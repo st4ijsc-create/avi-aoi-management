@@ -20,6 +20,7 @@ import { randomUUID } from "node:crypto";
 import { basename, join } from "node:path";
 import {
   chayVongAgent,
+  kiemDacTaBat,
   uocLuongTinNhan,
   uocLuongTokenMacDinh,
   GIOI_HAN_MAC_DINH,
@@ -276,6 +277,8 @@ export class PhienAgent {
         phat: (e) => this.xuLySuKien(e),
         signal: ac.signal,
         ngonNgu: ["vi", "en", "zh"].includes(ngonNgu) ? ngonNgu : "vi",
+        // (2026-10-19) nhắc đối chiếu đặc tả sau lần test xanh đầu — tắt bằng AI_AGENT_KIEM_DAC_TA=0 (env của extension host)
+        kiemDacTa: kiemDacTaBat(process.env.AI_AGENT_KIEM_DAC_TA),
       });
       this.xaDoan();
       this.lichSu = kq.tinNhan.filter((m) => m.role !== "system");

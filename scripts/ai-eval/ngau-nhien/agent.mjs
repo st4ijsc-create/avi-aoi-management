@@ -31,7 +31,7 @@ import { spawnSync } from "node:child_process";
 import { ROOT, BO, coToolchain } from "./lib/moiTruong.mjs";
 import { docKho, lietKeTep } from "./lib/kho.mjs";
 import { chonPhanTang } from "./lib/chon.mjs";
-import { chamDuAn, dungKhung, apMau, apSai, apGianLan, xoaThuMuc } from "./lib/cham.mjs";
+import { chamDuAn, dungKhung, apMau, apSai, apGianLan, xoaThuMuc, noiNodeModulesRepo } from "./lib/cham.mjs";
 import { taoCauHoiAgent, lenhTest } from "./lib/cauHoi.mjs";
 import { bangTomTat, trungVi } from "./lib/baoCao.mjs";
 import { chayAgent } from "../codegen-chay-duoc/agent-f/khachAgent.mjs";
@@ -85,9 +85,9 @@ async function kiemSong(luc) {
 }
 
 /** Tệp đã đổi so với khung (mới / sửa / mất), bỏ sản phẩm dựng. */
-function soVoiKhung(b, dir) {
+function soVoiKhung(b, dir, boQua = []) {
   const khung = new Set(lietKeTep(b.khungAbs));
-  const nay = new Set(lietKeTep(dir));
+  const nay = new Set(lietKeTep(dir).filter((r) => !boQua.includes(r)));
   const bang = (rel) => fs.readFileSync(`${b.khungAbs}/${rel}`).equals(fs.readFileSync(`${dir}/${rel}`));
   return {
     moi: [...nay].filter((r) => !khung.has(r)),
@@ -110,6 +110,15 @@ for (const b of DS) {
     const daCauHoi = GOC_BAI ? null : TIEN_TO ? `${TIEN_TO}/${b.id}` : rel;
     const dir = GOC_BAI_TUYET_DOI ? GOC_BAI : `${ROOT}/${rel}`;
     dungKhung(b, dir);
+    // ★ 2026-10-19 (js-ud2-react: máy chấm 0/2 ở gốc ngoài repo — esbuild/react không với tới): junction node_modules ⇒ repo.
+    const coJunction = noiNodeModulesRepo(b, dir);
+    /** tệp do BỘ ĐO đặt vào gốc bài (không tính "tệp đã đổi") */
+    const tepBoDo = [];
+    // .gitignore TRƯỚC commit khung: git không được theo junction vào node_modules của repo.
+    if (coJunction && GOC_BAI_TUYET_DOI && CONFIG === "agent" && !fs.existsSync(`${b.khungAbs}/.gitignore`)) {
+      fs.writeFileSync(`${dir}/.gitignore`, "node_modules\n");
+      tepBoDo.push(".gitignore");
+    }
     // ⚠ 2026-10-18 (NN-b-agent-2 = 0/27 VÔ GIÁ TRỊ lần hai): công cụ ghi FAIL-CLOSED khi dự án KHÔNG có git (không kiểm được
     // "tệp bẩn") ⇒ agent không sửa được tệp khung nào. Dự án thật (3a) luôn có git; gốc tuyệt đối ngoài repo thì phải tự
     // `git init` + commit khung như một dự án thật mới tạo.
@@ -136,7 +145,7 @@ for (const b of DS) {
       }
       await kiemSong(`sau ${b.id} lượt ${luot}`);
     }
-    row.tepDaDoi = soVoiKhung(b, dir);
+    row.tepDaDoi = soVoiKhung(b, dir, tepBoDo);
     const kq = await chamDuAn({ bai: b, thuMuc: dir });
     row.dat = kq.dat;
     row.cham = { ...kq, duoiRa: kq.dat ? undefined : kq.duoiRa.slice(-1500) };

@@ -45,6 +45,32 @@ export function dungLoiNhacHeThong(y: { cheDo: CheDoAgent; ngonNgu: NgonNgu }): 
   ].join("\n");
 }
 
+/**
+ * ★★★ (2026-10-19, 81 lượt bộ ngẫu nhiên) LỜI NHẮC TIẾN TRÌNH lõi chèn giữa vòng (tiếng Anh như prompt/tool; ngắn —
+ * mỗi lời nhắc tốn ngữ cảnh ở MỌI lượt sau). Tất định. Vòng (`vongAgent.ts`) quyết KHI NÀO; ở đây chỉ là CHỮ.
+ */
+
+/** (1) Sau lần test/build XANH đầu, khi model định kết thúc — MỘT lần mỗi lượt chạy (`AI_AGENT_KIEM_DAC_TA=0` tắt). */
+export const CAU_NHAC_KIEM_DAC_TA =
+  "[check before finishing: the visible tests passed, but hidden tests also check the specification. Before you finish, " +
+  "go through every requirement of the task's spec against your code — edge inputs, errors/exceptions it must raise, exact " +
+  "output format, empty / negative / very large inputs, Unicode and time zones if relevant. Write a few extra checks for " +
+  "edge cases the visible tests do not cover (run them, then delete them or keep them in a separate new test file — do not " +
+  "modify the existing test files), fix any mismatch, run the tests again, and only then finish with a short summary.]";
+
+/** (2) Lượt bị cắt ở trần token ra mà KHÔNG có tool call — chưa xong. */
+export const CAU_NHAC_LUOT_CAT_KHONG_TOOL =
+  "[your last reply was cut off at the output token limit, so the task is NOT finished. Stop the long reasoning: call " +
+  "the next tool now (for example run the tests), or give a short conclusion.]";
+
+/** (3) Hai lần ghi tệp liên tiếp chưa chạy test/build — nối vào quan sát của lần ghi thứ hai (một lần mỗi chuỗi). */
+export function cauNhacGhiChuaTest(lenhTest: string): string {
+  return (
+    `[note: you have written files twice without running the tests. If the files the tests need are in place, run the tests ` +
+    `now (run_command \`${lenhTest}\`) before writing more; do not rewrite a file again without running the tests first.]`
+  );
+}
+
 export interface DuLieuNguCanhDuAn {
   ten: string;
   /** gốc dự án tương đối (vd `sandbox-projects/demo`) — không lộ đường tuyệt đối của máy chủ */

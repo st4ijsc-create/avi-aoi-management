@@ -15,7 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { PYTHON, CMAKE, GO, CARGO, MOI_TRUONG } from "./moiTruong.mjs";
+import { PYTHON, CMAKE, GO, CARGO, MOI_TRUONG, ROOT } from "./moiTruong.mjs";
 import { lietKeTep } from "./kho.mjs";
 
 const sha256 = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
@@ -184,7 +184,9 @@ export async function chamDuAn({ bai, thuMuc, chiHienThi = false }) {
     : [];
   kq.tepCauHinhMoi = tepNay.filter((rel) => !trongKhung.has(rel) && cam.some((re) => re.test(rel)) && !cayDung.some((c) => rel.startsWith(c)));
   // node_modules bị lietKeTep bỏ qua (thư mục sản phẩm) ⇒ kiểm riêng: một node_modules MỚI trong dự án có thể che gói thật.
-  if (bai.kieu === "node" && fs.existsSync(`${thuMuc}/node_modules`) && !fs.existsSync(`${bai.khungAbs}/node_modules`)) kq.tepCauHinhMoi.push("node_modules/");
+  // Ngoại lệ DUY NHẤT: junction do BỘ ĐO đặt (`noiNodeModulesRepo`) trỏ đúng node_modules của repo cho bài `canNodeModulesRepo`.
+  if (bai.kieu === "node" && fs.existsSync(`${thuMuc}/node_modules`) && !fs.existsSync(`${bai.khungAbs}/node_modules`) &&
+    !(bai.canNodeModulesRepo && laNodeModulesRepo(thuMuc))) kq.tepCauHinhMoi.push("node_modules/");
   if (kq.tepCauHinhMoi.length) kq.lyDo.push("TEP_CAU_HINH_TEST_MOI");
 
   const daChep = [];
@@ -236,8 +238,33 @@ export function chepCay(tu, den) {
 }
 
 export function xoaThuMuc(p) {
+  // junction node_modules (noiNodeModulesRepo) gỡ RIÊNG trước — đo trên Node 24: rmSync không theo junction, nhưng xoá
+  // đệ quy xuyên vào node_modules của repo là thảm hoạ nên không dựa vào chi tiết đó.
+  try { if (fs.lstatSync(`${p}/node_modules`).isSymbolicLink()) fs.unlinkSync(`${p}/node_modules`); } catch { /* không có */ }
   try { fs.rmSync(p, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 }); }
   catch (e) { console.error(`  ⚠ không dọn được ${p}: ${e?.code ?? e}`); }
+}
+
+/** `thuMuc/node_modules` là junction/symlink trỏ ĐÚNG node_modules của repo (do bộ đo đặt). */
+export function laNodeModulesRepo(thuMuc) {
+  try {
+    const nm = `${thuMuc}/node_modules`;
+    return fs.lstatSync(nm).isSymbolicLink() &&
+      path.resolve(fs.realpathSync(nm)).toLowerCase() === path.resolve(fs.realpathSync(`${ROOT}/node_modules`)).toLowerCase();
+  } catch { return false; }
+}
+
+/**
+ * ★ 2026-10-19 — bài `canNodeModulesRepo` (React/esbuild) dựng ở gốc TUYỆT ĐỐI NGOÀI repo (`agent.mjs --goc-bai D:/…`)
+ * không với tới node_modules của repo (Node chỉ dò ngược lên cha) ⇒ máy chấm 0/2 dù lời giải đúng. Đặt junction
+ * `<thuMuc>/node_modules` ⇒ `<ROOT>/node_modules`. Trong repo thì không cần (dò ngược tự tới). Trả true nếu đã đặt.
+ */
+export function noiNodeModulesRepo(bai, thuMuc) {
+  if (!bai.canNodeModulesRepo) return false;
+  const goc = path.resolve(ROOT).toLowerCase() + path.sep;
+  if ((path.resolve(thuMuc).toLowerCase() + path.sep).startsWith(goc)) return false;
+  fs.symlinkSync(path.resolve(`${ROOT}/node_modules`), path.resolve(`${thuMuc}/node_modules`), "junction");
+  return true;
 }
 
 /** Dựng thư mục dự án mới tinh từ khung. */

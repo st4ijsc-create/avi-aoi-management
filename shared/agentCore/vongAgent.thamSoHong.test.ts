@@ -257,11 +257,27 @@ describe("★★★ lượt bị cắt ở trần token (biCat) có tool call �
     expect(goi).toHaveLength(1);
   });
 
-  it("lượt bị cắt KHÔNG có tool call ⇒ giữ hành vi cũ (hoan-thanh với chữ đã có)", async () => {
+  // ★ (2026-10-19) ĐỔI hành vi: trước đây `hoan-thanh` với chữ cụt (3/36 bài trượt bộ ngẫu nhiên) — nay chưa xong,
+  //   nhắc tối đa 2 lần rồi `het-token` (chi tiết: vongAgent.tienTrinh.test.ts).
+  it("lượt bị cắt KHÔNG có tool call ⇒ KHÔNG hoan-thanh; chữ cụt không thành hành động", async () => {
     const { goiModel, vao } = modelGia(() => ({ chu: "Câu trả lời dài bị cụt", biCat: true }));
-    const { bo } = boThucThiGia();
+    const { bo, goi } = boThucThiGia();
     const kq = await chay(goiModel, bo).p;
-    expect(kq.lyDo).toBe("hoan-thanh");
-    expect(vao).toHaveLength(1);
+    expect(kq.lyDo).toBe("het-token");
+    expect(vao).toHaveLength(3);
+    expect(goi).toHaveLength(0);
+  });
+
+  it("xen kẽ cắt CÓ tool call và cắt KHÔNG tool call 3 lượt liền ⇒ vẫn dừng lap-lai (chuỗi hỏng chung)", async () => {
+    const { goiModel, vao } = modelGia((i) =>
+      i === 1 ? { chu: "cụt", biCat: true } : { tool: [{ ten: "write_file", args: ARGS_HOP_LE_MA_CUT }], biCat: true },
+    );
+    const { bo, goi } = boThucThiGia();
+    const { p, suKien } = chay(goiModel, bo);
+    const kq = await p;
+    expect(kq.lyDo).toBe("lap-lai");
+    expect(vao).toHaveLength(3);
+    expect(goi).toHaveLength(0);
+    expect(suKien.some((e) => e.loai === "loi" && e.ma === "THAM_SO_HONG_LAP")).toBe(true);
   });
 });
