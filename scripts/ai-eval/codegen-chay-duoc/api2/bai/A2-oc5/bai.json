@@ -1,0 +1,1 @@
+{ "id": "A2-oc5", "lang": "cs", "name": "DocOpc", "nhom": "ot-dotnet", "thuVien": "OPCFoundation.NetStandard.Opc.Ua.Client/Core 1.5.378.156 (ReadValueIdCollection · Attributes · DataValue · StatusCode.IsBad/IsUncertain · ServiceResultException)", "dinhDanh": "DocOpc", "csproj": "api2/cs-ot/p.csproj" }

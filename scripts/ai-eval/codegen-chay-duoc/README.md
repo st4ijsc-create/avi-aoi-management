@@ -116,6 +116,7 @@ Báo cáo JSON: `reports/<label>.json`. **Nhãn luôn kết thúc bằng số l�
 | `tasks-hard.json` | **12** (3 TS · 3 Py · 3 C# · **3 C++**) | LRU+TTL · gộp khoảng · topo+chu trình (TS: **nhỏ nhất theo từ điển + đúng nút TRONG chu trình**) · rate-limit · SemVer · CSV RFC4180 · ring buffer · biểu thức · ca UTC · **C++: cửa sổ trượt biên MỞ · topo+chu trình · biểu thức chia cắt-về-0** |
 | `duan.mjs` | 3 đơn hàng | **hiện vật có biên dịch/phân tích được không**: T-SQL qua ScriptDom (offline) · PostgreSQL cục bộ, lược đồ tạm · `dotnet build` · `node --check`/esbuild |
 
+| `tasks-api2.json` | **30** (4 TS-thư viện · 4 React · 5 OT-Node · 6 OT-.NET · 6 SQL · 5 PowerShell) | **API theo nền tảng dự án**, đúng phiên bản trên máy: zod 4 · drizzle 0.44 · React 19.2 · node-opcua · MQTT.js/MQTTnet 5 · modbus-serial/NModbus · OPC UA .NET · PostgreSQL 18 · SQL Server 2025 · PowerShell 5.1 — xem mục riêng bên dưới |
 | `tasks-api.json` | **6** (6 C#) | **nặng API ngoài** (ADO.NET / `Microsoft.Data.SqlClient` 5.2.2 ghim trong `cs-template`): đọc `DbDataReader` theo TÊN cột + NULL · `SqlConnectionStringBuilder` · `SqlParameter` DECIMAL(18,2) + `DBNull` · nhiều tập kết quả (`NextResult`) · `DataTable` ràng buộc · `SqlBulkCopy` ánh xạ cột. Thiết kế để corpus kiểu `csharp-dotnet` (Training Studio "Eval mã") có chỗ TÁC DỤNG — bộ khó chỉ 2/12 bài nhận đoạn ≥ 0,44 |
 
 C++ đi qua **CMake → MSVC** (`cpp-template/`): CMake tự dò MSVC qua registry, không cần `vcvars64`.
@@ -124,6 +125,100 @@ Máy này: msys2 có nhưng **chưa cài toolchain**; MSVC 14.51 (VS 2026) có �
 ⚠ `duan.mjs` ghim **Postgres cục bộ** (`aoi@127.0.0.1:5434`) + lược đồ tạm `DROP … CASCADE`. Bản đầu đọc
 `DATABASE_URL` từ `.env` — trỏ tới **Supabase từ xa** — tức DDL do model sinh chạy lên một DB không nằm trên
 máy này. Không hại là MAY MẮN, không phải thiết kế. Đích chấm bài phải **dùng xong vứt được**.
+
+## `tasks-api2.json` — bộ đo API THEO NỀN TẢNG DỰ ÁN (2026-10-18)
+
+Sinh ra từ khuyến nghị #3 của `docs/superpowers/audits/2026-10-18-ai-local-nguon-hoc-code.md`: viết thước **trước** khi
+nạp thêm tài liệu, để chứng minh được tài liệu nào giúp. Đo đúng lớp lỗi đã thấy ở model: **sai namespace/API, thiếu
+using/import, gọi thành viên không tồn tại, dùng API đời cũ** (MQTTnet v4, zod 3, React trước 19, ConvertFrom-Json của
+PowerShell 7…). Mỗi bài bắt dùng API THẬT của **đúng phiên bản có trên máy đo**; nơi hành vi của API mới khác cách làm
+cũ, bài kiểm ghim chính chỗ khác đó (Suspense fallback, effect bị dọn khi `<Activity hidden>`, `z.encode` trên codec,
+chuỗi `z.prettifyError`, số `ReadRequest`/`CreateMonitoredItemsRequest` máy chủ OPC UA nhận, số lệnh FC16…).
+
+**30 bài · 6 nhóm** (≥ 4/nhóm). Kiểm thước 2026-10-18: **fake-ok 30/30 · fake-bad 0/30** (cả `run.mjs` lẫn `api2/kiem-thuoc.mjs`;
+mọi fake-bad CHẠY được và trượt đúng ở khẳng định nhắm tới — đã đọc lý do từng bài).
+
+```bash
+node scripts/ai-eval/codegen-chay-duoc/api2/kiem-thuoc.mjs                 # đóng gói lại + fake-ok 100 % / fake-bad 0 % (≈ 35 s, song song 3)
+node scripts/ai-eval/codegen-chay-duoc/run.mjs --tasks tasks-api2.json --config fake-ok   # PHẢI 30/30
+node scripts/ai-eval/codegen-chay-duoc/run.mjs --tasks tasks-api2.json --config fake-bad  # PHẢI 0/30
+node scripts/ai-eval/codegen-chay-duoc/run.mjs --tasks tasks-api2.json --config raw --max-tokens 16000 --only ot-dotnet --label M-<nhãn>-api2-1
+```
+`--only` nhận id, `lang` hoặc **nhóm** (`ts-thu-vien` · `react` · `ot-node` · `ot-dotnet` · `sql` · `powershell`). Studio "Eval mã" thấy
+bộ này qua tên `tasks-api2` (đọc thư mục; chạy cả bộ — bộ lọc `ngonNgu` của router chỉ nhận ts/py/cs/cpp, giao diện không dùng nó).
+
+**Nguồn sự thật = `api2/bai/<id>/`** (`bai.json` · `de.md` đề · `test.*` bài kiểm ẨN · `ok.*` lời giải mẫu · `bad.*` lời giải sai
+chạy được). `tasks-api2.json` + `fake-api2.json` là tệp SINH bởi `api2/dong-goi.mjs` — sửa nguồn, đừng sửa JSON.
+
+### Trình chấm mới trong `cham.mjs` (bài cũ không đổi lệnh — hồi quy fake-ok/fake-bad của `tasks`/`tasks-hard`/`tasks-api` giữ 100 %/0 %)
+
+| `lang` | Lời giải | Chạy | Đích dùng-xong-vứt |
+|---|---|---|---|
+| `ts` (+ `kem`, `pg`, `thoatCuong`) | `sol.ts` | `node --experimental-transform-types --test [--test-force-exit]` | máy chủ OT giả **in-process** trong bài kiểm; `pg: true` ⇒ cụm PostgreSQL riêng, URL qua `PG_URL` |
+| `tsx` | `sol.tsx` | esbuild (gói repo) bóc JSX `automatic` ⇒ `node --test` trên jsdom | — |
+| `cs` (+ `csproj`, `kem`) | `Sol.cs` | `dotnet run`; `csproj: api2/cs-ot/p.csproj` = khuôn OT | MQTTnet.Server / slave NModbus in-process |
+| `pgsql` | `sol.sql` | `node --test` + postgres.js | **cụm PostgreSQL riêng mỗi lượt** (`api2/pg.mjs`) |
+| `tsql` | `sol.sql` | `dotnet run` + `api2/kem/TroTsql.cs` (SqlClient) | **LocalDB riêng `AiEvalApi2`**, CSDL `ev_…` tệp trong thư mục bài, DROP sau lượt |
+| `ps1` | `sol.ps1` (ghi UTF-8 **có BOM**) | `powershell.exe` 5.1 `-File t.ps1`, assert tự viết (Pester máy này 3.4 — không dùng) | — |
+
+Vì sao KHÔNG dùng CSDL `_test` của repo (`vitest.setup.ts` ép `…_test`): `aoi` là chủ CSDL ấy và bài kiểm tích hợp khác dùng
+chung nó — SQL do model sinh có thể DROP bảng của người khác. Cụm PG riêng: `initdb` một lần vào khuôn `%TEMP%/ai-eval-pg-mau-<bản>`
+(≈ 4 s), mỗi lượt chép khuôn + `pg_ctl start` cổng ngẫu nhiên 127.0.0.1, `trust`, fsync tắt; runner dừng cụm trong `finally`
+(kể cả khi bài kiểm bị giết vì quá giờ). Bin: `AI_EVAL_PG_BIN` ⇒ `C:/Program Files/PostgreSQL/{18,17,16,15}/bin`.
+T-SQL chạy THẬT thay vì `tsql-check`: ScriptDom chỉ biết cú pháp — gọi hàm không tồn tại vẫn "OK", tức mù đúng lớp lỗi cần đo.
+
+### Bài và phiên bản thư viện (đo trên máy 2026-10-18)
+
+| id | nhóm | API/điểm bẫy | Phiên bản |
+|---|---|---|---|
+| A2-ts1 | ts-thu-vien | `z.strictObject` · `superRefine` · **`z.prettifyError`** (chỉ v4) | zod 4.3.6 |
+| A2-ts2 | ts-thu-vien | **`z.codec` · `z.decode`/`z.encode`** · `z.iso.datetime({offset})` (≥ 4.1) | zod 4.3.6 |
+| A2-ts3 | ts-thu-vien | `pgTable` ánh xạ cột · `inArray` · `count()` ra number | drizzle-orm 0.44.7 · postgres 3.4.9 · PG 18.4 |
+| A2-ts4 | ts-thu-vien | `onConflictDoUpdate` cộng dồn nguyên tử · `returning` + `xmax = 0` | drizzle-orm 0.44.7 · postgres 3.4.9 · PG 18.4 |
+| A2-rx1 | react | `useActionState` + `<form action>` (pending, tự reset) | react / react-dom 19.2.4 · @testing-library/react 16.3.3 · jsdom 30.0.1 |
+| A2-rx2 | react | **`use(promise)`** phải suspend | như trên |
+| A2-rx3 | react | **`<Activity>`** (ổn định 19.2): giữ state, DỌN effect khi ẩn | như trên |
+| A2-rx4 | react | **`useEffectEvent`** (ổn định 19.2) | như trên |
+| A2-on1 | ot-node | `OPCUAClient` · `session.read` gộp MỘT yêu cầu · `connectionStrategy` · StatusCode | node-opcua 2.174.0 |
+| A2-on2 | ot-node | `ClientSubscription` · `ClientMonitoredItem` (không thăm dò) | node-opcua 2.174.0 |
+| A2-on3 | ot-node | `session.call` · `Variant`/`DataType.Double` cho số nguyên | node-opcua 2.174.0 |
+| A2-on4 | ot-node | `connectAsync` · Last Will retain · `publishAsync` QoS1 · `endAsync` | mqtt 5.15.1 · broker aedes 0.51.3 (**chỉ MQTT 3.1.1**) |
+| A2-on5 | ot-node | `connectTCP` · `setID` · float32 **CDAB** · trần **125** thanh ghi/lệnh | modbus-serial 8.0.25 |
+| A2-oc1 | ot-dotnet | **`MqttClientFactory`** (v5) · MQTT 5 user property/content type · PUBACK `NoMatchingSubscribers` | MQTTnet + MQTTnet.Server 5.2.0.1603 |
+| A2-oc2 | ot-dotnet | `SubscribeAsync` · `ConvertPayloadToString` (payload `ReadOnlySequence` ở v5) · hết hạn ⇒ `TimeoutException` | MQTTnet 5.2.0.1603 |
+| A2-oc3 | ot-dotnet | `ModbusFactory().CreateMaster(TcpClient)` (không phải NModbus4) · chia ≤ 125 | NModbus 3.0.83 |
+| A2-oc4 | ot-dotnet | `WriteMultipleRegisters` (MỘT FC16) + `WriteSingleCoil` · bù hai | NModbus 3.0.83 |
+| A2-oc5 | ot-dotnet | `ReadValueIdCollection` · `Attributes.Value` · `StatusCode.IsBad/IsUncertain` · `ServiceResultException` | OPCFoundation.NetStandard.Opc.Ua.Client/Core 1.5.378.156 |
+| A2-oc6 | ot-dotnet | **`ExpandedNodeId.ToNodeId` + `NamespaceTable`** | OPCFoundation.NetStandard.Opc.Ua.Core 1.5.378.156 |
+| A2-pg1 | sql | `DISTINCT ON` · `FILTER` · chia numeric | PostgreSQL 18.4 |
+| A2-pg2 | sql | `generate_series` · **`date_bin`** · khung trống | PostgreSQL 18.4 |
+| A2-pg3 | sql | PL/pgSQL `RETURNS TABLE` trùng tên cột · `ON CONFLICT` · `ERRCODE '22023'` | PostgreSQL 18.4 |
+| A2-ms1 | sql | `STRING_AGG … WITHIN GROUP` (không nhận DISTINCT) | SQL Server 2025 LocalDB 17.0.4025 · SqlClient 5.2.2 |
+| A2-ms2 | sql | `OPENJSON … WITH` · `MERGE` · `OUTPUT $action` · so sánh có NULL | như trên |
+| A2-ms3 | sql | **`GENERATE_SERIES` · `DATE_BUCKET`** (2022+) | như trên |
+| A2-ps1 | powershell | `ConvertFrom-Json` 5.1 (không `-AsHashtable`) · đọc UTF-8 không BOM | Windows PowerShell 5.1.26100 |
+| A2-ps2 | powershell | `Import-Csv -Delimiter -Encoding` · `Measure-Object` trả `[double]` | như trên |
+| A2-ps3 | powershell | `TcpClient.ConnectAsync().Wait(ms)` · rò đầu ra pipeline | như trên (.NET Framework 4.8) |
+| A2-ps4 | powershell | `XmlDocument.Load` + `XmlNamespaceManager` · NodeSet2 OPC UA | như trên |
+| A2-ps5 | powershell | `SupportsShouldProcess` · `$PSCmdlet.ShouldProcess` · `-WhatIf` | như trên |
+
+**In đậm** = API ít phổ biến/mới (≥ 2 bài mỗi nền tảng có).
+
+### Giới hạn đã biết
+
+- **Chưa có số model nào** (lượt dựng thước không được gây tải GPU). Như mọi bộ mới: ≥ 3 lượt, đo A/A biên nhiễu riêng trước
+  khi kết luận corpus giúp hay không; báo `cụt N/M`.
+- aedes 0.51 chỉ nói **MQTT 3.1.1** ⇒ MQTT 5 chỉ đo ở phía .NET (A2-oc1/oc2); đề A2-on4 nói rõ điều này.
+- OPC UA .NET (oc5/oc6) đo **mô hình đối tượng ngoại tuyến**, không có máy chủ OPC UA .NET in-process (dựng chứng chỉ +
+  ApplicationConfiguration quá nặng cho một bài); đường mạng OPC UA thật đo ở phía node-opcua (on1–on3).
+- `tsql` cần SQL Server LocalDB (không cần admin) và chạy dưới **cùng tài khoản Windows** với tiến trình chấm (LocalDB theo
+  người dùng) — Studio trên :3000 phải chạy bằng tài khoản ấy. `pgsql`/`pg: true` cần bin PostgreSQL trên máy.
+- React chạy trên **jsdom**, không phải trình duyệt; node-opcua client tự tạo PKI của nó trong hồ sơ người dùng lần đầu.
+- Bài kiểm đo HÀNH VI: lời giải dùng API khác mà cho đúng hành vi vẫn ĐẠT (vd ref thay `useEffectEvent`) — chỉ những chỗ
+  hành vi khác nhau mới ghim API. A2-ps3 có ca địa chỉ không định tuyến (`10.255.255.1`) phụ thuộc mạng: bị từ chối nhanh
+  hay hết hạn đều phải ra `$false` trong < 3 s.
+- Khuôn `api2/cs-ot/p.csproj` ghim đúng bản trong `%USERPROFILE%\.nuget\packages` ⇒ restore không cần mạng; máy khác thiếu
+  gói ⇒ restore sẽ tải (hoặc trượt nếu ngoại tuyến) — kiểm thước sẽ lộ ngay.
 
 ## Đường cơ sở đã đo — bộ KHÓ 12 bài, 3 lượt, RTX 5090, llama.cpp b9814
 

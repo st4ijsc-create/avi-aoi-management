@@ -1,0 +1,1 @@
+{ "id": "A2-on5", "lang": "ts", "name": "docNhietDo", "nhom": "ot-node", "thuVien": "modbus-serial 8.0.25 (connectTCP · setID · setTimeout · readHoldingRegisters) — máy chủ giả ServerTCP in-process (thi hành trần 125 thanh ghi/lệnh)", "dinhDanh": "docNhietDo", "kem": ["api2/kem/modbus.mjs"], "thoatCuong": true, "tranMs": 60000 }

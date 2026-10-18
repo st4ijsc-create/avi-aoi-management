@@ -35,7 +35,7 @@ const TASKFILE = arg("--tasks", "tasks.json");
 const FAKE_CAP = TASKFILE.replace(/^tasks/, "fake");
 const FAKEFILE = arg("--fake", FAKE_CAP !== TASKFILE && fs.existsSync(`${BENCH}/${FAKE_CAP}`) ? FAKE_CAP : "fake.json");
 const tasks = JSON.parse(fs.readFileSync(`${BENCH}/${TASKFILE}`, "utf8"))
-  .filter(t => !ONLY || ONLY.split(",").includes(t.id) || ONLY.split(",").includes(t.lang));
+  .filter(t => !ONLY || ONLY.split(",").includes(t.id) || ONLY.split(",").includes(t.lang) || (t.nhom && ONLY.split(",").includes(t.nhom)));
 
 // ─────────────────────────────────────────────────────────── SINH
 async function genPipeline(t) {
@@ -175,7 +175,7 @@ for (const t of tasks) {
   const dir = `${WORK}/${LABEL}/${t.id}`;
   const c = await chamBai({ t, text: g.text || "", dir });
   const r = { ok: c.dat };
-  const row = { id: t.id, lang: t.lang, config: LABEL, sinhDuocMa: c.sinhDuocMa, chayDat: c.dat,
+  const row = { id: t.id, lang: t.lang, ...(t.nhom ? { nhom: t.nhom } : {}), config: LABEL, sinhDuocMa: c.sinhDuocMa, chayDat: c.dat,
     ttftMs: g.ttftMs ?? null, totalMs: g.totalMs ?? null, tokPerSec: g.tokPerSec ?? null,
     genTok: g.genTok ?? null, evs: g.evs ?? null, err: g.err ?? null,
     loi: c.loi, code: c.code, vanBanGoc: (g.text||"").slice(0,20000) };
@@ -189,9 +189,14 @@ fs.writeFileSync(`${BENCH}/reports/${LABEL}.json`, JSON.stringify(rows, null, 1)
 const by = (f) => rows.filter(f);
 const pct = (a, b) => b ? Math.round((a / b) * 100) : 0;
 console.log(`\n══ ${LABEL} ══ n=${rows.length}`);
-for (const l of ["ts", "py", "cs"]) {
+// api2: in MỌI ngôn ngữ có mặt (cpp/tsx/pgsql/tsql/ps1 trước đây bị bỏ khỏi bảng tóm tắt) + theo NHÓM nếu bài khai `nhom`.
+for (const l of [...new Set(["ts", "py", "cs", ...rows.map((r) => r.lang)])]) {
   const g = by(r => r.lang === l); if (!g.length) continue;
   console.log(` ${l}: sinh ${by(r => r.lang === l && r.sinhDuocMa).length}/${g.length} · CHẠY ĐẠT ${by(r => r.lang === l && r.chayDat).length}/${g.length}`);
+}
+for (const n of [...new Set(rows.map((r) => r.nhom).filter(Boolean))]) {
+  const g = by(r => r.nhom === n);
+  console.log(` [${n}] CHẠY ĐẠT ${g.filter(r => r.chayDat).length}/${g.length}`);
 }
 const okAll = by(r => r.chayDat).length;
 console.log(` TỔNG chạy-đạt: ${okAll}/${rows.length} = ${pct(okAll, rows.length)}%`);

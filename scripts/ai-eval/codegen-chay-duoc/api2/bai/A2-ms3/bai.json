@@ -1,0 +1,1 @@
+{ "id": "A2-ms3", "lang": "tsql", "name": "KhungMuoiLamPhut", "nhom": "sql", "thuVien": "SQL Server 2025 LocalDB 17.0.4025 (GENERATE_SERIES · DATE_BUCKET — có từ SQL Server 2022) · bài kiểm C# Microsoft.Data.SqlClient 5.2.2", "dinhDanh": "dbo.DoKiem", "kem": ["api2/kem/TroTsql.cs"] }

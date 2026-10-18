@@ -135,6 +135,16 @@ describe("bộ bài — đọc TỆP THẬT của bộ đo", () => {
     expect(docBoBai("fake-api")).toBeNull();
   });
 
+  it("tasks-api2 (30 bài API theo nền tảng dự án, 6 ngôn ngữ chấm) có trong danh sách; mỗi bài khai nhóm + phiên bản thư viện", () => {
+    expect(listBoBai().find((b) => b.ten === "tasks-api2")).toMatchObject({
+      soBai: 30,
+      ngonNgu: { ts: 9, tsx: 4, cs: 6, pgsql: 3, tsql: 3, ps1: 5 },
+    });
+    expect(docBoBai("fake-api2")).toBeNull();
+    const bai = docBoBai("tasks-api2")!.bai as unknown as Array<{ nhom?: string; thuVien?: string; dinhDanh?: string }>;
+    expect(bai.every((b) => !!b.nhom && !!b.thuVien && !!b.dinhDanh)).toBe(true);
+  });
+
   it("listBoBai thấy tasks (11) + tasks-hard (12) kèm băm", () => {
     const ds = listBoBai();
     expect(ds.find((b) => b.ten === "tasks-hard")).toMatchObject({ soBai: 12, ngonNgu: { ts: 3, py: 3, cs: 3, cpp: 3 } });

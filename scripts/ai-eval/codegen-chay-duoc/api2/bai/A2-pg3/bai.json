@@ -1,0 +1,1 @@
+{ "id": "A2-pg3", "lang": "pgsql", "name": "ghi_dem", "nhom": "sql", "thuVien": "PostgreSQL 18.4 (PL/pgSQL RETURNS TABLE · INSERT … ON CONFLICT DO UPDATE · RETURNING xmax · RAISE … ERRCODE) — cụm dùng-xong-vứt; bài kiểm qua postgres (postgres.js) 3.4.9", "dinhDanh": "ghi_dem" }

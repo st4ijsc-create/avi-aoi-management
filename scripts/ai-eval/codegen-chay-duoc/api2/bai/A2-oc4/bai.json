@@ -1,0 +1,1 @@
+{ "id": "A2-oc4", "lang": "cs", "name": "GhiModbus", "nhom": "ot-dotnet", "thuVien": "NModbus 3.0.83 (WriteMultipleRegisters FC16 · WriteSingleCoil FC05) — slave NModbus in-process với kho điểm đếm lệnh ghi", "dinhDanh": "GhiModbus", "csproj": "api2/cs-ot/p.csproj" }

@@ -1,0 +1,1 @@
+{ "id": "A2-oc3", "lang": "cs", "name": "DocModbus", "nhom": "ot-dotnet", "thuVien": "NModbus 3.0.83 (ModbusFactory · CreateMaster(TcpClient) · ReadHoldingRegisters · Transport.ReadTimeout) — slave NModbus in-process", "dinhDanh": "DocModbus", "csproj": "api2/cs-ot/p.csproj" }

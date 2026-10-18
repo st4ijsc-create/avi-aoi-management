@@ -1,0 +1,1 @@
+{ "id": "A2-on4", "lang": "ts", "name": "ketNoiThietBi", "nhom": "ot-node", "thuVien": "mqtt (MQTT.js) 5.15.1 (connectAsync · will · publishAsync · endAsync) — broker giả aedes 0.51.3 in-process (MQTT 3.1.1)", "dinhDanh": "ketNoiThietBi", "kem": ["api2/kem/mqtt.mjs"], "thoatCuong": true, "tranMs": 60000 }

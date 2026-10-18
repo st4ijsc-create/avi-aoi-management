@@ -1,0 +1,1 @@
+{ "id": "A2-pg2", "lang": "pgsql", "name": "khung_15_phut", "nhom": "sql", "thuVien": "PostgreSQL 18.4 (generate_series timestamptz · date_bin — có từ PG 14) — cụm dùng-xong-vứt; bài kiểm qua postgres (postgres.js) 3.4.9", "dinhDanh": "do_kiem" }
