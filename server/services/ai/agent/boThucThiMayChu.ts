@@ -76,6 +76,10 @@
  *   • `lookup_api` (2026-10-18) ⇒ chỉ mục ký hiệu API CỤC BỘ qua cổng tiêm `traApi` (`../apiRef/traApi.ts`, mặc định đọc
  *     `knowledge/api-ref/ky-hieu/`): tra CHÍNH XÁC theo tên/đuôi tên, không LLM, không cosine. Kết quả là DỮ LIỆU (đi
  *     `lamSachChoModel`, cắt trần); chỉ mục chưa dựng ⇒ `CHI_MUC_API_KHONG_CO` + cách dựng (không bịa).
+ *   • (2026-10-19) `run_command` ĐỎ có lỗi "không tìm thấy kiểu/thành viên/namespace" (CS0246/CS0234/CS0103/CS1061,
+ *     TS2304/TS2339/TS2307, javac `cannot find symbol`, NameError/AttributeError/ModuleNotFoundError; Go/Rust trích nhưng
+ *     chưa có chỉ mục) ⇒ TỰ tra `traApi` và gắn khối "Gợi ý tra cứu API (tự động)" ở cuối quan sát
+ *     (`../apiRef/goiYLoiBienDich.ts`; tắt `AI_AGENT_TU_TRA_API=0`). Chỉ khi chỉ mục có mục khớp.
  *   • Sau mỗi lượt GHI THÀNH CÔNG ⇒ `lamTuoiTep` (best-effort, không chờ, lỗi nuốt) để chỉ mục không cũ.
  */
 import path from "node:path";
@@ -112,6 +116,7 @@ import { layLyDoBac, ngheQuyetDinhDuyet, type QuyetDinhDuyet } from "./busDuyetA
 import { damBaoChiMucNen, phanGiaiChiMuc, type CongChiMucMa } from "./chiMucMaAgent";
 import { timTaiLieuMacDinh, type KhoTaiLieu, type TimTaiLieu } from "./timTaiLieuAgent";
 import { dinhDangKetQuaApi, traApiMacDinh, type NgonNguApi, type TraApi } from "../apiRef/traApi";
+import { goiYTraApiTuDauRa, tuTraApiBat } from "../apiRef/goiYLoiBienDich";
 
 /** Lý do gắn vào audit của `confirmAction` cho một lượt ghi KHÔNG người bấm của chế độ `tu-dong`. */
 export const LY_DO_AGENT_TU_DONG = "AI_AGENT_TU_DONG" as const;
@@ -844,7 +849,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     if (!kq.ok) {
       return { ok: false, ma: `XAC_NHAN_${String(kq.status).toUpperCase()}`, choModel: `The change was not applied (${kq.status}${kq.message ? `: ${kq.message}` : ""}).` };
     }
-    if (laLenh) return ketQuaLenh(kq.result);
+    if (laLenh) return await ketQuaLenh(kq.result);
     if (daBiTuChoiGhi(kq.result)) {
       const note = maTuChoiGhi(kq.result) ?? "TU_CHOI";
       return lamSachChoModel(`Write refused (${note}): ${vanBanChoModel(kq.result as ToolResult)} Nothing was written.`, { ok: false, ma: note });
@@ -863,7 +868,22 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     return { ok: true, choModel: cauThanhCong(tool, kq.result, thayDoi), thayDoi, hienThi: { tool, pendingActionId: pa.actionId, checkpointId, thayDoi } };
   }
 
-  function ketQuaLenh(result: unknown): KetQuaTool {
+  /**
+   * ★ (2026-10-19) Lệnh ĐỎ có lỗi "không tìm thấy kiểu/thành viên/namespace" ⇒ khối "Gợi ý tra cứu API (tự động)" từ chỉ
+   * mục `traApi` (`../apiRef/goiYLoiBienDich.ts`) — không chờ model tự gọi `lookup_api`. Gắn ở CUỐI quan sát (lõi cắt
+   * đầu+đuôi ⇒ đuôi sống), KHÔNG vào `hienThi.dauRa` (UI hiển thị đầu ra THẬT của lệnh). Tắt: `AI_AGENT_TU_TRA_API=0`.
+   * Hỏng ⇒ không có khối, kết quả lệnh nguyên vẹn.
+   */
+  async function goiYApiChoLenh(dauRa: string, maThoat: number | null | undefined, hetGio: boolean): Promise<{ vanBan: string; ten: string[] } | null> {
+    if (hetGio || maThoat === 0 || maThoat === null || maThoat === undefined || !tuTraApiBat()) return null;
+    try {
+      return await goiYTraApiTuDauRa(dauRa, traApi);
+    } catch {
+      return null;
+    }
+  }
+
+  async function ketQuaLenh(result: unknown): Promise<KetQuaTool> {
     const r = (result ?? {}) as { note?: string | null; textSummary?: string | null; data?: { command?: string; exitCode?: number | null; timedOut?: boolean; output?: string | null } };
     const d = r.data ?? {};
     const dauRa = String(d.output ?? r.textSummary ?? "");
@@ -879,8 +899,12 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
           : "FAILED";
     const dau = `$ ${d.command ?? ""}\nexit code: ${d.exitCode ?? "—"}${d.timedOut ? " (TIMED OUT)" : ""} · ${tomTat}`;
     const ra = lamSachChoModel(`${dau}\n${dauRa}`, { ok: true });
+    const goiY = await goiYApiChoLenh(dauRa, d.exitCode, d.timedOut === true);
+    // khối gợi ý (dữ liệu chỉ mục cục bộ, tên trích từ đầu ra) cũng đi qua làm sạch như mọi chữ tool
+    const choModel = goiY ? `${ra.choModel}\n\n${lamSachChoModel(goiY.vanBan, { ok: true }).choModel}` : ra.choModel;
     return {
       ...ra,
+      choModel,
       hienThi: {
         tool: "run_command",
         lenh: d.command ?? null,
@@ -890,6 +914,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
         soDo: t.soDo,
         soXanh: t.soXanh,
         dauRa: ra.choModel.slice(0, TRAN_DAU_RA_HIEN_THI),
+        ...(goiY ? { tuTraApi: goiY.ten } : {}),
       },
     };
   }

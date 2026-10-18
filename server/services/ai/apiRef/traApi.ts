@@ -241,13 +241,13 @@ export function moChiMucApi(thuMuc: string): ChiMucApiMo | null {
 
 const TRAN_KY_TU_MAC_DINH = 9_000;
 
-function tenDayDu(m: MucApi): string {
+export function tenDayDu(m: MucApi): string {
   if (!m.ns) return m.ten;
   return m.nn === "typescript" ? `"${m.ns}" › ${m.ten}` : `${m.ns}.${m.ten}`;
 }
 
 /** Gợi ý NHẬP theo ngôn ngữ (đúng thứ lỗi CS0246/TS2304/cannot find symbol/NameError cần). */
-function goiYNhap(m: MucApi): string {
+export function goiYNhap(m: MucApi): string {
   const kieuNgoai = m.cha ? m.cha.split(".")[0] : m.ten.split(".")[0];
   switch (m.nn) {
     case "csharp":
