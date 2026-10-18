@@ -54,7 +54,12 @@ const TIEN_TO = arg("--tien-to", null);
 const GIU = co("--giu");
 const REL_GOC = "tmp/ngau-nhien-agent";
 const GOC_BAI = arg("--goc-bai", null);
-if (GOC_BAI !== null && (!/^tmp\/[A-Za-z0-9_./-]+$/.test(GOC_BAI) || GOC_BAI.includes(".."))) { console.error(`--goc-bai phải là đường dưới tmp/ (đã .gitignore): ${GOC_BAI}`); process.exit(2); }
+// ⚠ 2026-10-18 (lượt NN-b-agent-1 = 0/27 VÔ GIÁ TRỊ): gốc dưới `tmp/` của worktree vẫn nằm TRONG repo chính ⇒ cổng Q1
+// (`laGhiVaoRepoChinh`) từ chối MỌI lượt ghi tự trị của `tu-dong` — đúng hành vi sản phẩm, sai thiết bị đo. Nay nhận thêm
+// đường TUYỆT ĐỐI NGOÀI repo (vd `D:/SOURCES/_ai7_nnbai/_bai`) — khuyên dùng.
+const GOC_BAI_TUYET_DOI = GOC_BAI !== null && /^[A-Za-z]:[\\/]/.test(GOC_BAI);
+if (GOC_BAI !== null && !GOC_BAI_TUYET_DOI && (!/^tmp\/[A-Za-z0-9_./-]+$/.test(GOC_BAI) || GOC_BAI.includes(".."))) { console.error(`--goc-bai phải là đường dưới tmp/ hoặc tuyệt đối NGOÀI repo: ${GOC_BAI}`); process.exit(2); }
+if (GOC_BAI_TUYET_DOI && (GOC_BAI.includes("..") || path.resolve(GOC_BAI).toLowerCase().startsWith(path.resolve(ROOT).toLowerCase()))) { console.error(`--goc-bai tuyệt đối phải NGOÀI repo (cổng Q1 chặn ghi tự trị trong repo chính): ${GOC_BAI}`); process.exit(2); }
 if (GOC_BAI !== null && CONFIG === "agent" && PROJECT_ID === "repo") { console.error("--goc-bai cần --project-id trỏ đúng thư mục ấy (AI_REPO_SANDBOX_ROOTS), không phải 'repo'."); process.exit(2); }
 
 const DS = chonPhanTang(KHO_LOC, { seed: SEED, n: N });
@@ -102,7 +107,7 @@ for (const b of DS) {
   for (let luot = 1; luot <= SO_LUOT; luot++) {
     const rel = GOC_BAI ?? `${REL_GOC}/${b.id}`;
     const daCauHoi = GOC_BAI ? null : TIEN_TO ? `${TIEN_TO}/${b.id}` : rel;
-    const dir = `${ROOT}/${rel}`;
+    const dir = GOC_BAI_TUYET_DOI ? GOC_BAI : `${ROOT}/${rel}`;
     dungKhung(b, dir);
     const row = { id: b.id, lang: b.lang, muc: b.muc, luot, vanTay: b.vanTay, config: CONFIG, agentChayDuocTest: lenhTest(b, daCauHoi).agentChayDuoc };
     process.stderr.write(`▶ ${b.id} (${b.lang}/${b.muc}) lượt ${luot} … `);
