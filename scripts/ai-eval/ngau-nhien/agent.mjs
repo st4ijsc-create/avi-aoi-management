@@ -27,6 +27,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { ROOT, BO, coToolchain } from "./lib/moiTruong.mjs";
 import { docKho, lietKeTep } from "./lib/kho.mjs";
 import { chonPhanTang } from "./lib/chon.mjs";
@@ -109,6 +110,15 @@ for (const b of DS) {
     const daCauHoi = GOC_BAI ? null : TIEN_TO ? `${TIEN_TO}/${b.id}` : rel;
     const dir = GOC_BAI_TUYET_DOI ? GOC_BAI : `${ROOT}/${rel}`;
     dungKhung(b, dir);
+    // ⚠ 2026-10-18 (NN-b-agent-2 = 0/27 VÔ GIÁ TRỊ lần hai): công cụ ghi FAIL-CLOSED khi dự án KHÔNG có git (không kiểm được
+    // "tệp bẩn") ⇒ agent không sửa được tệp khung nào. Dự án thật (3a) luôn có git; gốc tuyệt đối ngoài repo thì phải tự
+    // `git init` + commit khung như một dự án thật mới tạo.
+    if (GOC_BAI_TUYET_DOI && CONFIG === "agent") {
+      for (const a of [["init", "-q"], ["add", "-A"], ["commit", "-q", "--no-verify", "-m", `khung ${b.id}`]]) {
+        const r = spawnSync("git", ["-c", "user.name=ngau-nhien", "-c", "user.email=ngau-nhien@local", "-c", "core.autocrlf=false", ...a], { cwd: dir, encoding: "utf8" });
+        if (r.status !== 0) { console.error(`\n⛔ git ${a[0]} hỏng ở ${dir}: ${r.stderr}`); process.exit(2); }
+      }
+    }
     const row = { id: b.id, lang: b.lang, muc: b.muc, luot, vanTay: b.vanTay, config: CONFIG, agentChayDuocTest: lenhTest(b, daCauHoi).agentChayDuoc };
     process.stderr.write(`▶ ${b.id} (${b.lang}/${b.muc}) lượt ${luot} … `);
     if (CONFIG === "mau") apMau(b, dir);
