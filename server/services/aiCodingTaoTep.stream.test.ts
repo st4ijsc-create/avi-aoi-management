@@ -795,3 +795,69 @@ describe("§11 — CÂU THẬT CỦA NGƯỜI DÙNG PHẢI TỚI ĐƯỢC `apply
     expect(r.events.some((e) => e.type === "tool" && (e as any).toolName === "apply_diff_batch")).toBe(false);
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ 2026-10-18 — ĐẶC TẢ SINH MÃ KHÔNG ĐƯỢC BỊ CỬA GHI NUỐT (đầu–cuối qua `streamAnswer`).
+ *
+ * Đo được trên bộ ngẫu nhiên (`scripts/ai-eval/ngau-nhien/`): một đặc tả nhắc `Cargo.toml`/`schema.sql`
+ * + "viết lại"/"Không được sửa" trong thân ⇒ "Không có tệp" sau 20 ms, "CẢ LÔ dừng", hoặc thẻ duyệt
+ * sửa NHẦM một tệp CÓ THẬT của repo. Lưới thuần của chuỗi cửa ở `ai/dinhTuyenGhi.test.ts`; đây là
+ * bằng chứng đầu–cuối rằng `streamCodingAnswer` dùng đúng chuỗi ấy.
+ */
+describe("§12 — ĐẶC TẢ ⇒ sinh mã, KHÔNG rẽ cửa sửa/lô; lệnh sửa thật vẫn rẽ", () => {
+  const rao = "```";
+  const dacTa = (tepNhac: string[]) =>
+    [
+      "# Bộ đếm từ theo tần suất",
+      "Ngôn ngữ / nền tảng: C# (.NET 10).",
+      `Cài lớp \`DemTu\`:\n\n${rao}csharp\npublic static class DemTu { public static IReadOnlyList<(string, int)> Dem(string s, int k); }\n${rao}`,
+      "## Các tệp hiện có trong dự án",
+      "Không được sửa tệp test và tệp cấu hình. Tệp cần viết có thể đang là khung rỗng — hãy viết lại TOÀN BỘ nội dung của nó.",
+      ...tepNhac.map((t) => `### \`${t}\`\n${rao}\n// khung\n${rao}`),
+    ].join("\n\n");
+
+  it("★★★ đặc tả nhắc MỘT tệp KHÔNG có (`Cargo.toml`) ⇒ KHÔNG 'Không có tệp' của cửa sửa, model SINH MÃ", async () => {
+    h.manh = [MA_MOI];
+    const r = await chay(dacTa(["Cargo.toml"]), admin());
+    expect(r.chu, "gợi ý TẠO là dấu vân tay của cửa sửa 1 tệp").not.toContain("tạo file mới");
+    expect(h.quyetDinh.some((q) => q.tool === "apply_diff" || q.tool === "apply_diff_batch")).toBe(false);
+    expect(h.moiPrompt.length, "đặc tả phải tới được model").toBeGreaterThan(0);
+    expect(r.chu).toContain("NgayThang");
+  });
+
+  it("★★★ đặc tả nhắc NHIỀU tệp ⇒ KHÔNG 'CẢ LÔ dừng', KHÔNG đề xuất ghi", async () => {
+    h.manh = [MA_MOI];
+    const r = await chay(dacTa(["src/DemTu.cs", "Bai.csproj", "tests/HienThiTests.cs"]), admin());
+    expect(r.chu).not.toContain("CẢ LÔ dừng");
+    expect(h.quyetDinh.some((q) => q.tool === "apply_diff" || q.tool === "apply_diff_batch")).toBe(false);
+    expect(h.moiPrompt.length).toBeGreaterThan(0);
+  });
+
+  it("★★★ đặc tả nhắc một tệp CÓ THẬT của dự án ⇒ vẫn KHÔNG đề xuất sửa nhầm tệp ấy", async () => {
+    h.manh = [MA_MOI];
+    await chay(dacTa([TEP_A]), admin());
+    expect(h.quyetDinh.some((q) => q.tool === "apply_diff" || q.tool === "apply_diff_batch")).toBe(false);
+  });
+
+  it("★★★ CHỐNG VÁ QUÁ TAY — đặc tả có lệnh SỬA nhắm tệp ở DÒNG ĐẦU ⇒ vẫn đề xuất sửa đúng tệp", async () => {
+    h.manh = [MA_MOI];
+    await chay(`sửa ${TEP_A} theo đặc tả sau:\n\n## Yêu cầu\n- Divide ném lỗi khi chia 0\n- giữ nguyên chữ ký`, admin());
+    const ad = h.quyetDinh.filter((q) => q.tool === "apply_diff");
+    expect(ad.length).toBe(1);
+    expect(ad[0]!.args.path).toBe(TEP_A);
+  });
+
+  it("★★ câu ngắn, lệnh KHÔNG ở dòng đầu, tệp CÓ THẬT ⇒ vẫn rẽ cửa sửa", async () => {
+    h.manh = [MA_MOI];
+    await chay(`Dự án C# demo.\nsửa ${TEP_A} để Divide ném lỗi khi chia 0`, admin());
+    expect(h.quyetDinh.filter((q) => q.tool === "apply_diff").length).toBe(1);
+  });
+
+  it("★★ câu ngắn, lệnh KHÔNG ở dòng đầu, tệp KHÔNG có ⇒ KHÔNG rẽ cửa sửa (không gợi ý TẠO, không ghi)", async () => {
+    h.manh = [MA_MOI];
+    const r = await chay(`Dự án C# demo.\nsửa ${TEP_MOI} để Divide ném lỗi khi chia 0`, admin());
+    expect(r.chu).not.toContain("tạo file mới");
+    expect(h.quyetDinh.some((q) => q.tool === "apply_diff")).toBe(false);
+  });
+});

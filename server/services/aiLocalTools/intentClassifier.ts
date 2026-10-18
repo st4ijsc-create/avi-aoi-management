@@ -2338,6 +2338,71 @@ export function laYDinhTaoDuAn(question: string): boolean {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-10-18 — **ĐẶC TẢ** vs **CÂU LỆNH**: thân một đặc tả KHÔNG được lái cửa SỬA / TỰ TRỊ
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ LỖI ĐO ĐƯỢC (bộ ngẫu nhiên `scripts/ai-eval/ngau-nhien/`, đường (a) pipeline): đường chat lập trình
+ * thua model thô 7 bài/54 vì ĐỊNH TUYẾN — 17/54 đặc tả SINH MÃ bị cửa khác nuốt trước nhánh sinh mã:
+ *   • cửa SỬA 1 TỆP: tên tệp trong đề (`Cargo.toml`) + "viết lại"/"sửa" ở đâu đó trong thân ⇒ "Không có
+ *     tệp" sau ~20 ms, thẻ duyệt sửa NHẦM `schema.sql` của repo, hoặc bộ che an toàn từ chối;
+ *   • cửa SỬA NHIỀU TỆP (`001_tao_bang.sql` …) ⇒ "CẢ LÔ dừng";
+ *   • cửa TỰ TRỊ: "cho tới khi" (mô tả THUẬT TOÁN) + "sửa" (câu PHỦ ĐỊNH *"Không được sửa tệp test"*) +
+ *     "test" ⇒ chạy vòng tự trị ⇒ "không sinh được bản vá".
+ * Mọi vị từ cũ đọc TỪ KHOÁ trên TOÀN câu; một đặc tả 2–12 nghìn ký tự chứa gần như mọi từ khoá.
+ *
+ * ⇒ Hai vị từ thuần dưới đây tách HÌNH DẠNG: *đặc tả* (dài / khối mã / tiêu đề / danh sách) và *dòng
+ *   lệnh đầu*. Với một đặc tả, CHỈ dòng lệnh đầu được quyền rẽ sang cửa SỬA/TỰ TRỊ — thân đặc tả là DỮ
+ *   LIỆU của yêu cầu, không phải mệnh lệnh định tuyến. Nghi ngờ ⇒ sinh mã (chiều SÓT rẻ: mã in ra thay vì
+ *   thẻ duyệt; chiều THỪA đắt: 0 dòng mã, hoặc đề xuất ghi đè một tệp không liên quan).
+ * Lưới: `ai/dinhTuyenGhi.test.ts`.
+ */
+
+/**
+ * ★ Trần độ dài của một CÂU LỆNH; vượt ⇒ coi là đặc tả.
+ * Lý do con số: câu lệnh sửa/tự trị dài nhất trong các lưới định tuyến hiện có (câu vòng tự động
+ * *"sửa Calc.cs để khắc phục lỗi sau khi chạy `dotnet test …`. Đây là đầu ra THẬT:"* + 3 dòng lỗi) ≈ 200
+ * ký tự; đặc tả NGẮN NHẤT của bộ đo ngẫu nhiên = 2.055 ký tự (72 bài, trung vị 5.519). 600 ≈ 3× câu lệnh
+ * dài nhất, < 1/3 đặc tả ngắn nhất. ⚠ Vượt trần KHÔNG tự chặn một lượt sửa: đặc tả có lệnh sửa nhắm tệp ở
+ * DÒNG ĐẦU vẫn rẽ cửa sửa (`ai/dinhTuyenGhi.coLenhGhiODau`).
+ */
+export const TRAN_KY_TU_CAU_LENH = 600;
+/** Trần độ dài "dòng lệnh đầu" — một dòng đầu 5.000 ký tự là một đoạn văn, không phải một mệnh lệnh. */
+export const TRAN_KY_TU_DONG_LENH = 300;
+
+/**
+ * ★★★ *"Câu này có HÌNH DẠNG một đặc tả không?"* — dài (> `TRAN_KY_TU_CAU_LENH`) · có khối mã rào
+ * (```/~~~ đầu dòng) · có tiêu đề Markdown · có ≥3 dòng danh sách. Thuần, không I/O.
+ */
+export function laDacTaDai(question: string): boolean {
+  const s = String(question ?? "");
+  if (s.length > TRAN_KY_TU_CAU_LENH) return true;
+  if (/^[ \t]*(?:```|~~~)/m.test(s)) return true;
+  if (/^[ \t]{0,3}#{1,6}[ \t]+\S/m.test(s)) return true;
+  const dongDanhSach = s.split(/\r?\n/).filter((l) => /^[ \t]*(?:[-*•]|\d{1,3}[.)])[ \t]+\S/.test(l)).length;
+  return dongDanhSach >= 3;
+}
+
+/** Dòng KHÁC RỖNG đầu tiên, đã cắt khoảng trắng, tối đa `TRAN_KY_TU_DONG_LENH` ký tự. */
+export function dongLenhDau(question: string): string {
+  const dong = String(question ?? "").split(/\r?\n/).find((l) => l.trim() !== "") ?? "";
+  return dong.trim().slice(0, TRAN_KY_TU_DONG_LENH);
+}
+
+/**
+ * ★★ Gỡ động từ ghi bị PHỦ ĐỊNH (*"không được sửa"*, *"đừng sửa"*, *"do not modify"*) khỏi một chuỗi ĐÃ
+ * bỏ dấu + thường hoá. Đo được: *"Không được sửa tệp test và tệp cấu hình"* có trong MỌI đề của bộ đo
+ * và là nguồn của động từ "sửa" làm cửa SỬA/TỰ TRỊ nhận nhầm.
+ * ⚠ `dung` (= "đừng" bỏ dấu, trùng "dùng") chỉ tính là phủ định khi ĐỨNG SÁT một động từ ghi —
+ *   "dùng X để sửa" giữ nguyên.
+ */
+export function boDongTuGhiPhuDinh(sKhongDau: string): string {
+  return sKhongDau.replace(
+    /(^|[^a-z])(khong|dung|cam|chang|not|never|don'?t)(\s+(duoc|co|can|nen|bao gio))?\s+(chinh sua|chinh lai|viet lai|cap nhat|thay doi|sua|va|them|xoa|doi|fix|modify|change|edit|touch|update|rewrite|patch)(?=[^a-z]|$)/g,
+    "$1 ",
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
 // ★★★ Ý ĐỊNH **TỰ TRỊ GHI** (vòng tự sửa cho tới khi test xanh): vị từ TẤT ĐỊNH, KHỞI ĐỘNG TƯỜNG MINH
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 /**
@@ -2368,9 +2433,20 @@ export function laYDinhTaoDuAn(question: string): boolean {
  *   PHÉP; đây chỉ trả lời *"người dùng có XIN không"*. Cả hai phải cùng đúng — xem
  *   `autonomyPolicy.autonomyGhiTuTriBat` + `aiCodingTuTriGhi.khoiDongTuTriGhiDuoc`.
  */
-export function laYDinhTuTri(question: string): boolean {
-  const q = boDauThuong(question);
-  const dongTuSua = /(sua|va|fix|khac\s*phuc)/;
+export function laYDinhTuTri(cauHoi: string): boolean {
+  /**
+   * ★★★ 2026-10-18 — ĐẶC TẢ ⇒ chỉ DÒNG LỆNH ĐẦU được quyền khởi động tự trị (xem `laDacTaDai`). Đo được:
+   * 8/54 đặc tả sinh mã mở vòng tự-ghi chỉ vì thân mô tả THUẬT TOÁN (*"lặp cho tới khi hàng đợi rỗng"*)
+   * + câu PHỦ ĐỊNH *"Không được sửa tệp test"* + chữ "test". Động từ ghi bị phủ định bị gỡ trước khi xét.
+   */
+  const question = laDacTaDai(cauHoi) ? dongLenhDau(cauHoi) : String(cauHoi ?? "");
+  const q = boDongTuGhiPhuDinh(boDauThuong(question));
+  /**
+   * ⚠ (1b) đòi động từ sửa là MỘT TỪ (biên chữ hai đầu) và KHÔNG có `va` trần: bỏ dấu thì "và" = "va",
+   *   nên *"đọc a.ts và chạy test cho tới khi xong"* từng là "ý định tự trị". "vá" vẫn được nhận ở (1a)
+   *   (*"tự vá"*) và qua `va loi`.
+   */
+  const dongTuSua = /(^|[^a-z])(sua|fix|khac\s*phuc|va\s+loi)([^a-z]|$)/;
   const mucTieu = /(xanh|pass|test|build|loi|green|bug)/;
   // (1a) TỰ-TRỊ: "tự sửa" / "tự động sửa" / "tự vá" / "tự động khắc phục" — động từ sửa đứng SÁT "tự".
   const tuTri = /(^|[^a-z])tu(\s+dong|\s+tri)?\s+(sua|va|fix|khac\s*phuc)/.test(q);

@@ -24,14 +24,13 @@ import { tryExecuteCodingToolLoop, executeDecision, type ToolExecContext, type T
  * *"câu này có nêu một đường dẫn tệp không?"* trước khi quyết định ĐỌC hay SỬA. Nhập từ module con
  * để KHÔNG mở thêm một bộ trích đường dẫn thứ hai (hai bộ trích = hai sự thật về cùng một câu).
  */
-import {
-  classifyCodingToolIntent,
-  laCauCanSuyLuan,
-  laYDinhTaoDuAn,
-  laYDinhTuTri,
-  trichDuongSuaTatDinh,
-  trichMoiDuongDanRepo,
-} from "./aiLocalTools/intentClassifier";
+import { laCauCanSuyLuan } from "./aiLocalTools/intentClassifier";
+/**
+ * ★★★ 2026-10-18 — chuỗi cửa ghi (sửa "X:" · tạo khung · tự trị · sửa 1/nhiều tệp) tính MỘT lần, thuần, ở
+ * `ai/dinhTuyenGhi.ts` — cùng các vị từ trên (`classifyCodingToolIntent`, `trichMoiDuongDanRepo`…), không bản sao.
+ */
+import { dinhTuyenCuaGhi, tepTonTaiTrongGoc } from "./ai/dinhTuyenGhi";
+import { gocHopCat } from "./aiLocalTools/repoSandbox";
 import { cauChiNenNo } from "./ai/toolDuongTat";
 import { laCauSinhMa } from "./ai/cauSinhMa";
 import { vanBanChoModel } from "./ai/vanBanChoModel";
@@ -514,8 +513,13 @@ export async function* streamCodingAnswer(
    * ⚠ Fail-through: `streamCodingEdit` trả `false` (cờ tắt/model vắng) ⇒ rơi xuống đường cũ y hệt
    *   mọi cửa khác — không im lặng, không mất lượt.
    */
-  const yDinhTao = laYDinhTaoTep(question);
-  const duongSuaTatDinh = trichDuongSuaTatDinh(question);
+  /**
+   * ★★★ 2026-10-18 — MỌI điều kiện cửa ghi tính MỘT lần bằng `dinhTuyenCuaGhi` (module thuần
+   * `ai/dinhTuyenGhi.ts`, có lưới chuỗi cửa riêng). Thứ tự + fail-through của từng cửa bên dưới GIỮ NGUYÊN.
+   */
+  const dinhTuyen = dinhTuyenCuaGhi(question);
+  const yDinhTao = dinhTuyen.yDinhTao;
+  const duongSuaTatDinh = dinhTuyen.suaTatDinh;
   if (duongSuaTatDinh !== null) {
     const daXuLyTatDinh = yield* streamCodingEdit(
       question,
@@ -542,7 +546,7 @@ export async function* streamCodingAnswer(
    * docblock `streamCodingTaoKhung`.
    * ⚠ Fail-through y hệt mọi cửa: cờ tắt / model vắng ⇒ trả `false` ⇒ rơi xuống đường cũ (sinh mã).
    */
-  if (laYDinhTaoDuAn(question)) {
+  if (dinhTuyen.taoKhung) {
     const daXuLyKhung = yield* streamCodingTaoKhung(question, language, context, execCtx2, history, khoiBaiHocLuot);
     if (daXuLyKhung) return;
   }
@@ -566,7 +570,12 @@ export async function* streamCodingAnswer(
    *     — bật `AI_CODING_TU_TRI_GHI=1` + `AI_CODING_AUTOLOOP=1`", KHÔNG im lặng trả về câu thường
    *     (một người gõ "tự sửa cho test xanh" mà nhận về câu trả lời thường là bối rối).
    */
-  if (laYDinhTuTri(question)) {
+  /**
+   * ★★★ 2026-10-18 — `laYDinhTuTri` nay CHỈ đọc DÒNG LỆNH ĐẦU khi câu là một ĐẶC TẢ (`laDacTaDai`) và gỡ
+   * động từ sửa bị PHỦ ĐỊNH: đo được 8/54 đặc tả sinh mã mở vòng tự-ghi chỉ vì thân mô tả thuật toán
+   * ("lặp cho tới khi …") + câu "Không được sửa tệp test". Câu tự trị tường minh vẫn LUÔN return ở đây.
+   */
+  if (dinhTuyen.tuTri) {
     yield* streamCodingTuTriGhi(question, language, context, execCtx2, history, khoiBaiHocLuot, context.projectId);
     return;
   }
@@ -580,7 +589,7 @@ export async function* streamCodingAnswer(
    * (không viết bộ trích đường dẫn thứ hai) rồi hỏi thêm một câu: *"câu này là ĐỌC hay SỬA?"*
    * ⚠ Bộ chọn tất định KHÔNG bị sửa một byte ⇒ lưới A/B (`codingToolIntent.test.ts` §5) không đổi.
    */
-  const quyetDinh = classifyCodingToolIntent(question);
+  const quyetDinh = dinhTuyen.quyetDinh;
   /**
    * ★★★ doc 79 (2026-08-20) — GHI: **MỘT tệp hay NHIỀU tệp**, và ý định TẠO.
    *
@@ -594,9 +603,23 @@ export async function* streamCodingAnswer(
    * live 2026-08-19 cho thấy bộ chọn LLM bịa ra một đường dẫn tệp lõi cho một câu không nêu tệp
    * nào — nhân chuyện đó lên 6 tệp là điều tệ nhất có thể làm ở một tool ghi.
    */
-  const yDinhGhi = laYDinhSuaTep(question) || yDinhTao;
-  if (quyetDinh.tool === "read_file" && typeof quyetDinh.args.path === "string" && yDinhGhi) {
-    const nhieuDuong = trichMoiDuongDanRepo(question);
+  /**
+   * ★★★ 2026-10-18 — CỬA GHI CHỈ MỞ KHI CHẮC CHẮN (`ai/dinhTuyenGhi.phanLoaiYDinhGhi`). Đo được trên bộ ngẫu
+   * nhiên: một ĐẶC TẢ sinh mã nhắc `Cargo.toml`/`schema.sql` + có chữ "sửa"/"viết lại" ở đâu đó trong thân
+   * (kể cả *"Không được sửa tệp test"*) từng rẽ vào đây ⇒ "Không có tệp" sau 20 ms / "CẢ LÔ dừng" / thẻ duyệt
+   * sửa NHẦM `schema.sql` của repo. Nay:
+   *   • `ghiTep === null` — không có động từ ghi, hoặc ĐẶC TẢ mà dòng đầu không phải lệnh ghi nhắm tệp ⇒
+   *     không rẽ (xuống vòng tool + sinh mã);
+   *   • `canTonTai` — câu ngắn, lệnh ghi KHÔNG ở dòng đầu ⇒ chỉ rẽ khi MỌI tệp được nhắc CÓ THẬT trong dự án
+   *     đang chọn (realpath trong gốc, `tepTonTaiTrongGoc`); thiếu một ⇒ không rẽ thay vì "Không có tệp";
+   *   • lệnh ghi ở dòng đầu ⇒ rẽ như cũ (tệp chưa có ⇒ "Không có tệp" + gợi ý TẠO — câu trả lời ĐÚNG cho
+   *     người vừa gọi đích danh một tệp).
+   */
+  const ghiTep = dinhTuyen.ghiTep;
+  const gocDuAnDinhTuyen = execCtx2?.projectRoot ?? gocHopCat();
+  const moTepDeuCo = (ds: readonly string[]) => ds.every((d) => tepTonTaiTrongGoc(gocDuAnDinhTuyen, d));
+  if (ghiTep && (!ghiTep.canTonTai || moTepDeuCo([ghiTep.duong, ...ghiTep.nhieuDuong]))) {
+    const nhieuDuong = ghiTep.nhieuDuong;
     if (nhieuDuong.length >= 2) {
       const daXuLyLo = yield* streamCodingSuaNhieuTep(
         question,
@@ -612,7 +635,7 @@ export async function* streamCodingAnswer(
     }
     const daXuLy = yield* streamCodingEdit(
       question,
-      quyetDinh.args.path,
+      ghiTep.duong,
       language,
       context,
       execCtx2,
@@ -855,76 +878,11 @@ export const TRAN_TOKEN_TAO_KHUNG = 8_000;
  */
 export const TRAN_TEP_MOT_LUOT_SUA = 6;
 
-/** Bỏ dấu tiếng Việt (kể cả `đ`) — bản cục bộ, thuần, để phân biệt ĐỌC với SỬA. */
-function boDauVi(s: string): string {
-  return s
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d")
-    .replace(/Đ/g, "D")
-    .toLowerCase();
-}
-
 /**
- * ★★★ *"Câu này là ĐỌC tệp hay SỬA tệp?"*
- *
- * ⚠ CỐ Ý HẸP (ưu tiên độ CHÍNH XÁC hơn độ phủ). Một lượt nhận nhầm ĐỌC thành SỬA đốt ~30 s của model
- * 30B rồi đẻ ra một thẻ duyệt mà người dùng không hề xin. Vì thế:
- *   • KHÔNG nhận `thay` (đụng `thấy` → `thay`), KHÔNG nhận `doi` trần (đụng `đợi`/`đối`);
- *   • động từ ĐỌC (`doc`/`xem`/`mo`/`read`/`show`) KHÔNG nằm ở đây, nên
- *     *"đọc server/routers.ts và cho biết export gì"* vẫn đi đúng đường ĐỌC tất định của trục 1.
- * Điều kiện này chỉ được HỎI khi bộ chọn tất định đã cho ra `read_file` (tức câu CÓ đường dẫn tệp).
+ * ★ 2026-10-18 — `laYDinhSuaTep` / `laYDinhTaoTep` đã chuyển sang `ai/dinhTuyenGhi.ts` (module THUẦN, cùng
+ * chuỗi cửa ghi `dinhTuyenCuaGhi`) — xuất lại ở đây để mọi người nhập cũ không đổi một byte.
  */
-export function laYDinhSuaTep(question: string): boolean {
-  const q = boDauVi(question);
-  const vi = /(^|[^a-z])(sua|va loi|khac phuc|chinh lai|chinh sua|them|bo sung|cai dat|viet lai|cap nhat|doi ten|xoa bo|nem loi|toi uu)([^a-z]|$)/;
-  const en = /(^|[^a-z])(fix|edit|modify|change|update|refactor|implement|rewrite|patch|remove|throw)([^a-z]|$)/;
-  const zh = /(修改|修复|修正|实现|重构|更新|添加|删除|优化)/;
-  return vi.test(q) || en.test(q) || zh.test(question);
-}
-
-/**
- * ★★★ doc 79 (2026-08-20) — *"Câu này là TẠO tệp MỚI?"*
- *
- * ══════════════════════════════════════════════════════════════════════════════════════════════
- * LỖ ĐÃ ĐO — VÀ NÓ **KHÔNG** NẰM Ở TOOL
- * ══════════════════════════════════════════════════════════════════════════════════════════════
- * `apply_diff` đã hỗ trợ TẠO từ ngày đầu: `{path, original:"", modified}` là một hợp đồng hợp lệ,
- * có băm neo (`writeHandlers/applyDiff.ts` — nhánh `daCo === false`, và câu *"tệp chưa tồn tại nên
- * original phải RỖNG cho một lượt TẠO"*). Cái chặn là **ĐỊNH TUYẾN**: câu *"tạo file mới
- * src/utils/date.ts"* cho `classifyCodingToolIntent` ⇒ `read_file` (có đường dẫn), rồi
- * `laYDinhSuaTep` trả `false` (danh sách động từ của nó KHÔNG có `tao`) ⇒ đi thẳng xuống đường đọc
- * ⇒ tệp chưa tồn tại ⇒ người dùng nhận *"Không có tệp … trong hộp cát"*. Tool đúng, đường sai.
- *
- * ══════════════════════════════════════════════════════════════════════════════════════════════
- * ⚠⚠ VÀ ĐÂY LÀ ĐIỂM MẤU CHỐT: **HÀM NÀY KHÔNG QUYẾT ĐỊNH TẠO HAY SỬA — CÁI ĐĨA QUYẾT ĐỊNH.**
- * ══════════════════════════════════════════════════════════════════════════════════════════════
- * *"thêm hàm formatNgay vào src/utils/date.ts"* khớp CẢ `laYDinhSuaTep` (`them`) lẫn hàm này
- * (`them … file`? không — xem dưới). Mọi phép tách bằng ĐỘNG TỪ đều có vùng chồng lấn, và đoán sai
- * ở đây có một chiều RẤT đắt: coi một lượt SỬA thành TẠO nghĩa là gửi `original:""` cho một tệp
- * đang có nội dung — tức **đề xuất xoá sạch tệp rồi ghi đè**.
- *
- * ⇒ Nên hàm này chỉ dùng cho MỘT câu hỏi hẹp: *"tệp KHÔNG tồn tại — đó là lỗi, hay là ý người
- *   dùng?"*. Sự tồn tại do `read_file` trả lời (`NOT_FOUND`), và tệp **đã tồn tại** thì đường đi là
- *   SỬA bất kể hàm này nói gì (xem `streamCodingEdit`). Chiều hỏng còn lại — người xin TẠO mà tệp
- *   đã có — bị chặn tường minh, KHÔNG âm thầm chuyển thành ghi đè; và `apply_diff` còn chặn độc lập
- *   một lần nữa bằng `BASE_MISMATCH` (băm("") ≠ băm(nội dung thật)).
- *
- * ⚠ CỐ Ý HẸP: `tao` trần đụng `tao nhã`, `tao lao`… nên vi đòi **động từ + danh từ tệp** hoặc dạng
- *   `tao moi`. `viet` trần đụng `viet lai` (đã thuộc `laYDinhSuaTep`) nên cũng đòi danh từ tệp.
- */
-export function laYDinhTaoTep(question: string): boolean {
-  const q = boDauVi(question);
-  const vi =
-    /(^|[^a-z])(tao|khoi tao|sinh|them|bo sung|viet|lam)\s+(mot\s+|1\s+)?(file|tep|tap tin)([^a-z]|$)/.test(q) ||
-    /(^|[^a-z])(tao|khoi tao|sinh)\s+(moi|ra)([^a-z]|$)/.test(q) ||
-    /(^|[^a-z])(file|tep|tap tin)\s+moi([^a-z]|$)/.test(q);
-  const en =
-    /(^|[^a-z])(create|add|make|generate|scaffold|write)\s+(a\s+|an\s+|the\s+)?(new\s+)?(file|module|component)([^a-z]|$)/i.test(q) ||
-    /(^|[^a-z])new\s+file([^a-z]|$)/i.test(q);
-  const zh = /(创建|新建|新增|生成)\s*(一个)?\s*(文件|文件夹|模块|组件)/.test(question) || /新文件/.test(question);
-  return vi || en || zh;
-}
+export { laYDinhSuaTep, laYDinhTaoTep } from "./ai/dinhTuyenGhi";
 
 /**
  * Ngữ cảnh DỰ ÁN ĐANG CHỌN đưa vào persona: tên dự án + vài mục ở gốc. Không có nó, model trả lời
