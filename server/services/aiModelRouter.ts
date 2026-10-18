@@ -404,8 +404,11 @@ export const ROUTER_MODEL_PROFILES: readonly RouterModelProfile[] = [
      *   • cold-load 68,1 s (dòng đầu → "server is listening"), ctx 32768, -ngl 999, KV f16;
      *   • decode 187,9 t/s trung bình trên 372 lượt (min 69,2 · max 218,8);
      *   • prompt processing ~1.000 t/s.
-     * ⚠ Ngữ cảnh: 32768/slot là TRẦN PHẦN CỨNG trên RTX 5090 32 GB cùng CUDA context của server
-     *   node (đo: 29,0 GB dùng ở 32k). 65536 KHÔNG nạp nổi. `GGUF_MAX_CTX=32768` khớp.
+     * ⚠ Ngữ cảnh (sửa 2026-10-14 — câu cũ "32768 là trần phần cứng, 65536 KHÔNG nạp nổi" đã LỖI
+     *   THỜI): số 29,0 GB ở trên đo với 32k/slot khi còn chạy nhiều slot. Cấu hình ĐANG CHẠY là
+     *   **1 slot × 65536** (`LLAMA_SERVER_SLOTS=1`, `LLAMA_SERVER_CTX_TOTAL=65536`, `GGUF_MAX_CTX=65536`
+     *   — vòng B3 2026-09-22, chủ dự án duyệt) — đã nạp và đo: bộ khó H lên 86 % so với 32k. Hệ quả phải biết: một slot ⇒ các lượt xếp hàng nhau (câu vận
+     *   hành chờ sau lượt lập trình). Cold-load/decode bên dưới vẫn là số đo ở 32k.
      * ⚠ Ngưỡng định tuyến easy/hard/pin = MOE_THRESHOLDS, và đây là kết luận ĐO ĐƯỢC chứ không phải
      *   thừa kế mù: các ngưỡng ấy được chọn cho lớp "3B hoạt động, decode ~190 t/s" — model này đo
      *   tại chỗ 187,9 t/s so với 192,5 t/s của 30B-A3B (lệch 2,4 %), cùng fast tier Qwen3-4B, và

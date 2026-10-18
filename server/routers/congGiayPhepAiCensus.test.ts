@@ -399,7 +399,71 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   `machine_control:canDelete`. Không thủ tục nào là bề mặt AI; beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong và mọi SKU KHÔNG
  *   đổi. `tong` 2316 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2316, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-17 AI Local Đợt 1 · T4 (vòng agent máy chủ) — **tong 2316 → 2321 · beMatAi 367 → 372 · aiCoCong 305 → 310**
+ *   (đo trước rồi mới ghim; baseline 2316 XANH trên HEAD `c05b9848b` trước lượt này). Đúng NĂM thủ tục MỚI ở
+ *   `aiAgentRouter.ts` (bề mặt AI, sàn `moduleProcedure("MOD_AI")` như anh em cùng tệp ⇒ cả năm vào aiCoCong):
+ *   `aiAgent.{danhSach, chiTiet}` (query), `aiAgent.{duyet, bac, hoanTac}` (mutation) — quyền `ai_repo_read/canView`
+ *   kiểm trong thân (`services/ai/agent/thuTucLuotChay.ts`). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi.
+ *   `tong` 2321 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+/*
+ * ★ 2026-10-17 AI Local Đợt 2 (đề xuất nhớ của vòng agent) — **tong 2321 → 2323 · beMatAi 372 → 374 · aiCoCong 310 → 312**
+ *   (đo trước rồi mới ghim; trước lượt này 2321 XANH). Đúng HAI thủ tục MỚI ở `aiAgentRouter.ts` (bề mặt AI, sàn
+ *   `moduleProcedure("MOD_AI")` như anh em cùng tệp ⇒ cả hai vào aiCoCong): `aiAgent.{nhoDeXuat, boDeXuat}` (mutation) —
+ *   quyền `ai_repo_read/canView` kiểm trong thân (`thuTucLuotChay.ts`), chỉ chủ lượt chạy. aiMienTru / ngoaiAiCoCong và mọi
+ *   SKU khác KHÔNG đổi. `tong` 2323 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+/*
+ * ★ 2026-10-17 AI Local Đợt 4A (token theo người dùng cho cổng /v1) — **tong 2323 → 2328 · beMatAi 374 → 379 · aiCoCong
+ *   312 → 317** (đo trước rồi mới ghim; trước lượt này 2323 XANH). Đúng NĂM thủ tục MỚI ở tệp MỚI `aiGatewayTokenRouter.ts`
+ *   (tên `ai…` ⇒ tự vào bề mặt AI; sàn `moduleProcedure("MOD_AI")` ⇒ cả năm vào aiCoCong): `aiGatewayToken.{danhSach,
+ *   xemThietBi}` (query), `aiGatewayToken.{tao, thuHoi, quyetThietBi}` (mutation) — quyền `ai_repo_read/canView` kiểm trong thân
+ *   (`services/ai/gatewayToken/thuTucToken.ts`). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi. `tong` 2328 trùng
+ *   `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+/*
+ * ★ 2026-10-17 AI Local Đợt 3a (dự án cá nhân của kỹ sư, Q3) — **tong 2328 → 2332 · beMatAi 379 → 383 · aiCoCong 317 → 321**
+ *   (đo trước rồi mới ghim; trước lượt này 2328 XANH). Đúng BỐN thủ tục MỚI ở `repoWorkspaceRouter.ts` (bề mặt AI khai tường
+ *   minh, sàn `moduleProcedure("MOD_AI")` như anh em cùng tệp ⇒ cả bốn vào aiCoCong): `repoWorkspace.duAnCuaToi` (query),
+ *   `repoWorkspace.{taoDuAnCaNhan, doiTenDuAnCaNhan, xoaDuAnCaNhan}` (mutation) — quyền `ai_repo_read/canView` +
+ *   `ai_repo_exec/canCreate` kiểm trong thân (`congPhien` + `coQuyenTaoDuAn`). aiMienTru / ngoaiAiCoCong và mọi SKU khác
+ *   KHÔNG đổi. `tong` 2332 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+/*
+ * ★ 2026-10-17 AI Local Đợt 3c (Chạy & Xem trước) — **tong 2332 → 2337 · beMatAi 383 → 388 · aiCoCong 321 → 326** (đo trước
+ *   rồi mới ghim; trước lượt này 2332 XANH). Đúng NĂM thủ tục ở router MỚI `aiChayUngDungRouter.ts` (tên `ai…` ⇒ tự vào bề mặt
+ *   AI; sàn `moduleProcedure("MOD_AI")` ⇒ cả năm vào aiCoCong): `aiChayUngDung.{trangThai, nhatKy}` (query),
+ *   `aiChayUngDung.{chay, dung, deXuatLenh}` (mutation) — quyền kiểm trong thân (`services/ai/chayUngDung/dichVu.ts`;
+ *   `deXuatLenh` qua RBAC + HITL của `run_command`). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi.
+ *   `tong` 2337 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+/*
+ * ★ 2026-10-17 AI Local Đợt 3b (bảng Git · nút tệp · trí nhớ · tên phiên · OCR ảnh) — **tong 2337 → 2353 · beMatAi 388 → 404 ·
+ *   aiCoCong 326 → 342** (đo trước rồi mới ghim; trước lượt này 2337 XANH). Đúng MƯỜI SÁU thủ tục MỚI ở `repoWorkspaceRouter.ts`
+ *   (bề mặt AI khai tường minh, sàn `moduleProcedure("MOD_AI")` ⇒ cả mười sáu vào aiCoCong): `repoWorkspace.{gitTrangThai,
+ *   gitDiffTep, gitNhanh, gitLog, baiHocDanhSach}` (query), `repoWorkspace.{gitCommit, gitTaoNhanh, gitChuyenNhanh,
+ *   gitGoiYThongDiep, deXuatXoaTep, deXuatDoiTenTep, baiHocThem, baiHocSua, baiHocXoa, doiTenPhien, ocrAnhLoi}` (mutation) —
+ *   quyền kiểm trong thân (`congPhien` = ai_repo_read/canView; ghi git thêm `coQuyenTaoDuAn` = ai_repo_exec/canCreate; xoá/đổi
+ *   tên tệp qua RBAC + HITL của tool `delete_file`/`rename_file`). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi.
+ *   `tong` 2353 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+/*
+ * ★ 2026-10-17 AI Local Đợt 5 (5.1 phản hồi · 5.2 eval mã) — **tong 2353 → 2361 · beMatAi 404 → 408 · aiCoCong 342 → 346**
+ *   (đo trước rồi mới ghim; trước lượt này 2353 XANH trên HEAD `efb9ff532`). TÁM thủ tục mới:
+ *   • BỐN ở `aiAgentRouter.ts` (bề mặt AI, sàn MOD_AI ⇒ cả bốn vào aiCoCong): `aiAgent.phanHoiCuaToi` (query),
+ *     `aiAgent.{phanHoi, xuatBoDuLieu}` (mutation) — sàn `moduleProcedure("MOD_AI")`, quyền ai_repo_read/canView trong thân;
+ *     `aiAgent.phanHoiTongHop` (query) — sàn MỚI `adminPhanHoiProcedure = roleProcedure("admin").use(moduleGate("MOD_AI"))`.
+ *   • BỐN ở `kbStudioRouter.ts` (KHÔNG phải bề mặt AI — cùng nhóm với `evalCorpus`/`listEvalRuns`, chỉ vào `tong`):
+ *     `kbStudio.{listBoBaiMa, danhSachEvalMa}` (query, admin/engineer + 2FA), `kbStudio.{batDauEvalMa, huyEvalMa}`
+ *     (mutation, admin + 2FA). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi. `tong` 2361 trùng
+ *   `phamViDocCensus.test.ts#GHIM.tong`.
+ * ★ 2026-10-17 (AI Local Đợt 6 — đổi model llama-server qua API) — **tong 2361 → 2363 · beMatAi 408 → 410 ·
+ *   aiCoCong 346 → 348.** Hai thủ tục MỚI trong `aiGgufRouter.ts` (bề mặt AI, CÓ cổng `MOD_AI`):
+ *     `aiGguf.doiModelTongQuan` (query — sàn `adminProcedure` của `_core` + `moduleGate("MOD_AI")`) và
+ *     `aiGguf.doiModelBatDau` (mutation — cùng sàn; audit qua middleware + hàng audit kết quả riêng). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi. `tong` 2363 trùng `phamViDocCensus`.
+ */
+const GHIM = { tong: 2363, beMatAi: 410, aiCoCong: 348, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

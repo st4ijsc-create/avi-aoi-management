@@ -13,7 +13,7 @@ describe("xetDuyetLenh — CA DƯƠNG, argv CHÍNH XÁC", () => {
     const kq = xetDuyetLenh("git status");
     expect(kq).toEqual({
       ok: true,
-      lenh: { ten: "git_status", argv: ["git", "--no-pager", "status", "--", "."], hienThi: "git status" },
+      lenh: { ten: "git_status", argv: ["git", "--no-pager", "-c", "core.fsmonitor=false", "status", "--", "."], hienThi: "git status" },
     });
   });
 
@@ -21,7 +21,7 @@ describe("xetDuyetLenh — CA DƯƠNG, argv CHÍNH XÁC", () => {
     const kq = xetDuyetLenh("git diff");
     expect(kq).toEqual({
       ok: true,
-      lenh: { ten: "git_diff", argv: ["git", "--no-pager", "diff", "--", "."], hienThi: "git diff" },
+      lenh: { ten: "git_diff", argv: ["git", "--no-pager", "-c", "core.fsmonitor=false", "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--", "."], hienThi: "git diff" },
     });
   });
 
@@ -39,7 +39,7 @@ describe("xetDuyetLenh — CA DƯƠNG, argv CHÍNH XÁC", () => {
       ok: true,
       lenh: {
         ten: "vitest_run",
-        argv: ["npx", "vitest", "run", "src/loi/foo.unit.test.ts"],
+        argv: ["npx", "--no-install", "vitest", "run", "src/loi/foo.unit.test.ts"],
         hienThi: "npx vitest run src/loi/foo.unit.test.ts",
       },
     });
@@ -130,6 +130,67 @@ describe("TRAN_MS_THEO_LENH — mỗi khuôn có một trần thời gian dươn
     for (const [ten, ms] of Object.entries(TRAN_MS_THEO_LENH)) {
       expect(ms, `trần của ${ten} phải dương`).toBeGreaterThan(0);
       expect(ms, `trần của ${ten} không được vượt 300s`).toBeLessThanOrEqual(300_000);
+    }
+  });
+});
+
+describe("ĐỢT 4B — git diff --staged (cho /commit)", () => {
+  it("★★★ đúng 3 token ⇒ argv cố định có --staged và giới hạn '-- .'", () => {
+    const kq = xetDuyetLenh("git diff --staged");
+    expect(kq.ok && kq.lenh.argv).toEqual(["git", "--no-pager", "-c", "core.fsmonitor=false", "diff", "--staged", "--no-ext-diff", "--no-textconv", "--no-color", "--", "."]);
+  });
+  it("★★ thêm tham số ⇒ từ chối (không thương lượng)", () => {
+    expect(xetDuyetLenh("git diff --staged HEAD").ok).toBe(false);
+    expect(xetDuyetLenh("git diff --cached").ok).toBe(false);
+  });
+});
+
+/**
+ * ★★★ RÀ BẢO MẬT 9d26ad568 — allowlist-semantic-escape. Khuôn argv ĐÚNG số token nhưng token tham số CÓ THỂ là một
+ * CỜ: `npx vitest run --update` khớp khuôn 4 token ⇒ vitest GHI ĐÈ snapshot (ghi đĩa KHÔNG qua cửa ghi), `--inspect-brk`
+ * mở cổng debugger Node (ai kết nối được là chạy mã), `--api`/`--ui` mở máy chủ cục bộ; `dotnet build -bl` ghi
+ * msbuild.binlog chứa CẢ biến môi trường. Và `npx vitest` khi dự án CHƯA cài vitest sẽ TẢI + CHẠY gói từ registry
+ * (stdin không phải TTY ⇒ npx tự coi là --yes) — chương trình chạy không còn là "vitest của dự án".
+ */
+describe("★★★ RÀ BẢO MẬT — tham số tự do KHÔNG được là cờ; npx không được tải gói; git không gọi chương trình ngoài", () => {
+  const phaiTuChoi = (chuoi: string) => expect(xetDuyetLenh(chuoi), chuoi).toMatchObject({ ok: false });
+  it("cờ vitest ở vị trí <path> ⇒ từ chối", () => {
+    for (const c of ["--update", "-u", "--inspect-brk", "--inspect", "--api", "--ui", "--watch", "--standalone", "-w"]) {
+      phaiTuChoi(`npx vitest run ${c}`);
+    }
+  });
+  it("cờ dotnet ở vị trí <path> ⇒ từ chối", () => {
+    for (const c of ["-bl", "--interactive", "--blame", "-restore", "--no-restore", "-v"]) {
+      phaiTuChoi(`dotnet build ${c}`);
+      phaiTuChoi(`dotnet test ${c}`);
+    }
+  });
+  it("thamSoAnToan: bắt đầu bằng '-' ⇒ false; tuyệt đối kiểu Windows/UNC ⇒ false trên MỌI nền tảng", () => {
+    expect(thamSoAnToan("-bl")).toBe(false);
+    expect(thamSoAnToan("--update")).toBe(false);
+    expect(thamSoAnToan(String.raw`\\server\share\x.ts`)).toBe(false);
+    expect(thamSoAnToan(String.raw`\Windows\x.ts`)).toBe(false);
+    expect(thamSoAnToan("src/-a.test.ts")).toBe(true);
+  });
+  it("npx LUÔN mang --no-install ngay sau tên chương trình (không tải gói từ registry)", () => {
+    const kq = xetDuyetLenh("npx vitest run src/a.test.ts");
+    expect(kq.ok && kq.lenh.argv.slice(0, 3)).toEqual(["npx", "--no-install", "vitest"]);
+  });
+  it("git diff/--staged: --no-ext-diff + --no-textconv (không chạy diff ngoài / textconv do cấu hình chỉ định)", () => {
+    for (const c of ["git diff", "git diff --staged"]) {
+      const kq = xetDuyetLenh(c);
+      expect(kq.ok && kq.lenh.argv).toEqual(expect.arrayContaining(["--no-ext-diff", "--no-textconv", "core.fsmonitor=false"]));
+    }
+  });
+  it("★★ nhãn hienThi XÉT LẠI ra ĐÚNG lệnh cũ (bangChat xét lại allowlist trên nhãn đã lưu)", () => {
+    for (const c of ["git status", "git diff", "git diff --staged", "npm run check", "npx vitest run src/a.test.ts", "dotnet build a.csproj", "dotnet test t.csproj"]) {
+      const kq = xetDuyetLenh(c);
+      expect(kq.ok && xetDuyetLenh(kq.lenh.hienThi), c).toEqual(kq);
+    }
+  });
+  it("cờ git dạng --output=<tệp> / --ext-diff / -c ⇒ từ chối", () => {
+    for (const c of ["git diff --output=x.txt", "git diff --ext-diff", "git -c diff.external=x diff", "git diff --staged --output=a", "git status --porcelain"]) {
+      phaiTuChoi(c);
     }
   });
 });

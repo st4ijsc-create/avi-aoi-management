@@ -245,6 +245,52 @@ describe("gomToolCallTuVanBan", () => {
     const ra = gomToolCallTuVanBan('<tool_call>{"arguments":{}}</tool_call>');
     expect(ra.toolCalls).toEqual([]);
   });
+
+  // ★★★ Đo 2026-10-17 (proxy ghi thân thật, vòng agent Đợt 1): Qwen3.6 phát tool call khuôn XML NGAY TRONG
+  // chuỗi suy luận (chưa đóng </think>) ⇒ llama.cpp không tách ⇒ lượt kết thúc rỗng ⇒ G5-D ném ⇒ lượt agent
+  // chết `loi-model`. Mẫu dưới chép NGUYÊN VĂN từ tmp/proxy-log/0012-res.txt.
+  it("★★★ vớt khuôn XML của Qwen3.6 (<function=…><parameter=…>), giá trị mảng JSON được parse", () => {
+    const raw =
+      "Đợi một chút - đề bài nói bậc CAO NHẤT.\n\n<tool_call>\n<function=todo_write>\n<parameter=todos>\n" +
+      '[{"content": "Tạo src/maGiamGia.ts", "status": "in_progress"}, {"content": "Sửa src/gioHang.ts", "status": "pending"}]\n' +
+      "</parameter>\n</function>\n</tool_call>";
+    const ra = gomToolCallTuVanBan(raw);
+    expect(ra.toolCalls).toHaveLength(1);
+    expect(ra.toolCalls[0].function.name).toBe("todo_write");
+    expect(JSON.parse(ra.toolCalls[0].function.arguments)).toEqual({
+      todos: [
+        { content: "Tạo src/maGiamGia.ts", status: "in_progress" },
+        { content: "Sửa src/gioHang.ts", status: "pending" },
+      ],
+    });
+    expect(ra.vanBan).toBe("Đợi một chút - đề bài nói bậc CAO NHẤT.");
+  });
+
+  it("★★ XML: nhiều tham số chuỗi (giữ nguyên xuống dòng bên trong, bỏ đúng MỘT dòng mới bao ngoài), nhiều khối", () => {
+    const raw =
+      "<tool_call>\n<function=edit_file>\n<parameter=path>\nsrc/a.ts\n</parameter>\n<parameter=edits>\n" +
+      '[{"old_string": "a\\nb", "new_string": "c"}]\n</parameter>\n</function>\n</tool_call>\n' +
+      "<tool_call>\n<function=write_file>\n<parameter=path>\nsrc/b.ts\n</parameter>\n<parameter=content>\nline1\n\nline3\n</parameter>\n</function>\n</tool_call>";
+    const ra = gomToolCallTuVanBan(raw);
+    expect(ra.toolCalls.map((t) => t.function.name)).toEqual(["edit_file", "write_file"]);
+    expect(JSON.parse(ra.toolCalls[0].function.arguments)).toEqual({ path: "src/a.ts", edits: [{ old_string: "a\nb", new_string: "c" }] });
+    expect(JSON.parse(ra.toolCalls[1].function.arguments)).toEqual({ path: "src/b.ts", content: "line1\n\nline3" });
+  });
+
+  it("★★★ (rà bảo mật — ReDoS) nhiều <tool_call> KHÔNG đóng sau khối cuối ⇒ xong nhanh, giữ nguyên ngữ nghĩa", () => {
+    const raw = '<tool_call>{"name":"f","arguments":{}}</tool_call>' + "<tool_call>a ".repeat(20_000);
+    const t0 = Date.now();
+    const ra = gomToolCallTuVanBan(raw);
+    expect(Date.now() - t0).toBeLessThan(500);
+    expect(ra.toolCalls.map((t) => t.function.name)).toEqual(["f"]);
+    expect(ra.vanBan.startsWith("<tool_call>a")).toBe(true);
+  });
+
+  it("★★ XML hỏng (thiếu </function>) ⇒ không vớt, chữ vẫn được dọn", () => {
+    const ra = gomToolCallTuVanBan("<tool_call>\n<function=list_dir>\n<parameter=path>\nsrc\n</parameter>\n</tool_call>xong");
+    expect(ra.toolCalls).toEqual([]);
+    expect(ra.vanBan).toBe("xong");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

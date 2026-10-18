@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { BangKetQuaEval, type LuotChiTiet } from "./BangKetQuaEval";
 import { chuoiBieuDo, phanTram, type TongHopEval } from "./evalTabLogic";
+import { EvalMaPanel } from "./EvalMaPanel";
 
 /** Ba màu đã qua `validate_palette.js` (dataviz) cho cả nền tối (mặc định) lẫn `.light`. */
 const MAU_WRAP =
@@ -268,6 +269,9 @@ export function EvalTab() {
           )}
         </CardContent>
       </Card>
+
+      {/* AI Local Đợt 5.2 — eval MÃ (corpus BẬT/TẮT): eval truy hồi ở trên không đo được mã tốt lên hay tệ đi. */}
+      {corpus ? <EvalMaPanel corpus={corpus} /> : null}
 
       {corpus ? (
         <details className="rounded-md border p-3">

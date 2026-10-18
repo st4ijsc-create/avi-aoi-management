@@ -17,7 +17,7 @@
  * easy to audit.
  */
 
-import { listTools, getTool, type Tool } from "./toolRegistry";
+import { listTools, getTool, laToolChiChoAgent, type Tool } from "./toolRegistry";
 import { laCauSinhMa } from "../ai/cauSinhMa";
 import { laTenCongNghe } from "./tenCongNghe";
 // ⚠ CHỈ nhập KIỂU (bị xoá lúc biên dịch) — không tạo cạnh nhập lúc chạy, không kéo theo lượt
@@ -743,7 +743,9 @@ export function chonDuocTheoTrigger(tool: Tool): boolean {
   // Write/client tools are only matched via dedicated shortcuts or the LLM
   // router (which enforce required args / route whitelist) — never via generic
   // trigger scoring.
-  return tool.kind !== "write" && tool.kind !== "client";
+  // ★ Đợt 1 · T2 — tool chỉ cho vòng agent (`find_files`…) KHÔNG vào tập chọn-theo-trigger: đường cũ
+  //   giữ nguyên tập chọn, và lưới `toolArgCoverage` không đòi một nhánh trích tham số cho nó.
+  return tool.kind !== "write" && tool.kind !== "client" && !laToolChiChoAgent(tool);
 }
 
 /**
@@ -1567,6 +1569,8 @@ const TOOL_INTENT_SCHEMA = {
 
 function buildClassifierPrompt(question: string): string {
   const toolDescriptions = listTools()
+    // ★ Đợt 1 · T2 — tool chỉ cho agent không vào prompt bộ định tuyến vận hành (đường cũ không đổi).
+    .filter((t) => !laToolChiChoAgent(t))
     .map((t) => {
       const tag = t.kind === "write" ? " [WRITE]" : t.kind === "client" ? " [CLIENT]" : "";
       return `  - ${t.name}${tag}: ${t.description}`;
@@ -1736,7 +1740,8 @@ async function chayVaXacThuc(prompt: string): Promise<ToolDecision> {
   }
 
   const tool = getTool(parsed.tool);
-  if (!tool) {
+  // ★ Đợt 1 · T2 — model bịa đúng tên một tool chỉ-cho-agent (không có trong prompt) ⇒ coi như tên lạ.
+  if (!tool || laToolChiChoAgent(tool)) {
     return { tool: null, args: {}, reason: `LLM_UNKNOWN_TOOL:${parsed.tool}` };
   }
 
@@ -1838,6 +1843,31 @@ export async function decideNextToolLLM(
  */
 export const CODING_TOOL_NAMES = ["read_file", "list_files", "grep_repo", "run_command", "apply_diff"] as const;
 const CODING_TOOL_SET: ReadonlySet<string> = new Set(CODING_TOOL_NAMES);
+
+/**
+ * ★★ Đợt 1 · T2 (2026-10-14) — TẬP TÊN TOOL (trong registry) mà **VÒNG AGENT MỚI** được gọi qua
+ * `executeDecision` (bộ thực thi máy chủ của `shared/agentCore`, T4 nối vào).
+ *
+ * ⚠⚠ CỐ Ý LÀ MỘT DANH SÁCH RIÊNG, KHÔNG nối vào `CODING_TOOL_NAMES`: tập ấy là đầu vào của BỘ CHỌN
+ *   CŨ — heuristic `classifyCodingToolIntent`, bộ chọn LLM `buildCodingClassifierPrompt` (hậu-lọc
+ *   `CODING_TOOL_SET`) và tool native `phuQuyetToolNative.dungWireToolLapTrinh` — và nhiều lưới ghim
+ *   nó đúng 5 tên (`llmKhongKhoiXuongGhi`, `aiCodingLesson.stream`…). Thêm `delete_file` vào đó là cho
+ *   đường cũ (không checkpoint, không vòng agent) một tool HUỶ tệp — đổi hành vi đường cũ.
+ * ⚠ Tên ở đây là TÊN REGISTRY. Tên phơi cho model (`list_dir`, `grep`, `edit_file`…) là việc của
+ *   `shared/agentCore/congCu.ts` + bộ thực thi (ánh xạ tên model → tên registry).
+ * ⚠ Ba tool mới (`find_files`, `delete_file`, `rename_file`) mang `chiChoAgent` ⇒ bộ chọn
+ *   trigger/LLM vận hành/planner cũ bỏ qua chúng; lưới `xoaDoiTenTep.census` + `findFiles` canh.
+ */
+export const AGENT_SERVER_TOOL_NAMES = [
+  "read_file",
+  "list_files",
+  "grep_repo",
+  "find_files",
+  "apply_diff",
+  "delete_file",
+  "rename_file",
+  "run_command",
+] as const;
 
 /**
  * Ý định LIỆT KÊ thư mục.

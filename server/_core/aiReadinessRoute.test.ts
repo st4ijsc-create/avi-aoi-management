@@ -103,8 +103,9 @@ describe("G1-E LỖ 2 — `/api/health` là SPA catch-all, endpoint mới thì K
     expect(r.cacheControl).toBe("no-store"); // giám sát không được ăn bản cache
   });
 
-  it("★ llama-server CHẾT ⇒ HTTP 503 (KHÔNG 200) + câu 'in-process, MẤT PREFIX-CACHE' trong thân JSON", async () => {
-    current = baseDeps({ probeLlamaServer: async () => DEAD });
+  it("★ llama-server CHẾT (lối thoát LLAMA_SERVER_FAIL_CLOSED=false) ⇒ HTTP 503 (KHÔNG 200) + câu 'in-process, MẤT PREFIX-CACHE' trong thân JSON", async () => {
+    const d = baseDeps({ probeLlamaServer: async () => DEAD });
+    current = { ...d, env: { ...d.env, LLAMA_SERVER_FAIL_CLOSED: "false" } };
     const r = await get("/api/health/ai");
     expect(r.status).toBe(503);
     expect(r.status).not.toBe(200);
@@ -114,6 +115,29 @@ describe("G1-E LỖ 2 — `/api/health` là SPA catch-all, endpoint mới thì K
     expect(r.body.checks.textGeneration.reason).toContain("PREFIX-CACHE");
     // So sánh trực tiếp với cái cũ: cùng lúc đó `/api/health` VẪN xanh 200 — đó là lỗ.
     expect((await get("/api/health")).status).toBe(200);
+  });
+
+  it("★ Đợt 0.1 — mặc định FAIL-CLOSED: server chết ⇒ 503, thân JSON có `giamSat` và KHÔNG có 'fallback: silent'", async () => {
+    current = baseDeps({
+      probeLlamaServer: async () => DEAD,
+      trangThaiGiamSat: () => ({
+        trangThai: "dang-khoi-dong-lai",
+        thamDoCuoi: "khong-nghe",
+        lanKiemCuoi: null,
+        soLanKhoiDong: 1,
+        soLanTrongCuaSo: 1,
+        toiDaKhoiDong: 3,
+        cuaSoPhut: 30,
+        lanKhoiDongCuoi: null,
+        nguoiKhoiDong: "tien-trinh-nay",
+        lyDo: "Đang khởi động lại llama-server (lần 1).",
+      }),
+    });
+    const r = await get("/api/health/ai");
+    expect(r.status).toBe(503);
+    expect(r.body.giamSat.trangThai).toBe("dang-khoi-dong-lai");
+    expect(r.body.checks.textGeneration.detail.fallback).toBe("fail-closed");
+    expect(JSON.stringify(r.body)).not.toContain('"fallback":"silent"');
   });
 
   it("chỉ degraded (reranker rơi backend) ⇒ 207 Multi-Status: phép kiểm `== 200` ĐỎ, phép kiểm 2xx vẫn xanh", async () => {

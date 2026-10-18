@@ -223,6 +223,11 @@ export const AUDIT_ACTIONS = {
   // lượt thứ mấy. Đây là sổ để sau truy được CHÍNH XÁC model đã làm gì mà KHÔNG có người xem —
   // xem server/services/aiCodingTuTriGhi.ts.
   AI_CODING_TU_TRI_LUOT: "ai_coding_tu_tri_luot",
+  // ★★★ Đợt 1 · T3 (2026-10-17) — MỘT hàng tổng cho MỖI lần người bấm "Hoàn tác" một checkpoint /
+  // cả lượt chạy agent: ai, runId, checkpoint nào, tệp nào đã khôi phục, tệp nào xung đột/bỏ qua.
+  // Từng lượt ghi khôi phục vẫn có bộ PROPOSED/CONFIRMED/EXECUTED riêng (đi cửa HITL) — hàng này nối
+  // chúng lại thành một quyết định của người. Xem server/services/ai/agent/checkpointAgent.ts.
+  AI_AGENT_HOAN_TAC: "ai_agent_hoan_tac",
 
   // Interlock auto-block (GĐ F5b) — a DETERMINISTIC, human-approved interlock
   // rule auto-fired a block/stop/reduce command down to the machine. NOT an AI

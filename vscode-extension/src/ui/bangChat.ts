@@ -44,6 +44,8 @@ import { duocPhepGhi, duongTuongDoiTrongWorkspace, giaiDuongDeXuat } from "../lo
 import { giaiDuongThat } from "../loi/duongThat";
 import { nhanNguonTheDuyet, nhanNutGhi } from "../loi/nhanTheDuyet";
 import { apBanVa } from "./apBanVa";
+// ★★★ ĐỢT 4B — phiên agent chạy LÕI AGENT DÙNG CHUNG (chế độ Hỏi / Agent duyệt từng bước / Agent tự động).
+import { PhienAgent } from "./phienAgent";
 // ★★★ ĐỢT D / TASK 3 — vòng lặp tác nhân: model tự đọc mã (ba tool CHỈ ĐỌC của Task 2) TRƯỚC khi
 // đề xuất sửa. `buocKeTiep` (THUẦN, có lưới riêng) là nơi quyết định DUY NHẤT dừng/tiếp; tệp này
 // chỉ THỰC THI quyết định đó (gọi model, chạy tool, hiện tiến độ) — xem docblock `vongTacNhan.ts`.
@@ -282,6 +284,12 @@ export class BangChat {
   // `napMucQuyen()` (gọi lúc "san_sang") có cơ hội đọc `workspaceState` — cùng lý lẽ "rơi về an
   // toàn khi chưa biết" đã áp cho `daDangNhap` ở Task 1.
   private mucQuyenHienTai: MucQuyen = MUC_QUYEN_MAC_DINH;
+  /**
+   * ★★★ ĐỢT 4B — phiên agent (lõi dùng chung). Đường chat CŨ (`hoi()`, kênh KB của máy chủ) GIỮ NGUYÊN: một tin "hoi"
+   * KHÔNG mang `cheDoAgent` (Cmd+K, lưới cũ, chế độ "Chat cũ" ở ô chọn) đi đường cũ; webview mặc định gửi
+   * `cheDoAgent: "sua"` (Agent duyệt từng bước).
+   */
+  private readonly phienAgent: PhienAgent;
 
   private constructor(
     private readonly panel: VatChuaChat,
@@ -295,6 +303,22 @@ export class BangChat {
     private readonly lamHienRo?: () => void,
   ) {
     this.panel.webview.html = dungHtmlBang({ nonce: chuoiNgauNhien() });
+    this.phienAgent = new PhienAgent({
+      context: this.context,
+      gui: (m) => void this.panel.webview.postMessage(m),
+      khoDeXuat: this.khoDeXuat,
+      mucQuyen: () => this.mucQuyenHienTai,
+      goc: () => {
+        const goc = this.thuMucLocalDangChon();
+        const tatCa = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+        return goc ? [goc, ...tatCa.filter((x) => x !== goc)] : tatCa;
+      },
+      ghiLuot: (cauHoi, traLoi) => {
+        this.lichSu.push({ role: "user", content: cauHoi }, { role: "assistant", content: traLoi });
+        void this.luuHoiThoaiHienTai().catch((e) => console.error("AI Local: lưu hội thoại (agent) thất bại", e));
+        void this.panel.webview.postMessage({ loai: "ag_thong_ke", ...this.thongKeHoiThoaiHienTai() });
+      },
+    });
     this.panel.onDidDispose(() => {
       this.huy?.abort();
       // ★★★ THANH BÊN — CHỈ xoá singleton của ĐƯỜNG CŨ (bảng NỔI) nếu CHÍNH instance này là
@@ -328,6 +352,16 @@ export class BangChat {
         // có 3 lựa chọn tĩnh trong `<select>`, nhưng KHÔNG được tin nguyên văn — `datMucQuyen` tự
         // kiểm bằng `laMucQuyenHopLe` trước khi dùng.
         mucQuyen?: unknown;
+        // ★★★ ĐỢT 4B — chế độ agent của lượt hỏi + tham số các tin `ag_*` (đều THÔ, kiểm trước khi dùng).
+        cheDoAgent?: unknown;
+        id?: unknown;
+        lyDo?: unknown;
+        chiSo?: unknown;
+        hanhDong?: unknown;
+        // (Đợt 5.1) phiếu 👍/👎 — THÔ, kiểm trước khi dùng; văn bản do host giữ, webview chỉ gửi định danh.
+        luotId?: unknown;
+        chiSoKhoi?: unknown;
+        danhGia?: unknown;
       }) => {
       if (m.loai === "san_sang") {
         this.daSanSang = true;
@@ -345,6 +379,7 @@ export class BangChat {
         // chọn vẽ đúng mức thật thay vì mãi hiện mặc định tĩnh của markup.
         this.napMucQuyen();
         void this.panel.webview.postMessage({ loai: "muc_quyen", mucQuyen: this.mucQuyenHienTai });
+        void this.phienAgent.guiTrangThaiToken();
         return;
       }
       // ★★★ ĐỔI DỰ ÁN ⇒ VỨT ĐỀ XUẤT ĐANG CHỜ. Thẻ duyệt mang nhãn nguồn của dự án nó SINH RA; để
@@ -366,7 +401,42 @@ export class BangChat {
         const tepMention = Array.isArray(m.tepMention)
           ? m.tepMention.filter((x): x is string => typeof x === "string")
           : [];
+        // ★★★ ĐỢT 4B — lượt AGENT: chỉ khi webview nói rõ chế độ agent hợp lệ, KHÔNG phải Cmd+K, và dự án đang chọn
+        // là workspace LOCAL (agent chạy trên đĩa máy này; dự án SERVER vẫn đi đường cũ — hộp cát máy chủ).
+        const cheDoAgent = m.cheDoAgent === "hoi" || m.cheDoAgent === "sua" || m.cheDoAgent === "tu-dong" ? m.cheDoAgent : undefined;
+        if (cheDoAgent && m.tuLenh !== true && this.cheDoHienTai()?.loai !== "server") {
+          void this.phienAgent.chay(m.cauHoi, cheDoAgent, tepMention);
+          return;
+        }
         void this.hoi(m.cauHoi, tepMention, m.tuLenh === true);
+        return;
+      }
+      // ★★★ ĐỢT 4B — tin của phiên agent (thẻ duyệt từng tệp, diff, hoàn tác, nhớ, khối mã, đăng nhập device flow).
+      if (m.loai.startsWith("ag_")) {
+        const id = typeof m.id === "string" ? m.id : "";
+        if (m.loai === "ag_duyet" && id) this.phienAgent.quyet(id, { duyet: true });
+        else if (m.loai === "ag_bac" && id)
+          this.phienAgent.quyet(id, { duyet: false, ...(typeof m.lyDo === "string" && m.lyDo.trim() ? { lyDo: m.lyDo.trim().slice(0, 500) } : {}) });
+        else if (m.loai === "ag_xem_diff" && id) void this.phienAgent.xemDiff(id);
+        else if (m.loai === "ag_hoan_tac") void this.phienAgent.hoanTac();
+        else if (m.loai === "ag_nho" && id) void this.phienAgent.nho(id, true);
+        else if (m.loai === "ag_bo_nho" && id) void this.phienAgent.nho(id, false);
+        else if (m.loai === "ag_khoi_ma" && typeof m.chiSo === "number" && typeof m.hanhDong === "string")
+          void this.phienAgent.hanhDongKhoiMa(m.chiSo, m.hanhDong);
+        else if (
+          m.loai === "ag_phan_hoi" &&
+          typeof m.luotId === "string" &&
+          Number.isInteger(m.chiSoKhoi) &&
+          (m.danhGia === 1 || m.danhGia === -1 || m.danhGia === null)
+        )
+          void this.phienAgent.phanHoi(
+            m.luotId,
+            m.chiSoKhoi as number,
+            m.danhGia,
+            typeof m.lyDo === "string" && m.lyDo.trim() ? m.lyDo.trim().slice(0, 2000) : null,
+          );
+        else if (m.loai === "ag_dang_nhap_thiet_bi")
+          void Promise.resolve(vscode.commands.executeCommand("aviAiLocal.dangNhapThietBi")).then(() => this.phienAgent.guiTrangThaiToken());
         return;
       }
       if (m.loai === "xin_goi_y_mention") { void this.guiGoiYMention(typeof m.truy === "string" ? m.truy : ""); return; }
@@ -381,7 +451,7 @@ export class BangChat {
       if (m.loai === "huy_lenh") { this.quenLenhCucBo("Đã huỷ — không có lệnh nào được chạy."); return; }
       // ★★★ TASK 4 — nút Dừng. Tên loại tin CỐ Ý khác "huy" (huỷ ĐỀ XUẤT GHI, một khái niệm hoàn
       // toàn khác) — hai nút không được lẫn vào nhau.
-      if (m.loai === "dung_hoi") { this.dungVongHienTai(); return; }
+      if (m.loai === "dung_hoi") { this.dungVongHienTai(); this.phienAgent.dung(); return; }
       // ★★★ ĐỢT F / TASK 1 — nút "Đăng nhập"/"Đăng xuất" trong khung. Webview chỉ báo Ý ĐỊNH; đường
       // đăng nhập THẬT vẫn ĐÚNG MỘT nơi (`aviAiLocal.dangNhap`, `extension.ts`) — không viết luồng
       // thứ hai ở đây, không tự hỏi tài khoản/mật khẩu trong lớp này.
@@ -593,6 +663,21 @@ export class BangChat {
    *  ở `view/title` (`extension.ts`). `undefined` chỉ khi VSCode CHƯA từng resolve view đó. */
   static thanhBenDangMo(): BangChat | undefined {
     return BangChat.thanhBenHienTai;
+  }
+
+  /** ★★★ ĐỢT 4B — khung đang mở bất kỳ (thanh bên trước, bảng nổi sau) — cho lệnh "Hoàn tác lượt chạy agent". */
+  static dangMoBatKy(): BangChat | undefined {
+    return BangChat.thanhBenHienTai ?? BangChat.hienTai;
+  }
+
+  /** ★★★ ĐỢT 4B — hoàn tác lượt chạy agent gần nhất (checkpoint) — cùng đường với nút trong khung. */
+  public hoanTacAgent(): Promise<void> {
+    return this.phienAgent.hoanTac();
+  }
+
+  /** ★★★ ĐỢT 4B — báo lại trạng thái token /v1 sau khi lệnh device flow chạy xong. */
+  public guiTrangThaiTokenAgent(): Promise<void> {
+    return this.phienAgent.guiTrangThaiToken();
   }
 
   /**
@@ -950,6 +1035,7 @@ export class BangChat {
     this.quenLenhCucBo();
     // ★★★ ĐỢT G / TASK G2 / B3 — khung TRẮNG THẬT ⇒ thống kê cũng phải về ĐÚNG 0/0, không phải giữ
     // số của phiên vừa rời (`thongKeHoiThoaiHienTai()` đọc `this.lichSu`, VỪA được xoá ở trên).
+    this.phienAgent.datLaiLichSu([]);
     void this.panel.webview.postMessage({ loai: "chat_moi", ...this.thongKeHoiThoaiHienTai() });
   }
 
@@ -994,6 +1080,7 @@ export class BangChat {
     this.huy?.abort();
     this.lichSu = [...muc.hoiThoai.luot];
     this.maHoiThoaiHienTai = muc.hoiThoai.ma;
+    this.phienAgent.datLaiLichSu(muc.hoiThoai.luot);
     this.quenDeXuat();
     this.quenLenhCucBo();
     void this.panel.webview.postMessage({

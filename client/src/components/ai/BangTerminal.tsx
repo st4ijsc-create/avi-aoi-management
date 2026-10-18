@@ -114,6 +114,9 @@ interface BangTerminalProps {
    *   callback: gõ xong ⇒ `onGoLenh(lenh)` ⇒ TRANG dựng câu qua `handleSend` → model → propose →
    *   **đúng cái thẻ duyệt** như nút chạy-nhanh. Bảng giữ nguyên bất biến 0-mutation của nó.
    * ⚠ Vắng prop ⇒ không có ô nhập (tương thích ngược từng byte với mọi lưới cũ).
+   * ★ Đợt 3c (2026-10-17) — ĐÍNH CHÍNH đường đi ở TRANG: `onGoLenh`/`onChayLai` nay propose THẲNG `run_command`
+   *   (`aiChayUngDung.deXuatLenh`) — KHÔNG đi vòng qua model nữa (khảo sát đo 30–120 s/lệnh) — nhưng VẪN ra đúng thẻ
+   *   duyệt HITL; lệnh chạy chỉ sau Xác nhận. Bảng này vẫn 0 mutation.
    */
   onGoLenh?: (lenh: string) => void;
   /** Danh sách trắng để hiện thẳng trên màn + gợi ý tự điền. Vắng ⇒ không hiện phần gợi ý. */

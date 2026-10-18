@@ -67,6 +67,10 @@ import {
   BoGomToolCallLuong,
   type WireToolCall as NativeToolCall,
 } from "./ai/nativeToolCalls";
+// ★ Đợt 0.3 — cổng ưu tiên trước llama-server (1 slot): tương tác > agent > nền. Module LÁ (chỉ
+//   `node:async_hooks`) ⇒ import TĨNH. Cắm ở ĐÚNG ba chỗ chạm mạng: `postChatCompletion`,
+//   `streamChatCompletion`, `postInfill` — mọi hàm `server*` công khai đi qua một trong ba.
+import { quaCongUuTien, quaCongUuTienLuong } from "./ai/hangDoiUuTienLlm";
 
 // ═══ G5-D — Ô DỮ LIỆU THỨ HAI: `message.reasoning_content` ════════════════════════════════════
 //
@@ -310,6 +314,49 @@ function gomToolCallCuaDapUng(
   const tuO = docToolCallTuMessage(message);
   if (tuO.length) return tuO;
   return gomToolCallTuVanBan(noiDung).toolCalls;
+}
+
+/**
+ * ★★★ TOOL CALL NẰM TRONG SUY LUẬN — PHÁT HIỆN, KHÔNG VỚT.
+ * Đo 2026-10-17 (proxy ghi thân thật, vòng agent Đợt 1): Qwen3.6 có lúc phát tool call (khuôn XML) NGAY TRONG
+ * chuỗi suy luận, chưa đóng `</think>` ⇒ b9814 không tách ⇒ 0 tool_calls, content rỗng ⇒ G5-D ném "token cạn
+ * kiệt vào suy luận" (chẩn đoán sai) ⇒ lượt agent chết.
+ * ⚠ Bản đầu VỚT khối đó thành hành động; rà bảo mật bác HAI lần (9c9b8ee1e: trích dữ liệu khi nghĩ ⇒ tiêm;
+ *   e77b68dcd: so nguyên văn bị lách bằng định dạng khác — vi sai bộ phân tích). Kết luận: chữ SUY LUẬN không bao
+ *   giờ được thành HÀNH ĐỘNG. Thay vào đó ném lỗi có DẤU `TOOL_CALL_TRONG_SUY_LUAN` (chuỗi — sống qua mọi lớp bọc)
+ *   để tầng gọi tự quyết (vòng agent: hỏi lại ĐÚNG lượt đó với nghĩ TẮT ⇒ model phát tool call qua đường thật).
+ */
+export const DAU_TOOL_CALL_TRONG_SUY_LUAN = "TOOL_CALL_TRONG_SUY_LUAN";
+export class LoiToolCallTrongSuyLuan extends Error {
+  readonly code = DAU_TOOL_CALL_TRONG_SUY_LUAN;
+  constructor() {
+    super(`[llamaServer] ${DAU_TOOL_CALL_TRONG_SUY_LUAN}: model phát <tool_call> TRONG chuỗi suy luận (chưa đóng </think>) và content rỗng — không thực thi chữ suy luận; hỏi lại lượt này với nghĩ TẮT.`);
+    this.name = "LoiToolCallTrongSuyLuan";
+  }
+}
+export function laToolCallTrongSuyLuan(coGuiTools: boolean, daCoToolCall: boolean, noiDung: string, suyLuan: string): boolean {
+  return coGuiTools && !daCoToolCall && noiDung.trim() === "" && !!suyLuan && suyLuan.indexOf("<tool_call>") !== -1;
+}
+export function laLoiToolCallTrongSuyLuan(e: unknown): boolean {
+  for (let x: unknown = e, i = 0; x && i < 6; x = (x as { cause?: unknown }).cause, i++) {
+    if (String((x as { message?: unknown }).message ?? x).includes(DAU_TOOL_CALL_TRONG_SUY_LUAN)) return true;
+  }
+  return false;
+}
+
+/**
+ * ★★ G5-D ca (B) — content rỗng, CHỈ có suy luận (`LoiTokenCanKietVaoSuyLuan`). Nhận theo LỚP hoặc theo dấu chuỗi
+ * `DAU_G5D` trong thông điệp: cổng G1-D của `aiGgufEngine` bọc lỗi server bằng `new Error(msg)` (mất `cause`), nên
+ * dấu chuỗi là thứ duy nhất sống qua lớp bọc đó. Đo 2026-10-17 (V-dot4-1/2): Qwen3.6 viết NGUYÊN câu trả lời cuối vào
+ * suy luận chưa đóng `</think>` ⇒ lớp lỗi này; chữa = hỏi lại nghĩ TẮT (cách sửa (1) của chính thông điệp G5-D).
+ */
+export const DAU_G5D = "TỪ CHỐI TRUNG THỰC (G5-D";
+export function laLoiTokenCanKietVaoSuyLuan(e: unknown): boolean {
+  for (let x: unknown = e, i = 0; x && i < 6; x = (x as { cause?: unknown }).cause, i++) {
+    if (x instanceof LoiTokenCanKietVaoSuyLuan) return true;
+    if (String((x as { message?: unknown }).message ?? x).includes(DAU_G5D)) return true;
+  }
+  return false;
 }
 
 /** Chữ hiển thị sau khi đã bóc các khối `<tool_call>` nguyên văn ra. */
@@ -603,8 +650,21 @@ export async function preflightHealthyForFim(): Promise<boolean> {
   return probeHealthy(fimBaseUrl(), healthCheckTimeoutMs());
 }
 
+/**
+ * Đợt 0.3 — mọi lượt KHÔNG-stream xếp qua cổng ưu tiên TRƯỚC khi chạm mạng. Đồng hồ
+ * `LLAMA_SERVER_TIMEOUT_MS` chỉ bắt đầu SAU khi tới lượt (nằm trong thân trực tiếp) — thời gian
+ * chờ trong hàng có trần riêng (`LLM_PRIORITY_GATE_WAIT_MS`), không ăn vào ngân sách sinh chữ.
+ * `signal` huỷ khi đang chờ ⇒ rời hàng, không một byte nào được gửi.
+ */
+function postChatCompletion(
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<{ json: any; totalTimeMs: number }> {
+  return quaCongUuTien(() => postChatCompletionTrucTiep(body, signal), signal);
+}
+
 /** POST an OpenAI chat-completion to the server and return the raw JSON + timing. */
-async function postChatCompletion(
+async function postChatCompletionTrucTiep(
   body: Record<string, unknown>,
   /** Doc 80 · Task 8 — signal của người gọi (huỷ ⇒ đóng kết nối ⇒ slot rảnh). Vắng ⇒ như cũ. */
   signal?: AbortSignal,
@@ -739,6 +799,9 @@ export async function serverChatCompletion(
   // một chẩn đoán hoàn toàn sai. Bỏ qua cổng ấy CHỈ khi thật sự có tool_call (chứ không phải khi
   // `tools` được gửi): lượt có tools mà model trả chữ rỗng thật vẫn phải kêu như cũ.
   const toolCalls = gomToolCallCuaDapUng(message, options, nua.noiDung);
+  if (!toolCalls.length && laToolCallTrongSuyLuan(!!options.tools?.length, false, nua.noiDung, nua.suyLuan ?? "")) {
+    throw new LoiToolCallTrongSuyLuan();
+  }
   if (!toolCalls.length) {
     phanDinhCauTraLoiRong(nua, {
       maxTokens: body.max_tokens as number,
@@ -985,7 +1048,17 @@ function suyLuanTrongChunk(json: any): string {
  * `finally` gỡ đồng hồ, gỡ listener `abort` của signal ngoài (nếu không, một signal sống lâu sẽ
  * tích listener theo từng lượt gọi), và `reader.cancel()` để socket không nằm lại.
  */
-async function* streamChatCompletion(
+function streamChatCompletion(
+  body: Record<string, unknown>,
+  signal: AbortSignal | undefined,
+  modelHienThi: string,
+): AsyncGenerator<GgufStreamChunk> {
+  // Đợt 0.3 — slot của cổng ưu tiên giữ SUỐT vòng đời luồng, nhả ở `finally` của cổng (xong / ném /
+  // consumer `return()` sớm). Đồng hồ nhàn rỗi của thân trực tiếp chỉ chạy SAU khi tới lượt.
+  return quaCongUuTienLuong(() => streamChatCompletionTrucTiep(body, signal, modelHienThi), signal);
+}
+
+async function* streamChatCompletionTrucTiep(
   body: Record<string, unknown>,
   signal: AbortSignal | undefined,
   modelHienThi: string,
@@ -1169,6 +1242,11 @@ async function* streamChatCompletion(
     // THÀNH CÔNG kết thúc với `fullText === ""` theo cấu tạo (model không phát chữ nào, chỉ phát
     // `tool_calls`). Không có điều kiện `!boGomTool.coToolCall` dưới đây thì **mọi lượt native
     // streaming đều ném** — và ném bằng câu lỗi "token cạn kiệt vào suy luận", một chẩn đoán sai.
+    // ★★★ Tool call nằm TRONG suy luận ⇒ ném lỗi có dấu (xem `LoiToolCallTrongSuyLuan`), KHÔNG vớt, KHÔNG G5-D.
+    const coGuiTools = Array.isArray((body as { tools?: unknown[] }).tools) && (body as { tools?: unknown[] }).tools!.length > 0;
+    if (laToolCallTrongSuyLuan(coGuiTools, boGomTool.coToolCall || gomToolCallTuVanBan(fullText).toolCalls.length > 0, fullText, fullReasoning)) {
+      throw new LoiStreamServer(new LoiToolCallTrongSuyLuan().message, false, { cause: new LoiToolCallTrongSuyLuan() });
+    }
     if (fullText.length === 0 && !boGomTool.coToolCall) {
       try {
         // ⚠ ĐÚNG vị từ dùng chung với ba đường kia — KHÔNG dựng lại phép phân định ở đây. Lượt
@@ -1193,7 +1271,7 @@ async function* streamChatCompletion(
     // đường stream ta biết điều đó qua chính `body.tools`, không đoán theo nội dung chữ.
     const toolCalls = boGomTool.coToolCall
       ? boGomTool.ketThuc()
-      : Array.isArray((body as { tools?: unknown[] }).tools) && (body as { tools?: unknown[] }).tools!.length
+      : coGuiTools
         ? gomToolCallTuVanBan(fullText).toolCalls
         : [];
     yield {
@@ -1299,7 +1377,14 @@ export async function* serverChatCompletionStream(
  * Shares `LLAMA_SERVER_TIMEOUT_MS`/auth with the text path; targets `fimBaseUrl()` (the dedicated
  * FIM server when `LLAMA_FIM_SERVER_URL` is set, else the same server text uses).
  */
-async function postInfill(body: Record<string, unknown>): Promise<{ json: any; totalTimeMs: number }> {
+function postInfill(body: Record<string, unknown>): Promise<{ json: any; totalTimeMs: number }> {
+  // Đợt 0.3 — FIM chỉ qua cổng ưu tiên khi nó dùng CHUNG slot với đường chữ (không có
+  // `LLAMA_FIM_SERVER_URL` riêng). Server FIM riêng có slot riêng ⇒ xếp nó sau lượt chữ là chờ oan.
+  const dungChung = !dedicatedFimUrl() || dedicatedFimUrl() === baseUrl();
+  return dungChung ? quaCongUuTien(() => postInfillTrucTiep(body)) : postInfillTrucTiep(body);
+}
+
+async function postInfillTrucTiep(body: Record<string, unknown>): Promise<{ json: any; totalTimeMs: number }> {
   const url = fimBaseUrl();
   if (!url) throw new Error("[llamaServer] no FIM server URL configured (LLAMA_FIM_SERVER_URL/LLAMA_SERVER_URL)");
   const startTime = Date.now();

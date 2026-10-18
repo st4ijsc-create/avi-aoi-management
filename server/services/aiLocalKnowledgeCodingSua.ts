@@ -400,6 +400,15 @@ function cauTongTuTri(lang: KbLanguage, kq: KetQuaVongTuTri): string {
         return wt(lang, "tệp đích có thay đổi CHƯA LƯU của bạn — KHÔNG ghi đè", "the target file has UNSAVED changes — refused to overwrite", "目标文件有未保存的改动——已拒绝覆盖");
       case "kill_switch":
         return wt(lang, "kill-switch đã bật giữa vòng", "the kill-switch tripped mid-loop", "循环中途触发了急停开关");
+      // ★ Q1 (2026-10-14) — cờ BẬT nhưng đích là repo chính, chưa có checkpoint (hàng rào 7 ở
+      //   `aiCodingTuTriGhi`). Câu nói rõ lối ra cho người dùng: duyệt tay hoặc dự án hộp cát.
+      case "repo_chinh_chua_checkpoint":
+        return wt(
+          lang,
+          "vòng tự ghi không chạy trên repo chính cho tới khi có điểm khôi phục (checkpoint) — bản sửa KHÔNG được ghi; dùng đường duyệt tay hoặc một dự án hộp cát",
+          "the self-write loop does not run on the main repo until a restore point (checkpoint) exists — the fix was NOT written; use manual review or a sandbox project",
+          "在具备恢复点（checkpoint）之前，自写循环不在主仓库上运行——修改未写入；请使用人工审核或沙盒项目",
+        );
       case "het_tran":
         return wt(lang, `hết trần ${kq.soLuot} lượt, test vẫn chưa xanh`, `hit the ${kq.soLuot}-turn cap, tests still not green`, `已达 ${kq.soLuot} 轮上限，测试仍未通过`);
       case "khong_tien_bo":

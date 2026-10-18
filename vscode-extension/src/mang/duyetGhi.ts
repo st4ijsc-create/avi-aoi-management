@@ -26,6 +26,7 @@
  *   bản cài đặt thứ hai. Re-export ở đây để `bangChat.ts` có ĐÚNG MỘT nơi nhập trong extension.
  */
 import { boBoiSuperjson } from "../loi/trpc";
+import { kiemTraServerUrl } from "../loi/dangNhap";
 import { daBiTuChoiGhi, maTuChoiGhi } from "../../../shared/aiCodingLoop";
 
 export { daBiTuChoiGhi, maTuChoiGhi };
@@ -128,10 +129,15 @@ export function docKetQuaBatDau(dap: unknown): KetQuaBatDauApClient {
 /** GHI TRƯỚC khi byte rơi. Ném khi không nối được máy chủ — phía gọi PHẢI dừng, không ghi. */
 export async function goiBatDauApClient(
   serverUrl: string,
-  cookie: string,
+  xacThuc: XacThucSo,
   dv: DauVaoBatDauApClient,
 ): Promise<KetQuaBatDauApClient> {
-  return docKetQuaBatDau(await goiMutation(serverUrl, cookie, "aiCopilot.batDauApDungOClient", dv));
+  if (typeof xacThuc !== "string") {
+    // ★ 4B-client: chỉ 200 mới là sổ đã mở; mọi khung lỗi đều ném (`goiRestBearer`) ⇒ phía gọi KHÔNG ghi.
+    const { than } = await goiRestBearer(serverUrl, xacThuc.bearer, "/api/ai/client-apply/bat-dau", dv, false);
+    return docKetQuaBatDau(than);
+  }
+  return docKetQuaBatDau(await goiMutation(serverUrl, xacThuc, "aiCopilot.batDauApDungOClient", dv));
 }
 
 export interface DauVaoChotApClient {
@@ -145,8 +151,134 @@ export interface DauVaoChotApClient {
 /** CHỐT SAU khi byte đã rơi (hoặc đã hỏng). Cùng hình dạng {ok,status,message} như cửa duyệt. */
 export async function goiChotApClient(
   serverUrl: string,
-  cookie: string,
+  xacThuc: XacThucSo,
   dv: DauVaoChotApClient,
 ): Promise<KetQuaDuyet> {
-  return docKetQuaDuyet(await goiMutation(serverUrl, cookie, "aiCopilot.chotApDungOClient", dv));
+  if (typeof xacThuc !== "string") {
+    // 200 / 409 / 503-DB_UNAVAILABLE đều mang THÂN DỊCH VỤ `{ok,…}` ⇒ đọc `ok` (không ném) như tRPC cũ trả HTTP 200.
+    const { than } = await goiRestBearer(serverUrl, xacThuc.bearer, "/api/ai/client-apply/chot", dv, true);
+    return docKetQuaDuyet(than);
+  }
+  return docKetQuaDuyet(await goiMutation(serverUrl, xacThuc, "aiCopilot.chotApDungOClient", dv));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 4B-client (2026-10-17) — CÙNG HAI LƯỢT GHI SỔ, VẬN CHUYỂN QUA REST BEARER (máy chủ 126de672b)
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// Lõi agent của extension đăng nhập bằng DEVICE FLOW (token `avgw_…`, phạm vi `chat`/`fim`/`apply`) — không có cookie
+// phiên. Hai tuyến `POST /api/ai/client-apply/{bat-dau,chot}` (`server/routes/aiGatewayTokenBearerApi.ts`) gọi ĐÚNG hai
+// hàm dịch vụ mà tRPC `aiCopilot.*ApDungOClient` gọi, với ĐÚNG lược đồ — nên đây chỉ là đổi LỚP VẬN CHUYỂN, không phải
+// một sổ thứ hai. Đã đo trên mã máy chủ:
+//   · thân yêu cầu = JSON THẲNG (không bọc `{json}`); người = CHỦ TOKEN (máy chủ không đọc người từ thân);
+//   · thân thành công = NGUYÊN VĂN thân tRPC cũ; `chot` ok:false ⇒ 409 + thân dịch vụ; `chot` DB hỏng ⇒ 503 + thân dịch vụ;
+//   · mọi từ chối khác = khung OpenAI `{error:{message,type,code}}` — 401 token · 403 `permission_denied` /
+//     `insufficient_scope` · 429 · 400 `invalid_body` · 503 `db_unavailable`/`auth_backend_unavailable`/`server_error`.
+// ⚠⚠ FAIL-CLOSED: không mở được sổ ⇒ NÉM ⇒ `apBanVa` KHÔNG ghi byte nào ("thà không ghi còn hơn ghi mà không có vết").
+//   Token cũ thiếu `apply` KHÔNG được lùi về cookie hay "ghi tạm không sổ" — quyết định của chủ dự án: không có sổ kiểm
+//   toán thì không ghi; thông điệp chỉ ĐÚNG việc phải làm (đăng nhập lại để token mới mang `apply`).
+
+/** Cách xác thực lượt ghi sổ: chuỗi = cookie phiên (khung chat cũ, tRPC) · `{bearer}` = token cá nhân (lõi agent, REST). */
+export type XacThucSo = string | { bearer: string };
+
+export type MaLoiSoKiemToan =
+  | "CHUA_CO_TOKEN"
+  | "THIEU_PHAM_VI_APPLY"
+  | "TOKEN_401"
+  | "TOKEN_403"
+  | "QUA_TRAN"
+  | "SO_KIEM_TOAN_TAM_LOI"
+  | "LOI_SO";
+
+/** Lỗi của lượt ghi sổ qua REST — `ma` máy đọc để phía gọi (lõi agent) quyết định cách nói với model/người dùng. */
+export class LoiSoKiemToan extends Error {
+  constructor(
+    message: string,
+    readonly ma: MaLoiSoKiemToan,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = "LoiSoKiemToan";
+  }
+}
+
+const LENH_DANG_NHAP_THIET_BI = '"AI Local: Đăng nhập AI Local (device flow)"';
+
+/** Diễn dịch THUẦN khung lỗi `{error:{code,message}}` của các tuyến REST Bearer ⇒ mã + câu tiếng Việt chỉ việc phải làm. */
+export function moTaLoiSoKiemToan(status: number, than: unknown, retryAfter?: string | null): { ma: MaLoiSoKiemToan; thongDiep: string } {
+  const e = (than && typeof than === "object" ? (than as { error?: unknown }).error : undefined) as
+    | { message?: unknown; code?: unknown }
+    | undefined;
+  const code = e && typeof e === "object" && typeof e.code === "string" ? e.code : "";
+  const msg = e && typeof e === "object" && typeof e.message === "string" ? e.message : "";
+  const chiTiet = [code, msg].filter(Boolean).join(": ");
+  const kem = chiTiet ? ` — ${chiTiet}` : "";
+  if (status === 403 && code === "insufficient_scope") {
+    return {
+      ma: "THIEU_PHAM_VI_APPLY",
+      thongDiep:
+        `token hiện tại thiếu phạm vi 'apply' (403${kem}) — token này được cấp trước khi extension xin quyền ghi sổ kiểm toán. ` +
+        `Hãy đăng nhập lại để cấp quyền ghi sổ: chạy lệnh ${LENH_DANG_NHAP_THIET_BI}. Không có sổ kiểm toán thì extension KHÔNG áp tệp.`,
+    };
+  }
+  if (status === 401) {
+    return {
+      ma: "TOKEN_401",
+      thongDiep: `token cá nhân bị từ chối (401${kem}): chưa có, hết hạn hoặc đã thu hồi — chạy lệnh ${LENH_DANG_NHAP_THIET_BI} để đăng nhập lại.`,
+    };
+  }
+  if (status === 403) {
+    const goiY =
+      code === "password_change_required"
+        ? "tài khoản phải đổi mật khẩu trên web trước"
+        : code === "account_disabled"
+          ? "tài khoản đã bị khoá"
+          : "tài khoản không còn quyền AI hoặc giấy phép module AI chưa bật";
+    return { ma: "TOKEN_403", thongDiep: `máy chủ từ chối ghi sổ (403${kem}): ${goiY}.` };
+  }
+  if (status === 429) {
+    const giay = retryAfter && /^\d+$/.test(retryAfter) ? ` Thử lại sau ~${retryAfter} giây.` : "";
+    return { ma: "QUA_TRAN", thongDiep: `máy chủ chặn tạm vì vượt trần lượt ghi sổ/phút của token (429${kem}).${giay}` };
+  }
+  if (status >= 500) {
+    return { ma: "SO_KIEM_TOAN_TAM_LOI", thongDiep: `máy chủ không ghi được sổ kiểm toán lúc này (${status}${kem}).` };
+  }
+  if (status === 404) {
+    return { ma: "LOI_SO", thongDiep: "máy chủ chưa có tuyến /api/ai/client-apply (bản máy chủ cũ hơn 4B-server, hoặc thiếu giấy phép AI)." };
+  }
+  return { ma: "LOI_SO", thongDiep: `máy chủ trả ${status}${kem} khi ghi sổ kiểm toán.` };
+}
+
+/**
+ * Một lượt POST Bearer. `thanDichVuHopLe` ⇒ thân mang `ok` boolean (thân dịch vụ của `chot`) được TRẢ VỀ dù mã ≠ 200.
+ * Mọi trường hợp khác ngoài 200 ⇒ ném `LoiSoKiemToan`. Token RỖNG ⇒ ném TRƯỚC khi chạm mạng.
+ */
+async function goiRestBearer(
+  serverUrl: string,
+  token: string,
+  duong: string,
+  than: unknown,
+  thanDichVuHopLe: boolean,
+): Promise<{ status: number; than: unknown }> {
+  if (!token) {
+    throw new LoiSoKiemToan(`chưa có token cá nhân để ghi sổ kiểm toán — chạy lệnh ${LENH_DANG_NHAP_THIET_BI}.`, "CHUA_CO_TOKEN");
+  }
+  const kt = kiemTraServerUrl(serverUrl);
+  if (!kt.ok) throw new LoiSoKiemToan(kt.lyDo, "LOI_SO");
+  const res = await fetch(`${kt.url}${duong}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify(than),
+  });
+  let du: unknown = null;
+  try {
+    du = await res.json();
+  } catch {
+    du = null;
+  }
+  if (res.status === 200) return { status: res.status, than: du };
+  if (thanDichVuHopLe && du && typeof du === "object" && typeof (du as { ok?: unknown }).ok === "boolean") {
+    return { status: res.status, than: du };
+  }
+  const m = moTaLoiSoKiemToan(res.status, du, res.headers?.get?.("retry-after"));
+  throw new LoiSoKiemToan(m.thongDiep, m.ma, res.status);
 }

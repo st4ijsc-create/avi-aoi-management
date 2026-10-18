@@ -103,6 +103,26 @@ export function tachNghiSinh(u: {
   return { nghi, sinh, gop: nghi === null, pcCtx, tokMoiGiay };
 }
 
+/**
+ * ★ Đợt 0.1 — ô "máy" khi engine KHÔNG khoẻ: đọc thêm trạng thái bộ giám sát llama-server để nói
+ * ĐÚNG chuyện đang xảy ra. Trước đây mọi ca đều là "ENGINE HỎNG" đỏ — kể cả 60 s llama-server đang
+ * nạp lại model sau khi giám sát dựng nó lên, tức một báo động cho thứ đang TỰ LÀNH. Hàm THUẦN.
+ *   • engine khoẻ ⇒ `ok` (trạng thái giám sát không được làm đổi màu một máy đang chạy);
+ *   • đang khởi động lại / đang nạp / tạm dừng đổi model ⇒ hổ phách — lượt sinh mã sẽ CHỜ rồi chạy;
+ *   • bỏ cuộc ⇒ đỏ, nhãn riêng — cần người;
+ *   • còn lại (chết, giám sát tắt, không đọc được) ⇒ `hong` đỏ như cũ: không biết ≠ tốt.
+ */
+export function trangThaiOMay(o: {
+  readonly mayHong: boolean;
+  readonly giamSat?: { readonly trangThai: string } | null;
+}): { loai: "ok" | "hong" | "dang-khoi-dong-lai" | "dang-nap" | "tam-dung" | "bo-cuoc"; muc: MucCanhBao } {
+  if (!o.mayHong) return { loai: "ok", muc: "binh-thuong" };
+  const t = o.giamSat?.trangThai;
+  if (t === "dang-khoi-dong-lai" || t === "dang-nap" || t === "tam-dung") return { loai: t, muc: "canh-bao" };
+  if (t === "bo-cuoc") return { loai: "bo-cuoc", muc: "nguy" };
+  return { loai: "hong", muc: "nguy" };
+}
+
 const MAU: Record<MucCanhBao, string> = {
   "binh-thuong": "text-muted-foreground",
   "canh-bao": "text-amber-600 dark:text-amber-400",
@@ -184,6 +204,7 @@ export function ThanhTrangThaiAiLocal({
    * tự suy lại một kết luận mà server đã có đủ dữ kiện để kết. Một sự thật, một nơi tính.
    */
   const mayHong = useMemo(() => (d?.mayMoc ? !d.mayMoc.engineOk : false), [d]);
+  const oMay = useMemo(() => trangThaiOMay({ mayHong, giamSat: d?.mayMoc?.giamSat ?? null }), [mayHong, d]);
 
   if (!d) {
     return (
@@ -202,10 +223,38 @@ export function ThanhTrangThaiAiLocal({
         icon={mayHong ? AlertTriangle : Cpu}
         id="may"
         nhan={t("ttAiLocal.may", "máy")}
-        giaTri={mayHong ? t("ttAiLocal.engineHong", "ENGINE HỎNG") : t("ttAiLocal.engineOk", "engine ok")}
-        muc={mucCanhBao({ loai: "may", giaTri: null, mayHong })}
+        giaTri={
+          oMay.loai === "dang-khoi-dong-lai"
+            ? t("ttAiLocal.engineKhoiDongLai", "ĐANG KHỞI ĐỘNG LẠI MODEL")
+            : oMay.loai === "dang-nap"
+              ? t("ttAiLocal.engineDangNap", "ĐANG NẠP MODEL")
+              : oMay.loai === "tam-dung"
+                ? t("ttAiLocal.engineTamDung", "TẠM DỪNG (ĐỔI MODEL)")
+                : oMay.loai === "bo-cuoc"
+                  ? t("ttAiLocal.engineBoCuoc", "MODEL KHÔNG KHỞI ĐỘNG ĐƯỢC")
+                  : mayHong
+                    ? t("ttAiLocal.engineHong", "ENGINE HỎNG")
+                    : t("ttAiLocal.engineOk", "engine ok")
+        }
+        muc={oMay.muc}
         giaiThich={
-          mayHong
+          oMay.loai === "dang-khoi-dong-lai"
+            ? t("ttAiLocal.tipKhoiDongLai", "llama-server vừa chết; bộ giám sát đang khởi động lại nó (lần {{lan}}, {{trongCuaSo}}/{{toiDa}} trong {{phut}} phút). Lượt sinh mã lúc này CHỜ tối đa khoảng 2 phút rồi đi qua server — không nạp model vào ứng dụng.", {
+                lan: d.mayMoc?.giamSat?.soLanKhoiDong ?? KHONG_BIET,
+                trongCuaSo: d.mayMoc?.giamSat?.soLanTrongCuaSo ?? KHONG_BIET,
+                toiDa: d.mayMoc?.giamSat?.toiDaKhoiDong ?? KHONG_BIET,
+                phut: d.mayMoc?.giamSat?.cuaSoPhut ?? KHONG_BIET,
+              })
+            : oMay.loai === "dang-nap"
+              ? t("ttAiLocal.tipDangNap", "llama-server đang nạp model (30–90 giây với model khoảng 21 GB). Lượt sinh mã sẽ chờ rồi chạy tiếp.")
+              : oMay.loai === "tam-dung"
+                ? t("ttAiLocal.tipTamDung", "Bộ giám sát đang tạm dừng có chủ ý (đang đổi model) — không tự khởi động lại llama-server.")
+                : oMay.loai === "bo-cuoc"
+                  ? t("ttAiLocal.tipBoCuoc", "llama-server không khởi động được sau {{toiDa}} lần trong {{phut}} phút — bộ giám sát đã dừng thử. Cần người xem logs/llama-server-*.err.log rồi chạy lại scripts/ai/start-llama-server.ps1.", {
+                      toiDa: d.mayMoc?.giamSat?.toiDaKhoiDong ?? KHONG_BIET,
+                      phut: d.mayMoc?.giamSat?.cuaSoPhut ?? KHONG_BIET,
+                    })
+          : mayHong
             ? t("ttAiLocal.tipMayHong", "Engine suy luận KHÔNG khoẻ. Mọi câu trả lời lúc này phản ánh trạng thái MÁY, không phản ánh năng lực model — đừng kết luận gì về chất lượng model cho tới khi ô này xanh lại.")
             : t("ttAiLocal.tipMayOk", "Engine đang chạy qua {{duong}}. Model đã nạp: {{soModel}}. Chế độ GPU: {{gpu}}.", {
                 duong: d.mayMoc?.duongPhucVu === "llama-server"

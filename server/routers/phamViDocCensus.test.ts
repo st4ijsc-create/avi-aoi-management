@@ -722,7 +722,68 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   • `edgeRuntime.retireNode` (mutation, Đợt 12 O `f0a7c6f0a`): `adminProcedure` + `machine_control:canDelete`; the service
 //     re-checks an active admin in the DB, locks the node FOR NO KEY UPDATE (5 s lock_timeout) and refuses while it still owns
 //     devices / pending STOPs / runs; audited ⇒ D (edge nodes carry no factory scope of a caller). No baseline row added.
-const GHIM = { A: 333, B: 8, C: 474, D: 1144, S: 357, tong: 2316 } as const;
+// ★★★ 2026-10-17 (AI Local Đợt 1 · T4 — vòng agent máy chủ) — **C 474 → 476 · D 1144 → 1147 · tong 2316 → 2321 · A/B/S
+// unchanged.** Five NEW procedures in `aiAgentRouter.ts`, measured with this scanner (baseline 2316 green on HEAD `c05b9848b`):
+//   • `aiAgent.danhSach` / `aiAgent.chiTiet` (queries): read `ai_agent_runs` (mig 0390) with `eq(userId)` = OWNER scope (the
+//     agent-run log is per user, like `ai_coding_sessions`; no tenant/factory rows) ⇒ C;
+//   • `aiAgent.duyet` / `aiAgent.bac` / `aiAgent.hoanTac` (mutations): `confirmAction` / `cancelAction` (token bound to the
+//     session user) and the checkpoint undo (run ownership checked first) ⇒ D. No baseline row added.
+// ★★★ 2026-10-17 (AI Local Đợt 2 — đề xuất nhớ của vòng agent) — **D 1147 → 1149 · tong 2321 → 2323 · A/B/C/S unchanged.**
+// Two NEW mutations in `aiAgentRouter.ts`, measured with this scanner (before = this pin, green; after = D 1149 · tong 2323):
+//   • `aiAgent.nhoDeXuat` / `aiAgent.boDeXuat`: act on a "remember" proposal held IN MEMORY by the caller's OWN agent run
+//     (`quanLyLuotChay.nhoDeXuat` returns NOT_FOUND for another user's run); `nhoDeXuat` writes `ai_coding_lessons` through
+//     `luuBaiHoc(userId from the session, projectId of the run)` = OWNER scope, no tenant/factory rows ⇒ D. No baseline row added.
+// ★★★ 2026-10-17 (AI Local Đợt 4A — token theo người dùng cho cổng /v1) — **C 476 → 478 · D 1149 → 1152 · tong 2323 → 2328 ·
+// A/B/S unchanged.** Five NEW procedures in the NEW `aiGatewayTokenRouter.ts`, measured with this scanner (before = this pin,
+// green; after = C 478 · D 1152 · tong 2328):
+//   • `aiGatewayToken.danhSach` (query): `ai_gateway_tokens` (mig 0392) WHERE `userId` = session user = OWNER scope ⇒ C;
+//   • `aiGatewayToken.xemThietBi` (query): one device-code row by its short code (no tenant/factory rows, no owner yet) ⇒ C;
+//   • `aiGatewayToken.tao` / `thuHoi` / `quyetThietBi` (mutations): insert/revoke the caller's OWN token, approve a device code
+//     for the session user; `ai_repo_read/canView` checked in the body (`services/ai/gatewayToken/thuTucToken.ts`) ⇒ D.
+//     No baseline row added.
+// ★★★ 2026-10-17 (AI Local Đợt 3a — dự án cá nhân của kỹ sư, Q3) — **C 478 → 479 · D 1152 → 1155 · tong 2328 → 2332 ·
+// A/B/S unchanged.** Four NEW procedures in `repoWorkspaceRouter.ts`, measured with this scanner (before = this pin, green;
+// after = C 479 · D 1155 · tong 2332):
+//   • `repoWorkspace.duAnCuaToi` (query): the caller's OWN personal projects (filter `chuSoHuu === session user`) from the
+//     in-memory whitelist snapshot + a disk-usage walk of `<AI_PROJECTS_ROOT>/u<session user>` — OWNER scope, no tenant rows ⇒ C;
+//   • `repoWorkspace.taoDuAnCaNhan` / `doiTenDuAnCaNhan` / `xoaDuAnCaNhan` (mutations): owner = session user (never input),
+//     `ai_repo_read/canView` + `ai_repo_exec/canCreate` checked in the body, rename/delete restricted to owner (or admin) ⇒ D.
+//   `listProjects` now reads `ctx` (filters other users' personal projects) — stays in its group (A unchanged).
+//     No baseline row added.
+// ★★★ 2026-10-17 (AI Local Đợt 3c — Chạy & Xem trước) — **C 479 → 481 · D 1155 → 1158 · tong 2332 → 2337 · A/B/S
+// unchanged.** Five procedures in the NEW `aiChayUngDungRouter.ts`, measured with this scanner (before = this pin, green):
+//   • `aiChayUngDung.trangThai` / `nhatKy` (queries): in-memory app-process registry keyed by projectId; port/log only for the
+//     OWNER (the session user who started it) or admin, others see "busy" only; `ai_repo_read/canView` in the body ⇒ C;
+//   • `aiChayUngDung.chay` / `dung` / `deXuatLenh` (mutations): start (ai_repo_exec/canCreate) / stop (owner or admin) /
+//     propose ONE allowlisted command through `run_command`'s HITL path ⇒ D. No tenant rows. No baseline row added.
+// ★★★ 2026-10-17 (AI Local Đợt 3b — bảng Git · nút tệp · trí nhớ · tên phiên · OCR ảnh) — **C 481 → 486 · D 1158 → 1169 ·
+// tong 2337 → 2353 · A/B/S unchanged.** Sixteen NEW procedures in `repoWorkspaceRouter.ts` (before = this pin, green):
+//   • `repoWorkspace.gitTrangThai` / `gitDiffTep` / `gitNhanh` / `gitLog` (queries): git status/diff/branches/log of the
+//     project the CALLER resolves via `phanGiaiGoc(id, session user)` (personal projects: owner/admin only), through the
+//     controlled git gate `services/ai/gitDuAn/cuaGitDuAn.ts` — files on disk, no tenant rows ⇒ C;
+//   • `repoWorkspace.baiHocDanhSach` (query): the session user's OWN lessons (`eq(userId)` in every query) ⇒ C;
+//   • `repoWorkspace.gitCommit` / `gitTaoNhanh` / `gitChuyenNhanh` / `gitGoiYThongDiep` (mutations): ai_repo_exec/canCreate for
+//     writes, author = session user, platform repo read-only, audit `ai_repo_git`; suggestion only returns text ⇒ D;
+//   • `repoWorkspace.deXuatXoaTep` / `deXuatDoiTenTep` (mutations): PROPOSE `delete_file`/`rename_file` (HITL card) ⇒ D;
+//   • `repoWorkspace.baiHocThem` / `baiHocSua` / `baiHocXoa` / `doiTenPhien` (mutations): owner = session user ⇒ D;
+//   • `repoWorkspace.ocrAnhLoi` (mutation): OCR of an uploaded screenshot, no rows ⇒ D. No baseline row added.
+// ★★★ 2026-10-17 (AI Local Đợt 5 — phản hồi 👍/👎 + eval mã A/B) — **C 486 → 490 · D 1169 → 1173 · tong 2353 → 2361 ·
+// A/B/S unchanged.** Eight NEW procedures (before = this pin, green on HEAD `efb9ff532`):
+//   • `aiAgent.phanHoiCuaToi` (query): the session user's OWN feedback rows (`"userId" = <session>` in every query of
+//     `server/db/aiAgentFeedback.ts`) ⇒ C; `aiAgent.phanHoiTongHop` (query): ADMIN-only COUNTS over ai_agent_feedback, no
+//     content, no identity, no tenant rows ⇒ C;
+//   • `kbStudio.listBoBaiMa` (query): reads benchmark task files on disk ⇒ C; `kbStudio.danhSachEvalMa` (query): eval runs of
+//     one Studio corpus (`kb_eval_ma_runs`, not tenant data; same scope as `kbStudio.listEvalRuns`) ⇒ C;
+//   • `aiAgent.phanHoi` / `aiAgent.xuatBoDuLieu` (mutations): write / export the CALLER's own feedback (export of ALL users
+//     requires admin + is audited) ⇒ D; `kbStudio.batDauEvalMa` / `kbStudio.huyEvalMa` (mutations, admin + 2FA) ⇒ D.
+//   No baseline row added.
+// ★ 2026-10-17 (AI Local Đợt 6 — đổi model llama-server qua API) — **C 490 → 491 · D 1173 → 1174 · tong 2361 → 2363 ·
+// A/B/S unchanged.** Two NEW procedures in `aiGgufRouter.ts` (admin + 2FA):
+//   • `aiGguf.doiModelTongQuan` (query): lists `.gguf` files in GGUF_MODELS_DIR + GET `/props` of the local llama-server +
+//     the selection file outside the repo — files/HTTP on this machine, no tenant rows ⇒ C;
+//   • `aiGguf.doiModelBatDau` (mutation, admin + 2FA): restarts llama-server with another model, audited ⇒ D.
+//   No baseline row added.
+const GHIM = { A: 333, B: 8, C: 491, D: 1174, S: 357, tong: 2363 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

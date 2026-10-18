@@ -152,7 +152,21 @@ export type MaTuChoiKiemChung =
   | "RUN_FAILED";
 
 export type PhanQuyetLenhKiemChung =
-  | { ok: true; nhan: string; command: string }
+  | {
+      ok: true;
+      nhan: string;
+      command: string;
+      /**
+       * ★ Rà bảo mật a5f56d089 (2026-10-17) — dữ kiện của CHÍNH mục danh sách trắng đã khớp, để chế độ `tu-dong`
+       * của vòng agent (`boThucThiMayChu`) xét Q1 theo các ĐƯỜNG lệnh chạm mà KHÔNG phải gọi lại `tachArgv` /
+       * `phanQuyetLenh` (census §J đếm điểm gọi hai hàm ấy): ô tự do (đối số đường, đã qua `phanQuyetDuongDan`),
+       * lệnh có tự tìm dự án đi NGƯỢC từ cwd không, và có GHI ĐÈ mã nguồn không (phòng thủ chiều sâu — tập kiểm
+       * chứng vốn đã loại mục `ghiDia`).
+       */
+      oTuDo: string | null;
+      thoatCwdTheoCayThuMuc: boolean;
+      ghiDia: boolean;
+    }
   | { ok: false; ma: "CMD_NOT_VERIFY"; chiTiet: string };
 
 /**
@@ -174,7 +188,22 @@ export function laLenhKiemChung(command: unknown, goc?: string): PhanQuyetLenhKi
   if (!NHAN_KIEM_CHUNG.has(pq.muc.nhan)) {
     return { ok: false, ma: "CMD_NOT_VERIFY", chiTiet: pq.muc.nhan };
   }
-  return { ok: true, nhan: pq.muc.nhan, command: tach.argv.join(" ") };
+  /**
+   * ★★★ Đợt 3c (2026-10-17) — CHỐT CẤU TRÚC thứ hai, độc lập với tập TÊN ở trên: lệnh nhóm CÀI ĐẶT (chạm nguồn
+   * gói, chạy mã gói lúc cài) KHÔNG BAO GIỜ tự chạy, kể cả khi ai đó lỡ thêm tên của nó vào `NHAN_KIEM_CHUNG`.
+   * `repoCommandCaiDat.test.ts` §4 đo đúng ca "lỡ thêm" ấy.
+   */
+  if (pq.muc.nhom !== "hoi-kiem") {
+    return { ok: false, ma: "CMD_NOT_VERIFY", chiTiet: `${pq.muc.nhan} (nhóm ${pq.muc.nhom} — luôn cần người duyệt)` };
+  }
+  return {
+    ok: true,
+    nhan: pq.muc.nhan,
+    command: tach.argv.join(" "),
+    oTuDo: pq.oTuDo,
+    thoatCwdTheoCayThuMuc: pq.muc.thoatCwdTheoCayThuMuc,
+    ghiDia: pq.muc.ghiDia,
+  };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -312,7 +341,7 @@ export async function chayKiemChung(
   if (!execCtx) return rong("NO_EXEC_CONTEXT", null, tran);
   if (!Number.isInteger(y.luot) || y.luot < 1 || y.luot > tran) return rong("LOOP_CAP", null, tran);
 
-  const goc = phanGiaiGoc(y.projectId);
+  const goc = phanGiaiGoc(y.projectId, { id: user.id, role: user.role });
   if (!goc.ok) return rong("PROJECT_NOT_FOUND", null, tran);
   const ctx: ToolExecContext = goc.goc ? { ...execCtx, projectRoot: goc.goc } : execCtx;
   // Vắng projectId ⇒ `undefined` để `laLenhKiemChung` dùng `gocHopCat()` (đường cũ của pha B).

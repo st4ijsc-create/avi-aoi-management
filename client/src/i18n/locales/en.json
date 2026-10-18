@@ -3753,6 +3753,7 @@
       "interlockEvent": "interlock event",
       "interlockRule": "interlock rule",
       "kbCorpus": "knowledge corpus",
+      "kbEvalMaTaskSet": "code-generation evaluation task set",
       "license": "license",
       "line": "line",
       "machine": "machine",
@@ -3936,6 +3937,7 @@
       "closeProductionSession": "close production session",
       "signOffProductionSession": "supervisor sign-off production session",
       "unloadGgufModel": "unload GGUF model",
+      "doiModelLlamaServer": "switch the model running on llama-server",
       "generateText": "generate text",
       "chatCompletion": "chat completion",
       "analyzeDefect": "analyze defect",
@@ -4021,6 +4023,7 @@
       "taiAnhNenTang": "upload floor background image",
       "dungNhaXuong": "build factory layout",
       "runKbEval": "run the corpus evaluation",
+      "runKbEvalMa": "run the code-generation evaluation",
       "resumeOrchestrationRun": "resume the orchestration run",
       "buildArtifact": "build a program version",
       "requestVersionReview": "request a program version review",
@@ -4203,7 +4206,9 @@
       "secsGem": "SECS/GEM host communication",
       "secsGemLive": "SECS/GEM live dispatch",
       "gem300": "GEM300",
-      "kbEvalRuns": "Training Studio evaluation log"
+      "kbEvalRuns": "Training Studio evaluation log",
+      "kbEvalMa": "Training Studio code-generation evaluation",
+      "kbEvalMaRuns": "Training Studio code-generation evaluation log"
     },
     "action": {
       "changeMqttDeviceOfOtherScope": "change an MQTT device bound to a machine outside your scope",
@@ -4457,7 +4462,15 @@
     "DEVICE_PROTOCOL_UNSUPPORTED": "This build does not support the {{entity}} protocol.",
     "OT_COMMAND_SUPERSEDED_BY_STOP": "The waiting command was cancelled because a STOP command ({{stopKey}}) was issued — resend it if still needed.",
     "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "The waiting command was cancelled because a STOP command was issued — resend it if still needed.",
-    "OT_STOP_UNVERIFIED_QUEUE_FULL": "This stop is not a verified (pinned) STOP and too many such stops are already waiting for this device — it was refused and nothing was sent. Use the pinned STOP (or the machine's E-STOP)."
+    "OT_STOP_UNVERIFIED_QUEUE_FULL": "This stop is not a verified (pinned) STOP and too many such stops are already waiting for this device — it was refused and nothing was sent. Use the pinned STOP (or the machine's E-STOP).",
+    "TU_DONG_TAT": "Autonomous agent mode is OFF on the server (AI_CODING_TU_TRI_GHI switch). Use step-by-step approval mode, or ask an admin to enable it.",
+    "THIEU_QUYEN_THUC_THI": "Missing run/auto-write permission (ai_repo_exec) for autonomous agent mode.",
+    "THIEU_QUYEN": "Missing repository read permission (ai_repo_read) to run the agent.",
+    "DANG_CO_LUOT_CHAY": "You already have an agent run in progress — wait for it or press Stop before sending a new request.",
+    "CAU_HOI_RONG": "The request is empty.",
+    "CAU_HOI_QUA_DAI": "The request is too long for one agent run.",
+    "CHE_DO_SAI": "Invalid agent mode.",
+    "PROJECT_NOT_FOUND": "The selected project was not found (or is not in the allowed list)."
   },
   "export": {
     "reportMenu": {
@@ -13463,7 +13476,48 @@
     "providerOffline": "Offline",
     "gpuMode": "GPU Mode",
     "engineHealth": "Engine Health",
-    "embedding": "Embedding"
+    "embedding": "Embedding",
+    "doiModel": {
+      "tieuDe": "llama-server model",
+      "moTa": "Switch the main text model running on llama-server. The server checks VRAM, restarts, verifies /props and a short test generation; on failure it rolls back to the previous model.",
+      "dangTai": "Reading status…",
+      "dangChay": "Running",
+      "khongDocDuocProps": "cannot read /props",
+      "ngCanh": "Context / slots",
+      "mongDoi": "expected",
+      "nguon": "Selection source",
+      "nguonQuanTri": "admin selection",
+      "nguonEnv": "base configuration",
+      "cauHinhGoc": "base configuration",
+      "chonModel": "Choose a model",
+      "dangChayNhan": "running",
+      "nutDoi": "Switch model",
+      "canhBao": "All AI requests pause while switching (usually 1–3 minutes). Only text-generation models in the model store are listed.",
+      "daBatDau": "Model switch started — follow each step below.",
+      "sinhThuNhan": "test generation",
+      "ketQua": {
+        "dang-chay": "Switching",
+        "thanh-cong": "Succeeded",
+        "that-bai-da-quay-ve": "Failed — rolled back to previous model",
+        "that-bai-quay-ve-hong": "Failed — rollback also failed",
+        "huy-khong-doi": "Cancelled — nothing changed"
+      },
+      "buoc": {
+        "kiemLuaChon": "Validate selection",
+        "giuKhoa": "Acquire switch lock",
+        "kiemServer": "Read current /props",
+        "uocLuongVram": "Estimate VRAM",
+        "tamDungGiamSat": "Pause watchdog",
+        "choHangDoi": "Wait for running AI requests",
+        "ghiLuaChon": "Persist selection",
+        "khoiDong": "Restart llama-server",
+        "kiemProps": "Verify /props",
+        "sinhThu": "Test generation",
+        "apDung": "Apply routing",
+        "quayVe": "Roll back to previous model"
+      },
+      "xacNhan": "Switch the llama-server model? All AI requests pause while switching."
+    }
   },
   "measurementPointP1": {
     "shape": {
@@ -15363,6 +15417,20 @@
       }
     }
   },
+  "aiAgentPhanHoi": {
+    "huuIch": "Helpful",
+    "khongHuuIch": "Not good",
+    "lyDoNhan": "What was wrong? (optional)",
+    "lyDoGoiY": "e.g. wrong API, does not compile, edited the wrong file…",
+    "guiLyDo": "Send reason",
+    "daGhiLyDo": "Reason recorded.",
+    "loi": {
+      "quyen": "You are not allowed to send feedback.",
+      "khongThay": "This answer / proposal was not found (it may no longer be stored).",
+      "khongPhaiDiff": "This proposal is not a file change — it cannot be rated.",
+      "chung": "Feedback could not be saved — try again later."
+    }
+  },
   "kbStudio": {
     "title": "Training Studio",
     "subtitle": "Manage knowledge corpora, ingest documents and URLs, track ingest jobs, and preview what got ingested",
@@ -15426,7 +15494,7 @@
         "fillCorpusAria": "Fill the suggested corpus name \"{{corpus}}\" into the Corpus name field",
         "step1Note": "Clicking a suggestion only FILLS the \"Corpus name\" field below (it does not create an empty corpus) — a corpus only really exists once its first document has been ingested.",
         "currentlySelected": "Currently selected:",
-        "step1WebWarning": "For mainstream languages (C#, React, Node.js, Python, SQL): ingesting BEGINNER TUTORIALS is useless noise — the model already knows the syntax. API REFERENCE and PROJECT CONVENTIONS do help: measured 2026-09-23, the model's recurring C# error is a FORGOTTEN NAMESPACE — `reader.GetInt32(\"MaHocSinh\")` and `SqlDbType` both need `using System.Data;` (missing it ⇒ dotnet build rejects the whole file). The API reference states the `using` for every symbol. ⇒ Ingest API reference, coding standards and conventions; not tutorials.",
+        "step1WebWarning": "For mainstream languages (C#, React, Node.js, Python, SQL): ingesting BEGINNER TUTORIALS is almost certainly useless — the model already knows the syntax. API REFERENCE and PROJECT CONVENTIONS are better candidates, but NO measurement yet shows they make code better. Today a Studio corpus only reaches the web Q&A assistant and the VSCode assistant in LOCAL mode; it does NOT reach the browser coding workspace or the extension in SERVER mode. To find out whether a corpus helps code: Evaluation tab → Code eval (corpus ON/OFF).",
         "step2Title": "2. Pick files",
         "step2Accepts": "Accepts: {{formats}}",
         "step2AcceptsUrl": ", URL (paste a link in the panel on the right)",
@@ -15553,14 +15621,14 @@
         "hitHint": "Share of questions with a chunk of the expected file in the corpus top‑K.",
         "mrrHint": "Mean 1/rank of the first matching chunk (1 = always first).",
         "overThreshold": "Over {{nguong}}",
-        "overThresholdHint": "The matching chunk scores ≥ the coding assistant's Studio citation threshold — i.e. it actually enters the prompt.",
+        "overThresholdHint": "The matching chunk scores ≥ the Studio citation threshold (0.44) — the threshold the VSCode assistant in LOCAL mode uses to accept chunks into its context. The browser coding workspace does not read Studio corpora. Clearing the threshold does not prove better code — see Code eval.",
         "answer": "Answer in context",
         "answerHint": "The expected answer (regex) is present in the top‑K text — machine graded, no LLM.",
         "pipeline": "Reaches assistant",
         "pipelineHint": "After merging system KB + Studio + threshold + re-sort, the final citations include the expected file from this corpus.",
         "pipelineOff": "This run did not include the real-pipeline tier.",
         "reject": "Correct rejects ({{n}} off-corpus)",
-        "rejectHint": "Off-corpus questions where no chunk clears the threshold — noise stays out of the prompt.",
+        "rejectHint": "Off-corpus questions where no chunk clears the threshold — in the VSCode assistant in LOCAL mode, off-topic chunks would not be accepted into the context.",
         "pipelineAny": "Right source reaches assistant (any store)",
         "pipelineAnyHint": "The final citations include the expected file from ANY store — the system KB may hold a same-named copy that wins over your upload. Compare with the tile on the left to tell 'upload crowded out' from 'assistant truly lacks the source'."
       },
@@ -15578,11 +15646,52 @@
       "missingFileBadge": "file missing",
       "systemCopyBadge": "system copy"
     },
+    "evalMa": {
+      "title": "Code eval — corpus ON / OFF",
+      "desc": "Every task of the benchmark set is generated TWICE — without context, and with corpus chunks ≥ the 0.44 threshold (the way the VSCode assistant in LOCAL mode takes chunks) — then a machine compiles / runs the tests. It answers what the retrieval eval above cannot: does this corpus make code better or worse?",
+      "tat": "Code eval is OFF on the server (KB_STUDIO_EVAL_MA_ENABLED). A run executes model-generated code on the server, so it is off by default; turning it on is an administrator decision.",
+      "boBaiAria": "Task set",
+      "soLapAria": "Repetitions",
+      "soBai": "{{n}} tasks",
+      "chay": "Run code eval",
+      "huy": "Cancel",
+      "giaiThich": "Runs in the background at low priority (does not block people using the AI). Only an admin with 2FA can start / cancel. TWO MEASURES: the main verdict is computed on the tasks where the ON branch actually received ≥ 1 chunk (tasks without chunks get an identical prompt on both branches — they only add noise); at least 6 such attempts are needed, otherwise ⇒ \"Too few tasks with chunks\". The whole-set measure is still shown. \"Regressed\" only when ON scores below OFF by MORE than the noise margin: ±3/36 measured on the 12-task × 3-run set, scaled to that measure's attempt count. No ON attempt received a chunk ≥ the threshold ⇒ \"Not applicable\".",
+      "chuaCo": "No code eval runs for this corpus yet.",
+      "cut": "{{n}} cut off",
+      "dangChay": "running {{pct}} %",
+      "toanBo": "whole set: {{kl}}",
+      "doiChung": "A/A control",
+      "tapConCu": "— (older run, no such measure)",
+      "col": {
+        "thoiDiem": "Time",
+        "boBai": "Task set",
+        "tat": "OFF whole set (pass/n)",
+        "bat": "ON whole set (pass/n)",
+        "chenh": "Delta whole set (margin)",
+        "tapCoDoan": "Tasks with chunks: OFF → ON (delta, margin)",
+        "ketLuan": "Verdict"
+      },
+      "ketLuan": {
+        "tut": "REGRESSED",
+        "nang": "Improved",
+        "trong-nhieu": "Within noise",
+        "khong-ap-dung": "Not applicable",
+        "khong-do-duoc": "Not measurable",
+        "khong-du-bai-co-doan": "Too few tasks with chunks"
+      },
+      "trangThai": {
+        "dang-chay": "Running",
+        "huy": "Cancelled",
+        "loi": "Error",
+        "khong-do-duoc": "Not measurable",
+        "gian-doan": "Interrupted (server restarted mid-run)"
+      }
+    },
     "modelBuilder": {
       "title": "Model Builder",
       "desc": "Fine-tune a local model on a corpus (LoRA)",
       "comingSoon": "Coming in a later task (E3-6)",
-      "comingSoonDesc": "LoRA fine-tuning is not built yet. Documents you've ingested into a corpus are now used by the AI assistant as citation sources (labeled \"Your uploaded documents\") in its answers — a dedicated fine-tuned model is a separate future upgrade, not built yet.",
+      "comingSoonDesc": "LoRA fine-tuning is not built yet. Documents you ingest into a corpus are used as citation sources (labeled \"Your uploaded documents\") by the web Q&A assistant and the VSCode assistant in LOCAL mode — not by the browser coding workspace. Training a dedicated model is a future upgrade, not built yet.",
       "startButton": "Start fine-tune"
     },
     "kiemMay": {
@@ -18718,6 +18827,27 @@
     }
   },
   "systemHealth": {
+    "llamaWd": {
+      "title": "llama-server watchdog (main text model)",
+      "desc": "Restarts llama-server automatically when no process is listening on its port (2 consecutive 15-second checks), at most 3 times per 30 minutes. While the server is down, main-model text generation WAITS for it to come back instead of loading the model into the app.",
+      "trangThai": "Status",
+      "soLan": "Restarts (this process)",
+      "trongCuaSo": "Within the {{phut}}-minute window",
+      "lanCuoi": "Last restart",
+      "lanKiem": "Last check",
+      "lyDo": "Explanation (server)",
+      "khongDoc": "Could not read the AI machine status.",
+      "st": {
+        "song": "Alive",
+        "dangNap": "Loading model",
+        "chet": "Down",
+        "dangKhoiDongLai": "Restarting",
+        "boCuoc": "Gave up — needs a person",
+        "tamDung": "Paused (model switch)",
+        "tat": "Off",
+        "chuaKiem": "Not checked yet"
+      }
+    },
     "title": "System Health",
     "subtitle": "Real-time internal state: OT telemetry store-and-forward buffer, per-adapter HA connection supervision, and DINOv2 vision-model status. Read-only — no device write path is opened.",
     "ai": {
@@ -20464,6 +20594,14 @@
     "may": "engine",
     "engineHong": "ENGINE DOWN",
     "engineOk": "engine ok",
+    "engineKhoiDongLai": "RESTARTING MODEL",
+    "engineDangNap": "LOADING MODEL",
+    "engineTamDung": "PAUSED (MODEL SWITCH)",
+    "engineBoCuoc": "MODEL FAILED TO START",
+    "tipKhoiDongLai": "llama-server just died; the watchdog is restarting it (attempt {{lan}}, {{trongCuaSo}}/{{toiDa}} within {{phut}} min). Code generation now WAITS up to about 2 minutes and then goes through the server — the model is not loaded into the app.",
+    "tipDangNap": "llama-server is loading the model (30–90 seconds for a ~21 GB model). Code generation will wait and then continue.",
+    "tipTamDung": "The watchdog is intentionally paused (a model switch is in progress) — llama-server will not be restarted automatically.",
+    "tipBoCuoc": "llama-server failed to start after {{toiDa}} attempts within {{phut}} min — the watchdog stopped trying. Someone needs to check logs/llama-server-*.err.log and run scripts/ai/start-llama-server.ps1 again.",
     "tipMayHong": "The inference engine is NOT healthy. Every answer right now reflects the MACHINE, not the model — draw no conclusion about model quality until this turns green again.",
     "tipMayOk": "Engine running via {{duong}}. Models loaded: {{soModel}}. GPU mode: {{gpu}}.",
     "duongNgoai": "llama-server (external process)",
@@ -20528,6 +20666,7 @@
     },
     "khoi": {
       "modelSinh": "Code written by the model — may differ from the file on disk",
+      "dauRaLenh": "Output of a command the server actually ran — not model-written code",
       "bangChung": "Real bytes from disk · {{luc}}",
       "khacDia": "≠ file on disk (read {{luc}}) — if the model claims this is the CURRENT code, do not trust it",
       "khopDia": "matches the file on disk ({{luc}})"
@@ -20553,7 +20692,13 @@
         "min": "{{n}}m",
         "hour": "{{n}}h",
         "day": "{{n}}d"
-      }
+      },
+      "rename": "Rename session",
+      "renamePh": "Session name (empty = first question)",
+      "renameSave": "Save",
+      "renameFailed": "Could not rename the session.",
+      "terminalNote": "A session's Terminal/Problems log is restored only in the browser that ran the commands.",
+      "terminalRestored": "Restored {{n}} command run(s) for this session (stored in this browser)."
     },
     "ribbon": {
       "refreshTree": "Refresh file tree",
@@ -20620,7 +20765,9 @@
         "duongKhongHopLe": "Cannot browse this path (it does not exist, is not a folder, or the OS denies reading). Go up one level or pick another drive.",
         "guiThatBai": "Could not send the request to the server — details: {{chiTiet}}",
         "khac": "The server refused with code {{ma}} — report it to your system owner."
-      }
+      },
+      "moTitleMoi": "Manage projects",
+      "phanAdmin": "Administration: register an existing folder"
     },
     "title": "AI Coding Workspace",
     "subtitle": "Read code → propose diff → human review → run tests → read real errors, then keep fixing",
@@ -20815,7 +20962,8 @@
         "offUser": "The auto loop is OFF — the fix WAS written, but you must run the tests yourself. This feature is enabled by an administrator on the server — contact your administrator.",
         "error": "STOPPED by a REAL failure while running the verification command.",
         "dirty": "STOPPED because the target file has UNCOMMITTED changes of yours — the auto-write loop will NOT overwrite unsaved work. Commit (or stash) first, then retry.",
-        "kill": "STOPPED because the emergency kill-switch is tripped — the auto-write loop halts immediately. Contact your administrator to reset it."
+        "kill": "STOPPED because the emergency kill-switch is tripped — the auto-write loop halts immediately. Contact your administrator to reset it.",
+        "mainRepo": "STOPPED: the self-write loop does not run on the main repo until a restore point (checkpoint) exists. The fix was NOT written — use the manual review path, or run it on a sandbox project."
       }
     },
     "terminal": {
@@ -20859,7 +21007,9 @@
       "chat": "Chat",
       "terminalTab": "Commands & Logs",
       "problemsTab": "Problems",
-      "problemsCount": "{{n}}"
+      "problemsCount": "{{n}}",
+      "runTab": "Run & Preview",
+      "gitTab": "Git"
     },
     "problems": {
       "title": "Problems",
@@ -20895,6 +21045,321 @@
       "lop": "class",
       "kieu": "type",
       "hang": "const"
+    },
+    "agent": {
+      "nho": {
+        "tieuDe": "Memory proposal",
+        "phamViDuAn": "This project",
+        "phamViNguoiDung": "Your preference",
+        "giaiThich": "Saved only if you click Remember; it will be used as context in later runs.",
+        "nutNho": "Remember",
+        "nutBoQua": "Dismiss",
+        "daNho": "Remembered — it will be used in later runs.",
+        "daBo": "Dismissed.",
+        "loiHetHieuLuc": "This proposal has expired (the run is no longer on the server).",
+        "loiDaXuLy": "This proposal has already been handled.",
+        "loiTat": "Memory is turned off on the server — nothing saved.",
+        "loiRuiRo": "Not saved: the note looks like an instruction.",
+        "loiDay": "This project already has the maximum number of lessons — delete some first.",
+        "loiQuyen": "You do not have permission for this run.",
+        "loiKhac": "Could not save ({{ma}})."
+      },
+      "canDuyet": "Needs your approval",
+      "canhBaoDuLieu": "Content read from {{nguon}} contains instruction-like text — the agent treats it as data and does not follow it.",
+      "haTuTri": "Autonomy reduced: this run read suspicious content ({{nguon}}) — every further write/command needs your approval.",
+      "theDangNgo": "This run has read suspicious content: {{nguon}} — review carefully before approving.",
+      "cheDo": {
+        "hoi": "Ask",
+        "hoiGoiY": "Question & answer as before — never writes files on its own",
+        "nhom": "Chat mode",
+        "sua": "Agent · step-by-step approval",
+        "suaGoiY": "The agent reads, edits and runs commands over several steps — every write/command waits for your approval",
+        "tuDong": "Agent · automatic",
+        "tuDongCanhBao": "Automatic: the agent WRITES files and RUNS allow-listed commands WITHOUT asking again. Check the result and use Undo if needed.",
+        "tuDongGoiY": "Allow-listed writes/commands run on their own after a checkpoint (can be undone)"
+      },
+      "choModel": "Waiting for the model ({{n}} ahead)",
+      "coLuotDangChay": "You have an unfinished agent run.",
+      "ctx": "context {{p}}%",
+      "daBac": "Rejected.",
+      "daBacLyDo": "Rejected — reason: {{lyDo}}",
+      "daDuyet": "Approved.",
+      "daKhoiPhuc": "Restored {{n}} file(s).",
+      "dangChay": "Agent is working…",
+      "dangChoDuyet": "Waiting for your approval",
+      "dauRaLenh": "Command output (from the server)",
+      "duyet": {
+        "chayLenh": "RUN command:",
+        "doiTen": "RENAME {{tu}} → {{den}}",
+        "xoa": "DELETE file {{tep}}"
+      },
+      "guiBac": "Send rejection",
+      "hetHieuLuc": "No longer valid (the run has stopped).",
+      "hoanTac": "Undo this run",
+      "keHoach": "Plan",
+      "keHoachDem": "{{xong}}/{{tong}} done",
+      "lyDo": {
+        "hetGio": "Stopped: time limit reached.",
+        "hetLuot": "Stopped: step limit reached.",
+        "hetToken": "Stopped: token budget exhausted.",
+        "hoanThanh": "Completed.",
+        "huy": "Stopped on request.",
+        "lapLai": "Stopped: the model repeated the same action.",
+        "loiModel": "Stopped: model error.",
+        "menhLenh": "Safety stop: an instruction was found inside data the agent read."
+      },
+      "lyDoBac": "Reason for rejecting (the model will read it and try again)",
+      "lyDoBacGoiY": "E.g.: don't change the public API, only fix the internal function",
+      "maKetQua": "Code: {{ma}}",
+      "maThoat": "exit code {{ma}}",
+      "matKetNoi": "Lost the event stream — the run continues on the server.",
+      "moTep": "Open in the viewer",
+      "noiLai": "Reconnect",
+      "nutBac": "Reject",
+      "nutDuyet": "Approve",
+      "tepDaDoi": "Changed files ({{n}})",
+      "thoiBac": "Cancel",
+      "toolChuaCoKetQua": "No result yet.",
+      "toolDangChay": "running",
+      "toolLoi": "failed",
+      "toolOk": "succeeded",
+      "usage": "tokens in {{vao}} · out {{ra}}",
+      "viec": {
+        "cho": "pending",
+        "dangLam": "in progress",
+        "xong": "done"
+      },
+      "xungDot": "Conflict — NOT overwritten ({{n}} file(s) were edited again after the run):"
+    },
+    "duanCaNhan": {
+      "err": {
+        "quyen": "Your account cannot create projects yet (needs the AI command permission — ai_repo_exec). Ask an administrator.",
+        "ten": "The name must be 1–100 characters and must not contain # ; = |.",
+        "khuon": "This template does not exist on the server. Pick one from the list.",
+        "zipThieu": "No ZIP file selected.",
+        "zipHong": "The file is not a valid ZIP (or it is corrupted).",
+        "zipDuong": "The ZIP contains dangerous paths (../, drive letters, absolute paths) — the whole file was rejected, nothing was extracted.",
+        "zipSymlink": "The ZIP contains symbolic links — rejected. Re-create the archive without symlinks.",
+        "zipNhieu": "The ZIP has too many files. Remove node_modules/bin/obj and zip again.",
+        "zipLon": "The ZIP is too large once extracted (or exceeds your remaining quota).",
+        "zipBom": "The ZIP has an abnormal compression ratio (suspected zip bomb) — rejected.",
+        "zipGhi": "A file in the ZIP could not be written (same name with different letter case?).",
+        "gitTat": "Git clone is not enabled on this server (no internal git servers configured).",
+        "gitNguon": "Invalid git source. Use an https://… URL of the internal git server or an allowed folder path.",
+        "gitNgoai": "This source is not in the list of allowed internal git servers (the system runs offline).",
+        "gitClone": "Clone failed — check the URL and your access to the git server.",
+        "gitHetGio": "Clone took too long — the repository is too large or the git server is not responding.",
+        "tranSo": "You have reached the maximum number of projects. Delete one you no longer use, then try again.",
+        "tranByte": "Your storage quota is exceeded. Delete some projects (the trash keeps them 30 days and does not count toward the quota).",
+        "dangTao": "Another of your projects is being created — wait for it to finish, then try again.",
+        "goc": "The server's project root folder is misconfigured (AI_PROJECTS_ROOT) — tell an administrator.",
+        "gui": "Could not send the request to the server — details:",
+        "khongThay": "This project was not found (it may have been deleted). Reload the list.",
+        "khac": "The server refused with code {{ma}}."
+      },
+      "cach": {
+        "rong": "Empty",
+        "khuon": "From template",
+        "zip": "Import ZIP",
+        "git": "Internal git",
+        "moTa": "From description (Agent)"
+      },
+      "title": "My projects",
+      "dungLuong": "{{so}}/{{tran}} projects · {{daDung}} / {{tranByte}}",
+      "loiTai": "Could not load your projects — this is an ERROR, not an empty list.",
+      "dangTai": "Loading…",
+      "rong": "You have no projects yet — create one below.",
+      "doiTen": "Rename",
+      "luuTen": "Save name",
+      "huy": "Cancel",
+      "mo": "Open this project",
+      "xoa": "Delete (to trash for 30 days)",
+      "taoMoi": "New project",
+      "cachTao": "How to create",
+      "oTen": "Project name",
+      "oTenGoiY": "e.g. AOI machine log reader",
+      "oKhuon": "Template",
+      "oZip": "ZIP file (max 50 MB; executables and secrets are skipped)",
+      "oGit": "Internal git server URL (or an allowed folder)",
+      "oMoTa": "Project description — creates an empty project, then opens Agent mode with this description",
+      "oMoTaGoiY": "e.g. A C# console app that reads AOI result CSV files and prints the defect rate per shift",
+      "nutTao": "Create",
+      "daXoa": "Project moved to the trash (kept for 30 days).",
+      "boQua": "Skipped {{n}} disallowed files (executables / secrets / .git / node_modules).",
+      "daTao": "Project created — opening it.",
+      "hoiXoa": "Delete this project? The folder goes to the trash and is permanently removed after 30 days.",
+      "moTaDialog": "Create and open your own projects on the server — no existing folder needed. Only you (and administrators) can see personal projects."
+    },
+    "chayUD": {
+      "tieuDe": "Run & Preview",
+      "caiPhuThuoc": "Install dependencies",
+      "caiTip": "Proposes the install command from the project manifest — goes through the review card like every command; never runs by itself.",
+      "khongCoLenhCai": "No manifest recognised (package.json / requirements.txt / *.csproj).",
+      "chay": "Run",
+      "dung": "Stop",
+      "lenhChay": "Run command: {{lenh}} (from {{nguon}})",
+      "khongChayDuoc": "Cannot run [{{ma}}]: {{chiTiet}}",
+      "repoChinh": "The platform repo cannot be run here — its dev command is this very server.",
+      "cong": "Port {{cong}}",
+      "chuaNgheCong": "The app is not listening on port {{cong}} after 2 minutes — does the dev script read the PORT variable?",
+      "chuaXacNhanChet": "Stop was issued but the process exit was NOT observed — the port is still held.",
+      "nhatKy": "Log",
+      "nhatKyCat": "… (head truncated)",
+      "nhatKyRong": "No log yet.",
+      "xemTruoc": "Preview",
+      "moTabMoi": "Open in new tab",
+      "xemTruocTat": "Preview is OFF ({{lyDo}}) — an admin sets AI_PREVIEW_PROXY_PORT to enable it (proxy on a separate port, origin isolated from the app).",
+      "xemTruocCanHostRieng": "Preview is OFF ({{lyDo}}): the proxy must live on a HOST that is a different site from the app — cookies are not isolated by port, so on the same host preview code could write the app's session cookie. An admin sets AI_PREVIEW_PUBLIC_ORIGIN=http://127.0.0.2:<proxy port> and AI_PREVIEW_PROXY_HOST=127.0.0.2 (dev machine; on a LAN: a separate IP/domain), then opens the app via a different host.",
+      "xemTruocCho": "The preview frame appears once the app is listening.",
+      "xemTruocAnToan": "The frame runs on a SEPARATE ORIGIN (sandboxed) — it does not share your login session.",
+      "nguoiKhacDangChay": "Someone else is running this project.",
+      "nhanRoi": "Stops automatically after 30 minutes without preview traffic.",
+      "loiDeXuat": "Could not create a review card for the command [{{ma}}].",
+      "trangThai": {
+        "chuaChay": "Not running",
+        "dang-khoi-dong": "Starting",
+        "dang-chay": "Running",
+        "dang-dung": "Stopping",
+        "da-dung": "Stopped",
+        "loi": "Exited with error (code {{ma}})"
+      },
+      "lyDoDung": {
+        "nguoi-dung": "stopped by user",
+        "nhan-roi": "auto-stopped after 30 idle minutes",
+        "tat-may": "stopped by server shutdown",
+        "nghe-sai-dia-chi": "STOPPED: the app listened on 127.0.0.1/::1 instead of the assigned HOST address (same site as the main app) — make it listen on process.env.HOST"
+      }
+    },
+    "git": {
+      "chiDocRepoChinh": "Platform repository — status/diff/log only; no commits or branch changes from the UI.",
+      "chiDocWorktree": "This project is a worktree of another repository — view only.",
+      "thieuQuyen": "You need ai_repo_exec to commit / create / switch branches.",
+      "lamMoi": "Refresh",
+      "dangTai": "Reading git status…",
+      "thayDoi": "Changes ({{n}})",
+      "sach": "Working tree clean — nothing to commit.",
+      "chonTatCa": "Select all",
+      "soAn": "{{n}} file(s) hidden by sandbox policy (e.g. .env).",
+      "catBot": "List truncated.",
+      "thongDiepPh": "Commit message…",
+      "goiYTip": "The model reads the selected files' diff and suggests a message — it only fills text, it does not commit.",
+      "dangGoiY": "Suggesting…",
+      "goiY": "Suggest message",
+      "commit": "Commit {{n}} file(s)",
+      "chonDeXem": "Click a file name to view its diff.",
+      "dangTaiDiff": "Reading diff…",
+      "nhiPhan": "Binary file or non-viewable extension — no diff shown.",
+      "diffQuaLon": "File too large to show a diff (> 64 KiB).",
+      "daChe": "Some secret-like values were masked in this diff.",
+      "nhanh": "Branch",
+      "khongNhanh": "(detached HEAD)",
+      "chonNhanh": "Choose branch",
+      "chuyen": "Switch",
+      "nhanhMoiPh": "new-branch-name",
+      "tao": "Create",
+      "tenNhanhSai": "Branch names use letters, digits, . _ / - and must not start with - or .",
+      "canSachDeDoiNhanh": "Commit or discard changes before creating/switching branches.",
+      "log": "Recent history",
+      "logRong": "No commits yet.",
+      "daCommit": "Committed {{n}} file(s) ({{hash}}).",
+      "daTaoNhanh": "Created and switched to branch {{ten}}.",
+      "daChuyenNhanh": "Switched to branch {{ten}}.",
+      "loi": {
+        "PERMISSION_DENIED": "You lack permission for this action (read: ai_repo_read · git write: ai_repo_exec).",
+        "PROJECT_NOT_FOUND": "Project not found (or not yours).",
+        "GIT_CHUA_SAN_SANG": "The server cannot run git safely yet (managed projects folder AI_PROJECTS_ROOT is invalid) — tell your admin.",
+        "GIT_KHONG_PHAI_REPO": "The project folder is not its own git repository (no .git at the project root).",
+        "GIT_REPO_CHINH_CHI_DOC": "This is the platform repository — read-only; no commits or branch changes from the UI.",
+        "GIT_WORKTREE_CHI_DOC": "The project is a worktree of another repository — read-only.",
+        "GIT_CAY_BAN": "There are uncommitted changes — commit or discard them before creating/switching branches.",
+        "GIT_TEN_NHANH_SAI": "Invalid branch name.",
+        "GIT_NHANH_DA_CO": "This branch already exists.",
+        "GIT_NHANH_KHONG_CO": "No such branch.",
+        "GIT_DUONG_KHONG_HOP_LE": "The file is no longer in the change list — refresh the Git panel.",
+        "GIT_KHONG_CO_TEP": "No file selected.",
+        "GIT_QUA_NHIEU_TEP": "Too many files for one commit (max 200).",
+        "GIT_THONG_DIEP_RONG": "Commit message is empty.",
+        "GIT_TEP_BI_CHAN": "This file cannot be viewed (blocked by sandbox policy).",
+        "GIT_HET_GIO": "The git command timed out.",
+        "GIT_THAT_BAI": "The git command failed.",
+        "KHONG_CO_THAY_DOI": "No changes to suggest a message for.",
+        "MODEL_LOI": "The model could not answer (AI engine busy or down).",
+        "MODEL_RONG": "The model returned nothing — retry or write it yourself.",
+        "khac": "Git panel error: {{ma}}"
+      }
+    },
+    "tep": {
+      "taoTep": "New file",
+      "taoThuMuc": "New folder",
+      "doiTen": "Rename the open file",
+      "xoa": "Delete the open file",
+      "thieuQuyen": "write-proposal permission needed",
+      "duongTep": "New file path (relative to project root)",
+      "duongThuMuc": "New folder (relative to project root)",
+      "duongMoi": "New path",
+      "tepDau": "First file in the folder (git does not keep empty folders)",
+      "loi": {
+        "rong": "Enter a file name.",
+        "tuyet_doi": "Use a RELATIVE path inside the project.",
+        "thoat": "Do not use '..', '.' or empty segments.",
+        "ky_tu": "The path contains invalid characters."
+      },
+      "quaThe": "Creates an approval card — files change only after you confirm.",
+      "deXuat": "Propose",
+      "huy": "Cancel",
+      "loiDeXuat": "Could not create the proposal [{{ma}}].",
+      "xacNhanXoa": "Propose DELETING {{tep}}? The file is deleted only after you confirm on the approval card."
+    },
+    "triNho": {
+      "nut": "Project memory (lessons)",
+      "tieuDe": "Project memory",
+      "moTa": "Your lessons for project {{duAn}} — the AI adds relevant ones to later questions.",
+      "giaiThich": "Each lesson is one short sentence (≤ 400 chars) about project conventions. Content is scanned for prompt injection and secrets are masked before saving.",
+      "coTat": "AI_CODING_LESSONS is OFF — lessons are saved but NOT added to prompts.",
+      "themPh": "Add a lesson, e.g. The project uses bcryptjs, not crypto, for passwords",
+      "them": "Add",
+      "dem": "{{n}}/{{tran}}",
+      "dangTai": "Loading lessons…",
+      "rong": "No lessons for this project yet.",
+      "luu": "Save",
+      "huy": "Cancel",
+      "sua": "Edit lesson",
+      "xoa": "Delete lesson",
+      "xacNhanXoa": "Delete this lesson? This cannot be undone.",
+      "ruiRoThap": "low risk",
+      "ruiRoThapTip": "The scanner saw a weak signal — the lesson is kept and flagged for audit.",
+      "phamVi": "Lessons are yours alone on this project — others cannot read or edit them.",
+      "note": {
+        "PERMISSION_DENIED": "Missing ai_repo_read permission.",
+        "PROJECT_NOT_FOUND": "Project not found.",
+        "LESSON_RISKY": "Lesson rejected: it contains instruction-like text (prompt-injection risk).",
+        "LESSON_EMPTY": "The lesson is empty after cleaning.",
+        "LESSON_FULL": "Lesson limit reached for this project — delete some first.",
+        "LESSON_DUPLICATE": "This lesson already exists — moved to the top.",
+        "NOT_FOUND": "Lesson not found (deleted?).",
+        "SAVE_FAILED": "Could not save (database refused).",
+        "khac": "Could not complete [{{ma}}]."
+      }
+    },
+    "anh": {
+      "quaLon": "Image too large (max 4 MB).",
+      "khongPhaiAnh": "Only PNG/JPEG/WebP/GIF/BMP images are accepted.",
+      "nhan": "Text extracted from the error screenshot (OCR, confidence {{p}}%{{cat}}):",
+      "daCat": ", truncated",
+      "daChen": "Inserted the extracted text — review it before sending.",
+      "dangDoc": "Reading text in the image…",
+      "goiY": "paste/drop an error screenshot to extract its text (OCR)",
+      "loi": {
+        "PERMISSION_DENIED": "Missing ai_repo_read permission.",
+        "ANH_QUA_LON": "Image too large (max 4 MB).",
+        "KHONG_PHAI_ANH": "The file is not a PNG/JPEG/WebP/GIF/BMP image.",
+        "OCR_TAT": "OCR is disabled on the server (OCR_ENGINE_ENABLED) — tell your admin.",
+        "OCR_THIEU_MODEL": "The server is missing the OCR models (models/ocr) — tell your admin.",
+        "OCR_DANG_BAN": "Another image is being read — wait for it to finish.",
+        "OCR_HET_GIO": "Reading the image timed out.",
+        "OCR_KHONG_DOC_DUOC": "Could not read text in the image.",
+        "OCR_RONG": "No readable text in the image."
+      }
     }
   },
   "masterDataCol": {
@@ -22253,5 +22718,78 @@
     "lateDialogTitle": "Mark late write result #{{id}} as reviewed?",
     "lateDialogDesc": "The device returned a REAL result for this write AFTER it was recorded as 'outcome unknown'. The result is kept as evidence (nothing is edited or deleted). Check the real value on the device; the review is audited with your note and releases the adapter's ownership-change hold.",
     "lateReviewed": "Late result review recorded"
+  },
+  "aiGatewayToken": {
+    "title": "AI gateway tokens & devices",
+    "subtitle": "Let the VSCode extension call the /v1 gateway on your behalf — each token has scopes, an expiry and can be revoked.",
+    "device": {
+      "title": "Confirm a device",
+      "desc": "Enter the code shown by the extension. Only approve if you just started the sign-in in VSCode yourself.",
+      "codeLabel": "Device code",
+      "deviceName": "Device",
+      "scopes": "Requested scopes",
+      "expiresIn": "Code valid for {{s}} more seconds",
+      "warning": "Approving issues a 30-day token (chat + code completion only) tied to your account. Every request from the extension is recorded under your name.",
+      "approve": "Approve",
+      "deny": "Deny",
+      "approved": "Approved. Return to VSCode — the extension will pick up the token automatically.",
+      "denied": "Denied. The device received no token.",
+      "phishingWarning": "Approve ONLY if YOU just started the sign-in in VSCode on your own machine and typed this code yourself. If someone sent you this code or link — DENY it: that is how your access gets stolen.",
+      "requestedFrom": "Requested from IP",
+      "userAgent": "Requesting software",
+      "requestedAt": "Requested at",
+      "unknown": "unknown",
+      "ipMismatch": "This request came from a DIFFERENT IP address than the browser you are using. Approve only if your VSCode is running on that machine.",
+      "confirmMine": "I confirm I just started the sign-in in VSCode myself and the code above matches the one VSCode is showing."
+    },
+    "tokens": {
+      "title": "My tokens",
+      "desc": "A token is shown in full only once, when created; the server stores only its hash.",
+      "empty": "No tokens yet.",
+      "name": "Name",
+      "prefix": "Prefix",
+      "scopes": "Scopes",
+      "status": "Status",
+      "expires": "Expires",
+      "lastUsed": "Last used",
+      "never": "Never",
+      "revoke": "Revoke",
+      "revoked": "Token revoked."
+    },
+    "create": {
+      "name": "Token name (e.g. VSCode laptop)",
+      "days": "Days",
+      "submit": "Create token",
+      "once": "Copy the token now — it will NOT be shown again.",
+      "copied": "Token copied."
+    },
+    "scope": {
+      "chat": "Chat / agent",
+      "fim": "Code completion (FIM)",
+      "embed": "Embeddings",
+      "apply": "File-apply audit (extension)"
+    },
+    "source": {
+      "web": "created on web",
+      "thiet-bi": "device sign-in"
+    },
+    "status": {
+      "hieu-luc": "Active",
+      "het-han": "Expired",
+      "thu-hoi": "Revoked"
+    },
+    "errors": {
+      "PERMISSION_DENIED": "You do not have AI coding access (ai_repo_read).",
+      "CAN_PHIEN_WEB": "This action requires a web sign-in session. Please sign in again.",
+      "QUA_TRAN": "You have too many active tokens. Revoke some first.",
+      "DB_UNAVAILABLE": "The server could not store the token right now. Try again later.",
+      "NOT_FOUND": "Token not found (or already revoked).",
+      "RATE_LIMITED": "Too many code attempts. Wait a minute and try again.",
+      "khong-ton-tai": "Unknown code. Check the code shown in VSCode.",
+      "het-han": "The code has expired. Start the sign-in again from VSCode.",
+      "da-xu-ly": "This code has already been handled.",
+      "csdl": "The server is temporarily unavailable. Try again later.",
+      "CAN_XAC_NHAN": "Tick the confirmation that you yourself just started the sign-in in VSCode before approving."
+    }
   }
 }

@@ -6,6 +6,8 @@ import sharp from "sharp";
 // LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
 // `await import()` vừa hỏng. Xem `vramRefusalSignal.ts` để biết vì sao so TÊN, không `instanceof`.
 import { isVramRefusal } from "./vram/vramRefusalSignal";
+// Đợt 0.5 — cổng /api/tags trước khi gọi model Ollama (không lùi im lặng vào model không có).
+import { ollamaDungDuoc } from "./ai/ollamaLui";
 import path from "path";
 import fs from "fs";
 import { getDb } from "../db/connection";
@@ -233,11 +235,27 @@ export function parseVectorLiteral(raw: string | null | undefined): number[] {
 // ─── Text-of-image embedding pipeline (Ollama mxbai-embed-large, 1024-dim) ─────
 
 /**
+ * Ollama vắng model nhúng / không chạy — caller BẮT và lùi về tìm theo metadata (không tới tRPC dưới dạng câu chữ).
+ * Lớp có `code` để máy đọc thay `Error` thô (rawErrorCensus F3); message giữ nguyên văn (mang tên model + biến môi trường).
+ */
+export class LoiOllamaNhungVang extends Error {
+  readonly code = "OLLAMA_EMBED_UNAVAILABLE" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "LoiOllamaNhungVang";
+  }
+}
+
+/**
  * Embed text qua Ollama /api/embed (mxbai-embed-large), trả vector đã L2-normalize.
  * Thống nhất pipeline với knowledge base. Ném lỗi nếu Ollama không khả dụng →
  * caller fallback sang metadata search.
  */
 export async function embedTextOllama(text: string): Promise<number[]> {
+  if (!(await ollamaDungDuoc(OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, "embed"))) {
+    // Ném như mọi lỗi Ollama khác (caller lùi về metadata) — nhưng nói ĐÚNG lý do, không POST mù.
+    throw new LoiOllamaNhungVang(`Ollama không có model nhúng "${OLLAMA_EMBED_MODEL}" (hoặc không chạy) — đặt OLLAMA_EMBED_MODEL`);
+  }
   const res = await fetch(`${OLLAMA_BASE_URL}/api/embed`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

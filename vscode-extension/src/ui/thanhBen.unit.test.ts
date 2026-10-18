@@ -122,6 +122,9 @@ describe("thanh bên — ĐỢT F / TASK 3: view/title (Chat mới + Lịch sử
     "aviAiLocal.doiMayChu",
     "aviAiLocal.mcpServers",
     "aviAiLocal.nhoDieuNay",
+    // ★★★ ĐỢT 4B — đăng nhập device flow (token /v1 cho agent) + hoàn tác lượt chạy agent.
+    "aviAiLocal.dangNhapThietBi",
+    "aviAiLocal.hoanTacLuotChay",
   ];
   const TAM_LENH_VIEW_TITLE = [...BA_LENH_VIEW_TITLE, ...LENH_MENU_PHU];
 
@@ -161,7 +164,8 @@ describe("thanh bên — ĐỢT F / TASK 3: view/title (Chat mới + Lịch sử
         expect(co, `thiếu mục view/title cho lệnh "${lenh}" ở view "${view}"`).toBe(true);
       }
     }
-    expect(dsMenu()).toHaveLength(16);
+    // ★★★ ĐỢT 4B — +2 lệnh × 2 view id = 20.
+    expect(dsMenu()).toHaveLength(20);
   });
 
   it("★★★ MỐI NỐI 5 — mọi `command` trong view/title THẬT SỰ được `registerCommand(...)` trong extension.ts", () => {

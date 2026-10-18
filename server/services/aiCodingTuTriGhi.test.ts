@@ -19,7 +19,10 @@
  * thiểu: `executeDecision`/`confirmAction` (không sinh tiến trình, không ghi đĩa) và `db/connection`
  * (kill-switch đọc bảng ai_system_config) + sổ audit.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const h = vi.hoisted(() => ({
   /** Mọi quyết định đi qua `executeDecision` — bản kiểm đếm của §1. */
@@ -112,15 +115,24 @@ import {
   tranTuTriGhi,
   laTepTest,
   LY_DO_TU_TRI_GHI,
+  gocRepoChinh,
+  laGhiVaoRepoChinh,
   type SinhBanVa,
 } from "./aiCodingTuTriGhi";
-import { laLenhKiemChung } from "./aiCodingVerify";
+import { chayKiemChung, laLenhKiemChung } from "./aiCodingVerify";
 import { DANH_SACH_TRANG } from "./aiLocalTools/repoCommandSandbox";
 
-const ENV = ["AI_CODING_AUTOLOOP", "AI_CODING_AUTOLOOP_MAX", "AI_CODING_TU_TRI_GHI", "AI_CODING_TU_TRI_GHI_MAX", "AI_REPO_SANDBOX_ROOTS"] as const;
+const ENV = ["AI_CODING_AUTOLOOP", "AI_CODING_AUTOLOOP_MAX", "AI_CODING_TU_TRI_GHI", "AI_CODING_TU_TRI_GHI_MAX", "AI_REPO_SANDBOX_ROOTS", "AI_CODING_TU_TRI_GHI_REPO_CHINH"] as const;
 const NGUOI = { id: 7, role: "admin", name: "T" };
-function ctx() {
-  return { user: NGUOI, lang: "vi" as const };
+/**
+ * ★ Q1 (2026-10-14) — gốc dự án HỘP CÁT ở thư mục TẠM, NGOÀI repo chính. Trước Q1 các ca dưới đây
+ * chạy với gốc mặc định (= cwd = repo chính) vì khi ấy vị trí gốc không ảnh hưởng gì. Nay vòng tự ghi
+ * TỪ CHỐI repo chính (ngoài `sandbox-projects/`) ⇒ các ca đo hàng rào KHÁC phải đứng trên một dự án
+ * hộp cát thật, nếu không chúng đỏ vì hàng rào Q1 chứ không vì thứ chúng đo. §8 đo riêng Q1.
+ */
+const GOC_HOP_CAT = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "tu-tri-ghi-hopcat-")));
+function ctx(projectRoot: string | null = GOC_HOP_CAT) {
+  return { user: NGUOI, lang: "vi" as const, ...(projectRoot ? { projectRoot } : {}) };
 }
 /** SinhBanVa giả: trả một bản vá cố định cho mọi lượt (khác nhau qua `luot` để không bị "lặp diff"). */
 const banVaGia: SinhBanVa = async (_loi, luot) => ({ path: "src/Calculator.cs", original: "old", modified: `new-${luot}` });
@@ -144,6 +156,13 @@ beforeEach(() => {
 });
 afterEach(() => {
   for (const k of ENV) delete process.env[k];
+});
+afterAll(() => {
+  try {
+    fs.rmSync(GOC_HOP_CAT, { recursive: true, force: true });
+  } catch {
+    /* best-effort */
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
@@ -385,5 +404,154 @@ describe("§7 — laTepTest: tệp TEST ⇒ true (cờ audit), tệp NGUỒN ⇒
   it("★★ null/undefined ⇒ false (không ném)", () => {
     expect(laTepTest(null)).toBe(false);
     expect(laTepTest(undefined)).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ Q1 (2026-10-14, quyết định chủ dự án) — vòng TỰ GHI KHÔNG chạy trên REPO CHÍNH cho tới khi có
+ * điểm khôi phục (Đợt 1). Quy tắc theo ĐƯỜNG TỆP ĐÍCH THẬT (realpath), không theo id dự án:
+ *   đích ở TRONG repo chính VÀ KHÔNG dưới `<repo chính>/sandbox-projects/` ⇒ từ chối.
+ *
+ * ĐỘT BIẾN PHẢI BẮT:
+ *   • gỡ cổng ⇒ ca "repo chính bị từ chối" ĐỎ (có apply_diff).
+ *   • cổng so theo id "repo" thay vì đường ⇒ ca "gốc = repo/server" + ca "gốc viết HOA" + ca junction ĐỎ.
+ *   • cổng chặn cả sandbox-projects ⇒ ca bộ đo agentic (projectId "repo" + sandbox-projects/…) ĐỎ.
+ *   • so tiền tố chuỗi không chuẩn hoá `..` ⇒ ca `sandbox-projects/../server` ĐỎ.
+ *   • bỏ cờ ghi đè ⇒ ca ghi đè ĐỎ.
+ */
+describe("§8 — Q1: repo chính KHÔNG tự ghi khi chưa có checkpoint (theo đường tệp đích)", () => {
+  const REPO = gocRepoChinh();
+  const coApplyDiff = () => h.quyetDinh.some((q) => q.tool === "apply_diff");
+
+  it("★ gốc repo chính = thư mục có .git, đi lên từ cwd (ở lưới: gốc worktree này)", () => {
+    expect(fs.existsSync(path.join(REPO, ".git")), REPO).toBe(true);
+    expect(path.relative(REPO, process.cwd()).startsWith(".."), "cwd phải nằm trong repo chính").toBe(false);
+  });
+
+  it("★★★ gốc mặc định (= repo chính) + tệp mã server ⇒ REPO_CHINH_CHUA_CHECKPOINT, 0 apply_diff", async () => {
+    const r = await chayLuotTuTriGhi({ path: "server/x.ts", original: "a", modified: "b", luot: 1 }, ctx(null), NGUOI, "vi");
+    expect(r.ok).toBe(false);
+    expect(r.ma).toBe("REPO_CHINH_CHUA_CHECKPOINT");
+    expect(coApplyDiff(), "bị chặn TRƯỚC khi đề xuất").toBe(false);
+    expect(h.confirmNhan.length).toBe(0);
+  });
+
+  it("★★★ projectId 'repo' (danh sách trắng trỏ repo chính) ⇒ từ chối", async () => {
+    process.env.AI_REPO_SANDBOX_ROOTS = `repo=Repo chinh|${REPO}`;
+    const r = await chayLuotTuTriGhi({ projectId: "repo", path: "client/src/App.tsx", original: "a", modified: "b", luot: 1 }, ctx(null), NGUOI, "vi");
+    expect(r.ma).toBe("REPO_CHINH_CHUA_CHECKPOINT");
+    expect(coApplyDiff()).toBe(false);
+  });
+
+  it("★★★ xác định bằng ĐƯỜNG, không bằng id: dự án gốc = <repo>/server ⇒ vẫn từ chối", async () => {
+    const r = await chayLuotTuTriGhi({ path: "services/x.ts", original: "a", modified: "b", luot: 1 }, ctx(path.join(REPO, "server")), NGUOI, "vi");
+    expect(r.ma).toBe("REPO_CHINH_CHUA_CHECKPOINT");
+  });
+
+  it.skipIf(process.platform !== "win32")("★★ Windows: gốc viết HOA vẫn nhận ra là repo chính (FS không phân biệt hoa/thường)", async () => {
+    const r = await chayLuotTuTriGhi({ path: "server/x.ts", original: "a", modified: "b", luot: 1 }, ctx(REPO.toUpperCase()), NGUOI, "vi");
+    expect(r.ma).toBe("REPO_CHINH_CHUA_CHECKPOINT");
+  });
+
+  it("★★★ `sandbox-projects/../server/x.ts` (thoát bằng ..) ⇒ từ chối", async () => {
+    const r = await chayLuotTuTriGhi({ path: "sandbox-projects/../server/x.ts", original: "a", modified: "b", luot: 1 }, ctx(null), NGUOI, "vi");
+    expect(r.ma).toBe("REPO_CHINH_CHUA_CHECKPOINT");
+    expect(coApplyDiff()).toBe(false);
+  });
+
+  it("★★ junction/symlink trong dự án hộp cát trỏ vào repo chính ⇒ từ chối (so realpath)", async (c) => {
+    const lien = path.join(GOC_HOP_CAT, "lien-repo");
+    try {
+      if (!fs.existsSync(lien)) fs.symlinkSync(path.join(REPO, "server"), lien, "junction");
+    } catch {
+      c.skip();
+      return;
+    }
+    const r = await chayLuotTuTriGhi({ path: "lien-repo/x.ts", original: "a", modified: "b", luot: 1 }, ctx(), NGUOI, "vi");
+    expect(r.ma).toBe("REPO_CHINH_CHUA_CHECKPOINT");
+  });
+
+  it("★★★ BỘ ĐO AGENTIC: projectId repo + tệp dưới sandbox-projects/ ⇒ VẪN được tự ghi", async () => {
+    process.env.AI_REPO_SANDBOX_ROOTS = `repo=Repo chinh|${REPO}`;
+    const r = await chayLuotTuTriGhi({ projectId: "repo", path: "sandbox-projects/agentic-demo/src/kho.mjs", original: "a", modified: "b", luot: 1 }, ctx(null), NGUOI, "vi");
+    expect(r.ma).toBeNull();
+    expect(r.ok).toBe(true);
+    expect(coApplyDiff()).toBe(true);
+  });
+
+  it("★★★ dự án hộp cát đăng ký (gốc <repo>/sandbox-projects/…) ⇒ được tự ghi", async () => {
+    const r = await chayLuotTuTriGhi({ path: "src/Calc.cs", original: "a", modified: "b", luot: 1 }, ctx(path.join(REPO, "sandbox-projects", "csharp-demo")), NGUOI, "vi");
+    expect(r.ok).toBe(true);
+  });
+
+  it("★★★ dự án ngoài repo chính (thư mục tạm) ⇒ được tự ghi", async () => {
+    const r = await chayLuotTuTriGhi({ path: "src/Calc.cs", original: "a", modified: "b", luot: 1 }, ctx(), NGUOI, "vi");
+    expect(r.ok).toBe(true);
+  });
+
+  it("★★★ cờ ghi đè AI_CODING_TU_TRI_GHI_REPO_CHINH=1 ⇒ repo chính được tự ghi; giá trị lạ ⇒ vẫn chặn", async () => {
+    process.env.AI_CODING_TU_TRI_GHI_REPO_CHINH = "true";
+    const r0 = await chayLuotTuTriGhi({ path: "server/x.ts", original: "a", modified: "b", luot: 1 }, ctx(null), NGUOI, "vi");
+    expect(r0.ma).toBe("REPO_CHINH_CHUA_CHECKPOINT");
+    process.env.AI_CODING_TU_TRI_GHI_REPO_CHINH = "1";
+    const r = await chayLuotTuTriGhi({ path: "server/x.ts", original: "a", modified: "b", luot: 1 }, ctx(null), NGUOI, "vi");
+    expect(r.ok).toBe(true);
+    expect(coApplyDiff()).toBe(true);
+  });
+
+  it("★★★ trong VÒNG: dừng `repo_chinh_chua_checkpoint`, 0 lượt ghi confirm, sổ WORM khai mã từ chối", async () => {
+    const banVaServer: SinhBanVa = async () => ({ path: "server/x.ts", original: "a", modified: "b" });
+    const r = await chayVongTuTriGhi({ cauHoi: CAU }, ctx(null), NGUOI, "vi", banVaServer);
+    expect(r.batDau).toBe(true);
+    expect(r.lyDo).toBe("repo_chinh_chua_checkpoint");
+    expect(h.confirmNhan.some((c) => c.actionId === "ap-1"), "0 lượt ghi được xác nhận").toBe(false);
+    expect(h.auditRows.length, "lượt bị từ chối vẫn có hàng WORM").toBe(1);
+    const md = (h.auditRows[0]!.details as { metadata: Record<string, unknown> }).metadata;
+    expect(md.tu_choi).toBe("REPO_CHINH_CHUA_CHECKPOINT");
+    expect(md.path).toBe("server/x.ts");
+  });
+
+  it("★★ lượt ghi THÀNH CÔNG ⇒ sổ WORM `tu_choi: null`", async () => {
+    h.runSeq = [{ out: "Failed: 2, Passed: 4", exit: 1 }, { out: "Passed!  - Failed: 0, Passed: 6", exit: 0 }];
+    await chayVongTuTriGhi({ cauHoi: CAU }, ctx(), NGUOI, "vi", banVaGia);
+    const md = (h.auditRows[0]!.details as { metadata: Record<string, unknown> }).metadata;
+    expect(md.tu_choi).toBeNull();
+  });
+
+  it("★★ vị từ thuần: bảng chân trị", () => {
+    expect(laGhiVaoRepoChinh(REPO, "server/a.ts")).toBe(true);
+    expect(laGhiVaoRepoChinh(REPO, "package.json")).toBe(true);
+    expect(laGhiVaoRepoChinh(REPO, "sandbox-projects/x/a.ts")).toBe(false);
+    expect(laGhiVaoRepoChinh(REPO, "sandbox-projects"), "chính thư mục sandbox-projects không phải tệp dự án hộp cát").toBe(true);
+    expect(laGhiVaoRepoChinh(REPO, "sandbox-projectsX/a.ts"), "tiền tố CHUỖI không đủ — phải là ĐOẠN").toBe(true);
+    expect(laGhiVaoRepoChinh(GOC_HOP_CAT, "src/a.ts")).toBe(false);
+    expect(laGhiVaoRepoChinh(GOC_HOP_CAT, path.join(REPO, "server", "a.ts")), "đường tuyệt đối vào repo").toBe(true);
+  });
+
+  it("★★★ ĐƯỜNG DUYỆT TAY không đổi: bước CHẠY (chayKiemChung) trên repo chính vẫn chạy", async () => {
+    const r = await chayKiemChung({ cauHoi: CAU, luot: 1 }, ctx(null), NGUOI, "vi");
+    expect(r.ok).toBe(true);
+  });
+
+  it("★★★ ĐƯỜNG DUYỆT TAY không đổi: cổng Q1 chỉ được gọi từ vòng tự ghi (census nguồn)", () => {
+    const goc = path.resolve(__dirname);
+    const nguoiDung: string[] = [];
+    const duyet = (d: string) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) {
+          if (e.name !== "node_modules") duyet(p);
+        } else if (/\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name)) {
+          const t = fs.readFileSync(p, "utf8");
+          if (/laGhiVaoRepoChinh|tuTriGhiRepoChinhDuoc/.test(t)) nguoiDung.push(path.relative(goc, p).split(path.sep).join("/"));
+        }
+      }
+    };
+    duyet(goc);
+    // ★ Đợt 1 · T4 (2026-10-17) — `ai/agent/boThucThiMayChu.ts`: chế độ `tu-dong` của vòng agent máy chủ là MỘT
+    //   cửa TỰ GHI nữa (confirm `{reason:"AI_AGENT_TU_DONG"}`, không người bấm) ⇒ nó PHẢI gọi cổng Q1. Chế độ `sua`
+    //   (duyệt tay từng lượt) của cùng tệp KHÔNG gọi cổng — xem nhánh `ctx.cheDo === "tu-dong"` ở đó.
+    expect(nguoiDung.sort()).toEqual(["ai/agent/boThucThiMayChu.ts", "ai/autonomyPolicy.ts", "aiCodingTuTriGhi.ts"]);
   });
 });

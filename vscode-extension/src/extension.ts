@@ -1,5 +1,6 @@
 /**
- * Điểm vào extension "AI Local". ĐỢT A: chỉ đọc — không có bất kỳ đường ghi tệp nào.
+ * Điểm vào extension "AI Local". Đường ghi DUY NHẤT: `ui/apBanVa.ts` (census canh). ĐỢT 4B: lõi agent dùng chung
+ * (`ui/phienAgent.ts`) + đăng nhập device flow cho cổng `/v1`.
  */
 import * as vscode from "vscode";
 import { dangNhap } from "./mang/dangNhap";
@@ -20,6 +21,55 @@ import { chayQuanLyMcpNgoai } from "./ui/mcpQuanLy";
 // ★★★ ĐỢT H / TASK H3 — bộ nhớ dài hạn: lệnh "Nhớ điều này" (B5, nhánh người dùng chủ động) + bảng
 // xem/xoá (B2). Xem docblock `ui/boNhoQuanLy.ts`.
 import { BoNhoQuanLy, chayNhoDieuNay } from "./ui/boNhoQuanLy";
+// ★★★ ĐỢT 4B — đăng nhập DEVICE FLOW lấy token cổng /v1 cho lõi agent (token chỉ ở SecretStorage).
+import { dangNhapThietBi, thuHoiTokenCuaMinh } from "./mang/thietBi";
+import { KHOA_THONG_TIN_TOKEN, KHOA_TOKEN_GATEWAY, tenThietBi, thongDiepDangXuat } from "./loi/thietBi";
+// ★★★ ĐỢT 4C — ghost-text (InlineCompletionItemProvider) gọi /v1/completions bằng token cá nhân.
+import { dangKyGhostText } from "./ui/ghostText";
+import { hostname } from "node:os";
+
+/**
+ * ★★★ ĐỢT 4B — "Đăng nhập AI Local (device flow)": device flow (RFC 8628 rút gọn, `server/routes/aiGatewayTokenThietBi.ts`).
+ * Mở trình duyệt tới trang xác nhận của CHÍNH máy chủ đang cấu hình (phiên web đã qua 2FA nếu bật — đây là đường đăng
+ * nhập DUY NHẤT dùng được cho tài khoản 2FA), chờ người bấm Cho phép, lưu token `avgw_…` vào SecretStorage.
+ * ⚠ Token KHÔNG bao giờ vào settings/globalState/log; globalState chỉ giữ TIỀN TỐ hiển thị + hạn.
+ */
+async function chayDangNhapThietBi(context: vscode.ExtensionContext): Promise<void> {
+  const serverUrl = vscode.workspace.getConfiguration("aviAiLocal").get<string>("serverUrl", "http://localhost:3000");
+  const phienBan = String((context as { extension?: { packageJSON?: { version?: string } } }).extension?.packageJSON?.version ?? "");
+  const kq = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: "AI Local — đăng nhập bằng trình duyệt", cancellable: true },
+    async (tienDo, huy) => {
+      const ac = new AbortController();
+      huy.onCancellationRequested(() => ac.abort());
+      return dangNhapThietBi({
+        serverUrl,
+        tenThietBi: tenThietBi(hostname(), phienBan),
+        signal: ac.signal,
+        moTrinhDuyet: async (url, ma) => {
+          // ⚠ Chống lừa đảo mã thiết bị (máy chủ de591c868 #3): trang KHÔNG điền sẵn mã — người dùng GÕ mã này. Chỉ gõ
+          //   mã do CHÍNH VSCode của mình hiện; không bao giờ gõ mã ai đó gửi tới.
+          tienDo.report({ message: `Gõ mã ${ma.maNguoiDung} trên trang vừa mở, rồi bấm Cho phép (mã sống ${Math.round(ma.hetHanGiay / 60)} phút).` });
+          void vscode.window
+            .showInformationMessage(`AI Local: mã thiết bị của bạn là ${ma.maNguoiDung} — gõ mã này trên trang ${url}.`, "Chép mã")
+            .then((chon) => (chon === "Chép mã" ? vscode.env.clipboard.writeText(ma.maNguoiDung) : undefined));
+          return await vscode.env.openExternal(vscode.Uri.parse(url));
+        },
+        luuToken: async (token, tt) => {
+          await context.secrets.store(KHOA_TOKEN_GATEWAY, token);
+          await context.globalState.update(KHOA_THONG_TIN_TOKEN, { tienTo: tt.tienTo, hetHanLuc: tt.hetHanLuc });
+        },
+      });
+    },
+  );
+  if (kq.ok) {
+    void vscode.window.showInformationMessage(
+      `AI Local: đã đăng nhập bằng thiết bị${kq.tienTo ? ` (token ${kq.tienTo}…)` : ""}${kq.hetHanLuc ? `, hết hạn ${kq.hetHanLuc}` : ""}.`,
+    );
+  } else if (kq.ly !== "huy") {
+    void vscode.window.showErrorMessage(`AI Local: ${kq.lyDo}`);
+  }
+}
 
 async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("aviAiLocal");
@@ -196,7 +246,35 @@ export function activate(context: vscode.ExtensionContext): void {
       await context.secrets.delete(KHOA_COOKIE);
       // Xoá CÙNG LÚC với cookie — cùng lý do đã ghi CÙNG LÚC lúc đăng nhập (xem `chayDangNhap`).
       await context.globalState.update(KHOA_TEN_TAI_KHOAN, undefined);
-      void vscode.window.showInformationMessage("AI Local: đã đăng xuất.");
+      // ★★★ ĐỢT 4B-client — THU HỒI THẬT trên máy chủ bằng chính token (`/api/ai/gateway-token/tu-thu-hoi`) TRƯỚC khi
+      // xoá SecretStorage (xoá trước thì không còn gì để trình). Thu hồi hỏng (mạng/máy chủ) ⇒ VẪN xoá cục bộ, và thông
+      // điệp nói thẳng token còn sống trên máy chủ tới khi thu hồi ở /ai-thiet-bi — không khai "đã thu hồi" khi chưa đo.
+      const token = await context.secrets.get(KHOA_TOKEN_GATEWAY);
+      const kqThuHoi = token
+        ? await thuHoiTokenCuaMinh({
+            serverUrl: vscode.workspace.getConfiguration("aviAiLocal").get<string>("serverUrl", "http://localhost:3000"),
+            token,
+            signal: AbortSignal.timeout(8000),
+          })
+        : undefined;
+      await context.secrets.delete(KHOA_TOKEN_GATEWAY);
+      await context.globalState.update(KHOA_THONG_TIN_TOKEN, undefined);
+      const thongDiep = thongDiepDangXuat(!!token, kqThuHoi);
+      if (kqThuHoi && !kqThuHoi.ok) void vscode.window.showWarningMessage(thongDiep);
+      else void vscode.window.showInformationMessage(thongDiep);
+      void BangChat.dangMoBatKy()?.guiTrangThaiTokenAgent();
+    }),
+    vscode.commands.registerCommand("aviAiLocal.dangNhapThietBi", async () => {
+      await chayDangNhapThietBi(context);
+      void BangChat.dangMoBatKy()?.guiTrangThaiTokenAgent();
+    }),
+    vscode.commands.registerCommand("aviAiLocal.hoanTacLuotChay", async () => {
+      const bang = BangChat.dangMoBatKy();
+      if (!bang) {
+        void vscode.window.showInformationMessage("AI Local: hãy mở khung trò chuyện — hoàn tác áp cho lượt agent gần nhất của khung.");
+        return;
+      }
+      await bang.hoanTacAgent();
     }),
     vscode.commands.registerCommand("aviAiLocal.suaDoanChon", () => void chaySuaDoanChon(context, khoDeXuat)),
     /**
@@ -286,6 +364,10 @@ export function activate(context: vscode.ExtensionContext): void {
       webviewOptions: { retainContextWhenHidden: true },
     }),
   );
+
+  // ★★★ ĐỢT 4C — ghost-text: provider + lệnh bật/tắt + nút thanh trạng thái + kênh nhật ký (xem `ui/ghostText.ts`).
+  // Mặc định TẮT (`aviAiLocal.ghostText.enabled`); provider không gửi byte nào khi tắt.
+  dangKyGhostText(context);
 }
 
 export function deactivate(): void {

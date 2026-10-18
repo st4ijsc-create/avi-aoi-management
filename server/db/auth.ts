@@ -23,6 +23,7 @@ import { catTheoTranCot } from './catTheoTranCot';
 // this instance (cross-instance propagation: Redis broadcast when available,
 // otherwise bounded by the ≤TTL staleness window).
 import { invalidateAuthSession, invalidateAuthUser } from '../services/authSessionCache';
+import { thuHoiMoiTokenCuaNguoi } from './aiGatewayTokens'; // rà bảo mật de591c868 #2 — token /v1 chết theo danh tính
 import { invalidateStopAuthForUser } from '../services/robot/robotStopAuthMemo'; // doc 81 Đợt 10 D fix review 5 (R-10-be)
 
 export type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'maintenance' | 'engineer' | 'viewer' | 'user';
@@ -377,6 +378,9 @@ export async function updateUserPassword(userId: number, passwordHash: string) {
   await db.transaction(async (tx) => {
     await ghiBiMatNguoiDung(userId, { passwordHash }, tx);
     await tx.update(users).set({ passwordChangedAt: new Date() }).where(eq(users.id, userId));
+    // ★ Rà bảo mật de591c868 #2 — token cá nhân `/v1` (và mã thiết bị đã duyệt chưa đổi) chết CÙNG giao dịch: không có
+    //   trạng thái "mật khẩu đã đổi mà token cũ còn sống". Lỗi ⇒ cả lượt đổi rollback (fail-closed).
+    await thuHoiMoiTokenCuaNguoi(userId, tx as never);
   });
   await invalidateAuthUser(userId);
 }
@@ -849,6 +853,10 @@ export async function revokeAllSessions(userId: number, exceptSessionId?: number
       .where(eq(userSessions.userId, userId));
   }
   await invalidateAuthUser(userId);
+  // ★ Rà bảo mật de591c868 #2 — "đăng xuất mọi thiết bị" và lượt tắt tài khoản (updateUser → đây) cũng thu hồi token
+  //   cá nhân `/v1`: extension VSCode là một THIẾT BỊ, và tắt-rồi-bật-lại không được làm token cũ sống lại. Kể cả nhánh
+  //   `exceptSessionId` (giữ phiên web hiện tại) — token không phải phiên web hiện tại.
+  await thuHoiMoiTokenCuaNguoi(userId);
 }
 
 export async function cleanupExpiredSessions() {

@@ -214,6 +214,28 @@ export const DUOI_CHO_PHEP: ReadonlySet<string> = new Set([
   //   nằm trong danh sách) ⇒ trước bản vá, một khung khai tệp ấy chết ở cửa đuôi.
   ".props",
   ".targets",
+  // ★ 2026-10-17 · Đợt 1 — bộ đo F: 2/2 bài Python TRƯỢT vì `read_file` từ chối `.py` (model nói thật "không đọc
+  //   được tệp .py" rồi dừng). Mục tiêu "dự án bất kỳ" đòi các ngôn ngữ nguồn VĂN BẢN phổ biến. Tất cả là văn bản
+  //   thuần; bí mật (`.env*`, `.pem`, `.key`…) vẫn bị `KHUON_TEP_CAM` chặn độc lập, nhị phân/tệp chạy được của
+  //   hệ điều hành (`.exe .dll .pyc .bat .cmd .ps1`) vẫn NGOÀI danh sách (lưới §D3 ghim cả hai chiều).
+  ".py",
+  ".pyi",
+  ".ini",
+  ".cfg",
+  ".xml",
+  ".java",
+  ".kt",
+  ".go",
+  ".rs",
+  ".c",
+  ".h",
+  ".cpp",
+  ".hpp",
+  ".vue",
+  ".svelte",
+  // PLC (Structured Text / SCL) — văn bản; corpus lập trình PLC đã có từ trước.
+  ".st",
+  ".scl",
 ]);
 
 /**

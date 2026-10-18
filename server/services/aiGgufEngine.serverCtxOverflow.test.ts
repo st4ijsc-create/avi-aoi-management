@@ -26,6 +26,9 @@
  * ⚠ ĐƯỜNG KHÔNG ĐƯỢC PHÁ: server **không trả lời** (preflight hỏng) ⇒ tiến trình đó không giữ
  * VRAM nữa ⇒ lùi in-process VẪN ĐÚNG và vẫn phải chạy (đây là lựa chọn CÓ CHỦ Ý của người vận
  * hành, ghi trong `.env`: `LLAMA_SERVER_STRICT` cố ý để TẮT).
+ * ⚠ ĐÍNH CHÍNH Đợt 0.1 (2026-10-14): đường đó nay chỉ còn sau `LLAMA_SERVER_FAIL_CLOSED=false`. Mặc
+ *   định là FAIL-CLOSED — "server im" chỉ đúng ở giây đó; giám sát dựng lại nó trong ít phút và lượt
+ *   nạp in-process thành bản thứ hai. Lưới của mặc định mới: `aiGgufEngine.failClosed.test.ts`.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -256,8 +259,11 @@ describe("(a) CỔNG ĐẦU VÀO — vượt trần token MỖI SLOT thì không
   });
 });
 
-describe("ĐƯỜNG KHÔNG ĐƯỢC PHÁ — server KHÔNG trả lời ⇒ nó không giữ VRAM ⇒ vẫn lùi in-process", () => {
-  it("preflight hỏng: vẫn nạp in-process và vẫn trả lời (lựa chọn có chủ ý của người vận hành)", async () => {
+describe("ĐƯỜNG KHÔNG ĐƯỢC PHÁ (lối thoát LLAMA_SERVER_FAIL_CLOSED=false) — server KHÔNG trả lời ⇒ vẫn lùi in-process", () => {
+  it("preflight hỏng + LLAMA_SERVER_FAIL_CLOSED=false: vẫn nạp in-process và vẫn trả lời (lối thoát tương thích)", async () => {
+    // Đợt 0.1 — hành vi này nay chỉ còn sau lối thoát `LLAMA_SERVER_FAIL_CLOSED=false`; mặc định là
+    // FAIL-CLOSED (chờ giám sát dựng lại / ném LLAMA_SERVER_DOWN) — xem aiGgufEngine.failClosed.test.ts.
+    process.env.LLAMA_SERVER_FAIL_CLOSED = "false";
     preflightHealthyMock.mockResolvedValue(false);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -367,12 +373,21 @@ describe("ĐIỂM NGHẼN `loadGgufModel` — vị từ MỘT chỗ, phủ MỌI
   it("★★ chatCompletion (đường /v1 gateway): BẤT BIẾN — không bao giờ nạp bản thứ hai", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // ⚠ 2026-10-17: ca này từng gửi `fetch` THẬT tới :8091 (3 lượt "hi" vào model đang phục vụ đo; một lần hết giờ 30 s
+    //   khi server bận ⇒ đỏ chập chờn). Chặn mạng: bất biến cần đo không phụ thuộc server có trả lời hay không.
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:8091 (giả trong lưới)"), { code: "ECONNREFUSED" });
+    }));
     const eng = await freshEngine();
     // Không khai TRƯỚC là lượt này sẽ được phục vụ hay bị từ chối — đó chính là CƠ CHẾ, thứ P1 vừa
     // đổi. Chỉ phát biểu điều KHÔNG được phép xảy ra ở cả hai kết cục.
-    await eng
-      .chatCompletion({ messages: [{ role: "user", content: "hi" }] })
-      .catch(() => undefined);
+    try {
+      await eng
+        .chatCompletion({ messages: [{ role: "user", content: "hi" }] })
+        .catch(() => undefined);
+    } finally {
+      vi.unstubAllGlobals();
+    }
     expect(
       fakeLlama.loadModel,
       "lượt chat cho model mà llama-server đang giữ đã nạp BẢN THỨ HAI (~19.000 MiB)",
@@ -390,7 +405,10 @@ describe("ĐIỂM NGHẼN `loadGgufModel` — vị từ MỘT chỗ, phủ MỌI
     expect(fakeLlama.loadModel).toHaveBeenCalled();
   });
 
-  it("server KHÔNG trả lời ⇒ điểm nghẽn MỞ (tiến trình đó không còn giữ VRAM)", async () => {
+  it("server KHÔNG trả lời + LLAMA_SERVER_FAIL_CLOSED=false ⇒ điểm nghẽn MỞ (hành vi cũ)", async () => {
+    // Đợt 0.1 — hành vi này nay chỉ còn sau lối thoát `LLAMA_SERVER_FAIL_CLOSED=false`; mặc định là
+    // FAIL-CLOSED (chờ giám sát dựng lại / ném LLAMA_SERVER_DOWN) — xem aiGgufEngine.failClosed.test.ts.
+    process.env.LLAMA_SERVER_FAIL_CLOSED = "false";
     preflightHealthyMock.mockResolvedValue(false);
     shouldUseServerForTextMock.mockReturnValue(false); // ép đi thẳng đường in-process
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

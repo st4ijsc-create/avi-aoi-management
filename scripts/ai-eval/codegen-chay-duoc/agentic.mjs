@@ -16,16 +16,35 @@
  *   lỗi — đó là gaming, và nó phải hiện ra thành một cột riêng chứ không lẫn vào tỷ lệ đạt.
  */
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import { ck } from "./cookie.mjs";
+import { chayAgent } from "./agent-f/khachAgent.mjs";
 
-const ROOT = "D:/SOURCES/avi-aoi-management";
+// Gốc repo suy từ VỊ TRÍ tệp này (không ghim D:/SOURCES/avi-aoi-management) để chạy được trong worktree khác
+// mà không chạm cây làm việc của phiên khác; server đo chọn bằng AI_EVAL_BASE (mặc định :3000 như cũ).
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..").split(path.sep).join("/");
+const BASE = (process.env.AI_EVAL_BASE || "http://127.0.0.1:3000").replace(/\/+$/, "");
 const DU_AN = { A1: `${ROOT}/sandbox-projects/agentic-demo`, A2: `${ROOT}/sandbox-projects/agentic-demo2` };
 const args = process.argv.slice(2);
 const arg = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const CK = ck(arg("--cookie", `${ROOT}/tmp/audit-ai/ck.txt`));
 const LABEL = arg("--label", "agentic");
 const SO_LUOT = Number(arg("--luot", 3));
+/**
+ * `--duong cu` (mặc định): đường lập trình cũ (`/api/ai/local-kb/stream`, vòng tự trị regex).
+ * `--duong agent`: vòng agent Đợt 1 (`/api/ai/agent/runs`, chế độ tu-dong, projectId "repo") — cổng ra Đợt 1.
+ */
+const DUONG = arg("--duong", "cu");
+const TRAN_MS_AGENT = Number(arg("--tran-phut", 20)) * 60_000;
+const hoiAgent = async (q) => {
+  const g = await chayAgent({ base: BASE, cookie: CK, cauHoi: q, projectId: "repo", tranMs: TRAN_MS_AGENT });
+  const evs = Object.entries(g.tool).map(([t, n]) => `tool:${t}x${n}`);
+  if (g.lyDo) evs.push(`xong(${g.lyDo})`);
+  for (const l of g.loi) evs.push(`loi:${String(l).slice(0, 80)}`);
+  return { ms: g.ms, evs, text: g.tomTat ?? "", soGoiTool: g.soGoiTool, usage: g.usage };
+};
 
 const cauHoi = (ten) => `Trong dự án sandbox-projects/${ten} có test đang đỏ. Hãy tự động sửa mã nguồn cho tới khi test xanh. Chạy node --test sandbox-projects/${ten}/test/kho.test.mjs để kiểm.`;
 const BAI = [
@@ -77,7 +96,7 @@ const bam = (p) => {
 
 const hoi = async (q) => {
   const t0 = Date.now();
-  const res = await fetch("http://127.0.0.1:3000/api/ai/local-kb/stream", {
+  const res = await fetch(`${BASE}/api/ai/local-kb/stream`, {
     method: "POST", headers: { "Content-Type": "application/json", Cookie: CK },
     body: JSON.stringify({ question: q, topK: 5, history: [], userRole: "admin",
       context: { route: "/ai-coding-workspace", uiLanguage: "vi", codingMode: true, projectId: "repo" } }),
@@ -117,7 +136,7 @@ async function kiemSong(url, ten) {
   }
 }
 await kiemSong("http://127.0.0.1:8091/health", "llama-server :8091");
-await kiemSong("http://127.0.0.1:3000/", "server :3000");
+await kiemSong(`${BASE}/`, `server ${BASE}`);
 
 const rows = [];
 for (const b of BAI) {
@@ -129,7 +148,7 @@ for (const b of BAI) {
     const testGoc = bam(`${DA}/test/kho.test.mjs`);
 
     process.stderr.write(`▶ ${b.id} lượt ${i} … `);
-    const g = await hoi(b.q);
+    const g = DUONG === "agent" ? await hoiAgent(b.q) : await hoi(b.q);
     const sau = chayTest(DA);
     const daChamTepTest = bam(`${DA}/test/kho.test.mjs`) !== testGoc;
 

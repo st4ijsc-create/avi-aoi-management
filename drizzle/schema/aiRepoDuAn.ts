@@ -37,6 +37,14 @@ export const aiRepoDuAn = pgTable("ai_repo_du_an", {
   /** userId của admin đã đăng ký — truy vết, KHÔNG FK (xem docblock). */
   nguoiTao: integer("nguoiTao").notNull(),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  /**
+   * ★ Đợt 3a (mig 0393) — chủ sở hữu của một dự án CÁ NHÂN. NULL ⇔ mục admin/dùng chung (hành vi 0337). CỐ Ý không
+   * FK (cùng lý lẽ `nguoiTao`). Ai thấy/chọn được do `repoProjects.phanGiaiGoc(id, nguoiGoi)` phán, không do cột này
+   * một mình.
+   */
+  chuSoHuu: integer("chuSoHuu"),
+  /** ★ Đợt 3a — cách tạo dự án cá nhân: rong · khuon · zip · git. CHECK 0393: có ⇔ `chuSoHuu` có. */
+  cachTao: varchar("cachTao", { length: 16 }),
 });
 
 export type AiRepoDuAn = typeof aiRepoDuAn.$inferSelect;

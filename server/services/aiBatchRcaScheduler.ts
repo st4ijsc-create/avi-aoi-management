@@ -12,6 +12,8 @@
 import * as cron from "node-cron";
 import { sql } from "drizzle-orm";
 import { getDb } from "../db";
+// Đợt 0.3 — cổng ưu tiên llama-server (module LÁ).
+import { chayVoiUuTien } from "./ai/hangDoiUuTienLlm";
 import { rootCauseAnalysis } from "../../drizzle/schema";
 import { generateRCAInsights } from "./aiInsightsService";
 // B2.4 — auto-ingest hook (flag-gated RAG_AUTO_INGEST_ENABLED, default OFF).
@@ -117,7 +119,16 @@ function buildTopFactors(rows: InspectionRow[]) {
   return { topFactors, paretoData };
 }
 
-export async function runBatchRCAOnce(): Promise<{ machinesProcessed: number; succeeded: number; failed: number; durationMs: number }> {
+/**
+ * Đợt 0.3 — một lô RCA cho N máy (cron 02:00, hoặc nút admin "chạy lô") là việc NỀN theo bản chất:
+ * mỗi máy một lượt model, không ai đọc từng lượt ⇒ mọi lượt LLM bên trong mang mức `nen`, nhường
+ * câu hỏi của người đang ngồi chờ.
+ */
+export function runBatchRCAOnce(): Promise<{ machinesProcessed: number; succeeded: number; failed: number; durationMs: number }> {
+  return chayVoiUuTien("nen", chayLoRcaMotLan);
+}
+
+async function chayLoRcaMotLan(): Promise<{ machinesProcessed: number; succeeded: number; failed: number; durationMs: number }> {
   const start = Date.now();
   const db = await getDb();
   if (!db) {

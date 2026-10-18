@@ -82,6 +82,11 @@ export * from "./kbStudio"; // doc69 Giai đoạn 5/Wave E3 (E3-1) — multi-cor
 export * from "./vram"; // 2026-08-02 VRAM Pha 1 Task 2 — nhật ký chỉ-ghi-thêm điều phối VRAM, migration 0310
 export * from "./aiCodingSession"; // doc 79 DANH SÁCH PHIÊN — mạch hội thoại tác nhân lập trình, phạm vi CHỦ SỞ HỮU, migration 0333
 export * from "./aiCodingLesson"; // doc 82 BỘ NHỚ XUYÊN PHIÊN — bài học người dùng tự khai, phạm vi CHỦ SỞ HỮU, migration 0336
+export * from "./aiAgentRun"; // Đợt 1 T4 2026-10-17 — sổ LƯỢT CHẠY vòng agent máy chủ, phạm vi CHỦ LƯỢT CHẠY, migration 0390
+export * from "./aiCodeChunk"; // Đợt 2 2026-10-17 — chỉ mục NGỮ NGHĨA mã nguồn theo dự án (pgvector, khoá projectId), migration 0391
+export * from "./aiCodeIndexState"; // 2026-10-17 — TRẠNG THÁI lượt dựng chỉ mục ngữ nghĩa (san-sang CHỈ khi xong), migration 0395
+export * from "./aiAgentFeedback"; // Đợt 5 2026-10-17 — PHẢN HỒI 👍/👎 + diff duyệt/bác (phạm vi CHỦ) + lượt EVAL MÃ A/B corpus Studio, migration 0397
+export * from "./aiGatewayToken"; // Đợt 4A 2026-10-17 — token THEO NGƯỜI DÙNG cho cổng /v1 (chỉ lưu băm) + device flow extension, migration 0392
 export * from "./aiRepoDuAn"; // QUẢN LÝ DỰ ÁN 2026-08-23 — dự án hộp cát đăng ký qua UI (nguồn DB, env thắng khi trùng id), migration 0337
 export * from "./productConfigTree"; // Pha 1A 2026-08-25 — cây CẤU HÌNH 4 cấp surface→position→capture→component, migration 0338
 export * from "./inspectionTree"; // Pha 1A 2026-08-25 — cây KẾT QUẢ 3 cấp surface→position→capture, migration 0339

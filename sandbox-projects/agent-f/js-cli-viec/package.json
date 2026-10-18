@@ -1,0 +1,10 @@
+{
+  "name": "viec",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "CLI quản lý danh sách việc lưu trong một tệp JSON. Node thuần, không phụ thuộc ngoài.",
+  "bin": { "viec": "viec.mjs" },
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test test/cli.test.mjs" }
+}

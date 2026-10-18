@@ -129,12 +129,14 @@ import { aiSpecialistAgentRouter } from "./routers/aiSpecialistAgentRouter";
 import { aiLocalKbRouter } from "./routers/aiLocalKbRouter";
 import { aiProgrammingKbRouter } from "./routers/aiProgrammingKbRouter"; // doc 34 · P1: programming (vendor-manual) KB retrieval
 import { aiCopilotRouter } from "./routers/aiCopilotRouter"; // GĐ2: HITL write-action confirm/cancel
+import { aiChayUngDungRouter } from "./routers/aiChayUngDungRouter"; // Đợt 3c: Chạy & Xem trước (trình quản lý ứng dụng + đề xuất lệnh HITL)
 import { repoWorkspaceRouter } from "./routers/repoWorkspaceRouter"; // doc 78 PHA D: cổng mỏng gọi read tool (list_files/read_file/grep_repo) cho cây tệp + trình xem
 import { aiRcaCopilotRouter } from "./routers/aiRcaCopilotRouter"; // Technician Copilot ③: RCA diagnose + 1-tap fix
 import { aiThresholdAdvisorRouter } from "./routers/aiThresholdAdvisorRouter"; // Technician Copilot ②: Threshold/Param Advisor (recommend + HITL apply)
 import { aiSetupAdvisorRouter } from "./routers/aiSetupAdvisorRouter"; // Technician Copilot ①: Setup Advisor (pre-fill new-machine config from similar template)
 import { aiAgentRouter } from "./routers/aiAgentRouter"; // GĐ3b: multi-step agentic orchestrator (on top of HITL)
 import { aiAgentCenterRouter } from "./routers/aiAgentCenterRouter"; // doc69 GĐ4/Wave E2 (E2-1): unified agent roster read-model (ops-scoped)
+import { aiGatewayTokenRouter } from "./routers/aiGatewayTokenRouter"; // Đợt 4A: token THEO NGƯỜI DÙNG cho cổng /v1 (extension VSCode) + bước duyệt device flow
 import { aiCalibrationRouter } from "./routers/aiCalibrationRouter"; // B2: confidence calibration (ECE + reliability)
 import { aiAnomalyRouter } from "./routers/aiAnomalyRouter"; // B3: unsupervised anomaly detection (PatchCore-style)
 import { aiSegmentationRouter } from "./routers/aiSegmentationRouter"; // B7: segmentation mask + sub-pixel metrology
@@ -768,6 +770,9 @@ export const appRouter = router({
   // doc 78 PHA D — Không gian làm việc lập trình: cổng mỏng ĐỌC repo (list_files/read_file/grep_repo).
   // RBAC ai_repo_read/canView cưỡng chế TRONG tool; hai tool GHI/CHẠY vẫn đi qua đường HITL (aiCopilot).
   repoWorkspace: repoWorkspaceRouter,
+  // Đợt 3c — Chạy & Xem trước: chạy script dev/start của dự án (ai_repo_exec/canCreate), dừng, nhật ký, và đề xuất
+  // MỘT lệnh danh sách trắng qua ĐÚNG đường HITL của run_command (thẻ duyệt ⇒ aiCopilot.confirmAction).
+  aiChayUngDung: aiChayUngDungRouter,
   aiRcaCopilot: aiRcaCopilotRouter,
   // AI Threshold/Param Advisor — LUỒNG ②: recommend LSL/USL/target + NG warning/critical, HITL apply
   aiThresholdAdvisor: aiThresholdAdvisorRouter,
@@ -777,6 +782,8 @@ export const appRouter = router({
   aiAgent: aiAgentRouter,
   // AI Agent Command Center — doc69 GĐ4/Wave E2 (E2-1): unified agent roster read-model (ops-scoped)
   aiAgentCenter: aiAgentCenterRouter,
+  // AI Gateway Token — Đợt 4A: token cá nhân cho cổng OpenAI /v1 (chỉ lưu băm, phạm vi, hết hạn, thu hồi) + duyệt thiết bị
+  aiGatewayToken: aiGatewayTokenRouter,
   // AI Confidence Calibration — ECE / reliability diagram (B2)
   aiCalibration: aiCalibrationRouter,
   // AI Anomaly Detection — unsupervised PatchCore-style memory bank + kNN (B3)

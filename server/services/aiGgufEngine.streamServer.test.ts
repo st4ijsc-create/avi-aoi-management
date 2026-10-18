@@ -222,7 +222,10 @@ describe("★★ câu 2: đường stream dùng LẠI đúng ba cổng của đ�
     errSpy.mockRestore();
   });
 
-  it("★ cổng (b) PREFLIGHT hỏng ⇒ server không giữ VRAM ⇒ VẪN lùi in-process (lưới an toàn cố ý)", async () => {
+  it("★ cổng (b) PREFLIGHT hỏng + LLAMA_SERVER_FAIL_CLOSED=false ⇒ VẪN lùi in-process (lối thoát tương thích)", async () => {
+    // Đợt 0.1 — hành vi này nay chỉ còn sau lối thoát `LLAMA_SERVER_FAIL_CLOSED=false`; mặc định là
+    // FAIL-CLOSED (chờ giám sát dựng lại / ném LLAMA_SERVER_DOWN) — xem aiGgufEngine.failClosed.test.ts.
+    process.env.LLAMA_SERVER_FAIL_CLOSED = "false";
     preflightHealthyMock.mockResolvedValue(false);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const eng = await freshEngine();

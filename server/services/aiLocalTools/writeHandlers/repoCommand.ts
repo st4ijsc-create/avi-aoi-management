@@ -80,7 +80,12 @@ import {
   MA_TU_CHOI_LENH,
   TRAN_DAU_RA,
   TRAN_KY_TU_LENH,
+  BIEN_NGUON_NPM,
+  BIEN_NGUON_NUGET,
+  BIEN_NGUON_PIP,
   chayLenhTrongHopCat,
+  coScriptCaiNpm,
+  goiYKhiCaiLoiMang,
   goiYLenhGanNhat,
   hanGioThucTe,
   phanQuyetLenh,
@@ -260,6 +265,13 @@ function cauTuChoiLenh(ma: MaTuChoiLenh, chiTiet: string, lang: ToolLang, argv0?
         `The command did NOT run: ${chiTiet}`,
         `命令未运行：${chiTiet}`,
       );
+    case "CMD_THIEU_DIEU_KIEN":
+      return w(
+        lang,
+        `Lệnh HỢP LỆ nhưng CHƯA chạy vì thiếu điều kiện tiên quyết — ${chiTiet} Làm bước ấy rồi chạy lại.`,
+        `The command is VALID but did NOT run because a prerequisite is missing — ${chiTiet} Do that step and retry.`,
+        `命令有效但因缺少前置条件而未运行——${chiTiet} 完成该步骤后重试。`,
+      );
     case "CMD_TIMEOUT":
       return w(
         lang,
@@ -286,6 +298,34 @@ function cauTuChoiLenh(ma: MaTuChoiLenh, chiTiet: string, lang: ToolLang, argv0?
       );
     }
   }
+}
+
+/** ★ Đợt 3c — một câu cho thẻ duyệt của lệnh CÀI: tự-chạy · script cài · nguồn gói (đọc cấu hình TẠI LÚC GỌI). */
+function canhBaoCaiDat(nhan: string, goc: string, lang: ToolLang): string {
+  let nguon: string;
+  if (nhan.startsWith("npm ")) {
+    const reg = (process.env[BIEN_NGUON_NPM] ?? "").trim();
+    nguon = reg ? w(lang, `registry nội bộ ${reg}`, `internal registry ${reg}`, `内部仓库 ${reg}`) : w(lang, "CHỈ cache npm cục bộ (--prefer-offline, môi trường offline)", "local npm cache ONLY (--prefer-offline, offline env)", "仅本地 npm 缓存（--prefer-offline，离线环境）");
+    const sc = coScriptCaiNpm(goc);
+    const dongScript = sc
+      ? w(lang, `⚠ Script cài của gói (pre/postinstall) ĐƯỢC MỞ theo khai báo dự án — lý do: "${sc.lyDo}".`, `⚠ Package install scripts ENABLED by the project declaration — reason: "${sc.lyDo}".`, `⚠ 依项目声明启用包安装脚本——理由："${sc.lyDo}"。`)
+      : w(lang, "Script cài của gói BỊ TẮT (--ignore-scripts).", "Package install scripts DISABLED (--ignore-scripts).", "包安装脚本已禁用（--ignore-scripts）。");
+    nguon += ". " + dongScript;
+  } else if (nhan.startsWith("pip ")) {
+    const fl = (process.env[BIEN_NGUON_PIP] ?? "").trim();
+    nguon = fl ? w(lang, `thư mục wheel ${fl} (--no-index)`, `wheel directory ${fl} (--no-index)`, `wheel 目录 ${fl}（--no-index）`) : w(lang, `chỉ mục pip mặc định (cần mạng — đặt ${BIEN_NGUON_PIP} cho máy offline)`, `default pip index (needs network — set ${BIEN_NGUON_PIP} for offline)`, `默认 pip 索引（需联网——离线请设置 ${BIEN_NGUON_PIP}）`);
+  } else if (nhan.startsWith("dotnet ")) {
+    const src = (process.env[BIEN_NGUON_NUGET] ?? "").trim();
+    nguon = src ? w(lang, `nguồn NuGet ${src}`, `NuGet source ${src}`, `NuGet 源 ${src}`) : w(lang, `cấu hình NuGet mặc định (cần mạng — đặt ${BIEN_NGUON_NUGET} cho máy offline)`, `default NuGet config (needs network — set ${BIEN_NGUON_NUGET} for offline)`, `默认 NuGet 配置（需联网——离线请设置 ${BIEN_NGUON_NUGET}）`);
+  } else {
+    nguon = w(lang, "không tải gì", "no download", "不下载");
+  }
+  return w(
+    lang,
+    `⚠ LỆNH CÀI ĐẶT phụ thuộc — chỉ chạy khi BẠN bấm duyệt (chế độ tự động KHÔNG BAO GIỜ tự chạy lệnh cài). Nguồn gói: ${nguon}`,
+    `⚠ DEPENDENCY INSTALL command — runs only when YOU approve (automatic mode NEVER runs install commands). Package source: ${nguon}`,
+    `⚠ 依赖安装命令——仅在您批准后运行（自动模式永不自动运行安装命令）。包源：${nguon}`,
+  );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -364,6 +404,12 @@ async function xemTruoc(p: ThamSo, ctx: ToolExecContext): Promise<ActionPreview>
     }
   }
 
+  /**
+   * ★★★ Đợt 3c (2026-10-17) — **CẢNH BÁO CÀI ĐẶT đứng ĐẦU** (nhóm `cai-dat` không bao giờ có `ghiDia`, nên vị trí
+   * thứ nhất không tranh với cảnh báo ghi đè). Người bấm phải đọc được TRƯỚC khi duyệt: (1) lệnh này KHÔNG bao giờ
+   * tự chạy ở tu-dong, (2) script cài npm đang TẮT hay MỞ (và lý do dự án đã khai), (3) nguồn gói thật sự dùng.
+   */
+  if (pq.muc.nhom === "cai-dat") warnings.unshift(canhBaoCaiDat(pq.muc.nhan, goc, ctx.lang));
   warnings.push(w(ctx.lang, `Thư mục chạy: ${goc}`, `Working directory: ${goc}`, `工作目录：${goc}`));
   warnings.push(
     w(
@@ -444,6 +490,7 @@ export const runCommandTool: Tool<ThamSo, DuLieuChay> = {
     "Chạy MỘT lệnh trong DANH SÁCH TRẮNG ở thư mục repo nền tảng để lấy kết quả THẬT (kiểm kiểu, chạy lưới, trạng thái git, build/test dự án thử). " +
     "Được phép: `npm run check` · `npm run check:tests` · `npx vitest run <đường-dẫn>` · `git status` · `git diff` · " +
     "`dotnet build <đường>` · `dotnet test <đường>` · `dotnet format <đường>` · `node --test <đường>` (đường qua hộp cát). " +
+    "CÀI PHỤ THUỘC theo manifest (luôn cần người duyệt, không bao giờ tự chạy): `npm ci` · `npm install` (không đối số gói) · `python -m venv .venv` · `pip install -r requirements.txt` · `dotnet restore [<đường>]`. " +
     "⚠ TÁM lệnh chỉ HỎI/KIỂM TRA; riêng `dotnet format <đường>` GHI ĐÈ mọi tệp .cs dưới đường đó (không có diff xem trước, không kiểm tệp bẩn, không băm TOCTOU) — chỉ đề xuất nó khi người dùng thật sự xin ĐỊNH DẠNG LẠI mã. " +
     "Mọi lệnh khác bị TỪ CHỐI (danh sách TRẮNG, không phải danh sách đen); git checkout/git reset/rm KHÔNG BAO GIỜ được phép. " +
     "WRITE-ACTION (HITL): chỉ ĐỀ XUẤT, người dùng phải XÁC NHẬN mới chạy; quyền ai_repo_exec/canCreate. " +
@@ -503,6 +550,8 @@ export const runCommandTool: Tool<ThamSo, DuLieuChay> = {
           return { type: KIEU, title, data, note: "CMD_SPAWN_ERROR", textSummary: cau };
         case "CMD_GOC_THIEU_PACKAGE_JSON":
           return { type: KIEU, title, data, note: "CMD_GOC_THIEU_PACKAGE_JSON", textSummary: cau };
+        case "CMD_THIEU_DIEU_KIEN":
+          return { type: KIEU, title, data, note: "CMD_THIEU_DIEU_KIEN", textSummary: cau };
         case "CMD_TIMEOUT":
           return { type: KIEU, title, data, note: "CMD_TIMEOUT", textSummary: cau };
         default: {
@@ -636,7 +685,10 @@ export const runCommandTool: Tool<ThamSo, DuLieuChay> = {
      * để model văn vẻ hoá nó là mời nó rút gọn thành *"build hỏng"* — biến một phép đo BỘ PHẬN thành
      * một khẳng định TOÀN THỂ (đúng lý lẽ đã dùng cho `GREP_DEADLINE` ở pha A).
      */
-    const than = `${dau}\n---\n${kq.dauRa}`;
+    // ★ Đợt 3c — lệnh CÀI hỏng vì không với tới nguồn gói ⇒ một dòng chỉ đúng biến cấu hình offline (đặt TRƯỚC
+    //   đầu ra thô để không bị cắt mất ở cuối). Lệnh khác / mã 0 / lỗi không phải mạng ⇒ không thêm gì.
+    const goiYMang = goiYKhiCaiLoiMang(pq.muc.nhan, kq.dauRa, kq.maThoat, ctx.lang);
+    const than = `${dau}${goiYMang ? `\n${goiYMang}` : ""}\n---\n${kq.dauRa}`;
     tieuNganSach(khoa, than.length);
     return { type: KIEU, title, data, textSummary: than };
   },

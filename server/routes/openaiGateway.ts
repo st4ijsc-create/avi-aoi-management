@@ -19,6 +19,10 @@
  *     logs a clear error — we NEVER expose an unauthenticated LLM endpoint.
  *   • Every request must carry `Authorization: Bearer <OPENAI_GATEWAY_API_KEY>`
  *     (constant-time compared). 401 otherwise.
+ *   • ★★★ Đợt 4A (2026-10-17) — `Authorization: Bearer avgw_…` = TOKEN THEO NGƯỜI DÙNG (mig 0392, chỉ lưu băm):
+ *     gắn userId vào đo lường/hạn mức, phạm vi theo đường (chat · fim · embed), trần/phút theo token, hết hạn/thu
+ *     hồi ⇒ 401 có mã. Key chung ở trên GIỮ nhưng DEPRECATE (`OPENAI_GATEWAY_SHARED_KEY_ENABLED`, mặc định bật);
+ *     tắt cờ ⇒ chế độ chỉ-token (gắn cổng không cần key). CORS của `/v1`: không bao giờ `*` (`xuLyCorsCongOpenAi`).
  *
  * BINDING NOTE: this is intended for localhost / trusted-LAN engineer use (IDE
  * autocomplete + chat). It inherits the app's listen address — do NOT expose the
@@ -53,6 +57,7 @@ import {
 // primitives verbatim; no redaction logic is reimplemented here.
 import {
   planInference,
+  checkNamedRateLimit,
   RateLimitError,
   SafetyBlockedError,
   QuotaExceededError,
@@ -60,6 +65,10 @@ import {
   type TaskKind,
   type GatewayPlan,
 } from "../services/aiGateway";
+// ★★★ Đợt 4A — TOKEN THEO NGƯỜI DÙNG (`avgw_…`, mig 0392). Tầng dữ liệu chỉ tra BĂM; module lá cho tiền tố/phạm vi.
+import { xacThucTokenNguoiDung, ghiDungLanCuoi, type KetQuaXacThucToken } from "../db/aiGatewayTokens";
+import { TIEN_TO_TOKEN, phamViCuaDuong } from "../services/ai/gatewayToken/maToken";
+import { TU_CHOI_TOKEN, loaiLoiTheoMa } from "../services/ai/gatewayToken/tuChoiToken";
 import { redactSecretsAndPII, StreamingSecretRedactor } from "../services/ai/aiSafety";
 // ★ G5-E — bộ cắt chuỗi suy luận. Module LÁ (0 import, 0 I/O) nên import TĨNH được từ đây với chi
 // phí ~0 ⇒ hàng rào là vô điều kiện theo CẤU TẠO, không phụ thuộc một `await import()` trong try.
@@ -73,6 +82,7 @@ import { stripThinking, StreamingThinkingStripper } from "../services/ai/thinkin
 // for the full STEP 0 comparison / reconciliation notes, incl. the one deliberately-fixed "fim"
 // fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
 import { resolveLogicalModel } from "../services/ai/modelResolver";
+import { laLoiToolCallTrongSuyLuan, laLoiTokenCanKietVaoSuyLuan } from "../services/aiLlamaServerClient";
 // ★★★ G2-B — TOOL-CALLING GỐC. Module LÁ (0 import, 0 I/O, 0 env) — xem header của nó để biết
 // BẰNG CHỨNG ĐO SỐNG rằng build `llama-server` đang chạy hỗ trợ `tools` gốc, và ba thứ nó KHÔNG làm.
 //
@@ -246,6 +256,59 @@ function docYeuCauTool(body: any): YeuCauTool {
   return { tools, callerCoNeuTools: true };
 }
 
+/**
+ * ★★★ Đợt 4B-server — `chat_template_kwargs` theo DANH SÁCH TRẮNG.
+ *
+ * Extension (và client OpenAI-compat kiểu vLLM/llama.cpp) gửi `chat_template_kwargs.enable_thinking=false` để hỏi lại MỘT
+ * lượt với suy luận tắt (vd model phát tool call bên trong phần suy luận). Trước bản này cổng BỎ cả ô ⇒ lần hỏi lại vẫn
+ * nghĩ theo mặc định server.
+ * ⚠⚠ KHÔNG chuyển tiếp nguyên ô: mỗi khoá của chat template là một cần gạt hành vi model (thêm/bớt prompt sinh, chèn
+ *   tool vào lượt user, …) — để caller của một bề mặt dùng chung điều khiển chúng là mở một đường vòng quanh mọi giả định
+ *   prompt phía máy chủ. CHỈ `enable_thinking` kiểu BOOLEAN được đọc, và đi qua đường ĐÃ CÓ (`disableThinking` ⇒
+ *   `aiLlamaServerClient.lapCoTatSuyLuan`), không qua một ô mới xuống engine:
+ *     `false` ⇒ `{ disableThinking: true }` · `true`/vắng/kiểu sai/khoá khác ⇒ `{}` (mặc định server; hình dạng cũ bit-đối-bit).
+ */
+export function docTatNghi(body: unknown): { disableThinking?: true } {
+  const kw = (body as { chat_template_kwargs?: unknown } | null)?.chat_template_kwargs;
+  if (!kw || typeof kw !== "object" || Array.isArray(kw)) return {};
+  return Object.prototype.hasOwnProperty.call(kw, "enable_thinking") && (kw as { enable_thinking?: unknown }).enable_thinking === false
+    ? { disableThinking: true }
+    : {};
+}
+
+/** Trần `stop` của `/completions` (chuẩn OpenAI: tối đa 4 chuỗi) + trần độ dài MỖI chuỗi (cắt ở ranh giới dòng/khối). */
+export const TRAN_STOP_FIM = 4;
+export const TRAN_KY_TU_STOP_FIM = 64;
+
+/**
+ * ★★ Đợt 4C-server — `stop` của `/v1/completions` ⇒ `GgufFimOptions.stopSequences` (engine NỐI THÊM vào sentinel FIM).
+ * Nhận CHUỖI hoặc MẢNG ≤ `TRAN_STOP_FIM` phần tử, mỗi phần là chuỗi KHÔNG RỖNG ≤ `TRAN_KY_TU_STOP_FIM` ký tự. Mọi hình
+ * dạng khác ⇒ `undefined` (BỎ CẢ Ô — không cắt xén, không đoán ý caller) ⇒ opts engine giữ hình dạng cũ bit-đối-bit.
+ */
+export function docStopFim(stop: unknown): string[] | undefined {
+  const ds = typeof stop === "string" ? [stop] : Array.isArray(stop) ? stop : null;
+  if (!ds || ds.length === 0 || ds.length > TRAN_STOP_FIM) return undefined;
+  if (!ds.every((x) => typeof x === "string" && x.length > 0 && x.length <= TRAN_KY_TU_STOP_FIM)) return undefined;
+  return [...(ds as string[])];
+}
+
+/**
+ * ★★★ Đợt 4B-server — usage trong LUỒNG theo chuẩn OpenAI: chỉ khi caller xin `stream_options.include_usage: true` (mặc
+ * định OpenAI = KHÔNG phát; client không xin nhận luồng y như cũ). Chunk usage là chunk CUỐI trước `[DONE]`, `choices: []`.
+ * `completion_tokens_details.reasoning_tokens` chỉ có khi engine ĐẾM được (`tokensReasoning` là số — "không biết ≠ 0").
+ */
+function xinUsageLuong(body: unknown): boolean {
+  return (body as { stream_options?: { include_usage?: unknown } } | null)?.stream_options?.include_usage === true;
+}
+function usageOpenAi(vao: number, ra: number, nghi?: number): Record<string, unknown> {
+  return {
+    prompt_tokens: vao,
+    completion_tokens: ra,
+    total_tokens: vao + ra,
+    ...(typeof nghi === "number" && Number.isFinite(nghi) ? { completion_tokens_details: { reasoning_tokens: nghi } } : {}),
+  };
+}
+
 /** Cờ TẮT nhưng caller vẫn nêu `tools` ⇒ phải NÓI RA, không nuốt. */
 class LoiNativeToolsTat extends Error {
   readonly code = "native_tools_disabled";
@@ -340,9 +403,19 @@ interface PlannedCall {
    * thrown without redacted text attached, which should never happen). */
   safeText: string;
 }
-async function planGatewayFailOpen(task: TaskKind, text: string | undefined): Promise<PlannedCall> {
+async function planGatewayFailOpen(
+  task: TaskKind,
+  text: string | undefined,
+  nguoi?: NguoiGoiCong,
+): Promise<PlannedCall> {
   try {
-    const plan = await planInference({ task, text });
+    // ★ Đợt 4A — token người dùng ⇒ `userId`/`role` THẬT vào đo lường (`ai_gateway_metrics.userId`), hạn mức và
+    //   rate-limit theo người của `planInference`. Key chung ⇒ vẫn không có người (KHÔNG bịa một userId).
+    const plan = await planInference({
+      task,
+      text,
+      ...(nguoi?.kieu === "token" ? { userId: nguoi.userId, role: nguoi.role } : {}),
+    });
     return { plan, safeText: plan.safeText };
   } catch (err) {
     if (err instanceof RateLimitError) return { plan: null, safeText: err.safeText ?? text ?? "" };
@@ -425,6 +498,30 @@ function toGgufMessages(messages: any[]): GgufChatMessage[] {
 // FIM prompt assembly + stop sequences now live in aiGgufEngine.generateFim (native infill);
 // the gateway just forwards prefix/suffix to it.
 
+/**
+ * ★★★ Đợt 4 (bộ đo `vscode-e2e` V-dot4-1/2) — lớp lỗi "model trả lời vào KÊNH SUY LUẬN, content rỗng" mà HỎI LẠI với
+ * nghĩ TẮT chữa được. Trả `code` của khung lỗi `/v1` (để client hành động được thay vì một 500 trơn), `null` = lớp khác.
+ *   • `tool_call_in_reasoning` — `<tool_call>` trong suy luận chưa đóng (`LoiToolCallTrongSuyLuan`);
+ *   • `reasoning_without_content` — G5-D ca (B): suy luận có, content rỗng, không tool call (đo được: NGUYÊN câu trả
+ *     lời cuối nằm trong suy luận — 5/6 lượt `loi-model` của V-dot4-1/2).
+ * ⚠ Chữ suy luận KHÔNG BAO GIỜ được vớt thành hành động hay chữ hiển thị (rà bảo mật ×3) — chỉ được HỎI LẠI.
+ */
+export type MaLoiSuyLuanV1 = "tool_call_in_reasoning" | "reasoning_without_content";
+export function maLoiSuyLuanV1(e: unknown): MaLoiSuyLuanV1 | null {
+  if (!e) return null;
+  if (laLoiToolCallTrongSuyLuan(e)) return "tool_call_in_reasoning";
+  if (laLoiTokenCanKietVaoSuyLuan(e)) return "reasoning_without_content";
+  return null;
+}
+
+/**
+ * Được hỏi lại lượt này ĐÚNG MỘT lần với nghĩ TẮT? Chỉ khi: lỗi thuộc lớp trên · yêu cầu có `tools` (lượt agent — lượt
+ * chat thường giữ hành vi cũ) · yêu cầu CHƯA tắt nghĩ (tắt rồi thì lần hai y hệt lần một) · chưa hỏi lại lần nào.
+ */
+function nenHoiLaiNghiTat(err: unknown, coTools: boolean, daTatNghi: boolean, daHoiLai: boolean): boolean {
+  return !daHoiLai && coTools && !daTatNghi && maLoiSuyLuanV1(err) !== null;
+}
+
 function jsonError(
   res: Response,
   status: number,
@@ -489,11 +586,115 @@ function timingSafeEqualStr(a: string, b: string): boolean {
   }
 }
 
+// ─── ★★★ Đợt 4A — danh tính người gọi: TOKEN NGƯỜI DÙNG hoặc KEY CHUNG (deprecate) ──────────────
+
+/**
+ * Người gọi của MỘT yêu cầu `/v1`, do middleware xác thực đặt vào `res.locals.nguoiGoiCong`.
+ * ⚠ Chỉ middleware xác thực được ghi ô này; handler chỉ ĐỌC (qua `nguoiGoi`). Không có đường nào để thân yêu cầu
+ *   hay header khai một userId.
+ */
+export type NguoiGoiCong =
+  | { kieu: "token"; userId: number; role: string; tokenId: number; phamVi: readonly string[] }
+  | { kieu: "key-chung" };
+
+function nguoiGoi(res: Response): NguoiGoiCong | undefined {
+  return (res.locals as { nguoiGoiCong?: NguoiGoiCong }).nguoiGoiCong;
+}
+
+/**
+ * Key dùng chung `OPENAI_GATEWAY_API_KEY` — GIỮ để không gãy Continue/IDE đang cấu hình, nhưng đã DEPRECATE: nó không
+ * gắn người (đo lường/hạn mức về xô "anon"), và thu hồi nó là cắt mọi kỹ sư cùng lúc. Mặc định BẬT (hành vi cũ);
+ * `OPENAI_GATEWAY_SHARED_KEY_ENABLED=0|false|no|off` ⇒ chỉ token người dùng. Đọc tại thời điểm gọi.
+ */
+export function keyChungBat(): boolean {
+  const raw = envStr("OPENAI_GATEWAY_SHARED_KEY_ENABLED").toLowerCase();
+  if (raw === "") return true;
+  return raw !== "0" && raw !== "false" && raw !== "no" && raw !== "off";
+}
+
+/** Trần yêu cầu/phút MỖI TOKEN (FIM gõ phím bắn dày — mặc định rộng tay). `OPENAI_GATEWAY_TOKEN_RPM`. */
+function tranMoiPhutToken(): number {
+  const n = Number(envStr("OPENAI_GATEWAY_TOKEN_RPM"));
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 240;
+}
+
+let canhBaoKeyChungLuc = 0;
+function canhBaoKeyChung(): void {
+  const now = Date.now();
+  if (now - canhBaoKeyChungLuc < 10 * 60_000) return; // một dòng mỗi 10 phút, không lụt nhật ký
+  canhBaoKeyChungLuc = now;
+  console.warn(
+    "[openaiGateway] DEPRECATED: một yêu cầu /v1 dùng KEY CHUNG OPENAI_GATEWAY_API_KEY (không gắn người dùng). " +
+      "Chuyển sang token cá nhân (trang AI › Token cổng, hoặc đăng nhập thiết bị từ extension), rồi đặt " +
+      "OPENAI_GATEWAY_SHARED_KEY_ENABLED=0.",
+  );
+}
+
+// Bảng mã từ chối token (401/403/503 + `error.code`) — một chủ dùng chung với tuyến REST Bearer: `gatewayToken/tuChoiToken.ts`.
+
+/** Quyền AI mặc định: cùng bit `ai_repo_read/canView` cấp token (mất quyền sau khi cấp ⇒ token thôi mở cổng). */
+async function coQuyenAiMacDinh(userId: number, role: string): Promise<boolean> {
+  try {
+    const { checkPermission } = await import("../_core/accessControl");
+    return await checkPermission(userId, role, "ai_repo_read", "canView");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * ★★★ CORS RIÊNG cho đường `/v1` — gọi từ bộ CORS chung ở `_core/index.ts` TRƯỚC khi nó đặt bất kỳ header nào.
+ *
+ * Vì sao: bộ chung trả `Access-Control-Allow-Origin: *` cho yêu cầu không Origin và (ở dev) phản chiếu MỌI origin kèm
+ * credentials. Cổng giờ mang token CÁ NHÂN ⇒ một trang lạ không được phép đọc phản hồi `/v1` từ trình duyệt.
+ * Extension gọi từ extension host (Node, không Origin) nên KHÔNG cần CORS. Trình duyệt cần thì khai tường minh
+ * `OPENAI_GATEWAY_CORS_ORIGINS` (phẩy). Không bao giờ `*`, không bao giờ Allow-Credentials (cổng dùng Bearer).
+ *
+ * @returns `"khong-phai"` — không phải đường cổng (hoặc cổng TẮT) ⇒ bộ chung làm như cũ từng bit;
+ *          `"da-xu-ly"`   — preflight đã trả lời xong;
+ *          `"tiep"`       — header đã đặt, đi tiếp (BỎ QUA bộ chung).
+ */
+export function xuLyCorsCongOpenAi(req: Request, res: Response): "khong-phai" | "da-xu-ly" | "tiep" {
+  if (!envBool("OPENAI_GATEWAY_ENABLED")) return "khong-phai";
+  // ⚠ Rà bảo mật de591c868 #1 — so KHÔNG phân biệt hoa/thường: gắn cổng bằng Express khớp cả `/V1/…`, nên
+  //   bản so chính xác để `/V1/models` lọt về bộ CORS chung (`*` / phản chiếu kèm credentials).
+  const base = (envStr("OPENAI_GATEWAY_PATH") || "/v1").replace(/\/+$/, "").toLowerCase();
+  const duong = (req.path || "").toLowerCase();
+  if (duong !== base && !duong.startsWith(`${base}/`)) return "khong-phai";
+  const origin = typeof req.headers.origin === "string" ? req.headers.origin : "";
+  const choPhep = envStr("OPENAI_GATEWAY_CORS_ORIGINS")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  const hopLe = origin !== "" && choPhep.includes(origin);
+  if (hopLe) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setHeader("Access-Control-Max-Age", "600");
+  }
+  if (req.method === "OPTIONS") {
+    res.status(hopLe ? 204 : 403).end();
+    return "da-xu-ly";
+  }
+  return "tiep";
+}
+
 // ─── Router factory ─────────────────────────────────────────────────────────────
 
 export interface OpenAiGatewayConfig {
-  /** Bearer token every request must present (constant-time compared). Required. */
+  /**
+   * KEY CHUNG (deprecate) — so khớp hằng-thời-gian. Rỗng ⇒ không key chung nào khớp (chế độ chỉ-token).
+   * `OPENAI_GATEWAY_SHARED_KEY_ENABLED=0` ⇒ bị từ chối dù khớp.
+   */
   apiKey: string;
+  /** Đợt 4A — seam cho lưới; mặc định tra CSDL (`xacThucTokenNguoiDung`). */
+  xacThucToken?: (token: string) => Promise<KetQuaXacThucToken>;
+  /** Đợt 4A — seam cho lưới; mặc định `checkPermission(…, "ai_repo_read", "canView")`. */
+  coQuyenAi?: (userId: number, role: string) => Promise<boolean>;
+  /** Đợt 4A — seam cho lưới; mặc định ghi `dungLanCuoiLuc` (thưa 60 s). */
+  ghiDung?: (tokenId: number) => void;
 }
 
 /**
@@ -504,6 +705,9 @@ export interface OpenAiGatewayConfig {
 export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
   const router = Router();
   const apiKey = config.apiKey;
+  const xacThucToken = config.xacThucToken ?? xacThucTokenNguoiDung;
+  const coQuyenAi = config.coQuyenAi ?? coQuyenAiMacDinh;
+  const ghiDung = config.ghiDung ?? ghiDungLanCuoi;
 
   // Own body parser so the gateway works regardless of global config / in tests.
   // express.json is idempotent (skips when a body was already parsed upstream).
@@ -517,19 +721,88 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
   router.use(requireServiceIdentity({ audience: "openai-gateway" }));
 
   // Bearer auth on every endpoint. Fail-closed: no key configured ⇒ reject all.
+  // ★★★ Đợt 4A — HAI loại Bearer, rẽ theo TIỀN TỐ (key chung không bao giờ phải tra CSDL):
+  //   • `avgw_…` ⇒ token NGƯỜI DÙNG: tra băm ⇒ (thu hồi · hết hạn · tài khoản tắt) ⇒ quyền AI còn không ⇒ phạm vi của
+  //     đường ⇒ trần/phút của token ⇒ gắn `res.locals.nguoiGoiCong`. Mọi nhánh hỏng ⇒ dừng (fail-closed; CSDL sập ⇒ 503).
+  //   • còn lại ⇒ KEY CHUNG (deprecate): chỉ khi cờ bật; khớp hằng-thời-gian; cảnh báo + header `Deprecation`.
   router.use((req: Request, res: Response, next) => {
-    const token = extractBearer(req);
-    if (!apiKey || !token || !timingSafeEqualStr(token, apiKey)) {
-      jsonError(
-        res,
-        401,
-        "Invalid API key. Provide 'Authorization: Bearer <OPENAI_GATEWAY_API_KEY>'.",
-        "invalid_request_error",
-        "invalid_api_key",
-      );
-      return;
-    }
-    next();
+    void (async () => {
+      const token = extractBearer(req);
+      if (!token) {
+        jsonError(res, 401, "Missing API token. Provide 'Authorization: Bearer <token>'.", "invalid_request_error", "invalid_api_key");
+        return;
+      }
+
+      if (token.startsWith(TIEN_TO_TOKEN)) {
+        const kq = await xacThucToken(token);
+        if (!kq.ok) {
+          const [ma, code, msg] = TU_CHOI_TOKEN[kq.ma] ?? TU_CHOI_TOKEN["khong-hop-le"];
+          jsonError(res, ma, msg, loaiLoiTheoMa(ma), code);
+          return;
+        }
+        if (!(await coQuyenAi(kq.userId, kq.role))) {
+          jsonError(res, 403, "The token owner no longer has AI access.", "permission_error", "permission_denied");
+          return;
+        }
+        // ⚠ Rà bảo mật de591c868 #1 — `phamViCuaDuong` so không phân biệt hoa/thường (như Express); đường KHÔNG khai
+        //   phạm vi ⇒ 404 ngay tại đây (fail-closed), KHÔNG `next()` cho token người dùng.
+        const can = phamViCuaDuong(req.path);
+        if (can === "khong-ro") {
+          jsonError(res, 404, "Unknown gateway endpoint.", "invalid_request_error", "not_found");
+          return;
+        }
+        if (can !== null && !kq.phamVi.includes(can)) {
+          jsonError(res, 403, `This token lacks the '${can}' scope.`, "permission_error", "insufficient_scope");
+          return;
+        }
+        // Trần THEO TOKEN (không theo người): một extension chạy loạn không ăn hết trần của token khác cùng người.
+        const choMs = checkNamedRateLimit(kq.userId, `gw-token:${kq.tokenId}`, tranMoiPhutToken());
+        if (choMs !== null) {
+          res.setHeader("Retry-After", String(Math.max(1, Math.ceil(choMs / 1000))));
+          jsonError(res, 429, "Rate limit exceeded for this token.", "rate_limit_error", "rate_limit_exceeded");
+          return;
+        }
+        (res.locals as { nguoiGoiCong?: NguoiGoiCong }).nguoiGoiCong = {
+          kieu: "token",
+          userId: kq.userId,
+          role: kq.role,
+          tokenId: kq.tokenId,
+          phamVi: kq.phamVi,
+        };
+        ghiDung(kq.tokenId);
+        next();
+        return;
+      }
+
+      if (!keyChungBat()) {
+        jsonError(
+          res,
+          401,
+          "The shared gateway key is disabled. Use a personal API token.",
+          "invalid_request_error",
+          "shared_key_disabled",
+        );
+        return;
+      }
+      if (!apiKey || !timingSafeEqualStr(token, apiKey)) {
+        jsonError(
+          res,
+          401,
+          "Invalid API key. Provide 'Authorization: Bearer <OPENAI_GATEWAY_API_KEY>'.",
+          "invalid_request_error",
+          "invalid_api_key",
+        );
+        return;
+      }
+      canhBaoKeyChung();
+      res.setHeader("Deprecation", "true");
+      (res.locals as { nguoiGoiCong?: NguoiGoiCong }).nguoiGoiCong = { kieu: "key-chung" };
+      next();
+    })().catch((err) => {
+      // Lỗi không lường trước trong lượt xác thực ⇒ fail-closed, KHÔNG next().
+      console.error("[openaiGateway] auth middleware error:", (err as Error)?.message ?? err);
+      if (!res.headersSent) jsonError(res, 503, "Authentication failed unexpectedly.", "server_error", "auth_backend_unavailable");
+    });
   });
 
   async function ensureEngine(res: Response): Promise<boolean> {
@@ -589,10 +862,12 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // sai khuôn hoặc một ràng buộc không cưỡng chế được phải hỏng ở đây, TRƯỚC khi tiêu một
       // token nào của model. Ba lỗi của nó → 400 có mã (xem `xuLyLoiTool` ở khối catch).
       const yeuCauTool = docYeuCauTool(body);
+      // ★ Đợt 4B-server — danh sách trắng `chat_template_kwargs` (chỉ `enable_thinking` boolean) ⇒ `disableThinking`.
+      const tatNghi = docTatNghi(body);
       const ggufMessagesRaw = toGgufMessages(messages);
       const lastIdx = ggufMessagesRaw.length - 1;
       const representativeText = lastIdx >= 0 ? ggufMessagesRaw[lastIdx].content : "";
-      const planned = await planGatewayFailOpen(inferTaskFromLabel(modelLabel), representativeText);
+      const planned = await planGatewayFailOpen(inferTaskFromLabel(modelLabel), representativeText, nguoiGoi(res));
       plan = planned.plan;
       // Redact every OTHER message directly/ungated (defense-in-depth, mirrors
       // aiChatAssistant's treatment of prior-turn/tool-result text); the last (most recent)
@@ -632,21 +907,19 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         };
         res.write(`data: ${JSON.stringify(roleChunk)}\n\n`);
 
-        const stream = chatCompletionStream(
-          {
-            messages: ggufMessages,
-            maxTokens,
-            temperature,
-            topP,
-            // ★ G2-B — `...(x ? {k:v} : {})` chứ không `tools: yeuCauTool.tools`: một ô `tools:
-            // undefined` vẫn là một ô CÓ MẶT khi ai đó `JSON.stringify` xuống dây, và engine phân
-            // biệt "không có tools" bằng `options.tools?.length`. Giữ hình dạng cũ bit-đối-bit cho
-            // mọi lượt chat không dùng tool.
-            ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
-          },
-          modelId,
-          abort.signal,
-        );
+        // Chỉ dựng TUỲ CHỌN; lời gọi `chatCompletionStream` đứng NGAY trong handler (sổ `thinkingSurfaces` khoá theo hàm bao).
+        const tuyChonLuong = (nghi: { disableThinking?: true }) => ({
+          messages: ggufMessages,
+          maxTokens,
+          temperature,
+          topP,
+          // ★ G2-B — `...(x ? {k:v} : {})` chứ không `tools: yeuCauTool.tools`: một ô `tools:
+          // undefined` vẫn là một ô CÓ MẶT khi ai đó `JSON.stringify` xuống dây, và engine phân
+          // biệt "không có tools" bằng `options.tools?.length`. Giữ hình dạng cũ bit-đối-bit cho
+          // mọi lượt chat không dùng tool.
+          ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
+          ...nghi,
+        });
         // doc69 G2-3 — stateful per-request redactor: holds back a growing secret across
         // chunk boundaries so it never reaches the SSE client unredacted (reuses the exact
         // G2-2 class — see its doc comment in ai/aiSafety.ts). Review fix — gated behind
@@ -661,77 +934,110 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         const thinker = new StreamingThinkingStripper();
         let tokensIn = 0;
         let tokensOut = 0;
+        // ★ Đợt 4B-server — cho chunk usage: chỉ phát khi engine ĐÃ trả chunk `done` (có số thật để nói).
+        let tokensNghi: number | undefined;
+        let daCoDone = false;
         let outcome: "ok" | "error" = "ok";
         // ★★★ G2-B — `finish_reason` của luồng này. Chỉ đổi sang "tool_calls" khi ĐÃ THẬT SỰ phát
         // ít nhất một mảnh tool-call ra dây; mặc định giữ nguyên "stop" như trước.
         let daPhatToolCall = false;
-        for await (const chunk of stream) {
-          if (res.destroyed) break;
-          // ★★★ G2-B — mảnh `delta.tool_calls`, phát NGUYÊN VĂN đúng khuôn OpenAI.
-          // ⚠ KHÔNG đi qua `thinker`/`redactor`: cả hai là bộ lọc CHỮ hiển thị, stateful theo ô
-          // `content`. Đẩy JSON `arguments` qua chúng là (a) làm hỏng JSON khi bộ cắt giữ lại một
-          // đoạn giữa, và (b) trộn hai dòng dữ liệu vào một máy trạng thái. Args là dữ liệu có cấu
-          // trúc do CLIENT tự thực thi, không phải chữ in ra màn hình.
-          if (chunk.type === "tool_call_delta" && chunk.toolCallDelta?.length) {
-            daPhatToolCall = true;
-            res.write(
-              `data: ${JSON.stringify({
-                id,
-                object: "chat.completion.chunk",
-                created,
-                model: modelLabel,
-                choices: [{ index: 0, delta: { tool_calls: chunk.toolCallDelta }, finish_reason: null }],
-              })}\n\n`,
-            );
-            continue;
-          }
-          if (chunk.type === "token" && chunk.token) {
-            const visible = thinker.push(chunk.token);
-            const safe = redactor ? redactor.push(visible) : visible;
-            if (safe) {
-              const delta = {
-                id,
-                object: "chat.completion.chunk",
-                created,
-                model: modelLabel,
-                choices: [{ index: 0, delta: { content: safe }, finish_reason: null }],
-              };
-              res.write(`data: ${JSON.stringify(delta)}\n\n`);
-            }
-          } else if (chunk.type === "done") {
-            tokensIn = chunk.tokensPrompt ?? 0;
-            tokensOut = chunk.tokensGenerated ?? 0;
-            // ⚠ Bộ VỚT (build không phân giải `<tool_call>`) chỉ hiện ra ở chunk `done` — không có
-            // mảnh delta nào cả. Phát nguyên khối ở đây, nếu không lượt ấy im lặng mất tool-call.
-            if (chunk.toolCalls?.length && !daPhatToolCall) {
-              daPhatToolCall = true;
-              res.write(
-                `data: ${JSON.stringify({
+        // ★★★ Đợt 4 — HỎI LẠI ĐÚNG MỘT LẦN với nghĩ TẮT trong CÙNG luồng SSE (cùng `id`, không gửi lại role chunk)
+        // khi lượt sinh hỏng vì model trả lời vào kênh suy luận (`maLoiSuyLuanV1`). AN TOÀN vì hai lớp lỗi đó chỉ
+        // ném khi content RỖNG và CHƯA có tool call ⇒ trên dây mới có role chunk; mảnh `reasoning` không bao giờ ra dây
+        // (nội tâm chỉ phát ở cuối, từ `thinker`). Lưới thứ hai: `daNhanNoiDung` — đã nhận BẤT KỲ mảnh nào ngoài
+        // `reasoning` (chữ, kể cả chữ bộ cắt/bộ che còn GIỮ chưa ghi; tool call; lỗi) ⇒ KHÔNG hỏi lại: nối hai lượt
+        // suy luận khác nhau vào một câu trả lời là bịa (cùng lý lẽ G1 `daPhatChu`). Chữ suy luận của lượt hỏng bị BỎ.
+        let nghiLuot = tatNghi;
+        let daNhanNoiDung = false;
+        for (let daHoiLai = false; ; ) {
+          try {
+            for await (const chunk of chatCompletionStream(tuyChonLuong(nghiLuot), modelId, abort.signal)) {
+              if (res.destroyed) break;
+              if (chunk.type !== "reasoning") daNhanNoiDung = true;
+              // ★★★ G2-B — mảnh `delta.tool_calls`, phát NGUYÊN VĂN đúng khuôn OpenAI.
+              // ⚠ KHÔNG đi qua `thinker`/`redactor`: cả hai là bộ lọc CHỮ hiển thị, stateful theo ô
+              // `content`. Đẩy JSON `arguments` qua chúng là (a) làm hỏng JSON khi bộ cắt giữ lại một
+              // đoạn giữa, và (b) trộn hai dòng dữ liệu vào một máy trạng thái. Args là dữ liệu có cấu
+              // trúc do CLIENT tự thực thi, không phải chữ in ra màn hình.
+              if (chunk.type === "tool_call_delta" && chunk.toolCallDelta?.length) {
+                daPhatToolCall = true;
+                res.write(
+                  `data: ${JSON.stringify({
+                    id,
+                    object: "chat.completion.chunk",
+                    created,
+                    model: modelLabel,
+                    choices: [{ index: 0, delta: { tool_calls: chunk.toolCallDelta }, finish_reason: null }],
+                  })}\n\n`,
+                );
+                continue;
+              }
+              if (chunk.type === "token" && chunk.token) {
+                const visible = thinker.push(chunk.token);
+                const safe = redactor ? redactor.push(visible) : visible;
+                if (safe) {
+                  const delta = {
+                    id,
+                    object: "chat.completion.chunk",
+                    created,
+                    model: modelLabel,
+                    choices: [{ index: 0, delta: { content: safe }, finish_reason: null }],
+                  };
+                  res.write(`data: ${JSON.stringify(delta)}\n\n`);
+                }
+              } else if (chunk.type === "done") {
+                tokensIn = chunk.tokensPrompt ?? 0;
+                tokensOut = chunk.tokensGenerated ?? 0;
+                tokensNghi = chunk.tokensReasoning;
+                daCoDone = true;
+                // ⚠ Bộ VỚT (build không phân giải `<tool_call>`) chỉ hiện ra ở chunk `done` — không có
+                // mảnh delta nào cả. Phát nguyên khối ở đây, nếu không lượt ấy im lặng mất tool-call.
+                if (chunk.toolCalls?.length && !daPhatToolCall) {
+                  daPhatToolCall = true;
+                  res.write(
+                    `data: ${JSON.stringify({
+                      id,
+                      object: "chat.completion.chunk",
+                      created,
+                      model: modelLabel,
+                      choices: [
+                        {
+                          index: 0,
+                          delta: { tool_calls: chunk.toolCalls.map((t, i) => ({ index: i, ...t })) },
+                          finish_reason: null,
+                        },
+                      ],
+                    })}\n\n`,
+                  );
+                }
+              } else if (chunk.type === "error") {
+                outcome = "error";
+                const errChunk = {
                   id,
                   object: "chat.completion.chunk",
                   created,
                   model: modelLabel,
-                  choices: [
-                    {
-                      index: 0,
-                      delta: { tool_calls: chunk.toolCalls.map((t, i) => ({ index: i, ...t })) },
-                      finish_reason: null,
-                    },
-                  ],
-                })}\n\n`,
-              );
+                  choices: [{ index: 0, delta: {}, finish_reason: "error" }],
+                  error: { message: chunk.error || "generation error", type: "server_error" },
+                };
+                res.write(`data: ${JSON.stringify(errChunk)}\n\n`);
+              }
             }
-          } else if (chunk.type === "error") {
-            outcome = "error";
-            const errChunk = {
-              id,
-              object: "chat.completion.chunk",
-              created,
-              model: modelLabel,
-              choices: [{ index: 0, delta: {}, finish_reason: "error" }],
-              error: { message: chunk.error || "generation error", type: "server_error" },
-            };
-            res.write(`data: ${JSON.stringify(errChunk)}\n\n`);
+            break;
+          } catch (err) {
+            if (
+              daNhanNoiDung ||
+              res.destroyed ||
+              abort.signal.aborted ||
+              !nenHoiLaiNghiTat(err, !!yeuCauTool.tools, !!nghiLuot.disableThinking, daHoiLai)
+            ) {
+              throw err;
+            }
+            console.warn(
+              `[openaiGateway] /v1 stream: model trả lời vào kênh suy luận (${maLoiSuyLuanV1(err)}) — hỏi lại lượt này MỘT lần với nghĩ TẮT (chữ suy luận bị bỏ, không thực thi).`,
+            );
+            daHoiLai = true;
+            nghiLuot = { disableThinking: true };
           }
         }
         // Release whatever the two stateful filters were still holding back (e.g. a short tail).
@@ -779,22 +1085,37 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           choices: [{ index: 0, delta: {}, finish_reason: daPhatToolCall ? "tool_calls" : "stop" }],
         };
         res.write(`data: ${JSON.stringify(doneChunk)}\n\n`);
+        if (xinUsageLuong(body) && daCoDone && !res.destroyed) {
+          res.write(
+            `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelLabel, choices: [], usage: usageOpenAi(tokensIn, tokensOut, tokensNghi) })}\n\n`,
+          );
+        }
         res.write("data: [DONE]\n\n");
         res.end();
         return;
       }
 
       // ── Non-streaming ──
-      const result = await chatCompletion(
-        {
-          messages: ggufMessages,
-          maxTokens,
-          temperature,
-          topP,
-          ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
-        },
-        modelId,
-      );
+      // Chỉ dựng TUỲ CHỌN; lời gọi `chatCompletion` đứng NGAY trong handler (sổ `thinkingSurfaces` khoá theo hàm bao).
+      const tuyChonMotLan = (nghi: { disableThinking?: true }) => ({
+        messages: ggufMessages,
+        maxTokens,
+        temperature,
+        topP,
+        ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
+        ...nghi,
+      });
+      let result: Awaited<ReturnType<typeof chatCompletion>>;
+      try {
+        result = await chatCompletion(tuyChonMotLan(tatNghi), modelId);
+      } catch (err) {
+        // ★★★ Đợt 4 — cùng chính sách với nhánh stream: hỏi lại ĐÚNG MỘT lần với nghĩ TẮT (chưa có byte nào ra dây).
+        if (!nenHoiLaiNghiTat(err, !!yeuCauTool.tools, !!tatNghi.disableThinking, false)) throw err;
+        console.warn(
+          `[openaiGateway] /v1: model trả lời vào kênh suy luận (${maLoiSuyLuanV1(err)}) — hỏi lại lượt này MỘT lần với nghĩ TẮT (chữ suy luận bị bỏ, không thực thi).`,
+        );
+        result = await chatCompletion(tuyChonMotLan({ disableThinking: true }), modelId);
+      }
       // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
       plan?.record({
         tokensIn: result.tokensPrompt,
@@ -863,13 +1184,18 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // call) and a safe no-op when `plan` is null (fail-open path, or failure before the
       // plan was created).
       plan?.record({ latencyMs: engineStart ? Date.now() - engineStart : 0, outcome: "error" });
+      // ★★★ Đợt 4 — lớp "trả lời vào kênh suy luận" mang `code` để client hành động được (vd hỏi lại nghĩ TẮT).
+      const maSuyLuan = maLoiSuyLuanV1(err);
       if (!res.headersSent) {
-        jsonError(res, 500, err?.message || "chat completion failed", "server_error");
+        jsonError(res, 500, err?.message || "chat completion failed", "server_error", maSuyLuan ?? undefined);
       } else {
-        // data-raw-ok: khung lỗi SSE theo ĐÚNG chuẩn OpenAI — khách là API client (SDK
-        // openai, LangChain…) parse trường `error.message` này theo hợp đồng của họ.
-        // Dịch nó sang tiếng Việt là phá tương thích, không phải cải thiện.
-        res.write(`data: ${JSON.stringify({ error: { message: err?.message || "error" } })}\n\n`);
+        res.write(
+          // data-raw-ok: khung lỗi SSE theo ĐÚNG chuẩn OpenAI — khách là API client (SDK
+          // openai, LangChain…) parse trường `error.message` này theo hợp đồng của họ.
+          // Dịch nó sang tiếng Việt là phá tương thích, không phải cải thiện.
+          // (Dấu phải nằm NGAY TRÊN dòng chứa `message:` — bộ quét F14 chỉ đọc khối chú thích liền kề.)
+          `data: ${JSON.stringify({ error: { message: err?.message || "error", ...(maSuyLuan ? { type: "server_error", code: maSuyLuan } : {}) } })}\n\n`,
+        );
         res.end();
       }
     }
@@ -904,14 +1230,16 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // source of truth for generation, and the fail-open rate-limit rationale). `suffix`
       // (FIM's surrounding code context) is redacted directly/ungated, mirroring
       // aiChatAssistant's treatment of supplementary content.
-      const planned = await planGatewayFailOpen(isFim ? "fim" : "code", prompt);
+      const planned = await planGatewayFailOpen(isFim ? "fim" : "code", prompt, nguoiGoi(res));
       plan = planned.plan;
       const safeSuffix = suffix ? redactSecretsAndPII(suffix).text : suffix;
 
       // Native fill-in-middle via the engine's generateFim (LlamaCompletion.generateInfillCompletion
       // when the coder model supports infill; raw completion otherwise) — no chat template, so the
       // model returns clean inline code for Continue autocomplete. `suffix` present → real infill.
-      const fimOpts = { prefix: planned.safeText, suffix: safeSuffix, maxTokens, temperature, topP };
+      // ★ Đợt 4C-server — `stop` của caller (ghost-text cắt ở ranh giới dòng/khối); lạ ⇒ bỏ, khoá vắng như cũ.
+      const stopSequences = docStopFim(body.stop);
+      const fimOpts = { prefix: planned.safeText, suffix: safeSuffix, maxTokens, temperature, topP, ...(stopSequences ? { stopSequences } : {}) };
 
       const id = genId("cmpl");
       const created = nowUnix();
@@ -926,8 +1254,11 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           Connection: "keep-alive",
           "X-Accel-Buffering": "no",
         });
+        // ★ Đợt 4B-server — usage của luồng FIM (opt-in, chỉ khi `stream_options.include_usage: true`).
+        let usageFim: Record<string, unknown> | null = null;
         try {
           const result = await generateFim(fimOpts, modelId);
+          usageFim = usageOpenAi(result.tokensPrompt, result.tokensGenerated);
           // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
           plan?.record({
             tokensIn: result.tokensPrompt,
@@ -955,6 +1286,9 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         res.write(
           `data: ${JSON.stringify({ id, object: "text_completion", created, model: modelLabel, choices: [{ index: 0, text: "", finish_reason: "stop" }] })}\n\n`,
         );
+        if (usageFim && xinUsageLuong(body) && !res.destroyed) {
+          res.write(`data: ${JSON.stringify({ id, object: "text_completion", created, model: modelLabel, choices: [], usage: usageFim })}\n\n`);
+        }
         res.write("data: [DONE]\n\n");
         res.end();
         return;
@@ -1074,6 +1408,15 @@ export function registerOpenAiGateway(app: Express): boolean {
   }
 
   const apiKey = envStr("OPENAI_GATEWAY_API_KEY");
+  // ★ Đợt 4A — cờ key chung TẮT tường minh ⇒ chế độ CHỈ-TOKEN: gắn cổng mà không cần key (mọi yêu cầu vẫn phải mang
+  //   token cá nhân hợp lệ — không có đường nào vào cổng mà không xác thực). Cờ BẬT (mặc định) + key rỗng ⇒ từ chối
+  //   gắn NHƯ CŨ: một người cấu hình cũ quên key không được lặng lẽ thấy cổng mọc lên.
+  if (!keyChungBat()) {
+    const basePath = envStr("OPENAI_GATEWAY_PATH") || "/v1";
+    app.use(basePath, createOpenAiGatewayRouter({ apiKey: "" }));
+    console.log(`[openaiGateway] OpenAI-compatible gateway mounted at ${basePath} — CHỈ token người dùng (key chung TẮT).`);
+    return true;
+  }
   if (!apiKey) {
     console.error(
       "[openaiGateway] REFUSING to mount: OPENAI_GATEWAY_ENABLED is on but " +
@@ -1107,6 +1450,10 @@ export function registerOpenAiGateway(app: Express): boolean {
     `[openaiGateway] OpenAI-compatible gateway mounted at ${basePath} ` +
       `(chat/completions · completions[FIM] · embeddings · models). ` +
       `Bearer-auth required; intended for localhost/LAN engineer use only.`,
+  );
+  console.warn(
+    "[openaiGateway] KEY CHUNG OPENAI_GATEWAY_API_KEY đang BẬT (deprecate — không gắn người dùng). Token cá nhân `avgw_…` " +
+      "cũng được nhận; khi mọi client đã chuyển, đặt OPENAI_GATEWAY_SHARED_KEY_ENABLED=0.",
   );
   return true;
 }

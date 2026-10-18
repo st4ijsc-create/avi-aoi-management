@@ -3753,6 +3753,7 @@
       "interlockEvent": "sự kiện khoá liên động",
       "interlockRule": "quy tắc khoá liên động",
       "kbCorpus": "kho tri thức (corpus)",
+      "kbEvalMaTaskSet": "bộ bài đánh giá sinh mã",
       "license": "giấy phép",
       "line": "chuyền",
       "machine": "máy",
@@ -3936,6 +3937,7 @@
       "closeProductionSession": "đóng phiên sản xuất",
       "signOffProductionSession": "ký duyệt (supervisor) phiên sản xuất",
       "unloadGgufModel": "gỡ tải model GGUF",
+      "doiModelLlamaServer": "đổi model đang chạy trên llama-server",
       "generateText": "sinh văn bản",
       "chatCompletion": "hoàn thành hội thoại",
       "analyzeDefect": "phân tích lỗi",
@@ -4021,6 +4023,7 @@
       "taiAnhNenTang": "tải ảnh nền của tầng lên",
       "dungNhaXuong": "dựng nhà xưởng",
       "runKbEval": "chạy đánh giá corpus",
+      "runKbEvalMa": "chạy đánh giá sinh mã",
       "resumeOrchestrationRun": "tiếp tục lượt chạy điều phối",
       "buildArtifact": "build phiên bản chương trình",
       "requestVersionReview": "yêu cầu duyệt phiên bản chương trình",
@@ -4203,7 +4206,9 @@
       "secsGem": "SECS/GEM (giao tiếp host bán dẫn)",
       "secsGemLive": "SECS/GEM điều phối trực tiếp",
       "gem300": "GEM300",
-      "kbEvalRuns": "sổ lượt đánh giá Training Studio"
+      "kbEvalRuns": "sổ lượt đánh giá Training Studio",
+      "kbEvalMa": "đánh giá sinh mã Training Studio",
+      "kbEvalMaRuns": "sổ lượt đánh giá sinh mã Training Studio"
     },
     "action": {
       "changeMqttDeviceOfOtherScope": "đổi thiết bị MQTT đang gắn với máy ngoài phạm vi của bạn",
@@ -4449,7 +4454,15 @@
     "DEVICE_PROTOCOL_UNSUPPORTED": "Bản dựng này chưa hỗ trợ giao thức {{entity}}.",
     "OT_COMMAND_SUPERSEDED_BY_STOP": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG ({{stopKey}}) — gửi lại nếu cần.",
     "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần.",
-    "OT_STOP_UNVERIFIED_QUEUE_FULL": "Lệnh dừng này không phải DỪNG ghim đã xác minh và đã có quá nhiều lệnh như vậy đang chờ cho thiết bị này — lệnh bị từ chối, không gửi gì. Hãy dùng DỪNG ghim (hoặc nút E-STOP của máy)."
+    "OT_STOP_UNVERIFIED_QUEUE_FULL": "Lệnh dừng này không phải DỪNG ghim đã xác minh và đã có quá nhiều lệnh như vậy đang chờ cho thiết bị này — lệnh bị từ chối, không gửi gì. Hãy dùng DỪNG ghim (hoặc nút E-STOP của máy).",
+    "TU_DONG_TAT": "Chế độ Agent tự động đang TẮT trên máy chủ (công tắc AI_CODING_TU_TRI_GHI). Dùng chế độ duyệt từng bước, hoặc nhờ quản trị bật công tắc.",
+    "THIEU_QUYEN_THUC_THI": "Thiếu quyền chạy lệnh / tự ghi (ai_repo_exec) cho chế độ Agent tự động.",
+    "THIEU_QUYEN": "Thiếu quyền đọc repo (ai_repo_read) để chạy Agent.",
+    "DANG_CO_LUOT_CHAY": "Bạn đang có một lượt Agent chạy — chờ nó xong hoặc bấm Dừng trước khi gửi yêu cầu mới.",
+    "CAU_HOI_RONG": "Yêu cầu trống.",
+    "CAU_HOI_QUA_DAI": "Yêu cầu quá dài cho một lượt Agent.",
+    "CHE_DO_SAI": "Chế độ Agent không hợp lệ.",
+    "PROJECT_NOT_FOUND": "Không tìm thấy dự án đã chọn (hoặc dự án không nằm trong danh sách cho phép)."
   },
   "export": {
     "reportMenu": {
@@ -13443,7 +13456,48 @@
     "providerOffline": "Offline",
     "gpuMode": "GPU Mode",
     "engineHealth": "Engine Health",
-    "embedding": "Embedding"
+    "embedding": "Embedding",
+    "doiModel": {
+      "tieuDe": "Model của llama-server",
+      "moTa": "Đổi model chữ chính đang chạy trên llama-server. Máy chủ kiểm VRAM, khởi động lại, kiểm /props và một lượt sinh thử; hỏng thì tự quay về model cũ.",
+      "dangTai": "Đang đọc trạng thái…",
+      "dangChay": "Đang chạy",
+      "khongDocDuocProps": "không đọc được /props",
+      "ngCanh": "Ngữ cảnh / slot",
+      "mongDoi": "mong đợi",
+      "nguon": "Nguồn lựa chọn",
+      "nguonQuanTri": "lựa chọn quản trị",
+      "nguonEnv": "cấu hình gốc",
+      "cauHinhGoc": "cấu hình gốc",
+      "chonModel": "Chọn model",
+      "dangChayNhan": "đang chạy",
+      "nutDoi": "Đổi model",
+      "canhBao": "Mọi lượt AI bị tạm ngưng trong lúc đổi (thường 1–3 phút). Chỉ liệt kê model sinh chữ trong kho model.",
+      "daBatDau": "Đã bắt đầu đổi model — theo dõi từng bước bên dưới.",
+      "sinhThuNhan": "sinh thử",
+      "ketQua": {
+        "dang-chay": "Đang đổi",
+        "thanh-cong": "Thành công",
+        "that-bai-da-quay-ve": "Thất bại — đã quay về model cũ",
+        "that-bai-quay-ve-hong": "Thất bại — quay về cũng hỏng",
+        "huy-khong-doi": "Đã huỷ — chưa đổi gì"
+      },
+      "buoc": {
+        "kiemLuaChon": "Kiểm lựa chọn",
+        "giuKhoa": "Giữ khoá đổi model",
+        "kiemServer": "Đọc /props hiện tại",
+        "uocLuongVram": "Ước lượng VRAM",
+        "tamDungGiamSat": "Tạm dừng giám sát",
+        "choHangDoi": "Chờ lượt AI đang chạy",
+        "ghiLuaChon": "Ghi lựa chọn bền",
+        "khoiDong": "Khởi động lại llama-server",
+        "kiemProps": "Kiểm /props",
+        "sinhThu": "Sinh thử",
+        "apDung": "Áp dụng định tuyến",
+        "quayVe": "Quay về model cũ"
+      },
+      "xacNhan": "Đổi model llama-server? Mọi lượt AI tạm ngưng trong lúc đổi."
+    }
   },
   "measurementPointP1": {
     "shape": {
@@ -15343,6 +15397,20 @@
       }
     }
   },
+  "aiAgentPhanHoi": {
+    "huuIch": "Hữu ích",
+    "khongHuuIch": "Chưa tốt",
+    "lyDoNhan": "Vì sao chưa tốt? (tuỳ chọn)",
+    "lyDoGoiY": "VD: sai API, không biên dịch được, sửa nhầm tệp…",
+    "guiLyDo": "Gửi lý do",
+    "daGhiLyDo": "Đã ghi lý do.",
+    "loi": {
+      "quyen": "Bạn không có quyền gửi phản hồi.",
+      "khongThay": "Không tìm thấy câu trả lời / đề xuất này (có thể đã hết hạn lưu).",
+      "khongPhaiDiff": "Đề xuất này không phải một thay đổi tệp — không chấm được.",
+      "chung": "Không ghi được phản hồi — thử lại sau."
+    }
+  },
   "kbStudio": {
     "title": "Training Studio",
     "subtitle": "Quản lý kho tri thức (corpus), nạp tài liệu/URL, theo dõi tác vụ nạp dữ liệu và xem trước nội dung đã nạp",
@@ -15406,7 +15474,7 @@
         "fillCorpusAria": "Điền tên corpus gợi ý \"{{corpus}}\" vào ô Tên corpus",
         "step1Note": "Bấm một gợi ý chỉ ĐIỀN tên vào ô \"Tên corpus\" bên dưới (không tự tạo corpus rỗng) — corpus chỉ thật sự tồn tại sau khi tài liệu đầu tiên được nạp vào nó.",
         "currentlySelected": "Đang chọn:",
-        "step1WebWarning": "Với ngôn ngữ lập trình phổ thông (C#, React, Node.js, Python, SQL): nạp GIÁO TRÌNH NHẬP MÔN là vô ích và gây nhiễu — model đã nắm cú pháp từ lúc huấn luyện. Tài liệu THAM CHIẾU API và QUY ƯỚC DỰ ÁN thì có ích thật: đo 2026-09-23, lỗi C# lặp lại của model là QUÊN KHÔNG GIAN TÊN — `reader.GetInt32(\"MaHocSinh\")` và `SqlDbType` đều cần `using System.Data;` (thiếu ⇒ dotnet build chặn cả tệp). Tham chiếu API ghi rõ `using` cho từng ký hiệu. ⇒ Nạp tài liệu tra cứu API, chuẩn mã và quy ước; đừng nạp giáo trình.",
+        "step1WebWarning": "Với ngôn ngữ lập trình phổ thông (C#, React, Node.js, Python, SQL): nạp GIÁO TRÌNH NHẬP MÔN gần như chắc chắn vô ích — model đã nắm cú pháp từ lúc huấn luyện. Tài liệu THAM CHIẾU API và QUY ƯỚC DỰ ÁN là ứng viên đáng thử hơn, nhưng CHƯA có số đo nào cho thấy chúng làm mã tốt hơn. Corpus Studio hôm nay chỉ tới trợ lý hỏi đáp trên web và trợ lý VSCode chế độ LOCAL; KHÔNG tới không gian lập trình trên trình duyệt hay extension chế độ SERVER. Muốn biết một corpus có giúp mã hay không: tab Đánh giá → Eval mã (corpus BẬT/TẮT).",
         "step2Title": "2. Chọn tệp",
         "step2Accepts": "Nhận: {{formats}}",
         "step2AcceptsUrl": ", URL (dán link ở khung bên phải)",
@@ -15533,14 +15601,14 @@
         "hitHint": "Tỷ lệ câu có một đoạn của tệp kỳ vọng nằm trong top‑K truy hồi của corpus.",
         "mrrHint": "Trung bình 1/hạng của đoạn trúng đầu tiên (1 = luôn đứng đầu).",
         "overThreshold": "Qua ngưỡng {{nguong}}",
-        "overThresholdHint": "Đoạn trúng có điểm ≥ ngưỡng trích dẫn Studio của trợ lý lập trình — tức là thật sự được đưa vào prompt.",
+        "overThresholdHint": "Đoạn trúng có điểm ≥ ngưỡng trích dẫn Studio (0,44) — ngưỡng trợ lý VSCode chế độ LOCAL dùng để nhận đoạn vào ngữ cảnh. Không gian lập trình trên trình duyệt không đọc corpus Studio. Qua ngưỡng chưa chứng minh mã tốt hơn — xem Eval mã.",
         "answer": "Đáp án trong ngữ cảnh",
         "answerHint": "Đáp án kỳ vọng (regex) có mặt trong văn bản top‑K — chấm bằng máy, không dùng LLM.",
         "pipeline": "Tới trợ lý",
         "pipelineHint": "Sau khi trộn kho hệ thống + Studio + ngưỡng + sắp lại, trích dẫn cuối có đoạn của tệp kỳ vọng từ corpus này.",
         "pipelineOff": "Lượt này không chạy tầng đường ống thật.",
         "reject": "Từ chối đúng ({{n}} câu ngoài)",
-        "rejectHint": "Câu hỏi không thuộc corpus mà không đoạn nào qua ngưỡng — nhiễu không lọt vào prompt.",
+        "rejectHint": "Câu hỏi không thuộc corpus mà không đoạn nào qua ngưỡng — ở trợ lý VSCode chế độ LOCAL, đoạn lạc đề sẽ không được nhận vào ngữ cảnh.",
         "pipelineAny": "Nguồn đúng tới trợ lý (mọi kho)",
         "pipelineAnyHint": "Trích dẫn cuối có tệp kỳ vọng từ BẤT KỲ kho nào — kho hệ thống có thể giữ bản sao cùng tên và thắng chỗ bản bạn nạp. So với ô bên trái để biết tài liệu nạp bị lấn át hay trợ lý thật sự thiếu nguồn."
       },
@@ -15558,11 +15626,52 @@
       "missingFileBadge": "thiếu tệp",
       "systemCopyBadge": "bản hệ thống"
     },
+    "evalMa": {
+      "title": "Eval mã — corpus BẬT / TẮT",
+      "desc": "Mỗi bài trong bộ bài của bộ đo được sinh HAI lần — không ngữ cảnh, và có đoạn corpus ≥ ngưỡng 0,44 (cách trợ lý VSCode chế độ LOCAL nhận đoạn) — rồi máy biên dịch / chạy test chấm. Trả lời câu mà eval truy hồi ở trên không trả lời được: corpus này làm mã tốt lên hay tệ đi?",
+      "tat": "Eval mã đang TẮT trên máy chủ (KB_STUDIO_EVAL_MA_ENABLED). Lượt này chạy mã do model sinh trên máy chủ nên mặc định tắt; bật là quyết định của quản trị.",
+      "boBaiAria": "Bộ bài",
+      "soLapAria": "Số lần lặp",
+      "soBai": "{{n}} bài",
+      "chay": "Chạy eval mã",
+      "huy": "Huỷ",
+      "giaiThich": "Chạy nền, mức ưu tiên thấp (không chặn người đang dùng AI). Chỉ admin đã bật 2FA mới bắt đầu / huỷ được. HAI THƯỚC: kết luận chính tính trên các bài mà nhánh BẬT thật sự nhận ≥ 1 đoạn (bài không nhận đoạn có prompt giống hệt hai nhánh — chỉ góp nhiễu); cần ≥ 6 lượt như thế, nếu không ⇒ \"Không đủ bài có đoạn\". Thước toàn bộ vẫn hiển thị. \"Tụt\" chỉ khi BẬT thấp hơn TẮT QUÁ biên nhiễu: ±3/36 đo trên bộ 12 bài × 3 lượt, quy theo số lượt của thước đó. Không lượt BẬT nào nhận được đoạn ≥ ngưỡng ⇒ \"Không áp dụng\".",
+      "chuaCo": "Chưa có lượt eval mã nào cho corpus này.",
+      "cut": "cụt {{n}}",
+      "dangChay": "đang chạy {{pct}} %",
+      "toanBo": "toàn bộ: {{kl}}",
+      "doiChung": "A/A đối chứng",
+      "tapConCu": "— (lượt cũ, chưa có thước này)",
+      "col": {
+        "thoiDiem": "Thời điểm",
+        "boBai": "Bộ bài",
+        "tat": "TẮT toàn bộ (đạt/n)",
+        "bat": "BẬT toàn bộ (đạt/n)",
+        "chenh": "Chênh toàn bộ (biên)",
+        "tapCoDoan": "Bài có đoạn: TẮT → BẬT (chênh, biên)",
+        "ketLuan": "Kết luận"
+      },
+      "ketLuan": {
+        "tut": "TỤT",
+        "nang": "Nâng",
+        "trong-nhieu": "Trong nhiễu",
+        "khong-ap-dung": "Không áp dụng",
+        "khong-do-duoc": "Không đo được",
+        "khong-du-bai-co-doan": "Không đủ bài có đoạn"
+      },
+      "trangThai": {
+        "dang-chay": "Đang chạy",
+        "huy": "Đã huỷ",
+        "loi": "Lỗi",
+        "khong-do-duoc": "Không đo được",
+        "gian-doan": "Gián đoạn (máy chủ khởi động lại giữa chừng)"
+      }
+    },
     "modelBuilder": {
       "title": "Xây dựng mô hình",
       "desc": "Tinh chỉnh (fine-tune) một mô hình cục bộ trên corpus (LoRA)",
       "comingSoon": "Sẽ có ở tác vụ sau (E3-6)",
-      "comingSoonDesc": "Tinh chỉnh (fine-tune) LoRA chưa được xây dựng. Tài liệu bạn đã nạp vào corpus giờ được trợ lý AI dùng làm nguồn trích dẫn (nhãn \"Tài liệu bạn nạp\") trong câu trả lời — còn việc huấn luyện một mô hình tinh chỉnh riêng vẫn là nâng cấp trong tương lai, chưa được xây dựng.",
+      "comingSoonDesc": "Tinh chỉnh (fine-tune) LoRA chưa được xây dựng. Tài liệu bạn nạp vào corpus hiện được dùng làm nguồn trích dẫn (nhãn \"Tài liệu bạn nạp\") cho trợ lý hỏi đáp trên web và trợ lý VSCode chế độ LOCAL — không cho không gian lập trình trên trình duyệt. Huấn luyện một mô hình riêng vẫn là nâng cấp tương lai, chưa được xây dựng.",
       "startButton": "Bắt đầu tinh chỉnh"
     },
     "kiemMay": {
@@ -18698,6 +18807,27 @@
     }
   },
   "systemHealth": {
+    "llamaWd": {
+      "title": "Giám sát llama-server (model chữ chính)",
+      "desc": "Tự khởi động lại llama-server khi không còn tiến trình nào nghe cổng (2 nhịp 15 giây liên tiếp), tối đa 3 lần trong 30 phút. Khi server chết, lượt sinh chữ của model chính CHỜ server dựng lại thay vì nạp model vào ứng dụng.",
+      "trangThai": "Trạng thái",
+      "soLan": "Số lần khởi động (tiến trình này)",
+      "trongCuaSo": "Trong cửa sổ {{phut}} phút",
+      "lanCuoi": "Lần khởi động cuối",
+      "lanKiem": "Lần kiểm cuối",
+      "lyDo": "Diễn giải (máy chủ)",
+      "khongDoc": "Không đọc được trạng thái máy AI.",
+      "st": {
+        "song": "Sống",
+        "dangNap": "Đang nạp model",
+        "chet": "Chết",
+        "dangKhoiDongLai": "Đang khởi động lại",
+        "boCuoc": "Bỏ cuộc — cần người",
+        "tamDung": "Tạm dừng (đổi model)",
+        "tat": "Tắt",
+        "chuaKiem": "Chưa kiểm"
+      }
+    },
     "title": "Sức khỏe hệ thống",
     "subtitle": "Trạng thái nội bộ thời gian thực: bộ đệm store-and-forward telemetry OT, giám sát kết nối HA theo adapter, và tình trạng model thị giác DINOv2. Chỉ đọc — không mở đường ghi thiết bị.",
     "ai": {
@@ -20444,6 +20574,14 @@
     "may": "máy",
     "engineHong": "ENGINE HỎNG",
     "engineOk": "engine ok",
+    "engineKhoiDongLai": "ĐANG KHỞI ĐỘNG LẠI MODEL",
+    "engineDangNap": "ĐANG NẠP MODEL",
+    "engineTamDung": "TẠM DỪNG (ĐỔI MODEL)",
+    "engineBoCuoc": "MODEL KHÔNG KHỞI ĐỘNG ĐƯỢC",
+    "tipKhoiDongLai": "llama-server vừa chết; bộ giám sát đang khởi động lại nó (lần {{lan}}, {{trongCuaSo}}/{{toiDa}} trong {{phut}} phút). Lượt sinh mã lúc này CHỜ tối đa khoảng 2 phút rồi đi qua server — không nạp model vào ứng dụng.",
+    "tipDangNap": "llama-server đang nạp model (30–90 giây với model khoảng 21 GB). Lượt sinh mã sẽ chờ rồi chạy tiếp.",
+    "tipTamDung": "Bộ giám sát đang tạm dừng có chủ ý (đang đổi model) — không tự khởi động lại llama-server.",
+    "tipBoCuoc": "llama-server không khởi động được sau {{toiDa}} lần trong {{phut}} phút — bộ giám sát đã dừng thử. Cần người xem logs/llama-server-*.err.log rồi chạy lại scripts/ai/start-llama-server.ps1.",
     "tipMayHong": "Engine suy luận KHÔNG khoẻ. Mọi câu trả lời lúc này phản ánh trạng thái MÁY, không phản ánh năng lực model — đừng kết luận gì về chất lượng model cho tới khi ô này xanh lại.",
     "tipMayOk": "Engine đang chạy qua {{duong}}. Model đã nạp: {{soModel}}. Chế độ GPU: {{gpu}}.",
     "duongNgoai": "llama-server (tiến trình ngoài)",
@@ -20508,6 +20646,7 @@
     },
     "khoi": {
       "modelSinh": "Mã do model viết — có thể khác tệp trên đĩa",
+      "dauRaLenh": "Đầu ra lệnh do máy chủ chạy thật — không phải mã do model viết",
       "bangChung": "Byte thật từ đĩa · {{luc}}",
       "khacDia": "≠ tệp trên đĩa (đọc {{luc}}) — nếu model nói đây là mã HIỆN TẠI thì đừng tin",
       "khopDia": "khớp tệp trên đĩa ({{luc}})"
@@ -20533,7 +20672,13 @@
         "min": "{{n}} phút",
         "hour": "{{n}} giờ",
         "day": "{{n}} ngày"
-      }
+      },
+      "rename": "Đổi tên phiên",
+      "renamePh": "Tên phiên (để trống = theo câu hỏi đầu)",
+      "renameSave": "Lưu",
+      "renameFailed": "Không đổi được tên phiên.",
+      "terminalNote": "Nhật ký Terminal/Vấn đề của phiên chỉ khôi phục trên trình duyệt đã chạy lệnh.",
+      "terminalRestored": "Đã khôi phục {{n}} lượt lệnh của phiên (lưu trên trình duyệt này)."
     },
     "ribbon": {
       "refreshTree": "Làm mới cây tệp",
@@ -20600,7 +20745,9 @@
         "duongKhongHopLe": "Không duyệt được đường này (không tồn tại, không phải thư mục, hoặc hệ điều hành chặn đọc). Lên một cấp hoặc chọn ổ đĩa khác.",
         "guiThatBai": "Không gửi được yêu cầu tới máy chủ — chi tiết: {{chiTiet}}",
         "khac": "Server từ chối với mã {{ma}} — báo cho người phụ trách hệ thống."
-      }
+      },
+      "moTitleMoi": "Quản lý dự án",
+      "phanAdmin": "Quản trị: đăng ký thư mục có sẵn"
     },
     "title": "Không gian lập trình AI",
     "subtitle": "Đọc mã → đề xuất diff → người duyệt → chạy test → đọc lỗi thật rồi sửa tiếp",
@@ -20795,7 +20942,8 @@
         "offUser": "Vòng tự động đang TẮT — bản sửa ĐÃ ghi, nhưng bạn phải tự chạy test. Tính năng này do quản trị viên bật trên máy chủ — hãy liên hệ quản trị viên.",
         "error": "DỪNG vì một hỏng THẬT ở lượt chạy kiểm chứng.",
         "dirty": "DỪNG vì tệp đích có thay đổi CHƯA COMMIT của bạn — vòng tự-ghi KHÔNG đè lên công việc chưa lưu. Hãy commit (hoặc stash) rồi thử lại.",
-        "kill": "DỪNG vì công tắc khẩn cấp (kill-switch) đã được bật — vòng tự-ghi dừng ngay. Liên hệ quản trị viên để gỡ."
+        "kill": "DỪNG vì công tắc khẩn cấp (kill-switch) đã được bật — vòng tự-ghi dừng ngay. Liên hệ quản trị viên để gỡ.",
+        "mainRepo": "DỪNG: vòng tự ghi không chạy trên repo chính cho tới khi có điểm khôi phục (checkpoint). Bản sửa KHÔNG được ghi — hãy dùng đường duyệt tay, hoặc chạy trên một dự án hộp cát."
       }
     },
     "terminal": {
@@ -20839,7 +20987,9 @@
       "chat": "Hội thoại",
       "terminalTab": "Lệnh & Nhật ký",
       "problemsTab": "Vấn đề",
-      "problemsCount": "{{n}}"
+      "problemsCount": "{{n}}",
+      "runTab": "Chạy & Xem trước",
+      "gitTab": "Git"
     },
     "problems": {
       "title": "Vấn đề",
@@ -20875,6 +21025,321 @@
       "lop": "lớp",
       "kieu": "kiểu",
       "hang": "hằng"
+    },
+    "agent": {
+      "nho": {
+        "tieuDe": "Đề xuất nhớ",
+        "phamViDuAn": "Dự án này",
+        "phamViNguoiDung": "Sở thích của bạn",
+        "giaiThich": "Chỉ được lưu khi bạn bấm Nhớ; sẽ dùng làm ngữ cảnh cho các lượt sau.",
+        "nutNho": "Nhớ",
+        "nutBoQua": "Bỏ qua",
+        "daNho": "Đã nhớ — sẽ dùng cho các lượt sau.",
+        "daBo": "Đã bỏ qua.",
+        "loiHetHieuLuc": "Đề xuất đã hết hiệu lực (lượt chạy không còn trên máy chủ).",
+        "loiDaXuLy": "Đề xuất này đã được xử lý.",
+        "loiTat": "Trí nhớ đang tắt trên máy chủ — không lưu.",
+        "loiRuiRo": "Không lưu: ghi chú trông giống một mệnh lệnh.",
+        "loiDay": "Đã đủ số bài học tối đa cho dự án này — xoá bớt trước.",
+        "loiQuyen": "Bạn không có quyền với lượt chạy này.",
+        "loiKhac": "Không lưu được ({{ma}})."
+      },
+      "canDuyet": "Cần bạn duyệt",
+      "canhBaoDuLieu": "Nội dung đọc từ {{nguon}} chứa câu dạng mệnh lệnh — agent coi là dữ liệu, không làm theo.",
+      "haTuTri": "Đã hạ tự trị: lượt này đã đọc nội dung đáng ngờ ({{nguon}}) — mọi ghi/lệnh sau đó cần bạn duyệt.",
+      "theDangNgo": "Lượt này đã đọc nội dung đáng ngờ: {{nguon}} — xem kỹ trước khi duyệt.",
+      "cheDo": {
+        "hoi": "Hỏi",
+        "hoiGoiY": "Hỏi đáp như cũ — không tự ghi tệp",
+        "nhom": "Chế độ trò chuyện",
+        "sua": "Agent · duyệt từng bước",
+        "suaGoiY": "Agent tự đọc, sửa, chạy lệnh qua nhiều bước — mỗi lượt ghi/lệnh chờ bạn duyệt",
+        "tuDong": "Agent · tự động",
+        "tuDongCanhBao": "Tự động: agent GHI tệp và CHẠY lệnh danh sách trắng KHÔNG hỏi lại. Kiểm tra kết quả và dùng Hoàn tác nếu cần.",
+        "tuDongGoiY": "Ghi/lệnh trong danh sách trắng tự chạy sau checkpoint (hoàn tác được)"
+      },
+      "choModel": "Đang chờ lượt model ({{n}} phía trước)",
+      "coLuotDangChay": "Bạn có một lượt chạy agent chưa xong.",
+      "ctx": "ngữ cảnh {{p}}%",
+      "daBac": "Đã bác.",
+      "daBacLyDo": "Đã bác — lý do: {{lyDo}}",
+      "daDuyet": "Đã duyệt.",
+      "daKhoiPhuc": "Đã khôi phục {{n}} tệp.",
+      "dangChay": "Agent đang làm việc…",
+      "dangChoDuyet": "Đang chờ bạn duyệt",
+      "dauRaLenh": "Đầu ra lệnh (từ máy chủ)",
+      "duyet": {
+        "chayLenh": "CHẠY lệnh:",
+        "doiTen": "ĐỔI TÊN {{tu}} → {{den}}",
+        "xoa": "XOÁ tệp {{tep}}"
+      },
+      "guiBac": "Gửi lời bác",
+      "hetHieuLuc": "Hết hiệu lực (lượt chạy đã dừng).",
+      "hoanTac": "Hoàn tác lượt chạy",
+      "keHoach": "Kế hoạch",
+      "keHoachDem": "{{xong}}/{{tong}} xong",
+      "lyDo": {
+        "hetGio": "Dừng: đã hết thời gian cho phép.",
+        "hetLuot": "Dừng: đã hết số lượt cho phép.",
+        "hetToken": "Dừng: đã hết ngân sách token.",
+        "hoanThanh": "Hoàn thành.",
+        "huy": "Đã dừng theo yêu cầu.",
+        "lapLai": "Dừng: model lặp lại cùng một thao tác.",
+        "loiModel": "Dừng: lỗi model.",
+        "menhLenh": "Dừng an toàn: phát hiện mệnh lệnh nằm trong dữ liệu đọc được."
+      },
+      "lyDoBac": "Lý do bác (model sẽ đọc để làm lại)",
+      "lyDoBacGoiY": "Vd: đừng đổi API công khai, chỉ sửa hàm nội bộ",
+      "maKetQua": "Mã: {{ma}}",
+      "maThoat": "mã thoát {{ma}}",
+      "matKetNoi": "Mất kết nối luồng sự kiện — lượt chạy vẫn tiếp tục ở máy chủ.",
+      "moTep": "Mở trong trình xem",
+      "noiLai": "Nối lại",
+      "nutBac": "Bác",
+      "nutDuyet": "Duyệt",
+      "tepDaDoi": "Tệp đã đổi ({{n}})",
+      "thoiBac": "Thôi",
+      "toolChuaCoKetQua": "Chưa có kết quả.",
+      "toolDangChay": "đang chạy",
+      "toolLoi": "thất bại",
+      "toolOk": "thành công",
+      "usage": "token vào {{vao}} · ra {{ra}}",
+      "viec": {
+        "cho": "chờ",
+        "dangLam": "đang làm",
+        "xong": "xong"
+      },
+      "xungDot": "Xung đột — KHÔNG ghi đè ({{n}} tệp đã bị sửa tiếp sau lượt chạy):"
+    },
+    "duanCaNhan": {
+      "err": {
+        "quyen": "Tài khoản chưa có quyền tạo dự án (cần quyền chạy lệnh AI — ai_repo_exec). Nhờ quản trị cấp quyền.",
+        "ten": "Tên phải có 1–100 ký tự và không chứa # ; = |.",
+        "khuon": "Không có khuôn này trên máy chủ. Chọn một khuôn trong danh sách.",
+        "zipThieu": "Chưa chọn tệp ZIP.",
+        "zipHong": "Tệp không phải ZIP hợp lệ (hoặc bị hỏng).",
+        "zipDuong": "ZIP chứa đường dẫn nguy hiểm (../, ổ đĩa, đường tuyệt đối) — đã từ chối cả tệp, không giải nén gì.",
+        "zipSymlink": "ZIP chứa liên kết tượng trưng (symlink) — đã từ chối. Nén lại thư mục không kèm symlink.",
+        "zipNhieu": "ZIP có quá nhiều tệp. Bỏ node_modules/bin/obj rồi nén lại.",
+        "zipLon": "ZIP quá lớn sau khi giải nén (hoặc vượt dung lượng còn lại của bạn).",
+        "zipBom": "ZIP có tỉ lệ nén bất thường (nghi zip bomb) — đã từ chối.",
+        "zipGhi": "Không ghi được một tệp trong ZIP (trùng tên khác hoa/thường?).",
+        "gitTat": "Máy chủ chưa bật clone git (chưa khai danh sách máy chủ git nội bộ).",
+        "gitNguon": "Nguồn git không hợp lệ. Dùng URL https://… của máy chủ git nội bộ hoặc đường thư mục được phép.",
+        "gitNgoai": "Nguồn này không nằm trong danh sách máy chủ git nội bộ được phép (hệ chạy offline).",
+        "gitClone": "Clone thất bại — kiểm tra URL/quyền truy cập máy chủ git.",
+        "gitHetGio": "Clone quá thời gian cho phép — repo quá lớn hoặc máy chủ git không phản hồi.",
+        "tranSo": "Bạn đã đủ số dự án tối đa. Xoá bớt một dự án không dùng rồi tạo lại.",
+        "tranByte": "Vượt dung lượng cho phép của bạn. Xoá bớt dự án (thùng rác giữ 30 ngày, không tính vào dung lượng).",
+        "dangTao": "Đang tạo một dự án khác của bạn — đợi xong rồi thử lại.",
+        "goc": "Thư mục gốc dự án trên máy chủ cấu hình sai (AI_PROJECTS_ROOT) — báo quản trị.",
+        "gui": "Không gửi được yêu cầu tới máy chủ — chi tiết:",
+        "khongThay": "Không thấy dự án này (có thể đã bị xoá). Tải lại danh sách.",
+        "khac": "Máy chủ từ chối với mã {{ma}}."
+      },
+      "cach": {
+        "rong": "Rỗng",
+        "khuon": "Từ khuôn",
+        "zip": "Nhập ZIP",
+        "git": "Git nội bộ",
+        "moTa": "Từ mô tả (Agent)"
+      },
+      "title": "Dự án của tôi",
+      "dungLuong": "{{so}}/{{tran}} dự án · {{daDung}} / {{tranByte}}",
+      "loiTai": "Không tải được danh sách dự án của bạn — đây là LỖI, không phải danh sách rỗng.",
+      "dangTai": "Đang tải…",
+      "rong": "Bạn chưa có dự án nào — tạo một dự án bên dưới.",
+      "doiTen": "Đổi tên",
+      "luuTen": "Lưu tên",
+      "huy": "Huỷ",
+      "mo": "Mở dự án này",
+      "xoa": "Xoá (vào thùng rác 30 ngày)",
+      "taoMoi": "Tạo dự án mới",
+      "cachTao": "Cách tạo",
+      "oTen": "Tên dự án",
+      "oTenGoiY": "Ví dụ: Công cụ đọc log máy AOI",
+      "oKhuon": "Khuôn",
+      "oZip": "Tệp ZIP (tối đa 50 MB; tệp chạy được và bí mật sẽ bị bỏ qua)",
+      "oGit": "URL máy chủ git nội bộ (hoặc thư mục được phép)",
+      "oMoTa": "Mô tả dự án — tạo dự án rỗng rồi mở chế độ Agent với mô tả này",
+      "oMoTaGoiY": "Ví dụ: Ứng dụng console C# đọc tệp CSV kết quả AOI và in tỉ lệ lỗi theo ca",
+      "nutTao": "Tạo",
+      "daXoa": "Đã chuyển dự án vào thùng rác (giữ 30 ngày).",
+      "boQua": "Đã bỏ qua {{n}} tệp không được phép (tệp chạy được / bí mật / .git / node_modules).",
+      "daTao": "Đã tạo dự án — đang mở.",
+      "hoiXoa": "Xoá dự án này? Thư mục được chuyển vào thùng rác và xoá hẳn sau 30 ngày.",
+      "moTaDialog": "Tạo và mở dự án của riêng bạn trên máy chủ — không cần thư mục có sẵn. Chỉ bạn (và quản trị) thấy dự án cá nhân."
+    },
+    "chayUD": {
+      "tieuDe": "Chạy & Xem trước",
+      "caiPhuThuoc": "Cài phụ thuộc",
+      "caiTip": "Đề xuất lệnh cài theo manifest của dự án — đi qua thẻ duyệt như mọi lệnh; không bao giờ tự chạy.",
+      "khongCoLenhCai": "Không nhận ra manifest (package.json / requirements.txt / *.csproj).",
+      "chay": "Chạy",
+      "dung": "Dừng",
+      "lenhChay": "Lệnh chạy: {{lenh}} (từ {{nguon}})",
+      "khongChayDuoc": "Chưa chạy được [{{ma}}]: {{chiTiet}}",
+      "repoChinh": "Repo nền tảng không chạy được ở đây — lệnh dev của nó chính là máy chủ này.",
+      "cong": "Cổng {{cong}}",
+      "chuaNgheCong": "Ứng dụng chưa nghe cổng {{cong}} sau 2 phút — script dev có đọc biến PORT không?",
+      "chuaXacNhanChet": "Đã ra lệnh dừng nhưng CHƯA quan sát được tiến trình thoát — cổng vẫn bị giữ.",
+      "nhatKy": "Nhật ký",
+      "nhatKyCat": "… (phần đầu đã bị cắt)",
+      "nhatKyRong": "Chưa có nhật ký.",
+      "xemTruoc": "Xem trước",
+      "moTabMoi": "Mở tab mới",
+      "xemTruocTat": "Xem trước đang TẮT ({{lyDo}}) — quản trị đặt AI_PREVIEW_PROXY_PORT để bật (proxy trên cổng riêng, tách origin khỏi ứng dụng).",
+      "xemTruocCanHostRieng": "Xem trước đang TẮT ({{lyDo}}): proxy phải ở một HOST khác site với ứng dụng — cookie không tách theo cổng, nên cùng host thì mã xem trước ghi được cookie phiên của ứng dụng. Quản trị đặt AI_PREVIEW_PUBLIC_ORIGIN=http://127.0.0.2:<cổng proxy> và AI_PREVIEW_PROXY_HOST=127.0.0.2 (máy dev; LAN: một IP/tên miền riêng), rồi mở ứng dụng bằng host khác host ấy.",
+      "xemTruocCho": "Khung xem trước hiện khi ứng dụng đã nghe cổng.",
+      "xemTruocAnToan": "Khung chạy ở ORIGIN RIÊNG (sandbox) — không chia phiên đăng nhập với ứng dụng.",
+      "nguoiKhacDangChay": "Dự án này đang được người khác chạy.",
+      "nhanRoi": "Tự dừng sau 30 phút không có lượt xem trước.",
+      "loiDeXuat": "Không tạo được thẻ duyệt cho lệnh [{{ma}}].",
+      "trangThai": {
+        "chuaChay": "Chưa chạy",
+        "dang-khoi-dong": "Đang khởi động",
+        "dang-chay": "Đang chạy",
+        "dang-dung": "Đang dừng",
+        "da-dung": "Đã dừng",
+        "loi": "Thoát lỗi (mã {{ma}})"
+      },
+      "lyDoDung": {
+        "nguoi-dung": "dừng bởi người dùng",
+        "nhan-roi": "tự dừng vì nhàn rỗi 30 phút",
+        "tat-may": "dừng vì máy chủ tắt",
+        "nghe-sai-dia-chi": "DỪNG vì ứng dụng nghe trên 127.0.0.1/::1 thay vì địa chỉ HOST được cấp (cùng site với ứng dụng chính) — sửa mã để nghe process.env.HOST"
+      }
+    },
+    "git": {
+      "chiDocRepoChinh": "Repo nền tảng — chỉ xem trạng thái/diff/log; không commit hay đổi nhánh từ giao diện.",
+      "chiDocWorktree": "Dự án là worktree của repo khác — chỉ xem.",
+      "thieuQuyen": "Bạn cần quyền ai_repo_exec để commit / tạo / chuyển nhánh.",
+      "lamMoi": "Làm mới",
+      "dangTai": "Đang đọc trạng thái git…",
+      "thayDoi": "Thay đổi ({{n}})",
+      "sach": "Cây làm việc sạch — không có gì để commit.",
+      "chonTatCa": "Chọn tất cả",
+      "soAn": "{{n}} tệp bị ẩn theo chính sách hộp cát (vd .env).",
+      "catBot": "Danh sách đã cắt bớt.",
+      "thongDiepPh": "Thông điệp commit…",
+      "goiYTip": "Model đọc diff các tệp đã chọn và đề xuất thông điệp — chỉ điền chữ, không commit.",
+      "dangGoiY": "Đang gợi ý…",
+      "goiY": "Gợi ý thông điệp",
+      "commit": "Commit {{n}} tệp",
+      "chonDeXem": "Bấm tên tệp để xem diff.",
+      "dangTaiDiff": "Đang đọc diff…",
+      "nhiPhan": "Tệp nhị phân hoặc đuôi không xem được — không hiện diff.",
+      "diffQuaLon": "Tệp quá lớn để hiện diff (> 64 KiB).",
+      "daChe": "Một số chỗ giống bí mật đã được che trong diff.",
+      "nhanh": "Nhánh",
+      "khongNhanh": "(HEAD tách rời)",
+      "chonNhanh": "Chọn nhánh",
+      "chuyen": "Chuyển",
+      "nhanhMoiPh": "tên-nhánh-mới",
+      "tao": "Tạo",
+      "tenNhanhSai": "Tên nhánh chỉ gồm chữ, số, . _ / - và không bắt đầu bằng - hoặc .",
+      "canSachDeDoiNhanh": "Commit hoặc bỏ thay đổi trước khi tạo/chuyển nhánh.",
+      "log": "Lịch sử gần đây",
+      "logRong": "Chưa có commit nào.",
+      "daCommit": "Đã commit {{n}} tệp ({{hash}}).",
+      "daTaoNhanh": "Đã tạo và chuyển sang nhánh {{ten}}.",
+      "daChuyenNhanh": "Đã chuyển sang nhánh {{ten}}.",
+      "loi": {
+        "PERMISSION_DENIED": "Bạn không có quyền cho thao tác này (đọc: ai_repo_read · ghi git: ai_repo_exec).",
+        "PROJECT_NOT_FOUND": "Không tìm thấy dự án (hoặc không thuộc về bạn).",
+        "GIT_CHUA_SAN_SANG": "Máy chủ chưa sẵn sàng chạy git an toàn (thư mục quản lý dự án AI_PROJECTS_ROOT chưa hợp lệ) — báo quản trị.",
+        "GIT_KHONG_PHAI_REPO": "Thư mục dự án không phải một repo git riêng (không có .git ở gốc dự án).",
+        "GIT_REPO_CHINH_CHI_DOC": "Đây là repo nền tảng — chỉ xem; không commit/đổi nhánh từ giao diện.",
+        "GIT_WORKTREE_CHI_DOC": "Dự án là một worktree của repo khác — chỉ xem.",
+        "GIT_CAY_BAN": "Còn thay đổi chưa commit — commit hoặc bỏ thay đổi trước khi tạo/chuyển nhánh.",
+        "GIT_TEN_NHANH_SAI": "Tên nhánh không hợp lệ.",
+        "GIT_NHANH_DA_CO": "Nhánh này đã có.",
+        "GIT_NHANH_KHONG_CO": "Không có nhánh này.",
+        "GIT_DUONG_KHONG_HOP_LE": "Tệp không còn trong danh sách thay đổi — làm mới bảng Git.",
+        "GIT_KHONG_CO_TEP": "Chưa chọn tệp nào.",
+        "GIT_QUA_NHIEU_TEP": "Quá nhiều tệp cho một lượt commit (tối đa 200).",
+        "GIT_THONG_DIEP_RONG": "Thông điệp commit trống.",
+        "GIT_TEP_BI_CHAN": "Không xem được tệp này (bị chặn theo chính sách hộp cát).",
+        "GIT_HET_GIO": "Lệnh git quá giờ.",
+        "GIT_THAT_BAI": "Lệnh git thất bại.",
+        "KHONG_CO_THAY_DOI": "Không có thay đổi nào để gợi ý thông điệp.",
+        "MODEL_LOI": "Model không trả lời được (máy AI bận hoặc tắt).",
+        "MODEL_RONG": "Model trả về rỗng — thử lại hoặc tự viết.",
+        "khac": "Lỗi bảng Git: {{ma}}"
+      }
+    },
+    "tep": {
+      "taoTep": "Tạo tệp mới",
+      "taoThuMuc": "Tạo thư mục mới",
+      "doiTen": "Đổi tên tệp đang mở",
+      "xoa": "Xoá tệp đang mở",
+      "thieuQuyen": "cần quyền đề xuất ghi",
+      "duongTep": "Đường tệp mới (tương đối gốc dự án)",
+      "duongThuMuc": "Thư mục mới (tương đối gốc dự án)",
+      "duongMoi": "Đường mới",
+      "tepDau": "Tệp đầu tiên trong thư mục (git không giữ thư mục rỗng)",
+      "loi": {
+        "rong": "Nhập tên tệp.",
+        "tuyet_doi": "Dùng đường TƯƠNG ĐỐI trong dự án.",
+        "thoat": "Không dùng '..', '.' hoặc đoạn rỗng trong đường.",
+        "ky_tu": "Đường có ký tự không hợp lệ."
+      },
+      "quaThe": "Tạo thẻ duyệt — tệp chỉ đổi sau khi bạn bấm Xác nhận.",
+      "deXuat": "Đề xuất",
+      "huy": "Huỷ",
+      "loiDeXuat": "Không tạo được đề xuất [{{ma}}].",
+      "xacNhanXoa": "Đề xuất XOÁ tệp {{tep}}? Tệp chỉ bị xoá sau khi bạn bấm Xác nhận trên thẻ duyệt."
+    },
+    "triNho": {
+      "nut": "Trí nhớ dự án (bài học)",
+      "tieuDe": "Trí nhớ dự án",
+      "moTa": "Bài học của bạn cho dự án {{duAn}} — AI chèn những bài liên quan vào câu hỏi sau.",
+      "giaiThich": "Mỗi bài học là một câu ngắn (≤ 400 ký tự) về quy ước của dự án. Nội dung được quét tiêm prompt và che bí mật trước khi lưu.",
+      "coTat": "Cờ AI_CODING_LESSONS đang TẮT — bài học được lưu nhưng KHÔNG vào prompt.",
+      "themPh": "Thêm bài học, vd: Dự án dùng bcryptjs, không dùng crypto cho mật khẩu",
+      "them": "Thêm",
+      "dem": "{{n}}/{{tran}}",
+      "dangTai": "Đang tải bài học…",
+      "rong": "Chưa có bài học nào cho dự án này.",
+      "luu": "Lưu",
+      "huy": "Huỷ",
+      "sua": "Sửa bài học",
+      "xoa": "Xoá bài học",
+      "xacNhanXoa": "Xoá bài học này? Không hoàn tác được.",
+      "ruiRoThap": "rủi ro thấp",
+      "ruiRoThapTip": "Bộ quét thấy dấu hiệu nhẹ — bài học vẫn được lưu và đánh dấu để kiểm toán.",
+      "phamVi": "Bài học là của RIÊNG bạn trên dự án này — người khác không đọc hay sửa được.",
+      "note": {
+        "PERMISSION_DENIED": "Thiếu quyền ai_repo_read.",
+        "PROJECT_NOT_FOUND": "Không tìm thấy dự án.",
+        "LESSON_RISKY": "Bài học bị từ chối: chứa câu giống lệnh điều khiển AI (rủi ro tiêm prompt).",
+        "LESSON_EMPTY": "Bài học trống sau khi làm sạch.",
+        "LESSON_FULL": "Đã đủ số bài học tối đa cho dự án này — xoá bớt trước.",
+        "LESSON_DUPLICATE": "Bài học này đã có — đã đưa lên đầu danh sách.",
+        "NOT_FOUND": "Không tìm thấy bài học (đã bị xoá?).",
+        "SAVE_FAILED": "Không lưu được (CSDL từ chối).",
+        "khac": "Không thực hiện được [{{ma}}]."
+      }
+    },
+    "anh": {
+      "quaLon": "Ảnh quá lớn (tối đa 4 MB).",
+      "khongPhaiAnh": "Chỉ nhận ảnh PNG/JPEG/WebP/GIF/BMP.",
+      "nhan": "Chữ trích từ ảnh chụp lỗi (OCR, độ tin cậy {{p}}%{{cat}}):",
+      "daCat": ", đã cắt bớt",
+      "daChen": "Đã chèn chữ trích từ ảnh — kiểm lại trước khi gửi.",
+      "dangDoc": "Đang đọc chữ trong ảnh…",
+      "goiY": "dán/kéo ảnh chụp lỗi để trích chữ (OCR)",
+      "loi": {
+        "PERMISSION_DENIED": "Thiếu quyền ai_repo_read.",
+        "ANH_QUA_LON": "Ảnh quá lớn (tối đa 4 MB).",
+        "KHONG_PHAI_ANH": "Tệp không phải ảnh PNG/JPEG/WebP/GIF/BMP.",
+        "OCR_TAT": "OCR đang tắt trên máy chủ (OCR_ENGINE_ENABLED) — báo quản trị.",
+        "OCR_THIEU_MODEL": "Máy chủ thiếu model OCR (models/ocr) — báo quản trị.",
+        "OCR_DANG_BAN": "Đang đọc một ảnh khác — chờ xong rồi dán tiếp.",
+        "OCR_HET_GIO": "Đọc ảnh quá giờ.",
+        "OCR_KHONG_DOC_DUOC": "Không đọc được chữ trong ảnh.",
+        "OCR_RONG": "Ảnh không có chữ đọc được."
+      }
     }
   },
   "masterDataCol": {
@@ -22227,5 +22692,78 @@
     "lateDialogTitle": "Xác nhận đã xem kết quả ghi đến muộn #{{id}}?",
     "lateDialogDesc": "Thiết bị đã trả kết quả THẬT cho lệnh ghi này SAU khi lệnh được ghi nhận 'kết cục không rõ'. Kết quả được giữ nguyên làm bằng chứng (không sửa, không xoá). Hãy đối chiếu giá trị thật trên thiết bị; xác nhận được kiểm toán kèm ghi chú và gỡ việc chặn đổi chủ của bộ chuyển đổi.",
     "lateReviewed": "Đã ghi nhận việc xem xét kết quả đến muộn"
+  },
+  "aiGatewayToken": {
+    "title": "Token cổng AI & thiết bị",
+    "subtitle": "Cấp quyền cho extension VSCode gọi cổng /v1 thay mặt bạn — mỗi token có phạm vi, hạn dùng và thu hồi được.",
+    "device": {
+      "title": "Xác nhận thiết bị",
+      "desc": "Nhập mã extension đang hiển thị. Chỉ cho phép khi chính bạn vừa bấm đăng nhập trong VSCode.",
+      "codeLabel": "Mã thiết bị",
+      "deviceName": "Thiết bị",
+      "scopes": "Phạm vi xin",
+      "expiresIn": "Mã còn hiệu lực {{s}} giây",
+      "warning": "Cho phép sẽ cấp một token 30 ngày (chỉ chat + gợi ý mã) gắn với tài khoản của bạn. Mọi yêu cầu của extension được ghi theo tên bạn.",
+      "approve": "Cho phép",
+      "deny": "Từ chối",
+      "approved": "Đã cho phép. Quay lại VSCode — extension sẽ tự nhận token.",
+      "denied": "Đã từ chối. Thiết bị không nhận được token nào.",
+      "phishingWarning": "CHỈ cho phép nếu CHÍNH bạn vừa bấm đăng nhập trong VSCode trên máy của bạn và tự gõ mã ở đây. Nếu ai đó gửi mã/đường dẫn này cho bạn — hãy TỪ CHỐI: đó là cách lấy cắp quyền truy cập của bạn.",
+      "requestedFrom": "Yêu cầu từ IP",
+      "userAgent": "Phần mềm yêu cầu",
+      "requestedAt": "Lúc yêu cầu",
+      "unknown": "không rõ",
+      "ipMismatch": "Yêu cầu này đến từ một địa chỉ IP KHÁC trình duyệt bạn đang dùng. Chỉ cho phép nếu VSCode của bạn đang chạy trên máy đó.",
+      "confirmMine": "Tôi xác nhận chính tôi vừa bấm đăng nhập trong VSCode và mã trên khớp với mã VSCode đang hiển thị."
+    },
+    "tokens": {
+      "title": "Token của tôi",
+      "desc": "Token chỉ hiện đầy đủ một lần lúc tạo; máy chủ chỉ lưu bản băm.",
+      "empty": "Chưa có token nào.",
+      "name": "Tên",
+      "prefix": "Tiền tố",
+      "scopes": "Phạm vi",
+      "status": "Trạng thái",
+      "expires": "Hết hạn",
+      "lastUsed": "Dùng lần cuối",
+      "never": "Chưa dùng",
+      "revoke": "Thu hồi",
+      "revoked": "Đã thu hồi token."
+    },
+    "create": {
+      "name": "Tên token (vd: VSCode laptop)",
+      "days": "Số ngày",
+      "submit": "Tạo token",
+      "once": "Sao chép token ngay — nó sẽ KHÔNG hiện lại lần nữa.",
+      "copied": "Đã sao chép token."
+    },
+    "scope": {
+      "chat": "Trò chuyện / agent",
+      "fim": "Gợi ý mã (FIM)",
+      "embed": "Embedding",
+      "apply": "Ghi sổ áp tệp (extension)"
+    },
+    "source": {
+      "web": "tạo trên web",
+      "thiet-bi": "đăng nhập thiết bị"
+    },
+    "status": {
+      "hieu-luc": "Hiệu lực",
+      "het-han": "Hết hạn",
+      "thu-hoi": "Đã thu hồi"
+    },
+    "errors": {
+      "PERMISSION_DENIED": "Bạn chưa có quyền dùng trợ lý lập trình AI (ai_repo_read).",
+      "CAN_PHIEN_WEB": "Thao tác này cần phiên đăng nhập web. Hãy đăng nhập lại.",
+      "QUA_TRAN": "Bạn đã có quá nhiều token còn hiệu lực. Hãy thu hồi bớt.",
+      "DB_UNAVAILABLE": "Máy chủ tạm không lưu được token. Thử lại sau.",
+      "NOT_FOUND": "Không tìm thấy token (hoặc đã thu hồi).",
+      "RATE_LIMITED": "Thử mã quá nhiều lần. Đợi một phút rồi thử lại.",
+      "khong-ton-tai": "Mã không đúng. Kiểm tra lại mã trên VSCode.",
+      "het-han": "Mã đã hết hạn. Bắt đầu đăng nhập lại từ VSCode.",
+      "da-xu-ly": "Mã này đã được xử lý.",
+      "csdl": "Máy chủ tạm không xử lý được. Thử lại sau.",
+      "CAN_XAC_NHAN": "Hãy tích xác nhận rằng chính bạn vừa bấm đăng nhập trong VSCode trước khi cho phép."
+    }
   }
 }

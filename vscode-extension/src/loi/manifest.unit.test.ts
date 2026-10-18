@@ -47,6 +47,20 @@ describe("manifest extension", () => {
     expect(manifest.contributes.configuration.properties["aviAiLocal.serverUrl"]?.scope).toBe("machine");
   });
 
+  /**
+   * ★★★ ĐỢT 4C — ghost-text gửi mã quanh con trỏ lên máy chủ MỖI LẦN NGỪNG GÕ. Một repo lạ không được tự bật nó (hay
+   * hạ gỡ dội để dội máy chủ) bằng `.vscode/settings.json` ⇒ phạm vi Máy; mặc định TẮT; ghost-text cần kích hoạt lúc
+   * khởi động (không đợi người dùng mở khung chat).
+   */
+  it("★★★ ghost-text: khoá cấu hình phạm vi Máy, mặc định TẮT, có lệnh bật/tắt, kích hoạt lúc khởi động", () => {
+    const p = manifest.contributes.configuration.properties;
+    expect(p["aviAiLocal.ghostText.enabled"]?.scope).toBe("machine");
+    expect(p["aviAiLocal.ghostText.enabled"]?.default).toBe(false);
+    expect(p["aviAiLocal.ghostText.doTreMs"]?.scope).toBe("machine");
+    expect(manifest.contributes.commands.map((c: { command: string }) => c.command)).toContain("aviAiLocal.batTatGhostText");
+    expect(manifest.activationEvents).toContain("onStartupFinished");
+  });
+
   it("★★★ KHÔNG lệnh nào trong Command Palette tự nó GHI/ÁP/DUYỆT — mọi lượt ghi phải qua thẻ duyệt", () => {
     /**
      * ⚠ TIÊU ĐỀ CŨ NÓI SAI TỪ ĐỢT C (sửa 2026-08-30): nó viết "Đợt A KHÔNG khai lệnh nào mang nghĩa
@@ -63,5 +77,35 @@ describe("manifest extension", () => {
     for (const mau of [/ghi\s*tệp/, /áp\s*dụng/, /apply/, /confirm/, /duyệt/]) {
       expect(ten).not.toMatch(mau);
     }
+  });
+});
+
+/**
+ * ★ 2026-10-14 · Đợt 0.5 — README được đóng VÀO VSIX (trang chi tiết extension). Bản cũ còn ghi "Đợt A
+ * chỉ đọc" / "Ba lệnh" khi manifest đã có 10 lệnh + đường ghi có duyệt ⇒ người cài đọc một hợp đồng
+ * SAI. Lưới bám THẲNG manifest: mọi lệnh và mọi khoá cấu hình phải được README nhắc tới; câu lỗi thời
+ * không được quay lại.
+ */
+describe("README khớp manifest", () => {
+  const readme = readFileSync(join(goc, "README.md"), "utf8");
+
+  it("★★ mọi tiêu đề lệnh trong manifest có mặt trong README", () => {
+    const ds: Array<{ title: string }> = manifest.contributes.commands;
+    for (const l of ds) expect(readme, l.title).toContain(l.title);
+  });
+
+  it("★★ mọi khoá cấu hình có mặt trong README", () => {
+    for (const k of Object.keys(manifest.contributes.configuration.properties)) expect(readme, k).toContain(k);
+  });
+
+  it("★★ phím tắt khai trong manifest có mặt trong README", () => {
+    for (const kb of manifest.contributes.keybindings as Array<{ key: string }>) {
+      expect(readme.toLowerCase()).toContain(kb.key.toLowerCase());
+    }
+  });
+
+  it("★ không còn câu lỗi thời (Đợt A chỉ đọc / Ba lệnh)", () => {
+    expect(readme).not.toMatch(/CHỈ ĐỌC, chưa có đường ghi/);
+    expect(readme).not.toMatch(/^## Ba lệnh/m);
   });
 });

@@ -16,7 +16,7 @@
  *    orchestrator, on top of proposeAction/confirmAction).
  */
 
-import { listTools, getTool, isWriteTool, isClientTool, type ToolLang } from "./aiLocalTools/toolRegistry";
+import { listTools, getTool, isWriteTool, isClientTool, laToolChiChoAgent, type ToolLang } from "./aiLocalTools/toolRegistry";
 import type { AgentBranchCondition, AgentPlan, AgentPlanStep, AgentStepResult } from "../../drizzle/schema";
 // G3-B — lớp "dữ liệu không tin cậy" (G2-C dựng cho đường chat). DÙNG LẠI, không dựng bản thứ
 // hai: `scanUntrustedContent` là SIÊU TẬP của `scanForInjection` cộng 6 mẫu phạm vi DỮ LIỆU, và
@@ -239,6 +239,8 @@ export const OBSERVATION_MAX_CHARS = 500;
 /** Build a planner prompt that lists the registry with [WRITE]/[CLIENT] tags (reusing the classifier pattern). */
 function buildPlannerPrompt(goal: string, lang: ToolLang): string {
   const toolDescriptions = listTools()
+    // ★ Đợt 1 · T2 — tool chỉ cho vòng agent không vào prompt planner (đường cũ không đổi).
+    .filter((t) => !laToolChiChoAgent(t))
     .map((t) => {
       const tag = t.kind === "write" ? " [WRITE]" : t.kind === "client" ? " [CLIENT]" : " [READ]";
       return `  - ${t.name}${tag}: ${t.description}`;
@@ -326,7 +328,7 @@ function validateStep(raw: any): AgentPlanStep | null {
   const toolName = typeof raw.tool === "string" ? raw.tool : "";
   if (!toolName) return null;
   const tool = getTool(toolName);
-  if (!tool) return null;
+  if (!tool || laToolChiChoAgent(tool)) return null;
 
   // Enforce that the planned kind matches the tool's capability.
   if (kind === "write" && !isWriteTool(tool)) return null;
@@ -514,6 +516,8 @@ interface ReplanPromptBuild {
  */
 function buildReplanPrompt(input: ReplanInput, lang: ToolLang, stepBudget: number): ReplanPromptBuild {
   const toolDescriptions = listTools()
+    // ★ Đợt 1 · T2 — tool chỉ cho vòng agent không vào prompt planner (đường cũ không đổi).
+    .filter((t) => !laToolChiChoAgent(t))
     .map((t) => {
       const tag = t.kind === "write" ? " [WRITE]" : t.kind === "client" ? " [CLIENT]" : " [READ]";
       return `  - ${t.name}${tag}: ${t.description}`;

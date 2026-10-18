@@ -122,7 +122,31 @@ const cua = (n: NhomTuyen): TuyenExpress[] => NHOM.get(n) ?? [];
 // telemetry / robots/state / program-checks / locks/events chỉ nhận bản ghi của thiết bị nút sở hữu (khác ⇒ đếm notOwned +
 // EDGE_ANOMALY), heartbeat chỉ ghi bản ghi của chính nút; không tuyến nào trả dữ liệu tenant ngoài thiết bị đã giao cho nút.
 // Lưới hành vi: `server/services/edge/edge{Config,Authorize,Authorize.failclosed,Reports,Ingest,Commands}.dot10.db.test.ts`.
-const GHIM = { A: 80, C: 37, D: 87, S: 19, U: 16, tong: 239 } as const;
+// ★★★ 2026-10-17 (AI Local Đợt 1 / 3c / 4A — nhánh `feat/ai-local-7-tang`, đo MỘT lần trên cây làm việc của nhánh so với
+// gốc `8be43f65a`) — **C 37 → 40 · D 87 → 91 · tong 239 → 246 · A/S/U giữ nguyên.** Đo: chạy `quetPhamViDoc` trên cả hai cây,
+// diff danh sách (nhóm, khoá) — đúng BẢY tuyến mới, không tuyến cũ nào đổi nhóm:
+//   C (GET): `aiAgentApi.ts#GET /api/ai/agent/runs/:id/events` (Đợt 1 — SSE của lượt chạy; `thuXacThucRest` + lượt phải của
+//     CHÍNH người hỏi: `ql.layLuotChay(runId, userId)` / `docHangLuotChay(userId, runId)`, khác ⇒ 404);
+//     `aiXemTruocApi.ts#GET /api/ai/preview/:projectId` + `…/*` (Đợt 3c — `thuXacThucRest` + `ai_repo_read/canView` +
+//     `phanGiaiGoc` theo người hỏi + `tt.chuSoHuu === userId`, khác ⇒ 404; trả 302 + vé một lần, không đọc bảng tenant nào).
+//   D (POST): `aiAgentApi.ts#POST /api/ai/agent/runs` + `…/:id/huy` (Đợt 1 — phiên; huỷ chỉ lượt của chính người hỏi);
+//     `aiGatewayTokenThietBi.ts#POST /api/ai/gateway-token/thiet-bi` + `…/doi` (Đợt 4A — device flow RFC 8628: xin mã / đổi mã
+//     lấy token; danh tính là `device_code` bí mật + người DUYỆT trên web qua tRPC `aiGatewayToken.quyetThietBi`; có trần lượt).
+// Không tuyến nào chạm dữ liệu tenant/nhà máy ⇒ không mục nào vào A, sổ nợ không thêm dòng. Cả bảy sau cổng giấy phép `/api/ai`.
+// ★★★ 2026-10-17 (AI Local Đợt 4B-server, cùng nhánh) — **D 91 → 94 · tong 246 → 249 · A/C/S/U giữ nguyên.** Đo: chạy bộ suy
+// trước/sau khi thêm `server/routes/aiGatewayTokenBearerApi.ts` — đúng BA tuyến mới, đều POST, không tuyến cũ nào đổi nhóm:
+//   `POST /api/ai/client-apply/bat-dau` + `…/chot` (sổ kiểm toán lượt áp tệp ở client — gọi ĐÚNG `batDauApDungOClient` /
+//     `chotApDungOClient` của tRPC `aiCopilot.*`; danh tính = CHỦ token `avgw_` tra theo băm, phạm vi `apply`,
+//     `ai_repo_read/canView` kiểm lại mỗi lượt; chốt lượt của người khác bị chính dịch vụ từ chối — `row.userId !== user.id`);
+//   `POST /api/ai/gateway-token/tu-thu-hoi` (thu hồi CHÍNH token đang trình, tra theo băm; chỉ có thể THU HẸP quyền).
+// Không tuyến nào đọc dữ liệu tenant/nhà máy ⇒ không mục nào vào A, sổ nợ không thêm dòng. Cả ba sau cổng giấy phép `/api/ai`.
+// ★★★ 2026-10-17 (AI Local Đợt 5.1 phía VSCode, cùng nhánh) — **D 94 → 95 · tong 249 → 250 · A/C/S/U giữ nguyên.** Đo: chạy
+// lưới trước/sau khi thêm MỘT tuyến vào `server/routes/aiGatewayTokenBearerApi.ts` — đúng một tuyến mới, POST, không tuyến cũ
+// nào đổi nhóm: `POST /api/ai/client-feedback` (👍/👎 + lý do cho câu trả lời cuối của lượt agent CHẠY CỤC BỘ trong
+// extension; danh tính = CHỦ token `avgw_` tra theo băm, phạm vi `chat`, `ai_repo_read/canView` kiểm lại mỗi lượt; chỉ GHI
+// một hàng `ai_agent_feedback` của CHÍNH chủ token — `nguon = 'vscode'`, khoá (người, lượt client, khối) — và trả lại đúng
+// hàng ấy; không đọc dữ liệu tenant/nhà máy nào). Không mục nào vào A, sổ nợ không thêm dòng. Sau cổng giấy phép `/api/ai`.
+const GHIM = { A: 80, C: 40, D: 95, S: 19, U: 16, tong: 250 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -169,8 +193,16 @@ describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến khô
     //   `server/routes/uyQuyenAnhPhamVi.db.test.ts` (âm đối xứng, CSDL thật), và một lượt HTTP
     //   THẬT bằng socket thô (ghi trong báo cáo). Ghim danh sách để một lượt gắn thư mục MỚI ra
     //   web vẫn phải được ký tên.
+    // ⚠ 2026-10-17 (AI Local nhánh `feat/ai-local-7-tang`): **650 → 664** — +5 dòng `import` (registerAiAgentRoutes,
+    //   registerAiXemTruocRoutes, laOriginXemTruoc, registerAiGatewayTokenThietBiRoutes, danhDauGianDoanKhiBoot) + 9 dòng ở
+    //   middleware CORS phía trên (`xuLyCorsCongOpenAi` Đợt 4A, chặn phản chiếu origin xem trước Đợt 3c). Đo: diff `tuyenTinh`
+    //   gốc `8be43f65a` ↔ nhánh — vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`; không thư mục mới.
+    // ⚠ Đợt 4B-server: **664 → 665** — +1 dòng `import { registerAiGatewayTokenBearerRoutes }` cạnh import device flow.
+    //   Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`; không thư mục mới.
+    // ⚠ Đợt 6 (đổi model): **665 → 674** — +1 import `khoiChayDongBoLuaChonModel` + 8 dòng (docblock + lời gọi) ở thân
+    //   module điểm vào. Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`; không thư mục mới.
     expect(QUET.tuyenTinh.map((s) => s.split(" — ")[0])).toEqual([
-      "server/_core/index.ts:650",
+      "server/_core/index.ts:674",
       "server/_core/vite.ts:58",
     ]);
   });

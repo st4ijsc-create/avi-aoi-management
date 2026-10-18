@@ -156,6 +156,16 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *   (`__edgeE2eHarness.dot10` ×17 là chỉ-test, không đếm.) Cả ba bị bắt nội bộ, KHÔNG tới tRPC ⇒ luật (a)+(b): hai chỗ đầu là họ
  *   "DB không sẵn sàng" ⇒ `DbUnavailableError` (đúng lớp `deviceOwnershipService` dùng cho cùng câu trước R-12-b); chỗ thứ ba ⇒
  *   lớp có mã cục bộ `NoAlertRecipientError`. Message GIỮ NGUYÊN VĂN. ĐO sau vá ra **462** — 465 − 3 = 462, không nới, không dư.
+ *
+ * 462 GIỮ NGUYÊN (2026-10-17, AI Local nhánh `feat/ai-local-7-tang`, đo trước khi gộp main): ĐO trên HEAD `404d4406c` ra
+ *   **469** — nhánh (mốc `8be43f65a`, khi ấy 462) thêm **7** chỗ `throw new Error(`: `services/ai/doiModelLlamaServer` ×4
+ *   (`/props` HTTP lỗi · `/props` thiếu `model_path` · kịch bản quay về thoát ≠ 0 · quay về lệch model) ·
+ *   `services/ai/luaChonModelLlamaServer` ×1 + `services/ai/giamSatLlamaServer` ×1 (tên model sai dạng — lớp cuối trước khi
+ *   chạm tệp lựa chọn / `-Model`) · `services/ai/chayUngDung/cuaSinhUngDung` ×1 (địa chỉ ứng dụng loopback — lớp cuối của cửa sinh).
+ *   Cả bảy là bất biến NỘI BỘ bị bắt tại chỗ (chi tiết bước / cảnh báo / `loiDocProps`) hoặc đã có lớp kiểm phía trên trả
+ *   lỗi có mã cho người dùng (`LoiDoiModel` → appError ở `aiGgufRouter`; `{ ok:false, ma }` ở `quanLyUngDung`) ⇒ KHÔNG tới
+ *   tRPC ⇒ luật (a)+(b): không đẻ mã appError, đổi sang lớp có mã `LoiNoiBoDoiModel` (code theo họ) · `LoiTenModelKhongHopLe`
+ *   · `LoiDiaChiUngDung`. Message GIỮ NGUYÊN VĂN. ĐO sau vá ra **462** — 469 − 7 = 462, không nới, không dư.
  */
 const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 462;
 

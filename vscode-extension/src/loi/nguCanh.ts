@@ -3,6 +3,9 @@
  * giống khoá · ngân sách là trần THẬT (cắt thì phải KHAI là đã cắt, vì một ngữ cảnh bị cắt âm
  * thầm làm model trả lời sai mà không ai biết vì sao).
  */
+// ★★★ Đợt 4 (2026-10-17) — token có tiền tố (GitHub/GitLab/Slack/AWS/Google/Stripe/npm/OpenAI sk-proj-): MỘT NGUỒN với
+// máy chủ (`aiSafety.REDACT_PATTERNS`). Tệp THUẦN, không import gì — census quét nó như mọi tệp vào bundle.
+import { RE_TOKEN_CO_TIEN_TO } from "../../../shared/mauBiMat";
 // ★★★ H2 (review 2026-08-30) — export để `docCucBo.ts` (grep) có thể che NGUYÊN DÒNG bằng ĐÚNG
 // chuỗi này khi tự phát hiện một dòng nằm giữa BEGIN/END của khối PEM đa dòng (xem docblock
 // `grepThuan`) — hai bản sao của cùng một chuỗi che sẽ trôi khỏi nhau, đúng bài học đã trả giá ở
@@ -117,6 +120,9 @@ export function cheBiMat(s: string): string {
       // 2) Khoá có tiền tố. `sk[-_]` vì Stripe dùng GẠCH DƯỚI (sk_live_…), OpenAI dùng gạch nối.
       .replace(/sk[-_][A-Za-z0-9_-]{16,}/g, CHE)
       .replace(/AKIA[0-9A-Z]{16}/g, CHE)
+      // 2b) ★★★ Đợt 4 — token có tiền tố của nhà cung cấp, nguồn chung `shared/mauBiMat.ts`. Đo trước: `ghp_…` hardcode
+      //     trong tệp mã thường (`"githubPat": "ghp_…"` — tên trường không khớp luật 5) RÒ 21/21 lượt bộ đầu-cuối VSCode.
+      .replace(RE_TOKEN_CO_TIEN_TO, CHE)
       // 3) JWT ba đoạn.
       .replace(/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}/g, CHE)
       // 4) Credential NHÚNG trong chuỗi kết nối: scheme://user:MẬT_KHẨU@host. Dự án đã coi đây là

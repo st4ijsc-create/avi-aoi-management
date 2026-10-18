@@ -64,6 +64,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ThanhTrangThaiAiLocal } from "@/components/aiCoding/ThanhTrangThaiAiLocal";
 import { BangDangNghi } from "@/components/aiCoding/BangDangNghi";
+// ★ Đợt 1 · T5 — CHẾ ĐỘ AGENT (Hỏi / duyệt từng bước / tự động). Logic + giao diện ở `components/aiCoding/agent/`;
+//   trang chỉ nối: bộ chọn chế độ, rẽ `handleSend`, dòng thời gian, nút Dừng, làm mới cây/tab khi agent ghi tệp.
+import { BoChonCheDoChat } from "@/components/aiCoding/agent/BoChonCheDoChat";
+import { DongThoiGianAgent } from "@/components/aiCoding/agent/DongThoiGianAgent";
+import { useLuotChayAgent } from "@/components/aiCoding/agent/useLuotChayAgent";
+import { chuanHoaCheDo, docCheDoDaLuu, luuCheDo, type CheDoChat } from "@/components/aiCoding/agent/cheDoChat";
 import { LyDoDuyet } from "@/components/aiCoding/LyDoDuyet";
 import { chupLyDoDuyet, lyDoChoThe, type LyDoDuyet as LyDoDuyetT } from "@/components/aiCoding/lyDoDuyetLogic";
 import { congTuChoi, congUsage, thongKeRong, type ThongKePhien } from "@/components/aiCoding/thongKePhien";
@@ -125,7 +131,7 @@ import { QuanLyDuAnRepo } from "@/components/ai/QuanLyDuAnRepo";
 // ★★★ 2026-08-23 · LÔ 3 — NHÃN TIN CẬY cho khối mã trong văn xuôi model (tầng 1: nguồn gốc; tầng
 // 2: chip đối chiếu tất định với thẻ đọc tệp). Component ở tệp riêng để lưới render CÂY THẬT —
 // cùng bài học TheDuyetDiff; phép so THUẦN + neo ở `@/lib/soKhoiMa` (lưới + đột biến riêng).
-import { taoBoKhoiMaCoNhan } from "@/components/ai/KhoiMaCoNhan";
+import { boNhanDauRaLenhChoModel, khoiDauRaLenh, taoBoKhoiMaCoNhan } from "@/components/ai/KhoiMaCoNhan";
 import { bocTheDocTep, dinhDangLucNhan, viTriCauTraLoiCungLuot } from "@/lib/soKhoiMa";
 // ★★★ 2026-08-24 · WAVE NỐI DÂY — bốn thành phần mới (ribbon tác vụ · bảng terminal · panel
 // Problems · thẻ duyệt LÔ). Tất cả THUẦN HIỂN THỊ + callback; mọi hành động THẬT vẫn ở TRANG,
@@ -133,6 +139,15 @@ import { bocTheDocTep, dinhDangLucNhan, viTriCauTraLoiCungLuot } from "@/lib/soK
 import { RibbonTacVu } from "@/components/ai/RibbonTacVu";
 import { BangTerminal, type LuotLenh } from "@/components/ai/BangTerminal";
 import { BangProblems } from "@/components/ai/BangProblems";
+// ★ Đợt 3c — bảng "Chạy & Xem trước" (khung chứa tRPC + bảng thuần; lưới `bangChayUngDung.unit.test.ts`).
+import { KhungChayUngDung } from "@/components/ai/KhungChayUngDung";
+// ★★★ Đợt 3b — bảng Git (khung tRPC + bảng thuần) · nút tệp (đề xuất → thẻ duyệt hiện có) · màn quản lý trí nhớ ·
+//   nhật ký Terminal theo phiên (trình duyệt) · dán ảnh lỗi ⇒ OCR ⇒ chữ vào câu hỏi.
+import { KhungGit } from "@/components/ai/KhungGit";
+import { ThaoTacTep } from "@/components/ai/ThaoTacTep";
+import { QuanLyTriNho } from "@/components/ai/QuanLyTriNho";
+import { docNhatKyLenh, khoaNhatKyLenh, luuNhatKyLenh, xoaNhatKyLenh } from "@/lib/nhatKyLenhPhien";
+import { chenVaoO, docBase64, khoiChuOcr, kiemAnhLoi, layAnhTuDuLieu } from "@/lib/anhLoiChat";
 import { TheDuyetDiffLo } from "@/components/ai/TheDuyetDiffLo";
 // ★★★ 2026-08-25 · UX (Đợt 1) — TRÌNH XEM MÃ: tô cú pháp + SỐ DÒNG THẬT + cuộn ngang, thay `<pre>`
 // trơn ở khung Trình xem. Component thuần hiển thị (lưới render riêng `trinhXemMa.unit.test.ts`).
@@ -156,7 +171,7 @@ import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
   Repeat, CheckCircle2, OctagonX, Terminal, Search, X, ChevronUp, Wand2, Copy, Undo2,
-  WrapText, Maximize2, Minimize2, List, ArrowUpRight,
+  WrapText, Maximize2, Minimize2, List, ArrowUpRight, PlayCircle, GitBranch,
 } from "lucide-react";
 import { toast } from "sonner";
 /**
@@ -388,6 +403,8 @@ function VongTuDongCard({ vong, onDung, laAdmin }: { vong: TrangThaiVong; onDung
     // ★★★ 2026-08-24 — VÒNG TỰ-TRỊ-GHI: hai lý do RIÊNG (khác `loi`/`co_tat`) — xem `LyDoDungVong`.
     tep_ban_nguoi: t("repoWs.loop.stop.dirty", "DỪNG vì tệp đích có thay đổi CHƯA COMMIT của bạn — vòng tự-ghi KHÔNG đè lên công việc chưa lưu. Hãy commit (hoặc stash) rồi thử lại."),
     kill_switch: t("repoWs.loop.stop.kill", "DỪNG vì công tắc khẩn cấp (kill-switch) đã được bật — vòng tự-ghi dừng ngay. Liên hệ quản trị viên để gỡ."),
+    // ★ Q1 (2026-10-14) — vòng tự ghi không chạm repo chính khi chưa có checkpoint (server quyết định).
+    repo_chinh_chua_checkpoint: t("repoWs.loop.stop.mainRepo", "DỪNG: vòng tự ghi không chạy trên repo chính cho tới khi có điểm khôi phục (checkpoint). Bản sửa KHÔNG được ghi — hãy dùng đường duyệt tay, hoặc chạy trên một dự án hộp cát."),
   };
 
   const xong = vong.lyDoDung === "xanh";
@@ -423,7 +440,12 @@ function VongTuDongCard({ vong, onDung, laAdmin }: { vong: TrangThaiVong; onDung
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // TRANG
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-type ChatTurn = { role: "user" | "assistant"; content: string };
+/**
+ * `nguon: "dau-ra-lenh"` ⇔ tin nhắn do CLIENT chèn từ đầu ra `run_command` thật — chỉ tin nhắn này được
+ * nhãn "đầu ra lệnh do máy chủ chạy thật" (`KhoiMaCoNhan.tinDauRaLenh`). Không lưu vào phiên (mở lại
+ * ⇒ nhãn mặc định "model viết": an toàn) và KHÔNG gửi lên server (lịch sử chỉ mang role + content).
+ */
+type ChatTurn = { role: "user" | "assistant"; content: string; nguon?: "dau-ra-lenh" };
 
 /**
  * ★★★ 2026-08-23 — CHIỀU CAO KHUNG ĐO ĐƯỢC, THAY CHO HẰNG `calc(100vh-8.5rem)` ĐOÁN SAI.
@@ -478,6 +500,14 @@ export default function AICodingWorkspace() {
   const { hasPermission } = usePermissions();
   const canView = hasPermission("ai_repo_read", "canView");
   const canExec = hasPermission("ai_repo_exec", "canCreate");
+  // ★ Đợt 3b — bit của các tool GHI (apply_diff/delete_file/rename_file: `ai_repo_read/canEdit`) — chỉ để khoá nút tệp
+  //   cho lịch sự; tool tự kiểm lại ở máy chủ.
+  const canDeXuatGhi = hasPermission("ai_repo_read", "canEdit");
+  // ★ Đợt 1 · T5 — chế độ ô chat, nhớ theo trình duyệt. Đọc THÔ (không cắt theo quyền) rồi chuẩn hoá theo `canExec`
+  //   mỗi render: quyền nạp muộn không được xoá lựa chọn "tự động" đã lưu.
+  const [cheDoChatTho, setCheDoChatTho] = useState<CheDoChat>(() => docCheDoDaLuu(true));
+  const cheDoChat = chuanHoaCheDo(cheDoChatTho, canExec);
+  const doiCheDoChat = useCallback((v: CheDoChat) => { setCheDoChatTho(v); luuCheDo(v); }, []);
 
   // ── Bộ chọn DỰ ÁN (doc 79 · TRỤC 2) — danh sách từ server (danh sách TRẮNG .env). Client giữ và
   //    gửi lên MỘT id, KHÔNG BAO GIỜ đường dẫn. ──
@@ -771,7 +801,7 @@ export default function AICodingWorkspace() {
    * ⇒ **KHÔNG** nằm trong ba hàm reset. Mặc định GẬP: nội dung có `max-h` + cuộn nội bộ nên không đẩy
    * ô nhập xuống dưới nếp gấp (bài học `khungVuaManHinh`).
    */
-  const [duoiChat, setDuoiChat] = useState<"dong" | "terminal" | "problems">("dong");
+  const [duoiChat, setDuoiChat] = useState<"dong" | "terminal" | "problems" | "chay" | "git">("dong");
 
   // ★ ĐỢT A (UX H5) — KHÔI PHỤC bàn làm việc của dự án (một lần mỗi projectId; xem docblock khoá).
   useEffect(() => {
@@ -918,6 +948,8 @@ export default function AICodingWorkspace() {
   const neoDocTep = useMemo(() => (streamTool ? bocTheDocTep(streamTool.data as unknown) : null), [streamTool]);
   const boKhoiCoNeo = useMemo(() => taoBoKhoiMaCoNhan(neoDocTep, lucNhanTool), [neoDocTep, lucNhanTool]);
   const boKhoiKhongNeo = useMemo(() => taoBoKhoiMaCoNhan(null, null), []);
+  /** Chỉ cho tin nhắn `nguon: "dau-ra-lenh"` (client chèn) — xem `ChatTurn`. */
+  const boKhoiDauRaLenh = useMemo(() => taoBoKhoiMaCoNhan(null, null, true), []);
   const viTriNeo = useMemo(() => viTriCauTraLoiCungLuot(transcript), [transcript]);
 
   const {
@@ -939,6 +971,13 @@ export default function AICodingWorkspace() {
   const cancelM = trpc.aiCopilot.cancelAction.useMutation();
   // ★ ĐỢT C — đề xuất sửa tay (CHỈ propose; ghi vẫn qua confirmM duy nhất — xem docblock dangSuaTay).
   const deXuatSuaTayM = trpc.repoWorkspace.deXuatSuaTay.useMutation();
+  // ★ Đợt 3c — Terminal gõ/chạy-lại lệnh danh sách trắng ĐI THẲNG vào `run_command` propose (KHÔNG qua model).
+  const deXuatLenhM = trpc.aiChayUngDung.deXuatLenh.useMutation();
+  // ★ Đợt 3b — nút tệp (CHỈ propose `delete_file`/`rename_file`; ghi vẫn qua confirmM duy nhất) · đổi tên phiên · OCR ảnh.
+  const deXuatXoaTepM = trpc.repoWorkspace.deXuatXoaTep.useMutation();
+  const deXuatDoiTenTepM = trpc.repoWorkspace.deXuatDoiTenTep.useMutation();
+  const doiTenPhienM = trpc.repoWorkspace.doiTenPhien.useMutation();
+  const ocrAnhM = trpc.repoWorkspace.ocrAnhLoi.useMutation();
 
   // ── ★★★ doc 79 · VÒNG TỰ ĐỘNG — cấu hình từ SERVER (không đoán) + bộ chạy kiểm chứng ──
   const cauHinhVongQ = trpc.repoWorkspace.cauHinhVong.useQuery(undefined, { staleTime: 5 * 60_000 });
@@ -1418,16 +1457,38 @@ export default function AICodingWorkspace() {
    *   • gửi kèm `codingEditPath` GHIM tệp đang sửa. ⚠ Chỉ gửi ĐƯỜNG DẪN; nội dung tệp do server đọc
    *     LẠI từ đĩa trong lượt ấy (điểm neo của băm chống TOCTOU — sau lượt ghi trước, đĩa đã đổi).
    */
+  // ★ Đợt 1 · T5 — một LƯỢT CHẠY agent (SSE `/api/ai/agent/runs`). Agent ghi tệp ⇒ làm mới cây + tệp đang mở
+  //   (cùng đường trang dùng sau khi duyệt diff: `listFiles.invalidate` + `fileQ.refetch`). Hook giữ callback MỚI NHẤT qua ref.
+  const agent = useLuotChayAgent({
+    projectId,
+    ngonNgu: i18n.language?.startsWith("en") ? "en" : i18n.language?.startsWith("zh") ? "zh" : "vi",
+    onTepDaDoi: (tep) => {
+      void utils.repoWorkspace.listFiles.invalidate();
+      if (selectedPath && tep.includes(selectedPath)) void fileQ.refetch();
+    },
+  });
+  const agentDangChay = agent.trangThai.dangChay;
+  const agentGui = agent.gui;
+
   const handleSend = useCallback(async (override?: string, tuVong?: TuVongSend) => {
     const text = (override ?? input).trim();
     if (!text || isStreaming) return;
+    // ★ Đợt 1 · T5 — chế độ Agent: câu người gõ đi API agent (vòng tự động cũ `tuVong` giữ đường Hỏi).
+    if (cheDoChat !== "hoi" && !tuVong) {
+      if (agentDangChay) return;
+      setInput("");
+      void agentGui(text, cheDoChat);
+      return;
+    }
     setInput("");
     if (!tuVong) {
       // Người gõ một câu mới ⇒ vòng cũ kết thúc; câu này thành "câu hỏi gốc" của vòng kế tiếp.
       vongRef.current = { ...VONG_RONG, cauHoiGoc: text };
       setVong({ ...vongRef.current });
     }
-    const history = transcript.slice(-10);
+    // ★ Đợt 0.5 — đầu ra lệnh trong lịch sử mang nhãn fence riêng (nhãn tin cậy ở UI); bỏ nhãn ấy
+    //   trước khi gửi model để model không thấy mà bắt chước (xem `KhoiMaCoNhan` · khoiDauRaLenh).
+    const history = transcript.slice(-10).map((x) => ({ role: x.role, content: boNhanDauRaLenhChoModel(x.content) }));
     setTranscript((prev) => [...prev, { role: "user", content: text }]);
     setStreamTool(null);
     setStreamTools([]);
@@ -1519,7 +1580,7 @@ export default function AICodingWorkspace() {
       setTranscript((prev) => [...prev, { role: "assistant", content: t("repoWs.chat.streamFailed", "Luồng bị lỗi — thử lại.") }]);
       setThongKe((tk) => congTuChoi(tk)); // ★ F6 — luồng lỗi cũng là một lượt không trả được
     }
-  }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId, dungVong]);
+  }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId, dungVong, cheDoChat, agentDangChay, agentGui]);
   handleSendRef.current = handleSend;
 
   // ★★★ 2026-08-27 · CURSOR-PARITY — GỬI lệnh sửa-đoạn-chọn (Cmd+K): DỰNG câu hỏi có bối cảnh (đoạn đã bôi
@@ -1579,6 +1640,114 @@ export default function AICodingWorkspace() {
     setPendingDiff({ action: pa, args: { path: selectedPath, original, modified: banSua } });
     setDangSuaTay(false);
   }, [selectedPath, fileReply, banSua, lang, projectId, deXuatSuaTayM, t]);
+
+  /**
+   * ★★★ Đợt 3c — LỆNH TERMINAL ĐI THẲNG VÀO THẺ DUYỆT. Trước: gõ lệnh ⇒ dựng câu "chạy <lệnh>" ⇒ model ⇒ propose
+   * (khảo sát đo 30–120 s/lệnh, và model có lúc đổi lệnh). Nay: `aiChayUngDung.deXuatLenh` ⇒ máy chủ phán quyết danh
+   * sách trắng + dựng `pendingAction` ⇒ ĐÚNG thẻ duyệt hiện có (`setPending`). Lệnh chạy khi và chỉ khi người bấm
+   * Xác nhận (`confirmAction`). BangTerminal giữ nguyên 0 mutation.
+   */
+  const deXuatLenhTrucTiep = useCallback(async (lenh: string) => {
+    let r: Awaited<ReturnType<typeof deXuatLenhM.mutateAsync>> | null = null;
+    try {
+      r = await deXuatLenhM.mutateAsync({ command: lenh, lang, ...(projectId ? { projectId } : {}) });
+    } catch (e) {
+      toast.error(mapTrpcError(e));
+      return;
+    }
+    if (!r.ok || !r.pendingAction) {
+      toast.error(r.message ?? t("repoWs.chayUD.loiDeXuat", "Không tạo được thẻ duyệt cho lệnh [{{ma}}].", { ma: r.note ?? "?" }));
+      return;
+    }
+    setPending(r.pendingAction as unknown as KbPendingAction);
+    setActionState("pending");
+  }, [deXuatLenhM, lang, projectId, t]);
+
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ Đợt 3b (3.5) — NÚT TỆP: ba đề xuất, MỘT thẻ duyệt. Không đường ghi mới — tạo = `deXuatSuaTay` với
+  //   `original:""` (apply_diff tạo mới); xoá / đổi tên = tool `delete_file` / `rename_file`. Byte đổi CHỈ sau
+  //   Xác nhận ⇒ `handleConfirm` (điểm gọi `confirmM.mutateAsync` DUY NHẤT của trang không đổi).
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  const deXuatTaoTep = useCallback(async (duong: string, noiDung: string) => {
+    let r: Awaited<ReturnType<typeof deXuatSuaTayM.mutateAsync>> | null = null;
+    try {
+      r = await deXuatSuaTayM.mutateAsync({ path: duong, original: "", modified: noiDung, lang, projectId });
+    } catch (e) {
+      toast.error(mapTrpcError(e));
+      return;
+    }
+    if (!r.ok || !r.pendingAction) {
+      toast.error(r.message ?? t("repoWs.tep.loiDeXuat", "Không tạo được đề xuất [{{ma}}].", { ma: r.note ?? "?" }));
+      return;
+    }
+    const pa = r.pendingAction as unknown as KbPendingAction;
+    setPending(pa);
+    setActionState("pending");
+    setPendingDiff({ action: pa, args: { path: duong, original: "", modified: noiDung } });
+  }, [deXuatSuaTayM, lang, projectId, t]);
+
+  const deXuatXoaHoacDoiTen = useCallback(async (loai: "xoa" | "doiTen", tu: string, den?: string) => {
+    let r: { ok: boolean; note: string | null; message: string | null; pendingAction: unknown } | null = null;
+    try {
+      r = loai === "xoa"
+        ? await deXuatXoaTepM.mutateAsync({ path: tu, lang, projectId })
+        : await deXuatDoiTenTepM.mutateAsync({ from: tu, to: den ?? "", lang, projectId });
+    } catch (e) {
+      toast.error(mapTrpcError(e));
+      return;
+    }
+    if (!r.ok || !r.pendingAction) {
+      toast.error(r.message ?? t("repoWs.tep.loiDeXuat", "Không tạo được đề xuất [{{ma}}].", { ma: r.note ?? "?" }));
+      return;
+    }
+    setPending(r.pendingAction as unknown as KbPendingAction);
+    setActionState("pending");
+    setKetCucThongDiep(null);
+  }, [deXuatXoaTepM, deXuatDoiTenTepM, lang, projectId, t]);
+
+  // ── ★★★ Đợt 3b (3.5) — DÁN / KÉO ẢNH LỖI ⇒ OCR (máy chủ) ⇒ CHỮ chèn vào câu hỏi (model không nhận ảnh) ──
+  const [dangOcr, setDangOcr] = useState(false);
+  const xuLyAnhLoi = useCallback(async (f: File) => {
+    const k = kiemAnhLoi(f);
+    if (k !== "ok") {
+      toast.error(k === "qua_lon" ? t("repoWs.anh.quaLon", "Ảnh quá lớn (tối đa 4 MB).") : t("repoWs.anh.khongPhaiAnh", "Chỉ nhận ảnh PNG/JPEG/WebP/GIF/BMP."));
+      return;
+    }
+    setDangOcr(true);
+    try {
+      const b64 = await docBase64(f);
+      const r = await ocrAnhM.mutateAsync({ anhBase64: b64 });
+      if (!r.ok) {
+        toast.error(t(`repoWs.anh.loi.${r.ma}`, "Không đọc được chữ trong ảnh [{{ma}}].", { ma: r.ma }));
+        return;
+      }
+      const nhan = t("repoWs.anh.nhan", "Chữ trích từ ảnh chụp lỗi (OCR, độ tin cậy {{p}}%{{cat}}):", {
+        p: Math.round(r.doTinCay * 100),
+        cat: r.catBot ? t("repoWs.anh.daCat", ", đã cắt bớt") : "",
+      });
+      const viTri = oNhapRef.current?.selectionStart ?? null;
+      setInput((cu) => chenVaoO(cu, khoiChuOcr(r.text, nhan), viTri));
+      toast.success(t("repoWs.anh.daChen", "Đã chèn chữ trích từ ảnh — kiểm lại trước khi gửi."));
+    } catch (e) {
+      toast.error(mapTrpcError(e));
+    } finally {
+      setDangOcr(false);
+    }
+  }, [ocrAnhM, t]);
+
+  // ── ★★★ Đợt 3b (3.5) — ĐẶT TÊN PHIÊN ──
+  const doiTenPhien = useCallback(async (id: string, title: string) => {
+    try {
+      const r = await doiTenPhienM.mutateAsync({ sessionId: id, title });
+      if (!r.ok) {
+        toast.error(t("repoWs.sessions.renameFailed", "Không đổi được tên phiên."));
+        return;
+      }
+      void utils.repoWorkspace.danhSachPhien.invalidate();
+    } catch (e) {
+      toast.error(mapTrpcError(e));
+    }
+  }, [doiTenPhienM, utils, t]);
 
   // Đổi tệp/dự án ⇒ thoát chế độ sửa (buffer thuộc về tệp CŨ — giữ lại là dán nhầm nội dung).
   useEffect(() => { setDangSuaTay(false); }, [selectedPath, projectId]);
@@ -1681,7 +1850,7 @@ export default function AICodingWorkspace() {
       : "";
     setTranscript((prev) => [
       ...prev,
-      { role: "assistant", content: `${t("repoWs.loop.ranTurn", "Vòng tự động — lượt {{luot}}/{{tran}} đã chạy `{{lenh}}`", { luot, tran: cfg.tran, lenh: r.command ?? "" })}\n\n${klVong}\`\`\`\n${dauRa}\n\`\`\`` },
+      { role: "assistant", content: `${t("repoWs.loop.ranTurn", "Vòng tự động — lượt {{luot}}/{{tran}} đã chạy `{{lenh}}`", { luot, tran: cfg.tran, lenh: r.command ?? "" })}\n\n${klVong}${khoiDauRaLenh(dauRa)}`, nguon: "dau-ra-lenh" },
     ]);
 
     // ★★★ 2026-08-24 · BẮT #2 — lượt vòng tự-ghi vào bảng Terminal. `r` (`KetQuaKiemChung`) KHÔNG
@@ -1808,6 +1977,20 @@ export default function AICodingWorkspace() {
   }, [transcript, luuTranscript]);
 
   /**
+   * ★★★ Đợt 3b (3.5) — NHẬT KÝ TERMINAL/VẤN ĐỀ THEO PHIÊN, lưu ở TRÌNH DUYỆT (khoá người × dự án × phiên). Phiên máy chủ
+   * cố ý chỉ mang `{role, content}` (xem `@/lib/nhatKyLenhPhien` cho lý do + giới hạn). Ghi mỗi khi danh sách lượt
+   * lệnh đổi VÀ đã có id phiên (lượt lệnh trước khi phiên kịp tạo được ghi ngay khi id về — `sessionId` trong deps).
+   */
+  const khoaNhatKy = useMemo(
+    () => (sessionId ? khoaNhatKyLenh(user?.id ?? null, projectId, sessionId) : null),
+    [user?.id, projectId, sessionId],
+  );
+  useEffect(() => {
+    if (!khoaNhatKy || lenhDaChay.length === 0) return;
+    luuNhatKyLenh(typeof window !== "undefined" ? window.localStorage : null, khoaNhatKy, lenhDaChay);
+  }, [lenhDaChay, khoaNhatKy]);
+
+  /**
    * ★★★ MỞ LẠI MỘT PHIÊN CŨ. Ba lệnh xoá dưới đây **KHÔNG phải dọn dẹp cho gọn** — chúng là ba
    * bất biến của mục (C):
    *   • `setPending(null)` + `setPendingDiff(null)` — **KHÔNG tái phát một thẻ duyệt.** Phiên
@@ -1839,7 +2022,18 @@ export default function AICodingWorkspace() {
     dangKhoiPhucRef.current = true;
     bamDaLuuRef.current = bamChuoi(JSON.stringify(r.session.turns));
     setTranscript(r.session.turns.map((x) => ({ role: x.role, content: x.content })));
-  }, [isStreaming, sessionId, utils, t, datSessionId]);
+    // ★ Đợt 3b — khôi phục nhật ký Terminal/Vấn đề của phiên NẾU trình duyệt này còn giữ (chỉ chữ để xem: không thẻ
+    //   duyệt, không vòng). Địa điểm lỗi tính LẠI từ đầu ra bằng bộ đọc duy nhất của trang.
+    const nk = docNhatKyLenh(
+      typeof window !== "undefined" ? window.localStorage : null,
+      khoaNhatKyLenh(user?.id ?? null, projectId, r.session.id),
+      (dauRa) => phanTichLoiViTri(dauRa, dsTepDuAnRef.current),
+    );
+    if (nk.length > 0) {
+      setLenhDaChay(nk);
+      toast.info(t("repoWs.sessions.terminalRestored", "Đã khôi phục {{n}} lượt lệnh của phiên (lưu trên trình duyệt này).", { n: nk.length }));
+    }
+  }, [isStreaming, sessionId, utils, t, datSessionId, user?.id, projectId]);
 
   /** Phiên mới = trang sạch. Không gọi server: một phiên rỗng không được đẻ ra một hàng. */
   const phienMoi = useCallback(() => {
@@ -1872,9 +2066,10 @@ export default function AICodingWorkspace() {
       toast.error(t("repoWs.sessions.deleteFailed", "Không xoá được phiên."));
       return;
     }
+    xoaNhatKyLenh(typeof window !== "undefined" ? window.localStorage : null, khoaNhatKyLenh(user?.id ?? null, projectId, id));
     if (id === sessionId) phienMoi();
     void utils.repoWorkspace.danhSachPhien.invalidate();
-  }, [xoaPhienM, sessionId, phienMoi, utils, t]);
+  }, [xoaPhienM, sessionId, phienMoi, utils, t, user?.id, projectId]);
 
   // ── Duyệt / hủy một đề xuất ghi/chạy ──
   /**
@@ -1992,7 +2187,7 @@ export default function AICodingWorkspace() {
           // ★ NHỊP KHÉP VÒNG — đưa đầu ra THẬT vào lịch sử để lượt sau tác nhân đọc lỗi rồi sửa tiếp.
           setTranscript((prev) => [
             ...prev,
-            { role: "assistant", content: `${dongKetLuan}${t("repoWs.chat.cmdOutput", "Kết quả lệnh (đã đưa vào ngữ cảnh để sửa tiếp)")}:\n\n\`\`\`\n${out.textSummary}\n\`\`\`` },
+            { role: "assistant", content: `${dongKetLuan}${t("repoWs.chat.cmdOutput", "Kết quả lệnh (đã đưa vào ngữ cảnh để sửa tiếp)")}:\n\n${khoiDauRaLenh(out.textSummary ?? "")}`, nguon: "dau-ra-lenh" },
           ]);
         } else if (pending.tool === "apply_diff") {
           const tepDaGhi = (pending.args as unknown as DiffArgs | undefined)?.path ?? pendingDiff?.args.path ?? null;
@@ -2021,6 +2216,24 @@ export default function AICodingWorkspace() {
           // ★★★ doc 79 · VÒNG TỰ ĐỘNG BẮT ĐẦU ĐÚNG Ở ĐÂY — sau khi NGƯỜI đã duyệt và byte đã rời
           //   ra đĩa. Trước cú bấm này không có một lượt tự động nào chạy.
           if (tepDaGhi) void chayLuotVong(tepDaGhi);
+          // ★ Đợt 3b — tệp MỚI (nút Tạo tệp/thư mục) phải hiện trên cây ngay; làm mới cây là vô hại với tệp đã có.
+          void utils.repoWorkspace.listFiles.invalidate();
+        } else if (pending.tool === "delete_file" || pending.tool === "rename_file") {
+          // ★★★ Đợt 3b — XOÁ / ĐỔI TÊN qua nút tệp (tool sẵn có, thẻ duyệt hiện có). Tệp nguồn không còn ⇒ đóng tab của
+          //   nó; đổi tên ⇒ mở tab ở đường MỚI. Câu báo do SERVER viết (`textSummary`) — không tự chế.
+          const a = (pending.args ?? {}) as { path?: unknown; from?: unknown; to?: unknown };
+          const nguon = String(pending.tool === "delete_file" ? a.path ?? "" : a.from ?? "");
+          const dich = pending.tool === "rename_file" ? String(a.to ?? "") : null;
+          if (nguon) {
+            setOpenTabs((tabs) => {
+              const con = tabs.filter((x) => x !== nguon);
+              return dich && tabs.includes(nguon) && !con.includes(dich) ? [...con, dich] : con;
+            });
+            if (selectedPath === nguon) setSelectedPath(dich);
+          }
+          void utils.repoWorkspace.listFiles.invalidate();
+          void utils.repoWorkspace.gitTrangThai.invalidate();
+          setTranscript((prev) => [...prev, { role: "assistant", content: out?.textSummary ?? (res.message ?? "") }]);
         } else if (pending.tool === "apply_diff_batch") {
           // ★★★ 2026-08-24 — LÔ GHI THÀNH CÔNG. `out.textSummary` do SERVER viết (liệt kê từng tệp
           //   đã ghi) — đưa NGUYÊN vào transcript sau câu dẫn, không viết lại. Refetch trình xem CHỈ
@@ -2040,7 +2253,7 @@ export default function AICodingWorkspace() {
     } catch {
       toast.error(t("repoWs.chat.confirmFailed", "Không thực thi được."));
     }
-  }, [pending, actionState, confirmM, lang, t, selectedPath, fileQ, pendingDiff, chayLuotVong, dungVong]);
+  }, [pending, actionState, confirmM, lang, t, selectedPath, fileQ, pendingDiff, chayLuotVong, dungVong, utils]);
 
   const handleCancel = useCallback(async () => {
     if (!pending || actionState !== "pending") return;
@@ -2389,7 +2602,13 @@ export default function AICodingWorkspace() {
                 {/* ★ QUẢN LÝ DỰ ÁN — bánh răng NGOÀI <label> (nút trong label ăn cú bấm của label)
                     và chỉ gắn cho admin: phép LỊCH SỰ; hàng rào thật là `adminProcedure` ở server
                     (repoWorkspace.themDuAn/xoaDuAn) — gọi thẳng API vẫn FORBIDDEN. */}
-                {user?.role === "admin" && <QuanLyDuAnRepo />}
+                {/* ★ Đợt 3a (Q3) — mở cho MỌI người dùng: "Dự án của tôi" (tạo/mở/đổi tên/xoá); phần đăng ký thư mục
+                    vẫn chỉ admin. "Từ mô tả" = dự án rỗng ⇒ chế độ Agent (`sua`) + mô tả trong ô chat. */}
+                <QuanLyDuAnRepo
+                  laAdmin={user?.role === "admin"}
+                  onChonDuAn={changeProject}
+                  onTaoTuMoTa={(_id, moTa) => { doiCheDoChat("sua"); setInput(moTa); }}
+                />
               </div>
               <select
                 id="repows-project"
@@ -2424,6 +2643,22 @@ export default function AICodingWorkspace() {
                   <Search className="h-3.5 w-3.5" /> {t("repoWs.search.tab", "Tìm")}
                 </button>
               </div>
+              {/* ★ Đợt 3b — NÚT TỆP (tạo tệp / thư mục · đổi tên · xoá tệp đang mở) ⇒ đề xuất ⇒ THẺ DUYỆT hiện có. */}
+              {cheDoCay === "cay" && projectId && (
+                <ThaoTacTep
+                  thuMucHienTai={selectedPath && selectedPath.includes("/") ? selectedPath.slice(0, selectedPath.lastIndexOf("/")) : ""}
+                  tepDangChon={selectedPath}
+                  coQuyen={canDeXuatGhi}
+                  dangBan={deXuatSuaTayM.isPending || deXuatXoaTepM.isPending || deXuatDoiTenTepM.isPending || (!!pending && actionState === "pending")}
+                  onTaoTep={(d, nd) => void deXuatTaoTep(d, nd)}
+                  onDoiTen={(tu, den) => void deXuatXoaHoacDoiTen("doiTen", tu, den)}
+                  onXoa={(d) => {
+                    if (window.confirm(t("repoWs.tep.xacNhanXoa", "Đề xuất XOÁ tệp {{tep}}? Tệp chỉ bị xoá sau khi bạn bấm Xác nhận trên thẻ duyệt.", { tep: d }))) {
+                      void deXuatXoaHoacDoiTen("xoa", d);
+                    }
+                  }}
+                />
+              )}
               {cheDoCay === "cay" ? (
                 <div className="relative">
                   <Search aria-hidden className="pointer-events-none absolute left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
@@ -3040,8 +3275,11 @@ export default function AICodingWorkspace() {
               {/* ★★★ 2026-08-23 — BỘ CHỌN PHIÊN: đồng hồ (lịch sử) + ＋ (phiên mới) ở góc phải,
                   đúng mẫu Claude Code. Nạp/tạo/xoá đi qua ĐÚNG các handler cũ (`chonPhien`/
                   `phienMoi`/`xoaPhienNay`) — không có đường nạp thứ hai. */}
+              {/* ★ Đợt 3b — màn QUẢN LÝ TRÍ NHỚ (bài học của tôi × dự án này). */}
+              <div className="ml-auto flex items-center">
+                {projectId && <QuanLyTriNho projectId={projectId} />}
+              </div>
               <BoChonPhien
-                className="ml-auto"
                 phien={phienQ.data?.sessions ?? []}
                 dangChon={sessionId}
                 dangTai={phienQ.isLoading}
@@ -3049,6 +3287,7 @@ export default function AICodingWorkspace() {
                 onChon={(id) => void chonPhien(id)}
                 onMoi={phienMoi}
                 onXoa={(id) => void xoaPhienNay(id)}
+                onDoiTen={(id, ten) => void doiTenPhien(id, ten)}
               />
             </div>
             {/*
@@ -3125,7 +3364,7 @@ export default function AICodingWorkspace() {
                            lưu phiên/gửi server không đổi một byte. */
                         /* ★ LÔ 3 — nhãn khối mã: câu CÙNG LƯỢT với thẻ đọc nhận bộ CÓ neo (tầng 2
                            so được), mọi câu cũ hơn nhận bộ KHÔNG neo — xem docblock `viTriNeo`. */
-                        <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="static" components={i === viTriNeo ? boKhoiCoNeo : boKhoiKhongNeo}>{lamSachMocChoHienThi(m.content)}</Streamdown></div>
+                        <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="static" components={m.nguon === "dau-ra-lenh" ? boKhoiDauRaLenh : i === viTriNeo ? boKhoiCoNeo : boKhoiKhongNeo}>{lamSachMocChoHienThi(m.content)}</Streamdown></div>
                       )}
                       {/* ★★★ 2026-09-03 · ĐỢT F2 — NHẢY `tệp:dòng` TỪ CHAT (CẢ HAI VAI). Stack trace/lỗi build
                           thường nằm NGAY TRONG hội thoại (người dùng dán vào, hoặc model chép lại),
@@ -3259,6 +3498,8 @@ export default function AICodingWorkspace() {
                     thông báo NGAY khi hiện (công cụ bắt-duyệt-mỗi-lượt): `aria-live="assertive"` +
                     `role="status"`. Vùng LUÔN có trong DOM và LUÔN hiển thị (KHÔNG `empty:hidden`) để
                     lượt chèn thẻ chắc chắn được đọc. */}
+                {/* ★ Đợt 1 · T5 — dòng thời gian CHẾ ĐỘ AGENT (kế hoạch ghim · tool · thẻ duyệt · kết thúc + hoàn tác). */}
+                <DongThoiGianAgent agent={agent} onMoTep={openFile} />
                 <div aria-live="assertive" role="status">
                 {/* Thẻ xác nhận write-tool */}
                 {coDiffChoDuyet ? (
@@ -3332,11 +3573,26 @@ export default function AICodingWorkspace() {
                   <GoiYTep dsKhop={dsKhop} chiSoChon={chiSoChon} onChon={chenMention} />
                 </div>
               )}
+              <BoChonCheDoChat giaTri={cheDoChat} onDoi={doiCheDoChat} coQuyenTuDong={canExec} khoa={agentDangChay || isStreaming} />
               <div className="flex items-end gap-2">
                 <textarea
                   ref={oNhapRef}
                   value={input}
                   onChange={(e) => { setInput(e.target.value); tuGianChieuCao(e.currentTarget); capNhatGoiYTep(e.currentTarget); }}
+                  // ★ Đợt 3b — DÁN / KÉO ẢNH LỖI ⇒ OCR ⇒ chữ chèn vào câu hỏi. Dán CHỮ đi đường mặc định (không chặn).
+                  onPaste={(e) => {
+                    const f = layAnhTuDuLieu(e.clipboardData);
+                    if (!f) return;
+                    e.preventDefault();
+                    if (!dangOcr) void xuLyAnhLoi(f);
+                  }}
+                  onDragOver={(e) => { if (Array.from(e.dataTransfer?.items ?? []).some((i) => i.kind === "file")) e.preventDefault(); }}
+                  onDrop={(e) => {
+                    const f = layAnhTuDuLieu(e.dataTransfer);
+                    if (!f) return;
+                    e.preventDefault();
+                    if (!dangOcr) void xuLyAnhLoi(f);
+                  }}
                   placeholder={t("repoWs.chat.placeholder", "Hỏi tác nhân: đọc/tìm mã, đề xuất sửa, chạy test…")}
                   onKeyDown={(e) => {
                     const dangGoIme = (e.nativeEvent as unknown as { isComposing?: boolean }).isComposing;
@@ -3371,14 +3627,24 @@ export default function AICodingWorkspace() {
                   style={{ maxHeight: TRAN_CAO_O_NHAP_PX }}
                   aria-label={t("repoWs.chat.placeholder", "Hỏi tác nhân: đọc/tìm mã, đề xuất sửa, chạy test…")}
                 />
-                {isStreaming ? (
-                  <Button variant="destructive" size="icon" className="shrink-0" onClick={stopKbStream} aria-label={t("repoWs.chat.stopAria", "Dừng lượt đang chạy")}><StopCircle className="h-4 w-4" /></Button>
+                {isStreaming || agentDangChay ? (
+                  // ★ Đợt 1 · T5 — Dừng lượt agent = `/huy` (rời trang KHÔNG huỷ; chỉ nút này).
+                  <Button variant="destructive" size="icon" className="shrink-0" onClick={isStreaming ? stopKbStream : () => void agent.dung()} aria-label={t("repoWs.chat.stopAria", "Dừng lượt đang chạy")}><StopCircle className="h-4 w-4" /></Button>
                 ) : (
                   <Button size="icon" className="shrink-0" onClick={() => handleSend()} disabled={!input.trim()} aria-label={t("repoWs.chat.sendAria", "Gửi câu hỏi cho tác nhân")}><Send className="h-4 w-4" /></Button>
                 )}
               </div>
               <p className="mt-1 px-1 text-[10px] text-muted-foreground">
                 {t("repoWs.chat.keyHint", "Enter để gửi · Shift+Enter để xuống dòng (dán được stack trace nhiều dòng)")}
+                {" · "}
+                {dangOcr ? (
+                  <span data-dang-ocr className="inline-flex items-center gap-1 text-primary">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {t("repoWs.anh.dangDoc", "Đang đọc chữ trong ảnh…")}
+                  </span>
+                ) : (
+                  t("repoWs.anh.goiY", "dán/kéo ảnh chụp lỗi để trích chữ (OCR)")
+                )}
               </p>
             </div>
           </div>
@@ -3431,28 +3697,82 @@ export default function AICodingWorkspace() {
                 </span>
               )}
             </button>
+            {/* ★ Đợt 3c — tab "Chạy & Xem trước" (cài phụ thuộc qua thẻ duyệt · chạy/dừng · nhật ký · khung xem trước). */}
+            <button
+              type="button"
+              role="tab"
+              id="repows-tab-chay"
+              aria-selected={duoiChat === "chay"}
+              aria-controls="repows-panel-duoi"
+              data-tab-duoi="chay"
+              onClick={() => setDuoiChat((v) => (v === "chay" ? "dong" : "chay"))}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium",
+                duoiChat === "chay" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
+              )}
+            >
+              <PlayCircle className="h-3.5 w-3.5" />
+              {t("repoWs.pane.runTab", "Chạy & Xem trước")}
+            </button>
+            {/* ★ Đợt 3b — tab "Git" (trạng thái · diff · commit · nhánh · log) của dự án đang chọn. */}
+            <button
+              type="button"
+              role="tab"
+              id="repows-tab-git"
+              aria-selected={duoiChat === "git"}
+              aria-controls="repows-panel-duoi"
+              data-tab-duoi="git"
+              onClick={() => setDuoiChat((v) => (v === "git" ? "dong" : "git"))}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium",
+                duoiChat === "git" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
+              )}
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              {t("repoWs.pane.gitTab", "Git")}
+            </button>
           </div>
           {duoiChat !== "dong" && (
             <div
               className="min-h-0 flex-1 overflow-y-auto border-t px-2 py-2"
               role="tabpanel"
               id="repows-panel-duoi"
-              aria-labelledby={duoiChat === "terminal" ? "repows-tab-terminal" : "repows-tab-problems"}
+              aria-labelledby={duoiChat === "terminal" ? "repows-tab-terminal" : duoiChat === "chay" ? "repows-tab-chay" : duoiChat === "git" ? "repows-tab-git" : "repows-tab-problems"}
             >
-              {duoiChat === "terminal" ? (
+              {duoiChat === "git" ? (
+                projectId ? (
+                  <KhungGit
+                    projectId={projectId}
+                    lang={lang}
+                    onDaDoiCay={() => {
+                      void utils.repoWorkspace.listFiles.invalidate();
+                      if (selectedPath) void fileQ.refetch();
+                    }}
+                  />
+                ) : null
+              ) : duoiChat === "chay" ? (
+                projectId ? (
+                  <KhungChayUngDung
+                    projectId={projectId}
+                    lang={lang}
+                    onDeXuat={(pa) => {
+                      setPending(pa as KbPendingAction);
+                      setActionState("pending");
+                    }}
+                  />
+                ) : null
+              ) : duoiChat === "terminal" ? (
                 <BangTerminal
                   luotLenh={lenhDaChay}
                   goiYNhanh={goiYTheoDuAn(projectId)}
                   dangGui={isStreaming}
                   onChayNhanh={(g) => handleSend(t(g.khoa, g.macDinh))}
                   luotSong={dangChayLenhSong ? songQ.data ?? null : null}
-                  onChayLai={(lenh) => handleSend(t("repoWs.terminal.rerunPrompt", "chạy {{lenh}}", { lenh }))}
+                  onChayLai={(lenh) => void deXuatLenhTrucTiep(lenh)}
                   onXoaLichSu={() => setLenhDaChay([])}
-                  /* ★★★ G17 (2026-09-22 · phản hồi chủ dự án) — GÕ ĐƯỢC LỆNH.
-                     Đường đi y HỆT nút chạy-nhanh và nút chạy-lại: dựng câu → `handleSend` →
-                     model → propose → **cùng thẻ duyệt HITL**. Không một đường chạy thẳng nào
-                     mọc ra ở đây, nên bất biến "0 mutation trong BangTerminal" không đổi. */
-                  onGoLenh={(lenh) => handleSend(t("repoWs.terminal.rerunPrompt", "chạy {{lenh}}", { lenh }))}
+                  /* ★★★ G17 (2026-09-22) — GÕ ĐƯỢC LỆNH. ★ Đợt 3c — nay KHÔNG đi vòng qua model: propose thẳng
+                     `run_command` ⇒ **cùng thẻ duyệt HITL**. Không đường chạy thẳng nào: chạy chỉ sau Xác nhận. */
+                  onGoLenh={(lenh) => void deXuatLenhTrucTiep(lenh)}
                   lenhChoPhep={dsLenhChoPhepQ.data ?? undefined}
                 />
               ) : (

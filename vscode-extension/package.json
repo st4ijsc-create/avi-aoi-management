@@ -1,8 +1,8 @@
 {
   "name": "avi-ai-local",
   "displayName": "AI Local (ST4I)",
-  "description": "Trợ lý lập trình AI chạy nội bộ — offline, mọi lượt ghi phải có người duyệt.",
-  "version": "0.1.0",
+  "description": "Trợ lý lập trình AI chạy nội bộ — agent sửa trực tiếp dự án qua lõi agent dùng chung, mọi lượt ghi qua một điểm ghi có kiểm toán.",
+  "version": "0.2.0",
   "publisher": "st4i",
   "private": true,
   "license": "UNLICENSED",
@@ -12,6 +12,9 @@
   "categories": [
     "Programming Languages",
     "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -57,8 +60,12 @@
         "title": "AI Local: Mở bảng trò chuyện"
       },
       {
+        "command": "aviAiLocal.dangNhapThietBi",
+        "title": "AI Local: Đăng nhập AI Local (device flow)"
+      },
+      {
         "command": "aviAiLocal.dangNhap",
-        "title": "AI Local: Đăng nhập"
+        "title": "AI Local: Đăng nhập phiên (mật khẩu)"
       },
       {
         "command": "aviAiLocal.dangXuat",
@@ -94,6 +101,15 @@
       {
         "command": "aviAiLocal.doiMayChu",
         "title": "AI Local: Đổi địa chỉ máy chủ"
+      },
+      {
+        "command": "aviAiLocal.hoanTacLuotChay",
+        "title": "AI Local: Hoàn tác lượt chạy agent",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "aviAiLocal.batTatGhostText",
+        "title": "AI Local: Bật/tắt gợi ý chữ mờ (ghost-text)"
       }
     ],
     "keybindings": [
@@ -184,6 +200,26 @@
           "command": "aviAiLocal.nhoDieuNay",
           "when": "view == aviAiLocal.bangChatPhu",
           "group": "3_boNho@1"
+        },
+        {
+          "command": "aviAiLocal.dangNhapThietBi",
+          "when": "view == aviAiLocal.bangChat",
+          "group": "1_taiKhoan@0"
+        },
+        {
+          "command": "aviAiLocal.hoanTacLuotChay",
+          "when": "view == aviAiLocal.bangChat",
+          "group": "4_agent@1"
+        },
+        {
+          "command": "aviAiLocal.dangNhapThietBi",
+          "when": "view == aviAiLocal.bangChatPhu",
+          "group": "1_taiKhoan@0"
+        },
+        {
+          "command": "aviAiLocal.hoanTacLuotChay",
+          "when": "view == aviAiLocal.bangChatPhu",
+          "group": "4_agent@1"
         }
       ]
     },
@@ -216,6 +252,33 @@
           "scope": "machine",
           "default": {},
           "description": "MCP server ngoài mà AI Local được phép gọi ra (khuôn mcpServers quen thuộc). Mỗi khoá là tên server, giá trị mang command/args/cwd/env. KHÔNG cho workspace ghi đè (bài học Đợt A: aviAiLocal.serverUrl thiếu scope từng để một repo thù địch chiếm đường dữ liệu qua .vscode/settings.json) — sửa ở User Settings, phạm vi Máy. Mỗi server phải được người dùng DUYỆT lần đầu (hộp thoại xác nhận trước khi tiến trình được chạy)."
+        },
+        "aviAiLocal.agentModel": {
+          "type": "string",
+          "scope": "machine",
+          "default": "chat",
+          "description": "Model logic của cổng /v1 cho agent (chat | code). Đổi khi quản trị cấu hình model lập trình riêng (GGUF_CODE_MODEL)."
+        },
+        "aviAiLocal.agentMaxTokens": {
+          "type": "number",
+          "scope": "machine",
+          "default": 16000,
+          "minimum": 512,
+          "description": "Trần token sinh của MỘT lượt model trong agent (gồm cả suy luận). Lõi agent còn có trần tổng của lượt chạy."
+        },
+        "aviAiLocal.ghostText.enabled": {
+          "type": "boolean",
+          "scope": "machine",
+          "default": false,
+          "description": "Bật gợi ý chữ mờ khi gõ (ghost-text, kiểu Copilot) qua POST /v1/completions (model logic fim). Cần token /v1 (device flow). Chỉ gửi ~2.000 ký tự trước + ~800 ký tự sau con trỏ, đã che bí mật; không bao giờ gửi .env/khoá riêng/.git/tệp ngoài workspace. Phạm vi Máy: một repo lạ không tự bật được."
+        },
+        "aviAiLocal.ghostText.doTreMs": {
+          "type": "number",
+          "scope": "machine",
+          "default": 250,
+          "minimum": 50,
+          "maximum": 2000,
+          "description": "Thời gian ngừng gõ (ms) trước khi xin gợi ý ghost-text (gỡ dội)."
         }
       }
     }
@@ -234,6 +297,7 @@
     "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.25.12",
     "glob": "^13.0.6",
+    "marked": "16.4.2",
     "mocha": "^11.8.0",
     "typescript": "^5.6.3"
   }

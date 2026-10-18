@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mucCanhBao, tachNghiSinh } from "./ThanhTrangThaiAiLocal";
+import { mucCanhBao, tachNghiSinh, trangThaiOMay } from "./ThanhTrangThaiAiLocal";
 
 // ★ F2 (2026-09-22) — hai vị từ mới: % ngữ cảnh và tách nghĩ/sinh. "Không biết ≠ 0" là luật đắt nhất.
 describe("mucCanhBao — % ngữ cảnh đã dùng (F2)", () => {
@@ -104,5 +104,26 @@ describe("mucCanhBao — MÁY, và nguyên tắc 'không biết ≠ tốt'", () 
   it("★ số 0 THẬT vẫn phải kêu — khác hẳn 'không đo được'", () => {
     expect(mucCanhBao({ loai: "vram", giaTri: 0 })).toBe("nguy");
     expect(mucCanhBao({ loai: "toc-do", giaTri: 0 })).toBe("nguy");
+  });
+});
+
+// ★ Đợt 0.1 (2026-10-14) — ô "máy" phải nói "đang khởi động lại model" thay vì chỉ "ENGINE HỎNG" khi bộ giám sát
+// llama-server đang dựng lại; "bỏ cuộc" mới là đỏ thật. Server khoẻ thì trạng thái giám sát không được làm đổi màu.
+describe("trangThaiOMay — ô máy đọc trạng thái giám sát llama-server (Đợt 0.1)", () => {
+  it("engine khoẻ ⇒ 'ok' bất kể giám sát nói gì", () => {
+    expect(trangThaiOMay({ mayHong: false, giamSat: { trangThai: "bo-cuoc" } })).toEqual({ loai: "ok", muc: "binh-thuong" });
+  });
+  it("hỏng + đang khởi động lại / đang nạp / tạm dừng ⇒ hổ phách (sẽ tự lành), không phải đỏ", () => {
+    expect(trangThaiOMay({ mayHong: true, giamSat: { trangThai: "dang-khoi-dong-lai" } })).toEqual({ loai: "dang-khoi-dong-lai", muc: "canh-bao" });
+    expect(trangThaiOMay({ mayHong: true, giamSat: { trangThai: "dang-nap" } })).toEqual({ loai: "dang-nap", muc: "canh-bao" });
+    expect(trangThaiOMay({ mayHong: true, giamSat: { trangThai: "tam-dung" } })).toEqual({ loai: "tam-dung", muc: "canh-bao" });
+  });
+  it("hỏng + bỏ cuộc ⇒ đỏ, nhãn riêng 'không khởi động được'", () => {
+    expect(trangThaiOMay({ mayHong: true, giamSat: { trangThai: "bo-cuoc" } })).toEqual({ loai: "bo-cuoc", muc: "nguy" });
+  });
+  it("hỏng + giám sát chết/tắt/không đọc được ⇒ 'hong' đỏ như cũ (không biết ≠ tốt)", () => {
+    for (const g of [{ trangThai: "chet" }, { trangThai: "tat" }, null, undefined]) {
+      expect(trangThaiOMay({ mayHong: true, giamSat: g })).toEqual({ loai: "hong", muc: "nguy" });
+    }
   });
 });

@@ -105,6 +105,24 @@ export function apDungDiffTuTriDuoc(toolName: string): boolean {
   return toolName === "apply_diff" && autonomyGhiTuTriBat();
 }
 
+/**
+ * ★★★ 2026-10-14 · Q1 (quyết định chủ dự án) — `AI_CODING_TU_TRI_GHI_REPO_CHINH`: GHI ĐÈ CÓ CHỦ Ý
+ * cho phép vòng TỰ GHI chạm REPO CHÍNH (cây mã của chính server này). **MẶC ĐỊNH TẮT**, chỉ `"1"` bật.
+ *
+ * Vì sao có cờ thứ hai thay vì dựa vào `AI_CODING_TU_TRI_GHI`: lúc quyết định, `.env` máy dev ĐANG
+ * bật `AI_CODING_TU_TRI_GHI=1` + `AI_CODING_AUTOLOOP=1` và danh sách dự án GỒM repo chính, trong khi
+ * CHƯA có điểm khôi phục (checkpoint — Đợt 1, mục 1.4). Một lượt model phá trên repo chính khi ấy
+ * không đảo được bằng một nút. Chủ dự án chốt: vòng tự ghi KHÔNG chạy trên repo chính cho tới khi có
+ * checkpoint; hộp cát (`sandbox-projects/…`, dự án đăng ký ngoài repo) vẫn chạy. Cờ này là lối ra
+ * TƯỜNG MINH cho người chấp nhận rủi ro đó — không phải công tắc mặc định.
+ * ⚠ Chỉ ảnh hưởng vòng TỰ GHI (`aiCodingTuTriGhi.chayLuotTuTriGhi`). Đường DUYỆT TAY (HITL) trên repo
+ *   chính KHÔNG đọc cờ này và không đổi.
+ * ⚠ Đọc TẠI CHỖ GỌI (lưới lật env theo ca), như `autonomyGhiTuTriBat`.
+ */
+export function tuTriGhiRepoChinhDuoc(): boolean {
+  return process.env.AI_CODING_TU_TRI_GHI_REPO_CHINH === "1";
+}
+
 /** Comma-separated action `type`s (tool names) eligible for auto-confirm. Default EMPTY. */
 export function getAutonomyAllowlist(): ReadonlySet<string> {
   const raw = process.env.AI_AUTONOMY_ALLOWLIST;
@@ -172,6 +190,13 @@ export const AUTONOMY_INELIGIBLE: ReadonlySet<string> = new Set<string>([
   "propose_defect_from_vision",
   // PLC/robot program files — control logic, not data — server/services/aiLocalTools/writeHandlers/programmingFile.ts
   "write_project_file",
+  /**
+   * Đợt 1 T2 (2026-10-17) — `delete_file` / `rename_file` (writeHandlers/xoaDoiTenTep.ts): cùng lý lẽ với
+   * `apply_diff` ngay dưới — chúng đổi cây mã nguồn theo quyết định của model, nên KHÔNG được tự chạy qua
+   * đường autonomy chung. Vòng agent chế độ `tu-dong` (Đợt 1) đi cửa riêng có checkpoint, không đi qua đây.
+   */
+  "delete_file",
+  "rename_file",
   /**
    * ★★★ doc 78 PHA C — `apply_diff` (server/services/aiLocalTools/writeHandlers/applyDiff.ts).
    *

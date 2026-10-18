@@ -37,8 +37,18 @@ import type { ToolLang } from "../services/aiLocalTools";
 // D4 (doc69 Giai đoạn 4/Wave 3) — the D2 autonomy kill-switch, made OPERABLE.
 import { tripKillSwitch, untripKillSwitch, isKillSwitchTripped } from "../services/ai/autonomyPolicy";
 import { AUDIT_ACTIONS, ENTITY_TYPES, createAuditContext, logCrudOperation } from "../services/auditTrailService";
+// ★ Đợt 1 · T4 (2026-10-17) — lượt chạy của vòng agent máy chủ (`shared/agentCore`). Thân thủ tục ở services
+//   (`services/ai/agent/thuTucLuotChay.ts`), nhập ĐỘNG trong từng thủ tục: đồ thị nhập tĩnh của router này (và mọi
+//   lưới đang mock tầng dữ liệu của nó) không đổi. SSE tạo/nối lại/huỷ lượt chạy ở `server/routes/aiAgentApi.ts`.
+const thuTucLuotChay = () => import("../services/ai/agent/thuTucLuotChay");
+// ★ Đợt 5.1 (2026-10-17) — PHẢN HỒI 👍/👎 + bộ dữ liệu "chỉ dẫn → diff được duyệt". Thân ở
+//   `services/ai/phanHoi/thuTucPhanHoi.ts` (nhập ĐỘNG như trên). Quyền `ai_repo_read/canView` trong thân; tổng hợp + xuất
+//   MỌI người đòi admin (sàn `adminPhanHoiProcedure` + kiểm lại trong thân).
+const thuTucPhanHoi = () => import("../services/ai/phanHoi/thuTucPhanHoi");
 
 const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
+/** id lượt chạy / pending action — `randomUUID()`. */
+const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
 /** D4 — ops-scoped (cross-user) agent session visibility: admin/engineer only,
  *  mirrors aiModelRouter's modelCardProcedure convention (roleProcedure combo). */
@@ -47,6 +57,11 @@ const opsAgentProcedure = roleProcedure("admin", "engineer").use(moduleGate("MOD
 /** D4 — kill-switch trip/untrip: admin + 2FA, the SAME guard D3 chained for
  *  model-card writes (`roleProcedure(...).use(require2FA)`). */
 const killSwitchProcedure = roleProcedure("admin").use(require2FA);
+
+/** Đợt 5.1 — tổng hợp phản hồi của MỌI người (chỉ đếm): admin + giấy phép MOD_AI (khuôn `opsAgentProcedure`). */
+const adminPhanHoiProcedure = roleProcedure("admin").use(moduleGate("MOD_AI"));
+
+const danhGiaSchema = z.union([z.literal(1), z.literal(-1)]).nullable();
 
 const AGENT_SESSION_STATUSES = [
   "planning",
@@ -225,6 +240,120 @@ export const aiAgentRouter = router({
     }),
 
   /** Reset the kill-switch — admin + 2FA. Audited. */
+  // ═══ Đợt 1 · T4 — LƯỢT CHẠY vòng agent máy chủ (quyền `ai_repo_read/canView` kiểm trong thân) ═══
+  /** Lượt chạy CỦA MÌNH (tuỳ chọn lọc dự án), mới nhất trước. */
+  danhSach: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional() }).optional())
+    .query(async ({ input, ctx }) => (await thuTucLuotChay()).thuTucDanhSach(toAgentUser(ctx.user as any), input?.projectId ?? null)),
+
+  /** Chi tiết một lượt chạy của mình: trạng thái, sự kiện (đã gộp), checkpoint. */
+  chiTiet: protectedProcedure
+    .input(z.object({ runId: uuidSchema }))
+    .query(async ({ input, ctx }) => (await thuTucLuotChay()).thuTucChiTiet(toAgentUser(ctx.user as any), input.runId)),
+
+  /** Duyệt một đề xuất ghi/lệnh của lượt chạy (= `confirmAction` thật) rồi đánh thức lượt chạy. */
+  duyet: protectedProcedure
+    .input(
+      z.object({
+        actionId: uuidSchema,
+        selectedHunkIds: z.array(z.number().int().min(0).max(10_000)).max(2_000).optional(),
+        /** Bí danh của `selectedHunkIds` (tên phía giao diện T5). KHÔNG được để zod lặng lẽ bỏ — bỏ là áp MỌI khối. */
+        chonKhoi: z.array(z.number().int().min(0).max(10_000)).max(2_000).optional(),
+        lang: langSchema.optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) =>
+      (await thuTucLuotChay()).thuTucDuyet(toAgentUser(ctx.user as any), {
+        actionId: input.actionId,
+        selectedHunkIds: input.selectedHunkIds ?? input.chonKhoi,
+        lang: input.lang ?? "vi",
+        req: reqMeta(ctx),
+      }),
+    ),
+
+  /** Bác một đề xuất, kèm LÝ DO để model đọc ("User rejected this change: …"). */
+  bac: protectedProcedure
+    .input(z.object({ actionId: uuidSchema, lyDo: z.string().trim().min(1).max(2_000) }))
+    .mutation(async ({ input, ctx }) =>
+      (await thuTucLuotChay()).thuTucBac(toAgentUser(ctx.user as any), { actionId: input.actionId, lyDo: input.lyDo, req: reqMeta(ctx) }),
+    ),
+
+  /** Hoàn tác một checkpoint hoặc CẢ lượt chạy (thứ tự ngược) — đi cửa ghi + audit (T3 `checkpointAgent`). */
+  hoanTac: protectedProcedure
+    .input(z.object({ runId: uuidSchema, checkpointId: z.string().min(1).max(200).optional(), lang: langSchema.optional() }))
+    .mutation(async ({ input, ctx }) =>
+      (await thuTucLuotChay()).thuTucHoanTac(toAgentUser(ctx.user as any), {
+        runId: input.runId,
+        checkpointId: input.checkpointId,
+        lang: input.lang ?? "vi",
+        req: reqMeta(ctx),
+      }),
+    ),
+
+  // ═══ Đợt 2 — ĐỀ XUẤT NHỚ của lượt chạy (tool `remember` chỉ đề xuất; ghi CHỈ khi người bấm "Nhớ") ═══
+  /** Nhớ một đề xuất ⇒ `luuBaiHoc` (người × dự án của lượt) sau `lamSachBaiHoc`. Chỉ chủ lượt chạy. */
+  nhoDeXuat: protectedProcedure
+    .input(z.object({ runId: uuidSchema, id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) }))
+    .mutation(async ({ input, ctx }) =>
+      (await thuTucLuotChay()).thuTucNhoDeXuat(toAgentUser(ctx.user as any), { runId: input.runId, id: input.id }),
+    ),
+
+  /** Bỏ qua một đề xuất nhớ — không ghi gì. Chỉ chủ lượt chạy. */
+  boDeXuat: protectedProcedure
+    .input(z.object({ runId: uuidSchema, id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) }))
+    .mutation(async ({ input, ctx }) =>
+      (await thuTucLuotChay()).thuTucBoDeXuat(toAgentUser(ctx.user as any), { runId: input.runId, id: input.id }),
+    ),
+
+  // ═══ Đợt 5.1 — PHẢN HỒI 👍/👎 (câu trả lời của lượt chạy · diff đã duyệt/bác) + bộ dữ liệu ═══
+  /**
+   * Bỏ/sửa/gỡ phiếu CỦA MÌNH. `tra-loi`: khối trả lời thứ `chiSoTin` của lượt chạy; `diff`: một đề xuất `apply_diff`.
+   * Văn bản lưu lấy từ SỔ máy chủ (không từ client), đã che bí mật. `danhGia: null` = gỡ phiếu.
+   */
+  phanHoi: protectedProcedure
+    .input(
+      z.discriminatedUnion("loai", [
+        z.object({
+          loai: z.literal("tra-loi"),
+          runId: uuidSchema,
+          chiSoTin: z.number().int().min(0).max(10_000),
+          danhGia: danhGiaSchema,
+          lyDo: z.string().max(2_000).optional(),
+        }),
+        z.object({ loai: z.literal("diff"), actionId: uuidSchema, danhGia: danhGiaSchema, lyDo: z.string().max(2_000).optional() }),
+      ]),
+    )
+    .mutation(async ({ input, ctx }) => (await thuTucPhanHoi()).thuTucPhanHoi(toAgentUser(ctx.user as any), input)),
+
+  /** Phiếu CỦA MÌNH, mới nhất trước. */
+  phanHoiCuaToi: protectedProcedure.query(async ({ ctx }) => (await thuTucPhanHoi()).thuTucPhanHoiCuaToi(toAgentUser(ctx.user as any))),
+
+  /** ADMIN — đếm phiếu/quyết định của mọi người (không nội dung, không danh tính). */
+  phanHoiTongHop: adminPhanHoiProcedure.query(async ({ ctx }) =>
+    (await thuTucPhanHoi()).thuTucTongHopPhanHoi(toAgentUser(ctx.user as any)),
+  ),
+
+  /**
+   * Xuất JSONL "chỉ dẫn → diff ĐƯỢC DUYỆT" (đã che, loại tệp cấm). Mặc định của mình; `tatCa` (mọi người) đòi admin và
+   * được ghi audit. Mutation (không phải query) để không bị cache/tiền nạp như một lượt đọc thường.
+   */
+  xuatBoDuLieu: protectedProcedure
+    .input(z.object({ tatCa: z.boolean().optional() }).optional())
+    .mutation(async ({ input, ctx }) => {
+      const u = toAgentUser(ctx.user as any);
+      const kq = await (await thuTucPhanHoi()).thuTucXuatBoDuLieu(u, { tatCa: input?.tatCa === true });
+      if (kq.ok && input?.tatCa) {
+        await logCrudOperation(createAuditContext({ user: ctx.user as any, req: reqMeta(ctx) }), {
+          action: AUDIT_ACTIONS.EXPORT,
+          entityType: ENTITY_TYPES.AI_ACTION,
+          entityName: "ai_agent_feedback_dataset",
+          details: { operation: "AI_FEEDBACK_DATASET_EXPORT_ALL", metadata: { soMau: kq.soMau, soBoQua: kq.soBoQua } },
+          status: "success",
+        });
+      }
+      return kq;
+    }),
+
   untripKillSwitch: killSwitchProcedure.mutation(async ({ ctx }) => {
     await untripKillSwitch(ctx.user.id);
     await logCrudOperation(createAuditContext({ user: ctx.user as any, req: reqMeta(ctx) }), {

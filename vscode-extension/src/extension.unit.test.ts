@@ -51,6 +51,8 @@ const may = vi.hoisted(() => ({
   chonNutLoi: undefined as string | undefined,
   /** Mọi lần `showErrorMessage` được gọi — ghi lại (thông điệp, danh sách nút) để lưới đo cả hai. */
   loiDuaRa: [] as Array<{ thongDiep: string; nut: string[] }>,
+  /** ★★★ ĐỢT 4C — mọi lần `activate()` gọi `dangKyGhostText(context)`. */
+  dangKyGhostText: [] as unknown[],
 }));
 
 vi.mock("vscode", () => {
@@ -151,6 +153,15 @@ vi.mock("./ui/bangChat", () => ({
     thanhBenDangMo: () => may.thanhBenGia,
   },
 }));
+/**
+ * ★★★ ĐỢT 4C — ghost-text có lưới riêng (`ui/ghostText.unit.test.ts`, vscode giả đủ `languages`/thanh trạng thái).
+ * Ở đây chỉ đo `activate()` có ĐĂNG KÝ nó (một lần, với chính context) — bản giả ghi lại lời gọi.
+ */
+vi.mock("./ui/ghostText", () => ({
+  dangKyGhostText: (ctx: unknown) => {
+    may.dangKyGhostText.push(ctx);
+  },
+}));
 vi.mock("./ui/diffDeXuat", () => ({
   SCHEME: "avi-de-xuat",
   KhoDeXuat: class {
@@ -187,6 +198,7 @@ beforeEach(() => {
   may.dangNhapNem = undefined;
   may.chonNutLoi = undefined;
   may.loiDuaRa = [];
+  may.dangKyGhostText = [];
 });
 
 describe("Cmd+K — đường dẫn đưa cho model (F3)", () => {
@@ -463,5 +475,13 @@ describe("ĐỢT G / TASK G4 / B3 — đăng nhập gặp lỗi mạng ⇒ chỉ
     expect(loi, JSON.stringify(may.loiDuaRa)).toBeDefined();
     expect(loi!.nut).toEqual([]);
     expect(may.executeCommandGoi.some((a) => a[0] === "workbench.action.openSettings")).toBe(false);
+  });
+});
+
+describe("ĐỢT 4C — activate() đăng ký ghost-text", () => {
+  it("★★★ đúng MỘT lần, với chính context của extension (để provider/lệnh/thanh trạng thái vào subscriptions)", () => {
+    const ctx = { subscriptions: [], secrets: {} };
+    activate(ctx as never);
+    expect(may.dangKyGhostText).toEqual([ctx]);
   });
 });

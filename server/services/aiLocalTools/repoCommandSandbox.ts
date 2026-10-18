@@ -122,10 +122,12 @@
  * điểm chạm byte ("phép hỏi/dựng khung"), nên bất biến "mọi byte qua ĐÚNG HAI hàm cửa" vẫn nguyên.
  */
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { redactSecretsOnly } from "../ai/aiSafety";
 import { MA_TU_CHOI_HOP_CAT, gocHopCat, phanQuyetDuongDan } from "./repoSandbox";
+// ★ Đợt 3c — khai báo dự án `.ai-chay.json` (mở script cài npm CÓ LÝ DO). Tệp tên cố định dưới gốc, lstat tệp thường.
+import { docCauHinhChay } from "../ai/chayUngDung/cauHinhChayDuAn";
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // MÃ MÁY-ĐỌC-ĐƯỢC — **0 dòng im lặng là nói dối**
@@ -164,6 +166,14 @@ export const MA_TU_CHOI_LENH = {
    *   dựa trên nó. Từ chối, nói rõ, để tác nhân chuyển sang lệnh ĐÚNG của dự án (`dotnet test`).
    */
   CMD_GOC_THIEU_PACKAGE_JSON: "CMD_GOC_THIEU_PACKAGE_JSON",
+  /**
+   * ★★★ Đợt 3c (2026-10-17) — lệnh HỢP LỆ (khớp khuôn) nhưng THIẾU ĐIỀU KIỆN TIÊN QUYẾT để chạy đúng chỗ:
+   * `.venv` chưa tạo (pip sẽ cài vào python HỆ THỐNG — sai chỗ, nên từ chối thay vì "cứ chạy"),
+   * `requirements.txt` vắng, hoặc NGUỒN GÓI OFFLINE khai méo (`AI_NPM_REGISTRY`/`AI_PIP_FIND_LINKS`/
+   * `AI_NUGET_SOURCE`). Tách khỏi `CMD_RESOLVE_ERROR` (hỏng cài đặt máy chủ) vì hành động sửa KHÁC: ở đây
+   * người dùng/quản trị LÀM MỘT BƯỚC (tạo venv, sửa biến) rồi chạy lại — chi tiết nói đúng bước ấy.
+   */
+  CMD_THIEU_DIEU_KIEN: "CMD_THIEU_DIEU_KIEN",
 } as const;
 
 export type MaTuChoiLenh = (typeof MA_TU_CHOI_LENH)[keyof typeof MA_TU_CHOI_LENH];
@@ -179,7 +189,13 @@ export const TRAN_PHAN_TU_ARGV = 8;
  * Hạn giờ TRẦN cho **mọi** mục. Người gọi hạ xuống được, KHÔNG nâng lên được: `hanGioThucTe()` kẹp
  * hai đầu, nên một `timeoutMs` do model đưa chỉ có thể làm lượt chạy **ngắn hơn**.
  */
-export const HAN_GIO_TOI_DA_MS = 300_000;
+export const HAN_GIO_TOI_DA_MS = 600_000;
+/**
+ * ★ Đợt 3c — trần của NHÓM HỎI/KIỂM (giữ nguyên 300 s như trước). `HAN_GIO_TOI_DA_MS` (trần HỆ) lên 10 phút
+ * CHỈ vì nhóm CÀI ĐẶT (`npm ci` trên cache lạnh, `pip install` biên dịch wheel) — census ghim rằng không mục
+ * hỏi/kiểm nào vượt trần cũ, nên việc nâng trần hệ không lặng lẽ kéo dài một lượt `vitest` treo.
+ */
+export const HAN_GIO_TOI_DA_KIEM_TRA_MS = 300_000;
 /** Hạn giờ SÀN — dưới mức này thì mọi lệnh đều chết vì chưa kịp khởi động, tức một cái trần giả. */
 export const HAN_GIO_TOI_THIEU_MS = 1_000;
 /**
@@ -269,7 +285,7 @@ export function tachArgv(lenh: unknown): KetQuaTachArgv {
  * loại trừ nhau **nếu** đi qua cái tên `npm`. Lối ra không phải bật shell: đi thẳng vào
  * `node <npm-cli.js> run <script>` — cùng một chương trình, argv rời, không trình thông dịch nào.
  */
-function duongDanNpmCli(): string | null {
+export function duongDanNpmCli(): string | null {
   const d = path.dirname(process.execPath);
   const ung = [
     // Windows: <nodejs>/node_modules/npm/bin/npm-cli.js
@@ -300,6 +316,17 @@ export interface LenhDaPhanGiai {
   /** Tệp chạy THẬT (tuyệt đối, hoặc một tên để hệ điều hành tra PATH — chỉ `git`). */
   readonly file: string;
   readonly args: readonly string[];
+  /**
+   * ★ Đợt 3c — biến môi trường ĐẶT THÊM sau phép lọc (đè `BIEN_MOI_TRUONG_DAT_THEM`). Chỉ do `phanGiai` của
+   * mục dựng từ HẰNG + cấu hình máy chủ (vd mở `npm_config_offline=false` khi có registry nội bộ) — không
+   * bao giờ từ ô tự do / model.
+   */
+  readonly envThem?: Readonly<Record<string, string>>;
+}
+
+/** ★ Đợt 3c — `phanGiai` trả cái này ⇔ khuôn khớp nhưng THIẾU điều kiện tiên quyết (⇒ `CMD_THIEU_DIEU_KIEN`). */
+export interface ThieuDieuKien {
+  readonly thieu: string;
 }
 
 export interface MucDanhSachTrang {
@@ -368,10 +395,21 @@ export interface MucDanhSachTrang {
    * *"lệnh này không thể chạm tệp nào"*.
    */
   readonly sinhSanPhamDung: boolean;
+  /**
+   * ★★★ Đợt 3c (2026-10-17) — **NHÓM**: `"hoi-kiem"` (hỏi/kiểm/dựng — mười một mục cũ) hay `"cai-dat"` (cài phụ
+   * thuộc: `npm ci|install`, `python -m venv .venv`, `pip install -r requirements.txt`, `dotnet restore`).
+   * Vì sao là DỮ LIỆU: nhóm cài-đặt (a) chạm NGUỒN GÓI (mạng/feed nội bộ) và (b) chạy được mã của gói phụ thuộc
+   * lúc cài ⇒ nó **LUÔN cần người duyệt**. `laLenhKiemChung` (cổng tự-chạy của tu-dong) từ chối theo Ô NÀY, độc
+   * lập với tập tên `NHAN_KIEM_CHUNG` — một lượt lỡ tay thêm tên vào tập ấy vẫn không mở được đường tự chạy.
+   */
+  readonly nhom: "hoi-kiem" | "cai-dat";
   /** Phán quyết ô TỰ DO. Bắt buộc có khi `khuon` chứa `null`; `null` ⇔ được phép. */
   readonly phanQuyetOTuDo?: (v: string) => { ma: MaTuChoiLenh; chiTiet: string } | null;
-  /** Dựng argv THẬT. `null` ⇔ không phân giải được (thiếu `npm-cli.js`/`vitest.mjs`). */
-  readonly phanGiai: (oTuDo: string | null, goc: string) => LenhDaPhanGiai | null;
+  /**
+   * Dựng argv THẬT. `null` ⇔ không phân giải được (thiếu `npm-cli.js`/`vitest.mjs`).
+   * `{thieu}` ⇔ thiếu điều kiện tiên quyết (Đợt 3c — venv/requirements/nguồn offline méo).
+   */
+  readonly phanGiai: (oTuDo: string | null, goc: string) => LenhDaPhanGiai | ThieuDieuKien | null;
 }
 
 /** Tên biến môi trường của công tắc restore — xem `dotnetChoPhepRestore`. */
@@ -402,12 +440,146 @@ export function dotnetChoPhepRestore(): boolean {
   return process.env[BIEN_DOTNET_CHO_PHEP_RESTORE] === "1";
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ Đợt 3c (2026-10-17) — NGUỒN GÓI OFFLINE CHO NHÓM CÀI ĐẶT
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * Nhà máy OFFLINE là ràng buộc cứng ⇒ nguồn gói là CẤU HÌNH MÁY CHỦ (quản trị đặt), không phải đầu vào model:
+ *   • `AI_NPM_REGISTRY`   — registry npm nội bộ (vd Verdaccio) ⇒ `--registry <url>` + mở `npm_config_offline`
+ *                           CHỈ cho lượt ấy. VẮNG ⇒ `--prefer-offline` và môi trường GIỮ `npm_config_offline=true`
+ *                           ⇒ thực tế CHỈ dùng cache npm (`ENOTCACHED` khi thiếu) — không rò ra npmjs công cộng
+ *                           bằng cấu tạo.
+ *   • `AI_PIP_FIND_LINKS` — thư mục wheel (tuyệt đối, tồn tại) hoặc URL ⇒ `--no-index --find-links <nguồn>`.
+ *   • `AI_NUGET_SOURCE`   — feed/thư mục NuGet cục bộ ⇒ `--source <nguồn>` (thay MỌI nguồn, kể cả nuget.org).
+ * ⚠ Giá trị méo ⇒ `{thieu}` ⇒ `CMD_THIEU_DIEU_KIEN` — KHÔNG lặng lẽ rơi về nguồn mặc định (mạng công cộng).
+ * ⚠ URL có `user:pass@` bị TỪ CHỐI: argv THẬT được in lên thẻ duyệt + sổ audit ⇒ mật khẩu sẽ rò. Registry cần
+ *   xác thực thì đặt trong `.npmrc`/`pip.conf`/`NuGet.Config` của tài khoản dịch vụ.
+ * ⚠ Giá trị KHÔNG được nhắc lại trong câu từ chối (có thể mang token ở query) — chỉ nhắc TÊN biến.
+ */
+export const BIEN_NGUON_NPM = "AI_NPM_REGISTRY";
+export const BIEN_NGUON_PIP = "AI_PIP_FIND_LINKS";
+export const BIEN_NGUON_NUGET = "AI_NUGET_SOURCE";
+
+function urlNguonHopLe(v: string): boolean {
+  try {
+    const u = new URL(v);
+    return (u.protocol === "http:" || u.protocol === "https:") && u.username === "" && u.password === "";
+  } catch {
+    return false;
+  }
+}
+
+function laThuMucTuyetDoi(v: string): boolean {
+  if (!path.isAbsolute(v)) return false;
+  try {
+    return statSync(v).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** Đọc TẠI LÚC GỌI (bài học `TENANT_RLS_ENABLED` — lưới lật env theo ca). */
+export function nguonNpm(): { args: string[]; envThem?: Record<string, string> } | ThieuDieuKien {
+  const v = (process.env[BIEN_NGUON_NPM] ?? "").trim();
+  if (v === "") return { args: ["--prefer-offline"] };
+  if (!urlNguonHopLe(v)) {
+    return { thieu: `${BIEN_NGUON_NPM} không phải URL http(s) hợp lệ (không được chứa user:pass — đặt xác thực trong .npmrc).` };
+  }
+  return { args: ["--registry", v], envThem: { npm_config_offline: "false" } };
+}
+
+export function nguonPip(): string[] | ThieuDieuKien {
+  const v = (process.env[BIEN_NGUON_PIP] ?? "").trim();
+  if (v === "") return [];
+  if (!urlNguonHopLe(v) && !laThuMucTuyetDoi(v)) {
+    return { thieu: `${BIEN_NGUON_PIP} phải là đường TUYỆT ĐỐI tới một thư mục wheel đang tồn tại, hoặc URL http(s).` };
+  }
+  return ["--no-index", "--find-links", v];
+}
+
+export function nguonNuget(): string[] | ThieuDieuKien {
+  const v = (process.env[BIEN_NGUON_NUGET] ?? "").trim();
+  if (v === "") return [];
+  if (!urlNguonHopLe(v) && !laThuMucTuyetDoi(v)) {
+    return { thieu: `${BIEN_NGUON_NUGET} phải là đường TUYỆT ĐỐI tới một thư mục/feed NuGet đang tồn tại, hoặc URL http(s).` };
+  }
+  return ["--source", v];
+}
+
+/** Python CỦA VENV dự án — pip luôn chạy qua nó, nên gói rơi vào `.venv`, không vào python hệ thống. */
+export function duongPythonVenv(goc: string): string {
+  return process.platform === "win32" ? path.join(goc, ".venv", "Scripts", "python.exe") : path.join(goc, ".venv", "bin", "python");
+}
+
+/** `--ignore-scripts` trừ khi dự án khai mở CÓ LÝ DO (`.ai-chay.json` → `npmChoPhepScriptCai`). */
+export function coScriptCaiNpm(goc: string): { lyDo: string } | null {
+  return docCauHinhChay(goc).npmScriptCai;
+}
+
+function phanGiaiNpmCai(lenh: "ci" | "install", goc: string): LenhDaPhanGiai | ThieuDieuKien | null {
+  const cli = duongDanNpmCli();
+  if (cli === null) return null;
+  const nguon = nguonNpm();
+  if ("thieu" in nguon) return nguon;
+  const scripts = coScriptCaiNpm(goc) === null ? ["--ignore-scripts"] : [];
+  return {
+    file: process.execPath,
+    args: [cli, lenh, ...scripts, "--no-audit", "--no-fund", ...nguon.args],
+    ...(nguon.envThem ? { envThem: nguon.envThem } : {}),
+  };
+}
+
+function phanGiaiDotnetRestore(oTuDo: string | null): LenhDaPhanGiai | ThieuDieuKien {
+  const nguon = nguonNuget();
+  if (!Array.isArray(nguon)) return nguon;
+  return { file: "dotnet", args: ["restore", ...(oTuDo === null ? [] : [oTuDo]), ...nguon] };
+}
+
+/**
+ * ★ Gợi ý khi một lệnh CÀI hỏng vì KHÔNG VỚI TỚI NGUỒN GÓI — chỉ đúng biến cần đặt. `null` ⇔ không phải lệnh
+ * cài, mã thoát 0, hoặc đầu ra không mang dấu hiệu mạng/nguồn (chống báo giả: `npm ci` thiếu lockfile KHÔNG
+ * phải chuyện mạng).
+ */
+export function goiYKhiCaiLoiMang(nhan: string, dauRa: string, maThoat: number | null, lang: "vi" | "en" | "zh" = "vi"): string | null {
+  if (maThoat === 0) return null;
+  const muc = DANH_SACH_TRANG.find((m) => m.nhan === nhan);
+  if (!muc || muc.nhom !== "cai-dat") return null;
+  const s = String(dauRa ?? "");
+  const w = (vi: string, en: string, zh: string) => (lang === "en" ? en : lang === "zh" ? zh : vi);
+  if (nhan.startsWith("npm ") && /ENOTCACHED|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|ECONNRESET|request to https?:\/\/\S+ failed/i.test(s)) {
+    return w(
+      `Không với tới nguồn gói npm (máy offline?). Hoặc chép sẵn cache npm (npm cache add / mang thư mục cache sang), hoặc quản trị đặt ${BIEN_NGUON_NPM}=<URL registry nội bộ, vd Verdaccio> rồi chạy lại.`,
+      `Cannot reach an npm package source (offline machine?). Pre-seed the npm cache, or have an admin set ${BIEN_NGUON_NPM}=<internal registry URL, e.g. Verdaccio> and retry.`,
+      `无法访问 npm 包源（离线机器？）。请预先填充 npm 缓存，或由管理员设置 ${BIEN_NGUON_NPM}=<内部仓库 URL，如 Verdaccio> 后重试。`,
+    );
+  }
+  if (nhan.startsWith("pip ") && /No matching distribution found|Could not find a version that satisfies|NewConnectionError|Failed to establish a new connection|Temporary failure in name resolution|getaddrinfo failed/i.test(s)) {
+    return w(
+      `Không với tới chỉ mục gói Python (máy offline?). Quản trị đặt ${BIEN_NGUON_PIP}=<thư mục wheel tuyệt đối> (tải sẵn bằng "pip download -r requirements.txt -d <thư mục>" trên máy có mạng) rồi chạy lại.`,
+      `Cannot reach a Python package index (offline machine?). Have an admin set ${BIEN_NGUON_PIP}=<absolute wheel directory> (prepare it with "pip download -r requirements.txt -d <dir>" on a connected machine) and retry.`,
+      `无法访问 Python 包索引（离线机器？）。请管理员设置 ${BIEN_NGUON_PIP}=<wheel 目录绝对路径>（在联网机器上用 "pip download -r requirements.txt -d <目录>" 准备）后重试。`,
+    );
+  }
+  if (nhan.startsWith("dotnet ") && /NU1301|NU1101|NU1102|Unable to load the service index|No such host is known/i.test(s)) {
+    return w(
+      `Không với tới nguồn NuGet (máy offline?). Quản trị đặt ${BIEN_NGUON_NUGET}=<thư mục .nupkg tuyệt đối hoặc feed nội bộ> rồi chạy lại.`,
+      `Cannot reach a NuGet source (offline machine?). Have an admin set ${BIEN_NGUON_NUGET}=<absolute .nupkg folder or internal feed> and retry.`,
+      `无法访问 NuGet 源（离线机器？）。请管理员设置 ${BIEN_NGUON_NUGET}=<.nupkg 目录绝对路径或内部源> 后重试。`,
+    );
+  }
+  return null;
+}
+
 /**
  * ★★★ DANH SÁCH TRẮNG — **CHÍN MỤC: TÁM CHỈ HỎI/KIỂM TRA, MỘT GHI ĐÈ MÃ NGUỒN.**
  *
  * Mục thứ chín ấy là **`dotnet format <đường>`** (`ghiDia: true`). Đừng đọc bảng này là *"toàn lệnh
  * đọc"* — đó đúng là câu docblock cũ đã khai, và nó SAI từ 2026-08-19 (xem khối ĐÍNH CHÍNH đầu
  * file). Mỗi mục **BẮT BUỘC** khai `ghiDia` + `sinhSanPhamDung`; census ghim dân số cả hai.
+ *
+ * ★★★ Đợt 3c (2026-10-17) — bảng nay có **MƯỜI BẢY** mục: mười một mục `nhom: "hoi-kiem"` (một trong số đó —
+ * `dotnet format` — ghi đè mã nguồn) + **sáu** mục `nhom: "cai-dat"` (npm ci · npm install · python -m venv .venv ·
+ * pip install -r requirements.txt · dotnet restore · dotnet restore <đường>). Nhóm cài-đặt LUÔN cần người duyệt.
  *
  * ⚠ Đây là **toàn bộ** tập lệnh tác nhân chạy được, và nó là một hằng của mã nguồn: không cờ môi
  * trường nào nới nó, không tham số nào thêm mục vào nó. Muốn thêm thì phải sửa file này, tức phải
@@ -419,6 +591,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["npm", "run", "check"],
     hanGioMs: 240_000,
     moTa: "Kiểm kiểu toàn bộ mã sản phẩm (tsc --noEmit, heap 8 GB qua cross-env). KHÔNG sinh mã, chỉ cập nhật bộ nhớ đệm tsbuildinfo trong node_modules.",
+    nhom: "hoi-kiem",
     thoatCwdTheoCayThuMuc: true,
     ghiDia: false,
     // `--noEmit`, nhưng `"incremental": true` ⇒ ghi `node_modules/typescript/tsbuildinfo`.
@@ -433,6 +606,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["npm", "run", "check:tests"],
     hanGioMs: 240_000,
     moTa: "Kiểm kiểu bộ lưới (tsconfig.tests.json). KHÔNG sinh mã, chỉ cập nhật tsbuildinfo.tests trong node_modules.",
+    nhom: "hoi-kiem",
     thoatCwdTheoCayThuMuc: true,
     ghiDia: false,
     sinhSanPhamDung: true,
@@ -446,6 +620,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["npx", "vitest", "run", null],
     hanGioMs: 180_000,
     moTa: "Chạy lưới cho MỘT đường dẫn (bộ lọc theo tên tệp). Đường dẫn BẮT BUỘC — bỏ trống là chạy cả 12.777 ca.",
+    nhom: "hoi-kiem",
     thoatCwdTheoCayThuMuc: true,
     ghiDia: false,
     sinhSanPhamDung: false,
@@ -485,6 +660,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["git", "status"],
     hanGioMs: 20_000,
     moTa: "Liệt kê tệp đã đổi/chưa theo dõi. CHỈ HỎI — không đổi một byte nào của cây làm việc.",
+    nhom: "hoi-kiem",
     thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
     sinhSanPhamDung: false,
@@ -497,6 +673,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["git", "diff"],
     hanGioMs: 20_000,
     moTa: "Khác biệt chưa staged của cây làm việc. CHỈ HỎI — không hoàn nguyên gì (xem khối `git checkout` ở đầu file).",
+    nhom: "hoi-kiem",
     thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
     sinhSanPhamDung: false,
@@ -549,6 +726,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     },
     // ⚠ `bin/`+`obj/` là SẢN PHẨM DỰNG, không phải mã nguồn của người viết ⇒ `ghiDia: false`.
     //   Xem lý lẽ "vì sao HAI ô" ở `MucDanhSachTrang`.
+    nhom: "hoi-kiem",
     thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
     sinhSanPhamDung: true,
@@ -572,6 +750,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
         ? "Chạy bộ test C# của một dự án/solution (.csproj/.sln hoặc thư mục). DOTNET_CHO_PHEP_RESTORE=1 — restore NGẦM được phép, NuGet kéo về qua mạng như bình thường. KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/."
         : "Chạy bộ test C# của một dự án/solution (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore). KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/.";
     },
+    nhom: "hoi-kiem",
     thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
     sinhSanPhamDung: true,
@@ -601,6 +780,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
      *     rời đĩa mà không có người bấm;
      *   • cờ `AI_REPO_EXEC_GHIDIA_DOI_CANEDIT` (mặc định TẮT) đòi **thêm** `ai_repo_read/canEdit`.
      */
+    nhom: "hoi-kiem",
     thoatCwdTheoCayThuMuc: false,
     ghiDia: true,
     // MSBuild workspace load ⇒ cũng chạm `obj/`. Hai ô độc lập, và mục này bật cả hai.
@@ -616,6 +796,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["node", "--test", null],
     hanGioMs: 180_000,
     moTa: "Chạy trình chạy test tích hợp của Node cho MỘT đường (tệp .test.mjs hoặc thư mục). CHỈ chế độ --test, KHÔNG chạy script tuỳ ý.",
+    nhom: "hoi-kiem",
     thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
     sinhSanPhamDung: false,
@@ -652,6 +833,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["python", "-m", "pytest", null],
     hanGioMs: 180_000,
     moTa: "Chạy pytest cho MỘT đường dẫn. CHỈ chế độ -m pytest — KHÔNG chạy script Python tuỳ ý.",
+    nhom: "hoi-kiem",
     thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
     sinhSanPhamDung: false,
@@ -666,6 +848,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     khuon: ["python", "-m", "unittest", null],
     hanGioMs: 180_000,
     moTa: "Chạy unittest tích hợp của Python cho MỘT đường dẫn. CHỈ chế độ -m unittest — KHÔNG chạy script tuỳ ý.",
+    nhom: "hoi-kiem",
     thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
     sinhSanPhamDung: false,
@@ -674,6 +857,103 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
       return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
     },
     phanGiai: (oTuDo) => (oTuDo === null ? null : { file: "python", args: ["-m", "unittest", oTuDo] }),
+  },
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ Đợt 3c (2026-10-17) — NHÓM **CÀI ĐẶT** (`nhom: "cai-dat"`): LUÔN cần người duyệt, KHÔNG BAO GIỜ tự chạy
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  /**
+   * Hành trình "mô tả → dự án chạy được" tắc ở bước CÀI PHỤ THUỘC (khảo sát 7 tầng). Sáu khuôn dưới đây mở đúng
+   * bước ấy, và CHỈ bước ấy:
+   *   • Khuôn CỨNG như mọi mục khác: `npm install lodash` (thêm gói), `pip install requests`, `pip install -r
+   *     khac.txt`, `python -m venv khac` đều lệch arity/phần tử ⇒ `CMD_NOT_ALLOWED`. Cài THEO MANIFEST đã có trong
+   *     dự án (package.json / requirements.txt / *.csproj), không cài thứ model nghĩ ra lúc chạy.
+   *   • npm: `--ignore-scripts` MẶC ĐỊNH (script cài của gói phụ thuộc = mã tuỳ ý) — mở chỉ bằng khai báo dự án
+   *     CÓ LÝ DO (`.ai-chay.json`), lý do in lên thẻ duyệt. `--no-audit --no-fund`: hai đường ra mạng ngầm.
+   *   • pip LUÔN qua python của `.venv` dự án (`duongPythonVenv`) — venv vắng ⇒ `CMD_THIEU_DIEU_KIEN` chỉ lệnh
+   *     `python -m venv .venv` (một khuôn RIÊNG), không lặng lẽ cài vào python hệ thống.
+   *   • Nguồn gói: `nguonNpm/nguonPip/nguonNuget` (cấu hình máy chủ, xem khối trên).
+   *   • `ghiDia: false` (không viết đè mã do người viết), `sinhSanPhamDung: true` (node_modules/.venv/obj, và
+   *     `npm install` có thể tạo/cập nhật package-lock.json — tệp SINH RA). ⚠ Trục thứ ba (THI HÀNH mã) vẫn đúng
+   *     như khối `sinhSanPhamDung` đã khai: pip build sdist/`setup.py`, MSBuild target — đó là lý do nhóm này
+   *     không bao giờ tự chạy.
+   *   • Trần giờ 10 phút (`HAN_GIO_TOI_DA_MS`); trần đầu ra chung 32 KiB đầu+cuối.
+   */
+  {
+    nhan: "npm ci",
+    khuon: ["npm", "ci"],
+    hanGioMs: 600_000,
+    moTa: "CÀI phụ thuộc Node đúng theo package-lock.json (xoá và dựng lại node_modules). Mặc định --ignore-scripts; nguồn gói = cache npm hoặc AI_NPM_REGISTRY.",
+    nhom: "cai-dat",
+    thoatCwdTheoCayThuMuc: true,
+    ghiDia: false,
+    sinhSanPhamDung: true,
+    phanGiai: (_o, goc) => phanGiaiNpmCai("ci", goc),
+  },
+  {
+    nhan: "npm install",
+    khuon: ["npm", "install"],
+    hanGioMs: 600_000,
+    moTa: "CÀI phụ thuộc Node theo package.json (KHÔNG thêm gói mới; có thể tạo/cập nhật package-lock.json). Mặc định --ignore-scripts; nguồn gói = cache npm hoặc AI_NPM_REGISTRY.",
+    nhom: "cai-dat",
+    thoatCwdTheoCayThuMuc: true,
+    ghiDia: false,
+    sinhSanPhamDung: true,
+    phanGiai: (_o, goc) => phanGiaiNpmCai("install", goc),
+  },
+  {
+    nhan: "python -m venv .venv",
+    khuon: ["python", "-m", "venv", ".venv"],
+    hanGioMs: 300_000,
+    moTa: "Tạo môi trường ảo Python của dự án tại .venv (bước trước pip install). Không tải gì từ mạng.",
+    nhom: "cai-dat",
+    thoatCwdTheoCayThuMuc: false,
+    ghiDia: false,
+    sinhSanPhamDung: true,
+    phanGiai: () => ({ file: "python", args: ["-m", "venv", ".venv"] }),
+  },
+  {
+    nhan: "pip install -r requirements.txt",
+    khuon: ["pip", "install", "-r", "requirements.txt"],
+    hanGioMs: 600_000,
+    moTa: "CÀI gói Python theo requirements.txt VÀO .venv của dự án (python của venv, không phải python hệ thống). Nguồn = AI_PIP_FIND_LINKS (thư mục wheel, --no-index) hoặc chỉ mục mặc định.",
+    nhom: "cai-dat",
+    thoatCwdTheoCayThuMuc: false,
+    ghiDia: false,
+    sinhSanPhamDung: true,
+    phanGiai: (_o, goc) => {
+      const py = duongPythonVenv(goc);
+      if (!existsSync(py)) return { thieu: `chưa có môi trường ảo .venv — chạy "python -m venv .venv" trước (gói phải vào venv của dự án, không vào python hệ thống).` };
+      if (!existsSync(path.join(goc, "requirements.txt"))) return { thieu: `không có requirements.txt ở gốc dự án.` };
+      const nguon = nguonPip();
+      if (!Array.isArray(nguon)) return nguon;
+      return { file: py, args: ["-m", "pip", "install", "-r", "requirements.txt", "--disable-pip-version-check", ...nguon], envThem: { PIP_NO_INPUT: "1" } };
+    },
+  },
+  {
+    nhan: "dotnet restore",
+    khuon: ["dotnet", "restore"],
+    hanGioMs: 600_000,
+    moTa: "Khôi phục gói NuGet cho dự án/solution ở gốc. Nguồn = AI_NUGET_SOURCE (thư mục/feed cục bộ) hoặc cấu hình NuGet mặc định.",
+    nhom: "cai-dat",
+    thoatCwdTheoCayThuMuc: false,
+    ghiDia: false,
+    sinhSanPhamDung: true,
+    phanGiai: () => phanGiaiDotnetRestore(null),
+  },
+  {
+    nhan: "dotnet restore <đường-dẫn>",
+    khuon: ["dotnet", "restore", null],
+    hanGioMs: 600_000,
+    moTa: "Khôi phục gói NuGet cho MỘT .csproj/.sln (khi gốc có nhiều dự án). Nguồn = AI_NUGET_SOURCE hoặc cấu hình NuGet mặc định.",
+    nhom: "cai-dat",
+    thoatCwdTheoCayThuMuc: false,
+    ghiDia: false,
+    sinhSanPhamDung: true,
+    phanQuyetOTuDo: (v) => {
+      const ma = phanQuyetDuongDan(v);
+      return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
+    },
+    phanGiai: (oTuDo) => phanGiaiDotnetRestore(oTuDo),
   },
 ];
 
@@ -751,6 +1031,9 @@ export function phanQuyetLenh(argv: readonly string[], goc = gocHopCat()): KetQu
       if (pq !== null) return { ok: false, ma: pq.ma, chiTiet: pq.chiTiet };
     }
     const spec = muc.phanGiai(oTuDo, goc);
+    if (spec !== null && "thieu" in spec) {
+      return { ok: false, ma: MA_TU_CHOI_LENH.CMD_THIEU_DIEU_KIEN, chiTiet: `${muc.nhan}: ${spec.thieu}` };
+    }
     if (spec === null) {
       return {
         ok: false,
@@ -1037,7 +1320,8 @@ export function chayLenhTrongHopCat(spec: LenhDaPhanGiai, tuyChon: TuyChonChay):
     try {
       con = spawn(spec.file, [...spec.args], {
         cwd: goc,
-        env: moiTruongDaLoc(tuyChon.envNguon),
+        // ★ Đợt 3c — `envThem` (hằng/cấu hình máy chủ, không từ model) đè SAU phép lọc.
+        env: { ...moiTruongDaLoc(tuyChon.envNguon), ...(spec.envThem ?? {}) },
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
         // ⚠ POSIX: nhóm tiến trình RIÊNG để `process.kill(-pid)` với tới được cháu/chắt.

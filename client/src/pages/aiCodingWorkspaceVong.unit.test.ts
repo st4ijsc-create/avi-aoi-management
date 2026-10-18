@@ -184,6 +184,7 @@ describe("§3 — IM LẶNG LÀ NÓI DỐI: mọi lý do dừng có câu chữ �
     loi: "repoWs.loop.stop.error",
     tep_ban_nguoi: "repoWs.loop.stop.dirty",
     kill_switch: "repoWs.loop.stop.kill",
+    repo_chinh_chua_checkpoint: "repoWs.loop.stop.mainRepo",
   };
 
   for (const [lyDo, khoa] of Object.entries(KHOA)) {
@@ -226,5 +227,18 @@ describe("§3 — IM LẶNG LÀ NÓI DỐI: mọi lý do dừng có câu chữ �
       expect(String(doc["repoWs.loop.hitl"] ?? "").length).toBeGreaterThan(20);
     }
     expect(MA).toContain("repoWs.loop.hitl");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+describe("§9 — Đợt 0.5: đầu ra lệnh chèn vào hội thoại mang nhãn fence RIÊNG (không nhãn 'mã model')", () => {
+  it("★★★ cả hai chỗ chèn đầu ra lệnh (lượt duyệt + vòng tự động) đi qua khoiDauRaLenh, không fence trần", () => {
+    expect(MA).toContain("khoiDauRaLenh(dauRa)");
+    expect(MA).toContain("khoiDauRaLenh(out.textSummary");
+    expect(MA, "fence trần quanh đầu ra vòng").not.toMatch(/\`\`\`\n\$\{dauRa\}/);
+    expect(MA, "fence trần quanh đầu ra lượt duyệt").not.toMatch(/\`\`\`\n\$\{out\.textSummary\}/);
+  });
+  it("★★ lịch sử gửi model bỏ nhãn fence riêng (model không thấy để bắt chước)", () => {
+    expect(MA).toMatch(/boNhanDauRaLenhChoModel\(/);
   });
 });

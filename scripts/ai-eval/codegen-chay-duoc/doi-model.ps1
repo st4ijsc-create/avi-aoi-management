@@ -31,11 +31,26 @@ $exe = 'D:\SOURCES\16.AI\llama-cuda\llama-server.exe'
 $log = 'D:\SOURCES\avi-aoi-management\tmp\audit-ai'
 if (-not (Test-Path $Model)) { Write-Error "KHONG co tep model: $Model"; exit 2 }
 
+# 0. *** Dot 0.1 (2026-10-14) - TAM DUNG bo giam sat llama-server cua app (server/services/ai/giamSatLlamaServer.ts).
+#    Khong co tep nay: app (:3000/:3010) thay cong 8091 khong ai nghe 2 nhip (~30 s) trong luc doi model
+#    => tu chay start-llama-server.ps1 => HAI llama-server tranh cong/VRAM ngay giua phep do.
+#    Tep nam o %TEMP% (KHONG o goc repo) vi nhieu worktree dung chung mot :8091. Ghi de bang
+#    LLAMA_WATCHDOG_PAUSE_FILE (phai dat GIONG NHAU o .env cua app va o shell chay kich ban nay).
+#    Giam sat bo qua tep cu hon 30 phut (LLAMA_WATCHDOG_PAUSE_MAX_MS) => vong cho ben duoi CHAM mtime moi lan.
+$tepTamDung = if ($env:LLAMA_WATCHDOG_PAUSE_FILE) { $env:LLAMA_WATCHDOG_PAUSE_FILE }
+              elseif ($env:TEMP) { Join-Path $env:TEMP 'llama-watchdog.pause' }
+              else { Join-Path ([System.IO.Path]::GetTempPath()) 'llama-watchdog.pause' }
+function Go-TamDung { Remove-Item -LiteralPath $tepTamDung -Force -ErrorAction SilentlyContinue }
+function Cham-TamDung { try { (Get-Item -LiteralPath $tepTamDung -ErrorAction Stop).LastWriteTime = Get-Date } catch { } }
+Set-Content -LiteralPath $tepTamDung -Value "doi-model.ps1 PID $PID $(Get-Date -Format o) $Model" -Encoding ASCII
+
+try {
 # 1. Dung ban dang chay va CHO cong 8091 that su nha ra.
 Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force
 $het = (Get-Date).AddSeconds(60)
 while ((Get-Date) -lt $het) {
   if (-not (Get-NetTCPConnection -LocalPort 8091 -State Listen -ErrorAction SilentlyContinue)) { break }
+  Cham-TamDung
   Start-Sleep -Milliseconds 500
 }
 
@@ -56,10 +71,18 @@ while ((Get-Date) -lt $het) {
     if ($r.StatusCode -eq 200) {
       $vram = (nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader) -join ' '
       "SAN SANG: $ten (ctx=$Ctx) | VRAM: $vram"
+      Go-TamDung  # /health xanh => tra quyen trong coi cho giam sat cua app
       exit 0
     }
   } catch { }
+  Cham-TamDung
   Start-Sleep -Seconds 3
 }
+Go-TamDung  # that bai cung go: de giam sat dung lai model cua .env thay vi bo trong may
 Write-Error "HET GIO: $ten khong san sang sau $ChoGiay giay - xem $log\ls-$ten.err.log"
 exit 2
+}
+finally {
+  # Ctrl+C / loi bat ngo giua chung: KHONG de tep tam dung o lai (giam sat se bo qua no sau 30 phut, nhung khong can doi).
+  Go-TamDung
+}

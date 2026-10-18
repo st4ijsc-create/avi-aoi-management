@@ -441,6 +441,64 @@ export const kbStudioRouter = router({
     .input(z.object({ id: z.number().int().positive(), corpus: z.string().trim().min(1).max(120) }))
     .query(({ input }) => kbStudioEval.getEvalRun(input.id, input.corpus)),
 
+  // ─── Eval MÃ (AI Local Đợt 5.2) — câu hỏi → mã → biên dịch/chạy test, corpus BẬT/TẮT ──────
+  /** Bộ bài của bộ đo `scripts/ai-eval/codegen-chay-duoc/tasks*.json` + cờ bật (không chạy gì). */
+  listBoBaiMa: kbStudioProcedure.query(async () => {
+    const m = await import("../services/kbStudioEvalMa");
+    return { sets: m.listBoBai(), batDuoc: m.evalMaBat(), dangChay: m.luotDangChay() };
+  }),
+
+  /**
+   * Bắt đầu một lượt eval mã NỀN (trả id ngay; tiến độ qua `danhSachEvalMa`). CHỈ admin + 2FA và cờ
+   * `KB_STUDIO_EVAL_MA_ENABLED` — lượt này CHẠY MÃ DO MODEL SINH trên máy chủ (xem docblock `kbStudioEvalMa.ts`).
+   */
+  batDauEvalMa: kbStudioDeleteProcedure
+    .input(
+      z.object({
+        corpus: z.string().trim().min(1).max(120),
+        boBai: z.string().trim().regex(/^tasks(?:-[a-z0-9]+)*$/i).max(120),
+        soLap: z.number().int().min(1).max(3).optional(),
+        ngonNgu: z.array(z.enum(["ts", "py", "cs", "cpp"])).max(4).optional(),
+        /** Đối chứng A/A (hai nhánh cùng prompt TẮT) — đo biên nhiễu riêng của bộ bài. */
+        doiChung: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const m = await import("../services/kbStudioEvalMa");
+      const { KbEvalMaBangVangError } = await import("../services/kbStudioEvalMaSo");
+      try {
+        return await m.batDauEvalMa({
+          corpus: input.corpus,
+          boBai: input.boBai,
+          soLap: input.soLap ?? 1,
+          ngonNgu: input.ngonNgu,
+          doiChung: input.doiChung === true,
+          userId: ctx.user?.id ?? null,
+        });
+      } catch (err) {
+        if (err instanceof m.KbEvalMaTatError) throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "kbEvalMa" }, err.message);
+        if (err instanceof m.KbEvalMaDangChayError) {
+          throw appError("CONFLICT", "OPERATION_FAILED", { operation: "runKbEvalMa", reason: "evalAlreadyRunning" }, err.message);
+        }
+        if (err instanceof m.KbEvalMaBoBaiError) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "kbEvalMaTaskSet" }, err.message);
+        if (err instanceof KbEvalMaBangVangError) throw appError("PRECONDITION_FAILED", "FEATURE_NOT_CONFIGURED", { feature: "kbEvalMaRuns" }, err.message);
+        throw err;
+      }
+    }),
+
+  /** Huỷ lượt eval mã đang chạy (giết cả tiến trình biên dịch/test đang chạy). CHỈ admin + 2FA. */
+  huyEvalMa: kbStudioDeleteProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ input }) => ({ ok: (await import("../services/kbStudioEvalMa")).huyEvalMa(input.id) })),
+
+  /** Lượt eval mã của một corpus (mới nhất trước), kèm % của lượt đang chạy và kết luận cổng (tụt/nâng/trong nhiễu). */
+  danhSachEvalMa: kbStudioProcedure
+    .input(z.object({ corpus: z.string().trim().min(1).max(120), limit: z.number().int().min(1).max(100).optional() }))
+    .query(async ({ input }) => {
+      const m = await import("../services/kbStudioEvalMa");
+      return { runs: await m.danhSachEvalMa(input.corpus, input.limit ?? 20), dangChay: m.luotDangChay(), batDuoc: m.evalMaBat() };
+    }),
+
   // ─── Hồ sơ model (R3) ───────────────────────────────────────────────────
   /** Hồ sơ model THẬT (llama-server /props · .env · router · sổ đo B7 · báo cáo đo) — xem `ai/hoSoModelStudio.ts`. */
   hoSoModel: kbStudioProcedure.query(async () => {

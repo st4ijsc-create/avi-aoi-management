@@ -1,0 +1,82 @@
+[
+  {
+    "id": "ts-gio-hang",
+    "lang": "ts",
+    "kieu": "node",
+    "moTa": "Mã giảm giá % + theo bậc cho giỏ hàng: module mới, sửa giỏ (tạm tính/giảm/tổng), sửa hoá đơn, xuất API",
+    "cauHoi": "Trong dự án {DA} (TypeScript chạy thẳng bằng Node 24, xem README của dự án), mình cần thêm mã giảm giá cho giỏ hàng:\n\n1. Tạo module mới `src/maGiamGia.ts`, xuất kiểu `MaGiamGia` gồm hai loại:\n   - theo phần trăm: `{ loai: \"phan-tram\", ma: string, phanTram: number, giamToiDa?: number }`\n   - theo bậc: `{ loai: \"bac\", ma: string, bac: { tu: number, giam: number }[] }` — tạm tính ≥ `tu` của bậc nào thì được giảm `giam` của bậc CAO NHẤT đạt được (danh sách bậc có thể không sắp xếp); chưa đạt bậc nào thì giảm 0.\n   và hàm `tinhGiam(ma: MaGiamGia, tamTinh: number): number`: loại phần trăm làm tròn XUỐNG tới đồng và không vượt `giamToiDa` (nếu có); `phanTram` nằm ngoài khoảng (0, 100] thì ném `RangeError`. Mọi loại: không bao giờ giảm quá tạm tính.\n2. Lớp `GioHang`: thêm `apDungMa(ma: MaGiamGia)`, `boMa()`, `tamTinh()` (tổng trước giảm) và `tienGiam()`; `tongTien()` giờ trả tạm tính trừ tiền giảm. Giỏ chỉ giữ MỘT mã, áp mã mới thì thay mã cũ. Tiền giảm luôn tính theo giỏ hiện tại (thêm/bớt hàng sau khi áp mã thì tiền giảm đổi theo).\n3. Hoá đơn (`inHoaDon`): khi có mã và tiền giảm > 0 thì chèn ngay trước dòng \"Tổng cộng\" hai dòng `Tạm tính: <tiền>` và `Giảm giá (<mã>): -<tiền>` (tiền định dạng bằng `dinhDangVnd` như các dòng khác, ví dụ `Giảm giá (GIAM10): -107.000 ₫`). Không có mã hoặc giảm 0 thì hoá đơn giữ nguyên như cũ.\n4. Xuất `tinhGiam` và kiểu `MaGiamGia` từ `src/index.ts`.\n\nTest hiện có phải vẫn xanh: `node --test {DA}/test/gioHang.test.ts`.",
+    "testHienThi": ["test/gioHang.test.ts"],
+    "tepBaoVe": ["test/gioHang.test.ts"],
+    "testAn": ["test/an-f.test.ts"],
+    "soTest": { "hienThi": 5, "an": 9 },
+    "tranGiayMs": 60000
+  },
+  {
+    "id": "js-cli-viec",
+    "lang": "js",
+    "kieu": "node",
+    "moTa": "Lệnh con CLI `export --csv [--out] [--chua-xong]`: module CSV mới + lệnh mới, đăng ký vào bảng lệnh, sửa trợ giúp",
+    "cauHoi": "Dự án CLI {DA} (quản lý danh sách việc, Node thuần, xem README) cần thêm lệnh con `export`:\n\n- `viec export --csv` in CSV ra stdout (qua `io.ghi`). Cột theo thứ tự `id,tieuDe,xong,han` (dòng đầu là tiêu đề cột); `xong` ghi `1` hoặc `0`; `han` để trống nếu việc không có hạn. Dòng ngăn bằng `\\n` và có `\\n` ở cuối. Trường nào chứa dấu phẩy, nháy kép hoặc xuống dòng thì bọc trong nháy kép, nháy kép bên trong nhân đôi (RFC 4180). Kho rỗng thì chỉ có dòng tiêu đề.\n- `--chua-xong`: chỉ xuất việc chưa xong. Các cờ có thể đứng theo thứ tự bất kỳ.\n- `--out <tệp>`: ghi CSV ra tệp đó thay vì stdout, rồi in ra stdout đúng một dòng `Đã xuất <N> việc ra <tệp>`.\n- Thiếu `--csv` (chưa hỗ trợ định dạng khác): ghi `Thiếu định dạng xuất: dùng --csv` (kèm xuống dòng) ra stderr qua `io.loi`, không in gì ra stdout, trả mã thoát 2.\n- Viết phần CSV thành module dùng lại được `src/csv.mjs`, xuất `dongCsv(truong: string[]): string` (một dòng, không kèm ký tự xuống dòng) và `bangCsv(hang: string[][]): string` (cả bảng, mỗi hàng một dòng kết thúc bằng `\\n`). Lệnh mới đặt ở `src/lenh/export.mjs` như các lệnh khác.\n- `viec help` phải có dòng cho `export` theo cùng kiểu các dòng lệnh khác.\n\nTest hiện có phải vẫn xanh: `node --test {DA}/test/cli.test.mjs`.",
+    "testHienThi": ["test/cli.test.mjs"],
+    "tepBaoVe": ["test/cli.test.mjs"],
+    "testAn": ["test/an-f.test.mjs"],
+    "soTest": { "hienThi": 4, "an": 8 },
+    "tranGiayMs": 60000
+  },
+  {
+    "id": "py-kho-cache",
+    "lang": "py",
+    "kieu": "pytest",
+    "moTa": "Lớp repo có cache TTL (ghi xuyên, trả bản sao, thống kê) + sửa DichVuKho dùng nó + xuất package",
+    "cauHoi": "Dự án {DA} (Python, quản lý tồn kho, xem README): `RepoTep` đọc lại tệp JSON ở mỗi lần gọi nên chậm. Hãy thêm lớp cache:\n\n1. Module mới `kho/repo_cache.py`, lớp `RepoCoCache(nguon, ttl_giay=30.0, dong_ho=time.monotonic)` bọc bất kỳ repo nào có `lay/luu/xoa/tat_ca`:\n   - `lay(ma)`: còn hạn thì trả từ cache, không thì gọi `nguon.lay` rồi lưu vào cache — kết quả `None` (không có sản phẩm) cũng được cache. Mục hết hạn khi `dong_ho() - thời_điểm_nạp >= ttl_giay`.\n   - `luu(sp)`: ghi xuống nguồn trước (write-through) rồi cập nhật cache; `xoa(ma)`: xoá ở nguồn, bỏ mục khỏi cache, trả về đúng kết quả của nguồn.\n   - `tat_ca()`: luôn đọc từ nguồn, không cache.\n   - Luôn trả BẢN SAO: người gọi sửa đối tượng nhận được (kể cả `DichVuKho.xuat` khi báo lỗi không đủ hàng) không được làm hỏng dữ liệu trong cache.\n   - `thong_ke()` trả `{\"trung\": <số lần lay trúng cache>, \"truot\": <số lần lay phải đọc nguồn>}`; `xoa_cache()` xoá hết cache.\n2. `DichVuKho(repo, cache_ttl=None, dong_ho=None)`: khi `cache_ttl` khác `None` thì tự bọc repo bằng `RepoCoCache` với TTL đó (và `dong_ho` nếu được truyền). Thêm `thong_ke_cache()` trả thống kê của cache, hoặc `None` khi không dùng cache.\n3. Xuất `RepoCoCache` từ `kho/__init__.py`.\n\nTest hiện có phải vẫn xanh: `python -m pytest {DA}/tests`.",
+    "testHienThi": ["tests/test_dich_vu_kho.py"],
+    "tepBaoVe": ["tests/test_dich_vu_kho.py", "conftest.py"],
+    "testAn": ["tests/test_an_f_cache.py"],
+    "soTest": { "hienThi": 5, "an": 11 },
+    "tranGiayMs": 60000
+  },
+  {
+    "id": "py-dang-ky",
+    "lang": "py",
+    "kieu": "pytest",
+    "moTa": "Kiểm tra hợp lệ form đăng ký + thông báo lỗi song ngữ vi/en: module mới, sửa bảng thông điệp, sửa dịch vụ + ngoại lệ",
+    "cauHoi": "Form đăng ký trong dự án {DA} (Python, xem README) đang nhận dữ liệu bẩn. Thêm kiểm tra hợp lệ và thông báo lỗi song ngữ Việt/Anh:\n\n1. Module mới `dang_ky/kiem_tra.py`: dataclass `LoiTruong(truong: str, ma: str)` và hàm `kiem_tra(du_lieu: dict) -> list[LoiTruong]`. Kiểm theo thứ tự trường `ho_ten`, `email`, `tuoi`, `so_dien_thoai`; mỗi trường tối đa MỘT lỗi (lỗi đầu tiên gặp); hợp lệ thì trả danh sách rỗng.\n   - `ho_ten`: thiếu, `None` hoặc rỗng sau khi bỏ khoảng trắng ⇒ `bat_buoc`; độ dài (sau strip) < 2 hoặc > 80 ⇒ `do_dai`.\n   - `email`: thiếu/rỗng ⇒ `bat_buoc`; không có dạng `phần@tên.miền` (đúng một `@`, không khoảng trắng, phần sau `@` có dấu chấm với ký tự ở hai bên) ⇒ `email_sai`.\n   - `tuoi`: thiếu/rỗng ⇒ `bat_buoc`; không phải số nguyên (chấp nhận `int` hoặc chuỗi chỉ gồm chữ số) ⇒ `khong_phai_so`; ngoài 16..100 ⇒ `ngoai_khoang`.\n   - `so_dien_thoai`: KHÔNG bắt buộc (thiếu, `None`, chuỗi rỗng đều được). Có thì sau khi bỏ dấu cách và dấu chấm phải là `0` + 9 chữ số hoặc `+84` + 9 chữ số, không thì `sdt_sai`.\n2. `dang_ky/thong_diep.py`: thêm tiếng Anh; đổi thành `t(khoa, ngon_ngu=\"vi\", **tham_so)`. Khoá thiếu trong ngôn ngữ đã chọn, hoặc ngôn ngữ lạ, thì dùng tiếng Việt. Bảng thông điệp (vi / en):\n   - `bat_buoc`: `{ten_truong} là bắt buộc` / `{ten_truong} is required`\n   - `do_dai`: `{ten_truong} phải dài từ 2 đến 80 ký tự` / `{ten_truong} must be 2 to 80 characters long`\n   - `email_sai`: `Email không hợp lệ` / `Invalid email address`\n   - `khong_phai_so`: `{ten_truong} phải là số nguyên` / `{ten_truong} must be a whole number`\n   - `ngoai_khoang`: `{ten_truong} phải từ 16 đến 100` / `{ten_truong} must be between 16 and 100`\n   - `sdt_sai`: `Số điện thoại không hợp lệ` / `Invalid phone number`\n   - `email_trung`: (đã có) / `Email is already registered`\n   - tên trường `{ten_truong}`: ho_ten = `Họ tên` / `Full name`; email = `Email` / `Email`; tuoi = `Tuổi` / `Age`; so_dien_thoai = `Số điện thoại` / `Phone number`.\n3. `DichVuDangKy.dang_ky(du_lieu, ngon_ngu=\"vi\")`: chạy `kiem_tra` trước; có lỗi thì KHÔNG lưu gì và ném `LoiDangKy` có thuộc tính `loi` = danh sách dict `{\"truong\", \"ma\", \"thong_diep\"}` (thông điệp theo `ngon_ngu`), `str(lỗi)` = các thông điệp nối bằng `\"; \"`. Email trùng vẫn báo như cũ nhưng theo `ngon_ngu`, với `loi = [{\"truong\": \"email\", \"ma\": \"email_trung\", \"thong_diep\": ...}]`. Hợp lệ thì lưu `ho_ten` đã strip, `tuoi` kiểu `int`, số điện thoại đã bỏ dấu cách/dấu chấm (không có thì `None`).\n\nTest hiện có phải vẫn xanh: `python -m pytest {DA}/tests`.",
+    "testHienThi": ["tests/test_dang_ky.py"],
+    "tepBaoVe": ["tests/test_dang_ky.py", "conftest.py"],
+    "testAn": ["tests/test_an_f_dang_ky.py"],
+    "soTest": { "hienThi": 3, "an": 11 },
+    "tranGiayMs": 60000
+  },
+  {
+    "id": "cs-dat-phong",
+    "lang": "cs",
+    "kieu": "dotnet",
+    "moTa": "Đặt phòng lặp lại hằng tuần, tất cả-hoặc-không, ngoại lệ xung đột mới, mã chuỗi + huỷ cả chuỗi",
+    "cauHoi": "Dự án {DA} (C# .NET 10, đặt phòng họp, xem README) cần cho phép đặt phòng lặp lại hằng tuần:\n\n1. `DichVuDatPhong.DatLapLai(string maPhong, DateTime batDau, DateTime ketThuc, string nguoiDat, int soTuan)` tạo `soTuan` lượt đặt; lượt thứ k (tính từ 0) dời đi k*7 ngày. Trả `IReadOnlyList<DatCho>` theo thứ tự thời gian. Mọi lượt trong một lần gọi có cùng `MaChuoi` (chuỗi khác rỗng, khác nhau giữa các lần gọi). `soTuan` ngoài 1..52 ⇒ `ArgumentOutOfRangeException`. Các kiểm tra khác giống `Dat`.\n2. Tất cả hoặc không: nếu BẤT KỲ lượt nào trùng lịch (cùng quy tắc trùng của `Dat`, giáp ranh không tính là trùng) thì không lưu lượt nào và ném `XungDotLichException` — lớp mới, kế thừa `InvalidOperationException`, có thuộc tính `IReadOnlyList<DateTime> NgayXungDot` = giờ bắt đầu của các lượt bị trùng, theo thứ tự thời gian.\n3. `Dat(...)` đơn lẻ khi trùng lịch cũng ném `XungDotLichException` (với `NgayXungDot` chứa đúng giờ bắt đầu của lượt đó); mã cũ đang bắt `InvalidOperationException` vẫn phải chạy.\n4. `DatCho` thêm thuộc tính `string? MaChuoi` (đặt lẻ thì `null`). Thêm `DichVuDatPhong.HuyChuoi(string maChuoi)` huỷ mọi lượt của chuỗi đó, trả về số lượt đã huỷ (không có thì 0).\n\nTest hiện có phải vẫn xanh: `dotnet test {DA}/tests/DatPhong.Tests`.",
+    "testHienThi": ["tests/DatPhong.Tests/DichVuDatPhongTests.cs"],
+    "tepBaoVe": ["tests/DatPhong.Tests/DichVuDatPhongTests.cs", "tests/DatPhong.Tests/DatPhong.Tests.csproj"],
+    "testAn": ["tests/DatPhong.Tests/AnFDatLapLaiTests.cs"],
+    "dotnet": {
+      "duAnTest": "tests/DatPhong.Tests",
+      "lopTest": ["DatPhong.Tests.DichVuDatPhongTests", "DatPhong.Tests.AnFDatLapLaiTests"]
+    },
+    "soTest": { "hienThi": 5, "an": 10 },
+    "tranGiayMs": 300000
+  },
+  {
+    "id": "cs-nhat-ky",
+    "lang": "cs",
+    "kieu": "dotnet",
+    "moTa": "Mức FATAL + dòng nối tiếp (stack trace) + báo cáo theo nguồn có lọc thời gian và xuất JSON",
+    "cauHoi": "Dự án {DA} (C# .NET 10, phân tích nhật ký, xem README) cần:\n\n1. Thêm mức `MucDo.Fatal`; bộ phân tích nhận `[FATAL]`.\n2. Dòng nối tiếp: trong `BoPhanTich.PhanTich`, dòng bắt đầu bằng dấu cách hoặc tab mà dòng KHÁC TRỐNG ngay trước nó là một bản ghi hợp lệ (hoặc là dòng nối tiếp của bản ghi đó) thì là phần tiếp theo của nội dung (stack trace): nối vào `NoiDung` của bản ghi đó bằng `\\n` + dòng đã bỏ khoảng trắng đầu, và không tính là dòng bỏ qua. Dòng nối tiếp không có bản ghi hợp lệ ngay trước (đầu tệp, hoặc sau một dòng rác) thì bị bỏ qua và đếm vào `SoDongBoQua`.\n3. `ThongKe.TyLeLoi` tính cả `Fatal` là lỗi.\n4. Tệp mới `BaoCaoNguon.cs`: record `DongBaoCao(string Nguon, int Tong, int SoCanhBao, int SoLoi, DateTime LanCuoi)` và lớp tĩnh `BaoCaoNguon` với:\n   - `static IReadOnlyList<DongBaoCao> Tao(IEnumerable<BanGhi> banGhi, DateTime? tu = null, DateTime? den = null)`: lọc `tu <= ThoiGian < den` (bên nào `null` thì không chặn), gom theo `Nguon`; `SoLoi` đếm Error + Fatal, `SoCanhBao` đếm Warn, `LanCuoi` = thời gian lớn nhất của nguồn; sắp `SoLoi` giảm dần rồi `Nguon` tăng dần (so sánh ordinal).\n   - `static string XuatJson(IReadOnlyList<DongBaoCao> dong)`: mảng JSON, không thụt lề, tên thuộc tính camelCase (`nguon`, `tong`, `soCanhBao`, `soLoi`, `lanCuoi`), `lanCuoi` là chuỗi dạng `yyyy-MM-ddTHH:mm:ss`. Danh sách rỗng ⇒ `[]`.\n\nTest hiện có phải vẫn xanh: `dotnet test {DA}/tests/NhatKy.Tests`.",
+    "testHienThi": ["tests/NhatKy.Tests/BoPhanTichTests.cs"],
+    "tepBaoVe": ["tests/NhatKy.Tests/BoPhanTichTests.cs", "tests/NhatKy.Tests/NhatKy.Tests.csproj"],
+    "testAn": ["tests/NhatKy.Tests/AnFBaoCaoNguonTests.cs"],
+    "dotnet": {
+      "duAnTest": "tests/NhatKy.Tests",
+      "lopTest": ["NhatKy.Tests.BoPhanTichTests", "NhatKy.Tests.AnFBaoCaoNguonTests"]
+    },
+    "soTest": { "hienThi": 7, "an": 8 },
+    "tranGiayMs": 300000
+  }
+]

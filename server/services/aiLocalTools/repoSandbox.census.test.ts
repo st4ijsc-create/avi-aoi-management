@@ -204,7 +204,9 @@ describe("§0 — CẦU CHÌ: lưới đang quét vật thật, không quét hư
       ten,
       "một tool MỚI gắn bit `ai_repo_read` là một CỬA MỚI vào mã nguồn. Đọc lưới này, chứng minh " +
         "nó đi qua `repoSandbox`, rồi mới thêm tên vào đây.",
-    ).toEqual(["grep_repo", "list_files", "read_file"]);
+      // ★ Đợt 1 · T2 (2026-10-14) — `find_files`: chỉ LỌC danh sách `duyetTepDocDuoc` (cùng hộp cát,
+      //   không đọc nội dung tệp nào); các ca rò rỉ dưới đây chạy cả nó (`moiDauRa` gửi `pattern`).
+    ).toEqual(["find_files", "grep_repo", "list_files", "read_file"]);
   });
 
   it("★ mọi tool trong tập đều là read tool, có `handler`, và khai `__authCtx` trong schema", () => {
@@ -515,6 +517,19 @@ describe("§D — GỐC THẬT (thư mục repo): thứ duy nhất nói được
  *      trong danh sách — `Directory.Build.props` chết ở cửa; nay qua bằng đuôi, KHÔNG cần một mục
  *      basename trùng lặp không-đo-được).
  */
+describe("§D3 — Đợt 1 (2026-10-17): ngôn ngữ nguồn VĂN BẢN phổ biến đọc/sửa được (bộ F: 2/2 bài Python trượt vì .py bị chặn)", () => {
+  it("★★★ Python và các ngôn ngữ nguồn văn bản phổ biến qua lớp đuôi", () => {
+    for (const ten of ["kho/__init__.py", "stubs.pyi", "pytest.ini", "setup.cfg", "pom.xml", "Main.java", "App.kt", "main.go", "lib.rs", "a.c", "a.h", "a.cpp", "a.hpp", "App.vue", "Nut.svelte", "chuongTrinh.st", "khoi.scl"]) {
+      expect(duoiDuocPhep(ten), `"${ten}" phải đọc/sửa được`).toBe(true);
+    }
+  });
+  it("★★★ ÂM — mở ngôn ngữ nguồn KHÔNG mở bí mật/nhị phân/tệp chạy được của hệ điều hành", () => {
+    for (const ten of [".env", ".env.local", "id_rsa", "x.pem", "x.key", "a.exe", "a.dll", "a.pyc", "a.so", "a.bat", "a.cmd", "a.ps1"]) {
+      expect(duoiDuocPhep(ten), `"${ten}" phải NGOÀI danh sách`).toBe(false);
+    }
+  });
+});
+
 describe("§D2 — nhánh basename: dotfile dự án ĐI QUA, nhị phân và hậu-tố-giả vẫn BỊ CHẶN", () => {
   it("★★★ DƯƠNG thuần: từng mục của `TEN_TEP_CHO_PHEP` qua `duoiDuocPhep`, kể cả khác hoa/thường", () => {
     expect(TEN_TEP_CHO_PHEP.size, "tập rỗng thì mọi ca dưới là chân lý rỗng").toBeGreaterThan(0);

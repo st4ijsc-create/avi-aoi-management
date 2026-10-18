@@ -29,7 +29,7 @@
  */
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { History, Plus, Trash2 } from "lucide-react";
+import { History, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -89,6 +89,11 @@ interface NoiDungProps {
   onDoiTuKhoa: (tuKhoa: string) => void;
   onChon: (id: string) => void;
   onXoa: (id: string) => void;
+  /**
+   * ★ Đợt 3b (3.5) — ĐẶT / ĐỔI TÊN phiên (tuỳ chọn: vắng ⇒ không vẽ nút bút). Tên rỗng ⇒ máy chủ về nhãn suy từ câu
+   * hỏi đầu. Vẫn là callback — gọi máy chủ ở TRANG, như chọn/xoá.
+   */
+  onDoiTen?: (id: string, title: string) => void;
 }
 
 /**
@@ -97,9 +102,11 @@ interface NoiDungProps {
  *   đồng bộ bằng tay — đúng lớp lỗi "hai chỗ, một sự thật" mà repo đã trả giá.
  */
 export function NoiDungBoChonPhien({
-  phien, dangChon, dangTai, biTuChoi, tuKhoa, onDoiTuKhoa, onChon, onXoa,
+  phien, dangChon, dangTai, biTuChoi, tuKhoa, onDoiTuKhoa, onChon, onXoa, onDoiTen,
 }: NoiDungProps) {
   const { t, i18n } = useTranslation();
+  const [dangDoiTen, setDangDoiTen] = useState<string | null>(null);
+  const [tenMoi, setTenMoi] = useState("");
   const bayGio = new Date();
   const daLoc = locPhienTheoTen(phien, tuKhoa);
   /** Ngày đầy đủ chỉ còn ở tooltip — hàng danh sách dùng thời gian tương đối như mẫu. */
@@ -138,7 +145,33 @@ export function NoiDungBoChonPhien({
             {t("repoWs.sessions.noMatch", "Không phiên nào khớp từ khoá.")}
           </p>
         ) : (
-          daLoc.map((p) => (
+          daLoc.map((p) => dangDoiTen === p.id ? (
+            <form
+              key={p.id}
+              data-form-doi-ten-phien
+              className="flex items-center gap-1 rounded-md px-1.5 py-1"
+              onSubmit={(e) => {
+                e.preventDefault();
+                onDoiTen?.(p.id, tenMoi);
+                setDangDoiTen(null);
+              }}
+            >
+              <input
+                data-o-ten-phien
+                autoFocus
+                value={tenMoi}
+                maxLength={200}
+                onChange={(e) => setTenMoi(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setDangDoiTen(null); } }}
+                placeholder={t("repoWs.sessions.renamePh", "Tên phiên (để trống = theo câu hỏi đầu)")}
+                aria-label={t("repoWs.sessions.rename", "Đổi tên phiên")}
+                className="h-6 min-w-0 flex-1 rounded border border-input bg-background px-1.5 text-[11px]"
+              />
+              <button type="submit" data-nut-luu-ten-phien className="shrink-0 rounded px-1.5 text-[10px] font-medium text-primary hover:bg-muted">
+                {t("repoWs.sessions.renameSave", "Lưu")}
+              </button>
+            </form>
+          ) : (
             <div
               key={p.id}
               data-hang-phien
@@ -162,6 +195,18 @@ export function NoiDungBoChonPhien({
                   {thoiGianTuongDoi(p.updatedAt, bayGio, t)}
                 </span>
               </button>
+              {onDoiTen && (
+                <button
+                  type="button"
+                  data-nut-doi-ten-phien={p.id}
+                  onClick={() => { setDangDoiTen(p.id); setTenMoi(p.title); }}
+                  title={t("repoWs.sessions.rename", "Đổi tên phiên")}
+                  aria-label={t("repoWs.sessions.rename", "Đổi tên phiên")}
+                  className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground focus:opacity-100 group-hover:opacity-100"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              )}
               <button
                 type="button"
                 data-nut-xoa
@@ -177,7 +222,8 @@ export function NoiDungBoChonPhien({
         )}
       </div>
       <p className="shrink-0 border-t px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
-        {t("repoWs.sessions.scopeNote", "Phiên lưu trên máy chủ, riêng theo tài khoản và theo dự án — người khác không đọc được.")}
+        {t("repoWs.sessions.scopeNote", "Phiên lưu trên máy chủ, riêng theo tài khoản và theo dự án — người khác không đọc được.")}{" "}
+        {t("repoWs.sessions.terminalNote", "Nhật ký Terminal/Vấn đề của phiên chỉ khôi phục trên trình duyệt đã chạy lệnh.")}
       </p>
     </div>
   );
@@ -191,13 +237,14 @@ interface BoChonPhienProps {
   onChon: (id: string) => void;
   onMoi: () => void;
   onXoa: (id: string) => void;
+  onDoiTen?: (id: string, title: string) => void;
   /** Chỉ để trang đặt vị trí (vd `ml-auto` trên thanh đầu Hội thoại). Không mang trạng thái. */
   className?: string;
 }
 
 /** VỎ: nút đồng hồ (mở popover lịch sử) + nút ＋ (phiên mới) — góc phải thanh đầu, như mẫu. */
 export function BoChonPhien({
-  phien, dangChon, dangTai, biTuChoi, onChon, onMoi, onXoa, className,
+  phien, dangChon, dangTai, biTuChoi, onChon, onMoi, onXoa, onDoiTen, className,
 }: BoChonPhienProps) {
   const { t } = useTranslation();
   const [mo, setMo] = useState(false);
@@ -242,6 +289,7 @@ export function BoChonPhien({
               onChon(id);
             }}
             onXoa={onXoa}
+            onDoiTen={onDoiTen}
           />
         </PopoverContent>
       </Popover>

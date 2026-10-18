@@ -605,6 +605,8 @@ export function shutdownScheduledReports() {
 // ════════════════════════════════════════════════════════════════════════════
 
 import type { ReportPeriod, ReportLang } from "./aiExecutiveReport";
+// Đợt 0.3 — cổng ưu tiên llama-server (module LÁ).
+import { chayVoiUuTien } from "./ai/hangDoiUuTienLlm";
 
 const EXEC_REPORT_ENABLED = String(process.env.EXEC_REPORT_ENABLED ?? "false").toLowerCase() === "true";
 
@@ -645,7 +647,9 @@ export async function runExecutiveReport(period: ReportPeriod): Promise<void> {
   try {
     const { runExecutiveReportNow } = await import("./aiExecutiveReport");
     const lang = (process.env.EXEC_REPORT_LANG as ReportLang) || "vi";
-    const { summary, insightId } = await runExecutiveReportNow(period, lang);
+    // Đợt 0.3 — cron báo cáo điều hành: không ai ngồi chờ ⇒ mức `nen` (nút "chạy ngay" ở
+    // executiveReportRouter đi đường khác, giữ mặc định `tuong-tac`).
+    const { summary, insightId } = await chayVoiUuTien("nen", () => runExecutiveReportNow(period, lang));
     console.log(
       `[ExecReportScheduler] ${period} report generated (id=${insightId ?? "n/a"}, by=${summary.generatedBy}` +
         `, warnings=${summary.kpis.dataWarnings.length})`,

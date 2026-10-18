@@ -229,6 +229,23 @@ export interface Tool<TParams = unknown, TData = unknown> {
    * SAME code path execute() uses.
    */
   otWriteBinding?: (params: TParams, ctx: ToolExecContext) => Promise<OtWriteTarget | null>;
+  /**
+   * ★★ Đợt 1 · T2 (2026-10-14) — tool CHỈ dành cho VÒNG AGENT mới (`shared/agentCore` qua bộ thực thi
+   * máy chủ), KHÔNG cho các bộ chọn cũ.
+   *
+   * Vì sao cần một cờ chứ không chỉ "không khai trigger": registry là MỘT bản kê dùng chung, và ba
+   * bộ chọn cũ đọc thẳng `listTools()` — bộ chọn trigger (`chonDuocTheoTrigger`), bộ định tuyến LLM vận
+   * hành (`buildClassifierPrompt` + hậu kiểm tên) và planner (`aiAgentPlanner`). Thêm một tool vào sổ
+   * mà không có cờ này là lặng lẽ đổi PROMPT và TẬP CHỌN của cả ba đường cũ. Cờ này làm cho cả ba
+   * BỎ QUA tool ⇒ đường cũ giữ nguyên từng hành vi; tool vẫn chạy qua `executeDecision` như mọi tool
+   * (RBAC, tiêm `__authCtx`/`__projectRoot`, HITL cho write) — cờ KHÔNG mở/đóng một hàng rào nào.
+   */
+  chiChoAgent?: boolean;
+}
+
+/** ★ Đợt 1 · T2 — tool chỉ cho vòng agent (xem `Tool.chiChoAgent`). Một vị từ, mọi bộ chọn cũ gọi nó. */
+export function laToolChiChoAgent(tool: Tool<any, any> | undefined | null): boolean {
+  return !!tool && tool.chiChoAgent === true;
 }
 
 /** True when the tool is a client-side directive tool (navigate/prefill). */

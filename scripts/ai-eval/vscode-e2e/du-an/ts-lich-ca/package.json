@@ -1,0 +1,11 @@
+{
+  "name": "lich-ca",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Xếp lịch ca 8 giờ cho tổ sản xuất — TypeScript chạy thẳng bằng Node 24 (type stripping), không phụ thuộc ngoài.",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "node --test test/lich.test.ts"
+  }
+}

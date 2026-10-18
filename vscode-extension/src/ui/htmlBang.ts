@@ -141,6 +141,39 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
      bằng khoảng cách với đoạn văn phía trên (\`display:block\`) — không cần màu riêng, đây vẫn là
      một hành động PHỤ (mở cấu hình), không phải hành động chính của lượt hỏi. */
   .nut-mo-settings { display: block; margin-top: 6px; font-size: 12px; }
+  /* ★★★ ĐỢT 4B — AGENT: hàng điều khiển (chế độ · đăng nhập token · đồng hồ ngữ cảnh · hoàn tác), dòng thời gian tool,
+     kế hoạch, thẻ duyệt TỪNG TỆP, markdown (dựng bằng createElement/textContent — xem veMd). Chỉ biến --vscode-*. */
+  #vung-agent { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; }
+  #o-che-do { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground);
+              border: 1px solid var(--vscode-dropdown-border); font-size: 11px; padding: 2px 4px; }
+  #dong-ho-token { opacity: .75; }
+  .nut-phu { font-size: 11px; padding: 2px 8px; }
+  .ag-md { white-space: normal; }
+  .ag-md p { margin: 4px 0; }
+  .ag-md pre { white-space: pre; overflow-x: auto; margin: 0; padding: 6px;
+               background: var(--vscode-textCodeBlock-background); font-family: var(--vscode-editor-font-family); }
+  .ag-md code { font-family: var(--vscode-editor-font-family); background: var(--vscode-textCodeBlock-background); }
+  .ag-md table { border-collapse: collapse; }
+  .ag-md th, .ag-md td { border: 1px solid var(--vscode-panel-border); padding: 2px 6px; }
+  .khoi-ma { border: 1px solid var(--vscode-panel-border); margin: 6px 0; }
+  .khoi-ma-dau { display: flex; gap: 4px; align-items: center; padding: 2px 4px; font-size: 11px;
+                 background: var(--vscode-editorWidget-background); }
+  .khoi-ma-dau span { flex: 1; opacity: .7; }
+  .khoi-ma-dau button { font-size: 11px; padding: 1px 6px; }
+  .ag-tool { font-size: 12px; opacity: .85; cursor: pointer; margin: 2px 0; font-family: var(--vscode-editor-font-family); }
+  .ag-tool-ct { font-size: 11px; opacity: .75; margin-left: 14px; white-space: pre-wrap; }
+  .ag-nghi { font-size: 11px; opacity: .7; margin: 2px 0; white-space: pre-wrap; }
+  .ag-ke-hoach { border-left: 2px solid var(--vscode-charts-blue, var(--vscode-focusBorder)); padding-left: 6px; margin: 4px 0; font-size: 12px; }
+  .ag-the { border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+            background: var(--vscode-editorWidget-background); padding: 6px; margin: 6px 0; font-size: 12px; }
+  .ag-the input { width: 100%; box-sizing: border-box; margin-top: 4px; background: var(--vscode-input-background);
+                  color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); }
+  .ag-phan-hoi { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0; font-size: 11px; }
+  .ag-phan-hoi button { font-size: 12px; padding: 0 6px; opacity: .7; }
+  .ag-phan-hoi button.chon { opacity: 1; outline: 1px solid var(--vscode-focusBorder); }
+  .ag-phan-hoi input { flex: 1; min-width: 120px; background: var(--vscode-input-background);
+                       color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); }
+  .ag-phan-hoi .nhan { opacity: .7; }
 </style>
 </head>
 <body>
@@ -221,6 +254,20 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     <button id="nut-duyet-lenh">Chạy lệnh</button>
     <button id="nut-huy-lenh">Huỷ</button>
   </div>
+</div>
+<!-- ★★★ ĐỢT 4B — điều khiển AGENT. Chế độ mặc định TĨNH = "Agent — duyệt từng bước" (option ĐẦU TIÊN — không dùng
+     thuộc tính selected: lưới G3/B4 đòi đúng MỘT thuộc tính chọn sẵn trong cả markup, dành cho mức quyền an toàn). "Chat cũ" giữ
+     đường hỏi-đáp cũ qua máy chủ. Tự động chỉ bỏ bước duyệt khi mức quyền là "Tự ghi" (extension kiểm, không phải ô này). -->
+<div id="vung-agent">
+  <select id="o-che-do" aria-label="Chế độ làm việc của AI" title="Chế độ: Hỏi chỉ đọc · Agent duyệt từng tệp · Agent tự động (chỉ khi mức quyền Tự ghi) · Chat cũ">
+    <option value="sua">Agent — duyệt từng bước</option>
+    <option value="hoi">Hỏi (chỉ đọc)</option>
+    <option value="tu-dong">Agent — tự động</option>
+    <option value="chat-cu">Chat cũ (máy chủ)</option>
+  </select>
+  <button id="nut-token" class="nut-phu" hidden title="Lấy token cổng /v1 bằng trình duyệt (device flow)">Đăng nhập AI Local</button>
+  <span id="dong-ho-token" title="Token ngữ cảnh gửi model ở lượt gần nhất (~ = ước lượng 2,8 ký tự/token khi cổng /v1 không trả usage lúc stream)">Ngữ cảnh: —</span>
+  <button id="nut-hoan-tac" class="nut-phu" hidden>Hoàn tác lượt chạy</button>
 </div>
 <div id="hang-nhap">
   <!-- TASK 5 — dropdown gợi ý @-mention. MẶC ĐỊNH ẨN: chỉ hiện khi đang gõ "@..." VÀ extension đã
@@ -564,7 +611,317 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     // trước khi gui() kịp chạy) không được ăn theo cờ của lượt trước.
     const tuLenh = laCauHoiTuLenh;
     laCauHoiTuLenh = false;
-    vscode.postMessage({ loai: "hoi", cauHoi, duAnId: document.getElementById("o-du-an").value, tepMention, tuLenh });
+    // ★★★ ĐỢT 4B — chế độ agent đi kèm lượt hỏi (Cmd+K và "Chat cũ" KHÔNG kèm ⇒ đường cũ). Ô rỗng ⇒ mặc định "sua".
+    const cheDo = oCheDo.value || "sua";
+    const tin = { loai: "hoi", cauHoi, duAnId: document.getElementById("o-du-an").value, tepMention, tuLenh };
+    if (!tuLenh && cheDo !== "chat-cu") tin.cheDoAgent = cheDo;
+    agBatDauLuot();
+    vscode.postMessage(tin);
+  }
+
+  // ════ ★★★ ĐỢT 4B — AGENT: trạng thái + dựng DOM. KHÔNG innerHTML với nội dung — chỉ createElement/textContent/
+  //      setAttribute; innerHTML chỉ được gán chuỗi RỖNG để dọn. Cây markdown đến từ host đã qua danh sách trắng
+  //      (loi/markdownAnToan.ts) và được lọc LẦN HAI ở veNutMd (loại lạ ⇒ bỏ). ════
+  const oCheDo = document.getElementById("o-che-do");
+  const nutToken = document.getElementById("nut-token");
+  const dongHoToken = document.getElementById("dong-ho-token");
+  const nutHoanTac = document.getElementById("nut-hoan-tac");
+  nutToken.addEventListener("click", () => vscode.postMessage({ loai: "ag_dang_nhap_thiet_bi" }));
+  nutHoanTac.addEventListener("click", () => { nutHoanTac.disabled = true; vscode.postMessage({ loai: "ag_hoan_tac" }); });
+  let agDoan = null;
+  let agNghi = null;
+  let agKeHoach = null;
+  let agTool = {};
+  const agThe = {};
+  function agBatDauLuot() { agDoan = null; agNghi = null; agKeHoach = null; agTool = {}; }
+  function agKhung() { if (!khoiTraLoi) khoiTraLoi = themLuot("ai", ""); return khoiTraLoi; }
+  function taoPhan(the, lop, chu) {
+    const e = document.createElement(the);
+    if (lop) e.className = lop;
+    if (chu != null) e.textContent = chu;
+    return e;
+  }
+  const THE_KHOI = { p: "p", blockquote: "blockquote", li: "li", strong: "strong", em: "em", del: "del", ul: "ul", ol: "ol" };
+  const HANH_DONG_MA = [
+    ["chep", "Chép", "Chép vào clipboard"],
+    ["chen", "Chèn", "Chèn vào vị trí con trỏ trong editor (qua điểm ghi có kiểm toán)"],
+    ["ap-dung", "Áp dụng", "Đề xuất thay vùng chọn (hoặc cả tệp đang mở) — hiện thẻ duyệt + diff trước khi ghi"],
+  ];
+  /** Dựng MỘT nút của cây markdown an toàn. Loại lạ ⇒ bỏ qua (danh sách trắng lần 2). */
+  function veNutMd(n, cha, demMa) {
+    if (!n || typeof n.t !== "string") return;
+    if (n.t === "text") { cha.appendChild(taoPhan("span", "", String(n.chu ?? ""))); return; }
+    if (n.t === "br") { cha.appendChild(document.createElement("br")); return; }
+    if (n.t === "hr") { cha.appendChild(document.createElement("hr")); return; }
+    if (n.t === "codespan") { cha.appendChild(taoPhan("code", "", String(n.chu ?? ""))); return; }
+    if (n.t === "h") {
+      const h = document.createElement("h" + Math.min(6, Math.max(3, (n.cap | 0) + 2)));
+      (n.con || []).forEach((c) => veNutMd(c, h, demMa));
+      cha.appendChild(h);
+      return;
+    }
+    if (n.t === "a") {
+      const a = document.createElement("a");
+      if (typeof n.href === "string" && /^(https?:\\/\\/|mailto:)/i.test(n.href)) { a.setAttribute("href", n.href); a.title = n.href; }
+      (n.con || []).forEach((c) => veNutMd(c, a, demMa));
+      cha.appendChild(a);
+      return;
+    }
+    if (n.t === "code") {
+      const chiSo = demMa.tiep++;
+      const k = taoPhan("div", "khoi-ma");
+      const dau = taoPhan("div", "khoi-ma-dau");
+      dau.appendChild(taoPhan("span", "", String(n.ngonNgu || "mã")));
+      for (const [hanhDong, nhan, goiY] of HANH_DONG_MA) {
+        const b = taoPhan("button", "nut-khoi-ma", nhan);
+        b.title = goiY;
+        b.addEventListener("click", () => vscode.postMessage({ loai: "ag_khoi_ma", chiSo, hanhDong }));
+        dau.appendChild(b);
+      }
+      const pre = document.createElement("pre");
+      pre.appendChild(taoPhan("code", "", String(n.ma ?? "")));
+      k.appendChild(dau);
+      k.appendChild(pre);
+      cha.appendChild(k);
+      return;
+    }
+    if (n.t === "table") {
+      const b = document.createElement("table");
+      const hd = document.createElement("tr");
+      (n.dau || []).forEach((o) => { const th = document.createElement("th"); (o || []).forEach((c) => veNutMd(c, th, demMa)); hd.appendChild(th); });
+      b.appendChild(hd);
+      (n.hang || []).forEach((h) => {
+        const tr = document.createElement("tr");
+        (h || []).forEach((o) => { const td = document.createElement("td"); (o || []).forEach((c) => veNutMd(c, td, demMa)); tr.appendChild(td); });
+        b.appendChild(tr);
+      });
+      cha.appendChild(b);
+      return;
+    }
+    const the = THE_KHOI[n.t];
+    if (!the) return;
+    const e = document.createElement(the);
+    if (n.t === "ol" && n.batDau) e.setAttribute("start", String(n.batDau | 0));
+    (n.con || []).forEach((c) => veNutMd(c, e, demMa));
+    cha.appendChild(e);
+  }
+  function veMd(cay, chiSoMaDau, cha) {
+    const demMa = { tiep: chiSoMaDau | 0 };
+    (Array.isArray(cay) ? cay : []).forEach((n) => veNutMd(n, cha, demMa));
+  }
+  const NHAN_LY_DO = {
+    "het-luot": "Đã dừng: hết số lượt cho phép.",
+    "het-gio": "Đã dừng: hết thời gian cho phép.",
+    "het-token": "Đã dừng: hết ngân sách token.",
+    huy: "Đã dừng theo yêu cầu.",
+    "lap-lai": "Đã dừng: model lặp lại cùng một lời gọi tool.",
+    // Không còn phát (2026-10-17: nội dung đáng ngờ ⇒ cảnh báo/hạ tự trị, không dừng) — giữ cho bản ghi cũ.
+    "menh-lenh-trong-du-lieu": "Đã dừng: dữ liệu chứa mệnh lệnh đáng ngờ.",
+    "loi-model": "Đã dừng vì lỗi model.",
+  };
+  const MA_CAN_TOKEN = { CHUA_CO_TOKEN: 1, TOKEN_401: 1 };
+  // ★ Đợt 5.1 VSCode — 👍/👎 (+ lý do 👎 tuỳ chọn) dưới câu trả lời CUỐI của lượt agent đã xong. Webview chỉ gửi ĐỊNH
+  //   DANH (luotId, chiSoKhoi) + phiếu + lý do; văn bản câu hỏi/câu trả lời do HOST giữ (không tin chữ từ webview).
+  //   Kết quả gửi chỉ hiện ở dòng trạng thái nhỏ — lỗi mạng KHÔNG thành lượt "Lỗi" hay hộp thoại (chi tiết: kênh Output).
+  const agPhanHoi = {};
+  function agNutPhanHoi(ph) {
+    if (!ph || typeof ph.luotId !== "string" || typeof ph.chiSoKhoi !== "number") return;
+    const vung = taoPhan("div", "ag-phan-hoi");
+    const nutLen = taoPhan("button", "", "👍");
+    const nutXuong = taoPhan("button", "", "👎");
+    nutLen.title = "Câu trả lời hữu ích";
+    nutXuong.title = "Câu trả lời chưa tốt";
+    const oLyDo = document.createElement("input");
+    oLyDo.setAttribute("placeholder", "Lý do (tuỳ chọn)");
+    oLyDo.hidden = true;
+    const nutLyDo = taoPhan("button", "", "Gửi lý do");
+    nutLyDo.hidden = true;
+    const trangThai = taoPhan("span", "nhan", "");
+    const gui = (danhGia, lyDo) => {
+      const tin = { loai: "ag_phan_hoi", luotId: ph.luotId, chiSoKhoi: ph.chiSoKhoi, danhGia };
+      if (lyDo) tin.lyDo = lyDo;
+      nutLen.className = danhGia === 1 ? "chon" : "";
+      nutXuong.className = danhGia === -1 ? "chon" : "";
+      trangThai.textContent = "Đang gửi…";
+      vscode.postMessage(tin);
+    };
+    nutLen.addEventListener("click", () => { oLyDo.hidden = true; nutLyDo.hidden = true; gui(1, ""); });
+    nutXuong.addEventListener("click", () => { oLyDo.hidden = false; nutLyDo.hidden = false; gui(-1, ""); });
+    nutLyDo.addEventListener("click", () => { const l = String(oLyDo.value || "").trim(); if (l) gui(-1, l); });
+    vung.appendChild(nutLen);
+    vung.appendChild(nutXuong);
+    vung.appendChild(oLyDo);
+    vung.appendChild(nutLyDo);
+    vung.appendChild(trangThai);
+    agPhanHoi[ph.luotId] = { trangThai };
+    agKhung().appendChild(vung);
+  }
+  function agTheDuyet(m) {
+    const the = taoPhan("div", "ag-the");
+    the.appendChild(taoPhan("div", "nhan", m.loaiDuyet === "lenh" ? "AI muốn CHẠY LỆNH" : "Đề xuất thay đổi tệp"));
+    the.appendChild(taoPhan("div", "", String(m.tomTat || "")));
+    if (m.lenh) the.appendChild(taoPhan("code", "", String(m.lenh)));
+    const lyDo = document.createElement("input");
+    lyDo.setAttribute("placeholder", "Lý do bác (tuỳ chọn)");
+    const hang = taoPhan("div", "the-duyet-nut");
+    const nutDiff = taoPhan("button", "", "Xem diff");
+    const nutOk = taoPhan("button", "", m.loaiDuyet === "lenh" ? "Chạy" : "Duyệt");
+    const nutBac = taoPhan("button", "", "Bác");
+    nutDiff.hidden = !m.coDiff;
+    nutDiff.addEventListener("click", () => vscode.postMessage({ loai: "ag_xem_diff", id: m.id }));
+    let daGui = false;
+    nutOk.addEventListener("click", () => {
+      if (daGui) return;
+      daGui = true; nutOk.disabled = true; nutBac.disabled = true;
+      vscode.postMessage({ loai: "ag_duyet", id: m.id });
+    });
+    nutBac.addEventListener("click", () => {
+      if (daGui) return;
+      daGui = true; nutOk.disabled = true; nutBac.disabled = true;
+      vscode.postMessage({ loai: "ag_bac", id: m.id, lyDo: lyDo.value || "" });
+    });
+    hang.appendChild(nutDiff); hang.appendChild(nutOk); hang.appendChild(nutBac);
+    the.appendChild(hang);
+    the.appendChild(lyDo);
+    const trangThai = taoPhan("div", "nhan", "");
+    the.appendChild(trangThai);
+    agThe[m.id] = { the, nutOk, nutBac, nutDiff, lyDo, trangThai };
+    agKhung().appendChild(the);
+    agDoan = null;
+  }
+  function xuLyTinAgent(m) {
+    if (m.loai === "ag_bat_dau") { agBatDauLuot(); nutHoanTac.hidden = true; return; }
+    if (m.loai === "ag_chu") {
+      xoaChiBaoChoAi();
+      if (!agDoan) { agDoan = taoPhan("div", "ag-doan ag-md"); agKhung().appendChild(agDoan); }
+      agDoan.textContent += m.chu;
+      return;
+    }
+    if (m.loai === "ag_md") {
+      xoaChiBaoChoAi();
+      if (!agDoan) { agDoan = taoPhan("div", "ag-doan ag-md"); agKhung().appendChild(agDoan); }
+      agDoan.textContent = "";
+      agDoan.innerHTML = "";
+      veMd(m.cay, m.chiSoMaDau, agDoan);
+      agDoan = null;
+      return;
+    }
+    if (m.loai === "ag_nghi") {
+      xoaChiBaoChoAi();
+      if (!agNghi) {
+        const d = taoPhan("details", "ag-nghi");
+        d.appendChild(taoPhan("summary", "", "Suy luận của model"));
+        agNghi = taoPhan("div", "", "");
+        d.appendChild(agNghi);
+        agKhung().appendChild(d);
+      }
+      agNghi.textContent += m.chu;
+      return;
+    }
+    if (m.loai === "ag_goi_tool") {
+      xoaChiBaoChoAi();
+      const dong = taoPhan("div", "ag-tool", "⋯ " + String(m.moTa || m.ten));
+      const ct = taoPhan("div", "ag-tool-ct", "");
+      ct.hidden = true;
+      dong.addEventListener("click", () => { ct.hidden = !ct.hidden; });
+      const khung = agKhung();
+      khung.appendChild(dong);
+      khung.appendChild(ct);
+      agTool[m.id] = { dong, ct, moTa: String(m.moTa || m.ten) };
+      agDoan = null;
+      return;
+    }
+    if (m.loai === "ag_ket_qua_tool") {
+      const t = agTool[m.id];
+      if (t) { t.dong.textContent = (m.ok ? "✓ " : "✗ ") + t.moTa; t.ct.textContent = String(m.tomTat || ""); t.dong.title = String(m.tomTat || ""); }
+      return;
+    }
+    if (m.loai === "ag_ke_hoach") {
+      if (!agKeHoach) { agKeHoach = taoPhan("div", "ag-ke-hoach"); agKhung().appendChild(agKeHoach); }
+      agKeHoach.textContent = "";
+      agKeHoach.innerHTML = "";
+      agKeHoach.appendChild(taoPhan("div", "nhan", "Kế hoạch"));
+      for (const v of m.viec || []) {
+        const dau = v.trangThai === "xong" ? "☑ " : v.trangThai === "dang-lam" ? "◐ " : "☐ ";
+        agKeHoach.appendChild(taoPhan("div", "", dau + String(v.noiDung || "")));
+      }
+      return;
+    }
+    if (m.loai === "ag_the_duyet") { xoaChiBaoChoAi(); agTheDuyet(m); return; }
+    if (m.loai === "ag_an_the_duyet") {
+      const t = agThe[m.id];
+      if (t) { t.nutOk.disabled = true; t.nutBac.disabled = true; t.trangThai.textContent = m.ketQua === "duyet" ? "Đã duyệt" : "Đã bác / huỷ"; }
+      return;
+    }
+    if (m.loai === "ag_de_xuat_nho") {
+      const the = taoPhan("div", "ag-the");
+      the.appendChild(taoPhan("div", "nhan", "AI đề xuất ghi nhớ (" + (m.scope === "user" ? "người dùng" : "dự án") + ")"));
+      the.appendChild(taoPhan("div", "", String(m.note || "")));
+      const hang = taoPhan("div", "the-duyet-nut");
+      const nutNho = taoPhan("button", "", "Nhớ");
+      const nutBo = taoPhan("button", "", "Bỏ");
+      nutNho.addEventListener("click", () => { nutNho.disabled = true; nutBo.disabled = true; vscode.postMessage({ loai: "ag_nho", id: m.id }); });
+      nutBo.addEventListener("click", () => { nutNho.disabled = true; nutBo.disabled = true; vscode.postMessage({ loai: "ag_bo_nho", id: m.id }); });
+      hang.appendChild(nutNho);
+      hang.appendChild(nutBo);
+      the.appendChild(hang);
+      agThe["nho:" + m.id] = { the, nutNho, nutBo };
+      agKhung().appendChild(the);
+      agDoan = null;
+      return;
+    }
+    if (m.loai === "ag_an_de_xuat_nho") { const t = agThe["nho:" + m.id]; if (t) t.the.hidden = true; return; }
+    if (m.loai === "ag_usage") {
+      const k = Number(m.vao) || 0;
+      dongHoToken.textContent = "Ngữ cảnh: " + (m.uocLuong ? "~" : "") + (k >= 1000 ? (k / 1000).toFixed(1) + "k" : String(k)) +
+        " token (" + (Number(m.ctxPhanTram) || 0) + "%)" + (m.ra ? " · ra " + m.ra : "");
+      return;
+    }
+    if (m.loai === "ag_checkpoint") { nutHoanTac.textContent = "Hoàn tác lượt chạy (" + (m.soTep | 0) + " tệp)"; return; }
+    if (m.loai === "ag_xong") {
+      xoaChiBaoChoAi();
+      nutDung.hidden = true;
+      if (m.lyDo && m.lyDo !== "hoan-thanh" && m.lyDo !== "khong-chay") themLuot("he_thong", NHAN_LY_DO[m.lyDo] || ("Đã dừng: " + m.lyDo), false, "Lưu ý");
+      nutHoanTac.hidden = !m.coHoanTac;
+      nutHoanTac.disabled = false;
+      if (m.phanHoi) agNutPhanHoi(m.phanHoi);
+      khoiTraLoi = null;
+      return;
+    }
+    if (m.loai === "ag_phan_hoi_kq") {
+      const p = agPhanHoi[m.luotId];
+      if (p) p.trangThai.textContent = m.ok ? "Đã ghi phản hồi." : "Chưa gửi được phản hồi (chi tiết ở Output › AI Local — Phản hồi).";
+      return;
+    }
+    if (m.loai === "ag_loi") {
+      xoaChiBaoChoAi();
+      const c = themLuot("he_thong", String(m.thongDiep || ""), false, "Lỗi");
+      if (MA_CAN_TOKEN[m.ma]) {
+        const b = taoPhan("button", "nut-mo-settings", "Đăng nhập AI Local (device flow)");
+        b.addEventListener("click", () => vscode.postMessage({ loai: "ag_dang_nhap_thiet_bi" }));
+        c.appendChild(b);
+        nutToken.hidden = false;
+      }
+      return;
+    }
+    if (m.loai === "ag_canh_bao") {
+      // Nội dung đáng ngờ / đã hạ tự trị — CẢNH BÁO, lượt KHÔNG dừng. textContent (không HTML).
+      themLuot("he_thong", String(m.thongDiep || ""), false, m.haTuTri ? "Đã hạ tự trị" : "Cảnh báo");
+      return;
+    }
+    if (m.loai === "ag_thong_bao") {
+      capNhatChiBaoChoAi(String(m.thongDiep || ""));
+      themLuot("he_thong", String(m.thongDiep || ""), false, "Thông báo");
+      return;
+    }
+    if (m.loai === "ag_hoan_tac") {
+      themLuot("he_thong", String(m.thongDiep || "") + ((m.chiTiet || []).length ? "\\n" + m.chiTiet.join("\\n") : ""), false, m.ok ? "Hoàn tác" : "Lỗi");
+      nutHoanTac.hidden = !m.conHoanTac;
+      nutHoanTac.disabled = false;
+      return;
+    }
+    if (m.loai === "ag_token") { nutToken.hidden = m.coToken === true; return; }
+    if (m.loai === "ag_thong_ke") { thongKeHoiThoai = { soLuot: m.soLuot ?? 0, soKyTu: m.soKyTu ?? 0 }; capNhatThanhNguCanh(); return; }
   }
 
   document.getElementById("nut-gui").addEventListener("click", gui);
@@ -679,6 +1036,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
 
   window.addEventListener("message", (e) => {
     const m = e.data;
+    if (typeof m.loai === "string" && m.loai.indexOf("ag_") === 0) { xuLyTinAgent(m); hoiThoai.scrollTop = hoiThoai.scrollHeight; return; }
     // ★★★ ĐỢT I / TASK I-1a — token ĐẦU TIÊN của lượt là tín hiệu "model đã bắt đầu trả lời thật":
     // xoá chỉ báo đang-chờ NGAY TRƯỚC khi ghi chữ, không sau — DOM giả của lưới không tự dọn hộ
     // (xem docblock \`xoaChiBaoChoAi\`), và kể cả trên browser thật thì cũng phải TỰ xoá thay vì trông

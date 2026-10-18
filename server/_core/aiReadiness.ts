@@ -8,6 +8,9 @@
  *      `aiGgufEngine` KHÔNG lỗi: `preflightHealthy()` trả false và đường sinh chữ **âm thầm lùi về
  *      in-process** (`LLAMA_SERVER_STRICT` cố ý để TẮT). Câu trả lời vẫn ra ⇒ không ai biết. Cái
  *      mất là prefix-cache: **TTFT đo thật 5.304 ms → 71 ms (74×)**; 63× ở ctx 4k, 44× ở 16k.
+ *      ⚠ ĐÍNH CHÍNH Đợt 0.1 (2026-10-14): đường lùi im lặng đó nay chỉ còn sau
+ *      `LLAMA_SERVER_FAIL_CLOSED=false`. Mặc định: `ai/giamSatLlamaServer` tự dựng lại server, lượt
+ *      sinh chữ model chính CHỜ có trần rồi ném `LLAMA_SERVER_DOWN` — xem nhánh fail-closed bên dưới.
  *   2. `/api/health` **KHÔNG PHẢI một route** — nó rơi vào SPA catch-all (`_core/vite.ts` dùng
  *      `app.use("*")`) nên trả **200 + `text/html` 369 KB**. Mọi phép nghiệm thu từng viết
  *      "health 200 ⇒ hệ thống sống" thực chất chỉ chứng minh **trình duyệt tải được index.html**.
@@ -48,6 +51,21 @@
  * `HEALTH_AI_REQUIRE_LOOPBACK=true` ⇒ chỉ caller loopback được đọc, còn lại 403.
  */
 import type { Request, RequestHandler } from "express";
+import type { AnhChupGiamSat } from "../services/ai/giamSatLlamaServer";
+// Đợt 0.3 — thống kê cổng ưu tiên trước llama-server (module LÁ, chỉ đọc bộ nhớ, không I/O).
+import { thongKeHangDoiLlm as thongKeHangDoiLlmThat } from "../services/ai/hangDoiUuTienLlm";
+
+/**
+ * Đợt 0.3 — ảnh chụp CỔNG ƯU TIÊN trước llama-server. Ô QUAN SÁT, CỐ Ý không phải một `check`:
+ * với 1 slot, "model đang bận, 5 lượt nền đang chờ" là trạng thái BÌNH THƯỜNG, không phải mất năng
+ * lực AI ⇒ không được kéo `status`/mã HTTP xuống (nếu không, giám sát sẽ réo mỗi lần chạy eval).
+ */
+export type HangDoiLlmSnapshot = ReturnType<typeof thongKeHangDoiLlmThat> & {
+  /** `total_slots` mà `/props` của server khai (null nếu không đọc được). */
+  slotServerKhai?: number | null;
+  /** Có khi số slot cổng tin ≠ số slot server khai — cấu hình trôi. */
+  canhBao?: string;
+};
 
 export type SubsystemState = "ok" | "degraded" | "down" | "disabled";
 
@@ -75,8 +93,15 @@ export interface AiReadinessResult {
   checks: Record<CheckName, SubsystemReport>;
   /** Một dòng cho mỗi hệ con không ok — đủ để cảnh báo đọc mà không cần parse cả cây. */
   problems: string[];
+  /**
+   * ★ Đợt 0.1 — trạng thái bộ giám sát llama-server (`song`/`dang-nap`/`chet`/`dang-khoi-dong-lai`/
+   * `bo-cuoc`/`tam-dung`/`tat`, số lần khởi động, lần cuối). `null` = không đọc được.
+   */
+  giamSat: AnhChupGiamSat | null;
   checkMs: number;
   ts: string;
+  /** Đợt 0.3 — xem `HangDoiLlmSnapshot`. Vắng chỉ khi đọc thống kê ném (không bao giờ kéo status). */
+  hangDoiLlm?: HangDoiLlmSnapshot;
 }
 
 /** Kết quả thăm dò llama-server — `servedModel` là model NÓ ĐANG NẠP THẬT, không phải cấu hình. */
@@ -88,6 +113,8 @@ export interface LlamaServerProbeResult {
   ctxPerSlot: number | null;
   /** Lý do không với tới được (đã cắt ngắn, không kèm URL đầy đủ). */
   error?: string;
+  /** `/health` trả 503 — tiến trình CÓ nghe cổng, đang nạp model (không phải đã chết). */
+  loading?: boolean;
 }
 
 export interface RerankerStatusShape {
@@ -112,6 +139,10 @@ export interface AiReadinessDeps {
   /** Model GGUF có thật trên đĩa không (basename). */
   ggufExists?: (basename: string) => Promise<boolean> | boolean;
   auditTierFlags?: () => Promise<TierFlagFindingShape[]>;
+  /** Đợt 0.1 — ảnh chụp bộ giám sát llama-server (mặc định: đơn thể của tiến trình này). */
+  trangThaiGiamSat?: () => AnhChupGiamSat | Promise<AnhChupGiamSat>;
+  /** Đợt 0.3 — thống kê cổng ưu tiên LLM (test thay được). */
+  thongKeHangDoiLlm?: () => ReturnType<typeof thongKeHangDoiLlmThat>;
   env?: NodeJS.ProcessEnv;
   /** Trần thời gian cho MỖI phép kiểm (chúng chạy song song). */
   timeoutMs?: number;
@@ -196,7 +227,14 @@ async function defaultProbeLlamaServer(
     const headers = authHeaders(env);
     const health = await fetch(`${url}/health`, { headers, signal: ctrl.signal });
     if (!health.ok) {
-      return { reachable: false, servedModel: null, slots: null, ctxPerSlot: null, error: `/health HTTP ${health.status}` };
+      return {
+        reachable: false,
+        servedModel: null,
+        slots: null,
+        ctxPerSlot: null,
+        error: `/health HTTP ${health.status}`,
+        ...(health.status === 503 ? { loading: true } : {}),
+      };
     }
     let servedModel: string | null = null;
     let slots: number | null = null;
@@ -244,6 +282,11 @@ async function defaultGgufExists(basename: string): Promise<boolean> {
   }
 }
 
+async function defaultTrangThaiGiamSat(env: NodeJS.ProcessEnv): Promise<AnhChupGiamSat> {
+  const { layAnhChupGiamSat } = await import("../services/ai/giamSatLlamaServer");
+  return layAnhChupGiamSat(env);
+}
+
 async function defaultAuditTierFlags(): Promise<TierFlagFindingShape[]> {
   try {
     const { auditModelTierFlags } = await import("../services/ai/modelTierFlagAudit");
@@ -285,6 +328,9 @@ export async function probeAiReadiness(deps: AiReadinessDeps = {}): Promise<AiRe
   const rerankerStatus = deps.rerankerStatus;
   const ggufExists = deps.ggufExists ?? defaultGgufExists;
   const auditTierFlags = deps.auditTierFlags ?? defaultAuditTierFlags;
+  const trangThaiGiamSat = deps.trangThaiGiamSat ?? (() => defaultTrangThaiGiamSat(env));
+  // Cửa fail-closed (Đợt 0.1): đọc CÙNG biến với `ai/giamSatLlamaServer.llamaServerFailClosed()`.
+  const failClosed = (env.LLAMA_SERVER_FAIL_CLOSED || "").trim().toLowerCase() !== "false";
 
   const serverEnabled = (env.LLAMA_SERVER_ENABLED || "").trim() === "true";
   const serverUrl = (env.LLAMA_SERVER_URL || "").trim().replace(/\/+$/, "");
@@ -306,7 +352,7 @@ export async function probeAiReadiness(deps: AiReadinessDeps = {}): Promise<AiRe
   // quan trọng: `f()` ném ĐỒNG BỘ (một probe hỏng, một env đọc lỗi) sẽ thoát ra NGOÀI `Promise
   // .resolve` và làm hỏng CẢ phép đo; async-IIFE biến nó thành rejection để `withTimeout` nuốt và
   // hạ ĐÚNG hệ con đó xuống. Một thiết bị đo không được chết vì thứ nó đang đo bị hỏng.
-  const [dbOk, server, rerank, embedOnDisk, tierFindings] = await Promise.all([
+  const [dbOk, server, rerank, embedOnDisk, tierFindings, giamSat] = await Promise.all([
     withTimeout((async () => checkDb(budget))(), budget, false),
     serverConfigured
       ? withTimeout((async () => probeServer(serverUrl, budget))(), budget, DEAD_SERVER)
@@ -320,6 +366,7 @@ export async function probeAiReadiness(deps: AiReadinessDeps = {}): Promise<AiRe
       ? withTimeout((async () => ggufExists(embedModel))(), budget, false)
       : Promise.resolve(false),
     withTimeout((async () => auditTierFlags())(), budget, [] as TierFlagFindingShape[]),
+    withTimeout((async () => (await trangThaiGiamSat()) as AnhChupGiamSat | null)(), budget, null as AnhChupGiamSat | null),
   ]);
 
   const checks = {} as Record<CheckName, SubsystemReport>;
@@ -347,11 +394,19 @@ export async function probeAiReadiness(deps: AiReadinessDeps = {}): Promise<AiRe
   } else if (!server.reachable) {
     checks.llamaServer = {
       status: "down",
-      reason:
-        `llama-server (cổng ${ep.port ?? "?"}, ${ep.host}) KHÔNG với tới được: ${server.error ?? "không rõ"}. ` +
-        "Tiến trình nhiều khả năng đã chết hoặc chưa khởi động lại sau khi máy reboot — " +
-        "chạy `scripts/ai/start-llama-server.ps1` (hoặc tác vụ Task Scheduler tương ứng).",
-      detail: { port: ep.port, host: ep.host, expectedModel: configuredServerModel || null },
+      reason: server.loading
+        ? `llama-server (cổng ${ep.port ?? "?"}, ${ep.host}) đang nạp model (/health 503) — chưa phục vụ được.` +
+          (giamSat ? ` Giám sát: ${giamSat.lyDo}` : "")
+        : `llama-server (cổng ${ep.port ?? "?"}, ${ep.host}) KHÔNG với tới được: ${server.error ?? "không rõ"}. ` +
+          (giamSat?.trangThai === "dang-khoi-dong-lai"
+            ? `Bộ giám sát ĐANG khởi động lại nó (${giamSat.lyDo}).`
+            : giamSat?.trangThai === "bo-cuoc"
+              ? `Bộ giám sát đã BỎ CUỘC (${giamSat.lyDo}) — cần người xem logs/llama-server-*.err.log.`
+              : giamSat?.trangThai === "tam-dung"
+                ? "Bộ giám sát đang TẠM DỪNG có chủ ý (đổi model)."
+                : "Tiến trình nhiều khả năng đã chết hoặc chưa khởi động lại sau khi máy reboot — " +
+                  "chạy `scripts/ai/start-llama-server.ps1` (hoặc tác vụ Task Scheduler tương ứng)."),
+      detail: { port: ep.port, host: ep.host, expectedModel: configuredServerModel || null, giamSat },
     };
   } else if (configuredServerModel && server.servedModel && server.servedModel !== configuredServerModel) {
     checks.llamaServer = {
@@ -390,6 +445,32 @@ export async function probeAiReadiness(deps: AiReadinessDeps = {}): Promise<AiRe
       reason: `Sinh chữ model sâu đi QUA llama-server (prefix-cache CÒN, KV tái dùng theo slot).`,
       detail: { path: "llama-server", model: deepModel, strict },
     };
+  } else if (routedByConfig && !server.reachable && !strict && failClosed) {
+    /**
+     * ★★★ Đợt 0.1 — mặc định FAIL-CLOSED: không còn "in-process im lặng". Lượt sinh chữ model chính
+     * CHỜ (≤ LLAMA_SERVER_DOWN_WAIT_MS) cho giám sát dựng lại, hết trần thì ném LLAMA_SERVER_DOWN.
+     * Đang dựng lại / đang nạp / tạm dừng đổi model ⇒ degraded (sẽ tự lành); còn lại ⇒ down.
+     */
+    const seLanh =
+      giamSat?.trangThai === "dang-khoi-dong-lai" || giamSat?.trangThai === "dang-nap" || giamSat?.trangThai === "tam-dung" || !!server.loading;
+    const choGiay = Math.round(Number(env.LLAMA_SERVER_DOWN_WAIT_MS ?? 120_000) / 1000) || 120;
+    checks.textGeneration = seLanh
+      ? {
+          status: "degraded",
+          reason:
+            `llama-server đang KHỞI ĐỘNG LẠI / nạp model (giám sát: ${giamSat?.trangThai ?? "?"}) — lượt sinh chữ ` +
+            `model sâu CHỜ tối đa ${choGiay} s rồi đi qua server; KHÔNG lùi in-process (tránh bản thứ hai ~21 GB).`,
+          detail: { path: "cho-khoi-dong-lai", model: deepModel, strict, fallback: "fail-closed", giamSat: giamSat?.trangThai ?? null },
+        }
+      : {
+          status: "down",
+          reason:
+            (giamSat?.trangThai === "bo-cuoc"
+              ? `llama-server KHÔNG khởi động được (giám sát đã thử ${giamSat.soLanTrongCuaSo}/${giamSat.toiDaKhoiDong} lần trong ${giamSat.cuaSoPhut} phút rồi dừng). `
+              : `llama-server chết (giám sát: ${giamSat?.trangThai ?? "không đọc được"}). `) +
+            "Fail-closed: mọi yêu cầu sinh chữ model sâu sẽ báo lỗi LLAMA_SERVER_DOWN thay vì nạp model vào tiến trình ứng dụng.",
+          detail: { path: "none", model: deepModel, strict, fallback: "fail-closed", giamSat: giamSat?.trangThai ?? null },
+        };
   } else if (routedByConfig && !server.reachable) {
     checks.textGeneration = strict
       ? {
@@ -493,14 +574,37 @@ export async function probeAiReadiness(deps: AiReadinessDeps = {}): Promise<AiRe
     .filter((n) => checks[n].status === "down" || checks[n].status === "degraded")
     .map((n) => `[${checks[n].status}] ${n}: ${checks[n].reason}`);
 
+  // ── Đợt 0.3 — cổng ưu tiên LLM (QUAN SÁT, không vào `worst`) ─────────────────────────────────
+  let hangDoiLlm: HangDoiLlmSnapshot | undefined;
+  try {
+    const tk = (deps.thongKeHangDoiLlm ?? thongKeHangDoiLlmThat)();
+    const slotServerKhai = server.reachable ? server.slots : null;
+    hangDoiLlm = {
+      ...tk,
+      slotServerKhai,
+      ...(tk.batCong && typeof slotServerKhai === "number" && slotServerKhai !== tk.soSlot
+        ? {
+            canhBao:
+              `Cổng ưu tiên tin llama-server có ${tk.soSlot} slot nhưng /props khai ${slotServerKhai} — ` +
+              "sửa LLAMA_SERVER_SLOTS (hoặc LLM_PRIORITY_GATE_CONCURRENCY) cho khớp -np đang chạy; " +
+              "ít hơn ⇒ xếp hàng oan, nhiều hơn ⇒ lượt thừa rơi vào hàng FIFO của server (mất ưu tiên).",
+          }
+        : {}),
+    };
+  } catch {
+    hangDoiLlm = undefined; // ô quan sát hỏng không được làm hỏng phép đo sẵn sàng
+  }
+
   return {
     status,
     ready: status === "ok",
     httpStatus,
     checks,
     problems,
+    giamSat,
     checkMs: Date.now() - startedAt,
     ts: new Date().toISOString(),
+    ...(hangDoiLlm ? { hangDoiLlm } : {}),
   };
 }
 

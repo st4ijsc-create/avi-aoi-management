@@ -38,8 +38,14 @@ import { initializeRuntimeSecurity, shutdownRuntimeSecurity } from "../license/r
 import { registerExternalInspectionRoutes } from "../routes/externalInspectionApi";
 import { registerAiStreamingRoutes } from "../routes/aiStreamingApi";
 import { chanTuyenAiTheoGiayPhep } from "../routes/congGiayPhepAiExpress";
-import { registerOpenAiGateway } from "../routes/openaiGateway";
+import { registerOpenAiGateway, xuLyCorsCongOpenAi } from "../routes/openaiGateway";
 import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
+import { registerAiAgentRoutes } from "../routes/aiAgentApi"; // Đợt 1 T4 — lượt chạy vòng agent máy chủ (SSE)
+import { registerAiXemTruocRoutes } from "../routes/aiXemTruocApi"; // Đợt 3c — cửa vào xem trước: kiểm phiên + chủ ⇒ vé một lần ⇒ 302 sang ORIGIN riêng của proxy
+import { laOriginXemTruoc } from "../services/ai/chayUngDung"; // Đợt 3c — CORS KHÔNG phản chiếu origin xem trước (script do AI sinh)
+import { registerAiGatewayTokenThietBiRoutes } from "../routes/aiGatewayTokenThietBi"; // Đợt 4A — device flow: extension xin mã ⇒ người duyệt trên web ⇒ đổi lấy token /v1
+import { registerAiGatewayTokenBearerRoutes } from "../routes/aiGatewayTokenBearerApi"; // Đợt 4B-server — sổ áp tệp ở client + tự thu hồi, xác thực Bearer avgw_
+import { danhDauGianDoanKhiBoot } from "../db/aiAgentRuns";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
 import { kyAnhTrongThan, kyNeuLaDuongDanNoiBo } from "./anhKyUrl";
 import {
@@ -58,6 +64,7 @@ import { livenessProbe, createHealthHandler, createReadyzHandler, createNetworkH
 import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, credentialConflictGuard, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
 import { assertVramEnforcementPolicy } from "../services/vram/vramBroker";
+import { khoiChayDongBoLuaChonModel } from "../services/ai/luaChonModelLlamaServer";
 import { listenThenStartOt } from "../services/ot/backgroundStart";
 
 // Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
@@ -83,6 +90,14 @@ installConsoleBridge();
  * lập, không vai trò nào đi qua cả hai).
  */
 assertVramEnforcementPolicy();
+
+/**
+ * Đợt 6 (AI Local) — LỰA CHỌN MODEL llama-server của API đổi model (tệp ngoài repo, KHÔNG ghi `.env`).
+ * Phủ BA khoá env (`LLAMA_SERVER_MODEL` · `GGUF_DEFAULT_MODEL` · `GGUF_CODE_MODEL`) ở thân module điểm vào —
+ * TRƯỚC mọi lượt LLM — rồi áp lại mỗi 15 s để theo kịp lượt đổi từ tiến trình anh em. Không có tệp ⇒ no-op.
+ * Không phủ thì định tuyến so tên model mới với khoá cũ ⇒ lùi in-process ⇒ nạp bản thứ hai (OOM).
+ */
+khoiChayDongBoLuaChonModel();
 
 
 // BG-96 (spec Khối C QĐ-1): dateStr is a user-typed date/time — read as FACTORY
@@ -231,12 +246,21 @@ async function startServer() {
   }
 
   app.use((req, res, next) => {
+    // ★ Đợt 4A — cổng `/v1` mang token CÁ NHÂN ⇒ CORS riêng (không bao giờ `*`, chỉ origin khai trong
+    //   OPENAI_GATEWAY_CORS_ORIGINS). Cổng TẮT / đường khác ⇒ "khong-phai" ⇒ khối dưới chạy như cũ từng bit.
+    const corsCong = xuLyCorsCongOpenAi(req, res);
+    if (corsCong === "da-xu-ly") return;
+    if (corsCong === "tiep") return next();
+
     const origin = req.headers.origin;
 
     // No Origin header => non-browser client (LAN machine). Always allow.
     if (!origin) {
       res.setHeader("Access-Control-Allow-Origin", "*");
-    } else if (corsAllowAll || corsAllowList.includes(origin) || isDevLoopbackOrigin(origin)) {
+    } else if ((corsAllowAll || corsAllowList.includes(origin) || isDevLoopbackOrigin(origin)) && !laOriginXemTruoc(origin)) {
+      // ★ Đợt 3c — `!laOriginXemTruoc`: trang xem trước chạy mã do AI sinh trên cổng proxy riêng; nhánh dev
+      //   "phản chiếu mọi origin/loopback" sẽ cho nó ĐỌC phản hồi tRPC bằng phiên người dùng. Origin ấy KHÔNG BAO GIỜ
+      //   được phản chiếu (rơi xuống nhánh "untrusted" bên dưới — yêu cầu vẫn qua, trình duyệt không cho đọc).
       // Reflect only trusted origins so credentials can be shared safely.
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
@@ -5565,6 +5589,15 @@ async function startServer() {
   // middleware so trusted-LAN IDE tooling (VS Code + Continue) can reach it.
   registerOpenAiGateway(app);
   registerAiLocalKnowledgeRoutes(app);
+  // Đợt 1 T4 — vòng agent máy chủ: lượt chạy sống trong bộ nhớ ⇒ hàng sổ còn `dang-chay`/`cho-duyet` từ tiến trình
+  // trước là lượt đã chết ⇒ `gian-doan` (best-effort, không chặn khởi động). Đăng ký SAU cổng giấy phép `/api/ai`.
+  void danhDauGianDoanKhiBoot().then((n) => {
+    if (n > 0) console.log(`[aiAgent] ${n} lượt chạy dở từ lần chạy trước ⇒ gian-doan`);
+  });
+  registerAiAgentRoutes(app);
+  registerAiXemTruocRoutes(app); // Đợt 3c — sau cổng giấy phép `/api/ai`; xác thực `thuXacThucRest` (lượng từ §2 của xacThucBeMatRest)
+  registerAiGatewayTokenThietBiRoutes(app); // Đợt 4A — sau cổng giấy phép `/api/ai` ở trên; xác thực thay thế: xem docblock tuyến
+  registerAiGatewayTokenBearerRoutes(app); // Đợt 4B-server — sau cổng giấy phép `/api/ai`; Bearer `avgw_` + phạm vi `apply` (lượng từ §2 của xacThucBeMatRest)
   // WS-2 — edge model package download proxy (apiKey-verified, Range resume)
   registerEdgeDownloadRoute(app);
 
@@ -6284,6 +6317,29 @@ async function startServer() {
     })
     .catch((err) => console.error("[WormSize] monitor failed to start:", (err as any)?.message || err));
 
+  // Đợt 0.1 (AI Local) — GIÁM SÁT llama-server: không ai nghe cổng ≥ 2 nhịp (15 s) ⇒ chạy
+  // scripts/ai/start-llama-server.ps1 tách rời (khoá liên tiến trình trong os.tmpdir() để :3000 và
+  // :3010 không cùng dựng; tối đa 3 lần / 30 phút; tệp tạm dừng cho doi-model.ps1). Nửa kia của hợp
+  // đồng là cửa FAIL-CLOSED trong aiGgufEngine (không nạp model chính in-process khi server chết).
+  // Tự tắt khi LLAMA_SERVER_ENABLED khác true / LLAMA_WATCHDOG_ENABLED=false / URL không loopback.
+  // KHÔNG ở tiến trình edge (không có llama-server cục bộ để trông); vai worker early-return từ trước.
+  // Đợt 6 (an toàn khi sập): TRƯỚC giám sát, dọn lượt đổi model MỒ CÔI của lần chạy trước (khoá PID đã chết +
+  // tệp tạm dừng mang token của nó) — không thì giám sát đứng im tới 30 phút và lượt đổi sau bị khoá chặn.
+  // Dọn tệp đồng bộ trong lời gọi; /props + audit chạy nền. Không khởi động lại server.
+  void import("../services/ai/giamSatLlamaServer")
+    .then(async ({ khoiChayGiamSatLlamaServer }) => {
+      const { isEdgeProcessRole } = await import("../db/connection");
+      if (isEdgeProcessRole()) return;
+      try {
+        const { phucHoiDoiModelKhiKhoiDong } = await import("../services/ai/doiModelLlamaServer");
+        void phucHoiDoiModelKhiKhoiDong()?.catch((err) => console.error("[llama-doi-model] phục hồi hỏng:", err?.message ?? err));
+      } catch (err) {
+        console.error("[llama-doi-model] phục hồi hỏng:", (err as any)?.message || err);
+      }
+      khoiChayGiamSatLlamaServer();
+    })
+    .catch((err) => console.error("[llama-watchdog] failed to start:", (err as any)?.message || err));
+
   // VDA 5050 — AGV/AMR fleet connectivity framework (MQTT). Importing the module
   // registers the `vda5050` robot driver. Disabled by default; opt in via
   // VDA5050_ENABLED=true. AGV commands are HITL + dry-run unless ROBOT_CONTROL_ENABLED=true.
@@ -6434,6 +6490,11 @@ async function startServer() {
   const onListening = () => {
     logger.info({ port, protocol }, `Server running on ${protocol}://localhost:${port}/`);
 
+    // ★ Đợt 3c — proxy xem trước trên CỔNG RIÊNG (origin tách khỏi ứng dụng). Vắng AI_PREVIEW_PROXY_PORT ⇒ TẮT.
+    import("../services/ai/chayUngDung")
+      .then((m) => m.khoiDongProxyXemTruoc(port))
+      .catch((err) => logger.error({ err }, "[XemTruoc] khởi động proxy thất bại"));
+
     // doc 33 F1 (SYNAPSE ADR-007): report the resolved edition + infra profile (advisory).
     import("./deploymentProfile")
       .then(({ describeDeployment, resolveDeploymentProfile }) => {
@@ -6480,6 +6541,10 @@ async function startServer() {
       .then((m) => m.stopBackgroundSchedulers())
       .catch(() => {});
     shutdownScheduledReports();
+    // ★ Đợt 3c — dừng MỌI ứng dụng xem trước đang chạy (giết cây) + đóng proxy.
+    import("../services/ai/chayUngDung")
+      .then((m) => m.tatChayUngDung())
+      .catch(() => {});
     import("../services/reportScheduler")
       .then((m) => m.stopExecutiveReportScheduler())
       .catch(() => {});

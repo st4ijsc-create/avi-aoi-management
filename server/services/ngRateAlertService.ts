@@ -17,6 +17,8 @@ import * as schema from "../../drizzle/schema";
 // doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the NG-rate RCA enrichment must PIN a
 // text model (un-pinned calls used to land on the 0.6B RAG embedder → repetition garbage).
 import { resolveLogicalModel } from "./ai/modelResolver";
+// Đợt 0.3 — cổng ưu tiên llama-server (module LÁ).
+import { chayVoiUuTien } from "./ai/hangDoiUuTienLlm";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -712,7 +714,8 @@ Analyze this NG rate spike and respond in JSON format:
  * Updates the payload JSON field with aiAnalysis data.
  */
 function fireAiEnrichment(db: any, alertHistoryId: number, payload: NgRateAlertPayload): void {
-  enrichAlertWithAI(db, payload)
+  // Đợt 0.3 — chạy-rồi-quên SAU khi cảnh báo đã gửi, không ai chờ ⇒ mức `nen`.
+  chayVoiUuTien("nen", () => enrichAlertWithAI(db, payload))
     .then(async (enrichment) => {
       if (!enrichment) return;
       try {

@@ -213,6 +213,82 @@ export async function xoaBaiHocTheoThuTu(
   }
 }
 
+/** id bài học (uuid) — hình dạng cứng; id méo không bao giờ chạm CSDL. */
+const RE_ID_BAI_HOC = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * ★★★ Đợt 3b (3.5) — XOÁ một bài học theo `id` từ MÀN QUẢN LÝ TRÍ NHỚ (màn có `id` trong tay, khác ô chat).
+ *
+ * ⚠ WHERE mang `eq(userId)` + `eq(projectId)`: id đoán trúng của người khác ⇒ khớp 0 hàng ⇒ `{ok:false}` — cùng kết
+ *   cục với "không tồn tại" (không oracle).
+ */
+export async function xoaBaiHocTheoId(userId: number, projectId: string, id: string): Promise<{ ok: boolean }> {
+  if (!Number.isInteger(userId) || userId <= 0) return { ok: false };
+  if (!laIdDuAnHopLe(projectId) || !RE_ID_BAI_HOC.test(id)) return { ok: false };
+  const db = await getDb();
+  if (!db) return { ok: false };
+  try {
+    const ra = await db
+      .delete(aiCodingLessons)
+      .where(
+        and(
+          eq(aiCodingLessons.id, id),
+          eq(aiCodingLessons.userId, userId),
+          eq(aiCodingLessons.projectId, projectId),
+        ),
+      )
+      .returning({ id: aiCodingLessons.id });
+    return { ok: ra.length > 0 };
+  } catch (err) {
+    canhBao("xoaBaiHocTheoId", err);
+    return { ok: false };
+  }
+}
+
+export type MaSuaBaiHoc = "sua" | "trung" | "khong_thay" | "hong";
+
+/**
+ * ★★★ Đợt 3b (3.5) — SỬA nội dung một bài học. `noiDung` phải **đã làm sạch** (`lamSachBaiHoc` ở tầng dịch vụ — cùng
+ * luật cửa ghi `luuBaiHoc`: file này không quét tiêm). `mucRuiRo` cùng tập `'none'|'low'`.
+ *
+ * ⚠ `khoaTrung` tính LẠI từ nội dung mới; trùng với một bài KHÁC của cùng (người × dự án) ⇒ UNIQUE ném ⇒ `trung`
+ *   (không gộp ngầm, không ghi đè bài kia). WHERE mang `eq(userId)` + `eq(projectId)` như mọi câu ở đây.
+ */
+export async function suaBaiHoc(
+  userId: number,
+  input: { projectId: string; id: string; noiDung: string; mucRuiRo: string },
+): Promise<{ ma: MaSuaBaiHoc; noiDung: string }> {
+  const HONG = { ma: "hong" as const, noiDung: "" };
+  if (!Number.isInteger(userId) || userId <= 0) return HONG;
+  if (!laIdDuAnHopLe(input.projectId) || !RE_ID_BAI_HOC.test(input.id)) return HONG;
+  if (input.mucRuiRo !== "none" && input.mucRuiRo !== "low") return HONG;
+  const noiDung = chuanHoaNoiDung(input.noiDung);
+  if (noiDung === "") return HONG;
+  const khoa = khoaTrungBaiHoc(noiDung);
+  if (khoa === "") return HONG;
+  const db = await getDb();
+  if (!db) return HONG;
+  try {
+    const ra = await db
+      .update(aiCodingLessons)
+      .set({ noiDung, khoaTrung: khoa, mucRuiRo: input.mucRuiRo, updatedAt: new Date() })
+      .where(
+        and(
+          eq(aiCodingLessons.id, input.id),
+          eq(aiCodingLessons.userId, userId),
+          eq(aiCodingLessons.projectId, input.projectId),
+        ),
+      )
+      .returning({ id: aiCodingLessons.id });
+    return ra.length > 0 ? { ma: "sua", noiDung } : { ma: "khong_thay", noiDung: "" };
+  } catch (err) {
+    const code = (err as { code?: string; cause?: { code?: string } })?.code ?? (err as { cause?: { code?: string } })?.cause?.code;
+    if (code === "23505") return { ma: "trung", noiDung };
+    canhBao("suaBaiHoc", err);
+    return HONG;
+  }
+}
+
 /** Đếm bài học của một người trên một dự án. */
 export async function demBaiHoc(userId: number, projectId: string): Promise<number> {
   if (!Number.isInteger(userId) || userId <= 0) return 0;

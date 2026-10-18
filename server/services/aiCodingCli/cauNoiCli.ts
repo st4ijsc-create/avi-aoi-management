@@ -50,7 +50,7 @@ import {
 } from "../aiCopilotActions";
 import { streamAnswer, type ConversationMessage, type StreamEvent } from "../aiLocalKnowledgeService";
 import { executeDecision, type ToolExecContext, type ToolExecOutcome, type ToolLang } from "../aiLocalTools";
-import { danhSachDuAn, phanGiaiGoc, type DuAnHopCat } from "../aiLocalTools/repoProjects";
+import { danhSachDuAn, danhSachDuAnChoNguoi, phanGiaiGoc, type DuAnHopCat } from "../aiLocalTools/repoProjects";
 import type { DanhTinhCli } from "./danhTinhCli";
 
 /**
@@ -92,8 +92,12 @@ export type KetQuaMoPhien =
   | { readonly ok: false; readonly ma: MaPhien; readonly loi: string };
 
 /** Danh sách dự án hợp lệ — dùng lại NGUYÊN bộ phân tích danh sách trắng của trục 2. */
-export function danhSachDuAnCli(): DuAnHopCat[] {
-  return danhSachDuAn();
+/**
+ * ★ Đợt 3a — có danh tính ⇒ thêm dự án CÁ NHÂN của chính người đó; KHÔNG danh tính (liệt kê trước bước xác thực)
+ * ⇒ chỉ mục env/admin (fail-closed: tên/id dự án của người khác không lộ ra một tiến trình chưa biết là ai).
+ */
+export function danhSachDuAnCli(danhTinh: DanhTinhCli | null = null): DuAnHopCat[] {
+  return danhSachDuAnChoNguoi(danhTinh ? { id: danhTinh.userId, role: danhTinh.role } : null);
 }
 
 /**
@@ -106,7 +110,9 @@ export function moPhienCli(p: {
   lang?: ToolLang;
   nguon: "cli" | "mcp";
 }): KetQuaMoPhien {
-  const pg = phanGiaiGoc(p.projectId ?? undefined);
+  // ★ Đợt 3a — người gọi = danh tính ĐÃ CHỨNG MINH của phiên CLI/MCP: dự án cá nhân chỉ chủ (và admin) mở được.
+  const nguoiGoi = { id: p.danhTinh.userId, role: p.danhTinh.role };
+  const pg = phanGiaiGoc(p.projectId ?? undefined, nguoiGoi);
   if (!pg.ok) {
     return {
       ok: false,
@@ -114,7 +120,7 @@ export function moPhienCli(p: {
       loi:
         `Dự án "${String(p.projectId)}" không nằm trong danh sách TRẮNG (AI_REPO_SANDBOX_ROOTS). ` +
         `CLI chỉ nhận ID dự án, KHÔNG nhận đường dẫn. Dự án hợp lệ: ` +
-        danhSachDuAn()
+        danhSachDuAnChoNguoi(nguoiGoi)
           .map((d) => `${d.id} (${d.ten})`)
           .join(" · "),
     };

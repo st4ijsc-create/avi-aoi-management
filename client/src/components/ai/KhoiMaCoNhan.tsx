@@ -89,6 +89,33 @@ export function layMaVaNhanFence(node: unknown): { ma: string; nhanFence: string
   return { ma: gomChu(code), nhanFence };
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★ 2026-10-14 · Đợt 0.5 — KHỐI ĐẦU RA LỆNH: một nguồn gốc KHÁC, cần nhãn KHÁC
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * Đầu ra `run_command` (server chạy thật, client chèn vào hội thoại sau lượt duyệt/vòng tự động) là
+ * khối fence duy nhất trong hội thoại KHÔNG do model viết. Bản cũ chèn nó bằng fence trần ⇒ nhận
+ * nhãn "Mã do model viết — có thể khác tệp trên đĩa": sai nguồn gốc, đúng loại nhãn-tin-cậy-sai mà lô
+ * này sinh ra để tránh. Client nay bọc đầu ra bằng nhãn fence RIÊNG này; component đọc nó ⇒ nhãn
+ * "đầu ra lệnh", không đối chiếu tệp (đầu ra lệnh không phải trích tệp).
+ * ⚠ Nhãn fence là chữ trong nội dung ⇒ về lý thuyết model bắt chước được. Giảm rủi ro: lịch sử gửi
+ *   cho model đi qua `boNhanDauRaLenhChoModel` (bỏ nhãn) ⇒ model không thấy để học theo. Tên tiếng Anh
+ *   trung tính vì Streamdown in tên ngôn ngữ ở đầu khối; Shiki không biết ⇒ rơi về "text" (không tô).
+ */
+export const NHAN_FENCE_DAU_RA_LENH = "command-output";
+
+/** Bọc đầu ra lệnh thành khối fence có nhãn riêng; đầu ra CHỨA ``` ⇒ fence dài hơn (không vỡ khối). */
+export function khoiDauRaLenh(dauRa: string): string {
+  const dai = Math.max(2, ...Array.from(dauRa.matchAll(/`+/g), (m) => m[0].length));
+  const rao = "`".repeat(dai + 1);
+  return `${rao}${NHAN_FENCE_DAU_RA_LENH}\n${dauRa.replace(/\n$/, "")}\n${rao}`;
+}
+
+/** Lịch sử gửi model: bỏ nhãn fence đầu ra lệnh (giữ nguyên nội dung) — xem ⚠ ở trên. */
+export function boNhanDauRaLenhChoModel(noiDung: string): string {
+  return noiDung.replace(new RegExp(`^(\`{3,})${NHAN_FENCE_DAU_RA_LENH}[ \\t]*$`, "gm"), "$1");
+}
+
 interface PropsKhoiMa {
   node?: unknown;
   children?: ReactNode;
@@ -96,24 +123,36 @@ interface PropsKhoiMa {
   neo?: NeoDocTep | null;
   /** Mốc-NHẬN thẻ đọc, đã định dạng (`dinhDangLucNhan`) — display-only, xem docblock ở đó. */
   luc?: string | null;
+  /**
+   * ★★★ NHÃN TIN CẬY CẤP THEO NGUỒN TIN NHẮN, KHÔNG THEO CHỮ (rà bảo mật 2026-10-17): `true` CHỈ khi
+   * tin nhắn chứa khối này do CLIENT chèn từ đầu ra `run_command` thật (`ChatTurn.nguon`). Model tự
+   * viết một fence `command-output` (bắt chước, hoặc bị nội dung tệp/tool tiêm) ⇒ mặc định `false` ⇒
+   * khối ấy vẫn mang nhãn "Mã do model viết". Thiếu cờ này, câu "đầu ra lệnh do máy chủ chạy thật" có
+   * thể bị model giả để khai "test đã xanh" mà không lệnh nào chạy.
+   */
+  tinDauRaLenh?: boolean;
 }
 
 /**
  * Khối mã trong văn xuôi model, có nhãn. Dùng làm component `pre` cho `<Streamdown>` qua
  * `taoBoKhoiMaCoNhan` (Streamdown chỉ truyền props chuẩn + `node`; `neo`/`luc` đi qua bao đóng).
  */
-export function KhoiMaCoNhan({ node, children, neo = null, luc = null }: PropsKhoiMa): ReactElement {
+export function KhoiMaCoNhan({ node, children, neo = null, luc = null, tinDauRaLenh = false }: PropsKhoiMa): ReactElement {
   const { t } = useTranslation();
   const boc = layMaVaNhanFence(node);
   if (!boc) return <>{children}</>;
 
   const soDong = boc.ma.replace(/\n$/, "").split("\n").length;
   const coBang = soDong >= NGUONG_DONG_BANG_NHAN;
-  const cauNguonGoc = t("repoWs.khoi.modelSinh", "Mã do model viết — có thể khác tệp trên đĩa");
+  const laDauRaLenh = tinDauRaLenh && boc.nhanFence === NHAN_FENCE_DAU_RA_LENH;
+  const cauNguonGoc = laDauRaLenh
+    ? t("repoWs.khoi.dauRaLenh", "Đầu ra lệnh do máy chủ chạy thật — không phải mã do model viết")
+    : t("repoWs.khoi.modelSinh", "Mã do model viết — có thể khác tệp trên đĩa");
 
   // ── Tầng 2: chỉ so khi có neo VÀ nhãn fence khớp đuôi tệp; mọi ngả khác ⇒ im lặng. ──
+  //    Đầu ra lệnh KHÔNG bao giờ so (không phải trích tệp; `neoKhopNgonNgu` vốn đã trượt, nói thẳng).
   let ketCuc: KetCucSoKhoi | null = null;
-  if (neo && neoKhopNgonNgu(boc.nhanFence, neo.duongDan)) {
+  if (!laDauRaLenh && neo && neoKhopNgonNgu(boc.nhanFence, neo.duongDan)) {
     ketCuc = soKhoiVoiTep(boc.ma, neo);
   }
   const chip =
@@ -134,7 +173,8 @@ export function KhoiMaCoNhan({ node, children, neo = null, luc = null }: PropsKh
 
   return (
     <div
-      data-khoi-ma-model
+      data-khoi-ma-model={laDauRaLenh ? undefined : true}
+      data-khoi-dau-ra-lenh={laDauRaLenh ? true : undefined}
       className={cn("min-w-0", !coBang && "border-l-2 border-dashed border-muted-foreground/40 pl-1")}
       // Khối nhỏ không băng ⇒ tooltip mang ĐÚNG câu nguồn gốc (cùng một câu, một khoá dịch).
       title={coBang ? undefined : cauNguonGoc}
@@ -142,7 +182,11 @@ export function KhoiMaCoNhan({ node, children, neo = null, luc = null }: PropsKh
       {(coBang || chip !== null) && (
         <div className="flex min-w-0 flex-wrap items-center gap-1.5 px-1 pb-0.5 text-[10px] leading-tight">
           {coBang && (
-            <span data-nhan-model-sinh className="text-muted-foreground">
+            <span
+              data-nhan-model-sinh={laDauRaLenh ? undefined : true}
+              data-nhan-dau-ra-lenh={laDauRaLenh ? true : undefined}
+              className="text-muted-foreground"
+            >
               {cauNguonGoc}
             </span>
           )}
@@ -162,8 +206,10 @@ export function KhoiMaCoNhan({ node, children, neo = null, luc = null }: PropsKh
 export function taoBoKhoiMaCoNhan(
   neo: NeoDocTep | null,
   luc: string | null,
+  /** Xem `PropsKhoiMa.tinDauRaLenh` — chỉ `true` cho tin nhắn đầu ra lệnh do client chèn. */
+  tinDauRaLenh = false,
 ): { pre: (props: { node?: unknown; children?: ReactNode }) => ReactElement } {
   return {
-    pre: (props) => <KhoiMaCoNhan node={props.node} neo={neo} luc={luc}>{props.children}</KhoiMaCoNhan>,
+    pre: (props) => <KhoiMaCoNhan node={props.node} neo={neo} luc={luc} tinDauRaLenh={tinDauRaLenh}>{props.children}</KhoiMaCoNhan>,
   };
 }

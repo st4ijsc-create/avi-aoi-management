@@ -3745,6 +3745,7 @@
       "interlockEvent": "联锁事件",
       "interlockRule": "联锁规则",
       "kbCorpus": "知识库(corpus)",
+      "kbEvalMaTaskSet": "代码生成评估题集",
       "license": "许可证",
       "line": "产线",
       "machine": "机台",
@@ -3928,6 +3929,7 @@
       "closeProductionSession": "关闭生产阶段",
       "signOffProductionSession": "主管签核生产阶段",
       "unloadGgufModel": "卸载GGUF模型",
+      "doiModelLlamaServer": "切换 llama-server 上运行的模型",
       "generateText": "生成文本",
       "chatCompletion": "聊天补全",
       "analyzeDefect": "分析缺陷",
@@ -4013,6 +4015,7 @@
       "taiAnhNenTang": "上传楼层背景图",
       "dungNhaXuong": "搭建厂房布局",
       "runKbEval": "运行语料评估",
+      "runKbEvalMa": "运行代码生成评估",
       "resumeOrchestrationRun": "继续编排运行",
       "buildArtifact": "构建程序版本",
       "requestVersionReview": "请求审核程序版本",
@@ -4195,7 +4198,9 @@
       "secsGem": "SECS/GEM 主机通信",
       "secsGemLive": "SECS/GEM 实时调度",
       "gem300": "GEM300",
-      "kbEvalRuns": "Training Studio 评估记录"
+      "kbEvalRuns": "Training Studio 评估记录",
+      "kbEvalMa": "Training Studio 代码生成评估",
+      "kbEvalMaRuns": "Training Studio 代码生成评估记录"
     },
     "action": {
       "changeMqttDeviceOfOtherScope": "更改绑定到您范围外机器的MQTT设备",
@@ -4449,7 +4454,15 @@
     "DEVICE_PROTOCOL_UNSUPPORTED": "此版本不支持 {{entity}} 协议。",
     "OT_COMMAND_SUPERSEDED_BY_STOP": "等待中的命令已因停止（STOP）命令（{{stopKey}}）而被取消——如仍需要，请重新发送。",
     "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "等待中的命令已因停止（STOP）命令而被取消——如仍需要，请重新发送。",
-    "OT_STOP_UNVERIFIED_QUEUE_FULL": "此停止命令不是已验证的（固定）停止（STOP），且该设备已有过多此类命令在等待——已被拒绝，未发送任何内容。请使用固定停止（STOP）（或机器的急停 E-STOP）。"
+    "OT_STOP_UNVERIFIED_QUEUE_FULL": "此停止命令不是已验证的（固定）停止（STOP），且该设备已有过多此类命令在等待——已被拒绝，未发送任何内容。请使用固定停止（STOP）（或机器的急停 E-STOP）。",
+    "TU_DONG_TAT": "服务器上的自动 Agent 模式已关闭（AI_CODING_TU_TRI_GHI 开关）。请使用逐步审批模式，或请管理员开启。",
+    "THIEU_QUYEN_THUC_THI": "缺少自动 Agent 模式所需的执行/自动写入权限（ai_repo_exec）。",
+    "THIEU_QUYEN": "缺少运行 Agent 所需的仓库读取权限（ai_repo_read）。",
+    "DANG_CO_LUOT_CHAY": "您已有一个 Agent 运行在进行中——请等待其完成或先点击停止。",
+    "CAU_HOI_RONG": "请求为空。",
+    "CAU_HOI_QUA_DAI": "请求对单次 Agent 运行而言过长。",
+    "CHE_DO_SAI": "Agent 模式无效。",
+    "PROJECT_NOT_FOUND": "未找到所选项目（或项目不在允许列表中）。"
   },
   "export": {
     "reportMenu": {
@@ -13246,7 +13259,48 @@
     "providerOffline": "离线",
     "gpuMode": "GPU模式",
     "engineHealth": "引擎健康",
-    "embedding": "嵌入向量"
+    "embedding": "嵌入向量",
+    "doiModel": {
+      "tieuDe": "llama-server 模型",
+      "moTa": "切换 llama-server 上运行的主文本模型。服务器会检查显存、重启、校验 /props 并进行一次简短的测试生成；失败时自动回退到原模型。",
+      "dangTai": "正在读取状态…",
+      "dangChay": "正在运行",
+      "khongDocDuocProps": "无法读取 /props",
+      "ngCanh": "上下文 / 槽位",
+      "mongDoi": "期望",
+      "nguon": "选择来源",
+      "nguonQuanTri": "管理员选择",
+      "nguonEnv": "基础配置",
+      "cauHinhGoc": "基础配置",
+      "chonModel": "选择模型",
+      "dangChayNhan": "运行中",
+      "nutDoi": "切换模型",
+      "canhBao": "切换期间所有 AI 请求暂停（通常 1–3 分钟）。仅列出模型库中的文本生成模型。",
+      "daBatDau": "已开始切换模型 — 请在下方查看各步骤。",
+      "sinhThuNhan": "测试生成",
+      "ketQua": {
+        "dang-chay": "切换中",
+        "thanh-cong": "成功",
+        "that-bai-da-quay-ve": "失败 — 已回退到原模型",
+        "that-bai-quay-ve-hong": "失败 — 回退也失败",
+        "huy-khong-doi": "已取消 — 未做任何更改"
+      },
+      "buoc": {
+        "kiemLuaChon": "校验选择",
+        "giuKhoa": "获取切换锁",
+        "kiemServer": "读取当前 /props",
+        "uocLuongVram": "估算显存",
+        "tamDungGiamSat": "暂停看门狗",
+        "choHangDoi": "等待正在运行的 AI 请求",
+        "ghiLuaChon": "保存选择",
+        "khoiDong": "重启 llama-server",
+        "kiemProps": "校验 /props",
+        "sinhThu": "测试生成",
+        "apDung": "应用路由",
+        "quayVe": "回退到原模型"
+      },
+      "xacNhan": "切换 llama-server 模型？切换期间所有 AI 请求将暂停。"
+    }
   },
   "measurementPointP1": {
     "shape": {
@@ -14827,6 +14881,27 @@
     "noTarget": "缺少用于附加缺陷的 inspection/measurement 引用"
   },
   "systemHealth": {
+    "llamaWd": {
+      "title": "llama-server 监控（主文本模型）",
+      "desc": "当没有任何进程监听其端口（连续 2 次 15 秒检查）时自动重启 llama-server，30 分钟内最多 3 次。服务器停止期间，主模型的文本生成会等待其恢复，而不是把模型加载到应用中。",
+      "trangThai": "状态",
+      "soLan": "重启次数（本进程）",
+      "trongCuaSo": "{{phut}} 分钟窗口内",
+      "lanCuoi": "最近一次重启",
+      "lanKiem": "最近一次检查",
+      "lyDo": "说明（服务器）",
+      "khongDoc": "无法读取 AI 机器状态。",
+      "st": {
+        "song": "运行中",
+        "dangNap": "正在加载模型",
+        "chet": "已停止",
+        "dangKhoiDongLai": "正在重启",
+        "boCuoc": "已放弃——需要人工处理",
+        "tamDung": "已暂停（切换模型）",
+        "tat": "关闭",
+        "chuaKiem": "尚未检查"
+      }
+    },
     "crossReplica": {
       "desc": "本中央副本的状态：OT 停止同步（另一副本发出的停止指令会取消此处仍在等待的写入）以及设备归属变更通道。只读。",
       "disabledHint": "请设置 {{envKey}}（至少 32 个字符，所有中央副本相同）或 {{envSecret}}，然后重启。只有一个中央进程时无影响。",
@@ -15997,6 +16072,20 @@
       }
     }
   },
+  "aiAgentPhanHoi": {
+    "huuIch": "有帮助",
+    "khongHuuIch": "不好",
+    "lyDoNhan": "哪里不好？（可选）",
+    "lyDoGoiY": "例如：API 错误、无法编译、改错了文件…",
+    "guiLyDo": "发送原因",
+    "daGhiLyDo": "已记录原因。",
+    "loi": {
+      "quyen": "您无权发送反馈。",
+      "khongThay": "找不到该回答 / 提议（可能已不再保存）。",
+      "khongPhaiDiff": "该提议不是文件修改——无法评分。",
+      "chung": "无法保存反馈——请稍后重试。"
+    }
+  },
   "kbStudio": {
     "title": "Training Studio",
     "subtitle": "管理知识语料库（corpus）、导入文档与网页、跟踪导入任务、预览已导入的内容",
@@ -16060,7 +16149,7 @@
         "fillCorpusAria": "将建议的语料库名称「{{corpus}}」填入语料库名称栏",
         "step1Note": "点击建议只会把名称填入下方的「语料库名称」栏（不会自动创建空语料库）——语料库要等第一份文档导入后才真正存在。",
         "currentlySelected": "当前选择：",
-        "step1WebWarning": "对于主流编程语言（C#、React、Node.js、Python、SQL）：导入入门教程毫无用处且制造噪声——模型已掌握语法。API 参考与项目约定确实有用：2026-09-23 实测，模型反复出现的 C# 错误是遗漏命名空间——`reader.GetInt32(\"MaHocSinh\")` 与 `SqlDbType` 都需要 `using System.Data;`（缺少会使 dotnet build 拒绝整个文件）。API 参考为每个符号写明所需的 `using`。⇒ 请导入 API 参考、编码规范与约定，而不是教程。",
+        "step1WebWarning": "对于主流编程语言（C#、React、Node.js、Python、SQL）：导入入门教程几乎肯定无用——模型已掌握语法。API 参考与项目约定是更值得尝试的候选，但目前还没有任何测量表明它们能让代码更好。如今 Studio 语料库只到达网页问答助手和 LOCAL 模式的 VSCode 助手；不会到达浏览器编程工作区或 SERVER 模式的扩展。想知道某个语料库是否有助于代码：评估页 → 代码评估（语料库开/关）。",
         "step2Title": "2. 选择文件",
         "step2Accepts": "接受：{{formats}}",
         "step2AcceptsUrl": "、网址（粘贴到右侧面板的链接框）",
@@ -16187,14 +16276,14 @@
         "hitHint": "期望文件的段落出现在语料 top‑K 中的题目比例。",
         "mrrHint": "首个命中段落的平均 1/名次（1 = 总是第一）。",
         "overThreshold": "超过阈值 {{nguong}}",
-        "overThresholdHint": "命中段落得分 ≥ 编程助手的 Studio 引用阈值——即真正进入提示词。",
+        "overThresholdHint": "命中段落得分 ≥ Studio 引用阈值（0.44）——即 LOCAL 模式的 VSCode 助手将段落纳入上下文所用的阈值。浏览器编程工作区不读取 Studio 语料库。超过阈值并不证明代码更好——请看代码评估。",
         "answer": "答案在上下文中",
         "answerHint": "期望答案（正则）出现在 top‑K 文本中——机器评分，不使用 LLM。",
         "pipeline": "到达助手",
         "pipelineHint": "合并系统知识库 + Studio + 阈值 + 重排后，最终引用包含来自该语料的期望文件。",
         "pipelineOff": "本轮未运行真实管线层。",
         "reject": "正确拒绝（{{n}} 题外）",
-        "rejectHint": "题外问题中没有段落超过阈值——噪声未进入提示词。",
+        "rejectHint": "题外问题中没有段落超过阈值——在 LOCAL 模式的 VSCode 助手中，离题段落不会被纳入上下文。",
         "pipelineAny": "正确来源到达助手（任意库）",
         "pipelineAnyHint": "最终引用包含来自任意库的期望文件——系统知识库可能有同名副本并胜过你导入的版本。与左侧对比，区分“导入被挤出”与“助手确实缺少来源”。"
       },
@@ -16212,11 +16301,52 @@
       "missingFileBadge": "缺少文件",
       "systemCopyBadge": "系统副本"
     },
+    "evalMa": {
+      "title": "代码评估——语料库 开 / 关",
+      "desc": "基准题集中的每道题生成两次——无上下文，以及附带得分 ≥ 0.44 阈值的语料段落（即 LOCAL 模式 VSCode 助手接收段落的方式）——再由机器编译 / 运行测试评分。它回答上方检索评估无法回答的问题：该语料库让代码变好还是变差？",
+      "tat": "服务器上代码评估已关闭（KB_STUDIO_EVAL_MA_ENABLED）。该运行会在服务器上执行模型生成的代码，因此默认关闭；是否开启由管理员决定。",
+      "boBaiAria": "题集",
+      "soLapAria": "重复次数",
+      "soBai": "{{n}} 题",
+      "chay": "运行代码评估",
+      "huy": "取消",
+      "giaiThich": "后台低优先级运行（不阻塞正在使用 AI 的人）。只有启用 2FA 的管理员可以启动 / 取消。两种度量：主结论只按“开”分支实际获得 ≥ 1 个段落的题目计算（未获得段落的题目两分支提示完全相同——只贡献噪声）；此类轮次需 ≥ 6，否则 ⇒“有段落的题目不足”。全集度量仍然显示。只有当“开”比“关”低出噪声范围以上时才判定“退步”：噪声 ±3/36 测于 12 题 × 3 轮，按该度量的轮次数换算。没有任何“开”轮次获得 ≥ 阈值的段落 ⇒“不适用”。",
+      "chuaCo": "该语料库尚无代码评估运行。",
+      "cut": "截断 {{n}}",
+      "dangChay": "运行中 {{pct}} %",
+      "toanBo": "全集：{{kl}}",
+      "doiChung": "A/A 对照",
+      "tapConCu": "—（旧运行，无此度量）",
+      "col": {
+        "thoiDiem": "时间",
+        "boBai": "题集",
+        "tat": "关·全集（通过/n）",
+        "bat": "开·全集（通过/n）",
+        "chenh": "差值·全集（范围）",
+        "tapCoDoan": "有段落的题目：关 → 开（差值，范围）",
+        "ketLuan": "结论"
+      },
+      "ketLuan": {
+        "tut": "退步",
+        "nang": "提升",
+        "trong-nhieu": "在噪声内",
+        "khong-ap-dung": "不适用",
+        "khong-do-duoc": "无法测量",
+        "khong-du-bai-co-doan": "有段落的题目不足"
+      },
+      "trangThai": {
+        "dang-chay": "运行中",
+        "huy": "已取消",
+        "loi": "错误",
+        "khong-do-duoc": "无法测量",
+        "gian-doan": "中断（服务器中途重启）"
+      }
+    },
     "modelBuilder": {
       "title": "模型构建",
       "desc": "在语料库上微调本地模型（LoRA）",
       "comingSoon": "将在后续任务中提供（E3-6）",
-      "comingSoonDesc": "LoRA 微调功能尚未构建。您已导入语料库的文档现在会被 AI 助手用作回答中的引用来源（标注为“您上传的文档”）— 而专用微调模型仍是未来的升级项，尚未构建。",
+      "comingSoonDesc": "LoRA 微调功能尚未构建。您导入语料库的文档会被网页问答助手和 LOCAL 模式的 VSCode 助手用作引用来源（标注为“您上传的文档”）——浏览器编程工作区不会使用。训练专用模型仍是未来的升级项，尚未构建。",
       "startButton": "开始微调"
     },
     "kiemMay": {
@@ -20472,6 +20602,14 @@
     "may": "引擎",
     "engineHong": "引擎故障",
     "engineOk": "引擎正常",
+    "engineKhoiDongLai": "模型重启中",
+    "engineDangNap": "模型加载中",
+    "engineTamDung": "已暂停（切换模型）",
+    "engineBoCuoc": "模型无法启动",
+    "tipKhoiDongLai": "llama-server 刚刚停止；监控程序正在重启它（第 {{lan}} 次，{{phut}} 分钟内 {{trongCuaSo}}/{{toiDa}}）。此时代码生成会最多等待约 2 分钟，然后经由服务器执行——不会把模型加载到应用中。",
+    "tipDangNap": "llama-server 正在加载模型（约 21 GB 的模型需 30–90 秒）。代码生成将等待后继续。",
+    "tipTamDung": "监控程序已被有意暂停（正在切换模型）——不会自动重启 llama-server。",
+    "tipBoCuoc": "llama-server 在 {{phut}} 分钟内尝试 {{toiDa}} 次仍无法启动——监控程序已停止重试。需要人工查看 logs/llama-server-*.err.log，然后重新运行 scripts/ai/start-llama-server.ps1。",
     "tipMayHong": "推理引擎不健康。此时的所有回答反映的是机器状态，而不是模型能力——在此格重新变绿之前，不要对模型质量下任何结论。",
     "tipMayOk": "引擎通过 {{duong}} 运行。已加载模型：{{soModel}}。GPU 模式：{{gpu}}。",
     "duongNgoai": "llama-server（外部进程）",
@@ -20536,6 +20674,7 @@
     },
     "khoi": {
       "modelSinh": "模型编写的代码——可能与磁盘上的文件不同",
+      "dauRaLenh": "服务器实际运行命令的输出——不是模型编写的代码",
       "bangChung": "磁盘真实字节 · {{luc}}",
       "khacDia": "≠ 磁盘上的文件（读取于 {{luc}}）——若模型声称这是当前代码，请勿相信",
       "khopDia": "与磁盘上的文件一致（{{luc}}）"
@@ -20561,7 +20700,13 @@
         "min": "{{n}} 分钟",
         "hour": "{{n}} 小时",
         "day": "{{n}} 天"
-      }
+      },
+      "rename": "重命名会话",
+      "renamePh": "会话名称（留空 = 使用第一个问题）",
+      "renameSave": "保存",
+      "renameFailed": "无法重命名会话。",
+      "terminalNote": "会话的终端/问题日志只会在运行命令的浏览器中恢复。",
+      "terminalRestored": "已恢复本会话的 {{n}} 次命令（保存在此浏览器）。"
     },
     "ribbon": {
       "refreshTree": "刷新文件树",
@@ -20628,7 +20773,9 @@
         "duongKhongHopLe": "无法浏览该路径（不存在、不是文件夹，或被操作系统拒绝读取）。请返回上一级或选择其他磁盘。",
         "guiThatBai": "无法把请求发送到服务器——详情：{{chiTiet}}",
         "khac": "服务器以代码 {{ma}} 拒绝——请报告给系统负责人。"
-      }
+      },
+      "moTitleMoi": "项目管理",
+      "phanAdmin": "管理：登记现有文件夹"
     },
     "title": "AI 编程工作区",
     "subtitle": "读代码 → 提出 diff → 人工审核 → 运行测试 → 读真实错误再继续修复",
@@ -20823,7 +20970,8 @@
         "offUser": "自动循环处于关闭状态——修复已写入，但您需要自己运行测试。此功能由管理员在服务器上启用——请联系管理员。",
         "error": "已停止：运行验证命令时发生真实故障。",
         "dirty": "已停止：目标文件有你未提交的更改——自写循环不会覆盖未保存的工作。请先提交（或暂存）再重试。",
-        "kill": "已停止：紧急停止开关（kill-switch）已触发——自写循环立即停止。请联系管理员解除。"
+        "kill": "已停止：紧急停止开关（kill-switch）已触发——自写循环立即停止。请联系管理员解除。",
+        "mainRepo": "已停止：在具备恢复点（checkpoint）之前，自写循环不在主仓库上运行。修改未写入——请使用人工审核流程，或在沙盒项目中运行。"
       }
     },
     "terminal": {
@@ -20867,7 +21015,9 @@
       "chat": "对话",
       "terminalTab": "命令与日志",
       "problemsTab": "问题",
-      "problemsCount": "{{n}}"
+      "problemsCount": "{{n}}",
+      "runTab": "运行与预览",
+      "gitTab": "Git"
     },
     "problems": {
       "title": "问题",
@@ -20903,6 +21053,321 @@
       "lop": "类",
       "kieu": "类型",
       "hang": "常量"
+    },
+    "agent": {
+      "nho": {
+        "tieuDe": "记忆建议",
+        "phamViDuAn": "本项目",
+        "phamViNguoiDung": "您的偏好",
+        "giaiThich": "仅在您点击“记住”后保存；将作为后续运行的上下文。",
+        "nutNho": "记住",
+        "nutBoQua": "忽略",
+        "daNho": "已记住——后续运行将使用。",
+        "daBo": "已忽略。",
+        "loiHetHieuLuc": "该建议已失效（服务器上已没有这次运行）。",
+        "loiDaXuLy": "该建议已处理过。",
+        "loiTat": "服务器已关闭记忆功能——未保存。",
+        "loiRuiRo": "未保存：该笔记看起来像一条指令。",
+        "loiDay": "本项目的经验条数已达上限——请先删除一些。",
+        "loiQuyen": "您无权操作这次运行。",
+        "loiKhac": "无法保存（{{ma}}）。"
+      },
+      "canDuyet": "需要您审批",
+      "canhBaoDuLieu": "从 {{nguon}} 读取的内容包含类似指令的文本——智能体将其视为数据，不会执行。",
+      "haTuTri": "已降低自主权：本次运行读取了可疑内容（{{nguon}}）——之后的每次写入/命令都需要您审批。",
+      "theDangNgo": "本次运行已读取可疑内容：{{nguon}}——审批前请仔细检查。",
+      "cheDo": {
+        "hoi": "提问",
+        "hoiGoiY": "照常问答 — 不会自行写入文件",
+        "nhom": "对话模式",
+        "sua": "智能体 · 逐步审批",
+        "suaGoiY": "智能体分多步自行读取、修改、运行命令 — 每次写入/命令都等待您审批",
+        "tuDong": "智能体 · 自动",
+        "tuDongCanhBao": "自动：智能体会写入文件并运行白名单命令，不再询问。请检查结果，必要时使用撤销。",
+        "tuDongGoiY": "白名单内的写入/命令在检查点之后自动执行（可撤销）"
+      },
+      "choModel": "正在等待模型（前面还有 {{n}} 个）",
+      "coLuotDangChay": "您有一个尚未完成的智能体运行。",
+      "ctx": "上下文 {{p}}%",
+      "daBac": "已驳回。",
+      "daBacLyDo": "已驳回 — 原因：{{lyDo}}",
+      "daDuyet": "已批准。",
+      "daKhoiPhuc": "已恢复 {{n}} 个文件。",
+      "dangChay": "智能体正在工作…",
+      "dangChoDuyet": "正在等待您审批",
+      "dauRaLenh": "命令输出（来自服务器）",
+      "duyet": {
+        "chayLenh": "运行命令：",
+        "doiTen": "重命名 {{tu}} → {{den}}",
+        "xoa": "删除文件 {{tep}}"
+      },
+      "guiBac": "发送驳回",
+      "hetHieuLuc": "已失效（运行已停止）。",
+      "hoanTac": "撤销本次运行",
+      "keHoach": "计划",
+      "keHoachDem": "已完成 {{xong}}/{{tong}}",
+      "lyDo": {
+        "hetGio": "已停止：达到时间上限。",
+        "hetLuot": "已停止：达到步数上限。",
+        "hetToken": "已停止：令牌预算已用完。",
+        "hoanThanh": "已完成。",
+        "huy": "已按要求停止。",
+        "lapLai": "已停止：模型重复了同一操作。",
+        "loiModel": "已停止：模型错误。",
+        "menhLenh": "安全停止：在读取的数据中发现了指令。"
+      },
+      "lyDoBac": "驳回原因（模型会读取并重新处理）",
+      "lyDoBacGoiY": "例如：不要改动公开 API，只修改内部函数",
+      "maKetQua": "代码：{{ma}}",
+      "maThoat": "退出码 {{ma}}",
+      "matKetNoi": "事件流连接中断 — 运行仍在服务器上继续。",
+      "moTep": "在查看器中打开",
+      "noiLai": "重新连接",
+      "nutBac": "驳回",
+      "nutDuyet": "批准",
+      "tepDaDoi": "已更改的文件（{{n}}）",
+      "thoiBac": "取消",
+      "toolChuaCoKetQua": "暂无结果。",
+      "toolDangChay": "运行中",
+      "toolLoi": "失败",
+      "toolOk": "成功",
+      "usage": "令牌 输入 {{vao}} · 输出 {{ra}}",
+      "viec": {
+        "cho": "待办",
+        "dangLam": "进行中",
+        "xong": "完成"
+      },
+      "xungDot": "冲突 — 未覆盖（{{n}} 个文件在运行后被再次修改）："
+    },
+    "duanCaNhan": {
+      "err": {
+        "quyen": "您的账户尚无创建项目的权限（需要 AI 命令执行权限 ai_repo_exec）。请联系管理员。",
+        "ten": "名称须为 1–100 个字符，且不能包含 # ; = |。",
+        "khuon": "服务器上没有该模板。请从列表中选择。",
+        "zipThieu": "尚未选择 ZIP 文件。",
+        "zipHong": "该文件不是有效的 ZIP（或已损坏）。",
+        "zipDuong": "ZIP 含有危险路径（../、盘符、绝对路径）——已拒绝整个文件，未解压任何内容。",
+        "zipSymlink": "ZIP 含有符号链接——已拒绝。请重新打包且不包含符号链接。",
+        "zipNhieu": "ZIP 中文件过多。请去掉 node_modules/bin/obj 后重新压缩。",
+        "zipLon": "ZIP 解压后过大（或超出您剩余的配额）。",
+        "zipBom": "ZIP 压缩比异常（疑似 zip 炸弹）——已拒绝。",
+        "zipGhi": "ZIP 中有文件无法写入（是否存在仅大小写不同的同名文件？）。",
+        "gitTat": "服务器未启用 git 克隆（未配置内部 git 服务器列表）。",
+        "gitNguon": "git 来源无效。请使用内部 git 服务器的 https://… 地址或允许的文件夹路径。",
+        "gitNgoai": "该来源不在允许的内部 git 服务器列表中（系统离线运行）。",
+        "gitClone": "克隆失败——请检查地址及对 git 服务器的访问权限。",
+        "gitHetGio": "克隆超时——仓库过大或 git 服务器无响应。",
+        "tranSo": "您的项目数量已达上限。请删除不再使用的项目后重试。",
+        "tranByte": "已超出您的存储配额。请删除部分项目（回收站保留 30 天，不计入配额）。",
+        "dangTao": "您的另一个项目正在创建中——请等待完成后重试。",
+        "goc": "服务器项目根目录配置错误（AI_PROJECTS_ROOT）——请告知管理员。",
+        "gui": "无法向服务器发送请求——详情：",
+        "khongThay": "未找到该项目（可能已被删除）。请刷新列表。",
+        "khac": "服务器以代码 {{ma}} 拒绝。"
+      },
+      "cach": {
+        "rong": "空项目",
+        "khuon": "从模板",
+        "zip": "导入 ZIP",
+        "git": "内部 git",
+        "moTa": "从描述（Agent）"
+      },
+      "title": "我的项目",
+      "dungLuong": "{{so}}/{{tran}} 个项目 · {{daDung}} / {{tranByte}}",
+      "loiTai": "无法加载您的项目——这是错误，而不是空列表。",
+      "dangTai": "加载中…",
+      "rong": "您还没有项目——请在下方创建。",
+      "doiTen": "重命名",
+      "luuTen": "保存名称",
+      "huy": "取消",
+      "mo": "打开此项目",
+      "xoa": "删除（移入回收站 30 天）",
+      "taoMoi": "新建项目",
+      "cachTao": "创建方式",
+      "oTen": "项目名称",
+      "oTenGoiY": "例如：AOI 机台日志读取工具",
+      "oKhuon": "模板",
+      "oZip": "ZIP 文件（最大 50 MB；可执行文件和机密文件将被跳过）",
+      "oGit": "内部 git 服务器地址（或允许的文件夹）",
+      "oMoTa": "项目描述——先创建空项目，然后以此描述打开 Agent 模式",
+      "oMoTaGoiY": "例如：一个读取 AOI 结果 CSV 文件并按班次输出不良率的 C# 控制台程序",
+      "nutTao": "创建",
+      "daXoa": "项目已移入回收站（保留 30 天）。",
+      "boQua": "已跳过 {{n}} 个不允许的文件（可执行文件 / 机密 / .git / node_modules）。",
+      "daTao": "项目已创建——正在打开。",
+      "hoiXoa": "删除此项目？文件夹将移入回收站，30 天后永久删除。",
+      "moTaDialog": "在服务器上创建并打开您自己的项目——无需现有文件夹。个人项目仅您（和管理员）可见。"
+    },
+    "chayUD": {
+      "tieuDe": "运行与预览",
+      "caiPhuThuoc": "安装依赖",
+      "caiTip": "根据项目清单提出安装命令——与所有命令一样需经审批卡；绝不自动运行。",
+      "khongCoLenhCai": "未识别到清单（package.json / requirements.txt / *.csproj）。",
+      "chay": "运行",
+      "dung": "停止",
+      "lenhChay": "运行命令：{{lenh}}（来自 {{nguon}}）",
+      "khongChayDuoc": "无法运行 [{{ma}}]：{{chiTiet}}",
+      "repoChinh": "平台仓库不能在此运行——其 dev 命令就是本服务器。",
+      "cong": "端口 {{cong}}",
+      "chuaNgheCong": "2 分钟后应用仍未监听端口 {{cong}}——dev 脚本是否读取 PORT 变量？",
+      "chuaXacNhanChet": "已发出停止指令但未观察到进程退出——端口仍被占用。",
+      "nhatKy": "日志",
+      "nhatKyCat": "……（开头已截断）",
+      "nhatKyRong": "暂无日志。",
+      "xemTruoc": "预览",
+      "moTabMoi": "在新标签页打开",
+      "xemTruocTat": "预览已关闭（{{lyDo}}）——管理员设置 AI_PREVIEW_PROXY_PORT 以启用（独立端口代理，与应用源隔离）。",
+      "xemTruocCanHostRieng": "预览已关闭（{{lyDo}}）：代理必须位于与应用不同站点的主机上——Cookie 不按端口隔离，同一主机上的预览代码可写入应用的会话 Cookie。管理员设置 AI_PREVIEW_PUBLIC_ORIGIN=http://127.0.0.2:<代理端口> 和 AI_PREVIEW_PROXY_HOST=127.0.0.2（开发机；局域网：使用独立 IP/域名），并通过不同的主机访问应用。",
+      "xemTruocCho": "应用开始监听后显示预览框。",
+      "xemTruocAnToan": "预览框运行在独立源（沙箱）中——不共享登录会话。",
+      "nguoiKhacDangChay": "其他人正在运行此项目。",
+      "nhanRoi": "30 分钟无预览访问后自动停止。",
+      "loiDeXuat": "无法为该命令创建审批卡 [{{ma}}]。",
+      "trangThai": {
+        "chuaChay": "未运行",
+        "dang-khoi-dong": "启动中",
+        "dang-chay": "运行中",
+        "dang-dung": "停止中",
+        "da-dung": "已停止",
+        "loi": "异常退出（代码 {{ma}}）"
+      },
+      "lyDoDung": {
+        "nguoi-dung": "由用户停止",
+        "nhan-roi": "空闲 30 分钟后自动停止",
+        "tat-may": "因服务器关闭而停止",
+        "nghe-sai-dia-chi": "已停止：应用监听了 127.0.0.1/::1 而非分配的 HOST 地址（与主应用同站点）——请让其监听 process.env.HOST"
+      }
+    },
+    "git": {
+      "chiDocRepoChinh": "平台仓库——仅查看状态/差异/日志；不能从界面提交或切换分支。",
+      "chiDocWorktree": "该项目是另一个仓库的 worktree——仅查看。",
+      "thieuQuyen": "需要 ai_repo_exec 权限才能提交/创建/切换分支。",
+      "lamMoi": "刷新",
+      "dangTai": "正在读取 git 状态…",
+      "thayDoi": "更改（{{n}}）",
+      "sach": "工作区干净——没有可提交的内容。",
+      "chonTatCa": "全选",
+      "soAn": "{{n}} 个文件因沙箱策略被隐藏（例如 .env）。",
+      "catBot": "列表已截断。",
+      "thongDiepPh": "提交信息…",
+      "goiYTip": "模型读取所选文件的差异并建议提交信息——仅填写文字，不会提交。",
+      "dangGoiY": "正在生成…",
+      "goiY": "建议提交信息",
+      "commit": "提交 {{n}} 个文件",
+      "chonDeXem": "点击文件名查看差异。",
+      "dangTaiDiff": "正在读取差异…",
+      "nhiPhan": "二进制文件或不可查看的扩展名——不显示差异。",
+      "diffQuaLon": "文件过大，无法显示差异（> 64 KiB）。",
+      "daChe": "差异中部分疑似密钥的内容已被遮盖。",
+      "nhanh": "分支",
+      "khongNhanh": "（分离的 HEAD）",
+      "chonNhanh": "选择分支",
+      "chuyen": "切换",
+      "nhanhMoiPh": "新分支名",
+      "tao": "创建",
+      "tenNhanhSai": "分支名只能包含字母、数字、. _ / -，且不能以 - 或 . 开头。",
+      "canSachDeDoiNhanh": "请先提交或放弃更改，再创建/切换分支。",
+      "log": "最近历史",
+      "logRong": "尚无提交。",
+      "daCommit": "已提交 {{n}} 个文件（{{hash}}）。",
+      "daTaoNhanh": "已创建并切换到分支 {{ten}}。",
+      "daChuyenNhanh": "已切换到分支 {{ten}}。",
+      "loi": {
+        "PERMISSION_DENIED": "您没有此操作的权限（读取：ai_repo_read · git 写入：ai_repo_exec）。",
+        "PROJECT_NOT_FOUND": "未找到项目（或不属于您）。",
+        "GIT_CHUA_SAN_SANG": "服务器尚不能安全运行 git（项目管理目录 AI_PROJECTS_ROOT 无效）——请联系管理员。",
+        "GIT_KHONG_PHAI_REPO": "项目文件夹不是独立的 git 仓库（项目根目录没有 .git）。",
+        "GIT_REPO_CHINH_CHI_DOC": "这是平台仓库——只读；不能从界面提交或切换分支。",
+        "GIT_WORKTREE_CHI_DOC": "该项目是另一个仓库的 worktree——只读。",
+        "GIT_CAY_BAN": "存在未提交的更改——请先提交或放弃更改，再创建/切换分支。",
+        "GIT_TEN_NHANH_SAI": "分支名称无效。",
+        "GIT_NHANH_DA_CO": "该分支已存在。",
+        "GIT_NHANH_KHONG_CO": "没有该分支。",
+        "GIT_DUONG_KHONG_HOP_LE": "该文件已不在更改列表中——请刷新 Git 面板。",
+        "GIT_KHONG_CO_TEP": "未选择文件。",
+        "GIT_QUA_NHIEU_TEP": "一次提交的文件过多（最多 200 个）。",
+        "GIT_THONG_DIEP_RONG": "提交信息为空。",
+        "GIT_TEP_BI_CHAN": "无法查看此文件（被沙箱策略阻止）。",
+        "GIT_HET_GIO": "git 命令超时。",
+        "GIT_THAT_BAI": "git 命令失败。",
+        "KHONG_CO_THAY_DOI": "没有可用于生成提交信息的更改。",
+        "MODEL_LOI": "模型无法应答（AI 引擎繁忙或已关闭）。",
+        "MODEL_RONG": "模型返回为空——请重试或自行填写。",
+        "khac": "Git 面板错误：{{ma}}"
+      }
+    },
+    "tep": {
+      "taoTep": "新建文件",
+      "taoThuMuc": "新建文件夹",
+      "doiTen": "重命名当前文件",
+      "xoa": "删除当前文件",
+      "thieuQuyen": "需要写入提议权限",
+      "duongTep": "新文件路径（相对项目根目录）",
+      "duongThuMuc": "新文件夹（相对项目根目录）",
+      "duongMoi": "新路径",
+      "tepDau": "文件夹中的第一个文件（git 不保留空文件夹）",
+      "loi": {
+        "rong": "请输入文件名。",
+        "tuyet_doi": "请使用项目内的相对路径。",
+        "thoat": "路径中不能包含 '..'、'.' 或空段。",
+        "ky_tu": "路径包含无效字符。"
+      },
+      "quaThe": "将创建审批卡——确认后文件才会更改。",
+      "deXuat": "提议",
+      "huy": "取消",
+      "loiDeXuat": "无法创建提议 [{{ma}}]。",
+      "xacNhanXoa": "提议删除 {{tep}}？只有在审批卡上确认后才会删除。"
+    },
+    "triNho": {
+      "nut": "项目记忆（课程）",
+      "tieuDe": "项目记忆",
+      "moTa": "您在项目 {{duAn}} 的课程——AI 会把相关课程加入后续提问。",
+      "giaiThich": "每条课程是一句关于项目约定的短句（≤ 400 字符）。保存前会扫描提示注入并遮盖密钥。",
+      "coTat": "AI_CODING_LESSONS 已关闭——课程会保存但不会加入提示。",
+      "themPh": "添加课程，例如：项目使用 bcryptjs 而非 crypto 处理密码",
+      "them": "添加",
+      "dem": "{{n}}/{{tran}}",
+      "dangTai": "正在加载课程…",
+      "rong": "此项目尚无课程。",
+      "luu": "保存",
+      "huy": "取消",
+      "sua": "编辑课程",
+      "xoa": "删除课程",
+      "xacNhanXoa": "删除此课程？此操作无法撤销。",
+      "ruiRoThap": "低风险",
+      "ruiRoThapTip": "扫描器发现轻微迹象——课程已保存并标记以供审计。",
+      "phamVi": "课程仅属于您在此项目中——他人无法读取或编辑。",
+      "note": {
+        "PERMISSION_DENIED": "缺少 ai_repo_read 权限。",
+        "PROJECT_NOT_FOUND": "未找到项目。",
+        "LESSON_RISKY": "已拒绝：包含类似 AI 指令的文字（提示注入风险）。",
+        "LESSON_EMPTY": "清理后课程为空。",
+        "LESSON_FULL": "此项目的课程数量已达上限——请先删除一些。",
+        "LESSON_DUPLICATE": "该课程已存在——已移至顶部。",
+        "NOT_FOUND": "未找到课程（已删除？）。",
+        "SAVE_FAILED": "无法保存（数据库拒绝）。",
+        "khac": "无法完成 [{{ma}}]。"
+      }
+    },
+    "anh": {
+      "quaLon": "图片过大（最大 4 MB）。",
+      "khongPhaiAnh": "仅接受 PNG/JPEG/WebP/GIF/BMP 图片。",
+      "nhan": "从错误截图中提取的文字（OCR，置信度 {{p}}%{{cat}}）：",
+      "daCat": "，已截断",
+      "daChen": "已插入提取的文字——发送前请检查。",
+      "dangDoc": "正在读取图片中的文字…",
+      "goiY": "粘贴/拖入错误截图以提取文字（OCR）",
+      "loi": {
+        "PERMISSION_DENIED": "缺少 ai_repo_read 权限。",
+        "ANH_QUA_LON": "图片过大（最大 4 MB）。",
+        "KHONG_PHAI_ANH": "该文件不是 PNG/JPEG/WebP/GIF/BMP 图片。",
+        "OCR_TAT": "服务器上的 OCR 已关闭（OCR_ENGINE_ENABLED）——请联系管理员。",
+        "OCR_THIEU_MODEL": "服务器缺少 OCR 模型（models/ocr）——请联系管理员。",
+        "OCR_DANG_BAN": "正在读取另一张图片——请等待完成。",
+        "OCR_HET_GIO": "读取图片超时。",
+        "OCR_KHONG_DOC_DUOC": "无法读取图片中的文字。",
+        "OCR_RONG": "图片中没有可读文字。"
+      }
     }
   },
   "masterDataCol": {
@@ -22255,5 +22720,78 @@
     "lateDialogTitle": "将迟到的写入结果 #{{id}} 标记为已审阅？",
     "lateDialogDesc": "设备在该写入被记录为“结果未知”之后才返回了真实结果。该结果作为证据保留（不修改、不删除）。请在设备上核对实际值；审阅连同备注一起审计，并解除适配器的所有权变更阻止。",
     "lateReviewed": "已记录迟到结果的审阅"
+  },
+  "aiGatewayToken": {
+    "title": "AI 网关令牌与设备",
+    "subtitle": "允许 VSCode 扩展代表您调用 /v1 网关——每个令牌都有权限范围、有效期，且可撤销。",
+    "device": {
+      "title": "确认设备",
+      "desc": "输入扩展显示的代码。仅当您本人刚在 VSCode 中发起登录时才批准。",
+      "codeLabel": "设备代码",
+      "deviceName": "设备",
+      "scopes": "请求的权限范围",
+      "expiresIn": "代码剩余有效时间 {{s}} 秒",
+      "warning": "批准后将签发一个与您账户绑定、有效期 30 天的令牌（仅限对话 + 代码补全）。扩展的每个请求都会以您的名义记录。",
+      "approve": "批准",
+      "deny": "拒绝",
+      "approved": "已批准。请返回 VSCode——扩展将自动获取令牌。",
+      "denied": "已拒绝。设备未获得任何令牌。",
+      "phishingWarning": "仅当您本人刚在自己电脑上的 VSCode 中发起登录并亲自在此输入代码时才批准。如果有人把此代码或链接发给您——请拒绝：这是窃取您访问权限的手段。",
+      "requestedFrom": "请求来源 IP",
+      "userAgent": "请求软件",
+      "requestedAt": "请求时间",
+      "unknown": "未知",
+      "ipMismatch": "此请求来自与您当前浏览器不同的 IP 地址。仅当您的 VSCode 正在该机器上运行时才批准。",
+      "confirmMine": "我确认是我本人刚在 VSCode 中发起登录，且上方代码与 VSCode 显示的代码一致。"
+    },
+    "tokens": {
+      "title": "我的令牌",
+      "desc": "令牌仅在创建时完整显示一次；服务器只保存其哈希值。",
+      "empty": "暂无令牌。",
+      "name": "名称",
+      "prefix": "前缀",
+      "scopes": "权限范围",
+      "status": "状态",
+      "expires": "过期时间",
+      "lastUsed": "最近使用",
+      "never": "从未",
+      "revoke": "撤销",
+      "revoked": "令牌已撤销。"
+    },
+    "create": {
+      "name": "令牌名称（例如：VSCode 笔记本）",
+      "days": "天数",
+      "submit": "创建令牌",
+      "once": "请立即复制令牌——它将不会再次显示。",
+      "copied": "令牌已复制。"
+    },
+    "scope": {
+      "chat": "对话 / 智能体",
+      "fim": "代码补全（FIM）",
+      "embed": "向量嵌入",
+      "apply": "文件应用审计（扩展）"
+    },
+    "source": {
+      "web": "网页创建",
+      "thiet-bi": "设备登录"
+    },
+    "status": {
+      "hieu-luc": "有效",
+      "het-han": "已过期",
+      "thu-hoi": "已撤销"
+    },
+    "errors": {
+      "PERMISSION_DENIED": "您没有 AI 编程权限（ai_repo_read）。",
+      "CAN_PHIEN_WEB": "此操作需要网页登录会话，请重新登录。",
+      "QUA_TRAN": "您的有效令牌过多，请先撤销部分令牌。",
+      "DB_UNAVAILABLE": "服务器暂时无法保存令牌，请稍后重试。",
+      "NOT_FOUND": "未找到令牌（或已撤销）。",
+      "RATE_LIMITED": "尝试代码次数过多，请等待一分钟后重试。",
+      "khong-ton-tai": "代码无效，请核对 VSCode 中显示的代码。",
+      "het-han": "代码已过期，请在 VSCode 中重新开始登录。",
+      "da-xu-ly": "此代码已被处理。",
+      "csdl": "服务器暂时不可用，请稍后重试。",
+      "CAN_XAC_NHAN": "批准前请勾选确认：是您本人刚在 VSCode 中发起登录。"
+    }
   }
 }

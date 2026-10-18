@@ -46,7 +46,7 @@ export interface RibbonTacVuProps {
   onNhayChat: () => void;
   // ── Nhóm PANEL + PHIÊN (2026-08-24, theo yêu cầu chủ dự án: ribbon dày hơn) ──
   /** Trạng thái cửa sổ dưới (Terminal/Vấn đề) — để tô nút đang bật. MỘT nguồn sự thật với tab ở đáy. */
-  duoiChat: "dong" | "terminal" | "problems";
+  duoiChat: "dong" | "terminal" | "problems" | "chay" | "git"; // ★ Đợt 3c — "chay" = tab Chạy & Xem trước; ★ Đợt 3b — "git" = tab Git (ribbon không có nút riêng cho hai tab ấy)
   /** Bật/tắt cửa Terminal ở đáy (toggle như bấm tab). */
   onToggleTerminal: () => void;
   /** Bật/tắt cửa Vấn đề ở đáy. */

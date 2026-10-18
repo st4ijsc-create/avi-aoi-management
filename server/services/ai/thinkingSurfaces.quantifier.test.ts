@@ -331,6 +331,12 @@ interface BeMat {
 }
 
 const SO_KHAI: readonly BeMat[] = [
+  // ─── AI Local Đợt 3b (2026-10-17) — "Gợi ý thông điệp" commit ───
+  {
+    tep: "server/routers/repoWorkspaceRouter.ts", ham: "<module>", goi: "generateText",
+    hienThi: true, noi: "tai_cho",
+    ghiChu: "Ô thông điệp commit (người đọc + sửa trước khi bấm Commit). `stripThinking().answer` ngay tại điểm gọi; `lamSachThongDiepModel` cắt lần nữa (khối cụt). Lưới hành vi: `gitDuAn/goiYThongDiep.test.ts`.",
+  },
   // ─── B6 phủ quyết chọn tool lập trình (2026-09-23) ───
   {
     tep: "server/services/ai/phuQuyetToolNative.ts", ham: "hoiModelChonTool", goi: "chatCompletion",
@@ -403,6 +409,15 @@ const SO_KHAI: readonly BeMat[] = [
       "model lọt vào một tệp mã nguồn là hỏng câm. `StreamingThinkingStripper` + " +
       "`StreamingSecretRedactor` dựng NGOÀI mọi nhánh, ngay dòng đầu của hàm (hàm này có nhiều " +
       "đường ném: planInference, import engine, đứt giữa luồng).",
+  },
+  // ═══ Đợt 1 · T4 (2026-10-17) — VÒNG AGENT MÁY CHỦ (`shared/agentCore`) gọi model (1) ═══
+  {
+    tep: "server/services/ai/agent/goiModelMayChu.ts", ham: "bomLuongModelMayChu", goi: "chatCompletionStream",
+    hienThi: true, noi: "tai_cho",
+    ghiChu:
+      "Lượt model của vòng agent (SSE `/api/ai/agent/runs`): mảnh `token` ⇒ `StreamingThinkingStripper` rồi " +
+      "`StreamingSecretRedactor` (dựng ở hàm bao `luongModelMayChu`, một hop) ⇒ sự kiện `chu`; mảnh `reasoning` đi " +
+      "kênh RIÊNG `nghi` qua bộ che riêng, KHÔNG BAO GIỜ thành `chu`. Lưới hành vi: `agent/goiModelMayChu.test.ts`.",
   },
   {
     tep: "server/services/programming/aiProgrammingCopilot.ts", ham: "completeInline", goi: "generateFim",

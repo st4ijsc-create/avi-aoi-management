@@ -102,8 +102,10 @@ describe("★★★ F2 — luật: MỌI tool chọn được theo trigger phả
       "phép lọc không loại ai ⇒ nó không phải một phép lọc, và luật dưới đây đang canh sai tập",
     ).toBeGreaterThanOrEqual(20);
     // …và phép lọc phải loại ĐÚNG thứ nó nói là loại.
-    expect(KHONG_CHON_DUOC.every((t) => t.kind === "write" || t.kind === "client")).toBe(true);
-    expect(CHON_DUOC.every((t) => t.kind !== "write" && t.kind !== "client")).toBe(true);
+    // ★ Đợt 1 · T2 — tool CHỈ cho agent (`chiChoAgent`, vd `find_files`) cũng nằm ngoài tập chọn-theo-
+    //   trigger: bộ chọn cũ không với tới nó nên luật trích tham số không áp cho nó.
+    expect(KHONG_CHON_DUOC.every((t) => t.kind === "write" || t.kind === "client" || t.chiChoAgent === true)).toBe(true);
+    expect(CHON_DUOC.every((t) => t.kind !== "write" && t.kind !== "client" && t.chiChoAgent !== true)).toBe(true);
   });
 
   it("★★★ cầu chì — một tên KHÔNG TỒN TẠI phải KHÔNG có đường lấy tham số", () => {

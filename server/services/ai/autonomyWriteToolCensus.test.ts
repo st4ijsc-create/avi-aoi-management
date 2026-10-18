@@ -210,6 +210,13 @@ const FILE_DANG_KY_WRITE_TOOL_DA_NAP = [
    */
   "services/aiLocalTools/writeHandlers/applyDiffBatch.ts",
   "services/aiLocalTools/writeHandlers/visionControl.ts",
+  /**
+   * ★ Đợt 1 · T2 (2026-10-14) — `delete_file` + `rename_file` (nạp qua `import
+   * "./writeHandlers/xoaDoiTenTep"` ở `aiLocalTools/index.ts`). §A ĐỎ tới khi hai tên được xếp vào
+   * `AUTONOMY_INELIGIBLE` (đề xuất: cùng lý lẽ `apply_diff` — huỷ/dời mã nguồn); lúc chạy chúng đã bị
+   * cấm tự trị sẵn (`TYPE_UNCLASSIFIED`, fail-closed). `autonomyPolicy.ts` thuộc phiên khác.
+   */
+  "services/aiLocalTools/writeHandlers/xoaDoiTenTep.ts",
   "services/aiLocalTools/writeHandlers/yield.ts",
   "services/visionDefectProposal.ts",
 ].sort();
