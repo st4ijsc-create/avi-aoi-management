@@ -17,8 +17,6 @@
  *   thuần (`resolveLanguage`, `extractStructuredResponse`) — chỉ gọi lúc CHẠY, không lúc nạp module, nên
  *   vòng import hai chiều này an toàn trong ESM.
  */
-import fs from "node:fs";
-import path from "node:path";
 import { executeDecision, type ToolExecContext } from "./aiLocalTools";
 import {
   tranTokenSinhMa,
@@ -42,6 +40,7 @@ import { codingGenEnabled, codingModelSanSang, personaSinhMa, promptSinhMa, rutC
  */
 import { thuThapNguCanhMa, chanNguonNguCanhMa, type KetQuaNguCanhMa } from "./ai/codingRepoContext";
 import { boSungUsingTrongVanBan, thongBaoBoSung } from "./ai/boSungUsingCSharp";
+import { napChiMucUsingDotnet } from "./ai/apiRef/chiMucUsingDotnet";
 import type { KbLanguage, KbQueryContext, StreamEvent } from "./aiLocalKnowledgeService";
 // ★ B8 — các câu thông báo ba ngôn ngữ đã tách sang `./aiLocalKnowledgeCodingThongBao.ts` (xem docblock đầu tệp đó).
 import { codingModelErrorMessage, codingThoaiHoaMessage } from "./aiLocalKnowledgeCodingThongBao";
@@ -419,10 +418,9 @@ let chiMucUsingCache: import("./ai/boSungUsingCSharp").ChiMucUsing | null | unde
 function boSungUsingChoCauTraLoi(text: string, language: KbLanguage): { text: string; thongBao: string } | null {
   if (String(process.env.AI_CODING_BO_SUNG_USING ?? "").trim() === "0") return null;
   try {
-    if (chiMucUsingCache === undefined) {
-      const p = path.join(process.cwd(), "knowledge", "api-ref", "dotnet-using.json");
-      chiMucUsingCache = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;
-    }
+    // 2026-10-18: bảng chọn tay `dotnet-using.json` HỢP với bảng sinh `ky-hieu/dotnet-kieu-ns.json` (toàn bộ XML .NET 10 +
+    // ASP.NET Core + NuGet dự án; tên cũ giữ nguyên hành vi — `ai/apiRef/chiMucUsingDotnet.ts`). Vắng bảng sinh ⇒ y như cũ.
+    if (chiMucUsingCache === undefined) chiMucUsingCache = napChiMucUsingDotnet();
     if (!chiMucUsingCache) return null;
     const r = boSungUsingTrongVanBan(text, chiMucUsingCache);
     if (r.them.length === 0) return null;

@@ -286,6 +286,7 @@ describe("chayVongAgent — tool và tham số", () => {
       "find_symbol",
       "grep",
       "list_dir",
+      "lookup_api",
       "read_file",
       "remember",
       "search_code",

@@ -160,6 +160,8 @@ describe("BoThucThiVscode — bộ tool", () => {
     expect(ten("sua")).toEqual(expect.arrayContaining(["edit_file", "write_file", "delete_file", "rename_file", "run_command", "get_diagnostics", "find_symbol", "remember"]));
     expect(ten("sua")).not.toContain("search_code");
     expect(ten("sua")).not.toContain("search_docs");
+    // 2026-10-18: lookup_api đọc chỉ mục ký hiệu API ở MÁY CHỦ (knowledge/api-ref/ky-hieu, gitignore) ⇒ chưa bày ở extension
+    for (const c of ["hoi", "sua", "tu-dong"] as const) expect(ten(c)).not.toContain("lookup_api");
     expect(ten("hoi")).not.toContain("edit_file");
     expect(ten("hoi")).toContain("get_diagnostics");
   });

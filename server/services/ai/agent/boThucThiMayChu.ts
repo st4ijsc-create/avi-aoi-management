@@ -73,6 +73,9 @@
  *   • `remember` ⇒ CHỈ phát `de-xuat-nho` (ghi chú đã qua `lamSachBaiHoc`: một dòng, che bí mật; `high` ⇒ từ chối) và
  *     trả lời model ngay — KHÔNG chờ, KHÔNG ghi. Ghi chỉ xảy ra khi NGƯỜI bấm "Nhớ" (`aiAgent.nhoDeXuat`), ở MỌI
  *     chế độ kể cả `tu-dong`.
+ *   • `lookup_api` (2026-10-18) ⇒ chỉ mục ký hiệu API CỤC BỘ qua cổng tiêm `traApi` (`../apiRef/traApi.ts`, mặc định đọc
+ *     `knowledge/api-ref/ky-hieu/`): tra CHÍNH XÁC theo tên/đuôi tên, không LLM, không cosine. Kết quả là DỮ LIỆU (đi
+ *     `lamSachChoModel`, cắt trần); chỉ mục chưa dựng ⇒ `CHI_MUC_API_KHONG_CO` + cách dựng (không bịa).
  *   • Sau mỗi lượt GHI THÀNH CÔNG ⇒ `lamTuoiTep` (best-effort, không chờ, lỗi nuốt) để chỉ mục không cũ.
  */
 import path from "node:path";
@@ -108,6 +111,7 @@ import { baiHocEnabled, lamSachBaiHoc } from "../codingLessonContext";
 import { layLyDoBac, ngheQuyetDinhDuyet, type QuyetDinhDuyet } from "./busDuyetAgent";
 import { damBaoChiMucNen, phanGiaiChiMuc, type CongChiMucMa } from "./chiMucMaAgent";
 import { timTaiLieuMacDinh, type KhoTaiLieu, type TimTaiLieu } from "./timTaiLieuAgent";
+import { dinhDangKetQuaApi, traApiMacDinh, type NgonNguApi, type TraApi } from "../apiRef/traApi";
 
 /** Lý do gắn vào audit của `confirmAction` cho một lượt ghi KHÔNG người bấm của chế độ `tu-dong`. */
 export const LY_DO_AGENT_TU_DONG = "AI_AGENT_TU_DONG" as const;
@@ -169,6 +173,8 @@ export interface PhuThuocBoThucThi {
   chiMucMa?: CongChiMucMa | null;
   /** (Đợt 2) truy hồi tài liệu của `search_docs` (mặc định `timTaiLieuMacDinh`). */
   timTaiLieu?: TimTaiLieu;
+  /** (2026-10-18) tra ký hiệu API của `lookup_api` (mặc định `traApiMacDinh` — chỉ mục `knowledge/api-ref/ky-hieu/`). */
+  traApi?: TraApi;
 }
 
 export interface CauHinhBoThucThi {
@@ -408,6 +414,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   const p = cauHinh.phuThuoc ?? {};
   const layChiMuc = phanGiaiChiMuc(p.chiMucMa);
   const timTaiLieu = p.timTaiLieu ?? timTaiLieuMacDinh;
+  const traApi = p.traApi ?? traApiMacDinh;
   let seqDeXuatNho = 0;
   const executeDecision = p.executeDecision ?? executeDecisionGoc;
   const confirmAction = p.confirmAction ?? confirmActionGoc;
@@ -606,6 +613,24 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
       .map((d, i) => `[${i + 1}] source: ${d.nguon} (${NHAN[d.loai] ?? d.loai}, score ${Number(d.diem || 0).toFixed(2)})\n${catDuoi(String(d.noiDung ?? ""), TRAN_KY_TU_MOI_DOAN)}`)
       .join("\n\n");
     return lamSachChoModel(catDuoi(`${ds.length} excerpt(s) (searched: ${daTim}):\n${than}`, TRAN_KY_TU_DOC_MAC_DINH), { ok: true, hienThi });
+  }
+
+  async function traApiCho(t: Record<string, unknown>): Promise<KetQuaTool> {
+    const ten = String(t.name).trim();
+    const ngonNgu = typeof t.language === "string" ? (t.language as NgonNguApi) : undefined;
+    const kq = await traApi({ ten, ...(ngonNgu ? { ngonNgu } : {}) });
+    if (!kq) {
+      return {
+        ok: false,
+        ma: "CHI_MUC_API_KHONG_CO",
+        choModel:
+          "The local API index is not built on this server (an administrator can build it with " +
+          "`node scripts/ai-kb/api-ref/dung-chi-muc-api.mjs`). Do not guess the API: try search_docs with corpus 'api', or " +
+          "read how the project already uses it (grep).",
+      };
+    }
+    const hienThi = { tool: "lookup_api", ten, ...(ngonNgu ? { ngonNgu } : {}), soKetQua: kq.khop.length };
+    return lamSachChoModel(catDuoi(dinhDangKetQuaApi(ten, kq), TRAN_KY_TU_DOC_MAC_DINH), { ok: true, hienThi });
   }
 
   function deXuatNho(t: Record<string, unknown>, ctx: NguCanhThucThi): KetQuaTool {
@@ -957,6 +982,8 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
           return await timTaiLieuCho(t);
         case "remember":
           return deXuatNho(t, ctx);
+        case "lookup_api":
+          return await traApiCho(t);
         default:
           return { ok: false, ma: "CONG_CU_KHONG_CO", choModel: `Unknown tool "${goi.ten}".` };
       }

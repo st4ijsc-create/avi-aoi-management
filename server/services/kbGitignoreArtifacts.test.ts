@@ -52,6 +52,10 @@ describe("KB sinh ra ⇔ .gitignore", () => {
       "knowledge/studio-golden/st4i-may-aoi.jsonl",
       "knowledge/rag-eval-goldenset.json",
       "knowledge/golden-code/index.json",
+      "knowledge/api-ref/dotnet-using.json",
     ]) expect(biBoQua(f), f).toBe(false);
+  });
+  it("★ chỉ mục ký hiệu API SINH (scripts/ai-kb/api-ref/dung-chi-muc-api.mjs, ~trăm MB) bị bỏ qua", () => {
+    for (const f of ["muc.jsonl", "chi-muc.tsv", "meta.json", "dotnet-kieu-ns.json"]) expect(biBoQua(`knowledge/api-ref/ky-hieu/${f}`), f).toBe(true);
   });
 });

@@ -2,6 +2,8 @@
  * shared/agentCore — bộ tool v1 (schema OpenAI function, tên + mô tả tiếng Anh cho model), kiểm/chuẩn hoá tham số,
  * và `apDungEdits` (phép vá thuần của `edit_file`). Thiết kế: spec Đợt 1 §3; bốn tool ngữ cảnh/trí nhớ của Đợt 2
  * (`find_symbol`, `search_code`, `search_docs`, `remember`): spec `2026-10-17-ai-local-dot2-ngu-canh-tri-nho-design.md` §2.
+ * `lookup_api` (2026-10-18): tra CHÍNH XÁC ký hiệu API trong chỉ mục cục bộ (XML IntelliSense .NET, .d.ts, JDK src.zip, Python
+ * stdlib) — khuyến nghị #1/#2 `docs/superpowers/audits/2026-10-18-ai-local-nguon-hoc-code.md`.
  *
  * Ràng buộc grammar llama.cpp (xem `timGioiHanGrammar` trong server/services/ai/nativeToolCalls.ts): schema KHÔNG có
  * `pattern`, KHÔNG `maxLength > 1999`. Lưới `congCu.test.ts` chạy chính bộ kiểm đó trên `CONG_CU`.
@@ -30,6 +32,8 @@ export const TEN_CONG_CU = [
   "search_code",
   "search_docs",
   "remember",
+  // ── 2026-10-18: chỉ mục ký hiệu API cục bộ ──
+  "lookup_api",
 ] as const;
 export type TenCongCu = (typeof TEN_CONG_CU)[number];
 
@@ -48,6 +52,7 @@ export const LOAI_CONG_CU: Record<TenCongCu, LoaiCongCu> = {
   search_code: "doc",
   search_docs: "doc",
   remember: "de-xuat",
+  lookup_api: "doc",
 };
 
 /** Loại ký hiệu `find_symbol` nhận (enum — model chọn sai ⇒ lỗi liệt kê giá trị đúng). */
@@ -59,6 +64,10 @@ export const PHAM_VI_NHO = ["project", "user"] as const;
 export const TRAN_KY_TU_NHO = 400;
 /** Trần `k` của `search_code`. */
 export const TRAN_K_TIM_MA = 20;
+/** Ngôn ngữ lọc của `lookup_api` — BẰNG `NGON_NGU_TRA_API` (server/services/ai/apiRef/traApi.ts; lõi thuần nên chép). */
+export const NGON_NGU_API = ["csharp", "typescript", "java", "python"] as const;
+/** Trần ký tự `name` của `lookup_api` (một tên đầy đủ dài nhất cũng < 200). */
+export const TRAN_TEN_API = 200;
 
 const chuoi = (description: string) => ({ type: "string", description });
 const soNguyen = (description: string) => ({ type: "integer", minimum: 1, description });
@@ -209,11 +218,28 @@ export const CONG_CU: WireTool[] = [
     },
     ["note"],
   ),
+  tool(
+    "lookup_api",
+    "Look up an API symbol by its EXACT name (not a semantic search) in the local reference index built from the installed " +
+      "libraries: .NET 10 + ASP.NET Core + NuGet packages (SqlClient, OPC UA, MQTTnet, NModbus), TypeScript/Node .d.ts (lib, " +
+      "@types/node, React, zod, drizzle-orm, express, mqtt, node-opcua, modbus-serial), the JDK and the Python standard library. " +
+      "Returns where it is defined (namespace / module / package and the import line), its signature, a short summary and, " +
+      "for a type, its members. Use it when a compiler reports an unknown type, member or namespace, or before using an API " +
+      "you are not sure exists in this version.",
+    {
+      name: chuoi(
+        "Exact symbol name or a qualified suffix, e.g. 'SqlBulkCopyOptions', 'KeepIdentity', 'SqlBulkCopy.WriteToServer', " +
+          "'os.path.join', 'inArray'. Case-insensitive; no wildcards.",
+      ),
+      language: { type: "string", enum: [...NGON_NGU_API], description: "Optional language filter." },
+    },
+    ["name"],
+  ),
 ];
 
 /**
- * Bộ tool phơi cho model theo chế độ: `hoi` = đọc (kể cả 3 tool tìm của Đợt 2) + todo_write + remember (chỉ là đề
- * xuất); `sua`/`tu-dong` = đủ 14. Trả BẢN SAO sâu.
+ * Bộ tool phơi cho model theo chế độ: `hoi` = đọc (kể cả 3 tool tìm của Đợt 2 + lookup_api) + todo_write + remember (chỉ
+ * là đề xuất); `sua`/`tu-dong` = đủ 15. Trả BẢN SAO sâu.
  */
 export function congCuTheoCheDo(cheDo: CheDoAgent): WireTool[] {
   const chon =
@@ -255,6 +281,7 @@ const DAC_TA: Record<TenCongCu, DacTa> = {
   search_code: { query: B("chuoi"), k: T("so", { toiDa: TRAN_K_TIM_MA }) },
   search_docs: { query: B("chuoi"), corpus: T("enum", { giaTri: KHO_TAI_LIEU }) },
   remember: { note: B("chuoi", { toiDa: TRAN_KY_TU_NHO }), scope: T("enum", { giaTri: PHAM_VI_NHO }) },
+  lookup_api: { name: B("chuoi", { toiDa: TRAN_TEN_API }), language: T("enum", { giaTri: NGON_NGU_API }) },
 };
 
 const VI_DU: Record<TenCongCu, string> = {
@@ -272,6 +299,7 @@ const VI_DU: Record<TenCongCu, string> = {
   search_code: '{"query":"where are HTTP requests retried","k":5}',
   search_docs: '{"query":"Mitsubishi MC protocol read D registers","corpus":"vendor"}',
   remember: '{"note":"This project uses pnpm, not npm.","scope":"project"}',
+  lookup_api: '{"name":"SqlBulkCopyOptions","language":"csharp"}',
 };
 
 const TRANG_THAI_TODO = ["pending", "in_progress", "completed"] as const;

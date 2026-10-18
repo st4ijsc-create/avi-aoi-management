@@ -121,6 +121,7 @@ export function thamSoChinh(ten: string, thamSo: Record<string, unknown>): strin
   if (ten === "search_code") return chuoi(ts.query) ?? "";
   if (ten === "search_docs") return [chuoi(ts.query), chuoi(ts.corpus)].filter(Boolean).join(" · ");
   if (ten === "remember") return chuoi(ts.note) ?? "";
+  if (ten === "lookup_api") return [chuoi(ts.name), chuoi(ts.language)].filter(Boolean).join(" · ");
   if (ten === "todo_write") return Array.isArray(ts.todos) ? String(ts.todos.length) : "";
   return chuoi(ts.path) ?? "";
 }

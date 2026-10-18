@@ -19,11 +19,52 @@
  *   • đã có `using <ns>;` (hoặc `global using`) ⇒ không đụng; các kiểu SqlClient coi `System.Data.SqlClient`
  *     là tương đương `Microsoft.Data.SqlClient` (mã cũ dùng gói cũ vẫn hợp lệ — khuôn cs-template có cả hai).
  * Chèn ngay sau dòng `using` cuối ở đầu khối (hoặc đầu khối nếu chưa có). KHÔNG sửa gì khác.
+ *
+ * ★ 2026-10-18 — BẢNG MỞ RỘNG (`kieuMoRong`, sinh từ TOÀN BỘ XML IntelliSense .NET 10 + ASP.NET Core + NuGet dự án bởi
+ * `scripts/ai-kb/api-ref/dung-chi-muc-api.mjs`; nạp/hợp nhất ở `apiRef/chiMucUsingDotnet.ts`). Tên của bảng chọn tay
+ * (`kieu`) xử lý Y NHƯ CŨ. Tên chỉ có trong bảng mở rộng thêm ba rào vì một `using` thừa có thể PHÁ biên dịch:
+ *   • namespace của ImplicitUsings mặc định (`System`, `System.IO`, `System.Linq`, `System.Threading.Tasks`…) không
+ *     bổ sung — dự án SDK (kể cả khuôn chấm cs-template) đã có sẵn; thêm vào chỉ là thông báo nhiễu;
+ *   • khối mã `using` một namespace NGOÀI chỉ mục (`nsBiet`) ⇒ bỏ cả bảng mở rộng: thư viện lạ có thể khai cùng tên kiểu,
+ *     thêm `using` của ta sẽ gây CS0104 (tham chiếu mơ hồ);
+ *   • vẫn chỉ đụng tên thuộc ĐÚNG MỘT namespace (như bảng cũ).
  */
 
 export interface ChiMucUsing {
   kieu: Record<string, string[]>;
   moRong: Record<string, { ns: string; doiTuong: string[]; thamSo2: string[] }>;
+  /** (2026-10-18) tên kiểu CHỈ có trong bảng sinh — dùng có điều kiện (xem đầu tệp). */
+  kieuMoRong?: Record<string, string[]>;
+  /** (2026-10-18) mọi namespace chỉ mục biết — `using` ngoài tập này ⇒ tắt `kieuMoRong` cho khối đó. */
+  nsBiet?: string[];
+}
+
+/** Namespace của `<ImplicitUsings>enable</ImplicitUsings>` (Microsoft.NET.Sdk + Microsoft.NET.Sdk.Web). */
+export const NS_IMPLICIT_USINGS: ReadonlySet<string> = new Set([
+  "System",
+  "System.Collections.Generic",
+  "System.IO",
+  "System.Linq",
+  "System.Net.Http",
+  "System.Threading",
+  "System.Threading.Tasks",
+  "System.Net.Http.Json",
+  "Microsoft.AspNetCore.Builder",
+  "Microsoft.AspNetCore.Hosting",
+  "Microsoft.AspNetCore.Http",
+  "Microsoft.AspNetCore.Routing",
+  "Microsoft.Extensions.Configuration",
+  "Microsoft.Extensions.DependencyInjection",
+  "Microsoft.Extensions.Hosting",
+  "Microsoft.Extensions.Logging",
+]);
+
+/** Khối mã có `using X;` (không bí danh, không static) với X ngoài `nsBiet`? */
+function coUsingLa(ma: string, nsBiet: readonly string[] | undefined): boolean {
+  if (!nsBiet) return false;
+  const biet = new Set(nsBiet);
+  for (const m of ma.matchAll(/^\s*(?:global\s+)?using\s+(?!static\b)([A-Za-z_][\w.]*)\s*;/gm)) if (!biet.has(m[1])) return true;
+  return false;
 }
 
 export interface UsingThem {
@@ -75,12 +116,19 @@ export function phanTichThieuUsing(ma: string, chiMuc: ChiMucUsing): UsingThem[]
     if (!can.has(ns)) can.set(ns, new Set());
     can.get(ns)!.add(ten);
   };
+  const dungMoRong = !!chiMuc.kieuMoRong && !coUsingLa(sach, chiMuc.nsBiet);
   for (const m of sach.matchAll(/(?<![.\w])([A-Z][A-Za-z0-9_]*)\b/g)) {
     const ten = m[1];
-    const dsNs = chiMuc.kieu[ten];
+    const tuBangCu = Object.prototype.hasOwnProperty.call(chiMuc.kieu, ten);
+    const dsNs = tuBangCu
+      ? chiMuc.kieu[ten]
+      : dungMoRong && Object.prototype.hasOwnProperty.call(chiMuc.kieuMoRong, ten)
+        ? chiMuc.kieuMoRong![ten]
+        : undefined;
     if (!dsNs || khaiRieng.has(ten)) continue;
     // Một tên thuộc NHIỀU không gian tên ⇒ đoán sẽ sai một nửa ⇒ không đụng.
     if (dsNs.length !== 1) continue;
+    if (!tuBangCu && NS_IMPLICIT_USINGS.has(dsNs[0])) continue;
     // Chỉ tính khi đứng ở VỊ TRÍ KIỂU — chỉ mục có những tên chung chung (`Rule`, `Constraint`,
     // `SortOrder`): `public string Rule { get; set; }` là TÊN THUỘC TÍNH, không phải lượt dùng kiểu.
     if (!laViTriKieu(sach, m.index!, ten)) continue;

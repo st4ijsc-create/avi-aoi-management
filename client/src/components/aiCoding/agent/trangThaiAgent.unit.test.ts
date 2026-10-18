@@ -228,6 +228,8 @@ describe("Đợt 2 — đề xuất nhớ + dòng tool của 4 tool mới", () =
     expect(thamSoChinh("find_symbol", { name: "cong" })).toBe("cong");
     expect(thamSoChinh("search_code", { query: "retry logic" })).toBe("retry logic");
     expect(thamSoChinh("search_docs", { query: "MC protocol", corpus: "vendor" })).toBe("MC protocol · vendor");
+    expect(thamSoChinh("lookup_api", { name: "SqlBulkCopyOptions", language: "csharp" })).toBe("SqlBulkCopyOptions · csharp");
+    expect(thamSoChinh("lookup_api", { name: "inArray" })).toBe("inArray");
     expect(thamSoChinh("remember", { note: "Dùng pnpm." })).toBe("Dùng pnpm.");
   });
 });
