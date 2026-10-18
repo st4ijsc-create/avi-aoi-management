@@ -147,7 +147,7 @@ export const WIRED_ALLOCATION_SITE_COUNT = 15;
  * `ghi-lai-lich-ban-dung` (chạy `git`), và 5 script `do-twin` mở Playwright **có cờ GPU thật**
  * (`--use-gl=angle --use-angle=d3d11 --enable-gpu`), tức hộ tiêu thụ VRAM mà không sổ nào thấy.
  */
-export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 188; // 2026-09-22: +3 (agentic.mjs execSync thứ hai · duan.mjs execSync + child_process)
+export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 203; // 2026-10-17: +15 (doc 81 Đợt 10–12 engineering spawn sites (2026-10-17))
 
 /**
  * ★★ HAI CÁI BẪY ĐẾM-HAI-LẦN, khai TƯỜNG MINH thay vì lọc ngầm bằng regex.
@@ -461,6 +461,22 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "scripts/sim/sim-devices.mjs", symbol: "spawn(", wired: false, note: ":99 spawn(cmd, nodeArgs) — sinh tiến trình mô phỏng máy, KHÔNG chạm GPU." },
   { file: "scripts/verify/worker-leader-proof.run.mjs", symbol: "child_process", wired: false, note: ":8 import spawn — kiểm chứng bầu leader, KHÔNG chạm GPU." },
   { file: "scripts/verify/worker-leader-proof.run.mjs", symbol: "spawn(", wired: false, note: ":15 spawn(node, [SCRIPT]) — chạy hai worker để chứng minh chỉ một thành leader, KHÔNG chạm GPU." },
+  // ── doc 81 Đợt 10–12 engineering spawn sites (2026-10-17) — 15 dòng, TẤT CẢ `wired: false`; đã ĐỌC từng điểm gọi, không cái nào chạm GPU/VRAM ──
+  { file: "scripts/migration0376Guard.mjs", symbol: "child_process", wired: false, note: ":15 import — cổng bảo vệ migration 0376 (Đợt 10–12), chỉ chạy node." },
+  { file: "scripts/migration0376Guard.mjs", symbol: "spawn(", wired: false, note: ":94 spawn(process.execPath, [apply-migration-0376.mjs, flag]) — chạy script áp migration SQL; CPU/DB, không GPU." },
+  { file: "scripts/migration0377Guard.mjs", symbol: "child_process", wired: false, note: ":13 import — cổng bảo vệ migration 0377, chỉ chạy node." },
+  { file: "scripts/migration0377Guard.mjs", symbol: "spawn(", wired: false, note: ":129 spawn(process.execPath, [apply-migration-0377.mjs, flag]) — chạy script áp migration SQL; CPU/DB, không GPU." },
+  { file: "scripts/safety-plc-bench.ts", symbol: "child_process", wired: false, note: ":58 import động — bàn thử PLC an toàn (Đợt 12)." },
+  { file: "scripts/safety-plc-bench.ts", symbol: "execFileSync(", wired: false, note: ":59 execFileSync('docker', [stop|start, tên]) — dừng/bật container OpenPLC để thử offline; container PLC mềm, không GPU." },
+  { file: "scripts/test-all.mjs", symbol: "child_process", wired: false, note: ":8 import — `npm run test:all`." },
+  { file: "scripts/test-all.mjs", symbol: "spawnSync(", wired: false, note: ":22 spawnSync('npx', vitest run …) — chạy bộ test mặc định + bộ serial; CPU/DB test. (vitest có thể chạm tệp lưới VRAM nhưng đó là test mock, không nạp model.)" },
+  { file: "scripts/git/stage-phan-minh.mjs", symbol: "child_process", wired: false, note: ":21 import — công cụ stage theo pathspec." },
+  { file: "scripts/git/stage-phan-minh.mjs", symbol: "execFileSync(", wired: false, note: ":30 execFileSync('git', args) — chỉ chạy git." },
+  { file: "scripts/ui-metrics/engineeringLayout.mjs", symbol: "child_process", wired: false, note: ":51 import spawn+execFileSync — đo bố cục màn Kỹ thuật & Điều khiển: spawn tsx dựng server (:1190), taskkill (:1208), powershell (:1221), git status (:1879). Không nạp model; mở trình duyệt do script khác, không phải tệp này." },
+  { file: "server/services/edge/__edgeE2eHarness.dot10.ts", symbol: "child_process", wired: false, note: ":38 import — harness E2E edge (Đợt 10), chỉ dùng trong test." },
+  { file: "server/services/edge/__edgeE2eHarness.dot10.ts", symbol: "spawn(", wired: false, note: ":625 spawn(node, [vitest.mjs run edgeE2eChild.dot10.test.ts]) — sinh tiến trình vitest giả lập nút edge; CPU, chỉ trong test." },
+  { file: "server/services/mqttBrokerTls.ts", symbol: "child_process", wired: false, note: ":44 import execFile — cấp quyền/khoá TLS cho broker MQTT." },
+  { file: "server/services/mqttBrokerTls.ts", symbol: "execFile(", wired: false, note: ":308 runBounded() — whoami.exe (:326) và powershell.exe (:365, đặt ACL tệp khoá); có timeout, không GPU." },
 ];
 
 /**
