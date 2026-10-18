@@ -250,6 +250,15 @@ Bảng `ai_agent_feedback`: 0 hàng (chưa ai dùng thật). Corpus giúp 1 bài
 trang `SqlBulkCopyOptions` (bài A-cs6 5/6 trượt cả hai nhánh). Sau đo (`bc5b67343`): thước tập con "bài có đoạn" + bộ
 `tasks-api` vào repo + nhánh đối chứng A/A để đo nhiễu riêng — đo lại cổng cần: chạy A/A, bổ sung corpus, dữ liệu phản hồi thật.
 
+Đo lại 2026-10-18 (bộ `tasks-api` trong repo, 6 bài × 3 — dịch vụ ghim trần `TRAN_SO_LAP` = 3 dù xin 5):
+| Lượt | TẮT | BẬT | Biên | Kết luận dịch vụ |
+|---|---|---|---|---|
+| A/A đối chứng (cùng prompt) | 12/18 | 11/18 | ±2 | nhiễu ±1 |
+| A/B lần 2 | 10/18 | 13/18 | ±2 | **nâng** |
+| A/B lần 3 | 12/18 | 14/18 | ±2 | trong nhiễu (+2 = biên) |
+Tác dụng THẬT và lặp lại được nằm ở MỘT bài: A-cs3 (namespace `SqlDbType`) TẮT 2/9 · BẬT 8/9 qua ba lượt A/B. Tổng thể: 1/3 lượt
+"nâng" ⇒ chưa đủ để ghi cổng ĐẠT (không gộp số sau khi thấy dữ liệu). Phần "bảng phản hồi có hàng dùng thật" vẫn 0 hàng.
+
 ### Việc còn lại sau 2026-10-17
 - (xong) 5.1 phía VSCode.
 - Cổng Đợt 5: cần dữ liệu dùng thật (bảng phản hồi) + một lượt Eval mã A/B corpus trong Studio.
