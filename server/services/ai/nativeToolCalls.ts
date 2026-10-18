@@ -357,6 +357,38 @@ function argsVeChuoi(a: unknown): string {
   }
 }
 
+/**
+ * ★★★ `arguments` của một tool call TRONG LỊCH SỬ trước khi lên dây llama-server (V-dot4-2, `js-doi-ten` lượt 3).
+ *
+ * llama.cpp b9814 (`common/chat.cpp` `func_args_not_string`) `json::parse` MỌI `tool_calls[].function.arguments` của
+ * YÊU CẦU trước khi áp chat template ⇒ một chuỗi hỏng (vd `write_file` bị cắt ở trần token: JSON dở, thiếu nháy đóng)
+ * = HTTP 500 "Failed to parse tool call arguments as JSON" ở MỌI lượt sau của hội thoại — hỏi lại nghĩ tắt cũng không
+ * chữa vì lịch sử y hệt. Template Qwen (`arguments|items`) còn đòi OBJECT.
+ *
+ * - Chuỗi là object JSON CHẶT ⇒ trả NGUYÊN từng byte (prefix-cache không trượt).
+ * - Object (build trả object) ⇒ chuỗi JSON của nó.
+ * - Còn lại ⇒ `"{}"`. KHÔNG BAO GIỜ vớt/đoán tham số từ chữ hỏng (chính sách: chữ không hợp lệ không thành hành động);
+ *   đây chỉ là bản ghi lịch sử của một lời gọi ĐÃ không chạy — quan sát lỗi nằm ở tin `tool` đi kèm.
+ */
+export function thamSoLichSuLenDay(a: unknown): string {
+  const laObj = (v: unknown) => !!v && typeof v === "object" && !Array.isArray(v);
+  if (typeof a === "string") {
+    try {
+      return laObj(JSON.parse(a)) ? a : "{}";
+    } catch {
+      return "{}";
+    }
+  }
+  if (laObj(a)) {
+    try {
+      return JSON.stringify(a);
+    } catch {
+      return "{}";
+    }
+  }
+  return "{}";
+}
+
 /** Đọc `message.tool_calls` của một đáp ứng KHÔNG-stream. Luôn trả MẢNG (rỗng ⇒ không có). */
 export function docToolCallTuMessage(message: unknown): WireToolCall[] {
   const m = message as Record<string, any> | null | undefined;

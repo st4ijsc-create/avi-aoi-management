@@ -462,3 +462,71 @@ describe("G2-B · streaming tool-calls", () => {
     expect(ra.filter((c) => c.type === "tool_call_delta")).toHaveLength(0);
   });
 });
+
+// ═══ 5. ★★★ LỊCH SỬ MANG `arguments` HỎNG (V-dot4-2) ═════════════════════════════════════════════
+// llama.cpp b9814 `common/chat.cpp` `func_args_not_string` `json::parse` MỌI `tool_calls[].function.arguments` của YÊU
+// CẦU ⇒ một chuỗi hỏng trong lịch sử = HTTP 500 "Failed to parse tool call arguments as JSON" ở MỌI lượt sau (đo:
+// `js-doi-ten` lượt 3, cột 30901, `write_file` bị cắt ở trần token). Cổng dây là chốt chặn CUỐI cho mọi đường
+// (agent máy chủ, `/v1` của extension, lịch sử cũ đã lưu): chỉ object JSON CHẶT được lên dây, còn lại `{}` — KHÔNG vớt.
+describe("★★★ lịch sử có tool_calls.arguments hỏng — không bao giờ lên dây llama-server", () => {
+  const HONG = `{"path":"src/vanBan.mjs","content":"/** Bỏ dấu tiếng Việt ${"x".repeat(31_000)}`;
+  const HOP_LE = '{ "path" : "a.ts" }';
+  const lichSu = () => [
+    { role: "user" as const, content: "đổi tên" },
+    {
+      role: "assistant" as const,
+      content: "",
+      tool_calls: [
+        { id: "c1", type: "function" as const, function: { name: "write_file", arguments: HONG } },
+        { id: "c2", type: "function" as const, function: { name: "read_file", arguments: HOP_LE } },
+        { id: "c3", type: "function" as const, function: { name: "read_file", arguments: '```json\n{"path":"b.ts"}\n```' } },
+        { id: "c4", type: "function" as const, function: { name: "todo_write", arguments: "" } },
+        { id: "c5", type: "function" as const, function: { name: "read_file", arguments: '["a.ts"]' } },
+      ],
+    },
+    { role: "tool" as const, tool_call_id: "c1", content: "Invalid arguments for write_file: not valid JSON" },
+    { role: "tool" as const, tool_call_id: "c2", content: "..." },
+    { role: "tool" as const, tool_call_id: "c3", content: "..." },
+    { role: "tool" as const, tool_call_id: "c4", content: "..." },
+    { role: "tool" as const, tool_call_id: "c5", content: "..." },
+  ];
+
+  const kiemDay = (than: any) => {
+    const tc = than.messages[1].tool_calls;
+    // mọi `arguments` lên dây đều parse được thành OBJECT (điều llama.cpp + template Qwen đòi)
+    for (const t of tc) {
+      const v = JSON.parse(t.function.arguments);
+      expect(v && typeof v === "object" && !Array.isArray(v)).toBe(true);
+    }
+    expect(tc.map((t: any) => t.function.arguments)).toEqual(["{}", HOP_LE, "{}", "{}", "{}"]);
+    expect(tc.map((t: any) => t.id)).toEqual(["c1", "c2", "c3", "c4", "c5"]);
+    expect(JSON.stringify(than.messages)).not.toContain("Bỏ dấu tiếng Việt");
+  };
+
+  it("stream: arguments hỏng/không-object ⇒ `{}`; object chặt giữ NGUYÊN từng byte; id + tin tool không đổi", async () => {
+    const srv = await freshClient();
+    const cap = stubSse([
+      'data: {"choices":[{"index":0,"delta":{"content":"ok"}}]}\n\n',
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
+      "data: [DONE]\n\n",
+    ]);
+    for await (const _c of srv.serverChatCompletionStream({ messages: lichSu(), tools: TOOLS })) void _c;
+    kiemDay(cap.than());
+    expect(cap.than().messages[2]).toMatchObject({ role: "tool", tool_call_id: "c1" });
+  });
+
+  it("không-stream: cùng phép làm sạch", async () => {
+    const srv = await freshClient();
+    const cap = stubFetch({ choices: [{ message: { content: "ok" }, finish_reason: "stop" }] });
+    await srv.serverChatCompletion({ messages: lichSu(), tools: TOOLS });
+    kiemDay(cap.than());
+  });
+
+  it("lời gọi đầu vào KHÔNG bị sửa tại chỗ (mảng của người gọi giữ nguyên)", async () => {
+    const srv = await freshClient();
+    stubFetch({ choices: [{ message: { content: "ok" }, finish_reason: "stop" }] });
+    const ls = lichSu();
+    await srv.serverChatCompletion({ messages: ls, tools: TOOLS });
+    expect(ls[1].tool_calls![0].function.arguments).toBe(HONG);
+  });
+});

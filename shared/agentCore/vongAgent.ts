@@ -18,7 +18,7 @@
  *   mang `nguonDangNgo` (thẻ duyệt sau đó có cờ) và ở `tu-dong` HẠ tự trị một chiều (`ha-tu-tri` + `ctx.haTuTri`) —
  *   bộ thực thi THI HÀNH (không tự áp ghi/lệnh nữa). Lõi không bao giờ nâng lại.
  */
-import { CONG_CU_TODO_WRITE, chuanHoaThamSo, kiemThamSo, nhanNguonGoi } from "./congCu";
+import { CONG_CU_TODO_WRITE, chuanHoaThamSo, kiemThamSo, laThamSoObjectJson, nhanNguonGoi, thamSoChoLichSu } from "./congCu";
 import { dungLoiNhacHeThong } from "./loiNhac";
 import { catDauDuoi, nenLichSu, uocLuongTokenMacDinh, type UocLuongToken } from "./nguCanh";
 import {
@@ -69,6 +69,12 @@ const HUY = Symbol("huy");
 const TRAN_TOM_TAT = 300;
 /** Trần số nguồn đáng ngờ giữ trong một lượt (cờ thẻ duyệt) — đủ để người duyệt thấy, không phình sự kiện. */
 const TRAN_NGUON_DANG_NGO = 20;
+/**
+ * ★ Số lời gọi LIÊN TIẾP có `arguments` không đọc được thành object JSON (vd bị cắt ở trần token ra) ⇒ dừng `lap-lai`
+ * (mã `THAM_SO_HONG_LAP`). Mỗi lần trước đó model đã nhận quan sát "cắt cụt ⇒ ghi từng phần"; hỏng lần thứ 3 nghĩa là
+ * nó không tự thoát được — dừng có giới hạn thay vì đốt tới trần lượt. Một lời gọi đọc được ⇒ đếm về 0.
+ */
+const TRAN_THAM_SO_HONG_LIEN_TIEP = 3;
 
 /** Dòng cảnh báo đặt TRƯỚC kết quả đáng ngờ (đầu chuỗi ⇒ sống qua `catDauDuoi`). Tiếng Anh như prompt/tool. */
 export function cauCanhBaoDangNgo(nguon: string, mau: string[], vuaHaTuTri: boolean): string {
@@ -278,6 +284,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
   let tokenRa = 0;
   let khoaLap = "";
   let demLap = 0;
+  let demHongLienTiep = 0;
   let lyDo: LyDoDung;
 
   try {
@@ -335,7 +342,16 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
       }
 
       const calls = kq.toolCalls;
-      tinNhan.push(calls.length ? { role: "assistant", content: kq.chu, tool_calls: calls } : { role: "assistant", content: kq.chu });
+      // ★★★ Kiểm tham số TRƯỚC khi ghi lịch sử: tin `assistant.tool_calls` gửi lại model chỉ mang object JSON chặt
+      //   (`thamSoChoLichSu`) — một `arguments` hỏng trong lịch sử làm llama.cpp trả 500 ở MỌI lượt sau (V-dot4-2).
+      const kts = calls.map((tc) => kiemThamSo(tc.function.name, tc.function.arguments));
+      const callsLichSu = calls.map((tc, k) => {
+        const a = thamSoChoLichSu(tc.function.arguments, kts[k]);
+        return a === tc.function.arguments ? tc : { ...tc, function: { ...tc.function, arguments: a } };
+      });
+      tinNhan.push(
+        calls.length ? { role: "assistant", content: kq.chu, tool_calls: callsLichSu } : { role: "assistant", content: kq.chu },
+      );
       if (calls.length === 0) {
         lyDo = "hoan-thanh";
         break;
@@ -354,7 +370,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
           break vong;
         }
         const ten = tc.function.name;
-        const kt = kiemThamSo(ten, tc.function.arguments);
+        const kt = kts[k];
 
         // lặp lại: cùng tên + cùng tham số chuẩn hoá, liên tiếp
         const khoa = `${ten}\u0000${kt.ok ? chuanHoaThamSo(kt.thamSo) : tc.function.arguments.trim()}`;
@@ -364,6 +380,17 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
           demLap = 1;
         }
         if (demLap >= 3) {
+          lyDo = "lap-lai";
+          boSungKhongChay(calls, k, lyDo);
+          break vong;
+        }
+        demHongLienTiep = kt.ok || laThamSoObjectJson(tc.function.arguments) ? 0 : demHongLienTiep + 1;
+        if (demHongLienTiep >= TRAN_THAM_SO_HONG_LIEN_TIEP) {
+          phat({
+            loai: "loi",
+            ma: "THAM_SO_HONG_LAP",
+            thongDiep: `model sent ${demHongLienTiep} tool calls in a row whose arguments are not valid JSON (likely cut off by the output limit) — stopping`,
+          });
           lyDo = "lap-lai";
           boSungKhongChay(calls, k, lyDo);
           break vong;

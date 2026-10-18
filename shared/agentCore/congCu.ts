@@ -121,7 +121,9 @@ export const CONG_CU: WireTool[] = [
   ),
   tool(
     "write_file",
-    "Create a new file, or overwrite an existing file with the full new content. Prefer edit_file for small changes.",
+    "Create a new file, or overwrite an existing file with the full new content. Prefer edit_file for small changes. " +
+      "Keep each call under ~150 lines: very long arguments get cut off by the output limit and the call fails — " +
+      "for a large file write the first part here, then append the rest with edit_file.",
     { path: chuoi("File path relative to the project root."), content: chuoi("The complete file content.") },
     ["path", "content"],
   ),
@@ -381,7 +383,11 @@ export function kiemThamSo(ten: string, thamSoTho: unknown): KetQuaKiemThamSo {
   let v: unknown = thamSoTho ?? {};
   if (typeof v === "string") {
     const p = docJson(v);
-    if (!p.ok) return loi(`arguments are not valid JSON (${p.loi}). Send ONE JSON object matching the tool schema`);
+    if (!p.ok) {
+      // ★ Đợt 4 (V-dot4-2): tham số dài bị cắt ở trần token ra ⇒ JSON dở. Nói rõ KHÔNG có gì chạy + cách làm tiếp.
+      const dai = v.length >= NGUONG_THAM_SO_DAI ? ` ${goiYThamSoDai(v.length)}` : "";
+      return loi(`arguments are not valid JSON (${p.loi}). Nothing was executed.${dai} Send ONE JSON object matching the tool schema`);
+    }
     v = p.v;
   }
   if (!laObject(v)) return loi("arguments must be a JSON object");
@@ -408,6 +414,51 @@ export function kiemThamSo(ten: string, thamSoTho: unknown): KetQuaKiemThamSo {
     throw e;
   }
   return { ok: true, thamSo: ra };
+}
+
+/** Từ độ dài này (ký tự) một `arguments` hỏng được coi là "dài — có thể đã bị cắt ở trần token ra". */
+export const NGUONG_THAM_SO_DAI = 2_000;
+
+function goiYThamSoDai(n: number): string {
+  return (
+    `The arguments were very long (${n} characters) and were most likely cut off by the output token limit, so the JSON is incomplete. ` +
+    "Do not resend the whole content in one call: create the file with write_file containing only the first part (keep each call under ~150 lines), " +
+    "then add the remaining parts with edit_file (anchor old_string on the last lines already written), or change existing files with small edit_file edits."
+  );
+}
+
+/** `arguments` là một JSON OBJECT (cùng phép đọc nới của `kiemThamSo`: rào ```json, chuỗi rỗng ⇒ `{}`)? */
+export function laThamSoObjectJson(tho: string): boolean {
+  const p = docJson(tho);
+  return p.ok && laObject(p.v);
+}
+
+/**
+ * ★★★ `arguments` để GHI VÀO LỊCH SỬ hội thoại (tin `assistant.tool_calls` gửi lại model ở lượt sau). THUẦN.
+ *
+ * Vì sao: llama.cpp b9814 (`common/chat.cpp` `func_args_not_string`) `json::parse` MỌI `arguments` của YÊU CẦU trước khi
+ * áp chat template ⇒ một chuỗi hỏng trong lịch sử = HTTP 500 "Failed to parse tool call arguments as JSON" ở MỌI lượt
+ * sau (đo: V-dot4-2 `js-doi-ten` lượt 3, cột 30901 — `write_file` bị cắt ở trần token). Template Qwen còn đòi OBJECT.
+ *
+ * - JSON object CHẶT ⇒ trả NGUYÊN từng byte (prefix-cache của llama-server không trượt).
+ * - Lõi đã chấp nhận (nới: rào ```json, rỗng) ⇒ đúng object ĐÃ chạy (`kt.thamSo`), dạng chuẩn.
+ * - Còn lại (JSON dở, mảng, chuỗi…) ⇒ `{}`. KHÔNG BAO GIỜ vớt/đoán tham số từ chữ hỏng: lời gọi ấy không chạy, và lịch
+ *   sử chỉ ghi rằng nó không có tham số dùng được; quan sát lỗi nằm ở tin `tool` đi kèm.
+ */
+export function thamSoChoLichSu(tho: string, kt: KetQuaKiemThamSo): string {
+  try {
+    if (laObject(JSON.parse(tho))) return tho;
+  } catch {
+    /* không phải JSON chặt */
+  }
+  if (kt.ok) {
+    try {
+      return JSON.stringify(kt.thamSo) ?? "{}";
+    } catch {
+      return "{}";
+    }
+  }
+  return "{}";
 }
 
 /** Chuỗi chuẩn (khoá sắp xếp) của tham số — dùng phát hiện lặp lại. */

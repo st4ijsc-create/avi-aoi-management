@@ -64,6 +64,7 @@ import { fimModelBasename as resolveFimModelBasename } from "./ai/modelResolver"
 import {
   docToolCallTuMessage,
   gomToolCallTuVanBan,
+  thamSoLichSuLenDay,
   BoGomToolCallLuong,
   type WireToolCall as NativeToolCall,
 } from "./ai/nativeToolCalls";
@@ -280,7 +281,15 @@ function lapCoSampling(
 function chuyenMessageLenDay(m: GgufChatMessage): Record<string, unknown> {
   const ra: Record<string, unknown> = { role: m.role, content: m.content };
   if (m.tool_call_id) ra.tool_call_id = m.tool_call_id;
-  if (m.tool_calls?.length) ra.tool_calls = m.tool_calls;
+  // ★★★ V-dot4-2 — `arguments` hỏng trong lịch sử ⇒ llama.cpp 500 ở MỌI lượt sau. Chốt chặn CUỐI cho mọi đường (agent
+  //   máy chủ, `/v1` của extension, lịch sử cũ): chỉ object JSON chặt lên dây, còn lại `{}` (KHÔNG vớt). Bản sao — không
+  //   sửa mảng của người gọi.
+  if (m.tool_calls?.length) {
+    ra.tool_calls = m.tool_calls.map((t) => {
+      const a = thamSoLichSuLenDay(t?.function?.arguments);
+      return a === t?.function?.arguments ? t : { ...t, function: { ...t.function, arguments: a } };
+    });
+  }
   return ra;
 }
 
