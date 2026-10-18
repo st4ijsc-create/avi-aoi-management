@@ -1,0 +1,33 @@
+{
+  "id": "js-tt3-phan-so",
+  "lang": "js",
+  "muc": "thuat-toan",
+  "kieu": "node",
+  "tieuDe": "Lớp phân số BigInt: chuẩn hoá, bốn phép tính, parse, liên phân số và xấp xỉ tốt nhất",
+  "deBai": "Viết module ESM `src/phanSo.mjs` xuất lớp `PhanSo` — phân số hữu tỉ CHÍNH XÁC dùng `BigInt`.\n\n\"Số nguyên hợp lệ\" trong đề này = giá trị kiểu `bigint` HOẶC `number` thoả `Number.isSafeInteger`. Giá trị khác (chuỗi, `1.5`, `NaN`, `2 ** 60`…) ⇒ `TypeError`.\n\n**Hàm dựng** `new PhanSo(tu, mau = 1n)`: `tu`, `mau` là số nguyên hợp lệ; `mau` bằng 0 ⇒ `RangeError`. Đối tượng luôn ở dạng CHUẨN: thuộc tính `tu` và `mau` kiểu `bigint`, `mau > 0n` (dấu nằm ở tử), tối giản (ước chung lớn nhất của |tu| và mau là 1); số 0 là `tu = 0n, mau = 1n`. Đối tượng không bao giờ bị thay đổi sau khi tạo — mọi phép toán trả đối tượng MỚI.\n\n**Toán hạng** `b` của các phương thức dưới đây là một `PhanSo` hoặc một số nguyên hợp lệ (coi như `b/1`); kiểu khác ⇒ `TypeError`.\n- `cong(b)`, `tru(b)`, `nhan(b)`, `chia(b)` ⇒ `PhanSo` mới; `chia` cho giá trị bằng 0 ⇒ `RangeError`.\n- `soSanh(b)` ⇒ số `-1`, `0` hoặc `1` (this nhỏ hơn / bằng / lớn hơn b) — chính xác với số lớn tuỳ ý (không chuyển sang `Number`). `bang(b)` ⇒ `true` khi bằng giá trị.\n- `toString()` ⇒ `\"tu/mau\"`, hoặc chỉ `\"tu\"` khi `mau === 1n` (vd `\"-3/4\"`, `\"2\"`, `\"0\"`).\n\n**`static parse(chuoi)`**: không phải chuỗi ⇒ `TypeError`. Chuỗi hợp lệ khớp ĐÚNG dạng: khoảng trắng tuỳ ý, SỐ, rồi tuỳ chọn (khoảng trắng tuỳ ý, `/`, khoảng trắng tuỳ ý, SỐ), rồi khoảng trắng tuỳ ý — trong đó SỐ = một dấu `+` hoặc `-` tuỳ chọn đứng LIỀN trước một dãy chữ số thập phân `0-9` (cho phép số 0 đứng đầu, độ dài tuỳ ý); \"khoảng trắng\" như `\\s` của RegExp. Ví dụ hợp lệ: `\"-3/6\"` (= -1/2), `\"2\"`, `\" 4 / -8 \"` (= -1/2), `\"+3\"`, `\"007/014\"`. Không khớp (vd `\"\"`, `\"1.5\"`, `\"1/2/3\"`, `\"- 3\"`, `\"3/\"`, `\"1e3\"`, `\"0x10\"`) ⇒ `SyntaxError`. Khớp nhưng mẫu bằng 0 (`\"4/0\"`) ⇒ `RangeError`.\n\n**`lienPhanSo()`** ⇒ mảng `bigint` `[a0, a1, …, an]` là liên phân số hữu hạn CHÍNH TẮC của giá trị: theo thuật toán Euclid với phần nguyên làm tròn XUỐNG (floor): `a = floor(p/q)`, phần dư `r = p - a·q` (0 ≤ r < q); nếu `r = 0` thì dừng, ngược lại tiếp tục với `q/r`. Vì vậy `a0` có thể âm, mọi `ai` sau đều ≥ 1. Ví dụ 415/93 ⇒ `[4n, 2n, 6n, 7n]`, -7/3 ⇒ `[-3n, 1n, 2n]`, 5 ⇒ `[5n]`, 0 ⇒ `[0n]`.\n\n**`static tuLienPhanSo(ds)`** ⇒ `PhanSo` có giá trị `a0 + 1/(a1 + 1/(… + 1/an))` với `ds` là mảng số nguyên hợp lệ. Mảng rỗng ⇒ `RangeError`; khi tính gặp nghịch đảo của 0 ⇒ `RangeError`.\n\n**`xapXi(N)`** — xấp xỉ hữu tỉ TỐT NHẤT có mẫu giới hạn: `N` là số nguyên hợp lệ (sai kiểu ⇒ `TypeError`), `N < 1` ⇒ `RangeError`. Trả `PhanSo` `p/q` với `1 ≤ q ≤ N` sao cho `|x − p/q|` NHỎ NHẤT (x là giá trị của this); nếu có hai phân số khác nhau cùng khoảng cách nhỏ nhất ⇒ trả phân số NHỎ HƠN. Nếu mẫu của x đã ≤ N thì kết quả bằng chính x. Phải nhanh với N và tử/mẫu lớn (vd x = 314159265358979/100000000000000: N = 10 ⇒ 22/7, N = 1000 ⇒ 355/113) — không duyệt mọi mẫu từ 1 tới N.\n\nChỉ dùng JavaScript chuẩn.",
+  "tepGiai": [
+    "src/phanSo.mjs"
+  ],
+  "dinhDanh": "PhanSo",
+  "testHienThi": [
+    "test/hien-thi.test.mjs"
+  ],
+  "testAn": [
+    "test/an.test.mjs"
+  ],
+  "tepBaoVe": [
+    "package.json",
+    "test/hien-thi.test.mjs"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 12
+  },
+  "sai": [
+    {
+      "tep": "src/phanSo.mjs",
+      "tu": "return c1.soSanh(c2) < 0 ? c1 : c2;",
+      "den": "return c1.soSanh(c2) > 0 ? c1 : c2;"
+    }
+  ]
+}

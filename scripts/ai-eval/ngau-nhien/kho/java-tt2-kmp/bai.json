@@ -1,0 +1,33 @@
+{
+  "id": "java-tt2-kmp",
+  "lang": "java",
+  "muc": "thuat-toan",
+  "kieu": "java",
+  "tieuDe": "KMP: mảng tiền tố, mọi vị trí xuất hiện chồng lấn, chu kỳ ngắn nhất, thay thế không chồng lấn",
+  "deBai": "Viết lớp `Kmp` (tệp `src/Kmp.java`, package mặc định — không khai báo package; chỉ JDK) cài thuật toán Knuth–Morris–Pratt. Mọi chỉ số/độ dài tính theo `char` (đơn vị UTF-16 của `String`). Các hàm phải chạy thời gian tuyến tính `O(n + m)` (văn bản tới vài trăm nghìn ký tự, mẫu tới vài nghìn).\n\n- `public static int[] tienTo(String s)` — mảng tiền tố (prefix function) `pi` cùng độ dài với `s`: `pi[i]` = độ dài của tiền tố THỰC SỰ (ngắn hơn `s[0..i]`) dài nhất của `s[0..i]` đồng thời là hậu tố của `s[0..i]`. `pi[0] = 0`. `s` rỗng ⇒ mảng rỗng.\n- `public static List<Integer> viTri(String van, String mau)` — MỌI vị trí bắt đầu của `mau` trong `van`, tăng dần, CHO PHÉP CHỒNG LẤN (ví dụ `\"aaa\"` trong `\"aaaaa\"` ⇒ `[0, 1, 2]`). Không thấy (kể cả `mau` dài hơn `van`, `van` rỗng) ⇒ danh sách rỗng. `mau` rỗng ⇒ `IllegalArgumentException`.\n- `public static int dem(String van, String mau)` — số lần xuất hiện, tính cả chồng lấn (= số phần tử của `viTri`); `mau` rỗng ⇒ `IllegalArgumentException`.\n- `public static int chuKy(String s)` — độ dài `p` NHỎ NHẤT sao cho `s` bằng đúng một chuỗi độ dài `p` lặp lại nguyên số lần (`k ≥ 1` lần). Nếu không có cách lặp nào ngắn hơn thì trả `s.length()` (ví dụ `\"abcab\"` ⇒ 5 dù `\"abc\"` là chu kỳ kiểu dịch chuyển). `s` rỗng ⇒ 0.\n- `public static String thayThe(String van, String mau, String thay)` — thay các lần xuất hiện của `mau` bằng `thay`, quét TỪ TRÁI SANG PHẢI, KHÔNG chồng lấn: sau khi thay một lần xuất hiện, lần tìm tiếp theo bắt đầu ngay sau đoạn vừa bị thay trong `van` gốc (chuỗi `thay` không bao giờ bị quét lại). `thay` có thể rỗng. `mau` rỗng ⇒ `IllegalArgumentException` (KHÁC hành vi của `String.replace`).",
+  "tepGiai": [
+    "src/Kmp.java"
+  ],
+  "dinhDanh": "Kmp",
+  "testHienThi": [
+    "test/HienThiTest.java"
+  ],
+  "testAn": [
+    "test/AnTest.java"
+  ],
+  "tepBaoVe": [
+    "test/Kt.java",
+    "test/HienThiTest.java"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 8
+  },
+  "sai": [
+    {
+      "tep": "src/Kmp.java",
+      "tu": "j = pi[m - 1];",
+      "den": "j = 0;"
+    }
+  ]
+}

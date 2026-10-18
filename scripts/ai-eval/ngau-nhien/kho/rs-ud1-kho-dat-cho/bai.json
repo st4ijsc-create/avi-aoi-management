@@ -1,0 +1,36 @@
+{
+  "id": "rs-ud1-kho-dat-cho",
+  "lang": "rs",
+  "muc": "ung-dung",
+  "kieu": "cargo",
+  "tieuDe": "Kho hàng có giữ chỗ hết hạn theo đồng hồ tiêm vào (nhiều module: kho, lỗi)",
+  "deBai": "Ứng dụng nhỏ nhiều tệp — crate `bai` quản lý tồn kho có GIỮ CHỖ. Đã cho sẵn (KHÔNG sửa): `src/lib.rs` (khai module + re-export) và `src/dong_ho.rs` (trait `DongHo { fn bay_gio(&self) -> u64 }` tính bằng giây, và `DongHoGia` cho test). Bạn viết HAI tệp:\n\n- `src/loi.rs`: giữ nguyên `TrangThai`, `LoiKho` như khung, cài `fmt::Display` cho cả hai (và giữ `impl std::error::Error for LoiKho`).\n- `src/kho.rs`: struct `Kho` (trường tuỳ bạn) với đúng các phương thức công khai:\n\n```rust\nimpl Kho {\n    pub fn moi(dong_ho: Rc<dyn DongHo>, thoi_han_giu: u64) -> Kho;\n    pub fn nhap(&mut self, ma: &str, so_luong: u32) -> Result<(), LoiKho>;\n    pub fn ton(&self, ma: &str) -> u32;\n    pub fn dang_giu(&self, ma: &str) -> u32;\n    pub fn kha_dung(&self, ma: &str) -> u32;\n    pub fn giu(&mut self, ma: &str, so_luong: u32) -> Result<u64, LoiKho>;\n    pub fn huy(&mut self, id: u64) -> Result<(), LoiKho>;\n    pub fn xac_nhan(&mut self, id: u64) -> Result<(), LoiKho>;\n    pub fn xuat(&mut self, ma: &str, so_luong: u32) -> Result<(), LoiKho>;\n    pub fn trang_thai(&self, id: u64) -> Option<TrangThai>;\n}\n```\n\n**Khái niệm.** Mỗi mặt hàng (mã chuỗi) có số TỒN vật lý. Một đặt chỗ giữ `so_luong` của một mặt hàng; nó \"đang giữ\" cho tới khi bị huỷ, được xác nhận, hoặc HẾT HẠN. `dang_giu(ma)` = tổng số lượng các đặt chỗ đang giữ của mặt hàng; `kha_dung(ma) = ton(ma) − dang_giu(ma)`. Bất biến: luôn có `ton(ma) ≥ dang_giu(ma)`. Mã chưa từng nhập ⇒ `ton`, `dang_giu`, `kha_dung` đều 0.\n\n**Thời gian.** Chỉ đọc giờ qua `dong_ho.bay_gio()` (đồng hồ được chia sẻ, test tự tiến). Đặt chỗ tạo lúc `t` có hạn `t + thoi_han_giu`; nó HẾT HẠN khi `bay_gio() >= t + thoi_han_giu` (đúng mốc là đã hết hạn). Hết hạn xảy ra \"tự động\": không cần gọi gì, đặt chỗ hết hạn thôi tính vào `dang_giu` và `trang_thai` trả `HetHan`. Đặt chỗ đã huỷ/xác nhận thì giữ nguyên trạng thái đó mãi (không thành `HetHan`).\n\n**Hành vi.** Thứ tự kiểm lỗi: số lượng trước, rồi mặt hàng, rồi số khả dụng.\n- `nhap`: `so_luong == 0` ⇒ `SoLuongKhongHopLe`; ngược lại cộng vào tồn (tạo mặt hàng nếu chưa có). Tổng tồn không vượt `u32`.\n- `giu`: `so_luong == 0` ⇒ `SoLuongKhongHopLe`; mã chưa từng nhập ⇒ `KhongCoHang(ma)` (mặt hàng đã nhập mà tồn về 0 vẫn là mặt hàng có, chỉ là không đủ); `so_luong > kha_dung` ⇒ `KhongDu { ma, can: so_luong, con: kha_dung }`. Thành công ⇒ trả id mới: 1, 2, 3… tăng dần trên toàn kho; lần gọi lỗi KHÔNG tiêu tốn id.\n- `xuat`: bán thẳng không qua giữ chỗ, cùng các lỗi như `giu` (chỉ lấy được từ phần khả dụng); thành công ⇒ giảm tồn.\n- `huy` / `xac_nhan`: id không tồn tại (kể cả 0) ⇒ `KhongCoDatCho(id)`; đặt chỗ không còn đang giữ ⇒ `DaKetThuc { id, trang_thai }` với trạng thái HIỆN TẠI (`DaHuy`, `DaXacNhan` hoặc `HetHan`). `huy` thành công ⇒ trạng thái `DaHuy`, tồn không đổi. `xac_nhan` thành công ⇒ trạng thái `DaXacNhan` và tồn giảm đúng số lượng đã giữ.\n- `trang_thai`: id không tồn tại ⇒ `None`.\n\n**Hiển thị** (chính xác từng ký tự):\n- `TrangThai`: `DangGiu` ⇒ `đang giữ`, `DaXacNhan` ⇒ `đã xác nhận`, `DaHuy` ⇒ `đã huỷ`, `HetHan` ⇒ `hết hạn`.\n- `SoLuongKhongHopLe` ⇒ `số lượng phải lớn hơn 0`\n- `KhongCoHang(ma)` ⇒ `không có mặt hàng '<ma>'`\n- `KhongDu { ma, can, con }` ⇒ `mặt hàng '<ma>' không đủ: cần <can>, còn <con>`\n- `KhongCoDatCho(id)` ⇒ `không có đặt chỗ #<id>`\n- `DaKetThuc { id, trang_thai }` ⇒ `đặt chỗ #<id> đã kết thúc (<trang_thai hiển thị>)`\n\nKhông dùng crate ngoài; trả lời bằng đủ hai tệp `src/kho.rs` và `src/loi.rs`.",
+  "tepGiai": [
+    "src/kho.rs",
+    "src/loi.rs"
+  ],
+  "dinhDanh": "impl Kho",
+  "testHienThi": [
+    "tests/hien_thi.rs"
+  ],
+  "testAn": [
+    "tests/an.rs"
+  ],
+  "tepBaoVe": [
+    "Cargo.toml",
+    "tests/hien_thi.rs",
+    "src/lib.rs",
+    "src/dong_ho.rs"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 10
+  },
+  "sai": [
+    {
+      "tep": "src/kho.rs",
+      "tu": "self.dong_ho.bay_gio() >= d.het_han",
+      "den": "self.dong_ho.bay_gio() > d.het_han"
+    }
+  ]
+}

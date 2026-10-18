@@ -1,0 +1,15 @@
+{
+  "id": "sql-ud1-bao-cao-thang",
+  "lang": "sql",
+  "muc": "ung-dung",
+  "kieu": "pytest",
+  "tieuDe": "Báo cáo doanh thu tháng × khu vực: VIEW chuẩn hoá + CTE đệ quy sinh tháng + LAG tăng trưởng",
+  "deBai": "CSDL SQLite có hai bảng tạo sẵn bởi `schema.sql` (xem tệp, KHÔNG sửa): `khu_vuc(ma)` — danh sách khu vực cần báo cáo; `ban_hang(id, luc, khu_vuc, so_tien, giam_gia)` — `luc` dạng `'YYYY-MM-DD HH:MM:SS'`, `so_tien` số nguyên ≥ 0 (trước giảm giá), `giam_gia` số nguyên trong [0, so_tien] hoặc `NULL` (= không giảm). Test chạy `schema.sql` rồi `view.sql` (bằng `executescript`), chèn dữ liệu, rồi chạy `bao_cao.sql`.\n\nViết HAI tệp:\n\n**1. `view.sql`** — tạo VIEW `ban_hang_chuan` với đúng 4 cột theo thứ tự: `id` (như bảng gốc), `thang` (chuỗi `'YYYY-MM'` lấy từ `luc`), `khu_vuc`, `thuc_thu` (số nguyên = `so_tien` trừ `giam_gia`, `giam_gia` NULL coi như 0). Mỗi dòng `ban_hang` một dòng view.\n\n**2. `bao_cao.sql`** — ĐÚNG MỘT câu `SELECT` (được dùng `WITH RECURSIVE`, hàm cửa sổ) với hai tham số đặt tên `:tu`, `:den` (chuỗi `'YYYY-MM'`, test truyền dict `{\"tu\": …, \"den\": …}`), chỉ đọc dữ liệu bán hàng QUA view `ban_hang_chuan` (không đọc thẳng bảng `ban_hang`) cùng bảng `khu_vuc`. Kết quả có ĐÚNG một hàng cho MỖI tháng từ `:tu` đến `:den` (gồm cả hai đầu, các tháng liên tiếp, có thể vắt qua năm) × MỖI khu vực trong bảng `khu_vuc` — kể cả ô không có giao dịch nào. Cột theo thứ tự:\n\n1. `thang` — `'YYYY-MM'`.\n2. `khu_vuc` — mã khu vực.\n3. `doanh_thu` — số nguyên = tổng `thuc_thu` của tháng/khu vực đó; không có giao dịch ⇒ 0.\n4. `so_don` — số nguyên = số dòng giao dịch của tháng/khu vực đó (kể cả dòng có `thuc_thu` = 0); không có ⇒ 0.\n5. `tang_truong` — số thực `round(100.0 * (doanh_thu - dt_truoc) / dt_truoc, 2)` với `dt_truoc` = `doanh_thu` của THÁNG LIỀN TRƯỚC trong báo cáo, cùng khu vực. Là `NULL` khi: tháng là tháng đầu tiên của khoảng (KHÔNG nhìn dữ liệu trước `:tu`), hoặc `dt_truoc` = 0.\n\nGiao dịch ngoài khoảng tháng bị bỏ qua. `:tu` lớn hơn `:den` hoặc bảng `khu_vuc` rỗng ⇒ không có hàng nào. Sắp xếp: `thang` tăng dần, rồi `khu_vuc` tăng dần.",
+  "tepGiai": ["view.sql", "bao_cao.sql"],
+  "dinhDanh": "ban_hang_chuan",
+  "testHienThi": ["tests/test_hien_thi.py"],
+  "testAn": ["tests/test_an.py"],
+  "tepBaoVe": ["pytest.ini", "kiem_sql.py", "schema.sql", "tests/test_hien_thi.py"],
+  "soTest": { "hienThi": 3, "an": 9 },
+  "sai": [{ "tep": "bao_cao.sql", "tu": "COUNT(b.id) AS so_don", "den": "COUNT(*) AS so_don" }]
+}

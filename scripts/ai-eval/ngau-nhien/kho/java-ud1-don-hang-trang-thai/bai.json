@@ -1,0 +1,38 @@
+{
+  "id": "java-ud1-don-hang-trang-thai",
+  "lang": "java",
+  "muc": "ung-dung",
+  "kieu": "java",
+  "tieuDe": "Máy trạng thái đơn hàng: chuyển hợp lệ, lịch sử sự kiện, hoàn tiền một phần, dịch vụ + kho trong bộ nhớ (nhiều tệp)",
+  "deBai": "Ứng dụng nhỏ quản lý đơn hàng theo máy trạng thái (package mặc định — không khai báo package; chỉ JDK). Đã cho sẵn và KHÔNG được sửa: `src/TrangThai.java` (enum), `src/SuKien.java` (record sự kiện), `src/KhoDonHang.java` (giao diện kho). Viết ĐẦY ĐỦ ba tệp: `src/DonHang.java`, `src/KhoBoNho.java`, `src/DichVuDonHang.java` (giữ đúng các chữ ký public trong khung).\n\n**`DonHang`** — `public DonHang(long ma, String khach, long tongTien)`:\n- `khach` là `null` hoặc chỉ toàn khoảng trắng (`isBlank`), hoặc `tongTien <= 0` ⇒ `IllegalArgumentException`.\n- Đơn mới: trạng thái `CHO_THANH_TOAN`, `daThanhToan() == false`, `daHoan() == 0`, lịch sử có đúng một sự kiện `new SuKien(1, \"TAO\", null, CHO_THANH_TOAN, 0)`.\n- Getter: `ma()`, `khach()`, `tongTien()`, `trangThai()`, `daThanhToan()` (đã từng thanh toán thành công hay chưa), `daHoan()` (tổng tiền đã hoàn).\n- `lichSu()` — BẢN CHỤP không sửa được (sửa nó ⇒ `UnsupportedOperationException`; thao tác sau đó trên đơn không làm thay đổi bản chụp đã lấy).\n- Mỗi thao tác THÀNH CÔNG thêm đúng một `SuKien(thuTu, loai, truoc, sau, soTien)` với `thuTu` = số sự kiện hiện có + 1, `truoc`/`sau` = trạng thái trước/sau. Thao tác THẤT BẠI (ném) không thay đổi gì (trạng thái, tiền, lịch sử).\n- Luôn kiểm TRẠNG THÁI trước (sai ⇒ `IllegalStateException`), rồi mới kiểm SỐ TIỀN (sai ⇒ `IllegalArgumentException`).\n\n| Thao tác | Trạng thái được phép ⇒ trạng thái mới | `loai`, `soTien` của sự kiện | Ràng buộc tiền |\n|---|---|---|---|\n| `thanhToan(long soTien)` | `CHO_THANH_TOAN` ⇒ `DA_THANH_TOAN` (và `daThanhToan()` thành `true`) | `\"THANH_TOAN\"`, `soTien` | `soTien` phải ĐÚNG BẰNG `tongTien` |\n| `giao()` | `DA_THANH_TOAN` ⇒ `DANG_GIAO` | `\"GIAO\"`, 0 | — |\n| `nhan()` | `DANG_GIAO` ⇒ `DA_GIAO` | `\"NHAN\"`, 0 | — |\n| `huy()` | `CHO_THANH_TOAN` ⇒ `DA_HUY` | `\"HUY\"`, 0 | — |\n| `huy()` | `DA_THANH_TOAN` ⇒ `DA_HUY`, tự hoàn đủ: `daHoan` = `tongTien` | `\"HUY\"`, `tongTien` | — |\n| `hoanTien(long soTien)` | `DA_GIAO` ⇒ `DA_HOAN_TIEN` nếu sau lần này `daHoan == tongTien`, ngược lại vẫn `DA_GIAO` (hoàn một phần, có thể hoàn nhiều lần) | `\"HOAN_TIEN\"`, `soTien` | `soTien > 0` và `daHoan + soTien <= tongTien` (được phép hoàn ĐÚNG tới đủ) |\n\nMọi trạng thái khác cho thao tác đó (kể cả `huy()` khi `DANG_GIAO`/`DA_GIAO`, mọi thao tác trên đơn `DA_HUY`/`DA_HOAN_TIEN`) ⇒ `IllegalStateException`. Bất biến: `0 <= daHoan <= tongTien`.\n\n**`KhoBoNho implements KhoDonHang`** — kho trong bộ nhớ: `luu` thêm hoặc thay thế theo `ma()`; `tim` trả `Optional`; `tatCa()` trả danh sách mọi đơn theo mã TĂNG dần.\n\n**`DichVuDonHang`** — `public DichVuDonHang(KhoDonHang kho)`; mọi đọc/ghi đơn đều đi qua `kho` được truyền vào (không giữ bản sao riêng):\n- `taoDon(khach, tongTien)` — mã tự tăng RIÊNG cho từng đối tượng dịch vụ, bắt đầu từ 1; tạo đơn hỏng (ném `IllegalArgumentException` từ `DonHang`) KHÔNG tốn mã và không gọi `luu`. Thành công ⇒ gọi `kho.luu(don)` đúng một lần, trả đơn.\n- `thanhToan(ma, soTien)`, `giao(ma)`, `nhan(ma)`, `huy(ma)`, `hoanTien(ma, soTien)` — lấy đơn bằng `kho.tim(ma)`; không có ⇒ `NoSuchElementException`. Gọi thao tác tương ứng của `DonHang` (lỗi của nó lan ra nguyên vẹn); thành công ⇒ gọi `kho.luu(don)` đúng một lần rồi trả đơn; thất bại ⇒ KHÔNG gọi `luu`.\n- `long tongDoanhThuThuan()` — tổng trên mọi đơn trong kho có `daThanhToan()` của `tongTien() - daHoan()` (đơn chưa từng thanh toán góp 0).\n- `Map<TrangThai, Long> demTheoTrangThai()` — số đơn theo trạng thái; map có ĐỦ cả 6 khoá (0 nếu không có đơn), duyệt theo thứ tự khai báo của enum (ví dụ `EnumMap`).",
+  "tepGiai": [
+    "src/DonHang.java",
+    "src/KhoBoNho.java",
+    "src/DichVuDonHang.java"
+  ],
+  "dinhDanh": "DonHang",
+  "testHienThi": [
+    "test/HienThiTest.java"
+  ],
+  "testAn": [
+    "test/AnTest.java"
+  ],
+  "tepBaoVe": [
+    "test/Kt.java",
+    "test/HienThiTest.java",
+    "src/TrangThai.java",
+    "src/SuKien.java",
+    "src/KhoDonHang.java"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 11
+  },
+  "sai": [
+    {
+      "tep": "src/DonHang.java",
+      "tu": "daHoan + soTien > tongTien",
+      "den": "daHoan + soTien >= tongTien"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "id": "js-ud1-router-rest",
+  "lang": "js",
+  "muc": "ung-dung",
+  "kieu": "node",
+  "tieuDe": "Router REST trong bộ nhớ: tham số đường, query, middleware củ hành, lỗi tập trung + CRUD sản phẩm có kiểm dữ liệu",
+  "deBai": "Dự án là một ứng dụng REST nhỏ chạy HOÀN TOÀN trong bộ nhớ (không mạng): `src/app.mjs` và `src/loi.mjs` đã cho sẵn và KHÔNG được sửa; `src/router.mjs` mới làm dở (chỉ khớp đường tĩnh) — hãy viết lại cho đủ; `src/sanPham.mjs` chưa làm. Phải viết ĐẦY ĐỦ hai tệp `src/router.mjs` và `src/sanPham.mjs`. Chỉ dùng JavaScript chuẩn / thư viện chuẩn Node.\n\n## 1. `src/router.mjs` — `export class Router`\n\n- `dung(mw)`: đăng ký middleware `async (ctx, tiep) => …`. Các middleware chạy theo thứ tự đăng ký, kiểu \"củ hành\": `await tiep()` chạy phần còn lại của chuỗi (middleware sau, cuối cùng là bước điều phối tới handler) rồi quay lại; middleware không gọi `tiep` thì chặn phần còn lại. Gọi `tiep()` lần thứ hai trong cùng một middleware ⇒ lỗi (dẫn tới 500). Middleware chạy cho MỌI yêu cầu, kể cả khi đường không tồn tại.\n- `them(method, mau, xuLy)`: đăng ký tuyến; `method` như `\"GET\"` (so không phân biệt hoa/thường); `mau` như `\"/sp\"` hoặc `\"/sp/:id\"`; `xuLy` là `async (ctx) => …` (cũng có thể là hàm thường ném lỗi đồng bộ).\n- `async xuLy({ method, url, body, headers })` ⇒ Promise `{ status, headers, body }`:\n  1. Phân tích `url` (vd `\"/sp/1?q=a\"`) như `new URL(url, \"http://x\")`: `ctx.path` = pathname NGUYÊN DẠNG (không giải mã %), bỏ MỘT dấu `/` ở cuối nếu path dài hơn `\"/\"`; `ctx.query` = object thường từ query string đã giải mã, khoá lặp ⇒ lấy giá trị CUỐI (không có query ⇒ `{}`).\n  2. `ctx` = `{ method (CHỮ HOA), path, params, query, body (nguyên giá trị body truyền vào), headers (header yêu cầu, khoá đổi sang chữ thường; vắng ⇒ {}), phanHoi: { status: 200, headers: {}, body: null } }`. Handler/middleware trả lời bằng cách sửa `ctx.phanHoi` (header phản hồi đặt bằng khoá CHỮ THƯỜNG).\n  3. Điều phối (sau middleware): tách path và mẫu theo `/`; một mẫu khớp khi cùng số đoạn, đoạn thường bằng nhau chính xác (so trên dạng chưa giải mã), đoạn `:ten` khớp mọi đoạn KHÁC RỖNG. Duyệt các tuyến theo thứ tự đăng ký, tuyến ĐẦU TIÊN khớp cả đường lẫn phương thức được chọn: `ctx.params[ten] = decodeURIComponent(đoạn)` (giải mã lỗi ⇒ `HttpLoi(400, \"duong-dan-hong\")`) rồi gọi handler. Có tuyến khớp đường nhưng không tuyến nào khớp phương thức ⇒ ném `new HttpLoi(405, \"phuong-thuc-khong-ho-tro\", undefined, { allow })` với `allow` = các phương thức của các tuyến khớp đường, KHÔNG trùng, theo thứ tự đăng ký, nối bằng `\", \"`. Không tuyến nào khớp đường ⇒ `HttpLoi(404, \"khong-tim-thay\")`.\n  4. Thành công: trả `{ status: phanHoi.status, headers: bản sao phanHoi.headers, body: phanHoi.body }` (`undefined` ⇒ `null`); nếu body khác `null` và headers CHƯA có khoá `\"content-type\"` thì thêm `\"content-type\": \"application/json; charset=utf-8\"`. Body là giá trị JS (không tuần tự hoá).\n  5. Lỗi TẬP TRUNG — mọi lỗi ném ra từ middleware/handler/điều phối được bắt; header đã đặt vào `ctx.phanHoi` bị BỎ: `HttpLoi` ⇒ `{ status: e.status, headers: { \"content-type\": \"application/json; charset=utf-8\", ...e.headers }, body: { loi: e.ma } }` và thêm `chiTiet: e.chiTiet` vào body CHỈ khi `e.chiTiet !== undefined`; lỗi khác ⇒ `{ status: 500, headers: { \"content-type\": … }, body: { loi: \"loi-may-chu\" } }` (không lộ message).\n\n## 2. `src/sanPham.mjs` — `export function dangKySanPham(router)`\n\nĐăng ký ĐÚNG theo thứ tự: `GET /sp`, `POST /sp`, `GET /sp/:id`, `PUT /sp/:id`, `DELETE /sp/:id` (nên allow là `\"GET, POST\"` và `\"GET, PUT, DELETE\"`). Mỗi lần gọi có kho riêng (Map trong bộ nhớ), id bắt đầu 1, tăng dần, KHÔNG dùng lại id đã xoá. Sản phẩm: `{ id, ten, gia, ton }`. Lỗi đều ném `HttpLoi` (từ `./loi.mjs`).\n\n- **Kiểm dữ liệu** (POST và PUT), trả 422 `HttpLoi(422, \"du-lieu-khong-hop-le\", chiTiet)`: body không phải object thường (`null`, `undefined`, mảng, chuỗi, số…) ⇒ `chiTiet = [\"than\"]`. Ngược lại `chiTiet` gồm, THEO THỨ TỰ: `\"ten\"` nếu `ten` không phải chuỗi hoặc `ten.trim()` dài ngoài 1…100 ký tự; `\"gia\"` nếu `gia` không phải số nguyên ≥ 0 (`Number.isInteger`); `\"ton\"` nếu `ton` có mặt (khác `undefined`) mà không phải số nguyên ≥ 0; rồi tên MỌI khoá khác ngoài `ten`, `gia`, `ton` theo thứ tự `Object.keys` (kể cả `\"id\"`). `chiTiet` rỗng ⇒ hợp lệ; lưu `ten` đã `trim()`, `ton` vắng ⇒ 0.\n- **Trùng tên**: so `ten` (đã trim) bằng `toLowerCase()` với mọi sản phẩm KHÁC ⇒ `HttpLoi(409, \"trung-ten\")` (xét sau kiểm dữ liệu).\n- **Tìm theo id**: `params.id` phải khớp `/^[1-9][0-9]*$/` và tồn tại, ngược lại `HttpLoi(404, \"khong-tim-thay\")`.\n- `POST /sp` ⇒ 201, body = sản phẩm mới, header `location: \"/sp/<id>\"`.\n- `GET /sp/:id` ⇒ 200 sản phẩm. `PUT /sp/:id` ⇒ tìm (404) TRƯỚC, rồi kiểm dữ liệu (422), rồi trùng tên (409, trừ chính nó) ⇒ thay TOÀN BỘ `ten, gia, ton` (id giữ nguyên), 200 sản phẩm mới. `DELETE /sp/:id` ⇒ xoá, status 204, body để `null`.\n- `GET /sp` ⇒ 200 `{ tong, ds }`. Query: `q` — nếu `q.trim()` khác rỗng thì chỉ giữ sản phẩm có `ten.toLowerCase()` chứa `q.trim().toLowerCase()`; `sapXep` ∈ `\"ten\"`, `\"-ten\"`, `\"gia\"`, `\"-gia\"` (vắng ⇒ theo id tăng) — khoá `ten` so `ten.toLowerCase()` theo mã ký tự (toán tử `<`), khoá `gia` so số, tiền tố `-` đảo chiều khoá chính; HOÀ luôn xếp theo id TĂNG; `gioiHan` khớp `/^[1-9][0-9]*$/` và ≤ 100 (vắng ⇒ 20). `sapXep`/`gioiHan` có mặt nhưng sai (kể cả chuỗi rỗng) ⇒ `HttpLoi(400, \"tham-so-khong-hop-le\")`. `tong` = số sản phẩm SAU lọc, TRƯỚC khi cắt; `ds` = tối đa `gioiHan` phần tử đầu sau sắp xếp.\n\n`src/app.mjs` (cho sẵn) gắn hai middleware — header `x-ung-dung` cho phản hồi thành công và kiểm khoá `x-khoa` cho yêu cầu khác GET (401) — rồi gọi `dangKySanPham`; hãy đọc nó để biết thứ tự xử lý.",
+  "tepGiai": [
+    "src/router.mjs",
+    "src/sanPham.mjs"
+  ],
+  "dinhDanh": "Router",
+  "testHienThi": [
+    "test/hien-thi.test.mjs"
+  ],
+  "testAn": [
+    "test/an.test.mjs"
+  ],
+  "tepBaoVe": [
+    "package.json",
+    "test/hien-thi.test.mjs",
+    "src/app.mjs",
+    "src/loi.mjs"
+  ],
+  "soTest": {
+    "hienThi": 4,
+    "an": 12
+  },
+  "sai": [
+    {
+      "tep": "src/sanPham.mjs",
+      "tu": "|| a.id - b.id",
+      "den": "|| b.id - a.id"
+    }
+  ]
+}

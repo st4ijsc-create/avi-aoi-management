@@ -1,0 +1,33 @@
+{
+  "id": "rs-tt1-doi-tien",
+  "lang": "rs",
+  "muc": "thuat-toan",
+  "kieu": "cargo",
+  "tieuDe": "Đổi tiền ít đồng nhất (quy hoạch động, phá hoà theo từ điển) và đếm số cách đổi (u128)",
+  "deBai": "Trong crate `bai` (tệp `src/lib.rs`), cài:\n\n```rust\n#[derive(Debug, Clone, PartialEq, Eq)]\npub enum LoiMenhGia {\n    Rong,\n    BangKhong,\n    Trung(u32),\n}\n\npub fn it_dong_nhat(menh_gia: &[u32], so_tien: u32) -> Result<Option<Vec<u32>>, LoiMenhGia>;\npub fn dem_so_cach(menh_gia: &[u32], so_tien: u32) -> Result<u128, LoiMenhGia>;\n```\n\nMỗi mệnh giá dùng KHÔNG giới hạn số lần. `menh_gia` có thể chưa sắp xếp.\n\n**Kiểm tra mệnh giá** (cả hai hàm, LUÔN kiểm trước mọi việc khác, kể cả khi `so_tien == 0`), theo đúng thứ tự ưu tiên:\n1. `menh_gia` rỗng ⇒ `Err(LoiMenhGia::Rong)`.\n2. Có mệnh giá bằng 0 ⇒ `Err(LoiMenhGia::BangKhong)` (ưu tiên hơn lỗi trùng).\n3. Có giá trị xuất hiện ≥ 2 lần ⇒ `Err(LoiMenhGia::Trung(v))` với `v` là giá trị trùng NHỎ NHẤT.\n\n**`it_dong_nhat`** — đổi `so_tien` bằng ÍT đồng nhất:\n- Không đổi được ⇒ `Ok(None)`. `so_tien == 0` ⇒ `Ok(Some(vec![]))`.\n- Trả về danh sách các đồng đã dùng, sắp TĂNG dần (mỗi đồng một phần tử, ví dụ `[1, 5, 5]`).\n- Nhiều cách cùng số đồng ít nhất ⇒ chọn danh sách (tăng dần) NHỎ NHẤT theo thứ tự từ điển. Ví dụ với mệnh giá `{1, 2, 5, 7}` và 11: cả `[1, 5, 5]` và `[2, 2, 7]` đều 3 đồng ⇒ trả `[1, 5, 5]`. Lưu ý thuật toán tham lam (lấy đồng lớn trước) KHÔNG tối ưu nói chung.\n\n**`dem_so_cach`** — số cách đổi `so_tien`, KHÔNG phân biệt thứ tự các đồng (đếm tổ hợp/đa tập, không phải hoán vị). Không đổi được ⇒ `Ok(0)`; `so_tien == 0` ⇒ `Ok(1)`. Kết quả có thể vượt `u64` (vd mệnh giá `1..=1000`, số tiền 1000) nhưng nằm trong `u128`.\n\nGiới hạn: `so_tien ≤ 100_000`, tối đa 1000 mệnh giá; mỗi hàm chạy trong vài giây ở chế độ debug (`cargo test`), nên dùng quy hoạch động O(số mệnh giá × so_tien), không duyệt vét cạn. Không dùng crate ngoài.",
+  "tepGiai": [
+    "src/lib.rs"
+  ],
+  "dinhDanh": "it_dong_nhat",
+  "testHienThi": [
+    "tests/hien_thi.rs"
+  ],
+  "testAn": [
+    "tests/an.rs"
+  ],
+  "tepBaoVe": [
+    "Cargo.toml",
+    "tests/hien_thi.rs"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 9
+  },
+  "sai": [
+    {
+      "tep": "src/lib.rs",
+      "tu": ".find(|&c| c <= x && dp[x - c]",
+      "den": ".rfind(|&c| c <= x && dp[x - c]"
+    }
+  ]
+}

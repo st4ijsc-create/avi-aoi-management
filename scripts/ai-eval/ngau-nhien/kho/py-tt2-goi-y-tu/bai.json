@@ -1,0 +1,15 @@
+{
+  "id": "py-tt2-goi-y-tu",
+  "lang": "py",
+  "muc": "thuat-toan",
+  "kieu": "pytest",
+  "tieuDe": "Trie gợi ý từ theo tiền tố, xếp hạng theo tần suất",
+  "deBai": "Viết module `goi_y_tu.py` với lớp `TrieGoiY` (cây tiền tố) gợi ý từ theo tiền tố. Chỉ dùng thư viện chuẩn.\n\nQuy tắc chữ: KHÔNG phân biệt hoa thường — mọi từ và tiền tố đưa vào bất kỳ phương thức nào đều được chuẩn hoá bằng `str.lower()` trước khi xử lý; mọi từ trả về ở dạng đã chuẩn hoá (chữ thường). Từ có thể chứa ký tự Unicode bất kỳ, kể cả khoảng trắng (không cắt khoảng trắng).\n\n- `TrieGoiY()` — tạo cây rỗng.\n- `them(tu, tan_suat=1) -> None` — thêm từ với tần suất. Từ đã có (sau chuẩn hoá) ⇒ CỘNG DỒN tần suất. `tu` rỗng ⇒ `ValueError`; `tan_suat < 1` ⇒ `ValueError`. Khi ném lỗi, cây không thay đổi gì.\n- `tan_suat(tu) -> int` — tần suất hiện tại của từ; không có ⇒ `0`.\n- `xoa(tu) -> bool` — xoá HẲN từ (tần suất về 0, không còn được gợi ý, không còn được đếm). Trả `True` nếu đã xoá, `False` nếu từ không có (kể cả khi `tu` rỗng, hoặc `tu` chỉ là tiền tố của từ khác chứ không phải một từ đã thêm). Các từ khác — kể cả từ dài hơn có `tu` làm tiền tố — giữ nguyên. Thêm lại một từ đã xoá thì tần suất bắt đầu lại từ đầu.\n- `goi_y(tien_to, k) -> list[tuple[str, int]]` — các cặp `(tu, tan_suat)` của mọi từ bắt đầu bằng `tien_to` (gồm cả chính `tien_to` nếu nó là một từ; `tien_to` rỗng ⇒ mọi từ), sắp theo tần suất GIẢM dần, cùng tần suất thì theo từ TĂNG dần (so sánh chuỗi mặc định của Python); lấy tối đa `k` cặp đầu. `k <= 0` ⇒ `[]`. Không có từ nào khớp ⇒ `[]`.\n- `len(cay)` — số từ phân biệt hiện có.\n\nHiệu năng: với khoảng 30 000 từ dài 4–8 ký tự, 3 000 lời gọi `goi_y(tien_to_dai_3_ky_tu, 5)` phải xong trong dưới 3 giây (không duyệt toàn bộ từ điển ở mỗi lời gọi).",
+  "tepGiai": ["goi_y_tu.py"],
+  "dinhDanh": "TrieGoiY",
+  "testHienThi": ["tests/test_hien_thi.py"],
+  "testAn": ["tests/test_an.py"],
+  "tepBaoVe": ["tests/test_hien_thi.py", "pytest.ini"],
+  "soTest": { "hienThi": 3, "an": 9 },
+  "sai": [{ "tep": "goi_y_tu.py", "tu": "nut.tan_suat += tan_suat", "den": "nut.tan_suat = tan_suat" }]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "js-tv1-ndjson",
+  "lang": "js",
+  "muc": "thu-vien",
+  "kieu": "node",
+  "tieuDe": "Đọc NDJSON từ stream: đếm dòng hợp lệ và báo lỗi theo số dòng",
+  "deBai": "Viết module ESM `src/ndjson.mjs` xuất hai hàm làm việc trên một NGUỒN là `stream.Readable` của Node (chế độ byte hoặc chuỗi) hoặc bất kỳ async iterable nào phát ra các mảnh `Buffer`/`Uint8Array`/`string`:\n\n1. `async function demNdjson(nguon)` trả `{ tong, hopLe, loi }`:\n   - Nội dung là văn bản UTF-8, các dòng ngăn bởi `\\n`; một `\\r` ở cuối dòng bị bỏ. Dòng cuối không có `\\n` vẫn là một dòng.\n   - Dòng rỗng hoặc chỉ có khoảng trắng bị BỎ QUA (không tính vào `tong`) nhưng VẪN được đếm khi đánh số dòng.\n   - Mỗi dòng còn lại được `JSON.parse`. Dòng HỢP LỆ khi parse được VÀ kết quả là một object thường (không phải mảng, không phải `null`, không phải số/chuỗi/boolean).\n   - `tong` = số dòng không rỗng; `hopLe` = số dòng hợp lệ; `loi` = mảng `{ dong, lyDo }` theo thứ tự xuất hiện, `dong` là số thứ tự dòng (bắt đầu từ 1, tính cả dòng rỗng), `lyDo` là `\"json\"` (parse lỗi) hoặc `\"khong-phai-doi-tuong\"`.\n   - Một mảnh có thể cắt ngang giữa một dòng, và cắt ngang giữa các byte của MỘT ký tự UTF-8 nhiều byte — kết quả phải giống như khi đọc cả khối một lần.\n2. `async function* docNdjson(nguon)` — async generator lần lượt phát `{ dong, giaTri }` cho từng dòng HỢP LỆ (cùng quy tắc ở trên), bỏ qua dòng lỗi.\n\nKhông được đọc toàn bộ nguồn vào bộ nhớ rồi mới xử lý (phải xử lý dần theo mảnh). Chỉ dùng thư viện chuẩn của Node.",
+  "tepGiai": ["src/ndjson.mjs"],
+  "dinhDanh": "demNdjson",
+  "testHienThi": ["test/hien-thi.test.mjs"],
+  "testAn": ["test/an.test.mjs"],
+  "tepBaoVe": ["package.json", "test/hien-thi.test.mjs"],
+  "soTest": { "hienThi": 3, "an": 8 },
+  "sai": [{ "tep": "src/ndjson.mjs", "tu": "giaiMa.write(Buffer.from(manh))", "den": "Buffer.from(manh).toString(\"utf8\")" }]
+}

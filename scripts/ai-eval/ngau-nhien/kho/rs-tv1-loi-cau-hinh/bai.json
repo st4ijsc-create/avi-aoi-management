@@ -1,0 +1,15 @@
+{
+  "id": "rs-tv1-loi-cau-hinh",
+  "lang": "rs",
+  "muc": "thu-vien",
+  "kieu": "cargo",
+  "tieuDe": "Đọc tệp cấu hình với kiểu lỗi riêng, Result và toán tử ?",
+  "deBai": "Trong crate `bai` (tệp `src/lib.rs`), cài:\n\n```rust\n#[derive(Debug, Clone, PartialEq, Eq)]\npub enum LoiCauHinh {\n    DongHong { dong: usize },\n    KhoaTrung { khoa: String, dong: usize },\n    ThieuKhoa(String),\n    SaiKieu { khoa: String, mong_doi: &'static str },\n}\npub struct CauHinh { /* tuỳ bạn */ }\nimpl CauHinh {\n    pub fn phan_tich(s: &str) -> Result<CauHinh, LoiCauHinh>;\n    pub fn chuoi(&self, khoa: &str) -> Result<&str, LoiCauHinh>;\n    pub fn so_nguyen(&self, khoa: &str) -> Result<i64, LoiCauHinh>;\n    pub fn logic(&self, khoa: &str) -> Result<bool, LoiCauHinh>;\n    pub fn so_nguyen_hoac(&self, khoa: &str, mac_dinh: i64) -> Result<i64, LoiCauHinh>;\n}\n```\n\nĐịnh dạng (mỗi dòng một mục, dòng đánh số từ 1):\n- Mỗi dòng được bỏ khoảng trắng hai đầu. Dòng rỗng và dòng bắt đầu bằng `#` bị bỏ qua.\n- Dòng còn lại phải có dạng `khoa = gia_tri` (tách ở dấu `=` ĐẦU TIÊN, bỏ khoảng trắng hai bên mỗi phần). Khoá khác rỗng và chỉ gồm `a-z`, `0-9`, `_`, `.`. Sai ⇒ `DongHong { dong }`.\n- Giá trị bắt đầu VÀ kết thúc bằng `\"` (dài ≥ 2) thì bỏ hai dấu nháy, giữ nguyên phần bên trong (kể cả khoảng trắng, dấu `=` và `#`). Giá trị rỗng là hợp lệ.\n- Khoá xuất hiện lần thứ hai ⇒ `KhoaTrung { khoa, dong }` với `dong` là dòng của lần xuất hiện THỨ HAI.\n- `chuoi`: khoá không có ⇒ `ThieuKhoa(khoa)`.\n- `so_nguyen`: thiếu ⇒ `ThieuKhoa`; không phân tích được thành `i64` ⇒ `SaiKieu { khoa, mong_doi: \"so nguyen\" }`.\n- `logic`: nhận (không phân biệt hoa thường) `true/yes/1` ⇒ `true`, `false/no/0` ⇒ `false`; khác ⇒ `SaiKieu { khoa, mong_doi: \"logic\" }`; thiếu ⇒ `ThieuKhoa`.\n- `so_nguyen_hoac`: thiếu ⇒ `Ok(mac_dinh)`; có mà sai kiểu ⇒ vẫn `SaiKieu`.\n\n`LoiCauHinh` phải cài `std::fmt::Display` và `std::error::Error`. Chuỗi hiển thị CHÍNH XÁC:\n- `DongHong` ⇒ `dòng {dong}: không hợp lệ`\n- `KhoaTrung` ⇒ `dòng {dong}: khoá '{khoa}' bị trùng`\n- `ThieuKhoa` ⇒ `thiếu khoá '{khoa}'`\n- `SaiKieu` ⇒ `khoá '{khoa}': cần {mong_doi}`\n\nKhông dùng crate ngoài.",
+  "tepGiai": ["src/lib.rs"],
+  "dinhDanh": "LoiCauHinh",
+  "testHienThi": ["tests/hien_thi.rs"],
+  "testAn": ["tests/an.rs"],
+  "tepBaoVe": ["Cargo.toml", "tests/hien_thi.rs"],
+  "soTest": { "hienThi": 3, "an": 9 },
+  "sai": [{ "tep": "src/lib.rs", "tu": "return Err(LoiCauHinh::KhoaTrung { khoa: khoa.to_string(), dong: so_dong });", "den": "return Err(LoiCauHinh::KhoaTrung { khoa: khoa.to_string(), dong: map[khoa].1 });" }]
+}

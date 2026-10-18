@@ -1,0 +1,15 @@
+{
+  "id": "ts-tt1-base32",
+  "lang": "ts",
+  "muc": "thuat-toan",
+  "kieu": "node",
+  "tieuDe": "Mã hoá / giải mã Base32 Crockford",
+  "deBai": "Viết module `src/base32.ts` (TypeScript chạy thẳng bằng Node 24 — chỉ cú pháp xoá được) xuất ba hàm theo bảng chữ Base32 Crockford `0123456789ABCDEFGHJKMNPQRSTVWXYZ` (giá trị 0..31 theo đúng thứ tự đó):\n\n1. `maHoa(du: Uint8Array): string` — đọc các byte thành dãy bit theo thứ tự BIG-ENDIAN (bit cao của byte đầu trước), cắt thành nhóm 5 bit, mỗi nhóm thành một ký tự; nhóm cuối thiếu bit thì bù bit 0 vào bên phải. Không thêm ký tự đệm `=`, chữ HOA. Mảng rỗng ⇒ chuỗi rỗng.\n2. `giaiMa(s: string): Uint8Array` — ngược lại của `maHoa`:\n   - không phân biệt hoa thường; bỏ qua mọi dấu gạch `-`;\n   - `O`/`o` đọc là `0`; `I`/`i`/`L`/`l` đọc là `1`;\n   - ký tự nào khác ngoài bảng chữ (kể cả `U`/`u`, khoảng trắng) ⇒ ném `RangeError`;\n   - sau khi bỏ dấu gạch, gọi số ký tự là n: số byte = ⌊5n/8⌋; nếu số bit thừa (5n mod 8) ≥ 5 thì chuỗi có độ dài không hợp lệ ⇒ `RangeError`; các bit thừa phải đều bằng 0, ngược lại ⇒ `RangeError`.\n3. `maHoaSo(n: bigint): string` — viết số nguyên không âm `n` trong cơ số 32 bằng cùng bảng chữ (chữ số có nghĩa lớn nhất trước, không có số 0 đứng đầu; `0n` ⇒ `\"0\"`). `n < 0n` ⇒ `RangeError`.",
+  "tepGiai": ["src/base32.ts"],
+  "dinhDanh": "giaiMa",
+  "testHienThi": ["test/hien-thi.test.ts"],
+  "testAn": ["test/an.test.ts"],
+  "tepBaoVe": ["package.json", "test/hien-thi.test.ts"],
+  "soTest": { "hienThi": 3, "an": 9 },
+  "sai": [{ "tep": "src/base32.ts", "tu": "if (c === \"O\") c = \"0\";", "den": "" }]
+}

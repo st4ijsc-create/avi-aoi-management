@@ -1,0 +1,1 @@
+-- TODO: migration 002 — tách ho_ten thành ho/ten, chuẩn hoá email/phong, thêm ràng buộc mới

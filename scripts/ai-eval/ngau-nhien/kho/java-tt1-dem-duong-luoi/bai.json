@@ -1,0 +1,33 @@
+{
+  "id": "java-tt1-dem-duong-luoi",
+  "lang": "java",
+  "muc": "thuat-toan",
+  "kieu": "java",
+  "tieuDe": "Đếm đường đi trên lưới có chướng ngại và ô bắt buộc (modulo 1e9+7) cùng đường nhỏ nhất theo từ điển",
+  "deBai": "Viết lớp `DuongLuoi` (tệp `src/DuongLuoi.java`, package mặc định — không khai báo package; chỉ JDK). Giữ hằng `public static final long MOD = 1_000_000_007L;` như trong khung.\n\nLưới là `String[] luoi`: mỗi phần tử là một hàng, mỗi ký tự là một ô: `'.'` ô trống, `'#'` chướng ngại (không được đi vào), `'*'` ô BẮT BUỘC đi qua (đi vào được như ô trống). Đường đi bắt đầu ở ô trên trái `(0, 0)`, kết thúc ở ô dưới phải `(h−1, w−1)`, mỗi bước chỉ sang PHẢI (`R`, cột +1) hoặc XUỐNG (`D`, hàng +1), không đi vào `'#'`. Một đường HỢP LỆ phải đi qua MỌI ô `'*'` trong lưới (không có `'*'` thì không ràng buộc gì thêm). Ô đầu/ô cuối cũng có thể là `'*'`.\n\nKiểm đầu vào (cả hai hàm, ném `IllegalArgumentException`): `luoi` là `null` hoặc rỗng; có hàng `null` hoặc chuỗi rỗng; các hàng không cùng độ dài; có ký tự khác `.`, `#`, `*`.\n\n- `public static long demDuong(String[] luoi)` — số đường hợp lệ, lấy modulo `MOD` (kết quả trong `[0, MOD)`). Lưới tới 500×500 (số đường thật vượt xa `long` — phải lấy modulo trong khi tính). Ô đầu hoặc ô cuối là `'#'` ⇒ 0. Lưới 1×1 không phải `'#'` ⇒ 1 (đường rỗng).\n- `public static String duongNhoNhat(String[] luoi)` — trong mọi đường hợp lệ, trả chuỗi bước (gồm các ký tự `'R'`, `'D'`, độ dài `h−1+w−1`) NHỎ NHẤT theo thứ tự từ điển của `String.compareTo` (nên `'D'` < `'R'`: ưu tiên đi xuống khi đi xuống vẫn còn tới đích hợp lệ được). Không có đường hợp lệ nào ⇒ trả `null`. Lưới 1×1 hợp lệ ⇒ `\"\"`.\n\nHai hàm phải chạy nhanh (dưới một giây) trên lưới 500×500.",
+  "tepGiai": [
+    "src/DuongLuoi.java"
+  ],
+  "dinhDanh": "DuongLuoi",
+  "testHienThi": [
+    "test/HienThiTest.java"
+  ],
+  "testAn": [
+    "test/AnTest.java"
+  ],
+  "tepBaoVe": [
+    "test/Kt.java",
+    "test/HienThiTest.java"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 11
+  },
+  "sai": [
+    {
+      "tep": "src/DuongLuoi.java",
+      "tu": "dp[j] = (dp[j] + dp[j - 1]) % MOD;",
+      "den": "dp[j] = dp[j] + dp[j - 1];"
+    }
+  ]
+}

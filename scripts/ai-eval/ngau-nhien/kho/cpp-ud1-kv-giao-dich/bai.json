@@ -1,0 +1,38 @@
+{
+  "id": "cpp-ud1-kv-giao-dich",
+  "lang": "cpp",
+  "muc": "ung-dung",
+  "kieu": "cmake",
+  "tieuDe": "Kho khoá-giá trị có giao dịch lồng (BEGIN/ROLLBACK/COMMIT) và bộ chạy lệnh văn bản từ istream",
+  "deBai": "Ứng dụng nhiều tệp: kho khoá–giá trị trong bộ nhớ có giao dịch lồng nhau + bộ chạy lệnh văn bản. Viết HAI tệp: `src/kho_kv.cpp` (cài mọi thành viên của lớp `KhoKV` khai báo trong `src/kho_kv.hpp`) và `src/lenh.cpp` (cài `std::size_t chayLenh(KhoKV& kho, std::istream& vao, std::ostream& ra)` khai báo trong `src/lenh.hpp`). Hai header đã có, KHÔNG đổi (không thêm/bớt thành viên; dùng đúng ba thành viên private đã khai báo, có thể viết hàm phụ trong namespace ẩn danh của tệp .cpp). Chỉ thư viện chuẩn C++20.\n\n**Lớp `KhoKV`**\n- `dat(khoa, giaTri)`: đặt/ghi đè. `lay(khoa)`: giá trị hoặc `std::nullopt`. `xoa(khoa)`: xoá, trả `true` nếu khoá có tồn tại (không có ⇒ `false`, không đổi gì). `kichThuoc()`: số khoá hiện có.\n- `dem(giaTri)`: số khoá HIỆN đang có giá trị đúng bằng `giaTri` (không có ⇒ 0), luôn phản ánh trạng thái hiện tại kể cả sau hoàn tác. Phải O(1) trung bình (duy trì bộ đếm `demGiaTri_`, KHÔNG duyệt cả kho).\n- `batDau()`: mở giao dịch mới, lồng trong giao dịch đang mở. `doSau()`: số giao dịch đang mở.\n- `hoanTac()`: huỷ MỌI thay đổi (`dat`/`xoa`) kể từ `batDau()` gần nhất còn mở, đưa kho (và bộ đếm) về đúng trạng thái lúc đó, rồi đóng giao dịch ấy (các giao dịch ngoài vẫn mở); không có giao dịch ⇒ trả `false`, không đổi gì.\n- `xacNhan()`: giữ vĩnh viễn mọi thay đổi và đóng TẤT CẢ giao dịch đang mở (sau đó `hoanTac()` trả `false`); không có giao dịch ⇒ `false`.\n- Hiệu năng: `batDau` O(1); `hoanTac` tỉ lệ với số khoá bị sửa TRONG giao dịch đó (nhật ký hoàn tác `nhatKy_`: ghi giá trị cũ ở lần sửa ĐẦU TIÊN của mỗi khoá trong giao dịch) — KHÔNG sao chép cả kho. Test chạy kho 100 000 khoá với hàng chục nghìn giao dịch và 100 000 lần đếm.\n\n**`chayLenh`** — đọc `vao` từng dòng (`std::getline`), bỏ một `'\\r'` ở cuối dòng nếu có, tách token theo một hoặc nhiều dấu cách/tab; dòng không có token ⇒ bỏ qua, không in gì. Tên lệnh (token đầu) KHÔNG phân biệt hoa thường (chữ ASCII); khoá và giá trị phân biệt. Mỗi dòng in ra kết thúc bằng `'\\n'`.\n- `SET k v` (đặt, không in) · `GET k` (in giá trị, hoặc `NULL` nếu không có) · `UNSET k` (xoá, không in, kể cả khi không có khoá) · `COUNT v` (in `dem(v)`) · `SIZE` (in `kichThuoc()`) · `BEGIN` (không in) · `ROLLBACK` / `COMMIT` (không in; không có giao dịch ⇒ in `NO TRANSACTION`) · `END` (dừng NGAY: trả về, không đọc thêm dòng nào khỏi `vao`; giao dịch đang mở vẫn để nguyên).\n- Số tham số (không kể tên lệnh): SET 2; GET, UNSET, COUNT 1; SIZE, BEGIN, ROLLBACK, COMMIT, END 0.\n- Tên lệnh lạ ⇒ in `ERR unknown command: <token đầu, giữ nguyên như đã gõ>`. Tên đúng mà sai số tham số ⇒ in `ERR wrong number of arguments for <TÊN LỆNH VIẾT HOA>` (kể cả `END` có tham số — khi đó KHÔNG dừng). Kiểm tên lạ trước số tham số. Lệnh lỗi không làm gì khác.\n- Trả về số dòng `ERR ...` đã in (`NO TRANSACTION` không tính là lỗi).",
+  "tepGiai": [
+    "src/kho_kv.cpp",
+    "src/lenh.cpp"
+  ],
+  "dinhDanh": "chayLenh",
+  "testHienThi": [
+    "tests/hien_thi.cpp"
+  ],
+  "testAn": [
+    "tests/an.cpp"
+  ],
+  "tepBaoVe": [
+    "CMakeLists.txt",
+    "tests/kt.hpp",
+    "tests/hien_thi.cpp",
+    "src/kho_kv.hpp",
+    "src/lenh.hpp"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 10
+  },
+  "tranGiay": 180,
+  "sai": [
+    {
+      "tep": "src/kho_kv.cpp",
+      "tu": "nhatKy_.clear();",
+      "den": "nhatKy_.pop_back();"
+    }
+  ]
+}

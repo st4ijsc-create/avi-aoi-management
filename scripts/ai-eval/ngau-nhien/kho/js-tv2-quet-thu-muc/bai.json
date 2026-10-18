@@ -1,0 +1,33 @@
+{
+  "id": "js-tv2-quet-thu-muc",
+  "lang": "js",
+  "muc": "thu-vien",
+  "kieu": "node",
+  "tieuDe": "Quét đệ quy thư mục bằng fs/promises: bỏ qua theo tên, lọc đuôi, không theo symlink, tổng hợp theo đuôi",
+  "deBai": "Viết module ESM `src/quet.mjs` (chỉ dùng thư viện chuẩn Node: `node:fs/promises`, `node:path`) xuất hai hàm:\n\n1. `async function quetThuMuc(goc, tuyChon = {})` — quét ĐỆ QUY thư mục `goc` (đường tuyệt đối; có hay không có dấu phân cách ở cuối đều cho cùng kết quả) và trả (Promise của) mảng `{ duong, kichThuoc }` cho mọi TỆP THƯỜNG trong cây:\n   - `duong`: đường TƯƠNG ĐỐI so với `goc`, phân cách bằng `/` trên mọi hệ điều hành (vd `\"sub/sub2/c.md\"`), không có `./` hay `/` ở đầu.\n   - `kichThuoc`: kích thước tệp tính bằng BYTE (tệp rỗng vẫn được liệt kê với 0).\n   - Kết quả sắp xếp tăng dần theo `duong` bằng so sánh chuỗi theo MÃ KÝ TỰ UTF-16 (toán tử `<` của JavaScript) — KHÔNG dùng `localeCompare`/Intl. Vd `\"B.txt\" < \"_z.txt\" < \"a-b/x.txt\" < \"a.txt\" < \"a/b.txt\"`.\n   - Chỉ liệt kê tệp thường. Liên kết tượng trưng và junction (dù trỏ tới tệp hay thư mục) KHÔNG được theo và KHÔNG được liệt kê. Thư mục không xuất hiện trong kết quả (thư mục rỗng không đóng góp gì).\n   - `tuyChon.boQua`: mảng TÊN (so khớp chính xác, phân biệt hoa/thường, với tên của một mục — tệp hoặc thư mục — ở MỌI độ sâu, không phải đường). Mục trùng tên bị bỏ; thư mục bị bỏ thì bỏ cả cây con. Vắng mặt ⇒ không bỏ gì. Không áp cho chính `goc`.\n   - `tuyChon.duoi`: mảng đuôi tệp; một tệp được giữ khi `path.extname(tenTep).toLowerCase()` bằng một phần tử của mảng sau khi phần tử đó được `.toLowerCase()`. Theo đúng quy ước `path.extname`: `\"d.tar.gz\"` có đuôi `\".gz\"`; `\".gitignore\"` và `\"Makefile\"` có đuôi `\"\"` (nên `duoi: [\"\"]` giữ đúng các tệp không đuôi). Vắng mặt hoặc mảng rỗng ⇒ không lọc.\n   - `goc` không tồn tại ⇒ Promise bị từ chối với lỗi có `code === \"ENOENT\"`; `goc` là một tệp ⇒ lỗi có `code === \"ENOTDIR\"`.\n2. `function tongHopTheoDuoi(ds)` (đồng bộ) — nhận mảng như kết quả ở trên, trả mảng `{ duoi, soTep, tongKichThuoc }`, một phần tử cho mỗi đuôi khác nhau: `duoi = path.posix.extname(duong).toLowerCase()` (không đuôi ⇒ `\"\"`; `.TXT` và `.txt` gộp chung). Sắp xếp theo `tongKichThuoc` GIẢM dần; hoà thì theo `duoi` tăng dần (so sánh theo mã ký tự). `ds` rỗng ⇒ `[]`.\n\nPhải chạy tốt với cây sâu vài chục tầng và vài trăm tệp.",
+  "tepGiai": [
+    "src/quet.mjs"
+  ],
+  "dinhDanh": "quetThuMuc",
+  "testHienThi": [
+    "test/hien-thi.test.mjs"
+  ],
+  "testAn": [
+    "test/an.test.mjs"
+  ],
+  "tepBaoVe": [
+    "package.json",
+    "test/hien-thi.test.mjs"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 9
+  },
+  "sai": [
+    {
+      "tep": "src/quet.mjs",
+      "tu": "ra.sort((a, b) => soSanhMa(a.duong, b.duong))",
+      "den": "ra.sort((a, b) => a.duong.localeCompare(b.duong))"
+    }
+  ]
+}

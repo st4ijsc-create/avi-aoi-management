@@ -1,0 +1,15 @@
+{
+  "id": "cs-tv1-hoa-don-json",
+  "lang": "cs",
+  "muc": "thu-vien",
+  "kieu": "dotnet",
+  "tieuDe": "Tuần tự hoá hoá đơn bằng System.Text.Json theo hợp đồng cố định",
+  "deBai": "Trong tệp `src/HoaDonJson.cs` (namespace `Bai`) đã có các kiểu `TrangThai`, `DongHang`, `HoaDon` (KHÔNG đổi chữ ký của chúng). Hãy cài lớp tĩnh `HoaDonJson` với hai phương thức, CHỈ dùng `System.Text.Json` (không Newtonsoft):\n\n1. `public static string Ghi(HoaDon h)` — trả JSON một dòng (không thụt lề) theo hợp đồng:\n   - tên thuộc tính camelCase, đúng thứ tự khai báo của record: `so`, `ngay`, `trangThai`, `dong` (mỗi phần tử: `maSp`, `soLuong`, `donGia`), `ghiChu`;\n   - `ngay` dạng `\"yyyy-MM-dd\"`;\n   - `trangThai` là CHUỖI kebab-case chữ thường: `\"nhap\"`, `\"da-gui\"`, `\"da-thanh-toan\"`;\n   - `donGia` là số JSON giữ nguyên các chữ số thập phân của `decimal` (ví dụ `10.50m` ⇒ `10.50`);\n   - `ghiChu` bằng `null` thì BỎ HẲN thuộc tính;\n   - chữ tiếng Việt và ký tự không phải ASCII được giữ NGUYÊN (không thoát thành `\\uXXXX`).\n2. `public static HoaDon Doc(string json)` — đọc ngược lại:\n   - tên thuộc tính không phân biệt hoa thường;\n   - `trangThai` chỉ nhận đúng ba chuỗi kebab-case ở trên;\n   - thiếu `dong` ⇒ danh sách rỗng (không phải null);\n   - JSON hỏng, `trangThai` lạ, hoặc thiếu/rỗng `so` ⇒ ném `FormatException` (không để lọt `JsonException`).",
+  "tepGiai": ["src/HoaDonJson.cs"],
+  "dinhDanh": "HoaDonJson",
+  "testHienThi": ["tests/HienThiTests.cs"],
+  "testAn": ["tests/AnTests.cs"],
+  "tepBaoVe": ["Bai.csproj", "tests/HienThiTests.cs"],
+  "soTest": { "hienThi": 3, "an": 9 },
+  "sai": [{ "tep": "src/HoaDonJson.cs", "tu": "Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,", "den": "Encoder = JavaScriptEncoder.Default," }]
+}

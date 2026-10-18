@@ -1,0 +1,50 @@
+{
+  "_ghiChu": "Kiểm thước lát MultiPL-E: phần HOÀN THÀNH (văn bản nối ngay sau prompt, trước stop token) do bộ đo tự viết cho 3 bài cố định mỗi ngôn ngữ. mau ⇒ phải 3/3; sai (chỉ strlen, biên dịch được) ⇒ phải trượt; rong (chuỗi rỗng) ⇒ phải trượt. Python dùng canonical_solution của openai_humaneval.",
+  "mau": {
+    "cpp": {
+      "HumanEval_0_has_close_elements": "    for (size_t i = 0; i < numbers.size(); ++i)\n        for (size_t j = i + 1; j < numbers.size(); ++j)\n            if (std::abs(numbers[i] - numbers[j]) < threshold) return true;\n    return false;\n",
+      "HumanEval_23_strlen": "    return (long)string.size();\n",
+      "HumanEval_53_add": "    return x + y;\n"
+    },
+    "cs": {
+      "HumanEval_0_has_close_elements": "        for (int i = 0; i < numbers.Count; i++)\n            for (int j = i + 1; j < numbers.Count; j++)\n                if (Math.Abs(numbers[i] - numbers[j]) < threshold) return true;\n        return false;\n",
+      "HumanEval_23_strlen": "        return str.Length;\n",
+      "HumanEval_53_add": "        return x + y;\n"
+    },
+    "go": {
+      "HumanEval_0_has_close_elements": "\tfor i := range numbers {\n\t\tfor j := i + 1; j < len(numbers); j++ {\n\t\t\td := numbers[i] - numbers[j]\n\t\t\tif d < 0 {\n\t\t\t\td = -d\n\t\t\t}\n\t\t\tif d < threshold {\n\t\t\t\treturn true\n\t\t\t}\n\t\t}\n\t}\n\treturn false\n}\n",
+      "HumanEval_23_strlen": "\treturn len(myString)\n}\n",
+      "HumanEval_53_add": "\treturn x + y\n}\n"
+    },
+    "java": {
+      "HumanEval_0_has_close_elements": "        for (int i = 0; i < numbers.size(); i++)\n            for (int j = i + 1; j < numbers.size(); j++)\n                if (Math.abs(numbers.get(i) - numbers.get(j)) < threshold) return true;\n        return false;\n",
+      "HumanEval_23_strlen": "        return string.length();\n",
+      "HumanEval_53_add": "        return x + y;\n"
+    },
+    "js": {
+      "HumanEval_0_has_close_elements": "\n  for (let i = 0; i < numbers.length; i++)\n    for (let j = i + 1; j < numbers.length; j++)\n      if (Math.abs(numbers[i] - numbers[j]) < threshold) return true;\n  return false;\n}\n",
+      "HumanEval_23_strlen": "\n  return string.length;\n}\n",
+      "HumanEval_53_add": "\n  return x + y;\n}\n"
+    },
+    "ts": {
+      "HumanEval_0_has_close_elements": "\n  for (let i = 0; i < numbers.length; i++)\n    for (let j = i + 1; j < numbers.length; j++)\n      if (Math.abs(numbers[i] - numbers[j]) < threshold) return true;\n  return false;\n}\n",
+      "HumanEval_23_strlen": "\n  return string.length;\n}\n",
+      "HumanEval_53_add": "\n  return x + y;\n}\n"
+    },
+    "rs": {
+      "HumanEval_0_has_close_elements": "    for i in 0..numbers.len() {\n        for j in (i + 1)..numbers.len() {\n            if (numbers[i] - numbers[j]).abs() < threshold {\n                return true;\n            }\n        }\n    }\n    false\n",
+      "HumanEval_23_strlen": "    string.len() as isize\n",
+      "HumanEval_53_add": "    x + y\n"
+    }
+  },
+  "sai": {
+    "cpp": { "HumanEval_23_strlen": "    return 0;\n" },
+    "cs": { "HumanEval_23_strlen": "        return 0;\n" },
+    "go": { "HumanEval_23_strlen": "\treturn 0\n}\n" },
+    "java": { "HumanEval_23_strlen": "        return 0;\n" },
+    "js": { "HumanEval_23_strlen": "\n  return 0;\n}\n" },
+    "ts": { "HumanEval_23_strlen": "\n  return 0;\n}\n" },
+    "rs": { "HumanEval_23_strlen": "    0\n" },
+    "py": { "HumanEval_23_strlen": "    return 0\n" }
+  }
+}

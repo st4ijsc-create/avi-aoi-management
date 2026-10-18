@@ -1,0 +1,15 @@
+{
+  "id": "ts-tt2-hang-uu-tien",
+  "lang": "ts",
+  "muc": "thuat-toan",
+  "kieu": "node",
+  "tieuDe": "Hàng ưu tiên nhị phân generic, ổn định, cập nhật theo khoá + topK",
+  "deBai": "Viết module `src/hangUuTien.ts` (TypeScript chạy thẳng bằng Node 24 — CHỈ cú pháp TS xoá được: KHÔNG `enum`, KHÔNG `namespace`, KHÔNG parameter properties kiểu `constructor(private x: T)`, KHÔNG decorator; import (nếu có) ghi đuôi `.ts`, dùng `import type` cho kiểu; chỉ thư viện chuẩn). Giữ NGUYÊN các chữ ký trong tệp khung:\n\n```ts\nexport type SoSanh<T> = (a: T, b: T) => number;\nexport class HangUuTien<T> {\n  constructor(soSanh: SoSanh<T>, khoaCua?: (x: T) => string);\n  size(): number;\n  peek(): T | undefined;\n  push(x: T): void;\n  pop(): T | undefined;\n  capNhat(x: T): boolean;\n}\nexport function topK<T>(ds: Iterable<T>, k: number, soSanh: SoSanh<T>): T[];\n```\n\nHàng ưu tiên cài bằng heap nhị phân (push/pop/capNhat O(log n)):\n\n- `soSanh(a, b) < 0` nghĩa là `a` được lấy ra TRƯỚC `b`; `> 0` là sau; `0` là cùng ưu tiên.\n- ỔN ĐỊNH: hai phần tử cùng ưu tiên (`soSanh` trả 0) thì phần tử được `push` TRƯỚC ra TRƯỚC (thứ tự vào được tính theo lần `push` thành công).\n- `size()` số phần tử hiện có. `peek()` trả phần tử sẽ ra tiếp theo mà KHÔNG lấy ra; hàng rỗng ⇒ `undefined`. `pop()` lấy ra và trả phần tử đó; hàng rỗng ⇒ `undefined`.\n- `khoaCua` (tuỳ chọn) cho mỗi phần tử một khoá chuỗi. Khi có `khoaCua`: các khoá đang có trong hàng phải khác nhau — `push` một phần tử có khoá đang có trong hàng ⇒ ném `RangeError` và hàng không đổi; khoá được giải phóng khi phần tử bị `pop` (sau đó `push` lại khoá đó được). Không có `khoaCua` ⇒ không kiểm trùng gì.\n- `capNhat(x)`: tìm phần tử đang trong hàng có cùng khoá `khoaCua(x)`, THAY nó bằng `x` (ưu tiên mới, có thể lên trước hoặc xuống sau) và trả `true`; phần tử được thay GIỮ NGUYÊN thứ tự vào ban đầu của phần tử cũ (dùng để phá hoà). Không có phần tử nào mang khoá đó ⇒ trả `false`, hàng không đổi. Hàng tạo không có `khoaCua` ⇒ `capNhat` ném `TypeError`.\n\n`topK(ds, k, soSanh)`: trả mảng MỚI gồm `k` phần tử của `ds` sẽ được lấy ra đầu tiên nếu `push` lần lượt mọi phần tử của `ds` (theo thứ tự lặp) vào một `HangUuTien(soSanh)` rồi `pop` — tức là sắp theo `soSanh`, hoà thì giữ thứ tự trong `ds`. `k = 0` ⇒ `[]`; `k` lớn hơn số phần tử ⇒ trả tất cả (đã sắp). `k` âm hoặc không phải số nguyên (kể cả `NaN`) ⇒ ném `RangeError`. Không sửa `ds`.",
+  "tepGiai": ["src/hangUuTien.ts"],
+  "dinhDanh": "HangUuTien",
+  "testHienThi": ["test/hien-thi.test.ts"],
+  "testAn": ["test/an.test.ts"],
+  "tepBaoVe": ["package.json", "test/hien-thi.test.ts"],
+  "soTest": { "hienThi": 3, "an": 10 },
+  "sai": [{ "tep": "src/hangUuTien.ts", "tu": "return c !== 0 ? c < 0 : a.thuTu < b.thuTu;", "den": "return c < 0;" }]
+}

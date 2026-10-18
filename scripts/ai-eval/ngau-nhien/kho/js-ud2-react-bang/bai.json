@@ -1,0 +1,35 @@
+{
+  "id": "js-ud2-react-bang",
+  "lang": "js",
+  "muc": "ung-dung",
+  "kieu": "node",
+  "tieuDe": "Bảng sản phẩm React 19 render phía máy chủ: lọc không dấu, sắp xếp, định dạng tiền, HTML tất định",
+  "deBai": "Dự án React 19 nhỏ (gói `react`, `react-dom`, `esbuild` đã có sẵn ở `node_modules` của repo — KHÔNG cài thêm gì, không tạo `package.json`/`node_modules` mới). Test biên dịch `src/BangSanPham.jsx` bằng `esbuild.transformSync` (`jsx: \"automatic\"`, ESM), import nó, rồi so HTML của `renderToStaticMarkup` (react-dom/server). Hai tệp hiện là bản dở dang / khung — viết ĐẦY ĐỦ cả hai:\n\n## 1. `src/locSapXep.mjs` — logic thuần (không import React)\n\nSản phẩm là object `{ ma, ten, gia, ton }` (`ma`, `ten` chuỗi; `gia`, `ton` số nguyên ≥ 0).\n- `chuanHoa(s)` ⇒ chuỗi để so khớp KHÔNG DẤU: `s.normalize(\"NFD\")`, bỏ mọi ký tự trong khoảng U+0300–U+036F, đổi sang chữ thường, rồi thay `đ` bằng `d` (vì `Đ`/`đ` không tách dấu khi NFD). Vd `\"Đà Nẵng\"` ⇒ `\"da nang\"`, `\"ĐỒNG HỒ\"` ⇒ `\"dong ho\"`.\n- `dinhDangTien(so)` ⇒ chuỗi tiền Việt: phần nguyên nhóm 3 chữ số từ phải sang, ngăn bằng dấu chấm `.`, dấu `-` ở đầu nếu âm, theo sau là MỘT dấu cách thường (U+0020) và ký hiệu `₫` (U+20AB). Vd `1234567` ⇒ `\"1.234.567 ₫\"`, `0` ⇒ `\"0 ₫\"`, `-1234` ⇒ `\"-1.234 ₫\"`. Không dùng `Intl`/`toLocaleString` (phụ thuộc máy, dùng dấu cách đặc biệt). `so` không thoả `Number.isSafeInteger` ⇒ `TypeError`.\n- `locSapXep(ds, { tuKhoa = \"\", sapXep = \"ten\", tang = true } = {})` ⇒ MẢNG MỚI (không sửa `ds`, test truyền mảng đã đóng băng):\n  - Lọc: `k = chuanHoa(tuKhoa.trim())`; `k` rỗng ⇒ giữ tất cả; ngược lại giữ sản phẩm có `chuanHoa(ten)` HOẶC `chuanHoa(ma)` chứa `k`.\n  - Sắp: `sapXep` ∈ `\"ten\"` (khoá `chuanHoa(ten)`, so bằng `<` theo mã ký tự), `\"gia\"`, `\"ton\"` (so số); `tang === false` ⇒ đảo chiều khoá chính. Hoà ⇒ theo `ma` TĂNG dần (so `<`) BẤT KỂ chiều. Giá trị `sapXep` khác ba giá trị trên ⇒ `RangeError`.\n- `tongGiaTri(ds)` ⇒ tổng `gia * ton` (rỗng ⇒ 0).\n\n## 2. `src/BangSanPham.jsx` — `export function BangSanPham({ sanPham, tuKhoa = \"\", sapXep = \"ten\", tang = true })`\n\nTính `ds = locSapXep(sanPham, { tuKhoa, sapXep, tang })`.\n- `ds` rỗng ⇒ chỉ render `<p class=\"trong\">Không có sản phẩm phù hợp</p>`.\n- Ngược lại render ĐÚNG cấu trúc sau (thẻ và thuộc tính theo đúng thứ tự, không thêm thẻ/thuộc tính/khoảng trắng nào khác; HTML được so nguyên văn):\n  - `<table class=\"bang-sp\">` chứa lần lượt:\n  - `<caption>N sản phẩm</caption>` với N = `ds.length`;\n  - `<thead><tr>` bốn ô `<th>` với nội dung lần lượt `Mã`, `Tên`, `Giá`, `Tồn`; ô của cột đang sắp (`ten`/`gia`/`ton` ứng với Tên/Giá/Tồn) có DUY NHẤT thuộc tính `aria-sort=\"ascending\"` (khi `tang`) hoặc `aria-sort=\"descending\"`; các ô khác KHÔNG có thuộc tính nào;\n  - `<tbody>`: mỗi sản phẩm theo thứ tự `ds` một `<tr data-ma=\"<ma>\">` — nếu `ton === 0` thì thêm thuộc tính `class=\"het-hang\"` NGAY SAU `data-ma` (ngược lại KHÔNG có thuộc tính class) — gồm bốn ô: `<td><ma></td><td><ten></td><td class=\"so\"><dinhDangTien(gia)></td><td class=\"so\"><ton></td>`;\n  - `<tfoot><tr>` bốn ô: `<td>Tổng</td><td></td><td class=\"so\"><dinhDangTien(tongGiaTri(ds))></td><td class=\"so\"><tổng ton của ds></td>`.\n  - Ví dụ một sản phẩm `{ma:\"Q9\", ten:\"Quạt\", gia:250000, ton:2}`, mặc định: `<table class=\"bang-sp\"><caption>1 sản phẩm</caption><thead><tr><th>Mã</th><th aria-sort=\"ascending\">Tên</th><th>Giá</th><th>Tồn</th></tr></thead><tbody><tr data-ma=\"Q9\"><td>Q9</td><td>Quạt</td><td class=\"so\">250.000 ₫</td><td class=\"so\">2</td></tr></tbody><tfoot><tr><td>Tổng</td><td></td><td class=\"so\">500.000 ₫</td><td class=\"so\">2</td></tr></tfoot></table>`.\n- Trong JSX dùng `className`; thuộc tính có giá trị `undefined` không được render. Văn bản (tên, mã) phải để React tự thoát ký tự HTML — KHÔNG dùng `dangerouslySetInnerHTML`.",
+  "tepGiai": [
+    "src/locSapXep.mjs",
+    "src/BangSanPham.jsx"
+  ],
+  "dinhDanh": "BangSanPham",
+  "testHienThi": [
+    "test/hien-thi.test.mjs"
+  ],
+  "testAn": [
+    "test/an.test.mjs"
+  ],
+  "tepBaoVe": [
+    "package.json",
+    "test/hien-thi.test.mjs"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 9
+  },
+  "sai": [
+    {
+      "tep": "src/locSapXep.mjs",
+      "tu": ".replace(/đ/g, \"d\")",
+      "den": ".replace(/đ/g, \"đ\")"
+    }
+  ],
+  "canNodeModulesRepo": true
+}

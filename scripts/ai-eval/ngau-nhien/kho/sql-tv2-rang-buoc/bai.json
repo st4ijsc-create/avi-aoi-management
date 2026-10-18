@@ -1,0 +1,15 @@
+{
+  "id": "sql-tv2-rang-buoc",
+  "lang": "sql",
+  "muc": "thu-vien",
+  "kieu": "pytest",
+  "tieuDe": "Lược đồ có ràng buộc: PRIMARY KEY, UNIQUE NOCASE, CHECK, FOREIGN KEY CASCADE/RESTRICT, STRICT",
+  "deBai": "Viết tệp `schema.sql` (nhiều câu lệnh, chạy bằng `executescript` trên CSDL SQLite RỖNG; kết nối đã BẬT `PRAGMA foreign_keys = ON`) tạo đúng 4 bảng dưới đây. MỌI bảng là bảng `STRICT` (sai kiểu dữ liệu ⇒ bị từ chối). Mọi vi phạm ràng buộc phải làm câu lệnh lỗi với `sqlite3.IntegrityError` và không ghi gì.\n\n**`khach_hang`**\n- `id` INTEGER — khoá chính (rowid).\n- `email` TEXT, bắt buộc (NOT NULL), có collation `NOCASE` trên cột (nên phép so sánh `=` trên cột không phân biệt hoa thường ASCII), DUY NHẤT không phân biệt hoa thường (`'A@b.vn'` và `'a@B.VN'` là trùng). Định dạng: phải tồn tại một ký tự `@` và SAU nó một dấu `.` sao cho có ≥ 1 ký tự trước `@`, ≥ 1 ký tự giữa `@` và `.`, ≥ 1 ký tự sau `.` (vd hợp lệ `'x@y.z'`; sai: thiếu `@`, không có gì trước `@`, không có `.` sau `@`, `.` đứng ngay sau `@` hoặc ở cuối).\n- `ho_ten` TEXT, bắt buộc, không được rỗng hay toàn dấu cách (độ dài sau `trim` > 0).\n- `sdt` TEXT, được `NULL`; nếu khác `NULL` phải gồm ĐÚNG 10 ký tự, đều là chữ số `0-9`, ký tự đầu là `0`.\n- `hang` TEXT, bắt buộc, mặc định `'thuong'`, chỉ nhận một trong `'thuong'`, `'vang'`, `'kim_cuong'` (đúng chữ thường như vậy).\n\n**`san_pham`**\n- `ma` TEXT — khoá chính; đúng 6 ký tự: `SP` viết HOA rồi 4 chữ số (vd `'SP0001'`).\n- `ten` TEXT, bắt buộc.\n- `gia` INTEGER, bắt buộc, trong đoạn [1, 1000000000].\n- `ton` INTEGER, bắt buộc, mặc định 0, không âm (kể cả khi UPDATE).\n\n**`don_hang`**\n- `id` INTEGER — khoá chính (rowid).\n- `khach_id` INTEGER, bắt buộc, khoá ngoại tới `khach_hang(id)` với `ON DELETE RESTRICT` (không xoá được khách còn đơn).\n- `ngay` TEXT, bắt buộc, phải là ngày dương lịch CÓ THẬT đúng dạng `'YYYY-MM-DD'` (đủ số 0 đứng đầu, gạch nối, không kèm giờ); ngày không tồn tại (vd 30/02, 29/02 năm không nhuận), chuỗi rỗng hay chuỗi không phải ngày đều bị từ chối.\n- `ghi_chu` TEXT, bắt buộc, mặc định chuỗi rỗng `''`.\n\n**`chi_tiet`**\n- `don_id` INTEGER, bắt buộc, khoá ngoại tới `don_hang(id)` với `ON DELETE CASCADE` (xoá đơn ⇒ xoá các dòng chi tiết của nó).\n- `ma_sp` TEXT, bắt buộc, khoá ngoại tới `san_pham(ma)` với `ON DELETE RESTRICT`.\n- `so_luong` INTEGER, bắt buộc, trong đoạn [1, 1000].\n- Khoá chính ghép `(don_id, ma_sp)`.\n\nKhông tạo bảng nào khác (ngoài các bảng nội bộ của SQLite).",
+  "tepGiai": ["schema.sql"],
+  "dinhDanh": "CREATE TABLE",
+  "testHienThi": ["tests/test_hien_thi.py"],
+  "testAn": ["tests/test_an.py"],
+  "tepBaoVe": ["pytest.ini", "kiem_sql.py", "tests/test_hien_thi.py"],
+  "soTest": { "hienThi": 3, "an": 11 },
+  "sai": [{ "tep": "schema.sql", "tu": "email TEXT NOT NULL COLLATE NOCASE UNIQUE", "den": "email TEXT NOT NULL UNIQUE" }]
+}

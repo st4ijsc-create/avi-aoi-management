@@ -1,0 +1,33 @@
+{
+  "id": "js-tt1-diff-dong",
+  "lang": "js",
+  "muc": "thuat-toan",
+  "kieu": "node",
+  "tieuDe": "Diff theo dòng dựa trên LCS với quy tắc phá hoà tất định, áp bản vá xuôi/ngược",
+  "deBai": "Viết module ESM `src/diff.mjs` xuất ba hàm so sánh hai văn bản đã tách sẵn thành MẢNG DÒNG (mảng chuỗi):\n\n1. `diffDong(cu, moi)` trả MẢNG THAO TÁC, mỗi phần tử là object `{ loai, dong }`:\n   - `loai: \" \"` (dấu cách) — dòng giữ nguyên (có ở cả hai), `dong` là nội dung dòng;\n   - `loai: \"-\"` — dòng của `cu` bị xoá; `loai: \"+\"` — dòng của `moi` được thêm.\n   Kết quả phải là diff TỐI THIỂU (số dòng `\" \"` = độ dài dãy con chung dài nhất LCS) và được dựng TẤT ĐỊNH đúng theo quy tắc sau (đây là định nghĩa, test so khớp từng phần tử):\n   - Gọi `n = cu.length`, `m = moi.length`, `L(i, j)` = độ dài LCS của hai HẬU TỐ `cu[i..n-1]` và `moi[j..m-1]` (`L(n, j) = L(i, m) = 0`).\n   - Bắt đầu `i = 0, j = 0`; lặp cho tới khi `i == n` và `j == m`:\n     a. nếu `i < n`, `j < m` và `cu[i] === moi[j]` ⇒ phát `{loai: \" \", dong: cu[i]}`, tăng cả `i` và `j`;\n     b. ngược lại, nếu `j == m`, hoặc (`i < n` và `L(i+1, j) >= L(i, j+1)`) ⇒ phát `{loai: \"-\", dong: cu[i]}`, tăng `i`;\n     c. ngược lại ⇒ phát `{loai: \"+\", dong: moi[j]}`, tăng `j`.\n   - Hệ quả: khi hoà, XOÁ được ưu tiên trước THÊM — ví dụ thay dòng `b` bằng `x` cho `-b` rồi `+x`.\n   - So dòng bằng `===` (phân biệt hoa/thường, khoảng trắng cuối, chuỗi rỗng là một dòng hợp lệ).\n   - Hai mảng rỗng ⇒ `[]`.\n   - KHÔNG được sửa mảng đầu vào (test truyền mảng đã `Object.freeze`). Phải chạy được `cu`, `moi` mỗi bên 2000 dòng trong vài giây (bảng O(n·m) là đủ; đừng dùng đệ quy có nhớ sâu tới 4 triệu ô).\n2. `apDung(cu, thaoTac)` — áp bản vá: duyệt `thaoTac` theo thứ tự; mỗi thao tác `\" \"` hoặc `\"-\"` phải bằng (`===`) ĐÚNG dòng kế tiếp chưa dùng của `cu`; trả mảng mới gồm các dòng của thao tác `\" \"` và `\"+\"` theo thứ tự. Ném `Error` khi: một thao tác `\" \"`/`\"-\"` không khớp dòng kế tiếp (hoặc `cu` đã hết dòng), sau khi duyệt hết vẫn còn dòng của `cu` chưa dùng, hoặc gặp `loai` không thuộc `\" \"`, `\"-\"`, `\"+\"`.\n3. `apNguoc(moi, thaoTac)` — áp NGƯỢC bản vá: giống `apDung` nhưng đổi vai: thao tác `\" \"`/`\"+\"` phải khớp lần lượt từng dòng của `moi`, kết quả gồm dòng của thao tác `\" \"` và `\"-\"`. Cùng các trường hợp ném `Error` như trên.\n\nVới mọi `cu`, `moi`: `apDung(cu, diffDong(cu, moi))` bằng `moi` và `apNguoc(moi, diffDong(cu, moi))` bằng `cu`. Chỉ dùng JavaScript chuẩn.",
+  "tepGiai": [
+    "src/diff.mjs"
+  ],
+  "dinhDanh": "diffDong",
+  "testHienThi": [
+    "test/hien-thi.test.mjs"
+  ],
+  "testAn": [
+    "test/an.test.mjs"
+  ],
+  "tepBaoVe": [
+    "package.json",
+    "test/hien-thi.test.mjs"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 9
+  },
+  "sai": [
+    {
+      "tep": "src/diff.mjs",
+      "tu": "L[(i + 1) * w + j] >= L[i * w + j + 1]",
+      "den": "L[(i + 1) * w + j] > L[i * w + j + 1]"
+    }
+  ]
+}

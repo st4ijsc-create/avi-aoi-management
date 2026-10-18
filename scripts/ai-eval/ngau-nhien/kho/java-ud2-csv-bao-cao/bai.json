@@ -1,0 +1,35 @@
+{
+  "id": "java-ud2-csv-bao-cao",
+  "lang": "java",
+  "muc": "ung-dung",
+  "kieu": "java",
+  "tieuDe": "Đọc CSV RFC 4180 và lập báo cáo nhóm BigDecimal HALF_UP với bảng căn cột (nhiều tệp)",
+  "deBai": "Ứng dụng nhỏ đọc CSV và lập báo cáo theo nhóm (package mặc định — không khai báo package; chỉ JDK, không thư viện CSV ngoài). Record `src/DongBaoCao.java` đã cho sẵn — KHÔNG sửa. Viết ĐẦY ĐỦ hai tệp `src/DocCsv.java` và `src/BaoCao.java` (giữ đúng chữ ký trong khung). Mọi lỗi dữ liệu ném `IllegalArgumentException` (kể cả `NumberFormatException` — vốn là lớp con của nó).\n\n**`DocCsv.phanTich(String vanBan)` ⇒ `List<List<String>>`** — mỗi phần tử là một bản ghi (danh sách ô), theo RFC 4180:\n- Ô cách nhau bởi `,`; bản ghi kết thúc bởi `\\n` hoặc `\\r\\n`. Ký tự `\\r` KHÔNG đứng ngay trước `\\n` (ngoài nháy) là ký tự thường của ô.\n- Ô bọc nháy kép: bắt đầu bằng `\"` ngay đầu ô; bên trong, `\"\"` là một dấu `\"`; được chứa `,`, `\\n`, `\\r\\n` (giữ NGUYÊN các ký tự này trong giá trị). Sau nháy đóng chỉ được là `,`, xuống dòng (`\\n`/`\\r\\n`) hoặc hết văn bản.\n- Không cắt khoảng trắng (`\" a , b \"` ⇒ `[\" a \", \" b \"]`). Ô rỗng hợp lệ (`\",,\"` ⇒ ba ô rỗng; `\"a,\"` ⇒ `[\"a\", \"\"]`; `\"\\\"\\\"\"` ⇒ `[\"\"]`).\n- Văn bản rỗng ⇒ danh sách rỗng. MỘT dấu xuống dòng ở CUỐI văn bản không tạo bản ghi mới; dòng trống ở giữa (hoặc văn bản chỉ là `\"\\n\"`, hoặc dòng trống trước dấu xuống dòng cuối) là một bản ghi gồm MỘT ô rỗng (`\"a\\n\\nb\"` ⇒ `[[\"a\"], [\"\"], [\"b\"]]`; `\"a\\n\\n\"` ⇒ `[[\"a\"], [\"\"]]`). Số ô mỗi bản ghi có thể khác nhau.\n- Lỗi ⇒ ném: dấu `\"` xuất hiện trong ô KHÔNG bọc nháy (kể cả `\" \\\"a\\\"\"` vì ô bắt đầu bằng khoảng trắng); ký tự khác `,`/xuống dòng ngay sau nháy đóng; nháy chưa đóng tới hết văn bản.\n\n**`BaoCao.tongHop(String csv)` ⇒ `List<DongBaoCao>`**:\n- Phân tích bằng `DocCsv.phanTich`. Không có bản ghi nào ⇒ ném. Bản ghi đầu là tiêu đề, phải có cột tên ĐÚNG `nhom` và `so_tien` (so khớp chính xác, phân biệt hoa thường, không cắt khoảng trắng; ở vị trí bất kỳ, có thể có cột khác) — thiếu ⇒ ném. Mọi bản ghi dữ liệu phải có ĐÚNG số ô bằng tiêu đề — sai ⇒ ném (kể cả dòng trống).\n- Giá trị `so_tien` = `new BigDecimal(o.trim())` (sai/rỗng ⇒ ném). Có thể âm, rất lớn, nhiều chữ số thập phân — KHÔNG dùng `double`.\n- Gộp theo giá trị ô `nhom` (chuỗi chính xác). Mỗi nhóm: `soDong` = số bản ghi; `tong` = tổng CHÍNH XÁC rồi `setScale(2, RoundingMode.HALF_UP)`; `trungBinh` = tổng chính xác chia số dòng, làm tròn 2 chữ số `HALF_UP` (`divide(…, 2, RoundingMode.HALF_UP)`). Cả hai đều có scale đúng 2.\n- Sắp các nhóm theo tổng CHÍNH XÁC (trước làm tròn, so bằng `compareTo`) GIẢM dần; bằng nhau thì theo `nhom` TĂNG dần (`String.compareTo`).\n\n**`BaoCao.lapBang(String csv)` ⇒ `String`** — bảng văn bản 4 cột từ cùng dữ liệu (lỗi như `tongHop`):\n- Dòng tiêu đề `Nhóm`, `Số dòng`, `Tổng`, `Trung bình`; rồi dòng kẻ; rồi mỗi nhóm một dòng (đúng thứ tự `tongHop`; số dòng ghi dạng số nguyên, tổng và trung bình ghi bằng `toPlainString()` của giá trị scale 2); rồi dòng kẻ; rồi dòng `Cộng`. Dòng `Cộng`: số dòng = tổng số bản ghi dữ liệu; tổng = tổng chính xác của MỌI bản ghi rồi mới làm tròn 2 chữ số HALF_UP (KHÔNG cộng các tổng nhóm đã làm tròn); trung bình = tổng chính xác chung chia tổng số dòng, HALF_UP 2 chữ số; không có dữ liệu ⇒ `0`, `0.00`, `0.00`.\n- Độ rộng mỗi cột = độ dài (`String.length()`) lớn nhất của mọi ô trong cột đó, tính cả tiêu đề và dòng `Cộng`. Cột 1 căn TRÁI (đệm khoảng trắng bên phải), cột 2–4 căn PHẢI (đệm bên trái). Các ô trong một dòng nối bằng `\" | \"`. Dòng kẻ: mỗi cột là `-` lặp đúng độ rộng cột, nối bằng `\"-+-\"`. Mỗi dòng (kể cả dòng cuối) kết thúc bằng `\\n`; không có dòng nào khác.\n\nVí dụ (dữ liệu `nhom,so_tien` / `Táo,3` / `Lê,1.5` / `Táo,2`):\n\n    Nhóm | Số dòng | Tổng | Trung bình\n    -----+---------+------+-----------\n    Táo  |       2 | 5.00 |       2.50\n    Lê   |       1 | 1.50 |       1.50\n    -----+---------+------+-----------\n    Cộng |       3 | 6.50 |       2.17",
+  "tepGiai": [
+    "src/DocCsv.java",
+    "src/BaoCao.java"
+  ],
+  "dinhDanh": "BaoCao",
+  "testHienThi": [
+    "test/HienThiTest.java"
+  ],
+  "testAn": [
+    "test/AnTest.java"
+  ],
+  "tepBaoVe": [
+    "test/Kt.java",
+    "test/HienThiTest.java",
+    "src/DongBaoCao.java"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 12
+  },
+  "sai": [
+    {
+      "tep": "src/BaoCao.java",
+      "tu": "RoundingMode.HALF_UP",
+      "den": "RoundingMode.HALF_EVEN"
+    }
+  ]
+}

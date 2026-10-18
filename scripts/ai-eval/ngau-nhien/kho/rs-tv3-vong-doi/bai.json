@@ -1,0 +1,33 @@
+{
+  "id": "rs-tv3-vong-doi",
+  "lang": "rs",
+  "muc": "thu-vien",
+  "kieu": "cargo",
+  "tieuDe": "Lifetime và mượn: tách từ bằng struct giữ tham chiếu cài Iterator, đếm từ phổ biến trả lát cắt gốc",
+  "deBai": "Trong crate `bai` (tệp `src/lib.rs`), cài (giữ đúng chữ ký, kể cả tham số lifetime):\n\n```rust\npub struct TachTu<'a> { /* giữ tham chiếu tới chuỗi nguồn; trường tuỳ bạn */ }\nimpl<'a> TachTu<'a> { pub fn moi(s: &'a str) -> TachTu<'a>; }\nimpl<'a> Iterator for TachTu<'a> { type Item = &'a str; }\n\npub fn tu_pho_bien<'a>(s: &'a str, k: usize) -> Vec<(&'a str, usize)>;\npub fn tu_dai_nhat<'a>(s: &'a str) -> Option<&'a str>;\npub fn dong_chua<'a>(van_ban: &'a str, tu: &str) -> Vec<(usize, &'a str)>;\n```\n\n**Từ** = dãy DÀI NHẤT các ký tự liên tiếp mà `char::is_alphanumeric()` đúng (chữ Unicode có dấu và chữ số đều tính); mọi ký tự khác (khoảng trắng, dấu câu, `-`, `'`…) là dấu phân cách. Ví dụ `\"thế-giới\"` ⇒ `thế`, `giới`; `\"don't\"` ⇒ `don`, `t`.\n\n**So sánh không phân biệt hoa thường** = so sánh `str::to_lowercase()` (Unicode đầy đủ, vd `\"ĐÀ\"` và `\"đà\"` là một từ; không chỉ ASCII).\n\n- `TachTu` — iterator trả lần lượt các từ của chuỗi nguồn, theo thứ tự xuất hiện, mỗi từ là LÁT CẮT MƯỢN từ chuỗi nguồn (không cấp phát). Đã trả `None` thì các lần gọi `next` sau cũng trả `None`.\n- `tu_pho_bien` — đếm số lần xuất hiện của mỗi từ (không phân biệt hoa thường). Mỗi phần tử kết quả là `(lát cắt, số lần)` trong đó lát cắt là CHÍNH lát cắt của lần xuất hiện ĐẦU TIÊN trong `s` (giữ nguyên hoa thường gốc, trỏ vào bộ nhớ của `s`). Sắp theo số lần GIẢM dần, bằng nhau thì từ nào xuất hiện lần đầu SỚM hơn đứng trước. Lấy tối đa `k` phần tử (`k = 0` ⇒ rỗng; `k` lớn hơn số từ khác nhau ⇒ lấy hết).\n- `tu_dai_nhat` — từ có nhiều KÝ TỰ (`char`) nhất (KHÔNG phải nhiều byte nhất: `\"đường\"` dài 5); bằng nhau ⇒ từ xuất hiện trước; không có từ nào ⇒ `None`.\n- `dong_chua` — duyệt các dòng của `van_ban` theo `str::lines()` (bỏ `\\n` / `\\r\\n` cuối dòng), trả `(số thứ tự dòng tính từ 1, lát cắt dòng)` cho mỗi dòng có ÍT NHẤT MỘT từ bằng `tu` (không phân biệt hoa thường, so NGUYÊN từ: `\"dòngx\"` không khớp `\"dòng\"`). Kết quả chỉ mượn từ `van_ban` — phải dùng được sau khi chuỗi chứa `tu` đã bị huỷ. `tu` rỗng ⇒ không dòng nào khớp.\n\nKhông dùng crate ngoài.",
+  "tepGiai": [
+    "src/lib.rs"
+  ],
+  "dinhDanh": "tu_pho_bien",
+  "testHienThi": [
+    "tests/hien_thi.rs"
+  ],
+  "testAn": [
+    "tests/an.rs"
+  ],
+  "tepBaoVe": [
+    "Cargo.toml",
+    "tests/hien_thi.rs"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 8
+  },
+  "sai": [
+    {
+      "tep": "src/lib.rs",
+      "tu": "tu.to_lowercase()",
+      "den": "tu.to_ascii_lowercase()"
+    }
+  ]
+}

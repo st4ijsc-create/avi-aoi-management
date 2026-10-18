@@ -1,0 +1,35 @@
+{
+  "id": "cpp-tv2-chrono-lich",
+  "lang": "cpp",
+  "muc": "thu-vien",
+  "kieu": "cmake",
+  "tieuDe": "Lịch C++20 với std::chrono: đọc/in ngày, cộng tháng kẹp cuối tháng, thứ ISO, ngày thứ n của tháng, ngày làm việc",
+  "deBai": "Cài tám hàm trong namespace `lich` khai báo ở `src/lich.hpp` (đã có, KHÔNG đổi; `using Ngay = std::chrono::year_month_day;`) vào tệp `src/lich.cpp`. Dùng lịch C++20 của `<chrono>` (`year_month_day`, `sys_days`, `weekday`, `year_month_weekday`, `year_month_day_last`…). KHÔNG dùng múi giờ (`zoned_time`, `current_zone`, tzdb) và không đọc đồng hồ hệ thống. Lịch Gregory \"proleptic\" (áp cho cả năm 1).\n\n**Ngày hợp lệ** = `d.ok()` VÀ năm trong `[1, 9999]`. Hàm nhận `Ngay` không hợp lệ ⇒ ném `std::invalid_argument`. Hàm cộng mà KẾT QUẢ rơi ra ngoài năm `[1, 9999]` ⇒ ném `std::out_of_range`.\n\n- `std::optional<Ngay> docNgay(std::string_view s)`: nhận ĐÚNG định dạng `YYYY-MM-DD`: dài đúng 10 ký tự, `'-'` ở vị trí 4 và 7, tám vị trí còn lại đều là chữ số ASCII `'0'..'9'` (không dấu `+`/`-`, không khoảng trắng thừa). Sai định dạng, hoặc ngày không tồn tại (vd `2023-02-29`, `1900-02-29`, tháng `00`/`13`, ngày `00`), hoặc năm `0000` ⇒ `std::nullopt`.\n- `std::string inNgay(const Ngay& d)`: `YYYY-MM-DD`, năm đủ 4 chữ số, tháng/ngày 2 chữ số, đệm `0` bên trái (năm 42 ⇒ `0042`).\n- `Ngay congThang(const Ngay& d, int soThang)`: cộng `soThang` tháng (âm = lùi, qua năm đúng); nếu ngày của `d` lớn hơn số ngày của tháng đích thì KẸP về ngày cuối tháng đích (31/01 + 1 tháng ⇒ 29/02 năm nhuận hoặc 28/02; 31/03 − 1 tháng ⇒ cuối tháng 2). `soThang == 0` ⇒ `d`.\n- `Ngay congNgay(const Ngay& d, long long soNgay)`: cộng/trừ số ngày.\n- `int thuTrongTuan(const Ngay& d)`: thứ theo ISO 8601: 1 = thứ Hai, 2 = thứ Ba, …, 6 = thứ Bảy, 7 = Chủ nhật (KHÔNG phải 0).\n- `std::optional<Ngay> ngayThuNCuaThang(int nam, int thang, int thu, int n)`: `thu` theo mã ISO như trên (1..7, 7 = Chủ nhật); `n` từ 1 tới 5 ⇒ lần xuất hiện thứ `n` của thứ đó trong tháng (vd thứ Năm lần 4 của 11/2024 là 2024-11-28); tháng không có lần thứ `n` (vd thứ Năm lần 5 của 02/2023) ⇒ `std::nullopt`; `n == -1` ⇒ lần CUỐI CÙNG trong tháng (luôn có). Tham số sai — `nam` ngoài `[1, 9999]`, `thang` ngoài `[1, 12]`, `thu` ngoài `[1, 7]`, `n` không thuộc `{-1, 1, 2, 3, 4, 5}` ⇒ `std::invalid_argument`.\n- `long long soNgayGiua(const Ngay& a, const Ngay& b)`: số ngày `b − a` (âm nếu `b` trước `a`).\n- `long long soNgayLamViec(const Ngay& a, const Ngay& b)`: số ngày từ thứ Hai tới thứ Sáu trong nửa khoảng `[a, b)` (tính `a`, không tính `b`); `b <= a` ⇒ 0. Khoảng có thể dài cả nghìn năm — phải nhanh (dưới 1 giây).",
+  "tepGiai": [
+    "src/lich.cpp"
+  ],
+  "dinhDanh": "congThang",
+  "testHienThi": [
+    "tests/hien_thi.cpp"
+  ],
+  "testAn": [
+    "tests/an.cpp"
+  ],
+  "tepBaoVe": [
+    "CMakeLists.txt",
+    "tests/kt.hpp",
+    "tests/hien_thi.cpp",
+    "src/lich.hpp"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 10
+  },
+  "sai": [
+    {
+      "tep": "src/lich.cpp",
+      "tu": "iso_encoding()",
+      "den": "c_encoding()"
+    }
+  ]
+}

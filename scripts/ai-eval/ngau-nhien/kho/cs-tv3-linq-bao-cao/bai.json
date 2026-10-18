@@ -1,0 +1,15 @@
+{
+  "id": "cs-tv3-linq-bao-cao",
+  "lang": "cs",
+  "muc": "thu-vien",
+  "kieu": "dotnet",
+  "tieuDe": "Báo cáo doanh số bằng LINQ: nhóm nhiều khoá, left join, top-N, luỹ kế tháng",
+  "deBai": "Trong tệp `src/BaoCao.cs` (namespace `Bai`) đã có các record `KhachHang(int Ma, string Ten, string Vung)`, `DonHang(int Ma, int MaKhach, DateOnly Ngay, string DanhMuc, decimal SoTien)`, `DongDoanhSo(string Vung, string DanhMuc, int Nam, int Thang, int SoDon, decimal TongTien)`, `TongKhach(int MaKhach, string Ten, int SoDon, decimal TongTien)`, `LuyKeThang(int Thang, decimal TrongThang, decimal LuyKe)` (KHÔNG đổi chữ ký). Hãy cài bốn phương thức tĩnh của lớp `BaoCao` (dùng LINQ, chỉ BCL). Mã khách trong `khach` là duy nhất. Mọi so sánh chuỗi để SẮP XẾP là ORDINAL (`StringComparer.Ordinal`, theo giá trị mã UTF-16 — không theo văn hoá/locale; ví dụ `\"Bia\"` đứng trước `\"banh\"`, `\"Tây\"` đứng trước `\"Đông\"`). `SoTien` có thể âm (hoàn tiền) và được cộng như bình thường; tổng là `decimal` chính xác.\n\n1. `IReadOnlyList<DongDoanhSo> TheoVungDanhMucThang(IEnumerable<KhachHang> khach, IEnumerable<DonHang> don)` — một dòng cho mỗi bộ (vùng, danh mục, năm, tháng) có ít nhất một đơn; `Vung` = vùng của khách có `Ma == MaKhach`, không tìm thấy khách ⇒ `\"(không rõ)\"`; `SoDon` = số đơn, `TongTien` = tổng `SoTien`. Sắp: `Vung` (ordinal) tăng, rồi `DanhMuc` (ordinal) tăng, rồi `Nam` tăng, rồi `Thang` tăng (theo SỐ).\n2. `IReadOnlyList<TongKhach> TongTheoKhach(IEnumerable<KhachHang> khach, IEnumerable<DonHang> don)` — LEFT JOIN: MỖI khách đúng một dòng (khách không có đơn ⇒ `SoDon = 0`, `TongTien = 0`), sắp theo `MaKhach` tăng; đơn của mã khách không có trong `khach` bị bỏ.\n3. `IReadOnlyList<TongKhach> TopKhach(IEnumerable<KhachHang> khach, IEnumerable<DonHang> don, int n)` — từ kết quả `TongTheoKhach`, chỉ giữ khách có ít nhất MỘT đơn (`SoDon >= 1`, kể cả khi tổng bằng 0 hay âm), sắp `TongTien` GIẢM, hoà thì `SoDon` GIẢM, hoà nữa thì `MaKhach` TĂNG; lấy tối đa `n` dòng (ít hơn `n` khách thì trả hết). `n < 1` ⇒ `ArgumentOutOfRangeException`.\n4. `IReadOnlyList<LuyKeThang> LuyKeTheoThang(IEnumerable<DonHang> don, int nam)` — đúng 12 dòng, `Thang` = 1..12 theo thứ tự; `TrongThang` = tổng `SoTien` các đơn có `Ngay` thuộc tháng đó của năm `nam` (tháng không có đơn ⇒ 0); `LuyKe` = tổng dồn từ tháng 1 tới hết tháng đó. Đơn của năm khác bị bỏ.\n\nTham số danh sách null ⇒ `ArgumentNullException`.",
+  "tepGiai": ["src/BaoCao.cs"],
+  "dinhDanh": "BaoCao",
+  "testHienThi": ["tests/HienThiTests.cs"],
+  "testAn": ["tests/AnTests.cs"],
+  "tepBaoVe": ["Bai.csproj", "tests/HienThiTests.cs"],
+  "soTest": { "hienThi": 3, "an": 10 },
+  "sai": [{ "tep": "src/BaoCao.cs", "tu": ".ThenBy(t => t.MaKhach)", "den": ".ThenByDescending(t => t.MaKhach)" }]
+}

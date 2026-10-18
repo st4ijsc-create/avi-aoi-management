@@ -1,0 +1,37 @@
+{
+  "id": "cpp-ud2-csv-ton-kho",
+  "lang": "cpp",
+  "muc": "ung-dung",
+  "kieu": "cmake",
+  "tieuDe": "Đọc CSV (ngoặc kép, xuống dòng trong trường) và báo cáo tồn kho căn cột, cảnh báo tồn âm, số cố định 2 chữ số",
+  "deBai": "Ứng dụng nhiều tệp: đọc CSV giao dịch kho, tính tồn kho, in báo cáo căn cột. Viết HAI tệp: `src/csv.cpp` (cài `docCsv` khai báo trong `src/csv.hpp`) và `src/ton_kho.cpp` (cài năm hàm khai báo trong `src/ton_kho.hpp`). Hai header đã có (gồm `LoiCsv`, `BanGhi`, `HangTon`, `CanhBao`, `LoiDong`, `KetQuaTonKho`), KHÔNG đổi. Chỉ thư viện chuẩn C++20; không phụ thuộc locale.\n\n**1. `std::vector<BanGhi> docCsv(std::istream& vao)`** — đọc HẾT luồng (theo byte):\n- Bản ghi kết thúc bởi `\\n` hoặc `\\r\\n` (ngoài ngoặc kép) hoặc hết dữ liệu. Một `\\r` KHÔNG đứng ngay trước `\\n` là ký tự thường. Dữ liệu kết thúc bằng dấu xuống dòng thì KHÔNG sinh thêm bản ghi rỗng; luồng rỗng ⇒ vector rỗng.\n- Dòng hoàn toàn rỗng (không có ký tự nào giữa hai dấu kết thúc bản ghi) bị BỎ QUA. Dòng `\"\"` là bản ghi có một trường rỗng; dòng `,` là bản ghi hai trường rỗng.\n- Trường cách nhau bởi `,`; không cắt khoảng trắng. Trường mà ký tự ĐẦU TIÊN là `\"` là trường trong ngoặc kép: kéo tới dấu `\"` đóng; bên trong `\"\"` là một dấu `\"`; `,` và xuống dòng (`\\n`, `\\r\\n` — giữ NGUYÊN các byte) là nội dung. Sau dấu `\"` đóng PHẢI là `,`, kết thúc bản ghi hoặc hết dữ liệu — ngược lại ném `LoiCsv` với `dong` = dòng vật lý của ký tự vi phạm. Hết dữ liệu khi ngoặc kép chưa đóng ⇒ ném `LoiCsv` với `dong` = dòng vật lý của dấu `\"` MỞ. Trong trường KHÔNG ngoặc kép, `\"` là ký tự thường (vd `ab\"c`, ` \"x\"` có dấu cách đầu).\n- Dòng vật lý đếm từ 1, tăng sau MỖI byte `\\n` (kể cả `\\n` nằm trong ngoặc kép và dòng rỗng bị bỏ qua).\n\n**2. `long long docSoLuong(std::string_view s)`**: nhận đúng dạng `D+` hoặc `D+.D` hoặc `D+.DD` (D là chữ số ASCII, phần nguyên 1–12 chữ số, cho phép số 0 đứng đầu; không dấu, không khoảng trắng, không mũ) ⇒ giá trị × 100 (`\"12.5\"` ⇒ 1250, `\"0.07\"` ⇒ 7). Sai ⇒ `std::invalid_argument`.\n\n**3. `std::string inSoLuong(long long phanTram)`**: `[-]<phần nguyên>.<đúng 2 chữ số>`, không dấu phân cách nghìn: 0 ⇒ `0.00`, -5 ⇒ `-0.05`, 4000 ⇒ `40.00`.\n\n**4. `KetQuaTonKho tinhTonKho(const std::vector<BanGhi>& banGhi)`**: `banGhi[0]` phải ĐÚNG là `{\"ma\",\"ten\",\"loai\",\"so_luong\"}` (đúng 4 trường, đúng chữ) — rỗng hoặc sai ⇒ `std::invalid_argument`. Bản ghi thứ `i` (chỉ số vector từ 0) có SỐ THỨ TỰ `i + 1` (tiêu đề = 1; dòng rỗng đã bị `docCsv` bỏ nên không được đếm). Xét lần lượt các bản ghi sau tiêu đề, kiểm theo THỨ TỰ, lỗi đầu tiên được ghi `LoiDong{soThuTu, lyDo}` và bỏ bản ghi đó: số trường ≠ 4 ⇒ `\"so truong\"`; `ma` rỗng ⇒ `\"ma rong\"`; `loai` không phải ĐÚNG `NHAP` hoặc `XUAT` ⇒ `\"loai\"`; `so_luong` không hợp lệ theo `docSoLuong` ⇒ `\"so luong\"`. Bản ghi hợp lệ: `NHAP` cộng, `XUAT` trừ số lượng vào tồn của mã; `ten` của một mã lấy từ bản ghi HỢP LỆ ĐẦU TIÊN của mã đó (các tên sau bỏ qua). Sau một `XUAT` mà tồn của mã `< 0` ⇒ thêm `CanhBao{soThuTu, ma, tonSau}` (mỗi lần như vậy một cảnh báo, kể cả khi đã âm từ trước). `hang`: mọi mã có ít nhất một bản ghi hợp lệ, xếp theo `ma` tăng dần (thứ tự byte); `canhBao` và `loi` theo thứ tự bản ghi.\n\n**5. `std::string baoCao(const KetQuaTonKho& kq)`**: độ rộng hiển thị của chuỗi = số ký tự Unicode = số byte KHÔNG phải byte tiếp nối UTF-8 (byte có dạng `10xxxxxx` không tính). `w1` = max(2, độ rộng mọi `ma`), `w2` = max(3, độ rộng mọi `ten`), `w3` = max(3, độ rộng mọi `inSoLuong(ton)`). Dòng tiêu đề: `MA` căn trái trong `w1`, 2 dấu cách, `TEN` căn trái trong `w2`, 2 dấu cách, `TON` căn PHẢI trong `w3`. Mỗi mục `hang` một dòng cùng bố cục (`ma`, `ten` căn trái; `inSoLuong(ton)` căn phải). Đệm bằng dấu cách. Tiếp theo mỗi cảnh báo một dòng `CANH BAO: ban ghi <soThuTu>, ma <ma>, ton <inSoLuong(tonSau)>`, rồi mỗi lỗi một dòng `LOI: ban ghi <soThuTu>: <lyDo>`. Mọi dòng kết thúc bằng `\\n`. Không có hàng nào ⇒ chỉ dòng tiêu đề `MA  TEN  TON`.\n\n**6. `std::string xuLyCsv(std::istream& vao)`** = `baoCao(tinhTonKho(docCsv(vao)))`; ngoại lệ (`LoiCsv`, `std::invalid_argument`) để lan ra ngoài.",
+  "tepGiai": [
+    "src/csv.cpp",
+    "src/ton_kho.cpp"
+  ],
+  "dinhDanh": "tinhTonKho",
+  "testHienThi": [
+    "tests/hien_thi.cpp"
+  ],
+  "testAn": [
+    "tests/an.cpp"
+  ],
+  "tepBaoVe": [
+    "CMakeLists.txt",
+    "tests/kt.hpp",
+    "tests/hien_thi.cpp",
+    "src/csv.hpp",
+    "src/ton_kho.hpp"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 10
+  },
+  "sai": [
+    {
+      "tep": "src/ton_kho.cpp",
+      "tu": "& 0xC0) != 0x80",
+      "den": "& 0xC0) != 0x81"
+    }
+  ]
+}

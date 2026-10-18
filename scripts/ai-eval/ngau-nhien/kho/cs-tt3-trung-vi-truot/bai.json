@@ -1,0 +1,15 @@
+{
+  "id": "cs-tt3-trung-vi-truot",
+  "lang": "cs",
+  "muc": "thuat-toan",
+  "kieu": "dotnet",
+  "tieuDe": "Trung vị cửa sổ trượt O(n log k), không tràn số",
+  "deBai": "Trong tệp `src/TrungVi.cs` (namespace `Bai`), cài:\n\n```csharp\npublic static class TrungVi\n{\n    public static double[] TrungViTruot(int[] a, int k);\n}\n```\n\n- Trả mảng độ dài `a.Length - k + 1`; phần tử thứ `i` là trung vị của cửa sổ `a[i..i+k-1]`.\n- `k` lẻ ⇒ phần tử đứng giữa sau khi sắp xếp cửa sổ. `k` chẵn ⇒ trung bình cộng của HAI phần tử đứng giữa, tính CHÍNH XÁC (không tràn số dù hai giá trị đều gần `int.MaxValue` hay `int.MinValue`; ví dụ `int.MaxValue` và `int.MaxValue - 1` ⇒ `2147483646.5`).\n- Giá trị trùng nhau được tính là các phần tử riêng biệt (ví dụ cửa sổ `[2, 2, 1, 1]` có trung vị `1.5`).\n- `a` null ⇒ `ArgumentNullException`; `k < 1` hoặc `k > a.Length` (kể cả mảng rỗng) ⇒ `ArgumentOutOfRangeException`.\n- KHÔNG được sửa mảng `a`.\n- Hiệu năng BẮT BUỘC O(n log k): `n = 200 000`, `k = 50 001` phải xong trong vài giây (sắp xếp lại từng cửa sổ, hoặc chèn vào danh sách có thứ tự bằng dịch mảng O(k) mỗi bước, là quá chậm).\n- Chỉ dùng thư viện chuẩn .NET.",
+  "tepGiai": ["src/TrungVi.cs"],
+  "dinhDanh": "TrungViTruot",
+  "testHienThi": ["tests/HienThiTests.cs"],
+  "testAn": ["tests/AnTests.cs"],
+  "tepBaoVe": ["Bai.csproj", "tests/HienThiTests.cs"],
+  "soTest": { "hienThi": 3, "an": 10 },
+  "sai": [{ "tep": "src/TrungVi.cs", "tu": "return ((long)giuaTrai + giuaPhai) / 2.0;", "den": "return (giuaTrai + giuaPhai) / 2.0;" }]
+}

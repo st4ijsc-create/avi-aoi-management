@@ -1,0 +1,15 @@
+{
+  "id": "go-tt1-chia-mang",
+  "lang": "go",
+  "muc": "thuat-toan",
+  "kieu": "go",
+  "tieuDe": "Chia mảng thành k đoạn liên tiếp, cực tiểu tổng lớn nhất (nhị phân trên đáp án), trả cả cách chia",
+  "deBai": "Trong gói `bai` (module `bai`, tệp `chia_mang.go`), cài:\n\n```go\nvar (\n    ErrK  = errors.New(\"k khong hop le\")\n    ErrAm = errors.New(\"phan tu am\")\n)\n\nfunc ChiaMang(a []int64, k int) (int64, []int, error)\n```\n\nChia `a` thành ĐÚNG `k` đoạn liên tiếp, mỗi đoạn KHÁC RỖNG, phủ hết `a` theo thứ tự, sao cho tổng lớn nhất trong các đoạn (gọi là `M`) nhỏ nhất có thể. Trả `(M, doDai, nil)` với `doDai[i]` = số phần tử của đoạn thứ `i` (`len(doDai) == k`, tổng các `doDai[i]` = `len(a)`).\n\n- Lỗi: `k < 1` hoặc `k > len(a)` (kể cả `a` rỗng/nil) ⇒ trả `(0, nil, err)` với `errors.Is(err, ErrK)`. Có phần tử âm ⇒ `(0, nil, err)` với `errors.Is(err, ErrAm)` (khi `k` hợp lệ). Được bọc lỗi bằng `fmt.Errorf(\"...: %w\", ...)`.\n- Phần tử không âm, có thể bằng 0; tổng mọi phần tử không vượt quá `1<<62` (không được tràn số khi tính).\n- PHÁ HOÀ khi có nhiều cách chia cùng đạt `M`: chọn cách có vector `doDai` LỚN NHẤT theo thứ tự từ điển — tức là đoạn đầu dài nhất có thể, rồi đến đoạn thứ hai dài nhất có thể, … (luôn phải chừa đủ phần tử để mọi đoạn sau khác rỗng). Ví dụ `a = [1, 1, 1]`, `k = 2` ⇒ `M = 2`, `doDai = [2, 1]` (không phải `[1, 2]`).\n- Không được sửa nội dung `a`.\n- Hiệu năng: `len(a)` tới 200 000, phần tử tới 10^9 ⇒ phải chạy nhanh (gợi ý: tìm kiếm nhị phân trên giá trị `M` + kiểm tra tham lam O(n)); quy hoạch động O(n²·k) sẽ quá chậm.\n- Chỉ dùng thư viện chuẩn.",
+  "tepGiai": ["chia_mang.go"],
+  "dinhDanh": "ChiaMang",
+  "testHienThi": ["hien_thi_test.go"],
+  "testAn": ["an_test.go"],
+  "tepBaoVe": ["go.mod", "hien_thi_test.go"],
+  "soTest": { "hienThi": 3, "an": 9 },
+  "sai": [{ "tep": "chia_mang.go", "tu": "conLai := k - j - 1", "den": "conLai := 0" }]
+}

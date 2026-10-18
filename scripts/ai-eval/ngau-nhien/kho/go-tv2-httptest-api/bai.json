@@ -1,0 +1,15 @@
+{
+  "id": "go-tv2-httptest-api",
+  "lang": "go",
+  "muc": "thu-vien",
+  "kieu": "go",
+  "tieuDe": "API JSON kho sách bằng net/http (ServeMux Go 1.22+, PathValue), an toàn đồng thời, mã trạng thái chuẩn",
+  "deBai": "Trong gói `bai` (module `bai`, tệp `kho_sach.go`), cài một kho sách TRONG BỘ NHỚ phục vụ qua HTTP, chỉ dùng thư viện chuẩn:\n\n```go\ntype Sach struct {\n    ID     string `json:\"id\"`\n    TieuDe string `json:\"tieuDe\"`\n    TacGia string `json:\"tacGia\"`\n    Nam    int    `json:\"nam\"`\n}\n\ntype Kho struct { /* tự thêm trường */ }\nfunc MoiKho() *Kho                  // kho rỗng\nfunc (k *Kho) Handler() http.Handler\n```\n\nGiữ nguyên kiểu `Sach` (tên trường + thẻ json). Dùng `http.NewServeMux()` với mẫu route có phương thức (Go 1.22+): `GET /sach`, `POST /sach`, `GET /sach/{id}`, `DELETE /sach/{id}` và lấy id bằng `r.PathValue(\"id\")`. Kho phải an toàn khi nhiều request chạy ĐỒNG THỜI (dùng `sync.RWMutex`; kiểm tra trùng id và chèn phải là MỘT thao tác nguyên tử).\n\n- Mọi phản hồi có thân JSON đặt header `Content-Type: application/json; charset=utf-8` (đúng chuỗi này). Phản hồi lỗi (400/404/409) có thân là đối tượng `{\"loi\": \"<thông điệp khác rỗng>\"}`.\n- `GET /sach` ⇒ 200, mảng JSON mọi sách sắp xếp theo `id` tăng dần (so sánh chuỗi byte); kho rỗng ⇒ `[]` (không phải `null`).\n- `GET /sach/{id}` ⇒ 200 + đối tượng sách; không có ⇒ 404.\n- `POST /sach` — thân là ĐÚNG MỘT đối tượng JSON kiểu `Sach` (khoảng trắng phía sau được phép; mọi dữ liệu khác phía sau như `rac` hay đối tượng thứ hai ⇒ 400). Trả 400 nếu: thân rỗng hoặc JSON hỏng/sai kiểu (vd `\"nam\":\"1999\"`, hoặc là mảng); có trường lạ không thuộc `Sach` (dùng `DisallowUnknownFields`); `id` không gồm 1–32 ký tự thuộc `a-z`, `0-9`, `-`; `tieuDe` rỗng sau khi bỏ khoảng trắng hai đầu; `nam` ngoài khoảng 0–9999. `tacGia` tuỳ chọn. Hợp lệ nhưng `id` đã tồn tại ⇒ 409 (bản cũ giữ nguyên). Thành công ⇒ 201, header `Location: /sach/<id>`, thân = sách vừa tạo. Request lỗi KHÔNG thay đổi kho. Chỉ phản hồi 201 mới có `Location`.\n- `DELETE /sach/{id}` ⇒ 204, thân rỗng; không có ⇒ 404 (JSON lỗi như trên).\n- Phương thức không hỗ trợ trên `/sach` hoặc `/sach/{id}` (vd `PUT`, `PATCH`, `DELETE /sach`) ⇒ 405 kèm header `Allow` liệt kê các phương thức hợp lệ — hành vi sẵn có của `ServeMux` khi đăng ký route có phương thức là đủ (thân 405 không cần JSON).",
+  "tepGiai": ["kho_sach.go"],
+  "dinhDanh": "MoiKho",
+  "testHienThi": ["hien_thi_test.go"],
+  "testAn": ["an_test.go"],
+  "tepBaoVe": ["go.mod", "hien_thi_test.go"],
+  "soTest": { "hienThi": 3, "an": 8 },
+  "sai": [{ "tep": "kho_sach.go", "tu": "http.StatusConflict", "den": "http.StatusBadRequest" }]
+}

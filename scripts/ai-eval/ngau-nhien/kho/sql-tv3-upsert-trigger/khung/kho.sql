@@ -1,0 +1,1 @@
+-- TODO: tạo bảng ton_kho, nhat_ky và các trigger theo đề bài

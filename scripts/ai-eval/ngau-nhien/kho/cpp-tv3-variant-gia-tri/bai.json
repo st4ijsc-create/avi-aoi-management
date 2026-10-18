@@ -1,0 +1,35 @@
+{
+  "id": "cpp-tv3-variant-gia-tri",
+  "lang": "cpp",
+  "muc": "thu-vien",
+  "kieu": "cmake",
+  "tieuDe": "Giá trị kiểu JSON bằng std::variant: tuần tự hoá có quy tắc thoát, tra theo đường dẫn trả optional, so sánh sâu",
+  "deBai": "Cài năm hàm khai báo trong `src/gia_tri.hpp` (đã có, KHÔNG đổi) vào tệp `src/gia_tri.cpp`. `GiaTri` là giá trị kiểu JSON: `std::variant<std::nullptr_t, bool, std::int64_t, double, std::string, Mang, DoiTuong> v`, với `Mang = std::vector<GiaTri>` và `DoiTuong = std::vector<std::pair<std::string, GiaTri>>` (cặp khoá–giá trị theo THỨ TỰ chèn, có thể trùng khoá). Dùng `std::visit` / `std::get_if`; chỉ thư viện chuẩn C++20.\n\n**`std::string tenKieu(const GiaTri& g)`**: `\"null\"`, `\"bool\"`, `\"int\"` (int64), `\"double\"`, `\"string\"`, `\"array\"`, `\"object\"`.\n\n**`std::string tuanTuHoa(const GiaTri& g)`** — JSON gọn, KHÔNG có khoảng trắng nào ngoài nội dung chuỗi:\n- null ⇒ `null`; bool ⇒ `true`/`false`; int64 ⇒ số thập phân (kể cả `-9223372036854775808`).\n- double: NaN hoặc ±vô cực ⇒ `null`. Ngược lại lấy ĐÚNG chuỗi của `std::to_chars(dau, cuoi, x)` (dạng ngắn nhất khứ hồi, KHÔNG truyền `chars_format`/độ chính xác); nếu chuỗi đó chỉ gồm chữ số và dấu `-` (không có `.`, `e`) thì nối thêm `.0`. Vd `2.0` ⇒ `2.0`, `-0.0` ⇒ `-0.0`, `0.1` ⇒ `0.1`, `1e21` ⇒ `1e+21`.\n- chuỗi (và KHOÁ của đối tượng): trong cặp `\"`; thoát `\"` ⇒ `\\\"`, `\\` ⇒ `\\\\`, xuống dòng ⇒ `\\n`, `\\r` ⇒ `\\r`, tab ⇒ `\\t`, `\\b` (0x08) ⇒ `\\b`, `\\f` (0x0C) ⇒ `\\f`; MỌI byte khác `< 0x20` (kể cả `'\\0'`) ⇒ `\\u00XX` với 2 chữ số hex THƯỜNG (vd 0x1B ⇒ `\\u001b`). Mọi byte còn lại (kể cả `/`, 0x7F, byte UTF-8 `>= 0x80`) giữ nguyên.\n- mảng ⇒ `[a,b,c]`, rỗng `[]`; đối tượng ⇒ `{\"k1\":v1,\"k2\":v2}` theo đúng thứ tự lưu (in cả khoá trùng), rỗng `{}`.\n\n**`std::optional<GiaTri> layTheoDuong(const GiaTri& g, std::string_view duong)`** — trả BẢN SAO giá trị tìm được:\n- Cú pháp: `duong` là dãy (có thể rỗng) các đoạn, mỗi đoạn là `.KHOA` hoặc `[CHISO]`. `KHOA` = một hoặc nhiều ký tự bất kỳ trừ `.` và `[` (vd `.k]` là khoá `\"k]\"`). `CHISO` = một hoặc nhiều chữ số `0-9` (cho phép số 0 đứng đầu; không dấu, không khoảng trắng) rồi `]`. Đường rỗng ⇒ chính `g`.\n- Sai cú pháp ⇒ ném `std::invalid_argument`. Cú pháp được kiểm TOÀN BỘ trước khi tra (đường sai cú pháp luôn ném, kể cả khi đoạn đầu đã không tìm thấy).\n- Tra: `.KHOA` trên đối tượng ⇒ giá trị của cặp ĐẦU TIÊN có khoá đó; `[CHISO]` trên mảng ⇒ phần tử đó. Không có khoá, chỉ số `>=` kích thước (kể cả số quá lớn không vừa `std::size_t`), `.KHOA` trên thứ không phải đối tượng, `[CHISO]` trên thứ không phải mảng (kể cả chuỗi) ⇒ `std::nullopt`.\n\n**`std::size_t demNut(const GiaTri& g)`**: số giá trị trong cây kể cả `g` (khoá không tính; giá trị đơn ⇒ 1; mảng/đối tượng ⇒ 1 + tổng của các con).\n\n**`bool operator==(const GiaTri& a, const GiaTri& b)`**: bằng khi CÙNG kiểu thay thế và bằng nhau: int64 `1` KHÁC double `1.0`, `true` KHÁC `1`; double so bằng `==` (NaN khác chính nó); mảng so từng phần tử theo thứ tự; đối tượng so theo THỨ TỰ cặp (cùng số cặp, cặp thứ i cùng khoá và giá trị bằng nhau) — thứ tự khác ⇒ khác.\n\nBộ nhớ: `GiaTri` có ngữ nghĩa giá trị (sao chép là sao chép sâu, không con trỏ thô sở hữu); phải chạy đúng với cây lồng 1000 cấp.",
+  "tepGiai": [
+    "src/gia_tri.cpp"
+  ],
+  "dinhDanh": "tuanTuHoa",
+  "testHienThi": [
+    "tests/hien_thi.cpp"
+  ],
+  "testAn": [
+    "tests/an.cpp"
+  ],
+  "tepBaoVe": [
+    "CMakeLists.txt",
+    "tests/kt.hpp",
+    "tests/hien_thi.cpp",
+    "src/gia_tri.hpp"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 10
+  },
+  "sai": [
+    {
+      "tep": "src/gia_tri.cpp",
+      "tu": "\"0123456789abcdef\"",
+      "den": "\"0123456789ABCDEF\""
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "id": "js-tv3-may-chu-http",
+  "lang": "js",
+  "muc": "thu-vien",
+  "kieu": "node",
+  "tieuDe": "Máy chủ node:http JSON: định tuyến, 404/405+Allow, đọc thân theo luồng có giới hạn byte (413), 400/415/422",
+  "deBai": "Viết module ESM `src/mayChu.mjs` xuất `function taoMayChu(tuyChon = {})` trả về một `http.Server` (của `node:http`, CHƯA gọi `listen` — test tự `listen(0)` rồi `close()`). Máy chủ quản lý GHI CHÚ trong bộ nhớ RIÊNG của từng máy chủ (mỗi lần gọi `taoMayChu` là một kho mới, id bắt đầu từ 1). Chỉ dùng thư viện chuẩn của Node.\n\n**Tuỳ chọn**: `tuyChon.gioiHanThan` = số BYTE tối đa của thân yêu cầu (mặc định 65536). Thân dài ĐÚNG bằng giới hạn được nhận; dài hơn dù 1 byte bị từ chối.\n\n**Phản hồi JSON**: mọi phản hồi (trừ 204) có thân là `JSON.stringify` của giá trị nêu dưới đây và header `Content-Type: application/json; charset=utf-8` (đúng chuỗi này). Lỗi có thân dạng `{\"loi\": \"<mã>\"}`.\n\n**Khớp đường**: chỉ dùng phần đường (pathname) của URL, bỏ query string (`/ghi-chu?trang=2` khớp `/ghi-chu`); so khớp CHÍNH XÁC (không bỏ `/` cuối). Ba mẫu đường:\n| đường | phương thức hỗ trợ (đúng thứ tự trong header `Allow`) |\n|---|---|\n| `/suc-khoe` | `GET` ⇒ 200 `{\"ok\": true}` |\n| `/ghi-chu` | `GET` ⇒ 200, mảng mọi ghi chú `{id, noiDung}` theo thứ tự tạo; `POST` ⇒ tạo ghi chú (xem dưới) |\n| `/ghi-chu/<id>` với `<id>` khớp `/^[1-9][0-9]*$/` | `GET` ⇒ 200 ghi chú đó; `DELETE` ⇒ xoá, 204 KHÔNG có thân. Không có ghi chú id đó ⇒ 404 `{\"loi\":\"khong-tim-thay\"}` |\n- Đường khớp một mẫu nhưng phương thức không hỗ trợ ⇒ 405 `{\"loi\":\"phuong-thuc-khong-ho-tro\"}` kèm header `Allow` lần lượt là `\"GET\"`, `\"GET, POST\"`, `\"GET, DELETE\"` (405 xét TRƯỚC việc ghi chú có tồn tại hay không).\n- Đường không khớp mẫu nào (kể cả `/ghi-chu/01`, `/ghi-chu/abc`, `/ghi-chu/`, `/suc-khoe/`) ⇒ 404 `{\"loi\":\"khong-tim-thay\"}` với MỌI phương thức.\n\n**`POST /ghi-chu`** — kiểm theo đúng thứ tự:\n1. Loại media của header `Content-Type` (phần trước dấu `;`, cắt khoảng trắng, không phân biệt hoa/thường) khác `application/json` hoặc thiếu header ⇒ 415 `{\"loi\":\"can-json\"}`.\n2. Thân vượt giới hạn ⇒ 413 `{\"loi\":\"than-qua-lon\"}`. Header `Content-Length` lớn hơn giới hạn ⇒ trả 413 ngay, không đọc thân. Thân gửi theo mảnh (chunked, không có `Content-Length`) phải được đọc theo LUỒNG, đếm byte dồn và trả 413 ngay khi tổng vượt giới hạn — không tích luỹ quá giới hạn. Sau 413 máy chủ vẫn phục vụ các yêu cầu tiếp theo bình thường.\n3. Ghép đủ các byte rồi mới giải mã UTF-8 (một ký tự nhiều byte có thể bị cắt giữa hai mảnh). `JSON.parse` lỗi (kể cả thân rỗng) ⇒ 400 `{\"loi\":\"json-hong\"}`.\n4. Giá trị không phải object thường (mảng, `null`, số, chuỗi…), hoặc `noiDung` không phải chuỗi, hoặc `noiDung.trim()` rỗng ⇒ 422 `{\"loi\":\"du-lieu-khong-hop-le\"}`. Trường khác bị bỏ qua.\n5. Hợp lệ ⇒ lưu `{ id, noiDung: noiDung.trim() }` (id = số nguyên tăng dần 1, 2, 3…, KHÔNG dùng lại id đã xoá) và trả 201 với thân là ghi chú đó cùng header `Location: /ghi-chu/<id>`.",
+  "tepGiai": [
+    "src/mayChu.mjs"
+  ],
+  "dinhDanh": "taoMayChu",
+  "testHienThi": [
+    "test/hien-thi.test.mjs"
+  ],
+  "testAn": [
+    "test/an.test.mjs"
+  ],
+  "tepBaoVe": [
+    "package.json",
+    "test/hien-thi.test.mjs"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 11
+  },
+  "sai": [
+    {
+      "tep": "src/mayChu.mjs",
+      "tu": "daNhan > gioiHan",
+      "den": "daNhan >= gioiHan"
+    }
+  ]
+}

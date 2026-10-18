@@ -1,0 +1,35 @@
+{
+  "id": "cpp-tt2-top-k-tu",
+  "lang": "cpp",
+  "muc": "thuat-toan",
+  "kieu": "cmake",
+  "tieuDe": "Đếm tần suất từ và chọn top-k (chuẩn hoá ASCII, byte UTF-8 là chữ, phá hoà theo từ điển)",
+  "deBai": "Cài hai hàm khai báo trong `src/top_k.hpp` (đã có, KHÔNG đổi) vào tệp `src/top_k.cpp`. Chỉ dùng thư viện chuẩn C++20.\n\n```cpp\nusing DemTu = std::pair<std::string, std::size_t>;\nstd::vector<std::string> tachTu(std::string_view vanBan);\nstd::vector<DemTu> topKTu(std::string_view vanBan, std::size_t k);\n```\n\n**Tách từ** (xét từng BYTE của `vanBan`, ép về `unsigned char`):\n- Byte \"chữ\" là: `'A'..'Z'`, `'a'..'z'`, `'0'..'9'`, và MỌI byte có giá trị `>= 0x80` (byte của ký tự UTF-8 nhiều byte, kể cả đúng `0x80`). Mọi byte khác (khoảng trắng, dấu câu, `'_'`, `'-'`, `'\\''`, `0x7F`, byte `'\\0'` …) là dấu phân cách.\n- Một từ là một dãy byte chữ liên tiếp dài nhất (không rỗng).\n- Chuẩn hoá: chỉ đổi `'A'..'Z'` thành chữ thường tương ứng; byte `>= 0x80` giữ NGUYÊN (vd `\"VIỆT\"` ⇒ `\"viỆt\"`, khác `\"việt\"`). KHÔNG dùng `std::tolower`/locale.\n- `tachTu` trả mọi từ theo đúng thứ tự xuất hiện (từ lặp lại xuất hiện lặp lại); không có từ nào ⇒ vector rỗng.\n\n**topKTu**: đếm số lần xuất hiện của mỗi từ (sau chuẩn hoá), trả `min(k, số từ khác nhau)` cặp `(từ, số lần)` xếp theo: số lần GIẢM dần; cùng số lần thì từ TĂNG dần theo thứ tự byte không dấu (đúng như `operator<` của `std::string`, vd `\"z\" < \"é\"` vì `'z'` = 0x7A < 0xC3). `k == 0` hoặc không có từ ⇒ vector rỗng. `k` có thể rất lớn (tới `SIZE_MAX`).\n\n**Hiệu năng**: văn bản tới ~10 MB, khoảng 10^6 từ; dùng `std::unordered_map` để đếm và `std::partial_sort` (hoặc heap kích thước k) để chọn top-k — tổng thời gian test phải dưới vài giây ở bản Release.",
+  "tepGiai": [
+    "src/top_k.cpp"
+  ],
+  "dinhDanh": "topKTu",
+  "testHienThi": [
+    "tests/hien_thi.cpp"
+  ],
+  "testAn": [
+    "tests/an.cpp"
+  ],
+  "tepBaoVe": [
+    "CMakeLists.txt",
+    "tests/kt.hpp",
+    "tests/hien_thi.cpp",
+    "src/top_k.hpp"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 9
+  },
+  "sai": [
+    {
+      "tep": "src/top_k.cpp",
+      "tu": "c >= 0x80",
+      "den": "c > 0x80"
+    }
+  ]
+}

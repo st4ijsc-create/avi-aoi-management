@@ -1,0 +1,15 @@
+{
+  "id": "java-tv1-ngay-lam-viec",
+  "lang": "java",
+  "muc": "thu-vien",
+  "kieu": "java",
+  "tieuDe": "Ngày làm việc và lịch họp qua giờ mùa hè bằng java.time",
+  "deBai": "Viết lớp `NgayLamViec` (tệp `src/NgayLamViec.java`, package mặc định — không khai báo package) chỉ dùng `java.time`:\n\n- `public NgayLamViec(Set<LocalDate> ngayLe)` — tập ngày nghỉ lễ (lớp phải tự chép tập vào, sửa tập gốc sau đó không ảnh hưởng).\n- `public boolean laNgayLamViec(LocalDate d)` — đúng khi `d` không phải Thứ Bảy/Chủ Nhật và không nằm trong tập ngày lễ.\n- `public LocalDate congNgayLamViec(LocalDate tu, int n)`:\n  - `n > 0`: tiến tới ngày làm việc thứ `n` SAU `tu` (bản thân `tu` không được đếm);\n  - `n < 0`: lùi tới ngày làm việc thứ `|n|` TRƯỚC `tu`;\n  - `n == 0`: trả `tu` nếu `tu` là ngày làm việc, ngược lại trả ngày làm việc kế tiếp sau `tu`.\n- `public long demNgayLamViec(LocalDate tu, LocalDate den)` — số ngày làm việc trong khoảng NỬA MỞ `[tu, den)`; nếu `den` trước `tu` thì trả số ÂM bằng −(số ngày làm việc trong `[den, tu)`); `tu == den` ⇒ 0.\n- `public static ZonedDateTime hopTiepTheo(ZonedDateTime luc, DayOfWeek thu, LocalTime gio, ZoneId vung)` — thời điểm cuộc họp hằng tuần tiếp theo: ngày `thu` lúc `gio` theo giờ ĐỊA PHƯƠNG của `vung`, xảy ra SAU HẲN thời điểm `luc` (so sánh theo instant; `luc` có thể ở múi giờ khác). Kết quả biểu diễn trong `vung`. Nếu giờ địa phương rơi vào khoảng trống chuyển giờ mùa hè thì dời tới theo quy tắc mặc định của `ZonedDateTime.of`; rơi vào khoảng chồng thì lấy offset SỚM hơn (cũng là mặc định).",
+  "tepGiai": ["src/NgayLamViec.java"],
+  "dinhDanh": "NgayLamViec",
+  "testHienThi": ["test/HienThiTest.java"],
+  "testAn": ["test/AnTest.java"],
+  "tepBaoVe": ["test/Kt.java", "test/HienThiTest.java"],
+  "soTest": { "hienThi": 3, "an": 9 },
+  "sai": [{ "tep": "src/NgayLamViec.java", "tu": "d.isBefore(den)", "den": "!d.isAfter(den)" }]
+}

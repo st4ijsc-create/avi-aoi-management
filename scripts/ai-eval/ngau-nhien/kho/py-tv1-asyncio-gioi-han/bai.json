@@ -1,0 +1,15 @@
+{
+  "id": "py-tv1-asyncio-gioi-han",
+  "lang": "py",
+  "muc": "thu-vien",
+  "kieu": "pytest",
+  "tieuDe": "asyncio: chạy tác vụ với giới hạn đồng thời, trần thời gian, kết quả đóng gói theo thứ tự",
+  "deBai": "Trong tệp `chay_gioi_han.py`, cài coroutine function\n\n```python\nasync def chay_gioi_han(tac_vu, gioi_han, tran_giay=None) -> list[KetQua]\n```\n\ndùng `asyncio` (chỉ thư viện chuẩn). Lớp `KetQua` cho sẵn trong `ket_qua.py` (dataclass frozen `KetQua(chi_so, trang_thai, gia_tri=None, loi=None)`) — KHÔNG sửa tệp đó.\n\n- `tac_vu` là danh sách các hàm KHÔNG đối số; gọi hàm thứ `i` (`tac_vu[i]()`) trả về một awaitable (thường là coroutine). \"Chạy tác vụ `i`\" = gọi hàm rồi await awaitable nó trả về.\n- Tham số: `gioi_han` là số nguyên, `< 1` ⇒ `ValueError`; `tran_giay` là `None` (không giới hạn) hoặc số dương, `<= 0` ⇒ `ValueError`. Kiểm tham số TRƯỚC khi gọi bất kỳ hàm tác vụ nào (lỗi tham số thì không hàm nào được gọi).\n- Giới hạn đồng thời: một tác vụ được tính là ĐANG CHẠY từ lúc hàm của nó được gọi cho tới khi awaitable của nó kết thúc hẳn (kể cả khi đang xử lý việc bị huỷ). Không bao giờ có quá `gioi_han` tác vụ đang chạy cùng lúc; hàm của một tác vụ CHỈ được gọi khi đã có chỗ. Khi có đủ tác vụ chờ, số tác vụ chạy đồng thời phải đạt tới `gioi_han` (không được chạy tuần tự khi không cần).\n- Thứ tự khởi động: các hàm tác vụ được gọi theo thứ tự chỉ số tăng dần (với `gioi_han=1` các tác vụ chạy lần lượt 0, 1, 2, …, tác vụ sau chỉ bắt đầu khi tác vụ trước đã kết thúc).\n- Trần thời gian: nếu `tran_giay` khác `None`, mỗi tác vụ có tối đa `tran_giay` giây tính TỪ LÚC hàm của nó được gọi (thời gian chờ chỗ không tính). Quá trần ⇒ awaitable của tác vụ bị HUỶ (nó nhận `asyncio.CancelledError`), phải CHỜ nó kết thúc hẳn rồi mới nhả chỗ cho tác vụ khác; kết quả `KetQua(i, \"het_gio\")` (`gia_tri` và `loi` đều `None`).\n- Lỗi: việc gọi hàm hoặc await ném một ngoại lệ thuộc `Exception` ⇒ `KetQua(i, \"loi\", loi=<chính đối tượng ngoại lệ đó>)` (`gia_tri` là `None`). Lỗi của một tác vụ không ảnh hưởng các tác vụ khác.\n- Thành công ⇒ `KetQua(i, \"ok\", gia_tri=<giá trị trả về>)` (`loi` là `None`).\n- Trả về list cùng độ dài `tac_vu`, phần tử thứ `i` là kết quả của tác vụ `i` (`chi_so == i`), BẤT KỂ thứ tự hoàn thành. `tac_vu` rỗng ⇒ `[]`.\n- Bị huỷ từ bên ngoài (task đang chạy `chay_gioi_han` bị `cancel()`): huỷ mọi tác vụ đang chạy, KHÔNG gọi thêm hàm tác vụ nào nữa, chờ các tác vụ đang chạy kết thúc hẳn, rồi để `asyncio.CancelledError` lan ra người gọi.",
+  "tepGiai": ["chay_gioi_han.py"],
+  "dinhDanh": "chay_gioi_han",
+  "testHienThi": ["tests/test_hien_thi.py"],
+  "testAn": ["tests/test_an.py"],
+  "tepBaoVe": ["tests/test_hien_thi.py", "pytest.ini", "ket_qua.py"],
+  "soTest": { "hienThi": 3, "an": 9 },
+  "sai": [{ "tep": "chay_gioi_han.py", "tu": "asyncio.Semaphore(gioi_han)", "den": "asyncio.Semaphore(gioi_han + 1)" }]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "sql-tv3-upsert-trigger",
+  "lang": "sql",
+  "muc": "thu-vien",
+  "kieu": "pytest",
+  "tieuDe": "Tồn kho: UPSERT với excluded + RETURNING, trigger ghi nhật ký và chặn tồn âm bằng RAISE(ABORT)",
+  "deBai": "Viết HAI tệp SQLite.\n\n**1. `kho.sql`** — nhiều câu lệnh, chạy bằng `executescript` trên CSDL RỖNG, tạo:\n\n- Bảng `ton_kho`: `ma` TEXT khoá chính; `ten` TEXT NOT NULL; `ton` INTEGER NOT NULL. Cột `ma` không bao giờ bị sửa.\n- Bảng `nhat_ky`: `id` INTEGER PRIMARY KEY AUTOINCREMENT; `ma` TEXT NOT NULL; `ton_cu` INTEGER (được NULL); `ton_moi` INTEGER NOT NULL.\n- Các TRIGGER sao cho, với MỌI cách ghi vào `ton_kho` (câu UPSERT ở dưới, hay `INSERT`/`UPDATE` trực tiếp):\n  - Thêm một hàng mới ⇒ ghi một dòng `nhat_ky(ma, ton_cu = NULL, ton_moi = ton)`.\n  - Sửa một hàng mà giá trị `ton` THAY ĐỔI ⇒ ghi một dòng `nhat_ky(ma, ton_cu = ton cũ, ton_moi = ton mới)`. Sửa mà `ton` giữ nguyên (chỉ đổi `ten`, hoặc gán lại đúng giá trị cũ) ⇒ KHÔNG ghi gì.\n  - Bất kỳ thao tác nào làm một hàng có `ton < 0` (thêm hay sửa) ⇒ cả câu lệnh bị huỷ bằng `RAISE(ABORT, 'ton am')`: Python nhận `sqlite3.IntegrityError` có thông điệp `ton am`; không hàng nào của câu lệnh đó được ghi (kể cả `nhat_ky`). Không dùng ràng buộc `CHECK` cho việc này (thông điệp lỗi phải là `ton am`).\n  - `ton = 0` là hợp lệ.\n\n**2. `nhap_hang.sql`** — ĐÚNG MỘT câu lệnh `INSERT … ON CONFLICT … DO UPDATE …` (UPSERT, dùng `excluded`) với ba tham số đặt tên `:ma`, `:ten`, `:so_luong` (test truyền dict `{\"ma\": …, \"ten\": …, \"so_luong\": …}`), kết thúc bằng `RETURNING ma, ten, ton` (đúng ba cột, đúng thứ tự, trả trạng thái SAU khi ghi):\n\n- `ma` chưa có ⇒ thêm hàng `(ma, ten, ton = :so_luong)`.\n- `ma` đã có ⇒ `ton = ton hiện tại + :so_luong` và `ten` được thay bằng `:ten`.\n- `:so_luong` là số nguyên bất kỳ: dương = nhập, âm = xuất, 0 = chỉ cập nhật tên. Xuất làm tồn âm (hoặc mã mới với số lượng âm) ⇒ lỗi `ton am` như trên, dữ liệu giữ nguyên.",
+  "tepGiai": ["kho.sql", "nhap_hang.sql"],
+  "dinhDanh": "TRIGGER",
+  "testHienThi": ["tests/test_hien_thi.py"],
+  "testAn": ["tests/test_an.py"],
+  "tepBaoVe": ["pytest.ini", "kiem_sql.py", "tests/test_hien_thi.py"],
+  "soTest": { "hienThi": 3, "an": 8 },
+  "sai": [{ "tep": "kho.sql", "tu": "WHEN NEW.ton IS NOT OLD.ton", "den": "WHEN 1" }]
+}
