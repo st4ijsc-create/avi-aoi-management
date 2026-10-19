@@ -1,0 +1,15 @@
+{
+  "id": "ts-tt3-bfs-cong",
+  "lang": "ts",
+  "muc": "thuat-toan",
+  "kieu": "node",
+  "tieuDe": "Đường ngắn nhất trên lưới có cổng dịch chuyển (BFS, phá hoà tất định)",
+  "deBai": "Viết module `src/luoi.ts` (TypeScript chạy thẳng bằng Node 24 — CHỈ cú pháp TS xoá được: KHÔNG `enum`, KHÔNG `namespace`, KHÔNG parameter properties, KHÔNG decorator; import (nếu có) ghi đuôi `.ts`, `import type` cho kiểu; chỉ thư viện chuẩn), giữ nguyên các kiểu và chữ ký trong khung:\n\n```ts\nexport type O = [number, number];               // [hàng, cột], đánh số từ 0\nexport type KetQua = { doDai: number; duong: O[] };\nexport function duongNganNhat(luoi: string[]): KetQua | null;\n```\n\n`luoi` là các hàng của một lưới chữ nhật. Ký tự hợp lệ:\n- `S` ô xuất phát (đúng MỘT ô), `E` ô đích (đúng MỘT ô), `.` ô trống, `#` tường (không đi vào được);\n- chữ thường `a`–`z`: ô CỔNG (đi vào được như ô trống). Mỗi chữ cái xuất hiện đúng 0 hoặc 2 lần; hai ô cùng chữ là một cặp cổng.\n\nLưới không hợp lệ ⇒ ném `RangeError`: mảng rỗng; các hàng không cùng độ dài; không có hoặc có nhiều hơn một `S` (hoặc `E`); một chữ cổng xuất hiện số lần khác 2; bất kỳ ký tự nào khác (kể cả chữ HOA khác `S`/`E`, khoảng trắng).\n\nNước đi (mỗi nước tốn đúng 1 bước): sang ô kề theo 4 hướng (không ra ngoài lưới, không vào `#`); và khi đang đứng trên một ô cổng, có thể DỊCH CHUYỂN sang ô cùng chữ còn lại. Dịch chuyển là TUỲ CHỌN — đứng trên ô cổng vẫn có thể đi bộ sang ô kề như bình thường.\n\nTrả về đường ngắn nhất từ `S` tới `E`: `duong` liệt kê các ô theo thứ tự, gồm cả ô `S` (đầu) và ô `E` (cuối); `doDai = duong.length - 1` (số nước đi). Không tới được ⇒ trả `null`.\n\nPHÁ HOÀ (bắt buộc, test kiểm đúng từng ô): khi có nhiều đường ngắn nhất, chọn đường có dãy nước đi nhỏ nhất theo thứ tự từ điển với thứ tự nước: Lên (hàng−1) < Trái (cột−1) < Phải (cột+1) < Xuống (hàng+1) < Dịch chuyển. Cách làm tương đương: BFS bằng hàng đợi FIFO từ `S`, lấy ô ra và duyệt các nước theo đúng thứ tự trên, mỗi ô ghi nhận ô cha ở lần ĐẦU TIÊN được phát hiện, rồi lần ngược từ `E`.",
+  "tepGiai": ["src/luoi.ts"],
+  "dinhDanh": "duongNganNhat",
+  "testHienThi": ["test/hien-thi.test.ts"],
+  "testAn": ["test/an.test.ts"],
+  "tepBaoVe": ["package.json", "test/hien-thi.test.ts"],
+  "soTest": { "hienThi": 3, "an": 9 },
+  "sai": [{ "tep": "src/luoi.ts", "tu": "[[-1, 0], [0, -1], [0, 1], [1, 0]]", "den": "[[-1, 0], [0, 1], [0, -1], [1, 0]]" }]
+}

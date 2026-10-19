@@ -1,0 +1,33 @@
+{
+  "id": "rs-tt3-nen-rle",
+  "lang": "rs",
+  "muc": "thuat-toan",
+  "kieu": "cargo",
+  "tieuDe": "Nén/giải nén RLE trên ký tự Unicode: thoát chữ số, lỗi có vị trí, khứ hồi",
+  "deBai": "Trong crate `bai` (tệp `src/lib.rs`), cài nén loạt-độ-dài (RLE) trên `char` Unicode:\n\n```rust\n#[derive(Debug, Clone, PartialEq, Eq)]\npub enum LoiRle {\n    ThieuKyTu { vi_tri: usize },\n    SoKhongHopLe { vi_tri: usize },\n    ThoatSai { vi_tri: usize },\n}\n\npub const LUOT_TOI_DA: usize = 1_000_000;\n\npub fn nen(s: &str) -> String;\npub fn giai_nen(s: &str) -> Result<String, LoiRle>;\n```\n\n**Định dạng nén** — dãy các PHẦN TỬ, mỗi phần tử = [số đếm] + ký tự:\n- Ký tự là một `char` bất kỳ; riêng chữ số ASCII `0`–`9` và dấu gạch ngược `\\` phải viết dạng THOÁT: `\\` đứng trước (vd ký tự `7` viết `\\7`, ký tự `\\` viết `\\\\`). Chữ số KHÔNG phải ASCII (vd `٣`, `²`, `½`) là ký tự thường, KHÔNG thoát.\n- Số đếm (tuỳ chọn) là số thập phân ASCII ngay trước ký tự: phần tử có số đếm `k` nghĩa là ký tự lặp `k` lần; không có số đếm = 1 lần. Số đếm hợp lệ: 2 ≤ k ≤ `LUOT_TOI_DA`, không bắt đầu bằng chữ số `0`.\n\n**`nen`** — tạo dạng CHUẨN: gom mỗi loạt ký tự giống nhau liên tiếp (so sánh theo `char`) thành một phần tử; loạt dài 1 không ghi số đếm; loạt dài hơn `LUOT_TOI_DA` tách thành các phần tử dài đúng `LUOT_TOI_DA` theo sau là phần dư (phần dư 1 ⇒ viết ký tự không số đếm). Ví dụ: `\"aaabcc\"` ⇒ `\"3ab2c\"`, `\"a111\"` ⇒ `\"a3\\1\"` (chuỗi Rust `\"a3\\\\1\"`), `\"\"` ⇒ `\"\"`.\n\n**`giai_nen`** — đọc từ trái sang phải; `giai_nen(&nen(s)) == Ok(s)` với mọi `s`. Lỗi trả về lỗi ĐẦU TIÊN gặp phải; `vi_tri` là chỉ số KÝ TỰ (`char`, đếm từ 0, KHÔNG phải chỉ số byte) trong chuỗi nén:\n- Số đếm bắt đầu bằng `0`, hoặc giá trị < 2, hoặc > `LUOT_TOI_DA` (kể cả số rất dài vượt mọi kiểu nguyên — không được panic) ⇒ `SoKhongHopLe { vi_tri }` với `vi_tri` = vị trí chữ số ĐẦU TIÊN của số đếm. Số đếm được kiểm (đọc hết dãy chữ số) TRƯỚC khi xét ký tự theo sau.\n- Hết chuỗi khi đang cần một ký tự (sau số đếm, hoặc ngay sau `\\`) ⇒ `ThieuKyTu { vi_tri }` với `vi_tri` = số ký tự của chuỗi nén.\n- `\\` theo sau bởi ký tự không phải chữ số ASCII hay `\\` ⇒ `ThoatSai { vi_tri }` với `vi_tri` = vị trí của dấu `\\`.\n- Ký tự sau thoát kết thúc phần tử: `\"\\12a\"` (chuỗi Rust `\"\\\\12a\"`) = ký tự `1` rồi phần tử `2a` ⇒ `\"1aa\"`.\n\nKhông dùng crate ngoài.",
+  "tepGiai": [
+    "src/lib.rs"
+  ],
+  "dinhDanh": "giai_nen",
+  "testHienThi": [
+    "tests/hien_thi.rs"
+  ],
+  "testAn": [
+    "tests/an.rs"
+  ],
+  "tepBaoVe": [
+    "Cargo.toml",
+    "tests/hien_thi.rs"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 10
+  },
+  "sai": [
+    {
+      "tep": "src/lib.rs",
+      "tu": "c == '\\\\' || c.is_ascii_digit()",
+      "den": "c == '\\\\' || c.is_numeric()"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "id": "java-tv3-http-server",
+  "lang": "java",
+  "muc": "thu-vien",
+  "kieu": "java",
+  "tieuDe": "Máy chủ HTTP in-process bằng com.sun.net.httpserver: route JSON, 404/405 + Allow, query URLDecoder, POST thân",
+  "deBai": "Viết lớp `MayChu` (tệp `src/MayChu.java`, package mặc định — không khai báo package; chỉ JDK, KHÔNG thư viện JSON — tự ghép chuỗi JSON) dùng `com.sun.net.httpserver.HttpServer`:\n\n- `public static HttpServer tao() throws IOException` — tạo (CHƯA `start`) một máy chủ gắn vào `127.0.0.1`, cổng 0 (hệ điều hành tự chọn cổng; người gọi đọc cổng bằng `getAddress().getPort()`), đã đăng ký đủ các đường dưới đây. Người gọi tự `start()` và `stop(0)`. MỖI lần gọi `tao()` có kho ghi chú RIÊNG, rỗng (id bắt đầu từ 1). Máy chủ phải đúng khi nhiều yêu cầu tới đồng thời (id không trùng, không mất ghi chú).\n\nĐường đi so khớp CHÍNH XÁC với `getRequestURI().getPath()` (phân biệt hoa thường; `/chao/`, `/chaoxyz`, `/suc-khoe/x`, `/` … đều KHÔNG khớp — lưu ý `createContext` khớp theo TIỀN TỐ). Thứ tự kiểm: đường không khớp ⇒ 404 (bất kể phương thức); đường khớp nhưng phương thức không được phép ⇒ 405.\n\n| Đường | Phương thức | Phản hồi |\n|---|---|---|\n| `/suc-khoe` | `GET` | 200, `{\"trangThai\":\"ok\"}` (query nếu có thì bỏ qua) |\n| `/chao` | `GET` | 200, `{\"loiChao\":\"Xin chào, <ten>!\"}` |\n| `/ghi-chu` | `POST` | thân yêu cầu (đọc hết, giải mã UTF-8, giữ nguyên không cắt) là nội dung ghi chú. Thân rỗng (0 byte) ⇒ 400 `{\"loi\":\"noi dung rong\"}` và KHÔNG tốn id. Ngược lại lưu với id tăng dần 1, 2, 3… ⇒ 201 `{\"id\":<id>,\"noiDung\":\"<nội dung>\"}` |\n| `/ghi-chu` | `GET` | 200, `{\"soLuong\":<n>,\"ghiChu\":[{\"id\":1,\"noiDung\":\"…\"},{\"id\":2,\"noiDung\":\"…\"}]}` theo id tăng dần; rỗng ⇒ `{\"soLuong\":0,\"ghiChu\":[]}` |\n\n- 404: thân `{\"loi\":\"khong tim thay\"}`.\n- 405: thân `{\"loi\":\"phuong thuc khong ho tro\"}` và header `Allow` đúng bằng `GET` (cho `/suc-khoe`, `/chao`) hoặc `GET, POST` (cho `/ghi-chu`). Mọi phương thức khác danh sách đó (POST, PUT, DELETE…) đều 405.\n- MỌI phản hồi (kể cả 4xx) có header `Content-Type: application/json; charset=utf-8`, thân mã hoá UTF-8, gửi kèm độ dài cố định. JSON KHÔNG có khoảng trắng thừa, thứ tự khoá đúng như trên.\n\nTham số `ten` của `/chao`: lấy query THÔ (`getRequestURI().getRawQuery()`, chưa giải mã), tách theo `&`; mỗi cặp tách tại dấu `=` ĐẦU TIÊN (cặp không có `=` ⇒ giá trị rỗng); giải mã khoá và giá trị bằng `URLDecoder.decode(…, StandardCharsets.UTF_8)` (nên `+` thành khoảng trắng, `%2B` thành `+`, `%26` thành `&`). Khoá `ten` xuất hiện nhiều lần ⇒ lấy lần ĐẦU. Không có `ten`, hoặc giá trị sau giải mã là chuỗi rỗng ⇒ dùng `bạn`.\n\nThoát chuỗi JSON (áp cho mọi giá trị chuỗi trong thân phản hồi): `\"` ⇒ `\\\"`, `\\` ⇒ `\\\\`, xuống dòng ⇒ `\\n`, về đầu dòng ⇒ `\\r`, tab ⇒ `\\t`, ký tự điều khiển khác (< U+0020) ⇒ `\\u` + 4 chữ số hex THƯỜNG (ví dụ U+0001 ⇒ `\\u0001`); mọi ký tự khác (kể cả `/` và chữ có dấu, ký hiệu Unicode) giữ nguyên.",
+  "tepGiai": [
+    "src/MayChu.java"
+  ],
+  "dinhDanh": "MayChu",
+  "testHienThi": [
+    "test/HienThiTest.java"
+  ],
+  "testAn": [
+    "test/AnTest.java"
+  ],
+  "tepBaoVe": [
+    "test/Kt.java",
+    "test/HienThiTest.java"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 10
+  },
+  "sai": [
+    {
+      "tep": "src/MayChu.java",
+      "tu": "getRawQuery()",
+      "den": "getQuery()"
+    }
+  ]
+}

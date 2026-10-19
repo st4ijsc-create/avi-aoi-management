@@ -14,8 +14,8 @@ import type { WireTool } from "./kieu";
 
 const tenTheoCheDo = (c: Parameters<typeof congCuTheoCheDo>[0]) => congCuTheoCheDo(c).map((t) => t.function.name).sort();
 
-describe("congCu — schema 14 tool (10 của Đợt 1 + 4 của Đợt 2)", () => {
-  it("có đúng 14 tool (spec Đợt 1 §3 + Đợt 2 §2), tên tiếng Anh, có mô tả + parameters object", () => {
+describe("congCu — schema 15 tool (10 của Đợt 1 + 4 của Đợt 2 + lookup_api)", () => {
+  it("có đúng 15 tool (spec Đợt 1 §3 + Đợt 2 §2 + lookup_api 2026-10-18), tên tiếng Anh, có mô tả + parameters object", () => {
     expect([...TEN_CONG_CU].sort()).toEqual(
       [
         "delete_file",
@@ -24,6 +24,7 @@ describe("congCu — schema 14 tool (10 của Đợt 1 + 4 của Đợt 2)", () 
         "find_symbol",
         "grep",
         "list_dir",
+        "lookup_api",
         "read_file",
         "remember",
         "rename_file",
@@ -69,20 +70,21 @@ describe("congCu — schema 14 tool (10 của Đợt 1 + 4 của Đợt 2)", () 
     expect(LOAI_CONG_CU.todo_write).toBe("ke-hoach");
   });
 
-  it("congCuTheoCheDo: hoi = đọc (kể cả 3 tool tìm) + todo_write + remember; sua/tu-dong = đủ 14", () => {
+  it("congCuTheoCheDo: hoi = đọc (kể cả 3 tool tìm + lookup_api) + todo_write + remember; sua/tu-dong = đủ 15", () => {
     expect(tenTheoCheDo("hoi")).toEqual([
       "find_files",
       "find_symbol",
       "grep",
       "list_dir",
+      "lookup_api",
       "read_file",
       "remember",
       "search_code",
       "search_docs",
       "todo_write",
     ]);
-    expect(tenTheoCheDo("sua")).toHaveLength(14);
-    expect(tenTheoCheDo("tu-dong")).toHaveLength(14);
+    expect(tenTheoCheDo("sua")).toHaveLength(15);
+    expect(tenTheoCheDo("tu-dong")).toHaveLength(15);
   });
 
   it("congCuTheoCheDo trả bản sao — sửa kết quả không làm bẩn hằng", () => {

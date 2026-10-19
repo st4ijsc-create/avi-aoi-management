@@ -5,7 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const BO = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const ROOT = path.resolve(BO, "../../..");
@@ -13,7 +13,16 @@ const BO_F = path.join(ROOT, "scripts/ai-eval/codegen-chay-duoc/agent-f");
 
 const cauHoiTuF = (s) => s.replaceAll("{DA}/", "").replaceAll("Trong dự án {DA}", "Trong dự án này").replaceAll("{DA}", "này");
 
+/**
+ * Ngân hàng bài NGOÀI (2026-10-18, bộ đo ngẫu nhiên `scripts/ai-eval/ngau-nhien/vscode.mjs`): `AI_EVAL_NGAN_HANG` = đường
+ * module có `docNganHangVscode()` trả bài cùng hình dạng (nguonAbs/anAbs/mauAbs tuyệt đối). Vắng ⇒ ngân hàng của bộ này.
+ */
+const NGAN_HANG_NGOAI = process.env.AI_EVAL_NGAN_HANG
+  ? await import(pathToFileURL(path.resolve(process.env.AI_EVAL_NGAN_HANG)).href)
+  : null;
+
 export function docNganHang() {
+  if (NGAN_HANG_NGOAI) return NGAN_HANG_NGOAI.docNganHangVscode();
   const dsF = JSON.parse(fs.readFileSync(path.join(BO_F, "bai.json"), "utf8"));
   const ds = JSON.parse(fs.readFileSync(path.join(BO, "bai.json"), "utf8")).map((b) => {
     if (b.boF) {

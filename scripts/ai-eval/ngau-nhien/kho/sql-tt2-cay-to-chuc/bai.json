@@ -1,0 +1,35 @@
+{
+  "id": "sql-tt2-cay-to-chuc",
+  "lang": "sql",
+  "muc": "thuat-toan",
+  "kieu": "pytest",
+  "tieuDe": "Cây tổ chức nhân sự bằng CTE đệ quy: cấp, đường dẫn, số cấp dưới",
+  "deBai": "Cơ sở dữ liệu SQLite có bảng (đã được tạo sẵn bởi `schema.sql`, xem tệp):\n\n- `nhan_vien(id INTEGER PRIMARY KEY, ten TEXT NOT NULL, quan_ly_id INTEGER)` — `quan_ly_id` là `id` của quản lý trực tiếp (khoá ngoại tới chính bảng), `NULL` ⇒ người đứng đầu một cây. Có thể có NHIỀU người đứng đầu (rừng nhiều cây). Dữ liệu được bảo đảm KHÔNG có chu trình. Tên có thể trùng nhau.\n\nViết tệp `cay_to_chuc.sql` chứa ĐÚNG MỘT câu `SELECT` (được dùng `WITH RECURSIVE`, không tham số) trả về MỖI nhân viên đúng một hàng, các cột theo thứ tự:\n\n1. `id`\n2. `ten`\n3. `cap` — số nguyên: người đứng đầu = 0, cấp dưới trực tiếp của người cấp k có cấp k+1.\n4. `duong_dan` — tên từ người đứng đầu xuống tới chính người đó, nối bằng chuỗi `' > '` (dấu cách, `>`, dấu cách), vd `'Hà > Minh > Tú'`; người đứng đầu chỉ có tên mình.\n5. `so_cap_duoi` — số nguyên: số người dưới quyền cả trực tiếp lẫn gián tiếp (toàn bộ cây con, KHÔNG tính bản thân); không có ai ⇒ 0.\n\nThứ tự hàng: duyệt cây theo chiều sâu, thứ tự TRƯỚC (mỗi người đứng ngay trước toàn bộ cây con của mình); các cây xếp theo `id` người đứng đầu tăng dần; các cấp dưới trực tiếp của cùng một người xếp theo `id` tăng dần (so sánh theo GIÁ TRỊ SỐ — `id` có thể nhiều chữ số, vd 2 đứng trước 10). Bảng rỗng ⇒ không có hàng nào.",
+  "tepGiai": [
+    "cay_to_chuc.sql"
+  ],
+  "dinhDanh": "RECURSIVE",
+  "testHienThi": [
+    "tests/test_hien_thi.py"
+  ],
+  "testAn": [
+    "tests/test_an.py"
+  ],
+  "tepBaoVe": [
+    "pytest.ini",
+    "kiem_sql.py",
+    "schema.sql",
+    "tests/test_hien_thi.py"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 7
+  },
+  "sai": [
+    {
+      "tep": "cay_to_chuc.sql",
+      "tu": "c.khoa || '/' || printf('%08d', n.id)",
+      "den": "c.khoa || '/' || n.id"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "id": "java-tv2-streams",
+  "lang": "java",
+  "muc": "thu-vien",
+  "kieu": "java",
+  "tieuDe": "Thống kê đơn bán bằng Streams/Collectors: groupingBy TreeMap, partitioningBy, teeing, top-N nhiều khoá, trả record",
+  "deBai": "Viết lớp `ThongKe` (tệp `src/ThongKe.java`, package mặc định — không khai báo package; chỉ JDK) gồm các hàm tĩnh thống kê danh sách đơn bán bằng Stream API / `Collectors` (khuyến khích `groupingBy` với `TreeMap::new` + downstream `summingLong`, `averagingDouble`, `mapping`, `partitioningBy`, `teeing`). Ba record `DonBan`, `TomTat`, `XepHang` đã cho sẵn trong `src/` — KHÔNG sửa chúng; thành tiền một đơn là `DonBan.thanhTien()` (= `soLuong * donGia`, kiểu `long`). Không hàm nào được sửa danh sách đầu vào.\n\n- `public static TreeMap<String, Long> doanhThuTheoKhuVuc(List<DonBan> ds)` — khoá: `khuVuc`; giá trị: tổng thành tiền. Thứ tự khoá là thứ tự TỰ NHIÊN của `String` (`compareTo`, không dùng Collator — nên chữ hoa đứng trước chữ thường, ví dụ `\"Zeta\"` trước `\"alpha\"`). Danh sách rỗng ⇒ map rỗng.\n- `public static TreeMap<String, Double> soLuongTrungBinhTheoSanPham(List<DonBan> ds)` — khoá: `sanPham` (thứ tự tự nhiên); giá trị: trung bình cộng `soLuong` của các đơn sản phẩm đó (số thực, không làm tròn).\n- `public static TreeMap<String, List<String>> khachTheoKhuVuc(List<DonBan> ds)` — khoá: `khuVuc` (thứ tự tự nhiên); giá trị: danh sách các `khach` KHÔNG trùng của khu vực, sắp tăng dần theo thứ tự tự nhiên.\n- `public static Map<Boolean, Long> demDonLon(List<DonBan> ds, long nguong)` — đếm số đơn có `thanhTien() >= nguong` (khoá `true`) và còn lại (khoá `false`). Map trả về LUÔN có đủ cả hai khoá `true` và `false` (giá trị `0L` nếu không có đơn nào), kể cả khi danh sách rỗng.\n- `public static TomTat tomTat(List<DonBan> ds)` — `TomTat(soDon, tong, nhoNhat, lonNhat, trungBinh)` trên thành tiền các đơn: số đơn, tổng, nhỏ nhất, lớn nhất, trung bình cộng (`double`). Danh sách rỗng ⇒ `new TomTat(0, 0, 0, 0, 0.0)` (mọi trường bằng 0 — chú ý `LongSummaryStatistics` rỗng có min/max KHÔNG phải 0).\n- `public static List<XepHang> topKhach(List<DonBan> ds, int n)` — gộp theo `khach`: `XepHang(khach, tong, soDon)` với `tong` = tổng thành tiền và `soDon` = số đơn của khách đó. Sắp theo: `tong` GIẢM dần, hoà thì `soDon` GIẢM dần, vẫn hoà thì `khach` TĂNG dần (thứ tự tự nhiên). Trả `n` phần tử đầu (ít hơn nếu không đủ khách; `n == 0` ⇒ danh sách rỗng). `n < 0` ⇒ `IllegalArgumentException`.\n\nCác danh sách/map trả về được so sánh bằng `equals` (kiểu cài đặt `List`/`Map` cụ thể không quan trọng, trừ chỗ chữ ký đòi `TreeMap`).",
+  "tepGiai": [
+    "src/ThongKe.java"
+  ],
+  "dinhDanh": "ThongKe",
+  "testHienThi": [
+    "test/HienThiTest.java"
+  ],
+  "testAn": [
+    "test/AnTest.java"
+  ],
+  "tepBaoVe": [
+    "test/Kt.java",
+    "test/HienThiTest.java",
+    "src/DonBan.java",
+    "src/TomTat.java",
+    "src/XepHang.java"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 10
+  },
+  "sai": [
+    {
+      "tep": "src/ThongKe.java",
+      "tu": ".thenComparing(XepHang::khach);",
+      "den": ".thenComparing(XepHang::khach, Comparator.reverseOrder());"
+    }
+  ]
+}

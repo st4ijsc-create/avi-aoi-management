@@ -18,8 +18,8 @@
  *   mang `nguonDangNgo` (thẻ duyệt sau đó có cờ) và ở `tu-dong` HẠ tự trị một chiều (`ha-tu-tri` + `ctx.haTuTri`) —
  *   bộ thực thi THI HÀNH (không tự áp ghi/lệnh nữa). Lõi không bao giờ nâng lại.
  */
-import { CONG_CU_TODO_WRITE, chuanHoaThamSo, kiemThamSo, nhanNguonGoi } from "./congCu";
-import { dungLoiNhacHeThong } from "./loiNhac";
+import { CONG_CU_TODO_WRITE, chuanHoaThamSo, kiemThamSo, laThamSoObjectJson, nhanNguonGoi, thamSoChoLichSu } from "./congCu";
+import { CAU_NHAC_KIEM_DAC_TA, CAU_NHAC_LUOT_CAT_KHONG_TOOL, cauNhacGhiChuaTest, dungLoiNhacHeThong } from "./loiNhac";
 import { catDauDuoi, nenLichSu, uocLuongTokenMacDinh, type UocLuongToken } from "./nguCanh";
 import {
   GIOI_HAN_MAC_DINH,
@@ -58,6 +58,11 @@ export interface DauVaoVongAgent {
   ngonNgu?: NgonNgu;
   /** (mở rộng) ước lượng token tiêm vào — server truyền `uocLuongSoToken`; mặc định 2,8 ký tự/token */
   uocLuongToken?: UocLuongToken;
+  /**
+   * (2026-10-19) Nhắc "đối chiếu đặc tả + tự kiểm biên" MỘT lần khi model định kết thúc sau lần test/build xanh đầu
+   * (chỉ `sua`/`tu-dong`). Mặc định BẬT; host tắt bằng `AI_AGENT_KIEM_DAC_TA=0` (lõi thuần không đọc env).
+   */
+  kiemDacTa?: boolean;
 }
 
 export interface KetQuaVongAgent {
@@ -69,6 +74,96 @@ const HUY = Symbol("huy");
 const TRAN_TOM_TAT = 300;
 /** Trần số nguồn đáng ngờ giữ trong một lượt (cờ thẻ duyệt) — đủ để người duyệt thấy, không phình sự kiện. */
 const TRAN_NGUON_DANG_NGO = 20;
+/**
+ * ★ Số lời gọi LIÊN TIẾP có `arguments` không đọc được thành object JSON (vd bị cắt ở trần token ra) ⇒ dừng `lap-lai`
+ * (mã `THAM_SO_HONG_LAP`). Mỗi lần trước đó model đã nhận quan sát "cắt cụt ⇒ ghi từng phần"; hỏng lần thứ 3 nghĩa là
+ * nó không tự thoát được — dừng có giới hạn thay vì đốt tới trần lượt. Một lời gọi đọc được ⇒ đếm về 0.
+ */
+const TRAN_THAM_SO_HONG_LIEN_TIEP = 3;
+
+/** Mã kết quả tool cho lời gọi KHÔNG chạy vì lượt model bị cắt ở trần token ra (`ManhModel.xong.biCat`). */
+export const MA_LUOT_BI_CAT = "LUOT_BI_CAT";
+
+/** Quan sát cho model khi lượt bị cắt (tiếng Anh như prompt/tool). Nói rõ: không gì chạy + cách chia nhỏ. */
+export function cauQuanSatLuotBiCat(ten: string): string {
+  return (
+    `[not executed: this turn was cut off at the output token limit (finish_reason "length"), so the arguments of ${ten || "this call"} ` +
+    "may be incomplete even if they look valid. Nothing was executed. Split the work into smaller calls: for a large file, " +
+    "create it with write_file containing only the first part (keep each call under ~150 lines), then append the rest with " +
+    "edit_file (anchor old_string on the last lines already written); otherwise send fewer or shorter tool calls per turn.]"
+  );
+}
+
+/**
+ * ★★★ (2026-10-19, `NN-b-agent-3` · `js-ud1-router-rest`, run 9fde5efe…) Mảnh THẺ tool call trong chữ của một lượt
+ * KHÔNG có tool call nào. Đo được: model nghĩ 11 998 token (chạm `--reasoning-budget 12000`), `content` chỉ còn
+ * `</tool_call>` ⇒ bộ gom không vớt (không có khối đủ thẻ — đúng chính sách) ⇒ lõi cũ coi là câu trả lời cuối ⇒
+ * `hoan-thanh` với 0 tệp được ghi. Mảnh thẻ trong khối mã (```…``` hoặc `…`) là câu trả lời giải thích khuôn, không tính.
+ * Chỉ PHÁT HIỆN — không bao giờ đọc tham số từ chữ này (chữ không thành hành động).
+ */
+const RE_THE_TOOL_CALL = /<\/?tool_call>|<\/?function(?:=[A-Za-z0-9_.-]*)?>|<function=|<\/?parameter(?:=[A-Za-z0-9_.-]*)?>|<parameter=/;
+export function coManhToolCallHongKhuon(chu: string): boolean {
+  if (!chu || chu.indexOf("<") === -1) return false;
+  // Bỏ khối mã rào (kể cả rào chưa đóng tới hết chuỗi) rồi đoạn mã nội dòng.
+  const ngoaiMa = chu.replace(/```[\s\S]*?(?:```|$)/g, " ").replace(/`[^`\n]*`/g, " ");
+  return RE_THE_TOOL_CALL.test(ngoaiMa);
+}
+
+/** Quan sát cho model khi chữ mang mảnh thẻ tool call không gom được (tiếng Anh như prompt/tool). */
+export const CAU_QUAN_SAT_TOOL_CALL_HONG_KHUON =
+  "[tool call malformed: your last message contains tool-call markup (e.g. <tool_call>, </tool_call>, <function=…>) " +
+  "but no complete tool call could be read from it, so nothing was executed and the task is NOT finished. " +
+  "Call the tool again as a proper tool call (do not write the markup as text). If the call carries a large file, " +
+  "write it in smaller parts: write_file with the first part (under ~150 lines), then edit_file to append the rest. " +
+  "Keep your reasoning short before the call.]";
+
+/**
+ * ★★★ (2026-10-19) Bộ phân loại LỆNH KIỂM (test/build/kiểm kiểu) — theo TỪ của lệnh, không theo đường tệp
+ * (`node --test test/x.test.mjs` ⇒ có; `node src/main.js` ⇒ không). Java chạy lớp test (`java -cp out FooTest`) ⇒ có.
+ */
+const RE_TU_KIEM = /^(?:--)?(?:test|tests|pytest|vitest|jest|mocha|ctest|unittest|build|check|tsc|javac|vet)(?:[:.-][\w-]+)*$/i;
+export function laLenhKiem(lenh: string): boolean {
+  const tu = String(lenh ?? "").trim().split(/\s+/).filter(Boolean);
+  if (tu.length === 0) return false;
+  if (tu.some((t) => RE_TU_KIEM.test(t))) return true;
+  return tu[0] === "java" && /Tests?$/.test(tu[tu.length - 1]);
+}
+
+/**
+ * Kết quả lệnh XANH theo khuôn hai bộ thực thi (`exit code: N` ở dòng tiêu đề — máy chủ `$ cmd\nexit code: 0 · … → GREEN`,
+ * extension `exit code: 0\n…`). Cùng ngữ nghĩa fail-closed với `docKetQuaTest` (shared/aiCodingLoop.ts — lõi THUẦN không
+ * import được ra ngoài thư mục): mã thoát 0 ∧ không hết giờ ∧ không đếm được ca đỏ > 0 (dotnet/vitest/node --test/pytest).
+ */
+export function laKetQuaLenhXanh(kq: Pick<KetQuaTool, "ok" | "choModel">): boolean {
+  if (kq.ok === false) return false;
+  const s = String(kq.choModel ?? "");
+  const ma = /exit code:\s*([^\s·(]+)(.*)/i.exec(s);
+  if (!ma || ma[1] !== "0" || /timed out|RED\b/i.test(ma[2])) return false;
+  if (/Failed:\s*[1-9]/i.test(s) || /\b[1-9]\d*\s+failed\b/i.test(s) || /^[\s#ℹ]*fail\s+[1-9]/im.test(s)) return false;
+  return true;
+}
+
+/** Lệnh test nêu trong câu hỏi: đoạn mã nội dòng `…` là lệnh kiểm (vd "Test hiển thị: `node --test test/a.test.mjs`"). */
+export function timLenhTestTrongCauHoi(cauHoi: string): string | null {
+  for (const m of String(cauHoi ?? "").matchAll(/`([^`\n]{3,160})`/g)) {
+    const l = m[1].trim();
+    if (/^[a-z][\w.-]*\s/i.test(l) && laLenhKiem(l)) return l;
+  }
+  return null;
+}
+
+/**
+ * Giá trị công tắc `AI_AGENT_KIEM_DAC_TA` (host đọc env rồi truyền vào — lõi thuần không đọc env). Mặc định BẬT;
+ * `0`/`false`/`off`/`no` ⇒ tắt.
+ */
+export function kiemDacTaBat(giaTri: string | undefined): boolean {
+  return !["0", "false", "off", "no"].includes(String(giaTri ?? "").trim().toLowerCase());
+}
+
+/** Tool GHI tệp nội dung (đếm chuỗi ghi chưa chạy test). Xoá/đổi tên không phải "viết lại". */
+const TOOL_GHI_NOI_DUNG = new Set(["write_file", "edit_file"]);
+/** Lượt nhắc tối đa cho lượt bị cắt không tool call; lần kế tiếp ⇒ dừng `het-token`. */
+const TRAN_NHAC_CAT_KHONG_TOOL = 2;
 
 /** Dòng cảnh báo đặt TRƯỚC kết quả đáng ngờ (đầu chuỗi ⇒ sống qua `catDauDuoi`). Tiếng Anh như prompt/tool. */
 export function cauCanhBaoDangNgo(nguon: string, mau: string[], vuaHaTuTri: boolean): string {
@@ -80,7 +175,15 @@ export function cauCanhBaoDangNgo(nguon: string, mau: string[], vuaHaTuTri: bool
 }
 
 type KetQuaLuotModel =
-  | { loai: "ok"; chu: string; nghi: string; toolCalls: WireToolCall[]; usage?: { vao: number; ra: number; nghi?: number } }
+  | {
+      loai: "ok";
+      chu: string;
+      nghi: string;
+      toolCalls: WireToolCall[];
+      usage?: { vao: number; ra: number; nghi?: number };
+      /** lượt bị cắt ở trần token ra (`ManhModel.xong.biCat`) */
+      biCat?: boolean;
+    }
   | { loai: "huy" }
   | { loai: "het-gio"; chu: string }
   | { loai: "loi"; loi: unknown };
@@ -196,7 +299,14 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
           phat({ loai: "dang-cho-model", phiaTruoc: Number(m.phiaTruoc) || 0 });
         } else if (m.loai === "xong") {
           dong();
-          return { loai: "ok", chu, nghi, toolCalls: chuanHoaToolCalls(m.toolCalls, luot), usage: m.usage };
+          return {
+            loai: "ok",
+            chu,
+            nghi,
+            toolCalls: chuanHoaToolCalls(m.toolCalls, luot),
+            usage: m.usage,
+            ...(m.biCat === true ? { biCat: true } : {}),
+          };
         }
         if (hetGio()) {
           dong();
@@ -278,6 +388,18 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
   let tokenRa = 0;
   let khoaLap = "";
   let demLap = 0;
+  let demHongLienTiep = 0;
+  // ── tiến trình (2026-10-19): kiểm đặc tả sau lần xanh đầu · lượt cắt không tool · ghi liên tiếp chưa test ──
+  const choPhepKiemDacTa = y.kiemDacTa !== false && (y.cheDo === "sua" || y.cheDo === "tu-dong");
+  let daXanhLenhKiem = false;
+  let daNhacKiemDacTa = false;
+  let demCatKhongTool = 0;
+  /** lệnh test đã biết: nêu trong câu hỏi, hoặc lệnh kiểm model đã chạy gần nhất trong lượt này */
+  let lenhTestBiet = timLenhTestTrongCauHoi(y.cauHoi);
+  /** số lần ghi (ok) từ lần chạy lệnh kiểm gần nhất; đường ghi trước; đã nhắc trong chuỗi này chưa */
+  let demGhiChuaTest = 0;
+  let duongGhiTruoc: string | null = null;
+  let daNhacChuoiGhi = false;
   let lyDo: LyDoDung;
 
   try {
@@ -335,8 +457,75 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
       }
 
       const calls = kq.toolCalls;
-      tinNhan.push(calls.length ? { role: "assistant", content: kq.chu, tool_calls: calls } : { role: "assistant", content: kq.chu });
+      // ★★★ Kiểm tham số TRƯỚC khi ghi lịch sử: tin `assistant.tool_calls` gửi lại model chỉ mang object JSON chặt
+      //   (`thamSoChoLichSu`) — một `arguments` hỏng trong lịch sử làm llama.cpp trả 500 ở MỌI lượt sau (V-dot4-2).
+      const kts = calls.map((tc) => kiemThamSo(tc.function.name, tc.function.arguments));
+      const callsLichSu = calls.map((tc, k) => {
+        const a = thamSoChoLichSu(tc.function.arguments, kts[k]);
+        return a === tc.function.arguments ? tc : { ...tc, function: { ...tc.function, arguments: a } };
+      });
+      tinNhan.push(
+        calls.length ? { role: "assistant", content: kq.chu, tool_calls: callsLichSu } : { role: "assistant", content: kq.chu },
+      );
       if (calls.length === 0) {
+        // ★★★ Mảnh thẻ tool call không gom được ⇒ KHÔNG phải câu trả lời cuối (xem `coManhToolCallHongKhuon`). Không vớt,
+        //   không đoán: model nhận quan sát và gọi lại; tính CHUNG chuỗi hỏng liên tiếp với tham số JSON hỏng / lượt bị cắt.
+        if (coManhToolCallHongKhuon(kq.chu)) {
+          demHongLienTiep++;
+          if (demHongLienTiep >= TRAN_THAM_SO_HONG_LIEN_TIEP) {
+            phat({
+              loai: "loi",
+              ma: "THAM_SO_HONG_LAP",
+              thongDiep: `model sent ${demHongLienTiep} malformed tool calls in a row (tool-call markup as text, no readable call) — stopping`,
+            });
+            lyDo = "lap-lai";
+            break;
+          }
+          tinNhan.push({ role: "user", content: CAU_QUAN_SAT_TOOL_CALL_HONG_KHUON });
+          continue;
+        }
+        // ★★★ (2026-10-19) Lượt bị CẮT ở trần token ra mà KHÔNG có tool call (nghĩ hết ngân sách, suy luận tràn `content`)
+        //   ⇒ CHƯA xong (trước đây `hoan-thanh` với chữ cụt). Nhắc tối đa `TRAN_NHAC_CAT_KHONG_TOOL` lần, lần kế ⇒
+        //   `het-token`. Tính CHUNG chuỗi hỏng liên tiếp với lượt cắt CÓ tool call (`LUOT_BI_CAT`) ⇒ xen kẽ hai kiểu cắt
+        //   3 lượt liền vẫn dừng `lap-lai` như cũ. Chữ cụt KHÔNG bao giờ thành hành động.
+        if (kq.biCat === true) {
+          demCatKhongTool++;
+          demHongLienTiep++;
+          if (demCatKhongTool > TRAN_NHAC_CAT_KHONG_TOOL || tokenRa >= gh.tokenRaToiDa) {
+            phat({
+              loai: "loi",
+              ma: "LUOT_BI_CAT_LAP",
+              thongDiep: `model reply was cut off by the output limit without a tool call ${demCatKhongTool} times — stopping`,
+            });
+            lyDo = "het-token";
+            break;
+          }
+          if (demHongLienTiep >= TRAN_THAM_SO_HONG_LIEN_TIEP) {
+            phat({
+              loai: "loi",
+              ma: "THAM_SO_HONG_LAP",
+              thongDiep: `model was cut off by the output limit in ${demHongLienTiep} turns in a row — stopping`,
+            });
+            lyDo = "lap-lai";
+            break;
+          }
+          tinNhan.push({ role: "user", content: CAU_NHAC_LUOT_CAT_KHONG_TOOL });
+          continue;
+        }
+        // ★★★ (2026-10-19) Kiểm đặc tả MỘT lần: test/build đã xanh trong lượt chạy và model định kết thúc ⇒ nhắc đối
+        //   chiếu đặc tả + tự kiểm biên trước (25/36 bài trượt: test hiển thị xanh, test ẩn đỏ ở biên). Chỉ khi còn chỗ
+        //   (lượt, token ra) cho ít nhất một vòng kiểm.
+        if (
+          choPhepKiemDacTa &&
+          daXanhLenhKiem &&
+          !daNhacKiemDacTa &&
+          luot < gh.soLuotToiDa - 1 &&
+          tokenRa < gh.tokenRaToiDa * 0.8
+        ) {
+          daNhacKiemDacTa = true;
+          tinNhan.push({ role: "user", content: CAU_NHAC_KIEM_DAC_TA });
+          continue;
+        }
         lyDo = "hoan-thanh";
         break;
       }
@@ -344,6 +533,35 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
         lyDo = "het-token";
         boSungKhongChay(calls, 0, lyDo);
         break;
+      }
+
+      // ★★★ Lượt bị CẮT ở trần token ra (`biCat`, engine báo `finish_reason:"length"`) mà có tool call ⇒ KHÔNG thực thi
+      //   lời gọi nào của lượt: tham số có thể DỞ dù trông hợp lệ (JSON đủ ngoặc nhưng `content` của write_file cụt — ghi
+      //   nó xuống là ghi tệp hỏng). Mỗi lời gọi nhận quan sát "bị cắt ⇒ chia nhỏ"; tính vào bộ đếm hỏng liên tiếp
+      //   (cắt 3 lượt liền ⇒ dừng `lap-lai`). Lượt bị cắt KHÔNG có tool call: xem nhánh `calls.length === 0` ở trên
+      //   (2026-10-19: chưa xong ⇒ nhắc ≤ 2 lần rồi `het-token`, cùng chuỗi hỏng liên tiếp).
+      if (kq.biCat === true) {
+        demHongLienTiep++;
+        if (demHongLienTiep >= TRAN_THAM_SO_HONG_LIEN_TIEP) {
+          phat({
+            loai: "loi",
+            ma: "THAM_SO_HONG_LAP",
+            thongDiep: `model was cut off by the output limit in ${demHongLienTiep} turns in a row while calling tools — stopping`,
+          });
+          lyDo = "lap-lai";
+          boSungKhongChay(calls, 0, lyDo);
+          break;
+        }
+        for (let k = 0; k < calls.length; k++) {
+          const tc = calls[k];
+          const ten = tc.function.name;
+          const kt = kts[k];
+          phat({ loai: "goi-tool", goi: { id: tc.id, ten, thamSo: kt.ok ? kt.thamSo : {} }, luot });
+          const choModel = catDauDuoi(cauQuanSatLuotBiCat(ten), gh.kyTuQuanSatToiDa);
+          tinNhan.push({ role: "tool", tool_call_id: tc.id, name: ten, content: choModel });
+          phat({ loai: "ket-qua-tool", id: tc.id, ten, ok: false, tomTat: rutGon(choModel, TRAN_TOM_TAT), ma: MA_LUOT_BI_CAT });
+        }
+        continue;
       }
 
       for (let k = 0; k < calls.length; k++) {
@@ -354,7 +572,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
           break vong;
         }
         const ten = tc.function.name;
-        const kt = kiemThamSo(ten, tc.function.arguments);
+        const kt = kts[k];
 
         // lặp lại: cùng tên + cùng tham số chuẩn hoá, liên tiếp
         const khoa = `${ten}\u0000${kt.ok ? chuanHoaThamSo(kt.thamSo) : tc.function.arguments.trim()}`;
@@ -364,6 +582,17 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
           demLap = 1;
         }
         if (demLap >= 3) {
+          lyDo = "lap-lai";
+          boSungKhongChay(calls, k, lyDo);
+          break vong;
+        }
+        demHongLienTiep = kt.ok || laThamSoObjectJson(tc.function.arguments) ? 0 : demHongLienTiep + 1;
+        if (demHongLienTiep >= TRAN_THAM_SO_HONG_LIEN_TIEP) {
+          phat({
+            loai: "loi",
+            ma: "THAM_SO_HONG_LAP",
+            thongDiep: `model sent ${demHongLienTiep} tool calls in a row whose arguments are not valid JSON (likely cut off by the output limit) — stopping`,
+          });
           lyDo = "lap-lai";
           boSungKhongChay(calls, k, lyDo);
           break vong;
@@ -403,6 +632,26 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
               : null;
         let suKienDangNgo: SuKienAgent[] = [];
         let vanChoModel = ketQua.choModel;
+
+        // ── tiến trình: lệnh kiểm (xanh lần đầu ⇒ bật kiểm đặc tả; chạy ⇒ đóng chuỗi ghi) · chuỗi ghi chưa test ──
+        if (ten === "run_command" && kt.ok && laLenhKiem(String(kt.thamSo.command ?? ""))) {
+          const lenh = String(kt.thamSo.command).trim();
+          if (laKetQuaLenhXanh(ketQua)) daXanhLenhKiem = true;
+          lenhTestBiet = lenhTestBiet ?? lenh;
+          demGhiChuaTest = 0;
+          duongGhiTruoc = null;
+          daNhacChuoiGhi = false;
+        } else if (TOOL_GHI_NOI_DUNG.has(ten) && kt.ok && ketQua.ok === true) {
+          const duong = String(kt.thamSo.path ?? "");
+          // ghi từng phần (write_file rồi edit_file CÙNG tệp — cách lõi khuyên cho tệp lớn) không tính là ghi lại
+          const noiTiep = ten === "edit_file" && duongGhiTruoc === `write_file\u0000${duong}`;
+          duongGhiTruoc = `${ten}\u0000${duong}`;
+          if (!noiTiep) demGhiChuaTest++;
+          if (demGhiChuaTest >= 2 && !daNhacChuoiGhi && lenhTestBiet && y.cheDo !== "hoi") {
+            daNhacChuoiGhi = true;
+            vanChoModel = `${vanChoModel}\n${cauNhacGhiChuaTest(lenhTestBiet)}`;
+          }
+        }
         if (dangNgo) {
           const nguon = rutGon(String(dangNgo.nguon ?? "").trim() || nhanNguonGoi(goi), 160);
           const mau = (Array.isArray(dangNgo.mau) ? dangNgo.mau : []).filter((m): m is string => typeof m === "string").slice(0, 10);

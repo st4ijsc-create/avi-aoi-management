@@ -1,0 +1,15 @@
+{
+  "id": "py-tt3-khop-glob",
+  "lang": "py",
+  "muc": "thuat-toan",
+  "kieu": "pytest",
+  "tieuDe": "Khớp mẫu kiểu glob tự cài (*, ?, lớp ký tự, thoát), chạy nhanh với nhiều dấu *",
+  "deBai": "Viết module `khop_glob.py` với hàm `khop(mau, chuoi) -> bool`: trả `True` nếu TOÀN BỘ `chuoi` khớp mẫu glob `mau`. KHÔNG dùng `fnmatch`, `glob`, `re` hay thư viện ngoài — tự cài.\n\nCú pháp mẫu (phân biệt hoa thường; một ký tự là một code point của chuỗi Python; không có ký tự phân cách đường dẫn đặc biệt):\n\n- `*` khớp một dãy ký tự bất kỳ, kể cả rỗng.\n- `?` khớp đúng MỘT ký tự bất kỳ.\n- `\\x` (dấu gạch chéo ngược rồi một ký tự bất kỳ `x`) khớp đúng ký tự `x` theo nghĩa đen (vd `\\*` khớp dấu `*`, `\\\\` khớp một dấu `\\`).\n- `[...]` là lớp ký tự, khớp đúng MỘT ký tự thuộc lớp; `[!...]` (dấu `!` ngay sau `[`) khớp đúng MỘT ký tự KHÔNG thuộc lớp.\n  - Ký tự `]` đứng ĐẦU lớp (ngay sau `[` hoặc `[!`) là ký tự thường, không đóng lớp; lớp đóng ở dấu `]` kế tiếp. Vì vậy lớp không bao giờ rỗng.\n  - Trong lớp, `\\x` là ký tự `x` theo nghĩa đen (vd `[\\]]` là lớp chỉ chứa `]`).\n  - `c1-c2` là khoảng ký tự theo code point, GỒM cả hai đầu (`c1`, `c2` đều có thể viết dạng thoát `\\x`). Dấu `-` không tạo khoảng (đứng đầu lớp, hoặc ngay trước dấu `]` đóng lớp, hoặc viết `\\-`) là ký tự thường. Một lớp có thể chứa nhiều khoảng và ký tự, vd `[a-cx-z_]`.\n- Mọi ký tự khác khớp chính nó.\n\nMẫu hỏng ⇒ ném `ValueError`: lớp không đóng (vd `[abc`, `[`, `[!`, `[]`), dấu `\\` ở cuối mẫu (kể cả bên trong một lớp chưa đóng), khoảng ngược `c1 > c2` (vd `[z-a]`). Phải kiểm TOÀN BỘ mẫu và ném lỗi bất kể `chuoi` là gì (kể cả khi phần đầu mẫu đã không khớp `chuoi`).\n\nHiệu năng: thời gian tối đa cỡ `O(len(mau) * len(chuoi))` — mẫu như `\"*a\" * 50 + \"*b\"` so với chuỗi 2 000 ký tự phải trả lời gần như tức thì (không quay lui theo hàm mũ).",
+  "tepGiai": ["khop_glob.py"],
+  "dinhDanh": "khop",
+  "testHienThi": ["tests/test_hien_thi.py"],
+  "testAn": ["tests/test_an.py"],
+  "tepBaoVe": ["tests/test_hien_thi.py", "pytest.ini"],
+  "soTest": { "hienThi": 3, "an": 9 },
+  "sai": [{ "tep": "khop_glob.py", "tu": "dau_lop = True", "den": "dau_lop = False" }]
+}

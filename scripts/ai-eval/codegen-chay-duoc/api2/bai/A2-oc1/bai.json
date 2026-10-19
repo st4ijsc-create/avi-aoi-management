@@ -1,0 +1,1 @@
+{ "id": "A2-oc1", "lang": "cs", "name": "GuiMqtt", "nhom": "ot-dotnet", "thuVien": "MQTTnet 5.2.0.1603 (MqttClientFactory · MqttApplicationMessageBuilder · MQTT 5 user property) + MQTTnet.Server 5.2.0.1603 in-process", "dinhDanh": "GuiMqtt", "csproj": "api2/cs-ot/p.csproj" }

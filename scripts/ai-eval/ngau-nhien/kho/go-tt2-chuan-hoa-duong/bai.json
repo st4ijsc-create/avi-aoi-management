@@ -1,0 +1,15 @@
+{
+  "id": "go-tt2-chuan-hoa-duong",
+  "lang": "go",
+  "muc": "thuat-toan",
+  "kieu": "go",
+  "tieuDe": "Chuẩn hoá đường dẫn kiểu Unix và tính đường tương đối giữa hai đường tuyệt đối (tự cài)",
+  "deBai": "Trong gói `bai` (module `bai`, tệp `duong_dan.go`), cài:\n\n```go\nvar ErrKhongTuyetDoi = errors.New(\"duong dan khong tuyet doi\")\n\nfunc ChuanHoa(p string) string\nfunc DuongTuongDoi(goc, dich string) (string, error)\n```\n\nĐường dẫn kiểu Unix: dấu phân cách DUY NHẤT là `/` (dấu gạch ngược là ký tự thường). Phải TỰ CÀI — không dùng gói `path` hay `path/filepath` (máy chấm chỉ kiểm hành vi; lưu ý `filepath` trên Windows dùng dấu gạch ngược). Được dùng `strings`.\n\n`ChuanHoa(p)` — tách `p` theo `/` thành các thành phần rồi:\n- Bỏ thành phần rỗng (do `//` hoặc `/` ở đầu/cuối) và thành phần `.`.\n- `..` xoá thành phần thường đứng ngay trước nó. Nếu không có thành phần thường nào để xoá: với đường TUYỆT ĐỐI (`p` bắt đầu bằng `/`) thì `..` bị bỏ (không vượt quá gốc, vd `/../x` ⇒ `/x`); với đường TƯƠNG ĐỐI thì `..` được GIỮ lại ở đầu (vd `a/../../b` ⇒ `../b`).\n- Chỉ đúng `.` và `..` là đặc biệt; `...`, `.an`, `..a`, `b..` là tên thường. Tên có thể chứa chữ Unicode, dấu cách.\n- Kết quả: đường tuyệt đối ⇒ `/` + các thành phần nối bằng `/` (gốc là `/`, không có `/` ở cuối trừ gốc). Đường tương đối ⇒ các thành phần nối bằng `/`; nếu không còn thành phần nào (kể cả `p == \"\"`) ⇒ `.`.\n- Hàm luỹ đẳng: `ChuanHoa(ChuanHoa(p)) == ChuanHoa(p)`. Phải chạy nhanh với đường dài vài trăm nghìn ký tự / cỡ 10^5 thành phần (tránh thuật toán bình phương).\n\n`DuongTuongDoi(goc, dich)` — đường tương đối `r` sao cho đi từ thư mục `goc` theo `r` thì tới `dich`:\n- `goc` hoặc `dich` không bắt đầu bằng `/` (kể cả chuỗi rỗng) ⇒ trả `(\"\", err)` với `errors.Is(err, ErrKhongTuyetDoi)`.\n- Chuẩn hoá cả hai bằng quy tắc trên; tìm tiền tố chung dài nhất tính theo TỪNG THÀNH PHẦN NGUYÊN (không theo ký tự: `/ab` và `/a/b` chỉ chung gốc); kết quả = một `..` cho mỗi thành phần còn lại của `goc`, tiếp theo các thành phần còn lại của `dich`, nối bằng `/`. Hai đường trùng nhau ⇒ `.`. Ví dụ `DuongTuongDoi(\"/a/b/c\", \"/a/d\") == \"../../d\"`.",
+  "tepGiai": ["duong_dan.go"],
+  "dinhDanh": "ChuanHoa",
+  "testHienThi": ["hien_thi_test.go"],
+  "testAn": ["an_test.go"],
+  "tepBaoVe": ["go.mod", "hien_thi_test.go"],
+  "soTest": { "hienThi": 3, "an": 8 },
+  "sai": [{ "tep": "duong_dan.go", "tu": "len(ngan) > 0 && ngan[len(ngan)-1] != \"..\"", "den": "len(ngan) > 0" }]
+}

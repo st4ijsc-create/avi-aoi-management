@@ -30,6 +30,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   chayVongAgent,
+  kiemDacTaBat,
   dungKhoiNguCanhDuAn,
   type CheDoAgent,
   type GioiHanVong,
@@ -604,6 +605,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             gioiHan: phuThuoc.gioiHan,
             ngonNgu: lang,
             uocLuongToken: uocLuongSoToken,
+            // (2026-10-19) nhắc đối chiếu đặc tả sau lần test xanh đầu — tắt bằng AI_AGENT_KIEM_DAC_TA=0
+            kiemDacTa: kiemDacTaBat(process.env.AI_AGENT_KIEM_DAC_TA),
           });
           traLoi = [...kq.tinNhan].reverse().find((m) => m.role === "assistant" && m.content.trim())?.content ?? "";
         } catch (e) {

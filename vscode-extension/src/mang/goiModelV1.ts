@@ -149,7 +149,14 @@ async function* motLuot(
   if (!daXongDone && !tt.finishReason) {
     throw new LoiModel("Luồng /v1 đứt trước khi model trả lời xong.", { tamThoi: true, ma: "MODEL_CUT" });
   }
-  yield { loai: "xong", toolCalls: toolCallsCuoi(tt), ...(tt.usage ? { usage: tt.usage } : {}) };
+  // ★★★ `finish_reason:"length"` (chuẩn OpenAI; máy chủ giữ nó kể cả khi có tool call dở) ⇒ lượt bị CẮT ở trần token ⇒
+  //   lõi agent KHÔNG thực thi tool call của lượt đó (tham số có thể cụt dù JSON trông hợp lệ).
+  yield {
+    loai: "xong",
+    toolCalls: toolCallsCuoi(tt),
+    ...(tt.usage ? { usage: tt.usage } : {}),
+    ...(tt.finishReason === "length" ? { biCat: true } : {}),
+  };
 }
 
 export function taoGoiModelV1(ch: CauHinhGoiModelV1): GoiModel {

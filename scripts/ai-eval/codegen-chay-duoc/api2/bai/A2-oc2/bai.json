@@ -1,0 +1,1 @@
+{ "id": "A2-oc2", "lang": "cs", "name": "NhanMqtt", "nhom": "ot-dotnet", "thuVien": "MQTTnet 5.2.0.1603 (SubscribeAsync · ApplicationMessageReceivedAsync · ConvertPayloadToString — payload ReadOnlySequence ở v5) + MQTTnet.Server 5.2.0.1603 in-process", "dinhDanh": "NhanMqtt", "csproj": "api2/cs-ot/p.csproj" }

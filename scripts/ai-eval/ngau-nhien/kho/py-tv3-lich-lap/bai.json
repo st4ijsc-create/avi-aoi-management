@@ -1,0 +1,15 @@
+{
+  "id": "py-tv3-lich-lap",
+  "lang": "py",
+  "muc": "thu-vien",
+  "kieu": "pytest",
+  "tieuDe": "datetime: lịch lặp hằng tuần/hằng tháng với múi giờ lệch cố định",
+  "deBai": "Viết module `lich_lap.py` dùng `datetime` của thư viện chuẩn. Máy chấm KHÔNG có cơ sở dữ liệu múi giờ (tzdata) ⇒ KHÔNG dùng `zoneinfo`; mọi múi giờ là độ lệch cố định `datetime.timezone(timedelta(...))`.\n\n**Chuỗi múi** (dùng ở mọi nơi dưới đây): `\"Z\"` (độ lệch 0) hoặc `\"+HH:MM\"` / `\"-HH:MM\"` với đúng 2 chữ số giờ `00`–`14` và 2 chữ số phút `00`–`59` (`\"-00:00\"`, `\"+00:00\"` hợp lệ, bằng 0). Mọi dạng khác (`\"+7\"`, `\"+07\"`, `\"07:00\"`, `\"UTC\"`, `\"z\"`, `\"+15:00\"`, `\"+07:60\"`, chuỗi rỗng…) ⇒ `ValueError`.\n\n**Hàm phải có:**\n\n1. `phan_tich_mui(s) -> datetime.timezone` — đối tượng `timezone` có độ lệch tương ứng.\n2. `phan_tich_iso(s) -> datetime` — nhận ĐÚNG dạng `YYYY-MM-DDTHH:MM` hoặc `YYYY-MM-DDTHH:MM:SS` (chữ số ASCII, đủ số chữ số như mẫu, chữ `T` hoa) theo sau NGAY bởi một chuỗi múi như trên. Thiếu múi, dùng dấu cách thay `T`, phần lẻ giây, `+0700`, dạng gọn `20261018T…`, ngày/giờ không có thật (`2026-02-29`, giờ `24`…) ⇒ `ValueError`. Trả `datetime` aware mang ĐÚNG độ lệch trong chuỗi (giữ nguyên giờ địa phương như chuỗi viết; giây mặc định 0).\n3. `dinh_dang(dt, mui) -> str` — `dt` aware (naive ⇒ `ValueError`) quy đổi sang múi `mui`, định dạng `YYYY-MM-DDTHH:MM:SS` + hậu tố: `Z` nếu độ lệch của `mui` bằng 0 (kể cả khi viết `+00:00` hay `-00:00`), ngược lại `±HH:MM`.\n4. `sinh_lich(bat_dau, kieu, so_lan, mui_dich) -> list[str]` — `bat_dau` là chuỗi ISO như (2); `kieu` là `\"tuan\"` hoặc `\"thang\"`; `so_lan >= 1`; trả `so_lan` lần xuất hiện, lần đầu chính là `bat_dau`, mỗi lần định dạng bằng `dinh_dang(…, mui_dich)`.\n   - Lặp theo LỊCH TẠI ĐỘ LỆCH CỦA `bat_dau` (không phải theo UTC hay theo múi đích): ngày và giờ địa phương tính trên độ lệch của `bat_dau`, giờ:phút:giây giữ nguyên.\n   - `\"tuan\"`: mỗi lần cách nhau đúng 7 ngày.\n   - `\"thang\"`: lần thứ `i` (đếm từ 0) rơi vào tháng thứ `i` sau tháng của `bat_dau` (qua năm bình thường), vào NGÀY GỐC của `bat_dau`; tháng không có ngày đó ⇒ ngày CUỐI tháng ấy. Luôn neo vào ngày gốc, không trôi theo lần trước (bắt đầu ngày 31: 31/1 ⇒ 28/2 (hoặc 29/2 năm nhuận) ⇒ 31/3 ⇒ 30/4 ⇒ 31/5).\n   - `kieu` lạ, `so_lan < 1`, `bat_dau` hay `mui_dich` không hợp lệ ⇒ `ValueError`.",
+  "tepGiai": ["lich_lap.py"],
+  "dinhDanh": "sinh_lich",
+  "testHienThi": ["tests/test_hien_thi.py"],
+  "testAn": ["tests/test_an.py"],
+  "tepBaoVe": ["tests/test_hien_thi.py", "pytest.ini"],
+  "soTest": { "hienThi": 3, "an": 9 },
+  "sai": [{ "tep": "lich_lap.py", "tu": "hien = _cong_thang(hien, 1, bd.day)", "den": "hien = _cong_thang(hien, 1, hien.day)" }]
+}

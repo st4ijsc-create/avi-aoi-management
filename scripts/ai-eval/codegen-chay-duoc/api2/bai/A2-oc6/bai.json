@@ -1,0 +1,1 @@
+{ "id": "A2-oc6", "lang": "cs", "name": "ChuyenId", "nhom": "ot-dotnet", "thuVien": "OPCFoundation.NetStandard.Opc.Ua.Core 1.5.378.156 (ExpandedNodeId.Parse · ExpandedNodeId.ToNodeId · NamespaceTable)", "dinhDanh": "ChuyenId", "csproj": "api2/cs-ot/p.csproj" }

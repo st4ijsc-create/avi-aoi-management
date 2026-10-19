@@ -10,12 +10,13 @@
  *     Chọn nhánh này chứ không phải nhánh web: câu hỏi của agent là câu hỏi LẬP TRÌNH; nhánh web giữ top‑1 dù yếu
  *     (MIN_CITATION_SCORE 0,18) — đúng thứ §5 cấm ("dưới ngưỡng ⇒ không thấy", không bịa).
  *   • `knowledge/api-ref/dotnet-using.json` — chỉ mục kiểu .NET ⇒ namespace (nguồn của `boSungUsingCSharp`): khớp
- *     NGUYÊN TỪ tên kiểu trong câu hỏi ⇒ một dòng "Type → using Namespace;". Tất định, không nhúng.
+ *     NGUYÊN TỪ tên kiểu trong câu hỏi ⇒ một dòng "Type → using Namespace;". Tất định, không nhúng. (2026-10-18) hợp với
+ *     bảng SINH `ky-hieu/dotnet-kieu-ns.json` qua `apiRef/chiMucUsingDotnet.ts`; tra ĐỦ chữ ký/thành viên là việc của
+ *     `lookup_api` (`apiRef/traApi.ts`).
  *
  * Kết quả là DỮ LIỆU: bộ thực thi đưa qua `lamSachChoModel` (che bí mật + quét chỉ thị) và cắt trần như tool đọc khác.
  */
-import fs from "node:fs";
-import path from "node:path";
+import { napChiMucUsingDotnet } from "../apiRef/chiMucUsingDotnet";
 
 export type KhoTaiLieu = "all" | "vendor" | "studio" | "api";
 
@@ -45,18 +46,15 @@ const TRAN_KHOP_API = 8;
 interface ChiMucApi {
   nguon?: string[];
   kieu?: Record<string, string[]>;
+  /** (2026-10-18) tên chỉ có trong bảng SINH từ toàn bộ XML .NET (`apiRef/chiMucUsingDotnet.ts`) */
+  kieuMoRong?: Record<string, string[]>;
 }
 
 let _api: ChiMucApi | null | undefined;
 
 function napApiRef(): ChiMucApi | null {
   if (_api !== undefined) return _api;
-  try {
-    const p = path.join(process.cwd(), "knowledge", "api-ref", "dotnet-using.json");
-    _api = fs.existsSync(p) ? (JSON.parse(fs.readFileSync(p, "utf8")) as ChiMucApi) : null;
-  } catch {
-    _api = null;
-  }
+  _api = napChiMucUsingDotnet();
   return _api;
 }
 
@@ -64,11 +62,16 @@ function napApiRef(): ChiMucApi | null {
 export function timTrongApiRef(query: string, chiMuc: ChiMucApi | null): DoanTaiLieu[] {
   const kieu = chiMuc?.kieu;
   if (!kieu || typeof kieu !== "object") return [];
+  const moRong = chiMuc?.kieuMoRong ?? {};
   const tu = new Set(String(query).match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? []);
   const ra: DoanTaiLieu[] = [];
   for (const t of tu) {
     if (t.length < 3) continue;
-    const ns = Object.prototype.hasOwnProperty.call(kieu, t) ? kieu[t] : undefined;
+    const ns = Object.prototype.hasOwnProperty.call(kieu, t)
+      ? kieu[t]
+      : Object.prototype.hasOwnProperty.call(moRong, t)
+        ? moRong[t]
+        : undefined;
     if (!Array.isArray(ns) || ns.length === 0) continue;
     ra.push({
       nguon: `api-ref: .NET (${(chiMuc?.nguon ?? []).join(", ") || "dotnet-using.json"})`,

@@ -1,0 +1,36 @@
+{
+  "id": "rs-ud2-ngan-hang-luong",
+  "lang": "rs",
+  "muc": "ung-dung",
+  "kieu": "cargo",
+  "tieuDe": "Ngân hàng đồng thời: khoá theo thứ tự id chống deadlock, ảnh chụp tổng nhất quán, xử lý lô nhiều luồng gom bằng mpsc",
+  "deBai": "Ứng dụng nhỏ nhiều tệp — crate `bai`: ngân hàng dùng chung giữa nhiều luồng. Đã cho sẵn (KHÔNG sửa): `src/lib.rs` (khai module + re-export) và `src/loi.rs` (enum `LoiNganHang` đầy đủ, kèm `Display`). Bạn viết HAI tệp: `src/ngan_hang.rs` và `src/xu_ly.rs`.\n\n**`src/ngan_hang.rs`** — struct `NganHang` (trường tuỳ bạn) phải là `Send + Sync`; MỌI phương thức nhận `&self` (test chia sẻ một ngân hàng giữa nhiều luồng qua `&NganHang` trong `thread::scope` và qua `Arc<NganHang>` với `thread::spawn`):\n\n```rust\nimpl NganHang {\n    pub fn moi() -> NganHang;\n    pub fn mo_tai_khoan(&self, id: u32, so_du: u64) -> Result<(), LoiNganHang>;\n    pub fn so_du(&self, id: u32) -> Result<u64, LoiNganHang>;\n    pub fn nap(&self, id: u32, so_tien: u64) -> Result<u64, LoiNganHang>;\n    pub fn rut(&self, id: u32, so_tien: u64) -> Result<u64, LoiNganHang>;\n    pub fn chuyen(&self, tu: u32, den: u32, so_tien: u64) -> Result<(), LoiNganHang>;\n    pub fn tong_tien(&self) -> u128;\n}\n```\n\n- `mo_tai_khoan`: id đã có ⇒ `TaiKhoanDaCo(id)`; số dư ban đầu được phép bằng 0.\n- `so_du`: id không có ⇒ `KhongCoTaiKhoan(id)`.\n- `nap` / `rut` trả về số dư MỚI. Thứ tự kiểm: `so_tien == 0` ⇒ `SoTienKhongHopLe`; id không có ⇒ `KhongCoTaiKhoan(id)`; `nap` làm số dư vượt `u64::MAX` ⇒ `TranSo(id)`; `rut` khi số dư < `so_tien` ⇒ `KhongDuTien { id, so_du, can: so_tien }` (rút ĐÚNG bằng số dư là hợp lệ, còn 0).\n- `chuyen`: thứ tự kiểm: `so_tien == 0` ⇒ `SoTienKhongHopLe`; `tu == den` ⇒ `CungTaiKhoan`; `tu` không có ⇒ `KhongCoTaiKhoan(tu)`; `den` không có ⇒ `KhongCoTaiKhoan(den)`; số dư của `tu` < `so_tien` ⇒ `KhongDuTien { id: tu, so_du, can: so_tien }` (chuyển đúng bằng số dư là hợp lệ); số dư `den` cộng thêm vượt `u64::MAX` ⇒ `TranSo(den)`. Lỗi thì không tài khoản nào thay đổi. Thành công là NGUYÊN TỬ: không luồng nào thấy trạng thái nửa vời (đã trừ bên này mà chưa cộng bên kia), không mất cập nhật.\n- KHÔNG ĐƯỢC DEADLOCK dù nhiều luồng chuyển chéo nhau đồng thời (1→2, 2→1, 2→3, 3→1…): khi cần khoá hai tài khoản, luôn khoá theo thứ tự id TĂNG dần.\n- `tong_tien`: tổng số dư mọi tài khoản dạng `u128` (có thể vượt `u64`); phải là ẢNH CHỤP NHẤT QUÁN — gọi trong lúc các luồng khác đang chuyển khoản vẫn luôn ra đúng tổng (chuyển khoản không làm đổi tổng). Ngân hàng rỗng ⇒ 0.\n\n**`src/xu_ly.rs`** — giữ nguyên `Lenh` và `KetQuaLo` như khung, cài:\n\n```rust\npub fn xu_ly_lo(nh: &NganHang, lenh: &[Lenh], so_luong: usize) -> KetQuaLo;\n```\n\n- Chạy `so_luong` luồng (`so_luong == 0` coi như 1). Luồng thứ `i` (từ 0) thực hiện `nh.chuyen(tu, den, so_tien)` cho ĐÚNG các lệnh có chỉ số `j` với `j % so_luong == i`, theo thứ tự `j` TĂNG dần. Các luồng chạy song song với nhau.\n- Gom kết quả (gợi ý `std::sync::mpsc` + `std::thread::scope`): `thanh_cong` = số lệnh thành công; `that_bai` = các cặp `(chỉ số lệnh, lỗi)` của lệnh thất bại, sắp TĂNG dần theo chỉ số. Hàm chỉ trả về khi mọi luồng đã xong. `lenh` rỗng ⇒ `KetQuaLo { thanh_cong: 0, that_bai: vec![] }`.\n\nChỉ dùng thư viện chuẩn (`std::sync`, `std::thread`); không crate ngoài. Trả lời bằng đủ hai tệp `src/ngan_hang.rs` và `src/xu_ly.rs`.",
+  "tepGiai": [
+    "src/ngan_hang.rs",
+    "src/xu_ly.rs"
+  ],
+  "dinhDanh": "impl NganHang",
+  "testHienThi": [
+    "tests/hien_thi.rs"
+  ],
+  "testAn": [
+    "tests/an.rs"
+  ],
+  "tepBaoVe": [
+    "Cargo.toml",
+    "tests/hien_thi.rs",
+    "src/lib.rs",
+    "src/loi.rs"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 11
+  },
+  "sai": [
+    {
+      "tep": "src/ngan_hang.rs",
+      "tu": "if so_du < so_tien {",
+      "den": "if so_du <= so_tien {"
+    }
+  ]
+}

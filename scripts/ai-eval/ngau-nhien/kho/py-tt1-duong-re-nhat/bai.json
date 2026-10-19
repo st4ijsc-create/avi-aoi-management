@@ -1,0 +1,15 @@
+{
+  "id": "py-tt1-duong-re-nhat",
+  "lang": "py",
+  "muc": "thuat-toan",
+  "kieu": "pytest",
+  "tieuDe": "Đường đi rẻ nhất trên đồ thị có hướng, phá hoà tất định",
+  "deBai": "Viết module `duong_di.py` với hàm `duong_re_nhat(canh, nguon, dich)`.\n\n- `canh` là danh sách bộ ba `(u, v, w)`: cạnh CÓ HƯỚNG từ đỉnh `u` tới đỉnh `v` với trọng số nguyên `w`. Đỉnh là chuỗi. Có thể có nhiều cạnh song song giữa cùng hai đỉnh và có thể có chu trình.\n- Nếu BẤT KỲ cạnh nào có `w < 0` thì ném `ValueError` (kiểm tra trước mọi việc khác, kể cả khi `nguon == dich`).\n- Trả về bộ `(tong_chi_phi, duong)` với `duong` là list đỉnh từ `nguon` tới `dich` (gồm cả hai đầu) có tổng trọng số NHỎ NHẤT.\n- Nhiều đường cùng tổng nhỏ nhất ⇒ chọn đường có ÍT CẠNH nhất; vẫn hoà ⇒ chọn đường có list đỉnh nhỏ nhất theo thứ tự từ điển của Python (so sánh list chuỗi).\n- `nguon == dich` ⇒ trả `(0, [nguon])` (kể cả khi đỉnh không xuất hiện trong `canh`).\n- Không có đường từ `nguon` tới `dich` (kể cả khi một trong hai đỉnh không có trong đồ thị) ⇒ trả `None`.\n- Không dùng thư viện ngoài (chỉ thư viện chuẩn).",
+  "tepGiai": ["duong_di.py"],
+  "dinhDanh": "duong_re_nhat",
+  "testHienThi": ["tests/test_hien_thi.py"],
+  "testAn": ["tests/test_an.py"],
+  "tepBaoVe": ["tests/test_hien_thi.py", "pytest.ini"],
+  "soTest": { "hienThi": 3, "an": 9 },
+  "sai": [{ "tep": "duong_di.py", "tu": "(chi_phi + w, so_canh + 1, duong + [v])", "den": "(chi_phi + w, 0, duong + [v])" }]
+}

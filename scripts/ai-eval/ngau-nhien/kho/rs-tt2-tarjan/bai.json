@@ -1,0 +1,33 @@
+{
+  "id": "rs-tt2-tarjan",
+  "lang": "rs",
+  "muc": "thuat-toan",
+  "kieu": "cargo",
+  "tieuDe": "Thành phần liên thông mạnh (không đệ quy sâu), đồ thị thu gọn DAG và thứ tự tô-pô chuẩn hoá",
+  "deBai": "Trong crate `bai` (tệp `src/lib.rs`), cài:\n\n```rust\n#[derive(Debug, Clone, PartialEq, Eq)]\npub enum LoiDoThi {\n    DinhKhongHopLe { canh: usize },\n}\n\n#[derive(Debug, Clone, PartialEq, Eq)]\npub struct ThuGon {\n    pub thanh_phan: Vec<Vec<usize>>,\n    pub thuoc: Vec<usize>,\n    pub canh: Vec<(usize, usize)>,\n    pub thu_tu_topo: Vec<usize>,\n}\n\npub fn thanh_phan_manh(n: usize, canh: &[(usize, usize)]) -> Result<Vec<Vec<usize>>, LoiDoThi>;\npub fn thu_gon(n: usize, canh: &[(usize, usize)]) -> Result<ThuGon, LoiDoThi>;\n```\n\nĐồ thị CÓ HƯỚNG với các đỉnh `0..n`; mỗi phần tử `(u, v)` của `canh` là cạnh `u → v`. Cho phép cạnh khuyên (`u == v`) và cạnh lặp. `n` có thể bằng 0.\n\n**Lỗi** (cả hai hàm): cạnh có `u >= n` hoặc `v >= n` ⇒ `Err(LoiDoThi::DinhKhongHopLe { canh: i })` với `i` là chỉ số (trong `canh`) của cạnh không hợp lệ ĐẦU TIÊN.\n\n**`thanh_phan_manh`** trả về các thành phần liên thông mạnh (SCC) dạng CHUẨN HOÁ:\n- các đỉnh trong mỗi thành phần sắp TĂNG dần;\n- các thành phần sắp tăng dần theo đỉnh NHỎ NHẤT của chúng.\nMỗi đỉnh thuộc đúng một thành phần (đỉnh cô lập là một thành phần một đỉnh).\n\n**`thu_gon`** trả về đồ thị thu gọn (DAG các SCC):\n- `thanh_phan`: y hệt kết quả `thanh_phan_manh`; chỉ số của một thành phần là vị trí của nó trong danh sách này.\n- `thuoc`: độ dài `n`, `thuoc[v]` = chỉ số thành phần chứa `v`.\n- `canh`: với mỗi cạnh `u → v` của đồ thị gốc mà `thuoc[u] != thuoc[v]`, có cạnh `(thuoc[u], thuoc[v])`; KHÔNG lặp, sắp tăng dần theo thứ tự từ điển của cặp.\n- `thu_tu_topo`: thứ tự tô-pô của mọi chỉ số thành phần (mỗi cạnh `(a, b)` thì `a` đứng trước `b`); khi có nhiều thành phần cùng sẵn sàng (không còn cạnh vào từ thành phần chưa xếp), luôn lấy chỉ số NHỎ NHẤT trước ⇒ kết quả duy nhất.\n\nQuy mô: tới 100_000 đỉnh và 200_000 cạnh, kể cả đồ thị là một chuỗi dài 100_000 đỉnh. Test chạy trong luồng của `cargo test` (ngăn xếp mặc định khoảng 2 MiB) ⇒ cài DFS bằng đệ quy sẽ TRÀN NGĂN XẾP — phải dùng ngăn xếp tường minh (Tarjan hoặc Kosaraju lặp). Độ phức tạp gần tuyến tính; chạy vài giây ở chế độ debug. Không dùng crate ngoài.",
+  "tepGiai": [
+    "src/lib.rs"
+  ],
+  "dinhDanh": "thanh_phan_manh",
+  "testHienThi": [
+    "tests/hien_thi.rs"
+  ],
+  "testAn": [
+    "tests/an.rs"
+  ],
+  "tepBaoVe": [
+    "Cargo.toml",
+    "tests/hien_thi.rs"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 10
+  },
+  "sai": [
+    {
+      "tep": "src/lib.rs",
+      "tu": "} else if tren_ngan[w] {",
+      "den": "} else {"
+    }
+  ]
+}

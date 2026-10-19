@@ -2,6 +2,8 @@
  * shared/agentCore — bộ tool v1 (schema OpenAI function, tên + mô tả tiếng Anh cho model), kiểm/chuẩn hoá tham số,
  * và `apDungEdits` (phép vá thuần của `edit_file`). Thiết kế: spec Đợt 1 §3; bốn tool ngữ cảnh/trí nhớ của Đợt 2
  * (`find_symbol`, `search_code`, `search_docs`, `remember`): spec `2026-10-17-ai-local-dot2-ngu-canh-tri-nho-design.md` §2.
+ * `lookup_api` (2026-10-18): tra CHÍNH XÁC ký hiệu API trong chỉ mục cục bộ (XML IntelliSense .NET, .d.ts, JDK src.zip, Python
+ * stdlib) — khuyến nghị #1/#2 `docs/superpowers/audits/2026-10-18-ai-local-nguon-hoc-code.md`.
  *
  * Ràng buộc grammar llama.cpp (xem `timGioiHanGrammar` trong server/services/ai/nativeToolCalls.ts): schema KHÔNG có
  * `pattern`, KHÔNG `maxLength > 1999`. Lưới `congCu.test.ts` chạy chính bộ kiểm đó trên `CONG_CU`.
@@ -30,6 +32,8 @@ export const TEN_CONG_CU = [
   "search_code",
   "search_docs",
   "remember",
+  // ── 2026-10-18: chỉ mục ký hiệu API cục bộ ──
+  "lookup_api",
 ] as const;
 export type TenCongCu = (typeof TEN_CONG_CU)[number];
 
@@ -48,6 +52,7 @@ export const LOAI_CONG_CU: Record<TenCongCu, LoaiCongCu> = {
   search_code: "doc",
   search_docs: "doc",
   remember: "de-xuat",
+  lookup_api: "doc",
 };
 
 /** Loại ký hiệu `find_symbol` nhận (enum — model chọn sai ⇒ lỗi liệt kê giá trị đúng). */
@@ -59,6 +64,10 @@ export const PHAM_VI_NHO = ["project", "user"] as const;
 export const TRAN_KY_TU_NHO = 400;
 /** Trần `k` của `search_code`. */
 export const TRAN_K_TIM_MA = 20;
+/** Ngôn ngữ lọc của `lookup_api` — BẰNG `NGON_NGU_TRA_API` (server/services/ai/apiRef/traApi.ts; lõi thuần nên chép). */
+export const NGON_NGU_API = ["csharp", "typescript", "java", "python"] as const;
+/** Trần ký tự `name` của `lookup_api` (một tên đầy đủ dài nhất cũng < 200). */
+export const TRAN_TEN_API = 200;
 
 const chuoi = (description: string) => ({ type: "string", description });
 const soNguyen = (description: string) => ({ type: "integer", minimum: 1, description });
@@ -121,7 +130,9 @@ export const CONG_CU: WireTool[] = [
   ),
   tool(
     "write_file",
-    "Create a new file, or overwrite an existing file with the full new content. Prefer edit_file for small changes.",
+    "Create a new file, or overwrite an existing file with the full new content. Prefer edit_file for small changes. " +
+      "Keep each call under ~150 lines: very long arguments get cut off by the output limit and the call fails — " +
+      "for a large file write the first part here, then append the rest with edit_file.",
     { path: chuoi("File path relative to the project root."), content: chuoi("The complete file content.") },
     ["path", "content"],
   ),
@@ -134,8 +145,13 @@ export const CONG_CU: WireTool[] = [
   ),
   tool(
     "run_command",
-    "Run an allowed command (build, test, lint) in the project root and return its output and exit code.",
-    { command: chuoi("The command line, e.g. 'npm test'. Must be in the project's allowed command list.") },
+    "Run ONE allowed command (build, test, lint) in the project root and return its output and exit code. After changing " +
+      "code, build and run the tests yourself instead of assuming they pass. Typical forms by language: JS/TS 'node --test " +
+      "<path>'; Python 'python -m pytest <path>'; C# 'dotnet test <path>'; Java 'javac -d out <files or dir>' then 'java -cp " +
+      "out <TestClass>'; C++ 'cmake -S . -B build', 'cmake --build build', 'ctest --test-dir build'; Go 'go test ./...'; " +
+      "Rust 'cargo test --offline'. Only the exact forms under 'Allowed commands' in the project context are accepted (this " +
+      "host may allow fewer); there is no shell.",
+    { command: chuoi("The command line, exactly one allowed form, e.g. 'go test ./...'. Paths are relative to the project root.") },
     ["command"],
   ),
   tool(
@@ -207,11 +223,28 @@ export const CONG_CU: WireTool[] = [
     },
     ["note"],
   ),
+  tool(
+    "lookup_api",
+    "Look up an API symbol by its EXACT name (not a semantic search) in the local reference index built from the installed " +
+      "libraries: .NET 10 + ASP.NET Core + NuGet packages (SqlClient, OPC UA, MQTTnet, NModbus), TypeScript/Node .d.ts (lib, " +
+      "@types/node, React, zod, drizzle-orm, express, mqtt, node-opcua, modbus-serial), the JDK and the Python standard library. " +
+      "Returns where it is defined (namespace / module / package and the import line), its signature, a short summary and, " +
+      "for a type, its members. Use it when a compiler reports an unknown type, member or namespace, or before using an API " +
+      "you are not sure exists in this version.",
+    {
+      name: chuoi(
+        "Exact symbol name or a qualified suffix, e.g. 'SqlBulkCopyOptions', 'KeepIdentity', 'SqlBulkCopy.WriteToServer', " +
+          "'os.path.join', 'inArray'. Case-insensitive; no wildcards.",
+      ),
+      language: { type: "string", enum: [...NGON_NGU_API], description: "Optional language filter." },
+    },
+    ["name"],
+  ),
 ];
 
 /**
- * Bộ tool phơi cho model theo chế độ: `hoi` = đọc (kể cả 3 tool tìm của Đợt 2) + todo_write + remember (chỉ là đề
- * xuất); `sua`/`tu-dong` = đủ 14. Trả BẢN SAO sâu.
+ * Bộ tool phơi cho model theo chế độ: `hoi` = đọc (kể cả 3 tool tìm của Đợt 2 + lookup_api) + todo_write + remember (chỉ
+ * là đề xuất); `sua`/`tu-dong` = đủ 15. Trả BẢN SAO sâu.
  */
 export function congCuTheoCheDo(cheDo: CheDoAgent): WireTool[] {
   const chon =
@@ -253,6 +286,7 @@ const DAC_TA: Record<TenCongCu, DacTa> = {
   search_code: { query: B("chuoi"), k: T("so", { toiDa: TRAN_K_TIM_MA }) },
   search_docs: { query: B("chuoi"), corpus: T("enum", { giaTri: KHO_TAI_LIEU }) },
   remember: { note: B("chuoi", { toiDa: TRAN_KY_TU_NHO }), scope: T("enum", { giaTri: PHAM_VI_NHO }) },
+  lookup_api: { name: B("chuoi", { toiDa: TRAN_TEN_API }), language: T("enum", { giaTri: NGON_NGU_API }) },
 };
 
 const VI_DU: Record<TenCongCu, string> = {
@@ -270,6 +304,7 @@ const VI_DU: Record<TenCongCu, string> = {
   search_code: '{"query":"where are HTTP requests retried","k":5}',
   search_docs: '{"query":"Mitsubishi MC protocol read D registers","corpus":"vendor"}',
   remember: '{"note":"This project uses pnpm, not npm.","scope":"project"}',
+  lookup_api: '{"name":"SqlBulkCopyOptions","language":"csharp"}',
 };
 
 const TRANG_THAI_TODO = ["pending", "in_progress", "completed"] as const;
@@ -381,7 +416,11 @@ export function kiemThamSo(ten: string, thamSoTho: unknown): KetQuaKiemThamSo {
   let v: unknown = thamSoTho ?? {};
   if (typeof v === "string") {
     const p = docJson(v);
-    if (!p.ok) return loi(`arguments are not valid JSON (${p.loi}). Send ONE JSON object matching the tool schema`);
+    if (!p.ok) {
+      // ★ Đợt 4 (V-dot4-2): tham số dài bị cắt ở trần token ra ⇒ JSON dở. Nói rõ KHÔNG có gì chạy + cách làm tiếp.
+      const dai = v.length >= NGUONG_THAM_SO_DAI ? ` ${goiYThamSoDai(v.length)}` : "";
+      return loi(`arguments are not valid JSON (${p.loi}). Nothing was executed.${dai} Send ONE JSON object matching the tool schema`);
+    }
     v = p.v;
   }
   if (!laObject(v)) return loi("arguments must be a JSON object");
@@ -408,6 +447,51 @@ export function kiemThamSo(ten: string, thamSoTho: unknown): KetQuaKiemThamSo {
     throw e;
   }
   return { ok: true, thamSo: ra };
+}
+
+/** Từ độ dài này (ký tự) một `arguments` hỏng được coi là "dài — có thể đã bị cắt ở trần token ra". */
+export const NGUONG_THAM_SO_DAI = 2_000;
+
+function goiYThamSoDai(n: number): string {
+  return (
+    `The arguments were very long (${n} characters) and were most likely cut off by the output token limit, so the JSON is incomplete. ` +
+    "Do not resend the whole content in one call: create the file with write_file containing only the first part (keep each call under ~150 lines), " +
+    "then add the remaining parts with edit_file (anchor old_string on the last lines already written), or change existing files with small edit_file edits."
+  );
+}
+
+/** `arguments` là một JSON OBJECT (cùng phép đọc nới của `kiemThamSo`: rào ```json, chuỗi rỗng ⇒ `{}`)? */
+export function laThamSoObjectJson(tho: string): boolean {
+  const p = docJson(tho);
+  return p.ok && laObject(p.v);
+}
+
+/**
+ * ★★★ `arguments` để GHI VÀO LỊCH SỬ hội thoại (tin `assistant.tool_calls` gửi lại model ở lượt sau). THUẦN.
+ *
+ * Vì sao: llama.cpp b9814 (`common/chat.cpp` `func_args_not_string`) `json::parse` MỌI `arguments` của YÊU CẦU trước khi
+ * áp chat template ⇒ một chuỗi hỏng trong lịch sử = HTTP 500 "Failed to parse tool call arguments as JSON" ở MỌI lượt
+ * sau (đo: V-dot4-2 `js-doi-ten` lượt 3, cột 30901 — `write_file` bị cắt ở trần token). Template Qwen còn đòi OBJECT.
+ *
+ * - JSON object CHẶT ⇒ trả NGUYÊN từng byte (prefix-cache của llama-server không trượt).
+ * - Lõi đã chấp nhận (nới: rào ```json, rỗng) ⇒ đúng object ĐÃ chạy (`kt.thamSo`), dạng chuẩn.
+ * - Còn lại (JSON dở, mảng, chuỗi…) ⇒ `{}`. KHÔNG BAO GIỜ vớt/đoán tham số từ chữ hỏng: lời gọi ấy không chạy, và lịch
+ *   sử chỉ ghi rằng nó không có tham số dùng được; quan sát lỗi nằm ở tin `tool` đi kèm.
+ */
+export function thamSoChoLichSu(tho: string, kt: KetQuaKiemThamSo): string {
+  try {
+    if (laObject(JSON.parse(tho))) return tho;
+  } catch {
+    /* không phải JSON chặt */
+  }
+  if (kt.ok) {
+    try {
+      return JSON.stringify(kt.thamSo) ?? "{}";
+    } catch {
+      return "{}";
+    }
+  }
+  return "{}";
 }
 
 /** Chuỗi chuẩn (khoá sắp xếp) của tham số — dùng phát hiện lặp lại. */

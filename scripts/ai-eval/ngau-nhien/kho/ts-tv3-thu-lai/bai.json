@@ -1,0 +1,15 @@
+{
+  "id": "ts-tv3-thu-lai",
+  "lang": "ts",
+  "muc": "thu-vien",
+  "kieu": "node",
+  "tieuDe": "Thử lại với backoff luỹ thừa, huỷ bằng AbortSignal, hàm chờ tiêm được",
+  "deBai": "Viết module `src/thuLai.ts` (TypeScript chạy thẳng bằng Node 24 — CHỈ cú pháp TS xoá được: KHÔNG `enum`, KHÔNG `namespace`, KHÔNG parameter properties, KHÔNG decorator; import ghi đuôi `.ts`, `import type` cho kiểu; chỉ thư viện chuẩn Node). Giữ nguyên các kiểu `HamCho`, `TuyChonThuLai` và chữ ký `thuLai` trong khung:\n\n```ts\nexport async function thuLai<T>(fn: (lan: number, signal?: AbortSignal) => T | Promise<T>, tuyChon?: TuyChonThuLai): Promise<T>\n```\n\nTuỳ chọn (đều không bắt buộc): `lanToiDa` tổng số lần gọi `fn` tối đa, mặc định `3`, phải là số nguyên ≥ 1 · `choMs` mặc định `100`, số hữu hạn ≥ 0 · `heSo` mặc định `2`, số hữu hạn ≥ 1 · `choToiDaMs` mặc định `Infinity`, số ≥ 0 (được là `Infinity`, không được `NaN`) · `signal?: AbortSignal` · `nenThuLai?: (loi, lan) => boolean` · `cho?: HamCho` hàm chờ, mặc định chờ thật bằng `setTimeout` của `node:timers/promises` có truyền `{ signal }` (để huỷ được giữa lúc chờ). Tuỳ chọn sai ⇒ promise bị reject bằng `RangeError` và `fn` KHÔNG được gọi.\n\nThuật toán, với `lan` = 1, 2, …:\n1. Nếu `signal` đã bị huỷ ⇒ reject bằng LỖI HUỶ (định nghĩa dưới), không gọi `fn`.\n2. Gọi `fn(lan, signal)` (`fn` có thể trả giá trị thường hoặc promise; ném đồng bộ cũng tính là thất bại). Thành công ⇒ resolve bằng giá trị đó.\n3. Thất bại với lỗi `loi`, kiểm theo đúng thứ tự: (a) `signal` đã bị huỷ ⇒ reject bằng LỖI HUỶ (không gọi `nenThuLai`, không chờ); (b) có `nenThuLai` và `nenThuLai(loi, lan)` trả `false` ⇒ reject bằng CHÍNH đối tượng `loi` (kể cả khi đây là lần cuối); (c) `lan === lanToiDa` ⇒ reject bằng `AggregateError` có `errors` là mọi lỗi của các lần gọi theo thứ tự.\n4. Chờ `Math.min(choMs * heSo ** (lan - 1), choToiDaMs)` ms bằng `await cho(ms, signal)` (lần chờ đầu là `choMs`, rồi nhân `heSo` mỗi lần). Nếu `cho` reject: `signal` đã bị huỷ ⇒ reject bằng LỖI HUỶ; ngược lại reject bằng nguyên lỗi `cho` ném. Rồi quay lại bước 1 với `lan + 1`.\n\nLỖI HUỶ: một `Error` có `name === \"AbortError\"` và `cause` là `signal.reason` (vd khi dùng `AbortSignal.timeout(ms)` thì `cause` là lỗi `TimeoutError` của signal). Test dùng hàm `cho` giả (ghi lại các ms, không chờ thật) nên lịch chờ phải đúng từng số.",
+  "tepGiai": ["src/thuLai.ts"],
+  "dinhDanh": "thuLai",
+  "testHienThi": ["test/hien-thi.test.ts"],
+  "testAn": ["test/an.test.ts"],
+  "tepBaoVe": ["package.json", "test/hien-thi.test.ts"],
+  "soTest": { "hienThi": 3, "an": 11 },
+  "sai": [{ "tep": "src/thuLai.ts", "tu": "Math.min(choMs * heSo ** (lan - 1), choToiDaMs)", "den": "choMs * heSo ** (lan - 1)" }]
+}

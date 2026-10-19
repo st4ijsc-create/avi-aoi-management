@@ -1,0 +1,15 @@
+{
+  "id": "cpp-tt1-ngoac",
+  "lang": "cpp",
+  "muc": "thuat-toan",
+  "kieu": "cmake",
+  "tieuDe": "Kiểm tra dấu ngoặc và vị trí lỗi đầu tiên, bỏ qua chuỗi",
+  "deBai": "Cài hàm `KetQuaNgoac kiemNgoac(std::string_view s)` khai báo trong `src/ngoac.hpp` (đã có, KHÔNG đổi) vào tệp `src/ngoac.cpp`.\n\n- Bốn cặp ngoặc: `()`, `[]`, `{}`, `<>`. Mọi ký tự khác bị bỏ qua.\n- Đoạn nằm giữa hai dấu nháy kép `\"` là CHUỖI: mọi ngoặc trong chuỗi bị bỏ qua. Trong chuỗi, dấu `\\` thoát ký tự ngay sau nó (vd `\\\"` không kết thúc chuỗi, `\\\\` là một gạch chéo). Dấu nháy đơn KHÔNG có ý nghĩa đặc biệt.\n- Hợp lệ ⇒ `{true, -1, '\\0'}`.\n- Gặp ngoặc ĐÓNG không khớp ngoặc mở gần nhất (hoặc không còn ngoặc mở nào) ⇒ `hopLe = false`, `viTri` = chỉ số (từ 0) của ngoặc đóng đó, `mongDoi` = ngoặc đóng tương ứng với ngoặc mở gần nhất còn mở, hoặc `'\\0'` nếu không còn ngoặc mở nào.\n- Hết chuỗi mà chuỗi ký tự `\"…` chưa đóng ⇒ `{false, (int)s.size(), '\"'}`.\n- Hết chuỗi mà còn ngoặc mở ⇒ `{false, (int)s.size(), <ngoặc đóng của ngoặc mở GẦN NHẤT còn mở>}`.\n- Báo lỗi ĐẦU TIÊN gặp khi quét trái sang phải.",
+  "tepGiai": ["src/ngoac.cpp"],
+  "dinhDanh": "kiemNgoac",
+  "testHienThi": ["tests/hien_thi.cpp"],
+  "testAn": ["tests/an.cpp"],
+  "tepBaoVe": ["CMakeLists.txt", "tests/kt.hpp", "tests/hien_thi.cpp", "src/ngoac.hpp"],
+  "soTest": { "hienThi": 3, "an": 9 },
+  "sai": [{ "tep": "src/ngoac.cpp", "tu": "if (c == '\\\\') { ++i; continue; }", "den": "" }]
+}

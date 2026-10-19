@@ -941,6 +941,10 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         // ★★★ G2-B — `finish_reason` của luồng này. Chỉ đổi sang "tool_calls" khi ĐÃ THẬT SỰ phát
         // ít nhất một mảnh tool-call ra dây; mặc định giữ nguyên "stop" như trước.
         let daPhatToolCall = false;
+        // ★★★ Engine báo lượt bị CẮT ở trần token (`finishReason:"length"`, chunk `done`) ⇒ ô cuối là "length" — giá trị
+        // CHUẨN OpenAI — kể cả khi đã phát tool call: tham số của lượt cụt có thể DỞ dù JSON trông hợp lệ, và "tool_calls"
+        // ở đây là bảo client đi thực thi nó.
+        let biCat = false;
         // ★★★ Đợt 4 — HỎI LẠI ĐÚNG MỘT LẦN với nghĩ TẮT trong CÙNG luồng SSE (cùng `id`, không gửi lại role chunk)
         // khi lượt sinh hỏng vì model trả lời vào kênh suy luận (`maLoiSuyLuanV1`). AN TOÀN vì hai lớp lỗi đó chỉ
         // ném khi content RỖNG và CHƯA có tool call ⇒ trên dây mới có role chunk; mảnh `reasoning` không bao giờ ra dây
@@ -990,6 +994,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
                 tokensOut = chunk.tokensGenerated ?? 0;
                 tokensNghi = chunk.tokensReasoning;
                 daCoDone = true;
+                if (chunk.finishReason === "length") biCat = true;
                 // ⚠ Bộ VỚT (build không phân giải `<tool_call>`) chỉ hiện ra ở chunk `done` — không có
                 // mảnh delta nào cả. Phát nguyên khối ở đây, nếu không lượt ấy im lặng mất tool-call.
                 if (chunk.toolCalls?.length && !daPhatToolCall) {
@@ -1082,7 +1087,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           model: modelLabel,
           // ★ G2-B — client chuẩn (OpenAI SDK, Continue, Cline) dùng ĐÚNG ô này để biết phải đi
           // thực thi tool rồi quay lại, thay vì in câu trả lời ra cho người dùng.
-          choices: [{ index: 0, delta: {}, finish_reason: daPhatToolCall ? "tool_calls" : "stop" }],
+          choices: [{ index: 0, delta: {}, finish_reason: biCat ? "length" : daPhatToolCall ? "tool_calls" : "stop" }],
         };
         res.write(`data: ${JSON.stringify(doneChunk)}\n\n`);
         if (xinUsageLuong(body) && daCoDone && !res.destroyed) {
@@ -1153,7 +1158,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
               // phân biệt được "model không muốn gọi tool" với "chẳng ai từng hỏi model cả".
               ...(toolCallsRa.length ? { tool_calls: toolCallsRa } : {}),
             },
-            finish_reason: toolCallsRa.length ? "tool_calls" : "stop",
+            // ★★★ "length" (lượt bị cắt ở trần token) thắng "tool_calls" — xem `biCat` ở nhánh stream.
+            finish_reason: result.finishReason === "length" ? "length" : toolCallsRa.length ? "tool_calls" : "stop",
           },
         ],
         usage: {

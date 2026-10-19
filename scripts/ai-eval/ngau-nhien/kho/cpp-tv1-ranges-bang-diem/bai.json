@@ -1,0 +1,35 @@
+{
+  "id": "cpp-tv1-ranges-bang-diem",
+  "lang": "cpp",
+  "muc": "thu-vien",
+  "kieu": "cmake",
+  "tieuDe": "Bảng điểm với std::ranges: sắp xếp ổn định nhiều khoá, hạng đồng hạng 1-1-3, lọc/biến đổi, phân hoạch ổn định",
+  "deBai": "Cài sáu hàm khai báo trong `src/bang_diem.hpp` (đã có — gồm `struct HocSinh {ten, lop, toan, van, anh}` và `struct XepHang {hang, ten, lop, tong, toan}`; KHÔNG đổi) vào tệp `src/bang_diem.cpp`. Chỉ dùng thư viện chuẩn C++20; nên dùng `<ranges>`/`<algorithm>`/`<numeric>` (`std::ranges::stable_sort`, `std::ranges::stable_partition`, `std::views::filter`, `std::views::transform`, `std::accumulate`…).\n\n**Kiểm điểm** (chung): mỗi điểm môn (`toan`, `van`, `anh`) phải là số nguyên trong `[0, 10]`. MỌI hàm dưới đây (kể cả `tongDiem`) gặp bất kỳ học sinh nào có điểm ngoài khoảng đó trong đầu vào ⇒ ném `std::invalid_argument`; việc kiểm phải xong TRƯỚC khi thay đổi bất cứ gì (`tachDatTruot` ném thì `ds` giữ nguyên thứ tự).\n\n- `int tongDiem(const HocSinh& h)`: `toan + van + anh`.\n- `std::vector<XepHang> xepHang(const std::vector<HocSinh>& ds)`: mỗi học sinh một `XepHang{hang, ten, lop, tong, toan}`, sắp theo: `tong` GIẢM dần; cùng tổng thì `toan` GIẢM dần; cùng nữa thì `ten` TĂNG dần theo thứ tự byte (`operator<` của `std::string`, vd `\"Zed\" < \"an\" < \"Ánh\"`); trùng cả ba thì giữ thứ tự trong `ds` (sắp xếp ỔN ĐỊNH). Hạng kiểu thi đấu \"1, 1, 3\": hai học sinh ĐỒNG HẠNG khi cùng `tong` VÀ cùng `toan` (tên không tính); người đứng ở vị trí `i` (từ 0) có `hang = i + 1`, trừ khi đồng hạng với người ngay trước thì lấy đúng `hang` của người đó. Cùng tổng mà khác điểm toán thì KHÔNG đồng hạng.\n- `std::vector<std::string> tenDatChuan(const std::vector<HocSinh>& ds, int nguong)`: tên các học sinh có CẢ BA môn `>= nguong`, theo thứ tự trong `ds`.\n- `std::size_t tachDatTruot(std::vector<HocSinh>& ds, int nguongTong)`: sắp lại `ds` TẠI CHỖ: các học sinh có `tongDiem >= nguongTong` lên trước, còn lại phía sau, giữ thứ tự tương đối trong MỖI nhóm (phân hoạch ổn định); trả số học sinh nhóm đầu.\n- `std::optional<double> trungBinhLop(const std::vector<HocSinh>& ds, const std::string& lop)`: trung bình cộng `tongDiem` của các học sinh có `lop` bằng ĐÚNG chuỗi `lop` (phân biệt hoa thường); không có ai ⇒ `std::nullopt`.\n- `std::vector<XepHang> thuKhoaTheoLop(const std::vector<HocSinh>& ds)`: với mỗi lớp xuất hiện trong `ds`, lấy mục ĐẦU TIÊN của lớp đó trong bảng `xepHang(ds)` (giữ nguyên `hang` toàn trường); kết quả xếp theo `lop` TĂNG dần (thứ tự byte).\n\nDanh sách rỗng ⇒ kết quả rỗng / `0` / `std::nullopt`. Dữ liệu tới vài chục nghìn học sinh — dùng thuật toán O(n log n).",
+  "tepGiai": [
+    "src/bang_diem.cpp"
+  ],
+  "dinhDanh": "xepHang",
+  "testHienThi": [
+    "tests/hien_thi.cpp"
+  ],
+  "testAn": [
+    "tests/an.cpp"
+  ],
+  "tepBaoVe": [
+    "CMakeLists.txt",
+    "tests/kt.hpp",
+    "tests/hien_thi.cpp",
+    "src/bang_diem.hpp"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 10
+  },
+  "sai": [
+    {
+      "tep": "src/bang_diem.cpp",
+      "tu": " && kq[i].toan == kq[i - 1].toan",
+      "den": ""
+    }
+  ]
+}

@@ -152,7 +152,16 @@ export type ManhModel =
   | { loai: "chu" | "nghi"; noiDung: string }
   /** (mở rộng so với spec) model đang xếp hàng — lõi phát lại thành `dang-cho-model`. */
   | { loai: "cho"; phiaTruoc: number }
-  | { loai: "xong"; toolCalls: WireToolCall[]; usage?: { vao: number; ra: number; nghi?: number } };
+  | {
+      loai: "xong";
+      toolCalls: WireToolCall[];
+      usage?: { vao: number; ra: number; nghi?: number };
+      /**
+       * Lượt bị CẮT ở trần token ra (engine báo `finish_reason:"length"`). Có tool call ⇒ tham số có thể DỞ dù trông hợp
+       * lệ (JSON đủ ngoặc nhưng nội dung tệp cụt) ⇒ lõi KHÔNG thực thi lời gọi nào của lượt đó. Vắng = không bị cắt.
+       */
+      biCat?: boolean;
+    };
 
 export interface GoiModel {
   (vao: { tinNhan: TinNhan[]; congCu: WireTool[]; signal: AbortSignal }): AsyncIterable<ManhModel>;

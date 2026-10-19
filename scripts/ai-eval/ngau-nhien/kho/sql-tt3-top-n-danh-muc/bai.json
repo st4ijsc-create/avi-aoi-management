@@ -1,0 +1,15 @@
+{
+  "id": "sql-tt3-top-n-danh-muc",
+  "lang": "sql",
+  "muc": "thuat-toan",
+  "kieu": "pytest",
+  "tieuDe": "Top-2 sản phẩm mỗi danh mục theo doanh thu (hàm cửa sổ, đồng hạng, tỷ trọng)",
+  "deBai": "Cơ sở dữ liệu SQLite có ba bảng (đã được tạo sẵn bởi `schema.sql`, xem tệp): `danh_muc(id, ten)`, `san_pham(id, ten, danh_muc_id)`, `ban_hang(id, san_pham_id, so_luong, don_gia)` — `so_luong`, `don_gia` là số nguyên dương.\n\nDoanh thu của một sản phẩm = tổng `so_luong * don_gia` trên mọi dòng `ban_hang` của nó. Chỉ sản phẩm có ÍT NHẤT MỘT dòng bán hàng mới được xếp hạng; sản phẩm chưa bán không xuất hiện và không chiếm hạng.\n\nViết tệp `top_san_pham.sql` chứa ĐÚNG MỘT câu `SELECT` (được dùng `WITH`, hàm cửa sổ; không tham số), các cột theo thứ tự:\n\n1. `danh_muc` — tên danh mục.\n2. `hang` — số nguyên, hạng của sản phẩm trong danh mục theo doanh thu GIẢM dần, xếp kiểu `DENSE_RANK` (đồng doanh thu ⇒ đồng hạng; hạng kế tiếp liền sau, không nhảy cóc — vd doanh thu 9, 9, 4 ⇒ hạng 1, 1, 2).\n3. `san_pham` — tên sản phẩm.\n4. `doanh_thu` — số nguyên.\n5. `ty_trong` — số thực = `round(100.0 * doanh thu sản phẩm / tổng doanh thu của TOÀN BỘ danh mục, 2)` (mẫu số gồm mọi sản phẩm đã bán của danh mục, kể cả sản phẩm không lọt top).\n\nQuy tắc:\n- Mỗi danh mục chỉ giữ các sản phẩm có `hang <= 2` (vì đồng hạng nên có thể nhiều hơn 2 hàng).\n- MỌI danh mục đều xuất hiện: danh mục không có sản phẩm nào đã bán (kể cả danh mục có sản phẩm nhưng chưa bán) ⇒ đúng MỘT hàng `(tên danh mục, NULL, NULL, 0, NULL)`.\n- Không có danh mục nào ⇒ không có hàng nào.\n- Sắp xếp: `id` danh mục tăng dần, rồi `hang` tăng dần, rồi tên sản phẩm tăng dần (so sánh nhị phân mặc định), rồi `id` sản phẩm tăng dần.",
+  "tepGiai": ["top_san_pham.sql"],
+  "dinhDanh": "danh_muc",
+  "testHienThi": ["tests/test_hien_thi.py"],
+  "testAn": ["tests/test_an.py"],
+  "tepBaoVe": ["pytest.ini", "kiem_sql.py", "schema.sql", "tests/test_hien_thi.py"],
+  "soTest": { "hienThi": 2, "an": 8 },
+  "sai": [{ "tep": "top_san_pham.sql", "tu": "DENSE_RANK()", "den": "RANK()" }]
+}

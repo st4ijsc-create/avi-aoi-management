@@ -1,0 +1,14 @@
+{
+  "id": "sql-tt1-chuoi-dang-nhap",
+  "lang": "sql",
+  "muc": "thuat-toan",
+  "kieu": "pytest",
+  "tieuDe": "Chuỗi ngày đăng nhập liên tiếp dài nhất (gaps & islands)",
+  "deBai": "Cơ sở dữ liệu SQLite có bảng (đã được tạo sẵn bởi `schema.sql`):\n\n```sql\nCREATE TABLE dang_nhap (nguoi_dung TEXT NOT NULL, luc TEXT NOT NULL); -- luc dạng 'YYYY-MM-DD HH:MM:SS'\n```\n\nViết tệp `chuoi_dai_nhat.sql` chứa ĐÚNG MỘT câu `SELECT` (được dùng `WITH`, hàm cửa sổ) trả về, cho MỖI người dùng có ít nhất một lần đăng nhập, chuỗi NGÀY liên tiếp dài nhất mà ngày nào cũng có đăng nhập:\n\n- Cột theo thứ tự: `nguoi_dung`, `do_dai` (số ngày của chuỗi, số nguyên), `bat_dau`, `ket_thuc` (ngày đầu/cuối của chuỗi, dạng `'YYYY-MM-DD'`).\n- Một ngày có nhiều lần đăng nhập vẫn chỉ tính MỘT ngày. Ngày lấy theo phần ngày của `luc`.\n- Một người có nhiều chuỗi cùng dài nhất ⇒ lấy chuỗi BẮT ĐẦU SỚM nhất.\n- Sắp xếp kết quả: `do_dai` giảm dần, rồi `nguoi_dung` tăng dần.",
+  "tepGiai": ["chuoi_dai_nhat.sql"],
+  "testHienThi": ["tests/test_hien_thi.py"],
+  "testAn": ["tests/test_an.py"],
+  "tepBaoVe": ["pytest.ini", "kiem_sql.py", "schema.sql", "tests/test_hien_thi.py"],
+  "soTest": { "hienThi": 2, "an": 6 },
+  "sai": [{ "tep": "chuoi_dai_nhat.sql", "tu": "SELECT DISTINCT nguoi_dung, date(luc) AS ngay", "den": "SELECT nguoi_dung, date(luc) AS ngay" }]
+}

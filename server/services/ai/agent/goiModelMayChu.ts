@@ -135,6 +135,8 @@ async function* luongModelMayChu(
         day({
           loai: "xong",
           toolCalls: Array.isArray(c.toolCalls) ? c.toolCalls : [],
+          // ★★★ Lượt bị cắt ở trần token (engine giữ "length" kể cả khi có tool call dở) ⇒ lõi không thực thi lượt đó.
+          ...(c.finishReason === "length" ? { biCat: true } : {}),
           ...(coUsage
             ? {
                 usage: {

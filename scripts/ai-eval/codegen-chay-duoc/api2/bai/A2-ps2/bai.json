@@ -1,0 +1,1 @@
+{ "id": "A2-ps2", "lang": "ps1", "name": "Get-TongHopLoi", "nhom": "powershell", "thuVien": "Windows PowerShell 5.1.26100 (Import-Csv -Delimiter/-Encoding · Group-Object · Measure-Object trả [double]) — assert tự viết", "dinhDanh": "Get-TongHopLoi" }

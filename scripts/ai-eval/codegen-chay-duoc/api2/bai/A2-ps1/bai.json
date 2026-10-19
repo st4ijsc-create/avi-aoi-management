@@ -1,0 +1,1 @@
+{ "id": "A2-ps1", "lang": "ps1", "name": "Merge-CauHinh", "nhom": "powershell", "thuVien": "Windows PowerShell 5.1.26100 (ConvertFrom-Json không có -AsHashtable · Get-Content mặc định ANSI) — assert tự viết, không dùng Pester 3.4", "dinhDanh": "Merge-CauHinh" }

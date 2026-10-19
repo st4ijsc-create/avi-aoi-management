@@ -73,6 +73,13 @@
  *   • `remember` ⇒ CHỈ phát `de-xuat-nho` (ghi chú đã qua `lamSachBaiHoc`: một dòng, che bí mật; `high` ⇒ từ chối) và
  *     trả lời model ngay — KHÔNG chờ, KHÔNG ghi. Ghi chỉ xảy ra khi NGƯỜI bấm "Nhớ" (`aiAgent.nhoDeXuat`), ở MỌI
  *     chế độ kể cả `tu-dong`.
+ *   • `lookup_api` (2026-10-18) ⇒ chỉ mục ký hiệu API CỤC BỘ qua cổng tiêm `traApi` (`../apiRef/traApi.ts`, mặc định đọc
+ *     `knowledge/api-ref/ky-hieu/`): tra CHÍNH XÁC theo tên/đuôi tên, không LLM, không cosine. Kết quả là DỮ LIỆU (đi
+ *     `lamSachChoModel`, cắt trần); chỉ mục chưa dựng ⇒ `CHI_MUC_API_KHONG_CO` + cách dựng (không bịa).
+ *   • (2026-10-19) `run_command` ĐỎ có lỗi "không tìm thấy kiểu/thành viên/namespace" (CS0246/CS0234/CS0103/CS1061,
+ *     TS2304/TS2339/TS2307, javac `cannot find symbol`, NameError/AttributeError/ModuleNotFoundError; Go/Rust trích nhưng
+ *     chưa có chỉ mục) ⇒ TỰ tra `traApi` và gắn khối "Gợi ý tra cứu API (tự động)" ở cuối quan sát
+ *     (`../apiRef/goiYLoiBienDich.ts`; tắt `AI_AGENT_TU_TRA_API=0`). Chỉ khi chỉ mục có mục khớp.
  *   • Sau mỗi lượt GHI THÀNH CÔNG ⇒ `lamTuoiTep` (best-effort, không chờ, lỗi nuốt) để chỉ mục không cũ.
  */
 import path from "node:path";
@@ -108,6 +115,8 @@ import { baiHocEnabled, lamSachBaiHoc } from "../codingLessonContext";
 import { layLyDoBac, ngheQuyetDinhDuyet, type QuyetDinhDuyet } from "./busDuyetAgent";
 import { damBaoChiMucNen, phanGiaiChiMuc, type CongChiMucMa } from "./chiMucMaAgent";
 import { timTaiLieuMacDinh, type KhoTaiLieu, type TimTaiLieu } from "./timTaiLieuAgent";
+import { dinhDangKetQuaApi, traApiMacDinh, type NgonNguApi, type TraApi } from "../apiRef/traApi";
+import { goiYTraApiTuDauRa, tuTraApiBat } from "../apiRef/goiYLoiBienDich";
 
 /** Lý do gắn vào audit của `confirmAction` cho một lượt ghi KHÔNG người bấm của chế độ `tu-dong`. */
 export const LY_DO_AGENT_TU_DONG = "AI_AGENT_TU_DONG" as const;
@@ -169,6 +178,8 @@ export interface PhuThuocBoThucThi {
   chiMucMa?: CongChiMucMa | null;
   /** (Đợt 2) truy hồi tài liệu của `search_docs` (mặc định `timTaiLieuMacDinh`). */
   timTaiLieu?: TimTaiLieu;
+  /** (2026-10-18) tra ký hiệu API của `lookup_api` (mặc định `traApiMacDinh` — chỉ mục `knowledge/api-ref/ky-hieu/`). */
+  traApi?: TraApi;
 }
 
 export interface CauHinhBoThucThi {
@@ -341,6 +352,7 @@ export function phanQuyetLenhTuDong(
   const duongCham: string[] = [];
   if (kc.oTuDo === null || kc.thoatCwdTheoCayThuMuc) duongCham.push(".");
   if (kc.oTuDo !== null) duongCham.push(kc.oTuDo);
+  duongCham.push(...kc.duongThem);
   if (!tuTriGhiRepoChinhDuoc()) {
     let chamRepoChinh: boolean;
     try {
@@ -359,9 +371,18 @@ function cauTuChoiLenhTuDong(ma: "AUTOLOOP_TAT" | "LENH_CAN_DUYET_TAY", chiTiet:
       "Refused in automatic mode: running commands without approval is disabled on this server (AI_CODING_AUTOLOOP is off). " +
       "The command was NOT run. Do not retry it; tell the user they can run it in 'Edit' mode (approval per command)."
     );
+  // ★ 2026-10-19 (NN-b-agent-3, C# 0/3) — bị từ chối `dotnet restore`, model kết luận "không restore được" rồi BỊA
+  //   `obj/project.assets.json`. Chỉ đường thật: build/test tự restore offline từ cache gói của máy (repoCommandSandbox).
+  const goiYRestore = /^dotnet restore\b/.test(chiTiet)
+    ? " Note: dotnet build|test <path> restore NuGet packages automatically (offline, from this machine's package cache) — " +
+      "just run `dotnet test <project>`; a package not on this machine fails with NU1101 and needs the user to approve " +
+      "`dotnet restore` in 'Edit' mode. Do not create or edit obj/project.assets.json by hand."
+    : "";
   return (
-    `Refused in automatic mode: this command needs manual approval (${chiTiet}). Only test/build verification commands ` +
-    "(e.g. node --test <path>, npx vitest run <path>, dotnet build|test <path>, python -m pytest|unittest <path>) run without approval, " +
+    `Refused in automatic mode: this command needs manual approval (${chiTiet}).${goiYRestore} Only test/build verification commands ` +
+    "(e.g. node --test <path>, npx vitest run <path>, dotnet build|test <path>, python -m pytest|unittest <path>, " +
+    "javac -d <out> <files|dir>, java -cp <out> <TestClass>, cmake -S . -B <build>, cmake --build <build>, ctest --test-dir <build>, " +
+    "go test|build|vet ./..., cargo test|build|check --offline) run without approval, " +
     "and never commands that rewrite source files (dotnet format). The command was NOT run. Use a verification command, " +
     "or tell the user to run this one in 'Edit' mode."
   );
@@ -408,6 +429,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   const p = cauHinh.phuThuoc ?? {};
   const layChiMuc = phanGiaiChiMuc(p.chiMucMa);
   const timTaiLieu = p.timTaiLieu ?? timTaiLieuMacDinh;
+  const traApi = p.traApi ?? traApiMacDinh;
   let seqDeXuatNho = 0;
   const executeDecision = p.executeDecision ?? executeDecisionGoc;
   const confirmAction = p.confirmAction ?? confirmActionGoc;
@@ -606,6 +628,24 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
       .map((d, i) => `[${i + 1}] source: ${d.nguon} (${NHAN[d.loai] ?? d.loai}, score ${Number(d.diem || 0).toFixed(2)})\n${catDuoi(String(d.noiDung ?? ""), TRAN_KY_TU_MOI_DOAN)}`)
       .join("\n\n");
     return lamSachChoModel(catDuoi(`${ds.length} excerpt(s) (searched: ${daTim}):\n${than}`, TRAN_KY_TU_DOC_MAC_DINH), { ok: true, hienThi });
+  }
+
+  async function traApiCho(t: Record<string, unknown>): Promise<KetQuaTool> {
+    const ten = String(t.name).trim();
+    const ngonNgu = typeof t.language === "string" ? (t.language as NgonNguApi) : undefined;
+    const kq = await traApi({ ten, ...(ngonNgu ? { ngonNgu } : {}) });
+    if (!kq) {
+      return {
+        ok: false,
+        ma: "CHI_MUC_API_KHONG_CO",
+        choModel:
+          "The local API index is not built on this server (an administrator can build it with " +
+          "`node scripts/ai-kb/api-ref/dung-chi-muc-api.mjs`). Do not guess the API: try search_docs with corpus 'api', or " +
+          "read how the project already uses it (grep).",
+      };
+    }
+    const hienThi = { tool: "lookup_api", ten, ...(ngonNgu ? { ngonNgu } : {}), soKetQua: kq.khop.length };
+    return lamSachChoModel(catDuoi(dinhDangKetQuaApi(ten, kq), TRAN_KY_TU_DOC_MAC_DINH), { ok: true, hienThi });
   }
 
   function deXuatNho(t: Record<string, unknown>, ctx: NguCanhThucThi): KetQuaTool {
@@ -809,7 +849,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     if (!kq.ok) {
       return { ok: false, ma: `XAC_NHAN_${String(kq.status).toUpperCase()}`, choModel: `The change was not applied (${kq.status}${kq.message ? `: ${kq.message}` : ""}).` };
     }
-    if (laLenh) return ketQuaLenh(kq.result);
+    if (laLenh) return await ketQuaLenh(kq.result);
     if (daBiTuChoiGhi(kq.result)) {
       const note = maTuChoiGhi(kq.result) ?? "TU_CHOI";
       return lamSachChoModel(`Write refused (${note}): ${vanBanChoModel(kq.result as ToolResult)} Nothing was written.`, { ok: false, ma: note });
@@ -828,7 +868,22 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     return { ok: true, choModel: cauThanhCong(tool, kq.result, thayDoi), thayDoi, hienThi: { tool, pendingActionId: pa.actionId, checkpointId, thayDoi } };
   }
 
-  function ketQuaLenh(result: unknown): KetQuaTool {
+  /**
+   * ★ (2026-10-19) Lệnh ĐỎ có lỗi "không tìm thấy kiểu/thành viên/namespace" ⇒ khối "Gợi ý tra cứu API (tự động)" từ chỉ
+   * mục `traApi` (`../apiRef/goiYLoiBienDich.ts`) — không chờ model tự gọi `lookup_api`. Gắn ở CUỐI quan sát (lõi cắt
+   * đầu+đuôi ⇒ đuôi sống), KHÔNG vào `hienThi.dauRa` (UI hiển thị đầu ra THẬT của lệnh). Tắt: `AI_AGENT_TU_TRA_API=0`.
+   * Hỏng ⇒ không có khối, kết quả lệnh nguyên vẹn.
+   */
+  async function goiYApiChoLenh(dauRa: string, maThoat: number | null | undefined, hetGio: boolean): Promise<{ vanBan: string; ten: string[] } | null> {
+    if (hetGio || maThoat === 0 || maThoat === null || maThoat === undefined || !tuTraApiBat()) return null;
+    try {
+      return await goiYTraApiTuDauRa(dauRa, traApi);
+    } catch {
+      return null;
+    }
+  }
+
+  async function ketQuaLenh(result: unknown): Promise<KetQuaTool> {
     const r = (result ?? {}) as { note?: string | null; textSummary?: string | null; data?: { command?: string; exitCode?: number | null; timedOut?: boolean; output?: string | null } };
     const d = r.data ?? {};
     const dauRa = String(d.output ?? r.textSummary ?? "");
@@ -844,8 +899,12 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
           : "FAILED";
     const dau = `$ ${d.command ?? ""}\nexit code: ${d.exitCode ?? "—"}${d.timedOut ? " (TIMED OUT)" : ""} · ${tomTat}`;
     const ra = lamSachChoModel(`${dau}\n${dauRa}`, { ok: true });
+    const goiY = await goiYApiChoLenh(dauRa, d.exitCode, d.timedOut === true);
+    // khối gợi ý (dữ liệu chỉ mục cục bộ, tên trích từ đầu ra) cũng đi qua làm sạch như mọi chữ tool
+    const choModel = goiY ? `${ra.choModel}\n\n${lamSachChoModel(goiY.vanBan, { ok: true }).choModel}` : ra.choModel;
     return {
       ...ra,
+      choModel,
       hienThi: {
         tool: "run_command",
         lenh: d.command ?? null,
@@ -855,6 +914,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
         soDo: t.soDo,
         soXanh: t.soXanh,
         dauRa: ra.choModel.slice(0, TRAN_DAU_RA_HIEN_THI),
+        ...(goiY ? { tuTraApi: goiY.ten } : {}),
       },
     };
   }
@@ -957,6 +1017,8 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
           return await timTaiLieuCho(t);
         case "remember":
           return deXuatNho(t, ctx);
+        case "lookup_api":
+          return await traApiCho(t);
         default:
           return { ok: false, ma: "CONG_CU_KHONG_CO", choModel: `Unknown tool "${goi.ten}".` };
       }

@@ -1,0 +1,15 @@
+{
+  "id": "cs-tt2-huffman",
+  "lang": "cs",
+  "muc": "thuat-toan",
+  "kieu": "dotnet",
+  "tieuDe": "Mã Huffman tất định: bảng mã, mã hoá, giải mã",
+  "deBai": "Trong tệp `src/Huffman.cs` (namespace `Bai`), cài lớp tĩnh `Huffman` (chỉ thư viện chuẩn .NET) với đúng ba phương thức:\n\n```csharp\npublic static IReadOnlyDictionary<char, string> TaoBangMa(string vanBan);\npublic static string MaHoa(string vanBan, IReadOnlyDictionary<char, string> bang);\npublic static string GiaiMa(string bit, IReadOnlyDictionary<char, string> bang);\n```\n\n**TaoBangMa** — mã Huffman TẤT ĐỊNH trên các `char` (đơn vị UTF-16) của `vanBan`:\n- Mỗi ký tự khác nhau là một lá có khoá `(tần suất, ký tự)`. Mỗi nút có khoá `(tổng tần suất, ký tự NHỎ NHẤT trong cả cây con của nó)`; so sánh khoá: tần suất tăng dần, hoà thì ký tự nhỏ hơn theo giá trị mã `char` (thứ tự ordinal) đứng trước. Các cây con rời nhau nên không bao giờ có hai khoá bằng nhau.\n- Lặp: lấy nút có khoá nhỏ nhất làm con TRÁI, nút nhỏ nhất kế tiếp làm con PHẢI, gộp thành nút cha (tần suất = tổng, ký tự nhỏ nhất = nhỏ hơn trong hai con), đưa lại vào tập; đến khi còn một gốc.\n- Mã của ký tự = đường đi từ gốc tới lá: trái = `'0'`, phải = `'1'`.\n- Chỉ có MỘT ký tự khác nhau ⇒ bảng `{ký tự: \"0\"}`. Chuỗi rỗng ⇒ bảng rỗng. `vanBan` null ⇒ `ArgumentNullException`.\n- Ví dụ: `\"aaaabbc\"` ⇒ `a = \"1\"`, `b = \"01\"`, `c = \"00\"`.\n\n**MaHoa** — nối mã của từng ký tự theo thứ tự. Ký tự không có trong `bang` ⇒ ném `ArgumentException` (đúng kiểu này, không phải lớp con như `KeyNotFoundException`).\n\n**GiaiMa** — giải `bit` theo một bảng mã BẤT KỲ (không nhất thiết do `TaoBangMa` tạo):\n- Bảng phải là mã tiền tố hợp lệ: mọi mã khác rỗng, chỉ gồm `'0'`/`'1'`, không mã nào trùng hay là tiền tố của mã khác — vi phạm ⇒ `ArgumentException` (đúng kiểu này).\n- `bit` chứa ký tự khác `'0'`/`'1'`, hoặc có đoạn không khớp mã nào, hoặc kết thúc giữa chừng một mã ⇒ `FormatException`.\n- `bit` rỗng ⇒ chuỗi rỗng (kể cả với bảng rỗng); bảng rỗng mà `bit` khác rỗng ⇒ `FormatException`.\n- Ví dụ: bảng `{x: \"1\", y: \"01\", z: \"001\"}`, bit `\"0011\"` ⇒ `\"zx\"`.\n\nHiệu năng: văn bản vài chục nghìn ký tự phải mã hoá + giải mã nhanh (dưới 1 giây).",
+  "tepGiai": ["src/Huffman.cs"],
+  "dinhDanh": "Huffman",
+  "testHienThi": ["tests/HienThiTests.cs"],
+  "testAn": ["tests/AnTests.cs"],
+  "tepBaoVe": ["Bai.csproj", "tests/HienThiTests.cs"],
+  "soTest": { "hienThi": 3, "an": 11 },
+  "sai": [{ "tep": "src/Huffman.cs", "tu": "KyTuNho = (char)Math.Min(trai.KyTuNho, phai.KyTuNho),", "den": "KyTuNho = trai.KyTuNho," }]
+}

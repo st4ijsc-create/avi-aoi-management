@@ -64,6 +64,7 @@ import { fimModelBasename as resolveFimModelBasename } from "./ai/modelResolver"
 import {
   docToolCallTuMessage,
   gomToolCallTuVanBan,
+  thamSoLichSuLenDay,
   BoGomToolCallLuong,
   type WireToolCall as NativeToolCall,
 } from "./ai/nativeToolCalls";
@@ -280,7 +281,15 @@ function lapCoSampling(
 function chuyenMessageLenDay(m: GgufChatMessage): Record<string, unknown> {
   const ra: Record<string, unknown> = { role: m.role, content: m.content };
   if (m.tool_call_id) ra.tool_call_id = m.tool_call_id;
-  if (m.tool_calls?.length) ra.tool_calls = m.tool_calls;
+  // ★★★ V-dot4-2 — `arguments` hỏng trong lịch sử ⇒ llama.cpp 500 ở MỌI lượt sau. Chốt chặn CUỐI cho mọi đường (agent
+  //   máy chủ, `/v1` của extension, lịch sử cũ): chỉ object JSON chặt lên dây, còn lại `{}` (KHÔNG vớt). Bản sao — không
+  //   sửa mảng của người gọi.
+  if (m.tool_calls?.length) {
+    ra.tool_calls = m.tool_calls.map((t) => {
+      const a = thamSoLichSuLenDay(t?.function?.arguments);
+      return a === t?.function?.arguments ? t : { ...t, function: { ...t.function, arguments: a } };
+    });
+  }
   return ra;
 }
 
@@ -753,6 +762,18 @@ export async function serverGenerateText(
 }
 
 /**
+ * ★★★ `finishReason` trả cho tầng trên. `"length"` (engine dừng ở trần `max_tokens`) LUÔN thắng — kể cả khi bộ phân giải
+ * đã gom được tool call: tham số của lượt bị cắt có thể DỞ dù trông hợp lệ (JSON đủ ngoặc, nội dung tệp cụt). Đổi nó
+ * thành `"tool_calls"` (như trước bản vá) là bảo vòng agent / client `/v1` đi THỰC THI một write_file cụt. Còn lại: có
+ * tool call ⇒ `"tool_calls"`, không ⇒ nguyên giá trị engine.
+ */
+export function finishReasonRa(finishReasonEngine: unknown, coToolCall: boolean): string | undefined {
+  if (finishReasonEngine === "length") return "length";
+  if (coToolCall) return "tool_calls";
+  return typeof finishReasonEngine === "string" && finishReasonEngine ? finishReasonEngine : undefined;
+}
+
+/**
  * P1 (G5-D) — CHAT KHÔNG-STREAMING qua server. Bản song sinh không-stream của
  * `serverChatCompletionStream`, và là mảnh còn thiếu khiến `aiGgufEngine.chatCompletion()` — đường
  * mà `aiProgrammingCopilot` dùng để SINH MÃ — chưa bao giờ hỏi `llama-server`.
@@ -820,7 +841,7 @@ export async function serverChatCompletion(
     text: toolCalls.length ? vanBanSauKhiVot(nua.noiDung) : nua.noiDung,
     reasoning: nua.suyLuan || undefined,
     ...(toolCalls.length ? { toolCalls } : {}),
-    finishReason: toolCalls.length ? "tool_calls" : finishReason,
+    finishReason: finishReasonRa(finishReason, toolCalls.length > 0),
     tokensGenerated,
     tokensPrompt,
     totalTimeMs,
@@ -1280,7 +1301,7 @@ async function* streamChatCompletionTrucTiep(
       reasoningText: fullReasoning || undefined,
       tokensReasoning: soDeltaSuyLuan,
       ...(toolCalls.length ? { toolCalls } : {}),
-      finishReason: toolCalls.length ? "tool_calls" : finishReason,
+      finishReason: finishReasonRa(finishReason, toolCalls.length > 0),
       tokensGenerated,
       tokensPrompt,
       totalTimeMs,

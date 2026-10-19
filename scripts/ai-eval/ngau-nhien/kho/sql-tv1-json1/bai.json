@@ -1,0 +1,15 @@
+{
+  "id": "sql-tv1-json1",
+  "lang": "sql",
+  "muc": "thu-vien",
+  "kieu": "pytest",
+  "tieuDe": "Đơn hàng lưu JSON: tổng tiền, đếm theo thẻ, xuất JSON bằng JSON1 của SQLite",
+  "deBai": "Cơ sở dữ liệu SQLite có bảng `don_hang(id INTEGER PRIMARY KEY, khach TEXT NOT NULL, du_lieu TEXT NOT NULL)` (đã được tạo sẵn bởi `schema.sql`, xem tệp). Cột `du_lieu` là một đối tượng JSON:\n\n- `\"ngay\"`: chuỗi `'YYYY-MM-DD'`.\n- `\"phi_ship\"`: số nguyên — có thể THIẾU hẳn khoá hoặc là `null` (cả hai coi như 0).\n- `\"mat_hang\"`: mảng (luôn có, có thể rỗng) các đối tượng `{\"ma\": chuỗi, \"sl\": số nguyên > 0, \"gia\": số nguyên > 0, \"the\": mảng chuỗi}`; khoá `\"the\"` có thể thiếu hoặc là mảng rỗng; trong MỘT mặt hàng các thẻ không trùng nhau (nhưng nhiều mặt hàng của cùng một đơn có thể mang cùng một thẻ).\n\nDùng các hàm JSON1 (`json_each`, `json_extract`, `json_array_length`, `json_object`, `json_group_array`…). Viết BA tệp, mỗi tệp ĐÚNG MỘT câu `SELECT` (được dùng `WITH`):\n\n1. `tong_tien.sql` (không tham số) — mỗi đơn một hàng, sắp theo `id` tăng dần, cột: `id`, `khach`, `so_mat_hang` (số phần tử của mảng `mat_hang`, số nguyên), `tong_tien` (số nguyên = tổng `sl * gia` của mọi mặt hàng + `phi_ship`; đơn không có mặt hàng ⇒ chỉ còn `phi_ship`).\n2. `dem_the.sql` (không tham số) — mỗi thẻ xuất hiện ở ít nhất một mặt hàng một hàng, cột: `the` (chuỗi thẻ), `so_don` (số ĐƠN KHÁC NHAU có ít nhất một mặt hàng mang thẻ đó — một đơn có nhiều mặt hàng cùng thẻ vẫn chỉ tính 1), `so_luong` (tổng `sl` của mọi mặt hàng mang thẻ đó). Sắp `so_don` giảm dần, rồi `the` tăng dần (so sánh nhị phân). Mặt hàng không có thẻ không đóng góp gì.\n3. `xuat_json.sql` — có MỘT tham số đặt tên `:nguong` (số nguyên; test truyền `{\"nguong\": …}`). Một đơn \"đạt\" khi có ÍT NHẤT một mặt hàng `gia >= :nguong`. Mỗi khách có ít nhất một đơn đạt một hàng, sắp `khach` tăng dần, cột: `khach`, `don` — CHUỖI JSON là mảng các đối tượng `{\"id\": id đơn, \"ngay\": ngày của đơn, \"tong_sl\": tổng sl của MỌI mặt hàng trong đơn}` của các đơn ĐẠT của khách đó, phần tử sắp theo `id` tăng dần. Không đơn nào đạt ⇒ không có hàng nào.\n\nBảng rỗng ⇒ cả ba truy vấn không trả hàng nào.",
+  "tepGiai": ["tong_tien.sql", "dem_the.sql", "xuat_json.sql"],
+  "dinhDanh": "json_",
+  "testHienThi": ["tests/test_hien_thi.py"],
+  "testAn": ["tests/test_an.py"],
+  "tepBaoVe": ["pytest.ini", "kiem_sql.py", "schema.sql", "tests/test_hien_thi.py"],
+  "soTest": { "hienThi": 3, "an": 8 },
+  "sai": [{ "tep": "dem_the.sql", "tu": "COUNT(DISTINCT d.id)", "den": "COUNT(d.id)" }]
+}

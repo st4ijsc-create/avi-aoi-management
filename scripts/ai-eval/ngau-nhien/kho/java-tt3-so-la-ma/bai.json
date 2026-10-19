@@ -1,0 +1,33 @@
+{
+  "id": "java-tt3-so-la-ma",
+  "lang": "java",
+  "muc": "thuat-toan",
+  "kieu": "java",
+  "tieuDe": "Số La Mã hai chiều 1..3999 với kiểm hợp lệ chặt và phép cộng",
+  "deBai": "Viết lớp `LaMa` (tệp `src/LaMa.java`, package mặc định — không khai báo package; chỉ JDK) đổi số La Mã hai chiều trong miền 1..3999 với kiểm hợp lệ CHẶT. Mọi lỗi đều ném `IllegalArgumentException` (kể cả đầu vào `null`).\n\nKý hiệu: `I`=1, `V`=5, `X`=10, `L`=50, `C`=100, `D`=500, `M`=1000. Dạng CHUẨN của một số là dạng viết từng chữ số thập phân từ hàng nghìn xuống hàng đơn vị, mỗi chữ số theo bảng (đây là hàng đơn vị; hàng chục/hàng trăm tương tự với bộ `X L C` / `C D M`): 1 `I`, 2 `II`, 3 `III`, 4 `IV`, 5 `V`, 6 `VI`, 7 `VII`, 8 `VIII`, 9 `IX`, chữ số 0 không viết gì; hàng nghìn chỉ có `M`, `MM`, `MMM`. CHỈ dạng chuẩn là hợp lệ — nghĩa là: không ký hiệu nào lặp quá 3 lần liền, `V L D` không bao giờ lặp, chỉ có đúng sáu cặp trừ `IV IX XL XC CD CM`, và sau một cặp trừ không có thêm ký hiệu nào của cùng hàng (ví dụ `IIII`, `IC`, `VX`, `IIX`, `IXI`, `MMMM` đều KHÔNG hợp lệ).\n\n- `public static String sangLaMa(int n)` — dạng chuẩn, chữ HOA. `n` ngoài `[1, 3999]` ⇒ ném.\n- `public static int tuLaMa(String s)` — giá trị của `s`. Quy tắc chữ hoa/thường: chấp nhận chuỗi TOÀN chữ hoa hoặc TOÀN chữ thường (`\"xiv\"` ⇒ 14, đọc như bản chữ hoa tương ứng và cũng phải là dạng chuẩn); trộn hoa với thường (`\"Xiv\"`) ⇒ ném. Không cắt khoảng trắng: chuỗi rỗng, có khoảng trắng (đầu/cuối/giữa), có ký tự ngoài `IVXLCDM`/`ivxlcdm`, hoặc không phải dạng chuẩn ⇒ ném.\n- `public static String cong(String a, String b)` — đọc hai số theo đúng quy tắc của `tuLaMa` (sai ⇒ ném), trả tổng ở dạng chuẩn chữ HOA; tổng lớn hơn 3999 ⇒ ném.",
+  "tepGiai": [
+    "src/LaMa.java"
+  ],
+  "dinhDanh": "LaMa",
+  "testHienThi": [
+    "test/HienThiTest.java"
+  ],
+  "testAn": [
+    "test/AnTest.java"
+  ],
+  "tepBaoVe": [
+    "test/Kt.java",
+    "test/HienThiTest.java"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 8
+  },
+  "sai": [
+    {
+      "tep": "src/LaMa.java",
+      "tu": "M{0,3}(CM",
+      "den": "M{0,4}(CM"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "cs-tt1-kruskal",
+  "lang": "cs",
+  "muc": "thuat-toan",
+  "kieu": "dotnet",
+  "tieuDe": "Cây khung nhỏ nhất Kruskal + hợp-nhất (union-find) với quy tắc phá hoà tất định",
+  "deBai": "Trong tệp `src/Kruskal.cs` (namespace `Bai`) đã có các kiểu `Canh(int U, int V, long TrongSo)` và `KetQuaKhung(long TongTrongSo, IReadOnlyList<Canh> CacCanh, int SoThanhPhan)` (KHÔNG đổi chữ ký). Hãy cài hai lớp, chỉ dùng thư viện chuẩn .NET:\n\n**1. `public sealed class HopNhat`** — hợp-nhất trên phần tử `0..n-1`, BẮT BUỘC nén đường + hợp theo hạng (rank), `Tim` không được đệ quy sâu (phải chạy được với n = 1 000 000 phần tử nối thành chuỗi `Hop(i, i+1)`):\n- `public HopNhat(int n)` — `n < 0` ⇒ `ArgumentOutOfRangeException`; `n = 0` hợp lệ.\n- `public int SoTap { get; }` — số tập rời nhau hiện có (ban đầu = n).\n- `public int Tim(int x)` — trả đại diện (gốc) của tập chứa `x`; phần tử chưa từng hợp là gốc của chính nó (`Tim(x) == x`). `x` ngoài `0..n-1` ⇒ `ArgumentOutOfRangeException`.\n- `public bool Hop(int a, int b)` — hợp hai tập; trả `true` nếu hai phần tử trước đó ở hai tập KHÁC nhau (SoTap giảm 1), `false` nếu đã cùng tập (kể cả `a == b`). Chỉ số ngoài miền ⇒ `ArgumentOutOfRangeException`.\n\n**2. `public static class Kruskal`**\n- `public static KetQuaKhung RungKhung(int soDinh, IEnumerable<Canh> canh)` — rừng khung nhỏ nhất của đồ thị vô hướng có đỉnh `0..soDinh-1` (cạnh song song cho phép, trọng số có thể âm, tổng có thể vượt `int`).\n  - `soDinh < 0`, hoặc BẤT KỲ cạnh nào có `U`/`V` ngoài `0..soDinh-1` ⇒ `ArgumentOutOfRangeException` (kiểm mọi cạnh trước khi tính).\n  - Thứ tự xét cạnh (tất định): tăng dần theo `TrongSo`; hoà thì theo `min(U,V)` tăng dần; rồi `max(U,V)` tăng dần; vẫn hoà thì cạnh đứng TRƯỚC trong dãy đầu vào được xét trước. Cạnh nối hai thành phần khác nhau thì được chọn; khuyên (`U == V`) không bao giờ được chọn.\n  - `CacCanh` = các cạnh được chọn theo đúng THỨ TỰ được chọn, là đúng đối tượng/giá trị cạnh như đầu vào (KHÔNG đảo `U`/`V`); `TongTrongSo` = tổng trọng số các cạnh đó; `SoThanhPhan` = số thành phần liên thông của rừng (tính cả đỉnh cô lập; `soDinh = 0` ⇒ 0).\n- `public static KetQuaKhung? CayKhung(int soDinh, IEnumerable<Canh> canh)` — như `RungKhung` nhưng trả `null` khi `SoThanhPhan != 1` (đồ thị không liên thông, hoặc `soDinh = 0`). Một đỉnh không cạnh ⇒ cây rỗng `(0, [], 1)`.\n\nHiệu năng: đồ thị 200 000 đỉnh / ~400 000 cạnh phải xong trong vài giây.",
+  "tepGiai": ["src/Kruskal.cs"],
+  "dinhDanh": "Kruskal",
+  "testHienThi": ["tests/HienThiTests.cs"],
+  "testAn": ["tests/AnTests.cs"],
+  "tepBaoVe": ["Bai.csproj", "tests/HienThiTests.cs"],
+  "soTest": { "hienThi": 3, "an": 10 },
+  "sai": [{ "tep": "src/Kruskal.cs", "tu": ".ThenBy(x => Math.Min(x.c.U, x.c.V))", "den": ".ThenBy(x => x.c.U)" }]
+}

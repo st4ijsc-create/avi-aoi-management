@@ -497,6 +497,19 @@ describe("§G — lệnh ở tu-dong qua ĐÚNG cổng vòng cũ (AUTOLOOP + t�
     expect((await hangCuaToi("run_command")).length).toBe(soHang);
   });
 
+  /**
+   * ★★ 2026-10-19 (NN-b-agent-3, C# 0/3): bị từ chối `dotnet restore`, model kết luận "không thể restore" rồi BỊA
+   *   `obj/project.assets.json`. `dotnet restore` VẪN cần duyệt (Q4), nhưng câu từ chối phải chỉ đường thật: build/test
+   *   tự restore từ cache gói của máy.
+   */
+  it("★★ `dotnet restore` ở tu-dong ⇒ LENH_CAN_DUYET_TAY + chỉ đường: dotnet build|test tự restore từ cache máy", async () => {
+    const r = await chay(taoBo(), "run_command", { command: "dotnet restore" }, "tu-dong");
+    expect(r.kq.ok).toBe(false);
+    expect(r.kq.ma).toBe("LENH_CAN_DUYET_TAY");
+    expect(r.kq.choModel).toMatch(/dotnet (build|test).*restore.*automatically/i);
+    expect(r.kq.choModel).toMatch(/do not (create|write).*project\.assets\.json/i);
+  });
+
   it("★★ chế độ sua: lệnh ngoài tập kiểm chứng VẪN được đề xuất cho người duyệt (cổng chỉ của tu-dong)", async () => {
     const ac = new AbortController();
     const r = await chay(taoBo(), "run_command", { command: "git status" }, "sua", {

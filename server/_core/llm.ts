@@ -322,7 +322,9 @@ function wrapAsInvokeResult(
           content,
           ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
         },
-        finish_reason: toolCalls.length ? "tool_calls" : (opts.finishReason ?? "stop"),
+        // ★★★ "length" (lượt bị cắt ở trần token) thắng "tool_calls": tham số của lượt cụt có thể DỞ dù trông hợp lệ.
+        finish_reason:
+          opts.finishReason === "length" ? "length" : toolCalls.length ? "tool_calls" : (opts.finishReason ?? "stop"),
       },
     ],
     usage: {

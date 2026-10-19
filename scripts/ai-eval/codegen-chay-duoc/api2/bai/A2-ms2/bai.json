@@ -1,0 +1,1 @@
+{ "id": "A2-ms2", "lang": "tsql", "name": "NapCauHinh", "nhom": "sql", "thuVien": "SQL Server 2025 LocalDB 17.0.4025 (OPENJSON … WITH · MERGE · OUTPUT $action) · bài kiểm C# Microsoft.Data.SqlClient 5.2.2", "dinhDanh": "dbo.NapCauHinh", "kem": ["api2/kem/TroTsql.cs"] }

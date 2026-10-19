@@ -1,0 +1,1 @@
+{ "id": "A2-on2", "lang": "ts", "name": "thuMauThayDoi", "nhom": "ot-node", "thuVien": "node-opcua 2.174.0 (ClientSubscription · ClientMonitoredItem · TimestampsToReturn) — máy chủ giả OPCUAServer in-process", "dinhDanh": "thuMauThayDoi", "kem": ["api2/kem/opcua.mjs"], "thoatCuong": true, "tranMs": 90000 }

@@ -1,0 +1,1 @@
+{ "id": "A2-ps5", "lang": "ps1", "name": "Remove-NhatKyCu", "nhom": "powershell", "thuVien": "Windows PowerShell 5.1.26100 ([CmdletBinding(SupportsShouldProcess)] · $PSCmdlet.ShouldProcess · -WhatIf) — assert tự viết", "dinhDanh": "Remove-NhatKyCu" }

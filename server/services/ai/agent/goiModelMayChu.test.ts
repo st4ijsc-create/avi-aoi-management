@@ -233,3 +233,25 @@ describe("goiModelMayChu", () => {
     );
   });
 });
+
+describe("★★★ lượt bị cắt ở trần token ⇒ mảnh `xong` mang `biCat`", () => {
+  const CALL = { id: "c1", type: "function" as const, function: { name: "write_file", arguments: '{"path":"a.ts","content":"cụt"}' } };
+
+  it("engine báo finishReason='length' (có tool call dở) ⇒ xong.biCat=true, tool call vẫn chuyển nguyên cho lõi", async () => {
+    const goi = taoGoiModelMayChu({
+      chatStream: engineGia([{ type: "done", toolCalls: [CALL], finishReason: "length", tokensPrompt: 1, tokensGenerated: 300 }]),
+    });
+    const ra = await gom(goi({ tinNhan: TIN, congCu: [TOOL], signal: new AbortController().signal }));
+    const xong = ra.at(-1) as Extract<ManhModel, { loai: "xong" }>;
+    expect(xong.biCat).toBe(true);
+    expect(xong.toolCalls).toEqual([CALL]);
+  });
+
+  it("finishReason 'tool_calls' / 'stop' / vắng ⇒ KHÔNG có biCat", async () => {
+    for (const finishReason of ["tool_calls", "stop", undefined]) {
+      const goi = taoGoiModelMayChu({ chatStream: engineGia([{ type: "done", toolCalls: [CALL], ...(finishReason ? { finishReason } : {}) }]) });
+      const ra = await gom(goi({ tinNhan: TIN, congCu: [TOOL], signal: new AbortController().signal }));
+      expect((ra.at(-1) as Extract<ManhModel, { loai: "xong" }>).biCat).toBeUndefined();
+    }
+  });
+});

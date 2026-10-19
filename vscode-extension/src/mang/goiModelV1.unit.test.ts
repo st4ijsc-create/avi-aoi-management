@@ -263,3 +263,28 @@ describe("GoiModel /v1 — usage thật", () => {
     expect(ra.filter((m) => m.loai === "chu").map((m) => (m as { noiDung: string }).noiDung).join("")).toBe("xong");
   });
 });
+
+describe("GoiModel /v1 — lượt bị cắt ở trần token", () => {
+  it("★★★ finish_reason='length' (có tool call dở) ⇒ xong.biCat=true", async () => {
+    const f = (async () =>
+      dapStream(
+        sse(
+          delta({ tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "write_file", arguments: '{"path":"a.ts","content":"cụt"}' } }] }),
+          delta({}, "length"),
+          "[DONE]",
+        ),
+      )) as unknown as typeof fetch;
+    const ra = await gom(taoGoiModelV1({ serverUrl: "http://may:3000", layToken: async () => "avgw_abc", fetch: f })(vaoMau()));
+    const xong = ra.at(-1) as Extract<ManhModel, { loai: "xong" }>;
+    expect(xong.loai).toBe("xong");
+    expect(xong.biCat).toBe(true);
+    expect(xong.toolCalls).toHaveLength(1);
+  });
+
+  it("★★ finish_reason='tool_calls' ⇒ KHÔNG biCat", async () => {
+    const f = (async () =>
+      dapStream(sse(delta({ tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "read_file", arguments: "{}" } }] }), delta({}, "tool_calls"), "[DONE]"))) as unknown as typeof fetch;
+    const ra = await gom(taoGoiModelV1({ serverUrl: "http://may:3000", layToken: async () => "avgw_abc", fetch: f })(vaoMau()));
+    expect((ra.at(-1) as Extract<ManhModel, { loai: "xong" }>).biCat).toBeUndefined();
+  });
+});

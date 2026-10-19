@@ -291,6 +291,12 @@ knowledge/embeddings-meta.json
 knowledge/semantic-graph.json
 knowledge/rag-eval-results.json
 knowledge/operational/
+# 2026-10-18 — chỉ mục ký hiệu API cục bộ (`lookup_api`): SINH bởi `node scripts/ai-kb/api-ref/dung-chi-muc-api.mjs` từ tài liệu
+# đã cài trên máy (XML .NET/NuGet, .d.ts, JDK src.zip, Python stdlib) — ~75 MB, dựng lại ~10 s. `api-ref/dotnet-using.json`
+# (bảng chọn tay) VẪN theo dõi. `.dang-dung`/`.cu` là thư mục tạm của lượt đổi chỗ nguyên tử.
+knowledge/api-ref/ky-hieu/
+knowledge/api-ref/ky-hieu.dang-dung/
+knowledge/api-ref/ky-hieu.cu/
 
 
 # vstest trx logs — verify-suites.sh writes one per suite so a failure carries its REASON,

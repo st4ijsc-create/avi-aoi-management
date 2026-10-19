@@ -53,6 +53,17 @@ Thiết kế: `docs/superpowers/specs/2026-10-14-ai-local-dot1-loi-agent-design.
     rules above", không đổi chế độ/tool. Server đọc tệp qua hộp cát + che bí mật (`tepQuyUocAgent.ts`).
 21. Nhãn rút gọn khi nén lịch sử lấy thêm `name`/`query` (tool mới).
 
+## `lookup_api` — chỉ mục ký hiệu API cục bộ (2026-10-18, khuyến nghị #1/#2 `docs/superpowers/audits/2026-10-18-ai-local-nguon-hoc-code.md`)
+
+22. **Tool thứ 15** `lookup_api` (`name` ≤ 200 ký tự, `language?` = `csharp|typescript|java|python`), loại `doc` ⇒ có ở MỌI
+    chế độ. Tra CHÍNH XÁC theo tên/đuôi tên (không cosine) trong `knowledge/api-ref/ky-hieu/` (gitignore) do
+    `node scripts/ai-kb/api-ref/dung-chi-muc-api.mjs` dựng từ tài liệu ĐÃ CÀI (XML .NET 10 + ASP.NET Core + NuGet dự án,
+    `.d.ts`, JDK `src.zip`, Python stdlib). Thực thi ở máy chủ (`server/services/ai/apiRef/traApi.ts`, cổng tiêm `traApi`);
+    extension CHƯA bày (chỉ mục chỉ ở máy chủ). Ẩn được bằng `AI_AGENT_AN_CONG_CU=lookup_api`.
+23. **Quy tắc 12** của system prompt: build/test/type check báo không thấy kiểu/thành viên/namespace (CS0246, CS0103, CS1061,
+    CS0234, CS0117 · TS2304, TS2339, TS2305, TS2724, TS2307 · `cannot find symbol` · NameError/AttributeError/ImportError) ⇒
+    gọi `lookup_api` TRƯỚC khi đoán; không thấy ⇒ không bịa API.
+
 ## Nội dung đáng ngờ — chính sách PHÂN BẬC theo chế độ (2026-10-17)
 
 Đo được (bộ "tìm mã" Đợt 2, 45 lượt, `hoi`): 7/45 lượt chết sau 1–2 tool vì đọc mã CỦA CHÍNH REPO chứa chuỗi mẫu tiêm

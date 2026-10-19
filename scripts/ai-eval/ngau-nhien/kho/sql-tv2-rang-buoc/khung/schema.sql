@@ -1,0 +1,1 @@
+-- TODO: tạo 4 bảng khach_hang, san_pham, don_hang, chi_tiet với đủ ràng buộc theo đề bài

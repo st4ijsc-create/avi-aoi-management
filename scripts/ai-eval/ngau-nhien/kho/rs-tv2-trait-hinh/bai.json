@@ -1,0 +1,33 @@
+{
+  "id": "rs-tv2-trait-hinh",
+  "lang": "rs",
+  "muc": "thu-vien",
+  "kieu": "cargo",
+  "tieuDe": "Trait Hinh, Box<dyn Hinh>, Display cho dyn trait, sắp xếp total_cmp, generic và impl Iterator, PartialEq có dung sai",
+  "deBai": "Trong crate `bai` (tệp `src/lib.rs`), hoàn thiện khung đã cho (giữ nguyên các khai báo `pub` có sẵn: `SAI_SO`, `LoiHinh`, trait `Hinh`, các struct `Tron { ban_kinh }`, `ChuNhat { rong, cao }`, `TamGiac { a, b, c }` với trường `f64`):\n\n```rust\nimpl Tron { pub fn moi(ban_kinh: f64) -> Result<Tron, LoiHinh>; }\nimpl ChuNhat { pub fn moi(rong: f64, cao: f64) -> Result<ChuNhat, LoiHinh>; }\nimpl TamGiac { pub fn moi(a: f64, b: f64, c: f64) -> Result<TamGiac, LoiHinh>; }\n// impl Hinh cho cả ba; impl PartialEq cho cả ba; impl fmt::Display for dyn Hinh + '_\npub fn sap_xep_theo_dien_tich(ds: &mut [Box<dyn Hinh>]);\npub fn tong_dien_tich(ds: &[Box<dyn Hinh>]) -> f64;\npub fn lon_nhat<T: Hinh>(ds: &[T]) -> Option<&T>;\npub fn loc_dien_tich_lon_hon<'a>(ds: &'a [Box<dyn Hinh>], nguong: f64) -> impl Iterator<Item = &'a dyn Hinh> + 'a;\n```\n\n**Hàm tạo** — mỗi kích thước phải HỮU HẠN và > 0 (loại 0, -0, số âm, NaN, vô cực) ⇒ ngược lại `Err(LoiHinh::KichThuocKhongHopLe)`. Riêng tam giác: sau khi ba cạnh hợp lệ, phải thoả bất đẳng thức tam giác NGHIÊM NGẶT (`a + b > c`, `a + c > b`, `b + c > a`, so sánh trực tiếp trên `f64`) ⇒ ngược lại `Err(LoiHinh::KhongPhaiTamGiac)` (tam giác suy biến như 1, 2, 3 là lỗi). Lỗi kích thước được ưu tiên báo trước.\n\n**`Hinh`**:\n- `Tron`: diện tích `π·r²`, chu vi `2·π·r` (dùng `std::f64::consts::PI`), `ten()` = `\"tròn\"`.\n- `ChuNhat`: `rong·cao`, `2·(rong + cao)`, `\"chữ nhật\"`.\n- `TamGiac`: diện tích theo công thức Heron (`s` = nửa chu vi, `√(s(s−a)(s−b)(s−c))`), chu vi `a + b + c`, `\"tam giác\"`.\n\n**Hiển thị** — `impl fmt::Display for dyn Hinh + '_` cho chuỗi `\"{ten} S={diện tích} P={chu vi}\"`, hai số làm tròn 2 chữ số thập phân (`{:.2}`), ví dụ `\"chữ nhật S=6.00 P=10.00\"`. Dùng được qua `Box<dyn Hinh>` (`format!(\"{h}\")`, `h.to_string()`) và qua `&dyn Hinh`.\n\n**So sánh bằng** (`PartialEq`, dung sai tuyệt đối `SAI_SO`: hai số `x`, `y` coi là bằng khi `|x − y| ≤ SAI_SO`):\n- `Tron`: bán kính bằng nhau.\n- `ChuNhat`: cặp (rong, cao) bằng nhau HOẶC bằng nhau khi đổi chỗ (hình 2×3 bằng hình 3×2).\n- `TamGiac`: ba cạnh bằng nhau sau khi sắp tăng dần mỗi bên (thứ tự cạnh không quan trọng).\n\n**Hàm tiện ích**:\n- `sap_xep_theo_dien_tich`: sắp TĂNG dần theo diện tích, so sánh bằng `f64::total_cmp`; ỔN ĐỊNH — các hình cùng diện tích giữ nguyên thứ tự ban đầu.\n- `tong_dien_tich`: tổng diện tích; danh sách rỗng ⇒ `0.0`.\n- `lon_nhat`: tham chiếu tới phần tử có diện tích LỚN NHẤT (so bằng `total_cmp`); nhiều phần tử cùng lớn nhất ⇒ phần tử ĐẦU TIÊN trong số đó (lưu ý `Iterator::max_by` trả phần tử CUỐI); rỗng ⇒ `None`.\n- `loc_dien_tich_lon_hon`: iterator (lười) qua các hình có diện tích LỚN HƠN NGHIÊM NGẶT `nguong`, giữ thứ tự ban đầu, mượn từ `ds` (không sao chép hình).\n\nKhông dùng crate ngoài.",
+  "tepGiai": [
+    "src/lib.rs"
+  ],
+  "dinhDanh": "sap_xep_theo_dien_tich",
+  "testHienThi": [
+    "tests/hien_thi.rs"
+  ],
+  "testAn": [
+    "tests/an.rs"
+  ],
+  "tepBaoVe": [
+    "Cargo.toml",
+    "tests/hien_thi.rs"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 11
+  },
+  "sai": [
+    {
+      "tep": "src/lib.rs",
+      "tu": "!= Ordering::Greater =>",
+      "den": "== Ordering::Less =>"
+    }
+  ]
+}

@@ -123,7 +123,7 @@ describe("§0 — CẦU CHÌ: lưới đang quét vật thật", () => {
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chính bảng, không phải trên hành vi)", () => {
-  it("★ đúng MƯỜI BẢY mục, và mỗi mục có hạn giờ dương ≤ trần hệ", () => {
+  it("★ đúng HAI MƯƠI CHÍN mục, và mỗi mục có hạn giờ dương ≤ trần hệ", () => {
     // ★ 2026-08-19 (doc 79 TRỤC 1 (D)) — BỐN mục MỚI cho vòng khép kín dự án thử: ba `dotnet` (build/
     //   test/format) cho C# và một `node --test` cho react/node. Mỗi mục vẫn là "subcommand cố định +
     //   một đường trong hộp cát"; xem khối lý lẽ ở `repoCommandSandbox.DANH_SACH_TRANG`.
@@ -143,6 +143,21 @@ describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chín
       //   cố ý KHÔNG có mặt — đúng thứ danh sách trắng tồn tại để chặn.
       "python -m pytest <đường-dẫn>",
       "python -m unittest <đường-dẫn>",
+      // ★★★ 2026-10-18 — MƯỜI HAI mục JAVA · C++ (CMake) · GO · RUST (bộ đo ngẫu nhiên: agent không tự biên dịch/chạy
+      //   test được bốn ngôn ngữ này). Khuôn cứng + toolchain từ cấu hình máy chủ + không đường ra mạng; lưới riêng:
+      //   `repoCommandDaNgonNgu.test.ts`. `java -cp … <LớpMain>` KHÔNG thuộc tập kiểm chứng (tu-dong từ chối).
+      "javac -d <thư-mục-lớp> <tệp.java|thư-mục>…",
+      "java -cp <thư-mục-lớp> <LớpTest>",
+      "java -cp <thư-mục-lớp> <LớpMain>",
+      "cmake -S . -B <thư-mục-dựng>",
+      "cmake --build <thư-mục-dựng>",
+      "ctest --test-dir <thư-mục-dựng>",
+      "go test ./...",
+      "go build ./...",
+      "go vet ./...",
+      "cargo test --offline",
+      "cargo build --offline",
+      "cargo check --offline",
       // ★★★ Đợt 3c (2026-10-17) — SÁU mục nhóm CÀI ĐẶT (`nhom: "cai-dat"`): hành trình "mô tả → dự án chạy được"
       //   tắc ở bước cài phụ thuộc. Khuôn CỨNG theo manifest (không đối số gói), luôn cần người duyệt, KHÔNG
       //   BAO GIỜ tự chạy (`laLenhKiemChung` chốt theo `nhom`). Lưới riêng: `repoCommandCaiDat.test.ts`.
@@ -214,6 +229,16 @@ describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chín
       "dotnet build <đường-dẫn>",
       "dotnet test <đường-dẫn>",
       "dotnet format <đường-dẫn>",
+      // ★ 2026-10-18 — dựng Java/C++/Go/Rust sinh .class · thư mục dựng · target/ (go test/vet chỉ ghi GOCACHE NGOÀI dự án;
+      //   java/ctest… xem khai từng mục). Không mục nào ghi đè mã do người viết.
+      "javac -d <thư-mục-lớp> <tệp.java|thư-mục>…",
+      "cmake -S . -B <thư-mục-dựng>",
+      "cmake --build <thư-mục-dựng>",
+      "ctest --test-dir <thư-mục-dựng>",
+      "go build ./...",
+      "cargo test --offline",
+      "cargo build --offline",
+      "cargo check --offline",
       // ★ Đợt 3c — cả sáu lệnh cài đều SINH sản phẩm (node_modules · .venv · obj/project.assets.json · lockfile),
       //   và KHÔNG mục nào ghi đè mã do người viết ⇒ dân số `ghiDia` vẫn đúng 1.
       "npm ci",
@@ -296,8 +321,10 @@ describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chín
     delete process.env.DOTNET_CHO_PHEP_RESTORE;
     try {
       // dotnet phân giải qua PATH ("dotnet"); node --test qua process.execPath.
-      check(["dotnet", "build", "sandbox-projects/csharp-demo/CalculatorDemo.sln"], "dotnet", ["build", "sandbox-projects/csharp-demo/CalculatorDemo.sln", "--no-restore"]);
-      check(["dotnet", "test", "sandbox-projects/csharp-demo"], "dotnet", ["test", "sandbox-projects/csharp-demo", "--no-restore"]);
+      // ★ 2026-10-19 — mặc định offline KHÔNG còn `--no-restore` mà restore NGẦM chỉ từ cache máy (0 nguồn) — đuôi argv
+      //   ghim ở §A2 + `repoCommandDotnetRestoreOffline.test.ts`; ở đây chỉ ghim subcommand + đường.
+      check(["dotnet", "build", "sandbox-projects/csharp-demo/CalculatorDemo.sln"], "dotnet", ["build", "sandbox-projects/csharp-demo/CalculatorDemo.sln"]);
+      check(["dotnet", "test", "sandbox-projects/csharp-demo"], "dotnet", ["test", "sandbox-projects/csharp-demo"]);
       check(["dotnet", "format", "sandbox-projects/csharp-demo/src"], "dotnet", ["format", "sandbox-projects/csharp-demo/src"]);
       check(["node", "--test", "sandbox-projects/react-pg-demo/test/validate.test.mjs"], process.execPath, ["--test", "sandbox-projects/react-pg-demo/test/validate.test.mjs"]);
     } finally {
@@ -373,10 +400,21 @@ describe("§A2 — công tắc DOTNET_CHO_PHEP_RESTORE: vắng/lạ = offline, �
     return r.ok ? r.spec.args : [];
   }
 
-  it("★★★ VẮNG cờ ⇒ CẢ build LẪN test giữ `--no-restore` (mặc định an toàn offline)", () => {
+  /**
+   * ★ CẬP NHẬT CÓ LỜI KHAI (2026-10-19, NN-b-agent-3 C# 0/3): `--no-restore` làm dự án mới KHÔNG BAO GIỜ dựng được ở
+   *   tu-dong (NETSDK1004) dù gói đã nằm trong cache máy. Mặc định offline nay = restore NGẦM với 0 nguồn gói (cấu hình
+   *   NuGet của máy chủ + thuộc tính toàn cục đè nguồn dự án) ⇒ vẫn KHÔNG mạng; gói lạ ⇒ NU1101. Lưới đầy đủ (kể cả
+   *   chạy thật): `repoCommandDotnetRestoreOffline.test.ts`.
+   */
+  it("★★★ VẮNG cờ ⇒ build/test restore NGẦM CHỈ từ cache máy (0 nguồn) — không `--no-restore`, không nguồn mạng", () => {
     voiCo(undefined, () => {
-      expect(argsCua(["dotnet", "build", DUONG])).toEqual(["build", DUONG, "--no-restore"]);
-      expect(argsCua(["dotnet", "test", DUONG])).toEqual(["test", DUONG, "--no-restore"]);
+      for (const lenh of ["build", "test"]) {
+        const a = argsCua(["dotnet", lenh, DUONG]);
+        expect(a.slice(0, 2)).toEqual([lenh, DUONG]);
+        expect(a).not.toContain("--no-restore");
+        expect(a).toContain("-p:RestoreSources=");
+        expect(a.some((x) => x.startsWith("-p:RestoreConfigFile="))).toBe(true);
+      }
     });
   });
 
@@ -389,12 +427,9 @@ describe("§A2 — công tắc DOTNET_CHO_PHEP_RESTORE: vắng/lạ = offline, �
 
   it("★★★ giá trị LẠ ('true'/'0'/'2') ⇒ NHƯ VẮNG — van mạng chỉ mở bằng đúng chuỗi '1'", () => {
     for (const la of ["true", "0", "2", "yes", " 1"]) {
+      const vang = voiCo(undefined, () => argsCua(["dotnet", "build", DUONG]));
       voiCo(la, () => {
-        expect(argsCua(["dotnet", "build", DUONG]), `giá trị "${la}" không được mở restore`).toEqual([
-          "build",
-          DUONG,
-          "--no-restore",
-        ]);
+        expect(argsCua(["dotnet", "build", DUONG]), `giá trị "${la}" không được mở restore qua mạng`).toEqual(vang);
       });
     }
   });
@@ -403,7 +438,7 @@ describe("§A2 — công tắc DOTNET_CHO_PHEP_RESTORE: vắng/lạ = offline, �
     const muc = (nhan: string) => DANH_SACH_TRANG.find((m) => m.nhan === nhan)!;
     for (const nhan of ["dotnet build <đường-dẫn>", "dotnet test <đường-dẫn>"]) {
       voiCo(undefined, () => {
-        expect(muc(nhan).moTa, `${nhan} (cờ VẮNG)`).toContain("--no-restore");
+        expect(muc(nhan).moTa, `${nhan} (cờ VẮNG)`).toMatch(/OFFLINE.*cache/);
         expect(muc(nhan).moTa, `${nhan} (cờ VẮNG)`).not.toContain("DOTNET_CHO_PHEP_RESTORE=1");
       });
       voiCo("1", () => {
@@ -1058,7 +1093,11 @@ describe("§K — CẢNH BÁO GHI ĐĨA trên thẻ duyệt: có ĐÚNG ở mụ
   /** Dựng chuỗi lệnh hợp lệ cho MỘT mục, lấy khuôn từ bảng SỐNG (ô tự do ⇒ một đường trong hộp cát). */
   const DUONG_MAU = "sandbox-projects/csharp-demo";
   function lenhCuaMuc(m: (typeof DANH_SACH_TRANG)[number]): string {
-    return m.khuon.map((k) => k ?? DUONG_MAU).join(" ");
+    const dau = m.khuon.map((k) => k ?? DUONG_MAU);
+    // ★ 2026-10-18 — mục có ĐUÔI tự do (javac nguồn · java tên lớp): thiếu đuôi thì lệnh lệch khuôn ⇒ bị TỪ CHỐI, và câu
+    //   từ chối kèm cả bảng (có chữ "GHI ĐÈ") ⇒ ca này đo nhầm lời từ chối thay vì thẻ duyệt. Thêm một đuôi hợp lệ.
+    if (m.duoi) dau.push(m.duoi.laDuong ? `${DUONG_MAU}/Main.java` : m.dieuKienKhop ? "MainTest" : "vd.App");
+    return dau.join(" ");
   }
 
   it("★★★ ∀ 9 mục: cảnh báo GHI ĐÈ là warnings[0] ⇔ `ghiDia` (thừa cũng ĐỎ, thiếu cũng ĐỎ)", async () => {
@@ -1158,7 +1197,7 @@ describe("§L — dòng catalog quyền `ai_repo_exec` khai ĐÚNG bảng SỐNG
     return ra!;
   }
 
-  it("★★★ catalog nêu ĐỦ CẢ MƯỜI BẢY lệnh — suy từ bảng SỐNG, không chép tay", () => {
+  it("★★★ catalog nêu ĐỦ MỌI lệnh — suy từ bảng SỐNG, không chép tay", () => {
     const mo = moTaCatalog();
     const thieu = DANH_SACH_TRANG.filter((m) => !mo.includes(m.nhan)).map((m) => m.nhan);
     expect(
@@ -1331,7 +1370,24 @@ describe("§K — lệnh Node đòi `package.json` Ở ĐÚNG GỐC", () => {
       "Thêm một lệnh `npm`/`npx`/`yarn`/`pnpm` vào bảng mà quên khai ô này ⇒ nó chạy trên dự án CHA " +
         "trong khi thẻ duyệt khai thư mục CON. Đọc khối `thoatCwdTheoCayThuMuc` trước khi sửa số này.",
       // ★ Đợt 3c — `npm ci`/`npm install` cũng leo cây tìm package.json ⇒ khai `true` (phép kiểm gốc chặn chúng y hệt).
-    ).toEqual(["npm run check", "npm run check:tests", "npx vitest run <đường-dẫn>", "npm ci", "npm install"]);
+    ).toEqual([
+      "npm run check",
+      "npm run check:tests",
+      "npx vitest run <đường-dẫn>",
+      // ★ 2026-10-18 — go/cargo cũng đi NGƯỢC cây tìm go.mod/Cargo.toml ⇒ `manifestGoc` + phép kiểm gốc (CMD_THIEU_DIEU_KIEN).
+      "go test ./...",
+      "go build ./...",
+      "go vet ./...",
+      "cargo test --offline",
+      "cargo build --offline",
+      "cargo check --offline",
+      "npm ci",
+      "npm install",
+    ]);
+    // npm/npx thì manifest là package.json (mặc định); mục thoát cwd KHÁC npm phải khai manifest của riêng nó.
+    for (const m of DANH_SACH_TRANG.filter((x) => x.thoatCwdTheoCayThuMuc && !["npm", "npx"].includes(x.khuon[0] ?? ""))) {
+      expect(m.manifestGoc, `${m.nhan}: thoát cwd mà không khai manifestGoc ⇒ bị đòi package.json oan`).toBeTruthy();
+    }
     // Mọi mục đều PHẢI khai — thiếu ô là `undefined`, tức lọt qua cổng theo chiều KHÔNG an toàn.
     for (const m of DANH_SACH_TRANG) expect(typeof m.thoatCwdTheoCayThuMuc, m.nhan).toBe("boolean");
   });

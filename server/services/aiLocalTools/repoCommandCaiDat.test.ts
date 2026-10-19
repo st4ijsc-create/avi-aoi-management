@@ -274,17 +274,26 @@ describe("§3 — nguồn gói OFFLINE cấu hình được", () => {
     if (!r.ok) expect(r.ma).toBe(MA_TU_CHOI_LENH.CMD_THIEU_DIEU_KIEN);
   });
 
-  it("★★★ dotnet restore: AI_NUGET_SOURCE ⇒ `--source <nguồn>`; vắng ⇒ argv trần", () => {
+  /**
+   * ★ CẬP NHẬT CÓ LỜI KHAI (2026-10-19): offline (mặc định) không còn "argv trần" (= cấu hình NuGet mặc định ⇒
+   *   nuget.org): nguồn DUY NHẤT = AI_NUGET_SOURCE, vắng ⇒ 0 nguồn (chỉ cache máy), kèm cấu hình offline của máy chủ.
+   *   Lưới đầy đủ: `repoCommandDotnetRestoreOffline.test.ts` §2.
+   */
+  it("★★★ dotnet restore: AI_NUGET_SOURCE ⇒ `--source <nguồn>` (nguồn duy nhất); vắng ⇒ 0 nguồn (chỉ cache máy)", () => {
     let r = pq("dotnet restore");
-    expect(r.ok && r.spec.args).toEqual(["restore"]);
+    expect(r.ok && r.spec.args.slice(0, 1)).toEqual(["restore"]);
+    expect(r.ok && r.spec.args).toContain("-p:RestoreSources=");
+    expect(r.ok && r.spec.args).not.toContain("--source");
+    const sau = (a: readonly string[], k: string) => a[a.indexOf(k) + 1];
     const feed = fs.mkdtempSync(path.join(os.tmpdir(), "ai7-nuget-"));
     try {
       process.env[BIEN_NGUON_NUGET] = feed;
       r = pq("dotnet restore src/App.csproj");
-      expect(r.ok && r.spec.args).toEqual(["restore", "src/App.csproj", "--source", feed]);
+      expect(r.ok && r.spec.args.slice(0, 2)).toEqual(["restore", "src/App.csproj"]);
+      expect(r.ok && sau(r.spec.args, "--source")).toBe(feed);
       process.env[BIEN_NGUON_NUGET] = "http://nuget.local/v3/index.json";
       r = pq("dotnet restore");
-      expect(r.ok && r.spec.args).toEqual(["restore", "--source", "http://nuget.local/v3/index.json"]);
+      expect(r.ok && sau(r.spec.args, "--source")).toBe("http://nuget.local/v3/index.json");
       process.env[BIEN_NGUON_NUGET] = "nuget-tuong-doi";
       r = pq("dotnet restore");
       expect(!r.ok && r.ma).toBe(MA_TU_CHOI_LENH.CMD_THIEU_DIEU_KIEN);

@@ -1,0 +1,15 @@
+{
+  "id": "go-tv1-worker-pool",
+  "lang": "go",
+  "muc": "thu-vien",
+  "kieu": "go",
+  "tieuDe": "Xử lý song song có giới hạn bằng goroutine, giữ thứ tự, huỷ khi lỗi",
+  "deBai": "Trong gói `bai` (module `bai`, tệp `xu_ly.go`), cài:\n\n```go\nvar ErrSoWorker = errors.New(\"so worker phai >= 1\")\n\nfunc XuLySongSong(ctx context.Context, dauVao []int, soWorker int,\n    f func(ctx context.Context, x int) (int, error)) ([]int, error)\n```\n\n- `soWorker < 1` ⇒ trả `(nil, err)` với `errors.Is(err, ErrSoWorker)` đúng; không gọi `f` lần nào.\n- Gọi `f` cho từng phần tử, chạy song song nhưng KHÔNG BAO GIỜ quá `soWorker` lời gọi `f` đồng thời.\n- Thành công ⇒ kết quả cùng độ dài và cùng THỨ TỰ với `dauVao` (`kq[i] = f(dauVao[i])`). `dauVao` rỗng ⇒ slice rỗng KHÁC nil, `err == nil`.\n- Lời gọi `f` nào trả lỗi ⇒ huỷ context truyền cho các lời gọi khác, KHÔNG khởi động thêm lời gọi mới nào, chờ mọi goroutine đã chạy kết thúc rồi trả `(nil, err)`; `err` bọc lỗi gốc kèm chỉ số: `fmt.Errorf(\"phan tu %d: %w\", i, loi)` (khi nhiều lời gọi cùng lỗi, trả lỗi của lời gọi lỗi ĐẦU TIÊN được ghi nhận).\n- `ctx` của người gọi bị huỷ ⇒ dừng khởi động lời gọi mới, chờ các lời gọi đang chạy rồi trả `(nil, err)` với `errors.Is(err, context.Canceled)` (hoặc `DeadlineExceeded`) đúng — trừ khi đã có lỗi của `f` trước đó.\n- Hàm trả về thì không còn goroutine nào của nó đang chạy. Không dùng thư viện ngoài.",
+  "tepGiai": ["xu_ly.go"],
+  "dinhDanh": "XuLySongSong",
+  "testHienThi": ["hien_thi_test.go"],
+  "testAn": ["an_test.go"],
+  "tepBaoVe": ["go.mod", "hien_thi_test.go"],
+  "soTest": { "hienThi": 3, "an": 7 },
+  "sai": [{ "tep": "xu_ly.go", "tu": "make(chan struct{}, soWorker)", "den": "make(chan struct{}, soWorker+1)" }]
+}

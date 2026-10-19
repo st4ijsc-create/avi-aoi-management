@@ -392,3 +392,41 @@ describe("G2-B · an toàn: gateway KHÔNG thực thi tool, KHÔNG chạm regist
     expect(src).not.toMatch(/from\s+["'][^"']*toolRegistry/);
   });
 });
+
+// ═══ ★★★ Lượt bị CẮT ở trần token: `finish_reason:"length"` (giá trị CHUẨN OpenAI) phải tới client /v1 ═════════════════
+// Client OpenAI chuẩn (và vòng agent của extension) dựa vào ô này để biết tham số tool call có thể DỞ — "tool_calls" ở
+// đây là bảo nó đi thực thi một write_file cụt.
+describe("★★★ engine báo length ⇒ /v1 trả finish_reason='length' (kể cả khi có tool call dở)", () => {
+  const CALL = { id: "c9", type: "function", function: { name: "get_machine_oee", arguments: '{"machineId":"AOI' } };
+
+  it("stream + tool call dở ⇒ chunk cuối 'length' (tool call vẫn phát nguyên văn)", async () => {
+    h.streamChunks = [
+      { type: "tool_call_delta", toolCallDelta: [{ index: 0, ...CALL }] },
+      { type: "done", fullText: "", toolCalls: [CALL], finishReason: "length", tokensPrompt: 1, tokensGenerated: 300 },
+    ];
+    const evs = sseEvents(await chatSse({ model: "chat", messages: [{ role: "user", content: "x" }], tools: TOOLS }));
+    const fin = evs.filter((e) => e.choices?.[0]?.finish_reason).map((e) => e.choices[0].finish_reason);
+    expect(fin).toEqual(["length"]);
+    expect(evs.filter((e) => e.choices?.[0]?.delta?.tool_calls).length).toBe(1);
+  });
+
+  it("stream KHÔNG tool, engine báo length ⇒ 'length' (không còn nói dối 'stop')", async () => {
+    h.streamChunks = [
+      { type: "token", token: "câu trả lời dài bị " },
+      { type: "done", fullText: "câu trả lời dài bị ", finishReason: "length", tokensPrompt: 1, tokensGenerated: 300 },
+    ];
+    const evs = sseEvents(await chatSse({ model: "chat", messages: [{ role: "user", content: "x" }] }));
+    expect(evs.filter((e) => e.choices?.[0]?.finish_reason).map((e) => e.choices[0].finish_reason)).toEqual(["length"]);
+  });
+
+  it("không-stream + tool call dở ⇒ 'length', tool_calls vẫn trả về", async () => {
+    h.chatResult = {
+      text: "", toolCalls: [CALL], finishReason: "length",
+      tokensPrompt: 1, tokensGenerated: 300, modelId: "m", totalTimeMs: 1, tokensPerSecond: 1,
+    };
+    const { status, json } = await chat({ model: "chat", messages: [{ role: "user", content: "x" }], tools: TOOLS });
+    expect(status).toBe(200);
+    expect(json.choices[0].finish_reason).toBe("length");
+    expect(json.choices[0].message.tool_calls).toHaveLength(1);
+  });
+});

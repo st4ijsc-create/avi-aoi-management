@@ -1,0 +1,35 @@
+{
+  "id": "cpp-tt3-luy-thua-ma-tran",
+  "lang": "cpp",
+  "muc": "thuat-toan",
+  "kieu": "cmake",
+  "tieuDe": "Nhân và luỹ thừa nhanh ma trận modulo m 64 bit: Fibonacci thứ n, đếm đường đi độ dài n",
+  "deBai": "Cài năm hàm khai báo trong `src/ma_tran.hpp` (đã có, KHÔNG đổi) vào tệp `src/ma_tran.cpp`. Chỉ dùng thư viện chuẩn C++20; mã phải biên dịch bằng MSVC (KHÔNG có `unsigned __int128`).\n\n```cpp\nusing MaTran = std::vector<std::vector<std::uint64_t>>;\nstd::uint64_t nhanMod(std::uint64_t a, std::uint64_t b, std::uint64_t m);\nMaTran nhanMaTran(const MaTran& a, const MaTran& b, std::uint64_t m);\nMaTran luyThua(const MaTran& a, std::uint64_t n, std::uint64_t m);\nstd::uint64_t fibonacci(std::uint64_t n, std::uint64_t m);\nstd::uint64_t demDuongDi(const std::vector<std::vector<int>>& ke, int tu, int den, std::uint64_t n, std::uint64_t m);\n```\n\n**Modulo `m`** (chung cho cả năm hàm): hợp lệ khi `1 <= m <= 2^63` (tức tới đúng `1ull << 63`). `m == 0` hoặc `m > 2^63` ⇒ ném `std::invalid_argument` (kiểm `m` TRƯỚC mọi thứ khác). Mọi kết quả là số dư trong `[0, m)` — nên `m == 1` cho kết quả toàn 0 (kể cả ma trận đơn vị, `F(1)`, đường đi độ dài 0).\n\n- `nhanMod`: `(a * b) mod m` CHÍNH XÁC với mọi `a, b` 64 bit (kể cả `a, b >= m`, `UINT64_MAX`) — tích thật có thể tới 128 bit, không được tràn. (Gợi ý: rút gọn rồi nhân kiểu nhân đôi–cộng, hoặc dùng nhân trực tiếp khi chắc chắn không tràn.)\n- `nhanMaTran`: `(a × b) mod m`. Hai ma trận phải VUÔNG, KHÔNG rỗng, cùng cỡ `n` (`a.size() == n` và mọi hàng có đúng `n` phần tử) — sai ⇒ `std::invalid_argument`. Phần tử đầu vào có thể `>= m` (rút gọn mod m); mọi phép nhân/cộng trung gian không được tràn.\n- `luyThua`: `a^n mod m` bằng luỹ thừa nhanh (`n` tới ~10^18). `a` phải vuông, không rỗng (sai ⇒ `std::invalid_argument`). `n == 0` ⇒ ma trận đơn vị (mod m). `n == 1` ⇒ `a` đã rút gọn mod m.\n- `fibonacci`: `F(n) mod m` với `F(0) = 0`, `F(1) = 1`, `F(k) = F(k-1) + F(k-2)`; `n` tới 10^18.\n- `demDuongDi`: đồ thị CÓ HƯỚNG `V = ke.size()` đỉnh `0..V-1`; mỗi phần tử `x` trong `ke[u]` là một cạnh `u → x` (cạnh lặp lại được tính nhiều lần, khuyên `u → u` hợp lệ). Trả số đường đi (walk — được lặp đỉnh/cạnh) gồm ĐÚNG `n` cạnh từ `tu` tới `den`, mod m. `n == 0` ⇒ 1 nếu `tu == den`, ngược lại 0 (vẫn mod m). Thứ tự kiểm lỗi: `m` (`std::invalid_argument`), rồi mọi đỉnh kề phải trong `[0, V)` (sai ⇒ `std::invalid_argument`), rồi `tu`, `den` phải trong `[0, V)` (sai ⇒ `std::out_of_range`; `V == 0` thì mọi `tu` đều sai).\n\n**Hiệu năng**: ma trận tới 30×30 với `n` ~10^18 và `m` tới 2^63 phải xong trong khoảng một giây ở bản Release.",
+  "tepGiai": [
+    "src/ma_tran.cpp"
+  ],
+  "dinhDanh": "luyThua",
+  "testHienThi": [
+    "tests/hien_thi.cpp"
+  ],
+  "testAn": [
+    "tests/an.cpp"
+  ],
+  "tepBaoVe": [
+    "CMakeLists.txt",
+    "tests/kt.hpp",
+    "tests/hien_thi.cpp",
+    "src/ma_tran.hpp"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 10
+  },
+  "sai": [
+    {
+      "tep": "src/ma_tran.cpp",
+      "tu": "(1ull << 32)",
+      "den": "(1ull << 40)"
+    }
+  ]
+}

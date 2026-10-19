@@ -1,0 +1,33 @@
+{
+  "id": "js-tt2-duong-gang",
+  "lang": "js",
+  "muc": "thuat-toan",
+  "kieu": "node",
+  "tieuDe": "Lập lịch dự án: thời điểm sớm/muộn, dự trữ, đường găng và báo chu trình tất định",
+  "deBai": "Viết module ESM `src/lichDuAn.mjs` xuất hàm `lapLich(tacVu)` lập lịch dự án theo phương pháp đường găng (CPM).\n\n**Đầu vào** `tacVu`: mảng object `{ ma, thoiLuong, truoc }` — `ma` chuỗi định danh; `thoiLuong` số nguyên ≥ 0; `truoc` mảng mã các tác vụ phải XONG trước khi tác vụ này bắt đầu (có thể vắng mặt = `[]`; một mã có thể lặp lại trong `truoc`, coi như một). \"Thứ tự đầu vào\" = thứ tự phần tử trong mảng `tacVu`. Không được sửa đầu vào (test có thể truyền object đã `Object.freeze`).\n\n**Kiểm lỗi** — theo ĐÚNG thứ tự sau; mỗi bước duyệt tác vụ theo thứ tự đầu vào (và `truoc` theo thứ tự của nó); ném ngay lỗi ĐẦU TIÊN gặp:\n1. Hai tác vụ cùng `ma` ⇒ `throw new Error(\"trùng mã: <ma>\")`.\n2. `thoiLuong` không phải số nguyên ≥ 0 (theo `Number.isInteger`; chuỗi `\"3\"`, `1.5`, `NaN`, `undefined`, số âm đều sai) ⇒ `throw new RangeError(\"thời lượng không hợp lệ: <ma>\")`.\n3. `truoc` chứa mã không tồn tại ⇒ `throw new Error(\"phụ thuộc lạ: <ma> cần <mã lạ>\")`.\n4. Đồ thị có chu trình (kể cả tác vụ tự phụ thuộc chính nó) ⇒ ném `Error` mô tả MỘT chu trình, chọn tất định như sau:\n   - Gọi `R` = tập tác vụ KHÔNG xếp được thứ tự tô-pô (còn lại sau khi lặp đi lặp lại việc loại các tác vụ mà mọi phụ thuộc đã bị loại).\n   - Xuất phát từ tác vụ ĐẦU TIÊN (theo thứ tự đầu vào) thuộc `R`; từ tác vụ hiện tại đi tới phụ thuộc ĐẦU TIÊN trong `truoc` của nó mà thuộc `R`; lặp tới khi gặp lại một tác vụ đã đi qua. Chu trình là đoạn đường từ lần gặp đầu của tác vụ đó tới ngay trước khi gặp lại.\n   - Xoay vòng chu trình để nó BẮT ĐẦU bằng thành viên đứng sớm nhất trong thứ tự đầu vào (giữ chiều đi).\n   - Lỗi có `message` = `\"chu trình: \"` + các mã nối bằng `\" -> \"`, lặp lại mã đầu ở cuối (vd `\"chu trình: B -> D -> C -> B\"`, tự phụ thuộc: `\"chu trình: X -> X\"`), và thuộc tính `chuTrinh` = mảng các mã KHÔNG lặp mã đầu (vd `[\"B\", \"D\", \"C\"]`). Mũi tên `X -> Y` nghĩa là X có Y trong `truoc`.\n\n**Kết quả** `{ tongThoiGian, lich, duongGang }`:\n- `lich` là object ánh xạ MỖI `ma` ⇒ `{ batDau, ketThuc, batDauMuon, ketThucMuon, duTru }` (chỉ đúng năm trường này):\n  - `batDau` = max `ketThuc` của các tác vụ trong `truoc` (0 nếu không có); `ketThuc = batDau + thoiLuong`.\n  - `tongThoiGian` = max `ketThuc` của mọi tác vụ (0 nếu danh sách rỗng).\n  - `ketThucMuon` = min `batDauMuon` của các tác vụ nhận tác vụ này trong `truoc` (gọi là tác vụ KẾ); không có tác vụ kế ⇒ `tongThoiGian`. `batDauMuon = ketThucMuon - thoiLuong`; `duTru = batDauMuon - batDau`.\n- `duongGang`: mảng mã một đường găng, dựng như sau: điểm đầu = tác vụ ĐẦU TIÊN theo thứ tự đầu vào có `truoc` rỗng và `duTru === 0`; từ tác vụ hiện tại `t`, đi tới tác vụ kế ĐẦU TIÊN theo thứ tự đầu vào có `duTru === 0` và `batDau === ketThuc(t)`; dừng khi không còn. Danh sách rỗng ⇒ `[]`.\n\nVí dụ: A(3), B(2, sau A), C(4, sau A), D(1, sau B và C) ⇒ `tongThoiGian` 8, B có `duTru` 2, `duongGang` `[\"A\", \"C\", \"D\"]`.\n\nPhải xử lý được chuỗi phụ thuộc dài 20.000 tác vụ trong vài giây (không đệ quy sâu, không thuật toán bình phương). Chỉ dùng JavaScript chuẩn.",
+  "tepGiai": [
+    "src/lichDuAn.mjs"
+  ],
+  "dinhDanh": "lapLich",
+  "testHienThi": [
+    "test/hien-thi.test.mjs"
+  ],
+  "testAn": [
+    "test/an.test.mjs"
+  ],
+  "tepBaoVe": [
+    "package.json",
+    "test/hien-thi.test.mjs"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 10
+  },
+  "sai": [
+    {
+      "tep": "src/lichDuAn.mjs",
+      "tu": "sau.get(ma).find(",
+      "den": "sau.get(ma).findLast("
+    }
+  ]
+}
