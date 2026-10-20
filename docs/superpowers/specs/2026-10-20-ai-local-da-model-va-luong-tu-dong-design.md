@@ -1,6 +1,6 @@
 # Thiết kế: Đa model hoán đổi theo tác vụ + Luồng tự động hoá AI (kiểu n8n) trên AI Local
 
-Ngày: 2026-10-20 · Trạng thái: **ĐÃ DUYỆT (D1–D5, 2026-10-20) · pha 7.0 XONG** · Phạm vi: AI Local (uỷ quyền 2026-10-14)
+Ngày: 2026-10-20 · Trạng thái: **ĐÃ DUYỆT (D1–D5, 2026-10-20) · pha 7.0 + 7.1 XONG** · Phạm vi: AI Local (uỷ quyền 2026-10-14)
 
 Đầu vào:
 - Hiện trạng repo (khảo sát 2026-10-20 trên `feat/ai-local-L7-hang-rao` và worktree `_ai7_wt` / `feat/ai-local-7-tang`).
@@ -270,6 +270,18 @@ bộ đệm khởi động khi DB chưa lên.
 
 **e) Dự phòng**: profile chính không nạp được / OOM ⇒ thử `fallback[]`; hết ⇒ **fail-closed có thông báo** (không lùi
 im lặng về in‑process — luật Đợt 0).
+
+**Hiện thực 7.1 (2026-10-20) — ba điều chỉnh có lý do** (kế hoạch `docs/superpowers/plans/2026-10-20-ai-local-dot7-pha1-khe-nang.md`):
+1. **Không nhận nuôi :8091 làm hộ preempt được.** Giấy phép preempt cho :8091 nghĩa là broker có đường GIẾT chính model
+   đang phục vụ để lấy chỗ cho một lượt nạp in-process — đúng thứ G1-D cấm (lưới `aiLlamaServerClient.napTrung.test.ts`
+   giữ nguyên "không có đường giết :8091"). Thay bằng: lượt đổi thiếu VRAM ⇒ `DieuPhoiDoiModel` nhờ broker
+   `preempt("interactive", phần thiếu)` thu hồi hộ KHÁC (sidecar thị giác, model nhỏ rảnh) rồi kiểm lại một lần.
+2. **Đổi TẠM** (`batDau(…, { ben:false })`): không ghi lựa chọn bền, không phủ env ⇒ model "nhà" giữ nguyên nghĩa; quay
+   về / khởi động lại / bộ giám sát dựng lại đều về nhà.
+3. **Chỉ tiến trình API tự đổi khe** (`batTuDoiKheNang()` ở `server/_core/index.ts`): `giuCong` chỉ thấy cổng của chính
+   tiến trình — đổi từ worker có thể giết lượt đang chạy của API. Worker xin model khác ⇒ `KHE_NANG_TAT` nói thật.
+Tập khe nặng H = {nhà} ∪ {artifact hồ sơ `nang` bật + có tệp} (`soModel/tapKheNang.ts`); `laModelServerDangGiu(M)` =
+M ∈ H — MỘT vị từ cho đường đi qua server và đường cấm nạp trong tiến trình. Sổ không có hồ sơ `nang` ⇒ đi tắt.
 
 ### 3.6 Đổi gán vai trò có cổng đo
 
@@ -562,6 +574,7 @@ thiết kế này không mở lại.
 | **7.0** | Sổ model + vai trò + gán seed khớp `.env`; định tuyến tầng 1–3; `/v1/models` liệt kê vai trò | Lưới tương đương: mọi tier cũ → cùng model (100 %); H không tụt ngoài ±3 |
 | ↳ **kết quả 7.0 (2026-10-20)** | ĐẠT | Bất biến tương đương 5 bộ env × mọi vai trò sinh chữ = `resolveTaskModel` (ảnh seed và ảnh rỗng); tên logic cũ + passthrough tên tệp không đổi (59 + 11 + 9 ca cũ xanh); H 12×3 **không chạy** — đường sinh chữ cũ không đổi byte, chỉ thêm nhánh cho tên vai trò. Sống trên :3012: `/v1/models` bày 6 vai trò sinh chữ; `model:"code.plc"` trả lời qua :8091 trong 15,7 s, engine từ chối nạp bản 35B thứ hai trong tiến trình. Kho GGUF: +12 artifact. Mig 0400 áp test + dev, nghiệm thu avi_app đạt. |
 | **7.1** | Bộ giám sát: hàng đợi ái lực, lưu trú tối thiểu, nhận nuôi :8091 vào broker, fail‑closed có thông báo | Kịch bản xen kẽ 2 vai trò ×30 yêu cầu: số lần đổi khe ≤ số "đợt" thật + 1; interactive không chờ sau nền; giết server giữa đổi ⇒ phục hồi ≤ 90 s; broker `snapshot` có lease :8091 |
+| ↳ **kết quả 7.1 (2026-10-20)** | ĐẠT | Đồng hồ giả: 3 đợt A×10·B×10·A×10 ⇒ đổi đúng 2 lần (≤ 4); 30 yêu cầu xen kẽ mỗi 3 s ⇒ 1 lần sang B + 1 lần về nhà; tương tác A mỗi 5 s trong 12 phút ⇒ 100 % lượt A trước mốc 10 phút được nhận ngay, B nền đi sau đúng 10 phút; lưu trú 60 s; hỏng ⇒ nghỉ 60 s; huỷ khi chờ; về nhà sau 15 phút rảnh. **Thước nhạy:** đột biến "luôn đổi ngay" làm đỏ 3/10 ca. Sống trên :3012 (lưu trú 10 s cho phép đo nhanh): Qwen3.6 → Qwen3-Coder-30B 15 s gồm đổi khe (lần đầu 48 s khi tệp chưa vào bộ đệm đĩa), lượt Coder thứ hai 0 s đổi, `chat` về Qwen3.6 16 s; trả lời đúng ("Q := IN AND NOT RESET;", "Hà Nội"); 0 lượt nạp model nặng trong tiến trình; `/props` khớp từng bước. *Bẫy đo:* chuỗi tiếng Việt truyền qua tham số curl trên Git Bash bị hỏng mã ⇒ model trả lạc đề — gửi bằng tệp JSON UTF-8. "Giết server giữa lúc đổi" được lưới `DieuPhoiDoiModel` canh (quay về nhà) + `KheNang` đọc lại `/props`; chưa đo sống ca này. |
 | **7.2** | Bộ đo `plc-st-v1` (24 + 6 giữ lại) + toolchain MATIEC/RuSTy + mô phỏng OpenPLC | Thước tự kiểm: lời giải tham chiếu 30/30 qua; lời giải đột biến bị bắt ≥ 90 % (đo thước trước khi đo model) |
 | **7.3** | Đo ứng viên `code.plc`, gán qua quy trình thu → active; định tuyến tầng 4 (ngữ nghĩa) | Gán được chọn ≥ gán cũ ngoài nhiễu trên `plc-st-v1`; tầng 4 đúng vai trò ≥ 90 % trên 100 câu nhãn tay, câu dưới ngưỡng rơi về mặc định |
 | **7.4** | Trung tâm Model (UI) | Hành trình đổi gán bằng tài khoản admin e2e Playwright ×3 |

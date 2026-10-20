@@ -107,7 +107,7 @@ model lên NVMe; dọn ổ C:; dọn kho model không dùng (~89 GB).
 ### Đợt 7 — Đa model hoán đổi theo vai trò (M) — thêm 2026-10-20 (D1)
 Spec `docs/superpowers/specs/2026-10-20-ai-local-da-model-va-luong-tu-dong-design.md` §3, kế hoạch pha 7.0
 `docs/superpowers/plans/2026-10-20-ai-local-dot7-pha0-so-model-vai-tro.md`. Pha: 7.0 sổ model + vai trò + định tuyến
-tầng 1–3 (**XONG 2026-10-20**) · 7.1 bộ giám sát khe nặng (hàng đợi ái lực, :8091 vào VRAM broker) · 7.2 bộ đo
+tầng 1–3 (**XONG 2026-10-20**) · 7.1 bộ giám sát khe nặng (hàng đợi ái lực, đổi tạm, nhờ broker khi thiếu VRAM — **XONG 2026-10-20**) · 7.2 bộ đo
 `plc-st-v1` + toolchain ST · 7.3 đo ứng viên `code.plc` + định tuyến ngữ nghĩa · 7.4 Trung tâm Model (UI).
 Giữ Q5 (1 × 64k): không thêm llama-server.
 
