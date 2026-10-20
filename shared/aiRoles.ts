@@ -65,6 +65,8 @@ export interface TinHieuVaiTro {
   loaiDuAn?: string;
   duoiTep?: string;
   ngonNgu?: string;
+  /** Đợt 7.3 — chữ câu hỏi: ý định viết mã + từ khoá miền (`vaiTroTuCauHoi`), xét SAU ba tín hiệu trên. */
+  cauHoi?: string;
 }
 
 /** Tầng 3 của bộ định tuyến: tín hiệu rẻ, giải thích được. Không khớp ⇒ `null` (KHÔNG đoán). */
@@ -79,5 +81,27 @@ export function vaiTroTuTinHieu(t: TinHieuVaiTro): { vaiTro: string; bangChung: 
   const nn = (t.ngonNgu ?? "").trim().toLowerCase();
   if (NGON_NGU_PLC.has(nn)) return { vaiTro: "code.plc", bangChung: `ngôn ngữ ${nn}` };
   if (DU_AN_PHAN_MEM.has(loai)) return { vaiTro: "code.software", bangChung: `loại dự án ${loai}` };
+  return t.cauHoi ? vaiTroTuCauHoi(t.cauHoi) : null;
+}
+
+// ── ★★ Đợt 7.3 — TÍN HIỆU CHỮ (tầng 3, tất định): ý định VIẾT/SỬA MÃ + từ khoá miền ─────────────────────────
+// Chỉ kết luận khi có CẢ ý định mã lẫn từ khoá của ĐÚNG MỘT miền (PLC xor phần mềm) — câu hỏi khái niệm
+// ("IEC 61131-3 gồm ngôn ngữ nào?") không có ý định mã ⇒ không kết luận, để tầng 4/5 lo.
+const RE_Y_DINH_MA =
+  /(^|[\s,.:;(])(viết|code|lập trình|sửa|chuyển|tạo|thêm|tối ưu|refactor|write|fix|implement|convert|debug)(?=$|[\s,.:;)])|lỗi biên dịch|báo lỗi E\d+|compile error/i;
+// Viết tắt PHÂN BIỆT hoa thường ("ST", "TON" — không bắt "st"/"ton" trong chữ thường); cụm từ không phân biệt.
+const RE_PLC_VIET_TAT = /\b(ST|SCL|PLC|FB|TON|TOF|CTU|CTD|R_TRIG|F_TRIG)\b/;
+const RE_PLC_CUM = /\b(plc|codesys|twincat|tia portal|iec\s*61131(-3)?|structured text|function block|ladder)\b|khối chức năng/i;
+const RE_PHAN_MEM =
+  /\b(python|c#|java|javascript|typescript|react|vue|angular|sql|postgres|mysql|sqlite|rust|node(\.js)?|express|docker(file)?|powershell|bash|regex|api|wpf|fastapi|django|jest|vitest|pytest|html|css|\.net|kotlin|swift)\b|(^|\s)(C#|Go)(?=\s|$)/i;
+
+/** Tầng 3 — từ CHỮ của câu hỏi. Không chắc ⇒ `null`. */
+export function vaiTroTuCauHoi(cauHoi: string): { vaiTro: string; bangChung: string } | null {
+  const s = cauHoi ?? "";
+  if (!RE_Y_DINH_MA.test(s)) return null;
+  const plc = RE_PLC_VIET_TAT.exec(s) ?? RE_PLC_CUM.exec(s);
+  const pm = RE_PHAN_MEM.exec(s);
+  if (plc && !pm) return { vaiTro: "code.plc", bangChung: `câu hỏi viết mã + "${plc[0].trim()}"` };
+  if (pm && !plc) return { vaiTro: "code.software", bangChung: `câu hỏi viết mã + "${pm[0].trim()}"` };
   return null;
 }

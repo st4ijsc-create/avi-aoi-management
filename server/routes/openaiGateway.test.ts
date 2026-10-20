@@ -157,6 +157,34 @@ describe("GET /v1/models", () => {
   });
 });
 
+describe("★★ Đợt 7.3 — model \"auto\" chọn vai trò từ câu hỏi", () => {
+  it("câu viết mã PLC ⇒ vai trò code.plc (tầng 3), ghi vào model của phản hồi + header", async () => {
+    const res = await fetch(`${enabled.url}/v1/chat/completions`, {
+      method: "POST",
+      headers: { ...AUTH, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "auto", messages: [{ role: "user", content: "Viết function block ST điều khiển băng tải" }] }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-st4i-vai-tro")).toBe("code.plc; tang=3");
+    expect((await res.json()).model).toBe("code.plc");
+  });
+
+  it("không tín hiệu chữ ⇒ tầng 4/5 (engine giả trả vector giả) — không lỗi, vai trò hợp lệ", async () => {
+    const res = await fetch(`${enabled.url}/v1/chat/completions`, {
+      method: "POST",
+      headers: { ...AUTH, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "auto", messages: [{ role: "user", content: "Hôm nay thế nào?" }] }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-st4i-vai-tro")).toMatch(/^(chat|chat\.ops|summarize|extract|code\.software|code\.plc); tang=[45]$/);
+  });
+
+  it("/v1/models có mục auto", async () => {
+    const body = await (await fetch(`${enabled.url}/v1/models`, { headers: AUTH })).json();
+    expect(body.data.find((m: { id: string }) => m.id === "auto")?.kind).toBe("auto");
+  });
+});
+
 describe("POST /v1/chat/completions", () => {
   it("non-stream ⇒ chat.completion shape with message + usage", async () => {
     const res = await fetch(`${enabled.url}/v1/chat/completions`, {

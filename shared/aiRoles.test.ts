@@ -40,3 +40,15 @@ describe("aiRoles — từ vựng vai trò (Đợt 7.0)", () => {
     expect(vaiTroTuTinHieu({})).toBeNull();
   });
 });
+
+describe("vaiTroTuCauHoi — tín hiệu chữ tầng 3 (Đợt 7.3)", () => {
+  it("ý định viết mã + từ khoá đúng MỘT miền", async () => {
+    const { vaiTroTuCauHoi } = await import("./aiRoles");
+    expect(vaiTroTuCauHoi("Viết function block ST cho băng tải")?.vaiTro).toBe("code.plc");
+    expect(vaiTroTuCauHoi("Sửa lỗi TypeScript trong service")?.vaiTro).toBe("code.software");
+    expect(vaiTroTuCauHoi("Viết hàm Go đọc cổng serial")?.vaiTro).toBe("code.software");
+    expect(vaiTroTuCauHoi("Giải thích TON khác TOF thế nào")).toBeNull(); // không có ý định viết mã
+    expect(vaiTroTuCauHoi("Viết code Python đọc dữ liệu từ PLC")).toBeNull(); // hai miền ⇒ không kết luận
+    expect(vaiTroTuCauHoi("viết báo cáo về test hệ thống")).toBeNull(); // "test" không phải "ST"
+  });
+});

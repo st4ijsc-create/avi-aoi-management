@@ -1,0 +1,60 @@
+{"cauHoi":"Viết FB điều khiển máy nén khí chạy tải/không tải bằng ST","vaiTro":"code.plc"}
+{"cauHoi":"Code ST cho cửa cuốn có công tắc hành trình trên dưới","vaiTro":"code.plc"}
+{"cauHoi":"Viết chương trình PLC bơm định lượng hoá chất theo xung","vaiTro":"code.plc"}
+{"cauHoi":"Lỗi biên dịch CODESYS: biến chưa khai báo trong FB này","vaiTro":"code.plc"}
+{"cauHoi":"Viết khối chức năng tính lưu lượng tổng từ xung đồng hồ","vaiTro":"code.plc"}
+{"cauHoi":"PLC: viết logic báo động mức bồn cao cao có chốt","vaiTro":"code.plc"}
+{"cauHoi":"Viết ST xử lý tín hiệu encoder tính tốc độ băng tải","vaiTro":"code.plc"}
+{"cauHoi":"Write ladder-equivalent ST for a two-hand safety control","vaiTro":"code.plc"}
+{"cauHoi":"Viết FB điều khiển lò sấy theo công thức nhiều bước","vaiTro":"code.plc"}
+{"cauHoi":"Viết code PLC cho máy cắt dây theo chiều dài đặt","vaiTro":"code.plc"}
+{"cauHoi":"Viết hàm Python tính FPY từ file Excel","vaiTro":"code.software"}
+{"cauHoi":"Sửa lỗi deadlock trong code C# dùng async","vaiTro":"code.software"}
+{"cauHoi":"Viết API trả về danh sách máy dạng JSON bằng Express","vaiTro":"code.software"}
+{"cauHoi":"Viết truy vấn Postgres lấy 10 lỗi nhiều nhất","vaiTro":"code.software"}
+{"cauHoi":"Viết component React form đăng nhập","vaiTro":"code.software"}
+{"cauHoi":"Viết bash script dọn file log cũ hơn 7 ngày","vaiTro":"code.software"}
+{"cauHoi":"Write a Java class for parsing CSV with quotes","vaiTro":"code.software"}
+{"cauHoi":"Viết hàm Go đọc dữ liệu từ cổng serial","vaiTro":"code.software"}
+{"cauHoi":"Viết test Jest cho service gửi email","vaiTro":"code.software"}
+{"cauHoi":"Viết hàm TypeScript chuyển đổi đơn vị nhiệt độ","vaiTro":"code.software"}
+{"cauHoi":"Tóm tắt báo cáo đánh giá nhà cung cấp này","vaiTro":"summarize"}
+{"cauHoi":"Viết tóm tắt tuần về tình hình giao hàng","vaiTro":"summarize"}
+{"cauHoi":"Tóm tắt các vấn đề chính trong khảo sát nhân viên","vaiTro":"summarize"}
+{"cauHoi":"Rút gọn tài liệu đào tạo an toàn thành 5 gạch đầu dòng","vaiTro":"summarize"}
+{"cauHoi":"Summarize the meeting notes for management","vaiTro":"summarize"}
+{"cauHoi":"Tóm tắt lịch sử sửa chữa của máy gắp linh kiện","vaiTro":"summarize"}
+{"cauHoi":"Viết bản tóm lược kết quả thử nghiệm độ tin cậy","vaiTro":"summarize"}
+{"cauHoi":"Tóm tắt nội dung hợp đồng bảo trì","vaiTro":"summarize"}
+{"cauHoi":"Tổng hợp ý kiến phản hồi về phần mềm mới","vaiTro":"summarize"}
+{"cauHoi":"Làm báo cáo tóm tắt sự cố mất điện hôm qua","vaiTro":"summarize"}
+{"cauHoi":"Lấy mã sản phẩm và số lượng từ đơn đặt hàng sau","vaiTro":"extract"}
+{"cauHoi":"Trích ngày, ca, người vận hành từ phiếu sản xuất","vaiTro":"extract"}
+{"cauHoi":"Extract supplier names and lead times from this email","vaiTro":"extract"}
+{"cauHoi":"Lấy các giá trị điện trở và dung sai từ danh sách linh kiện","vaiTro":"extract"}
+{"cauHoi":"Từ log PLC lấy thời điểm và mã báo động","vaiTro":"extract"}
+{"cauHoi":"Điền JSON gồm mã máy, lỗi, mức độ từ mô tả sự cố","vaiTro":"extract"}
+{"cauHoi":"Lấy tên file ảnh lỗi và vị trí từ kết quả AOI","vaiTro":"extract"}
+{"cauHoi":"Trích thông tin bảo hành từ hoá đơn mua hàng","vaiTro":"extract"}
+{"cauHoi":"Lấy danh sách công việc và hạn hoàn thành từ kế hoạch","vaiTro":"extract"}
+{"cauHoi":"Rút ra địa chỉ IP và cổng từ cấu hình thiết bị","vaiTro":"extract"}
+{"cauHoi":"Máy AOI số 2 có lỗi nào đang mở?","vaiTro":"chat.ops"}
+{"cauHoi":"Ca này dừng máy bao nhiêu phút rồi?","vaiTro":"chat.ops"}
+{"cauHoi":"Sản lượng line 4 đến giờ là bao nhiêu?","vaiTro":"chat.ops"}
+{"cauHoi":"Cảnh báo nhiệt độ lò vừa rồi đã xử lý chưa?","vaiTro":"chat.ops"}
+{"cauHoi":"Hôm nay có lệnh sản xuất nào bị trễ?","vaiTro":"chat.ops"}
+{"cauHoi":"Tỉ lệ đạt lần đầu hôm nay thế nào?","vaiTro":"chat.ops"}
+{"cauHoi":"Ai đang vận hành máy in kem hàn?","vaiTro":"chat.ops"}
+{"cauHoi":"Còn bao nhiêu linh kiện 0402 trong kho?","vaiTro":"chat.ops"}
+{"cauHoi":"Máy nào báo lỗi nhiều nhất trong giờ qua?","vaiTro":"chat.ops"}
+{"cauHoi":"Tình trạng hiện tại của dây chuyền SMT 2?","vaiTro":"chat.ops"}
+{"cauHoi":"Vì sao cần kiểm tra X-ray cho linh kiện BGA?","vaiTro":"chat"}
+{"cauHoi":"Giải thích khái niệm takt time","vaiTro":"chat"}
+{"cauHoi":"Lean và Six Sigma khác nhau ở điểm nào?","vaiTro":"chat"}
+{"cauHoi":"Ưu điểm của truyền thông EtherCAT là gì?","vaiTro":"chat"}
+{"cauHoi":"Nên bảo trì dự đoán hay bảo trì định kỳ?","vaiTro":"chat"}
+{"cauHoi":"What is a poka-yoke in manufacturing?","vaiTro":"chat"}
+{"cauHoi":"Giải thích hiện tượng cầu thiếc khi hàn","vaiTro":"chat"}
+{"cauHoi":"Tại sao độ ẩm ảnh hưởng tới linh kiện MSD?","vaiTro":"chat"}
+{"cauHoi":"Cách đọc biểu đồ kiểm soát SPC","vaiTro":"chat"}
+{"cauHoi":"Ý nghĩa của chuẩn IPC Class 2 và Class 3","vaiTro":"chat"}

@@ -838,6 +838,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           root: resolveModelId(id) || envStr("GGUF_DEFAULT_MODEL") || id,
           kind: "role",
         })),
+      // ★★ Đợt 7.3 — chọn vai trò TỰ ĐỘNG từ câu hỏi (tầng 3 tín hiệu chữ → tầng 4 nhúng; không chắc ⇒ chat).
+      { id: "auto", object: "model", created, owned_by: "st4i-local", root: "theo-cau-hoi", kind: "auto" },
     ];
     res.json({ object: "list", data });
   });
@@ -858,8 +860,18 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         return;
       }
 
-      const modelLabel = typeof body.model === "string" && body.model ? body.model : "chat";
-      const modelId = resolveModelId(body.model);
+      let modelLabel = typeof body.model === "string" && body.model ? body.model : "chat";
+      // ★★ Đợt 7.3 — `model: "auto"`: chọn VAI TRÒ từ câu hỏi cuối của người dùng (tầng 3 tín hiệu chữ → tầng 4 nhúng);
+      // không chắc ⇒ "chat". Vai trò được chọn ghi vào `model` của phản hồi + header để người gọi thấy lý do.
+      if (modelLabel.trim().toLowerCase() === "auto") {
+        const cuoi = [...messages].reverse().find((m: { role?: string }) => m?.role === "user");
+        const chu = typeof cuoi?.content === "string" ? cuoi.content : Array.isArray(cuoi?.content) ? cuoi.content.map((p: { text?: string }) => p?.text ?? "").join(" ") : "";
+        const { chonVaiTroTuDong } = await import("../services/ai/soModel/phanLoaiNguNghia");
+        const chon = await chonVaiTroTuDong(chu);
+        modelLabel = chon.vaiTro ?? "chat";
+        if (!res.headersSent) res.setHeader("x-st4i-vai-tro", `${modelLabel}; tang=${chon.tang}`);
+      }
+      const modelId = resolveModelId(modelLabel);
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : 0.7;
       const topP = Number.isFinite(body.top_p) ? Number(body.top_p) : undefined;

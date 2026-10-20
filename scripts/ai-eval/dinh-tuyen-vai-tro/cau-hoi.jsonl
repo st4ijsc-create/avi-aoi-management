@@ -1,0 +1,100 @@
+{"cauHoi":"Viết FB đèn giao thông bằng ST có nút người đi bộ","vaiTro":"code.plc"}
+{"cauHoi":"Code PLC cho hai bơm chạy luân phiên theo phao mức","vaiTro":"code.plc"}
+{"cauHoi":"Đoạn Structured Text này báo lỗi E007 khi biên dịch, sửa giúp","vaiTro":"code.plc"}
+{"cauHoi":"Viết function block chống dội nút nhấn bằng TON","vaiTro":"code.plc"}
+{"cauHoi":"Cần chương trình PLC đếm sản phẩm theo lô bằng CTU","vaiTro":"code.plc"}
+{"cauHoi":"Hãy viết bộ PI rời rạc chống bão hoà trong ST","vaiTro":"code.plc"}
+{"cauHoi":"Viết code CODESYS điều khiển van hai cuộn có công tắc hành trình","vaiTro":"code.plc"}
+{"cauHoi":"Tạo FB cảnh báo theo ISA-18.2 bằng IEC 61131-3","vaiTro":"code.plc"}
+{"cauHoi":"Viết logic gạt sản phẩm lỗi AOI bằng thanh ghi dịch trên PLC","vaiTro":"code.plc"}
+{"cauHoi":"PLC Siemens: viết SCL đọc analog 4-20mA và cắt ngưỡng","vaiTro":"code.plc"}
+{"cauHoi":"Viết function block bỏ phiếu 2oo3 cho cảm biến an toàn","vaiTro":"code.plc"}
+{"cauHoi":"Lập trình thang nâng hai tầng bằng Structured Text","vaiTro":"code.plc"}
+{"cauHoi":"Write a structured text FB for a star-delta motor starter","vaiTro":"code.plc"}
+{"cauHoi":"Chuyển logic relay sau sang ST: K1 tự giữ, dừng bằng S0","vaiTro":"code.plc"}
+{"cauHoi":"Viết TOF trễ tắt quạt 30 giây trong PLC","vaiTro":"code.plc"}
+{"cauHoi":"Viết ST tính CRC16 Modbus cho khung truyền","vaiTro":"code.plc"}
+{"cauHoi":"Viết chương trình máy trạng thái cho máy dán nhãn trên CODESYS","vaiTro":"code.plc"}
+{"cauHoi":"Thêm khoá liên động cửa an toàn vào FB robot gắp đặt bằng ST","vaiTro":"code.plc"}
+{"cauHoi":"Sửa FB ramp tốc độ biến tần trong PLC bị vọt lố","vaiTro":"code.plc"}
+{"cauHoi":"Lập trình CTD đếm xuống tồn kho linh kiện trên PLC","vaiTro":"code.plc"}
+{"cauHoi":"Viết hàm Python gửi cảnh báo qua Telegram","vaiTro":"code.software"}
+{"cauHoi":"Viết migration SQL thêm cột status vào bảng orders","vaiTro":"code.software"}
+{"cauHoi":"Sửa lỗi CORS trong server Express","vaiTro":"code.software"}
+{"cauHoi":"Viết hook React lấy dữ liệu OEE mỗi 5 giây","vaiTro":"code.software"}
+{"cauHoi":"Viết class C# đọc dữ liệu Modbus TCP từ thư viện NModbus","vaiTro":"code.software"}
+{"cauHoi":"Viết test vitest cho hàm định dạng ngày","vaiTro":"code.software"}
+{"cauHoi":"Viết script PowerShell sao lưu thư mục logs mỗi đêm","vaiTro":"code.software"}
+{"cauHoi":"Tối ưu hàm JavaScript lọc mảng 1 triệu phần tử","vaiTro":"code.software"}
+{"cauHoi":"Viết endpoint FastAPI nhận ảnh lỗi và lưu vào đĩa","vaiTro":"code.software"}
+{"cauHoi":"Viết Dockerfile cho ứng dụng Node 24","vaiTro":"code.software"}
+{"cauHoi":"Write a Go function that retries HTTP requests with backoff","vaiTro":"code.software"}
+{"cauHoi":"Sửa lỗi TypeScript: Property does not exist on type","vaiTro":"code.software"}
+{"cauHoi":"Viết câu lệnh SQL tính tỉ lệ lỗi theo ca từ bảng defects","vaiTro":"code.software"}
+{"cauHoi":"Viết component Vue biểu đồ đường nhiệt độ","vaiTro":"code.software"}
+{"cauHoi":"Viết hàm Rust đọc file cấu hình TOML","vaiTro":"code.software"}
+{"cauHoi":"Thêm phân trang vào API danh sách sản phẩm trong Node.js","vaiTro":"code.software"}
+{"cauHoi":"Viết regex tách mã lô dạng LOT-2026-001 bằng JavaScript","vaiTro":"code.software"}
+{"cauHoi":"Viết WPF form nhập thông số máy bằng C#","vaiTro":"code.software"}
+{"cauHoi":"Viết code Java kết nối MQTT broker và subscribe topic","vaiTro":"code.software"}
+{"cauHoi":"Sửa memory leak trong service Node.js dùng setInterval","vaiTro":"code.software"}
+{"cauHoi":"Tóm tắt nhật ký sự cố máy in kem hàn tuần này","vaiTro":"summarize"}
+{"cauHoi":"Viết bản tóm tắt điều hành về hiệu suất nhà máy tháng 9","vaiTro":"summarize"}
+{"cauHoi":"Tóm lại giúp tôi 3 điểm chính của tài liệu SOP này","vaiTro":"summarize"}
+{"cauHoi":"Tóm tắt các phản hồi của khách hàng trong quý","vaiTro":"summarize"}
+{"cauHoi":"Viết báo cáo ngắn về nguyên nhân dừng máy hôm nay từ dữ liệu sau","vaiTro":"summarize"}
+{"cauHoi":"Summarize the attached audit findings in plain language","vaiTro":"summarize"}
+{"cauHoi":"Rút gọn bài viết kỹ thuật này còn một đoạn","vaiTro":"summarize"}
+{"cauHoi":"Tổng kết cuộc họp giao ca sáng nay","vaiTro":"summarize"}
+{"cauHoi":"Làm bản tóm tắt cho quản lý về đợt bảo trì định kỳ","vaiTro":"summarize"}
+{"cauHoi":"Tóm tắt thay đổi trong phiên bản phần mềm AOI mới","vaiTro":"summarize"}
+{"cauHoi":"Viết báo cáo tháng về số lượng NCR theo bộ phận","vaiTro":"summarize"}
+{"cauHoi":"Tóm tắt nội dung tiêu chuẩn IPC-A-610 phần linh kiện SMD","vaiTro":"summarize"}
+{"cauHoi":"Gom các ý chính trong 20 email về sự cố giao hàng","vaiTro":"summarize"}
+{"cauHoi":"Viết tóm tắt một trang về dự án giảm lỗi hàn","vaiTro":"summarize"}
+{"cauHoi":"Tóm tắt kết quả kiểm tra chất lượng lô hàng 2026-10","vaiTro":"summarize"}
+{"cauHoi":"Từ email sau lấy ra tên khách hàng, mã đơn và hạn giao dưới dạng JSON","vaiTro":"extract"}
+{"cauHoi":"Rút các thông số nhiệt độ vùng lò reflow từ bảng profile này","vaiTro":"extract"}
+{"cauHoi":"Lấy số serial và kết quả pass/fail từ log kiểm tra","vaiTro":"extract"}
+{"cauHoi":"Extract the error codes and timestamps from these machine logs","vaiTro":"extract"}
+{"cauHoi":"Đọc bảng datasheet và trích điện áp, dòng điện định mức","vaiTro":"extract"}
+{"cauHoi":"Lấy tên linh kiện, toạ độ X Y từ file pick and place","vaiTro":"extract"}
+{"cauHoi":"Trích các mục hành động, người phụ trách, hạn chót từ biên bản","vaiTro":"extract"}
+{"cauHoi":"Từ phiếu NCR lấy mã lỗi, số lượng, bộ phận gây lỗi","vaiTro":"extract"}
+{"cauHoi":"Điền các trường mã máy, mô tả lỗi, thời gian dừng từ báo cáo sự cố","vaiTro":"extract"}
+{"cauHoi":"Lấy danh sách vật tư và số lượng từ BOM dạng văn bản","vaiTro":"extract"}
+{"cauHoi":"Trích mã nhân viên và giờ vào ra từ dữ liệu chấm công","vaiTro":"extract"}
+{"cauHoi":"Lấy thông tin nhiệt độ, độ ẩm và thời điểm từ chuỗi cảm biến này","vaiTro":"extract"}
+{"cauHoi":"Parse this invoice text into vendor, date, total fields","vaiTro":"extract"}
+{"cauHoi":"Trích các số đo kích thước và dung sai từ bản vẽ mô tả","vaiTro":"extract"}
+{"cauHoi":"Lấy mã lỗi AOI và tên chân linh kiện từ đoạn mô tả","vaiTro":"extract"}
+{"cauHoi":"Line SMT 1 có đang chạy không?","vaiTro":"chat.ops"}
+{"cauHoi":"Hôm nay đã sản xuất được bao nhiêu bo mạch?","vaiTro":"chat.ops"}
+{"cauHoi":"Có cảnh báo nào chưa xác nhận không?","vaiTro":"chat.ops"}
+{"cauHoi":"Nhiệt độ lò reflow line 2 hiện tại bao nhiêu?","vaiTro":"chat.ops"}
+{"cauHoi":"Lỗi phổ biến nhất ca sáng nay là gì?","vaiTro":"chat.ops"}
+{"cauHoi":"Máy gắp linh kiện số 3 dừng lúc mấy giờ?","vaiTro":"chat.ops"}
+{"cauHoi":"Kế hoạch sản xuất ca chiều là gì?","vaiTro":"chat.ops"}
+{"cauHoi":"Lô hàng 2026-10-20 đã kiểm xong chưa?","vaiTro":"chat.ops"}
+{"cauHoi":"Có bao nhiêu phiếu bảo trì đang mở?","vaiTro":"chat.ops"}
+{"cauHoi":"Hiệu suất của máy AOI tuần này so với tuần trước?","vaiTro":"chat.ops"}
+{"cauHoi":"Ai đã xác nhận cảnh báo nhiệt độ vừa rồi?","vaiTro":"chat.ops"}
+{"cauHoi":"Kho còn bao nhiêu cuộn kem hàn?","vaiTro":"chat.ops"}
+{"cauHoi":"Line nào có tỉ lệ lỗi cao nhất hôm nay?","vaiTro":"chat.ops"}
+{"cauHoi":"Thời gian dừng máy tích luỹ hôm nay là bao nhiêu?","vaiTro":"chat.ops"}
+{"cauHoi":"Có máy nào sắp đến hạn bảo trì không?","vaiTro":"chat.ops"}
+{"cauHoi":"Hàn reflow và hàn sóng khác nhau thế nào?","vaiTro":"chat"}
+{"cauHoi":"Vì sao linh kiện bị dựng bia khi hàn?","vaiTro":"chat"}
+{"cauHoi":"Giải thích chỉ số OEE gồm những thành phần nào","vaiTro":"chat"}
+{"cauHoi":"Ưu nhược điểm của cảm biến quang loại phản xạ","vaiTro":"chat"}
+{"cauHoi":"Tại sao cần nối đất chống tĩnh điện trong xưởng SMT?","vaiTro":"chat"}
+{"cauHoi":"What does Cpk measure in process capability?","vaiTro":"chat"}
+{"cauHoi":"Khi nào nên dùng biến tần thay cho khởi động sao tam giác?","vaiTro":"chat"}
+{"cauHoi":"Phân biệt lỗi loại I và loại II trong kiểm tra chất lượng","vaiTro":"chat"}
+{"cauHoi":"Giải thích nguyên lý PID cho người mới","vaiTro":"chat"}
+{"cauHoi":"Chuẩn IEC 61131-3 gồm những ngôn ngữ lập trình nào?","vaiTro":"chat"}
+{"cauHoi":"Kaizen là gì và áp dụng trong nhà máy ra sao?","vaiTro":"chat"}
+{"cauHoi":"Ý nghĩa của các mức SIL trong an toàn chức năng","vaiTro":"chat"}
+{"cauHoi":"So sánh giao thức OPC UA và MQTT trong nhà máy","vaiTro":"chat"}
+{"cauHoi":"Làm sao để giảm lỗi thiếu linh kiện khi gắp đặt?","vaiTro":"chat"}
+{"cauHoi":"Tại sao kem hàn cần bảo quản lạnh?","vaiTro":"chat"}
