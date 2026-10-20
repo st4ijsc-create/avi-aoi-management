@@ -2,12 +2,14 @@
  * ★★ Đợt 7.0 — BỘ ĐỊNH TUYẾN VAI TRÒ (tầng 1 tường minh · 2 phạm vi · 3 tín hiệu · 5 mặc định). THUẦN: đọc ảnh chụp +
  * env được truyền vào, không I/O. Tầng 4 (phân loại ngữ nghĩa) là pha 7.3. Spec §3.4.
  *
- * ⚠ KHE NẶNG: gán trỏ profile `nang` mà llama-server KHÔNG đang giữ artifact đó ⇒ KHÔNG trả tên tệp ấy (engine sẽ nạp
- *   một model 30B thứ hai TRONG tiến trình — VRAM). Rơi dự phòng, ghi `khe-nang-chua-hoan-doi`. Hoán đổi thật là 7.1.
+ * ⚠ KHE NẶNG: gán trỏ profile `nang` mà llama-server KHÔNG đang giữ artifact đó ⇒ (7.1) dùng được, ghi `can-doi-khe`
+ *   — model ấy thuộc tập khe nặng (`tapKheNang`) nên engine đi server + cấm nạp trong tiến trình, bộ giám sát khe nặng
+ *   đổi khe. `AI_KHE_NANG_HOAN_DOI=false` ⇒ như 7.0: rơi dự phòng, ghi `khe-nang-chua-hoan-doi`.
  */
 import { VAI_TRO_GOC, laTenVaiTro, vaiTroTuTinHieu, type EnvKeyModel, type TinHieuVaiTro } from "../../../../shared/aiRoles";
 import { toBasename } from "../modelResolver";
 import type { AnhSoModel, GanTrongAnh, PhamViGan } from "./anhSoModel";
+import { hoanDoiKheNangBat } from "./tapKheNang";
 
 export interface YeuCauDinhTuyen {
   vaiTro?: string;
@@ -57,7 +59,7 @@ export function laVaiTroSinhChu(vaiTro: string, anh: AnhSoModel): boolean {
   return !!tk && TASK_SINH_CHU.has(tk);
 }
 
-type KetQuaProfile = { ok: true; model: string } | { ok: false; lyDo: string };
+type KetQuaProfile = { ok: true; model: string; ghiChu?: string } | { ok: false; lyDo: string };
 
 function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv): KetQuaProfile {
   const p = anh.profile.get(profileId);
@@ -66,7 +68,9 @@ function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv):
   if (p.artifactStatus !== "available") return { ok: false, lyDo: `artifact-${p.artifactStatus} (${profileId})` };
   const model = toBasename(p.artifactFile);
   if (p.slotClass === "nang" && model !== toBasename(env.LLAMA_SERVER_MODEL)) {
-    return { ok: false, lyDo: `khe-nang-chua-hoan-doi (${profileId})` };
+    // Đợt 7.1: khe nặng đổi được (bộ giám sát khe nặng) ⇒ dùng được, ghi `can-doi-khe`; cờ tắt ⇒ như 7.0.
+    if (!hoanDoiKheNangBat(env)) return { ok: false, lyDo: `khe-nang-chua-hoan-doi (${profileId})` };
+    return { ok: true, model, ghiChu: "can-doi-khe" };
   }
   return { ok: true, model };
 }
@@ -141,7 +145,7 @@ export function dinhTuyenVaiTro(
         model: kq.model,
         nguon: pid === gan.profileId ? "gan-profile" : "du-phong",
         phamVi: gan.scopeKind,
-        lyDo: { tang: tangGan, bangChung: [`${bangChung}; gán ${gan.scopeKind} → ${pid}`, ...loi].join("; ") },
+        lyDo: { tang: tangGan, bangChung: [`${bangChung}; gán ${gan.scopeKind} → ${pid}`, ...loi, ...(kq.ghiChu ? [kq.ghiChu] : [])].join("; ") },
       };
     }
     loi.push(kq.lyDo);

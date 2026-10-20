@@ -42,9 +42,16 @@ describe("dinhTuyenVaiTro (Đợt 7.0)", () => {
     expect(dinhTuyenVaiTro({ vaiTro: "code.plc", phamVi: { projectId: "khac" } }, a, ENV)).toMatchObject({ nguon: "gan-env", phamVi: "global" });
   });
 
-  it("profile khe nặng mà server không giữ ⇒ dự phòng về env, ghi khe-nang-chua-hoan-doi", () => {
+  it("(7.1) profile khe nặng mà server không giữ + hoán đổi bật (mặc định) ⇒ dùng profile, ghi can-doi-khe", () => {
     const a = anh([{ profileId: "ds" }], new Map([["ds", P({ slotClass: "nang" })]]));
     const kq = dinhTuyenVaiTro({ vaiTro: "code.plc" }, a, ENV);
+    expect(kq).toMatchObject({ nguon: "gan-profile", model: "DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M" });
+    expect(kq.lyDo.bangChung).toContain("can-doi-khe");
+  });
+
+  it("profile khe nặng mà server không giữ + AI_KHE_NANG_HOAN_DOI=false ⇒ dự phòng về env, ghi khe-nang-chua-hoan-doi", () => {
+    const a = anh([{ profileId: "ds" }], new Map([["ds", P({ slotClass: "nang" })]]));
+    const kq = dinhTuyenVaiTro({ vaiTro: "code.plc" }, a, { ...ENV, AI_KHE_NANG_HOAN_DOI: "false" });
     expect(kq.nguon).toBe("du-phong");
     expect(kq.model).toBe("Qwen3.6-35B-A3B-UD-Q4_K_XL");
     expect(kq.lyDo.bangChung).toContain("khe-nang-chua-hoan-doi");

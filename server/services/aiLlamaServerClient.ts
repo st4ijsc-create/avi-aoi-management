@@ -72,6 +72,9 @@ import {
 //   `node:async_hooks`) ⇒ import TĨNH. Cắm ở ĐÚNG ba chỗ chạm mạng: `postChatCompletion`,
 //   `streamChatCompletion`, `postInfill` — mọi hàm `server*` công khai đi qua một trong ba.
 import { quaCongUuTien, quaCongUuTienLuong } from "./ai/hangDoiUuTienLlm";
+import { layAnhSoModel } from "./ai/soModel/anhSoModel";
+import { laModelKheNangPhu } from "./ai/soModel/tapKheNang";
+import { quaKheNang, quaKheNangLuong } from "./ai/soModel/kheNangMacDinh";
 
 // ═══ G5-D — Ô DỮ LIỆU THỨ HAI: `message.reasoning_content` ════════════════════════════════════
 //
@@ -413,7 +416,10 @@ export function laModelServerDangGiu(modelId?: string): boolean {
   if (!llamaServerEnabled()) return false;
   const wanted = modelId ? basename(modelId) : basename(process.env.GGUF_DEFAULT_MODEL || "");
   const served = serverModelBasename();
-  return !!served && wanted === served;
+  if (!!served && wanted === served) return true;
+  // ★★ Đợt 7.1 — model của hồ sơ khe NẶNG (sổ model) cũng là "của server": phục vụ sau khi đổi khe (`kheNangMacDinh`),
+  // và vì thế CẤM nạp trong tiến trình — cùng một vị từ cho cả hai vế (xem `soModel/tapKheNang.ts`).
+  return laModelKheNangPhu(wanted, layAnhSoModel(), process.env);
 }
 
 /**
@@ -669,7 +675,9 @@ function postChatCompletion(
   body: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<{ json: any; totalTimeMs: number }> {
-  return quaCongUuTien(() => postChatCompletionTrucTiep(body, signal), signal);
+  // ★★ Đợt 7.1 — khe nặng TRƯỚC cổng ưu tiên: lượt cho model khác model đang giữ chờ đổi khe (có chính sách), không
+  // chiếm slot của cổng trong lúc chờ. Không có hồ sơ khe nặng nào ⇒ đi tắt (hành vi cũ).
+  return quaKheNang(String(body.model ?? ""), () => quaCongUuTien(() => postChatCompletionTrucTiep(body, signal), signal), signal);
 }
 
 /** POST an OpenAI chat-completion to the server and return the raw JSON + timing. */
@@ -1076,7 +1084,11 @@ function streamChatCompletion(
 ): AsyncGenerator<GgufStreamChunk> {
   // Đợt 0.3 — slot của cổng ưu tiên giữ SUỐT vòng đời luồng, nhả ở `finally` của cổng (xong / ném /
   // consumer `return()` sớm). Đồng hồ nhàn rỗi của thân trực tiếp chỉ chạy SAU khi tới lượt.
-  return quaCongUuTienLuong(() => streamChatCompletionTrucTiep(body, signal, modelHienThi), signal);
+  return quaKheNangLuong(
+    String(body.model ?? ""),
+    () => quaCongUuTienLuong(() => streamChatCompletionTrucTiep(body, signal, modelHienThi), signal),
+    signal,
+  );
 }
 
 async function* streamChatCompletionTrucTiep(

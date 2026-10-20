@@ -67,6 +67,7 @@ import { assertVramEnforcementPolicy } from "../services/vram/vramBroker";
 import { khoiChayDongBoLuaChonModel } from "../services/ai/luaChonModelLlamaServer";
 import { khoiChayDongBoSoModel } from "../services/ai/soModel/napSoModel";
 import { dongBoKhoModel } from "../services/ai/soModel/dongBoKhoModel";
+import { batTuDoiKheNang } from "../services/ai/soModel/kheNangMacDinh";
 import { listenThenStartOt } from "../services/ot/backgroundStart";
 
 // Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
@@ -103,6 +104,7 @@ khoiChayDongBoLuaChonModel();
 // ★★ Đợt 7.0 (AI Local) — SỔ MODEL: ảnh chụp vai trò/gán nạp nền + làm mới mỗi 15 s (CSDL chưa lên ⇒ hành vi `.env`);
 // đồng bộ kho GGUF → `ai_model_artifacts` một lần, nền, không chặn boot (chỉ tiến trình API — worker không cần).
 khoiChayDongBoSoModel();
+batTuDoiKheNang(); // Đợt 7.1 — chỉ tiến trình API tự đổi khe nặng (worker không)
 void dongBoKhoModel().then((k) => k.them + k.mat > 0 && console.log(`[so-model] kho GGUF: +${k.them} mới · ${k.mat} mất`));
 
 

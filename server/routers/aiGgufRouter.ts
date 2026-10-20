@@ -340,18 +340,19 @@ export const aiGgufRouter = router({
   // ─── ★★ Đợt 7.0 — Sổ model (vai trò → model) ──────────
   /** Vai trò · gán còn hiệu lực · hồ sơ · artifact + model mà MỖI vai trò đang phân giải ra (toàn cục) kèm lý do. */
   soModelTongQuan: adminDoiModel.query(async () => {
-    const [{ getDb }, sm, { dinhTuyenVaiTro }, { lamMoiAnhSoModel }] = await Promise.all([
+    const [{ getDb }, sm, { dinhTuyenVaiTro }, { lamMoiAnhSoModel }, { thongKeKheNang }] = await Promise.all([
       import("../db/connection"),
       import("../../drizzle/schema"),
       import("../services/ai/soModel/dinhTuyenVaiTro"),
       import("../services/ai/soModel/napSoModel"),
+      import("../services/ai/soModel/kheNangMacDinh"),
     ]);
     const db = await getDb();
     if (!db) throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "soModelTongQuan" }, "Không có kết nối CSDL.");
     const anh = await lamMoiAnhSoModel();
     const [artifacts, profiles] = await Promise.all([db.select().from(sm.aiModelArtifacts), db.select().from(sm.aiServingProfiles)]);
     const vaiTro = [...anh.vaiTro.keys()].sort().map((id) => ({ id, ...anh.vaiTro.get(id)!, dinhTuyen: dinhTuyenVaiTro({ vaiTro: id }, anh, process.env) }));
-    return { taiLuc: anh.taiLuc, vaiTro, gan: anh.gan, profiles, artifacts };
+    return { taiLuc: anh.taiLuc, vaiTro, gan: anh.gan, profiles, artifacts, kheNang: thongKeKheNang() };
   }),
 
   /** Quét `GGUF_MODELS_DIR` → `ai_model_artifacts` (thêm mới, đánh dấu mất / có lại). */
