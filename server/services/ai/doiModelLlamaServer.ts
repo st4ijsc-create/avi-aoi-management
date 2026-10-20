@@ -383,6 +383,12 @@ export interface PhuThuocDoiModel {
   khiKetThuc?: (p: PhienDoiModel) => void | Promise<void>;
   /** Gọi ĐÚNG khi `phucHoiLuotMoCoi` thấy một lượt mồ côi (log + audit). Hỏng không đổi kết quả. */
   khiPhucHoi?: (kq: KetQuaPhucHoi) => void | Promise<void>;
+  /**
+   * ★★ Đợt 7.1 — thiếu VRAM khi đổi ⇒ nhờ VRAM broker thu hồi hộ KHÁC (sidecar thị giác, model nhỏ rảnh) ĐÚNG phần
+   * thiếu rồi kiểm lại MỘT lần. Trả số byte đã thu. Vắng ⇒ hành vi cũ (từ chối `VRAM_KHONG_DU`). Broker không bao giờ
+   * giết :8091 (không có giấy phép — lưới `aiLlamaServerClient.napTrung.test.ts`).
+   */
+  thuHoiVram?: (thieuByte: number) => Promise<number>;
   /** PID ghi vào khoá + tệp tạm dừng (mặc định `process.pid`). */
   pid?: number;
   laPidSong?: (pid: number) => boolean;
@@ -574,7 +580,11 @@ export class DieuPhoiDoiModel {
    * Kiểm trước (đồng bộ với người gọi — từ chối ⇒ ném `LoiDoiModel`, không đụng gì), rồi chạy phần dài
    * ở nền. `xong` cho test/người gọi muốn chờ; router chỉ trả `id`.
    */
-  async batDau(tenModel: string, nguoi: string | null): Promise<{ id: string; xong: Promise<PhienDoiModel> }> {
+  /**
+   * `tuyChon.ben` (mặc định `true`): `false` = đổi TẠM cho bộ giám sát khe nặng (Đợt 7.1) — KHÔNG ghi lựa chọn bền,
+   * KHÔNG phủ env ⇒ model "nhà" (lựa chọn quản trị / `.env`) giữ nguyên nghĩa; khởi động lại / quay về đều về nhà.
+   */
+  async batDau(tenModel: string, nguoi: string | null, tuyChon: { ben?: boolean } = {}): Promise<{ id: string; xong: Promise<PhienDoiModel> }> {
     const env = this.d.env;
     if (env.LLAMA_SERVER_ENABLED !== "true" || !this.url()) throw new LoiDoiModel("TAT", "llama-server không bật trong cấu hình.");
     if (!laLoopback(this.url())) throw new LoiDoiModel("TAT", "llama-server không ở máy này (URL không loopback) — không đổi model từ xa được.");
@@ -636,12 +646,20 @@ export class DieuPhoiDoiModel {
         kvByte: moi.kv,
         coMeta: moi.coMeta,
       };
+      let daThuHoi = 0;
+      if (vram.canByte > vram.trongSauKhiDungByte && this.d.thuHoiVram) {
+        daThuHoi = await this.d.thuHoiVram(vram.canByte - vram.trongSauKhiDungByte).catch(() => 0);
+        const dv2 = daThuHoi > 0 ? await this.d.docVram().catch(() => null) : null;
+        if (dv2 && dv2.totalBytes > 0) {
+          vram = { ...vram, trongSauKhiDungByte: dv2.totalBytes - dv2.usedBytes + Math.min(traLai, dv2.usedBytes), dungByte: dv2.usedBytes };
+        }
+      }
       if (vram.canByte > vram.trongSauKhiDungByte) {
         const g = (b: number) => (b / GiB).toFixed(1);
         throw new LoiDoiModel(
           "VRAM_KHONG_DU",
           `${tenModel} cần ≈ ${g(vram.canByte)} GiB (trọng số ${g(moi.trongSo)} + KV ${g(moi.kv)} + phụ phí ${g(moi.phuPhi)} + đệm), ` +
-            `card còn ≈ ${g(vram.trongSauKhiDungByte)} GiB sau khi dừng model hiện tại — không vừa.`,
+            `card còn ≈ ${g(vram.trongSauKhiDungByte)} GiB sau khi dừng model hiện tại${daThuHoi > 0 ? ` (đã nhờ broker thu hồi ${g(daThuHoi)} GiB)` : ""} — không vừa.`,
         );
       }
     } catch (e) {
@@ -676,7 +694,7 @@ export class DieuPhoiDoiModel {
       "xong",
       `cần ≈ ${(vram.canByte / GiB).toFixed(1)} GiB / trống sau dừng ≈ ${(vram.trongSauKhiDungByte / GiB).toFixed(1)} GiB${vram.coMeta ? "" : " (không đọc được header GGUF — KV ước 8 GiB)"}`,
     );
-    const xong = this.chayNen(phien, khoa.token);
+    const xong = this.chayNen(phien, khoa.token, tuyChon.ben !== false);
     return { id: phien.id, xong };
   }
 
@@ -688,7 +706,7 @@ export class DieuPhoiDoiModel {
     x.luc = new Date(this.d.bayGio()).toISOString();
   }
 
-  private async chayNen(p: PhienDoiModel, tokenKhoa: string): Promise<PhienDoiModel> {
+  private async chayNen(p: PhienDoiModel, tokenKhoa: string, ben = true): Promise<PhienDoiModel> {
     const env = this.d.env;
     const url = this.url();
     const mong = this.mong();
@@ -800,6 +818,15 @@ export class DieuPhoiDoiModel {
       }
       p.sinhThu = { chu: st.chu, ms: st.ms };
       this.datBuoc("sinh-thu", "xong", `"${st.chu}" sau ${st.ms} ms`);
+
+      // Đổi TẠM (Đợt 7.1): không chốt, không phủ env — model nhà giữ nguyên nghĩa.
+      if (!ben) {
+        this.datBuoc("ghi-lua-chon", "bo-qua", "đổi tạm (khe nặng) — không chốt lựa chọn bền");
+        this.datBuoc("ap-dung", "bo-qua", "đổi tạm — env giữ model nhà");
+        this.datBuoc("quay-ve", "bo-qua", null);
+        p.ketQua = "thanh-cong";
+        return p;
+      }
 
       // 10. CHỐT lựa chọn bền — chỉ tới đây khi /props + sinh thử đạt. Ghi nguyên tử: hỏng ⇒ tệp y nguyên.
       const tho = docNoiDungTho(dLuaChon);
@@ -943,6 +970,10 @@ export function layDieuPhoiDoiModel(khiKetThuc?: (p: PhienDoiModel) => void | Pr
     duongKhoaGiamSat: cfg.duongKhoa,
     khiKetThuc,
     khiPhucHoi: ghiPhucHoiMacDinh,
+    thuHoiVram: async (thieuByte) => {
+      const { preempt } = await import("../vram/vramPreempt");
+      return (await preempt("interactive", thieuByte)).freedBytes;
+    },
   });
   return macDinh;
 }

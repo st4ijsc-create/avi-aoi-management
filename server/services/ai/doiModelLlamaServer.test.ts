@@ -419,6 +419,61 @@ async function choBuoc(dp: DieuPhoiDoiModel, buoc: string, trangThai = "dang-cha
   throw new Error(`không tới bước ${buoc}:${trangThai}`);
 }
 
+describe("★★ Đợt 7.1 — đổi TẠM (khe nặng) + nhờ broker khi thiếu VRAM", () => {
+  it("ben:false thành công ⇒ KHÔNG ghi lựa chọn bền, KHÔNG phủ env; server chạy model mới", async () => {
+    const m = dungMoiTruong();
+    const { xong } = await new DieuPhoiDoiModel(m.d).batDau("Moi.gguf", "khe-nang", { ben: false });
+    const kq = await xong;
+    expect(kq.ketQua).toBe("thanh-cong");
+    expect(m.s.model).toBe("Moi.gguf");
+    expect(m.nhatKy.kichBan).toEqual(["-Force -Model Moi.gguf"]);
+    expect(docLuaChon(duongLuaChon(m.env)), "lựa chọn bền không được ghi").toBeNull();
+    expect(m.env.LLAMA_SERVER_MODEL).toBe("Cu.gguf");
+    expect(m.env.GGUF_DEFAULT_MODEL).toBe("Cu.gguf");
+    expect(kq.buoc.find((b) => b.buoc === "ghi-lua-chon")?.trangThai).toBe("bo-qua");
+    expect(kq.buoc.find((b) => b.buoc === "ap-dung")?.trangThai).toBe("bo-qua");
+    expect(fs.existsSync(m.duongTamDung)).toBe(false);
+    expect(fs.existsSync(m.d.duongKhoaDoi)).toBe(false);
+  });
+
+  it("ben:false hỏng sinh thử ⇒ quay về model ĐÃ CHỐT (nhà)", async () => {
+    const m = dungMoiTruong();
+    m.s.sinhHong = true;
+    const kq = await (await new DieuPhoiDoiModel(m.d).batDau("Moi.gguf", "khe-nang", { ben: false })).xong;
+    expect(kq.ketQua).toBe("that-bai-da-quay-ve");
+    expect(m.s.model).toBe("Cu.gguf");
+  });
+
+  // Cu 10 GiB, Moi 22 GiB: cần ≈ 22 + KV 1,25 + phụ phí 3 + đệm 0,5 ≈ 26,75 GiB; trống sau dừng ≈ 32 − 26 + 14,25 = 20,25.
+  const kichThuoc = (p: string) => (p.endsWith("Cu.gguf") ? 10 * GiB : 22 * GiB);
+
+  it("thiếu VRAM + broker thu hồi đủ ⇒ đổi tiếp", async () => {
+    let used = 26 * GiB;
+    const xin: number[] = [];
+    const m = dungMoiTruong({
+      kichThuocTep: kichThuoc,
+      docVram: async () => ({ usedBytes: used, totalBytes: 32 * GiB }),
+      thuHoiVram: async (thieu) => {
+        xin.push(thieu);
+        used -= 8 * GiB;
+        return 8 * GiB;
+      },
+    });
+    const kq = await (await new DieuPhoiDoiModel(m.d).batDau("Moi.gguf", "khe-nang", { ben: false })).xong;
+    expect(kq.ketQua).toBe("thanh-cong");
+    expect(xin).toHaveLength(1);
+    expect(xin[0] / GiB).toBeGreaterThan(6);
+    expect(xin[0] / GiB).toBeLessThan(7);
+  });
+
+  it("thiếu VRAM + broker không thu được gì ⇒ VRAM_KHONG_DU, không chạm server", async () => {
+    const m = dungMoiTruong({ kichThuocTep: kichThuoc, thuHoiVram: async () => 0 });
+    await expect(new DieuPhoiDoiModel(m.d).batDau("Moi.gguf", "khe-nang", { ben: false })).rejects.toMatchObject({ code: "VRAM_KHONG_DU" });
+    expect(m.nhatKy.kichBan).toEqual([]);
+    expect(fs.existsSync(m.d.duongKhoaDoi)).toBe(false);
+  });
+});
+
 describe("AN TOÀN KHI SẬP — lựa chọn chỉ BỀN sau khi kiểm /props + sinh thử", () => {
   it("sập lúc kịch bản đang khởi động (server cũ đã bị giết) ⇒ lựa chọn bền VẪN là cũ; người đọc không phủ sang model chưa kiểm", async () => {
     const m = dungMoiTruong();
