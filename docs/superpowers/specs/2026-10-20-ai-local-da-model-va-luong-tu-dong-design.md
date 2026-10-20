@@ -1,6 +1,6 @@
 # Thiết kế: Đa model hoán đổi theo tác vụ + Luồng tự động hoá AI (kiểu n8n) trên AI Local
 
-Ngày: 2026-10-20 · Trạng thái: **ĐỀ XUẤT, chờ chủ dự án duyệt** · Phạm vi: AI Local (uỷ quyền 2026-10-14)
+Ngày: 2026-10-20 · Trạng thái: **ĐÃ DUYỆT (D1–D5, 2026-10-20) · pha 7.0 XONG** · Phạm vi: AI Local (uỷ quyền 2026-10-14)
 
 Đầu vào:
 - Hiện trạng repo (khảo sát 2026-10-20 trên `feat/ai-local-L7-hang-rao` và worktree `_ai7_wt` / `feat/ai-local-7-tang`).
@@ -191,6 +191,11 @@ CREATE TABLE public.ai_model_eval_runs (        -- mỗi lượt đo một profi
 );
 -- Lịch sử gán: ghi vào audit_logs (action 'ai.binding.change') + giữ bản ghi cũ (không UPDATE tại chỗ).
 ```
+
+**Hiện thực 7.0 khác bản phác trên ở hai điểm (mig `drizzle/0400_ai_model_registry.sql`):** (1) gán trỏ **đúng một
+trong** `profileId` | `envKey` — gán seed là *theo-env* (đi theo khoá `.env` + lựa chọn quản trị của
+`luaChonModelLlamaServer`), nên đổi model qua `doiModelLlamaServer` không làm sổ lệch; (2) lịch sử gán bằng `retiredAt`
+(không sửa tại chỗ), UNIQUE một phần `(roleId, scopeKind, COALESCE(scopeId,''), mode) WHERE retiredAt IS NULL`.
 
 Khởi tạo: tác vụ `dongBoSoModel` quét `GGUF_MODELS_DIR`, đọc header GGUF (đã có trong `doiModelLlamaServer`), tạo
 artifact; seed vai trò + gán **khớp đúng `.env` hiện tại** ⇒ ngày đầu hành vi không đổi (bất biến kiểm bằng lưới:
@@ -555,6 +560,7 @@ thiết kế này không mở lại.
 | Pha | Nội dung | Cổng ra (số) |
 |---|---|---|
 | **7.0** | Sổ model + vai trò + gán seed khớp `.env`; định tuyến tầng 1–3; `/v1/models` liệt kê vai trò | Lưới tương đương: mọi tier cũ → cùng model (100 %); H không tụt ngoài ±3 |
+| ↳ **kết quả 7.0 (2026-10-20)** | ĐẠT | Bất biến tương đương 5 bộ env × mọi vai trò sinh chữ = `resolveTaskModel` (ảnh seed và ảnh rỗng); tên logic cũ + passthrough tên tệp không đổi (59 + 11 + 9 ca cũ xanh); H 12×3 **không chạy** — đường sinh chữ cũ không đổi byte, chỉ thêm nhánh cho tên vai trò. Sống trên :3012: `/v1/models` bày 6 vai trò sinh chữ; `model:"code.plc"` trả lời qua :8091 trong 15,7 s, engine từ chối nạp bản 35B thứ hai trong tiến trình. Kho GGUF: +12 artifact. Mig 0400 áp test + dev, nghiệm thu avi_app đạt. |
 | **7.1** | Bộ giám sát: hàng đợi ái lực, lưu trú tối thiểu, nhận nuôi :8091 vào broker, fail‑closed có thông báo | Kịch bản xen kẽ 2 vai trò ×30 yêu cầu: số lần đổi khe ≤ số "đợt" thật + 1; interactive không chờ sau nền; giết server giữa đổi ⇒ phục hồi ≤ 90 s; broker `snapshot` có lease :8091 |
 | **7.2** | Bộ đo `plc-st-v1` (24 + 6 giữ lại) + toolchain MATIEC/RuSTy + mô phỏng OpenPLC | Thước tự kiểm: lời giải tham chiếu 30/30 qua; lời giải đột biến bị bắt ≥ 90 % (đo thước trước khi đo model) |
 | **7.3** | Đo ứng viên `code.plc`, gán qua quy trình thu → active; định tuyến tầng 4 (ngữ nghĩa) | Gán được chọn ≥ gán cũ ngoài nhiễu trên `plc-st-v1`; tầng 4 đúng vai trò ≥ 90 % trên 100 câu nhãn tay, câu dưới ngưỡng rơi về mặc định |
@@ -585,19 +591,33 @@ Phụ thuộc: 7.0 → 7.1 → (7.2 ∥ 8.0) → 7.3 · 8.1 → 8.2 → 8.3 → 
 
 ---
 
-## 8. Quyết định cần chủ dự án
+## 8. Quyết định của chủ dự án (2026-10-20)
 
-Thiết kế nằm trong uỷ quyền AI Local; các điểm dưới đây **thêm phạm vi** nên xin xác nhận trước khi làm:
-
-| # | Câu hỏi | Đề xuất |
+| # | Câu hỏi | Trả lời |
 |---|---|---|
-| D1 | Thêm Đợt 7 (Đa model) + Đợt 8 (Luồng AI) vào kế hoạch 7 tầng | Đồng ý; chạy sau khi Đợt 2–4 hiện tại đóng cổng |
-| D2 | Xây Luồng AI trong nhà trên FOE (không nhúng n8n/Activepieces) | Đồng ý (lý do §4.1) |
-| D3 | Dải migration mới cho AI Local | 0400–0419 (cần báo phiên engineering) |
-| D4 | Luồng có được chạm OT ở bản đầu không | Chỉ `ot.docTag` + đề xuất ở chế độ mô phỏng; mở thật là quyết định riêng sau |
-| D5 | Tải model ứng viên cho `code.plc` (DeepSeek‑Coder‑V2‑Lite ~10 GB…) | Đồng ý tải để đo; gán active chỉ khi thắng trên `plc-st-v1` và giấy phép rõ |
+| D1 | Thêm Đợt 7 (Đa model) + Đợt 8 (Luồng AI) vào kế hoạch 7 tầng | **Đồng ý** |
+| D2 | Xây Luồng AI trong nhà trên FOE | **Đồng ý** |
+| D3 | Dải migration AI Local mới | **0400–0419** |
+| D4 | Luồng chạm OT bản đầu | **Chỉ đọc + đề xuất ở chế độ mô phỏng** |
+| D5 | Model cho `code.plc` | **Được tải về đo, hoặc chọn model khác mạnh về tự động hoá theo khuyến nghị** |
 
----
+### 8.1 Khuyến nghị D5 — danh sách ứng viên đo cho `code.plc` (thứ tự đo)
+
+Không có benchmark công bố nào so các model mở trên ST trên cùng một bộ đo (§9.4). Một nghiên cứu về kỹ thuật prompt
+(LLM‑PLC‑AS, 21 kỹ thuật trên ST/IL) ghi DeepSeek là bộ sinh "đáng tin nhất" — nhưng đó là model DeepSeek bản lớn qua API,
+không phải bản chạy được trên 32 GB. Vì vậy chọn theo bộ đo `plc-st-v1`, với ứng viên:
+
+| # | Model | Vì sao đưa vào | Trạng thái |
+|---|---|---|---|
+| 1 | **Qwen3.6-35B-A3B** (đang chạy) | Nền so sánh; đã đạt H 86 % ở phần mềm | trên đĩa |
+| 2 | **Qwen3.6-27B (dense), nghĩ BẬT** | Đúng nhất trong số đã đo ở dự án này (92 % bộ khó 2026-09-22, chậm 82 s/bài — chậm không phải lý do loại) | **đã xoá 2026-10-17 ⇒ tải lại** |
+| 3 | **Devstral Small 2 (24B dense)** | Model lập trình mở mạnh nhất ngoài họ Qwen năm 2026 theo các bảng tổng hợp (SWE-bench Verified 68 % do hãng khai) — đối chứng khác họ | tải; kiểm giấy phép |
+| 4 | **DeepSeek-Coder-V2-Lite-Instruct (16B/2,4B active)** | Đại diện DeepSeek chạy được cục bộ; đã cũ (2024) — giữ làm đối chứng theo yêu cầu ban đầu | tải; **kiểm DeepSeek License thương mại** |
+| 5 | Qwen3-Coder-30B-A3B | Có sẵn; số đo ngẫu nhiên 11 % ⇒ chỉ chạy nếu thời gian cho phép | trên đĩa |
+
+Khuyến nghị thực chất: **giá trị lớn nhất cho `code.plc` nằm ở vòng kiểm (MATIEC/RuSTy + mô phỏng OpenPLC), không ở tên
+model** — LLM4PLC tăng 47→72 % nhờ vòng kiểm; SemaPLC +17 điểm nhờ hoàn thành có cổng. Tải model ở pha 7.3, sau khi
+thước `plc-st-v1` tự kiểm xong (7.2) — đo model trên thước chưa kiểm là lớp lỗi dự án đã gặp nhiều lần.
 
 ## 9. Nguồn tham khảo
 

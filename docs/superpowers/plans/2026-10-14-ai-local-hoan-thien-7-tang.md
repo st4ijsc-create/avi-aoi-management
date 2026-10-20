@@ -104,6 +104,18 @@ FIM ≥ nền trên tập giữ lại; 0 lượt ghi ngoài workspace; lưới c
 API đổi model có kiểm `/props` thay cho `doi-model.ps1` (công cụ đo, không dùng cho sản phẩm); server nhỏ thứ hai (Q5);
 model lên NVMe; dọn ổ C:; dọn kho model không dùng (~89 GB).
 
+### Đợt 7 — Đa model hoán đổi theo vai trò (M) — thêm 2026-10-20 (D1)
+Spec `docs/superpowers/specs/2026-10-20-ai-local-da-model-va-luong-tu-dong-design.md` §3, kế hoạch pha 7.0
+`docs/superpowers/plans/2026-10-20-ai-local-dot7-pha0-so-model-vai-tro.md`. Pha: 7.0 sổ model + vai trò + định tuyến
+tầng 1–3 (**XONG 2026-10-20**) · 7.1 bộ giám sát khe nặng (hàng đợi ái lực, :8091 vào VRAM broker) · 7.2 bộ đo
+`plc-st-v1` + toolchain ST · 7.3 đo ứng viên `code.plc` + định tuyến ngữ nghĩa · 7.4 Trung tâm Model (UI).
+Giữ Q5 (1 × 64k): không thêm llama-server.
+
+### Đợt 8 — Luồng AI kiểu n8n, xây trong nhà trên FOE (L) — thêm 2026-10-20 (D1, D2, D4)
+Spec cùng tệp §4. Pha 8.0 tách `shared/flow` + hàng đợi Postgres bền · 8.1 node lõi + 3 mẫu luồng · 8.2 phân hạng tác dụng
+phụ + bí mật + runner cách ly · 8.3 Flow Studio · 8.4 `ai.agent` + `ai.sinhMa` + MCP + mô tả → luồng · 8.5 node OT chế độ
+mô phỏng (D4). Dải migration 0400–0419 (D3).
+
 ## 3. Thứ tự và phụ thuộc
 
 ```
@@ -111,6 +123,8 @@ Q1 (ngay) ─► Đợt 0 ─► Đợt 1 ─┬─► Đợt 2 ─► Đợt 3
                               ├─► Đợt 4 (4.3 ghost-text làm được ngay sau Đợt 0)
                               └─► Đợt 6
                     Đợt 2 + 5.1 ─► Đợt 5
+         Đợt 1 ─► Đợt 7 (7.0 ─► 7.1 ─► 7.2 ∥ 8.0 ─► 7.3 ─► 7.4)
+         Đợt 1 + 7.0 ─► Đợt 8 (8.0 ─► 8.1 ─► 8.2 ─► 8.3 ─► 8.4 ─► 8.5)
 ```
 
 ## 4. Mức kỳ vọng sau từng đợt (dự kiến, đo lại ở mỗi cổng)
