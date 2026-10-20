@@ -16,7 +16,7 @@ export const NodeInstanceSchema = z.object({
   parameters: z.record(z.string(), z.unknown()).default({}),
   credentialRef: z.string().max(64).optional(),
   retry: z.object({ max: z.number().int().min(0).max(10), backoffMs: z.number().int().min(0).max(600_000) }).optional(),
-  onError: z.enum(["dung", "tiep-tuc", "nhanh-loi"]).optional(),
+  khiLoi: z.enum(["dung", "tiep-tuc", "nhanh-loi"]).optional(),
   disabled: z.boolean().optional(),
 });
 export type NodeInstance = z.infer<typeof NodeInstanceSchema>;

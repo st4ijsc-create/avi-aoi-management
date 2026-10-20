@@ -32,13 +32,13 @@ chờ đủ cổng), sổ đăng ký node. Mig 0401.
 2. Worker chết sau khi node `atMostOnce` BẮT ĐẦU nhưng trước khi ghi xong ⇒ KHÔNG chạy lại; bước thành `khong-ro`, run `loi` có lý do.
 3. Biểu thức truy cập `constructor`/`__proto__` hoặc gọi hàm ngoài danh sách ⇒ lỗi biểu thức có thông điệp, không ném lỗi JS lạ.
 4. Đồ thị có chu trình / nối tới node không tồn tại / không có node kích hoạt ⇒ `kiemLuong` từ chối, không lưu phiên bản.
-5. Node ném lỗi ⇒ thử lại theo `retry` của node rồi mới `loi`; `onError: "tiep-tuc"` ⇒ item lỗi đi cổng `loi`.
+5. Node ném lỗi ⇒ thử lại theo `retry` của node rồi mới `loi`; `khiLoi: "tiep-tuc"` ⇒ item lỗi đi cổng `loi`.
 
 ---
 
 ### Task 1: Mô hình + kiểm hợp lệ — `shared/flow/model.ts`
 Zod: `FlowDefinition`, `NodeInstance` (id `^[a-zA-Z0-9_-]{1,64}$`, `type`, `typeVersion`, `parameters`, `retry?`,
-`onError?`, `disabled?`), `Connection` (`from:{node,port}`, `to:{node,port}`), `Item {json, binary?}`.
+`khiLoi?`, `disabled?`), `Connection` (`from:{node,port}`, `to:{node,port}`), `Item {json, binary?}`.
 `kiemLuong(def, dangKy: (type) => KhaiBaoNode | undefined): { ok, loi: string[] }` — id duy nhất; type đã đăng ký;
 cổng tồn tại theo khai báo; ≥ 1 node kích hoạt; không chu trình (`validateDag` trên cạnh); node `disabled` vẫn được nối.
 Test: hợp lệ; trùng id; type lạ; cổng lạ; không trigger; chu trình.

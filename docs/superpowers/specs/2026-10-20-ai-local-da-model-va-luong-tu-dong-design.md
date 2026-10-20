@@ -400,7 +400,7 @@ export interface NodeInstance {
   name: string; position: [number, number];
   parameters: Record<string, unknown>;            // giá trị có thể là biểu thức {{ ... }}
   credentialRef?: string;                         // chỉ id, không bao giờ giá trị
-  retry?: { max: number; backoffMs: number }; onError?: 'dung' | 'tiep-tuc' | 'nhanh-loi';
+  retry?: { max: number; backoffMs: number }; khiLoi?: 'dung' | 'tiep-tuc' | 'nhanh-loi';
   disabled?: boolean;
 }
 export type PortType = 'main' | 'ai.model' | 'ai.tool' | 'ai.memory' | 'ai.retriever';

@@ -222,7 +222,7 @@ export async function ketThucBuoc(
         return;
       }
       await tx.delete(aiFlowQueue).where(eq(aiFlowQueue.id, muc.id));
-      if ((nut.onError ?? "dung") === "dung") {
+      if ((nut.khiLoi ?? "dung") === "dung") {
         await dongRun(tx, muc.runId, "loi", { nodeId: muc.nodeId, thongDiep });
         return;
       }
