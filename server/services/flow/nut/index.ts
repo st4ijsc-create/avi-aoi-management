@@ -1,0 +1,2 @@
+/** Nạp mọi nhóm node (đăng ký là tác dụng phụ của import). Động cơ import tệp này một lần. */
+import "./ai";

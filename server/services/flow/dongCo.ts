@@ -20,6 +20,7 @@ import { getDb } from "../../db/connection";
 import { kiemLuong, type FlowDefinition } from "../../../shared/flow/model";
 import type { ItemLuong } from "../../../shared/flow/bieuThuc";
 import { layNut, type KetQuaChay, type NguCanhChay } from "./dangKyNut";
+import "./nut";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
