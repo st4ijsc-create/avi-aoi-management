@@ -494,7 +494,12 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   `writeProcedure.use(moduleGate("MOD_AI"))` (mô tả tiếng Việt ⇒ model `code.software` qua Cổng AI ⇒ BẢN NHÁP FlowDefinition;
 //   không ghi CSDL, không bật) — CÓ cổng MOD_AI từ lượt sinh ra. aiMienTru / ngoaiAiCoCong / mọi SKU khác KHÔNG đổi. Đo trước
 //   (đỏ đúng +1 ở ba ô trên) / sau. `tong` 2383 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2383, beMatAi: 430, aiCoCong: 368, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+// ★★ 2026-10-20 (AI Local Đợt 8.5 — node OT chế độ mô phỏng) — **tong 2383 → 2384 · beMatAi 430 → 431 · aiCoCong 368 → 369.**
+//   Lời khai: `server/routers/flowRouter.ts` (đã ở `FILE_AI_TUONG_MINH`) mọc MỘT mutation `batLuongOt` trên
+//   `deployProcedure.use(moduleGate("MOD_AI"))` (bật phiên bản luồng hạng `ot` = admin + 2FA mới; vai + hạng kiểm ở
+//   `meta.chanTruocStepUp` trước OTP) — CÓ cổng MOD_AI từ lượt sinh ra. aiMienTru / ngoaiAiCoCong / mọi SKU khác KHÔNG đổi.
+//   Đo trước (đỏ đúng +1 ở ba ô trên) / sau. `tong` 2384 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2384, beMatAi: 431, aiCoCong: 369, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

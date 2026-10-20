@@ -826,7 +826,13 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // (side-effect class of referenced sub-flows — a machine-wide automation registry, no tenant column filled) and writes nothing
 // ⇒ D (+1, classified by procedure kind). Measured before (red by exactly +1 D) / after. No baseline row added. `tong` 2383
 // matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 333, B: 8, C: 500, D: 1185, S: 357, tong: 2383 } as const;
+// ★★ 2026-10-20 (AI Local Đợt 8.5 — node OT chế độ mô phỏng) — **D 1185 → 1186 · tong 2383 → 2384 · A/B/C/S unchanged.** One NEW
+// procedure in `server/routers/flowRouter.ts`: mutation `flow.batLuongOt` (floor `deployProcedure.use(moduleGate("MOD_AI"))` =
+// actuation roles + require2FA + fresh per-call OTP when step-up is on, plus `meta.chanTruocStepUp` = admin + version class `ot`,
+// read-only, before any OTP is spent) — enables an `ot`-class flow version (spec §4.6: admin + fresh TOTP). It writes only
+// `ai_flows` (machine-wide automation registry, no tenant column filled) ⇒ D (+1, classified by procedure kind). Measured
+// before (red by exactly +1 D) / after. No baseline row added. `tong` 2384 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 333, B: 8, C: 500, D: 1186, S: 357, tong: 2384 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

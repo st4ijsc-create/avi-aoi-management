@@ -22,7 +22,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { router, moduleProcedure, moduleGate, writeProcedure, adminProcedure } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, writeProcedure, adminProcedure, deployProcedure } from "../_core/trpc";
 import { appError } from "../_core/appError";
 import { getDb } from "../db/connection";
 import { aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../drizzle/schema";
@@ -33,10 +33,36 @@ import { danhSachNut, layNut } from "../services/flow/dangKyNut";
 import { kiemThamSoKichHoat, napLaiLich } from "../services/flow/kichHoat/lich";
 import { capTokenWebhook, coNodeWebhook, coTokenWebhook } from "../services/flow/kichHoat/webhook";
 import { LOAI_BI_MAT, LoiBiMat, lietKeBiMat, taoBiMat, xoaBiMat } from "../services/flow/biMat";
+import { ketQuaSauDuyetMoPhong, laDeXuatOtLuong } from "../services/flow/ot/congOtLuong";
 
 const xemProcedure = moduleProcedure("MOD_AI");
 const ghiProcedure = writeProcedure.use(moduleGate("MOD_AI"));
 const adminAiProcedure = adminProcedure.use(moduleGate("MOD_AI"));
+
+/**
+ * ★★★ Đợt 8.5 — sàn bật luồng hạng `ot` = **admin + 2FA mới**, ĐÚNG thủ tục có sẵn cho deploy: `deployProcedure` (sàn vai
+ * actuation + require2FA + step-up OTP tươi MỖI lượt gọi khi `ACTUATION_STEPUP_2FA` bật) + cổng giấy phép MOD_AI. Vai admin và
+ * hạng `ot` của phiên bản được kiểm ở `meta.chanTruocStepUp` — CHỈ ĐỌC, chạy TRƯỚC khi tiêu OTP (kỹ sư bị từ chối mà không
+ * đốt mã của mình).
+ */
+const batOtProcedure = deployProcedure.use(moduleGate("MOD_AI"));
+
+const RE_ID_OT = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** Cổng TRƯỚC step-up của `batLuongOt`: admin, và phiên bản tồn tại + hạng `ot`. Đọc raw input (chưa qua zod) — tự kiểm kiểu. */
+async function chanTruocBatLuongOt({ ctx, rawInput }: { ctx: { user?: { role?: string } | null }; rawInput: unknown }): Promise<void> {
+  if (ctx.user?.role !== "admin") {
+    throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowKichHoatHangCao" }, "Luồng hạng ot chỉ quản trị viên (kèm 2FA) được bật.");
+  }
+  const r = rawInput as { flowId?: unknown; version?: unknown } | null | undefined;
+  if (!r || typeof r.flowId !== "string" || !RE_ID_OT.test(r.flowId) || typeof r.version !== "number" || !Number.isInteger(r.version) || r.version < 1) {
+    throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowKichHoat" }, "Thiếu flowId/version hợp lệ.");
+  }
+  const db = await layDb("flowKichHoat");
+  const [v] = await db.select({ riskClass: aiFlowVersions.riskClass }).from(aiFlowVersions).where(and(eq(aiFlowVersions.flowId, r.flowId), eq(aiFlowVersions.version, r.version)));
+  if (!v) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowKichHoat" }, `Không có luồng ${r.flowId}@${r.version}.`);
+  if (v.riskClass !== "ot") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowKichHoat" }, `Luồng ${r.flowId}@${r.version} hạng ${v.riskClass} — bật bằng datPhienBanHoatDong.`);
+}
 
 const RE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const flowIdSchema = z.string().regex(RE_ID);
@@ -162,6 +188,10 @@ export const flowRouter = router({
       const db = await layDb("flowKichHoat");
       const [v] = await db.select().from(aiFlowVersions).where(and(eq(aiFlowVersions.flowId, input.flowId), eq(aiFlowVersions.version, input.version)));
       if (!v) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowKichHoat" }, `Không có luồng ${input.flowId}@${input.version}.`);
+      if (input.bat && v.riskClass === "ot") {
+        // Đợt 8.5 — hạng `ot` CHỈ bật qua `batLuongOt` (admin + 2FA mới); thủ tục này không còn là đường vòng.
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowKichHoatHangCao" }, "Luồng hạng ot chỉ bật qua batLuongOt (quản trị viên + mã 2FA).");
+      }
       if (input.bat && laHangCao(v.riskClass) && ctx.user.role !== "admin") {
         throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowKichHoatHangCao" }, `Luồng hạng ${v.riskClass} chỉ quản trị viên được bật.`);
       }
@@ -173,6 +203,28 @@ export const flowRouter = router({
       if (input.bat && coNodeWebhook(v.definition as FlowDefinition)) tokenWebhook = await capTokenWebhook(input.flowId, input.xoayToken === true);
       await napLaiLich();
       return { flowId: input.flowId, version: input.version, bat: input.bat, hang: v.riskClass, tokenWebhook };
+    }),
+
+  /**
+   * ★★★ Đợt 8.5 — BẬT một phiên bản hạng `ot`: admin + 2FA mới (`deployProcedure`: OTP tươi mỗi lượt khi step-up bật). Node OT
+   * ở 8.5 chỉ ĐỀ XUẤT ở chế độ mô phỏng; cổng này vẫn là sàn của hạng `ot` (spec §4.6).
+   */
+  batLuongOt: batOtProcedure
+    .meta({ chanTruocStepUp: chanTruocBatLuongOt })
+    .input(z.object({ flowId: flowIdSchema, version: z.number().int().min(1), totpCode: z.string().regex(/^\d{6}$/) }))
+    .mutation(async ({ input }) => {
+      const db = await layDb("flowKichHoat");
+      const [v] = await db.select().from(aiFlowVersions).where(and(eq(aiFlowVersions.flowId, input.flowId), eq(aiFlowVersions.version, input.version)));
+      if (!v) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowKichHoat" }, `Không có luồng ${input.flowId}@${input.version}.`);
+      if (v.riskClass !== "ot") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowKichHoat" }, `Luồng ${input.flowId}@${input.version} không phải hạng ot.`);
+      await db
+        .update(aiFlows)
+        .set({ activeVersion: input.version, enabled: true, updatedAt: sql`now()` })
+        .where(eq(aiFlows.id, input.flowId));
+      let tokenWebhook: string | null = null;
+      if (coNodeWebhook(v.definition as FlowDefinition)) tokenWebhook = await capTokenWebhook(input.flowId, false);
+      await napLaiLich();
+      return { flowId: input.flowId, version: input.version, bat: true, hang: v.riskClass, tokenWebhook };
     }),
 
   /**
@@ -191,6 +243,10 @@ export const flowRouter = router({
       const [v] = await db.select().from(aiFlowVersions).where(and(eq(aiFlowVersions.flowId, input.flowId), eq(aiFlowVersions.version, version)));
       if (!v) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowChayTay" }, `Không có phiên bản ${version}.`);
       const daBat = f.enabled && f.activeVersion === version;
+      if (!daBat && v.riskClass === "ot") {
+        // Đợt 8.5 — chạy thử một phiên bản `ot` chưa bật = bỏ qua cổng admin + 2FA ⇒ từ chối mọi vai.
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowKichHoatHangCao" }, "Luồng hạng ot phải được bật (batLuongOt: quản trị viên + mã 2FA) trước khi chạy.");
+      }
       if (!daBat && laHangCao(v.riskClass) && ctx.user.role !== "admin") {
         throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowKichHoatHangCao" }, `Luồng hạng ${v.riskClass} chưa bật — chỉ quản trị viên được chạy thử.`);
       }
@@ -257,7 +313,7 @@ export const flowRouter = router({
     .input(z.object({ runId: z.string().uuid(), nodeId: z.string().regex(RE_ID), dongY: z.boolean(), lyDo: z.string().max(2000).optional() }))
     .mutation(async ({ input, ctx }) => {
       const db = await layDb("flowDuyet");
-      const [w] = (await db.execute(sql`SELECT kind FROM ai_flow_waits WHERE "runId" = ${input.runId} AND "nodeId" = ${input.nodeId}`)) as unknown as { kind: string }[];
+      const [w] = (await db.execute(sql`SELECT kind, payload FROM ai_flow_waits WHERE "runId" = ${input.runId} AND "nodeId" = ${input.nodeId}`)) as unknown as { kind: string; payload: unknown }[];
       if (!w) {
         const [xong] = (await db.execute(sql`SELECT 1 AS c FROM ai_flow_steps WHERE "runId" = ${input.runId} AND "nodeId" = ${input.nodeId} AND status = 'xong' LIMIT 1`)) as unknown as unknown[];
         if (xong) throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowDuyet" }, "Bước này đã được trả lời.");
@@ -267,7 +323,11 @@ export const flowRouter = router({
         runId: input.runId,
         nodeId: input.nodeId,
         cong: input.dongY ? "dong-y" : "tu-choi",
-        them: { duyet: { dongY: input.dongY, nguoi: ctx.user.id, lyDo: input.lyDo ?? null } },
+        them: {
+          duyet: { dongY: input.dongY, nguoi: ctx.user.id, lyDo: input.lyDo ?? null },
+          // Đợt 8.5 — đề xuất OT của Luồng: CHẾ ĐỘ MÔ PHỎNG, không có đường gửi — chỉ ghi kết quả giả lập.
+          ...(laDeXuatOtLuong(w.payload) ? ketQuaSauDuyetMoPhong(input.dongY) : {}),
+        },
       });
       if (!kq.ok) throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowDuyet" }, "Bước này đã được trả lời hoặc lượt đã kết thúc.");
       return kq;

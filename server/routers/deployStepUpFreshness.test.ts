@@ -264,6 +264,8 @@ const CALLER: Record<string, (phien: string) => Record<string, (i: unknown) => P
  */
 const PHU_O_LUOI_KHAC: Record<string, string> = {
   "server/routers/vramRouter.ts": "server/routers/vramStepUpFreshness.test.ts",
+  // AI Local Đợt 8.5 — `flow.batLuongOt`: kỹ sư / admin chưa 2FA / OTP sai-thiếu bị từ chối, admin + OTP được (CSDL `_test`).
+  "server/routers/flowRouter.ts": "server/routers/flowRouterOt.db.test.ts",
 };
 
 /** Các thủ tục deploy mà lưới NÀY gọi thật. */
@@ -321,6 +323,10 @@ describe("★★★ Pha 6 Task 1b — cầu chì của lượng từ", async () 
       "danh sách thủ tục đứng trên `deployProcedure` đã đổi",
     ).toBe(
       [
+        // ⚠ AI Local Đợt 8.5 (2026-10-20) — QUYẾT ĐỊNH NÓI RA: `flow.batLuongOt` (bật phiên bản Luồng AI hạng `ot`) đứng trên
+        //   `deployProcedure` — spec §4.6 "admin + TOTP mới (như deployProcedure)". Vai admin + hạng `ot` kiểm ở
+        //   `meta.chanTruocStepUp` (trước OTP). 8 → 9; lưới hành vi: `flowRouterOt.db.test.ts` (PHU_O_LUOI_KHAC).
+        "server/routers/flowRouter.ts#batLuongOt",
         "server/routers/orchestrationRouter.ts#deployWorkflow",
         "server/routers/orchestrationRouter.ts#rollbackWorkflow",
         "server/routers/programmingRouter.ts#approveDeployment",
