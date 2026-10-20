@@ -4034,7 +4034,12 @@
       "resolveEdgeStop": "记录停止指令的处理方式",
       "resolveWriteIntent": "为孤立写入记录未知结果",
       "listEdgeResolution": "查看待处理的停止指令和孤立写入",
-      "reviewLateWriteResult": "记录已审阅迟到的写入结果"
+      "reviewLateWriteResult": "记录已审阅迟到的写入结果",
+      "flowXem": "查看 AI 流程",
+      "flowLuu": "保存 AI 流程版本",
+      "flowKichHoat": "启用/停用 AI 流程",
+      "flowChayTay": "手动运行 AI 流程",
+      "flowDuyet": "审批 AI 流程步骤"
     },
     "field": {
       "holderUserId": "密钥的发放对象（必须是现有的在职用户）",
@@ -4276,7 +4281,8 @@
       "overrideUrHome": "通过指令设置 UR 机器人的 home 位置",
       "selfApproveProgramVersion": "批准自己的程序版本",
       "selfApproveSafetyPlcConfig": "对自己创建或修改的安全PLC配置作出决定",
-      "secondApproveOwnSafetyPlcConfig": "对您已作出首次批准的安全PLC配置进行第二次批准（需要两名不同的管理员）"
+      "secondApproveOwnSafetyPlcConfig": "对您已作出首次批准的安全PLC配置进行第二次批准（需要两名不同的管理员）",
+      "flowKichHoatHangCao": "启用对外写入或涉及 OT 的流程（仅管理员）"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",

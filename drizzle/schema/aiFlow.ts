@@ -118,3 +118,13 @@ export const aiFlowWaits = pgTable(
   },
   (t) => [primaryKey({ columns: [t.runId, t.nodeId] })],
 );
+
+/**
+ * ★★ Đợt 8.1 Task 4b — TOKEN WEBHOOK theo luồng (migration `0402`). Chỉ lưu BĂM sha256 (hex 64); token thô trả cho người
+ * bật luồng ĐÚNG MỘT LẦN. Tuyến `POST /api/flow/webhook/:flowId/:nodeId` so băm thời gian hằng.
+ */
+export const aiFlowWebhooks = pgTable("ai_flow_webhooks", {
+  flowId: varchar("flowId", { length: 64 }).primaryKey().references(() => aiFlows.id, { onDelete: "cascade" }),
+  tokenHash: varchar("tokenHash", { length: 64 }).notNull(),
+  createdAt: tz("createdAt").defaultNow().notNull(),
+});

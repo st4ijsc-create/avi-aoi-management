@@ -445,6 +445,12 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
         "Đợt 4A device flow — chính là đường ĐẾN danh tính của extension (chưa có gì để trình). Thay thế xác thực: duyệt bằng PHIÊN WEB thật (tRPC `aiGatewayToken.quyetThietBi`), mã bí mật 32 byte chỉ lưu băm, 10 phút, dùng một lần, trần IP. Canh bởi `aiGatewayTokenThietBi.test.ts`.",
       soTuyen: 2,
     },
+    /* ★★ 2026-10-20 (AI Local Đợt 8.1 Task 4b) — WEBHOOK LUỒNG AI: bên gọi là HỆ THỐNG NGOÀI, không có phiên. */
+    "server/routes/flowWebhookApi.ts": {
+      viSao:
+        "Webhook Luồng AI (`/api/flow/webhook/:flowId/:nodeId`) — xác thực bằng TOKEN THEO LUỒNG (`x-flow-token`, 32 byte, CSDL chỉ giữ sha256 ở `ai_flow_webhooks` mig 0402, so thời gian hằng; sinh khi người có quyền bật luồng qua tRPC `flow.datPhienBanHoatDong`), không phải cookie phiên. Thiếu/sai token ⇒ 401 có mã. Trục này do `server/services/flow/kichHoat/webhook.db.test.ts` canh (HTTP thật).",
+      soTuyen: 1,
+    },
     "server/routes/edgeDownload.ts": {
       viSao: "Tải gói Edge — cưỡng chế bằng token tải một lần + `x-master-key`, trục khoá máy.",
       soTuyen: 1,
@@ -604,14 +610,16 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
       // Đợt 3c (2026-10-17): +1 AI Local — registerAiXemTruocRoutes (cửa vào xem trước), vào DA_GOI ⇒ 59.
       // Đợt 4B-server (2026-10-17): +1 — registerAiGatewayTokenBearerRoutes (sổ áp tệp ở client + tự thu hồi bằng Bearer
       // `avgw_`), vào DA_GOI (gọi thật ở beforeAll ⇒ §2 đo nó) ⇒ 60. Đo: chạy lưới trước/sau khi thêm registrar.
-    ).toBe(60);
+      // Đợt 8.1 Task 4b (2026-10-20): +1 — registerFlowWebhookRoutes (webhook Luồng AI, token theo luồng), khai NGOAI_PHAM_VI ⇒ 61.
+    ).toBe(61);
     expect(
       REGISTRAR.length,
       "số registrar TUYẾN EXPRESS đã đổi — một registrar tuyến mới vừa xuất hiện, hoặc vị từ đã bị nới",
       // 2026-10-17: 25 + 2 AI Local (aiAgentApi, aiGatewayTokenThietBi) + 1 engineering (edgeNodeRoutes) — cùng bộ ba ở trên.
       // Đợt 3c: +1 (aiXemTruocApi) ⇒ 29.
       // Đợt 4B-server: +1 (aiGatewayTokenBearerApi — nhận `app: express.Express`) ⇒ 30.
-    ).toBe(30);
+      // Đợt 8.1 Task 4b: +1 (flowWebhookApi — nhận `app: express.Express`) ⇒ 31.
+    ).toBe(31);
     expect(
       REGISTRAR.filter((d) => d.startsWith("server/_core/")).sort(),
       "ba registrar `_core/` mà bản trước KHÔNG BAO GIỜ thấy — chúng là lý do §6 được viết lại",

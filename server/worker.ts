@@ -42,6 +42,8 @@ khoiChayDongBoSoModel();
 // ⚠ Tiến trình worker KHÔNG tự đổi khe nặng (Đợt 7.1) ⇒ node AI cần model nặng khác model đang giữ sẽ nhận KHE_NANG_TAT.
 if (process.env.AI_FLOW_ENABLED === "true") {
   void import("./services/flow/worker").then(({ khoiChayWorkerLuong }) => khoiChayWorkerLuong());
+  // Đợt 8.1 Task 4a — bộ lập lịch Luồng AI (bầu chủ ⇒ an toàn khi API cũng khởi nó).
+  void import("./services/flow/kichHoat/lich").then(({ khoiChayLich }) => khoiChayLich());
 }
 
 runWorkerProcess().catch((err) => {

@@ -1,0 +1,84 @@
+{
+  "id": "mau-aoi-loi-lap-rca",
+  "name": "AOI lỗi lặp ⇒ RCA nháp ⇒ duyệt trưởng ca ⇒ tạo việc",
+  "version": 1,
+  "settings": { "uuTien": "background", "luuDuLieu": "day-du" },
+  "nodes": [
+    {
+      "id": "su-kien",
+      "type": "kich-hoat.webhook",
+      "typeVersion": 1,
+      "name": "Sự kiện lỗi AOI lặp (webhook tạm, chờ event bus nội bộ)",
+      "position": [0, 0],
+      "parameters": {}
+    },
+    {
+      "id": "rca",
+      "type": "ai.llm",
+      "typeVersion": 1,
+      "name": "Viết RCA nháp",
+      "position": [260, 0],
+      "parameters": {
+        "vaiTro": "chat",
+        "heThong": "Bạn là kỹ sư chất lượng SMT. Viết phân tích nguyên nhân gốc (RCA) NHÁP ngắn gọn bằng tiếng Việt: hiện tượng · nguyên nhân khả dĩ (xếp theo khả năng) · việc kiểm tra đề xuất. Không bịa số liệu không có trong dữ liệu.",
+        "loiNhac": "Máy {{ $json.may }} báo lỗi {{ $json.maLoi }} lặp {{ $json.soLan }} lần trong giờ qua (dòng sản phẩm: {{ $json.sanPham }}). Viết RCA nháp.",
+        "truongRa": "rcaNhap",
+        "maxTokens": 1200
+      }
+    },
+    {
+      "id": "duyet",
+      "type": "nguoi.duyet",
+      "typeVersion": 1,
+      "name": "Trưởng ca duyệt RCA",
+      "position": [520, 0],
+      "parameters": {
+        "tieuDe": "Duyệt RCA {{ $json.may }} · {{ $json.maLoi }}",
+        "noiDung": "{{ $json.rcaNhap }}",
+        "vaiTroDuyet": "supervisor",
+        "hetHanGio": 8
+      }
+    },
+    {
+      "id": "tao-viec",
+      "type": "du-lieu.dat",
+      "typeVersion": 1,
+      "name": "Tạo việc xử lý",
+      "position": [780, -80],
+      "parameters": {
+        "truong": {
+          "viec": {
+            "loai": "rca-aoi",
+            "tieuDe": "{{ 'Xử lý lỗi ' + $json.maLoi + ' trên ' + $json.may }}",
+            "moTa": "{{ $json.rcaNhap }}",
+            "trangThai": "can-xu-ly",
+            "nguoiDuyet": "{{ $json.duyet.nguoi }}"
+          }
+        }
+      }
+    },
+    {
+      "id": "bi-bac",
+      "type": "du-lieu.dat",
+      "typeVersion": 1,
+      "name": "RCA bị bác",
+      "position": [780, 80],
+      "parameters": { "truong": { "ketQua": "bi-bac", "lyDoBac": "{{ $json.duyet.lyDo }}" } }
+    },
+    {
+      "id": "qua-han",
+      "type": "du-lieu.dat",
+      "typeVersion": 1,
+      "name": "Quá hạn duyệt",
+      "position": [780, 200],
+      "parameters": { "truong": { "ketQua": "qua-han-duyet" } }
+    }
+  ],
+  "connections": [
+    { "from": { "node": "su-kien", "port": "main" }, "to": { "node": "rca", "port": "main" } },
+    { "from": { "node": "rca", "port": "main" }, "to": { "node": "duyet", "port": "main" } },
+    { "from": { "node": "duyet", "port": "dong-y" }, "to": { "node": "tao-viec", "port": "main" } },
+    { "from": { "node": "duyet", "port": "tu-choi" }, "to": { "node": "bi-bac", "port": "main" } },
+    { "from": { "node": "duyet", "port": "het-han" }, "to": { "node": "qua-han", "port": "main" } }
+  ]
+}

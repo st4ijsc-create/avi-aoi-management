@@ -48,6 +48,11 @@ export function layNut(type: string): DinhNghiaNut | undefined {
   return dangKy.get(type);
 }
 
+/** Mọi loại node đã đăng ký (danh mục cho Flow Studio — `flow.danhMucNode`). */
+export function danhSachNut(): DinhNghiaNut[] {
+  return [...dangKy.values()];
+}
+
 /** Chỉ lưới: gỡ một loại node thử nghiệm. */
 export function __goNutChoTest(type: string): void {
   dangKy.delete(type);

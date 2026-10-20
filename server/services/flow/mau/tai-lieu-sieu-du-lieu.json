@@ -1,0 +1,62 @@
+{
+  "id": "mau-tai-lieu-sieu-du-lieu",
+  "name": "Tài liệu ⇒ trích siêu dữ liệu",
+  "version": 1,
+  "settings": { "uuTien": "background", "luuDuLieu": "day-du" },
+  "nodes": [
+    {
+      "id": "nhan-tai-lieu",
+      "type": "kich-hoat.thu-cong",
+      "typeVersion": 1,
+      "name": "Nhận tài liệu (tên tệp + văn bản đã OCR)",
+      "position": [0, 0],
+      "parameters": {}
+    },
+    {
+      "id": "trich",
+      "type": "ai.trich-xuat",
+      "typeVersion": 1,
+      "name": "Trích siêu dữ liệu",
+      "position": [260, 0],
+      "parameters": {
+        "vaiTro": "extract",
+        "vanBan": "{{ $json.vanBan }}",
+        "truongRa": "sieuDuLieu",
+        "truong": [
+          { "ten": "tieuDe", "kieu": "chuoi", "batBuoc": true, "moTa": "tiêu đề tài liệu" },
+          { "ten": "maTaiLieu", "kieu": "chuoi", "moTa": "mã hiệu tài liệu, vd SOP-SMT-012" },
+          { "ten": "phienBan", "kieu": "chuoi" },
+          { "ten": "ngayBanHanh", "kieu": "chuoi", "moTa": "YYYY-MM-DD nếu có" },
+          { "ten": "tuKhoa", "kieu": "danh-sach", "moTa": "3–8 từ khoá" }
+        ]
+      }
+    },
+    {
+      "id": "phan-loai",
+      "type": "ai.phan-loai",
+      "typeVersion": 1,
+      "name": "Phân loại tài liệu",
+      "position": [520, 0],
+      "parameters": {
+        "vaiTro": "classify",
+        "vanBan": "{{ $json.vanBan }}",
+        "nhan": ["sop", "huong-dan-may", "bao-cao", "bieu-mau", "ban-ve"],
+        "huongDan": "sop = quy trình thao tác chuẩn; huong-dan-may = tài liệu vận hành/bảo trì thiết bị.",
+        "truongRa": "loaiTaiLieu"
+      }
+    },
+    {
+      "id": "cho-duyet-the",
+      "type": "du-lieu.dat",
+      "typeVersion": 1,
+      "name": "Đánh dấu chờ duyệt thẻ tri thức",
+      "position": [780, 0],
+      "parameters": { "truong": { "trangThaiThe": "cho-duyet" } }
+    }
+  ],
+  "connections": [
+    { "from": { "node": "nhan-tai-lieu", "port": "main" }, "to": { "node": "trich", "port": "main" } },
+    { "from": { "node": "trich", "port": "main" }, "to": { "node": "phan-loai", "port": "main" } },
+    { "from": { "node": "phan-loai", "port": "main" }, "to": { "node": "cho-duyet-the", "port": "main" } }
+  ]
+}

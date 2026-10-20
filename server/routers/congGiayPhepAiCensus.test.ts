@@ -64,6 +64,9 @@ const FILE_AI_TUONG_MINH = new Set([
   // `causalGraph` đã được `server/_core/moduleAccessMap.ts` khai là MOD_AI từ doc 38 (chỉ chưa nối
   // dây), và `/causal-graph` đã nằm trong `MOD_AI.routes`. Tên file không mang tiền tố `ai`.
   "server/routers/causalGraphRouter.ts",
+  // ★★ AI Local Đợt 8.1 — Luồng AI (`flow.*`): động cơ tự động hoá có node AI, thuộc SKU AI theo spec Đợt 8 §4. Tên file
+  // không mang tiền tố `ai` (router nằm ở khoá `flow`), nên khai TƯỜNG MINH — không thì §3 thấy MOD_AI "ngoài AI".
+  "server/routers/flowRouter.ts",
 ]);
 const laBeMatAi = (file: string): boolean =>
   /^server\/routers\/ai[A-Z]/.test(file) || FILE_AI_TUONG_MINH.has(file);
@@ -471,7 +474,12 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   `aiGgufRouter.ts` mọc hai mutation `soModelSuaArtifact` / `soModelTaoHoSo` trên CÙNG sàn `adminDoiModel` =
 //   `adminProcedure.use(moduleGate("MOD_AI"))` ⇒ CÓ cổng từ lượt sinh ra: `aiMienTru` KHÔNG đổi (62), `ngoaiAiCoCong` vẫn **0**.
 //   `tong` 2368 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2368, beMatAi: 415, aiCoCong: 353, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+// ★★ 2026-10-20 (AI Local Đợt 8.1 Task 5 — router `flow`, Luồng AI) — **tong 2368 → 2378 · beMatAi 415 → 425 · aiCoCong 353 → 363.**
+//   Lời khai: `server/routers/flowRouter.ts` (MỚI, khai vào `FILE_AI_TUONG_MINH`) có MƯỜI thủ tục — sáu query trên
+//   `moduleProcedure("MOD_AI")` (danhSach/chiTiet/lichSuChay/dongThoiGian/danhSachCho/danhMucNode) và bốn mutation trên
+//   `writeProcedure.use(moduleGate("MOD_AI"))` (luu/datPhienBanHoatDong/chayTay/duyet) — đều CÓ cổng MOD_AI. aiMienTru /
+//   ngoaiAiCoCong / mọi SKU khác KHÔNG đổi. Đo trước (xanh trên ghim cũ) / sau. `tong` 2378 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2378, beMatAi: 425, aiCoCong: 363, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

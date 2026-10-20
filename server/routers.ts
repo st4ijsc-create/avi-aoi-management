@@ -122,6 +122,7 @@ import { aiChatRouter } from "./routers/aiChatRouter";
 import { aiAnalysisHubRouter } from "./routers/aiAnalysisHubRouter";
 import { aiSettingsRouter } from "./routers/aiSettingsRouter";
 import { aiGgufRouter } from "./routers/aiGgufRouter";
+import { flowRouter } from "./routers/flowRouter"; // ★★ AI Local Đợt 8.1 — Luồng AI (kiểu n8n)
 import { vramRouter } from "./routers/vramRouter"; // Pha 4 Task 1: mặt ĐỌC trạng thái VRAM cho AI Agent
 import { aiInspectionAnalyticsRouter } from "./routers/aiInspectionAnalyticsRouter";
 import { aiAdvancedVisionRouter } from "./routers/aiAdvancedVisionRouter";
@@ -753,6 +754,8 @@ export const appRouter = router({
   aiSettings: aiSettingsRouter,
   // AI GGUF — Local LLM model management & inference
   aiGguf: aiGgufRouter,
+  // ★★ AI Local Đợt 8.1 — LUỒNG AI: luồng · phiên bản · bật/tắt · chạy tay · dòng thời gian · duyệt · danh mục node
+  flow: flowRouter,
   // VRAM — mặt ĐỌC trạng thái điều phối VRAM (Pha 4 Task 1). CHỈ ĐỌC: không đổi hành vi cấp phát.
   vram: vramRouter,
   // AI Specialist Agents — Data/Backend/Frontend/QA assistants on local GGUF

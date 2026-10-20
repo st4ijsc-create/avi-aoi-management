@@ -81,7 +81,10 @@ const MIEN_TRU_DONG: Array<{ file: string; dong: number; lyDo: string }> = [
   // (`registerAiGatewayTokenBearerRoutes`) và `1b04f2abd` +1 import (`khoiChayDongBoLuaChonModel`) + 8 dòng thân module
   // (khối gọi `khoiChayDongBoLuaChonModel()` kèm docblock) phía trên ⇒ lệch RÒNG +10. Xác minh bằng `git show <c>:server/_core/index.ts`:
   // 3709 @f4b504dc5 → 3710 @126de672b → 3719 @1b04f2abd. Cùng dòng `const fpy = t > 0 ? …` — không có công thức mới.
-  { file: "server/_core/index.ts",                          dong: 3719, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
+  // ⚠ 3719 → 3729 (2026-10-20, AI Local Đợt 8.1 Task 4): ô này ĐÃ ĐỎ trước lượt này (đo trên cây trước khi sửa: dòng 3727 — lệch
+  // +8 từ các lượt Đợt 7.0/7.1 thêm import/lời gọi phía trên), Đợt 8.1 thêm +2 (import `registerFlowWebhookRoutes` + chú thích
+  // cạnh `rawUploadPaths`). Cùng dòng `const fpy = t > 0 ? …` — không có công thức mới.
+  { file: "server/_core/index.ts",                          dong: 3729, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
 
   // aiInspectionAnalytics.ts: `pass` ở BỐN dòng này KHÔNG phải OK-only — nó là
   // COUNT(*) FILTER (WHERE finalYieldPassCondSql(...)) tính Ở SQL, tức đã CHÍNH LÀ

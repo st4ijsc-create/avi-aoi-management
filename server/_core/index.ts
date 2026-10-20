@@ -45,6 +45,7 @@ import { registerAiXemTruocRoutes } from "../routes/aiXemTruocApi"; // Đợt 3c
 import { laOriginXemTruoc } from "../services/ai/chayUngDung"; // Đợt 3c — CORS KHÔNG phản chiếu origin xem trước (script do AI sinh)
 import { registerAiGatewayTokenThietBiRoutes } from "../routes/aiGatewayTokenThietBi"; // Đợt 4A — device flow: extension xin mã ⇒ người duyệt trên web ⇒ đổi lấy token /v1
 import { registerAiGatewayTokenBearerRoutes } from "../routes/aiGatewayTokenBearerApi"; // Đợt 4B-server — sổ áp tệp ở client + tự thu hồi, xác thực Bearer avgw_
+import { registerFlowWebhookRoutes } from "../routes/flowWebhookApi"; // Đợt 8.1 — webhook Luồng AI: token theo luồng (x-flow-token), không phiên
 import { danhDauGianDoanKhiBoot } from "../db/aiAgentRuns";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
 import { kyAnhTrongThan, kyNeuLaDuongDanNoiBo } from "./anhKyUrl";
@@ -302,7 +303,8 @@ async function startServer() {
 
   // Configure body parser with larger size limit for file uploads
   // Skip JSON parsing for raw binary upload routes (APK uploads etc.)
-  const rawUploadPaths = ["/api/factory-alert/upload", "/api/aoi/upload/"];
+  // Đợt 8.1 — webhook Luồng AI tự đọc thân với trần 256 KB (`server/routes/flowWebhookApi.ts`).
+  const rawUploadPaths = ["/api/factory-alert/upload", "/api/aoi/upload/", "/api/flow/webhook/"];
   // R-1 (doc 38): scope the 200MB ceiling to the routes that legitimately carry
   // large base64/JSON bodies, and cap everything else at a sane default so a
   // single oversized POST to a generic endpoint can't force a 200MB in-memory
@@ -5606,6 +5608,7 @@ async function startServer() {
   registerAiXemTruocRoutes(app); // Đợt 3c — sau cổng giấy phép `/api/ai`; xác thực `thuXacThucRest` (lượng từ §2 của xacThucBeMatRest)
   registerAiGatewayTokenThietBiRoutes(app); // Đợt 4A — sau cổng giấy phép `/api/ai` ở trên; xác thực thay thế: xem docblock tuyến
   registerAiGatewayTokenBearerRoutes(app); // Đợt 4B-server — sau cổng giấy phép `/api/ai`; Bearer `avgw_` + phạm vi `apply` (lượng từ §2 của xacThucBeMatRest)
+  registerFlowWebhookRoutes(app); // Đợt 8.1 — `POST /api/flow/webhook/:flowId/:nodeId`, cổng MOD_AI gắn trong tuyến; xác thực bằng token luồng (xem docblock tuyến)
   // WS-2 — edge model package download proxy (apiKey-verified, Range resume)
   registerEdgeDownloadRoute(app);
 
@@ -6331,6 +6334,13 @@ async function startServer() {
     void import("../services/flow/worker")
       .then(({ khoiChayWorkerLuong }) => khoiChayWorkerLuong())
       .catch((err) => console.error("[luong-ai] worker không khởi chạy được:", (err as any)?.message || err));
+  }
+  // ★★ Đợt 8.1 Task 4a — bộ lập lịch Luồng AI (node `kich-hoat.lich`). BẦU CHỦ (`giuQuyenChu("lich")`) ⇒ khởi ở cả API lẫn
+  // worker vẫn chỉ MỘT tiến trình bắn; khoá idempotency theo phút chặn bắn trùng khi chuyển chủ.
+  if (process.env.AI_FLOW_ENABLED === "true") {
+    void import("../services/flow/kichHoat/lich")
+      .then(({ khoiChayLich }) => khoiChayLich())
+      .catch((err) => console.error("[luong-ai] bộ lập lịch không khởi chạy được:", (err as any)?.message || err));
   }
 
   // Đợt 0.1 (AI Local) — GIÁM SÁT llama-server: không ai nghe cổng ≥ 2 nhịp (15 s) ⇒ chạy

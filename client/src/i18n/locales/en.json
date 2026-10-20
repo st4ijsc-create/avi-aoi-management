@@ -4042,7 +4042,12 @@
       "resolveEdgeStop": "record how the STOP was resolved",
       "resolveWriteIntent": "record an unknown outcome for the orphaned write",
       "listEdgeResolution": "list pending STOPs and orphaned writes",
-      "reviewLateWriteResult": "record that the late write result was reviewed"
+      "reviewLateWriteResult": "record that the late write result was reviewed",
+      "flowXem": "view the AI flow",
+      "flowLuu": "save an AI flow version",
+      "flowKichHoat": "enable/disable the AI flow",
+      "flowChayTay": "run the AI flow manually",
+      "flowDuyet": "approve an AI flow step"
     },
     "field": {
       "holderUserId": "the user the key is issued to (an existing, active user)",
@@ -4284,7 +4289,8 @@
       "overrideUrHome": "set the home pose of a UR robot from the command",
       "selfApproveProgramVersion": "approve your own program version",
       "selfApproveSafetyPlcConfig": "decide on a safety-PLC configuration you created or edited",
-      "secondApproveOwnSafetyPlcConfig": "give the second approval of a safety-PLC configuration you approved first (two different admins are required)"
+      "secondApproveOwnSafetyPlcConfig": "give the second approval of a safety-PLC configuration you approved first (two different admins are required)",
+      "flowKichHoatHangCao": "enable a flow that writes externally or touches OT (admins only)"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",

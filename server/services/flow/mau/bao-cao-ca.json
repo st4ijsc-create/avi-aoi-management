@@ -1,0 +1,40 @@
+{
+  "id": "mau-bao-cao-ca",
+  "name": "Báo cáo ca 06:00",
+  "version": 1,
+  "settings": { "uuTien": "background", "luuDuLieu": "day-du" },
+  "nodes": [
+    {
+      "id": "lich-6h",
+      "type": "kich-hoat.lich",
+      "typeVersion": 1,
+      "name": "06:00 hằng ngày",
+      "position": [0, 0],
+      "parameters": { "cron": "0 6 * * *", "muiGio": "Asia/Ho_Chi_Minh" }
+    },
+    {
+      "id": "tom-tat",
+      "type": "ai.tom-tat",
+      "typeVersion": 1,
+      "name": "Tóm tắt ca",
+      "position": [260, 0],
+      "parameters": {
+        "vaiTro": "summarize",
+        "yeuCau": "Viết báo cáo ca ngắn bằng tiếng Việt: sản lượng, tỉ lệ lỗi, dừng máy nổi bật, việc cần bàn giao. Chỉ dùng số liệu có trong dữ liệu; thiếu số liệu thì ghi rõ 'chưa có dữ liệu'.",
+        "truongRa": "baoCao"
+      }
+    },
+    {
+      "id": "dong-goi",
+      "type": "du-lieu.dat",
+      "typeVersion": 1,
+      "name": "Đóng gói báo cáo",
+      "position": [520, 0],
+      "parameters": { "truong": { "loai": "bao-cao-ca", "moc": "{{ $node('lich-6h').json.moc }}" } }
+    }
+  ],
+  "connections": [
+    { "from": { "node": "lich-6h", "port": "main" }, "to": { "node": "tom-tat", "port": "main" } },
+    { "from": { "node": "tom-tat", "port": "main" }, "to": { "node": "dong-goi", "port": "main" } }
+  ]
+}

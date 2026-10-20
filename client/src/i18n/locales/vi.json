@@ -4042,7 +4042,12 @@
       "resolveEdgeStop": "ghi nhận cách xử lý lệnh DỪNG",
       "resolveWriteIntent": "ghi nhận kết cục không rõ cho lệnh ghi mồ côi",
       "listEdgeResolution": "xem lệnh DỪNG chờ và lệnh ghi mồ côi",
-      "reviewLateWriteResult": "xác nhận đã xem kết quả ghi đến muộn"
+      "reviewLateWriteResult": "xác nhận đã xem kết quả ghi đến muộn",
+      "flowXem": "xem Luồng AI",
+      "flowLuu": "lưu phiên bản Luồng AI",
+      "flowKichHoat": "bật/tắt Luồng AI",
+      "flowChayTay": "chạy tay Luồng AI",
+      "flowDuyet": "duyệt bước của Luồng AI"
     },
     "field": {
       "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",
@@ -4284,7 +4289,8 @@
       "overrideUrHome": "tự đặt vị trí home cho robot UR",
       "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình",
       "selfApproveSafetyPlcConfig": "quyết định trên cấu hình safety-PLC do chính bạn tạo hoặc sửa",
-      "secondApproveOwnSafetyPlcConfig": "duyệt lần hai một cấu hình safety-PLC mà chính bạn đã duyệt lần đầu (cần hai quản trị viên khác nhau)"
+      "secondApproveOwnSafetyPlcConfig": "duyệt lần hai một cấu hình safety-PLC mà chính bạn đã duyệt lần đầu (cần hai quản trị viên khác nhau)",
+      "flowKichHoatHangCao": "bật luồng có tác dụng ghi ra ngoài hoặc OT (chỉ quản trị viên)"
     },
     "robotRefusal": {
       "hitlActionRequired": "Lệnh chuyển động bị từ chối: không có thao tác xác nhận (HITL) nào đã được duyệt đứng sau lệnh này. Hãy gửi từ Bảng lệnh hoặc xác nhận thao tác trước.",

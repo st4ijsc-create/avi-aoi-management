@@ -798,7 +798,16 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   • `aiGguf.soModelTaoHoSo` (mutation): upserts one `ai_serving_profiles` row (artifact must exist + be `sinh-chu`) ⇒ D.
 //   `soModelTongQuan` (query, already C) only gained `evalRuns` (100 newest `ai_model_eval_runs`) + role `moTa` — count
 //   unchanged. No baseline row added.
-const GHIM = { A: 333, B: 8, C: 492, D: 1178, S: 357, tong: 2368 } as const;
+// ★★ 2026-10-20 (AI Local Đợt 8.1 Task 5 — router `flow`, Luồng AI) — **C 492 → 498 · D 1178 → 1182 · tong 2368 → 2378 ·
+// A/B/S unchanged.** Ten NEW procedures in `server/routers/flowRouter.ts` (floor: `moduleProcedure("MOD_AI")` for reads,
+// `writeProcedure.use(moduleGate("MOD_AI"))` for writes; enabling a `ngoai-ghi`/`ot` version = admin, checked in the body):
+//   • queries `flow.danhSach` / `chiTiet` / `lichSuChay` / `dongThoiGian` / `danhSachCho` / `danhMucNode`: read `ai_flow*`
+//     (flow definitions, runs, steps, events, waits — a machine-wide automation registry; `tenantId` column exists but is not
+//     populated in 8.1, the scanner does not infer these tables as tenant tables) or the in-memory node registry ⇒ C (+6);
+//   • mutations `flow.luu` / `datPhienBanHoatDong` / `chayTay` / `duyet` ⇒ D (+4).
+//   Measured before (green on this pin) / after (+6 C, +4 D). No baseline row added. `tong` 2378 matches
+//   `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 333, B: 8, C: 498, D: 1182, S: 357, tong: 2378 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

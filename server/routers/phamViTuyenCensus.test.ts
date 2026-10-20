@@ -146,7 +146,13 @@ const cua = (n: NhomTuyen): TuyenExpress[] => NHOM.get(n) ?? [];
 // extension; danh tính = CHỦ token `avgw_` tra theo băm, phạm vi `chat`, `ai_repo_read/canView` kiểm lại mỗi lượt; chỉ GHI
 // một hàng `ai_agent_feedback` của CHÍNH chủ token — `nguon = 'vscode'`, khoá (người, lượt client, khối) — và trả lại đúng
 // hàng ấy; không đọc dữ liệu tenant/nhà máy nào). Không mục nào vào A, sổ nợ không thêm dòng. Sau cổng giấy phép `/api/ai`.
-const GHIM = { A: 80, C: 40, D: 95, S: 19, U: 16, tong: 250 } as const;
+// ★★ 2026-10-20 (AI Local Đợt 8.1 Task 4b — webhook Luồng AI) — **D 95 → 96 · tong 250 → 251 · A/C/S/U giữ nguyên.** Đo: chạy
+// lưới trước/sau khi thêm `server/routes/flowWebhookApi.ts` — đúng MỘT tuyến mới, POST, không tuyến cũ nào đổi nhóm:
+// `POST /api/flow/webhook/:flowId/:nodeId` (kích hoạt một lượt Luồng AI; danh tính = token THEO LUỒNG `x-flow-token`, CSDL chỉ
+// giữ sha256 ở `ai_flow_webhooks` (mig 0402), so thời gian hằng; chỉ đọc `ai_flows`/`ai_flow_versions`/`ai_flow_webhooks` — sổ
+// máy, không bảng tenant — và ghi một lượt `ai_flow_runs`). Không mục nào vào A, sổ nợ không thêm dòng. Cổng giấy phép MOD_AI
+// gắn TRONG tuyến (`chanTuyenAiTheoGiayPhep()`, tuyến không nằm dưới `/api/ai`).
+const GHIM = { A: 80, C: 40, D: 96, S: 19, U: 16, tong: 251 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -202,10 +208,12 @@ describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến khô
     // ⚠ Đợt 6 (đổi model): **665 → 674** — +1 import `khoiChayDongBoLuaChonModel` + 8 dòng (docblock + lời gọi) ở thân
     //   module điểm vào. Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`; không thư mục mới.
     // ⚠ Đợt 7.1 (khe nặng): **680 → 682** — +1 import `batTuDoiKheNang` + 1 lời gọi ở thân module điểm vào.
+    // ⚠ Đợt 8.1 (Luồng AI, webhook): **682 → 684** — +1 import `registerFlowWebhookRoutes` + 1 dòng chú thích cạnh
+    //   `rawUploadPaths` (webhook tự đọc thân 256 KB). Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`.
     // ⚠ Đợt 7.0 (sổ model): **674 → 680** — +2 import (`khoiChayDongBoSoModel`, `dongBoKhoModel`) + 4 dòng (chú thích + hai
     //   lời gọi) ở thân module điểm vào. Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`.
     expect(QUET.tuyenTinh.map((s) => s.split(" — ")[0])).toEqual([
-      "server/_core/index.ts:682",
+      "server/_core/index.ts:684",
       "server/_core/vite.ts:58",
     ]);
   });
