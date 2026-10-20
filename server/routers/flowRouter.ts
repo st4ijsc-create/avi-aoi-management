@@ -14,15 +14,18 @@
  * (`adminProcedure` + MOD_AI); `biMatDanhSach` = quyền sửa luồng (`ghiProcedure`) và KHÔNG BAO GIỜ trả giá trị/bản mã.
  * Giá trị chỉ GHI: `biMatTao` trả id/tên/loại/phiên bản khoá. Thông điệp lỗi của `LoiBiMat` không chứa giá trị.
  */
+import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { router, moduleProcedure, moduleGate, writeProcedure, adminProcedure } from "../_core/trpc";
 import { appError } from "../_core/appError";
 import { getDb } from "../db/connection";
 import { aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../drizzle/schema";
-import { THU_TU_HANG, type FlowDefinition, type HangTacDungPhu } from "../../shared/flow/model";
+import { THU_TU_HANG, kiemLuong, type FlowDefinition, type HangTacDungPhu } from "../../shared/flow/model";
 import { LoiLuong, batDauRun, luuPhienBan, traLoiCho } from "../services/flow/dongCo";
-import { danhSachNut } from "../services/flow/dangKyNut";
+import { danhSachNut, layNut } from "../services/flow/dangKyNut";
 import { kiemThamSoKichHoat, napLaiLich } from "../services/flow/kichHoat/lich";
 import { capTokenWebhook, coNodeWebhook, coTokenWebhook } from "../services/flow/kichHoat/webhook";
 import { LOAI_BI_MAT, LoiBiMat, lietKeBiMat, taoBiMat, xoaBiMat } from "../services/flow/biMat";
@@ -34,6 +37,36 @@ const adminAiProcedure = adminProcedure.use(moduleGate("MOD_AI"));
 const RE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const flowIdSchema = z.string().regex(RE_ID);
 const itemSchema = z.object({ json: z.record(z.string(), z.unknown()) });
+
+/**
+ * Đợt 8.3 — thư mục MẪU LUỒNG (`server/services/flow/mau/*.json`). Bản dựng `dist/index.js` không mang tệp JSON theo, nên
+ * thử lần lượt: cạnh mã nguồn (dev/vitest) rồi theo thư mục làm việc (production chạy từ gốc repo).
+ */
+function thuMucMau(): string | null {
+  const ungVien = [resolve(process.cwd(), "server/services/flow/mau")];
+  try {
+    ungVien.unshift(join(dirname(fileURLToPath(import.meta.url)), "../services/flow/mau"));
+  } catch {
+    /* import.meta.url không phải file: — bỏ qua */
+  }
+  return ungVien.find((d) => existsSync(d)) ?? null;
+}
+
+/** Đọc các mẫu luồng hợp lệ JSON (tệp hỏng bị bỏ qua, không làm hỏng cả danh sách). */
+export function docMauLuong(): { tep: string; definition: FlowDefinition }[] {
+  const thuMuc = thuMucMau();
+  if (!thuMuc) return [];
+  const ra: { tep: string; definition: FlowDefinition }[] = [];
+  for (const tep of readdirSync(thuMuc).filter((f) => f.endsWith(".json")).sort()) {
+    try {
+      const def = JSON.parse(readFileSync(join(thuMuc, tep), "utf8")) as FlowDefinition;
+      if (def && typeof def.id === "string" && Array.isArray(def.nodes)) ra.push({ tep, definition: def });
+    } catch {
+      /* tệp mẫu hỏng — bỏ qua */
+    }
+  }
+  return ra;
+}
 
 /** Trần chữ của input/output mỗi bước trả về dòng thời gian (cắt ở đây, CSDL giữ nguyên theo `luuDuLieu`). */
 export const TRAN_CHU_BUOC = 4000;
@@ -275,6 +308,17 @@ export const flowRouter = router({
       loiBiMat(e, "flowBiMatXem");
     }
   }),
+
+  /**
+   * Đợt 8.3 — MẪU LUỒNG cho nút "Tạo từ mẫu" của Flow Studio: định nghĩa + hạng tính bằng `kiemLuong` trên sổ node thật.
+   * Chỉ đọc tệp tĩnh trong repo (không CSDL); người dùng lưu bản sao qua `luu` (id mới) — mẫu không bao giờ tự kích hoạt.
+   */
+  mauLuong: xemProcedure.query(() =>
+    docMauLuong().map(({ tep, definition }) => {
+      const kq = kiemLuong(definition, layNut);
+      return { tep, id: definition.id, ten: definition.name, soNode: definition.nodes.length, hang: kq.hang, hopLe: kq.ok, definition };
+    }),
+  ),
 
   /** Khai báo các loại node đã đăng ký (Flow Studio). */
   danhMucNode: xemProcedure.query(() =>

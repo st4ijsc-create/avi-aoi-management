@@ -375,6 +375,8 @@ const SEED_MODULES: SystemModule[] = [
       // (`client/src/pages/AiGatewayThietBi.tsx`). Tuyến mang `requireModule="MOD_AI"` ⇒ phải có tên ở đây
       // (`congGiayPhepAiTuyen.unit.test.ts` §3). Không có mục menu riêng — vào từ đường dẫn extension mở.
       "/ai-thiet-bi",
+      // AI Local Đợt 8.3 — Flow Studio (Luồng AI): danh sách + trình sửa + hộp duyệt (`client/src/pages/AIFlow*.tsx`).
+      "/ai-flows", "/ai-flows/duyet", "/ai-flows/:id",
     ],
     permissionCategories: ["analytics"],
     features: [

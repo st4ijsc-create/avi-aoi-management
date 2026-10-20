@@ -815,7 +815,12 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   • mutations `flow.biMatTao` / `flow.biMatXoa` (floor `adminProcedure.use(moduleGate("MOD_AI"))`) ⇒ D (+2).
 //   Measured before (green on this pin) / after (+1 C, +2 D). No baseline row added. `tong` 2381 matches
 //   `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 333, B: 8, C: 499, D: 1184, S: 357, tong: 2381 } as const;
+// ★★ 2026-10-20 (AI Local Đợt 8.3 — Flow Studio) — **C 499 → 500 · tong 2381 → 2382 · A/B/D/S unchanged.** One NEW
+// procedure in `server/routers/flowRouter.ts`: query `flow.mauLuong` (floor `moduleProcedure("MOD_AI")`) reads the static
+// flow templates `server/services/flow/mau/*.json` from the repo (no DB, no tenant data) + computes their side-effect class
+// with `kiemLuong` on the in-memory node registry ⇒ C (+1). Measured before (green on this pin) / after (+1 C). No baseline
+// row added. `tong` 2382 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 333, B: 8, C: 500, D: 1184, S: 357, tong: 2382 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

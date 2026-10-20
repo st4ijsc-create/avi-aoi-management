@@ -1653,6 +1653,18 @@ export const navGroups: NavGroup[] = [
         section: "agentOps",
       },
       {
+        // AI Local Đợt 8.3 — Flow Studio (Luồng AI kiểu n8n): danh sách + trình sửa `/ai-flows/:id` + hộp duyệt
+        // `/ai-flows/duyet` (RouteGuard navHref="/ai-flows" cho cả ba). Máy chủ: xem = MOD_AI, sửa/bật/chạy/duyệt =
+        // writeProcedure + MOD_AI, bật luồng hạng ngoai-ghi/ot = admin (flowRouter.ts). Supervisor có mặt để duyệt.
+        href: "/ai-flows",
+        label: "nav.aiFlows",
+        icon: <Workflow className="h-4 w-4" />,
+        description: "nav.aiFlowsDesc",
+        requiredRole: ['admin', 'engineer', 'supervisor'],
+        permissionCategory: "admin",
+        section: "agentOps",
+      },
+      {
         // doc69 Wave 0-C — engineer curates active-learning queues as daily work.
         href: "/ai-active-learning",
         label: "nav.aiActiveLearning",

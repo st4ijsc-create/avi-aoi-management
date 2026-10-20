@@ -115,6 +115,10 @@ const AIModelManagementPage = React.lazy(() => import("./pages/AIModelManagement
 const AIInspectionAnalyticsPage = React.lazy(() => import("./pages/AIInspectionAnalyticsPage"));
 const AdvancedVisionLabPage = React.lazy(() => import("./pages/AdvancedVisionLabPage"));
 const AIGgufModelsPage = React.lazy(() => import("./pages/AIGgufModelsPage"));
+// AI Local Đợt 8.3 — Flow Studio (Luồng AI).
+const AIFlowsPage = React.lazy(() => import("./pages/AIFlowsPage"));
+const AIFlowEditorPage = React.lazy(() => import("./pages/AIFlowEditorPage"));
+const AIFlowApprovalsPage = React.lazy(() => import("./pages/AIFlowApprovalsPage"));
 const AIBrainDashboard = React.lazy(() => import("./pages/AIBrainDashboard"));
 const AIAgentCommandCenter = React.lazy(() => import("./pages/AIAgentCommandCenter")); // doc69 GĐ4/E2-3: Agent Command Center (roster + savings + task feed + HITL drill-in)
 const AISpecialistStudio = React.lazy(() => import("./pages/AISpecialistStudio")); // Wave 1 T4: dispatch card + result card for the 4 specialist agents (trpc.aiSpecialistAgent.*)
@@ -730,6 +734,10 @@ function Router() {
       <Route path="/mask-annotation"><RouteGuard navHref="/mask-annotation" requireModule="MOD_AI"><AIPageWrapper><MaskAnnotationPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/causal-graph"><RouteGuard navHref="/causal-graph" requireModule="MOD_AI"><AIPageWrapper><CausalGraphEditorPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-inspection-analytics"><RouteGuard requirePermission="analytics_ai_performance" requireModule="MOD_AI"><AIPageWrapper><AIInspectionAnalyticsPage /></AIPageWrapper></RouteGuard></Route>
+      {/* AI Local Đợt 8.3 — Flow Studio: `/ai-flows/duyet` TRƯỚC `/ai-flows/:id` (Switch khớp tuyến đầu tiên). */}
+      <Route path="/ai-flows"><RouteGuard navHref="/ai-flows" requireModule="MOD_AI"><AIPageWrapper><AIFlowsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-flows/duyet"><RouteGuard navHref="/ai-flows" requireModule="MOD_AI"><AIPageWrapper><AIFlowApprovalsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-flows/:id"><RouteGuard navHref="/ai-flows" requireModule="MOD_AI"><AIPageWrapper><AIFlowEditorPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-gguf-models"><RouteGuard requireRole={["admin"]} requireModule="MOD_AI"><AIPageWrapper><AIGgufModelsPage /></AIPageWrapper></RouteGuard></Route>
       {/* X3: /ai-ab-testing was a deprecated stub → redirect to the B6 canary tab. */}
       <Route path="/ai-ab-testing"><Redirect to="/ai-performance" /></Route>
