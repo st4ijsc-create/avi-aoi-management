@@ -1,0 +1,15 @@
+{
+  "id": "st-tt1-bo-phieu-2oo3",
+  "lang": "st",
+  "muc": "thuat-toan",
+  "kieu": "st",
+  "tieuDe": "Bỏ phiếu 2 trên 3 cho cảm biến an toàn, có chỉ kênh lệch và đếm lần lệch",
+  "deBai": "Cài `FUNCTION_BLOCK BoPhieu2oo3` trong tệp `src/BoPhieu2oo3.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ).\n\nVào: `A`, `B`, `C : BOOL` (ba kênh cảm biến), `RESET : BOOL`. Ra: `Q : BOOL`, `LECH : BOOL`, `KENH_LECH : INT`, `DEM_LECH : DINT`. Mỗi lần gọi khối là một chu kỳ quét.\n\n- `Q` = TRUE khi có ÍT NHẤT HAI trong ba kênh TRUE.\n- `LECH` = TRUE khi ba kênh KHÔNG cùng giá trị (đúng một hoặc đúng hai kênh TRUE).\n- `KENH_LECH`: 0 khi ba kênh cùng giá trị; ngược lại là số thứ tự (1 = A, 2 = B, 3 = C) của kênh DUY NHẤT có giá trị khác hai kênh còn lại.\n- `DEM_LECH` đếm số lần `LECH` chuyển từ FALSE sang TRUE (sườn lên). Trạng thái ban đầu coi như `LECH` chu kỳ trước = FALSE, nên chu kỳ đầu tiên có `LECH` = TRUE được đếm.\n- `RESET` = TRUE ⇒ `DEM_LECH` = 0 trong chu kỳ đó và KHÔNG đếm sườn trong chu kỳ đó. Giá trị `LECH` của mọi chu kỳ (kể cả khi `RESET`) đều được nhớ làm \"chu kỳ trước\" — vì vậy nhả `RESET` khi `LECH` vẫn TRUE KHÔNG phải sườn mới.\n- Đầu vào không được truyền trong một lần gọi giữ giá trị lần gọi trước (ngữ nghĩa khối chức năng IEC thông thường).\n\nChỉ viết khối chức năng này; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, R_TRIG, …).",
+  "tepGiai": ["src/BoPhieu2oo3.st"],
+  "dinhDanh": "BoPhieu2oo3",
+  "testHienThi": ["tests/hien_thi.st"],
+  "testAn": ["tests/an.st"],
+  "tepBaoVe": ["tests/kt.st", "tests/hien_thi.st"],
+  "soTest": { "hienThi": 3, "an": 30 },
+  "sai": [{ "tep": "src/BoPhieu2oo3.st", "tu": "ELSIF LECH AND NOT lechCu THEN", "den": "ELSIF LECH THEN" }]
+}

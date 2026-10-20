@@ -9,7 +9,8 @@
  *      những tệp đổi được kết quả mà không chạm tệp test.
  *
  * Test ẩn chép vào NGAY TRƯỚC khi chạy, dọn NGAY SAU (kể cả khi lỗi); đường đích đã có tệp ⇒ khôi phục nội dung cũ.
- * Bảy kiểu chấm: pytest (py, sql) · node (js, ts) · dotnet (cs) · java · cmake (cpp) · go · cargo (rs).
+ * Tám kiểu chấm: pytest (py, sql) · node (js, ts) · dotnet (cs) · java · cmake (cpp) · go · cargo (rs) · st (Đợt 7.2 —
+ * IEC 61131-3 ST: RuSTy trong Docker, đồng hồ giả, xem `lib/st/chayST.mjs`).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -17,6 +18,7 @@ import crypto from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { PYTHON, CMAKE, GO, CARGO, MOI_TRUONG, ROOT } from "./moiTruong.mjs";
 import { lietKeTep } from "./kho.mjs";
+import { chayST } from "./st/chayST.mjs";
 
 const sha256 = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
 const bamTep = (p) => (fs.existsSync(p) ? sha256(fs.readFileSync(p)) : null);
@@ -32,9 +34,11 @@ const CAU_HINH_CAM = {
   cmake: [/(^|\/)CMakeLists\.txt$/, /\.cmake$/, /(^|\/)CMakePresets\.json$/],
   go: [/(^|\/)go\.(mod|work|sum)$/],
   cargo: [/(^|\/)build\.rs$/, /(^|\/)Cargo\.toml$/, /(^|\/)\.cargo\//, /(^|\/)rust-toolchain(\.toml)?$/],
+  // st: chỉ `src/*.st` vào biên dịch — tệp .st MỚI ngoài src/ (vd tests/phu.st đè harness) bị cấm.
+  st: [/^(?!src\/)[^]*\.st$/i],
 };
 
-const TRAN_MAC_DINH = { pytest: 120, node: 120, dotnet: 360, java: 180, cmake: 600, go: 240, cargo: 360 };
+const TRAN_MAC_DINH = { pytest: 120, node: 120, dotnet: 360, java: 180, cmake: 600, go: 240, cargo: 360, st: 20 };
 
 /**
  * Chạy một tiến trình con BẤT ĐỒNG BỘ (để kiểm thước chạy song song nhiều bài). Hết trần ⇒ giết CẢ CÂY tiến trình
@@ -147,6 +151,29 @@ const TRINH_CHAY = {
     const fail = (r.out.match(/^--- FAIL: /gm) ?? []).length;
     r.dem = pass + fail > 0 ? { pass, fail } : null;
     return r;
+  },
+  async st(dir, files, giay) {
+    // Mỗi tệp test là MỘT chương trình: prelude (đồng hồ giả) + mọi `src/*.st` (thứ tự tên) + `tests/kt.st` + tệp test
+    // (chứa `FUNCTION main : DINT`). Biên dịch hỏng ⇒ không có KT_TONG ⇒ tính một lượt trượt (như java/cmake).
+    const nguon = lietKeTep(dir).filter((f) => f.startsWith("src/") && /\.st$/i.test(f)).sort();
+    const tong = { pass: 0, fail: 0 };
+    let ma = 0, outAll = "", hetGio = false, loiChay = null, thay = 0;
+    for (const f of files) {
+      const r = await chayST({
+        tep: [...nguon, "tests/kt.st", f].map((rel) => ({ ten: rel, duong: `${dir}/${rel}` })),
+        thuMucViec: `${ROOT}/tmp/st-jobs`,
+        giayChay: giay,
+      });
+      const chanDoan = r.chanDoan.map((d) => `${d.tep ?? "?"}:${d.dong ?? "?"}:${d.cot ?? "?"} ${d.mucDo} ${d.ma ?? ""} ${d.thongDiep}`).join("\n");
+      outAll += `\n── ${f} [${r.giaiDoan}, ${r.ms} ms]\n${chanDoan}${chanDoan ? "\n" : ""}${r.stdout}`;
+      if (r.giaiDoan === "ha-tang") loiChay ??= "HA_TANG_DOCKER_ST";
+      if (r.giaiDoan === "het-gio") hetGio = true;
+      if (r.maThoat !== 0) ma = r.maThoat ?? 1;
+      const m = [...r.stdout.matchAll(/^KT_TONG pass=(\d+) fail=(\d+)\s*$/gm)].pop();
+      if (m && r.giaiDoan === "chay") { tong.pass += +m[1]; tong.fail += +m[2]; thay++; }
+      else tong.fail += 1;
+    }
+    return { ma, out: outAll, hetGio, loiChay, dem: thay ? tong : null };
   },
   async cargo(dir, files, giay) {
     const r = await chay(CARGO, ["test", "--offline", "--quiet", "--no-fail-fast"], dir, giay);

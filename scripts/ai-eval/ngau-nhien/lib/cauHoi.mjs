@@ -76,6 +76,8 @@ export function lenhTest(bai, da) {
     case "cmake": buoc = ["cmake -S . -B _b", "cmake --build _b", "ctest --test-dir _b"]; chiOGoc = true; break;
     case "go": buoc = ["go test ./..."]; chiOGoc = true; break;
     case "cargo": buoc = ["cargo test --offline"]; chiOGoc = true; break;
+    // ST (Đợt 7.2): biên dịch + chạy trong Docker của BỘ CHẤM — agent không có lệnh test trong allowlist.
+    case "st": return { buoc: [], lenh: "(không có)", agentChayDuoc: false, lyDo: "bài ST: chỉ máy chấm biên dịch + chạy được (RuSTy trong Docker)" };
     default: return { buoc: [], lenh: "?", agentChayDuoc: false, lyDo: `kiểu chấm lạ ${bai.kieu}` };
   }
   const agentChayDuoc = goc || !chiOGoc;

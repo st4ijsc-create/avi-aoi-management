@@ -72,5 +72,6 @@ export function coToolchain(kieu) {
   if (kieu === "go") return coTep(GO);
   if (kieu === "cargo") return coTep(CARGO);
   if (kieu === "pytest") return coTep(PYTHON);
+  // st: ảnh Docker `st-rusty:1.0.7` — kiểm bất đồng bộ ở `lib/st/chayST.mjs#coAnhST` (bộ chấm báo HA_TANG nếu thiếu).
   return true;
 }

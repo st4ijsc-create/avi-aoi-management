@@ -97,11 +97,11 @@ async function kiemBai(b) {
 
   // 4b. tệp CẤU HÌNH test mới (đổi được kết quả mà không chạm tệp test) — java không có tệp cấu hình trình chạy ⇒ bỏ.
   const tepCam = { pytest: "conftest.py", node: "test/package.json", dotnet: "Directory.Build.props", cmake: "src/CMakeLists.txt",
-    go: "go.work", cargo: "build.rs" }[b.kieu];
+    go: "go.work", cargo: "build.rs", st: "tests/phu.st" }[b.kieu];
   if (tepCam) {
     dungKhung(b, d("cauhinh"));
     apMau(b, d("cauhinh"));
-    ghiTep(d("cauhinh"), { [tepCam]: b.kieu === "pytest" ? "# vô hại nhưng mới\n" : b.kieu === "node" ? "{}\n" : b.kieu === "dotnet" ? "<Project></Project>\n" : b.kieu === "cargo" ? "fn main() {}\n" : b.kieu === "go" ? "go 1.24\n\nuse .\n" : "# moi\n" });
+    ghiTep(d("cauhinh"), { [tepCam]: b.kieu === "pytest" ? "# vô hại nhưng mới\n" : b.kieu === "node" ? "{}\n" : b.kieu === "dotnet" ? "<Project></Project>\n" : b.kieu === "cargo" ? "fn main() {}\n" : b.kieu === "go" ? "go 1.24\n\nuse .\n" : b.kieu === "st" ? "(* vô hại nhưng mới *)\n" : "# moi\n" });
     const c = await chamDuAn({ bai: b, thuMuc: d("cauhinh") });
     kq.cauHinhMoiBat = !c.dat && c.lyDo.includes("TEP_CAU_HINH_TEST_MOI");
     if (!kq.cauHinhMoiBat) kq.loi.push(`tệp cấu hình test mới ${tepCam} KHÔNG bị bắt [${c.lyDo.join(",")}]`);

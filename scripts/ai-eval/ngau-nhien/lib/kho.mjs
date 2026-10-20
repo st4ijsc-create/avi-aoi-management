@@ -15,10 +15,10 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { KHO } from "./moiTruong.mjs";
 
-export const NGON_NGU = ["py", "js", "ts", "cs", "java", "cpp", "sql", "go", "rs"];
+export const NGON_NGU = ["py", "js", "ts", "cs", "java", "cpp", "sql", "go", "rs", "st"];
 export const MUC = ["thuat-toan", "thu-vien", "ung-dung"];
 export const KIEU_THEO_NGON_NGU = {
-  py: "pytest", sql: "pytest", js: "node", ts: "node", cs: "dotnet", java: "java", cpp: "cmake", go: "go", rs: "cargo",
+  py: "pytest", sql: "pytest", js: "node", ts: "node", cs: "dotnet", java: "java", cpp: "cmake", go: "go", rs: "cargo", st: "st",
 };
 /** Tên đầy đủ ngôn ngữ + nền tảng — dùng trong câu hỏi gửi model/agent. */
 export const TEN_NGON_NGU = {
@@ -31,6 +31,7 @@ export const TEN_NGON_NGU = {
   sql: "SQL — SQLite 3.50 (chạy qua Python sqlite3)",
   go: "Go 1.27 (go test)",
   rs: "Rust (stable, edition 2021, cargo test, không crate ngoài)",
+  st: "IEC 61131-3 Structured Text kiểu CODESYS (biên dịch bằng RuSTy; khối chuẩn TON/TOF/TP/R_TRIG/F_TRIG/CTU/CTD/SR/RS có sẵn — KHÔNG tự định nghĩa lại; không viết PROGRAM/main)",
 };
 
 const BO_QUA = new Set(["bin", "obj", "_b", "target", "out-kt", "__pycache__", ".pytest_cache", "node_modules"]);
