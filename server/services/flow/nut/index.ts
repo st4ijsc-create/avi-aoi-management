@@ -2,5 +2,6 @@
 import "./ai";
 import "./nguoi";
 import "./tichHop";
+import "./ma";
 import "../kichHoat/lich";
 import "../kichHoat/webhook";

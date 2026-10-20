@@ -17,6 +17,11 @@ export interface NguCanhChay {
   nodes: Record<string, ItemLuong[]>;
   env: Record<string, string>;
   run: { id: string; flowId: string; batDau: string };
+  /**
+   * Đợt 8.2 — bí mật đã giải mã của node (chỉ khi node có `credentialRef` và loại khai `nhanBiMat`). Động cơ gắn ô này
+   * KHÔNG LIỆT KÊ ĐƯỢC (`JSON.stringify`/spread không mang theo); KHÔNG nằm trong `inputs`/`nodes`/biểu thức/bước/sự kiện.
+   */
+  biMat?: { giaTri: string; loai: string };
 }
 
 export type KetQuaChay = Record<string, ItemLuong[]>;

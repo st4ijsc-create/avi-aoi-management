@@ -4047,7 +4047,10 @@
       "flowLuu": "save an AI flow version",
       "flowKichHoat": "enable/disable the AI flow",
       "flowChayTay": "run the AI flow manually",
-      "flowDuyet": "approve an AI flow step"
+      "flowDuyet": "approve an AI flow step",
+      "flowBiMatTao": "create an AI flow secret",
+      "flowBiMatXoa": "delete an AI flow secret",
+      "flowBiMatXem": "list AI flow secrets"
     },
     "field": {
       "holderUserId": "the user the key is issued to (an existing, active user)",

@@ -14,7 +14,8 @@ export const NodeInstanceSchema = z.object({
   name: z.string().min(1).max(120),
   position: z.tuple([z.number(), z.number()]),
   parameters: z.record(z.string(), z.unknown()).default({}),
-  credentialRef: z.string().max(64).optional(),
+  /** Đợt 8.2: id một bí mật `ai_flow_credentials` — động cơ giải mã lúc chạy, chỉ node khai `nhanBiMat` nhận được. */
+  credentialRef: z.string().regex(RE_ID_NUT).optional(),
   retry: z.object({ max: z.number().int().min(0).max(10), backoffMs: z.number().int().min(0).max(600_000) }).optional(),
   khiLoi: z.enum(["dung", "tiep-tuc", "nhanh-loi"]).optional(),
   disabled: z.boolean().optional(),
@@ -62,6 +63,8 @@ export interface KhaiBaoNut {
   lapLai: "idempotent" | "atMostOnce";
   /** `gop`: node chờ ĐỦ mọi cổng vào có nối mới chạy (vd `logic.gop`). Mặc định: chạy khi có item ở bất kỳ cổng nào. */
   choDuCong?: boolean;
+  /** Đợt 8.2: node nhận bí mật qua `credentialRef` (vd HTTP). Node khác có `credentialRef` ⇒ luồng không hợp lệ. */
+  nhanBiMat?: boolean;
 }
 
 export interface KetQuaKiemLuong {
@@ -95,6 +98,7 @@ export function kiemLuong(raw: unknown, dangKy: (type: string) => KhaiBaoNut | u
     else {
       if (kb.typeVersion !== n.typeVersion) loi.push(`node '${n.id}': phiên bản loại ${n.typeVersion} ≠ ${kb.typeVersion}`);
       if (THU_TU_HANG[kb.tacDungPhu] > THU_TU_HANG[hang]) hang = kb.tacDungPhu;
+      if (n.credentialRef && !kb.nhanBiMat) loi.push(`node '${n.id}': loại '${n.type}' không nhận bí mật (credentialRef)`);
     }
     const bt: string[] = [];
     chuoiBieuThuc(n.parameters, bt);

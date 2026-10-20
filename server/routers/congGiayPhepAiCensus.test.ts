@@ -479,7 +479,12 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   `moduleProcedure("MOD_AI")` (danhSach/chiTiet/lichSuChay/dongThoiGian/danhSachCho/danhMucNode) và bốn mutation trên
 //   `writeProcedure.use(moduleGate("MOD_AI"))` (luu/datPhienBanHoatDong/chayTay/duyet) — đều CÓ cổng MOD_AI. aiMienTru /
 //   ngoaiAiCoCong / mọi SKU khác KHÔNG đổi. Đo trước (xanh trên ghim cũ) / sau. `tong` 2378 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2378, beMatAi: 425, aiCoCong: 363, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+// ★★ 2026-10-20 (AI Local Đợt 8.2 Task 4 — bí mật Luồng AI) — **tong 2378 → 2381 · beMatAi 425 → 428 · aiCoCong 363 → 366.**
+//   Lời khai: `server/routers/flowRouter.ts` (đã ở `FILE_AI_TUONG_MINH`) mọc BA thủ tục trên bảng `ai_flow_credentials`
+//   (mig 0403): query `biMatDanhSach` trên `writeProcedure.use(moduleGate("MOD_AI"))` và hai mutation `biMatTao` /
+//   `biMatXoa` trên `adminProcedure.use(moduleGate("MOD_AI"))` — đều CÓ cổng MOD_AI từ lượt sinh ra. aiMienTru /
+//   ngoaiAiCoCong / mọi SKU khác KHÔNG đổi. Đo trước (xanh trên ghim cũ) / sau. `tong` 2381 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2381, beMatAi: 428, aiCoCong: 366, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

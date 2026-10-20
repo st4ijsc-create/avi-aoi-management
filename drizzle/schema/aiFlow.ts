@@ -2,7 +2,7 @@
  * ★★ AI Local Đợt 8.0 (2026-10-20) — LUỒNG AI, migration `0401`. Spec §4.3–4.4.
  * ⚠ CHECK ở `drizzle/0401_ai_flows.sql`. Thời điểm hàng đợi/lease/lượt chạy là `timestamptz` (so với now()).
  */
-import { pgTable, varchar, integer, boolean, jsonb, uuid, bigserial, smallint, timestamp, primaryKey, unique, index } from "drizzle-orm/pg-core";
+import { pgTable, varchar, integer, boolean, jsonb, uuid, bigserial, smallint, timestamp, primaryKey, unique, index, customType } from "drizzle-orm/pg-core";
 import { users } from "./auth";
 
 const tz = (ten: string) => timestamp(ten, { withTimezone: true });
@@ -126,5 +126,26 @@ export const aiFlowWaits = pgTable(
 export const aiFlowWebhooks = pgTable("ai_flow_webhooks", {
   flowId: varchar("flowId", { length: 64 }).primaryKey().references(() => aiFlows.id, { onDelete: "cascade" }),
   tokenHash: varchar("tokenHash", { length: 64 }).notNull(),
+  createdAt: tz("createdAt").defaultNow().notNull(),
+});
+
+/** `bytea` — gói `postgres` v3 trả `Uint8Array`/nhận `Buffer` đúng chiều (như `auth.ts`). */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+/**
+ * ★★ Đợt 8.2 Task 1 — BÍ MẬT của Luồng AI (migration `0403`). Giá trị CHỈ ở dạng mã AES-256-GCM (`banMa` + `iv` 12 byte +
+ * `tag` 16 byte), khoá theo `phienBanKhoa` (xoay khoá). Đọc/ghi qua `server/services/flow/biMat.ts` — KHÔNG truy vấn trực tiếp.
+ * ⚠ CHECK ở `drizzle/0403_ai_flow_credentials.sql`.
+ */
+export const aiFlowCredentials = pgTable("ai_flow_credentials", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  ten: varchar("ten", { length: 120 }).notNull(),
+  /** `token` | `tai-khoan` ("tên:mật khẩu") | `khac` */
+  loai: varchar("loai", { length: 16 }).notNull(),
+  banMa: bytea("banMa").notNull(),
+  iv: bytea("iv").notNull(),
+  tag: bytea("tag").notNull(),
+  phienBanKhoa: integer("phienBanKhoa").notNull(),
+  createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
   createdAt: tz("createdAt").defaultNow().notNull(),
 });

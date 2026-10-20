@@ -4047,7 +4047,10 @@
       "flowLuu": "lưu phiên bản Luồng AI",
       "flowKichHoat": "bật/tắt Luồng AI",
       "flowChayTay": "chạy tay Luồng AI",
-      "flowDuyet": "duyệt bước của Luồng AI"
+      "flowDuyet": "duyệt bước của Luồng AI",
+      "flowBiMatTao": "tạo bí mật của Luồng AI",
+      "flowBiMatXoa": "xoá bí mật của Luồng AI",
+      "flowBiMatXem": "xem danh sách bí mật của Luồng AI"
     },
     "field": {
       "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",

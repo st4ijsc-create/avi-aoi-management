@@ -11,7 +11,7 @@ vi.hoisted(() => {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { inArray, like, sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
-import { aiFlowRuns, aiFlows } from "../../drizzle/schema";
+import { aiFlowCredentials, aiFlowRuns, aiFlows } from "../../drizzle/schema";
 import { chayMotMuc } from "../services/flow/dongCo";
 import { flowRouter, TRAN_CHU_BUOC } from "./flowRouter";
 
@@ -33,6 +33,7 @@ afterAll(async () => {
   const runs = await db.select({ id: aiFlowRuns.id }).from(aiFlowRuns).where(like(aiFlowRuns.flowId, `${TT}%`));
   if (runs.length) await db.delete(aiFlowRuns).where(inArray(aiFlowRuns.id, runs.map((r) => r.id)));
   await db.delete(aiFlows).where(like(aiFlows.id, `${TT}%`));
+  await db.delete(aiFlowCredentials).where(like(aiFlowCredentials.id, `${TT}%`));
 });
 
 async function chayHet() {
@@ -141,5 +142,35 @@ describe("flowRouter (Đợt 8.1, DB)", () => {
     expect(c.tokenWebhook).toBeTruthy();
     expect(c.tokenWebhook).not.toBe(a.tokenWebhook);
     expect((await goi("viewer").chiTiet({ flowId: def.id })).coTokenWebhook).toBe(true);
+  });
+
+  it("★ Đợt 8.2 bí mật: tạo/xoá = admin; danh sách = quyền sửa, KHÔNG giá trị; thiếu khoá ⇒ SERVICE_UNAVAILABLE", async () => {
+    const giu = process.env.AI_FLOW_KHOA_BI_MAT;
+    process.env.AI_FLOW_KHOA_BI_MAT = Buffer.alloc(32, 9).toString("base64");
+    const admin2fa = flowRouter.createCaller({ user: { id: uid, role: "admin", twoFactorEnabled: true } } as never);
+    const GIA_TRI = "gia-tri-bi-mat-router-8-2";
+    try {
+      await expect(goi("engineer").biMatTao({ id: `${TT}-bm`, ten: "x", loai: "token", giaTri: GIA_TRI })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const tao = await admin2fa.biMatTao({ id: `${TT}-bm`, ten: "Token ERP", loai: "token", giaTri: GIA_TRI });
+      expect(tao).toEqual({ id: `${TT}-bm`, ten: "Token ERP", loai: "token", phienBanKhoa: 1 });
+      await expect(admin2fa.biMatTao({ id: `${TT}-bm`, ten: "x", loai: "token", giaTri: GIA_TRI })).rejects.toMatchObject({ code: "CONFLICT" });
+      await expect(admin2fa.biMatTao({ id: `${TT}-bm2`, ten: "x", loai: "tai-khoan", giaTri: "khongcohaicham" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      await expect(goi("viewer").biMatDanhSach()).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const ds = (await goi("engineer").biMatDanhSach()).filter((b) => b.id.startsWith(TT));
+      expect(ds).toHaveLength(1);
+      expect(JSON.stringify(ds)).not.toContain(GIA_TRI);
+      expect(Object.keys(ds[0]).sort()).toEqual(["createdAt", "createdBy", "id", "loai", "phienBanKhoa", "ten"]);
+      const dm = await goi("viewer").danhMucNode();
+      expect(dm.find((n) => n.type === "tich-hop.http-doc")?.nhanBiMat).toBe(true);
+      expect(dm.find((n) => n.type === "du-lieu.ma")).toMatchObject({ tacDungPhu: "thuan", nhanBiMat: false });
+      await expect(goi("engineer").biMatXoa({ id: `${TT}-bm` })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(await admin2fa.biMatXoa({ id: `${TT}-bm` })).toEqual({ id: `${TT}-bm`, daXoa: true });
+      await expect(admin2fa.biMatXoa({ id: `${TT}-bm` })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      delete process.env.AI_FLOW_KHOA_BI_MAT;
+      await expect(admin2fa.biMatTao({ id: `${TT}-bm3`, ten: "x", loai: "token", giaTri: GIA_TRI })).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+    } finally {
+      if (giu === undefined) delete process.env.AI_FLOW_KHOA_BI_MAT;
+      else process.env.AI_FLOW_KHOA_BI_MAT = giu;
+    }
   });
 });

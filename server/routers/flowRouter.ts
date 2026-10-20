@@ -9,10 +9,14 @@
  *     (kiểm trong thân — hạng là thuộc tính của PHIÊN BẢN, không biết trước khi đọc CSDL).
  * Lỗi qua `appError` + khoá `errors.operation.flow*` / `errors.action.flowKichHoatHangCao` (vi/en/zh).
  * Bảng `ai_flow*` là sổ máy (không cột tenant nào được điền ở 8.1) — phạm vi tenant theo luồng là việc của 8.2.
+ *
+ * Đợt 8.2 Task 4 — BÍ MẬT (`ai_flow_credentials`, `services/flow/biMat.ts`): `biMatTao` / `biMatXoa` = admin
+ * (`adminProcedure` + MOD_AI); `biMatDanhSach` = quyền sửa luồng (`ghiProcedure`) và KHÔNG BAO GIỜ trả giá trị/bản mã.
+ * Giá trị chỉ GHI: `biMatTao` trả id/tên/loại/phiên bản khoá. Thông điệp lỗi của `LoiBiMat` không chứa giá trị.
  */
 import { z } from "zod";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { router, moduleProcedure, moduleGate, writeProcedure } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, writeProcedure, adminProcedure } from "../_core/trpc";
 import { appError } from "../_core/appError";
 import { getDb } from "../db/connection";
 import { aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../drizzle/schema";
@@ -21,9 +25,11 @@ import { LoiLuong, batDauRun, luuPhienBan, traLoiCho } from "../services/flow/do
 import { danhSachNut } from "../services/flow/dangKyNut";
 import { kiemThamSoKichHoat, napLaiLich } from "../services/flow/kichHoat/lich";
 import { capTokenWebhook, coNodeWebhook, coTokenWebhook } from "../services/flow/kichHoat/webhook";
+import { LOAI_BI_MAT, LoiBiMat, lietKeBiMat, taoBiMat, xoaBiMat } from "../services/flow/biMat";
 
 const xemProcedure = moduleProcedure("MOD_AI");
 const ghiProcedure = writeProcedure.use(moduleGate("MOD_AI"));
+const adminAiProcedure = adminProcedure.use(moduleGate("MOD_AI"));
 
 const RE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const flowIdSchema = z.string().regex(RE_ID);
@@ -32,7 +38,16 @@ const itemSchema = z.object({ json: z.record(z.string(), z.unknown()) });
 /** Trần chữ của input/output mỗi bước trả về dòng thời gian (cắt ở đây, CSDL giữ nguyên theo `luuDuLieu`). */
 export const TRAN_CHU_BUOC = 4000;
 
-type Op = "flowXem" | "flowLuu" | "flowKichHoat" | "flowChayTay" | "flowDuyet";
+type Op = "flowXem" | "flowLuu" | "flowKichHoat" | "flowChayTay" | "flowDuyet" | "flowBiMatTao" | "flowBiMatXoa" | "flowBiMatXem";
+
+/** `LoiBiMat` ⇒ `appError` (thông điệp của LoiBiMat không bao giờ chứa giá trị). Lỗi khác ném lại nguyên. */
+function loiBiMat(e: unknown, op: Op): never {
+  if (e instanceof LoiBiMat) {
+    const ma = ({ THIEU_KHOA: "SERVICE_UNAVAILABLE", KHONG_CO_DB: "SERVICE_UNAVAILABLE", KHONG_HOP_LE: "BAD_REQUEST", DA_CO: "CONFLICT", KHONG_CO: "NOT_FOUND", GIAI_MA_HONG: "INTERNAL_SERVER_ERROR" } as const)[e.code];
+    throw appError(ma, "OPERATION_FAILED", { operation: op }, e.message);
+  }
+  throw e;
+}
 
 async function layDb(op: Op) {
   const db = await getDb();
@@ -221,12 +236,52 @@ export const flowRouter = router({
       return kq;
     }),
 
+  /** Tạo (hoặc `ghiDe`) một bí mật — admin. Giá trị chỉ GHI: kết quả không có giá trị. */
+  biMatTao: adminAiProcedure
+    .input(
+      z.object({
+        id: z.string().regex(RE_ID),
+        ten: z.string().trim().min(1).max(120),
+        loai: z.enum(LOAI_BI_MAT as [string, ...string[]]),
+        giaTri: z.string().min(4).max(8192),
+        ghiDe: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        return await taoBiMat(input, ctx.user.id);
+      } catch (e) {
+        loiBiMat(e, "flowBiMatTao");
+      }
+    }),
+
+  /** Xoá một bí mật — admin. Luồng còn trỏ tới nó sẽ lỗi rõ ở node lúc chạy. */
+  biMatXoa: adminAiProcedure.input(z.object({ id: z.string().regex(RE_ID) })).mutation(async ({ input }) => {
+    let xoa: boolean;
+    try {
+      xoa = await xoaBiMat(input.id);
+    } catch (e) {
+      loiBiMat(e, "flowBiMatXoa");
+    }
+    if (!xoa) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowBiMatXoa" }, `Không có bí mật ${input.id}.`);
+    return { id: input.id, daXoa: true };
+  }),
+
+  /** Danh sách bí mật (id, tên, loại, phiên bản khoá, ngày) — quyền sửa luồng; KHÔNG giá trị. */
+  biMatDanhSach: ghiProcedure.query(async () => {
+    try {
+      return await lietKeBiMat();
+    } catch (e) {
+      loiBiMat(e, "flowBiMatXem");
+    }
+  }),
+
   /** Khai báo các loại node đã đăng ký (Flow Studio). */
   danhMucNode: xemProcedure.query(() =>
     danhSachNut()
       .map((n) => ({
         type: n.type, typeVersion: n.typeVersion, laKichHoat: n.laKichHoat, congVao: [...n.congVao], congRa: [...n.congRa],
-        tacDungPhu: n.tacDungPhu, lapLai: n.lapLai, choDuCong: n.choDuCong === true,
+        tacDungPhu: n.tacDungPhu, lapLai: n.lapLai, choDuCong: n.choDuCong === true, nhanBiMat: n.nhanBiMat === true,
       }))
       .sort((a, b) => a.type.localeCompare(b.type)),
   ),

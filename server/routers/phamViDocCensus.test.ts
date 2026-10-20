@@ -807,7 +807,15 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   • mutations `flow.luu` / `datPhienBanHoatDong` / `chayTay` / `duyet` ⇒ D (+4).
 //   Measured before (green on this pin) / after (+6 C, +4 D). No baseline row added. `tong` 2378 matches
 //   `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 333, B: 8, C: 498, D: 1182, S: 357, tong: 2378 } as const;
+// ★★ 2026-10-20 (AI Local Đợt 8.2 Task 4 — bí mật Luồng AI) — **C 498 → 499 · D 1182 → 1184 · tong 2378 → 2381 ·
+// A/B/S unchanged.** Three NEW procedures in `server/routers/flowRouter.ts` over `ai_flow_credentials` (mig 0403 — a
+// machine-wide secret store for flow HTTP nodes, no tenant column; values are write-only, AES-256-GCM, never returned):
+//   • query `flow.biMatDanhSach` (floor `writeProcedure.use(moduleGate("MOD_AI"))` = may edit flows): id/name/kind/key
+//     version/date only ⇒ C (+1);
+//   • mutations `flow.biMatTao` / `flow.biMatXoa` (floor `adminProcedure.use(moduleGate("MOD_AI"))`) ⇒ D (+2).
+//   Measured before (green on this pin) / after (+1 C, +2 D). No baseline row added. `tong` 2381 matches
+//   `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 333, B: 8, C: 499, D: 1184, S: 357, tong: 2381 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

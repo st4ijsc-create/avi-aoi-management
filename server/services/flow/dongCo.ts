@@ -20,6 +20,7 @@ import { getDb } from "../../db/connection";
 import { kiemLuong, type FlowDefinition } from "../../../shared/flow/model";
 import type { ItemLuong } from "../../../shared/flow/bieuThuc";
 import { layNut, type KetQuaChay, type NguCanhChay, type YeuCauCho } from "./dangKyNut";
+import { bienTheBiMat, cheBiMat, cheSau, giaiMaChoChay } from "./biMat";
 import "./nut";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -180,13 +181,44 @@ export async function batDauBuoc(muc: MucHang): Promise<KetQuaBatDau> {
   };
 }
 
-/** (3) Chạy node (node tắt ⇒ cho item `main` đi thẳng). */
+/**
+ * Đợt 8.2 — biến thể (dạng có thể rò) của bí mật đã giải cho từng bước, theo khoá bước `runId:nodeId:lan`. `thucThi` ghi,
+ * `ketThucBuoc` đọc + xoá để CHE lỗi/đầu ra trước khi ghi CSDL. Chỉ trong bộ nhớ; trần kích thước chống phình.
+ */
+const bienTheTheoBuoc = new Map<string, string[]>();
+function ghiBienThe(key: string, ds: string[]): void {
+  if (bienTheTheoBuoc.size > 2000) bienTheTheoBuoc.clear();
+  bienTheTheoBuoc.set(key, ds);
+}
+
+/** Che một thông điệp lỗi theo các biến thể bí mật (rỗng ⇒ nguyên văn). */
+export function cheThongDiepLoi(loi: unknown, bienThe: readonly string[]): string {
+  return cheBiMat(String((loi as Error)?.message ?? loi), bienThe).slice(0, 2000);
+}
+
+/**
+ * (3) Chạy node (node tắt ⇒ cho item `main` đi thẳng). Node có `credentialRef` (loại khai `nhanBiMat`) ⇒ giải mã NGAY ĐÂY và
+ * gắn vào ô `ngu.biMat` KHÔNG liệt kê được; lỗi/đầu ra của node được che trước khi rời hàm.
+ */
 export async function thucThi(def: FlowDefinition, ngu: NguCanhChay): Promise<KetQuaChay | YeuCauCho> {
   const nut = def.nodes.find((n) => n.id === ngu.nodeId)!;
   if (nut.disabled) return { main: ngu.inputs.main ?? [] };
   const loai = layNut(nut.type);
   if (!loai) throw new LoiLuong("LOAI_NODE_MAT", `loại node '${nut.type}' không còn đăng ký`);
-  return loai.chay(nut.parameters ?? {}, ngu);
+  if (!nut.credentialRef) return loai.chay(nut.parameters ?? {}, ngu);
+  if (!loai.nhanBiMat) throw new LoiLuong("LUONG_KHONG_HOP_LE", `loại node '${nut.type}' không nhận bí mật`);
+  const bm = await giaiMaChoChay(nut.credentialRef);
+  const bienThe = bienTheBiMat(bm.giaTri, bm.loai);
+  ghiBienThe(ngu.idempotencyKey, bienThe);
+  const nguBm: NguCanhChay = { ...ngu };
+  Object.defineProperty(nguBm, "biMat", { value: Object.freeze({ giaTri: bm.giaTri, loai: bm.loai }), enumerable: false });
+  try {
+    return cheSau(await loai.chay(nut.parameters ?? {}, nguBm), bienThe);
+  } catch (e) {
+    const che = new Error(cheThongDiepLoi(e, bienThe));
+    che.name = (e as Error)?.name ?? "Error";
+    throw che;
+  }
 }
 
 async function dongRun(tx: Tx, runId: string, status: "xong" | "loi" | "huy", error: unknown = null): Promise<void> {
@@ -220,6 +252,11 @@ export async function ketThucBuoc(
   const db = await layDb();
   const nut = def.nodes.find((n) => n.id === muc.nodeId)!;
   const uuTien = UU_TIEN_SO[def.settings?.uuTien ?? "background"] ?? 2;
+  // Đợt 8.2: biến thể bí mật của bước này (nếu node đã giải mã một bí mật) — che MỌI thứ sắp ghi.
+  const keyBuoc = `${muc.runId}:${muc.nodeId}:${muc.lan}`;
+  const bienThe = bienTheTheoBuoc.get(keyBuoc) ?? [];
+  bienTheTheoBuoc.delete(keyBuoc);
+  if (kq.ok && bienThe.length) kq = { ok: true, ra: cheSau(kq.ra, bienThe) };
   await db.transaction(async (tx) => {
     const buoc = and(eq(aiFlowSteps.runId, muc.runId), eq(aiFlowSteps.nodeId, muc.nodeId), eq(aiFlowSteps.lan, muc.lan), eq(aiFlowSteps.lanThu, lanThu));
     let ra: KetQuaChay;
@@ -231,7 +268,7 @@ export async function ketThucBuoc(
       return;
     }
     if (!kq.ok) {
-      const thongDiep = String((kq.loi as Error)?.message ?? kq.loi).slice(0, 2000);
+      const thongDiep = cheThongDiepLoi(kq.loi, bienThe);
       await tx.update(aiFlowSteps).set({ status: "loi", finishedAt: sql`now()`, error: { thongDiep } }).where(buoc);
       const thuToiDa = nut.retry?.max ?? 0;
       if (muc.attempts <= thuToiDa) {
