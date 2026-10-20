@@ -46,6 +46,17 @@ export function laVaiTroDaBiet(vaiTro: string, anh: AnhSoModel): boolean {
   return anh.vaiTro.has(vaiTro) || VAI_TRO_GOC.some((v) => v.id === vaiTro);
 }
 
+const TASK_SINH_CHU: ReadonlySet<string> = new Set(["chat", "code", "fast", "fim"]);
+
+/**
+ * Vai trò SINH CHỮ (taskKind chat/code/fast/fim) — chỉ những vai trò này được `/v1/chat/completions` phân giải: gọi
+ * `rerank`/`vision` qua đường chat sẽ nạp một reranker/model thị giác làm model chat trong tiến trình.
+ */
+export function laVaiTroSinhChu(vaiTro: string, anh: AnhSoModel): boolean {
+  const tk = anh.vaiTro.get(vaiTro)?.taskKind ?? VAI_TRO_GOC.find((v) => v.id === vaiTro)?.taskKind;
+  return !!tk && TASK_SINH_CHU.has(tk);
+}
+
 type KetQuaProfile = { ok: true; model: string } | { ok: false; lyDo: string };
 
 function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv): KetQuaProfile {

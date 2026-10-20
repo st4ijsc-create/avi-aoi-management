@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import { notInArray, sql } from "drizzle-orm";
 import { aiModelArtifacts } from "../../../../drizzle/schema";
-import { getDb } from "../../../db/connection";
+import { getDb, isEdgeProcessRole } from "../../../db/connection";
 import { lietKeModelTrongKho } from "../doiModelLlamaServer";
 
 export interface ArtifactSuyRa {
@@ -57,6 +57,7 @@ export async function dongBoKhoModel(deps: PhuThuocDongBo = {}): Promise<{ them:
   const rong = { them: 0, capNhat: 0, mat: 0 };
   try {
     const thuMuc = deps.thuMuc ?? process.env.GGUF_MODELS_DIR ?? "";
+    if (!deps.db && isEdgeProcessRole()) return rong; // tiến trình edge: không CSDL trung tâm
     const db = deps.db ?? (await getDb());
     if (!db || !thuMuc) return rong;
     // Kho không đọc được (ổ chưa gắn, quyền) ⇒ KHÔNG đánh dấu mất gì cả: `lietKeModelTrongKho` trả [] cho lỗi đọc, và

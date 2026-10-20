@@ -3930,6 +3930,8 @@
       "signOffProductionSession": "主管签核生产阶段",
       "unloadGgufModel": "卸载GGUF模型",
       "doiModelLlamaServer": "切换 llama-server 上运行的模型",
+      "soModelTongQuan": "查看模型注册表（角色 → 模型）",
+      "soModelDatGan": "更改角色 → 模型的绑定",
       "generateText": "生成文本",
       "chatCompletion": "聊天补全",
       "analyzeDefect": "分析缺陷",

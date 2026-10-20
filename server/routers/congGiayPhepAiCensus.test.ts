@@ -463,7 +463,11 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *     `aiGguf.doiModelTongQuan` (query — sàn `adminProcedure` của `_core` + `moduleGate("MOD_AI")`) và
  *     `aiGguf.doiModelBatDau` (mutation — cùng sàn; audit qua middleware + hàng audit kết quả riêng). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi. `tong` 2363 trùng `phamViDocCensus`.
  */
-const GHIM = { tong: 2363, beMatAi: 410, aiCoCong: 348, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+// ★★ 2026-10-20 (AI Local Đợt 7.0 — sổ model) — **tong 2363 → 2366 · beMatAi 410 → 413 · aiCoCong 348 → 351.** Lời khai:
+//   `aiGgufRouter.ts` mọc ba thủ tục `soModelTongQuan` / `soModelDongBoKho` / `soModelDatGan` trên sàn `adminDoiModel` =
+//   `adminProcedure.use(moduleGate("MOD_AI"))` ⇒ CÓ cổng từ lượt sinh ra: `aiMienTru` KHÔNG đổi (62), `ngoaiAiCoCong` vẫn **0**.
+//   `tong` 2366 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2366, beMatAi: 413, aiCoCong: 351, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

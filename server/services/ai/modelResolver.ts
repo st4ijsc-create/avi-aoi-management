@@ -71,6 +71,9 @@
  */
 
 import path from "path";
+import { laTenVaiTro } from "../../../shared/aiRoles";
+import { layAnhSoModel } from "./soModel/anhSoModel";
+import { dinhTuyenVaiTro, laVaiTroSinhChu } from "./soModel/dinhTuyenVaiTro";
 
 function envStr(name: string): string {
   return (process.env[name] || "").trim();
@@ -237,6 +240,13 @@ export function resolveLogicalModel(requested?: string): string | undefined {
     case "embeddings":
       return embedModelBasename();
     default: {
+      // ★★ Đợt 7.0 — tên VAI TRÒ SINH CHỮ đã biết (`code.plc`, `extract`, …; trong sổ hoặc bộ gốc) ⇒ bộ định tuyến vai
+      // trò. Tên logic cũ ở trên KHÔNG đi đường này (giữ từng byte). Vai trò embed/rerank/vision và tên lạ ⇒ passthrough
+      // như cũ (không để đường chat nạp reranker/model thị giác làm model chat).
+      if (laTenVaiTro(key)) {
+        const anh = layAnhSoModel();
+        if (laVaiTroSinhChu(key, anh)) return dinhTuyenVaiTro({ vaiTro: key }, anh, process.env).model;
+      }
       // Unknown, non-empty id: honour it VERBATIM (client may target a real on-disk basename,
       // possibly nested under GGUF_MODELS_DIR — aiGgufEngine.resolveModelPath supports that via
       // path.join). Only the redundant ".gguf" suffix is stripped so the engine's own

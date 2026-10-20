@@ -20,7 +20,7 @@ describe("napAnhSoModel (DB, Đợt 7.0)", () => {
   });
 
   it("seed: 11 vai trò khớp VAI_TRO_GOC, mỗi vai trò 1 gán global active theo-env", async () => {
-    const anh = await napAnhSoModel();
+    const anh = (await napAnhSoModel())!;
     expect(anh.taiLuc).toBeGreaterThan(0);
     for (const v of VAI_TRO_GOC) {
       expect(anh.vaiTro.get(v.id), v.id).toEqual({ envKey: v.envKey, taskKind: v.taskKind });
@@ -38,7 +38,7 @@ describe("napAnhSoModel (DB, Đợt 7.0)", () => {
       { roleId: "code.plc", scopeKind: "project", scopeId: `${TIEN_TO}-du-an`, profileId: `${TIEN_TO}-p`, mode: "active", retiredAt: new Date() },
       { roleId: "code.plc", scopeKind: "project", scopeId: `${TIEN_TO}-du-an`, profileId: `${TIEN_TO}-p`, mode: "thu" },
     ]);
-    const anh = await napAnhSoModel(db);
+    const anh = (await napAnhSoModel(db))!;
     const g = anh.gan.filter((x) => x.scopeId === `${TIEN_TO}-du-an`);
     expect(g.map((x) => x.mode)).toEqual(["thu"]);
     expect(anh.profile.get(`${TIEN_TO}-p`)).toMatchObject({ artifactFile: `${TIEN_TO}-a.gguf`, artifactStatus: "missing", slotClass: "nho", license: "unknown" });

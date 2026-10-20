@@ -3938,6 +3938,8 @@
       "signOffProductionSession": "ký duyệt (supervisor) phiên sản xuất",
       "unloadGgufModel": "gỡ tải model GGUF",
       "doiModelLlamaServer": "đổi model đang chạy trên llama-server",
+      "soModelTongQuan": "xem sổ model (vai trò → model)",
+      "soModelDatGan": "đổi gán vai trò → model",
       "generateText": "sinh văn bản",
       "chatCompletion": "hoàn thành hội thoại",
       "analyzeDefect": "phân tích lỗi",

@@ -146,9 +146,14 @@ describe("GET /v1/models", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.object).toBe("list");
-    const ids = body.data.map((m: { id: string }) => m.id).sort();
-    expect(ids).toEqual(["chat", "code", "embed", "fast", "fim"]);
+    const ids = body.data.map((m: { id: string }) => m.id);
+    // 5 tên logic cũ đứng ĐẦU, đúng thứ tự cũ (client lấy data[0] không đổi hành vi).
+    expect(ids.slice(0, 5)).toEqual(["chat", "code", "fast", "fim", "embed"]);
     expect(body.data[0].object).toBe("model");
+    // ★★ Đợt 7.0 — vai trò SINH CHỮ theo sau, đánh dấu kind:"role"; rerank/vision (không sinh chữ) KHÔNG được bày.
+    const vaiTro = body.data.filter((m: { kind?: string }) => m.kind === "role").map((m: { id: string }) => m.id).sort();
+    expect(vaiTro).toEqual(["chat.ops", "classify", "code.plc", "code.software", "extract", "summarize"]);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
 

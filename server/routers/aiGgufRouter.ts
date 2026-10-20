@@ -337,6 +337,65 @@ export const aiGgufRouter = router({
       return { id: kq.id };
     }),
 
+  // ─── ★★ Đợt 7.0 — Sổ model (vai trò → model) ──────────
+  /** Vai trò · gán còn hiệu lực · hồ sơ · artifact + model mà MỖI vai trò đang phân giải ra (toàn cục) kèm lý do. */
+  soModelTongQuan: adminDoiModel.query(async () => {
+    const [{ getDb }, sm, { dinhTuyenVaiTro }, { lamMoiAnhSoModel }] = await Promise.all([
+      import("../db/connection"),
+      import("../../drizzle/schema"),
+      import("../services/ai/soModel/dinhTuyenVaiTro"),
+      import("../services/ai/soModel/napSoModel"),
+    ]);
+    const db = await getDb();
+    if (!db) throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "soModelTongQuan" }, "Không có kết nối CSDL.");
+    const anh = await lamMoiAnhSoModel();
+    const [artifacts, profiles] = await Promise.all([db.select().from(sm.aiModelArtifacts), db.select().from(sm.aiServingProfiles)]);
+    const vaiTro = [...anh.vaiTro.keys()].sort().map((id) => ({ id, ...anh.vaiTro.get(id)!, dinhTuyen: dinhTuyenVaiTro({ vaiTro: id }, anh, process.env) }));
+    return { taiLuc: anh.taiLuc, vaiTro, gan: anh.gan, profiles, artifacts };
+  }),
+
+  /** Quét `GGUF_MODELS_DIR` → `ai_model_artifacts` (thêm mới, đánh dấu mất / có lại). */
+  soModelDongBoKho: adminDoiModel.mutation(async () => {
+    const { dongBoKhoModel } = await import("../services/ai/soModel/dongBoKhoModel");
+    return dongBoKhoModel();
+  }),
+
+  /** Đổi gán vai trò → (hồ sơ | khoá .env). Cổng: active + hồ sơ cần lượt đo + giấy phép rõ (xem `soModel/datGan.ts`). */
+  soModelDatGan: adminDoiModel
+    .input(
+      z
+        .object({
+          roleId: z.string().regex(/^[a-z][a-z0-9]*(\.[a-z0-9-]+)?$/).max(48),
+          scopeKind: z.enum(["global", "tenant", "project", "flow"]),
+          scopeId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).nullable(),
+          profileId: z.string().min(1).max(96).nullable(),
+          envKey: z.string().regex(/^GGUF_[A-Z_]+$/).max(32).nullable(),
+          fallback: z.array(z.string().min(1).max(96)).max(4).default([]),
+          mode: z.enum(["active", "shadow", "thu"]),
+        })
+        .refine((v) => (v.scopeKind === "global") === (v.scopeId === null), { message: "scopeId bắt buộc trừ phạm vi global" }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const [{ getDb }, { datGanModel, LoiDatGan }, { lamMoiAnhSoModel }] = await Promise.all([
+        import("../db/connection"),
+        import("../services/ai/soModel/datGan"),
+        import("../services/ai/soModel/napSoModel"),
+      ]);
+      const db = await getDb();
+      if (!db) throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "soModelDatGan" }, "Không có kết nối CSDL.");
+      try {
+        const kq = await datGanModel(db, input as Parameters<typeof datGanModel>[1], ctx.user.id);
+        await lamMoiAnhSoModel();
+        return kq;
+      } catch (e) {
+        if (e instanceof LoiDatGan) {
+          const ma = e.ma === "VAI_TRO_KHONG_CO" || e.ma === "PROFILE_KHONG_CO" ? "NOT_FOUND" : e.ma === "DICH_SAI" ? "BAD_REQUEST" : "PRECONDITION_FAILED";
+          throw appError(ma, "OPERATION_FAILED", { operation: "soModelDatGan" }, e.message);
+        }
+        throw e;
+      }
+    }),
+
   // ─── Token Counting ─────────────────────────────────
   tokenCount: protectedProcedure
     .input(z.object({

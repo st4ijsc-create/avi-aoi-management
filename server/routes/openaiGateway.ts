@@ -82,6 +82,9 @@ import { stripThinking, StreamingThinkingStripper } from "../services/ai/thinkin
 // for the full STEP 0 comparison / reconciliation notes, incl. the one deliberately-fixed "fim"
 // fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
 import { resolveLogicalModel } from "../services/ai/modelResolver";
+import { VAI_TRO_GOC } from "../../shared/aiRoles";
+import { layAnhSoModel } from "../services/ai/soModel/anhSoModel";
+import { laVaiTroSinhChu } from "../services/ai/soModel/dinhTuyenVaiTro";
 import { laLoiToolCallTrongSuyLuan, laLoiTokenCanKietVaoSuyLuan } from "../services/aiLlamaServerClient";
 // ★★★ G2-B — TOOL-CALLING GỐC. Module LÁ (0 import, 0 I/O, 0 env) — xem header của nó để biết
 // BẰNG CHỨNG ĐO SỐNG rằng build `llama-server` đang chạy hỗ trợ `tools` gốc, và ba thứ nó KHÔNG làm.
@@ -375,7 +378,7 @@ function backingFor(logical: LogicalModel): string {
  */
 function inferTaskFromLabel(label: string, fallback: TaskKind = "chat"): TaskKind {
   const key = (label || "").trim().toLowerCase();
-  if (key === "code" || key === "coder") return "code";
+  if (key === "code" || key === "coder" || key.startsWith("code.")) return "code";
   if (key === "fim" || key === "infill") return "fim";
   return fallback;
 }
@@ -816,16 +819,27 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
   // ─── GET /models ─────────────────────────────────────────────
   router.get("/models", (_req: Request, res: Response) => {
     const created = nowUnix();
-    res.json({
-      object: "list",
-      data: LOGICAL_MODELS.map((id) => ({
+    const data = [
+      ...LOGICAL_MODELS.map((id) => ({
         id,
         object: "model",
         created,
         owned_by: "st4i-local",
         root: backingFor(id),
       })),
-    });
+      // ★★ Đợt 7.0 — VAI TRÒ SINH CHỮ (sổ ∪ bộ gốc) sau 5 tên logic cũ (thứ tự cũ giữ nguyên cho client đang lấy data[0]).
+      ...[...new Set([...VAI_TRO_GOC.map((v) => v.id), ...layAnhSoModel().vaiTro.keys()])]
+        .filter((id) => !(LOGICAL_MODELS as readonly string[]).includes(id) && laVaiTroSinhChu(id, layAnhSoModel()))
+        .map((id) => ({
+          id,
+          object: "model",
+          created,
+          owned_by: "st4i-local",
+          root: resolveModelId(id) || envStr("GGUF_DEFAULT_MODEL") || id,
+          kind: "role",
+        })),
+    ];
+    res.json({ object: "list", data });
   });
 
   // ─── POST /chat/completions ──────────────────────────────────

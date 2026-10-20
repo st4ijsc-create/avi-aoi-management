@@ -3938,6 +3938,8 @@
       "signOffProductionSession": "supervisor sign-off production session",
       "unloadGgufModel": "unload GGUF model",
       "doiModelLlamaServer": "switch the model running on llama-server",
+      "soModelTongQuan": "view the model registry (role → model)",
+      "soModelDatGan": "change a role → model binding",
       "generateText": "generate text",
       "chatCompletion": "chat completion",
       "analyzeDefect": "analyze defect",

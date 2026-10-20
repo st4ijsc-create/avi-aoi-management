@@ -783,7 +783,14 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //     the selection file outside the repo — files/HTTP on this machine, no tenant rows ⇒ C;
 //   • `aiGguf.doiModelBatDau` (mutation, admin + 2FA): restarts llama-server with another model, audited ⇒ D.
 //   No baseline row added.
-const GHIM = { A: 333, B: 8, C: 491, D: 1174, S: 357, tong: 2363 } as const;
+// ★★ 2026-10-20 (AI Local Đợt 7.0 — sổ model vai trò → model, mig 0400) — **C 491 → 492 · D 1174 → 1176 · tong 2363 → 2366 ·
+// A/B/S unchanged.** Three NEW procedures in `aiGgufRouter.ts` (admin + 2FA, same floor as `doiModel*`):
+//   • `aiGguf.soModelTongQuan` (query): roles / bindings / serving profiles / artifacts of `ai_model_*` — a machine-wide model
+//     registry, no tenant rows ⇒ C;
+//   • `aiGguf.soModelDongBoKho` (mutation): scans GGUF_MODELS_DIR into `ai_model_artifacts` ⇒ D;
+//   • `aiGguf.soModelDatGan` (mutation): retires + inserts one `ai_model_bindings` row (gate: eval run + licence) ⇒ D.
+//   No baseline row added.
+const GHIM = { A: 333, B: 8, C: 492, D: 1176, S: 357, tong: 2366 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

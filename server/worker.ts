@@ -21,6 +21,7 @@ import { installConsoleBridge } from "./logger";
 import { runWorkerProcess } from "./_core/backgroundJobs";
 import { assertVramEnforcementPolicy } from "./services/vram/vramBroker";
 import { khoiChayDongBoLuaChonModel } from "./services/ai/luaChonModelLlamaServer";
+import { khoiChayDongBoSoModel } from "./services/ai/soModel/napSoModel";
 
 // Structured logging parity with the main entry (no-op unless LOG_JSON=1).
 installConsoleBridge();
@@ -35,6 +36,8 @@ assertVramEnforcementPolicy();
 // Đợt 6 (AI Local) — lựa chọn model llama-server của API đổi model: phủ BA khoá env TRƯỚC mọi lượt LLM,
 // áp lại mỗi 15 s (xem `luaChonModelLlamaServer.ts`). Không có tệp ⇒ no-op.
 khoiChayDongBoLuaChonModel();
+// ★★ Đợt 7.0 — sổ model (ảnh chụp vai trò/gán) cho lượt LLM của worker. Xem `soModel/napSoModel.ts`.
+khoiChayDongBoSoModel();
 
 runWorkerProcess().catch((err) => {
   console.error("[Worker] Fatal startup error:", err);

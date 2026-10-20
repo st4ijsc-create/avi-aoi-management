@@ -6,15 +6,16 @@
 import { eq, isNull } from "drizzle-orm";
 import type { EnvKeyModel } from "../../../../shared/aiRoles";
 import { aiModelArtifacts, aiModelBindings, aiRoles, aiServingProfiles } from "../../../../drizzle/schema";
-import { getDb } from "../../../db/connection";
+import { getDb, isEdgeProcessRole } from "../../../db/connection";
 import { isMissingTable } from "../../../_core/dbErrors";
 import { datAnhSoModel, layAnhSoModel, type AnhSoModel, type CheDoGan, type PhamViGan, type SlotClass } from "./anhSoModel";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
-export async function napAnhSoModel(dbVao?: Db | null): Promise<AnhSoModel> {
+/** `null` = không có kết nối CSDL (người gọi giữ ảnh cũ). Lỗi truy vấn (kể cả thiếu bảng) ⇒ ném. */
+export async function napAnhSoModel(dbVao?: Db | null): Promise<AnhSoModel | null> {
   const db = dbVao ?? (await getDb());
-  if (!db) throw new Error("không có kết nối CSDL");
+  if (!db) return null;
   const [vt, pf, gan] = await Promise.all([
     db.select().from(aiRoles),
     db
@@ -57,6 +58,7 @@ let loiDaBao = "";
 export async function lamMoiAnhSoModel(): Promise<AnhSoModel> {
   try {
     const anh = await napAnhSoModel();
+    if (!anh) return layAnhSoModel();
     datAnhSoModel(anh);
     if (loiDaBao) {
       console.log("[so-model] nạp lại sổ model thành công.");
@@ -80,7 +82,8 @@ let hen: NodeJS.Timeout | null = null;
 
 /** Nạp ngay (KHÔNG chờ — không chặn boot) rồi mỗi `nhipMs`. Gọi lại lần hai = no-op. */
 export function khoiChayDongBoSoModel(nhipMs = 15_000): void {
-  if (hen) return;
+  // Tiến trình EDGE không có CSDL trung tâm (bẫy `edgeDbRefused`) ⇒ ảnh rỗng = hành vi `.env`.
+  if (hen || isEdgeProcessRole()) return;
   void lamMoiAnhSoModel();
   hen = setInterval(() => void lamMoiAnhSoModel(), nhipMs);
   hen.unref?.();

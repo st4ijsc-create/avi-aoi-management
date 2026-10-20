@@ -201,8 +201,10 @@ describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến khô
     //   Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`; không thư mục mới.
     // ⚠ Đợt 6 (đổi model): **665 → 674** — +1 import `khoiChayDongBoLuaChonModel` + 8 dòng (docblock + lời gọi) ở thân
     //   module điểm vào. Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`; không thư mục mới.
+    // ⚠ Đợt 7.0 (sổ model): **674 → 680** — +2 import (`khoiChayDongBoSoModel`, `dongBoKhoModel`) + 4 dòng (chú thích + hai
+    //   lời gọi) ở thân module điểm vào. Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`.
     expect(QUET.tuyenTinh.map((s) => s.split(" — ")[0])).toEqual([
-      "server/_core/index.ts:674",
+      "server/_core/index.ts:680",
       "server/_core/vite.ts:58",
     ]);
   });
