@@ -29,7 +29,7 @@ const UU_TIEN_SO: Record<string, number> = { interactive: 0, agent: 1, backgroun
 
 export class LoiLuong extends Error {
   constructor(
-    public readonly code: "LUONG_KHONG_HOP_LE" | "LUONG_KHONG_CO" | "KHONG_CO_DB",
+    public readonly code: "LUONG_KHONG_HOP_LE" | "LUONG_KHONG_CO" | "KHONG_CO_DB" | "LOAI_NODE_MAT",
     message: string,
   ) {
     super(message);
@@ -185,7 +185,7 @@ export async function thucThi(def: FlowDefinition, ngu: NguCanhChay): Promise<Ke
   const nut = def.nodes.find((n) => n.id === ngu.nodeId)!;
   if (nut.disabled) return { main: ngu.inputs.main ?? [] };
   const loai = layNut(nut.type);
-  if (!loai) throw new Error(`loại node '${nut.type}' không còn đăng ký`);
+  if (!loai) throw new LoiLuong("LOAI_NODE_MAT", `loại node '${nut.type}' không còn đăng ký`);
   return loai.chay(nut.parameters ?? {}, ngu);
 }
 
