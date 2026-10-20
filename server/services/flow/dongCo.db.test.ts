@@ -51,7 +51,7 @@ afterAll(async () => {
 
 async function chayHet(worker = "w1", tran = 200): Promise<number> {
   let n = 0;
-  while (n < tran && (await chayMotMuc(worker))) n++;
+  while (n < tran && (await chayMotMuc(worker, undefined, TT))) n++;
   return n;
 }
 const layRun = async (id: string) => (await (await getDb())!.select().from(aiFlowRuns).where(eq(aiFlowRuns.id, id)))[0];
@@ -118,9 +118,9 @@ describe("động cơ Luồng AI (Đợt 8.0, DB)", () => {
       null,
     );
     const run = await batDauRun({ flowId: `${TT}-s${loai}`, version });
-    expect(await chayMotMuc("A")).toBe(true); // kích hoạt
+    expect(await chayMotMuc("A", undefined, TT)).toBe(true); // kích hoạt
     // Worker A nhặt node gửi, ghi bước dang-chay, GỌI đích… rồi CHẾT trước khi ghi kết quả.
-    const muc = (await nhatMuc("A", 40))!;
+    const muc = (await nhatMuc("A", 40, TT))!;
     expect(muc.nodeId).toBe("s");
     const bd = await batDauBuoc(muc);
     if (!bd.tiep) throw new Error("phải chạy");
@@ -157,7 +157,7 @@ describe("động cơ Luồng AI (Đợt 8.0, DB)", () => {
   it("hai worker giành cùng một mục ⇒ đúng một lấy được", async () => {
     const { version } = await luuPhienBan({ id: `${TT}-c`, name: "giành", version: 1, nodes: [nut("t", "kich-hoat.thu-cong")], connections: [] }, null);
     await batDauRun({ flowId: `${TT}-c`, version });
-    const [a, b] = await Promise.all([nhatMuc("X"), nhatMuc("Y")]);
+    const [a, b] = await Promise.all([nhatMuc("X", undefined, TT), nhatMuc("Y", undefined, TT)]);
     expect([a, b].filter(Boolean)).toHaveLength(1);
     await chayHet();
   });

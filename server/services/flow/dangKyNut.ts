@@ -21,8 +21,16 @@ export interface NguCanhChay {
 
 export type KetQuaChay = Record<string, ItemLuong[]>;
 
+/**
+ * Node xin CHỜ thay vì trả kết quả ngay (duyệt người, webhook, hẹn giờ): động cơ ghi `ai_flow_waits`, lượt ⇒ `cho-duyet`,
+ * bước giữ `dang-chay`; `traLoiCho` (dongCo) đi tiếp với `items` ở cổng được chọn.
+ */
+export interface YeuCauCho {
+  __cho: { kind: "duyet" | "webhook" | "thoi-gian"; items: ItemLuong[]; hetHanMs?: number; tokenHash?: string; payload?: Record<string, unknown> };
+}
+
 export interface DinhNghiaNut extends KhaiBaoNut {
-  chay(thamSo: Record<string, unknown>, ngu: NguCanhChay): Promise<KetQuaChay>;
+  chay(thamSo: Record<string, unknown>, ngu: NguCanhChay): Promise<KetQuaChay | YeuCauCho>;
 }
 
 /** Ngữ cảnh biểu thức cho MỘT item. */
