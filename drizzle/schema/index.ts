@@ -83,6 +83,7 @@ export * from "./vram"; // 2026-08-02 VRAM Pha 1 Task 2 — nhật ký chỉ-ghi
 export * from "./aiCodingSession"; // doc 79 DANH SÁCH PHIÊN — mạch hội thoại tác nhân lập trình, phạm vi CHỦ SỞ HỮU, migration 0333
 export * from "./aiCodingLesson"; // doc 82 BỘ NHỚ XUYÊN PHIÊN — bài học người dùng tự khai, phạm vi CHỦ SỞ HỮU, migration 0336
 export * from "./aiAgentRun"; // Đợt 1 T4 2026-10-17 — sổ LƯỢT CHẠY vòng agent máy chủ, phạm vi CHỦ LƯỢT CHẠY, migration 0390
+export * from "./aiModelRegistry"; // Đợt 7.0 2026-10-20 — SỔ MODEL (artifact · hồ sơ · vai trò · gán · lượt đo), migration 0400
 export * from "./aiCodeChunk"; // Đợt 2 2026-10-17 — chỉ mục NGỮ NGHĨA mã nguồn theo dự án (pgvector, khoá projectId), migration 0391
 export * from "./aiCodeIndexState"; // 2026-10-17 — TRẠNG THÁI lượt dựng chỉ mục ngữ nghĩa (san-sang CHỈ khi xong), migration 0395
 export * from "./aiAgentFeedback"; // Đợt 5 2026-10-17 — PHẢN HỒI 👍/👎 + diff duyệt/bác (phạm vi CHỦ) + lượt EVAL MÃ A/B corpus Studio, migration 0397
