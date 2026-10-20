@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 import { ArrowLeft, Inbox, Loader2, Play, Plus, Power, PowerOff, Save, Search, AlertTriangle, Sparkles } from "lucide-react";
 import { kiemLuong, type FlowDefinition, type KhaiBaoNut, type NodeInstance } from "@shared/flow/model";
 import FlowCanvas, { KIEU_KEO_NUT } from "@/components/aiFlow/FlowCanvas";
@@ -115,6 +116,18 @@ export default function AIFlowEditorPage() {
     onError: (e) => toastTrpcError(e),
   });
 
+  // ★★ Đợt 8.5 — bật luồng hạng `ot` đứng trên `deployProcedure` (admin + OTP TƯƠI mỗi lượt) ⇒ đi qua step-up 2FA chung.
+  const stepUp = useStepUpOtp();
+  const batOt = trpc.flow.batLuongOt.useMutation({
+    onSuccess: async (r) => {
+      toast.success(t("flowStudio.sua.daBat", { version: r.version }));
+      if (r.tokenWebhook) setTokenMoi(r.tokenWebhook);
+      await utils.flow.chiTiet.invalidate({ flowId });
+      void utils.flow.danhSach.invalidate();
+    },
+    onError: (e) => toastTrpcError(e),
+  });
+
   const chayTay = trpc.flow.chayTay.useMutation({
     onSuccess: (r) => {
       setMoChay(false);
@@ -198,6 +211,7 @@ export default function AIFlowEditorPage() {
 
   return (
     <DashboardLayout>
+      {stepUp.dialog}
       <div className="flex flex-col h-[calc(100vh-4rem)] min-h-[560px]" data-testid="flow-editor">
         {/* thanh cong cu */}
         <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
@@ -251,9 +265,13 @@ export default function AIFlowEditorPage() {
                 size="sm"
                 variant="outline"
                 data-testid="nut-bat"
-                disabled={datBat.isPending || !version || dirty}
+                disabled={datBat.isPending || batOt.isPending || !version || dirty}
                 title={dirty ? t("flowStudio.sua.luuTruocKhiBat") : undefined}
-                onClick={() => version && datBat.mutate({ flowId, version, bat: true })}
+                onClick={() => {
+                  if (!version) return;
+                  if (hangHienThi === "ot") stepUp.guard((totpCode) => batOt.mutate({ flowId, version, totpCode }));
+                  else datBat.mutate({ flowId, version, bat: true });
+                }}
               >
                 <Power className="h-4 w-4 mr-1" />
                 {t("flowStudio.sua.bat", { version: version ?? "" })}

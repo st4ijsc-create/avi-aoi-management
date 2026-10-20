@@ -30,6 +30,8 @@ import { dangKyNut, nguCanhItem, type NguCanhChay } from "../dangKyNut";
 import { HE_THONG_CHUNG, LoiNutAi, VAI_TRO_TASK, boc } from "./ai";
 import { kiemGoiLuongCon } from "./luong";
 import type { TimTaiLieu } from "../../ai/agent/timTaiLieuAgent";
+// Module LÁ — chữ cuối của agent thành dữ liệu luồng; chuỗi suy luận KHÔNG BAO GIỜ đi theo (và không bao giờ thành lệnh).
+import { stripThinking } from "../../ai/thinkingStrip";
 
 export type HamGoiAgent = (y: { vaiTro: string; tinNhan: TinNhan[]; congCu: WireTool[]; maxTokens: number; ngu: NguCanhChay }) => Promise<{ chu: string; toolCalls: WireToolCall[] }>;
 
@@ -50,7 +52,7 @@ let goiAgent: HamGoiAgent = async ({ vaiTro, tinNhan, congCu, maxTokens }) => {
         { messages: msgs, maxTokens, temperature: 0.2, disableThinking: true, ...(congCu.length ? { tools: congCu, toolChoice: "auto" as const } : {}) },
         modelId,
       );
-      return { result: { chu: r.text, toolCalls: (r.toolCalls ?? []) as WireToolCall[] }, tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated };
+      return { result: { chu: stripThinking(r.text).answer, toolCalls: (r.toolCalls ?? []) as WireToolCall[] }, tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated };
     },
     { getResponseText: (t) => t.chu },
   );

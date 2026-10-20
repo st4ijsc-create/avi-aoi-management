@@ -12,6 +12,8 @@
  */
 import { danhGiaThamSo, type ItemLuong } from "../../../../shared/flow/bieuThuc";
 import { dangKyNut, nguCanhItem, type NguCanhChay } from "../dangKyNut";
+// Module LÁ (0 import) — cắt chuỗi suy luận khỏi chữ model trước khi chữ thành DỮ LIỆU của luồng (hiển thị + chảy xuống node sau).
+import { stripThinking } from "../../ai/thinkingStrip";
 
 /** `ngu` vắng = lời gọi ngoài một lượt chạy (vd `flow.taoTuMoTa`, Đợt 8.4). */
 export type HamGoiAi = (y: { vaiTro: string; heThong: string; nguoiDung: string; nghi: boolean; maxTokens: number; loai: string; ngu?: NguCanhChay }) => Promise<string>;
@@ -33,7 +35,7 @@ let goiAi: HamGoiAi = async ({ vaiTro, heThong, nguoiDung, nghi, maxTokens, loai
         { messages: [{ role: "system", content: heThong }, { role: "user", content: safeText }], maxTokens, temperature: 0.2, disableThinking: !nghi },
         modelId,
       );
-      return { result: r.text, tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated };
+      return { result: stripThinking(r.text).answer, tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated };
     },
     { getResponseText: (t) => t },
   );

@@ -543,13 +543,13 @@ const CLIENT = diemGoiMutate(GOC_REPO);
 const KHOA_DEPLOY: readonly string[] = QUET.thuTuc.map((t) => khoaClient(t)).filter((k): k is string => k !== null);
 
 describe("★★★ I-3 — nửa CLIENT của bất biến step-up, ∀ THỦ TỤC `deployProcedure` (không chỉ VRAM)", () => {
-  it("★★★ cầu chì — bộ suy đọc được cả hai nửa: 0 ô mù, 8 thủ tục, 8 khoá client, nhiều file client", () => {
+  it("★★★ cầu chì — bộ suy đọc được cả hai nửa: 0 ô mù, 9 thủ tục, 9 khoá client, nhiều file client", () => {
     expect(QUET.mu.join("\n"), "một ô không phân giải được ở nửa MÁY CHỦ là một ô KHÔNG AI CANH").toBe("");
     expect(KHONG_GIAN_TEN.mu.join("\n"), "không dựng được ánh xạ không-gian-tên ⇒ mọi khoá client là rác").toBe("");
-    expect(QUET.thuTuc.length, "0 thủ tục deploy ⇒ mọi khẳng định dưới là chân lý rỗng").toBe(8);
+    expect(QUET.thuTuc.length, "0 thủ tục deploy ⇒ mọi khẳng định dưới là chân lý rỗng").toBe(9);
     // ⚠ Một thủ tục deploy mà router của nó CHƯA được gắn vào `server/routers.ts` sẽ mất khoá
     //   client ⇒ nó **im lặng rơi khỏi** lượng từ. Ô này bắt đúng lượt rơi ấy.
-    expect(KHOA_DEPLOY.length, "một thủ tục deploy KHÔNG có không-gian-tên client ⇒ nó rơi khỏi lượng từ").toBe(8);
+    expect(KHOA_DEPLOY.length, "một thủ tục deploy KHÔNG có không-gian-tên client ⇒ nó rơi khỏi lượng từ").toBe(9);
     expect(CLIENT.soFileDoc, "bộ suy client không đọc file nào ⇒ nó đã mù, không phải client đã sạch").toBeGreaterThanOrEqual(30);
     expect(CLIENT.diem.length, "0 điểm gọi `.mutate(` nào ⇒ chân lý rỗng").toBeGreaterThanOrEqual(20);
   });
@@ -626,7 +626,9 @@ describe("★★★ I-3 — nửa CLIENT của bất biến step-up, ∀ THỦ T
     expect(thua.join("\n"), "điểm gọi KHÔNG thuộc tập `deployProcedure` mà lại đi qua step-up 2FA").toBe("");
   });
 
-  it("★★ GHIM SỐ — 8 thủ tục / 8 điểm gọi client, cả hai tập nói ra đích danh", () => {
+  it("★★ GHIM SỐ — 9 thủ tục / 9 điểm gọi client, cả hai tập nói ra đích danh", () => {
+    // ⚠ AI Local Đợt 8.5 (2026-10-20) — QUYẾT ĐỊNH NÓI RA: `flow.batLuongOt` (bật luồng AI hạng `ot`, chế độ mô phỏng) đứng
+    //   trên `deployProcedure`; điểm gọi client ở AIFlowEditorPage đi qua `stepUp.guard` với `totpCode`. 8 → 9.
     // ⚠ doc 80 Đợt 0 Task 1 (ORC-05, 2026-09-26) — QUYẾT ĐỊNH NÓI RA: `orchestration.rollbackWorkflow`
     //   lên `deployProcedure` (rollback = re-deploy ⇒ OTP tươi + lý do bắt buộc); điểm gọi client ở
     //   OrchestrationStudio đi qua `stepUp.guard`. 7 → 8.
@@ -636,6 +638,7 @@ describe("★★★ I-3 — nửa CLIENT của bất biến step-up, ∀ THỦ T
      * xuống component con làm con số này lệch **trước khi** nó kịp thành một lỗ.
      */
     expect([...KHOA_DEPLOY].sort()).toEqual([
+      "flow.batLuongOt",
       "orchestration.deployWorkflow",
       "orchestration.rollbackWorkflow",
       "programming.approveDeployment",
@@ -653,6 +656,7 @@ describe("★★★ I-3 — nửa CLIENT của bất biến step-up, ∀ THỦ T
     ).toEqual([
       "client/src/components/ai/VramBrokerPanel.tsx vram.preempt",
       "client/src/components/ai/VramBrokerPanel.tsx vram.releaseStale",
+      "client/src/pages/AIFlowEditorPage.tsx flow.batLuongOt",
       "client/src/pages/ApprovalsInbox.tsx programming.approveDeployment",
       "client/src/pages/EngineeringWorkspace.tsx programming.deployBuild",
       "client/src/pages/EngineeringWorkspace.tsx programming.deployToFleet",

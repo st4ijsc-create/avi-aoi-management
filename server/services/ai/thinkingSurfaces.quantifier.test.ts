@@ -331,6 +331,17 @@ interface BeMat {
 }
 
 const SO_KHAI: readonly BeMat[] = [
+  // ─── AI Local Đợt 8.1/8.4 (2026-10-20) — node AI của Luồng AI ───
+  {
+    tep: "server/services/flow/nut/ai.ts", ham: "goiAi", goi: "chatCompletion",
+    hienThi: true, noi: "tai_cho",
+    ghiChu: "Chữ model thành DỮ LIỆU item của luồng (dòng thời gian Flow Studio + chảy xuống node sau: tóm tắt, email, phiếu). `stripThinking().answer` ngay tại điểm gọi, trong hàm `exec` của Cổng AI.",
+  },
+  {
+    tep: "server/services/flow/nut/agent.ts", ham: "goiAgent", goi: "chatCompletion",
+    hienThi: true, noi: "tai_cho",
+    ghiChu: "Node `ai.agent`: chỉ `toolCalls` được thực thi; chữ cuối thành dữ liệu item — `stripThinking().answer` tại chỗ, chuỗi suy luận không bao giờ thành lệnh hay dữ liệu.",
+  },
   // ─── AI Local Đợt 3b (2026-10-17) — "Gợi ý thông điệp" commit ───
   {
     tep: "server/routers/repoWorkspaceRouter.ts", ham: "<module>", goi: "generateText",
