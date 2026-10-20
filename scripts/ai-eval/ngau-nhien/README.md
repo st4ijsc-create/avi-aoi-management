@@ -29,6 +29,7 @@ reports/             báo cáo JSON (.gitignore)
 | cpp | cmake | CMake 4.4.3 (`C:\Program Files\CMake\bin`) → MSVC VS 2026, C++20 | CMake tự dò MSVC, không cần vcvars64 |
 | go | go | **go1.27.2** di động `D:\SOURCES\16.AI\toolchains\go` (`AI_EVAL_GO_ROOT`) | GOTOOLCHAIN=local, GOPROXY=off, GOCACHE/GOPATH dưới `toolchains\` |
 | rs | cargo | **rustc/cargo 1.99.1** msvc di động `CARGO_HOME=D:\SOURCES\16.AI\toolchains\cargo`, `RUSTUP_HOME=…\rustup` | `cargo test --offline`, linker MSVC có sẵn |
+| st | st | **RuSTy 1.0.7** (`plc`, LGPL-3.0) trong Docker: ảnh `st-rusty:1.0.7` (`lib/st/Dockerfile`, .deb chính thức lưu ở `D:SOURCES.AI	oolchainsstdl`, ảnh lưu `…imagesst-rusty-1.0.7.tar` ⇒ `docker load` offline) | `--network none`, ~0,5 s/lượt; prelude `lib/st/prelude-dong-ho-gia.st` = đồng hồ GIẢ `G_NOW` + TON/TOF/TP tất định (timers.st của stdlib KHÔNG nạp); phương ngữ CODESYS — cú pháp Siemens SCL (`#x`, `"FB"`, `REGION`) KHÔNG phân tích được |
 
 Cài Go/Rust (mức người dùng, không admin, không sửa PATH hệ thống) — đã chạy 2026-10-18:
 
@@ -165,7 +166,7 @@ kho/<id>/
 | trường | ý nghĩa |
 |---|---|
 | `id` | `<lang>-<tt\|tv\|ud><số>-<tên-ngắn>` = tên thư mục. `tt` thuật toán/CTDL · `tv` thư viện chuẩn/API platform · `ud` ứng dụng nhỏ NHIỀU TỆP |
-| `lang` / `kieu` | `py`/`sql` ⇒ `pytest` · `js`/`ts` ⇒ `node` · `cs` ⇒ `dotnet` · `java` ⇒ `java` · `cpp` ⇒ `cmake` · `go` ⇒ `go` · `rs` ⇒ `cargo` |
+| `lang` / `kieu` | `py`/`sql` ⇒ `pytest` · `js`/`ts` ⇒ `node` · `cs` ⇒ `dotnet` · `java` ⇒ `java` · `cpp` ⇒ `cmake` · `go` ⇒ `go` · `rs` ⇒ `cargo` · `st` ⇒ `st` |
 | `muc` | `thuat-toan` · `thu-vien` · `ung-dung` |
 | `tieuDe`, `deBai` | đặc tả tiếng Việt, ĐỦ để làm đúng không cần đoán: chữ ký chính xác, định dạng trả về, MỌI hành vi biên mà test ẩn kiểm. Test ẩn chỉ được kiểm điều `deBai` nói |
 | `tepGiai` | tệp lời giải phải viết (đường tương đối gốc dự án). Đường (a) ghi ĐÚNG các tệp này. `ud` ⇒ ≥ 2 tệp |
@@ -192,6 +193,7 @@ Dựng khung bài mới: `node scripts/ai-eval/ngau-nhien/tao-bai.mjs <id>` (ch�
 | cpp | `src/*.hpp` + `src/*.cpp`; `CMakeLists.txt` khuôn (mỗi `tests/*.cpp` một tệp chạy, liên kết mọi `src/*.cpp`, và MỘT `add_test` — `ctest` của agent chạy được; bộ chấm vẫn chạy thẳng `.exe` Release), C++20, MSVC `/utf-8 /EHsc /permissive-` | `tests/hien_thi.cpp`, `tests/an.cpp` dùng `kt.hpp` (`kt::chay`, `KT_BANG`, `KT_DUNG`, `KT_NEM`, `KT_GAN`), `return kt::ketThuc();` | mỗi `kt::chay` |
 | go | gói `bai` ở gốc module `bai` (`go 1.24`, `go.mod` ở GỐC — khuôn agent `go test ./...` đòi), chỉ thư viện chuẩn | `hien_thi_test.go`, `an_test.go` (package `bai`) | mỗi hàm `TestXxx` cấp cao (test con không tính) |
 | rs | crate `bai` (`src/lib.rs`, có thể thêm module, `Cargo.toml` ở GỐC — khuôn `cargo test --offline`), không crate ngoài | `tests/hien_thi.rs`, `tests/an.rs` (test tích hợp, `use bai::…`) | mỗi `#[test]` (tránh khối mã ``` trong doc comment — `cargo test` chạy doc-test) |
+| st | POU trong `src/*.st` (biên dịch theo thứ tự tên tệp), khối khai báo vào/ra cho sẵn trong khung — không đổi | `tests/hien_thi.st`, `tests/an.st`: mỗi tệp một `FUNCTION main : DINT` gọi `KT_BOOL/KT_DINT/KT_REAL/KT_TIME` (`tests/kt.st`, bảo vệ), tiến đồng hồ bằng `KT_BUOC(T#10ms)`, kết thúc `main := KT_TONG();`. Mỗi tệp test = một chương trình (prelude + src + kt + test). Tệp `.st` MỚI ngoài `src/` ⇒ `TEP_CAU_HINH_TEST_MOI`. Đường (b)/(c): agent không có lệnh test ST | mỗi lời gọi `KT_*` |
 
 ### Luật chất lượng bài
 

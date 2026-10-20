@@ -1,0 +1,15 @@
+{
+  "id": "st-tt4-trung-binh-truot",
+  "lang": "st",
+  "muc": "thuat-toan",
+  "kieu": "st",
+  "tieuDe": "Trung bình trượt 8 mẫu bằng bộ đệm vòng, nạp mẫu theo sườn lên",
+  "deBai": "Cài `FUNCTION_BLOCK TrungBinhTruot` trong tệp `src/TrungBinhTruot.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ).\n\nVào: `MAU : REAL` (giá trị mẫu), `LAY_MAU : BOOL`, `RESET : BOOL`. Ra: `TB : REAL`, `SO_MAU : INT`, `HOP_LE : BOOL`. Mỗi lần gọi khối là một chu kỳ quét.\n\n- Khối giữ TỐI ĐA 8 mẫu gần nhất (bộ đệm vòng). Một mẫu (giá trị `MAU` hiện tại) được nạp CHỈ ở chu kỳ có sườn lên của `LAY_MAU` (chu kỳ trước FALSE, chu kỳ này TRUE); giữ `LAY_MAU` TRUE nhiều chu kỳ chỉ nạp một mẫu. Trạng thái ban đầu coi như `LAY_MAU` chu kỳ trước = FALSE.\n- Khi đã đủ 8 mẫu, mẫu mới THAY mẫu CŨ NHẤT.\n- `SO_MAU` = số mẫu đang có (0..8); `HOP_LE` = (`SO_MAU` = 8); `TB` = trung bình cộng các mẫu đang có, 0.0 khi chưa có mẫu nào. Các đầu ra phản ánh trạng thái SAU khi xử lý chu kỳ hiện tại (mẫu nạp ở chu kỳ này đã được tính).\n- `RESET` = TRUE ⇒ xoá toàn bộ mẫu (`SO_MAU` = 0, `TB` = 0.0, `HOP_LE` = FALSE) và KHÔNG nạp mẫu trong chu kỳ đó, kể cả khi có sườn lên `LAY_MAU`. Giá trị `LAY_MAU` của MỌI chu kỳ (kể cả khi `RESET`) đều được nhớ làm \"chu kỳ trước\" — vì vậy nhả `RESET` khi `LAY_MAU` vẫn TRUE KHÔNG phải sườn mới.\n- Đầu vào không được truyền trong một lần gọi giữ giá trị lần gọi trước (ngữ nghĩa khối chức năng IEC thông thường).\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": ["src/TrungBinhTruot.st"],
+  "dinhDanh": "TrungBinhTruot",
+  "testHienThi": ["tests/hien_thi.st"],
+  "testAn": ["tests/an.st"],
+  "tepBaoVe": ["tests/kt.st", "tests/hien_thi.st"],
+  "soTest": { "hienThi": 3, "an": 26 },
+  "sai": [{ "tep": "src/TrungBinhTruot.st", "tu": "ELSIF LAY_MAU AND NOT layCu THEN", "den": "ELSIF LAY_MAU THEN" }]
+}

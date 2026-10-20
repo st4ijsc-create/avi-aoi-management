@@ -1,0 +1,21 @@
+FUNCTION_BLOCK BomLuanPhien
+VAR_INPUT
+    MUC_CAO : BOOL;
+    MUC_THAP : BOOL;
+    PH1 : BOOL;
+    PH2 : BOOL;
+    RESET : BOOL;
+    T_PHAN_HOI : TIME;
+END_VAR
+VAR_OUTPUT
+    BOM1 : BOOL;
+    BOM2 : BOOL;
+    CAN_BOM : BOOL;
+    LOI1 : BOOL;
+    LOI2 : BOOL;
+    BAO_DONG : BOOL;
+    BOM_CHINH : INT;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    BOM1 := FALSE;
+END_FUNCTION_BLOCK

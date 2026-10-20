@@ -1,0 +1,21 @@
+FUNCTION_BLOCK DenGiaoThong
+VAR_INPUT
+    NUT_NGUOI : BOOL;
+    NHAP_NHAY_VANG : BOOL;
+    T_XANH_MIN : TIME;
+    T_VANG : TIME;
+    T_NGUOI : TIME;
+    T_DO_CHUNG : TIME;
+    T_NHAY : TIME;
+END_VAR
+VAR_OUTPUT
+    XE_XANH : BOOL;
+    XE_VANG : BOOL;
+    XE_DO : BOOL;
+    NG_XANH : BOOL;
+    NG_DO : BOOL;
+    TRANG_THAI : INT;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    XE_XANH := FALSE;
+END_FUNCTION_BLOCK

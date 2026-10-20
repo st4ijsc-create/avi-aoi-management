@@ -1,0 +1,15 @@
+{
+  "id": "st-tt6-chon-bom-chinh",
+  "lang": "st",
+  "muc": "thuat-toan",
+  "kieu": "st",
+  "tieuDe": "Chọn bơm chính theo giờ chạy ít nhất và xếp thứ tự luân phiên các bơm sẵn sàng",
+  "deBai": "Cài `FUNCTION_BLOCK ChonBomChinh` trong tệp `src/ChonBomChinh.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ).\n\nVào: `GIO_CHAY : ARRAY[1..4] OF UDINT` (giờ chạy tích luỹ của bơm 1..4, có thể lớn hơn 2^31), `SAN_SANG : ARRAY[1..4] OF BOOL`. Ra: `BOM : INT`, `THU_TU : ARRAY[1..4] OF INT`. Mỗi lần gọi khối tính lại toàn bộ đầu ra từ đầu vào hiện tại (không phụ thuộc lần gọi trước).\n\n- `THU_TU`: chỉ số (1..4) của các bơm SẴN SÀNG, xếp TĂNG DẦN theo `GIO_CHAY`; hai bơm cùng giờ chạy thì bơm có chỉ số NHỎ hơn đứng trước. Nếu có k bơm sẵn sàng thì `THU_TU[1..k]` chứa chúng, các ô `THU_TU[k+1..4]` = 0 (kể cả khi lần gọi trước có nhiều bơm hơn).\n- `BOM` = bơm sẵn sàng có giờ chạy NHỎ NHẤT (hoà ⇒ chỉ số nhỏ nhất), tức là `THU_TU[1]`; không bơm nào sẵn sàng ⇒ `BOM` = 0.\n- So sánh giờ chạy theo giá trị UDINT không dấu.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": ["src/ChonBomChinh.st"],
+  "dinhDanh": "ChonBomChinh",
+  "testHienThi": ["tests/hien_thi.st"],
+  "testAn": ["tests/an.st"],
+  "tepBaoVe": ["tests/kt.st", "tests/hien_thi.st"],
+  "soTest": { "hienThi": 3, "an": 34 },
+  "sai": [{ "tep": "src/ChonBomChinh.st", "tu": "ELSIF GIO_CHAY[THU_TU[j]] > GIO_CHAY[i] THEN", "den": "ELSIF GIO_CHAY[THU_TU[j]] >= GIO_CHAY[i] THEN" }]
+}

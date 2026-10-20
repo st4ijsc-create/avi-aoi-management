@@ -1,0 +1,17 @@
+FUNCTION_BLOCK LoaiBoAOI
+VAR_INPUT
+    ENCODER : BOOL;
+    CO_SAN_PHAM : BOOL;
+    LOI_AOI : BOOL;
+    RESET : BOOL;
+    VI_TRI_GAT : INT;
+    T_GAT : TIME;
+END_VAR
+VAR_OUTPUT
+    CAN_GAT : BOOL;
+    DEM_GAT : DINT;
+    SO_O_LOI : INT;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    CAN_GAT := FALSE;
+END_FUNCTION_BLOCK

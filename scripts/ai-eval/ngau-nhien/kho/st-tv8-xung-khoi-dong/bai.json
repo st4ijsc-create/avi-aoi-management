@@ -1,0 +1,33 @@
+{
+  "id": "st-tv8-xung-khoi-dong",
+  "lang": "st",
+  "muc": "thu-vien",
+  "kieu": "st",
+  "tieuDe": "Xung khởi động độ dài cố định (TP) từ nút nhấn, có khóa cắt xung và đếm số xung",
+  "deBai": "Cài `FUNCTION_BLOCK XungKhoiDong` trong tệp `src/XungKhoiDong.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ). BẮT BUỘC dùng khối chuẩn `TP` (tạo xung) và `R_TRIG` (sườn nút) (có sẵn, KHÔNG tự định nghĩa).\n\nVào: `NUT : BOOL`, `T_XUNG : TIME` (> 0), `KHOA : BOOL`. Ra: `XUNG : BOOL`, `SO_LAN : UDINT`. Mỗi lần gọi khối là một chu kỳ quét; thời gian lấy theo đồng hồ của bộ chấm mà `TP` dùng (biến toàn cục `G_NOW`, bộ test tự tăng giữa các chu kỳ).\n\n- Sườn lên của `NUT` = FALSE ở lần gọi trước, TRUE ở lần này (trạng thái ban đầu coi lần trước = FALSE, nên `NUT` = TRUE ngay lần gọi đầu là sườn). Sườn được theo dõi ở MỌI chu kỳ, kể cả khi `KHOA` = TRUE.\n- Sườn lên khi `KHOA` = FALSE và KHÔNG đang xung ⇒ phát xung: `XUNG` = TRUE ngay chu kỳ đó (mốc t0 = chu kỳ đó) và `SO_LAN` tăng 1 trong chu kỳ đó. Xung kết thúc ở chu kỳ đầu tiên có (hiện tại − t0) ≥ `T_XUNG`: chu kỳ đó `XUNG` = FALSE (đúng ngữ nghĩa `TP`).\n- \"Đang xung\" gồm mọi chu kỳ từ t0 tới và KỂ CẢ chu kỳ kết thúc: sườn lên trong khoảng đó bị bỏ qua (không kéo dài, không phát lại, không đếm), và không được nhớ để phát sau.\n- `KHOA` = TRUE ⇒ `XUNG` = FALSE ngay trong chu kỳ đó (cắt xung đang phát), và sườn lên trong lúc `KHOA` = TRUE bị bỏ qua, không đếm. Nhả `KHOA` khi `NUT` vẫn giữ TRUE KHÔNG phát xung (không có sườn). Sau khi xung bị cắt, sườn lên kế tiếp (khi `KHOA` = FALSE) phát xung mới đủ `T_XUNG` bình thường — kể cả khi `T_XUNG` tính từ xung bị cắt chưa trôi hết.\n- Đầu vào không truyền trong một lần gọi giữ giá trị lần gọi trước.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": [
+    "src/XungKhoiDong.st"
+  ],
+  "dinhDanh": "XungKhoiDong",
+  "testHienThi": [
+    "tests/hien_thi.st"
+  ],
+  "testAn": [
+    "tests/an.st"
+  ],
+  "tepBaoVe": [
+    "tests/kt.st",
+    "tests/hien_thi.st"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 29
+  },
+  "sai": [
+    {
+      "tep": "src/XungKhoiDong.st",
+      "tu": "xungTp(IN := FALSE, PT := T#0s);",
+      "den": "xungTp(IN := FALSE, PT := T_XUNG);"
+    }
+  ]
+}

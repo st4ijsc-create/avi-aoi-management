@@ -1,0 +1,15 @@
+{
+  "id": "st-tt7-bcd",
+  "lang": "st",
+  "muc": "thuat-toan",
+  "kieu": "st",
+  "tieuDe": "Chuyển đổi BCD 4 chữ số ⇄ INT có báo lỗi",
+  "deBai": "Cài hai `FUNCTION` trong tệp `src/Bcd.st` (khối khai báo đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ). Cả hai có đầu ra phụ `LOI : BOOL` khai trong `VAR_OUTPUT` của hàm (gọi kiểu `v := BcdSangInt(BCD := w, LOI => l);`). `LOI` phải được gán ở MỌI lần gọi (FALSE khi hợp lệ).\n\n1. `BcdSangInt(BCD : WORD; VAR_OUTPUT LOI : BOOL) : INT` — `BCD` chứa 4 chữ số thập phân mã BCD, mỗi nhóm 4 bit (nibble) một chữ số, nibble cao nhất (bit 15..12) là hàng nghìn, nibble thấp nhất (bit 3..0) là hàng đơn vị. Ví dụ `16#1234` ⇒ 1234, `16#0909` ⇒ 909. Nếu BẤT KỲ nibble nào > 9 ⇒ `LOI` = TRUE và trả 0.\n2. `IntSangBcd(GIA_TRI : INT; VAR_OUTPUT LOI : BOOL) : WORD` — ngược lại: 0..9999 ⇒ mã BCD 4 chữ số (vd 1050 ⇒ `16#1050`, 7 ⇒ `16#0007`), `LOI` = FALSE. `GIA_TRI` < 0 hoặc > 9999 ⇒ `LOI` = TRUE và trả 0.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": ["src/Bcd.st"],
+  "dinhDanh": "BcdSangInt",
+  "testHienThi": ["tests/hien_thi.st"],
+  "testAn": ["tests/an.st"],
+  "tepBaoVe": ["tests/kt.st", "tests/hien_thi.st"],
+  "soTest": { "hienThi": 3, "an": 30 },
+  "sai": [{ "tep": "src/Bcd.st", "tu": "IF nib > 9 THEN", "den": "IF nib > 10 THEN" }]
+}

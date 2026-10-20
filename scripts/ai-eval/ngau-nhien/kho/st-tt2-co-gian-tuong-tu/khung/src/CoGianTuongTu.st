@@ -1,0 +1,15 @@
+FUNCTION_BLOCK CoGianTuongTu
+VAR_INPUT
+    THO : INT;
+    KT_THAP : REAL;
+    KT_CAO : REAL;
+END_VAR
+VAR_OUTPUT
+    GIA_TRI : REAL;
+    DUOI_DAI : BOOL;
+    TREN_DAI : BOOL;
+    LOI : BOOL;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    GIA_TRI := 0.0;
+END_FUNCTION_BLOCK

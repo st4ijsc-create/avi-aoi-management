@@ -1,0 +1,12 @@
+FUNCTION_BLOCK ChonBomChinh
+VAR_INPUT
+    GIO_CHAY : ARRAY[1..4] OF UDINT;
+    SAN_SANG : ARRAY[1..4] OF BOOL;
+END_VAR
+VAR_OUTPUT
+    BOM : INT;
+    THU_TU : ARRAY[1..4] OF INT;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    BOM := 0;
+END_FUNCTION_BLOCK

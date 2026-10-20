@@ -1,0 +1,14 @@
+FUNCTION_BLOCK DemSanPham
+VAR_INPUT
+    CAM_BIEN : BOOL;
+    KICH_THUOC_LO : INT;
+    RESET : BOOL;
+END_VAR
+VAR_OUTPUT
+    DEM : INT;
+    XONG_LO : BOOL;
+    SO_LO : INT;
+END_VAR
+    (* TODO: cài đặt theo đề bài, dùng R_TRIG + CTU *)
+    DEM := 0;
+END_FUNCTION_BLOCK

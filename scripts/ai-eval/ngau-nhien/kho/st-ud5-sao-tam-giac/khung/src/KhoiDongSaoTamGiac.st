@@ -1,0 +1,19 @@
+FUNCTION_BLOCK KhoiDongSaoTamGiac
+VAR_INPUT
+    START : BOOL;
+    STOP : BOOL;
+    QUA_TAI : BOOL;
+    RESET : BOOL;
+    T_SAO : TIME;
+    T_KHE : TIME;
+END_VAR
+VAR_OUTPUT
+    KM_CHINH : BOOL;
+    KM_SAO : BOOL;
+    KM_TAM_GIAC : BOOL;
+    LOI_QT : BOOL;
+    TRANG_THAI : INT;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    KM_CHINH := FALSE;
+END_FUNCTION_BLOCK

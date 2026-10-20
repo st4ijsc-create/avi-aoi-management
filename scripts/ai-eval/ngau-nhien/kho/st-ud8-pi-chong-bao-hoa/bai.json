@@ -1,0 +1,15 @@
+{
+  "id": "st-ud8-pi-chong-bao-hoa",
+  "lang": "st",
+  "muc": "ung-dung",
+  "kieu": "st",
+  "tieuDe": "Bộ PI rời rạc theo chu kỳ lấy mẫu, chống bão hoà tích phân và chuyển tay/tự động không giật",
+  "deBai": "Cài hai POU trong hai tệp: `FUNCTION KepGioiHan : REAL` (tệp `src/KepGioiHan.st`) và `FUNCTION_BLOCK BoPI` (tệp `src/BoPI.st`, dùng `KepGioiHan`). Khối khai báo vào/ra trong các tệp khung đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ.\n\nMỗi lần gọi khối là một chu kỳ quét. Đồng hồ: biến toàn cục `G_NOW : TIME` = thời điểm của chu kỳ hiện tại (chỉ đọc; TIME tính bằng nano giây, đổi sang giây: `LINT_TO_REAL(TIME_TO_LINT(t)) / 1.0E9`). Đầu vào không được truyền trong một lần gọi giữ giá trị lần gọi trước.\n\n**KepGioiHan** — vào `X`, `LO`, `HI : REAL`; trả `LO` nếu `X < LO`, `HI` nếu `X > HI`, ngược lại `X`.\n\n**BoPI** — vào `SP`, `PV`, `KP`, `TI : REAL` (TI tính bằng giây, > 0), `TS : TIME` (chu kỳ lấy mẫu), `U_MIN`, `U_MAX : REAL`, `MAN : BOOL`, `U_TAY : REAL`. Ra `U : REAL` (tín hiệu điều khiển), `I_TP : REAL` (thành phần tích phân hiện tại), `BAO_HOA_CAO`, `BAO_HOA_THAP : BOOL`. Ban đầu mọi ra 0 / FALSE. Mỗi chu kỳ, `e` = `SP - PV`:\n\n- **Tay** (`MAN` = TRUE), làm ở MỌI chu kỳ: `U` := `KepGioiHan(U_TAY, U_MIN, U_MAX)`; `I_TP` := `U - KP*e` (tích phân bám để khi về tự động lần tính đầu ra lại đúng `U` nếu e không đổi); hai cờ bão hoà := FALSE; ghi nhận \"thời điểm tính trước\" := `G_NOW`.\n- **Tự động** (`MAN` = FALSE): chỉ TÍNH khi đây là lần tính đầu tiên kể từ khi khối được tạo (chưa từng tính hay chạy tay), hoặc `G_NOW - (thời điểm tính trước) >= TS`. Khi tính: \"thời điểm tính trước\" := `G_NOW` (không cộng dồn TS); với `ts` = TS tính bằng giây: `u_tho` := `KP*e + I_TP` (I_TP TRƯỚC khi cập nhật); `BAO_HOA_CAO` := `u_tho > U_MAX`; `BAO_HOA_THAP` := `u_tho < U_MIN`; chống bão hoà: nếu (`BAO_HOA_CAO` AND e > 0) hoặc (`BAO_HOA_THAP` AND e < 0) thì KHÔNG đổi `I_TP`, ngược lại `I_TP` := `I_TP + KP*ts/TI*e` (vẫn tích phân khi sai số kéo ra khỏi vùng bão hoà); `U` := `KepGioiHan(u_tho, U_MIN, U_MAX)`. Các chu kỳ không tính: mọi đầu ra giữ nguyên (kể cả khi SP/PV thay đổi).\n\nVí dụ (chu kỳ quét 10 ms, KP 2, TI 1 s, TS 100 ms, U trong [0, 100]): lần gọi đầu ở t = 10 với SP 50, PV 40 ⇒ `U` = 20, `I_TP` = 2; các lần gọi t = 20..100 giữ nguyên; lần tính kế tiếp ở t = 110. Chạy tay tới t = 650 rồi về tự động ⇒ lần tính tự động đầu ở t = 750.\n\nBất biến ở mọi chu kỳ: `U` luôn trong [`U_MIN`, `U_MAX`]; hai cờ bão hoà không cùng TRUE.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": ["src/KepGioiHan.st", "src/BoPI.st"],
+  "dinhDanh": "BoPI",
+  "testHienThi": ["tests/hien_thi.st"],
+  "testAn": ["tests/an.st"],
+  "tepBaoVe": ["tests/kt.st", "tests/hien_thi.st"],
+  "soTest": { "hienThi": 3, "an": 39 },
+  "sai": [{ "tep": "src/BoPI.st", "tu": "(G_NOW - tTruoc >= TS)", "den": "(G_NOW - tTruoc > TS)" }]
+}

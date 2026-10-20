@@ -1,0 +1,33 @@
+{
+  "id": "st-tv3-nhap-nhay",
+  "lang": "st",
+  "muc": "thu-vien",
+  "kieu": "st",
+  "tieuDe": "Bộ nhấp nháy đèn sáng/tối không đối xứng bằng TON",
+  "deBai": "Cài `FUNCTION_BLOCK NhapNhay` trong tệp `src/NhapNhay.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ). BẮT BUỘC dùng khối chuẩn `TON` (có sẵn, KHÔNG tự định nghĩa) để đo thời gian mỗi pha.\n\nVào: `BAT : BOOL`, `T_SANG : TIME` (thời gian pha sáng), `T_TOI : TIME` (thời gian pha tối). Ra: `DEN : BOOL`. Mỗi lần gọi khối là một chu kỳ quét; thời gian lấy theo đồng hồ của bộ chấm mà `TON` dùng (biến toàn cục `G_NOW`, bộ test tự tăng giữa các chu kỳ). `T_SANG`, `T_TOI` > 0.\n\n- `BAT` = FALSE ⇒ `DEN` = FALSE ngay trong chu kỳ đó.\n- Chu kỳ đầu tiên `BAT` = TRUE (sau khi FALSE, hoặc lần gọi đầu) bắt đầu PHA SÁNG: `DEN` = TRUE ngay chu kỳ đó; mốc pha = thời điểm chu kỳ đó.\n- Pha sáng chuyển sang PHA TỐI ở chu kỳ đầu tiên có (thời gian hiện tại − mốc pha) ≥ `T_SANG`; trong chính chu kỳ chuyển, `DEN` = FALSE và mốc pha tối = thời điểm chu kỳ chuyển. Pha tối chuyển lại pha sáng ở chu kỳ đầu tiên có (hiện tại − mốc pha tối) ≥ `T_TOI` (chu kỳ đó `DEN` = TRUE, mốc pha sáng mới = chu kỳ đó). Lặp vô hạn khi `BAT` còn TRUE.\n- Tắt `BAT` rồi bật lại (ở bất kỳ pha nào) luôn bắt đầu lại từ pha sáng với mốc mới.\n- Đổi `T_SANG`/`T_TOI` giữa chừng thì áp dụng ngay cho pha đang chạy (so với mốc pha hiện tại). Đầu vào không truyền trong một lần gọi giữ giá trị lần gọi trước.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": [
+    "src/NhapNhay.st"
+  ],
+  "dinhDanh": "NhapNhay",
+  "testHienThi": [
+    "tests/hien_thi.st"
+  ],
+  "testAn": [
+    "tests/an.st"
+  ],
+  "tepBaoVe": [
+    "tests/kt.st",
+    "tests/hien_thi.st"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 22
+  },
+  "sai": [
+    {
+      "tep": "src/NhapNhay.st",
+      "tu": "toi := FALSE;",
+      "den": "toi := toi;"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "id": "st-tv4-tre-tat-quat",
+  "lang": "st",
+  "muc": "thu-vien",
+  "kieu": "st",
+  "tieuDe": "Quạt chạy thêm sau khi bỏ lệnh (TOF) có dừng khẩn hủy chạy thêm",
+  "deBai": "Cài `FUNCTION_BLOCK TreTatQuat` trong tệp `src/TreTatQuat.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ). BẮT BUỘC dùng khối chuẩn `TOF` (có sẵn, KHÔNG tự định nghĩa) để đo thời gian chạy thêm.\n\nVào: `LENH : BOOL` (lệnh chạy quạt), `DUNG_KHAN : BOOL`, `T_CHAY_THEM : TIME`. Ra: `QUAT : BOOL`, `CON_LAI : TIME`. Mỗi lần gọi khối là một chu kỳ quét; thời gian lấy theo đồng hồ của bộ chấm mà `TOF` dùng (biến toàn cục `G_NOW`, bộ test tự tăng giữa các chu kỳ).\n\n- `LENH` = TRUE và `DUNG_KHAN` = FALSE ⇒ `QUAT` = TRUE, `CON_LAI` = 0.\n- Khi `LENH` về FALSE (DUNG_KHAN = FALSE): quạt CHẠY THÊM. Mốc = chu kỳ đầu tiên `LENH` = FALSE; `QUAT` giữ TRUE ở mọi chu kỳ có (hiện tại − mốc) < `T_CHAY_THEM` và về FALSE ở chu kỳ đầu tiên có (hiện tại − mốc) ≥ `T_CHAY_THEM` (đúng ngữ nghĩa `TOF`). Trong lúc chạy thêm `CON_LAI` = `T_CHAY_THEM` − (hiện tại − mốc) (chu kỳ đầu tiên chạy thêm: `CON_LAI` = `T_CHAY_THEM`); ngoài lúc chạy thêm `CON_LAI` = 0.\n- `LENH` lên lại trong lúc chạy thêm ⇒ chạy bình thường; lần bỏ lệnh sau đếm lại từ đầu.\n- `DUNG_KHAN` = TRUE ⇒ `QUAT` = FALSE, `CON_LAI` = 0 ngay trong chu kỳ đó, và HỦY phần chạy thêm (kể cả chạy thêm sinh ra do chính dừng khẩn làm mất lệnh). Sau khi nhả `DUNG_KHAN`: nếu `LENH` = TRUE thì quạt chạy lại ngay; nếu `LENH` = FALSE thì quạt vẫn tắt (không chạy thêm) cho tới khi có `LENH` = TRUE mới.\n- Đầu vào không truyền trong một lần gọi giữ giá trị lần gọi trước.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": [
+    "src/TreTatQuat.st"
+  ],
+  "dinhDanh": "TreTatQuat",
+  "testHienThi": [
+    "tests/hien_thi.st"
+  ],
+  "testAn": [
+    "tests/an.st"
+  ],
+  "tepBaoVe": [
+    "tests/kt.st",
+    "tests/hien_thi.st"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 31
+  },
+  "sai": [
+    {
+      "tep": "src/TreTatQuat.st",
+      "tu": "QUAT := tre.Q AND NOT huy;",
+      "den": "QUAT := tre.Q AND NOT DUNG_KHAN;"
+    }
+  ]
+}

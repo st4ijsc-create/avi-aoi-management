@@ -1,0 +1,21 @@
+FUNCTION_BLOCK ThangNang2Tang
+VAR_INPUT
+    GOI_1 : BOOL;
+    GOI_2 : BOOL;
+    CT_TANG_1 : BOOL;
+    CT_TANG_2 : BOOL;
+    CUA_DONG : BOOL;
+    DUNG_KHAN : BOOL;
+    RESET : BOOL;
+    T_DI_CHUYEN : TIME;
+END_VAR
+VAR_OUTPUT
+    LEN : BOOL;
+    XUONG : BOOL;
+    TRANG_THAI : INT;
+    TANG : INT;
+    MA_LOI : INT;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    LEN := FALSE;
+END_FUNCTION_BLOCK

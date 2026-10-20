@@ -1,0 +1,15 @@
+FUNCTION_BLOCK ChotLoi
+VAR_INPUT
+    DUNG_KHAN : BOOL;
+    QT1 : BOOL;
+    QT2 : BOOL;
+    QT3 : BOOL;
+    RESET : BOOL;
+END_VAR
+VAR_OUTPUT
+    LOI : BOOL;
+    MA_LOI : INT;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    LOI := FALSE;
+END_FUNCTION_BLOCK

@@ -1,0 +1,18 @@
+FUNCTION_BLOCK VanHaiCuon
+VAR_INPUT
+    MO : BOOL;
+    DONG : BOOL;
+    CT_MO : BOOL;
+    CT_DONG : BOOL;
+    RESET : BOOL;
+    T_HANH_TRINH : TIME;
+END_VAR
+VAR_OUTPUT
+    CUON_MO : BOOL;
+    CUON_DONG : BOOL;
+    TRANG_THAI : INT;
+    MA_LOI : INT;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    CUON_MO := FALSE;
+END_FUNCTION_BLOCK

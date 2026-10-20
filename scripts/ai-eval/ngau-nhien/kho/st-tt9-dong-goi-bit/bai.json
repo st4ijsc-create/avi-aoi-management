@@ -1,0 +1,16 @@
+{
+  "id": "st-tt9-dong-goi-bit",
+  "lang": "st",
+  "muc": "thuat-toan",
+  "kieu": "st",
+  "giuLai": true,
+  "tieuDe": "Đóng gói 16 BOOL thành WORD và mở gói WORD thành 16 BOOL kèm đếm bit 1",
+  "deBai": "Cài trong tệp `src/DongGoiBit.st` (khối khai báo đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ):\n\n1. `FUNCTION DongGoiBit : WORD` — vào `BIT : ARRAY[0..15] OF BOOL`. Trả WORD có bit thứ i (trọng số 2^i) = 1 khi `BIT[i]` = TRUE; `BIT[0]` là bit thấp nhất, `BIT[15]` là bit cao nhất (ví dụ chỉ `BIT[0]` và `BIT[2]` TRUE ⇒ 5).\n2. `FUNCTION_BLOCK MoGoiBit` — vào `GIA_TRI : WORD`; ra `BIT : ARRAY[0..15] OF BOOL` (`BIT[i]` = TRUE khi bit i của `GIA_TRI` là 1) và `SO_BIT_1 : INT` (số bit 1 trong `GIA_TRI`, 0..16). Mỗi lần gọi khối tính lại TOÀN BỘ đầu ra chỉ từ `GIA_TRI` hiện tại — kết quả không được phụ thuộc các lần gọi trước của cùng một thể hiện khối.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": ["src/DongGoiBit.st"],
+  "dinhDanh": "DongGoiBit",
+  "testHienThi": ["tests/hien_thi.st"],
+  "testAn": ["tests/an.st"],
+  "tepBaoVe": ["tests/kt.st", "tests/hien_thi.st"],
+  "soTest": { "hienThi": 3, "an": 25 },
+  "sai": [{ "tep": "src/DongGoiBit.st", "tu": "    SO_BIT_1 := 0;\n", "den": "    SO_BIT_1 := SO_BIT_1;\n" }]
+}

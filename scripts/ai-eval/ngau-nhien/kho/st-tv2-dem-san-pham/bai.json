@@ -1,0 +1,33 @@
+{
+  "id": "st-tv2-dem-san-pham",
+  "lang": "st",
+  "muc": "thu-vien",
+  "kieu": "st",
+  "tieuDe": "Đếm sản phẩm theo lô bằng R_TRIG + CTU, báo xong lô một chu kỳ",
+  "deBai": "Cài `FUNCTION_BLOCK DemSanPham` trong tệp `src/DemSanPham.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ). BẮT BUỘC dùng khối chuẩn `R_TRIG` (bắt sườn) và `CTU` (đếm lên) của thư viện chuẩn (có sẵn, KHÔNG tự định nghĩa).\n\nVào: `CAM_BIEN : BOOL` (cảm biến sản phẩm), `KICH_THUOC_LO : INT` (số sản phẩm một lô, luôn ≥ 1, không đổi giữa lô), `RESET : BOOL`. Ra: `DEM : INT` (số sản phẩm của lô đang đếm), `XONG_LO : BOOL`, `SO_LO : INT` (số lô đã xong). Mỗi lần gọi khối là một chu kỳ quét.\n\n- Mỗi sườn lên của `CAM_BIEN` (FALSE→TRUE giữa chu kỳ trước và chu kỳ này) là một sản phẩm. Trạng thái ban đầu coi `CAM_BIEN` chu kỳ trước = FALSE, nên `CAM_BIEN` = TRUE ngay lần gọi đầu được đếm. Giữ TRUE nhiều chu kỳ chỉ đếm một lần.\n- Khi số đếm đạt `KICH_THUOC_LO`: TRONG CHÍNH chu kỳ đó `XONG_LO` = TRUE, `SO_LO` tăng 1 và `DEM` = 0 (sản phẩm tiếp theo được đếm là 1). `XONG_LO` chỉ TRUE đúng chu kỳ đó, các chu kỳ khác FALSE.\n- `RESET` = TRUE ⇒ trong chu kỳ đó `DEM` = 0, `SO_LO` = 0, `XONG_LO` = FALSE và sườn lên cùng chu kỳ KHÔNG được đếm (RESET ưu tiên). Giá trị `CAM_BIEN` của mọi chu kỳ (kể cả khi RESET) đều được nhớ làm \"chu kỳ trước\" — nhả `RESET` khi `CAM_BIEN` vẫn TRUE không phải sườn mới.\n- Đầu vào không truyền trong một lần gọi giữ giá trị lần gọi trước.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": [
+    "src/DemSanPham.st"
+  ],
+  "dinhDanh": "DemSanPham",
+  "testHienThi": [
+    "tests/hien_thi.st"
+  ],
+  "testAn": [
+    "tests/an.st"
+  ],
+  "tepBaoVe": [
+    "tests/kt.st",
+    "tests/hien_thi.st"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 27
+  },
+  "sai": [
+    {
+      "tep": "src/DemSanPham.st",
+      "tu": "ctuDem(CU := FALSE, R := TRUE);",
+      "den": "ctuDem(CU := FALSE, R := RESET);"
+    }
+  ]
+}

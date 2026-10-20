@@ -1,0 +1,15 @@
+FUNCTION_BLOCK GiamSatPhanHoi
+VAR_INPUT
+    LENH_CHAY : BOOL;
+    PHAN_HOI : BOOL;
+    T_CHO : TIME;
+    RESET : BOOL;
+END_VAR
+VAR_OUTPUT
+    BAO_DONG : BOOL;
+    LOI_MAT_PHAN_HOI : BOOL;
+    LOI_PHAN_HOI_THUA : BOOL;
+END_VAR
+    (* TODO: cài đặt theo đề bài, dùng TON *)
+    BAO_DONG := FALSE;
+END_FUNCTION_BLOCK

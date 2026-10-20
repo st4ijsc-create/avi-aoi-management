@@ -1,0 +1,14 @@
+FUNCTION_BLOCK KhoaDongCo
+VAR_INPUT
+    YC_LEN : BOOL;
+    YC_XUONG : BOOL;
+    CUA_DONG : BOOL;
+    DUNG_KHAN : BOOL;
+END_VAR
+VAR_OUTPUT
+    LEN : BOOL;
+    XUONG : BOOL;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    LEN := FALSE;
+END_FUNCTION_BLOCK

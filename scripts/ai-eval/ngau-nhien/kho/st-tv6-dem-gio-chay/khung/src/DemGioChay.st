@@ -1,0 +1,13 @@
+FUNCTION_BLOCK DemGioChay
+VAR_INPUT
+    DANG_CHAY : BOOL;
+    RESET : BOOL;
+END_VAR
+VAR_OUTPUT
+    GIO : UDINT;
+    PHUT : UDINT;
+    GIAY_TONG : UDINT;
+END_VAR
+    (* TODO: cài đặt theo đề bài, dùng R_TRIG và G_NOW *)
+    GIAY_TONG := 0;
+END_FUNCTION_BLOCK

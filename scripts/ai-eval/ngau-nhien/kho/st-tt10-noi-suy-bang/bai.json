@@ -1,0 +1,16 @@
+{
+  "id": "st-tt10-noi-suy-bang",
+  "lang": "st",
+  "muc": "thuat-toan",
+  "kieu": "st",
+  "giuLai": true,
+  "tieuDe": "Nội suy tuyến tính theo bảng tra tối đa 8 điểm, có kẹp biên và kiểm tra bảng",
+  "deBai": "Cài `FUNCTION_BLOCK NoiSuyBang` trong tệp `src/NoiSuyBang.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ).\n\nVào: `X : REAL`, `BANG_X : ARRAY[1..8] OF REAL`, `BANG_Y : ARRAY[1..8] OF REAL`, `SO_DIEM : INT` (số điểm dùng, tính từ ô 1). Ra: `Y : REAL`, `LOI : BOOL`, `NGOAI_BANG : BOOL`. Mỗi lần gọi khối tính lại toàn bộ đầu ra từ đầu vào hiện tại.\n\n- `LOI` = TRUE khi `SO_DIEM` < 2 hoặc > 8, HOẶC khi `BANG_X[1..SO_DIEM]` KHÔNG tăng nghiêm ngặt (có `BANG_X[i] <= BANG_X[i-1]` với 2 ≤ i ≤ `SO_DIEM`). Các ô sau `SO_DIEM` bị bỏ qua hoàn toàn (giá trị bất kỳ).\n- Khi `LOI`: `Y` = 0.0 và `NGOAI_BANG` = FALSE.\n- Khi không lỗi, với n = `SO_DIEM`: nếu `X < BANG_X[1]` ⇒ `Y = BANG_Y[1]`, `NGOAI_BANG` = TRUE; nếu `X > BANG_X[n]` ⇒ `Y = BANG_Y[n]`, `NGOAI_BANG` = TRUE; ngược lại (kể cả `X` đúng bằng `BANG_X[1]` hoặc `BANG_X[n]`) ⇒ `NGOAI_BANG` = FALSE và `Y` nội suy TUYẾN TÍNH giữa hai điểm kề `(BANG_X[i-1], BANG_Y[i-1])`, `(BANG_X[i], BANG_Y[i])` chứa `X` (X đúng bằng một điểm của bảng ⇒ `Y` bằng `BANG_Y` của điểm đó).\n- Đầu vào không được truyền trong một lần gọi giữ giá trị lần gọi trước (ngữ nghĩa khối chức năng IEC thông thường).\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": ["src/NoiSuyBang.st"],
+  "dinhDanh": "NoiSuyBang",
+  "testHienThi": ["tests/hien_thi.st"],
+  "testAn": ["tests/an.st"],
+  "tepBaoVe": ["tests/kt.st", "tests/hien_thi.st"],
+  "soTest": { "hienThi": 3, "an": 33 },
+  "sai": [{ "tep": "src/NoiSuyBang.st", "tu": "IF BANG_X[i] <= BANG_X[i - 1] THEN", "den": "IF BANG_X[i] < BANG_X[i - 1] THEN" }]
+}

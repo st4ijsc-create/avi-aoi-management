@@ -1,0 +1,33 @@
+{
+  "id": "st-tv5-giam-sat-phan-hoi",
+  "lang": "st",
+  "muc": "thu-vien",
+  "kieu": "st",
+  "tieuDe": "Giám sát phản hồi chạy động cơ: lỗi mất phản hồi / phản hồi thừa (TON), chốt và reset có điều kiện",
+  "deBai": "Cài `FUNCTION_BLOCK GiamSatPhanHoi` trong tệp `src/GiamSatPhanHoi.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ). BẮT BUỘC dùng khối chuẩn `TON` (có sẵn, KHÔNG tự định nghĩa) để đo thời gian phản hồi thừa.\n\nVào: `LENH_CHAY : BOOL` (lệnh chạy gửi xuống contactor), `PHAN_HOI : BOOL` (tiếp điểm phản hồi), `T_CHO : TIME`, `RESET : BOOL`. Ra: `BAO_DONG : BOOL`, `LOI_MAT_PHAN_HOI : BOOL`, `LOI_PHAN_HOI_THUA : BOOL`. Mỗi lần gọi khối là một chu kỳ quét; thời gian lấy theo đồng hồ của bộ chấm mà `TON` dùng (biến toàn cục `G_NOW`, bộ test tự tăng giữa các chu kỳ).\n\n- \"Lần chạy\" = chuỗi chu kỳ liên tiếp có `LENH_CHAY` = TRUE. Trong một lần chạy, khi đã có ít nhất một chu kỳ `PHAN_HOI` = TRUE thì coi là \"đã có phản hồi\"; trạng thái này xoá khi `LENH_CHAY` = FALSE (lần chạy sau bắt đầu lại là \"chưa có\").\n- Điều kiện MẤT PHẢN HỒI (tức thời, không trễ) ở một chu kỳ: `LENH_CHAY` = TRUE, đã có phản hồi ở một chu kỳ TRƯỚC trong lần chạy này, và `PHAN_HOI` = FALSE. Có lệnh mà chưa từng có phản hồi KHÔNG phải lỗi (đề này không giám sát lỗi đó).\n- Điều kiện PHẢN HỒI THỪA: `PHAN_HOI` = TRUE và `LENH_CHAY` = FALSE liên tục, tính từ chu kỳ đầu tiên của đợt đó, đã ≥ `T_CHO` (đúng ngữ nghĩa `TON`). Đợt ngắn hơn bị bỏ qua (vd quán tính khi dừng).\n- `LOI_MAT_PHAN_HOI` / `LOI_PHAN_HOI_THUA` là CHỐT: lên TRUE ở chu kỳ điều kiện tương ứng đúng và giữ TRUE kể cả khi điều kiện hết. `RESET` = TRUE chỉ xoá một lỗi khi điều kiện của chính lỗi đó KHÔNG còn đúng trong chu kỳ đó; còn đúng thì lỗi giữ TRUE.\n- `BAO_DONG` = `LOI_MAT_PHAN_HOI` OR `LOI_PHAN_HOI_THUA` (cùng chu kỳ).\n- Ban đầu mọi đầu ra FALSE. Đầu vào không truyền trong một lần gọi giữ giá trị lần gọi trước.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": [
+    "src/GiamSatPhanHoi.st"
+  ],
+  "dinhDanh": "GiamSatPhanHoi",
+  "testHienThi": [
+    "tests/hien_thi.st"
+  ],
+  "testAn": [
+    "tests/an.st"
+  ],
+  "tepBaoVe": [
+    "tests/kt.st",
+    "tests/hien_thi.st"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 27
+  },
+  "sai": [
+    {
+      "tep": "src/GiamSatPhanHoi.st",
+      "tu": "daCo := LENH_CHAY AND (daCo OR PHAN_HOI);",
+      "den": "daCo := daCo OR (LENH_CHAY AND PHAN_HOI);"
+    }
+  ]
+}

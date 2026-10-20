@@ -1,0 +1,34 @@
+{
+  "id": "st-tv9-dem-xuong",
+  "lang": "st",
+  "muc": "thu-vien",
+  "kieu": "st",
+  "tieuDe": "Tồn kho đếm xuống bằng CTD: nạp ưu tiên, không âm, báo sắp hết / hết",
+  "deBai": "Cài `FUNCTION_BLOCK TonKho` trong tệp `src/TonKho.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ). BẮT BUỘC dùng khối chuẩn `CTD` (đếm xuống) của thư viện chuẩn (có sẵn, KHÔNG tự định nghĩa); được dùng thêm `R_TRIG`. Lưu ý: `CTD` chuẩn KHÔNG tự chặn ở 0 (CV có thể âm) — phải tự chặn.\n\nVào: `LAY_RA : BOOL`, `NAP : BOOL`, `SO_NAP : INT` (≥ 0), `NGUONG_THAP : INT`. Ra: `TON : INT`, `SAP_HET : BOOL`, `HET : BOOL`. Mỗi lần gọi khối là một chu kỳ quét.\n\n- Ban đầu tồn = 0.\n- `NAP` = TRUE ⇒ tồn = `SO_NAP` trong chu kỳ đó (giữ `NAP` nhiều chu kỳ thì nạp lại mỗi chu kỳ). NAP ƯU TIÊN: sườn lấy cùng chu kỳ với `NAP` = TRUE không trừ.\n- Mỗi sườn lên của `LAY_RA` (FALSE ở lần gọi trước, TRUE ở lần này; sườn được theo dõi ở mọi chu kỳ, kể cả khi NAP) giảm tồn 1 — trừ khi tồn đang là 0 thì giữ 0 (không bao giờ âm). Giữ `LAY_RA` = TRUE chỉ tính một lần; nhả `NAP` khi `LAY_RA` vẫn TRUE không phải sườn mới.\n- `TON` = tồn hiện tại; `SAP_HET` = (`TON` <= `NGUONG_THAP`); `HET` = (`TON` = 0); cả ba cập nhật ngay trong chu kỳ (kể cả khi chỉ đổi `NGUONG_THAP`).\n- Đầu vào không truyền trong một lần gọi giữ giá trị lần gọi trước.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": [
+    "src/TonKho.st"
+  ],
+  "dinhDanh": "TonKho",
+  "testHienThi": [
+    "tests/hien_thi.st"
+  ],
+  "testAn": [
+    "tests/an.st"
+  ],
+  "tepBaoVe": [
+    "tests/kt.st",
+    "tests/hien_thi.st"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 27
+  },
+  "sai": [
+    {
+      "tep": "src/TonKho.st",
+      "tu": "suon.Q AND ctdTon.CV > 0",
+      "den": "suon.Q"
+    }
+  ],
+  "giuLai": true
+}

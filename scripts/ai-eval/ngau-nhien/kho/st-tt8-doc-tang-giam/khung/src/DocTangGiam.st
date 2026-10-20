@@ -1,0 +1,14 @@
+FUNCTION_BLOCK DocTangGiam
+VAR_INPUT
+    DICH : REAL;
+    TOC_DO_TANG : REAL;
+    TOC_DO_GIAM : REAL;
+    BAT : BOOL;
+END_VAR
+VAR_OUTPUT
+    RA : REAL;
+    DA_TOI : BOOL;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    RA := 0.0;
+END_FUNCTION_BLOCK

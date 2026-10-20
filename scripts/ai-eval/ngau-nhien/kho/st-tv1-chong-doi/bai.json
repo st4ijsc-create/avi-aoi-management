@@ -1,0 +1,33 @@
+{
+  "id": "st-tv1-chong-doi",
+  "lang": "st",
+  "muc": "thu-vien",
+  "kieu": "st",
+  "tieuDe": "Chống dội tín hiệu số hai chiều bằng TON (trễ bật / trễ tắt riêng)",
+  "deBai": "Cài `FUNCTION_BLOCK ChongDoi` trong tệp `src/ChongDoi.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ). BẮT BUỘC dùng khối chuẩn `TON` (có sẵn, KHÔNG tự định nghĩa) để đo thời gian.\n\nVào: `IN : BOOL` (tín hiệu thô có dội), `T_BAT : TIME`, `T_TAT : TIME`. Ra: `Q : BOOL` (tín hiệu đã lọc). Mỗi lần gọi khối là một chu kỳ quét; thời gian lấy theo đồng hồ của bộ chấm mà `TON` dùng (biến toàn cục `G_NOW`, bộ test tự tăng giữa các chu kỳ).\n\n- Ban đầu `Q` = FALSE.\n- `Q` chuyển lên TRUE ở chu kỳ đầu tiên mà `IN` đã TRUE liên tục và thời gian kể từ chu kỳ ĐẦU TIÊN của đợt TRUE đó ≥ `T_BAT` (đúng ngữ nghĩa `TON`: mốc = chu kỳ đầu `IN` = TRUE; `T_BAT` = 0 ⇒ lên ngay trong chu kỳ đầu tiên `IN` = TRUE).\n- `Q` chuyển xuống FALSE ở chu kỳ đầu tiên mà `IN` đã FALSE liên tục và thời gian kể từ chu kỳ đầu tiên của đợt FALSE đó ≥ `T_TAT` (`T_TAT` = 0 ⇒ xuống ngay).\n- Đợt TRUE (hoặc FALSE) ngắn hơn ngưỡng tương ứng bị bỏ qua: `Q` giữ nguyên; mỗi đợt mới đo lại từ đầu, không cộng dồn với đợt trước.\n- Đổi `T_BAT`/`T_TAT` giữa chừng thì áp dụng từ chu kỳ đó (như `PT` của `TON`). Đầu vào không truyền trong một lần gọi giữ giá trị lần gọi trước.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": [
+    "src/ChongDoi.st"
+  ],
+  "dinhDanh": "ChongDoi",
+  "testHienThi": [
+    "tests/hien_thi.st"
+  ],
+  "testAn": [
+    "tests/an.st"
+  ],
+  "tepBaoVe": [
+    "tests/kt.st",
+    "tests/hien_thi.st"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 21
+  },
+  "sai": [
+    {
+      "tep": "src/ChongDoi.st",
+      "tu": "ELSIF tonTat.Q THEN",
+      "den": "ELSIF NOT IN THEN"
+    }
+  ]
+}

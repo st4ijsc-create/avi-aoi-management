@@ -1,0 +1,15 @@
+{
+  "id": "st-ud6-nhiet-on-off",
+  "lang": "st",
+  "muc": "ung-dung",
+  "kieu": "st",
+  "tieuDe": "Điều khiển nhiệt lò on/off có trễ, cảnh báo cao, ngắt cao-cao chốt và lỗi cảm biến",
+  "deBai": "Cài hai khối chức năng trong hai tệp: `FUNCTION_BLOCK TreHaiNguong` (tệp `src/TreHaiNguong.st`) và `FUNCTION_BLOCK DieuKhienNhietLo` (tệp `src/DieuKhienNhietLo.st`, dùng một thể hiện `TreHaiNguong`). Khối khai báo vào/ra trong các tệp khung đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ.\n\nMỗi lần gọi khối là một chu kỳ quét. Đầu vào không được truyền trong một lần gọi giữ giá trị lần gọi trước.\n\n**TreHaiNguong** — rơ-le hai ngưỡng cho sưởi. Vào `X`, `SP`, `TRE : REAL`; ra `Q : BOOL` (ban đầu FALSE). Mỗi chu kỳ: `X <= SP - TRE` ⇒ `Q` := TRUE; ngược lại `X >= SP + TRE` ⇒ `Q` := FALSE; ở giữa hai ngưỡng ⇒ giữ nguyên.\n\n**DieuKhienNhietLo** — vào `BAT : BOOL` (cho phép sưởi), `NHIET : REAL` (°C, đo), `SP`, `TRE`, `NGUONG_CAO`, `NGUONG_HH : REAL`, `RESET : BOOL`. Ra `SUOI`, `CANH_BAO_CAO`, `NGAT_HH`, `LOI_CAM_BIEN : BOOL`; `TRANG_THAI : INT`. Ban đầu mọi ra FALSE / 0. Mỗi chu kỳ làm đúng thứ tự:\n\n1. `LOI_CAM_BIEN` := `NHIET` < -50.0 hoặc `NHIET` > 500.0 (KHÔNG chốt; -50.0 và 500.0 là hợp lệ).\n2. Gọi `TreHaiNguong` với `X` = `NHIET`, `SP`, `TRE` ở MỌI chu kỳ (kể cả khi lỗi cảm biến hay đang ngắt).\n3. `CANH_BAO_CAO` := NOT `LOI_CAM_BIEN` AND `NHIET >= NGUONG_CAO` (không chốt).\n4. Ngắt cao-cao CHỐT: NOT `LOI_CAM_BIEN` AND `NHIET >= NGUONG_HH` ⇒ `NGAT_HH` := TRUE; ngược lại nếu `RESET` AND NOT `LOI_CAM_BIEN` AND `NHIET < SP` ⇒ `NGAT_HH` := FALSE; các trường hợp khác giữ nguyên (RESET khi nhiệt còn ≥ SP không có tác dụng).\n5. `SUOI` := `BAT` AND `Q` của rơ-le AND NOT `NGAT_HH` AND NOT `LOI_CAM_BIEN`.\n6. `TRANG_THAI`: 3 nếu `LOI_CAM_BIEN`; ngược lại 2 nếu `NGAT_HH`; ngược lại 0 nếu `BAT` = FALSE; ngược lại 1.\n\nVí dụ: SP 100, TRE 5 ⇒ sưởi bật khi nhiệt ≤ 95, tắt khi ≥ 105; nhiệt 97 sau khi vừa tắt ở 105 ⇒ vẫn tắt. Sau một lần ngắt ở 120 rồi nhiệt về 90 (rơ-le bật lại), RESET ở 99 ⇒ hết ngắt và sưởi bật ngay chu kỳ đó.\n\nBất biến ở mọi chu kỳ: không bao giờ sưởi khi `NGAT_HH`, khi `LOI_CAM_BIEN` hoặc khi `BAT` = FALSE.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": ["src/TreHaiNguong.st", "src/DieuKhienNhietLo.st"],
+  "dinhDanh": "DieuKhienNhietLo",
+  "testHienThi": ["tests/hien_thi.st"],
+  "testAn": ["tests/an.st"],
+  "tepBaoVe": ["tests/kt.st", "tests/hien_thi.st"],
+  "soTest": { "hienThi": 4, "an": 40 },
+  "sai": [{ "tep": "src/TreHaiNguong.st", "tu": "IF X <= SP - TRE THEN", "den": "IF X < SP - TRE THEN" }]
+}

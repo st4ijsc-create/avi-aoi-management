@@ -1,0 +1,15 @@
+{
+  "id": "st-tt3-tre-tru",
+  "lang": "st",
+  "muc": "thuat-toan",
+  "kieu": "st",
+  "tieuDe": "Điều khiển bật/tắt có trễ (hysteresis) cho chế độ sưởi và làm lạnh",
+  "deBai": "Cài `FUNCTION_BLOCK TreTru` trong tệp `src/TreTru.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ).\n\nVào: `PV : REAL` (giá trị đo), `SP : REAL` (điểm đặt), `DAI : REAL` (độ rộng dải trễ), `CHE_DO_LAM_LANH : BOOL`. Ra: `Q : BOOL` (lệnh bật thiết bị). Mỗi lần gọi khối là một chu kỳ quét.\n\nĐặt `d = DAI`, nhưng nếu `DAI < 0` thì coi `d = 0`. Ngưỡng dưới `THAP = SP − d/2`, ngưỡng trên `CAO = SP + d/2` (tính lại MỖI chu kỳ theo giá trị vào hiện tại).\n\n- Chế độ SƯỞI (`CHE_DO_LAM_LANH = FALSE`): `Q` bật (TRUE) khi `PV <= THAP`; tắt (FALSE) khi `PV >= CAO`; khi `THAP < PV < CAO` thì `Q` giữ nguyên giá trị chu kỳ trước.\n- Chế độ LÀM LẠNH (`CHE_DO_LAM_LANH = TRUE`): ngược lại — `Q` bật khi `PV >= CAO`; tắt khi `PV <= THAP`; ở giữa giữ nguyên.\n- Khi điều kiện bật và điều kiện tắt CÙNG đúng (xảy ra khi `d = 0` và `PV = SP`), điều kiện TẮT thắng: `Q = FALSE`.\n- Ban đầu `Q = FALSE`. Đổi chế độ hay đổi `SP`/`DAI` giữa chừng: chỉ áp quy tắc trên với giá trị mới (không có xử lý riêng).\n- So sánh dùng đúng `<=` / `>=` như trên (đúng bằng ngưỡng là đã chuyển trạng thái).\n- Đầu vào không được truyền trong một lần gọi giữ giá trị lần gọi trước (ngữ nghĩa khối chức năng IEC thông thường).\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": ["src/TreTru.st"],
+  "dinhDanh": "TreTru",
+  "testHienThi": ["tests/hien_thi.st"],
+  "testAn": ["tests/an.st"],
+  "tepBaoVe": ["tests/kt.st", "tests/hien_thi.st"],
+  "soTest": { "hienThi": 3, "an": 25 },
+  "sai": [{ "tep": "src/TreTru.st", "tu": "ELSIF PV <= thap THEN", "den": "ELSIF PV < thap THEN" }]
+}

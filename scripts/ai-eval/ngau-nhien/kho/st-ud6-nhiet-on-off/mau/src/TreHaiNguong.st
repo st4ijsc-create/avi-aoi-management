@@ -1,0 +1,15 @@
+FUNCTION_BLOCK TreHaiNguong
+VAR_INPUT
+    X : REAL;
+    SP : REAL;
+    TRE : REAL;
+END_VAR
+VAR_OUTPUT
+    Q : BOOL;
+END_VAR
+    IF X <= SP - TRE THEN
+        Q := TRUE;
+    ELSIF X >= SP + TRE THEN
+        Q := FALSE;
+    END_IF
+END_FUNCTION_BLOCK

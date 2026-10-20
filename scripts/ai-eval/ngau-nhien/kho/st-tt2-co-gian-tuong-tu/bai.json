@@ -1,0 +1,15 @@
+{
+  "id": "st-tt2-co-gian-tuong-tu",
+  "lang": "st",
+  "muc": "thuat-toan",
+  "kieu": "st",
+  "tieuDe": "Co giãn giá trị thô kênh analog sang thang kỹ thuật, có kẹp, thang đảo và báo vượt dải",
+  "deBai": "Cài `FUNCTION_BLOCK CoGianTuongTu` trong tệp `src/CoGianTuongTu.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ).\n\nVào: `THO : INT` — giá trị thô của kênh analog kiểu Siemens: 0 ứng với 0 %, 27648 ứng với 100 %; `KT_THAP : REAL`, `KT_CAO : REAL` — giá trị kỹ thuật ứng với 0 % và 100 %. Ra: `GIA_TRI : REAL`, `DUOI_DAI : BOOL`, `TREN_DAI : BOOL`, `LOI : BOOL`. Mỗi lần gọi khối là một chu kỳ quét.\n\n- `DUOI_DAI` = TRUE khi `THO < -1382` (dưới −5 %); `TREN_DAI` = TRUE khi `THO > 32511` (trên 117,59 %). Đúng bằng −1382 hay 32511 KHÔNG phải vượt dải.\n- `LOI` = `DUOI_DAI OR TREN_DAI`.\n- Khi KHÔNG lỗi: `GIA_TRI` = `KT_THAP + THO / 27648 × (KT_CAO − KT_THAP)` (tính bằng số thực), rồi KẸP vào đoạn [min(KT_THAP, KT_CAO), max(KT_THAP, KT_CAO)]. Lưu ý `KT_THAP` có thể LỚN HƠN `KT_CAO` (thang đảo, vd 100 → 0): khi đó vẫn tính theo công thức trên và kẹp theo min/max của hai đầu thang.\n- Khi `LOI`: `GIA_TRI` GIỮ NGUYÊN giá trị hợp lệ của lần gọi gần nhất không lỗi; nếu chưa từng có lần gọi hợp lệ thì là 0.0 (giá trị ban đầu).\n- Đầu vào không được truyền trong một lần gọi giữ giá trị lần gọi trước (ngữ nghĩa khối chức năng IEC thông thường).\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": ["src/CoGianTuongTu.st"],
+  "dinhDanh": "CoGianTuongTu",
+  "testHienThi": ["tests/hien_thi.st"],
+  "testAn": ["tests/an.st"],
+  "tepBaoVe": ["tests/kt.st", "tests/hien_thi.st"],
+  "soTest": { "hienThi": 3, "an": 30 },
+  "sai": [{ "tep": "src/CoGianTuongTu.st", "tu": "GIA_TRI := LIMIT(lo, v, hi);", "den": "GIA_TRI := LIMIT(KT_THAP, v, KT_CAO);" }]
+}

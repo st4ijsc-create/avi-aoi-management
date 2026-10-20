@@ -1,0 +1,15 @@
+FUNCTION_BLOCK TonKho
+VAR_INPUT
+    LAY_RA : BOOL;
+    NAP : BOOL;
+    SO_NAP : INT;
+    NGUONG_THAP : INT;
+END_VAR
+VAR_OUTPUT
+    TON : INT;
+    SAP_HET : BOOL;
+    HET : BOOL;
+END_VAR
+    (* TODO: cài đặt theo đề bài, dùng R_TRIG + CTD *)
+    TON := SO_NAP;
+END_FUNCTION_BLOCK

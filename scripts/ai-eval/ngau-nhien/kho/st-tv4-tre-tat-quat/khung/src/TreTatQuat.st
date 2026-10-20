@@ -1,0 +1,14 @@
+FUNCTION_BLOCK TreTatQuat
+VAR_INPUT
+    LENH : BOOL;
+    DUNG_KHAN : BOOL;
+    T_CHAY_THEM : TIME;
+END_VAR
+VAR_OUTPUT
+    QUAT : BOOL;
+    CON_LAI : TIME;
+END_VAR
+    (* TODO: cài đặt theo đề bài, dùng TOF *)
+    QUAT := LENH;
+    CON_LAI := T#0s;
+END_FUNCTION_BLOCK

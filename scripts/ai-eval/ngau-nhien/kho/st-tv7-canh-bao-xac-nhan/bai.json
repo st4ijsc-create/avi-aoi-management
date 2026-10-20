@@ -1,0 +1,33 @@
+{
+  "id": "st-tv7-canh-bao-xac-nhan",
+  "lang": "st",
+  "muc": "thu-vien",
+  "kieu": "st",
+  "tieuDe": "Cảnh báo có xác nhận theo ISA-18.2: trễ bật TON, xác nhận theo sườn R_TRIG, máy 4 trạng thái",
+  "deBai": "Cài `FUNCTION_BLOCK CanhBaoXacNhan` trong tệp `src/CanhBaoXacNhan.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ). BẮT BUỘC dùng khối chuẩn `TON` (trễ điều kiện) và `R_TRIG` (sườn xác nhận) (có sẵn, KHÔNG tự định nghĩa).\n\nVào: `DIEU_KIEN : BOOL`, `XAC_NHAN : BOOL`, `T_TRE : TIME`. Ra: `TRANG_THAI : INT`, `NHAP_NHAY : BOOL`, `CO_CANH_BAO : BOOL`. Mỗi lần gọi khối là một chu kỳ quét; thời gian lấy theo đồng hồ của bộ chấm mà `TON` dùng (biến toàn cục `G_NOW`, bộ test tự tăng giữa các chu kỳ).\n\n- \"Đang có cảnh báo\" (ký hiệu A) = `DIEU_KIEN` đã TRUE liên tục, tính từ chu kỳ đầu tiên của đợt TRUE, ≥ `T_TRE` (đúng ngữ nghĩa `TON`). `DIEU_KIEN` = FALSE ⇒ A = FALSE ngay; điều kiện trở lại phải qua đủ trễ lần nữa mới A = TRUE.\n- \"Xác nhận\" (ký hiệu X) = sườn lên của `XAC_NHAN` (FALSE ở lần gọi trước, TRUE ở lần này; trạng thái ban đầu coi lần trước = FALSE). Sườn được theo dõi ở MỌI chu kỳ: giữ `XAC_NHAN` = TRUE nhiều chu kỳ chỉ là một xác nhận ở chu kỳ đầu; xác nhận rơi vào trạng thái không dùng nó thì bị bỏ, không nhớ sang chu kỳ sau.\n- `TRANG_THAI`: 0 = bình thường, 1 = đang có chưa xác nhận, 2 = đang có đã xác nhận, 3 = đã hết nhưng chưa xác nhận. Ban đầu 0. Mỗi chu kỳ xét A và X của chu kỳ đó rồi chuyển TỐI ĐA MỘT bước theo trạng thái đầu chu kỳ:\n  - 0: A ⇒ 1.\n  - 1: X ⇒ 2; ngược lại nếu NOT A ⇒ 3 (X và hết điều kiện cùng chu kỳ ⇒ 2, chu kỳ sau mới về 0).\n  - 2: NOT A ⇒ 0.\n  - 3: X ⇒ 0; ngược lại nếu A ⇒ 1.\n- `NHAP_NHAY` = (`TRANG_THAI` = 1 hoặc 3); `CO_CANH_BAO` = (`TRANG_THAI` = 1 hoặc 2), theo trạng thái SAU khi chuyển trong chu kỳ.\n- Đầu vào không truyền trong một lần gọi giữ giá trị lần gọi trước.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": [
+    "src/CanhBaoXacNhan.st"
+  ],
+  "dinhDanh": "CanhBaoXacNhan",
+  "testHienThi": [
+    "tests/hien_thi.st"
+  ],
+  "testAn": [
+    "tests/an.st"
+  ],
+  "tepBaoVe": [
+    "tests/kt.st",
+    "tests/hien_thi.st"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 31
+  },
+  "sai": [
+    {
+      "tep": "src/CanhBaoXacNhan.st",
+      "tu": "ack := xn.Q;",
+      "den": "ack := XAC_NHAN;"
+    }
+  ]
+}

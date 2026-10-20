@@ -1,0 +1,34 @@
+{
+  "id": "st-tv10-chot-uu-tien",
+  "lang": "st",
+  "muc": "thu-vien",
+  "kieu": "st",
+  "tieuDe": "Hai chốt SR (ưu tiên đặt) và RS (ưu tiên xoá) chuẩn, đếm số lần đổi trạng thái",
+  "deBai": "Cài `FUNCTION_BLOCK HaiChot` trong tệp `src/HaiChot.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ). BẮT BUỘC dùng hai khối chuẩn `SR` và `RS` của thư viện chuẩn (có sẵn, KHÔNG tự định nghĩa; giao diện IEC: `SR(SET1, RESET) → Q1`, `RS(SET, RESET1) → Q1`).\n\nVào: `DAT : BOOL`, `XOA : BOOL`. Ra: `Q_SR : BOOL`, `Q_RS : BOOL`, `DOI_TRANG_THAI : UDINT`. Mỗi lần gọi khối là một chu kỳ quét. Cả hai chốt nhận CÙNG `DAT` (đặt) và `XOA` (xoá).\n\n- `Q_SR`: chốt ƯU TIÊN ĐẶT — `DAT` = TRUE ⇒ TRUE (kể cả khi `XOA` = TRUE cùng lúc); ngược lại `XOA` = TRUE ⇒ FALSE; cả hai FALSE ⇒ giữ giá trị cũ.\n- `Q_RS`: chốt ƯU TIÊN XOÁ — `XOA` = TRUE ⇒ FALSE (kể cả khi `DAT` = TRUE cùng lúc); ngược lại `DAT` = TRUE ⇒ TRUE; cả hai FALSE ⇒ giữ.\n- Ban đầu cả hai chốt FALSE.\n- `DOI_TRANG_THAI` đếm số chu kỳ mà `Q_SR` có giá trị KHÁC giá trị ở chu kỳ trước (cả lên lẫn xuống; trước lần gọi đầu coi `Q_SR` = FALSE). Cập nhật ngay trong chu kỳ đổi.\n- Đầu vào không truyền trong một lần gọi giữ giá trị lần gọi trước.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": [
+    "src/HaiChot.st"
+  ],
+  "dinhDanh": "HaiChot",
+  "testHienThi": [
+    "tests/hien_thi.st"
+  ],
+  "testAn": [
+    "tests/an.st"
+  ],
+  "tepBaoVe": [
+    "tests/kt.st",
+    "tests/hien_thi.st"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 36
+  },
+  "sai": [
+    {
+      "tep": "src/HaiChot.st",
+      "tu": "Q_SR := chotSR.Q1;",
+      "den": "Q_SR := chotRS.Q1;"
+    }
+  ],
+  "giuLai": true
+}

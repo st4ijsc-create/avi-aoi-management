@@ -1,0 +1,12 @@
+FUNCTION_BLOCK KhoaChuyenMach
+VAR_INPUT
+    YC_SAO : BOOL;
+    YC_TG : BOOL;
+END_VAR
+VAR_OUTPUT
+    KM_SAO : BOOL;
+    KM_TAM_GIAC : BOOL;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    KM_SAO := FALSE;
+END_FUNCTION_BLOCK

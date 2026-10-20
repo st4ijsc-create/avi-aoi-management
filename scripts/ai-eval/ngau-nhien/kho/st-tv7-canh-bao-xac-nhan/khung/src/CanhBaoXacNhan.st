@@ -1,0 +1,14 @@
+FUNCTION_BLOCK CanhBaoXacNhan
+VAR_INPUT
+    DIEU_KIEN : BOOL;
+    XAC_NHAN : BOOL;
+    T_TRE : TIME;
+END_VAR
+VAR_OUTPUT
+    TRANG_THAI : INT;
+    NHAP_NHAY : BOOL;
+    CO_CANH_BAO : BOOL;
+END_VAR
+    (* TODO: cài đặt theo đề bài, dùng TON + R_TRIG *)
+    TRANG_THAI := 0;
+END_FUNCTION_BLOCK

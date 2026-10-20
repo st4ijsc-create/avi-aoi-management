@@ -1,0 +1,20 @@
+FUNCTION_BLOCK DieuKhienNhietLo
+VAR_INPUT
+    BAT : BOOL;
+    NHIET : REAL;
+    SP : REAL;
+    TRE : REAL;
+    NGUONG_CAO : REAL;
+    NGUONG_HH : REAL;
+    RESET : BOOL;
+END_VAR
+VAR_OUTPUT
+    SUOI : BOOL;
+    CANH_BAO_CAO : BOOL;
+    NGAT_HH : BOOL;
+    LOI_CAM_BIEN : BOOL;
+    TRANG_THAI : INT;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    SUOI := FALSE;
+END_FUNCTION_BLOCK

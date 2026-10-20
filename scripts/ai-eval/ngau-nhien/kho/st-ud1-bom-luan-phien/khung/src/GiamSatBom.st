@@ -1,0 +1,13 @@
+FUNCTION_BLOCK GiamSatBom
+VAR_INPUT
+    LENH : BOOL;
+    PHAN_HOI : BOOL;
+    RESET : BOOL;
+    T_PHAN_HOI : TIME;
+END_VAR
+VAR_OUTPUT
+    LOI : BOOL;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    LOI := FALSE;
+END_FUNCTION_BLOCK

@@ -1,0 +1,15 @@
+{
+  "id": "st-tt5-crc16-modbus",
+  "lang": "st",
+  "muc": "thuat-toan",
+  "kieu": "st",
+  "tieuDe": "Tính CRC-16/MODBUS cho bộ đệm byte",
+  "deBai": "Cài `FUNCTION Crc16Modbus : WORD` trong tệp `src/Crc16Modbus.st` (khối khai báo đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào; được thêm biến `VAR` nội bộ).\n\nVào: `DU_LIEU : ARRAY[0..63] OF BYTE` (truyền theo giá trị, `VAR_INPUT`), `DO_DAI : INT` (số byte đầu của `DU_LIEU` cần tính, từ `DU_LIEU[0]`). Trả về: CRC 16 bit.\n\n- Thuật toán CRC-16/MODBUS: giá trị khởi đầu `16#FFFF`; với mỗi byte: XOR byte vào 8 bit thấp của CRC, rồi lặp 8 lần: nếu bit thấp nhất của CRC là 1 thì `CRC := SHR(CRC, 1) XOR 16#A001`, ngược lại `CRC := SHR(CRC, 1)`. Không XOR cuối, không đảo byte trong giá trị trả về.\n- `DO_DAI` ngoài 0..64 được KẸP: âm ⇒ 0; lớn hơn 64 ⇒ 64. `DO_DAI` = 0 ⇒ trả `16#FFFF`. Chỉ `DO_DAI` (sau kẹp) byte đầu được tính, các byte sau bị bỏ qua.\n- Vector kiểm: các byte ASCII \"123456789\" ⇒ `16#4B37`; khung Modbus `01 03 00 00 00 0A` ⇒ `16#CDC5` (khi truyền trên đường dây byte thấp đi trước: `C5 CD`).\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": ["src/Crc16Modbus.st"],
+  "dinhDanh": "Crc16Modbus",
+  "testHienThi": ["tests/hien_thi.st"],
+  "testAn": ["tests/an.st"],
+  "tepBaoVe": ["tests/kt.st", "tests/hien_thi.st"],
+  "soTest": { "hienThi": 2, "an": 16 },
+  "sai": [{ "tep": "src/Crc16Modbus.st", "tu": "IF n > 64 THEN n := 64; END_IF", "den": "IF n > 63 THEN n := 63; END_IF" }]
+}

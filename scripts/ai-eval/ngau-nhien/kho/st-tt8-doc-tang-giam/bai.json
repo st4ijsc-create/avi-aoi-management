@@ -1,0 +1,15 @@
+{
+  "id": "st-tt8-doc-tang-giam",
+  "lang": "st",
+  "muc": "thuat-toan",
+  "kieu": "st",
+  "tieuDe": "Bộ tạo dốc tăng/giảm theo thời gian thực với tốc độ tăng và giảm riêng",
+  "deBai": "Cài `FUNCTION_BLOCK DocTangGiam` trong tệp `src/DocTangGiam.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ).\n\nVào: `DICH : REAL` (giá trị đích), `TOC_DO_TANG : REAL`, `TOC_DO_GIAM : REAL` (đơn vị/giây, luôn > 0), `BAT : BOOL`. Ra: `RA : REAL`, `DA_TOI : BOOL`. Mỗi lần gọi khối là một chu kỳ quét.\n\nThời gian: đọc biến toàn cục `G_NOW : TIME` (đồng hồ của môi trường chấm, đã khai sẵn — KHÔNG tự khai lại). Trong môi trường này `TIME` có độ phân giải NANO giây: `TIME_TO_LINT(t)` trả số nano giây (vd `TIME_TO_LINT(T#100ms)` = 100000000); đổi sang giây dạng REAL, ví dụ `LINT_TO_REAL(TIME_TO_LINT(G_NOW - tCu)) / 1.0E9`. Các lần gọi liên tiếp có thể cách nhau khoảng thời gian bất kỳ (kể cả 0).\n\n- `BAT` = FALSE ⇒ `RA := DICH` ngay trong chu kỳ đó (bám theo đích).\n- `BAT` = TRUE ⇒ đặt Δt = `G_NOW` hiện tại − `G_NOW` của chu kỳ trước (giây). Nếu `DICH > RA`: `RA` tăng thêm `TOC_DO_TANG × Δt` nhưng KHÔNG vượt `DICH`; nếu `DICH < RA`: `RA` giảm bớt `TOC_DO_GIAM × Δt` nhưng KHÔNG xuống dưới `DICH`; khi chạm/vượt thì `RA` đúng bằng `DICH`.\n- Chu kỳ ĐẦU TIÊN có `BAT` = TRUE sau khi `BAT` là FALSE (hoặc lần gọi đầu tiên của khối nếu khi đó `BAT` = TRUE) chỉ ghi nhận thời điểm: Δt = 0, `RA` không đổi. Khoảng thời gian lúc `BAT` = FALSE không bao giờ được tính vào Δt.\n- Giá trị ban đầu `RA` = 0.0.\n- `DA_TOI` = (`RA = DICH`) sau khi xử lý chu kỳ (vì vậy luôn TRUE khi `BAT` = FALSE).\n- Đầu vào không được truyền trong một lần gọi giữ giá trị lần gọi trước (ngữ nghĩa khối chức năng IEC thông thường).\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": ["src/DocTangGiam.st"],
+  "dinhDanh": "DocTangGiam",
+  "testHienThi": ["tests/hien_thi.st"],
+  "testAn": ["tests/an.st"],
+  "tepBaoVe": ["tests/kt.st", "tests/hien_thi.st"],
+  "soTest": { "hienThi": 3, "an": 27 },
+  "sai": [{ "tep": "src/DocTangGiam.st", "tu": "RA := MAX(RA - TOC_DO_GIAM * dt, DICH);", "den": "RA := MAX(RA - TOC_DO_TANG * dt, DICH);" }]
+}

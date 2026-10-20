@@ -1,0 +1,33 @@
+{
+  "id": "st-tv6-dem-gio-chay",
+  "lang": "st",
+  "muc": "thu-vien",
+  "kieu": "st",
+  "tieuDe": "Bộ đếm giờ chạy máy cộng dồn theo đồng hồ G_NOW, không trôi phần lẻ",
+  "deBai": "Cài `FUNCTION_BLOCK DemGioChay` trong tệp `src/DemGioChay.st` (khối khai báo vào/ra đã có — KHÔNG đổi tên, kiểu hay thứ tự biến vào/ra; được thêm biến `VAR` nội bộ). BẮT BUỘC dùng khối chuẩn `R_TRIG` (có sẵn, KHÔNG tự định nghĩa) để nhận ra chu kỳ bắt đầu chạy.\n\nVào: `DANG_CHAY : BOOL`, `RESET : BOOL`. Ra: `GIO : UDINT`, `PHUT : UDINT`, `GIAY_TONG : UDINT`. Mỗi lần gọi khối là một chu kỳ quét. Thời gian lấy từ biến toàn cục `G_NOW : TIME` (đồng hồ của bộ chấm, ĐÃ khai báo sẵn — đọc trực tiếp, KHÔNG tự khai báo; bộ test tự tăng giữa các chu kỳ, bước có thể lẻ như 7 ms hoặc lớn như 1 h). Trong bộ chấm TIME là số nguyên NANO giây 64 bit (`TIME_TO_LINT(T#1s)` = 1 000 000 000); cộng/trừ/so sánh TIME với nhau và với hằng như `T#1s` dùng bình thường.\n\n- Thời gian chạy tích luỹ: ở chu kỳ k, nếu `DANG_CHAY` = TRUE ở CẢ chu kỳ k và chu kỳ k−1 (lần gọi trước) và `RESET` = FALSE, cộng thêm Δt = `G_NOW`(k) − `G_NOW`(k−1). Vì vậy chu kỳ đầu tiên của một đợt chạy (kể cả lần gọi đầu tiên nếu `DANG_CHAY` = TRUE) KHÔNG cộng (chưa có mốc), chu kỳ `DANG_CHAY` = FALSE không cộng, thời gian lúc dừng không cộng.\n- `GIAY_TONG` = số GIÂY NGUYÊN của thời gian tích luỹ (làm tròn xuống). Phần lẻ dưới 1 s phải được GIỮ LẠI và cộng dồn, không được bỏ: vd 10 000 chu kỳ 7 ms sau chu kỳ bắt đầu ⇒ đúng 70 s; 9 999 chu kỳ ⇒ 69.\n- `GIO` = `GIAY_TONG` / 3600 (nguyên); `PHUT` = (`GIAY_TONG` / 60) MOD 60 (0..59). Cả ba đầu ra cập nhật ngay trong chu kỳ.\n- `RESET` = TRUE ⇒ thời gian tích luỹ (cả phần lẻ) = 0, ba đầu ra = 0 trong chu kỳ đó, không cộng chu kỳ đó. Nếu vẫn chạy, chu kỳ sau cộng Δt tính từ chu kỳ reset.\n- Đầu vào không truyền trong một lần gọi giữ giá trị lần gọi trước.\n\nChỉ viết các POU được yêu cầu; không viết `PROGRAM` hay `FUNCTION main`, không tự định nghĩa khối chuẩn (TON, TOF, TP, R_TRIG, F_TRIG, CTU, CTD, SR, RS).",
+  "tepGiai": [
+    "src/DemGioChay.st"
+  ],
+  "dinhDanh": "DemGioChay",
+  "testHienThi": [
+    "tests/hien_thi.st"
+  ],
+  "testAn": [
+    "tests/an.st"
+  ],
+  "tepBaoVe": [
+    "tests/kt.st",
+    "tests/hien_thi.st"
+  ],
+  "soTest": {
+    "hienThi": 3,
+    "an": 22
+  },
+  "sai": [
+    {
+      "tep": "src/DemGioChay.st",
+      "tu": "le := le - T#1s;",
+      "den": "le := T#0s;"
+    }
+  ]
+}

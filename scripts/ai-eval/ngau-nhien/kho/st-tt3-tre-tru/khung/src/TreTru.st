@@ -1,0 +1,13 @@
+FUNCTION_BLOCK TreTru
+VAR_INPUT
+    PV : REAL;
+    SP : REAL;
+    DAI : REAL;
+    CHE_DO_LAM_LANH : BOOL;
+END_VAR
+VAR_OUTPUT
+    Q : BOOL;
+END_VAR
+    (* TODO: cài đặt theo đề bài *)
+    Q := FALSE;
+END_FUNCTION_BLOCK
