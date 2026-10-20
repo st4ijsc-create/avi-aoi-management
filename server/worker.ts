@@ -38,6 +38,11 @@ assertVramEnforcementPolicy();
 khoiChayDongBoLuaChonModel();
 // ★★ Đợt 7.0 — sổ model (ảnh chụp vai trò/gán) cho lượt LLM của worker. Xem `soModel/napSoModel.ts`.
 khoiChayDongBoSoModel();
+// ★★ Đợt 8.1 — worker Luồng AI (hàng đợi bền Postgres). Tắt mặc định tới khi bật `AI_FLOW_ENABLED=true`.
+// ⚠ Tiến trình worker KHÔNG tự đổi khe nặng (Đợt 7.1) ⇒ node AI cần model nặng khác model đang giữ sẽ nhận KHE_NANG_TAT.
+if (process.env.AI_FLOW_ENABLED === "true") {
+  void import("./services/flow/worker").then(({ khoiChayWorkerLuong }) => khoiChayWorkerLuong());
+}
 
 runWorkerProcess().catch((err) => {
   console.error("[Worker] Fatal startup error:", err);

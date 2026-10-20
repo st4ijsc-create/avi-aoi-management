@@ -6325,6 +6325,14 @@ async function startServer() {
     })
     .catch((err) => console.error("[WormSize] monitor failed to start:", (err as any)?.message || err));
 
+  // ★★ Đợt 8.1 (AI Local) — worker Luồng AI TRONG tiến trình API, chỉ khi bật CẢ HAI cờ (máy một tiến trình). Mặc định
+  // worker Luồng chạy ở tiến trình worker (`server/worker.ts`). Hàng đợi bền Postgres ⇒ nhiều tiến trình cùng chạy an toàn.
+  if (process.env.AI_FLOW_ENABLED === "true" && process.env.AI_FLOW_WORKER_TRONG_API === "true") {
+    void import("../services/flow/worker")
+      .then(({ khoiChayWorkerLuong }) => khoiChayWorkerLuong())
+      .catch((err) => console.error("[luong-ai] worker không khởi chạy được:", (err as any)?.message || err));
+  }
+
   // Đợt 0.1 (AI Local) — GIÁM SÁT llama-server: không ai nghe cổng ≥ 2 nhịp (15 s) ⇒ chạy
   // scripts/ai/start-llama-server.ps1 tách rời (khoá liên tiến trình trong os.tmpdir() để :3000 và
   // :3010 không cùng dựng; tối đa 3 lần / 30 phút; tệp tạm dừng cho doi-model.ps1). Nửa kia của hợp
