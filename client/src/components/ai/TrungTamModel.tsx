@@ -153,11 +153,11 @@ function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
               <TableRow key={v.id} data-vai-tro={v.id}>
                 <TableCell className="font-mono text-xs">{v.id}</TableCell>
                 <TableCell className="text-xs">{v.moTa ?? "—"}</TableCell>
-                <TableCell className="text-xs break-all">
+                <TableCell className="text-xs whitespace-normal break-all">
                   {v.dinhTuyen.model ?? <span className="text-muted-foreground">{t("gguf.trungTam.vaiTro.macDinhEngine", "mặc định của engine")}</span>}
                   <Badge variant="outline" className="ml-1">{t(`gguf.trungTam.nguon.${v.dinhTuyen.nguon}`, v.dinhTuyen.nguon)}</Badge>
                 </TableCell>
-                <TableCell className="text-xs text-muted-foreground break-all">
+                <TableCell className="min-w-[16rem] text-xs text-muted-foreground whitespace-normal break-all">
                   {t("gguf.trungTam.vaiTro.tang", "tầng {{n}}", { n: v.dinhTuyen.lyDo.tang })} · {v.dinhTuyen.lyDo.bangChung}
                 </TableCell>
               </TableRow>
@@ -193,7 +193,7 @@ function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
                     <TableCell>
                       <Badge variant={g.mode === "active" ? "default" : "secondary"}>{t(`gguf.trungTam.cheDo.${g.mode}`, g.mode)}</Badge>
                     </TableCell>
-                    <TableCell className="text-xs break-all">
+                    <TableCell className="text-xs whitespace-normal break-all">
                       {g.profileId ? (
                         <>
                           <span className="text-muted-foreground">{t("gguf.trungTam.gan.hoSo", "hồ sơ")}: </span>
@@ -206,7 +206,7 @@ function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
                         </>
                       )}
                     </TableCell>
-                    <TableCell className="font-mono text-xs break-all">{g.fallback.length ? g.fallback.join(" → ") : "—"}</TableCell>
+                    <TableCell className="font-mono text-xs whitespace-normal break-all">{g.fallback.length ? g.fallback.join(" → ") : "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -332,7 +332,7 @@ function DongArtifact({ a, lamMoi }: { a: Artifact; lamMoi: () => void }) {
   const licenseHopLe = RE_GIAY_PHEP.test(license.trim());
   return (
     <TableRow data-artifact={a.id}>
-      <TableCell className="font-mono text-xs break-all">{a.filePath}</TableCell>
+      <TableCell className="min-w-[14rem] font-mono text-xs whitespace-normal break-all">{a.filePath}</TableCell>
       <TableCell className="text-xs">{a.family}</TableCell>
       <TableCell className="text-xs">
         {soB(a.paramsTotalB)} / {soB(a.paramsActiveB)}
@@ -343,7 +343,7 @@ function DongArtifact({ a, lamMoi }: { a: Artifact; lamMoi: () => void }) {
       <TableCell>
         <Badge variant={a.status === "available" ? "default" : a.status === "missing" ? "destructive" : "secondary"}>{t(`gguf.trungTam.trangThai.${a.status}`, a.status)}</Badge>
       </TableCell>
-      <TableCell className="min-w-[12rem] text-xs">
+      <TableCell className="min-w-[12rem] text-xs whitespace-normal">
         <div className="flex items-center gap-1">
           <Input className="h-7 text-xs" value={license} onChange={(e) => setLicense(e.target.value)} aria-label={t("gguf.trungTam.kho.cot.giayPhep", "Giấy phép")} />
           <Button size="sm" variant="outline" className="h-7" disabled={!licenseHopLe || license.trim() === a.license || sua.isPending} onClick={() => sua.mutate({ id: a.id, license: license.trim() })}>
@@ -466,7 +466,7 @@ function TabHoSo({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
               {d.profiles.map((p) => (
                 <TableRow key={p.id} data-ho-so={p.id}>
                   <TableCell className="font-mono text-xs">{p.id}</TableCell>
-                  <TableCell className="font-mono text-xs break-all">{tenTep.get(p.artifactId) ?? p.artifactId}</TableCell>
+                  <TableCell className="font-mono text-xs whitespace-normal break-all">{tenTep.get(p.artifactId) ?? p.artifactId}</TableCell>
                   <TableCell className="text-xs">{t(`gguf.trungTam.khe.${p.slotClass}`, p.slotClass)}</TableCell>
                   <TableCell className="text-xs">{p.ctx}</TableCell>
                   <TableCell className="text-xs">{t(`gguf.trungTam.suyNghi.${p.thinking}`, p.thinking)}</TableCell>
@@ -617,7 +617,7 @@ function TabKhe({ d }: { d: TongQuan }) {
             <TableBody>
               {k.dangCho.map((c, i) => (
                 <TableRow key={`${c.model}-${i}`}>
-                  <TableCell className="font-mono text-xs break-all">{c.model}</TableCell>
+                  <TableCell className="font-mono text-xs whitespace-normal break-all">{c.model}</TableCell>
                   <TableCell className="text-xs">{t(`gguf.trungTam.muc.${c.muc}`, c.muc)}</TableCell>
                   <TableCell className="text-xs">{giay(c.choMs)}</TableCell>
                 </TableRow>
@@ -670,7 +670,7 @@ function TabDo({ d }: { d: TongQuan }) {
           {ds.map((r) => (
             <TableRow key={r.id}>
               <TableCell className="font-mono text-xs">{r.suite}</TableCell>
-              <TableCell className="font-mono text-xs break-all">{r.profileId}</TableCell>
+              <TableCell className="font-mono text-xs whitespace-normal break-all">{r.profileId}</TableCell>
               <TableCell className="text-xs">
                 {r.nPass ?? "?"} / {r.nTasks ?? "?"}
                 {tiLe(r) >= 0 ? ` (${Math.round(tiLe(r) * 100)} %)` : ""}
