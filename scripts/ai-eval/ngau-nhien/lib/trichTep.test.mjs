@@ -73,3 +73,15 @@ test("dòng chú thích chỉ có đường (không chữ 'tệp:')", () => {
   assert.equal(r.cach["src/ngoac.cpp"], "danh-dau");
   assert.equal(r.tep["src/ngoac.cpp"].trim(), '#include "ngoac.hpp"');
 });
+
+test("ST (Đợt 7.2): dòng đánh dấu dạng chú thích (* tệp: … *) và // tệp:", () => {
+  const r = trichTep(
+    "```iecst\n(* tệp: src/BoPhieu.st *)\nFUNCTION_BLOCK BoPhieu\nEND_FUNCTION_BLOCK\n```\n```\n// tệp: src/Phu.st\nFUNCTION Phu : BOOL\nEND_FUNCTION\n```",
+    B(["src/BoPhieu.st", "src/Phu.st"]),
+  );
+  assert.equal(r.cach["src/BoPhieu.st"], "danh-dau");
+  assert.match(r.tep["src/BoPhieu.st"], /^FUNCTION_BLOCK BoPhieu/);
+  assert.equal(r.cach["src/Phu.st"], "danh-dau");
+  const r2 = trichTep("```\n(* src/BoPhieu.st *)\nFUNCTION_BLOCK X\nEND_FUNCTION_BLOCK\n```", B(["src/BoPhieu.st"]));
+  assert.equal(r2.cach["src/BoPhieu.st"], "danh-dau");
+});

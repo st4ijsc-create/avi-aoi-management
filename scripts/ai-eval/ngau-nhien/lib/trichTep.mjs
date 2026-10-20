@@ -10,13 +10,13 @@
  * Nhiều khối cùng một tệp ⇒ lấy khối CUỐI (model hay tự sửa lại).
  * Còn đúng MỘT tệp cần giải chưa có khối và còn khối chưa gán ⇒ chọn khối chưa gán chứa `dinhDanh` (nếu có), dài nhất.
  * Không có rào nào và bài chỉ có MỘT tệp ⇒ cả câu trả lời là tệp ấy (như `codegen-chay-duoc/cham.mjs`).
- * Khối `<think>…</think>` bị bỏ trước khi trích.
+ * Khối `<think>…</think>` bị bỏ trước khi trích. Chú thích ST `(* tệp: src/a.st *)` cũng được nhận (Đợt 7.2).
  */
 const RE_RAO = /```([^\n`]*)\n([\s\S]*?)```/g;
-const RE_DANH_DAU = /^\s*(?:\/\/|#|--|\/\*|<!--|;|')\s*(?:tệp|tep|file|tập tin|path)\s*[:：]\s*([^\s*]+?)\s*(?:\*\/|-->)?\s*$/i;
+const RE_DANH_DAU = /^\s*(?:\/\/|#|--|\/\*|\(\*|<!--|;|')\s*(?:tệp|tep|file|tập tin|path)\s*[:：]\s*([^\s*]+?)\s*(?:\*\/|\*\)|-->)?\s*$/i;
 
 /** Biến thể không có chữ "tệp:" — dòng chú thích CHỈ gồm một đường (vd `// src/a.ts`, `# sol.py`). */
-const RE_DANH_DAU_TRAN = /^\s*(?:\/\/|#|--|\/\*|<!--|;)\s*([A-Za-z0-9_./\\-]+\.[A-Za-z0-9]+)\s*(?:\*\/|-->)?\s*$/;
+const RE_DANH_DAU_TRAN = /^\s*(?:\/\/|#|--|\/\*|\(\*|<!--|;)\s*([A-Za-z0-9_./\\-]+\.[A-Za-z0-9]+)\s*(?:\*\/|\*\)|-->)?\s*$/;
 
 const chuanHoa =(p) => String(p).trim().replace(/^["'`*([]+|["'`*)\]:,.]+$/g, "").replace(/\\/g, "/").replace(/^\.\//, "");
 
