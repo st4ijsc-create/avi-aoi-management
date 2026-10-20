@@ -85,3 +85,17 @@ test("ST (Đợt 7.2): dòng đánh dấu dạng chú thích (* tệp: … *) v�
   const r2 = trichTep("```\n(* src/BoPhieu.st *)\nFUNCTION_BLOCK X\nEND_FUNCTION_BLOCK\n```", B(["src/BoPhieu.st"]));
   assert.equal(r2.cach["src/BoPhieu.st"], "danh-dau");
 });
+
+test("Đợt 7.3: không rào, nhiều tệp tách theo dòng đánh dấu", () => {
+  const r = trichTep("// tệp: src/A.st\nFUNCTION_BLOCK A\nEND_FUNCTION_BLOCK\n\n// tệp: src/B.st\nFUNCTION_BLOCK B\nEND_FUNCTION_BLOCK\n", B(["src/A.st", "src/B.st"]));
+  assert.deepEqual(r.thieu, []);
+  assert.equal(r.cach["src/A.st"], "danh-dau-khong-rao");
+  assert.match(r.tep["src/A.st"], /^FUNCTION_BLOCK A\nEND_FUNCTION_BLOCK/);
+  assert.doesNotMatch(r.tep["src/A.st"], /FUNCTION_BLOCK B/);
+  assert.match(r.tep["src/B.st"], /FUNCTION_BLOCK B/);
+});
+
+test("Đợt 7.3: có rào thì KHÔNG dùng đường tách không rào", () => {
+  const r = trichTep("// tệp: src/A.st\nchu\n```\n// tệp: src/A.st\nX\n```", B(["src/A.st"]));
+  assert.equal(r.tep["src/A.st"].trim(), "X");
+});

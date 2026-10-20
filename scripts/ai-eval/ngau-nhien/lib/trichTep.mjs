@@ -75,6 +75,23 @@ export function trichTep(text, bai) {
     }
     if (t) { tep[t] = than; daGan.add(i); }
   });
+  // Đợt 7.3 (đo 2026-10-20): model viết ĐÚNG dòng đánh dấu `// tệp: …` cho từng tệp nhưng KHÔNG bọc khối rào ⇒ 0 khối
+  // ⇒ trước đây THIEU_TEP oan cho mọi bài nhiều tệp (lỗi THƯỚC, không phải lỗi mã). Không có rào nào ⇒ tách câu trả lời
+  // theo các dòng đánh dấu khớp tệp cần giải: nội dung một tệp = các dòng từ sau dòng đánh dấu tới dòng đánh dấu kế.
+  if (khoi.length === 0) {
+    const dong = s.split(/\r?\n/);
+    const moc = [];
+    dong.forEach((l, i) => {
+      const md = l.match(RE_DANH_DAU) ?? l.match(RE_DANH_DAU_TRAN);
+      const t = md ? khopTep(md[1], tepGiai) : null;
+      if (t) moc.push({ i, t });
+    });
+    moc.forEach((m, k) => {
+      const het = k + 1 < moc.length ? moc[k + 1].i : dong.length;
+      const than = dong.slice(m.i + 1, het).join("\n");
+      if (than.trim()) { tep[m.t] = than; cach[m.t] = "danh-dau-khong-rao"; }
+    });
+  }
   let thieu = tepGiai.filter((t) => !(t in tep));
   if (thieu.length === 1) {
     const con = khoi.map((k, i) => ({ ...k, i })).filter((k) => !daGan.has(k.i));
