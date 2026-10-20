@@ -17,6 +17,8 @@ export interface NguCanhChay {
   nodes: Record<string, ItemLuong[]>;
   env: Record<string, string>;
   run: { id: string; flowId: string; batDau: string };
+  /** Đợt 8.4 — phiên bản của luồng đang chạy (để node gọi luồng con so hạng với PHIÊN BẢN này). */
+  version?: number;
   /**
    * Đợt 8.2 — bí mật đã giải mã của node (chỉ khi node có `credentialRef` và loại khai `nhanBiMat`). Động cơ gắn ô này
    * KHÔNG LIỆT KÊ ĐƯỢC (`JSON.stringify`/spread không mang theo); KHÔNG nằm trong `inputs`/`nodes`/biểu thức/bước/sự kiện.
@@ -31,7 +33,18 @@ export type KetQuaChay = Record<string, ItemLuong[]>;
  * bước giữ `dang-chay`; `traLoiCho` (dongCo) đi tiếp với `items` ở cổng được chọn.
  */
 export interface YeuCauCho {
-  __cho: { kind: "duyet" | "webhook" | "thoi-gian"; items: ItemLuong[]; hetHanMs?: number; tokenHash?: string; payload?: Record<string, unknown> };
+  __cho: {
+    kind: "duyet" | "webhook" | "thoi-gian" | "luong-con";
+    items: ItemLuong[];
+    hetHanMs?: number;
+    tokenHash?: string;
+    payload?: Record<string, unknown>;
+    /**
+     * Đợt 8.4 — chỉ với kind `luong-con`: lượt con cần TẠO. Động cơ tạo nó TRONG CÙNG giao dịch ghi hàng chờ của cha (con không
+     * thể xong trước khi cha kịp chờ), và chỉ khi hàng chờ mới được chèn (chạy lại node ⇒ không tạo con thứ hai).
+     */
+    con?: { flowId: string; version: number; nutKichHoat: string; items: ItemLuong[] };
+  };
 }
 
 export interface DinhNghiaNut extends KhaiBaoNut {

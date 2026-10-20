@@ -4042,7 +4042,8 @@
       "flowDuyet": "审批 AI 流程步骤",
       "flowBiMatTao": "创建 AI 流程密钥",
       "flowBiMatXoa": "删除 AI 流程密钥",
-      "flowBiMatXem": "查看 AI 流程密钥列表"
+      "flowBiMatXem": "查看 AI 流程密钥列表",
+      "flowTaoTuMoTa": "根据描述创建 AI 流程草稿"
     },
     "field": {
       "holderUserId": "密钥的发放对象（必须是现有的在职用户）",
@@ -22990,7 +22991,8 @@
       "ai": "AI",
       "nguoi": "人工",
       "tich-hop": "集成",
-      "ot": "OT"
+      "ot": "OT",
+      "luong": "子流程"
     },
     "danhSach": {
       "tieuDe": "AI 流程",
@@ -23179,6 +23181,17 @@
       "daDongY": "已同意",
       "daTuChoi": "已拒绝",
       "daCoNguoiDuyet": "此步骤已有人审批。"
+    },
+    "moTaLuong": {
+      "nut": "根据描述",
+      "tieuDe": "根据描述生成草稿",
+      "moTa": "用文字描述要自动化的工作。AI 生成流程草稿并放到画布上——未保存、未启用；请检查、修改后点击保存。",
+      "oNhap": "例如：每天早上 6 点汇总夜班 AOI 缺陷并提交给班长审批",
+      "tao": "生成草稿",
+      "dangTao": "生成中…",
+      "khongHopLe": "两次尝试后草稿仍无效——已放到画布上供您修改：",
+      "daDat": "草稿已放到画布（类别 {{hang}}）——未保存",
+      "thayCanvas": "草稿将替换画布上的现有内容（已保存的版本不变）。"
     }
   }
 }

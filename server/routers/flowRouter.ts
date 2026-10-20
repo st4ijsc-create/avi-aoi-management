@@ -13,6 +13,9 @@
  * Đợt 8.2 Task 4 — BÍ MẬT (`ai_flow_credentials`, `services/flow/biMat.ts`): `biMatTao` / `biMatXoa` = admin
  * (`adminProcedure` + MOD_AI); `biMatDanhSach` = quyền sửa luồng (`ghiProcedure`) và KHÔNG BAO GIỜ trả giá trị/bản mã.
  * Giá trị chỉ GHI: `biMatTao` trả id/tên/loại/phiên bản khoá. Thông điệp lỗi của `LoiBiMat` không chứa giá trị.
+ *
+ * Đợt 8.4 — `taoTuMoTa` (mô tả → BẢN NHÁP luồng, không lưu/không bật) = quyền sửa luồng. Hạng của phiên bản (`luu`) nay gồm
+ * hạng các LUỒNG CON được tham chiếu (`luong.goi-con`, tool `ai.agent`) ⇒ cổng bật/chạy-tay theo hạng ở dưới áp luôn cho chúng.
  */
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -24,7 +27,8 @@ import { appError } from "../_core/appError";
 import { getDb } from "../db/connection";
 import { aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../drizzle/schema";
 import { THU_TU_HANG, kiemLuong, type FlowDefinition, type HangTacDungPhu } from "../../shared/flow/model";
-import { LoiLuong, batDauRun, luuPhienBan, traLoiCho } from "../services/flow/dongCo";
+import { LoiLuong, batDauRun, hangLuongConTuDb, luuPhienBan, traLoiCho } from "../services/flow/dongCo";
+import { taoTuMoTa } from "../services/flow/taoTuMoTa";
 import { danhSachNut, layNut } from "../services/flow/dangKyNut";
 import { kiemThamSoKichHoat, napLaiLich } from "../services/flow/kichHoat/lich";
 import { capTokenWebhook, coNodeWebhook, coTokenWebhook } from "../services/flow/kichHoat/webhook";
@@ -71,7 +75,7 @@ export function docMauLuong(): { tep: string; definition: FlowDefinition }[] {
 /** Trần chữ của input/output mỗi bước trả về dòng thời gian (cắt ở đây, CSDL giữ nguyên theo `luuDuLieu`). */
 export const TRAN_CHU_BUOC = 4000;
 
-type Op = "flowXem" | "flowLuu" | "flowKichHoat" | "flowChayTay" | "flowDuyet" | "flowBiMatTao" | "flowBiMatXoa" | "flowBiMatXem";
+type Op = "flowXem" | "flowLuu" | "flowKichHoat" | "flowChayTay" | "flowDuyet" | "flowBiMatTao" | "flowBiMatXoa" | "flowBiMatXem" | "flowTaoTuMoTa";
 
 /** `LoiBiMat` ⇒ `appError` (thông điệp của LoiBiMat không bao giờ chứa giá trị). Lỗi khác ném lại nguyên. */
 function loiBiMat(e: unknown, op: Op): never {
@@ -319,6 +323,24 @@ export const flowRouter = router({
       return { tep, id: definition.id, ten: definition.name, soNode: definition.nodes.length, hang: kq.hang, hopLe: kq.ok, definition };
     }),
   ),
+
+  /**
+   * Đợt 8.4 — MÔ TẢ → LUỒNG (spec §4.9): model (`code.software`, qua Cổng AI) sinh FlowDefinition ⇒ kiểm schema + `kiemLuong`
+   * (hạng luồng con đọc CSDL) ⇒ BẢN NHÁP. KHÔNG lưu, KHÔNG bật — người mở bản nháp trên canvas rồi tự `luu`. Quyền = sửa luồng.
+   * Mutation (gọi model — tốn, không tất định), không phải query.
+   */
+  taoTuMoTa: ghiProcedure.input(z.object({ moTa: z.string().trim().min(10).max(4000) })).mutation(async ({ input }) => {
+    try {
+      return await taoTuMoTa(input.moTa, {
+        hangLuongCon: async (ids) => {
+          const m = await hangLuongConTuDb(ids);
+          return (id) => m.get(id) ?? null;
+        },
+      });
+    } catch (e) {
+      throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "flowTaoTuMoTa" }, `Không tạo được bản nháp: ${String((e as Error)?.message ?? e).slice(0, 300)}`);
+    }
+  }),
 
   /** Khai báo các loại node đã đăng ký (Flow Studio). */
   danhMucNode: xemProcedure.query(() =>

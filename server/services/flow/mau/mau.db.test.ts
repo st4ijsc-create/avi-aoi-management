@@ -69,7 +69,7 @@ async function raCua(runId: string, nodeId: string): Promise<Record<string, unkn
 describe("mẫu luồng — hợp lệ", () => {
   it("mọi tệp mẫu qua kiemLuong + kiểm tham số kích hoạt, hạng `thuan`", () => {
     const tep = readdirSync(THU_MUC).filter((f) => f.endsWith(".json"));
-    expect(tep.sort()).toEqual(["aoi-loi-lap-rca.json", "bao-cao-ca.json", "tai-lieu-sieu-du-lieu.json"]);
+    expect(tep.sort()).toEqual(["aoi-loi-lap-rca.json", "bao-cao-ca.json", "tai-lieu-sieu-du-lieu.json", "yeu-cau-plc.json"]); // Đợt 8.4: +#3 PLC (đầu-cuối ở yeuCauPlc.docker.db.test.ts)
     for (const f of tep) {
       const kq = kiemLuong(docMau(f), layNut);
       expect(kq.loi, f).toEqual([]);

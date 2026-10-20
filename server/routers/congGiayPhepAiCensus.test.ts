@@ -489,7 +489,12 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   (danh sách mẫu luồng tĩnh `server/services/flow/mau/*.json` cho nút "Tạo từ mẫu") — CÓ cổng MOD_AI từ lượt sinh ra.
 //   aiMienTru / ngoaiAiCoCong / mọi SKU khác KHÔNG đổi. Đo trước (xanh trên ghim cũ) / sau. `tong` 2382 trùng ĐÚNG
 //   `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2382, beMatAi: 429, aiCoCong: 367, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+// ★★ 2026-10-20 (AI Local Đợt 8.4 — mô tả → luồng) — **tong 2382 → 2383 · beMatAi 429 → 430 · aiCoCong 367 → 368.**
+//   Lời khai: `server/routers/flowRouter.ts` (đã ở `FILE_AI_TUONG_MINH`) mọc MỘT mutation `taoTuMoTa` trên
+//   `writeProcedure.use(moduleGate("MOD_AI"))` (mô tả tiếng Việt ⇒ model `code.software` qua Cổng AI ⇒ BẢN NHÁP FlowDefinition;
+//   không ghi CSDL, không bật) — CÓ cổng MOD_AI từ lượt sinh ra. aiMienTru / ngoaiAiCoCong / mọi SKU khác KHÔNG đổi. Đo trước
+//   (đỏ đúng +1 ở ba ô trên) / sau. `tong` 2383 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2383, beMatAi: 430, aiCoCong: 368, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

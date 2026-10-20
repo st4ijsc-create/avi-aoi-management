@@ -226,7 +226,14 @@ export interface KetQuaGoiMcp {
  */
 export async function goiToolMcp(ten: string, args: Record<string, unknown>): Promise<KetQuaGoiMcp> {
   const muc = SO_TOOL_MCP.find((m) => m.ten === ten);
-  if (!muc) return { chu: `Không có tool "${ten}".`, loi: true };
+  if (!muc) {
+    // ★ Luồng AI Đợt 8.4 — tool không thuộc sổ tĩnh ⇒ có thể là một LUỒNG được công bố (`kich-hoat.mcp`, hạng thuần/đọc).
+    // Cùng cổng danh tính fail-closed như mọi tool; điều kiện công bố được kiểm LẠI lúc gọi (`goiToolLuongMcp`).
+    const dtL = await layDanhTinh();
+    if (!dtL.ok) return { chu: `Chưa xác định được danh tính nên KHÔNG chạy gì cả.\n${dtL.loi}`, loi: true };
+    const luong = await (await import("../flow/kichHoat/mcp")).goiToolLuongMcp(ten, args);
+    return luong ?? { chu: `Không có tool "${ten}".`, loi: true };
+  }
 
   const dt = await layDanhTinh();
   if (!dt.ok) return { chu: `Chưa xác định được danh tính nên KHÔNG chạy gì cả.\n${dt.loi}`, loi: true };
@@ -290,6 +297,23 @@ export type TraLoiJsonRpc =
 export const MA_JSONRPC = { KHONG_CO_PHUONG_THUC: -32601, THAM_SO_XAU: -32602 } as const;
 
 /**
+ * ★ Luồng AI Đợt 8.4 — tool từ LUỒNG được công bố (spec §4.10). Chỉ liệt kê khi đã có danh tính (tên/mô tả luồng là thông tin
+ * nội bộ; không danh tính ⇒ chỉ sổ tĩnh — đúng hành vi trước 8.4). Mọi lỗi (CSDL vắng …) ⇒ rỗng, không làm hỏng `tools/list`.
+ */
+async function toolLuongCongBo(): Promise<Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>> {
+  try {
+    const dt = await layDanhTinh();
+    if (!dt.ok) return [];
+    const ds = await (await import("../flow/kichHoat/mcp")).lietKeToolLuongMcp();
+    const tinh = new Set(SO_TOOL_MCP.map((m) => m.ten));
+    return ds.filter((t) => !tinh.has(t.name)).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }));
+  } catch (e) {
+    ke(`không liệt kê được tool luồng: ${String((e as Error)?.message ?? e).slice(0, 200)}`);
+    return [];
+  }
+}
+
+/**
  * ★ Xử lý MỘT thông điệp. Trả `null` cho **notification** (không có `id`) — theo JSON-RPC, một
  * notification KHÔNG được trả lời; trả lời nó là lỗi giao thức và một số client sẽ ngắt.
  */
@@ -323,7 +347,7 @@ export async function xuLyGoi(goi: GoiJsonRpc): Promise<TraLoiJsonRpc | null> {
         jsonrpc: "2.0",
         id,
         result: {
-          tools: SO_TOOL_MCP.map((m) => ({ name: m.ten, description: m.moTa, inputSchema: m.luoc })),
+          tools: [...SO_TOOL_MCP.map((m) => ({ name: m.ten, description: m.moTa, inputSchema: m.luoc })), ...(await toolLuongCongBo())],
         },
       };
     case "tools/call": {

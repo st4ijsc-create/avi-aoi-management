@@ -6,6 +6,8 @@
  * Lưu = `flow.luu` ⇒ phiên bản MỚI bất biến; bị từ chối ⇒ hiện danh sách lỗi kiểm luồng của máy chủ. Bật/Tắt =
  * `flow.datPhienBanHoatDong` cho phiên bản ĐÃ LƯU đang mở. Chạy tay = `flow.chayTay` (items JSON) ⇒ chuyển sang dòng thời gian
  * và tô node theo trạng thái lượt. `?run=<id>` mở thẳng một lượt (liên kết từ hộp duyệt).
+ * Đợt 8.4 — "Từ mô tả" = `flow.taoTuMoTa` ⇒ BẢN NHÁP đặt lên canvas (giữ id luồng đang mở, CHƯA lưu, CHƯA bật): người kiểm tra,
+ * sửa rồi tự bấm Lưu (phiên bản mới) — máy chủ không bao giờ lưu/bật bản nháp.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -20,7 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { ArrowLeft, Inbox, Loader2, Play, Plus, Power, PowerOff, Save, Search, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Inbox, Loader2, Play, Plus, Power, PowerOff, Save, Search, AlertTriangle, Sparkles } from "lucide-react";
 import { kiemLuong, type FlowDefinition, type KhaiBaoNut, type NodeInstance } from "@shared/flow/model";
 import FlowCanvas, { KIEU_KEO_NUT } from "@/components/aiFlow/FlowCanvas";
 import NodeConfigPanel from "@/components/aiFlow/NodeConfigPanel";
@@ -54,6 +56,9 @@ export default function AIFlowEditorPage() {
   const [itemsChu, setItemsChu] = useState('[\n  { "json": {} }\n]');
   const [tokenMoi, setTokenMoi] = useState<string | null>(null);
   const [lanKhop, setLanKhop] = useState(0);
+  const [moMoTa, setMoMoTa] = useState(false);
+  const [chuMoTa, setChuMoTa] = useState("");
+  const [loiMoTa, setLoiMoTa] = useState<string[] | null>(null);
 
   // nap dinh nghia tu may chu khi doi phien ban / lan dau
   useEffect(() => {
@@ -117,6 +122,24 @@ export default function AIFlowEditorPage() {
       setTab("chay");
       toast.success(t("flowStudio.sua.daChay", { version: r.version }));
       void utils.flow.lichSuChay.invalidate({ flowId });
+    },
+    onError: (e) => toastTrpcError(e),
+  });
+
+  const taoTuMoTa = trpc.flow.taoTuMoTa.useMutation({
+    onSuccess: (r) => {
+      if (r.banNhap && def) {
+        // giữ id luồng đang mở + số phiên bản đang xem: Lưu tạo phiên bản MỚI của chính luồng này
+        setDef({ ...(r.banNhap as FlowDefinition), id: flowId, version: def.version });
+        setLanKhop((k) => k + 1);
+        setChon(null);
+        setLoiLuu(null);
+        toast.success(t("flowStudio.moTaLuong.daDat", { hang: t(`flowStudio.hang.${laHang(r.hang) ? r.hang : "thuan"}`) }));
+      }
+      if (r.ok) {
+        setMoMoTa(false);
+        setLoiMoTa(null);
+      } else setLoiMoTa(r.loi);
     },
     onError: (e) => toastTrpcError(e),
   });
@@ -236,6 +259,10 @@ export default function AIFlowEditorPage() {
                 {t("flowStudio.sua.bat", { version: version ?? "" })}
               </Button>
             )}
+            <Button size="sm" variant="outline" data-testid="nut-tu-mo-ta" disabled={!def} onClick={() => { setLoiMoTa(null); setMoMoTa(true); }}>
+              <Sparkles className="h-4 w-4 mr-1" />
+              {t("flowStudio.moTaLuong.nut")}
+            </Button>
             <Button size="sm" variant="secondary" data-testid="nut-chay-tay" disabled={!version} onClick={() => setMoChay(true)}>
               <Play className="h-4 w-4 mr-1" />
               {t("flowStudio.sua.chayTay")}
@@ -381,6 +408,36 @@ export default function AIFlowEditorPage() {
           </aside>
         </div>
       </div>
+
+      <Dialog open={moMoTa} onOpenChange={(o) => !o && setMoMoTa(false)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("flowStudio.moTaLuong.tieuDe")}</DialogTitle>
+            <DialogDescription>{t("flowStudio.moTaLuong.moTa")}</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            data-testid="o-mo-ta-luong"
+            rows={6}
+            value={chuMoTa}
+            placeholder={t("flowStudio.moTaLuong.oNhap")}
+            onChange={(e) => setChuMoTa(e.target.value)}
+          />
+          <p className="text-[11px] text-muted-foreground">{t("flowStudio.moTaLuong.thayCanvas")}</p>
+          {loiMoTa && (
+            <div className="rounded border border-destructive/40 bg-destructive/10 p-2 text-xs" role="alert" data-testid="loi-mo-ta-luong">
+              <div className="font-medium text-destructive mb-1">{t("flowStudio.moTaLuong.khongHopLe")}</div>
+              <ul className="list-disc pl-4 space-y-0.5">{loiMoTa.slice(0, 12).map((l, i) => <li key={i}>{l}</li>)}</ul>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMoMoTa(false)}>{t("flowStudio.chung.huy")}</Button>
+            <Button data-testid="xac-nhan-mo-ta-luong" disabled={chuMoTa.trim().length < 10 || taoTuMoTa.isPending} onClick={() => taoTuMoTa.mutate({ moTa: chuMoTa.trim() })}>
+              {taoTuMoTa.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1" />}
+              {taoTuMoTa.isPending ? t("flowStudio.moTaLuong.dangTao") : t("flowStudio.moTaLuong.tao")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={moChay} onOpenChange={setMoChay}>
         <DialogContent className="max-w-lg">

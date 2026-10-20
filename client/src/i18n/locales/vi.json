@@ -4050,7 +4050,8 @@
       "flowDuyet": "duyệt bước của Luồng AI",
       "flowBiMatTao": "tạo bí mật của Luồng AI",
       "flowBiMatXoa": "xoá bí mật của Luồng AI",
-      "flowBiMatXem": "xem danh sách bí mật của Luồng AI"
+      "flowBiMatXem": "xem danh sách bí mật của Luồng AI",
+      "flowTaoTuMoTa": "tạo bản nháp Luồng AI từ mô tả"
     },
     "field": {
       "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",
@@ -22962,7 +22963,8 @@
       "ai": "AI",
       "nguoi": "Con người",
       "tich-hop": "Tích hợp",
-      "ot": "OT"
+      "ot": "OT",
+      "luong": "Luồng con"
     },
     "danhSach": {
       "tieuDe": "Luồng AI",
@@ -23151,6 +23153,17 @@
       "daDongY": "Đã đồng ý",
       "daTuChoi": "Đã từ chối",
       "daCoNguoiDuyet": "Bước này đã có người duyệt."
+    },
+    "moTaLuong": {
+      "nut": "Từ mô tả",
+      "tieuDe": "Tạo bản nháp từ mô tả",
+      "moTa": "Mô tả việc cần tự động hoá bằng tiếng Việt. AI sinh một BẢN NHÁP luồng và đặt lên canvas — chưa lưu, chưa bật; bạn kiểm tra, sửa rồi bấm Lưu.",
+      "oNhap": "Ví dụ: Mỗi sáng 6 giờ tóm tắt lỗi AOI của ca đêm rồi gửi trưởng ca duyệt",
+      "tao": "Tạo bản nháp",
+      "dangTao": "Đang tạo…",
+      "khongHopLe": "Bản nháp chưa hợp lệ sau hai lần thử — vẫn đặt lên canvas để bạn sửa:",
+      "daDat": "Đã đặt bản nháp lên canvas (hạng {{hang}}) — chưa lưu",
+      "thayCanvas": "Bản nháp sẽ THAY nội dung đang có trên canvas (phiên bản đã lưu không đổi)."
     }
   }
 }

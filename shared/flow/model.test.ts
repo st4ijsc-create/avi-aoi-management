@@ -18,7 +18,7 @@ describe("kiemLuong (Đợt 8.0)", () => {
       luong([nut("t", "kich-hoat.thu-cong"), nut("a", "du-lieu.dat", { x: "{{ $json.a + 1 }}" }), nut("h", "tich-hop.http")], [noi("t", "main", "a"), noi("a", "main", "h")]),
       dk,
     );
-    expect(kq).toEqual({ ok: true, loi: [], hang: "ngoai-ghi" });
+    expect(kq).toEqual({ ok: true, loi: [], hang: "ngoai-ghi", luongCon: [] });
   });
 
   it("trùng id · loại lạ · cổng lạ · không kích hoạt · nối vào kích hoạt · biểu thức sai", () => {

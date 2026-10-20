@@ -820,7 +820,13 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // flow templates `server/services/flow/mau/*.json` from the repo (no DB, no tenant data) + computes their side-effect class
 // with `kiemLuong` on the in-memory node registry ⇒ C (+1). Measured before (green on this pin) / after (+1 C). No baseline
 // row added. `tong` 2382 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 333, B: 8, C: 500, D: 1184, S: 357, tong: 2382 } as const;
+// ★★ 2026-10-20 (AI Local Đợt 8.4 — description → flow) — **D 1184 → 1185 · tong 2382 → 2383 · A/B/C/S unchanged.** One NEW
+// procedure in `server/routers/flowRouter.ts`: mutation `flow.taoTuMoTa` (floor `writeProcedure.use(moduleGate("MOD_AI"))`) —
+// calls the model through the AI Gateway and returns a DRAFT FlowDefinition; it only READS `ai_flows`/`ai_flow_versions`
+// (side-effect class of referenced sub-flows — a machine-wide automation registry, no tenant column filled) and writes nothing
+// ⇒ D (+1, classified by procedure kind). Measured before (red by exactly +1 D) / after. No baseline row added. `tong` 2383
+// matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 333, B: 8, C: 500, D: 1185, S: 357, tong: 2383 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

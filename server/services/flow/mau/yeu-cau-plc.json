@@ -1,0 +1,77 @@
+{
+  "id": "mau-yeu-cau-plc",
+  "name": "Yêu cầu PLC ⇒ mã ST đã biên dịch ⇒ kỹ sư duyệt",
+  "version": 1,
+  "settings": { "uuTien": "background", "luuDuLieu": "day-du", "affinity": ["code.plc"] },
+  "nodes": [
+    {
+      "id": "form",
+      "type": "kich-hoat.thu-cong",
+      "typeVersion": 1,
+      "name": "Form kỹ sư (mô tả I/O, phương ngữ)",
+      "position": [0, 0],
+      "parameters": {}
+    },
+    {
+      "id": "sinh-ma",
+      "type": "ai.sinh-ma",
+      "typeVersion": 1,
+      "name": "Sinh ST + biên dịch RuSTy (vòng sửa)",
+      "position": [260, 0],
+      "parameters": {
+        "vaiTro": "code.plc",
+        "ngonNgu": "st",
+        "kiemBienDich": true,
+        "soVongSua": 2,
+        "phuongNgu": "{{ $json.phuongNgu || 'CODESYS (IEC 61131-3)' }}",
+        "moTa": "{{ $json.moTa }}"
+      }
+    },
+    {
+      "id": "duyet",
+      "type": "nguoi.duyet",
+      "typeVersion": 1,
+      "name": "Kỹ sư PLC duyệt mã",
+      "position": [520, 0],
+      "parameters": {
+        "tieuDe": "Duyệt mã ST: {{ $json.tenKhoi || 'yêu cầu PLC' }}",
+        "noiDung": "{{ $json.ma }}",
+        "vaiTroDuyet": "engineer",
+        "hetHanGio": 72
+      }
+    },
+    {
+      "id": "dong-goi",
+      "type": "du-lieu.dat",
+      "typeVersion": 1,
+      "name": "Đóng gói tệp + báo cáo kiểm (KHÔNG tải xuống thiết bị)",
+      "position": [780, -80],
+      "parameters": {
+        "truong": {
+          "tep": { "ten": "{{ ($json.tenKhoi || 'yeu_cau') + '.st' }}", "noiDung": "{{ $json.ma }}" },
+          "baoCaoKiem": {
+            "bienDichOk": "{{ $json.bienDich.ok }}",
+            "soVong": "{{ $json.bienDich.soVong }}",
+            "soChanDoan": "{{ $json.bienDich.chanDoan.length }}"
+          },
+          "trangThai": "da-duyet-cho-tai-xuong-qua-duong-ky-thuat",
+          "nguoiDuyet": "{{ $json.duyet.nguoi }}"
+        }
+      }
+    },
+    {
+      "id": "bi-bac",
+      "type": "du-lieu.dat",
+      "typeVersion": 1,
+      "name": "Bị bác",
+      "position": [780, 80],
+      "parameters": { "truong": { "trangThai": "bi-bac", "lyDoBac": "{{ $json.duyet.lyDo }}" } }
+    }
+  ],
+  "connections": [
+    { "from": { "node": "form", "port": "main" }, "to": { "node": "sinh-ma", "port": "main" } },
+    { "from": { "node": "sinh-ma", "port": "main" }, "to": { "node": "duyet", "port": "main" } },
+    { "from": { "node": "duyet", "port": "dong-y" }, "to": { "node": "dong-goi", "port": "main" } },
+    { "from": { "node": "duyet", "port": "tu-choi" }, "to": { "node": "bi-bac", "port": "main" } }
+  ]
+}

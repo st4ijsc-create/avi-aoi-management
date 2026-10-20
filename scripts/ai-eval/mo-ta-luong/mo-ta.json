@@ -1,0 +1,25 @@
+{
+  "_ghiChu": "Bộ đo 'mô tả → luồng' (AI Local Đợt 8.4, spec §6 cổng 8.4: ≥ 70 % bản nháp hợp lệ schema trên 20 mô tả, 0 bản nháp tự kích hoạt). VIẾT TRƯỚC khi chạy với model thật (2026-10-20) — KHÔNG sửa mô tả sau khi đã nhìn kết quả; muốn thêm thì thêm bộ mới. Đa dạng: kích hoạt (tay/lịch/webhook/MCP), node AI (llm/trích/phân loại/tóm tắt/sinh mã), người duyệt, HTTP đọc/gửi, rẽ nhánh, mã JS.",
+  "moTa": [
+    { "id": "m01", "moTa": "Mỗi sáng 6 giờ tóm tắt tình hình ca đêm (sản lượng, lỗi, dừng máy) rồi gửi trưởng ca duyệt.", "nhom": "lich+tom-tat+duyet" },
+    { "id": "m02", "moTa": "Khi hệ thống AOI gửi webhook báo một lỗi lặp lại nhiều lần, viết bản phân tích nguyên nhân nháp và chờ kỹ sư chất lượng duyệt.", "nhom": "webhook+llm+duyet" },
+    { "id": "m03", "moTa": "Kỹ sư nhập mô tả yêu cầu PLC, hệ thống sinh mã Structured Text, biên dịch kiểm tra rồi chờ kỹ sư PLC duyệt mã.", "nhom": "tay+sinh-ma+duyet" },
+    { "id": "m04", "moTa": "Nhận văn bản tài liệu mới, trích xuất tiêu đề, mã tài liệu, phiên bản và ngày ban hành thành các trường riêng.", "nhom": "tay+trich-xuat" },
+    { "id": "m05", "moTa": "Phân loại email bảo trì gửi vào thành ba nhóm: điện, cơ khí, khác; nhóm điện thì đánh dấu ưu tiên cao.", "nhom": "webhook+phan-loai+neu" },
+    { "id": "m06", "moTa": "Chạy tay: đọc dữ liệu từ API nội bộ của MES qua HTTP GET rồi tóm tắt các lệnh sản xuất đang trễ.", "nhom": "tay+http-doc+tom-tat" },
+    { "id": "m07", "moTa": "Mỗi thứ Hai lúc 7 giờ 30 tạo báo cáo tuần về tỉ lệ lỗi hàn và gửi cho quản lý chất lượng xem trước khi phát hành.", "nhom": "lich+tom-tat+duyet" },
+    { "id": "m08", "moTa": "Khi có phiếu yêu cầu sửa chữa qua webhook, dùng AI đọc nội dung và trích ra mã máy, mức độ khẩn cấp (cao/trung bình/thấp) và mô tả ngắn.", "nhom": "webhook+trich-xuat" },
+    { "id": "m09", "moTa": "Cho phép trợ lý lập trình gọi qua MCP để hỏi số lỗi của một máy AOI theo mã máy; trả về câu trả lời ngắn.", "nhom": "mcp+llm" },
+    { "id": "m10", "moTa": "Nếu nhiệt độ lò reflow trong dữ liệu gửi đến vượt 260 độ thì soạn cảnh báo cho kỹ thuật viên, ngược lại chỉ ghi nhận là bình thường.", "nhom": "webhook+neu+llm" },
+    { "id": "m11", "moTa": "Dịch ghi chú ca làm việc từ tiếng Việt sang tiếng Anh cho chuyên gia nước ngoài đọc.", "nhom": "tay+llm" },
+    { "id": "m12", "moTa": "Sau khi trưởng ca duyệt kế hoạch bảo trì, gửi kế hoạch đã duyệt sang hệ thống CMMS qua HTTP POST.", "nhom": "tay+duyet+http-gui" },
+    { "id": "m13", "moTa": "Tính tổng số sản phẩm lỗi từ danh sách các lô đầu vào bằng một đoạn mã nhỏ, rồi đặt trường kết luận đạt nếu tổng dưới 50.", "nhom": "tay+ma+neu" },
+    { "id": "m14", "moTa": "Hàng ngày lúc 22 giờ đọc danh sách cảnh báo chưa xử lý từ API, phân loại theo mức độ và tóm tắt cho ca sáng hôm sau.", "nhom": "lich+http-doc+phan-loai+tom-tat" },
+    { "id": "m15", "moTa": "Viết mô tả công việc chuẩn (SOP) nháp cho thao tác thay stencil máy in kem hàn từ ghi chú của kỹ sư, chờ trưởng bộ phận duyệt; nếu bị bác thì ghi lý do.", "nhom": "tay+llm+duyet+2nhanh" },
+    { "id": "m16", "moTa": "Khi nhận kết quả đo kích thước sản phẩm qua webhook, trích các giá trị đo và kết luận đạt hay không đạt theo dung sai đi kèm.", "nhom": "webhook+trich-xuat+neu" },
+    { "id": "m17", "moTa": "Sinh hàm ST điều khiển hai bơm luân phiên theo giờ chạy, kiểm tra biên dịch, tối đa sửa hai lần.", "nhom": "tay+sinh-ma" },
+    { "id": "m18", "moTa": "Gom các phản hồi khách hàng gửi đến trong ngày và tóm tắt thành ba vấn đề chính kèm số lần nhắc đến.", "nhom": "webhook+tom-tat" },
+    { "id": "m19", "moTa": "Mỗi giờ kiểm tra trạng thái máy chủ in nhãn qua HTTP, nếu không phản hồi đúng thì tạo cảnh báo cho bộ phận IT.", "nhom": "lich+http-doc+neu" },
+    { "id": "m20", "moTa": "Đánh giá câu trả lời của trợ lý vận hành: AI chấm điểm từ 1 đến 5 theo độ đúng và đầy đủ, điểm dưới 3 thì đưa người xem lại.", "nhom": "tay+trich-xuat+neu+duyet" }
+  ]
+}

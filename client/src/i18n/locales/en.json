@@ -4050,7 +4050,8 @@
       "flowDuyet": "approve an AI flow step",
       "flowBiMatTao": "create an AI flow secret",
       "flowBiMatXoa": "delete an AI flow secret",
-      "flowBiMatXem": "list AI flow secrets"
+      "flowBiMatXem": "list AI flow secrets",
+      "flowTaoTuMoTa": "create an AI flow draft from a description"
     },
     "field": {
       "holderUserId": "the user the key is issued to (an existing, active user)",
@@ -22988,7 +22989,8 @@
       "ai": "AI",
       "nguoi": "Human",
       "tich-hop": "Integrations",
-      "ot": "OT"
+      "ot": "OT",
+      "luong": "Sub-flows"
     },
     "danhSach": {
       "tieuDe": "AI Flows",
@@ -23177,6 +23179,17 @@
       "daDongY": "Approved",
       "daTuChoi": "Rejected",
       "daCoNguoiDuyet": "Someone has already decided this step."
+    },
+    "moTaLuong": {
+      "nut": "From description",
+      "tieuDe": "Draft from description",
+      "moTa": "Describe what to automate. AI generates a flow DRAFT and places it on the canvas — not saved, not enabled; review, edit, then Save.",
+      "oNhap": "E.g. Every morning at 6 summarize the night shift AOI defects and send them to the shift lead for approval",
+      "tao": "Create draft",
+      "dangTao": "Creating…",
+      "khongHopLe": "The draft is still invalid after two attempts — placed on the canvas for you to fix:",
+      "daDat": "Draft placed on the canvas (class {{hang}}) — not saved",
+      "thayCanvas": "The draft REPLACES what is on the canvas (saved versions are unchanged)."
     }
   }
 }

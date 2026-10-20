@@ -70,8 +70,47 @@ export interface KhaiBaoNut {
 export interface KetQuaKiemLuong {
   ok: boolean;
   loi: string[];
-  /** Hạng tác dụng phụ của CẢ luồng = hạng cao nhất của mọi node (kể cả node tắt — bật lại không qua duyệt mới). */
+  /**
+   * Hạng tác dụng phụ của CẢ luồng = hạng cao nhất của mọi node (kể cả node tắt — bật lại không qua duyệt mới) VÀ của mọi
+   * luồng con được tham chiếu (Đợt 8.4: `luong.goi-con`, tool của `ai.agent`) khi biết hạng của chúng.
+   */
   hang: HangTacDungPhu;
+  /** Đợt 8.4 — id các luồng con được tham chiếu (không trùng). */
+  luongCon: string[];
+}
+
+/** Đợt 8.4 — loại node GỌI LUỒNG KHÁC và chỗ đặt id luồng con trong tham số. */
+export const LOAI_GOI_LUONG_CON = "luong.goi-con";
+export const LOAI_AGENT = "ai.agent";
+/** Độ sâu lồng tối đa (cha ⇒ con ⇒ cháu …) lúc chạy. */
+export const DO_SAU_LUONG_CON_TOI_DA = 4;
+
+/**
+ * Đợt 8.4 — id luồng con một node tham chiếu (`luong.goi-con.parameters.flowId`, `ai.agent.parameters.luongCon[].flowId`).
+ * Id PHẢI là chuỗi CỐ ĐỊNH đúng khuôn id — id là biểu thức thì hạng luồng con không biết được lúc lưu ⇒ lỗi.
+ */
+export function luongConCuaNut(n: Pick<NodeInstance, "id" | "type" | "parameters">): { ids: string[]; loi: string[] } {
+  const ids: string[] = [];
+  const loi: string[] = [];
+  const kiem = (v: unknown, cho: string) => {
+    if (typeof v !== "string" || !RE_ID_NUT.test(v)) loi.push(`node '${n.id}': ${cho} phải là id luồng CỐ ĐỊNH (không biểu thức)`);
+    else ids.push(v);
+  };
+  if (n.type === LOAI_GOI_LUONG_CON) kiem(n.parameters?.flowId, "flowId");
+  else if (n.type === LOAI_AGENT) {
+    const ds = n.parameters?.luongCon;
+    if (ds !== undefined && !Array.isArray(ds)) loi.push(`node '${n.id}': luongCon phải là danh sách`);
+    else (ds ?? []).forEach((x: unknown, i: number) => kiem((x as { flowId?: unknown } | null)?.flowId, `luongCon[${i}].flowId`));
+  }
+  return { ids, loi };
+}
+
+export interface TuyChonKiemLuong {
+  /**
+   * Đợt 8.4 — hạng của PHIÊN BẢN HOẠT ĐỘNG của một luồng con; `null` ⇒ luồng con không tồn tại / chưa có phiên bản hoạt động
+   * (lỗi). Vắng tuỳ chọn (client) ⇒ chỉ kiểm cú pháp tham chiếu, hạng chỉ tính theo node.
+   */
+  hangLuongCon?: (flowId: string) => HangTacDungPhu | null;
 }
 
 function chuoiBieuThuc(v: unknown, ra: string[]): void {
@@ -82,14 +121,15 @@ function chuoiBieuThuc(v: unknown, ra: string[]): void {
 }
 
 /** Kiểm một định nghĩa luồng trước khi lưu phiên bản. */
-export function kiemLuong(raw: unknown, dangKy: (type: string) => KhaiBaoNut | undefined): KetQuaKiemLuong {
+export function kiemLuong(raw: unknown, dangKy: (type: string) => KhaiBaoNut | undefined, tuyChon: TuyChonKiemLuong = {}): KetQuaKiemLuong {
   const p = FlowDefinitionSchema.safeParse(raw);
   if (!p.success) {
-    return { ok: false, loi: p.error.issues.map((i) => `${i.path.join(".") || "(gốc)"}: ${i.message}`), hang: "thuan" };
+    return { ok: false, loi: p.error.issues.map((i) => `${i.path.join(".") || "(gốc)"}: ${i.message}`), hang: "thuan", luongCon: [] };
   }
   const def = p.data;
   const loi: string[] = [];
   const theoId = new Map<string, { n: NodeInstance; kb: KhaiBaoNut | undefined }>();
+  const luongCon: string[] = [];
   let hang: HangTacDungPhu = "thuan";
   for (const n of def.nodes) {
     if (theoId.has(n.id)) loi.push(`id node trùng '${n.id}'`);
@@ -107,6 +147,19 @@ export function kiemLuong(raw: unknown, dangKy: (type: string) => KhaiBaoNut | u
       if (l) loi.push(`node '${n.id}': biểu thức {{${b.trim()}}} — ${l}`);
     }
     theoId.set(n.id, { n, kb });
+    const lc = luongConCuaNut(n);
+    loi.push(...lc.loi);
+    for (const con of lc.ids) {
+      if (con === def.id) loi.push(`node '${n.id}': luồng không được gọi chính nó ('${con}')`);
+      else if (!luongCon.includes(con)) luongCon.push(con);
+    }
+  }
+  if (tuyChon.hangLuongCon) {
+    for (const con of luongCon) {
+      const h = tuyChon.hangLuongCon(con);
+      if (h === null) loi.push(`luồng con '${con}' không tồn tại hoặc chưa có phiên bản hoạt động`);
+      else if (THU_TU_HANG[h] > THU_TU_HANG[hang]) hang = h;
+    }
   }
   if (!def.nodes.some((n) => theoId.get(n.id)?.kb?.laKichHoat)) loi.push("luồng cần ít nhất một node kích hoạt");
   const canh = new Map<string, Set<string>>();
@@ -136,5 +189,5 @@ export function kiemLuong(raw: unknown, dangKy: (type: string) => KhaiBaoNut | u
     }
   }
   if (daDuyet < vao.size) loi.push(`luồng có chu trình (qua: ${[...vao].filter(([, v]) => v > 0).map(([k]) => k).join(", ")})`);
-  return { ok: loi.length === 0, loi, hang };
+  return { ok: loi.length === 0, loi, hang, luongCon };
 }
