@@ -245,7 +245,7 @@ const HAM: Record<string, (...a: unknown[]) => unknown> = {
     const n = typeof x === "number" ? x : Number(String(x ?? "").trim());
     return Number.isFinite(n) ? n : null;
   },
-  toString: (x) => (x === null || x === undefined ? "" : typeof x === "object" ? JSON.stringify(x) : String(x)),
+  toString: (x: unknown) => (x === null || x === undefined ? "" : typeof x === "object" ? JSON.stringify(x) : String(x)),
   isEmpty: (x) => x === null || x === undefined || x === "" || (Array.isArray(x) && x.length === 0) || (typeof x === "object" && !Array.isArray(x) && Object.keys(x as object).length === 0),
 };
 
