@@ -3940,6 +3940,8 @@
       "doiModelLlamaServer": "đổi model đang chạy trên llama-server",
       "soModelTongQuan": "xem sổ model (vai trò → model)",
       "soModelDatGan": "đổi gán vai trò → model",
+      "soModelSuaArtifact": "sửa giấy phép / trạng thái artifact model",
+      "soModelTaoHoSo": "tạo/sửa hồ sơ phục vụ model",
       "generateText": "sinh văn bản",
       "chatCompletion": "hoàn thành hội thoại",
       "analyzeDefect": "phân tích lỗi",
@@ -13499,6 +13501,161 @@
         "quayVe": "Quay về model cũ"
       },
       "xacNhan": "Đổi model llama-server? Mọi lượt AI tạm ngưng trong lúc đổi."
+    },
+    "trungTam": {
+      "tieuDe": "Trung tâm Model",
+      "moTa": "Sổ model: vai trò → model, kho tệp GGUF, hồ sơ phục vụ, khe nặng và kết quả đo.",
+      "dangTai": "Đang đọc sổ model…",
+      "anhRong": "Sổ model chưa nạp được (CSDL/migration) — định tuyến đang dùng .env.",
+      "chon": "— chọn —",
+      "luu": "Lưu",
+      "co": "có",
+      "khong": "không",
+      "tab": {
+        "vaiTro": "Vai trò & gán",
+        "kho": "Kho model",
+        "hoSo": "Hồ sơ phục vụ",
+        "khe": "Khe nặng",
+        "do": "Đo"
+      },
+      "vaiTro": {
+        "cot": {
+          "id": "Vai trò",
+          "moTa": "Mô tả",
+          "model": "Model phân giải",
+          "lyDo": "Lý do định tuyến"
+        },
+        "macDinhEngine": "mặc định của engine",
+        "tang": "tầng {{n}}"
+      },
+      "nguon": {
+        "gan-env": "gán theo .env",
+        "gan-profile": "gán hồ sơ",
+        "du-phong": "dự phòng",
+        "mac-dinh-env": "mặc định .env"
+      },
+      "gan": {
+        "tieuDe": "Gán còn hiệu lực",
+        "rong": "Chưa có gán nào — mọi vai trò đi theo .env.",
+        "cot": {
+          "phamVi": "Phạm vi",
+          "cheDo": "Chế độ",
+          "dich": "Đích",
+          "duPhong": "Dự phòng"
+        },
+        "hoSo": "hồ sơ",
+        "envKey": "khoá .env"
+      },
+      "phamVi": {
+        "global": "toàn cục",
+        "tenant": "tổ chức",
+        "project": "dự án",
+        "flow": "luồng"
+      },
+      "cheDo": {
+        "active": "chạy thật",
+        "shadow": "chạy bóng",
+        "thu": "thử"
+      },
+      "datGan": {
+        "tieuDe": "Đặt gán",
+        "nut": "Đặt gán",
+        "daDat": "Đã đặt gán (thay {{n}} gán cũ).",
+        "maPhamVi": "Mã phạm vi",
+        "loaiDich": "Loại đích",
+        "duPhong": "Dự phòng (mã hồ sơ, cách nhau dấu phẩy, tối đa 4)",
+        "cong": "Chế độ active trỏ hồ sơ cần ≥ 1 lượt đo của hồ sơ đó và giấy phép model đã khai. Gán theo khoá .env không cần đo."
+      },
+      "kho": {
+        "dongBo": "Đồng bộ kho",
+        "daDongBo": "Đồng bộ xong: thêm {{them}}, cập nhật {{capNhat}}, mất {{mat}}.",
+        "ghiChu": "Quét thư mục GGUF: thêm tệp mới, đánh dấu tệp mất / có lại. Giấy phép không tự đoán.",
+        "rong": "Kho chưa có artifact — bấm Đồng bộ kho.",
+        "daLuu": "Đã lưu artifact.",
+        "chuaGanActive": "Giấy phép chưa khai — chưa gán active được.",
+        "cachLy": "Cách ly",
+        "boCachLy": "Bỏ cách ly",
+        "cot": {
+          "tep": "Tệp",
+          "ho": "Họ",
+          "thamSo": "Tham số tổng / hoạt động",
+          "quant": "Quant",
+          "kichThuoc": "GB",
+          "loai": "Loại",
+          "trangThai": "Trạng thái",
+          "giayPhep": "Giấy phép"
+        }
+      },
+      "loai": {
+        "sinh-chu": "sinh chữ",
+        "nhung": "nhúng",
+        "xep-hang": "xếp hạng",
+        "chieu-thi-giac": "chiếu thị giác"
+      },
+      "trangThai": {
+        "available": "sẵn sàng",
+        "missing": "mất tệp",
+        "quarantined": "cách ly"
+      },
+      "hoSo": {
+        "rong": "Chưa có hồ sơ phục vụ nào.",
+        "daTao": "Đã tạo hồ sơ.",
+        "daSua": "Đã sửa hồ sơ.",
+        "sua": "Sửa",
+        "moi": "Hồ sơ mới",
+        "formTieuDe": "Tạo / sửa hồ sơ",
+        "ghiChu": "Mã trùng ⇒ sửa hồ sơ đó. Cờ máy chủ và tham số lấy mẫu chưa mở chỉnh ở bản này.",
+        "cot": {
+          "id": "Mã hồ sơ",
+          "artifact": "Artifact",
+          "khe": "Khe",
+          "ctx": "Ngữ cảnh",
+          "suyNghi": "Suy nghĩ",
+          "bat": "Bật"
+        }
+      },
+      "khe": {
+        "nang": "nặng (llama-server)",
+        "nho": "nhỏ (trong tiến trình)",
+        "sidecar": "sidecar",
+        "chuaDung": "Khe nặng chưa dùng trong tiến trình này.",
+        "dangGiu": "Đang giữ",
+        "dangDoi": "Đang đổi sang",
+        "tuDoi": "Tự đổi khe",
+        "soLanDoi": "Số lần đổi",
+        "soLanHong": "Số lần hỏng",
+        "dangChay": "Đang chạy",
+        "hangCho": "Hàng chờ",
+        "khongCo": "không có",
+        "cot": {
+          "model": "Model",
+          "muc": "Mức ưu tiên",
+          "cho": "Đã chờ"
+        },
+        "nghi": "Model đang nghỉ (sau lỗi nạp)",
+        "conLai": "còn {{t}}",
+        "ghiChu": "Số liệu của tiến trình API, tự làm mới mỗi 5 giây khi tab này mở."
+      },
+      "suyNghi": {
+        "auto": "tự động",
+        "on": "bật",
+        "off": "tắt"
+      },
+      "muc": {
+        "tuong-tac": "tương tác",
+        "agent": "agent",
+        "nen": "nền"
+      },
+      "do": {
+        "rong": "Chưa có lượt đo.",
+        "cot": {
+          "boDo": "Bộ đo",
+          "dat": "Đạt / bài",
+          "luot": "Lượt",
+          "p50": "p50 / p90",
+          "luc": "Lúc"
+        }
+      }
     }
   },
   "measurementPointP1": {

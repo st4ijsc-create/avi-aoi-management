@@ -3940,6 +3940,8 @@
       "doiModelLlamaServer": "switch the model running on llama-server",
       "soModelTongQuan": "view the model registry (role → model)",
       "soModelDatGan": "change a role → model binding",
+      "soModelSuaArtifact": "edit a model artifact's licence / status",
+      "soModelTaoHoSo": "create/edit a model serving profile",
       "generateText": "generate text",
       "chatCompletion": "chat completion",
       "analyzeDefect": "analyze defect",
@@ -13519,6 +13521,161 @@
         "quayVe": "Roll back to previous model"
       },
       "xacNhan": "Switch the llama-server model? All AI requests pause while switching."
+    },
+    "trungTam": {
+      "tieuDe": "Model Center",
+      "moTa": "Model registry: role → model, GGUF file store, serving profiles, heavy slot and evaluation results.",
+      "dangTai": "Reading the model registry…",
+      "anhRong": "Model registry not loaded (database/migration) — routing is using .env.",
+      "chon": "— select —",
+      "luu": "Save",
+      "co": "yes",
+      "khong": "no",
+      "tab": {
+        "vaiTro": "Roles & bindings",
+        "kho": "Model store",
+        "hoSo": "Serving profiles",
+        "khe": "Heavy slot",
+        "do": "Evaluation"
+      },
+      "vaiTro": {
+        "cot": {
+          "id": "Role",
+          "moTa": "Description",
+          "model": "Resolved model",
+          "lyDo": "Routing reason"
+        },
+        "macDinhEngine": "engine default",
+        "tang": "tier {{n}}"
+      },
+      "nguon": {
+        "gan-env": "bound to .env",
+        "gan-profile": "bound to profile",
+        "du-phong": "fallback",
+        "mac-dinh-env": "default .env"
+      },
+      "gan": {
+        "tieuDe": "Active bindings",
+        "rong": "No bindings yet — every role follows .env.",
+        "cot": {
+          "phamVi": "Scope",
+          "cheDo": "Mode",
+          "dich": "Target",
+          "duPhong": "Fallback"
+        },
+        "hoSo": "profile",
+        "envKey": ".env key"
+      },
+      "phamVi": {
+        "global": "global",
+        "tenant": "tenant",
+        "project": "project",
+        "flow": "flow"
+      },
+      "cheDo": {
+        "active": "active",
+        "shadow": "shadow",
+        "thu": "trial"
+      },
+      "datGan": {
+        "tieuDe": "Set binding",
+        "nut": "Set binding",
+        "daDat": "Binding set (replaced {{n}} old binding(s)).",
+        "maPhamVi": "Scope ID",
+        "loaiDich": "Target type",
+        "duPhong": "Fallback (profile IDs, comma-separated, up to 4)",
+        "cong": "Active mode on a profile requires ≥ 1 evaluation run of that profile and a declared model licence. Bindings to a .env key need no evaluation."
+      },
+      "kho": {
+        "dongBo": "Sync store",
+        "daDongBo": "Sync done: {{them}} added, {{capNhat}} updated, {{mat}} missing.",
+        "ghiChu": "Scans the GGUF folder: adds new files, marks files missing / back. Licences are never guessed.",
+        "rong": "No artifacts yet — press Sync store.",
+        "daLuu": "Artifact saved.",
+        "chuaGanActive": "Licence not declared — cannot be bound as active yet.",
+        "cachLy": "Quarantine",
+        "boCachLy": "Release",
+        "cot": {
+          "tep": "File",
+          "ho": "Family",
+          "thamSo": "Params total / active",
+          "quant": "Quant",
+          "kichThuoc": "GB",
+          "loai": "Kind",
+          "trangThai": "Status",
+          "giayPhep": "Licence"
+        }
+      },
+      "loai": {
+        "sinh-chu": "text generation",
+        "nhung": "embedding",
+        "xep-hang": "reranker",
+        "chieu-thi-giac": "vision projector"
+      },
+      "trangThai": {
+        "available": "available",
+        "missing": "missing",
+        "quarantined": "quarantined"
+      },
+      "hoSo": {
+        "rong": "No serving profiles yet.",
+        "daTao": "Profile created.",
+        "daSua": "Profile updated.",
+        "sua": "Edit",
+        "moi": "New profile",
+        "formTieuDe": "Create / edit profile",
+        "ghiChu": "An existing ID ⇒ edits that profile. Server flags and sampling are not editable in this version.",
+        "cot": {
+          "id": "Profile ID",
+          "artifact": "Artifact",
+          "khe": "Slot",
+          "ctx": "Context",
+          "suyNghi": "Thinking",
+          "bat": "Enabled"
+        }
+      },
+      "khe": {
+        "nang": "heavy (llama-server)",
+        "nho": "small (in-process)",
+        "sidecar": "sidecar",
+        "chuaDung": "The heavy slot has not been used in this process.",
+        "dangGiu": "Holding",
+        "dangDoi": "Switching to",
+        "tuDoi": "Auto-switch",
+        "soLanDoi": "Switches",
+        "soLanHong": "Failures",
+        "dangChay": "Running",
+        "hangCho": "Queue",
+        "khongCo": "none",
+        "cot": {
+          "model": "Model",
+          "muc": "Priority",
+          "cho": "Waited"
+        },
+        "nghi": "Models cooling down (after load failure)",
+        "conLai": "{{t}} left",
+        "ghiChu": "Figures from the API process, refreshed every 5 seconds while this tab is open."
+      },
+      "suyNghi": {
+        "auto": "auto",
+        "on": "on",
+        "off": "off"
+      },
+      "muc": {
+        "tuong-tac": "interactive",
+        "agent": "agent",
+        "nen": "background"
+      },
+      "do": {
+        "rong": "No evaluation runs yet.",
+        "cot": {
+          "boDo": "Suite",
+          "dat": "Pass / tasks",
+          "luot": "Runs",
+          "p50": "p50 / p90",
+          "luc": "At"
+        }
+      }
     }
   },
   "measurementPointP1": {

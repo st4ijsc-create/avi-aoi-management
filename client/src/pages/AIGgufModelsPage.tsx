@@ -24,6 +24,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
 import DoiModelLlamaServerCard from "@/components/ai/DoiModelLlamaServerCard";
+import TrungTamModel from "@/components/ai/TrungTamModel";
 import {
   Cpu,
   HardDrive,
@@ -136,6 +137,9 @@ export default function AIGgufModelsPage() {
         {/* Đợt 6 — đổi model llama-server (admin; tự ẩn với người khác). Đặt NGOÀI nhánh node-llama-cpp:
             llama-server là tiến trình riêng, không phụ thuộc gói in-process. */}
         <DoiModelLlamaServerCard />
+
+        {/* Đợt 7.4 — Trung tâm Model (sổ model: vai trò/kho/hồ sơ/khe nặng/đo; admin, tự ẩn với người khác). */}
+        <TrungTamModel />
 
         {!status.data?.available ? (
           <Card>

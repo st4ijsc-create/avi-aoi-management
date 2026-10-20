@@ -790,7 +790,15 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   • `aiGguf.soModelDongBoKho` (mutation): scans GGUF_MODELS_DIR into `ai_model_artifacts` ⇒ D;
 //   • `aiGguf.soModelDatGan` (mutation): retires + inserts one `ai_model_bindings` row (gate: eval run + licence) ⇒ D.
 //   No baseline row added.
-const GHIM = { A: 333, B: 8, C: 492, D: 1176, S: 357, tong: 2366 } as const;
+// ★★ 2026-10-20 (AI Local Đợt 7.4 — Trung tâm Model) — **D 1176 → 1178 · tong 2366 → 2368 · A/B/C/S unchanged.** Two NEW
+// mutations in `aiGgufRouter.ts` (admin + 2FA + MOD_AI, same floor `adminDoiModel` as `soModel*`; logic in
+// `services/ai/soModel/suaSoModel.ts`):
+//   • `aiGguf.soModelSuaArtifact` (mutation): sets `license` / `status` (available|quarantined, never `missing`) of one
+//     `ai_model_artifacts` row — machine-wide model registry, no tenant rows ⇒ D;
+//   • `aiGguf.soModelTaoHoSo` (mutation): upserts one `ai_serving_profiles` row (artifact must exist + be `sinh-chu`) ⇒ D.
+//   `soModelTongQuan` (query, already C) only gained `evalRuns` (100 newest `ai_model_eval_runs`) + role `moTa` — count
+//   unchanged. No baseline row added.
+const GHIM = { A: 333, B: 8, C: 492, D: 1178, S: 357, tong: 2368 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

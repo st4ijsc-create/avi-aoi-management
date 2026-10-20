@@ -3932,6 +3932,8 @@
       "doiModelLlamaServer": "切换 llama-server 上运行的模型",
       "soModelTongQuan": "查看模型注册表（角色 → 模型）",
       "soModelDatGan": "更改角色 → 模型的绑定",
+      "soModelSuaArtifact": "修改模型文件的许可证/状态",
+      "soModelTaoHoSo": "创建/编辑模型服务配置",
       "generateText": "生成文本",
       "chatCompletion": "聊天补全",
       "analyzeDefect": "分析缺陷",
@@ -13302,6 +13304,161 @@
         "quayVe": "回退到原模型"
       },
       "xacNhan": "切换 llama-server 模型？切换期间所有 AI 请求将暂停。"
+    },
+    "trungTam": {
+      "tieuDe": "模型中心",
+      "moTa": "模型注册表：角色 → 模型、GGUF 文件库、服务配置、重型槽位与评测结果。",
+      "dangTai": "正在读取模型注册表…",
+      "anhRong": "模型注册表未加载（数据库/迁移）— 路由正在使用 .env。",
+      "chon": "— 选择 —",
+      "luu": "保存",
+      "co": "是",
+      "khong": "否",
+      "tab": {
+        "vaiTro": "角色与绑定",
+        "kho": "模型库",
+        "hoSo": "服务配置",
+        "khe": "重型槽位",
+        "do": "评测"
+      },
+      "vaiTro": {
+        "cot": {
+          "id": "角色",
+          "moTa": "描述",
+          "model": "解析出的模型",
+          "lyDo": "路由原因"
+        },
+        "macDinhEngine": "引擎默认",
+        "tang": "第 {{n}} 层"
+      },
+      "nguon": {
+        "gan-env": "按 .env 绑定",
+        "gan-profile": "绑定配置",
+        "du-phong": "备用",
+        "mac-dinh-env": ".env 默认"
+      },
+      "gan": {
+        "tieuDe": "有效绑定",
+        "rong": "尚无绑定 — 所有角色按 .env。",
+        "cot": {
+          "phamVi": "范围",
+          "cheDo": "模式",
+          "dich": "目标",
+          "duPhong": "备用"
+        },
+        "hoSo": "配置",
+        "envKey": ".env 键"
+      },
+      "phamVi": {
+        "global": "全局",
+        "tenant": "租户",
+        "project": "项目",
+        "flow": "流程"
+      },
+      "cheDo": {
+        "active": "生效",
+        "shadow": "影子",
+        "thu": "试用"
+      },
+      "datGan": {
+        "tieuDe": "设置绑定",
+        "nut": "设置绑定",
+        "daDat": "已设置绑定（替换 {{n}} 个旧绑定）。",
+        "maPhamVi": "范围 ID",
+        "loaiDich": "目标类型",
+        "duPhong": "备用（配置 ID，逗号分隔，最多 4 个）",
+        "cong": "指向配置的生效模式需要该配置至少 1 次评测且已声明模型许可证。绑定到 .env 键无需评测。"
+      },
+      "kho": {
+        "dongBo": "同步模型库",
+        "daDongBo": "同步完成：新增 {{them}}，更新 {{capNhat}}，缺失 {{mat}}。",
+        "ghiChu": "扫描 GGUF 目录：添加新文件，标记缺失/恢复的文件。许可证不会自动推测。",
+        "rong": "尚无模型文件 — 请点击同步模型库。",
+        "daLuu": "已保存模型文件。",
+        "chuaGanActive": "许可证未声明 — 暂不能设为生效绑定。",
+        "cachLy": "隔离",
+        "boCachLy": "解除隔离",
+        "cot": {
+          "tep": "文件",
+          "ho": "系列",
+          "thamSo": "参数 总量/激活",
+          "quant": "量化",
+          "kichThuoc": "GB",
+          "loai": "类型",
+          "trangThai": "状态",
+          "giayPhep": "许可证"
+        }
+      },
+      "loai": {
+        "sinh-chu": "文本生成",
+        "nhung": "嵌入",
+        "xep-hang": "重排序",
+        "chieu-thi-giac": "视觉投影"
+      },
+      "trangThai": {
+        "available": "可用",
+        "missing": "缺失",
+        "quarantined": "已隔离"
+      },
+      "hoSo": {
+        "rong": "尚无服务配置。",
+        "daTao": "已创建配置。",
+        "daSua": "已更新配置。",
+        "sua": "编辑",
+        "moi": "新建配置",
+        "formTieuDe": "创建/编辑配置",
+        "ghiChu": "ID 已存在 ⇒ 编辑该配置。本版本暂不支持编辑服务器参数和采样参数。",
+        "cot": {
+          "id": "配置 ID",
+          "artifact": "模型文件",
+          "khe": "槽位",
+          "ctx": "上下文",
+          "suyNghi": "思考",
+          "bat": "启用"
+        }
+      },
+      "khe": {
+        "nang": "重型（llama-server）",
+        "nho": "小型（进程内）",
+        "sidecar": "边车",
+        "chuaDung": "此进程中尚未使用重型槽位。",
+        "dangGiu": "当前持有",
+        "dangDoi": "正在切换到",
+        "tuDoi": "自动切换",
+        "soLanDoi": "切换次数",
+        "soLanHong": "失败次数",
+        "dangChay": "运行中",
+        "hangCho": "队列",
+        "khongCo": "无",
+        "cot": {
+          "model": "模型",
+          "muc": "优先级",
+          "cho": "已等待"
+        },
+        "nghi": "冷却中的模型（加载失败后）",
+        "conLai": "剩余 {{t}}",
+        "ghiChu": "来自 API 进程的数据，此标签页打开时每 5 秒刷新。"
+      },
+      "suyNghi": {
+        "auto": "自动",
+        "on": "开",
+        "off": "关"
+      },
+      "muc": {
+        "tuong-tac": "交互",
+        "agent": "智能体",
+        "nen": "后台"
+      },
+      "do": {
+        "rong": "尚无评测记录。",
+        "cot": {
+          "boDo": "评测集",
+          "dat": "通过/任务",
+          "luot": "轮次",
+          "p50": "p50 / p90",
+          "luc": "时间"
+        }
+      }
     }
   },
   "measurementPointP1": {

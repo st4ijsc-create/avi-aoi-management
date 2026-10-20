@@ -3,6 +3,7 @@
  */
 
 import { z } from "zod";
+import { desc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, moduleProcedure, moduleGate, adminProcedure as adminProcedureCore } from "../_core/trpc";
 import { appError } from "../_core/appError";
@@ -350,9 +351,37 @@ export const aiGgufRouter = router({
     const db = await getDb();
     if (!db) throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "soModelTongQuan" }, "Không có kết nối CSDL.");
     const anh = await lamMoiAnhSoModel();
-    const [artifacts, profiles] = await Promise.all([db.select().from(sm.aiModelArtifacts), db.select().from(sm.aiServingProfiles)]);
-    const vaiTro = [...anh.vaiTro.keys()].sort().map((id) => ({ id, ...anh.vaiTro.get(id)!, dinhTuyen: dinhTuyenVaiTro({ vaiTro: id }, anh, process.env) }));
-    return { taiLuc: anh.taiLuc, vaiTro, gan: anh.gan, profiles, artifacts, kheNang: thongKeKheNang() };
+    const [artifacts, profiles, roles, evalRuns] = await Promise.all([
+      db.select().from(sm.aiModelArtifacts),
+      db.select().from(sm.aiServingProfiles),
+      db.select({ id: sm.aiRoles.id, moTa: sm.aiRoles.moTa, evalSuite: sm.aiRoles.evalSuite }).from(sm.aiRoles),
+      // Đợt 7.4 — tab "Đo" của Trung tâm Model: 100 lượt đo mới nhất (bảng rỗng ⇒ "chưa có lượt đo").
+      db
+        .select({
+          id: sm.aiModelEvalRuns.id,
+          profileId: sm.aiModelEvalRuns.profileId,
+          suite: sm.aiModelEvalRuns.suite,
+          nTasks: sm.aiModelEvalRuns.nTasks,
+          nPass: sm.aiModelEvalRuns.nPass,
+          nRuns: sm.aiModelEvalRuns.nRuns,
+          p50Ms: sm.aiModelEvalRuns.p50Ms,
+          p90Ms: sm.aiModelEvalRuns.p90Ms,
+          gitSha: sm.aiModelEvalRuns.gitSha,
+          createdAt: sm.aiModelEvalRuns.createdAt,
+        })
+        .from(sm.aiModelEvalRuns)
+        .orderBy(desc(sm.aiModelEvalRuns.createdAt), desc(sm.aiModelEvalRuns.id))
+        .limit(100),
+    ]);
+    const moTa = new Map(roles.map((r) => [r.id, r]));
+    const vaiTro = [...anh.vaiTro.keys()].sort().map((id) => ({
+      id,
+      ...anh.vaiTro.get(id)!,
+      moTa: moTa.get(id)?.moTa ?? null,
+      evalSuite: moTa.get(id)?.evalSuite ?? null,
+      dinhTuyen: dinhTuyenVaiTro({ vaiTro: id }, anh, process.env),
+    }));
+    return { taiLuc: anh.taiLuc, vaiTro, gan: anh.gan, profiles, artifacts, evalRuns, kheNang: thongKeKheNang() };
   }),
 
   /** Quét `GGUF_MODELS_DIR` → `ai_model_artifacts` (thêm mới, đánh dấu mất / có lại). */
@@ -392,6 +421,77 @@ export const aiGgufRouter = router({
         if (e instanceof LoiDatGan) {
           const ma = e.ma === "VAI_TRO_KHONG_CO" || e.ma === "PROFILE_KHONG_CO" ? "NOT_FOUND" : e.ma === "DICH_SAI" ? "BAD_REQUEST" : "PRECONDITION_FAILED";
           throw appError(ma, "OPERATION_FAILED", { operation: "soModelDatGan" }, e.message);
+        }
+        throw e;
+      }
+    }),
+
+  /**
+   * ★★ Đợt 7.4 — khai giấy phép / cách ly một artifact. `missing` KHÔNG đặt tay được (việc của "Đồng bộ kho").
+   * Logic + cổng ở `soModel/suaSoModel.ts`; router mỏng.
+   */
+  soModelSuaArtifact: adminDoiModel
+    .input(
+      z
+        .object({
+          id: z.string().min(1).max(96),
+          license: z.string().trim().min(1).max(48).regex(/^[a-z0-9][a-z0-9.+_-]{0,47}$/).optional(),
+          status: z.enum(["available", "quarantined"]).optional(),
+        })
+        .strict()
+        .refine((v) => v.license !== undefined || v.status !== undefined, { message: "cần license hoặc status" }),
+    )
+    .mutation(async ({ input }) => {
+      const [{ getDb }, { suaArtifact, LoiSuaSoModel }, { lamMoiAnhSoModel }] = await Promise.all([
+        import("../db/connection"),
+        import("../services/ai/soModel/suaSoModel"),
+        import("../services/ai/soModel/napSoModel"),
+      ]);
+      const db = await getDb();
+      if (!db) throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "soModelSuaArtifact" }, "Không có kết nối CSDL.");
+      try {
+        const kq = await suaArtifact(db, input);
+        await lamMoiAnhSoModel();
+        return kq;
+      } catch (e) {
+        if (e instanceof LoiSuaSoModel) {
+          const ma = e.ma === "ARTIFACT_KHONG_CO" ? "NOT_FOUND" : e.ma === "DAU_VAO_SAI" ? "BAD_REQUEST" : "PRECONDITION_FAILED";
+          throw appError(ma, "OPERATION_FAILED", { operation: "soModelSuaArtifact" }, e.message);
+        }
+        throw e;
+      }
+    }),
+
+  /** ★★ Đợt 7.4 — tạo/sửa (upsert) hồ sơ phục vụ. `serverArgs`/`sampling` = `{}` ở v1 (chưa mở chỉnh). */
+  soModelTaoHoSo: adminDoiModel
+    .input(
+      z
+        .object({
+          id: z.string().regex(/^[a-z0-9][a-z0-9.@-]{0,95}$/),
+          artifactId: z.string().min(1).max(96),
+          slotClass: z.enum(["nang", "nho", "sidecar"]),
+          ctx: z.number().int().min(512).max(262_144),
+          thinking: z.enum(["on", "off", "auto"]),
+          enabled: z.boolean(),
+        })
+        .strict(),
+    )
+    .mutation(async ({ input }) => {
+      const [{ getDb }, { luuHoSo, LoiSuaSoModel }, { lamMoiAnhSoModel }] = await Promise.all([
+        import("../db/connection"),
+        import("../services/ai/soModel/suaSoModel"),
+        import("../services/ai/soModel/napSoModel"),
+      ]);
+      const db = await getDb();
+      if (!db) throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "soModelTaoHoSo" }, "Không có kết nối CSDL.");
+      try {
+        const kq = await luuHoSo(db, input);
+        await lamMoiAnhSoModel();
+        return kq;
+      } catch (e) {
+        if (e instanceof LoiSuaSoModel) {
+          const ma = e.ma === "ARTIFACT_KHONG_CO" ? "NOT_FOUND" : e.ma === "DAU_VAO_SAI" ? "BAD_REQUEST" : "PRECONDITION_FAILED";
+          throw appError(ma, "OPERATION_FAILED", { operation: "soModelTaoHoSo" }, e.message);
         }
         throw e;
       }
