@@ -2,8 +2,8 @@
  * H2 (audit 2026-10-21) — CENSUS: không đường duyệt nào lách quyền duyệt, và mọi chỗ BẬT / CHẠY TAY đều ghi người làm.
  * (1) trong `flow.duyet`, `kiemQuyenDuyet(` đứng TRƯỚC `traLoiCho(`;
  * (2) `traLoiCho(` chỉ được gọi từ flowRouter.ts (ngoài định nghĩa ở dongCo.ts và các tệp test) — đường duyệt thứ hai sẽ không qua cổng;
- * (3) mỗi chỗ BẬT một phiên bản (`activeVersion: input.version` + `enabled: true|input.bat`) đều có một lệnh ghi `enabledBy: ctx.user.id`;
- * (4) `chayTay` ghi `startedBy: ctx.user.id`.
+ * (3) mỗi chỗ BẬT một phiên bản (`activeVersion: input.version` + `enabled: true|input.bat`) đều ghi `approvedBy: ctx.user.id` (người bật);
+ * (4) `chayTay` truyền `chuLuong: ctx.user.id` (chủ lượt) — hai cột mà quyền duyệt (quyenDuyet.ts) đọc: tách người duyệt dựa vào chúng.
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -44,12 +44,15 @@ describe("H2 census — quyền duyệt", () => {
     expect(ten.filter((t) => t !== "services/flow/dongCo.ts")).toEqual(["routers/flowRouter.ts"]);
   });
 
-  it("(3) mỗi chỗ BẬT một phiên bản đều ghi enabledBy; (4) chayTay ghi startedBy", () => {
+  it("(3) mỗi chỗ BẬT một phiên bản đều ghi approvedBy; (4) chayTay truyền chuLuong; quyenDuyet.ts đọc đúng hai cột đó", () => {
     const code = bo(router);
     const bat = [...code.matchAll(/activeVersion:\s*input\.version,\s*enabled:\s*(?:true|input\.bat)/g)].length;
-    const ghi = [...code.matchAll(/enabledBy:\s*ctx\.user\.id/g)].length;
+    const ghi = [...code.matchAll(/approvedBy:\s*ctx\.user\.id/g)].length;
     expect(bat, "không thấy chỗ bật nào — mẫu dò hỏng?").toBeGreaterThanOrEqual(2);
     expect(ghi).toBe(bat);
-    expect(code).toMatch(/startedBy:\s*ctx\.user\.id/);
+    expect(code).toMatch(/chuLuong:\s*ctx\.user\.id/);
+    const q = readFileSync(join(SERVER, "services", "flow", "quyenDuyet.ts"), "utf8");
+    expect(q).toMatch(/"chuLuong"/);
+    expect(q).toMatch(/"approvedBy"/);
   });
 });

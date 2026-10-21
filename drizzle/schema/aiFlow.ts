@@ -29,8 +29,6 @@ export const aiFlowVersions = pgTable(
     riskClass: varchar("riskClass", { length: 12 }).notNull(),
     createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
     approvedBy: integer("approvedBy").references(() => users.id, { onDelete: "set null" }),
-    /** H2 (mig 0415) — người BẬT phiên bản gần nhất (tách người duyệt khỏi người bật). */
-    enabledBy: integer("enabledBy").references(() => users.id, { onDelete: "set null" }),
     createdAt: tz("createdAt").defaultNow().notNull(),
   },
   (t) => [primaryKey({ columns: [t.flowId, t.version] })],
@@ -48,8 +46,8 @@ export const aiFlowRuns = pgTable(
     uuTien: varchar("uuTien", { length: 12 }).notNull().default("background"),
     idempotencyKey: varchar("idempotencyKey", { length: 128 }).unique(),
     parentRunId: uuid("parentRunId"),
-    /** H2 (mig 0415) — người kích hoạt lượt bằng tay (chayTay); lịch/webhook/MCP/luồng con ⇒ NULL. */
-    startedBy: integer("startedBy").references(() => users.id, { onDelete: "set null" }),
+    /** Đợt 9 (mig 0410) — người mà phạm vi dữ liệu của lượt được tính theo (NULL ⇒ node tham chiếu tài nguyên từ chối). */
+    chuLuong: integer("chuLuong").references(() => users.id, { onDelete: "set null" }),
     retryOf: uuid("retryOf"),
     error: jsonb("error"),
     startedAt: tz("startedAt").defaultNow().notNull(),

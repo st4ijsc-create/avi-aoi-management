@@ -8,14 +8,14 @@
  *     chỉnh — danh sách trắng cờ là việc sau); upsert KHÔNG ghi đè hai ô đó nếu hồ sơ đã có.
  * Router gọi `lamMoiAnhSoModel()` sau mỗi lượt. Audit: middleware mutation của tRPC.
  */
-import { eq, sql } from "drizzle-orm";
-import { aiModelArtifacts, aiServingProfiles } from "../../../../drizzle/schema";
+import { and, count, eq, isNull, or, sql } from "drizzle-orm";
+import { aiModelArtifacts, aiModelBindings, aiModelEvalRuns, aiServingProfiles } from "../../../../drizzle/schema";
 import type { getDb } from "../../../db/connection";
 import type { SlotClass } from "./anhSoModel";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
-export type MaLoiSuaSoModel = "ARTIFACT_KHONG_CO" | "ARTIFACT_MAT" | "LOAI_KHONG_PHUC_VU" | "DAU_VAO_SAI";
+export type MaLoiSuaSoModel = "ARTIFACT_KHONG_CO" | "ARTIFACT_MAT" | "LOAI_KHONG_PHUC_VU" | "DAU_VAO_SAI" | "HO_SO_DANG_DUNG";
 
 export class LoiSuaSoModel extends Error {
   constructor(
@@ -97,7 +97,26 @@ export async function luuHoSo(db: Db, yc: YeuCauLuuHoSo): Promise<{ id: string; 
     if (a.loai !== "sinh-chu") {
       throw new LoiSuaSoModel("LOAI_KHONG_PHUC_VU", `Artifact ${yc.artifactId} loại "${a.loai}" — hồ sơ phục vụ chỉ dành cho model sinh chữ.`);
     }
-    const [cu] = await tx.select({ id: aiServingProfiles.id }).from(aiServingProfiles).where(eq(aiServingProfiles.id, yc.id));
+    const [cu] = await tx
+      .select({ id: aiServingProfiles.id, artifactId: aiServingProfiles.artifactId })
+      .from(aiServingProfiles)
+      .where(eq(aiServingProfiles.id, yc.id));
+    // ★ L2 (audit kiem-dinh 2026-10-21) — cổng "≥ 1 lượt đo + giấy phép" chạy lúc GÁN (datGan.ts) và đo gắn với HỒ SƠ:
+    // đổi artifact của hồ sơ đang được gán (chính hoặc dự phòng, chưa nghỉ) hoặc đã có lượt đo ⇒ lách cổng bằng một model
+    // chưa đo / chưa khai giấy phép. Từ chối — tạo hồ sơ MỚI cho artifact mới.
+    if (cu && cu.artifactId !== yc.artifactId) {
+      const [dung] = await tx
+        .select({ n: count() })
+        .from(aiModelBindings)
+        .where(and(isNull(aiModelBindings.retiredAt), or(eq(aiModelBindings.profileId, yc.id), sql`${yc.id} = ANY(${aiModelBindings.fallback})`)));
+      const [do_] = await tx.select({ n: count() }).from(aiModelEvalRuns).where(eq(aiModelEvalRuns.profileId, yc.id));
+      if ((dung?.n ?? 0) > 0 || (do_?.n ?? 0) > 0) {
+        throw new LoiSuaSoModel(
+          "HO_SO_DANG_DUNG",
+          `Hồ sơ ${yc.id} đang được gán (${dung?.n ?? 0}) hoặc đã có lượt đo (${do_?.n ?? 0}) — không đổi artifact; tạo hồ sơ mới.`,
+        );
+      }
+    }
     const giaTri = { artifactId: yc.artifactId, slotClass: yc.slotClass, ctx: yc.ctx, thinking: yc.thinking, enabled: yc.enabled };
     await tx
       .insert(aiServingProfiles)

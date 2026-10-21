@@ -149,6 +149,22 @@ describe("chayThuNut — PHẠM VI người gọi (IDOR)", () => {
     }
   });
 
+  it("★ ot.de-xuat-lenh với máy là CHUỖI SỐ \"3\" trong phạm vi ⇒ đề xuất mô phỏng được tạo với may = 3 KIỂU SỐ (kiểm = dùng); dạng lạ ⇒ từ chối theo hình dạng", async () => {
+    const bk = boKiem(3);
+    const r = await chayThuNut({ nut: nut("ot.de-xuat-lenh", { may: "3", lenh: "pause" }), inputs: { main: [{ json: {} }] } }, bk);
+    expect(r.ok).toBe(true);
+    expect(bk.hoi).toEqual([3]);
+    const dx = (r.cho?.payload as { deXuat?: { may?: unknown } } | undefined)?.deXuat;
+    expect(dx?.may).toBe(3);
+    for (const xau of [" 3", "3e0", "0x3", null, [3], {}]) {
+      const bk2 = boKiem(3);
+      const x = await chayThuNut({ nut: nut("ot.de-xuat-lenh", { may: xau, lenh: "pause" }), inputs: { main: [{ json: {} }] } }, bk2);
+      expect(x.ok, JSON.stringify(xau)).toBe(false);
+      expect(x.loi).toMatch(/tu-choi-muc-cao/);
+      expect(bk2.hoi).toEqual([]);
+    }
+  });
+
   it("danh sách item RỖNG: node không đọc gì (tham số tĩnh vẫn không chạm máy)", async () => {
     goiNguon = 0;
     dem();

@@ -26,10 +26,10 @@ import { router, moduleProcedure, moduleGate, writeProcedure, adminProcedure, de
 import { appError } from "../_core/appError";
 import { getDb } from "../db/connection";
 import { createAuditLog } from "../db";
-import { aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows, machines } from "../../drizzle/schema";
+import { aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../drizzle/schema";
 import { THU_TU_HANG, NodeInstanceSchema, kiemLuong, type FlowDefinition, type HangTacDungPhu } from "../../shared/flow/model";
 import { LoiNgoaiPhamVi, chayThuNut, type BoKiemPhamVi } from "../services/flow/chayThuNut";
-import { trongPhamVi } from "../db/hierarchy";
+import { boKiemPhamVi, kiemThamChieuTinh } from "../services/flow/boKiemPhamVi";
 import { phamViCua } from "./_phamViNguoiXem";
 import { LoiLuong, batDauRun, hangLuongConTuDb, luuPhienBan, traLoiCho } from "../services/flow/dongCo";
 import { taoTuMoTa } from "../services/flow/taoTuMoTa";
@@ -133,6 +133,15 @@ export function catJson(v: unknown, tran = TRAN_CHU_BUOC): unknown {
   return { __catBot: true, kichThuoc: s.length, dau: s.slice(0, tran) };
 }
 
+/**
+ * ★ Đợt 9 (IDOR) — lúc BẬT: mọi `may` / FOE workflow viết THẲNG trong định nghĩa phải nằm trong phạm vi NGƯỜI BẬT (biểu thức động để kiểm lúc
+ * chạy). Ngoài phạm vi / không tồn tại ⇒ NOT_FOUND, cùng thông điệp.
+ */
+async function kiemTruocKhiBat(def: FlowDefinition, ctx: { user: { id: number; role: string } }): Promise<void> {
+  const loi = await kiemThamChieuTinh(def, boKiemPhamVi(phamViCua(ctx)));
+  if (loi.length) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowKichHoat" }, `Không bật được: ${loi.join("; ")}.`);
+}
+
 export const flowRouter = router({
   /** Mọi luồng + phiên bản hoạt động + phiên bản mới nhất + hạng. */
   danhSach: xemProcedure.query(async () => {
@@ -200,11 +209,13 @@ export const flowRouter = router({
       if (input.bat && laHangCao(v.riskClass) && ctx.user.role !== "admin") {
         throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowKichHoatHangCao" }, `Luồng hạng ${v.riskClass} chỉ quản trị viên được bật.`);
       }
+      if (input.bat) await kiemTruocKhiBat(v.definition as FlowDefinition, ctx);
       await db
         .update(aiFlows)
         .set({ activeVersion: input.version, enabled: input.bat, updatedAt: sql`now()` })
         .where(eq(aiFlows.id, input.flowId));
-      if (input.bat) await db.update(aiFlowVersions).set({ enabledBy: ctx.user.id }).where(and(eq(aiFlowVersions.flowId, input.flowId), eq(aiFlowVersions.version, input.version))); // H2
+      // Đợt 9 — NGƯỜI BẬT là chủ của các lượt tự kích hoạt (lịch/webhook/MCP) của phiên bản này: ghi lại (không đụng khi tắt).
+      if (input.bat) await db.update(aiFlowVersions).set({ approvedBy: ctx.user.id }).where(and(eq(aiFlowVersions.flowId, input.flowId), eq(aiFlowVersions.version, input.version)));
       let tokenWebhook: string | null = null;
       if (input.bat && coNodeWebhook(v.definition as FlowDefinition)) tokenWebhook = await capTokenWebhook(input.flowId, input.xoayToken === true);
       await napLaiLich();
@@ -223,11 +234,12 @@ export const flowRouter = router({
       const [v] = await db.select().from(aiFlowVersions).where(and(eq(aiFlowVersions.flowId, input.flowId), eq(aiFlowVersions.version, input.version)));
       if (!v) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowKichHoat" }, `Không có luồng ${input.flowId}@${input.version}.`);
       if (v.riskClass !== "ot") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowKichHoat" }, `Luồng ${input.flowId}@${input.version} không phải hạng ot.`);
+      await kiemTruocKhiBat(v.definition as FlowDefinition, ctx);
       await db
         .update(aiFlows)
         .set({ activeVersion: input.version, enabled: true, updatedAt: sql`now()` })
         .where(eq(aiFlows.id, input.flowId));
-      await db.update(aiFlowVersions).set({ enabledBy: ctx.user.id }).where(and(eq(aiFlowVersions.flowId, input.flowId), eq(aiFlowVersions.version, input.version))); // H2
+      await db.update(aiFlowVersions).set({ approvedBy: ctx.user.id }).where(and(eq(aiFlowVersions.flowId, input.flowId), eq(aiFlowVersions.version, input.version)));
       let tokenWebhook: string | null = null;
       if (coNodeWebhook(v.definition as FlowDefinition)) tokenWebhook = await capTokenWebhook(input.flowId, false);
       await napLaiLich();
@@ -261,12 +273,11 @@ export const flowRouter = router({
       const thuCong = def.nodes.find((n) => n.type === "kich-hoat.thu-cong" && !n.disabled);
       let runId: string;
       try {
-        runId = await batDauRun({ flowId: input.flowId, version, items: input.items, nutKichHoat: thuCong?.id, triggerKind: "thu-cong" });
+        runId = await batDauRun({ flowId: input.flowId, version, items: input.items, nutKichHoat: thuCong?.id, triggerKind: "thu-cong", chuLuong: ctx.user.id });
       } catch (e) {
         if (e instanceof LoiLuong && e.code === "QUA_TRAN_DONG_THOI") throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowChayTay" }, e.message);
         throw e;
       }
-      await db.update(aiFlowRuns).set({ startedBy: ctx.user.id }).where(eq(aiFlowRuns.id, runId)); // H2: người kích hoạt lượt (không được tự duyệt)
       return { runId, version };
     }),
 
@@ -284,14 +295,7 @@ export const flowRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       // ★ IDOR: id tài nguyên của node (máy…) phải TỒN TẠI và thuộc phạm vi NGƯỜI GỌI (từ ctx, không từ input).
-      const pv = phamViCua(ctx);
-      const boKiem: BoKiemPhamVi = {
-        may: async (id) => {
-          const db = await layDb("flowChayThu");
-          const [m] = await db.select({ id: machines.id }).from(machines).where(eq(machines.id, id)).limit(1);
-          return !!m && (await trongPhamVi("machine", id, pv));
-        },
-      };
+      const boKiem: BoKiemPhamVi = boKiemPhamVi(phamViCua(ctx));
       let r;
       try {
         r = await chayThuNut(input, boKiem);

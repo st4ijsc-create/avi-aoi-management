@@ -177,3 +177,13 @@ describe("★ Đợt 9 — khongDoiKhe CHỈ cho vai trò nhẹ (VAI_TRO_NHE_KHO
     expect([...VAI_TRO_NHE_KHONG_DOI_KHE].sort()).toEqual(["chat", "chat.ops", "classify", "extract", "summarize"]);
   });
 });
+
+describe("★ L2 (audit kiem-dinh) — runtime: profile có giấy phép CHƯA KHAI không được dùng", () => {
+  it("license unknown ⇒ coi như không dùng được ⇒ dự phòng / env", () => {
+    const a = anh([{ profileId: "ds" }], new Map([["ds", { ...P({}), license: "unknown" }]]));
+    const kq = dinhTuyenVaiTro({ vaiTro: "code.plc" }, a, ENV);
+    expect(kq.nguon).toBe("du-phong");
+    expect(kq.model).toBe("Qwen3.6-35B-A3B-UD-Q4_K_XL");
+    expect(kq.lyDo.bangChung).toContain("giay-phep-chua-khai");
+  });
+});

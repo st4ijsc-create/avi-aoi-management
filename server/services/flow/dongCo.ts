@@ -104,6 +104,26 @@ interface YeuCauRun {
   idempotencyKey?: string;
   /** Đợt 8.4 — lượt cha (luồng con). */
   parentRunId?: string;
+  /**
+   * Đợt 9 — CHỦ LƯỢT (phạm vi dữ liệu tính theo người này lúc chạy). Vắng ⇒ suy: chủ của lượt cha (luồng con) → NGƯỜI BẬT phiên bản
+   * (`approvedBy`; dữ liệu cũ chưa lưu người bật ⇒ `createdBy`, chỉ là dự phòng) ⇒ không ai ⇒ NULL ⇒ node tài nguyên từ chối.
+   * Chạy tay truyền NGƯỜI BẤM.
+   */
+  chuLuong?: number | null;
+}
+
+/** Chủ lượt cho một lượt mới (xem `YeuCauRun.chuLuong`). */
+async function suyChuLuong(tx: Db | Tx, y: YeuCauRun): Promise<number | null> {
+  if (y.chuLuong !== undefined) return y.chuLuong;
+  if (y.parentRunId) {
+    const [cha] = await tx.select({ chuLuong: aiFlowRuns.chuLuong }).from(aiFlowRuns).where(eq(aiFlowRuns.id, y.parentRunId));
+    return cha?.chuLuong ?? null;
+  }
+  const [v] = await tx
+    .select({ approvedBy: aiFlowVersions.approvedBy, createdBy: aiFlowVersions.createdBy })
+    .from(aiFlowVersions)
+    .where(and(eq(aiFlowVersions.flowId, y.flowId), eq(aiFlowVersions.version, y.version)));
+  return v?.approvedBy ?? v?.createdBy ?? null;
 }
 
 /**
@@ -136,7 +156,7 @@ async function taoRunTx(tx: Db | Tx, y: YeuCauRun): Promise<string> {
   const kichHoat = def.nodes.filter((n) => layNut(n.type)?.laKichHoat && (!y.nutKichHoat || n.id === y.nutKichHoat));
   await tx.insert(aiFlowRuns).values({
     id: runId, flowId: y.flowId, version: y.version, triggerKind: y.triggerKind ?? "thu-cong", uuTien, idempotencyKey: y.idempotencyKey ?? null,
-    parentRunId: y.parentRunId ?? null,
+    parentRunId: y.parentRunId ?? null, chuLuong: await suyChuLuong(tx, y),
   });
   for (const n of kichHoat) {
     await tx.insert(aiFlowQueue).values({ runId, nodeId: n.id, lan: 1, inputs: { main: y.items ?? [{ json: {} }] }, uuTien: UU_TIEN_SO[uuTien] ?? 2 });
@@ -233,6 +253,8 @@ export async function batDauBuoc(muc: MucHang): Promise<KetQuaBatDau> {
     ngu: {
       runId: muc.runId, flowId: run.flowId, nodeId: muc.nodeId, lan: muc.lan, idempotencyKey: key, inputs: muc.inputs, nodes,
       env: {}, run: { id: muc.runId, flowId: run.flowId, batDau: new Date(run.startedAt).toISOString() }, version: run.version,
+      // Đợt 9 (IDOR) — phạm vi tính lại LÚC CHẠY từ người dùng hiện tại; không chủ / bị khoá / xoá / mất quyền ⇒ vắng ⇒ node tài nguyên từ chối.
+      kiemPhamVi: (await (await import("./boKiemPhamVi")).boKiemChoChuLuong(run.chuLuong)) ?? undefined,
     },
   };
 }

@@ -40,7 +40,7 @@ describe("kiemQuyenDuyet — tách người làm / người duyệt", () => {
   it("chính người KÍCH HOẠT lượt (kể cả lượt gốc của cây lượt con) ⇒ TRUNG_NGUOI_CHAY", () => {
     expect(ok({ nguoiBat: [1], nguoiChay: [null, 7] })).toMatchObject({ ok: false, ma: "TRUNG_NGUOI_CHAY" });
   });
-  it("lịch/webhook/MCP (startedBy NULL) và dữ liệu cũ (enabledBy NULL) ⇒ chỉ còn luật vai; vai thấp ⇒ VAI_THAP trước", () => {
+  it("lịch/webhook/MCP (chuLuong NULL) và dữ liệu cũ (approvedBy NULL) ⇒ chỉ còn luật vai; vai thấp ⇒ VAI_THAP trước", () => {
     expect(ok({ nguoiBat: [null], nguoiChay: [null] })).toEqual({ ok: true });
     expect(ok({ nguoiBat: [1], nguoiChay: [] }, { id: 8, role: "operator" })).toMatchObject({ ok: false, ma: "VAI_THAP" });
   });

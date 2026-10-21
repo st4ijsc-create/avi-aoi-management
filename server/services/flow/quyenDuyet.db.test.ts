@@ -88,17 +88,17 @@ describe("H2 — TÁCH người duyệt khỏi người bật / người chạy 
     const { runId } = await dungLuotCho(duyetDef("tach"), { role: "supervisor", id: A }, { role: "engineer", id: B });
     await expect(as("supervisor", A).duyet({ runId, nodeId: "d", dongY: true })).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/BẬT phiên bản/) });
     await expect(as("admin", A).duyet({ runId, nodeId: "d", dongY: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(as("supervisor", B).duyet({ runId, nodeId: "d", dongY: true })).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/kích hoạt lượt/) });
+    await expect(as("supervisor", B).duyet({ runId, nodeId: "d", dongY: true })).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/chủ lượt/) });
     expect((await kiemToan(runId)).map((k) => k.details.ma)).toEqual(["TRUNG_NGUOI_BAT", "TRUNG_NGUOI_BAT", "TRUNG_NGUOI_CHAY"]);
     expect(await conCho(runId)).toBe(1);
     expect(await as("supervisor", C).duyet({ runId, nodeId: "d", dongY: true })).toMatchObject({ ok: true });
   });
 
-  it("lượt từ lịch/webhook/MCP (startedBy NULL): chỉ ràng buộc khác người bật", async () => {
+  it("lượt từ lịch/webhook/MCP (chuLuong NULL): chỉ ràng buộc khác người bật", async () => {
     const def = duyetDef("lich");
     const r = await as("supervisor", A).luu({ definition: def });
     await as("supervisor", A).datPhienBanHoatDong({ flowId: def.id, version: r.version, bat: true });
-    const runId = await batDauRun({ flowId: def.id, version: r.version, triggerKind: "lich" }); // không qua chayTay ⇒ startedBy NULL
+    const runId = await batDauRun({ flowId: def.id, version: r.version, triggerKind: "lich" }); // không qua chayTay ⇒ chuLuong NULL
     await chayHet();
     await expect(as("supervisor", A).duyet({ runId, nodeId: "d", dongY: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(await as("supervisor", B).duyet({ runId, nodeId: "d", dongY: true })).toMatchObject({ ok: true });
@@ -123,8 +123,8 @@ describe("H2 — TÁCH người duyệt khỏi người bật / người chạy 
 
   it("dữ liệu CŨ chưa ghi người bật/người chạy (NULL) ⇒ chỉ áp luật vai — không khoá hàng chờ có trước bản vá", async () => {
     const { runId, flowId, version } = await dungLuotCho(duyetDef("cu"), { role: "supervisor", id: A }, { role: "engineer", id: B });
-    await (await db()).execute(sql`UPDATE ai_flow_versions SET "enabledBy" = NULL WHERE "flowId" = ${flowId} AND version = ${version}`);
-    await (await db()).execute(sql`UPDATE ai_flow_runs SET "startedBy" = NULL WHERE id = ${runId}`);
+    await (await db()).execute(sql`UPDATE ai_flow_versions SET "approvedBy" = NULL WHERE "flowId" = ${flowId} AND version = ${version}`);
+    await (await db()).execute(sql`UPDATE ai_flow_runs SET "chuLuong" = NULL WHERE id = ${runId}`);
     expect(await as("supervisor", A).duyet({ runId, nodeId: "d", dongY: true })).toMatchObject({ ok: true });
   });
 });

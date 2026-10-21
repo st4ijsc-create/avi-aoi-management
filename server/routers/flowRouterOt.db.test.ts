@@ -47,7 +47,7 @@ const luongOt = {
 const luongThuan = { id: `${TT}-thuan`, name: "thuần", version: 1, nodes: [nut("t", "kich-hoat.thu-cong")], connections: [] };
 
 beforeAll(async () => {
-  const [u] = (await (await getDb())!.execute(sql`SELECT id FROM users ORDER BY id LIMIT 1`)) as unknown as { id: number }[];
+  const [u] = (await (await getDb())!.execute(sql`SELECT id FROM users WHERE role = 'admin' AND "isActive" ORDER BY id LIMIT 1`)) as unknown as { id: number }[];
   uid = u.id;
   // H2: người duyệt khác người bật (admin) và người chạy tay (engineer) — hai người đó là `uid`.
   const [u2] = (await (await getDb())!.execute(sql`SELECT id FROM users ORDER BY id OFFSET 1 LIMIT 1`)) as unknown as { id: number }[];

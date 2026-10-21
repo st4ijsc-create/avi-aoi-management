@@ -16,9 +16,13 @@ import { dangKyNut, nguCanhItem, type NguCanhChay } from "../dangKyNut";
 import { LoiCongOt, kiemVaDeXuat, type KetQuaKiemOt } from "../ot/congOtLuong";
 import { LoiNgoaiPhamVi, chuanHoaIdMay } from "../idTaiNguyen";
 
-/** Máy phải thuộc phạm vi (nếu có bộ kiểm). Ngoài phạm vi và không tồn tại: cùng MỘT lỗi. */
+/**
+ * Máy phải TỒN TẠI và thuộc phạm vi CHỦ LƯỢT / người chạy thử (`ngu.kiemPhamVi`, dựng lúc chạy từ người dùng hiện tại). KHÔNG có bộ kiểm
+ * (lượt không chủ / chủ bị khoá, xoá, mất quyền) ⇒ TỪ CHỐI — đóng theo mặc định. Ngoài phạm vi và không tồn tại: cùng MỘT lỗi.
+ */
 async function kiemMayTrongPhamVi(ngu: NguCanhChay, may: number): Promise<void> {
-  if (ngu.kiemPhamVi && !(await ngu.kiemPhamVi.may(may))) throw new LoiNgoaiPhamVi();
+  if (!ngu.kiemPhamVi) throw new LoiCongOt(0, "Không xác định được người chạy luồng (khoá / mất quyền / chưa có chủ lượt) — từ chối tham chiếu máy.");
+  if (!(await ngu.kiemPhamVi.may(may))) throw new LoiNgoaiPhamVi();
 }
 
 /** Một dòng telemetry đọc được (hình dạng `TelemetryLatestRow` rút gọn). */
@@ -82,7 +86,7 @@ function thamSoMotItem(thamSo: Record<string, unknown>, ngu: NguCanhChay, loai: 
   return danhGiaThamSo(thamSo, nguCanhItem(ngu, vao[0], vao)) as Record<string, unknown>;
 }
 
-const nguDeXuat = (ngu: NguCanhChay) => ({ runId: ngu.runId, nodeId: ngu.nodeId, idempotencyKey: ngu.idempotencyKey });
+const nguDeXuat = (ngu: NguCanhChay) => ({ runId: ngu.runId, nodeId: ngu.nodeId, idempotencyKey: ngu.idempotencyKey, boKiem: ngu.kiemPhamVi });
 
 /** Kết quả của `kiemVaDeXuat` ⇒ đầu ra node: mức 4–5 ⇒ LỖI node (không đề xuất) · mức ≤ 3 ⇒ yêu cầu chờ duyệt (mô phỏng). */
 function ketQuaNut(kq: KetQuaKiemOt, loai: string) {
@@ -104,9 +108,10 @@ dangKyNut({
   async chay(thamSo, ngu) {
     const t = thamSoMotItem(thamSo, ngu, "ot.de-xuat-lenh");
     // id không hợp lệ ⇒ cổng OT từ chối theo hình dạng (không đọc máy); id hợp lệ ⇒ phải thuộc phạm vi TRƯỚC khi cổng đọc `device_tags`.
-    const mayDaChuanHoa = chuanHoaIdMay(t.may);
-    if (mayDaChuanHoa !== null) await kiemMayTrongPhamVi(ngu, mayDaChuanHoa);
-    const kq = await kiemVaDeXuat({ loai: "lenh", may: t.may, lenh: t.lenh, tag: t.tag, giaTri: t.giaTri, hetHanGio: t.hetHanGio }, nguDeXuat(ngu));
+    const may = chuanHoaIdMay(t.may);
+    if (may === null) throw new LoiCongOt(5, `ot.de-xuat-lenh: tu-choi-muc-cao (mức 5, KHONG_NHAN_RA) — TỪ CHỐI (fail-closed, mức 5) — máy phải là số nguyên dương (nhận ${JSON.stringify(t.may)?.slice(0, 40)})`);
+    await kiemMayTrongPhamVi(ngu, may);
+    const kq = await kiemVaDeXuat({ loai: "lenh", may, lenh: t.lenh, tag: t.tag, giaTri: t.giaTri, hetHanGio: t.hetHanGio }, nguDeXuat(ngu));
     return ketQuaNut(kq, "ot.de-xuat-lenh");
   },
 });
@@ -122,6 +127,7 @@ dangKyNut({
   lapLai: "atMostOnce",
   async chay(thamSo, ngu) {
     const t = thamSoMotItem(thamSo, ngu, "ot.de-xuat-luong");
+    if (!ngu.kiemPhamVi) throw new LoiCongOt(0, "Không xác định được người chạy luồng (khoá / mất quyền / chưa có chủ lượt) — từ chối tham chiếu FOE workflow.");
     const kq = await kiemVaDeXuat({ loai: "luong-foe", workflowId: t.workflowId, version: t.version, thamSo: t.thamSo, hetHanGio: t.hetHanGio }, nguDeXuat(ngu));
     return ketQuaNut(kq, "ot.de-xuat-luong");
   },

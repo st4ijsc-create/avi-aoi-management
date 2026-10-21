@@ -6,12 +6,13 @@
  *   • `command_log` / `orchestration_runs` KHÔNG đổi một hàng suốt lưới (không có đường gửi);
  *   • `ot.doc-tag` với nguồn giả; `ot.de-xuat-luong` với FOE workflow giả (đọc tiêm).
  */
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { eq, inArray, like, sql } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { aiFlowRuns, aiFlowSteps, aiFlows } from "../../../../drizzle/schema";
 import { batDauRun, chayMotMuc, luuPhienBan, traLoiCho } from "../dongCo";
 import { __datNguonDocTagChoTest } from "../nut/ot";
+import { __datBoKiemChuLuongChoTest } from "../boKiemPhamVi";
 import { GHI_CHU_DA_DUYET_MO_PHONG, __datPhuThuocCongOtChoTest, ketQuaSauDuyetMoPhong } from "./congOtLuong";
 import { CA_CAO, CA_THAP } from "./__boDotBienOt";
 
@@ -19,6 +20,11 @@ const TT = "t85ot";
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}) => ({ id, type, typeVersion: 1, name: id, position: [0, 0] as [number, number], parameters });
 const noi = (a: string, pa: string, b: string) => ({ from: { node: a, port: pa }, to: { node: b, port: "main" } });
 const db = async () => (await getDb())!;
+
+// Lưới này kiểm CỔNG OT (phân loại mức 4–5, đề xuất mô phỏng) với máy số tuỳ ý ⇒ cho mọi máy "tồn tại + trong phạm vi". PHẠM VI thật
+// được kiểm ở `flowPhamViChuLuong.db.test.ts` (hai nhà máy, người dùng thật).
+beforeAll(() => __datBoKiemChuLuongChoTest(async () => ({ may: async () => true })));
+afterAll(() => __datBoKiemChuLuongChoTest(null));
 
 afterEach(() => {
   __datNguonDocTagChoTest(null);
