@@ -351,7 +351,7 @@ export const aiGgufRouter = router({
     const db = await getDb();
     if (!db) throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "soModelTongQuan" }, "Không có kết nối CSDL.");
     const anh = await lamMoiAnhSoModel();
-    const [artifacts, profiles, roles, evalRuns] = await Promise.all([
+    const [artifacts, profiles, roles, evalRuns, hoSoCoDoRows] = await Promise.all([
       db.select().from(sm.aiModelArtifacts),
       db.select().from(sm.aiServingProfiles),
       db.select({ id: sm.aiRoles.id, moTa: sm.aiRoles.moTa, evalSuite: sm.aiRoles.evalSuite }).from(sm.aiRoles),
@@ -372,6 +372,8 @@ export const aiGgufRouter = router({
         .from(sm.aiModelEvalRuns)
         .orderBy(desc(sm.aiModelEvalRuns.createdAt), desc(sm.aiModelEvalRuns.id))
         .limit(100),
+      // Hồ sơ có ≥ 1 lượt đo (KỂ CẢ lượt cũ hơn 100 dòng trên) — đúng điều kiện cổng `datGan` (CHUA_CO_DO); UI dùng để vô hiệu nút gán active.
+      db.selectDistinct({ profileId: sm.aiModelEvalRuns.profileId }).from(sm.aiModelEvalRuns),
     ]);
     const moTa = new Map(roles.map((r) => [r.id, r]));
     const vaiTro = [...anh.vaiTro.keys()].sort().map((id) => ({
@@ -381,7 +383,7 @@ export const aiGgufRouter = router({
       evalSuite: moTa.get(id)?.evalSuite ?? null,
       dinhTuyen: dinhTuyenVaiTro({ vaiTro: id }, anh, process.env),
     }));
-    return { taiLuc: anh.taiLuc, vaiTro, gan: anh.gan, profiles, artifacts, evalRuns, kheNang: thongKeKheNang() };
+    return { taiLuc: anh.taiLuc, vaiTro, gan: anh.gan, profiles, artifacts, evalRuns, hoSoCoDo: hoSoCoDoRows.map((r) => r.profileId).sort(), kheNang: thongKeKheNang() };
   }),
 
   /** Quét `GGUF_MODELS_DIR` → `ai_model_artifacts` (thêm mới, đánh dấu mất / có lại). */

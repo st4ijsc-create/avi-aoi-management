@@ -13615,7 +13615,8 @@
         "maPhamVi": "Scope ID",
         "loaiDich": "Target type",
         "duPhong": "Fallback (profile IDs, comma-separated, up to 4)",
-        "cong": "Active mode on a profile requires ≥ 1 evaluation run of that profile and a declared model licence. Bindings to a .env key need no evaluation."
+        "cong": "Active mode on a profile requires ≥ 1 evaluation run of that profile and a declared model licence. Bindings to a .env key need no evaluation.",
+        "chuaDoChan": "Profile {{id}} has no eval run yet — it can't be assigned as active. Assign it in 'trial' mode, run the role's suite, then activate."
       },
       "kho": {
         "dongBo": "Sync store",
@@ -13701,10 +13702,27 @@
         "rong": "No evaluation runs yet.",
         "cot": {
           "boDo": "Suite",
-          "dat": "Pass / tasks",
+          "dat": "Pass / tasks × runs",
           "luot": "Runs",
           "p50": "p50 / p90",
-          "luc": "At"
+          "luc": "At",
+          "vaiTro": "Role",
+          "gitSha": "Commit"
+        },
+        "dangGan": "assigned"
+      },
+      "soDo": {
+        "tieuDe": "Measurements",
+        "hienTai": "Currently assigned",
+        "dich": "Target",
+        "khongCo": "— (no profile)",
+        "chuaDo": "no run on this suite yet",
+        "khongCoBoDo": "This role declares no eval suite — no direct comparison.",
+        "boKhac": "The target has runs, but on another suite — no direct comparison.",
+        "kq": {
+          "hon": "Target is better than the assigned profile (more accurate, or equally accurate and faster).",
+          "kem": "Target is WORSE than the assigned profile on the same suite.",
+          "bang": "Target is on par with the assigned profile on the same suite."
         }
       }
     }

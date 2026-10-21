@@ -285,3 +285,46 @@ test("8 — lỗi phạm vi hiện bằng EN: luồng không có/ngoài phạm v
   await expect(p2.getByTestId("xac-nhan-tao")).toBeDisabled();
   await ctx2.close();
 });
+
+test("9 — Trung tâm Model: bảng lượt đo đánh dấu hồ sơ ĐANG GÁN; form đổi gán đặt số đo cạnh nhau; hồ sơ chưa đo ⇒ nút gán active bị vô hiệu kèm lý do", async ({ page }) => {
+  await dangNhap(page, fx.admin, "en");
+  await page.goto(`${base}/ai-gguf-models`);
+  const trungTam = page.getByTestId("trung-tam-model");
+  await expect(trungTam).toBeVisible({ timeout: 60_000 });
+
+  // (1) tab Đo: các lượt của e2e, hàng của hồ sơ đang gán có nhãn, kèm vai trò + mã commit + n×lượt
+  await trungTam.getByRole("tab", { name: "Evaluation" }).click();
+  const bang = page.getByTestId("bang-luot-do");
+  const hangGan = bang.locator(`tr[data-profile="fse2e-ho-so-gan"]`);
+  const hangTot = bang.locator(`tr[data-profile="fse2e-ho-so-tot"]`);
+  await expect(hangGan).toHaveAttribute("data-dang-gan", "1");
+  await expect(hangGan.getByTestId("dang-gan")).toBeVisible();
+  await expect(hangGan).toContainText("7/10×1 (70 %)");
+  await expect(hangGan).toContainText("code.plc");
+  await expect(hangGan).toContainText("aaaaaaa11");
+  await expect(hangTot).toHaveAttribute("data-dang-gan", "0");
+  await expect(hangTot).toContainText("9/10×3 (90 %)");
+  if (process.env.FS_SHOT_DIR) await trungTam.screenshot({ path: `${process.env.FS_SHOT_DIR}/9a-luot-do.png` });
+
+  // (2) tab Vai trò & gán → form Đặt gán
+  await trungTam.getByRole("tab", { name: "Roles & bindings" }).click();
+  const form = page.getByTestId("form-dat-gan");
+  await form.locator('select[name="roleId"]').selectOption("code.plc");
+  await form.locator('select[name="loaiDich"]').selectOption("profile");
+  await form.locator('select[name="dich"]').selectOption("fse2e-ho-so-tot");
+  const soDo = page.getByTestId("so-do-canh-nhau");
+  await expect(soDo).toContainText("plc-st-v1");
+  await expect(page.getByTestId("so-do-hienTai")).toContainText("7/10×1 (70 %)");
+  await expect(page.getByTestId("so-do-dich")).toContainText("9/10×3 (90 %)");
+  await expect(page.getByTestId("ket-qua-so-sanh")).toHaveAttribute("data-ket-qua", "hon");
+  if (process.env.FS_SHOT_DIR) await trungTam.screenshot({ path: `${process.env.FS_SHOT_DIR}/9b-so-canh-nhau.png` });
+
+  // hồ sơ CHƯA ĐO: chế độ active ⇒ nút vô hiệu + lý do; chế độ 'trial' ⇒ cho gán
+  await form.locator('select[name="dich"]').selectOption("fse2e-ho-so-chua-do");
+  await form.locator('select[name="mode"]').selectOption("active");
+  await expect(form.getByRole("button", { name: "Set binding" })).toBeDisabled();
+  await expect(page.getByTestId("ly-do-chan-gan")).toContainText("has no eval run yet");
+  if (process.env.FS_SHOT_DIR) await trungTam.screenshot({ path: `${process.env.FS_SHOT_DIR}/9c-chua-do-vo-hieu.png` });
+  await form.locator('select[name="mode"]').selectOption("thu");
+  await expect(form.getByRole("button", { name: "Set binding" })).toBeEnabled();
+});

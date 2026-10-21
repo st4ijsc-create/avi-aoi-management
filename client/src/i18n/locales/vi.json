@@ -13595,7 +13595,8 @@
         "maPhamVi": "Mã phạm vi",
         "loaiDich": "Loại đích",
         "duPhong": "Dự phòng (mã hồ sơ, cách nhau dấu phẩy, tối đa 4)",
-        "cong": "Chế độ active trỏ hồ sơ cần ≥ 1 lượt đo của hồ sơ đó và giấy phép model đã khai. Gán theo khoá .env không cần đo."
+        "cong": "Chế độ active trỏ hồ sơ cần ≥ 1 lượt đo của hồ sơ đó và giấy phép model đã khai. Gán theo khoá .env không cần đo.",
+        "chuaDoChan": "Hồ sơ {{id}} chưa có lượt đo nào — chưa gán active được. Gán ở chế độ 'thử', chạy bộ đo của vai trò, rồi mới active."
       },
       "kho": {
         "dongBo": "Đồng bộ kho",
@@ -13681,10 +13682,27 @@
         "rong": "Chưa có lượt đo.",
         "cot": {
           "boDo": "Bộ đo",
-          "dat": "Đạt / bài",
+          "dat": "Đạt / bài × lượt",
           "luot": "Lượt",
           "p50": "p50 / p90",
-          "luc": "Lúc"
+          "luc": "Lúc",
+          "vaiTro": "Vai trò",
+          "gitSha": "Mã commit"
+        },
+        "dangGan": "đang gán"
+      },
+      "soDo": {
+        "tieuDe": "Số đo",
+        "hienTai": "Đang gán",
+        "dich": "Đích",
+        "khongCo": "— (không có hồ sơ)",
+        "chuaDo": "chưa có lượt đo ở bộ này",
+        "khongCoBoDo": "Vai trò này chưa khai bộ đo — không so trực tiếp được.",
+        "boKhac": "Hồ sơ đích có lượt đo nhưng ở bộ đo khác — không so trực tiếp.",
+        "kq": {
+          "hon": "Đích tốt hơn hồ sơ đang gán (đúng hơn, hoặc đúng bằng và nhanh hơn).",
+          "kem": "Đích KÉM hơn hồ sơ đang gán trên cùng bộ đo.",
+          "bang": "Đích ngang hồ sơ đang gán trên cùng bộ đo."
         }
       }
     }
