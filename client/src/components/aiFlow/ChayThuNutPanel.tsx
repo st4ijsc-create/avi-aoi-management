@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Loader2, FlaskConical } from "lucide-react";
 import { docItemsNhap, type KhaiBaoNutClient } from "@/lib/flowStudio";
+import { VetModelHuy } from "./RunTimeline";
 
 const MAU = '[\n  { "json": {} }\n]';
 
@@ -88,6 +89,7 @@ export default function ChayThuNutPanel({ node, kb }: { node: NodeInstance; kb: 
             <span className="text-muted-foreground">{r.che === "chay" ? t("flowStudio.chayThu.daChay") : t("flowStudio.chayThu.xemTruoc")}</span>
             <span className="ml-auto text-[10px] text-muted-foreground">{t("flowStudio.chayThu.ms", { ms: r.ms })}</span>
           </div>
+          {r.model && <VetModelHuy nodeId={node.id} vet={r.model} />}
           {r.credentialRef && <p className="text-[11px] text-muted-foreground">{t("flowStudio.chayThu.biMat", { id: r.credentialRef })}</p>}
           {r.loi && <p className="text-destructive break-all" data-testid="chay-thu-loi">{r.loi}</p>}
           {r.output &&

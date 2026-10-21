@@ -30,6 +30,7 @@ const TT = "t84mcp";
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({ id, type, typeVersion: 1, name: id, position: [0, 0], parameters, ...extra });
 const noi = (a: string, b: string) => ({ from: { node: a, port: "main" }, to: { node: b, port: "main" } });
 let uid = 0;
+let fidMcp = 0;
 const goi = (role: string) => flowRouter.createCaller({ user: { id: uid, role } } as never);
 
 const MCP_THAM_SO = { moTa: "Tra số lỗi của một máy AOI theo mã máy", thamSo: [{ ten: "maMay", kieu: "chuoi", batBuoc: true, moTa: "mã máy" }, { ten: "soGio", kieu: "so" }] };
@@ -39,8 +40,14 @@ const TAT = { ...THUAN, id: `${TT}-tat` };
 const NUT_TAT = { ...THUAN, id: `${TT}-nut-tat`, nodes: [nut("vao", "kich-hoat.mcp", MCP_THAM_SO, { disabled: true }), nut("tc", "kich-hoat.thu-cong")], connections: [] };
 
 beforeAll(async () => {
-  const [u] = (await (await getDb())!.execute(sql`SELECT id FROM users ORDER BY id LIMIT 1`)) as unknown as { id: number }[];
-  uid = u.id;
+  const db0 = (await getDb())!;
+  const [uMoi] = (await db0.execute(sql`INSERT INTO users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
+    VALUES (${TT + "-nd-" + Date.now().toString(36)}, ${TT + "_nd_" + Date.now().toString(36)}, ${"người gọi"}, ${"password"}, ${"engineer"}, true, false, now()) RETURNING id`)) as unknown as { id: number }[];
+  uid = uMoi.id;
+  // Đợt 9 — phạm vi nhà máy của luồng: người gọi (engineer) thuộc ĐÚNG MỘT nhà máy của test.
+  const [fa] = (await db0.execute(sql`INSERT INTO factories (code, name, "isActive") VALUES (${TT + "F"}, ${"T F"}, true) RETURNING id`)) as unknown as { id: number }[];
+  fidMcp = fa.id;
+  await db0.execute(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uid}, ${TT + "F"})`);
   for (const [d, role, bat] of [[THUAN, "engineer", true], [GHI, "admin", true], [TAT, "engineer", false], [NUT_TAT, "engineer", true]] as const) {
     const r = await goi(role).luu({ definition: d });
     await goi(role).datPhienBanHoatDong({ flowId: d.id, version: r.version, bat });
@@ -52,6 +59,9 @@ afterAll(async () => {
   const runs = await db.select({ id: aiFlowRuns.id }).from(aiFlowRuns).where(like(aiFlowRuns.flowId, `${TT}%`));
   if (runs.length) await db.delete(aiFlowRuns).where(inArray(aiFlowRuns.id, runs.map((r) => r.id)));
   await db.delete(aiFlows).where(like(aiFlows.id, `${TT}%`));
+  await db.execute(sql`DELETE FROM user_factory_assignments WHERE "userId" = ${uid}`);
+  await db.execute(sql`DELETE FROM factories WHERE id = ${fidMcp}`);
+  await db.execute(sql`DELETE FROM users WHERE id = ${uid}`);
 });
 
 type KqList = { result: { tools: { name: string; description: string; inputSchema: { type: string; properties: Record<string, { type: string }>; required: string[] } }[] } };

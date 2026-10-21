@@ -55,6 +55,8 @@ async function docBanGhim(flowId: string, version: number): Promise<{ version: n
  */
 export async function kiemGoiLuongCon(ngu: NguCanhChay, flowIdCon: string, versionGhim?: number): Promise<{ version: number; hang: HangTacDungPhu; nutVao: string; def: FlowDefinition }> {
   const { chuoiLuotCha, hangDu, hangPhienBan } = await import("../dongCo");
+  // Đợt 9 (IDOR) — luồng con phải thuộc phạm vi CHỦ LƯỢT; vắng bộ kiểm / ngoài phạm vi ⇒ cùng câu với "không tồn tại" (không lộ).
+  if (!ngu.kiemPhamVi || !(await ngu.kiemPhamVi.luong(flowIdCon))) throw new LoiLuongCon(`luồng con '${flowIdCon}' không tồn tại hoặc chưa có phiên bản hoạt động`);
   if (versionGhim === undefined || !Number.isInteger(versionGhim) || versionGhim < 1) {
     throw new LoiLuongCon(`luồng con '${flowIdCon}' chưa được GHIM phiên bản trong định nghĩa luồng cha — cần LƯU LẠI luồng ${ngu.flowId} để ghim (không tự dùng phiên bản hoạt động)`);
   }

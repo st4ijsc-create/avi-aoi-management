@@ -207,3 +207,28 @@ export function docItemsNhap(chu: string): { ok: true; items: { json: Record<str
   }
   return { ok: true, items };
 }
+
+/** Đợt 9 — vết model của một bước (sự kiện `buoc.model` của `flow.dongThoiGian`): các lần gọi AI trong bước `nodeId#lan`. */
+export interface VetModelClient {
+  vaiTro: string;
+  model: string | null;
+  nguon: string;
+  phamVi: string | null;
+  duPhong: boolean;
+  kheBan: boolean;
+  lyDo: string[];
+}
+
+export function vetModelCuaBuoc(suKien: readonly { kind: string; payload: unknown }[], nodeId: string, lan: number): VetModelClient[] {
+  const ra: VetModelClient[] = [];
+  for (const e of suKien) {
+    if (e.kind !== "buoc.model") continue;
+    const p = e.payload as (Partial<VetModelClient> & { nodeId?: string; lan?: number }) | null;
+    if (!p || p.nodeId !== nodeId || p.lan !== lan) continue;
+    ra.push({
+      vaiTro: String(p.vaiTro ?? ""), model: typeof p.model === "string" ? p.model : null, nguon: String(p.nguon ?? ""), phamVi: typeof p.phamVi === "string" ? p.phamVi : null,
+      duPhong: p.duPhong === true, kheBan: p.kheBan === true, lyDo: Array.isArray(p.lyDo) ? p.lyDo.map(String).slice(0, 8) : [],
+    });
+  }
+  return ra;
+}

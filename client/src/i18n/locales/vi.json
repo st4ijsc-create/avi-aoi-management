@@ -23138,7 +23138,13 @@
       "lanLanThu": "lần {{lan}} · thử {{lanThu}}",
       "dauVao": "Vào",
       "dauRa": "Ra",
-      "suKien": "Sự kiện ({{n}})"
+      "suKien": "Sự kiện ({{n}})",
+      "model": "Model thực chạy",
+      "modelMacDinh": "(mặc định của máy chủ)",
+      "duPhong": "Dự phòng",
+      "duPhongKheBan": "Dự phòng — khe nặng đang giữ model khác",
+      "nguon": "Nguồn chọn: {{nguon}}{{phamVi}}",
+      "phamVi": " · phạm vi {{pv}}"
     },
     "duyet": {
       "tieuDe": "Hộp duyệt luồng",

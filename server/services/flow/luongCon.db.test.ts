@@ -19,20 +19,31 @@ import { getDb } from "../../db/connection";
 import { aiFlowRuns, aiFlowSteps, aiFlows } from "../../../drizzle/schema";
 import { flowRouter } from "../../routers/flowRouter";
 import { batDauBuoc, batDauRun, chayMotMuc, nhatMuc, thucThi, ketThucBuoc, traLoiCho } from "./dongCo";
+import { BO_KIEM_CHO_QUA, __datBoKiemChuLuongChoTest } from "./boKiemPhamVi";
 import { datHamGoiAgent, type HamGoiAgent } from "./nut/agent";
 
 const TT = "t84lc";
+// Lưới này kiểm luồng con / agent qua động cơ, KHÔNG phải phạm vi ⇒ cho-qua-hết; phạm vi thật: flowPhamViLuong.db.test.ts
+beforeAll(() => __datBoKiemChuLuongChoTest(async () => BO_KIEM_CHO_QUA));
+afterAll(() => __datBoKiemChuLuongChoTest(null));
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}) => ({ id, type, typeVersion: 1, name: id, position: [0, 0], parameters });
 const noi = (a: string, b: string, pa = "main") => ({ from: { node: a, port: pa }, to: { node: b, port: "main" } });
 const def = (id: string, nodes: unknown[], connections: unknown[]) => ({ id: `${TT}-${id}`, name: id, version: 1, nodes, connections });
 
 let uid = 0;
+let fidLc = 0;
 const goi = (role: string) => flowRouter.createCaller({ user: { id: uid, role } } as never);
 const db = async () => (await getDb())!;
 
 beforeAll(async () => {
-  const [u] = (await (await db()).execute(sql`SELECT id FROM users ORDER BY id LIMIT 1`)) as unknown as { id: number }[];
-  uid = u.id;
+  const [uMoi] = (await (await db()).execute(sql`INSERT INTO users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
+    VALUES (${TT + "-nd-" + Date.now().toString(36)}, ${TT + "_nd_" + Date.now().toString(36)}, ${"người gọi"}, ${"password"}, ${"engineer"}, true, false, now()) RETURNING id`)) as unknown as { id: number }[];
+  uid = uMoi.id;
+  // Đợt 9 — luồng có phạm vi nhà máy: người gọi (vai engineer) thuộc ĐÚNG MỘT nhà máy của test ⇒ luồng mới tự gán nhà máy ấy.
+  const d0 = await db();
+  const [fa] = (await d0.execute(sql`INSERT INTO factories (code, name, "isActive") VALUES (${TT + "F"}, ${"T84 F"}, true) RETURNING id`)) as unknown as { id: number }[];
+  fidLc = fa.id;
+  await d0.execute(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uid}, ${TT + "F"})`);
 });
 afterAll(async () => {
   const d = await getDb();
@@ -40,6 +51,9 @@ afterAll(async () => {
   const runs = await d.select({ id: aiFlowRuns.id }).from(aiFlowRuns).where(like(aiFlowRuns.flowId, `${TT}%`));
   if (runs.length) await d.delete(aiFlowRuns).where(inArray(aiFlowRuns.id, runs.map((r) => r.id)));
   await d.delete(aiFlows).where(like(aiFlows.id, `${TT}%`));
+  await d.execute(sql`DELETE FROM user_factory_assignments WHERE "userId" = ${uid} AND "factoryCode" = ${TT + "F"}`);
+  await d.execute(sql`DELETE FROM factories WHERE id = ${fidLc}`);
+  await d.execute(sql`DELETE FROM users WHERE id = ${uid}`);
 });
 let cuAgent: HamGoiAgent | null = null;
 afterEach(() => {
@@ -58,7 +72,8 @@ async function raCua(runId: string, nodeId: string): Promise<Record<string, unkn
 }
 /** Lưu + đặt phiên bản hoạt động (bật) bằng vai cho trước. */
 async function luuVaBat(d: ReturnType<typeof def>, role = "engineer") {
-  const r = await goi(role).luu({ definition: d });
+  // admin tạo luồng mặc định NULL (toàn hệ thống — kỹ sư không dùng được); luồng con dùng chung phải thuộc nhà máy của kỹ sư.
+  const r = await goi(role).luu({ definition: d, factoryId: role === "admin" ? fidLc : undefined });
   await goi(role).datPhienBanHoatDong({ flowId: d.id, version: r.version, bat: true });
   return r;
 }

@@ -22,9 +22,17 @@ const noi = (a: string, pa: string, b: string) => ({ from: { node: a, port: pa }
 let uid = 0;
 const goi = (role: string) => flowRouter.createCaller({ user: { id: uid, role } } as never);
 
+let fid = 0;
+const MA_NM = `${TT}F`;
 beforeAll(async () => {
-  const [u] = (await (await getDb())!.execute(sql`SELECT id FROM users ORDER BY id LIMIT 1`)) as unknown as { id: number }[];
-  uid = u.id;
+  const db0 = (await getDb())!;
+  const [uMoi] = (await db0.execute(sql`INSERT INTO users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
+    VALUES (${TT + "-nd-" + Date.now().toString(36)}, ${TT + "_nd_" + Date.now().toString(36)}, ${"người gọi"}, ${"password"}, ${"engineer"}, true, false, now()) RETURNING id`)) as unknown as { id: number }[];
+  uid = uMoi.id;
+  // Đợt 9 — luồng có phạm vi nhà máy: người gọi (vai engineer) thuộc ĐÚNG MỘT nhà máy của test ⇒ luồng mới tự gán nhà máy ấy.
+  const [f] = (await db0.execute(sql`INSERT INTO factories (code, name, "isActive") VALUES (${MA_NM}, ${"T8 " + MA_NM}, true) RETURNING id`)) as unknown as { id: number }[];
+  fid = f.id;
+  await db0.execute(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uid}, ${MA_NM})`);
 });
 
 afterAll(async () => {
@@ -34,6 +42,9 @@ afterAll(async () => {
   if (runs.length) await db.delete(aiFlowRuns).where(inArray(aiFlowRuns.id, runs.map((r) => r.id)));
   await db.delete(aiFlows).where(like(aiFlows.id, `${TT}%`));
   await db.delete(aiFlowCredentials).where(like(aiFlowCredentials.id, `${TT}%`));
+  await db.execute(sql`DELETE FROM user_factory_assignments WHERE "userId" = ${uid} AND "factoryCode" = ${MA_NM}`);
+  await db.execute(sql`DELETE FROM factories WHERE id = ${fid}`);
+  await db.execute(sql`DELETE FROM users WHERE id = ${uid}`);
 });
 
 async function chayHet() {
@@ -151,7 +162,7 @@ describe("flowRouter (Đợt 8.1, DB)", () => {
     const GIA_TRI = "gia-tri-bi-mat-router-8-2";
     try {
       await expect(goi("engineer").biMatTao({ id: `${TT}-bm`, ten: "x", loai: "token", giaTri: GIA_TRI })).rejects.toMatchObject({ code: "FORBIDDEN" });
-      const tao = await admin2fa.biMatTao({ id: `${TT}-bm`, ten: "Token ERP", loai: "token", giaTri: GIA_TRI });
+      const tao = await admin2fa.biMatTao({ id: `${TT}-bm`, ten: "Token ERP", loai: "token", giaTri: GIA_TRI, factoryId: fid });
       expect(tao).toEqual({ id: `${TT}-bm`, ten: "Token ERP", loai: "token", phienBanKhoa: 1 });
       await expect(admin2fa.biMatTao({ id: `${TT}-bm`, ten: "x", loai: "token", giaTri: GIA_TRI })).rejects.toMatchObject({ code: "CONFLICT" });
       await expect(admin2fa.biMatTao({ id: `${TT}-bm2`, ten: "x", loai: "tai-khoan", giaTri: "khongcohaicham" })).rejects.toMatchObject({ code: "BAD_REQUEST" });

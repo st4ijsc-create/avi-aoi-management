@@ -12,7 +12,7 @@ import { getDb } from "../../../db/connection";
 import { aiFlowRuns, aiFlowSteps, aiFlows } from "../../../../drizzle/schema";
 import { batDauRun, chayMotMuc, luuPhienBan, traLoiCho } from "../dongCo";
 import { __datNguonDocTagChoTest } from "../nut/ot";
-import { __datBoKiemChuLuongChoTest } from "../boKiemPhamVi";
+import { BO_KIEM_CHO_QUA, __datBoKiemChuLuongChoTest } from "../boKiemPhamVi";
 import { GHI_CHU_DA_DUYET_MO_PHONG, __datPhuThuocCongOtChoTest, ketQuaSauDuyetMoPhong } from "./congOtLuong";
 import { CA_CAO, CA_THAP } from "./__boDotBienOt";
 
@@ -23,7 +23,7 @@ const db = async () => (await getDb())!;
 
 // Lưới này kiểm CỔNG OT (phân loại mức 4–5, đề xuất mô phỏng) với máy số tuỳ ý ⇒ cho mọi máy "tồn tại + trong phạm vi". PHẠM VI thật
 // được kiểm ở `flowPhamViChuLuong.db.test.ts` (hai nhà máy, người dùng thật).
-beforeAll(() => __datBoKiemChuLuongChoTest(async () => ({ may: async () => true })));
+beforeAll(() => __datBoKiemChuLuongChoTest(async () => BO_KIEM_CHO_QUA));
 afterAll(() => __datBoKiemChuLuongChoTest(null));
 
 afterEach(() => {

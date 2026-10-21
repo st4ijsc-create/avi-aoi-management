@@ -15,6 +15,7 @@ import type { FlowDefinition } from "../../../shared/flow/model";
 import type { BoKiemPhamVi } from "./dangKyNut";
 import { chuanHoaIdMay } from "./idTaiNguyen";
 import { docLuongFoeHienHanh, luongFoeTrongPhamVi } from "./ot/congOtLuong";
+import { biMatTrongPhamVi, luongTrongPhamVi } from "./phamViLuong";
 
 /** Vai KHÔNG được ghi (sàn của `writeProcedure`) — chủ lượt mang vai này ⇒ mất quyền ⇒ từ chối. */
 const VAI_CHI_DOC: ReadonlySet<string> = new Set(["viewer", "user"]);
@@ -28,8 +29,13 @@ export function boKiemPhamVi(pv: PhamViNguoiXem): BoKiemPhamVi {
       const [m] = await db.select({ id: machines.id }).from(machines).where(eq(machines.id, id)).limit(1);
       return !!m && (await trongPhamVi("machine", id, pv));
     },
+    biMat: (id) => biMatTrongPhamVi(pv, id),
+    luong: (flowId) => luongTrongPhamVi(pv, flowId),
   };
 }
+
+/** Chỉ lưới: bộ kiểm cho-qua-hết (test động cơ không liên quan phạm vi, vd bí mật / luồng con / cổng OT với máy tuỳ ý). */
+export const BO_KIEM_CHO_QUA: BoKiemPhamVi = { may: async () => true, biMat: async () => true, luong: async () => true };
 
 let ghiDeChoTest: ((userId: number | null | undefined) => Promise<BoKiemPhamVi | null>) | null = null;
 /** Chỉ lưới: thay cách dựng bộ kiểm cho chủ lượt (vd. cho phép mọi máy khi test cổng OT). `null` ⇒ về mặc định. */

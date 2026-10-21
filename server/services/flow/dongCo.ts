@@ -19,8 +19,8 @@ import { aiFlowEvents, aiFlowInbox, aiFlowQueue, aiFlowRuns, aiFlowSteps, aiFlow
 import { getDb } from "../../db/connection";
 import { THU_TU_HANG, kiemLuong, type FlowDefinition, type HangTacDungPhu } from "../../../shared/flow/model";
 import type { ItemLuong } from "../../../shared/flow/bieuThuc";
-import { layNut, type KetQuaChay, type NguCanhChay, type YeuCauCho } from "./dangKyNut";
-import { bienTheBiMat, cheBiMat, cheSau, giaiMaChoChay } from "./biMat";
+import { layNut, type KetQuaChay, type NguCanhChay, type VetModel, type YeuCauCho } from "./dangKyNut";
+import { LoiBiMat, bienTheBiMat, cheBiMat, cheSau, giaiMaChoChay } from "./biMat";
 import { ghimLuongCon, hangLuongConGhim, thamChieuTho } from "./ghimLuongCon";
 import "./nut";
 
@@ -67,14 +67,14 @@ export async function kiemLuongDayDu(raw: unknown): Promise<ReturnType<typeof ki
 }
 
 /** Lưu một phiên bản MỚI (bất biến) của luồng sau khi kiểm hợp lệ. Trả số phiên bản. */
-export async function luuPhienBan(rawGoc: unknown, userId: number | null): Promise<{ flowId: string; version: number; hang: string }> {
+export async function luuPhienBan(rawGoc: unknown, userId: number | null, factoryId: number | null = null): Promise<{ flowId: string; version: number; hang: string }> {
   const raw = await ghimLuongCon(rawGoc); // H1: tham chiếu luồng con thiếu `version` được GHIM = phiên bản hoạt động hiện tại
   const kq = await kiemLuongDayDu(raw);
   if (!kq.ok) throw new LoiLuong("LUONG_KHONG_HOP_LE", kq.loi.join("; "));
   const def = raw as FlowDefinition;
   const db = await layDb();
   return db.transaction(async (tx) => {
-    await tx.insert(aiFlows).values({ id: def.id, name: def.name, ownerId: userId, riskClass: kq.hang }).onConflictDoNothing();
+    await tx.insert(aiFlows).values({ id: def.id, name: def.name, ownerId: userId, riskClass: kq.hang, factoryId }).onConflictDoNothing();
     const [m] = (await tx.execute(sql`SELECT coalesce(max(version), 0)::int AS v FROM ai_flow_versions WHERE "flowId" = ${def.id}`)) as unknown as { v: number }[];
     const version = m.v + 1;
     await tx.insert(aiFlowVersions).values({ flowId: def.id, version, definition: { ...def, version }, riskClass: kq.hang, createdBy: userId });
@@ -263,6 +263,9 @@ export async function thucThi(def: FlowDefinition, ngu: NguCanhChay): Promise<Ke
   if (!loai) throw new LoiLuong("LOAI_NODE_MAT", `loại node '${nut.type}' không còn đăng ký`);
   if (!nut.credentialRef) return loai.chay(nut.parameters ?? {}, ngu);
   if (!loai.nhanBiMat) throw new LoiLuong("LUONG_KHONG_HOP_LE", `loại node '${nut.type}' không nhận bí mật`);
+  // Đợt 9 (IDOR) — bí mật phải thuộc phạm vi CHỦ LƯỢT (NULL = toàn hệ thống ⇒ chỉ admin). Vắng bộ kiểm / ngoài phạm vi ⇒ cùng câu với
+  // "không có bí mật" (LoiBiMat KHONG_CO) — không lộ tồn tại, và KHÔNG giải mã.
+  if (!ngu.kiemPhamVi || !(await ngu.kiemPhamVi.biMat(nut.credentialRef))) throw new LoiBiMat("KHONG_CO", `không có bí mật '${nut.credentialRef}'`);
   const bm = await giaiMaChoChay(nut.credentialRef);
   const bienThe = bienTheBiMat(bm.giaTri, bm.loai);
   ghiBienThe(ngu.idempotencyKey, bienThe);
@@ -521,13 +524,26 @@ export async function chayMotMuc(workerId: string, leaseMs?: number, tienToFlow?
   const bd = await batDauBuoc(muc);
   if (!bd.tiep) return true;
   let kq: { ok: true; ra: KetQuaChay | YeuCauCho } | { ok: false; loi: unknown };
+  const vet: VetModel[] = [];
+  bd.ngu.ghiModel = (v) => void vet.push(v);
   try {
     kq = { ok: true, ra: await thucThi(bd.def, bd.ngu) };
   } catch (e) {
     kq = { ok: false, loi: e };
   }
   await ketThucBuoc(muc, bd.def, bd.lanThu, kq);
+  if (vet.length) await ghiVetModel(muc.runId, muc.nodeId, muc.lan, vet);
   return true;
+}
+
+/** Đợt 9 — ghi sự kiện `buoc.model` (model thực chạy của từng lần gọi AI trong bước). Thông tin phụ: lỗi ghi không làm hỏng lượt. */
+async function ghiVetModel(runId: string, nodeId: string, lan: number, vet: VetModel[]): Promise<void> {
+  try {
+    const db = await layDb();
+    await db.insert(aiFlowEvents).values(vet.map((v) => ({ runId, kind: "buoc.model", payload: { nodeId, lan, ...v } })));
+  } catch {
+    /* lượt có thể đã bị xoá giữa chừng */
+  }
 }
 
 export interface KetQuaLuotDongBo {

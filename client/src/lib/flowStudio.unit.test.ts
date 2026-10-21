@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { kiemLuong, type KhaiBaoNut } from "@shared/flow/model";
 import {
-  docItemsNhap, idLuongTuTen, idNutMoi, loiBieuThucChuoi, loiBieuThucThamSo, luongMoi, nhomDanhMuc, saoTuMau, taoNutMoi, trangThaiTheoNut,
+  vetModelCuaBuoc, docItemsNhap, idLuongTuTen, idNutMoi, loiBieuThucChuoi, loiBieuThucThamSo, luongMoi, nhomDanhMuc, saoTuMau, taoNutMoi, trangThaiTheoNut,
   type KhaiBaoNutClient,
 } from "./flowStudio";
 
@@ -126,5 +126,19 @@ describe("Flow Studio — ô số hoặc biểu thức của form OT", () => {
     const re = new RegExp(m![1].slice(1, -1));
     expect(re.test("999999")).toBe(true);
     for (const x of ["{{ $json.may }}", "abc", "", "1a", "1234567890123"]) expect(re.test(x), x).toBe(false);
+  });
+});
+
+describe("Flow Studio — vết model của bước (Đợt 9)", () => {
+  const ev = (nodeId: string, lan: number, them: Record<string, unknown> = {}) => ({
+    kind: "buoc.model", payload: { nodeId, lan, vaiTro: "extract", model: "Qwen3-4B", nguon: "du-phong", phamVi: "flow", duPhong: true, kheBan: true, lyDo: ["khe-dang-giu-model-khac (p; bề mặt nền không đổi khe)"], ...them },
+  });
+  it("lọc theo node + lần; bỏ sự kiện khác loại; chuẩn hoá trường thiếu/sai kiểu", () => {
+    const ds = [ev("a", 1), ev("a", 2), ev("b", 1), { kind: "buoc.xong", payload: { nodeId: "a", lan: 1 } }, { kind: "buoc.model", payload: null }, ev("a", 1, { model: 5, duPhong: "x", kheBan: undefined, lyDo: "no" })];
+    const r = vetModelCuaBuoc(ds, "a", 1);
+    expect(r).toHaveLength(2);
+    expect(r[0]).toMatchObject({ vaiTro: "extract", model: "Qwen3-4B", duPhong: true, kheBan: true });
+    expect(r[1]).toMatchObject({ model: null, duPhong: false, kheBan: false, lyDo: [] });
+    expect(vetModelCuaBuoc(ds, "z", 1)).toEqual([]);
   });
 });

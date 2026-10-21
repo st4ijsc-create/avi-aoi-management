@@ -175,3 +175,21 @@ test("4 — bật luồng hạng OT: hộp OTP step-up, gọi flow.batLuongOt (k
   const [f] = await withTestDb((sql) => sql`SELECT enabled, "activeVersion" FROM ai_flows WHERE id = ${FLOW_OT}`);
   expect(f.enabled).toBe(false);
 });
+
+test("5 — dòng thời gian hiện MODEL THỰC của node AI; node rơi dự phòng vì khe nặng bận có nhãn + lý do", async ({ page }) => {
+  await dangNhap(page);
+  await moTrinhSua(page, FLOW_SO_SANH, `?run=${fx.runA}`);
+  await expect(page.getByTestId("buoc-dat")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("model-thuc-dat")).toHaveText("Qwen3-Khe-Nang-30B");
+  await expect(page.getByTestId("du-phong-dat")).toHaveCount(0);
+  await chup(page, "5a-model-thuc");
+
+  await moTrinhSua(page, FLOW_SO_SANH, `?run=${fx.runB}`);
+  await expect(page.getByTestId("buoc-dat")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("model-thuc-dat")).toHaveText("Qwen3-4B-Instruct-2507-UD-Q4_K_XL");
+  const nhan = page.getByTestId("du-phong-dat");
+  await expect(nhan).toHaveAttribute("data-khe-ban", "1");
+  await expect(nhan).toContainText("khe nặng đang giữ model khác");
+  await expect(page.getByTestId("buoc-model-dat").locator("div").first()).toHaveAttribute("title", /khe-dang-giu-model-khac/);
+  await chup(page, "5b-du-phong-khe-ban");
+});

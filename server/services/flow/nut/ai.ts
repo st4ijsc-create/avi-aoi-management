@@ -11,7 +11,7 @@
  * theo chỉ dẫn trong dữ liệu. Chữ suy luận của model không bao giờ thành dữ liệu ra (engine đã tách `<think>`).
  */
 import { danhGiaThamSo, type ItemLuong } from "../../../../shared/flow/bieuThuc";
-import { dangKyNut, nguCanhItem, type NguCanhChay } from "../dangKyNut";
+import { dangKyNut, nguCanhItem, type NguCanhChay, type VetModel } from "../dangKyNut";
 // Module LÁ (0 import) — cắt chuỗi suy luận khỏi chữ model trước khi chữ thành DỮ LIỆU của luồng (hiển thị + chảy xuống node sau).
 import { stripThinking } from "../../ai/thinkingStrip";
 
@@ -48,9 +48,47 @@ let goiAi: HamGoiAi = async ({ vaiTro, heThong, nguoiDung, nghi, maxTokens, loai
   return result;
 };
 
+/**
+ * ★ Đợt 9 — model THỰC dự định chạy cho một lần gọi trong lượt (cùng tham số định tuyến như `goiAi` mặc định: phạm vi flow +
+ * bề mặt `luong`, `khongDoiKhe`). Thuần định tuyến — KHÔNG nạp model, không GPU. Độc lập với hàm gọi (lưới thay hàm giả vẫn có vết).
+ */
+export async function diemModel(vaiTro: string, ngu: NguCanhChay): Promise<VetModel> {
+  const [{ resolveLogicalModel, defaultModelBasename }, { laTenVaiTro }, { layAnhSoModel }, { dinhTuyenVaiTro, laVaiTroSinhChu }] = await Promise.all([
+    import("../../ai/modelResolver"),
+    import("../../../../shared/aiRoles"),
+    import("../../ai/soModel/anhSoModel"),
+    import("../../ai/soModel/dinhTuyenVaiTro"),
+  ]);
+  const phamVi = { flowId: ngu.flowId, beMat: "luong" };
+  const model = resolveLogicalModel(vaiTro, { phamVi, khongDoiKhe: true }) ?? defaultModelBasename() ?? null;
+  let nguon = "mac-dinh-env";
+  let pv: string | null = null;
+  let lyDo: string[] = [];
+  const anh = layAnhSoModel();
+  if (laTenVaiTro(vaiTro) && laVaiTroSinhChu(vaiTro, anh)) {
+    const kq = dinhTuyenVaiTro({ vaiTro, phamVi, khongDoiKhe: true }, anh, process.env);
+    nguon = kq.nguon;
+    pv = kq.phamVi;
+    lyDo = kq.lyDo.bangChung.split("; ").slice(1).map((x) => x.slice(0, 200)).slice(0, 8);
+  }
+  return { vaiTro, model, nguon, phamVi: pv, duPhong: nguon === "du-phong", kheBan: lyDo.some((x) => x.includes("khe-dang-giu-model-khac")), lyDo };
+}
+
+/** Báo vết model (nếu lượt chạy / chạy thử đang lắng nghe) rồi gọi model. Lỗi định tuyến KHÔNG làm hỏng node. */
+async function goiAiCoVet(y: Parameters<HamGoiAi>[0]): Promise<string> {
+  if (y.ngu?.ghiModel) {
+    try {
+      y.ngu.ghiModel(await diemModel(y.vaiTro, y.ngu));
+    } catch {
+      /* vết là thông tin phụ */
+    }
+  }
+  return goiAi(y);
+}
+
 /** Đợt 8.4 — gọi model qua hàm hiện hành (Cổng AI, hoặc hàm giả của lưới) cho các node/thủ tục ở tệp khác. */
 export function goiAiHienHanh(y: Parameters<HamGoiAi>[0]): Promise<string> {
-  return goiAi(y);
+  return goiAiCoVet(y);
 }
 
 /** Chỉ lưới. */
@@ -88,7 +126,7 @@ dangKyNut({
     const ra: ItemLuong[] = [];
     for (const item of vao) {
       const t = thamSoItem(thamSo, ngu, item, vao);
-      const chu = await goiAi({
+      const chu = await goiAiCoVet({
         vaiTro: String(t.vaiTro ?? "chat"),
         heThong: `${HE_THONG_CHUNG}${t.heThong ? `\n\n${String(t.heThong)}` : ""}`,
         nguoiDung: String(t.loiNhac ?? ""),
@@ -160,7 +198,7 @@ dangKyNut({
       let nguoiDung = `Trích các trường sau thành MỘT đối tượng JSON (không thêm trường khác; không có thì null):\n${moTa}\n\n${boc(nguon)}`;
       let kq: ReturnType<typeof kiemTheoTruong> = { ok: false, loi: "chưa gọi" };
       for (let lan = 0; lan < 2; lan++) {
-        const chu = await goiAi({ vaiTro: String(t.vaiTro ?? "extract"), heThong: HE_THONG_CHUNG, nguoiDung, nghi: false, maxTokens: so(t.maxTokens, 1024, 64, 8000), loai: "trich-xuat", ngu });
+        const chu = await goiAiCoVet({ vaiTro: String(t.vaiTro ?? "extract"), heThong: HE_THONG_CHUNG, nguoiDung, nghi: false, maxTokens: so(t.maxTokens, 1024, 64, 8000), loai: "trich-xuat", ngu });
         kq = kiemTheoTruong(chu, truong);
         if (kq.ok) break;
         nguoiDung += `\n\nLần trước sai: ${kq.loi}. Chỉ trả về ĐÚNG một đối tượng JSON hợp lệ.`;
@@ -187,7 +225,7 @@ dangKyNut({
     const ra: ItemLuong[] = [];
     for (const item of vao) {
       const t = thamSoItem(thamSo, ngu, item, vao);
-      const chu = await goiAi({
+      const chu = await goiAiCoVet({
         vaiTro: String(t.vaiTro ?? "classify"),
         heThong: HE_THONG_CHUNG,
         nguoiDung: `Chọn ĐÚNG MỘT nhãn trong: ${nhan.join(" | ")}. Chỉ trả về nhãn.${t.huongDan ? `\nHướng dẫn: ${String(t.huongDan)}` : ""}\n\n${boc(t.vanBan ?? item.json)}`,
@@ -215,7 +253,7 @@ dangKyNut({
   async chay(thamSo, ngu) {
     const vao = ngu.inputs.main ?? [];
     const t = thamSoItem(thamSo, ngu, vao[0] ?? { json: {} }, vao);
-    const chu = await goiAi({
+    const chu = await goiAiCoVet({
       vaiTro: String(t.vaiTro ?? "summarize"),
       heThong: HE_THONG_CHUNG,
       nguoiDung: `${String(t.yeuCau ?? "Tóm tắt ngắn gọn các ý chính bằng tiếng Việt.")}\n\n${boc(vao.map((x) => x.json))}`,
