@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { danhGia, danhGiaChuoi, danhGiaThamSo, kiemCuPhap, LoiBieuThuc, type NguCanhBieuThuc } from "./bieuThuc";
+import { danhGia, danhGiaChuoi, danhGiaThamSo, kiemCuPhap, LoiBieuThuc, TRAN_KET_QUA_CHUOI, type NguCanhBieuThuc } from "./bieuThuc";
 
 const NGU: NguCanhBieuThuc = {
   json: { ten: "AOI-2", soLoi: 3, ds: [10, 20, 30], ct: { muc: { sau: "x" } }, rong: "" },
@@ -87,5 +87,42 @@ describe("bieuThuc (Đợt 8.0)", () => {
     const src = fs.readFileSync(path.join(__dirname, "bieuThuc.ts"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(src).not.toMatch(/\beval\s*\(/);
     expect(src).not.toMatch(/new\s+Function/);
+  });
+});
+
+describe("trần độ dài kết quả chuỗi (Đợt 9 — L1)", () => {
+  const ngu = (json: Record<string, unknown>): NguCanhBieuThuc => ({ json });
+  const TRAN = TRAN_KET_QUA_CHUOI;
+
+  it("phép nối vượt trần ⇒ LoiBieuThuc NGAY (kiểm độ dài trước khi nối); đúng bằng trần ⇒ được; thêm một ký tự ⇒ lỗi", () => {
+    const a = "x".repeat(TRAN / 2);
+    expect(() => danhGia("$json.a + $json.a + 'y'", ngu({ a }))).toThrow(/phép nối dài quá/);
+    expect(danhGia("$json.a + $json.a", ngu({ a })) as string).toHaveLength(TRAN);
+    expect(() => danhGia("$json.a + $json.a + '1'", ngu({ a }))).toThrow(LoiBieuThuc);
+    expect(danhGia("'a' + 1 + null", ngu({}))).toBe("a1");
+    expect(danhGia("1 + 2", ngu({}))).toBe(3);
+  });
+
+  it("★ khuếch đại: biểu thức ≤ 2000 ký tự lặp `a+a+…` trên chuỗi 5 KB (×249 ≈ 1,2 MB) bị chặn; dưới trần vẫn chạy", () => {
+    const bt = Array(249).fill("$json.a").join("+"); // 249×7 + 248 = 1991 ký tự
+    expect(bt.length).toBeLessThanOrEqual(2000);
+    expect(() => danhGia(bt, ngu({ a: "z".repeat(5000) }))).toThrow(/phép nối dài quá/);
+    expect((danhGia(bt, ngu({ a: "z".repeat(4000) })) as string).length).toBe(996_000);
+  });
+
+  it("mẫu {{ }} lẫn chữ: tổng độ dài vượt trần ⇒ lỗi; trả nguyên kiểu (một {{ }}) không bị ảnh hưởng ở dưới trần", () => {
+    const a = "q".repeat(400_000);
+    expect(() => danhGiaChuoi("{{ $json.a }}-{{ $json.a }}-{{ $json.a }}", ngu({ a }))).toThrow(/mẫu dài quá/);
+    expect(danhGiaChuoi("{{ $json.a }}-{{ $json.a }}", ngu({ a })) as string).toHaveLength(800_001);
+    expect(danhGiaChuoi("{{ $json.n }}", ngu({ n: 5 }))).toBe(5);
+    expect(() => danhGiaThamSo({ s: "{{ $json.a }}{{ $json.a }}{{ $json.a }}" }, ngu({ a }))).toThrow(LoiBieuThuc);
+  });
+
+  it("join: dấu phân cách dài × nhiều phần tử vượt trần ⇒ lỗi trước khi nối; phần tử lớn cũng vậy; bình thường vẫn chạy", () => {
+    const l = Array(2000).fill("a");
+    expect(() => danhGia("join($json.l, $json.sep)", ngu({ l, sep: "S".repeat(1024) }))).toThrow(/join dài quá/);
+    expect(() => danhGia("join($json.l)", ngu({ l: ["x".repeat(TRAN), "y"] }))).toThrow(/join dài quá/);
+    expect(danhGia("join($json.l, '-')", ngu({ l: ["a", null, 3] }))).toBe("a--3");
+    expect(danhGia("join($json.l)", ngu({ l: [] }))).toBe("");
   });
 });
