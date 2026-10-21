@@ -27,7 +27,7 @@
  * `tranByteGoiZip() + 1` (mặc định 200*1024*1024+1) — presign phải từ chối
  * NGAY từ tầng schema, KHÔNG có ZIP nào được dựng/tải cho ca này.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import os from "node:os";
 import path from "node:path";
 import { promises as fsp } from "node:fs";
@@ -46,6 +46,15 @@ import {
 
 const STAMP = Date.now();
 const API_KEY = `BG87-PKG-${STAMP}`;
+
+// aoiPackageRouter đọc AOI_CACHE_DIR LÚC NẠP MODULE (mặc định ./uploads/aoi-cache của repo). Không đặt nó trước import thì ca
+// getImage ghi bộ nhớ đệm ảnh vào chính thư mục uploads của repo — mỗi lần chạy để lại một thư mục `BG87-FALLBACK-<ts>-correct-path`
+// (đo 2026-10-21: 75 thư mục như vậy, từ 2026-08-31). `vi.hoisted` chạy trước các import.
+const CACHE_TAM = vi.hoisted(() => {
+  const p = require("node:path").join(require("node:os").tmpdir(), `bg87-aoi-cache-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  process.env.AOI_CACHE_DIR = p;
+  return p;
+});
 
 let machineId: number;
 const packageDbIds: number[] = [];
@@ -79,6 +88,8 @@ afterAll(async () => {
     // KHÔNG delete `productInspections` — WORM, xem docblock đầu file.
   }
   if (machineId) await db.deleteMachine(machineId);
+  await fsp.rm(CACHE_TAM, { recursive: true, force: true }).catch(() => undefined);
+  delete process.env.AOI_CACHE_DIR;
 });
 
 beforeEach(() => {
