@@ -74,6 +74,7 @@ export async function teardownFixtures(): Promise<Record<string, number>> {
     const like = `${PREFIX}%`;
     const out: Record<string, number> = {};
     out.ai_flow_runs = (await sql`DELETE FROM ai_flow_runs WHERE "flowId" LIKE ${like}`).count;
+    out.ai_flow_credentials = (await sql`DELETE FROM ai_flow_credentials WHERE id LIKE ${like}`).count;
     out.ai_flows = (await sql`DELETE FROM ai_flows WHERE id LIKE ${like}`).count;
     // luồng do e2e tạo qua giao diện (id sinh từ tên, không mang tiền tố): theo CHỦ hoặc NHÀ MÁY của fixture
     const fl = (await sql`SELECT id FROM ai_flows WHERE "factoryId" IN (SELECT id FROM factories WHERE code LIKE ${like}) OR "ownerId" IN (SELECT id FROM users WHERE "openId" LIKE ${like})`).map((r) => String(r.id));
@@ -177,6 +178,8 @@ export async function setupFixtures(): Promise<FsFixture> {
       await buoc(runA, "dat", "xong", 1, 2, item(1), item(1));
       await buoc(runB, "t", "xong", 10, 11, item(1), item(1));
       await buoc(runB, "dat", "loi", 11, 17, item(2), null, { thongDiep: "hỏng ở dat" });
+      // bí mật CŨ chưa khai host (mặc định {}) — UI phải báo "chưa dùng được" và cho admin khai
+      await tx`INSERT INTO ai_flow_credentials (id, ten, loai, "banMa", iv, tag, "phienBanKhoa") VALUES (${`${PREFIX}-bm-cu`}, ${"Bí mật cũ"}, ${"token"}, ${Buffer.alloc(8, 1)}, ${Buffer.alloc(12, 2)}, ${Buffer.alloc(16, 3)}, 1)`;
       // vết model (sự kiện do động cơ ghi khi node ai.* chạy): A dùng model gán; B rơi dự phòng vì khe nặng đang giữ model khác
       const vet = (rid: string, o: object) => tx`INSERT INTO ai_flow_events ("runId", kind, payload) VALUES (${rid}, ${"buoc.model"}, ${tx.json({ nodeId: "dat", lan: 1, vaiTro: "extract", ...o } as never)})`;
       await vet(runA, { model: "Qwen3-Khe-Nang-30B", nguon: "gan-profile", phamVi: "flow", duPhong: false, kheBan: false, lyDo: [] });

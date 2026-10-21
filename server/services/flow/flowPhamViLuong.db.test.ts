@@ -133,7 +133,7 @@ describe("động cơ: bí mật và luồng con theo phạm vi CHỦ LƯỢT", 
   const tt = async (id: string) => ((await db.execute(sql`SELECT status FROM ai_flow_runs WHERE id = ${id}`)) as unknown as { status: string }[])[0].status;
 
   it("node HTTP dùng credentialRef: bí mật CỦA B / toàn hệ thống / không tồn tại ⇒ cùng lỗi 'không có bí mật', KHÔNG giải mã, KHÔNG gọi mạng; bí mật của A ⇒ chạy", async () => {
-    for (const [ten, fac] of [["bm-a", f.a], ["bm-b", f.b], ["bm-null", null]] as const) await taoBiMat({ id: `${TT}-${ten}`, ten, loai: "token", giaTri: "gia-tri-bi-mat-12345", factoryId: fac }, null);
+    for (const [ten, fac] of [["bm-a", f.a], ["bm-b", f.b], ["bm-null", null]] as const) await taoBiMat({ id: `${TT}-${ten}`, ten, loai: "token", giaTri: "gia-tri-bi-mat-12345", hostChoPhep: ["dich.gia"], factoryId: fac }, null);
     const mk = async (ten: string, ref: string, chu: number) => {
       const def = { id: `${TT}-${ten}`, name: ten, version: 1, nodes: [nut("t", "kich-hoat.thu-cong"), nut("h", "tich-hop.http-doc", { url: "https://dich.gia/x", kieuXacThuc: "bearer" }, { credentialRef: ref })], connections: [noi("t", "h")] };
       const { version } = await luuPhienBan(def, null);

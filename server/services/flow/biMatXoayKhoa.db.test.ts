@@ -77,7 +77,7 @@ describe("xoayKhoaBiMat (Đợt 9.4)", () => {
     expect(await phienBan()).toEqual({ [`${TT}-a`]: 2, [`${TT}-b`]: 2, [`${TT}-c`]: 2 });
     for (const [id, { v, loai }] of Object.entries(GIA_TRI)) {
       // env2ChiMoi KHÔNG có khoá cũ ⇒ chứng minh hàng đã thật sự ở khoá mới
-      await expect(giaiMaChoChay(id, env2ChiMoi)).resolves.toEqual({ giaTri: v, loai });
+      await expect(giaiMaChoChay(id, env2ChiMoi)).resolves.toEqual({ giaTri: v, loai, hostChoPhep: [] });
     }
     const sau = await (await getDb())!.select().from(aiFlowCredentials).where(like(aiFlowCredentials.id, `${TT}%`));
     for (const h of sau) expect(Buffer.from(h.banMa).toString("hex")).not.toBe(truoc.get(h.id)); // bản mã mới, IV mới

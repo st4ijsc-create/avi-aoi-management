@@ -23043,7 +23043,15 @@
         "token": "Token",
         "tai-khoan": "Account (user:password)",
         "khac": "Other"
-      }
+      },
+      "host": "Allowed hosts",
+      "hostChuaKhai": "Not declared — unusable",
+      "suaHost": "Edit",
+      "suaHostTieuDe": "Allowed hosts of secret {{id}}",
+      "hostGoiY": "Comma-separated hostnames (no scheme, port or wildcard). The secret is only ever sent to these hosts.",
+      "luuHost": "Save hosts",
+      "daLuuHost": "Host list saved",
+      "nhaMay": "Factory"
     },
     "sua": {
       "quayLai": "Back to flows",

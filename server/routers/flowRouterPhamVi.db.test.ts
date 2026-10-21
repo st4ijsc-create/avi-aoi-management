@@ -241,11 +241,11 @@ describe("bí mật: danh sách lọc; tạo/xoá/ghi đè theo phạm vi", () =
 
   it("biMatTao / biMatXoa (admin): mặc định NULL; chọn nhà máy; nhà máy không tồn tại ⇒ lỗi; xoá bí mật không tồn tại ⇒ NOT_FOUND", async () => {
     const nm = async (id: string) => ((await db.execute(sql`SELECT "factoryId" AS f FROM ai_flow_credentials WHERE id = ${id}`)) as unknown as { f: number | null }[])[0].f;
-    await ADMIN.biMatTao({ id: `${TT}-bm-t1`, ten: "t", loai: "token", giaTri: "gia-tri-bi-mat" });
+    await ADMIN.biMatTao({ id: `${TT}-bm-t1`, ten: "t", loai: "token", giaTri: "gia-tri-bi-mat", hostChoPhep: ["dich.gia"] });
     expect(await nm(`${TT}-bm-t1`)).toBeNull();
-    await ADMIN.biMatTao({ id: `${TT}-bm-t2`, ten: "t", loai: "token", giaTri: "gia-tri-bi-mat", factoryId: f.b });
+    await ADMIN.biMatTao({ id: `${TT}-bm-t2`, ten: "t", loai: "token", giaTri: "gia-tri-bi-mat", hostChoPhep: ["dich.gia"], factoryId: f.b });
     expect(await nm(`${TT}-bm-t2`)).toBe(f.b);
-    await expect(ADMIN.biMatTao({ id: `${TT}-bm-t3`, ten: "t", loai: "token", giaTri: "gia-tri-bi-mat", factoryId: 2_000_900_001 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(ADMIN.biMatTao({ id: `${TT}-bm-t3`, ten: "t", loai: "token", giaTri: "gia-tri-bi-mat", hostChoPhep: ["dich.gia"], factoryId: 2_000_900_001 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(ADMIN.biMatXoa({ id: `${TT}-bm-khong-co` })).rejects.toMatchObject(NF);
     expect(await ADMIN.biMatXoa({ id: `${TT}-bm-t2` })).toMatchObject({ daXoa: true });
   });

@@ -36,7 +36,7 @@ import { taoTuMoTa } from "../services/flow/taoTuMoTa";
 import { danhSachNut, layNut } from "../services/flow/dangKyNut";
 import { kiemThamSoKichHoat, napLaiLich } from "../services/flow/kichHoat/lich";
 import { capTokenWebhook, coNodeWebhook, coTokenWebhook } from "../services/flow/kichHoat/webhook";
-import { LOAI_BI_MAT, LoiBiMat, lietKeBiMat, taoBiMat, xoaBiMat } from "../services/flow/biMat";
+import { LOAI_BI_MAT, LoiBiMat, datHostBiMat, lietKeBiMat, taoBiMat, xoaBiMat } from "../services/flow/biMat";
 import { ketQuaSauDuyetMoPhong, laDeXuatOtLuong } from "../services/flow/ot/congOtLuong";
 
 const xemProcedure = moduleProcedure("MOD_AI");
@@ -462,11 +462,14 @@ export const flowRouter = router({
         ghiDe: z.boolean().optional(),
         /** Đợt 9 — nhà máy của bí mật (admin: vắng ⇒ TOÀN HỆ THỐNG, chỉ admin dùng được). */
         factoryId: z.number().int().positive().optional(),
+        /** Đợt 9 (M2) — host bí mật được phép gửi tới: BẮT BUỘC khi tạo (1–20 hostname). Ghi đè (`ghiDe`) vắng ⇒ giữ danh sách cũ. */
+        hostChoPhep: z.array(z.string().max(253)).min(1).max(20).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
       // ★ Đợt 9 (IDOR): ghi đè bí mật đã có ⇒ phải thuộc phạm vi; bí mật mới ⇒ gán nhà máy theo cùng luật với luồng.
       const { factoryId: yeuCau, ...phanCon } = input;
+      if (!input.hostChoPhep && !input.ghiDe) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowBiMatTao" }, "Phải khai hostChoPhep (host bí mật được gửi tới).");
       let factoryId: number | null | undefined;
       const dbB = await layDb("flowBiMatTao");
       const [co] = await dbB.select({ id: aiFlowCredentials.id }).from(aiFlowCredentials).where(eq(aiFlowCredentials.id, input.id)).limit(1);
@@ -482,6 +485,20 @@ export const flowRouter = router({
     }),
 
   /** Xoá một bí mật — admin. Luồng còn trỏ tới nó sẽ lỗi rõ ở node lúc chạy. */
+  /** Khai / sửa danh sách host của một bí mật (M2) — admin. Bí mật cũ chưa khai host KHÔNG dùng được cho tới khi gọi thủ tục này. */
+  biMatDatHost: adminAiProcedure
+    .input(z.object({ id: z.string().regex(RE_ID), hostChoPhep: z.array(z.string().max(253)).min(1).max(20) }))
+    .mutation(async ({ input, ctx }) => {
+      await chanBiMat(ctx, input.id, "flowBiMatTao");
+      try {
+        const kq = await datHostBiMat(input.id, input.hostChoPhep);
+        if (!kq) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowBiMatTao" }, `Không có bí mật ${input.id}.`);
+        return { id: input.id, hostChoPhep: kq };
+      } catch (e) {
+        loiBiMat(e, "flowBiMatTao");
+      }
+    }),
+
   biMatXoa: adminAiProcedure.input(z.object({ id: z.string().regex(RE_ID) })).mutation(async ({ input, ctx }) => {
     await chanBiMat(ctx, input.id, "flowBiMatXoa");
     let xoa: boolean;
@@ -505,8 +522,8 @@ export const flowRouter = router({
     // ★ Đợt 9 (IDOR): chỉ bí mật trong phạm vi người gọi (NULL = toàn hệ thống ⇒ chỉ phạm vi "tất cả").
     const cho = await nhaMayChoPhep(phamViCua(ctx));
     const db = await layDb("flowBiMatXem");
-    const nm = new Map((await db.select({ id: aiFlowCredentials.id, f: aiFlowCredentials.factoryId }).from(aiFlowCredentials)).map((r) => [r.id, r.f]));
-    return ds.filter((b) => nhaMayHopLe(nm.get(b.id), cho));
+    const nm = new Map((await db.select({ id: aiFlowCredentials.id, f: aiFlowCredentials.factoryId, h: aiFlowCredentials.hostChoPhep }).from(aiFlowCredentials)).map((r) => [r.id, r]));
+    return ds.filter((b) => nhaMayHopLe(nm.get(b.id)?.f, cho)).map((b) => ({ ...b, factoryId: nm.get(b.id)?.f ?? null, hostChoPhep: nm.get(b.id)?.h ?? [] }));
   }),
 
   /**

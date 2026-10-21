@@ -58,9 +58,9 @@ beforeAll(async () => {
       return (goc as (...x: unknown[]) => boolean)(c, ...r);
     }) as never));
   }
-  await taoBiMat({ id: `${TT}-tok`, ten: "token ERP", loai: "token", giaTri: TOKEN }, null);
-  await taoBiMat({ id: `${TT}-tk`, ten: "tài khoản MES", loai: "tai-khoan", giaTri: TAI_KHOAN }, null);
-  await taoBiMat({ id: `${TT}-key`, ten: "khoá API", loai: "token", giaTri: API_KEY }, null);
+  await taoBiMat({ id: `${TT}-tok`, ten: "token ERP", loai: "token", giaTri: TOKEN, hostChoPhep: ["dich.gia"] }, null);
+  await taoBiMat({ id: `${TT}-tk`, ten: "tài khoản MES", loai: "tai-khoan", giaTri: TAI_KHOAN, hostChoPhep: ["dich.gia"] }, null);
+  await taoBiMat({ id: `${TT}-key`, ten: "khoá API", loai: "token", giaTri: API_KEY, hostChoPhep: ["dich.gia"] }, null);
 });
 
 afterAll(async () => {

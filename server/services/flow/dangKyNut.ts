@@ -51,7 +51,7 @@ export interface NguCanhChay {
    * Đợt 8.2 — bí mật đã giải mã của node (chỉ khi node có `credentialRef` và loại khai `nhanBiMat`). Động cơ gắn ô này
    * KHÔNG LIỆT KÊ ĐƯỢC (`JSON.stringify`/spread không mang theo); KHÔNG nằm trong `inputs`/`nodes`/biểu thức/bước/sự kiện.
    */
-  biMat?: { giaTri: string; loai: string };
+  biMat?: { giaTri: string; loai: string; /** Đợt 9 (M2) — host bí mật được phép gửi tới. */ hostChoPhep: readonly string[] };
   /** Đợt 9 — bộ kiểm phạm vi (chạy thử: của người gọi). Chạy thật: chủ lượt — xem mig 0410 / bước (a). */
   kiemPhamVi?: BoKiemPhamVi;
   /** Đợt 9 — node AI báo model thực chạy (động cơ / chạy thử gắn; vắng ⇒ bỏ qua). */

@@ -841,7 +841,12 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // đọc `flow.*` (`danhSach` · `chiTiet` · `lichSuChay` · `dongThoiGian` · `danhSachCho` · `biMatDanhSach` — trước chỉ có cổng MOD_AI, đọc luồng/lượt/bí mật
 // của MỌI nhà máy) nay gọi bộ kiểm `phamViLuong` (`idsTrongPhamVi("factory", phamViCua(ctx))`) ⇒ chuyển C → S. Không thủ tục mới (tong 2385). Đo trước
 // (đỏ đúng −6 C / +6 S) / sau. Census riêng: `flowRouterPhamViCensus.test.ts`; hai chiều DB: `flowRouterPhamVi.db.test.ts`.
-const GHIM = { A: 333, B: 8, C: 494, D: 1187, S: 363, tong: 2385 } as const;
+// ★★ 2026-10-21 (AI Local Đợt 9 — M2 host của bí mật) — **D 1187 → 1188 · tong 2385 → 2386 · A/B/C/S unchanged.** One NEW procedure in
+// `server/routers/flowRouter.ts`: mutation `flow.biMatDatHost` (floor `adminProcedure.use(moduleGate("MOD_AI"))`) — sets a Flow credential's
+// allowed-host list (writes only `ai_flow_credentials.hostChoPhep`, never the secret value; guarded by the credential's factory scope)
+// ⇒ D (+1, classified by procedure kind). Measured before (red by exactly +1 D) / after. No baseline row added. `tong` 2386 matches
+// `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 333, B: 8, C: 494, D: 1188, S: 363, tong: 2386 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

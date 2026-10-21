@@ -504,7 +504,12 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   `writeProcedure.use(moduleGate("MOD_AI"))` (chạy thử MỘT node của bản nháp với item mẫu; không tạo lượt/bước/hàng đợi,
 //   node ra ngoài chỉ xem trước) — CÓ cổng MOD_AI từ lượt sinh ra. aiMienTru / ngoaiAiCoCong / mọi SKU khác KHÔNG đổi.
 //   Đo trước (đỏ đúng +1 ở ba ô trên) / sau. `tong` 2385 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2385, beMatAi: 432, aiCoCong: 370, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+// ★★ 2026-10-21 (AI Local Đợt 9 — M2 host của bí mật) — **tong 2385 → 2386 · beMatAi 432 → 433 · aiCoCong 370 → 371.**
+//   Lời khai: `server/routers/flowRouter.ts` (đã ở `FILE_AI_TUONG_MINH`) mọc MỘT mutation `biMatDatHost` trên
+//   `adminProcedure.use(moduleGate("MOD_AI"))` (admin khai / sửa danh sách host của một bí mật Luồng AI; không đụng giá trị) — CÓ cổng
+//   MOD_AI từ lượt sinh ra. aiMienTru / ngoaiAiCoCong / mọi SKU khác KHÔNG đổi. Đo trước (đỏ đúng +1 ở ba ô trên) / sau. `tong` 2386
+//   trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2386, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

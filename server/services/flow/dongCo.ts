@@ -270,7 +270,7 @@ export async function thucThi(def: FlowDefinition, ngu: NguCanhChay): Promise<Ke
   const bienThe = bienTheBiMat(bm.giaTri, bm.loai);
   ghiBienThe(ngu.idempotencyKey, bienThe);
   const nguBm: NguCanhChay = { ...ngu };
-  Object.defineProperty(nguBm, "biMat", { value: Object.freeze({ giaTri: bm.giaTri, loai: bm.loai }), enumerable: false });
+  Object.defineProperty(nguBm, "biMat", { value: Object.freeze({ giaTri: bm.giaTri, loai: bm.loai, hostChoPhep: Object.freeze([...bm.hostChoPhep]) }), enumerable: false });
   try {
     return cheSau(await loai.chay(nut.parameters ?? {}, nguBm), bienThe);
   } catch (e) {

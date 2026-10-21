@@ -23045,7 +23045,15 @@
         "token": "令牌",
         "tai-khoan": "账户（用户:密码）",
         "khac": "其他"
-      }
+      },
+      "host": "允许的主机",
+      "hostChuaKhai": "未声明 — 暂不可用",
+      "suaHost": "编辑",
+      "suaHostTieuDe": "密钥 {{id}} 的允许主机",
+      "hostGoiY": "以逗号分隔的主机名（不含协议、端口或通配符）。密钥只会发送到这些主机。",
+      "luuHost": "保存主机",
+      "daLuuHost": "主机列表已保存",
+      "nhaMay": "工厂"
     },
     "sua": {
       "quayLai": "返回流程列表",

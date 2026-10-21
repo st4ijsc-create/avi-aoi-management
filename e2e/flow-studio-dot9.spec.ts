@@ -231,3 +231,30 @@ test("6 — tạo luồng MỚI: kỹ sư NHIỀU nhà máy phải chọn nhà m
   expect(f2.factoryId).toBe(fx.nhaMayA.id);
   await ctx2.close();
 });
+
+test("7 — bí mật: cột host cho phép; bí mật cũ báo 'chưa khai'; admin khai host; tạo mới BẮT BUỘC có host", async ({ page }) => {
+  await dangNhap(page);
+  await page.goto(`${base}/ai-flows`);
+  const o = page.getByTestId("host-fse2e-bm-cu");
+  await expect(o).toBeVisible({ timeout: 60_000 });
+  await expect(o).toContainText("Chưa khai");
+  await chup(page, "7a-bi-mat-chua-khai-host");
+
+  // tạo mới: thiếu host ⇒ nút Tạo bị khoá
+  const khoi = page.getByTestId("khoi-bi-mat");
+  await khoi.getByRole("textbox").nth(0).fill("fse2e-bm-moi");
+  await khoi.getByRole("textbox").nth(1).fill("Bí mật mới");
+  await khoi.locator('input[type="password"]').fill("gia-tri-bi-mat-1234");
+  await expect(khoi.getByRole("button", { name: "Tạo" })).toBeDisabled();
+  await page.getByTestId("bi-mat-host").fill("dich.gia");
+  await expect(khoi.getByRole("button", { name: "Tạo" })).toBeEnabled();
+
+  // khai host cho bí mật cũ
+  await page.getByTestId("sua-host-fse2e-bm-cu").click();
+  await page.getByTestId("sua-host-o").fill("Erp.Nha-May.vn, api.mes.vn");
+  await page.getByTestId("luu-host").click();
+  await expect(o).toContainText("erp.nha-may.vn, api.mes.vn", { timeout: 20_000 });
+  const [h] = await withTestDb((sql) => sql`SELECT "hostChoPhep" FROM ai_flow_credentials WHERE id = 'fse2e-bm-cu'`);
+  expect(h.hostChoPhep).toEqual(["erp.nha-may.vn", "api.mes.vn"]);
+  await chup(page, "7b-bi-mat-da-khai-host");
+});

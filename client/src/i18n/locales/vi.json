@@ -23017,7 +23017,15 @@
         "token": "Token",
         "tai-khoan": "Tài khoản (tên:mật khẩu)",
         "khac": "Khác"
-      }
+      },
+      "host": "Host cho phép",
+      "hostChuaKhai": "Chưa khai — chưa dùng được",
+      "suaHost": "Khai/sửa",
+      "suaHostTieuDe": "Host cho phép của bí mật {{id}}",
+      "hostGoiY": "Hostname cách nhau bởi dấu phẩy (không scheme, không cổng, không ký tự đại diện). Bí mật chỉ được gửi tới các host này.",
+      "luuHost": "Lưu host",
+      "daLuuHost": "Đã lưu danh sách host",
+      "nhaMay": "Nhà máy"
     },
     "sua": {
       "quayLai": "Về danh sách luồng",
