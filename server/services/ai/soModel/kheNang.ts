@@ -103,8 +103,13 @@ export class KheNang {
     private readonly modelNha: () => string,
   ) {}
 
-  /** Xin chạy một lượt cho `model`; trả hàm nhả (gọi nhiều lần vô hại). */
-  async cho(model: string, muc: MucUuTien, signal?: AbortSignal): Promise<() => void> {
+  /**
+   * Xin chạy một lượt cho `model`; trả hàm nhả (gọi nhiều lần vô hại).
+   * ★ Đợt 9 — `khiDoiKhe`: gọi ĐÚNG một lần nếu lượt này được VÀO sau một lần đổi khe THỰC (soLanDoi tăng) xảy ra trong
+   * lúc nó chờ, và khe đang giữ đúng model của nó (trần đổi khe theo token /v1, `tranDoiKheToken.ts`). Lượt khớp model
+   * đang giữ ngay lúc đến ⇒ không gọi.
+   */
+  async cho(model: string, muc: MucUuTien, signal?: AbortSignal, khiDoiKhe?: () => void): Promise<() => void> {
     if (signal?.aborted) throw new LoiKheNang("KHE_NANG_HUY", "Đã huỷ khi đang chờ khe model.");
     const nghiToi = this.hong.get(model) ?? 0;
     if (nghiToi > Date.now()) {
@@ -128,7 +133,18 @@ export class KheNang {
     if (!this.dangDoiSang && !this.xa && model === this.dangGiu) return this.nhan(model);
 
     return new Promise<() => void>((resolve, reject) => {
-      const n: NguoiCho = { model, muc, tDen: Date.now(), thuTu: this.demThuTu++, nhan: resolve, tuChoi: reject, hetGio: null };
+      const doiLucDen = this.soLanDoi;
+      const nhan = (nha: () => void) => {
+        if (khiDoiKhe && this.soLanDoi > doiLucDen && this.dangGiu === model) {
+          try {
+            khiDoiKhe();
+          } catch {
+            /* bộ đếm không bao giờ được làm hỏng lượt sinh chữ */
+          }
+        }
+        resolve(nha);
+      };
+      const n: NguoiCho = { model, muc, tDen: Date.now(), thuTu: this.demThuTu++, nhan, tuChoi: reject, hetGio: null };
       n.hetGio = setTimeout(() => {
         if (this.roiHang(n)) reject(new LoiKheNang("KHE_NANG_HET_GIO", `Chờ khe model ${model} quá ${Math.round(this.ch.choToiDaMs / 1000)} s.`));
       }, this.ch.choToiDaMs);

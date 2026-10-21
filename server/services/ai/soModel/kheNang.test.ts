@@ -229,3 +229,40 @@ describe("KheNang (Đợt 7.1)", () => {
     kn.dung();
   });
 });
+
+describe("★ Đợt 9 (M4 tranh khe) — `khiDoiKhe`: báo khi lượt được vào SAU một lần đổi khe THỰC xảy ra lúc nó chờ", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("chờ B khi khe giữ A ⇒ đổi sang B ⇒ gọi khiDoiKhe ĐÚNG một lần; lượt khớp model đang giữ ⇒ không gọi", async () => {
+    const { kn } = dung({ cauHinh: { luuTruToiThieuMs: 0 } });
+    const daBao: string[] = [];
+    const pA = kn.cho("A", "tuong-tac", undefined, () => daBao.push("A")).then((nha) => nha());
+    await tien(100);
+    const pB = kn.cho("B", "tuong-tac", undefined, () => daBao.push("B")).then((nha) => nha());
+    await tien(DOI_MS + 5_000);
+    await Promise.all([pA, pB]);
+    expect(daBao).toEqual(["B"]);
+  });
+
+  it("lượt phải XẾP HÀNG (khe đang xả để đổi) nhưng lần đổi HỎNG ⇒ vào lại model cũ KHÔNG qua đổi khe ⇒ không gọi khiDoiKhe", async () => {
+    const { kn } = dung({ cauHinh: { luuTruToiThieuMs: 0 }, hongKhi: (m) => m === "B" });
+    const daBao: string[] = [];
+    const pA1 = kn.cho("A", "tuong-tac").then(async (nha) => {
+      await new Promise((r) => setTimeout(r, 5_000));
+      nha();
+    });
+    await tien(100);
+    const pB = kn.cho("B", "tuong-tac", undefined, () => daBao.push("B")).then((nha) => nha()).catch(() => daBao.push("B-loi"));
+    await tien(100);
+    const pA2 = kn.cho("A", "tuong-tac", undefined, () => daBao.push("A2")).then((nha) => nha());
+    await tien(5_000 + DOI_MS + 5_000);
+    await Promise.all([pA1, pB, pA2]);
+    expect(daBao).toEqual(["B-loi"]);
+  });
+});
