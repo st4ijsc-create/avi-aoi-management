@@ -10,6 +10,8 @@
  *   node scripts/luoi-truoc-gop.mjs --nen main-do.txt     # danh sách tệp đỏ có sẵn trên main (mỗi dòng một tệp)
  *   --ra <thư mục>   nơi ghi báo cáo (mặc định .luoi-truoc-gop/)
  *   --co-vitest "a b" tham số thêm cho vitest
+ *   --khong-tach-db  chạy MỘT lô duy nhất (mặc định: lô thường loại `*.db.test.ts`, rồi lô DB riêng
+ *                    chạy TUẦN TỰ bằng vitest.db.config.ts — loại nhiễu hết kết nối PG / dọn chồng DB dùng chung)
  *
  * Mã thoát: 0 = không còn đỏ THẬT; 1 = còn ít nhất một tệp đỏ khi chạy riêng.
  * Tệp đỏ-chỉ-khi-song-song được liệt kê riêng (nhiễu), KHÔNG làm thoát 1 — nhưng vẫn phải đọc.
@@ -28,6 +30,8 @@ const opt = (name) => {
   return v ?? null;
 };
 const tuJson = opt("--tu-json");
+const khongTachDb = args.includes("--khong-tach-db");
+if (khongTachDb) args.splice(args.indexOf("--khong-tach-db"), 1);
 const nenFile = opt("--nen");
 const outDir = resolve(opt("--ra") ?? ".luoi-truoc-gop");
 const extra = (opt("--co-vitest") ?? "").split(/\s+/).filter(Boolean);
@@ -36,8 +40,13 @@ mkdirSync(outDir, { recursive: true });
 
 const root = process.cwd();
 const rel = (p) => relative(root, p).replaceAll("\\", "/");
-const vitest = (files, jsonOut) =>
-  spawnSync("npx", ["vitest", "run", ...files, ...extra, "--reporter=json", `--outputFile=${jsonOut}`], {
+const SERIAL_CFG = ["vitest.serial.config.ts"];
+// 7 tệp chạy tuần tự riêng (loại khỏi cấu hình mặc định): chạy lại RIÊNG phải dùng cấu hình của chúng.
+const SERIAL_FILES = new Set(
+  [...readFileSync(resolve("vitest.serial.config.ts"), "utf8").matchAll(/"(server\/[^"]+\.db\.test\.ts)"/g)].map((m) => m[1]),
+);
+const vitest = (files, jsonOut, cfg = [], truocFiles = []) =>
+  spawnSync("npx", ["vitest", "run", ...cfg, ...truocFiles, ...files, ...extra, "--reporter=json", `--outputFile=${jsonOut}`], {
     shell: true, stdio: ["ignore", "ignore", "ignore"], cwd: root,
   }).status;
 
@@ -55,15 +64,33 @@ function doTepDo(jsonPath) {
 }
 
 // 1. LÔ
-let batchJson = tuJson;
-if (!batchJson) {
-  batchJson = resolve(outDir, "lo.json");
-  console.log(`[lô] vitest run ${targets.join(" ")}`);
-  vitest(targets, batchJson);
+const lo = { red: new Map(), total: 0, failed: 0 };
+function gop(jsonPath, nhan) {
+  if (!existsSync(jsonPath)) { console.error(`Không có báo cáo JSON của ${nhan} (vitest chết sớm?)`); process.exit(2); }
+  const r = doTepDo(jsonPath);
+  for (const [k, v] of r.red) lo.red.set(k, v);
+  lo.total += r.total ?? 0;
+  lo.failed += r.failed ?? 0;
+  console.log(`[${nhan}] ${r.total} ca, ${r.failed} đỏ, ${r.red.size} tệp đỏ`);
 }
-if (!existsSync(batchJson)) { console.error("Không có báo cáo JSON của lô (vitest chết sớm?)"); process.exit(2); }
-const lo = doTepDo(batchJson);
-console.log(`[lô] ${lo.total} ca, ${lo.failed} đỏ, ${lo.red.size} tệp đỏ`);
+if (tuJson) {
+  gop(tuJson, "lô (JSON có sẵn)");
+} else if (khongTachDb) {
+  const j = resolve(outDir, "lo.json");
+  console.log(`[lô] vitest run ${targets.join(" ")}`);
+  vitest(targets, j);
+  gop(j, "lô");
+} else {
+  const j1 = resolve(outDir, "lo-thuong.json");
+  console.log(`[lô thường] vitest run --exclude **/*.db.test.ts ${targets.join(" ")}`);
+  vitest(targets, j1, [], ["--exclude", "**/*.db.test.ts"]);
+  gop(j1, "lô thường");
+  const j2 = resolve(outDir, "lo-db.json");
+  console.log(`[lô DB, tuần tự] vitest run --config vitest.db.config.ts ${targets.join(" ")}`);
+  vitest(targets, j2, ["--config", "vitest.db.config.ts"]);
+  gop(j2, "lô DB");
+}
+console.log(`[tổng] ${lo.total} ca, ${lo.failed} đỏ, ${lo.red.size} tệp đỏ`);
 
 // 2. CHẠY RIÊNG từng tệp đỏ
 const nen = nenFile && existsSync(nenFile)
@@ -72,7 +99,7 @@ const rows = [];
 for (const [file, info] of lo.red) {
   const j = resolve(outDir, "rieng-" + file.replace(/[\\/]/g, "_") + ".json");
   console.log(`[riêng] ${file}`);
-  vitest([file], j);
+  vitest([file], j, SERIAL_FILES.has(file) ? ["--config", ...SERIAL_CFG] : []);
   let again = "?";
   let msg = info.msg;
   if (existsSync(j)) {
