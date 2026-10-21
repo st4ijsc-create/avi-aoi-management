@@ -204,10 +204,37 @@ describe.skipIf(!DB_URL)("dải KPI — bốn nguồn còn lại trên CSDL TH�
   });
 
   it("oee — ÂM đối xứng: B ra con số của RIÊNG B (chứng minh không phải 'A tình cờ luôn thắng')", async () => {
+    // ⚠ PHỤ THUỘC ĐỒNG HỒ THẬT (đo 2026-10-21): hàng 'offline' của machB là hàng CUỐI ⇒ `trangThaiTapMay` kéo khoảng offline
+    // của nó tới `NOW()` LÚC TRUY VẤN (db/machine.ts: COALESCE(next_ts, NOW())). Tức A = 3600 / (3600 + offline_sec) với
+    // offline_sec = 3600 + δ, δ = thời gian từ lúc gieo tới lúc gọi (ca này chạy sau nhiều ca khác, dưới tải δ vượt 0,72 s ⇒
+    // 49,99 thay vì 50). Mã sản phẩm ĐÚNG (khoảng mở tính tới hiện tại); test sai khi ghim "đúng 50" trên một đồng hồ chạy.
+    // Sửa: dựng ORACLE từ chính đồng hồ DB — đo NOW() ngay TRƯỚC và ngay SAU lượt gọi, suy A kỳ vọng theo hai mốc, rồi đòi A nằm
+    // trong [A(sau), A(trước)] (làm tròn 2 chữ số như sản phẩm). Không nới sai số: khoảng chỉ rộng bằng thời gian lượt gọi.
+    const mocB = async () => {
+      const [r] = await sql`
+        SELECT EXTRACT(EPOCH FROM (off."timestamp" - onl."timestamp"))::float AS online_sec,
+               EXTRACT(EPOCH FROM (NOW() - off."timestamp"))::float AS offline_sec
+        FROM machine_status_logs onl, machine_status_logs off
+        WHERE onl."machineId" = ${ids.machB} AND onl.status = 'online'
+          AND off."machineId" = ${ids.machB} AND off.status = 'offline'`;
+      return { onl: Number(r!.online_sec), off: Number(r!.offline_sec) };
+    };
+    const truoc = await mocB();
     const b = await kpi(U_B, "engineer");
+    const sau = await mocB();
     expect(b.oee.available).toBe(true);
-    // machB: A=50% (online 1h/2h) · P=min(1, 18×100/3600)=50% · Q=50% ⇒ OEE=12,5%.
-    expect(b.oee.value).toEqual({ a: 50, p: 50, q: 50, oee: 12.5 });
+    const r2 = (x: number) => Math.round(x * 100) / 100;
+    const aTu = r2((100 * sau.onl) / (sau.onl + sau.off)); // offline lớn hơn ⇒ A nhỏ hơn
+    const aDen = r2((100 * truoc.onl) / (truoc.onl + truoc.off));
+    const v = b.oee.value!;
+    expect(v.a, `A của machB phải nằm trong [${aTu}; ${aDen}] (3600 s online / (3600 + offline tới NOW()))`).toBeGreaterThanOrEqual(aTu);
+    expect(v.a).toBeLessThanOrEqual(aDen);
+    // machB: P=min(1, 18×100/3600)=50% · Q=50% (không phụ thuộc đồng hồ) · OEE = A×P×Q.
+    expect(v.p).toBe(50);
+    expect(v.q).toBe(50);
+    expect(Math.abs(v.oee! - (v.a! * 0.25))).toBeLessThanOrEqual(0.01);
+    // …và vẫn KHÁC số của A (100/50/100/50): đây mới là ý của ca âm đối xứng.
+    expect(v.oee).not.toBe(50);
   });
 
   it("oee — DƯƠNG admin: mẫu của admin KHÔNG bằng mẫu của A cũng không bằng của B", async () => {
