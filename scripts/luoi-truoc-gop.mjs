@@ -40,6 +40,12 @@ const NANG = [
   { tep: "server/services/flow/nut/ma.docker.test.ts", ly: "ca vòng lặp vô hạn phải hết giờ ≤ 12 s gồm khởi/dọn container docker; 12–14 s khi lô tải" },
   { tep: "server/services/edge/edgeExecutionAgent.dot10.test.ts", ly: "đếm lệnh theo thời điểm trên đồng hồ thật (130 vs 131 dưới tải); xanh khi chạy riêng" },
 ];
+/**
+ * KHÔNG TÁI HIỆN được (đo 2026-10-21): `server/services/ot/drivers/opcuaDriver.secure.sim.test.ts` từng đỏ MỘT lần trong lô thường đầy đủ với
+ * "BadCertificateUntrusted"; chạy riêng, chạy theo nhóm, chạy tải song song và 3 lượt lô
+ * thường (19k ca) đều xanh; test đã cô lập PKI bằng mkdtemp riêng. Nghi: độ trễ trình theo dõi PKI > vòng thử lại 15 s khi máy đang tải.
+ * Chưa phải tệp NẶNG (không có ngưỡng sản phẩm đo đồng hồ) nên KHÔNG đưa vào --nang; nếu đỏ trong lô, bước "chạy riêng" tự phân loại.
+ */
 const nang = args.includes("--nang");
 if (nang) args.splice(args.indexOf("--nang"), 1);
 const khongTachDb = args.includes("--khong-tach-db");
