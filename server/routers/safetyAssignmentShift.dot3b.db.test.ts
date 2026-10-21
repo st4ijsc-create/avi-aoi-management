@@ -488,9 +488,14 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
       await setTz(fx.facIn, "Asia/Ho_Chi_Minh");
       await setTz(fx.facOut, "Asia/Ho_Chi_Minh");
       const distinct = (await sql`SELECT DISTINCT timezone FROM factories WHERE "isActive" = true`) as unknown as Array<{ timezone: string | null }>;
-      expect(distinct, "oracle: _test phải đồng nhất múi giờ để ô dương có nghĩa").toEqual([{ timezone: "Asia/Ho_Chi_Minh" }]);
+      // `_test` dùng chung: tệp/lượt khác có thể để lại nhà máy đang hoạt động mang múi giờ lạ (đã thấy "Mars/Olympus_Mons" và NULL) —
+      // sản phẩm đọc MỌI nhà máy đang hoạt động nên ta KHÔNG thể lọc theo hàng của riêng tệp này. Kỳ vọng đi theo oracle: đồng
+      // nhất ⇒ ô dương (mọi ca dùng múi đó); không đồng nhất ⇒ ô ÂM (ca toàn hệ thống null, ca của riêng tệp vẫn theo nhà máy nó).
+      const dongNhat = distinct.length === 1 && distinct[0]!.timezone === "Asia/Ho_Chi_Minh";
       const r = (await (await asAdmin()).assignableShifts({})) as Row[];
-      expect([tzOf(r, fx.shiftIn), tzOf(r, fx.shiftOut), tzOf(r, fx.shiftGlobal)]).toEqual(["Asia/Ho_Chi_Minh", "Asia/Ho_Chi_Minh", "Asia/Ho_Chi_Minh"]);
+      expect([tzOf(r, fx.shiftIn), tzOf(r, fx.shiftOut)]).toEqual(["Asia/Ho_Chi_Minh", "Asia/Ho_Chi_Minh"]);
+      if (dongNhat) expect(tzOf(r, fx.shiftGlobal)).toBe("Asia/Ho_Chi_Minh");
+      else expect(tzOf(r, fx.shiftGlobal), "oracle: _test lệch múi giờ ⇒ ca toàn hệ thống phải null (không đoán)").toBeNull();
       await setTz(fx.facOut, "America/New_York");
       const r2 = (await (await asAdmin()).assignableShifts({})) as Row[];
       expect(tzOf(r2, fx.shiftGlobal)).toBeNull();
