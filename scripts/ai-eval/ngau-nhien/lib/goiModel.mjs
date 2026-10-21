@@ -29,13 +29,18 @@ export function taoGoiModel(o) {
   };
 
   async function chatRaw(sys, user) {
+    return chatRawTin([...(sys ? [{ role: "system", content: sys }] : []), { role: "user", content: user }]);
+  }
+
+  /** Như `chatRaw` nhưng nhận CẢ lịch sử hội thoại (vòng sửa theo lỗi biên dịch — `mot-luot.mjs --vong-sua`). */
+  async function chatRawTin(messages) {
     const t0 = Date.now();
     const res = await fetch(rawUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...(o.model ? { model: o.model } : {}),
-        messages: [...(sys ? [{ role: "system", content: sys }] : []), { role: "user", content: user }],
+        messages,
         ...kwargs(), ...sampling(), max_tokens: o.maxTokens, stream: false,
       }),
     });
@@ -113,7 +118,7 @@ export function taoGoiModel(o) {
     if (pipeline) await thu(`${base}/`, `server ${base}`);
   }
 
-  return { chatRaw, hoanThanhRaw, chatPipeline, kiemSong };
+  return { chatRaw, chatRawTin, hoanThanhRaw, chatPipeline, kiemSong };
 }
 
 /** Đọc tuỳ chọn gọi model từ argv (cùng tên cờ với codegen-chay-duoc/run.mjs). */

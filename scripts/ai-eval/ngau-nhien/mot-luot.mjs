@@ -23,6 +23,7 @@ import { trichTep, dungCauTraLoiGia } from "./lib/trichTep.mjs";
 import { taoCauHoiMotLuot, SYS_MOT_LUOT } from "./lib/cauHoi.mjs";
 import { bangTomTat, trungVi } from "./lib/baoCao.mjs";
 import { taoGoiModel, tuyChonTuArgs } from "./lib/goiModel.mjs";
+import { chayST } from "./lib/st/chayST.mjs";
 
 const args = process.argv.slice(2);
 const arg = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
@@ -38,6 +39,12 @@ const SO_LUOT = Math.max(1, Number(arg("--luot", 1)));
 const LABEL = arg("--label", `NN-a-${CONFIG}-1`);
 const SONG_SONG_CHAM = Math.max(1, Number(arg("--song-song-cham", 2)));
 const WORK = `${ROOT}/tmp/ngau-nhien-work/${LABEL}-${process.pid}`;
+/**
+ * ★★ Đợt 7.3+ (2026-10-21) — `--vong-sua N` (chỉ config raw, chỉ bài `st`): sau câu trả lời, BIÊN DỊCH RIÊNG mã nguồn (src +
+ * hàm `main` rỗng — KHÔNG có test nào, không lộ test hiển thị/ẩn) bằng RuSTy; lỗi biên dịch ⇒ gửi lại model trong CÙNG hội
+ * thoại, tối đa N vòng. Đúng cơ chế node `ai.sinh-ma` của Luồng AI ⇒ A/B đo tác dụng của vòng kiểm biên dịch.
+ */
+const VONG_SUA = Math.max(0, Number(arg("--vong-sua", 0)));
 
 const DS = chonPhanTang(KHO_LOC, { seed: SEED, n: N });
 if (!DS.length) { console.error("Không có bài nào (kho rỗng hoặc --only không khớp)."); process.exit(2); }
@@ -91,7 +98,7 @@ async function cham(b, luot, g) {
     duoiRa: kq.dat ? undefined : kq.duoiRa.slice(-1500),
     totalMs: g.totalMs ?? null, ttftMs: g.ttftMs ?? null, promptTok: g.promptTok ?? null, genTok: g.genTok ?? null,
     finish: g.finish ?? null, cut: !!g.cut, evs: g.evs ?? null, err: g.err ?? null, chamMs: kq.ms,
-    tep: tr.tep, vanBanGoc: GOI_MODEL ? (g.text || "").slice(0, 40000) : undefined,
+    tep: tr.tep, vanBanGoc: GOI_MODEL ? (g.text || "").slice(0, 40000) : undefined, vongSua: g.vongSua,
   };
   if (tr.thieu.length && !row.lyDo.includes("THIEU_TEP")) row.lyDo = ["THIEU_TEP:" + tr.thieu.join("+"), ...row.lyDo];
   rows.push(row);
@@ -99,12 +106,51 @@ async function cham(b, luot, g) {
     `${row.cut ? " · CỤT" : ""}${row.genTok ? ` · ${row.genTok} tok` : ""}${row.totalMs ? ` · ${row.totalMs} ms` : ""}`);
 }
 
+/** Biên dịch CHỈ `src/*.st` của câu trả lời (+ `main` rỗng). Trả danh sách lỗi (rỗng = biên dịch được). */
+async function loiBienDichST(b, text, nhan) {
+  const tr = trichTep(text, b);
+  const dir = `${WORK}/_vong/${b.id}-${nhan}`;
+  xoaThuMuc(dir);
+  fs.mkdirSync(`${dir}/src`, { recursive: true });
+  const tep = [];
+  for (const [rel, nd] of Object.entries(tr.tep)) {
+    if (!/^src\/[^/]+\.st$/i.test(rel)) continue;
+    fs.writeFileSync(`${dir}/${rel}`, nd);
+    tep.push({ ten: rel, duong: `${dir}/${rel}` });
+  }
+  fs.writeFileSync(`${dir}/_main.st`, "FUNCTION main : DINT\n    main := 0;\nEND_FUNCTION\n");
+  tep.push({ ten: "_main.st", duong: `${dir}/_main.st` });
+  if (tr.thieu.length) return [`thiếu tệp: ${tr.thieu.join(", ")} — trả về ĐỦ mọi tệp, mỗi tệp một khối mã có dòng \`// tệp: …\``];
+  const r = await chayST({ tep, thuMucViec: `${WORK}/_st-jobs`, giayChay: 5 });
+  xoaThuMuc(dir);
+  if (r.giaiDoan !== "bien-dich") return [];
+  return r.chanDoan.filter((d) => d.mucDo === "error").slice(0, 15).map((d) => `${d.tep ?? "?"}:${d.dong ?? "?"}:${d.cot ?? "?"} ${d.ma ?? ""} ${d.thongDiep}`.trim());
+}
+
+async function sinhCoVongSua(b) {
+  const tin = [{ role: "system", content: SYS_MOT_LUOT }, { role: "user", content: taoCauHoiMotLuot(b) }];
+  let g = await goi.chatRawTin(tin);
+  const vet = { vong: 0, loiTungVong: [] };
+  for (let k = 1; k <= VONG_SUA && !g.err && g.text; k++) {
+    const loi = await loiBienDichST(b, g.text, `${k}-${Date.now()}`);
+    vet.loiTungVong.push(loi.length);
+    if (!loi.length) break;
+    tin.push({ role: "assistant", content: g.text });
+    tin.push({ role: "user", content: `Trình biên dịch IEC 61131-3 (RuSTy, phương ngữ CODESYS) báo lỗi:\n${loi.map((l) => `- ${l}`).join("\n")}\n\nSửa các lỗi trên và trả lại ĐẦY ĐỦ mọi tệp theo đúng định dạng như trước (mỗi tệp một khối mã có dòng \`// tệp: …\`).` });
+    const g2 = await goi.chatRawTin(tin);
+    vet.vong = k;
+    g = { ...g2, totalMs: (g.totalMs ?? 0) + (g2.totalMs ?? 0), genTok: (g.genTok ?? 0) + (g2.genTok ?? 0) };
+  }
+  return { ...g, vongSua: vet };
+}
+
 for (const b of DS) {
   for (let luot = 1; luot <= SO_LUOT; luot++) {
     process.stderr.write(`▶ ${b.id} (${b.lang}/${b.muc}) lượt ${luot} … sinh\n`);
     let g;
     try {
-      g = CONFIG === "raw" ? await goi.chatRaw(SYS_MOT_LUOT, taoCauHoiMotLuot(b)) : CONFIG === "pipeline" ? await goi.chatPipeline(taoCauHoiMotLuot(b)) : genGia(b);
+      g = CONFIG === "raw" && VONG_SUA > 0 && b.kieu === "st" ? await sinhCoVongSua(b)
+        : CONFIG === "raw" ? await goi.chatRaw(SYS_MOT_LUOT, taoCauHoiMotLuot(b)) : CONFIG === "pipeline" ? await goi.chatPipeline(taoCauHoiMotLuot(b)) : genGia(b);
     } catch (e) {
       g = { text: "", err: String(e).slice(0, 300) };
     }
@@ -129,7 +175,7 @@ fs.mkdirSync(dirBc, { recursive: true });
 fs.writeFileSync(`${dirBc}/${LABEL}.json`, JSON.stringify({
   label: LABEL, duong: "a-mot-luot", config: CONFIG, seed: SEED, n: N, soLuot: SO_LUOT, luc: new Date().toISOString(),
   base: CONFIG === "pipeline" ? TUY_CHON.base : null, rawUrl: CONFIG === "raw" ? TUY_CHON.rawUrl : null, maxTokens: GOI_MODEL ? TUY_CHON.maxTokens : null,
-  khongNghi: co("--khong-nghi"), sampling: arg("--sampling", "hien-tai"),
+  khongNghi: co("--khong-nghi"), sampling: arg("--sampling", "hien-tai"), vongSua: VONG_SUA,
   bai: DS.map((b) => ({ id: b.id, lang: b.lang, muc: b.muc, vanTay: b.vanTay })), bang, rows,
 }, null, 1));
 console.log(` báo cáo: ${path.join(dirBc, `${LABEL}.json`)}`);
