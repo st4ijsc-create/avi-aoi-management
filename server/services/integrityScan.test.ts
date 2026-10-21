@@ -39,17 +39,19 @@ const ids = {
   product: 0, pointDef: 0, inspection: 0, orphanResult: 0,
 };
 
-const apply0180 = async () => {
-  const file = fs.readFileSync(path.join(root, "drizzle", "0180_integrity_enforce_fk_unique.sql"), "utf-8");
-  await sql.unsafe(file);
-};
-
 describe.skipIf(!DB_URL)("W3-A master-data integrity (0179/0180 + scanner + repair)", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
-    // Apply both migrations (idempotent; safe on a dirty clone).
-    await sql.unsafe(fs.readFileSync(path.join(root, "drizzle", "0179_integrity_orphan_scan.sql"), "utf-8"));
-    await apply0180();
+    // 0179/0180 phải ĐÃ có trong DB test (clone của dev: `node scripts/setup-test-db.mjs`). avi_app là vai
+    // least-privilege (mig 0224) KHÔNG được CREATE/ALTER — áp migration từ trong test chỉ nổ "permission
+    // denied for schema public". Thiếu ⇒ FAIL nói rõ lệnh dựng, không skip (skip = xanh giả).
+    const [pre] = await sql`
+      SELECT to_regclass('public.integrity_scan_results') AS rpt,
+             (SELECT count(*)::int FROM pg_indexes WHERE indexname = 'uq_pm_mappings_pair') AS uq,
+             (SELECT count(*)::int FROM pg_constraint WHERE conname = 'fk_machines_station') AS fk`;
+    if (!pre.rpt || !pre.fk) {
+      throw new Error("DB test thiếu migration 0179/0180 (integrity_scan_results / fk_machines_station) — chạy: node scripts/setup-test-db.mjs");
+    }
 
     // Scratch hierarchy chain with unique codes (clone may enforce global codes).
     const [f] = await sql`INSERT INTO factories (code, name) VALUES (${"F-" + RUN}, 'W3A test factory') RETURNING id`;
@@ -70,7 +72,6 @@ describe.skipIf(!DB_URL)("W3-A master-data integrity (0179/0180 + scanner + repa
     // Remove scratch data (children first — the FKs are real now). Best-effort.
     try {
       if (ids.orphanResult) await sql`DELETE FROM measurement_results WHERE id = ${ids.orphanResult}`;
-      if (ids.inspection) await sql`DELETE FROM product_inspections WHERE id = ${ids.inspection}`;
       if (ids.pointDef) await sql`DELETE FROM measurement_point_defs WHERE id = ${ids.pointDef}`;
       if (ids.product) await sql`DELETE FROM product_models WHERE id = ${ids.product}`; // mappings cascade
       if (ids.machine) await sql`DELETE FROM machines WHERE id = ${ids.machine}`;
@@ -78,8 +79,6 @@ describe.skipIf(!DB_URL)("W3-A master-data integrity (0179/0180 + scanner + repa
       if (ids.line) await sql`DELETE FROM production_lines WHERE id = ${ids.line}`;
       if (ids.workshop) await sql`DELETE FROM workshops WHERE id = ${ids.workshop}`;
       if (ids.factory) await sql`DELETE FROM factories WHERE id = ${ids.factory}`;
-      // Restore any constraint the orphan-seeding test dropped.
-      await apply0180();
     } finally {
       await sql.end();
     }
@@ -134,38 +133,36 @@ describe.skipIf(!DB_URL)("W3-A master-data integrity (0179/0180 + scanner + repa
     await sql`DELETE FROM product_machine_mappings WHERE "productModelId" = ${ids.product} AND "machineId" = ${ids.machine}`;
   });
 
-  it("scanner detects a seeded orphan (defectCatalogId, M11) and persists a snapshot", async () => {
-    // The SET NULL FK (if present) would block seeding — drop it to simulate the
-    // unenforced/hypertable world the weekly scanner exists for. afterAll re-applies 0180.
-    await sql`ALTER TABLE measurement_results DROP CONSTRAINT IF EXISTS fk_measurement_results_defect_catalog`;
+  it("scanner detects a seeded orphan (measurement_results.inspectionId, hypertable ⇒ no FK) and persists a snapshot", async () => {
+    // measurement_results là hypertable: 0180 KHÔNG tạo FK inspectionId ⇒ đây đúng là thế giới "không cưỡng chế" mà
+    // máy quét hằng tuần sinh ra để canh, và chèn mồ côi KHÔNG cần DDL (avi_app không đủ quyền DROP CONSTRAINT trên
+    // hypertable). Mồ côi KHÔNG trỏ tới product_inspections nào ⇒ không để lại hàng WORM. Đo trước/sau để chắc
+    // ĐÚNG MỘT mồ côi mới được phát hiện (DB test có thể đã có mồ côi từ các lượt cũ — mẫu 20 hàng đầu không tin được).
+    const KEY = "fk:measurement_results.inspectionId->product_inspections.id";
+    const truoc = (await runIntegrityScanNow("manual")).results.find((r) => r.key === KEY);
+    expect(truoc?.degraded).toBe(false);
 
     const [pd] = await sql`
       INSERT INTO measurement_point_defs ("productModelId", code, name, "measurementType", "positionX", "positionY")
       VALUES (${ids.product}, ${"PD-" + RUN}, 'W3A test point', 'VISUAL', 0, 0) RETURNING id`;
     ids.pointDef = pd.id;
-    const [insp] = await sql`
-      INSERT INTO product_inspections ("machineId", "serialNumber", "overallResult", "originalResult", "inspectionTime")
-      VALUES (${ids.machine}, ${"SN-" + RUN}, 'NG', 'NG', now()) RETURNING id`;
-    ids.inspection = insp.id;
+    ids.inspection = 2_000_000_000 + Math.floor(Math.random() * 100_000_000); // id không tồn tại trong product_inspections
     const [mr] = await sql`
-      INSERT INTO measurement_results ("inspectionId", "pointDefId", result, "defectCatalogId")
-      VALUES (${ids.inspection}, ${ids.pointDef}, 'NG', 2147480000) RETURNING id`;
+      INSERT INTO measurement_results ("inspectionId", "pointDefId", result)
+      VALUES (${ids.inspection}, ${ids.pointDef}, 'NG') RETURNING id`;
     ids.orphanResult = mr.id;
 
     const run = await runIntegrityScanNow("manual");
     expect(run.skipped).toBeFalsy();
     expect(run.results.length).toBe(INTEGRITY_RELATIONSHIPS.length);
-    const defectScan = run.results.find(
-      (r) => r.key === "fk:measurement_results.defectCatalogId->defect_catalog.id",
-    );
+    const defectScan = run.results.find((r) => r.key === KEY);
     expect(defectScan?.degraded).toBe(false);
-    expect(defectScan!.violationCount).toBeGreaterThanOrEqual(1);
-    expect(JSON.stringify(defectScan!.samples)).toContain(String(ids.orphanResult));
+    expect(defectScan!.violationCount).toBe(truoc!.violationCount + 1);
 
     // Snapshot persisted for the admin router / trend history.
     const [persisted] = await sql`
       SELECT count(*)::int AS n FROM integrity_scan_results
-      WHERE "scanKey" = 'fk:measurement_results.defectCatalogId->defect_catalog.id'
+      WHERE "scanKey" = 'fk:measurement_results.inspectionId->product_inspections.id'
         AND "scanSource" = 'manual' AND "violationCount" >= 1`;
     expect(Number(persisted.n)).toBeGreaterThanOrEqual(1);
   }, 120_000);
@@ -187,8 +184,8 @@ describe.skipIf(!DB_URL)("W3-A master-data integrity (0179/0180 + scanner + repa
 
   it("dry-run really did not touch the seeded orphan", async () => {
     const [row] = await sql`
-      SELECT "defectCatalogId" FROM measurement_results WHERE id = ${ids.orphanResult}`;
-    expect(Number(row.defectCatalogId)).toBe(2147480000);
+      SELECT "inspectionId" FROM measurement_results WHERE id = ${ids.orphanResult}`;
+    expect(Number(row.inspectionId)).toBe(ids.inspection);
   });
 
   it("scan-key contract: every service relationship exists in the repair script (and counts match 0179)", () => {

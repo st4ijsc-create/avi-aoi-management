@@ -32,7 +32,8 @@
  *   mà người dùng en/zh sẽ đọc bằng tiếng Việt.
  */
 import { describe, it, expect } from "vitest";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { demHinhDangBa } from "../../../scripts/viStringScan.mjs";
@@ -333,5 +334,41 @@ describe("F12 — parity FILE-VỚI-FILE (bổ sung cho i18n-check.mjs, không t
     const vi = doc("vi"), en = doc("en"), zh = doc("zh");
     const thieu = Object.keys(vi).filter((k) => en[k] === undefined || zh[k] === undefined);
     expect(thieu).toEqual([]);
+  });
+});
+
+describe("F12 — thiết bị đo hình-3: ĐỘT BIẾN hai chiều cho hai miễn trừ thêm 2026-10-21", () => {
+  // Dựng một cây `client/src` giả trong thư mục tạm rồi cho CHÍNH bộ đếm quét — không dựa vào mã thật của repo.
+  const dem = (noiDung: string): { total: number; chamTran: number } => {
+    const goc = mkdtempSync(join(tmpdir(), "vi-scan-"));
+    try {
+      writeFileSync(join(goc, "Gia.tsx"), noiDung);
+      const r = demHinhDangBa(goc);
+      return { total: r.total, chamTran: r.chamTran };
+    } finally {
+      rmSync(goc, { recursive: true, force: true });
+    }
+  };
+
+  it("console.* (lập trình viên) KHÔNG bị đếm — một dòng lẫn nhiều dòng", () => {
+    expect(dem('export const f = () => { console.error("Lỗi tải bản vẽ", 1); };\n').total).toBe(0);
+    expect(dem('export const f = () => {\n  console.warn(\n    `Cảnh báo vi phạm ${1}`,\n    "Chỉ MỘT canvas",\n  );\n};\n').total).toBe(0);
+  });
+
+  it("…nhưng chuỗi giao diện THẬT ngay sau console nhiều dòng VẪN bị đếm (miễn trừ không nuốt đuôi file)", () => {
+    const nd = 'export const f = () => {\n  console.warn(\n    `Cảnh báo ${1}`,\n  );\n  return "Tầng trệt";\n};\n';
+    expect(dem(nd).total).toBe(1);
+  });
+
+  it("chuỗi trần ngoài console VẪN bị đếm (đột biến: bỏ miễn trừ ⇒ ca này không đổi, bật miễn trừ thừa ⇒ ĐỎ)", () => {
+    expect(dem('export const a = "Tầng trệt";\n').total).toBe(1);
+    expect(dem('export const b = { nhan: s.ten || `Tầng ${s.capSo}` };\n').total).toBe(1);
+  });
+
+  it("trần theo dõi `t(` nhiều dòng: một lời gọi HỢP LỆ dài 20 dòng không chạm trần; một ngoặc LẠC thì chạm", () => {
+    const tham = Array.from({ length: 18 }, (_, i) => `    p${i}: ${i},`).join("\n");
+    expect(dem(`export const x = t(\n  "a.b.c",\n  "Mặc định",\n  {\n${tham}\n  },\n);\n`).chamTran).toBe(0);
+    const lac = 't(\n  "a.b.c",\n  "Mặc định",\n  {\n' + Array.from({ length: 60 }, (_, i) => `    p${i}: (${i},`).join("\n") + "\n";
+    expect(dem(lac).chamTran).toBeGreaterThanOrEqual(1);
   });
 });

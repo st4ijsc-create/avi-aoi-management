@@ -21899,6 +21899,8 @@
     "guiYeuCauDuyetLoiMotPhan": "Gửi được {{thanhCong}}/{{tong}} yêu cầu duyệt — {{soLoi}} yêu cầu lỗi, thử lại sau"
   },
   "twin3d": {
+    "nhanTang": "Tầng {{n}}",
+    "tangTret": "Tầng trệt",
     "may": {
       "chuaGanNhaMay": "Tài khoản của bạn chưa được gán nhà máy nào — liên hệ quản trị để được gán, rồi mở lại máy này.",
       "idKhongHopLe": "Không đọc được máy từ đường dẫn",

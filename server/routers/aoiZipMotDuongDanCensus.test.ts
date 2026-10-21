@@ -84,6 +84,16 @@ const THU_MUC_BO_QUA = new Set([
   "tmp",
 ]);
 
+/**
+ * Tệp có `zip.file(<tên>)` nhưng KHÔNG đọc gói ảnh AOI — mỗi mục nêu zip nó đọc là zip gì.
+ * (Khác `THU_MUC_BO_QUA`: ở đây là TỆP cụ thể, khai tường minh, và có ca bên dưới canh nội dung.)
+ *  · `scripts/ai-kb/api-ref/dung-chi-muc-api.mjs` — dựng chỉ mục API cục bộ: đọc `lib/src.zip` CỦA JDK
+ *    (`<mod>/module-info.java`, `*.java`). Không phải gói ảnh AOI; "tên trần" ở đó là đường dẫn trong JDK.
+ */
+const TEP_ZIP_KHAC_AOI: Readonly<Record<string, RegExp>> = {
+  "scripts/ai-kb/api-ref/dung-chi-muc-api.mjs": /src\.zip/,
+};
+
 const DUOI_MA_NGUON = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
 
 /** Liệt kê mọi tệp MÃ NGUỒN SẢN XUẤT trong repo (bỏ `*.test.*`, `*.d.ts`). */
@@ -111,6 +121,7 @@ function lietKeTepSanXuat(thuMuc: string, ra: string[] = []): string[] {
     // không thêm một điểm tra ảnh nào. §"nhìn thấy điểm THẬT" ở dưới là cầu chì:
     // nếu ngưỡng này có ngày nuốt mất một tệp thật, ca đó đỏ trước.
     if (st.size > 1024 * 1024) continue;
+    if (path.relative(GOC_REPO, p).replace(/\\/g, "/") in TEP_ZIP_KHAC_AOI) continue;
     ra.push(p);
   }
   return ra;
@@ -289,6 +300,17 @@ describe("I-3 — census TOÀN REPO: MỘT đường dẫn duy nhất cho ảnh 
       TEP.some((t) => t.replace(/\\/g, "/").endsWith("scripts/ai/backfill-ai-data.mjs")),
       "và cụ thể phải quét TỚI tệp mốc — không chỉ 'có quét .mjs ở đâu đó'",
     ).toBe(true);
+  });
+
+  it("miễn trừ TEP_ZIP_KHAC_AOI còn ĐÚNG lý do — tệp vẫn tồn tại và vẫn đọc zip KHÁC (không phải gói ảnh AOI)", () => {
+    for (const [tep, dauHieu] of Object.entries(TEP_ZIP_KHAC_AOI)) {
+      const p = path.join(GOC_REPO, tep);
+      expect(existsSync(p), `${tep} đã biến mất/đổi tên ⇒ gỡ khỏi TEP_ZIP_KHAC_AOI`).toBe(true);
+      const nd = readFileSync(p, "utf8");
+      expect(dauHieu.test(nd), `${tep} không còn đọc zip đã khai ⇒ miễn trừ hết lý do`).toBe(true);
+      expect(/images\//.test(nd), `${tep} nhắc "images/" ⇒ có thể đã đọc ảnh gói AOI, hãy tháo miễn trừ`).toBe(false);
+    }
+    expect(TEP.some((t) => path.relative(GOC_REPO, t).replace(/\\/g, "/") in TEP_ZIP_KHAC_AOI)).toBe(false);
   });
 
   it("census PHẢI nhìn thấy các điểm tra ảnh THẬT (chống bộ dò không khớp gì)", () => {

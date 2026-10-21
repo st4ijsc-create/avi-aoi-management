@@ -22,6 +22,7 @@ import { TRPCError } from "@trpc/server";
 // ── db (index) mock — only the helpers the router calls. Hoisted so the (also
 // hoisted) vi.mock factory can reference it. ──
 const h = vi.hoisted(() => ({
+  phaiDoiMatKhau: vi.fn(async () => false), // đọc bởi middleware gốc server/_core/trpc.ts (requireUser)
   productVariantsTableAvailable: vi.fn(async () => true),
   getVariantsByModel: vi.fn(async () => [] as any[]),
   getVariantById: vi.fn(async () => undefined as any),

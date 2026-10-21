@@ -105,8 +105,7 @@ describe.skipIf(!ready)("defectDispositionService — repair loop (0183, real DB
   afterAll(async () => {
     if (!db) return;
     await db.delete(defectDispositions).where(like(defectDispositions.serialNumber, `${PREFIX}%`));
-    await db.delete(auditLogs).where(like(auditLogs.entityName, `${PREFIX}%`));
-    await db.delete(productInspections).where(like(productInspections.serialNumber, `${PREFIX}%`));
+    // product_inspections / audit_logs là bảng WORM (mig 0224/0279): avi_app KHÔNG có DELETE ⇒ KHÔNG dọn. Hàng sót vô hại — mọi truy vấn lọc theo tiền tố/serial riêng của lượt chạy.
   });
 
   it("create: validates the inspection, denormalises serial, opens at 'open', audit-logs", async () => {
@@ -325,8 +324,7 @@ describe.skipIf(!ready)("repair-station service additions (real DB, W8-C)", () =
   afterAll(async () => {
     if (!db) return;
     await db.delete(defectDispositions).where(like(defectDispositions.serialNumber, `${PREFIX8}%`));
-    await db.delete(auditLogs).where(like(auditLogs.entityName, `${PREFIX8}%`));
-    await db.delete(productInspections).where(like(productInspections.serialNumber, `${PREFIX8}%`));
+    // product_inspections / audit_logs là bảng WORM (mig 0224/0279): avi_app KHÔNG có DELETE ⇒ KHÔNG dọn. Hàng sót vô hại — mọi truy vấn lọc theo tiền tố/serial riêng của lượt chạy.
   });
 
   async function seed8(serial: string, time = new Date()) {
@@ -415,8 +413,7 @@ describe.skipIf(!ready)("defectDisposition.transition router (repair-bench RBAC,
   afterAll(async () => {
     if (!db) return;
     await db.delete(defectDispositions).where(like(defectDispositions.serialNumber, `${PREFIX_RT}%`));
-    await db.delete(auditLogs).where(like(auditLogs.entityName, `${PREFIX_RT}%`));
-    await db.delete(productInspections).where(like(productInspections.serialNumber, `${PREFIX_RT}%`));
+    // product_inspections / audit_logs là bảng WORM (mig 0224/0279): avi_app KHÔNG có DELETE ⇒ KHÔNG dọn. Hàng sót vô hại — mọi truy vấn lọc theo tiền tố/serial riêng của lượt chạy.
   });
 
   async function seedRouterDisposition(suffix: string) {

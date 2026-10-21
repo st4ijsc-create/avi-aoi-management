@@ -1013,8 +1013,8 @@ export const dotBienRoRiRouter = router({
   it("★★★ router rò MỚI ⇒ nhóm A + KHÔNG có trong sổ nợ; bản đã lọc ⇒ nhóm S", () => {
     expect(existsSync(FILE_DOT_BIEN), "file đột biến còn sót từ lượt trước — dọn đi trước khi chạy").toBe(false);
     try {
-      writeFileSync(FILE_DOT_BIEN, MA, "utf8");
-      const lai = quetPhamViDoc(GOC_REPO);
+      // Tệp ẢO (không ghi đĩa): ghi tệp tạm vào server/routers/ làm các lưới quét khác nổ ENOENT khi chạy song song.
+      const lai = quetPhamViDoc(GOC_REPO, { "server/routers/__dotBienPhamViDoc.ts": MA });
       const tim = (ten: string): ThuTuc | undefined =>
         lai.thuTuc.find((t) => t.file.endsWith("__dotBienPhamViDoc.ts") && t.ten === ten);
 
@@ -1028,7 +1028,7 @@ export const dotBienRoRiRouter = router({
       expect(daLoc?.chamTenant, "bản đối chứng phải VẪN chạm dữ liệu tenant").toBe(true);
       expect(nhomCua(daLoc as ThuTuc), "CHỐNG VÁ QUÁ TAY: có danh tính rời tay ⇒ KHÔNG bị bắt").toBe("S");
     } finally {
-      rmSync(FILE_DOT_BIEN, { force: true });
+      /* không có gì để dọn — tệp ảo */
     }
     expect(existsSync(FILE_DOT_BIEN), "phép đột biến phải tự dọn — file rò không được ở lại cây").toBe(false);
   }, 120_000);

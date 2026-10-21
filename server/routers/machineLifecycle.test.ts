@@ -35,6 +35,7 @@ vi.mock("../services/audit/controlAuditService", () => ({
 // auditTrailService is REAL — it writes through db.createAuditLog (mocked below),
 // so these tests verify the actual audit payload shape end-to-end.
 vi.mock("../db", () => ({
+  phaiDoiMatKhau: vi.fn(async () => false), // đọc bởi middleware gốc server/_core/trpc.ts (requireUser)
   transitionMachineLifecycle: mocks.transitionMachineLifecycle,
   createAuditLog: mocks.createAuditLog,
   getDb: mocks.getDb,

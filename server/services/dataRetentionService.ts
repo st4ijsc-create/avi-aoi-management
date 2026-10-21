@@ -32,6 +32,12 @@
  *    enforced by a privileged archival job (partition drop / external archive),
  *    not by app-level pruning. Set RETENTION_AUDIT_LOGS_DAYS=0 to drop the target.
  *
+ * ⚠ BẢNG CÓ CHÍNH SÁCH NATIVE (cập nhật 2026-10-21): với mọi bảng nằm trong `getNativeRetentionTables()` (trên dev/prod:
+ *   product_inspections, measurement_results, audit_logs, … — `drop_after 365 days`, mig 0173) quét ứng dụng BỎ QUA bảng
+ *   đó, nên nhánh R6 bên dưới (RETURNING khoá ảnh → deleteStorageKeys/deleteInspectionDirs) KHÔNG CHẠY cho chúng. Ảnh của hàng bị
+ *   Timescale drop chỉ được dọn bởi: (2) `pruneOldInspectionImages` (tuổi mtime >365 ngày, con trỏ bền theo id) và (3)
+ *   `reapOrphanImages` (so khoá ảnh với DB; mặc định TẮT/dry-run). Xem docs/IMAGE_LIFECYCLE_OPERATIONS.md.
+ *
  * IMAGE LIFECYCLE COUPLING (doc 27 gap R6 · decision #5): pruning
  * product_inspections / measurement_results rows would orphan their image
  * files under ./uploads. Each prune therefore CAPTURES identifying values

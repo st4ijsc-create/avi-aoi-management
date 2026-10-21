@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ── Mock the whole db barrel (only the functions these endpoints call).
 // vi.hoisted so the factory can reference the fns after vitest hoists vi.mock.
 const mockDb = vi.hoisted(() => ({
+  phaiDoiMatKhau: vi.fn(async () => false), // đọc bởi middleware gốc server/_core/trpc.ts (requireUser)
   // trpc middleware audit trail (fire-and-forget) — inert here
   createAuditLog: vi.fn(async () => undefined),
   getRoleDashboardDefault: vi.fn(),

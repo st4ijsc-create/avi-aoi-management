@@ -95,7 +95,7 @@ afterAll(async () => {
   if (d) {
     if (inspectionIds.length) {
       await d.delete(measurementResults).where(inArray(measurementResults.inspectionId, inspectionIds));
-      await d.delete(productInspections).where(inArray(productInspections.id, inspectionIds));
+      // product_inspections / audit_logs là bảng WORM (mig 0224/0279): avi_app KHÔNG có DELETE ⇒ KHÔNG dọn. Hàng sót vô hại — mọi truy vấn lọc theo tiền tố/serial riêng của lượt chạy.
     }
     await d.delete(measurementPointDefs).where(inArray(measurementPointDefs.id, [tgtDefR1, unmappedR1, unmappedR99].filter(Boolean)));
     await d.delete(productModels).where(eq(productModels.id, targetModelId));

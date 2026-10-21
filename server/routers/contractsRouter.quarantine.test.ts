@@ -34,6 +34,12 @@ const fakeDb = {
   update: () => ({ set: setSpy }),
 };
 
+// vai "user" không miễn cổng đổi-mật-khẩu ⇒ requireUser đọc db.phaiDoiMatKhau; không có bản giả thì nó
+// rơi xuống getDb() giả của file này (không có .limit) và nổ trước khi tới cổng FORBIDDEN cần kiểm.
+vi.mock("../db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../db")>()),
+  phaiDoiMatKhau: vi.fn(async () => false),
+}));
 vi.mock("../db/connection", () => ({
   getDb: vi.fn(async () => fakeDb),
   getJobsDb: vi.fn(async () => null),

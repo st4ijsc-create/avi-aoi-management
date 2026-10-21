@@ -98,13 +98,21 @@ describe("Task 13 — PRODUCT_COLUMN_SPEC (một nguồn sự thật)", () => {
     expect(src).not.toMatch(/const PRODUCT_EXPORT_COLUMNS\b/);
   });
 
-  it("ProductModels.tsx KHÔNG còn khai spec cột riêng — dùng PRODUCT_COLUMN_SPEC dùng chung", () => {
-    const src = readFileSync(
-      resolve(__dirname, "../client/src/pages/ProductModels.tsx"),
+  it("trang ProductModels KHÔNG khai spec cột riêng — ImportExportBar dùng PRODUCT_COLUMN_SPEC dùng chung", () => {
+    // Commit 86bdf1fd6 (Task 14, tách shell ProductModels — PURE RELOCATION) chuyển cột trái (ImportExportBar + DataTable)
+    // sang ProductListPanel.tsx ⇒ chỗ DÙNG spec nay ở panel; trang chỉ còn lắp panel. Bất biến giữ nguyên: dùng spec dùng
+    // chung, và KHÔNG tệp nào trong hai tệp có bản khai riêng.
+    const trang = readFileSync(resolve(__dirname, "../client/src/pages/ProductModels.tsx"), "utf8");
+    const panel = readFileSync(
+      resolve(__dirname, "../client/src/components/products/ProductListPanel.tsx"),
       "utf8",
     );
-    expect(src).toContain("PRODUCT_COLUMN_SPEC");
-    expect(src).toContain('from "@shared/productColumnSpec"');
-    expect(src).not.toMatch(/const PRODUCT_IO_COLUMNS/);
+    expect(panel).toContain("PRODUCT_COLUMN_SPEC");
+    expect(panel).toContain('from "@shared/productColumnSpec"');
+    for (const src of [trang, panel]) {
+      expect(src).not.toMatch(/const PRODUCT_IO_COLUMNS/);
+      expect(src).not.toMatch(/const PRODUCT_IMPORT_COLUMNS/);
+      expect(src).not.toMatch(/const PRODUCT_EXPORT_COLUMNS/);
+    }
   });
 });

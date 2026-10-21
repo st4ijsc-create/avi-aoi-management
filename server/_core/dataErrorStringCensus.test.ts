@@ -142,18 +142,24 @@ describe("F14 — chuỗi lỗi thô trả về như DỮ LIỆU (cửa THÀNH C
     // Bất biến 0 có điểm mù riêng: một bộ đếm hỏng cũng trả 0 và trông y hệt "đã sạch".
     // Bơm vào một chuỗi có ĐÚNG hình dạng nợ rồi hỏi thước xem nó có thấy không.
     // Cùng lớp lỗi với glob rỗng ở Pha 4 và với lưới 0326 canh `reltuples < 0`.
-    const { writeFileSync, unlinkSync } = require("node:fs") as typeof import("node:fs");
-    const P = "server/routers/__dataErrorProbe.tmp.ts";
+    // 2026-10-21: mẫu thử nằm trong thư mục TẠM RIÊNG (mkdtemp, tên duy nhất theo lượt) chứ KHÔNG ghi vào server/routers/ của repo —
+    // ghi/xoá tệp trong cây repo làm các lưới quét khác đang chạy song song nổ ENOENT (tệp biến mất giữa lúc liệt kê và lúc đọc).
+    // `kenh` được suy từ đường dẫn có "/routers/" nên thư mục tạm dựng đúng thư mục con `routers`.
+    const fs = require("node:fs") as typeof import("node:fs");
+    const os = require("node:os") as typeof import("node:os");
+    const path = require("node:path") as typeof import("node:path");
+    const goc = fs.mkdtempSync(path.join(os.tmpdir(), "data-error-probe-"));
     try {
+      fs.mkdirSync(path.join(goc, "routers"));
       // ⚠ Mẫu thử phải có ĐÚNG hình dạng nợ thật. Bản đầu viết `(err as Error).message`
       // và KHÔNG bị bắt — vì bộ dò khớp theo ĐỊNH DANH (`err.message`), còn dấu ngoặc
       // làm biểu thức không còn là một định danh. Một cầu chì viết sai hình dạng sẽ báo
       // "thước hỏng" trong khi thước vẫn tốt: cầu chì cũng cần được kiểm.
-      writeFileSync(P, `export const x = (err: any) => ({ ok: false, error: err.message });\n`);
-      const t = demDataError().filter((y) => y.kenh === "trpc");
+      fs.writeFileSync(path.join(goc, "routers", "probe.ts"), `export const x = (err: any) => ({ ok: false, error: err.message });\n`);
+      const t = demDataError(goc).filter((y) => y.kenh === "trpc");
       expect(t.length, "thước KHÔNG thấy nợ vừa bơm vào ⇒ nó đang hỏng").toBe(1);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá */ }
+      fs.rmSync(goc, { recursive: true, force: true });
     }
     expect(demDataError().filter((y) => y.kenh === "trpc").length).toBe(0);
   });

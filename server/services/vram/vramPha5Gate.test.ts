@@ -241,6 +241,66 @@ const FILE_TU_KHAI_PHA = MOI_FILE.filter((f) => DAU_KHAI_PHA.test(docMaNguon(f.t
 /** ⚠ **HỢP**, không phải thay thế: ba vị từ chỉ nới rộng đối tượng bị canh. */
 const FILE_CANH = [...new Set([...FILE_PHA5, ...FILE_VRAM, ...FILE_PHA_TRONG_CONG])].sort();
 
+/**
+ * ★★★ MIỄN TRỪ TƯỜNG MINH — tệp có chữ `Pha N` nhưng thuộc CÔNG TRÌNH KHÁC (không phải lưới VRAM).
+ *
+ * ⚠ VÌ SAO CẦN: `DAU_KHAI_PHA` chỉ hỏi *"có chữ \`Pha N\` không"*. Khi cổng ra đời chữ ấy chỉ do công trình VRAM
+ * dùng; về sau AOI ("Pha 1b"), Twin ("Pha 3"), hợp đồng ingest, i18n lỗi… cũng đánh số pha trong chú thích ⇒ 47 tệp
+ * KHÔNG liên quan VRAM bị coi là "lưới VRAM tự khai mà nằm ngoài §Cổng kiểm chung" và cổng đỏ vĩnh viễn trên mã không hỏng.
+ * Thu hẹp lượng từ bằng NỘI DUNG (dấu "vram/broker…") đã được ĐO và BÁC: nó làm 18 lưới VỐN trong cổng (Pha 7–9: phiên/
+ * xác thực, không nhắc VRAM) rơi khỏi bảo vệ, còn 6 tệp ngoài cổng vẫn bị bắt vì chú thích trích "bài học VRAM pha 4".
+ * Không có dấu nội dung nào đúng cả hai chiều ⇒ khai TƯỜNG MINH theo công trình.
+ *
+ * LUẬT: mục kết thúc bằng "/" = cả thư mục là công trình khác; ngược lại = đúng một tệp. Mỗi mục kèm tên công trình.
+ * Tệp MỚI có "Pha N" mà ngoài cả §Cổng lẫn bảng này ⇒ ĐỎ (ép một quyết định: đưa vào cổng nếu là lưới VRAM, khai ở đây
+ * nếu là công trình khác). Các ca bên dưới canh chính bảng này: mục phải tồn tại, KHÔNG được trùng với cổng (miễn trừ thừa
+ * che một lưới VRAM thật), và số tệp bị miễn trừ được ghim.
+ */
+const MIEN_TRU_CONG_TRINH_KHAC: ReadonlyArray<readonly [string, string]> = [
+  ["server/contracts/", "AOI — hợp đồng dữ liệu máy / cap chuỗi (Khối C)"],
+  ["client/src/components/twin3d/", "Twin 3D"],
+  ["server/_core/dataErrorStringCensus.test.ts", "i18n lỗi (F1/F14)"],
+  ["server/_core/deviceErrors.test.ts", "i18n lỗi (F1/F14)"],
+  ["server/_core/entityDictionaryCoverage.test.ts", "i18n lỗi (F1/F14)"],
+  ["server/_core/rawErrorCensus.test.ts", "i18n lỗi (F1/F14)"],
+  ["server/db/cayCauHinhBatBien.db.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
+  ["server/db/cayKetQuaSchema.db.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
+  ["server/db/connection.edgeTrap.dot10.test.ts", "Engineering doc 81 Đợt 10 (edge)"],
+  ["server/db/ingestCayKetQua.db.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
+  ["server/db/ingestV2KhuTrung.db.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
+  ["server/db/ingestV2XuyenSuot.db.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
+  ["server/db/ntfSourceNguoiXacNhan.db.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
+  ["server/routers/aoiPackageDeadCongDanHangNhat.test.ts", "AOI — gói ảnh/ZIP (BG-87…)"],
+  ["server/routers/aoiPackageHinhDangHopDongChoPhep.test.ts", "AOI — gói ảnh/ZIP (BG-87…)"],
+  ["server/routers/aoiPackageZipChotChanRetry.test.ts", "AOI — gói ảnh/ZIP (BG-87…)"],
+  ["server/routers/aoiPackageZipCuaNoiDoi.test.ts", "AOI — gói ảnh/ZIP (BG-87…)"],
+  ["server/routers/aoiPackageZipHinhDangMayThat.test.ts", "AOI — gói ảnh/ZIP (BG-87…)"],
+  ["server/routers/aoiZipMotDuongDanCensus.test.ts", "AOI — gói ảnh/ZIP (BG-87…)"],
+  ["server/routers/cuaIngestCensus.test.ts", "AOI — ingest & hợp đồng máy"],
+  ["server/routers/machineApiBatchIngest.test.ts", "AOI — ingest & hợp đồng máy"],
+  ["server/routers/machineApiIngestCayV2.test.ts", "AOI — ingest & hợp đồng máy"],
+  ["server/routers/machineApiThoiGianDaiThat.test.ts", "AOI — ingest & hợp đồng máy"],
+  ["server/routers/machineApiV1CuonNg.db.test.ts", "AOI — ingest & hợp đồng máy"],
+  ["server/routers/machineConfigSync.test.ts", "AOI — ingest & hợp đồng máy"],
+  ["server/routers/machineContractRouter.test.ts", "AOI — ingest & hợp đồng máy"],
+  ["server/routers/machineRecipeRouter.test.ts", "AOI — ingest & hợp đồng máy"],
+  ["server/services/aiCopilotActions.apMotPhan.test.ts", "AI Copilot"],
+  ["server/services/ingestCayKetQua.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
+  ["server/services/inspection/inspectionStoreForwardBaLoWal.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
+  ["server/services/integrityScanBoKhongDo.test.ts", "Toàn vẹn dữ liệu chủ (W3-A)"],
+  ["server/services/predictiveMaintenanceService.timeframeGuard.test.ts", "Bảo trì dự báo"],
+  ["server/utils/kpiCongThucCensus.test.ts", "KPI công thức"],
+];
+/** Một tệp có được miễn trừ khỏi lượng từ "tự khai pha phải nằm trong cổng" không. */
+const duocMienTru = (f: string, bang: ReadonlyArray<readonly [string, string]> = MIEN_TRU_CONG_TRINH_KHAC): boolean =>
+  bang.some(([m]) => f === m || (m.endsWith("/") && f.startsWith(m)));
+/** Phần bù của lượng từ: tự khai pha ∧ ngoài cổng ∧ ngoài bảng miễn trừ. RỖNG mới xanh. */
+const tuKhaiNgoaiCaHai = (
+  files: readonly string[],
+  cong: string[],
+  bang: ReadonlyArray<readonly [string, string]> = MIEN_TRU_CONG_TRINH_KHAC,
+): string[] => files.filter((f) => !duocPhu(f, cong) && !duocMienTru(f, bang));
+
 describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lưới bị canh (đảo lượng từ, ghim SỐ)", () => {
   it("★★★ cầu chì — đọc được cổng từ file kế hoạch, và nó không rỗng", () => {
     expect(existsSync(KE_HOACH), `không thấy file kế hoạch: ${duong(KE_HOACH)}`).toBe(true);
@@ -624,7 +684,7 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   ("chạy từ Node khác: 413–467 ms, 0 lỗi") đo `run()`, KHÔNG đo `JSON.parse`. Lưới mới ghim
     //   đúng chuỗi đã đo, nên nó tất định và không đổi màu theo tiến trình đang chạy trên máy.
     //   Nó nằm dưới `server/services/vram/` ⇒ `CONG.length` KHÔNG đổi (vẫn 58).
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(126); // Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-4: +1 · Pha 9 I-5: +1 (neoTenXacThuc) · Pha 10: +5 · Pha 10b: +1
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(129); // 2026-10-21 lưới đỏ: +3 THEO TÊN — client/src/lib/rawErrorMessageCensus.unit.test.ts (2026-08-21, trích 'Pha 4'; thư mục client/src/lib/ đã là một đường của cổng) · server/services/aiLocalTools/lenhSong.test.ts (2026-08-31, nhắc 'Pha 8'; aiLocalTools/ đã trong cổng) · server/services/vram/vramTranThietBi.test.ts (2026-09-21; vram/ đã trong cổng) ⇒ CONG.length KHÔNG đổi (58) · Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-4: +1 · Pha 9 I-5: +1 (neoTenXacThuc) · Pha 10: +5 · Pha 10b: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
@@ -657,13 +717,35 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
      * ⚠ Cầu chì trước: 0 file tự khai ⇒ khẳng định dưới là **chân lý rỗng** (đúng lớp "glob rỗng").
      */
     expect(FILE_TU_KHAI_PHA.length, "bộ quét TỰ-KHAI không thấy file nào — mẫu đã hỏng?").toBeGreaterThanOrEqual(80);
-    const ngoai = FILE_TU_KHAI_PHA.filter((f) => !duocPhu(f, CONG));
+    const ngoai = tuKhaiNgoaiCaHai(FILE_TU_KHAI_PHA, CONG); // + bảng MIEN_TRU_CONG_TRINH_KHAC (công trình khác nhắc `Pha N`)
     expect(
       ngoai.join("\n"),
       "lưới TỰ KHAI thuộc một pha mà nằm NGOÀI §Cổng kiểm chung ⇒ theo CẤU TẠO nó không bao giờ " +
         "được canh: một đột biến trong đúng file ấy ship được với cổng xanh 100%.\n" +
         "⇒ Thêm đường của nó vào §Cổng kiểm chung (kế hoạch Pha 5), rồi cập nhật `CONG`/`FILE_CANH`.",
     ).toBe("");
+  });
+
+  it("★★★ miễn trừ công trình khác — bảng KHÔNG thừa, KHÔNG che lưới VRAM trong cổng, số tệp được ghim; và ĐỘT BIẾN hai chiều", () => {
+    // (1) mỗi mục phải còn tồn tại (tệp thật / thư mục có ≥1 tệp tự khai) — mục chết là rác che lỗ tương lai.
+    for (const [m] of MIEN_TRU_CONG_TRINH_KHAC) {
+      const coFile = m.endsWith("/")
+        ? FILE_TU_KHAI_PHA.some((f) => f.startsWith(m))
+        : existsSync(join(GOC, m)) && FILE_TU_KHAI_PHA.includes(m);
+      expect(coFile, `mục miễn trừ "${m}" không còn tệp tự khai nào ⇒ gỡ khỏi bảng`).toBe(true);
+    }
+    // (2) KHÔNG trùng cổng: tệp nằm trong cổng thì được canh rồi — miễn trừ nó là che một lưới có thể là VRAM.
+    const trung = FILE_TU_KHAI_PHA.filter((f) => duocMienTru(f) && duocPhu(f, CONG));
+    expect(trung.join("\n"), "tệp vừa nằm trong cổng vừa nằm trong bảng miễn trừ").toBe("");
+    // (3) số tệp thực sự được miễn trừ ghim = 47 (31 tệp khai riêng + 9 server/contracts + 7 twin3d).
+    const duocMien = FILE_TU_KHAI_PHA.filter((f) => duocMienTru(f) && !duocPhu(f, CONG));
+    expect(duocMien.length, `danh sách miễn trừ đã đổi:\n${duocMien.join("\n")}`).toBe(47);
+    // (4) ĐỘT BIẾN: tệp giả tự khai pha, ngoài cổng ∧ ngoài bảng ⇒ PHẢI bị bắt; tệp trong bảng ⇒ không; trong cổng ⇒ không.
+    expect(tuKhaiNgoaiCaHai(["server/zzz/gia.test.ts"], CONG)).toEqual(["server/zzz/gia.test.ts"]);
+    expect(tuKhaiNgoaiCaHai(["server/contracts/moi.test.ts", "client/src/components/twin3d/moi.unit.test.ts"], CONG)).toEqual([]);
+    expect(tuKhaiNgoaiCaHai(["server/services/vram/moi.test.ts"], CONG)).toEqual([]);
+    // bảng rỗng ⇒ phần bù LÀ chính tập ngoài cổng (chứng minh bảng có tác dụng thật, không phải trang trí).
+    expect(tuKhaiNgoaiCaHai(FILE_TU_KHAI_PHA, CONG, []).length).toBe(47);
   });
 
   it("★★ KHÔNG BẮT NHẦM — tập TỰ-KHAI phải RỘNG HƠN tập trong-cổng-cũ, và không nuốt file không khai gì", () => {

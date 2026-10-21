@@ -21927,6 +21927,8 @@
     "guiYeuCauDuyetLoiMotPhan": "已提交 {{thanhCong}}/{{tong}} 个审批申请——{{soLoi}} 个失败，请稍后重试"
   },
   "twin3d": {
+    "nhanTang": "第{{n}}层",
+    "tangTret": "首层",
     "may": {
       "chuaGanNhaMay": "您的账户尚未分配任何工厂。请联系管理员分配后再打开此机台。",
       "idKhongHopLe": "无法从地址读取机台",

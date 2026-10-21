@@ -117,7 +117,7 @@ export default function DungNhaXuong({ factoryId, onXongTao }: DungNhaXuongProps
   const [cungKichThuoc, setCungKichThuoc] = useState(true);
   const [tuTinhCaoDo, setTuTinhCaoDo] = useState(true);
   const [sinhTuong, setSinhTuong] = useState(true);
-  const [dongs, setDongs] = useState<DongTang[]>([dongTangMoi(1, "Tầng trệt")]);
+  const [dongs, setDongs] = useState<DongTang[]>([dongTangMoi(1, t("twin3d.tangTret", "Tầng trệt"))]);
 
   // ── Quy đổi: MÉT (form) → MILIMÉT (DB), qua boCucTang, không tự chia 1000 ──
   const toaNhaNhap: ToaNhaNhapMet = useMemo(
@@ -248,7 +248,7 @@ export default function DungNhaXuong({ factoryId, onXongTao }: DungNhaXuongProps
               data-testid="nut-them-tang"
               onClick={() => {
                 const capMax = dongs.reduce((m, d) => Math.max(m, Number(d.capSo) || 0), 0);
-                setDongs((ds) => [...ds, dongTangMoi(capMax + 1, `Tầng ${capMax + 1}`)]);
+                setDongs((ds) => [...ds, dongTangMoi(capMax + 1, t("twin3d.nhanTang", "Tầng {{n}}", { n: capMax + 1 }))]);
               }}
             >
               <Plus className="mr-1 h-3.5 w-3.5" /> {t("twin3d.tang.themMoi")}

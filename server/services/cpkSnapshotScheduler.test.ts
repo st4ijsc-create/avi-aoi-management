@@ -14,9 +14,10 @@ import {
   cpkHistory,
 } from "../../drizzle/schema";
 import { runCpkSnapshotNow } from "./cpkSnapshotScheduler";
+import { issueMachineKey } from "./machineAuthService";
 
 const STAMP = Date.now();
-const API_KEY = `OP9-${STAMP}`;
+let API_KEY = ""; // khoá mk_ cấp trong beforeAll
 const MODEL_CODE = `OP9_MODEL_${STAMP}`;
 const POINT_CODE = `OP9_PT_${STAMP}`;
 
@@ -31,8 +32,12 @@ function caller() {
 
 beforeAll(async () => {
   machineId = await db.createMachine({
-    stationId: 1, code: `OP9-${STAMP}`, name: "OP9 cpk snapshot test", machineType: "AOI", apiKey: API_KEY, isActive: true,
+    stationId: 1, code: `OP9-${STAMP}`, name: "OP9 cpk snapshot test", machineType: "AOI", isActive: true,
   });
+  // Đường xác thực MẠNH hiện hành (doc 51-P0): khoá riêng mk_ của máy, KHÔNG phải shared-key trên cột machines.apiKey
+  // (MachineAuth từ chối đường yếu — cờ không được nới).
+  const cred = await issueMachineKey({ machineId, name: `op9-cpk-${STAMP}`, scopes: ["ingest:write"] });
+  API_KEY = cred.plaintextKey;
   productModelId = await db.createProductModel({ code: MODEL_CODE, name: "OP9 test model" });
   pointDefId = await db.createMeasurementPointDef({
     productModelId,
@@ -66,7 +71,7 @@ afterAll(async () => {
     await d.delete(cpkHistory).where(eq(cpkHistory.measurementPointDefId, pointDefId));
     if (inspectionIds.length) {
       await d.delete(measurementResults).where(inArray(measurementResults.inspectionId, inspectionIds));
-      await d.delete(productInspections).where(inArray(productInspections.id, inspectionIds));
+      // product_inspections là bảng WORM (mig 0224/0279): avi_app KHÔNG có DELETE ⇒ hàng của lượt này ở lại (serial/mã có STAMP riêng).
     }
     await d.delete(measurementPointDefs).where(eq(measurementPointDefs.id, pointDefId));
   }
@@ -91,5 +96,7 @@ describe("runCpkSnapshotNow (OP9)", () => {
     expect(snap.cpk).not.toBeNull();
     expect(Number(snap.mean)).toBeGreaterThan(9);
     expect(Number(snap.mean)).toBeLessThan(11);
-  });
+    // runCpkSnapshotNow quét MỌI điểm đo có giới hạn trong DB (không lọc được theo điểm) và mỗi điểm một truy vấn:
+    // thời gian tỉ lệ với cỡ DB test (hiện ~1 160 điểm) ⇒ trần 30 s mặc định không đủ.
+  }, 180_000);
 });

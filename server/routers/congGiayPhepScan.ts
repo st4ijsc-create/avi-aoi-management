@@ -90,15 +90,25 @@ function chuoiDoiSoDau(n: ts.CallExpression): string | undefined {
  * Quét `server/**` và trả **mọi** thủ tục tRPC kèm mã module mà nó đứng sau.
  * @param goc thư mục gốc repo.
  */
-export function quetCongGiayPhep(goc: string): KetQuaQuetCong {
+/**
+ * @param ghiDe tệp ẢO chồng lên cây (khoá = đường dẫn tương đối posix từ `goc`) — cho phép đột biến mà không ghi đĩa
+ *   (xem `quetPhamViDoc`: ghi tệp tạm vào cây repo làm các lưới quét khác gặp ENOENT khi chạy song song).
+ */
+export function quetCongGiayPhep(goc: string, ghiDe: Readonly<Record<string, string>> = {}): KetQuaQuetCong {
   const CORE_TRPC = join(goc, "server", "_core", "trpc.ts");
   const mu: string[] = [];
 
   const tatCa = moiFileDuoi(goc, "server", [".ts"]);
+  const ao = new Map<string, string>();
+  for (const [rel, nd] of Object.entries(ghiDe)) {
+    const that = join(goc, ...rel.split("/"));
+    ao.set(that, nd);
+    if (!tatCa.some((f) => f.that === that)) tatCa.push({ duong: rel, that });
+  }
   if (!existsSync(CORE_TRPC)) mu.push("không thấy server/_core/trpc.ts — bộ suy mất điểm neo");
 
   const noiDung = new Map<string, string>();
-  for (const f of tatCa) noiDung.set(f.that, readFileSync(f.that, "utf8"));
+  for (const f of tatCa) noiDung.set(f.that, ao.get(f.that) ?? readFileSync(f.that, "utf8"));
 
   const cayCua = new Map<string, ts.SourceFile>();
   const cay = (f: { duong: string; that: string }): ts.SourceFile => {

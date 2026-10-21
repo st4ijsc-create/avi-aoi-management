@@ -114,7 +114,7 @@ describe("runRetentionOnce against the isolated test DB", () => {
       sql`DELETE FROM measurement_results WHERE "inspectionId" IN
           (SELECT id FROM product_inspections WHERE "serialNumber" LIKE ${MARKER + "%"})`,
     );
-    await db.execute(sql`DELETE FROM product_inspections WHERE "serialNumber" LIKE ${MARKER + "%"}`);
+    // product_inspections / audit_logs là bảng WORM (mig 0224/0279): avi_app KHÔNG có DELETE ⇒ KHÔNG dọn. Hàng sót vô hại — mọi truy vấn lọc theo tiền tố/serial riêng của lượt chạy.
   }
 
   beforeAll(async () => {
@@ -137,10 +137,21 @@ describe("runRetentionOnce against the isolated test DB", () => {
     await fs.promises.rm(tmpUploads, { recursive: true, force: true }).catch(() => {});
   });
 
-  it("getNativeRetentionTables is an empty set on plain PostgreSQL", async () => {
+  it("getNativeRetentionTables returns exactly the hypertables with an active native retention policy (empty on plain PostgreSQL)", async () => {
     const set = await getNativeRetentionTables(db);
     expect(set).toBeInstanceOf(Set);
-    expect(set.size).toBe(0); // test DB has no timescaledb → no native policies
+    // The test DB is a CLONE of dev (Timescale + mig 0173 policies), so the expected set is read from the
+    // catalog independently of the function under test; where the catalog is absent it must be empty.
+    let expected: string[] = [];
+    try {
+      const rows = (await db.execute(
+        sql`SELECT hypertable_name FROM timescaledb_information.jobs WHERE proc_name = 'policy_retention'`,
+      )) as unknown as Array<{ hypertable_name: string }>;
+      expected = rows.map((r) => r.hypertable_name);
+    } catch {
+      expected = [];
+    }
+    expect([...set].sort()).toEqual([...new Set(expected)].sort());
   });
 
   it("prunes >365d rows from log tables and keeps fresh rows", async () => {
@@ -206,21 +217,31 @@ describe("runRetentionOnce against the isolated test DB", () => {
       await fs.promises.writeFile(p, "img");
     }
 
+    // Hai thế giới, mỗi thế giới một cam kết có assert THẬT (không skip):
+    //  · PG thường (không chính sách native cho bảng): quét app xoá hàng >365 ngày + ảnh của nó, giữ hàng mới.
+    //  · Timescale native giữ product_inspections (DB test là clone của dev, mig 0173): "một cơ chế/bảng" ⇒ quét
+    //    app KHÔNG ĐƯỢC đụng (không xoá đôi) — hàng cũ, đo lường cũ và ảnh cũ còn nguyên cho chính sách native lo.
+    const native = await getNativeRetentionTables(db);
+    const inspNative = native.has("product_inspections");
+    const measNative = native.has("measurement_results");
+
     await runRetentionOnce();
 
     const rows = (await db.execute(
-      sql`SELECT "serialNumber" FROM product_inspections WHERE "serialNumber" LIKE ${MARKER + "%"}`,
-    )) as unknown as Array<{ serialNumber: string }>;
-    expect(rows.map((r) => r.serialNumber)).toEqual([MARKER + "-new"]);
+      sql`SELECT id FROM product_inspections WHERE id IN (${oldId}, ${newId})`,
+    )) as unknown as Array<{ id: number }>;
+    const ids = rows.map((r) => Number(r.id)).sort((x, y) => x - y);
+    expect(ids).toEqual(inspNative ? [oldId, newId].sort((x, y) => x - y) : [newId]);
 
     const meas = (await db.execute(
       sql`SELECT id FROM measurement_results WHERE "inspectionId" IN (${oldId}, ${newId})`,
     )) as unknown as Array<{ id: number }>;
-    expect(meas.length).toBe(1); // only the fresh measurement survives
+    // measurement_results cũ chỉ bị xoá bởi quét app khi cả bảng cha lẫn bảng con đều do quét app giữ.
+    expect(meas.length).toBe(inspNative || measNative ? 2 : 1);
 
-    // Old files gone (key capture + per-inspection dir removal); fresh intact.
-    expect(fs.existsSync(path.join(tmpUploads, oldKey))).toBe(false);
-    expect(fs.existsSync(path.join(tmpUploads, `inspections/${oldId}`))).toBe(false);
+    // Ảnh: quét app chỉ dọn ảnh của hàng NÓ xoá.
+    expect(fs.existsSync(path.join(tmpUploads, oldKey))).toBe(inspNative);
+    expect(fs.existsSync(path.join(tmpUploads, `inspections/${oldId}`))).toBe(inspNative);
     expect(fs.existsSync(path.join(tmpUploads, newKey))).toBe(true);
   });
 

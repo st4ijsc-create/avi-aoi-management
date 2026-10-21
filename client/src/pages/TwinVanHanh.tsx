@@ -746,7 +746,7 @@ export function ThanTwinVanHanh() {
     () =>
       dsTang.map((s) => ({
         id: s.id,
-        nhan: s.ten || (s.capSo != null ? `Tầng ${s.capSo}` : `#${s.id}`),
+        nhan: s.ten || (s.capSo != null ? t("twin3d.nhanTang", "Tầng {{n}}", { n: s.capSo }) : `#${s.id}`),
       })),
     [dsTang],
   );
@@ -4659,25 +4659,21 @@ export function ThanTwinVanHanh() {
               }
               data-testid="trang-thai-ket-noi"
               data-ket-noi={ketNoi}
-              title={t(`twin3d.ketNoi.${ketNoi}.moTa`, {
-                defaultValue: {
-                  chua_ket_noi: "Chưa kết nối luồng trực tiếp — các số dưới đây là ảnh chụp lúc tải trang.",
-                  dang_cho: "Đã kết nối, đang chờ gói dữ liệu đầu tiên.",
-                  truc_tiep: "Đang nhận dữ liệu trực tiếp.",
-                  im_lang: "Đã kết nối nhưng không nhận được gói nào gần đây — dữ liệu đang cũ dần.",
-                  xem_lai: "Đang xem lại lịch sử, không phải dữ liệu trực tiếp.",
-                }[ketNoi],
-              })}
+              title={{
+                  chua_ket_noi: t("twin3d.ketNoi.chua_ket_noi.moTa", "Chưa kết nối luồng trực tiếp — các số dưới đây là ảnh chụp lúc tải trang."),
+                  dang_cho: t("twin3d.ketNoi.dang_cho.moTa", "Đã kết nối, đang chờ gói dữ liệu đầu tiên."),
+                  truc_tiep: t("twin3d.ketNoi.truc_tiep.moTa", "Đang nhận dữ liệu trực tiếp."),
+                  im_lang: t("twin3d.ketNoi.im_lang.moTa", "Đã kết nối nhưng không nhận được gói nào gần đây — dữ liệu đang cũ dần."),
+                  xem_lai: t("twin3d.ketNoi.xem_lai.moTa", "Đang xem lại lịch sử, không phải dữ liệu trực tiếp."),
+                }[ketNoi]}
             >
-              {t(`twin3d.ketNoi.${ketNoi}.nhan`, {
-                defaultValue: {
-                  chua_ket_noi: "Chưa kết nối",
-                  dang_cho: "Đang chờ…",
-                  truc_tiep: "Trực tiếp",
-                  im_lang: "Im lặng",
-                  xem_lai: "Xem lại",
-                }[ketNoi],
-              })}
+              {{
+                  chua_ket_noi: t("twin3d.ketNoi.chua_ket_noi.nhan", "Chưa kết nối"),
+                  dang_cho: t("twin3d.ketNoi.dang_cho.nhan", "Đang chờ…"),
+                  truc_tiep: t("twin3d.ketNoi.truc_tiep.nhan", "Trực tiếp"),
+                  im_lang: t("twin3d.ketNoi.im_lang.nhan", "Im lặng"),
+                  xem_lai: t("twin3d.ketNoi.xem_lai.nhan", "Xem lại"),
+                }[ketNoi]}
             </span>
 
             {/*
@@ -4712,26 +4708,21 @@ export function ThanTwinVanHanh() {
               data-chi-tu-hoi={khaiNguon.chiTuHoi ? "1" : "0"}
               data-nhip-ms={khaiNguon.nhipHieuLucMs ?? ""}
               data-tuoi-ms={khaiNguon.tuoiMs ?? ""}
-              title={t(`twin3d.coCheGiao.${khaiNguon.coChe}.moTa`, {
-                defaultValue: {
-                  day: "Mọi con số tới bằng luồng đẩy thời gian thực.",
-                  hon_hop:
-                    "Luồng đẩy đang sống, nhưng một phần số vẫn tới bằng lượt hỏi định kỳ 30 giây.",
-                  hoi: "Không có luồng đẩy — mọi con số tới bằng lượt hỏi định kỳ.",
-                  lich_su: "Đang xem lịch sử — các số không tự làm mới.",
-                  chua_ro: "Chưa xác định được cơ chế giao số.",
-                }[khaiNguon.coChe],
-              })}
+              title={{
+                  day: t("twin3d.coCheGiao.day.moTa", "Mọi con số tới bằng luồng đẩy thời gian thực."),
+                  hon_hop: t("twin3d.coCheGiao.hon_hop.moTa", "Luồng đẩy đang sống, nhưng một phần số vẫn tới bằng lượt hỏi định kỳ 30 giây."),
+                  hoi: t("twin3d.coCheGiao.hoi.moTa", "Không có luồng đẩy — mọi con số tới bằng lượt hỏi định kỳ."),
+                  lich_su: t("twin3d.coCheGiao.lich_su.moTa", "Đang xem lịch sử — các số không tự làm mới."),
+                  chua_ro: t("twin3d.coCheGiao.chua_ro.moTa", "Chưa xác định được cơ chế giao số."),
+                }[khaiNguon.coChe]}
             >
-              {t(`twin3d.coCheGiao.${khaiNguon.coChe}.nhan`, {
-                defaultValue: {
-                  day: "đẩy",
-                  hon_hop: "đẩy + hỏi 30s",
-                  hoi: "hỏi định kỳ",
-                  lich_su: "lịch sử",
-                  chua_ro: "—",
-                }[khaiNguon.coChe],
-              })}
+              {{
+                  day: t("twin3d.coCheGiao.day.nhan", "đẩy"),
+                  hon_hop: t("twin3d.coCheGiao.hon_hop.nhan", "đẩy + hỏi 30s"),
+                  hoi: t("twin3d.coCheGiao.hoi.nhan", "hỏi định kỳ"),
+                  lich_su: t("twin3d.coCheGiao.lich_su.nhan", "lịch sử"),
+                  chua_ro: t("twin3d.coCheGiao.chua_ro.nhan", "—"),
+                }[khaiNguon.coChe]}
             </span>
             {/*
               ★★★ NT-3.2 — "cập nhật lần cuối" là max(timestamp) của DỮ LIỆU NỀN.
@@ -4754,20 +4745,19 @@ export function ThanTwinVanHanh() {
               }
               data-testid="badge-xuat-xu"
               data-xuat-xu={xuatXu}
-              title={t(`twin3d.xuatXu.${xuatXu}.moTa`, {
-                defaultValue: {
-                  bong: "SHADOW — màu phản ánh telemetry/heartbeat THỰC của thiết bị.",
-                  mo_phong: "MÔ PHỎNG — các số này là giả định what-if, KHÔNG phải số đo.",
-                  so_do: "SƠ ĐỒ — chỉ có bố cục, chưa có số liệu vận hành nào.",
-                  khong_ro: "Chưa xác định được xuất xứ của dữ liệu đang hiện.",
-                }[xuatXu],
-              })}
+              title={{
+                  bong: t("twin3d.xuatXu.bong.moTa", "SHADOW — màu phản ánh telemetry/heartbeat THỰC của thiết bị."),
+                  mo_phong: t("twin3d.xuatXu.mo_phong.moTa", "MÔ PHỎNG — các số này là giả định what-if, KHÔNG phải số đo."),
+                  so_do: t("twin3d.xuatXu.so_do.moTa", "SƠ ĐỒ — chỉ có bố cục, chưa có số liệu vận hành nào."),
+                  khong_ro: t("twin3d.xuatXu.khong_ro.moTa", "Chưa xác định được xuất xứ của dữ liệu đang hiện."),
+                }[xuatXu]}
             >
-              {t(`twin3d.xuatXu.${xuatXu}.nhan`, {
-                defaultValue: {
-                  bong: "SHADOW", mo_phong: "MÔ PHỎNG", so_do: "SƠ ĐỒ", khong_ro: "—",
-                }[xuatXu],
-              })}
+              {{
+                  bong: t("twin3d.xuatXu.bong.nhan", "SHADOW"),
+                  mo_phong: t("twin3d.xuatXu.mo_phong.nhan", "MÔ PHỎNG"),
+                  so_do: t("twin3d.xuatXu.so_do.nhan", "SƠ ĐỒ"),
+                  khong_ro: t("twin3d.xuatXu.khong_ro.nhan", "—"),
+                }[xuatXu]}
             </span>
             {/*
               ════════════════════════════════════════════════════════════════

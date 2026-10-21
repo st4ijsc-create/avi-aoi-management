@@ -641,22 +641,10 @@ function O({
  *   nơi nó đã có kiểu đúng — thì không cần ép kiểu ở đâu cả.
  */
 const NHAN_LY_DO: Readonly<Record<LyDoKhongMoPhong, readonly [string, string]>> = {
-  chua_chon_line: [
-    "twin3d.moPhong.lyDo.chuaChonLine",
-    "Chọn một chuyền để mô phỏng năng suất.",
-  ],
+  chua_chon_line: ["twin3d.moPhong.lyDo.chuaChonLine", "Chọn một chuyền để mô phỏng năng suất."],
   khong_co_tram: ["twin3d.moPhong.lyDo.khongCoTram", "Chuyền này chưa có trạm nào."],
   chua_do: ["twin3d.moPhong.lyDo.chuaDo", "Đang đọc nhịp chuyền…"],
-  khong_co_ban_ghi: [
-    "twin3d.moPhong.lyDo.khongCoBanGhi",
-    "Chưa có bản ghi cân bằng chuyền nào cho chuyền này.",
-  ],
-  ban_ghi_khong_co_nhip: [
-    "twin3d.moPhong.lyDo.banGhiKhongCoNhip",
-    "Bản ghi cân bằng chuyền gần nhất không có nhịp (avgCycleTimeMs rỗng).",
-  ],
-  nhip_het_han: [
-    "twin3d.moPhong.lyDo.nhipHetHan",
-    "Nhịp chuyền gần nhất đã quá hạn 8 giờ — không dùng để mô phỏng.",
-  ],
+  khong_co_ban_ghi: ["twin3d.moPhong.lyDo.khongCoBanGhi", "Chưa có bản ghi cân bằng chuyền nào cho chuyền này."],
+  ban_ghi_khong_co_nhip: ["twin3d.moPhong.lyDo.banGhiKhongCoNhip", "Bản ghi cân bằng chuyền gần nhất không có nhịp (avgCycleTimeMs rỗng)."],
+  nhip_het_han: ["twin3d.moPhong.lyDo.nhipHetHan", "Nhịp chuyền gần nhất đã quá hạn 8 giờ — không dùng để mô phỏng."],
 };

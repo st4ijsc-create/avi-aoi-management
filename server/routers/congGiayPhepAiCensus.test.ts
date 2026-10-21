@@ -745,6 +745,10 @@ export const dotBienNgoaiAiRouter = router({
 `;
 
   /**
+   * ★ 2026-10-21 — ĐOẠN DƯỚI ĐÃ LỖI THỜI VỀ CƠ CHẾ: ba phép đột biến §7 (ở đây, `phamViDocCensus`, `phamViTuyenCensus`) nay dùng
+   *   TỆP ẢO (`quetCongGiayPhep(goc, ghiDe)` / `quetPhamViDoc(goc, ghiDe)`) nên KHÔNG ghi gì vào cây repo và nguy cơ ENOENT
+   *   chéo giữa các lưới đã hết tại gốc. Giữ lại bản mô tả cũ làm bằng chứng lịch sử.
+   *
    * ⚠⚠⚠ **BA lời khai trong MỘT ô, và đó là một quyết định có lý do — không phải lười.**
    * Hai file đột biến được ghi và xoá **trong cùng một cửa sổ**, và bộ suy chỉ chạy **một lần**.
    * Lý do: các cổng khác của repo duyệt `server/**` rồi `readFileSync` **từng file** — đo được ở
@@ -766,9 +770,11 @@ export const dotBienNgoaiAiRouter = router({
       expect(existsSync(f), `file đột biến còn sót từ lượt trước — dọn đi trước khi chạy: ${f}`).toBe(false);
     }
     try {
-      writeFileSync(FILE_AI_MOI, MA_AI_MOI, "utf8");
-      writeFileSync(FILE_NGOAI_AI, MA_NGOAI_AI, "utf8");
-      const lai = quetCongGiayPhep(GOC_REPO);
+      // Tệp ẢO (không ghi đĩa) — xem ghi chú ở docblock phía trên.
+      const lai = quetCongGiayPhep(GOC_REPO, {
+        "server/routers/aiDotBienRouter.ts": MA_AI_MOI,
+        "server/routers/__dotBienNgoaiAiRouter.ts": MA_NGOAI_AI,
+      });
       const tim = (duoi: string, ten: string): ThuTucCong | undefined =>
         lai.thuTuc.find((t) => t.file.endsWith(duoi) && t.ten === ten);
 
@@ -794,8 +800,6 @@ export const dotBienNgoaiAiRouter = router({
       const roRi = lai.thuTuc.filter((x) => !laBeMatAi(x.file) && x.module === "MOD_AI");
       expect(roRi.map(khoaCong)).toContain(khoaCong(khoaNham as ThuTucCong));
     } finally {
-      rmSync(FILE_AI_MOI, { force: true });
-      rmSync(FILE_NGOAI_AI, { force: true });
     }
     for (const f of [FILE_AI_MOI, FILE_NGOAI_AI]) {
       expect(existsSync(f), "phép đột biến phải tự dọn — file đột biến không được ở lại cây").toBe(false);
