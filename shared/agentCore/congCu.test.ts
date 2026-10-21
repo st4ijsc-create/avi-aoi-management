@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CONG_CU,
+  CONG_CU_TUY_CHON,
   TEN_CONG_CU,
   LOAI_CONG_CU,
   congCuTheoCheDo,
@@ -16,7 +17,10 @@ const tenTheoCheDo = (c: Parameters<typeof congCuTheoCheDo>[0]) => congCuTheoChe
 
 describe("congCu — schema 15 tool (10 của Đợt 1 + 4 của Đợt 2 + lookup_api)", () => {
   it("có đúng 15 tool (spec Đợt 1 §3 + Đợt 2 §2 + lookup_api 2026-10-18), tên tiếng Anh, có mô tả + parameters object", () => {
-    expect([...TEN_CONG_CU].sort()).toEqual(
+    // ★ Đợt 9 — `compile_st` là tool TUỲ CHỌN (sổ `CONG_CU_TUY_CHON`): có schema ở đây, nhưng KHÔNG thuộc bộ 15 phơi mặc định
+    //   (xem `congCu.compileSt.test.ts`). Bộ 15 dưới đây là phần CHUẨN.
+    expect([...CONG_CU_TUY_CHON]).toEqual(["compile_st"]);
+    expect([...TEN_CONG_CU].filter((t) => !CONG_CU_TUY_CHON.has(t)).sort()).toEqual(
       [
         "delete_file",
         "edit_file",

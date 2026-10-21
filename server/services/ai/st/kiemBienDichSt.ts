@@ -144,7 +144,7 @@ export async function kiemVaSuaST(y: TuyChonKiemST): Promise<KetQuaKiemBienDichS
 }
 
 /** Cờ `AI_KIEM_BIEN_DICH_ST` = danh sách bề mặt (`v1`, `tro-ly`, `cmdk`) hoặc `off` (mặc định). */
-export function kiemBienDichBat(beMat: "v1" | "tro-ly" | "cmdk", env: NodeJS.ProcessEnv = process.env): boolean {
+export function kiemBienDichBat(beMat: "v1" | "tro-ly" | "cmdk" | "agent", env: NodeJS.ProcessEnv = process.env): boolean {
   const ds = (env.AI_KIEM_BIEN_DICH_ST ?? "off").split(",").map((x) => x.trim().toLowerCase());
   return ds.includes(beMat) || ds.includes("all");
 }
