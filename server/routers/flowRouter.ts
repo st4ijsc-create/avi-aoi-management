@@ -25,10 +25,11 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { router, moduleProcedure, moduleGate, writeProcedure, adminProcedure, deployProcedure } from "../_core/trpc";
 import { appError } from "../_core/appError";
 import { getDb } from "../db/connection";
-import { aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../drizzle/schema";
-import { THU_TU_HANG, NodeInstanceSchema, kiemLuong, type FlowDefinition, type HangTacDungPhu } from "../../shared/flow/model";
+import { aiFlowCredentials, aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../drizzle/schema";
+import { THU_TU_HANG, NodeInstanceSchema, kiemLuong, luongConCuaNut, type FlowDefinition, type HangTacDungPhu } from "../../shared/flow/model";
 import { LoiNgoaiPhamVi, chayThuNut, type BoKiemPhamVi } from "../services/flow/chayThuNut";
 import { boKiemPhamVi, kiemThamChieuTinh } from "../services/flow/boKiemPhamVi";
+import { biMatTrongPhamVi, luongTrongPhamVi, luotTrongPhamVi, nhaMayChoLuongMoi, nhaMayChoPhep, nhaMayHopLe } from "../services/flow/phamViLuong";
 import { phamViCua } from "./_phamViNguoiXem";
 import { LoiLuong, batDauRun, hangLuongConTuDb, luuPhienBan, traLoiCho } from "../services/flow/dongCo";
 import { taoTuMoTa } from "../services/flow/taoTuMoTa";
@@ -53,7 +54,7 @@ const batOtProcedure = deployProcedure.use(moduleGate("MOD_AI"));
 const RE_ID_OT = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Cổng TRƯỚC step-up của `batLuongOt`: admin, và phiên bản tồn tại + hạng `ot`. Đọc raw input (chưa qua zod) — tự kiểm kiểu. */
-async function chanTruocBatLuongOt({ ctx, rawInput }: { ctx: { user?: { role?: string } | null }; rawInput: unknown }): Promise<void> {
+async function chanTruocBatLuongOt({ ctx, rawInput }: { ctx: { user?: { id?: number; role?: string } | null }; rawInput: unknown }): Promise<void> {
   if (ctx.user?.role !== "admin") {
     throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowKichHoatHangCao" }, "Luồng hạng ot chỉ quản trị viên (kèm 2FA) được bật.");
   }
@@ -61,6 +62,8 @@ async function chanTruocBatLuongOt({ ctx, rawInput }: { ctx: { user?: { role?: s
   if (!r || typeof r.flowId !== "string" || !RE_ID_OT.test(r.flowId) || typeof r.version !== "number" || !Number.isInteger(r.version) || r.version < 1) {
     throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowKichHoat" }, "Thiếu flowId/version hợp lệ.");
   }
+  // Đợt 9 (IDOR) — luồng ngoài phạm vi người gọi = không tồn tại (cùng thông điệp), TRƯỚC khi tiêu OTP.
+  if (!(await luongTrongPhamVi(phamViCua(ctx as CoCtx), r.flowId))) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowKichHoat" }, `Không có luồng ${r.flowId}@${r.version}.`);
   const db = await layDb("flowKichHoat");
   const [v] = await db.select({ riskClass: aiFlowVersions.riskClass }).from(aiFlowVersions).where(and(eq(aiFlowVersions.flowId, r.flowId), eq(aiFlowVersions.version, r.version)));
   if (!v) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowKichHoat" }, `Không có luồng ${r.flowId}@${r.version}.`);
@@ -132,6 +135,52 @@ export function catJson(v: unknown, tran = TRAN_CHU_BUOC): unknown {
 }
 
 /**
+ * ★★★ Đợt 9 (IDOR, duyệt (d)) — PHẠM VI NHÀ MÁY của chính luồng. Mọi thủ tục nhận flowId / runId / credentialId (và mọi danh sách) đi qua
+ * các hàm này TRƯỚC khi chạm dữ liệu. Ngoài phạm vi và không tồn tại ⇒ CÙNG MỘT NOT_FOUND (cùng thông điệp, không lộ tồn tại).
+ * Census `flowRouterPhamViCensus.test.ts` đọc mã: thủ tục nào không gọi một trong các hàm này (trừ danh sách khai tường minh) ⇒ đỏ.
+ */
+type CoCtx = { user: { id: number; role: string } };
+async function chanLuong(ctx: CoCtx, flowId: string, op: Op, thongDiep = `Không có luồng ${flowId}.`): Promise<void> {
+  if (!(await luongTrongPhamVi(phamViCua(ctx), flowId))) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: op }, thongDiep);
+}
+async function chanLuot(ctx: CoCtx, runId: string, op: Op, thongDiep = `Không có lượt ${runId}.`): Promise<void> {
+  if (!(await luotTrongPhamVi(phamViCua(ctx), runId))) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: op }, thongDiep);
+}
+async function chanBiMat(ctx: CoCtx, id: string, op: Op): Promise<void> {
+  if (!(await biMatTrongPhamVi(phamViCua(ctx), id))) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: op }, `Không có bí mật ${id}.`);
+}
+/** Mệnh đề SQL `col IN (…)` theo tập nhà máy được phép (`null` = tất cả ⇒ không lọc; `[]` ⇒ không hàng nào). */
+function locNhaMay(col: ReturnType<typeof sql>, cho: number[] | null) {
+  if (cho === null) return sql`TRUE`;
+  if (cho.length === 0) return sql`FALSE`;
+  return sql`${col} IN (${sql.join(cho.map((x) => sql`${x}`), sql`, `)})`;
+}
+/** Nhà máy gán cho luồng / bí mật MỚI (xem `nhaMayChoLuongMoi`); lỗi ⇒ appError rõ lý do. */
+async function nhaMayMoi(ctx: CoCtx, yeuCau: number | undefined, op: Op): Promise<number | null> {
+  const kq = await nhaMayChoLuongMoi(phamViCua(ctx), yeuCau);
+  if (kq.ok) return kq.factoryId;
+  if (kq.lyDo === "can-chon-nha-may") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: op }, "Bạn thuộc nhiều nhà máy — phải chọn factoryId.");
+  throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowPhamVi" }, kq.lyDo === "chua-co-nha-may" ? "Tài khoản chưa được gán nhà máy nào." : "Nhà máy không nằm trong phạm vi của bạn.");
+}
+/** Luồng LƯU: mọi `credentialRef` và luồng con được tham chiếu phải tồn tại và thuộc phạm vi NGƯỜI LƯU (cùng thông điệp cho không tồn tại / ngoài phạm vi). */
+async function kiemThamChieuKhiLuu(def: Record<string, unknown>, ctx: CoCtx): Promise<void> {
+  const pv = phamViCua(ctx);
+  const nodes = Array.isArray(def.nodes) ? (def.nodes as { id?: unknown; type?: unknown; parameters?: unknown; credentialRef?: unknown }[]) : [];
+  for (const n of nodes) {
+    const id = typeof n.id === "string" ? n.id : "?";
+    if (typeof n.credentialRef === "string" && !(await biMatTrongPhamVi(pv, n.credentialRef))) {
+      throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowLuu" }, `Luồng không hợp lệ: node '${id}': credentialRef '${n.credentialRef}' không tồn tại hoặc ngoài phạm vi của bạn.`);
+    }
+    const { ids } = luongConCuaNut({ id, type: String(n.type ?? ""), parameters: (n.parameters ?? {}) as Record<string, unknown> });
+    for (const con of ids) {
+      if (con !== def.id && !(await luongTrongPhamVi(pv, con))) {
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowLuu" }, `Luồng không hợp lệ: luồng con '${con}' không tồn tại hoặc chưa có phiên bản hoạt động.`);
+      }
+    }
+  }
+}
+
+/**
  * ★ Đợt 9 (IDOR) — lúc BẬT: mọi `may` / FOE workflow viết THẲNG trong định nghĩa phải nằm trong phạm vi NGƯỜI BẬT (biểu thức động để kiểm lúc
  * chạy). Ngoài phạm vi / không tồn tại ⇒ NOT_FOUND, cùng thông điệp.
  */
@@ -142,18 +191,20 @@ async function kiemTruocKhiBat(def: FlowDefinition, ctx: { user: { id: number; r
 
 export const flowRouter = router({
   /** Mọi luồng + phiên bản hoạt động + phiên bản mới nhất + hạng. */
-  danhSach: xemProcedure.query(async () => {
+  danhSach: xemProcedure.query(async ({ ctx }) => {
     const db = await layDb("flowXem");
+    const cho = await nhaMayChoPhep(phamViCua(ctx));
     const rows = (await db.execute(sql`
       SELECT f.id, f.name, f."activeVersion", f.enabled, f."riskClass", f."updatedAt",
              (SELECT max(v.version) FROM ai_flow_versions v WHERE v."flowId" = f.id)::int AS "phienBanMoiNhat",
              (SELECT r.status FROM ai_flow_runs r WHERE r."flowId" = f.id ORDER BY r."startedAt" DESC LIMIT 1) AS "trangThaiLuotCuoi"
-        FROM ai_flows f ORDER BY f."updatedAt" DESC LIMIT 500`)) as unknown as Record<string, unknown>[];
+        FROM ai_flows f WHERE ${locNhaMay(sql`f."factoryId"`, cho)} ORDER BY f."updatedAt" DESC LIMIT 500`)) as unknown as Record<string, unknown>[];
     return rows;
   }),
 
   /** Định nghĩa của phiên bản yêu cầu / hoạt động / mới nhất + danh sách phiên bản. */
-  chiTiet: xemProcedure.input(z.object({ flowId: flowIdSchema, version: z.number().int().min(1).optional() })).query(async ({ input }) => {
+  chiTiet: xemProcedure.input(z.object({ flowId: flowIdSchema, version: z.number().int().min(1).optional() })).query(async ({ input, ctx }) => {
+    await chanLuong(ctx, input.flowId, "flowXem");
     const db = await layDb("flowXem");
     const [f] = await db.select().from(aiFlows).where(eq(aiFlows.id, input.flowId));
     if (!f) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowXem" }, `Không có luồng ${input.flowId}.`);
@@ -178,11 +229,24 @@ export const flowRouter = router({
   }),
 
   /** Lưu phiên bản MỚI (bất biến) sau khi kiểm hợp lệ + tham số kích hoạt. */
-  luu: ghiProcedure.input(z.object({ definition: z.record(z.string(), z.unknown()) })).mutation(async ({ input, ctx }) => {
+  luu: ghiProcedure
+    .input(z.object({ definition: z.record(z.string(), z.unknown()), factoryId: z.number().int().positive().optional() }))
+    .mutation(async ({ input, ctx }) => {
     const loiKichHoat = kiemThamSoKichHoat(input.definition);
     if (loiKichHoat.length) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowLuu" }, `Luồng không hợp lệ: ${loiKichHoat.join("; ")}`);
+    // ★ Đợt 9 (IDOR): id đã có ⇒ phải thuộc phạm vi người lưu (không được thêm phiên bản vào luồng của nhà máy khác); id mới ⇒ gán nhà máy.
+    let factoryId: number | null = null;
+    const idLuong = typeof input.definition.id === "string" ? input.definition.id : null;
+    if (idLuong && RE_ID.test(idLuong)) {
+      const dbL = await layDb("flowLuu");
+      const [co] = await dbL.select({ id: aiFlows.id }).from(aiFlows).where(eq(aiFlows.id, idLuong)).limit(1);
+      if (co) {
+        if (!(await luongTrongPhamVi(phamViCua(ctx), idLuong))) throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowLuu" }, "Id luồng đã được dùng — chọn id khác.");
+      } else factoryId = await nhaMayMoi(ctx, input.factoryId, "flowLuu");
+    }
+    await kiemThamChieuKhiLuu(input.definition, ctx);
     try {
-      return await luuPhienBan(input.definition, ctx.user.id);
+      return await luuPhienBan(input.definition, ctx.user.id, factoryId);
     } catch (e) {
       if (e instanceof LoiLuong && e.code === "LUONG_KHONG_HOP_LE") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowLuu" }, `Luồng không hợp lệ: ${e.message}`);
       if (e instanceof LoiLuong && e.code === "KHONG_CO_DB") throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "flowLuu" }, e.message);
@@ -197,6 +261,7 @@ export const flowRouter = router({
   datPhienBanHoatDong: ghiProcedure
     .input(z.object({ flowId: flowIdSchema, version: z.number().int().min(1), bat: z.boolean(), xoayToken: z.boolean().optional() }))
     .mutation(async ({ input, ctx }) => {
+      await chanLuong(ctx, input.flowId, "flowKichHoat", `Không có luồng ${input.flowId}@${input.version}.`);
       const db = await layDb("flowKichHoat");
       const [v] = await db.select().from(aiFlowVersions).where(and(eq(aiFlowVersions.flowId, input.flowId), eq(aiFlowVersions.version, input.version)));
       if (!v) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowKichHoat" }, `Không có luồng ${input.flowId}@${input.version}.`);
@@ -228,6 +293,7 @@ export const flowRouter = router({
     .meta({ chanTruocStepUp: chanTruocBatLuongOt })
     .input(z.object({ flowId: flowIdSchema, version: z.number().int().min(1), totpCode: z.string().regex(/^\d{6}$/) }))
     .mutation(async ({ input, ctx }) => {
+      await chanLuong(ctx, input.flowId, "flowKichHoat", `Không có luồng ${input.flowId}@${input.version}.`);
       const db = await layDb("flowKichHoat");
       const [v] = await db.select().from(aiFlowVersions).where(and(eq(aiFlowVersions.flowId, input.flowId), eq(aiFlowVersions.version, input.version)));
       if (!v) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowKichHoat" }, `Không có luồng ${input.flowId}@${input.version}.`);
@@ -251,6 +317,7 @@ export const flowRouter = router({
   chayTay: ghiProcedure
     .input(z.object({ flowId: flowIdSchema, items: z.array(itemSchema).max(100).optional(), version: z.number().int().min(1).optional() }))
     .mutation(async ({ input, ctx }) => {
+      await chanLuong(ctx, input.flowId, "flowChayTay");
       const db = await layDb("flowChayTay");
       const [f] = await db.select().from(aiFlows).where(eq(aiFlows.id, input.flowId));
       if (!f) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowChayTay" }, `Không có luồng ${input.flowId}.`);
@@ -305,7 +372,8 @@ export const flowRouter = router({
 
   lichSuChay: xemProcedure
     .input(z.object({ flowId: flowIdSchema, gioiHan: z.number().int().min(1).max(200).default(50) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await chanLuong(ctx, input.flowId, "flowXem");
       const db = await layDb("flowXem");
       return db
         .select({
@@ -319,7 +387,8 @@ export const flowRouter = router({
     }),
 
   /** Dòng thời gian một lượt: bước (input/output cắt ở `TRAN_CHU_BUOC`) + sự kiện. */
-  dongThoiGian: xemProcedure.input(z.object({ runId: z.string().uuid() })).query(async ({ input }) => {
+  dongThoiGian: xemProcedure.input(z.object({ runId: z.string().uuid() })).query(async ({ input, ctx }) => {
+    await chanLuot(ctx, input.runId, "flowXem");
     const db = await layDb("flowXem");
     const [run] = await db.select().from(aiFlowRuns).where(eq(aiFlowRuns.id, input.runId));
     if (!run) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowXem" }, `Không có lượt ${input.runId}.`);
@@ -333,14 +402,15 @@ export const flowRouter = router({
   }),
 
   /** Hàng chờ DUYỆT còn hạn (trang duyệt). */
-  danhSachCho: xemProcedure.query(async () => {
+  danhSachCho: xemProcedure.query(async ({ ctx }) => {
     const db = await layDb("flowXem");
+    const cho = await nhaMayChoPhep(phamViCua(ctx));
     const rows = (await db.execute(sql`
       SELECT w."runId", w."nodeId", w."expiresAt", w.payload, r."flowId", r.version, r."startedAt", f.name AS "tenLuong"
         FROM ai_flow_waits w
         JOIN ai_flow_runs r ON r.id = w."runId"
         LEFT JOIN ai_flows f ON f.id = r."flowId"
-       WHERE w.kind = 'duyet' AND (w."expiresAt" IS NULL OR w."expiresAt" > now())
+       WHERE w.kind = 'duyet' AND (w."expiresAt" IS NULL OR w."expiresAt" > now()) AND ${locNhaMay(sql`f."factoryId"`, cho)}
        ORDER BY r."startedAt" DESC LIMIT 200`)) as unknown as {
       runId: string; nodeId: string; expiresAt: string | null; flowId: string; version: number; startedAt: string; tenLuong: string | null;
       payload: { tieuDe?: string; noiDung?: string; vaiTroDuyet?: string; items?: { json: unknown }[] } | null;
@@ -359,6 +429,7 @@ export const flowRouter = router({
   duyet: ghiProcedure
     .input(z.object({ runId: z.string().uuid(), nodeId: z.string().regex(RE_ID), dongY: z.boolean(), lyDo: z.string().max(2000).optional() }))
     .mutation(async ({ input, ctx }) => {
+      await chanLuot(ctx, input.runId, "flowDuyet", "Không có bước nào đang chờ duyệt ở đây.");
       const db = await layDb("flowDuyet");
       const [w] = (await db.execute(sql`SELECT kind, payload FROM ai_flow_waits WHERE "runId" = ${input.runId} AND "nodeId" = ${input.nodeId}`)) as unknown as { kind: string; payload: unknown }[];
       if (!w) {
@@ -389,18 +460,30 @@ export const flowRouter = router({
         loai: z.enum(LOAI_BI_MAT as [string, ...string[]]),
         giaTri: z.string().min(4).max(8192),
         ghiDe: z.boolean().optional(),
+        /** Đợt 9 — nhà máy của bí mật (admin: vắng ⇒ TOÀN HỆ THỐNG, chỉ admin dùng được). */
+        factoryId: z.number().int().positive().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      // ★ Đợt 9 (IDOR): ghi đè bí mật đã có ⇒ phải thuộc phạm vi; bí mật mới ⇒ gán nhà máy theo cùng luật với luồng.
+      const { factoryId: yeuCau, ...phanCon } = input;
+      let factoryId: number | null | undefined;
+      const dbB = await layDb("flowBiMatTao");
+      const [co] = await dbB.select({ id: aiFlowCredentials.id }).from(aiFlowCredentials).where(eq(aiFlowCredentials.id, input.id)).limit(1);
+      if (co && input.ghiDe) {
+        await chanBiMat(ctx, input.id, "flowBiMatTao");
+        factoryId = yeuCau === undefined ? undefined : await nhaMayMoi(ctx, yeuCau, "flowBiMatTao");
+      } else if (!co) factoryId = await nhaMayMoi(ctx, yeuCau, "flowBiMatTao");
       try {
-        return await taoBiMat(input, ctx.user.id);
+        return await taoBiMat({ ...phanCon, factoryId }, ctx.user.id);
       } catch (e) {
         loiBiMat(e, "flowBiMatTao");
       }
     }),
 
   /** Xoá một bí mật — admin. Luồng còn trỏ tới nó sẽ lỗi rõ ở node lúc chạy. */
-  biMatXoa: adminAiProcedure.input(z.object({ id: z.string().regex(RE_ID) })).mutation(async ({ input }) => {
+  biMatXoa: adminAiProcedure.input(z.object({ id: z.string().regex(RE_ID) })).mutation(async ({ input, ctx }) => {
+    await chanBiMat(ctx, input.id, "flowBiMatXoa");
     let xoa: boolean;
     try {
       xoa = await xoaBiMat(input.id);
@@ -412,12 +495,18 @@ export const flowRouter = router({
   }),
 
   /** Danh sách bí mật (id, tên, loại, phiên bản khoá, ngày) — quyền sửa luồng; KHÔNG giá trị. */
-  biMatDanhSach: ghiProcedure.query(async () => {
+  biMatDanhSach: ghiProcedure.query(async ({ ctx }) => {
+    let ds: Awaited<ReturnType<typeof lietKeBiMat>>;
     try {
-      return await lietKeBiMat();
+      ds = await lietKeBiMat();
     } catch (e) {
       loiBiMat(e, "flowBiMatXem");
     }
+    // ★ Đợt 9 (IDOR): chỉ bí mật trong phạm vi người gọi (NULL = toàn hệ thống ⇒ chỉ phạm vi "tất cả").
+    const cho = await nhaMayChoPhep(phamViCua(ctx));
+    const db = await layDb("flowBiMatXem");
+    const nm = new Map((await db.select({ id: aiFlowCredentials.id, f: aiFlowCredentials.factoryId }).from(aiFlowCredentials)).map((r) => [r.id, r.f]));
+    return ds.filter((b) => nhaMayHopLe(nm.get(b.id), cho));
   }),
 
   /**
@@ -436,12 +525,15 @@ export const flowRouter = router({
    * (hạng luồng con đọc CSDL) ⇒ BẢN NHÁP. KHÔNG lưu, KHÔNG bật — người mở bản nháp trên canvas rồi tự `luu`. Quyền = sửa luồng.
    * Mutation (gọi model — tốn, không tất định), không phải query.
    */
-  taoTuMoTa: ghiProcedure.input(z.object({ moTa: z.string().trim().min(10).max(4000) })).mutation(async ({ input }) => {
+  taoTuMoTa: ghiProcedure.input(z.object({ moTa: z.string().trim().min(10).max(4000) })).mutation(async ({ input, ctx }) => {
     try {
       return await taoTuMoTa(input.moTa, {
         hangLuongCon: async (ids) => {
           const m = await hangLuongConTuDb(ids);
-          return (id) => m.get(id) ?? null;
+          // ★ Đợt 9 (IDOR): luồng con ngoài phạm vi người gọi = không tồn tại (không lộ hạng của luồng nhà máy khác).
+          const thay = new Set<string>();
+          for (const id of ids) if (await luongTrongPhamVi(phamViCua(ctx), id)) thay.add(id);
+          return (id) => (thay.has(id) ? (m.get(id) ?? null) : null);
         },
       });
     } catch (e) {

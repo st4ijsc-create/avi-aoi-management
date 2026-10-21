@@ -31,12 +31,19 @@ const noi = (a: string, b: string, pa = "main") => ({ from: { node: a, port: pa 
 const def = (id: string, nodes: unknown[], connections: unknown[]) => ({ id: `${TT}-${id}`, name: id, version: 1, nodes, connections });
 
 let uid = 0;
+let fidLc = 0;
 const goi = (role: string) => flowRouter.createCaller({ user: { id: uid, role } } as never);
 const db = async () => (await getDb())!;
 
 beforeAll(async () => {
-  const [u] = (await (await db()).execute(sql`SELECT id FROM users ORDER BY id LIMIT 1`)) as unknown as { id: number }[];
-  uid = u.id;
+  const [uMoi] = (await (await db()).execute(sql`INSERT INTO users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
+    VALUES (${TT + "-nd-" + Date.now().toString(36)}, ${TT + "_nd_" + Date.now().toString(36)}, ${"người gọi"}, ${"password"}, ${"engineer"}, true, false, now()) RETURNING id`)) as unknown as { id: number }[];
+  uid = uMoi.id;
+  // Đợt 9 — luồng có phạm vi nhà máy: người gọi (vai engineer) thuộc ĐÚNG MỘT nhà máy của test ⇒ luồng mới tự gán nhà máy ấy.
+  const d0 = await db();
+  const [fa] = (await d0.execute(sql`INSERT INTO factories (code, name, "isActive") VALUES (${TT + "F"}, ${"T84 F"}, true) RETURNING id`)) as unknown as { id: number }[];
+  fidLc = fa.id;
+  await d0.execute(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uid}, ${TT + "F"})`);
 });
 afterAll(async () => {
   const d = await getDb();
@@ -44,6 +51,9 @@ afterAll(async () => {
   const runs = await d.select({ id: aiFlowRuns.id }).from(aiFlowRuns).where(like(aiFlowRuns.flowId, `${TT}%`));
   if (runs.length) await d.delete(aiFlowRuns).where(inArray(aiFlowRuns.id, runs.map((r) => r.id)));
   await d.delete(aiFlows).where(like(aiFlows.id, `${TT}%`));
+  await d.execute(sql`DELETE FROM user_factory_assignments WHERE "userId" = ${uid} AND "factoryCode" = ${TT + "F"}`);
+  await d.execute(sql`DELETE FROM factories WHERE id = ${fidLc}`);
+  await d.execute(sql`DELETE FROM users WHERE id = ${uid}`);
 });
 let cuAgent: HamGoiAgent | null = null;
 afterEach(() => {
@@ -62,7 +72,8 @@ async function raCua(runId: string, nodeId: string): Promise<Record<string, unkn
 }
 /** Lưu + đặt phiên bản hoạt động (bật) bằng vai cho trước. */
 async function luuVaBat(d: ReturnType<typeof def>, role = "engineer") {
-  const r = await goi(role).luu({ definition: d });
+  // admin tạo luồng mặc định NULL (toàn hệ thống — kỹ sư không dùng được); luồng con dùng chung phải thuộc nhà máy của kỹ sư.
+  const r = await goi(role).luu({ definition: d, factoryId: role === "admin" ? fidLc : undefined });
   await goi(role).datPhienBanHoatDong({ flowId: d.id, version: r.version, bat: true });
   return r;
 }

@@ -90,7 +90,7 @@ describe("vết model của node AI (Đợt 9)", () => {
     datAnhSoModel(anh([{ scopeKind: "flow", scopeId: `${TT}-doc`, profileId: "p-nang" }], new Map([["p-nang", P({})]])));
     const { runId } = await chayMot("doc");
     const [u] = (await (await getDb())!.execute(sql`SELECT id FROM users WHERE role = 'admin' AND "isActive" ORDER BY id LIMIT 1`)) as unknown as { id: number }[];
-    const dtg = await flowRouter.createCaller({ user: { id: u.id, role: "viewer" } } as never).dongThoiGian({ runId });
+    const dtg = await flowRouter.createCaller({ user: { id: u.id, role: "admin" } } as never).dongThoiGian({ runId });
     const e = dtg.suKien.find((x) => x.kind === "buoc.model");
     expect(e?.payload).toMatchObject({ nodeId: "a", lan: 1, duPhong: true, kheBan: true });
   });

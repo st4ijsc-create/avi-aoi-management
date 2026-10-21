@@ -81,13 +81,13 @@ export async function kiemLuongDayDu(raw: unknown): Promise<ReturnType<typeof ki
 }
 
 /** Lưu một phiên bản MỚI (bất biến) của luồng sau khi kiểm hợp lệ. Trả số phiên bản. */
-export async function luuPhienBan(raw: unknown, userId: number | null): Promise<{ flowId: string; version: number; hang: string }> {
+export async function luuPhienBan(raw: unknown, userId: number | null, factoryId: number | null = null): Promise<{ flowId: string; version: number; hang: string }> {
   const kq = await kiemLuongDayDu(raw);
   if (!kq.ok) throw new LoiLuong("LUONG_KHONG_HOP_LE", kq.loi.join("; "));
   const def = raw as FlowDefinition;
   const db = await layDb();
   return db.transaction(async (tx) => {
-    await tx.insert(aiFlows).values({ id: def.id, name: def.name, ownerId: userId, riskClass: kq.hang }).onConflictDoNothing();
+    await tx.insert(aiFlows).values({ id: def.id, name: def.name, ownerId: userId, riskClass: kq.hang, factoryId }).onConflictDoNothing();
     const [m] = (await tx.execute(sql`SELECT coalesce(max(version), 0)::int AS v FROM ai_flow_versions WHERE "flowId" = ${def.id}`)) as unknown as { v: number }[];
     const version = m.v + 1;
     await tx.insert(aiFlowVersions).values({ flowId: def.id, version, definition: { ...def, version }, riskClass: kq.hang, createdBy: userId });
