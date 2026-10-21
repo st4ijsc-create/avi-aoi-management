@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, like } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
-import { aiModelArtifacts, aiServingProfiles } from "../../../../drizzle/schema";
+import { aiModelArtifacts, aiModelBindings, aiModelEvalRuns, aiServingProfiles } from "../../../../drizzle/schema";
 import { luuHoSo, LoiSuaSoModel, suaArtifact, type YeuCauLuuHoSo } from "./suaSoModel";
 
 const TT = "t74sua";
@@ -26,11 +26,14 @@ describe("suaSoModel (DB _test, Đợt 7.4)", () => {
       { id: `${TT}-chu`, filePath: `${TT}-chu.gguf`, family: "probe" },
       { id: `${TT}-nhung`, filePath: `${TT}-nhung.gguf`, family: "probe", loai: "nhung" },
       { id: `${TT}-mat`, filePath: `${TT}-mat.gguf`, family: "probe", status: "missing" },
+      { id: `${TT}-chu2`, filePath: `${TT}-chu2.gguf`, family: "probe" },
     ]);
   });
   afterAll(async () => {
     const db = await getDb();
     if (!db) return;
+    await db.delete(aiModelBindings).where(like(aiModelBindings.scopeId, `${TT}%`));
+    await db.delete(aiModelEvalRuns).where(like(aiModelEvalRuns.profileId, `${TT}%`));
     await db.delete(aiServingProfiles).where(like(aiServingProfiles.id, `${TT}%`));
     await db.delete(aiModelArtifacts).where(like(aiModelArtifacts.id, `${TT}%`));
   });
@@ -71,5 +74,25 @@ describe("suaSoModel (DB _test, Đợt 7.4)", () => {
     expect(await maLoi(luuHoSo(db, hs({ id: `${TT}-q5`, ctx: 300_000 })))).toBe("DAU_VAO_SAI");
     const sot = await db.select({ id: aiServingProfiles.id }).from(aiServingProfiles).where(like(aiServingProfiles.id, `${TT}-q%`));
     expect(sot).toEqual([]);
+  });
+
+  it("★ L2 (audit kiem-dinh) — đổi artifact của hồ sơ ĐANG được gán hoặc ĐÃ có lượt đo ⇒ từ chối (lách cổng đo + giấy phép)", async () => {
+    const db = (await getDb())!;
+    // hồ sơ có gán (tenant, không phải active global ⇒ không đụng định tuyến thật)
+    await luuHoSo(db, hs({ id: `${TT}-gan@8k` }));
+    await db.insert(aiModelBindings).values({ roleId: "extract", scopeKind: "tenant", scopeId: `${TT}-t`, profileId: `${TT}-gan@8k`, mode: "shadow" });
+    expect(await maLoi(luuHoSo(db, hs({ id: `${TT}-gan@8k`, artifactId: `${TT}-chu2` })))).toBe("HO_SO_DANG_DUNG");
+    // hồ sơ là DỰ PHÒNG của một gán
+    await luuHoSo(db, hs({ id: `${TT}-dp@8k` }));
+    await db.insert(aiModelBindings).values({ roleId: "extract", scopeKind: "tenant", scopeId: `${TT}-t2`, envKey: "GGUF_FAST_MODEL", fallback: [`${TT}-dp@8k`], mode: "shadow" });
+    expect(await maLoi(luuHoSo(db, hs({ id: `${TT}-dp@8k`, artifactId: `${TT}-chu2` })))).toBe("HO_SO_DANG_DUNG");
+    // hồ sơ đã có lượt đo (lượt đo đo artifact CŨ)
+    await luuHoSo(db, hs({ id: `${TT}-do@8k` }));
+    await db.insert(aiModelEvalRuns).values({ profileId: `${TT}-do@8k`, suite: "probe", nTasks: 1, nPass: 1, nRuns: 1 });
+    expect(await maLoi(luuHoSo(db, hs({ id: `${TT}-do@8k`, artifactId: `${TT}-chu2` })))).toBe("HO_SO_DANG_DUNG");
+    // Sửa trường KHÁC artifact của hồ sơ đang dùng vẫn được; hồ sơ trơn đổi artifact vẫn được.
+    expect(await maLoi(luuHoSo(db, hs({ id: `${TT}-gan@8k`, ctx: 32768 })))).toBeNull();
+    await luuHoSo(db, hs({ id: `${TT}-tron@8k` }));
+    expect(await maLoi(luuHoSo(db, hs({ id: `${TT}-tron@8k`, artifactId: `${TT}-chu2` })))).toBeNull();
   });
 });
