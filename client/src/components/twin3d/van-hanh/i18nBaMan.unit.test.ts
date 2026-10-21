@@ -65,7 +65,10 @@ describe("★★★ Đợt 36 — lưới i18n ba màn twin3d (khoá MÃ DÙNG p
     expect(tienToMau.size).toBeGreaterThanOrEqual(5);
     expect(khoaTinh.has("twin3d.line.veNhaMay")).toBe(true);
     expect(khoaTinh.has("twin3d.may.hang.nguyKich")).toBe(true);
-    expect(tienToMau.has("twin3d.coCheGiao")).toBe(true);
+    // 2026-10-21: `TwinVanHanh` đưa khoá cơ chế giao số/xuất xứ/kết nối về dạng TĨNH (`t("twin3d.coCheGiao.day.nhan", …)` từng
+    // khoá một, trong bảng tra theo trạng thái) để `i18n:check` và cổng chuỗi trần nhìn thấy được — nên `coCheGiao` không còn là
+    // tiền tố mẫu mà là khoá tĩnh. Cầu chì đổi theo: phải THẤY khoá tĩnh đầu tiên; ca bên dưới vẫn đòi đủ 5×{nhan,moTa} ở cả ba locale.
+    expect(khoaTinh.has("twin3d.coCheGiao.day.nhan")).toBe(true);
   });
 
   it("mọi khoá tĩnh `t(\"twin3d.…\")` là chuỗi ở CẢ BA locale — 0 khoá thiếu (trước Đợt 36: 43 thiếu cả ba)", () => {

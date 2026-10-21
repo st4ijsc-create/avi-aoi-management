@@ -32,33 +32,20 @@ const BUOC = [
   "ap-dung",
   "quay-ve",
 ] as const;
-const KHOA_BUOC: Record<(typeof BUOC)[number], string> = {
-  "kiem-lua-chon": "kiemLuaChon",
-  "giu-khoa": "giuKhoa",
-  "kiem-server": "kiemServer",
-  "uoc-luong-vram": "uocLuongVram",
-  "tam-dung-giam-sat": "tamDungGiamSat",
-  "cho-hang-doi": "choHangDoi",
-  "ghi-lua-chon": "ghiLuaChon",
-  "khoi-dong": "khoiDong",
-  "kiem-props": "kiemProps",
-  "sinh-thu": "sinhThu",
-  "ap-dung": "apDung",
-  "quay-ve": "quayVe",
-};
-const MAC_DINH_BUOC: Record<(typeof BUOC)[number], string> = {
-  "kiem-lua-chon": "Kiểm lựa chọn",
-  "giu-khoa": "Giữ khoá đổi model",
-  "kiem-server": "Đọc /props hiện tại",
-  "uoc-luong-vram": "Ước lượng VRAM",
-  "tam-dung-giam-sat": "Tạm dừng giám sát",
-  "cho-hang-doi": "Chờ lượt AI đang chạy",
-  "ghi-lua-chon": "Ghi lựa chọn bền",
-  "khoi-dong": "Khởi động lại llama-server",
-  "kiem-props": "Kiểm /props",
-  "sinh-thu": "Sinh thử",
-  "ap-dung": "Áp dụng định tuyến",
-  "quay-ve": "Quay về model cũ",
+// Nhãn bước: khoá i18n `gguf.doiModel.buoc.<key>` (đủ vi/en/zh) + mặc định tiếng Việt cùng một dòng.
+const NHAN_BUOC: Record<(typeof BUOC)[number], { key: string; default: string }> = {
+  "kiem-lua-chon": { key: "kiemLuaChon", default: "Kiểm lựa chọn" },
+  "giu-khoa": { key: "giuKhoa", default: "Giữ khoá đổi model" },
+  "kiem-server": { key: "kiemServer", default: "Đọc /props hiện tại" },
+  "uoc-luong-vram": { key: "uocLuongVram", default: "Ước lượng VRAM" },
+  "tam-dung-giam-sat": { key: "tamDungGiamSat", default: "Tạm dừng giám sát" },
+  "cho-hang-doi": { key: "choHangDoi", default: "Chờ lượt AI đang chạy" },
+  "ghi-lua-chon": { key: "ghiLuaChon", default: "Ghi lựa chọn bền" },
+  "khoi-dong": { key: "khoiDong", default: "Khởi động lại llama-server" },
+  "kiem-props": { key: "kiemProps", default: "Kiểm /props" },
+  "sinh-thu": { key: "sinhThu", default: "Sinh thử" },
+  "ap-dung": { key: "apDung", default: "Áp dụng định tuyến" },
+  "quay-ve": { key: "quayVe", default: "Quay về model cũ" },
 };
 
 function IconBuoc({ s }: { s: string }) {
@@ -203,7 +190,7 @@ export default function DoiModelLlamaServerCard() {
                       <li key={b.buoc} className="flex items-start gap-2">
                         <IconBuoc s={b.trangThai} />
                         <span className="min-w-0">
-                          {t(`gguf.doiModel.buoc.${KHOA_BUOC[b.buoc]}`, MAC_DINH_BUOC[b.buoc])}
+                          {t(`gguf.doiModel.buoc.${NHAN_BUOC[b.buoc].key}`, NHAN_BUOC[b.buoc].default)}
                           {b.chiTiet ? <span className="ml-1 text-xs text-muted-foreground break-all">— {b.chiTiet}</span> : null}
                         </span>
                       </li>

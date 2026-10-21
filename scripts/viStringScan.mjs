@@ -198,7 +198,16 @@ export function demNgoacNgoaiChuoi(ln) {
  * lỗi "thước rỗng" đã trả giá ở Pha 4. Quá trần thì BỎ theo dõi, và số lần chạm trần
  * được IN RA thay vì nuốt.
  */
-const TRAN_DONG_TRONG_MOT_T = 12;
+const TRAN_DONG_TRONG_MOT_T = 30;
+// ⚠ 12 → 30 (2026-10-21), KHÔNG phải để cho xanh: ĐO số dòng dài nhất của một lời gọi `t(` HỢP LỆ (đếm ngoặc về 0)
+// trên toàn `client/src` = 20 dòng (`ThanhTrangThaiAiLocal.tsx:361`, chuỗi mặc định + 9 tham số nội suy kèm chú thích);
+// kế đến 17 (`TwinLine.tsx`), 16, 14. Trần 12 cũ nhỏ hơn cả các lời gọi đúng ⇒ nó chạm trần oan 4 lần và tự cắt theo dõi
+// (đúng cái "thước lạc" mà ca `chamTran === 0` canh). 30 = 1,5 × số đo lớn nhất; một bộ đếm ngoặc LẠC thật làm độ sâu
+// không về 0 và sẽ vượt xa 30 dòng (cả phần đuôi file) nên trần vẫn bắt được.
+/** Mở một lời gọi `console.*(` mà đối số nằm từ dòng sau — thông điệp cho LẬP TRÌNH VIÊN, không hiển thị cho người dùng. */
+const MO_CONSOLE = /\bconsole\.(?:error|warn|log|info|debug)\s*\(\s*$/;
+/** `console.*(…)` trọn trên một dòng. */
+const CONSOLE_MOT_DONG = /\bconsole\.(?:error|warn|log|info|debug)\s*\(/;
 
 /**
  * File có BẢNG DỊCH TỰ VIẾT đủ ba ngôn ngữ — nhánh `vi` của bảng KHÔNG phải nợ.
@@ -261,9 +270,13 @@ export function demHinhDangBa(clientSrc = resolve("client/src"), chiTiet = false
       const dangTrongThanT = sauT > 0;
       if (sauT > 0) {
         sauT += demNgoacNgoaiChuoi(ln);
-        if (++dongTrongT > TRAN_DONG_TRONG_MOT_T) { chamTran++; sauT = 0; }
+        if (++dongTrongT > TRAN_DONG_TRONG_MOT_T) {
+          chamTran++;
+          sauT = 0;
+          if (chiTiet) dong.push({ file: file.replace(clientSrc, "").split("\\").join("/"), line: idx + 1, text: "[CHẠM TRẦN t( nhiều dòng] " + tr });
+        }
         else if (sauT <= 0) sauT = 0;
-      } else if (MO_T_CO_KHOA.test(ln)) {
+      } else if (MO_T_CO_KHOA.test(ln) || MO_CONSOLE.test(ln)) {
         const d = demNgoacNgoaiChuoi(ln);
         if (d > 0) { sauT = d; dongTrongT = 0; }
       }
@@ -271,6 +284,8 @@ export function demHinhDangBa(clientSrc = resolve("client/src"), chiTiet = false
       dongMaTruoc = ln;
 
       if (!CHU_VIET.test(ln)) return;
+      // Nhật ký cho lập trình viên (`console.error("…")` một dòng; nhiều dòng đã vào nhánh dangTrongThanT): không phải chuỗi giao diện.
+      if (CONSOLE_MOT_DONG.test(ln)) return;
       if (dangTrongThanT && !LA_THUOC_TINH_OBJECT.test(ln)) return;
       if (khoaODongTruoc && CHI_LA_CAP_THUOC_TINH.test(ln)) return;
       if (/>[^<>{}]*[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ][^<>{}]*</i.test(ln)) return;

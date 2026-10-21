@@ -598,5 +598,6 @@ export function XemTruocDoiChieu({ rongM, caoM }: { rongM: number; caoM: number 
  * phải "đúng trong thực tế", và §10A.1 không cho phép bỏ bước xác nhận nào.
  */
 export async function napGltfChoBanVe(_file: File): Promise<TomTatBanVe> {
-  throw new Error("napGltfChoBanVe: Đợt 4 lắp (cần lớp bọc three của Đợt 1)");
+  // Điểm đặt chỗ cho lập trình viên, KHÔNG có nơi gọi nào (grep 2026-10-21) nên thông điệp không bao giờ tới UI.
+  throw new Error("napGltfChoBanVe: not wired yet (needs the three wrapper of phase 1; wired in phase 4)");
 }
