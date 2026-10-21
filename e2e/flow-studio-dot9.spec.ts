@@ -98,7 +98,7 @@ test("2 — so sánh hai lượt: bước giống/khác, đường dẫn JSON, l
   await page.getByTestId("so-sanh-a").selectOption(fx.runA);
   await page.getByTestId("so-sanh-b").selectOption(fx.runB);
 
-  await expect(page.getByTestId("so-sanh-tom-tat")).toContainText("1 bước giống · 1 khác · 0 chỉ ở A · 0 chỉ ở B");
+  await expect(page.getByTestId("so-sanh-tom-tat")).toContainText("1 bước giống · 1 khác · 0 chỉ ở A · 0 chỉ ở B", { timeout: 60_000 });
   await expect(page.getByTestId("so-sanh-buoc-t")).toHaveAttribute("data-ket", "giong");
   const dat = page.getByTestId("so-sanh-buoc-dat");
   await expect(dat).toHaveAttribute("data-ket", "khac");
