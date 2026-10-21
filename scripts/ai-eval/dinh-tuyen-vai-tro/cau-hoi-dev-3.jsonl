@@ -1,0 +1,90 @@
+{"cauHoi":"tom gon giup minh doan nay: Ca dem 20/10 line 2 dung 3 lan do kep bo mach o bang tai, tong 45 phut. Da thay day dai, chay on dinh tu 3h sang.","vaiTro":"summarize","kho":true}
+{"cauHoi":"Gói gọn email này trong 2 câu cho sếp:\nAnh Minh, lô HB2610 bị trả về 37 bo do lệch linh kiện U3. Bên em đã kiểm lại 100% lô kế tiếp, chưa thấy lỗi. Đề nghị họp với nhà cung cấp kem hàn tuần sau.","vaiTro":"summarize","kho":true}
+{"cauHoi":"Recap this for the morning meeting:\n- Line 1 OEE 82%\n- Line 3 down 2h due to reflow fan\n- Scrap rate 0.6%","vaiTro":"summarize"}
+{"cauHoi":"tong ket ngan cuoc hop QA: thong nhat doi nha cung cap thiec, tang tan suat kiem SPI len 2 lan/ca, anh Tuan theo doi","vaiTro":"summarize","kho":true}
+{"cauHoi":"Tóm lược giúp báo cáo 8D sau thành một đoạn:\nD2: hở mạch chân IC sau reflow\nD4: nhiệt vùng 5 thấp 8°C\nD5: hiệu chỉnh profile, thay cảm biến nhiệt","vaiTro":"summarize","kho":true}
+{"cauHoi":"Viết lại ngắn gọn phần nhận xét kiểm toán này, giữ ý chính: hồ sơ hiệu chuẩn thiếu 3 thiết bị, quy trình ESD chưa cập nhật, khu vực kho ẩm vượt chuẩn 2 ngày","vaiTro":"summarize"}
+{"cauHoi":"Nói gọn lại giúp mấy dòng log này cho trưởng ca hiểu:\n08:10 AOI2 FAIL bridge R12\n08:12 AOI2 FAIL bridge R12\n08:15 operator recalibrate\n08:30 AOI2 PASS","vaiTro":"summarize","kho":true}
+{"cauHoi":"tóm tắt hộ bài viết về lean dưới đây trong 3 gạch đầu dòng: ...","vaiTro":"summarize"}
+{"cauHoi":"Summarize the customer complaint below in one sentence: Boards from lot 4471 show intermittent resets; our analysis points to cold joints on the regulator.","vaiTro":"summarize"}
+{"cauHoi":"làm bản tóm tắt điều hành cho báo cáo năng suất quý từ số liệu: Q1 1,2tr bo, Q2 1,35tr, Q3 1,41tr; tỉ lệ lỗi giảm từ 1,1% xuống 0,7%","vaiTro":"summarize"}
+{"cauHoi":"rut gon bien ban ban giao ca nay con 3 y","vaiTro":"summarize","kho":true}
+{"cauHoi":"Tổng hợp ý kiến công nhân về ca xoay vòng từ các phản hồi sau: \"mệt vì đổi ca liên tục\", \"thích được nghỉ 2 ngày liền\", \"cần báo lịch sớm hơn\"","vaiTro":"summarize"}
+{"cauHoi":"Khái quát nội dung chính của hướng dẫn công việc WI-SMT-012 bên dưới","vaiTro":"summarize"}
+{"cauHoi":"tóm gọn kết quả DOE này: nhiệt 245 cho tỉ lệ void 3%, 250 cho 2,1%, 255 cho 2,4%","vaiTro":"summarize","kho":true}
+{"cauHoi":"Can you shorten this changelog for operators? v2.3: new barcode format, faster upload, fixed crash when printer offline","vaiTro":"summarize"}
+{"cauHoi":"lay ra cac ma loi va so lan xuat hien tu log:\nE101 nozzle\nE205 feeder\nE101 nozzle\nE330 vacuum","vaiTro":"extract","kho":true}
+{"cauHoi":"Bóc tách giúp ngày, ca, người trực từ lịch sau thành bảng: 21/10 ca A anh Hùng; 21/10 ca B chị Mai; 22/10 ca A anh Long","vaiTro":"extract","kho":true}
+{"cauHoi":"Từ đoạn mô tả này rút ra JSON {may, loi, thoiGian}: Máy SPI-03 báo E221 lúc 14:05, dừng 12 phút","vaiTro":"extract","kho":true}
+{"cauHoi":"Pull the lot numbers and quantities from this shipment note:\nLOT-7781 x 1200\nLOT-7782 x 800","vaiTro":"extract"}
+{"cauHoi":"tach so PO, ngay giao, so luong tu email: PO 55120 giao 30/10 so luong 5000 pcs","vaiTro":"extract","kho":true}
+{"cauHoi":"Liệt kê các thiết bị và hạn hiệu chuẩn có trong đoạn văn sau ra bảng: Thước cặp TC-01 hạn 12/2026, đồng hồ đo nhiệt DN-03 hạn 01/2027","vaiTro":"extract"}
+{"cauHoi":"Gom các địa chỉ IP xuất hiện trong cấu hình sau thành danh sách:\nplc1 192.168.10.11\nhmi 192.168.10.20\naoi 192.168.10.31","vaiTro":"extract"}
+{"cauHoi":"Chuyển đoạn ghi chép kiểm tra sau thành bảng cột vị trí, lỗi, mức độ: R12 thiếu thiếc nhẹ; C7 lệch nặng; U3 bắc cầu nặng","vaiTro":"extract","kho":true}
+{"cauHoi":"Extract every temperature value with its zone from this profile: Z1 150C, Z2 175C, Z3 200C, Z4 245C","vaiTro":"extract"}
+{"cauHoi":"lấy tên khách hàng và mã sản phẩm từ phiếu yêu cầu này: Khách: Hanbit, sản phẩm HB-CTRL-5521 rev C","vaiTro":"extract"}
+{"cauHoi":"điền giúp các trường người lập, ngày, nội dung thay đổi từ phiếu ECN sau: Người lập Trần Nam, 18/10/2026, đổi tụ C12 từ 10uF sang 22uF","vaiTro":"extract"}
+{"cauHoi":"Tìm trong báo cáo dưới đây các con số tỉ lệ lỗi và ghi theo từng line","vaiTro":"extract","kho":true}
+{"cauHoi":"loc ra nhung dong co chu FAIL trong ket qua test va cho thanh JSON gom sn va test_name","vaiTro":"extract","kho":true}
+{"cauHoi":"Trích các mốc thời gian trong biên bản sự cố: 09:02 báo động, 09:05 dừng máy, 09:40 khởi động lại","vaiTro":"extract"}
+{"cauHoi":"Từ datasheet đoạn sau hãy cho tôi Vcc, dòng tiêu thụ và nhiệt độ làm việc: Supply 3.3V, Icc 12mA, Operating -40 to 85C","vaiTro":"extract"}
+{"cauHoi":"viet ham python tinh oee tu kha dung hieu suat chat luong","vaiTro":"code.software","kho":true}
+{"cauHoi":"Đoạn code này bị lỗi khi danh sách rỗng, sửa giúp:\ndef tb(a):\n    return sum(a)/len(a)","vaiTro":"code.software","kho":true}
+{"cauHoi":"lam giup cau SELECT dem so loi theo ngay trong bang defects","vaiTro":"code.software","kho":true}
+{"cauHoi":"Review đoạn TypeScript sau và chỉ ra lỗi:\nconst x = arr.map(a => { a.id })","vaiTro":"code.software","kho":true}
+{"cauHoi":"Viết script đọc file CSV kết quả AOI rồi vẽ biểu đồ Pareto lỗi","vaiTro":"code.software"}
+{"cauHoi":"Tạo endpoint REST trả danh sách máy đang dừng, dùng Express","vaiTro":"code.software"}
+{"cauHoi":"fix this C# method, it throws when the barcode is null:\nstring Lot(string b) => b.Substring(0, 8);","vaiTro":"code.software"}
+{"cauHoi":"code giup minh ham JS dinh dang thoi gian dung may thanh hh:mm","vaiTro":"code.software","kho":true}
+{"cauHoi":"Dựng giúp trang HTML hiển thị bảng OEE theo line","vaiTro":"code.software"}
+{"cauHoi":"Tối ưu truy vấn này, đang chạy 20 giây:\nSELECT * FROM measurements WHERE date(ts) = '2026-10-20'","vaiTro":"code.software","kho":true}
+{"cauHoi":"Viết unit test cho hàm tinhCpk trong file stats.ts","vaiTro":"code.software"}
+{"cauHoi":"Chuyển đoạn Python sau sang Go: def add(a, b): return a + b","vaiTro":"code.software"}
+{"cauHoi":"lap trinh giup ham C# doc cong COM lay du lieu can","vaiTro":"code.software","kho":true}
+{"cauHoi":"Viết Dockerfile cho ứng dụng Flask đọc dữ liệu MES","vaiTro":"code.software"}
+{"cauHoi":"Thêm xử lý timeout cho hàm fetch dữ liệu máy trong service Node.js","vaiTro":"code.software"}
+{"cauHoi":"viet FB ST dieu khien bom theo muc nuoc cao thap","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Đoạn ST này chạy sai, đèn không tắt khi nhả nút:\nIF START THEN LAMP := TRUE; END_IF;","vaiTro":"code.plc","kho":true}
+{"cauHoi":"lam giup chuong trinh plc dem san pham qua cam bien, du 100 thi bao den","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Chuyển network ladder sau sang SCL cho S7-1500: --| I0.0 |--| I0.1 |--( Q0.0 )","vaiTro":"code.plc"}
+{"cauHoi":"Sửa FB này để có timeout 5 giây khi xi lanh không về:\nFUNCTION_BLOCK XiLanh ... END_FUNCTION_BLOCK","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Write Structured Text for a two-hand safety start with 0.5 s window","vaiTro":"code.plc"}
+{"cauHoi":"Thêm chế độ chạy tay vào chương trình PLC băng tải hiện có","vaiTro":"code.plc"}
+{"cauHoi":"Tạo khối chức năng tính trung bình 10 lần đo nhiệt độ trong CODESYS","vaiTro":"code.plc"}
+{"cauHoi":"debug giup doan TON nay, Q khong len:\ntg(IN := run, PT := t#2s);\nIF tg.Q THEN out := TRUE; END_IF","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Viết logic PLC tuần tự cho máy chiết rót 3 bước","vaiTro":"code.plc"}
+{"cauHoi":"Lập trình TwinCAT đọc encoder và tính tốc độ băng tải","vaiTro":"code.plc"}
+{"cauHoi":"Chuyển chương trình ladder đèn giao thông sang Structured Text","vaiTro":"code.plc"}
+{"cauHoi":"code ST cho bo dem gio chay dong co luu qua mat dien","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Viết FC tính trung bình trượt trong TIA Portal","vaiTro":"code.plc"}
+{"cauHoi":"Thêm báo lỗi quá dòng vào FB điều khiển động cơ, dùng TON","vaiTro":"code.plc"}
+{"cauHoi":"line 4 dang chay hang gi vay","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"Ca này AOI bắt được bao nhiêu lỗi bắc cầu rồi?","vaiTro":"chat.ops"}
+{"cauHoi":"may reflow 1 co dang bao dong ko","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"How many work orders are still open for SMT today?","vaiTro":"chat.ops"}
+{"cauHoi":"Tồn kho thiếc hàn SAC305 hiện còn mấy hũ?","vaiTro":"chat.ops"}
+{"cauHoi":"Hôm nay máy nào dừng lâu nhất?","vaiTro":"chat.ops"}
+{"cauHoi":"Phiếu bảo trì của máy gắp đặt số 3 đã có người nhận chưa?","vaiTro":"chat.ops"}
+{"cauHoi":"tỉ lệ first pass của line 2 tuần này đang bao nhiêu","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"Ai đang phụ trách ca đêm nay ở xưởng lắp ráp?","vaiTro":"chat.ops"}
+{"cauHoi":"Có cảnh báo nhiệt độ nào chưa xác nhận không?","vaiTro":"chat.ops"}
+{"cauHoi":"Sản lượng giờ vừa rồi của line 1 là bao nhiêu?","vaiTro":"chat.ops"}
+{"cauHoi":"PLC máy dán keo line 3 có đang online không?","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"Lô HB2610-07 đang nằm ở công đoạn nào?","vaiTro":"chat.ops"}
+{"cauHoi":"con bao nhieu bo cho sua o tram rework","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"Máy SPI có đang chạy chương trình mới nhất không?","vaiTro":"chat.ops"}
+{"cauHoi":"tai sao kem han bi kho nhanh tren stencil","vaiTro":"chat","kho":true}
+{"cauHoi":"ST và ladder cái nào dễ bảo trì hơn cho máy lớn?","vaiTro":"chat","kho":true}
+{"cauHoi":"Modbus RTU có giới hạn bao nhiêu thiết bị trên một đường bus?","vaiTro":"chat","kho":true}
+{"cauHoi":"Why do we need a nitrogen atmosphere in some reflow ovens?","vaiTro":"chat"}
+{"cauHoi":"khac nhau giua TON va TP la gi","vaiTro":"chat","kho":true}
+{"cauHoi":"Nguyên nhân thường gặp của lỗi void trong mối hàn BGA?","vaiTro":"chat"}
+{"cauHoi":"Có nên dùng index cho cột thời gian trong bảng đo lường lớn không?","vaiTro":"chat","kho":true}
+{"cauHoi":"Giải thích ngắn gọn SPC và biểu đồ X-bar R","vaiTro":"chat"}
+{"cauHoi":"chuong trinh plc nen chia FB the nao cho de doc","vaiTro":"chat","kho":true}
+{"cauHoi":"Ưu nhược điểm của AOI 3D so với kiểm tra X-ray?","vaiTro":"chat"}
+{"cauHoi":"Làm sao chọn kích thước stencil phù hợp cho linh kiện 0201?","vaiTro":"chat"}
+{"cauHoi":"What does IPC-A-610 class 3 mean for solder joints?","vaiTro":"chat"}
+{"cauHoi":"Vì sao cần vòng tiếp đất khi thao tác linh kiện nhạy tĩnh điện?","vaiTro":"chat"}
+{"cauHoi":"OPC UA khác MQTT ở điểm nào khi kết nối máy?","vaiTro":"chat","kho":true}
+{"cauHoi":"Thế nào là thời gian chu kỳ chuẩn trong tính OEE?","vaiTro":"chat"}
