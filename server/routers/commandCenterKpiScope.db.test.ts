@@ -73,6 +73,9 @@ const GONE_ROBOT = 2_000_100_004;
 describe.skipIf(!DB_URL)("dải KPI — bốn nguồn còn lại trên CSDL THẬT (oee · wip · fleet · sites)", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    // Dọn dư của một lượt trước bị ngắt (userId cố định ⇒ hàng sót làm lượt sau đỏ) — cùng thân dọn idempotent với afterAll.
+    await sql`DELETE FROM user_factory_assignments WHERE "userId" IN ${sql(ALL_USERS)}`;
+    await sql`DELETE FROM permissions WHERE "userId" IN ${sql(ALL_USERS)}`;
     const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
 
     // ── Phân cấp: hai nhà máy độc lập ────────────────────────────────────────
