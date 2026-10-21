@@ -167,28 +167,28 @@ describe("pruneOldInspectionImages", () => {
 describe("pruneOldInspectionImages — con trỏ bền (không để thư mục cũ đói vì thư mục trẻ đứng trước)", () => {
   const DAY = 24 * 60 * 60 * 1000;
 
-  it("★ >5000 thư mục TRẺ đứng trước một thư mục CŨ ⇒ thư mục cũ vẫn bị xử lý ở lượt kế (bản cũ: không bao giờ)", async () => {
+  it("★ nhiều thư mục TRẺ (> trần mỗi lượt) đứng trước một thư mục CŨ ⇒ thư mục cũ vẫn bị xử lý ở lượt kế (bản cũ: không bao giờ)", async () => {
     const now = Date.now();
-    // ids 1..5001 còn trẻ; id 5002 cũ. Bản cũ: readdir thứ tự chữ, đếm mọi thư mục, dừng ở 5000 ⇒ thư mục cũ không được xét.
-    const young = Array.from({ length: 5001 }, (_, i) => i + 1);
-    for (let i = 0; i < young.length; i += 200) {
-      await Promise.all(young.slice(i, i + 200).map((id) => mkFile(`inspections/${id}/a.jpg`, now - 10 * DAY)));
-    }
-    await mkFile("inspections/5002/old.jpg", now - 400 * DAY);
+    // Cùng tính chất với ca 5 001 thư mục nhưng thu nhỏ theo TRẦN: trần mỗi lượt = 40, 41 thư mục trẻ (ids 1..41) đứng trước thư mục
+    // cũ (id 42). Bản cũ: đếm mọi thư mục và không có con trỏ ⇒ lượt nào cũng chỉ xét 40 tên đầu ⇒ thư mục cũ KHÔNG BAO GIỜ được xét.
+    // (Bản 5 001 thư mục tốn ~100 s khi cả lô đang tải và gây timeout giả; tính chất kiểm không phụ thuộc cỡ tuyệt đối.)
+    const TRAN = 40;
+    for (let id = 1; id <= TRAN + 1; id++) await mkFile(`inspections/${id}/a.jpg`, now - 10 * DAY);
+    await mkFile(`inspections/${TRAN + 2}/old.jpg`, now - 400 * DAY);
 
-    const r1 = await pruneOldInspectionImages({ retentionDays: 365, nowMs: now }); // trần mặc định 5000
-    expect(r1.scannedDirs).toBe(5000);
+    const r1 = await pruneOldInspectionImages({ retentionDays: 365, nowMs: now, maxDirsPerRun: TRAN });
+    expect(r1.scannedDirs).toBe(TRAN);
     expect(r1.deletedDirs).toBe(0);
     expect(r1.wrapped).toBe(false);
-    expect(fs.existsSync(path.join(tmpRoot, "inspections/5002"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpRoot, `inspections/${TRAN + 2}`))).toBe(true);
 
-    const r2 = await pruneOldInspectionImages({ retentionDays: 365, nowMs: now });
-    expect(r2.scannedDirs).toBe(2); // 5001 và 5002 — phần còn lại sau con trỏ
+    const r2 = await pruneOldInspectionImages({ retentionDays: 365, nowMs: now, maxDirsPerRun: TRAN });
+    expect(r2.scannedDirs).toBe(2); // id 41 và 42 — phần còn lại sau con trỏ
     expect(r2.deletedDirs).toBe(1);
     expect(r2.wrapped).toBe(true);
-    expect(fs.existsSync(path.join(tmpRoot, "inspections/5002"))).toBe(false);
-    expect(fs.existsSync(path.join(tmpRoot, "inspections/5001/a.jpg"))).toBe(true);
-  }, 120_000);
+    expect(fs.existsSync(path.join(tmpRoot, `inspections/${TRAN + 2}`))).toBe(false);
+    expect(fs.existsSync(path.join(tmpRoot, `inspections/${TRAN + 1}/a.jpg`))).toBe(true);
+  });
 
   it("duyệt theo id SỐ tăng dần (2 trước 10), trần chỉ đếm thư mục đã xét, hết vòng thì quay lại đầu", async () => {
     const now = Date.now();
