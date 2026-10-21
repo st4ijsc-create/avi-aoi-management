@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
+import { hoSoDangGan, luotTotNhat, soSanh, tapDangGan, tiLeDat, type LuotDo } from "@/lib/soSanhLuotDo";
 import { AlertTriangle, Boxes, Loader2, RefreshCw } from "lucide-react";
 
 type TongQuan = inferRouterOutputs<AppRouter>["aiGguf"]["soModelTongQuan"];
@@ -134,7 +135,16 @@ function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
 
   const roleMoTa = new Map(d.vaiTro.map((v) => [v.id, v.moTa]));
   const dsFallback = fallback.split(",").map((s) => s.trim()).filter(Boolean);
-  const hopLe = !!roleId && !!dich && (scopeKind === "global" || /^[A-Za-z0-9_-]{1,64}$/.test(scopeId)) && dsFallback.length <= 4;
+  // Số đo cạnh nhau: bộ đo của vai trò; hồ sơ đang gán (active toàn cục) so với hồ sơ đích — CHỈ so trực tiếp khi cùng bộ đo.
+  const suite = d.vaiTro.find((v) => v.id === roleId)?.evalSuite ?? null;
+  const hienTaiId = roleId ? hoSoDangGan(d.gan, roleId) : null;
+  const dichHoSo = loaiDich === "profile" && dich ? dich : null;
+  const luotDich = luotTotNhat(d.evalRuns, dichHoSo, suite);
+  const luotHienTai = luotTotNhat(d.evalRuns, hienTaiId, suite);
+  const dichCoDo = !!dichHoSo && d.hoSoCoDo.includes(dichHoSo);
+  // Cổng máy chủ (CHUA_CO_DO): chế độ active trỏ hồ sơ chưa có lượt đo nào ⇒ UI vô hiệu nút và nói rõ lý do (máy chủ vẫn là nơi chặn thật).
+  const chanVIChuaDo = mode === "active" && !!dichHoSo && !dichCoDo;
+  const hopLe = !!roleId && !!dich && (scopeKind === "global" || /^[A-Za-z0-9_-]{1,64}$/.test(scopeId)) && dsFallback.length <= 4 && !chanVIChuaDo;
 
   return (
     <>
@@ -301,6 +311,14 @@ function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
             <Input className="h-8 text-xs" value={fallback} onChange={(e) => setFallback(e.target.value)} name="fallback" />
           </label>
         </div>
+        {roleId && dichHoSo ? (
+          <SoDoCanhNhau suite={suite} hienTaiId={hienTaiId} dichId={dichHoSo} luotHienTai={luotHienTai} luotDich={luotDich} dichCoDo={dichCoDo} />
+        ) : null}
+        {chanVIChuaDo ? (
+          <p className="text-xs text-destructive" role="status" data-testid="ly-do-chan-gan">
+            {t("gguf.trungTam.datGan.chuaDoChan", "Hồ sơ {{id}} chưa có lượt đo nào — chưa gán active được. Gán ở chế độ 'thử', chạy bộ đo của vai trò, rồi mới active.", { id: dichHoSo })}
+          </p>
+        ) : null}
         <p className="text-xs text-muted-foreground">{t("gguf.trungTam.datGan.cong", "Chế độ active trỏ hồ sơ cần ≥ 1 lượt đo của hồ sơ đó và giấy phép model đã khai. Gán theo khoá .env không cần đo.")}</p>
         <Button type="submit" size="sm" disabled={!hopLe || datGan.isPending}>
           {datGan.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden /> : null}
@@ -314,6 +332,53 @@ function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
         )}
       </form>
     </>
+  );
+}
+
+function MotLuot({ nhan, id, luot }: { nhan: "hienTai" | "dich"; id: string | null; luot: LuotDo | null }) {
+  const { t } = useTranslation();
+  const tl = luot ? tiLeDat(luot) : null;
+  return (
+    <div className="rounded-md border p-2 text-xs" data-testid={`so-do-${nhan}`}>
+      <div className="text-muted-foreground">{nhan === "hienTai" ? t("gguf.trungTam.soDo.hienTai", "Đang gán") : t("gguf.trungTam.soDo.dich", "Đích")}</div>
+      <div className="font-mono break-all">{id ?? t("gguf.trungTam.soDo.khongCo", "— (không có hồ sơ)")}</div>
+      {luot ? (
+        <div>
+          {luot.nPass ?? "?"}/{luot.nTasks ?? "?"}×{luot.nRuns ?? 1}
+          {tl !== null ? ` (${Math.round(tl * 100)} %)` : ""} · p50 {luot.p50Ms !== null ? giay(luot.p50Ms) : "—"} / p90 {luot.p90Ms !== null ? giay(luot.p90Ms) : "—"}
+        </div>
+      ) : (
+        <div className="text-muted-foreground">{t("gguf.trungTam.soDo.chuaDo", "chưa có lượt đo ở bộ này")}</div>
+      )}
+    </div>
+  );
+}
+
+function SoDoCanhNhau({ suite, hienTaiId, dichId, luotHienTai, luotDich, dichCoDo }: { suite: string | null; hienTaiId: string | null; dichId: string; luotHienTai: LuotDo | null; luotDich: LuotDo | null; dichCoDo: boolean }) {
+  const { t } = useTranslation();
+  const kq = soSanh(luotHienTai, luotDich);
+  return (
+    <div className="space-y-2" data-testid="so-do-canh-nhau">
+      <h5 className="text-xs font-medium">
+        {t("gguf.trungTam.soDo.tieuDe", "Số đo")}
+        {suite ? <span className="ml-1 font-mono text-muted-foreground">{suite}</span> : null}
+      </h5>
+      {!suite ? <p className="text-xs text-muted-foreground">{t("gguf.trungTam.soDo.khongCoBoDo", "Vai trò này chưa khai bộ đo — không so trực tiếp được.")}</p> : null}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <MotLuot nhan="hienTai" id={hienTaiId} luot={luotHienTai} />
+        <MotLuot nhan="dich" id={dichId} luot={luotDich} />
+      </div>
+      {suite && !luotDich && dichCoDo ? (
+        <p className="text-xs text-muted-foreground">{t("gguf.trungTam.soDo.boKhac", "Hồ sơ đích có lượt đo nhưng ở bộ đo khác — không so trực tiếp.")}</p>
+      ) : null}
+      {kq === "hon" ? (
+        <p className="text-xs" data-testid="ket-qua-so-sanh" data-ket-qua="hon">{t("gguf.trungTam.soDo.kq.hon", "Đích tốt hơn hồ sơ đang gán.")}</p>
+      ) : kq === "kem" ? (
+        <p className="text-xs" data-testid="ket-qua-so-sanh" data-ket-qua="kem">{t("gguf.trungTam.soDo.kq.kem", "Đích KÉM hơn hồ sơ đang gán.")}</p>
+      ) : kq === "bang" ? (
+        <p className="text-xs" data-testid="ket-qua-so-sanh" data-ket-qua="bang">{t("gguf.trungTam.soDo.kq.bang", "Đích ngang hồ sơ đang gán.")}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -650,38 +715,52 @@ function TabKhe({ d }: { d: TongQuan }) {
 function TabDo({ d }: { d: TongQuan }) {
   const { t } = useTranslation();
   if (d.evalRuns.length === 0) return <p className="text-sm text-muted-foreground">{t("gguf.trungTam.do.rong", "Chưa có lượt đo.")}</p>;
-  // Tiêu chí chủ dự án: độ ĐÚNG trước, tốc độ sau (model chậm không bị loại vì chậm).
-  const tiLe = (r: TongQuan["evalRuns"][number]) => (r.nTasks && r.nPass !== null ? r.nPass / r.nTasks : -1);
+  // Tiêu chí chủ dự án: độ ĐÚNG trước, tốc độ sau (model chậm không bị loại vì chậm). Nhóm theo bộ đo; mỗi bộ ghi vai trò dùng nó.
+  const tiLe = (r: LuotDo) => tiLeDat(r) ?? -1;
   const ds = [...d.evalRuns].sort((a, b) => a.suite.localeCompare(b.suite) || tiLe(b) - tiLe(a) || (a.p50Ms ?? Infinity) - (b.p50Ms ?? Infinity));
+  const dangGan = tapDangGan(d.gan, d.vaiTro);
+  const vaiTroCuaBo = (suite: string) => d.vaiTro.filter((v) => v.evalSuite === suite).map((v) => v.id);
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto" data-testid="bang-luot-do">
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>{t("gguf.trungTam.do.cot.boDo", "Bộ đo")}</TableHead>
+            <TableHead>{t("gguf.trungTam.do.cot.vaiTro", "Vai trò")}</TableHead>
             <TableHead>{t("gguf.trungTam.hoSo.cot.id", "Mã hồ sơ")}</TableHead>
-            <TableHead>{t("gguf.trungTam.do.cot.dat", "Đạt / bài")}</TableHead>
-            <TableHead>{t("gguf.trungTam.do.cot.luot", "Lượt")}</TableHead>
+            <TableHead>{t("gguf.trungTam.do.cot.dat", "Đạt / bài × lượt")}</TableHead>
             <TableHead>{t("gguf.trungTam.do.cot.p50", "p50 / p90")}</TableHead>
+            <TableHead>{t("gguf.trungTam.do.cot.gitSha", "Mã commit")}</TableHead>
             <TableHead>{t("gguf.trungTam.do.cot.luc", "Lúc")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {ds.map((r) => (
-            <TableRow key={r.id}>
-              <TableCell className="font-mono text-xs">{r.suite}</TableCell>
-              <TableCell className="font-mono text-xs whitespace-normal break-all">{r.profileId}</TableCell>
-              <TableCell className="text-xs">
-                {r.nPass ?? "?"} / {r.nTasks ?? "?"}
-                {tiLe(r) >= 0 ? ` (${Math.round(tiLe(r) * 100)} %)` : ""}
-              </TableCell>
-              <TableCell className="text-xs">{r.nRuns ?? "—"}</TableCell>
-              <TableCell className="text-xs">
-                {r.p50Ms !== null ? giay(r.p50Ms) : "—"} / {r.p90Ms !== null ? giay(r.p90Ms) : "—"}
-              </TableCell>
-              <TableCell className="text-xs">{new Date(r.createdAt).toLocaleString()}</TableCell>
-            </TableRow>
-          ))}
+          {ds.map((r) => {
+            const gan = dangGan.has(`${r.profileId}|${r.suite}`);
+            return (
+              <TableRow key={r.id} data-dang-gan={gan ? "1" : "0"} data-profile={r.profileId}>
+                <TableCell className="font-mono text-xs">{r.suite}</TableCell>
+                <TableCell className="font-mono text-xs">{vaiTroCuaBo(r.suite).join(", ") || "—"}</TableCell>
+                <TableCell className="font-mono text-xs whitespace-normal break-all">
+                  {r.profileId}
+                  {gan ? (
+                    <Badge variant="default" className="ml-1" data-testid="dang-gan">
+                      {t("gguf.trungTam.do.dangGan", "đang gán")}
+                    </Badge>
+                  ) : null}
+                </TableCell>
+                <TableCell className="text-xs">
+                  {r.nPass ?? "?"}/{r.nTasks ?? "?"}×{r.nRuns ?? 1}
+                  {tiLe(r) >= 0 ? ` (${Math.round(tiLe(r) * 100)} %)` : ""}
+                </TableCell>
+                <TableCell className="text-xs">
+                  {r.p50Ms !== null ? giay(r.p50Ms) : "—"} / {r.p90Ms !== null ? giay(r.p90Ms) : "—"}
+                </TableCell>
+                <TableCell className="font-mono text-xs">{r.gitSha ? r.gitSha.slice(0, 9) : "—"}</TableCell>
+                <TableCell className="text-xs">{new Date(r.createdAt).toLocaleString()}</TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>

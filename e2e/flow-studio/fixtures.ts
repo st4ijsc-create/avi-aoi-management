@@ -47,6 +47,11 @@ export async function withTestDb<T>(fn: (sql: ReturnType<typeof postgres>) => Pr
 export const FLOW_THU = `${PREFIX}-thu`;
 export const FLOW_SO_SANH = `${PREFIX}-sosanh`;
 export const FLOW_OT = `${PREFIX}-ot`;
+/** Bộ đo gán tạm cho vai trò code.plc trong e2e Trung tâm Model (teardown trả về NULL). */
+export const SUITE_E2E = "plc-st-v1";
+export const HO_SO_GAN = `${PREFIX}-ho-so-gan`;
+export const HO_SO_TOT = `${PREFIX}-ho-so-tot`;
+export const HO_SO_CHUA_DO = `${PREFIX}-ho-so-chua-do`;
 
 export interface FsFixture {
   admin: { id: number; username: string; password: string };
@@ -89,6 +94,15 @@ export async function teardownFixtures(): Promise<Record<string, number>> {
     out.production_lines = (await sql`DELETE FROM production_lines WHERE code LIKE ${like}`).count;
     out.workshops = (await sql`DELETE FROM workshops WHERE code LIKE ${like}`).count;
     out.factories = (await sql`DELETE FROM factories WHERE code LIKE ${like}`).count;
+    // Sổ model (Trung tâm Model): gỡ gán/lượt đo/hồ sơ/artifact của e2e, rồi TRẢ vai trò code.plc về trạng thái nền (gán .env, chưa khai bộ đo).
+    out.ai_model_bindings = (await sql`DELETE FROM ai_model_bindings WHERE "profileId" LIKE ${like}`).count;
+    out.ai_model_eval_runs = (await sql`DELETE FROM ai_model_eval_runs WHERE "profileId" LIKE ${like}`).count;
+    out.ai_serving_profiles = (await sql`DELETE FROM ai_serving_profiles WHERE id LIKE ${like}`).count;
+    out.ai_model_artifacts = (await sql`DELETE FROM ai_model_artifacts WHERE id LIKE ${like}`).count;
+    await sql`UPDATE ai_roles SET "evalSuite" = NULL WHERE id = 'code.plc' AND "evalSuite" = ${SUITE_E2E}`;
+    await sql`INSERT INTO ai_model_bindings ("roleId", "scopeKind", "scopeId", "envKey", fallback, mode)
+      SELECT r.id, 'global', NULL, r."envKey", '{}', 'active' FROM ai_roles r
+      WHERE r.id = 'code.plc' AND NOT EXISTS (SELECT 1 FROM ai_model_bindings b WHERE b."roleId" = r.id AND b."scopeKind" = 'global' AND b.mode = 'active' AND b."retiredAt" IS NULL)`;
     const users = (await sql`SELECT id FROM users WHERE "openId" LIKE ${like}`).map((r) => Number(r.id));
     if (users.length) {
       await sql`DELETE FROM user_factory_assignments WHERE "userId" IN ${sql(users)}`;
@@ -187,6 +201,16 @@ export async function setupFixtures(): Promise<FsFixture> {
       const vet = (rid: string, o: object) => tx`INSERT INTO ai_flow_events ("runId", kind, payload) VALUES (${rid}, ${"buoc.model"}, ${tx.json({ nodeId: "dat", lan: 1, vaiTro: "extract", ...o } as never)})`;
       await vet(runA, { model: "Qwen3-Khe-Nang-30B", nguon: "gan-profile", phamVi: "flow", duPhong: false, kheBan: false, lyDo: [] });
       await vet(runB, { model: "Qwen3-4B-Instruct-2507-UD-Q4_K_XL", nguon: "du-phong", phamVi: "flow", duPhong: true, kheBan: true, lyDo: ["gán flow → p-nang", "khe-dang-giu-model-khac (p-nang; bề mặt nền không đổi khe)"] });
+      // Sổ model: hồ sơ ĐANG GÁN (7/10), hồ sơ TỐT hơn (9/10), hồ sơ CHƯA ĐO; code.plc khai bộ đo; gán active toàn cục chuyển sang hồ sơ đang-gán.
+      await tx`INSERT INTO ai_model_artifacts (id, "filePath", family, license, loai, status) VALUES (${`${PREFIX}-art`}, ${`${PREFIX}.gguf`}, 'fse2e', 'apache-2.0', 'sinh-chu', 'available')`;
+      for (const pid of [HO_SO_GAN, HO_SO_TOT, HO_SO_CHUA_DO]) {
+        await tx`INSERT INTO ai_serving_profiles (id, "artifactId", "slotClass", ctx) VALUES (${pid}, ${`${PREFIX}-art`}, 'nho', 8192)`;
+      }
+      await tx`UPDATE ai_roles SET "evalSuite" = ${SUITE_E2E} WHERE id = 'code.plc'`;
+      await tx`INSERT INTO ai_model_eval_runs ("profileId", suite, "nTasks", "nPass", "nRuns", "p50Ms", "p90Ms", "gitSha") VALUES (${HO_SO_GAN}, ${SUITE_E2E}, 10, 7, 1, 4200, 6100, 'aaaaaaa1111111')`;
+      await tx`INSERT INTO ai_model_eval_runs ("profileId", suite, "nTasks", "nPass", "nRuns", "p50Ms", "p90Ms", "gitSha") VALUES (${HO_SO_TOT}, ${SUITE_E2E}, 10, 9, 3, 5200, 8800, 'bbbbbbb2222222')`;
+      await tx`UPDATE ai_model_bindings SET "retiredAt" = now() WHERE "roleId" = 'code.plc' AND "scopeKind" = 'global' AND mode = 'active' AND "retiredAt" IS NULL`;
+      await tx`INSERT INTO ai_model_bindings ("roleId", "scopeKind", "scopeId", "profileId", fallback, mode) VALUES ('code.plc', 'global', NULL, ${HO_SO_GAN}, '{}', 'active')`;
       return { admin: { id: Number(u.id), username: `${run}_admin`, password }, runA, runB, machineId: Number(mc.id), nhieu, mot, khong, nhaMayA: { id: Number(fac.id), code: run }, nhaMayB: { id: Number(facB.id), code: run + "b" } };
     }),
   );

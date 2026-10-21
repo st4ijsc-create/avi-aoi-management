@@ -798,6 +798,9 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   • `aiGguf.soModelTaoHoSo` (mutation): upserts one `ai_serving_profiles` row (artifact must exist + be `sinh-chu`) ⇒ D.
 //   `soModelTongQuan` (query, already C) only gained `evalRuns` (100 newest `ai_model_eval_runs`) + role `moTa` — count
 //   unchanged. No baseline row added.
+//   2026-10-21 (Trung tâm Model — số đo cạnh số): `soModelTongQuan` gained `hoSoCoDo` (DISTINCT `ai_model_eval_runs.profileId`,
+//   the exact condition of the `datGan` gate CHUA_CO_DO, so the UI can disable the active-assign button) — same query, same
+//   floor `adminDoiModel`, machine-wide registry ⇒ still C, count unchanged. No new procedure, no baseline row.
 // ★★ 2026-10-20 (AI Local Đợt 8.1 Task 5 — router `flow`, Luồng AI) — **C 492 → 498 · D 1178 → 1182 · tong 2368 → 2378 ·
 // A/B/S unchanged.** Ten NEW procedures in `server/routers/flowRouter.ts` (floor: `moduleProcedure("MOD_AI")` for reads,
 // `writeProcedure.use(moduleGate("MOD_AI"))` for writes; enabling a `ngoai-ghi`/`ot` version = admin, checked in the body):
