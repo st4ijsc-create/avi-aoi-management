@@ -21349,7 +21349,12 @@
         "dangLam": "in progress",
         "xong": "done"
       },
-      "xungDot": "Conflict — NOT overwritten ({{n}} file(s) were edited again after the run):"
+      "xungDot": "Conflict — NOT overwritten ({{n}} file(s) were edited again after the run):",
+      "compileSt": {
+        "sach": "compiles clean",
+        "loi": "{{n}} error(s)",
+        "chuaKiem": "not checked"
+      }
     },
     "duanCaNhan": {
       "err": {
@@ -21580,6 +21585,14 @@
         "OCR_KHONG_DOC_DUOC": "Could not read text in the image.",
         "OCR_RONG": "No readable text in the image."
       }
+    },
+    "kiemBienDich": {
+      "dangKiem": "Trial-compiling the ST code (RuSTy)…",
+      "sach": "Compiled clean (RuSTy): no errors.",
+      "daSua": "Auto-fixed {{k}} compile error(s) (RuSTy) after {{v}} round(s) — the version shown is the corrected one.",
+      "xemBanDau": "View the first draft (before the fix)",
+      "conLoi": "The ST code still has {{n}} compile error(s) (RuSTy) after {{v}} auto-fix round(s):",
+      "khongKiemDuoc": "Couldn't check compilation ({{lyDo}})."
     }
   },
   "masterDataCol": {

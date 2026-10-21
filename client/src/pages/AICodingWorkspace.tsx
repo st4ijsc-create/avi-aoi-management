@@ -85,9 +85,11 @@ import {
   useKbChatStream,
   type KbPendingAction,
   type KbToolLoopProgress,
+  type KbKiemBienDich,
   type KbUsageLuot,
 } from "@/hooks/useKbChatStream";
 import { AIToolResultCard, type ToolResultPayload } from "@/components/AIToolResultCard";
+import { KiemBienDichCard } from "@/components/aiCoding/KiemBienDichCard";
 import {
   ConfirmActionCard,
   type PendingAction,
@@ -876,6 +878,8 @@ export default function AICodingWorkspace() {
    * phải "đang làm việc". Đây là điều kiện brief nêu đích danh cho việc 2.
    */
   const [vongTool, setVongTool] = useState<KbToolLoopProgress | null>(null);
+  // ★★ Đợt 9 — kiểm biên dịch ST của lượt hiện tại (null = không có / cờ tắt). Xoá cùng `streamTool` mỗi lượt/phiên mới.
+  const [kiemBienDich, setKiemBienDich] = useState<KbKiemBienDich | null>(null);
 
   // ══════════════════════════════════════════════════════════════════════════════════════════
   // ★★★ 2026-08-25 · ĐỢT 2 (audit UX cho model LOCAL chậm) — (A) đồng hồ elapsed · (B) dấu vết
@@ -1492,6 +1496,7 @@ export default function AICodingWorkspace() {
     setTranscript((prev) => [...prev, { role: "user", content: text }]);
     setStreamTool(null);
     setStreamTools([]);
+    setKiemBienDich(null);
     setPending(null);
     setActionState("pending");
     setKetCucThongDiep(null);
@@ -1525,6 +1530,7 @@ export default function AICodingWorkspace() {
         onToolResult: (tr) => { setStreamTool(tr); setLucNhanTool(dinhDangLucNhan(new Date())); },
         // ★★★ doc 81 · VIỆC 2 — "đang ở vòng mấy". `phase:"dung"` mang theo lý do dừng.
         onToolLoop: (p) => setVongTool(p),
+        onKiemBienDich: (k) => setKiemBienDich(k),
         // ★ F4 — ref cập nhật ĐỒNG BỘ theo từng mảnh: React gộp setState, nên nếu `pending_action` tới cùng gói đọc với
         //   mảnh nghĩ cuối thì bản render chưa kịp mang mảnh đó — chụp từ state sẽ hụt đuôi (chính là phần lý do).
         onReasoning: (nghi) => { nghiRef.current = nghi; },
@@ -1921,6 +1927,7 @@ export default function AICodingWorkspace() {
     setLenhDaChay([]);
     setStreamTool(null);
     setStreamTools([]);
+    setKiemBienDich(null);
     setPending(null);
     setDiffPreview("");
     setTranscript([]);
@@ -2013,6 +2020,7 @@ export default function AICodingWorkspace() {
     setLenhDaChay([]);
     setStreamTool(null);
     setStreamTools([]);
+    setKiemBienDich(null);
     setDiffPreview("");
     setActionState("pending");
     setKetCucThongDiep(null);
@@ -2045,6 +2053,7 @@ export default function AICodingWorkspace() {
     setLenhDaChay([]);
     setStreamTool(null);
     setStreamTools([]);
+    setKiemBienDich(null);
     setDiffPreview("");
     setActionState("pending");
     setKetCucThongDiep(null);
@@ -3431,6 +3440,7 @@ export default function AICodingWorkspace() {
                       {giayCho > 0 && <div className="tabular-nums text-[10px] text-muted-foreground/80">{t("repoWs.chat.elapsed", "{{giay}} giây", { giay: giayCho })}</div>}
                       {dauVetTool}
                       {streamTool && <AIToolResultCard toolResult={streamTool} lucNhan={lucNhanTool ?? undefined} />}
+                      <KiemBienDichCard kiem={kiemBienDich} />
                       {/* `mode="streaming"` — Streamdown vá markdown DỞ DANG (``` chưa đóng) nên khối
                           mã đang stream vẫn hiện đúng thay vì nhảy layout ở mỗi token. */}
                       {/* ★ UX (D1) — cùng phép lọc mốc với bản tĩnh; dòng mốc đang gõ dở chưa khớp
@@ -3476,6 +3486,9 @@ export default function AICodingWorkspace() {
                     </p>
                   </div>
                 )}
+
+                {/* ★★ Đợt 9 — kết cục kiểm biên dịch ST sau khi lượt xong (nhãn + bản đầu); đang stream thì thẻ nằm trong bong bóng ở trên. */}
+                {!isStreaming && kiemBienDich && <KiemBienDichCard kiem={kiemBienDich} />}
 
                 {/* Kết quả tool đã xong (không stream nữa) — ★ ĐỢT 2 (B): kèm dấu vết các thẻ trước. */}
                 {!isStreaming && streamTool && (

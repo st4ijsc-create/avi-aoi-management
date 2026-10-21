@@ -45,6 +45,7 @@ import type { KbLanguage, KbQueryContext, StreamEvent } from "./aiLocalKnowledge
 // ★ B8 — các câu thông báo ba ngôn ngữ đã tách sang `./aiLocalKnowledgeCodingThongBao.ts` (xem docblock đầu tệp đó).
 import { codingModelErrorMessage, codingThoaiHoaMessage } from "./aiLocalKnowledgeCodingThongBao";
 import { doneSinhMa, nguCanhDuAnChoPrompt } from "./aiLocalKnowledgeCoding";
+import { chayKiemBienDichST, goiLaiBangModel, khoiBoSungSauBienDich } from "./aiLocalKnowledgeCodingKiemST";
 
 
 /** Vì sao nhánh sinh mã KHÔNG chạy — mỗi lý do là một câu khác nhau với người dùng. */
@@ -402,14 +403,25 @@ export async function* streamCodingGenerate(
    * của các lượt duan trước: biên dịch được 21 → 34, 0 khối đang đúng bị làm hỏng; 228 lời giải C# trục
    * H/M: 0 lần đụng. Tắt để ablation: `AI_CODING_BO_SUNG_USING=0`.
    */
+  // ★★ Đợt 9 — vòng kiểm biên dịch ST (cờ AI_KIEM_BIEN_DICH_ST=tro-ly|all; TẮT ⇒ không một sự kiện/byte nào đổi). Khối bổ sung
+  // ("Bản đã sửa sau biên dịch" / lỗi còn lại) đã STREAM nên nằm trong văn bản lưu phiên; câu trả lời gốc GIỮ NGUYÊN.
+  const kiemST = yield* chayKiemBienDichST({
+    beMat: "tro-ly",
+    cauTraLoi: kq.text,
+    goiLai: goiLaiBangModel({ heThong, promptGoc: promptCuoi, maxTokens: tran, userId: execCtx?.user?.id, tacVu: (context as { modelTask?: unknown })?.modelTask, signal: execCtx?.signal }),
+    signal: execCtx?.signal,
+  });
+  const boSungST = kiemST ? khoiBoSungSauBienDich(kiemST, language) : "";
+  if (boSungST) yield { type: "token", token: boSungST };
+
   const boSung = boSungUsingChoCauTraLoi(kq.text, language);
   if (boSung) {
     yield { type: "token", token: boSung.thongBao };
-    const doneDaSua = doneSinhMa(boSung.text + chan + boSung.thongBao, "ollama") as Extract<StreamEvent, { type: "done" }>;
+    const doneDaSua = doneSinhMa(boSung.text + chan + boSungST + boSung.thongBao, "ollama") as Extract<StreamEvent, { type: "done" }>;
     yield { ...doneDaSua, answerRevised: true };
     return "xong";
   }
-  yield doneSinhMa(kq.text + chan, "ollama");
+  yield doneSinhMa(kq.text + chan + boSungST, "ollama");
   return "xong";
 }
 
