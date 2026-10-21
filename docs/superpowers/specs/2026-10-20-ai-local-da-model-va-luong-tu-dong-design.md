@@ -634,7 +634,10 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   KHÔNG có tác dụng. Đã nối: Luồng truyền `{ flowId, beMat: "luong" }` + `khongDoiKhe` (lượt chạy nền không kéo đổi khe
   nặng — profile `nang` khe không giữ ⇒ dự phòng ⇒ env của vai trò). Phạm vi mới `be-mat` (mig 0405, scopeId `luong`); thứ
   tự flow > project > be-mat > tenant > global. Metrics + `ai_llm_audit` (`flow_*`) ghi model THỰC chạy (`InferenceOutcome.model`).
-- (1) định tuyến: tầng 3 theo tác vụ — bộ mù 3 (agent viết, chưa ai nhìn) 98 → 107/120. (4) MATIEC đúng bản bench + SCL:
+- (1) định tuyến: tầng 3 theo tác vụ — bộ mù 3 (agent viết, chưa ai nhìn) 98 → 107/120 (⚠ 107 đo trên bản 9beab7e8b có LỖI
+  regex: `\p{L}` trong template thường thành "p" ⇒ ranh giới chữ sai; `\S`/`\d` mất `\` ⇒ dấu vận hành "line N" không bao giờ
+  khớp — sửa ở 8509b2f0e). Đợt 9 (a)(b): cổng ý định mã cho tầng 4 + không dấu/đồng nghĩa ⇒ bộ mù 4 (agent viết, commit
+  685abed9e trước khi chỉnh) 105 → 109/120. Còn lại ("soạn", "the nao/cai nao" không dấu, "lần gần nhất") chờ bộ mù 5. (4) MATIEC đúng bản bench + SCL:
   thước đạt (tập OpenPLC 22 bài); ★ lỗi runtime MATIEC `__normalize_timespec` (docs/superpowers/audits/2026-10-21-matiec-loi-normalize-timespec.md).
 
 **Bảo mật Luồng 2026-10-21** (quét bảo mật của phiên kỹ thuật + audit chỉ-đọc của kiem-dinh; vận hành: `docs/AI_FLOW_SECURITY_OPERATIONS.md`;
