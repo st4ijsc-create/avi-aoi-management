@@ -87,8 +87,10 @@ export async function kiemTokenTruocThan(y: { flowId: string; nodeId: string; to
 
 export type KetQuaWebhook =
   | { ma: 202; runId: string; trung: boolean }
-  | { ma: 400 | 401 | 404 | 409 | 413 | 429 | 503; code: string; thongDiep: string };
+  | { ma: 400 | 401 | 404 | 409 | 413 | 429 | 503; code: string; thongDiep: string; /** giây — chỉ 429 (header `Retry-After`) */ retryAfterS?: number };
 
+/** Gợi ý chờ (giây) cho người gọi bị 429 — cố định (lượt đang chạy thường xong trong vài chục giây), chuẩn `Retry-After` cho máy gọi máy. */
+export const RETRY_AFTER_429_GIAY = 30;
 const RE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Một lượt gọi webhook — thuần dữ liệu (tuyến REST chỉ dịch kết quả ra HTTP; lưới gọi được trực tiếp). */
@@ -136,7 +138,7 @@ export async function xuLyWebhook(y: { flowId: string; nodeId: string; token: un
     }
     // M5: luồng đã đủ số lượt đồng thời (maxConcurrentRuns) ⇒ 429 — người gửi thử lại sau; KHÔNG xếp hàng.
     if (e instanceof Error && e.name === "LoiLuong" && (e as { code?: string }).code === "QUA_TRAN_DONG_THOI") {
-      return { ma: 429, code: "RATE_LIMITED", thongDiep: e.message };
+      return { ma: 429, code: "RATE_LIMITED", thongDiep: e.message, retryAfterS: RETRY_AFTER_429_GIAY };
     }
     throw e;
   }

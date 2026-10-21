@@ -114,7 +114,7 @@ describe("M5 (i) — maxConcurrentRuns được thi hành (mặc định 1, từ
     await ADMIN().chayTay({ flowId: def.id }); // lượt 1 chưa chạy
     await expect(ADMIN().chayTay({ flowId: def.id })).rejects.toMatchObject({ code: "CONFLICT", message: expect.stringMatching(/maxConcurrentRuns/) });
     const wh = await xuLyWebhook({ flowId: def.id, nodeId: "wh", token, than: { a: 1 } });
-    expect(wh).toMatchObject({ ma: 429, code: "RATE_LIMITED" });
+    expect(wh).toMatchObject({ ma: 429, code: "RATE_LIMITED", retryAfterS: 30 }); // tuyến REST đặt header Retry-After: 30
     await chayHet(); // giải phóng
     const hai = await xuLyWebhook({ flowId: def.id, nodeId: "wh", token, than: { a: 2 }, idemKey: "k-1" });
     expect(hai).toMatchObject({ ma: 202, trung: false });

@@ -122,7 +122,7 @@ Hành vi khi **lượt đồng thời** vượt trần (chỉ đếm lượt g�
 | Đường vào | Kết quả |
 |---|---|
 | Chạy tay (`flow.chayTay`) | `CONFLICT` — người dùng thấy: `Luồng này đang chạy đủ số lượt đồng thời cho phép — lượt mới bị từ chối (không xếp hàng). Thử lại khi lượt đang chạy xong.` |
-| Webhook | HTTP **429**, `code: RATE_LIMITED` — người gửi tự thử lại sau |
+| Webhook | HTTP **429**, `code: RATE_LIMITED`, header **`Retry-After: 30`** (giây, cố định) — người gửi thử lại sau |
 | MCP | lỗi tool: `Từ chối: luồng … đang có N lượt chạy (trần maxConcurrentRuns=…) …` |
 | Lịch | **bỏ mốc** + log, mốc sau chạy bình thường |
 

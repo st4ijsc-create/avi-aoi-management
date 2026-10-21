@@ -64,6 +64,7 @@ export function registerFlowWebhookRoutes(app: express.Express): void {
         res.status(202).json({ success: true, runId: kq.runId, trung: kq.trung });
         return;
       }
+      if (kq.ma === 429 && kq.retryAfterS) res.set("Retry-After", String(kq.retryAfterS));
       // data-raw-ok: thân lỗi cho client MÁY — `code` (mã AppError đã có bản dịch) là hợp đồng.
       res.status(kq.ma).json({ success: false, code: kq.code, error: kq.thongDiep });
     } catch (err) {
