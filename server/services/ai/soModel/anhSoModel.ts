@@ -8,7 +8,10 @@
 import type { EnvKeyModel } from "../../../../shared/aiRoles";
 
 export type SlotClass = "nang" | "nho" | "sidecar";
-export type PhamViGan = "global" | "tenant" | "project" | "flow";
+export type PhamViGan = "global" | "tenant" | "project" | "flow" | "be-mat";
+/** ★ Đợt 9 (mig 0405) — giá trị `scopeId` hợp lệ của phạm vi `be-mat` (bề mặt gọi model). */
+export const BE_MAT_GAN = ["luong"] as const;
+export type BeMatGan = (typeof BE_MAT_GAN)[number];
 export type CheDoGan = "active" | "shadow" | "thu";
 
 export interface ProfileTrongAnh {

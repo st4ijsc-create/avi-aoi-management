@@ -605,6 +605,15 @@ của vòng kiểm biên dịch `ai.sinh-ma` trên plc-st-v1 (A/B có/không vò
 một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mật: xoay khoá thực tế + khoá trong `.env.example`;
 (8) gộp nhánh `feat/ai-local-da-model-luong` vào main (chưa làm — cần chạy lưới đầy đủ trên cây gộp).
 
+**Đợt 9 (2026-10-21, nhánh `feat/ai-do-model`):**
+- ★ PHÁT HIỆN: phạm vi gán `flow`/`project` (mig 0400, §3.4 tầng 2) **không có người gọi nào truyền** — node AI của Luồng gọi
+  `resolveLogicalModel(vaiTro)` không phạm vi, `modelResolver` gọi `dinhTuyenVaiTro({ vaiTro })` ⇒ một gán `flow` ghi vào sổ
+  KHÔNG có tác dụng. Đã nối: Luồng truyền `{ flowId, beMat: "luong" }` + `khongDoiKhe` (lượt chạy nền không kéo đổi khe
+  nặng — profile `nang` khe không giữ ⇒ dự phòng ⇒ env của vai trò). Phạm vi mới `be-mat` (mig 0405, scopeId `luong`); thứ
+  tự flow > project > be-mat > tenant > global. Metrics + `ai_llm_audit` (`flow_*`) ghi model THỰC chạy (`InferenceOutcome.model`).
+- (1) định tuyến: tầng 3 theo tác vụ — bộ mù 3 (agent viết, chưa ai nhìn) 98 → 107/120. (4) MATIEC đúng bản bench + SCL:
+  thước đạt (tập OpenPLC 22 bài); ★ lỗi runtime MATIEC `__normalize_timespec` (docs/superpowers/audits/2026-10-21-matiec-loi-normalize-timespec.md).
+
 ## 7. Rủi ro và cách giảm
 
 | Rủi ro | Giảm |

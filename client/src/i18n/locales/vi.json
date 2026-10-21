@@ -13562,7 +13562,8 @@
         "global": "toàn cục",
         "tenant": "tổ chức",
         "project": "dự án",
-        "flow": "luồng"
+        "flow": "luồng",
+        "be-mat": "bề mặt"
       },
       "cheDo": {
         "active": "chạy thật",

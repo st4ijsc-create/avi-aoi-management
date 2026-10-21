@@ -396,14 +396,16 @@ export const aiGgufRouter = router({
       z
         .object({
           roleId: z.string().regex(/^[a-z][a-z0-9]*(\.[a-z0-9-]+)?$/).max(48),
-          scopeKind: z.enum(["global", "tenant", "project", "flow"]),
+          scopeKind: z.enum(["global", "tenant", "project", "flow", "be-mat"]),
           scopeId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).nullable(),
           profileId: z.string().min(1).max(96).nullable(),
           envKey: z.string().regex(/^GGUF_[A-Z_]+$/).max(32).nullable(),
           fallback: z.array(z.string().min(1).max(96)).max(4).default([]),
           mode: z.enum(["active", "shadow", "thu"]),
         })
-        .refine((v) => (v.scopeKind === "global") === (v.scopeId === null), { message: "scopeId bắt buộc trừ phạm vi global" }),
+        .refine((v) => (v.scopeKind === "global") === (v.scopeId === null), { message: "scopeId bắt buộc trừ phạm vi global" })
+        // ★ Đợt 9 — phạm vi bề mặt: scopeId theo danh sách trắng (BE_MAT_GAN, mig 0405).
+        .refine((v) => v.scopeKind !== "be-mat" || v.scopeId === "luong", { message: "phạm vi be-mat: scopeId phải là 'luong'" }),
     )
     .mutation(async ({ input, ctx }) => {
       const [{ getDb }, { datGanModel, LoiDatGan }, { lamMoiAnhSoModel }] = await Promise.all([

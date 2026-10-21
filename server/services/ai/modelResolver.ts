@@ -73,7 +73,7 @@
 import path from "path";
 import { laTenVaiTro } from "../../../shared/aiRoles";
 import { layAnhSoModel } from "./soModel/anhSoModel";
-import { dinhTuyenVaiTro, laVaiTroSinhChu } from "./soModel/dinhTuyenVaiTro";
+import { dinhTuyenVaiTro, laVaiTroSinhChu, type YeuCauDinhTuyen } from "./soModel/dinhTuyenVaiTro";
 
 function envStr(name: string): string {
   return (process.env[name] || "").trim();
@@ -219,8 +219,11 @@ export function resolveTaskModel(task: ResolvableTask): string | undefined {
  * → FAST_MODEL → undefined), NOT the exported `fimModelBasename()`/`resolveTaskModel("fim")`
  * (3-level, → DEFAULT_MODEL). See the module header, STEP 0 finding (b), for why this call shape
  * must preserve the original 2-level behavior.
+ *
+ * ★ Đợt 9 — `ngu` (tuỳ chọn, CHỈ áp cho tên VAI TRÒ): phạm vi + `khongDoiKhe` của bề mặt gọi (Luồng AI truyền
+ * `{ phamVi: { flowId, beMat: "luong" }, khongDoiKhe: true }`). Vắng ⇒ y hệt trước (mọi người gọi cũ không đổi một byte).
  */
-export function resolveLogicalModel(requested?: string): string | undefined {
+export function resolveLogicalModel(requested?: string, ngu?: Pick<YeuCauDinhTuyen, "phamVi" | "khongDoiKhe">): string | undefined {
   const key = (requested || "").trim().toLowerCase();
 
   switch (key) {
@@ -245,7 +248,7 @@ export function resolveLogicalModel(requested?: string): string | undefined {
       // như cũ (không để đường chat nạp reranker/model thị giác làm model chat).
       if (laTenVaiTro(key)) {
         const anh = layAnhSoModel();
-        if (laVaiTroSinhChu(key, anh)) return dinhTuyenVaiTro({ vaiTro: key }, anh, process.env).model;
+        if (laVaiTroSinhChu(key, anh)) return dinhTuyenVaiTro({ vaiTro: key, ...ngu }, anh, process.env).model;
       }
       // Unknown, non-empty id: honour it VERBATIM (client may target a real on-disk basename,
       // possibly nested under GGUF_MODELS_DIR — aiGgufEngine.resolveModelPath supports that via

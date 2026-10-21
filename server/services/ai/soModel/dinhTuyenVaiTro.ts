@@ -13,8 +13,18 @@ import { hoanDoiKheNangBat } from "./tapKheNang";
 
 export interface YeuCauDinhTuyen {
   vaiTro?: string;
-  phamVi?: { tenantId?: string; projectId?: string; flowId?: string };
+  /**
+   * ★ Đợt 9 — `beMat`: bề mặt gọi (phạm vi `be-mat`, mig 0405; vd `luong`). Thứ tự: flow > project > be-mat > tenant >
+   * global — gán theo dự án do người dùng chọn thắng chính sách của bề mặt.
+   */
+  phamVi?: { tenantId?: string; projectId?: string; flowId?: string; beMat?: string };
   tinHieu?: TinHieuVaiTro;
+  /**
+   * ★ Đợt 9 — bề mặt chạy NỀN (Luồng): KHÔNG kéo đổi khe nặng. Profile `nang` mà llama-server không đang giữ ⇒ coi như
+   * không dùng được ⇒ dự phòng ⇒ env của vai trò. Tránh đổi khe qua lại (15–50 s mỗi lần) khi :8091 đang giữ model khác
+   * cho bề mặt tương tác.
+   */
+  khongDoiKhe?: boolean;
 }
 
 export interface KetQuaDinhTuyen {
@@ -61,13 +71,14 @@ export function laVaiTroSinhChu(vaiTro: string, anh: AnhSoModel): boolean {
 
 type KetQuaProfile = { ok: true; model: string; ghiChu?: string } | { ok: false; lyDo: string };
 
-function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv): KetQuaProfile {
+function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv, khongDoiKhe = false): KetQuaProfile {
   const p = anh.profile.get(profileId);
   if (!p) return { ok: false, lyDo: `profile ${profileId} không có` };
   if (!p.enabled) return { ok: false, lyDo: `profile ${profileId} tắt` };
   if (p.artifactStatus !== "available") return { ok: false, lyDo: `artifact-${p.artifactStatus} (${profileId})` };
   const model = toBasename(p.artifactFile);
   if (p.slotClass === "nang" && model !== toBasename(env.LLAMA_SERVER_MODEL)) {
+    if (khongDoiKhe) return { ok: false, lyDo: `khe-dang-giu-model-khac (${profileId}; bề mặt nền không đổi khe)` };
     // Đợt 7.1: khe nặng đổi được (bộ giám sát khe nặng) ⇒ dùng được, ghi `can-doi-khe`; cờ tắt ⇒ như 7.0.
     if (!hoanDoiKheNangBat(env)) return { ok: false, lyDo: `khe-nang-chua-hoan-doi (${profileId})` };
     return { ok: true, model, ghiChu: "can-doi-khe" };
@@ -75,12 +86,13 @@ function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv):
   return { ok: true, model };
 }
 
-const THU_TU_PHAM_VI: readonly PhamViGan[] = ["flow", "project", "tenant", "global"];
+const THU_TU_PHAM_VI: readonly PhamViGan[] = ["flow", "project", "be-mat", "tenant", "global"];
 
 function chonGan(vaiTro: string, yc: YeuCauDinhTuyen, anh: AnhSoModel): GanTrongAnh | null {
   const id: Record<PhamViGan, string | null> = {
     flow: yc.phamVi?.flowId ?? null,
     project: yc.phamVi?.projectId ?? null,
+    "be-mat": yc.phamVi?.beMat ?? null,
     tenant: yc.phamVi?.tenantId ?? null,
     global: null,
   };
@@ -138,7 +150,7 @@ export function dinhTuyenVaiTro(
   }
   const loi: string[] = [];
   for (const pid of [gan.profileId!, ...gan.fallback]) {
-    const kq = thuProfile(pid, anh, env);
+    const kq = thuProfile(pid, anh, env, yc.khongDoiKhe === true);
     if (kq.ok) {
       return {
         vaiTro,

@@ -32,7 +32,7 @@ type HoSo = TongQuan["profiles"][number];
 const GB = 1e9;
 const O_NHAP =
   "h-8 w-full rounded-md border border-input bg-background px-2 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const PHAM_VI = ["global", "tenant", "project", "flow"] as const;
+const PHAM_VI = ["global", "tenant", "project", "flow", "be-mat"] as const;
 const CHE_DO = ["thu", "shadow", "active"] as const;
 const KHE = ["nang", "nho", "sidecar"] as const;
 const SUY_NGHI = ["auto", "on", "off"] as const;

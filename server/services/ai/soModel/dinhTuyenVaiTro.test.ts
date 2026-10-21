@@ -107,3 +107,47 @@ describe("dinhTuyenVaiTro (Đợt 7.0)", () => {
     });
   });
 });
+
+describe("★ Đợt 9 — phạm vi be-mat (mig 0405) + khongDoiKhe (bề mặt nền)", () => {
+  const Q35 = P({ artifactFile: "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", slotClass: "nang" });
+  const Q27 = P({ artifactFile: "Qwen3.6-27B-UD-Q4_K_XL.gguf", slotClass: "nang" });
+  const gan = (g: Partial<GanTrongAnh>[]) => anh(g.map((x) => ({ roleId: "extract", ...x })), new Map([["q35", Q35], ["q27", Q27]]));
+  const LUONG = { flowId: "f1", beMat: "luong" };
+
+  it("thứ tự: flow > project > be-mat > tenant > global", () => {
+    const a = gan([
+      { envKey: "GGUF_FAST_MODEL" },
+      { scopeKind: "tenant", scopeId: "t1", envKey: "GGUF_FIM_MODEL" },
+      { scopeKind: "be-mat", scopeId: "luong", profileId: "q35" },
+      { scopeKind: "project", scopeId: "p1", envKey: "GGUF_CODE_MODEL" },
+      { scopeKind: "flow", scopeId: "f1", envKey: "GGUF_DEFAULT_MODEL" },
+    ]);
+    const vt = { vaiTro: "extract" };
+    expect(dinhTuyenVaiTro({ ...vt, phamVi: { ...LUONG, projectId: "p1", tenantId: "t1" } }, a, ENV).phamVi).toBe("flow");
+    expect(dinhTuyenVaiTro({ ...vt, phamVi: { flowId: "khac", beMat: "luong", projectId: "p1", tenantId: "t1" } }, a, ENV).phamVi).toBe("project");
+    expect(dinhTuyenVaiTro({ ...vt, phamVi: { flowId: "khac", beMat: "luong", tenantId: "t1" } }, a, ENV)).toMatchObject({ phamVi: "be-mat", nguon: "gan-profile", model: "Qwen3.6-35B-A3B-UD-Q4_K_XL" });
+    expect(dinhTuyenVaiTro({ ...vt, phamVi: { tenantId: "t1" } }, a, ENV).phamVi).toBe("tenant");
+    expect(dinhTuyenVaiTro(vt, a, ENV)).toMatchObject({ phamVi: "global", model: "Qwen3-4B-Instruct-2507-UD-Q4_K_XL" });
+  });
+
+  it("khongDoiKhe + khe đang giữ ĐÚNG profile ⇒ dùng profile (không ghi can-doi-khe)", () => {
+    const a = gan([{ envKey: "GGUF_FAST_MODEL" }, { scopeKind: "be-mat", scopeId: "luong", profileId: "q35" }]);
+    const kq = dinhTuyenVaiTro({ vaiTro: "extract", phamVi: LUONG, khongDoiKhe: true }, a, ENV);
+    expect(kq).toMatchObject({ nguon: "gan-profile", model: "Qwen3.6-35B-A3B-UD-Q4_K_XL", phamVi: "be-mat" });
+    expect(kq.lyDo.bangChung).not.toContain("can-doi-khe");
+  });
+
+  it("khongDoiKhe + khe đang giữ model KHÁC ⇒ rơi dự phòng ⇒ env của vai trò (4B), ghi lý do", () => {
+    const a = gan([{ envKey: "GGUF_FAST_MODEL" }, { scopeKind: "be-mat", scopeId: "luong", profileId: "q35", fallback: ["q27"] }]);
+    const env = { ...ENV, LLAMA_SERVER_MODEL: "Qwen3.6-27B-UD-Q4_K_XL.gguf" };
+    // dự phòng q27 ĐANG được giữ ⇒ dùng nó
+    expect(dinhTuyenVaiTro({ vaiTro: "extract", phamVi: LUONG, khongDoiKhe: true }, a, env)).toMatchObject({ nguon: "du-phong", model: "Qwen3.6-27B-UD-Q4_K_XL" });
+    // không có dự phòng nào đang giữ ⇒ env của extract (GGUF_FAST_MODEL = 4B)
+    const b = gan([{ envKey: "GGUF_FAST_MODEL" }, { scopeKind: "be-mat", scopeId: "luong", profileId: "q35" }]);
+    const kq = dinhTuyenVaiTro({ vaiTro: "extract", phamVi: LUONG, khongDoiKhe: true }, b, env);
+    expect(kq).toMatchObject({ nguon: "du-phong", model: "Qwen3-4B-Instruct-2507-UD-Q4_K_XL", phamVi: "be-mat" });
+    expect(kq.lyDo.bangChung).toContain("khe-dang-giu-model-khac");
+    // KHÔNG khongDoiKhe (bề mặt tương tác) ⇒ như 7.1: dùng profile, ghi can-doi-khe
+    expect(dinhTuyenVaiTro({ vaiTro: "extract", phamVi: LUONG }, b, env).lyDo.bangChung).toContain("can-doi-khe");
+  });
+});
