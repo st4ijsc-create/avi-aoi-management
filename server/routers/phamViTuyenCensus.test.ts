@@ -413,8 +413,8 @@ export function dangKyDotBienTuyen(app: Express): void {
   it("★★★ tuyến rò MỚI ⇒ nhóm A + KHÔNG có trong sổ nợ; bản đã lọc ⇒ nhóm S", () => {
     expect(existsSync(FILE_DOT_BIEN), "file đột biến còn sót từ lượt trước — dọn đi trước khi chạy").toBe(false);
     try {
-      writeFileSync(FILE_DOT_BIEN, MA, "utf8");
-      const lai = quetPhamViDoc(GOC_REPO);
+      // Tệp ẢO (không ghi đĩa): ghi tệp tạm vào server/routes/ làm các lưới quét khác nổ ENOENT khi chạy song song.
+      const lai = quetPhamViDoc(GOC_REPO, { "server/routes/__dotBienTuyenPhamVi.ts": MA });
       const tim = (duong: string): TuyenExpress | undefined =>
         lai.tuyen.find((t) => t.file.endsWith("__dotBienTuyenPhamVi.ts") && t.duong === duong);
 

@@ -354,8 +354,11 @@ const TEN_PHAN_GIAI = new Set([
 /**
  * ★★★ Quét `server/**` và phân loại **mọi** thủ tục tRPC.
  * @param goc thư mục gốc repo.
+ * @param ghiDe tệp ẢO chồng lên cây (khoá = đường dẫn tương đối posix từ `goc`, vd `server/routers/x.ts`; giá trị = nội dung).
+ *   Dùng cho phép ĐỘT BIẾN của các lưới canh: trước đây chúng GHI tệp tạm vào cây repo rồi xoá, và mọi lưới khác đang quét
+ *   cùng cây (chạy song song) gặp `ENOENT` khi tệp biến mất giữa lúc liệt kê và lúc đọc. Tệp ảo không chạm đĩa.
  */
-export function quetPhamViDoc(goc: string): KetQuaQuetPhamVi {
+export function quetPhamViDoc(goc: string, ghiDe: Readonly<Record<string, string>> = {}): KetQuaQuetPhamVi {
   const bang = bangTenant();
   const mu: string[] = [];
   if (bang.tongBang === 0) mu.push("drizzle/schema không cho bảng nào — bộ suy mất điểm neo");
@@ -363,11 +366,17 @@ export function quetPhamViDoc(goc: string): KetQuaQuetPhamVi {
 
   const THU_MUC_SERVER = join(goc, "server");
   const files = moiFileTs(THU_MUC_SERVER).filter((f) => !f.endsWith(".test.ts"));
+  const ao = new Map<string, string>();
+  for (const [rel, nd] of Object.entries(ghiDe)) {
+    const p = join(goc, ...rel.split("/"));
+    ao.set(p, nd);
+    if (!files.includes(p)) files.push(p);
+  }
   if (files.length === 0) mu.push("không duyệt được file nào dưới server/** — bộ suy quét trúng 0 file");
 
   const duong = (p: string): string => relative(goc, p).split(sep).join("/");
   const noiDung = new Map<string, string>();
-  for (const f of files) noiDung.set(f, readFileSync(f, "utf8"));
+  for (const f of files) noiDung.set(f, ao.get(f) ?? readFileSync(f, "utf8"));
 
   const cayCua = new Map<string, ts.SourceFile>();
   const cay = (f: string): ts.SourceFile => {
