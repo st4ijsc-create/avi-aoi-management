@@ -20,9 +20,9 @@ export interface YeuCauDinhTuyen {
   phamVi?: { tenantId?: string; projectId?: string; flowId?: string; beMat?: string };
   tinHieu?: TinHieuVaiTro;
   /**
-   * ★ Đợt 9 — bề mặt chạy NỀN (Luồng): KHÔNG kéo đổi khe nặng. Profile `nang` mà llama-server không đang giữ ⇒ coi như
-   * không dùng được ⇒ dự phòng ⇒ env của vai trò. Tránh đổi khe qua lại (15–50 s mỗi lần) khi :8091 đang giữ model khác
-   * cho bề mặt tương tác.
+   * ★ Đợt 9 — bề mặt chạy NỀN (Luồng): vai trò NHẸ (`VAI_TRO_NHE_KHONG_DOI_KHE`) KHÔNG kéo đổi khe nặng — profile `nang`
+   * mà llama-server không đang giữ ⇒ coi như không dùng được ⇒ dự phòng ⇒ env của vai trò. Vai trò `code.*` vẫn đổi khe
+   * như 7.1 (nền chờ được; tiêu chí ĐÚNG hơn NHANH: code.plc 27B 53 % vs 35B 43 %).
    */
   khongDoiKhe?: boolean;
 }
@@ -68,6 +68,12 @@ export function laVaiTroSinhChu(vaiTro: string, anh: AnhSoModel): boolean {
   const tk = anh.vaiTro.get(vaiTro)?.taskKind ?? VAI_TRO_GOC.find((v) => v.id === vaiTro)?.taskKind;
   return !!tk && TASK_SINH_CHU.has(tk);
 }
+
+/**
+ * ★ Đợt 9 (dieu-phoi quyết 2026-10-21) — MỘT chỗ duy nhất: vai trò NHẸ mà bề mặt nền (`khongDoiKhe`) không được kéo đổi
+ * khe nặng; dự phòng đủ tốt cho chúng, còn đổi khe qua lại mới là cái đau. Vai trò ngoài danh sách (code.*) đổi khe như 7.1.
+ */
+export const VAI_TRO_NHE_KHONG_DOI_KHE: ReadonlySet<string> = new Set(["extract", "summarize", "classify", "chat", "chat.ops"]);
 
 type KetQuaProfile = { ok: true; model: string; ghiChu?: string } | { ok: false; lyDo: string };
 
@@ -150,7 +156,7 @@ export function dinhTuyenVaiTro(
   }
   const loi: string[] = [];
   for (const pid of [gan.profileId!, ...gan.fallback]) {
-    const kq = thuProfile(pid, anh, env, yc.khongDoiKhe === true);
+    const kq = thuProfile(pid, anh, env, yc.khongDoiKhe === true && VAI_TRO_NHE_KHONG_DOI_KHE.has(vaiTro));
     if (kq.ok) {
       return {
         vaiTro,

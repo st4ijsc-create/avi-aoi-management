@@ -151,3 +151,29 @@ describe("★ Đợt 9 — phạm vi be-mat (mig 0405) + khongDoiKhe (bề mặt
     expect(dinhTuyenVaiTro({ vaiTro: "extract", phamVi: LUONG }, b, env).lyDo.bangChung).toContain("can-doi-khe");
   });
 });
+
+describe("★ Đợt 9 — khongDoiKhe CHỈ cho vai trò nhẹ (VAI_TRO_NHE_KHONG_DOI_KHE)", () => {
+  const Q35 = P({ artifactFile: "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", slotClass: "nang" });
+  const Q27 = P({ artifactFile: "Qwen3.6-27B-UD-Q4_K_XL.gguf", slotClass: "nang" });
+  const LUONG = { phamVi: { flowId: "f1", beMat: "luong" }, khongDoiKhe: true };
+
+  it("Luồng + code.plc (gán 27B) + khe giữ 35B ⇒ VẪN đổi khe (can-doi-khe)", () => {
+    const a = anh([{ roleId: "code.plc", profileId: "q27", fallback: ["q35"] }], new Map([["q35", Q35], ["q27", Q27]]));
+    const kq = dinhTuyenVaiTro({ vaiTro: "code.plc", ...LUONG }, a, ENV);
+    expect(kq).toMatchObject({ nguon: "gan-profile", model: "Qwen3.6-27B-UD-Q4_K_XL" });
+    expect(kq.lyDo.bangChung).toContain("can-doi-khe");
+  });
+
+  it("Luồng + extract (gán 35B) + khe giữ 27B ⇒ dự phòng ⇒ 4B, không đổi khe", () => {
+    const a = anh([{ roleId: "extract", envKey: "GGUF_FAST_MODEL" }, { roleId: "extract", scopeKind: "be-mat", scopeId: "luong", profileId: "q35" }], new Map([["q35", Q35], ["q27", Q27]]));
+    const kq = dinhTuyenVaiTro({ vaiTro: "extract", ...LUONG }, a, { ...ENV, LLAMA_SERVER_MODEL: "Qwen3.6-27B-UD-Q4_K_XL.gguf" });
+    expect(kq).toMatchObject({ nguon: "du-phong", model: "Qwen3-4B-Instruct-2507-UD-Q4_K_XL" });
+    expect(kq.lyDo.bangChung).toContain("khe-dang-giu-model-khac");
+    expect(kq.lyDo.bangChung).not.toContain("can-doi-khe");
+  });
+
+  it("hằng: đúng năm vai trò nhẹ, không có code.*", async () => {
+    const { VAI_TRO_NHE_KHONG_DOI_KHE } = await import("./dinhTuyenVaiTro");
+    expect([...VAI_TRO_NHE_KHONG_DOI_KHE].sort()).toEqual(["chat", "chat.ops", "classify", "extract", "summarize"]);
+  });
+});

@@ -27,8 +27,8 @@ let goiAi: HamGoiAi = async ({ vaiTro, heThong, nguoiDung, nghi, maxTokens, loai
     import("../../aiGgufEngine"),
     import("../../ai/modelResolver"),
   ]);
-  // ★ Đợt 9 — trong MỘT lượt chạy (có `ngu`): phạm vi flow + bề mặt `luong` (mig 0405), và KHÔNG kéo đổi khe nặng (lượt
-  // nền). Ngoài lượt chạy (vd `flow.taoTuMoTa`, người dùng đang chờ) ⇒ như trước.
+  // ★ Đợt 9 — trong MỘT lượt chạy (có `ngu`): phạm vi flow + bề mặt `luong` (mig 0405), và vai trò NHẸ không kéo
+  // đổi khe nặng (lượt nền; danh sách MỘT chỗ: `VAI_TRO_NHE_KHONG_DOI_KHE` — code.* vẫn đổi khe). Ngoài lượt chạy (vd `flow.taoTuMoTa`, người dùng đang chờ) ⇒ như trước.
   const modelId = ngu
     ? resolveLogicalModel(vaiTro, { phamVi: { flowId: ngu.flowId, beMat: "luong" }, khongDoiKhe: true })
     : resolveLogicalModel(vaiTro);
