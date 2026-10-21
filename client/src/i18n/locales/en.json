@@ -23164,7 +23164,13 @@
       "lanLanThu": "pass {{lan}} · attempt {{lanThu}}",
       "dauVao": "Input",
       "dauRa": "Output",
-      "suKien": "Events ({{n}})"
+      "suKien": "Events ({{n}})",
+      "model": "Model actually used",
+      "modelMacDinh": "(server default)",
+      "duPhong": "Fallback",
+      "duPhongKheBan": "Fallback — the heavy slot is holding another model",
+      "nguon": "Chosen by: {{nguon}}{{phamVi}}",
+      "phamVi": " · scope {{pv}}"
     },
     "duyet": {
       "tieuDe": "Flow approvals",

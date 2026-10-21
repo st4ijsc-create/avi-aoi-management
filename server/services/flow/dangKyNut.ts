@@ -13,6 +13,22 @@ export interface BoKiemPhamVi {
   may(id: number): Promise<boolean>;
 }
 
+/**
+ * ★ Đợt 9 — VẾT MODEL của một lần gọi AI trong node: model THỰC dự định chạy (đã qua định tuyến vai trò: gán flow → be-mat →
+ * toàn cục → env) và có phải DỰ PHÒNG không (vd khe nặng đang giữ model khác ⇒ `kheBan`). Động cơ ghi thành sự kiện
+ * `buoc.model`; chạy thử node trả cùng dữ liệu.
+ */
+export interface VetModel {
+  vaiTro: string;
+  model: string | null;
+  nguon: string;
+  phamVi: string | null;
+  duPhong: boolean;
+  /** Dự phòng vì khe nặng đang giữ model khác (`khe-dang-giu-model-khac`). */
+  kheBan: boolean;
+  lyDo: string[];
+}
+
 export interface NguCanhChay {
   runId: string;
   flowId: string;
@@ -34,6 +50,8 @@ export interface NguCanhChay {
   biMat?: { giaTri: string; loai: string };
   /** Đợt 9 — bộ kiểm phạm vi (chạy thử: của người gọi). Chạy thật: chủ lượt — xem mig 0410 / bước (a). */
   kiemPhamVi?: BoKiemPhamVi;
+  /** Đợt 9 — node AI báo model thực chạy (động cơ / chạy thử gắn; vắng ⇒ bỏ qua). */
+  ghiModel?: (v: VetModel) => void;
 }
 
 export type KetQuaChay = Record<string, ItemLuong[]>;

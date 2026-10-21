@@ -19,7 +19,7 @@ import { aiFlowEvents, aiFlowInbox, aiFlowQueue, aiFlowRuns, aiFlowSteps, aiFlow
 import { getDb } from "../../db/connection";
 import { THU_TU_HANG, kiemLuong, luongConCuaNut, type FlowDefinition, type HangTacDungPhu } from "../../../shared/flow/model";
 import type { ItemLuong } from "../../../shared/flow/bieuThuc";
-import { layNut, type KetQuaChay, type NguCanhChay, type YeuCauCho } from "./dangKyNut";
+import { layNut, type KetQuaChay, type NguCanhChay, type VetModel, type YeuCauCho } from "./dangKyNut";
 import { bienTheBiMat, cheBiMat, cheSau, giaiMaChoChay } from "./biMat";
 import "./nut";
 
@@ -534,13 +534,26 @@ export async function chayMotMuc(workerId: string, leaseMs?: number, tienToFlow?
   const bd = await batDauBuoc(muc);
   if (!bd.tiep) return true;
   let kq: { ok: true; ra: KetQuaChay | YeuCauCho } | { ok: false; loi: unknown };
+  const vet: VetModel[] = [];
+  bd.ngu.ghiModel = (v) => void vet.push(v);
   try {
     kq = { ok: true, ra: await thucThi(bd.def, bd.ngu) };
   } catch (e) {
     kq = { ok: false, loi: e };
   }
   await ketThucBuoc(muc, bd.def, bd.lanThu, kq);
+  if (vet.length) await ghiVetModel(muc.runId, muc.nodeId, muc.lan, vet);
   return true;
+}
+
+/** Đợt 9 — ghi sự kiện `buoc.model` (model thực chạy của từng lần gọi AI trong bước). Thông tin phụ: lỗi ghi không làm hỏng lượt. */
+async function ghiVetModel(runId: string, nodeId: string, lan: number, vet: VetModel[]): Promise<void> {
+  try {
+    const db = await layDb();
+    await db.insert(aiFlowEvents).values(vet.map((v) => ({ runId, kind: "buoc.model", payload: { nodeId, lan, ...v } })));
+  } catch {
+    /* lượt có thể đã bị xoá giữa chừng */
+  }
 }
 
 export interface KetQuaLuotDongBo {

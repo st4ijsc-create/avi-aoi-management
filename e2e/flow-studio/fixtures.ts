@@ -153,6 +153,10 @@ export async function setupFixtures(): Promise<FsFixture> {
       await buoc(runA, "dat", "xong", 1, 2, item(1), item(1));
       await buoc(runB, "t", "xong", 10, 11, item(1), item(1));
       await buoc(runB, "dat", "loi", 11, 17, item(2), null, { thongDiep: "hỏng ở dat" });
+      // vết model (sự kiện do động cơ ghi khi node ai.* chạy): A dùng model gán; B rơi dự phòng vì khe nặng đang giữ model khác
+      const vet = (rid: string, o: object) => tx`INSERT INTO ai_flow_events ("runId", kind, payload) VALUES (${rid}, ${"buoc.model"}, ${tx.json({ nodeId: "dat", lan: 1, vaiTro: "extract", ...o } as never)})`;
+      await vet(runA, { model: "Qwen3-Khe-Nang-30B", nguon: "gan-profile", phamVi: "flow", duPhong: false, kheBan: false, lyDo: [] });
+      await vet(runB, { model: "Qwen3-4B-Instruct-2507-UD-Q4_K_XL", nguon: "du-phong", phamVi: "flow", duPhong: true, kheBan: true, lyDo: ["gán flow → p-nang", "khe-dang-giu-model-khac (p-nang; bề mặt nền không đổi khe)"] });
       return { admin: { id: Number(u.id), username: `${run}_admin`, password }, runA, runB, machineId: Number(mc.id) };
     }),
   );

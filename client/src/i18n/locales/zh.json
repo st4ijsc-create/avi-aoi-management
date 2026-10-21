@@ -23166,7 +23166,13 @@
       "lanLanThu": "第 {{lan}} 次 · 尝试 {{lanThu}}",
       "dauVao": "输入",
       "dauRa": "输出",
-      "suKien": "事件（{{n}}）"
+      "suKien": "事件（{{n}}）",
+      "model": "实际使用的模型",
+      "modelMacDinh": "（服务器默认）",
+      "duPhong": "回退",
+      "duPhongKheBan": "回退 — 重型槽位正被其他模型占用",
+      "nguon": "选择来源：{{nguon}}{{phamVi}}",
+      "phamVi": " · 范围 {{pv}}"
     },
     "duyet": {
       "tieuDe": "流程审批箱",

@@ -13,7 +13,29 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, GitCompare, Loader2, RefreshCw } from "lucide-react";
 import RunCompare from "./RunCompare";
-import { MAU_TRANG_THAI, luotDangSong, trangThaiTheoNut } from "@/lib/flowStudio";
+import { MAU_TRANG_THAI, luotDangSong, trangThaiTheoNut, vetModelCuaBuoc, type VetModelClient } from "@/lib/flowStudio";
+
+/** Đợt 9 — model THỰC chạy của một lần gọi AI trong bước + nhãn dự phòng (kèm lý do khi khe nặng đang bận). */
+export function VetModelHuy({ nodeId, vet }: { nodeId: string; vet: VetModelClient[] }) {
+  const { t } = useTranslation();
+  if (!vet.length) return null;
+  return (
+    <div className="flex flex-col gap-1" data-testid={`buoc-model-${nodeId}`}>
+      {vet.map((m, i) => (
+        <div key={i} className="flex items-center gap-1 flex-wrap text-[11px]" title={m.lyDo.join("; ")}>
+          <span className="text-muted-foreground">{t("flowStudio.chay.model")}:</span>
+          <span className="font-mono" data-testid={`model-thuc-${nodeId}`}>{m.model ?? t("flowStudio.chay.modelMacDinh")}</span>
+          <span className="text-muted-foreground">· {m.vaiTro}</span>
+          {m.duPhong && (
+            <Badge variant="outline" className="text-[10px] bg-warning/15 text-warning border-warning/40" data-testid={`du-phong-${nodeId}`} data-khe-ban={m.kheBan ? "1" : "0"}>
+              {m.kheBan ? t("flowStudio.chay.duPhongKheBan") : t("flowStudio.chay.duPhong")}
+            </Badge>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function NhanTrangThai({ tt }: { tt: string }) {
   const { t } = useTranslation();
@@ -142,6 +164,7 @@ export default function RunTimeline({ flowId, runId, onChonRun, tenNut, onTrangT
                       </span>
                       <span className="ml-auto text-[10px] text-muted-foreground">{khoangMs(b.startedAt, b.finishedAt)}</span>
                     </div>
+                    <VetModelHuy nodeId={b.nodeId} vet={vetModelCuaBuoc(dtg.data.suKien, b.nodeId, b.lan)} />
                     <KhoiJson nhan={t("flowStudio.chay.dauVao")} v={b.input} />
                     <KhoiJson nhan={t("flowStudio.chay.dauRa")} v={b.output} />
                     {b.error != null && (
