@@ -274,11 +274,15 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — command queue: L-7 STOP deliver
     try {
       let release!: () => void;
       const held = new Promise<void>((r) => (release = r));
+      let locked!: () => void;
+      const isLocked = new Promise<void>((r) => (locked = r));
       const locker = other.begin(async (tx) => {
         await tx`SELECT id FROM robot_motion_lock_requests WHERE id = ${stop} FOR UPDATE`;
+        locked();
         await held;
       });
-      await new Promise((r) => setTimeout(r, 200));
+      // chờ ĐIỀU KIỆN (khoá đã giữ), không ngủ cố định: dưới tải nặng 200 ms không đủ để mở kết nối + lấy khoá ⇒ lượt kéo chạy trước khi khoá tồn tại.
+      await Promise.race([isLocked, locker]);
       const t0 = Date.now();
       const c = await commandsForNode(await k.principal("A"));
       const took = Date.now() - t0;
@@ -316,11 +320,14 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — command queue: L-7 STOP deliver
     try {
       let release!: () => void;
       const held = new Promise<void>((r) => (release = r));
+      let locked!: () => void;
+      const isLocked = new Promise<void>((r) => (locked = r));
       const locker = other.begin(async (tx) => {
         await tx`SELECT id FROM robots WHERE id = ${k.ids.robotA} FOR UPDATE`;
+        locked();
         await held;
       });
-      await new Promise((r) => setTimeout(r, 200));
+      await Promise.race([isLocked, locker]); // chờ khoá đã giữ (không ngủ cố định)
       const t0 = Date.now();
       const err = await enqueueEdgeDeviceRequest({ kind: "stop", robotId: k.ids.robotA, reason: "console STOP", requestedBy: k.u.admin }).catch((e) => e);
       const took = Date.now() - t0;
