@@ -9,6 +9,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { donLuongTheoTienTo } from "./__donDuLieuTest";
 import { inArray, like, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { aiFlowCredentials, aiFlowRuns, aiFlows } from "../../../drizzle/schema";
@@ -18,6 +19,7 @@ import { BO_KIEM_CHO_QUA, __datBoKiemChuLuongChoTest } from "./boKiemPhamVi";
 import { datFetchLuong } from "./nut/tichHop";
 
 const TT = "t8bm";
+beforeAll(() => donLuongTheoTienTo(TT)); // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy) — xem flow/__donDuLieuTest.ts
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}, them: Record<string, unknown> = {}) => ({
   id, type, typeVersion: 1, name: id, position: [0, 0] as [number, number], parameters, ...them,
 });

@@ -7,7 +7,8 @@
  * riêng của test (admin tạo luồng ⇒ nhà máy NULL ⇒ người thường không thấy). "Người bật" = `ai_flow_versions.approvedBy`,
  * "chủ lượt" = `ai_flow_runs.chuLuong` (chạy tay = người bấm; lịch/webhook/MCP = người bật; luồng con kế thừa lượt cha).
  */
-import { vi } from "vitest";
+import { vi, beforeAll } from "vitest";
+import { donLuongTheoTienTo, donNhaMayVaNguoiTheoMa } from "./__donDuLieuTest";
 vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";
 });
@@ -19,6 +20,11 @@ import { flowRouter } from "../../routers/flowRouter";
 import { batDauRun, chayMotMuc } from "./dongCo";
 
 const TT = "h2qd";
+beforeAll(async () => {
+  // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy) — xem flow/__donDuLieuTest.ts
+  await donLuongTheoTienTo(TT);
+  await donNhaMayVaNguoiTheoMa(MA_NM, TT + "-");
+});
 const MA_NM = `${TT}F`;
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}) => ({ id, type, typeVersion: 1, name: id, position: [0, 0], parameters });
 const noi = (a: string, pa: string, b: string) => ({ from: { node: a, port: pa }, to: { node: b, port: "main" } });

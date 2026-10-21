@@ -7,7 +7,8 @@
  *   (iv)  kill switch con — đã ở H1 (luongCon.db.test.ts).
  * Mỗi ca dựng đúng kịch bản của audit và HỎNG trên mã trước bản vá (không có trần ⇒ mọi lượt đều vào).
  */
-import { vi } from "vitest";
+import { vi, beforeAll } from "vitest";
+import { donLuongTheoTienTo } from "./__donDuLieuTest";
 vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";
 });
@@ -23,6 +24,7 @@ import { goiToolLuongMcp } from "./kichHoat/mcp";
 import { TRAN_ITEM_GOI_CON, TRAN_LUOT_TRONG_CAY } from "../../../shared/flow/model";
 
 const TT = "m5tr";
+beforeAll(() => donLuongTheoTienTo(TT)); // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy) — xem flow/__donDuLieuTest.ts
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}) => ({ id, type, typeVersion: 1, name: id, position: [0, 0], parameters });
 const noi = (a: string, b: string, pa = "main") => ({ from: { node: a, port: pa }, to: { node: b, port: "main" } });
 const db = async () => (await getDb())!;

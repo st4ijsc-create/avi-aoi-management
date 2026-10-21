@@ -3,7 +3,8 @@
  * token sai/thiếu ⇒ 401 · luồng tắt ⇒ 409 · đúng ⇒ 202 + runId, item = thân · idempotency-key lặp ⇒ cùng runId ·
  * > 256 KB ⇒ 413 · thân không phải đối tượng ⇒ 400 · node không phải webhook ⇒ 404 · xoay token ⇒ token cũ 401.
  */
-import { vi } from "vitest";
+import { vi, beforeAll } from "vitest";
+import { donLuongTheoTienTo } from "../__donDuLieuTest";
 vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";
 });
@@ -19,6 +20,7 @@ import { registerFlowWebhookRoutes } from "../../../routes/flowWebhookApi";
 import { bamToken, capTokenWebhook } from "./webhook";
 
 const TT = "t8wh";
+beforeAll(() => donLuongTheoTienTo(TT)); // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy) — xem flow/__donDuLieuTest.ts
 const FLOW = `${TT}-a`;
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}) => ({ id, type, typeVersion: 1, name: id, position: [0, 0] as [number, number], parameters });
 const noi = (a: string, b: string) => ({ from: { node: a, port: "main" }, to: { node: b, port: "main" } });

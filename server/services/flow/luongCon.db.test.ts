@@ -9,7 +9,8 @@
  *   3. `ai.agent`: tool luồng con chạy đồng bộ, kết quả là DỮ LIỆU quay lại model; chữ "gọi tool" trong nội dung KHÔNG chạy gì;
  *      tool lạ / tham số sai kiểu ⇒ quan sát lỗi; trần lượt.
  */
-import { vi } from "vitest";
+import { vi, beforeAll } from "vitest";
+import { donLuongTheoTienTo, donNhaMayVaNguoiTheoMa } from "./__donDuLieuTest";
 vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";
 });
@@ -23,6 +24,11 @@ import { BO_KIEM_CHO_QUA, __datBoKiemChuLuongChoTest } from "./boKiemPhamVi";
 import { datHamGoiAgent, type HamGoiAgent } from "./nut/agent";
 
 const TT = "t84lc";
+beforeAll(async () => {
+  // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy) — xem flow/__donDuLieuTest.ts
+  await donLuongTheoTienTo(TT);
+  await donNhaMayVaNguoiTheoMa(TT + "F", TT + "-nd-");
+});
 // Lưới này kiểm luồng con / agent qua động cơ, KHÔNG phải phạm vi ⇒ cho-qua-hết; phạm vi thật: flowPhamViLuong.db.test.ts
 beforeAll(() => __datBoKiemChuLuongChoTest(async () => BO_KIEM_CHO_QUA));
 afterAll(() => __datBoKiemChuLuongChoTest(null));

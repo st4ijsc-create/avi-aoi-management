@@ -3,6 +3,7 @@
  * khác hoàn tất, node idempotent chạy lại với cùng khoá (đích giả khử trùng ⇒ 1 tác dụng), node atMostOnce KHÔNG chạy lại.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { donLuongTheoTienTo } from "./__donDuLieuTest";
 import { eq, inArray, like } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { aiFlowRuns, aiFlowSteps, aiFlows } from "../../../drizzle/schema";
@@ -10,6 +11,7 @@ import { __goNutChoTest, dangKyNut } from "./dangKyNut";
 import { batDauBuoc, batDauRun, chayMotMuc, luuPhienBan, nhatMuc, thucThi } from "./dongCo";
 
 const TT = "t8dc";
+beforeAll(() => donLuongTheoTienTo(TT)); // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy) — xem flow/__donDuLieuTest.ts
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}, them: Record<string, unknown> = {}) => ({
   id, type, typeVersion: 1, name: id, position: [0, 0] as [number, number], parameters, ...them,
 });
