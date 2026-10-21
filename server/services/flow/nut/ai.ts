@@ -21,13 +21,19 @@ export type HamGoiAi = (y: { vaiTro: string; heThong: string; nguoiDung: string;
 export const VAI_TRO_TASK: Record<string, "code" | "extract" | "chat"> = { "code.plc": "code", "code.software": "code", extract: "extract", classify: "extract" };
 
 /** Mặc định: Cổng AI + engine (nạp động — lưới thay bằng `datHamGoiAi`). */
-let goiAi: HamGoiAi = async ({ vaiTro, heThong, nguoiDung, nghi, maxTokens, loai }) => {
-  const [{ routeInference }, { chatCompletion }, { resolveLogicalModel }] = await Promise.all([
+let goiAi: HamGoiAi = async ({ vaiTro, heThong, nguoiDung, nghi, maxTokens, loai, ngu }) => {
+  const [{ routeInference }, { chatCompletion }, { resolveLogicalModel, defaultModelBasename }] = await Promise.all([
     import("../../aiGateway"),
     import("../../aiGgufEngine"),
     import("../../ai/modelResolver"),
   ]);
-  const modelId = resolveLogicalModel(vaiTro);
+  // ★ Đợt 9 — trong MỘT lượt chạy (có `ngu`): phạm vi flow + bề mặt `luong` (mig 0405), và vai trò NHẸ không kéo
+  // đổi khe nặng (lượt nền; danh sách MỘT chỗ: `VAI_TRO_NHE_KHONG_DOI_KHE` — code.* vẫn đổi khe). Ngoài lượt chạy (vd `flow.taoTuMoTa`, người dùng đang chờ) ⇒ như trước.
+  const modelId = ngu
+    ? resolveLogicalModel(vaiTro, { phamVi: { flowId: ngu.flowId, beMat: "luong" }, khongDoiKhe: true })
+    : resolveLogicalModel(vaiTro);
+  // Model THỰC chạy (vắng ⇒ engine dùng GGUF_DEFAULT_MODEL) ⇒ ghi vào metrics/audit `flow_*`.
+  const modelThuc = modelId ?? defaultModelBasename() ?? null;
   const { result } = await routeInference(
     { task: VAI_TRO_TASK[vaiTro] ?? "chat", text: nguoiDung, auditTask: `flow_${loai}`.slice(0, 32) },
     async (_d, _ab, safeText) => {
@@ -35,7 +41,7 @@ let goiAi: HamGoiAi = async ({ vaiTro, heThong, nguoiDung, nghi, maxTokens, loai
         { messages: [{ role: "system", content: heThong }, { role: "user", content: safeText }], maxTokens, temperature: 0.2, disableThinking: !nghi },
         modelId,
       );
-      return { result: stripThinking(r.text).answer, tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated };
+      return { result: stripThinking(r.text).answer, tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated, model: modelThuc };
     },
     { getResponseText: (t) => t },
   );

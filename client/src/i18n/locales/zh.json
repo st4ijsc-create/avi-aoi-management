@@ -13365,7 +13365,8 @@
         "global": "全局",
         "tenant": "租户",
         "project": "项目",
-        "flow": "流程"
+        "flow": "流程",
+        "be-mat": "界面"
       },
       "cheDo": {
         "active": "生效",

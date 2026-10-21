@@ -106,3 +106,36 @@ describe("B7 — ba cột mới đi tới INSERT đúng như đã đo", () => {
     expect(h.thinking).toBeNull();
   });
 });
+
+describe("★ Đợt 9 — `model` THỰC chạy (người gọi chọn model theo vai trò, vd Luồng AI) đi tới hàng sổ đo", () => {
+  it("có `model` ⇒ hàng ghi model đó; vắng ⇒ như cũ (decision.modelId hoặc 'default')", async () => {
+    const co = await hangDaGhi({ tokensIn: 1, tokensOut: 2, latencyMs: 3, outcome: "ok", model: "Qwen3-4B-Instruct-2507-UD-Q4_K_XL" });
+    expect(co.model).toBe("Qwen3-4B-Instruct-2507-UD-Q4_K_XL");
+    const vang = await hangDaGhi({ tokensIn: 1, tokensOut: 2, latencyMs: 3, outcome: "ok" });
+    expect(vang.model).not.toBe("Qwen3-4B-Instruct-2507-UD-Q4_K_XL");
+    expect(typeof vang.model).toBe("string");
+  });
+});
+
+describe("★ Đợt 9 — `model` THỰC chạy đi tới hàng `ai_llm_audit` (vệt flow_*)", () => {
+  it("routeInference: exec trả `model` ⇒ hàng audit ghi model đó, không phải decision.modelId", async () => {
+    insertValuesMock.mockClear();
+    vi.resetModules();
+    process.env.AI_LLM_AUDIT_ENABLED = "true";
+    const gateway = await import("./aiGateway");
+    const audit = await import("./ai/aiLlmAudit");
+    await gateway.routeInference(
+      { task: "extract", text: "trích mã lỗi", auditTask: "flow_trich-xuat", userId: 7 } as never,
+      async () => ({ result: "ok", tokensIn: 1, tokensOut: 1, model: "Qwen3-4B-Instruct-2507-UD-Q4_K_XL" }),
+    );
+    await audit.flushLlmAudit();
+    gateway.stopGatewayFlushTimer();
+    audit.stopLlmAuditFlushTimer();
+    const hangAudit = insertValuesMock.mock.calls
+      .filter((c) => getTableName((c as unknown[])[1] as never) === "ai_llm_audit")
+      .flatMap((c) => (c as unknown[])[0] as Array<Record<string, unknown>>);
+    expect(hangAudit).toHaveLength(1);
+    expect(hangAudit[0].task).toBe("flow_trich-xuat");
+    expect(hangAudit[0].model).toBe("Qwen3-4B-Instruct-2507-UD-Q4_K_XL");
+  });
+});

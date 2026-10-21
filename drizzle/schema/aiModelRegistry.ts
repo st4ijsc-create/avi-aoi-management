@@ -62,7 +62,7 @@ export const aiModelBindings = pgTable("ai_model_bindings", {
   roleId: varchar("roleId", { length: 48 })
     .notNull()
     .references(() => aiRoles.id),
-  /** `global` | `tenant` | `project` | `flow` */
+  /** `global` | `tenant` | `project` | `flow` | `be-mat` (mig 0405, scopeId = 'luong') */
   scopeKind: varchar("scopeKind", { length: 8 }).notNull(),
   scopeId: varchar("scopeId", { length: 64 }),
   profileId: varchar("profileId", { length: 96 }).references(() => aiServingProfiles.id),

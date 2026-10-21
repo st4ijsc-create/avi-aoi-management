@@ -121,6 +121,12 @@ export interface InferenceOutcome {
    * khi ghi, nên một người gọi quên che cũng không rò được.
    */
   auditSnippet?: string;
+  /**
+   * ★ Đợt 9 (2026-10-21) — basename model THỰC chạy, khi người gọi tự chọn model theo VAI TRÒ (Luồng AI) khác với
+   * `decision.modelId` của cổng. Vắng ⇒ như cũ (`decision.modelId`). Ghi vào `ai_gateway_metrics.model` VÀ
+   * `ai_llm_audit.model` — để biết lượt nào chạy 4B vì khe nặng bận (`khongDoiKhe`).
+   */
+  model?: string | null;
 }
 
 /**
@@ -402,14 +408,14 @@ function auditIfRisky(
   safetyFlags: SafetyFlagsSummary,
   promptText: string,
   outcome: Outcome,
-  extra?: { responseText?: string; latencyMs?: number; auditSnippet?: string },
+  extra?: { responseText?: string; latencyMs?: number; auditSnippet?: string; model?: string | null },
 ): void {
   if (!llmAuditEnabled() || !shouldAuditTask(req.task)) return;
   recordLlmAudit({
     userId: req.userId ?? null,
     task: auditTaskLabel(req),
     tier: decision.tier,
-    model: decision.modelId ?? "default",
+    model: extra?.model || decision.modelId || "default",
     outcome,
     promptText,
     responseText: extra?.responseText ?? null,
@@ -901,6 +907,7 @@ export async function planInference(req: GatewayRequest): Promise<GatewayPlan> {
       responseText: o.responseText,
       latencyMs: o.latencyMs,
       auditSnippet: o.auditSnippet,
+      model: o.model,
     });
   };
 
@@ -935,13 +942,13 @@ export async function planInference(req: GatewayRequest): Promise<GatewayPlan> {
  */
 export async function routeInference<T>(
   req: GatewayRequest,
-  exec: (decision: RouteDecision, abVariant: "A" | "B" | null, safeText: string) => Promise<{ result: T; tokensIn?: number; tokensOut?: number }>,
+  exec: (decision: RouteDecision, abVariant: "A" | "B" | null, safeText: string) => Promise<{ result: T; tokensIn?: number; tokensOut?: number; model?: string | null }>,
   opts?: { getResponseText?: (result: T) => string | null | undefined },
 ): Promise<{ result: T; decision: RouteDecision; abVariant: "A" | "B" | null }> {
   const plan = await planInference(req); // may throw RateLimitError | SafetyBlockedError | QuotaExceededError | LicenseGateError
   const start = Date.now();
   try {
-    const { result, tokensIn, tokensOut } = await exec(plan.decision, plan.abVariant, plan.safeText);
+    const { result, tokensIn, tokensOut, model } = await exec(plan.decision, plan.abVariant, plan.safeText);
     let responseText: string | undefined;
     if (opts?.getResponseText) {
       try {
@@ -954,7 +961,7 @@ export async function routeInference<T>(
         );
       }
     }
-    plan.record({ tokensIn, tokensOut, latencyMs: Date.now() - start, outcome: "ok", responseText });
+    plan.record({ tokensIn, tokensOut, latencyMs: Date.now() - start, outcome: "ok", responseText, model });
     return { result, decision: plan.decision, abVariant: plan.abVariant };
   } catch (err) {
     plan.record({ latencyMs: Date.now() - start, outcome: "error" });
@@ -971,7 +978,7 @@ function toRow(
   return {
     tier: decision.tier,
     task: req.task,
-    model: decision.modelId ?? "default",
+    model: o.model || decision.modelId || "default",
     abVariant,
     tokensIn: Math.max(0, Math.trunc(o.tokensIn ?? 0)),
     tokensOut: Math.max(0, Math.trunc(o.tokensOut ?? 0)),

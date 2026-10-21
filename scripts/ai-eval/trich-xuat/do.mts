@@ -126,11 +126,21 @@ for (const b of bo) {
   dung += r.dung; tong += r.tong; ms.push(t);
   if (r.dung === r.tong) baiTron++;
   console.log(`${r.dung === r.tong ? "ĐẠT " : "    "} ${b.id} ${r.dung}/${r.tong} · ${t} ms${r.sai.length ? "\n      " + r.sai.join("\n      ") : ""}`);
-  chiTiet.push({ id: b.id, dung: r.dung, tong: r.tong, sai: r.sai, text });
+  chiTiet.push({ id: b.id, dung: r.dung, tong: r.tong, sai: r.sai, text, ms: t });
 }
 ms.sort((a, b) => a - b);
-const nhan = DICH === "4b" ? "4b" : NGHI ? "nha-nghi" : "nha";
+const nhan = arg("--nhan", DICH === "4b" ? "4b" : NGHI ? "nha-nghi" : "nha");
+// ★ Đợt 9 — model THỰC chạy (đích nhà: /v1/models của :8091) + phân vị thời gian ⇒ ghi sổ được (ghi-ket-qua-so-model --trich-xuat).
+let modelThuc = DICH === "4b" ? path.basename(process.env.GGUF_FAST_MODEL || "Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf") : "?";
+if (DICH !== "4b") {
+  try {
+    const u = new URL(arg("--url", "http://127.0.0.1:8091/v1/chat/completions"));
+    const m = (await (await fetch(`${u.origin}/v1/models`)).json()) as { data?: { id?: string }[] };
+    modelThuc = String(m.data?.[0]?.id ?? "?").split(/[\\/]/).pop() ?? "?";
+  } catch { /* để "?" */ }
+}
+const pv = (q: number) => ms[Math.min(ms.length - 1, Math.floor(q * ms.length))];
 console.log(`\n══ extract đích ${nhan}: trường ${dung}/${tong} = ${Math.round((100 * dung) / tong)} % · bài trọn ${baiTron}/${bo.length} · không ra JSON ${khongJson} · trung vị ${ms[ms.length >> 1]} ms ══`);
 fs.mkdirSync("tmp", { recursive: true });
-fs.writeFileSync(`tmp/trich-xuat-${nhan}.json`, JSON.stringify({ dich: nhan, dung, tong, baiTron, khongJson, chiTiet }, null, 1));
+fs.writeFileSync(`tmp/trich-xuat-${nhan}.json`, JSON.stringify({ dich: nhan, model: modelThuc, nghi: NGHI, luc: new Date().toISOString(), p50Ms: pv(0.5), p90Ms: pv(0.9), dung, tong, baiTron, khongJson, chiTiet }, null, 1));
 await donDep();

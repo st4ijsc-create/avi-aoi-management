@@ -13,8 +13,18 @@ import { hoanDoiKheNangBat } from "./tapKheNang";
 
 export interface YeuCauDinhTuyen {
   vaiTro?: string;
-  phamVi?: { tenantId?: string; projectId?: string; flowId?: string };
+  /**
+   * ★ Đợt 9 — `beMat`: bề mặt gọi (phạm vi `be-mat`, mig 0405; vd `luong`). Thứ tự: flow > project > be-mat > tenant >
+   * global — gán theo dự án do người dùng chọn thắng chính sách của bề mặt.
+   */
+  phamVi?: { tenantId?: string; projectId?: string; flowId?: string; beMat?: string };
   tinHieu?: TinHieuVaiTro;
+  /**
+   * ★ Đợt 9 — bề mặt chạy NỀN (Luồng): vai trò NHẸ (`VAI_TRO_NHE_KHONG_DOI_KHE`) KHÔNG kéo đổi khe nặng — profile `nang`
+   * mà llama-server không đang giữ ⇒ coi như không dùng được ⇒ dự phòng ⇒ env của vai trò. Vai trò `code.*` vẫn đổi khe
+   * như 7.1 (nền chờ được; tiêu chí ĐÚNG hơn NHANH: code.plc 27B 53 % vs 35B 43 %).
+   */
+  khongDoiKhe?: boolean;
 }
 
 export interface KetQuaDinhTuyen {
@@ -59,15 +69,22 @@ export function laVaiTroSinhChu(vaiTro: string, anh: AnhSoModel): boolean {
   return !!tk && TASK_SINH_CHU.has(tk);
 }
 
+/**
+ * ★ Đợt 9 (dieu-phoi quyết 2026-10-21) — MỘT chỗ duy nhất: vai trò NHẸ mà bề mặt nền (`khongDoiKhe`) không được kéo đổi
+ * khe nặng; dự phòng đủ tốt cho chúng, còn đổi khe qua lại mới là cái đau. Vai trò ngoài danh sách (code.*) đổi khe như 7.1.
+ */
+export const VAI_TRO_NHE_KHONG_DOI_KHE: ReadonlySet<string> = new Set(["extract", "summarize", "classify", "chat", "chat.ops"]);
+
 type KetQuaProfile = { ok: true; model: string; ghiChu?: string } | { ok: false; lyDo: string };
 
-function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv): KetQuaProfile {
+function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv, khongDoiKhe = false): KetQuaProfile {
   const p = anh.profile.get(profileId);
   if (!p) return { ok: false, lyDo: `profile ${profileId} không có` };
   if (!p.enabled) return { ok: false, lyDo: `profile ${profileId} tắt` };
   if (p.artifactStatus !== "available") return { ok: false, lyDo: `artifact-${p.artifactStatus} (${profileId})` };
   const model = toBasename(p.artifactFile);
   if (p.slotClass === "nang" && model !== toBasename(env.LLAMA_SERVER_MODEL)) {
+    if (khongDoiKhe) return { ok: false, lyDo: `khe-dang-giu-model-khac (${profileId}; bề mặt nền không đổi khe)` };
     // Đợt 7.1: khe nặng đổi được (bộ giám sát khe nặng) ⇒ dùng được, ghi `can-doi-khe`; cờ tắt ⇒ như 7.0.
     if (!hoanDoiKheNangBat(env)) return { ok: false, lyDo: `khe-nang-chua-hoan-doi (${profileId})` };
     return { ok: true, model, ghiChu: "can-doi-khe" };
@@ -75,12 +92,13 @@ function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv):
   return { ok: true, model };
 }
 
-const THU_TU_PHAM_VI: readonly PhamViGan[] = ["flow", "project", "tenant", "global"];
+const THU_TU_PHAM_VI: readonly PhamViGan[] = ["flow", "project", "be-mat", "tenant", "global"];
 
 function chonGan(vaiTro: string, yc: YeuCauDinhTuyen, anh: AnhSoModel): GanTrongAnh | null {
   const id: Record<PhamViGan, string | null> = {
     flow: yc.phamVi?.flowId ?? null,
     project: yc.phamVi?.projectId ?? null,
+    "be-mat": yc.phamVi?.beMat ?? null,
     tenant: yc.phamVi?.tenantId ?? null,
     global: null,
   };
@@ -138,7 +156,7 @@ export function dinhTuyenVaiTro(
   }
   const loi: string[] = [];
   for (const pid of [gan.profileId!, ...gan.fallback]) {
-    const kq = thuProfile(pid, anh, env);
+    const kq = thuProfile(pid, anh, env, yc.khongDoiKhe === true && VAI_TRO_NHE_KHONG_DOI_KHE.has(vaiTro));
     if (kq.ok) {
       return {
         vaiTro,
