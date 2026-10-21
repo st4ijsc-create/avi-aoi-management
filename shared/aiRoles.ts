@@ -88,7 +88,7 @@ export function vaiTroTuTinHieu(t: TinHieuVaiTro): { vaiTro: string; bangChung: 
 // Chỉ kết luận khi có CẢ ý định mã lẫn từ khoá của ĐÚNG MỘT miền (PLC xor phần mềm) — câu hỏi khái niệm
 // ("IEC 61131-3 gồm ngôn ngữ nào?") không có ý định mã ⇒ không kết luận, để tầng 4/5 lo.
 const RE_Y_DINH_MA =
-  /(^|[\s,.:;(])(viết|code|lập trình|sửa|chuyển|tạo|thêm|tối ưu|refactor|write|fix|implement|convert|debug)(?=$|[\s,.:;)])|lỗi biên dịch|báo lỗi E\d+|compile error/i;
+  /(^|[\s,.:;(])(viết|viet|code|lập trình|lap trinh|sửa|sua|chuyển|chuyen|tạo|tao|thêm|them|tối ưu|toi uu|refactor|review|write|fix|implement|convert|debug)(?=$|[\s,.:;)])|lỗi biên dịch|báo lỗi E\d+|compile error/i;
 // Viết tắt PHÂN BIỆT hoa thường ("ST", "TON" — không bắt "st"/"ton" trong chữ thường); cụm từ không phân biệt.
 const RE_PLC_VIET_TAT = /\b(ST|SCL|PLC|FB|TON|TOF|CTU|CTD|R_TRIG|F_TRIG)\b/;
 const RE_PLC_CUM = /\b(plc|codesys|twincat|tia portal|iec\s*61131(-3)?|structured text|function block|ladder)\b|khối chức năng/i;
@@ -97,6 +97,24 @@ const RE_PHAN_MEM =
 
 /** "ngôn ngữ lập trình" là DANH TỪ, không phải ý định viết mã ("IEC 61131-3 gồm những ngôn ngữ lập trình nào?"). */
 const boDanhTuMa = (cauHoi: string) => (cauHoi ?? "").replace(/ngôn ngữ lập trình/gi, "ngôn ngữ");
+
+// ★ Đợt 9 (a) — dấu hiệu MÃ DÁN VÀO (ST / Python / SQL / JS / ladder ASCII) — câu "đoạn này lỗi, sửa giúp" kèm mã.
+const RE_SAN_PHAM_MA =
+  /(?<![\p{L}\p{N}])(?:hàm|ham|script|chương trình|chuong trinh|trang|endpoint|truy vấn|truy van|câu lệnh|cau lenh|câu|cau|khối|khoi|module|component|làm giúp|lam giup|dựng|cần|can|help me|build|create|make)(?![\p{L}\p{N}])/iu;
+const RE_MA_DAN = /:=|\bEND_(?:IF|FOR|WHILE|CASE|FUNCTION(?:_BLOCK)?|VAR|PROGRAM)\b|\bdef\s+\w+\s*\(|=>|\bSELECT\b[\s\S]*\bFROM\b|--\|/i;
+
+/**
+ * ★ Đợt 9 (a) — CỔNG của tầng 4: chỉ được chọn `code.*` khi câu có Ý ĐỊNH viết/sửa mã hoặc có mã dán vào. Nhúng bắt CHỦ ĐỀ
+ * (câu dài dán log máy, câu vận hành không dấu bị hút về tâm cụm code.plc) — chủ đề kỹ thuật không phải ý định viết mã.
+ */
+export function coYDinhHoacMa(cauHoi: string): boolean {
+  const s = boDanhTuMa(cauHoi);
+  if (RE_Y_DINH_MA.test(s) || RE_MA_DAN.test(s)) return true;
+  // Yêu cầu SẢN PHẨM MÃ không dùng động từ trong danh sách ("Làm giúp chương trình … PLC", "Script bash nén …",
+  // "Dựng giúp trang HTML …"): từ khoá MIỀN + (danh từ sản phẩm mã | động từ nhờ làm).
+  const mien = RE_PLC_VIET_TAT.test(s) || RE_PLC_CUM.test(s) || RE_PHAN_MEM.test(s) || /\bselect\b/i.test(s);
+  return mien && RE_SAN_PHAM_MA.test(s);
+}
 
 /** Tầng 3 — từ CHỮ của câu hỏi. Không chắc ⇒ `null`. */
 export function vaiTroTuCauHoi(cauHoi: string): { vaiTro: string; bangChung: string } | null {
@@ -114,19 +132,21 @@ export function vaiTroTuCauHoi(cauHoi: string): { vaiTro: string; bangChung: str
 // bắt Ý ĐỊNH). Ý định "tóm tắt / trích / hỏi khái niệm" lộ ra bằng chữ ⇒ xét bằng luật, rồi mới tới tầng 4.
 // TÁCH khỏi `vaiTroTuCauHoi` có chủ ý: `vaiTroTuTinHieu` (bề mặt lập trình) chỉ được trả vai trò MÃ.
 // Ranh giới chữ theo Unicode (`\b` của JS là ASCII — gãy giữa chữ có dấu).
-const T = (s: string) => new RegExp(`(?<![\p{L}\p{N}])(?:${s})(?![\p{L}\p{N}])`, "iu");
-const RE_TOM_TAT = T("tóm tắt|tom tat|tóm lại|tom lai|tổng kết|tong ket|rút gọn|rut gon|ý chính|y chinh|summari[sz]e|summary|tl;?dr|condense|key (?:points|findings)");
+// ⚠ String.raw: trong template thường `\p` thành "p" ⇒ (bản 9beab7e8b) ranh giới thực ra là lớp [p{L}N] — SAI, sửa Đợt 9.
+const T = (s: string) => new RegExp(String.raw`(?<![\p{L}\p{N}])(?:${s})(?![\p{L}\p{N}])`, "iu");
+// ★ Đợt 9 (b) — đồng nghĩa + không dấu: tóm gọn/lược/hộ/giúp, gói gọn, nói gọn, khái quát, recap, shorten.
+const RE_TOM_TAT = T("tóm tắt|tom tat|tóm (?:lại|gọn|lược|hộ|giúp)|tom (?:lai|gon|luoc|ho|giup)|gói gọn|goi gon|nói gọn|noi gon|khái quát|khai quat|recap|shorten|tổng kết|tong ket|rút gọn|rut gon|ý chính|y chinh|summari[sz]e|summary|tl;?dr|condense|key (?:points|findings)");
 const RE_TONG_HOP = T("tổng hợp|tong hop");
-const RE_TRICH = T("trích|trich|trích xuất|extract|parse");
-const RE_LAY = T("lấy|lay|lọc|loc|tách|tach|rút|rut|điền|dien|pull|get");
+const RE_TRICH = T("trích|trich|trích xuất|bóc tách|boc tach|extract|parse");
+const RE_LAY = T("lấy|lay|lọc|loc|tách|tach|rút|rut|điền|dien|liệt kê|liet ke|gom|chuyển|chuyen|pull|get");
 const RE_TAI_LIEU_KEM = T("này|nay|sau|sau đây|dưới|duoi|dưới đây|đoạn văn|văn bản|this|following|below|attached");
-const RE_DANG_CAU_TRUC = T("json|bảng|bang|danh sách|danh sach|các trường|cac truong|table|list|csv|fields?");
+const RE_DANG_CAU_TRUC = T("json|bảng|bang|danh sách|danh sach|các trường|cac truong|cột|cot|table|list|csv|fields?");
 const RE_HOI_KHAI_NIEM = T(
-  "là gì|la gi|là sao|khác nhau|khac nhau|khác gì|khác .{1,40} (?:thế nào|ra sao)|so sánh|so sanh|tại sao|tai sao|vì sao|vi sao|giải thích|giai thich|nguyên lý|nguyen ly|nguyên nhân|ưu điểm|nhược điểm|ý nghĩa|ảnh hưởng(?: \S+){0,6} (?:thế nào|ra sao)|gồm những|gồm gì|hoạt động (?:thế nào|ra sao)|khi nào nên|nên dùng|nên chọn|có nên|what is|what are|what's|why|explain|difference|how does|how do|should i|when to use",
+  "là gì|la gi|là sao|khác nhau|khac nhau|khác gì|khác .{1,40} (?:thế nào|ra sao)|so sánh|so sanh|tại sao|tai sao|vì sao|vi sao|giải thích|giai thich|nguyên lý|nguyen ly|nguyên nhân|ưu điểm|nhược điểm|ý nghĩa|ảnh hưởng(?: \\S+){0,6} (?:thế nào|ra sao)|gồm những|gồm gì|hoạt động (?:thế nào|ra sao)|khi nào nên|nên dùng|nên chọn|có nên|what is|what are|what's|why|explain|difference|how does|how do|should i|when to use",
 );
 // Câu hỏi SỐ LIỆU HIỆN TẠI của nhà máy (chat.ops) — có các dấu này thì KHÔNG kết luận "chat".
 const RE_DAU_VAN_HANH = T(
-  "hôm nay|hom nay|hôm qua|hom qua|hiện tại|hien tai|hiện (?:đang|nay|giờ|có)|đang|dang|ca này|ca nay|ca sáng|ca chiều|ca đêm|tuần này|tuan nay|tháng này|thang nay|line ?\d+|máy số ?\d+|today|yesterday|currently|right now|this (?:shift|week|month)",
+  "hôm nay|hom nay|hôm qua|hom qua|hiện tại|hien tai|hiện (?:đang|nay|giờ|có)|đang|dang|ca này|ca nay|ca sáng|ca chiều|ca đêm|tuần này|tuan nay|tháng này|thang nay|line ?\\d+|máy số ?\\d+|today|yesterday|currently|right now|this (?:shift|week|month)",
 );
 // Câu đính kèm mã/tài liệu ("đoạn này", "code sau") — câu "tại sao…" về MÃ người dùng dán vào không phải hỏi khái niệm.
 const RE_KEM_MA = T("đoạn (?:mã|code|st|này|sau|dưới)|code (?:này|sau|dưới)|chương trình này|this (?:code|snippet|function|rung)");

@@ -9,8 +9,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cauMauTheoVaiTro, chonVaiTroTheoNhung, tamCum, TIEN_TO_NHUNG } from "../../../server/services/ai/soModel/phanLoaiNguNghia";
-import { vaiTroTuCauHoiTuDong } from "../../../shared/aiRoles";
+import { cauMauTheoVaiTro, chonVaiTroTang4CoCong, tamCum, TIEN_TO_NHUNG } from "../../../server/services/ai/soModel/phanLoaiNguNghia";
+import { coYDinhHoacMa, vaiTroTuCauHoiTuDong } from "../../../shared/aiRoles";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const arg = (k: string, d: string) => {
@@ -51,7 +51,7 @@ function cham(nguong: number, cach: number) {
   cau.forEach((c, i) => {
     // Tầng 3 (tín hiệu chữ) trước — như bộ định tuyến sản phẩm; rồi tầng 4.
     const t3 = vaiTroTuCauHoiTuDong(c.cauHoi);
-    const kq = t3 ? { vaiTro: t3.vaiTro, lyDo: `tầng 3: ${t3.bangChung}` } : chonVaiTroTheoNhung(vec[i], mau, nguong, cach);
+    const kq = t3 ? { vaiTro: t3.vaiTro, lyDo: `tầng 3: ${t3.bangChung}` } : chonVaiTroTang4CoCong(vec[i], mau, nguong, cach, c.cauHoi, coYDinhHoacMa);
     const du = kq.vaiTro ?? "chat";
     if (!kq.vaiTro) roi++;
     theoVt[c.vaiTro] ??= { dung: 0, tong: 0 };

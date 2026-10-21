@@ -70,3 +70,28 @@ describe("vaiTroTuTacVu / vaiTroTuCauHoiTuDong — tín hiệu tác vụ tầng 
     expect(vaiTroTuTinHieu({ cauHoi: "Tóm tắt biên bản họp này" })).toBeNull();
   });
 });
+
+describe("★ Đợt 9 (a)(b) — cổng ý định mã + không dấu / đồng nghĩa + ranh giới Unicode", () => {
+  it("coYDinhHoacMa: động từ (cả không dấu), mã dán, hoặc miền + sản phẩm mã; câu vận hành / dán log thì không", async () => {
+    const { coYDinhHoacMa } = await import("./aiRoles");
+    expect(coYDinhHoacMa("viet ham python tinh oee")).toBe(true);
+    expect(coYDinhHoacMa("Đoạn này sai:\nIF a THEN b := 1; END_IF")).toBe(true);
+    expect(coYDinhHoacMa("Làm giúp chương trình đèn giao thông bằng TON trên PLC")).toBe(true);
+    expect(coYDinhHoacMa("Script bash nén thư mục ảnh")).toBe(true);
+    expect(coYDinhHoacMa("may reflow 1 co dang bao dong ko")).toBe(false);
+    expect(coYDinhHoacMa("Gói gọn email này: lô HB2610 bị trả về 37 bo do lệch U3")).toBe(false);
+  });
+
+  it("đồng nghĩa + không dấu của tóm tắt / trích", async () => {
+    const { vaiTroTuTacVu } = await import("./aiRoles");
+    expect(vaiTroTuTacVu("tom gon giup minh doan nay")?.vaiTro).toBe("summarize");
+    expect(vaiTroTuTacVu("Recap this for the meeting")?.vaiTro).toBe("summarize");
+    expect(vaiTroTuTacVu("Bóc tách ngày, ca, người trực từ lịch sau")?.vaiTro).toBe("extract");
+  });
+
+  it("ranh giới chữ là THẬT (bản cũ: `\p` trong template thành 'p'): 'tom tat' trong 'atom tat' không khớp; 'line 3' là dấu vận hành", async () => {
+    const { vaiTroTuTacVu } = await import("./aiRoles");
+    expect(vaiTroTuTacVu("cho tôi xem atom tatoo")).toBeNull();
+    expect(vaiTroTuTacVu("Tại sao line 3 dừng?")).toBeNull(); // dấu vận hành "line 3" ⇒ không kết luận chat
+  });
+});

@@ -141,9 +141,11 @@ export function chonVaiTroTheoNhung(
   mau: ReadonlyMap<string, readonly (readonly number[])[]>,
   nguong: number,
   cachBiet: number,
+  boQua?: (vaiTro: string) => boolean,
 ): KetQuaPhanLoai {
   const diem: [string, number][] = [];
   for (const [vt, ds] of mau) {
+    if (boQua?.(vt)) continue;
     let max = -1;
     for (const v of ds) max = Math.max(max, cosine(vec, v));
     if (ds.length) diem.push([vt, max]);
@@ -157,6 +159,25 @@ export function chonVaiTroTheoNhung(
     return { vaiTro: null, ...kq, lyDo: `${nhat[0]} ${nhat[1].toFixed(3)} sát ${nhi[0]} ${nhi[1].toFixed(3)}` };
   }
   return { vaiTro: nhat[0], ...kq, lyDo: `gần câu mẫu ${nhat[0]} (${nhat[1].toFixed(3)})` };
+}
+
+/**
+ * ★ Đợt 9 (a) — tầng 4 CÓ CỔNG: nhúng chọn `code.*` mà câu KHÔNG có ý định viết/sửa mã và không có mã dán vào
+ * (`coYDinhHoacMa`) ⇒ chọn lại trong các vai trò KHÔNG phải code. "Hố hút" code.plc: câu dài dán log máy / câu vận hành
+ * không dấu có cosine ~0,5 với tâm cụm code.plc (bộ mù 3: 9/13 lỗi).
+ */
+export function chonVaiTroTang4CoCong(
+  vec: readonly number[],
+  mau: ReadonlyMap<string, readonly (readonly number[])[]>,
+  nguong: number,
+  cachBiet: number,
+  cauHoi: string,
+  coYDinhHoacMa: (cauHoi: string) => boolean,
+): KetQuaPhanLoai {
+  const kq = chonVaiTroTheoNhung(vec, mau, nguong, cachBiet);
+  if (!kq.vaiTro?.startsWith("code.") || coYDinhHoacMa(cauHoi)) return kq;
+  const lai = chonVaiTroTheoNhung(vec, mau, nguong, cachBiet, (vt) => vt.startsWith("code."));
+  return { ...lai, lyDo: `${lai.lyDo} (cổng ý định mã: bỏ ${kq.vaiTro} ${kq.diem.toFixed(3)} — câu không có ý định viết mã)` };
 }
 
 /** Câu mẫu theo vai trò: CSDL (`ai_roles.examples`) thắng, không có thì mặc định. */
@@ -179,7 +200,7 @@ let boNhoMau: { khoa: string; mau: Map<string, number[][]> } | null = null;
  */
 export async function phanLoaiNguNghia(
   cauHoi: string,
-  y: { cauMau: Map<string, readonly string[]>; nhung: HamNhung; nguong?: number; cachBiet?: number },
+  y: { cauMau: Map<string, readonly string[]>; nhung: HamNhung; nguong?: number; cachBiet?: number; coYDinhHoacMa?: (cauHoi: string) => boolean },
 ): Promise<KetQuaPhanLoai> {
   // Chốt TRƯỚC lượt đo cuối (chọn trên DEV): ngưỡng 0,3 chỉ chặn câu lạc đề hẳn, không cách biệt.
   const nguong = y.nguong ?? 0.3;
@@ -192,6 +213,7 @@ export async function phanLoaiNguNghia(
       boNhoMau = { khoa, mau };
     }
     const [vec] = await y.nhung([TIEN_TO_NHUNG + cauHoi.slice(0, 2000)]);
+    if (y.coYDinhHoacMa) return chonVaiTroTang4CoCong(vec, boNhoMau.mau, nguong, cachBiet, cauHoi, y.coYDinhHoacMa);
     return chonVaiTroTheoNhung(vec, boNhoMau.mau, nguong, cachBiet);
   } catch (e) {
     return { vaiTro: null, diem: 0, vaiTroNhi: null, diemNhi: 0, lyDo: `nhúng hỏng: ${String((e as Error)?.message ?? e).slice(0, 120)}` };
@@ -203,11 +225,12 @@ export async function phanLoaiNguNghia(
  * embedding thường trú của engine). `null` ⇒ bề mặt dùng vai trò mặc định của nó. Không bao giờ ném.
  */
 export async function chonVaiTroTuDong(cauHoi: string): Promise<{ vaiTro: string | null; tang: 3 | 4 | 5; lyDo: string }> {
-  const { vaiTroTuCauHoiTuDong } = await import("../../../../shared/aiRoles");
+  const { vaiTroTuCauHoiTuDong, coYDinhHoacMa } = await import("../../../../shared/aiRoles");
   const t3 = vaiTroTuCauHoiTuDong(cauHoi);
   if (t3) return { vaiTro: t3.vaiTro, tang: 3, lyDo: t3.bangChung };
   const kq = await phanLoaiNguNghia(cauHoi, {
     cauMau: cauMauTheoVaiTro(),
+    coYDinhHoacMa,
     nhung: async (ts) => {
       const { generateEmbeddings } = await import("../../aiGgufEngine");
       return (await generateEmbeddings(ts)).embeddings;
