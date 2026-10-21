@@ -43,7 +43,7 @@ $tepTamDung = if ($env:LLAMA_WATCHDOG_PAUSE_FILE) { $env:LLAMA_WATCHDOG_PAUSE_FI
 # *** Dot 9 (2026-10-21) - tep nay dong thoi la KHOA KHE (server/services/ai/khoaKhe.ts): JSON {chu, lyDo, hetHan}.
 #     Bo lap lich khe nang cua app gap khoa con han => KHONG doi khe (su co 14:00: :3000 doi khe giet 27B giua luot do).
 #     Moi lan "cham" GHI LAI hetHan = bay gio + 10 phut; script chet => khoa tu het han.
-#     ⚠ Go-TamDung xoa tep ca khi mot phep do khac dang giu khoa: nguoi giu (scripts/ai-eval/lib/khoaKhe.mjs) ghi lai trong
+#     !! Go-TamDung xoa tep ca khi mot phep do khac dang giu khoa: nguoi giu (scripts/ai-eval/lib/khoaKhe.mjs) ghi lai trong
 #       <= 30 s => cua so ho <= 30 s, CHAP NHAN (dieu-phoi 2026-10-21).
 function Ghi-Khoa {
   $hetHan = (Get-Date).ToUniversalTime().AddMinutes(10).ToString('o')
