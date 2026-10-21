@@ -362,6 +362,15 @@ export function demTrongCuaSo(mocs: number[], bayGio: number, cuaSoMs: number): 
 export function dangTamDung(duong: string, bayGio: number, hetHanMs: number): boolean {
   try {
     const st = fs.statSync(duong);
+    // ★ Đợt 9 — KHOÁ KHE JSON {chu, lyDo, hetHan} (khoaKhe.ts): hạn là `hetHan` của người giữ (gia hạn định kỳ) — người giữ
+    // chết ⇒ hết hạn sớm, không kẹt tới 30 phút theo mtime.
+    try {
+      const j = JSON.parse(fs.readFileSync(duong, "utf8").replace(/^\uFEFF/, ""));
+      const h = typeof j?.hetHan === "number" ? j.hetHan : Date.parse(String(j?.hetHan ?? ""));
+      if (typeof j?.chu === "string" && Number.isFinite(h)) return h > bayGio && bayGio - st.mtimeMs < hetHanMs;
+    } catch {
+      /* định dạng chữ cũ ⇒ theo mtime */
+    }
     return bayGio - st.mtimeMs < hetHanMs;
   } catch {
     return false;

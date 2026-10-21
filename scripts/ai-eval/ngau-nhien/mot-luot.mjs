@@ -24,6 +24,7 @@ import { taoCauHoiMotLuot, SYS_MOT_LUOT } from "./lib/cauHoi.mjs";
 import { bangTomTat, trungVi } from "./lib/baoCao.mjs";
 import { taoGoiModel, tuyChonTuArgs } from "./lib/goiModel.mjs";
 import { chayST } from "./lib/st/chayST.mjs";
+import { giuKhoaKhe } from "../lib/khoaKhe.mjs";
 import { chaySTMatiec } from "./lib/st-matiec/chaySTMatiec.mjs";
 import { sclSangSt } from "./lib/st-scl/scl.mjs";
 
@@ -74,8 +75,8 @@ function genGia(b) {
   return { text: dungCauTraLoiGia(tep), totalMs: 0 };
 }
 
-async function kiemSong(luc) {
-  if (GOI_MODEL) await goi.kiemSong(luc, { pipeline: CONFIG === "pipeline" });
+async function kiemSong(luc, thoat = true) {
+  return GOI_MODEL ? goi.kiemSong(luc, { pipeline: CONFIG === "pipeline", thoat }) : true;
 }
 
 // ── VÒNG ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -84,6 +85,13 @@ if (CONFIG === "pipeline") {
   goi = taoGoiModel({ ...TUY_CHON, cookie: ck(arg("--cookie", `${ROOT}/tmp/audit-ai/ck.txt`)) });
 }
 await kiemSong("TRƯỚC khi đo");
+// ★ Đợt 9 — KHOÁ KHE suốt lượt (server/services/ai/khoaKhe.ts): app không được đổi khe :8091 giữa phép đo; gia hạn 30 s,
+// tự hết hạn ≤ 5 phút nếu tiến trình này chết.
+const KHOA = GOI_MODEL && CONFIG === "raw" ? giuKhoaKhe({ chu: `mot-luot ${LABEL} (PID ${process.pid})`, lyDo: "đo plc/ngẫu nhiên trên :8091" }) : null;
+// ★ Đợt 9 — model THỰC chạy đầu + cuối lượt (khe nặng của một tiến trình khác có thể đổi :8091 giữa chừng).
+const MODEL_DAU = GOI_MODEL && CONFIG === "raw" ? await goi.modelDangChay() : null;
+if (MODEL_DAU) console.error(`ℹ model :8091 lúc bắt đầu: ${MODEL_DAU}`);
+let dungSom = null;
 
 const rows = [];
 const dangCham = new Set();
@@ -161,15 +169,25 @@ for (const b of DS) {
     } catch (e) {
       g = { text: "", err: String(e).slice(0, 300) };
     }
+    // ★ Đợt 9 — lượt hỏng (lỗi gọi / chữ rỗng) ⇒ hỏi sức khoẻ; server chết ⇒ DỪNG NGAY, KHÔNG chấm lượt này (lỗi máy, không
+    // phải lỗi model), ghi báo cáo phần đã xong rồi thoát 2.
+    if (GOI_MODEL && (g.err || !g.text) && !(await kiemSong(`SAU lượt ${b.id}#${luot}`, false))) {
+      dungSom = { id: b.id, luot, loi: String(g.err ?? "chữ rỗng").slice(0, 200), luc: new Date().toISOString() };
+      break;
+    }
     // Chấm song song với lượt sinh kế tiếp (CPU ↔ GPU), giới hạn SONG_SONG_CHAM.
     while (dangCham.size >= SONG_SONG_CHAM) await Promise.race(dangCham);
     const p = cham(b, luot, g).catch((e) => console.error(`  ⚠ lỗi chấm ${b.id}: ${e?.stack ?? e}`)).finally(() => dangCham.delete(p));
     dangCham.add(p);
   }
+  if (dungSom) break;
 }
 await Promise.all(dangCham);
-await kiemSong("SAU khi đo");
+const songSau = dungSom ? false : await kiemSong("SAU khi đo", false);
+const MODEL_CUOI = GOI_MODEL && CONFIG === "raw" ? await goi.modelDangChay() : null;
+if (MODEL_DAU && MODEL_CUOI !== MODEL_DAU) console.error(`⚠ model :8091 ĐỔI giữa lượt: đầu ${MODEL_DAU} · cuối ${MODEL_CUOI ?? "không đọc được"}`);
 xoaThuMuc(WORK);
+KHOA?.go();
 
 // ── BÁO CÁO ──────────────────────────────────────────────────────────────────────────────────────────
 rows.sort((a, b) => (a.id === b.id ? a.luot - b.luot : a.id < b.id ? -1 : 1));
@@ -183,9 +201,17 @@ fs.writeFileSync(`${dirBc}/${LABEL}.json`, JSON.stringify({
   label: LABEL, duong: "a-mot-luot", config: CONFIG, seed: SEED, n: N, soLuot: SO_LUOT, luc: new Date().toISOString(),
   base: CONFIG === "pipeline" ? TUY_CHON.base : null, rawUrl: CONFIG === "raw" ? TUY_CHON.rawUrl : null, maxTokens: GOI_MODEL ? TUY_CHON.maxTokens : null,
   khongNghi: co("--khong-nghi"), sampling: arg("--sampling", "hien-tai"), vongSua: VONG_SUA, stTrinhDich: ST_TRINH_DICH, stPhuongNgu: ST_PHUONG_NGU,
+  modelDau: MODEL_DAU, modelCuoi: MODEL_CUOI, dungSom, songSau,
   bai: DS.map((b) => ({ id: b.id, lang: b.lang, muc: b.muc, vanTay: b.vanTay })), bang, rows,
 }, null, 1));
 console.log(` báo cáo: ${path.join(dirBc, `${LABEL}.json`)}`);
+if (dungSom || !songSau || (MODEL_DAU && MODEL_CUOI !== MODEL_DAU)) {
+  console.error(
+    `\n⛔ LƯỢT KHÔNG TRỌN: ${dungSom ? `server chết sau ${dungSom.id}#${dungSom.luot} (${dungSom.loi})` : !songSau ? "server không khoẻ SAU khi đo" : "model đổi giữa lượt"}` +
+      ` — báo cáo ĐÃ GHI ${rows.length} lượt hợp lệ (dungSom/songSau/modelDau/modelCuoi trong JSON). KHÔNG ghi sổ nguyên trạng.`,
+  );
+  process.exit(2);
+}
 
 const dat = rows.filter((r) => r.dat).length;
 const KY_VONG = { mau: rows.length, khung: 0, sai: 0 };

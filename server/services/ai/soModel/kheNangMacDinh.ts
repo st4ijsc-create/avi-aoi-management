@@ -12,6 +12,7 @@ import { CAU_HINH_MAC_DINH, KheNang, LoiKheNang, type BoPhucVuKheNang, type CauH
 import { hoanDoiKheNangBat, modelKheNangPhu, modelNhaKheNang } from "./tapKheNang";
 // ★ Đợt 9 — đếm đổi khe THỰC theo token /v1 (trần 3 / 10 phút trượt; ngoài /v1 ⇒ không đếm).
 import { ghiDoiKheTheoNguCanh } from "./tranDoiKheToken";
+import { docKhoaKhe } from "../khoaKhe";
 
 function soEnv(ten: string, macDinh: number): number {
   const v = Number(process.env[ten]);
@@ -31,6 +32,9 @@ const boThat: BoPhucVuKheNang = {
     } catch {
       return null;
     }
+  },
+  khoaKhe() {
+    return docKhoaKhe();
   },
   async doiSang(model) {
     const { layDieuPhoiDoiModel, LoiDoiModel } = await import("../doiModelLlamaServer");
@@ -95,6 +99,11 @@ export async function* quaKheNangLuong<T>(model: string, moLuong: () => AsyncGen
 /** Cho tRPC tổng quan; `null` = khe nặng chưa từng được dùng trong tiến trình này. */
 export function thongKeKheNang(): (ThongKeKheNang & { tuDoi: boolean }) | null {
   return kn ? { ...kn.thongKe(), tuDoi: cauHinh.tuDoi } : null;
+}
+
+/** ★ Đợt 9 — khoá khe đang hiệu lực (cho Trung tâm Model; null = không khoá). */
+export function khoaKheHienTai() {
+  return docKhoaKhe();
 }
 
 /** Chỉ lưới: thay đơn thể bằng một `KheNang` dựng với `BoPhucVu` giả (`null` = về mặc định). */

@@ -341,7 +341,7 @@ export const aiGgufRouter = router({
   // ─── ★★ Đợt 7.0 — Sổ model (vai trò → model) ──────────
   /** Vai trò · gán còn hiệu lực · hồ sơ · artifact + model mà MỖI vai trò đang phân giải ra (toàn cục) kèm lý do. */
   soModelTongQuan: adminDoiModel.query(async () => {
-    const [{ getDb }, sm, { dinhTuyenVaiTro }, { lamMoiAnhSoModel }, { thongKeKheNang }] = await Promise.all([
+    const [{ getDb }, sm, { dinhTuyenVaiTro }, { lamMoiAnhSoModel }, { thongKeKheNang, khoaKheHienTai }] = await Promise.all([
       import("../db/connection"),
       import("../../drizzle/schema"),
       import("../services/ai/soModel/dinhTuyenVaiTro"),
@@ -383,7 +383,7 @@ export const aiGgufRouter = router({
       evalSuite: moTa.get(id)?.evalSuite ?? null,
       dinhTuyen: dinhTuyenVaiTro({ vaiTro: id }, anh, process.env),
     }));
-    return { taiLuc: anh.taiLuc, vaiTro, gan: anh.gan, profiles, artifacts, evalRuns, hoSoCoDo: hoSoCoDoRows.map((r) => r.profileId).sort(), kheNang: thongKeKheNang() };
+    return { taiLuc: anh.taiLuc, vaiTro, gan: anh.gan, profiles, artifacts, evalRuns, hoSoCoDo: hoSoCoDoRows.map((r) => r.profileId).sort(), kheNang: thongKeKheNang(), khoaKhe: khoaKheHienTai() };
   }),
 
   /** Quét `GGUF_MODELS_DIR` → `ai_model_artifacts` (thêm mới, đánh dấu mất / có lại). */

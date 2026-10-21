@@ -25,6 +25,11 @@ export interface YeuCauDinhTuyen {
    * như 7.1 (nền chờ được; tiêu chí ĐÚNG hơn NHANH: code.plc 27B 53 % vs 35B 43 %).
    */
   khongDoiKhe?: boolean;
+  /**
+   * ★ Đợt 9 — KHOÁ KHE còn hiệu lực (`khoaKhe.ts`): MỌI vai trò (kể cả code.*) không chọn profile nặng mà khe không giữ ⇒
+   * dự phòng ⇒ env. Bộ lập lịch khe nặng chặn lần cuối (từ chối nói thật) nếu đích cuối vẫn đòi đổi khe.
+   */
+  kheBiKhoa?: boolean;
 }
 
 export interface KetQuaDinhTuyen {
@@ -77,7 +82,7 @@ export const VAI_TRO_NHE_KHONG_DOI_KHE: ReadonlySet<string> = new Set(["extract"
 
 type KetQuaProfile = { ok: true; model: string; ghiChu?: string } | { ok: false; lyDo: string };
 
-function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv, khongDoiKhe = false): KetQuaProfile {
+function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv, khongDoiKhe: false | string = false): KetQuaProfile {
   const p = anh.profile.get(profileId);
   if (!p) return { ok: false, lyDo: `profile ${profileId} không có` };
   if (!p.enabled) return { ok: false, lyDo: `profile ${profileId} tắt` };
@@ -87,7 +92,7 @@ function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv, 
   if (p.license === "unknown") return { ok: false, lyDo: `giay-phep-chua-khai (${profileId})` };
   const model = toBasename(p.artifactFile);
   if (p.slotClass === "nang" && model !== toBasename(env.LLAMA_SERVER_MODEL)) {
-    if (khongDoiKhe) return { ok: false, lyDo: `khe-dang-giu-model-khac (${profileId}; bề mặt nền không đổi khe)` };
+    if (khongDoiKhe) return { ok: false, lyDo: `${khongDoiKhe} (${profileId})` };
     // Đợt 7.1: khe nặng đổi được (bộ giám sát khe nặng) ⇒ dùng được, ghi `can-doi-khe`; cờ tắt ⇒ như 7.0.
     if (!hoanDoiKheNangBat(env)) return { ok: false, lyDo: `khe-nang-chua-hoan-doi (${profileId})` };
     return { ok: true, model, ghiChu: "can-doi-khe" };
@@ -159,7 +164,12 @@ export function dinhTuyenVaiTro(
   }
   const loi: string[] = [];
   for (const pid of [gan.profileId!, ...gan.fallback]) {
-    const kq = thuProfile(pid, anh, env, yc.khongDoiKhe === true && VAI_TRO_NHE_KHONG_DOI_KHE.has(vaiTro));
+    const chan = yc.kheBiKhoa
+      ? "khe-bi-khoa; khe đang bị khoá, không đổi khe"
+      : yc.khongDoiKhe === true && VAI_TRO_NHE_KHONG_DOI_KHE.has(vaiTro)
+        ? "khe-dang-giu-model-khac; bề mặt nền không đổi khe"
+        : false;
+    const kq = thuProfile(pid, anh, env, chan);
     if (kq.ok) {
       return {
         vaiTro,

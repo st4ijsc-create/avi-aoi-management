@@ -74,6 +74,7 @@ import path from "path";
 import { laTenVaiTro } from "../../../shared/aiRoles";
 import { layAnhSoModel } from "./soModel/anhSoModel";
 import { dinhTuyenVaiTro, laVaiTroSinhChu, type YeuCauDinhTuyen } from "./soModel/dinhTuyenVaiTro";
+import { docKhoaKhe } from "./khoaKhe";
 
 function envStr(name: string): string {
   return (process.env[name] || "").trim();
@@ -248,7 +249,8 @@ export function resolveLogicalModel(requested?: string, ngu?: Pick<YeuCauDinhTuy
       // như cũ (không để đường chat nạp reranker/model thị giác làm model chat).
       if (laTenVaiTro(key)) {
         const anh = layAnhSoModel();
-        if (laVaiTroSinhChu(key, anh)) return dinhTuyenVaiTro({ vaiTro: key, ...ngu }, anh, process.env).model;
+        // ★ Đợt 9 — khoá khe (đọc tệp, nhớ đệm 2 s — ngoại lệ I/O DUY NHẤT của module này, có chủ ý).
+        if (laVaiTroSinhChu(key, anh)) return dinhTuyenVaiTro({ vaiTro: key, ...ngu, kheBiKhoa: docKhoaKhe() !== null }, anh, process.env).model;
       }
       // Unknown, non-empty id: honour it VERBATIM (client may target a real on-disk basename,
       // possibly nested under GGUF_MODELS_DIR — aiGgufEngine.resolveModelPath supports that via

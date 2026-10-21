@@ -110,3 +110,10 @@ process.env.VRAM_PROCESS_PROBE ??= "off";
  * `vi.mock("./vramGpuHolders")` — xem `server/services/vram/reconciler.baselinePids.test.ts`.
  */
 process.env.VRAM_GPU_HOLDER_SCAN ??= "off";
+
+/**
+ * ★ Đợt 9 — KHOÁ KHE (`server/services/ai/khoaKhe.ts`) đọc tệp `LLAMA_WATCHDOG_PAUSE_FILE` (mặc định %TEMP%) — tệp THẬT mà
+ * một phép đo đang chạy trên máy có thể giữ ⇒ bộ định tuyến trong lưới đổi hành vi theo việc ngoài lưới. Trỏ về một thư
+ * mục tạm RỖNG (không có tệp ⇒ không khoá); lưới khoá dùng đường tường minh.
+ */
+process.env.LLAMA_WATCHDOG_PAUSE_FILE = resolve(mkdtempSync(resolve(tmpdir(), "vitest-khoa-khe-")), "llama-watchdog.pause");

@@ -625,11 +625,31 @@ function TabHoSo({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
 function TabKhe({ d }: { d: TongQuan }) {
   const { t } = useTranslation();
   const k = d.kheNang;
-  if (!k) return <p className="text-sm text-muted-foreground">{t("gguf.trungTam.khe.chuaDung", "Khe nặng chưa dùng trong tiến trình này.")}</p>;
+  // ★ Đợt 9 — khoá khe (phép đo / đổi model ngoài app đang giữ :8091) — CHỈ hiển thị.
+  const khoa = d.khoaKhe;
+  const oKhoa = khoa ? (
+    <div className="rounded border border-amber-500/60 bg-amber-500/10 p-2 text-xs" data-testid="khoa-khe" role="status">
+      <span className="font-medium">{t("gguf.trungTam.khe.khoa.tieuDe", "Khe đang bị khoá")}</span>
+      {" — "}
+      {t("gguf.trungTam.khe.khoa.chu", "chủ")}: <span className="font-mono break-all">{khoa.chu}</span>
+      {khoa.lyDo ? <> · {t("gguf.trungTam.khe.khoa.lyDo", "lý do")}: {khoa.lyDo}</> : null}
+      {" · "}
+      {t("gguf.trungTam.khe.khoa.hetHan", "hết hạn")}: <span className="font-mono">{new Date(khoa.hetHan).toLocaleString()}</span>
+      {khoa.hong ? <> · {t("gguf.trungTam.khe.khoa.hong", "tệp khoá không đúng định dạng — khoá ngắn")}</> : null}
+    </div>
+  ) : null;
+  if (!k)
+    return (
+      <div className="space-y-2">
+        {oKhoa}
+        <p className="text-sm text-muted-foreground">{t("gguf.trungTam.khe.chuaDung", "Khe nặng chưa dùng trong tiến trình này.")}</p>
+      </div>
+    );
   const dangChay = Object.entries(k.dangChay);
   const nghi = Object.entries(k.nghi);
   return (
     <div className="space-y-3 text-sm" data-testid="khe-nang">
+      {oKhoa}
       <div className="grid gap-2 sm:grid-cols-3">
         <div>
           <span className="text-muted-foreground">{t("gguf.trungTam.khe.dangGiu", "Đang giữ")}: </span>

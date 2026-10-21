@@ -49,3 +49,34 @@ describe("resolveLogicalModel × vai trò", () => {
     expect(resolveLogicalModel("sub/dir/model.gguf")).toBeUndefined(); // ★ M4: không còn mang đường dẫn
   });
 });
+
+describe("★ Đợt 9 — resolveLogicalModel đọc KHOÁ KHE thật (LLAMA_WATCHDOG_PAUSE_FILE) ⇒ không chọn profile nặng khe không giữ", () => {
+  it("code.plc gán 27B, khe giữ 35B: không khoá ⇒ 27B (đổi khe); có khoá ⇒ dự phòng 35B", async () => {
+    const fs = await import("node:fs");
+    const { __xoaBoNhoKhoaKhe } = await import("./khoaKhe");
+    const tep = process.env.LLAMA_WATCHDOG_PAUSE_FILE!;
+    const giuServer = process.env.LLAMA_SERVER_MODEL;
+    process.env.LLAMA_SERVER_MODEL = "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf";
+    const p = (f: string) => ({ artifactFile: f, slotClass: "nang" as const, artifactStatus: "available", license: "apache-2.0", enabled: true });
+    datAnhSoModel({
+      ...ANH_RONG,
+      taiLuc: 1,
+      vaiTro: new Map([["code.plc", { envKey: "GGUF_CODE_MODEL", taskKind: "code" }]]),
+      profile: new Map([["q27", p("Qwen3.6-27B-UD-Q4_K_XL.gguf")], ["q35", p("Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf")]]),
+      gan: [{ roleId: "code.plc", scopeKind: "global", scopeId: null, profileId: "q27", envKey: null, fallback: ["q35"], mode: "active" }],
+    });
+    try {
+      __xoaBoNhoKhoaKhe();
+      expect(resolveLogicalModel("code.plc")).toBe("Qwen3.6-27B-UD-Q4_K_XL");
+      fs.writeFileSync(tep, JSON.stringify({ chu: "lưới", lyDo: "thử", hetHan: new Date(Date.now() + 60_000).toISOString() }));
+      __xoaBoNhoKhoaKhe();
+      expect(resolveLogicalModel("code.plc")).toBe("Qwen3.6-35B-A3B-UD-Q4_K_XL");
+    } finally {
+      fs.rmSync(tep, { force: true });
+      __xoaBoNhoKhoaKhe();
+      if (giuServer === undefined) delete process.env.LLAMA_SERVER_MODEL;
+      else process.env.LLAMA_SERVER_MODEL = giuServer;
+      datAnhSoModel(ANH_RONG);
+    }
+  });
+});

@@ -13691,7 +13691,14 @@
         },
         "nghi": "Models cooling down (after load failure)",
         "conLai": "{{t}} left",
-        "ghiChu": "Figures from the API process, refreshed every 5 seconds while this tab is open."
+        "ghiChu": "Figures from the API process, refreshed every 5 seconds while this tab is open.",
+        "khoa": {
+          "tieuDe": "Slot is locked",
+          "chu": "holder",
+          "lyDo": "reason",
+          "hetHan": "expires",
+          "hong": "lock file malformed — short lock"
+        }
       },
       "suyNghi": {
         "auto": "auto",
