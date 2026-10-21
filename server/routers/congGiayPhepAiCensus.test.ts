@@ -499,7 +499,12 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   `deployProcedure.use(moduleGate("MOD_AI"))` (bật phiên bản luồng hạng `ot` = admin + 2FA mới; vai + hạng kiểm ở
 //   `meta.chanTruocStepUp` trước OTP) — CÓ cổng MOD_AI từ lượt sinh ra. aiMienTru / ngoaiAiCoCong / mọi SKU khác KHÔNG đổi.
 //   Đo trước (đỏ đúng +1 ở ba ô trên) / sau. `tong` 2384 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2384, beMatAi: 431, aiCoCong: 369, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+// ★★ 2026-10-21 (AI Local Đợt 9.1 — chạy thử một node) — **tong 2384 → 2385 · beMatAi 431 → 432 · aiCoCong 369 → 370.**
+//   Lời khai: `server/routers/flowRouter.ts` (đã ở `FILE_AI_TUONG_MINH`) mọc MỘT mutation `chayThuNut` trên
+//   `writeProcedure.use(moduleGate("MOD_AI"))` (chạy thử MỘT node của bản nháp với item mẫu; không tạo lượt/bước/hàng đợi,
+//   node ra ngoài chỉ xem trước) — CÓ cổng MOD_AI từ lượt sinh ra. aiMienTru / ngoaiAiCoCong / mọi SKU khác KHÔNG đổi.
+//   Đo trước (đỏ đúng +1 ở ba ô trên) / sau. `tong` 2385 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2385, beMatAi: 432, aiCoCong: 370, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

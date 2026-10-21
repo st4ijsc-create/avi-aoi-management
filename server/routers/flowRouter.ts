@@ -26,7 +26,8 @@ import { router, moduleProcedure, moduleGate, writeProcedure, adminProcedure, de
 import { appError } from "../_core/appError";
 import { getDb } from "../db/connection";
 import { aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../drizzle/schema";
-import { THU_TU_HANG, kiemLuong, type FlowDefinition, type HangTacDungPhu } from "../../shared/flow/model";
+import { THU_TU_HANG, NodeInstanceSchema, kiemLuong, type FlowDefinition, type HangTacDungPhu } from "../../shared/flow/model";
+import { chayThuNut } from "../services/flow/chayThuNut";
 import { LoiLuong, batDauRun, hangLuongConTuDb, luuPhienBan, traLoiCho } from "../services/flow/dongCo";
 import { taoTuMoTa } from "../services/flow/taoTuMoTa";
 import { danhSachNut, layNut } from "../services/flow/dangKyNut";
@@ -254,6 +255,28 @@ export const flowRouter = router({
       const thuCong = def.nodes.find((n) => n.type === "kich-hoat.thu-cong" && !n.disabled);
       const runId = await batDauRun({ flowId: input.flowId, version, items: input.items, nutKichHoat: thuCong?.id, triggerKind: "thu-cong" });
       return { runId, version };
+    }),
+
+  /**
+   * ★ Đợt 9.1 — CHẠY THỬ MỘT NODE của bản nháp (chưa lưu) với item mẫu. KHÔNG tạo lượt, bước, hàng đợi, hàng chờ; node có tác
+   * dụng ra ngoài (HTTP, mã, agent…) chỉ được XEM TRƯỚC tham số; node OT chỉ đọc / đề xuất MÔ PHỎNG. Xem `chayThuNut.ts`.
+   */
+  chayThuNut: ghiProcedure
+    .input(
+      z.object({
+        nut: NodeInstanceSchema,
+        inputs: z.record(z.string().regex(RE_ID), z.array(itemSchema).max(100)).default({ main: [{ json: {} }] }),
+        dauRaNutTruoc: z.record(z.string().regex(RE_ID), z.array(itemSchema).max(100)).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const r = await chayThuNut(input);
+      return {
+        ...r,
+        output: catJson(r.output, TRAN_CHU_BUOC * 4) as typeof r.output,
+        cho: catJson(r.cho, TRAN_CHU_BUOC * 4) as typeof r.cho,
+        thamSoDaDanhGia: catJson(r.thamSoDaDanhGia, TRAN_CHU_BUOC * 4),
+      };
     }),
 
   lichSuChay: xemProcedure

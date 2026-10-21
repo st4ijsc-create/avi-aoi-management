@@ -1,0 +1,142 @@
+/**
+ * Đợt 9.1 — CHẠY THỬ MỘT NODE (không CSDL, AI GIẢ): chạy `chay` thật cho nhóm an toàn · xem trước (không chạy) cho nhóm có
+ * tác dụng ra ngoài · không bao giờ giải mã bí mật · census ∀ sổ đăng ký + quét nguồn (không ghi lượt, không HTTP).
+ */
+import { afterEach, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { danhSachNut } from "./dangKyNut";
+import "./nut";
+import { datHamGoiAi } from "./nut/ai";
+import { __datNguonDocTagChoTest } from "./nut/ot";
+import { NUT_CHAY_THAT, NUT_XEM_TRUOC, chayThuNut } from "./chayThuNut";
+
+const nut = (type: string, parameters: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({
+  id: "n1", type, typeVersion: 1, name: "n1", position: [0, 0] as [number, number], parameters, ...extra,
+});
+
+let khoiPhucAi: ReturnType<typeof datHamGoiAi> | null = null;
+afterEach(() => {
+  if (khoiPhucAi) datHamGoiAi(khoiPhucAi);
+  khoiPhucAi = null;
+  __datNguonDocTagChoTest(null);
+});
+
+describe("chayThuNut — nhóm CHAY (chạy hàm thật)", () => {
+  it("du-lieu.dat: đánh giá biểu thức trên item mẫu, trả đầu ra theo cổng", async () => {
+    const r = await chayThuNut({ nut: nut("du-lieu.dat", { truong: { gap: "{{ $json.x * 2 }}" } }), inputs: { main: [{ json: { x: 21 } }] } });
+    expect(r).toMatchObject({ che: "chay", ok: true, output: { main: [{ json: { x: 21, gap: 42 } }] } });
+    expect(r.ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("logic.neu rẽ nhánh; $node đọc đầu ra node trước do người dùng cấp", async () => {
+    const r = await chayThuNut({
+      nut: nut("logic.neu", { dieuKien: "{{ $json.v > $node('truoc').json.nguong }}" }),
+      inputs: { main: [{ json: { v: 5 } }, { json: { v: 1 } }] },
+      dauRaNutTruoc: { truoc: [{ json: { nguong: 3 } }] },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.output).toEqual({ dung: [{ json: { v: 5 } }], sai: [{ json: { v: 1 } }] });
+  });
+
+  it("lỗi của node ⇒ ok=false kèm thông điệp (không ném); biểu thức hỏng cũng vậy", async () => {
+    const r = await chayThuNut({ nut: nut("du-lieu.dat", { truong: { a: "{{ 1 + }}" } }), inputs: { main: [{ json: {} }] } });
+    expect(r).toMatchObject({ che: "chay", ok: false });
+    expect(r.loi).toBeTruthy();
+  });
+
+  it("node tắt ⇒ chuyển item thẳng như động cơ", async () => {
+    const r = await chayThuNut({ nut: nut("du-lieu.dat", { truong: { a: 1 } }, { disabled: true }), inputs: { main: [{ json: { k: 1 } }] } });
+    expect(r.output).toEqual({ main: [{ json: { k: 1 } }] });
+  });
+
+  it("ai.llm dùng hàm AI GIẢ; không có lời gọi model thật", async () => {
+    const goi: string[] = [];
+    khoiPhucAi = datHamGoiAi(async (y) => {
+      goi.push(y.nguoiDung);
+      return " xin chào ";
+    });
+    const r = await chayThuNut({ nut: nut("ai.llm", { loiNhac: "Chào {{ $json.ten }}", truongRa: "out" }), inputs: { main: [{ json: { ten: "An" } }] } });
+    expect(goi).toEqual(["Chào An"]);
+    expect(r.output).toEqual({ main: [{ json: { ten: "An", out: "xin chào" } }] });
+  });
+
+  it("ot.doc-tag chỉ ĐỌC qua nguồn tiêm; ot.de-xuat-lenh trả yêu cầu CHỜ DUYỆT mô phỏng, không ghi gì", async () => {
+    __datNguonDocTagChoTest(async () => [{ tagKey: "t1", valueNumeric: 7, valueText: null, quality: "good", timestamp: "2026-01-01T00:00:00Z", unit: "C" }]);
+    const d = await chayThuNut({ nut: nut("ot.doc-tag", { may: 3, tag: "t1" }), inputs: { main: [{ json: {} }] } });
+    expect(d.ok).toBe(true);
+    expect(JSON.stringify(d.output)).toContain('"giaTri":7');
+
+    const x = await chayThuNut({
+      nut: nut("ot.de-xuat-lenh", { may: 3, lenh: "pause" }),
+      inputs: { main: [{ json: {} }] },
+    });
+    // Cổng AI cần CSDL cho tra tag/máy; không có ⇒ hoặc chờ duyệt mô phỏng hoặc từ chối — cả hai KHÔNG gửi lệnh.
+    expect(["chay"]).toContain(x.che);
+    if (x.ok && x.cho) expect(JSON.stringify(x.cho)).toContain("MÔ PHỎNG");
+    expect(JSON.stringify(x)).not.toMatch(/"daGui":\s*true/);
+  });
+});
+
+describe("chayThuNut — nhóm XEM TRƯỚC (không chạy)", () => {
+  it("HTTP: chỉ đánh giá tham số, không gọi mạng, không giải mã credentialRef", async () => {
+    const dich = globalThis.fetch;
+    let goiMang = 0;
+    globalThis.fetch = (async () => {
+      goiMang++;
+      return new Response("{}");
+    }) as typeof fetch;
+    try {
+      const r = await chayThuNut({
+        nut: nut("tich-hop.http-gui", { url: "https://x.example/{{ $json.id }}", than: "{{ $json.id }}" }, { credentialRef: "khoa-erp" }),
+        inputs: { main: [{ json: { id: "A7" } }] },
+      });
+      expect(goiMang).toBe(0);
+      expect(r).toMatchObject({ che: "xem-truoc", ok: true });
+      expect(r.output).toBeUndefined();
+      expect(r.thamSoDaDanhGia).toMatchObject({ url: "https://x.example/A7", than: "A7" });
+      expect(r.credentialRef).toBe("khoa-erp");
+    } finally {
+      globalThis.fetch = dich;
+    }
+  });
+
+  it("nguoi.duyet / du-lieu.ma / ai.sinh-ma: xem trước, không chạy", async () => {
+    for (const t of ["nguoi.duyet", "du-lieu.ma", "ai.sinh-ma"]) {
+      const r = await chayThuNut({ nut: nut(t, { tieuDe: "{{ $json.a }}" }), inputs: { main: [{ json: { a: "z" } }] } });
+      expect(r.che, t).toBe("xem-truoc");
+    }
+  });
+
+  it("loại lạ chưa phân loại ⇒ xem trước (fail-safe), loại chưa đăng ký ⇒ lỗi rõ", async () => {
+    const lac = await chayThuNut({ nut: nut("khong.co"), inputs: { main: [{ json: {} }] } });
+    expect(lac).toMatchObject({ ok: false });
+    expect(lac.loi).toMatch(/chưa đăng ký/);
+  });
+});
+
+describe("chayThuNut — bất biến (census)", () => {
+  it("∀ node trong SỔ ĐĂNG KÝ thuộc đúng MỘT tập; tập CHAY không có node nhận bí mật / ngoài-ghi", () => {
+    const loai = danhSachNut();
+    for (const k of loai) {
+      const o = Number(NUT_CHAY_THAT.has(k.type)) + Number(NUT_XEM_TRUOC.has(k.type));
+      expect(o, `node '${k.type}' phải được phân loại chạy-thử (CHAY hoặc XEM_TRUOC) trong chayThuNut.ts`).toBe(1);
+    }
+    for (const t of NUT_CHAY_THAT) {
+      const k = loai.find((x) => x.type === t);
+      expect(k, `${t} không còn trong sổ đăng ký`).toBeTruthy();
+      expect(k!.nhanBiMat ?? false, `${t} nhận bí mật`).toBe(false);
+      expect(["thuan", "doc", "ot"]).toContain(k!.tacDungPhu); // "ngoai-ghi" không bao giờ chạy thử
+    }
+    for (const t of NUT_XEM_TRUOC) expect(loai.some((x) => x.type === t), `${t} không còn trong sổ đăng ký`).toBe(true);
+  });
+
+  it("nguồn chayThuNut.ts: không import dongCo / CSDL / biMat giải mã / dispatcher; không fetch", () => {
+    const goc = resolve(dirname(fileURLToPath(import.meta.url)));
+    const s = readFileSync(resolve(goc, "chayThuNut.ts"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    for (const cam of [/from\s+["'][^"']*dongCo["']/, /from\s+["'][^"']*db\/connection["']/, /giaiMaChoChay/, /\bgetDb\b/, /\bfetch\s*\(/, /commandDispatcher|foeEngine|robotCommandDispatcher/, /ai_flow_(runs|steps|queue|events|waits)/i]) {
+      expect(cam.test(s), String(cam)).toBe(false);
+    }
+  });
+});
