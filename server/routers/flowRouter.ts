@@ -259,7 +259,13 @@ export const flowRouter = router({
       }
       const def = v.definition as FlowDefinition;
       const thuCong = def.nodes.find((n) => n.type === "kich-hoat.thu-cong" && !n.disabled);
-      const runId = await batDauRun({ flowId: input.flowId, version, items: input.items, nutKichHoat: thuCong?.id, triggerKind: "thu-cong" });
+      let runId: string;
+      try {
+        runId = await batDauRun({ flowId: input.flowId, version, items: input.items, nutKichHoat: thuCong?.id, triggerKind: "thu-cong" });
+      } catch (e) {
+        if (e instanceof LoiLuong && e.code === "QUA_TRAN_DONG_THOI") throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowChayTay" }, e.message);
+        throw e;
+      }
       await db.update(aiFlowRuns).set({ startedBy: ctx.user.id }).where(eq(aiFlowRuns.id, runId)); // H2: người kích hoạt lượt (không được tự duyệt)
       return { runId, version };
     }),

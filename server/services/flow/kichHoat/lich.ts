@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 import * as cron from "node-cron";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
-import type { FlowDefinition } from "../../../../shared/flow/model";
+import { TRAN_LUOT_LICH_MOI_GIO, TRAN_NODE_LICH_MOI_LUONG, type FlowDefinition } from "../../../../shared/flow/model";
 import { dangKyNut } from "../dangKyNut";
 import { giuQuyenChu, type QuyenChu } from "../bauChu";
 
@@ -43,6 +43,30 @@ export function kiemCron(bieuThuc: unknown): string | null {
   return null;
 }
 
+/**
+ * Số phút KHÁC NHAU trong một giờ mà trường phút của cron khớp (0..60) = số lượt bắn tối đa MỖI GIỜ của node (các trường giờ/ngày/tháng/thứ
+ * chỉ có thể làm ít hơn). Hỗ trợ `*`, `a`, `a-b`, danh sách `,`, bước `/n`. Không đọc được ⇒ coi là 60 (xấu nhất, fail-closed).
+ */
+export function soLuotToiDaMoiGio(bieuThuc: string): number {
+  const truongPhut = bieuThuc.trim().split(/\s+/)[0] ?? "*";
+  const tap = new Set<number>();
+  for (const phan of truongPhut.split(",")) {
+    const m = /^(\*|\d{1,2}(?:-\d{1,2})?)(?:\/(\d{1,2}))?$/.exec(phan);
+    if (!m) return 60;
+    const buoc = m[2] === undefined ? 1 : Number(m[2]);
+    if (!(buoc >= 1)) return 60;
+    let [tu, den] = [0, 59];
+    if (m[1] !== "*") {
+      const [a, b] = m[1].split("-").map(Number);
+      tu = a;
+      den = b ?? (m[2] === undefined ? a : 59);
+    }
+    if (!(tu >= 0 && den <= 59 && tu <= den)) return 60;
+    for (let p = tu; p <= den; p += buoc) tap.add(p);
+  }
+  return tap.size;
+}
+
 export function kiemMuiGio(muiGio: unknown): string | null {
   if (muiGio === undefined || muiGio === null || muiGio === "") return null;
   try {
@@ -68,6 +92,11 @@ export function kiemThamSoKichHoat(raw: unknown): string[] {
     const l2 = kiemMuiGio(n.parameters?.muiGio);
     if (l2) loi.push(`node '${String(n.id)}': ${l2}`);
   }
+  // ★ M5: một người ghi không được dựng 500 node `* * * * *` (DoS vĩnh viễn chạy không gắn người dùng). Đếm cả node TẮT (bật lại không qua duyệt).
+  const lich = (nodes as { type?: unknown; parameters?: Record<string, unknown> }[]).filter((n) => n?.type === LOAI_LICH);
+  if (lich.length > TRAN_NODE_LICH_MOI_LUONG) loi.push(`luồng có ${lich.length} node lịch — tối đa ${TRAN_NODE_LICH_MOI_LUONG} mỗi luồng`);
+  const moiGio = lich.reduce((t, n) => t + (typeof n.parameters?.cron === "string" ? soLuotToiDaMoiGio(n.parameters.cron) : 0), 0);
+  if (moiGio > TRAN_LUOT_LICH_MOI_GIO) loi.push(`các node lịch có thể bắn tới ${moiGio} lượt/giờ — tối đa ${TRAN_LUOT_LICH_MOI_GIO} lượt/giờ mỗi luồng`);
   return loi;
 }
 
@@ -96,6 +125,15 @@ export function laTrungKhoa(e: unknown): boolean {
 export async function banLich(y: { flowId: string; version: number; nodeId: string; bayGio?: Date; cron?: string; muiGio?: string }): Promise<string | null> {
   const { batDauRun } = await import("../dongCo");
   const moc = y.bayGio ?? new Date();
+  // ★ M5: trần số lượt bắn theo lịch MỖI GIỜ mỗi luồng (chống luồng lưu trước bản vá / cron dày) — vượt ⇒ BỎ mốc, có log.
+  const db = await getDb();
+  if (db) {
+    const [d] = (await db.execute(sql`SELECT count(*)::int AS n FROM ai_flow_runs WHERE "flowId" = ${y.flowId} AND "triggerKind" = 'lich' AND "startedAt" > now() - interval '1 hour'`)) as unknown as { n: number }[];
+    if (d.n >= TRAN_LUOT_LICH_MOI_GIO) {
+      console.warn(`[luong-ai] lịch ${y.flowId}#${y.nodeId}: đã ${d.n} lượt trong 1 giờ (trần ${TRAN_LUOT_LICH_MOI_GIO}) — BỎ mốc ${mocPhut(moc)}`);
+      return null;
+    }
+  }
   try {
     return await batDauRun({
       flowId: y.flowId,
@@ -107,6 +145,11 @@ export async function banLich(y: { flowId: string; version: number; nodeId: stri
     });
   } catch (e) {
     if (laTrungKhoa(e)) return null;
+    // M5: luồng đã đủ lượt đồng thời (maxConcurrentRuns) ⇒ BỎ mốc này (không xếp hàng), có log.
+    if (e instanceof Error && e.name === "LoiLuong" && (e as { code?: string }).code === "QUA_TRAN_DONG_THOI") {
+      console.warn(`[luong-ai] lịch ${y.flowId}#${y.nodeId}: ${e.message} — BỎ mốc ${mocPhut(moc)}`);
+      return null;
+    }
     throw e;
   }
 }
@@ -131,8 +174,14 @@ export async function docMucLich(tienToFlow?: string): Promise<MucLich[]> {
      ORDER BY f.id`)) as unknown as { flowId: string; version: number; definition: FlowDefinition }[];
   const ra: MucLich[] = [];
   for (const r of rows) {
+    let daLap = 0;
     for (const n of r.definition?.nodes ?? []) {
       if (n.type !== LOAI_LICH || n.disabled) continue;
+      // M5: luồng lưu TRƯỚC bản vá có thể có nhiều hơn trần ⇒ chỉ lập lịch `TRAN_NODE_LICH_MOI_LUONG` node đầu (còn lại bị bỏ, có log).
+      if (++daLap > TRAN_NODE_LICH_MOI_LUONG) {
+        console.warn(`[luong-ai] luồng ${r.flowId}: node lịch '${n.id}' vượt trần ${TRAN_NODE_LICH_MOI_LUONG}/luồng — KHÔNG lập lịch (lưu lại luồng để sửa)`);
+        continue;
+      }
       const c = String(n.parameters?.cron ?? "");
       const mg = String(n.parameters?.muiGio || MUI_GIO_MAC_DINH);
       if (kiemCron(c) || kiemMuiGio(mg)) continue; // phiên bản lưu trước khi có kiểm ⇒ bỏ qua, không làm sập bộ lập lịch

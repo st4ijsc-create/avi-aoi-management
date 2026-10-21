@@ -84,6 +84,17 @@ export const LOAI_GOI_LUONG_CON = "luong.goi-con";
 export const LOAI_AGENT = "ai.agent";
 /** Độ sâu lồng tối đa (cha ⇒ con ⇒ cháu …) lúc chạy. */
 export const DO_SAU_LUONG_CON_TOI_DA = 4;
+/**
+ * ★ M5 (audit 2026-10-21) — TRẦN CHỐNG NHÂN BẬC BA. Độ sâu 4 một mình không chặn fan-out: cha có 500 node gọi cùng một con, con 500 node
+ * gọi cháu … = 500³ lượt từ một lần kích hoạt. Nay: tổng số lượt trong MỘT cây lượt (gốc + mọi con/cháu) và số item đưa vào một lần gọi.
+ */
+export const TRAN_LUOT_TRONG_CAY = 50;
+export const TRAN_ITEM_GOI_CON = 100;
+/** ★ M5 — số lượt đồng thời mặc định của MỘT luồng khi `settings.maxConcurrentRuns` vắng (lượt vượt trần bị TỪ CHỐI, không xếp hàng). */
+export const TRAN_DONG_THOI_MAC_DINH = 1;
+/** ★ M5 — trần node `kich-hoat.lich` mỗi luồng và trần lượt bắn theo lịch mỗi giờ mỗi luồng. */
+export const TRAN_NODE_LICH_MOI_LUONG = 3;
+export const TRAN_LUOT_LICH_MOI_GIO = 60;
 
 /**
  * Đợt 8.4 — id luồng con một node tham chiếu (`luong.goi-con.parameters.flowId`, `ai.agent.parameters.luongCon[].flowId`).

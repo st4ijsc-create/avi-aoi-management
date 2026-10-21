@@ -36,7 +36,7 @@ beforeAll(async () => {
   goc = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const { version } = await luuPhienBan(
     {
-      id: FLOW, name: "webhook", version: 1,
+      id: FLOW, name: "webhook", version: 1, settings: { maxConcurrentRuns: 100 }, // M5: nhiều lượt webhook chưa chạy xong
       nodes: [nut("wh", "kich-hoat.webhook"), nut("tay", "kich-hoat.thu-cong"), nut("d", "du-lieu.dat", { truong: { daNhan: "{{ $json.may }}" } })],
       connections: [noi("wh", "d"), noi("tay", "d")],
     },
