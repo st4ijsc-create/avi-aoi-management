@@ -237,13 +237,15 @@ describe("H1 — GHIM PHIÊN BẢN LUỒNG CON (audit 2026-10-21): bật bản m
   it("★ KỊCH BẢN AUDIT: admin duyệt cha `ngoai-ghi`; operator lưu + bật phiên bản MỚI của con (thuần) ⇒ lượt cha vẫn chạy con@1, 0 lượt con@2", async () => {
     await luuVaBat(conV("h1-con", { ketQua: "bản-1" }));
     const cha = chaGhi("h1-cha", `${TT}-h1-con`);
-    const rc = await goi("admin").luu({ definition: cha });
+    // Đợt 9: luồng có phạm vi nhà máy — admin gán cha vào nhà máy của test (NULL ⇒ chỉ admin thấy, kịch bản không còn dựng được).
+    const rc = await goi("admin").luu({ definition: cha, factoryId: fidLc });
     expect(rc.hang).toBe("ngoai-ghi");
     await goi("admin").datPhienBanHoatDong({ flowId: cha.id, version: rc.version, bat: true });
     // kẻ tấn công (operator — ghiProcedure, KHÔNG admin) đổi đầu ra của con và bật nó (hạng thuần ⇒ không đòi admin)
     const v2 = await luuVaBat(conV("h1-con", { ketQua: "BẢN-KẺ-GIAN" }), "operator");
     expect(v2.version).toBe(2);
-    const { runId } = await goi("operator").chayTay({ flowId: cha.id });
+    // L3: chạy tay hạng ≥ ngoai-ghi chỉ admin — lượt cha do admin (hoặc lịch) kích hoạt; kẻ tấn công chỉ đổi CON.
+    const { runId } = await goi("admin").chayTay({ flowId: cha.id });
     await chayHet();
     const conRuns = (await runCua("h1-con")).filter((x) => x.parentRunId === runId);
     expect(conRuns.map((x) => x.version)).toEqual([1]); // trước bản vá: [2]
