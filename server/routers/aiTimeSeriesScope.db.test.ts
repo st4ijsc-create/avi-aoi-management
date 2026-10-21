@@ -92,6 +92,8 @@ function ngayTruoc(n: number): Date {
 describe.skipIf(!DB_URL)("★★★ nhóm B #4 — analyzeMetric bị giới hạn theo factoryId, trên CSDL THẬT", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy): machineId 970001/970002 cố định + (machineId, date) duy nhất ⇒ lượt sau 23505.
+    await sql`DELETE FROM daily_statistics WHERE "machineId" IN (970001, 970002)`;
     const [fa] = await sql`INSERT INTO factories (code, name) VALUES (${CODE_A}, ${"TS4 A " + RUN}) RETURNING id`;
     const [fb] = await sql`INSERT INTO factories (code, name) VALUES (${CODE_B}, ${"TS4 B " + RUN}) RETURNING id`;
     idA = Number(fa.id);
