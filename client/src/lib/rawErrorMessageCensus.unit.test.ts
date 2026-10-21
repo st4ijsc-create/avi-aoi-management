@@ -84,14 +84,9 @@ describe("F1 — `err.message` thô tới mắt người dùng (client)", () => 
     // thấy không — không có bước này, mọi ca trên đúng một cách vô nghĩa kể từ ngày
     // bộ đếm hỏng. Cùng lớp lỗi với glob rỗng ở Pha 4 và với `reltuples < 0` ở lưới 0326.
     const gia = "toast.error(err.message);";
-    const { readFileSync, writeFileSync } = require("node:fs") as typeof import("node:fs");
-    const P = "client/src/lib/__rawMessageProbe.tmp.tsx";
-    try {
-      writeFileSync(P, `export function Probe() {\n  try {} catch (err) { ${gia} }\n}\n`);
-      expect(demRawMessage().length, "thước KHÔNG thấy nợ vừa bơm vào ⇒ nó đang hỏng").toBe(1);
-    } finally {
-      try { require("node:fs").unlinkSync(P); } catch { /* đã xoá */ }
-    }
+    // Tệp ẢO (ghiDe) — KHÔNG ghi tệp vật lý vào cây repo (lưới quét chạy song song sẽ đọc nhầm rồi ENOENT).
+    const ghiDe = new Map([["client/src/lib/__rawMessageProbe.tmp.tsx", `export function Probe() {\n  try {} catch (err) { ${gia} }\n}\n`]]);
+    expect(demRawMessage("client/src", ghiDe).length, "thước KHÔNG thấy nợ vừa bơm vào ⇒ nó đang hỏng").toBe(1);
     expect(demRawMessage().length).toBe(0);
   });
 
