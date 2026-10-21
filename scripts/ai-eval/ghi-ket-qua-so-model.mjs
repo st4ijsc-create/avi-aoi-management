@@ -36,6 +36,11 @@ const thuMucBc = path.join(ROOT, "scripts/ai-eval/ngau-nhien/reports");
 const tepCl = path.join(thuMucBc, `${NHAN}-cl.json`);
 const tepGoc = TRICH_XUAT ? path.resolve(TRICH_XUAT) : path.join(thuMucBc, `${NHAN}.json`);
 const goc = JSON.parse(fs.readFileSync(tepGoc, "utf8"));
+// ★ Đợt 9 — báo cáo mot-luot KHÔNG TRỌN (server chết / model đổi giữa lượt) ⇒ từ chối, trừ khi người ghi khẳng định đã ghép.
+if (!TRICH_XUAT && (goc.dungSom || goc.songSau === false || (goc.modelDau && goc.modelCuoi !== goc.modelDau)) && !process.argv.includes("--cho-phep-khong-tron")) {
+  console.error(`báo cáo ${NHAN} KHÔNG TRỌN (dungSom=${JSON.stringify(goc.dungSom)}, songSau=${goc.songSau}, model ${goc.modelDau}→${goc.modelCuoi}) — ghép/chạy lại trước khi ghi sổ`);
+  process.exit(2);
+}
 if (TRICH_XUAT && !Number.isFinite(goc.p50Ms)) {
   console.error("tệp trích xuất thiếu thời gian từng bài (bản do.mts cũ) — đo lại bằng do.mts hiện hành");
   process.exit(2);

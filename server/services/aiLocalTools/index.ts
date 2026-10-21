@@ -27,6 +27,8 @@ import "./writeHandlers/programmingFile";
 // ĐẢO có kiểm soát quyết định "repoContextService KHÔNG đăng ký vào toolRegistry": nay LLM tự chọn
 // được tệp, nhưng chỉ trong hộp cát của `repoSandbox.ts` và sau bit `ai_repo_read`.
 import "./repoReadTools";
+// ★★ Đợt 9 (2026-10-21) — `kiem_bien_dich_st`: tác nhân tự biên dịch thử ST/SCL bằng RuSTy (docker cách ly, CHỈ biên dịch).
+import "./kiemBienDichStTool";
 // doc 78 PHA B — `run_command`: chạy lệnh trong DANH SÁCH TRẮNG. WRITE tool ⇒ đi qua
 // `proposeAction`/`confirmAction`, KHÔNG BAO GIỜ tự chạy. Chính sách + bộ chạy ở
 // `repoCommandSandbox.ts` (cùng gốc hộp cát, cùng sổ ngân sách byte với pha A).

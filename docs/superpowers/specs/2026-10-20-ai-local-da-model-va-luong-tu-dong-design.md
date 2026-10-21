@@ -634,7 +634,27 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   KHÔNG có tác dụng. Đã nối: Luồng truyền `{ flowId, beMat: "luong" }` + `khongDoiKhe` (lượt chạy nền không kéo đổi khe
   nặng — profile `nang` khe không giữ ⇒ dự phòng ⇒ env của vai trò). Phạm vi mới `be-mat` (mig 0405, scopeId `luong`); thứ
   tự flow > project > be-mat > tenant > global. Metrics + `ai_llm_audit` (`flow_*`) ghi model THỰC chạy (`InferenceOutcome.model`).
-- (1) định tuyến: tầng 3 theo tác vụ — bộ mù 3 (agent viết, chưa ai nhìn) 98 → 107/120. (4) MATIEC đúng bản bench + SCL:
+- (1) định tuyến: tầng 3 theo tác vụ — bộ mù 3 (agent viết, chưa ai nhìn) 98 → 107/120 (⚠ 107 đo trên bản 9beab7e8b có LỖI
+  regex: `\p{L}` trong template thường thành "p" ⇒ ranh giới chữ sai; `\S`/`\d` mất `\` ⇒ dấu vận hành "line N" không bao giờ
+  khớp — sửa ở 8509b2f0e). Đợt 9 (a)(b): cổng ý định mã cho tầng 4 + không dấu/đồng nghĩa ⇒ bộ mù 4 (agent viết, commit
+  685abed9e trước khi chỉnh) 105 → 109/120. Còn lại ("soạn", "the nao/cai nao" không dấu, "lần gần nhất") chờ bộ mù 5.
+- ★ SỰ CỐ 2026-10-21 14:00: bộ lập lịch khe nặng của :3000 đổi khe sang 35B (start-llama-server.ps1 -Force ⇒ Stop-Process)
+  GIỮA lượt đo 27B của tiến trình khác (bằng chứng: vram_events 07:01:50Z "Đổi khe sang … hỏng: kịch bản khởi động thoát 4" +
+  logs/llama-server-20261021-140007 thấy 30,9 GB trống). Sửa: KHOÁ KHE — tệp LLAMA_WATCHDOG_PAUSE_FILE mang JSON {chu, lyDo,
+  hetHan}, phép đo/doi-model.ps1 giữ + gia hạn; KheNang không đổi/không về nhà khi khoá còn hạn; định tuyến `kheBiKhoa`.
+- (3) extract — (c1) 35B TẮT nghĩ không bị chen trên bộ mù 30 bài/227 trường: 224/227 = 99 %, trọn 28/30, trung vị 1232 ms
+  (4B: 208/227 = 92 %, trọn 19/30, 947 ms) — sổ #10, hồ sơ `qwen3.6-35b-a3b@64k`. (c3) code.* trên :8091 chậm thêm khi extract
+  nền xếp trước: trung vị 247 ms (K=1, max 772) · 1332 ms (K=2, max 2343) ≪ ngưỡng 10 s ⇒ không cần cơ chế nhường. (c2) 4B
+  trong tiến trình (chat.ops) chậm thêm 413 ms khi :8091 bận. GÁN (2026-10-21, qua datGanModel, binding id 34): extract @
+  be-mat/luong → qwen3.6-35b-a3b@64k active, không dự phòng; khe giữ 27B ⇒ 4B (khongDoiKhe). Bề mặt tương tác giữ 4B.
+- (2) vòng sửa: 35B + `--vong-sua 2` 39/72 (sổ #7), giữ lại 10/18 (#8); 27B + vòng sửa giữ lại 13/18 = 72 % (#9; lần nhìn thứ
+  HAI 6 bài giữ lại). Chạy lại SẠCH 24×3: **27B + vòng sửa 53/72 = 74 %** (sổ #11; tt 23 · tv 16 · ud 14; trung vị 164 s) — theo
+  bài so 35B + vòng sửa: hơn 10 · kém 0 · bằng 14; so 27B không vòng: hơn 9 · kém 3. QUYẾT (dieu-phoi): GIỮ gán code.plc →
+  qwen3.6-27b@64k-nghi, dự phòng 35B. Đòn bẩy kế tiếp (ưu tiên cao nhất): vòng kiểm biên dịch cho bề mặt TƯƠNG TÁC.
+- ⚠ RỦI RO TIỀM ẨN (chưa sửa): baseline_foreign_pid của vramReconciler xếp llama-server (pid 33552, 35B lúc 01:45Z) vào
+  `orphanHolders` ("tàn dư, tắt được") chứ KHÔNG vào `peerHolders`. Nếu hộ đó được nhận nuôi kèm lease (`leaseNhanNuoi`), đường
+  preempt `thuHoiHoNhanNuoi` (SIGTERM, vramReconciler.ts ~1940) giết được llama-server đang phục vụ. Lần 14:00 KHÔNG đi đường
+  này (không lease nào cho PID llama-server, không reserve/preempt quanh 07:00Z). (4) MATIEC đúng bản bench + SCL:
   thước đạt (tập OpenPLC 22 bài); ★ lỗi runtime MATIEC `__normalize_timespec` (docs/superpowers/audits/2026-10-21-matiec-loi-normalize-timespec.md).
 
 **Bảo mật Luồng 2026-10-21** (quét bảo mật của phiên kỹ thuật + audit chỉ-đọc của kiem-dinh; vận hành: `docs/AI_FLOW_SECURITY_OPERATIONS.md`;

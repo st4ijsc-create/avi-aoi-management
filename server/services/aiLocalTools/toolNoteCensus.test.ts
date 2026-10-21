@@ -263,6 +263,16 @@ const CENSUS: Record<string, XepLoai> = {
    */
   DEST_EXISTS: "chan",
   FIND_DEADLINE: "chan",
+  // ── Đợt 9 (2026-10-21) — `kiem_bien_dich_st` (biên dịch thử ST bằng RuSTy) ──────────────────────
+  /**
+   * ⚠ HAI MÃ MỚI, cả hai `chan` (từ chối hộp cát DÙNG LẠI `ketQuaTuChoiHopCat` của `read_file`):
+   *   • `NO_ST_CODE`           — đầu vào không có khối ST/SCL nào (khối rào nhãn khác bị BỎ, nghi ngờ thì
+   *     bỏ) ⇒ CHƯA biên dịch gì; văn vẻ hoá là mời model nói "mã đã qua biên dịch" từ một lượt không chạy.
+   *   • `COMPILER_UNAVAILABLE` — docker/RuSTy vắng hoặc quá hạn ⇒ KHÔNG có phán quyết biên dịch; đúng
+   *     lý lẽ `GENERATE_UNAVAILABLE` — "chưa kiểm được" không được thành "không lỗi".
+   */
+  NO_ST_CODE: "chan",
+  COMPILER_UNAVAILABLE: "chan",
 };
 
 describe("§1 — mọi mã `note` trong mã nguồn đều đã được PHÁN QUYẾT", () => {

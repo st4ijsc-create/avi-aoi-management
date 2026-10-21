@@ -83,6 +83,8 @@ import { stripThinking, StreamingThinkingStripper } from "../services/ai/thinkin
 // fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
 import { defaultModelBasename, resolveLogicalModel, toBasename } from "../services/ai/modelResolver";
 import { kiemModelV1, thongDiepLoiChoKhachV1 } from "../services/ai/kiemModelV1";
+import { kiemBienDichBat, kiemVaSuaST, nhanKiemBienDich, type KetQuaKiemBienDichST } from "../services/ai/st/kiemBienDichSt";
+import { trichMaST } from "../services/ai/st/trichMaST";
 import { chayVoiTokenKhe, chonModelKhiVuotTran, tokenKheHienTai, vuotTranDoiKhe } from "../services/ai/soModel/tranDoiKheToken";
 import { laModelKheNangPhu, modelNhaKheNang } from "../services/ai/soModel/tapKheNang";
 import { thongKeKheNang } from "../services/ai/soModel/kheNangMacDinh";
@@ -385,6 +387,44 @@ function apTranDoiKhe(res: Response, modelId: string | undefined): string | unde
   });
   if (kq.doi && !res.headersSent) res.setHeader("x-st4i-khe", "tran-doi-khe-token");
   return kq.model;
+}
+
+/**
+ * ★★ Đợt 9 — VÒNG KIỂM BIÊN DỊCH ST (`services/ai/st/kiemBienDichSt.ts`) cho /v1: chỉ khi cờ `AI_KIEM_BIEN_DICH_ST` có `v1`,
+ * vai trò SAU định tuyến là `code.plc`, không phải lượt tool, và client không tắt (`st4i_kiem_bien_dich: false`).
+ */
+function nenKiemBienDichV1(modelLabel: string, body: Record<string, unknown>, coTool: boolean): boolean {
+  return kiemBienDichBat("v1") && modelLabel.trim().toLowerCase() === "code.plc" && !coTool && body.st4i_kiem_bien_dich !== false;
+}
+
+/** Giá trị header `x-st4i-bien-dich` (nhánh không stream). */
+function headerKiemBienDich(k: KetQuaKiemBienDichST): string {
+  if (k.trangThai === "bo-qua") return "ok=skip";
+  const loiCon = k.chanDoanCuoi.filter((d) => d.mucDo === "error").length;
+  const ok = k.trangThai === "sach" || k.trangThai === "da-sua" ? "1" : k.trangThai === "khong-kiem-duoc" ? "na" : "0";
+  return `ok=${ok}; trang-thai=${k.trangThai}; vong=${k.soVong}; sua=${k.soLoiDaSua}; con=${loiCon}`;
+}
+
+/**
+ * ★ Đợt 9 — mẩu AUDIT của vòng kiểm biên dịch (`ai_llm_audit.redactedSnippet` qua `plan.record({auditSnippet})`): CHỈ số liệu
+ * + mã lỗi còn lại (không mã nguồn). `bo-qua` ⇒ `undefined` (cột giữ NULL như mọi lượt khác). Định dạng ỔN ĐỊNH — luong-ui/tra
+ * cứu đọc theo khoá: `kiem-bien-dich-st ok=… trang-thai=… vong=… sua=… con=… ms=… [ly-do=…] [ma=E1,E2]`.
+ */
+export function auditKiemBienDich(k: KetQuaKiemBienDichST): string | undefined {
+  if (k.trangThai === "bo-qua") return undefined;
+  const ma = [...new Set(k.chanDoanCuoi.filter((d) => d.mucDo === "error").map((d) => d.ma).filter(Boolean))].slice(0, 10);
+  const lyDo = k.lyDo ? ` ly-do=${k.lyDo.replace(/\s+/g, "_").slice(0, 120)}` : "";
+  return `kiem-bien-dich-st ${headerKiemBienDich(k).replace(/;/g, "")} ms=${k.msThem}${lyDo}${ma.length ? ` ma=${ma.join(",")}` : ""}`;
+}
+
+/** Phần BỔ SUNG phát ở cuối luồng (TRƯỚC chunk finish_reason): nhãn + (đã sửa ⇒) các khối ST đã sửa. Rỗng = không phát. */
+function phanBoSungLuong(k: KetQuaKiemBienDichST): string {
+  const nhan = nhanKiemBienDich(k);
+  if (!nhan) return "";
+  if (k.trangThai !== "da-sua") return `\n\n---\n${nhan}\n`;
+  const rao = "```";
+  const khoi = trichMaST(k.cauTraLoiCuoi).map((x) => `${rao}${x.nhan ?? (x.laScl ? "scl" : "st")}\n${x.ma.replace(/\n$/, "")}\n${rao}`);
+  return `\n\n---\n${nhan}\n\n${khoi.join("\n\n")}\n`;
 }
 
 /** Backing basename for a logical model (for the models-list `root`/transparency). */
@@ -1008,6 +1048,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         // suy luận khác nhau vào một câu trả lời là bịa (cùng lý lẽ G1 `daPhatChu`). Chữ suy luận của lượt hỏng bị BỎ.
         let nghiLuot = tatNghi;
         let daNhanNoiDung = false;
+        // ★★ Đợt 9 — chữ HIỂN THỊ đã ra dây (cho vòng kiểm biên dịch ST sau bản đầu).
+        let chuDaPhat = "";
         for (let daHoiLai = false; ; ) {
           try {
             for await (const chunk of chatCompletionStream(tuyChonLuong(nghiLuot), modelId, abort.signal)) {
@@ -1035,6 +1077,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
                 const visible = thinker.push(chunk.token);
                 const safe = redactor ? redactor.push(visible) : visible;
                 if (safe) {
+                  chuDaPhat += safe;
                   const delta = {
                     id,
                     object: "chat.completion.chunk",
@@ -1105,6 +1148,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         const duoiHienThi = thinker.flush();
         const tail = redactor ? `${redactor.push(duoiHienThi)}${redactor.flush()}` : duoiHienThi;
         if (tail && !res.destroyed) {
+          chuDaPhat += tail;
           const delta = {
             id,
             object: "chat.completion.chunk",
@@ -1113,6 +1157,41 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
             choices: [{ index: 0, delta: { content: tail }, finish_reason: null }],
           };
           res.write(`data: ${JSON.stringify(delta)}\n\n`);
+        }
+        // ★★ Đợt 9 — VÒNG KIỂM BIÊN DỊCH ST: bản đầu ĐÃ ra dây nguyên vẹn; GIỮ chunk finish_reason lại, biên dịch (+ sửa
+        // tối đa 2 vòng), phát phần BỔ SUNG rồi mới finish_reason + [DONE] (client OpenAI dừng đọc ở finish_reason —
+        // dieu-phoi 2026-10-21). Trong lúc chờ phát keep-alive (chú thích SSE) để proxy không cắt. Không có mã ST ⇒ không phát gì.
+        let auditKiem: string | undefined;
+        if (nenKiemBienDichV1(modelLabel, body, !!yeuCauTool.tools) && outcome === "ok" && !daPhatToolCall && !biCat && !res.destroyed) {
+          const giuSong = setInterval(() => {
+            if (!res.destroyed) res.write(": kiem-bien-dich-st\n\n");
+          }, 5_000);
+          try {
+            const kq = await kiemVaSuaST({
+              cauTraLoi: chuDaPhat,
+              signal: abort.signal,
+              goiLai: async (tin, lanTruoc) => {
+                const r2 = await chatCompletion(
+                  { ...tuyChonLuong(nghiLuot), messages: [...ggufMessages, { role: "assistant", content: lanTruoc }, { role: "user", content: tin }] },
+                  modelId,
+                );
+                const hien = catGiuNguyenBien(r2.text).hienThi;
+                return plan?.sanitizeOutput(hien) ?? hien;
+              },
+            });
+            const boSung = phanBoSungLuong(kq);
+            if (boSung && !res.destroyed) {
+              res.write(
+                `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelLabel, choices: [{ index: 0, delta: { content: boSung }, finish_reason: null }] })}\n\n`,
+              );
+            }
+            auditKiem = auditKiemBienDich(kq);
+            if (kq.trangThai !== "bo-qua") console.log(`[openaiGateway] /v1 kiểm biên dịch ST (stream): ${headerKiemBienDich(kq)} · +${kq.msThem} ms`);
+          } catch (e) {
+            console.warn("[openaiGateway] /v1 kiểm biên dịch ST hỏng (bỏ qua, không chặn):", (e as Error)?.message ?? e);
+          } finally {
+            clearInterval(giuSong);
+          }
         }
         // ★ G5-E — nội tâm model ra ô RIÊNG `delta.reasoning_content` (xem quyết định ở
         // `reasoningFieldEnabled`). Gộp thành MỘT chunk sau phần chữ: client chuẩn nối các
@@ -1133,7 +1212,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         }
         // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
         // `plan?.` — no-op when the fail-open rate-limit path left `plan` null.
-        plan?.record({ tokensIn, tokensOut, latencyMs: Date.now() - engineStart, outcome });
+        plan?.record({ tokensIn, tokensOut, latencyMs: Date.now() - engineStart, outcome, ...(auditKiem ? { auditSnippet: auditKiem } : {}) });
 
         const doneChunk = {
           id,
@@ -1177,12 +1256,16 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         result = await chatCompletion(tuyChonMotLan({ disableThinking: true }), modelId);
       }
       // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
-      plan?.record({
-        tokensIn: result.tokensPrompt,
-        tokensOut: result.tokensGenerated,
-        latencyMs: Date.now() - engineStart,
-        outcome: "ok",
-      });
+      // ★ Đợt 9 — ghi SAU vòng kiểm biên dịch ST (bên dưới) để mang mẩu audit của nó; độ trễ chốt NGAY sau lượt model (như cũ).
+      const msMotLan = Date.now() - engineStart;
+      const ghiDoDem = (auditSnippet?: string) =>
+        plan?.record({
+          tokensIn: result.tokensPrompt,
+          tokensOut: result.tokensGenerated,
+          latencyMs: msMotLan,
+          outcome: "ok",
+          ...(auditSnippet ? { auditSnippet } : {}),
+        });
       // ★ G5-E — cắt thẻ TRƯỚC `sanitizeOutput` (bộ canh NỘI DUNG đứng CUỐI — xem khối import).
       const catChat = catGiuNguyenBien(result.text);
       const chatHienThi = plan?.sanitizeOutput(catChat.hienThi) ?? catChat.hienThi;
@@ -1194,6 +1277,32 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // được vì (a) args do CLIENT tự thực thi, không hiện lên màn hình ai khác, và (b) che một
       // phần JSON sẽ tạo ra args KHÔNG PARSE ĐƯỢC — hỏng nặng hơn hẳn, và hỏng trong im lặng.
       const toolCallsRa = (result.toolCalls ?? []).filter(toolCallHopLe) as NativeToolCall[];
+      // ★★ Đợt 9 — VÒNG KIỂM BIÊN DỊCH ST (không stream): chạy TRƯỚC khi trả; bản cuối + một dòng ghi chú (không thay lặng lẽ),
+      // header `x-st4i-bien-dich`. Không có mã ST ⇒ nội dung nguyên vẹn, header `ok=skip`.
+      let noiDungRa = chatHienThi;
+      let auditKiemMotLan: string | undefined;
+      if (nenKiemBienDichV1(modelLabel, body, !!yeuCauTool.tools) && !toolCallsRa.length && result.finishReason !== "length") {
+        try {
+          const kq = await kiemVaSuaST({
+            cauTraLoi: chatHienThi,
+            goiLai: async (tin, lanTruoc) => {
+              const r2 = await chatCompletion(
+                { ...tuyChonMotLan(tatNghi), messages: [...ggufMessages, { role: "assistant", content: lanTruoc }, { role: "user", content: tin }] },
+                modelId,
+              );
+              const hien = catGiuNguyenBien(r2.text).hienThi;
+              return plan?.sanitizeOutput(hien) ?? hien;
+            },
+          });
+          const nhan = nhanKiemBienDich(kq);
+          noiDungRa = nhan ? `${kq.cauTraLoiCuoi}\n\n---\n${nhan}` : kq.cauTraLoiCuoi;
+          if (!res.headersSent) res.setHeader("x-st4i-bien-dich", headerKiemBienDich(kq));
+          auditKiemMotLan = auditKiemBienDich(kq);
+        } catch (e) {
+          console.warn("[openaiGateway] /v1 kiểm biên dịch ST hỏng (bỏ qua, không chặn):", (e as Error)?.message ?? e);
+        }
+      }
+      ghiDoDem(auditKiemMotLan);
       res.json({
         id,
         object: "chat.completion",
@@ -1205,7 +1314,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
             // doc69 G2-3 — output safety: redact any secret the model echoed back.
             message: {
               role: "assistant",
-              content: chatHienThi,
+              content: noiDungRa,
               // Ô chỉ MỌC RA khi thật sự có nội tâm ⇒ đầu ra roster hiện tại giữ nguyên hình dạng.
               ...(reasoningFieldEnabled() && chatNoiTam ? { reasoning_content: chatNoiTam } : {}),
               // ⚠⚠ Ô này MỌC RA hay KHÔNG — **không bao giờ là `[]`**. Đó chính là lời nói dối mà
