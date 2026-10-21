@@ -10,6 +10,7 @@
  *   node scripts/luoi-truoc-gop.mjs --nen main-do.txt     # danh sách tệp đỏ có sẵn trên main (mỗi dòng một tệp)
  *   --ra <thư mục>   nơi ghi báo cáo (mặc định .luoi-truoc-gop/)
  *   --co-vitest "a b" tham số thêm cho vitest
+ *   --nang           loại các tệp TẢI NẶNG (xem NANG bên dưới, có lý do từng tệp) khỏi lô thường và chạy chúng TUẦN TỰ sau cùng
  *   --khong-tach-db  chạy MỘT lô duy nhất (mặc định: lô thường loại `*.db.test.ts`, rồi lô DB riêng
  *                    chạy TUẦN TỰ bằng vitest.db.config.ts — loại nhiễu hết kết nối PG / dọn chồng DB dùng chung)
  *
@@ -30,6 +31,17 @@ const opt = (name) => {
   return v ?? null;
 };
 const tuJson = opt("--tu-json");
+/**
+ * Tệp TẢI NẶNG (khai MỘT chỗ). Mỗi tệp khẳng định một NGƯỠNG SẢN PHẨM bằng đồng hồ thật nên đỏ khi lô song song chiếm máy mà xanh khi
+ * chạy một mình (đo 2026-10-21, lg3/lg4). KHÔNG nới ngưỡng — chạy chúng một mình, tuần tự, sau lô thường (cờ --nang).
+ */
+const NANG = [
+  { tep: "server/services/edge/edgeJournal.dot10.test.ts", ly: "ca R-10-ag: 10 000 append trên journal ĐẦY phải < 15 s (tính chất O(1)); 17–22 s khi lô tải" },
+  { tep: "server/services/flow/nut/ma.docker.test.ts", ly: "ca vòng lặp vô hạn phải hết giờ ≤ 12 s gồm khởi/dọn container docker; 12–14 s khi lô tải" },
+  { tep: "server/services/edge/edgeExecutionAgent.dot10.test.ts", ly: "đếm lệnh theo thời điểm trên đồng hồ thật (130 vs 131 dưới tải); xanh khi chạy riêng" },
+];
+const nang = args.includes("--nang");
+if (nang) args.splice(args.indexOf("--nang"), 1);
 const khongTachDb = args.includes("--khong-tach-db");
 if (khongTachDb) args.splice(args.indexOf("--khong-tach-db"), 1);
 const nenFile = opt("--nen");
@@ -85,12 +97,20 @@ if (tuJson) {
 } else {
   const j1 = resolve(outDir, "lo-thuong.json");
   console.log(`[lô thường] vitest run --exclude **/*.db.test.ts ${targets.join(" ")}`);
-  vitest(targets, j1, [], ["--exclude", "**/*.db.test.ts"]);
+  const loaiNang = nang ? NANG.flatMap((n) => ["--exclude", n.tep]) : [];
+  vitest(targets, j1, [], ["--exclude", "**/*.db.test.ts", ...loaiNang]);
   gop(j1, "lô thường");
   const j2 = resolve(outDir, "lo-db.json");
   console.log(`[lô DB, tuần tự] vitest run --config vitest.db.config.ts ${targets.join(" ")}`);
   vitest(targets, j2, ["--config", "vitest.db.config.ts"]);
   gop(j2, "lô DB");
+  if (nang) {
+    // Lô NẶNG: các tệp đo thời gian/tài nguyên SÁT ngưỡng sản phẩm chạy TUẦN TỰ, một mình, sau cùng (máy rảnh).
+    const j3 = resolve(outDir, "lo-nang.json");
+    console.log(`[lô nặng, tuần tự] ${NANG.map((n) => n.tep).join(" ")}`);
+    vitest(NANG.map((n) => n.tep), j3, ["--no-file-parallelism"]);
+    gop(j3, "lô nặng");
+  }
 }
 console.log(`[tổng] ${lo.total} ca, ${lo.failed} đỏ, ${lo.red.size} tệp đỏ`);
 
