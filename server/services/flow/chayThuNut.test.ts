@@ -10,7 +10,13 @@ import { danhSachNut } from "./dangKyNut";
 import "./nut";
 import { datHamGoiAi } from "./nut/ai";
 import { __datNguonDocTagChoTest } from "./nut/ot";
-import { NUT_CHAY_THAT, NUT_XEM_TRUOC, chayThuNut } from "./chayThuNut";
+import { LoiNgoaiPhamVi, NUT_CHAY_THAT, NUT_KHONG_THAM_CHIEU, NUT_XEM_TRUOC, THAM_CHIEU_TAI_NGUYEN, chayThuNut, type BoKiemPhamVi } from "./chayThuNut";
+
+/** Bộ kiểm giả: chỉ máy trong tập được phép. */
+const boKiem = (...cho: number[]): BoKiemPhamVi & { hoi: number[] } => {
+  const hoi: number[] = [];
+  return { hoi, may: async (id) => (hoi.push(id), cho.includes(id)) };
+};
 
 const nut = (type: string, parameters: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({
   id: "n1", type, typeVersion: 1, name: "n1", position: [0, 0] as [number, number], parameters, ...extra,
@@ -64,18 +70,90 @@ describe("chayThuNut — nhóm CHAY (chạy hàm thật)", () => {
 
   it("ot.doc-tag chỉ ĐỌC qua nguồn tiêm; ot.de-xuat-lenh trả yêu cầu CHỜ DUYỆT mô phỏng, không ghi gì", async () => {
     __datNguonDocTagChoTest(async () => [{ tagKey: "t1", valueNumeric: 7, valueText: null, quality: "good", timestamp: "2026-01-01T00:00:00Z", unit: "C" }]);
-    const d = await chayThuNut({ nut: nut("ot.doc-tag", { may: 3, tag: "t1" }), inputs: { main: [{ json: {} }] } });
+    const d = await chayThuNut({ nut: nut("ot.doc-tag", { may: 3, tag: "t1" }), inputs: { main: [{ json: {} }] } }, boKiem(3));
     expect(d.ok).toBe(true);
     expect(JSON.stringify(d.output)).toContain('"giaTri":7');
 
     const x = await chayThuNut({
       nut: nut("ot.de-xuat-lenh", { may: 3, lenh: "pause" }),
       inputs: { main: [{ json: {} }] },
-    });
+    }, boKiem(3));
     // Cổng AI cần CSDL cho tra tag/máy; không có ⇒ hoặc chờ duyệt mô phỏng hoặc từ chối — cả hai KHÔNG gửi lệnh.
     expect(["chay"]).toContain(x.che);
     if (x.ok && x.cho) expect(JSON.stringify(x.cho)).toContain("MÔ PHỎNG");
     expect(JSON.stringify(x)).not.toMatch(/"daGui":\s*true/);
+  });
+});
+
+describe("chayThuNut — PHẠM VI người gọi (IDOR)", () => {
+  const doc = (may: unknown) => nut("ot.doc-tag", { may, tag: "t1" });
+  let goiNguon = 0;
+  const dem = () => __datNguonDocTagChoTest(async () => (goiNguon++, [{ tagKey: "t1", valueNumeric: 1, valueText: null, quality: "good", timestamp: "2026-01-01T00:00:00Z", unit: null }]));
+
+  it("máy ngoài phạm vi ⇒ LoiNgoaiPhamVi và nguồn telemetry KHÔNG được gọi; máy trong phạm vi ⇒ đọc được", async () => {
+    goiNguon = 0;
+    dem();
+    await expect(chayThuNut({ nut: doc(7), inputs: { main: [{ json: {} }] } }, boKiem(3))).rejects.toBeInstanceOf(LoiNgoaiPhamVi);
+    expect(goiNguon).toBe(0);
+    const ok = await chayThuNut({ nut: doc(3), inputs: { main: [{ json: {} }] } }, boKiem(3));
+    expect(ok.ok).toBe(true);
+    expect(goiNguon).toBe(1);
+  });
+
+  it("id lấy từ BIỂU THỨC theo TỪNG item: một item trỏ máy lạ ⇒ cả lượt bị từ chối, nguồn không bị gọi", async () => {
+    goiNguon = 0;
+    dem();
+    const bk = boKiem(3);
+    await expect(chayThuNut({ nut: doc("{{ $json.m }}"), inputs: { main: [{ json: { m: 3 } }, { json: { m: 9 } }] } }, bk)).rejects.toBeInstanceOf(LoiNgoaiPhamVi);
+    expect(goiNguon).toBe(0);
+    expect(bk.hoi).toEqual([3, 9]);
+  });
+
+  it("thiếu bộ kiểm ⇒ ĐÓNG: xem trước, nguồn không bị gọi", async () => {
+    goiNguon = 0;
+    dem();
+    const r = await chayThuNut({ nut: doc(3), inputs: { main: [{ json: {} }] } });
+    expect(r.che).toBe("xem-truoc");
+    expect(goiNguon).toBe(0);
+  });
+
+  it("đề xuất lệnh: máy ngoài phạm vi ⇒ từ chối (không rò qua câu lý do của cổng OT)", async () => {
+    await expect(chayThuNut({ nut: nut("ot.de-xuat-lenh", { may: 7, lenh: "pause" }), inputs: { main: [{ json: {} }] } }, boKiem(3))).rejects.toBeInstanceOf(LoiNgoaiPhamVi);
+  });
+
+  it("ot.de-xuat-luong: xem trước kể cả khi CÓ bộ kiểm (FOE workflow chưa có bộ kiểm phạm vi)", async () => {
+    const r = await chayThuNut({ nut: nut("ot.de-xuat-luong", { workflowId: 1, version: 1 }), inputs: { main: [{ json: {} }] } }, boKiem(1));
+    expect(r.che).toBe("xem-truoc");
+  });
+
+  it("id không phải số nguyên dương ⇒ không hỏi bộ kiểm, node tự báo lỗi hình dạng", async () => {
+    const bk = boKiem();
+    const r = await chayThuNut({ nut: doc("abc"), inputs: { main: [{ json: {} }] } }, bk);
+    expect(bk.hoi).toEqual([]);
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe("chayThuNut — census: node CHAY đọc tài nguyên PHẢI khai bộ kiểm phạm vi", () => {
+  it("∀ node CHAY: hạng doc/ot ⇒ có trong THAM_CHIEU_TAI_NGUYEN; còn lại ⇒ khai tường minh KHÔNG tham chiếu; không node nào ở cả hai", () => {
+    const loai = danhSachNut();
+    for (const t of NUT_CHAY_THAT) {
+      const k = loai.find((x) => x.type === t)!;
+      const coKhai = t in THAM_CHIEU_TAI_NGUYEN;
+      const khongThamChieu = NUT_KHONG_THAM_CHIEU.has(t);
+      expect(Number(coKhai) + Number(khongThamChieu), `${t}: phải khai THAM_CHIEU_TAI_NGUYEN hoặc NUT_KHONG_THAM_CHIEU (đúng một)`).toBe(1);
+      if (k.tacDungPhu === "doc" || k.tacDungPhu === "ot") expect(coKhai, `${t} hạng ${k.tacDungPhu} đọc tài nguyên ⇒ phải có bộ kiểm`).toBe(true);
+    }
+    for (const t of [...Object.keys(THAM_CHIEU_TAI_NGUYEN), ...NUT_KHONG_THAM_CHIEU]) expect(NUT_CHAY_THAT.has(t), `${t} khai nhưng không thuộc CHAY`).toBe(true);
+  });
+
+  it("nguồn ot.ts: mọi tham số trỏ id tài nguyên đã khai (may) — node ot.* chạy thật mà thiếu khai ⇒ đỏ", async () => {
+    const { readFileSync } = await import("node:fs");
+    const goc = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(resolve(goc, "nut/ot.ts"), "utf8");
+    // mỗi node ot.* đọc `t.may`; THAM_CHIEU phải có đủ các node ấy (trừ node xem trước)
+    const cacNutOt = [...src.matchAll(/type: "(ot.[a-z-]+)"/g)].map((m) => m[1]);
+    for (const t of cacNutOt) expect(t in THAM_CHIEU_TAI_NGUYEN || NUT_XEM_TRUOC.has(t), `${t} chưa khai phạm vi`).toBe(true);
   });
 });
 

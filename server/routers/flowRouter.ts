@@ -25,9 +25,11 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { router, moduleProcedure, moduleGate, writeProcedure, adminProcedure, deployProcedure } from "../_core/trpc";
 import { appError } from "../_core/appError";
 import { getDb } from "../db/connection";
-import { aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../drizzle/schema";
+import { aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows, machines } from "../../drizzle/schema";
 import { THU_TU_HANG, NodeInstanceSchema, kiemLuong, type FlowDefinition, type HangTacDungPhu } from "../../shared/flow/model";
-import { chayThuNut } from "../services/flow/chayThuNut";
+import { LoiNgoaiPhamVi, chayThuNut, type BoKiemPhamVi } from "../services/flow/chayThuNut";
+import { trongPhamVi } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
 import { LoiLuong, batDauRun, hangLuongConTuDb, luuPhienBan, traLoiCho } from "../services/flow/dongCo";
 import { taoTuMoTa } from "../services/flow/taoTuMoTa";
 import { danhSachNut, layNut } from "../services/flow/dangKyNut";
@@ -102,7 +104,7 @@ export function docMauLuong(): { tep: string; definition: FlowDefinition }[] {
 /** Trần chữ của input/output mỗi bước trả về dòng thời gian (cắt ở đây, CSDL giữ nguyên theo `luuDuLieu`). */
 export const TRAN_CHU_BUOC = 4000;
 
-type Op = "flowXem" | "flowLuu" | "flowKichHoat" | "flowChayTay" | "flowDuyet" | "flowBiMatTao" | "flowBiMatXoa" | "flowBiMatXem" | "flowTaoTuMoTa";
+type Op = "flowXem" | "flowLuu" | "flowKichHoat" | "flowChayTay" | "flowDuyet" | "flowBiMatTao" | "flowBiMatXoa" | "flowBiMatXem" | "flowTaoTuMoTa" | "flowChayThu";
 
 /** `LoiBiMat` ⇒ `appError` (thông điệp của LoiBiMat không bao giờ chứa giá trị). Lỗi khác ném lại nguyên. */
 function loiBiMat(e: unknown, op: Op): never {
@@ -269,8 +271,23 @@ export const flowRouter = router({
         dauRaNutTruoc: z.record(z.string().regex(RE_ID), z.array(itemSchema).max(100)).optional(),
       }),
     )
-    .mutation(async ({ input }) => {
-      const r = await chayThuNut(input);
+    .mutation(async ({ input, ctx }) => {
+      // ★ IDOR: id tài nguyên của node (máy…) phải TỒN TẠI và thuộc phạm vi NGƯỜI GỌI (từ ctx, không từ input).
+      const pv = phamViCua(ctx);
+      const boKiem: BoKiemPhamVi = {
+        may: async (id) => {
+          const db = await layDb("flowChayThu");
+          const [m] = await db.select({ id: machines.id }).from(machines).where(eq(machines.id, id)).limit(1);
+          return !!m && (await trongPhamVi("machine", id, pv));
+        },
+      };
+      let r;
+      try {
+        r = await chayThuNut(input, boKiem);
+      } catch (e) {
+        if (e instanceof LoiNgoaiPhamVi) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowChayThu" }, "Không tìm thấy máy.");
+        throw e;
+      }
       return {
         ...r,
         output: catJson(r.output, TRAN_CHU_BUOC * 4) as typeof r.output,

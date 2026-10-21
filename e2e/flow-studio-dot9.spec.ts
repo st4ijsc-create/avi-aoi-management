@@ -134,7 +134,7 @@ test("3 — form node OT: MÔ PHỎNG, không nút nào trong form, chạy thử
 
   // đề xuất lệnh: chạy thử ⇒ hoặc yêu cầu chờ duyệt MÔ PHỎNG, hoặc bị Cổng AI từ chối; không có dấu hiệu đã gửi
   await page.getByTestId("them-ot.de-xuat-lenh").click();
-  await page.getByTestId("ot-may").fill("999999");
+  await page.getByTestId("ot-may").fill(String(fx.machineId));
   await page.getByTestId("ot-lenh").fill("pause");
   await page.getByTestId("nut-chay-thu-nut").click();
   const kq = page.getByTestId("ket-qua-chay-thu");

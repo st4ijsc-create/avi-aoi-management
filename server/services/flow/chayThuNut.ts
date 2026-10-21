@@ -26,8 +26,33 @@ export const NUT_CHAY_THAT: ReadonlySet<string> = new Set([
   "ai.tom-tat",
   "ot.doc-tag",
   "ot.de-xuat-lenh",
-  "ot.de-xuat-luong",
 ]);
+
+/**
+ * ★★★ Đợt 9 (IDOR, dieu-phoi 2026-10-21) — node CHAY mà THAM CHIẾU TÀI NGUYÊN bằng id: tham số nào mang id, và loại tài
+ * nguyên nào. MỌI id lấy ra (đánh giá biểu thức trên TỪNG item) phải qua `BoKiemPhamVi` TRƯỚC khi node chạy. Thiếu bộ kiểm ⇒
+ * node rơi XEM_TRUOC (đóng theo mặc định). Census: node hạng `doc`/`ot` trong CHAY bắt buộc có mặt ở đây.
+ */
+export const THAM_CHIEU_TAI_NGUYEN: Readonly<Record<string, readonly { tham: string; loai: "may" }[]>> = {
+  "ot.doc-tag": [{ tham: "may", loai: "may" }],
+  "ot.de-xuat-lenh": [{ tham: "may", loai: "may" }],
+};
+
+/** CHAY nhưng KHÔNG tham chiếu tài nguyên theo id (dữ liệu chỉ đến từ item mẫu + biểu thức) — khai tường minh, census đối chiếu. */
+export const NUT_KHONG_THAM_CHIEU: ReadonlySet<string> = new Set(["kich-hoat.thu-cong", "du-lieu.dat", "logic.neu", "logic.gop", "ai.llm", "ai.trich-xuat", "ai.phan-loai", "ai.tom-tat"]);
+
+/** Bộ kiểm phạm vi của NGƯỜI GỌI (router dựng từ ctx — danh tính không bao giờ đến từ input). `true` ⇔ tồn tại VÀ thuộc phạm vi. */
+export interface BoKiemPhamVi {
+  may(id: number): Promise<boolean>;
+}
+
+/** Ngoài phạm vi HOẶC không tồn tại — một lỗi, một thông điệp (không lộ tồn tại). Router ⇒ NOT_FOUND. */
+export class LoiNgoaiPhamVi extends Error {
+  constructor() {
+    super("Không tìm thấy tài nguyên.");
+    this.name = "LoiNgoaiPhamVi";
+  }
+}
 
 export const NUT_XEM_TRUOC: ReadonlySet<string> = new Set([
   "kich-hoat.lich",
@@ -40,6 +65,8 @@ export const NUT_XEM_TRUOC: ReadonlySet<string> = new Set([
   "ai.sinh-ma",
   "ai.agent",
   "luong.goi-con",
+  // FOE workflow: không có cột tenant (phạm vi suy từ máy của các bước) và chưa có bộ kiểm ⇒ chỉ xem trước.
+  "ot.de-xuat-luong",
 ]);
 
 export const TRAN_ITEM_CHAY_THU = 100;
@@ -71,7 +98,7 @@ function cat<T>(ds: readonly T[] | undefined): T[] {
   return (ds ?? []).slice(0, TRAN_ITEM_CHAY_THU);
 }
 
-export async function chayThuNut(y: YeuCauChayThu): Promise<KetQuaChayThu> {
+export async function chayThuNut(y: YeuCauChayThu, boKiem?: BoKiemPhamVi): Promise<KetQuaChayThu> {
   const t0 = Date.now();
   const ms = () => Date.now() - t0;
   const { nut } = y;
@@ -88,7 +115,9 @@ export async function chayThuNut(y: YeuCauChayThu): Promise<KetQuaChayThu> {
     inputs, nodes, env: {}, run: { id: "chay-thu", flowId: "chay-thu", batDau: new Date().toISOString() },
   };
 
-  if (!NUT_CHAY_THAT.has(nut.type) || nut.credentialRef) {
+  const thamChieu = THAM_CHIEU_TAI_NGUYEN[nut.type];
+  // Đóng theo mặc định: node tham chiếu tài nguyên mà KHÔNG có bộ kiểm phạm vi ⇒ không chạy, chỉ xem trước.
+  if (!NUT_CHAY_THAT.has(nut.type) || nut.credentialRef || (thamChieu && !boKiem)) {
     // Xem trước: đánh giá biểu thức trên item đầu của cổng đầu tiên có dữ liệu.
     const vao = inputs.main ?? Object.values(inputs).find((d) => d.length) ?? [];
     try {
@@ -101,6 +130,23 @@ export async function chayThuNut(y: YeuCauChayThu): Promise<KetQuaChayThu> {
   }
 
   if (nut.disabled) return { che: "chay", ok: true, ms: ms(), output: { main: inputs.main ?? [] } };
+
+  if (thamChieu && boKiem) {
+    // MỌI id tài nguyên của MỌI item (biểu thức đánh giá y như node sẽ làm) phải thuộc phạm vi người gọi — TRƯỚC khi node chạy.
+    try {
+      const mauItem = Object.values(inputs).flat();
+      for (const item of mauItem) {
+        const t = danhGiaThamSo(nut.parameters ?? {}, nguCanhItem(ngu, item, mauItem)) as Record<string, unknown>;
+        for (const tc of thamChieu) {
+          const id = t[tc.tham];
+          if (typeof id === "number" && Number.isInteger(id) && id > 0 && !(await boKiem.may(id))) throw new LoiNgoaiPhamVi();
+        }
+      }
+    } catch (e) {
+      if (e instanceof LoiNgoaiPhamVi) throw e;
+      return { che: "chay", ok: false, ms: ms(), loi: thongDiep(e) };
+    }
+  }
 
   let dongHo: ReturnType<typeof setTimeout> | undefined;
   try {

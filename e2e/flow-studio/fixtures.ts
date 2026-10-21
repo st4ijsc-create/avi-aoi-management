@@ -52,6 +52,8 @@ export interface FsFixture {
   admin: { id: number; username: string; password: string };
   runA: string;
   runB: string;
+  /** Máy thật trong CSDL _test (node OT phải trỏ máy TỒN TẠI và thuộc phạm vi người gọi). */
+  machineId: number;
 }
 
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}, x = 0) => ({
@@ -68,6 +70,11 @@ export async function teardownFixtures(): Promise<Record<string, number>> {
     const out: Record<string, number> = {};
     out.ai_flow_runs = (await sql`DELETE FROM ai_flow_runs WHERE "flowId" LIKE ${like}`).count;
     out.ai_flows = (await sql`DELETE FROM ai_flows WHERE id LIKE ${like}`).count;
+    out.machines = (await sql`DELETE FROM machines WHERE code LIKE ${like}`).count;
+    out.stations = (await sql`DELETE FROM stations WHERE code LIKE ${like}`).count;
+    out.production_lines = (await sql`DELETE FROM production_lines WHERE code LIKE ${like}`).count;
+    out.workshops = (await sql`DELETE FROM workshops WHERE code LIKE ${like}`).count;
+    out.factories = (await sql`DELETE FROM factories WHERE code LIKE ${like}`).count;
     const users = (await sql`SELECT id FROM users WHERE "openId" LIKE ${like}`).map((r) => Number(r.id));
     if (users.length) {
       await sql`DELETE FROM user_sessions WHERE "userId" IN ${sql(users)}`.catch(() => undefined);
@@ -89,6 +96,8 @@ export async function countFixtures(): Promise<Record<string, number>> {
     const [r] = await sql`SELECT
       (SELECT count(*)::int FROM ai_flows WHERE id LIKE ${like}) AS flows,
       (SELECT count(*)::int FROM ai_flow_runs WHERE "flowId" LIKE ${like}) AS runs,
+      (SELECT count(*)::int FROM machines WHERE code LIKE ${like}) AS machines,
+      (SELECT count(*)::int FROM factories WHERE code LIKE ${like}) AS factories,
       (SELECT count(*)::int FROM users WHERE "openId" LIKE ${like}) AS users`;
     return r as unknown as Record<string, number>;
   });
@@ -105,6 +114,11 @@ export async function setupFixtures(): Promise<FsFixture> {
       const [u] = await tx`INSERT INTO users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
         VALUES (${`${run}-admin`}, ${`${run}_admin`}, 'FS admin', 'password', 'admin', true, false, now()) RETURNING id`;
       await tx`INSERT INTO user_secrets ("userId", "passwordHash", "updatedAt") VALUES (${u.id}, ${hash}, now())`;
+      const [fac] = await tx`INSERT INTO factories (code, name) VALUES (${run}, ${run + " factory"}) RETURNING id`;
+      const [ws] = await tx`INSERT INTO workshops ("factoryId", code, name) VALUES (${fac.id}, ${run}, ${run + " ws"}) RETURNING id`;
+      const [ln] = await tx`INSERT INTO production_lines ("workshopId", code, name) VALUES (${ws.id}, ${run}, ${run + " line"}) RETURNING id`;
+      const [st] = await tx`INSERT INTO stations ("lineId", code, name) VALUES (${ln.id}, ${run}, ${run + " station"}) RETURNING id`;
+      const [mc] = await tx`INSERT INTO machines ("stationId", code, name, "machineType", "isActive") VALUES (${st.id}, ${run}, ${run + " machine"}, ${"AOI"}, true) RETURNING id`;
 
       const luong = async (id: string, ten: string, def: object, hang: string) => {
         await tx`INSERT INTO ai_flows (id, name, "riskClass", enabled) VALUES (${id}, ${ten}, ${hang}, false)`;
@@ -139,7 +153,7 @@ export async function setupFixtures(): Promise<FsFixture> {
       await buoc(runA, "dat", "xong", 1, 2, item(1), item(1));
       await buoc(runB, "t", "xong", 10, 11, item(1), item(1));
       await buoc(runB, "dat", "loi", 11, 17, item(2), null, { thongDiep: "hỏng ở dat" });
-      return { admin: { id: Number(u.id), username: `${run}_admin`, password }, runA, runB };
+      return { admin: { id: Number(u.id), username: `${run}_admin`, password }, runA, runB, machineId: Number(mc.id) };
     }),
   );
 }
