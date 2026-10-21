@@ -47,7 +47,11 @@ function ChuGiaiLoi({ loi }: { loi: unknown }) {
       ? t("flowStudio.chay.chuGiai.BI_MAT_CHUA_KHAI_HOST")
       : ma === "CHU_LUOT_KHONG_XAC_DINH"
         ? t("flowStudio.chay.chuGiai.CHU_LUOT_KHONG_XAC_DINH")
-        : t("flowStudio.chay.chuGiai.DICH_NOI_BO");
+        : ma === "CAY_LUOT_DAY"
+          ? t("flowStudio.chay.chuGiai.CAY_LUOT_DAY")
+          : ma === "ITEM_GOI_CON_QUA_NHIEU"
+            ? t("flowStudio.chay.chuGiai.ITEM_GOI_CON_QUA_NHIEU")
+            : t("flowStudio.chay.chuGiai.DICH_NOI_BO");
   return (
     <p className="text-[11px] text-muted-foreground" data-testid={`chu-giai-${ma}`}>
       {noiDung} <span className="font-mono">docs/AI_FLOW_SECURITY_OPERATIONS.md</span>
