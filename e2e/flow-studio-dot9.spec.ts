@@ -366,13 +366,19 @@ test("10 — trợ lý lập trình: nhãn kiểm biên dịch ST (AI giả qua 
   await expect(the).toContainText("Auto-fixed 2 compile error(s) (RuSTy) after 1 round(s)"); // nhãn do CLIENT dựng (en), không khoá thô
   await expect(page.getByText("Version corrected after compiling")).toBeVisible(); // khối bổ sung trong chat
   await page.getByTestId("kiem-bien-dich-xem-dau").click();
-  await expect(page.getByTestId("kiem-bien-dich-ban-dau")).toContainText("y := x AND ;");
+  const banDau = page.getByTestId("kiem-bien-dich-ban-dau");
+  await expect(banDau).toContainText("y := x AND ;");
+  // render bằng khối mã của chat (không phải markdown thô): có khối code-block, không còn chữ rào ```
+  await expect(banDau.locator('[data-streamdown="code-block"]')).toHaveCount(1);
+  await expect(banDau.locator('[data-streamdown="code-block"] .animate-spin')).toHaveCount(0, { timeout: 45_000 });
+  expect(await banDau.innerText()).not.toContain("```");
   // Khối mã trong chat do Streamdown vẽ, bộ tô màu cú pháp TẢI LƯỜI (Suspense + spinner): chờ nó xong rồi mới chụp / khẳng định có mã thật.
   const khoiMa = page.locator('[data-streamdown="code-block"]');
   await expect(khoiMa.first()).toBeVisible();
   await expect(page.locator('[data-streamdown="code-block"] .animate-spin')).toHaveCount(0, { timeout: 45_000 });
-  await expect(khoiMa.last()).toContainText("y := x;"); // khối "đã sửa" hiện mã đúng, không kẹt spinner
+  await expect(khoiMa.filter({ hasText: "y := x;" })).toHaveCount(1); // khối "đã sửa" hiện mã đúng, không kẹt spinner
   await expect(khoiMa.first()).toContainText("y := x AND ;"); // khối đầu (bản sai) cũng hiện mã
+  await banDau.scrollIntoViewIfNeeded();
   if (process.env.FS_SHOT_DIR) await page.screenshot({ path: `${process.env.FS_SHOT_DIR}/10a-da-sua.png` });
 
   await o.fill("another one");

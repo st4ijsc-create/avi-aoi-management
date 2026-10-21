@@ -7,6 +7,7 @@
  */
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Streamdown } from "streamdown";
 import { AlertTriangle, Check, ChevronDown, ChevronRight, Info, Loader2 } from "lucide-react";
 import type { KbKiemBienDich } from "@/hooks/useKbChatStream";
 
@@ -44,7 +45,12 @@ export function KiemBienDichCard({ kiem }: { kiem: KbKiemBienDich | null }) {
                 {xemDau ? <ChevronDown className="h-3 w-3" aria-hidden /> : <ChevronRight className="h-3 w-3" aria-hidden />}
                 {t("repoWs.kiemBienDich.xemBanDau", "Xem bản đầu (trước khi sửa)")}
               </button>
-              {xemDau && <pre data-testid="kiem-bien-dich-ban-dau" className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 px-2 py-1 font-mono text-[11px]">{k.cauTraLoiDau.slice(0, 12000)}</pre>}
+              {/* Bản đầu là markdown (có rào ```st): vẽ bằng CÙNG thành phần khối mã như bong bóng chat (số dòng, tô màu) để so mắt với bản đã sửa. */}
+              {xemDau && (
+                <div data-testid="kiem-bien-dich-ban-dau" className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[12px]">
+                  <Streamdown mode="static">{k.cauTraLoiDau.slice(0, 12000)}</Streamdown>
+                </div>
+              )}
             </>
           ) : null}
         </>
@@ -69,7 +75,12 @@ export function KiemBienDichCard({ kiem }: { kiem: KbKiemBienDich | null }) {
                 {xemDau ? <ChevronDown className="h-3 w-3" aria-hidden /> : <ChevronRight className="h-3 w-3" aria-hidden />}
                 {t("repoWs.kiemBienDich.xemBanDau", "Xem bản đầu (trước khi sửa)")}
               </button>
-              {xemDau && <pre data-testid="kiem-bien-dich-ban-dau" className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 px-2 py-1 font-mono text-[11px]">{k.cauTraLoiDau.slice(0, 12000)}</pre>}
+              {/* Bản đầu là markdown (có rào ```st): vẽ bằng CÙNG thành phần khối mã như bong bóng chat (số dòng, tô màu) để so mắt với bản đã sửa. */}
+              {xemDau && (
+                <div data-testid="kiem-bien-dich-ban-dau" className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[12px]">
+                  <Streamdown mode="static">{k.cauTraLoiDau.slice(0, 12000)}</Streamdown>
+                </div>
+              )}
             </>
           ) : null}
         </>

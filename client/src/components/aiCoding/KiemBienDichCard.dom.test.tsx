@@ -12,6 +12,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string, a?: unknown, b?: unknown) => (typeof a === "string" ? noiSuy(a, b as Record<string, unknown>) : k) }),
 }));
 
+vi.mock("streamdown", () => ({ Streamdown: (p: { children: string }) => <div data-testid="streamdown">{p.children}</div> }));
+
 import { KiemBienDichCard } from "./KiemBienDichCard";
 import { docKetQuaCompileSt } from "./agent/DongThoiGianAgent";
 import { thamSoChinh } from "./agent/trangThaiAgent";
