@@ -2,6 +2,10 @@
  * ★ M4 (audit bảo mật kiem-dinh 2026-10-21) — `/v1` nhận `model` do client gửi. Trước: chuỗi lạ đi THẲNG tới
  * `resolveModelPath` ⇒ đường tuyệt đối tồn tại được nạp, `..` thoát GGUF_MODELS_DIR, và thông điệp "GGUF model file not
  * found: <đường>" trả nguyên cho client (oracle tồn tại tệp).
+ *
+ * ⚠ Ca "symlink trỏ ra ngoài" TỰ BỎ QUA trên Windows (tạo symlink TỆP cần quyền quản trị / Developer Mode) ⇒ đột biến
+ * "bỏ kiểm realpath.startsWith(gốc)" SỐNG trên máy này (đã ghi nhận, dieu-phoi chấp nhận 2026-10-21): đó là lớp phòng thủ
+ * THỨ HAI — lớp chính là danh sách ký tự (không dấu phân cách, không `..`), được ca "Co Dau Cach" + các ca đường dẫn canh.
  */
 import fs from "node:fs";
 import os from "node:os";
