@@ -46,6 +46,6 @@ describe("resolveLogicalModel × vai trò", () => {
     expect(resolveLogicalModel("")).toBe("Qwen3.6-35B-A3B-UD-Q4_K_XL");
     expect(resolveLogicalModel("Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf")).toBe("Qwen3-4B-Instruct-2507-UD-Q4_K_XL");
     expect(resolveLogicalModel("qwen3")).toBe("qwen3"); // hình dạng vai trò nhưng không phải vai trò đã biết
-    expect(resolveLogicalModel("sub/dir/model.gguf")).toBe("sub/dir/model");
+    expect(resolveLogicalModel("sub/dir/model.gguf")).toBeUndefined(); // ★ M4: không còn mang đường dẫn
   });
 });

@@ -82,6 +82,7 @@ import { stripThinking, StreamingThinkingStripper } from "../services/ai/thinkin
 // for the full STEP 0 comparison / reconciliation notes, incl. the one deliberately-fixed "fim"
 // fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
 import { resolveLogicalModel } from "../services/ai/modelResolver";
+import { kiemModelV1, thongDiepLoiChoKhachV1 } from "../services/ai/kiemModelV1";
 import { VAI_TRO_GOC } from "../../shared/aiRoles";
 import { layAnhSoModel } from "../services/ai/soModel/anhSoModel";
 import { laVaiTroSinhChu } from "../services/ai/soModel/dinhTuyenVaiTro";
@@ -861,6 +862,13 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       }
 
       let modelLabel = typeof body.model === "string" && body.model ? body.model : "chat";
+      // ★ M4 (audit kiem-dinh) — `model` chỉ là tên logic / vai trò / hồ sơ trong sổ / tên tệp TRONG GGUF_MODELS_DIR.
+      const kiem = kiemModelV1(modelLabel);
+      if (!kiem.ok) {
+        jsonError(res, 400, "Unknown model.", "invalid_request_error", "model_not_found");
+        return;
+      }
+      modelLabel = kiem.ten;
       // ★★ Đợt 7.3 — `model: "auto"`: chọn VAI TRÒ từ câu hỏi cuối của người dùng (tầng 3 tín hiệu chữ → tầng 4 nhúng);
       // không chắc ⇒ "chat". Vai trò được chọn ghi vào `model` của phản hồi + header để người gọi thấy lý do.
       if (modelLabel.trim().toLowerCase() === "auto") {
@@ -1219,14 +1227,14 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // ★★★ Đợt 4 — lớp "trả lời vào kênh suy luận" mang `code` để client hành động được (vd hỏi lại nghĩ TẮT).
       const maSuyLuan = maLoiSuyLuanV1(err);
       if (!res.headersSent) {
-        jsonError(res, 500, err?.message || "chat completion failed", "server_error", maSuyLuan ?? undefined);
+        jsonError(res, 500, thongDiepLoiChoKhachV1(err, "chat completion failed"), "server_error", maSuyLuan ?? undefined);
       } else {
         res.write(
           // data-raw-ok: khung lỗi SSE theo ĐÚNG chuẩn OpenAI — khách là API client (SDK
           // openai, LangChain…) parse trường `error.message` này theo hợp đồng của họ.
           // Dịch nó sang tiếng Việt là phá tương thích, không phải cải thiện.
           // (Dấu phải nằm NGAY TRÊN dòng chứa `message:` — bộ quét F14 chỉ đọc khối chú thích liền kề.)
-          `data: ${JSON.stringify({ error: { message: err?.message || "error", ...(maSuyLuan ? { type: "server_error", code: maSuyLuan } : {}) } })}\n\n`,
+          `data: ${JSON.stringify({ error: { message: thongDiepLoiChoKhachV1(err, "error"), ...(maSuyLuan ? { type: "server_error", code: maSuyLuan } : {}) } })}\n\n`,
         );
         res.end();
       }
@@ -1251,8 +1259,14 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       }
 
       const isFim = suffix.length > 0;
-      const modelLabel = typeof body.model === "string" && body.model ? body.model : isFim ? "fim" : "code";
-      const modelId = resolveModelId(body.model || (isFim ? "fim" : "code"));
+      const kiem = kiemModelV1(typeof body.model === "string" && body.model ? body.model : isFim ? "fim" : "code");
+      // ★ M4 (audit kiem-dinh) — như /chat/completions.
+      if (!kiem.ok) {
+        jsonError(res, 400, "Unknown model.", "invalid_request_error", "model_not_found");
+        return;
+      }
+      const modelLabel = kiem.ten;
+      const modelId = resolveModelId(modelLabel);
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : isFim ? 256 : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : isFim ? 0.2 : 0.7;
       const topP = Number.isFinite(body.top_p) ? Number(body.top_p) : undefined;
@@ -1366,10 +1380,10 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // is null (fail-open path, or failure before the plan was created).
       plan?.record({ latencyMs: engineStart ? Date.now() - engineStart : 0, outcome: "error" });
       if (!res.headersSent) {
-        jsonError(res, 500, err?.message || "completion failed", "server_error");
+        jsonError(res, 500, thongDiepLoiChoKhachV1(err, "completion failed"), "server_error");
       } else {
         // data-raw-ok: khung lỗi SSE chuẩn OpenAI — xem ghi chú ở nhánh chat phía trên.
-        res.write(`data: ${JSON.stringify({ error: { message: err?.message || "error" } })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: { message: thongDiepLoiChoKhachV1(err, "error") } })}\n\n`);
         res.end();
       }
     }
@@ -1415,7 +1429,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         usage: { prompt_tokens: promptTokens, total_tokens: promptTokens },
       });
     } catch (err: any) {
-      jsonError(res, 500, err?.message || "embeddings failed", "server_error");
+      jsonError(res, 500, thongDiepLoiChoKhachV1(err, "embeddings failed"), "server_error");
     }
   });
 

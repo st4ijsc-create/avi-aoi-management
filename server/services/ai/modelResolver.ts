@@ -255,8 +255,12 @@ export function resolveLogicalModel(requested?: string, ngu?: Pick<YeuCauDinhTuy
       // path.join). Only the redundant ".gguf" suffix is stripped so the engine's own
       // `${id}.gguf` append can't double it; the directory component is deliberately preserved
       // (see STEP 0 finding (a) in the module header).
+      // ★ M4 (audit bảo mật kiem-dinh 2026-10-21) — KHÔNG còn mang ĐƯỜNG DẪN: chuỗi có dấu phân cách, `..` hoặc ổ đĩa ⇒
+      // undefined (engine dùng mặc định). Trước đây `/v1` (và tham số `vaiTro` của Luồng) đưa được đường tuyệt đối /
+      // `../` tới `resolveModelPath` ⇒ nạp tệp ngoài GGUF_MODELS_DIR. Cửa `/v1` còn kiểm chặt hơn ở `kiemModelV1.ts`.
       const trimmed = (requested || "").trim();
-      return trimmed ? stripGgufSuffixOnly(trimmed) : undefined;
+      if (!trimmed || /[\\/]|\.\.|^[A-Za-z]:/.test(trimmed)) return undefined;
+      return stripGgufSuffixOnly(trimmed);
     }
   }
 }

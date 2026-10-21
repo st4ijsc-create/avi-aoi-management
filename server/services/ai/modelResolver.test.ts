@@ -255,10 +255,12 @@ describe("resolveLogicalModel — openaiGateway.ts call shape (OpenAI-style logi
     expect(resolveLogicalModel(name)).toBe(expected);
   });
 
-  it("unknown id passthrough: strips a trailing .gguf but PRESERVES any directory (verbatim client-supplied basename)", () => {
+  // ★ M4 (audit bảo mật kiem-dinh 2026-10-21) — ĐỔI CÓ CHỦ Ý: thư mục KHÔNG còn được giữ (trước: "subdir/x" ⇒ "subdir/x",
+  // cho phép đường tuyệt đối / `../` tới resolveModelPath). Có dấu phân cách / `..` / ổ đĩa ⇒ undefined (engine dùng mặc định).
+  it("unknown id passthrough: strips a trailing .gguf; any directory / '..' / drive ⇒ undefined (M4)", () => {
     expect(resolveLogicalModel("my-custom-model")).toBe("my-custom-model");
     expect(resolveLogicalModel("my-custom-model.gguf")).toBe("my-custom-model");
-    expect(resolveLogicalModel("subdir/my-custom-model.gguf")).toBe("subdir/my-custom-model");
+    expect(resolveLogicalModel("subdir/my-custom-model.gguf")).toBeUndefined();
   });
 
   it("empty/whitespace-only passthrough -> undefined", () => {
