@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/VanHaiCuon.st",
+    "tu": "ELSIF #eMo THEN #tt := 3;",
+    "den": "ELSIF #eMo THEN #tt := 1;"
+  }
+]

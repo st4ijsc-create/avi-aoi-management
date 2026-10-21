@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/Bcd.st",
+    "tu": "IF #nib > 9 THEN",
+    "den": "IF #nib > 10 THEN"
+  }
+]

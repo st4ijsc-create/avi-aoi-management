@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/BoPhieu2oo3.st",
+    "tu": "ELSIF #LECH AND NOT #lechCu THEN",
+    "den": "ELSIF #LECH THEN"
+  }
+]

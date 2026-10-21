@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/DocTangGiam.st",
+    "tu": "#RA := MAX(IN1 := #RA - #TOC_DO_GIAM * #dtGiay, IN2 := #DICH);",
+    "den": "#RA := MAX(IN1 := #RA - #TOC_DO_TANG * #dtGiay, IN2 := #DICH);"
+  }
+]

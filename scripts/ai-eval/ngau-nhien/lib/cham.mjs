@@ -20,9 +20,12 @@ import { PYTHON, CMAKE, GO, CARGO, MOI_TRUONG, ROOT } from "./moiTruong.mjs";
 import { lietKeTep } from "./kho.mjs";
 import { chayST } from "./st/chayST.mjs";
 import { chaySTMatiec } from "./st-matiec/chaySTMatiec.mjs";
+import { sclSangSt } from "./st-scl/scl.mjs";
 
 // ★ Đợt 9 — trình dịch ST: "rusty" (mặc định, như mọi số đo trước) | "matiec" (OpenPLC v3 bench, TON/TOF/TP chuẩn MATIEC).
 export const ST_TRINH_DICH = (process.env.AI_EVAL_ST_TRINH_DICH || "rusty").trim().toLowerCase();
+// ★ Đợt 9 — phương ngữ câu trả lời ST: "iec" (mặc định) | "scl" (Siemens SCL, chuẩn hoá về ST trước khi biên dịch — lib/st-scl).
+export const ST_PHUONG_NGU = (process.env.AI_EVAL_ST_PHUONG_NGU || "iec").trim().toLowerCase();
 
 const sha256 = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
 const bamTep = (p) => (fs.existsSync(p) ? sha256(fs.readFileSync(p)) : null);
@@ -160,11 +163,21 @@ const TRINH_CHAY = {
     // Mỗi tệp test là MỘT chương trình: prelude (đồng hồ giả) + mọi `src/*.st` (thứ tự tên) + `tests/kt.st` + tệp test
     // (chứa `FUNCTION main : DINT`). Biên dịch hỏng ⇒ không có KT_TONG ⇒ tính một lượt trượt (như java/cmake).
     const nguon = lietKeTep(dir).filter((f) => f.startsWith("src/") && /\.st$/i.test(f)).sort();
+    // SCL: bản đã CHUẨN HOÁ ghi sang thư mục cạnh dự án (không ghi đè tệp của model); chẩn đoán vẫn mang tên src/….
+    const duongNguon = {};
+    if (ST_PHUONG_NGU === "scl") {
+      const tam = `${dir}/../_scl-${path.basename(dir)}`;
+      for (const rel of nguon) {
+        fs.mkdirSync(path.dirname(`${tam}/${rel}`), { recursive: true });
+        fs.writeFileSync(`${tam}/${rel}`, sclSangSt(fs.readFileSync(`${dir}/${rel}`, "utf8")));
+        duongNguon[rel] = `${tam}/${rel}`;
+      }
+    }
     const tong = { pass: 0, fail: 0 };
     let ma = 0, outAll = "", hetGio = false, loiChay = null, thay = 0;
     for (const f of files) {
       const r = await (ST_TRINH_DICH === "matiec" ? chaySTMatiec : chayST)({
-        tep: [...nguon, "tests/kt.st", f].map((rel) => ({ ten: rel, duong: `${dir}/${rel}` })),
+        tep: [...nguon, "tests/kt.st", f].map((rel) => ({ ten: rel, duong: duongNguon[rel] ?? `${dir}/${rel}` })),
         thuMucViec: `${ROOT}/tmp/st-jobs`,
         giayChay: giay,
       });

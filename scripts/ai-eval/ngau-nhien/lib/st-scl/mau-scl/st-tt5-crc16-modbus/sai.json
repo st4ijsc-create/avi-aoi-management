@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/Crc16Modbus.st",
+    "tu": "IF #n > 64 THEN #n := 64; END_IF;",
+    "den": "IF #n > 63 THEN #n := 63; END_IF;"
+  }
+]

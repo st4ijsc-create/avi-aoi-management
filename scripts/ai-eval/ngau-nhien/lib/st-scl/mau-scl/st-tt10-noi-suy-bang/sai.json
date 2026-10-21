@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/NoiSuyBang.st",
+    "tu": "IF #BANG_X[#i] <= #BANG_X[#i - 1] THEN",
+    "den": "IF #BANG_X[#i] < #BANG_X[#i - 1] THEN"
+  }
+]

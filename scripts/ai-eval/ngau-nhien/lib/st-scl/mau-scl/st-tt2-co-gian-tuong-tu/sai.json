@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/CoGianTuongTu.st",
+    "tu": "#GIA_TRI := LIMIT(MN := #lo, IN := #v, MX := #hi);",
+    "den": "#GIA_TRI := LIMIT(MN := #KT_THAP, IN := #v, MX := #KT_CAO);"
+  }
+]

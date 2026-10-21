@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/ChongDoi.st",
+    "tu": "ELSIF #tonTat.Q THEN",
+    "den": "ELSIF NOT #IN THEN"
+  }
+]

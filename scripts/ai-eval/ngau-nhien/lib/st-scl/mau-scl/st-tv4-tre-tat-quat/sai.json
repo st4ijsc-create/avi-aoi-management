@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/TreTatQuat.st",
+    "tu": "#QUAT := #tre.Q AND NOT #huy;",
+    "den": "#QUAT := #tre.Q AND NOT #DUNG_KHAN;"
+  }
+]

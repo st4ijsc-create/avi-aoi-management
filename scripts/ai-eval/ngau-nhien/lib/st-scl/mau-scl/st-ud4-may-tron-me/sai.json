@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/MayTronMe.st",
+    "tu": "#TRANG_THAI := #buocDo;",
+    "den": "#TRANG_THAI := 1;"
+  }
+]

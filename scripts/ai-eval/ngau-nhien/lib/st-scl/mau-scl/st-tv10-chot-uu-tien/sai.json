@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/HaiChot.st",
+    "tu": "#Q_SR := #chotSR.Q1;",
+    "den": "#Q_SR := #chotRS.Q1;"
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/DenGiaoThong.st",
+    "tu": "IF #TRANG_THAI <> 0 THEN",
+    "den": "IF #TRANG_THAI = 1 THEN"
+  }
+]

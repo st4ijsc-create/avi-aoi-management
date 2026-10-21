@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/DemGioChay.st",
+    "tu": "#le := #le - T#1s;",
+    "den": "#le := T#0s;"
+  }
+]
