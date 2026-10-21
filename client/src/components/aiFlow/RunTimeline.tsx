@@ -11,7 +11,8 @@ import { fmtDateTime } from "@/lib/fmtDateTime";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronRight, GitCompare, Loader2, RefreshCw } from "lucide-react";
+import RunCompare from "./RunCompare";
 import { MAU_TRANG_THAI, luotDangSong, trangThaiTheoNut } from "@/lib/flowStudio";
 
 function NhanTrangThai({ tt }: { tt: string }) {
@@ -67,6 +68,7 @@ export default function RunTimeline({ flowId, runId, onChonRun, tenNut, onTrangT
     { enabled: !!runId, refetchInterval: (q) => (luotDangSong(q.state.data?.run.status) ? 1500 : false) },
   );
   const [moSuKien, setMoSuKien] = useState(false);
+  const [soSanh, setSoSanh] = useState(false);
 
   const trangThaiRun = dtg.data?.run.status;
   useEffect(() => {
@@ -81,6 +83,10 @@ export default function RunTimeline({ flowId, runId, onChonRun, tenNut, onTrangT
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-semibold">{t("flowStudio.chay.lichSu")}</h3>
+          <Button type="button" variant={soSanh ? "secondary" : "ghost"} size="sm" className="h-7 ml-auto mr-1 text-xs" data-testid="nut-so-sanh-luot" disabled={(lichSu.data?.length ?? 0) < 2} onClick={() => setSoSanh(!soSanh)}>
+            <GitCompare className="h-3.5 w-3.5 mr-1" />
+            {t("flowStudio.soSanh.nut")}
+          </Button>
           <Button type="button" variant="ghost" size="icon" className="h-7 w-7" aria-label={t("flowStudio.chay.lamMoi")} onClick={() => { void lichSu.refetch(); void dtg.refetch(); }}>
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
@@ -105,7 +111,9 @@ export default function RunTimeline({ flowId, runId, onChonRun, tenNut, onTrangT
         </ul>
       </div>
 
-      {runId && (
+      {soSanh && lichSu.data && <RunCompare lichSu={lichSu.data} runIdMacDinh={runId} tenNut={tenNut} />}
+
+      {runId && !soSanh && (
         <div className="border-t pt-3 space-y-3">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-sm font-semibold">{t("flowStudio.chay.dongThoiGian")}</h3>

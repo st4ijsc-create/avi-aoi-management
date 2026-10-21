@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Trash2, Plus, RefreshCw } from "lucide-react";
+import { Trash2, Plus, RefreshCw, ShieldAlert } from "lucide-react";
 import { MAU_HANG, loiBieuThucChuoi, type KhaiBaoNutClient } from "@/lib/flowStudio";
 
 const O_CHON =
@@ -164,6 +164,78 @@ function FormTrichXuat({ p, doi }: { p: ThamSo; doi: (k: string, v: unknown) => 
         <Plus className="h-3.5 w-3.5 mr-1" />
         {t("flowStudio.cauHinh.themTruong")}
       </Button>
+    </div>
+  );
+}
+
+/** Ô nhập số HOẶC biểu thức: chuỗi toàn chữ số ⇒ lưu số; còn lại lưu chữ (có thể là {{ … }}). */
+const soHoacChu = (v: string): number | string => (/^d{1,12}$/.test(v.trim()) ? Number(v.trim()) : v);
+
+/**
+ * ★★★ Đợt 9.3 — FORM NODE OT (CHẾ ĐỘ MÔ PHỎNG, quyết định D4): `ot.doc-tag` chỉ ĐỌC; `ot.de-xuat-lenh` / `ot.de-xuat-luong` chỉ ĐỀ XUẤT.
+ * Không có ô, nút hay giá trị nào ở đây dẫn tới gửi lệnh thật — biểu ngữ nói rõ điều đó ngay trong form.
+ */
+function FormOt({ type, p, doi }: { type: string; p: ThamSo; doi: (k: string, v: unknown) => void }) {
+  const { t } = useTranslation();
+  const s = (k: string) => (typeof p[k] === "string" ? (p[k] as string) : p[k] === undefined || p[k] === null ? "" : String(p[k]));
+  const ten = (k: string, nhan: string, goiY?: string, testId?: string) => (
+    <Truong nhan={nhan} goiY={goiY}>
+      <OBieuThuc testId={testId} giaTri={p[k]} onDoi={(v) => doi(k, soHoacChu(v))} />
+    </Truong>
+  );
+  return (
+    <div className="space-y-3" data-testid="form-ot">
+      <div className="flex gap-2 rounded border border-warning/50 bg-warning/10 p-2 text-xs" role="note" data-testid="ot-mo-phong">
+        <ShieldAlert className="h-4 w-4 shrink-0 text-warning" />
+        <div className="space-y-1">
+          <p className="font-medium">{t("flowStudio.ot.moPhong")}</p>
+          <p className="text-muted-foreground">{t("flowStudio.ot.batCan2fa")}</p>
+        </div>
+      </div>
+      {type === "ot.doc-tag" && (
+        <>
+          <p className="text-[11px] text-muted-foreground">{t("flowStudio.ot.docTagChiDoc")}</p>
+          {ten("may", t("flowStudio.ot.may"), undefined, "ot-may")}
+          <Truong nhan={t("flowStudio.ot.tag")}>
+            <OBieuThuc testId="ot-tag" giaTri={p.tag} onDoi={(v) => doi("tag", v)} />
+          </Truong>
+          <Truong nhan={t("flowStudio.ot.gioiHan")}>
+            <Input type="number" min={1} max={100} className="h-9 text-xs" value={s("gioiHan")} onChange={(e) => doi("gioiHan", e.target.value === "" ? undefined : Number(e.target.value))} />
+          </Truong>
+          <Truong nhan={t("flowStudio.cauHinh.truongRa")}><Input className="h-9 text-xs font-mono" value={s("truongRa")} onChange={(e) => doi("truongRa", e.target.value)} /></Truong>
+        </>
+      )}
+      {type === "ot.de-xuat-lenh" && (
+        <>
+          {ten("may", t("flowStudio.ot.may"), undefined, "ot-may")}
+          <Truong nhan={t("flowStudio.ot.lenh")} goiY={t("flowStudio.ot.lenhGoiY")}>
+            <Input data-testid="ot-lenh" className="h-9 text-xs font-mono" list="flow-ot-lenh" value={s("lenh")} onChange={(e) => doi("lenh", e.target.value)} />
+            <datalist id="flow-ot-lenh">
+              {["pause", "start", "stop", "reset"].map((v) => <option key={v} value={v} />)}
+            </datalist>
+          </Truong>
+          <Truong nhan={t("flowStudio.ot.tag")}>
+            <OBieuThuc testId="ot-tag" giaTri={p.tag} onDoi={(v) => doi("tag", v)} />
+          </Truong>
+          <Truong nhan={t("flowStudio.ot.giaTri")}>
+            <OBieuThuc testId="ot-gia-tri" giaTri={p.giaTri} onDoi={(v) => doi("giaTri", v === "" ? undefined : v)} />
+          </Truong>
+          <Truong nhan={t("flowStudio.ot.hetHanGio")}>
+            <Input type="number" min={1} max={168} className="h-9 text-xs" value={s("hetHanGio")} onChange={(e) => doi("hetHanGio", e.target.value === "" ? undefined : Number(e.target.value))} />
+          </Truong>
+        </>
+      )}
+      {type === "ot.de-xuat-luong" && (
+        <>
+          <p className="text-[11px] text-muted-foreground">{t("flowStudio.ot.luongGoiY")}</p>
+          {ten("workflowId", t("flowStudio.ot.workflowId"), undefined, "ot-workflow")}
+          {ten("version", t("flowStudio.ot.version"), undefined, "ot-version")}
+          <FormJson nhan={t("flowStudio.ot.thamSoFoe")} giaTri={p.thamSo ?? {}} onDoi={(v) => doi("thamSo", v)} />
+          <Truong nhan={t("flowStudio.ot.hetHanGio")}>
+            <Input type="number" min={1} max={168} className="h-9 text-xs" value={s("hetHanGio")} onChange={(e) => doi("hetHanGio", e.target.value === "" ? undefined : Number(e.target.value))} />
+          </Truong>
+        </>
+      )}
     </div>
   );
 }
@@ -360,6 +432,11 @@ export default function NodeConfigPanel({ node, kb, onDoi, onXoa, biMat, webhook
       );
       break;
     }
+    case "ot.doc-tag":
+    case "ot.de-xuat-lenh":
+    case "ot.de-xuat-luong":
+      form = <FormOt type={node.type} p={p} doi={doi} />;
+      break;
     case "du-lieu.ma":
       form = (
         <Truong nhan={t("flowStudio.cauHinh.ma")} goiY={t("flowStudio.cauHinh.maGoiY")}>

@@ -28,6 +28,7 @@ import { kiemLuong, type FlowDefinition, type KhaiBaoNut, type NodeInstance } fr
 import FlowCanvas, { KIEU_KEO_NUT } from "@/components/aiFlow/FlowCanvas";
 import NodeConfigPanel from "@/components/aiFlow/NodeConfigPanel";
 import RunTimeline from "@/components/aiFlow/RunTimeline";
+import ChayThuNutPanel from "@/components/aiFlow/ChayThuNutPanel";
 import { MAU_HANG, docItemsNhap, laHang, loiBieuThucThamSo, nhomDanhMuc, taoNutMoi, type KhaiBaoNutClient } from "@/lib/flowStudio";
 
 const O_CHON =
@@ -369,6 +370,7 @@ export default function AIFlowEditorPage() {
               </TabsList>
               <TabsContent value="cauHinh" className="px-3 pb-4">
                 {nutChon ? (
+                  <>
                   <NodeConfigPanel
                     key={nutChon.id}
                     node={nutChon}
@@ -385,6 +387,8 @@ export default function AIFlowEditorPage() {
                       onXoay: () => version && datBat.mutate({ flowId, version, bat: true, xoayToken: true }),
                     }}
                   />
+                  <ChayThuNutPanel key={`thu-${nutChon.id}`} node={nutChon} kb={danhMuc.get(nutChon.type)} />
+                  </>
                 ) : (
                   def && (
                     <div className="space-y-3 text-sm">
