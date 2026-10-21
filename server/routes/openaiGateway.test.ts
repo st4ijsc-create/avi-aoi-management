@@ -293,3 +293,24 @@ describe("createOpenAiGatewayRouter (unit)", () => {
     }
   });
 });
+
+describe("★ M4 (audit kiem-dinh) — `model` của client không mang được đường dẫn tới engine", () => {
+  for (const [duong, body] of [
+    ["/v1/chat/completions", (m: string) => ({ model: m, messages: [{ role: "user", content: "hi" }] })],
+    ["/v1/completions", (m: string) => ({ model: m, prompt: "print(" })],
+  ] as const) {
+    it(`${duong}: đường tuyệt đối / \`..\` / tên tệp không có ⇒ 400 chung, KHÔNG phản chiếu chuỗi`, async () => {
+      for (const m of ["C:\\Windows\\System32\\x.gguf", "/etc/passwd", "../../secret", "khong-co-model-nao"]) {
+        const res = await fetch(`${enabled.url}${duong}`, {
+          method: "POST",
+          headers: { ...AUTH, "Content-Type": "application/json" },
+          body: JSON.stringify(body(m)),
+        });
+        expect(res.status, m).toBe(400);
+        const j = await res.json();
+        expect(j.error.code).toBe("model_not_found");
+        expect(JSON.stringify(j)).not.toContain(m.slice(0, 8));
+      }
+    });
+  }
+});

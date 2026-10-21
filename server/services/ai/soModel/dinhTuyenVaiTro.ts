@@ -82,6 +82,9 @@ function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv, 
   if (!p) return { ok: false, lyDo: `profile ${profileId} không có` };
   if (!p.enabled) return { ok: false, lyDo: `profile ${profileId} tắt` };
   if (p.artifactStatus !== "available") return { ok: false, lyDo: `artifact-${p.artifactStatus} (${profileId})` };
+  // ★ L2 (audit kiem-dinh 2026-10-21) — cổng giấy phép cũng ở RUNTIME, không chỉ lúc gán (`datGan.ts`): artifact đổi /
+  // giấy phép bị gỡ sau khi gán ⇒ không chạy model chưa khai giấy phép.
+  if (p.license === "unknown") return { ok: false, lyDo: `giay-phep-chua-khai (${profileId})` };
   const model = toBasename(p.artifactFile);
   if (p.slotClass === "nang" && model !== toBasename(env.LLAMA_SERVER_MODEL)) {
     if (khongDoiKhe) return { ok: false, lyDo: `khe-dang-giu-model-khac (${profileId}; bề mặt nền không đổi khe)` };
