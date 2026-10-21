@@ -20,7 +20,7 @@ vi.mock("../_core/accessControl", () => ({
 
 // db.updateMachine spy — không đụng DB thật (vi.hoisted vì factory được hoist lên đầu file)
 const { updateMachine } = vi.hoisted(() => ({ updateMachine: vi.fn(async () => {}) }));
-vi.mock("../db", () => ({ updateMachine }));
+vi.mock("../db", () => ({ phaiDoiMatKhau: vi.fn(async () => false), updateMachine }));
 
 // Bỏ qua audit fire-and-forget để không kéo theo db thật (W3-B: router giờ
 // import thêm logCreate/logUpdate/logDelete/createAuditContext/ENTITY_TYPES)

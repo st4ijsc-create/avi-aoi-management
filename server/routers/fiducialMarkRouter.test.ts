@@ -20,6 +20,7 @@ const auditSpy = vi.fn(async () => ({ id: 1 }));
 const storagePutSpy = vi.fn(async () => ({ url: "https://cdn/x.png", key: "k/x.png" }));
 
 vi.mock("../db", () => ({
+  phaiDoiMatKhau: vi.fn(async () => false), // đọc bởi middleware gốc server/_core/trpc.ts (requireUser)
   getProductModelById: (...a: any[]) => getProductSpy(...a),
   getFiducialMarkById: (...a: any[]) => getFidSpy(...a),
   createFiducialMark: (...a: any[]) => createFidSpy(...a),

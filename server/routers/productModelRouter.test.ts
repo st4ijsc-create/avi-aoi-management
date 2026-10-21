@@ -21,7 +21,11 @@ const deleteSpy = vi.fn(async () => {});
 const backfillNormalizedSpy = vi.fn(async () => ({ points: 0, fiducials: 0 }));
 const auditSpy = vi.fn(async () => ({ id: 1 }));
 
-vi.mock("../db", () => ({
+// importOriginal: export mới của ../db (vd. phaiDoiMatKhau, sanPhamTrongPhamVi) không làm vỡ lại file này.
+vi.mock("../db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../db")>()),
+  phaiDoiMatKhau: vi.fn(async () => false), // middleware gốc server/_core/trpc.ts
+  sanPhamTrongPhamVi: vi.fn(async () => true), // sản phẩm trong phạm vi người xem
   getProductModels: (...a: any[]) => getModelsSpy(...a),
   getProductModelById: (...a: any[]) => getByIdSpy(...a),
   getProductModelByCode: (...a: any[]) => getByCodeSpy(...a),
@@ -114,7 +118,9 @@ describe("productModel.update — rename + duplicate-code guard", () => {
     getByIdSpy.mockResolvedValue(undefined);
     await expect(admin.update({ id: 999999, name: "ghost" })).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(updateSpy).not.toHaveBeenCalled();
-    expect(auditSpy).not.toHaveBeenCalled();
+    // middleware kiểm toán GỐC luôn ghi một dòng entityType "trpc_mutation" cho mọi mutation (kể cả
+    // bị từ chối) — thứ test này cấm là dòng product.update NGHIỆP VỤ.
+    expect(auditSpy.mock.calls.map((c) => (c[0] as any)?.entityType).filter((t) => t !== "trpc_mutation")).toEqual([]);
   });
 
   it("re-sending the SAME code drops it from the patch (no false duplicate error)", async () => {

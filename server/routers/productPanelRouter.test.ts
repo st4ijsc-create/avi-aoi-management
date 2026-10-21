@@ -26,6 +26,7 @@ const softDeleteSpy = vi.fn();
 const replaceBoardsSpy = vi.fn();
 
 vi.mock("../db", () => ({
+  phaiDoiMatKhau: vi.fn(async () => false), // đọc bởi middleware gốc server/_core/trpc.ts (requireUser)
   getProductModelById: (...a: any[]) => getProductSpy(...a),
   // consumed by the global fire-and-forget audit middleware (protectedProcedure)
   createAuditLog: vi.fn(async () => ({})),

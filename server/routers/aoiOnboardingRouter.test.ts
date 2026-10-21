@@ -35,6 +35,7 @@ vi.mock("drizzle-orm", async (orig) => {
   return { ...actual, eq: makeEq, and: makeAnd, desc: makeDesc, ne };
 });
 vi.mock("../db", () => ({
+  phaiDoiMatKhau: vi.fn(async () => false), // đọc bởi middleware gốc server/_core/trpc.ts (requireUser)
   getDb: vi.fn(async () => fake),
   // consumed by the global fire-and-forget audit middleware (protectedProcedure)
   createAuditLog: vi.fn(async () => ({})),

@@ -24,7 +24,7 @@ const { getFactoryZones, createFactoryZone, updateFactoryZone, deleteFactoryZone
   updateFactoryZone: vi.fn(async () => {}),
   deleteFactoryZone: vi.fn(async () => {}),
 }));
-vi.mock("../db", () => ({ getFactoryZones, createFactoryZone, updateFactoryZone, deleteFactoryZone }));
+vi.mock("../db", () => ({ phaiDoiMatKhau: vi.fn(async () => false), getFactoryZones, createFactoryZone, updateFactoryZone, deleteFactoryZone }));
 
 // Bỏ qua audit fire-and-forget để không kéo theo db thật (W3-B: router giờ
 // import thêm logCreate/logUpdate/logDelete/createAuditContext/ENTITY_TYPES)
@@ -56,7 +56,7 @@ beforeEach(() => {
 describe("factoryZone.listByFactory — đọc mở", () => {
   it("trả về danh sách zone của nhà máy", async () => {
     const res = await caller.listByFactory({ factoryId: 9 });
-    expect(getFactoryZones).toHaveBeenCalledWith(9);
+    expect(getFactoryZones).toHaveBeenCalledWith(9, { userId: 42, userRole: "operator" }); // + phạm vi người xem (phamViCua)
     expect(res).toHaveLength(1);
   });
 });

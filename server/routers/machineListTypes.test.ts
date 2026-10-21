@@ -17,6 +17,7 @@ vi.mock("../_core/accessControl", () => ({
 }));
 
 const dbm = vi.hoisted(() => ({
+  phaiDoiMatKhau: vi.fn(async () => false), // đọc bởi middleware gốc server/_core/trpc.ts (requireUser)
   createAuditLog: vi.fn(async (): Promise<any> => ({ id: 1 })),
   getDb: vi.fn(async (): Promise<any> => ({ fake: true })),
   getMachines: vi.fn(async (): Promise<any> => []),

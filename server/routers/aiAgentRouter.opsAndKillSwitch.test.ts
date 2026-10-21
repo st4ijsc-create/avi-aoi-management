@@ -63,7 +63,10 @@ vi.mock("../db/connection", () => ({
   getDb: vi.fn(async () => makeFakeDb()),
 }));
 
-vi.mock("../../drizzle/schema", () => ({
+// importOriginal: bảng/ export mới của schema không làm vỡ lại file này (lần trước: productInspections,
+// mqttClients). Chỉ aiSystemConfig bị thay bằng cột giả để fake db đọc được `__name`.
+vi.mock("../../drizzle/schema", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../drizzle/schema")>()),
   aiSystemConfig: {
     key: { __name: "key" },
     value: { __name: "value" },
@@ -73,7 +76,8 @@ vi.mock("../../drizzle/schema", () => ({
   },
 }));
 
-vi.mock("drizzle-orm", () => ({
+vi.mock("drizzle-orm", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("drizzle-orm")>()),
   eq: (col: any, val: any) => (r: Row) => r[col.__name] === val,
 }));
 

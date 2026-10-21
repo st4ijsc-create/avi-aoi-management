@@ -12,6 +12,7 @@ import { join } from "node:path";
 // ── db mock (telemetry write + enpi helpers) ───────────────────
 const recordEnergyReadingMock = vi.fn(async () => 99);
 vi.mock("../db", () => ({
+  phaiDoiMatKhau: vi.fn(async () => false), // đọc bởi middleware gốc server/_core/trpc.ts (requireUser)
   recordEnergyReading: (...a: any[]) => recordEnergyReadingMock(...a),
   listEnpiMetrics: vi.fn(async () => []),
   upsertEnpiSnapshot: vi.fn(async () => ({ id: 1, updated: false })),
