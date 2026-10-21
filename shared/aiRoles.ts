@@ -95,13 +95,62 @@ const RE_PLC_CUM = /\b(plc|codesys|twincat|tia portal|iec\s*61131(-3)?|structure
 const RE_PHAN_MEM =
   /\b(python|c#|java|javascript|typescript|react|vue|angular|sql|postgres|mysql|sqlite|rust|node(\.js)?|express|docker(file)?|powershell|bash|regex|api|wpf|fastapi|django|jest|vitest|pytest|html|css|\.net|kotlin|swift)\b|(^|\s)(C#|Go)(?=\s|$)/i;
 
+/** "ngôn ngữ lập trình" là DANH TỪ, không phải ý định viết mã ("IEC 61131-3 gồm những ngôn ngữ lập trình nào?"). */
+const boDanhTuMa = (cauHoi: string) => (cauHoi ?? "").replace(/ngôn ngữ lập trình/gi, "ngôn ngữ");
+
 /** Tầng 3 — từ CHỮ của câu hỏi. Không chắc ⇒ `null`. */
 export function vaiTroTuCauHoi(cauHoi: string): { vaiTro: string; bangChung: string } | null {
-  const s = cauHoi ?? "";
+  const s = boDanhTuMa(cauHoi);
   if (!RE_Y_DINH_MA.test(s)) return null;
   const plc = RE_PLC_VIET_TAT.exec(s) ?? RE_PLC_CUM.exec(s);
   const pm = RE_PHAN_MEM.exec(s);
   if (plc && !pm) return { vaiTro: "code.plc", bangChung: `câu hỏi viết mã + "${plc[0].trim()}"` };
   if (pm && !plc) return { vaiTro: "code.software", bangChung: `câu hỏi viết mã + "${pm[0].trim()}"` };
   return null;
+}
+
+// ── ★★ Đợt 9 (2026-10-21) — TÍN HIỆU CHỮ THEO TÁC VỤ (tầng 3, tất định) cho bề mặt chọn TỰ ĐỘNG (`model: "auto"`) ──
+// Đo mù 2026-10-21: `chat` 11/20 — câu KIẾN THỨC ngành bị tâm cụm code.plc/chat.ops hút (nhúng bắt CHỦ ĐỀ, không
+// bắt Ý ĐỊNH). Ý định "tóm tắt / trích / hỏi khái niệm" lộ ra bằng chữ ⇒ xét bằng luật, rồi mới tới tầng 4.
+// TÁCH khỏi `vaiTroTuCauHoi` có chủ ý: `vaiTroTuTinHieu` (bề mặt lập trình) chỉ được trả vai trò MÃ.
+// Ranh giới chữ theo Unicode (`\b` của JS là ASCII — gãy giữa chữ có dấu).
+const T = (s: string) => new RegExp(`(?<![\p{L}\p{N}])(?:${s})(?![\p{L}\p{N}])`, "iu");
+const RE_TOM_TAT = T("tóm tắt|tom tat|tóm lại|tom lai|tổng kết|tong ket|rút gọn|rut gon|ý chính|y chinh|summari[sz]e|summary|tl;?dr|condense|key (?:points|findings)");
+const RE_TONG_HOP = T("tổng hợp|tong hop");
+const RE_TRICH = T("trích|trich|trích xuất|extract|parse");
+const RE_LAY = T("lấy|lay|lọc|loc|tách|tach|rút|rut|điền|dien|pull|get");
+const RE_TAI_LIEU_KEM = T("này|nay|sau|sau đây|dưới|duoi|dưới đây|đoạn văn|văn bản|this|following|below|attached");
+const RE_DANG_CAU_TRUC = T("json|bảng|bang|danh sách|danh sach|các trường|cac truong|table|list|csv|fields?");
+const RE_HOI_KHAI_NIEM = T(
+  "là gì|la gi|là sao|khác nhau|khac nhau|khác gì|khác .{1,40} (?:thế nào|ra sao)|so sánh|so sanh|tại sao|tai sao|vì sao|vi sao|giải thích|giai thich|nguyên lý|nguyen ly|nguyên nhân|ưu điểm|nhược điểm|ý nghĩa|ảnh hưởng(?: \S+){0,6} (?:thế nào|ra sao)|gồm những|gồm gì|hoạt động (?:thế nào|ra sao)|khi nào nên|nên dùng|nên chọn|có nên|what is|what are|what's|why|explain|difference|how does|how do|should i|when to use",
+);
+// Câu hỏi SỐ LIỆU HIỆN TẠI của nhà máy (chat.ops) — có các dấu này thì KHÔNG kết luận "chat".
+const RE_DAU_VAN_HANH = T(
+  "hôm nay|hom nay|hôm qua|hom qua|hiện tại|hien tai|hiện (?:đang|nay|giờ|có)|đang|dang|ca này|ca nay|ca sáng|ca chiều|ca đêm|tuần này|tuan nay|tháng này|thang nay|line ?\d+|máy số ?\d+|today|yesterday|currently|right now|this (?:shift|week|month)",
+);
+// Câu đính kèm mã/tài liệu ("đoạn này", "code sau") — câu "tại sao…" về MÃ người dùng dán vào không phải hỏi khái niệm.
+const RE_KEM_MA = T("đoạn (?:mã|code|st|này|sau|dưới)|code (?:này|sau|dưới)|chương trình này|this (?:code|snippet|function|rung)");
+
+// Câu MỆNH LỆNH thao tác trên tài liệu ("Lấy danh sách… nêu trong thông báo") — không phải hỏi khái niệm.
+const RE_MO_LENH = /^\s*(?:lấy|lay|liệt kê|liet ke|lọc|loc|tách|tach|điền|dien|chuyển|chuyen|list|pull|get)(?![\p{L}\p{N}])/iu;
+
+/** Tầng 3 theo TÁC VỤ — `summarize` / `extract` / `chat` (khái niệm). Xét SAU `vaiTroTuCauHoi`. Không chắc ⇒ `null`. */
+export function vaiTroTuTacVu(cauHoi: string): { vaiTro: string; bangChung: string } | null {
+  const s = boDanhTuMa(cauHoi);
+  const m = (re: RegExp) => re.exec(s)?.[0];
+  const tomTat = m(RE_TOM_TAT) ?? (!RE_DAU_VAN_HANH.test(s) || RE_TAI_LIEU_KEM.test(s) ? m(RE_TONG_HOP) : undefined);
+  const trich = m(RE_TRICH) ?? (RE_LAY.test(s) && RE_TAI_LIEU_KEM.test(s) && RE_DANG_CAU_TRUC.test(s) ? m(RE_LAY) : undefined);
+  if (tomTat && !trich) return { vaiTro: "summarize", bangChung: `từ tác vụ "${tomTat}"` };
+  if (trich && !tomTat) return { vaiTro: "extract", bangChung: `từ tác vụ "${trich}"` };
+  if (tomTat || trich) return null;
+  const hoi = m(RE_HOI_KHAI_NIEM);
+  if (hoi && !RE_MO_LENH.test(s) && !RE_Y_DINH_MA.test(s) && !RE_DAU_VAN_HANH.test(s) && !RE_KEM_MA.test(s)) {
+    return { vaiTro: "chat", bangChung: `hỏi khái niệm "${hoi}"` };
+  }
+  return null;
+}
+
+/** Tầng 3 đầy đủ cho chọn TỰ ĐỘNG: ý định mã (miền) trước, rồi tác vụ. */
+export function vaiTroTuCauHoiTuDong(cauHoi: string): { vaiTro: string; bangChung: string } | null {
+  return vaiTroTuCauHoi(cauHoi) ?? vaiTroTuTacVu(cauHoi);
 }
