@@ -307,3 +307,6 @@ tools/machine-simulator/tests/**/TestResults/
 deploy/edge/secrets/*
 !deploy/edge/secrets/README.md
 *.cred
+
+# Bo dem anh boc tu ZIP goi AOI (sinh ra luc chay, TTL 7 ngay) — khong theo doi (chu du an duyet xoa 2026-10-21)
+uploads/aoi-cache/
