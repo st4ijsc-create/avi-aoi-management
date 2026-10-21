@@ -193,6 +193,12 @@ for (const b of DS) {
       }
       // ★ Đợt 9 — lượt hỏng (lỗi gọi / chữ rỗng) ⇒ hỏi sức khoẻ; server chết ⇒ DỪNG NGAY, KHÔNG chấm lượt này (lỗi máy, không
       // phải lỗi model), ghi báo cáo phần đã xong rồi thoát 2.
+      // ★ v1 (2026-10-22, A/B lần 3: HTTP 500 "khe bị khoá" bị CHẤM thành trượt 20–40 ms/lượt) — server sản phẩm trả LỖI ⇒ lỗi
+      // hạ tầng/định tuyến, không phải câu trả lời của model ⇒ dừng, không chấm.
+      if (CONFIG === "v1" && g.err) {
+        dungSom = { id: b.id, luot, nhanh, loi: `v1 trả lỗi: ${String(g.err).slice(0, 200)}`, luc: new Date().toISOString() };
+        break;
+      }
       if (GOI_MODEL && (g.err || !g.text) && !(await kiemSong(`SAU lượt ${b.id}#${luot}`, false))) {
         dungSom = { id: b.id, luot, nhanh, loi: String(g.err ?? "chữ rỗng").slice(0, 200), luc: new Date().toISOString() };
         break;
