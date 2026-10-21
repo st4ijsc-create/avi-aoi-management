@@ -107,7 +107,7 @@ async function layDb() {
 
 /** Tạo (hoặc `ghiDe` — thay giá trị) một bí mật. Trả thông tin KHÔNG có giá trị. */
 export async function taoBiMat(
-  y: { id: string; ten: string; loai: string; giaTri: string; ghiDe?: boolean },
+  y: { id: string; ten: string; loai: string; giaTri: string; ghiDe?: boolean; /** Đợt 9 — phạm vi nhà máy (vắng/NULL = toàn hệ thống: chỉ admin dùng). */ factoryId?: number | null },
   userId: number | null,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ id: string; ten: string; loai: string; phienBanKhoa: number }> {
@@ -117,10 +117,10 @@ export async function taoBiMat(
   kiemGiaTri(y.loai, y.giaTri);
   const m = maHoa(y.id, y.giaTri, env);
   const db = await layDb();
-  const hang = { id: y.id, ten, loai: y.loai, ...m, createdBy: userId };
+  const hang = { id: y.id, ten, loai: y.loai, ...m, createdBy: userId, factoryId: y.factoryId ?? null };
   const q = db.insert(aiFlowCredentials).values(hang);
   const ra = y.ghiDe
-    ? await q.onConflictDoUpdate({ target: aiFlowCredentials.id, set: { ten, loai: y.loai, ...m, createdBy: userId } }).returning({ id: aiFlowCredentials.id })
+    ? await q.onConflictDoUpdate({ target: aiFlowCredentials.id, set: { ten, loai: y.loai, ...m, createdBy: userId, ...(y.factoryId !== undefined ? { factoryId: y.factoryId } : {}) } }).returning({ id: aiFlowCredentials.id })
     : await q.onConflictDoNothing().returning({ id: aiFlowCredentials.id });
   if (!ra.length) throw new LoiBiMat("DA_CO", `bí mật '${y.id}' đã có`);
   return { id: y.id, ten, loai: y.loai, phienBanKhoa: m.phienBanKhoa };

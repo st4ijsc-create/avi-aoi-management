@@ -20,7 +20,7 @@ import { getDb } from "../../db/connection";
 import { THU_TU_HANG, kiemLuong, luongConCuaNut, type FlowDefinition, type HangTacDungPhu } from "../../../shared/flow/model";
 import type { ItemLuong } from "../../../shared/flow/bieuThuc";
 import { layNut, type KetQuaChay, type NguCanhChay, type VetModel, type YeuCauCho } from "./dangKyNut";
-import { bienTheBiMat, cheBiMat, cheSau, giaiMaChoChay } from "./biMat";
+import { LoiBiMat, bienTheBiMat, cheBiMat, cheSau, giaiMaChoChay } from "./biMat";
 import "./nut";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -276,6 +276,9 @@ export async function thucThi(def: FlowDefinition, ngu: NguCanhChay): Promise<Ke
   if (!loai) throw new LoiLuong("LOAI_NODE_MAT", `loại node '${nut.type}' không còn đăng ký`);
   if (!nut.credentialRef) return loai.chay(nut.parameters ?? {}, ngu);
   if (!loai.nhanBiMat) throw new LoiLuong("LUONG_KHONG_HOP_LE", `loại node '${nut.type}' không nhận bí mật`);
+  // Đợt 9 (IDOR) — bí mật phải thuộc phạm vi CHỦ LƯỢT (NULL = toàn hệ thống ⇒ chỉ admin). Vắng bộ kiểm / ngoài phạm vi ⇒ cùng câu với
+  // "không có bí mật" (LoiBiMat KHONG_CO) — không lộ tồn tại, và KHÔNG giải mã.
+  if (!ngu.kiemPhamVi || !(await ngu.kiemPhamVi.biMat(nut.credentialRef))) throw new LoiBiMat("KHONG_CO", `không có bí mật '${nut.credentialRef}'`);
   const bm = await giaiMaChoChay(nut.credentialRef);
   const bienThe = bienTheBiMat(bm.giaTri, bm.loai);
   ghiBienThe(ngu.idempotencyKey, bienThe);

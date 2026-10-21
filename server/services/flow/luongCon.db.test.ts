@@ -19,9 +19,13 @@ import { getDb } from "../../db/connection";
 import { aiFlowRuns, aiFlowSteps, aiFlows } from "../../../drizzle/schema";
 import { flowRouter } from "../../routers/flowRouter";
 import { batDauBuoc, batDauRun, chayMotMuc, nhatMuc, thucThi, ketThucBuoc, traLoiCho } from "./dongCo";
+import { BO_KIEM_CHO_QUA, __datBoKiemChuLuongChoTest } from "./boKiemPhamVi";
 import { datHamGoiAgent, type HamGoiAgent } from "./nut/agent";
 
 const TT = "t84lc";
+// Lưới này kiểm luồng con / agent qua động cơ, KHÔNG phải phạm vi ⇒ cho-qua-hết; phạm vi thật: flowPhamViLuong.db.test.ts
+beforeAll(() => __datBoKiemChuLuongChoTest(async () => BO_KIEM_CHO_QUA));
+afterAll(() => __datBoKiemChuLuongChoTest(null));
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}) => ({ id, type, typeVersion: 1, name: id, position: [0, 0], parameters });
 const noi = (a: string, b: string, pa = "main") => ({ from: { node: a, port: pa }, to: { node: b, port: "main" } });
 const def = (id: string, nodes: unknown[], connections: unknown[]) => ({ id: `${TT}-${id}`, name: id, version: 1, nodes, connections });

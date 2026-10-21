@@ -16,7 +16,7 @@ import { LoiNgoaiPhamVi, NUT_CHAY_THAT, NUT_KHONG_THAM_CHIEU, NUT_XEM_TRUOC, THA
 /** Bộ kiểm giả: chỉ máy trong tập được phép. */
 const boKiem = (...cho: number[]): BoKiemPhamVi & { hoi: number[] } => {
   const hoi: number[] = [];
-  return { hoi, may: async (id) => (hoi.push(id), cho.includes(id)) };
+  return { hoi, may: async (id) => (hoi.push(id), cho.includes(id)), biMat: async () => false, luong: async () => false };
 };
 
 const nut = (type: string, parameters: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({

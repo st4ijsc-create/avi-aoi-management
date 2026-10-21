@@ -11,6 +11,10 @@ import type { KhaiBaoNut } from "../../../shared/flow/model";
  */
 export interface BoKiemPhamVi {
   may(id: number): Promise<boolean>;
+  /** Bí mật (`credentialRef`) tồn tại và thuộc phạm vi (NULL = toàn hệ thống ⇒ chỉ phạm vi "tất cả"). */
+  biMat(id: string): Promise<boolean>;
+  /** Luồng (luồng con / tool agent) tồn tại và thuộc phạm vi. */
+  luong(flowId: string): Promise<boolean>;
 }
 
 /**

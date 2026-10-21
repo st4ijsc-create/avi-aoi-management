@@ -37,6 +37,8 @@ export function nutVaoLuongCon(def: FlowDefinition, uuTien: readonly string[] = 
  */
 export async function kiemGoiLuongCon(ngu: NguCanhChay, flowIdCon: string): Promise<{ version: number; hang: HangTacDungPhu; nutVao: string; def: FlowDefinition }> {
   const { chuoiLuotCha, hangDu, hangPhienBan, phienBanHoatDong } = await import("../dongCo");
+  // Đợt 9 (IDOR) — luồng con phải thuộc phạm vi CHỦ LƯỢT; vắng bộ kiểm / ngoài phạm vi ⇒ cùng câu với "không tồn tại" (không lộ).
+  if (!ngu.kiemPhamVi || !(await ngu.kiemPhamVi.luong(flowIdCon))) throw new LoiLuongCon(`luồng con '${flowIdCon}' không tồn tại hoặc chưa có phiên bản hoạt động`);
   const con = await phienBanHoatDong(flowIdCon);
   if (!con) throw new LoiLuongCon(`luồng con '${flowIdCon}' không tồn tại hoặc chưa có phiên bản hoạt động`);
   const hangCha = ngu.version ? await hangPhienBan(ngu.flowId, ngu.version) : null;
