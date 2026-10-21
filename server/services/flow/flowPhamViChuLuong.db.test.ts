@@ -36,6 +36,7 @@ let goiNguon: number[] = [];
 
 const luongDoc = (id: string) => ({
   id, name: "đọc tag", version: 1,
+  settings: { maxConcurrentRuns: 100 }, // M5: nhiều lượt cùng chưa xong — mặc định maxConcurrentRuns=1 sẽ từ chối
   nodes: [nut("t", "kich-hoat.thu-cong"), nut("d", "ot.doc-tag", { may: "{{ $json.may }}", tag: "t1" })],
   connections: [noi("t", "d")],
 });
@@ -199,6 +200,7 @@ describe("chạy THẬT — phạm vi theo CHỦ LƯỢT (động cơ thật, DB
     });
     const def = {
       id: `${TT}-foe`, name: "đề xuất FOE", version: 1,
+      settings: { maxConcurrentRuns: 100 }, // M5: nhiều lượt cùng chưa xong — mặc định maxConcurrentRuns=1 sẽ từ chối
       nodes: [nut("t", "kich-hoat.thu-cong"), nut("d", "ot.de-xuat-luong", { workflowId: "{{ $json.w }}", version: 1 })],
       connections: [noi("t", "d")],
     };
@@ -218,6 +220,7 @@ describe("BẬT luồng — kiểm tham chiếu TĨNH so với phạm vi ngườ
   const goi = (id: number, role = "engineer") => flowRouter.createCaller({ user: { id, role } } as never);
   const luongTinh = (id: string, may: unknown) => ({
     id, name: "tĩnh", version: 1,
+    settings: { maxConcurrentRuns: 100 }, // M5: nhiều lượt cùng chưa xong — mặc định maxConcurrentRuns=1 sẽ từ chối
     nodes: [nut("t", "kich-hoat.thu-cong"), nut("d", "ot.doc-tag", { may, tag: "t1" })],
     connections: [noi("t", "d")],
   });
