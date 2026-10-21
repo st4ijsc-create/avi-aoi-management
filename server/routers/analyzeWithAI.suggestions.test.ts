@@ -99,7 +99,7 @@ afterAll(async () => {
   if (inspectionId) {
     await db.delete(aiSuggestions).where(eq(aiSuggestions.inspectionId, inspectionId));
     await db.delete(measurementResults).where(eq(measurementResults.inspectionId, inspectionId));
-    await db.delete(productInspections).where(like(productInspections.serialNumber, `${SERIAL_PREFIX}%`));
+    // product_inspections / audit_logs là bảng WORM (mig 0224/0279): avi_app KHÔNG có DELETE ⇒ KHÔNG dọn. Hàng sót vô hại — mọi truy vấn lọc theo tiền tố/serial riêng của lượt chạy.
   }
   await db.delete(measurementPointDefs).where(like(measurementPointDefs.code, `${SERIAL_PREFIX}%`));
 });

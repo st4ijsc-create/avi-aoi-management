@@ -49,9 +49,7 @@ afterAll(async () => {
     if (machineId) {
       await d.delete(aoiCommissioningRecords).where(eq(aoiCommissioningRecords.machineId, machineId));
     }
-    for (const id of inspectionIds) {
-      await d.delete(productInspections).where(eq(productInspections.id, id));
-    }
+    // product_inspections / audit_logs là bảng WORM (mig 0224/0279): avi_app KHÔNG có DELETE ⇒ KHÔNG dọn. Hàng sót vô hại — mọi truy vấn lọc theo tiền tố/serial riêng của lượt chạy.
   }
   if (machineId) await db.deleteMachine(machineId);
   invalidateAoiCommissioningCache();

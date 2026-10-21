@@ -114,7 +114,7 @@ describe("runRetentionOnce against the isolated test DB", () => {
       sql`DELETE FROM measurement_results WHERE "inspectionId" IN
           (SELECT id FROM product_inspections WHERE "serialNumber" LIKE ${MARKER + "%"})`,
     );
-    await db.execute(sql`DELETE FROM product_inspections WHERE "serialNumber" LIKE ${MARKER + "%"}`);
+    // product_inspections / audit_logs là bảng WORM (mig 0224/0279): avi_app KHÔNG có DELETE ⇒ KHÔNG dọn. Hàng sót vô hại — mọi truy vấn lọc theo tiền tố/serial riêng của lượt chạy.
   }
 
   beforeAll(async () => {
@@ -137,10 +137,21 @@ describe("runRetentionOnce against the isolated test DB", () => {
     await fs.promises.rm(tmpUploads, { recursive: true, force: true }).catch(() => {});
   });
 
-  it("getNativeRetentionTables is an empty set on plain PostgreSQL", async () => {
+  it("getNativeRetentionTables returns exactly the hypertables with an active native retention policy (empty on plain PostgreSQL)", async () => {
     const set = await getNativeRetentionTables(db);
     expect(set).toBeInstanceOf(Set);
-    expect(set.size).toBe(0); // test DB has no timescaledb → no native policies
+    // The test DB is a CLONE of dev (Timescale + mig 0173 policies), so the expected set is read from the
+    // catalog independently of the function under test; where the catalog is absent it must be empty.
+    let expected: string[] = [];
+    try {
+      const rows = (await db.execute(
+        sql`SELECT hypertable_name FROM timescaledb_information.jobs WHERE proc_name = 'policy_retention'`,
+      )) as unknown as Array<{ hypertable_name: string }>;
+      expected = rows.map((r) => r.hypertable_name);
+    } catch {
+      expected = [];
+    }
+    expect([...set].sort()).toEqual([...new Set(expected)].sort());
   });
 
   it("prunes >365d rows from log tables and keeps fresh rows", async () => {

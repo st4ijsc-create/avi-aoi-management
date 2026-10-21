@@ -33,8 +33,14 @@ const ids = {
 describe.skipIf(!DB_URL)("W8-A package Pareto (0191 linkage chain, seeded)", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
-    // 0191 is idempotent — safe on a clone that already has it.
-    await sql.unsafe(fs.readFileSync(path.join(root, "drizzle", "0191_component_library_capabilities.sql"), "utf-8"));
+    // Migration 0191 phải ĐÃ có trong DB test (clone của dev: `node scripts/setup-test-db.mjs`). avi_app là vai
+    // least-privilege (mig 0224) KHÔNG được CREATE/ALTER ⇒ áp migration từ trong test chỉ nổ "permission denied
+    // for schema public". Thiếu ⇒ FAIL nói rõ lệnh dựng (không skip: skip = xanh giả).
+    const [pre] = await sql`SELECT to_regclass('public.component_packages') AS pk,
+      (SELECT count(*)::int FROM information_schema.columns WHERE table_name = 'materials' AND column_name = 'packageId') AS col`;
+    if (!pre.pk || Number(pre.col) !== 1) {
+      throw new Error("DB test thiếu migration 0191 (component_packages / materials.packageId) — chạy: node scripts/setup-test-db.mjs");
+    }
 
     // Scratch hierarchy chain (unique codes — clone content must not collide).
     const [f] = await sql`INSERT INTO factories (code, name) VALUES (${"F-" + RUN}, 'W8A pareto factory') RETURNING id`;
@@ -105,17 +111,13 @@ describe.skipIf(!DB_URL)("W8-A package Pareto (0191 linkage chain, seeded)", () 
   afterAll(async () => {
     try {
       if (ids.results.length) await sql`DELETE FROM measurement_results WHERE id IN ${sql(ids.results)}`;
-      if (ids.inspection) await sql`DELETE FROM product_inspections WHERE id = ${ids.inspection}`;
       await sql`DELETE FROM measurement_point_defs WHERE id IN ${sql([ids.pointLinked, ids.pointNoCode, ids.pointNoMaterial, ids.pointNoPkg].filter(Boolean))}`;
       if (ids.material) await sql`DELETE FROM materials WHERE id = ${ids.material}`;
       if (ids.materialNoPkg) await sql`DELETE FROM materials WHERE id = ${ids.materialNoPkg}`;
       if (ids.pkg) await sql`DELETE FROM component_packages WHERE id = ${ids.pkg}`;
-      if (ids.product) await sql`DELETE FROM product_models WHERE id = ${ids.product}`;
-      if (ids.machine) await sql`DELETE FROM machines WHERE id = ${ids.machine}`;
-      if (ids.station) await sql`DELETE FROM stations WHERE id = ${ids.station}`;
-      if (ids.line) await sql`DELETE FROM production_lines WHERE id = ${ids.line}`;
-      if (ids.workshop) await sql`DELETE FROM workshops WHERE id = ${ids.workshop}`;
-      if (ids.factory) await sql`DELETE FROM factories WHERE id = ${ids.factory}`;
+      // product_inspections là bảng WORM (mig 0224/0279): avi_app KHÔNG có DELETE ⇒ hàng thanh tra của lượt này ở lại,
+      // và nó giữ máy/chuyền/xưởng/nhà máy/sản phẩm (FK RESTRICT) ⇒ KHÔNG xoá chuỗi cha. Mã định danh có RUN riêng
+      // theo lượt nên hàng sót vô hại.
     } finally {
       await sql?.end();
     }

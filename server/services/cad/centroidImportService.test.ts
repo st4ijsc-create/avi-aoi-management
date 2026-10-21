@@ -160,11 +160,14 @@ const COLUMN_MAP = {
 describe.skipIf(!DB_URL)("centroid import — commit → apply lifecycle (seeded)", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
-    // Apply 0196 idempotently so this runs on a clone predating the migration
-    // (allows format='centroid' on cad_import_jobs).
-    const here = dirname(fileURLToPath(import.meta.url));
-    const migPath = join(here, "..", "..", "..", "drizzle", "0196_cad_import_centroid_format.sql");
-    await sql.unsafe(readFileSync(migPath, "utf-8"));
+    // Mig 0196 (cho phép format='centroid' trên cad_import_jobs) phải ĐÃ có trong DB test (clone của dev:
+    // `node scripts/setup-test-db.mjs`). avi_app KHÔNG phải chủ bảng ⇒ ALTER TABLE từ test nổ "must be owner".
+    // Thiếu ⇒ FAIL nói rõ lệnh dựng (không skip: skip = xanh giả).
+    const [pre] = await sql`
+      SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'chk_cad_import_jobs_format'`;
+    if (!pre || !String(pre.def).includes("centroid")) {
+      throw new Error("DB test thiếu migration 0196 (chk_cad_import_jobs_format chưa cho 'centroid') — chạy: node scripts/setup-test-db.mjs");
+    }
     const [p] = await sql`
       INSERT INTO product_models (code, name, "lifecycleStatus", "coordinateMode", "imageWidth", "imageHeight")
       VALUES (${"PC-" + RUN}, 'Centroid product', 'development', 'pixel', 1000, 800)

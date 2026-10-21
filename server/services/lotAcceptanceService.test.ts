@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { appRouter } from "../routers";
 import * as db from "../db";
+import { issueMachineKey } from "./machineAuthService";
 import {
   productInspections,
   measurementResults,
@@ -72,7 +73,7 @@ describe("decideDisposition", () => {
 
 // ── DB integration ────────────────────────────────────────────────────────────
 const STAMP = Date.now();
-const API_KEY = `OP5-${STAMP}`;
+let API_KEY = ""; // khoá mk_ cấp trong beforeAll
 const MODEL_CODE = `OP5_MODEL_${STAMP}`;
 const ACCEPT_BATCH = `LOT_ACC_${STAMP}`;
 const REJECT_BATCH = `LOT_REJ_${STAMP}`;
@@ -103,8 +104,12 @@ function caller() {
 
 beforeAll(async () => {
   machineId = await db.createMachine({
-    stationId: 1, code: `OP5-${STAMP}`, name: "OP5 lot-accept test", machineType: "AOI", apiKey: API_KEY, isActive: true,
+    stationId: 1, code: `OP5-${STAMP}`, name: "OP5 lot-accept test", machineType: "AOI", isActive: true,
   });
+  // Đường xác thực MẠNH hiện hành (doc 51-P0): khoá riêng mk_ của máy, KHÔNG phải shared-key trên cột machines.apiKey
+  // (MachineAuth từ chối đường yếu — cờ không được nới).
+  const cred = await issueMachineKey({ machineId, name: `op5-lot-${STAMP}`, scopes: ["ingest:write"] });
+  API_KEY = cred.plaintextKey;
   productModelId = await db.createProductModel({ code: MODEL_CODE, name: "OP5 test model" });
   planId = await db.createSamplingPlan({
     productModelId, code: `AQL-${STAMP}`, name: "AQL c=0 n=5", strategy: "aql",
@@ -122,7 +127,7 @@ afterAll(async () => {
   if (d) {
     if (inspectionIds.length) {
       await d.delete(measurementResults).where(inArray(measurementResults.inspectionId, inspectionIds));
-      await d.delete(productInspections).where(inArray(productInspections.id, inspectionIds));
+      // product_inspections là bảng WORM (mig 0224/0279): avi_app KHÔNG có DELETE ⇒ hàng của lượt này ở lại (serial/mã có STAMP riêng).
     }
     if (planId) await d.delete(samplingPlans).where(eq(samplingPlans.id, planId));
   }

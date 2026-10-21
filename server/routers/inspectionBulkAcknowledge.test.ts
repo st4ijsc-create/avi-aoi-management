@@ -67,10 +67,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!db) return;
-  await db.delete(productInspections).where(like(productInspections.serialNumber, `${SERIAL_PREFIX}%`));
-  await db
-    .delete(auditLogs)
-    .where(and(eq(auditLogs.action, "inspection.bulkAcknowledge"), inArray(auditLogs.userId, [TEST_USER_ID, OTHER_USER_ID])));
+  // product_inspections / audit_logs là bảng WORM (mig 0224/0279): avi_app KHÔNG có DELETE ⇒ KHÔNG dọn. Hàng sót vô hại — mọi truy vấn lọc theo tiền tố/serial riêng của lượt chạy.
 });
 
 describe("inspection.bulkAcknowledge (integration, isolated test DB)", () => {

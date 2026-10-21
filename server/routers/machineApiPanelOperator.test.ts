@@ -73,9 +73,7 @@ beforeAll(async () => {
 afterAll(async () => {
   const d = await getDb();
   if (d) {
-    if (inspectionIds.length > 0) {
-      await d.delete(productInspections).where(inArray(productInspections.id, inspectionIds));
-    }
+    // product_inspections / audit_logs là bảng WORM (mig 0224/0279): avi_app KHÔNG có DELETE ⇒ KHÔNG dọn. Hàng sót vô hại — mọi truy vấn lọc theo tiền tố/serial riêng của lượt chạy.
     await d.delete(operatorBadges).where(like(operatorBadges.badgeCode, `W8B-%-${STAMP}`));
     await d.delete(users).where(eq(users.id, operatorUser));
   }
