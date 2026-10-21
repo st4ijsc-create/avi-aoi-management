@@ -1,0 +1,120 @@
+{"cauHoi":"Viết báo cáo tổng hợp tuần 42 từ các báo cáo ca sau: ca 1 đạt 98 % kế hoạch, ca 2 đạt 92 % do dừng máy in 35 phút, ca 3 đạt 95 %, tổng phế 11 bo.","vaiTro":"summarize"}
+{"cauHoi":"Giải thích nguyên lý đo 3D của máy SPI.","vaiTro":"chat"}
+{"cauHoi":"Can you condense the following supplier audit report into key findings and recommendations, one paragraph each?","vaiTro":"summarize"}
+{"cauHoi":"Mình có file Excel tồn kho linh kiện, viết Python pandas lọc mã có tồn < min stock rồi xuất ra file mới.","vaiTro":"code.software"}
+{"cauHoi":"Nhà máy nhỏ khoảng 3 line SMT có nên đầu tư MES không? tư vấn giúp","vaiTro":"chat"}
+{"cauHoi":"Làm giúp bản executive summary tối đa 150 từ cho báo cáo 8D sau về lỗi tụ cắm ngược cực ở trạm THT-04.","vaiTro":"summarize"}
+{"cauHoi":"Write a Python script that parses AOI CSV result files in a folder and outputs the defect count per board serial.","vaiTro":"code.software"}
+{"cauHoi":"Script PowerShell xoá ảnh AOI cũ hơn 90 ngày trong D:\\AOI\\Images nhưng giữ lại ảnh NG.","vaiTro":"code.software"}
+{"cauHoi":"code CTU đếm sp lỗi AOI, quá 5 con trong 1 giờ thì dừng line. viết ST nhé","vaiTro":"code.plc"}
+{"cauHoi":"Viết script Python dùng pymodbus đọc thanh ghi 40001–40010 từ PLC rồi ghi vào bảng PostgreSQL mỗi 5 giây.","vaiTro":"code.software","kho":true}
+{"cauHoi":"How many boards passed AOI today?","vaiTro":"chat.ops"}
+{"cauHoi":"Parse đoạn log PLC sau thành JSON gồm timestamp, alarm_code, message: \"10/20/2026 22:14:05 ALM 1043 ON Conveyor jam at T2\"","vaiTro":"extract","kho":true}
+{"cauHoi":"Cpk bao nhiêu thì được coi là quy trình ổn định?","vaiTro":"chat"}
+{"cauHoi":"OEE là gì và tính thế nào?","vaiTro":"chat"}
+{"cauHoi":"Any open NCRs this week?","vaiTro":"chat.ops"}
+{"cauHoi":"Viết API Express GET /api/machines/:id/oee trả về OEE ca hiện tại lấy từ bảng oee_shift.","vaiTro":"code.software"}
+{"cauHoi":"Tạo FB PID đơn giản bằng ST điều khiển nhiệt độ bể thiếc máy hàn sóng, giới hạn output 0–100 %, có chống bão hoà tích phân.","vaiTro":"code.plc"}
+{"cauHoi":"Fix the off-by-one bug in this JS loop: for (let i = 0; i <= arr.length; i++) total += arr[i];","vaiTro":"code.software"}
+{"cauHoi":"Tối ưu câu query này đang chạy 12 giây: SELECT * FROM inspections WHERE date(created_at) = '2026-10-20'","vaiTro":"code.software"}
+{"cauHoi":"Viết biên bản tóm tắt cuộc họp từ bản ghi âm đã chuyển thành văn bản sau, chỉ giữ quyết định và việc cần làm.","vaiTro":"summarize"}
+{"cauHoi":"Summarize this customer complaint email in 3 sentences: \"We found solder bridges on U12 on 37 pcs out of 1,200 from lot HB2610-07. Please send an 8D report by Oct 24 and replace the defective units. Remaining stock is on hold.\"","vaiTro":"summarize"}
+{"cauHoi":"tom tat giup minh bao cao ca dem nay: ke hoach 2400, thuc te 2215, dung may 55 phut, 41 bo NG sau sua con 3 bo phe","vaiTro":"summarize"}
+{"cauHoi":"Cách giảm voiding khi hàn BGA?","vaiTro":"chat"}
+{"cauHoi":"Viết chương trình điều khiển trình tự 4 bước cho máy dán băng keo: kẹp → dán → cắt → nhả, mỗi bước có cảm biến xác nhận, ngôn ngữ ST hoặc SFC.","vaiTro":"code.plc"}
+{"cauHoi":"Viết function block dùng TON trễ 3 giây bật đèn báo khi cảm biến nhiệt vùng reflow vượt 250 độ.","vaiTro":"code.plc"}
+{"cauHoi":"IEC 61131-3 có mấy ngôn ngữ lập trình?","vaiTro":"chat","kho":true}
+{"cauHoi":"MSL level 3 nghĩa là gì, linh kiện mở túi để ngoài được bao lâu?","vaiTro":"chat"}
+{"cauHoi":"Viết logic interlock cho cửa an toàn máy AOI: mở cửa thì cấm chạy trục X/Y, đóng cửa lại phải nhấn Reset mới cho chạy. Dùng ST cho Siemens S7-1200.","vaiTro":"code.plc"}
+{"cauHoi":"Từ biên bản họp dưới đây, liệt kê các action item kèm người phụ trách và deadline dạng JSON.","vaiTro":"extract","kho":true}
+{"cauHoi":"Từ hoá đơn này lấy ra số hoá đơn, ngày, tổng tiền trước thuế và tiền VAT.","vaiTro":"extract"}
+{"cauHoi":"Chuyển danh sách linh kiện thiếu trong tin nhắn này thành bảng 2 cột mã – số lượng: \"thiếu 0402 10k 3 reel, 0603 1uF 2 reel, LDO AMS1117 500 con\"","vaiTro":"extract"}
+{"cauHoi":"Tỷ lệ false call AOI line 1 hôm nay?","vaiTro":"chat.ops"}
+{"cauHoi":"Nhiệt độ độ ẩm phòng SMT hiện tại?","vaiTro":"chat.ops"}
+{"cauHoi":"sửa lỗi TypeError: Cannot read properties of undefined (reading 'map') trong component React DefectTable khi API chưa trả dữ liệu","vaiTro":"code.software"}
+{"cauHoi":"ca 3 hôm nay ai trực?","vaiTro":"chat.ops"}
+{"cauHoi":"Line 2 dang chay hay dung?","vaiTro":"chat.ops"}
+{"cauHoi":"Rút gọn báo cáo sự cố dừng line SMT3 này còn 1 đoạn để gửi giám đốc.","vaiTro":"summarize"}
+{"cauHoi":"C# WinForms: viết hàm đọc mã vạch từ cổng COM3 và hiển thị lên textbox.","vaiTro":"code.software"}
+{"cauHoi":"Feeder nào sắp hết linh kiện?","vaiTro":"chat.ops"}
+{"cauHoi":"Viết endpoint FastAPI nhận ảnh upload từ máy AOI, lưu vào thư mục theo ngày và trả về id.","vaiTro":"code.software"}
+{"cauHoi":"Lấy ra tất cả mã lỗi xuất hiện trong log dưới đây, trả về dạng danh sách JSON, không cần nhận xét: ALM 1043 ON ... ALM 2201 ON ... ALM 1043 ON","vaiTro":"extract","kho":true}
+{"cauHoi":"What's the current yield on line 3?","vaiTro":"chat.ops"}
+{"cauHoi":"sản lượng line 4 tới giờ được bao nhiêu","vaiTro":"chat.ops"}
+{"cauHoi":"Lấy thông số profile reflow (nhiệt độ từng zone, tốc độ băng tải, peak, TAL) từ đoạn văn bản này ra bảng.","vaiTro":"extract"}
+{"cauHoi":"Tóm lại giúp kết quả kiểm tra FAI mẫu mới dưới đây, nhìn tổng thể là ổn hay không và vướng ở đâu.","vaiTro":"summarize"}
+{"cauHoi":"Đoạn code này làm gì vậy, giải thích giúp: rtStart(CLK := bStartBtn); IF rtStart.Q THEN iCount := iCount + 1; END_IF","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Đoạn ST này báo lỗi biên dịch \"Expression expected\" ở dòng CASE, sửa giúp: CASE iStep OF 0: bStart := TRUE 1: bRun := TRUE; END_CASE","vaiTro":"code.plc"}
+{"cauHoi":"Điền form JSON {model, line, ngay, so_luong_ng} từ báo cáo ca sau: \"Ca 2 ngày 19/10 line SMT1 chạy model IOT-GW-220, AOI NG 41 bo.\"","vaiTro":"extract"}
+{"cauHoi":"sửa giúp đoạn ladder này, coil Q0.1 không bao giờ tắt: |--[ I0.0 ]--+--( Q0.1 )--|  |--[ Q0.1 ]--+  (nút stop I0.1 chưa thấy nối vào đâu)","vaiTro":"code.plc"}
+{"cauHoi":"Gom 20 phản hồi của công nhân dưới đây thành các nhóm vấn đề chính rồi tóm lại mỗi nhóm một câu.","vaiTro":"summarize"}
+{"cauHoi":"Mình cần một FB chống dội phím (debounce) 50 ms cho nút nhấn, viết bằng ST trên Omron Sysmac được không","vaiTro":"code.plc"}
+{"cauHoi":"Lấy ngày hiệu chuẩn gần nhất và ngày hết hạn của từng thiết bị đo trong danh sách sau.","vaiTro":"extract"}
+{"cauHoi":"Có cảnh báo nào chưa xử lý không?","vaiTro":"chat.ops"}
+{"cauHoi":"viet ham ST tinh trung binh truot 10 mau nhiet do lo reflow, dung mang vong","vaiTro":"code.plc"}
+{"cauHoi":"Viết cron job Node chạy 6h sáng gửi email báo cáo sản lượng ca đêm cho quản lý.","vaiTro":"code.software"}
+{"cauHoi":"PLC máy hàn sóng đang online không?","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"OEE ca này bao nhiêu?","vaiTro":"chat.ops"}
+{"cauHoi":"Viết báo cáo tháng 9 của bộ phận bảo trì từ danh sách phiếu bảo trì sau, nêu tổng giờ dừng và các máy hỏng nhiều nhất.","vaiTro":"summarize"}
+{"cauHoi":"Tồn kho kem hàn còn bao nhiêu hũ?","vaiTro":"chat.ops"}
+{"cauHoi":"TL;DR cái thread email này với khách hàng về lô hàng giao trễ giúp mình, sếp cần trong 5 phút","vaiTro":"summarize"}
+{"cauHoi":"Please refactor this ST code to use an array instead of 8 separate BOOL variables bSensor1..bSensor8 and loop over them.","vaiTro":"code.plc"}
+{"cauHoi":"Tóm tắt các lỗi chính trong đoạn log AOI dưới đây cho mình biết tình hình chung: 06:02 NG MISSING C45 / 06:03 NG BRIDGE U7 / 06:04 WARN CAMERA TEMP 58C / 06:05 NG SHIFT R102 / 06:07 NG BRIDGE U7","vaiTro":"summarize","kho":true}
+{"cauHoi":"What's the difference between Modbus TCP and OPC UA?","vaiTro":"chat","kho":true}
+{"cauHoi":"Extract every temperature reading with its timestamp from these sensor logs into a table.","vaiTro":"extract"}
+{"cauHoi":"Độ ẩm phòng SMT nên giữ trong khoảng nào, tại sao?","vaiTro":"chat"}
+{"cauHoi":"tóm tắt ngắn gọn tài liệu hướng dẫn vận hành máy in kem mình dán dưới đây cho công nhân mới đọc","vaiTro":"summarize"}
+{"cauHoi":"Đọc báo cáo audit của khách hàng bên dưới và cho mình bức tranh tổng quan là họ không hài lòng ở những mảng nào.","vaiTro":"summarize","kho":true}
+{"cauHoi":"Từ BOM dán dưới đây, liệt kê các vị trí (designator) dùng linh kiện package 0402.","vaiTro":"extract"}
+{"cauHoi":"Viết code JavaScript cho function node Node-RED chuyển payload MQTT từ máy hàn sang JSON chuẩn {machine, temp, ts}.","vaiTro":"code.software","kho":true}
+{"cauHoi":"Tổng kết những gì đã làm trong dự án giảm false call AOI quý 3 từ ghi chú sau thành báo cáo 1 trang.","vaiTro":"summarize"}
+{"cauHoi":"Ladder với Structured Text thì khi nào nên dùng cái nào?","vaiTro":"chat","kho":true}
+{"cauHoi":"Viết đoạn ST để PLC đóng gói sản lượng ca vào mảng thanh ghi và gửi lên server qua Modbus TCP (dùng thư viện của CODESYS).","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Rút từ phiếu bảo trì: mã máy, hạng mục thay thế, thời gian dừng (phút), kỹ thuật viên.","vaiTro":"extract"}
+{"cauHoi":"Top 3 lỗi AOI ca sáng nay?","vaiTro":"chat.ops"}
+{"cauHoi":"Từ phiếu NCR này điền giúp các trường: số NCR, mã sản phẩm, số lượng lỗi, nguyên nhân, người lập.","vaiTro":"extract"}
+{"cauHoi":"Đọc datasheet tụ này và lấy ra điện dung, điện áp định mức, package, dải nhiệt độ làm việc.","vaiTro":"extract"}
+{"cauHoi":"Viết chương trình ST cho băng tải: nhấn Start thì chạy, nhấn Stop hoặc có lỗi quá tải thì dừng, có tự giữ.","vaiTro":"code.plc"}
+{"cauHoi":"Tại sao xuất hiện lỗi tombstone khi hàn reflow?","vaiTro":"chat"}
+{"cauHoi":"Câu SQL lấy top 10 mã lỗi AOI nhiều nhất tuần trước theo từng line, PostgreSQL.","vaiTro":"code.software"}
+{"cauHoi":"Trích mã lỗi, thời gian và tên máy từ log sau thành bảng: \"2026-10-20 06:02:43 [AOI-L1] NG MISSING C45; 2026-10-20 06:03:15 [AOI-L2] NG BRIDGE U7\"","vaiTro":"extract"}
+{"cauHoi":"Refactor this function for readability and split it into 3 smaller functions: function process(d){let r=[];for(const x of d){if(x.ok){r.push(x.v*2)}else{console.log(x)}};return r.sort()}","vaiTro":"code.software"}
+{"cauHoi":"Pull out all serial numbers that failed ICT from the following text and return them as CSV.","vaiTro":"extract"}
+{"cauHoi":"Máy reflow 3 dừng từ lúc nào?","vaiTro":"chat.ops"}
+{"cauHoi":"CODESYS: viết state machine bằng ST cho bộ nạp magazine, các bước Idle, Load, Push, Unload, Error, có timeout mỗi bước 10 s.","vaiTro":"code.plc"}
+{"cauHoi":"Line SMT2 đang chạy model gì?","vaiTro":"chat.ops"}
+{"cauHoi":"Viết ứng dụng C# dùng thư viện S7.Net đọc DB1 từ PLC S7-1500 rồi hiển thị lên dashboard WPF.","vaiTro":"code.software","kho":true}
+{"cauHoi":"Hôm nay có máy nào đang bảo trì không?","vaiTro":"chat.ops"}
+{"cauHoi":"What is the difference between AOI and AXI?","vaiTro":"chat"}
+{"cauHoi":"Timer TON và TOF khác nhau thế nào?","vaiTro":"chat","kho":true}
+{"cauHoi":"Trong email khiếu nại này, khách nêu những mã sản phẩm và số lô nào? Liệt kê dạng bảng.","vaiTro":"extract"}
+{"cauHoi":"Viết ladder cho đèn tháp 3 màu: xanh khi chạy, vàng khi cảnh báo, đỏ khi lỗi, đỏ nhấp nháy 1 Hz khi nhấn E-stop.","vaiTro":"code.plc"}
+{"cauHoi":"Explain what a false call is in AOI inspection.","vaiTro":"chat"}
+{"cauHoi":"Nên học ngôn ngữ lập trình nào để làm tự động hoá nhà máy?","vaiTro":"chat","kho":true}
+{"cauHoi":"Tóm tắt lịch sử sửa chữa máy Yamaha YSM20 từ các phiếu sau để mình nắm nhanh trước buổi họp.","vaiTro":"summarize"}
+{"cauHoi":"Dockerfile cho app Node 20 có bước build Vite, chạy cổng 3000.","vaiTro":"code.software"}
+{"cauHoi":"Tóm tắt biên bản họp chất lượng sáng nay thành 5 gạch đầu dòng: \"Họp lúc 8h, QA báo false call AOI line 3 tăng lên 4,8 %, PE nhận tối ưu thư viện, bảo trì thay đèn camera, sản xuất đào tạo lại trạm sửa lỗi, hẹn họp lại thứ Sáu.\"","vaiTro":"summarize"}
+{"cauHoi":"Lệnh sản xuất WO-1023 xong chưa?","vaiTro":"chat.ops"}
+{"cauHoi":"Write a TypeScript function that groups alarm events by machine and returns the longest downtime per machine.","vaiTro":"code.software"}
+{"cauHoi":"trích sdt, tên khách, địa chỉ giao hàng từ email dưới","vaiTro":"extract"}
+{"cauHoi":"viet regex bat ma PCB dang PCB-2026-000123","vaiTro":"code.software"}
+{"cauHoi":"Tổng hợp lại các ý chính trong tin nhắn Zalo của tổ trưởng ca 2 hôm qua: \"ae chú ý feeder 12, 15 hay lỗi; 22h có xe; line 4 còn 640 con; ai nghỉ báo trước\"","vaiTro":"summarize"}
+{"cauHoi":"Quy trình 8D gồm những bước nào?","vaiTro":"chat"}
+{"cauHoi":"Split this barcode string into fields lot, date code, qty, part no: \"P12345-L2026A-D4123-Q500\"","vaiTro":"extract"}
+{"cauHoi":"Write an IEC 61131-3 Structured Text function block for a 3-state traffic light with configurable timers.","vaiTro":"code.plc"}
+{"cauHoi":"Trong TIA Portal viết giúp FB đếm số PCB qua cảm biến, đủ 50 tấm thì bật xi lanh đẩy và reset bộ đếm.","vaiTro":"code.plc"}
+{"cauHoi":"Viết unit test vitest cho hàm tinhOEE(availability, performance, quality).","vaiTro":"code.software"}
+{"cauHoi":"Giải thích từng dòng đoạn SCL này giúp mình: IF #Start AND NOT #Stop THEN #Motor := TRUE; ELSIF #Stop THEN #Motor := FALSE; END_IF;","vaiTro":"code.plc"}
+{"cauHoi":"Còn bao nhiêu tấm chờ kiểm AVI?","vaiTro":"chat.ops"}
+{"cauHoi":"Bảo trì dự phòng và bảo trì tiên đoán khác nhau thế nào?","vaiTro":"chat"}
+{"cauHoi":"Máy AOI nào đang báo lỗi?","vaiTro":"chat.ops"}
+{"cauHoi":"Chuyển đoạn ladder sau sang Structured Text giúp mình: rung 1: I0.0 AND NOT I0.1 -> M0.0 (tự giữ bằng M0.0); rung 2: M0.0 AND T1.Q -> Q0.0","vaiTro":"code.plc"}
+{"cauHoi":"Extract the PO number, delivery date, part numbers and quantities from this purchase order email as JSON.","vaiTro":"extract"}
+{"cauHoi":"Viết trigger PostgreSQL tự cập nhật cột updated_at khi sửa bảng work_orders.","vaiTro":"code.software"}
+{"cauHoi":"Từ thông báo thay đổi kỹ thuật ECN, trích các thay đổi: vị trí, linh kiện cũ, linh kiện mới, ngày hiệu lực.","vaiTro":"extract"}
+{"cauHoi":"Please write a short shift handover summary from these notes: line 2 feeder slot 12 keeps failing, 640 pcs left on RX-77, truck pickup at 22:00.","vaiTro":"summarize"}
+{"cauHoi":"Python có dùng để lập trình PLC được không?","vaiTro":"chat","kho":true}
+{"cauHoi":"Hãy tóm tắt nội dung phần yêu cầu mối hàn của IPC-A-610 mà mình dán bên dưới, khoảng nửa trang.","vaiTro":"summarize"}
+{"cauHoi":"Write a ladder rung for an emergency stop that latches a fault until the reset button is pressed.","vaiTro":"code.plc"}
+{"cauHoi":"phương pháp 5 Why khác gì biểu đồ xương cá","vaiTro":"chat"}
+{"cauHoi":"What does IPC-A-610 Class 3 mean?","vaiTro":"chat"}

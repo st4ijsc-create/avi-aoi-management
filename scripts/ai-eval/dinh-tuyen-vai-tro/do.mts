@@ -66,7 +66,9 @@ function cham(nguong: number, cach: number) {
 
 const kq = cham(NGUONG, CACH);
 console.log(`\n══ tầng 4 — ngưỡng ${NGUONG}, cách biệt ${CACH}, model ${path.basename(MODEL)} ══`);
-console.log(`đúng ${kq.dung}/${cau.length} = ${kq.dung} % · dưới ngưỡng (rơi về chat) ${kq.roi} · PLC→phần mềm ${kq.plcSangSw} · phần mềm→PLC ${kq.swSangPlc}`);
+const kho = cau.map((c, i) => [c, i] as const).filter(([c]) => (c as { kho?: boolean }).kho);
+const khoSai = kho.filter(([c]) => kq.sai.some((s) => s.includes(`] ${c.cauHoi} — `))).length;
+console.log(`đúng ${kq.dung}/${cau.length} = ${Math.round((100 * kq.dung) / cau.length)} %${kho.length ? ` · câu khó ${kho.length - khoSai}/${kho.length}` : ""} · dưới ngưỡng (rơi về chat) ${kq.roi} · PLC→phần mềm ${kq.plcSangSw} · phần mềm→PLC ${kq.swSangPlc}`);
 console.log("| vai trò | đúng |\n|---|---|");
 for (const [vt, v] of Object.entries(kq.theoVt)) console.log(`| ${vt} | ${v.dung}/${v.tong} |`);
 console.log("\nsai:\n" + kq.sai.map((s) => "  " + s).join("\n"));

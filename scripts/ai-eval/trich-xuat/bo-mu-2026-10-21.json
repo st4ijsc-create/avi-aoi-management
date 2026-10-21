@@ -1,0 +1,1700 @@
+[
+  {
+    "id": "tx-01",
+    "vanBan": "PHIẾU BẢO TRÌ SỐ: BT-2026-0871\nMáy: Máy gắp đặt linh kiện YSM20R (mã TB: SMT2-MNT-02)\nNgày: 14/10/2026, bắt đầu 08:15, kết thúc 10:40\nHiện tượng: đầu gắp số 3 hút trượt linh kiện 0201, tỷ lệ ném (drop) tăng lên 2,3%.\nCông việc: vệ sinh nozzle, thay 2 nozzle loại 301A, thay lọc khí đầu gắp.\nVật tư: Nozzle 301A x2; Lọc khí KHY-M7155 x1\nKTV thực hiện: Trần Văn Hùng\nXác nhận tổ trưởng: (chưa ký)",
+    "truong": [
+      {
+        "ten": "soPhieu",
+        "kieu": "chuoi",
+        "batBuoc": true,
+        "moTa": "Số phiếu bảo trì"
+      },
+      {
+        "ten": "maThietBi",
+        "kieu": "chuoi",
+        "batBuoc": true,
+        "moTa": "Mã thiết bị (mã TB)"
+      },
+      {
+        "ten": "ngay",
+        "kieu": "chuoi",
+        "moTa": "Ngày bảo trì, ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "thoiGianDungPhut",
+        "kieu": "so",
+        "moTa": "Số phút từ giờ bắt đầu đến giờ kết thúc"
+      },
+      {
+        "ten": "tyLeNemPhanTram",
+        "kieu": "so",
+        "moTa": "Tỷ lệ ném (drop) tính bằng %, chỉ lấy số"
+      },
+      {
+        "ten": "vatTu",
+        "kieu": "danh-sach",
+        "moTa": "Tên vật tư nguyên văn (không kèm phần \"xN\"), theo thứ tự"
+      },
+      {
+        "ten": "nguoiXacNhan",
+        "kieu": "chuoi",
+        "moTa": "Họ tên tổ trưởng xác nhận; null nếu không có"
+      }
+    ],
+    "dapAn": {
+      "soPhieu": "BT-2026-0871",
+      "maThietBi": "SMT2-MNT-02",
+      "ngay": "2026-10-14",
+      "thoiGianDungPhut": 145,
+      "tyLeNemPhanTram": 2.3,
+      "vatTu": [
+        "Nozzle 301A",
+        "Lọc khí KHY-M7155"
+      ],
+      "nguoiXacNhan": null
+    }
+  },
+  {
+    "id": "tx-02",
+    "vanBan": "From: kim.lee@hanbit-elec.co.kr\nSubject: [Urgent] Solder bridge issue – lot HB2610-07\n\nDear ST4I team,\nWe found solder bridges on U12 (QFN-48) on 37 pcs out of 1,200 pcs from lot HB2610-07 received on Oct 9, 2026. Part number: HB-CTRL-5521 rev C. Please send 8D report by 2026-10-24 and replace defective units. We will hold the remaining stock until your feedback.\nBest regards,\nKim Lee – SQE Manager, Hanbit Electronics",
+    "truong": [
+      {
+        "ten": "khachHang",
+        "kieu": "chuoi",
+        "moTa": "Tên công ty khách hàng"
+      },
+      {
+        "ten": "soLo",
+        "kieu": "chuoi",
+        "batBuoc": true,
+        "moTa": "Số lô hàng"
+      },
+      {
+        "ten": "maSanPham",
+        "kieu": "chuoi",
+        "moTa": "Mã sản phẩm, KHÔNG kèm phần \"rev\""
+      },
+      {
+        "ten": "revision",
+        "kieu": "chuoi",
+        "moTa": "Ký hiệu revision (chỉ phần sau \"rev\")"
+      },
+      {
+        "ten": "soLuongLoi",
+        "kieu": "so",
+        "moTa": "Số pcs bị lỗi"
+      },
+      {
+        "ten": "tongSoLuong",
+        "kieu": "so",
+        "moTa": "Tổng số pcs của lô được nêu"
+      },
+      {
+        "ten": "hanBaoCao8D",
+        "kieu": "chuoi",
+        "moTa": "Hạn gửi báo cáo 8D, ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "viTriLoi",
+        "kieu": "danh-sach",
+        "moTa": "Các vị trí linh kiện (designator) bị lỗi"
+      }
+    ],
+    "dapAn": {
+      "khachHang": "Hanbit Electronics",
+      "soLo": "HB2610-07",
+      "maSanPham": "HB-CTRL-5521",
+      "revision": "C",
+      "soLuongLoi": 37,
+      "tongSoLuong": 1200,
+      "hanBaoCao8D": "2026-10-24",
+      "viTriLoi": [
+        "U12"
+      ]
+    }
+  },
+  {
+    "id": "tx-03",
+    "vanBan": "2026-10-20 06:02:11 [AOI-L1] BOARD SN=PB2610200451 RESULT=PASS\n2026-10-20 06:02:43 [AOI-L1] BOARD SN=PB2610200452 RESULT=NG DEFECT=MISSING REF=C45\n2026-10-20 06:03:15 [AOI-L1] BOARD SN=PB2610200453 RESULT=NG DEFECT=BRIDGE REF=U7\n2026-10-20 06:03:47 [AOI-L1] BOARD SN=PB2610200454 RESULT=PASS\n2026-10-20 06:04:19 [AOI-L1] WARN CAMERA TEMP=58.4C\n2026-10-20 06:04:52 [AOI-L1] BOARD SN=PB2610200455 RESULT=NG DEFECT=SHIFT REF=R102",
+    "truong": [
+      {
+        "ten": "may",
+        "kieu": "chuoi",
+        "moTa": "Tên máy trong ngoặc vuông"
+      },
+      {
+        "ten": "soBoardKiem",
+        "kieu": "so",
+        "moTa": "Số dòng BOARD (số board đã kiểm)"
+      },
+      {
+        "ten": "soBoardNG",
+        "kieu": "so",
+        "moTa": "Số board RESULT=NG"
+      },
+      {
+        "ten": "snNG",
+        "kieu": "danh-sach",
+        "moTa": "Serial (SN) của các board NG theo thứ tự"
+      },
+      {
+        "ten": "loaiLoi",
+        "kieu": "danh-sach",
+        "moTa": "Giá trị DEFECT theo thứ tự xuất hiện"
+      },
+      {
+        "ten": "nhietDoCamera",
+        "kieu": "so",
+        "moTa": "Nhiệt độ camera (°C), chỉ số"
+      },
+      {
+        "ten": "maChuongTrinh",
+        "kieu": "chuoi",
+        "moTa": "Tên chương trình kiểm tra; null nếu không có"
+      }
+    ],
+    "dapAn": {
+      "may": "AOI-L1",
+      "soBoardKiem": 5,
+      "soBoardNG": 3,
+      "snNG": [
+        "PB2610200452",
+        "PB2610200453",
+        "PB2610200455"
+      ],
+      "loaiLoi": [
+        "MISSING",
+        "BRIDGE",
+        "SHIFT"
+      ],
+      "nhietDoCamera": 58.4,
+      "maChuongTrinh": null
+    }
+  },
+  {
+    "id": "tx-04",
+    "vanBan": "PHIẾU KHÔNG PHÙ HỢP (NCR)\nSố: NCR-QA-26-0193        Ngày lập: 17.10.2026\nSản phẩm: Bo mạch nguồn PSU-12V-A (model PWR-0457)\nCông đoạn phát hiện: FQC\nSố lượng kiểm: 500 pcs — Không đạt: 12 pcs\nMô tả: tụ hóa C3 cắm ngược cực.\nNguyên nhân sơ bộ: công nhân tay mới, chưa đào tạo đủ tại trạm THT-04.\nHành động tạm thời: khoanh vùng 3 ngày sản xuất 14–16/10, kiểm 100%.\nNgười lập: Nguyễn Thị Mai – QC",
+    "truong": [
+      {
+        "ten": "soNCR",
+        "kieu": "chuoi",
+        "batBuoc": true,
+        "moTa": "Số NCR"
+      },
+      {
+        "ten": "ngayLap",
+        "kieu": "chuoi",
+        "moTa": "Ngày lập, ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "model",
+        "kieu": "chuoi",
+        "moTa": "Mã model trong ngoặc"
+      },
+      {
+        "ten": "congDoan",
+        "kieu": "chuoi",
+        "moTa": "Công đoạn phát hiện"
+      },
+      {
+        "ten": "soLuongKiem",
+        "kieu": "so",
+        "moTa": "Số lượng kiểm"
+      },
+      {
+        "ten": "soLuongLoi",
+        "kieu": "so",
+        "moTa": "Số lượng không đạt"
+      },
+      {
+        "ten": "tramLienQuan",
+        "kieu": "chuoi",
+        "moTa": "Mã trạm được nêu trong nguyên nhân"
+      },
+      {
+        "ten": "nguoiLap",
+        "kieu": "chuoi",
+        "moTa": "Họ tên người lập (không kèm chức danh)"
+      }
+    ],
+    "dapAn": {
+      "soNCR": "NCR-QA-26-0193",
+      "ngayLap": "2026-10-17",
+      "model": "PWR-0457",
+      "congDoan": "FQC",
+      "soLuongKiem": 500,
+      "soLuongLoi": 12,
+      "tramLienQuan": "THT-04",
+      "nguoiLap": "Nguyễn Thị Mai"
+    }
+  },
+  {
+    "id": "tx-05",
+    "vanBan": "BIÊN BẢN HỌP GIAO BAN CHẤT LƯỢNG – 15/10/2026\nThành phần: anh Phong (QA Manager), chị Lan (PE), anh Đức (Bảo trì), chị Hà (Sản xuất)\nNội dung:\n1. False call AOI line 3 tuần 41 là 4,8%, mục tiêu < 3%.\n2. Thống nhất: chị Lan tối ưu lại thư viện linh kiện AOI line 3, hạn 22/10.\n3. Anh Đức thay đèn chiếu sáng camera AOI line 3, hạn 18/10.\n4. Chị Hà bố trí đào tạo lại 6 công nhân trạm sửa lỗi trước 25/10.\nCuộc họp kết thúc lúc 9h45.",
+    "truong": [
+      {
+        "ten": "ngayHop",
+        "kieu": "chuoi",
+        "moTa": "Ngày họp, ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "thanhPhan",
+        "kieu": "danh-sach",
+        "moTa": "Người tham dự, giữ danh xưng viết thường như dòng Thành phần (vd \"anh Phong\"), bỏ chức danh trong ngoặc"
+      },
+      {
+        "ten": "falseCallPhanTram",
+        "kieu": "so",
+        "moTa": "False call tuần 41 (%)"
+      },
+      {
+        "ten": "mucTieuPhanTram",
+        "kieu": "so",
+        "moTa": "Mục tiêu false call (%), chỉ số"
+      },
+      {
+        "ten": "nguoiPhuTrach",
+        "kieu": "danh-sach",
+        "moTa": "Người phụ trách từng việc theo thứ tự mục 2→4, chuẩn hoá danh xưng viết thường (vd \"anh Đức\")"
+      },
+      {
+        "ten": "soCongNhanDaoTao",
+        "kieu": "so",
+        "moTa": "Số công nhân được đào tạo lại"
+      },
+      {
+        "ten": "gioKetThuc",
+        "kieu": "chuoi",
+        "moTa": "Giờ kết thúc, chuẩn hoá HH:MM 24 giờ"
+      },
+      {
+        "ten": "diaDiem",
+        "kieu": "chuoi",
+        "moTa": "Địa điểm họp; null nếu không có"
+      }
+    ],
+    "dapAn": {
+      "ngayHop": "2026-10-15",
+      "thanhPhan": [
+        "anh Phong",
+        "chị Lan",
+        "anh Đức",
+        "chị Hà"
+      ],
+      "falseCallPhanTram": 4.8,
+      "mucTieuPhanTram": 3,
+      "nguoiPhuTrach": [
+        "chị Lan",
+        "anh Đức",
+        "chị Hà"
+      ],
+      "soCongNhanDaoTao": 6,
+      "gioKetThuc": "09:45",
+      "diaDiem": null
+    }
+  },
+  {
+    "id": "tx-06",
+    "vanBan": "PURCHASE ORDER No. PO-260318\nDate: 03-Oct-2026\nSupplier: Công ty TNHH Linh Kiện Sao Việt\nShip to: ST4I Factory, KCN Quang Minh, Hà Nội\n| # | Part No.            | Description         | Qty    | Unit price (USD) |\n| 1 | GRM155R71C104KA88D  | Cap 0.1uF 16V 0402  | 50,000 | 0.0021 |\n| 2 | RC0402FR-0710KL     | Res 10k 1% 0402     | 40,000 | 0.0011 |\n| 3 | STM32F103C8T6       | MCU LQFP48          | 1,500  | 1.85   |\nPayment: Net 30. Required delivery: 20/10/2026.",
+    "truong": [
+      {
+        "ten": "soPO",
+        "kieu": "chuoi",
+        "batBuoc": true,
+        "moTa": "Số PO"
+      },
+      {
+        "ten": "ngayPO",
+        "kieu": "chuoi",
+        "moTa": "Ngày PO, ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "nhaCungCap",
+        "kieu": "chuoi",
+        "moTa": "Tên nhà cung cấp"
+      },
+      {
+        "ten": "maLinhKien",
+        "kieu": "danh-sach",
+        "moTa": "Part No. theo thứ tự dòng"
+      },
+      {
+        "ten": "soLuong",
+        "kieu": "danh-sach",
+        "moTa": "Qty theo thứ tự dòng, mỗi phần tử là SỐ"
+      },
+      {
+        "ten": "ngayGiao",
+        "kieu": "chuoi",
+        "moTa": "Ngày giao yêu cầu, ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "dieuKhoanThanhToan",
+        "kieu": "chuoi",
+        "moTa": "Điều khoản thanh toán"
+      },
+      {
+        "ten": "donViTienTe",
+        "kieu": "chuoi",
+        "moTa": "Mã tiền tệ của đơn giá"
+      }
+    ],
+    "dapAn": {
+      "soPO": "PO-260318",
+      "ngayPO": "2026-10-03",
+      "nhaCungCap": "Công ty TNHH Linh Kiện Sao Việt",
+      "maLinhKien": [
+        "GRM155R71C104KA88D",
+        "RC0402FR-0710KL",
+        "STM32F103C8T6"
+      ],
+      "soLuong": [
+        50000,
+        40000,
+        1500
+      ],
+      "ngayGiao": "2026-10-20",
+      "dieuKhoanThanhToan": "Net 30",
+      "donViTienTe": "USD"
+    }
+  },
+  {
+    "id": "tx-07",
+    "vanBan": "THÔNG SỐ PROFILE REFLOW – Model: IOT-GW-220 – Lò: Heller 1913 MK5 (REF-L2)\nZone 1–4 (preheat): 150 / 165 / 175 / 185 °C\nZone 5–7 (soak): 195 / 200 / 210 °C\nZone 8–9 (reflow): 245 / 255 °C\nZone 10: làm mát\nTốc độ băng tải: 75 cm/phút\nKhí N2: Có, O2 < 1000 ppm\nPeak nhiệt độ trên board (đo bằng KIC): 241,5 °C\nTAL (time above liquidus 217°C): 62 s\nNgười duyệt: Lê Quang Vinh – 11/10/26",
+    "truong": [
+      {
+        "ten": "model",
+        "kieu": "chuoi",
+        "moTa": "Model sản phẩm"
+      },
+      {
+        "ten": "maLo",
+        "kieu": "chuoi",
+        "moTa": "Mã lò trong ngoặc"
+      },
+      {
+        "ten": "nhietDoReflowZone",
+        "kieu": "danh-sach",
+        "moTa": "Nhiệt độ đặt các zone reflow (°C), mỗi phần tử là số"
+      },
+      {
+        "ten": "tocDoBangTai",
+        "kieu": "so",
+        "moTa": "Tốc độ băng tải (cm/phút)"
+      },
+      {
+        "ten": "suDungN2",
+        "kieu": "boolean",
+        "moTa": "Có dùng khí N2 không"
+      },
+      {
+        "ten": "peakTrenBoard",
+        "kieu": "so",
+        "moTa": "Peak nhiệt độ trên board (°C)"
+      },
+      {
+        "ten": "talGiay",
+        "kieu": "so",
+        "moTa": "TAL (giây)"
+      },
+      {
+        "ten": "nguoiDuyet",
+        "kieu": "chuoi",
+        "moTa": "Họ tên người duyệt"
+      }
+    ],
+    "dapAn": {
+      "model": "IOT-GW-220",
+      "maLo": "REF-L2",
+      "nhietDoReflowZone": [
+        245,
+        255
+      ],
+      "tocDoBangTai": 75,
+      "suDungN2": true,
+      "peakTrenBoard": 241.5,
+      "talGiay": 62,
+      "nguoiDuyet": "Lê Quang Vinh"
+    }
+  },
+  {
+    "id": "tx-08",
+    "vanBan": "BÁO CÁO CA 2 – NGÀY 19/10/2026 – LINE SMT1\nKế hoạch: 2.400 bo | Thực tế: 2.215 bo\nMáy dừng: Máy in kem DEK dừng 35' do kẹt giấy lau; Mounter NXT dừng 20' đổi model.\nAOI: 2.215 bo kiểm, 41 bo NG, sau sửa còn 3 bo phế.\nNhân sự: 14/15 (1 nghỉ phép)\nGhi chú: chưa nhận được kem hàn lô mới.",
+    "truong": [
+      {
+        "ten": "ca",
+        "kieu": "so",
+        "moTa": "Số ca"
+      },
+      {
+        "ten": "ngay",
+        "kieu": "chuoi",
+        "moTa": "Ngày báo cáo, ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "line",
+        "kieu": "chuoi",
+        "moTa": "Tên line"
+      },
+      {
+        "ten": "keHoach",
+        "kieu": "so",
+        "moTa": "Sản lượng kế hoạch (bo)"
+      },
+      {
+        "ten": "thucTe",
+        "kieu": "so",
+        "moTa": "Sản lượng thực tế (bo)"
+      },
+      {
+        "ten": "tongPhutDung",
+        "kieu": "so",
+        "moTa": "Tổng số phút dừng của tất cả máy được nêu"
+      },
+      {
+        "ten": "soBoNG",
+        "kieu": "so",
+        "moTa": "Số bo NG tại AOI"
+      },
+      {
+        "ten": "soBoPhe",
+        "kieu": "so",
+        "moTa": "Số bo phế sau sửa"
+      }
+    ],
+    "dapAn": {
+      "ca": 2,
+      "ngay": "2026-10-19",
+      "line": "SMT1",
+      "keHoach": 2400,
+      "thucTe": 2215,
+      "tongPhutDung": 55,
+      "soBoNG": 41,
+      "soBoPhe": 3
+    }
+  },
+  {
+    "id": "tx-09",
+    "vanBan": "[19:42] Tuấn tổ trưởng: ae ca đêm chú ý nhé, line 4 chạy tiếp model RX-77 còn 640 con nữa là xong đơn\n[19:43] Tuấn tổ trưởng: feeder slot 12 & 15 hay báo lỗi, ai thấy thì gọi a Bình bảo trì sđt 0912 345 678\n[19:45] Tuấn tổ trưởng: 22h có xe lấy hàng, đóng 8 thùng mỗi thùng 50 pcs\n[19:47] Hoa: ok a",
+    "truong": [
+      {
+        "ten": "nguoiChiDao",
+        "kieu": "chuoi",
+        "moTa": "Tên người gửi các chỉ đạo, bỏ chữ \"tổ trưởng\""
+      },
+      {
+        "ten": "line",
+        "kieu": "so",
+        "moTa": "Số hiệu line"
+      },
+      {
+        "ten": "model",
+        "kieu": "chuoi",
+        "moTa": "Model đang chạy"
+      },
+      {
+        "ten": "soLuongConLai",
+        "kieu": "so",
+        "moTa": "Số con còn lại để xong đơn"
+      },
+      {
+        "ten": "slotFeederLoi",
+        "kieu": "danh-sach",
+        "moTa": "Các slot feeder hay lỗi, mỗi phần tử là số"
+      },
+      {
+        "ten": "sdtBaoTri",
+        "kieu": "chuoi",
+        "moTa": "Số điện thoại bảo trì, chuẩn hoá bỏ mọi khoảng trắng"
+      },
+      {
+        "ten": "gioXeLayHang",
+        "kieu": "chuoi",
+        "moTa": "Giờ xe lấy hàng, chuẩn hoá HH:MM"
+      },
+      {
+        "ten": "soThung",
+        "kieu": "so",
+        "moTa": "Số thùng cần đóng"
+      }
+    ],
+    "dapAn": {
+      "nguoiChiDao": "Tuấn",
+      "line": 4,
+      "model": "RX-77",
+      "soLuongConLai": 640,
+      "slotFeederLoi": [
+        12,
+        15
+      ],
+      "sdtBaoTri": "0912345678",
+      "gioXeLayHang": "22:00",
+      "soThung": 8
+    }
+  },
+  {
+    "id": "tx-10",
+    "vanBan": "MLCC – Mã: CL10A106KP8NNNC\nĐiện dung: 10 µF ±10%\nĐiện áp định mức: 10 V DC\nĐiện môi: X5R\nKích thước: 0603 (1,6 × 0,8 mm)\nNhiệt độ làm việc: -55 ~ +85 °C\nĐóng gói: Reel 4.000 pcs",
+    "truong": [
+      {
+        "ten": "ma",
+        "kieu": "chuoi",
+        "batBuoc": true,
+        "moTa": "Mã linh kiện"
+      },
+      {
+        "ten": "dienDungUF",
+        "kieu": "so",
+        "moTa": "Điện dung (µF)"
+      },
+      {
+        "ten": "dungSaiPhanTram",
+        "kieu": "so",
+        "moTa": "Dung sai (%), chỉ số dương"
+      },
+      {
+        "ten": "dienApV",
+        "kieu": "so",
+        "moTa": "Điện áp định mức (V)"
+      },
+      {
+        "ten": "dienMoi",
+        "kieu": "chuoi",
+        "moTa": "Loại điện môi"
+      },
+      {
+        "ten": "nhietDoMin",
+        "kieu": "so",
+        "moTa": "Nhiệt độ làm việc thấp nhất (°C)"
+      },
+      {
+        "ten": "nhietDoMax",
+        "kieu": "so",
+        "moTa": "Nhiệt độ làm việc cao nhất (°C)"
+      },
+      {
+        "ten": "chungNhanAECQ200",
+        "kieu": "boolean",
+        "moTa": "Đạt AEC-Q200 không; null nếu văn bản không nói"
+      }
+    ],
+    "dapAn": {
+      "ma": "CL10A106KP8NNNC",
+      "dienDungUF": 10,
+      "dungSaiPhanTram": 10,
+      "dienApV": 10,
+      "dienMoi": "X5R",
+      "nhietDoMin": -55,
+      "nhietDoMax": 85,
+      "chungNhanAECQ200": null
+    }
+  },
+  {
+    "id": "tx-11",
+    "vanBan": "10/20/2026 22:14:05.120 ALM 1043 ON  Conveyor jam at transfer station T2\n10/20/2026 22:14:38.900 ALM 1043 OFF\n10/20/2026 23:01:12.004 ALM 2201 ON  Door interlock open - AOI cabinet\n10/20/2026 23:01:15.330 ALM 2201 OFF\n10/20/2026 23:30:00.000 INFO Shift counter reset",
+    "truong": [
+      {
+        "ten": "maAlarm",
+        "kieu": "danh-sach",
+        "moTa": "Mã alarm (chuỗi) theo thứ tự xuất hiện lần đầu, không lặp"
+      },
+      {
+        "ten": "soLanBat",
+        "kieu": "so",
+        "moTa": "Số sự kiện ALM ... ON"
+      },
+      {
+        "ten": "thoiGianJamGiay",
+        "kieu": "so",
+        "moTa": "Số giây từ ON đến OFF của alarm kẹt băng tải (giữ phần thập phân)"
+      },
+      {
+        "ten": "tramLienQuan",
+        "kieu": "chuoi",
+        "moTa": "Mã trạm bị kẹt"
+      },
+      {
+        "ten": "ngay",
+        "kieu": "chuoi",
+        "moTa": "Ngày của log (định dạng gốc MM/DD/YYYY), ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "coResetCounter",
+        "kieu": "boolean",
+        "moTa": "Có sự kiện reset bộ đếm ca không"
+      }
+    ],
+    "dapAn": {
+      "maAlarm": [
+        "1043",
+        "2201"
+      ],
+      "soLanBat": 2,
+      "thoiGianJamGiay": 33.78,
+      "tramLienQuan": "T2",
+      "ngay": "2026-10-20",
+      "coResetCounter": true
+    }
+  },
+  {
+    "id": "tx-12",
+    "vanBan": "HÓA ĐƠN GIÁ TRỊ GIA TĂNG\nKý hiệu: 1C26TSV     Số: 0004517\nNgày 08 tháng 10 năm 2026\nĐơn vị bán: CÔNG TY CP HÓA CHẤT ĐIỆN TỬ MIỀN BẮC – MST: 0101234567\nNgười mua: Công ty CP ST4I – MST: 0109876543\nHàng hóa: Kem hàn SAC305 Type 4, hũ 500g – SL 40 hũ – Đơn giá 1.250.000 – Thành tiền 50.000.000\nCộng tiền hàng: 50.000.000\nThuế GTGT 8%: 4.000.000\nTổng thanh toán: 54.000.000 đồng",
+    "truong": [
+      {
+        "ten": "soHoaDon",
+        "kieu": "chuoi",
+        "batBuoc": true,
+        "moTa": "Số hoá đơn, giữ nguyên số 0 đầu"
+      },
+      {
+        "ten": "ngay",
+        "kieu": "chuoi",
+        "moTa": "Ngày hoá đơn, ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "mstNguoiBan",
+        "kieu": "chuoi",
+        "moTa": "Mã số thuế đơn vị bán"
+      },
+      {
+        "ten": "soLuong",
+        "kieu": "so",
+        "moTa": "Số lượng hàng"
+      },
+      {
+        "ten": "tienTruocThue",
+        "kieu": "so",
+        "moTa": "Cộng tiền hàng (đồng)"
+      },
+      {
+        "ten": "thueSuatPhanTram",
+        "kieu": "so",
+        "moTa": "Thuế suất GTGT (%)"
+      },
+      {
+        "ten": "tongThanhToan",
+        "kieu": "so",
+        "moTa": "Tổng thanh toán (đồng)"
+      }
+    ],
+    "dapAn": {
+      "soHoaDon": "0004517",
+      "ngay": "2026-10-08",
+      "mstNguoiBan": "0101234567",
+      "soLuong": 40,
+      "tienTruocThue": 50000000,
+      "thueSuatPhanTram": 8,
+      "tongThanhToan": 54000000
+    }
+  },
+  {
+    "id": "tx-13",
+    "vanBan": "Hi Mr. Khoa,\nSorry for the late notice. Due to a typhoon in Shenzhen, shipment of 12 reels of TPS62130RGTR (your PO 4500-1182) will be delayed from Oct 22 to Nov 5. The other 3 reels of LM1117-3.3 are on schedule. We'll ship via DHL, tracking will be provided.\nRegards,\nAmy Chen\nSales, Futron Components Ltd.",
+    "truong": [
+      {
+        "ten": "soPO",
+        "kieu": "chuoi",
+        "moTa": "Số PO"
+      },
+      {
+        "ten": "maLinhKienTre",
+        "kieu": "chuoi",
+        "moTa": "Mã linh kiện bị trễ"
+      },
+      {
+        "ten": "soReelTre",
+        "kieu": "so",
+        "moTa": "Số reel bị trễ"
+      },
+      {
+        "ten": "ngayGiaoMoi",
+        "kieu": "chuoi",
+        "moTa": "Ngày giao mới, nguyên văn như văn bản"
+      },
+      {
+        "ten": "nguyenNhan",
+        "kieu": "chuoi",
+        "moTa": "Cụm từ nguyên văn ngay sau \"Due to\""
+      },
+      {
+        "ten": "donViVanChuyen",
+        "kieu": "chuoi",
+        "moTa": "Hãng vận chuyển"
+      },
+      {
+        "ten": "maTracking",
+        "kieu": "chuoi",
+        "moTa": "Mã tracking; null nếu chưa có"
+      },
+      {
+        "ten": "congTy",
+        "kieu": "chuoi",
+        "moTa": "Tên công ty nhà cung cấp, nguyên văn"
+      }
+    ],
+    "dapAn": {
+      "soPO": "4500-1182",
+      "maLinhKienTre": "TPS62130RGTR",
+      "soReelTre": 12,
+      "ngayGiaoMoi": "Nov 5",
+      "nguyenNhan": "a typhoon in Shenzhen",
+      "donViVanChuyen": "DHL",
+      "maTracking": null,
+      "congTy": "Futron Components Ltd."
+    }
+  },
+  {
+    "id": "tx-14",
+    "vanBan": "DANH SÁCH THIẾT BỊ ĐO ĐẾN HẠN HIỆU CHUẨN – Q4/2026\n1) Thước cặp Mitutoyo 500-196, mã QA-CAL-011, hạn 30/10/2026\n2) Máy đo nhiệt profile KIC X5, mã PE-CAL-004, hạn 12/11/2026\n3) Đồng hồ vạn năng Fluke 87V, mã ME-CAL-020, hạn 05/12/2026 – đang gửi sửa\n4) Cân điện tử AND GF-600, mã WH-CAL-002, hạn 28/10/2026",
+    "truong": [
+      {
+        "ten": "soThietBi",
+        "kieu": "so",
+        "moTa": "Số thiết bị trong danh sách"
+      },
+      {
+        "ten": "danhSachMa",
+        "kieu": "danh-sach",
+        "moTa": "Mã thiết bị theo thứ tự"
+      },
+      {
+        "ten": "maHanSomNhat",
+        "kieu": "chuoi",
+        "moTa": "Mã thiết bị có hạn sớm nhất"
+      },
+      {
+        "ten": "hanSomNhat",
+        "kieu": "chuoi",
+        "moTa": "Hạn sớm nhất, ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "thietBiDangSua",
+        "kieu": "chuoi",
+        "moTa": "Mã thiết bị đang gửi sửa"
+      },
+      {
+        "ten": "quy",
+        "kieu": "chuoi",
+        "moTa": "Quý, nguyên văn"
+      }
+    ],
+    "dapAn": {
+      "soThietBi": 4,
+      "danhSachMa": [
+        "QA-CAL-011",
+        "PE-CAL-004",
+        "ME-CAL-020",
+        "WH-CAL-002"
+      ],
+      "maHanSomNhat": "WH-CAL-002",
+      "hanSomNhat": "2026-10-28",
+      "thietBiDangSua": "ME-CAL-020",
+      "quy": "Q4/2026"
+    }
+  },
+  {
+    "id": "tx-15",
+    "vanBan": "ECN-2026-045 | Hiệu lực: từ lô sản xuất ngày 01/11/2026\nSản phẩm: SM-HUB-300 rev B → rev C\nThay đổi:\n- R15: 4.7kΩ → 10kΩ (RC0402FR-0710KL)\n- C22: thêm mới 1uF 0402\n- U3: đổi nhà SX từ TI sang ST (cùng footprint)\nLý do: khắc phục reset ngẫu nhiên khi nguồn yếu.\nPhê duyệt: Giám đốc kỹ thuật Phạm Minh Tuấn",
+    "truong": [
+      {
+        "ten": "soECN",
+        "kieu": "chuoi",
+        "batBuoc": true,
+        "moTa": "Số ECN"
+      },
+      {
+        "ten": "ngayHieuLuc",
+        "kieu": "chuoi",
+        "moTa": "Ngày hiệu lực, ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "maSanPham",
+        "kieu": "chuoi",
+        "moTa": "Mã sản phẩm, không kèm rev"
+      },
+      {
+        "ten": "revCu",
+        "kieu": "chuoi",
+        "moTa": "Revision cũ (chỉ ký hiệu)"
+      },
+      {
+        "ten": "revMoi",
+        "kieu": "chuoi",
+        "moTa": "Revision mới (chỉ ký hiệu)"
+      },
+      {
+        "ten": "viTriThayDoi",
+        "kieu": "danh-sach",
+        "moTa": "Các designator thay đổi theo thứ tự"
+      },
+      {
+        "ten": "nguoiPheDuyet",
+        "kieu": "chuoi",
+        "moTa": "Họ tên người phê duyệt, không kèm chức danh"
+      },
+      {
+        "ten": "canCapNhatChuongTrinhAOI",
+        "kieu": "boolean",
+        "moTa": "Có yêu cầu cập nhật chương trình AOI không; null nếu không nói"
+      }
+    ],
+    "dapAn": {
+      "soECN": "ECN-2026-045",
+      "ngayHieuLuc": "2026-11-01",
+      "maSanPham": "SM-HUB-300",
+      "revCu": "B",
+      "revMoi": "C",
+      "viTriThayDoi": [
+        "R15",
+        "C22",
+        "U3"
+      ],
+      "nguoiPheDuyet": "Phạm Minh Tuấn",
+      "canCapNhatChuongTrinhAOI": null
+    }
+  },
+  {
+    "id": "tx-16",
+    "vanBan": "Báo cáo sự cố: Lúc 2h10 sáng 18/10, xi lanh đẩy magazine ở unloader line SMT3 kẹt, công nhân Lò Văn Sơn thò tay gỡ khi chưa nhấn E-stop, bị kẹp nhẹ ngón trỏ tay trái, sơ cứu tại chỗ, không phải nghỉ việc. Line dừng 25 phút. Đề xuất: lắp thêm cảm biến rèm an toàn, đào tạo lại LOTO cho toàn bộ ca 3.",
+    "truong": [
+      {
+        "ten": "gio",
+        "kieu": "chuoi",
+        "moTa": "Giờ xảy ra, chuẩn hoá HH:MM 24 giờ"
+      },
+      {
+        "ten": "ngay",
+        "kieu": "chuoi",
+        "moTa": "Ngày xảy ra, nguyên văn dạng DD/MM (văn bản không có năm)"
+      },
+      {
+        "ten": "line",
+        "kieu": "chuoi",
+        "moTa": "Line xảy ra"
+      },
+      {
+        "ten": "nguoiBiNan",
+        "kieu": "chuoi",
+        "moTa": "Họ tên người bị nạn"
+      },
+      {
+        "ten": "coNghiViec",
+        "kieu": "boolean",
+        "moTa": "Người bị nạn có phải nghỉ việc không"
+      },
+      {
+        "ten": "thoiGianDungPhut",
+        "kieu": "so",
+        "moTa": "Số phút line dừng"
+      },
+      {
+        "ten": "deXuat",
+        "kieu": "danh-sach",
+        "moTa": "Các đề xuất nguyên văn, tách theo dấu phẩy, bỏ dấu chấm cuối"
+      }
+    ],
+    "dapAn": {
+      "gio": "02:10",
+      "ngay": "18/10",
+      "line": "SMT3",
+      "nguoiBiNan": "Lò Văn Sơn",
+      "coNghiViec": false,
+      "thoiGianDungPhut": 25,
+      "deXuat": [
+        "lắp thêm cảm biến rèm an toàn",
+        "đào tạo lại LOTO cho toàn bộ ca 3"
+      ]
+    }
+  },
+  {
+    "id": "tx-17",
+    "vanBan": "SPI REPORT – Board: CTRL-889 – SN 889-26-10-0042 – 2026/10/20 14:31\nTổng pad: 1,284 | Pass: 1,276 | Fail: 8\nFail detail: Insufficient x5 (U1 pins), Bridge x2 (U4), Excess x1 (C18)\nAvg volume: 102.6% | Avg height: 118 µm\nStencil: 0.12mm, Squeegee pressure 6.5 kg",
+    "truong": [
+      {
+        "ten": "sn",
+        "kieu": "chuoi",
+        "batBuoc": true,
+        "moTa": "Serial board"
+      },
+      {
+        "ten": "tongPad",
+        "kieu": "so",
+        "moTa": "Tổng số pad"
+      },
+      {
+        "ten": "soPadFail",
+        "kieu": "so",
+        "moTa": "Số pad fail"
+      },
+      {
+        "ten": "loaiLoi",
+        "kieu": "danh-sach",
+        "moTa": "Tên loại lỗi theo thứ tự (không kèm \"xN\")"
+      },
+      {
+        "ten": "theTichTBPhanTram",
+        "kieu": "so",
+        "moTa": "Avg volume (%)"
+      },
+      {
+        "ten": "doDayStencilMm",
+        "kieu": "so",
+        "moTa": "Độ dày stencil (mm)"
+      },
+      {
+        "ten": "apLucGatKg",
+        "kieu": "so",
+        "moTa": "Áp lực gạt (kg)"
+      },
+      {
+        "ten": "thoiGian",
+        "kieu": "chuoi",
+        "moTa": "Thời điểm đo, chuẩn hoá YYYY-MM-DDTHH:MM"
+      }
+    ],
+    "dapAn": {
+      "sn": "889-26-10-0042",
+      "tongPad": 1284,
+      "soPadFail": 8,
+      "loaiLoi": [
+        "Insufficient",
+        "Bridge",
+        "Excess"
+      ],
+      "theTichTBPhanTram": 102.6,
+      "doDayStencilMm": 0.12,
+      "apLucGatKg": 6.5,
+      "thoiGian": "2026-10-20T14:31"
+    }
+  },
+  {
+    "id": "tx-18",
+    "vanBan": "Kho ơi xuất giúp e cho line 5 ca chiều: 3 reel 0402 10k, 2 reel 0603 1uF, 1 hũ kem SAC305, 2 cuộn băng keo kapton 10mm. Lệnh SX: WO-26-1187. E ký nhận là Thảo PE. Cần trước 13h30 nha",
+    "truong": [
+      {
+        "ten": "line",
+        "kieu": "so",
+        "moTa": "Số hiệu line"
+      },
+      {
+        "ten": "lenhSX",
+        "kieu": "chuoi",
+        "batBuoc": true,
+        "moTa": "Mã lệnh sản xuất"
+      },
+      {
+        "ten": "soMucVatTu",
+        "kieu": "so",
+        "moTa": "Số mục vật tư khác nhau được yêu cầu"
+      },
+      {
+        "ten": "soLuong",
+        "kieu": "danh-sach",
+        "moTa": "Số lượng từng mục theo thứ tự, mỗi phần tử là số"
+      },
+      {
+        "ten": "nguoiNhan",
+        "kieu": "chuoi",
+        "moTa": "Tên người ký nhận, bỏ tên bộ phận"
+      },
+      {
+        "ten": "hanChot",
+        "kieu": "chuoi",
+        "moTa": "Hạn chót, chuẩn hoá HH:MM"
+      },
+      {
+        "ten": "ca",
+        "kieu": "chuoi",
+        "moTa": "Ca, nguyên văn"
+      },
+      {
+        "ten": "khoNguon",
+        "kieu": "chuoi",
+        "moTa": "Mã/tên kho xuất cụ thể; null nếu không có"
+      }
+    ],
+    "dapAn": {
+      "line": 5,
+      "lenhSX": "WO-26-1187",
+      "soMucVatTu": 4,
+      "soLuong": [
+        3,
+        2,
+        1,
+        2
+      ],
+      "nguoiNhan": "Thảo",
+      "hanChot": "13:30",
+      "ca": "chiều",
+      "khoNguon": null
+    }
+  },
+  {
+    "id": "tx-19",
+    "vanBan": "Model: VT-S730 3D AOI\nCamera resolution: 12 MP, pixel size 10 µm / 15 µm (switchable)\nMax PCB size: 510 x 460 mm\nPCB thickness: 0.4 – 5.0 mm\nInspection speed: up to 70 cm²/s\nPower: 200–240 VAC, single phase, 2.5 kVA\nWeight: approx. 1,350 kg",
+    "truong": [
+      {
+        "ten": "model",
+        "kieu": "chuoi",
+        "moTa": "Mã model, không kèm \"3D AOI\""
+      },
+      {
+        "ten": "doPhanGiaiMP",
+        "kieu": "so",
+        "moTa": "Độ phân giải camera (MP)"
+      },
+      {
+        "ten": "kichThuocPixelUm",
+        "kieu": "danh-sach",
+        "moTa": "Các kích thước pixel (µm), mỗi phần tử là số"
+      },
+      {
+        "ten": "pcbMaxDaiMm",
+        "kieu": "so",
+        "moTa": "Kích thước PCB tối đa – chiều thứ nhất (mm)"
+      },
+      {
+        "ten": "pcbMaxRongMm",
+        "kieu": "so",
+        "moTa": "Kích thước PCB tối đa – chiều thứ hai (mm)"
+      },
+      {
+        "ten": "doDayMaxMm",
+        "kieu": "so",
+        "moTa": "Độ dày PCB tối đa (mm)"
+      },
+      {
+        "ten": "khoiLuongKg",
+        "kieu": "so",
+        "moTa": "Khối lượng (kg)"
+      },
+      {
+        "ten": "giaUSD",
+        "kieu": "so",
+        "moTa": "Giá máy (USD); null nếu không có"
+      }
+    ],
+    "dapAn": {
+      "model": "VT-S730",
+      "doPhanGiaiMP": 12,
+      "kichThuocPixelUm": [
+        10,
+        15
+      ],
+      "pcbMaxDaiMm": 510,
+      "pcbMaxRongMm": 460,
+      "doDayMaxMm": 5,
+      "khoiLuongKg": 1350,
+      "giaUSD": null
+    }
+  },
+  {
+    "id": "tx-20",
+    "vanBan": "Kết quả audit nhà cung cấp – Công ty Bao Bì Thành Đạt – ngày 06/10/2026\nĐiểm tổng: 78/100 (Xếp loại B)\nPhát hiện:\n(1) Major: không kiểm soát độ ẩm kho thành phẩm.\n(2) Minor: hồ sơ đào tạo thiếu chữ ký.\n(3) Minor: chưa có quy trình xử lý hàng trả về.\nYêu cầu CAPA trong 14 ngày. Đánh giá viên: Vũ Thanh Bình.",
+    "truong": [
+      {
+        "ten": "nhaCungCap",
+        "kieu": "chuoi",
+        "moTa": "Tên nhà cung cấp"
+      },
+      {
+        "ten": "ngayAudit",
+        "kieu": "chuoi",
+        "moTa": "Ngày audit, ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "diem",
+        "kieu": "so",
+        "moTa": "Điểm tổng (trên 100)"
+      },
+      {
+        "ten": "xepLoai",
+        "kieu": "chuoi",
+        "moTa": "Xếp loại (chỉ ký hiệu)"
+      },
+      {
+        "ten": "soMajor",
+        "kieu": "so",
+        "moTa": "Số phát hiện Major"
+      },
+      {
+        "ten": "soMinor",
+        "kieu": "so",
+        "moTa": "Số phát hiện Minor"
+      },
+      {
+        "ten": "hanCAPANgay",
+        "kieu": "so",
+        "moTa": "Số ngày hạn CAPA"
+      },
+      {
+        "ten": "danhGiaVien",
+        "kieu": "chuoi",
+        "moTa": "Họ tên đánh giá viên"
+      }
+    ],
+    "dapAn": {
+      "nhaCungCap": "Công ty Bao Bì Thành Đạt",
+      "ngayAudit": "2026-10-06",
+      "diem": 78,
+      "xepLoai": "B",
+      "soMajor": 1,
+      "soMinor": 2,
+      "hanCAPANgay": 14,
+      "danhGiaVien": "Vũ Thanh Bình"
+    }
+  },
+  {
+    "id": "tx-21",
+    "vanBan": "Gửi các line, kế hoạch tuần 44 (26/10 – 01/11):\nLine 1: MDL-A12, 18.000 pcs\nLine 2: MDL-B07, 9.500 pcs\nLine 3: bảo trì định kỳ T2–T3, chạy MDL-A12 từ T4, 7.200 pcs\nLine 4: chưa có kế hoạch\nTrân trọng, PMC – Đỗ Ngọc Ánh",
+    "truong": [
+      {
+        "ten": "tuan",
+        "kieu": "so",
+        "moTa": "Số tuần"
+      },
+      {
+        "ten": "danhSachModel",
+        "kieu": "danh-sach",
+        "moTa": "Các model KHÁC NHAU theo thứ tự xuất hiện lần đầu"
+      },
+      {
+        "ten": "tongSanLuong",
+        "kieu": "so",
+        "moTa": "Tổng sản lượng kế hoạch của mọi line (pcs)"
+      },
+      {
+        "ten": "sanLuongLine2",
+        "kieu": "so",
+        "moTa": "Sản lượng line 2 (pcs)"
+      },
+      {
+        "ten": "lineBaoTri",
+        "kieu": "chuoi",
+        "moTa": "Line có bảo trì định kỳ, nguyên văn (vd \"Line 9\")"
+      },
+      {
+        "ten": "nguoiGui",
+        "kieu": "chuoi",
+        "moTa": "Họ tên người gửi, không kèm bộ phận"
+      },
+      {
+        "ten": "modelLine4",
+        "kieu": "chuoi",
+        "moTa": "Model của line 4; null nếu không có"
+      }
+    ],
+    "dapAn": {
+      "tuan": 44,
+      "danhSachModel": [
+        "MDL-A12",
+        "MDL-B07"
+      ],
+      "tongSanLuong": 34700,
+      "sanLuongLine2": 9500,
+      "lineBaoTri": "Line 3",
+      "nguoiGui": "Đỗ Ngọc Ánh",
+      "modelLine4": null
+    }
+  },
+  {
+    "id": "tx-22",
+    "vanBan": "CHECKLIST ĐẦU CA – MÁY IN KEM DEK HORIZON 03iX – LINE 2 – 21/10/2026 – Ca 1\n[x] Kiểm tra áp suất khí: 5.8 bar (chuẩn 5–7)\n[x] Vệ sinh stencil\n[ ] Kiểm tra giấy lau (hết, đã báo kho)\n[x] Nhiệt độ/độ ẩm phòng: 24.5°C / 52%RH\n[x] Thời gian kem ngoài tủ: 2h15'\nNgười kiểm: Hằng",
+    "truong": [
+      {
+        "ten": "may",
+        "kieu": "chuoi",
+        "moTa": "Tên máy sau \"MÁY IN KEM\", nguyên văn"
+      },
+      {
+        "ten": "apSuatKhiBar",
+        "kieu": "so",
+        "moTa": "Áp suất khí đo được (bar)"
+      },
+      {
+        "ten": "nhietDoC",
+        "kieu": "so",
+        "moTa": "Nhiệt độ phòng (°C)"
+      },
+      {
+        "ten": "doAmPhanTram",
+        "kieu": "so",
+        "moTa": "Độ ẩm phòng (%RH)"
+      },
+      {
+        "ten": "mucChuaDat",
+        "kieu": "danh-sach",
+        "moTa": "Hạng mục chưa tick, bỏ phần trong ngoặc"
+      },
+      {
+        "ten": "thoiGianKemPhut",
+        "kieu": "so",
+        "moTa": "Thời gian kem ngoài tủ quy ra phút"
+      },
+      {
+        "ten": "nguoiKiem",
+        "kieu": "chuoi",
+        "moTa": "Tên người kiểm"
+      },
+      {
+        "ten": "ca",
+        "kieu": "so",
+        "moTa": "Số ca"
+      }
+    ],
+    "dapAn": {
+      "may": "DEK HORIZON 03iX",
+      "apSuatKhiBar": 5.8,
+      "nhietDoC": 24.5,
+      "doAmPhanTram": 52,
+      "mucChuaDat": [
+        "Kiểm tra giấy lau"
+      ],
+      "thoiGianKemPhut": 135,
+      "nguoiKiem": "Hằng",
+      "ca": 1
+    }
+  },
+  {
+    "id": "tx-23",
+    "vanBan": "Chào anh Quân,\nKhách Delta gửi trả 25 pcs bo DLT-PWR-09 (RMA#RMA-2610-033), lỗi field fail: không lên nguồn. Bên em đã phân tích 10/25 pcs, 7 pcs do MOSFET Q2 chết, 3 pcs NTF (no trouble found). 15 pcs còn lại sẽ xong trước thứ Sáu 23/10. Em đề xuất gửi 3 pcs Q2 sang lab ngoài để decap.\nThân, Minh – FA team",
+    "truong": [
+      {
+        "ten": "soRMA",
+        "kieu": "chuoi",
+        "batBuoc": true,
+        "moTa": "Số RMA (phần sau \"RMA#\")"
+      },
+      {
+        "ten": "khachHang",
+        "kieu": "chuoi",
+        "moTa": "Tên khách hàng"
+      },
+      {
+        "ten": "soLuongTra",
+        "kieu": "so",
+        "moTa": "Số pcs khách trả"
+      },
+      {
+        "ten": "soDaPhanTich",
+        "kieu": "so",
+        "moTa": "Số pcs đã phân tích"
+      },
+      {
+        "ten": "soLoiQ2",
+        "kieu": "so",
+        "moTa": "Số pcs lỗi do Q2"
+      },
+      {
+        "ten": "soNTF",
+        "kieu": "so",
+        "moTa": "Số pcs NTF"
+      },
+      {
+        "ten": "hanXong",
+        "kieu": "chuoi",
+        "moTa": "Hạn xong phần còn lại, nguyên văn dạng DD/MM"
+      },
+      {
+        "ten": "nguoiGui",
+        "kieu": "chuoi",
+        "moTa": "Tên người gửi, không kèm nhóm"
+      }
+    ],
+    "dapAn": {
+      "soRMA": "RMA-2610-033",
+      "khachHang": "Delta",
+      "soLuongTra": 25,
+      "soDaPhanTich": 10,
+      "soLoiQ2": 7,
+      "soNTF": 3,
+      "hanXong": "23/10",
+      "nguoiGui": "Minh"
+    }
+  },
+  {
+    "id": "tx-24",
+    "vanBan": "Báo cáo tiêu thụ điện tháng 9/2026 – Xưởng SMT\nTổng: 182.450 kWh (tháng 8: 176.900 kWh)\nGiờ cao điểm: 41.300 kWh\nLò reflow chiếm 38% tổng tiêu thụ\nCông suất cực đại ghi nhận: 612 kW lúc 10:20 ngày 15/9\nHệ số công suất trung bình: 0,93",
+    "truong": [
+      {
+        "ten": "thang",
+        "kieu": "chuoi",
+        "moTa": "Tháng báo cáo, chuẩn hoá YYYY-MM"
+      },
+      {
+        "ten": "tongKWh",
+        "kieu": "so",
+        "moTa": "Tổng tiêu thụ tháng báo cáo (kWh)"
+      },
+      {
+        "ten": "tongThangTruocKWh",
+        "kieu": "so",
+        "moTa": "Tổng tiêu thụ tháng trước (kWh)"
+      },
+      {
+        "ten": "caoDiemKWh",
+        "kieu": "so",
+        "moTa": "Tiêu thụ giờ cao điểm (kWh)"
+      },
+      {
+        "ten": "tyLeReflowPhanTram",
+        "kieu": "so",
+        "moTa": "Tỷ lệ của lò reflow (%)"
+      },
+      {
+        "ten": "congSuatMaxKW",
+        "kieu": "so",
+        "moTa": "Công suất cực đại (kW)"
+      },
+      {
+        "ten": "heSoCongSuat",
+        "kieu": "so",
+        "moTa": "Hệ số công suất trung bình"
+      },
+      {
+        "ten": "chiPhiVND",
+        "kieu": "so",
+        "moTa": "Tiền điện (VND); null nếu không có"
+      }
+    ],
+    "dapAn": {
+      "thang": "2026-09",
+      "tongKWh": 182450,
+      "tongThangTruocKWh": 176900,
+      "caoDiemKWh": 41300,
+      "tyLeReflowPhanTram": 38,
+      "congSuatMaxKW": 612,
+      "heSoCongSuat": 0.93,
+      "chiPhiVND": null
+    }
+  },
+  {
+    "id": "tx-25",
+    "vanBan": "[WAVE-02] 2026-10-21T07:00:03 Preheat1=110C Preheat2=125C Solder pot=258C Conveyor=1.1 m/min Flux=ON N2=OFF\n[WAVE-02] 2026-10-21T07:30:03 Preheat1=111C Preheat2=126C Solder pot=262C Conveyor=1.1 m/min Flux=ON N2=OFF ALARM: POT_TEMP_HIGH (limit 260C)",
+    "truong": [
+      {
+        "ten": "may",
+        "kieu": "chuoi",
+        "moTa": "Tên máy"
+      },
+      {
+        "ten": "nhietDoNoiLanCuoi",
+        "kieu": "so",
+        "moTa": "Solder pot ở bản ghi cuối (°C)"
+      },
+      {
+        "ten": "gioiHanNoi",
+        "kieu": "so",
+        "moTa": "Giới hạn nhiệt nồi (°C)"
+      },
+      {
+        "ten": "tocDoBangTai",
+        "kieu": "so",
+        "moTa": "Tốc độ băng tải (m/min)"
+      },
+      {
+        "ten": "dungN2",
+        "kieu": "boolean",
+        "moTa": "Có dùng N2 không"
+      },
+      {
+        "ten": "maAlarm",
+        "kieu": "danh-sach",
+        "moTa": "Các mã alarm theo thứ tự"
+      },
+      {
+        "ten": "soBanGhi",
+        "kieu": "so",
+        "moTa": "Số dòng bản ghi"
+      }
+    ],
+    "dapAn": {
+      "may": "WAVE-02",
+      "nhietDoNoiLanCuoi": 262,
+      "gioiHanNoi": 260,
+      "tocDoBangTai": 1.1,
+      "dungN2": false,
+      "maAlarm": [
+        "POT_TEMP_HIGH"
+      ],
+      "soBanGhi": 2
+    }
+  },
+  {
+    "id": "tx-26",
+    "vanBan": "BIÊN BẢN GIAO NHẬN\nHôm nay, ngày 16 tháng 10 năm 2026, tại kho ST4I.\nBên giao: Công ty Vận tải Hưng Thịnh, lái xe Ngô Văn Lực, BKS 29H-123.45\nBên nhận: Kho nguyên liệu ST4I, thủ kho Đào Thu Trang\nHàng: 6 pallet linh kiện theo PO-260318, tổng 142 thùng, 1 thùng móp méo (đã chụp ảnh).\nNhiệt độ xe lạnh: không áp dụng.",
+    "truong": [
+      {
+        "ten": "ngay",
+        "kieu": "chuoi",
+        "moTa": "Ngày giao nhận, ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "bienSo",
+        "kieu": "chuoi",
+        "moTa": "Biển kiểm soát xe"
+      },
+      {
+        "ten": "laiXe",
+        "kieu": "chuoi",
+        "moTa": "Họ tên lái xe"
+      },
+      {
+        "ten": "soPallet",
+        "kieu": "so",
+        "moTa": "Số pallet"
+      },
+      {
+        "ten": "soThung",
+        "kieu": "so",
+        "moTa": "Tổng số thùng"
+      },
+      {
+        "ten": "soThungHuHong",
+        "kieu": "so",
+        "moTa": "Số thùng hư hỏng/móp méo"
+      },
+      {
+        "ten": "soPO",
+        "kieu": "chuoi",
+        "moTa": "Số PO"
+      },
+      {
+        "ten": "nhietDoXeC",
+        "kieu": "so",
+        "moTa": "Nhiệt độ xe lạnh (°C); null nếu không có hoặc không áp dụng"
+      }
+    ],
+    "dapAn": {
+      "ngay": "2026-10-16",
+      "bienSo": "29H-123.45",
+      "laiXe": "Ngô Văn Lực",
+      "soPallet": 6,
+      "soThung": 142,
+      "soThungHuHong": 1,
+      "soPO": "PO-260318",
+      "nhietDoXeC": null
+    }
+  },
+  {
+    "id": "tx-27",
+    "vanBan": "a ơi máy AOI L3 lại treo, màn hình báo E-3021 'Z axis servo error', đã reset 2 lần ko đc. Đang dồn ~120 bo ở buffer. E là Long ca 3, 01h20.",
+    "truong": [
+      {
+        "ten": "may",
+        "kieu": "chuoi",
+        "moTa": "Tên máy, nguyên văn"
+      },
+      {
+        "ten": "maLoi",
+        "kieu": "chuoi",
+        "batBuoc": true,
+        "moTa": "Mã lỗi"
+      },
+      {
+        "ten": "moTaLoi",
+        "kieu": "chuoi",
+        "moTa": "Mô tả lỗi trong dấu nháy, không kèm dấu nháy"
+      },
+      {
+        "ten": "soLanReset",
+        "kieu": "so",
+        "moTa": "Số lần đã reset"
+      },
+      {
+        "ten": "soBoTon",
+        "kieu": "so",
+        "moTa": "Số bo đang dồn (xấp xỉ, chỉ số)"
+      },
+      {
+        "ten": "nguoiBao",
+        "kieu": "chuoi",
+        "moTa": "Tên người báo"
+      },
+      {
+        "ten": "gio",
+        "kieu": "chuoi",
+        "moTa": "Giờ báo, chuẩn hoá HH:MM"
+      },
+      {
+        "ten": "daGoiHang",
+        "kieu": "boolean",
+        "moTa": "Đã gọi hãng chưa; null nếu không nói"
+      }
+    ],
+    "dapAn": {
+      "may": "AOI L3",
+      "maLoi": "E-3021",
+      "moTaLoi": "Z axis servo error",
+      "soLanReset": 2,
+      "soBoTon": 120,
+      "nguoiBao": "Long",
+      "gio": "01:20",
+      "daGoiHang": null
+    }
+  },
+  {
+    "id": "tx-28",
+    "vanBan": "ĐỀ NGHỊ MUA SẮM số ĐN-BT-2026-112\nBộ phận: Bảo trì – Người đề nghị: Hoàng Văn Nam\nLý do: dự phòng cho 4 máy NXT III đang chạy, hiện kho còn 0.\nDanh mục: (1) Đầu gắp H08M – 1 cái – 95.000.000đ; (2) Nozzle 1.0 – 20 cái – 650.000đ/cái; (3) Belt băng tải – 4 sợi – 1.200.000đ/sợi\nTổng dự toán: 112.800.000đ\nMức độ: Khẩn",
+    "truong": [
+      {
+        "ten": "soDeNghi",
+        "kieu": "chuoi",
+        "batBuoc": true,
+        "moTa": "Số đề nghị"
+      },
+      {
+        "ten": "nguoiDeNghi",
+        "kieu": "chuoi",
+        "moTa": "Họ tên người đề nghị"
+      },
+      {
+        "ten": "soMay",
+        "kieu": "so",
+        "moTa": "Số máy NXT III đang chạy"
+      },
+      {
+        "ten": "danhMuc",
+        "kieu": "danh-sach",
+        "moTa": "Tên các mục vật tư theo thứ tự, không kèm số lượng/giá"
+      },
+      {
+        "ten": "tongDuToan",
+        "kieu": "so",
+        "moTa": "Tổng dự toán (đồng)"
+      },
+      {
+        "ten": "khan",
+        "kieu": "boolean",
+        "moTa": "Mức độ có phải khẩn không"
+      },
+      {
+        "ten": "nhaCungCapDeXuat",
+        "kieu": "chuoi",
+        "moTa": "Nhà cung cấp đề xuất; null nếu không có"
+      }
+    ],
+    "dapAn": {
+      "soDeNghi": "ĐN-BT-2026-112",
+      "nguoiDeNghi": "Hoàng Văn Nam",
+      "soMay": 4,
+      "danhMuc": [
+        "Đầu gắp H08M",
+        "Nozzle 1.0",
+        "Belt băng tải"
+      ],
+      "tongDuToan": 112800000,
+      "khan": true,
+      "nhaCungCapDeXuat": null
+    }
+  },
+  {
+    "id": "tx-29",
+    "vanBan": "X-RAY INSPECTION – BGA U5 (BCM2711) – Board RPI-CM4-IO – 5 samples\nSample 1: void 12.4% PASS\nSample 2: void 18.9% PASS\nSample 3: void 27.3% FAIL\nSample 4: void 9.8% PASS\nSample 5: void 22.1% PASS\nAcceptance: void ≤ 25% (IPC-7095 Class 2)\nOperator: J. Nguyen, 10/19/2026",
+    "truong": [
+      {
+        "ten": "viTri",
+        "kieu": "chuoi",
+        "moTa": "Designator của BGA"
+      },
+      {
+        "ten": "soMau",
+        "kieu": "so",
+        "moTa": "Số mẫu"
+      },
+      {
+        "ten": "tyLeVoid",
+        "kieu": "danh-sach",
+        "moTa": "Tỷ lệ void (%) từng mẫu theo thứ tự, mỗi phần tử là số"
+      },
+      {
+        "ten": "soMauFail",
+        "kieu": "so",
+        "moTa": "Số mẫu FAIL"
+      },
+      {
+        "ten": "nguongVoidPhanTram",
+        "kieu": "so",
+        "moTa": "Ngưỡng chấp nhận void (%)"
+      },
+      {
+        "ten": "ngay",
+        "kieu": "chuoi",
+        "moTa": "Ngày kiểm (gốc MM/DD/YYYY), ngày chuẩn hoá về dạng YYYY-MM-DD"
+      },
+      {
+        "ten": "ketLuanLo",
+        "kieu": "chuoi",
+        "moTa": "Kết luận chấp nhận/loại cả lô; null nếu không có"
+      }
+    ],
+    "dapAn": {
+      "viTri": "U5",
+      "soMau": 5,
+      "tyLeVoid": [
+        12.4,
+        18.9,
+        27.3,
+        9.8,
+        22.1
+      ],
+      "soMauFail": 1,
+      "nguongVoidPhanTram": 25,
+      "ngay": "2026-10-19",
+      "ketLuanLo": null
+    }
+  },
+  {
+    "id": "tx-30",
+    "vanBan": "Nhật ký kỹ thuật ca đêm 20→21/10\n- 23:10 Line 1 mounter báo 'Feeder not found' slot 22, thay feeder 8mm, chạy lại 23:18.\n- 00:45 Reflow L2 zone 6 cảnh báo nhiệt thấp (đặt 210, thực 196), kiểm tra thấy rơ-le SSR hỏng, thay SSR 40A, ổn định 01:30.\n- 03:05 AOI L4 sai lệch camera, hiệu chuẩn lại bằng tấm chuẩn, OK 03:25.\nKTV trực: Phan Đức Anh, Bùi Tiến.\nVật tư dùng: Feeder 8mm (mượn line 2), SSR 40A x1.",
+    "truong": [
+      {
+        "ten": "soSuCo",
+        "kieu": "so",
+        "moTa": "Số sự cố được ghi"
+      },
+      {
+        "ten": "thoiGianSuaReflowPhut",
+        "kieu": "so",
+        "moTa": "Số phút từ lúc cảnh báo reflow đến lúc ổn định"
+      },
+      {
+        "ten": "nhietDoDat",
+        "kieu": "so",
+        "moTa": "Nhiệt độ đặt zone 6 (°C)"
+      },
+      {
+        "ten": "nhietDoThuc",
+        "kieu": "so",
+        "moTa": "Nhiệt độ thực zone 6 (°C)"
+      },
+      {
+        "ten": "ktvTruc",
+        "kieu": "danh-sach",
+        "moTa": "Họ tên KTV trực theo thứ tự"
+      },
+      {
+        "ten": "slotFeeder",
+        "kieu": "so",
+        "moTa": "Số slot báo Feeder not found"
+      },
+      {
+        "ten": "thietBiHieuChuan",
+        "kieu": "chuoi",
+        "moTa": "Thiết bị được hiệu chuẩn lại, nguyên văn (vd \"AOI L9\")"
+      }
+    ],
+    "dapAn": {
+      "soSuCo": 3,
+      "thoiGianSuaReflowPhut": 45,
+      "nhietDoDat": 210,
+      "nhietDoThuc": 196,
+      "ktvTruc": [
+        "Phan Đức Anh",
+        "Bùi Tiến"
+      ],
+      "slotFeeder": 22,
+      "thietBiHieuChuan": "AOI L4"
+    }
+  }
+]
