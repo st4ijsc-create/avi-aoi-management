@@ -21,6 +21,8 @@ import {
   deleteStorageKeys,
   deleteInspectionDirs,
   pruneOldInspectionImages,
+  sweepAoiCache,
+  aoiCacheRoot,
   evaluateDiskUsage,
   checkUploadsDiskUsage,
   startImageLifecycle,
@@ -159,6 +161,125 @@ describe("pruneOldInspectionImages", () => {
     const res = await pruneOldInspectionImages({ retentionDays: 365, nowMs: now, maxDirsPerRun: 2 });
     expect(res.scannedDirs).toBe(2);
     expect(res.deletedDirs).toBe(2);
+  });
+});
+
+describe("pruneOldInspectionImages — con trỏ bền (không để thư mục cũ đói vì thư mục trẻ đứng trước)", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("★ >5000 thư mục TRẺ đứng trước một thư mục CŨ ⇒ thư mục cũ vẫn bị xử lý ở lượt kế (bản cũ: không bao giờ)", async () => {
+    const now = Date.now();
+    // ids 1..5001 còn trẻ; id 5002 cũ. Bản cũ: readdir thứ tự chữ, đếm mọi thư mục, dừng ở 5000 ⇒ thư mục cũ không được xét.
+    const young = Array.from({ length: 5001 }, (_, i) => i + 1);
+    for (let i = 0; i < young.length; i += 200) {
+      await Promise.all(young.slice(i, i + 200).map((id) => mkFile(`inspections/${id}/a.jpg`, now - 10 * DAY)));
+    }
+    await mkFile("inspections/5002/old.jpg", now - 400 * DAY);
+
+    const r1 = await pruneOldInspectionImages({ retentionDays: 365, nowMs: now }); // trần mặc định 5000
+    expect(r1.scannedDirs).toBe(5000);
+    expect(r1.deletedDirs).toBe(0);
+    expect(r1.wrapped).toBe(false);
+    expect(fs.existsSync(path.join(tmpRoot, "inspections/5002"))).toBe(true);
+
+    const r2 = await pruneOldInspectionImages({ retentionDays: 365, nowMs: now });
+    expect(r2.scannedDirs).toBe(2); // 5001 và 5002 — phần còn lại sau con trỏ
+    expect(r2.deletedDirs).toBe(1);
+    expect(r2.wrapped).toBe(true);
+    expect(fs.existsSync(path.join(tmpRoot, "inspections/5002"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpRoot, "inspections/5001/a.jpg"))).toBe(true);
+  }, 120_000);
+
+  it("duyệt theo id SỐ tăng dần (2 trước 10), trần chỉ đếm thư mục đã xét, hết vòng thì quay lại đầu", async () => {
+    const now = Date.now();
+    for (const id of [10, 2, 33, 4, 100]) await mkFile(`inspections/${id}/a.jpg`, now - 5 * DAY);
+    const r1 = await pruneOldInspectionImages({ retentionDays: 365, nowMs: now, maxDirsPerRun: 2 });
+    expect([r1.scannedDirs, r1.nextCursor, r1.wrapped]).toEqual([2, "4", false]); // 2, 4
+    const r2 = await pruneOldInspectionImages({ retentionDays: 365, nowMs: now, maxDirsPerRun: 2 });
+    expect([r2.scannedDirs, r2.nextCursor, r2.wrapped]).toEqual([2, "33", false]); // 10, 33
+    const r3 = await pruneOldInspectionImages({ retentionDays: 365, nowMs: now, maxDirsPerRun: 2 });
+    expect([r3.scannedDirs, r3.nextCursor, r3.wrapped]).toEqual([1, null, true]); // 100 ⇒ hết vòng
+    const r4 = await pruneOldInspectionImages({ retentionDays: 365, nowMs: now, maxDirsPerRun: 2 });
+    expect([r4.scannedDirs, r4.nextCursor]).toEqual([2, "4"]); // quay lại đầu
+  });
+
+  it("tệp con trỏ nằm NGOÀI `inspections/` (reaper liệt kê tiền tố đó sẽ không coi nó là ảnh mồ côi)", async () => {
+    await mkFile("inspections/1/a.jpg", Date.now());
+    await pruneOldInspectionImages({ retentionDays: 365, maxDirsPerRun: 1 });
+    expect(fs.existsSync(path.join(tmpRoot, ".lifecycle", "inspections-prune.cursor.json"))).toBe(true);
+    expect(fs.readdirSync(path.join(tmpRoot, "inspections"))).toEqual(["1"]);
+  });
+
+  it("con trỏ hỏng/không ghi được ⇒ không sập, lượt sau chỉ bắt đầu từ đầu", async () => {
+    await mkFile("inspections/1/a.jpg", Date.now());
+    await mkFile(".lifecycle/inspections-prune.cursor.json");
+    await fs.promises.writeFile(path.join(tmpRoot, ".lifecycle", "inspections-prune.cursor.json"), "{not json");
+    const r = await pruneOldInspectionImages({ retentionDays: 365 });
+    expect(r.scannedDirs).toBe(1);
+  });
+});
+
+describe("sweepAoiCache — bộ quét bộ nhớ đệm ảnh AOI (mặc định DRY-RUN)", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  let cache: string;
+  beforeEach(() => {
+    cache = path.join(tmpRoot, "aoi-cache");
+  });
+  async function mk(rel: string, bytes: number, mtimeMs: number) {
+    const p = path.join(cache, rel);
+    await fs.promises.mkdir(path.dirname(p), { recursive: true });
+    await fs.promises.writeFile(p, Buffer.alloc(bytes, 1));
+    const t = new Date(mtimeMs);
+    await fs.promises.utimes(p, t, t);
+  }
+
+  it("mặc định chỉ BÁO CÁO: đếm đúng thư mục/tệp/byte hết hạn, KHÔNG xoá gì", async () => {
+    const now = Date.now();
+    await mk("PKG-OLD/a.jpg", 100, now - 30 * DAY);
+    await mk("PKG-OLD/b.jpg", 50, now - 20 * DAY);
+    await mk("PKG-MIX/old.jpg", 10, now - 30 * DAY);
+    await mk("PKG-MIX/new.jpg", 10, now - 1 * DAY); // tệp mới nhất còn trẻ ⇒ cả thư mục KHÔNG hết hạn
+    await mk("PKG-NEW/c.jpg", 10, now - 2 * DAY);
+    const r = await sweepAoiCache({ cacheDir: cache, ttlDays: 7, nowMs: now });
+    expect(r).toMatchObject({ dryRun: true, scannedDirs: 3, expiredDirs: 1, expiredFiles: 2, expiredBytes: 150, deletedDirs: 0 });
+    expect(fs.existsSync(path.join(cache, "PKG-OLD/a.jpg"))).toBe(true);
+  });
+
+  it("dryRun:false xoá ĐÚNG thư mục hết hạn, giữ thư mục còn tươi", async () => {
+    const now = Date.now();
+    await mk("PKG-OLD/a.jpg", 5, now - 30 * DAY);
+    await mk("PKG-MIX/old.jpg", 5, now - 30 * DAY);
+    await mk("PKG-MIX/new.jpg", 5, now - 1 * DAY);
+    const r = await sweepAoiCache({ cacheDir: cache, ttlDays: 7, nowMs: now, dryRun: false });
+    expect(r.deletedDirs).toBe(1);
+    expect(fs.existsSync(path.join(cache, "PKG-OLD"))).toBe(false);
+    expect(fs.existsSync(path.join(cache, "PKG-MIX/old.jpg"))).toBe(true);
+  });
+
+  it("giới hạn thư mục/lượt + con trỏ: nhiều lượt mới phủ hết, không lượt nào xét quá trần", async () => {
+    const now = Date.now();
+    for (let i = 0; i < 7; i++) await mk(`P${i}/a.jpg`, 1, now - 30 * DAY);
+    const seen: number[] = [];
+    let exp = 0;
+    for (let k = 0; k < 3; k++) {
+      const r = await sweepAoiCache({ cacheDir: cache, ttlDays: 7, nowMs: now, maxDirsPerRun: 3 });
+      seen.push(r.scannedDirs);
+      exp += r.expiredDirs;
+    }
+    expect(seen).toEqual([3, 3, 1]);
+    expect(exp).toBe(7);
+  });
+
+  it("TTL <= 0 ⇒ tắt; thư mục gốc chưa có ⇒ bỏ qua êm", async () => {
+    expect((await sweepAoiCache({ cacheDir: cache, ttlDays: 0 })).skipped).toBe(true);
+    expect((await sweepAoiCache({ cacheDir: path.join(tmpRoot, "khong-co"), ttlDays: 7 })).skipped).toBe(true);
+  });
+
+  it("aoiCacheRoot khớp quy tắc của aoiPackageRouter (AOI_CACHE_DIR hoặc ./uploads/aoi-cache)", () => {
+    setEnv("AOI_CACHE_DIR", path.join(tmpRoot, "x"));
+    expect(aoiCacheRoot()).toBe(path.join(tmpRoot, "x"));
+    setEnv("AOI_CACHE_DIR", undefined);
+    expect(aoiCacheRoot()).toBe(path.join(process.cwd(), "uploads", "aoi-cache"));
   });
 });
 

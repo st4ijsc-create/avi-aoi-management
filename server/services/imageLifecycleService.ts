@@ -160,19 +160,98 @@ async function newestMtimeMs(dir: string): Promise<number> {
 }
 
 export interface PruneImagesResult {
+  /** Số thư mục ĐÃ XÉT trong lượt này (mỗi thư mục xét đúng một lần; đây là thứ bị chặn bởi maxDirsPerRun). */
   scannedDirs: number;
   deletedDirs: number;
   skipped: boolean;
+  /** Tên thư mục cuối cùng đã xét — con trỏ bền của lượt kế tiếp (null = hết vòng, lượt sau quay lại đầu). */
+  nextCursor?: string | null;
+  /** true khi lượt này chạm cuối danh sách và đặt con trỏ về đầu. */
+  wrapped?: boolean;
+}
+
+// ── 3a. Con trỏ bền cho các bộ quét theo lượt ─────────────────────────────────
+//
+// ⚠ VÌ SAO: bản cũ của `pruneOldInspectionImages` duyệt `readdir` theo thứ tự chữ, ĐẾM MỌI thư mục (kể cả chưa hết hạn)
+// vào trần 5 000 rồi `break`, và KHÔNG nhớ gì giữa các lượt ⇒ mỗi lượt chỉ xét lại ~5 000 tên ĐẦU. Khi 5 000 tên đầu
+// là thư mục còn trẻ thì mọi thư mục cũ đứng sau chúng KHÔNG BAO GIỜ được xét. Ở quy mô sản xuất (hàng triệu bo, mỗi bo một
+// thư mục) lưới này vì thế gần như chết. Nay: sắp theo id SỐ tăng dần (id ≈ thời gian ⇒ cũ trước), xét tối đa `max`
+// thư mục kể từ sau con trỏ, lưu con trỏ vào tệp trạng thái; hết danh sách thì quay lại đầu. Mọi thư mục được xét sau
+// ⌈N / max⌉ lượt, bất kể chúng trẻ hay già.
+//
+// Tệp trạng thái nằm ở `<uploadsRoot>/.lifecycle/` — NGOÀI mọi tiền tố mà reaper liệt kê (`inspections/`), nếu không
+// reaper sẽ coi chính con trỏ là "ảnh mồ côi".
+
+const STATE_DIR_NAME = ".lifecycle";
+
+function stateFile(name: string, stateDir?: string): string {
+  return path.join(stateDir ?? path.join(uploadsRoot(), STATE_DIR_NAME), name);
+}
+
+async function docConTro(file: string): Promise<string | null> {
+  try {
+    const j = JSON.parse(await fs.promises.readFile(file, "utf8"));
+    return typeof j?.cursor === "string" ? j.cursor : null;
+  } catch {
+    return null; // chưa có / hỏng ⇒ bắt đầu từ đầu (an toàn: chỉ làm lượt đầu dài hơn)
+  }
+}
+
+async function ghiConTro(file: string, cursor: string | null): Promise<void> {
+  try {
+    await fs.promises.mkdir(path.dirname(file), { recursive: true });
+    await fs.promises.writeFile(file, JSON.stringify({ cursor, at: new Date().toISOString() }));
+  } catch (err: any) {
+    // Không ghi được con trỏ ⇒ lượt sau lại bắt đầu từ đầu: giảm tiến độ nhưng KHÔNG được làm sập lượt dọn.
+    console.warn(`[ImageLifecycle] cannot persist sweep cursor ${file}:`, err?.message ?? err);
+  }
+}
+
+/** So sánh tên thư mục: số nguyên tăng dần trước, rồi tên không phải số theo chữ. */
+export function soSanhTenThuMuc(a: string, b: string): number {
+  const na = /^\d+$/.test(a), nb = /^\d+$/.test(b);
+  if (na && nb) {
+    const x = BigInt(a), y = BigInt(b);
+    return x < y ? -1 : x > y ? 1 : 0;
+  }
+  if (na !== nb) return na ? -1 : 1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Chọn lô tên thư mục cho lượt này: các tên đứng SAU `conTro` (theo `soSanhTenThuMuc`), tối đa `max`.
+ * Hết danh sách trong lượt này ⇒ `nextCursor = null` và `wrapped = true` (lượt sau quay lại đầu). Nếu con trỏ đã ở cuối
+ * (không còn tên nào sau nó) thì quay lại đầu NGAY trong lượt này để lượt không rỗng vô ích.
+ */
+export function chonLoDuyet(
+  ten: readonly string[],
+  conTro: string | null,
+  max: number,
+): { batch: string[]; nextCursor: string | null; wrapped: boolean } {
+  const sorted = [...ten].sort(soSanhTenThuMuc);
+  let start = 0;
+  if (conTro !== null) {
+    start = sorted.findIndex((t) => soSanhTenThuMuc(t, conTro) > 0);
+    if (start === -1) start = 0; // con trỏ đã ở cuối ⇒ quay lại đầu
+  }
+  const batch = sorted.slice(start, start + max);
+  const het = start + batch.length >= sorted.length;
+  return { batch, nextCursor: het ? null : (batch[batch.length - 1] ?? null), wrapped: het };
 }
 
 /**
  * Sweep uploads/inspections/*: delete directories whose newest content is older
  * than the retention window. RETENTION_INSPECTION_IMAGES_DAYS <= 0 disables.
+ *
+ * Duyệt theo id tăng dần với CON TRỎ BỀN (xem 3a): trần `maxDirsPerRun` chỉ đếm thư mục ĐÃ XÉT, và lượt sau tiếp tục
+ * sau thư mục cuối cùng của lượt trước.
  */
 export async function pruneOldInspectionImages(opts?: {
   retentionDays?: number;
   maxDirsPerRun?: number;
   nowMs?: number;
+  /** Ghi đè thư mục trạng thái (test). */
+  stateDir?: string;
 }): Promise<PruneImagesResult> {
   const result: PruneImagesResult = { scannedDirs: 0, deletedDirs: 0, skipped: true };
   if (!isLocalStorage()) return result;
@@ -192,11 +271,15 @@ export async function pruneOldInspectionImages(opts?: {
   }
 
   result.skipped = false;
-  for (const e of entries) {
-    if (result.scannedDirs >= maxDirs) break;
-    if (!e.isDirectory()) continue;
+  const cursorFile = stateFile("inspections-prune.cursor.json", opts?.stateDir);
+  const lo = chonLoDuyet(
+    entries.filter((e) => e.isDirectory()).map((e) => e.name),
+    await docConTro(cursorFile),
+    maxDirs,
+  );
+  for (const name of lo.batch) {
     result.scannedDirs++;
-    const dir = path.join(base, e.name);
+    const dir = path.join(base, name);
     const newest = await newestMtimeMs(dir);
     if (newest > 0 && newest < cutoffMs) {
       try {
@@ -207,12 +290,145 @@ export async function pruneOldInspectionImages(opts?: {
       }
     }
   }
+  result.nextCursor = lo.nextCursor;
+  result.wrapped = lo.wrapped;
+  await ghiConTro(cursorFile, lo.nextCursor);
   if (result.deletedDirs > 0) {
     console.log(
-      `[ImageLifecycle] pruned ${result.deletedDirs} inspection image dirs older than ${retentionDays}d`,
+      `[ImageLifecycle] pruned ${result.deletedDirs} inspection image dirs older than ${retentionDays}d ` +
+        `(examined ${result.scannedDirs}${lo.wrapped ? ", end of list — next run restarts from the first dir" : ""})`,
     );
   }
   return result;
+}
+
+// ── 3b. Bộ quét bộ nhớ đệm ảnh AOI (`aoi-cache/<packageId>/<tệp>`) ─────────────
+//
+// Bộ nhớ đệm này chỉ có TTL LƯỜI: `aoiPackageRouter` xoá một tệp hết hạn khi có người truy cập đúng tệp đó; không ai quét.
+// Đo 2026-10-21 trên dev: 368 thư mục / 2 336 tệp / 661 MB, TẤT CẢ cũ hơn 7 ngày (cũ nhất 2026-02-07) và không còn hàng
+// `inspection_packages` nào. Tệp bóc ra từ ZIP nên LUÔN dựng lại được — xoá là an toàn về dữ liệu, nhưng việc xoá là
+// quyết định vận hành ⇒ MẶC ĐỊNH DRY-RUN (chỉ báo cáo); bật xoá bằng cờ riêng AOI_CACHE_SWEEP_DELETE=true.
+
+/** Thư mục gốc bộ nhớ đệm — PHẢI khớp với `CACHE_DIR` của `aoiPackageRouter`. */
+export function aoiCacheRoot(): string {
+  return process.env.AOI_CACHE_DIR
+    ? path.resolve(process.env.AOI_CACHE_DIR)
+    : path.join(process.cwd(), "uploads", "aoi-cache");
+}
+
+export interface AoiCacheSweepResult {
+  dryRun: boolean;
+  /** Thư mục đã xét trong lượt này. */
+  scannedDirs: number;
+  /** Thư mục hết hạn (mtime tệp mới nhất cũ hơn TTL) — ứng viên xoá. */
+  expiredDirs: number;
+  expiredFiles: number;
+  expiredBytes: number;
+  /** Thư mục thật sự bị xoá (0 khi dry-run). */
+  deletedDirs: number;
+  nextCursor: string | null;
+  wrapped: boolean;
+  skipped: boolean;
+}
+
+async function dirStats(dir: string): Promise<{ files: number; bytes: number; newestMs: number }> {
+  let files = 0, bytes = 0, newestMs = 0;
+  async function walk(d: string): Promise<void> {
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) await walk(p);
+      else {
+        try {
+          const st = await fs.promises.stat(p);
+          files++;
+          bytes += st.size;
+          newestMs = Math.max(newestMs, st.mtimeMs);
+        } catch {
+          /* vanished */
+        }
+      }
+    }
+  }
+  await walk(dir);
+  return { files, bytes, newestMs };
+}
+
+/**
+ * Quét `aoi-cache`: thư mục có tệp mới nhất cũ hơn TTL (AOI_CACHE_TTL_DAYS, mặc định 7) là hết hạn. Tối đa
+ * `maxDirsPerRun` thư mục ĐÃ XÉT mỗi lượt (AOI_CACHE_SWEEP_MAX_DIRS, mặc định 500), có con trỏ bền như 3a.
+ * DRY-RUN trừ khi `dryRun:false` được truyền tường minh (scheduler chỉ truyền khi AOI_CACHE_SWEEP_DELETE=true).
+ */
+export async function sweepAoiCache(opts?: {
+  ttlDays?: number;
+  maxDirsPerRun?: number;
+  nowMs?: number;
+  dryRun?: boolean;
+  cacheDir?: string;
+  stateDir?: string;
+}): Promise<AoiCacheSweepResult> {
+  const dryRun = opts?.dryRun !== false;
+  const r: AoiCacheSweepResult = {
+    dryRun, scannedDirs: 0, expiredDirs: 0, expiredFiles: 0, expiredBytes: 0, deletedDirs: 0,
+    nextCursor: null, wrapped: false, skipped: true,
+  };
+  const ttlDays = opts?.ttlDays ?? envInt("AOI_CACHE_TTL_DAYS", 7);
+  if (!(ttlDays > 0)) return r;
+  const maxDirs = Math.max(1, opts?.maxDirsPerRun ?? envInt("AOI_CACHE_SWEEP_MAX_DIRS", 500));
+  const root = opts?.cacheDir ?? aoiCacheRoot();
+  const cutoffMs = (opts?.nowMs ?? Date.now()) - ttlDays * 24 * 60 * 60 * 1000;
+
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(root, { withFileTypes: true });
+  } catch {
+    return r; // chưa có bộ nhớ đệm
+  }
+  r.skipped = false;
+  const cursorFile = stateFile("aoi-cache-sweep.cursor.json", opts?.stateDir);
+  const lo = chonLoDuyet(entries.filter((e) => e.isDirectory()).map((e) => e.name), await docConTro(cursorFile), maxDirs);
+  for (const name of lo.batch) {
+    r.scannedDirs++;
+    const dir = path.join(root, name);
+    const st = await dirStats(dir);
+    // Thư mục rỗng (không còn tệp) ⇒ newestMs = 0 ⇒ coi là hết hạn bằng mtime của chính thư mục.
+    let newest = st.newestMs;
+    if (newest === 0) {
+      try {
+        newest = (await fs.promises.stat(dir)).mtimeMs;
+      } catch {
+        continue;
+      }
+    }
+    if (newest >= cutoffMs) continue;
+    r.expiredDirs++;
+    r.expiredFiles += st.files;
+    r.expiredBytes += st.bytes;
+    if (!dryRun) {
+      try {
+        await fs.promises.rm(dir, { recursive: true, force: true });
+        r.deletedDirs++;
+      } catch (err: any) {
+        console.warn(`[AoiCacheSweep] failed to remove ${dir}:`, err?.message ?? err);
+      }
+    }
+  }
+  r.nextCursor = lo.nextCursor;
+  r.wrapped = lo.wrapped;
+  await ghiConTro(cursorFile, lo.nextCursor);
+  if (r.expiredDirs > 0) {
+    console.log(
+      `[AoiCacheSweep] ${dryRun ? "DRY-RUN — would delete" : "deleted"} ${r.expiredDirs} dirs / ${r.expiredFiles} files / ` +
+        `${(r.expiredBytes / 1048576).toFixed(1)} MB older than ${ttlDays}d (examined ${r.scannedDirs}` +
+        `${r.wrapped ? ", end of list" : ""}) — root=${root}`,
+    );
+  }
+  return r;
 }
 
 // ── 4. Disk-usage monitor (decision #5 — 32TB volume, alert at 80%) ──────────
@@ -604,6 +820,7 @@ export async function reapOrphanImages(opts?: {
 let pruneTimer: NodeJS.Timeout | null = null;
 let diskTimer: NodeJS.Timeout | null = null;
 let orphanTimer: NodeJS.Timeout | null = null;
+let aoiCacheTimer: NodeJS.Timeout | null = null;
 
 /**
  * Start the image lifecycle scheduler. Gated by DATA_RETENTION_ENABLED (same
@@ -625,6 +842,12 @@ export function startImageLifecycle(): void {
   // on, it runs DRY-RUN (report only) unless ORPHAN_IMAGE_REAPER_DELETE=true.
   const reaperEnabled = process.env.ORPHAN_IMAGE_REAPER_ENABLED === "true";
   const reaperDelete = process.env.ORPHAN_IMAGE_REAPER_DELETE === "true";
+  // Bộ quét aoi-cache (3b): LUÔN chạy ở chế độ báo cáo; chỉ XOÁ khi cờ riêng AOI_CACHE_SWEEP_DELETE=true (mặc định tắt).
+  const aoiCacheDelete = process.env.AOI_CACHE_SWEEP_DELETE === "true";
+  const sweepAoiCacheOnce = () =>
+    void sweepAoiCache({ dryRun: !aoiCacheDelete }).catch((e) =>
+      console.error("[AoiCacheSweep] run failed:", e?.message ?? e),
+    );
 
   // First runs shortly after boot (don't block startup), then on interval.
   setTimeout(() => {
@@ -634,6 +857,7 @@ export function startImageLifecycle(): void {
     void checkUploadsDiskUsage().catch((e) =>
       console.error("[ImageLifecycle] disk check failed:", e?.message ?? e),
     );
+    sweepAoiCacheOnce();
     if (reaperEnabled) {
       void reapOrphanImages({ dryRun: !reaperDelete }).catch((e) =>
         console.error("[OrphanReaper] run failed:", e?.message ?? e),
@@ -647,6 +871,9 @@ export function startImageLifecycle(): void {
     );
   }, pruneIntervalMs);
   if (typeof pruneTimer.unref === "function") pruneTimer.unref();
+
+  aoiCacheTimer = setInterval(sweepAoiCacheOnce, pruneIntervalMs);
+  if (typeof aoiCacheTimer.unref === "function") aoiCacheTimer.unref();
 
   diskTimer = setInterval(() => {
     void checkUploadsDiskUsage().catch((e) =>
@@ -693,5 +920,9 @@ export function stopImageLifecycle(): void {
   if (orphanTimer) {
     clearInterval(orphanTimer);
     orphanTimer = null;
+  }
+  if (aoiCacheTimer) {
+    clearInterval(aoiCacheTimer);
+    aoiCacheTimer = null;
   }
 }
