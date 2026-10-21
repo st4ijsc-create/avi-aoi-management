@@ -73,7 +73,7 @@ import {
 //   `streamChatCompletion`, `postInfill` — mọi hàm `server*` công khai đi qua một trong ba.
 import { quaCongUuTien, quaCongUuTienLuong } from "./ai/hangDoiUuTienLlm";
 import { layAnhSoModel } from "./ai/soModel/anhSoModel";
-import { laModelKheNangPhu } from "./ai/soModel/tapKheNang";
+import { laModelHoSoKheNang, laModelKheNangPhu } from "./ai/soModel/tapKheNang";
 import { quaKheNang, quaKheNangLuong } from "./ai/soModel/kheNangMacDinh";
 
 // ═══ G5-D — Ô DỮ LIỆU THỨ HAI: `message.reasoning_content` ════════════════════════════════════
@@ -680,6 +680,22 @@ function postChatCompletion(
   return quaKheNang(String(body.model ?? ""), () => quaCongUuTien(() => postChatCompletionTrucTiep(body, signal), signal), signal);
 }
 
+/**
+ * ★ Đợt 9 (dieu-phoi 2026-10-22) — trần thời gian SINH (tổng) của một lượt KHÔNG stream. Lượt phục vụ bởi HỒ SƠ khe nặng
+ * (`slotClass = nang`) ⇒ `AI_KHE_NANG_INFER_TIMEOUT_MS` (mặc định 900 000 ms); mọi lượt khác ⇒ `LLAMA_SERVER_TIMEOUT_MS`
+ * (mặc định 120 000 ms) như cũ. Lý do ĐO ĐƯỢC: A/B /v1 2026-10-22 — 27B nghĩ 16k có trung vị 296 s (đường raw), trần 120 s
+ * chung cắt lượt `code.plc` ("This operation was aborted") ⇒ khoảng một nửa câu trả lời mất trên sản phẩm.
+ * Đường STREAM không dùng trần này: nó có trần NHÀN RỖI giữa hai mảnh (`streamIdleTimeoutMs`), không trần tổng.
+ */
+export function tranSinhKhongLuongMs(model: string | undefined, env: NodeJS.ProcessEnv = process.env, anh = layAnhSoModel()): number {
+  const so = (v: string | undefined, macDinh: number) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : macDinh;
+  };
+  if (laModelHoSoKheNang(model, anh)) return so(env.AI_KHE_NANG_INFER_TIMEOUT_MS, 900_000);
+  return so(env.LLAMA_SERVER_TIMEOUT_MS, 120_000);
+}
+
 /** POST an OpenAI chat-completion to the server and return the raw JSON + timing. */
 async function postChatCompletionTrucTiep(
   body: Record<string, unknown>,
@@ -689,7 +705,7 @@ async function postChatCompletionTrucTiep(
   const url = baseUrl();
   if (!url) throw new Error("[llamaServer] LLAMA_SERVER_URL not set");
   const startTime = Date.now();
-  const timeoutMs = Number(process.env.LLAMA_SERVER_TIMEOUT_MS ?? 120_000);
+  const timeoutMs = tranSinhKhongLuongMs(typeof body.model === "string" ? body.model : undefined);
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   const huyTheoNgoai = () => ctrl.abort();

@@ -31,6 +31,19 @@ export function modelKheNangPhu(anh: AnhSoModel, modelNha: string): string[] {
   return [...ra].sort();
 }
 
+/**
+ * ★ Đợt 9 (dieu-phoi 2026-10-22) — M là artifact của một HỒ SƠ khe nặng (`slotClass = nang`, bật, tệp còn) — kể cả model nhà
+ * nếu nó có hồ sơ. Dùng cho trần thời gian SINH riêng của khe nặng (`AI_KHE_NANG_INFER_TIMEOUT_MS`), KHÔNG phụ thuộc cờ đổi khe.
+ */
+export function laModelHoSoKheNang(model: string | undefined, anh: AnhSoModel): boolean {
+  const m = toBasename(model);
+  if (!m) return false;
+  for (const p of anh.profile.values()) {
+    if (p.slotClass === "nang" && p.enabled && p.artifactStatus === "available" && toBasename(p.artifactFile) === m) return true;
+  }
+  return false;
+}
+
 /** M có thuộc tập PHỤ (phục vụ được sau khi đổi khe) không. */
 export function laModelKheNangPhu(model: string | undefined, anh: AnhSoModel, env: NodeJS.ProcessEnv): boolean {
   if (!model || !hoanDoiKheNangBat(env)) return false;
