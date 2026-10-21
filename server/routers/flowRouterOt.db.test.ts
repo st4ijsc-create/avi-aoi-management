@@ -132,7 +132,8 @@ describe("★★★ Đợt 8.5 — bật luồng hạng `ot` = admin + 2FA mới
     expect(await trangThaiLuong(luongOt.id)).toMatchObject({ enabled: true, activeVersion: version });
 
     const cmd0 = await demCmd();
-    const { runId } = await goi("engineer").chayTay({ flowId: luongOt.id });
+    await expect(goi("engineer").chayTay({ flowId: luongOt.id })).rejects.toMatchObject({ code: "FORBIDDEN" }); // Đợt 9 (L3): hạng ot đã bật vẫn chỉ admin chạy tay
+    const { runId } = await goi("admin").chayTay({ flowId: luongOt.id });
     await chayHet();
     const cho = (await goi("viewer").danhSachCho()).find((x) => x.runId === runId);
     expect(cho).toMatchObject({ nodeId: "d", vaiTroDuyet: "supervisor" });

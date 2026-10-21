@@ -331,8 +331,9 @@ export const flowRouter = router({
         // Đợt 8.5 — chạy thử một phiên bản `ot` chưa bật = bỏ qua cổng admin + 2FA ⇒ từ chối mọi vai.
         throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowKichHoatHangCao" }, "Luồng hạng ot phải được bật (batLuongOt: quản trị viên + mã 2FA) trước khi chạy.");
       }
-      if (!daBat && laHangCao(v.riskClass) && ctx.user.role !== "admin") {
-        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowKichHoatHangCao" }, `Luồng hạng ${v.riskClass} chưa bật — chỉ quản trị viên được chạy thử.`);
+      // Đợt 9 (L3): hạng ≥ ngoai-ghi chỉ admin chạy tay — kể cả khi phiên bản ĐÃ BẬT (bật bởi admin không biến mọi người ghi thành người được chạy tay).
+      if (laHangCao(v.riskClass) && ctx.user.role !== "admin") {
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowKichHoatHangCao" }, `Luồng hạng ${v.riskClass} — chỉ quản trị viên được chạy tay.`);
       }
       const def = v.definition as FlowDefinition;
       const thuCong = def.nodes.find((n) => n.type === "kich-hoat.thu-cong" && !n.disabled);

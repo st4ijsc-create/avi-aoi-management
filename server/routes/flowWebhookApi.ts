@@ -28,8 +28,27 @@ function docThanJson(): express.RequestHandler {
   };
 }
 
+/** ★ Đợt 9 (L3) — token TRƯỚC thân: sai/thiếu ⇒ 401 và ĐÓNG kết nối, KHÔNG đọc thân (bộ đọc JSON đứng sau middleware này). */
+function kiemTokenTruoc(): express.RequestHandler {
+  return async (req, res, next) => {
+    try {
+      const { kiemTokenTruocThan } = await import("../services/flow/kichHoat/webhook");
+      const kq = await kiemTokenTruocThan({ flowId: String(req.params.flowId ?? ""), nodeId: String(req.params.nodeId ?? ""), token: req.get("x-flow-token") });
+      if (kq.ok) return next();
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Connection", "close");
+      // data-raw-ok: thân lỗi cho client MÁY — `code` là hợp đồng (cùng mã/thông điệp với xuLyWebhook).
+      res.status(kq.ma).json(kq.ma === 401 ? { success: false, code: "AUTH_REQUIRED", error: "token webhook sai hoặc thiếu" } : { success: false, code: "DB_UNAVAILABLE", error: "không có kết nối CSDL" });
+    } catch (err) {
+      console.error("[luong-ai] webhook (kiểm token) lỗi:", String((err as Error)?.message ?? err).slice(0, 300));
+      // data-raw-ok: không đẩy thông điệp ngoại lệ nội bộ ra ngoài.
+      res.status(500).json({ success: false, code: "OPERATION_FAILED", error: "internal error" });
+    }
+  };
+}
+
 export function registerFlowWebhookRoutes(app: express.Express): void {
-  app.post("/api/flow/webhook/:flowId/:nodeId", chanTuyenAiTheoGiayPhep(), docThanJson(), async (req, res) => {
+  app.post("/api/flow/webhook/:flowId/:nodeId", chanTuyenAiTheoGiayPhep(), kiemTokenTruoc(), docThanJson(), async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     try {
       const { xuLyWebhook } = await import("../services/flow/kichHoat/webhook");

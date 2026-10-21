@@ -140,6 +140,10 @@ describe("flowRouter (Đợt 8.1, DB)", () => {
     // tắt (bat=false) thì engineer vẫn làm được — cổng chỉ chặn chiều BẬT
     expect(await goi("engineer").datPhienBanHoatDong({ flowId: def.id, version, bat: false })).toMatchObject({ bat: false });
     expect(await goi("admin").datPhienBanHoatDong({ flowId: def.id, version, bat: true })).toMatchObject({ bat: true, hang: "ngoai-ghi" });
+    // ★ Đợt 9 (L3): luồng ĐÃ BẬT hạng ngoai-ghi — engineer vẫn KHÔNG chạy tay được; admin được
+    await expect(goi("engineer").chayTay({ flowId: def.id })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(goi("engineer").chayTay({ flowId: def.id, version })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await goi("admin").chayTay({ flowId: def.id })).runId).toBeTruthy();
     await goi("admin").datPhienBanHoatDong({ flowId: def.id, version, bat: false });
   });
 
