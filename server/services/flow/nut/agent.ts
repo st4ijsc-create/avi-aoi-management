@@ -75,6 +75,8 @@ export function datHamTimTaiLieu(f: TimTaiLieu | null): void {
 
 export interface KhaiToolLuong {
   flowId: string;
+  /** H1: phiên bản luồng con đã GHIM (máy chủ ghim lúc lưu). */
+  version?: number;
   ten?: string;
   moTa?: string;
   thamSo?: { ten: string; kieu: "chuoi" | "so" | "boolean"; batBuoc?: boolean; moTa?: string }[];
@@ -134,7 +136,7 @@ const cat = (s: string) => (s.length > TRAN_QUAN_SAT ? `${s.slice(0, TRAN_QUAN_S
 async function chayToolLuong(ngu: NguCanhChay, k: KhaiToolLuong, thamSo: Record<string, unknown>): Promise<{ ok: boolean; chu: string }> {
   let kiem;
   try {
-    kiem = await kiemGoiLuongCon(ngu, k.flowId);
+    kiem = await kiemGoiLuongCon(ngu, k.flowId, typeof k.version === "number" ? k.version : undefined);
   } catch (e) {
     return { ok: false, chu: `[error] ${(e as Error).message}` };
   }

@@ -17,10 +17,11 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { aiFlowEvents, aiFlowInbox, aiFlowQueue, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../../drizzle/schema";
 import { getDb } from "../../db/connection";
-import { THU_TU_HANG, kiemLuong, luongConCuaNut, type FlowDefinition, type HangTacDungPhu } from "../../../shared/flow/model";
+import { THU_TU_HANG, kiemLuong, type FlowDefinition, type HangTacDungPhu } from "../../../shared/flow/model";
 import type { ItemLuong } from "../../../shared/flow/bieuThuc";
 import { layNut, type KetQuaChay, type NguCanhChay, type YeuCauCho } from "./dangKyNut";
 import { bienTheBiMat, cheBiMat, cheSau, giaiMaChoChay } from "./biMat";
+import { ghimLuongCon, hangLuongConGhim, thamChieuTho } from "./ghimLuongCon";
 import "./nut";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -59,29 +60,15 @@ export async function hangLuongConTuDb(ids: readonly string[]): Promise<Map<stri
   return ra;
 }
 
-/** Id mọi luồng con được tham chiếu (đọc thô, trước khi kiểm). */
-function idLuongConTho(raw: unknown): string[] {
-  const nodes = (raw as { nodes?: unknown })?.nodes;
-  if (!Array.isArray(nodes)) return [];
-  const ids = new Set<string>();
-  for (const n of nodes) {
-    if (!n || typeof n !== "object") continue;
-    const x = n as { id?: unknown; type?: unknown; parameters?: unknown };
-    const p = x.parameters && typeof x.parameters === "object" ? (x.parameters as Record<string, unknown>) : {};
-    for (const id of luongConCuaNut({ id: String(x.id ?? ""), type: String(x.type ?? ""), parameters: p }).ids) ids.add(id);
-  }
-  return [...ids];
-}
-
 /** `kiemLuong` với hạng luồng con đọc từ CSDL (đường của máy chủ — lưu phiên bản, mô tả → luồng). */
 export async function kiemLuongDayDu(raw: unknown): Promise<ReturnType<typeof kiemLuong>> {
-  const ids = idLuongConTho(raw);
-  const hang = ids.length ? await hangLuongConTuDb(ids) : new Map<string, HangTacDungPhu | null>();
-  return kiemLuong(raw, layNut, { hangLuongCon: (id) => hang.get(id) ?? null });
+  // H1: hạng của luồng con tính trên ĐÚNG phiên bản ghim (xem ghimLuongCon.ts).
+  return kiemLuong(raw, layNut, { hangLuongCon: await hangLuongConGhim(thamChieuTho(raw)) });
 }
 
 /** Lưu một phiên bản MỚI (bất biến) của luồng sau khi kiểm hợp lệ. Trả số phiên bản. */
-export async function luuPhienBan(raw: unknown, userId: number | null): Promise<{ flowId: string; version: number; hang: string }> {
+export async function luuPhienBan(rawGoc: unknown, userId: number | null): Promise<{ flowId: string; version: number; hang: string }> {
+  const raw = await ghimLuongCon(rawGoc); // H1: tham chiếu luồng con thiếu `version` được GHIM = phiên bản hoạt động hiện tại
   const kq = await kiemLuongDayDu(raw);
   if (!kq.ok) throw new LoiLuong("LUONG_KHONG_HOP_LE", kq.loi.join("; "));
   const def = raw as FlowDefinition;

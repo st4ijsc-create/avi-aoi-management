@@ -1,5 +1,5 @@
 /**
- * ★★ Luồng AI Đợt 8.4 — NODE `luong.goi-con`: gọi PHIÊN BẢN HOẠT ĐỘNG của một luồng khác với các item đầu vào, CHỜ nó xong
+ * ★★ Luồng AI Đợt 8.4 — NODE `luong.goi-con`: gọi một PHIÊN BẢN ĐÃ GHIM (H1, 2026-10-21 — trước đây: phiên bản hoạt động hiện tại) của một luồng khác với các item đầu vào, CHỜ nó xong
  * rồi đi tiếp với đầu ra node cuối của nó (cổng `main`). Spec §4.5 ("gọi sub-flow"), §4.6 (hạng luồng gồm cả sub-flow).
  *
  * Cách chờ — BỀN, không giữ worker: node trả `YeuCauCho` kind `luong-con` mang yêu cầu tạo lượt con; động cơ ghi hàng chờ
@@ -14,6 +14,9 @@
  */
 import { DO_SAU_LUONG_CON_TOI_DA, LOAI_GOI_LUONG_CON, type FlowDefinition, type HangTacDungPhu } from "../../../../shared/flow/model";
 import { dangKyNut, type NguCanhChay } from "../dangKyNut";
+import { and, eq } from "drizzle-orm";
+import { aiFlowVersions, aiFlows } from "../../../../drizzle/schema";
+import { getDb } from "../../../db/connection";
 
 export class LoiLuongCon extends Error {
   constructor(message: string) {
@@ -31,14 +34,33 @@ export function nutVaoLuongCon(def: FlowDefinition, uuTien: readonly string[] = 
   return null;
 }
 
+/** Bản ĐÃ GHIM của một luồng con: định nghĩa + hạng của đúng bản đó + cờ BẬT của luồng (tắt ⇒ không gọi). */
+async function docBanGhim(flowId: string, version: number): Promise<{ version: number; hang: HangTacDungPhu; enabled: boolean; def: FlowDefinition } | null> {
+  const db = await getDb();
+  if (!db) throw new LoiLuongCon("không có kết nối CSDL");
+  const [f] = await db.select({ enabled: aiFlows.enabled }).from(aiFlows).where(eq(aiFlows.id, flowId));
+  if (!f) return null;
+  const [v] = await db.select().from(aiFlowVersions).where(and(eq(aiFlowVersions.flowId, flowId), eq(aiFlowVersions.version, version)));
+  if (!v) return null;
+  return { version: v.version, hang: v.riskClass as HangTacDungPhu, enabled: f.enabled, def: v.definition as FlowDefinition };
+}
+
 /**
- * Kiểm LÚC CHẠY trước khi gọi một luồng con (dùng chung `luong.goi-con` và tool của `ai.agent`): luồng con có phiên bản hoạt
- * động, hạng của nó ≤ hạng phiên bản cha đang chạy, không vòng, không quá sâu, có node vào. Trả phiên bản + node vào.
+ * Kiểm LÚC CHẠY trước khi gọi một luồng con (dùng chung `luong.goi-con` và tool của `ai.agent`): ĐÚNG phiên bản ĐÃ GHIM trong
+ * định nghĩa cha (H1), luồng con đang BẬT (tắt = kill switch), hạng của bản ghim ≤ hạng phiên bản cha đang chạy, không vòng,
+ * không quá sâu, có node vào. Trả phiên bản + node vào.
+ *
+ * ★ H1: KHÔNG còn đọc "phiên bản hoạt động hiện tại" của con — bật bản mới của con không đổi được cha đã duyệt. Định nghĩa cũ không
+ *   có `version` ⇒ TỪ CHỐI (lưu lại cha để ghim), không fallback im lặng.
  */
-export async function kiemGoiLuongCon(ngu: NguCanhChay, flowIdCon: string): Promise<{ version: number; hang: HangTacDungPhu; nutVao: string; def: FlowDefinition }> {
-  const { chuoiLuotCha, hangDu, hangPhienBan, phienBanHoatDong } = await import("../dongCo");
-  const con = await phienBanHoatDong(flowIdCon);
-  if (!con) throw new LoiLuongCon(`luồng con '${flowIdCon}' không tồn tại hoặc chưa có phiên bản hoạt động`);
+export async function kiemGoiLuongCon(ngu: NguCanhChay, flowIdCon: string, versionGhim?: number): Promise<{ version: number; hang: HangTacDungPhu; nutVao: string; def: FlowDefinition }> {
+  const { chuoiLuotCha, hangDu, hangPhienBan } = await import("../dongCo");
+  if (versionGhim === undefined || !Number.isInteger(versionGhim) || versionGhim < 1) {
+    throw new LoiLuongCon(`luồng con '${flowIdCon}' chưa được GHIM phiên bản trong định nghĩa luồng cha — cần LƯU LẠI luồng ${ngu.flowId} để ghim (không tự dùng phiên bản hoạt động)`);
+  }
+  const con = await docBanGhim(flowIdCon, versionGhim);
+  if (!con) throw new LoiLuongCon(`luồng con '${flowIdCon}'@${versionGhim} không tồn tại`);
+  if (!con.enabled) throw new LoiLuongCon(`từ chối: luồng con '${flowIdCon}' đang TẮT (kill switch) — không gọi được`);
   const hangCha = ngu.version ? await hangPhienBan(ngu.flowId, ngu.version) : null;
   if (!hangCha) throw new LoiLuongCon(`không xác định được hạng của luồng ${ngu.flowId}@${ngu.version ?? "?"}`);
   if (!hangDu(hangCha, con.hang)) {
@@ -67,7 +89,7 @@ dangKyNut({
   async chay(thamSo, ngu) {
     const flowIdCon = thamSo.flowId;
     if (typeof flowIdCon !== "string") throw new LoiLuongCon("luong.goi-con cần 'flowId' cố định");
-    const k = await kiemGoiLuongCon(ngu, flowIdCon);
+    const k = await kiemGoiLuongCon(ngu, flowIdCon, typeof thamSo.version === "number" ? thamSo.version : undefined);
     const vao = ngu.inputs.main ?? [];
     return {
       __cho: {
