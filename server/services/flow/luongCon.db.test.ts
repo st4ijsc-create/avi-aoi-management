@@ -153,7 +153,7 @@ describe("BỘ TẤN CÔNG HẠNG — luồng hạng thấp gọi hạng cao (0 
     expect(await runCua("cha-a")).toHaveLength(0);
   });
 
-  it("(b) cha `thuan` ĐÃ BẬT; con đổi phiên bản hoạt động sang `ngoai-ghi` ⇒ lượt cha bị TỪ CHỐI lúc chạy, 0 lượt con", async () => {
+  it("(b) cha `thuan` ĐÃ BẬT; con đổi phiên bản hoạt động sang `ngoai-ghi` ⇒ cha VẪN chạy đúng bản đã GHIM (H1); định nghĩa cha bị can thiệp trỏ bản `ngoai-ghi` ⇒ TỪ CHỐI lúc chạy, 0 lượt con", async () => {
     const con = def("con-doi", [nut("vao", "kich-hoat.thu-cong"), nut("x", "du-lieu.dat", { truong: { y: 1 } })], [noi("vao", "x")]);
     await luuVaBat(con);
     const cha = def("cha-b", [nut("t", "kich-hoat.thu-cong"), nut("g", "luong.goi-con", { flowId: con.id })], [noi("t", "g")]);
@@ -165,13 +165,22 @@ describe("BỘ TẤN CÔNG HẠNG — luồng hạng thấp gọi hạng cao (0 
     // Đổi con: phiên bản mới hạng `ngoai-ghi`, admin đặt hoạt động.
     const con2 = { ...con, nodes: [nut("vao", "kich-hoat.thu-cong"), nut("gui", "tich-hop.http-gui", { url: "https://khong-duoc-phep.invalid/x", phuongThuc: "POST" })], connections: [noi("vao", "gui")] };
     await luuVaBat(con2, "admin");
-    // Lượt cha (chạy tay của kỹ sư — phiên bản cha đã bật, hạng ghi trên phiên bản vẫn `thuan`).
+    // H1: cha đã GHIM con@1 lúc lưu ⇒ bật con@2 (ngoai-ghi) KHÔNG đổi cha: lượt cha chạy con ĐÚNG bản 1 và xong.
+    const { runId: runGhim } = await goi("engineer").chayTay({ flowId: cha.id });
+    await chayHet();
+    expect((await layRun(runGhim)).status).toBe("xong");
+    expect((await runCua("con-doi")).filter((x) => x.parentRunId === runGhim).map((x) => x.version)).toEqual([1]);
+    // Lớp phòng thủ thứ hai: ai đó sửa THẲNG định nghĩa cha (bỏ qua `luu`) để trỏ bản `ngoai-ghi` mà hạng cha vẫn `thuan` ⇒ TỪ CHỐI lúc chạy.
+    // (động cơ nhớ định nghĩa theo flowId@version ⇒ chèn MỘT PHIÊN BẢN MỚI do kẻ gian dựng thẳng trong CSDL, hạng ghi vẫn `thuan`, rồi bật nó)
+    const bang = await (await db()).execute(sql`INSERT INTO ai_flow_versions ("flowId", version, definition, "riskClass") SELECT "flowId", version + 100, jsonb_set(definition, '{nodes,1,parameters,version}', '2'::jsonb), 'thuan' FROM ai_flow_versions WHERE "flowId" = ${cha.id} AND version = ${rc.version} RETURNING version`) as unknown as { version: number }[];
+    await (await db()).execute(sql`UPDATE ai_flows SET "activeVersion" = ${bang[0].version}, enabled = true WHERE id = ${cha.id}`);
     const { runId } = await goi("engineer").chayTay({ flowId: cha.id });
     await chayHet();
     const r = await layRun(runId);
     expect(r.status).toBe("loi");
     expect(JSON.stringify(r.error)).toMatch(/từ chối: luồng con .*hạng 'ngoai-ghi' cao hơn hạng 'thuan'/);
-    // (c) cùng tấn công qua TOOL agent: model gọi tool ⇒ tool trả TỪ CHỐI, không lượt con nào.
+    expect((await runCua("con-doi")).filter((x) => x.parentRunId === runId)).toHaveLength(0);
+    // (c) cùng tấn công qua TOOL agent: model gọi tool ⇒ agent đã ghim bản 1 ⇒ chạy bản 1 (không bị bản ngoai-ghi mới ảnh hưởng).
     cuAgent = datHamGoiAgent(async ({ tinNhan }) => {
       const daCoKq = tinNhan.some((m) => m.role === "tool");
       return daCoKq ? { chu: "Không làm được.", toolCalls: [] } : { chu: "", toolCalls: [{ id: "c1", type: "function", function: { name: "lam_viec", arguments: "{}" } }] };
@@ -180,8 +189,8 @@ describe("BỘ TẤN CÔNG HẠNG — luồng hạng thấp gọi hạng cao (0 
     await chayHet();
     expect((await layRun(runA)).status).toBe("xong");
     const [kq] = await raCua(runA, "a");
-    expect(kq.agent).toEqual({ ketThuc: "hoan-thanh", soLuotTool: 1, tool: [{ ten: "lam_viec", ok: false }] });
-    expect(await runCua("con-doi")).toHaveLength(0);
+    expect(kq.agent).toEqual({ ketThuc: "hoan-thanh", soLuotTool: 1, tool: [{ ten: "lam_viec", ok: true }] });
+    expect((await runCua("con-doi")).filter((x) => x.parentRunId === runA).map((x) => x.version)).toEqual([1]);
     // Lưu LẠI cha ⇒ hạng tính lại ⇒ `ngoai-ghi` ⇒ kỹ sư không bật được nữa.
     const moi = await goi("engineer").luu({ definition: cha });
     expect(moi.hang).toBe("ngoai-ghi");
@@ -202,6 +211,85 @@ describe("BỘ TẤN CÔNG HẠNG — luồng hạng thấp gọi hạng cao (0 
     const r = await goi("engineer").luu({ definition: ag });
     expect(r.hang).toBe("ngoai-ghi");
     await expect(goi("engineer").datPhienBanHoatDong({ flowId: ag.id, version: r.version, bat: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});
+
+describe("H1 — GHIM PHIÊN BẢN LUỒNG CON (audit 2026-10-21): bật bản mới của con KHÔNG đổi cha đã duyệt", () => {
+  const conV = (id: string, truong: Record<string, unknown>) => def(id, [nut("vao", "kich-hoat.thu-cong"), nut("tinh", "du-lieu.dat", { truong })], [noi("vao", "tinh")]);
+  const chaGhi = (id: string, conId: string, extra: Record<string, unknown> = {}) =>
+    def(id, [nut("t", "kich-hoat.thu-cong"), nut("g", "luong.goi-con", { flowId: conId, ...extra }), nut("gui", "tich-hop.http-gui", { url: "https://khong-duoc-phep.invalid/x", phuongThuc: "POST", than: "{{ $json.ketQua }}" })], [noi("t", "g"), noi("g", "gui")]);
+
+  it("★ KỊCH BẢN AUDIT: admin duyệt cha `ngoai-ghi`; operator lưu + bật phiên bản MỚI của con (thuần) ⇒ lượt cha vẫn chạy con@1, 0 lượt con@2", async () => {
+    await luuVaBat(conV("h1-con", { ketQua: "bản-1" }));
+    const cha = chaGhi("h1-cha", `${TT}-h1-con`);
+    const rc = await goi("admin").luu({ definition: cha });
+    expect(rc.hang).toBe("ngoai-ghi");
+    await goi("admin").datPhienBanHoatDong({ flowId: cha.id, version: rc.version, bat: true });
+    // kẻ tấn công (operator — ghiProcedure, KHÔNG admin) đổi đầu ra của con và bật nó (hạng thuần ⇒ không đòi admin)
+    const v2 = await luuVaBat(conV("h1-con", { ketQua: "BẢN-KẺ-GIAN" }), "operator");
+    expect(v2.version).toBe(2);
+    const { runId } = await goi("operator").chayTay({ flowId: cha.id });
+    await chayHet();
+    const conRuns = (await runCua("h1-con")).filter((x) => x.parentRunId === runId);
+    expect(conRuns.map((x) => x.version)).toEqual([1]); // trước bản vá: [2]
+    const [bc] = await raCua(conRuns[0].id, "tinh");
+    expect(bc.ketQua).toBe("bản-1");
+  });
+
+  it("lúc LƯU máy chủ GHIM `version` = phiên bản hoạt động hiện tại của con (cả goi-con lẫn từng luongCon[] của agent); bản đã ghim sẵn được giữ", async () => {
+    await luuVaBat(conV("h1-ghim", { a: 1 }));
+    await luuVaBat(conV("h1-ghim", { a: 2 })); // hoạt động = 2
+    const cha = def("h1-ghim-cha", [nut("t", "kich-hoat.thu-cong"), nut("g", "luong.goi-con", { flowId: `${TT}-h1-ghim` }), nut("a", "ai.agent", { luongCon: [{ flowId: `${TT}-h1-ghim`, ten: "x" }, { flowId: `${TT}-h1-ghim`, ten: "y", version: 1 }] })], [noi("t", "g"), noi("t", "a")]);
+    const r = await goi("engineer").luu({ definition: cha });
+    const ct = await goi("engineer").chiTiet({ flowId: cha.id, version: r.version });
+    const nodes = (ct.definition as { nodes: { id: string; parameters: Record<string, unknown> }[] }).nodes;
+    expect(nodes.find((n) => n.id === "g")!.parameters.version).toBe(2);
+    expect((nodes.find((n) => n.id === "a")!.parameters.luongCon as { version?: number }[]).map((x) => x.version)).toEqual([2, 1]);
+  });
+
+  it("hạng cha tính trên bản ghim: ghim bản thuần của con (con hiện là ngoai-ghi) ⇒ cha thuần; không ghim ⇒ ngoai-ghi", async () => {
+    await luuVaBat(conV("h1-hang", { a: 1 }));
+    await luuVaBat({ ...CON_GHI, id: `${TT}-h1-hang`, name: "h1-hang" }, "admin"); // bản 2 hạng ngoai-ghi, đang hoạt động
+    const ghim1 = def("h1-hang-cha1", [nut("t", "kich-hoat.thu-cong"), nut("g", "luong.goi-con", { flowId: `${TT}-h1-hang`, version: 1 })], [noi("t", "g")]);
+    expect((await goi("engineer").luu({ definition: ghim1 })).hang).toBe("thuan");
+    const khongGhim = def("h1-hang-cha2", [nut("t", "kich-hoat.thu-cong"), nut("g", "luong.goi-con", { flowId: `${TT}-h1-hang` })], [noi("t", "g")]);
+    expect((await goi("engineer").luu({ definition: khongGhim })).hang).toBe("ngoai-ghi");
+  });
+
+  it("ghim vào bản KHÔNG tồn tại / sai kiểu ⇒ không lưu được", async () => {
+    await luuVaBat(conV("h1-sai", { a: 1 }));
+    const bad = (p: Record<string, unknown>) => def("h1-sai-cha", [nut("t", "kich-hoat.thu-cong"), nut("g", "luong.goi-con", { flowId: `${TT}-h1-sai`, ...p })], [noi("t", "g")]);
+    await expect(goi("engineer").luu({ definition: bad({ version: 9 }) })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/@9 không tồn tại/) });
+    await expect(goi("engineer").luu({ definition: bad({ version: "1" }) })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/version phải là số nguyên/) });
+  });
+
+  it("KILL SWITCH: con đang TẮT ⇒ cha gọi con bị từ chối, 0 lượt con (goi-con và tool agent)", async () => {
+    const con = conV("h1-tat", { a: 1 });
+    const rc = await luuVaBat(con);
+    const cha = def("h1-tat-cha", [nut("t", "kich-hoat.thu-cong"), nut("g", "luong.goi-con", { flowId: con.id })], [noi("t", "g")]);
+    const r = await luuVaBat(cha);
+    await goi("engineer").datPhienBanHoatDong({ flowId: con.id, version: rc.version, bat: false }); // tắt con
+    const { runId } = await goi("engineer").chayTay({ flowId: cha.id, version: r.version });
+    await chayHet();
+    const run = await layRun(runId);
+    expect(run.status).toBe("loi");
+    expect(JSON.stringify(run.error)).toMatch(/đang TẮT \(kill switch\)/);
+    expect((await runCua("h1-tat")).filter((x) => x.parentRunId === runId)).toHaveLength(0);
+  });
+
+  it("định nghĩa CŨ không có `version` ⇒ lúc chạy TỪ CHỐI kèm lý do 'cần lưu lại để ghim' — KHÔNG fallback im lặng", async () => {
+    const con = conV("h1-cu", { a: 1 });
+    await luuVaBat(con);
+    const cha = def("h1-cu-cha", [nut("t", "kich-hoat.thu-cong"), nut("g", "luong.goi-con", { flowId: con.id })], [noi("t", "g")]);
+    const r = await luuVaBat(cha);
+    // mô phỏng định nghĩa lưu TRƯỚC bản vá: bỏ `version` khỏi tham số node
+    await (await db()).execute(sql`UPDATE ai_flow_versions SET definition = definition #- '{nodes,1,parameters,version}' WHERE "flowId" = ${cha.id} AND version = ${r.version}`);
+    const { runId } = await goi("engineer").chayTay({ flowId: cha.id, version: r.version });
+    await chayHet();
+    const run = await layRun(runId);
+    expect(run.status).toBe("loi");
+    expect(JSON.stringify(run.error)).toMatch(/chưa được GHIM phiên bản.*LƯU LẠI/);
+    expect((await runCua("h1-cu")).filter((x) => x.parentRunId === runId)).toHaveLength(0);
   });
 });
 

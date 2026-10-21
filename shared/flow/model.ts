@@ -89,6 +89,33 @@ export const DO_SAU_LUONG_CON_TOI_DA = 4;
  * Đợt 8.4 — id luồng con một node tham chiếu (`luong.goi-con.parameters.flowId`, `ai.agent.parameters.luongCon[].flowId`).
  * Id PHẢI là chuỗi CỐ ĐỊNH đúng khuôn id — id là biểu thức thì hạng luồng con không biết được lúc lưu ⇒ lỗi.
  */
+/** Một tham chiếu luồng con: id + PHIÊN BẢN GHIM (vắng ⇒ chưa ghim; máy chủ ghim lúc lưu — xem `services/flow/ghimLuongCon.ts`). */
+export interface ThamChieuLuongCon {
+  flowId: string;
+  version: number | undefined;
+}
+
+/**
+ * ★★★ H1 (audit 2026-10-21) — THAM CHIẾU luồng con KÈM PHIÊN BẢN GHIM. Trước đây luồng cha gọi phiên bản HOẠT ĐỘNG HIỆN TẠI của con
+ * ⇒ một người ghi tự lưu + bật phiên bản mới của con (hạng thuần/đọc không đòi admin) và đổi đầu ra mà luồng cha đã được admin duyệt
+ * (hạng ngoai-ghi) tin cậy. Nay tham số `version` (số nguyên ≥ 1) ghim đúng bản; hạng của cha tính trên ĐÚNG bản ghim.
+ * `luong.goi-con.parameters.version` · `ai.agent.parameters.luongCon[].version`. Có mà sai kiểu ⇒ lỗi.
+ */
+export function luongConThamChieu(n: Pick<NodeInstance, "id" | "type" | "parameters">): { refs: ThamChieuLuongCon[]; loi: string[] } {
+  const refs: ThamChieuLuongCon[] = [];
+  const loi: string[] = [];
+  const them = (x: unknown, cho: string) => {
+    const o = (x ?? {}) as { flowId?: unknown; version?: unknown };
+    if (typeof o.flowId !== "string" || !RE_ID_NUT.test(o.flowId)) return; // lỗi id do luongConCuaNut báo
+    if (o.version === undefined || o.version === null) refs.push({ flowId: o.flowId, version: undefined });
+    else if (typeof o.version !== "number" || !Number.isInteger(o.version) || o.version < 1) loi.push(`node '${n.id}': ${cho}.version phải là số nguyên ≥ 1`);
+    else refs.push({ flowId: o.flowId, version: o.version });
+  };
+  if (n.type === LOAI_GOI_LUONG_CON) them(n.parameters, "parameters");
+  else if (n.type === LOAI_AGENT && Array.isArray(n.parameters?.luongCon)) (n.parameters.luongCon as unknown[]).forEach((x, i) => them(x, `luongCon[${i}]`));
+  return { refs, loi };
+}
+
 export function luongConCuaNut(n: Pick<NodeInstance, "id" | "type" | "parameters">): { ids: string[]; loi: string[] } {
   const ids: string[] = [];
   const loi: string[] = [];
@@ -110,7 +137,7 @@ export interface TuyChonKiemLuong {
    * Đợt 8.4 — hạng của PHIÊN BẢN HOẠT ĐỘNG của một luồng con; `null` ⇒ luồng con không tồn tại / chưa có phiên bản hoạt động
    * (lỗi). Vắng tuỳ chọn (client) ⇒ chỉ kiểm cú pháp tham chiếu, hạng chỉ tính theo node.
    */
-  hangLuongCon?: (flowId: string) => HangTacDungPhu | null;
+  hangLuongCon?: (flowId: string, version?: number) => HangTacDungPhu | null;
 }
 
 function chuoiBieuThuc(v: unknown, ra: string[]): void {
@@ -130,6 +157,7 @@ export function kiemLuong(raw: unknown, dangKy: (type: string) => KhaiBaoNut | u
   const loi: string[] = [];
   const theoId = new Map<string, { n: NodeInstance; kb: KhaiBaoNut | undefined }>();
   const luongCon: string[] = [];
+  const thamChieu = new Map<string, ThamChieuLuongCon>();
   let hang: HangTacDungPhu = "thuan";
   for (const n of def.nodes) {
     if (theoId.has(n.id)) loi.push(`id node trùng '${n.id}'`);
@@ -149,15 +177,20 @@ export function kiemLuong(raw: unknown, dangKy: (type: string) => KhaiBaoNut | u
     theoId.set(n.id, { n, kb });
     const lc = luongConCuaNut(n);
     loi.push(...lc.loi);
+    const tc = luongConThamChieu(n);
+    loi.push(...tc.loi);
+    for (const r of tc.refs) thamChieu.set(`${r.flowId}@${r.version ?? "*"}`, r);
     for (const con of lc.ids) {
       if (con === def.id) loi.push(`node '${n.id}': luồng không được gọi chính nó ('${con}')`);
       else if (!luongCon.includes(con)) luongCon.push(con);
     }
   }
   if (tuyChon.hangLuongCon) {
-    for (const con of luongCon) {
-      const h = tuyChon.hangLuongCon(con);
-      if (h === null) loi.push(`luồng con '${con}' không tồn tại hoặc chưa có phiên bản hoạt động`);
+    // H1: hạng tính trên ĐÚNG bản ghim (version) — không có ghim thì trên phiên bản hoạt động (đường xem trước / bản nháp).
+    for (const r of thamChieu.values()) {
+      if (r.flowId === def.id) continue; // đã báo "không được gọi chính nó"
+      const h = tuyChon.hangLuongCon(r.flowId, r.version);
+      if (h === null) loi.push(r.version === undefined ? `luồng con '${r.flowId}' không tồn tại hoặc chưa có phiên bản hoạt động` : `luồng con '${r.flowId}'@${r.version} không tồn tại`);
       else if (THU_TU_HANG[h] > THU_TU_HANG[hang]) hang = h;
     }
   }

@@ -3,7 +3,7 @@
  * tự gọi chính mình bị từ chối; luồng con không có phiên bản hoạt động ⇒ lỗi; vắng bộ đọc hạng (client) ⇒ chỉ kiểm cú pháp.
  */
 import { describe, expect, it } from "vitest";
-import { kiemLuong, luongConCuaNut, type HangTacDungPhu, type KhaiBaoNut } from "./model";
+import { kiemLuong, luongConCuaNut, luongConThamChieu, type HangTacDungPhu, type KhaiBaoNut } from "./model";
 
 const kb = (type: string, laKichHoat = false, congRa = ["main"]): KhaiBaoNut => ({
   type, typeVersion: 1, laKichHoat, congVao: laKichHoat ? [] : ["main"], congRa, tacDungPhu: "thuan", lapLai: "idempotent",
@@ -18,6 +18,37 @@ const nut = (id: string, type: string, parameters: Record<string, unknown> = {})
 const luong = (nodes: unknown[]) => ({ id: "cha", name: "cha", version: 1, nodes: [nut("t", "kich-hoat.thu-cong"), ...nodes], connections: [] });
 const HANG: Record<string, HangTacDungPhu | null> = { "con-thuan": "thuan", "con-doc": "doc", "con-ghi": "ngoai-ghi", "con-ot": "ot", "chua-bat": null };
 const hangLuongCon = (id: string) => (id in HANG ? HANG[id] : null);
+
+describe("H1 — GHIM phiên bản luồng con (audit 2026-10-21)", () => {
+  // con-x: bản 1 hạng thuần, bản 2 hạng ngoai-ghi; bản hoạt động hiện là 2.
+  const theoBan: Record<string, HangTacDungPhu | null> = { "con-x@1": "thuan", "con-x@2": "ngoai-ghi", "con-x@*": "ngoai-ghi" };
+  const hangGhim = (id: string, v?: number) => theoBan[`${id}@${v ?? "*"}`] ?? null;
+
+  it("luongConThamChieu: đọc version của goi-con và của từng luongCon[] của agent; sai kiểu ⇒ lỗi", () => {
+    expect(luongConThamChieu(nut("g", "luong.goi-con", { flowId: "con-x", version: 3 }))).toEqual({ refs: [{ flowId: "con-x", version: 3 }], loi: [] });
+    expect(luongConThamChieu(nut("g", "luong.goi-con", { flowId: "con-x" })).refs).toEqual([{ flowId: "con-x", version: undefined }]);
+    const ag = luongConThamChieu(nut("a", "ai.agent", { luongCon: [{ flowId: "con-x", version: 1 }, { flowId: "con-y" }] }));
+    expect(ag.refs).toEqual([{ flowId: "con-x", version: 1 }, { flowId: "con-y", version: undefined }]);
+    for (const v of [0, -1, 1.5, "2", true]) {
+      expect(luongConThamChieu(nut("g", "luong.goi-con", { flowId: "con-x", version: v })).loi.join(" "), String(v)).toMatch(/version phải là số nguyên ≥ 1/);
+    }
+  });
+
+  it("★ hạng của cha tính trên ĐÚNG bản ghim: ghim bản 1 (thuần) ⇒ cha thuần; ghim bản 2 hoặc không ghim (= hoạt động, ngoai-ghi) ⇒ ngoai-ghi", () => {
+    const hang = (p: Record<string, unknown>) => kiemLuong(luong([nut("g", "luong.goi-con", p)]), dk, { hangLuongCon: hangGhim });
+    expect(hang({ flowId: "con-x", version: 1 })).toMatchObject({ ok: true, hang: "thuan" });
+    expect(hang({ flowId: "con-x", version: 2 })).toMatchObject({ ok: true, hang: "ngoai-ghi" });
+    expect(hang({ flowId: "con-x" })).toMatchObject({ ok: true, hang: "ngoai-ghi" });
+  });
+
+  it("ghim vào bản KHÔNG tồn tại ⇒ lỗi nêu rõ bản; agent cũng được ghim", () => {
+    const kq = kiemLuong(luong([nut("g", "luong.goi-con", { flowId: "con-x", version: 9 })]), dk, { hangLuongCon: hangGhim });
+    expect(kq.ok).toBe(false);
+    expect(kq.loi.join(" ")).toMatch(/con-x'@9 không tồn tại/);
+    const ag = kiemLuong(luong([nut("a", "ai.agent", { luongCon: [{ flowId: "con-x", version: 1 }] })]), dk, { hangLuongCon: hangGhim });
+    expect(ag).toMatchObject({ ok: true, hang: "thuan" });
+  });
+});
 
 describe("kiemLuong — luồng con (Đợt 8.4)", () => {
   it("hạng luồng = hạng cao nhất của luồng con (goi-con)", () => {
