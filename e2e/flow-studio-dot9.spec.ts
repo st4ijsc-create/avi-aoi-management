@@ -71,6 +71,7 @@ test("1 — chạy thử MỘT node trên bản nháp chưa lưu: node lõi ch�
   await expect(page.getByTestId("chay-thu-ra-main")).toContainText('"gap": 42');
   await expect(page.getByTestId("chay-thu-ra-main")).toContainText('"x": 21');
 
+  await kq.scrollIntoViewIfNeeded();
   await chup(page, "1-chay-thu-node");
 
   // biểu thức hỏng ⇒ lỗi hiện NGAY tại node, không ném
@@ -85,6 +86,8 @@ test("1 — chạy thử MỘT node trên bản nháp chưa lưu: node lõi ch�
   await page.getByTestId("nut-chay-thu-nut").click();
   await expect(page.getByTestId("ket-qua-chay-thu")).toHaveAttribute("data-che", "xem-truoc");
   await expect(page.getByTestId("chay-thu-tham-so")).toContainText("POST");
+  await page.getByTestId("ket-qua-chay-thu").scrollIntoViewIfNeeded();
+  await chup(page, "1b-http-xem-truoc");
 
   // CSDL: không có lượt / hàng đợi / hàng chờ nào được tạo
   expect(await demHang(FLOW_THU)).toEqual(truoc);
@@ -139,8 +142,12 @@ test("3 — form node OT: MÔ PHỎNG, không nút nào trong form, chạy thử
   await expect(kq).toHaveAttribute("data-che", "chay");
   const chu = (await kq.innerText()) + (await kq.evaluate((e) => e.textContent ?? ""));
   expect(chu).not.toMatch(/"daGui":\s*true/);
+  await kq.scrollIntoViewIfNeeded();
   await chup(page, "3b-form-ot-chay-thu");
-  if ((await kq.getAttribute("data-ok")) === "1") await expect(page.getByTestId("chay-thu-cho")).toContainText(/MÔ PHỎNG|moPhong/);
+  // máy là SỐ (không phải chuỗi "999999"): cổng không còn từ chối vì sai kiểu ⇒ đề xuất chờ duyệt MÔ PHỎNG, KHÔNG gửi
+  await expect(kq).toHaveAttribute("data-ok", "1");
+  await expect(page.getByTestId("chay-thu-cho")).toContainText(/MÔ PHỎNG/);
+  await expect(page.getByTestId("chay-thu-cho")).toContainText("mô phỏng", { ignoreCase: true });
 });
 
 test("4 — bật luồng hạng OT: hộp OTP step-up, gọi flow.batLuongOt (không phải datPhienBanHoatDong); mã sai ⇒ luồng vẫn TẮT", async ({ page }) => {

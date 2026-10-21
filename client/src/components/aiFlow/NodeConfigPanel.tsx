@@ -169,7 +169,7 @@ function FormTrichXuat({ p, doi }: { p: ThamSo; doi: (k: string, v: unknown) => 
 }
 
 /** Ô nhập số HOẶC biểu thức: chuỗi toàn chữ số ⇒ lưu số; còn lại lưu chữ (có thể là {{ … }}). */
-const soHoacChu = (v: string): number | string => (/^d{1,12}$/.test(v.trim()) ? Number(v.trim()) : v);
+const soHoacChu = (v: string): number | string => (/^\d{1,12}$/.test(v.trim()) ? Number(v.trim()) : v);
 
 /**
  * ★★★ Đợt 9.3 — FORM NODE OT (CHẾ ĐỘ MÔ PHỎNG, quyết định D4): `ot.doc-tag` chỉ ĐỌC; `ot.de-xuat-lenh` / `ot.de-xuat-luong` chỉ ĐỀ XUẤT.

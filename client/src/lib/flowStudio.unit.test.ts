@@ -115,3 +115,16 @@ describe("Flow Studio — node OT (Đợt 9.3)", () => {
     }
   });
 });
+
+describe("Flow Studio — ô số hoặc biểu thức của form OT", () => {
+  it("★ NodeConfigPanel.soHoacChu: toàn chữ số ⇒ lưu SỐ (cổng OT từ chối 'may' kiểu chuỗi); còn lại giữ chữ", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const src = readFileSync(resolve(__dirname, "../components/aiFlow/NodeConfigPanel.tsx"), "utf8");
+    const m = /const soHoacChu = \(v: string\): number \| string => \((\/.+?\/)\.test\(v\.trim\(\)\)/.exec(src);
+    expect(m, "không thấy soHoacChu").toBeTruthy();
+    const re = new RegExp(m![1].slice(1, -1));
+    expect(re.test("999999")).toBe(true);
+    for (const x of ["{{ $json.may }}", "abc", "", "1a", "1234567890123"]) expect(re.test(x), x).toBe(false);
+  });
+});
