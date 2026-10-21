@@ -605,6 +605,29 @@ của vòng kiểm biên dịch `ai.sinh-ma` trên plc-st-v1 (A/B có/không vò
 một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mật: xoay khoá thực tế + khoá trong `.env.example`;
 (8) gộp nhánh `feat/ai-local-da-model-luong` vào main (chưa làm — cần chạy lưới đầy đủ trên cây gộp).
 
+**Cập nhật 2026-10-21 (cơ cấu 4 phiên: dieu-phoi · do-model · luong-ui · kiem-dinh):**
+- (1) Định tuyến — bộ mù 1 (120 câu, `cau-hoi-mu-2026-10-21.jsonl`) đo MỘT lần ở cấu hình chốt: **102/120 = 85 %** (câu khó 10/17;
+  `chat` 11/20 yếu nhất). do-model thêm tầng 3 theo TÁC VỤ (`vaiTroTuTacVu`, chỉnh trên bộ DEV-2) rồi chấm bộ mù 3 (agent con viết,
+  commit TRƯỚC khi chỉnh): **98 → 107/120 (82 → 89 %)**, câu khó 17→20/22, `chat` 16→19/20. Còn mở: tâm cụm `code.plc` hút câu dài
+  có dữ liệu dán (hướng: tầng 4 chỉ chọn code.* khi có ý định viết mã; chấm trên bộ mù 4).
+- (2) Vòng sửa theo lỗi biên dịch (`mot-luot.mjs --vong-sua 2`, RuSTy), Qwen3.6-35B nghĩ bật, 24 bài ×3: **39/72 = 54 % vs nền
+  33/72 = 46 %** (tt 19→19 · tv 8→12 · ud 6→8; theo bài hơn 6 · kém 3 · bằng 15); 23/72 lượt lỗi biên dịch lần đầu ⇒ 11 sửa xong và
+  đạt. Trung vị 75 s (nền 38 s). ⇒ 35B + vòng sửa ngang 27B không vòng (39/72, 141 s) với ~½ thời gian. `ai_model_eval_runs` #7.
+  Kế tiếp (do-model): 27B + vòng sửa; nối vòng sửa với MATIEC/SCL.
+- (3) `extract` — bộ mù 30 bài / 227 trường đáp án tay (`scripts/ai-eval/trich-xuat/`, thước tự kiểm đạt): Qwen3-4B **208/227 = 92 %**
+  (19/30 bài trọn, ~1 s) vs Qwen3.6-35B tắt nghĩ **224/227 = 99 %** (28/30). Lỗi 4B: số học, "sớm nhất", bỏ dấu tên người, bịa trường
+  null. Chưa đổi gán: :8091 một slot (bài học vòng 7 KB) ⇒ hướng gán theo PHẠM VI Luồng, chờ đo độ trễ khi chen + thiết kế phạm vi.
+- (4) MATIEC đúng bản OpenPLC v3 của bench (`AI_EVAL_ST_TRINH_DICH=matiec`, tập OpenPLC 22/23 bài) + phương ngữ Siemens SCL (chuẩn
+  hoá SCL→ST, thước 30 lời giải SCL viết tay) — thước đạt mọi cột; CHƯA đo model. Phát hiện: lỗi runtime MATIEC
+  `__normalize_timespec` (`> 1e9` thay vì `>=`) ⇒ `T#993ms + T#7ms >= T#1s` = FALSE; 0/30 lời giải mẫu qua cờ OpenPLC thật vì
+  thiếu `;` sau END_IF.
+- (6)(7) Flow Studio: chạy thử MỘT node (không ghi lượt; node ra ngoài chỉ xem trước), so sánh hai lượt, form node OT (banner MÔ
+  PHỎNG, bật luồng `ot` qua 2FA), xoay khoá bí mật (nguyên tử, chạy khô mặc định, CLI + runbook) — Playwright 4/4; bắt lỗi regex
+  `/^d{1,12}$/` làm form OT lưu số thành chuỗi.
+- Lưới: 38 tệp đỏ có sẵn trên main → 0 (kiem-dinh; WORM teardown, mock, ghim đọc mã, i18n); script `scripts/luoi-truoc-gop.mjs`.
+  Phát hiện sản phẩm: dọn ảnh hết hạn chỉ rà ~5000 thư mục đầu (đã vá con trỏ bền); aoi-cache không có bộ quét (đã thêm, mặc định
+  dry-run); 368 thư mục `uploads/aoi-cache` (661 MB) xoá theo duyệt của chủ dự án.
+
 ## 7. Rủi ro và cách giảm
 
 | Rủi ro | Giảm |
