@@ -67,7 +67,9 @@ export const CA_CAO: readonly CaDotBien[] = [
   { ten: "lệnh là mảng", may: m, lenh: ["stop"] },
   { ten: "__proto__", may: m, lenh: "__proto__" },
   { ten: "constructor", may: m, lenh: "constructor" },
-  { ten: "máy là chuỗi", may: "7", lenh: "stop" },
+  { ten: "máy chuỗi dạng lạ (khoảng trắng)", may: " 7", lenh: "stop" },
+  { ten: "máy chuỗi dạng lạ (mũ)", may: "7e0", lenh: "stop" },
+  { ten: "máy chuỗi dạng lạ (hex)", may: "0x7", lenh: "stop" },
   { ten: "máy âm", may: -1, lenh: "stop" },
   { ten: "máy thập phân", may: 1.5, lenh: "pause" },
 ];
@@ -79,4 +81,6 @@ export const CA_THAP: readonly CaDotBien[] = [
   { ten: "machine_pause", may: m, lenh: "machine_pause" },
   { ten: "stop máy khác", may: 8, lenh: "stop" },
   { ten: "pause máy khác", may: 9, lenh: "pause" },
+  // Đợt 9: id dạng CHUỖI SỐ hợp lệ được chuẩn hoá về số (MỘT luật `chuanHoaIdMay` cho cổng lẫn node) — không còn bị chặn vì kiểu.
+  { ten: "máy chuỗi số", may: "7", lenh: "stop" },
 ];

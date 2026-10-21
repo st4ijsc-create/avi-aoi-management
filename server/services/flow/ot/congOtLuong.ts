@@ -29,7 +29,8 @@
 import { and, eq } from "drizzle-orm";
 import { BoDemTanSuat, kiemCongAi, laTagAnToan, phanLoaiMuc, type MucRuiRo } from "../../ot/aiControlGate";
 import type { ItemLuong } from "../../../../shared/flow/bieuThuc";
-import type { YeuCauCho } from "../dangKyNut";
+import type { BoKiemPhamVi, YeuCauCho } from "../dangKyNut";
+import { chuanHoaIdMay } from "../idTaiNguyen";
 
 /** ★ Chế độ mô phỏng — HẰNG SỐ của pha 8.5. Không cờ env nào tắt được; mở đường thực thi là một pha khác, có duyệt riêng. */
 export const CHE_DO_MO_PHONG = true as const;
@@ -89,6 +90,8 @@ export interface NguCanhDeXuat {
   runId: string;
   nodeId: string;
   idempotencyKey: string;
+  /** Đợt 9 (IDOR) — có ⇒ FOE workflow có bước tham chiếu máy ngoài phạm vi bị coi như KHÔNG CÓ (cùng câu trả lời với không tồn tại). */
+  boKiem?: BoKiemPhamVi;
 }
 
 export type KetQuaKiemOt =
@@ -140,6 +143,26 @@ const phuThuocMacDinh: PhuThuocCongOt = {
 };
 
 let phuThuocHienHanh: PhuThuocCongOt = phuThuocMacDinh;
+
+/** Đọc một FOE workflow qua nguồn HIỆN HÀNH (mặc định: CSDL, chỉ đọc) — dùng chung với kiểm tham chiếu tĩnh lúc BẬT luồng. */
+export function docLuongFoeHienHanh(workflowId: number, version: number) {
+  return phuThuocHienHanh.docLuongFoe(workflowId, version);
+}
+
+/**
+ * ★★★ Đợt 9 (IDOR) — MỌI bước FOE mang `machineId` phải trỏ máy TỒN TẠI và thuộc phạm vi (`boKiem`). Hình dạng lạ / `machineId` sai kiểu ⇒
+ * `false` (đóng theo mặc định). FOE workflow không có cột tenant: phạm vi của nó CHÍNH LÀ phạm vi các máy nó nhắm tới.
+ */
+export async function luongFoeTrongPhamVi(definition: unknown, boKiem: BoKiemPhamVi): Promise<boolean> {
+  const steps = buocFoe((definition as { steps?: unknown } | null)?.steps ?? null);
+  if (!steps) return false;
+  for (const b of steps) {
+    if (!("machineId" in b) || b.machineId === undefined) continue;
+    const id = b.machineId;
+    if (typeof id !== "number" || !Number.isInteger(id) || id <= 0 || !(await boKiem.may(id))) return false;
+  }
+  return true;
+}
 
 /** Chỉ lưới: thay nguồn đọc (tag / FOE). `null` ⇒ về mặc định. */
 export function __datPhuThuocCongOtChoTest(p: Partial<PhuThuocCongOt> | null): void {
@@ -272,6 +295,10 @@ function hetHanMs(hetHanGio: unknown): number {
  */
 export async function kiemVaDeXuat(yc: YeuCauOt, ngu: NguCanhDeXuat, p: PhuThuocCongOt = phuThuocHienHanh): Promise<KetQuaKiemOt> {
   if (!CHE_DO_MO_PHONG) throw new LoiCongOt(5, "Đợt 8.5: chỉ có chế độ mô phỏng");
+  // Đợt 9 — MỘT luật chuẩn hoá id cho mọi đường vào (số hoặc chuỗi số ⇒ số; khác ⇒ giữ nguyên để bị từ chối theo hình dạng).
+  const chuan = (v: unknown): unknown => chuanHoaIdMay(v) ?? v;
+  if (yc.loai === "lenh") yc = { ...yc, may: chuan(yc.may) };
+  else if (yc.loai === "luong-foe") yc = { ...yc, workflowId: chuan(yc.workflowId), version: chuan(yc.version) };
   let pl: PhanLoai;
   let deXuat: Record<string, unknown>;
   let tieuDe: string;
@@ -285,7 +312,8 @@ export async function kiemVaDeXuat(yc: YeuCauOt, ngu: NguCanhDeXuat, p: PhuThuoc
       deXuat = { loai: "luong-foe" };
       tieuDe = "";
     } else {
-      const wf = await p.docLuongFoe(yc.workflowId, yc.version);
+      let wf = await p.docLuongFoe(yc.workflowId, yc.version);
+      if (wf && ngu.boKiem && !(await luongFoeTrongPhamVi(wf.definition, ngu.boKiem))) wf = null;
       if (!wf) pl = MUC_5(`không có FOE workflow #${yc.workflowId}@${yc.version}`);
       else if (wf.trangThai !== "active") pl = MUC_5(`FOE workflow #${yc.workflowId} chưa được duyệt (trạng thái ${wf.trangThai})`);
       else pl = await phanLoaiLuongFoe(wf.definition, p);

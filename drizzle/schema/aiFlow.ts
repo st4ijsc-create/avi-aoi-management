@@ -46,6 +46,8 @@ export const aiFlowRuns = pgTable(
     uuTien: varchar("uuTien", { length: 12 }).notNull().default("background"),
     idempotencyKey: varchar("idempotencyKey", { length: 128 }).unique(),
     parentRunId: uuid("parentRunId"),
+    /** Đợt 9 (mig 0410) — người mà phạm vi dữ liệu của lượt được tính theo (NULL ⇒ node tham chiếu tài nguyên từ chối). */
+    chuLuong: integer("chuLuong").references(() => users.id, { onDelete: "set null" }),
     retryOf: uuid("retryOf"),
     error: jsonb("error"),
     startedAt: tz("startedAt").defaultNow().notNull(),
