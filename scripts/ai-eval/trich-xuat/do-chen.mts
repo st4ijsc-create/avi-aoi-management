@@ -68,6 +68,9 @@ const tv = (a: number[]) => { const s = [...a].sort((x, y) => x - y); return s.l
 const ngu = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const ket: Record<string, unknown> = { luc: new Date().toISOString(), k: K, lap: LAP, url: URL_CHAT };
+// ★ Đợt 9 — KHOÁ KHE suốt phép đo (app không đổi khe :8091 giữa chừng).
+const { giuKhoaKhe } = await import("../lib/khoaKhe.mjs");
+const KHOA = giuKhoaKhe({ chu: `trich-xuat/do-chen.mts (PID ${process.pid})`, lyDo: "đo chen extract nền" });
 try {
   const u = new URL(URL_CHAT);
   const m = (await (await fetch(`${u.origin}/v1/models`)).json()) as { data?: { id?: string }[] };
@@ -120,4 +123,5 @@ if (PHA === "c2" || PHA === "ca-hai") {
 fs.mkdirSync("tmp", { recursive: true });
 const tep = `tmp/do-chen-${arg("--nhan", `k${K}`)}.json`;
 fs.writeFileSync(tep, JSON.stringify(ket, null, 1));
+KHOA.go();
 console.log(`ghi ${tep}`);

@@ -24,6 +24,7 @@ import { taoCauHoiMotLuot, SYS_MOT_LUOT } from "./lib/cauHoi.mjs";
 import { bangTomTat, trungVi } from "./lib/baoCao.mjs";
 import { taoGoiModel, tuyChonTuArgs } from "./lib/goiModel.mjs";
 import { chayST } from "./lib/st/chayST.mjs";
+import { giuKhoaKhe } from "../lib/khoaKhe.mjs";
 import { chaySTMatiec } from "./lib/st-matiec/chaySTMatiec.mjs";
 import { sclSangSt } from "./lib/st-scl/scl.mjs";
 
@@ -84,6 +85,9 @@ if (CONFIG === "pipeline") {
   goi = taoGoiModel({ ...TUY_CHON, cookie: ck(arg("--cookie", `${ROOT}/tmp/audit-ai/ck.txt`)) });
 }
 await kiemSong("TRƯỚC khi đo");
+// ★ Đợt 9 — KHOÁ KHE suốt lượt (server/services/ai/khoaKhe.ts): app không được đổi khe :8091 giữa phép đo; gia hạn 30 s,
+// tự hết hạn ≤ 5 phút nếu tiến trình này chết.
+const KHOA = GOI_MODEL && CONFIG === "raw" ? giuKhoaKhe({ chu: `mot-luot ${LABEL} (PID ${process.pid})`, lyDo: "đo plc/ngẫu nhiên trên :8091" }) : null;
 // ★ Đợt 9 — model THỰC chạy đầu + cuối lượt (khe nặng của một tiến trình khác có thể đổi :8091 giữa chừng).
 const MODEL_DAU = GOI_MODEL && CONFIG === "raw" ? await goi.modelDangChay() : null;
 if (MODEL_DAU) console.error(`ℹ model :8091 lúc bắt đầu: ${MODEL_DAU}`);
@@ -183,6 +187,7 @@ const songSau = dungSom ? false : await kiemSong("SAU khi đo", false);
 const MODEL_CUOI = GOI_MODEL && CONFIG === "raw" ? await goi.modelDangChay() : null;
 if (MODEL_DAU && MODEL_CUOI !== MODEL_DAU) console.error(`⚠ model :8091 ĐỔI giữa lượt: đầu ${MODEL_DAU} · cuối ${MODEL_CUOI ?? "không đọc được"}`);
 xoaThuMuc(WORK);
+KHOA?.go();
 
 // ── BÁO CÁO ──────────────────────────────────────────────────────────────────────────────────────────
 rows.sort((a, b) => (a.id === b.id ? a.luot - b.luot : a.id < b.id ? -1 : 1));

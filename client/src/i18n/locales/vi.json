@@ -13666,7 +13666,14 @@
         },
         "nghi": "Model đang nghỉ (sau lỗi nạp)",
         "conLai": "còn {{t}}",
-        "ghiChu": "Số liệu của tiến trình API, tự làm mới mỗi 5 giây khi tab này mở."
+        "ghiChu": "Số liệu của tiến trình API, tự làm mới mỗi 5 giây khi tab này mở.",
+        "khoa": {
+          "tieuDe": "Khe đang bị khoá",
+          "chu": "chủ",
+          "lyDo": "lý do",
+          "hetHan": "hết hạn",
+          "hong": "tệp khoá không đúng định dạng — khoá ngắn"
+        }
       },
       "suyNghi": {
         "auto": "tự động",

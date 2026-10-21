@@ -187,3 +187,15 @@ describe("★ L2 (audit kiem-dinh) — runtime: profile có giấy phép CHƯA K
     expect(kq.lyDo.bangChung).toContain("giay-phep-chua-khai");
   });
 });
+
+describe("★ Đợt 9 — kheBiKhoa: khe bị khoá ⇒ profile nặng mà khe KHÔNG giữ không dùng được, MỌI vai trò (kể cả code.*)", () => {
+  it("code.plc gán 27B (dự phòng 35B) + khe giữ 35B + khoá ⇒ dự phòng 35B, lý do khe-bi-khoa, không can-doi-khe", () => {
+    const Q35 = P({ artifactFile: "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", slotClass: "nang" });
+    const Q27 = P({ artifactFile: "Qwen3.6-27B-UD-Q4_K_XL.gguf", slotClass: "nang" });
+    const a = anh([{ roleId: "code.plc", profileId: "q27", fallback: ["q35"] }], new Map([["q35", Q35], ["q27", Q27]]));
+    const kq = dinhTuyenVaiTro({ vaiTro: "code.plc", kheBiKhoa: true }, a, ENV);
+    expect(kq).toMatchObject({ nguon: "du-phong", model: "Qwen3.6-35B-A3B-UD-Q4_K_XL" });
+    expect(kq.lyDo.bangChung).toContain("khe-bi-khoa");
+    expect(kq.lyDo.bangChung).not.toContain("can-doi-khe");
+  });
+});

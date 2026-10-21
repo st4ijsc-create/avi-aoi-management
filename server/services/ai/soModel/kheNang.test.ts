@@ -266,3 +266,53 @@ describe("★ Đợt 9 (M4 tranh khe) — `khiDoiKhe`: báo khi lượt được
     expect(daBao).toEqual(["B-loi"]);
   });
 });
+
+describe("★ Đợt 9 — KHOÁ KHE: khoá còn hạn ⇒ KHÔNG gọi doiSang (kể cả 'về nhà'); hết hạn ⇒ như cũ", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-21T08:00:00Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  function dungKhoa(khoaToi: number | null) {
+    const sv = { giu: "B" as string | null, doi: [] as string[] };
+    const k = { hetHan: khoaToi };
+    const bo = {
+      modelDangGiu: async () => sv.giu,
+      doiSang: (m: string) => new Promise<void>((res) => setTimeout(() => { sv.doi.push(m); sv.giu = m; res(); }, DOI_MS)),
+      khoaKhe: () => (k.hetHan !== null && Date.now() < k.hetHan ? { chu: "mot-luot PLC", lyDo: "đo", hetHan: k.hetHan, hong: false } : null),
+    };
+    const kn = new KheNang(bo, { ...CAU_HINH_MAC_DINH, luuTruToiThieuMs: 0, veNhaSauMs: 60_000 }, () => "A");
+    return { sv, k, kn };
+  }
+
+  it("khe giữ B (27B) + khoá ⇒ yêu cầu A (35B) bị từ chối NÓI THẬT, không gọi doiSang", async () => {
+    const { sv, kn } = dungKhoa(Date.now() + 10 * 60_000);
+    let loi: LoiKheNang | null = null;
+    const p = kn.cho("A", "tuong-tac").catch((e) => (loi = e));
+    await tien(DOI_MS + 1_000);
+    await p;
+    expect(sv.doi).toEqual([]);
+    expect(loi!.code).toBe("KHE_NANG_KHOA");
+    expect(loi!.message).toContain("mot-luot PLC");
+  });
+
+  it("khoá HẾT HẠN ⇒ đổi như cũ", async () => {
+    const { sv, kn } = dungKhoa(Date.now() - 1);
+    const p = kn.cho("A", "tuong-tac").then((nha) => nha());
+    await tien(DOI_MS + 1_000);
+    await p;
+    expect(sv.doi).toEqual(["A"]);
+  });
+
+  it("'về nhà' sau rảnh cũng bị khoá chặn; khoá hết ⇒ về nhà", async () => {
+    const { sv, k, kn } = dungKhoa(Date.now() + 5 * 60_000);
+    const p = kn.cho("B", "tuong-tac").then((nha) => nha()); // khớp model đang giữ ⇒ vào ngay, nhả ⇒ rảnh
+    await p;
+    await tien(2 * 60_000);
+    expect(sv.doi).toEqual([]);
+    k.hetHan = Date.now() - 1;
+    await tien(4 * 60_000 + DOI_MS);
+    expect(sv.doi).toEqual(["A"]);
+  });
+});

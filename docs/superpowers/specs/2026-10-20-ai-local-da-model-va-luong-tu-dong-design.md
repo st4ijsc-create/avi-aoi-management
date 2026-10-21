@@ -637,7 +637,15 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
 - (1) định tuyến: tầng 3 theo tác vụ — bộ mù 3 (agent viết, chưa ai nhìn) 98 → 107/120 (⚠ 107 đo trên bản 9beab7e8b có LỖI
   regex: `\p{L}` trong template thường thành "p" ⇒ ranh giới chữ sai; `\S`/`\d` mất `\` ⇒ dấu vận hành "line N" không bao giờ
   khớp — sửa ở 8509b2f0e). Đợt 9 (a)(b): cổng ý định mã cho tầng 4 + không dấu/đồng nghĩa ⇒ bộ mù 4 (agent viết, commit
-  685abed9e trước khi chỉnh) 105 → 109/120. Còn lại ("soạn", "the nao/cai nao" không dấu, "lần gần nhất") chờ bộ mù 5. (4) MATIEC đúng bản bench + SCL:
+  685abed9e trước khi chỉnh) 105 → 109/120. Còn lại ("soạn", "the nao/cai nao" không dấu, "lần gần nhất") chờ bộ mù 5.
+- ★ SỰ CỐ 2026-10-21 14:00: bộ lập lịch khe nặng của :3000 đổi khe sang 35B (start-llama-server.ps1 -Force ⇒ Stop-Process)
+  GIỮA lượt đo 27B của tiến trình khác (bằng chứng: vram_events 07:01:50Z "Đổi khe sang … hỏng: kịch bản khởi động thoát 4" +
+  logs/llama-server-20261021-140007 thấy 30,9 GB trống). Sửa: KHOÁ KHE — tệp LLAMA_WATCHDOG_PAUSE_FILE mang JSON {chu, lyDo,
+  hetHan}, phép đo/doi-model.ps1 giữ + gia hạn; KheNang không đổi/không về nhà khi khoá còn hạn; định tuyến `kheBiKhoa`.
+- ⚠ RỦI RO TIỀM ẨN (chưa sửa): baseline_foreign_pid của vramReconciler xếp llama-server (pid 33552, 35B lúc 01:45Z) vào
+  `orphanHolders` ("tàn dư, tắt được") chứ KHÔNG vào `peerHolders`. Nếu hộ đó được nhận nuôi kèm lease (`leaseNhanNuoi`), đường
+  preempt `thuHoiHoNhanNuoi` (SIGTERM, vramReconciler.ts ~1940) giết được llama-server đang phục vụ. Lần 14:00 KHÔNG đi đường
+  này (không lease nào cho PID llama-server, không reserve/preempt quanh 07:00Z). (4) MATIEC đúng bản bench + SCL:
   thước đạt (tập OpenPLC 22 bài); ★ lỗi runtime MATIEC `__normalize_timespec` (docs/superpowers/audits/2026-10-21-matiec-loi-normalize-timespec.md).
 
 **Bảo mật Luồng 2026-10-21** (quét bảo mật của phiên kỹ thuật + audit chỉ-đọc của kiem-dinh; vận hành: `docs/AI_FLOW_SECURITY_OPERATIONS.md`;

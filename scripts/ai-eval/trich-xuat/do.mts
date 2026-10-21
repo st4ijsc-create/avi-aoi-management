@@ -99,6 +99,10 @@ if (DICH === "4b") {
   };
   donDep = async () => { await ctx.dispose(); await model.dispose(); };
 } else {
+  // ★ Đợt 9 — KHOÁ KHE suốt lượt đo trên :8091 (app không đổi khe giữa chừng).
+  const { giuKhoaKhe } = await import("../lib/khoaKhe.mjs");
+  const khoa = giuKhoaKhe({ chu: `trich-xuat/do.mts ${DICH} (PID ${process.pid})`, lyDo: "đo extract trên :8091" });
+  donDep = async () => khoa.go();
   const url = arg("--url", "http://127.0.0.1:8091/v1/chat/completions");
   hoi = async (b) => {
     const t0 = Date.now();

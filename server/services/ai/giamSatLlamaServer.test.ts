@@ -256,6 +256,13 @@ describe("dangTamDung — tệp đánh dấu có hạn dùng (chống kẹt vĩn
     expect(dangTamDung(duong, Date.now(), 30 * PHUT)).toBe(true);
     expect(dangTamDung(duong, Date.now() + 31 * PHUT, 30 * PHUT)).toBe(false);
   });
+
+  it("★ Đợt 9 — tệp là KHOÁ KHE JSON {chu, lyDo, hetHan}: theo hetHan (hết hạn ⇒ không tạm dừng dù mtime còn mới)", () => {
+    const duong = path.join(thuMuc, "k.pause");
+    fs.writeFileSync(duong, JSON.stringify({ chu: "mot-luot", lyDo: "đo", hetHan: new Date(Date.now() + 5 * PHUT).toISOString() }));
+    expect(dangTamDung(duong, Date.now(), 30 * PHUT)).toBe(true);
+    expect(dangTamDung(duong, Date.now() + 6 * PHUT, 30 * PHUT)).toBe(false);
+  });
 });
 
 // ═══ 5. GIÁM SÁT đầy đủ — đồng hồ + thăm dò + trình spawn TIÊM VÀO, tệp khoá/lịch sử/tạm dừng THẬT ══

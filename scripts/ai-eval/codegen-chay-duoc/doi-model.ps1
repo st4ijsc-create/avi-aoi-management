@@ -40,9 +40,17 @@ if (-not (Test-Path $Model)) { Write-Error "KHONG co tep model: $Model"; exit 2 
 $tepTamDung = if ($env:LLAMA_WATCHDOG_PAUSE_FILE) { $env:LLAMA_WATCHDOG_PAUSE_FILE }
               elseif ($env:TEMP) { Join-Path $env:TEMP 'llama-watchdog.pause' }
               else { Join-Path ([System.IO.Path]::GetTempPath()) 'llama-watchdog.pause' }
+# *** Dot 9 (2026-10-21) - tep nay dong thoi la KHOA KHE (server/services/ai/khoaKhe.ts): JSON {chu, lyDo, hetHan}.
+#     Bo lap lich khe nang cua app gap khoa con han => KHONG doi khe (su co 14:00: :3000 doi khe giet 27B giua luot do).
+#     Moi lan "cham" GHI LAI hetHan = bay gio + 10 phut; script chet => khoa tu het han.
+function Ghi-Khoa {
+  $hetHan = (Get-Date).ToUniversalTime().AddMinutes(10).ToString('o')
+  $json = '{"chu":"doi-model.ps1 PID ' + $PID + '","lyDo":"doi model ' + ([IO.Path]::GetFileName($Model)) + '","hetHan":"' + $hetHan + '"}'
+  Set-Content -LiteralPath $tepTamDung -Value $json -Encoding ASCII
+}
 function Go-TamDung { Remove-Item -LiteralPath $tepTamDung -Force -ErrorAction SilentlyContinue }
-function Cham-TamDung { try { (Get-Item -LiteralPath $tepTamDung -ErrorAction Stop).LastWriteTime = Get-Date } catch { } }
-Set-Content -LiteralPath $tepTamDung -Value "doi-model.ps1 PID $PID $(Get-Date -Format o) $Model" -Encoding ASCII
+function Cham-TamDung { try { Ghi-Khoa } catch { } }
+Ghi-Khoa
 
 try {
 # 1. Dung ban dang chay va CHO cong 8091 that su nha ra.

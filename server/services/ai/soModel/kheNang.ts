@@ -20,6 +20,11 @@ export interface BoPhucVuKheNang {
   modelDangGiu(): Promise<string | null>;
   /** Đổi khe sang `model` (basename). Ném khi hỏng — bên dưới đã tự quay về model nhà. */
   doiSang(model: string): Promise<void>;
+  /**
+   * ★ Đợt 9 — KHOÁ KHE (`khoaKhe.ts`): khoá còn hạn ⇒ KHÔNG đổi khe, KHÔNG về nhà; người chờ model khác bị từ chối nói thật.
+   * Vắng ⇒ không bao giờ khoá (lưới cũ, hành vi 7.1).
+   */
+  khoaKhe?(): { chu: string; lyDo: string; hetHan: number } | null;
 }
 
 export interface CauHinhKheNang {
@@ -45,7 +50,7 @@ export const CAU_HINH_MAC_DINH: CauHinhKheNang = {
   tuDoi: true,
 };
 
-export type MaLoiKheNang = "KHE_NANG_TAT" | "KHE_NANG_HONG" | "KHE_NANG_HET_GIO" | "KHE_NANG_HUY" | "KHE_NANG_SERVER";
+export type MaLoiKheNang = "KHE_NANG_TAT" | "KHE_NANG_HONG" | "KHE_NANG_HET_GIO" | "KHE_NANG_HUY" | "KHE_NANG_SERVER" | "KHE_NANG_KHOA";
 
 export class LoiKheNang extends Error {
   constructor(
@@ -252,12 +257,29 @@ export class KheNang {
     const bayGio = Date.now();
     const khac = this.hang.filter((n) => n.model !== this.dangGiu);
     const nha = this.modelNha();
+    // ★ Đợt 9 — KHOÁ KHE còn hạn ⇒ không đổi, không về nhà; người chờ model khác bị từ chối NÓI THẬT; xét lại khi khoá hết.
+    let khoa: { chu: string; lyDo: string; hetHan: number } | null = null;
+    try {
+      khoa = this.bo.khoaKhe?.() ?? null;
+    } catch {
+      khoa = null;
+    }
 
     if (khac.length === 0) {
       if (this.ch.tuDoi && this.dangGiu && this.dangGiu !== nha && this.tongChay() === 0 && this.hang.length === 0) {
         const luc = Math.max(this.ranhTu + this.ch.veNhaSauMs, this.doiLuc + this.ch.luuTruToiThieuMs);
-        if (bayGio >= luc) this.batDauDoi(nha);
+        if (khoa) this.henLuc(Math.max(luc, khoa.hetHan + 1));
+        else if (bayGio >= luc) this.batDauDoi(nha);
         else this.henLuc(luc);
+      }
+      return;
+    }
+    if (khoa) {
+      const den = new Date(khoa.hetHan).toISOString();
+      for (const n of khac) {
+        if (this.roiHang(n)) {
+          n.tuChoi(new LoiKheNang("KHE_NANG_KHOA", `Khe llama-server đang bị khoá bởi ${khoa.chu} tới ${den}${khoa.lyDo ? ` (${khoa.lyDo})` : ""} — không đổi sang ${n.model}; khe giữ ${this.dangGiu ?? "?"}.`));
+        }
       }
       return;
     }
