@@ -22,6 +22,11 @@ const hs = (o: Partial<YeuCauLuuHoSo>): YeuCauLuuHoSo => ({
 describe("suaSoModel (DB _test, Đợt 7.4)", () => {
   beforeAll(async () => {
     const db = (await getDb())!;
+    // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy) — xem afterAll bên dưới (cùng danh sách xoá)
+    await db.delete(aiModelBindings).where(like(aiModelBindings.scopeId, `${TT}%`));
+    await db.delete(aiModelEvalRuns).where(like(aiModelEvalRuns.profileId, `${TT}%`));
+    await db.delete(aiServingProfiles).where(like(aiServingProfiles.id, `${TT}%`));
+    await db.delete(aiModelArtifacts).where(like(aiModelArtifacts.id, `${TT}%`));
     await db.insert(aiModelArtifacts).values([
       { id: `${TT}-chu`, filePath: `${TT}-chu.gguf`, family: "probe" },
       { id: `${TT}-nhung`, filePath: `${TT}-nhung.gguf`, family: "probe", loai: "nhung" },

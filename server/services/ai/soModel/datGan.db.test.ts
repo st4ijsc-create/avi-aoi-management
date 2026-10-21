@@ -22,6 +22,11 @@ async function maLoi(p: Promise<unknown>): Promise<string | null> {
 describe("datGanModel (DB _test, Đợt 7.0)", () => {
   beforeAll(async () => {
     const db = (await getDb())!;
+    // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy) — xem afterAll bên dưới (cùng danh sách xoá)
+    await db.delete(aiModelBindings).where(eq(aiModelBindings.scopeId, SCOPE));
+    await db.delete(aiModelEvalRuns).where(like(aiModelEvalRuns.profileId, `${TT}%`));
+    await db.delete(aiServingProfiles).where(like(aiServingProfiles.id, `${TT}%`));
+    await db.delete(aiModelArtifacts).where(like(aiModelArtifacts.id, `${TT}%`));
     await db.insert(aiModelArtifacts).values([
       { id: `${TT}-a`, filePath: `${TT}-a.gguf`, family: "probe" },
       { id: `${TT}-b`, filePath: `${TT}-b.gguf`, family: "probe", license: "apache-2.0" },
