@@ -12,7 +12,7 @@
  * DAU (duy nhất theo lượt chạy) nên không va hàng cũ. Adapter/tag/pending action được dọn.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
-import { eq, like } from "drizzle-orm";
+import { eq, inArray, like } from "drizzle-orm";
 import postgres from "postgres";
 
 const fake = vi.hoisted(() => ({
@@ -65,6 +65,16 @@ const OWNER = 990_600_101;
 const OTHER_USER = 990_600_102;
 const MACHINE = 990_600_001;
 const TOOL = "set_machine_param";
+
+/** Dọn adapter/tag mồ côi của một lượt trước bị ngắt: máy tổng hợp CỐ ĐỊNH ⇒ tool AI (machineControl.ts: adapter đầu tiên theo machineId) chọn nhầm adapter sót, không có driver giả ⇒ bi_tu_choi_ghi. */
+async function donAdapterSotCuaMay(machineIds: number[]): Promise<void> {
+  const x = await d();
+  const old = await x.select({ id: deviceAdapters.id }).from(deviceAdapters).where(inArray(deviceAdapters.machineId, machineIds));
+  for (const a of old) {
+    await x.delete(deviceTags).where(eq(deviceTags.adapterId, a.id));
+    await x.delete(deviceAdapters).where(eq(deviceAdapters.id, a.id));
+  }
+}
 
 // ── driver giả: đếm số lần thiết bị bị ghi ──────────────────────────────────
 let writeCalls = 0;
@@ -186,6 +196,7 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     // Hạn sản xuất KHÔNG đổi.
     await import("./adapterFacade");
     await import("../safety/plc/safetyPlcAdapter");
+    await donAdapterSotCuaMay([MACHINE]);
     const x = await d();
     const [a] = await x
       .insert(deviceAdapters)
@@ -763,6 +774,7 @@ describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long key
   beforeAll(async () => {
     expect(DB_URL).toMatch(/_test/);
     for (const k of [...ENV_KEYS, "INTERLOCK_AUTO_BLOCK_ENABLED"]) savedEnv[k] = process.env[k];
+    await donAdapterSotCuaMay([MI, MS]);
     adI = await makeAdapter("FI", MI);
     adS = await makeAdapter("FS", MS);
     ({ ruleId: ruleReduce, eventId: evReduce } = await makeRule({ action: "reduce_speed", commandTag: "speed_sp", commandValue: 30 }));
