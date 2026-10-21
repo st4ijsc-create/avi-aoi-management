@@ -11,7 +11,11 @@ import OpenAI from "openai";
 
 const FB_SAI = "FUNCTION_BLOCK A\nVAR_INPUT x : BOOL; END_VAR\nVAR_OUTPUT y : BOOL; END_VAR\n  y := x AND ;\nEND_FUNCTION_BLOCK";
 const FB_DUNG = "FUNCTION_BLOCK A\nVAR_INPUT x : BOOL; END_VAR\nVAR_OUTPUT y : BOOL; END_VAR\n  y := x;\nEND_FUNCTION_BLOCK";
-const h = vi.hoisted(() => ({ banDau: "", soLanGoiLai: 0, soLanBienDich: 0 }));
+const h = vi.hoisted(() => ({ banDau: "", soLanGoiLai: 0, soLanBienDich: 0, audit: [] as { redactedSnippet?: string | null }[] }));
+vi.mock("../services/ai/aiLlmAudit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/ai/aiLlmAudit")>()),
+  recordLlmAudit: vi.fn((e: { redactedSnippet?: string | null }) => void h.audit.push(e)),
+}));
 
 vi.mock("../services/aiGgufEngine", () => ({
   isGgufAvailable: vi.fn(async () => true),
@@ -74,7 +78,9 @@ const datLai = (banDau: string) => {
   h.banDau = banDau;
   h.soLanGoiLai = 0;
   h.soLanBienDich = 0;
+  h.audit = [];
 };
+const snippetKiem = () => h.audit.map((e) => e.redactedSnippet).filter((x): x is string => typeof x === "string" && x.startsWith("kiem-bien-dich-st"));
 const khach = () => new OpenAI({ apiKey: API_KEY, baseURL: `${sv.url}/v1` });
 
 describe("/v1 code.plc + kiểm biên dịch ST — không stream", () => {
@@ -90,6 +96,10 @@ describe("/v1 code.plc + kiểm biên dịch ST — không stream", () => {
     expect(j.choices[0].message.content).not.toContain("AND ;");
     expect(j.choices[0].message.content).toContain("Đã tự sửa 1 lỗi biên dịch");
     expect(h.soLanGoiLai).toBe(1);
+    // audit: MỘT bản ghi mang số liệu vòng (không mã nguồn)
+    expect(snippetKiem()).toHaveLength(1);
+    expect(snippetKiem()[0]).toMatch(/^kiem-bien-dich-st ok=1 trang-thai=da-sua vong=1 sua=1 con=0 ms=\d+$/);
+    expect(snippetKiem()[0]).not.toContain("FUNCTION_BLOCK");
   });
 
   it("câu trả lời CHỮ THUẦN (không mã ST) ⇒ không biên dịch, không nhãn, header ok=skip", async () => {
@@ -103,6 +113,7 @@ describe("/v1 code.plc + kiểm biên dịch ST — không stream", () => {
     expect(res.headers.get("x-st4i-bien-dich")).toBe("ok=skip");
     expect(j.choices[0].message.content).toBe(h.banDau);
     expect(h.soLanBienDich).toBe(0);
+    expect(snippetKiem()).toEqual([]); // bỏ qua ⇒ cột NULL như mọi lượt
   });
 
   it("khối nhãn python trông giống ST ⇒ KHÔNG biên dịch như ST", async () => {
@@ -165,6 +176,8 @@ describe("/v1 code.plc + kiểm biên dịch ST — STREAM qua SDK openai THẬT
     expect(chu.slice(h.banDau.length)).toContain(FB_DUNG);
     expect(finish).toBe("stop");
     expect(chuSauFinish).toBe(""); // không gì sau finish_reason
+    expect(snippetKiem()).toHaveLength(1);
+    expect(snippetKiem()[0]).toMatch(/trang-thai=da-sua vong=1 sua=1 con=0/);
   });
 
   it("stream chữ thuần ⇒ không phần bổ sung, không biên dịch", async () => {
