@@ -43,7 +43,9 @@ const rel = (p) => relative(root, p).replaceAll("\\", "/");
 const SERIAL_CFG = ["vitest.serial.config.ts"];
 // 7 tệp chạy tuần tự riêng (loại khỏi cấu hình mặc định): chạy lại RIÊNG phải dùng cấu hình của chúng.
 const SERIAL_FILES = new Set(
-  [...readFileSync(resolve("vitest.serial.config.ts"), "utf8").matchAll(/"(server\/[^"]+\.db\.test\.ts)"/g)].map((m) => m[1]),
+  // \x22 thay cho dấu nháy kép: máy quét điểm spawn (vramAllocationSites) bóc chuỗi theo dấu nháy và sẽ coi một `"` trần trong
+  // regex literal là mở chuỗi, nuốt mất lời gọi spawnSync( phía dưới ⇒ bản liệt kê khai mà quét "thấy 0".
+  [...readFileSync(resolve("vitest.serial.config.ts"), "utf8").matchAll(new RegExp("\\x22(server/[^\\x22]+\\.db\\.test\\.ts)\\x22", "g"))].map((m) => m[1]),
 );
 const vitest = (files, jsonOut, cfg = [], truocFiles = []) =>
   spawnSync("npx", ["vitest", "run", ...cfg, ...truocFiles, ...files, ...extra, "--reporter=json", `--outputFile=${jsonOut}`], {
