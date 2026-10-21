@@ -65,8 +65,7 @@ VAR_INPUT ten : STRING; thuc : TIME; mong : TIME; END_VAR
     IF thuc = mong THEN
         {{ extern long kt_dat; kt_dat++; printf("DAT %.*s\n", (int)TEN.len, (char*)TEN.body); }}
     ELSE
-        {{ extern long kt_truot; kt_truot++; printf("TRUOT %.*s thuc=%lldms mong=%lldms\n", (int)TEN.len, (char*)TEN.body,
-             (long long)THUC.tv_sec * 1000 + THUC.tv_nsec / 1000000, (long long)MONG.tv_sec * 1000 + MONG.tv_nsec / 1000000); }}
+        {{ extern long kt_truot; kt_truot++; printf("TRUOT %.*s thuc=%lldms mong=%lldms\n", (int)TEN.len, (char*)TEN.body, (long long)THUC.tv_sec * 1000 + THUC.tv_nsec / 1000000, (long long)MONG.tv_sec * 1000 + MONG.tv_nsec / 1000000); }}
     END_IF;
 END_FUNCTION
 
@@ -91,6 +90,5 @@ END_FUNCTION
 
 FUNCTION KT_LINT_TO_TIME : TIME
 VAR_INPUT ns : LINT; END_VAR
-    {{ KT_LINT_TO_TIME.tv_sec = (long)(NS / 1000000000LL); KT_LINT_TO_TIME.tv_nsec = (long)(NS % 1000000000LL);
-       if (KT_LINT_TO_TIME.tv_nsec < 0) { KT_LINT_TO_TIME.tv_nsec += 1000000000L; KT_LINT_TO_TIME.tv_sec -= 1; } }}
+    {{ KT_LINT_TO_TIME.tv_sec = (long)(NS / 1000000000LL); KT_LINT_TO_TIME.tv_nsec = (long)(NS % 1000000000LL); if (KT_LINT_TO_TIME.tv_nsec < 0) { KT_LINT_TO_TIME.tv_nsec += 1000000000L; KT_LINT_TO_TIME.tv_sec -= 1; } }}
 END_FUNCTION

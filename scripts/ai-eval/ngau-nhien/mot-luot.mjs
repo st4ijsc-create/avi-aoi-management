@@ -18,12 +18,14 @@ import path from "node:path";
 import { ROOT, BO, coToolchain } from "./lib/moiTruong.mjs";
 import { docKho } from "./lib/kho.mjs";
 import { chonPhanTang } from "./lib/chon.mjs";
-import { chamDuAn, dungKhung, ghiTep, xoaThuMuc, apSai } from "./lib/cham.mjs";
+import { chamDuAn, dungKhung, ghiTep, xoaThuMuc, apSai, ST_TRINH_DICH, ST_PHUONG_NGU } from "./lib/cham.mjs";
 import { trichTep, dungCauTraLoiGia } from "./lib/trichTep.mjs";
 import { taoCauHoiMotLuot, SYS_MOT_LUOT } from "./lib/cauHoi.mjs";
 import { bangTomTat, trungVi } from "./lib/baoCao.mjs";
 import { taoGoiModel, tuyChonTuArgs } from "./lib/goiModel.mjs";
 import { chayST } from "./lib/st/chayST.mjs";
+import { chaySTMatiec } from "./lib/st-matiec/chaySTMatiec.mjs";
+import { sclSangSt } from "./lib/st-scl/scl.mjs";
 
 const args = process.argv.slice(2);
 const arg = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
@@ -43,7 +45,10 @@ const WORK = `${ROOT}/tmp/ngau-nhien-work/${LABEL}-${process.pid}`;
  * ★★ Đợt 7.3+ (2026-10-21) — `--vong-sua N` (chỉ config raw, chỉ bài `st`): sau câu trả lời, BIÊN DỊCH RIÊNG mã nguồn (src +
  * hàm `main` rỗng — KHÔNG có test nào, không lộ test hiển thị/ẩn) bằng RuSTy; lỗi biên dịch ⇒ gửi lại model trong CÙNG hội
  * thoại, tối đa N vòng. Đúng cơ chế node `ai.sinh-ma` của Luồng AI ⇒ A/B đo tác dụng của vòng kiểm biên dịch.
+ * ★ Đợt 9 — theo chế độ chấm: `AI_EVAL_ST_TRINH_DICH=matiec` ⇒ biên dịch bằng MATIEC (pha A, cờ OpenPLC thật, chỉ src);
+ * `AI_EVAL_ST_PHUONG_NGU=scl` ⇒ chuẩn hoá SCL → ST trước khi biên dịch (số dòng giữ nguyên ⇒ lỗi trỏ đúng dòng SCL).
  */
+const TEN_TRINH_DICH = ST_TRINH_DICH === "matiec" ? "MATIEC của OpenPLC v3, chuẩn IEC 61131-3" : "RuSTy, phương ngữ CODESYS";
 const VONG_SUA = Math.max(0, Number(arg("--vong-sua", 0)));
 
 const DS = chonPhanTang(KHO_LOC, { seed: SEED, n: N });
@@ -115,15 +120,17 @@ async function loiBienDichST(b, text, nhan) {
   const tep = [];
   for (const [rel, nd] of Object.entries(tr.tep)) {
     if (!/^src\/[^/]+\.st$/i.test(rel)) continue;
-    fs.writeFileSync(`${dir}/${rel}`, nd);
+    fs.writeFileSync(`${dir}/${rel}`, ST_PHUONG_NGU === "scl" ? sclSangSt(nd) : nd);
     tep.push({ ten: rel, duong: `${dir}/${rel}` });
   }
-  fs.writeFileSync(`${dir}/_main.st`, "FUNCTION main : DINT\n    main := 0;\nEND_FUNCTION\n");
-  tep.push({ ten: "_main.st", duong: `${dir}/_main.st` });
+  if (ST_TRINH_DICH !== "matiec") { // MATIEC: chỉ src (pha A, cờ OpenPLC) — không cần main
+    fs.writeFileSync(`${dir}/_main.st`, "FUNCTION main : DINT\n    main := 0;\nEND_FUNCTION\n");
+    tep.push({ ten: "_main.st", duong: `${dir}/_main.st` });
+  }
   if (tr.thieu.length) return [`thiếu tệp: ${tr.thieu.join(", ")} — trả về ĐỦ mọi tệp, mỗi tệp một khối mã có dòng \`// tệp: …\``];
-  const r = await chayST({ tep, thuMucViec: `${WORK}/_st-jobs`, giayChay: 5 });
+  const r = await (ST_TRINH_DICH === "matiec" ? chaySTMatiec : chayST)({ tep, thuMucViec: `${WORK}/_st-jobs`, giayChay: 5 });
   xoaThuMuc(dir);
-  if (r.giaiDoan !== "bien-dich") return [];
+  if (r.giaiDoan !== "bien-dich" || r.ok) return []; // MATIEC chỉ src: biên dịch được ⇒ giaiDoan "bien-dich" + ok
   return r.chanDoan.filter((d) => d.mucDo === "error").slice(0, 15).map((d) => `${d.tep ?? "?"}:${d.dong ?? "?"}:${d.cot ?? "?"} ${d.ma ?? ""} ${d.thongDiep}`.trim());
 }
 
@@ -136,7 +143,7 @@ async function sinhCoVongSua(b) {
     vet.loiTungVong.push(loi.length);
     if (!loi.length) break;
     tin.push({ role: "assistant", content: g.text });
-    tin.push({ role: "user", content: `Trình biên dịch IEC 61131-3 (RuSTy, phương ngữ CODESYS) báo lỗi:\n${loi.map((l) => `- ${l}`).join("\n")}\n\nSửa các lỗi trên và trả lại ĐẦY ĐỦ mọi tệp theo đúng định dạng như trước (mỗi tệp một khối mã có dòng \`// tệp: …\`).` });
+    tin.push({ role: "user", content: `Trình biên dịch IEC 61131-3 (${TEN_TRINH_DICH}) báo lỗi${ST_PHUONG_NGU === "scl" ? " (mã SCL của bạn được chuẩn hoá sang ST trước khi biên dịch; số dòng giữ nguyên)" : ""}:\n${loi.map((l) => `- ${l}`).join("\n")}\n\nSửa các lỗi trên và trả lại ĐẦY ĐỦ mọi tệp theo đúng định dạng như trước (mỗi tệp một khối mã có dòng \`// tệp: …\`).` });
     const g2 = await goi.chatRawTin(tin);
     vet.vong = k;
     g = { ...g2, totalMs: (g.totalMs ?? 0) + (g2.totalMs ?? 0), genTok: (g.genTok ?? 0) + (g2.genTok ?? 0) };
@@ -175,7 +182,7 @@ fs.mkdirSync(dirBc, { recursive: true });
 fs.writeFileSync(`${dirBc}/${LABEL}.json`, JSON.stringify({
   label: LABEL, duong: "a-mot-luot", config: CONFIG, seed: SEED, n: N, soLuot: SO_LUOT, luc: new Date().toISOString(),
   base: CONFIG === "pipeline" ? TUY_CHON.base : null, rawUrl: CONFIG === "raw" ? TUY_CHON.rawUrl : null, maxTokens: GOI_MODEL ? TUY_CHON.maxTokens : null,
-  khongNghi: co("--khong-nghi"), sampling: arg("--sampling", "hien-tai"), vongSua: VONG_SUA,
+  khongNghi: co("--khong-nghi"), sampling: arg("--sampling", "hien-tai"), vongSua: VONG_SUA, stTrinhDich: ST_TRINH_DICH, stPhuongNgu: ST_PHUONG_NGU,
   bai: DS.map((b) => ({ id: b.id, lang: b.lang, muc: b.muc, vanTay: b.vanTay })), bang, rows,
 }, null, 1));
 console.log(` báo cáo: ${path.join(dirBc, `${LABEL}.json`)}`);
