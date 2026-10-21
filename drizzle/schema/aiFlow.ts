@@ -2,7 +2,7 @@
  * ★★ AI Local Đợt 8.0 (2026-10-20) — LUỒNG AI, migration `0401`. Spec §4.3–4.4.
  * ⚠ CHECK ở `drizzle/0401_ai_flows.sql`. Thời điểm hàng đợi/lease/lượt chạy là `timestamptz` (so với now()).
  */
-import { pgTable, varchar, integer, boolean, jsonb, uuid, bigserial, smallint, timestamp, primaryKey, unique, index, customType } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, jsonb, uuid, bigserial, smallint, timestamp, primaryKey, unique, index, customType } from "drizzle-orm/pg-core";
 import { users } from "./auth";
 import { factories } from "./hierarchy";
 
@@ -151,6 +151,8 @@ export const aiFlowCredentials = pgTable("ai_flow_credentials", {
   iv: bytea("iv").notNull(),
   tag: bytea("tag").notNull(),
   phienBanKhoa: integer("phienBanKhoa").notNull(),
+  /** Đợt 9 (mig 0412, M2) — host bí mật được phép gửi tới (mảng rỗng = CHƯA khai ⇒ không dùng được). */
+  hostChoPhep: text("hostChoPhep").array().notNull().default([]),
   /** Đợt 9 (mig 0411) — phạm vi NHÀ MÁY của bí mật. NULL = toàn hệ thống (chỉ admin dùng được). */
   factoryId: integer("factoryId").references(() => factories.id, { onDelete: "set null" }),
   createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
