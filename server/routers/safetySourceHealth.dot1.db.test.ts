@@ -55,6 +55,11 @@ describe.skipIf(!DB_URL)("Task 4 — safety.sourceHealth + listRuns DRY-RUN (CSD
   beforeAll(async () => {
     for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    // Dọn dư của một lượt trước bị ngắt (userId cố định ⇒ INSERT permissions dưới đây đỏ duplicate key; run/PLC mang tiền tố riêng của file).
+    await sql`DELETE FROM orchestration_run_steps WHERE "runId" IN (SELECT id FROM orchestration_runs WHERE "workflowRef" LIKE 't4-t4s%')`;
+    await sql`DELETE FROM orchestration_runs WHERE "workflowRef" LIKE 't4-t4s%'`;
+    await sql`DELETE FROM safety_plc_configs WHERE code LIKE 'SIM-T4-t4s%'`;
+    await sql`DELETE FROM permissions WHERE "userId" = ${U_SCOPED}`;
     const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
     await sql`INSERT INTO permissions ("userId", category, "moduleName", "canView")
               VALUES (${U_SCOPED}, 'machine_monitoring', 'machine_status', true)`;
