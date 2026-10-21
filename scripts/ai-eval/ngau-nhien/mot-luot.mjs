@@ -3,6 +3,8 @@
  *
  *   --config raw       gọi THẲNG llama-server (trục M — model thuần; `--raw-url`, mặc định :8091)
  *   --config pipeline  đường SẢN PHẨM `/api/ai/local-kb/stream` (codingMode) như `codegen-chay-duoc/run.mjs` (trục H)
+ *   --config v1        đường SẢN PHẨM `/v1/chat/completions` (AI_EVAL_BASE, token người dùng ở `--token-file` JSON {token,ten},
+ *                      `--v1-model` mặc định `code.plc`) — trục H của vòng kiểm biên dịch ST (cờ AI_KIEM_BIEN_DICH_ST CỦA SERVER)
  *   --config mau|khung|sai   KHÔNG gọi model — kiểm thước đường (a) trên CHÍNH mẫu được chọn:
  *                            mau ⇒ phải 100 % · khung ⇒ phải 0 % · sai ⇒ phải 0 % (lệch ⇒ exit 1, vứt số)
  *
@@ -33,8 +35,10 @@ const arg = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] :
 const co = (k) => args.includes(k);
 
 const CONFIG = arg("--config", "raw");
-if (!["raw", "pipeline", "mau", "khung", "sai"].includes(CONFIG)) { console.error(`--config lạ: ${CONFIG}`); process.exit(2); }
-const GOI_MODEL = CONFIG === "raw" || CONFIG === "pipeline";
+if (!["raw", "pipeline", "v1", "mau", "khung", "sai"].includes(CONFIG)) { console.error(`--config lạ: ${CONFIG}`); process.exit(2); }
+const GOI_MODEL = CONFIG === "raw" || CONFIG === "pipeline" || CONFIG === "v1";
+/** Cấu hình dùng khe :8091 (giữ khoá khe + đọc model đầu/cuối): raw gọi thẳng; v1 qua app nhưng app gọi :8091. */
+const DUNG_KHE = CONFIG === "raw" || CONFIG === "v1";
 const SEED = arg("--seed", null) ?? `t${Date.now()}`;
 const KHO_LOC = docKho({ only: arg("--only", null) });
 const N = co("--tat-ca") ? KHO_LOC.length : Number(arg("--n", 18));
@@ -51,6 +55,7 @@ const WORK = `${ROOT}/tmp/ngau-nhien-work/${LABEL}-${process.pid}`;
  */
 const TEN_TRINH_DICH = ST_TRINH_DICH === "matiec" ? "MATIEC của OpenPLC v3, chuẩn IEC 61131-3" : "RuSTy, phương ngữ CODESYS";
 const VONG_SUA = Math.max(0, Number(arg("--vong-sua", 0)));
+if (VONG_SUA > 0 && CONFIG !== "raw") { console.error("--vong-sua chỉ cho --config raw (v1: vòng kiểm là của SERVER, bật bằng cờ)."); process.exit(2); }
 
 const DS = chonPhanTang(KHO_LOC, { seed: SEED, n: N });
 if (!DS.length) { console.error("Không có bài nào (kho rỗng hoặc --only không khớp)."); process.exit(2); }
@@ -76,7 +81,7 @@ function genGia(b) {
 }
 
 async function kiemSong(luc, thoat = true) {
-  return GOI_MODEL ? goi.kiemSong(luc, { pipeline: CONFIG === "pipeline", thoat }) : true;
+  return GOI_MODEL ? goi.kiemSong(luc, { pipeline: CONFIG === "pipeline" || CONFIG === "v1", thoat }) : true;
 }
 
 // ── VÒNG ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -84,12 +89,19 @@ if (CONFIG === "pipeline") {
   const { ck } = await import("../codegen-chay-duoc/cookie.mjs");
   goi = taoGoiModel({ ...TUY_CHON, cookie: ck(arg("--cookie", `${ROOT}/tmp/audit-ai/ck.txt`)) });
 }
+/** ★ Đợt 9 — token /v1 RIÊNG cho phép đo (tên ghi vào báo cáo; KHÔNG ghi token). */
+let TOKEN_V1 = null;
+if (CONFIG === "v1") {
+  const tf = arg("--token-file", `${ROOT}/tmp/token-do.json`);
+  try { TOKEN_V1 = JSON.parse(fs.readFileSync(tf, "utf8")); } catch (e) { console.error(`⛔ không đọc được --token-file ${tf}: ${e?.message ?? e}`); process.exit(2); }
+  goi = taoGoiModel({ ...TUY_CHON, v1Token: TOKEN_V1.token, v1Model: arg("--v1-model", "code.plc") });
+}
 await kiemSong("TRƯỚC khi đo");
 // ★ Đợt 9 — KHOÁ KHE suốt lượt (server/services/ai/khoaKhe.ts): app không được đổi khe :8091 giữa phép đo; gia hạn 30 s,
 // tự hết hạn ≤ 5 phút nếu tiến trình này chết.
-const KHOA = GOI_MODEL && CONFIG === "raw" ? giuKhoaKhe({ chu: `mot-luot ${LABEL} (PID ${process.pid})`, lyDo: "đo plc/ngẫu nhiên trên :8091" }) : null;
+const KHOA = GOI_MODEL && DUNG_KHE ? giuKhoaKhe({ chu: `mot-luot ${LABEL} (PID ${process.pid})`, lyDo: "đo plc/ngẫu nhiên trên :8091" }) : null;
 // ★ Đợt 9 — model THỰC chạy đầu + cuối lượt (khe nặng của một tiến trình khác có thể đổi :8091 giữa chừng).
-const MODEL_DAU = GOI_MODEL && CONFIG === "raw" ? await goi.modelDangChay() : null;
+const MODEL_DAU = GOI_MODEL && DUNG_KHE ? await goi.modelDangChay() : null;
 if (MODEL_DAU) console.error(`ℹ model :8091 lúc bắt đầu: ${MODEL_DAU}`);
 let dungSom = null;
 
@@ -112,11 +124,13 @@ async function cham(b, luot, g) {
     totalMs: g.totalMs ?? null, ttftMs: g.ttftMs ?? null, promptTok: g.promptTok ?? null, genTok: g.genTok ?? null,
     finish: g.finish ?? null, cut: !!g.cut, evs: g.evs ?? null, err: g.err ?? null, chamMs: kq.ms,
     tep: tr.tep, vanBanGoc: GOI_MODEL ? (g.text || "").slice(0, 40000) : undefined, vongSua: g.vongSua,
+    hdr: g.hdr ?? undefined, requestId: g.requestId ?? undefined,
   };
   if (tr.thieu.length && !row.lyDo.includes("THIEU_TEP")) row.lyDo = ["THIEU_TEP:" + tr.thieu.join("+"), ...row.lyDo];
   rows.push(row);
   console.error(`  ${row.dat ? "ĐẠT " : "TRƯỢT"} ${b.id}#${luot}  ${row.dem ? `${row.dem.pass}✓/${row.dem.fail}✗ (cần ≥${row.canToiThieu})` : ""} ${row.lyDo.join(",")}` +
-    `${row.cut ? " · CỤT" : ""}${row.genTok ? ` · ${row.genTok} tok` : ""}${row.totalMs ? ` · ${row.totalMs} ms` : ""}`);
+    `${row.cut ? " · CỤT" : ""}${row.genTok ? ` · ${row.genTok} tok` : ""}${row.totalMs ? ` · ${row.totalMs} ms` : ""}` +
+    `${row.hdr?.["x-st4i-bien-dich"] ? ` · BD[${row.hdr["x-st4i-bien-dich"]}]` : ""}`);
 }
 
 /** Biên dịch CHỈ `src/*.st` của câu trả lời (+ `main` rỗng). Trả danh sách lỗi (rỗng = biên dịch được). */
@@ -165,7 +179,8 @@ for (const b of DS) {
     let g;
     try {
       g = CONFIG === "raw" && VONG_SUA > 0 && b.kieu === "st" ? await sinhCoVongSua(b)
-        : CONFIG === "raw" ? await goi.chatRaw(SYS_MOT_LUOT, taoCauHoiMotLuot(b)) : CONFIG === "pipeline" ? await goi.chatPipeline(taoCauHoiMotLuot(b)) : genGia(b);
+        : CONFIG === "raw" ? await goi.chatRaw(SYS_MOT_LUOT, taoCauHoiMotLuot(b)) : CONFIG === "pipeline" ? await goi.chatPipeline(taoCauHoiMotLuot(b))
+        : CONFIG === "v1" ? await goi.chatV1(SYS_MOT_LUOT, taoCauHoiMotLuot(b)) : genGia(b);
     } catch (e) {
       g = { text: "", err: String(e).slice(0, 300) };
     }
@@ -184,7 +199,7 @@ for (const b of DS) {
 }
 await Promise.all(dangCham);
 const songSau = dungSom ? false : await kiemSong("SAU khi đo", false);
-const MODEL_CUOI = GOI_MODEL && CONFIG === "raw" ? await goi.modelDangChay() : null;
+const MODEL_CUOI = GOI_MODEL && DUNG_KHE ? await goi.modelDangChay() : null;
 if (MODEL_DAU && MODEL_CUOI !== MODEL_DAU) console.error(`⚠ model :8091 ĐỔI giữa lượt: đầu ${MODEL_DAU} · cuối ${MODEL_CUOI ?? "không đọc được"}`);
 xoaThuMuc(WORK);
 KHOA?.go();
@@ -194,12 +209,23 @@ rows.sort((a, b) => (a.id === b.id ? a.luot - b.luot : a.id < b.id ? -1 : 1));
 const bang = bangTomTat(rows, { tieuDe: `${LABEL} — đường (a) một lượt, config=${CONFIG}, seed=${SEED}` });
 console.log(bang);
 const lat = rows.map((r) => r.totalMs).filter((x) => x);
+if (CONFIG === "v1") {
+  // ★ Đợt 9 — server đã làm gì với vòng kiểm biên dịch (header `x-st4i-bien-dich`; vắng = cờ tắt / không phải code.plc).
+  const dem = {};
+  for (const r of rows) {
+    const h = r.hdr?.["x-st4i-bien-dich"];
+    const k = !h ? "(không header)" : h === "ok=skip" ? "bo-qua" : (/trang-thai=([a-z-]+)/.exec(h)?.[1] ?? h);
+    dem[k] = (dem[k] ?? 0) + 1;
+  }
+  console.log(` vòng kiểm biên dịch (server): ${Object.entries(dem).map(([k, n]) => `${k} ${n}`).join(" · ")}`);
+}
 if (GOI_MODEL && lat.length) console.log(` độ trễ sinh: trung vị ${trungVi(lat)} ms · max ${Math.max(...lat)} ms · token ra trung vị ${trungVi(rows.map((r) => r.genTok))}`);
 const dirBc = `${BO}/reports`;
 fs.mkdirSync(dirBc, { recursive: true });
 fs.writeFileSync(`${dirBc}/${LABEL}.json`, JSON.stringify({
   label: LABEL, duong: "a-mot-luot", config: CONFIG, seed: SEED, n: N, soLuot: SO_LUOT, luc: new Date().toISOString(),
-  base: CONFIG === "pipeline" ? TUY_CHON.base : null, rawUrl: CONFIG === "raw" ? TUY_CHON.rawUrl : null, maxTokens: GOI_MODEL ? TUY_CHON.maxTokens : null,
+  base: CONFIG === "pipeline" || CONFIG === "v1" ? TUY_CHON.base : null,
+  v1: CONFIG === "v1" ? { model: arg("--v1-model", "code.plc"), tokenTen: TOKEN_V1?.ten ?? null, tokenId: TOKEN_V1?.id ?? null, tokenTienTo: TOKEN_V1?.tienTo ?? null } : null, rawUrl: CONFIG === "raw" ? TUY_CHON.rawUrl : null, maxTokens: GOI_MODEL ? TUY_CHON.maxTokens : null,
   khongNghi: co("--khong-nghi"), sampling: arg("--sampling", "hien-tai"), vongSua: VONG_SUA, stTrinhDich: ST_TRINH_DICH, stPhuongNgu: ST_PHUONG_NGU,
   modelDau: MODEL_DAU, modelCuoi: MODEL_CUOI, dungSom, songSau,
   bai: DS.map((b) => ({ id: b.id, lang: b.lang, muc: b.muc, vanTay: b.vanTay })), bang, rows,
