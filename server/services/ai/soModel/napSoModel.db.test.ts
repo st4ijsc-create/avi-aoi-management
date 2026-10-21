@@ -1,7 +1,7 @@
 /**
  * Đợt 7.0 — nạp sổ model từ CSDL `_test` (mig 0400 phải đã áp: `node scripts/apply-migration-0400.mjs --test-only`).
  */
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, like } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { aiModelArtifacts, aiModelBindings, aiServingProfiles } from "../../../../drizzle/schema";
@@ -11,13 +11,16 @@ import { napAnhSoModel } from "./napSoModel";
 const TIEN_TO = "t7nap";
 
 describe("napAnhSoModel (DB, Đợt 7.0)", () => {
-  afterAll(async () => {
+  // Dọn cả TRƯỚC: lượt bị ngắt giữa chừng để lại hàng id cố định ⇒ insert 23505 ở lượt sau (đo 2026-10-21).
+  const don = async () => {
     const db = await getDb();
     if (!db) return;
     await db.delete(aiModelBindings).where(eq(aiModelBindings.scopeId, `${TIEN_TO}-du-an`));
     await db.delete(aiServingProfiles).where(like(aiServingProfiles.id, `${TIEN_TO}%`));
     await db.delete(aiModelArtifacts).where(like(aiModelArtifacts.id, `${TIEN_TO}%`));
-  });
+  };
+  beforeAll(don);
+  afterAll(don);
 
   it("seed: 11 vai trò khớp VAI_TRO_GOC, mỗi vai trò 1 gán global active theo-env", async () => {
     const anh = (await napAnhSoModel())!;
