@@ -183,6 +183,31 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — command queue: L-7 STOP deliver
     expect((await k.sql`SELECT outcome FROM robot_motion_lock_requests WHERE id = ${stop}`)[0].outcome).toBe("done");
   });
 
+  it("★ doc 81 dot 12 follow-up: a lock / clear ack re-sent with the IDENTICAL outcome, target and epoch is idempotent (true, no anomaly); a different outcome is still refused and audited", async () => {
+    const { eventsForNode } = await import("./edgeReportsCentral");
+    const { enqueueEdgeDeviceRequest, ackEdgeCommand } = await import("./edgeNodeCommands");
+    const { centralDb } = await import("./edgeCentralCommon");
+    const ep = Number((await k.sql`SELECT "ownerEpoch" FROM robots WHERE id = ${k.ids.robotA}`)[0].ownerEpoch);
+    const lock = (await enqueueEdgeDeviceRequest({ kind: "lock", robotId: k.ids.robotA, reason: "op same", requestedBy: k.u.admin })).requestId;
+    await k.sql`UPDATE robot_motion_lock_requests SET "deliveredAt" = now() WHERE id = ${lock}`;
+    const rec = (outcome: "done" | "failed", robotId = k.ids.robotA, ownerEpoch = ep) => ({ requestId: lock, outcome, generation: 1, at: Date.now(), target: { robotId }, ownerEpoch });
+    const d = await centralDb();
+    await d.transaction(async (tx) => {
+      expect(await ackEdgeCommand(tx as never, k.ids.nodeA, rec("done"))).toBe(true);
+      expect(await ackEdgeCommand(tx as never, k.ids.nodeA, rec("done"))).toBe(true); // the identical re-send
+      expect(await ackEdgeCommand(tx as never, k.ids.nodeA, rec("failed"))).toBe(false); // another outcome
+      expect(await ackEdgeCommand(tx as never, k.ids.nodeA, rec("done", k.ids.robotB))).toBe(false); // another target
+      expect(await ackEdgeCommand(tx as never, k.ids.nodeA, rec("done", k.ids.robotA, ep + 1))).toBe(false); // another epoch
+      expect(await ackEdgeCommand(tx as never, k.ids.nodeB, rec("done"))).toBe(false); // another node
+    });
+    expect((await k.sql`SELECT outcome FROM robot_motion_lock_requests WHERE id = ${lock}`)[0].outcome).toBe("done");
+    // through the stream: the identical re-send is applied silently, a different outcome is an anomaly
+    const ev = (seq: number, outcome: string) => ({ kind: "command_ack", seq, requestId: lock, outcome, generation: 1, at: Date.now(), target: { robotId: k.ids.robotA }, ownerEpoch: ep });
+    const r = await eventsForNode(await k.principal("A"), { epoch: epoch(), stream: "events", records: [ev(1, "done"), ev(2, "failed")] });
+    expect(r, JSON.stringify(r)).toMatchObject({ http: 200, data: { outcomes: [{ seq: 2, outcome: "anomaly", code: "command_ack_refused" }] } });
+    expect((r.data as { outcomes?: unknown[] }).outcomes).toHaveLength(1);
+  });
+
   it("★ R-10-au: a STOP acked `notOwnedHere` is NEVER terminal — 200 with the anomaly `ack_not_owned_here`, the STOP stays pending and is re-delivered next pull; a lock acked `notOwnedHere` stays pending too", async () => {
     const { eventsForNode } = await import("./edgeReportsCentral");
     const { enqueueEdgeDeviceRequest, commandsForNode } = await import("./edgeNodeCommands");

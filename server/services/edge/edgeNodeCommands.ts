@@ -405,6 +405,8 @@ export async function ackEdgeCommand(tx: Db, nodeId: number, rec: EdgeAckInput):
   // fail-closed: a lock / clear ack that does not name exactly one target and its owner epoch is never recorded; R-10-au —
   // `notOwnedHere` never closes a request (the lock stays pending until delivered to its owner or expired by the sweeper)
   if (!wellFormed || head.edgeNodeId !== nodeId || rec.outcome === "notOwnedHere") return false;
+  // the same lock / clear ack re-sent (already recorded: same node, outcome, target and owner epoch) is not a second ack: ok, no anomaly
+  if (head.ackedAt != null && head.outcome === rec.outcome && (head.robotId ?? null) === robotId && (head.adapterId ?? null) === adapterId && Number(head.ownerEpoch) === rec.ownerEpoch && rec.unsigned !== true) return true;
   const outcome: "done" | "refused" | "failed" | "expired" = rec.outcome;
   try {
     return await tx.transaction(async (sp) => {

@@ -195,7 +195,11 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 12 .*re-taken after the STOP/.test(a))).toBe(false);
     expect(after.some((a) => /^EDGE_DEVICE_RELEASED: adapter 21 .*pinned STOP \w+ \(run\), session closed/.test(a))).toBe(true);
     expect(writes).toHaveBeenCalled();
-    expect(central.received.locksEvents.filter((r) => r.kind === "command_ack" && r.requestId === 140).map((r) => r.outcome)).toEqual(["done"]);
+    // central re-delivers a STOP until it holds the ack, and the agent re-acks by design (immediate, then a 2 s back-off; central is
+    // idempotent) - so under load 1..n acks may arrive: every one is "done", at least one
+    const stopAcks = central.received.locksEvents.filter((r) => r.kind === "command_ack" && r.requestId === 140).map((r) => r.outcome);
+    expect(stopAcks.length).toBeGreaterThanOrEqual(1);
+    expect(stopAcks.every((x) => x === "done")).toBe(true);
 
     // ── F-2: robot 12 comes back and robot 14 is added (it never connects) — each through D's per-robot attach; the healthy
     //    robot 13 keeps its session the whole time (no gateway restart, no cycling), robot 14 is retried with a back-off
