@@ -4,12 +4,15 @@
  */
 import { pgTable, varchar, integer, boolean, jsonb, uuid, bigserial, smallint, timestamp, primaryKey, unique, index, customType } from "drizzle-orm/pg-core";
 import { users } from "./auth";
+import { factories } from "./hierarchy";
 
 const tz = (ten: string) => timestamp(ten, { withTimezone: true });
 
 export const aiFlows = pgTable("ai_flows", {
   id: varchar("id", { length: 64 }).primaryKey(),
   tenantId: varchar("tenantId", { length: 64 }),
+  /** Đợt 9 (mig 0411) — phạm vi NHÀ MÁY. NULL = toàn hệ thống: chỉ phạm vi "tất cả" (admin) thấy/dùng. */
+  factoryId: integer("factoryId").references(() => factories.id, { onDelete: "set null" }),
   name: varchar("name", { length: 200 }).notNull(),
   activeVersion: integer("activeVersion"),
   ownerId: integer("ownerId").references(() => users.id, { onDelete: "set null" }),
@@ -148,6 +151,8 @@ export const aiFlowCredentials = pgTable("ai_flow_credentials", {
   iv: bytea("iv").notNull(),
   tag: bytea("tag").notNull(),
   phienBanKhoa: integer("phienBanKhoa").notNull(),
+  /** Đợt 9 (mig 0411) — phạm vi NHÀ MÁY của bí mật. NULL = toàn hệ thống (chỉ admin dùng được). */
+  factoryId: integer("factoryId").references(() => factories.id, { onDelete: "set null" }),
   createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
   createdAt: tz("createdAt").defaultNow().notNull(),
 });
