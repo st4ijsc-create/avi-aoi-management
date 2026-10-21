@@ -52,3 +52,21 @@ describe("vaiTroTuCauHoi — tín hiệu chữ tầng 3 (Đợt 7.3)", () => {
     expect(vaiTroTuCauHoi("viết báo cáo về test hệ thống")).toBeNull(); // "test" không phải "ST"
   });
 });
+
+describe("vaiTroTuTacVu / vaiTroTuCauHoiTuDong — tín hiệu tác vụ tầng 3 (Đợt 9)", () => {
+  it("tóm tắt / trích / hỏi khái niệm; câu vận hành và câu kèm mã KHÔNG thành chat", async () => {
+    const { vaiTroTuTacVu, vaiTroTuCauHoiTuDong, vaiTroTuTinHieu } = await import("./aiRoles");
+    expect(vaiTroTuTacVu("Tóm tắt biên bản họp này")?.vaiTro).toBe("summarize");
+    expect(vaiTroTuTacVu("Trích mã lỗi từ log sau ra JSON")?.vaiTro).toBe("extract");
+    expect(vaiTroTuTacVu("Lấy các trường khách hàng, số lượng từ email này ra bảng")?.vaiTro).toBe("extract");
+    expect(vaiTroTuTacVu("TON khác TOF thế nào?")?.vaiTro).toBe("chat");
+    expect(vaiTroTuTacVu("Hiện tượng tombstone là gì?")?.vaiTro).toBe("chat"); // "hiện tượng" không phải dấu vận hành
+    expect(vaiTroTuTacVu("Tại sao line 3 dừng hôm nay?")).toBeNull(); // dấu vận hành ⇒ để tầng 4
+    expect(vaiTroTuTacVu("Tại sao TON trong đoạn ST này không lên Q?")).toBeNull(); // kèm mã
+    expect(vaiTroTuTacVu("Tóm tắt rồi trích mã lỗi từ báo cáo này")).toBeNull(); // hai tác vụ ⇒ không kết luận
+    expect(vaiTroTuCauHoiTuDong("Chuẩn IEC 61131-3 gồm những ngôn ngữ lập trình nào?")?.vaiTro).toBe("chat");
+    expect(vaiTroTuCauHoiTuDong("Viết FB ST cho băng tải")?.vaiTro).toBe("code.plc"); // ý định mã thắng
+    // Bề mặt lập trình (`vaiTroTuTinHieu`) KHÔNG nhận vai trò tác vụ.
+    expect(vaiTroTuTinHieu({ cauHoi: "Tóm tắt biên bản họp này" })).toBeNull();
+  });
+});

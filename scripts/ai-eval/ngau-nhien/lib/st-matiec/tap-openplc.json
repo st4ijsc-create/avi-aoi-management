@@ -1,0 +1,19 @@
+{
+  "_ghiChu": "Đợt 9 (2026-10-21) — bài plc-st-v1 có GIAO DIỆN (khung, không phải lời giải) KHÔNG mang sang OpenPLC v3/MATIEC được. Ngoài tập khi chấm bằng AI_EVAL_ST_TRINH_DICH=matiec. Bằng chứng: kiem-thuoc-st-matiec.mjs (mẫu trượt ở pha openplc/gcc).",
+  "ngoaiTap": {
+    "st-tt5-crc16-modbus": "FUNCTION nhận ARRAY làm đầu vào — iec2c chấp nhận nhưng C sinh ra hỏng (gcc: aggregate value used where an integer was expected)",
+    "st-tt9-dong-goi-bit": "FUNCTION nhận ARRAY làm đầu vào — như tt5",
+    "st-tv9-dem-xuong": "đầu ra tên TON (trùng khối chuẩn TON)",
+    "st-tv10-chot-uu-tien": "đề bắt dùng SR/RS với tên chân CODESYS SET1/RESET, SET/RESET1 — MATIEC theo IEC: S1/R, S/R1",
+    "st-ud2-den-giao-thong": "đầu vào tên EN (EN/ENO là chân ngầm định của mọi POU trong MATIEC)",
+    "st-ud10-thang-nang-2-tang": "đầu ra tên LEN (trùng hàm chuẩn LEN)",
+    "st-tv6-dem-gio-chay": "LỖI RUNTIME MATIEC/OpenPLC: __normalize_timespec không chuẩn hoá tv_nsec == 1e9 ⇒ T#993ms + T#7ms >= T#1s là FALSE (đã kiểm bằng chương trình 3 dòng) ⇒ cộng dồn TIME trượt đúng biên giây; lời giải đúng cũng trượt"
+  },
+  "mauOpenplc": {
+    "st-tt8-doc-tang-giam": "lời giải mẫu dùng biến cục bộ dt (từ khoá DT) ⇒ bản mẫu-openplc đổi thành dtGiay",
+    "st-tv6-dem-gio-chay": "lời giải mẫu dùng biến cục bộ le (hàm chuẩn LE) ⇒ bản mẫu-openplc đổi thành phanLe"
+  },
+  "ngoaiTapKhiDongHoChuan": {
+    "st-tv1-chong-doi": "TON CHUẨN MATIEC (timer.txt) không lên Q ngay chu kỳ đầu khi PT = T#0s (chỉ xét START+PT <= NOW từ chu kỳ sau); đề + test đòi lên ngay. Chạy được với AI_EVAL_ST_DONG_HO=gia"
+  }
+}

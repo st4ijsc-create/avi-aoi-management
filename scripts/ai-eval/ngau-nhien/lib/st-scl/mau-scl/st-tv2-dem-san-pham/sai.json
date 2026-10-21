@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/DemSanPham.st",
+    "tu": "#ctuDem(CU := FALSE, R := TRUE);",
+    "den": "#ctuDem(CU := FALSE, R := #RESET);"
+  }
+]

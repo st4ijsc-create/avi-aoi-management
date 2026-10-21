@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/XungKhoiDong.st",
+    "tu": "#xungTp(IN := FALSE, PT := t#0s);",
+    "den": "#xungTp(IN := FALSE, PT := #T_XUNG);"
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/GiamSatPhanHoi.st",
+    "tu": "#daCo := #LENH_CHAY AND (#daCo OR #PHAN_HOI);",
+    "den": "#daCo := #daCo OR (#LENH_CHAY AND #PHAN_HOI);"
+  }
+]

@@ -7,6 +7,10 @@
 import fs from "node:fs";
 import { lietKeTep, TEN_NGON_NGU } from "./kho.mjs";
 import { tienToChuThich } from "./trichTep.mjs";
+import { stSangScl, HUONG_DAN_SCL } from "./st-scl/scl.mjs";
+
+// ★ Đợt 9 — bài ST hỏi theo phương ngữ Siemens SCL khi AI_EVAL_ST_PHUONG_NGU=scl (bộ chấm chuẩn hoá SCL → ST, lib/st-scl).
+const laScl = (bai) => bai.lang === "st" && (process.env.AI_EVAL_ST_PHUONG_NGU || "").trim().toLowerCase() === "scl";
 
 const NGON_NGU_RAO = { py: "python", sql: "sql", js: "javascript", ts: "typescript", cs: "csharp", java: "java", cpp: "cpp", go: "go", rs: "rust" };
 const raoTheoDuoi = (rel) => {
@@ -26,10 +30,12 @@ export function taoCauHoiMotLuot(bai) {
   phan.push(`# ${bai.tieuDe}`);
   phan.push(`Ngôn ngữ / nền tảng: ${TEN_NGON_NGU[bai.lang]}.`);
   phan.push(bai.deBai.trim());
+  if (laScl(bai)) phan.push(HUONG_DAN_SCL);
   phan.push("## Các tệp hiện có trong dự án");
   phan.push("Không được sửa tệp test và tệp cấu hình. Tệp cần viết có thể đang là khung rỗng — hãy viết lại TOÀN BỘ nội dung của nó.");
   for (const rel of tepKhung) {
-    const nd = fs.readFileSync(`${bai.khungAbs}/${rel}`, "utf8");
+    const tho = fs.readFileSync(`${bai.khungAbs}/${rel}`, "utf8");
+    const nd = laScl(bai) && bai.tepGiai.includes(rel) ? stSangScl(tho) : tho; // khung lời giải hiển thị bằng SCL; test giữ ST
     phan.push(`### \`${rel}\`\n\`\`\`${raoTheoDuoi(rel)}\n${nd.replace(/\n$/, "")}\n\`\`\``);
   }
   const vd = bai.tepGiai[0];
@@ -98,6 +104,7 @@ export function taoCauHoiAgent(bai, da) {
     `Trong dự án ${ten} (${TEN_NGON_NGU[bai.lang]}), hãy làm việc sau. Các đường tệp trong yêu cầu tính từ gốc dự án${da ? ` \`${da}\`` : ""}.`,
     `# ${bai.tieuDe}`,
     bai.deBai.trim(),
+    ...(laScl(bai) ? [HUONG_DAN_SCL] : []),
     `Tệp cần tạo/sửa: ${bai.tepGiai.map((t) => `\`${t}\``).join(", ")}. KHÔNG sửa tệp test và tệp cấu hình dự án; không tạo tệp cấu hình test mới.`,
     agentChayDuoc
       ? `Test hiển thị (mỗi lệnh một lần gọi run_command, đúng thứ tự, đường tính từ gốc dự án của bạn): ${lenhIn}. Chạy để kiểm tra trước khi kết thúc. Máy chấm còn chạy thêm test ẩn kiểm đúng đặc tả.`

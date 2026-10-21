@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/LoaiBoAOI.st",
+    "tu": "#tg(DICH := #rtEnc.Q AND NOT #RESET",
+    "den": "#tg(DICH := #ENCODER AND NOT #RESET"
+  }
+]

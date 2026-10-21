@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/TonKho.st",
+    "tu": "#suon.Q AND #ctdTon.CV > 0",
+    "den": "#suon.Q"
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/BomLuanPhien.st",
+    "tu": "IF #CAN_BOM AND NOT #canCu THEN",
+    "den": "IF #CAN_BOM THEN"
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/NhapNhay.st",
+    "tu": "#toi := FALSE;",
+    "den": "#toi := #toi;"
+  }
+]

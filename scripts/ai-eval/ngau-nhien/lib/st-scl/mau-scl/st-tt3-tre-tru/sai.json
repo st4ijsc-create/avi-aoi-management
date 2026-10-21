@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/TreTru.st",
+    "tu": "ELSIF #PV <= #thap THEN",
+    "den": "ELSIF #PV < #thap THEN"
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/BoPI.st",
+    "tu": "(\"G_NOW\" - #tTruoc >= #TS)",
+    "den": "(\"G_NOW\" - #tTruoc > #TS)"
+  }
+]

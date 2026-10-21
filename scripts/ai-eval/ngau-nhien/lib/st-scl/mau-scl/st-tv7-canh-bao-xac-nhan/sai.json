@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/CanhBaoXacNhan.st",
+    "tu": "#ack := #xn.Q;",
+    "den": "#ack := #XAC_NHAN;"
+  }
+]

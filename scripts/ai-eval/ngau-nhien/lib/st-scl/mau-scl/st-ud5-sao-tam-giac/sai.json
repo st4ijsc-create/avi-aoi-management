@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/KhoiDongSaoTamGiac.st",
+    "tu": "#LOI_QT := #QUA_TAI OR (#LOI_QT AND NOT #RESET);",
+    "den": "#LOI_QT := (#QUA_TAI OR #LOI_QT) AND NOT #RESET;"
+  }
+]

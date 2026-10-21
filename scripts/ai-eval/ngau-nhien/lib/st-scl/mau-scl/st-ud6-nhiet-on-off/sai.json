@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/TreHaiNguong.st",
+    "tu": "IF #X <= #SP - #TRE THEN",
+    "den": "IF #X < #SP - #TRE THEN"
+  }
+]

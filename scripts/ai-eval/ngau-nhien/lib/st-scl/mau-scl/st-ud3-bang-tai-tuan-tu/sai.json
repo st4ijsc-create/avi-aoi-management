@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/ChotLoi.st",
+    "tu": "ELSIF #LOI AND #RESET AND NOT #coNguyenNhan THEN",
+    "den": "ELSIF #LOI AND #RESET THEN"
+  }
+]

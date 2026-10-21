@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/TrungBinhTruot.st",
+    "tu": "ELSIF #LAY_MAU AND NOT #layCu THEN",
+    "den": "ELSIF #LAY_MAU THEN"
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/ThangNang2Tang.st",
+    "tu": "IF #CUA_DONG AND NOT (#GOI_1 AND #GOI_2) THEN",
+    "den": "IF NOT (#GOI_1 AND #GOI_2) THEN"
+  }
+]

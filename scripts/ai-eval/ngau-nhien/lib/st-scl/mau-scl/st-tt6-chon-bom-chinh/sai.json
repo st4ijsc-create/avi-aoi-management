@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/ChonBomChinh.st",
+    "tu": "ELSIF #GIO_CHAY[#THU_TU[#j]] > #GIO_CHAY[#i] THEN",
+    "den": "ELSIF #GIO_CHAY[#THU_TU[#j]] >= #GIO_CHAY[#i] THEN"
+  }
+]

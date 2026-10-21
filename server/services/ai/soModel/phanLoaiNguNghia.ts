@@ -203,8 +203,8 @@ export async function phanLoaiNguNghia(
  * embedding thường trú của engine). `null` ⇒ bề mặt dùng vai trò mặc định của nó. Không bao giờ ném.
  */
 export async function chonVaiTroTuDong(cauHoi: string): Promise<{ vaiTro: string | null; tang: 3 | 4 | 5; lyDo: string }> {
-  const { vaiTroTuCauHoi } = await import("../../../../shared/aiRoles");
-  const t3 = vaiTroTuCauHoi(cauHoi);
+  const { vaiTroTuCauHoiTuDong } = await import("../../../../shared/aiRoles");
+  const t3 = vaiTroTuCauHoiTuDong(cauHoi);
   if (t3) return { vaiTro: t3.vaiTro, tang: 3, lyDo: t3.bangChung };
   const kq = await phanLoaiNguNghia(cauHoi, {
     cauMau: cauMauTheoVaiTro(),

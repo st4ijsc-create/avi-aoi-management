@@ -1,0 +1,7 @@
+[
+  {
+    "tep": "src/DongGoiBit.st",
+    "tu": "#SO_BIT_1 := 0;",
+    "den": "#SO_BIT_1 := #SO_BIT_1;"
+  }
+]
