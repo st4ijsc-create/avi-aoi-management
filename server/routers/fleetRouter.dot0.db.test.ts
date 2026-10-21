@@ -80,6 +80,12 @@ async function auditRows(entityType: string, entityId: number | string, action: 
 describe.skipIf(!DB_URL)("fleetRouter Đợt 0 Task 6 — CAS đồng thời · actor+audit · phạm vi nhà máy khi ghi (CSDL THẬT)", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    // Dọn dư của một lượt trước bị ngắt: programProjectId/userId CỐ ĐỊNH ⇒ hàng sót làm lượt sau đỏ
+    // (duplicate key uq_program_variant) — cùng thân dọn idempotent với afterAll.
+    await sql`DELETE FROM operation_program_map WHERE "programProjectId" IN (900000101, 900000001)`;
+    await sql`DELETE FROM program_variants WHERE "programProjectId" IN (900000777, 900000002, 900000003)`;
+    await sql`DELETE FROM user_factory_assignments WHERE "userId" IN ${sql(ALL_USERS)}`;
+    await sql`DELETE FROM permissions WHERE "userId" IN ${sql(ALL_USERS)}`;
     process.env.FLEET_ORCH_ENABLED = "true";
     process.env.FLEET_RESOURCE_ENABLED = "true"; // fix round 1 (Important #2) — G2 mutations
     const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
