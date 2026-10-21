@@ -197,6 +197,17 @@ for (const b of DS) {
         dungSom = { id: b.id, luot, nhanh, loi: String(g.err ?? "chữ rỗng").slice(0, 200), luc: new Date().toISOString() };
         break;
       }
+      // ★ Đợt 9 (dieu-phoi) — KIỂM NHÁNH của --ab-kiem: "tat" mà server vẫn chạy vòng (header khác vắng/`ok=skip`) ⇒ công tắc
+      // không hiệu lực; "bat" mà KHÔNG có header ⇒ cờ server không có `v1`. Cả hai ⇒ DỪNG, số vô giá trị (exit 2 ở dưới).
+      if (AB_KIEM && !g.err) {
+        const h = g.hdr?.["x-st4i-bien-dich"];
+        const hong = nhanh === "tat" && h && h !== "ok=skip" ? `nhánh tat có header "${h}"` : nhanh === "bat" && !h ? "nhánh bat KHÔNG có header (cờ server thiếu v1?)" : null;
+        if (hong) {
+          dungSom = { id: b.id, luot, nhanh, loi: `KIỂM NHÁNH HỎNG: ${hong}`, luc: new Date().toISOString() };
+          console.error(`\n⛔ ${dungSom.loi} — dừng, vứt số.`);
+          break;
+        }
+      }
       // Chấm song song với lượt sinh kế tiếp (CPU ↔ GPU), giới hạn SONG_SONG_CHAM.
       while (dangCham.size >= SONG_SONG_CHAM) await Promise.race(dangCham);
       const p = cham(b, luot, g, nhanh).catch((e) => console.error(`  ⚠ lỗi chấm ${b.id}: ${e?.stack ?? e}`)).finally(() => dangCham.delete(p));
@@ -253,7 +264,7 @@ fs.writeFileSync(`${dirBc}/${LABEL}.json`, JSON.stringify({
 console.log(` báo cáo: ${path.join(dirBc, `${LABEL}.json`)}`);
 if (dungSom || !songSau || (MODEL_DAU && MODEL_CUOI !== MODEL_DAU)) {
   console.error(
-    `\n⛔ LƯỢT KHÔNG TRỌN: ${dungSom ? `server chết sau ${dungSom.id}#${dungSom.luot} (${dungSom.loi})` : !songSau ? "server không khoẻ SAU khi đo" : "model đổi giữa lượt"}` +
+    `\n⛔ LƯỢT KHÔNG TRỌN: ${dungSom ? `dừng sớm sau ${dungSom.id}#${dungSom.luot}${dungSom.nhanh ? `[${dungSom.nhanh}]` : ""} (${dungSom.loi})` : !songSau ? "server không khoẻ SAU khi đo" : "model đổi giữa lượt"}` +
       ` — báo cáo ĐÃ GHI ${rows.length} lượt hợp lệ (dungSom/songSau/modelDau/modelCuoi trong JSON). KHÔNG ghi sổ nguyên trạng.`,
   );
   process.exit(2);
