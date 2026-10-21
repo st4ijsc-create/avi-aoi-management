@@ -14,6 +14,12 @@
 import { danhGiaThamSo } from "../../../../shared/flow/bieuThuc";
 import { dangKyNut, nguCanhItem, type NguCanhChay } from "../dangKyNut";
 import { LoiCongOt, kiemVaDeXuat, type KetQuaKiemOt } from "../ot/congOtLuong";
+import { LoiNgoaiPhamVi, chuanHoaIdMay } from "../idTaiNguyen";
+
+/** Máy phải thuộc phạm vi (nếu có bộ kiểm). Ngoài phạm vi và không tồn tại: cùng MỘT lỗi. */
+async function kiemMayTrongPhamVi(ngu: NguCanhChay, may: number): Promise<void> {
+  if (ngu.kiemPhamVi && !(await ngu.kiemPhamVi.may(may))) throw new LoiNgoaiPhamVi();
+}
 
 /** Một dòng telemetry đọc được (hình dạng `TelemetryLatestRow` rút gọn). */
 export interface DongTag {
@@ -46,10 +52,16 @@ dangKyNut({
   async chay(thamSo, ngu) {
     const vao = ngu.inputs.main ?? [];
     const ra = [];
+    // Lượt 1: đánh giá tham số + chuẩn hoá + KIỂM PHẠM VI cho MỌI item — chưa đọc gì. Lượt 2: đọc đúng các giá trị đã kiểm.
+    const dsItem = [];
     for (const item of vao) {
       const t = danhGiaThamSo(thamSo, nguCanhItem(ngu, item, vao)) as Record<string, unknown>;
-      const may = Number(t.may);
-      if (!Number.isInteger(may) || may <= 0) throw new LoiCongOt(0, `ot.doc-tag: 'may' phải là số nguyên dương (nhận ${JSON.stringify(t.may)?.slice(0, 40)})`);
+      const may = chuanHoaIdMay(t.may);
+      if (may === null) throw new LoiCongOt(0, `ot.doc-tag: 'may' phải là số nguyên dương (nhận ${JSON.stringify(t.may)?.slice(0, 40)})`);
+      await kiemMayTrongPhamVi(ngu, may);
+      dsItem.push({ item, t, may });
+    }
+    for (const { item, t, may } of dsItem) {
       const tag = typeof t.tag === "string" && t.tag !== "" ? t.tag : undefined;
       const gioiHan = Math.min(Math.max(Number(t.gioiHan ?? (tag ? 1 : 20)) || 1, 1), 100);
       const dong = await nguonDocTag({ machineId: may, tagKey: tag, limit: gioiHan });
@@ -91,6 +103,9 @@ dangKyNut({
   lapLai: "atMostOnce",
   async chay(thamSo, ngu) {
     const t = thamSoMotItem(thamSo, ngu, "ot.de-xuat-lenh");
+    // id không hợp lệ ⇒ cổng OT từ chối theo hình dạng (không đọc máy); id hợp lệ ⇒ phải thuộc phạm vi TRƯỚC khi cổng đọc `device_tags`.
+    const mayDaChuanHoa = chuanHoaIdMay(t.may);
+    if (mayDaChuanHoa !== null) await kiemMayTrongPhamVi(ngu, mayDaChuanHoa);
     const kq = await kiemVaDeXuat({ loai: "lenh", may: t.may, lenh: t.lenh, tag: t.tag, giaTri: t.giaTri, hetHanGio: t.hetHanGio }, nguDeXuat(ngu));
     return ketQuaNut(kq, "ot.de-xuat-lenh");
   },

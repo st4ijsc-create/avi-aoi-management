@@ -2,11 +2,12 @@
  * Đợt 9.1 — CHẠY THỬ MỘT NODE (không CSDL, AI GIẢ): chạy `chay` thật cho nhóm an toàn · xem trước (không chạy) cho nhóm có
  * tác dụng ra ngoài · không bao giờ giải mã bí mật · census ∀ sổ đăng ký + quét nguồn (không ghi lượt, không HTTP).
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { danhSachNut } from "./dangKyNut";
+import { chuanHoaIdMay } from "./idTaiNguyen";
 import "./nut";
 import { datHamGoiAi } from "./nut/ai";
 import { __datNguonDocTagChoTest } from "./nut/ot";
@@ -119,6 +120,48 @@ describe("chayThuNut — PHẠM VI người gọi (IDOR)", () => {
 
   it("đề xuất lệnh: máy ngoài phạm vi ⇒ từ chối (không rò qua câu lý do của cổng OT)", async () => {
     await expect(chayThuNut({ nut: nut("ot.de-xuat-lenh", { may: 7, lenh: "pause" }), inputs: { main: [{ json: {} }] } }, boKiem(3))).rejects.toBeInstanceOf(LoiNgoaiPhamVi);
+  });
+
+  it("★ id dạng CHUỖI SỐ (chuỗi 999) bị kiểm y như số: máy ngoài phạm vi ⇒ LoiNgoaiPhamVi, nguồn không bị gọi; máy trong phạm vi ⇒ đọc đúng máy đó", async () => {
+    goiNguon = 0;
+    const doc9 = vi.fn(async (_y: unknown) => []);
+    __datNguonDocTagChoTest(async (y) => (goiNguon++, doc9(y)));
+    const bk = boKiem(3);
+    await expect(chayThuNut({ nut: doc("999"), inputs: { main: [{ json: {} }] } }, bk)).rejects.toBeInstanceOf(LoiNgoaiPhamVi);
+    await expect(chayThuNut({ nut: doc("{{ $json.m }}"), inputs: { main: [{ json: { m: "999" } }] } }, bk)).rejects.toBeInstanceOf(LoiNgoaiPhamVi);
+    expect(goiNguon).toBe(0);
+    expect(bk.hoi).toEqual([999, 999]);
+    const ok = await chayThuNut({ nut: doc("3"), inputs: { main: [{ json: {} }] } }, boKiem(3));
+    expect(ok.ok).toBe(true);
+    expect(doc9).toHaveBeenCalledWith(expect.objectContaining({ machineId: 3 })); // giá trị đã kiểm = giá trị đã dùng
+    await expect(chayThuNut({ nut: nut("ot.de-xuat-lenh", { may: "999", lenh: "pause" }), inputs: { main: [{ json: {} }] } }, boKiem(3))).rejects.toBeInstanceOf(LoiNgoaiPhamVi);
+  });
+
+  it("★ id KHÔNG hợp lệ (khoảng trắng, mũ, hex, âm, thập phân, null, mảng, đối tượng, rỗng, 0, quá dài): không bao giờ đọc máy, không hỏi bộ kiểm", async () => {
+    for (const xau of [" 999", "999 ", "9e2", "0x3E7", -1, 0, 1.5, null, undefined, [], [3], {}, { may: 3 }, "", "٣", "1234567890123", 1e21, true, "3.0", "+3", "-3"]) {
+      goiNguon = 0;
+      dem();
+      const bk = boKiem(3, 999);
+      const r = await chayThuNut({ nut: doc(xau), inputs: { main: [{ json: {} }] } }, bk);
+      expect(r.ok, JSON.stringify(xau)).toBe(false);
+      expect(goiNguon, JSON.stringify(xau)).toBe(0);
+      expect(bk.hoi, JSON.stringify(xau)).toEqual([]);
+    }
+  });
+
+  it("danh sách item RỖNG: node không đọc gì (tham số tĩnh vẫn không chạm máy)", async () => {
+    goiNguon = 0;
+    dem();
+    const bk = boKiem();
+    const r = await chayThuNut({ nut: doc(7), inputs: { main: [] } }, bk);
+    expect(r.ok).toBe(true);
+    expect(goiNguon).toBe(0);
+    expect(bk.hoi).toEqual([]);
+  });
+
+  it("chuanHoaIdMay: bảng chuẩn", () => {
+    expect([3, "3", "0003", 2147483647, "2147483647"].map(chuanHoaIdMay)).toEqual([3, 3, 3, 2147483647, 2147483647]);
+    for (const xau of [0, -1, 1.5, NaN, Infinity, 2147483648, "2147483648", " 3", "3 ", "3e0", "0x3", "", null, undefined, [], {}, true, "٣"]) expect(chuanHoaIdMay(xau), String(xau)).toBeNull();
   });
 
   it("ot.de-xuat-luong: xem trước kể cả khi CÓ bộ kiểm (FOE workflow chưa có bộ kiểm phạm vi)", async () => {
