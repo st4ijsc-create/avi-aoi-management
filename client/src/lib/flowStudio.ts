@@ -93,6 +93,12 @@ export function thamSoMacDinh(type: string): Record<string, unknown> {
       return { cron: "0 6 * * *", muiGio: "Asia/Ho_Chi_Minh" };
     case "du-lieu.ma":
       return { ma: "return items;" };
+    case "ot.doc-tag":
+      return { may: 1, gioiHan: 20, truongRa: "tag" };
+    case "ot.de-xuat-lenh":
+      return { may: 1, lenh: "pause", hetHanGio: 24 };
+    case "ot.de-xuat-luong":
+      return { workflowId: 1, version: 1, thamSo: {}, hetHanGio: 24 };
     default:
       return {};
   }

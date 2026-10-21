@@ -23164,6 +23164,70 @@
       "khongHopLe": "Bản nháp chưa hợp lệ sau hai lần thử — vẫn đặt lên canvas để bạn sửa:",
       "daDat": "Đã đặt bản nháp lên canvas (hạng {{hang}}) — chưa lưu",
       "thayCanvas": "Bản nháp sẽ THAY nội dung đang có trên canvas (phiên bản đã lưu không đổi)."
+    },
+    "ot": {
+      "moPhong": "CHẾ ĐỘ MÔ PHỎNG — node này chỉ ĐỌC hoặc ĐỀ XUẤT. Đồng ý một đề xuất KHÔNG gửi lệnh nào tới thiết bị.",
+      "docTagChiDoc": "Chỉ đọc giá trị tag/telemetry mới nhất — không ghi gì.",
+      "may": "Máy (id số)",
+      "tag": "Tag (để trống = các tag mới nhất)",
+      "gioiHan": "Số dòng tối đa (≤ 100)",
+      "lenh": "Lệnh",
+      "lenhGoiY": "Lệnh mức rủi ro 4–5 bị Cổng AI từ chối (node lỗi, không có đề xuất). Mỗi node nhận đúng 1 item.",
+      "giaTri": "Giá trị (tuỳ chọn)",
+      "hetHanGio": "Hết hạn sau (giờ, ≤ 168)",
+      "workflowId": "FOE workflow (id số)",
+      "version": "Phiên bản FOE",
+      "thamSoFoe": "Tham số kèm theo (JSON — ghi cho người duyệt)",
+      "luongGoiY": "Chỉ ĐỀ XUẤT chạy một FOE workflow đã duyệt; luồng không gửi gì tới thiết bị.",
+      "batCan2fa": "Luồng có node OT: bật cần quản trị viên + mã 2FA."
+    },
+    "chayThu": {
+      "tieuDe": "Chạy thử node này",
+      "moTa": "Chạy riêng MỘT node (bản đang sửa, kể cả chưa lưu) trên dữ liệu mẫu. Không tạo lượt chạy; không gọi HTTP, mã, thiết bị.",
+      "itemsCong": "Item mẫu vào cổng “{{cong}}” (JSON)",
+      "dauRaTruoc": "Đầu ra giả định của node trước (cho $node) — JSON { \"id-node\": [ { … } ] }",
+      "chay": "Chạy thử",
+      "dangChay": "Đang chạy…",
+      "daChay": "Đã chạy thật (không ghi lượt)",
+      "xemTruoc": "Xem trước — node này KHÔNG được chạy thử; đây là tham số sau khi tính biểu thức",
+      "thanhCong": "Thành công",
+      "loi": "Lỗi",
+      "dauRa": "Đầu ra cổng “{{cong}}” ({{n}} item)",
+      "cho": "Node xin chờ ({{kind}}) — không tạo hàng chờ",
+      "thamSo": "Tham số đã đánh giá",
+      "biMat": "Bí mật “{{id}}” không được giải mã khi chạy thử.",
+      "jsonHong": "JSON mẫu không hợp lệ",
+      "ms": "{{ms}} ms"
+    },
+    "soSanh": {
+      "nut": "So sánh lượt",
+      "tieuDe": "So sánh hai lượt",
+      "luotA": "Lượt A",
+      "luotB": "Lượt B",
+      "chon": "— chọn lượt —",
+      "tomTat": "{{giong}} bước giống · {{khac}} khác · {{chiA}} chỉ ở A · {{chiB}} chỉ ở B",
+      "khacPhienBan": "Hai lượt chạy ở phiên bản khác nhau (v{{a}} ↔ v{{b}}).",
+      "khacTrangThai": "Trạng thái lượt khác nhau: {{a}} ↔ {{b}}.",
+      "giongHet": "Hai lượt giống hệt nhau.",
+      "canHai": "Cần ít nhất hai lượt để so sánh.",
+      "ket": {
+        "giong": "Giống",
+        "khac": "Khác",
+        "chi-a": "Chỉ ở A",
+        "chi-b": "Chỉ ở B"
+      },
+      "vao": "Đầu vào",
+      "ra": "Đầu ra",
+      "loi": "Lỗi",
+      "catBot": "Dữ liệu bị cắt ở máy chủ — không so được từng trường.",
+      "biCat": "Còn khác biệt chưa liệt kê (quá nhiều).",
+      "thoiGian": "{{a}} → {{b}}",
+      "chenh": "Δ {{ms}} ms",
+      "loai": {
+        "doi": "đổi",
+        "them": "thêm",
+        "bo": "bỏ"
+      }
     }
   }
 }

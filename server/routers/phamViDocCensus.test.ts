@@ -832,7 +832,12 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // read-only, before any OTP is spent) — enables an `ot`-class flow version (spec §4.6: admin + fresh TOTP). It writes only
 // `ai_flows` (machine-wide automation registry, no tenant column filled) ⇒ D (+1, classified by procedure kind). Measured
 // before (red by exactly +1 D) / after. No baseline row added. `tong` 2384 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 333, B: 8, C: 500, D: 1186, S: 357, tong: 2384 } as const;
+// ★★ 2026-10-21 (AI Local Đợt 9.1 — chạy thử một node) — **D 1186 → 1187 · tong 2384 → 2385 · A/B/C/S unchanged.** One NEW
+// procedure in `server/routers/flowRouter.ts`: mutation `flow.chayThuNut` (floor `writeProcedure.use(moduleGate("MOD_AI"))`) —
+// runs ONE draft node on sample items in memory (no run/step/queue/wait rows; external-effect nodes are preview-only; OT nodes
+// read-only / simulated proposal). Writes nothing and touches no tenant column ⇒ D (+1, classified by procedure kind). Measured
+// before (red by exactly +1 D) / after. No baseline row added. `tong` 2385 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 333, B: 8, C: 500, D: 1187, S: 357, tong: 2385 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

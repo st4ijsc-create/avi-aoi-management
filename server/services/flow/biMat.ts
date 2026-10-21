@@ -11,7 +11,7 @@
  *     mật khẩu của "tên:mật khẩu") bằng `[BI_MAT]` trước khi bất cứ gì được ghi vào bước/sự kiện.
  */
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { aiFlowCredentials } from "../../../drizzle/schema";
 import { getDb } from "../../db/connection";
 
@@ -205,4 +205,75 @@ export function cheSau<T>(v: T, bienThe: readonly string[]): T {
     return x;
   };
   return di(v) as T;
+}
+
+// ── xoay khoá (Đợt 9.4) ──────────────────────────────────────────────────────────────────────────
+
+export interface KetQuaXoayKhoa {
+  kho: boolean;
+  /** Số bí mật trong phạm vi. */
+  tong: number;
+  /** Số hàng chưa ở phiên bản khoá hiện hành. */
+  canChuyen: number;
+  /** Số hàng đã mã lại (0 khi chạy khô). */
+  daChuyen: number;
+  phienBanDen: number;
+}
+
+/**
+ * ★★ Đợt 9.4 — QUY TRÌNH XOAY KHOÁ. Đặt khoá mới vào `AI_FLOW_KHOA_BI_MAT` + `…_PHIEN_BAN` = n+1, khoá cũ vào `…_CU`, rồi gọi
+ * hàm này (CLI `scripts/flow-xoay-khoa.ts`). Hàm:
+ *   1. khoá mọi hàng trong phạm vi (`FOR UPDATE`) và TIỀN KIỂM: hàng nào không có khoá giải (phiên bản cách hiện hành > 1, hoặc
+ *      thiếu `…_CU`) ⇒ `THIEU_KHOA` liệt kê id@phiên-bản — chưa đổi gì;
+ *   2. giải từng hàng (kể cả hàng đã ở khoá hiện hành — hàng hỏng bị báo sớm), mã lại bằng khoá hiện hành (IV mới);
+ *   3. ĐỌC LẠI hàng vừa ghi và giải CHỈ bằng khoá hiện hành (không `…_CU`) — chứng minh khoá cũ không còn cần;
+ *   4. tất cả trong MỘT giao dịch: bất kỳ hàng nào lỗi ⇒ lùi cả lô.
+ * `kho: true` làm bước 1–2 (kể cả giải thử) nhưng không ghi. Kết quả / lỗi chỉ mang id + số đếm — không giá trị, bản mã, khoá.
+ */
+export async function xoayKhoaBiMat(
+  env: NodeJS.ProcessEnv = process.env,
+  tuyChon: { kho?: boolean; tienTo?: string } = {},
+): Promise<KetQuaXoayKhoa> {
+  const { phienBan } = khoaHienTai(env); // fail-closed trước khi chạm CSDL
+  const chiKhoaMoi = { AI_FLOW_KHOA_BI_MAT: env.AI_FLOW_KHOA_BI_MAT, AI_FLOW_KHOA_BI_MAT_PHIEN_BAN: env.AI_FLOW_KHOA_BI_MAT_PHIEN_BAN } as NodeJS.ProcessEnv;
+  const kho = tuyChon.kho === true;
+  const db = await layDb();
+  return db.transaction(async (tx) => {
+    const q = tx.select().from(aiFlowCredentials);
+    const hang = await (tuyChon.tienTo ? q.where(sql`starts_with(${aiFlowCredentials.id}, ${tuyChon.tienTo})`) : q).orderBy(asc(aiFlowCredentials.id)).for("update");
+
+    const khongGiai: string[] = [];
+    for (const h of hang) {
+      try {
+        khoaCho(h.phienBanKhoa, env);
+      } catch {
+        khongGiai.push(`${h.id}@${h.phienBanKhoa}`);
+      }
+    }
+    if (khongGiai.length) {
+      throw new LoiBiMat("THIEU_KHOA", `không có khoá để giải ${khongGiai.length} bí mật (id@phiên-bản): ${khongGiai.slice(0, 20).join(", ")} — phiên bản hiện hành ${phienBan}`);
+    }
+
+    const canChuyen = hang.filter((h) => h.phienBanKhoa !== phienBan).length;
+    let daChuyen = 0;
+    for (const h of hang) {
+      const giaTri = giaiMa(h.id, h, env); // hàng hỏng ⇒ GIAI_MA_HONG nêu id
+      if (h.phienBanKhoa === phienBan) continue;
+      if (kho) continue;
+      const m = maHoa(h.id, giaTri, env);
+      if (giaiMa(h.id, m, chiKhoaMoi) !== giaTri) throw new LoiBiMat("GIAI_MA_HONG", `bí mật '${h.id}': mã lại xong nhưng giải thử không khớp`);
+      await tx.update(aiFlowCredentials).set(m).where(eq(aiFlowCredentials.id, h.id));
+      daChuyen++;
+    }
+
+    if (!kho && daChuyen) {
+      // đọc lại những gì giao dịch vừa ghi, giải CHỈ bằng khoá hiện hành
+      const sau = await tx.select().from(aiFlowCredentials).where(sql`${aiFlowCredentials.id} IN (${sql.join(hang.map((h) => sql`${h.id}`), sql`, `)})`);
+      for (const h of sau) {
+        if (h.phienBanKhoa !== phienBan) throw new LoiBiMat("GIAI_MA_HONG", `bí mật '${h.id}' vẫn ở phiên bản ${h.phienBanKhoa} sau khi mã lại`);
+        giaiMa(h.id, h, chiKhoaMoi);
+      }
+    }
+    return { kho, tong: hang.length, canChuyen, daChuyen, phienBanDen: phienBan };
+  });
 }

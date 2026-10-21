@@ -78,3 +78,53 @@ describe("Flow Studio — chạy tay / dòng thời gian", () => {
     expect(trangThaiTheoNut([{ nodeId: "a", status: "loi" }, { nodeId: "a", status: "xong" }, { nodeId: "b", status: "dang-chay" }])).toEqual({ a: "xong", b: "dang-chay" });
   });
 });
+
+describe("Flow Studio — node OT (Đợt 9.3)", () => {
+  it("tham số mặc định của ba node OT là mô phỏng/chỉ-đề-xuất và qua kiemLuong cùng hạng đã khai", () => {
+    const dm = [
+      kb("kich-hoat.thu-cong", { laKichHoat: true, congVao: [] }),
+      kb("ot.doc-tag", { tacDungPhu: "doc" }),
+      kb("ot.de-xuat-lenh", { tacDungPhu: "ot", lapLai: "atMostOnce", congRa: ["dong-y", "tu-choi", "het-han"] }),
+      kb("ot.de-xuat-luong", { tacDungPhu: "ot", lapLai: "atMostOnce", congRa: ["dong-y", "tu-choi", "het-han"] }),
+    ];
+    const tim = (t: string) => dm.find((k) => k.type === t)!;
+    const nodes = ["ot.doc-tag", "ot.de-xuat-lenh", "ot.de-xuat-luong"].map((t, i) => taoNutMoi(tim(t), [], [260 * (i + 1), 0]));
+    expect(nodes[0].parameters).toMatchObject({ may: 1 });
+    expect(nodes[1].parameters).toMatchObject({ lenh: "pause" });
+    expect(nodes[2].parameters).toMatchObject({ workflowId: 1, version: 1, thamSo: {} });
+    const def = {
+      id: "ot-x", name: "x", version: 1,
+      nodes: [{ id: "t", type: "kich-hoat.thu-cong", typeVersion: 1, name: "t", position: [0, 0] as [number, number], parameters: {} }, nodes[1]],
+      connections: [{ from: { node: "t", port: "main" }, to: { node: nodes[1].id, port: "main" } }],
+      settings: { uuTien: "background" as const, luuDuLieu: "day-du" as const },
+    };
+    const kq = kiemLuong(def, (t) => dm.find((k) => k.type === t) as KhaiBaoNut | undefined);
+    expect(kq.hang).toBe("ot");
+  });
+
+  it("★ mã phía client của form OT / chạy thử KHÔNG import đường thực thi (dispatcher/FOE/robot) và không có chữ gửi lệnh thật", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const goc = resolve(__dirname, "../components/aiFlow");
+    for (const tep of ["NodeConfigPanel.tsx", "ChayThuNutPanel.tsx", "RunCompare.tsx"]) {
+      const s = readFileSync(resolve(goc, tep), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+      for (const cam of [/commandDispatcher|robotCommandDispatcher|foeEngine/i, /\bdispatch\w*\s*\(/, /\bsendCommand\b|\bwriteTags\b|\bdeployWorkflow\b|\bstartRun\b|\bconfirmAction\b/]) {
+        expect(cam.test(s), `${tep}: ${cam}`).toBe(false);
+      }
+      expect(/trpc\.(orchestration|ot|robot|equipment|programming)\./.test(s), `${tep} gọi router thực thi`).toBe(false);
+    }
+  });
+});
+
+describe("Flow Studio — ô số hoặc biểu thức của form OT", () => {
+  it("★ NodeConfigPanel.soHoacChu: toàn chữ số ⇒ lưu SỐ (cổng OT từ chối 'may' kiểu chuỗi); còn lại giữ chữ", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const src = readFileSync(resolve(__dirname, "../components/aiFlow/NodeConfigPanel.tsx"), "utf8");
+    const m = /const soHoacChu = \(v: string\): number \| string => \((\/.+?\/)\.test\(v\.trim\(\)\)/.exec(src);
+    expect(m, "không thấy soHoacChu").toBeTruthy();
+    const re = new RegExp(m![1].slice(1, -1));
+    expect(re.test("999999")).toBe(true);
+    for (const x of ["{{ $json.may }}", "abc", "", "1a", "1234567890123"]) expect(re.test(x), x).toBe(false);
+  });
+});

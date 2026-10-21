@@ -23190,6 +23190,70 @@
       "khongHopLe": "The draft is still invalid after two attempts — placed on the canvas for you to fix:",
       "daDat": "Draft placed on the canvas (class {{hang}}) — not saved",
       "thayCanvas": "The draft REPLACES what is on the canvas (saved versions are unchanged)."
+    },
+    "ot": {
+      "moPhong": "SIMULATION MODE — this node only READS or PROPOSES. Approving a proposal sends NO command to any device.",
+      "docTagChiDoc": "Reads the latest tag/telemetry value only — never writes.",
+      "may": "Machine (numeric id)",
+      "tag": "Tag (empty = latest tags)",
+      "gioiHan": "Max rows (≤ 100)",
+      "lenh": "Command",
+      "lenhGoiY": "Commands of risk level 4–5 are refused by the AI gate (node error, no proposal). Each node takes exactly 1 item.",
+      "giaTri": "Value (optional)",
+      "hetHanGio": "Expires after (hours, ≤ 168)",
+      "workflowId": "FOE workflow (numeric id)",
+      "version": "FOE version",
+      "thamSoFoe": "Attached parameters (JSON — shown to the approver)",
+      "luongGoiY": "Only PROPOSES running an approved FOE workflow; the flow sends nothing to devices.",
+      "batCan2fa": "Flows with OT nodes: enabling needs an administrator + 2FA code."
+    },
+    "chayThu": {
+      "tieuDe": "Test this node",
+      "moTa": "Runs ONE node on its own (the version being edited, even unsaved) on sample data. No run is created; no HTTP, code or device calls.",
+      "itemsCong": "Sample items for port “{{cong}}” (JSON)",
+      "dauRaTruoc": "Assumed output of earlier nodes (for $node) — JSON { \"node-id\": [ { … } ] }",
+      "chay": "Test run",
+      "dangChay": "Running…",
+      "daChay": "Actually executed (no run recorded)",
+      "xemTruoc": "Preview — this node is NOT executed in a test; these are the parameters after expression evaluation",
+      "thanhCong": "Success",
+      "loi": "Error",
+      "dauRa": "Output of port “{{cong}}” ({{n}} items)",
+      "cho": "Node asks to wait ({{kind}}) — no wait row created",
+      "thamSo": "Evaluated parameters",
+      "biMat": "Secret “{{id}}” is not decrypted in a test run.",
+      "jsonHong": "Sample JSON is invalid",
+      "ms": "{{ms}} ms"
+    },
+    "soSanh": {
+      "nut": "Compare runs",
+      "tieuDe": "Compare two runs",
+      "luotA": "Run A",
+      "luotB": "Run B",
+      "chon": "— pick a run —",
+      "tomTat": "{{giong}} steps same · {{khac}} different · {{chiA}} only in A · {{chiB}} only in B",
+      "khacPhienBan": "The runs used different versions (v{{a}} ↔ v{{b}}).",
+      "khacTrangThai": "Run status differs: {{a}} ↔ {{b}}.",
+      "giongHet": "The two runs are identical.",
+      "canHai": "At least two runs are needed to compare.",
+      "ket": {
+        "giong": "Same",
+        "khac": "Different",
+        "chi-a": "Only in A",
+        "chi-b": "Only in B"
+      },
+      "vao": "Input",
+      "ra": "Output",
+      "loi": "Error",
+      "catBot": "Data was truncated on the server — fields cannot be compared.",
+      "biCat": "More differences exist than are listed.",
+      "thoiGian": "{{a}} → {{b}}",
+      "chenh": "Δ {{ms}} ms",
+      "loai": {
+        "doi": "changed",
+        "them": "added",
+        "bo": "removed"
+      }
     }
   }
 }
