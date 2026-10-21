@@ -67,6 +67,7 @@ beforeAll(async () => {
   u.AB = await mkUser("ab", "engineer", FA, FB);
   u.khong = await mkUser("khong", "engineer");
   u.admin = await mkUser("admin", "admin");
+  u.asup = await mkUser("asup", "supervisor", FA); // H2: bước duyệt mặc định đòi supervisor; A (engineer) không còn duyệt được
   A = goi(u.A, "engineer");
   B = goi(u.B, "engineer");
   AB = goi(u.AB, "engineer");
@@ -221,7 +222,7 @@ describe("đọc / điều khiển theo flowId: ngoài phạm vi ≡ không tồ
   });
 
   it("★ duyet đúng phạm vi: A duyệt lượt của A ⇒ xong", async () => {
-    await A.duyet({ runId: runA, nodeId: "d", dongY: true });
+    await goi(u.asup, "supervisor").duyet({ runId: runA, nodeId: "d", dongY: true }); // supervisor CÙNG nhà máy A (không phải người bật/chủ lượt: admin)
     await chayHet();
     expect(((await db.execute(sql`SELECT status FROM ai_flow_runs WHERE id = ${runA}`)) as unknown as { status: string }[])[0].status).toBe("xong");
   });
