@@ -19,6 +19,10 @@ import { spawn, spawnSync } from "node:child_process";
 import { PYTHON, CMAKE, GO, CARGO, MOI_TRUONG, ROOT } from "./moiTruong.mjs";
 import { lietKeTep } from "./kho.mjs";
 import { chayST } from "./st/chayST.mjs";
+import { chaySTMatiec } from "./st-matiec/chaySTMatiec.mjs";
+
+// ★ Đợt 9 — trình dịch ST: "rusty" (mặc định, như mọi số đo trước) | "matiec" (OpenPLC v3 bench, TON/TOF/TP chuẩn MATIEC).
+export const ST_TRINH_DICH = (process.env.AI_EVAL_ST_TRINH_DICH || "rusty").trim().toLowerCase();
 
 const sha256 = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
 const bamTep = (p) => (fs.existsSync(p) ? sha256(fs.readFileSync(p)) : null);
@@ -159,7 +163,7 @@ const TRINH_CHAY = {
     const tong = { pass: 0, fail: 0 };
     let ma = 0, outAll = "", hetGio = false, loiChay = null, thay = 0;
     for (const f of files) {
-      const r = await chayST({
+      const r = await (ST_TRINH_DICH === "matiec" ? chaySTMatiec : chayST)({
         tep: [...nguon, "tests/kt.st", f].map((rel) => ({ ten: rel, duong: `${dir}/${rel}` })),
         thuMucViec: `${ROOT}/tmp/st-jobs`,
         giayChay: giay,

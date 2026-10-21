@@ -14,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { KHO } from "./moiTruong.mjs";
+import { lyDoNgoaiTapOpenplc } from "./st-matiec/chaySTMatiec.mjs";
 
 export const NGON_NGU = ["py", "js", "ts", "cs", "java", "cpp", "sql", "go", "rs", "st"];
 export const MUC = ["thuat-toan", "thu-vien", "ung-dung"];
@@ -109,6 +110,8 @@ export function docKho({ boQuaLoi = false, only = null } = {}) {
     let b;
     try { b = JSON.parse(fs.readFileSync(`${dir}/bai.json`, "utf8")); }
     catch (e) { hong.push(`${id}: bai.json hỏng (${e.message})`); continue; }
+    // ★ Đợt 9 — chấm ST bằng MATIEC/OpenPLC: bài có giao diện/runtime không mang sang được KHÔNG vào lượt đo.
+    if (b.lang === "st" && (process.env.AI_EVAL_ST_TRINH_DICH || "").trim().toLowerCase() === "matiec" && lyDoNgoaiTapOpenplc(id)) continue;
     const loi = kiemBai(b, dir);
     if (loi.length) { hong.push(`${id}: ${loi.join("; ")}`); continue; }
     ds.push({
