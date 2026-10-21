@@ -53,7 +53,7 @@ let goiAi: HamGoiAi = async ({ vaiTro, heThong, nguoiDung, nghi, maxTokens, loai
  * bề mặt `luong`, `khongDoiKhe`). Thuần định tuyến — KHÔNG nạp model, không GPU. Độc lập với hàm gọi (lưới thay hàm giả vẫn có vết).
  */
 export async function diemModel(vaiTro: string, ngu: NguCanhChay): Promise<VetModel> {
-  const [{ resolveLogicalModel, defaultModelBasename }, { laTenVaiTro }, { layAnhSoModel }, { dinhTuyenVaiTro, laVaiTroSinhChu }] = await Promise.all([
+  const [{ resolveLogicalModel, defaultModelBasename, nguCanhKhe }, { laTenVaiTro }, { layAnhSoModel }, { dinhTuyenVaiTro, laVaiTroSinhChu }] = await Promise.all([
     import("../../ai/modelResolver"),
     import("../../../../shared/aiRoles"),
     import("../../ai/soModel/anhSoModel"),
@@ -66,7 +66,8 @@ export async function diemModel(vaiTro: string, ngu: NguCanhChay): Promise<VetMo
   let lyDo: string[] = [];
   const anh = layAnhSoModel();
   if (laTenVaiTro(vaiTro) && laVaiTroSinhChu(vaiTro, anh)) {
-    const kq = dinhTuyenVaiTro({ vaiTro, phamVi, khongDoiKhe: true }, anh, process.env);
+    // cùng trạng thái khe với đường chạy (`resolveLogicalModel`) — vết giải thích không được lệch model thật
+    const kq = dinhTuyenVaiTro({ vaiTro, phamVi, khongDoiKhe: true, ...nguCanhKhe() }, anh, process.env);
     nguon = kq.nguon;
     pv = kq.phamVi;
     lyDo = kq.lyDo.bangChung.split("; ").slice(1).map((x) => x.slice(0, 200)).slice(0, 8);

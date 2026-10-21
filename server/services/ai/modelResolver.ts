@@ -224,6 +224,20 @@ export function resolveTaskModel(task: ResolvableTask): string | undefined {
  * ★ Đợt 9 — `ngu` (tuỳ chọn, CHỈ áp cho tên VAI TRÒ): phạm vi + `khongDoiKhe` của bề mặt gọi (Luồng AI truyền
  * `{ phamVi: { flowId, beMat: "luong" }, khongDoiKhe: true }`). Vắng ⇒ y hệt trước (mọi người gọi cũ không đổi một byte).
  */
+/**
+ * ★ Đợt 9 (sửa 2026-10-22) — nguồn "khe nặng đang giữ model nào" do bộ lập lịch khe đăng ký (`kheNangMacDinh.ts` — nó đã
+ * nhập module này nên đăng ký NGƯỢC tránh vòng import). Chưa đăng ký / trả null ⇒ định tuyến so với model NHÀ như cũ.
+ */
+let docKheDangGiu: () => string | null = () => null;
+export function datNguonKheDangGiu(fn: () => string | null): void {
+  docKheDangGiu = fn;
+}
+
+/** Trạng thái khe cho định tuyến vai trò — MỘT nguồn cho đường chạy (`resolveLogicalModel`) và đường GIẢI THÍCH (Luồng). */
+export function nguCanhKhe(): { kheBiKhoa: boolean; kheDangGiu: string | null } {
+  return { kheBiKhoa: docKhoaKhe() !== null, kheDangGiu: docKheDangGiu() };
+}
+
 export function resolveLogicalModel(requested?: string, ngu?: Pick<YeuCauDinhTuyen, "phamVi" | "khongDoiKhe">): string | undefined {
   const key = (requested || "").trim().toLowerCase();
 
@@ -250,7 +264,9 @@ export function resolveLogicalModel(requested?: string, ngu?: Pick<YeuCauDinhTuy
       if (laTenVaiTro(key)) {
         const anh = layAnhSoModel();
         // ★ Đợt 9 — khoá khe (đọc tệp, nhớ đệm 2 s — ngoại lệ I/O DUY NHẤT của module này, có chủ ý).
-        if (laVaiTroSinhChu(key, anh)) return dinhTuyenVaiTro({ vaiTro: key, ...ngu, kheBiKhoa: docKhoaKhe() !== null }, anh, process.env).model;
+        if (laVaiTroSinhChu(key, anh)) {
+          return dinhTuyenVaiTro({ vaiTro: key, ...ngu, ...nguCanhKhe() }, anh, process.env).model;
+        }
       }
       // Unknown, non-empty id: honour it VERBATIM (client may target a real on-disk basename,
       // possibly nested under GGUF_MODELS_DIR — aiGgufEngine.resolveModelPath supports that via
