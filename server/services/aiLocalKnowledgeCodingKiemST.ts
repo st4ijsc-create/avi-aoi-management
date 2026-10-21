@@ -8,6 +8,8 @@
  *
  * Luật: cờ `AI_KIEM_BIEN_DICH_ST` tắt (mặc định) ⇒ KHÔNG một sự kiện / một byte nào đổi. Không có mã ST ⇒ không phát gì. Không thay lặng
  * lẽ: bản đã sửa luôn đi kèm `cauTraLoiDau` (nút "xem bản đầu"). Không bao giờ ném (trừ huỷ) — hạ tầng hỏng ⇒ "khong-kiem-duoc".
+ * ⚠ KHOẢNG TRỐNG AUDIT (dieu-phoi xác nhận 2026-10-21): đường KB coding KHÔNG ghi `ai_llm_audit` ở đâu cả (chỉ `aiGateway.routeInference` ghi), nên
+ * vòng kiểm này cũng KHÔNG có `auditSnippet` như `/v1` (`auditKiemBienDich`). Không bịa chỗ ghi; chờ điểm ghi audit chung cho đường KB coding.
  * Tên tệp khớp `aiLocalKnowledge*.ts` CÓ CHỦ Ý: lưới `aiLocalKnowledgeApi.sseCensus` đếm điểm phát ở các tệp này.
  */
 import { kiemBienDichBat, kiemVaSuaST, type KetQuaKiemBienDichST } from "./ai/st/kiemBienDichSt";

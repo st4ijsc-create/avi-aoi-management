@@ -367,6 +367,12 @@ test("10 — trợ lý lập trình: nhãn kiểm biên dịch ST (AI giả qua 
   await expect(page.getByText("Version corrected after compiling")).toBeVisible(); // khối bổ sung trong chat
   await page.getByTestId("kiem-bien-dich-xem-dau").click();
   await expect(page.getByTestId("kiem-bien-dich-ban-dau")).toContainText("y := x AND ;");
+  // Khối mã trong chat do Streamdown vẽ, bộ tô màu cú pháp TẢI LƯỜI (Suspense + spinner): chờ nó xong rồi mới chụp / khẳng định có mã thật.
+  const khoiMa = page.locator('[data-streamdown="code-block"]');
+  await expect(khoiMa.first()).toBeVisible();
+  await expect(page.locator('[data-streamdown="code-block"] .animate-spin')).toHaveCount(0, { timeout: 45_000 });
+  await expect(khoiMa.last()).toContainText("y := x;"); // khối "đã sửa" hiện mã đúng, không kẹt spinner
+  await expect(khoiMa.first()).toContainText("y := x AND ;"); // khối đầu (bản sai) cũng hiện mã
   if (process.env.FS_SHOT_DIR) await page.screenshot({ path: `${process.env.FS_SHOT_DIR}/10a-da-sua.png` });
 
   await o.fill("another one");
