@@ -82,6 +82,10 @@ const T = {
 describe.skipIf(!DB_URL)("Nhóm B #5 — phạm vi báo động trên CSDL THẬT (recentAlerts · kpiSummary · alarmKpi.summary)", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    // Dọn dư của một lượt trước bị ngắt (userId cố định ⇒ hàng sót làm lượt sau đỏ) — cùng thân dọn idempotent với afterAll.
+    await sql`DELETE FROM user_factory_assignments WHERE "userId" IN ${sql(ALL_USERS)}`;
+    await sql`DELETE FROM andon_events WHERE title LIKE 'B5 ANDON%'`;
+    await sql`DELETE FROM permissions WHERE "userId" IN ${sql(ALL_USERS)}`;
 
     const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
 
