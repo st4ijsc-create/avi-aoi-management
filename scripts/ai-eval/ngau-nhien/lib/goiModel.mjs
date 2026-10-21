@@ -102,23 +102,42 @@ export function taoGoiModel(o) {
     return { text, ttftMs: tFirst, totalMs: Date.now() - t0, evs, cut: evs.some((e) => /\((length|max_tokens)\)/i.test(e)) };
   }
 
-  /** Cổng sức khoẻ: llama-server (+ server sản phẩm nếu dùng pipeline). Hỏng ⇒ exit 2. */
-  async function kiemSong(luc, { pipeline = false } = {}) {
+  /**
+   * Cổng sức khoẻ: llama-server (+ server sản phẩm nếu dùng pipeline). Hỏng ⇒ exit 2 (mặc định), hoặc `thoat: false` ⇒
+   * trả `false` để người gọi GHI phần đã đo rồi mới thoát (★ Đợt 9 — sự cố 2026-10-21: :8091 bị giết ở lượt 68/72, cổng
+   * exit TRƯỚC khi ghi báo cáo ⇒ mất cả 68 lượt hợp lệ).
+   */
+  async function kiemSong(luc, { pipeline = false, thoat = true } = {}) {
     const thu = async (url, ten) => {
       try {
         const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
         if (r.status >= 500 || (url.endsWith("/health") && r.status !== 200)) throw new Error(`HTTP ${r.status}`);
+        return true;
       } catch (e) {
         console.error(`\n⛔ VỨT KẾT QUẢ: ${ten} KHÔNG khoẻ ${luc} (${e?.message ?? e}). Mọi số của lượt này VÔ GIÁ TRỊ.`);
-        process.exit(2);
+        if (thoat) process.exit(2);
+        return false;
       }
     };
     const u = new URL(rawUrl);
-    await thu(u.port === "11434" ? `${u.origin}/api/tags` : `${u.origin}/health`, `llama-server ${u.origin}`);
-    if (pipeline) await thu(`${base}/`, `server ${base}`);
+    if (!(await thu(u.port === "11434" ? `${u.origin}/api/tags` : `${u.origin}/health`, `llama-server ${u.origin}`))) return false;
+    if (pipeline && !(await thu(`${base}/`, `server ${base}`))) return false;
+    return true;
   }
 
-  return { chatRaw, chatRawTin, hoanThanhRaw, chatPipeline, kiemSong };
+  /** ★ Đợt 9 — model llama-server ĐANG chạy (`/v1/models`), basename; `null` = không đọc được. */
+  async function modelDangChay() {
+    try {
+      const u = new URL(rawUrl);
+      const j = await (await fetch(`${u.origin}/v1/models`, { signal: AbortSignal.timeout(5000) })).json();
+      const id = String(j?.data?.[0]?.id ?? "");
+      return id ? id.split(/[\\/]/).pop() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return { chatRaw, chatRawTin, hoanThanhRaw, chatPipeline, kiemSong, modelDangChay };
 }
 
 /** Đọc tuỳ chọn gọi model từ argv (cùng tên cờ với codegen-chay-duoc/run.mjs). */
