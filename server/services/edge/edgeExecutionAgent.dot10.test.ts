@@ -807,7 +807,9 @@ describe("doc 81 Đợt 10 E — agent v2: central commands (design §2.8)", () 
     void h.agent.tick();
     await vi.waitFor(() => expect(h.devices.calls).toEqual(["stopRobot:12"]), { timeout: 1_000, interval: 5 });
     expect(Date.now() - t0).toBeLessThan(1_000);
-    await new Promise((r) => setTimeout(r, 50)); // the first pull is over; its work phase hangs on the refresh
+    // the first pull is over (its single-flight released — a fixed sleep raced it under full-suite load, so the second tick
+    // JOINED pull 1 and reported 130); its work phase hangs on the refresh
+    await vi.waitFor(() => expect((h.agent as unknown as { pulling: unknown }).pulling).toBeNull(), { timeout: 2_000, interval: 5 });
     // a second pull while the first work phase still hangs: its STOP goes too
     h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 131, kind: "stop", target: { adapterId: 21 } }))];
     const t1 = Date.now();
