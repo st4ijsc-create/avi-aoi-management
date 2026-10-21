@@ -642,6 +642,13 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   GIỮA lượt đo 27B của tiến trình khác (bằng chứng: vram_events 07:01:50Z "Đổi khe sang … hỏng: kịch bản khởi động thoát 4" +
   logs/llama-server-20261021-140007 thấy 30,9 GB trống). Sửa: KHOÁ KHE — tệp LLAMA_WATCHDOG_PAUSE_FILE mang JSON {chu, lyDo,
   hetHan}, phép đo/doi-model.ps1 giữ + gia hạn; KheNang không đổi/không về nhà khi khoá còn hạn; định tuyến `kheBiKhoa`.
+- (3) extract — (c1) 35B TẮT nghĩ không bị chen trên bộ mù 30 bài/227 trường: 224/227 = 99 %, trọn 28/30, trung vị 1232 ms
+  (4B: 208/227 = 92 %, trọn 19/30, 947 ms) — sổ #10, hồ sơ `qwen3.6-35b-a3b@64k`. (c3) code.* trên :8091 chậm thêm khi extract
+  nền xếp trước: trung vị 247 ms (K=1, max 772) · 1332 ms (K=2, max 2343) ≪ ngưỡng 10 s ⇒ không cần cơ chế nhường. (c2) 4B
+  trong tiến trình (chat.ops) chậm thêm 413 ms khi :8091 bận. GÁN (2026-10-21, qua datGanModel, binding id 34): extract @
+  be-mat/luong → qwen3.6-35b-a3b@64k active, không dự phòng; khe giữ 27B ⇒ 4B (khongDoiKhe). Bề mặt tương tác giữ 4B.
+- (2) vòng sửa: 35B + `--vong-sua 2` 39/72 (sổ #7), giữ lại 10/18 (#8); 27B + vòng sửa giữ lại 13/18 = 72 % (#9; lần nhìn thứ
+  HAI 6 bài giữ lại) — 24×3 đang chạy lại SẠCH (lượt đầu mất 4 lượt cuối do sự cố khe 14:00; dựng lại từ log 57/72, không ghi sổ).
 - ⚠ RỦI RO TIỀM ẨN (chưa sửa): baseline_foreign_pid của vramReconciler xếp llama-server (pid 33552, 35B lúc 01:45Z) vào
   `orphanHolders` ("tàn dư, tắt được") chứ KHÔNG vào `peerHolders`. Nếu hộ đó được nhận nuôi kèm lease (`leaseNhanNuoi`), đường
   preempt `thuHoiHoNhanNuoi` (SIGTERM, vramReconciler.ts ~1940) giết được llama-server đang phục vụ. Lần 14:00 KHÔNG đi đường
