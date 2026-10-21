@@ -75,7 +75,7 @@ export function taoGoiModel(o) {
    * `model` = vai trò (mặc định `code.plc` — định tuyến vai trò + vòng kiểm biên dịch ST nếu cờ bật). Không stream (nội dung
    * trả về là bản CUỐI). Giữ mọi header `x-st4i-*` (vd `x-st4i-bien-dich`) để báo cáo đọc được server đã làm gì.
    */
-  async function chatV1(sys, user) {
+  async function chatV1(sys, user, { tatKiem = false } = {}) {
     const t0 = Date.now();
     const res = await fetch(`${base}/v1/chat/completions`, {
       method: "POST",
@@ -84,6 +84,8 @@ export function taoGoiModel(o) {
         model: o.v1Model ?? "code.plc",
         messages: [...(sys ? [{ role: "system", content: sys }] : []), { role: "user", content: user }],
         ...kwargs(), ...sampling(), max_tokens: o.maxTokens, stream: false,
+        // opt-out của client cho vòng kiểm biên dịch ST (server: `nenKiemBienDichV1`) — nhánh "off" của A/B trên CÙNG server
+        ...(tatKiem ? { st4i_kiem_bien_dich: false } : {}),
       }),
     });
     const hdr = {};

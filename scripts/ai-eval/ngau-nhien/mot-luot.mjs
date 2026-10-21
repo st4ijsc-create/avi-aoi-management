@@ -5,6 +5,9 @@
  *   --config pipeline  đường SẢN PHẨM `/api/ai/local-kb/stream` (codingMode) như `codegen-chay-duoc/run.mjs` (trục H)
  *   --config v1        đường SẢN PHẨM `/v1/chat/completions` (AI_EVAL_BASE, token người dùng ở `--token-file` JSON {token,ten},
  *                      `--v1-model` mặc định `code.plc`) — trục H của vòng kiểm biên dịch ST (cờ AI_KIEM_BIEN_DICH_ST CỦA SERVER)
+ *                      `--ab-kiem`: A/B XEN KẼ trên CÙNG server (cờ phải có `v1`): mỗi (bài, lượt) chạy LIỀN hai nhánh — "tat"
+ *                      (gửi `st4i_kiem_bien_dich:false`, server bỏ vòng) và "bat"; thứ tự đảo theo lượt (lẻ tat→bat, chẵn
+ *                      bat→tat) để trôi nhiệt/khe không dồn một phía. Hàng mang `nhanh`; bảng in riêng từng nhánh + cặp lệch.
  *   --config mau|khung|sai   KHÔNG gọi model — kiểm thước đường (a) trên CHÍNH mẫu được chọn:
  *                            mau ⇒ phải 100 % · khung ⇒ phải 0 % · sai ⇒ phải 0 % (lệch ⇒ exit 1, vứt số)
  *
@@ -55,6 +58,8 @@ const WORK = `${ROOT}/tmp/ngau-nhien-work/${LABEL}-${process.pid}`;
  */
 const TEN_TRINH_DICH = ST_TRINH_DICH === "matiec" ? "MATIEC của OpenPLC v3, chuẩn IEC 61131-3" : "RuSTy, phương ngữ CODESYS";
 const VONG_SUA = Math.max(0, Number(arg("--vong-sua", 0)));
+const AB_KIEM = co("--ab-kiem");
+if (AB_KIEM && CONFIG !== "v1") { console.error("--ab-kiem chỉ cho --config v1."); process.exit(2); }
 if (VONG_SUA > 0 && CONFIG !== "raw") { console.error("--vong-sua chỉ cho --config raw (v1: vòng kiểm là của SERVER, bật bằng cờ)."); process.exit(2); }
 
 const DS = chonPhanTang(KHO_LOC, { seed: SEED, n: N });
@@ -107,7 +112,7 @@ let dungSom = null;
 
 const rows = [];
 const dangCham = new Set();
-async function cham(b, luot, g) {
+async function cham(b, luot, g, nhanh = undefined) {
   const dir = `${WORK}/${b.id}-${luot}`;
   dungKhung(b, dir);
   const tr = trichTep(g.text || "", b);
@@ -116,7 +121,7 @@ async function cham(b, luot, g) {
   const kq = await chamDuAn({ bai: b, thuMuc: dir });
   xoaThuMuc(dir);
   const row = {
-    id: b.id, lang: b.lang, muc: b.muc, luot, vanTay: b.vanTay, config: CONFIG,
+    id: b.id, lang: b.lang, muc: b.muc, luot, vanTay: b.vanTay, config: CONFIG, nhanh,
     dat: kq.dat && !loiGhi && tr.thieu.length === 0,
     trich: { thieu: tr.thieu, soKhoi: tr.soKhoi, cach: tr.cach },
     loiGhi, lyDo: kq.lyDo, dem: kq.dem, canToiThieu: kq.canToiThieu,
@@ -128,7 +133,7 @@ async function cham(b, luot, g) {
   };
   if (tr.thieu.length && !row.lyDo.includes("THIEU_TEP")) row.lyDo = ["THIEU_TEP:" + tr.thieu.join("+"), ...row.lyDo];
   rows.push(row);
-  console.error(`  ${row.dat ? "ĐẠT " : "TRƯỢT"} ${b.id}#${luot}  ${row.dem ? `${row.dem.pass}✓/${row.dem.fail}✗ (cần ≥${row.canToiThieu})` : ""} ${row.lyDo.join(",")}` +
+  console.error(`  ${row.dat ? "ĐẠT " : "TRƯỢT"} ${b.id}#${luot}${nhanh ? `[${nhanh}]` : ""}  ${row.dem ? `${row.dem.pass}✓/${row.dem.fail}✗ (cần ≥${row.canToiThieu})` : ""} ${row.lyDo.join(",")}` +
     `${row.cut ? " · CỤT" : ""}${row.genTok ? ` · ${row.genTok} tok` : ""}${row.totalMs ? ` · ${row.totalMs} ms` : ""}` +
     `${row.hdr?.["x-st4i-bien-dich"] ? ` · BD[${row.hdr["x-st4i-bien-dich"]}]` : ""}`);
 }
@@ -175,25 +180,29 @@ async function sinhCoVongSua(b) {
 
 for (const b of DS) {
   for (let luot = 1; luot <= SO_LUOT; luot++) {
-    process.stderr.write(`▶ ${b.id} (${b.lang}/${b.muc}) lượt ${luot} … sinh\n`);
-    let g;
-    try {
-      g = CONFIG === "raw" && VONG_SUA > 0 && b.kieu === "st" ? await sinhCoVongSua(b)
-        : CONFIG === "raw" ? await goi.chatRaw(SYS_MOT_LUOT, taoCauHoiMotLuot(b)) : CONFIG === "pipeline" ? await goi.chatPipeline(taoCauHoiMotLuot(b))
-        : CONFIG === "v1" ? await goi.chatV1(SYS_MOT_LUOT, taoCauHoiMotLuot(b)) : genGia(b);
-    } catch (e) {
-      g = { text: "", err: String(e).slice(0, 300) };
+    // --ab-kiem: hai nhánh LIỀN nhau, thứ tự đảo theo lượt (lẻ tat→bat, chẵn bat→tat).
+    for (const nhanh of AB_KIEM ? (luot % 2 ? ["tat", "bat"] : ["bat", "tat"]) : [undefined]) {
+      process.stderr.write(`▶ ${b.id} (${b.lang}/${b.muc}) lượt ${luot}${nhanh ? ` [${nhanh}]` : ""} … sinh\n`);
+      let g;
+      try {
+        g = CONFIG === "raw" && VONG_SUA > 0 && b.kieu === "st" ? await sinhCoVongSua(b)
+          : CONFIG === "raw" ? await goi.chatRaw(SYS_MOT_LUOT, taoCauHoiMotLuot(b)) : CONFIG === "pipeline" ? await goi.chatPipeline(taoCauHoiMotLuot(b))
+          : CONFIG === "v1" ? await goi.chatV1(SYS_MOT_LUOT, taoCauHoiMotLuot(b), { tatKiem: nhanh === "tat" }) : genGia(b);
+      } catch (e) {
+        g = { text: "", err: String(e).slice(0, 300) };
+      }
+      // ★ Đợt 9 — lượt hỏng (lỗi gọi / chữ rỗng) ⇒ hỏi sức khoẻ; server chết ⇒ DỪNG NGAY, KHÔNG chấm lượt này (lỗi máy, không
+      // phải lỗi model), ghi báo cáo phần đã xong rồi thoát 2.
+      if (GOI_MODEL && (g.err || !g.text) && !(await kiemSong(`SAU lượt ${b.id}#${luot}`, false))) {
+        dungSom = { id: b.id, luot, nhanh, loi: String(g.err ?? "chữ rỗng").slice(0, 200), luc: new Date().toISOString() };
+        break;
+      }
+      // Chấm song song với lượt sinh kế tiếp (CPU ↔ GPU), giới hạn SONG_SONG_CHAM.
+      while (dangCham.size >= SONG_SONG_CHAM) await Promise.race(dangCham);
+      const p = cham(b, luot, g, nhanh).catch((e) => console.error(`  ⚠ lỗi chấm ${b.id}: ${e?.stack ?? e}`)).finally(() => dangCham.delete(p));
+      dangCham.add(p);
     }
-    // ★ Đợt 9 — lượt hỏng (lỗi gọi / chữ rỗng) ⇒ hỏi sức khoẻ; server chết ⇒ DỪNG NGAY, KHÔNG chấm lượt này (lỗi máy, không
-    // phải lỗi model), ghi báo cáo phần đã xong rồi thoát 2.
-    if (GOI_MODEL && (g.err || !g.text) && !(await kiemSong(`SAU lượt ${b.id}#${luot}`, false))) {
-      dungSom = { id: b.id, luot, loi: String(g.err ?? "chữ rỗng").slice(0, 200), luc: new Date().toISOString() };
-      break;
-    }
-    // Chấm song song với lượt sinh kế tiếp (CPU ↔ GPU), giới hạn SONG_SONG_CHAM.
-    while (dangCham.size >= SONG_SONG_CHAM) await Promise.race(dangCham);
-    const p = cham(b, luot, g).catch((e) => console.error(`  ⚠ lỗi chấm ${b.id}: ${e?.stack ?? e}`)).finally(() => dangCham.delete(p));
-    dangCham.add(p);
+    if (dungSom) break;
   }
   if (dungSom) break;
 }
@@ -205,9 +214,20 @@ xoaThuMuc(WORK);
 KHOA?.go();
 
 // ── BÁO CÁO ──────────────────────────────────────────────────────────────────────────────────────────
-rows.sort((a, b) => (a.id === b.id ? a.luot - b.luot : a.id < b.id ? -1 : 1));
-const bang = bangTomTat(rows, { tieuDe: `${LABEL} — đường (a) một lượt, config=${CONFIG}, seed=${SEED}` });
+rows.sort((a, b) => (a.id === b.id ? (a.luot === b.luot ? String(a.nhanh).localeCompare(String(b.nhanh)) : a.luot - b.luot) : a.id < b.id ? -1 : 1));
+const bang = AB_KIEM
+  ? ["tat", "bat"].map((n) => bangTomTat(rows.filter((r) => r.nhanh === n), { tieuDe: `${LABEL} [${n}] — đường (a) một lượt, config=v1, seed=${SEED}` })).join("\n")
+  : bangTomTat(rows, { tieuDe: `${LABEL} — đường (a) một lượt, config=${CONFIG}, seed=${SEED}` });
 console.log(bang);
+if (AB_KIEM) {
+  // Cặp (bài, lượt) có CẢ hai nhánh: bật đạt/tắt trượt vs ngược lại — chênh thuần của vòng kiểm.
+  const cap = new Map();
+  for (const r of rows) cap.set(`${r.id}#${r.luot}`, { ...(cap.get(`${r.id}#${r.luot}`) ?? {}), [r.nhanh]: r.dat });
+  const du = [...cap.entries()].filter(([, v]) => "tat" in v && "bat" in v);
+  const loi = du.filter(([, v]) => v.bat && !v.tat).map(([k]) => k);
+  const hai = du.filter(([, v]) => !v.bat && v.tat).map(([k]) => k);
+  console.log(` A/B cặp đủ hai nhánh: ${du.length} · bật ĐẠT/tắt TRƯỢT ${loi.length} [${loi.join(", ")}] · bật TRƯỢT/tắt ĐẠT ${hai.length} [${hai.join(", ")}]`);
+}
 const lat = rows.map((r) => r.totalMs).filter((x) => x);
 if (CONFIG === "v1") {
   // ★ Đợt 9 — server đã làm gì với vòng kiểm biên dịch (header `x-st4i-bien-dich`; vắng = cờ tắt / không phải code.plc).
@@ -226,7 +246,7 @@ fs.writeFileSync(`${dirBc}/${LABEL}.json`, JSON.stringify({
   label: LABEL, duong: "a-mot-luot", config: CONFIG, seed: SEED, n: N, soLuot: SO_LUOT, luc: new Date().toISOString(),
   base: CONFIG === "pipeline" || CONFIG === "v1" ? TUY_CHON.base : null,
   v1: CONFIG === "v1" ? { model: arg("--v1-model", "code.plc"), tokenTen: TOKEN_V1?.ten ?? null, tokenId: TOKEN_V1?.id ?? null, tokenTienTo: TOKEN_V1?.tienTo ?? null } : null, rawUrl: CONFIG === "raw" ? TUY_CHON.rawUrl : null, maxTokens: GOI_MODEL ? TUY_CHON.maxTokens : null,
-  khongNghi: co("--khong-nghi"), sampling: arg("--sampling", "hien-tai"), vongSua: VONG_SUA, stTrinhDich: ST_TRINH_DICH, stPhuongNgu: ST_PHUONG_NGU,
+  abKiem: AB_KIEM, khongNghi: co("--khong-nghi"), sampling: arg("--sampling", "hien-tai"), vongSua: VONG_SUA, stTrinhDich: ST_TRINH_DICH, stPhuongNgu: ST_PHUONG_NGU,
   modelDau: MODEL_DAU, modelCuoi: MODEL_CUOI, dungSom, songSau,
   bai: DS.map((b) => ({ id: b.id, lang: b.lang, muc: b.muc, vanTay: b.vanTay })), bang, rows,
 }, null, 1));
