@@ -138,12 +138,16 @@ function dongVaTren(src, idx) {
 }
 
 /** @returns {{file:string,dong:number,cau:string}[]} mọi chỗ còn là NỢ. */
-export function demRawMessage(goc = "client/src") {
+/**
+ * `ghiDe`: Map<đường dẫn tương đối dạng `/`, mã nguồn> — tệp ẢO chồng lên cây thật, dùng cho đột biến/cầu chì của test. Ghi tệp
+ * probe VẬT LÝ vào cây repo làm các lưới quét khác chạy song song đọc nhầm rồi ENOENT khi probe bị xoá (đo 2026-10-21).
+ */
+export function demRawMessage(goc = "client/src", ghiDe = new Map()) {
   const no = [];
-  for (const file of duyetFile(goc)) {
+  for (const file of [...duyetFile(goc), ...ghiDe.keys()]) {
     const rel = file.split("\\").join("/");
     if (MIEN_TRU_FILE.some((re) => re.test(rel))) continue;
-    const goc = readFileSync(file, "utf8");
+    const goc = ghiDe.has(rel) ? ghiDe.get(rel) : readFileSync(file, "utf8");
     // Quét trên bản ĐÃ BỎ COMMENT (giữ nguyên offset) — nhưng dấu miễn trừ thì tra trên
     // bản GỐC, vì bản thân dấu miễn trừ LÀ một comment.
     const src = boComment(goc);

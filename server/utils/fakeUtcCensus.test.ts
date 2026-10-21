@@ -30,12 +30,21 @@
  * chỉ có một cách duy nhất đi qua: strip đúng comment CŨ và vẫn thấy mã MỚI.
  */
 import { describe, it, expect } from "vitest";
-import { readdirSync, statSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
+import { readdirSync, statSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 import { docMaNguon } from "@shared/testing/docMaNguon";
+
+/**
+ * Lớp phủ TỆP ẢO cho các mồi đột biến (đường dẫn tuyệt đối → mã nguồn). KHÔNG ghi tệp vật lý vào cây `server/` — probe vật lý bị các lưới
+ * quét khác chạy SONG SONG đọc nhầm rồi ENOENT khi bị xoá (đo 2026-10-21: totpReplayScan/userExposureScan… đỏ chỉ trong lô, xanh khi chạy riêng).
+ * Cùng khuôn `ghiDe` của phamViDocScan/congGiayPhepScan (7781a49b2).
+ */
+const GHI_DE = new Map<string, string>();
+const docMa = (file: string): string => GHI_DE.get(file) ?? docMaNguon(file);
+const tonTai = (p: string): boolean => GHI_DE.has(p) || existsSync(p);
 
 const SERVER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -63,6 +72,9 @@ function walkTs(dir: string): string[] {
     } else if (/\.ts$/.test(name) && !/\.test\.ts$/.test(name)) {
       out.push(full);
     }
+  }
+  for (const ao of GHI_DE.keys()) {
+    if (dirname(ao) === dir && /\.ts$/.test(ao) && !/\.test\.ts$/.test(ao)) out.push(ao);
   }
   return out;
 }
@@ -113,7 +125,7 @@ function boCacKhoiTrenDong(line: string, dangTrongKhoi: boolean): { text: string
  * docblock của hàm đó cho lý do cần tách riêng).
  */
 function dongMaKhongComment(filePath: string): string[] {
-  const lines = docMaNguon(filePath).split("\n");
+  const lines = docMa(filePath).split("\n");
   const out: string[] = [];
   let inBlock = false;
   for (const ln of lines) {
@@ -259,7 +271,7 @@ function quetFakeUtcAst(goc: string = SERVER_ROOT): FakeUtcHit[] {
   const ket: FakeUtcHit[] = [];
   for (const file of walkTs(goc)) {
     const rel = relative(SERVER_ROOT, file).split("\\").join("/");
-    ket.push(...quetFakeUtcAstTuVanBan(rel, docMaNguon(file)));
+    ket.push(...quetFakeUtcAstTuVanBan(rel, docMa(file)));
   }
   return ket;
 }
@@ -287,7 +299,7 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
 
   it("cầu chì 2 — bẫy đã biết PHẢI còn tồn tại (nếu không, ca dưới đây canh một bẫy ma)", () => {
     for (const rel of FILE_CO_COMMENT_BAY) {
-      const raw = docMaNguon(join(SERVER_ROOT, rel));
+      const raw = docMa(join(SERVER_ROOT, rel));
       expect(
         RE_FAKE_UTC.test(raw),
         `${rel}: không còn chứa mẫu trong văn bản thô — bẫy đã biến mất, gỡ file này khỏi FILE_CO_COMMENT_BAY`,
@@ -299,14 +311,14 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
     const P = join(SERVER_ROOT, "utils", "__fakeUtcCensusProbe.tmp.ts");
     try {
       // Mồi PHẢI là mã thật, không phải comment — xem lý do ở docblock đầu file.
-      writeFileSync(
+      GHI_DE.set(
         P,
         `export const moiFakeUtc = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000);\n`,
       );
       const bat = quetFakeUtc().filter((h) => h.file.endsWith("__fakeUtcCensusProbe.tmp.ts"));
       expect(bat.length, "thước KHÔNG bắt được mồi vừa bơm ⇒ nó đang mù, không phải sạch thật").toBe(1);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+      try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
   });
 
@@ -317,7 +329,7 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
     // hình dạng này, không chỉ "chưa gặp phải". Mồi: `/* mồi */ <mã chứa công thức>`.
     const P = join(SERVER_ROOT, "utils", "__fakeUtcCensusProbeInlineBlock.tmp.ts");
     try {
-      writeFileSync(
+      GHI_DE.set(
         P,
         `/* eslint-disable */ export const moiFakeUtcInline = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000);\n`,
       );
@@ -327,14 +339,14 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
         "thước blank CẢ DÒNG khi khối /* … */ đóng cùng dòng ⇒ bỏ lọt mã đứng sau */ (lỗ soundness)",
       ).toBe(1);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+      try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
   });
 
   it("★★★ vòng sửa 9 (I-5.4): biến thể `* 60 * 1000` (tách phép nhân, CÙNG DÒNG, CÙNG NGHĨA 60000) phải bị bắt", () => {
     const P = join(SERVER_ROOT, "utils", "__fakeUtcCensusProbe60x1000.tmp.ts");
     try {
-      writeFileSync(
+      GHI_DE.set(
         P,
         `export const moiFakeUtc60x1000 = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60 * 1000);\n`,
       );
@@ -344,7 +356,7 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
         "bản GỐC chỉ khớp `* 60000` — `* 60 * 1000` cùng dòng lách qua, đúng lỗ I-5.4 review lượt 9",
       ).toBe(1);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+      try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
   });
 
@@ -382,7 +394,7 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
       const relProbe = `utils/__fakeUtcAstProbe_${ten.replace(/[^a-zA-Z0-9]/g, "")}.tmp.ts`;
       const P = join(SERVER_ROOT, relProbe);
       try {
-        writeFileSync(P, `export const moiFakeUtcAst = (d: Date) => new Date(d.getTime() - ${bieuThuc});\n`);
+        GHI_DE.set(P, `export const moiFakeUtcAst = (d: Date) => new Date(d.getTime() - ${bieuThuc});\n`);
 
         // Cầu chì: regex CŨ (quetFakeUtc) PHẢI MÙ dạng này — nếu nó tự bắt
         // được thì phép thử AST dưới đây không chứng minh được gì mới.
@@ -397,7 +409,7 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
         const theoHopNhat = quetFakeUtcHopNhat().filter((h) => h.file === relProbe);
         expect(theoHopNhat.length).toBe(1);
       } finally {
-        try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+        try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
       }
     });
   }
@@ -406,11 +418,11 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
     const relProbe = "utils/__fakeUtcAstProbeKhongLienQuan.tmp.ts";
     const P = join(SERVER_ROOT, relProbe);
     try {
-      writeFileSync(P, `export const khongPhaiFakeUtc = (d: Date) => d.getTimezoneOffset() * 61;\n`);
+      GHI_DE.set(P, `export const khongPhaiFakeUtc = (d: Date) => d.getTimezoneOffset() * 61;\n`);
       const bat = quetFakeUtcAst().filter((h) => h.file === relProbe);
       expect(bat.length, "61 ≠ 60000 — không phải công thức fake-UTC, không nên bị bắt").toBe(0);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+      try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
   });
 
@@ -418,11 +430,11 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
     const relProbe = "utils/__fakeUtcAstProbeDocTron.tmp.ts";
     const P = join(SERVER_ROOT, relProbe);
     try {
-      writeFileSync(P, `export const docTronOffset = (d: Date) => d.getTimezoneOffset();\n`);
+      GHI_DE.set(P, `export const docTronOffset = (d: Date) => d.getTimezoneOffset();\n`);
       const bat = quetFakeUtcAst().filter((h) => h.file === relProbe);
       expect(bat.length, "đọc trơn getTimezoneOffset() (không nhân với gì) không phải công thức fake-UTC").toBe(0);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+      try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
   });
 
@@ -653,8 +665,8 @@ function quetBg99Ast(relFiles: readonly string[], goc: string): Bg99Hit[] {
   const ket: Bg99Hit[] = [];
   for (const rel of relFiles) {
     const full = join(goc, rel);
-    if (!existsSync(full)) continue;
-    ket.push(...quetBg99AstTuVanBan(rel, docMaNguon(full)));
+    if (!tonTai(full)) continue;
+    ket.push(...quetBg99AstTuVanBan(rel, docMa(full)));
   }
   return ket;
 }
@@ -666,7 +678,7 @@ function quetBg99(relFiles: readonly string[] = FILE_INGEST_BG99, goc: string = 
   const ket: Bg99Hit[] = [];
   for (const rel of relFiles) {
     const full = join(goc, rel);
-    if (!existsSync(full)) continue; // cầu chì 1 dưới đây canh việc file biến mất
+    if (!tonTai(full)) continue; // cầu chì 1 dưới đây canh việc file biến mất
     const lines = dongMaKhongComment(full);
     lines.forEach((ln, i) => {
       if (RE_NEW_DATE_CO_DOI_SO.test(ln) && RE_TU_KHOA_MAY.test(ln) && !RE_MIEN_TRU_BG99.test(ln)) {
@@ -684,7 +696,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
   it("cầu chì 1: bộ quét ĐỘNG phải THẤY file thật — không thì đang canh tập rỗng", () => {
     expect(FILE_INGEST_BG99.length, "0 file ứng viên — laFileUngVienBg99/timFileIngestBg99 đang canh tập rỗng").toBeGreaterThan(0);
     for (const rel of FILE_INGEST_BG99) {
-      expect(existsSync(join(SERVER_ROOT, rel)), `${rel} không tồn tại — bộ quét trả về đường dẫn hỏng`).toBe(true);
+      expect(tonTai(join(SERVER_ROOT, rel)), `${rel} không tồn tại — bộ quét trả về đường dẫn hỏng`).toBe(true);
     }
   });
 
@@ -708,7 +720,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
     // Cầu chì đối chứng — xác nhận rớt khỏi danh sách vì ĐÃ DI TRÚ (0 new
     // Date(...) THẬT trong CHÍNH file), không phải bộ quét bị hỏng.
     expect(
-      /new Date\(\s*[^)\s]/.test(docMaNguon(join(SERVER_ROOT, "services/ingestCayKetQua.ts"))),
+      /new Date\(\s*[^)\s]/.test(docMa(join(SERVER_ROOT, "services/ingestCayKetQua.ts"))),
       "cầu chì: services/ingestCayKetQua.ts phải THẬT SỰ 0 new Date(đối số) — nếu có, nó phải xuất hiện lại trong FILE_INGEST_BG99, kiểm lại bộ quét",
     ).toBe(false);
   });
@@ -752,7 +764,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
     const relProbe = "utils/__bg99FileDiscoveryProbe.tmp.ts";
     const P = join(SERVER_ROOT, relProbe);
     try {
-      writeFileSync(
+      GHI_DE.set(
         P,
         `import type { MachineDataContractV2 } from "../contracts/machineDataContractV2";\n` +
           `export const moiCuaThuNam = (p: { completedAt?: string }) => new Date(p.completedAt);\n`,
@@ -763,7 +775,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
         "cửa ingest MỚI (import contracts/ + new Date(chuỗi)) PHẢI được bộ quét ĐỘNG tự thấy — danh sách tĩnh cũ sẽ CÂM ở đây",
       ).toBe(true);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+      try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
   });
 
@@ -771,11 +783,11 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
     const relProbe = "utils/__bg99FileDiscoveryProbeKhongLienQuan.tmp.ts";
     const P = join(SERVER_ROOT, relProbe);
     try {
-      writeFileSync(P, `export const chiLaMotHamNgayThang = (s: string) => new Date(s);\n`);
+      GHI_DE.set(P, `export const chiLaMotHamNgayThang = (s: string) => new Date(s);\n`);
       const ungVien = timFileIngestBg99();
       expect(ungVien.includes(relProbe), "file KHÔNG import ingest/contracts không phải một cửa ingest — không nên bị quét").toBe(false);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+      try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
   });
 
@@ -783,7 +795,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
     const relProbe = "utils/__bg99FileDiscoveryProbeKhongNewDate.tmp.ts";
     const P = join(SERVER_ROOT, relProbe);
     try {
-      writeFileSync(
+      GHI_DE.set(
         P,
         `import type { MachineDataContractV2 } from "../contracts/machineDataContractV2";\n` +
           `export const khongDocGioNao = (p: MachineDataContractV2) => p;\n`,
@@ -791,7 +803,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
       const ungVien = timFileIngestBg99();
       expect(ungVien.includes(relProbe), "file KHÔNG có new Date(đối số) nào không đọc chuỗi thời gian nào — không nên bị quét").toBe(false);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+      try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
   });
 
@@ -799,14 +811,14 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
     const relProbe = "utils/__bg99CensusProbe.tmp.ts";
     const P = join(SERVER_ROOT, relProbe);
     try {
-      writeFileSync(
+      GHI_DE.set(
         P,
         `export const moiBg99 = (x: { completedAt?: string }) => new Date(x.completedAt);\n`,
       );
       const bat = quetBg99([relProbe]);
       expect(bat.length, "thước KHÔNG bắt được mồi vừa bơm ⇒ nó đang mù, không phải sạch thật").toBe(1);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+      try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
   });
 
@@ -814,7 +826,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
     const relProbe = "utils/__bg99CensusProbeBareNewDate.tmp.ts";
     const P = join(SERVER_ROOT, relProbe);
     try {
-      writeFileSync(
+      GHI_DE.set(
         P,
         `export const moiBg99Bare = (completedAt?: string) => new Date();\n`,
       );
@@ -824,7 +836,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
         "new Date() trần không đọc chuỗi máy nào — bắt nó là đỏ GIẢ trên chính lối thoát an toàn",
       ).toBe(0);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+      try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
   });
 
@@ -832,14 +844,14 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
     const relProbe = "utils/__bg99CensusProbeExempt.tmp.ts";
     const P = join(SERVER_ROOT, relProbe);
     try {
-      writeFileSync(
+      GHI_DE.set(
         P,
         `export const moiBg99Exempt = (x: { completedAt?: string }) => new Date(x.completedAt); // bg99-ok: mo phong bo loc UI\n`,
       );
       const bat = quetBg99([relProbe]);
       expect(bat.length, "dòng có bg99-ok: kèm lý do phải được miễn trừ").toBe(0);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+      try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
   });
 
@@ -847,7 +859,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
     const relProbe = "utils/__bg99AstProbe.tmp.ts";
     const P = join(SERVER_ROOT, relProbe);
     try {
-      writeFileSync(
+      GHI_DE.set(
         P,
         [
           "function toDateOrUndefinedMoPhong(iso: string | undefined): Date | undefined {",
@@ -863,7 +875,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
         "thước theo-dòng-cùng-từ-khoá KHÔNG thấy hình dạng này (tham số tên `iso`, không phải completedAt/startedAt/inspectionTime) — thước AST phải bắt được bằng cách theo lời gọi",
       ).toBe(1);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+      try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
   });
 
@@ -871,7 +883,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
     const relProbe = "utils/__bg99AstProbeKhongLienQuan.tmp.ts";
     const P = join(SERVER_ROOT, relProbe);
     try {
-      writeFileSync(
+      GHI_DE.set(
         P,
         [
           "function chuyenChuoiKhongLienQuanBg99(s: string | undefined): Date | undefined {",
@@ -887,13 +899,13 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
         "hàm này không hề được gọi với completedAt/startedAt/inspectionTime — không phải hình dạng BG-99, không nên đỏ (tránh dương tính giả tràn lan)",
       ).toBe(0);
     } finally {
-      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+      try { GHI_DE.delete(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
   });
 
   it("★★★ ĐỘT BIẾN THẬT (I-5.1, review lượt 9 §6-1): inspection.ts quay lại `new Date(iso)` trong toDateOrUndefined ⇒ census AST PHẢI bắt (không chạm đĩa)", () => {
     const rel = "db/inspection.ts";
-    const goc = docMaNguon(join(SERVER_ROOT, rel));
+    const goc = docMa(join(SERVER_ROOT, rel));
     const DONG_GOC = "  return iso === undefined ? undefined : docGioMay(iso) ?? undefined;";
     expect(
       goc.includes(DONG_GOC),
@@ -911,7 +923,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
     ).toBeGreaterThan(0);
 
     // Đột biến chỉ sống trong biến `maDotBien` — chưa từng `writeFileSync`.
-    const docLai = docMaNguon(join(SERVER_ROOT, rel));
+    const docLai = docMa(join(SERVER_ROOT, rel));
     expect(docLai).toBe(goc);
   });
 
@@ -976,8 +988,8 @@ function quetTsThietBi(relFiles: readonly string[] = timFileUngVienTs(), goc: st
   const ket: Bg99Hit[] = [];
   for (const rel of relFiles) {
     const full = join(goc, rel);
-    if (!existsSync(full)) continue;
-    ket.push(...quetTsThietBiTuVanBan(rel, dongMaKhongComment(full), docMaNguon(full).split("\n")));
+    if (!tonTai(full)) continue;
+    ket.push(...quetTsThietBiTuVanBan(rel, dongMaKhongComment(full), docMa(full).split("\n")));
   }
   return ket;
 }
