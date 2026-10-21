@@ -195,12 +195,31 @@ describe.skipIf(!DB_URL)("dải KPI — bốn nguồn còn lại trên CSDL TH�
   // ══════════════════════════════════════════════════════════════════════════
 
   it("oee — DƯƠNG A (đúng số của MÌNH) + ÂM (máy của B không kéo trung bình của A)", async () => {
+    // ⚠ Cùng gốc đồng hồ với ca B bên dưới: hàng 'online' DUY NHẤT của machA kéo khoảng online tới NOW() lúc truy vấn
+    // (db/machine.ts COALESCE(next_ts, NOW())) ⇒ online_sec = 7200 + δ ⇒ P = min(1, 36×100 / online_sec) = 3600/(7200+δ) — KHÔNG phải
+    // đúng 50 (δ > ~0,72 s ⇒ 49,99). Oracle từ chính đồng hồ DB: đo online_sec ngay TRƯỚC/SAU lượt gọi.
+    const onlineA = async () => {
+      const [r] = await sql`
+        SELECT EXTRACT(EPOCH FROM (NOW() - "timestamp"))::float AS online_sec
+        FROM machine_status_logs WHERE "machineId" = ${ids.machA} AND status = 'online'`;
+      return Number(r!.online_sec);
+    };
+    const truoc = await onlineA();
     const a = await kpi(U_A, "engineer");
+    const sau = await onlineA();
     expect(a.oee.available).toBe(true);
-    // machA một mình: A=100% · P=min(1, 36×100/7200)=50% · Q=100% ⇒ OEE=50%.
-    // Con số này ĐỒNG THỜI là chiều dương (A thấy đủ máy của A) và chiều âm: nếu machB
-    // (A=50, Q=50) lọt vào mẫu thì trung bình phải là 75/50/75 — không thể vẫn là 100/50/100.
-    expect(a.oee.value).toEqual({ a: 100, p: 50, q: 100, oee: 50 });
+    const r2 = (x: number) => Math.round(x * 100) / 100;
+    const pTu = r2((100 * 3600) / sau); // online lớn hơn ⇒ P nhỏ hơn
+    const pDen = r2((100 * 3600) / truoc);
+    const v = a.oee.value!;
+    // machA một mình: A=100% · Q=100% · P=3600/online_sec (≈50%) ⇒ OEE = P.
+    // Con số này ĐỒNG THỜI là chiều dương (A thấy đủ máy của A) và chiều âm: nếu machB (A=50, Q=50) lọt vào mẫu thì
+    // trung bình phải là A≈75 / Q=75 — không thể vẫn là A=100 / Q=100.
+    expect(v.a).toBe(100);
+    expect(v.q).toBe(100);
+    expect(v.p, `P của machA phải nằm trong [${pTu}; ${pDen}] (3600 / online_sec tới NOW())`).toBeGreaterThanOrEqual(pTu);
+    expect(v.p).toBeLessThanOrEqual(pDen);
+    expect(Math.abs(v.oee! - v.p!)).toBeLessThanOrEqual(0.01);
   });
 
   it("oee — ÂM đối xứng: B ra con số của RIÊNG B (chứng minh không phải 'A tình cờ luôn thắng')", async () => {
