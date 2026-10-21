@@ -116,7 +116,11 @@ describe("Đợt 8.5 — cổng OT của Luồng (thuần)", () => {
       expect(kq.muc).toBeGreaterThanOrEqual(4);
     });
     it("id/version không phải số nguyên dương ⇒ chặn", async () => {
-      expect((await kiemVaDeXuat({ loai: "luong-foe", workflowId: "1", version: 1 }, ngu(500), nguon(luong))).ketQua).toBe("tu-choi-muc-cao");
+      for (const xau of [" 1", "1e0", "0x1", -1, 1.5, null, [1], "", 0]) {
+        expect((await kiemVaDeXuat({ loai: "luong-foe", workflowId: xau, version: 1 }, ngu(500), nguon(luong))).ketQua, JSON.stringify(xau)).toBe("tu-choi-muc-cao");
+      }
+      // Đợt 9 — chuỗi số hợp lệ được chuẩn hoá (MỘT luật chuanHoaIdMay cho mọi đường vào) ⇒ như số
+      expect((await kiemVaDeXuat({ loai: "luong-foe", workflowId: "1", version: "1" }, ngu(500), nguon(luong))).ketQua).toBe("da-de-xuat");
     });
   });
 
