@@ -87,7 +87,7 @@ export async function kiemTokenTruocThan(y: { flowId: string; nodeId: string; to
 
 export type KetQuaWebhook =
   | { ma: 202; runId: string; trung: boolean }
-  | { ma: 400 | 401 | 404 | 409 | 413 | 503; code: string; thongDiep: string };
+  | { ma: 400 | 401 | 404 | 409 | 413 | 429 | 503; code: string; thongDiep: string };
 
 const RE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -133,6 +133,10 @@ export async function xuLyWebhook(y: { flowId: string; nodeId: string; token: un
     if (idempotencyKey && laTrungKhoa(e)) {
       const [r] = await db.select({ id: aiFlowRuns.id }).from(aiFlowRuns).where(eq(aiFlowRuns.idempotencyKey, idempotencyKey));
       if (r) return { ma: 202, runId: r.id, trung: true };
+    }
+    // M5: luồng đã đủ số lượt đồng thời (maxConcurrentRuns) ⇒ 429 — người gửi thử lại sau; KHÔNG xếp hàng.
+    if (e instanceof Error && e.name === "LoiLuong" && (e as { code?: string }).code === "QUA_TRAN_DONG_THOI") {
+      return { ma: 429, code: "RATE_LIMITED", thongDiep: e.message };
     }
     throw e;
   }

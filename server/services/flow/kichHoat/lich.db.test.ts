@@ -51,7 +51,7 @@ describe("banLich (Đợt 8.1, DB)", () => {
   it("mỗi mốc phút đúng MỘT lượt (kể cả hai bên bắn đồng thời); mốc khác ⇒ lượt mới; lượt chạy hết", async () => {
     const { version } = await luuPhienBan(
       {
-        id: `${TT}-a`, name: "lịch", version: 1,
+        id: `${TT}-a`, name: "lịch", version: 1, settings: { maxConcurrentRuns: 100 }, // M5: nhiều mốc phút, lượt cũ chưa chạy xong
         nodes: [nut("l", "kich-hoat.lich", { cron: "0 6 * * *" }), nut("d", "du-lieu.dat", { truong: { moc: "{{ $json.moc }}" } })],
         connections: [noi("l", "d")],
       },
@@ -82,7 +82,7 @@ describe("banLich (Đợt 8.1, DB)", () => {
   it("docMucLich: chỉ luồng BẬT, đúng phiên bản hoạt động, bỏ node lịch tắt", async () => {
     const { version } = await luuPhienBan(
       {
-        id: `${TT}-b`, name: "lịch b", version: 1,
+        id: `${TT}-b`, name: "lịch b", version: 1, settings: { maxConcurrentRuns: 100 }, // M5
         nodes: [nut("l1", "kich-hoat.lich", { cron: "0 6 * * *" }), { ...nut("l2", "kich-hoat.lich", { cron: "0 7 * * *" }), disabled: true }, nut("d", "du-lieu.dat")],
         connections: [noi("l1", "d"), noi("l2", "d")],
       },

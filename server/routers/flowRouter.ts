@@ -25,6 +25,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { router, moduleProcedure, moduleGate, writeProcedure, adminProcedure, deployProcedure } from "../_core/trpc";
 import { appError } from "../_core/appError";
 import { getDb } from "../db/connection";
+import { createAuditLog } from "../db";
 import { aiFlowCredentials, aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../drizzle/schema";
 import { THU_TU_HANG, NodeInstanceSchema, kiemLuong, luongConCuaNut, type FlowDefinition, type HangTacDungPhu } from "../../shared/flow/model";
 import { LoiNgoaiPhamVi, chayThuNut, type BoKiemPhamVi } from "../services/flow/chayThuNut";
@@ -38,6 +39,7 @@ import { kiemThamSoKichHoat, napLaiLich } from "../services/flow/kichHoat/lich";
 import { capTokenWebhook, coNodeWebhook, coTokenWebhook } from "../services/flow/kichHoat/webhook";
 import { LOAI_BI_MAT, LoiBiMat, datHostBiMat, lietKeBiMat, taoBiMat, xoaBiMat } from "../services/flow/biMat";
 import { ketQuaSauDuyetMoPhong, laDeXuatOtLuong } from "../services/flow/ot/congOtLuong";
+import { kiemQuyenDuyet, layNguoiLienQuan } from "../services/flow/quyenDuyet";
 
 const xemProcedure = moduleProcedure("MOD_AI");
 const ghiProcedure = writeProcedure.use(moduleGate("MOD_AI"));
@@ -343,7 +345,13 @@ export const flowRouter = router({
       }
       const def = v.definition as FlowDefinition;
       const thuCong = def.nodes.find((n) => n.type === "kich-hoat.thu-cong" && !n.disabled);
-      const runId = await batDauRun({ flowId: input.flowId, version, items: input.items, nutKichHoat: thuCong?.id, triggerKind: "thu-cong", chuLuong: ctx.user.id });
+      let runId: string;
+      try {
+        runId = await batDauRun({ flowId: input.flowId, version, items: input.items, nutKichHoat: thuCong?.id, triggerKind: "thu-cong", chuLuong: ctx.user.id });
+      } catch (e) {
+        if (e instanceof LoiLuong && e.code === "QUA_TRAN_DONG_THOI") throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowChayTay" }, e.message);
+        throw e;
+      }
       return { runId, version };
     }),
 
@@ -445,6 +453,17 @@ export const flowRouter = router({
         if (xong) throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowDuyet", reason: "flowDaTraLoi" }, "Bước này đã được trả lời.");
       }
       if (!w || w.kind !== "duyet") throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowDuyet", reason: "flowKhongCoBuocChoDuyet" }, "Không có bước nào đang chờ duyệt ở đây.");
+      // ★ H2: vai đủ thứ bậc so với `vaiTroDuyet` + người duyệt KHÁC người bật phiên bản / người kích hoạt lượt. Sai ⇒ FORBIDDEN,
+      // ghi kiểm toán, hàng chờ GIỮ NGUYÊN (bước vẫn chờ người đúng).
+      const vaiYeuCau = String((w.payload as { vaiTroDuyet?: unknown } | null)?.vaiTroDuyet ?? "supervisor");
+      const quyen = kiemQuyenDuyet({ nguoiDuyet: { id: ctx.user.id, role: String(ctx.user.role) }, vaiTroDuyet: vaiYeuCau, lienQuan: await layNguoiLienQuan(db, input.runId) });
+      if (!quyen.ok) {
+        await createAuditLog({
+          userId: ctx.user.id, action: "FLOW_DUYET_TU_CHOI", entityType: "ai_flow_run", entityName: input.runId, status: "failure",
+          details: { ma: quyen.ma, nodeId: input.nodeId, vaiTroDuyet: vaiYeuCau, vaiNguoiDuyet: String(ctx.user.role), dongY: input.dongY },
+        }).catch((e: unknown) => console.error("[flow.duyet] không ghi được kiểm toán từ chối:", (e as Error)?.message ?? e));
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowDuyet" }, quyen.lyDo);
+      }
       const kq = await traLoiCho({
         runId: input.runId,
         nodeId: input.nodeId,

@@ -12,9 +12,9 @@
  * Lồng sâu > `DO_SAU_LUONG_CON_TOI_DA` hoặc vòng (con đã có trong chuỗi cha) ⇒ từ chối.
  * Lượt con bắt đầu ở node `kich-hoat.thu-cong` (hoặc `kich-hoat.mcp`) không tắt của nó.
  */
-import { DO_SAU_LUONG_CON_TOI_DA, LOAI_GOI_LUONG_CON, type FlowDefinition, type HangTacDungPhu } from "../../../../shared/flow/model";
+import { DO_SAU_LUONG_CON_TOI_DA, LOAI_GOI_LUONG_CON, TRAN_ITEM_GOI_CON, TRAN_LUOT_TRONG_CAY, type FlowDefinition, type HangTacDungPhu } from "../../../../shared/flow/model";
 import { dangKyNut, type NguCanhChay } from "../dangKyNut";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { aiFlowVersions, aiFlows } from "../../../../drizzle/schema";
 import { getDb } from "../../../db/connection";
 
@@ -32,6 +32,17 @@ export function nutVaoLuongCon(def: FlowDefinition, uuTien: readonly string[] = 
     if (n) return n.id;
   }
   return null;
+}
+
+/** Số lượt trong cây lượt có gốc `rootRunId` (gồm gốc). */
+export async function demLuotTrongCay(rootRunId: string): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new LoiLuongCon("không có kết nối CSDL");
+  const [r] = (await db.execute(sql`WITH RECURSIVE c AS (
+      SELECT id, 0 AS d FROM ai_flow_runs WHERE id = ${rootRunId}::uuid
+      UNION ALL SELECT r.id, c.d + 1 FROM ai_flow_runs r JOIN c ON r."parentRunId" = c.id WHERE c.d < 16)
+    SELECT count(*)::int AS n FROM c`)) as unknown as { n: number }[];
+  return r?.n ?? 0;
 }
 
 /** Bản ĐÃ GHIM của một luồng con: định nghĩa + hạng của đúng bản đó + cờ BẬT của luồng (tắt ⇒ không gọi). */
@@ -73,6 +84,9 @@ export async function kiemGoiLuongCon(ngu: NguCanhChay, flowIdCon: string, versi
   const chuoi = await chuoiLuotCha(ngu.runId);
   if (chuoi.some((c) => c.flowId === flowIdCon)) throw new LoiLuongCon(`từ chối: vòng gọi luồng ('${flowIdCon}' đã nằm trong chuỗi lượt cha)`);
   if (chuoi.length >= DO_SAU_LUONG_CON_TOI_DA) throw new LoiLuongCon(`từ chối: lồng luồng con quá ${DO_SAU_LUONG_CON_TOI_DA} cấp`);
+  // M5: tổng số lượt trong CẢ CÂY lượt (gốc + mọi con/cháu) — độ sâu 4 một mình không chặn fan-out nhân bậc ba.
+  const soLuot = await demLuotTrongCay(chuoi[chuoi.length - 1]!.runId);
+  if (soLuot >= TRAN_LUOT_TRONG_CAY) throw new LoiLuongCon(`từ chối: cây lượt của luồng ${ngu.flowId} đã có ${soLuot} lượt (trần ${TRAN_LUOT_TRONG_CAY}) — không tạo thêm lượt con`);
   const nutVao = nutVaoLuongCon(con.def);
   if (!nutVao) throw new LoiLuongCon(`luồng con '${flowIdCon}' không có node kích hoạt thủ công/MCP để gọi vào`);
   return { version: con.version, hang: con.hang, nutVao, def: con.def };
@@ -91,8 +105,9 @@ dangKyNut({
   async chay(thamSo, ngu) {
     const flowIdCon = thamSo.flowId;
     if (typeof flowIdCon !== "string") throw new LoiLuongCon("luong.goi-con cần 'flowId' cố định");
-    const k = await kiemGoiLuongCon(ngu, flowIdCon, typeof thamSo.version === "number" ? thamSo.version : undefined);
     const vao = ngu.inputs.main ?? [];
+    if (vao.length > TRAN_ITEM_GOI_CON) throw new LoiLuongCon(`từ chối: ${vao.length} item vào luong.goi-con vượt trần ${TRAN_ITEM_GOI_CON} — chia lô trước khi gọi`);
+    const k = await kiemGoiLuongCon(ngu, flowIdCon, typeof thamSo.version === "number" ? thamSo.version : undefined);
     return {
       __cho: {
         kind: "luong-con",

@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { aiFlowEvents, aiFlowInbox, aiFlowQueue, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../../drizzle/schema";
 import { getDb } from "../../db/connection";
-import { THU_TU_HANG, kiemLuong, type FlowDefinition, type HangTacDungPhu } from "../../../shared/flow/model";
+import { THU_TU_HANG, TRAN_DONG_THOI_MAC_DINH, kiemLuong, type FlowDefinition, type HangTacDungPhu } from "../../../shared/flow/model";
 import type { ItemLuong } from "../../../shared/flow/bieuThuc";
 import { layNut, type KetQuaChay, type NguCanhChay, type VetModel, type YeuCauCho } from "./dangKyNut";
 import { LoiBiMat, bienTheBiMat, cheBiMat, cheSau, giaiMaChoChay } from "./biMat";
@@ -31,7 +31,7 @@ const UU_TIEN_SO: Record<string, number> = { interactive: 0, agent: 1, backgroun
 
 export class LoiLuong extends Error {
   constructor(
-    public readonly code: "LUONG_KHONG_HOP_LE" | "LUONG_KHONG_CO" | "KHONG_CO_DB" | "LOAI_NODE_MAT",
+    public readonly code: "LUONG_KHONG_HOP_LE" | "LUONG_KHONG_CO" | "KHONG_CO_DB" | "LOAI_NODE_MAT" | "QUA_TRAN_DONG_THOI",
     message: string,
   ) {
     super(message);
@@ -126,9 +126,31 @@ async function suyChuLuong(tx: Db | Tx, y: YeuCauRun): Promise<number | null> {
   return v?.approvedBy ?? v?.createdBy ?? null;
 }
 
+/**
+ * ★ M5 — thi hành `settings.maxConcurrentRuns` (mặc định `TRAN_DONG_THOI_MAC_DINH` = 1). CHỌN: TỪ CHỐI lượt vượt trần (ném
+ * `LoiLuong QUA_TRAN_DONG_THOI`), KHÔNG xếp hàng — hàng đợi không trần chỉ dời DoS sang bảng (và cần bộ đẩy lượt chờ trong `dongRun`);
+ * người gọi tự xử lý: chạy tay ⇒ CONFLICT, webhook ⇒ 429, lịch ⇒ bỏ mốc + ghi log, MCP ⇒ lỗi tool. Chỉ đếm lượt GỐC `dang-chay`
+ * (lượt chờ duyệt/chờ con không chiếm tài nguyên; lượt con bị chặn bởi trần cây lượt `TRAN_LUOT_TRONG_CAY`). Khoá cố vấn theo luồng
+ * để hai lượt gọi cùng lúc không cùng lọt qua phép đếm. Lượt trùng khoá idempotency được miễn (để đường cũ trả đúng lượt đã có).
+ */
+async function kiemTranDongThoi(tx: Db | Tx, y: YeuCauRun, def: FlowDefinition): Promise<void> {
+  if (y.parentRunId) return;
+  const tran = def.settings?.maxConcurrentRuns ?? TRAN_DONG_THOI_MAC_DINH;
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${"ai-flow-run:" + y.flowId}, 0))`);
+  if (y.idempotencyKey) {
+    const da = (await tx.execute(sql`SELECT 1 FROM ai_flow_runs WHERE "idempotencyKey" = ${y.idempotencyKey} LIMIT 1`)) as unknown as unknown[];
+    if (da.length) return;
+  }
+  const [d] = (await tx.execute(sql`SELECT count(*)::int AS n FROM ai_flow_runs WHERE "flowId" = ${y.flowId} AND status = 'dang-chay' AND "parentRunId" IS NULL`)) as unknown as { n: number }[];
+  if (d.n >= tran) {
+    throw new LoiLuong("QUA_TRAN_DONG_THOI", `luồng ${y.flowId} đang có ${d.n} lượt chạy (trần maxConcurrentRuns=${tran}) — lượt mới bị TỪ CHỐI (không xếp hàng)`);
+  }
+}
+
 /** Tạo lượt + mục hàng của node kích hoạt TRONG một giao dịch có sẵn. */
 async function taoRunTx(tx: Db | Tx, y: YeuCauRun): Promise<string> {
   const def = await dinhNghia(tx, y.flowId, y.version);
+  await kiemTranDongThoi(tx, y, def);
   const runId = randomUUID();
   const uuTien = def.settings?.uuTien ?? "background";
   const kichHoat = def.nodes.filter((n) => layNut(n.type)?.laKichHoat && (!y.nutKichHoat || n.id === y.nutKichHoat));

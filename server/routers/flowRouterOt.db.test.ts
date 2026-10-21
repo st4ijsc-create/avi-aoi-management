@@ -33,6 +33,7 @@ const nut = (id: string, type: string, parameters: Record<string, unknown> = {})
 const noi = (a: string, pa: string, b: string) => ({ from: { node: a, port: pa }, to: { node: b, port: "main" } });
 
 let uid = 0;
+let uid2 = 0;
 const goi = (role: string, twoFactorEnabled = true) =>
   flowRouter.createCaller({ user: { id: uid, role, twoFactorEnabled }, sessionToken: `phien-${role}-${twoFactorEnabled}-${Math.random()}` } as never);
 const ma = (e: unknown) => (readAppErrorMeta(e) as { appCode?: string; appParams?: Record<string, unknown> } | null) ?? {};
@@ -55,6 +56,11 @@ beforeAll(async () => {
     VALUES (${TT + "-nd-" + Date.now().toString(36)}, ${TT + "_nd_" + Date.now().toString(36)}, ${"người gọi"}, ${"password"}, ${"admin"}, true, false, now()) RETURNING id`)) as unknown as { id: number }[];
   uid = uMoi.id;
   await db0.execute(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uid}, ${MA_NM_OT})`);
+  // H2: người duyệt khác người bật (admin `uid`) — người thứ hai cùng nhà máy của test.
+  const [uid2Moi] = (await db0.execute(sql`INSERT INTO users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
+    VALUES (${TT + "-d2-" + Date.now().toString(36)}, ${TT + "_d2_" + Date.now().toString(36)}, ${"người duyệt d2"}, ${"password"}, ${"supervisor"}, true, false, now()) RETURNING id`)) as unknown as { id: number }[];
+  uid2 = uid2Moi.id;
+  await db0.execute(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uid2}, ${MA_NM_OT})`);
 });
 afterEach(() => {
   delete process.env.ACTUATION_STEPUP_2FA;
@@ -138,7 +144,7 @@ describe("★★★ Đợt 8.5 — bật luồng hạng `ot` = admin + 2FA mới
     const cho = (await goi("viewer").danhSachCho()).find((x) => x.runId === runId);
     expect(cho).toMatchObject({ nodeId: "d", vaiTroDuyet: "supervisor" });
     expect(cho!.tieuDe).toMatch(/MÔ PHỎNG/);
-    await goi("supervisor").duyet({ runId, nodeId: "d", dongY: true });
+    await flowRouter.createCaller({ user: { id: uid2, role: "supervisor", twoFactorEnabled: true } } as never).duyet({ runId, nodeId: "d", dongY: true });
     await chayHet();
     const b = (await (await getDb())!.select().from(aiFlowSteps).where(eq(aiFlowSteps.runId, runId))).find((x) => x.nodeId === "ok")!;
     const item = (b.output as { main: { json: Record<string, unknown> }[] }).main[0].json;

@@ -51,7 +51,7 @@ const demDeXuat = async (runIds: string[]) =>
 const trangThai = async (id: string) => (await (await db()).select().from(aiFlowRuns).where(eq(aiFlowRuns.id, id)))[0].status;
 
 const luongLenh = {
-  id: `${TT}-lenh`, name: "đề xuất lệnh", version: 1,
+  id: `${TT}-lenh`, name: "đề xuất lệnh", version: 1, settings: { maxConcurrentRuns: 100 }, // M5: nhiều lượt cùng chưa xong
   nodes: [
     nut("t", "kich-hoat.thu-cong"),
     nut("d", "ot.de-xuat-lenh", { may: "{{ $json.may }}", lenh: "{{ $json.lenh }}", tag: "{{ $json.tag }}", giaTri: "{{ $json.giaTri }}" }),
@@ -152,7 +152,7 @@ describe("Đợt 8.5 — node OT chế độ mô phỏng (động cơ thật, DB
       },
     });
     const def = {
-      id: `${TT}-foe`, name: "đề xuất FOE", version: 1,
+      id: `${TT}-foe`, name: "đề xuất FOE", version: 1, settings: { maxConcurrentRuns: 100 }, // M5
       nodes: [nut("t", "kich-hoat.thu-cong"), nut("d", "ot.de-xuat-luong", { workflowId: "{{ $json.wf }}", version: 1 })],
       connections: [noi("t", "main", "d")],
     };
