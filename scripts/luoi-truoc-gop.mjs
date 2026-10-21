@@ -22,7 +22,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve, relative } from "node:path";
 
-const DEFAULT_TARGETS = ["server/_core", "server/routers", "server/routes", "client/src/lib", "server/services", "shared"];
+const DEFAULT_TARGETS = ["server/_core", "server/routers", "server/routes", "client/src/lib", "server/services", "shared", "scripts"];
 const args = process.argv.slice(2);
 const opt = (name) => {
   const i = args.indexOf(name);
