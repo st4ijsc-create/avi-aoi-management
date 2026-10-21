@@ -16,7 +16,7 @@ import { LoiNgoaiPhamVi, NUT_CHAY_THAT, NUT_KHONG_THAM_CHIEU, NUT_XEM_TRUOC, THA
 /** Bộ kiểm giả: chỉ máy trong tập được phép. */
 const boKiem = (...cho: number[]): BoKiemPhamVi & { hoi: number[] } => {
   const hoi: number[] = [];
-  return { hoi, may: async (id) => (hoi.push(id), cho.includes(id)) };
+  return { hoi, may: async (id) => (hoi.push(id), cho.includes(id)), biMat: async () => false, luong: async () => false };
 };
 
 const nut = (type: string, parameters: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({
@@ -67,6 +67,10 @@ describe("chayThuNut — nhóm CHAY (chạy hàm thật)", () => {
     const r = await chayThuNut({ nut: nut("ai.llm", { loiNhac: "Chào {{ $json.ten }}", truongRa: "out" }), inputs: { main: [{ json: { ten: "An" } }] } });
     expect(goi).toEqual(["Chào An"]);
     expect(r.output).toEqual({ main: [{ json: { ten: "An", out: "xin chào" } }] });
+    // Đợt 9 — chạy thử cũng trả model thực dự định chạy của lần gọi AI (không GPU: chỉ định tuyến)
+    expect(r.model).toHaveLength(1);
+    expect(r.model![0]).toMatchObject({ vaiTro: "chat", duPhong: false, kheBan: false });
+    expect(typeof r.model![0].nguon).toBe("string");
   });
 
   it("ot.doc-tag chỉ ĐỌC qua nguồn tiêm; ot.de-xuat-lenh trả yêu cầu CHỜ DUYỆT mô phỏng, không ghi gì", async () => {

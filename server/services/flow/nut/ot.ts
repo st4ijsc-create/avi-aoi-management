@@ -21,7 +21,7 @@ import { LoiNgoaiPhamVi, chuanHoaIdMay } from "../idTaiNguyen";
  * (lượt không chủ / chủ bị khoá, xoá, mất quyền) ⇒ TỪ CHỐI — đóng theo mặc định. Ngoài phạm vi và không tồn tại: cùng MỘT lỗi.
  */
 async function kiemMayTrongPhamVi(ngu: NguCanhChay, may: number): Promise<void> {
-  if (!ngu.kiemPhamVi) throw new LoiCongOt(0, "Không xác định được người chạy luồng (khoá / mất quyền / chưa có chủ lượt) — từ chối tham chiếu máy.");
+  if (!ngu.kiemPhamVi) throw new LoiCongOt(0, "Không xác định được người chạy luồng (khoá / mất quyền / chưa có chủ lượt) — từ chối tham chiếu máy.", "CHU_LUOT_KHONG_XAC_DINH");
   if (!(await ngu.kiemPhamVi.may(may))) throw new LoiNgoaiPhamVi();
 }
 
@@ -127,7 +127,7 @@ dangKyNut({
   lapLai: "atMostOnce",
   async chay(thamSo, ngu) {
     const t = thamSoMotItem(thamSo, ngu, "ot.de-xuat-luong");
-    if (!ngu.kiemPhamVi) throw new LoiCongOt(0, "Không xác định được người chạy luồng (khoá / mất quyền / chưa có chủ lượt) — từ chối tham chiếu FOE workflow.");
+    if (!ngu.kiemPhamVi) throw new LoiCongOt(0, "Không xác định được người chạy luồng (khoá / mất quyền / chưa có chủ lượt) — từ chối tham chiếu FOE workflow.", "CHU_LUOT_KHONG_XAC_DINH");
     const kq = await kiemVaDeXuat({ loai: "luong-foe", workflowId: t.workflowId, version: t.version, thamSo: t.thamSo, hetHanGio: t.hetHanGio }, nguDeXuat(ngu));
     return ketQuaNut(kq, "ot.de-xuat-luong");
   },

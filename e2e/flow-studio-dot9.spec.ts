@@ -27,11 +27,11 @@ test.beforeAll(() => {
   base = process.env.FS_BASE_URL!;
 });
 
-async function dangNhap(page: Page): Promise<void> {
-  await page.context().addInitScript(() => {
-    try { localStorage.setItem("i18nextLng", "vi"); } catch { /* */ }
-  });
-  const r = await page.context().request.post(`${base}/api/auth/login`, { data: { username: fx.admin.username, password: fx.admin.password } });
+async function dangNhap(page: Page, ai: { username: string; password: string } = fx.admin, ngonNgu = "vi"): Promise<void> {
+  await page.context().addInitScript((lng) => {
+    try { localStorage.setItem("i18nextLng", lng); } catch { /* */ }
+  }, ngonNgu);
+  const r = await page.context().request.post(`${base}/api/auth/login`, { data: { username: ai.username, password: ai.password } });
   expect(r.ok(), `login: ${r.status()}`).toBe(true);
 }
 
@@ -174,4 +174,114 @@ test("4 — bật luồng hạng OT: hộp OTP step-up, gọi flow.batLuongOt (k
   await expect(page.getByTestId("flow-trang-thai-bat")).not.toContainText("Đang bật", { timeout: 10_000 });
   const [f] = await withTestDb((sql) => sql`SELECT enabled, "activeVersion" FROM ai_flows WHERE id = ${FLOW_OT}`);
   expect(f.enabled).toBe(false);
+});
+
+test("5 — dòng thời gian hiện MODEL THỰC của node AI; node rơi dự phòng vì khe nặng bận có nhãn + lý do", async ({ page }) => {
+  await dangNhap(page);
+  await moTrinhSua(page, FLOW_SO_SANH, `?run=${fx.runA}`);
+  await expect(page.getByTestId("buoc-dat")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("model-thuc-dat")).toHaveText("Qwen3-Khe-Nang-30B");
+  await expect(page.getByTestId("du-phong-dat")).toHaveCount(0);
+  await chup(page, "5a-model-thuc");
+
+  await moTrinhSua(page, FLOW_SO_SANH, `?run=${fx.runB}`);
+  await expect(page.getByTestId("buoc-dat")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("model-thuc-dat")).toHaveText("Qwen3-4B-Instruct-2507-UD-Q4_K_XL");
+  const nhan = page.getByTestId("du-phong-dat");
+  await expect(nhan).toHaveAttribute("data-khe-ban", "1");
+  await expect(nhan).toContainText("khe nặng đang giữ model khác");
+  await expect(page.getByTestId("buoc-model-dat").locator("div").first()).toHaveAttribute("title", /khe-dang-giu-model-khac/);
+  await chup(page, "5b-du-phong-khe-ban");
+});
+
+test("6 — tạo luồng MỚI: kỹ sư NHIỀU nhà máy phải chọn nhà máy; một nhà máy ⇒ không hỏi, máy chủ tự gán; luồng gán đúng nhà máy", async ({ page }) => {
+  await dangNhap(page, fx.nhieu);
+  await page.goto(`${base}/ai-flows`);
+  await page.getByTestId("nut-tao-luong").click();
+  await page.getByTestId("ten-luong-moi").fill("Luồng nhiều nhà máy");
+  const chon = page.getByTestId("chon-nha-may");
+  await expect(chon).toBeVisible();
+  await expect(chon.locator("option")).toHaveCount(3); // "— chọn nhà máy —" + 2 nhà máy
+  await expect(page.getByTestId("xac-nhan-tao")).toBeDisabled(); // chưa chọn ⇒ không cho tạo
+  await chup(page, "6a-chon-nha-may");
+  await chon.selectOption(String(fx.nhaMayB.id));
+  await expect(page.getByTestId("xac-nhan-tao")).toBeEnabled();
+  await page.getByTestId("xac-nhan-tao").click();
+  await page.waitForURL(/\/ai-flows\/(?!duyet)[^/]+$/, { timeout: 30_000 });
+  const id = decodeURIComponent(page.url().split("/").pop()!);
+  const [f] = await withTestDb((sql) => sql`SELECT "factoryId" FROM ai_flows WHERE id = ${id}`);
+  expect(f.factoryId).toBe(fx.nhaMayB.id);
+
+  // kỹ sư MỘT nhà máy: không có ô chọn; luồng tự gán nhà máy ấy
+  const ctx2 = await page.context().browser()!.newContext();
+  const p2 = await ctx2.newPage();
+  await ctx2.addInitScript(() => {
+    try { localStorage.setItem("i18nextLng", "vi"); } catch { /* */ }
+  });
+  const r = await ctx2.request.post(`${base}/api/auth/login`, { data: { username: fx.mot.username, password: fx.mot.password } });
+  expect(r.ok()).toBe(true);
+  await p2.goto(`${base}/ai-flows`);
+  await p2.getByTestId("nut-tao-luong").click();
+  await p2.getByTestId("ten-luong-moi").fill("Luồng một nhà máy");
+  await expect(p2.getByTestId("chon-nha-may")).toHaveCount(0);
+  await p2.getByTestId("xac-nhan-tao").click();
+  await p2.waitForURL(/\/ai-flows\/(?!duyet)[^/]+$/, { timeout: 30_000 });
+  const id2 = decodeURIComponent(p2.url().split("/").pop()!);
+  const [f2] = await withTestDb((sql) => sql`SELECT "factoryId" FROM ai_flows WHERE id = ${id2}`);
+  expect(f2.factoryId).toBe(fx.nhaMayA.id);
+  await ctx2.close();
+});
+
+test("7 — bí mật: cột host cho phép; bí mật cũ báo 'chưa khai'; admin khai host; tạo mới BẮT BUỘC có host", async ({ page }) => {
+  await dangNhap(page);
+  await page.goto(`${base}/ai-flows`);
+  const o = page.getByTestId("host-fse2e-bm-cu");
+  await expect(o).toBeVisible({ timeout: 60_000 });
+  await expect(o).toContainText("Chưa khai");
+  await chup(page, "7a-bi-mat-chua-khai-host");
+
+  // tạo mới: thiếu host ⇒ nút Tạo bị khoá
+  const khoi = page.getByTestId("khoi-bi-mat");
+  await khoi.getByRole("textbox").nth(0).fill("fse2e-bm-moi");
+  await khoi.getByRole("textbox").nth(1).fill("Bí mật mới");
+  await khoi.locator('input[type="password"]').fill("gia-tri-bi-mat-1234");
+  await expect(khoi.getByRole("button", { name: "Tạo" })).toBeDisabled();
+  await page.getByTestId("bi-mat-host").fill("dich.gia");
+  await expect(khoi.getByRole("button", { name: "Tạo" })).toBeEnabled();
+
+  // khai host cho bí mật cũ
+  await page.getByTestId("sua-host-fse2e-bm-cu").click();
+  await page.getByTestId("sua-host-o").fill("Erp.Nha-May.vn, api.mes.vn");
+  await page.getByTestId("luu-host").click();
+  await expect(o).toContainText("erp.nha-may.vn, api.mes.vn", { timeout: 20_000 });
+  const [h] = await withTestDb((sql) => sql`SELECT "hostChoPhep" FROM ai_flow_credentials WHERE id = 'fse2e-bm-cu'`);
+  expect(h.hostChoPhep).toEqual(["erp.nha-may.vn", "api.mes.vn"]);
+  await chup(page, "7b-bi-mat-da-khai-host");
+});
+
+test("8 — lỗi phạm vi hiện bằng EN: luồng không có/ngoài phạm vi ⇒ MỘT câu chung đã dịch (không khoá thô); chưa gán nhà máy ⇒ báo trước và vô hiệu nút Tạo", async ({ page }) => {
+  await dangNhap(page, fx.mot, "en");
+  await page.goto(`${base}/ai-flows/fse2e-khong-ton-tai`);
+  const loi = page.locator("p.text-destructive").first();
+  await expect(loi).toBeVisible({ timeout: 60_000 });
+  const chu = (await loi.innerText()).trim();
+  expect(chu).toContain("doesn't exist or doesn't belong to your factory");
+  expect(chu).not.toMatch(/errors\.|flowKhongTonTai|Không/); // không khoá thô, không tiếng Việt
+  await chup(page, "8a-loi-pham-vi-en");
+
+  const ctx2 = await page.context().browser()!.newContext();
+  const p2 = await ctx2.newPage();
+  await ctx2.addInitScript(() => {
+    try { localStorage.setItem("i18nextLng", "en"); } catch { /* */ }
+  });
+  const r = await ctx2.request.post(`${base}/api/auth/login`, { data: { username: fx.khong.username, password: fx.khong.password } });
+  expect(r.ok()).toBe(true);
+  await p2.goto(`${base}/ai-flows`);
+  await p2.getByTestId("nut-tao-luong").click();
+  await p2.getByTestId("ten-luong-moi").fill("Luồng không nhà máy");
+  const canhBao = p2.getByTestId("chua-gan-nha-may");
+  await expect(canhBao).toBeVisible({ timeout: 30_000 });
+  await expect(canhBao).toContainText("isn't assigned to any factory");
+  await expect(p2.getByTestId("xac-nhan-tao")).toBeDisabled();
+  await ctx2.close();
 });

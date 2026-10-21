@@ -54,6 +54,13 @@ export interface FsFixture {
   runB: string;
   /** Máy thật trong CSDL _test (node OT phải trỏ máy TỒN TẠI và thuộc phạm vi người gọi). */
   machineId: number;
+  /** Kỹ sư thuộc HAI nhà máy (phải chọn nhà máy khi tạo luồng) và kỹ sư thuộc MỘT nhà máy (máy chủ tự gán). */
+  nhieu: { id: number; username: string; password: string };
+  mot: { id: number; username: string; password: string };
+  /** Kỹ sư CHƯA gán nhà máy nào (hộp tạo luồng phải báo trước, nút Tạo bị vô hiệu). */
+  khong: { id: number; username: string; password: string };
+  nhaMayA: { id: number; code: string };
+  nhaMayB: { id: number; code: string };
 }
 
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}, x = 0) => ({
@@ -69,7 +76,14 @@ export async function teardownFixtures(): Promise<Record<string, number>> {
     const like = `${PREFIX}%`;
     const out: Record<string, number> = {};
     out.ai_flow_runs = (await sql`DELETE FROM ai_flow_runs WHERE "flowId" LIKE ${like}`).count;
+    out.ai_flow_credentials = (await sql`DELETE FROM ai_flow_credentials WHERE id LIKE ${like}`).count;
     out.ai_flows = (await sql`DELETE FROM ai_flows WHERE id LIKE ${like}`).count;
+    // luồng do e2e tạo qua giao diện (id sinh từ tên, không mang tiền tố): theo CHỦ hoặc NHÀ MÁY của fixture
+    const fl = (await sql`SELECT id FROM ai_flows WHERE "factoryId" IN (SELECT id FROM factories WHERE code LIKE ${like}) OR "ownerId" IN (SELECT id FROM users WHERE "openId" LIKE ${like})`).map((r) => String(r.id));
+    if (fl.length) {
+      await sql`DELETE FROM ai_flow_runs WHERE "flowId" IN ${sql(fl)}`;
+      out.ai_flows_ui = (await sql`DELETE FROM ai_flows WHERE id IN ${sql(fl)}`).count;
+    }
     out.machines = (await sql`DELETE FROM machines WHERE code LIKE ${like}`).count;
     out.stations = (await sql`DELETE FROM stations WHERE code LIKE ${like}`).count;
     out.production_lines = (await sql`DELETE FROM production_lines WHERE code LIKE ${like}`).count;
@@ -77,6 +91,7 @@ export async function teardownFixtures(): Promise<Record<string, number>> {
     out.factories = (await sql`DELETE FROM factories WHERE code LIKE ${like}`).count;
     const users = (await sql`SELECT id FROM users WHERE "openId" LIKE ${like}`).map((r) => Number(r.id));
     if (users.length) {
+      await sql`DELETE FROM user_factory_assignments WHERE "userId" IN ${sql(users)}`;
       await sql`DELETE FROM user_sessions WHERE "userId" IN ${sql(users)}`.catch(() => undefined);
       await sql`DELETE FROM permissions WHERE "userId" IN ${sql(users)}`;
       await sql`DELETE FROM user_secrets WHERE "userId" IN ${sql(users)}`;
@@ -115,6 +130,19 @@ export async function setupFixtures(): Promise<FsFixture> {
         VALUES (${`${run}-admin`}, ${`${run}_admin`}, 'FS admin', 'password', 'admin', true, false, now()) RETURNING id`;
       await tx`INSERT INTO user_secrets ("userId", "passwordHash", "updatedAt") VALUES (${u.id}, ${hash}, now())`;
       const [fac] = await tx`INSERT INTO factories (code, name) VALUES (${run}, ${run + " factory"}) RETURNING id`;
+      const [facB] = await tx`INSERT INTO factories (code, name) VALUES (${run + "b"}, ${run + " factory B"}) RETURNING id`;
+      const mkKySu = async (ten: string, ...ma: string[]) => {
+        const [k] = await tx`INSERT INTO users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
+          VALUES (${`${run}-${ten}`}, ${`${run}_${ten}`}, ${"FS " + ten}, 'password', 'engineer', true, false, now()) RETURNING id`;
+        await tx`INSERT INTO user_secrets ("userId", "passwordHash", "updatedAt") VALUES (${k.id}, ${hash}, now())`;
+        // `factory.list` đòi "bất kỳ quyền nào" (requireBatKyQuyenNao): kỹ sư cần ít nhất một hàng quyền.
+        await tx`INSERT INTO permissions ("userId", category, "moduleName", "canView") VALUES (${k.id}, 'machine_monitoring', 'machine_status', true)`;
+        for (const c of ma) await tx`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${k.id}, ${c})`;
+        return { id: Number(k.id), username: `${run}_${ten}`, password };
+      };
+      const nhieu = await mkKySu("nhieu", run, run + "b");
+      const mot = await mkKySu("mot", run);
+      const khong = await mkKySu("khong");
       const [ws] = await tx`INSERT INTO workshops ("factoryId", code, name) VALUES (${fac.id}, ${run}, ${run + " ws"}) RETURNING id`;
       const [ln] = await tx`INSERT INTO production_lines ("workshopId", code, name) VALUES (${ws.id}, ${run}, ${run + " line"}) RETURNING id`;
       const [st] = await tx`INSERT INTO stations ("lineId", code, name) VALUES (${ln.id}, ${run}, ${run + " station"}) RETURNING id`;
@@ -153,7 +181,13 @@ export async function setupFixtures(): Promise<FsFixture> {
       await buoc(runA, "dat", "xong", 1, 2, item(1), item(1));
       await buoc(runB, "t", "xong", 10, 11, item(1), item(1));
       await buoc(runB, "dat", "loi", 11, 17, item(2), null, { thongDiep: "hỏng ở dat" });
-      return { admin: { id: Number(u.id), username: `${run}_admin`, password }, runA, runB, machineId: Number(mc.id) };
+      // bí mật CŨ chưa khai host (mặc định {}) — UI phải báo "chưa dùng được" và cho admin khai
+      await tx`INSERT INTO ai_flow_credentials (id, ten, loai, "banMa", iv, tag, "phienBanKhoa") VALUES (${`${PREFIX}-bm-cu`}, ${"Bí mật cũ"}, ${"token"}, ${Buffer.alloc(8, 1)}, ${Buffer.alloc(12, 2)}, ${Buffer.alloc(16, 3)}, 1)`;
+      // vết model (sự kiện do động cơ ghi khi node ai.* chạy): A dùng model gán; B rơi dự phòng vì khe nặng đang giữ model khác
+      const vet = (rid: string, o: object) => tx`INSERT INTO ai_flow_events ("runId", kind, payload) VALUES (${rid}, ${"buoc.model"}, ${tx.json({ nodeId: "dat", lan: 1, vaiTro: "extract", ...o } as never)})`;
+      await vet(runA, { model: "Qwen3-Khe-Nang-30B", nguon: "gan-profile", phamVi: "flow", duPhong: false, kheBan: false, lyDo: [] });
+      await vet(runB, { model: "Qwen3-4B-Instruct-2507-UD-Q4_K_XL", nguon: "du-phong", phamVi: "flow", duPhong: true, kheBan: true, lyDo: ["gán flow → p-nang", "khe-dang-giu-model-khac (p-nang; bề mặt nền không đổi khe)"] });
+      return { admin: { id: Number(u.id), username: `${run}_admin`, password }, runA, runB, machineId: Number(mc.id), nhieu, mot, khong, nhaMayA: { id: Number(fac.id), code: run }, nhaMayB: { id: Number(facB.id), code: run + "b" } };
     }),
   );
 }

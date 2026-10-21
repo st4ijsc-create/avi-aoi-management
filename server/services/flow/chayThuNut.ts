@@ -13,7 +13,7 @@
  */
 import { danhGiaThamSo, type ItemLuong } from "../../../shared/flow/bieuThuc";
 import type { NodeInstance } from "../../../shared/flow/model";
-import { layNut, nguCanhItem, type BoKiemPhamVi, type KetQuaChay, type NguCanhChay } from "./dangKyNut";
+import { layNut, nguCanhItem, type BoKiemPhamVi, type KetQuaChay, type NguCanhChay, type VetModel } from "./dangKyNut";
 import { LoiNgoaiPhamVi } from "./idTaiNguyen";
 export { LoiNgoaiPhamVi };
 export type { BoKiemPhamVi };
@@ -82,6 +82,8 @@ export interface KetQuaChayThu {
   loi?: string;
   thamSoDaDanhGia?: unknown;
   credentialRef?: string;
+  /** Đợt 9 — model thực dự định chạy của từng lần gọi AI trong node (chỉ node ai.*). */
+  model?: VetModel[];
 }
 
 const thongDiep = (e: unknown) => String((e as Error)?.message ?? e).slice(0, 2000);
@@ -121,6 +123,10 @@ export async function chayThuNut(y: YeuCauChayThu, boKiem?: BoKiemPhamVi): Promi
     }
   }
 
+  const vet: VetModel[] = [];
+  ngu.ghiModel = (v) => void vet.push(v);
+  const kemModel = <T extends object>(r: T): T & { model?: VetModel[] } => (vet.length ? { ...r, model: vet } : r);
+
   if (nut.disabled) return { che: "chay", ok: true, ms: ms(), output: { main: inputs.main ?? [] } };
 
   let dongHo: ReturnType<typeof setTimeout> | undefined;
@@ -133,13 +139,13 @@ export async function chayThuNut(y: YeuCauChayThu, boKiem?: BoKiemPhamVi): Promi
     ]);
     if (kq && typeof kq === "object" && "__cho" in kq) {
       const { kind, items, hetHanMs, payload } = (kq as { __cho: { kind: string; items: ItemLuong[]; hetHanMs?: number; payload?: Record<string, unknown> } }).__cho;
-      return { che: "chay", ok: true, ms: ms(), cho: { kind, items, hetHanMs, payload } };
+      return kemModel({ che: "chay", ok: true, ms: ms(), cho: { kind, items, hetHanMs, payload } });
     }
-    return { che: "chay", ok: true, ms: ms(), output: kq as KetQuaChay };
+    return kemModel({ che: "chay", ok: true, ms: ms(), output: kq as KetQuaChay });
   } catch (e) {
     // Phạm vi do NODE kiểm (cùng giá trị node dùng) — ngoài phạm vi phải đi tới router thành NOT_FOUND, không thành "lỗi node".
     if (e instanceof LoiNgoaiPhamVi) throw e;
-    return { che: "chay", ok: false, ms: ms(), loi: thongDiep(e) };
+    return kemModel({ che: "chay", ok: false, ms: ms(), loi: thongDiep(e) });
   } finally {
     if (dongHo) clearTimeout(dongHo);
   }

@@ -46,12 +46,21 @@ const luongOt = {
 };
 const luongThuan = { id: `${TT}-thuan`, name: "thuần", version: 1, nodes: [nut("t", "kich-hoat.thu-cong")], connections: [] };
 
+let fidOt = 0;
+const MA_NM_OT = `${TT}F`;
 beforeAll(async () => {
-  const [u] = (await (await getDb())!.execute(sql`SELECT id FROM users WHERE role = 'admin' AND "isActive" ORDER BY id LIMIT 1`)) as unknown as { id: number }[];
-  uid = u.id;
-  // H2: người duyệt khác người bật (admin) và người chạy tay (engineer) — hai người đó là `uid`.
-  const [u2] = (await (await getDb())!.execute(sql`SELECT id FROM users ORDER BY id OFFSET 1 LIMIT 1`)) as unknown as { id: number }[];
-  uid2 = u2.id;
+  const db0 = (await getDb())!;
+  const [fa] = (await db0.execute(sql`INSERT INTO factories (code, name, "isActive") VALUES (${MA_NM_OT}, ${"T85 " + MA_NM_OT}, true) RETURNING id`)) as unknown as { id: number }[];
+  fidOt = fa.id;
+  const [uMoi] = (await db0.execute(sql`INSERT INTO users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
+    VALUES (${TT + "-nd-" + Date.now().toString(36)}, ${TT + "_nd_" + Date.now().toString(36)}, ${"người gọi"}, ${"password"}, ${"admin"}, true, false, now()) RETURNING id`)) as unknown as { id: number }[];
+  uid = uMoi.id;
+  await db0.execute(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uid}, ${MA_NM_OT})`);
+  // H2: người duyệt khác người bật (admin `uid`) — người thứ hai cùng nhà máy của test.
+  const [uid2Moi] = (await db0.execute(sql`INSERT INTO users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
+    VALUES (${TT + "-d2-" + Date.now().toString(36)}, ${TT + "_d2_" + Date.now().toString(36)}, ${"người duyệt d2"}, ${"password"}, ${"supervisor"}, true, false, now()) RETURNING id`)) as unknown as { id: number }[];
+  uid2 = uid2Moi.id;
+  await db0.execute(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uid2}, ${MA_NM_OT})`);
 });
 afterEach(() => {
   delete process.env.ACTUATION_STEPUP_2FA;
@@ -62,6 +71,9 @@ afterAll(async () => {
   const runs = await db.select({ id: aiFlowRuns.id }).from(aiFlowRuns).where(like(aiFlowRuns.flowId, `${TT}%`));
   if (runs.length) await db.delete(aiFlowRuns).where(inArray(aiFlowRuns.id, runs.map((r) => r.id)));
   await db.delete(aiFlows).where(like(aiFlows.id, `${TT}%`));
+  await db.execute(sql`DELETE FROM user_factory_assignments WHERE "userId" = ${uid} AND "factoryCode" = ${MA_NM_OT}`);
+  await db.execute(sql`DELETE FROM factories WHERE id = ${fidOt}`);
+  await db.execute(sql`DELETE FROM users WHERE id = ${uid}`);
 });
 
 async function chayHet() {
@@ -126,7 +138,8 @@ describe("★★★ Đợt 8.5 — bật luồng hạng `ot` = admin + 2FA mới
     expect(await trangThaiLuong(luongOt.id)).toMatchObject({ enabled: true, activeVersion: version });
 
     const cmd0 = await demCmd();
-    const { runId } = await goi("engineer").chayTay({ flowId: luongOt.id });
+    await expect(goi("engineer").chayTay({ flowId: luongOt.id })).rejects.toMatchObject({ code: "FORBIDDEN" }); // Đợt 9 (L3): hạng ot đã bật vẫn chỉ admin chạy tay
+    const { runId } = await goi("admin").chayTay({ flowId: luongOt.id });
     await chayHet();
     const cho = (await goi("viewer").danhSachCho()).find((x) => x.runId === runId);
     expect(cho).toMatchObject({ nodeId: "d", vaiTroDuyet: "supervisor" });

@@ -81,8 +81,11 @@ import { stripThinking, StreamingThinkingStripper } from "../services/ai/thinkin
 // doc69 G2-5b — env→basename resolution now lives in ONE place (see modelResolver.ts's header
 // for the full STEP 0 comparison / reconciliation notes, incl. the one deliberately-fixed "fim"
 // fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
-import { resolveLogicalModel } from "../services/ai/modelResolver";
+import { defaultModelBasename, resolveLogicalModel, toBasename } from "../services/ai/modelResolver";
 import { kiemModelV1, thongDiepLoiChoKhachV1 } from "../services/ai/kiemModelV1";
+import { chayVoiTokenKhe, chonModelKhiVuotTran, tokenKheHienTai, vuotTranDoiKhe } from "../services/ai/soModel/tranDoiKheToken";
+import { laModelKheNangPhu, modelNhaKheNang } from "../services/ai/soModel/tapKheNang";
+import { thongKeKheNang } from "../services/ai/soModel/kheNangMacDinh";
 import { VAI_TRO_GOC } from "../../shared/aiRoles";
 import { layAnhSoModel } from "../services/ai/soModel/anhSoModel";
 import { laVaiTroSinhChu } from "../services/ai/soModel/dinhTuyenVaiTro";
@@ -365,6 +368,23 @@ type LogicalModel = (typeof LOGICAL_MODELS)[number];
  */
 function resolveModelId(requested?: string): string | undefined {
   return resolveLogicalModel(requested);
+}
+
+/**
+ * ★ Đợt 9 (audit kiem-dinh M4 — tranh khe) — token của ngữ cảnh đã gây ≥ 3 lần đổi khe THỰC trong 10 phút trượt ⇒ model
+ * NẶNG khác khe đang giữ được thay bằng model khe đang giữ (mọi vai trò), header `x-st4i-khe: tran-doi-khe-token`.
+ */
+function apTranDoiKhe(res: Response, modelId: string | undefined): string | undefined {
+  if (!vuotTranDoiKhe(tokenKheHienTai())) return modelId;
+  const env = process.env;
+  const nha = modelNhaKheNang(env);
+  const kq = chonModelKhiVuotTran(modelId, {
+    giu: thongKeKheNang()?.dangGiu ?? (toBasename(env.LLAMA_SERVER_MODEL) || null),
+    laKheNang: (m) => m === nha || laModelKheNangPhu(m, layAnhSoModel(), env),
+    modelMacDinh: defaultModelBasename(),
+  });
+  if (kq.doi && !res.headersSent) res.setHeader("x-st4i-khe", "tran-doi-khe-token");
+  return kq.model;
 }
 
 /** Backing basename for a logical model (for the models-list `root`/transparency). */
@@ -774,7 +794,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           phamVi: kq.phamVi,
         };
         ghiDung(kq.tokenId);
-        next();
+        // ★ Đợt 9 — ngữ cảnh token cho trần đổi khe (tranDoiKheToken.ts): đổi khe THỰC do lượt này gây ra được đếm cho token.
+        chayVoiTokenKhe(`token:${kq.tokenId}`, () => next());
         return;
       }
 
@@ -801,7 +822,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       canhBaoKeyChung();
       res.setHeader("Deprecation", "true");
       (res.locals as { nguoiGoiCong?: NguoiGoiCong }).nguoiGoiCong = { kieu: "key-chung" };
-      next();
+      chayVoiTokenKhe("key-chung", () => next()); // key chung = MỘT xô (không gắn người)
     })().catch((err) => {
       // Lỗi không lường trước trong lượt xác thực ⇒ fail-closed, KHÔNG next().
       console.error("[openaiGateway] auth middleware error:", (err as Error)?.message ?? err);
@@ -879,7 +900,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         modelLabel = chon.vaiTro ?? "chat";
         if (!res.headersSent) res.setHeader("x-st4i-vai-tro", `${modelLabel}; tang=${chon.tang}`);
       }
-      const modelId = resolveModelId(modelLabel);
+      const modelId = apTranDoiKhe(res, resolveModelId(modelLabel));
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : 0.7;
       const topP = Number.isFinite(body.top_p) ? Number(body.top_p) : undefined;
@@ -1266,7 +1287,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         return;
       }
       const modelLabel = kiem.ten;
-      const modelId = resolveModelId(modelLabel);
+      const modelId = apTranDoiKhe(res, resolveModelId(modelLabel));
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : isFim ? 256 : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : isFim ? 0.2 : 0.7;
       const topP = Number.isFinite(body.top_p) ? Number(body.top_p) : undefined;

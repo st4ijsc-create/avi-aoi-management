@@ -38,6 +38,15 @@ export class LoiBieuThuc extends Error {
 
 const DO_DAI_TOI_DA = 2000;
 const DO_SAU_TOI_DA = 64;
+/**
+ * ★ Đợt 9 (L1 của kiem-dinh) — TRẦN ĐỘ DÀI KẾT QUẢ chuỗi (ký tự): mỗi phép nối, `join`, mẫu \`{{ }}\` lẫn chữ và mỗi tham số cuối. Biểu thức dài
+ * 2000 ký tự mà lặp \`a + a + a …\` trên một chuỗi lớn khuếch đại bộ nhớ hàng nghìn lần; trần chặn TRƯỚC khi cấp phát (kiểm độ dài hai vế
+ * rồi mới nối), nên cả kết quả lẫn bước trung gian đều không vượt trần.
+ */
+export const TRAN_KET_QUA_CHUOI = 1_048_576;
+const quaDai = (n: number, noi: string): never => {
+  throw new LoiBieuThuc(`kết quả ${noi} dài quá ${TRAN_KET_QUA_CHUOI} ký tự`);
+};
 const TEN_CAM: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype", "__defineGetter__", "__defineSetter__", "__lookupGetter__", "__lookupSetter__"]);
 
 // ── tách từ ──────────────────────────────────────────────────────────────────────────────────────
@@ -237,7 +246,21 @@ const HAM: Record<string, (...a: unknown[]) => unknown> = {
   abs: (x) => Math.abs(so(x, "abs")),
   min: (...a) => Math.min(...a.map((x) => so(x, "min"))),
   max: (...a) => Math.max(...a.map((x) => so(x, "max"))),
-  join: (a, sep) => (Array.isArray(a) ? a.map((x) => (x === null || x === undefined ? "" : String(x))).join(sep === undefined ? "," : String(sep)) : ""),
+  join: (a, sep) => {
+    if (!Array.isArray(a)) return "";
+    const ngan = sep === undefined ? "," : String(sep);
+    // ước lượng TRƯỚC khi nối: (n−1)·|sep| + Σ|phần tử| — dừng ngay khi vượt trần
+    let tong = Math.max(0, a.length - 1) * ngan.length;
+    if (tong > TRAN_KET_QUA_CHUOI) return quaDai(tong, "join");
+    const ds: string[] = [];
+    for (const x of a) {
+      const s = x === null || x === undefined ? "" : String(x);
+      tong += s.length;
+      if (tong > TRAN_KET_QUA_CHUOI) return quaDai(tong, "join");
+      ds.push(s);
+    }
+    return ds.join(ngan);
+  },
   split: (s, sep) => String(s ?? "").split(String(sep ?? ",")).slice(0, 10_000),
   contains: (a, x) => (typeof a === "string" ? a.includes(String(x)) : Array.isArray(a) ? a.includes(x) : false),
   startsWith: (s, x) => String(s ?? "").startsWith(String(x)),
@@ -301,7 +324,12 @@ function danhGiaNut(n: Nut, ngu: NguCanhBieuThuc): unknown {
         case "!=":
           return a !== b;
         case "+":
-          if (typeof a === "string" || typeof b === "string") return `${a ?? ""}${b ?? ""}`;
+          if (typeof a === "string" || typeof b === "string") {
+            const sa = typeof a === "string" ? a : `${a ?? ""}`;
+            const sb = typeof b === "string" ? b : `${b ?? ""}`;
+            if (sa.length + sb.length > TRAN_KET_QUA_CHUOI) return quaDai(sa.length + sb.length, "phép nối");
+            return sa + sb;
+          }
           return so(a, "'+'") + so(b, "'+'");
         case "-":
           return so(a, "'-'") - so(b, "'-'");
@@ -352,10 +380,16 @@ export function danhGiaChuoi(mau: string, ngu: NguCanhBieuThuc): unknown {
   const nguyen = /^\s*\{\{([\s\S]*?)\}\}\s*$/.exec(mau);
   if (nguyen && !nguyen[1].includes("}}")) return danhGia(nguyen[1], ngu);
   if (!mau.includes("{{")) return mau;
-  return mau.replace(RE_MAU, (_, bt: string) => {
+  let tong = 0;
+  const ra = mau.replace(RE_MAU, (m, bt: string) => {
     const v = danhGia(bt, ngu);
-    return v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+    const s = v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+    tong += s.length - m.length;
+    if (tong + mau.length > TRAN_KET_QUA_CHUOI) return quaDai(tong + mau.length, "mẫu");
+    return s;
   });
+  if (ra.length > TRAN_KET_QUA_CHUOI) return quaDai(ra.length, "mẫu");
+  return ra;
 }
 
 /** Đánh giá đệ quy mọi chuỗi trong tham số node (đối tượng/mảng lồng). */

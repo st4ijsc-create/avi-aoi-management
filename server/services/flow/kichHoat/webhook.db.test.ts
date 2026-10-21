@@ -101,6 +101,15 @@ describe("webhook Luồng AI (Đợt 8.1, HTTP + DB)", () => {
     expect((await goi("tay", {}, { "x-flow-token": token })).status).toBe(404);
   });
 
+  it("★ Đợt 9 (L3) token kiểm TRƯỚC khi đọc thân: token sai/thiếu + thân quá lớn hoặc JSON hỏng ⇒ 401 (không phải 413/400 — bộ đọc JSON chưa chạy); token đúng ⇒ 413/400 như cũ", async () => {
+    for (const h of [{}, { "x-flow-token": "sai-token" }] as Record<string, string>[]) {
+      expect((await goi("wh", { x: "a".repeat(300 * 1024) }, h)).status).toBe(401);
+      expect((await goi("wh", "{hỏng", h)).status).toBe(401);
+    }
+    expect((await goi("wh", { x: "a".repeat(300 * 1024) }, { "x-flow-token": token })).status).toBe(413);
+    expect((await goi("wh", "{hỏng", { "x-flow-token": token })).status).toBe(400);
+  });
+
   it("xoay token ⇒ token cũ 401, token mới 202", async () => {
     const moi = (await capTokenWebhook(FLOW, true))!;
     expect(moi).not.toBe(token);

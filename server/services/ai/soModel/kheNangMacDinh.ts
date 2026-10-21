@@ -10,6 +10,8 @@ import { toBasename } from "../modelResolver";
 import { layAnhSoModel } from "./anhSoModel";
 import { CAU_HINH_MAC_DINH, KheNang, LoiKheNang, type BoPhucVuKheNang, type CauHinhKheNang, type ThongKeKheNang } from "./kheNang";
 import { hoanDoiKheNangBat, modelKheNangPhu, modelNhaKheNang } from "./tapKheNang";
+// ★ Đợt 9 — đếm đổi khe THỰC theo token /v1 (trần 3 / 10 phút trượt; ngoài /v1 ⇒ không đếm).
+import { ghiDoiKheTheoNguCanh } from "./tranDoiKheToken";
 
 function soEnv(ten: string, macDinh: number): number {
   const v = Number(process.env[ten]);
@@ -69,7 +71,7 @@ function diTat(): boolean {
 
 export async function quaKheNang<T>(model: string, fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   if (diTat()) return fn();
-  const nha = await layKheNang().cho(toBasename(model) || modelNhaKheNang(process.env), mucUuTienHienTai(), signal);
+  const nha = await layKheNang().cho(toBasename(model) || modelNhaKheNang(process.env), mucUuTienHienTai(), signal, ghiDoiKheTheoNguCanh);
   try {
     return await fn();
   } finally {
@@ -82,7 +84,7 @@ export async function* quaKheNangLuong<T>(model: string, moLuong: () => AsyncGen
     yield* moLuong();
     return;
   }
-  const nha = await layKheNang().cho(toBasename(model) || modelNhaKheNang(process.env), mucUuTienHienTai(), signal);
+  const nha = await layKheNang().cho(toBasename(model) || modelNhaKheNang(process.env), mucUuTienHienTai(), signal, ghiDoiKheTheoNguCanh);
   try {
     yield* moLuong();
   } finally {

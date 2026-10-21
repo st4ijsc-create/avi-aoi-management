@@ -38,12 +38,27 @@ function KhoiBiMat({ laAdmin }: { laAdmin: boolean }) {
   const [ten, setTen] = useState("");
   const [loai, setLoai] = useState("token");
   const [giaTri, setGiaTri] = useState("");
+  // Đợt 9 — host bí mật được phép gửi tới (BẮT BUỘC khi tạo; M2) + nhà máy của bí mật (admin: trống = toàn hệ thống, chỉ admin dùng).
+  const [hostChu, setHostChu] = useState("");
+  const [nhaMayBm, setNhaMayBm] = useState("");
+  const [suaHost, setSuaHost] = useState<null | { id: string; chu: string }>(null);
+  const dsNhaMay = trpc.factory.list.useQuery(undefined, { enabled: laAdmin });
+  const tachHost = (chu: string) => chu.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean);
+  const datHost = trpc.flow.biMatDatHost.useMutation({
+    onSuccess: () => {
+      toast.success(t("flowStudio.biMat.daLuuHost"));
+      setSuaHost(null);
+      void utils.flow.biMatDanhSach.invalidate();
+    },
+    onError: (e) => toastTrpcError(e),
+  });
   const tao = trpc.flow.biMatTao.useMutation({
     onSuccess: () => {
       toast.success(t("flowStudio.biMat.daTao"));
       setId("");
       setTen("");
       setGiaTri("");
+      setHostChu("");
       void utils.flow.biMatDanhSach.invalidate();
     },
     onError: (e) => toastTrpcError(e),
@@ -55,7 +70,7 @@ function KhoiBiMat({ laAdmin }: { laAdmin: boolean }) {
     },
     onError: (e) => toastTrpcError(e),
   });
-  const hopLe = /^[A-Za-z0-9_-]{1,64}$/.test(id) && ten.trim().length > 0 && giaTri.length >= 4;
+  const hopLe = /^[A-Za-z0-9_-]{1,64}$/.test(id) && ten.trim().length > 0 && giaTri.length >= 4 && tachHost(hostChu).length > 0;
 
   return (
     <Card data-testid="khoi-bi-mat">
@@ -73,6 +88,7 @@ function KhoiBiMat({ laAdmin }: { laAdmin: boolean }) {
                 <TableHead>{t("flowStudio.biMat.id")}</TableHead>
                 <TableHead>{t("flowStudio.biMat.ten")}</TableHead>
                 <TableHead>{t("flowStudio.biMat.loai")}</TableHead>
+                <TableHead>{t("flowStudio.biMat.host")}</TableHead>
                 <TableHead>{t("flowStudio.biMat.phienBanKhoa")}</TableHead>
                 <TableHead>{t("flowStudio.biMat.ngayTao")}</TableHead>
                 {laAdmin && <TableHead className="w-12" />}
@@ -84,6 +100,18 @@ function KhoiBiMat({ laAdmin }: { laAdmin: boolean }) {
                   <TableCell className="font-mono text-xs">{b.id}</TableCell>
                   <TableCell className="text-sm">{b.ten}</TableCell>
                   <TableCell className="text-xs">{t(`flowStudio.biMat.loaiChon.${b.loai}`, { defaultValue: b.loai })}</TableCell>
+                  <TableCell className="text-xs" data-testid={`host-${b.id}`}>
+                    {b.hostChoPhep.length === 0 ? (
+                      <Badge variant="outline" className="text-[10px] bg-warning/15 text-warning border-warning/40">{t("flowStudio.biMat.hostChuaKhai")}</Badge>
+                    ) : (
+                      <span className="font-mono">{b.hostChoPhep.join(", ")}</span>
+                    )}
+                    {laAdmin && (
+                      <Button variant="ghost" size="sm" className="h-6 px-1 ml-1 text-[11px]" data-testid={`sua-host-${b.id}`} onClick={() => setSuaHost({ id: b.id, chu: b.hostChoPhep.join(", ") })}>
+                        {t("flowStudio.biMat.suaHost")}
+                      </Button>
+                    )}
+                  </TableCell>
                   <TableCell className="text-xs">{b.phienBanKhoa}</TableCell>
                   <TableCell className="text-xs">{fmtDateTime(b.createdAt)}</TableCell>
                   {laAdmin && (
@@ -103,11 +131,11 @@ function KhoiBiMat({ laAdmin }: { laAdmin: boolean }) {
         )}
         {laAdmin && (
           <form
-            className="grid gap-2 md:grid-cols-[1fr_1fr_140px_1fr_auto] items-end"
+            className="grid gap-2 md:grid-cols-3 items-end"
             autoComplete="off"
             onSubmit={(e) => {
               e.preventDefault();
-              if (hopLe) tao.mutate({ id, ten: ten.trim(), loai, giaTri });
+              if (hopLe) tao.mutate({ id, ten: ten.trim(), loai, giaTri, hostChoPhep: tachHost(hostChu), ...(nhaMayBm ? { factoryId: Number(nhaMayBm) } : {}) });
             }}
           >
             <div className="space-y-1"><label className="text-xs">{t("flowStudio.biMat.id")}</label><Input className="h-9 font-mono text-xs" value={id} onChange={(e) => setId(e.target.value)} /></div>
@@ -122,6 +150,17 @@ function KhoiBiMat({ laAdmin }: { laAdmin: boolean }) {
               <label className="text-xs">{t("flowStudio.biMat.giaTri")}</label>
               <Input type="password" autoComplete="new-password" className="h-9 text-sm" value={giaTri} onChange={(e) => setGiaTri(e.target.value)} />
             </div>
+            <div className="space-y-1">
+              <label className="text-xs">{t("flowStudio.biMat.host")}</label>
+              <Input data-testid="bi-mat-host" className="h-9 font-mono text-xs" placeholder="erp.nha-may.vn, api.mes.vn" value={hostChu} onChange={(e) => setHostChu(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs">{t("flowStudio.biMat.nhaMay")}</label>
+              <select data-testid="bi-mat-nha-may" className={O_CHON} value={nhaMayBm} onChange={(e) => setNhaMayBm(e.target.value)}>
+                <option value="">{t("flowStudio.danhSach.nhaMayToanHeThong")}</option>
+                {(dsNhaMay.data ?? []).map((f) => <option key={f.id} value={String(f.id)}>{f.name} ({f.code})</option>)}
+              </select>
+            </div>
             <Button type="submit" disabled={!hopLe || tao.isPending}>
               {tao.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
               {t("flowStudio.biMat.tao")}
@@ -129,6 +168,21 @@ function KhoiBiMat({ laAdmin }: { laAdmin: boolean }) {
           </form>
         )}
         {laAdmin && <p className="text-[11px] text-muted-foreground">{t("flowStudio.biMat.chiGhi")}</p>}
+        <Dialog open={!!suaHost} onOpenChange={(o) => !o && setSuaHost(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t("flowStudio.biMat.suaHostTieuDe", { id: suaHost?.id ?? "" })}</DialogTitle>
+              <DialogDescription>{t("flowStudio.biMat.hostGoiY")}</DialogDescription>
+            </DialogHeader>
+            <Input data-testid="sua-host-o" className="font-mono text-xs" value={suaHost?.chu ?? ""} onChange={(e) => suaHost && setSuaHost({ ...suaHost, chu: e.target.value })} />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setSuaHost(null)}>{t("flowStudio.chung.huy")}</Button>
+              <Button data-testid="luu-host" disabled={!suaHost || tachHost(suaHost.chu).length === 0 || datHost.isPending} onClick={() => suaHost && datHost.mutate({ id: suaHost.id, hostChoPhep: tachHost(suaHost.chu) })}>
+                {t("flowStudio.biMat.luuHost")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );
@@ -147,6 +201,15 @@ export default function AIFlowsPage() {
   const [moTao, setMoTao] = useState<null | { mau: FlowDefinition | null }>(null);
   const [tenMoi, setTenMoi] = useState("");
   const [mauChon, setMauChon] = useState<string>("");
+  // Đợt 9 — phạm vi nhà máy của luồng MỚI: danh sách nhà máy ĐÃ LỌC theo phạm vi người dùng (`factory.list`).
+  // Admin: tuỳ chọn ("" = toàn hệ thống, chỉ admin dùng); thuộc NHIỀU nhà máy: BẮT BUỘC chọn; đúng một nhà máy: máy chủ tự gán.
+  const dsNhaMay = trpc.factory.list.useQuery(undefined, { enabled: !!moTao });
+  const [nhaMay, setNhaMay] = useState<string>("");
+  const nhaMays = dsNhaMay.data ?? [];
+  const hienChonNhaMay = laAdmin ? nhaMays.length > 0 : nhaMays.length > 1;
+  const canChonNhaMay = !laAdmin && nhaMays.length > 1;
+  // Tài khoản thường chưa được gán nhà máy nào ⇒ máy chủ sẽ từ chối (FORBIDDEN) — báo TRƯỚC và vô hiệu nút Tạo.
+  const chuaGanNhaMay = !laAdmin && dsNhaMay.isSuccess && nhaMays.length === 0;
 
   const luu = trpc.flow.luu.useMutation({
     onSuccess: (r) => {
@@ -170,7 +233,11 @@ export default function AIFlowsPage() {
     if (!ten) return;
     const id = idLuongTuTen(ten);
     const m = moTao?.mau ?? null;
-    luu.mutate({ definition: (m ? saoTuMau(m, id, ten) : luongMoi(id, ten)) as unknown as Record<string, unknown> });
+    if (chuaGanNhaMay || (canChonNhaMay && !nhaMay)) return;
+    luu.mutate({
+      definition: (m ? saoTuMau(m, id, ten) : luongMoi(id, ten)) as unknown as Record<string, unknown>,
+      ...(hienChonNhaMay && nhaMay ? { factoryId: Number(nhaMay) } : {}),
+    });
   };
 
   const moTuMau = () => {
@@ -302,6 +369,29 @@ export default function AIFlowsPage() {
                 </div>
               </div>
             )}
+            {chuaGanNhaMay && (
+              <p role="alert" data-testid="chua-gan-nha-may" className="rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-xs text-warning">
+                {t("flowStudio.danhSach.chuaGanNhaMay")}
+              </p>
+            )}
+            {hienChonNhaMay && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium" htmlFor="chon-nha-may">{t("flowStudio.danhSach.nhaMay")}</label>
+                <select
+                  id="chon-nha-may"
+                  data-testid="chon-nha-may"
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  value={nhaMay}
+                  onChange={(e) => setNhaMay(e.target.value)}
+                >
+                  <option value="">{laAdmin ? t("flowStudio.danhSach.nhaMayToanHeThong") : t("flowStudio.danhSach.chonNhaMay")}</option>
+                  {nhaMays.map((f) => (
+                    <option key={f.id} value={String(f.id)}>{f.name} ({f.code})</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-muted-foreground">{laAdmin ? t("flowStudio.danhSach.nhaMayGoiYAdmin") : t("flowStudio.danhSach.nhaMayCanChon")}</p>
+              </div>
+            )}
             <div className="space-y-1">
               <label className="text-xs font-medium">{t("flowStudio.danhSach.tenLuong")}</label>
               <Input data-testid="ten-luong-moi" value={tenMoi} onChange={(e) => setTenMoi(e.target.value)} onKeyDown={(e) => e.key === "Enter" && taoLuong()} autoFocus />
@@ -309,7 +399,7 @@ export default function AIFlowsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMoTao(null)}>{t("flowStudio.chung.huy")}</Button>
-            <Button data-testid="xac-nhan-tao" disabled={!tenMoi.trim() || luu.isPending} onClick={taoLuong}>
+            <Button data-testid="xac-nhan-tao" disabled={!tenMoi.trim() || luu.isPending || chuaGanNhaMay || (canChonNhaMay && !nhaMay)} onClick={taoLuong}>
               {luu.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
               {t("flowStudio.danhSach.tao")}
             </Button>

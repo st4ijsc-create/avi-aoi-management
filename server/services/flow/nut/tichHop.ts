@@ -14,12 +14,8 @@
 import { danhGiaThamSo, type ItemLuong } from "../../../../shared/flow/bieuThuc";
 import { dangKyNut, nguCanhItem, type KetQuaChay, type NguCanhChay } from "../dangKyNut";
 
-export class LoiHttpLuong extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "LoiHttpLuong";
-  }
-}
+import { LoiHttpLuong, coMucHostCong, datPhanGiaiDns, docThanCoTran, fetchGhim, kiemDichDen, type DichDen } from "./mangAnToan";
+export { LoiHttpLuong };
 
 const TRAN_THAN = 1024 * 1024;
 const TIEU_DE_CAM = new Set(["authorization", "cookie", "proxy-authorization", "host"]);
@@ -62,18 +58,29 @@ export function kiemUrl(raw: unknown, choPhep: Set<string>): URL {
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") throw new LoiHttpLuong(`chỉ http/https (nhận ${u.protocol})`);
   if (u.username || u.password) throw new LoiHttpLuong("URL không được chứa tài khoản/mật khẩu");
-  if (!choPhep.has(u.hostname.toLowerCase())) {
+  // mục `host` (mọi cổng, chỉ đích CÔNG CỘNG) hoặc `host:cổng` (đúng cổng; đây cũng là cách DUY NHẤT cho phép đích nội bộ — xem mangAnToan.ts)
+  if (!choPhep.has(u.hostname.toLowerCase()) && !coMucHostCong(u, choPhep)) {
     throw new LoiHttpLuong(`host '${u.hostname}' không có trong AI_FLOW_HTTP_HOST_CHO_PHEP`);
   }
   return u;
 }
 
-export type HamFetch = typeof fetch;
-let fetchLuong: HamFetch = (...a) => fetch(...a);
-/** Chỉ lưới. */
+/** Hàm gửi: `(url, init, dich)` — `dich` là IP ĐÃ KIỂM để kết nối (ghim; chống DNS rebinding). Hàm giả của lưới có thể bỏ qua đối số thứ ba. */
+export type HamFetch = ((url: URL, init: RequestInit, dich: DichDen) => Promise<Response>) | typeof fetch;
+const fetchMacDinh: HamFetch = (url, init, dich) => fetchGhim(url, init, dich);
+let fetchLuong: HamFetch = fetchMacDinh;
+/** IP công cộng cố định của bộ phân giải GIẢ (lưới thay fetch thì không có mạng/DNS thật). */
+export const IP_CONG_KHAI_GIA = "93.184.216.34";
+/**
+ * Chỉ lưới. Thay hàm gửi; khi thay bằng hàm KHÁC mặc định, bộ phân giải DNS cũng đổi sang GIẢ (mọi host → \`IP_CONG_KHAI_GIA\`) để lưới không
+ * cần mạng — lưới kiểm SSRF tự đặt \`datPhanGiaiDns\` SAU đó. Trả lại mặc định ⇒ bộ phân giải thật.
+ */
 export function datFetchLuong(f: HamFetch | null): HamFetch {
   const cu = fetchLuong;
-  if (f) fetchLuong = f;
+  if (f) {
+    fetchLuong = f;
+    datPhanGiaiDns(f === fetchMacDinh ? null : async () => [{ address: IP_CONG_KHAI_GIA, family: 4 }]);
+  }
   return cu;
 }
 
@@ -83,6 +90,13 @@ async function goi(phuongThuc: string, item: ItemLuong, vao: ItemLuong[], thamSo
   const xacThuc = tieuDeXacThuc(kieuXacThuc, ngu.biMat);
   const t = danhGiaThamSo(thamSoBieuThuc, nguCanhItem(ngu, item, vao)) as Record<string, unknown>;
   const url = kiemUrl(t.url, hostChoPhep());
+  // Đợt 9 (M2) — bí mật chỉ được gắn vào yêu cầu tới host NÓ KHAI (ngoài danh sách trắng chung). Chưa khai (mảng rỗng) ⇒ chưa dùng được.
+  if (ngu.biMat && !ngu.biMat.hostChoPhep.includes(url.hostname.toLowerCase())) {
+    throw new LoiHttpLuong(
+      ngu.biMat.hostChoPhep.length === 0 ? "bí mật chưa khai host cho phép (quản trị viên khai ở Bí mật → host)" : `host '${url.hostname}' không nằm trong danh sách host của bí mật`,
+      ngu.biMat.hostChoPhep.length === 0 ? "BI_MAT_CHUA_KHAI_HOST" : undefined,
+    );
+  }
   const tieuDe: Record<string, string> = {};
   for (const [k, v] of Object.entries((t.tieuDe as Record<string, unknown>) ?? {})) {
     if (TIEU_DE_CAM.has(k.toLowerCase())) throw new LoiHttpLuong(`tiêu đề '${k}' chỉ được lấy từ credential`);
@@ -98,9 +112,10 @@ async function goi(phuongThuc: string, item: ItemLuong, vao: ItemLuong[], thamSo
     than = typeof t.than === "string" ? t.than : JSON.stringify(t.than);
     tieuDe["Content-Type"] ??= typeof t.than === "string" ? "text/plain; charset=utf-8" : "application/json";
   }
-  const r = await fetchLuong(url, { method: phuongThuc, headers: tieuDe, body: than, redirect: "manual", signal: AbortSignal.timeout(30_000) });
-  const chu = await r.text();
-  if (chu.length > TRAN_THAN) throw new LoiHttpLuong(`phản hồi quá ${TRAN_THAN} byte`);
+  // Đợt 9 (M3): phân giải DNS MỘT lần, từ chối đích nội bộ (trừ mục host:cổng rõ ràng), kết nối tới ĐÚNG IP đã kiểm; đọc thân dạng luồng, ngắt ở trần.
+  const dich = await kiemDichDen(url, hostChoPhep());
+  const r = await (fetchLuong as (u: URL, i: RequestInit, d: DichDen) => Promise<Response>)(url, { method: phuongThuc, headers: tieuDe, body: than, redirect: "manual", signal: AbortSignal.timeout(30_000) }, dich);
+  const chu = await docThanCoTran(r, TRAN_THAN);
   let duLieu: unknown = chu;
   if ((r.headers.get("content-type") ?? "").includes("json")) {
     try {

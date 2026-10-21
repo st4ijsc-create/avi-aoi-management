@@ -314,3 +314,42 @@ describe("★ M4 (audit kiem-dinh) — `model` của client không mang được
     });
   }
 });
+
+describe("★ Đợt 9 (M4 tranh khe) — token /v1 vượt trần 3 lần đổi khe / 10 phút ⇒ đi model khe đang giữ", () => {
+  it("dưới trần ⇒ model nặng được yêu cầu; vượt trần ⇒ model khe đang giữ + header tran-doi-khe-token", async () => {
+    const { datAnhSoModel, layAnhSoModel } = await import("../services/ai/soModel/anhSoModel");
+    const { __xoaTranDoiKhe, chayVoiTokenKhe, ghiDoiKheTheoNguCanh } = await import("../services/ai/soModel/tranDoiKheToken");
+    const anhCu = layAnhSoModel();
+    const envCu = process.env.LLAMA_SERVER_MODEL;
+    process.env.LLAMA_SERVER_MODEL = "Q35-Home.gguf"; // khe đang giữ (không có KheNang thật ⇒ đọc env)
+    datAnhSoModel({
+      ...anhCu,
+      taiLuc: 1,
+      profile: new Map([["q27@64k", { artifactFile: "Q27-Nang.gguf", slotClass: "nang", artifactStatus: "available", license: "apache-2.0", enabled: true }]]),
+    });
+    __xoaTranDoiKhe();
+    try {
+      const goi = () =>
+        fetch(`${enabled.url}/v1/chat/completions`, {
+          method: "POST",
+          headers: { ...AUTH, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: "q27@64k", messages: [{ role: "user", content: "hi" }] }),
+        });
+      let res = await goi();
+      expect(res.status).toBe(200);
+      expect(h.lastChatArgs.modelId).toBe("Q27-Nang");
+      expect(res.headers.get("x-st4i-khe")).toBeNull();
+      // key chung đã gây 3 lần đổi khe THỰC trong cửa sổ
+      for (let i = 0; i < 3; i++) await chayVoiTokenKhe("key-chung", async () => ghiDoiKheTheoNguCanh());
+      res = await goi();
+      expect(res.status).toBe(200);
+      expect(h.lastChatArgs.modelId).toBe("Q35-Home");
+      expect(res.headers.get("x-st4i-khe")).toBe("tran-doi-khe-token");
+    } finally {
+      datAnhSoModel(anhCu);
+      if (envCu === undefined) delete process.env.LLAMA_SERVER_MODEL;
+      else process.env.LLAMA_SERVER_MODEL = envCu;
+      __xoaTranDoiKhe();
+    }
+  });
+});

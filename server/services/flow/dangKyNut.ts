@@ -11,6 +11,26 @@ import type { KhaiBaoNut } from "../../../shared/flow/model";
  */
 export interface BoKiemPhamVi {
   may(id: number): Promise<boolean>;
+  /** Bí mật (`credentialRef`) tồn tại và thuộc phạm vi (NULL = toàn hệ thống ⇒ chỉ phạm vi "tất cả"). */
+  biMat(id: string): Promise<boolean>;
+  /** Luồng (luồng con / tool agent) tồn tại và thuộc phạm vi. */
+  luong(flowId: string): Promise<boolean>;
+}
+
+/**
+ * ★ Đợt 9 — VẾT MODEL của một lần gọi AI trong node: model THỰC dự định chạy (đã qua định tuyến vai trò: gán flow → be-mat →
+ * toàn cục → env) và có phải DỰ PHÒNG không (vd khe nặng đang giữ model khác ⇒ `kheBan`). Động cơ ghi thành sự kiện
+ * `buoc.model`; chạy thử node trả cùng dữ liệu.
+ */
+export interface VetModel {
+  vaiTro: string;
+  model: string | null;
+  nguon: string;
+  phamVi: string | null;
+  duPhong: boolean;
+  /** Dự phòng vì khe nặng đang giữ model khác (`khe-dang-giu-model-khac`). */
+  kheBan: boolean;
+  lyDo: string[];
 }
 
 export interface NguCanhChay {
@@ -31,9 +51,11 @@ export interface NguCanhChay {
    * Đợt 8.2 — bí mật đã giải mã của node (chỉ khi node có `credentialRef` và loại khai `nhanBiMat`). Động cơ gắn ô này
    * KHÔNG LIỆT KÊ ĐƯỢC (`JSON.stringify`/spread không mang theo); KHÔNG nằm trong `inputs`/`nodes`/biểu thức/bước/sự kiện.
    */
-  biMat?: { giaTri: string; loai: string };
+  biMat?: { giaTri: string; loai: string; /** Đợt 9 (M2) — host bí mật được phép gửi tới. */ hostChoPhep: readonly string[] };
   /** Đợt 9 — bộ kiểm phạm vi (chạy thử: của người gọi). Chạy thật: chủ lượt — xem mig 0410 / bước (a). */
   kiemPhamVi?: BoKiemPhamVi;
+  /** Đợt 9 — node AI báo model thực chạy (động cơ / chạy thử gắn; vắng ⇒ bỏ qua). */
+  ghiModel?: (v: VetModel) => void;
 }
 
 export type KetQuaChay = Record<string, ItemLuong[]>;

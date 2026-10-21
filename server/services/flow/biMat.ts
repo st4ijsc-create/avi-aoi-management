@@ -89,6 +89,21 @@ export function giaiMa(id: string, b: BanMa, env: NodeJS.ProcessEnv = process.en
   }
 }
 
+/** Hostname hợp lệ cho `hostChoPhep`: chữ thường/số/gạch/chấm, không scheme, cổng, đường dẫn hay ký tự đại diện. */
+export const RE_HOST_BI_MAT = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
+/** Chuẩn hoá + kiểm danh sách host (1–20, không trùng, không rỗng). Sai ⇒ KHONG_HOP_LE. */
+export function chuanHoaHost(ds: unknown): string[] {
+  if (!Array.isArray(ds) || ds.length < 1 || ds.length > 20) throw new LoiBiMat("KHONG_HOP_LE", "hostChoPhep phải có 1–20 hostname");
+  const ra = new Set<string>();
+  for (const h of ds) {
+    const x = typeof h === "string" ? h.trim().toLowerCase() : "";
+    if (!RE_HOST_BI_MAT.test(x)) throw new LoiBiMat("KHONG_HOP_LE", `host '${String(h).slice(0, 64)}' không hợp lệ (chỉ hostname: không scheme, cổng, đường dẫn, ký tự đại diện)`);
+    ra.add(x);
+  }
+  return [...ra];
+}
+
 export function kiemGiaTri(loai: string, giaTri: string): void {
   if (!LOAI_BI_MAT.includes(loai as LoaiBiMat)) throw new LoiBiMat("KHONG_HOP_LE", `loại bí mật '${loai}' không hợp lệ`);
   if (typeof giaTri !== "string" || giaTri.length < 4 || giaTri.length > TRAN_GIA_TRI) {
@@ -107,7 +122,7 @@ async function layDb() {
 
 /** Tạo (hoặc `ghiDe` — thay giá trị) một bí mật. Trả thông tin KHÔNG có giá trị. */
 export async function taoBiMat(
-  y: { id: string; ten: string; loai: string; giaTri: string; ghiDe?: boolean },
+  y: { id: string; ten: string; loai: string; giaTri: string; ghiDe?: boolean; /** Đợt 9 — phạm vi nhà máy (vắng/NULL = toàn hệ thống: chỉ admin dùng). */ factoryId?: number | null; /** Đợt 9 (M2) — host được phép; vắng ⇒ [] = CHƯA khai, chưa dùng được. */ hostChoPhep?: string[] },
   userId: number | null,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ id: string; ten: string; loai: string; phienBanKhoa: number }> {
@@ -117,13 +132,22 @@ export async function taoBiMat(
   kiemGiaTri(y.loai, y.giaTri);
   const m = maHoa(y.id, y.giaTri, env);
   const db = await layDb();
-  const hang = { id: y.id, ten, loai: y.loai, ...m, createdBy: userId };
+  const host = y.hostChoPhep === undefined ? undefined : chuanHoaHost(y.hostChoPhep);
+  const hang = { id: y.id, ten, loai: y.loai, ...m, createdBy: userId, factoryId: y.factoryId ?? null, hostChoPhep: host ?? [] };
   const q = db.insert(aiFlowCredentials).values(hang);
   const ra = y.ghiDe
-    ? await q.onConflictDoUpdate({ target: aiFlowCredentials.id, set: { ten, loai: y.loai, ...m, createdBy: userId } }).returning({ id: aiFlowCredentials.id })
+    ? await q.onConflictDoUpdate({ target: aiFlowCredentials.id, set: { ten, loai: y.loai, ...m, createdBy: userId, ...(y.factoryId !== undefined ? { factoryId: y.factoryId } : {}), ...(host ? { hostChoPhep: host } : {}) } }).returning({ id: aiFlowCredentials.id })
     : await q.onConflictDoNothing().returning({ id: aiFlowCredentials.id });
   if (!ra.length) throw new LoiBiMat("DA_CO", `bí mật '${y.id}' đã có`);
   return { id: y.id, ten, loai: y.loai, phienBanKhoa: m.phienBanKhoa };
+}
+
+/** Đặt (thay) danh sách host của một bí mật — admin. Không đụng giá trị. `false` nếu không có bí mật. */
+export async function datHostBiMat(id: string, ds: unknown): Promise<string[] | false> {
+  const host = chuanHoaHost(ds);
+  const db = await layDb();
+  const ra = await db.update(aiFlowCredentials).set({ hostChoPhep: host }).where(eq(aiFlowCredentials.id, id)).returning({ id: aiFlowCredentials.id });
+  return ra.length ? host : false;
 }
 
 export async function xoaBiMat(id: string): Promise<boolean> {
@@ -145,12 +169,12 @@ export async function lietKeBiMat(): Promise<{ id: string; ten: string; loai: st
 }
 
 /** ⚠ NỘI BỘ ĐỘNG CƠ: giải mã đúng lúc chạy node. Không gọi từ router / không trả ra API. */
-export async function giaiMaChoChay(id: string, env: NodeJS.ProcessEnv = process.env): Promise<{ giaTri: string; loai: LoaiBiMat }> {
+export async function giaiMaChoChay(id: string, env: NodeJS.ProcessEnv = process.env): Promise<{ giaTri: string; loai: LoaiBiMat; hostChoPhep: string[] }> {
   khoaHienTai(env); // fail-closed TRƯỚC khi đọc CSDL
   const db = await layDb();
   const [h] = await db.select().from(aiFlowCredentials).where(eq(aiFlowCredentials.id, id));
   if (!h) throw new LoiBiMat("KHONG_CO", `không có bí mật '${id}'`);
-  return { giaTri: giaiMa(id, h, env), loai: h.loai as LoaiBiMat };
+  return { giaTri: giaiMa(id, h, env), loai: h.loai as LoaiBiMat, hostChoPhep: h.hostChoPhep ?? [] };
 }
 
 /** Mã lại mọi hàng chưa ở khoá hiện hành (sau khi xoay khoá). Trả số hàng đã chuyển. */

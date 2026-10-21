@@ -14,6 +14,7 @@ import { getDb } from "../../db/connection";
 import { aiFlowCredentials, aiFlowRuns, aiFlows } from "../../../drizzle/schema";
 import { bienTheBiMat, giaiMaChoChay, lietKeBiMat, taoBiMat, xoaBiMat } from "./biMat";
 import { batDauRun, chayMotMuc, luuPhienBan } from "./dongCo";
+import { BO_KIEM_CHO_QUA, __datBoKiemChuLuongChoTest } from "./boKiemPhamVi";
 import { datFetchLuong } from "./nut/tichHop";
 
 const TT = "t8bm";
@@ -30,7 +31,11 @@ const BIEN_THE = [...bienTheBiMat(TOKEN, "token"), ...bienTheBiMat(TAI_KHOAN, "t
 const giuEnv = { k: process.env.AI_FLOW_KHOA_BI_MAT, h: process.env.AI_FLOW_HTTP_HOST_CHO_PHEP, pb: process.env.AI_FLOW_KHOA_BI_MAT_PHIEN_BAN };
 const nhan: { url: string; headers: Record<string, string> }[] = [];
 let cheDoDich: "vong-lai" | "nem" = "vong-lai";
-let fetchCu: typeof fetch;
+let fetchCu: typeof fetch// Lưới này kiểm bí mật / luồng con qua động cơ, KHÔNG phải phạm vi ⇒ cho-qua-hết; phạm vi thật: flowPhamViLuong.db.test.ts
+beforeAll(() => __datBoKiemChuLuongChoTest(async () => BO_KIEM_CHO_QUA));
+afterAll(() => __datBoKiemChuLuongChoTest(null));
+
+;
 const batDuoc: string[] = [];
 const spies: { mockRestore(): void }[] = [];
 
@@ -53,9 +58,9 @@ beforeAll(async () => {
       return (goc as (...x: unknown[]) => boolean)(c, ...r);
     }) as never));
   }
-  await taoBiMat({ id: `${TT}-tok`, ten: "token ERP", loai: "token", giaTri: TOKEN }, null);
-  await taoBiMat({ id: `${TT}-tk`, ten: "tài khoản MES", loai: "tai-khoan", giaTri: TAI_KHOAN }, null);
-  await taoBiMat({ id: `${TT}-key`, ten: "khoá API", loai: "token", giaTri: API_KEY }, null);
+  await taoBiMat({ id: `${TT}-tok`, ten: "token ERP", loai: "token", giaTri: TOKEN, hostChoPhep: ["dich.gia"] }, null);
+  await taoBiMat({ id: `${TT}-tk`, ten: "tài khoản MES", loai: "tai-khoan", giaTri: TAI_KHOAN, hostChoPhep: ["dich.gia"] }, null);
+  await taoBiMat({ id: `${TT}-key`, ten: "khoá API", loai: "token", giaTri: API_KEY, hostChoPhep: ["dich.gia"] }, null);
 });
 
 afterAll(async () => {

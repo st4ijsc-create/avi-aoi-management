@@ -231,7 +231,7 @@ export async function goiToolMcp(ten: string, args: Record<string, unknown>): Pr
     // Cùng cổng danh tính fail-closed như mọi tool; điều kiện công bố được kiểm LẠI lúc gọi (`goiToolLuongMcp`).
     const dtL = await layDanhTinh();
     if (!dtL.ok) return { chu: `Chưa xác định được danh tính nên KHÔNG chạy gì cả.\n${dtL.loi}`, loi: true };
-    const luong = await (await import("../flow/kichHoat/mcp")).goiToolLuongMcp(ten, args);
+    const luong = await (await import("../flow/kichHoat/mcp")).goiToolLuongMcp(ten, args, { userId: dtL.danhTinh.userId, role: dtL.danhTinh.role });
     return luong ?? { chu: `Không có tool "${ten}".`, loi: true };
   }
 
@@ -304,7 +304,7 @@ async function toolLuongCongBo(): Promise<Array<{ name: string; description: str
   try {
     const dt = await layDanhTinh();
     if (!dt.ok) return [];
-    const ds = await (await import("../flow/kichHoat/mcp")).lietKeToolLuongMcp();
+    const ds = await (await import("../flow/kichHoat/mcp")).lietKeToolLuongMcp({ userId: dt.danhTinh.userId, role: dt.danhTinh.role });
     const tinh = new Set(SO_TOOL_MCP.map((m) => m.ten));
     return ds.filter((t) => !tinh.has(t.name)).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }));
   } catch (e) {

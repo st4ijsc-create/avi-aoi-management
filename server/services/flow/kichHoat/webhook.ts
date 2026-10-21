@@ -66,6 +66,25 @@ export async function coTokenWebhook(flowId: string): Promise<boolean> {
   return r.length > 0;
 }
 
+/** Token đúng với luồng (so thời gian hằng, băm giả khi luồng không có token)? Dùng CHUNG cho kiểm-trước-thân và `xuLyWebhook`. */
+async function tokenKhop(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, flowId: string, nodeId: string, token: unknown): Promise<boolean> {
+  const hopLeId = RE_ID.test(flowId) && RE_ID.test(nodeId);
+  const [hang] = hopLeId ? await db.select({ h: aiFlowWebhooks.tokenHash }).from(aiFlowWebhooks).where(eq(aiFlowWebhooks.flowId, flowId)) : [];
+  const bamDung = Buffer.from(hang?.h ?? BAM_GIA, "hex");
+  const bamGui = Buffer.from(bamToken(typeof token === "string" ? token : ""), "hex");
+  return timingSafeEqual(bamDung, bamGui) && !!hang && typeof token === "string" && token.length > 0;
+}
+
+/**
+ * ★ Đợt 9 (L3) — kiểm TOKEN TRƯỚC KHI đọc/parse thân: tuyến gọi hàm này ở một middleware đứng TRƯỚC bộ đọc JSON, nên kẻ không có token không
+ * bắt máy chủ đọc + parse tới 256 KB mỗi yêu cầu. `xuLyWebhook` vẫn kiểm lại (phòng thủ nhiều lớp; token có thể xoay giữa chừng).
+ */
+export async function kiemTokenTruocThan(y: { flowId: string; nodeId: string; token: unknown }): Promise<{ ok: true } | { ok: false; ma: 401 | 503 }> {
+  const db = await getDb();
+  if (!db) return { ok: false, ma: 503 };
+  return (await tokenKhop(db, y.flowId, y.nodeId, y.token)) ? { ok: true } : { ok: false, ma: 401 };
+}
+
 export type KetQuaWebhook =
   | { ma: 202; runId: string; trung: boolean }
   | { ma: 400 | 401 | 404 | 409 | 413 | 429 | 503; code: string; thongDiep: string };
@@ -76,12 +95,7 @@ const RE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 export async function xuLyWebhook(y: { flowId: string; nodeId: string; token: unknown; than: unknown; kichThuoc?: number; idemKey?: unknown }): Promise<KetQuaWebhook> {
   const db = await getDb();
   if (!db) return { ma: 503, code: "DB_UNAVAILABLE", thongDiep: "không có kết nối CSDL" };
-  const hopLeId = RE_ID.test(y.flowId) && RE_ID.test(y.nodeId);
-  const [hang] = hopLeId ? await db.select({ h: aiFlowWebhooks.tokenHash }).from(aiFlowWebhooks).where(eq(aiFlowWebhooks.flowId, y.flowId)) : [];
-  const bamDung = Buffer.from(hang?.h ?? BAM_GIA, "hex");
-  const bamGui = Buffer.from(bamToken(typeof y.token === "string" ? y.token : ""), "hex");
-  const khop = timingSafeEqual(bamDung, bamGui) && !!hang && typeof y.token === "string" && y.token.length > 0;
-  if (!khop) return { ma: 401, code: "AUTH_REQUIRED", thongDiep: "token webhook sai hoặc thiếu" };
+  if (!(await tokenKhop(db, y.flowId, y.nodeId, y.token))) return { ma: 401, code: "AUTH_REQUIRED", thongDiep: "token webhook sai hoặc thiếu" };
 
   const [f] = await db.select().from(aiFlows).where(eq(aiFlows.id, y.flowId));
   if (!f?.enabled || f.activeVersion == null) return { ma: 409, code: "FEATURE_DISABLED", thongDiep: "luồng đang tắt" };

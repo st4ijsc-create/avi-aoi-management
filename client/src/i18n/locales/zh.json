@@ -4043,7 +4043,8 @@
       "flowBiMatTao": "创建 AI 流程密钥",
       "flowBiMatXoa": "删除 AI 流程密钥",
       "flowBiMatXem": "查看 AI 流程密钥列表",
-      "flowTaoTuMoTa": "根据描述创建 AI 流程草稿"
+      "flowTaoTuMoTa": "根据描述创建 AI 流程草稿",
+      "flowChayThu": "试运行 AI 流程的一个节点"
     },
     "field": {
       "holderUserId": "密钥的发放对象（必须是现有的在职用户）",
@@ -4286,7 +4287,8 @@
       "selfApproveProgramVersion": "批准自己的程序版本",
       "selfApproveSafetyPlcConfig": "对自己创建或修改的安全PLC配置作出决定",
       "secondApproveOwnSafetyPlcConfig": "对您已作出首次批准的安全PLC配置进行第二次批准（需要两名不同的管理员）",
-      "flowKichHoatHangCao": "启用对外写入或涉及 OT 的流程（仅管理员）"
+      "flowKichHoatHangCao": "启用对外写入或涉及 OT 的流程（仅管理员）",
+      "flowPhamVi": "按工厂使用流程/密钥"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
@@ -4437,7 +4439,23 @@
       "alreadyResolved": "该项已被处理（他人已处理，或已有结果）。请刷新列表。",
       "edgeControlUnavailable": "数据库中没有边缘控制结构（未应用迁移 0374）——未执行任何操作。",
       "factoryScopeUnavailable": "无法读取您的工厂范围——为安全起见已拒绝。请稍后重试。",
-      "lateResultNotReviewable": "无法记录对该迟到结果的审阅（用户已停用、备注过短，或这不是迟到结果）。"
+      "lateResultNotReviewable": "无法记录对该迟到结果的审阅（用户已停用、备注过短，或这不是迟到结果）。",
+      "flowKhongTonTaiHoacNgoaiPhamVi": "该项不存在，或不属于您所在的工厂。",
+      "flowCanChonNhaMay": "您属于多个工厂 — 请为该项选择一个工厂。",
+      "flowChuaGanNhaMay": "您的账户尚未分配任何工厂 — 请联系管理员分配。",
+      "flowNhaMayNgoaiPhamVi": "所选工厂不在您的权限范围内。",
+      "flowIdDaDung": "该 ID 已被使用 — 请换一个 ID。",
+      "flowChiAdminChayTay": "{{hang}} 级流程只有管理员可以手动运行。",
+      "flowChiAdminBat": "{{hang}} 级流程只有管理员可以启用。",
+      "flowOtChiBatQuaBatLuongOt": "OT 级流程只能由管理员（需新的 2FA 验证码）通过 OT 专用操作启用。",
+      "flowOtPhaiBatTruoc": "OT 级流程必须先由管理员（需 2FA 验证码）启用才能运行。",
+      "flowBiMatCanHost": "密钥必须声明允许发送到的主机列表。",
+      "flowKhongBatDuocThamChieu": "节点 {{nodeId}} 引用的资源（设备或 FOE 工作流）不存在，或不属于您所在的工厂。",
+      "flowKhongCoPhienBan": "没有版本 {{version}}。",
+      "flowChuaCoPhienBan": "该流程还没有任何版本。",
+      "flowDaTraLoi": "此步骤已被回答，或本次运行已结束。",
+      "flowKhongCoBuocChoDuyet": "这里没有等待审批的步骤。",
+      "flowChiTietMayChu": "{{chiTiet}}"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -23018,7 +23036,13 @@
       "capNhat": "更新时间",
       "pbHoatDong": "活动 v{{v}}",
       "pbMoiNhat": "最新 v{{v}}",
-      "chuaCo": "未启用"
+      "chuaCo": "未启用",
+      "nhaMay": "流程所属工厂",
+      "chonNhaMay": "— 选择工厂 —",
+      "nhaMayToanHeThong": "全系统（仅管理员可用）",
+      "nhaMayCanChon": "您属于多个工厂 — 请为此流程选择一个。只有该工厂的人员可以查看和使用。",
+      "nhaMayGoiYAdmin": "留空 = 全系统流程：仅管理员可查看和使用。",
+      "chuaGanNhaMay": "您的账户尚未分配任何工厂，因此暂时无法创建流程 — 请联系管理员为您分配工厂。"
     },
     "biMat": {
       "tieuDe": "流程密钥",
@@ -23040,7 +23064,15 @@
         "token": "令牌",
         "tai-khoan": "账户（用户:密码）",
         "khac": "其他"
-      }
+      },
+      "host": "允许的主机",
+      "hostChuaKhai": "未声明 — 暂不可用",
+      "suaHost": "编辑",
+      "suaHostTieuDe": "密钥 {{id}} 的允许主机",
+      "hostGoiY": "以逗号分隔的主机名（不含协议、端口或通配符）。密钥只会发送到这些主机。",
+      "luuHost": "保存主机",
+      "daLuuHost": "主机列表已保存",
+      "nhaMay": "工厂"
     },
     "sua": {
       "quayLai": "返回流程列表",
@@ -23166,7 +23198,18 @@
       "lanLanThu": "第 {{lan}} 次 · 尝试 {{lanThu}}",
       "dauVao": "输入",
       "dauRa": "输出",
-      "suKien": "事件（{{n}}）"
+      "suKien": "事件（{{n}}）",
+      "model": "实际使用的模型",
+      "modelMacDinh": "（服务器默认）",
+      "duPhong": "回退",
+      "duPhongKheBan": "回退 — 重型槽位正被其他模型占用",
+      "nguon": "选择来源：{{nguon}}{{phamVi}}",
+      "phamVi": " · 范围 {{pv}}",
+      "chuGiai": {
+        "BI_MAT_CHUA_KHAI_HOST": "该密钥尚未声明允许的主机 — 由管理员在 密钥 → 主机 中声明。参见",
+        "CHU_LUOT_KHONG_XAC_DINH": "无法确定运行所有者（已被锁定、失去写权限或不存在）— 请用仍有权限的账户重新启用该流程。参见",
+        "DICH_NOI_BO": "目标是内部地址 — 仅当白名单明确列出 host:端口 时才可调用。参见"
+      }
     },
     "duyet": {
       "tieuDe": "流程审批箱",

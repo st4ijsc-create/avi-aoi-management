@@ -207,3 +207,37 @@ export function docItemsNhap(chu: string): { ok: true; items: { json: Record<str
   }
   return { ok: true, items };
 }
+
+/** Đợt 9 — vết model của một bước (sự kiện `buoc.model` của `flow.dongThoiGian`): các lần gọi AI trong bước `nodeId#lan`. */
+export interface VetModelClient {
+  vaiTro: string;
+  model: string | null;
+  nguon: string;
+  phamVi: string | null;
+  duPhong: boolean;
+  kheBan: boolean;
+  lyDo: string[];
+}
+
+export function vetModelCuaBuoc(suKien: readonly { kind: string; payload: unknown }[], nodeId: string, lan: number): VetModelClient[] {
+  const ra: VetModelClient[] = [];
+  for (const e of suKien) {
+    if (e.kind !== "buoc.model") continue;
+    const p = e.payload as (Partial<VetModelClient> & { nodeId?: string; lan?: number }) | null;
+    if (!p || p.nodeId !== nodeId || p.lan !== lan) continue;
+    ra.push({
+      vaiTro: String(p.vaiTro ?? ""), model: typeof p.model === "string" ? p.model : null, nguon: String(p.nguon ?? ""), phamVi: typeof p.phamVi === "string" ? p.phamVi : null,
+      duPhong: p.duPhong === true, kheBan: p.kheBan === true, lyDo: Array.isArray(p.lyDo) ? p.lyDo.map(String).slice(0, 8) : [],
+    });
+  }
+  return ra;
+}
+
+/** Mã lỗi node ỔN ĐỊNH (do máy chủ đóng dấu vào `error.ma`) có chú giải ở UI — nhận diện theo MÃ, không theo chuỗi tiếng Việt. */
+export const MA_LOI_CO_CHU_GIAI = ["BI_MAT_CHUA_KHAI_HOST", "CHU_LUOT_KHONG_XAC_DINH", "DICH_NOI_BO"] as const;
+export type MaLoiCoChuGiai = (typeof MA_LOI_CO_CHU_GIAI)[number];
+
+export function maLoiChuGiai(loi: unknown): MaLoiCoChuGiai | null {
+  const ma = loi && typeof loi === "object" ? (loi as { ma?: unknown }).ma : null;
+  return typeof ma === "string" && (MA_LOI_CO_CHU_GIAI as readonly string[]).includes(ma) ? (ma as MaLoiCoChuGiai) : null;
+}

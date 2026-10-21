@@ -637,6 +637,28 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
 - (1) định tuyến: tầng 3 theo tác vụ — bộ mù 3 (agent viết, chưa ai nhìn) 98 → 107/120. (4) MATIEC đúng bản bench + SCL:
   thước đạt (tập OpenPLC 22 bài); ★ lỗi runtime MATIEC `__normalize_timespec` (docs/superpowers/audits/2026-10-21-matiec-loi-normalize-timespec.md).
 
+**Bảo mật Luồng 2026-10-21** (quét bảo mật của phiên kỹ thuật + audit chỉ-đọc của kiem-dinh; vận hành: `docs/AI_FLOW_SECURITY_OPERATIONS.md`;
+mig 0410–0412 đã áp dev). Mỗi lỗ: test hỏng trước, đột biến bỏ kiểm ⇒ đỏ, commit riêng.
+- **IDOR `flow.chayThuNut`** (đọc telemetry máy ngoài phạm vi qua `ot.doc-tag`): máy phải TỒN TẠI và thuộc phạm vi người gọi
+  (`ctx`); ngoài phạm vi ≡ không tồn tại (cùng NOT_FOUND). Cổng ĐÓNG theo mặc định (node tham chiếu tài nguyên mà không có bộ kiểm ⇒ chỉ xem
+  trước); `ot.de-xuat-luong` chỉ xem trước. Lách bằng kiểu (`may: "999"` chuỗi qua cổng rồi `Number()` ở node) vá bằng MỘT hàm
+  `chuanHoaIdMay` + kiểm BÊN TRONG node (giá trị kiểm = giá trị dùng).
+- **Đường chạy THẬT cũng không có phạm vi** → mig **0410** `ai_flow_runs.chuLuong`: chạy tay = người bấm; lịch/webhook/MCP = NGƯỜI BẬT
+  (`approvedBy`; dữ liệu cũ `createdBy`); luồng con kế thừa; phạm vi tính lại LÚC CHẠY từ người dùng hiện tại (khoá/xoá/hạ vai ⇒ từ chối);
+  không có chủ ⇒ từ chối (đóng theo mặc định). Lúc BẬT kiểm máy/FOE viết thẳng so với phạm vi người bật; FOE workflow theo các máy của bước.
+- **Phạm vi nhà máy của chính luồng/bí mật** → mig **0411** `ai_flows.factoryId` + `ai_flow_credentials.factoryId` (NULL = toàn hệ thống,
+  chỉ admin): MỌI thủ tục `flow.*` qua bộ kiểm một chỗ (`phamViLuong.ts`), `luu` vào id nhà máy khác ⇒ CONFLICT, danh sách lọc, tham chiếu
+  bí mật/luồng con kiểm lúc lưu + lúc chạy. Census AST `flowRouterPhamViCensus` canh mọi thủ tục. Backfill có báo cáo.
+- **M2 host của bí mật** → mig **0412** `ai_flow_credentials.hostChoPhep text[]` (mặc định rỗng = chưa dùng được); `flow.biMatDatHost`.
+- **M3 SSRF/rebinding**: phân giải DNS một lần, chặn địa chỉ không công cộng (trừ `host:cổng` rõ ràng), kết nối ghim IP đã kiểm, không theo
+  3xx, thân đọc dạng luồng cắt 1 MB.
+- **M1 MCP** chạy luồng: đòi vai ghi (đọc lại CSDL) + MOD_AI + phạm vi nhà máy; mô tả node là dữ liệu (cắt/làm sạch/đánh dấu).
+- **H1 ghim phiên bản luồng con**, **M4 trần đổi khe `/v1`** (kiem-dinh); **L1** trần độ dài kết quả chuỗi biểu thức (1 MB);
+  **L3** chạy tay hạng ≥ ngoai-ghi chỉ admin + webhook kiểm token trước khi đọc thân. H2 (thi hành `vaiTroDuyet` + tách người): kiem-dinh.
+- Bài học quy trình: (i) hai lần mất dấu `\` trong regex khi sinh mã bằng script (một lần thành `.` ăn mọi ký tự trong `RE_HOST_BI_MAT`) — chỉ
+  sửa regex bằng công cụ Edit, và mỗi regex an ninh phải có test bảng giá trị xấu; (ii) e2e chấp nhận cả hai kết cục = mù (ca OT lưu `may` kiểu
+  chuỗi lọt qua một lượt vì thế); (iii) test dùng "người dùng đầu tiên" của CSDL dùng chung giẫm nhau khi chạy song song — dựng người dùng riêng.
+
 ## 7. Rủi ro và cách giảm
 
 | Rủi ro | Giảm |

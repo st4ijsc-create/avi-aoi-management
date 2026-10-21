@@ -102,6 +102,7 @@ export class LoiCongOt extends Error {
   constructor(
     public readonly muc: number,
     message: string,
+    public readonly ma?: string,
   ) {
     super(message);
     this.name = "LoiCongOt";

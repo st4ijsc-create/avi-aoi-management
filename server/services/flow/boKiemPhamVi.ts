@@ -15,6 +15,7 @@ import type { FlowDefinition } from "../../../shared/flow/model";
 import type { BoKiemPhamVi } from "./dangKyNut";
 import { chuanHoaIdMay } from "./idTaiNguyen";
 import { docLuongFoeHienHanh, luongFoeTrongPhamVi } from "./ot/congOtLuong";
+import { biMatTrongPhamVi, luongTrongPhamVi } from "./phamViLuong";
 
 /** Vai KHÔNG được ghi (sàn của `writeProcedure`) — chủ lượt mang vai này ⇒ mất quyền ⇒ từ chối. */
 const VAI_CHI_DOC: ReadonlySet<string> = new Set(["viewer", "user"]);
@@ -28,8 +29,13 @@ export function boKiemPhamVi(pv: PhamViNguoiXem): BoKiemPhamVi {
       const [m] = await db.select({ id: machines.id }).from(machines).where(eq(machines.id, id)).limit(1);
       return !!m && (await trongPhamVi("machine", id, pv));
     },
+    biMat: (id) => biMatTrongPhamVi(pv, id),
+    luong: (flowId) => luongTrongPhamVi(pv, flowId),
   };
 }
+
+/** Chỉ lưới: bộ kiểm cho-qua-hết (test động cơ không liên quan phạm vi, vd bí mật / luồng con / cổng OT với máy tuỳ ý). */
+export const BO_KIEM_CHO_QUA: BoKiemPhamVi = { may: async () => true, biMat: async () => true, luong: async () => true };
 
 let ghiDeChoTest: ((userId: number | null | undefined) => Promise<BoKiemPhamVi | null>) | null = null;
 /** Chỉ lưới: thay cách dựng bộ kiểm cho chủ lượt (vd. cho phép mọi máy khi test cổng OT). `null` ⇒ về mặc định. */
@@ -53,20 +59,25 @@ export async function boKiemChoChuLuong(userId: number | null | undefined): Prom
  * BẬT luồng. Biểu thức động để kiểm lúc chạy. Trả danh sách lỗi (rỗng ⇒ ổn); thông điệp không phân biệt "ngoài phạm vi" / "không có".
  */
 export async function kiemThamChieuTinh(def: FlowDefinition, boKiem: BoKiemPhamVi): Promise<string[]> {
-  const loi: string[] = [];
+  return (await thamChieuTinhNgoai(def, boKiem)).map((x) => x.thongDiep);
+}
+
+/** Như `kiemThamChieuTinh` nhưng trả cả id node vi phạm (cho thông điệp i18n mang `nodeId`). */
+export async function thamChieuTinhNgoai(def: FlowDefinition, boKiem: BoKiemPhamVi): Promise<{ nodeId: string; thongDiep: string }[]> {
+  const loi: { nodeId: string; thongDiep: string }[] = [];
   for (const n of def.nodes) {
     const t = n.parameters ?? {};
     // id viết thẳng (số hoặc chuỗi số — cùng chuẩn hoá như node); biểu thức `{{ … }}` để kiểm lúc chạy.
     const tinh = (v: unknown): number | null => (typeof v === "string" && v.includes("{{") ? null : chuanHoaIdMay(v));
     const may = tinh(t.may);
     if ((n.type === "ot.doc-tag" || n.type === "ot.de-xuat-lenh") && may !== null && !(await boKiem.may(may))) {
-      loi.push(`node "${n.id}" tham chiếu máy ngoài phạm vi của bạn hoặc không tồn tại`);
+      loi.push({ nodeId: n.id, thongDiep: `node "${n.id}" tham chiếu máy ngoài phạm vi của bạn hoặc không tồn tại` });
     }
     const wid = tinh(t.workflowId);
     const ver = tinh(t.version);
     if (n.type === "ot.de-xuat-luong" && wid !== null && ver !== null) {
       const wf = await docLuongFoeHienHanh(wid, ver);
-      if (!wf || !(await luongFoeTrongPhamVi(wf.definition, boKiem))) loi.push(`node "${n.id}" tham chiếu FOE workflow ngoài phạm vi của bạn hoặc không tồn tại`);
+      if (!wf || !(await luongFoeTrongPhamVi(wf.definition, boKiem))) loi.push({ nodeId: n.id, thongDiep: `node "${n.id}" tham chiếu FOE workflow ngoài phạm vi của bạn hoặc không tồn tại` });
     }
   }
   return loi;

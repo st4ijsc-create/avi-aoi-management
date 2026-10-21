@@ -159,6 +159,7 @@ describe("chạy THẬT — phạm vi theo CHỦ LƯỢT (động cơ thật, DB
     await chayHet();
     expect((await trangThai(r)).status).toBe("loi");
     expect(JSON.stringify((await buocD(r)).error)).toMatch(/Không xác định được người chạy/);
+    expect((await buocD(r)).error).toMatchObject({ ma: "CHU_LUOT_KHONG_XAC_DINH" }); // mã ỔN ĐỊNH cho chú giải UI
     expect(goiNguon).toEqual([]);
   });
 
