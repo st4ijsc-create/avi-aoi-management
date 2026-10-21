@@ -463,17 +463,24 @@ describe("Task 3b — bit VRAM là bit RIÊNG (bất biến cấu trúc trên to
     );
   });
 
-  it("bit CŨ vẫn nguyên vẹn cho 8 thủ tục kia — task này THU HẸP VRAM, không đụng phần còn lại", () => {
+  it("bit CŨ vẫn nguyên vẹn cho 10 thủ tục kia — task này THU HẸP VRAM, không đụng phần còn lại", () => {
+    // Mười điểm = tám cũ + hai điểm XOÁ/NGHỈ HƯU thêm ở doc 81 Đợt 8–12 (đều KHÔNG phải lệnh VRAM, đều
+    // đúng ngữ nghĩa "huỷ/xoá một thực thể điều khiển" của bit cũ; mỗi dòng dưới đây có lý do):
+    //   · edgeRuntimeRouter ×2: deleteNode (cũ) + retireNode (Đợt 12 task O — nghỉ hưu node edge, adminProcedure
+    //     + canDelete "never a widening").
+    //   · safetyRouter ×1: deleteSafetyPlcConfig (Đợt 8 task N fix 1 — xoá cấu hình safety-PLC, có kiểm toán).
     const cu = diem.filter((d) => d.module === "machine_control" && d.action === "canDelete");
     expect(cu.map((d) => d.file).sort()).toEqual(
       [
         "server/routers/deviceAdapterRouter.ts",
         "server/routers/deviceAdapterRouter.ts",
         "server/routers/edgeRuntimeRouter.ts",
+        "server/routers/edgeRuntimeRouter.ts",
         "server/routers/hotFolderRouter.ts",
         "server/routers/orchestrationRouter.ts",
         "server/routers/programmingRouter.ts",
         "server/routers/programmingRouter.ts",
+        "server/routers/safetyRouter.ts",
         "server/routers/unsMappingRouter.ts",
       ].sort(),
     );

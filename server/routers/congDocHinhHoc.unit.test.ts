@@ -74,8 +74,13 @@ function quetThuTuc(): Array<{ ten: string; cong: string }> {
 
 const THU_TUC = quetThuTuc();
 
-/** Ba thủ tục đọc hình học dùng CHUNG giữa `/twin` và `/twin-studio`. */
-const DOC_MO = ["danhSachToaNha", "chiTietToaNha", "canhThietKe"];
+/**
+ * Bốn thủ tục đọc hình học dùng CHUNG giữa `/twin` và `/twin-studio`.
+ * `toaNhaTangNhieuNhaMay` là thủ tục THỨ TƯ, thêm ở Task 19 (cảnh phạm vi Tập đoàn): một query
+ * chỉ-đọc gộp toà+tầng của tập nhà máy, đứng trên cùng cổng `quyenDocHinhHoc` và lọc `phamViCua(ctx)`
+ * (phép kiểm "PHẠM VI TENANT" bên dưới duyệt từng tên trong danh sách này, kể cả thủ tục mới).
+ */
+const DOC_MO = ["danhSachToaNha", "chiTietToaNha", "canhThietKe", "toaNhaTangNhieuNhaMay"];
 
 describe("H2 — thiết bị đo tự canh mình TRƯỚC", () => {
   it("bộ quét tìm được một số lượng thủ tục HỢP LÝ, không phải 0", () => {
@@ -125,7 +130,7 @@ describe("H2 — cổng ĐỌC hình học mở đúng bốn module, không hơn
 });
 
 describe("H2 — nới ĐỌC KHÔNG được nới GHI", () => {
-  it("★★★ ĐÚNG ba thủ tục đứng trên `quyenDocHinhHoc`, không phải bốn", () => {
+  it("★★★ ĐÚNG bốn thủ tục (DOC_MO) đứng trên `quyenDocHinhHoc` — đều là query chỉ-đọc", () => {
     const mo = THU_TUC.filter((x) => x.cong === "quyenDocHinhHoc").map((x) => x.ten);
     expect(mo.sort()).toEqual([...DOC_MO].sort());
   });
@@ -149,7 +154,7 @@ describe("H2 — nới ĐỌC KHÔNG được nới GHI", () => {
     }
   });
 
-  it("PHẠM VI TENANT không đi qua cổng quyền — ba thủ tục mở vẫn lọc `phamViCua`", () => {
+  it("PHẠM VI TENANT không đi qua cổng quyền — bốn thủ tục mở vẫn lọc `phamViCua`", () => {
     // ⚠ Đây là điều kiện mà brief đòi chứng minh trước khi được nới quyền: mở
     //   module quyền KHÔNG cho ai thấy thêm một nhà máy nào, vì trục tenant là
     //   `trongPhamVi(..., phamViCua(ctx))` ở tầng db — hoàn toàn rời với module.
