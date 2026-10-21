@@ -127,6 +127,16 @@ export interface InferenceOutcome {
    * `ai_llm_audit.model` — để biết lượt nào chạy 4B vì khe nặng bận (`khongDoiKhe`).
    */
   model?: string | null;
+  /**
+   * ★ Đợt 9 (mig 0406) — mã yêu cầu (vd `chatcmpl-…`) ghi vào `ai_gateway_metrics.requestId`; hàng chính và mọi lượt phụ
+   * (`recordPhu`) của cùng yêu cầu mang CÙNG mã. Vắng ⇒ NULL (mọi đường cũ không đổi).
+   */
+  requestId?: string | null;
+}
+
+/** ★ Đợt 9 — một LƯỢT PHỤ (model gọi thêm trong CÙNG yêu cầu): bắt buộc nêu loại (`ai_gateway_metrics.luotPhu`). */
+export interface InferenceOutcomePhu extends Omit<InferenceOutcome, "auditSnippet" | "responseText"> {
+  luotPhu: string;
 }
 
 /**
@@ -139,6 +149,12 @@ export interface GatewayPlan {
   abVariant: "A" | "B" | null;
   /** Record token/latency/outcome for this request (idempotent — only the first call counts). */
   record: (o: InferenceOutcome) => void;
+  /**
+   * ★ Đợt 9 — ghi MỘT hàng đo cho một LƯỢT PHỤ của cùng yêu cầu (vd lượt sửa của vòng kiểm biên dịch ST): KHÔNG idempotent
+   * (mỗi lượt phụ một hàng), KHÔNG audit (bản ghi audit thuộc lượt chính — `record`), cùng tier/task/A-B với lượt chính.
+   * Tuỳ chọn trên kiểu để các giả lập `GatewayPlan` cũ vẫn khớp; `planInference` LUÔN cấp.
+   */
+  recordPhu?: (o: InferenceOutcomePhu) => void;
   /**
    * doc69 G2-2 — sanitized version of the request's `text` (secrets/PII redacted with a stable
    * placeholder; identical to the input when AI_SAFETY_ENABLED is off or nothing matched).
@@ -576,6 +592,9 @@ interface MetricRow {
   reasoningTokens: number | null;
   thinking: boolean | null;
   samplingProfile: string | null;
+  /** ★ Đợt 9 (mig 0406) — xem `InferenceOutcome.requestId` / `InferenceOutcomePhu.luotPhu`. */
+  requestId: string | null;
+  luotPhu: string | null;
 }
 
 const buffer: MetricRow[] = [];
@@ -645,6 +664,9 @@ export async function flush(): Promise<void> {
         reasoningTokens: r.reasoningTokens,
         thinking: r.thinking,
         samplingProfile: r.samplingProfile,
+        // ★ Đợt 9 — hai cột nullable (migration 0406).
+        requestId: r.requestId,
+        luotPhu: r.luotPhu,
       })),
     );
   } catch (err) {
@@ -911,9 +933,11 @@ export async function planInference(req: GatewayRequest): Promise<GatewayPlan> {
     });
   };
 
+  const recordPhu = (o: InferenceOutcomePhu) => enqueue(toRow(req, decision, abVariant, o, o.luotPhu));
+
   const sanitizeOutput = (text: string): string => safeApplyOutput(text).text;
 
-  return { decision, abVariant, record, safeText: safety.text, safetyFlags: safety.flags, sanitizeOutput };
+  return { decision, abVariant, record, recordPhu, safeText: safety.text, safetyFlags: safety.flags, sanitizeOutput };
 }
 
 /**
@@ -974,6 +998,7 @@ function toRow(
   decision: RouteDecision,
   abVariant: "A" | "B" | null,
   o: InferenceOutcome,
+  luotPhu: string | null = null,
 ): MetricRow {
   return {
     tier: decision.tier,
@@ -994,6 +1019,9 @@ function toRow(
         : null,
     thinking: typeof o.thinking === "boolean" ? o.thinking : null,
     samplingProfile: typeof o.samplingProfile === "string" && o.samplingProfile ? o.samplingProfile.slice(0, 24) : null,
+    requestId: typeof o.requestId === "string" && o.requestId ? o.requestId.slice(0, 64) : null,
+    // CHECK của 0406 là hình dạng `^[a-z0-9-]{1,32}$` — chuẩn hoá ở đây để một nhãn sai không làm hỏng CẢ lô xả.
+    luotPhu: luotPhu ? luotPhu.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 32) || null : null,
   };
 }
 
