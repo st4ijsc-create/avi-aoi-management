@@ -20,11 +20,15 @@ const nut = (id: string, type: string, parameters: Record<string, unknown> = {})
 const noi = (a: string, pa: string, b: string) => ({ from: { node: a, port: pa }, to: { node: b, port: "main" } });
 
 let uid = 0;
+// H2 (2026-10-21): người duyệt phải KHÁC người bật / người chạy tay lượt ⇒ các ca duyệt dùng người THỨ HAI / THỨ BA.
+let uid2 = 0;
+let uid3 = 0;
 const goi = (role: string) => flowRouter.createCaller({ user: { id: uid, role } } as never);
+const goiAs = (role: string, id: number) => flowRouter.createCaller({ user: { id, role } } as never);
 
 beforeAll(async () => {
-  const [u] = (await (await getDb())!.execute(sql`SELECT id FROM users ORDER BY id LIMIT 1`)) as unknown as { id: number }[];
-  uid = u.id;
+  const us = (await (await getDb())!.execute(sql`SELECT id FROM users ORDER BY id LIMIT 3`)) as unknown as { id: number }[];
+  [uid, uid2, uid3] = [us[0].id, us[1].id, us[2].id];
 });
 
 afterAll(async () => {
@@ -87,9 +91,9 @@ describe("flowRouter (Đợt 8.1, DB)", () => {
     expect(cho[0]).toMatchObject({ nodeId: "d", tieuDe: "Duyệt RCA-1", flowId: `${TT}-duyet`, soItem: 1 });
 
     await expect(goi("viewer").duyet({ runId, nodeId: "d", dongY: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(await goi("supervisor").duyet({ runId, nodeId: "d", dongY: true, lyDo: "đủ" })).toEqual({ ok: true, cong: "dong-y" });
-    await expect(goi("supervisor").duyet({ runId, nodeId: "d", dongY: false })).rejects.toMatchObject({ code: "CONFLICT" });
-    await expect(goi("supervisor").duyet({ runId, nodeId: "khong-co", dongY: true })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(await goiAs("supervisor", uid2).duyet({ runId, nodeId: "d", dongY: true, lyDo: "đủ" })).toEqual({ ok: true, cong: "dong-y" });
+    await expect(goiAs("supervisor", uid2).duyet({ runId, nodeId: "d", dongY: false })).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(goiAs("supervisor", uid2).duyet({ runId, nodeId: "khong-co", dongY: true })).rejects.toMatchObject({ code: "NOT_FOUND" });
     await chayHet();
 
     const dt = await goi("viewer").dongThoiGian({ runId });
@@ -98,7 +102,7 @@ describe("flowRouter (Đợt 8.1, DB)", () => {
     expect(ok.output).toMatchObject({ __catBot: true });
     // CSDL giữ bản ĐẦY ĐỦ (chỉ API cắt): item ra của bước duyệt mang người duyệt = người gọi.
     const [dDb] = (await (await getDb())!.execute(sql`SELECT output FROM ai_flow_steps WHERE "runId" = ${runId} AND "nodeId" = 'd'`)) as unknown as { output: { "dong-y": { json: { duyet: unknown } }[] } }[];
-    expect(dDb.output["dong-y"][0].json.duyet).toEqual({ dongY: true, nguoi: uid, lyDo: "đủ" });
+    expect(dDb.output["dong-y"][0].json.duyet).toEqual({ dongY: true, nguoi: uid2, lyDo: "đủ" });
     expect(dt.suKien.map((e) => e.kind)).toContain("cho.tra-loi");
     const ls = await goi("viewer").lichSuChay({ flowId: `${TT}-duyet`, gioiHan: 5 });
     expect(ls[0]).toMatchObject({ id: runId, status: "xong", triggerKind: "thu-cong" });
@@ -108,8 +112,8 @@ describe("flowRouter (Đợt 8.1, DB)", () => {
     const { runId } = await goi("engineer").chayTay({ flowId: `${TT}-duyet`, items: [{ json: { ma: "RCA-2", x: 1 } }] });
     await chayHet();
     const kq = await Promise.allSettled([
-      goi("supervisor").duyet({ runId, nodeId: "d", dongY: true }),
-      goi("admin").duyet({ runId, nodeId: "d", dongY: false }),
+      goiAs("supervisor", uid2).duyet({ runId, nodeId: "d", dongY: true }),
+      goiAs("admin", uid3).duyet({ runId, nodeId: "d", dongY: false }),
     ]);
     expect(kq.filter((k) => k.status === "fulfilled")).toHaveLength(1);
     const bai = kq.find((k) => k.status === "rejected") as PromiseRejectedResult;

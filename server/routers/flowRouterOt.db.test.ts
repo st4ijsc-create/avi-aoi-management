@@ -33,6 +33,7 @@ const nut = (id: string, type: string, parameters: Record<string, unknown> = {})
 const noi = (a: string, pa: string, b: string) => ({ from: { node: a, port: pa }, to: { node: b, port: "main" } });
 
 let uid = 0;
+let uid2 = 0;
 const goi = (role: string, twoFactorEnabled = true) =>
   flowRouter.createCaller({ user: { id: uid, role, twoFactorEnabled }, sessionToken: `phien-${role}-${twoFactorEnabled}-${Math.random()}` } as never);
 const ma = (e: unknown) => (readAppErrorMeta(e) as { appCode?: string; appParams?: Record<string, unknown> } | null) ?? {};
@@ -48,6 +49,9 @@ const luongThuan = { id: `${TT}-thuan`, name: "thuần", version: 1, nodes: [nut
 beforeAll(async () => {
   const [u] = (await (await getDb())!.execute(sql`SELECT id FROM users ORDER BY id LIMIT 1`)) as unknown as { id: number }[];
   uid = u.id;
+  // H2: người duyệt khác người bật (admin) và người chạy tay (engineer) — hai người đó là `uid`.
+  const [u2] = (await (await getDb())!.execute(sql`SELECT id FROM users ORDER BY id OFFSET 1 LIMIT 1`)) as unknown as { id: number }[];
+  uid2 = u2.id;
 });
 afterEach(() => {
   delete process.env.ACTUATION_STEPUP_2FA;
@@ -127,7 +131,7 @@ describe("★★★ Đợt 8.5 — bật luồng hạng `ot` = admin + 2FA mới
     const cho = (await goi("viewer").danhSachCho()).find((x) => x.runId === runId);
     expect(cho).toMatchObject({ nodeId: "d", vaiTroDuyet: "supervisor" });
     expect(cho!.tieuDe).toMatch(/MÔ PHỎNG/);
-    await goi("supervisor").duyet({ runId, nodeId: "d", dongY: true });
+    await flowRouter.createCaller({ user: { id: uid2, role: "supervisor", twoFactorEnabled: true } } as never).duyet({ runId, nodeId: "d", dongY: true });
     await chayHet();
     const b = (await (await getDb())!.select().from(aiFlowSteps).where(eq(aiFlowSteps.runId, runId))).find((x) => x.nodeId === "ok")!;
     const item = (b.output as { main: { json: Record<string, unknown> }[] }).main[0].json;
