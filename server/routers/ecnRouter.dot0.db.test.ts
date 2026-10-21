@@ -60,6 +60,8 @@ async function mkEcn(opts: {
 describe.skipIf(!DB_URL)("ecnRouter Đợt 0 Task 8 — RBAC-02 · ECN-03 (CAS) · ECN-05 (SoD mở rộng) (CSDL THẬT)", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    // Dọn dư của một lượt trước bị ngắt (userId cố định ⇒ hàng permissions sót làm INSERT dưới đây đỏ) — idempotent như afterAll.
+    await sql`DELETE FROM permissions WHERE "userId" IN ${sql(ALL_USERS)}`;
     await sql`INSERT INTO permissions ("userId", category, "moduleName", "canView", "canCreate")
               VALUES (${U_ENG_VIEW}, 'machine_control', 'machine_control', true, false)`;
     await sql`INSERT INTO permissions ("userId", category, "moduleName", "canView", "canCreate")
