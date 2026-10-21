@@ -23018,7 +23018,12 @@
       "capNhat": "更新时间",
       "pbHoatDong": "活动 v{{v}}",
       "pbMoiNhat": "最新 v{{v}}",
-      "chuaCo": "未启用"
+      "chuaCo": "未启用",
+      "nhaMay": "流程所属工厂",
+      "chonNhaMay": "— 选择工厂 —",
+      "nhaMayToanHeThong": "全系统（仅管理员可用）",
+      "nhaMayCanChon": "您属于多个工厂 — 请为此流程选择一个。只有该工厂的人员可以查看和使用。",
+      "nhaMayGoiYAdmin": "留空 = 全系统流程：仅管理员可查看和使用。"
     },
     "biMat": {
       "tieuDe": "流程密钥",

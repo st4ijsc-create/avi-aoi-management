@@ -22990,7 +22990,12 @@
       "capNhat": "Cập nhật",
       "pbHoatDong": "hoạt động v{{v}}",
       "pbMoiNhat": "mới nhất v{{v}}",
-      "chuaCo": "chưa bật"
+      "chuaCo": "chưa bật",
+      "nhaMay": "Nhà máy của luồng",
+      "chonNhaMay": "— chọn nhà máy —",
+      "nhaMayToanHeThong": "Toàn hệ thống (chỉ quản trị viên dùng được)",
+      "nhaMayCanChon": "Bạn thuộc nhiều nhà máy — chọn nhà máy cho luồng này. Chỉ người thuộc nhà máy đó thấy và dùng luồng.",
+      "nhaMayGoiYAdmin": "Để trống = luồng toàn hệ thống: chỉ quản trị viên thấy và dùng."
     },
     "biMat": {
       "tieuDe": "Bí mật của luồng",

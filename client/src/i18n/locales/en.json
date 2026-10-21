@@ -23016,7 +23016,12 @@
       "capNhat": "Updated",
       "pbHoatDong": "active v{{v}}",
       "pbMoiNhat": "latest v{{v}}",
-      "chuaCo": "not enabled"
+      "chuaCo": "not enabled",
+      "nhaMay": "Flow's factory",
+      "chonNhaMay": "— choose a factory —",
+      "nhaMayToanHeThong": "System-wide (administrators only)",
+      "nhaMayCanChon": "You belong to several factories — pick one for this flow. Only people in that factory can see and use it.",
+      "nhaMayGoiYAdmin": "Empty = system-wide flow: only administrators see and use it."
     },
     "biMat": {
       "tieuDe": "Flow secrets",

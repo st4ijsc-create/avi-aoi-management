@@ -147,6 +147,13 @@ export default function AIFlowsPage() {
   const [moTao, setMoTao] = useState<null | { mau: FlowDefinition | null }>(null);
   const [tenMoi, setTenMoi] = useState("");
   const [mauChon, setMauChon] = useState<string>("");
+  // Đợt 9 — phạm vi nhà máy của luồng MỚI: danh sách nhà máy ĐÃ LỌC theo phạm vi người dùng (`factory.list`).
+  // Admin: tuỳ chọn ("" = toàn hệ thống, chỉ admin dùng); thuộc NHIỀU nhà máy: BẮT BUỘC chọn; đúng một nhà máy: máy chủ tự gán.
+  const dsNhaMay = trpc.factory.list.useQuery(undefined, { enabled: !!moTao });
+  const [nhaMay, setNhaMay] = useState<string>("");
+  const nhaMays = dsNhaMay.data ?? [];
+  const hienChonNhaMay = laAdmin ? nhaMays.length > 0 : nhaMays.length > 1;
+  const canChonNhaMay = !laAdmin && nhaMays.length > 1;
 
   const luu = trpc.flow.luu.useMutation({
     onSuccess: (r) => {
@@ -170,7 +177,11 @@ export default function AIFlowsPage() {
     if (!ten) return;
     const id = idLuongTuTen(ten);
     const m = moTao?.mau ?? null;
-    luu.mutate({ definition: (m ? saoTuMau(m, id, ten) : luongMoi(id, ten)) as unknown as Record<string, unknown> });
+    if (canChonNhaMay && !nhaMay) return;
+    luu.mutate({
+      definition: (m ? saoTuMau(m, id, ten) : luongMoi(id, ten)) as unknown as Record<string, unknown>,
+      ...(hienChonNhaMay && nhaMay ? { factoryId: Number(nhaMay) } : {}),
+    });
   };
 
   const moTuMau = () => {
@@ -302,6 +313,24 @@ export default function AIFlowsPage() {
                 </div>
               </div>
             )}
+            {hienChonNhaMay && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium" htmlFor="chon-nha-may">{t("flowStudio.danhSach.nhaMay")}</label>
+                <select
+                  id="chon-nha-may"
+                  data-testid="chon-nha-may"
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  value={nhaMay}
+                  onChange={(e) => setNhaMay(e.target.value)}
+                >
+                  <option value="">{laAdmin ? t("flowStudio.danhSach.nhaMayToanHeThong") : t("flowStudio.danhSach.chonNhaMay")}</option>
+                  {nhaMays.map((f) => (
+                    <option key={f.id} value={String(f.id)}>{f.name} ({f.code})</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-muted-foreground">{laAdmin ? t("flowStudio.danhSach.nhaMayGoiYAdmin") : t("flowStudio.danhSach.nhaMayCanChon")}</p>
+              </div>
+            )}
             <div className="space-y-1">
               <label className="text-xs font-medium">{t("flowStudio.danhSach.tenLuong")}</label>
               <Input data-testid="ten-luong-moi" value={tenMoi} onChange={(e) => setTenMoi(e.target.value)} onKeyDown={(e) => e.key === "Enter" && taoLuong()} autoFocus />
@@ -309,7 +338,7 @@ export default function AIFlowsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMoTao(null)}>{t("flowStudio.chung.huy")}</Button>
-            <Button data-testid="xac-nhan-tao" disabled={!tenMoi.trim() || luu.isPending} onClick={taoLuong}>
+            <Button data-testid="xac-nhan-tao" disabled={!tenMoi.trim() || luu.isPending || (canChonNhaMay && !nhaMay)} onClick={taoLuong}>
               {luu.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
               {t("flowStudio.danhSach.tao")}
             </Button>
