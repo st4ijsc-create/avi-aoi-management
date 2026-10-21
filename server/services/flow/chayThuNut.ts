@@ -13,7 +13,10 @@
  */
 import { danhGiaThamSo, type ItemLuong } from "../../../shared/flow/bieuThuc";
 import type { NodeInstance } from "../../../shared/flow/model";
-import { layNut, nguCanhItem, type KetQuaChay, type NguCanhChay } from "./dangKyNut";
+import { layNut, nguCanhItem, type BoKiemPhamVi, type KetQuaChay, type NguCanhChay } from "./dangKyNut";
+import { LoiNgoaiPhamVi } from "./idTaiNguyen";
+export { LoiNgoaiPhamVi };
+export type { BoKiemPhamVi };
 
 export const NUT_CHAY_THAT: ReadonlySet<string> = new Set([
   "kich-hoat.thu-cong",
@@ -41,18 +44,7 @@ export const THAM_CHIEU_TAI_NGUYEN: Readonly<Record<string, readonly { tham: str
 /** CHAY nhưng KHÔNG tham chiếu tài nguyên theo id (dữ liệu chỉ đến từ item mẫu + biểu thức) — khai tường minh, census đối chiếu. */
 export const NUT_KHONG_THAM_CHIEU: ReadonlySet<string> = new Set(["kich-hoat.thu-cong", "du-lieu.dat", "logic.neu", "logic.gop", "ai.llm", "ai.trich-xuat", "ai.phan-loai", "ai.tom-tat"]);
 
-/** Bộ kiểm phạm vi của NGƯỜI GỌI (router dựng từ ctx — danh tính không bao giờ đến từ input). `true` ⇔ tồn tại VÀ thuộc phạm vi. */
-export interface BoKiemPhamVi {
-  may(id: number): Promise<boolean>;
-}
 
-/** Ngoài phạm vi HOẶC không tồn tại — một lỗi, một thông điệp (không lộ tồn tại). Router ⇒ NOT_FOUND. */
-export class LoiNgoaiPhamVi extends Error {
-  constructor() {
-    super("Không tìm thấy tài nguyên.");
-    this.name = "LoiNgoaiPhamVi";
-  }
-}
 
 export const NUT_XEM_TRUOC: ReadonlySet<string> = new Set([
   "kich-hoat.lich",
@@ -112,7 +104,7 @@ export async function chayThuNut(y: YeuCauChayThu, boKiem?: BoKiemPhamVi): Promi
 
   const ngu: NguCanhChay = {
     runId: "chay-thu", flowId: "chay-thu", nodeId: nut.id, lan: 1, idempotencyKey: `chay-thu:${nut.id}:1`,
-    inputs, nodes, env: {}, run: { id: "chay-thu", flowId: "chay-thu", batDau: new Date().toISOString() },
+    inputs, nodes, env: {}, kiemPhamVi: boKiem, run: { id: "chay-thu", flowId: "chay-thu", batDau: new Date().toISOString() },
   };
 
   const thamChieu = THAM_CHIEU_TAI_NGUYEN[nut.type];
@@ -131,23 +123,6 @@ export async function chayThuNut(y: YeuCauChayThu, boKiem?: BoKiemPhamVi): Promi
 
   if (nut.disabled) return { che: "chay", ok: true, ms: ms(), output: { main: inputs.main ?? [] } };
 
-  if (thamChieu && boKiem) {
-    // MỌI id tài nguyên của MỌI item (biểu thức đánh giá y như node sẽ làm) phải thuộc phạm vi người gọi — TRƯỚC khi node chạy.
-    try {
-      const mauItem = Object.values(inputs).flat();
-      for (const item of mauItem) {
-        const t = danhGiaThamSo(nut.parameters ?? {}, nguCanhItem(ngu, item, mauItem)) as Record<string, unknown>;
-        for (const tc of thamChieu) {
-          const id = t[tc.tham];
-          if (typeof id === "number" && Number.isInteger(id) && id > 0 && !(await boKiem.may(id))) throw new LoiNgoaiPhamVi();
-        }
-      }
-    } catch (e) {
-      if (e instanceof LoiNgoaiPhamVi) throw e;
-      return { che: "chay", ok: false, ms: ms(), loi: thongDiep(e) };
-    }
-  }
-
   let dongHo: ReturnType<typeof setTimeout> | undefined;
   try {
     const kq = await Promise.race([
@@ -162,6 +137,8 @@ export async function chayThuNut(y: YeuCauChayThu, boKiem?: BoKiemPhamVi): Promi
     }
     return { che: "chay", ok: true, ms: ms(), output: kq as KetQuaChay };
   } catch (e) {
+    // Phạm vi do NODE kiểm (cùng giá trị node dùng) — ngoài phạm vi phải đi tới router thành NOT_FOUND, không thành "lỗi node".
+    if (e instanceof LoiNgoaiPhamVi) throw e;
     return { che: "chay", ok: false, ms: ms(), loi: thongDiep(e) };
   } finally {
     if (dongHo) clearTimeout(dongHo);

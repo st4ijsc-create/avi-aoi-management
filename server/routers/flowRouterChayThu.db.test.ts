@@ -17,12 +17,15 @@ const nut = (type: string, parameters: Record<string, unknown> = {}, extra: Reco
 let uid = 0;
 const goi = (role: string) => flowRouter.createCaller({ user: { id: uid, role } } as never);
 
+/** Hàng do CHẠY THỬ có thể tạo: mọi lượt/bước mang định danh giả `chay-thu` (lọc theo định danh, không đếm cả bảng — bảng dùng chung với test khác). */
 async function demHang(): Promise<number[]> {
   const db = (await getDb())!;
   const r = (await db.execute(sql`SELECT
-    (SELECT count(*) FROM ai_flow_runs)::int AS a, (SELECT count(*) FROM ai_flow_steps)::int AS b,
-    (SELECT count(*) FROM ai_flow_queue)::int AS c, (SELECT count(*) FROM ai_flow_events)::int AS d,
-    (SELECT count(*) FROM ai_flow_waits)::int AS e`)) as unknown as Record<string, number>[];
+    (SELECT count(*) FROM ai_flow_runs WHERE "flowId" = 'chay-thu')::int AS a,
+    (SELECT count(*) FROM ai_flow_steps WHERE "idempotencyKey" LIKE 'chay-thu:%')::int AS b,
+    (SELECT count(*) FROM ai_flow_queue q JOIN ai_flow_runs r ON r.id = q."runId" WHERE r."flowId" = 'chay-thu')::int AS c,
+    (SELECT count(*) FROM ai_flow_events e JOIN ai_flow_runs r ON r.id = e."runId" WHERE r."flowId" = 'chay-thu')::int AS d,
+    (SELECT count(*) FROM ai_flow_waits w JOIN ai_flow_runs r ON r.id = w."runId" WHERE r."flowId" = 'chay-thu')::int AS e`)) as unknown as Record<string, number>[];
   return [r[0].a, r[0].b, r[0].c, r[0].d, r[0].e];
 }
 
@@ -140,6 +143,20 @@ describe("flow.chayThuNut — IDOR: máy phải TỒN TẠI và thuộc phạm v
     expect(JSON.stringify(ok)).not.toMatch(/"daGui":\s*true/);
     await expect(thuOt(a, "ot.de-xuat-lenh", ids.machB)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(await demHang()).toEqual(truoc);
+  });
+
+  it("★ lách bằng kiểu: máy của B viết dạng CHUỖI ('999'-kiểu) ⇒ NOT_FOUND như số; chuỗi dạng lạ ⇒ không đọc, không lộ; chuỗi máy của A ⇒ đọc được", async () => {
+    const a = caller(U_A, "engineer");
+    const chuoiB = String(ids.machB);
+    for (const loai of ["ot.doc-tag", "ot.de-xuat-lenh"] as const) {
+      await expect(a.chayThuNut({ nut: nut(loai, loai === "ot.doc-tag" ? { may: chuoiB, tag: "t1" } : { may: chuoiB, lenh: "pause" }), inputs: { main: [{ json: {} }] } })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    }
+    await expect(a.chayThuNut({ nut: nut("ot.doc-tag", { may: "{{ $json.m }}", tag: "t1" }), inputs: { main: [{ json: { m: chuoiB } }] } })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    for (const xau of [` ${ids.machB}`, `${ids.machB}e0`, `0x${ids.machB.toString(16)}`, -ids.machB, ids.machB + 0.5, null, [ids.machB], { may: ids.machB }]) {
+      const r = await a.chayThuNut({ nut: nut("ot.doc-tag", { may: xau, tag: "t1" }), inputs: { main: [{ json: {} }] } }).catch((e) => e);
+      expect(r.ok === false || r.code === "NOT_FOUND", JSON.stringify(xau)).toBe(true); // không đọc máy B
+    }
+    expect(await a.chayThuNut({ nut: nut("ot.doc-tag", { may: String(ids.machA), tag: "t1" }), inputs: { main: [{ json: {} }] } })).toMatchObject({ ok: true });
   });
 
   it("id lấy từ biểu thức theo item: một item trỏ máy của B ⇒ cả lần chạy thử bị từ chối", async () => {

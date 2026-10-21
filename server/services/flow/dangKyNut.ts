@@ -5,6 +5,14 @@
 import { danhGiaThamSo, type ItemLuong, type NguCanhBieuThuc } from "../../../shared/flow/bieuThuc";
 import type { KhaiBaoNut } from "../../../shared/flow/model";
 
+/**
+ * ★★★ Đợt 9 (IDOR) — bộ kiểm PHẠM VI của người mà lần chạy thử / lượt chạy dưới quyền. `true` ⇔ tài nguyên TỒN TẠI VÀ thuộc phạm vi;
+ * ngoài phạm vi và không tồn tại KHÔNG phân biệt được. Node tham chiếu tài nguyên theo id gọi nó TRONG node (cùng giá trị sẽ dùng).
+ */
+export interface BoKiemPhamVi {
+  may(id: number): Promise<boolean>;
+}
+
 export interface NguCanhChay {
   runId: string;
   flowId: string;
@@ -24,6 +32,8 @@ export interface NguCanhChay {
    * KHÔNG LIỆT KÊ ĐƯỢC (`JSON.stringify`/spread không mang theo); KHÔNG nằm trong `inputs`/`nodes`/biểu thức/bước/sự kiện.
    */
   biMat?: { giaTri: string; loai: string };
+  /** Đợt 9 — bộ kiểm phạm vi (chạy thử: của người gọi). Chạy thật: chủ lượt — xem mig 0410 / bước (a). */
+  kiemPhamVi?: BoKiemPhamVi;
 }
 
 export type KetQuaChay = Record<string, ItemLuong[]>;
