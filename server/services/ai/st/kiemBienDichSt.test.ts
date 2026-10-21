@@ -28,6 +28,41 @@ describe("trichMaST — nghi ngờ thì BỎ QUA", () => {
     expect(trichMaST(`<think>\`\`\`st\n${FB_SAI}\n\`\`\`</think>\n${tl(FB_DUNG)}`).map((k) => k.ma.includes("AND ;"))).toEqual([false]);
   });
 
+  it("★ (2026-10-22) nhãn GẦN-ST (pascal/iec/plc) ⇒ lấy CHỈ khi thân chắc là ST; Pascal thật / thiếu VAR / nhãn khác ⇒ bỏ", () => {
+    // 27B dán ```pascal cho ~58 % khối ST thật (đo trên 60 câu trả lời) — đúng hình dạng này:
+    const thatTu27B = "// tệp: src/BoPhieu2oo3.st\nFUNCTION_BLOCK BoPhieu2oo3\nVAR_INPUT\n    A : BOOL;\nEND_VAR\nVAR_OUTPUT\n    Q : BOOL;\nEND_VAR\n    IF A THEN\n        Q := TRUE;\n    END_IF;\nEND_FUNCTION_BLOCK";
+    for (const n of ["pascal", "Pascal", "iec", "plc", "codesys"]) expect(trichMaST(tl(thatTu27B, n)).length, n).toBe(1);
+    // Pascal THẬT — kể cả khi có chữ FUNCTION…END_FUNCTION_BLOCK lọt vào chú thích
+    const pascalThat = "program Hello;\nuses crt;\nvar x: integer;\nbegin\n  { FUNCTION_BLOCK A VAR END_VAR END_FUNCTION_BLOCK }\n  writeln('hi');\nend.";
+    expect(trichMaST(tl(pascalThat, "pascal")).length).toBe(0);
+    const pascalThuTuc = "FUNCTION_BLOCK X\nVAR a : INT; END_VAR\nprocedure P;\nbegin\nend;\nEND_FUNCTION_BLOCK";
+    expect(trichMaST(tl(pascalThuTuc, "pascal")).length).toBe(0);
+    // POU nhưng KHÔNG có VAR…END_VAR ⇒ chưa chắc ⇒ bỏ
+    expect(trichMaST(tl("FUNCTION_BLOCK A\n  y := x;\nEND_FUNCTION_BLOCK", "pascal")).length).toBe(0);
+    // SCL TIA (có BEGIN) dưới nhãn pascal ⇒ nghi ngờ ⇒ bỏ (nhãn scl / không nhãn vẫn lấy như cũ)
+    expect(trichMaST(tl('FUNCTION_BLOCK "A"\nVAR_INPUT x : Bool; END_VAR\nBEGIN\n  #y := #x;\nEND_FUNCTION_BLOCK', "pascal")).length).toBe(0);
+    // nhãn KHÁC (không thuộc nhóm gần-ST) vẫn KHÔNG BAO GIỜ lấy
+    for (const n of ["python", "c", "javascript", "delphi", "text"]) expect(trichMaST(tl(thatTu27B, n)).length, n).toBe(0);
+  });
+
+  it("★ TÍN HIỆU MẠNH `// tệp: *.st|*.scl` (trong khối hoặc dòng ngay trước) thay vế 'Pascal thật'; vẫn đòi POU + VAR", () => {
+    const sclTia = 'FUNCTION_BLOCK "A"\nVAR_INPUT x : Bool; END_VAR\nVAR_OUTPUT y : Bool; END_VAR\nBEGIN\n  #y := #x;\nEND_FUNCTION_BLOCK';
+    const k = trichMaST(tl(`// tệp: src/A.scl\n${sclTia}`, "pascal"));
+    expect(k.length).toBe(1);
+    expect(k[0].laScl).toBe(true);
+    expect(trichMaST(`Tệp: src/A.scl\n\`\`\`pascal\n${sclTia}\n\`\`\``).length).toBe(1); // dòng NGAY TRƯỚC khối
+    expect(trichMaST(tl(`// tệp: src/A.st\nFUNCTION_BLOCK A\n  BEGIN y := x; END;\nEND_FUNCTION_BLOCK`, "pascal")).length).toBe(0); // không VAR
+    expect(trichMaST(tl(`// tệp: src/A.pas\n${sclTia}`, "pascal")).length).toBe(0); // đuôi khác ⇒ không phải tín hiệu
+  });
+
+  it("★ `=>` TRẦN là cú pháp IEC (gán đầu ra FB) — không bị coi là JS; `=> {` / `=> (` vẫn loại", () => {
+    const fbGoiTrig = "FUNCTION_BLOCK B\nVAR_INPUT x : BOOL; END_VAR\nVAR f : F_TRIG; c : BOOL; END_VAR\n  f(CLK := x, Q => c);\nEND_FUNCTION_BLOCK";
+    expect(trichMaST(tl(fbGoiTrig, "pascal")).length).toBe(1);
+    expect(trichMaST(tl(fbGoiTrig, "")).length).toBe(1);
+    expect(trichMaST(tl(`${fbGoiTrig}\nxs.map((a) => { return a; });`, "")).length).toBe(0); // CHỈ dấu hiệu mũi tên
+    expect(trichMaST(tl(`${fbGoiTrig}\nys.forEach(a => (a + 1));`, "pascal")).length).toBe(0);
+  });
+
   it("SCL: nhãn scl hoặc dấu hiệu TIA ⇒ laScl; ghép chuẩn hoá SCL → ST, giữ số dòng", () => {
     const scl = 'FUNCTION_BLOCK "A"\n{ S7_Optimized_Access := \'TRUE\' }\nVERSION : 0.1\nVAR_INPUT x : Bool; END_VAR\nVAR_OUTPUT y : Bool; END_VAR\nBEGIN\n  #y := #x;\nEND_FUNCTION_BLOCK';
     const k = trichMaST(tl(scl, ""));

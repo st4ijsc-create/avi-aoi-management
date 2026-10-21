@@ -254,6 +254,32 @@ describe("serverGenerateTextStream — hỏng, huỷ, hết giờ (không đư�
     await expect(gom(c.serverGenerateTextStream({ prompt: "hi" }))).rejects.toThrow();
     expect(Date.now() - t0).toBeLessThan(3000);
   }, 10_000);
+
+  it("★ Đợt 9 (2026-10-22, dieu-phoi hỏi) — luồng DÀI hơn trần tổng nhưng đều đặn ⇒ KHÔNG bị cắt (chỉ trần NHÀN RỖI)", async () => {
+    // Trần tổng của đường không stream = 150 ms; luồng chạy ~600 ms, mỗi mảnh cách 60 ms (< trần nhàn rỗi mặc định = 150).
+    process.env.LLAMA_SERVER_TIMEOUT_MS = "150";
+    const enc2 = new TextEncoder();
+    const manh = Array.from({ length: 10 }, (_, k) => enc2.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: `m${k} ` } }] })}\n\n`));
+    let i = 0;
+    const reader = {
+      async read(): Promise<{ done: boolean; value?: Uint8Array }> {
+        await new Promise((r) => setTimeout(r, 60));
+        if (i < manh.length) return { done: false, value: manh[i++] };
+        if (i === manh.length) {
+          i++;
+          return { done: false, value: enc2.encode("data: [DONE]\n\n") };
+        }
+        return { done: true };
+      },
+      async cancel() {},
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, body: { getReader: () => reader } }) as unknown as Response));
+    const c = await freshClient();
+    const t0 = Date.now();
+    const ds = await gom(c.serverGenerateTextStream({ prompt: "hi" }));
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(500); // dài hơn hẳn trần tổng 150 ms
+    expect(ds.filter((x) => x.type === "token").map((x) => (x as { token: string }).token).join("")).toContain("m9");
+  }, 10_000);
 });
 
 describe("serverGenerateTextStream — thân yêu cầu gửi lên đúng khuôn OpenAI + prefix-cache", () => {

@@ -417,6 +417,25 @@ export function auditKiemBienDich(k: KetQuaKiemBienDichST): string | undefined {
   return `kiem-bien-dich-st ${headerKiemBienDich(k).replace(/;/g, "")} ms=${k.msThem}${lyDo}${ma.length ? ` ma=${ma.join(",")}` : ""}`;
 }
 
+/**
+ * ★ Đợt 9 (dieu-phoi) — mỗi lượt model SINH LẠI của vòng kiểm biên dịch là MỘT hàng `ai_gateway_metrics` (`luotPhu =
+ * 'sua-bien-dich-st'`, CÙNG `requestId` với hàng chính) — chúng chiếm khe + token thật; thiếu thì sổ đo báo thấp giả.
+ */
+function ghiLuotSuaST(
+  plan: GatewayPlan | null,
+  requestId: string,
+  t0: number,
+  r: { tokensPrompt: number; tokensGenerated: number } | null,
+): void {
+  plan?.recordPhu?.({
+    luotPhu: "sua-bien-dich-st",
+    requestId,
+    latencyMs: Date.now() - t0,
+    outcome: r ? "ok" : "error",
+    ...(r ? { tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated } : {}),
+  });
+}
+
 /** Phần BỔ SUNG phát ở cuối luồng (TRƯỚC chunk finish_reason): nhãn + (đã sửa ⇒) các khối ST đã sửa. Rỗng = không phát. */
 function phanBoSungLuong(k: KetQuaKiemBienDichST): string {
   const nhan = nhanKiemBienDich(k);
@@ -1171,10 +1190,18 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
               cauTraLoi: chuDaPhat,
               signal: abort.signal,
               goiLai: async (tin, lanTruoc) => {
-                const r2 = await chatCompletion(
-                  { ...tuyChonLuong(nghiLuot), messages: [...ggufMessages, { role: "assistant", content: lanTruoc }, { role: "user", content: tin }] },
-                  modelId,
-                );
+                const t0Sua = Date.now();
+                let r2: Awaited<ReturnType<typeof chatCompletion>>;
+                try {
+                  r2 = await chatCompletion(
+                    { ...tuyChonLuong(nghiLuot), messages: [...ggufMessages, { role: "assistant", content: lanTruoc }, { role: "user", content: tin }] },
+                    modelId,
+                  );
+                } catch (e) {
+                  ghiLuotSuaST(plan, id, t0Sua, null);
+                  throw e;
+                }
+                ghiLuotSuaST(plan, id, t0Sua, r2);
                 const hien = catGiuNguyenBien(r2.text).hienThi;
                 return plan?.sanitizeOutput(hien) ?? hien;
               },
@@ -1212,7 +1239,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         }
         // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
         // `plan?.` — no-op when the fail-open rate-limit path left `plan` null.
-        plan?.record({ tokensIn, tokensOut, latencyMs: Date.now() - engineStart, outcome, ...(auditKiem ? { auditSnippet: auditKiem } : {}) });
+        plan?.record({ tokensIn, tokensOut, latencyMs: Date.now() - engineStart, outcome, requestId: id, ...(auditKiem ? { auditSnippet: auditKiem } : {}) });
 
         const doneChunk = {
           id,
@@ -1264,6 +1291,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           tokensOut: result.tokensGenerated,
           latencyMs: msMotLan,
           outcome: "ok",
+          requestId: id,
           ...(auditSnippet ? { auditSnippet } : {}),
         });
       // ★ G5-E — cắt thẻ TRƯỚC `sanitizeOutput` (bộ canh NỘI DUNG đứng CUỐI — xem khối import).
@@ -1286,10 +1314,18 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           const kq = await kiemVaSuaST({
             cauTraLoi: chatHienThi,
             goiLai: async (tin, lanTruoc) => {
-              const r2 = await chatCompletion(
-                { ...tuyChonMotLan(tatNghi), messages: [...ggufMessages, { role: "assistant", content: lanTruoc }, { role: "user", content: tin }] },
-                modelId,
-              );
+              const t0Sua = Date.now();
+              let r2: Awaited<ReturnType<typeof chatCompletion>>;
+              try {
+                r2 = await chatCompletion(
+                  { ...tuyChonMotLan(tatNghi), messages: [...ggufMessages, { role: "assistant", content: lanTruoc }, { role: "user", content: tin }] },
+                  modelId,
+                );
+              } catch (e) {
+                ghiLuotSuaST(plan, id, t0Sua, null);
+                throw e;
+              }
+              ghiLuotSuaST(plan, id, t0Sua, r2);
               const hien = catGiuNguyenBien(r2.text).hienThi;
               return plan?.sanitizeOutput(hien) ?? hien;
             },

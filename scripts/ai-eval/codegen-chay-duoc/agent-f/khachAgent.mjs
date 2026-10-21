@@ -9,7 +9,7 @@ export async function chayAgent({ base, cookie, cauHoi, projectId, tranMs }) {
   const t0 = Date.now();
   const ac = new AbortController();
   const hen = setTimeout(() => ac.abort(), tranMs);
-  const g = { runId: null, ms: 0, ttftMs: null, soGoiTool: 0, luotMax: 0, tool: {}, toolLoi: 0, canDuyet: 0,
+  const g = { runId: null, ms: 0, ttftMs: null, soGoiTool: 0, luotMax: 0, tool: {}, toolOk: {}, toolMa: {}, toolLoi: 0, canDuyet: 0,
     biBac: 0, usage: { vao: 0, ra: 0, nghi: 0 }, usageCuoi: null, ctxMax: null, checkpointTep: [], lyDo: null,
     tomTat: null, loi: [], chu: 0, hetGioClient: false, http: null };
   try {
@@ -28,7 +28,12 @@ export async function chayAgent({ base, cookie, cauHoi, projectId, tranMs }) {
         case "chu": if (g.ttftMs === null) g.ttftMs = Date.now() - t0; g.chu += (o.noiDung ?? "").length; break;
         case "goi-tool": g.soGoiTool++; g.luotMax = Math.max(g.luotMax, o.luot ?? 0);
           g.tool[o.goi?.ten ?? "?"] = (g.tool[o.goi?.ten ?? "?"] ?? 0) + 1; break;
-        case "ket-qua-tool": if (!o.ok) g.toolLoi++; break;
+        case "ket-qua-tool":
+          if (!o.ok) g.toolLoi++;
+          // ★ Đợt 9 — theo TÊN tool: số lượt OK + mã lỗi (kiểm nhánh của ablation `compile_st`)
+          if (o.ok && o.ten) g.toolOk[o.ten] = (g.toolOk[o.ten] ?? 0) + 1;
+          if (!o.ok && o.ten && o.ma) (g.toolMa[o.ten] ??= []).push(o.ma);
+          break;
         case "can-duyet": g.canDuyet++; break;
         case "bi-bac": g.biBac++; break;
         case "checkpoint": g.checkpointTep.push(...(o.tep ?? [])); break;

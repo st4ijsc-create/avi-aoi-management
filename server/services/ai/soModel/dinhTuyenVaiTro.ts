@@ -30,6 +30,12 @@ export interface YeuCauDinhTuyen {
    * dự phòng ⇒ env. Bộ lập lịch khe nặng chặn lần cuối (từ chối nói thật) nếu đích cuối vẫn đòi đổi khe.
    */
   kheBiKhoa?: boolean;
+  /**
+   * ★ Đợt 9 (sửa 2026-10-22, A/B /v1 lần 3) — model khe nặng ĐANG GIỮ thật (bộ lập lịch `KheNang.dangGiu`). Vắng/null ⇒
+   * như cũ: so với `LLAMA_SERVER_MODEL` (model NHÀ). Lỗi đã đo: khoá khe giữ 27B (một phép đo nạp nó), `code.plc` → 27B bị coi
+   * là "phải đổi khe" (vì env nói 35B) ⇒ bị chặn ⇒ dự phòng 35B ⇒ CHÍNH 35B mới cần đổi khe ⇒ từ chối — ngược thực tế.
+   */
+  kheDangGiu?: string | null;
 }
 
 export interface KetQuaDinhTuyen {
@@ -82,7 +88,13 @@ export const VAI_TRO_NHE_KHONG_DOI_KHE: ReadonlySet<string> = new Set(["extract"
 
 type KetQuaProfile = { ok: true; model: string; ghiChu?: string } | { ok: false; lyDo: string };
 
-function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv, khongDoiKhe: false | string = false): KetQuaProfile {
+function thuProfile(
+  profileId: string,
+  anh: AnhSoModel,
+  env: NodeJS.ProcessEnv,
+  khongDoiKhe: false | string = false,
+  kheDangGiu: string | null = null,
+): KetQuaProfile {
   const p = anh.profile.get(profileId);
   if (!p) return { ok: false, lyDo: `profile ${profileId} không có` };
   if (!p.enabled) return { ok: false, lyDo: `profile ${profileId} tắt` };
@@ -91,7 +103,7 @@ function thuProfile(profileId: string, anh: AnhSoModel, env: NodeJS.ProcessEnv, 
   // giấy phép bị gỡ sau khi gán ⇒ không chạy model chưa khai giấy phép.
   if (p.license === "unknown") return { ok: false, lyDo: `giay-phep-chua-khai (${profileId})` };
   const model = toBasename(p.artifactFile);
-  if (p.slotClass === "nang" && model !== toBasename(env.LLAMA_SERVER_MODEL)) {
+  if (p.slotClass === "nang" && model !== (kheDangGiu ? toBasename(kheDangGiu) : toBasename(env.LLAMA_SERVER_MODEL))) {
     if (khongDoiKhe) return { ok: false, lyDo: `${khongDoiKhe} (${profileId})` };
     // Đợt 7.1: khe nặng đổi được (bộ giám sát khe nặng) ⇒ dùng được, ghi `can-doi-khe`; cờ tắt ⇒ như 7.0.
     if (!hoanDoiKheNangBat(env)) return { ok: false, lyDo: `khe-nang-chua-hoan-doi (${profileId})` };
@@ -169,7 +181,7 @@ export function dinhTuyenVaiTro(
       : yc.khongDoiKhe === true && VAI_TRO_NHE_KHONG_DOI_KHE.has(vaiTro)
         ? "khe-dang-giu-model-khac; bề mặt nền không đổi khe"
         : false;
-    const kq = thuProfile(pid, anh, env, chan);
+    const kq = thuProfile(pid, anh, env, chan, yc.kheDangGiu ?? null);
     if (kq.ok) {
       return {
         vaiTro,

@@ -11,7 +11,21 @@ import OpenAI from "openai";
 
 const FB_SAI = "FUNCTION_BLOCK A\nVAR_INPUT x : BOOL; END_VAR\nVAR_OUTPUT y : BOOL; END_VAR\n  y := x AND ;\nEND_FUNCTION_BLOCK";
 const FB_DUNG = "FUNCTION_BLOCK A\nVAR_INPUT x : BOOL; END_VAR\nVAR_OUTPUT y : BOOL; END_VAR\n  y := x;\nEND_FUNCTION_BLOCK";
-const h = vi.hoisted(() => ({ banDau: "", soLanGoiLai: 0, soLanBienDich: 0, audit: [] as { redactedSnippet?: string | null }[] }));
+const h = vi.hoisted(() => ({ banDau: "", soLanGoiLai: 0, soLanBienDich: 0, audit: [] as { redactedSnippet?: string | null }[], doDem: [] as Record<string, unknown>[] }));
+vi.mock("../services/aiGateway", async (importOriginal) => {
+  const goc = await importOriginal<typeof import("../services/aiGateway")>();
+  return {
+    ...goc,
+    planInference: async (...a: Parameters<typeof goc.planInference>) => {
+      const p = await goc.planInference(...a);
+      return {
+        ...p,
+        record: (o: Record<string, unknown>) => { h.doDem.push({ ...o, chinh: true }); p.record(o as never); },
+        recordPhu: (o: Record<string, unknown>) => { h.doDem.push(o); p.recordPhu?.(o as never); },
+      };
+    },
+  };
+});
 vi.mock("../services/ai/aiLlmAudit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../services/ai/aiLlmAudit")>()),
   recordLlmAudit: vi.fn((e: { redactedSnippet?: string | null }) => void h.audit.push(e)),
@@ -79,6 +93,18 @@ const datLai = (banDau: string) => {
   h.soLanGoiLai = 0;
   h.soLanBienDich = 0;
   h.audit = [];
+  h.doDem = [];
+};
+/** Hàng đo: chính + lượt phụ — CÙNG requestId. */
+const kiemDoDem = (soPhu: number) => {
+  const chinh = h.doDem.filter((d) => d.chinh);
+  const phu = h.doDem.filter((d) => !d.chinh);
+  expect(chinh).toHaveLength(1);
+  expect(phu).toHaveLength(soPhu);
+  for (const d of phu) {
+    expect(d).toMatchObject({ luotPhu: "sua-bien-dich-st", outcome: "ok", tokensIn: 5, tokensOut: 5, requestId: chinh[0].requestId });
+    expect(String(d.requestId)).toMatch(/^chatcmpl-/);
+  }
 };
 const snippetKiem = () => h.audit.map((e) => e.redactedSnippet).filter((x): x is string => typeof x === "string" && x.startsWith("kiem-bien-dich-st"));
 const khach = () => new OpenAI({ apiKey: API_KEY, baseURL: `${sv.url}/v1` });
@@ -100,6 +126,7 @@ describe("/v1 code.plc + kiểm biên dịch ST — không stream", () => {
     expect(snippetKiem()).toHaveLength(1);
     expect(snippetKiem()[0]).toMatch(/^kiem-bien-dich-st ok=1 trang-thai=da-sua vong=1 sua=1 con=0 ms=\d+$/);
     expect(snippetKiem()[0]).not.toContain("FUNCTION_BLOCK");
+    kiemDoDem(1); // lượt sửa = một hàng đo phụ, cùng requestId
   });
 
   it("câu trả lời CHỮ THUẦN (không mã ST) ⇒ không biên dịch, không nhãn, header ok=skip", async () => {
@@ -114,6 +141,7 @@ describe("/v1 code.plc + kiểm biên dịch ST — không stream", () => {
     expect(j.choices[0].message.content).toBe(h.banDau);
     expect(h.soLanBienDich).toBe(0);
     expect(snippetKiem()).toEqual([]); // bỏ qua ⇒ cột NULL như mọi lượt
+    kiemDoDem(0);
   });
 
   it("khối nhãn python trông giống ST ⇒ KHÔNG biên dịch như ST", async () => {
@@ -178,6 +206,7 @@ describe("/v1 code.plc + kiểm biên dịch ST — STREAM qua SDK openai THẬT
     expect(chuSauFinish).toBe(""); // không gì sau finish_reason
     expect(snippetKiem()).toHaveLength(1);
     expect(snippetKiem()[0]).toMatch(/trang-thai=da-sua vong=1 sua=1 con=0/);
+    kiemDoDem(1);
   });
 
   it("stream chữ thuần ⇒ không phần bổ sung, không biên dịch", async () => {

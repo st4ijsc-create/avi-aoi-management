@@ -23,6 +23,8 @@
  *   trỏ đúng thư mục ấy, vd `nnbai=Bai ngau nhien|D:\SOURCES\_ai7_wt\tmp\ngau-nhien-agent\_bai`, rồi
  *   `--project-id nnbai --goc-bai tmp/ngau-nhien-agent/_bai`. Không có cờ này ⇒ như cũ (dự án `repo`, bài ở thư mục con):
  *   java/py/js/ts/cs/sql agent chạy được test; cpp/go/rs KHÔNG (cột "lệnh test trong khuôn" của báo cáo).
+ * ★ Đợt 9 — `--nhanh bat|tat` (ablation `compile_st`, server khởi động với / không với `agent` trong AI_KIEM_BIEN_DICH_ST):
+ *   nhánh `tat` mà `compile_st` chạy OK ⇒ công tắc không hiệu lực ⇒ exit 2 (vứt số). Hàng mang `nhanh` + số lượt compile_st.
  * Cổng sức khoẻ: AI_EVAL_LLAMA/health (mặc định :8091) + BASE/ trước/sau MỖI bài; hỏng ⇒ exit 2, vứt số.
  */
 import fs from "node:fs";
@@ -55,6 +57,8 @@ const TIEN_TO = arg("--tien-to", null);
 const GIU = co("--giu");
 const REL_GOC = "tmp/ngau-nhien-agent";
 const GOC_BAI = arg("--goc-bai", null);
+const NHANH = arg("--nhanh", null);
+if (NHANH !== null && !["bat", "tat"].includes(NHANH)) { console.error(`--nhanh phải là bat|tat: ${NHANH}`); process.exit(2); }
 // ⚠ 2026-10-18 (lượt NN-b-agent-1 = 0/27 VÔ GIÁ TRỊ): gốc dưới `tmp/` của worktree vẫn nằm TRONG repo chính ⇒ cổng Q1
 // (`laGhiVaoRepoChinh`) từ chối MỌI lượt ghi tự trị của `tu-dong` — đúng hành vi sản phẩm, sai thiết bị đo. Nay nhận thêm
 // đường TUYỆT ĐỐI NGOÀI repo (vd `D:/SOURCES/_ai7_nnbai/_bai`) — khuyên dùng.
@@ -128,7 +132,7 @@ for (const b of DS) {
         if (r.status !== 0) { console.error(`\n⛔ git ${a[0]} hỏng ở ${dir}: ${r.stderr}`); process.exit(2); }
       }
     }
-    const row = { id: b.id, lang: b.lang, muc: b.muc, luot, vanTay: b.vanTay, config: CONFIG, agentChayDuocTest: lenhTest(b, daCauHoi).agentChayDuoc };
+    const row = { id: b.id, lang: b.lang, muc: b.muc, luot, vanTay: b.vanTay, config: CONFIG, nhanh: NHANH, agentChayDuocTest: lenhTest(b, daCauHoi).agentChayDuoc };
     process.stderr.write(`▶ ${b.id} (${b.lang}/${b.muc}) lượt ${luot} … `);
     if (CONFIG === "mau") apMau(b, dir);
     if (CONFIG === "sai") apSai(b, dir);
@@ -144,6 +148,11 @@ for (const b of DS) {
         process.exit(2);
       }
       await kiemSong(`sau ${b.id} lượt ${luot}`);
+      row.compileSt = { goi: row.agent.tool.compile_st ?? 0, ok: row.agent.toolOk.compile_st ?? 0, ma: row.agent.toolMa.compile_st ?? [] };
+      if (NHANH === "tat" && row.compileSt.ok > 0) {
+        console.error(`\n⛔ VỨT: nhánh tat mà compile_st chạy OK ${row.compileSt.ok} lần — công tắc không hiệu lực (server có \`agent\` trong AI_KIEM_BIEN_DICH_ST?).`);
+        process.exit(2);
+      }
     }
     row.tepDaDoi = soVoiKhung(b, dir, tepBoDo);
     const kq = await chamDuAn({ bai: b, thuMuc: dir });
@@ -153,7 +162,8 @@ for (const b of DS) {
     const a = row.agent;
     console.error(`${kq.dat ? "ĐẠT" : "TRƯỢT"}  ${kq.dem ? `${kq.dem.pass}✓/${kq.dem.fail}✗ (cần ≥${kq.canToiThieu})` : "không có tổng kết test"}` +
       `${kq.lyDo.length ? ` [${kq.lyDo.join(", ")}]` : ""} · đổi ${row.tepDaDoi.moi.length + row.tepDaDoi.doi.length + row.tepDaDoi.mat.length} tệp` +
-      `${a ? ` · ${a.ms} ms · ${a.soGoiTool} tool · ra ${a.usage.ra} tok · ${a.lyDo ?? "?"}${a.loi.length ? ` · lỗi ${a.loi.length}` : ""}` : ""}`);
+      `${a ? ` · ${a.ms} ms · ${a.soGoiTool} tool · ra ${a.usage.ra} tok · ${a.lyDo ?? "?"}${a.loi.length ? ` · lỗi ${a.loi.length}` : ""}` : ""}` +
+      `${row.compileSt ? ` · compile_st ${row.compileSt.ok}/${row.compileSt.goi}${row.compileSt.ma.length ? ` [${row.compileSt.ma.join(",")}]` : ""}` : ""}${NHANH ? ` [${NHANH}]` : ""}`);
     if (!GIU) xoaThuMuc(dir);
   }
 }
@@ -178,7 +188,7 @@ if (suaTest) console.log(` ⚠ ${suaTest} lượt SỬA TỆP TEST/ CẤU HÌNH 
 const dirBc = `${BO}/reports`;
 fs.mkdirSync(dirBc, { recursive: true });
 fs.writeFileSync(`${dirBc}/${LABEL}.json`, JSON.stringify({
-  label: LABEL, duong: "b-agent", config: CONFIG, seed: SEED, n: N, soLuot: SO_LUOT, luc: new Date().toISOString(),
+  label: LABEL, duong: "b-agent", config: CONFIG, nhanh: NHANH, seed: SEED, n: N, soLuot: SO_LUOT, luc: new Date().toISOString(),
   base: CONFIG === "agent" ? BASE : null, projectId: CONFIG === "agent" ? PROJECT_ID : null,
   bai: DS.map((b) => ({ id: b.id, lang: b.lang, muc: b.muc, vanTay: b.vanTay })), bang, rows,
 }, null, 1));
