@@ -38,3 +38,15 @@ describe("phanLoaiNguNghia (Đợt 7.3, tầng 4)", () => {
     expect(kq.lyDo).toContain("nhúng hỏng");
   });
 });
+
+describe("★ Đợt 9 (a) — chonVaiTroTang4CoCong", () => {
+  it("nhúng chọn code.* mà câu không có ý định mã ⇒ chọn lại ngoài code.*; có ý định ⇒ giữ", async () => {
+    const { chonVaiTroTang4CoCong } = await import("./phanLoaiNguNghia");
+    const mau = new Map<string, number[][]>([["code.plc", [[1, 0, 0]]], ["chat.ops", [[0.8, 0.6, 0]]], ["chat", [[0, 0, 1]]]]);
+    const vec = [0.95, 0.3, 0];
+    const khong = chonVaiTroTang4CoCong(vec, mau, 0.3, 0, "may 1 dang bao dong ko", () => false);
+    expect(khong.vaiTro).toBe("chat.ops");
+    expect(khong.lyDo).toContain("cổng ý định mã");
+    expect(chonVaiTroTang4CoCong(vec, mau, 0.3, 0, "viết FB", () => true).vaiTro).toBe("code.plc");
+  });
+});

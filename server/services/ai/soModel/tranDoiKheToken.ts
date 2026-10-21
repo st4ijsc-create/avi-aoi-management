@@ -11,6 +11,8 @@
  * không đếm lúc định tuyến. Ngữ cảnh token đi qua AsyncLocalStorage (`chayVoiTokenKhe`) — lời gọi ngoài `/v1` (app,
  * Luồng) không có ngữ cảnh ⇒ không đếm, không bị trần.
  * ⚠ Trạng thái TRONG BỘ NHỚ của tiến trình: khởi động lại ⇒ reset (chấp nhận — trần chống lạm dụng ngắn hạn, không phải sổ).
+ * ⚠ Xô `key-chung` DÙNG CHUNG cho mọi người dùng bearer chung (key không gắn người): một người lạm dụng thì cả nhóm bị ghim
+ *   vào model khe đang giữ (vẫn được phục vụ, chỉ không ép đổi khe) — chấp nhận (dieu-phoi 2026-10-21); token cá nhân tách xô.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 
