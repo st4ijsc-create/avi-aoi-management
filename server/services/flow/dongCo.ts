@@ -276,6 +276,9 @@ export async function thucThi(def: FlowDefinition, ngu: NguCanhChay): Promise<Ke
   } catch (e) {
     const che = new Error(cheThongDiepLoi(e, bienThe));
     che.name = (e as Error)?.name ?? "Error";
+    // Mã ổn định do mã nguồn đặt (không phải bí mật) — giữ lại qua lớp che.
+    const ma = (e as { ma?: unknown } | null)?.ma;
+    if (typeof ma === "string") Object.defineProperty(che, "ma", { value: ma, enumerable: false });
     throw che;
   }
 }
@@ -381,7 +384,10 @@ export async function ketThucBuoc(
     }
     if (!kq.ok) {
       const thongDiep = cheThongDiepLoi(kq.loi, bienThe);
-      await tx.update(aiFlowSteps).set({ status: "loi", finishedAt: sql`now()`, error: { thongDiep } }).where(buoc);
+      // Mã ỔN ĐỊNH (không dịch) để UI chú giải; chỉ nhận chuỗi ngắn do mã nguồn đặt, không lấy từ dữ liệu người dùng.
+      const maRaw = (kq.loi as { ma?: unknown } | null)?.ma;
+      const ma = typeof maRaw === "string" && /^[A-Z_]{3,40}$/.test(maRaw) ? maRaw : undefined;
+      await tx.update(aiFlowSteps).set({ status: "loi", finishedAt: sql`now()`, error: ma ? { thongDiep, ma } : { thongDiep } }).where(buoc);
       const thuToiDa = nut.retry?.max ?? 0;
       if (muc.attempts <= thuToiDa) {
         const lui = (nut.retry?.backoffMs ?? 1000) * 2 ** (muc.attempts - 1);
@@ -392,7 +398,7 @@ export async function ketThucBuoc(
       }
       await tx.delete(aiFlowQueue).where(eq(aiFlowQueue.id, muc.id));
       if ((nut.khiLoi ?? "dung") === "dung") {
-        await dongRun(tx, muc.runId, "loi", { nodeId: muc.nodeId, thongDiep });
+        await dongRun(tx, muc.runId, "loi", ma ? { nodeId: muc.nodeId, thongDiep, ma } : { nodeId: muc.nodeId, thongDiep });
         return;
       }
       ra = { loi: [{ json: { thongDiep, nodeId: muc.nodeId } }] };

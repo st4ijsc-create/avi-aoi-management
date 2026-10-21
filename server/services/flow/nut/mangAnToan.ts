@@ -17,7 +17,8 @@ import { BlockList, isIP } from "node:net";
 import { Readable } from "node:stream";
 
 export class LoiHttpLuong extends Error {
-  constructor(message: string) {
+  /** `ma`: mã ỔN ĐỊNH (không dịch) cho UI chú giải — thông điệp tiếng Việt chỉ để người đọc. */
+  constructor(message: string, public readonly ma?: string) {
     super(message);
     this.name = "LoiHttpLuong";
   }
@@ -117,7 +118,7 @@ export async function kiemDichDen(url: URL, choPhep: ReadonlySet<string>): Promi
   if (!ds.length) throw new LoiHttpLuong(`host '${host.slice(0, 100)}' không có địa chỉ`);
   const roRang = coMucHostCong(url, choPhep);
   if (!roRang && ds.some((d) => laDiaChiNoiBo(d.address))) {
-    throw new LoiHttpLuong(`đích '${host.slice(0, 100)}' là địa chỉ nội bộ / không công cộng — chỉ cho phép khi danh sách trắng ghi rõ host:cổng`);
+    throw new LoiHttpLuong(`đích '${host.slice(0, 100)}' là địa chỉ nội bộ / không công cộng — chỉ cho phép khi danh sách trắng ghi rõ host:cổng`, "DICH_NOI_BO");
   }
   const d = ds[0];
   return { ip: d.address, family: isIP(d.address) === 6 ? 6 : 4 };

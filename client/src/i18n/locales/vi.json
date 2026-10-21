@@ -4051,7 +4051,8 @@
       "flowBiMatTao": "tạo bí mật của Luồng AI",
       "flowBiMatXoa": "xoá bí mật của Luồng AI",
       "flowBiMatXem": "xem danh sách bí mật của Luồng AI",
-      "flowTaoTuMoTa": "tạo bản nháp Luồng AI từ mô tả"
+      "flowTaoTuMoTa": "tạo bản nháp Luồng AI từ mô tả",
+      "flowChayThu": "chạy thử một node của Luồng AI"
     },
     "field": {
       "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",
@@ -4294,7 +4295,8 @@
       "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình",
       "selfApproveSafetyPlcConfig": "quyết định trên cấu hình safety-PLC do chính bạn tạo hoặc sửa",
       "secondApproveOwnSafetyPlcConfig": "duyệt lần hai một cấu hình safety-PLC mà chính bạn đã duyệt lần đầu (cần hai quản trị viên khác nhau)",
-      "flowKichHoatHangCao": "bật luồng có tác dụng ghi ra ngoài hoặc OT (chỉ quản trị viên)"
+      "flowKichHoatHangCao": "bật luồng có tác dụng ghi ra ngoài hoặc OT (chỉ quản trị viên)",
+      "flowPhamVi": "dùng luồng/bí mật theo nhà máy"
     },
     "robotRefusal": {
       "hitlActionRequired": "Lệnh chuyển động bị từ chối: không có thao tác xác nhận (HITL) nào đã được duyệt đứng sau lệnh này. Hãy gửi từ Bảng lệnh hoặc xác nhận thao tác trước.",
@@ -4437,7 +4439,23 @@
       "alreadyResolved": "Mục này đã được xử lý (bởi người khác hoặc đã có kết quả). Tải lại danh sách.",
       "edgeControlUnavailable": "Lược đồ điều khiển edge chưa có trên CSDL (migration 0374 chưa áp) — không làm gì cả.",
       "factoryScopeUnavailable": "Không đọc được phạm vi nhà máy của bạn — từ chối để an toàn. Thử lại sau.",
-      "lateResultNotReviewable": "Không ghi nhận được việc xem xét kết quả đến muộn này (người dùng không còn hoạt động, ghi chú quá ngắn, hoặc đây không phải kết quả đến muộn)."
+      "lateResultNotReviewable": "Không ghi nhận được việc xem xét kết quả đến muộn này (người dùng không còn hoạt động, ghi chú quá ngắn, hoặc đây không phải kết quả đến muộn).",
+      "flowKhongTonTaiHoacNgoaiPhamVi": "Mục này không tồn tại hoặc không thuộc nhà máy của bạn.",
+      "flowCanChonNhaMay": "Bạn thuộc nhiều nhà máy — hãy chọn nhà máy cho mục này.",
+      "flowChuaGanNhaMay": "Tài khoản chưa được gán nhà máy nào — nhờ quản trị viên gán nhà máy.",
+      "flowNhaMayNgoaiPhamVi": "Nhà máy đã chọn không nằm trong phạm vi của bạn.",
+      "flowIdDaDung": "Id này đã được dùng — hãy chọn id khác.",
+      "flowChiAdminChayTay": "Luồng hạng {{hang}} chỉ quản trị viên được chạy tay.",
+      "flowChiAdminBat": "Luồng hạng {{hang}} chỉ quản trị viên được bật.",
+      "flowOtChiBatQuaBatLuongOt": "Luồng hạng ot chỉ quản trị viên (kèm mã 2FA mới) được bật, bằng thao tác dành riêng cho hạng OT.",
+      "flowOtPhaiBatTruoc": "Luồng hạng ot phải được quản trị viên bật (kèm mã 2FA) trước khi chạy.",
+      "flowBiMatCanHost": "Bí mật phải khai danh sách host được phép gửi tới.",
+      "flowKhongBatDuocThamChieu": "Node {{nodeId}} tham chiếu tài nguyên (máy hoặc FOE workflow) không tồn tại hoặc không thuộc nhà máy của bạn.",
+      "flowKhongCoPhienBan": "Không có phiên bản {{version}}.",
+      "flowChuaCoPhienBan": "Luồng chưa có phiên bản nào.",
+      "flowDaTraLoi": "Bước này đã được trả lời hoặc lượt đã kết thúc.",
+      "flowKhongCoBuocChoDuyet": "Không có bước nào đang chờ duyệt ở đây.",
+      "flowChiTietMayChu": "{{chiTiet}}"
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -22995,7 +23013,8 @@
       "chonNhaMay": "— chọn nhà máy —",
       "nhaMayToanHeThong": "Toàn hệ thống (chỉ quản trị viên dùng được)",
       "nhaMayCanChon": "Bạn thuộc nhiều nhà máy — chọn nhà máy cho luồng này. Chỉ người thuộc nhà máy đó thấy và dùng luồng.",
-      "nhaMayGoiYAdmin": "Để trống = luồng toàn hệ thống: chỉ quản trị viên thấy và dùng."
+      "nhaMayGoiYAdmin": "Để trống = luồng toàn hệ thống: chỉ quản trị viên thấy và dùng.",
+      "chuaGanNhaMay": "Tài khoản của bạn chưa được gán nhà máy nào nên chưa tạo được luồng — nhờ quản trị viên gán nhà máy cho bạn."
     },
     "biMat": {
       "tieuDe": "Bí mật của luồng",
@@ -23157,7 +23176,12 @@
       "duPhong": "Dự phòng",
       "duPhongKheBan": "Dự phòng — khe nặng đang giữ model khác",
       "nguon": "Nguồn chọn: {{nguon}}{{phamVi}}",
-      "phamVi": " · phạm vi {{pv}}"
+      "phamVi": " · phạm vi {{pv}}",
+      "chuGiai": {
+        "BI_MAT_CHUA_KHAI_HOST": "Bí mật này chưa khai host được phép — quản trị viên khai ở Bí mật → host. Xem",
+        "CHU_LUOT_KHONG_XAC_DINH": "Không xác định được người chạy (chủ lượt bị khoá, mất quyền ghi hoặc chưa có) — bật lại luồng bằng tài khoản còn quyền. Xem",
+        "DICH_NOI_BO": "Đích là địa chỉ nội bộ — chỉ gọi được khi danh sách trắng ghi rõ host:cổng. Xem"
+      }
     },
     "duyet": {
       "tieuDe": "Hộp duyệt luồng",

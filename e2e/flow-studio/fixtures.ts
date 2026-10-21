@@ -57,6 +57,8 @@ export interface FsFixture {
   /** Kỹ sư thuộc HAI nhà máy (phải chọn nhà máy khi tạo luồng) và kỹ sư thuộc MỘT nhà máy (máy chủ tự gán). */
   nhieu: { id: number; username: string; password: string };
   mot: { id: number; username: string; password: string };
+  /** Kỹ sư CHƯA gán nhà máy nào (hộp tạo luồng phải báo trước, nút Tạo bị vô hiệu). */
+  khong: { id: number; username: string; password: string };
   nhaMayA: { id: number; code: string };
   nhaMayB: { id: number; code: string };
 }
@@ -140,6 +142,7 @@ export async function setupFixtures(): Promise<FsFixture> {
       };
       const nhieu = await mkKySu("nhieu", run, run + "b");
       const mot = await mkKySu("mot", run);
+      const khong = await mkKySu("khong");
       const [ws] = await tx`INSERT INTO workshops ("factoryId", code, name) VALUES (${fac.id}, ${run}, ${run + " ws"}) RETURNING id`;
       const [ln] = await tx`INSERT INTO production_lines ("workshopId", code, name) VALUES (${ws.id}, ${run}, ${run + " line"}) RETURNING id`;
       const [st] = await tx`INSERT INTO stations ("lineId", code, name) VALUES (${ln.id}, ${run}, ${run + " station"}) RETURNING id`;
@@ -184,7 +187,7 @@ export async function setupFixtures(): Promise<FsFixture> {
       const vet = (rid: string, o: object) => tx`INSERT INTO ai_flow_events ("runId", kind, payload) VALUES (${rid}, ${"buoc.model"}, ${tx.json({ nodeId: "dat", lan: 1, vaiTro: "extract", ...o } as never)})`;
       await vet(runA, { model: "Qwen3-Khe-Nang-30B", nguon: "gan-profile", phamVi: "flow", duPhong: false, kheBan: false, lyDo: [] });
       await vet(runB, { model: "Qwen3-4B-Instruct-2507-UD-Q4_K_XL", nguon: "du-phong", phamVi: "flow", duPhong: true, kheBan: true, lyDo: ["gán flow → p-nang", "khe-dang-giu-model-khac (p-nang; bề mặt nền không đổi khe)"] });
-      return { admin: { id: Number(u.id), username: `${run}_admin`, password }, runA, runB, machineId: Number(mc.id), nhieu, mot, nhaMayA: { id: Number(fac.id), code: run }, nhaMayB: { id: Number(facB.id), code: run + "b" } };
+      return { admin: { id: Number(u.id), username: `${run}_admin`, password }, runA, runB, machineId: Number(mc.id), nhieu, mot, khong, nhaMayA: { id: Number(fac.id), code: run }, nhaMayB: { id: Number(facB.id), code: run + "b" } };
     }),
   );
 }

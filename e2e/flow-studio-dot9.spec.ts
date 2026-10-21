@@ -27,10 +27,10 @@ test.beforeAll(() => {
   base = process.env.FS_BASE_URL!;
 });
 
-async function dangNhap(page: Page, ai: { username: string; password: string } = fx.admin): Promise<void> {
-  await page.context().addInitScript(() => {
-    try { localStorage.setItem("i18nextLng", "vi"); } catch { /* */ }
-  });
+async function dangNhap(page: Page, ai: { username: string; password: string } = fx.admin, ngonNgu = "vi"): Promise<void> {
+  await page.context().addInitScript((lng) => {
+    try { localStorage.setItem("i18nextLng", lng); } catch { /* */ }
+  }, ngonNgu);
   const r = await page.context().request.post(`${base}/api/auth/login`, { data: { username: ai.username, password: ai.password } });
   expect(r.ok(), `login: ${r.status()}`).toBe(true);
 }
@@ -257,4 +257,31 @@ test("7 — bí mật: cột host cho phép; bí mật cũ báo 'chưa khai'; ad
   const [h] = await withTestDb((sql) => sql`SELECT "hostChoPhep" FROM ai_flow_credentials WHERE id = 'fse2e-bm-cu'`);
   expect(h.hostChoPhep).toEqual(["erp.nha-may.vn", "api.mes.vn"]);
   await chup(page, "7b-bi-mat-da-khai-host");
+});
+
+test("8 — lỗi phạm vi hiện bằng EN: luồng không có/ngoài phạm vi ⇒ MỘT câu chung đã dịch (không khoá thô); chưa gán nhà máy ⇒ báo trước và vô hiệu nút Tạo", async ({ page }) => {
+  await dangNhap(page, fx.mot, "en");
+  await page.goto(`${base}/ai-flows/fse2e-khong-ton-tai`);
+  const loi = page.locator("p.text-destructive").first();
+  await expect(loi).toBeVisible({ timeout: 60_000 });
+  const chu = (await loi.innerText()).trim();
+  expect(chu).toContain("doesn't exist or doesn't belong to your factory");
+  expect(chu).not.toMatch(/errors\.|flowKhongTonTai|Không/); // không khoá thô, không tiếng Việt
+  await chup(page, "8a-loi-pham-vi-en");
+
+  const ctx2 = await page.context().browser()!.newContext();
+  const p2 = await ctx2.newPage();
+  await ctx2.addInitScript(() => {
+    try { localStorage.setItem("i18nextLng", "en"); } catch { /* */ }
+  });
+  const r = await ctx2.request.post(`${base}/api/auth/login`, { data: { username: fx.khong.username, password: fx.khong.password } });
+  expect(r.ok()).toBe(true);
+  await p2.goto(`${base}/ai-flows`);
+  await p2.getByTestId("nut-tao-luong").click();
+  await p2.getByTestId("ten-luong-moi").fill("Luồng không nhà máy");
+  const canhBao = p2.getByTestId("chua-gan-nha-may");
+  await expect(canhBao).toBeVisible({ timeout: 30_000 });
+  await expect(canhBao).toContainText("isn't assigned to any factory");
+  await expect(p2.getByTestId("xac-nhan-tao")).toBeDisabled();
+  await ctx2.close();
 });

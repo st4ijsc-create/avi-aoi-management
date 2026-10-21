@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, GitCompare, Loader2, RefreshCw } from "lucide-react";
 import RunCompare from "./RunCompare";
-import { MAU_TRANG_THAI, luotDangSong, trangThaiTheoNut, vetModelCuaBuoc, type VetModelClient } from "@/lib/flowStudio";
+import { MAU_TRANG_THAI, luotDangSong, maLoiChuGiai, trangThaiTheoNut, vetModelCuaBuoc, type VetModelClient } from "@/lib/flowStudio";
 
 /** Đợt 9 — model THỰC chạy của một lần gọi AI trong bước + nhãn dự phòng (kèm lý do khi khe nặng đang bận). */
 export function VetModelHuy({ nodeId, vet }: { nodeId: string; vet: VetModelClient[] }) {
@@ -34,6 +34,24 @@ export function VetModelHuy({ nodeId, vet }: { nodeId: string; vet: VetModelClie
         </div>
       ))}
     </div>
+  );
+}
+
+/** Chú giải cho 3 lỗi node hay gặp (nhận diện theo MÃ ổn định `error.ma`), trỏ tới tài liệu vận hành. */
+function ChuGiaiLoi({ loi }: { loi: unknown }) {
+  const { t } = useTranslation();
+  const ma = maLoiChuGiai(loi);
+  if (!ma) return null;
+  const noiDung =
+    ma === "BI_MAT_CHUA_KHAI_HOST"
+      ? t("flowStudio.chay.chuGiai.BI_MAT_CHUA_KHAI_HOST")
+      : ma === "CHU_LUOT_KHONG_XAC_DINH"
+        ? t("flowStudio.chay.chuGiai.CHU_LUOT_KHONG_XAC_DINH")
+        : t("flowStudio.chay.chuGiai.DICH_NOI_BO");
+  return (
+    <p className="text-[11px] text-muted-foreground" data-testid={`chu-giai-${ma}`}>
+      {noiDung} <span className="font-mono">docs/AI_FLOW_SECURITY_OPERATIONS.md</span>
+    </p>
   );
 }
 
@@ -153,6 +171,7 @@ export default function RunTimeline({ flowId, runId, onChonRun, tenNut, onTrangT
                 </div>
               </div>
               {dtg.data.run.error != null && <KhoiJson nhan={t("flowStudio.chay.loi")} v={dtg.data.run.error} />}
+              <ChuGiaiLoi loi={dtg.data.run.error} />
               <ol className="space-y-2" data-testid="cac-buoc">
                 {dtg.data.buoc.map((b) => (
                   <li key={b.id} className="rounded border p-2 space-y-1" data-testid={`buoc-${b.nodeId}`}>
@@ -170,6 +189,7 @@ export default function RunTimeline({ flowId, runId, onChonRun, tenNut, onTrangT
                     {b.error != null && (
                       <div className="text-destructive">
                         <KhoiJson nhan={t("flowStudio.chay.loi")} v={b.error} />
+                        <ChuGiaiLoi loi={b.error} />
                       </div>
                     )}
                   </li>

@@ -92,9 +92,11 @@ describe("động cơ: bí mật chỉ tới host nó khai", () => {
     expect(sai.status).toBe("loi");
     expect(sai.loi).toContain("không nằm trong danh sách host của bí mật");
     expect(sai.loi).not.toContain("gia-tri-bi-mat");
+    expect(sai.loi).not.toContain("BI_MAT_CHUA_KHAI_HOST");
     const cu = await chay("cu", `${TT}-cu`, "https://dich.gia/x");
     expect(cu.status).toBe("loi");
     expect(cu.loi).toContain("chưa khai host");
+    expect(cu.loi).toContain("BI_MAT_CHUA_KHAI_HOST"); // mã ỔN ĐỊNH cho chú giải UI; host-không-khớp thì KHÔNG có mã
     expect(mang, "KHÔNG được gọi mạng khi host không khớp / chưa khai").toHaveLength(0);
   });
 

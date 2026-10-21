@@ -15,6 +15,7 @@ export function chuanHoaIdMay(raw: unknown): number | null {
 
 /** Ngoài phạm vi HOẶC không tồn tại — một lỗi, một thông điệp (không lộ tồn tại). Router ⇒ NOT_FOUND. */
 export class LoiNgoaiPhamVi extends Error {
+  readonly ma = "TAI_NGUYEN_KHONG_THAY";
   constructor() {
     super("Không tìm thấy tài nguyên.");
     this.name = "LoiNgoaiPhamVi";

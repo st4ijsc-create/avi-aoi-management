@@ -92,7 +92,10 @@ async function goi(phuongThuc: string, item: ItemLuong, vao: ItemLuong[], thamSo
   const url = kiemUrl(t.url, hostChoPhep());
   // Đợt 9 (M2) — bí mật chỉ được gắn vào yêu cầu tới host NÓ KHAI (ngoài danh sách trắng chung). Chưa khai (mảng rỗng) ⇒ chưa dùng được.
   if (ngu.biMat && !ngu.biMat.hostChoPhep.includes(url.hostname.toLowerCase())) {
-    throw new LoiHttpLuong(ngu.biMat.hostChoPhep.length === 0 ? "bí mật chưa khai host cho phép (quản trị viên khai ở Bí mật → host)" : `host '${url.hostname}' không nằm trong danh sách host của bí mật`);
+    throw new LoiHttpLuong(
+      ngu.biMat.hostChoPhep.length === 0 ? "bí mật chưa khai host cho phép (quản trị viên khai ở Bí mật → host)" : `host '${url.hostname}' không nằm trong danh sách host của bí mật`,
+      ngu.biMat.hostChoPhep.length === 0 ? "BI_MAT_CHUA_KHAI_HOST" : undefined,
+    );
   }
   const tieuDe: Record<string, string> = {};
   for (const [k, v] of Object.entries((t.tieuDe as Record<string, unknown>) ?? {})) {

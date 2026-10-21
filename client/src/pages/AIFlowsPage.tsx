@@ -208,6 +208,8 @@ export default function AIFlowsPage() {
   const nhaMays = dsNhaMay.data ?? [];
   const hienChonNhaMay = laAdmin ? nhaMays.length > 0 : nhaMays.length > 1;
   const canChonNhaMay = !laAdmin && nhaMays.length > 1;
+  // Tài khoản thường chưa được gán nhà máy nào ⇒ máy chủ sẽ từ chối (FORBIDDEN) — báo TRƯỚC và vô hiệu nút Tạo.
+  const chuaGanNhaMay = !laAdmin && dsNhaMay.isSuccess && nhaMays.length === 0;
 
   const luu = trpc.flow.luu.useMutation({
     onSuccess: (r) => {
@@ -231,7 +233,7 @@ export default function AIFlowsPage() {
     if (!ten) return;
     const id = idLuongTuTen(ten);
     const m = moTao?.mau ?? null;
-    if (canChonNhaMay && !nhaMay) return;
+    if (chuaGanNhaMay || (canChonNhaMay && !nhaMay)) return;
     luu.mutate({
       definition: (m ? saoTuMau(m, id, ten) : luongMoi(id, ten)) as unknown as Record<string, unknown>,
       ...(hienChonNhaMay && nhaMay ? { factoryId: Number(nhaMay) } : {}),
@@ -367,6 +369,11 @@ export default function AIFlowsPage() {
                 </div>
               </div>
             )}
+            {chuaGanNhaMay && (
+              <p role="alert" data-testid="chua-gan-nha-may" className="rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-xs text-warning">
+                {t("flowStudio.danhSach.chuaGanNhaMay")}
+              </p>
+            )}
             {hienChonNhaMay && (
               <div className="space-y-1">
                 <label className="text-xs font-medium" htmlFor="chon-nha-may">{t("flowStudio.danhSach.nhaMay")}</label>
@@ -392,7 +399,7 @@ export default function AIFlowsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMoTao(null)}>{t("flowStudio.chung.huy")}</Button>
-            <Button data-testid="xac-nhan-tao" disabled={!tenMoi.trim() || luu.isPending || (canChonNhaMay && !nhaMay)} onClick={taoLuong}>
+            <Button data-testid="xac-nhan-tao" disabled={!tenMoi.trim() || luu.isPending || chuaGanNhaMay || (canChonNhaMay && !nhaMay)} onClick={taoLuong}>
               {luu.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
               {t("flowStudio.danhSach.tao")}
             </Button>

@@ -4051,7 +4051,8 @@
       "flowBiMatTao": "create an AI flow secret",
       "flowBiMatXoa": "delete an AI flow secret",
       "flowBiMatXem": "list AI flow secrets",
-      "flowTaoTuMoTa": "create an AI flow draft from a description"
+      "flowTaoTuMoTa": "create an AI flow draft from a description",
+      "flowChayThu": "test-run a node of an AI flow"
     },
     "field": {
       "holderUserId": "the user the key is issued to (an existing, active user)",
@@ -4294,7 +4295,8 @@
       "selfApproveProgramVersion": "approve your own program version",
       "selfApproveSafetyPlcConfig": "decide on a safety-PLC configuration you created or edited",
       "secondApproveOwnSafetyPlcConfig": "give the second approval of a safety-PLC configuration you approved first (two different admins are required)",
-      "flowKichHoatHangCao": "enable a flow that writes externally or touches OT (admins only)"
+      "flowKichHoatHangCao": "enable a flow that writes externally or touches OT (admins only)",
+      "flowPhamVi": "use flows/secrets by factory"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -4445,7 +4447,23 @@
       "alreadyResolved": "This item was already resolved (by someone else, or it already has a result). Reload the list.",
       "edgeControlUnavailable": "The edge control schema is not in the database (migration 0374 not applied) — nothing was done.",
       "factoryScopeUnavailable": "Your factory scope could not be read — refused for safety. Try again later.",
-      "lateResultNotReviewable": "The review of this late result could not be recorded (inactive user, note too short, or it is not a late result)."
+      "lateResultNotReviewable": "The review of this late result could not be recorded (inactive user, note too short, or it is not a late result).",
+      "flowKhongTonTaiHoacNgoaiPhamVi": "This item doesn't exist or doesn't belong to your factory.",
+      "flowCanChonNhaMay": "You belong to several factories — pick a factory for this item.",
+      "flowChuaGanNhaMay": "Your account isn't assigned to any factory — ask an administrator to assign one.",
+      "flowNhaMayNgoaiPhamVi": "The selected factory is outside your scope.",
+      "flowIdDaDung": "This id is already in use — choose another id.",
+      "flowChiAdminChayTay": "Only an administrator can run a flow of class {{hang}} manually.",
+      "flowChiAdminBat": "Only an administrator can enable a flow of class {{hang}}.",
+      "flowOtChiBatQuaBatLuongOt": "An OT-class flow can only be enabled by an administrator (with a fresh 2FA code), through the OT-specific action.",
+      "flowOtPhaiBatTruoc": "An OT-class flow must be enabled by an administrator (with a 2FA code) before it can run.",
+      "flowBiMatCanHost": "A secret must declare the list of hosts it may be sent to.",
+      "flowKhongBatDuocThamChieu": "Node {{nodeId}} references a resource (machine or FOE workflow) that doesn't exist or doesn't belong to your factory.",
+      "flowKhongCoPhienBan": "There is no version {{version}}.",
+      "flowChuaCoPhienBan": "The flow has no version yet.",
+      "flowDaTraLoi": "This step has already been answered or the run has ended.",
+      "flowKhongCoBuocChoDuyet": "There is no step waiting for approval here.",
+      "flowChiTietMayChu": "{{chiTiet}}"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -23021,7 +23039,8 @@
       "chonNhaMay": "— choose a factory —",
       "nhaMayToanHeThong": "System-wide (administrators only)",
       "nhaMayCanChon": "You belong to several factories — pick one for this flow. Only people in that factory can see and use it.",
-      "nhaMayGoiYAdmin": "Empty = system-wide flow: only administrators see and use it."
+      "nhaMayGoiYAdmin": "Empty = system-wide flow: only administrators see and use it.",
+      "chuaGanNhaMay": "Your account isn't assigned to any factory, so you can't create a flow yet — ask an administrator to assign one to you."
     },
     "biMat": {
       "tieuDe": "Flow secrets",
@@ -23183,7 +23202,12 @@
       "duPhong": "Fallback",
       "duPhongKheBan": "Fallback — the heavy slot is holding another model",
       "nguon": "Chosen by: {{nguon}}{{phamVi}}",
-      "phamVi": " · scope {{pv}}"
+      "phamVi": " · scope {{pv}}",
+      "chuGiai": {
+        "BI_MAT_CHUA_KHAI_HOST": "This secret has no allowed hosts declared — an administrator declares them under Secrets → hosts. See",
+        "CHU_LUOT_KHONG_XAC_DINH": "The run owner can't be determined (locked, lost write access, or missing) — re-enable the flow with an account that still has access. See",
+        "DICH_NOI_BO": "The target is an internal address — it can only be called when the allow-list names the exact host:port. See"
+      }
     },
     "duyet": {
       "tieuDe": "Flow approvals",
