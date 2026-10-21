@@ -198,4 +198,18 @@ describe("★ Đợt 9 — kheBiKhoa: khe bị khoá ⇒ profile nặng mà khe 
     expect(kq.lyDo.bangChung).toContain("khe-bi-khoa");
     expect(kq.lyDo.bangChung).not.toContain("can-doi-khe");
   });
+
+  it("★ (sửa 2026-10-22, A/B /v1) khoá + khe ĐANG GIỮ 27B (khác model nhà 35B) ⇒ code.plc dùng ĐÚNG 27B đang nạp, không dự phòng", () => {
+    const Q35 = P({ artifactFile: "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", slotClass: "nang" });
+    const Q27 = P({ artifactFile: "Qwen3.6-27B-UD-Q4_K_XL.gguf", slotClass: "nang" });
+    const a = anh([{ roleId: "code.plc", profileId: "q27", fallback: ["q35"] }], new Map([["q35", Q35], ["q27", Q27]]));
+    const kq = dinhTuyenVaiTro({ vaiTro: "code.plc", kheBiKhoa: true, kheDangGiu: "Qwen3.6-27B-UD-Q4_K_XL.gguf" }, a, ENV);
+    expect(kq).toMatchObject({ nguon: "gan-profile", model: "Qwen3.6-27B-UD-Q4_K_XL" });
+    expect(kq.lyDo.bangChung).not.toContain("khe-bi-khoa");
+    // và chiều ngược: khe giữ 27B, khoá ⇒ dự phòng 35B KHÔNG được chọn (nó mới là thứ cần đổi khe)
+    const chiDuPhong = anh([{ roleId: "code.plc", profileId: "q35", fallback: [] }], new Map([["q35", Q35], ["q27", Q27]]));
+    const kq2 = dinhTuyenVaiTro({ vaiTro: "code.plc", kheBiKhoa: true, kheDangGiu: "Qwen3.6-27B-UD-Q4_K_XL" }, chiDuPhong, ENV);
+    expect(kq2.nguon).not.toBe("gan-profile");
+    expect(kq2.lyDo.bangChung).toContain("khe-bi-khoa");
+  });
 });

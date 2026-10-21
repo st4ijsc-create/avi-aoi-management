@@ -6,7 +6,7 @@
  * Chỉ tiến trình gọi `batTuDoiKheNang()` (API, ở `server/_core/index.ts`) được tự đổi khe.
  */
 import { mucUuTienHienTai } from "../hangDoiUuTienLlm";
-import { toBasename } from "../modelResolver";
+import { datNguonKheDangGiu, toBasename } from "../modelResolver";
 import { layAnhSoModel } from "./anhSoModel";
 import { CAU_HINH_MAC_DINH, KheNang, LoiKheNang, type BoPhucVuKheNang, type CauHinhKheNang, type ThongKeKheNang } from "./kheNang";
 import { hoanDoiKheNangBat, modelKheNangPhu, modelNhaKheNang } from "./tapKheNang";
@@ -21,6 +21,8 @@ function soEnv(ten: string, macDinh: number): number {
 
 const cauHinh: CauHinhKheNang = { ...CAU_HINH_MAC_DINH, tuDoi: false };
 let kn: KheNang | null = null;
+// ★ Đợt 9 (sửa 2026-10-22) — định tuyến vai trò so với model khe ĐANG GIỮ thật, không phải model NHÀ (xem `kheDangGiu`).
+datNguonKheDangGiu(() => kn?.thongKe().dangGiu ?? null);
 
 const boThat: BoPhucVuKheNang = {
   async modelDangGiu() {
