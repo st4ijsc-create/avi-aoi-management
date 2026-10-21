@@ -70,7 +70,15 @@ Biến môi trường, các mục cách nhau dấu phẩy. Mặc định rỗng 
 
 ## 6. Ai được duyệt (nút "duyệt người")
 
-> *Phần này sẽ bổ sung khi H2 (thi hành `vaiTroDuyet` + tách người) lên main.* Hiện tại quyền duyệt theo vai ghi + phạm vi nhà máy của lượt (`duyet` kiểm phạm vi luồng của lượt; ngoài phạm vi ⇒ `Không có bước nào đang chờ duyệt ở đây.`).
+Người bấm duyệt phải thoả **ba điều kiện**, theo thứ tự (code: `server/services/flow/quyenDuyet.ts`; `flow.duyet` kiểm cả phạm vi nhà máy của lượt trước đó — ngoài phạm vi ⇒ `Không có bước nào đang chờ duyệt ở đây.`):
+
+1. **Đủ thứ bậc vai** so với `vaiTroDuyet` của bước (mặc định `supervisor`). Thứ bậc (của riêng module này): `viewer` = `user` (0, không bao giờ duyệt) < `operator` = `maintenance` (1) < `quality_inspector` = `engineer` (2) < `supervisor` (3) < `admin` (4). Admin duyệt được mọi bước. Vai lạ (không có trong bảng) ⇒ chỉ đúng vai đó (và admin) được duyệt.
+2. **Khác người bật**: không phải người đã bật phiên bản luồng (`approvedBy`) — của luồng chứa bước chờ **và** của các luồng cha (luồng con trong cây lượt).
+3. **Khác chủ lượt**: không phải chủ lượt (`chuLuong`, xem §8) — của lượt chứa bước chờ **và** của mọi lượt cha. Hai điều kiện 2–3 **không miễn cho admin** (tách người làm / người duyệt, cùng tiền lệ "four-eyes" của FOE).
+
+Dữ liệu cũ chưa ghi người bật / chủ lượt (NULL) ⇒ không có gì để so ⇒ chỉ áp điều kiện 1 (không khoá hàng chờ có trước bản vá).
+
+**Khi bị từ chối:** `FORBIDDEN` (người dùng thấy câu đã dịch, vd. `Bạn là chủ lượt chạy này (đã kích hoạt hoặc bật) — người duyệt phải là người khác.`), ghi kiểm toán **`FLOW_DUYET_TU_CHOI`** (`details.ma` = `VAI_THAP` / `TRUNG_NGUOI_BAT` / `TRUNG_NGUOI_CHAY`, kèm `nodeId`, vai của hai bên, `dongY`), và **hàng chờ giữ nguyên** — bước vẫn chờ đúng người. Cách xử lý: nhờ một người khác đủ vai (không phải người bật / chủ lượt) duyệt. Muốn thấy các vụ từ chối: lọc nhật ký kiểm toán theo `FLOW_DUYET_TU_CHOI`.
 
 ## 7. MCP — luồng thành tool cho tác nhân
 
@@ -97,6 +105,29 @@ Một token `/v1` gây ≥ **3 lần đổi khe model nặng** trong **10 phút 
 
 Kết quả chuỗi của một phép nối `+`, `join` hay mẫu `{{ }}` lẫn chữ tối đa **1 048 576 ký tự**; vượt ⇒ `kết quả phép nối|join|mẫu dài quá 1048576 ký tự`. Thu nhỏ dữ liệu (cắt, chọn trường) trước khi nối.
 
+## 11. Trần tài nguyên của lượt chạy (M5)
+
+Chống một người ghi (hoặc một luồng lỗi) làm đầy hàng đợi / bảng lượt. Các trần (hằng ở `shared/flow/model.ts`):
+
+| Trần | Giá trị | Vượt thì |
+|---|---|---|
+| Lượt **đồng thời** của một luồng (`settings.maxConcurrentRuns`) | mặc định **1** | **TỪ CHỐI, không xếp hàng** (bảng dưới) |
+| Node lịch mỗi luồng | **≤ 3** | lưu luồng bị từ chối: `luồng có N node lịch — tối đa 3 mỗi luồng` |
+| Lượt bắn theo lịch mỗi giờ mỗi luồng | **≤ 60** | lưu luồng bị từ chối: `các node lịch có thể bắn tới N lượt/giờ — tối đa 60 lượt/giờ mỗi luồng`; lúc chạy, lịch **bỏ mốc** (có log `[luong-ai] lịch …`) |
+| Số lượt trong cả **cây lượt** (gốc + con + cháu) | **≤ 50** | node `luong.goi-con` lỗi: `từ chối: cây lượt … đã có N lượt (trần 50) …` |
+| Số item vào một lần `luong.goi-con` | **≤ 100** | node lỗi: `từ chối: N item vào luong.goi-con vượt trần 100 — chia lô trước khi gọi` |
+
+Hành vi khi **lượt đồng thời** vượt trần (chỉ đếm lượt gốc đang `dang-chay`; lượt chờ duyệt / chờ con không tính; lượt con bị chặn bởi trần cây lượt):
+
+| Đường vào | Kết quả |
+|---|---|
+| Chạy tay (`flow.chayTay`) | `CONFLICT` — người dùng thấy: `Luồng này đang chạy đủ số lượt đồng thời cho phép — lượt mới bị từ chối (không xếp hàng). Thử lại khi lượt đang chạy xong.` |
+| Webhook | HTTP **429**, `code: RATE_LIMITED`, header **`Retry-After: 30`** (giây, cố định) — người gửi thử lại sau |
+| MCP | lỗi tool: `Từ chối: luồng … đang có N lượt chạy (trần maxConcurrentRuns=…) …` |
+| Lịch | **bỏ mốc** + log, mốc sau chạy bình thường |
+
+**Khuyến nghị:** trần mặc định 1 an toàn nhưng chặt. Luồng **webhook / lịch có tải** (nhiều lượt chạy chồng nhau là bình thường) cần khai `settings.maxConcurrentRuns` trong định nghĩa luồng, vd. `"settings": { "maxConcurrentRuns": 5 }`; nếu không, đỉnh tải sẽ bị 429 / bỏ mốc. Đặt vừa đủ — không đặt số lớn "cho khỏi lỗi". Dấu hiệu cần chỉnh: webhook trả 429 liên tục, log `BỎ mốc` của lịch, hoặc người dùng báo "lượt mới bị từ chối".
+
 ## Phụ lục — việc cần làm khi nâng cấp
 
 1. Áp mig 0410 (chủ lượt), 0411 (phạm vi nhà máy), 0412 (host của bí mật) — `node scripts/apply-migration-04xx.mjs --dev-only|--test-only`.
@@ -104,3 +135,5 @@ Kết quả chuỗi của một phép nối `+`, `join` hay mẫu `{{ }}` lẫn 
 3. Khai host cho **mọi bí mật cũ** (§2), nếu không các node HTTP dùng bí mật sẽ lỗi.
 4. Lưu lại các luồng cha có luồng con (§4).
 5. Đặt `AI_FLOW_HTTP_HOST_CHO_PHEP` theo §3 nếu dùng node HTTP.
+6. Rà các luồng webhook / lịch có tải: khai `settings.maxConcurrentRuns` nếu cần (§11; mặc định 1).
+7. Nếu có bước chờ duyệt do chính người bật / chủ lượt định duyệt: nhờ người khác duyệt (§6).

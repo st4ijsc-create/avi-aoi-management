@@ -19,7 +19,8 @@ import { aiFlowVersions, aiFlows } from "../../../../drizzle/schema";
 import { getDb } from "../../../db/connection";
 
 export class LoiLuongCon extends Error {
-  constructor(message: string) {
+  /** `ma`: mã ỔN ĐỊNH (không dịch) cho chú giải ở UI. */
+  constructor(message: string, public readonly ma?: string) {
     super(message);
     this.name = "LoiLuongCon";
   }
@@ -86,7 +87,7 @@ export async function kiemGoiLuongCon(ngu: NguCanhChay, flowIdCon: string, versi
   if (chuoi.length >= DO_SAU_LUONG_CON_TOI_DA) throw new LoiLuongCon(`từ chối: lồng luồng con quá ${DO_SAU_LUONG_CON_TOI_DA} cấp`);
   // M5: tổng số lượt trong CẢ CÂY lượt (gốc + mọi con/cháu) — độ sâu 4 một mình không chặn fan-out nhân bậc ba.
   const soLuot = await demLuotTrongCay(chuoi[chuoi.length - 1]!.runId);
-  if (soLuot >= TRAN_LUOT_TRONG_CAY) throw new LoiLuongCon(`từ chối: cây lượt của luồng ${ngu.flowId} đã có ${soLuot} lượt (trần ${TRAN_LUOT_TRONG_CAY}) — không tạo thêm lượt con`);
+  if (soLuot >= TRAN_LUOT_TRONG_CAY) throw new LoiLuongCon(`từ chối: cây lượt của luồng ${ngu.flowId} đã có ${soLuot} lượt (trần ${TRAN_LUOT_TRONG_CAY}) — không tạo thêm lượt con`, "CAY_LUOT_DAY");
   const nutVao = nutVaoLuongCon(con.def);
   if (!nutVao) throw new LoiLuongCon(`luồng con '${flowIdCon}' không có node kích hoạt thủ công/MCP để gọi vào`);
   return { version: con.version, hang: con.hang, nutVao, def: con.def };
@@ -106,7 +107,7 @@ dangKyNut({
     const flowIdCon = thamSo.flowId;
     if (typeof flowIdCon !== "string") throw new LoiLuongCon("luong.goi-con cần 'flowId' cố định");
     const vao = ngu.inputs.main ?? [];
-    if (vao.length > TRAN_ITEM_GOI_CON) throw new LoiLuongCon(`từ chối: ${vao.length} item vào luong.goi-con vượt trần ${TRAN_ITEM_GOI_CON} — chia lô trước khi gọi`);
+    if (vao.length > TRAN_ITEM_GOI_CON) throw new LoiLuongCon(`từ chối: ${vao.length} item vào luong.goi-con vượt trần ${TRAN_ITEM_GOI_CON} — chia lô trước khi gọi`, "ITEM_GOI_CON_QUA_NHIEU");
     const k = await kiemGoiLuongCon(ngu, flowIdCon, typeof thamSo.version === "number" ? thamSo.version : undefined);
     return {
       __cho: {

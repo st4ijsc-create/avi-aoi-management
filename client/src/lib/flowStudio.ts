@@ -234,7 +234,7 @@ export function vetModelCuaBuoc(suKien: readonly { kind: string; payload: unknow
 }
 
 /** Mã lỗi node ỔN ĐỊNH (do máy chủ đóng dấu vào `error.ma`) có chú giải ở UI — nhận diện theo MÃ, không theo chuỗi tiếng Việt. */
-export const MA_LOI_CO_CHU_GIAI = ["BI_MAT_CHUA_KHAI_HOST", "CHU_LUOT_KHONG_XAC_DINH", "DICH_NOI_BO"] as const;
+export const MA_LOI_CO_CHU_GIAI = ["BI_MAT_CHUA_KHAI_HOST", "CHU_LUOT_KHONG_XAC_DINH", "DICH_NOI_BO", "CAY_LUOT_DAY", "ITEM_GOI_CON_QUA_NHIEU"] as const;
 export type MaLoiCoChuGiai = (typeof MA_LOI_CO_CHU_GIAI)[number];
 
 export function maLoiChuGiai(loi: unknown): MaLoiCoChuGiai | null {

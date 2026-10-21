@@ -4296,7 +4296,8 @@
       "selfApproveSafetyPlcConfig": "quyết định trên cấu hình safety-PLC do chính bạn tạo hoặc sửa",
       "secondApproveOwnSafetyPlcConfig": "duyệt lần hai một cấu hình safety-PLC mà chính bạn đã duyệt lần đầu (cần hai quản trị viên khác nhau)",
       "flowKichHoatHangCao": "bật luồng có tác dụng ghi ra ngoài hoặc OT (chỉ quản trị viên)",
-      "flowPhamVi": "dùng luồng/bí mật theo nhà máy"
+      "flowPhamVi": "dùng luồng/bí mật theo nhà máy",
+      "flowDuyet": "duyệt bước chờ của Luồng AI"
     },
     "robotRefusal": {
       "hitlActionRequired": "Lệnh chuyển động bị từ chối: không có thao tác xác nhận (HITL) nào đã được duyệt đứng sau lệnh này. Hãy gửi từ Bảng lệnh hoặc xác nhận thao tác trước.",
@@ -4455,7 +4456,11 @@
       "flowChuaCoPhienBan": "Luồng chưa có phiên bản nào.",
       "flowDaTraLoi": "Bước này đã được trả lời hoặc lượt đã kết thúc.",
       "flowKhongCoBuocChoDuyet": "Không có bước nào đang chờ duyệt ở đây.",
-      "flowChiTietMayChu": "{{chiTiet}}"
+      "flowChiTietMayChu": "{{chiTiet}}",
+      "flowQuaTranDongThoi": "Luồng này đang chạy đủ số lượt đồng thời cho phép — lượt mới bị từ chối (không xếp hàng). Thử lại khi lượt đang chạy xong.",
+      "flowDuyetVaiThap": "Bước này chỉ vai '{{vaiYeuCau}}' trở lên (hoặc admin) được duyệt — vai của bạn: '{{vaiCuaBan}}'.",
+      "flowDuyetTrungNguoiBat": "Bạn đã bật phiên bản luồng này — người duyệt phải là người khác.",
+      "flowDuyetTrungChuLuot": "Bạn là chủ lượt chạy này (đã kích hoạt hoặc bật) — người duyệt phải là người khác."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -23198,7 +23203,9 @@
       "chuGiai": {
         "BI_MAT_CHUA_KHAI_HOST": "Bí mật này chưa khai host được phép — quản trị viên khai ở Bí mật → host. Xem",
         "CHU_LUOT_KHONG_XAC_DINH": "Không xác định được người chạy (chủ lượt bị khoá, mất quyền ghi hoặc chưa có) — bật lại luồng bằng tài khoản còn quyền. Xem",
-        "DICH_NOI_BO": "Đích là địa chỉ nội bộ — chỉ gọi được khi danh sách trắng ghi rõ host:cổng. Xem"
+        "DICH_NOI_BO": "Đích là địa chỉ nội bộ — chỉ gọi được khi danh sách trắng ghi rõ host:cổng. Xem",
+        "CAY_LUOT_DAY": "Cây lượt đã đạt trần số lượt (cha + con + cháu) — giảm số lần gọi luồng con hoặc chia luồng. Xem",
+        "ITEM_GOI_CON_QUA_NHIEU": "Một lần gọi luồng con nhận quá nhiều item — chia lô trước khi gọi. Xem"
       }
     },
     "duyet": {

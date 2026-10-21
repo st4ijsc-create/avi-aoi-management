@@ -349,7 +349,7 @@ export const flowRouter = router({
       try {
         runId = await batDauRun({ flowId: input.flowId, version, items: input.items, nutKichHoat: thuCong?.id, triggerKind: "thu-cong", chuLuong: ctx.user.id });
       } catch (e) {
-        if (e instanceof LoiLuong && e.code === "QUA_TRAN_DONG_THOI") throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowChayTay" }, e.message);
+        if (e instanceof LoiLuong && e.code === "QUA_TRAN_DONG_THOI") throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowChayTay", reason: "flowQuaTranDongThoi" }, e.message);
         throw e;
       }
       return { runId, version };
@@ -462,7 +462,10 @@ export const flowRouter = router({
           userId: ctx.user.id, action: "FLOW_DUYET_TU_CHOI", entityType: "ai_flow_run", entityName: input.runId, status: "failure",
           details: { ma: quyen.ma, nodeId: input.nodeId, vaiTroDuyet: vaiYeuCau, vaiNguoiDuyet: String(ctx.user.role), dongY: input.dongY },
         }).catch((e: unknown) => console.error("[flow.duyet] không ghi được kiểm toán từ chối:", (e as Error)?.message ?? e));
-        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowDuyet" }, quyen.lyDo);
+        // Ba lý do KHÔNG lộ gì ngoài điều người duyệt đã biết (vai của chính họ, vai bước yêu cầu, việc họ đã bật/kích hoạt).
+        if (quyen.ma === "VAI_THAP") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowDuyet", reason: "flowDuyetVaiThap", vaiYeuCau, vaiCuaBan: String(ctx.user.role) }, quyen.lyDo);
+        if (quyen.ma === "TRUNG_NGUOI_BAT") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowDuyet", reason: "flowDuyetTrungNguoiBat" }, quyen.lyDo);
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowDuyet", reason: "flowDuyetTrungChuLuot" }, quyen.lyDo);
       }
       const kq = await traLoiCho({
         runId: input.runId,

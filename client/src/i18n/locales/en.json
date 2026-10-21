@@ -4296,7 +4296,8 @@
       "selfApproveSafetyPlcConfig": "decide on a safety-PLC configuration you created or edited",
       "secondApproveOwnSafetyPlcConfig": "give the second approval of a safety-PLC configuration you approved first (two different admins are required)",
       "flowKichHoatHangCao": "enable a flow that writes externally or touches OT (admins only)",
-      "flowPhamVi": "use flows/secrets by factory"
+      "flowPhamVi": "use flows/secrets by factory",
+      "flowDuyet": "approve a waiting step of an AI flow"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -4463,7 +4464,11 @@
       "flowChuaCoPhienBan": "The flow has no version yet.",
       "flowDaTraLoi": "This step has already been answered or the run has ended.",
       "flowKhongCoBuocChoDuyet": "There is no step waiting for approval here.",
-      "flowChiTietMayChu": "{{chiTiet}}"
+      "flowChiTietMayChu": "{{chiTiet}}",
+      "flowQuaTranDongThoi": "This flow already has the maximum number of concurrent runs — the new run was rejected (not queued). Try again when a running one finishes.",
+      "flowDuyetVaiThap": "This step can only be approved by role '{{vaiYeuCau}}' or higher (or admin) — your role: '{{vaiCuaBan}}'.",
+      "flowDuyetTrungNguoiBat": "You enabled this flow version — the approver must be someone else.",
+      "flowDuyetTrungChuLuot": "You own this run (you triggered or enabled it) — the approver must be someone else."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -23224,7 +23229,9 @@
       "chuGiai": {
         "BI_MAT_CHUA_KHAI_HOST": "This secret has no allowed hosts declared — an administrator declares them under Secrets → hosts. See",
         "CHU_LUOT_KHONG_XAC_DINH": "The run owner can't be determined (locked, lost write access, or missing) — re-enable the flow with an account that still has access. See",
-        "DICH_NOI_BO": "The target is an internal address — it can only be called when the allow-list names the exact host:port. See"
+        "DICH_NOI_BO": "The target is an internal address — it can only be called when the allow-list names the exact host:port. See",
+        "CAY_LUOT_DAY": "The run tree hit its run limit (parent + children + grandchildren) — reduce sub-flow calls or split the flow. See",
+        "ITEM_GOI_CON_QUA_NHIEU": "One sub-flow call received too many items — split into batches before calling. See"
       }
     },
     "duyet": {

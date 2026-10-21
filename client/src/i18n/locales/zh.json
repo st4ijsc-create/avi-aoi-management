@@ -4288,7 +4288,8 @@
       "selfApproveSafetyPlcConfig": "对自己创建或修改的安全PLC配置作出决定",
       "secondApproveOwnSafetyPlcConfig": "对您已作出首次批准的安全PLC配置进行第二次批准（需要两名不同的管理员）",
       "flowKichHoatHangCao": "启用对外写入或涉及 OT 的流程（仅管理员）",
-      "flowPhamVi": "按工厂使用流程/密钥"
+      "flowPhamVi": "按工厂使用流程/密钥",
+      "flowDuyet": "审批 AI 流程中等待的步骤"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
@@ -4455,7 +4456,11 @@
       "flowChuaCoPhienBan": "该流程还没有任何版本。",
       "flowDaTraLoi": "此步骤已被回答，或本次运行已结束。",
       "flowKhongCoBuocChoDuyet": "这里没有等待审批的步骤。",
-      "flowChiTietMayChu": "{{chiTiet}}"
+      "flowChiTietMayChu": "{{chiTiet}}",
+      "flowQuaTranDongThoi": "该流程已达并发运行上限 — 新运行被拒绝（不排队）。请在正在运行的完成后重试。",
+      "flowDuyetVaiThap": "该步骤只能由角色“{{vaiYeuCau}}”及以上（或管理员）审批 — 您的角色：“{{vaiCuaBan}}”。",
+      "flowDuyetTrungNguoiBat": "您启用了此流程版本 — 审批人必须是其他人。",
+      "flowDuyetTrungChuLuot": "您是本次运行的所有者（触发或启用者）— 审批人必须是其他人。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -23226,7 +23231,9 @@
       "chuGiai": {
         "BI_MAT_CHUA_KHAI_HOST": "该密钥尚未声明允许的主机 — 由管理员在 密钥 → 主机 中声明。参见",
         "CHU_LUOT_KHONG_XAC_DINH": "无法确定运行所有者（已被锁定、失去写权限或不存在）— 请用仍有权限的账户重新启用该流程。参见",
-        "DICH_NOI_BO": "目标是内部地址 — 仅当白名单明确列出 host:端口 时才可调用。参见"
+        "DICH_NOI_BO": "目标是内部地址 — 仅当白名单明确列出 host:端口 时才可调用。参见",
+        "CAY_LUOT_DAY": "运行树已达运行数量上限（父 + 子 + 孙）— 请减少子流程调用或拆分流程。参见",
+        "ITEM_GOI_CON_QUA_NHIEU": "单次子流程调用收到的条目过多 — 调用前请分批。参见"
       }
     },
     "duyet": {
