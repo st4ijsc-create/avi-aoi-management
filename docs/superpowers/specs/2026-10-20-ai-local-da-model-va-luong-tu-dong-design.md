@@ -690,6 +690,13 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   (thứ tự lượt lẻ tat→bat), server mã 8bfe341d7 (có thêm dự phòng `--ir`). Gộp 36 lượt/nhánh. **Cổng chính: bat ≥ tat + 3/36.**
   Cổng PHỤ (chỉ BÁO, không quyết): số lượt grader không biên dịch được bat ≤ tat − 3/36 — cổng phụ do dữ liệu 2 lượt đầu GỢI Ý nên
   KHÔNG được dùng một mình để bật cờ `agent`. Cờ `agent` giữ TẮT tới khi có kết quả.
+  **KẾT QUẢ (2026-10-22 14:30, 72 báo cáo, 35B):** TẮT 20/36 (tt 9 · tv 7 · ud 4 /12) · BẬT 23/36 (tt 10 · tv 8 · ud 5 /12) ⇒
+  **+3/36 — cổng chính ĐẠT đúng biên (23 ≥ 20 + 3)**. Cặp: bật đạt/tắt trượt 5 [tt5#1 #3, tv9#1 #2, ud5#3] · ngược lại 2 [tt10#2,
+  tv9#3]. Cổng phụ (chỉ báo): grader không biên dịch được 9 → 5 (≤ 9 − 3 ⇒ đạt). Riêng lượt 3: tắt 8/12 · bật 9/12. Chi phí: thời gian
+  trung vị 156 → 209 s (+34 %), token ra trung vị 30,2k → 41,1k (+36 %), dừng het-luot 3 + lap-lai 1 ở nhánh bật (model kẹt sửa).
+  Mã server: lượt 1–2 = 88db78df3 (4/24 lượt bật trước 08:10 là mã cũ hơn, đều biên dịch sạch), lượt 3 = 8bfe341d7 (có `--ir`);
+  khác nhau CHỈ khi RuSTy bị giết sớm — đếm trên 12 lượt bật của lượt 3: **0** lượt dính dự phòng `--ir`, 0 lượt không kiểm được.
+  Quyết định bật cờ `agent`: dieu-phoi.
 - **ĐĂNG KÝ TRƯỚC — tác nhân theo vai trò** (thiết kế `2026-10-22-tac-nhan-theo-vai-tro-design.md`, dieu-phoi duyệt kèm 4 chỉnh):
   12 bài ST (cùng danh sách) × 2 lượt, vai trò `code` (35B) vs `code.plc` (27B, qua định tuyến mới). **Cổng: code.plc ≥ code + 2/24
   VÀ trung vị thời gian ≤ 2×.** Không đạt ⇒ tác nhân giữ `code`. Chạy SAU A/B /v1 #2.
