@@ -10,6 +10,15 @@
  * sampling "hien-tai" (0,2/0,9 — như mọi báo cáo cũ) | "chinh-hang" (model card Qwen3.6) · model · rawUrl · base · cookie ·
  * cheDoNghi (pipeline).
  */
+import { Agent, fetch as fetchUndici } from "undici";
+
+/**
+ * ★ Đợt 9 (2026-10-22, A/B /v1 lần 7: "TypeError: fetch failed" ở lượt > 300 s) — `fetch` của Node có `headersTimeout`
+ * 300 s: lượt /v1 KHÔNG stream chỉ gửi header khi xong (27B nghĩ 16k + 2 vòng sửa vượt 300 s) ⇒ client tự cắt. Đường /v1
+ * dùng undici riêng, KHÔNG trần header/body — trần thật là của SERVER (AI_KHE_NANG_INFER_TIMEOUT_MS).
+ */
+const KHONG_TRAN = new Agent({ headersTimeout: 0, bodyTimeout: 0 });
+
 export function taoGoiModel(o) {
   const rawUrl = o.rawUrl ?? "http://127.0.0.1:8091/v1/chat/completions";
   const goc = new URL(rawUrl).origin;
@@ -77,7 +86,8 @@ export function taoGoiModel(o) {
    */
   async function chatV1(sys, user, { tatKiem = false } = {}) {
     const t0 = Date.now();
-    const res = await fetch(`${base}/v1/chat/completions`, {
+    const res = await fetchUndici(`${base}/v1/chat/completions`, {
+      dispatcher: KHONG_TRAN,
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${o.v1Token ?? ""}` },
       body: JSON.stringify({

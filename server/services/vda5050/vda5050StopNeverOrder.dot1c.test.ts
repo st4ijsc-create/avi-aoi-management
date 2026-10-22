@@ -102,6 +102,12 @@ const orders = (p: Pub[]) => p.filter((x) => /\/order$/.test(x.topic));
 const instant = (p: Pub[]) => p.filter((x) => /\/instantActions$/.test(x.topic));
 const EVIL = { order: { orderId: "evil", nodes: [{ nodeId: "far", sequenceId: 0, released: true, nodePosition: { x: 99, y: 99, mapId: "m" }, actions: [] }], edges: [] }, x: 50, y: 50, mapId: "m" };
 
+// Bait của EVIL. headerId/timestamp/actionId do SERVER sinh từ Date.now() (vda5050Mapping.buildVda5050StopInstantActions) nên có thể chứa
+// "99" ngẫu nhiên ⇒ khớp thô /99/ trên JSON thô là flake. Gỡ đúng ba khoá sinh-bởi-server trước khi khớp; mọi trường khác (kể cả
+// actionType/actionParameters/serialNumber) vẫn bị quét.
+const BAIT = /evil|far|99/;
+const sanBaiServer = (m: unknown): string => JSON.stringify(m, (k, v) => (k === "headerId" || k === "timestamp" || k === "actionId" ? undefined : v));
+
 const ENV_KEYS = ["ROBOT_CONTROL_ENABLED", "ROBOT_COMMISSIONING_REQUIRED", "SEC_PLATFORM", "FIELD_V2_ENABLED"] as const;
 const saved: Record<string, string | undefined> = {};
 for (const k of ENV_KEYS) saved[k] = process.env[k];
@@ -132,7 +138,13 @@ describe("R-1C-m lớp (b) — Vda5050RobotDriver: job dừng ⇒ CHỈ instantA
     expect(msg.actions.map((a: any) => a.actionType)).toEqual(["cancelOrder", "startPause"]);
     expect(msg.manufacturer).toBe("acme");
     expect(msg.serialNumber).toBe("sn7");
-    expect(JSON.stringify(msg)).not.toMatch(/evil|far|99/);
+    expect(sanBaiServer(msg)).not.toMatch(BAIT);
+    // Tripwire: bộ lọc KHÔNG được mù — bản tin bị tiêm bait (tham số, nodePosition, serialNumber) vẫn phải bị bắt; còn giá trị 99 nằm
+    // ở khoá sinh-bởi-server thì phải được bỏ qua (chính là nguồn flake).
+    expect(sanBaiServer({ ...msg, actions: [{ ...msg.actions[0], actionParameters: [{ key: "orderId", value: "evil" }] }] })).toMatch(BAIT);
+    expect(sanBaiServer({ ...msg, actions: [{ ...msg.actions[0], nodePosition: { x: 99, y: 99 } }] })).toMatch(BAIT);
+    expect(sanBaiServer({ ...msg, serialNumber: "far" })).toMatch(BAIT);
+    expect(sanBaiServer({ ...msg, headerId: 99, timestamp: "1999-99-99", actions: msg.actions.map((a: any) => ({ ...a, actionId: "x99" })) })).not.toMatch(BAIT);
     for (const a of msg.actions) expect(a.actionParameters ?? []).toEqual([]);
   });
 

@@ -6,7 +6,8 @@
  *   • không danh tính ⇒ `tools/list` chỉ sổ tĩnh, `tools/call` luồng ⇒ từ chối (fail-closed như mọi tool MCP).
  * Danh tính MCP được GIẢ ở `xacThucCli` (bcrypt/khoá tài khoản thật có lưới riêng ở aiCodingCli).
  */
-import { vi } from "vitest";
+import { vi, beforeAll } from "vitest";
+import { donLuongTheoTienTo, donNhaMayVaNguoiTheoMa } from "../__donDuLieuTest";
 const dtGia = vi.hoisted(() => ({ ok: true, userId: 1, role: "engineer" }));
 vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";
@@ -27,6 +28,11 @@ import { SO_TOOL_MCP, xoaDanhTinhNho, xuLyGoi } from "../../aiCodingCli/mcpServe
 import { toolCuaPhienBan } from "./mcp";
 
 const TT = "t84mcp";
+beforeAll(async () => {
+  // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy) — xem flow/__donDuLieuTest.ts
+  await donLuongTheoTienTo(TT);
+  await donNhaMayVaNguoiTheoMa(TT + "F", TT + "-nd-");
+});
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({ id, type, typeVersion: 1, name: id, position: [0, 0], parameters, ...extra });
 const noi = (a: string, b: string) => ({ from: { node: a, port: "main" }, to: { node: b, port: "main" } });
 let uid = 0;

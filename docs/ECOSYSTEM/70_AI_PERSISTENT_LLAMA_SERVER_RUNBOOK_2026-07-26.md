@@ -82,6 +82,21 @@ a `systemd` unit on Linux) — the app does **not** manage this process's lifecy
 | `LLAMA_SERVER_HEALTH_TIMEOUT_MS` | `2000` (2s) | **Short** timeout for the pre-generation preflight probe (§6) — deliberately much shorter than the generation timeout so a down/hung server is detected in ~2s, not 120s. |
 | `LLAMA_SERVER_STRICT` | unset (OFF) | `"true"` → a server failure (preflight or generation) **throws** instead of falling back in-process, so the caller's honest-degrade/offline-template path kicks in rather than a silent in-process detour. Leave OFF unless you specifically want "server or nothing." |
 
+> **Long heavy-slot answers and `/v1` clients (measured 2026-10-22).** A/B of `/v1` `code.plc` on Qwen3.6-27B (thinking,
+> `max_tokens` 16000), 24 PLC tasks × 3 turns per arm, non-stream, total time per answer:
+>
+> | arm | p50 | p90 | max | > 120 s | > 300 s |
+> |---|---|---|---|---|---|
+> | ST compile check OFF | 136 s | 193 s | 250 s | 47/72 (65 %) | 0/72 |
+> | ST compile check ON (`AI_KIEM_BIEN_DICH_ST=v1`) | 163 s | 239 s | 385 s | 51/72 (71 %) | 3/72 (4 %) |
+>
+> - Without `AI_KHE_NANG_INFER_TIMEOUT_MS`, the server's own 120 s limit cuts about two thirds of these answers.
+> - Even with it, **the client side** has a limit too: Node's built-in `fetch` (and many SDKs) gives up after
+>   300 s without response headers (`UND_ERR_HEADERS_TIMEOUT`), and a non-stream answer only sends headers when it is
+>   finished. With the compile check on, ~4 % of answers exceed 300 s.
+> - **Recommendation: `/v1` clients should use `stream: true` for `code.plc`** (a stream sends headers at once and
+>   has no total limit, only the idle limit between chunks); a non-stream client must raise its own header/body timeout.
+
 To enable: set `LLAMA_SERVER_ENABLED=true` + `LLAMA_SERVER_URL=http://127.0.0.1:8090` (matching §3's
 `--port`) in the API process's environment and restart it.
 

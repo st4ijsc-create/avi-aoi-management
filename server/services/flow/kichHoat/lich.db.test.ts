@@ -3,7 +3,8 @@
  * UNIQUE — hai tiến trình bắn trùng vẫn một lượt), mốc khác ⇒ lượt mới, chỉ luồng BẬT có node lịch được nạp, lượt chạy hết.
  * Đồng hồ GIẢ (`bayGio`) — không chờ cron thật.
  */
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, beforeAll } from "vitest";
+import { donLuongTheoTienTo } from "../__donDuLieuTest";
 import { eq, inArray, like } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { aiFlowRuns, aiFlowSteps, aiFlows } from "../../../../drizzle/schema";
@@ -11,6 +12,7 @@ import { chayMotMuc, luuPhienBan } from "../dongCo";
 import { banLich, docMucLich, khoaLich, kiemCron, kiemMuiGio, kiemThamSoKichHoat, mocPhut } from "./lich";
 
 const TT = "t8lh";
+beforeAll(() => donLuongTheoTienTo(TT)); // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy) — xem flow/__donDuLieuTest.ts
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}) => ({ id, type, typeVersion: 1, name: id, position: [0, 0] as [number, number], parameters });
 const noi = (a: string, b: string) => ({ from: { node: a, port: "main" }, to: { node: b, port: "main" } });
 

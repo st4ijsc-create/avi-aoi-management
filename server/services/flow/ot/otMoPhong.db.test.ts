@@ -42,6 +42,19 @@ afterAll(async () => {
 async function chayHet() {
   for (let i = 0; i < 2000 && (await chayMotMuc("w-85", undefined, TT)); i++);
 }
+/**
+ * Lượt FOE do CHÍNH test này sinh ra: hàng `orchestration_runs` MỚI (id > mốc chụp trước) mà tham số/ngữ cảnh nhắc tới một lượt luồng của test
+ * hoặc workflow giả `wf-N` của test. KHÔNG đếm cả bảng: `orchestration_runs` là bảng DÙNG CHUNG — các bộ test khác (edge, FOE…) chạy
+ * song song/cùng lúc trong lưới đầy đủ và chèn hàng vào đó, nên "đếm toàn bảng rồi đòi không đổi" đỏ ngẫu nhiên (đo: 44→45, 52→57).
+ */
+const mocFoe = async () =>
+  ((await (await db()).execute(sql`SELECT coalesce(max(id), 0)::int AS m FROM orchestration_runs`)) as unknown as { m: number }[])[0].m;
+const demFoeCuaTest = async (moc: number, runIds: readonly string[]) => {
+  const nhan = [...runIds, TT];
+  const dk = nhan.map((n) => sql`("paramsJson"::text LIKE ${"%" + n + "%"} OR "contextJson"::text LIKE ${"%" + n + "%"})`);
+  const dkSql = dk.reduce((a, b) => sql`${a} OR ${b}`);
+  return ((await (await db()).execute(sql`SELECT count(*)::int AS n FROM orchestration_runs WHERE id > ${moc} AND ("workflowRef" LIKE 'wf-%' OR ${dkSql})`)) as unknown as { n: number }[])[0].n;
+};
 const demBang = async (bang: "command_log" | "orchestration_runs") =>
   ((await (await db()).execute(sql.raw(`SELECT count(*)::int AS n FROM ${bang}`))) as unknown as { n: number }[])[0].n;
 const demDeXuat = async (runIds: string[]) =>
@@ -69,7 +82,7 @@ describe("Đợt 8.5 — node OT chế độ mô phỏng (động cơ thật, DB
   it(`★★★ bộ đột biến: ${CA_CAO.length} yêu cầu mức 4–5 ⇒ ${CA_CAO.length}/${CA_CAO.length} lượt bị chặn, 0 đề xuất (đếm bảng); ${CA_THAP.length} stop/pause ⇒ ${CA_THAP.length} đề xuất mô phỏng`, async () => {
     const { version } = await luuPhienBan(luongLenh, null);
     const cmd0 = await demBang("command_log");
-    const orch0 = await demBang("orchestration_runs");
+    const moc0 = await mocFoe();
 
     const runCao: string[] = [];
     for (const c of CA_CAO) runCao.push(await batDauRun({ flowId: luongLenh.id, version, items: [{ json: { may: c.may, lenh: c.lenh, tag: c.tag ?? null, giaTri: c.giaTri ?? null } }] }));
@@ -88,7 +101,7 @@ describe("Đợt 8.5 — node OT chế độ mô phỏng (động cơ thật, DB
     expect(await demDeXuat(runThap)).toBe(CA_THAP.length);
 
     expect(await demBang("command_log"), "command_log phải đứng yên").toBe(cmd0);
-    expect(await demBang("orchestration_runs"), "không có lượt FOE nào").toBe(orch0);
+    expect(await demFoeCuaTest(moc0, [...runCao, ...runThap]), "không có lượt FOE nào do luồng này sinh ra").toBe(0);
   });
 
   it("★★ đồng ý một đề xuất ⇒ 'đã duyệt (mô phỏng) — không gửi', item mang deXuatId/muc/ketQua; command_log đứng yên", async () => {
@@ -158,7 +171,7 @@ describe("Đợt 8.5 — node OT chế độ mô phỏng (động cơ thật, DB
     };
     const { version, hang } = await luuPhienBan(def, null);
     expect(hang).toBe("ot");
-    const orch0 = await demBang("orchestration_runs");
+    const moc0 = await mocFoe();
     const r1 = await batDauRun({ flowId: def.id, version, items: [{ json: { wf: 1 } }] });
     const r2 = await batDauRun({ flowId: def.id, version, items: [{ json: { wf: 2 } }] });
     await chayHet();
@@ -166,6 +179,21 @@ describe("Đợt 8.5 — node OT chế độ mô phỏng (động cơ thật, DB
     expect(await demDeXuat([r1])).toBe(1);
     expect(await trangThai(r2)).toBe("loi");
     expect(await demDeXuat([r2])).toBe(0);
-    expect(await demBang("orchestration_runs")).toBe(orch0);
+    expect(await demFoeCuaTest(moc0, [r1, r2]), "không lượt FOE nào do luồng này sinh ra").toBe(0);
+  });
+
+  it("bộ đếm lượt FOE của test tự canh: hàng của test (workflowRef wf-N / tham số nhắc lượt luồng) được ĐẾM, hàng của bộ test khác thì KHÔNG", async () => {
+    const d = await db();
+    const moc = await mocFoe();
+    const wfId = ((await d.execute(sql`SELECT id FROM orchestration_workflows ORDER BY id LIMIT 1`)) as unknown as { id: number }[])[0]?.id;
+    if (wfId === undefined) return; // DB không có workflow nào để gắn khoá ngoại — không dựng được hàng thử
+    const chen = (ref: string, params: string) =>
+      d.execute(sql`INSERT INTO orchestration_runs ("workflowId", "workflowRef", status, "paramsJson") VALUES (${wfId}, ${ref}, 'queued', ${params}::jsonb) RETURNING id`) as unknown as Promise<{ id: number }[]>;
+    const ngoai = await chen("B10REP-khong-lien-quan", "{}"); // bộ test khác
+    expect(await demFoeCuaTest(moc, ["run-gia-1"])).toBe(0);
+    const cua = await chen("wf-gia", "{}"); // workflow giả của test
+    const nhac = await chen("ref-khac", '{"nguon":"run-gia-1"}'); // tham số nhắc lượt luồng của test
+    expect(await demFoeCuaTest(moc, ["run-gia-1"])).toBe(2);
+    await d.execute(sql`DELETE FROM orchestration_runs WHERE id IN (${ngoai[0].id}, ${cua[0].id}, ${nhac[0].id})`);
   });
 });

@@ -5,7 +5,8 @@
  *   #2 thủ công ⇒ ai.trich-xuat (lần đầu trả JSON hỏng ⇒ thử lại) ⇒ ai.phan-loai ⇒ đánh dấu chờ duyệt thẻ
  *   #4 lịch 06:00 ⇒ ai.tom-tat ⇒ đóng gói
  */
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, beforeAll } from "vitest";
+import { donLuongTheoTienTo } from "../__donDuLieuTest";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,7 @@ import { datHamGoiAi, type HamGoiAi } from "../nut/ai";
 import { banLich, kiemThamSoKichHoat } from "../kichHoat/lich";
 
 const TT = "t8mau";
+beforeAll(() => donLuongTheoTienTo(TT)); // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy) — xem flow/__donDuLieuTest.ts
 const THU_MUC = dirname(fileURLToPath(import.meta.url));
 const docMau = (ten: string) => JSON.parse(readFileSync(join(THU_MUC, ten), "utf8")) as FlowDefinition;
 /** Lưu mẫu dưới id có tiền tố riêng của lưới (không giành mục với lưới khác). */

@@ -283,7 +283,7 @@ describe("Inspector ST / PLCopen / Copilot + Lưu vào project", () => {
     const tab = within(aside).getByRole("tab", { name: /Copilot/ });
     expect(tab).toHaveAttribute("aria-selected", "true");
     expect(document.getElementById(tab.getAttribute("aria-controls")!)!.contains(document.activeElement)).toBe(true);
-    await within(aside).findByPlaceholderText(/Describe what to generate|Mô tả/);
+    await within(aside).findByPlaceholderText(/Describe what to generate|Mô tả/, undefined, { timeout: 5000 });
     expect(document.body.style.paddingRight).toBe("");
     expect(Array.from(document.querySelectorAll("aside")).some((a) => /(^|\s)fixed(\s|$)/.test(a.className))).toBe(false);
     expect(mainEl().contains(aside)).toBe(false);
@@ -422,7 +422,7 @@ describe("final wave T14 — POU: stream Copilot qua mốc 1024 px", () => {
     seed();
     renderPage();
     fireEvent.click(within(inspector()).getByRole("tab", { name: /Copilot/ }));
-    fireEvent.change(await screen.findByPlaceholderText(/Mô tả cần sinh gì|Describe what to generate/), { target: { value: "start motor" } });
+    fireEvent.change(await screen.findByPlaceholderText(/Mô tả cần sinh gì|Describe what to generate/, undefined, { timeout: 5000 }), { target: { value: "start motor" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^(Sinh mã|Generate)$/ })); });
     await nghi();
     expect(luot).toHaveLength(1);

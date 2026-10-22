@@ -92,7 +92,9 @@ export function goiLaiBangModel(y: {
     for (;;) {
       const n = await it.next();
       if (n.done) {
-        if (n.value.degraded || !n.value.text.trim()) throw new Error("model_khong_tra_loi");
+        // Model không trả lời ⇒ chuỗi rỗng: kiemVaSuaST thấy "không còn khối ST" và giữ bản tốt nhất (cùng kết cục
+        // với nhánh bắt lỗi goiLai) — không ném lỗi thô (rawErrorCensus F3).
+        if (n.value.degraded || !n.value.text.trim()) return "";
         return n.value.text;
       }
     }

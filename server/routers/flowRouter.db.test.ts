@@ -5,6 +5,7 @@
  * hai ⇒ CONFLICT · dòng thời gian cắt dữ liệu dài · danh mục node.
  */
 import { vi } from "vitest";
+import { donLuongTheoTienTo, donNhaMayVaNguoiTheoMa } from "../services/flow/__donDuLieuTest";
 vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";
 });
@@ -16,6 +17,11 @@ import { chayMotMuc } from "../services/flow/dongCo";
 import { flowRouter, TRAN_CHU_BUOC } from "./flowRouter";
 
 const TT = "t8rt";
+beforeAll(async () => {
+  // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy) — xem services/flow/__donDuLieuTest.ts
+  await donLuongTheoTienTo(TT);
+  await donNhaMayVaNguoiTheoMa(MA_NM, TT + "-");
+});
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}) => ({ id, type, typeVersion: 1, name: id, position: [0, 0], parameters });
 const noi = (a: string, pa: string, b: string) => ({ from: { node: a, port: pa }, to: { node: b, port: "main" } });
 

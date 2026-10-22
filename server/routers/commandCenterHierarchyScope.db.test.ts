@@ -74,6 +74,9 @@ const maCua = (nodes: Array<{ children?: unknown[] }> | undefined): string[] =>
 describe.skipIf(!DB_URL)("PH-23 — `commandCenter.hierarchy` theo phạm vi NGƯỜI XEM, bốn chiều, CSDL thật", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    // Dọn dư của một lượt trước bị ngắt (userId cố định ⇒ hàng sót làm lượt sau đỏ) — cùng thân dọn idempotent với afterAll.
+    await sql`DELETE FROM user_factory_assignments WHERE "userId" IN ${sql(ALL_USERS)}`;
+    await sql`DELETE FROM permissions WHERE "userId" IN ${sql(ALL_USERS)}`;
     const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
 
     // ── Hai nhà máy ĐỘC LẬP, mỗi cái một nhánh đầy đủ tới tận máy ───────────────

@@ -61,6 +61,11 @@ export default defineConfig({
     exclude: [
       "**/node_modules/**",
       "**/dist/**",
+      // Phụ kiện bài thi của bộ đo model (scripts/ai-eval): đề ẩn `an/` import ../src chỉ có trong sandbox, `khung/` rỗng, `du-an/` là dự án mẫu.
+      // Bộ chấm chạy `node --test` trong bản chép ngoài scripts/ (không dùng vitest) nên loại ở đây là AN TOÀN (do-model xác nhận 2026-10-21).
+      "scripts/ai-eval/**/an/**",
+      "scripts/ai-eval/**/khung/**",
+      "scripts/ai-eval/vscode-e2e/du-an/**",
       "server/services/edge/edgeExecution.dot10.e2e.db.test.ts",
       "server/services/edge/edgeAttack.dot10.e2e.db.test.ts",
       "server/services/edge/edgeExecution.s3.dot9.db.test.ts",

@@ -8,6 +8,7 @@
  * có lưới riêng (`deployStepUpFreshness`, `totpReplay`).
  */
 import { vi } from "vitest";
+import { donLuongTheoTienTo, donNhaMayVaNguoiTheoMa } from "../services/flow/__donDuLieuTest";
 vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";
   process.env.AUDIT_ALL_MUTATIONS = "false";
@@ -29,6 +30,11 @@ import { readAppErrorMeta } from "../_core/appError";
 import { flowRouter } from "./flowRouter";
 
 const TT = "t85rt";
+beforeAll(async () => {
+  // Dọn dữ liệu SÓT của lượt trước bị ngắt (afterAll không chạy) — xem services/flow/__donDuLieuTest.ts
+  await donLuongTheoTienTo(TT);
+  await donNhaMayVaNguoiTheoMa(MA_NM_OT, TT + "-");
+});
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}) => ({ id, type, typeVersion: 1, name: id, position: [0, 0], parameters });
 const noi = (a: string, pa: string, b: string) => ({ from: { node: a, port: pa }, to: { node: b, port: "main" } });
 

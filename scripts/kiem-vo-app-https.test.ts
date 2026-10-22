@@ -94,7 +94,8 @@ describe("vỏ app NGUỒN (tầng 2) — 0 http(s):// thô", () => {
     const css = readFileSync(resolve(REPO_ROOT, "client/src/fonts.css"), "utf8");
     expect(css.match(/font-family: "Geist";/g)).toHaveLength(5);
     expect(css.match(/font-family: "Geist Mono";/g)).toHaveLength(6);
-    expect(css.match(/url\("@fontsource-variable\/geist(-mono)?\/files\/[a-z0-9-]+\.woff2"\)/g)).toHaveLength(11);
+    // a72c853ab: url đổi sang đường dẫn tương đối tới node_modules (Vite resolve woff2 không cần bare-specifier) — vẫn đúng 11 url woff2 @fontsource-variable.
+    expect(css.match(/url\("(?:\.\.\/\.\.\/node_modules\/)?@fontsource-variable\/geist(-mono)?\/files\/[a-z0-9-]+\.woff2"\)/g)).toHaveLength(11);
     expect(css).not.toMatch(/https?:\/\//);
     expect(css).toMatch(/font-display: swap;/);
   });

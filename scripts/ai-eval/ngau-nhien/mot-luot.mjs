@@ -111,9 +111,26 @@ if (MODEL_DAU) console.error(`ℹ model :8091 lúc bắt đầu: ${MODEL_DAU}`);
 let dungSom = null;
 
 const rows = [];
+/**
+ * ★ Đợt 9 (2026-10-22) — `--noi-tiep <nhãn>`: NỐI TIẾP một lượt dừng sớm (lỗi hạ tầng) — nạp các hàng ĐÃ CHẤM của báo cáo
+ * `<nhãn>.json` (cùng cấu hình: config/ab-kiem phải khớp, kiểm dưới) và CHỈ chạy các (bài, lượt, nhánh) còn thiếu. Hàng nạp
+ * lại mang `noiTiep: true`; báo cáo ghi `noiTiepTu`.
+ */
+const NOI_TIEP = arg("--noi-tiep", null);
+const daCo = new Set();
+if (NOI_TIEP) {
+  const cu = JSON.parse(fs.readFileSync(`${BO}/reports/${NOI_TIEP}.json`, "utf8"));
+  if (cu.config !== CONFIG || !!cu.abKiem !== AB_KIEM) { console.error(`⛔ --noi-tiep ${NOI_TIEP}: cấu hình khác (config ${cu.config}, abKiem ${cu.abKiem})`); process.exit(2); }
+  for (const r of cu.rows) {
+    rows.push({ ...r, noiTiep: true });
+    daCo.add(`${r.id}#${r.luot}#${r.nhanh ?? ""}`);
+  }
+  console.error(`ℹ nối tiếp ${NOI_TIEP}: nạp ${cu.rows.length} hàng đã chấm`);
+}
 const dangCham = new Set();
 async function cham(b, luot, g, nhanh = undefined) {
-  const dir = `${WORK}/${b.id}-${luot}`;
+  // thư mục theo NHÁNH — hai nhánh của cùng (bài, lượt) không bao giờ chấm chung một thư mục
+  const dir = `${WORK}/${b.id}-${luot}${nhanh ? `-${nhanh}` : ""}`;
   dungKhung(b, dir);
   const tr = trichTep(g.text || "", b);
   let loiGhi = null;
@@ -182,6 +199,7 @@ for (const b of DS) {
   for (let luot = 1; luot <= SO_LUOT; luot++) {
     // --ab-kiem: hai nhánh LIỀN nhau, thứ tự đảo theo lượt (lẻ tat→bat, chẵn bat→tat).
     for (const nhanh of AB_KIEM ? (luot % 2 ? ["tat", "bat"] : ["bat", "tat"]) : [undefined]) {
+      if (daCo.has(`${b.id}#${luot}#${nhanh ?? ""}`)) continue;
       process.stderr.write(`▶ ${b.id} (${b.lang}/${b.muc}) lượt ${luot}${nhanh ? ` [${nhanh}]` : ""} … sinh\n`);
       let g;
       try {
@@ -263,7 +281,7 @@ fs.writeFileSync(`${dirBc}/${LABEL}.json`, JSON.stringify({
   label: LABEL, duong: "a-mot-luot", config: CONFIG, seed: SEED, n: N, soLuot: SO_LUOT, luc: new Date().toISOString(),
   base: CONFIG === "pipeline" || CONFIG === "v1" ? TUY_CHON.base : null,
   v1: CONFIG === "v1" ? { model: arg("--v1-model", "code.plc"), tokenTen: TOKEN_V1?.ten ?? null, tokenId: TOKEN_V1?.id ?? null, tokenTienTo: TOKEN_V1?.tienTo ?? null } : null, rawUrl: CONFIG === "raw" ? TUY_CHON.rawUrl : null, maxTokens: GOI_MODEL ? TUY_CHON.maxTokens : null,
-  abKiem: AB_KIEM, khongNghi: co("--khong-nghi"), sampling: arg("--sampling", "hien-tai"), vongSua: VONG_SUA, stTrinhDich: ST_TRINH_DICH, stPhuongNgu: ST_PHUONG_NGU,
+  abKiem: AB_KIEM, noiTiepTu: NOI_TIEP, khongNghi: co("--khong-nghi"), sampling: arg("--sampling", "hien-tai"), vongSua: VONG_SUA, stTrinhDich: ST_TRINH_DICH, stPhuongNgu: ST_PHUONG_NGU,
   modelDau: MODEL_DAU, modelCuoi: MODEL_CUOI, dungSom, songSau,
   bai: DS.map((b) => ({ id: b.id, lang: b.lang, muc: b.muc, vanTay: b.vanTay })), bang, rows,
 }, null, 1));

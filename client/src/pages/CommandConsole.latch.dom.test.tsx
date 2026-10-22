@@ -11,6 +11,7 @@ const H = vi.hoisted(() => ({
   latched: [] as Array<{ code: string; since: string }>,
   healthCalls: [] as Array<{ input: unknown; enabled: boolean }>,
   actuate: vi.fn(),
+  consoleStop: vi.fn(),
 }));
 vi.mock("@/components/DashboardLayout", () => ({ default: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 vi.mock("@/_core/hooks/usePermissions", () => ({ usePermissions: () => ({ hasPermission: () => true }) }));
@@ -25,6 +26,8 @@ vi.mock("@/lib/trpc", () => ({
       interlockPreview: { useQuery: () => q({ blocked: false, violations: [] }) },
       jobs: { useQuery: () => q([]) },
       actuate: { useMutation: () => ({ mutate: H.actuate, isPending: false }) },
+      // robot.consoleStop (doc 81 Đợt 10 D R-10-bb): STOP/abort route in CommandConsole.tsx — the mock must offer it or the page throws on render.
+      consoleStop: { useMutation: () => ({ mutate: H.consoleStop, isPending: false }) },
     },
     assetCockpit: { robotDetail: { useQuery: () => q({ gatedActions: [] }) } },
     safety: {
@@ -45,6 +48,7 @@ beforeEach(() => {
   H.latched = [{ code: "MB-7", since: SINCE }];
   H.healthCalls.length = 0;
   H.actuate.mockReset();
+  H.consoleStop.mockReset();
 });
 afterEach(() => cleanup());
 
