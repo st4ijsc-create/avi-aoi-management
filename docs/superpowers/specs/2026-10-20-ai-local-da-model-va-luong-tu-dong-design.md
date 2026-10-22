@@ -673,6 +673,20 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   /v1 — CHƯA tách được nếu không chạy GPU. Mở: (a) trần thời gian vòng theo khe (nặng ≥ 2 lượt sinh), (b) lời nhắc sửa theo M,
   (c) chế độ `chi-kiem` (biên dịch 1 lần, gắn nhãn ✓/⚠, không sinh lại — ~1–2 s, 0 token) — hàng đợi, CHƯA làm.
   Tác động thời gian (cả hai nhánh, không stream): > 120 s 65–71 % · > 300 s 0–4 % ⇒ runbook 70 §4: khách `/v1` dùng stream.
+  ⚠ (dieu-phoi 2026-10-22) A/B này đo một bản CÀI ĐẶT LỖI (thực chất 1 vòng), không phải thiết kế đã duyệt (2 vòng) ⇒ "giữ tắt"
+  đúng cho bản đó, chưa trả lời câu hỏi về thiết kế. Đã sửa (f024945d3): (a) trần vòng theo khe — hồ sơ nặng 480 s (2 × 240 s),
+  nhẹ 90 s, `AI_KIEM_BIEN_DICH_ST_TRAN_MS_NANG`; (b) lời nhắc sửa DÙNG CHUNG với bộ đo M (`shared/stNhacSua.mjs`) + chẩn đoán mang
+  tên tệp `// tệp:`; (c) đếm vòng thật (9b85bff11).
+- **ĐĂNG KÝ TRƯỚC — A/B `/v1` lần 2** (viết 2026-10-22, TRƯỚC khi chạy; chạy SAU ablation tác nhân, trước SCL): cùng 24 bài (#11) ×
+  3 lượt, cùng xen kẽ trên CÙNG server (nhánh tắt opt-out `st4i_kiem_bien_dich:false`, thứ tự đảo theo lượt), 27B `code.plc`,
+  cùng `max_tokens` 16000, server ở bản có (a)(b)(c). **Cổng: on ≥ off + 4/72** (không đổi sau khi thấy số). Kiểm nhánh như lần 1
+  (tắt mà có header ⇒ vứt; bật không header ⇒ vứt). Báo kèm: số vòng thật/lượt, tỉ lệ cứu được trên lượt có lỗi lần đầu (so M 13/16),
+  > 120/300 s mỗi nhánh. Nhãn báo cáo `PLC-v1-ab-kiem-q36-27b-2`.
+- **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
+  luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
+  (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
+  `phuQuyetToolNative.hoiModelChonTool` cũng vậy. Hàng đợi: thiết kế ngắn đưa tác nhân qua `planInference` + `dinhTuyenVaiTro` (dự án
+  PLC ⇒ `code.plc`), tính hệ quả gating ném GIỮA vòng tool và khoá/đổi khe giữa các lượt tool — gửi dieu-phoi SAU ablation. CHƯA làm.
 
 **Bảo mật Luồng 2026-10-21** (quét bảo mật của phiên kỹ thuật + audit chỉ-đọc của kiem-dinh; vận hành: `docs/AI_FLOW_SECURITY_OPERATIONS.md`;
 mig 0410–0412 đã áp dev). Mỗi lỗ: test hỏng trước, đột biến bỏ kiểm ⇒ đỏ, commit riêng.
