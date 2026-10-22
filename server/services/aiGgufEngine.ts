@@ -1896,6 +1896,28 @@ function noteWarmFailure(
  * Phép thử phải chạy trước mọi bản vá: lặp cùng một lượt thử 5 lần để biết trần có tất định không.
  * Chi tiết: docs/superpowers/reports/2026-08-02-dot2-report.md §5.
  */
+/**
+ * Vì sao warm BOOT không được nạp model `deep` trong tiến trình — `null` ⇒ được warm.
+ *   1. ★ G1-D — llama-server phục vụ đúng model này (env / tập khe nặng): warm = nạp BẢN THỨ HAI.
+ *   2. ★ Đợt 9 (2026-10-23, dieu-phoi duyệt) — llama-server SỐNG và đang giữ BẤT KỲ model nào (hỏi thẳng `/v1/models`, KHÔNG so env):
+ *      khe nặng đã chiếm phần lớn card (27B ~24,6 GB / 35B ~26,4 GB trên 32,6 GB, đo `doi-model.ps1` 2026-10-23) ⇒ nạp ~19 GB in-process
+ *      cạnh nó là OOM. Lỗ đã thấy: (1) so với ENV `LLAMA_SERVER_MODEL` — khe đổi sang 27B mà env vẫn nói 35B; bỏ qua lần đó chỉ là may.
+ */
+export async function lyDoBoQuaWarmBoot(
+  deep: string,
+  dv: { laModelServerDangGiu?: (m?: string) => boolean; modelServerDangChay?: () => Promise<string | null> } = {},
+): Promise<string | null> {
+  const srv = await import("./aiLlamaServerClient");
+  if ((dv.laModelServerDangGiu ?? srv.laModelServerDangGiu)(deep)) {
+    return `llama-server đang phục vụ "${deep}" (LLAMA_SERVER_MODEL / tập khe nặng). Làm ấm bản in-process ở đây là nạp BẢN THỨ HAI của cùng model.`;
+  }
+  const dangGiu = await (dv.modelServerDangChay ?? srv.modelServerDangChay)();
+  if (dangGiu) {
+    return `llama-server (khe nặng) đang giữ "${dangGiu}" — nạp "${deep}" trong tiến trình cạnh nó sẽ tràn VRAM.`;
+  }
+  return null;
+}
+
 let deepWarmStarted = false;
 export function initDeepModelWarmup(): void {
   if (deepWarmStarted) return;
@@ -1925,12 +1947,9 @@ export function initDeepModelWarmup(): void {
          * dòng `warm_failed` cho một việc ta CỐ Ý không làm — đúng thứ rác mà M-5 (xem
          * `noteWarmFailure`) đã dọn một lần rồi.
          */
-        const srv = await import("./aiLlamaServerClient");
-        if (srv.laModelServerDangGiu(deep)) {
-          console.log(
-            `[aiGgufEngine] deep-model boot warm BỎ QUA — llama-server đang phục vụ "${deep}" ` +
-              `(LLAMA_SERVER_MODEL). Làm ấm bản in-process ở đây là nạp BẢN THỨ HAI của cùng model.`,
-          );
+        const lyDo = await lyDoBoQuaWarmBoot(deep);
+        if (lyDo) {
+          console.log(`[aiGgufEngine] deep-model boot warm BỎ QUA — ${lyDo}`);
           return;
         }
         const ok = await warmModel(deep);
