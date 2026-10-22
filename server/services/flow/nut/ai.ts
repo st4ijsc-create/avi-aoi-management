@@ -60,6 +60,8 @@ export async function diemModel(vaiTro: string, ngu: NguCanhChay): Promise<VetMo
     import("../../ai/soModel/dinhTuyenVaiTro"),
   ]);
   const phamVi = { flowId: ngu.flowId, beMat: "luong" };
+  // ★ Đợt 9 (2026-10-23) — làm mới "khe đang giữ" trước định tuyến (đổi khe ngoài tiến trình ⇒ chọn theo giá trị cũ).
+  await (await import("../../ai/soModel/kheNangMacDinh")).lamMoiKheDangGiu();
   const model = resolveLogicalModel(vaiTro, { phamVi, khongDoiKhe: true }) ?? defaultModelBasename() ?? null;
   let nguon = "mac-dinh-env";
   let pv: string | null = null;

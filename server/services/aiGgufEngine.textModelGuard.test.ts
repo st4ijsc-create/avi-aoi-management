@@ -38,6 +38,8 @@ vi.mock("./aiLlamaServerClient", () => ({
   llamaServerStrict: () => false,
   llamaServerEnabled: () => false,
   llamaServerHealthy: async () => false,
+  // Đợt 9 (2026-10-23) — warm boot hỏi thẳng server đang giữ gì; server TẮT (như mock này) ⇒ không giữ gì.
+  modelServerDangChay: async () => null,
 }));
 
 vi.mock("./aiModelRouter", () => ({

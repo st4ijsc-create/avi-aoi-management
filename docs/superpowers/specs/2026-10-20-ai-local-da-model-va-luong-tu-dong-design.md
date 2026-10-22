@@ -713,6 +713,28 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
 - **ĐĂNG KÝ TRƯỚC — tác nhân theo vai trò** (thiết kế `2026-10-22-tac-nhan-theo-vai-tro-design.md`, dieu-phoi duyệt kèm 4 chỉnh):
   12 bài ST (cùng danh sách) × 2 lượt, vai trò `code` (35B) vs `code.plc` (27B, qua định tuyến mới). **Cổng: code.plc ≥ code + 2/24
   VÀ trung vị thời gian ≤ 2×.** Không đạt ⇒ tác nhân giữ `code`. Chạy SAU A/B /v1 #2.
+  **KẾT QUẢ (2026-10-23 04:37, `tmp/do-ablation-vaitro.sh`, báo cáo `reports/AB-agent-vt-*`, gộp `so-sanh-ablation-agent.mjs --tien-to
+  AB-agent-vt-`; mã server ff338d42f ở cả hai khối — 5461dafea chỉ sửa bộ đo):** tat (cờ tắt, 35B) **15/24** (tt 8/8 · tv 4/8 · ud 3/8) ·
+  bat (`AI_AGENT_THEO_VAI_TRO=1`, dự án PLC ⇒ `code.plc` ⇒ 27B, 24/24 lượt `bat-dau.model` = code.plc/27B/gan-profile) **19/24** (tt 8/8 ·
+  tv 4/8 · ud 7/8) ⇒ **+4/24 ≥ +2 — CỔNG ĐẠT**; trung vị thời gian 177 → 276 s = **1,56× ≤ 2× — ĐẠT**. Cặp: bật đạt/tắt trượt 4 (ud10#2,
+  ud5#1, ud5#2, ud8#2) · ngược lại **0**. Token ra trung vị 35,6k → 17,3k (27B nghĩ ít hơn); compile_st 82 → 64 lần; không build được ở
+  máy chấm 3 · 3; dừng khác hoàn-thành: tắt 5 (het-token 2, lap-lai 2, het-luot 1) · bật 2 (lap-lai 1, het-gio 1 — trần client 40 phút).
+  Nhiễu đã biết: thiết kế KHỐI (bat 23:57–02:50, tat 02:53–04:37 — nhiệt/cache/giờ không tách được khỏi nhánh). Kiểm trôi TRONG khối:
+  tỉ lệ thời gian lượt 2/lượt 1 cùng bài trung vị 0,87 (bat) · 1,08 (tat), biên 0,28–2,71 (nhiễu từng bài lớn, không xu hướng); ĐẠT
+  lượt 1→2: bat 9→10, tat 8→7. :3013 chết lúc boot: khối bat 1 lần (thử lại lên), khối tat 0. Một lượt tat đầu bị BỘ ĐO vứt oan (kiểm
+  "tat mà compile_st chạy" của ablation cũ — sửa 5461dafea, chạy lại; không có báo cáo nào bị ghi đè).
+  **QUYẾT (dieu-phoi 2026-10-23): BẬT MẶC ĐỊNH** — `AI_AGENT_THEO_VAI_TRO` vắng ⇒ bật; `false`/`off`/`0` ⇒ tắt (chủ dự án tắt bằng .env).
+  Chi phí đã biết: thời gian lượt chạy dự án PLC ~1,56×; khe đang giữ 35B ⇒ lượt đầu chờ đổi khe ~60 s (doi-model đo 35 s nạp 27B + chờ).
+  Lưới ghim ba nhánh (vắng/"1"/"false") + 2 đột biến đỏ.
+- **Chỉnh 2 — gán `code.software` (2026-10-23, dieu-phoi duyệt có điều kiện; điều kiện `GGUF_CODE_MODEL` = Qwen3.6-35B-A3B ĐÃ KIỂM ở cả hai
+  .env):** qua `datGanModel` (`scripts/ai-eval/dat-gan-vai-tro.mts`) — gán id 35 `code.software` global → `qwen3.6-35b-a3b@64k-nghi`, dự
+  phòng [`qwen3.6-27b@64k-nghi`], thay hàng env cũ. Định tuyến trên ảnh sổ thật: khoá+khe 35B ⇒ 35B gan-profile · khoá+khe 27B ⇒ 27B
+  du-phong · không khoá+khe 27B ⇒ 35B can-doi-khe. **Kiểm SỐNG `/v1 code.software` trên :3013 (khoá + `doi-model -GiuKhoa`):** lần đầu lộ
+  HAI lỗi sản phẩm, vá rồi đo lại: (1) lượt ĐẦU sau khi khe đổi NGOÀI tiến trình bị từ chối oan — `KheNang.dangGiu` chỉ làm mới khi có lượt
+  xin khe ⇒ định tuyến theo giá trị cũ (35B); lượt 2 sau 8 s chạy được ⇒ `lamMoiKheDangGiu()` trước định tuyến ở /v1, tác nhân, node AI
+  Luồng (3e12e9d4f); (2) `ai_gateway_metrics.model` của /v1 ghi model của bộ định tuyến CỔNG (env 35B) cả khi lượt chạy 27B ⇒ /v1 ghi
+  `modelId` đã định tuyến (2c84fc593). Đo lại (`tmp/kiem-gan-song-4.log` + metrics theo requestId): khe 35B ⇒ 35B; ngay sau đổi sang 27B
+  lượt 1 (3 s sau) và lượt 2 ⇒ **27B, cả hai ok**. Kết thúc :8091 = 35B.
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;

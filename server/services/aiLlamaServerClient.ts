@@ -634,6 +634,31 @@ export async function llamaServerHealthy(timeoutMs = 3000): Promise<boolean> {
   return probeHealthy(baseUrl(), timeoutMs);
 }
 
+/**
+ * ★ Đợt 9 (2026-10-23, dieu-phoi duyệt) — model llama-server (khe nặng) ĐANG GIỮ THẬT, hỏi thẳng `GET /v1/models` (basename, không
+ * `.gguf`). Server tắt cấu hình / không trả lời / không đọc được ⇒ `null`. KHÔNG so với env: `LLAMA_SERVER_MODEL` là model NHÀ, còn khe
+ * có thể đang giữ model khác (hoán đổi khe, phép đo `doi-model.ps1`) — cùng lớp lỗi đã sửa ở 4e1b235db cho định tuyến.
+ */
+export async function modelServerDangChay(timeoutMs = 2000): Promise<string | null> {
+  if (!llamaServerEnabled()) return null;
+  const url = baseUrl();
+  if (!url) return null;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${url}/v1/models`, { headers: authHeaders(), signal: ctrl.signal });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { data?: Array<{ id?: unknown }>; models?: Array<{ model?: unknown; name?: unknown }> };
+    const id = j?.data?.[0]?.id ?? j?.models?.[0]?.model ?? j?.models?.[0]?.name;
+    if (typeof id !== "string" || !id.trim()) return null;
+    return basename(id) || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 /** Short timeout (default 2s) for the PRE-generation preflight probe below — deliberately much
  *  shorter than LLAMA_SERVER_TIMEOUT_MS (generation timeout, default 120s) so a down/unresponsive
  *  server is detected in ~2s instead of only after a long hung POST. Configurable in case the

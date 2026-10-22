@@ -1,7 +1,8 @@
 /**
  * ★ Đợt 9 (2026-10-22, dieu-phoi duyệt kèm 4 chỉnh — `docs/superpowers/specs/2026-10-22-tac-nhan-theo-vai-tro-design.md`) — tác nhân
- * lập trình chọn model theo VAI TRÒ và đi qua aiGateway. Sau cờ `AI_AGENT_THEO_VAI_TRO` (mặc định TẮT ⇒ tác nhân như cũ từng byte:
- * model mặc định của llama-server, ngoài aiGateway).
+ * lập trình chọn model theo VAI TRÒ và đi qua aiGateway. Cờ `AI_AGENT_THEO_VAI_TRO`: MẶC ĐỊNH BẬT (dieu-phoi 2026-10-23, sau ablation
+ * đăng ký trước: 19/24 vs 15/24, cặp 4–0, thời gian 1,56×); `false`/`off`/`0` ⇒ tắt = tác nhân như cũ từng byte (model mặc định của
+ * llama-server, ngoài aiGateway).
  *
  * MỘT lần mỗi lượt chạy, TRƯỚC token đầu (§2.1–2.3):
  *   1. vai trò: dự án PLC (`laDuAnPlc` — .st/.scl/PLCopen tc6, chỉnh 1) hoặc chữ câu hỏi chọn `code.plc` (tầng 3) ⇒ `code.plc`;
@@ -28,9 +29,9 @@ import type { AnhSoModel } from "../soModel/anhSoModel";
 import { dinhTuyenVaiTro, type KetQuaDinhTuyen } from "../soModel/dinhTuyenVaiTro";
 import { laModelHoSoKheNang } from "../soModel/tapKheNang";
 
-/** Cờ bật. Vắng / khác "1"/"true"/"on" ⇒ TẮT. */
+/** Cờ. Vắng / rỗng ⇒ BẬT (mặc định); "false"/"off"/"0"/"no" ⇒ TẮT; giá trị khác ⇒ bật. */
 export function tacNhanTheoVaiTroBat(env: NodeJS.ProcessEnv = process.env): boolean {
-  return /^(1|true|on)$/i.test((env.AI_AGENT_THEO_VAI_TRO ?? "").trim());
+  return !/^(0|false|off|no)$/i.test((env.AI_AGENT_THEO_VAI_TRO ?? "").trim());
 }
 
 /**
@@ -69,6 +70,8 @@ export interface PhuThuocVaiTro {
   planInference: (req: GatewayRequest) => Promise<GatewayPlan>;
   layAnh: () => AnhSoModel;
   nguCanhKhe: () => { kheBiKhoa: boolean; kheDangGiu: string | null };
+  /** Làm mới "khe đang giữ" TRƯỚC `nguCanhKhe` (mặc định `lamMoiKheDangGiu`; đổi khe ngoài tiến trình ⇒ giá trị cũ ⇒ từ chối oan). */
+  lamMoiKhe?: () => Promise<void>;
   laDuAnPlc: (goc: string) => boolean;
   env?: NodeJS.ProcessEnv;
 }
@@ -84,6 +87,7 @@ export async function chuanBiLuotChayTheoVaiTro(
   const env = p.env ?? process.env;
   const chon = chonVaiTroTacNhan({ laDuAnPlc: p.laDuAnPlc(y.gocDuAn), cauHoi: y.cauHoi });
   const anh = p.layAnh();
+  await p.lamMoiKhe?.();
   const khe = p.nguCanhKhe();
   const r = dinhTuyenVaiTro({ vaiTro: chon.vaiTro, phamVi: { projectId: y.projectId }, ...khe }, anh, env);
   const thongTin: ThongTinModelLuotChay = {

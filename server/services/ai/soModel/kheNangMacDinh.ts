@@ -98,6 +98,19 @@ export async function* quaKheNangLuong<T>(model: string, moLuong: () => AsyncGen
   }
 }
 
+/**
+ * ★ Đợt 9 (2026-10-23) — làm mới "khe đang giữ" (nguồn của `kheDangGiu` trong định tuyến vai trò) TRƯỚC khi định tuyến. Đi tắt
+ * (hoán đổi tắt / không hồ sơ nặng) ⇒ không làm gì. Không ném (định tuyến vẫn chạy với giá trị đã có).
+ */
+export async function lamMoiKheDangGiu(): Promise<void> {
+  if (diTat()) return;
+  try {
+    await layKheNang().xacNhanDangGiu();
+  } catch {
+    /* thăm dò hỏng: bộ lập lịch tự xử ở lượt xin khe */
+  }
+}
+
 /** Cho tRPC tổng quan; `null` = khe nặng chưa từng được dùng trong tiến trình này. */
 export function thongKeKheNang(): (ThongKeKheNang & { tuDoi: boolean }) | null {
   return kn ? { ...kn.thongKe(), tuDoi: cauHinh.tuDoi } : null;

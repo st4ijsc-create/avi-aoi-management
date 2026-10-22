@@ -73,6 +73,7 @@ import {
 import { planInference, type GatewayPlan } from "../../aiGateway";
 import { nguCanhKhe } from "../modelResolver";
 import { layAnhSoModel } from "../soModel/anhSoModel";
+import { lamMoiKheDangGiu } from "../soModel/kheNangMacDinh";
 import { damBaoChiMucNen, phanGiaiChiMuc, type CongChiMucMa } from "./chiMucMaAgent";
 import { docTepQuyUoc } from "./tepQuyUocAgent";
 import type { TimTaiLieu } from "./timTaiLieuAgent";
@@ -595,7 +596,14 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         try {
           const cb = await chuanBiLuotChayTheoVaiTro(
             { cauHoi, gocDuAn: goc, projectId, user },
-            { planInference, layAnh: layAnhSoModel, nguCanhKhe, laDuAnPlc: (g) => laDuAnPlc(g), ...phuThuoc.vaiTro },
+            {
+              planInference,
+              layAnh: layAnhSoModel,
+              nguCanhKhe,
+              lamMoiKhe: lamMoiKheDangGiu,
+              laDuAnPlc: (g) => laDuAnPlc(g),
+              ...phuThuoc.vaiTro,
+            },
           );
           if (!cb.ok) {
             nhaCho();

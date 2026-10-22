@@ -949,6 +949,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         modelLabel = chon.vaiTro ?? "chat";
         if (!res.headersSent) res.setHeader("x-st4i-vai-tro", `${modelLabel}; tang=${chon.tang}`);
       }
+      // ★ Đợt 9 (2026-10-23) — làm mới "khe đang giữ" TRƯỚC định tuyến vai trò (đổi khe ngoài tiến trình ⇒ lượt đầu bị từ chối oan).
+      await (await import("../services/ai/soModel/kheNangMacDinh")).lamMoiKheDangGiu();
       const modelId = apTranDoiKhe(res, resolveModelId(modelLabel));
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : 0.7;
@@ -1230,7 +1232,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         }
         // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
         // `plan?.` — no-op when the fail-open rate-limit path left `plan` null.
-        plan?.record({ tokensIn, tokensOut, latencyMs: Date.now() - engineStart, outcome, requestId: id, ...(auditKiem ? { auditSnippet: auditKiem } : {}) });
+        plan?.record({ tokensIn, tokensOut, latencyMs: Date.now() - engineStart, outcome, requestId: id, model: modelId ?? null, ...(auditKiem ? { auditSnippet: auditKiem } : {}) });
 
         const doneChunk = {
           id,
@@ -1278,6 +1280,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const msMotLan = Date.now() - engineStart;
       const ghiDoDem = (auditSnippet?: string) =>
         plan?.record({
+          // ★ Đợt 9 (2026-10-23, đo) — model THỰC chạy theo định tuyến vai trò; vắng ⇒ metrics ghi model của bộ định tuyến cổng (env).
+          model: modelId ?? null,
           tokensIn: result.tokensPrompt,
           tokensOut: result.tokensGenerated,
           latencyMs: msMotLan,
@@ -1424,6 +1428,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         return;
       }
       const modelLabel = kiem.ten;
+      // ★ Đợt 9 (2026-10-23) — làm mới "khe đang giữ" TRƯỚC định tuyến vai trò (đổi khe ngoài tiến trình ⇒ lượt đầu bị từ chối oan).
+      await (await import("../services/ai/soModel/kheNangMacDinh")).lamMoiKheDangGiu();
       const modelId = apTranDoiKhe(res, resolveModelId(modelLabel));
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : isFim ? 256 : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : isFim ? 0.2 : 0.7;
@@ -1465,6 +1471,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           usageFim = usageOpenAi(result.tokensPrompt, result.tokensGenerated);
           // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
           plan?.record({
+            // ★ Đợt 9 (2026-10-23, đo) — model THỰC chạy theo định tuyến vai trò; vắng ⇒ metrics ghi model của bộ định tuyến cổng (env).
+            model: modelId ?? null,
             tokensIn: result.tokensPrompt,
             tokensOut: result.tokensGenerated,
             latencyMs: Date.now() - engineStart,
@@ -1502,6 +1510,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const result = await generateFim(fimOpts, modelId);
       // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
       plan?.record({
+        // ★ Đợt 9 (2026-10-23, đo) — model THỰC chạy theo định tuyến vai trò; vắng ⇒ metrics ghi model của bộ định tuyến cổng (env).
+        model: modelId ?? null,
         tokensIn: result.tokensPrompt,
         tokensOut: result.tokensGenerated,
         latencyMs: Date.now() - engineStart,

@@ -25,6 +25,8 @@
  *   java/py/js/ts/cs/sql agent chạy được test; cpp/go/rs KHÔNG (cột "lệnh test trong khuôn" của báo cáo).
  * ★ Đợt 9 — `--nhanh bat|tat` (ablation `compile_st`, server khởi động với / không với `agent` trong AI_KIEM_BIEN_DICH_ST):
  *   nhánh `tat` mà `compile_st` chạy OK ⇒ công tắc không hiệu lực ⇒ exit 2 (vứt số). Hàng mang `nhanh` + số lượt compile_st.
+ *   `--nhanh-cua compile-st|vai-tro` (mặc định compile-st): nhánh của ablation NÀO. `vai-tro` (AI_AGENT_THEO_VAI_TRO) ⇒ compile_st bật ở CẢ
+ *   hai nhánh ⇒ KHÔNG áp kiểm "tat mà compile_st chạy" (đo 2026-10-23: kiểm cũ vứt lượt tat đầu của ablation vai trò — lỗi của BỘ ĐO).
  * Cổng sức khoẻ: AI_EVAL_LLAMA/health (mặc định :8091) + BASE/ trước/sau MỖI bài; hỏng ⇒ exit 2, vứt số.
  */
 import fs from "node:fs";
@@ -59,6 +61,8 @@ const REL_GOC = "tmp/ngau-nhien-agent";
 const GOC_BAI = arg("--goc-bai", null);
 const NHANH = arg("--nhanh", null);
 if (NHANH !== null && !["bat", "tat"].includes(NHANH)) { console.error(`--nhanh phải là bat|tat: ${NHANH}`); process.exit(2); }
+const NHANH_CUA = arg("--nhanh-cua", "compile-st");
+if (!["compile-st", "vai-tro"].includes(NHANH_CUA)) { console.error(`--nhanh-cua phải là compile-st|vai-tro: ${NHANH_CUA}`); process.exit(2); }
 // ⚠ 2026-10-18 (lượt NN-b-agent-1 = 0/27 VÔ GIÁ TRỊ): gốc dưới `tmp/` của worktree vẫn nằm TRONG repo chính ⇒ cổng Q1
 // (`laGhiVaoRepoChinh`) từ chối MỌI lượt ghi tự trị của `tu-dong` — đúng hành vi sản phẩm, sai thiết bị đo. Nay nhận thêm
 // đường TUYỆT ĐỐI NGOÀI repo (vd `D:/SOURCES/_ai7_nnbai/_bai`) — khuyên dùng.
@@ -157,7 +161,7 @@ for (const b of DS) {
         process.exit(2);
       }
       row.compileSt = { goi: row.agent.tool.compile_st ?? 0, ok: row.agent.toolOk.compile_st ?? 0, ma: row.agent.toolMa.compile_st ?? [] };
-      if (NHANH === "tat" && row.compileSt.ok > 0) {
+      if (NHANH_CUA === "compile-st" && NHANH === "tat" && row.compileSt.ok > 0) {
         console.error(`\n⛔ VỨT: nhánh tat mà compile_st chạy OK ${row.compileSt.ok} lần — công tắc không hiệu lực (server có \`agent\` trong AI_KIEM_BIEN_DICH_ST?).`);
         process.exit(2);
       }
@@ -196,7 +200,7 @@ if (suaTest) console.log(` ⚠ ${suaTest} lượt SỬA TỆP TEST/ CẤU HÌNH 
 const dirBc = `${BO}/reports`;
 fs.mkdirSync(dirBc, { recursive: true });
 fs.writeFileSync(`${dirBc}/${LABEL}.json`, JSON.stringify({
-  label: LABEL, duong: "b-agent", config: CONFIG, nhanh: NHANH, seed: SEED, n: N, soLuot: SO_LUOT, luc: new Date().toISOString(),
+  label: LABEL, duong: "b-agent", config: CONFIG, nhanh: NHANH, nhanhCua: NHANH ? NHANH_CUA : null, seed: SEED, n: N, soLuot: SO_LUOT, luc: new Date().toISOString(),
   base: CONFIG === "agent" ? BASE : null, projectId: CONFIG === "agent" ? PROJECT_ID : null,
   bai: DS.map((b) => ({ id: b.id, lang: b.lang, muc: b.muc, vanTay: b.vanTay })), bang, rows,
 }, null, 1));

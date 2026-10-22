@@ -11,7 +11,7 @@ import OpenAI from "openai";
 
 const FB_SAI = "FUNCTION_BLOCK A\nVAR_INPUT x : BOOL; END_VAR\nVAR_OUTPUT y : BOOL; END_VAR\n  y := x AND ;\nEND_FUNCTION_BLOCK";
 const FB_DUNG = "FUNCTION_BLOCK A\nVAR_INPUT x : BOOL; END_VAR\nVAR_OUTPUT y : BOOL; END_VAR\n  y := x;\nEND_FUNCTION_BLOCK";
-const h = vi.hoisted(() => ({ banDau: "", soLanGoiLai: 0, soLanBienDich: 0, audit: [] as { redactedSnippet?: string | null }[], doDem: [] as Record<string, unknown>[], tranMs: [] as unknown[] }));
+const h = vi.hoisted(() => ({ banDau: "", soLanGoiLai: 0, soLanBienDich: 0, audit: [] as { redactedSnippet?: string | null }[], doDem: [] as Record<string, unknown>[], tranMs: [] as unknown[], modelEngine: [] as unknown[] }));
 // ★ (2026-10-22) nối dây trần thời gian vòng theo khe: /v1 phải truyền `tranMs = tranMsVongSuaST(modelId)` cho MỌI lượt kiểm.
 vi.mock("../services/ai/st/kiemBienDichSt", async (importOriginal) => {
   const goc = await importOriginal<typeof import("../services/ai/st/kiemBienDichSt")>();
@@ -42,7 +42,8 @@ vi.mock("../services/ai/aiLlmAudit", async (importOriginal) => ({
 
 vi.mock("../services/aiGgufEngine", () => ({
   isGgufAvailable: vi.fn(async () => true),
-  chatCompletion: vi.fn(async (opts: { messages: { role: string; content: string }[] }) => {
+  chatCompletion: vi.fn(async (opts: { messages: { role: string; content: string }[] }, modelId?: string) => {
+    h.modelEngine.push(modelId);
     const sua = opts.messages.some((m) => m.role === "user" && m.content.includes("Trình biên dịch IEC 61131-3"));
     if (sua) h.soLanGoiLai++;
     const text = sua ? `Đã sửa:\n\`\`\`st\n${FB_DUNG}\n\`\`\`` : h.banDau;
@@ -75,7 +76,7 @@ import { registerOpenAiGateway } from "./openaiGateway";
 
 const API_KEY = "SECRET-TEST-KEY-ST";
 let sv: { url: string; server: Server };
-const ENV = ["OPENAI_GATEWAY_ENABLED", "OPENAI_GATEWAY_API_KEY", "AI_KIEM_BIEN_DICH_ST"] as const;
+const ENV = ["OPENAI_GATEWAY_ENABLED", "OPENAI_GATEWAY_API_KEY", "AI_KIEM_BIEN_DICH_ST", "GGUF_CODE_MODEL"] as const;
 const cu: Record<string, string | undefined> = {};
 
 beforeAll(async () => {
@@ -83,6 +84,8 @@ beforeAll(async () => {
   process.env.OPENAI_GATEWAY_ENABLED = "true";
   process.env.OPENAI_GATEWAY_API_KEY = API_KEY;
   process.env.AI_KIEM_BIEN_DICH_ST = "v1";
+  // model CÓ TÊN cho code.plc (định tuyến vai trò ⇒ env) — để hàng đo chứng minh ghi đúng model engine nhận (không phải undefined = undefined).
+  process.env.GGUF_CODE_MODEL = "Model-Code-Thu.gguf";
   const app = express();
   registerOpenAiGateway(app);
   const server = createServer(app);
@@ -104,6 +107,7 @@ const datLai = (banDau: string) => {
   h.audit = [];
   h.doDem = [];
   h.tranMs = [];
+  h.modelEngine = [];
 };
 /** Hàng đo: chính + lượt phụ — CÙNG requestId. */
 const kiemDoDem = (soPhu: number) => {
@@ -111,6 +115,9 @@ const kiemDoDem = (soPhu: number) => {
   const phu = h.doDem.filter((d) => !d.chinh);
   expect(chinh).toHaveLength(1);
   expect(phu).toHaveLength(soPhu);
+  // ★ Đợt 9 (2026-10-23) — hàng chính ghi model ENGINE thực nhận (định tuyến vai trò), không phải model của bộ định tuyến cổng.
+  expect(h.modelEngine.length).toBeGreaterThan(0);
+  expect(chinh[0].model).toBe(h.modelEngine[0]);
   for (const d of phu) {
     expect(d).toMatchObject({ luotPhu: "sua-bien-dich-st", outcome: "ok", tokensIn: 5, tokensOut: 5, requestId: chinh[0].requestId });
     expect(String(d.requestId)).toMatch(/^chatcmpl-/);

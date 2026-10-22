@@ -59,7 +59,7 @@ người dùng tác nhân sẽ bị chặn (đã xảy ra: ablation 2026-10-22 l
 4. Cổng đo §3 đăng ký vào spec §6 (2026-10-20 design) TRƯỚC khi làm — đã ghi (7a5f4bfc5).
 Hiện thực sau cờ, mặc định TẮT. Thứ tự: sau --ir + census; chạy đo SAU A/B /v1 #2.
 
-## 6. Hiện thực (2026-10-22, do-model) — sau cờ `AI_AGENT_THEO_VAI_TRO`, mặc định TẮT
+## 6. Hiện thực (2026-10-22, do-model) — cờ `AI_AGENT_THEO_VAI_TRO` (mặc định BẬT từ 2026-10-23 sau ablation 19/24 vs 15/24; `false` ⇒ tắt)
 
 - `server/services/ai/agent/vaiTroTacNhan.ts`: `chonVaiTroTacNhan` (PLC ⇒ `code.plc`; "code" của thiết kế = vai trò gốc `code.software`),
   `chuanBiLuotChayTheoVaiTro` (`dinhTuyenVaiTro` với `phamVi.projectId` + khoá khe/khe đang giữ; khoá còn hạn mà đích cuối là model khe nặng
