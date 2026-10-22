@@ -12,6 +12,11 @@
   !! `-c` (do dai ngu canh) KHONG dung chung mot gia tri cho moi model: 30B-A3B la MoE (chi ~3B
     tham so hoat dong) nen ganh noi 65536; mot model DAY 27B voi KV f16 o cung ngu canh se nuot
     het phan VRAM con lai roi bi driver tu choi. Goi kem -Ctx cho model day.
+
+  !! GOI TU BASH: KHONG pipe (`| tr`, `| tee`) va KHONG `$( )` dau ra cua kich ban nay. llama-server (Start-Process co
+    -Redirect*) THUA KE handle stdout cua powershell => ben doc pipe khong bao gio thay EOF => treo den khi llama-server chet
+    (do 2026-10-22: doi-model thoat exit 0 luc 16:29:07, `| tr` treo 10 phut; truoc do `$( )` treo 30 phut). Ghi ra TEP:
+    `powershell.exe -File doi-model.ps1 ... > tmp/doi-model.log 2>&1; echo $?` - roi doc tep.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Model,

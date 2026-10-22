@@ -58,3 +58,17 @@ người dùng tác nhân sẽ bị chặn (đã xảy ra: ablation 2026-10-22 l
 3. Quota theo trung vị token đo được × hệ số an toàn, ghi nguồn số — §2.3.
 4. Cổng đo §3 đăng ký vào spec §6 (2026-10-20 design) TRƯỚC khi làm — đã ghi (7a5f4bfc5).
 Hiện thực sau cờ, mặc định TẮT. Thứ tự: sau --ir + census; chạy đo SAU A/B /v1 #2.
+
+## 6. Hiện thực (2026-10-22, do-model) — sau cờ `AI_AGENT_THEO_VAI_TRO`, mặc định TẮT
+
+- `server/services/ai/agent/vaiTroTacNhan.ts`: `chonVaiTroTacNhan` (PLC ⇒ `code.plc`; "code" của thiết kế = vai trò gốc `code.software`),
+  `chuanBiLuotChayTheoVaiTro` (`dinhTuyenVaiTro` với `phamVi.projectId` + khoá khe/khe đang giữ; khoá còn hạn mà đích cuối là model khe nặng
+  KHÁC model đang giữ ⇒ `AI_KHONG_CO_MODEL` 503 nói thật; rồi MỘT `planInference({ task: "code", auditTask: "agent_run", uocLuongToken })`;
+  RateLimit/Quota/Safety/License ⇒ 429/429/422/403), `boDemLuotModel` (đo mỗi lượt model ⇒ `recordPhu agent-luot`).
+- `quanLyLuotChay`: gating SAU giữ chỗ, TRƯỚC hàng sổ — từ chối ⇒ nhả chỗ, không hàng sổ, không token; model nhận `safeText`; `bat-dau.model`
+  = {vaiTro, model, nguon, bangChung}; kết thúc ⇒ `record` hàng chính cùng `requestId = runId`. REST trả `message` cho mã từ chối.
+- `aiGateway.GatewayRequest.uocLuongToken` (chỉnh 3): `AI_QUOTA_ENFORCE` bật + đã dùng + ước lượng > hạn mức ⇒ chặn ở cửa. Mặc định 64 000
+  (`AI_AGENT_UOC_LUONG_TOKEN`).
+- Chỉnh 2 là việc DỮ LIỆU: sổ dev hiện gán `code.software` theo env (35B, không dự phòng) ⇒ khi phép đo khoá khe giữ 27B, tác nhân dự án
+  không-PLC bị TỪ CHỐI nói thật. Muốn chạy được trên 27B lúc ấy: gán `code.software` → hồ sơ 35B với dự phòng [27B] (cần dieu-phoi duyệt).
+- Chưa làm: UI hiện `bat-dau.model` (client chỉ nhận, chưa vẽ); mã từ chối mới chưa có chuỗi i18n phía client.

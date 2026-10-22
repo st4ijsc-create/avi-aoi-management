@@ -119,11 +119,20 @@ export type LyDoDung =
   | "menh-lenh-trong-du-lieu"
   | "loi-model";
 
+/** (Đợt 9) model của lượt chạy khi host chọn theo vai trò — để UI nói thật "đang chạy X vì Y". */
+export interface ThongTinModelBatDau {
+  vaiTro: string;
+  model: string | null;
+  nguon: string;
+  bangChung: string;
+}
+
 /** Phạm vi một ghi chú trí nhớ (tool `remember`, Đợt 2). Bảng `ai_coding_lessons` khoá (người × dự án) — xem README. */
 export type PhamViNho = "project" | "user";
 
 export type SuKienAgent =
-  | { loai: "bat-dau"; runId: string; cheDo: CheDoAgent }
+  /** `model`: chỉ có khi host chọn model theo VAI TRÒ (`AI_AGENT_THEO_VAI_TRO`) — vắng ⇒ sự kiện như cũ từng byte. */
+  | { loai: "bat-dau"; runId: string; cheDo: CheDoAgent; model?: ThongTinModelBatDau }
   | { loai: "chu"; noiDung: string }
   | { loai: "nghi"; noiDung: string }
   | { loai: "goi-tool"; goi: LoiGoiTool; luot: number }

@@ -62,6 +62,17 @@ import {
 import type { CopilotUser } from "../../aiCopilotActions";
 import { taoBoThucThiMayChu, type CongCheckpoint, type PhuThuocBoThucThi } from "./boThucThiMayChu";
 import { taoGoiModelMayChu } from "./goiModelMayChu";
+import { laDuAnPlc } from "./nhanDienDuAnPlc";
+import {
+  boDemLuotModel,
+  chuanBiLuotChayTheoVaiTro,
+  tacNhanTheoVaiTroBat,
+  type MaTuChoiVaiTro,
+  type PhuThuocVaiTro,
+} from "./vaiTroTacNhan";
+import { planInference, type GatewayPlan } from "../../aiGateway";
+import { nguCanhKhe } from "../modelResolver";
+import { layAnhSoModel } from "../soModel/anhSoModel";
 import { damBaoChiMucNen, phanGiaiChiMuc, type CongChiMucMa } from "./chiMucMaAgent";
 import { docTepQuyUoc } from "./tepQuyUocAgent";
 import type { TimTaiLieu } from "./timTaiLieuAgent";
@@ -156,7 +167,9 @@ export type MaTuChoiTao =
   | "THIEU_QUYEN_THUC_THI"
   /** Chế độ tu-dong khi công tắc AI_CODING_TU_TRI_GHI (model ghi không người duyệt) TẮT. */
   | "TU_DONG_TAT"
-  | "DANG_CO_LUOT_CHAY";
+  | "DANG_CO_LUOT_CHAY"
+  /** (Đợt 9, chỉ khi `AI_AGENT_THEO_VAI_TRO`) từ chối ở bước chọn model / gating aiGateway — TRƯỚC mọi token. */
+  | MaTuChoiVaiTro;
 
 const HTTP_CUA_MA: Record<MaTuChoiTao, number> = {
   CAU_HOI_RONG: 400,
@@ -167,6 +180,11 @@ const HTTP_CUA_MA: Record<MaTuChoiTao, number> = {
   THIEU_QUYEN_THUC_THI: 403,
   TU_DONG_TAT: 403,
   DANG_CO_LUOT_CHAY: 409,
+  AI_KHONG_CO_MODEL: 503,
+  AI_GIOI_HAN_TAN_SUAT: 429,
+  AI_HET_HAN_MUC: 429,
+  AI_CHAN_AN_TOAN: 422,
+  AI_CHUA_CAP_PHEP: 403,
 };
 
 export interface YeuCauTaoLuotChay {
@@ -180,7 +198,9 @@ export interface YeuCauTaoLuotChay {
   req?: ToolExecContext["req"];
 }
 
-export type KetQuaTaoLuotChay = { ok: true; luot: LuotChay } | { ok: false; ma: MaTuChoiTao; http: number; runId?: string };
+export type KetQuaTaoLuotChay =
+  | { ok: true; luot: LuotChay }
+  | { ok: false; ma: MaTuChoiTao; http: number; runId?: string; thongDiep?: string };
 
 export interface PhuThuocQuanLy {
   /** Model (mặc định `taoGoiModelMayChu()`). */
@@ -195,6 +215,8 @@ export interface PhuThuocQuanLy {
   chiMucMa?: CongChiMucMa | null;
   /** (Đợt 2) truy hồi tài liệu cho `search_docs`. */
   timTaiLieu?: TimTaiLieu;
+  /** (Đợt 9) phụ thuộc của chọn model theo vai trò + gating (lưới thay) — chỉ dùng khi `AI_AGENT_THEO_VAI_TRO` bật. */
+  vaiTro?: Partial<PhuThuocVaiTro>;
 }
 
 // ─── tiện ích thuần ───────────────────────────────────────────────────────────────────────────
@@ -561,6 +583,31 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
       // Giữ chỗ NGAY (đồng bộ) — hai POST cùng lúc không lọt được cả hai.
       theoId.set(id, s);
       dangChayCuaNguoi.set(user.id, id);
+
+      // ★ Đợt 9 — (cờ `AI_AGENT_THEO_VAI_TRO`) chọn model theo vai trò + MỘT `planInference` cho cả lượt chạy, SAU giữ chỗ (await
+      //   không mở khe đua) và TRƯỚC hàng sổ / token / checkpoint. Từ chối ⇒ nhả chỗ, trả mã + lời nói thật; không có hàng sổ.
+      let theoVaiTro: Extract<Awaited<ReturnType<typeof chuanBiLuotChayTheoVaiTro>>, { ok: true }> | null = null;
+      if (tacNhanTheoVaiTroBat()) {
+        const nhaCho = () => {
+          theoId.delete(id);
+          if (dangChayCuaNguoi.get(user.id) === id) dangChayCuaNguoi.delete(user.id);
+        };
+        try {
+          const cb = await chuanBiLuotChayTheoVaiTro(
+            { cauHoi, gocDuAn: goc, projectId, user },
+            { planInference, layAnh: layAnhSoModel, nguCanhKhe, laDuAnPlc: (g) => laDuAnPlc(g), ...phuThuoc.vaiTro },
+          );
+          if (!cb.ok) {
+            nhaCho();
+            return { ok: false, ma: cb.ma, http: HTTP_CUA_MA[cb.ma], thongDiep: cb.thongDiep };
+          }
+          theoVaiTro = cb;
+        } catch (e) {
+          nhaCho();
+          throw e;
+        }
+      }
+      const plan: GatewayPlan | null = theoVaiTro?.plan ?? null;
       // Hàng sổ được tạo TRƯỚC mọi lượt cập nhật (chuỗi ghi bắt đầu từ đây).
       s.chuoiLuu = taoHangLuotChay({ id, userId: user.id, projectId, cheDo, cauHoi, sessionId }).then(() => undefined);
       await s.chuoiLuu;
@@ -593,12 +640,27 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         try {
           const nguCanhDuAn = await dungNguCanh({ ten, goc, projectId, execCtx, userId: user.id, cauHoi, lang });
           const kq = await chayVongAgent({
-            cauHoi,
+            // ★ Đợt 9 — theo vai trò: model nhận câu hỏi ĐÃ CHE của aiGateway (`safeText`: bí mật/PII); sổ vẫn giữ câu gốc của chính người dùng.
+            cauHoi: plan ? plan.safeText : cauHoi,
             lichSu,
             cheDo,
             runId: id,
             nguCanhDuAn,
-            goiModel: phuThuoc.goiModel ?? taoGoiModelMayChu(),
+            goiModel: theoVaiTro
+              ? boDemLuotModel(phuThuoc.goiModel ?? taoGoiModelMayChu({ modelId: theoVaiTro.modelId }), (l) =>
+                  plan?.recordPhu?.({
+                    luotPhu: "agent-luot",
+                    requestId: id,
+                    model: theoVaiTro?.modelId ?? null,
+                    tokensIn: l.vao ?? undefined,
+                    tokensOut: l.ra ?? undefined,
+                    reasoningTokens: l.nghi,
+                    latencyMs: l.ms,
+                    outcome: "ok",
+                  }),
+                )
+              : (phuThuoc.goiModel ?? taoGoiModelMayChu()),
+            ...(theoVaiTro ? { thongTinModel: theoVaiTro.thongTin } : {}),
             boThucThi,
             phat: (e) => phat(s, e),
             signal: boHuy.signal,
@@ -615,6 +677,16 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
           if (luot.ketThuc === null) phat(s, { loai: "xong", lyDo: boHuy.signal.aborted ? "huy" : "loi-model" });
         } finally {
           if (luot.ketThuc === null) phat(s, { loai: "xong", lyDo: "loi-model" });
+          // ★ Đợt 9 — hàng CHÍNH của lượt chạy (cùng `requestId` với các hàng `agent-luot`): tổng token + kết cục.
+          plan?.record({
+            requestId: id,
+            model: theoVaiTro?.modelId ?? null,
+            tokensIn: luot.token.vao,
+            tokensOut: luot.token.ra,
+            reasoningTokens: luot.token.nghi,
+            latencyMs: (luot.ketThuc ?? Date.now()) - luot.batDau,
+            outcome: luot.lyDoDung === "loi-model" ? "error" : "ok",
+          });
           await luuNgay(s);
           if (dangChayCuaNguoi.get(user.id) === id) dangChayCuaNguoi.delete(user.id);
           if (sessionId) await luuPhienNeuCo(user.id, projectId, sessionId, cauHoi, traLoi.slice(0, 20_000));

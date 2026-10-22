@@ -11,6 +11,10 @@
  * ★ Đợt 9 — `--trich-xuat <tệp json>` (thay `--bao-cao`): kết quả `scripts/ai-eval/trich-xuat/do.mts` (vai trò extract):
  *   nTasks = số bài, nPass = bài TRỌN (mọi trường đúng), p50/p90 từ thời gian từng bài; detail mang trường đúng/tổng + model
  *   thực chạy. Tệp thiếu `p50Ms` (bản cũ, không có thời gian từng bài) ⇒ TỪ CHỐI (sổ cần thời gian hợp lệ).
+ *
+ * ★ Đợt 9 — báo cáo A/B (`mot-luot --ab-kiem`, hàng mang `nhanh` = bat|tat): `--nhanh <bat|tat>` ghi MỘT hàng sổ cho MỘT nhánh
+ *   (lọc hàng TRƯỚC khi đếm + tính p50/p90). Báo cáo A/B mà thiếu `--nhanh` ⇒ TỪ CHỐI (trộn hai nhánh = số vô nghĩa).
+ *   `--git-sha <sha>` ghi đè HEAD khi lượt đo chạy trên mã khác HEAD hiện tại (vd báo cáo nối tiếp qua hai commit — ghi rõ ở detail).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -46,10 +50,25 @@ if (TRICH_XUAT && !Number.isFinite(goc.p50Ms)) {
   process.exit(2);
 }
 // Trích xuất: mỗi bài một "lượt", ĐẠT = bài trọn; muc "trich-xuat".
+const NHANH = arg("--nhanh");
+const laAB = !TRICH_XUAT && (goc.abKiem || goc.rows?.some((r) => r.nhanh));
+if (laAB && !NHANH) {
+  console.error("báo cáo A/B (hàng có 'nhanh') — cần --nhanh bat|tat: mỗi nhánh MỘT hàng sổ");
+  process.exit(2);
+}
+if (NHANH && !laAB) {
+  console.error("--nhanh chỉ dùng cho báo cáo A/B");
+  process.exit(2);
+}
+const locNhanh = (ds) => (NHANH ? ds.filter((r) => r.nhanh === NHANH) : ds);
 const rows = TRICH_XUAT
   ? goc.chiTiet.map((c) => ({ id: c.id, muc: "trich-xuat", dat: c.dung === c.tong, totalMs: c.ms }))
-  : fs.existsSync(tepCl) ? JSON.parse(fs.readFileSync(tepCl, "utf8")).rows : goc.rows;
-const ms = (TRICH_XUAT ? rows : goc.rows).map((r) => r.totalMs).filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
+  : locNhanh(fs.existsSync(tepCl) ? JSON.parse(fs.readFileSync(tepCl, "utf8")).rows : goc.rows);
+if (!rows.length) {
+  console.error(`không có hàng nào (nhánh ${NHANH})`);
+  process.exit(2);
+}
+const ms = (TRICH_XUAT ? rows : locNhanh(goc.rows)).map((r) => r.totalMs).filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
 const pct = (p) => (ms.length ? ms[Math.min(ms.length - 1, Math.floor(p * ms.length))] : null);
 const theoMuc = {};
 for (const r of rows) {
@@ -73,7 +92,7 @@ function shaHead() {
     return "khong-ro";
   }
 }
-const sha = shaHead();
+const sha = arg("--git-sha") ?? shaHead();
 const sql = postgres(env.DATABASE_URL, { max: 1 });
 try {
   if (arg("--artifact")) {
@@ -90,7 +109,7 @@ try {
     VALUES (${PROFILE}, ${SUITE}, ${new Set(rows.map((x) => x.id)).size}, ${nPass}, ${TRICH_XUAT ? 1 : goc.soLuot ?? 1}, ${pct(0.5)}, ${pct(0.9)},
       ${sql.json(TRICH_XUAT
         ? { tepKetQua: path.basename(tepGoc), modelThuc: goc.model, nghi: goc.nghi, luc: goc.luc, truongDung: goc.dung, truongTong: goc.tong, khongJson: goc.khongJson, theoMuc }
-        : { nhanBaoCao: NHAN, chamLai: fs.existsSync(tepCl), tongLuot: rows.length, theoMuc, seed: goc.seed, sampling: goc.sampling, khongNghi: goc.khongNghi, vanTay: goc.bai?.map((b) => [b.id, b.vanTay]) })},
+        : { nhanBaoCao: NHAN, chamLai: fs.existsSync(tepCl), tongLuot: rows.length, theoMuc, seed: goc.seed, sampling: goc.sampling, khongNghi: goc.khongNghi, nhanh: NHANH ?? null, ghiChu: arg("--ghi-chu") ?? null, vanTay: goc.bai?.map((b) => [b.id, b.vanTay]) })},
       ${sha.slice(0, 40)}) RETURNING id`;
   console.log(`ghi lượt đo #${r.id}: ${PROFILE} · ${SUITE} · ${nPass}/${rows.length} · p50 ${pct(0.5)} ms`);
 } finally {
