@@ -139,8 +139,9 @@ afterAll(async () => {
 
 const tc = (id: string, name: string, args: Record<string, unknown>) => ({ id, type: "function", function: { name, arguments: JSON.stringify(args) } });
 
-describe("cờ TẮT (mặc định) ⇒ như cũ", () => {
+describe("cờ TẮT (AI_AGENT_THEO_VAI_TRO=false — chủ dự án tắt bằng .env) ⇒ như cũ", () => {
   it("★★★ không planInference, engine nhận modelId undefined, bat-dau KHÔNG có model", async () => {
+    process.env.AI_AGENT_THEO_VAI_TRO = "false";
     const ghi: Ghi = { record: [], phu: [], yeuCau: [] };
     h.kichBan = [{ chu: "xong." }];
     const ql = taoQuanLyLuotChay({ vaiTro: { planInference: planInferenceGia(ghi), layAnh: () => ANH, env: ENV } });
@@ -154,6 +155,7 @@ describe("cờ TẮT (mặc định) ⇒ như cũ", () => {
   }, 60_000);
 });
 
+// Ba nhánh của cờ: (i) + (iv) chạy với cờ VẮNG (mặc định BẬT, dieu-phoi 2026-10-23), (iii) với "1", khối trên với "false".
 describe("cờ BẬT", () => {
   const phu = (ghi: Ghi, nem?: unknown) => ({
     planInference: planInferenceGia(ghi, nem),
@@ -162,8 +164,8 @@ describe("cờ BẬT", () => {
     env: ENV,
   });
 
-  it("★★★ (i) dự án có .st ⇒ bat-dau.model.vaiTro = code.plc và ENGINE nhận 27B; dự án TS ⇒ code.software, 35B", async () => {
-    process.env.AI_AGENT_THEO_VAI_TRO = "1";
+  it("★★★ (i) cờ VẮNG = bật: dự án có .st ⇒ bat-dau.model.vaiTro = code.plc và ENGINE nhận 27B; dự án TS ⇒ code.software, 35B", async () => {
+    delete process.env.AI_AGENT_THEO_VAI_TRO;
     const ghi: Ghi = { record: [], phu: [], yeuCau: [] };
     h.kichBan = [{ chu: "xong." }];
     const ql = taoQuanLyLuotChay({ vaiTro: phu(ghi) });
@@ -207,7 +209,7 @@ describe("cờ BẬT", () => {
   }, 60_000);
 
   it("★★★ (iv) N lượt model ⇒ N hàng agent-luot + 1 hàng chính, CÙNG requestId = runId", async () => {
-    process.env.AI_AGENT_THEO_VAI_TRO = "1";
+    delete process.env.AI_AGENT_THEO_VAI_TRO;
     const ghi: Ghi = { record: [], phu: [], yeuCau: [] };
     h.kichBan = [
       { toolCalls: [tc("c1", "read_file", { path: "src/a.ts" })] },

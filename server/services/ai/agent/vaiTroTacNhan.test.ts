@@ -55,9 +55,10 @@ function phu(o: Partial<PhuThuocVaiTro> = {}): PhuThuocVaiTro & { planInference:
 const Y = { cauHoi: "thêm hàm tính tổng", gocDuAn: "/x", projectId: "duan", user: { id: 7, role: "engineer" } };
 
 describe("cờ + ước lượng", () => {
-  it("cờ mặc định TẮT; 1/true/on ⇒ bật", () => {
-    expect(tacNhanTheoVaiTroBat({})).toBe(false);
-    expect(tacNhanTheoVaiTroBat({ AI_AGENT_THEO_VAI_TRO: "0" })).toBe(false);
+  it("★★★ cờ: VẮNG ⇒ BẬT (mặc định, dieu-phoi 2026-10-23); false/off/0/no ⇒ TẮT; 1/true/on ⇒ bật", () => {
+    expect(tacNhanTheoVaiTroBat({})).toBe(true);
+    expect(tacNhanTheoVaiTroBat({ AI_AGENT_THEO_VAI_TRO: "" })).toBe(true);
+    for (const v of ["false", "OFF", "0", "no", " false "]) expect(tacNhanTheoVaiTroBat({ AI_AGENT_THEO_VAI_TRO: v })).toBe(false);
     for (const v of ["1", "true", "ON"]) expect(tacNhanTheoVaiTroBat({ AI_AGENT_THEO_VAI_TRO: v })).toBe(true);
   });
   it("ước lượng token lượt chạy = 64k (trung vị đo ~31k × 2), env ghi đè, rác ⇒ mặc định", () => {

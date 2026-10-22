@@ -722,7 +722,10 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   Nhiễu đã biết: thiết kế KHỐI (bat 23:57–02:50, tat 02:53–04:37 — nhiệt/cache/giờ không tách được khỏi nhánh). Kiểm trôi TRONG khối:
   tỉ lệ thời gian lượt 2/lượt 1 cùng bài trung vị 0,87 (bat) · 1,08 (tat), biên 0,28–2,71 (nhiễu từng bài lớn, không xu hướng); ĐẠT
   lượt 1→2: bat 9→10, tat 8→7. :3013 chết lúc boot: khối bat 1 lần (thử lại lên), khối tat 0. Một lượt tat đầu bị BỘ ĐO vứt oan (kiểm
-  "tat mà compile_st chạy" của ablation cũ — sửa 5461dafea, chạy lại; không có báo cáo nào bị ghi đè). Quyết định bật cờ: dieu-phoi.
+  "tat mà compile_st chạy" của ablation cũ — sửa 5461dafea, chạy lại; không có báo cáo nào bị ghi đè).
+  **QUYẾT (dieu-phoi 2026-10-23): BẬT MẶC ĐỊNH** — `AI_AGENT_THEO_VAI_TRO` vắng ⇒ bật; `false`/`off`/`0` ⇒ tắt (chủ dự án tắt bằng .env).
+  Chi phí đã biết: thời gian lượt chạy dự án PLC ~1,56×; khe đang giữ 35B ⇒ lượt đầu chờ đổi khe ~60 s (doi-model đo 35 s nạp 27B + chờ).
+  Lưới ghim ba nhánh (vắng/"1"/"false") + 2 đột biến đỏ.
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
