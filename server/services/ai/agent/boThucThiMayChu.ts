@@ -694,14 +694,14 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     const nn = d.phuongNgu === "scl" ? "SCL normalised to ST, line numbers kept" : "ST";
     if (d.ok) return { ok: true, choModel: `Compiled OK with RuSTy (${nn}): no errors.`, hienThi };
     const dong = (d.chanDoan ?? []).map((c) => `${c.tep ?? "?"}:${c.dong ?? "?"}:${c.cot ?? "?"} ${c.ma ? `error[${c.ma}]` : "error"}: ${c.thongDiep}`);
-    return lamSachChoModel(
-      catDuoi(
-        `Compilation FAILED with RuSTy (${nn}): ${Number(d.soLoi ?? dong.length)} error(s).\n${dong.join("\n")}\n` +
-          "Fix every error, then call compile_st again.",
-        TRAN_KY_TU_DOC_MAC_DINH,
-      ),
+    // ⚠ (2026-10-22, ablation tác nhân: tt5 dừng 20 phút) — CHỈ chẩn đoán (dữ liệu từ trình biên dịch) đi qua bộ quét chỉ thị.
+    // Câu hướng dẫn của CHÍNH ta ("… call compile_st again") từng nằm TRONG khối được quét ⇒ bộ quét gắn `tool_call_directive`
+    // ⇒ lõi HẠ tự trị ⇒ mọi lượt ghi sau đó chờ duyệt người tới hết hạn. Câu ấy là văn bản tin cậy ⇒ gắn SAU khi làm sạch.
+    const sach = lamSachChoModel(
+      catDuoi(`Compilation FAILED with RuSTy (${nn}): ${Number(d.soLoi ?? dong.length)} error(s).\n${dong.join("\n")}`, TRAN_KY_TU_DOC_MAC_DINH),
       { ok: true, hienThi },
     );
+    return { ...sach, choModel: `${sach.choModel}\nFix every error, then compile the file again.` };
   }
 
   function deXuatNho(t: Record<string, unknown>, ctx: NguCanhThucThi): KetQuaTool {
