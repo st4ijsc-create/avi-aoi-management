@@ -113,6 +113,8 @@ export async function kiemVaSuaST(y: TuyChonKiemST): Promise<KetQuaKiemBienDichS
   let tot = { chu: y.cauTraLoi, chanDoan: dau.chanDoan };
   let lanTruoc = y.cauTraLoi;
   let chanDoan = dau.chanDoan;
+  // ★ (2026-10-22) số vòng ĐÃ GỌI model thật — A/B /v1: trần 90 s cắt sau vòng 1 mà nhãn vẫn báo `vong=2` (7/7 con-loi).
+  let daGoi = 0;
   for (let vong = 1; vong <= vongToiDa; vong++) {
     if (y.signal?.aborted) break;
     if (bayGio() - t0 >= tranMs) break;
@@ -121,6 +123,7 @@ export async function kiemVaSuaST(y: TuyChonKiemST): Promise<KetQuaKiemBienDichS
       `${chanDoanChoModel(chanDoan)}\n\nSửa các lỗi trên và trả lại ĐẦY ĐỦ mã trong khối \`\`\`${dau.phuongNgu === "scl" ? "scl" : "st"} … \`\`\` (không lược bớt phần đúng).`;
     let moi: string;
     try {
+      daGoi = vong;
       moi = await y.goiLai(tin, lanTruoc);
     } catch (e) {
       if ((e as Error)?.name === "AbortError") throw e;
@@ -140,7 +143,7 @@ export async function kiemVaSuaST(y: TuyChonKiemST): Promise<KetQuaKiemBienDichS
     if (soLoi(r.chanDoan) < soLoi(tot.chanDoan)) tot = { chu: moi, chanDoan: r.chanDoan };
     if (vong === vongToiDa) return kq({ trangThai: "con-loi", phuongNgu: dau.phuongNgu, soVong: vong, chanDoanCuoi: tot.chanDoan, cauTraLoiCuoi: tot.chu });
   }
-  return kq({ trangThai: "con-loi", phuongNgu: dau.phuongNgu, soVong: lanTruoc === y.cauTraLoi ? 0 : vongToiDa, chanDoanCuoi: tot.chanDoan, cauTraLoiCuoi: tot.chu });
+  return kq({ trangThai: "con-loi", phuongNgu: dau.phuongNgu, soVong: daGoi, chanDoanCuoi: tot.chanDoan, cauTraLoiCuoi: tot.chu });
 }
 
 /** Cờ `AI_KIEM_BIEN_DICH_ST` = danh sách bề mặt (`v1`, `tro-ly`, `cmdk`) hoặc `off` (mặc định). */

@@ -116,6 +116,21 @@ describe("kiemVaSuaST", () => {
     expect(r.trangThai).toBe("con-loi");
   });
 
+  it("★ (2026-10-22) trần thời gian cắt SAU vòng 1 ⇒ soVong = 1 (số vòng THẬT, không báo vòng tối đa)", async () => {
+    let t = 0;
+    let n = 0;
+    const r = await kiemVaSuaST({
+      cauTraLoi: tl(FB_SAI),
+      goiLai: async () => ((t += 100_000), n++, tl(FB_SAI)), // vòng sửa 100 s, vẫn lỗi
+      bienDich: bdGia,
+      bayGio: () => t,
+      tranMs: 90_000,
+    });
+    expect(n).toBe(1);
+    expect(r).toMatchObject({ trangThai: "con-loi", soVong: 1 });
+    expect(nhanKiemBienDich(r)).toContain("sau 1 vòng");
+  });
+
   it("docker/ảnh vắng ⇒ khong-kiem-duoc (không ném, không chặn)", async () => {
     const r = await kiemVaSuaST({ cauTraLoi: tl(FB_DUNG), goiLai: async () => "", bienDich: async () => { throw new LoiBienDichST("thieu-anh", "ảnh vắng"); } });
     expect(r.trangThai).toBe("khong-kiem-duoc");
