@@ -74,7 +74,8 @@ export const CONG_CU_CHAN_DOAN: WireTool = {
 
 // `lookup_api` (2026-10-18): chỉ mục ký hiệu API (~70 MB) chỉ có ở MÁY CHỦ (`knowledge/api-ref/ky-hieu/`, gitignore) — CHƯA bày ở
 // extension (rủi ro thấp nhất: không mở thêm đường REST); lõi chặn tool ngoài bộ phơi, gọi bừa ⇒ câu "not available" dưới.
-const KHONG_BAY = new Set(["search_code", "search_docs", "lookup_api"]);
+// `compile_st` (Đợt 9): trình biên dịch ST (RuSTy trong docker) chỉ có ở MÁY CHỦ, sau cờ — không bày ở extension.
+const KHONG_BAY = new Set(["search_code", "search_docs", "lookup_api", "compile_st"]);
 /** Tool mà kết quả là DỮ LIỆU từ workspace/tiến trình (quét tìm câu dạng mệnh lệnh). */
 const TOOL_TRA_DU_LIEU = new Set(["read_file", "list_dir", "find_files", "grep", "find_symbol", "get_diagnostics", "run_command"]);
 const TRAN_TEP_GREP = 4000;

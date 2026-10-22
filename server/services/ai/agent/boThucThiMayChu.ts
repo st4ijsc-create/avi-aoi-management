@@ -81,10 +81,14 @@
  *     chưa có chỉ mục) ⇒ TỰ tra `traApi` và gắn khối "Gợi ý tra cứu API (tự động)" ở cuối quan sát
  *     (`../apiRef/goiYLoiBienDich.ts`; tắt `AI_AGENT_TU_TRA_API=0`). Chỉ khi chỉ mục có mục khớp.
  *   • Sau mỗi lượt GHI THÀNH CÔNG ⇒ `lamTuoiTep` (best-effort, không chờ, lỗi nuốt) để chỉ mục không cũ.
+ *   • ★ Đợt 9 (2026-10-21) `compile_st` ⇒ tool sổ đăng ký `kiem_bien_dich_st` (RuSTy trong docker cách ly, CHỈ biên dịch;
+ *     `path` qua `moTepTrongHopCat` cùng cửa `read_file`). Tool TUỲ CHỌN: chỉ phơi khi `AI_KIEM_BIEN_DICH_ST` chứa
+ *     `agent`/`all` (`toolTuyChonBat`); tắt ⇒ không phơi + gọi bừa bị từ chối (`CONG_CU_BI_AN`), lời nhắc không đổi byte nào.
  */
 import path from "node:path";
 import {
   apDungEdits,
+  CONG_CU_TUY_CHON,
   congCuTheoCheDo,
   nhanNguonGoi,
   type BoThucThi,
@@ -117,6 +121,7 @@ import { damBaoChiMucNen, phanGiaiChiMuc, type CongChiMucMa } from "./chiMucMaAg
 import { timTaiLieuMacDinh, type KhoTaiLieu, type TimTaiLieu } from "./timTaiLieuAgent";
 import { dinhDangKetQuaApi, traApiMacDinh, type NgonNguApi, type TraApi } from "../apiRef/traApi";
 import { goiYTraApiTuDauRa, tuTraApiBat } from "../apiRef/goiYLoiBienDich";
+import { kiemBienDichBat } from "../st/kiemBienDichSt";
 
 /** Lý do gắn vào audit của `confirmAction` cho một lượt ghi KHÔNG người bấm của chế độ `tu-dong`. */
 export const LY_DO_AGENT_TU_DONG = "AI_AGENT_TU_DONG" as const;
@@ -151,6 +156,12 @@ export function congCuBiAn(giaTri: string | undefined = process.env.AI_AGENT_AN_
       .map((x) => x.trim())
       .filter(Boolean),
   );
+}
+
+/** ★ Đợt 9 — tool TUỲ CHỌN (`CONG_CU_TUY_CHON`) có được phơi ở lượt chạy này? Đọc TẠI CHỖ GỌI như `congCuBiAn`. */
+export function toolTuyChonBat(ten: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (ten === "compile_st") return kiemBienDichBat("agent", env);
+  return false;
 }
 
 /** Cắt một chuỗi theo trần, có dấu cắt. */
@@ -648,6 +659,51 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     return lamSachChoModel(catDuoi(dinhDangKetQuaApi(ten, kq), TRAN_KY_TU_DOC_MAC_DINH), { ok: true, hienThi });
   }
 
+  /**
+   * ★ Đợt 9 — `compile_st`. Chữ cho model viết TẠI ĐÂY bằng tiếng Anh từ `data` có cấu trúc (textSummary của tool sổ đăng
+   * ký là tiếng Việt cho người); từ chối hộp cát đi `ketQuaTuChoiDoc` (đã mang `textModel`). Chẩn đoán là DỮ LIỆU ⇒ làm sạch.
+   */
+  async function bienDichStCho(t: Record<string, unknown>): Promise<KetQuaTool> {
+    const args: Record<string, unknown> = typeof t.path === "string" ? { path: t.path } : { code: String(t.code ?? "") };
+    const { result, loi } = await chayDoc("kiem_bien_dich_st", args);
+    if (!result) return { ok: false, ma: "LOI_TOOL", choModel: loi ?? "compile_st failed" };
+    const d = (result.data ?? {}) as {
+      ok?: boolean | null;
+      phuongNgu?: "st" | "scl" | null;
+      soLoi?: number;
+      chanDoan?: Array<{ tep: string | null; dong: number | null; cot: number | null; ma: string | null; thongDiep: string }>;
+      path?: string | null;
+    };
+    const hienThi = { tool: "compile_st", ...(d.path ? { path: d.path } : {}), ok: d.ok ?? null, soLoi: Number(d.soLoi ?? 0) };
+    if (result.note === "NO_ST_CODE") {
+      return {
+        ok: false,
+        ma: "NO_ST_CODE",
+        choModel: "No Structured Text found to compile. Pass a .st/.scl file as path, or code with the ST source (fenced blocks must be labelled st, scl or iecst).",
+      };
+    }
+    if (result.note === "COMPILER_UNAVAILABLE") {
+      return {
+        ok: false,
+        ma: "COMPILER_UNAVAILABLE",
+        choModel: "The ST compiler is unavailable on this server, so the code was NOT compile-checked. Do not claim it compiles; tell the user it was not verified.",
+        hienThi,
+      };
+    }
+    if (result.note) return ketQuaTuChoiDoc(result);
+    const nn = d.phuongNgu === "scl" ? "SCL normalised to ST, line numbers kept" : "ST";
+    if (d.ok) return { ok: true, choModel: `Compiled OK with RuSTy (${nn}): no errors.`, hienThi };
+    const dong = (d.chanDoan ?? []).map((c) => `${c.tep ?? "?"}:${c.dong ?? "?"}:${c.cot ?? "?"} ${c.ma ? `error[${c.ma}]` : "error"}: ${c.thongDiep}`);
+    return lamSachChoModel(
+      catDuoi(
+        `Compilation FAILED with RuSTy (${nn}): ${Number(d.soLoi ?? dong.length)} error(s).\n${dong.join("\n")}\n` +
+          "Fix every error, then call compile_st again.",
+        TRAN_KY_TU_DOC_MAC_DINH,
+      ),
+      { ok: true, hienThi },
+    );
+  }
+
   function deXuatNho(t: Record<string, unknown>, ctx: NguCanhThucThi): KetQuaTool {
     // Cờ trí nhớ TẮT ⇒ cả cửa đề xuất im lặng (xem `baiHocEnabled`: cờ tắt phải tắt CẢ HAI cửa).
     if (!baiHocEnabled()) {
@@ -966,7 +1022,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   return {
     congCu(cheDo: CheDoAgent) {
       const an = congCuBiAn();
-      const ds = congCuTheoCheDo(cheDo);
+      const ds = congCuTheoCheDo(cheDo, [...CONG_CU_TUY_CHON].filter((ten) => toolTuyChonBat(ten)));
       return an.size === 0 ? ds : ds.filter((t) => !an.has(t.function.name));
     },
     async chay(goi, ctx) {
@@ -979,7 +1035,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   };
 
   async function chayMot(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
-    if (congCuBiAn().has(goi.ten)) {
+    if (congCuBiAn().has(goi.ten) || (CONG_CU_TUY_CHON.has(goi.ten as never) && !toolTuyChonBat(goi.ten))) {
       return { ok: false, ma: "CONG_CU_BI_AN", choModel: `Tool "${goi.ten}" is not available in this run. Use the tools you were given.` };
     }
     try {
@@ -1019,6 +1075,8 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
           return deXuatNho(t, ctx);
         case "lookup_api":
           return await traApiCho(t);
+        case "compile_st":
+          return await bienDichStCho(t);
         default:
           return { ok: false, ma: "CONG_CU_KHONG_CO", choModel: `Unknown tool "${goi.ten}".` };
       }

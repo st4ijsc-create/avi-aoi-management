@@ -1870,6 +1870,13 @@ export const aiGatewayMetrics = pgTable("ai_gateway_metrics", {
   reasoningTokens: integer("reasoningTokens"),
   thinking: boolean("thinking"),
   samplingProfile: varchar("samplingProfile", { length: 24 }),
+  /**
+   * ★ Đợt 9 (2026-10-21, migration 0406) — LƯỢT PHỤ của một yêu cầu. `requestId` = mã yêu cầu (vd `chatcmpl-…` của /v1) — hàng
+   * chính và các lượt phụ mang CÙNG mã; `luotPhu` NULL = lượt chính, khác NULL = loại lượt phụ (`sua-bien-dich-st`: lượt model
+   * sinh lại trong vòng kiểm biên dịch ST). Cả hai nullable, không default. CHECK `luotPhu ~ '^[a-z0-9-]{1,32}$'`.
+   */
+  requestId: varchar("requestId", { length: 64 }),
+  luotPhu: varchar("luotPhu", { length: 32 }),
   // Who triggered it (best-effort; null for system/cron callers).
   userId: integer("userId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

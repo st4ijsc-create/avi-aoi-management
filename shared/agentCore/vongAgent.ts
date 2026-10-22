@@ -246,7 +246,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
     phat(e);
   };
 
-  const heThong = dungLoiNhacHeThong({ cheDo: y.cheDo, ngonNgu: y.ngonNgu ?? "vi" });
+  const heThong = dungLoiNhacHeThong({ cheDo: y.cheDo, ngonNgu: y.ngonNgu ?? "vi", congCu: [...tenDuocPhep] });
   let tinNhan: TinNhan[] = [
     { role: "system", content: y.nguCanhDuAn ? `${heThong}\n\n${y.nguCanhDuAn}` : heThong },
     ...(y.lichSu ?? []).filter((m) => m.role !== "system"),
