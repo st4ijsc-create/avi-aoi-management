@@ -668,7 +668,7 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   hiệu quả SỬA: M cứu 13/16 lượt có lỗi (13 trong số đó sạch ngay sau vòng 1), H chỉ 4/13 (6/13 sạch sau vòng 1). Hai nguyên nhân
   ĐO ĐƯỢC ở H: trần 90 s của vòng (định cho model nhẹ) nhỏ hơn MỘT lượt sinh lại của 27B (67–197 s) ⇒ 7/7 lượt `con-loi` chỉ được
   ĐÚNG MỘT vòng (sổ đo có 13 lượt sửa cho 13 yêu cầu), trong khi nhãn báo `vong=2` (lỗi đếm — sửa 9b85bff11); và ví dụ tt7 (BCD,
-  `x SHR 12` không phải IEC): chẩn đoán của hai đường GIỐNG HỆT nhau (đối chiếu tmp/so-loi-tt7.mts) nhưng M sửa được 2/3, H 0/3 ⇒
+  `x SHR 12` không phải IEC): chẩn đoán của hai đường GIỐNG HỆT nhau (đối chiếu `scripts/ai-eval/ngau-nhien/phan-tich/so-loi-tt7.mts`) nhưng M sửa được 2/3, H 0/3 ⇒
   khác biệt còn lại nằm ở lời nhắc sửa (M đòi "trả lại ĐỦ mọi tệp đúng định dạng `// tệp:`", H chỉ đòi khối ```st) / ngữ cảnh cổng
   /v1 — CHƯA tách được nếu không chạy GPU. Mở: (a) trần thời gian vòng theo khe (nặng ≥ 2 lượt sinh), (b) lời nhắc sửa theo M,
   (c) chế độ `chi-kiem` (biên dịch 1 lần, gắn nhãn ✓/⚠, không sinh lại — ~1–2 s, 0 token) — hàng đợi, CHƯA làm.
