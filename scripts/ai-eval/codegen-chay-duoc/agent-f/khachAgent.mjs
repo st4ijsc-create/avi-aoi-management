@@ -11,7 +11,7 @@ export async function chayAgent({ base, cookie, cauHoi, projectId, tranMs }) {
   const hen = setTimeout(() => ac.abort(), tranMs);
   const g = { runId: null, ms: 0, ttftMs: null, soGoiTool: 0, luotMax: 0, tool: {}, toolOk: {}, toolMa: {}, toolLoi: 0, canDuyet: 0,
     biBac: 0, usage: { vao: 0, ra: 0, nghi: 0 }, usageCuoi: null, ctxMax: null, checkpointTep: [], lyDo: null,
-    tomTat: null, loi: [], chu: 0, hetGioClient: false, http: null };
+    tomTat: null, loi: [], chu: 0, hetGioClient: false, http: null, model: null };
   try {
     const res = await fetch(`${base}/api/ai/agent/runs`, {
       method: "POST", signal: ac.signal,
@@ -24,7 +24,8 @@ export async function chayAgent({ base, cookie, cauHoi, projectId, tranMs }) {
     let buf = "";
     const xuLy = (o) => {
       switch (o.loai) {
-        case "bat-dau": g.runId = o.runId; break;
+        // ★ Đợt 9 — `model` chỉ có khi server bật AI_AGENT_THEO_VAI_TRO: vai trò + model THỰC chạy (ablation vai trò kiểm từng lượt).
+        case "bat-dau": g.runId = o.runId; g.model = o.model ?? null; break;
         case "chu": if (g.ttftMs === null) g.ttftMs = Date.now() - t0; g.chu += (o.noiDung ?? "").length; break;
         case "goi-tool": g.soGoiTool++; g.luotMax = Math.max(g.luotMax, o.luot ?? 0);
           g.tool[o.goi?.ten ?? "?"] = (g.tool[o.goi?.ten ?? "?"] ?? 0) + 1; break;
