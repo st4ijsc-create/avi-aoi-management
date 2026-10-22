@@ -91,7 +91,8 @@ async function kiemSong(luc) {
 /** Tệp đã đổi so với khung (mới / sửa / mất), bỏ sản phẩm dựng. */
 function soVoiKhung(b, dir, boQua = []) {
   const khung = new Set(lietKeTep(b.khungAbs));
-  const nay = new Set(lietKeTep(dir).filter((r) => !boQua.includes(r)));
+  // `.git/` do bộ đo `git init` ở gốc tuyệt đối — không phải tệp agent đổi
+  const nay = new Set(lietKeTep(dir).filter((r) => !boQua.includes(r) && !r.startsWith(".git/")));
   const bang = (rel) => fs.readFileSync(`${b.khungAbs}/${rel}`).equals(fs.readFileSync(`${dir}/${rel}`));
   return {
     moi: [...nay].filter((r) => !khung.has(r)),
@@ -148,6 +149,13 @@ for (const b of DS) {
         process.exit(2);
       }
       await kiemSong(`sau ${b.id} lượt ${luot}`);
+      // ★ Đợt 9 (2026-10-22, ablation lần 1: 3 lượt "loi-model" 0 tool bị CHẤM thành trượt) — lượt chết vì LỖI MODEL/HẠ TẦNG
+      // (khe bị khoá, model từ chối…) không phải câu trả lời của agent ⇒ VỨT, exit 2.
+      if (row.agent.lyDo === "loi-model" || row.agent.loi.some((l) => /^MODEL_LOI/.test(l))) {
+        console.error(`
+⛔ VỨT: lượt agent chết vì lỗi model/hạ tầng: ${String(row.agent.loi[0] ?? row.agent.lyDo).slice(0, 300)}`);
+        process.exit(2);
+      }
       row.compileSt = { goi: row.agent.tool.compile_st ?? 0, ok: row.agent.toolOk.compile_st ?? 0, ma: row.agent.toolMa.compile_st ?? [] };
       if (NHANH === "tat" && row.compileSt.ok > 0) {
         console.error(`\n⛔ VỨT: nhánh tat mà compile_st chạy OK ${row.compileSt.ok} lần — công tắc không hiệu lực (server có \`agent\` trong AI_KIEM_BIEN_DICH_ST?).`);
