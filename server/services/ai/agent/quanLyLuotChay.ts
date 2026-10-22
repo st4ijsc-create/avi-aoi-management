@@ -646,8 +646,9 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             cheDo,
             runId: id,
             nguCanhDuAn,
+            // Cờ AI_AGENT_THEO_VAI_TRO BẬT ⇒ lượt model đã được đếm qua cổng (recordPhu agent-luot) ⇒ tắt dấu vết chỉ-ghi của goiModelMayChu (tránh hai hàng/lượt); TẮT ⇒ dấu vết chỉ-ghi mang người chạy.
             goiModel: theoVaiTro
-              ? boDemLuotModel(phuThuoc.goiModel ?? taoGoiModelMayChu({ modelId: theoVaiTro.modelId }), (l) =>
+              ? boDemLuotModel(phuThuoc.goiModel ?? taoGoiModelMayChu({ modelId: theoVaiTro.modelId, khongGhiDauVet: true }), (l) =>
                   plan?.recordPhu?.({
                     luotPhu: "agent-luot",
                     requestId: id,
@@ -659,7 +660,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
                     outcome: "ok",
                   }),
                 )
-              : (phuThuoc.goiModel ?? taoGoiModelMayChu()),
+              : (phuThuoc.goiModel ?? taoGoiModelMayChu({ userId: user.id })),
             ...(theoVaiTro ? { thongTinModel: theoVaiTro.thongTin } : {}),
             boThucThi,
             phat: (e) => phat(s, e),
