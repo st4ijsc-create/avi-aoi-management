@@ -22,6 +22,7 @@ import type {
   LyDoDung,
   PhamViNho,
   SuKienAgent,
+  ThongTinModelBatDau,
   ViecKeHoach,
 } from "@shared/agentCore/kieu";
 
@@ -72,6 +73,8 @@ export interface TrangThaiAgent {
   ketThuc: { lyDo: LyDoDung; tomTat?: string } | null;
   /** (2026-10-17) tu-dong đã bị hạ tự trị trong lượt này (`ha-tu-tri`) — một chiều. */
   daHaTuTri: boolean;
+  /** ★ Đợt 9 — model + vai trò THỰC của lượt (sự kiện `bat-dau.model`; CHỈ có khi server bật `AI_AGENT_THEO_VAI_TRO`). `null` ⇒ không hiện gì. */
+  modelBatDau: ThongTinModelBatDau | null;
 }
 
 export const TRANG_THAI_RONG: TrangThaiAgent = {
@@ -88,6 +91,7 @@ export const TRANG_THAI_RONG: TrangThaiAgent = {
   tepDaDoi: [],
   ketThuc: null,
   daHaTuTri: false,
+  modelBatDau: null,
 };
 
 /** Trạng thái lúc người dùng vừa gửi câu hỏi (chưa có `bat-dau`). */
@@ -158,7 +162,7 @@ export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent): TrangThaiAgent {
   const n: TrangThaiAgent = { ...s, soSuKien: s.soSuKien + 1 };
   switch (e?.loai) {
     case "bat-dau":
-      return { ...n, runId: e.runId, cheDo: e.cheDo, dangChay: true, ketThuc: null };
+      return { ...n, runId: e.runId, cheDo: e.cheDo, dangChay: true, ketThuc: null, modelBatDau: e.model ?? null };
     case "chu":
     case "nghi":
       return { ...n, phiaTruoc: null, dongThoiGian: noiChu(n.dongThoiGian, e.loai, e.noiDung ?? "") };

@@ -27,6 +27,7 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
+  Cpu,
   CircleDot,
   FileText,
   Hourglass,
@@ -38,7 +39,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import type { LyDoDung, ViecKeHoach } from "@shared/agentCore/kieu";
+import type { LyDoDung, ThongTinModelBatDau, ViecKeHoach } from "@shared/agentCore/kieu";
 import { Button } from "@/components/ui/button";
 import { TheDuyetDiff } from "@/components/ai/TheDuyetDiff";
 import type { ActionState } from "@/components/ConfirmActionCard";
@@ -468,6 +469,40 @@ function KetThuc({ agent, onMoTep }: { agent: HookAgent; onMoTep: (p: string) =>
   );
 }
 
+/**
+ * ★ Đợt 9 — dòng ngắn "Đang chạy <model> · vai trò <vai trò> (dự án …)" từ sự kiện `bat-dau.model` (chỉ khi server bật
+ * `AI_AGENT_THEO_VAI_TRO`; `null` ⇒ KHÔNG vẽ gì — DOM y như cũ). `nguon = "du-phong"` ⇒ nhãn "dự phòng"; `bangChung` (chuỗi giải
+ * thích của máy chủ) nằm ở tooltip.
+ */
+export function DongModelBatDau({ m, dangChay }: { m: ThongTinModelBatDau | null; dangChay: boolean }) {
+  const { t } = useTranslation();
+  if (!m) return null;
+  const duAn = m.vaiTro === "code.plc" ? t("repoWs.agent.modelBatDau.duAnPlc", " (dự án PLC)") : m.vaiTro === "code.software" ? t("repoWs.agent.modelBatDau.duAnPhanMem", " (dự án phần mềm)") : "";
+  const model = m.model ?? t("repoWs.agent.modelBatDau.macDinh", "model mặc định của engine");
+  return (
+    <div
+      data-testid="agent-model-bat-dau"
+      data-nguon={m.nguon}
+      data-vai-tro={m.vaiTro}
+      // i18n-raw-ok: `bangChung` là chuỗi giải thích kỹ thuật do máy chủ dựng (nguồn định tuyến) — chỉ ở tooltip.
+      title={m.bangChung}
+      className="flex flex-wrap items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] text-muted-foreground"
+    >
+      <Cpu className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span className="min-w-0 break-words">
+        {dangChay
+          ? t("repoWs.agent.modelBatDau.dangChay", "Đang chạy {{model}} · vai trò {{vaiTro}}{{duAn}}", { model, vaiTro: m.vaiTro, duAn })
+          : t("repoWs.agent.modelBatDau.daChay", "Đã chạy {{model}} · vai trò {{vaiTro}}{{duAn}}", { model, vaiTro: m.vaiTro, duAn })}
+      </span>
+      {m.nguon === "du-phong" && (
+        <span data-testid="agent-model-du-phong" className="rounded border border-amber-300 bg-amber-50 px-1 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          {t("repoWs.agent.modelBatDau.duPhong", "dự phòng — khe đang giữ model khác")}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTep: (path: string) => void }) {
   const { t } = useTranslation();
   const s = agent.trangThai;
@@ -492,6 +527,8 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
       )}
 
       <BangKeHoach viec={s.keHoach} />
+
+      <DongModelBatDau m={s.modelBatDau} dangChay={s.dangChay} />
 
       {s.dangChay && (
         <div data-testid="agent-trang-thai" aria-live="polite" className="flex flex-wrap items-center gap-2 rounded-md border border-dashed px-2 py-1 text-[11px] text-muted-foreground">

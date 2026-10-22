@@ -388,3 +388,52 @@ test("10 — trợ lý lập trình: nhãn kiểm biên dịch ST (AI giả qua 
   expect(await the.innerText()).not.toMatch(/repoWs\.|kiemBienDich/); // không khoá thô
   if (process.env.FS_SHOT_DIR) await page.screenshot({ path: `${process.env.FS_SHOT_DIR}/10b-con-loi.png` });
 });
+
+test("11 — tác nhân theo VAI TRÒ (AI giả qua SSE): dòng 'Running <model> · role code.plc' + nhãn dự phòng; mã từ chối 503 AI_KHONG_CO_MODEL hiện câu EN đã dịch", async ({ page }) => {
+  await dangNhap(page, fx.admin, "en");
+  const sse = (...su: object[]) => su.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
+  let luot = 0;
+  await page.route("**/api/ai/agent/runs", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    luot += 1;
+    if (luot === 1) {
+      // cờ AI_AGENT_THEO_VAI_TRO bật: bat-dau mang model + vai trò (nguồn dự phòng ⇒ nhãn)
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+        body: sse(
+          { loai: "bat-dau", runId: "run-fs-1", cheDo: "duyet", model: { vaiTro: "code.plc", model: "Qwen3.6-27B-UD-Q4_K_XL", nguon: "du-phong", bangChung: "dự án PLC (.st/.scl); khe đang giữ model khác" } },
+          { loai: "chu", noiDung: "Done." },
+          { loai: "xong", lyDo: "hoan-thanh", tomTat: "ok" },
+        ),
+      });
+      return;
+    }
+    // lượt 2: bị từ chối TRƯỚC khi có lượt chạy (không SSE) — thân JSON y như server
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ success: false, code: "AI_KHONG_CO_MODEL", message: "raw server text" }) });
+  });
+  await page.goto(`${base}/ai-coding-workspace`);
+  await page.getByRole("radio", { name: /step-by-step approval/i }).click();
+  const o = page.locator("textarea").last();
+  await expect(o).toBeVisible({ timeout: 60_000 });
+
+  await o.fill("write a PLC function block");
+  await o.press("Enter");
+  const dong = page.getByTestId("agent-model-bat-dau");
+  await expect(dong).toBeVisible({ timeout: 30_000 });
+  await expect(dong).toHaveAttribute("data-vai-tro", "code.plc");
+  await expect(dong).toContainText("Qwen3.6-27B-UD-Q4_K_XL · role code.plc (PLC project)");
+  await expect(page.getByTestId("agent-model-du-phong")).toContainText("fallback");
+  expect(await dong.innerText()).not.toMatch(/repoWs\.|modelBatDau/); // không khoá thô
+  if (process.env.FS_SHOT_DIR) await page.screenshot({ path: `${process.env.FS_SHOT_DIR}/11a-model-bat-dau.png` });
+
+  await expect(page.getByTestId("agent-trang-thai")).toHaveCount(0, { timeout: 30_000 }); // lượt 1 đã xong
+  await o.fill("second request");
+  await o.press("Enter");
+  const khung = page.getByTestId("agent-dong-thoi-gian");
+  await expect(khung).toContainText("No model is available for the Agent", { timeout: 30_000 });
+  const chu = await khung.innerText();
+  expect(chu).not.toContain("AI_KHONG_CO_MODEL"); // không mã thô
+  expect(chu).not.toContain("raw server text"); // câu đã dịch thắng `message` của server
+  if (process.env.FS_SHOT_DIR) await page.screenshot({ path: `${process.env.FS_SHOT_DIR}/11b-tu-choi-503.png` });
+});
