@@ -598,7 +598,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             cheDo,
             runId: id,
             nguCanhDuAn,
-            goiModel: phuThuoc.goiModel ?? taoGoiModelMayChu({ userId: user.id }),
+            goiModel: phuThuoc.goiModel ?? taoGoiModelMayChu(),
             boThucThi,
             phat: (e) => phat(s, e),
             signal: boHuy.signal,
