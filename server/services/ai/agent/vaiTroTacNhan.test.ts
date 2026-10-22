@@ -107,6 +107,28 @@ describe("(ii) khoá khe giữ model khác", () => {
     expect(kq).toMatchObject({ ok: true, modelId: M27, thongTin: { model: M27, nguon: "du-phong" } });
   });
 
+  it("★★★ (2026-10-23, đo trên :3013) làm mới khe TRƯỚC khi đọc: khe vừa đổi NGOÀI tiến trình 35B→27B + khoá ⇒ 27B du-phong, không từ chối oan", async () => {
+    const a = anh([G({ roleId: "code.software", profileId: "p35", fallback: ["p27"] })]);
+    let dangGiu = M35; // giá trị CŨ trong bộ lập lịch
+    const thuTu: string[] = [];
+    const kq = await chuanBiLuotChayTheoVaiTro(
+      Y,
+      phu({
+        layAnh: () => a,
+        lamMoiKhe: async () => {
+          thuTu.push("lam-moi");
+          dangGiu = M27; // /props thật nói 27B
+        },
+        nguCanhKhe: () => {
+          thuTu.push("doc");
+          return { kheBiKhoa: true, kheDangGiu: dangGiu };
+        },
+      }),
+    );
+    expect(thuTu).toEqual(["lam-moi", "doc"]);
+    expect(kq).toMatchObject({ ok: true, modelId: M27, thongTin: { nguon: "du-phong" } });
+  });
+
   it("khoá giữ 27B + dự án PLC (code.plc → 27B) ⇒ chạy, không đổi khe", async () => {
     const kq = await chuanBiLuotChayTheoVaiTro(Y, phu({ laDuAnPlc: () => true, nguCanhKhe: () => ({ kheBiKhoa: true, kheDangGiu: M27 }) }));
     expect(kq).toMatchObject({ ok: true, modelId: M27 });

@@ -965,6 +965,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         modelLabel = chon.vaiTro ?? "chat";
         if (!res.headersSent) res.setHeader("x-st4i-vai-tro", `${modelLabel}; tang=${chon.tang}`);
       }
+      // ★ Đợt 9 (2026-10-23) — làm mới "khe đang giữ" TRƯỚC định tuyến vai trò (đổi khe ngoài tiến trình ⇒ lượt đầu bị từ chối oan).
+      await (await import("../services/ai/soModel/kheNangMacDinh")).lamMoiKheDangGiu();
       const modelId = apTranDoiKhe(res, resolveModelId(modelLabel));
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : 0.7;
@@ -1440,6 +1442,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         return;
       }
       const modelLabel = kiem.ten;
+      // ★ Đợt 9 (2026-10-23) — làm mới "khe đang giữ" TRƯỚC định tuyến vai trò (đổi khe ngoài tiến trình ⇒ lượt đầu bị từ chối oan).
+      await (await import("../services/ai/soModel/kheNangMacDinh")).lamMoiKheDangGiu();
       const modelId = apTranDoiKhe(res, resolveModelId(modelLabel));
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : isFim ? 256 : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : isFim ? 0.2 : 0.7;

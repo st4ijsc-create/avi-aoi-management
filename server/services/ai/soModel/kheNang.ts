@@ -167,6 +167,17 @@ export class KheNang {
     });
   }
 
+  /**
+   * ★ Đợt 9 (2026-10-23, đo) — xác nhận lại model khe ĐANG GIỮ (dùng chung bộ đệm `xacNhanMs`) rồi trả nó. Người định tuyến
+   * vai trò gọi TRƯỚC khi chọn model: `dangGiu` chỉ được làm mới khi có lượt xin khe, nên sau một lần đổi khe NGOÀI tiến trình
+   * (`doi-model.ps1`, phép đo giữ khoá) lượt ĐẦU TIÊN định tuyến theo giá trị cũ ⇒ chọn model khe không giữ ⇒ bị từ chối oan
+   * (đo trên :3013: khoá + khe vừa đổi sang 27B ⇒ `/v1 code.software` lượt 1 bị từ chối, lượt 2 sau 8 s chạy 27B).
+   */
+  async xacNhanDangGiu(): Promise<string | null> {
+    await this.xacNhan();
+    return this.dangGiu;
+  }
+
   thongKe(): ThongKeKheNang {
     const bayGio = Date.now();
     return {

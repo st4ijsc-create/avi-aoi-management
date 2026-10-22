@@ -56,6 +56,19 @@ describe("KheNang (Đợt 7.1)", () => {
     vi.useRealTimers();
   });
 
+  it("★★ Đợt 9 (2026-10-23) — đổi khe NGOÀI tiến trình: xacNhanDangGiu làm mới dangGiu (sau xacNhanMs), không cần lượt xin khe", async () => {
+    const { sv, kn, goi } = dung();
+    const p = goi("A", "tuong-tac", 10);
+    await tien(20);
+    await p;
+    expect(kn.thongKe().dangGiu).toBe("A");
+    sv.giu = "B"; // doi-model.ps1 / phép đo đổi khe, tiến trình này không biết
+    expect(kn.thongKe().dangGiu, "chưa làm mới ⇒ còn giá trị cũ (đây là lỗ đã đo)").toBe("A");
+    await tien(CAU_HINH_MAC_DINH.xacNhanMs + 1);
+    expect(await kn.xacNhanDangGiu()).toBe("B");
+    expect(kn.thongKe().dangGiu).toBe("B");
+  });
+
   it("★ CỔNG 7.1 — 3 đợt A×10 · B×10 · A×10 ⇒ số lần đổi ≤ 3 + 1, mọi lượt được phục vụ đúng model", async () => {
     const { sv, kn, goi, nhatKy } = dung();
     const p: Promise<void>[] = [];

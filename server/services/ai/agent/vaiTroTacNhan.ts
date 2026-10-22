@@ -70,6 +70,8 @@ export interface PhuThuocVaiTro {
   planInference: (req: GatewayRequest) => Promise<GatewayPlan>;
   layAnh: () => AnhSoModel;
   nguCanhKhe: () => { kheBiKhoa: boolean; kheDangGiu: string | null };
+  /** Làm mới "khe đang giữ" TRƯỚC `nguCanhKhe` (mặc định `lamMoiKheDangGiu`; đổi khe ngoài tiến trình ⇒ giá trị cũ ⇒ từ chối oan). */
+  lamMoiKhe?: () => Promise<void>;
   laDuAnPlc: (goc: string) => boolean;
   env?: NodeJS.ProcessEnv;
 }
@@ -85,6 +87,7 @@ export async function chuanBiLuotChayTheoVaiTro(
   const env = p.env ?? process.env;
   const chon = chonVaiTroTacNhan({ laDuAnPlc: p.laDuAnPlc(y.gocDuAn), cauHoi: y.cauHoi });
   const anh = p.layAnh();
+  await p.lamMoiKhe?.();
   const khe = p.nguCanhKhe();
   const r = dinhTuyenVaiTro({ vaiTro: chon.vaiTro, phamVi: { projectId: y.projectId }, ...khe }, anh, env);
   const thongTin: ThongTinModelLuotChay = {
