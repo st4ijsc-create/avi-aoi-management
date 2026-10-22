@@ -32,6 +32,7 @@ import { chayST } from "./lib/st/chayST.mjs";
 import { giuKhoaKhe } from "../lib/khoaKhe.mjs";
 import { chaySTMatiec } from "./lib/st-matiec/chaySTMatiec.mjs";
 import { sclSangSt } from "./lib/st-scl/scl.mjs";
+import { TEN_TRINH_DICH_ST, cauNhacSuaST, dongLoiST } from "../../../shared/stNhacSua.mjs";
 
 const args = process.argv.slice(2);
 const arg = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
@@ -56,7 +57,8 @@ const WORK = `${ROOT}/tmp/ngau-nhien-work/${LABEL}-${process.pid}`;
  * ★ Đợt 9 — theo chế độ chấm: `AI_EVAL_ST_TRINH_DICH=matiec` ⇒ biên dịch bằng MATIEC (pha A, cờ OpenPLC thật, chỉ src);
  * `AI_EVAL_ST_PHUONG_NGU=scl` ⇒ chuẩn hoá SCL → ST trước khi biên dịch (số dòng giữ nguyên ⇒ lỗi trỏ đúng dòng SCL).
  */
-const TEN_TRINH_DICH = ST_TRINH_DICH === "matiec" ? "MATIEC của OpenPLC v3, chuẩn IEC 61131-3" : "RuSTy, phương ngữ CODESYS";
+// ★ (2026-10-22) lời nhắc sửa dùng CHUNG với sản phẩm (shared/stNhacSua.mjs — chữ giữ từng byte, lưới ghim).
+const TEN_TRINH_DICH = ST_TRINH_DICH === "matiec" ? TEN_TRINH_DICH_ST.matiec : TEN_TRINH_DICH_ST.rusty;
 const VONG_SUA = Math.max(0, Number(arg("--vong-sua", 0)));
 const AB_KIEM = co("--ab-kiem");
 if (AB_KIEM && CONFIG !== "v1") { console.error("--ab-kiem chỉ cho --config v1."); process.exit(2); }
@@ -175,7 +177,7 @@ async function loiBienDichST(b, text, nhan) {
   const r = await (ST_TRINH_DICH === "matiec" ? chaySTMatiec : chayST)({ tep, thuMucViec: `${WORK}/_st-jobs`, giayChay: 5 });
   xoaThuMuc(dir);
   if (r.giaiDoan !== "bien-dich" || r.ok) return []; // MATIEC chỉ src: biên dịch được ⇒ giaiDoan "bien-dich" + ok
-  return r.chanDoan.filter((d) => d.mucDo === "error").slice(0, 15).map((d) => `${d.tep ?? "?"}:${d.dong ?? "?"}:${d.cot ?? "?"} ${d.ma ?? ""} ${d.thongDiep}`.trim());
+  return r.chanDoan.filter((d) => d.mucDo === "error").slice(0, 15).map(dongLoiST);
 }
 
 async function sinhCoVongSua(b) {
@@ -187,7 +189,7 @@ async function sinhCoVongSua(b) {
     vet.loiTungVong.push(loi.length);
     if (!loi.length) break;
     tin.push({ role: "assistant", content: g.text });
-    tin.push({ role: "user", content: `Trình biên dịch IEC 61131-3 (${TEN_TRINH_DICH}) báo lỗi${ST_PHUONG_NGU === "scl" ? " (mã SCL của bạn được chuẩn hoá sang ST trước khi biên dịch; số dòng giữ nguyên)" : ""}:\n${loi.map((l) => `- ${l}`).join("\n")}\n\nSửa các lỗi trên và trả lại ĐẦY ĐỦ mọi tệp theo đúng định dạng như trước (mỗi tệp một khối mã có dòng \`// tệp: …\`).` });
+    tin.push({ role: "user", content: cauNhacSuaST({ trinhDich: TEN_TRINH_DICH, laScl: ST_PHUONG_NGU === "scl", loi, dinhDangTep: true }) });
     const g2 = await goi.chatRawTin(tin);
     vet.vong = k;
     g = { ...g2, totalMs: (g.totalMs ?? 0) + (g2.totalMs ?? 0), genTok: (g.genTok ?? 0) + (g2.genTok ?? 0) };

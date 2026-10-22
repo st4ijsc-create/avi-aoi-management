@@ -83,7 +83,7 @@ import { stripThinking, StreamingThinkingStripper } from "../services/ai/thinkin
 // fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
 import { defaultModelBasename, resolveLogicalModel, toBasename } from "../services/ai/modelResolver";
 import { kiemModelV1, thongDiepLoiChoKhachV1 } from "../services/ai/kiemModelV1";
-import { kiemBienDichBat, kiemVaSuaST, nhanKiemBienDich, type KetQuaKiemBienDichST } from "../services/ai/st/kiemBienDichSt";
+import { kiemBienDichBat, kiemVaSuaST, nhanKiemBienDich, tranMsVongSuaST, type KetQuaKiemBienDichST } from "../services/ai/st/kiemBienDichSt";
 import { trichMaST } from "../services/ai/st/trichMaST";
 import { chayVoiTokenKhe, chonModelKhiVuotTran, tokenKheHienTai, vuotTranDoiKhe } from "../services/ai/soModel/tranDoiKheToken";
 import { laModelKheNangPhu, modelNhaKheNang } from "../services/ai/soModel/tapKheNang";
@@ -1189,6 +1189,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
             const kq = await kiemVaSuaST({
               cauTraLoi: chuDaPhat,
               signal: abort.signal,
+              tranMs: tranMsVongSuaST(modelId),
               goiLai: async (tin, lanTruoc) => {
                 const t0Sua = Date.now();
                 let r2: Awaited<ReturnType<typeof chatCompletion>>;
@@ -1313,6 +1314,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         try {
           const kq = await kiemVaSuaST({
             cauTraLoi: chatHienThi,
+            tranMs: tranMsVongSuaST(modelId),
             goiLai: async (tin, lanTruoc) => {
               const t0Sua = Date.now();
               let r2: Awaited<ReturnType<typeof chatCompletion>>;

@@ -12,6 +12,25 @@
 import { bienDichST, LoiBienDichST, type ChanDoanST, type KetQuaBienDichST } from "../../flow/lib/bienDichST";
 import { sclSangSt } from "./sclSangSt";
 import { trichMaST, type KhoiMaST } from "./trichMaST";
+import { TEN_TRINH_DICH_ST, cauNhacSuaST, dongLoiST } from "../../../../shared/stNhacSua.mjs";
+import { layAnhSoModel, type AnhSoModel } from "../soModel/anhSoModel";
+import { laModelHoSoKheNang } from "../soModel/tapKheNang";
+
+/** Trần thời gian vòng sửa cho model khe NHẸ (giữ như thiết kế 2026-10-21). */
+export const TRAN_MS_VONG_SUA_NHE = 90_000;
+/**
+ * ★ (2026-10-22, dieu-phoi) — trần cho model HỒ SƠ khe nặng: đủ 2 lần sinh lại. Đo (A/B /v1, 27B nghĩ 16k): một lần sinh lại
+ * 67–197 s (13 lượt sửa thật, p90 ≈ 192 s), câu trả lời đầu p90 239 s ⇒ mặc định 2 × 240 s. Trần 90 s cũ nhỏ hơn MỘT lần sinh lại
+ * ⇒ 7/7 lượt còn lỗi chỉ được đúng một vòng. Ghi đè: `AI_KIEM_BIEN_DICH_ST_TRAN_MS_NANG`.
+ */
+export const TRAN_MS_VONG_SUA_NANG_MAC_DINH = 480_000;
+
+/** Trần thời gian vòng sửa theo khe của model chạy lượt này. */
+export function tranMsVongSuaST(model: string | undefined, env: NodeJS.ProcessEnv = process.env, anh: AnhSoModel = layAnhSoModel()): number {
+  if (!laModelHoSoKheNang(model, anh)) return TRAN_MS_VONG_SUA_NHE;
+  const n = Number(env.AI_KIEM_BIEN_DICH_ST_TRAN_MS_NANG);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : TRAN_MS_VONG_SUA_NANG_MAC_DINH;
+}
 
 export type TrangThaiKiemST = "bo-qua" | "sach" | "da-sua" | "con-loi" | "khong-kiem-duoc";
 
@@ -59,12 +78,18 @@ export function ghepMaST(khoi: KhoiMaST[]): { ma: string; bang: { tu: number; de
 }
 
 /** Chẩn đoán trên đơn vị ghép ⇒ "khối k, dòng j" (dòng TRONG khối người dùng thấy). */
-export function chanDoanTheoKhoi(ds: ChanDoanST[], bang: { tu: number; den: number; chiSo: number }[], soKhoi: number): ChanDoanST[] {
+export function chanDoanTheoKhoi(
+  ds: ChanDoanST[],
+  bang: { tu: number; den: number; chiSo: number }[],
+  soKhoi: number,
+  /** ★ (2026-10-22) tên tệp của từng khối (dòng `// tệp:`) — có ⇒ chẩn đoán mang ĐÚNG tên model đã viết. */
+  tenKhoi: (string | null)[] = [],
+): ChanDoanST[] {
   return ds.map((d) => {
     if (d.dong === null) return d;
     const b = bang.find((x) => d.dong! >= x.tu && d.dong! <= x.den);
     if (!b) return d;
-    return { ...d, tep: soKhoi > 1 ? `khối ${b.chiSo + 1}` : "mã", dong: d.dong - b.tu + 1 };
+    return { ...d, tep: tenKhoi[b.chiSo] ?? (soKhoi > 1 ? `khối ${b.chiSo + 1}` : "mã"), dong: d.dong - b.tu + 1 };
   });
 }
 
@@ -84,7 +109,7 @@ export async function kiemVaSuaST(y: TuyChonKiemST): Promise<KetQuaKiemBienDichS
   const bayGio = y.bayGio ?? Date.now;
   const t0 = bayGio();
   const vongToiDa = Math.max(0, y.vongToiDa ?? 2);
-  const tranMs = y.tranMs ?? 90_000;
+  const tranMs = y.tranMs ?? TRAN_MS_VONG_SUA_NHE;
   const bienDich = y.bienDich ?? ((ma: string) => bienDichST(ma));
   const kq = (p: Partial<KetQuaKiemBienDichST>): KetQuaKiemBienDichST => ({
     trangThai: "bo-qua", lyDo: null, phuongNgu: null, trinhDich: "rusty", soVong: 0, soLoiDaSua: 0, chanDoanCuoi: [],
@@ -96,7 +121,7 @@ export async function kiemVaSuaST(y: TuyChonKiemST): Promise<KetQuaKiemBienDichS
     if (!khoi.length) return null;
     const g = ghepMaST(khoi);
     const r = await bienDich(g.ma);
-    return { ...r, chanDoan: chanDoanTheoKhoi(r.chanDoan, g.bang, khoi.length), phuongNgu: g.phuongNgu };
+    return { ...r, chanDoan: chanDoanTheoKhoi(r.chanDoan, g.bang, khoi.length, khoi.map((k) => k.tep)), phuongNgu: g.phuongNgu, coTep: khoi.some((k) => k.tep) };
   };
 
   let dau: Awaited<ReturnType<typeof kiem>>;
@@ -118,9 +143,14 @@ export async function kiemVaSuaST(y: TuyChonKiemST): Promise<KetQuaKiemBienDichS
   for (let vong = 1; vong <= vongToiDa; vong++) {
     if (y.signal?.aborted) break;
     if (bayGio() - t0 >= tranMs) break;
-    const tin =
-      `Trình biên dịch IEC 61131-3 (RuSTy, ${dau.phuongNgu === "scl" ? "mã SCL đã chuẩn hoá sang ST, số dòng giữ nguyên" : "ST"}) báo lỗi:\n` +
-      `${chanDoanChoModel(chanDoan)}\n\nSửa các lỗi trên và trả lại ĐẦY ĐỦ mã trong khối \`\`\`${dau.phuongNgu === "scl" ? "scl" : "st"} … \`\`\` (không lược bớt phần đúng).`;
+    // ★ (2026-10-22, dieu-phoi) lời nhắc DÙNG CHUNG với bộ đo M (`shared/stNhacSua.mjs`): A/B /v1 cho thấy cùng chẩn đoán, M sửa
+    // được tt7 2/3 còn đường này 0/3 — khác biệt còn lại là lời nhắc (M đòi trả lại ĐỦ mọi tệp đúng định dạng `// tệp:`).
+    const tin = cauNhacSuaST({
+      trinhDich: TEN_TRINH_DICH_ST.rusty,
+      laScl: dau.phuongNgu === "scl",
+      loi: chanDoan.filter((d) => d.mucDo === "error").map(dongLoiST),
+      dinhDangTep: dau.coTep,
+    });
     let moi: string;
     try {
       daGoi = vong;

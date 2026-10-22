@@ -24,6 +24,8 @@ export interface KhoiMaST {
   ma: string;
   nhan: string | null;
   laScl: boolean;
+  /** ★ (2026-10-22) đường tệp từ dòng đánh dấu `// tệp: …` (trong 3 dòng đầu khối / dòng ngay trước); null = không có. */
+  tep: string | null;
   /** vị trí trong câu trả lời GỐC (để thay khối khi cần) */
   batDau: number;
   ketThuc: number;
@@ -35,13 +37,13 @@ const RE_VAR = /\bVAR(_INPUT|_OUTPUT|_IN_OUT|_TEMP|_GLOBAL|_EXTERNAL)?\b[\s\S]*?
 const RE_PASCAL_THAT = /\bbegin\b|\bend\s*[;.]|(^|\n)\s*(procedure\b|unit\s+\w+\s*;|uses\s|program\s+\w+\s*;)/i;
 
 /** Dòng đánh dấu tệp ST/SCL (`// tệp: src/A.st`, `(* tệp: a.scl *)`, `file: x.st`) — đuôi bắt `st` | `scl`. */
-const RE_DANH_DAU_TEP = /^\s*(?:\/\/|\(\*|#|--)?\s*(?:tệp|tep|file|tập tin)\s*[:：]\s*\S+\.(st|scl)\b/i;
+const RE_DANH_DAU_TEP = /^\s*(?:\/\/|\(\*|#|--)?\s*(?:tệp|tep|file|tập tin)\s*[:：]\s*(\S+\.(st|scl))\b/i;
 
 /** Đuôi tệp (`st`/`scl`) nếu khối có dòng đánh dấu trong 3 dòng đầu, hoặc dòng chữ NGAY TRƯỚC rào. */
-function duoiDanhDau(than: string, dongTruoc: string): "st" | "scl" | null {
+function duoiDanhDau(than: string, dongTruoc: string): { duoi: "st" | "scl"; tep: string } | null {
   for (const d of [...than.split(/\r?\n/).slice(0, 3), dongTruoc]) {
     const m = RE_DANH_DAU_TEP.exec(d);
-    if (m) return m[1].toLowerCase() as "st" | "scl";
+    if (m) return { duoi: m[2].toLowerCase() as "st" | "scl", tep: m[1].replace(/\\/g, "/") };
   }
   return null;
 }
@@ -50,7 +52,7 @@ function duoiDanhDau(than: string, dongTruoc: string): "st" | "scl" | null {
  * Thân dưới nhãn GẦN-ST là ST chắc chắn: (a) POU IEC đầy đủ + VAR…END_VAR, VÀ (b) không dấu hiệu Pascal thật — trừ khi có
  * dòng đánh dấu tệp .st/.scl (tín hiệu mạnh, thay (b)). Dấu hiệu ngôn ngữ khác (`def`, `=>`, `#include`…) luôn loại.
  */
-function laStChac(than: string, danhDau: "st" | "scl" | null): boolean {
+function laStChac(than: string, danhDau: { duoi: "st" | "scl"; tep: string } | null): boolean {
   return RE_POU.test(than) && RE_VAR.test(than) && (danhDau !== null || !RE_PASCAL_THAT.test(than)) && !RE_NGON_NGU_KHAC.test(than);
 }
 
@@ -75,7 +77,8 @@ export function trichMaST(cauTraLoi: string): KhoiMaST[] {
     ra.push({
       ma: than,
       nhan,
-      laScl: nhan === "scl" || danhDau === "scl" || dh.tenKhoiNgoacKep || dh.soThamChieuThang > 0,
+      tep: danhDau?.tep ?? null,
+      laScl: nhan === "scl" || danhDau?.duoi === "scl" || dh.tenKhoiNgoacKep || dh.soThamChieuThang > 0,
       batDau: m.index ?? 0,
       ketThuc: (m.index ?? 0) + m[0].length,
     });

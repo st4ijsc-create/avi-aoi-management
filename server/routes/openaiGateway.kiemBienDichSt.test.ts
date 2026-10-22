@@ -11,7 +11,16 @@ import OpenAI from "openai";
 
 const FB_SAI = "FUNCTION_BLOCK A\nVAR_INPUT x : BOOL; END_VAR\nVAR_OUTPUT y : BOOL; END_VAR\n  y := x AND ;\nEND_FUNCTION_BLOCK";
 const FB_DUNG = "FUNCTION_BLOCK A\nVAR_INPUT x : BOOL; END_VAR\nVAR_OUTPUT y : BOOL; END_VAR\n  y := x;\nEND_FUNCTION_BLOCK";
-const h = vi.hoisted(() => ({ banDau: "", soLanGoiLai: 0, soLanBienDich: 0, audit: [] as { redactedSnippet?: string | null }[], doDem: [] as Record<string, unknown>[] }));
+const h = vi.hoisted(() => ({ banDau: "", soLanGoiLai: 0, soLanBienDich: 0, audit: [] as { redactedSnippet?: string | null }[], doDem: [] as Record<string, unknown>[], tranMs: [] as unknown[] }));
+// ★ (2026-10-22) nối dây trần thời gian vòng theo khe: /v1 phải truyền `tranMs = tranMsVongSuaST(modelId)` cho MỌI lượt kiểm.
+vi.mock("../services/ai/st/kiemBienDichSt", async (importOriginal) => {
+  const goc = await importOriginal<typeof import("../services/ai/st/kiemBienDichSt")>();
+  return {
+    ...goc,
+    tranMsVongSuaST: () => 123_456,
+    kiemVaSuaST: (y: Parameters<typeof goc.kiemVaSuaST>[0]) => (h.tranMs.push(y.tranMs), goc.kiemVaSuaST(y)),
+  };
+});
 vi.mock("../services/aiGateway", async (importOriginal) => {
   const goc = await importOriginal<typeof import("../services/aiGateway")>();
   return {
@@ -94,6 +103,7 @@ const datLai = (banDau: string) => {
   h.soLanBienDich = 0;
   h.audit = [];
   h.doDem = [];
+  h.tranMs = [];
 };
 /** Hàng đo: chính + lượt phụ — CÙNG requestId. */
 const kiemDoDem = (soPhu: number) => {
@@ -127,6 +137,7 @@ describe("/v1 code.plc + kiểm biên dịch ST — không stream", () => {
     expect(snippetKiem()[0]).toMatch(/^kiem-bien-dich-st ok=1 trang-thai=da-sua vong=1 sua=1 con=0 ms=\d+$/);
     expect(snippetKiem()[0]).not.toContain("FUNCTION_BLOCK");
     kiemDoDem(1); // lượt sửa = một hàng đo phụ, cùng requestId
+    expect(h.tranMs).toEqual([123_456]); // trần vòng theo khe được truyền (không phải mặc định 90 s ngầm)
   });
 
   it("câu trả lời CHỮ THUẦN (không mã ST) ⇒ không biên dịch, không nhãn, header ok=skip", async () => {
@@ -206,6 +217,7 @@ describe("/v1 code.plc + kiểm biên dịch ST — STREAM qua SDK openai THẬT
     expect(chuSauFinish).toBe(""); // không gì sau finish_reason
     expect(snippetKiem()).toHaveLength(1);
     expect(snippetKiem()[0]).toMatch(/trang-thai=da-sua vong=1 sua=1 con=0/);
+    expect(h.tranMs).toEqual([123_456]);
     kiemDoDem(1);
   });
 
