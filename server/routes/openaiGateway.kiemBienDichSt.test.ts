@@ -230,3 +230,73 @@ describe("/v1 code.plc + kiểm biên dịch ST — STREAM qua SDK openai THẬT
     expect(h.soLanBienDich).toBe(0);
   });
 });
+
+describe("★ (2026-10-22, dieu-phoi) MẶC ĐỊNH khi AI_KIEM_BIEN_DICH_ST KHÔNG đặt = v1-stream: stream BẬT · non-stream TẮT trừ opt-in", () => {
+  const voiEnvTrong = async <T,>(f: () => Promise<T>) => {
+    const cu = process.env.AI_KIEM_BIEN_DICH_ST;
+    delete process.env.AI_KIEM_BIEN_DICH_ST;
+    try {
+      return await f();
+    } finally {
+      process.env.AI_KIEM_BIEN_DICH_ST = cu;
+    }
+  };
+  const goiThuong = (them: Record<string, unknown> = {}) =>
+    fetch(`${sv.url}/v1/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "code.plc", messages: [{ role: "user", content: "Viết FB" }], ...them }),
+    });
+
+  it("non-stream KHÔNG opt-in ⇒ không kiểm (không header, nội dung nguyên vẹn) — khách trần 300 s không bị đẩy quá hạn", async () => {
+    await voiEnvTrong(async () => {
+      datLai(`\`\`\`st\n${FB_SAI}\n\`\`\``);
+      const res = await goiThuong();
+      expect(res.headers.get("x-st4i-bien-dich")).toBeNull();
+      expect((await res.json()).choices[0].message.content).toBe(h.banDau);
+      expect(h.soLanBienDich).toBe(0);
+    });
+  });
+
+  it("non-stream opt-in `st4i_kiem_bien_dich:true` ⇒ kiểm + sửa như khi bật", async () => {
+    await voiEnvTrong(async () => {
+      datLai(`\`\`\`st\n${FB_SAI}\n\`\`\``);
+      const res = await goiThuong({ st4i_kiem_bien_dich: true });
+      expect(res.headers.get("x-st4i-bien-dich")).toContain("trang-thai=da-sua");
+      expect(h.soLanGoiLai).toBe(1);
+    });
+  });
+
+  it("STREAM (không tham số gì) ⇒ BẬT: phần bổ sung tới TRƯỚC finish_reason (SDK openai thật)", async () => {
+    await voiEnvTrong(async () => {
+      datLai(`Mã:\n\`\`\`st\n${FB_SAI}\n\`\`\``);
+      const s = await khach().chat.completions.create({ model: "code.plc", stream: true, messages: [{ role: "user", content: "Viết FB" }] });
+      let chu = "";
+      for await (const c of s) chu += c.choices[0]?.delta?.content ?? "";
+      expect(chu).toContain("Đã tự sửa 1 lỗi biên dịch");
+      expect(h.soLanGoiLai).toBe(1);
+    });
+  });
+
+  it("stream mà khách tắt (`st4i_kiem_bien_dich:false`) ⇒ không kiểm", async () => {
+    await voiEnvTrong(async () => {
+      datLai(`\`\`\`st\n${FB_SAI}\n\`\`\``);
+      const s = await khach().chat.completions.create({ model: "code.plc", stream: true, messages: [{ role: "user", content: "x" }], st4i_kiem_bien_dich: false } as never);
+      for await (const _ of s) void _;
+      expect(h.soLanBienDich).toBe(0);
+    });
+  });
+
+  it("env đặt rõ `off` ⇒ tắt cả opt-in non-stream lẫn stream", async () => {
+    const cu = process.env.AI_KIEM_BIEN_DICH_ST;
+    process.env.AI_KIEM_BIEN_DICH_ST = "off";
+    try {
+      datLai(`\`\`\`st\n${FB_SAI}\n\`\`\``);
+      const res = await goiThuong({ st4i_kiem_bien_dich: true });
+      expect(res.headers.get("x-st4i-bien-dich")).toBeNull();
+      expect(h.soLanBienDich).toBe(0);
+    } finally {
+      process.env.AI_KIEM_BIEN_DICH_ST = cu;
+    }
+  });
+});

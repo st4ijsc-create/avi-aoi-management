@@ -181,7 +181,22 @@ export async function kiemVaSuaST(y: TuyChonKiemST): Promise<KetQuaKiemBienDichS
  * KHÔNG đặt: `agent-plc` (lộ `compile_st` + luật 13 cho tác nhân, CHỈ ở dự án nhận diện là PLC). Mọi bề mặt khác (v1, tro-ly,
  * cmdk) vẫn TẮT mặc định. Đặt rõ (`off`, danh sách khác) ⇒ theo env, không mặc định nào chen vào.
  */
-export const KIEM_BIEN_DICH_ST_MAC_DINH = "agent-plc";
+export const KIEM_BIEN_DICH_ST_MAC_DINH = "agent-plc,v1-stream";
+
+/**
+ * ★ (2026-10-22, dieu-phoi — A/B /v1 #2 đạt cổng +8/72, nhưng > 300 s 0 → 7/72 = 10 %) — chế độ vòng kiểm cho /v1:
+ *   `bat`         (env có `v1`/`all`): stream + non-stream, khách tắt được bằng `st4i_kiem_bien_dich:false`;
+ *   `chi-stream`  (`v1-stream` — MẶC ĐỊNH khi env không đặt): STREAM bật (keep-alive, giữ chunk finish_reason); NON-STREAM tắt —
+ *                 khách non-stream có trần header 300 s (fetch Node/SDK) sẽ bị CẮT ~10 % lượt nếu bật, tệ hơn không bật — trừ khi
+ *                 khách tự opt-in `st4i_kiem_bien_dich:true`;
+ *   `tat`.
+ */
+export function cheDoKiemBienDichV1(env: NodeJS.ProcessEnv = process.env): "bat" | "chi-stream" | "tat" {
+  const ds = dsCoKiemBienDich(env);
+  if (ds.includes("v1") || ds.includes("all")) return "bat";
+  if (ds.includes("v1-stream")) return "chi-stream";
+  return "tat";
+}
 
 function dsCoKiemBienDich(env: NodeJS.ProcessEnv): string[] {
   return (env.AI_KIEM_BIEN_DICH_ST ?? KIEM_BIEN_DICH_ST_MAC_DINH).split(",").map((x) => x.trim().toLowerCase());

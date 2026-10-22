@@ -682,6 +682,16 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   cùng `max_tokens` 16000, server ở bản có (a)(b)(c). **Cổng: on ≥ off + 4/72** (không đổi sau khi thấy số). Kiểm nhánh như lần 1
   (tắt mà có header ⇒ vứt; bật không header ⇒ vứt). Báo kèm: số vòng thật/lượt, tỉ lệ cứu được trên lượt có lỗi lần đầu (so M 13/16),
   > 120/300 s mỗi nhánh. Nhãn báo cáo `PLC-v1-ab-kiem-q36-27b-2`.
+  **KẾT QUẢ (2026-10-22 21:06, 144 hàng; 85 hàng đầu HEAD 1ac3504d1, 59 hàng nối tiếp HEAD 25662d0cd — đường /v1 KHÔNG đổi giữa hai
+  mã; dừng giữa chừng 18:21 do llama-server chết vì Windows hết commit, xem runbook):** TẮT 44/72 = 61 % (tt 15 · tv 13 · ud 16) ·
+  BẬT 52/72 = 72 % (tt 21 · tv 17 · ud 14) ⇒ **+8/72 — CỔNG ĐẠT** (lần 1 trên bản lỗi: +3/72). Cặp bật đạt/tắt trượt 15 · ngược lại 7.
+  Theo bài: tt4 +3 · tt5 +2 · tv6 +2 · tt7/tv1/tv2/tv8/ud3 +1 · ud2 −2 · tv3/ud7 −1. Vòng ở nhánh bật: sach 54 (40 đạt) · da-sua 13
+  (11 đạt; 10 sau vòng 1, 3 cần vòng 2 — trần 480 s cho phép) · con-loi 3 · bo-qua 2. **Cứu được 11/16 lượt có lỗi lần đầu** (lần 1:
+  4/13; trục M 13/16). Grader không biên dịch được: tắt 17 → bật 3. Thời gian: trung vị 156 → 152 s, p90 190 → 279 s, max 233 → 550 s;
+  > 120 s: 50 → 52/72; **> 300 s: 0 → 7/72 (10 %)** ⇒ khách /v1 không stream với trần header 300 s sẽ tự cắt 10 % lượt bật ⇒ stream.
+  Quyết định bật `v1`: dieu-phoi — **QUYẾT (2026-10-22, `40d128cce`): mặc định `agent-plc,v1-stream`**: /v1 `code.plc` STREAM bật
+  (khách bỏ bằng `st4i_kiem_bien_dich:false`), NON-STREAM tắt trừ khi khách opt-in `st4i_kiem_bien_dich:true` (vì 10 % > 300 s);
+  env đặt rõ `v1`/`all` ⇒ bật cả hai; `off` ⇒ tắt cả hai, bỏ qua opt-in. Test ghim 3 nhánh; 3 đột biến đỏ.
 - **Ablation `compile_st` trong vòng TÁC NHÂN (35B = model tác nhân sản phẩm), 12 bài ST × 2 lượt** (2026-10-22, báo cáo
   `reports/AB-agent-cst-*`, gộp `so-sanh-ablation-agent.mjs`): TẮT 12/24 · BẬT 14/24 (cặp 3 vs 1); grader không biên dịch được
   7/24 → 3/24; compile_st được gọi ở 24/24 lượt bật (74 lần). Nhiễu ghi rõ: 4/24 lượt bật chạy mã trước f024945d3; tt5-l1-bat chạy
