@@ -735,6 +735,12 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   Luồng (3e12e9d4f); (2) `ai_gateway_metrics.model` của /v1 ghi model của bộ định tuyến CỔNG (env 35B) cả khi lượt chạy 27B ⇒ /v1 ghi
   `modelId` đã định tuyến (2c84fc593). Đo lại (`tmp/kiem-gan-song-4.log` + metrics theo requestId): khe 35B ⇒ 35B; ngay sau đổi sang 27B
   lượt 1 (3 s sau) và lượt 2 ⇒ **27B, cả hai ok**. Kết thúc :8091 = 35B.
+- **ĐĂNG KÝ TRƯỚC — phương ngữ Siemens SCL trên `code.plc` (27B)** (viết 2026-10-23, TRƯỚC khi chạy): đo KHẢ NĂNG (không A/B) — cùng 24
+  bài #11 (`tmp/st-24-ids.txt`) × 3 lượt, đường raw :8091, `--vong-sua 2`, `max_tokens` 16000, `AI_EVAL_ST_PHUONG_NGU=scl` (câu hỏi đòi
+  SCL; chấm = chuẩn hoá SCL→ST rồi RuSTy; thước `kt-st-scl-chung` đạt). Đối chiếu: #11 ST/RuSTy cùng bài cùng model 53/72. **Diễn giải đặt
+  trước:** chênh ≤ 6/72 (nhiễu đã đo ±2 bài/lượt × 3) ⇒ `code.plc` dùng chung cho dự án SCL, không gán riêng; SCL thấp hơn > 6/72 ⇒ ghi
+  cảnh báo phương ngữ + đề xuất đo model khác cho SCL (KHÔNG đổi gán dựa trên số này). Ghi rõ: mã lời nhắc sửa đã đổi từ #11 (b6e0e3735 →
+  lời nhắc chung `shared/stNhacSua.mjs`), nên chênh gồm cả thay đổi đó.
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
