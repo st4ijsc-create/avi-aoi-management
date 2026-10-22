@@ -24,7 +24,9 @@ param(
   # tran sinh 16k): G5-D/G18-B1 3/6 -> 0/6 tren agentic A2, truc H 25/36 -> 27/36, khong luot H nao bi cat (max nghi 8.6k),
   # 2 luot agentic bi ep ket thuc o 12k van ra ban sua. -1 = khong gioi han (mac dinh cua llama-server) - dung khi A/B.
   # `/props` KHONG lo co nay; xac nhan bang log: "reasoning-budget: activated, budget=N".
-  [int]$NganSachNghi = 12000
+  [int]$NganSachNghi = 12000,
+  # Dot 9 (2026-10-22): chu khoa nhan BAN GIAO khi /health xanh (vd chu cua khoaKhe.mjs giu cua phep do) - xem khoi KHOA ben duoi.
+  [string]$GiuKhoa = ""
 )
 
 $exe = 'D:\SOURCES\16.AI\llama-cuda\llama-server.exe'
@@ -45,13 +47,45 @@ $tepTamDung = if ($env:LLAMA_WATCHDOG_PAUSE_FILE) { $env:LLAMA_WATCHDOG_PAUSE_FI
 #     Moi lan "cham" GHI LAI hetHan = bay gio + 10 phut; script chet => khoa tu het han.
 #     !! Go-TamDung xoa tep ca khi mot phep do khac dang giu khoa: nguoi giu (scripts/ai-eval/lib/khoaKhe.mjs) ghi lai trong
 #       <= 30 s => cua so ho <= 30 s, CHAP NHAN (dieu-phoi 2026-10-21).
-function Ghi-Khoa {
-  $hetHan = (Get-Date).ToUniversalTime().AddMinutes(10).ToString('o')
-  $json = '{"chu":"doi-model.ps1 PID ' + $PID + '","lyDo":"doi model ' + ([IO.Path]::GetFileName($Model)) + '","hetHan":"' + $hetHan + '"}'
-  Set-Content -LiteralPath $tepTamDung -Value $json -Encoding ASCII
+# *** Dot 9 (2026-10-22, dieu-phoi) - sua o GOC cua so ho 3 s (KheNang cua :3000 "ve nha" ngay khi doi-model xoa khoa):
+#     -GiuKhoa <chu>: /health xanh => GHI khoa mang <chu> (han ngan 2 phut) THAY VI xoa => nguoi giu ke tiep (phep do co cung
+#     <chu>) tiep quan KHONG khe ho. Khong co tuy chon => nhu cu (xoa). Va: doi-model KHONG BAO GIO xoa/ghi de khoa CON HAN cua
+#     CHU KHAC - khoa la cua chu khac (khong khop -GiuKhoa) => TU CHOI doi model (exit 3).
+$chuCuaToi = 'doi-model.ps1 PID ' + $PID
+function Doc-Khoa {
+  try {
+    $j = Get-Content -LiteralPath $tepTamDung -Raw -ErrorAction Stop | ConvertFrom-Json
+    if ($j.hetHan -and ([DateTime]::Parse($j.hetHan).ToUniversalTime() -gt (Get-Date).ToUniversalTime())) { return $j }
+  } catch { }
+  return $null
 }
-function Go-TamDung { Remove-Item -LiteralPath $tepTamDung -Force -ErrorAction SilentlyContinue }
-function Cham-TamDung { try { Ghi-Khoa } catch { } }
+function Ghi-Khoa([string]$chu = $chuCuaToi, [int]$phut = 10) {
+  $hetHan = (Get-Date).ToUniversalTime().AddMinutes($phut).ToString('o')
+  $o = [ordered]@{ chu = $chu; lyDo = ('doi model ' + [IO.Path]::GetFileName($Model)); hetHan = $hetHan }
+  Set-Content -LiteralPath $tepTamDung -Value ($o | ConvertTo-Json -Compress) -Encoding UTF8
+}
+# Chi xoa khi khoa la CUA TOI (hoac het han / hong).
+function Go-TamDung {
+  $k = Doc-Khoa
+  if ($k -and $k.chu -ne $chuCuaToi) { return }
+  Remove-Item -LiteralPath $tepTamDung -Force -ErrorAction SilentlyContinue
+}
+function Cham-TamDung {
+  try {
+    $k = Doc-Khoa
+    if ($k -and $k.chu -ne $chuCuaToi -and $k.chu -ne $GiuKhoa) { return }  # chu khac chen vao: khong ghi de
+    Ghi-Khoa
+  } catch { }
+}
+# Ban giao /health xanh: -GiuKhoa ⇒ ghi khoa cua nguoi nhan (han 2 phut); khong ⇒ go nhu cu.
+function Ban-Giao {
+  if ($GiuKhoa) { Ghi-Khoa $GiuKhoa 2; "BAN GIAO khoa cho: $GiuKhoa (han 2 phut)" } else { Go-TamDung }
+}
+$khoaCu = Doc-Khoa
+if ($khoaCu -and $khoaCu.chu -ne $GiuKhoa) {
+  Write-Error ("KHE DANG BI KHOA boi '" + $khoaCu.chu + "' toi " + $khoaCu.hetHan + " (" + $khoaCu.lyDo + ") - KHONG doi model. Dung -GiuKhoa '<chu>' neu ban la nguoi giu.")
+  exit 3
+}
 Ghi-Khoa
 
 try {
@@ -85,7 +119,7 @@ while ((Get-Date) -lt $het) {
     if ($r.StatusCode -eq 200) {
       $vram = (nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader) -join ' '
       "SAN SANG: $ten (ctx=$Ctx) | VRAM: $vram"
-      Go-TamDung  # /health xanh => tra quyen trong coi cho giam sat cua app
+      Ban-Giao  # /health xanh => -GiuKhoa: ban giao khoa khong khe ho; khong => tra quyen cho giam sat cua app
       exit 0
     }
   } catch { }
