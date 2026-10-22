@@ -1248,7 +1248,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         }
         // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
         // `plan?.` — no-op when the fail-open rate-limit path left `plan` null.
-        plan?.record({ tokensIn, tokensOut, latencyMs: Date.now() - engineStart, outcome, requestId: id, ...(auditKiem ? { auditSnippet: auditKiem } : {}) });
+        plan?.record({ tokensIn, tokensOut, latencyMs: Date.now() - engineStart, outcome, requestId: id, model: modelId ?? null, ...(auditKiem ? { auditSnippet: auditKiem } : {}) });
 
         const doneChunk = {
           id,
@@ -1296,6 +1296,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const msMotLan = Date.now() - engineStart;
       const ghiDoDem = (auditSnippet?: string) =>
         plan?.record({
+          // ★ Đợt 9 (2026-10-23, đo) — model THỰC chạy theo định tuyến vai trò; vắng ⇒ metrics ghi model của bộ định tuyến cổng (env).
+          model: modelId ?? null,
           tokensIn: result.tokensPrompt,
           tokensOut: result.tokensGenerated,
           latencyMs: msMotLan,
@@ -1485,6 +1487,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           usageFim = usageOpenAi(result.tokensPrompt, result.tokensGenerated);
           // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
           plan?.record({
+            // ★ Đợt 9 (2026-10-23, đo) — model THỰC chạy theo định tuyến vai trò; vắng ⇒ metrics ghi model của bộ định tuyến cổng (env).
+            model: modelId ?? null,
             tokensIn: result.tokensPrompt,
             tokensOut: result.tokensGenerated,
             latencyMs: Date.now() - engineStart,
@@ -1522,6 +1526,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const result = await generateFim(fimOpts, modelId);
       // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
       plan?.record({
+        // ★ Đợt 9 (2026-10-23, đo) — model THỰC chạy theo định tuyến vai trò; vắng ⇒ metrics ghi model của bộ định tuyến cổng (env).
+        model: modelId ?? null,
         tokensIn: result.tokensPrompt,
         tokensOut: result.tokensGenerated,
         latencyMs: Date.now() - engineStart,
