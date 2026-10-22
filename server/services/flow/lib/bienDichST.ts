@@ -104,12 +104,19 @@ export function phanTichChanDoanST(log: string): ChanDoanST[] {
 }
 
 /** Cờ docker cố định (trừ `--name` và đường gắn). Xuất để lưới kiểm từng cờ an toàn. */
-export function coDockerST(tenContainer: string, thuMucViec: string, anh = ANH_ST): string[] {
+export function coDockerST(
+  tenContainer: string,
+  thuMucViec: string,
+  anh = ANH_ST,
+  /** ★ Đợt 9 — lượt `--ir` dự phòng (chỉ khi `-c` bị giết sớm); vắng ⇒ cờ GIỐNG HỆT bản cũ. */
+  them: { cheDo?: "ir"; giay?: number } = {},
+): string[] {
   return [
     "run", "--rm", "--pull", "never", "--name", tenContainer, "--log-driver", "none",
     "--network", "none", "--read-only", "--tmpfs", "/tmp:size=64m", "--memory", "512m", "--memory-swap", "512m",
     "--pids-limit", "128", "--cpus", "2", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-    "-e", `CT=${TRAN_GIAY_BIEN_DICH}`, "-v", `${thuMucViec}:/w`, anh, "bash", "/w/bien-dich-job.sh",
+    "-e", `CT=${them.giay ?? TRAN_GIAY_BIEN_DICH}`, ...(them.cheDo ? ["-e", `CHE_DO=${them.cheDo}`] : []),
+    "-v", `${thuMucViec}:/w`, anh, "bash", "/w/bien-dich-job.sh",
   ];
 }
 
@@ -125,7 +132,14 @@ async function giuCho(): Promise<() => void> {
   };
 }
 
+/** ★ Đợt 9 — số lượt `docker run` ĐÃ chạy (lưới đo "đường bình thường không tốn thêm"; không ảnh hưởng hành vi). */
+let soLuotRun = 0;
+export function soLuotDockerRunST(): number {
+  return soLuotRun;
+}
+
 function chayDocker(thamSo: string[], tranMs: number): Promise<{ ma: number | null; se: string; biGiet: boolean; loiSpawn?: string }> {
+  if (thamSo[0] === "run") soLuotRun++;
   return new Promise((res) => {
     const p = spawn("docker", thamSo, { windowsHide: true, shell: false, stdio: ["ignore", "ignore", "pipe"] });
     let se = "";
@@ -178,6 +192,43 @@ export function phanLoaiBiGiet(
   };
 }
 
+/** Trần giây của lượt `--ir` dự phòng (IR báo lỗi tức thì trên ca đã đo; trần chỉ để không treo). */
+export const TRAN_GIAY_IR_DU_PHONG = 15;
+
+/** Câu kèm chẩn đoán lấy từ `--ir` — model biết vì sao lỗi không có số dòng ST và phải tìm ở đâu. */
+export const GHI_CHU_IR =
+  "trình biên dịch nổ bộ nhớ khi sinh mã đối tượng; chế độ --ir báo lỗi này — thường do một nhãn CASE xuất hiện ở NHIỀU nhánh " +
+  "(vd `1, 2:` … `1, 2:`): mỗi giá trị chỉ được thuộc MỘT nhánh";
+
+/**
+ * ★ Đợt 9 — đọc kết quả lượt `--ir` (thuần, lưới gọi thẳng): lỗi có vị trí ST (clang) ⇒ giữ nguyên; lỗi của bộ dựng LLVM
+ * ("Builder error: …ll:N:M: error: duplicate case value in switch") ⇒ MỘT chẩn đoán không dòng + `GHI_CHU_IR`. Không lỗi nào ⇒ null.
+ */
+export function chanDoanTuIr(rc: string, log: string): ChanDoanST[] | null {
+  if (rc === "0" || rc === "") return null;
+  // dòng/cột trỏ vào tệp IR TẠM (`…/10-ma.st.ll:19:5`) là vị trí trong LLVM IR, KHÔNG phải trong mã ST ⇒ không đưa model
+  const ds = phanTichChanDoanST(log).filter(
+    (d) => d.mucDo === "error" && !/\.ll$/i.test(d.tep ?? "") && !/Builder error|\.ll:\d+/i.test(d.thongDiep),
+  );
+  if (ds.length) return ds;
+  const m = /error:\s*([^\n]+)/i.exec(log);
+  if (!m) return null;
+  return [{ tep: null, dong: null, cot: null, mucDo: "error", ma: null, thongDiep: `${m[1].trim().slice(0, 200)} (${GHI_CHU_IR})` }];
+}
+
+async function thuIrSauKhiNo(viec: string, anh?: string): Promise<ChanDoanST[] | null> {
+  try {
+    for (const f of ["compile.rc", "compile.log"]) rmSync(join(viec, f), { force: true });
+    const ten = `luong-st-ir-${process.pid}-${randomBytes(6).toString("hex")}`;
+    const r = await chayDocker(coDockerST(ten, viec, anh, { cheDo: "ir", giay: TRAN_GIAY_IR_DU_PHONG }), (TRAN_GIAY_IR_DU_PHONG + 20) * 1000);
+    if (r.biGiet) await chayDocker(["rm", "-f", ten], 10_000);
+    const doc = (f: string) => (existsSync(join(viec, f)) ? readFileSync(join(viec, f), "utf8") : "");
+    return chanDoanTuIr(doc("compile.rc").trim(), doc("compile.log"));
+  } catch {
+    return null; // dự phòng hỏng ⇒ giữ phân loại hạ tầng như cũ
+  }
+}
+
 export async function bienDichST(ma: string, y: { anh?: string } = {}): Promise<KetQuaBienDichST> {
   if (typeof ma !== "string" || !ma.trim()) throw new LoiBienDichST("khong-hop-le", "mã rỗng");
   if (ma.length > TRAN_MA_ST) throw new LoiBienDichST("khong-hop-le", `mã dài quá ${TRAN_MA_ST} ký tự`);
@@ -202,6 +253,13 @@ export async function bienDichST(ma: string, y: { anh?: string } = {}): Promise<
       throw new LoiBienDichST("thieu-anh", `ảnh ${y.anh ?? ANH_ST} chưa có trên máy — dựng theo scripts/ai-eval/ngau-nhien/lib/st/Dockerfile`);
     }
     const ketThuc = phanLoaiBiGiet(rc, r.biGiet, ms);
+    if (ketThuc?.loai === "ha-tang") {
+      // ★ Đợt 9 (2026-10-22, kiem-dinh tìm gốc) — `-c` bị giết SỚM: RuSTy 1.0.7 phình bộ nhớ vô hạn với nhãn CASE trùng giữa
+      // các nhánh viết dạng danh sách. Chạy THÊM `--ir` (chỉ đường này — đường bình thường không tốn gì) để lấy chẩn đoán THẬT
+      // cho model sửa thay vì "không kiểm được".
+      const ir = await thuIrSauKhiNo(viec, y.anh);
+      if (ir) return { ok: false, chanDoan: ir, ms: Date.now() - t0 };
+    }
     if (ketThuc) throw new LoiBienDichST(ketThuc.loai, ketThuc.thongDiep);
     if (rc === "") throw new LoiBienDichST("ha-tang", `container không trả kết quả (mã thoát ${r.ma}): ${r.se.trim().slice(0, 500)}`);
     const chanDoan = phanTichChanDoanST(doc("compile.log"));
