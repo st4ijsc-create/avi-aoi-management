@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { collectDescendants, type RawProcRow } from "./vramProcessProbe";
+import { cacCongAI, dongLenhMangCongAI } from "./vramAiPorts";
 
 /**
  * Pha 2B Task 1 — AI ĐANG GIỮ GPU? (bản liệt kê DANH TÍNH, không phải bản liệt kê BYTE)
@@ -360,6 +361,13 @@ export function classifyHolders(input: {
   appRoot?: string;
   commandSignatures?: readonly string[];
   roleMarkers?: readonly string[];
+  /**
+   * ★★★ Audit orphanHolders 2026-10-22 (P1) — cổng của các llama-server ĐANG PHỤC VỤ AI (`cacCongAI()`). Một hộ chạy ảnh thực thi của hệ
+   * mà dòng lệnh mang `--port` thuộc tập này là server AI chính / FIM / coder, KHÔNG phải sidecar mồ côi ⇒ vào `peers` ("ĐỪNG TẮT"), kể cả
+   * khi cha đã chết. CHỈ đổi ngăn `orphans`⇄`peers` (cùng mức an toàn — xem bảng ở docstring đầu file); hệ quả có chủ ý: nhận nuôi chỉ đọc
+   * `orphans` nên server AI không bao giờ là ứng viên nhận nuôi. Không truyền ⇒ [] (hành vi cũ).
+   */
+  congAI?: readonly number[];
 }): GpuHolderCensus {
   const {
     holders,
@@ -369,6 +377,7 @@ export function classifyHolders(input: {
     appRoot,
     commandSignatures = [],
     roleMarkers = ROLE_ENTRYPOINT_MARKERS,
+    congAI = [],
   } = input;
   // ⚠ DÙNG LẠI cây tiến trình của Pha 2A — KHÔNG dựng đường thứ hai. Hai bản dựng cây song song
   // là đúng lớp lỗi "sổ song song" mà bốn pha trước đã trả giá.
@@ -459,7 +468,8 @@ export function classifyHolders(input: {
       thirdParty.push(h);
       continue;
     }
-    if (isRoleProcess(h.pid) || isChildOfRole(h)) peers.push(h);
+    // ★ P1 — server AI (cổng đã cấu hình) đang phục vụ: anh em, không phải tàn dư. Chỉ xét khi đã `runsOurCode` (ảnh thực thi của hệ).
+    if (isRoleProcess(h.pid) || isChildOfRole(h) || (congAI.length > 0 && dongLenhMangCongAI(cmdOf(h.pid), congAI))) peers.push(h);
     else orphans.push(h);
   }
   return { holders, ours, peers, orphans, thirdParty };
@@ -698,7 +708,7 @@ export async function readGpuHolders(roots: readonly number[]): Promise<GpuHolde
   // Không hộ nào ngoài chính ta ⇒ khỏi bảng tiến trình. ⚠ Trên máy có desktop nhánh này KHÔNG BAO
   // GIỜ chạy (đo được 15 hộ) — xem m-3 ở docstring.
   if (!holders.some((h) => !rootSet.has(h.pid))) {
-    return classifyHolders({ holders, procs: [], roots, ownExecutables, appRoot, commandSignatures });
+    return classifyHolders({ holders, procs: [], roots, ownExecutables, appRoot, commandSignatures, congAI: cacCongAI() });
   }
 
   const procs = await readProcTable();
@@ -717,7 +727,7 @@ export async function readGpuHolders(roots: readonly number[]): Promise<GpuHolde
     );
     return null;
   }
-  return classifyHolders({ holders, procs, roots, ownExecutables, appRoot, commandSignatures });
+  return classifyHolders({ holders, procs, roots, ownExecutables, appRoot, commandSignatures, congAI: cacCongAI() });
 }
 
 /**

@@ -23,8 +23,10 @@ import type { SharedBaselineRecord, SharedLeaseRow } from "./vramSharedLedger";
  * (chỉ `import type` + một hằng chuỗi từ `vramSharedLedger`, không I/O, thuần).
  */
 import {
-  hangNenChoKeHoach, lapKeHoachNhanNuoi, moTaSidecarNhanNuoi, ownerNhanNuoi, tachProcessKey,
+  hangNenChoKeHoach, lapKeHoachNhanNuoi, lyDoTuChoiGiet, moTaSidecarNhanNuoi, ownerNhanNuoi, tachProcessKey,
 } from "./vramAdoption";
+/** ★ Audit orphanHolders 2026-10-22 — module LÁ thuần (không import, không I/O): cổng của llama-server đang phục vụ AI + so khớp cổng theo token. */
+import { cacCongAI } from "./vramAiPorts";
 import type { HangMaCanXoa } from "./vramAdoption";
 import type { ProcTableRow } from "./vramGpuHolders";
 /**
@@ -1443,6 +1445,26 @@ function nhanNenDungChung(nen: SharedBaselineRecord, tuoiMs: number): void {
  *
  * KHÔNG BAO GIỜ ném: một lỗi kế toán không được đánh hỏng nhịp đối chiếu.
  */
+/**
+ * ★★★ Audit orphanHolders 2026-10-22 (P3) — KHOÁ KHE đang hiệu lực? `docKhoaKhe()` (`ai/khoaKhe.ts`) đọc tệp `LLAMA_WATCHDOG_PAUSE_FILE`: JSON
+ * `{chu, lyDo, hetHan}` do phép đo / `doi-model.ps1` cầm khi đang dùng llama-server. Tệp KHÔNG mang pid ⇒ không loại RIÊNG một tiến trình được ⇒
+ * khoá còn hạn là lý do để KHÔNG nhận nuôi và KHÔNG giết BẤT KỲ llama-server nào. Đọc tệp CỤC BỘ đồng bộ (nhớ đệm 2 s), KHÔNG mạng, KHÔNG /slots.
+ * ⚠ `await import` (như `vramPreempt` làm với `aiGgufEngine`) để lớp vram không kéo lớp ai lúc nạp module. Đọc HỎNG ⇒ coi như ĐANG GIỮ
+ * (chiều CHẶT: thà hoãn một lần nhận nuôi/thu hồi còn hơn giết nhầm một phép đo).
+ */
+async function khoaKheDangGiu(): Promise<{ giu: boolean; lyDo: string }> {
+  try {
+    const { docKhoaKhe } = await import("../ai/khoaKhe");
+    const k = docKhoaKhe();
+    return k === null ? { giu: false, lyDo: "" } : { giu: true, lyDo: `khoá khe của "${k.chu}"${k.lyDo ? ` (${k.lyDo})` : ""} còn hạn tới ${new Date(k.hetHan).toISOString()}` };
+  } catch (e) {
+    return { giu: true, lyDo: `KHÔNG đọc được khoá khe (${(e as Error).message}) ⇒ coi như đang giữ` };
+  }
+}
+
+let daBaoCauHinhNhanNuoiSai = false;
+let lanCuoiBaoHoanViKhoaKhe = 0;
+
 async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Promise<void> {
   // ⚠ `null` (quét HỎNG) KHÁC `undefined` (nhịp này CỐ Ý không quét): quét hỏng thì ta không biết
   // hộ mồ côi nào, nhưng vẫn có thể đọc bảng tiến trình để dọn HÀNG MA — hai câu hỏi độc lập.
@@ -1488,6 +1510,7 @@ async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Pro
     rows.push(hangNenChoKeHoach(banSao.baseline.processKey, banSao.baseline.bytes));
   }
 
+  const khoa = await khoaKheDangGiu();
   const ke = lapKeHoachNhanNuoi({
     selfKey,
     rows,
@@ -1497,8 +1520,18 @@ async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Pro
     sidecar: moTaSidecarNhanNuoi(),
     pidVangMat: quetVangMatKhiCanhChinhCam(procs, rows),
     nowMs: Date.now(),
+    congAI: cacCongAI(),
+    khoaKheDangGiu: khoa.giu,
   });
   pidTanDuDaCoChu = ke.pidTanDuDaCoChu;
+  if (ke.cauHinhSai !== null && !daBaoCauHinhNhanNuoiSai) {
+    daBaoCauHinhNhanNuoiSai = true; // MỘT lần mỗi tiến trình — nhịp 60 s không được lặp lại cùng một dòng
+    console.error(`[vram] CẤU HÌNH SAI: ${ke.cauHinhSai}`);
+  }
+  if (ke.hoanViKhoaKhe > 0 && Date.now() - lanCuoiBaoHoanViKhoaKhe > 10 * 60_000) {
+    lanCuoiBaoHoanViKhoaKhe = Date.now();
+    console.warn(`[vram] HOÃN nhận nuôi ${ke.hoanViKhoaKhe} hộ mồ côi: ${khoa.lyDo}. Nhận nuôi mở đường SIGTERM nên không làm khi một phép đo đang cầm llama-server.`);
+  }
 
   /**
    * ★★★ VỨT HÀNG MA KHỎI BẢN SAO **NGAY TRONG NHỊP NÀY**, trước khi lượt chụp nền và lượt đối
@@ -1541,6 +1574,15 @@ async function chayLuotNhanNuoi(census: GpuHolderCensus | null | undefined): Pro
         `nhan-nuoi-mo-coi:pid=${ho.pid}`,
       );
       leaseNhanNuoi.set(ho.pid, { lease, ctime: row.ctime });
+      // ★ P4 — dấu vết truy được bằng SQL (`adoptLease` không tự ghi sự kiện; trước đây chỉ có một dòng console).
+      logVramEvent({
+        event: "adopt_orphan",
+        owner: ownerNhanNuoi(ho.pid),
+        leaseKind: "external-process",
+        priority: "interactive",
+        estimatedBytes: ho.bytes,
+        detail: { pid: ho.pid, name: ho.name, ctime: row.ctime, reclaimer: "orphan-pid", congSidecar: moTaSidecarNhanNuoi()?.port ?? null, congAI: cacCongAI() },
+      });
       // Hộ vừa có chủ ⇒ nó thôi là "tàn dư vô chủ" NGAY trong nhịp này, không phải nhịp sau.
       pidTanDuDaCoChu = new Set([...pidTanDuDaCoChu, ho.pid]);
       console.warn(
@@ -1931,6 +1973,29 @@ export async function thuHoiHoNhanNuoi(
     return false;
   }
 
+  /**
+   * ★★★ Audit orphanHolders 2026-10-22 (P3) — HAI CỔNG MỚI TRƯỚC `SIGTERM`, sau cổng mốc-tạo:
+   *   1. DÒNG LỆNH đọc lại từ chính `bang` vừa đọc: vẫn là ảnh thực thi đã khai, vẫn mang cổng sidecar đã khai, và KHÔNG mang cổng AI
+   *      (`lyDoTuChoiGiet`). `ctime` chỉ nói "vẫn là tiến trình đó"; câu này nói "tiến trình đó vẫn là thứ ta nhận nuôi".
+   *   2. KHOÁ KHE: phép đo đang cầm llama-server ⇒ không giết.
+   * Từ chối ⇒ `false` + GIỮ NGUYÊN giấy phép (cùng kỷ luật các nhánh từ chối ở trên). KHÔNG thăm dò /slots: thêm I/O mạng vào đường an toàn là rủi ro mới.
+   */
+  const luDoCmd = lyDoTuChoiGiet(hienTai.cmdline, moTaSidecarNhanNuoi(), cacCongAI());
+  const khoa = luDoCmd === null ? await khoaKheDangGiu() : { giu: false, lyDo: "" };
+  if (luDoCmd !== null || khoa.giu) {
+    const lyDo = luDoCmd ?? khoa.lyDo;
+    console.error(`[vram] KHÔNG THU HỒI pid ${pid}: ${lyDo}. Giữ nguyên giấy phép và khai THẤT BẠI.`);
+    logVramEvent({
+      event: "reclaim_orphan",
+      owner: ownerNhanNuoi(pid),
+      leaseKind: "external-process",
+      priority: "interactive",
+      estimatedBytes: muc.lease.actualBytes ?? undefined,
+      detail: { pid, outcome: luDoCmd !== null ? "refused-cmdline" : "refused-khoa-khe", reason: lyDo },
+    });
+    return false;
+  }
+
   const cua: Partial<CuaThuHoiNgoaiTienTrinh> | undefined =
     cuaVao ?? cuaThuHoiCuaTest ?? undefined;
 
@@ -1978,6 +2043,14 @@ export async function thuHoiHoNhanNuoi(
       } catch {
         /* sổ hỏng KHÔNG được biến một lượt thu hồi THÀNH CÔNG thành một lời khai thất bại */
       }
+      logVramEvent({
+        event: "reclaim_orphan",
+        owner: ownerNhanNuoi(pid),
+        leaseKind: "external-process",
+        priority: "interactive",
+        estimatedBytes: bytes,
+        detail: { pid, outcome: "killed-confirmed", freedBytes: bytes },
+      });
       console.warn(
         `[vram] THU HỒI XUYÊN TIẾN TRÌNH: đã tắt pid ${pid} và nvidia-smi XÁC NHẬN nó không còn giữ ` +
           `GPU ⇒ nhả ${Math.round(bytes / 1024 / 1024)} MiB khỏi sổ. Đây là hộ NGOÀI tiến trình này ` +
@@ -1986,6 +2059,14 @@ export async function thuHoiHoNhanNuoi(
       return true;
     }
     if (now() >= hanChot) {
+      logVramEvent({
+        event: "reclaim_orphan",
+        owner: ownerNhanNuoi(pid),
+        leaseKind: "external-process",
+        priority: "interactive",
+        estimatedBytes: muc.lease.actualBytes ?? undefined,
+        detail: { pid, outcome: "kill-sent-not-confirmed", deviceReadable: pids !== null },
+      });
       console.error(
         `[vram] THU HỒI HỎNG: đã gửi tín hiệu tắt tới pid ${pid} nhưng ${pids === null ? "KHÔNG ĐỌC ĐƯỢC" : "vẫn thấy"} ` +
           `nó trong danh sách compute-app sau ${reclaimWaitMs()} ms ⇒ KHÔNG có bằng chứng byte đã nhả ⇒ ` +
@@ -2161,6 +2242,8 @@ export async function __runReconcileTick(): Promise<VramReconcileResult> {
 
 /** Chỉ dùng trong test. */
 export function __resetVramBaselineForTests(): void {
+  daBaoCauHinhNhanNuoiSai = false;
+  lanCuoiBaoHoanViKhoaKhe = 0;
   baselineUsedBytes = null;
   baselineCaptured = false;
   baselineRequired = false;

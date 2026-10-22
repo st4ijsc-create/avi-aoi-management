@@ -61,6 +61,7 @@
 import type { GpuHolder, ProcTableRow } from "./vramGpuHolders";
 import type { SharedLeaseRow } from "./vramSharedLedger";
 import { SHARED_BASELINE_KEY } from "./vramSharedLedger";
+import { dongLenhMangCong, dongLenhMangCongAI } from "./vramAiPorts";
 
 /**
  * ⚠ BA giá trị, KHÔNG PHẢI `boolean`. `"khong-biet"` là một câu trả lời KHÁC HẲN `"song"`: nó
@@ -220,6 +221,12 @@ export interface KeHoachNhanNuoi {
    * biết vì sao một hộ như thế KHÔNG được coi là "tàn dư" nữa.
    */
   readonly pidTanDuDaCoChu: ReadonlySet<number>;
+  /**
+   * ★ P2 — khác `null` ⇔ cổng sidecar đã khai TRÙNG cổng AI: cấu hình sai, `nhanNuoi` bị ép rỗng. Người gọi log MỘT lần.
+   */
+  readonly cauHinhSai: string | null;
+  /** ★ P3 — khác `null` ⇔ có hộ khớp mô tả nhưng KHÔNG nhận nuôi vì khoá khe đang giữ (đếm để log). */
+  readonly hoanViKhoaKhe: number;
 }
 
 export interface DauVaoNhanNuoi {
@@ -236,6 +243,18 @@ export interface DauVaoNhanNuoi {
    * trước Pha 10. Chỉ được đọc khi `procs === null`.
    */
   readonly pidVangMat?: ReadonlySet<number> | null;
+  /**
+   * ★★★ Audit orphanHolders 2026-10-22 (P2) — cổng của các llama-server ĐANG PHỤC VỤ AI (`cacCongAI()`). Hàm này THUẦN nên người gọi đưa vào.
+   * Hộ có dòng lệnh mang một cổng trong tập này KHÔNG BAO GIỜ được nhận nuôi; và nếu chính cổng sidecar đã khai nằm trong tập này thì
+   * cấu hình tự mâu thuẫn ⇒ KHÔNG nhận nuôi hộ nào (xem `KeHoachNhanNuoi.cauHinhSai`). Vắng ⇒ [] (hành vi cũ).
+   */
+  readonly congAI?: readonly number[];
+  /**
+   * ★★★ P3 — KHOÁ KHE đang hiệu lực (`docKhoaKhe() !== null`): một phép đo / lượt đổi khe đang cầm llama-server. Tệp khoá KHÔNG mang pid
+   * (chỉ `{chu, lyDo, hetHan}`) nên không thể loại RIÊNG một tiến trình ⇒ trong lúc khoá còn hạn KHÔNG nhận nuôi hộ nào (nhận nuôi mở
+   * đường SIGTERM). Chiều CHẶT: hộ vẫn nằm trong `orphans`, byte vẫn được cảnh báo như cũ.
+   */
+  readonly khoaKheDangGiu?: boolean;
   /** Đồng hồ của người gọi — hàm này THUẦN nên không tự đọc. Bắt buộc khi có `pidVangMat`. */
   readonly nowMs?: number;
   /**
@@ -324,9 +343,16 @@ export function lapKeHoachNhanNuoi(input: DauVaoNhanNuoi): KeHoachNhanNuoi {
   }
 
   const nhanNuoi: HoCanNhanNuoi[] = [];
-  if (sidecar !== null && procs !== null) {
+  const congAI = input.congAI ?? [];
+  let cauHinhSai: string | null = null;
+  let hoanViKhoaKhe = 0;
+  if (sidecar !== null && congAI.includes(sidecar.port)) {
+    cauHinhSai =
+      `LLAMA_VISION_PORT=${sidecar.port} TRÙNG cổng của server AI (${congAI.join(", ")}) ⇒ KHÔNG nhận nuôi hộ nào: nhận nuôi mở đường SIGTERM, ` +
+      `và cổng này đang phục vụ AI. Đổi LLAMA_VISION_PORT sang cổng riêng của sidecar thị giác.`;
+  }
+  if (sidecar !== null && procs !== null && cauHinhSai === null) {
     const bin = chuan(sidecar.binPath);
-    const dauCong = `--port ${sidecar.port}`;
     for (const h of orphans) {
       if (pidTanDuDaCoChu.has(h.pid)) continue;
       const row = procs.find((p) => p.pid === h.pid);
@@ -337,12 +363,38 @@ export function lapKeHoachNhanNuoi(input: DauVaoNhanNuoi): KeHoachNhanNuoi {
       // `llama-server` do người khác chạy trên máy này cũng khớp, và nhận nuôi nó là khai một
       // khối byte của người lạ thành của ta.
       const khopAnh = chuan(h.name) === bin || cmd.startsWith(bin) || cmd.startsWith(`"${bin}"`);
-      if (!khopAnh || !cmd.includes(chuan(dauCong))) continue;
+      // ★ P2 — cổng theo RANH GIỚI TOKEN (`--port 8081` ≠ chuỗi con của `--port 80810`/`--port 8081x`), và DENY khi dòng lệnh mang cổng AI.
+      if (!khopAnh || !dongLenhMangCong(cmd, sidecar.port) || dongLenhMangCongAI(cmd, congAI)) continue;
+      if (input.khoaKheDangGiu === true) {
+        hoanViKhoaKhe++;
+        continue;
+      }
       nhanNuoi.push({ pid: h.pid, name: h.name, bytes: sidecar.bytes });
     }
   }
 
-  return { xoaHangMa, nhanNuoi, pidTanDuDaCoChu };
+  return { xoaHangMa, nhanNuoi, pidTanDuDaCoChu, cauHinhSai, hoanViKhoaKhe };
+}
+
+/**
+ * ★★★ P3 — KIỂM LẠI DÒNG LỆNH NGAY TRƯỚC KHI GIẾT. `ctime` chỉ chứng minh "vẫn là tiến trình đó"; câu hỏi còn lại là "tiến trình đó có CÒN LÀ
+ * sidecar ta nhận nuôi không" — ảnh thực thi + cổng đã khai, và KHÔNG mang cổng AI. Hàm THUẦN; `null` ⇔ được phép, chuỗi ⇔ lý do TỪ CHỐI.
+ * ⚠ Không đọc được dòng lệnh (rỗng) ⇒ từ chối: "không biết" không được đọc thành "được phép".
+ */
+export function lyDoTuChoiGiet(
+  cmdline: string | undefined,
+  sidecar: MoTaSidecarNhanNuoi | null,
+  congAI: readonly number[],
+): string | null {
+  if (sidecar === null) return "chưa cấu hình sidecar (LLAMA_SERVER_BIN trống) ⇒ không còn mô tả nào để đối chiếu";
+  if (congAI.includes(sidecar.port)) return `LLAMA_VISION_PORT=${sidecar.port} trùng cổng server AI`;
+  const cmd = chuan(cmdline ?? "");
+  if (cmd.length === 0) return "KHÔNG đọc được dòng lệnh của pid ⇒ không có bằng chứng nó vẫn là sidecar đã nhận nuôi";
+  const bin = chuan(sidecar.binPath);
+  if (!(cmd.startsWith(bin) || cmd.startsWith(`"${bin}"`))) return "dòng lệnh không còn bắt đầu bằng ảnh thực thi đã khai (LLAMA_SERVER_BIN)";
+  if (dongLenhMangCongAI(cmd, congAI)) return "dòng lệnh mang cổng của server AI — đây là server đang phục vụ, không phải sidecar mồ côi";
+  if (!dongLenhMangCong(cmd, sidecar.port)) return `dòng lệnh không mang --port ${sidecar.port} của sidecar đã khai`;
+  return null;
 }
 
 /**
