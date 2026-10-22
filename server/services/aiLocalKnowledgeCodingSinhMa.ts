@@ -292,6 +292,7 @@ export async function* streamCodingGenerate(
   const moLuong = (tran: number) =>
     rutChuCoCanh(
       streamCodingModel({
+        auditTask: "kb_sinh_ma", // ★ Đợt 9 — bề mặt ở ai_llm_audit
         // ★ G4 — tầng model người dùng chọn cho lượt này (bộ chọn ở màn lập trình). Vắng ⇒ mặc định hệ.
         tacVu: (context as { modelTask?: unknown })?.modelTask,
         systemPrompt: heThong,
@@ -410,6 +411,7 @@ export async function* streamCodingGenerate(
     cauTraLoi: kq.text,
     goiLai: goiLaiBangModel({ heThong, promptGoc: promptCuoi, maxTokens: tran, userId: execCtx?.user?.id, tacVu: (context as { modelTask?: unknown })?.modelTask, signal: execCtx?.signal }),
     signal: execCtx?.signal,
+    boiCanh: { tier: dungSinhMa?.tier, model: dungSinhMa?.modelId, userId: execCtx?.user?.id },
   });
   const boSungST = kiemST ? khoiBoSungSauBienDich(kiemST, language) : "";
   if (boSungST) yield { type: "token", token: boSungST };

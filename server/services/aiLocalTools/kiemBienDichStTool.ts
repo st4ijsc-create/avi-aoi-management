@@ -47,7 +47,7 @@ function khoiTuMa(chu: string, tenTep: string | null): KhoiMaST[] {
   if (coRao) return trichMaST(chu);
   const dh = dauHieuScl(chu);
   const laScl = /\.scl$/i.test(tenTep ?? "") || dh.tenKhoiNgoacKep || dh.soThamChieuThang > 0;
-  return [{ ma: chu, nhan: laScl ? "scl" : "st", laScl, batDau: 0, ketThuc: chu.length }];
+  return [{ ma: chu, nhan: laScl ? "scl" : "st", laScl, tep: tenTep, batDau: 0, ketThuc: chu.length }];
 }
 
 const kiemBienDichStTool: Tool<z.infer<typeof thamSo>, DuLieuKiemBienDich> = {

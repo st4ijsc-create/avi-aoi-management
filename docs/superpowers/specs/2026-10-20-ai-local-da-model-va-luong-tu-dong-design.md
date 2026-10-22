@@ -656,6 +656,37 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   preempt `thuHoiHoNhanNuoi` (SIGTERM, vramReconciler.ts ~1940) giết được llama-server đang phục vụ. Lần 14:00 KHÔNG đi đường
   này (không lease nào cho PID llama-server, không reserve/preempt quanh 07:00Z). (4) MATIEC đúng bản bench + SCL:
   thước đạt (tập OpenPLC 22 bài); ★ lỗi runtime MATIEC `__normalize_timespec` (docs/superpowers/audits/2026-10-21-matiec-loi-normalize-timespec.md).
+  MATIEC 27B + vòng sửa (20 bài × 3): 38/60 = 63 % vs RuSTy #11 cùng bài 42/60 (lệch 4 bài, trong nhiễu) — sổ #12.
+- **Vòng kiểm biên dịch ST trên `/v1` (code.plc, 27B) — A/B trục H, 24 bài (#11) × 3 lượt, xen kẽ cùng server** (2026-10-22,
+  `scripts/ai-eval/ngau-nhien/reports/PLC-v1-ab-kiem-q36-27b-1.json`, 144 hàng): TẮT 44/72 = 61 % · BẬT 47/72 = 65 % (+3/72;
+  cặp bật đạt/tắt trượt 10 · ngược lại 7). **Cổng viết trước "on ≥ off + 4" KHÔNG đạt ⇒ `AI_KIEM_BIEN_DICH_ST` GIỮ TẮT**
+  (dieu-phoi 2026-10-22; không đổi cổng sau khi thấy số). Lợi ích tập trung ở tt4/tt5 (lỗi biên dịch thật: +3, +2 trên 3 lượt);
+  58/72 = 82 % lượt biên dịch sạch ngay (43 trong đó đạt) ⇒ thất bại chủ yếu là lỗi LOGIC (test đỏ), trình biên dịch không bắt được.
+  Chi phí: trung vị 136 → 163 s, p90 193 → 239 s; lượt sửa ≈ +8 % token ra (`ai_gateway_metrics.luotPhu`).
+  *Vì sao trục M +14/72 (#11 so 27B không vòng) mà trục H chỉ +3/72* — đọc từ dữ liệu đã có, không chạy thêm: (i) tỉ lệ lượt có lỗi
+  biên dịch ở lần ĐẦU gần bằng nhau (M 16/72 = 22 % · H 13/72 = 18 %) ⇒ đường sản phẩm KHÔNG giảm lỗi biên dịch đáng kể; (ii) khác ở
+  hiệu quả SỬA: M cứu 13/16 lượt có lỗi (13 trong số đó sạch ngay sau vòng 1), H chỉ 4/13 (6/13 sạch sau vòng 1). Hai nguyên nhân
+  ĐO ĐƯỢC ở H: trần 90 s của vòng (định cho model nhẹ) nhỏ hơn MỘT lượt sinh lại của 27B (67–197 s) ⇒ 7/7 lượt `con-loi` chỉ được
+  ĐÚNG MỘT vòng (sổ đo có 13 lượt sửa cho 13 yêu cầu), trong khi nhãn báo `vong=2` (lỗi đếm — sửa 9b85bff11); và ví dụ tt7 (BCD,
+  `x SHR 12` không phải IEC): chẩn đoán của hai đường GIỐNG HỆT nhau (đối chiếu `scripts/ai-eval/ngau-nhien/phan-tich/so-loi-tt7.mts`) nhưng M sửa được 2/3, H 0/3 ⇒
+  khác biệt còn lại nằm ở lời nhắc sửa (M đòi "trả lại ĐỦ mọi tệp đúng định dạng `// tệp:`", H chỉ đòi khối ```st) / ngữ cảnh cổng
+  /v1 — CHƯA tách được nếu không chạy GPU. Mở: (a) trần thời gian vòng theo khe (nặng ≥ 2 lượt sinh), (b) lời nhắc sửa theo M,
+  (c) chế độ `chi-kiem` (biên dịch 1 lần, gắn nhãn ✓/⚠, không sinh lại — ~1–2 s, 0 token) — hàng đợi, CHƯA làm.
+  Tác động thời gian (cả hai nhánh, không stream): > 120 s 65–71 % · > 300 s 0–4 % ⇒ runbook 70 §4: khách `/v1` dùng stream.
+  ⚠ (dieu-phoi 2026-10-22) A/B này đo một bản CÀI ĐẶT LỖI (thực chất 1 vòng), không phải thiết kế đã duyệt (2 vòng) ⇒ "giữ tắt"
+  đúng cho bản đó, chưa trả lời câu hỏi về thiết kế. Đã sửa (f024945d3): (a) trần vòng theo khe — hồ sơ nặng 480 s (2 × 240 s),
+  nhẹ 90 s, `AI_KIEM_BIEN_DICH_ST_TRAN_MS_NANG`; (b) lời nhắc sửa DÙNG CHUNG với bộ đo M (`shared/stNhacSua.mjs`) + chẩn đoán mang
+  tên tệp `// tệp:`; (c) đếm vòng thật (9b85bff11).
+- **ĐĂNG KÝ TRƯỚC — A/B `/v1` lần 2** (viết 2026-10-22, TRƯỚC khi chạy; chạy SAU ablation tác nhân, trước SCL): cùng 24 bài (#11) ×
+  3 lượt, cùng xen kẽ trên CÙNG server (nhánh tắt opt-out `st4i_kiem_bien_dich:false`, thứ tự đảo theo lượt), 27B `code.plc`,
+  cùng `max_tokens` 16000, server ở bản có (a)(b)(c). **Cổng: on ≥ off + 4/72** (không đổi sau khi thấy số). Kiểm nhánh như lần 1
+  (tắt mà có header ⇒ vứt; bật không header ⇒ vứt). Báo kèm: số vòng thật/lượt, tỉ lệ cứu được trên lượt có lỗi lần đầu (so M 13/16),
+  > 120/300 s mỗi nhánh. Nhãn báo cáo `PLC-v1-ab-kiem-q36-27b-2`.
+- **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
+  luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
+  (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
+  `phuQuyetToolNative.hoiModelChonTool` cũng vậy. Hàng đợi: thiết kế ngắn đưa tác nhân qua `planInference` + `dinhTuyenVaiTro` (dự án
+  PLC ⇒ `code.plc`), tính hệ quả gating ném GIỮA vòng tool và khoá/đổi khe giữa các lượt tool — gửi dieu-phoi SAU ablation. CHƯA làm.
 
 **Bảo mật Luồng 2026-10-21** (quét bảo mật của phiên kỹ thuật + audit chỉ-đọc của kiem-dinh; vận hành: `docs/AI_FLOW_SECURITY_OPERATIONS.md`;
 mig 0410–0412 đã áp dev). Mỗi lỗ: test hỏng trước, đột biến bỏ kiểm ⇒ đỏ, commit riêng.

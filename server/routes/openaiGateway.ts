@@ -83,7 +83,8 @@ import { stripThinking, StreamingThinkingStripper } from "../services/ai/thinkin
 // fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
 import { defaultModelBasename, resolveLogicalModel, toBasename } from "../services/ai/modelResolver";
 import { kiemModelV1, thongDiepLoiChoKhachV1 } from "../services/ai/kiemModelV1";
-import { kiemBienDichBat, kiemVaSuaST, nhanKiemBienDich, type KetQuaKiemBienDichST } from "../services/ai/st/kiemBienDichSt";
+import { kiemBienDichBat, kiemVaSuaST, nhanKiemBienDich, tranMsVongSuaST, type KetQuaKiemBienDichST } from "../services/ai/st/kiemBienDichSt";
+import { auditKiemBienDich, headerKiemBienDich } from "../services/ai/st/auditKiemBienDich";
 import { trichMaST } from "../services/ai/st/trichMaST";
 import { chayVoiTokenKhe, chonModelKhiVuotTran, tokenKheHienTai, vuotTranDoiKhe } from "../services/ai/soModel/tranDoiKheToken";
 import { laModelKheNangPhu, modelNhaKheNang } from "../services/ai/soModel/tapKheNang";
@@ -397,25 +398,8 @@ function nenKiemBienDichV1(modelLabel: string, body: Record<string, unknown>, co
   return kiemBienDichBat("v1") && modelLabel.trim().toLowerCase() === "code.plc" && !coTool && body.st4i_kiem_bien_dich !== false;
 }
 
-/** Giá trị header `x-st4i-bien-dich` (nhánh không stream). */
-function headerKiemBienDich(k: KetQuaKiemBienDichST): string {
-  if (k.trangThai === "bo-qua") return "ok=skip";
-  const loiCon = k.chanDoanCuoi.filter((d) => d.mucDo === "error").length;
-  const ok = k.trangThai === "sach" || k.trangThai === "da-sua" ? "1" : k.trangThai === "khong-kiem-duoc" ? "na" : "0";
-  return `ok=${ok}; trang-thai=${k.trangThai}; vong=${k.soVong}; sua=${k.soLoiDaSua}; con=${loiCon}`;
-}
-
-/**
- * ★ Đợt 9 — mẩu AUDIT của vòng kiểm biên dịch (`ai_llm_audit.redactedSnippet` qua `plan.record({auditSnippet})`): CHỈ số liệu
- * + mã lỗi còn lại (không mã nguồn). `bo-qua` ⇒ `undefined` (cột giữ NULL như mọi lượt khác). Định dạng ỔN ĐỊNH — luong-ui/tra
- * cứu đọc theo khoá: `kiem-bien-dich-st ok=… trang-thai=… vong=… sua=… con=… ms=… [ly-do=…] [ma=E1,E2]`.
- */
-export function auditKiemBienDich(k: KetQuaKiemBienDichST): string | undefined {
-  if (k.trangThai === "bo-qua") return undefined;
-  const ma = [...new Set(k.chanDoanCuoi.filter((d) => d.mucDo === "error").map((d) => d.ma).filter(Boolean))].slice(0, 10);
-  const lyDo = k.lyDo ? ` ly-do=${k.lyDo.replace(/\s+/g, "_").slice(0, 120)}` : "";
-  return `kiem-bien-dich-st ${headerKiemBienDich(k).replace(/;/g, "")} ms=${k.msThem}${lyDo}${ma.length ? ` ma=${ma.join(",")}` : ""}`;
-}
+// ★ Đợt 9 — `headerKiemBienDich` / `auditKiemBienDich` nay ở `ai/st/auditKiemBienDich.ts` (dùng chung với đường KB coding); re-export giữ nguyên API cũ.
+export { auditKiemBienDich };
 
 /**
  * ★ Đợt 9 (dieu-phoi) — mỗi lượt model SINH LẠI của vòng kiểm biên dịch là MỘT hàng `ai_gateway_metrics` (`luotPhu =
@@ -1189,6 +1173,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
             const kq = await kiemVaSuaST({
               cauTraLoi: chuDaPhat,
               signal: abort.signal,
+              tranMs: tranMsVongSuaST(modelId),
               goiLai: async (tin, lanTruoc) => {
                 const t0Sua = Date.now();
                 let r2: Awaited<ReturnType<typeof chatCompletion>>;
@@ -1313,6 +1298,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         try {
           const kq = await kiemVaSuaST({
             cauTraLoi: chatHienThi,
+            tranMs: tranMsVongSuaST(modelId),
             goiLai: async (tin, lanTruoc) => {
               const t0Sua = Date.now();
               let r2: Awaited<ReturnType<typeof chatCompletion>>;

@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import type { KetQuaBienDichST } from "../../flow/lib/bienDichST";
 import { LoiBienDichST, coAnhST } from "../../flow/lib/bienDichST";
-import { ghepMaST, kiemBienDichBat, kiemVaSuaST, nhanKiemBienDich } from "./kiemBienDichSt";
+import { ghepMaST, kiemBienDichBat, kiemVaSuaST, nhanKiemBienDich, tranMsVongSuaST } from "./kiemBienDichSt";
 import { trichMaST } from "./trichMaST";
 
 const FB_DUNG = "FUNCTION_BLOCK A\nVAR_INPUT x : BOOL; END_VAR\nVAR_OUTPUT y : BOOL; END_VAR\n  y := x;\nEND_FUNCTION_BLOCK";
@@ -96,7 +96,8 @@ describe("kiemVaSuaST", () => {
     expect(r).toMatchObject({ trangThai: "da-sua", soVong: 1, soLoiDaSua: 1 });
     expect(r.cauTraLoiDau).toContain("AND ;");
     expect(r.cauTraLoiCuoi).not.toContain("AND ;");
-    expect(tinNhan[0]).toContain("mã:4:3 error[E007]");
+    expect(tinNhan[0]).toContain("- mã:4:3 E007 Unexpected token"); // hình dạng dòng lỗi CHUNG với bộ đo M (shared/stNhacSua.mjs)
+    expect(tinNhan[0]).toContain("ĐẦY ĐỦ mã"); // không có dòng `// tệp:` ⇒ không đòi định dạng tệp
     expect(nhanKiemBienDich(r)).toContain("Đã tự sửa 1 lỗi");
   });
 
@@ -114,6 +115,21 @@ describe("kiemVaSuaST", () => {
     const r = await kiemVaSuaST({ cauTraLoi: tl(FB_SAI), goiLai: async () => (n++, tl(FB_DUNG)), bienDich: async (m) => ((t += 100_000), bdGia(m)), bayGio: () => t, tranMs: 90_000 });
     expect(n).toBe(0);
     expect(r.trangThai).toBe("con-loi");
+  });
+
+  it("★ (2026-10-22) trần thời gian cắt SAU vòng 1 ⇒ soVong = 1 (số vòng THẬT, không báo vòng tối đa)", async () => {
+    let t = 0;
+    let n = 0;
+    const r = await kiemVaSuaST({
+      cauTraLoi: tl(FB_SAI),
+      goiLai: async () => ((t += 100_000), n++, tl(FB_SAI)), // vòng sửa 100 s, vẫn lỗi
+      bienDich: bdGia,
+      bayGio: () => t,
+      tranMs: 90_000,
+    });
+    expect(n).toBe(1);
+    expect(r).toMatchObject({ trangThai: "con-loi", soVong: 1 });
+    expect(nhanKiemBienDich(r)).toContain("sau 1 vòng");
   });
 
   it("docker/ảnh vắng ⇒ khong-kiem-duoc (không ném, không chặn)", async () => {
@@ -143,4 +159,38 @@ describe("kiemVaSuaST × RuSTy THẬT (docker)", () => {
     expect(r.trangThai).toBe("da-sua");
     expect(r.soLoiDaSua).toBeGreaterThan(0);
   }, 120_000);
+});
+
+describe("★ (2026-10-22) lời nhắc sửa CHUNG với bộ đo M + trần thời gian theo khe", () => {
+  it("khối có `// tệp:` ⇒ chẩn đoán mang ĐÚNG tên tệp model đã viết + lời nhắc đòi trả lại ĐỦ mọi tệp đúng định dạng (chữ của M)", async () => {
+    const tinNhan: string[] = [];
+    const coTep = (ma: string) => `\`\`\`pascal\n// tệp: src/A.st\n${ma}\n\`\`\``;
+    const r = await kiemVaSuaST({
+      cauTraLoi: coTep(FB_SAI),
+      goiLai: async (tin) => (tinNhan.push(tin), coTep(FB_DUNG)),
+      bienDich: async (m) => (m.includes("AND ;") ? loi(5) : sach), // dòng 5 của khối = dòng có lỗi (sau dòng đánh dấu)
+    });
+    expect(r.trangThai).toBe("da-sua");
+    expect(tinNhan[0]).toContain("- src/A.st:5:3 E007");
+    expect(tinNhan[0]).toContain("trả lại ĐẦY ĐỦ mọi tệp theo đúng định dạng như trước (mỗi tệp một khối mã có dòng `// tệp: …`)");
+    expect(tinNhan[0]).toContain("(RuSTy, phương ngữ CODESYS)");
+  });
+
+  it("tranMsVongSuaST: hồ sơ khe NẶNG ⇒ 480 s (đủ 2 lần sinh lại 27B), ghi đè được; khe nhẹ / model lạ ⇒ 90 s", () => {
+    const P = (artifactFile: string, slotClass: "nang" | "nho") => ({ artifactFile, slotClass, artifactStatus: "available", license: "apache-2.0", enabled: true });
+    const anh = { taiLuc: 1, vaiTro: new Map(), gan: [], profile: new Map([["q27", P("Qwen3.6-27B-UD-Q4_K_XL.gguf", "nang")], ["q4", P("Qwen3-4B.gguf", "nho")]]) } as never;
+    expect(tranMsVongSuaST("Qwen3.6-27B-UD-Q4_K_XL", {}, anh)).toBe(480_000);
+    expect(tranMsVongSuaST("Qwen3.6-27B-UD-Q4_K_XL", { AI_KIEM_BIEN_DICH_ST_TRAN_MS_NANG: "600000" }, anh)).toBe(600_000);
+    expect(tranMsVongSuaST("Qwen3.6-27B-UD-Q4_K_XL", { AI_KIEM_BIEN_DICH_ST_TRAN_MS_NANG: "abc" }, anh)).toBe(480_000);
+    for (const m of ["Qwen3-4B", "la", undefined]) expect(tranMsVongSuaST(m, { AI_KIEM_BIEN_DICH_ST_TRAN_MS_NANG: "600000" }, anh)).toBe(90_000);
+  });
+
+  it("★ trần khe nặng cho ĐỦ 2 vòng khi mỗi lần sinh lại ~200 s (trần 90 s cũ chỉ cho 1)", async () => {
+    for (const [tranMs, kyVong] of [[90_000, 1], [480_000, 2]] as const) {
+      let t = 0;
+      let n = 0;
+      await kiemVaSuaST({ cauTraLoi: tl(FB_SAI), goiLai: async () => ((t += 200_000), n++, tl(FB_SAI)), bienDich: bdGia, bayGio: () => t, tranMs });
+      expect(n, `tranMs ${tranMs}`).toBe(kyVong);
+    }
+  });
 });

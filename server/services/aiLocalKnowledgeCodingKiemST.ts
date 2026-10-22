@@ -12,7 +12,9 @@
  * vòng kiểm này cũng KHÔNG có `auditSnippet` như `/v1` (`auditKiemBienDich`). Không bịa chỗ ghi; chờ điểm ghi audit chung cho đường KB coding.
  * Tên tệp khớp `aiLocalKnowledge*.ts` CÓ CHỦ Ý: lưới `aiLocalKnowledgeApi.sseCensus` đếm điểm phát ở các tệp này.
  */
-import { kiemBienDichBat, kiemVaSuaST, type KetQuaKiemBienDichST } from "./ai/st/kiemBienDichSt";
+import { kiemBienDichBat, kiemVaSuaST, tranMsVongSuaST, type KetQuaKiemBienDichST } from "./ai/st/kiemBienDichSt";
+import { auditKiemBienDich } from "./ai/st/auditKiemBienDich";
+import { ghiLuotNgoaiCong } from "./aiGateway";
 import { trichMaST } from "./ai/st/trichMaST";
 import { rutChuCoCanh, streamCodingModel } from "./aiCodingAgent";
 import type { KbLanguage, StreamEvent } from "./aiLocalKnowledgeService";
@@ -56,12 +58,28 @@ export async function* chayKiemBienDichST(y: {
   /** Hỏi lại model trong CÙNG hội thoại: nhận tin sửa (lỗi biên dịch) + câu trả lời trước ⇒ câu trả lời mới. */
   goiLai: (tinSua: string, lanTruoc: string) => Promise<string>;
   signal?: AbortSignal;
+  /** Bối cảnh của LƯỢT CHÍNH để hàng audit `kb_kiem_st` mang cùng tầng / model / người dùng (vắng ⇒ tầng 0 = "không định tuyến"). */
+  boiCanh?: { tier?: number; model?: string | null; userId?: number };
 }): AsyncGenerator<StreamEvent, KetQuaKiemBienDichST | null> {
   if (!kiemBienDichBat(y.beMat)) return null;
   if (trichMaST(y.cauTraLoi).length === 0) return null;
   yield { type: "kiem_bien_dich", phase: "dang-kiem" };
-  const k = await kiemVaSuaST({ cauTraLoi: y.cauTraLoi, goiLai: y.goiLai, signal: y.signal });
+  const k = await kiemVaSuaST({ cauTraLoi: y.cauTraLoi, goiLai: y.goiLai, signal: y.signal, tranMs: tranMsVongSuaST(y.boiCanh?.model ?? undefined) });
   if (k.trangThai === "bo-qua") return null;
+  // ★ Đợt 9 — MỘT hàng nhật ký cho mỗi lần chạy vòng (kể cả "sạch"): chỉ số + mã lỗi (auditKiemBienDich) + BĂM mã đã kiểm — KHÔNG lưu mã nguồn.
+  ghiLuotNgoaiCong({
+    task: "code",
+    auditTask: "kb_kiem_st",
+    chiNhatKy: true,
+    userId: y.boiCanh?.userId ?? null,
+    tier: y.boiCanh?.tier,
+    model: y.boiCanh?.model ?? null,
+    latencyMs: k.msThem,
+    outcome: k.trangThai === "khong-kiem-duoc" ? "error" : "ok",
+    promptText: k.cauTraLoiDau,
+    responseText: k.cauTraLoiCuoi,
+    auditSnippet: auditKiemBienDich(k),
+  });
   yield { type: "kiem_bien_dich", phase: "xong", ketQua: dtoKiemBienDich(k) };
   return k;
 }
@@ -79,6 +97,7 @@ export function goiLaiBangModel(y: {
     const prompt = `${y.promptGoc}\n\n[Câu trả lời trước của bạn]\n${lanTruoc}\n\n[Phản hồi của trình biên dịch]\n${tinSua}`;
     const it = rutChuCoCanh(
       streamCodingModel({
+        auditTask: "kb_kiem_st_sua", // ★ Đợt 9 — lượt hỏi-lại của vòng kiểm biên dịch ST
         tacVu: y.tacVu,
         systemPrompt: y.heThong,
         prompt,

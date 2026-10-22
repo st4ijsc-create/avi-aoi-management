@@ -26,6 +26,7 @@ import { StreamingThinkingStripper, thinkingStartsOpen } from "../../ai/thinking
 import { StreamingSecretRedactor } from "../aiSafety";
 import { chayVoiNgheCho, chayVoiUuTien, type MucUuTien } from "../hangDoiUuTienLlm";
 import type { GgufChatMessage, GgufChatOptions, GgufStreamChunk } from "../../aiGgufEngine";
+import { ghiLuotNgoaiCong } from "../../aiGateway";
 
 /** Trần token sinh MỘT lượt (gồm nghĩ). Cân bằng = 16.000 như chế độ lập trình cũ (`nghiSau.ts`). */
 export const TRAN_TOKEN_MOT_LUOT_MAC_DINH = 16_000;
@@ -41,9 +42,27 @@ export interface CauHinhGoiModel {
   nghi?: boolean;
   mucUuTien?: MucUuTien;
   temperature?: number;
+  /** Người chạy lượt — chỉ để gắn vào dấu vết `ai_gateway_metrics` / `ai_llm_audit` (không ảnh hưởng gì khác). */
+  userId?: number;
 }
 
 const moTaLoi = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** Số ký tự tối đa của chữ dùng để BĂM ở dấu vết (đuôi prompt / đầu câu trả lời) — chặn chi phí quét an toàn trên hội thoại dài. */
+const TRAN_CHU_DAU_VET = 32_768;
+
+/** Đuôi hội thoại gửi đi, chỉ để BĂM. */
+function duoiHoiThoai(tinNhan: readonly { content?: unknown }[]): string {
+  const gop = tinNhan.map((t) => (typeof t.content === "string" ? t.content : "")).join("\n");
+  return gop.length > TRAN_CHU_DAU_VET ? gop.slice(gop.length - TRAN_CHU_DAU_VET) : gop;
+}
+
+/** Mẩu audit: CHỈ tên công cụ model gọi (không đối số, không mã). `undefined` khi không có. */
+function tenCongCuGoi(c: GgufStreamChunk | null): string | undefined {
+  const ds = Array.isArray(c?.toolCalls) ? (c!.toolCalls as Array<{ function?: { name?: unknown } }>) : [];
+  const ten = [...new Set(ds.map((t) => (typeof t.function?.name === "string" ? t.function.name : "")).filter((x) => /^[a-z_][a-z0-9_]{0,40}$/i.test(x)))].slice(0, 10);
+  return ten.length ? "kb-agent-luot cong-cu=" + ten.join(",") : undefined;
+}
 
 /** Lỗi engine ⇒ `LoiModel` có cờ tạm thời đúng nghĩa. */
 export function chuyenLoiModel(e: unknown): LoiModel {
@@ -117,10 +136,22 @@ async function* luongModelMayChu(
       ...(vao.congCu.length ? { tools: vao.congCu, toolChoice: "auto" as const } : {}),
       ...(nghi ? {} : { disableThinking: true }),
     };
+    // ★ Đợt 9 — DẤU VẾT: đường agent đi NGOÀI cổng (gọi thẳng engine, không `planInference`) ⇒ không quota / safety / license và KHÔNG
+    //   định tuyến theo vai trò (gốc của lỗ "tác nhân luôn dùng model mặc định"). Chưa đưa qua cổng thật (việc riêng); trong lúc đó mỗi lượt
+    //   model để lại MỘT hàng bằng helper CHỈ-GHI `ghiLuotNgoaiCong` — dễ thay bằng `planInference().record()` khi agent qua cổng.
+    //   Chỉ BĂM: prompt = đuôi TRAN_CHU_DAU_VET ký tự của hội thoại gửi đi; câu trả lời = chữ đã che; mã nguồn không được lưu.
+    const t0 = Date.now();
+    let chuDaPhat = "";
+    let ketThuc: GgufStreamChunk | null = null;
+    let hoanTat = false;
+    try {
     for await (const c of chatCompletionStream(options, modelId, vao.signal)) {
       if (c.type === "token" && typeof c.token === "string" && c.token) {
         const an = cheChu.push(catSuyLuan.push(c.token));
-        if (an) day({ loai: "chu", noiDung: an });
+        if (an) {
+          if (chuDaPhat.length < TRAN_CHU_DAU_VET) chuDaPhat += an;
+          day({ loai: "chu", noiDung: an });
+        }
       } else if (c.type === "reasoning" && typeof c.token === "string" && c.token) {
         const an = cheNghi.push(c.token);
         if (an) day({ loai: "nghi", noiDung: an });
@@ -128,7 +159,12 @@ async function* luongModelMayChu(
         throw new LoiModel(`model stream error: ${c.error ?? "unknown"}`, { tamThoi: true, ma: "MODEL_LOI_LUONG" });
       } else if (c.type === "done") {
         const conChu = cheChu.push(catSuyLuan.flush()) + cheChu.flush();
-        if (conChu) day({ loai: "chu", noiDung: conChu });
+        if (conChu) {
+          if (chuDaPhat.length < TRAN_CHU_DAU_VET) chuDaPhat += conChu;
+          day({ loai: "chu", noiDung: conChu });
+        }
+        ketThuc = c;
+        hoanTat = true;
         const conNghi = cheNghi.flush();
         if (conNghi) day({ loai: "nghi", noiDung: conNghi });
         const coUsage = typeof c.tokensPrompt === "number" || typeof c.tokensGenerated === "number";
@@ -150,6 +186,23 @@ async function* luongModelMayChu(
         });
         return;
       }
+    }
+    } finally {
+      ghiLuotNgoaiCong({
+        task: "chat",
+        auditTask: "kb_agent_luot",
+        userId: cauHinh.userId ?? null,
+        model: (typeof ketThuc?.modelId === "string" && ketThuc.modelId ? ketThuc.modelId : modelId ?? null) || null,
+        tokensIn: ketThuc?.tokensPrompt,
+        tokensOut: ketThuc?.tokensGenerated,
+        reasoningTokens: typeof ketThuc?.tokensReasoning === "number" ? ketThuc.tokensReasoning : null,
+        thinking: nghi ? null : false,
+        latencyMs: Date.now() - t0,
+        outcome: hoanTat ? "ok" : "error",
+        promptText: duoiHoiThoai(options.messages),
+        responseText: chuDaPhat || undefined,
+        auditSnippet: tenCongCuGoi(ketThuc),
+      });
     }
   }
 

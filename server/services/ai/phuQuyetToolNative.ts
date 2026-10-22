@@ -62,6 +62,12 @@ export function dungWireToolLapTrinh(): WireTool[] {
 export async function hoiModelChonTool(question: string, hanGioMs = HAN_GIO_PHU_QUYET_MS): Promise<string | null | undefined> {
   const { chatCompletion } = await import("../aiGgufEngine");
   let henGio: ReturnType<typeof setTimeout> | undefined;
+  // ★ Đợt 9 — lượt này đi NGOÀI cổng (gọi thẳng engine, không planInference) ⇒ để lại dấu vết bằng helper CHỈ-GHI (xem
+  //   `aiGateway.ghiLuotNgoaiCong`: không quota/safety/license, không định tuyến, không ném). Người dùng không có sẵn ở điểm này ⇒ userId null.
+  const t0 = Date.now();
+  let ketQuaEngine: { modelId?: string; tokensPrompt?: number; tokensGenerated?: number } | null = null;
+  let ketLuan: string | undefined;
+  let loi = true;
   try {
     const kq = await Promise.race([
       chatCompletion({
@@ -80,7 +86,10 @@ export async function hoiModelChonTool(question: string, hanGioMs = HAN_GIO_PHU_
       }),
     ]);
     if (kq === null) return undefined; // quá hạn
+    ketQuaEngine = kq as { modelId?: string; tokensPrompt?: number; tokensGenerated?: number };
+    loi = false;
     const ten = (kq as { toolCalls?: Array<{ function?: { name?: string } }> }).toolCalls?.[0]?.function?.name;
+    ketLuan = ten;
     if (ten) return (CODING_TOOL_NAMES as readonly string[]).includes(ten) ? ten : undefined;
     // Cắt khối nghĩ TRƯỚC khi hỏi "rỗng?": một chuỗi chỉ gồm `<think>…` bị cắt vì length là LƯỢT CỤT, không
     // phải lời "không dùng tool" (đúng lớp lỗi 8.4k: 9/12 "không tool" từng là rỗng bị cắt). Chữ này không
@@ -93,6 +102,24 @@ export async function hoiModelChonTool(question: string, hanGioMs = HAN_GIO_PHU_
     return undefined;
   } finally {
     if (henGio) clearTimeout(henGio);
+    try {
+      // import ĐỘNG: module này được thước đo (`eval-toolcall.mjs`) nạp riêng — không kéo cổng/DB vào lúc nạp.
+      const { ghiLuotNgoaiCong } = await import("../aiGateway");
+      ghiLuotNgoaiCong({
+        task: "intent",
+        auditTask: "kb_chon_tool",
+        model: ketQuaEngine?.modelId ?? null,
+        tokensIn: ketQuaEngine?.tokensPrompt,
+        tokensOut: ketQuaEngine?.tokensGenerated,
+        latencyMs: Date.now() - t0,
+        outcome: loi ? "error" : "ok",
+        thinking: false,
+        promptText: question,
+        responseText: ketLuan,
+      });
+    } catch {
+      /* ghi dấu vết hỏng không được làm hỏng bộ chọn tool */
+    }
   }
 }
 
