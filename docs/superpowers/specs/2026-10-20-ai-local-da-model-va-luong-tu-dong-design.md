@@ -682,6 +682,27 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   cùng `max_tokens` 16000, server ở bản có (a)(b)(c). **Cổng: on ≥ off + 4/72** (không đổi sau khi thấy số). Kiểm nhánh như lần 1
   (tắt mà có header ⇒ vứt; bật không header ⇒ vứt). Báo kèm: số vòng thật/lượt, tỉ lệ cứu được trên lượt có lỗi lần đầu (so M 13/16),
   > 120/300 s mỗi nhánh. Nhãn báo cáo `PLC-v1-ab-kiem-q36-27b-2`.
+- **Ablation `compile_st` trong vòng TÁC NHÂN (35B = model tác nhân sản phẩm), 12 bài ST × 2 lượt** (2026-10-22, báo cáo
+  `reports/AB-agent-cst-*`, gộp `so-sanh-ablation-agent.mjs`): TẮT 12/24 · BẬT 14/24 (cặp 3 vs 1); grader không biên dịch được
+  7/24 → 3/24; compile_st được gọi ở 24/24 lượt bật (74 lần). Nhiễu ghi rõ: 4/24 lượt bật chạy mã trước f024945d3; tt5-l1-bat chạy
+  lại sau 88db78df3 (lỗi câu chỉ dẫn tự hạ tự trị).
+- **ĐĂNG KÝ TRƯỚC — ablation tác nhân LƯỢT 3** (viết 2026-10-22 TRƯỚC khi chạy; dieu-phoi): cùng 12 bài, lượt 3 cho CẢ HAI nhánh
+  (thứ tự lượt lẻ tat→bat), server mã 8bfe341d7 (có thêm dự phòng `--ir`). Gộp 36 lượt/nhánh. **Cổng chính: bat ≥ tat + 3/36.**
+  Cổng PHỤ (chỉ BÁO, không quyết): số lượt grader không biên dịch được bat ≤ tat − 3/36 — cổng phụ do dữ liệu 2 lượt đầu GỢI Ý nên
+  KHÔNG được dùng một mình để bật cờ `agent`. Cờ `agent` giữ TẮT tới khi có kết quả.
+  **KẾT QUẢ (2026-10-22 14:30, 72 báo cáo, 35B):** TẮT 20/36 (tt 9 · tv 7 · ud 4 /12) · BẬT 23/36 (tt 10 · tv 8 · ud 5 /12) ⇒
+  **+3/36 — cổng chính ĐẠT đúng biên (23 ≥ 20 + 3)**. Cặp: bật đạt/tắt trượt 5 [tt5#1 #3, tv9#1 #2, ud5#3] · ngược lại 2 [tt10#2,
+  tv9#3]. Cổng phụ (chỉ báo): grader không biên dịch được 9 → 5 (≤ 9 − 3 ⇒ đạt). Riêng lượt 3: tắt 8/12 · bật 9/12. Chi phí: thời gian
+  trung vị 156 → 209 s (+34 %), token ra trung vị 30,2k → 41,1k (+36 %), dừng het-luot 3 + lap-lai 1 ở nhánh bật (model kẹt sửa).
+  Mã server: lượt 1–2 = 88db78df3 (4/24 lượt bật trước 08:10 là mã cũ hơn, đều biên dịch sạch), lượt 3 = 8bfe341d7 (có `--ir`);
+  khác nhau CHỈ khi RuSTy bị giết sớm — đếm trên 12 lượt bật của lượt 3: **0** lượt dính dự phòng `--ir`, 0 lượt không kiểm được.
+  **QUYẾT (dieu-phoi 2026-10-22):** BẬT `compile_st` cho tác nhân CHỈ ở dự án nhận diện là PLC — `AI_KIEM_BIEN_DICH_ST` không đặt
+  ⇒ mặc định `agent-plc` (đặt rõ `off`/danh sách khác ⇒ theo env; không sửa .env của chủ dự án); dự án không PLC: bộ tool + lời nhắc
+  GIỐNG TỪNG BYTE (lưới ghim). Trần `AI_COMPILE_ST_TRAN_MOI_LUOT` = 6 lần/lượt chạy (hàng rào chống kẹt vòng, không phải tuyên bố
+  chất lượng — chỉ BÁO số lần chạm trần ở ablation sau). Cái giá đã biết: +34 % thời gian, +36 % token trên dự án PLC.
+- **ĐĂNG KÝ TRƯỚC — tác nhân theo vai trò** (thiết kế `2026-10-22-tac-nhan-theo-vai-tro-design.md`, dieu-phoi duyệt kèm 4 chỉnh):
+  12 bài ST (cùng danh sách) × 2 lượt, vai trò `code` (35B) vs `code.plc` (27B, qua định tuyến mới). **Cổng: code.plc ≥ code + 2/24
+  VÀ trung vị thời gian ≤ 2×.** Không đạt ⇒ tác nhân giữ `code`. Chạy SAU A/B /v1 #2.
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;

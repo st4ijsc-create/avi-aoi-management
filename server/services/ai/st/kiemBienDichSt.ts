@@ -176,10 +176,29 @@ export async function kiemVaSuaST(y: TuyChonKiemST): Promise<KetQuaKiemBienDichS
   return kq({ trangThai: "con-loi", phuongNgu: dau.phuongNgu, soVong: daGoi, chanDoanCuoi: tot.chanDoan, cauTraLoiCuoi: tot.chu });
 }
 
-/** Cờ `AI_KIEM_BIEN_DICH_ST` = danh sách bề mặt (`v1`, `tro-ly`, `cmdk`) hoặc `off` (mặc định). */
+/**
+ * ★ Đợt 9 (2026-10-22, dieu-phoi — ablation tác nhân 36 lượt đạt cổng đăng ký trước) — giá trị MẶC ĐỊNH khi `AI_KIEM_BIEN_DICH_ST`
+ * KHÔNG đặt: `agent-plc` (lộ `compile_st` + luật 13 cho tác nhân, CHỈ ở dự án nhận diện là PLC). Mọi bề mặt khác (v1, tro-ly,
+ * cmdk) vẫn TẮT mặc định. Đặt rõ (`off`, danh sách khác) ⇒ theo env, không mặc định nào chen vào.
+ */
+export const KIEM_BIEN_DICH_ST_MAC_DINH = "agent-plc";
+
+function dsCoKiemBienDich(env: NodeJS.ProcessEnv): string[] {
+  return (env.AI_KIEM_BIEN_DICH_ST ?? KIEM_BIEN_DICH_ST_MAC_DINH).split(",").map((x) => x.trim().toLowerCase());
+}
+
+/** Cờ `AI_KIEM_BIEN_DICH_ST` = danh sách bề mặt (`v1`, `tro-ly`, `cmdk`, `agent`, `agent-plc`, `all`) hoặc `off`. */
 export function kiemBienDichBat(beMat: "v1" | "tro-ly" | "cmdk" | "agent", env: NodeJS.ProcessEnv = process.env): boolean {
-  const ds = (env.AI_KIEM_BIEN_DICH_ST ?? "off").split(",").map((x) => x.trim().toLowerCase());
+  const ds = dsCoKiemBienDich(env);
   return ds.includes(beMat) || ds.includes("all");
+}
+
+/** `compile_st` cho TÁC NHÂN: `moi-du-an` (agent/all) · `plc` (agent-plc — mặc định) · `tat`. */
+export function cheDoCompileStTacNhan(env: NodeJS.ProcessEnv = process.env): "moi-du-an" | "plc" | "tat" {
+  const ds = dsCoKiemBienDich(env);
+  if (ds.includes("agent") || ds.includes("all")) return "moi-du-an";
+  if (ds.includes("agent-plc")) return "plc";
+  return "tat";
 }
 
 /** Dòng ghi chú cho người dùng (không thay lặng lẽ). `null` = không hiển thị gì ("bo-qua"). */

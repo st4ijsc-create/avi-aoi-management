@@ -121,7 +121,8 @@ import { damBaoChiMucNen, phanGiaiChiMuc, type CongChiMucMa } from "./chiMucMaAg
 import { timTaiLieuMacDinh, type KhoTaiLieu, type TimTaiLieu } from "./timTaiLieuAgent";
 import { dinhDangKetQuaApi, traApiMacDinh, type NgonNguApi, type TraApi } from "../apiRef/traApi";
 import { goiYTraApiTuDauRa, tuTraApiBat } from "../apiRef/goiYLoiBienDich";
-import { kiemBienDichBat } from "../st/kiemBienDichSt";
+import { cheDoCompileStTacNhan } from "../st/kiemBienDichSt";
+import { laDuAnPlc } from "./nhanDienDuAnPlc";
 
 /** Lý do gắn vào audit của `confirmAction` cho một lượt ghi KHÔNG người bấm của chế độ `tu-dong`. */
 export const LY_DO_AGENT_TU_DONG = "AI_AGENT_TU_DONG" as const;
@@ -159,9 +160,22 @@ export function congCuBiAn(giaTri: string | undefined = process.env.AI_AGENT_AN_
 }
 
 /** ★ Đợt 9 — tool TUỲ CHỌN (`CONG_CU_TUY_CHON`) có được phơi ở lượt chạy này? Đọc TẠI CHỖ GỌI như `congCuBiAn`. */
-export function toolTuyChonBat(ten: string, env: NodeJS.ProcessEnv = process.env): boolean {
-  if (ten === "compile_st") return kiemBienDichBat("agent", env);
-  return false;
+/**
+ * `compile_st` (2026-10-22, dieu-phoi): `AI_KIEM_BIEN_DICH_ST` chứa `agent`/`all` ⇒ mọi dự án; `agent-plc` (MẶC ĐỊNH khi biến
+ * không đặt) ⇒ CHỈ dự án nhận diện là PLC (`nhanDienDuAnPlc.ts`); khác ⇒ tắt. Vắng `goc` ⇒ không coi là PLC.
+ */
+export function toolTuyChonBat(ten: string, env: NodeJS.ProcessEnv = process.env, goc?: string): boolean {
+  if (ten !== "compile_st") return false;
+  const cheDo = cheDoCompileStTacNhan(env);
+  if (cheDo === "moi-du-an") return true;
+  return cheDo === "plc" && !!goc && laDuAnPlc(goc);
+}
+
+/** ★ (2026-10-22, dieu-phoi) trần số lần `compile_st` MỖI lượt chạy — hàng rào chống kẹt vòng sửa (ablation: ud5 gọi 9 lần không sửa được). */
+export const TRAN_COMPILE_ST_MOI_LUOT_MAC_DINH = 6;
+export function tranCompileStMoiLuot(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.AI_COMPILE_ST_TRAN_MOI_LUOT);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : TRAN_COMPILE_ST_MOI_LUOT_MAC_DINH;
 }
 
 /** Cắt một chuỗi theo trần, có dấu cắt. */
@@ -442,6 +456,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   const timTaiLieu = p.timTaiLieu ?? timTaiLieuMacDinh;
   const traApi = p.traApi ?? traApiMacDinh;
   let seqDeXuatNho = 0;
+  let soLanCompileSt = 0;
   const executeDecision = p.executeDecision ?? executeDecisionGoc;
   const confirmAction = p.confirmAction ?? confirmActionGoc;
   const cancelAction = p.cancelAction ?? cancelActionGoc;
@@ -664,6 +679,18 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
    * ký là tiếng Việt cho người); từ chối hộp cát đi `ketQuaTuChoiDoc` (đã mang `textModel`). Chẩn đoán là DỮ LIỆU ⇒ làm sạch.
    */
   async function bienDichStCho(t: Record<string, unknown>): Promise<KetQuaTool> {
+    const tran = tranCompileStMoiLuot();
+    if (++soLanCompileSt > tran) {
+      // KHÔNG ném, KHÔNG qua bộ quét (chữ tin cậy của ta): hàng rào chống kẹt vòng, không phải phán quyết về mã.
+      return {
+        ok: false,
+        ma: "CHAM_TRAN_COMPILE_ST",
+        choModel:
+          `Compile limit reached (${tran} compiles in this run). Stop trying to fix compile errors; finish now and tell the user ` +
+          "which compile errors remain (from the last compile result).",
+        hienThi: { tool: "compile_st", chamTran: tran },
+      };
+    }
     const args: Record<string, unknown> = typeof t.path === "string" ? { path: t.path } : { code: String(t.code ?? "") };
     const { result, loi } = await chayDoc("kiem_bien_dich_st", args);
     if (!result) return { ok: false, ma: "LOI_TOOL", choModel: loi ?? "compile_st failed" };
@@ -694,14 +721,14 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     const nn = d.phuongNgu === "scl" ? "SCL normalised to ST, line numbers kept" : "ST";
     if (d.ok) return { ok: true, choModel: `Compiled OK with RuSTy (${nn}): no errors.`, hienThi };
     const dong = (d.chanDoan ?? []).map((c) => `${c.tep ?? "?"}:${c.dong ?? "?"}:${c.cot ?? "?"} ${c.ma ? `error[${c.ma}]` : "error"}: ${c.thongDiep}`);
-    return lamSachChoModel(
-      catDuoi(
-        `Compilation FAILED with RuSTy (${nn}): ${Number(d.soLoi ?? dong.length)} error(s).\n${dong.join("\n")}\n` +
-          "Fix every error, then call compile_st again.",
-        TRAN_KY_TU_DOC_MAC_DINH,
-      ),
+    // ⚠ (2026-10-22, ablation tác nhân: tt5 dừng 20 phút) — CHỈ chẩn đoán (dữ liệu từ trình biên dịch) đi qua bộ quét chỉ thị.
+    // Câu hướng dẫn của CHÍNH ta ("… call compile_st again") từng nằm TRONG khối được quét ⇒ bộ quét gắn `tool_call_directive`
+    // ⇒ lõi HẠ tự trị ⇒ mọi lượt ghi sau đó chờ duyệt người tới hết hạn. Câu ấy là văn bản tin cậy ⇒ gắn SAU khi làm sạch.
+    const sach = lamSachChoModel(
+      catDuoi(`Compilation FAILED with RuSTy (${nn}): ${Number(d.soLoi ?? dong.length)} error(s).\n${dong.join("\n")}`, TRAN_KY_TU_DOC_MAC_DINH),
       { ok: true, hienThi },
     );
+    return { ...sach, choModel: `${sach.choModel}\nFix every error, then compile the file again.` };
   }
 
   function deXuatNho(t: Record<string, unknown>, ctx: NguCanhThucThi): KetQuaTool {
@@ -1022,7 +1049,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   return {
     congCu(cheDo: CheDoAgent) {
       const an = congCuBiAn();
-      const ds = congCuTheoCheDo(cheDo, [...CONG_CU_TUY_CHON].filter((ten) => toolTuyChonBat(ten)));
+      const ds = congCuTheoCheDo(cheDo, [...CONG_CU_TUY_CHON].filter((ten) => toolTuyChonBat(ten, process.env, gocDuAn)));
       return an.size === 0 ? ds : ds.filter((t) => !an.has(t.function.name));
     },
     async chay(goi, ctx) {
@@ -1035,7 +1062,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   };
 
   async function chayMot(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
-    if (congCuBiAn().has(goi.ten) || (CONG_CU_TUY_CHON.has(goi.ten as never) && !toolTuyChonBat(goi.ten))) {
+    if (congCuBiAn().has(goi.ten) || (CONG_CU_TUY_CHON.has(goi.ten as never) && !toolTuyChonBat(goi.ten, process.env, gocDuAn))) {
       return { ok: false, ma: "CONG_CU_BI_AN", choModel: `Tool "${goi.ten}" is not available in this run. Use the tools you were given.` };
     }
     try {
