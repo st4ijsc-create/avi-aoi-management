@@ -726,6 +726,15 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   **QUYẾT (dieu-phoi 2026-10-23): BẬT MẶC ĐỊNH** — `AI_AGENT_THEO_VAI_TRO` vắng ⇒ bật; `false`/`off`/`0` ⇒ tắt (chủ dự án tắt bằng .env).
   Chi phí đã biết: thời gian lượt chạy dự án PLC ~1,56×; khe đang giữ 35B ⇒ lượt đầu chờ đổi khe ~60 s (doi-model đo 35 s nạp 27B + chờ).
   Lưới ghim ba nhánh (vắng/"1"/"false") + 2 đột biến đỏ.
+- **Chỉnh 2 — gán `code.software` (2026-10-23, dieu-phoi duyệt có điều kiện; điều kiện `GGUF_CODE_MODEL` = Qwen3.6-35B-A3B ĐÃ KIỂM ở cả hai
+  .env):** qua `datGanModel` (`scripts/ai-eval/dat-gan-vai-tro.mts`) — gán id 35 `code.software` global → `qwen3.6-35b-a3b@64k-nghi`, dự
+  phòng [`qwen3.6-27b@64k-nghi`], thay hàng env cũ. Định tuyến trên ảnh sổ thật: khoá+khe 35B ⇒ 35B gan-profile · khoá+khe 27B ⇒ 27B
+  du-phong · không khoá+khe 27B ⇒ 35B can-doi-khe. **Kiểm SỐNG `/v1 code.software` trên :3013 (khoá + `doi-model -GiuKhoa`):** lần đầu lộ
+  HAI lỗi sản phẩm, vá rồi đo lại: (1) lượt ĐẦU sau khi khe đổi NGOÀI tiến trình bị từ chối oan — `KheNang.dangGiu` chỉ làm mới khi có lượt
+  xin khe ⇒ định tuyến theo giá trị cũ (35B); lượt 2 sau 8 s chạy được ⇒ `lamMoiKheDangGiu()` trước định tuyến ở /v1, tác nhân, node AI
+  Luồng (3e12e9d4f); (2) `ai_gateway_metrics.model` của /v1 ghi model của bộ định tuyến CỔNG (env 35B) cả khi lượt chạy 27B ⇒ /v1 ghi
+  `modelId` đã định tuyến (2c84fc593). Đo lại (`tmp/kiem-gan-song-4.log` + metrics theo requestId): khe 35B ⇒ 35B; ngay sau đổi sang 27B
+  lượt 1 (3 s sau) và lượt 2 ⇒ **27B, cả hai ok**. Kết thúc :8091 = 35B.
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
