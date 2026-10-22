@@ -292,6 +292,7 @@ export async function* streamCodingGenerate(
   const moLuong = (tran: number) =>
     rutChuCoCanh(
       streamCodingModel({
+        auditTask: "kb_sinh_ma", // ★ Đợt 9 — bề mặt ở ai_llm_audit
         // ★ G4 — tầng model người dùng chọn cho lượt này (bộ chọn ở màn lập trình). Vắng ⇒ mặc định hệ.
         tacVu: (context as { modelTask?: unknown })?.modelTask,
         systemPrompt: heThong,

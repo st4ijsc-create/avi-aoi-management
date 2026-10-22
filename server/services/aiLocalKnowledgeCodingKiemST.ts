@@ -79,6 +79,7 @@ export function goiLaiBangModel(y: {
     const prompt = `${y.promptGoc}\n\n[Câu trả lời trước của bạn]\n${lanTruoc}\n\n[Phản hồi của trình biên dịch]\n${tinSua}`;
     const it = rutChuCoCanh(
       streamCodingModel({
+        auditTask: "kb_kiem_st_sua", // ★ Đợt 9 — lượt hỏi-lại của vòng kiểm biên dịch ST
         tacVu: y.tacVu,
         systemPrompt: y.heThong,
         prompt,

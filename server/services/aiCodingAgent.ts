@@ -214,9 +214,16 @@ export interface DungLuotModel {
   latencyMs: number;
   /** Trần ngữ cảnh (token) mà lượt này được cấp — để UI hiện "đã dùng / trần". */
   ctxMax: number | undefined;
+  /** Tầng định tuyến của cổng cho lượt này (`plan.decision.tier`) — để hàng audit phụ (vd. vòng kiểm biên dịch ST) mang CÙNG tầng. Không lên SSE. */
+  tier?: number;
 }
 
 export interface YeuCauSinhChu {
+  /**
+   * ★ Đợt 9 — nhãn BỀ MẶT cho vệt `ai_llm_audit.task` (varchar(32); `GatewayRequest.auditTask`): `kb_sinh_ma`, `kb_khoi_sua`,
+   * `kb_kiem_st_sua`… Vắng ⇒ như cũ (task thô `chat|code`). `ai_gateway_metrics.task` KHÔNG đổi.
+   */
+  auditTask?: string;
   /**
    * ★ G4 — tầng model người dùng chọn cho LƯỢT NÀY (`"auto"|"fast"|"code"`). Vắng ⇒ mặc định của hệ.
    * Giá trị đến từ client nên `chonTacVuModel` lọc qua danh sách TRẮNG; không nới quyền gì.
@@ -312,7 +319,7 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
   //   này với nửa của luồng kia.
   const cheBiMatNghi = new StreamingSecretRedactor();
 
-  const plan = await planInference({ task: tacVuModel(y.tacVu) as never, text: y.prompt, userId: y.userId });
+  const plan = await planInference({ task: tacVuModel(y.tacVu) as never, text: y.prompt, userId: y.userId, ...(y.auditTask ? { auditTask: y.auditTask } : {}) });
   if (y.nguyenVanPrompt === true && plan.safeText !== y.prompt) {
     plan.record({ latencyMs: 0, outcome: "error" });
     throw new Error("CODING_PROMPT_REDACTED");
@@ -322,6 +329,9 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
   let tokensIn = 0;
   let tokensOut = 0;
   let tokensReasoning: number | undefined;
+  // ★ Đợt 9 — chữ ĐÃ CHE đã phát (chỉ để BĂM ở `ai_llm_audit.responseSha256`; không lưu) + model THỰC trả lời (chunk `done`).
+  let daPhat = "";
+  let modelThuc: string | null = null;
   try {
     const { generateTextStream: ggufStream } = await import("./aiGgufEngine");
     for await (const chunk of ggufStream(
@@ -353,7 +363,10 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
         // `ai/thinkingStrip.ts`: cắt thẻ là phép XOÁ nên nó NỐI hai nửa một bí mật bị `<think>`
         // tách rời; bộ canh nội dung phải đứng CUỐI).
         const an = cheBiMat.push(catSuyLuan.push(chunk.token));
-        if (an) yield an;
+        if (an) {
+          if (daPhat.length < 262_144) daPhat += an;
+          yield an;
+        }
       } else if (chunk.type === "reasoning" && typeof chunk.token === "string" && chunk.token.length > 0) {
         // ★ F1 — suy luận sống, đã che bí mật, đi kiểu ĐỐI TƯỢNG (xem `ManhSuyLuan`).
         const an = cheBiMatNghi.push(chunk.token);
@@ -361,6 +374,7 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
       } else if (chunk.type === "done") {
         tokensIn = chunk.tokensPrompt ?? 0;
         tokensOut = chunk.tokensGenerated ?? 0;
+        if (typeof chunk.modelId === "string" && chunk.modelId) modelThuc = chunk.modelId.split(/[\\/]/).pop() ?? null;
         // ★ B7 — `undefined` giữ nguyên là "không đếm được" (đường in-process) — không ép về 0.
         tokensReasoning = typeof chunk.tokensReasoning === "number" ? chunk.tokensReasoning : undefined;
       } else if (chunk.type === "error") {
@@ -374,7 +388,10 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
     if (duoiNghi) yield { suyLuan: duoiNghi };
     const con = catSuyLuan.flush();
     const duoi = (con ? cheBiMat.push(con) : "") + cheBiMat.flush();
-    if (duoi) yield duoi;
+    if (duoi) {
+      if (daPhat.length < 262_144) daPhat += duoi;
+      yield duoi;
+    }
     const latencyMs = Date.now() - batDau;
     // ★ B7 — `thinking`: đã TẮT tường minh ⇒ false; còn lại chỉ dám nói "có nghĩ" khi ĐẾM được suy luận,
     //   không đếm được ⇒ null (không biết ≠ không nghĩ).
@@ -389,8 +406,12 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
       reasoningTokens: tokensReasoning ?? null,
       thinking,
       samplingProfile,
+      // ★ Đợt 9 — model THỰC (chunk `done`); vắng ⇒ cổng dùng `decision.modelId` như cũ. `responseText` chỉ để BĂM (đã che).
+      ...(modelThuc ? { model: modelThuc } : {}),
+      ...(daPhat ? { responseText: plan.sanitizeOutput(daPhat) } : {}),
     });
     y.onUsage?.({
+      tier: plan.decision.tier,
       // Cùng luật với sổ đo (`aiGateway.toRow`): không có id ⇒ "default", không để undefined lọt lên UI.
       modelId: plan.decision.modelId ?? "default",
       tokensIn,

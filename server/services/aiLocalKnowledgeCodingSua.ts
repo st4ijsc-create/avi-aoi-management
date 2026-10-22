@@ -967,6 +967,7 @@ export async function* motLuotModel(y: {
   const moLuong = (tatNghi: boolean) =>
     rutChuCoCanh(
       streamCodingModel({
+        auditTask: ("kb_" + y.loai.replace(/-/g, "_")).slice(0, 32), // ★ Đợt 9 — bề mặt ở ai_llm_audit (kb_khoi_sua, kb_sua_tep, kb_chon_tep…)
         systemPrompt: y.heThong,
         prompt: promptLuot,
         maxTokens: tranLuot,
