@@ -713,6 +713,16 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
 - **ĐĂNG KÝ TRƯỚC — tác nhân theo vai trò** (thiết kế `2026-10-22-tac-nhan-theo-vai-tro-design.md`, dieu-phoi duyệt kèm 4 chỉnh):
   12 bài ST (cùng danh sách) × 2 lượt, vai trò `code` (35B) vs `code.plc` (27B, qua định tuyến mới). **Cổng: code.plc ≥ code + 2/24
   VÀ trung vị thời gian ≤ 2×.** Không đạt ⇒ tác nhân giữ `code`. Chạy SAU A/B /v1 #2.
+  **KẾT QUẢ (2026-10-23 04:37, `tmp/do-ablation-vaitro.sh`, báo cáo `reports/AB-agent-vt-*`, gộp `so-sanh-ablation-agent.mjs --tien-to
+  AB-agent-vt-`; mã server ff338d42f ở cả hai khối — 5461dafea chỉ sửa bộ đo):** tat (cờ tắt, 35B) **15/24** (tt 8/8 · tv 4/8 · ud 3/8) ·
+  bat (`AI_AGENT_THEO_VAI_TRO=1`, dự án PLC ⇒ `code.plc` ⇒ 27B, 24/24 lượt `bat-dau.model` = code.plc/27B/gan-profile) **19/24** (tt 8/8 ·
+  tv 4/8 · ud 7/8) ⇒ **+4/24 ≥ +2 — CỔNG ĐẠT**; trung vị thời gian 177 → 276 s = **1,56× ≤ 2× — ĐẠT**. Cặp: bật đạt/tắt trượt 4 (ud10#2,
+  ud5#1, ud5#2, ud8#2) · ngược lại **0**. Token ra trung vị 35,6k → 17,3k (27B nghĩ ít hơn); compile_st 82 → 64 lần; không build được ở
+  máy chấm 3 · 3; dừng khác hoàn-thành: tắt 5 (het-token 2, lap-lai 2, het-luot 1) · bật 2 (lap-lai 1, het-gio 1 — trần client 40 phút).
+  Nhiễu đã biết: thiết kế KHỐI (bat 23:57–02:50, tat 02:53–04:37 — nhiệt/cache/giờ không tách được khỏi nhánh). Kiểm trôi TRONG khối:
+  tỉ lệ thời gian lượt 2/lượt 1 cùng bài trung vị 0,87 (bat) · 1,08 (tat), biên 0,28–2,71 (nhiễu từng bài lớn, không xu hướng); ĐẠT
+  lượt 1→2: bat 9→10, tat 8→7. :3013 chết lúc boot: khối bat 1 lần (thử lại lên), khối tat 0. Một lượt tat đầu bị BỘ ĐO vứt oan (kiểm
+  "tat mà compile_st chạy" của ablation cũ — sửa 5461dafea, chạy lại; không có báo cáo nào bị ghi đè). Quyết định bật cờ: dieu-phoi.
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
