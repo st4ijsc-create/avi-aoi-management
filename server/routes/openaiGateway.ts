@@ -83,7 +83,7 @@ import { stripThinking, StreamingThinkingStripper } from "../services/ai/thinkin
 // fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
 import { defaultModelBasename, resolveLogicalModel, toBasename } from "../services/ai/modelResolver";
 import { kiemModelV1, thongDiepLoiChoKhachV1 } from "../services/ai/kiemModelV1";
-import { kiemBienDichBat, kiemVaSuaST, nhanKiemBienDich, tranMsVongSuaST, type KetQuaKiemBienDichST } from "../services/ai/st/kiemBienDichSt";
+import { cheDoKiemBienDichV1, kiemVaSuaST, nhanKiemBienDich, tranMsVongSuaST, type KetQuaKiemBienDichST } from "../services/ai/st/kiemBienDichSt";
 import { trichMaST } from "../services/ai/st/trichMaST";
 import { chayVoiTokenKhe, chonModelKhiVuotTran, tokenKheHienTai, vuotTranDoiKhe } from "../services/ai/soModel/tranDoiKheToken";
 import { laModelKheNangPhu, modelNhaKheNang } from "../services/ai/soModel/tapKheNang";
@@ -393,8 +393,14 @@ function apTranDoiKhe(res: Response, modelId: string | undefined): string | unde
  * ★★ Đợt 9 — VÒNG KIỂM BIÊN DỊCH ST (`services/ai/st/kiemBienDichSt.ts`) cho /v1: chỉ khi cờ `AI_KIEM_BIEN_DICH_ST` có `v1`,
  * vai trò SAU định tuyến là `code.plc`, không phải lượt tool, và client không tắt (`st4i_kiem_bien_dich: false`).
  */
-function nenKiemBienDichV1(modelLabel: string, body: Record<string, unknown>, coTool: boolean): boolean {
-  return kiemBienDichBat("v1") && modelLabel.trim().toLowerCase() === "code.plc" && !coTool && body.st4i_kiem_bien_dich !== false;
+function nenKiemBienDichV1(modelLabel: string, body: Record<string, unknown>, coTool: boolean, stream: boolean): boolean {
+  if (modelLabel.trim().toLowerCase() !== "code.plc" || coTool) return false;
+  // ★ (2026-10-22, dieu-phoi) mặc định env không đặt = `chi-stream`: non-stream chỉ khi khách opt-in (`st4i_kiem_bien_dich:true`)
+  //   — A/B #2: vòng bật đẩy 10 % lượt quá 300 s ⇒ khách non-stream có trần header 300 s bị cắt (xem `cheDoKiemBienDichV1`).
+  const cheDo = cheDoKiemBienDichV1();
+  if (cheDo === "bat") return body.st4i_kiem_bien_dich !== false;
+  if (cheDo === "chi-stream") return stream ? body.st4i_kiem_bien_dich !== false : body.st4i_kiem_bien_dich === true;
+  return false;
 }
 
 /** Giá trị header `x-st4i-bien-dich` (nhánh không stream). */
@@ -1181,7 +1187,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         // tối đa 2 vòng), phát phần BỔ SUNG rồi mới finish_reason + [DONE] (client OpenAI dừng đọc ở finish_reason —
         // dieu-phoi 2026-10-21). Trong lúc chờ phát keep-alive (chú thích SSE) để proxy không cắt. Không có mã ST ⇒ không phát gì.
         let auditKiem: string | undefined;
-        if (nenKiemBienDichV1(modelLabel, body, !!yeuCauTool.tools) && outcome === "ok" && !daPhatToolCall && !biCat && !res.destroyed) {
+        if (nenKiemBienDichV1(modelLabel, body, !!yeuCauTool.tools, true) && outcome === "ok" && !daPhatToolCall && !biCat && !res.destroyed) {
           const giuSong = setInterval(() => {
             if (!res.destroyed) res.write(": kiem-bien-dich-st\n\n");
           }, 5_000);
@@ -1310,7 +1316,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // header `x-st4i-bien-dich`. Không có mã ST ⇒ nội dung nguyên vẹn, header `ok=skip`.
       let noiDungRa = chatHienThi;
       let auditKiemMotLan: string | undefined;
-      if (nenKiemBienDichV1(modelLabel, body, !!yeuCauTool.tools) && !toolCallsRa.length && result.finishReason !== "length") {
+      if (nenKiemBienDichV1(modelLabel, body, !!yeuCauTool.tools, false) && !toolCallsRa.length && result.finishReason !== "length") {
         try {
           const kq = await kiemVaSuaST({
             cauTraLoi: chatHienThi,
