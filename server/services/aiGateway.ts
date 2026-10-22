@@ -1225,7 +1225,9 @@ export function ghiLuotNgoaiCong(o: LuotNgoaiCong): void {
   try {
     const req = { task: o.task, userId: o.userId ?? undefined, text: "", ...(o.auditTask ? { auditTask: o.auditTask } : {}) } as GatewayRequest;
     const tier = Math.max(0, Math.min(4, Math.trunc(o.tier ?? 0))) as RouteDecision["tier"];
-    const decision = { tier, modelId: o.model || undefined, requiresHitl: false, maxTokens: 0, temperature: 0, jsonMode: false, reason: "ngoai-cong (ghiLuotNgoaiCong)" } as RouteDecision;
+    // cùng quy ước basename KHÔNG .gguf như bộ định tuyến / `ai_gateway_metrics.model`
+    const model = o.model ? String(o.model).split(/[\\/]/).pop()!.replace(/\.gguf$/i, "") || null : null;
+    const decision = { tier, modelId: model || undefined, requiresHitl: false, maxTokens: 0, temperature: 0, jsonMode: false, reason: "ngoai-cong (ghiLuotNgoaiCong)" } as RouteDecision;
     const outcome = o.outcome ?? "ok";
     if (!o.chiNhatKy) {
       enqueue(
@@ -1237,7 +1239,7 @@ export function ghiLuotNgoaiCong(o: LuotNgoaiCong): void {
           reasoningTokens: o.reasoningTokens,
           thinking: o.thinking,
           samplingProfile: o.samplingProfile,
-          ...(o.model ? { model: o.model } : {}),
+          ...(model ? { model } : {}),
         }),
       );
     }
@@ -1246,7 +1248,7 @@ export function ghiLuotNgoaiCong(o: LuotNgoaiCong): void {
       responseText: o.responseText ? safeApplyOutput(o.responseText).text : undefined,
       latencyMs: o.latencyMs,
       auditSnippet: o.auditSnippet,
-      model: o.model ?? null,
+      model,
     });
   } catch (err) {
     console.warn("[aiGateway] ghiLuotNgoaiCong lỗi (bỏ qua, không ảnh hưởng đường gọi):", (err as Error)?.message ?? err);

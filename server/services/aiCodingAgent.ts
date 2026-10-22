@@ -374,7 +374,7 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
       } else if (chunk.type === "done") {
         tokensIn = chunk.tokensPrompt ?? 0;
         tokensOut = chunk.tokensGenerated ?? 0;
-        if (typeof chunk.modelId === "string" && chunk.modelId) modelThuc = chunk.modelId.split(/[\\/]/).pop() ?? null;
+        if (typeof chunk.modelId === "string" && chunk.modelId) modelThuc = (chunk.modelId.split(/[\\/]/).pop() ?? "").replace(/\.gguf$/i, "") || null; // cùng quy ước basename KHÔNG .gguf của bộ định tuyến
         // ★ B7 — `undefined` giữ nguyên là "không đếm được" (đường in-process) — không ép về 0.
         tokensReasoning = typeof chunk.tokensReasoning === "number" ? chunk.tokensReasoning : undefined;
       } else if (chunk.type === "error") {
