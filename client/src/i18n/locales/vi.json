@@ -21329,7 +21329,12 @@
         "dangLam": "đang làm",
         "xong": "xong"
       },
-      "xungDot": "Xung đột — KHÔNG ghi đè ({{n}} tệp đã bị sửa tiếp sau lượt chạy):"
+      "xungDot": "Xung đột — KHÔNG ghi đè ({{n}} tệp đã bị sửa tiếp sau lượt chạy):",
+      "compileSt": {
+        "sach": "biên dịch sạch",
+        "loi": "{{n}} lỗi",
+        "chuaKiem": "chưa kiểm được"
+      }
     },
     "duanCaNhan": {
       "err": {
@@ -21560,6 +21565,14 @@
         "OCR_KHONG_DOC_DUOC": "Không đọc được chữ trong ảnh.",
         "OCR_RONG": "Ảnh không có chữ đọc được."
       }
+    },
+    "kiemBienDich": {
+      "dangKiem": "Đang biên dịch thử mã ST (RuSTy)…",
+      "sach": "Biên dịch sạch (RuSTy): không lỗi.",
+      "daSua": "Đã tự sửa {{k}} lỗi biên dịch (RuSTy) sau {{v}} vòng — bản hiển thị là bản đã sửa.",
+      "xemBanDau": "Xem bản đầu (trước khi sửa)",
+      "conLoi": "Mã ST còn {{n}} lỗi biên dịch (RuSTy) sau {{v}} vòng tự sửa:",
+      "khongKiemDuoc": "Chưa kiểm biên dịch được ({{lyDo}})."
     }
   },
   "masterDataCol": {

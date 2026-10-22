@@ -122,6 +122,8 @@ export function thamSoChinh(ten: string, thamSo: Record<string, unknown>): strin
   if (ten === "search_docs") return [chuoi(ts.query), chuoi(ts.corpus)].filter(Boolean).join(" · ");
   if (ten === "remember") return chuoi(ts.note) ?? "";
   if (ten === "lookup_api") return [chuoi(ts.name), chuoi(ts.language)].filter(Boolean).join(" · ");
+  // ★★ Đợt 9 — compile_st: `path` (tệp .st/.scl) hoặc mã dán thẳng (`code`, không hiện nội dung — chỉ dấu "code").
+  if (ten === "compile_st") return chuoi(ts.path) ?? (chuoi(ts.code) ? "code" : "");
   if (ten === "todo_write") return Array.isArray(ts.todos) ? String(ts.todos.length) : "";
   return chuoi(ts.path) ?? "";
 }

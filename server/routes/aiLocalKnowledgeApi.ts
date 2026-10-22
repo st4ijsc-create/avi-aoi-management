@@ -678,6 +678,10 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
           case "reasoning":
             send({ type: "reasoning", token: evt.token });
             break;
+          // ★★ Đợt 9 — vòng kiểm biên dịch ST (trợ lý / Cmd+K): chỉ báo + kết cục; cờ tắt ⇒ service không phát.
+          case "kiem_bien_dich":
+            send({ type: "kiem_bien_dich", phase: evt.phase, ...(evt.ketQua ? { ketQua: evt.ketQua } : {}) });
+            break;
           case "usage":
             send({
               type: "usage",

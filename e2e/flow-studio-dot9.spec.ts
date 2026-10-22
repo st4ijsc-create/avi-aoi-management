@@ -328,3 +328,63 @@ test("9 — Trung tâm Model: bảng lượt đo đánh dấu hồ sơ ĐANG GÁ
   await form.locator('select[name="mode"]').selectOption("thu");
   await expect(form.getByRole("button", { name: "Set binding" })).toBeEnabled();
 });
+
+test("10 — trợ lý lập trình: nhãn kiểm biên dịch ST (AI giả qua SSE) — 'đã tự sửa K lỗi' + xem bản đầu + khối 'Bản đã sửa sau biên dịch'; còn lỗi ⇒ liệt kê", async ({ page }) => {
+  await dangNhap(page, fx.admin, "en");
+  const sse = (...su: object[]) => su.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
+  const FB_SAI = "FUNCTION_BLOCK A\n  y := x AND ;\nEND_FUNCTION_BLOCK";
+  const kich = {
+    daSua: sse(
+      { type: "meta", intent: "general", language: "en", confidence: 1, citations: [] },
+      { type: "token", token: "Here is the block.\n```st\n" + FB_SAI + "\n```" },
+      { type: "kiem_bien_dich", phase: "dang-kiem" },
+      { type: "kiem_bien_dich", phase: "xong", ketQua: { trangThai: "da-sua", lyDo: null, phuongNgu: "st", soVong: 1, soLoiDaSua: 2, chanDoan: [], cauTraLoiDau: "```st\n" + FB_SAI + "\n```", msThem: 900 } },
+      { type: "token", token: "\n\n---\n**Version corrected after compiling** — Auto-fixed 2 compile error(s) (RuSTy) after 1 round(s).\n\n```st\nFUNCTION_BLOCK A\n  y := x;\nEND_FUNCTION_BLOCK\n```" },
+      { type: "done", provider: "ollama", cached: false, followUpSuggestions: [], answer: "", structured: {} },
+    ),
+    conLoi: sse(
+      { type: "meta", intent: "general", language: "en", confidence: 1, citations: [] },
+      { type: "token", token: "Another block.\n```st\n" + FB_SAI + "\n```" },
+      { type: "kiem_bien_dich", phase: "xong", ketQua: { trangThai: "con-loi", lyDo: null, phuongNgu: "st", soVong: 2, soLoiDaSua: 0, chanDoan: [{ tep: "mã", dong: 2, cot: 14, ma: "E007", thongDiep: "Unexpected token ';'" }], cauTraLoiDau: null, msThem: 1200 } },
+      { type: "done", provider: "ollama", cached: false, followUpSuggestions: [], answer: "", structured: {} },
+    ),
+  };
+  let luot = 0;
+  await page.route("**/api/ai/local-kb/stream", async (route) => {
+    const body = luot++ === 0 ? kich.daSua : kich.conLoi;
+    await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" }, body });
+  });
+  await page.goto(`${base}/ai-coding-workspace`);
+  const o = page.locator("textarea").last();
+  await expect(o).toBeVisible({ timeout: 60_000 });
+
+  await o.fill("write a PLC function block");
+  await o.press("Enter");
+  const the = page.getByTestId("kiem-bien-dich");
+  await expect(the).toBeVisible({ timeout: 30_000 });
+  await expect(the).toHaveAttribute("data-trang-thai", "da-sua");
+  await expect(the).toContainText("Auto-fixed 2 compile error(s) (RuSTy) after 1 round(s)"); // nhãn do CLIENT dựng (en), không khoá thô
+  await expect(page.getByText("Version corrected after compiling")).toBeVisible(); // khối bổ sung trong chat
+  await page.getByTestId("kiem-bien-dich-xem-dau").click();
+  const banDau = page.getByTestId("kiem-bien-dich-ban-dau");
+  await expect(banDau).toContainText("y := x AND ;");
+  // render bằng khối mã của chat (không phải markdown thô): có khối code-block, không còn chữ rào ```
+  await expect(banDau.locator('[data-streamdown="code-block"]')).toHaveCount(1);
+  await expect(banDau.locator('[data-streamdown="code-block"] .animate-spin')).toHaveCount(0, { timeout: 45_000 });
+  expect(await banDau.innerText()).not.toContain("```");
+  // Khối mã trong chat do Streamdown vẽ, bộ tô màu cú pháp TẢI LƯỜI (Suspense + spinner): chờ nó xong rồi mới chụp / khẳng định có mã thật.
+  const khoiMa = page.locator('[data-streamdown="code-block"]');
+  await expect(khoiMa.first()).toBeVisible();
+  await expect(page.locator('[data-streamdown="code-block"] .animate-spin')).toHaveCount(0, { timeout: 45_000 });
+  await expect(khoiMa.filter({ hasText: "y := x;" })).toHaveCount(1); // khối "đã sửa" hiện mã đúng, không kẹt spinner
+  await expect(khoiMa.first()).toContainText("y := x AND ;"); // khối đầu (bản sai) cũng hiện mã
+  await banDau.scrollIntoViewIfNeeded();
+  if (process.env.FS_SHOT_DIR) await page.screenshot({ path: `${process.env.FS_SHOT_DIR}/10a-da-sua.png` });
+
+  await o.fill("another one");
+  await o.press("Enter");
+  await expect(the).toHaveAttribute("data-trang-thai", "con-loi", { timeout: 30_000 });
+  await expect(page.getByTestId("kiem-bien-dich-loi")).toContainText("mã:2:14 error[E007]: Unexpected token ';'");
+  expect(await the.innerText()).not.toMatch(/repoWs\.|kiemBienDich/); // không khoá thô
+  if (process.env.FS_SHOT_DIR) await page.screenshot({ path: `${process.env.FS_SHOT_DIR}/10b-con-loi.png` });
+});

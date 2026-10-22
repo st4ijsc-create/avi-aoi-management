@@ -263,6 +263,8 @@ export interface KbStreamCallbacks {
    * Thuần hiển thị (bảng "model đang nghĩ"); KHÔNG nối vào câu trả lời, KHÔNG lưu phiên.
    */
   onReasoning?: (text: string) => void;
+  /** ★★ Đợt 9 — vòng kiểm biên dịch ST (cờ AI_KIEM_BIEN_DICH_ST; tắt ⇒ không bao giờ gọi). Thuần hiển thị. */
+  onKiemBienDich?: (k: KbKiemBienDich) => void;
   /** ★ F6 — gọi đúng một lần khi có `done`: `degraded` = server đã TỪ CHỐI/THOÁI HOÁ và thay câu trả lời. */
   onDone?: (info: { degraded: boolean }) => void;
 }
@@ -309,6 +311,21 @@ export function bocUsage(p: Record<string, unknown>): KbUsageLuot | null {
     samplingProfile: typeof p.samplingProfile === "string" ? p.samplingProfile : "?",
     latencyMs,
     ...(ctxMax !== undefined && ctxMax > 0 ? { ctxMax } : {}),
+  };
+}
+
+/** ★★ Đợt 9 — sự kiện SSE `kiem_bien_dich` (vòng kiểm biên dịch ST): chỉ báo tiến trình / kết cục. Gương của `KiemBienDichDto` (server). */
+export interface KbKiemBienDich {
+  phase: "dang-kiem" | "xong";
+  ketQua?: {
+    trangThai: "sach" | "da-sua" | "con-loi" | "khong-kiem-duoc" | "bo-qua";
+    lyDo: string | null;
+    phuongNgu: "st" | "scl" | null;
+    soVong: number;
+    soLoiDaSua: number;
+    chanDoan: { tep: string | null; dong: number | null; cot: number | null; ma: string | null; thongDiep: string }[];
+    cauTraLoiDau: string | null;
+    msThem: number;
   };
 }
 
@@ -470,6 +487,7 @@ export function useKbChatStream() {
                 // dùng THẤY đang ở vòng mấy trên một trần 180 s.
                 round?: number;
                 phase?: "dang_goi" | "xong" | "dung";
+                ketQua?: KbKiemBienDich["ketQua"];
                 elapsedMs?: number;
                 stop?: string;
               };
@@ -521,6 +539,12 @@ export function useKbChatStream() {
                 const snapshotNghi = suyLuanTichLuy;
                 setStreamingReasoning(snapshotNghi);
                 callbacks?.onReasoning?.(snapshotNghi);
+              } else if (payload.type === "kiem_bien_dich") {
+                // ★★ Đợt 9 — thuần hiển thị: không chạm `accumulated` (câu trả lời); khối bổ sung đã nằm trong `token`.
+                const kb = payload as { phase?: string; ketQua?: KbKiemBienDich["ketQua"] };
+                if (kb.phase === "dang-kiem" || kb.phase === "xong") {
+                  callbacks?.onKiemBienDich?.({ phase: kb.phase, ...(kb.ketQua ? { ketQua: kb.ketQua } : {}) });
+                }
               } else if (payload.type === "usage") {
                 // ★ F2 — số đo lượt model; gói hỏng ⇒ bỏ qua, không dựng ô 0.
                 const u = bocUsage(payload as Record<string, unknown>);

@@ -49,6 +49,7 @@ import { thuThapNguCanhMa } from "./ai/codingRepoContext";
 import type { KbLanguage, KbQueryContext, StreamEvent } from "./aiLocalKnowledgeService";
 // ★ B8 — các câu thông báo ba ngôn ngữ đã tách sang `./aiLocalKnowledgeCodingThongBao.ts` (xem docblock đầu tệp đó).
 import { codingErrorMessage, codingGoiYTaoTepMessage, codingKhoiHongMessage, codingKhongCoKhoiMaMessage, codingKhongDoiMessage, codingKhongTuSuaMessage, codingLoDungMessage, codingLoKhongDoiMessage, codingModelErrorMessage, codingQuaNhieuTepMessage, codingTaoRongMessage, codingTepDaTonTaiMessage, codingThoaiHoaMessage, codingTieuDeTepMessage } from "./aiLocalKnowledgeCodingThongBao";
+import { chayKiemBienDichST, goiLaiSuaTep, boTepTuCauTraLoi } from "./aiLocalKnowledgeCodingKiemST";
 import { TRAN_TEP_MOT_LUOT_SUA, TRAN_TOKEN_TAO_TEP, doneSinhMa, laYDinhSuaTep, nguCanhDuAnChoPrompt } from "./aiLocalKnowledgeCoding";
 
 
@@ -101,8 +102,24 @@ export async function* streamCodingEdit(
     return true;
   }
 
+  // ★★ Đợt 9 — Cmd+K / sửa tại chỗ trên tệp .st/.scl: biên dịch thử bản `modified` TRƯỚC khi dựng thẻ diff (cờ AI_KIEM_BIEN_DICH_ST=cmdk|all;
+  // TẮT ⇒ không một byte nào đổi). Đã sửa ⇒ thẻ diff dựng từ bản đã sửa (diff vẫn so với tệp THẬT trên đĩa); client có "xem bản đầu".
+  let banModified = bs.modified;
+  if (/\.(st|scl)$/i.test(bs.relPath)) {
+    const nhan = /\.scl$/i.test(bs.relPath) ? "scl" : "st";
+    const kiem = yield* chayKiemBienDichST({
+      beMat: "cmdk",
+      cauTraLoi: "```" + nhan + "\n" + bs.modified.replace(/\n?$/, "\n") + "```",
+      goiLai: goiLaiSuaTep({ question, relPath: bs.relPath, userId: execCtx?.user?.id, tacVu: (context as { modelTask?: unknown })?.modelTask, signal: execCtx?.signal }),
+      signal: execCtx?.signal,
+    });
+    if (kiem && (kiem.trangThai === "da-sua" || kiem.trangThai === "con-loi") && kiem.cauTraLoiCuoi !== kiem.cauTraLoiDau) {
+      const moi = boTepTuCauTraLoi(kiem.cauTraLoiCuoi);
+      if (moi) banModified = dongBoXuongDong(bs.original, bs.modified.endsWith("\n") ? moi : moi.replace(/\n$/, ""));
+    }
+  }
   const ad = await executeDecision(
-    { tool: "apply_diff", args: { path: bs.relPath, original: bs.original, modified: bs.modified } },
+    { tool: "apply_diff", args: { path: bs.relPath, original: bs.original, modified: banModified } },
     execCtx!,
   );
   if (ad.pendingAction) {

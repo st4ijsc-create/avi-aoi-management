@@ -3479,6 +3479,11 @@ export type StreamEvent =
    * mật. Client hiện ở bảng "model đang nghĩ", KHÔNG nối vào câu trả lời, KHÔNG lưu phiên. Consumer cũ bỏ qua kiểu lạ.
    */
   | { type: "reasoning"; token: string }
+  /**
+   * ★★ Đợt 9 (2026-10-21) — vòng KIỂM BIÊN DỊCH ST của trợ lý / Cmd+K (cờ `AI_KIEM_BIEN_DICH_ST`, mặc định tắt ⇒ không bao giờ phát).
+   * `dang-kiem` = chỉ báo tiến trình; `xong` mang số liệu để CLIENT dựng nhãn (vi/en/zh). Thuần bổ sung; consumer cũ bỏ qua.
+   */
+  | { type: "kiem_bien_dich"; phase: "dang-kiem" | "xong"; ketQua?: import("./aiLocalKnowledgeCodingKiemST").KiemBienDichDto }
   | {
       type: "done";
       provider: "ollama" | "extractive" | "tool";
