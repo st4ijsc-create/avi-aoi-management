@@ -696,7 +696,10 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   trung vị 156 → 209 s (+34 %), token ra trung vị 30,2k → 41,1k (+36 %), dừng het-luot 3 + lap-lai 1 ở nhánh bật (model kẹt sửa).
   Mã server: lượt 1–2 = 88db78df3 (4/24 lượt bật trước 08:10 là mã cũ hơn, đều biên dịch sạch), lượt 3 = 8bfe341d7 (có `--ir`);
   khác nhau CHỈ khi RuSTy bị giết sớm — đếm trên 12 lượt bật của lượt 3: **0** lượt dính dự phòng `--ir`, 0 lượt không kiểm được.
-  Quyết định bật cờ `agent`: dieu-phoi.
+  **QUYẾT (dieu-phoi 2026-10-22):** BẬT `compile_st` cho tác nhân CHỈ ở dự án nhận diện là PLC — `AI_KIEM_BIEN_DICH_ST` không đặt
+  ⇒ mặc định `agent-plc` (đặt rõ `off`/danh sách khác ⇒ theo env; không sửa .env của chủ dự án); dự án không PLC: bộ tool + lời nhắc
+  GIỐNG TỪNG BYTE (lưới ghim). Trần `AI_COMPILE_ST_TRAN_MOI_LUOT` = 6 lần/lượt chạy (hàng rào chống kẹt vòng, không phải tuyên bố
+  chất lượng — chỉ BÁO số lần chạm trần ở ablation sau). Cái giá đã biết: +34 % thời gian, +36 % token trên dự án PLC.
 - **ĐĂNG KÝ TRƯỚC — tác nhân theo vai trò** (thiết kế `2026-10-22-tac-nhan-theo-vai-tro-design.md`, dieu-phoi duyệt kèm 4 chỉnh):
   12 bài ST (cùng danh sách) × 2 lượt, vai trò `code` (35B) vs `code.plc` (27B, qua định tuyến mới). **Cổng: code.plc ≥ code + 2/24
   VÀ trung vị thời gian ≤ 2×.** Không đạt ⇒ tác nhân giữ `code`. Chạy SAU A/B /v1 #2.
