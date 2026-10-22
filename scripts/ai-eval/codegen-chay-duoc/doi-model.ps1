@@ -67,7 +67,11 @@ while ((Get-Date) -lt $het) {
 $ten = [System.IO.Path]::GetFileNameWithoutExtension($Model)
 $thamSo = @('-m', $Model, '--host', '127.0.0.1', '--port', '8091', '-c', "$Ctx",
           '-np', '1', '-fa', 'on', '-ngl', '999', '-ctk', 'f16', '-ctv', 'f16',
-          '--slots', '--metrics', '--no-webui')
+          '--slots', '--metrics', '--no-webui',
+          # Dot 9 (2026-10-22, dieu-phoi duyet): tran prompt-cache tren RAM MAY = 4 GB. Su co 18:21: llama-server 27B chet giua luc
+          # luu prompt cache (bo nho tam ~5,9 GB/muc) khi Windows het commit ("Virtual Memory Minimum Too Low"). Chi anh huong
+          # TOC DO (dung lai KV), KHONG anh huong dau ra.
+          '--cache-ram', '4096')
 if ($NganSachNghi -ge 0) { $thamSo += @('--reasoning-budget', "$NganSachNghi") }
 $thamSo += $ThemArgs
 Start-Process -FilePath $exe -ArgumentList $thamSo -WindowStyle Hidden `
