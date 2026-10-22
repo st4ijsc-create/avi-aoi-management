@@ -64,6 +64,16 @@ import { TRAN_TEP_MOT_LUOT_SUA, TRAN_TOKEN_TAO_TEP, doneSinhMa, laYDinhSuaTep, n
  * Trả `true` ⇔ đã trả lời xong (kể cả bằng một câu từ chối trung thực). `false` ⇒ người gọi đi tiếp
  * xuống đường tool tất định (đọc tệp) như trước — KHÔNG im lặng, KHÔNG mất lượt.
  */
+/** Chuyển tiếp mọi sự kiện của `g` NGUYÊN VẸN, chỉ "liếc" sự kiện `usage` (mang `tier`/`modelId` của lượt model) và trả lại giá trị cuối. */
+async function* theoDoiUsage<T>(g: AsyncGenerator<StreamEvent, T>, ghi: (u: { tier?: number; modelId?: string }) => void): AsyncGenerator<StreamEvent, T> {
+  for (;;) {
+    const n = await g.next();
+    if (n.done) return n.value;
+    if (n.value.type === "usage") ghi(n.value as { tier?: number; modelId?: string });
+    yield n.value;
+  }
+}
+
 export async function* streamCodingEdit(
   question: string,
   duong: string,
@@ -85,17 +95,24 @@ export async function* streamCodingEdit(
    */
   khoiBaiHoc = "",
 ): AsyncGenerator<StreamEvent, boolean> {
-  const bs = yield* chuanBiBanSuaMotTep({
-    question,
-    duong,
-    language,
-    context,
-    execCtx,
-    history,
-    yDinhTao,
-    khoiBaiHoc,
-    phatTheTool: true,
-  });
+  // ★ Đợt 9 — nhớ tầng/model của lượt chính (từ sự kiện `usage` đi qua) để hàng audit `kb_kiem_st` mang cùng bối cảnh.
+  let usageLuot: { tier?: number; modelId?: string } | undefined;
+  const bs = yield* theoDoiUsage(
+    chuanBiBanSuaMotTep({
+      question,
+      duong,
+      language,
+      context,
+      execCtx,
+      history,
+      yDinhTao,
+      khoiBaiHoc,
+      phatTheTool: true,
+    }),
+    (u) => {
+      usageLuot = u;
+    },
+  );
   if (bs.kq === "bo_qua") return false;
   if (bs.kq !== "ok") {
     yield doneSinhMa(bs.traLoi, bs.provider, bs.degraded);
@@ -112,6 +129,7 @@ export async function* streamCodingEdit(
       cauTraLoi: "```" + nhan + "\n" + bs.modified.replace(/\n?$/, "\n") + "```",
       goiLai: goiLaiSuaTep({ question, relPath: bs.relPath, userId: execCtx?.user?.id, tacVu: (context as { modelTask?: unknown })?.modelTask, signal: execCtx?.signal }),
       signal: execCtx?.signal,
+      boiCanh: { tier: usageLuot?.tier, model: usageLuot?.modelId, userId: execCtx?.user?.id },
     });
     if (kiem && (kiem.trangThai === "da-sua" || kiem.trangThai === "con-loi") && kiem.cauTraLoiCuoi !== kiem.cauTraLoiDau) {
       const moi = boTepTuCauTraLoi(kiem.cauTraLoiCuoi);

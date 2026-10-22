@@ -1179,3 +1179,76 @@ function emptyDbStats(): GatewayStats {
 export function isAbEnabled(): boolean {
   return abSplit() > 0;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★ Đợt 9 (2026-10-22) — `ghiLuotNgoaiCong`: GHI sổ đo + nhật ký cho lượt model đi NGOÀI cổng
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+/** Một lượt model đã chạy NGOÀI `planInference` (gọi thẳng engine). Mọi chữ truyền vào chỉ để BĂM — không bao giờ được lưu. */
+export interface LuotNgoaiCong {
+  /** `ai_gateway_metrics.task` (một `TaskKind` hợp lệ) và, mặc định, `ai_llm_audit.task`. */
+  task: TaskKind;
+  /** Nhãn bề mặt cho `ai_llm_audit.task` (≤32 ký tự): `kb_agent_luot`, `kb_chon_tool`, `kb_kiem_st`… */
+  auditTask?: string;
+  userId?: number | null;
+  /** Tầng của lượt chính (nếu có); vắng ⇒ 0 = "không định tuyến". */
+  tier?: number;
+  model?: string | null;
+  tokensIn?: number;
+  tokensOut?: number;
+  latencyMs?: number;
+  outcome?: Outcome;
+  reasoningTokens?: number | null;
+  thinking?: boolean | null;
+  samplingProfile?: string | null;
+  /** Chữ prompt / câu trả lời — được che (aiSafety) rồi CHỈ BĂM ở `ai_llm_audit`; không lưu. */
+  promptText?: string;
+  responseText?: string;
+  /** Mẩu tóm tắt NGẮN (chỉ số + mã) — `recordLlmAudit` còn che + cắt thêm một lần. */
+  auditSnippet?: string;
+  /** `true` ⇒ CHỈ nhật ký (`ai_llm_audit`), KHÔNG thêm hàng `ai_gateway_metrics` (vd. hàng kiểm biên dịch không phải một lượt model). */
+  chiNhatKy?: boolean;
+}
+
+/**
+ * ⚠⚠ HELPER CHỈ-GHI — KHÔNG phải cổng. Khác `planInference`:
+ *   • KHÔNG rate-limit, KHÔNG quota, KHÔNG license-gate, KHÔNG chặn an toàn, KHÔNG định tuyến (không chọn model/tầng, không
+ *     NÉM bất cứ lỗi nào) — hành vi của đường gọi KHÔNG đổi một byte; nó chỉ để lại dấu vết;
+ *   • không bao giờ ném (mọi lỗi bị nuốt + cảnh báo) — ghi hỏng không được làm hỏng câu trả lời.
+ *
+ * Ai dùng nó = đang đi NGOÀI cổng: đường AGENT (`ai/agent/goiModelMayChu`) và bộ chọn tool (`phuQuyetToolNative`) gọi thẳng
+ * `aiGgufEngine`, nên KHÔNG có quota / safety / license và KHÔNG định tuyến theo vai trò — đó cũng là gốc của lỗ "tác nhân luôn
+ * dùng model mặc định". Đưa agent qua cổng thật là việc RIÊNG (dieu-phoi + do-model); khi đó chỉ việc thay các điểm gọi helper này
+ * bằng `planInference().record()` — giữ chữ ký gọn để dễ thay. Census `kbCodingAudit.census.test.ts` canh: mọi lời gọi engine của
+ * đường KB coding/agent phải qua cổng HOẶC qua helper này (hoặc nằm trong danh sách miễn có lý do).
+ */
+export function ghiLuotNgoaiCong(o: LuotNgoaiCong): void {
+  try {
+    const req = { task: o.task, userId: o.userId ?? undefined, text: "", ...(o.auditTask ? { auditTask: o.auditTask } : {}) } as GatewayRequest;
+    const tier = Math.max(0, Math.min(4, Math.trunc(o.tier ?? 0))) as RouteDecision["tier"];
+    const decision = { tier, modelId: o.model || undefined, requiresHitl: false, maxTokens: 0, temperature: 0, jsonMode: false, reason: "ngoai-cong (ghiLuotNgoaiCong)" } as RouteDecision;
+    const outcome = o.outcome ?? "ok";
+    if (!o.chiNhatKy) {
+      enqueue(
+        toRow(req, decision, null, {
+          tokensIn: o.tokensIn,
+          tokensOut: o.tokensOut,
+          latencyMs: o.latencyMs,
+          outcome,
+          reasoningTokens: o.reasoningTokens,
+          thinking: o.thinking,
+          samplingProfile: o.samplingProfile,
+          ...(o.model ? { model: o.model } : {}),
+        }),
+      );
+    }
+    const vao = safeApplyInput(o.promptText);
+    auditIfRisky(req, decision, vao.flags, vao.text, outcome, {
+      responseText: o.responseText ? safeApplyOutput(o.responseText).text : undefined,
+      latencyMs: o.latencyMs,
+      auditSnippet: o.auditSnippet,
+      model: o.model ?? null,
+    });
+  } catch (err) {
+    console.warn("[aiGateway] ghiLuotNgoaiCong lỗi (bỏ qua, không ảnh hưởng đường gọi):", (err as Error)?.message ?? err);
+  }
+}

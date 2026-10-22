@@ -411,6 +411,7 @@ export async function* streamCodingGenerate(
     cauTraLoi: kq.text,
     goiLai: goiLaiBangModel({ heThong, promptGoc: promptCuoi, maxTokens: tran, userId: execCtx?.user?.id, tacVu: (context as { modelTask?: unknown })?.modelTask, signal: execCtx?.signal }),
     signal: execCtx?.signal,
+    boiCanh: { tier: dungSinhMa?.tier, model: dungSinhMa?.modelId, userId: execCtx?.user?.id },
   });
   const boSungST = kiemST ? khoiBoSungSauBienDich(kiemST, language) : "";
   if (boSungST) yield { type: "token", token: boSungST };
