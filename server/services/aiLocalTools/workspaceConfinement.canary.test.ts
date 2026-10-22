@@ -171,6 +171,8 @@ describe("★★★ I-3 — KHÔNG byte nào của một inode nlink>1 rời kh�
       "apply_diff",
       "delete_file",
       "grep_repo",
+      // ★ Đợt 9 — `kiem_bien_dich_st`: gốc hộp cát repo, `path` qua `moTepTrongHopCat` (như `read_file`), chỉ đọc.
+      "kiem_bien_dich_st",
       "list_files",
       "read_file",
       "read_project_file",

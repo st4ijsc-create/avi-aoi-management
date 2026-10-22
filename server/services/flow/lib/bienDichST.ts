@@ -157,6 +157,27 @@ export async function coAnhST(anh = ANH_ST): Promise<boolean> {
  * Biên dịch MỘT đơn vị ST (sau prelude). Trả chẩn đoán có cấu trúc; ném `LoiBienDichST` cho lỗi hạ tầng (không phải lỗi mã).
  * `anh` chỉ để lưới thử nhánh "ảnh thiếu".
  */
+/**
+ * ★ Đợt 9 (2026-10-22) — phân loại một lượt biên dịch BỊ GIẾT. Trước: mọi `137` đều báo "biên dịch quá 60 s" — SAI: đo trên
+ * một câu trả lời thật của 27B (A/B /v1, st-ud3#1) RuSTy bị giết sau ~1 s, cả khi nới trần bộ nhớ lên 2 GB / 6 GB ⇒ trình
+ * biên dịch NỔ bộ nhớ trên mã đó, không phải hết giờ. `124`, hoặc bị giết khi đã gần trần thời gian ⇒ `het-gio`; `137` sớm ⇒
+ * `ha-tang` (trình biên dịch sập). Cả hai đều là "chưa kiểm được" — KHÔNG phải phán quyết về mã. Thuần (lưới gọi thẳng).
+ */
+export function phanLoaiBiGiet(
+  rc: string,
+  biGiet: boolean,
+  ms: number,
+  tranGiay = TRAN_GIAY_BIEN_DICH,
+): { loai: "het-gio" | "ha-tang"; thongDiep: string } | null {
+  if (biGiet || rc === "124") return { loai: "het-gio", thongDiep: `biên dịch quá ${tranGiay} s` };
+  if (rc !== "137") return null;
+  if (ms >= tranGiay * 1000 * 0.9) return { loai: "het-gio", thongDiep: `biên dịch quá ${tranGiay} s` };
+  return {
+    loai: "ha-tang",
+    thongDiep: `trình biên dịch bị giết (mã 137) sau ${ms} ms — vượt trần bộ nhớ của sandbox (lỗi của trình biên dịch với mã này)`,
+  };
+}
+
 export async function bienDichST(ma: string, y: { anh?: string } = {}): Promise<KetQuaBienDichST> {
   if (typeof ma !== "string" || !ma.trim()) throw new LoiBienDichST("khong-hop-le", "mã rỗng");
   if (ma.length > TRAN_MA_ST) throw new LoiBienDichST("khong-hop-le", `mã dài quá ${TRAN_MA_ST} ký tự`);
@@ -180,7 +201,8 @@ export async function bienDichST(ma: string, y: { anh?: string } = {}): Promise<
     if (/No such image|Unable to find image/i.test(r.se) && rc === "") {
       throw new LoiBienDichST("thieu-anh", `ảnh ${y.anh ?? ANH_ST} chưa có trên máy — dựng theo scripts/ai-eval/ngau-nhien/lib/st/Dockerfile`);
     }
-    if (r.biGiet || rc === "124" || rc === "137") throw new LoiBienDichST("het-gio", `biên dịch quá ${TRAN_GIAY_BIEN_DICH} s`);
+    const ketThuc = phanLoaiBiGiet(rc, r.biGiet, ms);
+    if (ketThuc) throw new LoiBienDichST(ketThuc.loai, ketThuc.thongDiep);
     if (rc === "") throw new LoiBienDichST("ha-tang", `container không trả kết quả (mã thoát ${r.ma}): ${r.se.trim().slice(0, 500)}`);
     const chanDoan = phanTichChanDoanST(doc("compile.log"));
     if (rc !== "0" && !chanDoan.some((d) => d.mucDo === "error")) {

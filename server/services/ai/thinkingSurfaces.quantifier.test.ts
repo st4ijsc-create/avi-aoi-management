@@ -479,6 +479,14 @@ const SO_KHAI: readonly BeMat[] = [
       "`message.reasoning_content` (ô chỉ MỌC khi thật sự có nội tâm ⇒ hình dạng đáp ứng hiện tại giữ nguyên).",
   },
   {
+    tep: "server/routes/openaiGateway.ts", ham: "goiLai", goi: "chatCompletion",
+    hienThi: true, noi: "tai_cho",
+    ghiChu:
+      "★ Đợt 9 — vòng kiểm biên dịch ST của /v1 (cả nhánh stream lẫn không stream; cờ AI_KIEM_BIEN_DICH_ST): lượt SINH LẠI " +
+      "sau lỗi biên dịch. `catGiuNguyenBien(...).hienThi` rồi `plan.sanitizeOutput` NGAY trong `goiLai` — nội tâm bị bỏ, chỉ " +
+      "chữ hiển thị thành bản sửa / khối bổ sung.",
+  },
+  {
     tep: "server/routes/openaiGateway.ts", ham: "post /completions", goi: "generateFim",
     hienThi: true, noi: "tai_cho",
     ghiChu:

@@ -34,6 +34,8 @@ export const TEN_CONG_CU = [
   "remember",
   // ── 2026-10-18: chỉ mục ký hiệu API cục bộ ──
   "lookup_api",
+  // ── Đợt 9 (2026-10-21): biên dịch THỬ Structured Text (RuSTy, docker cách ly) — CHỈ máy chủ, sau cờ ──
+  "compile_st",
 ] as const;
 export type TenCongCu = (typeof TEN_CONG_CU)[number];
 
@@ -53,6 +55,7 @@ export const LOAI_CONG_CU: Record<TenCongCu, LoaiCongCu> = {
   search_docs: "doc",
   remember: "de-xuat",
   lookup_api: "doc",
+  compile_st: "doc",
 };
 
 /** Loại ký hiệu `find_symbol` nhận (enum — model chọn sai ⇒ lỗi liệt kê giá trị đúng). */
@@ -68,6 +71,14 @@ export const TRAN_K_TIM_MA = 20;
 export const NGON_NGU_API = ["csharp", "typescript", "java", "python"] as const;
 /** Trần ký tự `name` của `lookup_api` (một tên đầy đủ dài nhất cũng < 200). */
 export const TRAN_TEN_API = 200;
+/** Trần ký tự `code` của `compile_st` — BẰNG trần `code` của tool `kiem_bien_dich_st` (server; lõi thuần nên chép số). */
+export const TRAN_MA_ST = 64 * 1024;
+/**
+ * ★ Đợt 9 — tool TUỲ CHỌN: có trong `CONG_CU` (schema + kiểm tham số dùng chung) nhưng bộ thực thi chỉ phơi khi bật
+ * (`compile_st` ⇐ cờ `AI_KIEM_BIEN_DICH_ST` chứa `agent`/`all`, trình biên dịch chỉ có ở máy chủ). Tắt ⇒ bộ tool và lời
+ * nhắc hệ thống GIỐNG TỪNG BYTE bản trước (A/B sạch).
+ */
+export const CONG_CU_TUY_CHON: ReadonlySet<TenCongCu> = new Set<TenCongCu>(["compile_st"]);
 
 const chuoi = (description: string) => ({ type: "string", description });
 const soNguyen = (description: string) => ({ type: "integer", minimum: 1, description });
@@ -240,20 +251,37 @@ export const CONG_CU: WireTool[] = [
     },
     ["name"],
   ),
+  tool(
+    "compile_st",
+    "Compile-check IEC 61131-3 Structured Text (PLC code: .st, or Siemens SCL .scl which is normalised to ST keeping line " +
+      "numbers) with the RuSTy compiler in an isolated sandbox. It only compiles: nothing is executed or downloaded to a " +
+      "device. Returns OK or the errors as file:line:col. Give either path (a .st/.scl file of the project) or code.",
+    {
+      path: chuoi("File path relative to the project root (a .st or .scl file)."),
+      code: chuoi("Structured Text source, or a reply containing ```st fenced blocks (use path for files)."),
+    },
+    [],
+  ),
 ];
 
 /**
  * Bộ tool phơi cho model theo chế độ: `hoi` = đọc (kể cả 3 tool tìm của Đợt 2 + lookup_api) + todo_write + remember (chỉ
  * là đề xuất); `sua`/`tu-dong` = đủ 15. Trả BẢN SAO sâu.
+ * ★ Đợt 9 — tool TUỲ CHỌN (`CONG_CU_TUY_CHON`) KHÔNG có mặt trừ khi người gọi liệt kê ở `them` (bộ thực thi máy chủ, sau cờ)
+ * — mọi người gọi khác (extension, CLI, lưới) giữ nguyên bộ 15.
  */
-export function congCuTheoCheDo(cheDo: CheDoAgent): WireTool[] {
+export function congCuTheoCheDo(cheDo: CheDoAgent, them: readonly TenCongCu[] = []): WireTool[] {
+  const coMat = CONG_CU.filter((t) => {
+    const ten = t.function.name as TenCongCu;
+    return !CONG_CU_TUY_CHON.has(ten) || them.includes(ten);
+  });
   const chon =
     cheDo === "hoi"
-      ? CONG_CU.filter((t) => {
+      ? coMat.filter((t) => {
           const loai = LOAI_CONG_CU[t.function.name as TenCongCu];
           return loai === "doc" || loai === "ke-hoach" || loai === "de-xuat";
         })
-      : CONG_CU;
+      : coMat;
   return structuredClone(chon);
 }
 
@@ -287,6 +315,7 @@ const DAC_TA: Record<TenCongCu, DacTa> = {
   search_docs: { query: B("chuoi"), corpus: T("enum", { giaTri: KHO_TAI_LIEU }) },
   remember: { note: B("chuoi", { toiDa: TRAN_KY_TU_NHO }), scope: T("enum", { giaTri: PHAM_VI_NHO }) },
   lookup_api: { name: B("chuoi", { toiDa: TRAN_TEN_API }), language: T("enum", { giaTri: NGON_NGU_API }) },
+  compile_st: { path: T("duong"), code: T("chuoi", { toiDa: TRAN_MA_ST }) },
 };
 
 const VI_DU: Record<TenCongCu, string> = {
@@ -305,6 +334,7 @@ const VI_DU: Record<TenCongCu, string> = {
   search_docs: '{"query":"Mitsubishi MC protocol read D registers","corpus":"vendor"}',
   remember: '{"note":"This project uses pnpm, not npm.","scope":"project"}',
   lookup_api: '{"name":"SqlBulkCopyOptions","language":"csharp"}',
+  compile_st: '{"path":"src/FB_Motor.st"}',
 };
 
 const TRANG_THAI_TODO = ["pending", "in_progress", "completed"] as const;
@@ -441,6 +471,11 @@ export function kiemThamSo(ten: string, thamSoTho: unknown): KetQuaKiemThamSo {
         continue;
       }
       ra[truong] = kiemTruong(dt, gt, truong);
+    }
+    // compile_st: hai ô đều tuỳ chọn trong schema (grammar không diễn được "một trong hai") ⇒ kiểm ở đây.
+    if (ten === "compile_st") {
+      if (ra.path === undefined && ra.code === undefined) throw new LoiThamSo('give either "path" (a .st/.scl file) or "code"');
+      if (ra.path !== undefined && ra.code !== undefined) throw new LoiThamSo('give only one of "path" or "code", not both');
     }
   } catch (e) {
     if (e instanceof LoiThamSo) return loi(e.message);

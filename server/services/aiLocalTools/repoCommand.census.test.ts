@@ -116,7 +116,8 @@ describe("§0 — CẦU CHÌ: lưới đang quét vật thật", () => {
       .map((t) => t.name)
       .sort();
     // ★ Đợt 1 · T2 — `find_files` (glob tên, CHỈ cho agent) là tool đọc thứ tư sau cùng bit canView.
-    expect(doc, "pha A phải còn nguyên các tool đọc").toEqual(["find_files", "grep_repo", "list_files", "read_file"]);
+    // ★ Đợt 9 — `kiem_bien_dich_st` (biên dịch THỬ ST trong docker cách ly, chỉ đọc) đứng sau cùng bit canView.
+    expect(doc, "pha A phải còn nguyên các tool đọc").toEqual(["find_files", "grep_repo", "kiem_bien_dich_st", "list_files", "read_file"]);
     expect(doc).not.toContain("run_command");
   });
 });

@@ -10,6 +10,15 @@
  * sampling "hien-tai" (0,2/0,9 — như mọi báo cáo cũ) | "chinh-hang" (model card Qwen3.6) · model · rawUrl · base · cookie ·
  * cheDoNghi (pipeline).
  */
+import { Agent, fetch as fetchUndici } from "undici";
+
+/**
+ * ★ Đợt 9 (2026-10-22, A/B /v1 lần 7: "TypeError: fetch failed" ở lượt > 300 s) — `fetch` của Node có `headersTimeout`
+ * 300 s: lượt /v1 KHÔNG stream chỉ gửi header khi xong (27B nghĩ 16k + 2 vòng sửa vượt 300 s) ⇒ client tự cắt. Đường /v1
+ * dùng undici riêng, KHÔNG trần header/body — trần thật là của SERVER (AI_KHE_NANG_INFER_TIMEOUT_MS).
+ */
+const KHONG_TRAN = new Agent({ headersTimeout: 0, bodyTimeout: 0 });
+
 export function taoGoiModel(o) {
   const rawUrl = o.rawUrl ?? "http://127.0.0.1:8091/v1/chat/completions";
   const goc = new URL(rawUrl).origin;
@@ -68,6 +77,35 @@ export function taoGoiModel(o) {
     // Phòng server không cắt ở stop: cắt ở lần xuất hiện ĐẦU TIÊN của bất kỳ stop nào (đúng giao thức MultiPL-E).
     for (const s of stop ?? []) { const i = text.indexOf(s); if (i >= 0) text = text.slice(0, i); }
     return { text, totalMs: Date.now() - t0, promptTok: u.prompt_tokens ?? null, genTok: u.completion_tokens ?? null, finish, cut: finish === "length" };
+  }
+
+  /**
+   * ★ Đợt 9 — trục H qua cổng OpenAI `/v1/chat/completions` của server SẢN PHẨM (`<base>`), token NGƯỜI DÙNG `o.v1Token`,
+   * `model` = vai trò (mặc định `code.plc` — định tuyến vai trò + vòng kiểm biên dịch ST nếu cờ bật). Không stream (nội dung
+   * trả về là bản CUỐI). Giữ mọi header `x-st4i-*` (vd `x-st4i-bien-dich`) để báo cáo đọc được server đã làm gì.
+   */
+  async function chatV1(sys, user, { tatKiem = false } = {}) {
+    const t0 = Date.now();
+    const res = await fetchUndici(`${base}/v1/chat/completions`, {
+      dispatcher: KHONG_TRAN,
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${o.v1Token ?? ""}` },
+      body: JSON.stringify({
+        model: o.v1Model ?? "code.plc",
+        messages: [...(sys ? [{ role: "system", content: sys }] : []), { role: "user", content: user }],
+        ...kwargs(), ...sampling(), max_tokens: o.maxTokens, stream: false,
+        // opt-out của client cho vòng kiểm biên dịch ST (server: `nenKiemBienDichV1`) — nhánh "off" của A/B trên CÙNG server
+        ...(tatKiem ? { st4i_kiem_bien_dich: false } : {}),
+      }),
+    });
+    const hdr = {};
+    for (const [k, v] of res.headers) if (k.startsWith("x-st4i-")) hdr[k] = v;
+    if (!res.ok) return { text: "", err: `HTTP ${res.status} ${(await res.text()).slice(0, 200)}`, totalMs: Date.now() - t0, cut: false, hdr };
+    const j = await res.json();
+    const u = j.usage ?? {};
+    const finish = j.choices?.[0]?.finish_reason ?? null;
+    return { text: j.choices?.[0]?.message?.content ?? "", totalMs: Date.now() - t0, promptTok: u.prompt_tokens ?? null,
+      genTok: u.completion_tokens ?? null, finish, cut: finish === "length", hdr, requestId: j.id ?? null };
   }
 
   async function chatPipeline(cauHoi) {
@@ -137,7 +175,7 @@ export function taoGoiModel(o) {
     }
   }
 
-  return { chatRaw, chatRawTin, hoanThanhRaw, chatPipeline, kiemSong, modelDangChay };
+  return { chatRaw, chatRawTin, hoanThanhRaw, chatPipeline, chatV1, kiemSong, modelDangChay };
 }
 
 /** Đọc tuỳ chọn gọi model từ argv (cùng tên cờ với codegen-chay-duoc/run.mjs). */

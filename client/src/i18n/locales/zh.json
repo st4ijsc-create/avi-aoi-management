@@ -21357,7 +21357,12 @@
         "dangLam": "进行中",
         "xong": "完成"
       },
-      "xungDot": "冲突 — 未覆盖（{{n}} 个文件在运行后被再次修改）："
+      "xungDot": "冲突 — 未覆盖（{{n}} 个文件在运行后被再次修改）：",
+      "compileSt": {
+        "sach": "编译通过",
+        "loi": "{{n}} 个错误",
+        "chuaKiem": "未能检查"
+      }
     },
     "duanCaNhan": {
       "err": {
@@ -21588,6 +21593,14 @@
         "OCR_KHONG_DOC_DUOC": "无法读取图片中的文字。",
         "OCR_RONG": "图片中没有可读文字。"
       }
+    },
+    "kiemBienDich": {
+      "dangKiem": "正在试编译 ST 代码（RuSTy）…",
+      "sach": "编译通过（RuSTy）：无错误。",
+      "daSua": "经 {{v}} 轮自动修复了 {{k}} 个编译错误（RuSTy）— 显示的是修正后的版本。",
+      "xemBanDau": "查看初稿（修复前）",
+      "conLoi": "经 {{v}} 轮自动修复后，ST 代码仍有 {{n}} 个编译错误（RuSTy）：",
+      "khongKiemDuoc": "无法检查编译（{{lyDo}}）。"
     }
   },
   "masterDataCol": {

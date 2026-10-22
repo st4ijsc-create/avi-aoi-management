@@ -130,7 +130,7 @@ function lyDoChoModel(ma: MaTuChoiHopCat, chiTiet: string): { doiTuong: string; 
   }
 }
 
-function ketQuaTuChoiHopCat<T>(title: string, rong: T, ma: MaTuChoiHopCat, chiTiet: string): ToolResult<T> {
+export function ketQuaTuChoiHopCat<T>(title: string, rong: T, ma: MaTuChoiHopCat, chiTiet: string): ToolResult<T> {
   /**
    * ★★★ G2 — MỌI nhánh dưới đây nay mang THÊM `textModel`. `textSummary` giữ NGUYÊN từng byte
    * (người dùng vẫn đọc đúng câu cũ, đã dịch và đã có lưới); chỉ chữ nạp vào PROMPT là đổi.

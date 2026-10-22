@@ -206,7 +206,9 @@ describe("§0 — CẦU CHÌ: lưới đang quét vật thật, không quét hư
         "nó đi qua `repoSandbox`, rồi mới thêm tên vào đây.",
       // ★ Đợt 1 · T2 (2026-10-14) — `find_files`: chỉ LỌC danh sách `duyetTepDocDuoc` (cùng hộp cát,
       //   không đọc nội dung tệp nào); các ca rò rỉ dưới đây chạy cả nó (`moiDauRa` gửi `pattern`).
-    ).toEqual(["find_files", "grep_repo", "list_files", "read_file"]);
+      // ★ Đợt 9 (2026-10-21) — `kiem_bien_dich_st`: `path` đọc qua `moTepTrongHopCat` (cùng cửa + ngân sách byte
+      //   với `read_file`), từ chối trả qua `ketQuaTuChoiHopCat` ⇒ mọi ca rò rỉ dưới đây chạy cả nó.
+    ).toEqual(["find_files", "grep_repo", "kiem_bien_dich_st", "list_files", "read_file"]);
   });
 
   it("★ mọi tool trong tập đều là read tool, có `handler`, và khai `__authCtx` trong schema", () => {

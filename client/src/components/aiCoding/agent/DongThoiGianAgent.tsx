@@ -132,6 +132,25 @@ function DauRaLenhAgent({ hienThi }: { hienThi: unknown }) {
   );
 }
 
+/** ★★ Đợt 9 — `hienThi` của compile_st: { ok: boolean|null, soLoi } (đọc khoan dung; hình dạng lạ ⇒ không hiện chip). */
+export function docKetQuaCompileSt(hienThi: unknown): { ok: boolean | null; soLoi: number } | null {
+  if (!hienThi || typeof hienThi !== "object") return null;
+  const h = hienThi as { ok?: unknown; soLoi?: unknown };
+  const ok = h.ok === true ? true : h.ok === false ? false : null;
+  const soLoi = typeof h.soLoi === "number" && Number.isFinite(h.soLoi) ? Math.max(0, Math.floor(h.soLoi)) : 0;
+  if (h.ok === undefined && h.soLoi === undefined) return null;
+  return { ok, soLoi };
+}
+
+function ChipCompileSt({ hienThi }: { hienThi: unknown }) {
+  const { t } = useTranslation();
+  const r = docKetQuaCompileSt(hienThi);
+  if (!r) return null;
+  if (r.ok === true) return <span data-testid="agent-compile-st" data-ok="1" className="shrink-0 text-emerald-600">{t("repoWs.agent.compileSt.sach", "biên dịch sạch")}</span>;
+  if (r.ok === false) return <span data-testid="agent-compile-st" data-ok="0" className="shrink-0 text-amber-600">{t("repoWs.agent.compileSt.loi", "{{n}} lỗi", { n: r.soLoi })}</span>;
+  return <span data-testid="agent-compile-st" data-ok="na" className="shrink-0 text-muted-foreground">{t("repoWs.agent.compileSt.chuaKiem", "chưa kiểm được")}</span>;
+}
+
 function DongTool({ m }: { m: Extract<MucDongThoiGian, { kieu: "tool" }> }) {
   const { t } = useTranslation();
   const [mo, setMo] = useState(false);
@@ -144,6 +163,7 @@ function DongTool({ m }: { m: Extract<MucDongThoiGian, { kieu: "tool" }> }) {
         <Wrench className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
         <span className="shrink-0 font-mono font-medium">{m.ten}</span>
         {chinh && <span className="min-w-0 truncate font-mono text-muted-foreground" title={chinh}>{chinh}</span>}
+        {m.ten === "compile_st" && kq && <ChipCompileSt hienThi={kq.hienThi} />}
         <span className="ml-auto shrink-0">
           {!kq ? (
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" aria-label={t("repoWs.agent.toolDangChay", "đang chạy")} />

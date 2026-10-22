@@ -648,7 +648,9 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   trong tiến trình (chat.ops) chậm thêm 413 ms khi :8091 bận. GÁN (2026-10-21, qua datGanModel, binding id 34): extract @
   be-mat/luong → qwen3.6-35b-a3b@64k active, không dự phòng; khe giữ 27B ⇒ 4B (khongDoiKhe). Bề mặt tương tác giữ 4B.
 - (2) vòng sửa: 35B + `--vong-sua 2` 39/72 (sổ #7), giữ lại 10/18 (#8); 27B + vòng sửa giữ lại 13/18 = 72 % (#9; lần nhìn thứ
-  HAI 6 bài giữ lại) — 24×3 đang chạy lại SẠCH (lượt đầu mất 4 lượt cuối do sự cố khe 14:00; dựng lại từ log 57/72, không ghi sổ).
+  HAI 6 bài giữ lại). Chạy lại SẠCH 24×3: **27B + vòng sửa 53/72 = 74 %** (sổ #11; tt 23 · tv 16 · ud 14; trung vị 164 s) — theo
+  bài so 35B + vòng sửa: hơn 10 · kém 0 · bằng 14; so 27B không vòng: hơn 9 · kém 3. QUYẾT (dieu-phoi): GIỮ gán code.plc →
+  qwen3.6-27b@64k-nghi, dự phòng 35B. Đòn bẩy kế tiếp (ưu tiên cao nhất): vòng kiểm biên dịch cho bề mặt TƯƠNG TÁC.
 - ⚠ RỦI RO TIỀM ẨN (chưa sửa): baseline_foreign_pid của vramReconciler xếp llama-server (pid 33552, 35B lúc 01:45Z) vào
   `orphanHolders` ("tàn dư, tắt được") chứ KHÔNG vào `peerHolders`. Nếu hộ đó được nhận nuôi kèm lease (`leaseNhanNuoi`), đường
   preempt `thuHoiHoNhanNuoi` (SIGTERM, vramReconciler.ts ~1940) giết được llama-server đang phục vụ. Lần 14:00 KHÔNG đi đường
