@@ -77,6 +77,12 @@ export interface GatewayRequest extends RouteInput {
    * mà không đụng vào quyết định định tuyến.
    */
   auditTask?: string;
+  /**
+   * ★ Đợt 9 (2026-10-22) — ƯỚC LƯỢNG token của cả yêu cầu nhiều lượt (vd một lượt chạy tác nhân: trung vị đo × hệ số an toàn).
+   * Chỉ dùng khi `AI_QUOTA_ENFORCE` bật: đã dùng + ước lượng > hạn mức ⇒ `QuotaExceededError` NGAY (không ném giữa vòng tool).
+   * Vắng ⇒ như cũ (chỉ chặn khi đã dùng ≥ hạn mức).
+   */
+  uocLuongToken?: number;
 }
 
 // Review fix (doc69 G2-4 W1-3) — "license_denied" is a DISTINCT value from "blocked" (the
@@ -907,10 +913,13 @@ export async function planInference(req: GatewayRequest): Promise<GatewayPlan> {
   // Ships dark: when off, no extra DB round-trip happens at all (checkAiQuota is never called).
   if (quotaEnforceEnabled()) {
     const quota = await checkAiQuota(req.userId, req.role);
-    if (quota && !quota.allowed) {
+    const uocLuong = Math.max(0, Math.floor(req.uocLuongToken ?? 0));
+    if (quota && (!quota.allowed || (uocLuong > 0 && quota.usedTokens + uocLuong > quota.budgetTokens))) {
       enqueue(toRow(req, decision, abVariant, { outcome: "quota_exceeded" }));
       throw new QuotaExceededError(
-        `Daily AI token quota exceeded (${quota.usedTokens}/${quota.budgetTokens} tokens in the last 24h).`,
+        quota.allowed
+          ? `Daily AI token quota would be exceeded (${quota.usedTokens}/${quota.budgetTokens} tokens used in the last 24h; this request is estimated at ~${uocLuong}).`
+          : `Daily AI token quota exceeded (${quota.usedTokens}/${quota.budgetTokens} tokens in the last 24h).`,
         quota.usedTokens,
         quota.budgetTokens,
       );

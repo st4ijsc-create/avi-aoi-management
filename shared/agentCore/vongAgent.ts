@@ -35,6 +35,7 @@ import {
   type ManhModel,
   type NgonNgu,
   type SuKienAgent,
+  type ThongTinModelBatDau,
   type TinNhan,
   type ViecKeHoach,
   type WireTool,
@@ -63,6 +64,8 @@ export interface DauVaoVongAgent {
    * (chỉ `sua`/`tu-dong`). Mặc định BẬT; host tắt bằng `AI_AGENT_KIEM_DAC_TA=0` (lõi thuần không đọc env).
    */
   kiemDacTa?: boolean;
+  /** (Đợt 9) model host đã chọn theo vai trò — gắn vào `bat-dau`. Vắng ⇒ `bat-dau` như cũ. */
+  thongTinModel?: ThongTinModelBatDau;
 }
 
 export interface KetQuaVongAgent {
@@ -253,7 +256,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
     { role: "user", content: y.cauHoi },
   ];
 
-  phat({ loai: "bat-dau", runId: y.runId, cheDo: y.cheDo });
+  phat({ loai: "bat-dau", runId: y.runId, cheDo: y.cheDo, ...(y.thongTinModel ? { model: y.thongTinModel } : {}) });
 
   // ── một lượt model, ngắt được bởi huỷ ──
   async function motLuotModel(luot: number): Promise<KetQuaLuotModel> {
