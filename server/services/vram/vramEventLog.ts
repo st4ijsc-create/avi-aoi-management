@@ -10,7 +10,11 @@ export interface VramEventInput {
   /**
    * baseline | baseline_deferred | baseline_blocked | baseline_foreign_pid | reserve | commit |
    * commit_fallback | measure_failed | release | refuse | preempt | drift | adopt | defer |
-   * defer_exceeded
+   * defer_exceeded | adopt_orphan | reclaim_orphan
+   *
+   * ★ `adopt_orphan` / `reclaim_orphan` (audit orphanHolders 2026-10-22, P4) = nhận nuôi sidecar mồ côi / thu hồi (SIGTERM) nó. `reclaim_orphan.detail.outcome`:
+   * `killed-confirmed` · `kill-sent-not-confirmed` · `refused-cmdline` · `refused-khoa-khe`. Trước đây nhận nuôi chỉ để lại một dòng console nên "0 lần nhận nuôi"
+   * trong `vram_events` KHÔNG chứng minh được gì. `event` là varchar(24), không CHECK ⇒ không cần migration.
    *
    * ⚠ `baseline_foreign_pid` (Pha 2B Task 1) = lượt chụp nền bị **TỪ CHỐI** vì có tiến trình chạy
    * ảnh thực thi CỦA HỆ nhưng NGOÀI cây tiến trình hiện tại (tàn dư sau khi server khởi động lại —
