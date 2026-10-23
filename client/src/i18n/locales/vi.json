@@ -4052,7 +4052,10 @@
       "flowBiMatXoa": "xoá bí mật của Luồng AI",
       "flowBiMatXem": "xem danh sách bí mật của Luồng AI",
       "flowTaoTuMoTa": "tạo bản nháp Luồng AI từ mô tả",
-      "flowChayThu": "chạy thử một node của Luồng AI"
+      "flowChayThu": "chạy thử một node của Luồng AI",
+      "scadaReconnectAdapter": "kết nối lại adapter",
+      "scadaDisableAdapter": "tạm tắt adapter",
+      "scadaSetStubFault": "đặt lỗi mô phỏng cho stub"
     },
     "field": {
       "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",
@@ -4222,7 +4225,8 @@
       "gem300": "GEM300",
       "kbEvalRuns": "sổ lượt đánh giá Training Studio",
       "kbEvalMa": "đánh giá sinh mã Training Studio",
-      "kbEvalMaRuns": "sổ lượt đánh giá sinh mã Training Studio"
+      "kbEvalMaRuns": "sổ lượt đánh giá sinh mã Training Studio",
+      "scadaLab": "chế độ Lab SCADA"
     },
     "action": {
       "changeMqttDeviceOfOtherScope": "đổi thiết bị MQTT đang gắn với máy ngoài phạm vi của bạn",
@@ -4460,7 +4464,10 @@
       "flowQuaTranDongThoi": "Luồng này đang chạy đủ số lượt đồng thời cho phép — lượt mới bị từ chối (không xếp hàng). Thử lại khi lượt đang chạy xong.",
       "flowDuyetVaiThap": "Bước này chỉ vai '{{vaiYeuCau}}' trở lên (hoặc admin) được duyệt — vai của bạn: '{{vaiCuaBan}}'.",
       "flowDuyetTrungNguoiBat": "Bạn đã bật phiên bản luồng này — người duyệt phải là người khác.",
-      "flowDuyetTrungChuLuot": "Bạn là chủ lượt chạy này (đã kích hoạt hoặc bật) — người duyệt phải là người khác."
+      "flowDuyetTrungChuLuot": "Bạn là chủ lượt chạy này (đã kích hoạt hoặc bật) — người duyệt phải là người khác.",
+      "adapterOwnedByEdge": "Adapter này do một edge node sở hữu — trung tâm không điều khiển phiên của nó.",
+      "adapterNotStub": "Chỉ áp dụng cho adapter giao thức stub.",
+      "stubEndpointShared": "Nhiều adapter stub dùng chung endpoint này — đổi endpoint cho riêng từng adapter trước."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",

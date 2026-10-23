@@ -4052,7 +4052,10 @@
       "flowBiMatXoa": "delete an AI flow secret",
       "flowBiMatXem": "list AI flow secrets",
       "flowTaoTuMoTa": "create an AI flow draft from a description",
-      "flowChayThu": "test-run a node of an AI flow"
+      "flowChayThu": "test-run a node of an AI flow",
+      "scadaReconnectAdapter": "reconnect the adapter",
+      "scadaDisableAdapter": "disable the adapter",
+      "scadaSetStubFault": "set a simulated stub fault"
     },
     "field": {
       "holderUserId": "the user the key is issued to (an existing, active user)",
@@ -4222,7 +4225,8 @@
       "gem300": "GEM300",
       "kbEvalRuns": "Training Studio evaluation log",
       "kbEvalMa": "Training Studio code-generation evaluation",
-      "kbEvalMaRuns": "Training Studio code-generation evaluation log"
+      "kbEvalMaRuns": "Training Studio code-generation evaluation log",
+      "scadaLab": "SCADA Lab mode"
     },
     "action": {
       "changeMqttDeviceOfOtherScope": "change an MQTT device bound to a machine outside your scope",
@@ -4468,7 +4472,10 @@
       "flowQuaTranDongThoi": "This flow already has the maximum number of concurrent runs — the new run was rejected (not queued). Try again when a running one finishes.",
       "flowDuyetVaiThap": "This step can only be approved by role '{{vaiYeuCau}}' or higher (or admin) — your role: '{{vaiCuaBan}}'.",
       "flowDuyetTrungNguoiBat": "You enabled this flow version — the approver must be someone else.",
-      "flowDuyetTrungChuLuot": "You own this run (you triggered or enabled it) — the approver must be someone else."
+      "flowDuyetTrungChuLuot": "You own this run (you triggered or enabled it) — the approver must be someone else.",
+      "adapterOwnedByEdge": "This adapter is owned by an edge node — the central server does not control its session.",
+      "adapterNotStub": "Only applies to stub-protocol adapters.",
+      "stubEndpointShared": "Several stub adapters share this endpoint — give each adapter its own endpoint first."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",

@@ -4044,7 +4044,10 @@
       "flowBiMatXoa": "删除 AI 流程密钥",
       "flowBiMatXem": "查看 AI 流程密钥列表",
       "flowTaoTuMoTa": "根据描述创建 AI 流程草稿",
-      "flowChayThu": "试运行 AI 流程的一个节点"
+      "flowChayThu": "试运行 AI 流程的一个节点",
+      "scadaReconnectAdapter": "重新连接适配器",
+      "scadaDisableAdapter": "暂停适配器",
+      "scadaSetStubFault": "为模拟器设置故障"
     },
     "field": {
       "holderUserId": "密钥的发放对象（必须是现有的在职用户）",
@@ -4214,7 +4217,8 @@
       "gem300": "GEM300",
       "kbEvalRuns": "Training Studio 评估记录",
       "kbEvalMa": "Training Studio 代码生成评估",
-      "kbEvalMaRuns": "Training Studio 代码生成评估记录"
+      "kbEvalMaRuns": "Training Studio 代码生成评估记录",
+      "scadaLab": "SCADA 实验模式"
     },
     "action": {
       "changeMqttDeviceOfOtherScope": "更改绑定到您范围外机器的MQTT设备",
@@ -4460,7 +4464,10 @@
       "flowQuaTranDongThoi": "该流程已达并发运行上限 — 新运行被拒绝（不排队）。请在正在运行的完成后重试。",
       "flowDuyetVaiThap": "该步骤只能由角色“{{vaiYeuCau}}”及以上（或管理员）审批 — 您的角色：“{{vaiCuaBan}}”。",
       "flowDuyetTrungNguoiBat": "您启用了此流程版本 — 审批人必须是其他人。",
-      "flowDuyetTrungChuLuot": "您是本次运行的所有者（触发或启用者）— 审批人必须是其他人。"
+      "flowDuyetTrungChuLuot": "您是本次运行的所有者（触发或启用者）— 审批人必须是其他人。",
+      "adapterOwnedByEdge": "该适配器由边缘节点拥有——中心服务器不控制其会话。",
+      "adapterNotStub": "仅适用于 stub 协议的适配器。",
+      "stubEndpointShared": "多个 stub 适配器共用此端点——请先为每个适配器设置独立端点。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
