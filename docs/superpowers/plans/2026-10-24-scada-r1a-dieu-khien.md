@@ -684,6 +684,32 @@ Cổng (hàng R1 của báo cáo + ô 8 do điều phối thêm 2026-10-24): m�
 - [ ] **Step 6: Chạy toàn bộ** `npx vitest run server/services/ot server/services/scada server/services/interlock server/routers/scada* server/_core client/src/components/scada client/src/pages/Scada*` + các tệp DB mới (riêng lẻ) + `npm run check`. Ghi số tệp/test.
 - [ ] **Step 7: Commit** `test(scada): nghiem thu R1a - ma tran 8 o, bench OpenPLC + safety PLC mo phong, bao cao`.
 
+### Task 16: Bộ đếm TOTP sai theo người dùng (khoá 5 phút) — điều phối 2026-10-24, chạy SAU Task 13, TRƯỚC Task 14/15
+
+Lý do: từ R1a mã TOTP canh lệnh tác động vật lý mức 4–5; hiện mã sai chỉ bị giới hạn bởi bộ giới hạn chung  300/phút/phiên.
+
+**Files:**
+- Create: , , - Modify:  ( ~:350),  (bảng mới),  (mã mới), các bên gọi  ( ×4,  ~:410/:440,  ) để hiện mã khoá; i18n vi/en/zh
+- Test: 
+**Interfaces:**
+- Produces: bảng ; hằng , , ; mã từ chối  kèm ;  thêm .
+
+Chốt:
+- **Nơi đặt:** trong  (dùng chung cho MỌI bên gọi: đăng nhập 2FA, đăng ký/tắt 2FA, deploy, actuation, SCADA).
+- **Lưu trữ:** CHỈ DB (ruling: bộ đệm Redis + DB dự phòng = hai nguồn có thể lệch; DB một nguồn, upsert nguyên tử, sống qua restart và nhiều tiến trình). Không RAM.
+- **Trình tự:** (1) đọc khoá của :  ⇒ trả  +  NGAY, **không** kiểm mã, **không** tiêu mã (mã đúng khi đang khoá vẫn bị từ chối); (2) kiểm mã như cũ; (3) sai ⇒ một câu upsert nguyên tử: cửa sổ quá 5 phút ⇒ đặt lại ; còn trong cửa sổ ⇒ ; đạt 5 ⇒ ; (4) đúng (ngoài khoá) ⇒ xoá hàng.
+- **Fail-closed:** lỗi đọc/ghi bộ đếm ⇒ từ chối (mã ), KHÔNG bao giờ "không giới hạn".
+- **Audit:** ghi  (hoặc nhật ký bảo mật hiện có cho đăng nhập 2FA — theo mẫu của ) cho lần sai THỨ 5 (bắt đầu khoá) và cho MỖI lần bị từ chối vì đang khoá; không ghi mã.
+- **Đường hiển thị:** đăng nhập 2FA và các bên gọi hiện có trả lỗi có mã + thời gian còn lại (i18n); M5 (Task 14) hiện "Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau {phút} phút".
+- Migration 0432: ADD-only,  cần  (mặc định) — verify quyền; gửi SQL cho điều phối như 0431, áp DEV khi được "áp".
+
+- [ ] **Step 1: Migration 0432** (TEST): SQL + script verify (a) bảng/PK (b) avi_app SELECT/INSERT/UPDATE/DELETE = true (c) sổ migration. Đột biến verify. **Không áp DEV.**
+- [ ] **Step 2: Test đỏ (DB):** sai 5 lần ⇒ lần 6 với mã ĐÚNG ⇒  (mã không bị tiêu: dùng được sau khi hết khoá nếu còn trong cửa sổ TOTP — hoặc dùng mã mới); hết 5 phút (đồng hồ giả) ⇒ mã đúng qua, hàng bị xoá; 2 người dùng độc lập; sai 4 lần rồi đúng ⇒ hàng bị xoá; sai rải rác quá 5 phút ⇒ không khoá; lỗi DB bộ đếm ⇒ từ chối; audit có đúng 1 dòng cho lần sai thứ 5 và 1 dòng mỗi lần bị từ chối vì khoá; hai lần sai đồng thời đếm đúng 2 (upsert nguyên tử).
+- [ ] **Step 3: Cài.** Cập nhật  + các bên gọi; i18n.
+- [ ] **Step 4: Chạy lại** + bộ hồi quy step-up/TOTP/đăng nhập 2FA (, , ) +  + .
+- [ ] **Step 5: Đột biến:** bỏ kiểm khoá ⇒ ca lần 6 đỏ; bỏ reset cửa sổ ⇒ ca rải rác đỏ. Hoàn tác.
+- [ ] **Step 6: Commit** .
+
 ---
 
 ## Bàn giao sau R1a (không làm trong kế hoạch này)
