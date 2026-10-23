@@ -30,6 +30,14 @@ import { dinhTuyenVaiTro, type KetQuaDinhTuyen } from "../soModel/dinhTuyenVaiTr
 import { laModelHoSoKheNang } from "../soModel/tapKheNang";
 
 /** Cờ. Vắng / rỗng ⇒ BẬT (mặc định); "false"/"off"/"0"/"no" ⇒ TẮT; giá trị khác ⇒ bật. */
+/**
+ * ★ Đợt 9 (2026-10-23, thiết kế 26ba9d039) — cờ TRỢ LÝ theo vai trò `AI_TRO_LY_THEO_VAI_TRO`: MẶC ĐỊNH TẮT (chỉ "1"/"true"/"on" ⇒ bật) cho tới khi
+ * cổng đo đăng ký trước đạt.
+ */
+export function troLyTheoVaiTroBat(env: NodeJS.ProcessEnv = process.env): boolean {
+  return /^(1|true|on)$/i.test((env.AI_TRO_LY_THEO_VAI_TRO ?? "").trim());
+}
+
 export function tacNhanTheoVaiTroBat(env: NodeJS.ProcessEnv = process.env): boolean {
   return !/^(0|false|off|no)$/i.test((env.AI_AGENT_THEO_VAI_TRO ?? "").trim());
 }

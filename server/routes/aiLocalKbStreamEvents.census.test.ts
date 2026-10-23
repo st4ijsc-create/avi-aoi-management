@@ -332,3 +332,24 @@ describe("§C — `done.kiemBienDichST` đi ra tới socket; vắng thì không 
     expect(Object.prototype.hasOwnProperty.call(d, "kiemBienDichST")).toBe(false);
   });
 });
+
+// ★ Đợt 9 (2026-10-23) — trợ lý theo vai trò: `usage.vaiTro`/`nguonVaiTro` phải RA TỚI socket (ca `usage` là danh sách trắng từng ô).
+describe("§D — `usage.vaiTro` đi ra tới socket; vắng thì không bịa", () => {
+  async function chayUsage(u: Record<string, unknown>) {
+    h.sukien = [{ type: "usage", luot: "sinh-ma", modelId: "M27", tokensIn: 1, tokensOut: 1, thinking: null, samplingProfile: "x", latencyMs: 1, ...u },
+      { type: "done", provider: "ollama", cached: false, followUpSuggestions: [], answer: "a" }];
+    const { app, tuyen } = appGia();
+    registerAiLocalKnowledgeRoutes(app);
+    const { res, manh } = resGia();
+    await tuyen.get("/api/ai/local-kb/stream")!(reqGia({ question: "q", context: { codingMode: true } }), res);
+    return khungSSE(manh).find((k) => k.type === "usage")!;
+  }
+  it("★★★ có vaiTro ⇒ khung usage mang vaiTro + nguonVaiTro", async () => {
+    const u = await chayUsage({ vaiTro: "code.plc", nguonVaiTro: "gan-profile" });
+    expect(u).toMatchObject({ vaiTro: "code.plc", nguonVaiTro: "gan-profile", modelId: "M27" });
+  });
+  it("vắng ⇒ không khoá vaiTro", async () => {
+    const u = await chayUsage({});
+    expect(Object.prototype.hasOwnProperty.call(u, "vaiTro")).toBe(false);
+  });
+});

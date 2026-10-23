@@ -118,6 +118,8 @@ export function goiLaiBangModel(y: {
   maxTokens: number;
   userId?: number;
   tacVu?: unknown;
+  /** ★ Đợt 9 — model của lượt chính (trợ lý theo vai trò) — lượt hỏi lại đi CÙNG model. */
+  modelId?: string;
   signal?: AbortSignal;
 }): (tinSua: string, lanTruoc: string) => Promise<string> {
   return async (tinSua, lanTruoc) => {
@@ -126,6 +128,7 @@ export function goiLaiBangModel(y: {
       streamCodingModel({
         auditTask: "kb_kiem_st_sua", // ★ Đợt 9 — lượt hỏi-lại của vòng kiểm biên dịch ST
         tacVu: y.tacVu,
+        ...(y.modelId ? { modelId: y.modelId } : {}),
         systemPrompt: y.heThong,
         prompt,
         maxTokens: y.maxTokens,
