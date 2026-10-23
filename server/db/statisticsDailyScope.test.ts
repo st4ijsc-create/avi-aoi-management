@@ -29,6 +29,8 @@
  * chính vì thế các con số dưới đây là SỐ CHÍNH XÁC chứ không phải "lớn hơn 0".
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import superjson from "superjson";
 import * as db from "../db";
 import { getDb } from "./connection";
@@ -60,17 +62,8 @@ let USER_A: Who;
 let USER_NONE: Who;
 
 async function mkUser(role: InsertUser["role"], tag: string): Promise<number> {
-  const conn = await getDb();
-  const [u] = await conn!
-    .insert(users)
-    .values({
-      openId: `cds_${tag}_${ts}`,
-      username: `cds_${tag}_${ts}`,
-      name: `daily scope ${tag}`,
-      role,
-      loginMethod: "local",
-    })
-    .returning({ id: users.id });
+  // Dùng helper chung: TỰ dọn người dùng ở afterAll (xem server/testing/nguoiDungTest.ts) — trước đây tệp này không xoá ⇒ chất người dùng admin ở CSDL _test.
+  const u = await taoNguoiDungTest(tag, role as NonNullable<InsertUser["role"]>, { tienTo: "cds", ten: `daily scope ${tag}`, ts });
   return u.id;
 }
 
@@ -116,7 +109,7 @@ beforeAll(async () => {
   wsBId = b.workshopId;
   machineBId = b.machineId;
 
-  productModelId = await db.createProductModel({ code: `CDSPM_${ts}`, name: "Daily scope product" });
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: `CDSPM_${ts}`, name: "Daily scope product" }));
 
   // Nhà máy A: 3 bản ghi kiểm · nhà máy B: 2. `factoryCode` trên bản ghi khớp nhà máy sở hữu MÁY,
   // để hai TRỤC KHÁC NHAU (`resolveDataScope` lọc theo `factoryCode`; bộ lọc mới lọc theo chuỗi

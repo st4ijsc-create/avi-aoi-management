@@ -201,13 +201,15 @@ async function quanSatVien() {
   const ad = await ketNoi({ phien: 1 });
   ad.emit("subscribe", {});
   ad.emit("admin:join");
-  await vi.waitFor(() => expect(phongCua(ad)).toEqual(["admin", "global"]), { timeout: 2000 });
+  await vi.waitFor(() => expect(phongCua(ad)).toEqual(["admin", "global", "scope:all"]), { timeout: 2000 });
   return { ad, ketNoiMay: ghiNhan(ad, "machine:connected"), capNhat: ghiNhan(ad, "machine:status_update") };
 }
 
 beforeAll(async () => {
   for (const k of ENV_KHOA) delete process.env[k]; // MẶC ĐỊNH TRONG MÃ — đúng như .env hiện tại (vắng cờ)
   socketMod = await import("./socket");
+  // P-S1b: sự kiện máy giờ phát theo phòng (scope:all / factory:{id}); tệp này đo XÁC THỰC MÁY bằng DB giả nên người quan sát có phạm vi TOÀN QUYỀN (phạm vi thật: socketPhamViPhong.db.test.ts).
+  (await import("./socketPhongQuyen")).__datCongPhamViChoTest({ trongPhamVi: async () => true, idsTrongPhamVi: async () => null });
   authMod = await import("./socketMachineAuth");
   rlMod = await import("./socketMachineRateLimit");
   http = createServer();

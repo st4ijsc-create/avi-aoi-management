@@ -6,6 +6,7 @@
  * measurement_results.defectCatalogId against defect_catalog.
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { buildDefectClassPareto, getDefectClassPareto } from "./aiInspectionAnalytics";
 import * as db from "../db";
 
@@ -107,7 +108,7 @@ describe("getDefectClassPareto (DB integration)", () => {
       machineType: "AOI",
       apiKey: `test_dcp_${ts}`,
     });
-    productModelId = await db.createProductModel({ code: `PROD_DCP_${ts}`, name: "DCP product", version: "1.0" });
+    productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: `PROD_DCP_${ts}`, name: "DCP product", version: "1.0" }));
     const pointDefId = await db.createMeasurementPointDef({
       productModelId,
       code: `MP_DCP_${ts}`,

@@ -43,6 +43,8 @@
  * khác (vitest chạy song song theo file) và cũng không cộng dồn qua các lần chạy.
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import superjson from "superjson";
@@ -145,17 +147,8 @@ let USER_A: Who;
 let USER_NONE: Who;
 
 async function mkUser(role: NonNullable<InsertUser["role"]>, tag: string): Promise<number> {
-  const conn = await getDb();
-  const [u] = await conn!
-    .insert(users)
-    .values({
-      openId: `ss_${tag}_${ts}`,
-      username: `ss_${tag}_${ts}`,
-      name: `stats scope ${tag}`,
-      role,
-      loginMethod: "local",
-    })
-    .returning({ id: users.id });
+  // Dùng helper chung: TỰ dọn người dùng ở afterAll (xem server/testing/nguoiDungTest.ts) — trước đây tệp này không xoá ⇒ chất người dùng admin ở CSDL _test.
+  const u = await taoNguoiDungTest(tag, role as NonNullable<InsertUser["role"]>, { tienTo: "ss", ten: `stats scope ${tag}`, ts });
   return u.id;
 }
 
@@ -198,7 +191,7 @@ beforeAll(async () => {
     apiKey: `ss_${ts}`,
   });
 
-  productModelId = await db.createProductModel({ code: `SSPM_${ts}`, name: "Stats scope product" });
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: `SSPM_${ts}`, name: "Stats scope product" }));
   workstationId = await db.createWorkstation({
     code: `SSWS_${ts}`,
     name: "Stats scope workstation",

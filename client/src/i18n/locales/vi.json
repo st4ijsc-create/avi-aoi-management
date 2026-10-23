@@ -4499,7 +4499,12 @@
     "CAU_HOI_RONG": "Yêu cầu trống.",
     "CAU_HOI_QUA_DAI": "Yêu cầu quá dài cho một lượt Agent.",
     "CHE_DO_SAI": "Chế độ Agent không hợp lệ.",
-    "PROJECT_NOT_FOUND": "Không tìm thấy dự án đã chọn (hoặc dự án không nằm trong danh sách cho phép)."
+    "PROJECT_NOT_FOUND": "Không tìm thấy dự án đã chọn (hoặc dự án không nằm trong danh sách cho phép).",
+    "AI_KHONG_CO_MODEL": "Chưa có model để chạy Agent: khe model đang bị khoá cho một phép đo / đổi model và vai trò này không có model dự phòng dùng được. Thử lại sau ít phút.",
+    "AI_GIOI_HAN_TAN_SUAT": "Bạn gửi yêu cầu AI quá nhanh — chờ một lát rồi thử lại.",
+    "AI_HET_HAN_MUC": "Đã hết hạn mức token AI trong ngày (kể cả phần ước lượng cho một lượt Agent). Thử lại vào ngày mai hoặc nhờ quản trị viên nâng hạn mức.",
+    "AI_CHAN_AN_TOAN": "Yêu cầu bị lớp an toàn AI chặn vì có dấu hiệu tiêm lệnh. Hãy diễn đạt lại yêu cầu.",
+    "AI_CHUA_CAP_PHEP": "Phiên bản / giấy phép hiện tại không gồm tính năng AI (MOD_AI)."
   },
   "export": {
     "reportMenu": {
@@ -7480,7 +7485,10 @@
     "highPriorityOnly": "Chỉ ưu tiên cao",
     "snooze1h": "Tạm tắt 1 giờ",
     "snoozed": "Đang tạm tắt",
-    "snoozeHint": "Đang tạm tắt: chỉ ẩn số trên chuông và thông báo nổi của mục thường — mục khẩn/nghiêm trọng vẫn báo; danh sách vẫn đầy đủ."
+    "snoozeHint": "Đang tạm tắt: chỉ ẩn số trên chuông và thông báo nổi của mục thường — mục khẩn/nghiêm trọng vẫn báo; danh sách vẫn đầy đủ.",
+    "storm": {
+      "heldBack": "+{{count}} cảnh báo khác đã gộp lại — mở chuông thông báo để xem đủ"
+    }
   },
   "oee": {
     "targetSettingsDescription": "Thiết lập mục tiêu OEE cho máy hoặc dây chuyền",
@@ -21334,6 +21342,14 @@
         "sach": "biên dịch sạch",
         "loi": "{{n}} lỗi",
         "chuaKiem": "chưa kiểm được"
+      },
+      "modelBatDau": {
+        "dangChay": "Đang chạy {{model}} · vai trò {{vaiTro}}{{duAn}}",
+        "daChay": "Đã chạy {{model}} · vai trò {{vaiTro}}{{duAn}}",
+        "duAnPlc": " (dự án PLC)",
+        "duAnPhanMem": " (dự án phần mềm)",
+        "macDinh": "model mặc định của engine",
+        "duPhong": "dự phòng — khe đang giữ model khác"
       }
     },
     "duanCaNhan": {

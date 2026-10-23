@@ -711,6 +711,7 @@ async function* chuanBiBanSuaMotTep(y: {
       khoiNguCanhMa: khoiMaSua,
       tranToken: TRAN_TOKEN_KHOI_SUA,
       ghiDe: y.context.cheDoNghi, // ★ F3 — chế độ nghĩ người dùng chọn cho lượt
+      ...modelCuaLuot(y.context),
       loai: "khoi-sua", // ★ B1 — lớp NGHĨ: sửa mã, trần nới theo model biết nghĩ
       language,
       history,
@@ -782,6 +783,7 @@ async function* chuanBiBanSuaMotTep(y: {
     heThong,
     ghepPrompt: ghepPromptTep,
     ghiDe: y.context.cheDoNghi, // ★ F3
+    ...modelCuaLuot(y.context),
     loai: "sua-tep", // ★ B1 — lớp NGHĨ: chép lại cả tệp có thay đổi
     khoiBaiHoc,
     khoiNguCanhMa: khoiMaSua,
@@ -841,12 +843,21 @@ function noiChu(truoc: string, sau: string): string {
  * ⚠ Nó **không phát `done`** và không quyết định gì về việc ghi — nó chỉ trả CHỮ, hoặc một lời từ
  *   chối trung thực đã có mã.
  */
+/** ★ Đợt 9 — model + nhãn vai trò của lượt (trợ lý theo vai trò) cho các lượt SỬA; `{}` khi không định tuyến. */
+function modelCuaLuot(c: KbQueryContext): { modelId?: string; nhanVaiTro?: { vaiTro: string; nguon: string } } {
+  if (!c.modelVaiTro) return {};
+  return { ...(c.modelVaiTro.modelId ? { modelId: c.modelVaiTro.modelId } : {}), nhanVaiTro: { vaiTro: c.modelVaiTro.vaiTro, nguon: c.modelVaiTro.nguon } };
+}
+
 type LuotModel =
   | { kq: "chu"; text: string }
   | { kq: "dung"; traLoi: string; provider: "ollama" | "tool"; degraded?: { reason: string } };
 
 export async function* motLuotModel(y: {
   heThong: string;
+  /** ★ Đợt 9 — trợ lý theo vai trò: model đã định tuyến của lượt (vắng ⇒ bộ định tuyến cổng như cũ). Lượt PHỤ (chọn tệp) KHÔNG truyền. */
+  modelId?: string;
+  nhanVaiTro?: { vaiTro: string; nguon: string };
   /**
    * ⚠ HAI tham số, không phải một: khối lịch sử **và** khối bài học. Cả hai phải nằm trong CHUỖI
    *   THẬT mà `kiemNganSachNguCanh` cân — nếu bài học được nối vào sau lượt cân thì ta lại đo một
@@ -989,6 +1000,8 @@ export async function* motLuotModel(y: {
         systemPrompt: y.heThong,
         prompt: promptLuot,
         maxTokens: tranLuot,
+        ...(y.modelId ? { modelId: y.modelId } : {}),
+        ...(y.nhanVaiTro ? { nhanVaiTro: y.nhanVaiTro } : {}),
         // ★ B7/F2 — số đo lượt, phát thành sự kiện `usage` sau khi luồng đóng (xem cuối hàm).
         onUsage: (u) => {
           dungLuot = u;

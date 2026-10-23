@@ -35,6 +35,8 @@
  * bộ phân giải phạm vi, vì thứ cần chứng minh chính là SQL sinh ra từ nó có tới nơi hay không.
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { computeSpatialHeatmap } from "./defectSpatialHeatmap";
 import * as db from "../db";
 import { getDb } from "../db/connection";
@@ -59,17 +61,8 @@ let userAId: number;
 let userNoneId: number;
 
 async function mkUser(role: NonNullable<InsertUser["role"]>, tag: string): Promise<number> {
-  const conn = await getDb();
-  const [u] = await conn!
-    .insert(users)
-    .values({
-      openId: `scp_hm_${tag}_${ts}`,
-      username: `scp_hm_${tag}_${ts}`,
-      name: `scope heatmap ${tag}`,
-      role,
-      loginMethod: "local",
-    })
-    .returning({ id: users.id });
+  // Dùng helper chung: TỰ dọn người dùng ở afterAll (xem server/testing/nguoiDungTest.ts) — trước đây tệp này không xoá ⇒ chất người dùng admin ở CSDL _test.
+  const u = await taoNguoiDungTest(tag, role as NonNullable<InsertUser["role"]>, { tienTo: "scp_hm", ten: `scope heatmap ${tag}`, ts });
   return u.id;
 }
 
@@ -98,12 +91,12 @@ beforeAll(async () => {
     machineType: "AOI",
     apiKey: `scope_hm_${ts}`,
   });
-  productModelId = await db.createProductModel({
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({
     code: `SCPP_${ts}`,
     name: "Scope product",
     imageWidth: 1000,
     imageHeight: 800,
-  });
+  }));
   const pointDefId = await db.createMeasurementPointDef({
     productModelId,
     code: `SCPMP_${ts}`,

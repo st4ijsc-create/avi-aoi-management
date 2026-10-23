@@ -83,7 +83,7 @@ import { stripThinking, StreamingThinkingStripper } from "../services/ai/thinkin
 // fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
 import { defaultModelBasename, resolveLogicalModel, toBasename } from "../services/ai/modelResolver";
 import { kiemModelV1, thongDiepLoiChoKhachV1 } from "../services/ai/kiemModelV1";
-import { kiemBienDichBat, kiemVaSuaST, nhanKiemBienDich, tranMsVongSuaST, type KetQuaKiemBienDichST } from "../services/ai/st/kiemBienDichSt";
+import { cheDoKiemBienDichV1, kiemVaSuaST, nhanKiemBienDich, tranMsVongSuaST, type KetQuaKiemBienDichST } from "../services/ai/st/kiemBienDichSt";
 import { auditKiemBienDich, headerKiemBienDich } from "../services/ai/st/auditKiemBienDich";
 import { trichMaST } from "../services/ai/st/trichMaST";
 import { chayVoiTokenKhe, chonModelKhiVuotTran, tokenKheHienTai, vuotTranDoiKhe } from "../services/ai/soModel/tranDoiKheToken";
@@ -394,8 +394,14 @@ function apTranDoiKhe(res: Response, modelId: string | undefined): string | unde
  * ★★ Đợt 9 — VÒNG KIỂM BIÊN DỊCH ST (`services/ai/st/kiemBienDichSt.ts`) cho /v1: chỉ khi cờ `AI_KIEM_BIEN_DICH_ST` có `v1`,
  * vai trò SAU định tuyến là `code.plc`, không phải lượt tool, và client không tắt (`st4i_kiem_bien_dich: false`).
  */
-function nenKiemBienDichV1(modelLabel: string, body: Record<string, unknown>, coTool: boolean): boolean {
-  return kiemBienDichBat("v1") && modelLabel.trim().toLowerCase() === "code.plc" && !coTool && body.st4i_kiem_bien_dich !== false;
+function nenKiemBienDichV1(modelLabel: string, body: Record<string, unknown>, coTool: boolean, stream: boolean): boolean {
+  if (modelLabel.trim().toLowerCase() !== "code.plc" || coTool) return false;
+  // ★ (2026-10-22, dieu-phoi) mặc định env không đặt = `chi-stream`: non-stream chỉ khi khách opt-in (`st4i_kiem_bien_dich:true`)
+  //   — A/B #2: vòng bật đẩy 10 % lượt quá 300 s ⇒ khách non-stream có trần header 300 s bị cắt (xem `cheDoKiemBienDichV1`).
+  const cheDo = cheDoKiemBienDichV1();
+  if (cheDo === "bat") return body.st4i_kiem_bien_dich !== false;
+  if (cheDo === "chi-stream") return stream ? body.st4i_kiem_bien_dich !== false : body.st4i_kiem_bien_dich === true;
+  return false;
 }
 
 // ★ Đợt 9 — `headerKiemBienDich` / `auditKiemBienDich` nay ở `ai/st/auditKiemBienDich.ts` (dùng chung với đường KB coding); re-export giữ nguyên API cũ.
@@ -943,6 +949,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         modelLabel = chon.vaiTro ?? "chat";
         if (!res.headersSent) res.setHeader("x-st4i-vai-tro", `${modelLabel}; tang=${chon.tang}`);
       }
+      // ★ Đợt 9 (2026-10-23) — làm mới "khe đang giữ" TRƯỚC định tuyến vai trò (đổi khe ngoài tiến trình ⇒ lượt đầu bị từ chối oan).
+      await (await import("../services/ai/soModel/kheNangMacDinh")).lamMoiKheDangGiu();
       const modelId = apTranDoiKhe(res, resolveModelId(modelLabel));
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : 0.7;
@@ -1165,7 +1173,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         // tối đa 2 vòng), phát phần BỔ SUNG rồi mới finish_reason + [DONE] (client OpenAI dừng đọc ở finish_reason —
         // dieu-phoi 2026-10-21). Trong lúc chờ phát keep-alive (chú thích SSE) để proxy không cắt. Không có mã ST ⇒ không phát gì.
         let auditKiem: string | undefined;
-        if (nenKiemBienDichV1(modelLabel, body, !!yeuCauTool.tools) && outcome === "ok" && !daPhatToolCall && !biCat && !res.destroyed) {
+        if (nenKiemBienDichV1(modelLabel, body, !!yeuCauTool.tools, true) && outcome === "ok" && !daPhatToolCall && !biCat && !res.destroyed) {
           const giuSong = setInterval(() => {
             if (!res.destroyed) res.write(": kiem-bien-dich-st\n\n");
           }, 5_000);
@@ -1224,7 +1232,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         }
         // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
         // `plan?.` — no-op when the fail-open rate-limit path left `plan` null.
-        plan?.record({ tokensIn, tokensOut, latencyMs: Date.now() - engineStart, outcome, requestId: id, ...(auditKiem ? { auditSnippet: auditKiem } : {}) });
+        plan?.record({ tokensIn, tokensOut, latencyMs: Date.now() - engineStart, outcome, requestId: id, model: modelId ?? null, ...(auditKiem ? { auditSnippet: auditKiem } : {}) });
 
         const doneChunk = {
           id,
@@ -1272,6 +1280,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const msMotLan = Date.now() - engineStart;
       const ghiDoDem = (auditSnippet?: string) =>
         plan?.record({
+          // ★ Đợt 9 (2026-10-23, đo) — model THỰC chạy theo định tuyến vai trò; vắng ⇒ metrics ghi model của bộ định tuyến cổng (env).
+          model: modelId ?? null,
           tokensIn: result.tokensPrompt,
           tokensOut: result.tokensGenerated,
           latencyMs: msMotLan,
@@ -1294,7 +1304,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // header `x-st4i-bien-dich`. Không có mã ST ⇒ nội dung nguyên vẹn, header `ok=skip`.
       let noiDungRa = chatHienThi;
       let auditKiemMotLan: string | undefined;
-      if (nenKiemBienDichV1(modelLabel, body, !!yeuCauTool.tools) && !toolCallsRa.length && result.finishReason !== "length") {
+      if (nenKiemBienDichV1(modelLabel, body, !!yeuCauTool.tools, false) && !toolCallsRa.length && result.finishReason !== "length") {
         try {
           const kq = await kiemVaSuaST({
             cauTraLoi: chatHienThi,
@@ -1418,6 +1428,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         return;
       }
       const modelLabel = kiem.ten;
+      // ★ Đợt 9 (2026-10-23) — làm mới "khe đang giữ" TRƯỚC định tuyến vai trò (đổi khe ngoài tiến trình ⇒ lượt đầu bị từ chối oan).
+      await (await import("../services/ai/soModel/kheNangMacDinh")).lamMoiKheDangGiu();
       const modelId = apTranDoiKhe(res, resolveModelId(modelLabel));
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : isFim ? 256 : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : isFim ? 0.2 : 0.7;
@@ -1459,6 +1471,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           usageFim = usageOpenAi(result.tokensPrompt, result.tokensGenerated);
           // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
           plan?.record({
+            // ★ Đợt 9 (2026-10-23, đo) — model THỰC chạy theo định tuyến vai trò; vắng ⇒ metrics ghi model của bộ định tuyến cổng (env).
+            model: modelId ?? null,
             tokensIn: result.tokensPrompt,
             tokensOut: result.tokensGenerated,
             latencyMs: Date.now() - engineStart,
@@ -1496,6 +1510,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const result = await generateFim(fimOpts, modelId);
       // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
       plan?.record({
+        // ★ Đợt 9 (2026-10-23, đo) — model THỰC chạy theo định tuyến vai trò; vắng ⇒ metrics ghi model của bộ định tuyến cổng (env).
+        model: modelId ?? null,
         tokensIn: result.tokensPrompt,
         tokensOut: result.tokensGenerated,
         latencyMs: Date.now() - engineStart,

@@ -96,7 +96,12 @@ export function registerAiAgentRoutes(app: express.Express, ql: QuanLyLuotChay =
       req: reqChoAudit(req),
     });
     if (!kq.ok) {
-      res.status(kq.http).json({ success: false, code: kq.ma, ...(kq.runId ? { runId: kq.runId } : {}) });
+      res.status(kq.http).json({
+        success: false,
+        code: kq.ma,
+        ...(kq.runId ? { runId: kq.runId } : {}),
+        ...(kq.thongDiep ? { message: kq.thongDiep } : {}),
+      });
       return;
     }
     res.setHeader("X-Agent-Run-Id", kq.luot.id);

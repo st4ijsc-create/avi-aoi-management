@@ -47,8 +47,23 @@ const boThat: BoPhucVuKheNang = {
       if (e instanceof LoiDoiModel && e.code === "DA_DANG_CHAY") return;
       throw e;
     }
+    const t0 = Date.now();
     const p = await xong;
     console.log(`[khe-nang] đổi khe → ${model}: ${p.ketQua}${p.loi ? ` (${p.loi})` : ""}`);
+    // ★ Đợt 9 (2026-10-23, dieu-phoi) — GHI mỗi lần đổi khe vào `vram_events` (event `doi_khe`, có giờ) ⇒ đếm được "số lần đổi khe/giờ"
+    //   sau khi bật trợ lý + tác nhân theo vai trò (ngưỡng báo > 6/giờ: đổi khe làm câu KB/vận hành xếp hàng sau). Log console không có giờ.
+    try {
+      const { logVramEvent } = await import("../../vram/vramEventLog");
+      logVramEvent({
+        event: "doi_khe",
+        owner: "khe-nang",
+        leaseKind: "external-process",
+        priority: "interactive",
+        detail: { den: model, ketQua: p.ketQua, ms: Date.now() - t0, ...(p.loi ? { loi: String(p.loi).slice(0, 200) } : {}) },
+      });
+    } catch {
+      /* nhật ký là phần thêm — không bao giờ làm hỏng lượt đổi khe */
+    }
     if (p.ketQua !== "thanh-cong") throw new LoiKheNang("KHE_NANG_HONG", p.loi ?? p.ketQua);
   },
 };
@@ -98,6 +113,19 @@ export async function* quaKheNangLuong<T>(model: string, moLuong: () => AsyncGen
   }
 }
 
+/**
+ * ★ Đợt 9 (2026-10-23) — làm mới "khe đang giữ" (nguồn của `kheDangGiu` trong định tuyến vai trò) TRƯỚC khi định tuyến. Đi tắt
+ * (hoán đổi tắt / không hồ sơ nặng) ⇒ không làm gì. Không ném (định tuyến vẫn chạy với giá trị đã có).
+ */
+export async function lamMoiKheDangGiu(): Promise<void> {
+  if (diTat()) return;
+  try {
+    await layKheNang().xacNhanDangGiu();
+  } catch {
+    /* thăm dò hỏng: bộ lập lịch tự xử ở lượt xin khe */
+  }
+}
+
 /** Cho tRPC tổng quan; `null` = khe nặng chưa từng được dùng trong tiến trình này. */
 export function thongKeKheNang(): (ThongKeKheNang & { tuDoi: boolean }) | null {
   return kn ? { ...kn.thongKe(), tuDoi: cauHinh.tuDoi } : null;
@@ -113,3 +141,6 @@ export function __datKheNangChoTest(k: KheNang | null, tuDoi = true): void {
   kn = k;
   cauHinh.tuDoi = tuDoi;
 }
+
+/** Chỉ lưới: `BoPhucVu` THẬT (đổi khe qua `DieuPhoiDoiModel` + ghi `vram_events` `doi_khe`). */
+export const __boPhucVuThatChoTest: BoPhucVuKheNang = boThat;

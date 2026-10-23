@@ -210,6 +210,18 @@ describe("hai đường NGOÀI cổng — ghiLuotNgoaiCong", () => {
     expect(h[0]).toMatchObject({ task: "kb_agent_luot", outcome: "error" });
   });
 
+  it("agent theo vai trò (khongGhiDauVet) ⇒ KHÔNG ghi dấu vết chỉ-ghi (lượt đã đếm qua cổng ở quanLyLuotChay) — tránh hai hàng cho một lượt", async () => {
+    const goi = taoGoiModelMayChu({ userId: 7, khongGhiDauVet: true });
+    const g = goi({ tinNhan: [{ role: "user" as const, content: "x" }], congCu: [], signal: new AbortController().signal });
+    for (;;) {
+      const n = await g.next();
+      if (n.done) break;
+    }
+    await xa();
+    expect(hangAudit()).toHaveLength(0);
+    expect(hangSoDo()).toHaveLength(0);
+  });
+
   it("helper KHÔNG ném và KHÔNG gating (đầu vào lạ vẫn chỉ ghi/nuốt); chiNhatKy ⇒ không có hàng sổ đo", async () => {
     expect(() => ghiLuotNgoaiCong({ task: "code", auditTask: "kb_x".repeat(20), tier: 99, latencyMs: -5, tokensIn: Number.NaN })).not.toThrow();
     ghiLuotNgoaiCong({ task: "code", auditTask: "kb_kiem_st", chiNhatKy: true, auditSnippet: "x" });

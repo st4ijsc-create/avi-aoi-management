@@ -1,11 +1,29 @@
 import * as db from "../db";
 import { notificationConfigured, notifyOwner } from "./notification";
 import { getIO } from "./socket";
+import { phatTheoNhaMay } from "./socketPhatTheoNhaMay";
 
 const OFFLINE_THRESHOLD_MINUTES = 5;
 const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
 
 let intervalId: NodeJS.Timeout | null = null;
+
+/**
+ * ★ H1b (2026-10-23) — MỖI ĐỢT offline của một máy chỉ PHÁT `machine:offline_alert` MỘT lần.
+ *
+ * Lỗi đo được trên :3000: hàm này chạy mỗi 60 s và phát LẠI cho mọi máy offline "chưa gửi" — mà khi dịch vụ thông báo chưa cấu hình thì KHÔNG máy nào được đánh dấu đã
+ * gửi ⇒ phát mãi (3.400 tin trong 75 s vào phòng `admin`, không client nào nghe).
+ *
+ * "Đợt offline" = MỘT hàng `machine_status_logs` (`log.id`): máy online lại rồi offline lần nữa tạo hàng MỚI ⇒ đợt mới ⇒ phát lại. Việc ghi nhớ "đã phát" ĐỘC LẬP với
+ * việc gửi thông báo thành công (`markOfflineNotificationSent` giữ nguyên nghĩa: chỉ đánh dấu khi `notifyOwner` gửi được). Bộ nhớ trong tiến trình: khởi động lại ⇒ tối đa một lần
+ * phát lại mỗi đợt đang diễn ra. Mỗi chu kỳ dọn các id không còn trong danh sách offline (đợt đã kết thúc) ⇒ bộ nhớ bị chặn theo số máy đang offline.
+ */
+const daPhatDotOffline = new Set<number>();
+
+/** Chỉ lưới: quên các đợt đã phát (mô phỏng khởi động lại). */
+export function __quenDotOfflineChoTest(): void {
+  daPhatDotOffline.clear();
+}
 
 export async function checkOfflineMachines(): Promise<void> {
   try {
@@ -23,8 +41,12 @@ export async function checkOfflineMachines(): Promise<void> {
     }
     
     if (unnotifiedMachines.length === 0) {
+      daPhatDotOffline.clear(); // không máy nào còn offline-chưa-gửi ⇒ mọi đợt đã kết thúc (hoặc đã gửi)
       return;
     }
+    // đợt đã kết thúc (máy online lại / đã đánh dấu gửi) ⇒ quên, để đợt sau phát lại
+    const conOffline = new Set<number>(unnotifiedMachines.map((x) => x.log.id));
+    for (const id of daPhatDotOffline) if (!conOffline.has(id)) daPhatDotOffline.delete(id);
 
     console.log(`[OfflineMonitor] Found ${unnotifiedMachines.length} machines offline for more than ${OFFLINE_THRESHOLD_MINUTES} minutes`);
 
@@ -72,16 +94,25 @@ export async function checkOfflineMachines(): Promise<void> {
         console.warn(`[OfflineMonitor] Failed to send notification for machine ${machine.code}`);
       }
 
-      // Also emit to connected admin clients via WebSocket
-      const io = getIO();
-      if (io) {
-        io.to("admin").emit("machine:offline_alert", {
-          machineId: machine.id,
-          machineCode: machine.code,
-          machineName: machine.name,
-          offlineSince: log.timestamp,
-          offlineDurationMinutes: offlineDuration,
-        });
+      // WebSocket: MỖI ĐỢT offline phát ĐÚNG MỘT lần (xem `daPhatDotOffline`), theo PHÒNG NHÀ MÁY của máy (P-S1b) thay vì `admin` — người trong nhà máy đó (và người toàn quyền) nhận.
+      // Hiện KHÔNG client nào nghe sự kiện này; giữ lại vì rẻ khi chỉ phát một lần.
+      if (!daPhatDotOffline.has(log.id)) {
+        daPhatDotOffline.add(log.id);
+        const io = getIO();
+        if (io) {
+          phatTheoNhaMay(
+            io,
+            "machine:offline_alert",
+            {
+              machineId: machine.id,
+              machineCode: machine.code,
+              machineName: machine.name,
+              offlineSince: log.timestamp,
+              offlineDurationMinutes: offlineDuration,
+            },
+            { machineId: machine.id, machineCode: machine.code },
+          );
+        }
       }
     }
   } catch (error) {

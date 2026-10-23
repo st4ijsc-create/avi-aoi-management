@@ -4507,7 +4507,12 @@
     "CAU_HOI_RONG": "The request is empty.",
     "CAU_HOI_QUA_DAI": "The request is too long for one agent run.",
     "CHE_DO_SAI": "Invalid agent mode.",
-    "PROJECT_NOT_FOUND": "The selected project was not found (or is not in the allowed list)."
+    "PROJECT_NOT_FOUND": "The selected project was not found (or is not in the allowed list).",
+    "AI_KHONG_CO_MODEL": "No model is available for the Agent: the model slot is locked for a measurement / model switch and this role has no usable fallback. Try again in a few minutes.",
+    "AI_GIOI_HAN_TAN_SUAT": "You're sending AI requests too fast — wait a moment and try again.",
+    "AI_HET_HAN_MUC": "Today's AI token quota is used up (including the estimate reserved for one Agent run). Try again tomorrow or ask an administrator to raise the quota.",
+    "AI_CHAN_AN_TOAN": "The request was blocked by the AI safety layer because it looks like a prompt injection. Please rephrase it.",
+    "AI_CHUA_CAP_PHEP": "The current edition / licence does not include AI (MOD_AI)."
   },
   "export": {
     "reportMenu": {
@@ -7500,7 +7505,10 @@
     "highPriorityOnly": "High priority only",
     "snooze1h": "Snooze 1 hour",
     "snoozed": "Snoozed",
-    "snoozeHint": "Snoozed: only the bell count and pop-ups for normal items are muted — urgent/critical items still alert; the list stays complete."
+    "snoozeHint": "Snoozed: only the bell count and pop-ups for normal items are muted — urgent/critical items still alert; the list stays complete.",
+    "storm": {
+      "heldBack": "+{{count}} more alerts grouped — open notifications to see them all"
+    }
   },
   "oee": {
     "updateTarget": "Update target",
@@ -21354,6 +21362,14 @@
         "sach": "compiles clean",
         "loi": "{{n}} error(s)",
         "chuaKiem": "not checked"
+      },
+      "modelBatDau": {
+        "dangChay": "Running {{model}} · role {{vaiTro}}{{duAn}}",
+        "daChay": "Ran {{model}} · role {{vaiTro}}{{duAn}}",
+        "duAnPlc": " (PLC project)",
+        "duAnPhanMem": " (software project)",
+        "macDinh": "the engine's default model",
+        "duPhong": "fallback — the slot is holding another model"
       }
     },
     "duanCaNhan": {

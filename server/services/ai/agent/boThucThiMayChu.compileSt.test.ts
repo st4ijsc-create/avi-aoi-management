@@ -73,7 +73,9 @@ describe("compile_st — kết quả cho model", () => {
     expect(goi).toEqual([{ tool: "kiem_bien_dich_st", args: { path: "src/A.st" } }]);
     expect(kq.choModel).toContain("Compilation FAILED");
     expect(kq.choModel).toContain("src/A.st:4:13 error[E007]: Unexpected token ;");
-    expect(kq.choModel).toMatch(/call compile_st again/);
+    expect(kq.choModel).toMatch(/Fix every error, then compile the file again\.$/);
+    // ★★ (2026-10-22, ablation tác nhân) câu hướng dẫn của CHÍNH ta không được làm bộ quét chỉ thị gắn cờ ⇒ KHÔNG hạ tự trị
+    expect(kq.dangNgo).toBeUndefined();
     expect(kq.hienThi).toMatchObject({ tool: "compile_st", path: "src/A.st", ok: false, soLoi: 1 });
   });
 

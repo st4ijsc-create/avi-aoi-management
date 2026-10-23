@@ -18,6 +18,7 @@
  *    panel final yield uses ALL rows (FPY 100% vs final 0% on the same panel).
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import * as db from "../db";
 
 describe("panel-level yield (doc 51 CASE #7)", () => {
@@ -55,7 +56,7 @@ describe("panel-level yield (doc 51 CASE #7)", () => {
     const workshopId = await db.createWorkshop({ factoryId, code: `TEST_WS_PANEL_${ts}`, name: "Panel test workshop" });
     const lineId = await db.createProductionLine({ workshopId, code: `TEST_LINE_PANEL_${ts}`, name: "Panel test line" });
     const stationId = await db.createStation({ lineId, code: `TEST_ST_PANEL_${ts}`, name: "Panel test station", sequence: 1 });
-    productModelId = await db.createProductModel({ code: `PROD_PANEL_${ts}`, name: "Panel test product", version: "1.0" });
+    productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: `PROD_PANEL_${ts}`, name: "Panel test product", version: "1.0" }));
 
     const mk = async (suffix: string) => db.createMachine({
       stationId,

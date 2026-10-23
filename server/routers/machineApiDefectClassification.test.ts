@@ -16,6 +16,7 @@
  * unseeded → visible+recoverable (never silently dropped).
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { eq, inArray } from "drizzle-orm";
 import { appRouter } from "../routers";
 import * as db from "../db";
@@ -60,10 +61,10 @@ beforeAll(async () => {
     apiKey: API_KEY,
     isActive: true,
   });
-  productModelId = await db.createProductModel({
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({
     code: MODEL_CODE,
     name: "WB2 OP3 test model",
-  });
+  }));
   seededDefectId = await db.createDefectCatalog({
     code: SEEDED_CODE,
     name: "WB2 seeded bridge",

@@ -32,6 +32,8 @@ function serverEnv(logDir: string): NodeJS.ProcessEnv {
     PORT: String(SERVER_PORT), ROLE: "api", NODE_ENV: "development",
     JWT_SECRET: "fs-" + crypto.randomBytes(32).toString("hex"),
     LICENSE_BYPASS: "true", AUTH_2FA_BAT_BUOC: "0", VITE_APP_ID: "ui-metrics",
+    // Quét lệch nhà máy edge × quản trị viên: ở CSDL _test đông đúc mỗi lần khởi động tạo hàng triệu truy vấn/hàng thông báo, làm instance e2e nghẽn pool (đăng nhập treo 40–60 s).
+    EDGE_FACTORY_DRIFT_ALERT: "off",
     ACTUATION_STEPUP_2FA: "true",
   }, ALWAYS_OFF, { FOE_ENABLED: "false", OT_GATEWAY_ENABLED: "false", OT_CONTROL_ENABLED: "false", AI_OT_CONTROL_ENABLED: "false", AI_FLOW_ENABLED: "false" });
   return env;

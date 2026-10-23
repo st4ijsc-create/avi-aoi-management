@@ -388,3 +388,96 @@ test("10 — trợ lý lập trình: nhãn kiểm biên dịch ST (AI giả qua 
   expect(await the.innerText()).not.toMatch(/repoWs\.|kiemBienDich/); // không khoá thô
   if (process.env.FS_SHOT_DIR) await page.screenshot({ path: `${process.env.FS_SHOT_DIR}/10b-con-loi.png` });
 });
+
+test("11 — tác nhân theo VAI TRÒ (AI giả qua SSE): dòng 'Running <model> · role code.plc' + nhãn dự phòng; mã từ chối 503 AI_KHONG_CO_MODEL hiện câu EN đã dịch", async ({ page }) => {
+  await dangNhap(page, fx.admin, "en");
+  const sse = (...su: object[]) => su.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
+  let luot = 0;
+  await page.route("**/api/ai/agent/runs", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    luot += 1;
+    if (luot === 1) {
+      // cờ AI_AGENT_THEO_VAI_TRO bật: bat-dau mang model + vai trò (nguồn dự phòng ⇒ nhãn)
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+        body: sse(
+          { loai: "bat-dau", runId: "run-fs-1", cheDo: "duyet", model: { vaiTro: "code.plc", model: "Qwen3.6-27B-UD-Q4_K_XL", nguon: "du-phong", bangChung: "dự án PLC (.st/.scl); khe đang giữ model khác" } },
+          { loai: "chu", noiDung: "Done." },
+          { loai: "xong", lyDo: "hoan-thanh", tomTat: "ok" },
+        ),
+      });
+      return;
+    }
+    // lượt 2: bị từ chối TRƯỚC khi có lượt chạy (không SSE) — thân JSON y như server
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ success: false, code: "AI_KHONG_CO_MODEL", message: "raw server text" }) });
+  });
+  await page.goto(`${base}/ai-coding-workspace`);
+  await page.getByRole("radio", { name: /step-by-step approval/i }).click();
+  const o = page.locator("textarea").last();
+  await expect(o).toBeVisible({ timeout: 60_000 });
+
+  await o.fill("write a PLC function block");
+  await o.press("Enter");
+  const dong = page.getByTestId("agent-model-bat-dau");
+  await expect(dong).toBeVisible({ timeout: 30_000 });
+  await expect(dong).toHaveAttribute("data-vai-tro", "code.plc");
+  await expect(dong).toContainText("Qwen3.6-27B-UD-Q4_K_XL · role code.plc (PLC project)");
+  await expect(page.getByTestId("agent-model-du-phong")).toContainText("fallback");
+  expect(await dong.innerText()).not.toMatch(/repoWs\.|modelBatDau/); // không khoá thô
+  if (process.env.FS_SHOT_DIR) await page.screenshot({ path: `${process.env.FS_SHOT_DIR}/11a-model-bat-dau.png` });
+
+  await expect(page.getByTestId("agent-trang-thai")).toHaveCount(0, { timeout: 30_000 }); // lượt 1 đã xong
+  await o.fill("second request");
+  await o.press("Enter");
+  const khung = page.getByTestId("agent-dong-thoi-gian");
+  await expect(khung).toContainText("No model is available for the Agent", { timeout: 30_000 });
+  const chu = await khung.innerText();
+  expect(chu).not.toContain("AI_KHONG_CO_MODEL"); // không mã thô
+  expect(chu).not.toContain("raw server text"); // câu đã dịch thắng `message` của server
+  if (process.env.FS_SHOT_DIR) await page.screenshot({ path: `${process.env.FS_SHOT_DIR}/11b-tu-choi-503.png` });
+});
+
+test("12 — socket `subscribe` theo PHẠM VI (instance thật, đăng nhập cookie thật): người trong nhà máy vào phòng máy của mình KHÔNG bị lỗi; người chưa gán nhà máy bị từ chối bằng lỗi chung", async ({ browser }) => {
+  const { io: ioClient } = await import("socket.io-client");
+  // Đăng nhập MỘT lần cho mỗi người dùng (nhiều lần đăng nhập liên tiếp dễ chạm giới hạn tần suất của /api/auth/login).
+  const cookieCua = new Map<string, string>();
+  const dangNhapMotLan = async (ai: { username: string; password: string }): Promise<string> => {
+    const da = cookieCua.get(ai.username);
+    if (da) return da;
+    const ctx = await browser.newContext();
+    const r = await ctx.request.post(`${base}/api/auth/login`, { data: { username: ai.username, password: ai.password }, timeout: 60_000 });
+    expect(r.ok(), `login ${ai.username}: ${r.status()}`).toBe(true);
+    const cookie = (await ctx.cookies()).map((c) => `${c.name}=${c.value}`).join("; ");
+    await ctx.close();
+    cookieCua.set(ai.username, cookie);
+    return cookie;
+  };
+  const ketNoi = async (ai: { username: string; password: string }) => {
+    const cookie = await dangNhapMotLan(ai);
+    const sk = ioClient(base, { path: "/api/socket.io", transports: ["websocket"], forceNew: true, reconnection: false, extraHeaders: { cookie } });
+    await new Promise<void>((ok, loi) => {
+      sk.once("connect", () => ok());
+      sk.once("connect_error", (e) => loi(e));
+    });
+    return { sk };
+  };
+  // `choTuChoi`: dự kiến BỊ từ chối ⇒ đợi lỗi tới (tối đa 15 s — lượt phân giải phạm vi đầu tiên trên instance nguội có thể chậm); không ⇒ đợi 3 s xem có lỗi muộn không.
+  const thu = async (ai: { username: string; password: string }, payload: Record<string, unknown>, choTuChoi = false): Promise<unknown[]> => {
+    const { sk } = await ketNoi(ai);
+    const loi: unknown[] = [];
+    sk.on("subscribe:error", (g) => loi.push(g));
+    sk.emit("subscribe", payload);
+    const han = Date.now() + (choTuChoi ? 15_000 : 3_000);
+    while (Date.now() < han && !(choTuChoi && loi.length > 0)) await new Promise((r) => setTimeout(r, 100));
+    sk.disconnect();
+    return loi;
+  };
+  const dung = { machineId: fx.machineId, factoryId: fx.nhaMayA.id };
+  expect(await thu(fx.mot, dung)).toEqual([]); // kỹ sư nhà máy A: máy + nhà máy của mình ⇒ không lỗi
+  expect(await thu(fx.nhieu, dung)).toEqual([]); // kỹ sư A+B: cũng hợp lệ
+  expect(await thu(fx.admin, dung)).toEqual([]); // admin: bypass
+  expect(await thu(fx.mot, { factoryId: fx.nhaMayB.id }, true)).toEqual([{ code: "SUBSCRIBE_DENIED" }]); // nhà máy B không thuộc phạm vi của `mot`
+  expect(await thu(fx.khong, dung, true)).toEqual([{ code: "SUBSCRIBE_DENIED" }]); // chưa gán nhà máy nào ⇒ chặn (MỘT lỗi chung)
+  expect(await thu(fx.mot, {})).toEqual([]); // `subscribe {}` (các trang chỉ cần phòng chung) vẫn như cũ
+});

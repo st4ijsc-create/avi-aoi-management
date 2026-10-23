@@ -61,7 +61,8 @@ const WORK = `${ROOT}/tmp/ngau-nhien-work/${LABEL}-${process.pid}`;
 const TEN_TRINH_DICH = ST_TRINH_DICH === "matiec" ? TEN_TRINH_DICH_ST.matiec : TEN_TRINH_DICH_ST.rusty;
 const VONG_SUA = Math.max(0, Number(arg("--vong-sua", 0)));
 const AB_KIEM = co("--ab-kiem");
-if (AB_KIEM && CONFIG !== "v1") { console.error("--ab-kiem chỉ cho --config v1."); process.exit(2); }
+// ★ Đợt 9 (2026-10-23) — pipeline (trợ lý lập trình): opt-out `context.kiemBienDichST:false`; cờ server phải có `tro-ly`.
+if (AB_KIEM && CONFIG !== "v1" && CONFIG !== "pipeline") { console.error("--ab-kiem chỉ cho --config v1 | pipeline."); process.exit(2); }
 if (VONG_SUA > 0 && CONFIG !== "raw") { console.error("--vong-sua chỉ cho --config raw (v1: vòng kiểm là của SERVER, bật bằng cờ)."); process.exit(2); }
 
 const DS = chonPhanTang(KHO_LOC, { seed: SEED, n: N });
@@ -148,7 +149,7 @@ async function cham(b, luot, g, nhanh = undefined) {
     totalMs: g.totalMs ?? null, ttftMs: g.ttftMs ?? null, promptTok: g.promptTok ?? null, genTok: g.genTok ?? null,
     finish: g.finish ?? null, cut: !!g.cut, evs: g.evs ?? null, err: g.err ?? null, chamMs: kq.ms,
     tep: tr.tep, vanBanGoc: GOI_MODEL ? (g.text || "").slice(0, 40000) : undefined, vongSua: g.vongSua,
-    hdr: g.hdr ?? undefined, requestId: g.requestId ?? undefined,
+    hdr: g.hdr ?? undefined, requestId: g.requestId ?? undefined, usage: g.usage ?? undefined,
   };
   if (tr.thieu.length && !row.lyDo.includes("THIEU_TEP")) row.lyDo = ["THIEU_TEP:" + tr.thieu.join("+"), ...row.lyDo];
   rows.push(row);
@@ -206,16 +207,18 @@ for (const b of DS) {
       let g;
       try {
         g = CONFIG === "raw" && VONG_SUA > 0 && b.kieu === "st" ? await sinhCoVongSua(b)
-          : CONFIG === "raw" ? await goi.chatRaw(SYS_MOT_LUOT, taoCauHoiMotLuot(b)) : CONFIG === "pipeline" ? await goi.chatPipeline(taoCauHoiMotLuot(b))
+          : CONFIG === "raw" ? await goi.chatRaw(SYS_MOT_LUOT, taoCauHoiMotLuot(b)) : CONFIG === "pipeline" ? await goi.chatPipeline(taoCauHoiMotLuot(b), { tatKiem: nhanh === "tat" })
           : CONFIG === "v1" ? await goi.chatV1(SYS_MOT_LUOT, taoCauHoiMotLuot(b), { tatKiem: nhanh === "tat" }) : genGia(b);
       } catch (e) {
         g = { text: "", err: String(e).slice(0, 300) };
       }
+      // ★ Đợt 9 — pipeline: tóm tắt vòng kiểm đi ở `done.kiemBienDichST` ⇒ đặt vào CÙNG ô header của /v1 (kiểm nhánh + báo cáo dùng chung).
+      if (CONFIG === "pipeline" && g.kiemBienDich) g.hdr = { "x-st4i-bien-dich": g.kiemBienDich };
       // ★ Đợt 9 — lượt hỏng (lỗi gọi / chữ rỗng) ⇒ hỏi sức khoẻ; server chết ⇒ DỪNG NGAY, KHÔNG chấm lượt này (lỗi máy, không
       // phải lỗi model), ghi báo cáo phần đã xong rồi thoát 2.
       // ★ v1 (2026-10-22, A/B lần 3: HTTP 500 "khe bị khoá" bị CHẤM thành trượt 20–40 ms/lượt) — server sản phẩm trả LỖI ⇒ lỗi
       // hạ tầng/định tuyến, không phải câu trả lời của model ⇒ dừng, không chấm.
-      if (CONFIG === "v1" && g.err) {
+      if ((CONFIG === "v1" || CONFIG === "pipeline") && g.err) {
         dungSom = { id: b.id, luot, nhanh, loi: `v1 trả lỗi: ${String(g.err).slice(0, 200)}`, luc: new Date().toISOString() };
         break;
       }
@@ -227,7 +230,7 @@ for (const b of DS) {
       // không hiệu lực; "bat" mà KHÔNG có header ⇒ cờ server không có `v1`. Cả hai ⇒ DỪNG, số vô giá trị (exit 2 ở dưới).
       if (AB_KIEM && !g.err) {
         const h = g.hdr?.["x-st4i-bien-dich"];
-        const hong = nhanh === "tat" && h && h !== "ok=skip" ? `nhánh tat có header "${h}"` : nhanh === "bat" && !h ? "nhánh bat KHÔNG có header (cờ server thiếu v1?)" : null;
+        const hong = nhanh === "tat" && h && h !== "ok=skip" ? `nhánh tat có header "${h}"` : nhanh === "bat" && !h ? `nhánh bat KHÔNG có tóm tắt vòng kiểm (cờ server thiếu ${CONFIG === "pipeline" ? "tro-ly" : "v1"}?)` : null;
         if (hong) {
           dungSom = { id: b.id, luot, nhanh, loi: `KIỂM NHÁNH HỎNG: ${hong}`, luc: new Date().toISOString() };
           console.error(`\n⛔ ${dungSom.loi} — dừng, vứt số.`);
@@ -253,7 +256,7 @@ KHOA?.go();
 // ── BÁO CÁO ──────────────────────────────────────────────────────────────────────────────────────────
 rows.sort((a, b) => (a.id === b.id ? (a.luot === b.luot ? String(a.nhanh).localeCompare(String(b.nhanh)) : a.luot - b.luot) : a.id < b.id ? -1 : 1));
 const bang = AB_KIEM
-  ? ["tat", "bat"].map((n) => bangTomTat(rows.filter((r) => r.nhanh === n), { tieuDe: `${LABEL} [${n}] — đường (a) một lượt, config=v1, seed=${SEED}` })).join("\n")
+  ? ["tat", "bat"].map((n) => bangTomTat(rows.filter((r) => r.nhanh === n), { tieuDe: `${LABEL} [${n}] — đường (a) một lượt, config=${CONFIG}, seed=${SEED}` })).join("\n")
   : bangTomTat(rows, { tieuDe: `${LABEL} — đường (a) một lượt, config=${CONFIG}, seed=${SEED}` });
 console.log(bang);
 if (AB_KIEM) {
@@ -266,7 +269,7 @@ if (AB_KIEM) {
   console.log(` A/B cặp đủ hai nhánh: ${du.length} · bật ĐẠT/tắt TRƯỢT ${loi.length} [${loi.join(", ")}] · bật TRƯỢT/tắt ĐẠT ${hai.length} [${hai.join(", ")}]`);
 }
 const lat = rows.map((r) => r.totalMs).filter((x) => x);
-if (CONFIG === "v1") {
+if (CONFIG === "v1" || CONFIG === "pipeline") {
   // ★ Đợt 9 — server đã làm gì với vòng kiểm biên dịch (header `x-st4i-bien-dich`; vắng = cờ tắt / không phải code.plc).
   const dem = {};
   for (const r of rows) {

@@ -4499,7 +4499,12 @@
     "CAU_HOI_RONG": "请求为空。",
     "CAU_HOI_QUA_DAI": "请求对单次 Agent 运行而言过长。",
     "CHE_DO_SAI": "Agent 模式无效。",
-    "PROJECT_NOT_FOUND": "未找到所选项目（或项目不在允许列表中）。"
+    "PROJECT_NOT_FOUND": "未找到所选项目（或项目不在允许列表中）。",
+    "AI_KHONG_CO_MODEL": "没有可用于智能体的模型：模型槽位正被锁定用于测量/切换模型，且该角色没有可用的备用模型。请几分钟后重试。",
+    "AI_GIOI_HAN_TAN_SUAT": "您发送 AI 请求过快 — 请稍等片刻再试。",
+    "AI_HET_HAN_MUC": "今日 AI 令牌额度已用完（含为一次智能体运行预留的估算量）。请明天再试，或请管理员提高额度。",
+    "AI_CHAN_AN_TOAN": "该请求因疑似提示注入被 AI 安全层拦截。请换种方式表述。",
+    "AI_CHUA_CAP_PHEP": "当前版本/许可不包含 AI（MOD_AI）。"
   },
   "export": {
     "reportMenu": {
@@ -7283,7 +7288,10 @@
     "highPriorityOnly": "仅高优先级",
     "snooze1h": "延后 1 小时",
     "snoozed": "已延后",
-    "snoozeHint": "已延后：仅静音普通项的铃铛计数和弹出提示——紧急/严重项仍会提醒；列表保持完整。"
+    "snoozeHint": "已延后：仅静音普通项的铃铛计数和弹出提示——紧急/严重项仍会提醒；列表保持完整。",
+    "storm": {
+      "heldBack": "另有 {{count}} 条告警已合并 — 打开通知查看全部"
+    }
   },
   "oee": {
     "updateTarget": "更新目标",
@@ -21362,6 +21370,14 @@
         "sach": "编译通过",
         "loi": "{{n}} 个错误",
         "chuaKiem": "未能检查"
+      },
+      "modelBatDau": {
+        "dangChay": "正在运行 {{model}} · 角色 {{vaiTro}}{{duAn}}",
+        "daChay": "已运行 {{model}} · 角色 {{vaiTro}}{{duAn}}",
+        "duAnPlc": "（PLC 项目）",
+        "duAnPhanMem": "（软件项目）",
+        "macDinh": "引擎默认模型",
+        "duPhong": "备用 — 槽位正占用另一个模型"
       }
     },
     "duanCaNhan": {

@@ -4,6 +4,7 @@
  *  • DB integration: a real lot (batchNumber) is accepted/rejected/pending per plan.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { eq, inArray } from "drizzle-orm";
 import { appRouter } from "../routers";
 import * as db from "../db";
@@ -110,7 +111,7 @@ beforeAll(async () => {
   // (MachineAuth từ chối đường yếu — cờ không được nới).
   const cred = await issueMachineKey({ machineId, name: `op5-lot-${STAMP}`, scopes: ["ingest:write"] });
   API_KEY = cred.plaintextKey;
-  productModelId = await db.createProductModel({ code: MODEL_CODE, name: "OP5 test model" });
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: MODEL_CODE, name: "OP5 test model" }));
   planId = await db.createSamplingPlan({
     productModelId, code: `AQL-${STAMP}`, name: "AQL c=0 n=5", strategy: "aql",
     sampleSize: 5, acceptanceQty: 0, rejectionQty: 1, aqlMajor: "1.0", isActive: true,

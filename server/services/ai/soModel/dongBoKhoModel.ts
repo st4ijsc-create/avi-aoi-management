@@ -51,6 +51,12 @@ export interface PhuThuocDongBo {
   thuMuc?: string;
   db?: Db | null;
   liet?: typeof lietKeModelTrongKho;
+  /**
+   * ★ Đợt 9 (2026-10-23) — CHỈ LƯỚI: giới hạn bước "đánh dấu MẤT" vào artifact có `filePath` bắt đầu bằng tiền tố này. Vắng (sản phẩm)
+   * ⇒ như cũ: mọi artifact không còn trên đĩa. Lý do đo được: lưới của tệp này chạy song song với `suaSoModel.db.test` trên CÙNG CSDL
+   * `_test` đã đánh dấu `missing` hàng của lưới kia (1/15 lần dưới tải) — đua CSDL giữa hai tệp, không phải thời gian.
+   */
+  chiTienToMat?: string;
 }
 
 export async function dongBoKhoModel(deps: PhuThuocDongBo = {}): Promise<{ them: number; capNhat: number; mat: number }> {
@@ -96,7 +102,11 @@ export async function dongBoKhoModel(deps: PhuThuocDongBo = {}): Promise<{ them:
     const matRows = await db
       .update(aiModelArtifacts)
       .set({ status: "missing", updatedAt: sql`now()` })
-      .where(sql`${notInArray(aiModelArtifacts.filePath, conTren)} AND ${aiModelArtifacts.status} = 'available'`)
+      .where(
+        deps.chiTienToMat
+          ? sql`${notInArray(aiModelArtifacts.filePath, conTren)} AND ${aiModelArtifacts.status} = 'available' AND ${aiModelArtifacts.filePath} LIKE ${deps.chiTienToMat + "%"}`
+          : sql`${notInArray(aiModelArtifacts.filePath, conTren)} AND ${aiModelArtifacts.status} = 'available'`,
+      )
       .returning({ f: aiModelArtifacts.filePath });
     return { them, capNhat, mat: matRows.length };
   } catch (e) {

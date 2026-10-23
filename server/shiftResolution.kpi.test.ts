@@ -14,6 +14,7 @@
  * Runs against the isolated cloned test DB (vitest.setup.ts).
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { dangKyModelSanPhamTest } from "./testing/modelSanPhamTest";
 import * as db from "./db";
 import { shiftConfigs, productionSessions } from "../drizzle/schema";
 import {
@@ -138,7 +139,7 @@ describe("getShiftStats / getShiftReport — real shift_configs windows", () => 
   }
 
   beforeAll(async () => {
-    const productModelId = await db.createProductModel({ code: `PM_SHIFT_${ts}`, name: "pm", version: "1.0" });
+    const productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: `PM_SHIFT_${ts}`, name: "pm", version: "1.0" }));
 
     // ── F2: clean 2-shift (DAY 06-18, NIGHT 18-06) covering 24h ──
     const f2 = await buildFactory("SHIFT_F2");

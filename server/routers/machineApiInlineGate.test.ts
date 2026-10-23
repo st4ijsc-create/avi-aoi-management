@@ -15,6 +15,7 @@
  *   • flag OFF (code default) ⇒ zero behavior change.
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import os from "node:os";
 import path from "node:path";
 import { promises as fsp } from "node:fs";
@@ -124,7 +125,7 @@ beforeAll(async () => {
     apiKey: API_KEY,
     isActive: true,
   });
-  productModelId = await db.createProductModel({ code: PM_CODE, name: "W7-A inline-gate PM" });
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: PM_CODE, name: "W7-A inline-gate PM" }));
 
   const d = await db.getDb();
   const [cfg] = await d!

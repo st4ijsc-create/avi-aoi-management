@@ -37,6 +37,8 @@
  * phạm vi, vì thứ cần chứng minh chính là SQL sinh ra từ nó có tới nơi hay không.
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 
 // Router đứng sau `moduleProcedure("MOD_QUALITY")`; cổng license mặc định BẬT và SKU của CSDL
 // test không gồm MOD_QUALITY ⇒ mọi lượt gọi FEATURE_DISABLED trước khi tới đoạn cần đo.
@@ -92,17 +94,8 @@ const callerA = () => defectHeatmapRouter.createCaller(ctxFor(userAId, "engineer
 const callerNone = () => defectHeatmapRouter.createCaller(ctxFor(userNoneId, "engineer"));
 
 async function mkUser(role: NonNullable<InsertUser["role"]>, tag: string): Promise<number> {
-  const conn = await getDb();
-  const [u] = await conn!
-    .insert(users)
-    .values({
-      openId: `hms_${tag}_${ts}`,
-      username: `hms_${tag}_${ts}`,
-      name: `heatmap saved ${tag}`,
-      role,
-      loginMethod: "local",
-    })
-    .returning({ id: users.id });
+  // Dùng helper chung: TỰ dọn người dùng ở afterAll (xem server/testing/nguoiDungTest.ts) — trước đây tệp này không xoá ⇒ chất người dùng admin ở CSDL _test.
+  const u = await taoNguoiDungTest(tag, role as NonNullable<InsertUser["role"]>, { tienTo: "hms", ten: `heatmap saved ${tag}`, ts });
   return u.id;
 }
 
@@ -152,12 +145,12 @@ beforeAll(async () => {
     machineType: "AOI",
     apiKey: `hms_${ts}`,
   });
-  productModelId = await dbApi.createProductModel({
+  productModelId = dangKyModelSanPhamTest(await dbApi.createProductModel({
     code: `HMSP_${ts}`,
     name: "HMS product",
     imageWidth: 1000,
     imageHeight: 800,
-  });
+  }));
   // HAI điểm đo: A chỉ được nhà máy A dùng, B chỉ nhà máy B ⇒ `getRealTimeHotspots` (GROUP BY
   // điểm đo) và `getProductDefectOverlay` (theo điểm đo) phân biệt được hai nhà máy.
   pointDefA = await dbApi.createMeasurementPointDef({

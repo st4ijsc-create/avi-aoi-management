@@ -638,6 +638,18 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   regex: `\p{L}` trong template thường thành "p" ⇒ ranh giới chữ sai; `\S`/`\d` mất `\` ⇒ dấu vận hành "line N" không bao giờ
   khớp — sửa ở 8509b2f0e). Đợt 9 (a)(b): cổng ý định mã cho tầng 4 + không dấu/đồng nghĩa ⇒ bộ mù 4 (agent viết, commit
   685abed9e trước khi chỉnh) 105 → 109/120. Còn lại ("soạn", "the nao/cai nao" không dấu, "lần gần nhất") chờ bộ mù 5.
+  **Bộ mù 5 (2026-10-23; agent con viết, commit 581521e78 TRƯỚC khi chỉnh; chỉnh trên DEV-4; mã chốt 9b7ffcf72; chấm MỘT lần, GPU như mù
+  1–4):** trước chỉnh 104/120 → **sau 106/120 = 88 %** (+2; DEV-4 83 → 90 ⇒ phần lớn khớp DEV). Sửa được: "lần gần nhất máy AOI-04…",
+  "Soạn giúp… FB bằng ST…". Theo vai trò: code.plc 20 · chat.ops 20 · summarize 19 · code.software 17 · extract 16 · **chat 14/20** (yếu nhất).
+  ⚠ Lần đầu thấy lỗi ĐỘ CHÍNH XÁC tầng 3 trên bộ mù (bộ cũ 100 %): "parse" (tác vụ) thắng ý định mã khi động từ là "soạn"; trích không có
+  từ cấu trúc ("kèm người phụ trách", "các mã… khác nhau") rơi sang vận hành / khái niệm; ý định mã bị PHỦ ĐỊNH ("chưa cần code") hoặc
+  động từ trùng nghĩa thường ("có tạo thread mới không"). Lỗi tầng 4: câu hội thoại/khuyên chung ("soạn email… nguyên tắc", "SMB hay FTP")
+  bị hút về summarize/code. Không chỉnh tiếp trên bộ này (đã dùng) — hướng sau cần bộ mù 6.
+  **BACKLOG định tuyến (dieu-phoi 2026-10-23: KHÔNG làm bộ mù 6 lúc này; gom đủ một vòng rồi mới làm bộ mù mới):** tầng 3 — (1) "soạn" +
+  test/parse ("Soạn unit test pytest cho hàm parse_…" → extract); (2) trích xuất KHÔNG có từ cấu trúc ("lấy… kèm người phụ trách" →
+  chat.ops); (3) "khác nhau" trong yêu cầu trích ("các mã alarm khác nhau" → chat); (4) phủ định ý định mã ("chưa cần code" → code.plc);
+  (5) động từ trùng nghĩa thường ("có tạo thread mới không" → code.software). Tầng 4 — (6) xin lời khuyên chung bị hút về summarize/code
+  ("soạn email… nguyên tắc", "SMB hay FTP cái nào hợp hơn"); (7) câu hội thoại có "hôm qua" nhưng hỏi khái niệm ("digital thread là gì").
 - ★ SỰ CỐ 2026-10-21 14:00: bộ lập lịch khe nặng của :3000 đổi khe sang 35B (start-llama-server.ps1 -Force ⇒ Stop-Process)
   GIỮA lượt đo 27B của tiến trình khác (bằng chứng: vram_events 07:01:50Z "Đổi khe sang … hỏng: kịch bản khởi động thoát 4" +
   logs/llama-server-20261021-140007 thấy 30,9 GB trống). Sửa: KHOÁ KHE — tệp LLAMA_WATCHDOG_PAUSE_FILE mang JSON {chu, lyDo,
@@ -682,6 +694,126 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   cùng `max_tokens` 16000, server ở bản có (a)(b)(c). **Cổng: on ≥ off + 4/72** (không đổi sau khi thấy số). Kiểm nhánh như lần 1
   (tắt mà có header ⇒ vứt; bật không header ⇒ vứt). Báo kèm: số vòng thật/lượt, tỉ lệ cứu được trên lượt có lỗi lần đầu (so M 13/16),
   > 120/300 s mỗi nhánh. Nhãn báo cáo `PLC-v1-ab-kiem-q36-27b-2`.
+  **KẾT QUẢ (2026-10-22 21:06, 144 hàng; 85 hàng đầu HEAD 1ac3504d1, 59 hàng nối tiếp HEAD 25662d0cd — đường /v1 KHÔNG đổi giữa hai
+  mã; dừng giữa chừng 18:21 do llama-server chết vì Windows hết commit, xem runbook):** TẮT 44/72 = 61 % (tt 15 · tv 13 · ud 16) ·
+  BẬT 52/72 = 72 % (tt 21 · tv 17 · ud 14) ⇒ **+8/72 — CỔNG ĐẠT** (lần 1 trên bản lỗi: +3/72). Cặp bật đạt/tắt trượt 15 · ngược lại 7.
+  Theo bài: tt4 +3 · tt5 +2 · tv6 +2 · tt7/tv1/tv2/tv8/ud3 +1 · ud2 −2 · tv3/ud7 −1. Vòng ở nhánh bật: sach 54 (40 đạt) · da-sua 13
+  (11 đạt; 10 sau vòng 1, 3 cần vòng 2 — trần 480 s cho phép) · con-loi 3 · bo-qua 2. **Cứu được 11/16 lượt có lỗi lần đầu** (lần 1:
+  4/13; trục M 13/16). Grader không biên dịch được: tắt 17 → bật 3. Thời gian: trung vị 156 → 152 s, p90 190 → 279 s, max 233 → 550 s;
+  > 120 s: 50 → 52/72; **> 300 s: 0 → 7/72 (10 %)** ⇒ khách /v1 không stream với trần header 300 s sẽ tự cắt 10 % lượt bật ⇒ stream.
+  Quyết định bật `v1`: dieu-phoi — **QUYẾT (2026-10-22, `40d128cce`): mặc định `agent-plc,v1-stream`**: /v1 `code.plc` STREAM bật
+  (khách bỏ bằng `st4i_kiem_bien_dich:false`), NON-STREAM tắt trừ khi khách opt-in `st4i_kiem_bien_dich:true` (vì 10 % > 300 s);
+  env đặt rõ `v1`/`all` ⇒ bật cả hai; `off` ⇒ tắt cả hai, bỏ qua opt-in. Test ghim 3 nhánh; 3 đột biến đỏ.
+- **Ablation `compile_st` trong vòng TÁC NHÂN (35B = model tác nhân sản phẩm), 12 bài ST × 2 lượt** (2026-10-22, báo cáo
+  `reports/AB-agent-cst-*`, gộp `so-sanh-ablation-agent.mjs`): TẮT 12/24 · BẬT 14/24 (cặp 3 vs 1); grader không biên dịch được
+  7/24 → 3/24; compile_st được gọi ở 24/24 lượt bật (74 lần). Nhiễu ghi rõ: 4/24 lượt bật chạy mã trước f024945d3; tt5-l1-bat chạy
+  lại sau 88db78df3 (lỗi câu chỉ dẫn tự hạ tự trị).
+- **ĐĂNG KÝ TRƯỚC — ablation tác nhân LƯỢT 3** (viết 2026-10-22 TRƯỚC khi chạy; dieu-phoi): cùng 12 bài, lượt 3 cho CẢ HAI nhánh
+  (thứ tự lượt lẻ tat→bat), server mã 8bfe341d7 (có thêm dự phòng `--ir`). Gộp 36 lượt/nhánh. **Cổng chính: bat ≥ tat + 3/36.**
+  Cổng PHỤ (chỉ BÁO, không quyết): số lượt grader không biên dịch được bat ≤ tat − 3/36 — cổng phụ do dữ liệu 2 lượt đầu GỢI Ý nên
+  KHÔNG được dùng một mình để bật cờ `agent`. Cờ `agent` giữ TẮT tới khi có kết quả.
+  **KẾT QUẢ (2026-10-22 14:30, 72 báo cáo, 35B):** TẮT 20/36 (tt 9 · tv 7 · ud 4 /12) · BẬT 23/36 (tt 10 · tv 8 · ud 5 /12) ⇒
+  **+3/36 — cổng chính ĐẠT đúng biên (23 ≥ 20 + 3)**. Cặp: bật đạt/tắt trượt 5 [tt5#1 #3, tv9#1 #2, ud5#3] · ngược lại 2 [tt10#2,
+  tv9#3]. Cổng phụ (chỉ báo): grader không biên dịch được 9 → 5 (≤ 9 − 3 ⇒ đạt). Riêng lượt 3: tắt 8/12 · bật 9/12. Chi phí: thời gian
+  trung vị 156 → 209 s (+34 %), token ra trung vị 30,2k → 41,1k (+36 %), dừng het-luot 3 + lap-lai 1 ở nhánh bật (model kẹt sửa).
+  Mã server: lượt 1–2 = 88db78df3 (4/24 lượt bật trước 08:10 là mã cũ hơn, đều biên dịch sạch), lượt 3 = 8bfe341d7 (có `--ir`);
+  khác nhau CHỈ khi RuSTy bị giết sớm — đếm trên 12 lượt bật của lượt 3: **0** lượt dính dự phòng `--ir`, 0 lượt không kiểm được.
+  **QUYẾT (dieu-phoi 2026-10-22):** BẬT `compile_st` cho tác nhân CHỈ ở dự án nhận diện là PLC — `AI_KIEM_BIEN_DICH_ST` không đặt
+  ⇒ mặc định `agent-plc` (đặt rõ `off`/danh sách khác ⇒ theo env; không sửa .env của chủ dự án); dự án không PLC: bộ tool + lời nhắc
+  GIỐNG TỪNG BYTE (lưới ghim). Trần `AI_COMPILE_ST_TRAN_MOI_LUOT` = 6 lần/lượt chạy (hàng rào chống kẹt vòng, không phải tuyên bố
+  chất lượng — chỉ BÁO số lần chạm trần ở ablation sau). Cái giá đã biết: +34 % thời gian, +36 % token trên dự án PLC.
+- **ĐĂNG KÝ TRƯỚC — tác nhân theo vai trò** (thiết kế `2026-10-22-tac-nhan-theo-vai-tro-design.md`, dieu-phoi duyệt kèm 4 chỉnh):
+  12 bài ST (cùng danh sách) × 2 lượt, vai trò `code` (35B) vs `code.plc` (27B, qua định tuyến mới). **Cổng: code.plc ≥ code + 2/24
+  VÀ trung vị thời gian ≤ 2×.** Không đạt ⇒ tác nhân giữ `code`. Chạy SAU A/B /v1 #2.
+  **KẾT QUẢ (2026-10-23 04:37, `tmp/do-ablation-vaitro.sh`, báo cáo `reports/AB-agent-vt-*`, gộp `so-sanh-ablation-agent.mjs --tien-to
+  AB-agent-vt-`; mã server ff338d42f ở cả hai khối — 5461dafea chỉ sửa bộ đo):** tat (cờ tắt, 35B) **15/24** (tt 8/8 · tv 4/8 · ud 3/8) ·
+  bat (`AI_AGENT_THEO_VAI_TRO=1`, dự án PLC ⇒ `code.plc` ⇒ 27B, 24/24 lượt `bat-dau.model` = code.plc/27B/gan-profile) **19/24** (tt 8/8 ·
+  tv 4/8 · ud 7/8) ⇒ **+4/24 ≥ +2 — CỔNG ĐẠT**; trung vị thời gian 177 → 276 s = **1,56× ≤ 2× — ĐẠT**. Cặp: bật đạt/tắt trượt 4 (ud10#2,
+  ud5#1, ud5#2, ud8#2) · ngược lại **0**. Token ra trung vị 35,6k → 17,3k (27B nghĩ ít hơn); compile_st 82 → 64 lần; không build được ở
+  máy chấm 3 · 3; dừng khác hoàn-thành: tắt 5 (het-token 2, lap-lai 2, het-luot 1) · bật 2 (lap-lai 1, het-gio 1 — trần client 40 phút).
+  Nhiễu đã biết: thiết kế KHỐI (bat 23:57–02:50, tat 02:53–04:37 — nhiệt/cache/giờ không tách được khỏi nhánh). Kiểm trôi TRONG khối:
+  tỉ lệ thời gian lượt 2/lượt 1 cùng bài trung vị 0,87 (bat) · 1,08 (tat), biên 0,28–2,71 (nhiễu từng bài lớn, không xu hướng); ĐẠT
+  lượt 1→2: bat 9→10, tat 8→7. :3013 chết lúc boot: khối bat 1 lần (thử lại lên), khối tat 0. Một lượt tat đầu bị BỘ ĐO vứt oan (kiểm
+  "tat mà compile_st chạy" của ablation cũ — sửa 5461dafea, chạy lại; không có báo cáo nào bị ghi đè).
+  **QUYẾT (dieu-phoi 2026-10-23): BẬT MẶC ĐỊNH** — `AI_AGENT_THEO_VAI_TRO` vắng ⇒ bật; `false`/`off`/`0` ⇒ tắt (chủ dự án tắt bằng .env).
+  Chi phí đã biết: thời gian lượt chạy dự án PLC ~1,56×; khe đang giữ 35B ⇒ lượt đầu chờ đổi khe ~60 s (doi-model đo 35 s nạp 27B + chờ).
+  Lưới ghim ba nhánh (vắng/"1"/"false") + 2 đột biến đỏ.
+- **Chỉnh 2 — gán `code.software` (2026-10-23, dieu-phoi duyệt có điều kiện; điều kiện `GGUF_CODE_MODEL` = Qwen3.6-35B-A3B ĐÃ KIỂM ở cả hai
+  .env):** qua `datGanModel` (`scripts/ai-eval/dat-gan-vai-tro.mts`) — gán id 35 `code.software` global → `qwen3.6-35b-a3b@64k-nghi`, dự
+  phòng [`qwen3.6-27b@64k-nghi`], thay hàng env cũ. Định tuyến trên ảnh sổ thật: khoá+khe 35B ⇒ 35B gan-profile · khoá+khe 27B ⇒ 27B
+  du-phong · không khoá+khe 27B ⇒ 35B can-doi-khe. **Kiểm SỐNG `/v1 code.software` trên :3013 (khoá + `doi-model -GiuKhoa`):** lần đầu lộ
+  HAI lỗi sản phẩm, vá rồi đo lại: (1) lượt ĐẦU sau khi khe đổi NGOÀI tiến trình bị từ chối oan — `KheNang.dangGiu` chỉ làm mới khi có lượt
+  xin khe ⇒ định tuyến theo giá trị cũ (35B); lượt 2 sau 8 s chạy được ⇒ `lamMoiKheDangGiu()` trước định tuyến ở /v1, tác nhân, node AI
+  Luồng (3e12e9d4f); (2) `ai_gateway_metrics.model` của /v1 ghi model của bộ định tuyến CỔNG (env 35B) cả khi lượt chạy 27B ⇒ /v1 ghi
+  `modelId` đã định tuyến (2c84fc593). Đo lại (`tmp/kiem-gan-song-4.log` + metrics theo requestId): khe 35B ⇒ 35B; ngay sau đổi sang 27B
+  lượt 1 (3 s sau) và lượt 2 ⇒ **27B, cả hai ok**. Kết thúc :8091 = 35B.
+- **ĐĂNG KÝ TRƯỚC — phương ngữ Siemens SCL trên `code.plc` (27B)** (viết 2026-10-23, TRƯỚC khi chạy): đo KHẢ NĂNG (không A/B) — cùng 24
+  bài #11 (`tmp/st-24-ids.txt`) × 3 lượt, đường raw :8091, `--vong-sua 2`, `max_tokens` 16000, `AI_EVAL_ST_PHUONG_NGU=scl` (câu hỏi đòi
+  SCL; chấm = chuẩn hoá SCL→ST rồi RuSTy; thước `kt-st-scl-chung` đạt). Đối chiếu: #11 ST/RuSTy cùng bài cùng model 53/72. **Diễn giải đặt
+  trước:** chênh ≤ 6/72 (nhiễu đã đo ±2 bài/lượt × 3) ⇒ `code.plc` dùng chung cho dự án SCL, không gán riêng; SCL thấp hơn > 6/72 ⇒ ghi
+  cảnh báo phương ngữ + đề xuất đo model khác cho SCL (KHÔNG đổi gán dựa trên số này). Ghi rõ: mã lời nhắc sửa đã đổi từ #11 (b6e0e3735 →
+  lời nhắc chung `shared/stNhacSua.mjs`), nên chênh gồm cả thay đổi đó.
+  **KẾT QUẢ (2026-10-23 08:48, `reports/PLC-scl-vongsua2-q36-27b-1.json`, sổ #17, mã 41d1a3a14):** SCL **50/72 = 69 %** (tt 21 · tv 15 ·
+  ud 14) vs #11 ST 53/72 (tt 23 · tv 16 · ud 14) ⇒ **−3/72, trong ngưỡng 6 ⇒ `code.plc` dùng chung cho dự án SCL, không gán riêng.** Cặp
+  (bài, lượt): SCL đạt/ST trượt 4 · ngược lại 7. Theo bài: tv1 −2, tt4 −1, tt7 −1, tv8 +1. Biên dịch: lỗi ở câu trả lời đầu 13/72 (ST 16),
+  còn lỗi sau vòng sửa 3 (ST 3), trích bỏ sót 0 — mọi lượt trượt là TEST đỏ (ngữ nghĩa), không phải biên dịch. Trung vị sinh 169 s
+  (token ra 11,4k). Báo cáo trọn (không dừng sớm, 27B đầu = cuối). Giới hạn: chấm SCL qua chuẩn hoá SCL→ST + RuSTy — đo NGỮ NGHĨA, không
+  đo hợp lệ với trình biên dịch TIA thật (không có trình dịch SCL mở).
+- **ĐĂNG KÝ TRƯỚC — A/B vòng kiểm biên dịch ST trên TRỢ LÝ LẬP TRÌNH** (viết 2026-10-23, TRƯỚC khi chạy; dieu-phoi giao). Đường SẢN PHẨM
+  `/api/ai/local-kb/stream` (`codingMode`, nhánh sinh mã; vòng mới ở e7220eb9e, cờ `AI_KIEM_BIEN_DICH_ST` có `tro-ly`), `mot-luot --config
+  pipeline --ab-kiem`: cùng 24 bài #11 × **3 lượt** (chốt TRƯỚC: ước ~4 h < 7 h — 35B trung vị ~75–90 s/lượt × 144 + vòng sửa), XEN KẼ trên
+  CÙNG server :3013 (nhánh tắt = `context.kiemBienDichST:false`, không đổi server); khoá khe + canh bộ nhớ; kiểm nhánh MỖI lượt (`done.kiemBienDichST`
+  bat phải có, tat phải vắng ⇒ sai thì dừng, vứt số). **Model: 35B** — đường trợ lý dùng model lập trình của bộ định tuyến CỔNG
+  (`GGUF_CODE_MODEL`), KHÔNG định tuyến vai trò ⇒ khác /v1 #2 (27B `code.plc`); số này là của sản phẩm trợ lý như nó đang chạy.
+  **Cổng: bat ≥ tat + 4/72 VÀ số lượt bat > 300 s (tới khi khối cuối/`done` xong) ≤ 7/72 (mức /v1 #2).** Báo kèm: TTFT, thời gian tới `done`,
+  vòng sửa (sach/da-sua/con-loi/bo-qua), cặp lệch. Đạt ⇒ đề xuất bật mặc định cho `tro-ly` (Cmd+K đo sau nếu cần); không đạt ⇒ giữ tắt.
+  **KẾT QUẢ (2026-10-23 09:04–12:11, `reports/PLC-troly-ab-kiem-q36-35b-1.json`, sổ #18/#19):** TẮT **35/72** (tt 17 · tv 10 · ud 8) · BẬT
+  **38/72** (tt 21 · tv 9 · ud 8) ⇒ **+3/72 < +4 — CỔNG KHÔNG ĐẠT ⇒ `tro-ly` GIỮ TẮT.** Vế thời gian đạt: > 300 s bật 1/72 (tắt 0) ≤ 7;
+  trung vị tới `done` 56 → 64 s, p90 119 → 151 s, TTFT trung vị 52 / 50 s (nghĩ trước chữ đầu). Cặp: bật đạt/tắt trượt 11 · ngược lại 8.
+  Vòng ở nhánh bật: sach 55 (33 đạt) · da-sua 8 (5 đạt) · con-loi 8 (0 đạt) · bo-qua 1. **Vòng cứu BIÊN DỊCH nhưng không cứu NGỮ NGHĨA:**
+  trượt vì không biên dịch được (máy chấm không thấy tổng kết test) 25 → 9, nhưng trượt vì test đỏ 12 → 25. Khác /v1 #2 (+8/72 trên 27B):
+  model ở đây là 35B (đường trợ lý không định tuyến vai trò — thiết kế 26ba9d039 xử lý) và tỉ lệ không biên dịch ở bản đầu của 35B trên
+  đường này cao (25/72). Nhiễu ghi rõ: 09:30–10:40 các lượt dò định tuyến (nhúng CPU, `do.mts --cpu`) chạy song song vài phút mỗi lượt —
+  tải CPU, không GPU. Báo cáo trọn (dungSom null); model :8091 = 35B lúc đầu và cuối (đọc bởi script, `modelDau` của báo cáo null vì
+  pipeline không đọc khe). Hướng sau: đo lại khi trợ lý theo vai trò (27B ở dự án PLC) — vòng có thể đổi dấu theo model.
+  **HỢP NHẤT (2026-10-23, dieu-phoi):** sổ #18/#19 đo trên triển khai THỨ HAI e7220eb9e (`ai/st/kiemBienDichTroLy.ts`: sửa đa lượt có nghĩ,
+  thay bản đã sửa qua `answerRevised`). Main đã có triển khai của luong-ui (4fbda1418 + d68bcf22f: `aiLocalKnowledgeCodingKiemST`, sự kiện
+  `kiem_bien_dich`, thẻ UI, audit `kb_kiem_st`; sửa = MỘT prompt ghép, TẮT nghĩ; bản gốc giữ nguyên + NỐI khối "Bản đã sửa"). Bản main là
+  triển khai DUY NHẤT; đã chuyển vào nó: opt-out của lượt, nhịp `dang-kiem` 15 s, `done.kiemBienDichST`; bản e7220eb9e đã xoá. Cổng đã
+  trượt và cả hai đều TẮT ⇒ KHÔNG đo lại lúc này; mọi lần đo sau phải trên bản main (harness: chấm phần sau "Bản đã sửa sau biên dịch").
+- **ĐĂNG KÝ TRƯỚC — TRỢ LÝ LẬP TRÌNH THEO VAI TRÒ** (viết 2026-10-23, TRƯỚC khi chạy; thiết kế 26ba9d039 dieu-phoi duyệt; mã 9248dac34,
+  cờ `AI_TRO_LY_THEO_VAI_TRO`). `mot-luot --config pipeline`, cùng 24 bài #11, HAI NHÓM × 1 lượt mỗi nhánh (= 48 lượt/nhánh):
+  **(i) vai trò từ DỰ ÁN PLC** — `projectId` trỏ một gốc PLC NGOÀI repo (`D:/SOURCES/_ai9_nnbai/_plc_troly`: 2 tệp .st chung, KHÔNG phải lời
+  giải bài nào; `AI_REPO_SANDBOX_ROOTS` CHỈ cho :3013); **(ii) vai trò từ CHỮ câu hỏi** — `projectId: "repo"` (không PLC). Tính trước bằng
+  đúng bộ chọn sản phẩm (`tmp/vai-tro-nhom2.mts`): 24/24 câu nhóm (ii) ra `code.plc` (chữ câu hỏi có TON/TOF/R_TRIG + ý định viết) ⇒ cả
+  hai nhóm nhánh bật đều chạy 27B. Thiết kế KHỐI, một lần đổi model (`doi-model -GiuKhoa`): khối BẬT (27B) → khối TẮT (35B, kết thúc ở
+  35B); khoá khe suốt đợt; canh bộ nhớ; vòng kiểm biên dịch `tro-ly` TẮT ở CẢ HAI khối (A không đạt). Kiểm MỖI lượt từ sự kiện `usage`:
+  bật ⇒ `vaiTro=code.plc` + model 27B; tắt ⇒ không `vaiTro` + model 35B — sai ⇒ dừng, vứt số. **Cổng: bật ≥ tắt + 4/48 VÀ trung vị thời
+  gian bật ≤ 2× tắt; báo cáo tách nhóm (i)/(ii), cổng tính trên TỔNG.** Đạt ⇒ đề xuất bật mặc định; không ⇒ giữ tắt. Ước ~3 h.
+  **KẾT QUẢ (2026-10-23, `reports/PLC-troly-vt-{bat,tat}-{i,ii}.json`, sổ #20–#23, mã 9248dac34 / HEAD 80c11ecf7):** BẬT **29/48** (i 16 ·
+  ii 13) vs TẮT **22/48** (i 13 · ii 9) ⇒ **+7/48 ≥ +4 — CỔNG ĐẠT** (dư 3, KHÔNG sát ngưỡng); trung vị tới `done` 111 s vs 70 s = **1,59× ≤ 2×
+  — ĐẠT**; p90 190 / 120 s; > 300 s 0 / 0. TTFT trung vị: bật 98 s · tắt 64 s (nghĩ trước chữ đầu). Cặp theo bài: nhóm (i) bật đạt/tắt
+  trượt 5 (tt7, tt8, tv1, tv2, ud2) · ngược lại 2 (tt4, tv6); nhóm (ii) 7 (tt4, tt5, tv1, tv5, ud3, ud6, ud8) · ngược lại 3 (tv6, ud2, ud5);
+  tổng 12 · 5. Trượt: bật — không biên dịch 9 · test đỏ 10; tắt — 11 · 15. Kiểm nhánh MỖI hàng: 96/96 đúng (bật: `code.plc` · 27B ·
+  `gan-profile`; tắt: không `vaiTro` · 35B). Giờ khối: BẬT 13:21:54–15:04:22 (27B), TẮT 15:06:17–16:08:01 (35B). Khởi động lại trong lúc đo:
+  :3013 chết lúc boot 0 lần ở cả hai khối; :8091 chỉ 2 lần ĐỔI MODEL theo kế hoạch (13:21, 15:05), không lần nào ngoài kế hoạch.
+  **Giới hạn đo / nhiễu (ghi rõ):** (1) thiết bị KHỐI (bật rồi tắt, không xen kẽ — đổi khe mỗi bài quá đắt) ⇒ giờ/nhiệt/tải không tách được
+  khỏi nhánh; (2) kiem-dinh báo hôm nay ~90 lần boot dev/e2e của họ MỖI lần nạp backend CUDA in-process (warmUp KB ⇒ embedder ~1,7 GB;
+  aiWatcher ⇒ getOrLoadModel, broker từ chối 35B), thoáng qua 10–40 s trên cùng card ⇒ mọi phép đo hôm nay (kể cả #18/#19 và phép đo này)
+  có thể chịu nhiễu VRAM/CPU ngắn; từ nay kiem-dinh boot với `DIAG_NO_KB_WARM=1` + `AI_ORCHESTRATION_ENABLED=false`. Quyết định bật mặc
+  định: dieu-phoi.
+  **QUYẾT (dieu-phoi 2026-10-23, main 6f44a2bb3): BẬT MẶC ĐỊNH `AI_TRO_LY_THEO_VAI_TRO`** — cổng dư 3, hai nhóm cùng chiều, kiểm nhánh 96/96;
+  tiêu chí "đúng hơn nhanh" ⇒ chấp nhận TTFT +34 s và đổi khe. Ngữ nghĩa CÙNG cờ tác nhân: vắng ⇒ bật; `false`/`off`/`0`/`no` ⇒ tắt (chủ dự
+  án tắt bằng .env). Lưới ghim ba nhánh (vắng / đặt tắt ×4 giá trị / "1") + 2 đột biến đỏ. **THEO DÕI sau khi bật:** mỗi lần đổi khe ghi
+  `vram_events` `doi_khe` (`soModel/kheNangMacDinh.ts`; log console không có giờ); đếm theo giờ bằng `scripts/ai-eval/dem-doi-khe.mjs`
+  (exit 1 khi > 6 lần/giờ) — **> 6 lần/giờ ⇒ báo dieu-phoi** (đổi khe làm câu trả lời KB/vận hành xếp hàng sau). Chỉ đếm được từ khi :3000
+  chạy bản có dòng ghi.
+- **ĐĂNG KÝ TRƯỚC (backlog, CHƯA chạy — chờ dieu-phoi xếp lịch GPU) — vòng kiểm biên dịch `tro-ly` khi trợ lý PLC chạy 27B.** Giả thuyết
+  từ A (sổ #18/#19, 35B: +3/72, cổng trượt): trên 27B (trợ lý theo vai trò, nay mặc định ở dự án PLC) vòng có thể ĐỔI DẤU — /v1 #2 27B được
+  +8/72. Thiết kế: `mot-luot --config pipeline --ab-kiem --project-id <gốc PLC>` trên CÙNG 24 bài #11 × 3, xen kẽ trên CÙNG :3013 (khe 27B suốt
+  đợt, cờ trợ lý theo vai trò bật, cờ kiểm có `tro-ly`; nhánh tắt = `context.kiemBienDichST:false`), triển khai main (`aiLocalKnowledgeCodingKiemST`,
+  sửa = một prompt ghép, tắt nghĩ); harness chấm phần sau "Bản đã sửa sau biên dịch". **Cổng (giống A): bật ≥ tắt + 4/72 VÀ số lượt bật > 300 s
+  ≤ 7/72.** Đạt ⇒ đề xuất bật `tro-ly` CHỈ khi model của lượt là 27B (hoặc theo vai trò `code.plc`); không ⇒ giữ tắt.
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;

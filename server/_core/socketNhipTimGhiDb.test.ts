@@ -182,6 +182,8 @@ describe("★★★ machine:heartbeat (socket) — BỀN HOÁ xuống machines.l
     createMachineStatusLog.mockClear();
     presenceRefresh.mockClear();
     socketMod = await import("./socket");
+    // P-S1b: sự kiện máy giờ phát theo phòng (scope:all / factory:{id}); tệp này đo TIẾT LƯU GHI DB bằng DB giả ⇒ người quan sát có phạm vi TOÀN QUYỀN.
+    (await import("./socketPhongQuyen")).__datCongPhamViChoTest({ trongPhamVi: async () => true, idsTrongPhamVi: async () => null });
     socketMod.initializeSocket({} as any);
     // Ba broadcaster anh em: dừng ngay để đồng hồ giả không kéo theo việc khác.
     socketMod.stopTwinBroadcaster();

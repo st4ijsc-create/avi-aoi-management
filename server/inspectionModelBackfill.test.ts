@@ -19,6 +19,7 @@
  * (softCount returns NaN → the toBe assertions fail).
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "./testing/modelSanPhamTest";
 import postgres from "postgres";
 import {
   runIntegrityScanNow,
@@ -59,6 +60,7 @@ async function insertModel(code: string): Promise<number> {
   const [row] = await sql`
     INSERT INTO product_models (code, name) VALUES (${code}, ${"Model " + code}) RETURNING id`;
   createdProducts.push(row.id);
+  dangKyModelSanPhamTest(row.id);
   return row.id;
 }
 
@@ -115,6 +117,7 @@ describe.skipIf(!DB_URL)("doc51 P2 CASE#6 — inspection backfill + soft-orphan 
     } as any);
     const res = await caller.create({ code, name: `Model ${RUN}` });
     createdProducts.push(res.id);
+    dangKyModelSanPhamTest(res.id); // afterAll của tệp này bị chặn ở DELETE product_inspections (quyền) nên không tới được bước xoá model — helper dọn thay
 
     // 3. WIRING: the create mutation itself backfilled insp1 (NULL → res.id).
     const [post] = await sql`SELECT "productModelId" AS pmid FROM product_inspections WHERE id = ${insp1}`;

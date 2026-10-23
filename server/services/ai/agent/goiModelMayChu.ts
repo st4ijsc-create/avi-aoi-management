@@ -44,6 +44,8 @@ export interface CauHinhGoiModel {
   temperature?: number;
   /** Người chạy lượt — chỉ để gắn vào dấu vết `ai_gateway_metrics` / `ai_llm_audit` (không ảnh hưởng gì khác). */
   userId?: number;
+  /** `true` ⇒ KHÔNG ghi dấu vết chỉ-ghi (lượt đã được đếm ở nơi khác, vd. qua cổng khi `AI_AGENT_THEO_VAI_TRO` bật). */
+  khongGhiDauVet?: boolean;
 }
 
 const moTaLoi = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -188,7 +190,7 @@ async function* luongModelMayChu(
       }
     }
     } finally {
-      ghiLuotNgoaiCong({
+      if (!cauHinh.khongGhiDauVet) ghiLuotNgoaiCong({
         task: "chat",
         auditTask: "kb_agent_luot",
         userId: cauHinh.userId ?? null,

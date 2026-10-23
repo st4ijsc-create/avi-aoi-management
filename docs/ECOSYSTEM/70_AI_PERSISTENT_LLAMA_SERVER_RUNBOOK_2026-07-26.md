@@ -96,6 +96,36 @@ a `systemd` unit on Linux) — the app does **not** manage this process's lifecy
 >   finished. With the compile check on, ~4 % of answers exceed 300 s.
 > - **Recommendation: `/v1` clients should use `stream: true` for `code.plc`** (a stream sends headers at once and
 >   has no total limit, only the idle limit between chunks); a non-stream client must raise its own header/body timeout.
+>
+> **Second A/B (pre-registered, fixed build, 2026-10-22).** Same 24 tasks × 3 turns: OFF 44/72 vs ON 52/72 passed
+> (+8/72, gate met). Cost: p90 190 s → 279 s, and answers over 300 s went from **0/72 to 7/72 (10 %)** — every one of
+> those 7 would hit the 300 s header limit of a default non-stream client.
+>
+> **Default since then (`AI_KIEM_BIEN_DICH_ST` unset = `agent-plc,v1-stream`):**
+>
+> | `/v1` `code.plc` request | compile check |
+> |---|---|
+> | `stream: true` | **ON** (client sends `st4i_kiem_bien_dich: false` to skip it) |
+> | non-stream | **OFF**, unless the client sends `st4i_kiem_bien_dich: true` (opt-in: it must then allow > 300 s) |
+> | env set explicitly with `v1` (or `all`) | ON for both, as before |
+> | env `off` / list without `v1`, `v1-stream` | OFF for both, opt-in ignored |
+>
+> Reason: a stream sends headers at once and keeps the connection alive, so the extra repair rounds cannot trip a
+> client timeout; for non-stream, 1 answer in 10 would be cut by a default client, which is worse than no check.
+
+> **Reading old `/v1` metrics — the `model` column was wrong before 2026-10-23.** Until commit `2c84fc593`
+> (2026-10-23 05:06 +07:00; reached `main` with merge `dc68f9bb4` the same day), `/v1/chat/completions` and
+> `/v1/completions` did not pass the model they actually ran to the gateway's `record()`. So `ai_gateway_metrics.model`
+> (and the Model Center's per-model `/v1` numbers) showed the **gateway router's** model, which is the env default
+> (`GGUF_DEFAULT_MODEL`, 35B), even when role routing sent the request to another model (e.g. `code.plc` → 27B).
+> Rows written before that commit reached the running server cannot say which model served a `/v1` request.
+> They still give request counts, tokens and latency, but not which model. Rows from other surfaces (agent,
+> flows) are not affected by this bug.
+>
+> A related fix in the same release: `3e12e9d4f` (05:03 +07:00). The first request routed after llama-server's model was
+> swapped by another process (`doi-model.ps1`, a measurement holding the slot lock) used a stale "slot holds"
+> value and could be refused although a fallback model was usable. The value is now re-checked (5 s cache) before
+> role routing.
 
 To enable: set `LLAMA_SERVER_ENABLED=true` + `LLAMA_SERVER_URL=http://127.0.0.1:8090` (matching §3's
 `--port`) in the API process's environment and restart it.

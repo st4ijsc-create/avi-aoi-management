@@ -100,4 +100,27 @@ describe("aiGateway.planInference — quota wiring (doc69 G2-4)", () => {
     await gateway.planInference({ task: "chat", text: "hi", userId: 42, role: "operator" });
     expect(checkQuotaMock).toHaveBeenCalledWith(42, "operator");
   });
+
+  // ★ Đợt 9 (2026-10-22) — yêu cầu NHIỀU lượt (tác nhân) khai ước lượng token: chặn ở cửa, không ném giữa vòng tool.
+  it("uocLuongToken: đã dùng + ước lượng > hạn mức ⇒ QuotaExceededError NGAY (dù chưa vượt); vừa đủ ⇒ cho qua; vắng ⇒ như cũ", async () => {
+    process.env.AI_QUOTA_ENFORCE = "true";
+    checkQuotaMock.mockResolvedValue({ allowed: true, usedTokens: 950_000, budgetTokens: 1_000_000, source: "user" });
+    const gateway = await loadFresh();
+
+    await expect(gateway.planInference({ task: "code", text: "x", userId: 42, uocLuongToken: 64_000 })).rejects.toMatchObject({
+      code: "AI_QUOTA_EXCEEDED",
+      usedTokens: 950_000,
+      budgetTokens: 1_000_000,
+      message: expect.stringContaining("estimated at ~64000"),
+    });
+    await expect(gateway.planInference({ task: "code", text: "x", userId: 42, uocLuongToken: 50_000 })).resolves.toBeTruthy();
+    await expect(gateway.planInference({ task: "code", text: "x", userId: 42 })).resolves.toBeTruthy();
+  });
+
+  it("uocLuongToken bị bỏ qua khi AI_QUOTA_ENFORCE tắt", async () => {
+    checkQuotaMock.mockResolvedValue({ allowed: true, usedTokens: 999_000, budgetTokens: 1_000_000, source: "user" });
+    const gateway = await loadFresh();
+    await expect(gateway.planInference({ task: "code", text: "x", userId: 42, uocLuongToken: 64_000 })).resolves.toBeTruthy();
+    expect(checkQuotaMock).not.toHaveBeenCalled();
+  });
 });

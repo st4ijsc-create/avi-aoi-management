@@ -1,0 +1,120 @@
+{"cauHoi":"Soạn giúp mình một FB bằng ST điều khiển van ba ngả cho bể trộn keo: mở theo mức, đóng ngay khi quá áp, có chế độ bảo trì khoá van.","vaiTro":"code.plc"}
+{"cauHoi":"soan chuong trinh SCL cho S7-1200 dieu khien quat hut khoi han theo nhiet do phong, tat co tre 30s","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Viết ST lưu lại thời điểm lần gần nhất alarm áp suất khí thấp bật lên (kiểu DT) và đếm số lần nó bật trong ca.","vaiTro":"code.plc","kho":true}
+{"cauHoi":"can doan ST ghi lai lan cuoi cua an toan bi mo, luu vao bien RETAIN de mat dien van con","vaiTro":"code.plc","kho":true}
+{"cauHoi":"dem san pham bang CTU the nao trong CODESYS, viet code luon giup minh, reset luc dau ca","vaiTro":"code.plc","kho":true}
+{"cauHoi":"lam the nao de viet FB ST loc nhieu nut nhan 20ms? cho minh code luon","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Đoạn ST đếm board này đếm dư gấp đôi so với thực tế, sửa giúp:\nVAR\n  cnt : INT;\n  senIn : BOOL;\nEND_VAR\nIF senIn THEN\n  cnt := cnt + 1;\nEND_IF;\n(* cảm biến giữ mức cao khoảng 2 chu kỳ quét *)","vaiTro":"code.plc"}
+{"cauHoi":"TIA Portal báo lỗi khi compile đoạn SCL này, sửa lại giúp:\nFOR #i := 1 TO 12 DO\n  #tmp := \"DB_Recipe\".Speed[#i];\n  \"DB_Out\".Total := \"DB_Out\".Total + #tmp;\nEND_FOR;\nLỗi: Invalid data type at \"DB_Out\".Total (Total khai báo INT, Speed là REAL)","vaiTro":"code.plc"}
+{"cauHoi":"Write an IEC 61131-3 function block for a vacuum gripper on a pick-and-place head: turn on vacuum, wait for the pressure switch within 1.5 s, otherwise retry once and then raise a fault.","vaiTro":"code.plc"}
+{"cauHoi":"Implement ladder logic for a stack light with a buzzer silence button: buzzer re-arms when a new alarm appears.","vaiTro":"code.plc"}
+{"cauHoi":"Viết chương trình trên OpenPLC cho cổng xoay ra vào xưởng: quẹt thẻ hợp lệ thì mở 1 vòng, quá 10s không qua thì khoá lại.","vaiTro":"code.plc"}
+{"cauHoi":"Viết logic ST cho máy dán nhãn, ca trước bị dán lệch nhiều nên thêm bước kiểm tra cảm biến nhãn có mặt trước khi xi lanh đẩy, thiếu nhãn thì dừng và báo đèn.","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Thêm vào FB băng tải một bộ cộng thời gian dừng theo ngày: reset lúc 6h sáng, giữ lại tổng giây dừng của hôm qua trong một biến riêng để HMI hiển thị.","vaiTro":"code.plc","kho":true}
+{"cauHoi":"TwinCAT 3: viết method MoveAbs cho FB_Axis, kiểm tra vận tốc và vị trí đích nằm trong giới hạn, sai thì trả mã lỗi chứ không gọi MC_MoveAbsolute.","vaiTro":"code.plc"}
+{"cauHoi":"Viết trình tự máy ép nhiệt dạng CASE trong ST: kẹp phôi, hạ đầu ép giữ 8 giây, nâng đầu, nhả kẹp, đẩy sản phẩm ra.","vaiTro":"code.plc"}
+{"cauHoi":"tai sao TON cua minh khong reset, sua code giup:\nIF btn THEN\n  t1(IN := TRUE, PT := T#3S);\nEND_IF;\nlamp := t1.Q;","vaiTro":"code.plc","kho":true}
+{"cauHoi":"viet FC tinh bao nhieu phut may chay trong ca tu bit Running, xuat ra INT cho HMI","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Sửa network ladder dưới đây để động cơ không tự chạy lại khi có điện trở lại:\n|--[ Start ]--+--[/Stop]--[/OL]--( M )--|\n|--[ AutoRun ]-+\nAutoRun là bit nhớ giữ (retentive).","vaiTro":"code.plc"}
+{"cauHoi":"Soạn chương trình ST trên GX Works3 cho trạm cấp phôi rung: bật bộ rung khi khay trống quá 3 giây, tắt khi cảm biến đầy.","vaiTro":"code.plc"}
+{"cauHoi":"Chuyển logic này sang ST cho CODESYS: bơm chạy khi mức thấp, dừng khi mức cao, nếu chạy liên tục quá 15 phút mà mức không lên thì báo khô bơm.","vaiTro":"code.plc"}
+{"cauHoi":"Soạn giúp mình script Python gửi email báo cáo sản lượng hằng ngày lúc 7h sáng, số liệu lấy từ API /api/output của hệ thống.","vaiTro":"code.software","kho":true}
+{"cauHoi":"soan cau SQL lay lan dung may gan nhat cua tung may trong bang downtime_events (machine_id, started_at, reason)","vaiTro":"code.software","kho":true}
+{"cauHoi":"Viết query lấy lần cuối mỗi máy AOI được hiệu chuẩn từ bảng calibration_log(machine_id, calibrated_at), máy nào chưa có thì vẫn hiện với giá trị null.","vaiTro":"code.software","kho":true}
+{"cauHoi":"lam the nao viet regex bat chuoi dang LOT-2026-xxxx trong C#? cho minh code mau luon","vaiTro":"code.software","kho":true}
+{"cauHoi":"khac gi giua 2 doan nay ma doan duoi bi leak bo nho? sua lai cho dung:\nuseEffect(() => {\n  setInterval(() => fetchStatus(), 5000);\n}, []);","vaiTro":"code.software","kho":true}
+{"cauHoi":"Script đọc log máy in kem bị lỗi, sửa giúp:\nTraceback (most recent call last):\n  File \"read_log.py\", line 14, in <module>\n    ts = datetime.strptime(parts[0], \"%Y-%m-%d %H:%M\")\nValueError: unconverted data remains: :07\nDòng log mẫu: 2026-10-22 06:15:07;PRINTER-2;OK","vaiTro":"code.software"}
+{"cauHoi":"review giúp hàm này, nghi bị race khi 2 request cùng trừ tồn kho:\nasync function truTon(id, qty) {\n  const r = await db.query(\"SELECT qty FROM stock WHERE id=$1\", [id]);\n  await db.query(\"UPDATE stock SET qty=$1 WHERE id=$2\", [r.rows[0].qty - qty, id]);\n}","vaiTro":"code.software"}
+{"cauHoi":"Write a PowerShell script that tails every *.log file in C:\\AOI\\logs and pops a Windows toast notification whenever a line contains FATAL.","vaiTro":"code.software"}
+{"cauHoi":"Viết component React hiển thị đồng hồ đếm ngược đến giờ đổi ca, chuyển màu đỏ khi còn dưới 10 phút.","vaiTro":"code.software"}
+{"cauHoi":"tạo bash script kiểm tra dung lượng ổ /data, quá 90% thì gửi webhook sang Teams kèm tên máy chủ","vaiTro":"code.software"}
+{"cauHoi":"Viết docker-compose chạy Postgres 16 với Grafana, có volume lưu dữ liệu và Grafana tự cấu hình sẵn datasource Postgres.","vaiTro":"code.software"}
+{"cauHoi":"Câu này chạy hơn 40 giây, tối ưu giúp:\nSELECT l.name, COUNT(*)\nFROM defects d JOIN lines l ON l.id = d.line_id\nWHERE to_char(d.created_at, 'YYYY-MM') = '2026-10'\nGROUP BY l.name;\nBảng defects khoảng 15 triệu dòng, có index trên created_at.","vaiTro":"code.software"}
+{"cauHoi":"Viết hàm C# tính Cpk từ List<double> với USL và LSL, xử lý trường hợp độ lệch chuẩn bằng 0 và danh sách ít hơn 2 phần tử.","vaiTro":"code.software"}
+{"cauHoi":"Write a Node.js MQTT subscriber that stores machine status messages into Postgres and reconnects automatically when the broker drops.","vaiTro":"code.software"}
+{"cauHoi":"Soạn unit test pytest cho hàm parse_barcode: chuỗi rỗng, sai định dạng, có khoảng trắng đầu cuối, mã hợp lệ.","vaiTro":"code.software"}
+{"cauHoi":"Python: đọc file Excel kế hoạch sản xuất (mỗi sheet là một tuần), xuất JSON theo từng line, bỏ các dòng trống.","vaiTro":"code.software"}
+{"cauHoi":"tai sao doan JS nay in ra NaN? sua giup:\nconst tong = rows.reduce((a, r) => a + r.qty);","vaiTro":"code.software","kho":true}
+{"cauHoi":"Viết hàm TypeScript parse các dòng log kiểu sau thành object {time, machine, result, ref, defect, conf}:\n[2026-10-22 06:01:13] AOI-02 FAIL R105 bridge conf=0.91\n[2026-10-22 06:01:40] AOI-02 PASS\n[2026-10-22 06:02:05] AOI-02 FAIL C33 missing conf=0.77\nDòng PASS thì các trường còn lại để null.","vaiTro":"code.software","kho":true}
+{"cauHoi":"Viết script PowerShell xoá ảnh AOI cũ hơn 30 ngày trong D:\\AOI\\images nhưng bỏ qua thư mục golden.","vaiTro":"code.software"}
+{"cauHoi":"useEffect gọi API trạng thái máy bị chạy 2 lần ở môi trường dev và đôi khi set state sau khi unmount, sửa lại cho đúng, dùng AbortController.","vaiTro":"code.software"}
+{"cauHoi":"Soạn báo cáo ngắn gửi giám đốc từ ghi chú sau, tối đa 5 dòng:\n- Line 1: 9.820 bo, đạt kế hoạch 98%\n- Line 2: dừng 1h10 do lỗi servo trục Y máy gắp 3, đã thay driver\n- Lỗi AOI chủ yếu: thiếu thiếc (41), lệch linh kiện (19)\n- Khách Hanbit dời lịch giao lô 2611 sang thứ Sáu","vaiTro":"summarize","kho":true}
+{"cauHoi":"soan email tom tat tinh hinh ca dem gui truong phong tu ghi chu nay: line 1 chay deu 8h, line 3 dung 25p do ket bang tai, may in 2 doi stencil luc 2h, tong NG 14 bo, khong co tai nan","vaiTro":"summarize","kho":true}
+{"cauHoi":"Tóm tắt lần dừng máy gần nhất theo mô tả của kỹ thuật dưới đây, viết cho quản lý không chuyên:\n\"15:42 máy gắp 4 báo lỗi vacuum nozzle head 2. Kiểm tra thấy lọc bị tắc do bụi kem. Thay lọc, chạy thử 20 bo OK. Khởi động lại 16:20. Đề nghị thêm vệ sinh lọc vào PM tuần.\"","vaiTro":"summarize","kho":true}
+{"cauHoi":"tom tat giup su co hom qua theo bien ban: 14:20 mat khi nen toan xuong, 14:22 cac may gap dung, 14:35 phat hien van xa may nen so 2 bi ket, 14:50 chuyen sang may nen du phong, 15:05 chay lai binh thuong, mat khoang 1.900 bo san luong","vaiTro":"summarize","kho":true}
+{"cauHoi":"Ca trước để lại ghi chú bàn giao dài quá, rút gọn còn 4 gạch đầu dòng giúp:\n\"Line 2 chạy model HB-CTRL-5521 rev C, đã đổi chương trình AOI sang bản 3.2. Máy in 1 hơi lệch, đã chỉnh offset X +0,02. Còn 3 cuộn 0402 10k trong máy, kho chưa cấp thêm. Lò reflow zone 6 hơi cao 3 độ nhưng trong dung sai. Bàn rework còn 11 bo chờ sửa, chủ yếu lỗi thiếu thiếc chân IC.\"","vaiTro":"summarize","kho":true}
+{"cauHoi":"Summarize this supplier email for my manager in two sentences:\n\"Dear team, due to a furnace maintenance at our Penang site, deliveries of SAC305 solder bars will be delayed by about 10 days. We can partially ship 40% of the order from our Shenzhen stock next week at the same price. Please confirm by Friday whether you accept the split shipment.\"","vaiTro":"summarize"}
+{"cauHoi":"Tóm tắt các ý chính của bài hướng dẫn 5S dưới đây để làm slide đào tạo công nhân mới: Sàng lọc là loại bỏ những thứ không cần thiết khỏi nơi làm việc. Sắp xếp là đặt mọi thứ đúng chỗ, dễ lấy. Sạch sẽ là vệ sinh và kiểm tra máy móc hằng ngày. Săn sóc là duy trì ba bước trên thành tiêu chuẩn. Sẵn sàng là tạo thói quen tự giác tuân thủ.","vaiTro":"summarize"}
+{"cauHoi":"Gói thread Zalo này lại thành 3 ý cho mình:\nHùng: máy SPI-02 sáng nay báo lỗi chiều cao liên tục\nLan: em kiểm tra thì do board cong, không phải lỗi in\nHùng: vậy chỉnh support pin được không\nLan: chỉnh rồi, giảm còn 2 cảnh báo/giờ\nQuân: mai đặt thêm bộ support pin cho line 3 luôn nhé","vaiTro":"summarize"}
+{"cauHoi":"Viết bản tóm tắt điều hành cho báo cáo 8D dưới đây:\nD1: Nhóm QA + SMT + kỹ thuật quy trình\nD2: 0,8% bo bị hở mạch chân connector J4 sau sóng hàn\nD3: Kiểm 100% bằng mắt các lô đang có\nD4: Nhiệt độ bể thiếc thấp 6°C do cảm biến lệch\nD5: Hiệu chuẩn lại cảm biến, đặt lịch kiểm hằng tuần\nD7: Bổ sung kiểm cảm biến vào checklist PM","vaiTro":"summarize"}
+{"cauHoi":"tom tat ngan doan log nay cho nguoi khong ky thuat hieu chuyen gi da xay ra:\n06:02 AOI-03 conveyor jam\n06:03 AOI-03 operator reset\n06:09 AOI-03 conveyor jam\n06:10 AOI-03 maintenance called\n06:31 AOI-03 belt replaced\n06:35 AOI-03 running","vaiTro":"summarize","kho":true}
+{"cauHoi":"Nêu ngắn gọn kết luận của biên bản đánh giá nhà cung cấp sau: Nhà cung cấp X đạt 82/100 điểm. Điểm mạnh: giao hàng đúng hạn 97%, chứng chỉ ISO 9001 còn hiệu lực. Điểm yếu: hồ sơ truy xuất lô chưa đầy đủ, phản hồi khiếu nại chậm trung bình 9 ngày. Đề xuất: tiếp tục hợp tác, yêu cầu cải thiện truy xuất trong 3 tháng.","vaiTro":"summarize"}
+{"cauHoi":"Summarize the key points of this release note for line leaders: v4.1 adds automatic recipe download when the barcode changes, removes the manual confirm dialog, fixes the counter reset bug after power loss, and requires operators to log in with their badge before starting a lot.","vaiTro":"summarize"}
+{"cauHoi":"Tóm lược tuần qua của bộ phận bảo trì để đưa lên slide từ số liệu: 14 phiếu sửa chữa (12 đã đóng), 9 lần PM đúng hạn trên 10, MTTR trung bình 38 phút, thay 2 động cơ băng tải, 1 phiếu chờ linh kiện từ Nhật.","vaiTro":"summarize"}
+{"cauHoi":"Rút gọn quy trình xử lý hàng NG sau còn 5 bước ngắn cho công nhân: khi phát hiện bo lỗi tại AOI, công nhân dán tem đỏ, ghi vị trí lỗi vào phiếu, đặt bo vào khay NG có nắp, cuối mỗi giờ mang khay sang bàn rework, kỹ thuật rework ký nhận, sau khi sửa phải quét lại qua AOI trước khi trả về line, nếu lỗi lặp lại quá 3 lần cùng vị trí thì báo kỹ sư quy trình.","vaiTro":"summarize"}
+{"cauHoi":"Soạn một đoạn tổng kết ngắn cho bản tin nội bộ tháng 10 từ các thông tin: xưởng đạt 0 tai nạn lao động, OEE trung bình 81%, hoàn thành chuyển đổi line 4 sang sản xuất không chì, 12 sáng kiến cải tiến được duyệt.","vaiTro":"summarize","kho":true}
+{"cauHoi":"Làm biên bản tóm tắt cuộc họp từ transcript sau:\nAnh Tuấn: tuần sau khách audit, cần dọn khu vực kho.\nChị Hoa: em sẽ cập nhật lại sơ đồ kho và nhãn kệ trước thứ Tư.\nAnh Tuấn: QA chuẩn bị hồ sơ hiệu chuẩn.\nBình: hồ sơ còn thiếu 2 thiết bị, em gửi đi hiệu chuẩn ngay mai.\nAnh Tuấn: thống nhất họp lại thứ Năm.","vaiTro":"summarize"}
+{"cauHoi":"tom tat lai giup minh, ngan thoi: khach hang phan anh la trong lo giao ngay 15/10 co 6 bo bi bong tem, ho chua tra hang nhung yeu cau bao cao nguyen nhan trong 5 ngay va kiem tra lai keo dan tem cho cac lo sau","vaiTro":"summarize"}
+{"cauHoi":"cai nao quan trong nhat trong bao cao duoi day? tom lai 3 y thoi:\nTy le loi thang 10 giam tu 1,2% xuong 0,9%. Chi phi rework tang 8% do gia linh kien thay the. Line 2 van la line co loi cao nhat. Du kien thang 11 se thay may in kem cu.","vaiTro":"summarize","kho":true}
+{"cauHoi":"Tóm tắt kết quả đợt audit ESD gần đây nhất theo các phát hiện sau: 3/40 vòng đeo tay không đạt điện trở, 1 xe đẩy thiếu dây tiếp đất, khu kho chưa có thảm chống tĩnh điện, các trạm kiểm tra đầu ca đều có ghi chép đầy đủ.","vaiTro":"summarize","kho":true}
+{"cauHoi":"Recap the incident thread below in 2 sentences:\nOps: reflow 1 exhaust fan alarm at 02:10\nMaint: fan bearing seized, swapped with spare at 02:40\nQA: boards processed 02:10-02:40 put on hold, 120 pcs\nQA (09:00): X-ray check passed, hold released","vaiTro":"summarize"}
+{"cauHoi":"Trích ra lần cuối mỗi máy báo lỗi từ log sau, làm bảng máy | thời gian | mã lỗi:\n2026-10-22 07:01 PNP-01 E212\n2026-10-22 07:15 PNP-02 E101\n2026-10-22 08:40 PNP-01 E330\n2026-10-22 09:02 PNP-02 E101\n2026-10-22 09:30 PNP-03 E045","vaiTro":"extract","kho":true}
+{"cauHoi":"lay ra lan gan nhat thay nozzle cua tung dau gap trong so bao tri nay:\nH1 thay 03/10, H2 thay 05/10, H1 thay 18/10, H3 thay 11/10, H2 thay 20/10","vaiTro":"extract","kho":true}
+{"cauHoi":"Từ báo cáo ca trước dưới đây, lấy ra danh sách máy bị dừng kèm số phút, dạng JSON:\n\"Ca B 21/10: máy in 1 dừng 12 phút chỉnh stencil; SPI-01 chạy tốt; máy gắp 2 dừng 35 phút thiếu cuộn; lò reflow không dừng; AOI-02 dừng 8 phút kẹt board.\"","vaiTro":"extract","kho":true}
+{"cauHoi":"Lấy giúp các việc hôm qua đã giao mà chưa xong từ biên bản sau, kèm người phụ trách:\n1. Vệ sinh lọc máy gắp 4 - Nam - xong\n2. Cập nhật WI máy in - Hoa - chưa\n3. Đặt support pin line 3 - Quân - đang làm\n4. Kiểm tra cảm biến bể thiếc - Bình - xong","vaiTro":"extract","kho":true}
+{"cauHoi":"Soạn lại thành bảng giúp mình: trích tên, mã NV, ca làm từ danh sách sau\nNguyễn Văn Tâm NV102 ca A; Lê Thị Hằng NV115 ca B; Phạm Đức NV120 ca C; Trần Mỹ NV131 ca A","vaiTro":"extract","kho":true}
+{"cauHoi":"bao nhieu dong FAIL trong log nay? liet ke serial cua chung ra luon:\nSN7781 PASS\nSN7782 FAIL\nSN7783 PASS\nSN7784 FAIL\nSN7785 FAIL","vaiTro":"extract","kho":true}
+{"cauHoi":"Extract the action items with owner and due date from this email:\n\"Hi all, following today's review: Minh will update the stencil cleaning interval by Oct 25; Linh needs to send the revised BOM to the customer by Oct 28; and I will book the X-ray vendor visit before end of month. Thanks, David\"","vaiTro":"extract"}
+{"cauHoi":"Trích các tham số in kem từ ghi chú kỹ thuật này: tốc độ gạt 40 mm/s, áp lực dao 6 kg, góc dao 60 độ, khe hở tách 0,5 mm, tần suất lau stencil 5 bo/lần.","vaiTro":"extract"}
+{"cauHoi":"Chuyển bảng copy từ Excel này sang mảng JSON object:\nline\tplan\tactual\nL1\t10000\t9820\nL2\t8000\t7410\nL3\t9000\t9105","vaiTro":"extract"}
+{"cauHoi":"Tìm trong hợp đồng sau các mốc thanh toán và số tiền tương ứng: \"Bên A thanh toán 30% giá trị hợp đồng (450.000.000đ) trong 7 ngày kể từ ngày ký; 50% (750.000.000đ) sau khi lắp đặt xong; 20% còn lại (300.000.000đ) sau nghiệm thu 30 ngày.\"","vaiTro":"extract"}
+{"cauHoi":"Từ file export cảnh báo dưới đây, lấy ra các mã alarm khác nhau và thời điểm xuất hiện đầu tiên của mỗi mã:\nTime,AlarmID,Text\n06:01,A17,Low air\n06:05,A03,Door open\n06:20,A17,Low air\n07:11,A42,Servo overload\n07:15,A03,Door open","vaiTro":"extract"}
+{"cauHoi":"Parse this nameplate text into fields (model, voltage, power, IP rating, serial): \"Servo Motor HG-KR43 | 200V AC | 400W | IP65 | S/N 2209A7741 | Made in Japan\"","vaiTro":"extract"}
+{"cauHoi":"Đọc phiếu NCR sau và điền vào các trường số NCR, mã sản phẩm, số lượng lỗi, nguyên nhân, hành động:\nNCR-2026-118. Sản phẩm PWR-220 rev B. Phát hiện 64 bo nứt tụ C12 do tách panel bằng tay. Hành động: chuyển sang máy cắt V-cut, đào tạo lại tổ đóng gói.","vaiTro":"extract"}
+{"cauHoi":"tach thong tin tu tin nhan dat hang nay thanh JSON (khach, ma hang, so luong, ngay can): \"Ben em la Dai Phat, can 3.000 bo DP-LED-12 giao truoc 05/11, them 500 bo DP-LED-24 giao cung dot\"","vaiTro":"extract"}
+{"cauHoi":"Liệt kê các bước kiểm tra và tiêu chí chấp nhận trong đoạn WI dưới thành bảng 2 cột:\nBước 1: kiểm tra ngoại quan, không được có vết xước dài hơn 2 mm. Bước 2: đo điện trở cách điện, phải lớn hơn 100 MΩ. Bước 3: kiểm tra chức năng, đèn LED sáng đủ 4 màu.","vaiTro":"extract"}
+{"cauHoi":"Từ đoạn chat nhóm này lọc ra những ai xác nhận đi tăng ca thứ Bảy:\nTú: em đi được\nNga: thứ Bảy em bận rồi\nKhoa: ok em đi\nDung: chắc không được anh ơi\nPhát: em đi nửa ngày sáng","vaiTro":"extract"}
+{"cauHoi":"Rút các setpoint trong file cấu hình sau ra bảng tên | giá trị | đơn vị:\n[Oven]\nZ1_SP=150 ;degC\nZ2_SP=175 ;degC\nConvSpeed=80 ;cm/min\nN2_Flow=25 ;L/min","vaiTro":"extract"}
+{"cauHoi":"Trích mã linh kiện và designator bị lỗi từ kết quả AOI sau: \"Board SN99102: R15 (RC0402-10K) thiếu thiếc; U7 (STM32F030) lệch 0,15 mm; C22 (CL05B104) dựng bia.\"","vaiTro":"extract"}
+{"cauHoi":"cai nao trong danh sach nay da het han hieu chuan tinh den 23/10/2026? loc ra bang ten thiet bi + ngay het han:\nThuoc cap TC-01 het han 15/09/2026\nNhiet ke NK-03 het han 30/11/2026\nDong ho do luc DL-02 het han 01/10/2026\nCan dien tu CD-05 het han 12/01/2027","vaiTro":"extract","kho":true}
+{"cauHoi":"Get all timestamps and alarm codes from this PLC alarm buffer dump as CSV:\n#0001 2026/10/22 05:58:11 ALM 0x1A04\n#0002 2026/10/22 06:03:47 ALM 0x0B12\n#0003 2026/10/22 06:03:49 CLR 0x0B12\n#0004 2026/10/22 06:44:02 ALM 0x1A04","vaiTro":"extract"}
+{"cauHoi":"lan gan nhat may AOI-04 bi dung la luc nao, dung bao lau","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"Lần cuối lò reflow số 2 được bảo trì định kỳ là ngày nào?","vaiTro":"chat.ops"}
+{"cauHoi":"hom qua line 3 dung may tong cong bao nhieu phut","vaiTro":"chat.ops"}
+{"cauHoi":"Ca trước có bao nhiêu board bị NG ở SPI?","vaiTro":"chat.ops"}
+{"cauHoi":"Gần đây nhất có sự cố mất khí nén nào trong xưởng không, xảy ra lúc mấy giờ?","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"san luong hom nay cua line 2 bao nhieu roi","vaiTro":"chat.ops"}
+{"cauHoi":"may nao dang bao loi tren line 1 vay","vaiTro":"chat.ops"}
+{"cauHoi":"cai nao trong 4 line dang co OEE thap nhat tuan nay","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"tai sao line 5 dang dung vay, co ai xu ly chua","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"Đã có ai soạn phiếu bảo trì cho máy in kem số 2 chưa, hay vẫn đang để trống?","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"Who is the line leader on line 4 this shift?","vaiTro":"chat.ops"}
+{"cauHoi":"Is the nitrogen generator running normally right now?","vaiTro":"chat.ops"}
+{"cauHoi":"Yield của sản phẩm HB-CTRL-5521 tuần này đang bao nhiêu phần trăm?","vaiTro":"chat.ops"}
+{"cauHoi":"Hiện còn bao nhiêu cảnh báo chưa xác nhận ở khu SMT?","vaiTro":"chat.ops"}
+{"cauHoi":"Máy gắp số 6 thay nozzle lần gần nhất cách đây bao lâu rồi?","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"tốc độ băng tải line 2 lúc này đang đặt bao nhiêu mm/s","vaiTro":"chat.ops"}
+{"cauHoi":"Lô 8812 đã đóng gói xong chưa?","vaiTro":"chat.ops"}
+{"cauHoi":"Có cuộn linh kiện MSL nào trong xưởng đang vượt floor life không?","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"OEE hôm qua của toàn xưởng so với hôm kia tăng hay giảm?","vaiTro":"chat.ops"}
+{"cauHoi":"dung cu do nao o xuong minh sap het han hieu chuan trong thang nay","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"profinet IRT la gi, khac gi voi RT thuong","vaiTro":"chat"}
+{"cauHoi":"tai sao bien tan hay bao loi qua ap khi dung gap dong co","vaiTro":"chat"}
+{"cauHoi":"the nao la mot function block tot trong IEC 61131-3, nen chia nho den muc nao","vaiTro":"chat","kho":true}
+{"cauHoi":"cai nao hop hon de chuyen anh AOI ve server: SMB hay FTP","vaiTro":"chat","kho":true}
+{"cauHoi":"mot ca 8 tieng nghi giua ca 30 phut thi thoi gian van hanh ke hoach toi da la bao nhieu, tinh nhu the nao","vaiTro":"chat","kho":true}
+{"cauHoi":"Khi soạn email báo trễ hàng cho khách thì nên viết theo những nguyên tắc nào cho chuyên nghiệp? Mình chỉ cần vài lời khuyên chung.","vaiTro":"chat","kho":true}
+{"cauHoi":"Khi soạn chương trình PLC lớn thì nên tách theo từng máy hay theo chức năng? Mình chỉ cần lời khuyên, chưa cần code.","vaiTro":"chat","kho":true}
+{"cauHoi":"Theo tiêu chuẩn chung thì tính từ lần hiệu chuẩn gần nhất bao lâu phải hiệu chuẩn lại thước cặp?","vaiTro":"chat","kho":true}
+{"cauHoi":"What is the difference between EtherCAT distributed clocks and IEEE 1588 PTP?","vaiTro":"chat"}
+{"cauHoi":"Giải thích cơ chế gây ra hiện tượng dựng bia (tombstoning) ở linh kiện 0402 khi reflow.","vaiTro":"chat"}
+{"cauHoi":"Docker volume với bind mount khác nhau thế nào, khi nào dùng cái nào?","vaiTro":"chat"}
+{"cauHoi":"async/await trong C# hoạt động thế nào ở bên dưới, có tạo thread mới không?","vaiTro":"chat"}
+{"cauHoi":"Vì sao mạng OT nên tách VLAN riêng khỏi mạng văn phòng?","vaiTro":"chat"}
+{"cauHoi":"MTBF và MTTR tính thế nào, cho ví dụ bằng số đơn giản","vaiTro":"chat"}
+{"cauHoi":"Safety PLC khác PLC thường ở điểm nào, SIL 2 nghĩa là gì?","vaiTro":"chat"}
+{"cauHoi":"Khi nào nên dùng retained message trong MQTT, có rủi ro gì không?","vaiTro":"chat"}
+{"cauHoi":"Hôm qua mình đọc thấy khái niệm digital thread trong sản xuất, nó là gì vậy?","vaiTro":"chat","kho":true}
+{"cauHoi":"Kanban và CONWIP khác nhau ở điểm nào trong kiểm soát WIP?","vaiTro":"chat"}
+{"cauHoi":"How does a vision system compute the board offset from two fiducial marks?","vaiTro":"chat"}
+{"cauHoi":"Ưu nhược điểm của sơn phủ conformal coating bằng phun so với nhúng?","vaiTro":"chat"}

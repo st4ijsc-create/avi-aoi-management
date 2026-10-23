@@ -26,6 +26,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import postgres from "postgres";
 import bcrypt from "bcryptjs";
+import { taoNguoiDungTest } from "../server/testing/nguoiDungTest";
 import { runEdgeCredentialCli, type CliIo } from "./edge-node-credential";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -119,7 +120,8 @@ describe.skipIf(!DB_URL)("Đợt 12 O — retire an edge node (CLI retire-node, 
     sql = postgres(DB_URL!, { max: 4, connect_timeout: 30, onnotice: () => {} });
     has0378 = Number((await sql`SELECT count(*)::int AS n FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'edge_nodes' AND column_name = 'retiredAt'`)[0].n) === 1;
     const user = async (tag: string, role: string, pw: string) => {
-      const id = Number((await sql`INSERT INTO users ("openId", username, name, role, "isActive") VALUES (${`${DAU}-${tag}`}, ${`${DAU}-${tag}`}, ${`d12o ${tag}`}, ${role}, true) RETURNING id`)[0].id);
+      // helper chung (TỰ dọn); giữ NGUYÊN openId/username `${DAU}-${tag}` vì CLI gọi `--actor ${DAU}-a`. FK `retiredBy` của nút đã nghỉ giữ lại ⇒ helper rơi về isActive=false (có cảnh báo).
+      const id = (await taoNguoiDungTest(tag, role as "admin", { tienTo: DAU, ten: `d12o ${tag}`, extra: { openId: `${DAU}-${tag}`, username: `${DAU}-${tag}` } })).id;
       await sql`INSERT INTO user_secrets ("userId", "passwordHash") VALUES (${id}, ${await bcrypt.hash(pw, 4)})`;
       return id;
     };

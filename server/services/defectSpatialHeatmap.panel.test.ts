@@ -6,6 +6,7 @@
  * (that suite is untouched and must stay green).
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { eq, inArray } from "drizzle-orm";
 import { computeSpatialHeatmap } from "./defectSpatialHeatmap";
 import { createPanelDef } from "./panel/panelService";
@@ -39,18 +40,18 @@ beforeAll(async () => {
     apiKey: `test_pnhm_${ts}`,
   });
   // Panel image = 400×300 px ⇒ panel 200×150 mm ⇒ scale 0.5 mm/px.
-  productModelId = await db.createProductModel({
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({
     code: `PROD_PNHM_${ts}`,
     name: "Panel heatmap product",
     imageWidth: 400,
     imageHeight: 300,
-  });
-  plainProductId = await db.createProductModel({
+  }));
+  plainProductId = dangKyModelSanPhamTest(await db.createProductModel({
     code: `PROD_PNHM_PLAIN_${ts}`,
     name: "Plain product (no panel)",
     imageWidth: 400,
     imageHeight: 300,
-  });
+  }));
   const pointDefId = await db.createMeasurementPointDef({
     productModelId,
     code: `MP_PNHM_${ts}`,

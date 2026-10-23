@@ -26,6 +26,8 @@
  * một lưới nuốt dữ liệu của chính nó cho ra ĐỎ GIẢ, vô dụng y như XANH GIẢ.
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 
 // ── Seam ghi-lại: bắt ĐÚNG đối tượng dữ liệu đi vào bộ dựng tài liệu ─────────────────────
 const pptComparisonCalls: Array<{ data: any }> = [];
@@ -125,18 +127,9 @@ let userDisabled: User;
 let baseShiftTotal = 0;
 
 async function mkUser(role: NonNullable<InsertUser["role"]>, tag: string): Promise<User> {
-  const conn = await getDb();
-  const [u] = await conn!
-    .insert(users)
-    .values({
-      openId: `rss_${tag}_${ts}`,
-      username: `rss_${tag}_${ts}`,
-      name: `report scope ${tag}`,
-      role,
-      loginMethod: "local",
-    })
-    .returning();
-  return u as User;
+  // Dùng helper chung: TỰ dọn người dùng ở afterAll (xem server/testing/nguoiDungTest.ts) — trước đây tệp này không xoá ⇒ chất người dùng admin ở CSDL _test.
+  const u = await taoNguoiDungTest(tag, role as NonNullable<InsertUser["role"]>, { tienTo: "rss", ten: `report scope ${tag}`, ts });
+  return u;
 }
 
 function callerFor(user: User) {
@@ -193,10 +186,10 @@ beforeAll(async () => {
     machineType: "AOI",
     apiKey: `rssb_${ts}`,
   });
-  productModelId = await db.createProductModel({
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({
     code: `RSSP_${ts}`,
     name: "Report scope product",
-  });
+  }));
   pointDefId = await db.createMeasurementPointDef({
     productModelId,
     machineId,

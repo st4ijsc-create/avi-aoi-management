@@ -119,3 +119,37 @@ describe("dtoKiemBienDich / boTepTuCauTraLoi", () => {
     expect(dtoKiemBienDich({ ...k, cauTraLoiCuoi: "b" }).cauTraLoiDau).toBe("a");
   });
 });
+
+// ★ Đợt 9 (2026-10-23) — phần hợp nhất từ e7220eb9e (bản thứ hai đã xoá): opt-out của lượt + nhịp tiến độ trong lúc sửa.
+describe("chayKiemBienDichST — opt-out của lượt + nhịp dang-kiem", () => {
+  async function chayVoi(y: Partial<Parameters<typeof chayKiemBienDichST>[0]> & { cauTraLoi: string; goiLai: (t: string, l: string) => Promise<string> }) {
+    const g = chayKiemBienDichST({ beMat: "tro-ly", ...y });
+    const su: StreamEvent[] = [];
+    for (;;) {
+      const n = await g.next();
+      if (n.done) return { su, kq: n.value };
+      su.push(n.value);
+    }
+  }
+  it("★★★ cờ BẬT nhưng tatBoiLuot ⇒ null, KHÔNG sự kiện, KHÔNG gọi model (nhánh 'tắt' của A/B cùng server)", async () => {
+    process.env.AI_KIEM_BIEN_DICH_ST = "tro-ly";
+    const goiLai = vi.fn(async () => tl(FB_DUNG));
+    const { su, kq } = await chayVoi({ cauTraLoi: tl(FB_SAI), goiLai, tatBoiLuot: true });
+    expect(kq).toBeNull();
+    expect(su).toEqual([]);
+    expect(goiLai).not.toHaveBeenCalled();
+  });
+  it("★★ lượt sửa CHẬM ⇒ phát lại dang-kiem theo nhịp (SSE không im), rồi xong", async () => {
+    process.env.AI_KIEM_BIEN_DICH_ST = "tro-ly";
+    const goiLai = vi.fn(async () => {
+      // rộng tay: dưới tải song song bộ hẹn giờ trễ — chỉ đòi ÍT NHẤT MỘT lần phát LẠI (đo 2026-10-23: 60 ms ⇒ có lúc chỉ 2 sự kiện)
+      await new Promise((r) => setTimeout(r, 300));
+      return tl(FB_DUNG);
+    });
+    const { su, kq } = await chayVoi({ cauTraLoi: tl(FB_SAI), goiLai, nhipMs: 10 });
+    const pha = su.map((e) => (e as { phase?: string }).phase);
+    expect(pha.filter((p) => p === "dang-kiem").length).toBeGreaterThanOrEqual(2);
+    expect(pha.at(-1)).toBe("xong");
+    expect(kq?.trangThai).toBe("da-sua");
+  });
+});

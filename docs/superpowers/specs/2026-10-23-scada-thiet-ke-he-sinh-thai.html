@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Thiết kế SCADA SYNAPSE</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Be+Vietnam+Pro:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Tài liệu kỹ thuật: chữ ~78ch, bảng/sơ đồ rộng hơn trong khung cuộn riêng. Nền xám thép kiểu ISA-101; màu cảnh báo chỉ dùng trong ví dụ cảnh báo và nhãn mức lỗi. */
+:root{
+  --bg:#f3f4f5; --paper:#ffffff; --ink:#1b2126; --ink-2:#4a545c; --ink-3:#6f7981;
+  --line:#d6dadd; --line-2:#e7e9eb; --accent:#0e5f6b; --accent-soft:#e3eff1;
+  --isa-bg:#c9cdd1; --isa-panel:#dcdfe2; --isa-gfx:#5d666e; --isa-gfx-2:#8e979e; --isa-val:#0b3b6f; --isa-band:#eef2f5;
+  --a1:#d4232b; --a1-fg:#ffffff; --a2:#f07c1a; --a2-fg:#1b1200; --a3:#f2c418; --a3-fg:#1b1600; --a4:#a63ccf; --a4-fg:#ffffff;
+  --ok:#2c7a4b; --stale:#7a3fb0;
+  --f-display:"Archivo","Segoe UI",system-ui,sans-serif;
+  --f-body:"Be Vietnam Pro","Segoe UI",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --r:6px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#15191c; --paper:#1c2125; --ink:#e4e7e9; --ink-2:#b0b8be; --ink-3:#8c969f;
+  --line:#323a40; --line-2:#272d32; --accent:#5fb7c4; --accent-soft:#1d3135;
+  --isa-bg:#2b3136; --isa-panel:#343b41; --isa-gfx:#a7b0b7; --isa-gfx-2:#78828a; --isa-val:#9cc7ff; --isa-band:#3b444b;
+  --ok:#5fbf86; --stale:#c59bf0; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#15191c; --paper:#1c2125; --ink:#e4e7e9; --ink-2:#b0b8be; --ink-3:#8c969f;
+  --line:#323a40; --line-2:#272d32; --accent:#5fb7c4; --accent-soft:#1d3135;
+  --isa-bg:#2b3136; --isa-panel:#343b41; --isa-gfx:#a7b0b7; --isa-gfx-2:#78828a; --isa-val:#9cc7ff; --isa-band:#3b444b;
+  --ok:#5fbf86; --stale:#c59bf0; color-scheme:dark;}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 var(--f-body)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--paper)}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+h1,h2,h3,h4{font-family:var(--f-display);line-height:1.2;text-wrap:balance;margin:0}
+h1{font-size:clamp(28px,4vw,40px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:26px;font-weight:700;margin-top:56px;padding-top:16px;border-top:2px solid var(--ink)}
+h2 .no{color:var(--accent);margin-right:8px}
+h3{font-size:19px;font-weight:700;margin-top:32px}
+h4{font-size:15px;font-weight:700;margin-top:20px}
+p,li{max-width:78ch}
+p{margin:10px 0}
+a{color:var(--accent)}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+code,.mono{font-family:var(--f-mono);font-size:.88em}
+code{background:var(--line-2);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+.eyebrow{font:600 12px/1 var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.lead{font-size:17px;color:var(--ink-2)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;color:var(--ink-3);font-size:13px;margin-top:12px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:99px;font:600 12px/1.6 var(--f-body);border:1px solid var(--line);background:var(--paper);color:var(--ink-2)}
+.pill.wait{border-color:var(--a2);color:var(--ink)}
+header.top{padding-block:40px 24px}
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--paper);border-bottom:1px solid var(--line);margin:0 calc(-1*max(16px,env(safe-area-inset-left,0px)));padding:8px max(16px,env(safe-area-inset-left,0px));overflow-x:auto;white-space:nowrap}
+nav.toc a{display:inline-block;margin-right:14px;font-size:13px;font-weight:600;color:var(--ink-2);text-decoration:none;padding:4px 0}
+nav.toc a:hover{color:var(--accent)}
+.note{border-left:3px solid var(--accent);background:var(--accent-soft);padding:10px 14px;border-radius:0 var(--r) var(--r) 0;margin:14px 0;max-width:86ch}
+.warn{border-left:3px solid var(--a2);background:var(--paper);padding:10px 14px;border-radius:0 var(--r) var(--r) 0;margin:14px 0;max-width:86ch}
+.tbl{overflow-x:auto;margin:14px 0;border:1px solid var(--line);border-radius:var(--r);background:var(--paper)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line-2)}
+th{font:600 12px/1.4 var(--f-display);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3);background:var(--bg)}
+tr:last-child td{border-bottom:0}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+.sev{display:inline-block;font:700 11px/1.6 var(--f-mono);padding:0 6px;border-radius:3px;white-space:nowrap}
+.sev.p0{background:var(--a1);color:var(--a1-fg)}
+.sev.p1{background:var(--a2);color:var(--a2-fg)}
+.sev.p2{background:var(--line);color:var(--ink)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin:16px 0}
+.grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:16px 0}
+.grid2>*,.grid4>*{min-width:0}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+.card h4{margin-top:0}
+.card ul{padding-left:18px;margin:6px 0}
+.card .big{font:800 30px/1 var(--f-display);color:var(--accent)}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13.5px}
+.kv dt{color:var(--ink-3);font-weight:600}
+.kv dd{margin:0;min-width:0}
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:0;margin:14px 0}
+.flow .st{flex:1 1 150px;min-width:140px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;font-size:12.5px}
+.flow .st b{display:block;font:700 13px/1.3 var(--f-display);margin-bottom:4px}
+.flow .st .tag{display:inline-block;font:500 11px/1.5 var(--f-mono);color:var(--ink-3);overflow-wrap:anywhere}
+.flow .st.new{border:1.5px dashed var(--accent);background:var(--accent-soft)}
+.flow .st.bad{border:1.5px solid var(--a2)}
+.flow .ar{flex:0 0 22px;display:flex;align-items:center;justify-content:center;color:var(--ink-3);font-size:18px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--ink-2);margin:6px 0}
+.legend span::before{content:"";display:inline-block;width:14px;height:10px;margin-right:6px;vertical-align:-1px;border:1px solid var(--line);background:var(--paper)}
+.legend span.n::before{border:1.5px dashed var(--accent);background:var(--accent-soft)}
+.legend span.b::before{border:1.5px solid var(--a2)}
+ol.gates{counter-reset:g;list-style:none;padding:0;margin:10px 0;display:grid;gap:6px}
+ol.gates li{counter-increment:g;display:grid;grid-template-columns:34px 1fr;gap:10px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;font-size:13.5px;max-width:none}
+ol.gates li::before{content:counter(g);font:700 13px/24px var(--f-mono);text-align:center;background:var(--bg);border-radius:4px}
+.wf{background:var(--isa-bg);border:1px solid var(--line);border-radius:var(--r);padding:8px;margin:14px 0;overflow-x:auto;font-size:12px;color:var(--ink)}
+.wf .scr{min-width:760px;display:grid;gap:6px}
+.wf .bar{background:var(--isa-panel);border-radius:4px;padding:6px 10px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
+.wf .bar .sp{flex:1}
+.wf .box{background:var(--isa-panel);border-radius:4px;padding:8px 10px}
+.wf .lbl{font:600 10.5px/1.3 var(--f-display);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.wf .val{font:500 13px/1.3 var(--f-mono);color:var(--isa-val)}
+.wf .muted{color:var(--ink-3)}
+.wf table th{background:var(--isa-panel)}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:1px 7px;border-radius:3px;font:600 11px/1.6 var(--f-body);background:var(--isa-band);color:var(--ink)}
+.chip.go{background:var(--ink);color:var(--paper);padding:6px 14px}
+.ai{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;font:700 11px/1 var(--f-mono)}
+.ai.p1{background:var(--a1);color:var(--a1-fg)}
+.ai.p2{background:var(--a2);color:var(--a2-fg);clip-path:polygon(50% 0,100% 100%,0 100%);padding-top:5px}
+.ai.p3{background:var(--a3);color:var(--a3-fg);clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
+.ai.p4{background:var(--a4);color:var(--a4-fg);border-radius:50%}
+.blink{animation:bl 1s steps(1) infinite}
+@keyframes bl{50%{opacity:.25}}
+.mbar{position:relative;height:10px;background:var(--isa-gfx-2);border-radius:2px;margin:4px 0 2px}
+.mbar i{position:absolute;top:0;bottom:0;background:var(--isa-band)}
+.mbar b{position:absolute;top:-3px;bottom:-3px;width:3px;background:var(--isa-val)}
+.mbar u{position:absolute;top:-6px;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid var(--ink)}
+.stale{outline:2px dashed var(--stale);outline-offset:1px}
+.svgbox{background:var(--isa-bg);border:1px solid var(--line);border-radius:var(--r);overflow-x:auto;margin:14px 0}
+.svgbox svg{display:block;min-width:900px;width:100%;height:auto}
+.small{font-size:12.5px;color:var(--ink-3)}
+.decision{display:grid;grid-template-columns:52px 1fr;gap:12px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin:10px 0}
+.decision .id{font:700 15px/1.2 var(--f-mono);color:var(--accent)}
+.decision p{margin:4px 0}
+.decision .opt{font-size:13.5px;color:var(--ink-2)}
+footer{margin-top:56px;color:var(--ink-3);font-size:12.5px;border-top:1px solid var(--line);padding-top:14px}
+@media (max-width:640px){h2{font-size:22px}.decision{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">SYNAPSE · Lớp giám sát – điều khiển</div>
+  <h1>Thiết kế SCADA SYNAPSE — từ gốc: kết nối, điều khiển, chức năng, giao diện</h1>
+  <p class="lead">Bản thiết kế đi từ tầng dưới lên: driver và vòng đời kết nối, đường ghi lệnh tới thiết bị, các chức năng lõi (kênh, giới hạn, cảnh báo, lưu trữ, công thức), rồi mới tới giao diện. Mọi khẳng định về hiện trạng đều dẫn tới tệp và dòng mã; các lỗi gốc được xếp mức và có hướng sửa.</p>
+  <div class="meta">
+    <span class="pill">ĐÃ DUYỆT 2026-10-23 — D1–D11 theo đề xuất; bước tiếp: kế hoạch thực thi R0</span>
+    <span>Bản 2 · 2026-10-23 (tập trung vào gốc theo yêu cầu)</span>
+    <span>Phiên dieu-phoi</span>
+    <span>Mã đối chiếu: <code>_ai8_wt</code> @ main <code>f22f702d9</code> — đọc mã, chưa chạy thử</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Mục lục">
+  <a href="#tomtat">Tóm tắt</a><a href="#ketnoi">1 · Kết nối</a><a href="#dieukhien">2 · Điều khiển</a><a href="#chucnang">3 · Chức năng lõi</a><a href="#giaodien">4 · Giao diện</a><a href="#lotrinh">Lộ trình</a><a href="#quyetdinh">Cần duyệt</a><a href="#phuluc">Phụ lục</a>
+</nav>
+
+<!-- ======================================================= -->
+<h2 id="tomtat">Tóm tắt</h2>
+<p>SYNAPSE đã có đủ <i>bộ phận</i> của một SCADA, nhưng ba chỗ ở gốc chưa đạt chuẩn SCADA:</p>
+<ul>
+<li><b>Giá trị không nói thật về độ tin cậy của nó</b> khi mất kết nối.</li>
+<li><b>Không có đường để người vận hành ghi lệnh</b> tới tag OT.</li>
+<li><b>Chưa có mô hình kênh / giới hạn / cảnh báo theo tag.</b></li>
+</ul>
+<p>Màn mimic dựng trên nền này sẽ hiển thị sai mà vẫn trông như đúng. Vì vậy đề xuất sửa gốc trước, vẽ màn sau.</p>
+<div class="grid4">
+  <div class="card"><div class="eyebrow">Kết nối</div><div class="big">9</div><p>lỗi gốc, 1 lỗi mức P0: mất kết nối thì giá trị cuối vẫn mang chất lượng <b>tốt</b> mãi mãi.</p></div>
+  <div class="card"><div class="eyebrow">Điều khiển</div><div class="big">11</div><p>lỗi gốc, 3 lỗi mức P0: không có UI để người ghi tag, không có chế độ Local/Remote, interlock cho qua khi thiếu dữ liệu.</p></div>
+  <div class="card"><div class="eyebrow">Chức năng</div><div class="big">7</div><p>khối lõi: kênh, mã trạng thái, giới hạn, cảnh báo, lưu trữ, công thức, sự kiện. 5 khối chưa có, 2 khối mới có một phần.</p></div>
+  <div class="card"><div class="eyebrow">Giao diện</div><div class="big">6</div><p>màn lõi thiết kế chi tiết: chẩn đoán truyền thông, faceplate, hộp thoại lệnh, cảnh báo, mimic L2, trình soạn.</p></div>
+</div>
+<div class="note">Quan hệ với phiên <code>scada-master</code>:
+<ul>
+<li><code>2026-10-23-scada-phan-tich-chi-tiet.md</code> (thắng spec 22/10 khi mâu thuẫn) giữ DDL, hợp đồng tRPC/socket và máy trạng thái.</li>
+<li>Bản này dùng thẳng các hợp đồng ở đó: socket C.6, lệnh hai bước C.5, trạng thái cảnh báo C.4, trình soạn theo cấp D.3.</li>
+<li>Phần bản này thêm vào: <b>các lỗi gốc ở driver và đường lệnh</b> (§1, §2) do tôi đo thêm, và <b>thiết kế giao diện</b> (§4).</li>
+</ul>
+Chỗ hai bản khác nhau được ghi ở quyết định D10–D11.</div>
+
+<!-- ======================================================= -->
+<h2 id="ketnoi"><span class="no">1</span>Kết nối thiết bị</h2>
+
+<h3>1.1 Hợp đồng driver hiện có</h3>
+<p>Mọi driver cài <code>OtDriver</code> (<code>server/services/ot/otDriver.ts:197-227</code>):</p>
+<ul>
+<li>Phương thức bắt buộc: <code>connect · disconnect · isConnected · readTags · subscribe · writeTags · health</code>.</li>
+<li>Phương thức tuỳ chọn: <code>executeCommand · getSafetyStatus · describe · readProgramChecksum</code>.</li>
+<li>Một mẫu có dạng <code>OtSample {tagKey, raw, value, quality: good|bad|uncertain, timestamp, statusCode?, tsSource?}</code> (:38-61).</li>
+</ul>
+<div class="tbl"><table>
+<thead><tr><th>Driver</th><th>Thư viện</th><th>Cú pháp địa chỉ</th><th>Cách đọc</th><th>Ghi</th><th>Thiếu</th></tr></thead>
+<tbody>
+<tr><td><b>OPC UA</b></td><td>node-opcua 2.173</td><td><code>ns=2;s=Line.Temp</code>, <code>nsu=…</code></td><td>Một <code>session.read</code> cho cả lô; tag lỗi được cô lập; tuỳ chọn monitored items (<code>OT_OPCUA_MONITORED_ITEMS</code>)</td><td>Ép kiểu theo DataType của node; không có deadline riêng</td><td>Uncertain bị gộp vào bad</td></tr>
+<tr><td><b>Modbus TCP</b></td><td>modbus-serial</td><td><code>holding:40001</code>, <code>4x:1</code></td><td>Mỗi tag một request, tuần tự, <b>không gộp khối</b></td><td>writeCoil / writeRegister(s), có kiểm dải</td><td>RTU, int32/uint, string, bit trong word, mã exception</td></tr>
+<tr><td><b>Siemens S7</b></td><td>nodes7</td><td><code>DB1,REAL0</code>, <code>DB1,X14.0</code>, <code>MW0</code></td><td><code>readAllItems</code> (thư viện tự gộp); <b>không bọc timeout</b></td><td><code>writeItems</code> 5 s; một tag xấu làm hỏng cả lô</td><td>STRING; một địa chỉ sai ném lỗi cả lô</td></tr>
+<tr><td><b>EtherNet/IP</b></td><td>st-ethernet-ip</td><td><code>Program:P.Tag</code>, <code>UDT.Member</code>, <code>Arr[3]</code></td><td>Từng tag, tuần tự, không có timeout cho mỗi lần đọc</td><td>Từng tag, 5 s</td><td>Đọc theo lô, timeout đọc</td></tr>
+<tr><td><b>Mitsubishi MC</b></td><td>mcprotocol (khung 1E)</td><td><code>D100</code>, <code>D6000.1</code>, <code>X1A</code></td><td><code>readAllItems</code> có deadline</td><td><code>writeItems</code> 5 s</td><td>Khung 3E/4E (đi qua SLMP)</td></tr>
+<tr><td><b>SLMP 3E/4E</b></td><td>tự viết trên <code>node:net</code></td><td><code>D100</code>, <code>M200</code></td><td>Một giao dịch mỗi tag, chỉ một yêu cầu đang chờ</td><td>Theo tag, kiểm <code>endCode</code></td><td>Bit trong word; string bị giải thành int16</td></tr>
+<tr><td><b>Stub</b> (mô phỏng)</td><td>—</td><td>bất kỳ</td><td>sin + nhiễu, luôn <i>good</i></td><td>luôn từ chối</td><td>Mô phỏng mất kết nối, chất lượng xấu</td></tr>
+</tbody></table></div>
+<p class="small">Các cửa nhận dữ liệu khác không theo <code>OtDriver</code>:</p>
+<ul class="small">
+<li>MQTT (<code>mqttService.ts:397</code>) và HTTP <code>/api/ot/ingest</code>.</li>
+<li>MTConnect: poll HTTP/XML.</li>
+<li>CFX: AMQP, chỉ chiều vào.</li>
+<li>SECS/HSMS: mới là khung CONNECT/TEST.</li>
+<li>FOCAS: chưa nối thư viện.</li>
+<li>OpenPLC: chưa có driver runtime, chỉ có phần biên dịch IEC 61131.</li>
+</ul>
+
+<h3>1.2 Vòng đời kết nối và đường đi của một mẫu</h3>
+<div class="legend"><span>Đúng như cần</span><span class="b">Có lỗi gốc (xem 1.3)</span></div>
+<div class="flow">
+  <div class="st"><b>Khởi động</b><code>startOt</code> khi bật <code>OT_GATEWAY_ENABLED</code>; khôi phục WAL trước; khởi song song tối đa 4 adapter, 10 s mỗi adapter<br><span class="tag">otManager.ts:640</span></div><div class="ar">→</div>
+  <div class="st bad"><b>Poll</b><code>setInterval(tick, pollIntervalMs‖5000)</code>; timeout truyền cho driver <b>luôn undefined</b> ⇒ dùng 5 s<br><span class="tag">deviceAdapter.ts:118</span></div><div class="ar">→</div>
+  <div class="st bad"><b>Mất kết nối</b><code>tick</code> bắt lỗi, ghi <code>lastError</code>, <b>không phát mẫu</b> ⇒ giá trị cuối vẫn mang chất lượng <i>good</i><br><span class="tag">modbusDriver.ts:267</span></div><div class="ar">→</div>
+  <div class="st"><b>Kết nối lại</b>Mặc định: watchdog 5 s, lùi 5 s × 2ⁿ, tối đa 60 s. HA (<code>OT_CONN_HA_ENABLED</code>, đang tắt): 500 ms → 30 s, có jitter, chuyển sang endpoint dự phòng<br><span class="tag">connectionSupervisor.ts</span></div><div class="ar">→</div>
+  <div class="st"><b>Deadband</b>chỉ chạy khi bật <code>OT_TAG_DEADBAND_ENABLED</code>; luôn gửi khi đổi chất lượng hoặc sau 60 s<br><span class="tag">shouldForwardSample :468</span></div><div class="ar">→</div>
+  <div class="st bad"><b>Ghi ở trung tâm</b><code>ingestTelemetry</code> → <code>ot_telemetry</code>; <b>đơn vị của tag bị bỏ</b><br><span class="tag">ot/ingest.ts:45-58</span></div>
+</div>
+<div class="flow">
+  <div class="st bad"><b>Edge nhận cấu hình</b>kéo bản ký số khi <code>configVersion</code> tăng (heartbeat 30 s); schema tag phía edge <b>thiếu unit, deadband, samplingMs</b><br><span class="tag">edgeProtocol.ts:361</span></div><div class="ar">→</div>
+  <div class="st"><b>Store-and-forward</b>WAL JSONL tối đa 100 000 mẫu / 24 h, ghi nguyên tử, phát lại mẫu cũ trước, khử trùng theo <code>adapter|tag|ts</code><br><span class="tag">storeForward.ts</span></div><div class="ar">→</div>
+  <div class="st bad"><b>Gửi về trung tâm</b>lô bị trung tâm từ chối thì <b>bị bỏ, không thử lại</b>; <code>tsSource</code> là giờ server nhưng bị gắn nhãn <i>device</i><br><span class="tag">edgeStreams.ts:355, 380</span></div><div class="ar">→</div>
+  <div class="st"><b>Kiểm chủ sở hữu</b>bỏ mẫu của adapter mà node không sở hữu; trung tâm bỏ qua adapter của edge khi nạp<br><span class="tag">edgeIngestCentral.ts:51-77</span></div>
+</div>
+
+<h3>1.3 Lỗi gốc ở tầng kết nối</h3>
+<div class="tbl"><table>
+<thead><tr><th>#</th><th>Mức</th><th>Lỗi</th><th>Bằng chứng</th><th>Hậu quả với SCADA</th><th>Hướng sửa</th></tr></thead>
+<tbody>
+<tr><td class="n">C1</td><td><span class="sev p0">P0</span></td><td>Mất kết nối không sinh mẫu chất lượng xấu; giá trị cuối vẫn <i>good</i>. Chỉ OPC UA ở chế độ push mới phát <i>bad</i>.</td><td><code>modbusDriver.ts:267-269</code>, <code>opcuaDriver.ts:500-502</code>; supervisor không đụng tới quality</td><td>Màn hình vẽ số cũ như số sống. Cảnh báo theo ngưỡng không bật vì giá trị "đứng yên trong dải". Interlock đọc số cũ.</td><td>Khi adapter chuyển sang mất kết nối, supervisor phát mẫu <i>bad</i> (<code>statusCode: comm_lost</code>) cho mọi tag của nó; chỉ một tag lỗi thì phát <i>uncertain</i>. Bộ đệm giá trị hiện tại đánh dấu cũ theo tuổi (§3.2).</td></tr>
+<tr><td class="n">C2</td><td><span class="sev p1">P1</span></td><td>Không driver nào phát <i>uncertain</i>: OPC UA Uncertain (0x40…) bị gộp vào <i>bad</i>; Modbus mất mã exception; <code>endCode</code> của SLMP chỉ vào <code>lastError</code>.</td><td><code>opcuaDriver.ts:445-461</code>, <code>modbusDriver.ts:221-230</code>, <code>slmpDriver.ts:289</code></td><td>Không phân biệt được "cảm biến báo nghi ngờ" với "mất liên lạc"; muốn chẩn đoán phải đọc log.</td><td>Bảng ánh xạ chất lượng ba mức cho từng driver; mẫu luôn mang <code>statusCode</code> gốc.</td></tr>
+<tr><td class="n">C3</td><td><span class="sev p1">P1</span></td><td>Runtime <b>không bao giờ ghi</b> <code>device_adapters.status / lastConnectedAt / lastError</code>; chỉ router quản trị ghi.</td><td><code>deviceAdapterRouter.ts:312</code>; đọc ở <code>fleetStatusService.ts:135</code></td><td>Màn quản lý adapter và màn fleet hiển thị trạng thái sai.</td><td>Supervisor ghi ngược trạng thái (tối đa 1 lần/5 s mỗi adapter) và phát sự kiện truyền thông.</td></tr>
+<tr><td class="n">C4</td><td><span class="sev p1">P1</span></td><td>Phía edge: tag thiếu <code>unit/deadband/samplingMs</code> nên deadband tắt trên edge; <code>tsSource</code> sai nhãn; lệch đồng hồ chỉ được ghi lại, không hiệu chỉnh.</td><td><code>edgeProtocol.ts:361-373</code>, <code>edgeIngestCentral.ts:64</code>, <code>edgeCoordinator.ts:314</code></td><td>Cùng một tag hành xử khác nhau tuỳ máy do trung tâm hay edge sở hữu; xu hướng bị lệch giờ.</td><td>Mở rộng schema cấu hình edge; edge gắn <code>tsSource</code> đúng; cảnh báo chẩn đoán khi lệch &gt; 2 s (không tự sửa ts).</td></tr>
+<tr><td class="n">C5</td><td><span class="sev p2">P2</span></td><td>Timeout cấu hình không tới được driver; S7 và EIP đọc không bọc timeout.</td><td><code>deviceAdapter.ts:118</code>, <code>s7Driver.ts:237</code></td><td>Một PLC treo có thể giữ chu kỳ poll lâu hơn dự kiến.</td><td>Đọc <code>connectionOptions.timeoutMs</code>; bọc mọi lần đọc bằng deadline.</td></tr>
+<tr><td class="n">C6</td><td><span class="sev p2">P2</span></td><td>Modbus không gộp khối, chỉ có int16, string sai, không đọc bit; S7 không có STRING; với S7 và MC, một địa chỉ sai ném lỗi cả lô.</td><td><code>modbusDecode.ts:117-131</code>, <code>s7Driver.ts:213</code></td><td>Tải mạng cao; không đọc được các kiểu dữ liệu phổ biến của máy SMT.</td><td>Bộ lập kế hoạch đọc khối (gộp thanh ghi liền kề, tối đa 125 word); bổ sung kiểu; cô lập lỗi từng tag.</td></tr>
+<tr><td class="n">C7</td><td><span class="sev p2">P2</span></td><td>Lô từ edge bị trung tâm từ chối thì bị bỏ.</td><td><code>edgeStreams.ts:380-383</code></td><td>Mất dữ liệu im lặng khi trung tâm lỗi tạm thời.</td><td>Tách từ chối vĩnh viễn (4xx do kiểm định) khỏi từ chối tạm thời (5xx, giữ lại trong WAL).</td></tr>
+<tr><td class="n">C8</td><td><span class="sev p2">P2</span></td><td>Không có bộ đếm theo tag / theo request; chỉ có <code>OtHealth</code> và số lần kết nối lại.</td><td><code>otDriver.ts:64-70</code></td><td>Không chẩn đoán được tag nào chậm hay lỗi.</td><td>Bộ đếm kiểu Rapid SCADA (phiên, request, lỗi, timeout, lệnh) theo adapter và theo tag.</td></tr>
+<tr><td class="n">C9</td><td><span class="sev p2">P2</span></td><td>Driver mô phỏng không mô phỏng được sự cố: luôn <i>good</i>, không nhận ghi.</td><td><code>stubDriver.ts:120-205</code></td><td>Không thử được màn hình, cảnh báo, lệnh khi không có máy thật.</td><td>Stub có kịch bản: rớt kết nối, tag xấu, giá trị vượt ngưỡng, nhận ghi vào RAM và đọc lại.</td></tr>
+</tbody></table></div>
+
+<h3>1.4 Mô hình kết nối đích</h3>
+<p>Giữ kiến trúc driver + edge hiện tại, thêm ba thứ lấy từ Communicator của Rapid SCADA (<code>ScadaCommEngine/CommLine.cs</code>, <code>DeviceLogic.cs</code>):</p>
+<div class="grid2">
+  <div class="card"><h4>Phiên poll có cấu trúc</h4><ul><li>Mỗi chu kỳ chạy theo thứ tự: <b>lệnh chờ → chọn thiết bị → phiên đọc → chuyển dữ liệu</b>. Lệnh chen trước poll; sau một lệnh, thiết bị đó được poll ưu tiên để đọc lại nhanh.</li><li>Đọc theo nhóm khối; nhóm lỗi được thử lại tối đa N lần (<code>reqRetries</code>, mặc định 3) rồi bị đánh dấu <i>bad</i>.</li><li>Mỗi adapter có <code>pollIntervalMs</code>, <code>timeoutMs</code>, <code>reqRetries</code>, <code>delayMs</code> giữa các request, và cả bốn đều tới được driver.</li></ul></div>
+  <div class="card"><h4>Chất lượng là dữ liệu hạng nhất</h4><ul><li>3 mức <code>good / uncertain / bad</code>, kèm <code>statusCode</code> gốc và lý do chuẩn hoá (<code>comm_lost</code>, <code>device_error</code>, <code>config_error</code>, <code>out_of_range</code>, <code>stale</code>).</li><li>Khi trạng thái kết nối đổi, phát ngay mẫu chất lượng cho mọi tag bị ảnh hưởng (kể cả khi có deadband).</li><li>Tuổi giá trị tính ở bộ đệm hiện tại: quá <code>max(3 × poll, 70 s nếu có deadband)</code> thì thành <i>stale</i>.</li></ul></div>
+  <div class="card"><h4>Chẩn đoán đo được</h4><ul><li>Bộ đếm phiên, request, lỗi, timeout, lệnh, lệnh lỗi; độ trễ p50/p95 cho từng adapter.</li><li>Trạng thái adapter được ghi ngược vào DB và phát sự kiện <code>scada.comm</code>.</li><li>Mỗi adapter có một tag trạng thái tổng hợp (giống <code>DeviceStatus</code> của Rapid) để vẽ lên mimic và đặt cảnh báo.</li></ul></div>
+  <div class="card"><h4>Edge và trung tâm đồng nhất</h4><ul><li>Một schema tag duy nhất cho cả hai phía: unit, deadband, samplingMs, dải ghi, mức tác động.</li><li>Đồng hồ: edge gắn <code>tsSource</code> đúng; trung tâm cảnh báo chẩn đoán khi lệch.</li><li>Lô bị từ chối tạm thời ở lại trong WAL.</li></ul></div>
+</div>
+<p class="small">Không làm trong đợt này:</p>
+<ul class="small">
+<li>Dự phòng máy chủ trung tâm (cả hai hệ tham chiếu cũng không có).</li>
+<li>Modbus RTU (chưa có thiết bị nối tiếp trong phạm vi).</li>
+<li>Driver OpenPLC (chờ Q2: dùng bench nào).</li>
+</ul>
+
+<!-- ======================================================= -->
+<h2 id="dieukhien"><span class="no">2</span>Điều khiển</h2>
+
+<h3>2.1 Ai đang gọi được đường ghi thiết bị</h3>
+<p>Có ba đường ghi tách biệt:</p>
+<ul>
+<li><b>Tag PLC</b> đi qua <code>commandDispatcher.dispatch()</code>.</li>
+<li><b>Robot</b> đi qua <code>robotCommandDispatcher</code> (nơi giữ khoá chuyển động).</li>
+<li><b>Edge</b> đi qua <code>otEdgeDispatch</code>.</li>
+</ul>
+<p>Những ai đang gọi đường tag PLC:</p>
+<div class="tbl"><table>
+<thead><tr><th>Người gọi</th><th>Xác thực</th><th>Ghi chú</th></tr></thead>
+<tbody>
+<tr><td>Công cụ AI (máy, thị giác)</td><td><code>copilot.confirmAction</code> là <code>protectedProcedure</code> trơn; quyền <code>machine_control</code>; <code>kiemCongAi</code> chặn mức ≥ 4</td><td>Cần <code>AI_OT_CONTROL_ENABLED</code> (đang tắt), kể cả khi người đã xác nhận</td></tr>
+<tr><td>Interlock engine</td><td>Luật đã được duyệt, không tự duyệt</td><td><code>INTERLOCK_ENGINE_ENABLED</code> đang tắt</td></tr>
+<tr><td>Điều phối FOE</td><td><code>actuationProcedure</code> (admin/supervisor/engineer + 2FA); deploy cần thêm TOTP mới</td><td>Qua <code>equipmentAdapter.sendCommand</code></td></tr>
+<tr><td>REST <code>POST /api/v1/equipment/:id/commands</code></td><td>Chỉ có API scope; tự tạo actionId <code>apiv1-…</code>, <code>requestedBy: 0</code></td><td>Không có bản ghi chờ tương ứng, nên theo mã thì luôn bị <code>NOT_CONFIRMED</code>; chưa có test</td></tr>
+<tr><td>Sparkplug DCMD/NCMD, kỹ thuật Mitsubishi</td><td><code>requireBoundAction</code> / HITL</td><td>Có cờ riêng</td></tr>
+</tbody></table></div>
+<div class="warn"><b>Không có giao diện nào cho người vận hành ghi tag OT.</b> <code>CommandConsole.tsx</code> chỉ gọi <code>robot.actuate</code> / <code>robot.consoleStop</code>; <code>MachineCockpit.tsx</code> chỉ truy vấn. Đây là khoảng trống lớn nhất về điều khiển. Vì vậy hộp thoại lệnh (§4) phải đi cùng cổng server mới, không thể chỉ là một màn hình.</div>
+
+<h3>2.2 Chuỗi cổng của <code>dispatchCore</code> (hiện có)</h3>
+<ol class="gates">
+  <li><b>Ràng buộc hành động</b>: Sparkplug cần actionId khớp; HITL cũ cần bản ghi <code>confirmed/executed</code> và <code>userId === confirmedBy</code>. <span class="small">:809-843</span></li>
+  <li><b>Lệnh do interlock phát</b>: 11 điều kiện (luật bật, đã duyệt, đúng adapter/tag/giá trị…). <span class="small">:1877-1946</span></li>
+  <li><b>Idempotency</b>: khoá đã có kết quả thì trả kết quả cũ. <span class="small">:857</span></li>
+  <li><b>Adapter</b> đang bật · <b>tag</b> tồn tại và đang bật · <b>tag writable</b>. <span class="small">:868-901</span></li>
+  <li><b>Driver</b>: không có driver thì hoặc là adapter của edge (định tuyến sang edge), hoặc trả <code>ADAPTER_OFFLINE</code>. <span class="small">:914</span></li>
+  <li><b>Chế độ</b>: <code>OT_CONTROL_ENABLED</code> ≠ true thì <code>writeSimulated</code>; adapter chưa nghiệm thu (commissioning bật mặc định) cũng chỉ mô phỏng. <span class="small">:928-947</span></li>
+  <li><b>STOP ghim</b>: stop/e_stop khớp đúng <code>device_tags.stop_value</code> và vân tay kết nối thì được vượt policy và interlock. <span class="small">:966</span></li>
+  <li><b>Policy</b> (<code>SEC_PLATFORM</code>, đang tắt) · <b>safety PLC preflight</b> 5 s: BLOCKED, chỉ-mô-phỏng và <b>UNKNOWN đều bị từ chối</b>. <span class="small">:1011-1140</span></li>
+  <li><b>Interlock nội tuyến</b>: <code>evaluateInterlockGate</code>; lỗi thì từ chối. <span class="small">:1142</span></li>
+  <li><b>Giữ chỗ trước khi ghi</b>: <span class="small">:1699-1858</span><br>advisory lock theo khoá → kiểm chủ edge trong giao dịch (<code>FOR SHARE</code>) → tiêu thụ bản ghi chờ bằng CAS <code>confirmed→executed</code> → chèn dòng ý định → rồi mới gọi driver.</li>
+  <li><b>Hàng đợi theo adapter</b> (<code>OT_CMD_SERIALIZE_ENABLED</code>, đang tắt; trong RAM; tối đa 10) · <b>kiểm lại STOP</b> nếu có STOP chen vào giữa. <span class="small">:1262-1487</span></li>
+  <li><b>Ghi + đọc lại</b>: <span class="small">otDeviceWrite.ts:1190-1268</span>
+    <ul>
+    <li>Chỉ đọc lại khi bật <code>OT_READBACK_ENABLED</code> (đang tắt).</li>
+    <li>Đọc lại lệch thì ra <code>acked_unverified</code> nhưng vẫn <code>ok</code>.</li>
+    <li>Quá hạn thì kết quả là "không rõ".</li>
+    </ul></li>
+</ol>
+<p><code>command_log</code> là WORM (<code>REVOKE UPDATE, DELETE</code> + trigger một kết quả cho mỗi ý định). Mọi lần từ chối ở các cổng trên đều có một dòng.</p>
+<div class="note"><b>Mặc định hiện tại an toàn theo kiểu "đóng":</b> safety preflight đang bật nhưng adapter safety PLC đang tắt, nên mọi lệnh HITL thật đều nhận <code>SAFETY_UNKNOWN</code>. Muốn SCADA điều khiển thật thì phải nối safety PLC trước, hoặc quyết định rõ bỏ preflight cho một danh sách kênh (xem D9).</div>
+
+<h3>2.3 Lỗi gốc ở tầng điều khiển</h3>
+<div class="tbl"><table>
+<thead><tr><th>#</th><th>Mức</th><th>Lỗi</th><th>Bằng chứng</th><th>Hướng sửa</th></tr></thead>
+<tbody>
+<tr><td class="n">K1</td><td><span class="sev p0">P0</span></td><td>Không có đường để người vận hành ghi tag (thiếu cả UI lẫn thủ tục server có 2FA theo mức).</td><td><code>CommandConsole.tsx:180</code>, <code>MachineCockpit.tsx</code></td><td><code>scada.cmd.request / confirm</code> (C.5 bên scada-master), dùng chung <code>dispatch()</code></td></tr>
+<tr><td class="n">K2</td><td><span class="sev p0">P0</span></td><td>Không có chế độ Local/Remote hay Tay/Tự động; PackML chỉ để hiển thị, dispatch không kiểm.</td><td>Không tìm thấy trong schema/server; <code>packml.ts</code> chỉ suy từ <code>operationStatus</code></td><td>Mỗi máy khai một kênh chế độ (đọc từ PLC); thêm cổng: LOCAL thì từ chối mọi lệnh từ xa trừ STOP ghim.</td></tr>
+<tr><td class="n">K3</td><td><span class="sev p0">P0</span></td><td>Interlock <b>cho qua khi thiếu dữ liệu</b>: <code>compare()</code> trả false khi giá trị null. Nó đọc từ DB (cửa sổ 300 s) chứ không đọc giá trị sống, và engine poll 10 s một lần.</td><td><code>ruleEvaluator.ts:15</code>, <code>interlockGate.ts:48-126</code></td><td>Mỗi luật khai <code>khiThieuDuLieu: chan | cho_qua</code>, mặc định <b>chặn</b>; đọc từ bộ đệm hiện tại có chất lượng; chất lượng xấu tính là thiếu dữ liệu.</td></tr>
+<tr><td class="n">K4</td><td><span class="sev p1">P1</span></td><td>Không có dải ghi theo tag. Chỉ có <code>parameter_guardrails</code>, đang tắt và chỉ áp cho <code>set_machine_param</code>.</td><td><code>drizzle/schema/ot.ts:74-106</code></td><td>Dải ghi khai trên kênh, kiểm trong dispatch cho mọi người gọi.</td></tr>
+<tr><td class="n">K5</td><td><span class="sev p1">P1</span></td><td>Không có giá trị cũ thật: bản xem trước đặt <code>oldValue: null</code>; "giá trị cũ" của guardrail lấy từ sổ thay đổi chứ không từ tag.</td><td><code>machineControl.ts:469</code></td><td>Đọc từ bộ đệm hiện tại (kèm chất lượng và tuổi) lúc tạo yêu cầu.</td></tr>
+<tr><td class="n">K6</td><td><span class="sev p1">P1</span></td><td>Không có chọn-trước-thực-hiện hay quyền điều khiển. Hai người cùng ghi một tag chỉ bị chặn bởi advisory lock theo khoá idempotency.</td><td>Không có <code>controlToken</code>; hàng đợi đang tắt và chỉ nằm trong RAM</td><td>Khoá chọn theo (máy, kênh), gắn với một người, hết hạn cùng TTL yêu cầu; người thứ hai thấy "đang được X điều khiển".</td></tr>
+<tr><td class="n">K7</td><td><span class="sev p1">P1</span></td><td>Đọc lại tắt theo mặc định; đọc lại lệch chỉ sinh cảnh báo.</td><td><code>otDeviceWrite.ts:23, 1251</code></td><td>Bật đọc lại cho đường SCADA; <code>acked_unverified</code> hiện rõ cho người vận hành.</td></tr>
+<tr><td class="n">K8</td><td><span class="sev p1">P1</span></td><td>Mức tác động chỉ có trong bảng của AI; dispatch không biết lệnh thuộc mức nào.</td><td><code>aiControlGate.ts:136-152</code></td><td>Khai mức trên kênh (1/3/4/5, để trống = 5), dùng chung cho AI, HMI và REST.</td></tr>
+<tr><td class="n">K9</td><td><span class="sev p2">P2</span></td><td>Lệnh đang xếp hàng không hết hạn; STOP xếp hàng cho edge không bao giờ hết hạn.</td><td><code>commandDispatcher.ts:2122</code></td><td>Lệnh thường có thời hạn sống (Rapid dùng 60 s); STOP giữ không hạn nhưng hiện trên M10.</td></tr>
+<tr><td class="n">K10</td><td><span class="sev p2">P2</span></td><td>REST v1 lệnh thiết bị tự tạo actionId; theo mã thì luôn bị từ chối, nhưng chưa có test.</td><td><code>api/v1/router.ts:157, 328-358</code></td><td>Viết test xác nhận, rồi gỡ hoặc cho đi qua bản ghi chờ thật.</td></tr>
+<tr><td class="n">K11</td><td><span class="sev p2">P2</span></td><td><code>copilot.confirmAction</code> không có sàn vai trò hay 2FA (hiện đang được cờ AI che).</td><td><code>aiCopilotRouter.ts:38</code></td><td>Dùng chung thủ tục 2FA theo mức với HMI.</td></tr>
+</tbody></table></div>
+
+<h3>2.4 Mô hình lệnh đích (khớp C.5 của scada-master)</h3>
+<p>Không viết đường ghi mới. Lệnh đi qua hai bước request → confirm rồi vào chuỗi cổng sẵn có.</p>
+<div class="legend"><span>Có sẵn</span><span class="n">Mới</span></div>
+<div class="flow">
+  <div class="st new"><b>Chọn</b>khoá chọn (máy, kênh) cho một người; trả các điều kiện cho phép hiện tại</div><div class="ar">→</div>
+  <div class="st new"><b>request()</b>trả bản xem trước <code>{current, requested, afterFormula, level, needsTotp, mode real|simulated + lý do, route central|edge}</code>; TTL 60 s</div><div class="ar">→</div>
+  <div class="st new"><b>confirm()</b>trong TTL; 2FA theo mức</div><div class="ar">→</div>
+  <div class="st"><b>dispatch()</b>chuỗi 12 cổng ở §2.2 (trung tâm), hoặc thực thi trên edge (Q1)</div><div class="ar">→</div>
+  <div class="st new"><b>Kết quả cho người</b>qua socket <code>scada:cmd</code>: đã đọc lại · chưa đọc lại · mô phỏng · bị từ chối (tên cổng) · không rõ</div>
+</div>
+<p>Các kiểm tra mới của <code>request()</code>:</p>
+<ul>
+<li>kiểu kênh phải là kênh ra;</li>
+<li>giá trị nằm trong dải ghi;</li>
+<li>có quyền control theo cây;</li>
+<li>máy ở chế độ REMOTE;</li>
+<li>qua được công thức ra (biến đổi hoặc REJECT);</li>
+<li>đọc được giá trị cũ sống;</li>
+<li>không có ai khác đang chọn.</li>
+</ul>
+<div class="tbl"><table>
+<thead><tr><th>Trạng thái lệnh</th><th>Vào khi</th><th>Ra khi</th></tr></thead>
+<tbody>
+<tr><td>Chờ xác nhận</td><td><code>request()</code> qua hết cổng mới</td><td>Xác nhận · huỷ · hết 60 s · bị người khác giành chọn (không cho phép)</td></tr>
+<tr><td>Đang gửi</td><td><code>confirm()</code></td><td>Có kết quả từ driver/edge</td></tr>
+<tr><td>Kết thúc</td><td><code>acked_verified</code> · <code>acked_unverified</code> · <code>simulated</code> · <code>rejected</code> · <code>failed</code> · <code>timeout</code></td><td>— (dòng WORM)</td></tr>
+</tbody></table></div>
+<div class="note">So với tham chiếu:
+<ul>
+<li><b>Rapid SCADA</b> kiểm 4 bước ở Server (người dùng đang bật, kênh ra, quyền Control, công thức ra có thể huỷ) và cho lệnh hết hạn sau 60 s ở Comm. Nhưng nó chỉ trả "đã xếp hàng", không xác nhận tới thiết bị.</li>
+<li><b>FUXA</b> ghi thẳng, không xác nhận, và có lỗi: tính giá trị cộng/trừ xong lại ghi giá trị gốc (<code>device.js:313-314</code>).</li>
+</ul>
+Phía server, SYNAPSE đã chặt hơn cả hai. Thứ còn thiếu là: chọn, chế độ, dải ghi, giá trị cũ, và người vận hành nhìn thấy kết quả.</div>
+
+<h3>2.5 Thứ phần mềm <u>không</u> làm</h3>
+<ul>
+<li>Không phải hệ an toàn: STOP phần mềm không được xếp hạng an toàn (<code>interlockEngine.ts:257</code>); STOP bị từ chối thì hướng dẫn dùng E-STOP cứng (<code>commandDispatcher.ts:620</code>).</li>
+<li>Adapter safety PLC chỉ đọc trạng thái, không điều khiển; bộ kích E-stop hiện mới là khung rỗng (<code>safetyEstopAdapter.ts</code>).</li>
+<li>AI chỉ đề xuất, không tải mã xuống thiết bị; <code>AI_OT_CONTROL_ENABLED</code> giữ tắt.</li>
+</ul>
+
+<!-- ======================================================= -->
+<h2 id="chucnang"><span class="no">3</span>Chức năng lõi</h2>
+<p>Bảy khối một SCADA cần có, đối chiếu ba hệ. Cột cuối là đề xuất; DDL chi tiết nằm ở mục C của bản phân tích <code>scada-master</code>.</p>
+<div class="tbl"><table>
+<thead><tr><th>Khối</th><th>Rapid SCADA 6</th><th>FUXA</th><th>SYNAPSE hiện</th><th>SYNAPSE đề xuất</th></tr></thead>
+<tbody>
+<tr><td><b>Kênh</b></td><td>5 kiểu: Input, InputOutput, Calculated, CalculatedOutput, Output (<code>CnlTypeID.cs</code>)</td><td>Tag theo thiết bị, không phân kiểu vào/ra</td><td><code>device_tags.writable</code> (boolean)</td><td>5 kiểu như Rapid; để trống thì suy từ <code>writable</code>; kênh tính toán chạy ở trung tâm</td></tr>
+<tr><td><b>Mã trạng thái</b></td><td>Undefined, Defined, Unreliable (không hoạt động 300 s), FormulaError, LoLo…HiHi; bảng <code>CnlStatus</code> mang màu, mức và cờ bắt buộc xác nhận</td><td>Không có theo tag</td><td><code>good/bad</code> (xem C1, C2)</td><td>Chất lượng 3 mức, tách riêng khỏi trạng thái giới hạn; bảng <code>scada_status_styles</code> quyết định cách hiển thị và mức cảnh báo</td></tr>
+<tr><td><b>Giới hạn</b></td><td>Bảng <code>Lim</code>: LoLo, Low, High, HiHi, deadband (trễ khi về Normal); giới hạn có thể lấy từ kênh khác</td><td>Dải min..max trong cảnh báo</td><td>Không có (chỉ có guardrail tham số)</td><td>Bộ giới hạn dùng chung; giới hạn có thể đi theo công thức sản xuất (setpoint lò theo profile); chỉ đánh giá khi chất lượng tốt</td></tr>
+<tr><td><b>Cảnh báo</b></td><td>Sự kiện theo mặt nạ kênh; có xác nhận; không có tạm gác</td><td>4 loại, có trễ bật, không có trễ tắt, không deadband</td><td>Nguồn rời rạc: andon, predictive, luật MQTT; <code>master_alarms</code> chỉ là danh mục</td><td>Vòng đời ISA-18.2 (§3.1): trễ bật/tắt, deadband, tạm gác, che theo trạng thái máy, khử trùng với andon</td></tr>
+<tr><td><b>Lưu trữ</b></td><td>Hiện tại · phút · giờ · ngày · sự kiện, mặt nạ theo kênh; mô-đun Postgres/Influx</td><td>SQLite/Influx/TDengine/QuestDB; mất dữ liệu khi Influx lỗi</td><td><code>ot_telemetry</code> + cagg 1 phút/1 giờ (chưa ai đọc) + <code>/api/v1/timeseries?bucket</code></td><td>Bộ đệm hiện tại (mới); dữ liệu thô 90 ngày; 1 phút/1 giờ đã có; thêm mức ngày và tỉ lệ chất lượng; mặt nạ theo kênh</td></tr>
+<tr><td><b>Công thức</b></td><td>C# biên dịch bằng Roslyn, <code>InFormula</code>/<code>OutFormula</code>; công thức ra có thể huỷ lệnh</td><td>Script không sandbox (chuỗi CVE)</td><td>Không có</td><td>Biểu thức chạy trong sandbox, API danh sách trắng; công thức ra chỉ biến đổi hoặc trả <code>REJECT</code>; lỗi thì cách ly và đặt trạng thái FormulaError</td></tr>
+<tr><td><b>Sự kiện &amp; nhật ký</b></td><td>Bảng sự kiện; xác nhận có thể phát lệnh cho nút khác</td><td>Lịch sử cảnh báo trong SQLite</td><td><code>command_log</code> WORM, audit</td><td>Nhật ký hợp nhất: chuyển trạng thái cảnh báo, lệnh (kể cả bị từ chối), đổi cấu hình, truyền thông</td></tr>
+</tbody></table></div>
+
+<h3>3.1 Máy trạng thái cảnh báo (tên trạng thái theo C.4)</h3>
+<div class="tbl"><table>
+<thead><tr><th>Trạng thái</th><th>Vào khi</th><th>Ra khi</th></tr></thead>
+<tbody>
+<tr><td><code>normal</code></td><td>—</td><td>Điều kiện đúng quá trễ bật</td></tr>
+<tr><td><code>unack_active</code></td><td>Điều kiện đúng</td><td>Xác nhận ⇒ <code>ack_active</code>; hết điều kiện ⇒ <code>unack_rtn</code></td></tr>
+<tr><td><code>ack_active</code></td><td>Xác nhận</td><td>Hết điều kiện quá trễ tắt ⇒ <code>normal</code></td></tr>
+<tr><td><code>unack_rtn</code></td><td>Hết điều kiện trước khi được xác nhận</td><td>Xác nhận ⇒ <code>normal</code>; điều kiện quay lại ⇒ <code>unack_active</code></td></tr>
+<tr><td><code>shelved</code></td><td>Người chọn, có lý do, tối đa 8 h</td><td>Hết hạn ⇒ <code>unack_active</code> (nếu điều kiện còn); bỏ gác bằng tay</td></tr>
+<tr><td><code>suppressed</code></td><td>Máy đang bảo trì / dừng theo kế hoạch</td><td>Máy chạy lại</td></tr>
+<tr><td><code>out_of_service</code></td><td>Kỹ sư đặt, có duyệt</td><td>Kỹ sư đưa trở lại</td></tr>
+</tbody></table></div>
+<p class="small">Quy tắc nối với tầng kết nối (bổ sung cho C.4):</p>
+<ul class="small">
+<li>Chất lượng xấu thì <b>không</b> đánh giá ngưỡng, để tránh bật/tắt giả.</li>
+<li>Thay vào đó sinh <b>một</b> cảnh báo chẩn đoán "mất dữ liệu" mức 4 cho cả adapter, không phải mỗi tag một cái (chống ngập).</li>
+</ul>
+
+<h3>3.2 Bộ đệm giá trị hiện tại: nối ba tầng</h3>
+<p>Đây là một bảng trong RAM:</p>
+<ul>
+<li>Khoá <code>(adapterId, tagKey)</code> → <code>{value, quality, statusCode, ts, ingestedAt, limitState}</code>.</li>
+<li>Được nuôi từ tap <code>telemetryBus</code>, và nạp lại từ DB khi khởi động.</li>
+<li>Tuổi giá trị được tính ở đây, không tính ở client.</li>
+</ul>
+<p>Nó là <b>nguồn sự thật duy nhất</b> cho:</p>
+<ul>
+<li>màn hình, qua socket C.6: <code>scada:subscribe/snapshot/delta/alarm</code>, tối đa 500 tag mỗi màn, tối đa 4 khung/s, kiểm phạm vi từng tag;</li>
+<li>cảnh báo;</li>
+<li>interlock (K3);</li>
+<li>giá trị cũ của lệnh (K5);</li>
+<li>OPC UA server hướng bắc.</li>
+</ul>
+<div class="warn">Phát hiện bảo mật P-S1 (cả hai phiên cùng thấy độc lập): handler <code>subscribe</code> cũ ở <code>server/_core/socket.ts:405-420</code> cho bất kỳ ai join phòng <code>factory:/workshop:/machine:/line:</code> mà không kiểm phạm vi.
+<ul>
+<li>Đã giao phiên <code>luong-ui</code> vá.</li>
+<li>Không màn SCADA nào được dựa vào các phòng đó; chỉ dùng <code>scada:subscribe</code>.</li>
+</ul></div>
+
+<!-- ======================================================= -->
+<h2 id="giaodien"><span class="no">4</span>Giao diện</h2>
+
+<h3>4.1 Nguyên tắc (ISA-101, rút gọn)</h3>
+<div class="grid2">
+  <div class="card"><h4>Hiển thị sự thật của tầng dưới</h4><ul><li>Mọi giá trị đều mang chất lượng và tuổi.</li><li><i>Uncertain</i>: giá trị cuối + "?" + tuổi, viền chấm.</li><li><i>Bad/stale</i>: giá trị bị gạch ngang + tuổi, viền tím; không vẽ thanh.</li><li>Trạng thái kết nối của adapter hiện ngay trên mimic (một chỉ báo cho cả máy), không để từng con số "đứng yên".</li></ul></div>
+  <div class="card"><h4>Màu chỉ dành cho bất thường</h4><ul><li>Nền xám ISA (token <code>--isa-*</code> đã có). Đỏ/cam/vàng/tím chỉ cho 4 mức cảnh báo.</li><li>Máy chạy = khối đặc + chữ; dừng = viền + chữ.</li><li>Máy lỗi không bị tô màu thân máy; chỉ báo cảnh báo được đặt bên cạnh.</li></ul></div>
+  <div class="card"><h4>Lệnh đi đúng mô hình §2.4</h4><ul><li>Không có nút "ghi ngay". Nút lệnh ≥ 44 px và luôn mở hộp thoại lệnh.</li><li>Đủ quyền nhưng bị điều kiện chặn: nút bị khoá và nói lý do. Không đủ quyền: nút bị ẩn.</li></ul></div>
+  <div class="card"><h4>Nông và nhanh</h4><ul><li>L1 → L2 → L3 tối đa 3 lần bấm; bấm máy trên twin 3D mở màn L3, và ngược lại.</li><li>Chỉ cảnh báo chưa xác nhận mới nhấp nháy và kêu.</li></ul></div>
+</div>
+
+<h3>4.2 Khung SCADA</h3>
+<div class="wf" role="img" aria-label="Wireframe khung SCADA">
+<div class="scr">
+  <div class="bar"><b>SYNAPSE · SCADA</b><span class="chip">Nhà máy HN › Xưởng SMT › Line 2</span><span class="chip">⌂ L1</span><span class="sp"></span><span><span class="ai p1 blink">1</span> 2</span><span><span class="ai p2">2</span> 5</span><span><span class="ai p3">3</span> 9</span><span><span class="ai p4">4</span> 3</span><span class="chip">Truyền thông 11/12</span><span class="chip">Ca 2 · 14:32:07</span><span class="chip">nguyen.a</span></div>
+  <div style="display:grid;grid-template-columns:200px 1fr;gap:6px">
+    <div class="box"><div class="lbl">Cây màn</div><div>▾ Nhà máy HN</div><div>&nbsp;&nbsp;▾ Xưởng SMT</div><div>&nbsp;&nbsp;&nbsp;&nbsp;▸ Line 1</div><div>&nbsp;&nbsp;&nbsp;&nbsp;▾ <b>Line 2</b></div><div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Lò reflow RF-2</div><div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;AOI-2</div><div>&nbsp;&nbsp;▸ Tiện ích</div><div class="muted" style="margin-top:8px">Cảnh báo · Xu hướng · Nhật ký · Truyền thông</div></div>
+    <div class="box" style="min-height:150px"><div class="lbl">Vùng làm việc — màn L1/L2/L3</div><div class="muted">Faceplate mở ở ngăn phải hoặc trong cửa sổ nổi</div></div>
+  </div>
+  <div class="bar"><span class="ai p1 blink">1</span><b>14:31:52</b><span>Line 2 · RF-2 · Zone 7 nhiệt cao HiHi · 268,4 °C (giới hạn 260)</span><span class="sp"></span><span class="chip">Xác nhận</span><span class="chip">Tắt chuông 60 s</span><span class="chip">Danh sách (19)</span></div>
+</div>
+</div>
+<p class="small">Thanh trên có thêm chỉ báo <b>Truyền thông n/m</b> (số adapter đang kết nối / tổng số; bấm vào để mở M10). Chỉ báo này có được nhờ sửa C3. Chế độ phòng điều khiển bỏ sidebar, giống <code>?kiosk=1</code>.</p>
+
+<h3>4.3 Bộ màn hình</h3>
+<div class="tbl"><table>
+<thead><tr><th>#</th><th>Màn</th><th>Đường dẫn</th><th>Phụ thuộc gốc</th><th>Đợt</th></tr></thead>
+<tbody>
+<tr><td class="n">M10</td><td><b>Chẩn đoán truyền thông</b> (L4)</td><td><code>/scada/diag</code></td><td>C1, C3, C8</td><td>R0</td></tr>
+<tr><td class="n">M4</td><td><b>Faceplate</b></td><td>ngăn / cửa sổ</td><td>bộ đệm hiện tại, K2, K4</td><td>R1</td></tr>
+<tr><td class="n">M5</td><td><b>Hộp thoại lệnh</b></td><td>cửa sổ</td><td>K1, K5–K8</td><td>R1</td></tr>
+<tr><td class="n">M12</td><td>Kênh &amp; giới hạn</td><td><code>/scada/config/channels</code></td><td>kiểu kênh, dải ghi, mức</td><td>R1</td></tr>
+<tr><td class="n">M9</td><td>Nhật ký sự kiện &amp; lệnh</td><td><code>/scada/journal</code></td><td><code>command_log</code></td><td>R1</td></tr>
+<tr><td class="n">M6</td><td><b>Danh sách cảnh báo</b> + M7 tạm gác</td><td><code>/scada/alarms</code></td><td>§3.1</td><td>R2</td></tr>
+<tr><td class="n">M13</td><td>Định nghĩa cảnh báo</td><td><code>/scada/config/alarms</code></td><td>§3.1</td><td>R2</td></tr>
+<tr><td class="n">M1–M3</td><td><b>Tổng quan / Line / Thiết bị</b></td><td><code>/scada</code>, <code>/line/:id</code>, <code>/may/:id</code></td><td>mọi thứ ở trên</td><td>R3</td></tr>
+<tr><td class="n">M11</td><td><b>Trình soạn mimic</b> (cấp 0/1/2 theo D.3)</td><td><code>/scada/views/:id/edit</code></td><td>kênh</td><td>R3</td></tr>
+<tr><td class="n">M8</td><td>Xu hướng</td><td><code>/scada/trends</code></td><td>lưu trữ</td><td>R3</td></tr>
+<tr><td class="n">M14–M20</td><td>Công thức, gói dự án, quyền theo cây, KPI cảnh báo, sổ giao ca, mobile, báo cáo</td><td>—</td><td>—</td><td>R4 (phụ lục)</td></tr>
+</tbody></table></div>
+
+<h3>4.4 M10 · Chẩn đoán truyền thông: màn làm đầu tiên</h3>
+<p>Màn này làm trước mọi mimic vì hai lý do: nó cho phép kiểm bằng mắt các sửa C1/C3/C8, và kỹ sư cần nó khi đưa máy thật vào.</p>
+<div class="wf"><div class="scr">
+  <div class="bar"><b>Truyền thông — Xưởng SMT</b><span class="chip">12 adapter · 11 kết nối</span><span class="chip">3 edge node</span><span class="sp"></span><span class="chip">Lọc: lỗi</span></div>
+  <div class="box" style="padding:0"><table style="font-size:12px"><thead><tr><th>Adapter</th><th>Giao thức · endpoint</th><th>Sở hữu</th><th>Trạng thái</th><th>Poll / p95</th><th>Request · lỗi · timeout (1 h)</th><th>Tag tốt / ? / xấu</th><th>Lỗi gần nhất</th></tr></thead><tbody>
+  <tr><td>RF-2</td><td>S7 · 10.1.2.21:102</td><td>edge EN-02</td><td>Kết nối</td><td class="n">1000 / 84 ms</td><td class="n">3 600 · 0 · 0</td><td class="n">42 / 0 / 0</td><td class="muted">—</td></tr>
+  <tr><td>DEK-2</td><td>OPC UA · opc.tcp://10.1.2.11:4840</td><td>trung tâm</td><td>Kết nối</td><td class="n">500 / 31 ms</td><td class="n">7 200 · 3 · 1</td><td class="n">27 / 2 / 0</td><td class="muted">BadSensorFailure ns=2;s=Blade.P</td></tr>
+  <tr class="stale"><td>AOI-4</td><td>Modbus · 10.1.4.31:502</td><td>edge EN-04</td><td><b>Mất kết nối 3 ph</b></td><td class="n">2000 / —</td><td class="n">1 710 · 90 · 90</td><td class="n">0 / 0 / 18</td><td>ETIMEDOUT · lùi 40 s · lần 6</td></tr>
+  </tbody></table></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+    <div class="box"><div class="lbl">Edge EN-04</div><div>Heartbeat cũ 3 ph · WAL 12 480 mẫu (12 % trần) · lệch đồng hồ +0,4 s · cấu hình đã ký ✓</div><div class="muted">Lệnh STOP đang xếp hàng: 0</div></div>
+    <div class="box"><div class="lbl">Mẫu bị chặn tại trung tâm (1 h)</div><div>ts tương lai 0 · ts không có múi giờ 0 · sai chủ sở hữu 0 · lô bị từ chối 0</div></div>
+  </div>
+</div></div>
+<p class="small">Các hành động của kỹ sư (đều có audit): kết nối lại adapter, tạm tắt adapter, xem 100 mẫu thô gần nhất của một tag, thử đọc một địa chỉ (chế độ Lab, không ghi).</p>
+
+<h3>4.5 M4 · Faceplate</h3>
+<div class="wf"><div class="scr" style="min-width:360px;max-width:440px">
+  <div class="bar"><b>RF-2 · Zone 7 trên</b><span class="sp"></span><span class="chip">REMOTE</span><span class="chip">TỰ ĐỘNG</span></div>
+  <div class="box"><div class="lbl">Giá trị đo · tốt · 0,8 s · nguồn: thiết bị</div><div class="val" style="font-size:22px">268,4 °C</div>
+    <div class="mbar"><i style="left:40%;width:30%"></i><b style="left:92%"></b><u style="left:55%"></u></div>
+    <div class="muted mono">LoLo 200 · Lo 235 · SP 245 · Hi 255 · HiHi 260</div></div>
+  <div class="box"><div class="lbl">Cảnh báo</div><div><span class="ai p1 blink">1</span> HiHi từ 14:31:52 · chưa xác nhận</div><div class="muted">Hậu quả: bo phồng, linh kiện nứt · Xử lý: giảm SP zone 7, kiểm quạt Z7</div></div>
+  <div class="box"><div class="lbl">Điều kiện cho phép ghi SP</div><div>✓ Remote · ✓ quyền control Line 2 · ✓ truyền thông tốt · ✓ không có interlock · ✓ không ai đang chọn · ✗ đang có bo trong lò: dải 240–250</div></div>
+  <div class="box"><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip" style="padding:6px 12px">Đổi setpoint…</span><span class="chip" style="padding:6px 12px">Xu hướng</span><span class="chip" style="padding:6px 12px">Lịch sử lệnh</span></div></div>
+</div></div>
+<div class="tbl"><table>
+<thead><tr><th>Khối</th><th>Nguồn dữ liệu</th><th>Quy tắc</th></tr></thead>
+<tbody>
+<tr><td>Chế độ</td><td>kênh chế độ của máy (K2)</td><td>LOCAL: ẩn mọi lệnh trừ STOP ghim, hiện dòng "Đang điều khiển tại chỗ"</td></tr>
+<tr><td>Giá trị</td><td>bộ đệm hiện tại</td><td>Hiển thị chất lượng, tuổi, nguồn ts; thanh analog có dải bình thường, các ngưỡng và SP</td></tr>
+<tr><td>Điều kiện cho phép</td><td><code>request()</code> chạy khô (không tạo bản ghi chờ)</td><td>Mỗi dòng ✓/✗ kèm lý do (= tên cổng ở §2.2/§2.4); có ✗ thì khoá nút</td></tr>
+<tr><td>Lệnh</td><td>khai báo của kênh ra</td><td>Theo kiểu: số (ô nhập + dải), enum (mỗi giá trị một nút, như Rapid), bool (hai nút có nhãn)</td></tr>
+</tbody></table></div>
+
+<h3>4.6 M5 · Hộp thoại lệnh</h3>
+<div class="wf"><div class="scr" style="min-width:360px;max-width:460px">
+  <div class="bar"><b>Xác nhận lệnh</b><span class="sp"></span><span class="chip">còn 54 s</span></div>
+  <div class="box"><dl class="kv"><dt>Máy</dt><dd>Line 2 · RF-2 · REMOTE</dd><dt>Kênh</dt><dd class="mono">zone7_top.sp (°C) · vào/ra</dd><dt>Hiện tại</dt><dd class="mono">245,0 · tốt · 0,6 s</dd><dt>Yêu cầu</dt><dd class="mono">240,2</dd><dt>Sau công thức</dt><dd class="mono"><b>240,0</b> <span class="muted">(làm tròn 0,5)</span></dd><dt>Dải</dt><dd class="mono">240,0 … 250,0</dd><dt>Mức</dt><dd>3 — tham số · không cần TOTP</dd><dt>Chế độ</dt><dd>THẬT</dd><dt>Đường</dt><dd>edge EN-02 · thực thi ký số</dd></dl></div>
+  <div class="box"><div class="lbl">Lý do (bắt buộc)</div><div class="muted">Zone 7 HiHi, giảm SP theo PCN-0412</div></div>
+  <div class="bar"><span class="chip">Huỷ</span><span class="sp"></span><span class="chip go">Gửi lệnh</span></div>
+</div></div>
+<p class="small">Các trường hiển thị khớp đúng bản xem trước của C.5. Khi <code>mode = simulated</code>, dòng "Chế độ" ghi "MÔ PHỎNG" kèm lý do, và nút đổi thành "Gửi (mô phỏng)".</p>
+<div class="tbl"><table>
+<thead><tr><th>Kết quả (<code>scada:cmd</code>)</th><th>Người vận hành thấy</th></tr></thead>
+<tbody>
+<tr><td><code>acked_verified</code></td><td>"Đã ghi, đã đọc lại 240,0" — tự đóng sau 3 s</td></tr>
+<tr><td><code>acked_unverified</code></td><td>"Đã ghi nhưng đọc lại ra 245,0 / không đọc được — kiểm tra tại máy" — không tự đóng</td></tr>
+<tr><td><code>simulated</code></td><td>"Chế độ mô phỏng — không gửi tới máy", kèm lý do (OT tắt / chưa nghiệm thu)</td></tr>
+<tr><td><code>rejected</code></td><td>"Bị từ chối: <i>tên cổng</i> — <i>lý do</i>" (ví dụ <code>SAFETY_UNKNOWN</code> hiện thành "Không đọc được trạng thái safety PLC")</td></tr>
+<tr><td><code>timeout</code></td><td>"Không rõ máy đã nhận hay chưa — đọc lại giá trị trước khi gửi lần nữa"</td></tr>
+</tbody></table></div>
+
+<h3>4.7 M6 · Danh sách cảnh báo</h3>
+<div class="wf"><div class="scr">
+  <div class="bar"><b>Cảnh báo</b><span class="chip" style="background:var(--paper)">Đang có 19</span><span class="chip">Tạm gác 3</span><span class="chip">Che / Ngừng phục vụ 5</span><span class="chip">Lịch sử</span><span class="sp"></span><span class="chip">Line 2 ✕</span><span class="chip">Mức 1–2</span></div>
+  <div class="box" style="padding:0"><table style="font-size:12px"><thead><tr><th>Mức</th><th>Trạng thái</th><th>Lúc</th><th>Vị trí</th><th>Nội dung</th><th>Giá trị</th><th>Giới hạn</th><th></th></tr></thead><tbody>
+  <tr><td><span class="ai p1 blink">1</span></td><td><b>Chưa XN</b></td><td class="n">14:31:52</td><td>Line 2 › RF-2</td><td>Zone 7 nhiệt cao HiHi</td><td class="n">268,4 °C</td><td class="n">260</td><td>Xác nhận · Gác · Chi tiết</td></tr>
+  <tr><td><span class="ai p3">3</span></td><td>Đã XN</td><td class="n">14:18:05</td><td>Line 2 › M2</td><td>Feeder 12 sắp hết linh kiện</td><td class="n">38</td><td class="n">50</td><td>Gác · Chi tiết</td></tr>
+  <tr class="stale"><td><span class="ai p4">4</span></td><td>Chưa XN</td><td class="n">14:29:40</td><td>Line 4 › AOI-4</td><td>Mất truyền thông adapter (18 tag)</td><td class="n">—</td><td class="n">—</td><td>Xác nhận · Truyền thông</td></tr>
+  </tbody></table></div>
+</div></div>
+<ul>
+<li>Thứ tự sắp xếp: chưa XN đang có → đã XN đang có → hết nhưng chưa XN; trong mỗi nhóm xếp theo mức rồi theo mới nhất.</li>
+<li>Ngập (&gt; 10 cảnh báo mới trong 10 phút):
+  <ul>
+  <li>hiện banner;</li>
+  <li>mặc định chỉ lọc mức 1–2;</li>
+  <li>gom theo máy.</li>
+  </ul>
+  First-out được đánh dấu ①.</li>
+<li>Mất truyền thông chỉ là <b>một</b> dòng mức 4 cho cả adapter, mở thẳng sang M10.</li>
+<li>Tạm gác (M7): thời hạn chọn từ danh sách, tối đa 8 h; lý do bắt buộc; có trần theo vai trò; hết hạn thì quay về chưa xác nhận.</li>
+</ul>
+
+<h3>4.8 M2 · Line (L2) — mimic</h3>
+<div class="svgbox">
+<svg viewBox="0 0 1000 250" role="img" aria-label="Mimic line SMT ví dụ">
+  <rect x="0" y="0" width="1000" height="250" fill="var(--isa-bg)"/>
+  <line x1="30" y1="130" x2="970" y2="130" stroke="var(--isa-gfx-2)" stroke-width="6"/>
+  <g font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--ink)">
+    <rect x="40" y="80" width="110" height="80" fill="var(--isa-gfx)"/>
+    <text x="95" y="72" text-anchor="middle" font-family="Archivo, sans-serif" font-weight="600" fill="var(--ink-2)">IN KEM DEK-2</text>
+    <text x="95" y="125" text-anchor="middle" fill="var(--isa-panel)" font-weight="600">CHẠY</text>
+    <text x="45" y="182" fill="var(--ink-2)">Áp dao</text><text x="145" y="182" text-anchor="end" fill="var(--isa-val)">6,8 kg ?</text>
+    <rect x="180" y="80" width="90" height="80" fill="var(--isa-gfx)"/>
+    <text x="225" y="72" text-anchor="middle" font-family="Archivo, sans-serif" font-weight="600" fill="var(--ink-2)">SPI-2</text>
+    <text x="225" y="125" text-anchor="middle" fill="var(--isa-panel)" font-weight="600">CHẠY</text>
+    <text x="185" y="182" fill="var(--ink-2)">Pass</text><text x="265" y="182" text-anchor="end" fill="var(--isa-val)">99,2 %</text>
+    <rect x="300" y="80" width="110" height="80" fill="var(--isa-gfx)"/>
+    <text x="355" y="72" text-anchor="middle" font-family="Archivo, sans-serif" font-weight="600" fill="var(--ink-2)">GẮP ĐẶT M1</text>
+    <text x="355" y="125" text-anchor="middle" fill="var(--isa-panel)" font-weight="600">CHẠY</text>
+    <rect x="440" y="80" width="110" height="80" fill="none" stroke="var(--isa-gfx)" stroke-width="2"/>
+    <text x="495" y="72" text-anchor="middle" font-family="Archivo, sans-serif" font-weight="600" fill="var(--ink-2)">GẮP ĐẶT M2</text>
+    <text x="495" y="125" text-anchor="middle" font-weight="600">CHỜ LIỆU</text>
+    <polygon points="556,52 570,76 542,76" fill="var(--a3)"/><text x="556" y="72" text-anchor="middle" font-weight="700" fill="var(--a3-fg)">3</text>
+    <rect x="580" y="80" width="230" height="80" fill="var(--isa-gfx)"/>
+    <text x="695" y="72" text-anchor="middle" font-family="Archivo, sans-serif" font-weight="600" fill="var(--ink-2)">LÒ REFLOW RF-2 (N₂)</text>
+    <text x="695" y="125" text-anchor="middle" fill="var(--isa-panel)" font-weight="600">CHẠY</text>
+    <rect x="806" y="48" width="22" height="22" fill="var(--a1)"/><text x="817" y="64" text-anchor="middle" font-weight="700" fill="var(--a1-fg)">1</text>
+    <rect x="840" y="80" width="110" height="80" fill="none" stroke="var(--stale)" stroke-width="2" stroke-dasharray="5 4"/>
+    <text x="895" y="72" text-anchor="middle" font-family="Archivo, sans-serif" font-weight="600" fill="var(--ink-2)">AOI-2</text>
+    <text x="895" y="118" text-anchor="middle" font-weight="600" fill="var(--ink)">CHẠY ?</text>
+    <text x="895" y="136" text-anchor="middle" fill="var(--ink-2)">mất TT 3 ph</text>
+    <circle cx="952" cy="62" r="11" fill="var(--a4)"/><text x="952" y="66" text-anchor="middle" font-weight="700" fill="var(--a4-fg)">4</text>
+    <text x="45" y="225" fill="var(--ink-2)">Khối đặc = chạy · viền = dừng/chờ · viền đứt tím = dữ liệu không tin được · "?" = uncertain · chỉ báo cảnh báo đặt cạnh máy</text>
+  </g>
+</svg>
+</div>
+<ul>
+<li>Bấm trái vào máy: mở faceplate.</li>
+<li>Bấm đúp: mở M3.</li>
+<li>Bấm phải: menu xu hướng, cảnh báo của máy, twin 3D, MachineCockpit, truyền thông (M10).</li>
+<li>Rê chuột: hiện giá trị, chất lượng, tuổi, <code>ts</code>.</li>
+</ul>
+
+<h3>4.9 M11 · Trình soạn mimic (theo cấp 0/1/2 của D.3)</h3>
+<ul>
+<li>Viết mới bằng React + SVG, không nhúng svg-edit của FUXA.
+  <ul>
+  <li>Có lớp, lưới, bắt dính, nhóm, hoàn tác.</li>
+  <li>Nhập được SVG ngoài, có lọc <code>script</code>/<code>on*</code>/<code>foreignObject</code>.</li>
+  </ul></li>
+<li>Gắn tag bằng khai báo, không dùng script: <code>text</code>, <code>state</code> (đặc/viền), <code>visible</code>, <code>level</code>, <code>alarmIndicator</code>, <code>commIndicator</code>, <code>click</code> (mở màn / faceplate / xu hướng / lệnh, lệnh luôn qua M5).</li>
+<li>Người soạn không được đặt dải màu tự do; màu đến từ trạng thái cảnh báo và chất lượng thật.</li>
+<li>Chế độ Lab dùng driver stub có kịch bản (C9) để thử mất kết nối, vượt ngưỡng, lệnh bị từ chối.</li>
+<li>Bản nháp và bản phát hành tách nhau, có diff; phát hành cần người thứ hai duyệt.</li>
+</ul>
+
+<h3>4.10 Ngôn ngữ trạng thái</h3>
+<div class="tbl"><table>
+<thead><tr><th>Đối tượng</th><th>Trạng thái</th><th>Hình / chữ</th><th>Màu</th></tr></thead>
+<tbody>
+<tr><td>Cảnh báo</td><td>Mức 1 · 2 · 3 · 4</td><td>vuông · tam giác · thoi · tròn, kèm số</td><td>đỏ · cam · vàng · tím (theo <code>scada_status_styles</code>); chưa xác nhận thì nhấp nháy 1 Hz + kêu</td></tr>
+<tr><td>Chất lượng</td><td>Tốt · uncertain · bad/stale</td><td>bình thường · giá trị cuối + "?" + tuổi, viền chấm · gạch ngang + tuổi</td><td>— · xem D10 · tím</td></tr>
+<tr><td>Truyền thông</td><td>Kết nối · đang nối lại · mất</td><td>chỉ báo trên máy + "n/m" trên thanh trên</td><td>— · — · tím (mức 4)</td></tr>
+<tr><td>Máy</td><td>Chạy · dừng/chờ · lỗi · dừng theo kế hoạch</td><td>khối đặc · viền · viền + "LỖI" + chỉ báo · viền mảnh + lý do</td><td>xám; màu chỉ nằm ở chỉ báo</td></tr>
+<tr><td>Chế độ</td><td>REMOTE · LOCAL · TỰ ĐỘNG · TAY</td><td>huy hiệu chữ</td><td>xám</td></tr>
+<tr><td>Lệnh</td><td>chờ xác nhận · đang gửi · đã đọc lại · chưa đọc lại · mô phỏng · bị từ chối · không rõ</td><td>chữ trong hộp thoại và nhật ký</td><td>không dùng màu cảnh báo</td></tr>
+</tbody></table></div>
+
+<!-- ======================================================= -->
+<h2 id="lotrinh">Lộ trình theo gốc</h2>
+<p>Sắp lại các đợt của scada-master (S0–S7) theo thứ tự gốc trước. Mỗi đợt có cổng nghiệm thu đo được, viết ra trước khi làm.</p>
+<div class="tbl"><table>
+<thead><tr><th>Đợt</th><th>Nội dung</th><th>Cổng nghiệm thu</th></tr></thead>
+<tbody>
+<tr><td><b>R0 · Kết nối thật</b></td><td>C1–C3, C8, C9 (và C4 nếu có edge thật); bộ đệm giá trị hiện tại; <code>scada:subscribe</code> (C.6) có kiểm phạm vi; M10</td><td>Rút cáp adapter (stub có kịch bản + 1 PLC bench):
+  <ul>
+  <li>mọi tag thành <i>bad</i> trong ≤ 2 chu kỳ poll;</li>
+  <li>M10 hiện "mất kết nối" trong ≤ 5 s;</li>
+  <li><code>device_adapters.status</code> trong DB khớp;</li>
+  <li>cắm lại thì về tốt trong ≤ 2 chu kỳ;</li>
+  <li>Uncertain của OPC UA hiện được tới màn.</li>
+  </ul></td></tr>
+<tr><td><b>R1 · Điều khiển</b></td><td>K1–K8: kiểu kênh, dải ghi, mức tác động, kênh chế độ, khoá chọn, giá trị cũ sống, bật đọc lại; interlock chặn khi thiếu dữ liệu; M4, M5, M9, M12</td><td>Ma trận các ô: kênh vào / ngoài dải / LOCAL / người thứ hai đang chọn / hết TTL / interlock thiếu dữ liệu. Mỗi ô phải:
+  <ul>
+  <li>bị từ chối đúng cổng;</li>
+  <li>có dòng WORM.</li>
+  </ul>
+  Đọc lại lệch phải hiện cho người vận hành.</td></tr>
+<tr><td><b>R2 · Chức năng lõi</b></td><td>Giới hạn, cảnh báo ISA-18.2 (C.4), khử trùng với andon, cảnh báo truyền thông gộp; M6, M7, M13</td><td>
+  <ul>
+  <li>Kịch bản HiHi → xác nhận → hết → tạm gác hết hạn chạy đúng thứ tự.</li>
+  <li>Mất truyền thông 18 tag sinh đúng 1 cảnh báo.</li>
+  <li>Chất lượng xấu không bật ngưỡng.</li>
+  </ul></td></tr>
+<tr><td><b>R3 · Giao diện vận hành</b></td><td>M1–M3, M8, M11, thư viện ký hiệu SMT</td><td>
+  <ul>
+  <li>Kỹ sư dựng màn một trạm trong &lt; 30 phút.</li>
+  <li>Màn 200 tag dùng ≤ 5 % CPU client.</li>
+  <li>Từ mẫu tới màn: p95 &lt; 1 s trên LAN.</li>
+  <li>Ở thang xám vẫn đọc được mức cảnh báo.</li>
+  </ul></td></tr>
+<tr><td>R4 · Mở rộng</td><td>Công thức, lưu trữ mức ngày, gói dự án, OPC UA server, quyền theo cây, KPI cảnh báo, sổ giao ca, mobile, báo cáo</td><td>theo bản phân tích của scada-master</td></tr>
+</tbody></table></div>
+
+<!-- ======================================================= -->
+<h2 id="quyetdinh">Cần chủ dự án duyệt</h2>
+<div class="decision"><div class="id">D1</div><div><p><b>Thứ tự gốc trước (R0 → R1 → R2 → R3)</b></p><p class="opt">Đề xuất: duyệt. Hệ quả là 2 đợt đầu gần như chưa có màn mimic nào, chỉ có M10, faceplate và hộp thoại lệnh.</p></div></div>
+<div class="decision"><div class="id">D2</div><div><p><b>Interlock khi thiếu dữ liệu (K3)</b></p><p class="opt">Đề xuất: mặc định <b>chặn</b>; từng luật được khai "cho qua" nếu có duyệt. Điều này đổi hành vi của các luật hiện có: luật đang bật sẽ chặn khi vắng telemetry.</p></div></div>
+<div class="decision"><div class="id">D3</div><div><p><b>Kênh chế độ Local/Remote (K2)</b></p><p class="opt">Đề xuất: bắt buộc khai cho máy nào muốn nhận lệnh từ SCADA. Máy chưa khai thì coi như LOCAL: từ chối lệnh từ xa, trừ STOP ghim.</p></div></div>
+<div class="decision"><div class="id">D4</div><div><p><b>TTL của yêu cầu lệnh</b>: 60 s theo C.5; khoá chọn hết hạn cùng lúc.</p></div></div>
+<div class="decision"><div class="id">D5</div><div><p><b>2FA theo mức</b>: mức 1–3 không cần; mức 4 cần bước 2FA của phiên; mức 5 cần TOTP mới mỗi lần.</p></div></div>
+<div class="decision"><div class="id">D6</div><div><p><b>Theme màn vận hành</b></p><p class="opt">Đề xuất: bảng xám ISA theo theme hiện hành, phòng điều khiển mặc định xám sáng. Phương án khác: giữ nền tối như toàn app.</p></div></div>
+<div class="decision"><div class="id">D7</div><div><p><b>Lệnh từ mobile</b>: bản đầu chưa cho; mobile chỉ xem, xác nhận cảnh báo và ghi chú.</p></div></div>
+<div class="decision"><div class="id">D8</div><div><p><b>REST v1 lệnh thiết bị (K10)</b></p><p class="opt">Đề xuất: viết test xác nhận nó luôn bị từ chối, rồi gỡ khỏi OpenAPI cho tới khi có luồng duyệt thật.</p></div></div>
+<div class="decision"><div class="id">D9</div><div><p><b>Bật điều khiển thật cần safety PLC</b></p><p class="opt">Hiện mọi lệnh HITL thật đều bị <code>SAFETY_UNKNOWN</code>. Đề xuất: giữ nguyên. Nghiệm thu R1 trên bench có safety adapter mô phỏng; máy thật chỉ bật khi đã nối safety PLC.</p></div></div>
+<div class="decision"><div class="id">D10</div><div><p><b>Màu viền của uncertain</b> (khác nhau giữa hai bản)</p><p class="opt">C.6 của scada-master dùng viền chấm <b>vàng</b>. Tôi đề xuất viền chấm <b>xám đậm</b> + "?", vì vàng đã là màu của cảnh báo mức 3 và ISA-101 giữ màu cảnh báo chỉ cho cảnh báo. Bad/stale dùng tím gạch ngang như C.6.</p></div></div>
+<div class="decision"><div class="id">D11</div><div><p><b>Interlock đọc giá trị sống + cảnh báo truyền thông gộp</b> (chưa có trong bản phân tích)</p><p class="opt">Đề xuất bổ sung vào C.4/C.5 của scada-master trước khi lập kế hoạch R0–R1.</p></div></div>
+<div class="decision"><div class="id">Q</div><div><p><b>Q1–Q6 của scada-master</b> (mục F bên đó)</p><p class="opt">Trong đó có Q1 (lệnh HMI vào máy do edge sở hữu; đề xuất đi đường thực thi edge có ký số) và chọn bench/máy thật cho R0. Trả lời cùng lúc với các quyết định ở trên.</p></div></div>
+<p>Sau khi duyệt: giao <code>scada-master</code> viết kế hoạch thực thi R0 (tầng kết nối + bộ đệm hiện tại + M10), rồi mới viết mã.</p>
+
+<!-- ======================================================= -->
+<h2 id="phuluc">Phụ lục</h2>
+<h3>A. Phân quyền theo việc</h3>
+<div class="tbl"><table>
+<thead><tr><th>Việc</th><th>viewer</th><th>operator</th><th>supervisor</th><th>engineer</th><th>admin</th></tr></thead>
+<tbody>
+<tr><td>Xem màn, cảnh báo, xu hướng, nhật ký</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>Xác nhận cảnh báo</td><td>—</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>Tạm gác mức 2–4 / mức 1</td><td>—</td><td>≤ hết ca / —</td><td>≤ 8 h / ≤ 1 h</td><td>≤ 8 h / ≤ 1 h</td><td>≤ 8 h</td></tr>
+<tr><td>Lệnh mức 1–3 / mức 4–5</td><td>—</td><td>✓ / —</td><td>✓ / ✓ 2FA</td><td>✓ / ✓ 2FA</td><td>✓</td></tr>
+<tr><td>Kết nối lại / tắt adapter (M10)</td><td>—</td><td>—</td><td>—</td><td>✓</td><td>✓</td></tr>
+<tr><td>Kênh, giới hạn, cảnh báo, soạn mimic</td><td>—</td><td>—</td><td>—</td><td>✓ (phát hành cần người thứ hai)</td><td>✓</td></tr>
+</tbody></table></div>
+<p class="small">Mọi quyền đều AND với phạm vi nhà máy hiện có và quyền theo cây. Không đủ quyền thì ẩn; đủ quyền nhưng bị điều kiện chặn thì khoá và nói lý do.</p>
+
+<h3>B. Nối hệ sinh thái</h3>
+<ul>
+<li><b>Twin 3D</b> cho không gian, <b>mimic</b> cho quy trình. Hai bên dùng chung bộ đệm giá trị và ngôn ngữ trạng thái, liên kết hai chiều theo máy.</li>
+<li><b>MachineCockpit / DeviceHub</b> giữ OEE, bảo trì, chương trình; SCADA giữ giám sát realtime và lệnh.</li>
+<li><b>Andon / OpsConsole / FactoryAlert</b>: cảnh báo tag được khử trùng với andon theo (máy, <code>master_alarm_code</code>) và đẩy đi qua MQTT sẵn có.</li>
+<li><b>AI / Luồng</b>: AI giải thích cảnh báo, gợi ý xử lý, và đề xuất lệnh vào hàng chờ để người duyệt (M5). Luồng chỉ đọc tag.</li>
+</ul>
+
+<h3>C. Màn mở rộng (R4)</h3>
+<ul>
+<li><b>M8 xu hướng</b>: tối đa 8 bút; đoạn chất lượng xấu vẽ đứt; đoạn trống không nối; độ phân giải tự chọn giữa thô / 1 phút / 1 giờ.</li>
+<li><b>M14 công thức</b>: sandbox, thử trên dữ liệu lịch sử.</li>
+<li><b>M15 gói dự án</b>: xuất/nhập JSON, chạy thử và xem diff.</li>
+<li><b>M16</b> quyền theo cây.</li>
+<li><b>M17 KPI cảnh báo</b>: mục tiêu ≈ 1 cảnh báo / người / 10 phút.</li>
+<li><b>M18</b> sổ giao ca · <b>M19</b> mobile · <b>M20</b> báo cáo theo giờ/ca/ngày.</li>
+</ul>
+
+<h3>D. Nguồn</h3>
+<ul>
+<li>Mã SYNAPSE (số dòng theo main <code>f22f702d9</code>):
+  <ul>
+  <li><code>server/services/ot/*</code>: otDriver, otManager, connectionSupervisor, drivers/*, commandDispatcher, otDeviceWrite, storeForward, ingest;</li>
+  <li><code>server/services/edge/*</code>, <code>server/services/interlock/*</code>;</li>
+  <li><code>drizzle/schema/ot.ts</code>, <code>aiControlGate.ts</code>;</li>
+  <li><code>CommandConsole.tsx</code>, <code>MachineCockpit.tsx</code>.</li>
+  </ul></li>
+<li>Bản phân tích của scada-master: <code>docs/superpowers/specs/2026-10-23-scada-phan-tich-chi-tiet.md</code> (cây chính, chưa commit).</li>
+<li>Rapid SCADA 6 (<code>D:\SOURCES\SYNAPSE\SCADA\scada-v6-master</code>):
+  <ul>
+  <li><code>CommLine.cs</code>, <code>DeviceLogic.cs</code>, <code>DeviceStats.cs</code>;</li>
+  <li><code>CoreLogic.cs</code>, <code>Calculator.cs</code>;</li>
+  <li><code>CnlTypeID.cs</code>, <code>CnlStatusID.cs</code>, <code>Lim.cs</code>;</li>
+  <li><code>PlgMain/Areas/Main/Pages/Command.cshtml.cs</code>.</li>
+  </ul></li>
+<li>FUXA (<code>D:\SOURCES\SYNAPSE\SCADA\FUXA-master</code>):
+  <ul>
+  <li><code>server/runtime/devices/device.js</code>, <code>devices/modbus/index.js</code>, <code>device-utils.js</code>;</li>
+  <li><code>alarms/index.js</code>, <code>storage/daqstorage.js</code>, <code>scripts/index.js</code>.</li>
+  </ul></li>
+<li>ISA-101 / ISA-18.2 qua nguồn thứ cấp: <a href="https://docs.inductiveautomation.com/docs/8.1/ignition-modules/vision/common-tasks-in-vision/high-performance-hmitechniques">Ignition HPHMI</a>, <a href="https://documentation.iconics.com/v10.97.3/Content/Alarming/Alarm%20Server/Alarm%20References/alarm-state-transition-diagram.htm">ICONICS alarm states</a>, <a href="https://reference.opcfoundation.org/Core/Part9/4.8">OPC UA Part 9 §4.8</a>, <a href="https://www.exida.com/Resources/Whitepapers/the-alarm-shelving-ebook">exida shelving</a>. Văn bản chuẩn gốc phải trả phí, chưa đọc.</li>
+</ul>
+</div>
+<footer class="wrap" style="padding-block:0">
+  Bản nháp để duyệt · phiên dieu-phoi · 2026-10-23 · Không viết mã theo tài liệu này trước khi duyệt.
+</footer>
+</body>
+</html>

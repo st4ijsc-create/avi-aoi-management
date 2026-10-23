@@ -46,6 +46,8 @@ import type { KbLanguage, KbQueryContext, StreamEvent } from "./aiLocalKnowledge
 import { codingModelErrorMessage, codingThoaiHoaMessage } from "./aiLocalKnowledgeCodingThongBao";
 import { doneSinhMa, nguCanhDuAnChoPrompt } from "./aiLocalKnowledgeCoding";
 import { chayKiemBienDichST, goiLaiBangModel, khoiBoSungSauBienDich } from "./aiLocalKnowledgeCodingKiemST";
+import { kiemBienDichBat } from "./ai/st/kiemBienDichSt";
+import { headerKiemBienDich } from "./ai/st/auditKiemBienDich";
 
 
 /** Vì sao nhánh sinh mã KHÔNG chạy — mỗi lý do là một câu khác nhau với người dùng. */
@@ -295,6 +297,9 @@ export async function* streamCodingGenerate(
         auditTask: "kb_sinh_ma", // ★ Đợt 9 — bề mặt ở ai_llm_audit
         // ★ G4 — tầng model người dùng chọn cho lượt này (bộ chọn ở màn lập trình). Vắng ⇒ mặc định hệ.
         tacVu: (context as { modelTask?: unknown })?.modelTask,
+        // ★ Đợt 9 — trợ lý theo vai trò: model đã định tuyến (vắng ⇒ bộ định tuyến cổng như cũ).
+        ...(context.modelVaiTro?.modelId ? { modelId: context.modelVaiTro.modelId } : {}),
+        ...(context.modelVaiTro ? { nhanVaiTro: { vaiTro: context.modelVaiTro.vaiTro, nguon: context.modelVaiTro.nguon } } : {}),
         systemPrompt: heThong,
         prompt: promptCuoi,
         maxTokens: tran,
@@ -409,21 +414,27 @@ export async function* streamCodingGenerate(
   const kiemST = yield* chayKiemBienDichST({
     beMat: "tro-ly",
     cauTraLoi: kq.text,
-    goiLai: goiLaiBangModel({ heThong, promptGoc: promptCuoi, maxTokens: tran, userId: execCtx?.user?.id, tacVu: (context as { modelTask?: unknown })?.modelTask, signal: execCtx?.signal }),
+    goiLai: goiLaiBangModel({ heThong, promptGoc: promptCuoi, maxTokens: tran, userId: execCtx?.user?.id, tacVu: (context as { modelTask?: unknown })?.modelTask, signal: execCtx?.signal, modelId: context.modelVaiTro?.modelId }),
     signal: execCtx?.signal,
     boiCanh: { tier: dungSinhMa?.tier, model: dungSinhMa?.modelId, userId: execCtx?.user?.id },
+    // ★ Đợt 9 (hợp nhất từ e7220eb9e) — opt-out của lượt (nhánh "tắt" của A/B cùng server; cửa `parseContext` chỉ nhận `false`).
+    tatBoiLuot: context.kiemBienDichST === false,
   });
   const boSungST = kiemST ? khoiBoSungSauBienDich(kiemST, language) : "";
   if (boSungST) yield { type: "token", token: boSungST };
+  // ★ Đợt 9 (hợp nhất từ e7220eb9e) — tóm tắt máy đọc trên `done` (kiểm nhánh A/B + tra cứu): vòng ĐƯỢC PHÉP chạy ở lượt này ⇒ luôn có
+  //   (không mã ST ⇒ "ok=skip"); cờ tắt / opt-out ⇒ vắng.
+  const oKiem =
+    kiemBienDichBat("tro-ly") && context.kiemBienDichST !== false ? { kiemBienDichST: kiemST ? headerKiemBienDich(kiemST) : "ok=skip" } : {};
 
   const boSung = boSungUsingChoCauTraLoi(kq.text, language);
   if (boSung) {
     yield { type: "token", token: boSung.thongBao };
     const doneDaSua = doneSinhMa(boSung.text + chan + boSungST + boSung.thongBao, "ollama") as Extract<StreamEvent, { type: "done" }>;
-    yield { ...doneDaSua, answerRevised: true };
+    yield { ...doneDaSua, answerRevised: true, ...oKiem };
     return "xong";
   }
-  yield doneSinhMa(kq.text + chan + boSungST, "ollama");
+  yield { ...(doneSinhMa(kq.text + chan + boSungST, "ollama") as Extract<StreamEvent, { type: "done" }>), ...oKiem };
   return "xong";
 }
 

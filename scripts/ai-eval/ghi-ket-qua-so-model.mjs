@@ -11,6 +11,10 @@
  * ★ Đợt 9 — `--trich-xuat <tệp json>` (thay `--bao-cao`): kết quả `scripts/ai-eval/trich-xuat/do.mts` (vai trò extract):
  *   nTasks = số bài, nPass = bài TRỌN (mọi trường đúng), p50/p90 từ thời gian từng bài; detail mang trường đúng/tổng + model
  *   thực chạy. Tệp thiếu `p50Ms` (bản cũ, không có thời gian từng bài) ⇒ TỪ CHỐI (sổ cần thời gian hợp lệ).
+ *
+ * ★ Đợt 9 — báo cáo A/B (`mot-luot --ab-kiem`, hàng mang `nhanh` = bat|tat): `--nhanh <bat|tat>` ghi MỘT hàng sổ cho MỘT nhánh
+ *   (lọc hàng TRƯỚC khi đếm + tính p50/p90). Báo cáo A/B mà thiếu `--nhanh` ⇒ TỪ CHỐI (trộn hai nhánh = số vô nghĩa).
+ *   `--git-sha <sha>` ghi đè HEAD khi lượt đo chạy trên mã khác HEAD hiện tại (vd báo cáo nối tiếp qua hai commit — ghi rõ ở detail).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -22,10 +26,11 @@ const arg = (k, d) => {
 };
 const NHAN = arg("--bao-cao");
 const TRICH_XUAT = arg("--trich-xuat");
+const TAC_NHAN = arg("--tac-nhan");
 const PROFILE = arg("--profile");
 const SUITE = arg("--suite", TRICH_XUAT ? "trich-xuat-mu-2026-10-21" : "plc-st-v1");
-if ((!NHAN && !TRICH_XUAT) || !PROFILE) {
-  console.error("cần (--bao-cao | --trich-xuat) và --profile");
+if ((!NHAN && !TRICH_XUAT && !TAC_NHAN) || !PROFILE) {
+  console.error("cần (--bao-cao | --trich-xuat | --tac-nhan) và --profile");
   process.exit(2);
 }
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "../..");
@@ -35,7 +40,32 @@ const env = Object.fromEntries(
 const thuMucBc = path.join(ROOT, "scripts/ai-eval/ngau-nhien/reports");
 const tepCl = path.join(thuMucBc, `${NHAN}-cl.json`);
 const tepGoc = TRICH_XUAT ? path.resolve(TRICH_XUAT) : path.join(thuMucBc, `${NHAN}.json`);
-const goc = JSON.parse(fs.readFileSync(tepGoc, "utf8"));
+/**
+ * ★ Đợt 9 (2026-10-23) — `--tac-nhan <tiền tố>`: GỘP báo cáo ablation TÁC NHÂN (`agent.mjs`, mỗi (bài, lượt, nhánh) một tệp
+ * `reports/<tiền tố><id>-l<lượt>-<bat|tat>.json`) thành MỘT báo cáo A/B ảo cùng hình dạng `mot-luot` — dùng kèm `--nhanh`.
+ * Thời gian = `agent.ms` (đầu–cuối lượt chạy). Lượt thiếu `dat` / `agent.ms` ⇒ TỪ CHỐI. detail mang model THỰC chạy (`bat-dau.model`).
+ */
+function gopBaoCaoTacNhan(tienTo) {
+  const rows = [];
+  for (const ten of fs.readdirSync(thuMucBc).sort()) {
+    if (!ten.startsWith(tienTo)) continue;
+    const m = /-l(\d+)-(bat|tat)\.json$/.exec(ten);
+    if (!m) continue;
+    const r = JSON.parse(fs.readFileSync(path.join(thuMucBc, ten), "utf8")).rows?.[0];
+    if (!r || typeof r.dat !== "boolean" || !Number.isFinite(r.agent?.ms)) {
+      console.error(`báo cáo tác nhân ${ten} thiếu dat/agent.ms — không ghi sổ`);
+      process.exit(2);
+    }
+    rows.push({ ...r, nhanh: m[2], luot: Number(m[1]), totalMs: r.agent.ms, modelThuc: r.agent.model?.model ?? null, lyDoDung: r.agent.lyDo ?? null });
+  }
+  if (!rows.length) {
+    console.error(`không có báo cáo tác nhân nào khớp tiền tố ${tienTo}`);
+    process.exit(2);
+  }
+  const bai = [...new Map(rows.map((r) => [r.id, { id: r.id, vanTay: r.vanTay }])).values()];
+  return { abKiem: true, tacNhan: tienTo, soLuot: Math.max(...rows.map((r) => r.luot)), rows, bai };
+}
+const goc = TAC_NHAN ? gopBaoCaoTacNhan(TAC_NHAN) : JSON.parse(fs.readFileSync(tepGoc, "utf8"));
 // ★ Đợt 9 — báo cáo mot-luot KHÔNG TRỌN (server chết / model đổi giữa lượt) ⇒ từ chối, trừ khi người ghi khẳng định đã ghép.
 if (!TRICH_XUAT && (goc.dungSom || goc.songSau === false || (goc.modelDau && goc.modelCuoi !== goc.modelDau)) && !process.argv.includes("--cho-phep-khong-tron")) {
   console.error(`báo cáo ${NHAN} KHÔNG TRỌN (dungSom=${JSON.stringify(goc.dungSom)}, songSau=${goc.songSau}, model ${goc.modelDau}→${goc.modelCuoi}) — ghép/chạy lại trước khi ghi sổ`);
@@ -46,10 +76,25 @@ if (TRICH_XUAT && !Number.isFinite(goc.p50Ms)) {
   process.exit(2);
 }
 // Trích xuất: mỗi bài một "lượt", ĐẠT = bài trọn; muc "trich-xuat".
+const NHANH = arg("--nhanh");
+const laAB = !TRICH_XUAT && (goc.abKiem || goc.rows?.some((r) => r.nhanh));
+if (laAB && !NHANH) {
+  console.error("báo cáo A/B (hàng có 'nhanh') — cần --nhanh bat|tat: mỗi nhánh MỘT hàng sổ");
+  process.exit(2);
+}
+if (NHANH && !laAB) {
+  console.error("--nhanh chỉ dùng cho báo cáo A/B");
+  process.exit(2);
+}
+const locNhanh = (ds) => (NHANH ? ds.filter((r) => r.nhanh === NHANH) : ds);
 const rows = TRICH_XUAT
   ? goc.chiTiet.map((c) => ({ id: c.id, muc: "trich-xuat", dat: c.dung === c.tong, totalMs: c.ms }))
-  : fs.existsSync(tepCl) ? JSON.parse(fs.readFileSync(tepCl, "utf8")).rows : goc.rows;
-const ms = (TRICH_XUAT ? rows : goc.rows).map((r) => r.totalMs).filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
+  : locNhanh(fs.existsSync(tepCl) ? JSON.parse(fs.readFileSync(tepCl, "utf8")).rows : goc.rows);
+if (!rows.length) {
+  console.error(`không có hàng nào (nhánh ${NHANH})`);
+  process.exit(2);
+}
+const ms = (TRICH_XUAT ? rows : locNhanh(goc.rows)).map((r) => r.totalMs).filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
 const pct = (p) => (ms.length ? ms[Math.min(ms.length - 1, Math.floor(p * ms.length))] : null);
 const theoMuc = {};
 for (const r of rows) {
@@ -73,7 +118,7 @@ function shaHead() {
     return "khong-ro";
   }
 }
-const sha = shaHead();
+const sha = arg("--git-sha") ?? shaHead();
 const sql = postgres(env.DATABASE_URL, { max: 1 });
 try {
   if (arg("--artifact")) {
@@ -90,7 +135,12 @@ try {
     VALUES (${PROFILE}, ${SUITE}, ${new Set(rows.map((x) => x.id)).size}, ${nPass}, ${TRICH_XUAT ? 1 : goc.soLuot ?? 1}, ${pct(0.5)}, ${pct(0.9)},
       ${sql.json(TRICH_XUAT
         ? { tepKetQua: path.basename(tepGoc), modelThuc: goc.model, nghi: goc.nghi, luc: goc.luc, truongDung: goc.dung, truongTong: goc.tong, khongJson: goc.khongJson, theoMuc }
-        : { nhanBaoCao: NHAN, chamLai: fs.existsSync(tepCl), tongLuot: rows.length, theoMuc, seed: goc.seed, sampling: goc.sampling, khongNghi: goc.khongNghi, vanTay: goc.bai?.map((b) => [b.id, b.vanTay]) })},
+        : TAC_NHAN
+          ? { tacNhan: TAC_NHAN, tongLuot: rows.length, theoMuc, nhanh: NHANH, ghiChu: arg("--ghi-chu") ?? null,
+              modelThuc: [...new Set(rows.map((r) => r.modelThuc))],
+              lyDoDung: rows.reduce((a, r) => ((a[r.lyDoDung] = (a[r.lyDoDung] ?? 0) + 1), a), {}),
+              vanTay: goc.bai.map((b) => [b.id, b.vanTay]) }
+          : { nhanBaoCao: NHAN, chamLai: fs.existsSync(tepCl), tongLuot: rows.length, theoMuc, seed: goc.seed, sampling: goc.sampling, khongNghi: goc.khongNghi, nhanh: NHANH ?? null, ghiChu: arg("--ghi-chu") ?? null, vanTay: goc.bai?.map((b) => [b.id, b.vanTay]) })},
       ${sha.slice(0, 40)}) RETURNING id`;
   console.log(`ghi lượt đo #${r.id}: ${PROFILE} · ${SUITE} · ${nPass}/${rows.length} · p50 ${pct(0.5)} ms`);
 } finally {

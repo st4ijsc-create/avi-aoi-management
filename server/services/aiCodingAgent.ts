@@ -216,6 +216,9 @@ export interface DungLuotModel {
   ctxMax: number | undefined;
   /** Tầng định tuyến của cổng cho lượt này (`plan.decision.tier`) — để hàng audit phụ (vd. vòng kiểm biên dịch ST) mang CÙNG tầng. Không lên SSE. */
   tier?: number;
+  /** ★ Đợt 9 — trợ lý theo vai trò: vai trò + nguồn định tuyến của lượt (vắng = không định tuyến vai trò). Lên SSE `usage`. */
+  vaiTro?: string;
+  nguonVaiTro?: string;
 }
 
 export interface YeuCauSinhChu {
@@ -229,6 +232,13 @@ export interface YeuCauSinhChu {
    * Giá trị đến từ client nên `chonTacVuModel` lọc qua danh sách TRẮNG; không nới quyền gì.
    */
   tacVu?: unknown;
+  /**
+   * ★ Đợt 9 (2026-10-23, thiết kế 26ba9d039) — model ĐÃ ĐỊNH TUYẾN THEO VAI TRÒ cho lượt (trợ lý theo vai trò, cờ `AI_TRO_LY_THEO_VAI_TRO`).
+   * Có ⇒ engine nhận model này (cổng vẫn tính quota/safety/metrics); vắng ⇒ model của bộ định tuyến cổng như cũ, từng byte.
+   */
+  modelId?: string;
+  /** ★ Đợt 9 — vai trò + nguồn định tuyến của lượt (minh bạch: đi lên sự kiện `usage`). */
+  nhanVaiTro?: { vaiTro: string; nguon: string };
   systemPrompt: string;
   prompt: string;
   maxTokens: number;
@@ -353,7 +363,7 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
         ...(y.disableThinking !== undefined ? { disableThinking: y.disableThinking } : {}),
         ...(y.thinkingBudgetTokens !== undefined ? { thinkingBudgetTokens: y.thinkingBudgetTokens } : {}),
       },
-      plan.decision.modelId,
+      y.modelId ?? plan.decision.modelId,
       // ★★★ ĐỐI SỐ THỨ BA — xem `YeuCauSinhChu.signal`. Thiếu nó, mỗi lượt Dừng giữ một khe
       //   llama-server tới 120 s. Đây là con đường DUY NHẤT signal đi xuống ở đường lập trình.
       y.signal,
@@ -407,13 +417,14 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
       thinking,
       samplingProfile,
       // ★ Đợt 9 — model THỰC (chunk `done`); vắng ⇒ cổng dùng `decision.modelId` như cũ. `responseText` chỉ để BĂM (đã che).
-      ...(modelThuc ? { model: modelThuc } : {}),
+      ...((modelThuc ?? y.modelId) ? { model: modelThuc ?? y.modelId } : {}),
       ...(daPhat ? { responseText: plan.sanitizeOutput(daPhat) } : {}),
     });
     y.onUsage?.({
       tier: plan.decision.tier,
       // Cùng luật với sổ đo (`aiGateway.toRow`): không có id ⇒ "default", không để undefined lọt lên UI.
-      modelId: plan.decision.modelId ?? "default",
+      modelId: y.modelId ?? plan.decision.modelId ?? "default",
+      ...(y.nhanVaiTro ? { vaiTro: y.nhanVaiTro.vaiTro, nguonVaiTro: y.nhanVaiTro.nguon } : {}),
       tokensIn,
       tokensOut,
       tokensReasoning,

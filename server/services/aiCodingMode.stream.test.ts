@@ -28,6 +28,10 @@ import path from "node:path";
 
 const h = vi.hoisted(() => ({
   manh: [] as string[],
+  /** ★ Đợt 9 — mảnh trả lời của lượt HỎI LẠI sau biên dịch (vòng kiểm ST của trợ lý); rỗng ⇒ dùng `manh`. */
+  manhSua: [] as string[],
+  /** ★ Đợt 9 — đối số model của từng lượt engine (trợ lý theo vai trò). */
+  modelNhan: [] as Array<string | undefined>,
   systemPromptNhan: "" as string,
   promptNhan: "" as string,
   /** ★ B1 — cờ `disableThinking` THẬT tới engine, theo từng lượt gọi (đo hợp đồng, không đo lời khai). */
@@ -126,7 +130,8 @@ vi.mock("./aiGgufEngine", () => ({
     tokensPrompt: 1,
     tokensGenerated: 1,
   })),
-  generateTextStream: async function* (opt: any) {
+  generateTextStream: async function* (opt: any, modelId?: string) {
+    h.modelNhan.push(modelId); // ★ Đợt 9 — model engine THỰC nhận (trợ lý theo vai trò)
     h.systemPromptNhan = String(opt?.systemPrompt ?? "");
     h.promptNhan = String(opt?.prompt ?? "");
     h.disableThinkingNhan.push(opt?.disableThinking); // ★ B1 — ghi cờ THẬT tới engine
@@ -149,15 +154,30 @@ vi.mock("./aiGgufEngine", () => ({
       h.chiSoNem = h.disableThinkingNhan.length - 1;
       throw e;
     }
-    for (const m of h.manh) yield { type: "token", token: m };
+    // ★ Đợt 9 — lượt HỎI LẠI của vòng kiểm biên dịch ST (`goiLaiBangModel`: prompt có "[Phản hồi của trình biên dịch]") ⇒ `h.manhSua`.
+    const manh = String(opt?.prompt ?? "").includes("[Phản hồi của trình biên dịch]") && h.manhSua.length ? h.manhSua : h.manh;
+    for (const m of manh) yield { type: "token", token: m };
     yield {
       type: "done",
       tokensPrompt: 10,
-      tokensGenerated: h.manh.length,
+      tokensGenerated: manh.length,
       ...(h.tokensReasoningGia !== undefined ? { tokensReasoning: h.tokensReasoningGia } : {}),
     };
   },
 }));
+
+// ★ Đợt 9 (2026-10-23) — trình biên dịch ST GIẢ cho §ĐỢT 9 (vòng kiểm biên dịch của trợ lý): mã có "AND ;" ⇒ lỗi E007. Không chạy docker.
+vi.mock("./flow/lib/bienDichST", async (goc) => {
+  const that = await goc<typeof import("./flow/lib/bienDichST")>();
+  return {
+    ...that,
+    bienDichST: vi.fn(async (ma: string) =>
+      ma.includes("AND ;")
+        ? { ok: false, chanDoan: [{ tep: "ma.st", dong: 4, cot: 13, mucDo: "error", ma: "E007", thongDiep: "Unexpected token ;" }], ms: 3 }
+        : { ok: true, chanDoan: [], ms: 3 },
+    ),
+  };
+});
 
 vi.mock("../db/connection", () => ({
   getDb: vi.fn(async () => ({ insert: () => ({ values: async () => undefined }) })),
@@ -202,6 +222,10 @@ vi.mock("./aiLocalTools", async (goc) => {
 });
 
 import { streamAnswer, laYDinhSuaTep, type StreamEvent } from "./aiLocalKnowledgeService";
+import { VAI_TRO_GOC } from "../../shared/aiRoles";
+import { ANH_RONG, datAnhSoModel } from "./ai/soModel/anhSoModel";
+import { __xoaBoNhoKhoaKhe } from "./ai/khoaKhe";
+import { _xoaNhoDuAnPlc } from "./ai/agent/nhanDienDuAnPlc";
 
 const TEP_THI = "sandbox-projects/csharp-demo/src/Calculator.cs";
 const DUONG_THI = path.resolve(process.cwd(), TEP_THI);
@@ -246,6 +270,8 @@ const ENV = [
 beforeEach(() => {
   for (const k of ENV) delete process.env[k];
   h.manh = [];
+  h.manhSua = [];
+  h.modelNhan = [];
   h.systemPromptNhan = "";
   h.promptNhan = "";
   h.disableThinkingNhan = [];
@@ -1425,5 +1451,183 @@ describe("§R2B — bổ sung `using` C# còn thiếu SAU sinh (tất định, t
     } finally {
       delete process.env.AI_CODING_BO_SUNG_USING;
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// ★ Đợt 9 — vòng kiểm biên dịch ST của TRỢ LÝ (triển khai DUY NHẤT `aiLocalKnowledgeCodingKiemST`; phần hợp nhất từ e7220eb9e: opt-out của
+//   lượt, `done.kiemBienDichST`). Hành vi chính (sự kiện `kiem_bien_dich`, khối bổ sung) có lưới riêng ở aiLocalKnowledgeCodingKiemST.test.
+describe("§ĐỢT 9 — vòng kiểm biên dịch ST của TRỢ LÝ qua streamAnswer (AI_KIEM_BIEN_DICH_ST có tro-ly; opt-out context.kiemBienDichST=false)", () => {
+  const CAU = "viết function block ST tên A: đầu ra y bằng đầu vào x";
+  const NL = String.fromCharCode(10);
+  const FB_SAI = ["FUNCTION_BLOCK A", "VAR_INPUT x : BOOL; END_VAR", "VAR_OUTPUT y : BOOL; END_VAR", "  y := x AND ;", "END_FUNCTION_BLOCK"].join(NL);
+  const FB_DUNG = ["FUNCTION_BLOCK A", "VAR_INPUT x : BOOL; END_VAR", "VAR_OUTPUT y : BOOL; END_VAR", "  y := x;", "END_FUNCTION_BLOCK"].join(NL);
+  const RAO = "`".repeat(3);
+  const rao = (ma: string) => ["Mã:", `${RAO}st`, ma, RAO].join(NL);
+  afterEach(() => {
+    delete process.env.AI_KIEM_BIEN_DICH_ST;
+  });
+
+  it("★★★ cờ có tro-ly + bản đầu LỖI ⇒ kiem_bien_dich dang-kiem → xong(da-sua), khối 'Bản đã sửa' STREAM + trong done, done.kiemBienDichST", async () => {
+    process.env.AI_KIEM_BIEN_DICH_ST = "tro-ly";
+    h.manh = [rao(FB_SAI)];
+    h.manhSua = [rao(FB_DUNG)];
+    const r = await chay(CAU, admin());
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    const kiem = r.events.filter((e) => e.type === "kiem_bien_dich") as Array<Extract<StreamEvent, { type: "kiem_bien_dich" }>>;
+    expect(kiem[0]?.phase).toBe("dang-kiem");
+    expect(kiem.at(-1)).toMatchObject({ phase: "xong", ketQua: { trangThai: "da-sua", soLoiDaSua: 1 } });
+    expect(r.chu).toContain("Bản đã sửa sau biên dịch");
+    expect(d.answer).toContain(FB_DUNG);
+    expect(d.answer).toContain("AND ;"); // bản gốc GIỮ NGUYÊN — không thay lặng lẽ
+    expect(d.kiemBienDichST).toMatch(/^ok=1; trang-thai=da-sua; vong=1; sua=1; con=0$/);
+  });
+
+  it("★★★ opt-out context.kiemBienDichST=false (nhánh 'tắt' của A/B cùng server) ⇒ 0 sự kiện kiem_bien_dich, không lượt hỏi lại, không kiemBienDichST", async () => {
+    process.env.AI_KIEM_BIEN_DICH_ST = "tro-ly";
+    h.manh = [rao(FB_SAI)];
+    h.manhSua = [rao(FB_DUNG)];
+    const truoc = h.promptTheoLuot.length;
+    const r = await chay(CAU, admin(), { kiemBienDichST: false });
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    expect(r.events.some((e) => e.type === "kiem_bien_dich")).toBe(false);
+    expect(h.promptTheoLuot.slice(truoc).some((p) => p.includes("[Phản hồi của trình biên dịch]"))).toBe(false);
+    expect(d.kiemBienDichST).toBeUndefined();
+    expect(d.answer).not.toContain("Bản đã sửa sau biên dịch");
+  });
+
+  it("cờ mặc định (không có tro-ly) ⇒ y hệt trước: không sự kiện, không kiemBienDichST", async () => {
+    h.manh = [rao(FB_SAI)];
+    const r = await chay(CAU, admin());
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    expect(r.events.some((e) => e.type === "kiem_bien_dich")).toBe(false);
+    expect(d.kiemBienDichST).toBeUndefined();
+  });
+
+  it("cờ bật nhưng câu trả lời KHÔNG có mã ST ⇒ không sự kiện, done.kiemBienDichST = 'ok=skip' (nhánh bật vẫn chứng minh được)", async () => {
+    process.env.AI_KIEM_BIEN_DICH_ST = "tro-ly";
+    h.manh = ["Chỉ trả lời bằng chữ, không có khối mã."];
+    const r = await chay(CAU, admin());
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    expect(r.events.some((e) => e.type === "kiem_bien_dich")).toBe(false);
+    expect(d.kiemBienDichST).toBe("ok=skip");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// ★ Đợt 9 (2026-10-23, thiết kế 26ba9d039) — TRỢ LÝ THEO VAI TRÒ (cờ AI_TRO_LY_THEO_VAI_TRO, mặc định tắt). Lưới 5 vế ĐĂNG KÝ TRƯỚC:
+//   (i) dự án .st ⇒ engine nhận 27B, dự án TS ⇒ 35B (+ chữ câu hỏi PLC ⇒ 27B); (ii) người dùng chọn "fast" ⇒ không định tuyến;
+//   (iii) khoá giữ 27B + code.software có dự phòng 27B ⇒ 27B; không dự phòng ⇒ nói thật, 0 lượt engine; (iv) cờ tắt ⇒ như cũ;
+//   (v) sự kiện usage mang vaiTro (đi ra socket: aiLocalKbStreamEvents.census §D).
+describe("§ĐỢT 9 — trợ lý lập trình theo VAI TRÒ", () => {
+  const M35 = "Qwen3.6-35B-A3B-UD-Q4_K_XL";
+  const M27 = "Qwen3.6-27B-UD-Q4_K_XL";
+  const NL = String.fromCharCode(10);
+  const P = (f: string) => ({ artifactFile: `${f}.gguf`, slotClass: "nang" as const, artifactStatus: "available", license: "apache-2.0", enabled: true });
+  const anh = (duPhongSw: string[]) => ({
+    taiLuc: 1,
+    vaiTro: new Map(VAI_TRO_GOC.map((v) => [v.id, { envKey: v.envKey, taskKind: v.taskKind }])),
+    profile: new Map([["p27", P(M27)], ["p35", P(M35)]]),
+    gan: [
+      { roleId: "code.plc", scopeKind: "global" as const, scopeId: null, profileId: "p27", envKey: null, fallback: ["p35"], mode: "active" as const },
+      { roleId: "code.software", scopeKind: "global" as const, scopeId: null, profileId: "p35", envKey: null, fallback: duPhongSw, mode: "active" as const },
+    ],
+  });
+  const KHOA_ENV = ["AI_TRO_LY_THEO_VAI_TRO", "LLAMA_SERVER_MODEL", "LLAMA_WATCHDOG_PAUSE_FILE", "AI_KHE_NANG_HOAN_DOI", "GGUF_CODE_MODEL", "GGUF_DEFAULT_MODEL"] as const;
+  let gocPlc = "";
+  let gocTs = "";
+  let tepKhoa = "";
+  const cu: Record<string, string | undefined> = {};
+  beforeEach(() => {
+    for (const k of KHOA_ENV) cu[k] = process.env[k];
+    gocPlc = fs.mkdtempSync(path.join(os.tmpdir(), "trl-plc-"));
+    gocTs = fs.mkdtempSync(path.join(os.tmpdir(), "trl-ts-"));
+    fs.mkdirSync(path.join(gocPlc, "src"));
+    fs.writeFileSync(path.join(gocPlc, "src", "main.st"), "PROGRAM Main" + NL + "END_PROGRAM" + NL);
+    fs.mkdirSync(path.join(gocTs, "src"));
+    fs.writeFileSync(path.join(gocTs, "src", "a.ts"), "export const A = 1;" + NL);
+    process.env.AI_REPO_SANDBOX_ROOTS = `plc=PLC|${gocPlc};tsx=TS|${gocTs}`;
+    process.env.LLAMA_SERVER_MODEL = `${M35}.gguf`;
+    // như dev: hoán đổi khe BẬT (mặc định), model mã/mặc định = 35B; LLAMA_SERVER_URL vắng ⇒ làm mới khe trả null ngay (không mạng)
+    delete process.env.AI_KHE_NANG_HOAN_DOI;
+    process.env.GGUF_CODE_MODEL = `${M35}.gguf`;
+    process.env.GGUF_DEFAULT_MODEL = `${M35}.gguf`;
+    tepKhoa = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "trl-khoa-")), "p.pause");
+    process.env.LLAMA_WATCHDOG_PAUSE_FILE = tepKhoa;
+    __xoaBoNhoKhoaKhe();
+    _xoaNhoDuAnPlc();
+    datAnhSoModel(anh(["p27"]) as never);
+    h.manh = ["Đây là câu trả lời."];
+  });
+  afterEach(() => {
+    for (const k of KHOA_ENV) (cu[k] === undefined ? delete process.env[k] : (process.env[k] = cu[k]));
+    datAnhSoModel(ANH_RONG);
+    __xoaBoNhoKhoaKhe();
+    for (const d of [gocPlc, gocTs, path.dirname(tepKhoa)]) fs.rmSync(d, { recursive: true, force: true });
+  });
+  const usage = (r: { events: StreamEvent[] }) => r.events.find((e) => e.type === "usage") as Extract<StreamEvent, { type: "usage" }> | undefined;
+
+  it("★★★ (i) cờ bật: dự án có .st ⇒ engine nhận 27B (code.plc); dự án TS ⇒ 35B (code.software); usage mang vaiTro", async () => {
+    process.env.AI_TRO_LY_THEO_VAI_TRO = "1";
+    const rPlc = await chay("viết hàm cộng hai số nguyên", admin(), { projectId: "plc" });
+    expect(h.modelNhan).toEqual([M27]);
+    expect(usage(rPlc)).toMatchObject({ modelId: M27, vaiTro: "code.plc", nguonVaiTro: "gan-profile" });
+    h.modelNhan = [];
+    const rTs = await chay("viết hàm cộng hai số nguyên", admin(), { projectId: "tsx" });
+    expect(h.modelNhan).toEqual([M35]);
+    expect(usage(rTs)).toMatchObject({ modelId: M35, vaiTro: "code.software" });
+  });
+
+  it("★★ (i-b) dự án TS nhưng CHỮ câu hỏi viết mã PLC ⇒ code.plc ⇒ 27B", async () => {
+    process.env.AI_TRO_LY_THEO_VAI_TRO = "1";
+    await chay("viết FB TON trễ 5 giây cho PLC bật quạt", admin(), { projectId: "tsx" });
+    expect(h.modelNhan).toEqual([M27]);
+  });
+
+  it("★★★ (ii) người dùng CHỌN TƯỜNG MINH (modelTask fast) ⇒ KHÔNG định tuyến vai trò, usage không có vaiTro", async () => {
+    process.env.AI_TRO_LY_THEO_VAI_TRO = "1";
+    const r = await chay("viết hàm cộng hai số nguyên", admin(), { projectId: "plc", modelTask: "fast" });
+    expect(h.modelNhan[0]).not.toBe(M27);
+    expect(usage(r)?.vaiTro).toBeUndefined();
+  });
+
+  it("★★★ (iii) khoá khe giữ 27B: code.software có dự phòng 27B ⇒ chạy 27B; KHÔNG dự phòng ⇒ nói thật, 0 lượt engine", async () => {
+    process.env.AI_TRO_LY_THEO_VAI_TRO = "1";
+    process.env.LLAMA_SERVER_MODEL = `${M27}.gguf`; // khe đang giữ 27B (không có bộ lập lịch trong lưới ⇒ so với model nhà)
+    fs.writeFileSync(tepKhoa, JSON.stringify({ chu: "phép đo X", lyDo: "đo", hetHan: new Date(Date.now() + 300_000).toISOString() }));
+    __xoaBoNhoKhoaKhe();
+    await chay("viết hàm cộng hai số nguyên", admin(), { projectId: "tsx" });
+    expect(h.modelNhan).toEqual([M27]);
+
+    h.modelNhan = [];
+    datAnhSoModel(anh([]) as never);
+    const r = await chay("viết hàm cộng hai số nguyên", admin(), { projectId: "tsx" });
+    expect(h.modelNhan).toEqual([]);
+    expect(r.chu).toMatch(/Khe model đang bị khoá/);
+    expect((r.done as Extract<StreamEvent, { type: "done" }>).answer).toMatch(/Khe model đang bị khoá/);
+  });
+
+  it("★★★ (i-c) nhánh SỬA TỆP (tệp ghim) ở dự án PLC ⇒ lượt sửa cũng đi 27B (cùng model của lượt)", async () => {
+    process.env.AI_TRO_LY_THEO_VAI_TRO = "1";
+    await chay("sửa chương trình để đếm thêm biến x", admin(), { projectId: "plc", codingEditPath: "src/main.st" });
+    expect(h.modelNhan.length).toBeGreaterThan(0);
+    expect(h.modelNhan.every((m) => m === M27)).toBe(true);
+  });
+
+  it("★★★ (iv) cờ đặt TẮT (\"false\"/\"off\"/\"0\"/\"no\" — chủ dự án tắt bằng .env) ⇒ như cũ: engine KHÔNG nhận model vai trò, usage không có vaiTro", async () => {
+    for (const v of ["false", "off", "0", "no"]) {
+      process.env.AI_TRO_LY_THEO_VAI_TRO = v;
+      h.modelNhan = [];
+      const r = await chay("viết hàm cộng hai số nguyên", admin(), { projectId: "plc" });
+      expect(h.modelNhan[0], v).not.toBe(M27);
+      expect(usage(r)?.vaiTro, v).toBeUndefined();
+    }
+  });
+
+  it("★★★ (iv-b) cờ VẮNG ⇒ BẬT (mặc định — dieu-phoi quyết 2026-10-23 sau phép đo 29/48 vs 22/48): dự án PLC ⇒ 27B", async () => {
+    delete process.env.AI_TRO_LY_THEO_VAI_TRO;
+    const r = await chay("viết hàm cộng hai số nguyên", admin(), { projectId: "plc" });
+    expect(h.modelNhan).toEqual([M27]);
+    expect(usage(r)).toMatchObject({ vaiTro: "code.plc" });
   });
 });

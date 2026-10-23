@@ -21,6 +21,9 @@ import type { KbLanguage, StreamEvent } from "./aiLocalKnowledgeService";
 
 export type BeMatKiemST = "tro-ly" | "cmdk";
 
+/** Nhịp phát lại `dang-kiem` trong lúc vòng kiểm/sửa chạy. */
+export const NHIP_KIEM_MS = 15_000;
+
 /** Gói gửi client — chỉ số liệu + chẩn đoán đã có sẵn (không mã nguồn trừ `cauTraLoiDau`/`cauTraLoiCuoi` mà người dùng vốn thấy). */
 export interface KiemBienDichDto {
   trangThai: KetQuaKiemBienDichST["trangThai"];
@@ -60,11 +63,35 @@ export async function* chayKiemBienDichST(y: {
   signal?: AbortSignal;
   /** Bối cảnh của LƯỢT CHÍNH để hàng audit `kb_kiem_st` mang cùng tầng / model / người dùng (vắng ⇒ tầng 0 = "không định tuyến"). */
   boiCanh?: { tier?: number; model?: string | null; userId?: number };
+  /**
+   * ★ Đợt 9 (2026-10-23, hợp nhất từ e7220eb9e) — opt-out của LƯỢT (`context.kiemBienDichST === false`, cửa chỉ nhận `false`): nhánh "tắt"
+   * của A/B trên CÙNG server. Không mở được vòng khi cờ tắt.
+   */
+  tatBoiLuot?: boolean;
+  /** Nhịp phát lại `dang-kiem` trong lúc vòng chạy (mặc định 15 s) — lượt sửa có thể im hàng phút; SSE không được im (fetch Node cắt thân im > 300 s). */
+  nhipMs?: number;
 }): AsyncGenerator<StreamEvent, KetQuaKiemBienDichST | null> {
-  if (!kiemBienDichBat(y.beMat)) return null;
+  if (!kiemBienDichBat(y.beMat) || y.tatBoiLuot === true) return null;
   if (trichMaST(y.cauTraLoi).length === 0) return null;
   yield { type: "kiem_bien_dich", phase: "dang-kiem" };
-  const k = await kiemVaSuaST({ cauTraLoi: y.cauTraLoi, goiLai: y.goiLai, signal: y.signal, tranMs: tranMsVongSuaST(y.boiCanh?.model ?? undefined) });
+  const loiHua = kiemVaSuaST({ cauTraLoi: y.cauTraLoi, goiLai: y.goiLai, signal: y.signal, tranMs: tranMsVongSuaST(y.boiCanh?.model ?? undefined) });
+  // ★ Đợt 9 (hợp nhất từ e7220eb9e) — nhịp tiến độ: phát lại `dang-kiem` (client: chỉ báo "đang biên dịch thử…", phát lặp vô hại).
+  for (;;) {
+    let hen: ReturnType<typeof setTimeout> | null = null;
+    const xong = await Promise.race([
+      loiHua.then(
+        () => true,
+        () => true,
+      ),
+      new Promise<false>((r) => {
+        hen = setTimeout(() => r(false), y.nhipMs ?? NHIP_KIEM_MS);
+      }),
+    ]);
+    if (hen) clearTimeout(hen);
+    if (xong) break;
+    yield { type: "kiem_bien_dich", phase: "dang-kiem" };
+  }
+  const k = await loiHua;
   if (k.trangThai === "bo-qua") return null;
   // ★ Đợt 9 — MỘT hàng nhật ký cho mỗi lần chạy vòng (kể cả "sạch"): chỉ số + mã lỗi (auditKiemBienDich) + BĂM mã đã kiểm — KHÔNG lưu mã nguồn.
   ghiLuotNgoaiCong({
@@ -91,6 +118,8 @@ export function goiLaiBangModel(y: {
   maxTokens: number;
   userId?: number;
   tacVu?: unknown;
+  /** ★ Đợt 9 — model của lượt chính (trợ lý theo vai trò) — lượt hỏi lại đi CÙNG model. */
+  modelId?: string;
   signal?: AbortSignal;
 }): (tinSua: string, lanTruoc: string) => Promise<string> {
   return async (tinSua, lanTruoc) => {
@@ -99,6 +128,7 @@ export function goiLaiBangModel(y: {
       streamCodingModel({
         auditTask: "kb_kiem_st_sua", // ★ Đợt 9 — lượt hỏi-lại của vòng kiểm biên dịch ST
         tacVu: y.tacVu,
+        ...(y.modelId ? { modelId: y.modelId } : {}),
         systemPrompt: y.heThong,
         prompt,
         maxTokens: y.maxTokens,

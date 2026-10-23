@@ -145,8 +145,9 @@ async function checkForDowntimes(): Promise<void> {
                 reason: 'Auto-detected: Machine inactive',
                 detectionMethod: 'AUTO',
               };
-              io.to("global").emit("downtime:start", event);
-              io.to(`machine:${machineId}`).emit("downtime:start", event);
+              // ★ P-S1b — theo phòng nhà máy (không `global`)
+              const { phatTheoNhaMay } = await import('../_core/socketPhatTheoNhaMay');
+              phatTheoNhaMay(io, "downtime:start", event, { machineId }, [`machine:${machineId}`]);
             }
           } catch (err) {
             // Socket.io not available, skip emit
@@ -199,8 +200,8 @@ async function checkForDowntimes(): Promise<void> {
                 reason: 'Auto-detected: Machine inactive',
                 resolution: 'Auto-resolved: Machine became active',
               };
-              io.to("global").emit("downtime:end", event);
-              io.to(`machine:${machineId}`).emit("downtime:end", event);
+              const { phatTheoNhaMay } = await import('../_core/socketPhatTheoNhaMay');
+              phatTheoNhaMay(io, "downtime:end", event, { machineId }, [`machine:${machineId}`]);
             }
           } catch (err) {
             // Socket.io not available, skip emit
