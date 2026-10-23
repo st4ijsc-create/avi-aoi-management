@@ -253,9 +253,9 @@ export const drCheckStatusEnum = pgEnum("drcheckstatusenum", ["passed", "failed"
 export const otProtocolEnum = pgEnum("otprotocolenum", ["opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip", "stub", "slmp"]);
 // Logical data type of an OT tag value
 export const otDataTypeEnum = pgEnum("otdatatypeenum", ["bool", "int", "float", "string", "json"]);
-// Runtime connection state of an OT adapter
 // SCADA R1a Task 1 (migration 0431): loai kenh cua tag. NULL tren device_tags = tag cu (khong khai kenh).
 export const scadaChannelKindEnum = pgEnum("scada_channel_kind", ["input", "input_output", "calculated", "calculated_output", "output"]);
+// Runtime connection state of an OT adapter
 export const otAdapterStatusEnum = pgEnum("otadapterstatusenum", ["disabled", "connecting", "connected", "error"]);
 
 // === Doc 12 §5 / P2 — Unified canonical telemetry store (ot_telemetry) ===
