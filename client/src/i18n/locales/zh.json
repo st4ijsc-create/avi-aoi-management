@@ -23468,7 +23468,10 @@
         "apDung": "应用故障",
         "xoaLoi": "清除故障",
         "daDat": "已设置 stub 故障",
-        "khongChay": "stub 未在中心运行 —— 故障未生效"
+        "khongChay": "stub 未在中心运行 —— 故障未生效",
+        "dialogApDungTieuDe": "为 {{code}} 设置 stub 故障？",
+        "dialogXoaLoiTieuDe": "清除 {{code}} 的 stub 故障？",
+        "dialogMoTa": "对模拟适配器的 Lab 操作。原因将记录到审计日志。"
       }
     }
   }

@@ -1,6 +1,7 @@
 /**
  * SCADA R0 Task 11 — ngăn tag của một adapter (M10): giá trị, chất lượng, tuổi, statusCode; nút "100 mẫu thô"; và (Lab) khối
  * "đặt lỗi stub" CHỈ khi API báo `labStub` cho hàng này VÀ người xem là engineer/admin có quyền sửa (`canAct`; máy chủ vẫn kiểm lại).
+ * final M2 — đặt / xoá lỗi Lab đi qua hộp lý do (cùng mẫu với Kết nối lại / Tạm tắt ở `ScadaDiag.tsx`): lý do 5..300 ký tự, ghi audit.
  *
  * Hiển thị chất lượng theo D10 (xem `chatLuongHienThi.ts`): uncertain ⇒ "?" + viền chấm xám; bad/cũ ⇒ gạch tím + mờ. Tuổi âm/null ⇒ "—".
  */
@@ -15,11 +16,15 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BIEN_MAU_GACH_TIM, BIEN_MAU_VIEN_XAM, dinhDangTuoi, hienChatLuong, type VienChatLuong } from "./chatLuongHienThi";
 import { ChipTrangThai, tenEdge, useDonViThoiGian, type HangDiag } from "./BangTruyenThong";
 
 const KY_TU_TOI_DA_LAB = 128;
+/** Khớp `lyDoInput` ở máy chủ (`trim().min(5).max(300)`), như hộp lý do của ScadaDiag. */
+const LY_DO_TOI_THIEU = 5;
+const LY_DO_TOI_DA = 300;
 
 /** Kiểu CSS của ô giá trị theo viền D10 — chỉ token ISA có sẵn, không màu cứng. */
 export function kieuVien(vien: VienChatLuong, cu: boolean): CSSProperties {
@@ -60,24 +65,36 @@ const danhSachTag = (text: string): string[] | undefined => {
   return ds.length > 0 ? ds : undefined;
 };
 
-function KhoiLab({ adapterId }: { adapterId: number }) {
+type LoiLab = { matKetNoi?: boolean; tagXau?: string[]; tagNghiNgo?: string[]; giaTri?: Record<string, number | boolean | string> };
+
+function KhoiLab({ adapterId, code }: { adapterId: number; code: string }) {
   const { t } = useTranslation();
   const utils = trpc.useUtils();
   const [matKetNoi, setMatKetNoi] = useState(false);
   const [tagXau, setTagXau] = useState("");
   const [tagNghiNgo, setTagNghiNgo] = useState("");
   const [giaTri, setGiaTri] = useState("");
+  /** Thao tác đang chờ lý do: lỗi sẽ gửi + loại hộp ("apDung" / "xoaLoi"). */
+  const [cho, setCho] = useState<{ kieu: "apDung" | "xoaLoi"; loi: LoiLab } | null>(null);
+  const [lyDo, setLyDo] = useState("");
+  const dongHop = () => {
+    setCho(null);
+    setLyDo("");
+  };
   const dat = trpc.scadaDiag.datLoiStub.useMutation({
     onSuccess: (r: { apDung: boolean }) => {
       if (r?.apDung === false) toast.warning(t("scada.diag.lab.khongChay"));
       else toast.success(t("scada.diag.lab.daDat"));
       void utils.scadaDiag.danhSach.invalidate();
       void utils.scadaDiag.tagCuaAdapter.invalidate();
+      dongHop();
     },
     onError: (e: unknown) => toastTrpcError(e as never),
   });
+  const lyDoCat = lyDo.trim();
+  const lyDoDu = lyDoCat.length >= LY_DO_TOI_THIEU;
   const apDung = () => {
-    const loi: { matKetNoi?: boolean; tagXau?: string[]; tagNghiNgo?: string[]; giaTri?: Record<string, number | boolean | string> } = {};
+    const loi: LoiLab = {};
     if (matKetNoi) loi.matKetNoi = true;
     const x = danhSachTag(tagXau);
     if (x) loi.tagXau = x;
@@ -85,14 +102,18 @@ function KhoiLab({ adapterId }: { adapterId: number }) {
     if (n) loi.tagNghiNgo = n;
     const g = phanTichGiaTri(giaTri);
     if (g) loi.giaTri = g;
-    dat.mutate({ adapterId, loi });
+    setCho({ kieu: "apDung", loi });
   };
   const xoaLoi = () => {
     setMatKetNoi(false);
     setTagXau("");
     setTagNghiNgo("");
     setGiaTri("");
-    dat.mutate({ adapterId, loi: {} });
+    setCho({ kieu: "xoaLoi", loi: {} });
+  };
+  const gui = () => {
+    if (!cho || !lyDoDu || dat.isPending) return;
+    dat.mutate({ adapterId, loi: cho.loi, lyDo: lyDoCat });
   };
   return (
     <section className="mt-4 space-y-3 rounded-md border border-dashed p-3" aria-labelledby="lab-tieu-de">
@@ -124,6 +145,38 @@ function KhoiLab({ adapterId }: { adapterId: number }) {
           {t("scada.diag.lab.xoaLoi")}
         </Button>
       </div>
+      <Dialog open={!!cho} onOpenChange={(o) => !o && !dat.isPending && dongHop()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {cho ? t(cho.kieu === "apDung" ? "scada.diag.lab.dialogApDungTieuDe" : "scada.diag.lab.dialogXoaLoiTieuDe", { code }) : ""}
+            </DialogTitle>
+            <DialogDescription>{t("scada.diag.lab.dialogMoTa")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1">
+            <Label htmlFor="scada-lab-ly-do">{t("scada.diag.dialog.lyDo")}</Label>
+            <Textarea
+              id="scada-lab-ly-do"
+              rows={3}
+              maxLength={LY_DO_TOI_DA}
+              value={lyDo}
+              onChange={(e) => setLyDo(e.target.value)}
+              autoFocus
+            />
+            {lyDoCat.length > 0 && !lyDoDu && (
+              <p className="text-xs text-destructive">{t("scada.diag.dialog.lyDoNgan", { min: LY_DO_TOI_THIEU })}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={dongHop} disabled={dat.isPending}>
+              {t("scada.diag.dialog.huy")}
+            </Button>
+            <Button onClick={gui} disabled={!lyDoDu || dat.isPending}>
+              {t("scada.diag.dialog.gui")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -256,7 +309,7 @@ export function NganTagAdapter({ hang, now, canAct, onDong }: NganTagAdapterProp
                 </Table>
               )}
               {mauDangXem && <MauTho adapterId={mauDangXem.adapterId} tagKey={mauDangXem.tagKey} />}
-              {canAct && hang.labStub && <KhoiLab adapterId={hang.adapterId} />}
+              {canAct && hang.labStub && <KhoiLab adapterId={hang.adapterId} code={hang.code} />}
             </div>
           </>
         )}

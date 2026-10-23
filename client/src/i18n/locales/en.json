@@ -23466,7 +23466,10 @@
         "apDung": "Apply fault",
         "xoaLoi": "Clear fault",
         "daDat": "Stub fault set",
-        "khongChay": "The stub is not running on the central server — the fault was not applied"
+        "khongChay": "The stub is not running on the central server — the fault was not applied",
+        "dialogApDungTieuDe": "Apply stub fault to {{code}}?",
+        "dialogXoaLoiTieuDe": "Clear stub fault on {{code}}?",
+        "dialogMoTa": "Lab action on a simulated adapter. The reason is recorded in the audit log."
       }
     }
   }

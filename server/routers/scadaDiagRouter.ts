@@ -354,10 +354,14 @@ export const scadaDiagRouter = router({
       return { daGo };
     }),
 
-  /** Lab (SCADA_LAB_ENABLED): đặt lỗi mô phỏng cho stub ĐANG CHẠY của adapter (`{}` = hết lỗi). Chỉ protocol `stub`. */
+  /**
+   * Lab (SCADA_LAB_ENABLED): đặt lỗi mô phỏng cho stub ĐANG CHẠY của adapter (`{}` = hết lỗi). Chỉ protocol `stub`.
+   * final M2 — `lyDo` bắt buộc (5..300) như ketNoiLai/tamTat, ghi vào audit. Audit ghi SAU khi áp lỗi (chấp nhận cho R0): insert audit
+   * hỏng ⇒ lỗi Lab đã áp mà không có dòng audit (lỗi được log/ném ra người gọi).
+   */
   datLoiStub: kySuProcedure
     .use(requirePermission("machine_control", "canEdit"))
-    .input(z.object({ adapterId: adapterIdInput, loi: loiStubInput }))
+    .input(z.object({ adapterId: adapterIdInput, loi: loiStubInput, lyDo: lyDoInput }))
     .mutation(async ({ ctx, input }) => {
       if (process.env.SCADA_LAB_ENABLED !== "true") {
         throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "scadaLab" }, "Chế độ Lab tắt (SCADA_LAB_ENABLED).");
@@ -390,7 +394,7 @@ export const scadaDiagRouter = router({
         actorId: ctx.user.id,
         before: null,
         after: { loi: input.loi, apDung: !!stub },
-        reason: null,
+        reason: input.lyDo,
       });
       return { apDung: !!stub };
     }),

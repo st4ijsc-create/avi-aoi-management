@@ -23440,7 +23440,10 @@
         "apDung": "Áp dụng lỗi",
         "xoaLoi": "Xoá lỗi",
         "daDat": "Đã đặt lỗi stub",
-        "khongChay": "Stub chưa chạy ở trung tâm — lỗi chưa được áp"
+        "khongChay": "Stub chưa chạy ở trung tâm — lỗi chưa được áp",
+        "dialogApDungTieuDe": "Đặt lỗi stub cho {{code}}?",
+        "dialogXoaLoiTieuDe": "Xoá lỗi stub của {{code}}?",
+        "dialogMoTa": "Thao tác Lab trên adapter mô phỏng. Lý do được ghi vào audit."
       }
     }
   }

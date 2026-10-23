@@ -365,16 +365,46 @@ describe("ScadaDiag — Lab stub", () => {
     fireEvent.click(screen.getByText("AD-STUB"));
     expect(screen.queryByText(S("scada.diag.lab.tieuDe"))).toBeNull();
   });
-  it("labStub=true ⇒ khối Lab; bật 'mất kết nối' + áp dụng gửi datLoiStub {matKetNoi:true}; 'Xoá lỗi' gửi {}", () => {
+  // final M2 — đặt / xoá lỗi Lab đi qua hộp lý do (như Kết nối lại / Tạm tắt): lý do < 5 ký tự ⇒ nút gửi khoá; gửi kèm `lyDo` đã cắt.
+  const hopLab = (kieu: "apDung" | "xoaLoi") =>
+    screen.getByRole("dialog", { name: S(kieu === "apDung" ? "scada.diag.lab.dialogApDungTieuDe" : "scada.diag.lab.dialogXoaLoiTieuDe", { code: "AD-STUB" }) });
+  it("labStub=true ⇒ khối Lab; bật 'mất kết nối' + áp dụng ⇒ hộp lý do ⇒ gửi datLoiStub {matKetNoi:true, lyDo}; 'Xoá lỗi' ⇒ hộp ⇒ gửi {} + lyDo", () => {
     srv.rows = [stub(true)];
     render(<ScadaDiag />);
     fireEvent.click(screen.getByText("AD-STUB"));
     expect(screen.getByText(S("scada.diag.lab.tieuDe"))).toBeInTheDocument();
     fireEvent.click(screen.getByRole("switch", { name: S("scada.diag.lab.matKetNoi") }));
     fireEvent.click(screen.getByRole("button", { name: S("scada.diag.lab.apDung") }));
-    expect(srv.mutCalls.at(-1)).toEqual({ proc: "datLoiStub", vars: { adapterId: 1, loi: { matKetNoi: true } } });
+    expect(srv.mutCalls).toEqual([]); // chưa gửi khi chưa có lý do
+    let dlg = hopLab("apDung");
+    const gui = within(dlg).getByRole("button", { name: S("scada.diag.dialog.gui") });
+    const o = within(dlg).getByLabelText(S("scada.diag.dialog.lyDo")) as HTMLTextAreaElement;
+    fireEvent.change(o, { target: { value: "abc" } });
+    expect(gui).toBeDisabled();
+    expect(within(dlg).getByText(S("scada.diag.dialog.lyDoNgan", { min: 5 }))).toBeInTheDocument();
+    fireEvent.change(o, { target: { value: "  mô phỏng rút cáp  " } });
+    expect(gui).toBeEnabled();
+    fireEvent.click(gui);
+    expect(srv.mutCalls.at(-1)).toEqual({ proc: "datLoiStub", vars: { adapterId: 1, loi: { matKetNoi: true }, lyDo: "mô phỏng rút cáp" } });
+    act(() => srv.mutOpts.datLoiStub.onSuccess?.({ apDung: true }));
+    expect(screen.queryByRole("dialog", { name: S("scada.diag.lab.dialogApDungTieuDe", { code: "AD-STUB" }) })).toBeNull();
+
     fireEvent.click(screen.getByRole("button", { name: S("scada.diag.lab.xoaLoi") }));
-    expect(srv.mutCalls.at(-1)).toEqual({ proc: "datLoiStub", vars: { adapterId: 1, loi: {} } });
+    dlg = hopLab("xoaLoi");
+    fireEvent.change(within(dlg).getByLabelText(S("scada.diag.dialog.lyDo")), { target: { value: "gỡ lỗi mô phỏng" } });
+    fireEvent.click(within(dlg).getByRole("button", { name: S("scada.diag.dialog.gui") }));
+    expect(srv.mutCalls.at(-1)).toEqual({ proc: "datLoiStub", vars: { adapterId: 1, loi: {}, lyDo: "gỡ lỗi mô phỏng" } });
+    expect(srv.mutCalls).toHaveLength(2);
+  });
+  it("hộp lý do Lab: Huỷ ⇒ không gửi gì", () => {
+    srv.rows = [stub(true)];
+    render(<ScadaDiag />);
+    fireEvent.click(screen.getByText("AD-STUB"));
+    fireEvent.click(screen.getByRole("button", { name: S("scada.diag.lab.apDung") }));
+    const dlg = hopLab("apDung");
+    fireEvent.change(within(dlg).getByLabelText(S("scada.diag.dialog.lyDo")), { target: { value: "lý do đủ dài" } });
+    fireEvent.click(within(dlg).getByRole("button", { name: S("scada.diag.dialog.huy") }));
+    expect(srv.mutCalls).toEqual([]);
   });
   it("operator không thấy khối Lab dù labStub=true", () => {
     who.role = "operator";

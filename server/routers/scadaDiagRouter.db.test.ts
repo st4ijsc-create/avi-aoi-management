@@ -356,7 +356,7 @@ describe("scadaDiag.ketNoiLai", () => {
 describe("scadaDiag.datLoiStub (Lab)", () => {
   it("cờ SCADA_LAB_ENABLED tắt ⇒ lỗi, không đổi gì", async () => {
     vi.stubEnv("SCADA_LAB_ENABLED", "false");
-    const e = await loiCua(engA.datLoiStub({ adapterId: ad.a, loi: { matKetNoi: true } }));
+    const e = await loiCua(engA.datLoiStub({ adapterId: ad.a, loi: { matKetNoi: true }, lyDo: "thử đặt lỗi lab" }));
     expect(e.appCode).toBe("FEATURE_DISABLED");
     expect((await dongCua(engA, ad.a))?.trangThai).toBe("connected");
   });
@@ -364,11 +364,17 @@ describe("scadaDiag.datLoiStub (Lab)", () => {
   it("cờ bật ⇒ stub mất kết nối và ≤ 5 s danhSach báo 'lost'; tag thành 'xấu'; gỡ lỗi ⇒ connected lại", async () => {
     vi.stubEnv("SCADA_LAB_ENABLED", "true");
     try {
-      expect((await loiCua(operatorA.datLoiStub({ adapterId: ad.a, loi: { matKetNoi: true } }))).code).toBe("FORBIDDEN");
-      expect((await loiCua(engA.datLoiStub({ adapterId: ad.b, loi: { matKetNoi: true } }))).code).toBe("NOT_FOUND");
+      expect((await loiCua(operatorA.datLoiStub({ adapterId: ad.a, loi: { matKetNoi: true }, lyDo: "thử đặt lỗi lab" }))).code).toBe("FORBIDDEN");
+      expect((await loiCua(engA.datLoiStub({ adapterId: ad.b, loi: { matKetNoi: true }, lyDo: "thử đặt lỗi lab" }))).code).toBe("NOT_FOUND");
       const truoc = await soAudit(ad.a, "scada_dat_loi_stub");
+      // final M2 — lý do BẮT BUỘC (5..300) như ketNoiLai/tamTat: thiếu / quá ngắn / quá dài ⇒ BAD_REQUEST, không đặt lỗi, không audit
+      expect((await loiCua(engA.datLoiStub({ adapterId: ad.a, loi: { matKetNoi: true } } as never))).code).toBe("BAD_REQUEST");
+      expect((await loiCua(engA.datLoiStub({ adapterId: ad.a, loi: { matKetNoi: true }, lyDo: "abc" }))).code).toBe("BAD_REQUEST");
+      expect((await loiCua(engA.datLoiStub({ adapterId: ad.a, loi: { matKetNoi: true }, lyDo: "x".repeat(301) }))).code).toBe("BAD_REQUEST");
+      expect(await soAudit(ad.a, "scada_dat_loi_stub")).toBe(truoc);
+      expect((await dongCua(viewerA, ad.a))?.trangThai).toBe("connected");
       const t0 = Date.now();
-      await expect(engA.datLoiStub({ adapterId: ad.a, loi: { matKetNoi: true } })).resolves.toMatchObject({ apDung: true });
+      await expect(engA.datLoiStub({ adapterId: ad.a, loi: { matKetNoi: true }, lyDo: "mô phỏng rút cáp" })).resolves.toMatchObject({ apDung: true });
       await vi.waitFor(async () => expect((await dongCua(viewerA, ad.a))?.trangThai).toBe("lost"), { timeout: 5_000, interval: 100 });
       expect(Date.now() - t0).toBeLessThanOrEqual(5_000);
       const r = (await dongCua(viewerA, ad.a))!;
@@ -378,9 +384,14 @@ describe("scadaDiag.datLoiStub (Lab)", () => {
       // adapter B không bị đụng
       expect((await dongCua(admin, ad.b))?.trangThai).toBe("connected");
 
-      await expect(engA.datLoiStub({ adapterId: ad.a, loi: {} })).resolves.toMatchObject({ apDung: true });
+      await expect(engA.datLoiStub({ adapterId: ad.a, loi: {}, lyDo: "gỡ lỗi mô phỏng" })).resolves.toMatchObject({ apDung: true });
       await vi.waitFor(async () => expect((await dongCua(viewerA, ad.a))?.trangThai).toBe("connected"), { timeout: 5_000, interval: 100 });
       expect(await soAudit(ad.a, "scada_dat_loi_stub")).toBe(truoc + 2);
+      // final M2 — lý do vào audit (cột reason), cùng người làm
+      const dongAudit = await dung(
+        sql`SELECT reason, "actorId" FROM control_audit_log WHERE "entityType" = 'device_adapter' AND "entityId" = ${String(ad.a)} AND action = 'scada_dat_loi_stub' ORDER BY id DESC LIMIT 2`,
+      );
+      expect(dongAudit.map((d) => d.reason)).toEqual(["gỡ lỗi mô phỏng", "mô phỏng rút cáp"]);
     } finally {
       vi.stubEnv("SCADA_LAB_ENABLED", "false");
     }
