@@ -686,29 +686,71 @@ Cổng (hàng R1 của báo cáo + ô 8 do điều phối thêm 2026-10-24): m�
 
 ### Task 16: Bộ đếm TOTP sai theo người dùng (khoá 5 phút) — điều phối 2026-10-24, chạy SAU Task 13, TRƯỚC Task 14/15
 
-Lý do: từ R1a mã TOTP canh lệnh tác động vật lý mức 4–5; hiện mã sai chỉ bị giới hạn bởi bộ giới hạn chung  300/phút/phiên.
+Lý do: từ R1a, mã TOTP canh các lệnh tác động vật lý mức 4–5. Hiện mã sai chỉ bị chặn bởi bộ giới hạn chung `/api/` (300 lần/phút/phiên).
 
 **Files:**
-- Create: , , - Modify:  ( ~:350),  (bảng mới),  (mã mới), các bên gọi  ( ×4,  ~:410/:440,  ) để hiện mã khoá; i18n vi/en/zh
-- Test: 
+- Create: `drizzle/0432_totp_khoa_sai.sql`, `scripts/apply-migration-0432.mjs`, `server/_core/totpKhoaSai.ts`
+- Modify:
+  - `server/_core/totpOnce.ts` (`verifyTotpOnce` ~:350)
+  - `drizzle/schema/*` (bảng mới)
+  - `server/_core/xacThucTheoMuc.ts` (mã mới)
+  - các bên gọi `verifyTotpOnce`, để hiện mã khoá: `server/routers/twoFactorRouter.ts` (×4), `server/routers/userRouters.ts` (~:410/:440), `server/_core/trpc.ts` (`verifyFreshTotp`)
+  - i18n vi/en/zh
+- Test: `server/_core/totpKhoaSai.db.test.ts`
+
 **Interfaces:**
-- Produces: bảng ; hằng , , ; mã từ chối  kèm ;  thêm .
+- Produces:
+  - bảng `totp_khoa_sai (user_id integer PRIMARY KEY, so_lan_sai integer NOT NULL, cua_so_bat_dau timestamptz NOT NULL, khoa_den timestamptz NULL, updated_at timestamptz NOT NULL DEFAULT now())`
+  - hằng `SO_LAN_SAI_TOI_DA = 5`, `CUA_SO_SAI_MS = 300_000`, `THOI_GIAN_KHOA_MS = 300_000`
+  - mã từ chối `TOTP_TAM_KHOA` kèm `conLaiMs`; mã `TOTP_KHONG_KIEM_DUOC` khi lỗi bộ đếm
+  - `kiemXacThucTheoMuc` thêm hai kết quả: `{ ok:false; ma:"TOTP_TAM_KHOA"; conLaiMs:number }` và `{ ok:false; ma:"TOTP_KHONG_KIEM_DUOC" }`
 
 Chốt:
-- **Nơi đặt:** trong  (dùng chung cho MỌI bên gọi: đăng nhập 2FA, đăng ký/tắt 2FA, deploy, actuation, SCADA).
-- **Lưu trữ:** CHỈ DB (ruling: bộ đệm Redis + DB dự phòng = hai nguồn có thể lệch; DB một nguồn, upsert nguyên tử, sống qua restart và nhiều tiến trình). Không RAM.
-- **Trình tự:** (1) đọc khoá của :  ⇒ trả  +  NGAY, **không** kiểm mã, **không** tiêu mã (mã đúng khi đang khoá vẫn bị từ chối); (2) kiểm mã như cũ; (3) sai ⇒ một câu upsert nguyên tử: cửa sổ quá 5 phút ⇒ đặt lại ; còn trong cửa sổ ⇒ ; đạt 5 ⇒ ; (4) đúng (ngoài khoá) ⇒ xoá hàng.
-- **Fail-closed:** lỗi đọc/ghi bộ đếm ⇒ từ chối (mã ), KHÔNG bao giờ "không giới hạn".
-- **Audit:** ghi  (hoặc nhật ký bảo mật hiện có cho đăng nhập 2FA — theo mẫu của ) cho lần sai THỨ 5 (bắt đầu khoá) và cho MỖI lần bị từ chối vì đang khoá; không ghi mã.
-- **Đường hiển thị:** đăng nhập 2FA và các bên gọi hiện có trả lỗi có mã + thời gian còn lại (i18n); M5 (Task 14) hiện "Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau {phút} phút".
-- Migration 0432: ADD-only,  cần  (mặc định) — verify quyền; gửi SQL cho điều phối như 0431, áp DEV khi được "áp".
+- **Nơi đặt:** trong `verifyTotpOnce`, dùng chung cho MỌI bên gọi: đăng nhập 2FA, đăng ký/tắt 2FA, deploy, actuation, SCADA.
+- **Lưu trữ:** CHỈ trong DB, không RAM, không Redis.
+  - Ruling: Redis kèm DB dự phòng là hai nguồn có thể lệch nhau.
+  - Một bảng DB với upsert nguyên tử sống được qua restart và qua nhiều tiến trình.
+- **Trình tự:**
+  1. Đọc khoá của `userId`. Nếu `khoa_den > now`, trả ngay `TOTP_TAM_KHOA` kèm `conLaiMs`. **Không** kiểm mã, **không** tiêu mã: mã đúng khi đang khoá vẫn bị từ chối.
+  2. Kiểm mã như cũ.
+  3. Mã sai ⇒ một câu upsert nguyên tử:
+     - cửa sổ đã quá 5 phút ⇒ đặt `so_lan_sai = 1`, `cua_so_bat_dau = now`;
+     - còn trong cửa sổ ⇒ `so_lan_sai + 1`;
+     - đạt 5 ⇒ `khoa_den = now + 5 phút`.
+  4. Mã đúng (không đang khoá) ⇒ xoá hàng.
+- **Fail-closed:** lỗi đọc hoặc ghi bộ đếm ⇒ từ chối với `TOTP_KHONG_KIEM_DUOC`. KHÔNG bao giờ rơi về "không giới hạn".
+- **Audit:**
+  - Ghi cho lần sai THỨ 5 (lúc bắt đầu khoá), và cho MỖI lần bị từ chối vì đang khoá.
+  - Dùng `recordAuditEvent`, hoặc nhật ký bảo mật mà đăng nhập 2FA đang dùng (theo mẫu của `userRouters`).
+  - Không ghi mã.
+- **Hiển thị:**
+  - Đăng nhập 2FA và các bên gọi hiện có trả lỗi có mã kèm thời gian còn lại (i18n).
+  - M5 (Task 14) hiện "Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau {phút} phút".
+- **Migration 0432:** chỉ thêm. `avi_app` cần `arwd`, quyền mặc định đã cho; vẫn verify quyền. Gửi SQL cho điều phối như 0431; áp DEV khi được trả lời "áp".
 
-- [ ] **Step 1: Migration 0432** (TEST): SQL + script verify (a) bảng/PK (b) avi_app SELECT/INSERT/UPDATE/DELETE = true (c) sổ migration. Đột biến verify. **Không áp DEV.**
-- [ ] **Step 2: Test đỏ (DB):** sai 5 lần ⇒ lần 6 với mã ĐÚNG ⇒  (mã không bị tiêu: dùng được sau khi hết khoá nếu còn trong cửa sổ TOTP — hoặc dùng mã mới); hết 5 phút (đồng hồ giả) ⇒ mã đúng qua, hàng bị xoá; 2 người dùng độc lập; sai 4 lần rồi đúng ⇒ hàng bị xoá; sai rải rác quá 5 phút ⇒ không khoá; lỗi DB bộ đếm ⇒ từ chối; audit có đúng 1 dòng cho lần sai thứ 5 và 1 dòng mỗi lần bị từ chối vì khoá; hai lần sai đồng thời đếm đúng 2 (upsert nguyên tử).
-- [ ] **Step 3: Cài.** Cập nhật  + các bên gọi; i18n.
-- [ ] **Step 4: Chạy lại** + bộ hồi quy step-up/TOTP/đăng nhập 2FA (, , ) +  + .
-- [ ] **Step 5: Đột biến:** bỏ kiểm khoá ⇒ ca lần 6 đỏ; bỏ reset cửa sổ ⇒ ca rải rác đỏ. Hoàn tác.
-- [ ] **Step 6: Commit** .
+- [ ] **Step 1: Migration 0432 trên TEST.** Viết SQL và script verify:
+  - (a) bảng và PK;
+  - (b) `avi_app` có SELECT/INSERT/UPDATE/DELETE = true;
+  - (c) sổ migration.
+
+  Chạy đột biến verify. **Không áp DEV.**
+- [ ] **Step 2: Test đỏ (DB):**
+  - sai 5 lần, lần 6 với mã ĐÚNG ⇒ `TOTP_TAM_KHOA`;
+  - hết 5 phút (đồng hồ giả) ⇒ mã đúng qua, hàng bị xoá;
+  - 2 người dùng độc lập;
+  - sai 4 lần rồi đúng ⇒ hàng bị xoá;
+  - các lần sai cách nhau quá 5 phút ⇒ không khoá;
+  - lỗi DB ở bộ đếm ⇒ từ chối;
+  - audit đúng 1 dòng cho lần sai thứ 5, và 1 dòng cho mỗi lần bị từ chối vì khoá;
+  - hai lần sai đồng thời đếm đúng 2 (upsert nguyên tử).
+- [ ] **Step 3: Cài.** Cập nhật `kiemXacThucTheoMuc` và các bên gọi; thêm i18n.
+- [ ] **Step 4: Chạy lại** cùng bộ hồi quy step-up/TOTP/đăng nhập 2FA (`server/_core`, `server/routers/twoFactor*`, `server/routers/user*`), `npm run check` và `npm run i18n:check`.
+- [ ] **Step 5: Đột biến:**
+  - bỏ kiểm khoá ⇒ ca lần 6 đỏ;
+  - bỏ reset cửa sổ ⇒ ca sai rải rác đỏ.
+
+  Hoàn tác cả hai.
+- [ ] **Step 6: Commit** `feat(auth): bo dem TOTP sai theo nguoi dung - 5 lan/5 phut khoa 5 phut, luu DB, fail-closed, audit (R1a T16)`.
 
 ---
 
