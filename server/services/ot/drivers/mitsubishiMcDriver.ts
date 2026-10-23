@@ -73,12 +73,15 @@ import type {
   OtWrite,
   OtHealth,
   OnOtSample,
+  TuyChonVongPoll,
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseMcAddress, coerceMcValue } from "./mcAddress";
 import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { boundedClose, withDeadline } from "./boundedClose";
+import { taoVongPoll } from "../vongPoll";
+import { chatLuongLoiChung, chatLuongV2Bat } from "../chatLuong";
 
 /** Ép raw (đã inverse scale) sang kiểu mcprotocol chấp nhận theo dataType. */
 function coerceMcWrite(raw: unknown, dataType: string): number | boolean | string {
@@ -353,33 +356,56 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     }
     if (tags.length === 0) return [];
 
+    // SCADA R0 (C2) — sau cờ: địa chỉ sai của MỘT tag ⇒ chỉ tag đó bad/config_error, tag khác vẫn đọc.
+    // Cờ tắt: địa chỉ sai ném cả lô như cũ.
+    const v2 = chatLuongV2Bat();
     const addrByKey = new Map<string, string>();
+    const loiDiaChi = new Map<string, OtSample>();
     for (const t of tags) {
-      addrByKey.set(t.tagKey, parseMcAddress(t.address).mc);
+      try {
+        addrByKey.set(t.tagKey, parseMcAddress(t.address).mc);
+      } catch (e) {
+        if (!v2) throw e;
+        loiDiaChi.set(t.tagKey, {
+          tagKey: t.tagKey,
+          raw: null,
+          value: null,
+          quality: "bad",
+          timestamp: new Date(),
+          tsSource: "server",
+          statusCode: "invalid_address",
+          reason: "config_error",
+        });
+      }
     }
     this.conn.setTranslationCB((tag: string) => addrByKey.get(tag));
 
-    const keys = tags.map((t) => t.tagKey);
-    this.conn.removeItems();
-    this.conn.addItems(keys);
+    let values: Record<string, unknown> = {};
+    if (addrByKey.size > 0) {
+      const keys = tags.filter((t) => addrByKey.has(t.tagKey)).map((t) => t.tagKey);
+      this.conn.removeItems();
+      this.conn.addItems(keys);
 
-    const t0 = Date.now();
-    // doc 81 Đợt 1B Task 1 — readAllItems có thể không bao giờ gọi lại (lib tự thử lại mỗi
-    // 100 ms khi còn gói chưa xong) ⇒ đọc CÓ HẠN; lib tự timeout gói sau globalTimeout 4500 ms.
-    const values: Record<string, unknown> = await withDeadline(
-      new Promise<Record<string, unknown>>((resolve, reject) => {
-        this.conn.readAllItems((_anythingBad: boolean, vals: Record<string, unknown>) => {
-          if (vals && typeof vals === "object") resolve(vals);
-          else reject(new Error("MitsubishiMcDriver: readAllItems returned no values"));
-        });
-      }),
-      Math.max(this.timeoutMs, 4500) + 1000,
-      "mc readAllItems",
-    );
-    this.lastLatencyMs = Date.now() - t0;
-    this.lastOkAt = new Date();
+      const t0 = Date.now();
+      // doc 81 Đợt 1B Task 1 — readAllItems có thể không bao giờ gọi lại (lib tự thử lại mỗi
+      // 100 ms khi còn gói chưa xong) ⇒ đọc CÓ HẠN; lib tự timeout gói sau globalTimeout 4500 ms.
+      values = await withDeadline(
+        new Promise<Record<string, unknown>>((resolve, reject) => {
+          this.conn.readAllItems((_anythingBad: boolean, vals: Record<string, unknown>) => {
+            if (vals && typeof vals === "object") resolve(vals);
+            else reject(new Error("MitsubishiMcDriver: readAllItems returned no values"));
+          });
+        }),
+        Math.max(this.timeoutMs, 4500) + 1000,
+        "mc readAllItems",
+      );
+      this.lastLatencyMs = Date.now() - t0;
+      this.lastOkAt = new Date();
+    }
 
     return tags.map((tag) => {
+      const loi = loiDiaChi.get(tag.tagKey);
+      if (loi) return loi;
       const raw = values[tag.tagKey];
       const co = coerceMcValue(raw, tag.dataType);
 
@@ -406,34 +432,29 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     tags: OtTagAddress[],
     onSample: OnOtSample,
     intervalMs = 5000,
+    tuyChon?: TuyChonVongPoll,
   ): Promise<OtSubscriptionHandle> {
     if (!this.connected) throw new DeviceUnreachableError("mitsubishi-mc");
 
-    const tick = async () => {
-      try {
-        const samples = await this.readTags(tags);
-        for (const s of samples) {
-          try {
-            await onSample(s);
-          } catch {
-            // bỏ qua lỗi callback từng mẫu
-          }
+    // SCADA R0 — vòng poll DÙNG CHUNG (chống chồng tick, hạn đọc, mẫu xấu một lần khi mất liên lạc sau cờ).
+    return taoVongPoll({
+      tags,
+      intervalMs,
+      deadlineMs: tuyChon?.deadlineMs,
+      doc: async (t) => {
+        try {
+          return await this.readTags(t);
+        } catch (e) {
+          this.lastError = (e as Error)?.message || String(e);
+          throw e;
         }
-      } catch (e) {
-        this.lastError = (e as Error)?.message || String(e);
-      }
-    };
-
-    const timer = setInterval(() => void tick(), intervalMs > 0 ? intervalMs : 5000);
-    if (typeof (timer as NodeJS.Timeout).unref === "function") {
-      (timer as NodeJS.Timeout).unref();
-    }
-
-    return {
-      close: async () => {
-        clearInterval(timer);
       },
-    };
+      onSample,
+      onTick: tuyChon?.onTick,
+      phanLoiLoi: chatLuongLoiChung,
+      chatLuongV2: chatLuongV2Bat(),
+      nhan: "mc",
+    });
   }
 
   /**

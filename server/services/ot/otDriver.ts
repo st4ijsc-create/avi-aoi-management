@@ -13,6 +13,16 @@ export type OtDataType = "bool" | "int" | "float" | "string" | "json";
 
 export type OtQuality = "good" | "bad" | "uncertain";
 
+/**
+ * SCADA R0 (C2) — VÌ SAO một mẫu không "good": phân loại thô để UI/cảnh báo/interlock không phải đoán từ chuỗi.
+ *   comm_lost    mất liên lạc với thiết bị (timeout, rớt kết nối, từ chối kết nối, không tới được)
+ *   device_error thiết bị trả lỗi/trạng thái không dùng được (Modbus exception 4/5/6/11, OPC UA Bad chung, Uncertain)
+ *   config_error cấu hình sai (địa chỉ/tag không tồn tại, mã exception 1/2/3, SLMP end code địa chỉ/thiết bị sai)
+ *   out_of_range giá trị ngoài dải kỹ thuật khai báo
+ *   stale        giá trị cũ quá hạn (không còn được làm mới)
+ */
+export type LyDoChatLuong = "comm_lost" | "device_error" | "config_error" | "out_of_range" | "stale";
+
 /** Một địa chỉ tag cần đọc/ghi trên thiết bị. */
 export interface OtTagAddress {
   tagKey: string;
@@ -42,11 +52,13 @@ export interface OtSample {
   quality: OtQuality;
   timestamp: Date;
   /**
-   * doc 81 Đợt 1B Task 12 — TUỲ CHỌN: mã trạng thái của giao thức khi mẫu `bad`
+   * doc 81 Đợt 1B Task 12 — TUỲ CHỌN: mã trạng thái của giao thức khi mẫu `bad` hoặc `uncertain`
    * (vd OPC UA "BadNodeIdUnknown (0x80340000)"), để một tag hỏng nói được vì sao mà không
    * kéo cả lô. Mẫu good không mang trường này (hình dạng cũ giữ nguyên).
    */
   statusCode?: string;
+  /** SCADA R0 (C2) — lý do thô khi mẫu không good. Mẫu good không mang trường này. */
+  reason?: LyDoChatLuong;
   /**
    * Đợt 1C Task 6 (R-1C-a) — nguồn mẫu khai giờ bằng chuỗi KHÔNG múi giờ (plugin sidecar). `timestamp`
    * khi đó chỉ là giờ nhận; `sampleToCanonical` chuyển cờ này sang bus ⇒ loại `ts_no_timezone`.
@@ -74,6 +86,28 @@ export interface OtConnectionConfig {
   endpoint: string;
   options?: Record<string, unknown>;
   timeoutMs?: number;
+}
+
+/**
+ * SCADA R0 (C1/C5) — một lần đọc của vòng poll, báo cho người nghe (tiêu thụ ở supervisor/trạng thái adapter).
+ * `timeout` = lần đọc bị cắt ở hạn `deadlineMs` (không phải lỗi giao thức); `ms` = thời gian thực tế.
+ */
+export interface SuKienDoc {
+  ok: boolean;
+  timeout: boolean;
+  ms: number;
+  /** Tick tốt: chất lượng từng tag (`reason` khi mẫu mang lý do). Tick lỗi: rỗng. */
+  tags: { tagKey: string; quality: OtQuality; reason?: LyDoChatLuong }[];
+  /** SCADA R0 T12 (D1) — chỉ tick lỗi (`ok:false`): phân loại lỗi của lần đọc (phanLoiLoi của driver). */
+  statusCode?: string;
+  reason?: LyDoChatLuong;
+}
+
+/** SCADA R0 — tuỳ chọn thêm cho vòng poll của driver (tham số 4 của subscribe). */
+export interface TuyChonVongPoll {
+  /** Hạn cứng cho MỘT lần đọc; quá hạn ⇒ coi là timeout. Không đặt ⇒ dùng timeout của kết nối. */
+  deadlineMs?: number;
+  onTick?: (e: SuKienDoc) => void;
 }
 
 /** Tay cầm của một subscription để đóng lại khi dừng. */
@@ -200,7 +234,12 @@ export interface OtDriver {
   disconnect(): Promise<void>;
   isConnected(): boolean;
   readTags(tags: OtTagAddress[]): Promise<OtSample[]>;
-  subscribe(tags: OtTagAddress[], onSample: OnOtSample, intervalMs?: number): Promise<OtSubscriptionHandle>;
+  subscribe(
+    tags: OtTagAddress[],
+    onSample: OnOtSample,
+    intervalMs?: number,
+    tuyChon?: TuyChonVongPoll,
+  ): Promise<OtSubscriptionHandle>;
   writeTags(writes: OtWrite[]): Promise<OtCommandResult[]>;
   health(): Promise<OtHealth>;
   // ── G1.1 — optional per-spec methods (mọi driver hiện có được giữ nguyên) ──

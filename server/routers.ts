@@ -144,6 +144,7 @@ import { aiSegmentationRouter } from "./routers/aiSegmentationRouter"; // B7: se
 import { aiVisionRouter } from "./routers/aiVisionRouter"; // P4-F: vision-close-loop (propose defect → HITL) + vision-router consolidation
 import { andonRouter } from "./routers/andonRouter"; // F5a: Andon (ALERT-ONLY)
 import { interlockRouter } from "./routers/interlockRouter"; // F5a: Interlock rules (ALERT-ONLY, no command path)
+import { scadaDiagRouter } from "./routers/scadaDiagRouter"; // SCADA R0 Task 10: M10 chan doan truyen thong (doc + ket noi lai / tam tat / Lab stub, co audit)
 import { deviceAdapterRouter } from "./routers/deviceAdapterRouter"; // G2.2a: OT adapter/tag CONFIG + read-only testConnection (no write path)
 import { mappingAsCodeRouter } from "./routers/mappingAsCodeRouter"; // W2-B3 (doc 44 G1.13): mapping-as-code — export/preview/apply YAML per-adapter (contracts/mappings, versioned trong Git)
 import { visionAdapterRouter } from "./routers/visionAdapterRouter"; // P1a: vendor-agnostic vision/inspection adapter ingest (VISION_ADAPTERS_ENABLED)
@@ -549,6 +550,7 @@ export const appRouter = router({
   // F5a — Andon + Interlock (ALERT-ONLY; engine has no command path)
   andon: andonRouter,
   interlock: interlockRouter,
+  scadaDiag: scadaDiagRouter, // SCADA R0 Task 10 (M10)
 
   // G2.2a — OT machine-control CONFIG + audit (config/query only; no write-to-device path)
   deviceAdapter: deviceAdapterRouter,

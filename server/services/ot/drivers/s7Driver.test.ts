@@ -38,6 +38,18 @@ describe("S7Driver (mocked nodes7)", () => {
     return conn;
   }
 
+  it("T12b fix round 1: connect lại trên cùng driver ⇒ phiên cũ bị dropConnection (không rò transport)", async () => {
+    const conn = mockNodeS7({ temp: 2, run: true });
+    const { S7Driver } = await import("./s7Driver");
+    const d = new S7Driver();
+    await d.connect({ endpoint: "127.0.0.1" });
+    expect(conn.dropConnection).toHaveBeenCalledTimes(0);
+    await d.connect({ endpoint: "127.0.0.1" });
+    expect(conn.dropConnection).toHaveBeenCalledTimes(1);
+    expect(d.isConnected()).toBe(true);
+    await d.disconnect();
+  });
+
   it("connect → readTags decode + scale/offset; disconnect", async () => {
     mockNodeS7({ temp: 2, run: true });
     const { S7Driver } = await import("./s7Driver");

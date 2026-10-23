@@ -45,7 +45,10 @@ import type {
   OtSubscriptionHandle,
   OnOtSample,
   OtProtocol,
+  TuyChonVongPoll,
 } from "./otDriver";
+import { chatLuongLoiChung } from "./chatLuong";
+import { khoangNoiLaiMs, taoDemTickHong, thoiGianOnDinhMs } from "./reconnectNhanh";
 import { withDeadline } from "./drivers/boundedClose";
 
 /**
@@ -159,6 +162,22 @@ export interface SupervisorOptions {
    * (đi endpoint kế / backoff); nếu connect rốt cuộc xong MUỘN, kết nối muộn bị hạ ngay.
    */
   connectTimeoutMs?: number;
+  /**
+   * SCADA R0 Task 5 (C1 ở supervisor, C3) — gọi (đồng bộ, sau khi trạng thái đã đổi) mỗi lần chuyển trạng thái THẬT, kèm
+   * lỗi gần nhất (+ `statusCode` ngắn của lỗi đó theo chatLuongLoiChung khi có đối tượng lỗi; null = không biết). Callback ném ⇒
+   * bị nuốt (không bao giờ ảnh hưởng vòng kết nối). `stopped` là trạng thái CUỐI: không bao giờ có chuyển tiếp rời nó.
+   */
+  onStateChange?: (prev: SupervisorState, next: SupervisorState, lastError: string | null, statusCode?: string | null) => void;
+  /** SCADA R0 Task 6 — tham số thứ 4 của driver.subscribe() (hạn đọc + onTick). Không đặt ⇒ driver dùng mặc định. */
+  tuyChon?: TuyChonVongPoll;
+  /** SCADA R0 Task 6 (C8) — gọi sau MỖI lần thử nối một endpoint (ok = nối + subscribe thành công). Ném ⇒ bị nuốt. */
+  onConnectAttempt?: (ok: boolean) => void;
+  /**
+   * SCADA R0 T12 (D1) — số tick poll HỎNG liên tiếp (laTickHong: timeout / comm_lost cả tick) của phiên ĐANG HOẠT ĐỘNG ⇒ coi như mất
+   * liên kết (onActiveLost: `reconnecting` ⇒ host báo lost; hạ phiên; nối lại). Bắt liên kết TREO mà isConnected() không thấy. Không
+   * đặt / ≤ 0 ⇒ tắt (hành vi cũ). Tick của phiên đã bị thay bị bỏ qua. Dạng hàm ⇒ đọc lại MỖI lần subscribe (host gắn cờ vào đây).
+   */
+  soTickHongDeMat?: number | (() => number);
 }
 
 /** Snapshot of a supervisor for an internal health getter (future health endpoint). */
@@ -268,8 +287,20 @@ export class ConnectionSupervisor {
   private consecutiveFailures = 0;
   private samplesForwarded = 0;
   private lastError: string | null = null;
+  /** statusCode ngắn (chatLuongLoiChung) của lỗi gần nhất khi có đối tượng lỗi; null = không biết (báo "comm_lost"). */
+  private lastStatusCode: string | null = null;
   private lastConnectedAt: number | null = null;
+  /** SCADA R0 — Date.now() lúc lần nối LẠI (không phải lần đầu) gần nhất thành công; null khi liên kết đã ổn định/chưa nối lại. */
+  private reconnectedAt: number | null = null;
   private lastStateChangeAt: number = Date.now();
+  private readonly onStateChange: SupervisorOptions["onStateChange"] | null;
+  private readonly tuyChon: TuyChonVongPoll | undefined;
+  private readonly onConnectAttempt: SupervisorOptions["onConnectAttempt"] | null;
+  /** T12 D1 — ngưỡng tick hỏng liên tiếp (≤ 0 = tắt); hàm ⇒ đọc lại mỗi phiên. */
+  private readonly soTickHongDeMat: number | (() => number);
+  /** T12 D1 — số thứ tự phiên subscribe (tăng mỗi lần connectAndSubscribe) và phiên đang là activeHandle (0 = không có). */
+  private demPhien = 0;
+  private phienHoatDong = 0;
 
   constructor(opts: SupervisorOptions) {
     this.adapterId = opts.adapterId;
@@ -293,6 +324,10 @@ export class ConnectionSupervisor {
       Math.floor(opts.linkLossFailThreshold ?? linkLossThresholdFromEnv()),
     );
     this.machineId = opts.machineId ?? null;
+    this.onStateChange = opts.onStateChange ?? null;
+    this.tuyChon = opts.tuyChon;
+    this.onConnectAttempt = opts.onConnectAttempt ?? null;
+    this.soTickHongDeMat = opts.soTickHongDeMat ?? 0;
     this.disconnectTimeoutMs =
       typeof opts.disconnectTimeoutMs === "number" && opts.disconnectTimeoutMs > 0
         ? opts.disconnectTimeoutMs
@@ -434,6 +469,7 @@ export class ConnectionSupervisor {
     this.cycleRunning = true;
     try {
       this.lastError = reason;
+      this.lastStatusCode = null;
       this.setState("reconnecting");
       const h = this.activeHandle;
       this.activeHandle = null;
@@ -453,7 +489,7 @@ export class ConnectionSupervisor {
       try {
         await this.connectAndSubscribe(ep, left());
       } catch (err) {
-        this.failResetCycle(errMsg(err));
+        this.failResetCycle(errMsg(err), chatLuongLoiChung(err).statusCode);
         void this.safeDisconnect(ep); // bounded on its own; never on the caller's budget
         return false;
       }
@@ -478,8 +514,9 @@ export class ConnectionSupervisor {
   }
 
   /** B3 — a reset that did not reconnect: honest state + the normal backoff retry (which may fail over). */
-  private failResetCycle(error: string): void {
+  private failResetCycle(error: string, statusCode: string | null = null): void {
     this.lastError = error;
+    this.lastStatusCode = statusCode;
     this.consecutiveFailures += 1;
     this.setState("failed");
     this.scheduleRetry(this.nextBackoffDelay());
@@ -518,8 +555,18 @@ export class ConnectionSupervisor {
   private setState(next: SupervisorState): void {
     const prev = this.state;
     if (prev === next) return;
+    // 'stopped' là trạng thái CUỐI: một vòng nối/reset đang dở khi stop() chạy không được kéo nó về 'failed'/'reconnecting'.
+    if (prev === "stopped") return;
     this.state = next;
     this.lastStateChangeAt = Date.now();
+    if (next === "connected") this.lastStatusCode = null;
+    if (this.onStateChange) {
+      try {
+        this.onStateChange(prev, next, this.lastError, this.lastStatusCode);
+      } catch {
+        // callback của host không được làm hỏng vòng kết nối
+      }
+    }
     // doc 40 MON-F1 — đẩy presence CHỈ trên chuyển tiếp THẬT quanh 'connected':
     //   • vào 'connected'                → online
     //   • RỜI 'connected' sang state khác → offline
@@ -572,6 +619,11 @@ export class ConnectionSupervisor {
       if (this.stopped || this.state !== "connected") return;
       const ep = this.endpoints[this.activeIndex];
       if (!ep) return;
+      // Liên kết đã giữ vững đủ lâu sau lần nối ⇒ đợt mất kết thúc: bộ đếm thất bại về 0.
+      if (this.lastConnectedAt != null && Date.now() - this.lastConnectedAt >= thoiGianOnDinhMs(this.pollIntervalMs)) {
+        this.consecutiveFailures = 0;
+        this.reconnectedAt = null;
+      }
 
       // ── Tín hiệu CỨNG #1: driver báo isConnected()===false (event transport đã lật,
       // hoặc trạng thái lib thật đã đứt) → mất kết nối NGAY (không đợi ngưỡng). Đây là
@@ -596,6 +648,7 @@ export class ConnectionSupervisor {
         probeConnected = h.connected !== false;
       } catch (err) {
         this.lastError = errMsg(err);
+        this.lastStatusCode = chatLuongLoiChung(err).statusCode;
         probeThrew = true;
       }
       if (this.state !== "connected") return; // state có thể đã đổi trong lúc await
@@ -623,11 +676,31 @@ export class ConnectionSupervisor {
   }
 
   /** The active endpoint was detected down → promote standby / reconnect. */
-  private async onActiveLost(reason?: string): Promise<void> {
+  private async onActiveLost(reason?: string, statusCode?: string, haTransport = false): Promise<void> {
     if (this.stopped) return;
-    if (reason) this.lastError = reason;
+    if (reason) {
+      this.lastError = reason;
+      if (reason !== "health probe threw") this.lastStatusCode = null; // lỗi thật của probe đã ghi statusCode ngay trước đó
+    }
+    if (statusCode !== undefined) this.lastStatusCode = statusCode;
+    // Liên kết vừa được nối LẠI mà rớt trước khi ổn định ⇒ tính là một lần thất bại và CHỜ theo backoff (không nối ngay, nếu không
+    // vòng nối–rớt chạy mãi mỗi chu kỳ health). Liên kết ổn định (hoặc lần nối đầu) rớt ⇒ bộ đếm về 0, thử NGAY như trước.
+    const khongOnDinh = this.reconnectedAt != null && Date.now() - this.reconnectedAt < thoiGianOnDinhMs(this.pollIntervalMs);
+    if (khongOnDinh) this.consecutiveFailures += 1;
+    else {
+      this.consecutiveFailures = 0;
+      this.reconnectedAt = null;
+    }
     this.setState("reconnecting");
+    const epMat = this.endpoints[this.activeIndex];
     await this.closeActiveHandle();
+    // T12b fix round 1 — liên kết TREO (D1): driver vẫn tưởng còn nối (TCP nửa mở) ⇒ HẠ transport NGAY (có hạn), không để socket cũ
+    // sống tới lần thử kế (backoff) hay bị bỏ rơi khi driver thay transport mà không đóng cái cũ (rò socket, phản hồi muộn).
+    if (haTransport && epMat) await this.safeDisconnect(epMat);
+    if (khongOnDinh) {
+      this.scheduleRetry(this.nextBackoffDelay());
+      return;
+    }
     // preferOther=true → try the OTHER endpoint first (immediate hot-standby promote).
     await this.runReconnect(true);
   }
@@ -666,6 +739,7 @@ export class ConnectionSupervisor {
       this.attempts += 1;
       try {
         await this.connectAndSubscribe(ep);
+        this.baoLanThu(true);
         // doc 81 Đợt 1B Task 1 — stop() đã chạy trong lúc connect: KHÔNG sống lại; hạ ngay
         // kết nối muộn này (không để poll/socket rò sau khi tiến trình đã yêu cầu dừng).
         if (this.stopped) {
@@ -675,12 +749,16 @@ export class ConnectionSupervisor {
         }
         // ── success ──
         this.activeIndex = idx;
-        this.consecutiveFailures = 0;
+        // KHÔNG đặt consecutiveFailures = 0 ở đây: nối được rồi rớt ngay (thiết bị chấp nhận rồi đóng) phải làm backoff tích luỹ;
+        // bộ đếm chỉ về 0 khi liên kết giữ vững ≥ thoiGianOnDinhMs (healthTick) hoặc khi một liên kết ổn định rớt (onActiveLost).
         this.consecutiveProbeFailures = 0; // doc 40 OT-F1 — reset đếm probe-mềm sau khi nối lại
         this.lastError = null;
         this.lastConnectedAt = Date.now();
         const wasConnected = this.hasConnectedOnce;
-        if (wasConnected) this.reconnects += 1;
+        if (wasConnected) {
+          this.reconnects += 1;
+          this.reconnectedAt = Date.now();
+        }
         if (wasConnected && prevIndex >= 0 && prevIndex !== idx) {
           this.failovers += 1;
           // single-writer: drop the endpoint we just left (if still up).
@@ -690,7 +768,9 @@ export class ConnectionSupervisor {
         this.setState("connected");
         return true;
       } catch (err) {
+        this.baoLanThu(false);
         this.lastError = errMsg(err);
+        this.lastStatusCode = chatLuongLoiChung(err).statusCode;
         await this.safeDisconnect(ep);
         // try the next endpoint in this cycle
       }
@@ -700,6 +780,15 @@ export class ConnectionSupervisor {
     this.consecutiveFailures += 1;
     this.setState("failed");
     return false;
+  }
+
+  /** SCADA R0 Task 6 (C8) — báo kết quả một lần thử nối; người nghe ném không ảnh hưởng vòng kết nối. */
+  private baoLanThu(ok: boolean): void {
+    try {
+      this.onConnectAttempt?.(ok);
+    } catch {
+      // nuốt
+    }
   }
 
   /** Endpoint indices to try: primary-first, or standby-first when promoting. */
@@ -742,10 +831,12 @@ export class ConnectionSupervisor {
     }
     const connectMs = budgetMs == null ? deadlineMs : Math.max(1, deadlineMs - (Date.now() - t0));
 
+    const phien = ++this.demPhien;
+    const tuyChon = this.tuyChonChoPhien(phien);
     const work = (async (): Promise<OtSubscriptionHandle> => {
       await ep.driver.connect(ep.connection);
       try {
-        return await ep.driver.subscribe(this.tags, this.wrappedOnSample, this.pollIntervalMs);
+        return await ep.driver.subscribe(this.tags, this.wrappedOnSample, this.pollIntervalMs, tuyChon);
       } catch (err) {
         await this.safeDisconnect(ep);
         throw err;
@@ -763,9 +854,42 @@ export class ConnectionSupervisor {
       const handle = await withDeadline(work, connectMs, `supervisor ${this.code} ${ep.label} connect`);
       inTime = true;
       this.activeHandle = handle;
+      this.phienHoatDong = phien;
     } finally {
       if (!inTime && !workSettled) this.reapLateConnect(ep, work);
     }
+  }
+
+  /**
+   * SCADA R0 T12 (D1) — tuỳ chọn poll cho MỘT phiên: onTick của host + bộ đếm tick hỏng RIÊNG của phiên này. Tick hỏng thứ K chỉ tác
+   * động khi phiên VẪN là phiên hoạt động và supervisor đang 'connected' (không chồng lên vòng nối/reset đang chạy).
+   */
+  private tuyChonChoPhien(phien: number): TuyChonVongPoll | undefined {
+    let k = 0;
+    try {
+      const v = typeof this.soTickHongDeMat === "function" ? this.soTickHongDeMat() : this.soTickHongDeMat;
+      k = typeof v === "number" && v > 0 ? v : 0;
+    } catch {
+      k = 0;
+    }
+    if (k <= 0) return this.tuyChon;
+    const hostOnTick = this.tuyChon?.onTick;
+    const dem = taoDemTickHong(k, (e) => {
+      if (this.stopped || this.cycleRunning || this.state !== "connected" || phien !== this.phienHoatDong) return;
+      const sc = e.statusCode ?? (e.timeout ? "timeout" : "comm_lost");
+      void this.onActiveLost(`poll: ${k} consecutive failed ticks (${sc})`, sc, true);
+    });
+    return {
+      ...this.tuyChon,
+      onTick: (e) => {
+        try {
+          hostOnTick?.(e);
+        } catch {
+          // người nghe của host không được làm hỏng bộ đếm
+        }
+        dem(e);
+      },
+    };
   }
 
   /** Fix round 1 — hạn một lần nối endpoint: không ngắn hơn timeoutMs của chính endpoint + biên. */
@@ -808,6 +932,7 @@ export class ConnectionSupervisor {
   };
 
   private async closeActiveHandle(): Promise<void> {
+    this.phienHoatDong = 0;
     if (this.activeHandle) {
       const h = this.activeHandle;
       this.activeHandle = null;
@@ -836,8 +961,13 @@ export class ConnectionSupervisor {
 
   /** Exponential backoff with (equal-)jitter, bounded by maxMs. */
   private nextBackoffDelay(): number {
+    // SCADA R0: 10 lần đầu của đợt mất nối lại nhanh (≤ max(poll, 500) ms), sau đó backoff lũy thừa như cũ (reconnectNhanh.ts).
+    return khoangNoiLaiMs(this.consecutiveFailures, this.pollIntervalMs, (n) => this.expBackoffDelay(n));
+  }
+
+  private expBackoffDelay(failures: number): number {
     const { initialMs, maxMs, factor, jitter } = this.backoff;
-    const exp = Math.max(0, this.consecutiveFailures - 1);
+    const exp = Math.max(0, failures - 1);
     const raw = Math.min(maxMs, initialMs * Math.pow(factor, exp));
     const fixed = raw * (1 - jitter);
     const rand = raw * jitter * Math.random();

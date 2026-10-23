@@ -3,7 +3,8 @@
  *
  * Sinh giá trị xác định theo `tagKey` (sin + nhiễu nhẹ), áp scale/offset từ tag.
  * Dùng để E2E pipeline ingest → telemetry → (tuỳ chọn) UNS mà chưa cài driver thật.
- * writeTags là no-op trả ok:false ("write disabled in F1.1").
+ * SCADA R0 (C9) — stub CÓ KỊCH BẢN: `simDatLoi` (rớt kết nối / TREO (T12) / tag xấu / tag nghi ngờ / ép giá trị), `connectionOptions.simKichBan`
+ * (tự rớt rồi có lại theo thời gian) và writeTags ghi vào RAM (readTags trả lại giá trị đã ghi). Dùng cho nghiệm thu R0 và nút "Lab" (M10).
  */
 import type {
   OtProtocol,
@@ -16,9 +17,12 @@ import type {
   OtHealth,
   OnOtSample,
   ProgramChecksumResult,
+  TuyChonVongPoll,
 } from "../otDriver";
 import { createHash } from "node:crypto";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
+import { taoVongPoll } from "../vongPoll";
+import { chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
 
 /** Hash ổn định từ chuỗi để mỗi tagKey có pha riêng. */
 function hashString(s: string): number {
@@ -29,12 +33,68 @@ function hashString(s: string): number {
   return Math.abs(h);
 }
 
+/**
+ * SCADA R0 (C9) — lỗi mô phỏng đặt bằng `simDatLoi` (GHI ĐÈ toàn bộ; `{}` = hết lỗi).
+ * `giaTri` là giá trị kỹ thuật (đã qua scale/offset), ưu tiên hơn giá trị đã ghi RAM và hơn sóng sin.
+ */
+export interface LoiStub {
+  /** Rớt hẳn (cổng đóng / RST): isConnected false, đọc/nối ném ngay. */
+  matKetNoi?: boolean;
+  /**
+   * SCADA R0 T12 — TREO (cáp rút sau switch, PLC đóng băng; TCP nửa mở): isConnected VẪN true (không ai báo client), mọi giao dịch
+   * không được trả lời ⇒ ném lỗi QUÁ HẠN sau `timeoutMs` của kết nối; connect chờ tới `timeoutMs` rồi ném. Hết treo giữa lúc chờ ⇒
+   * giao dịch/connect đó xong bình thường (câu trả lời tới muộn).
+   */
+  treo?: boolean;
+  tagXau?: string[];
+  tagNghiNgo?: string[];
+  giaTri?: Record<string, number | boolean | string>;
+}
+
+/**
+ * T12b fix round 1 — lỗi QUÁ HẠN của một giao dịch/connect khi mô phỏng TREO. Cùng LỚP lỗi với `TransactionTimedOutError` của
+ * modbus-serial (tên có "Timeout"): `laLoiTimeout`/`laLoiHuyTickPoll` coi là quá hạn, KHÔNG phải lỗi mức liên kết — nên lưới stub đi đúng
+ * đường D3 (huỷ tick vì quá hạn) như driver thật.
+ */
+export class StubTimeoutError extends Error {
+  constructor(viec: "connect" | "transaction", ms: number) {
+    super(`stub (sim hang): ${viec} timed out after ${ms}ms`);
+    this.name = "TimeoutError";
+  }
+}
+
+/** Kịch bản theo thời gian (`connectionOptions.simKichBan`, đọc ở `connect`): mất từ `matKetNoiSauMs` (mặc định 0), kéo dài `matKetNoiTrongMs` (bỏ trống = mãi mãi). */
+interface KichBanStub {
+  matKetNoiSauMs?: number;
+  matKetNoiTrongMs?: number;
+}
+
+/** Các stub đang kết nối, theo endpoint (cho nút Lab của M10 và nghiệm thu). Gỡ khi `disconnect`. */
+const stubDangChay = new Map<string, StubDriver>();
+
+/** Instance stub đang kết nối ở `endpoint`; undefined nếu chưa `connect` hoặc đã `disconnect`. */
+export function layStubDangChay(endpoint: string): StubDriver | undefined {
+  return stubDangChay.get(endpoint);
+}
+
+function soHuuHan(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
+}
+
 export class StubDriver implements OtDriver {
   readonly protocol: OtProtocol = "stub";
 
   private connected = false;
   private connectedAt: Date | null = null;
   private lastError: string | undefined;
+  private endpoint: string | null = null;
+  /** SCADA R0 (C9) — lỗi mô phỏng hiện hành, giá trị ghi RAM, và cửa sổ mất kết nối theo thời gian [tu, den). */
+  private loi: LoiStub = {};
+  private readonly ram = new Map<string, number | boolean | string>();
+  private matTu: number | null = null;
+  private matDen = Number.POSITIVE_INFINITY;
+  /** T12 — hạn một giao dịch/connect khi mô phỏng TREO (`cfg.timeoutMs`, mặc định 5000 như driver thật). */
+  private timeoutMs = 5000;
   /**
    * doc 81 Đợt 8 task O1 — the program "loaded in" the simulated controller: `connectionOptions.simProgram` (a string) at
    * connect; null ⇔ no simulated program (the sim then reports supported:false, like a controller without the feature).
@@ -43,11 +103,64 @@ export class StubDriver implements OtDriver {
   private simProgramFault: "error" | "hang" | null = null;
 
   async connect(cfg: OtConnectionConfig): Promise<void> {
+    // SCADA R0 — đang mô phỏng mất kết nối (`simDatLoi({matKetNoi:true})` hoặc trong cửa sổ `simKichBan` của lần connect trước)
+    // thì nối lại KHÔNG thành công, như một thiết bị thật không với tới: tránh chập chờn connected↔reconnecting của supervisor.
+    // Kiểm TRƯỚC khi tính lại cửa sổ kịch bản (nối lại không được kéo dài/khởi động lại cửa sổ đang chạy).
+    if (this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
+    this.timeoutMs = typeof cfg?.timeoutMs === "number" && cfg.timeoutMs > 0 ? cfg.timeoutMs : 5000;
+    // T12 — đang TREO: không có SYN-ACK; chờ tới hạn (hết treo giữa chừng ⇒ nối được).
+    if (this.loi.treo && !(await this.choHetTreo())) throw new StubTimeoutError("connect", this.timeoutMs);
+    if (this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
     this.connected = true;
     this.connectedAt = new Date();
     this.lastError = undefined;
     const p = cfg?.options?.simProgram;
     this.simProgram = typeof p === "string" ? p : null;
+
+    // SCADA R0 (C9) — kịch bản tự rớt/có lại, tính theo đồng hồ (Date.now) từ lúc connect.
+    const kb = cfg?.options?.simKichBan as KichBanStub | undefined;
+    const sau = soHuuHan(kb?.matKetNoiSauMs);
+    const trong = soHuuHan(kb?.matKetNoiTrongMs);
+    if (kb && (sau !== undefined || trong !== undefined)) {
+      this.matTu = Date.now() + (sau ?? 0);
+      this.matDen = trong !== undefined ? this.matTu + trong : Number.POSITIVE_INFINITY;
+    } else {
+      this.matTu = null;
+      this.matDen = Number.POSITIVE_INFINITY;
+    }
+
+    if (this.endpoint !== null && this.endpoint !== cfg.endpoint && stubDangChay.get(this.endpoint) === this) {
+      stubDangChay.delete(this.endpoint);
+    }
+    this.endpoint = cfg.endpoint;
+    stubDangChay.set(cfg.endpoint, this);
+  }
+
+  /**
+   * SIM ONLY (C9) — đặt lỗi mô phỏng; GHI ĐÈ toàn bộ trạng thái lỗi trước đó (`{}` = hết lỗi). Giá trị đã ghi RAM
+   * (`writeTags`) KHÔNG bị xoá. Lỗi theo thời gian của `simKichBan` độc lập với hàm này.
+   */
+  simDatLoi(l: LoiStub): void {
+    this.loi = { ...l };
+  }
+
+  /** T12 — chờ tới khi hết TREO hoặc hết `timeoutMs`; true ⇔ hết treo trong hạn. */
+  private async choHetTreo(): Promise<boolean> {
+    const han = Date.now() + this.timeoutMs;
+    while (this.loi.treo) {
+      const con = han - Date.now();
+      if (con <= 0) return false;
+      await new Promise<void>((r) => setTimeout(r, Math.min(20, con)));
+    }
+    return true;
+  }
+
+  /** Đang mất kết nối mô phỏng (đặt tay hoặc trong cửa sổ kịch bản). */
+  private matKetNoiHieuLuc(): boolean {
+    if (this.loi.matKetNoi) return true;
+    if (this.matTu === null) return false;
+    const now = Date.now();
+    return now >= this.matTu && now < this.matDen;
   }
 
   /**
@@ -99,10 +212,15 @@ export class StubDriver implements OtDriver {
 
   async disconnect(): Promise<void> {
     this.connected = false;
+    // gỡ đăng ký CHỈ khi chính mình còn là instance đang chạy ở endpoint đó (connect mới cùng endpoint đã thay thế).
+    // Đang mô phỏng mất kết nối THỦ CÔNG (`simDatLoi({matKetNoi:true})`) thì GIỮ đăng ký: connect() ném trong lúc mất, nên nếu gỡ thì
+    // không ai tìm lại được instance để `simDatLoi({})` (nút Lab của M10); kết thúc lỗi/connect lại thì quay về quy tắc thường.
+    if (this.loi.matKetNoi || this.loi.treo) return;
+    if (this.endpoint !== null && stubDangChay.get(this.endpoint) === this) stubDangChay.delete(this.endpoint);
   }
 
   isConnected(): boolean {
-    return this.connected;
+    return this.connected && !this.matKetNoiHieuLuc();
   }
 
   /** Sinh một mẫu mô phỏng cho một tag, áp scale/offset. */
@@ -158,50 +276,113 @@ export class StubDriver implements OtDriver {
     };
   }
 
-  async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
-    if (!this.connected) throw new DeviceUnreachableError("stub");
-    return tags.map((t) => this.sampleFor(t));
-  }
-
-  async subscribe(tags: OtTagAddress[], onSample: OnOtSample, intervalMs = 5000): Promise<OtSubscriptionHandle> {
-    if (!this.connected) throw new DeviceUnreachableError("stub");
-
-    const tick = () => {
-      for (const t of tags) {
-        try {
-          void onSample(this.sampleFor(t));
-        } catch {
-          // bỏ qua lỗi callback từng tag để không sập poll loop
-        }
-      }
-    };
-
-    const timer = setInterval(tick, intervalMs > 0 ? intervalMs : 5000);
-    if (typeof (timer as NodeJS.Timeout).unref === "function") {
-      (timer as NodeJS.Timeout).unref();
+  /**
+   * Mẫu cho một tag có áp lỗi mô phỏng. Ưu tiên giá trị: `giaTri` > đã ghi RAM > sóng sin.
+   * tagXau ⇒ bad (không giá trị); tagNghiNgo ⇒ uncertain GIỮ giá trị. Áp dụng bất kể cờ OT_CHAT_LUONG_V2_ENABLED
+   * (là yêu cầu mô phỏng tường minh; cờ chỉ quyết định vòng poll có phát loạt mẫu xấu khi mất liên lạc hay không).
+   */
+  private mauCoLoi(tag: OtTagAddress): OtSample {
+    const sin = this.sampleFor(tag);
+    const ghi = this.loi.giaTri && tag.tagKey in this.loi.giaTri ? this.loi.giaTri[tag.tagKey] : this.ram.get(tag.tagKey);
+    const mau: OtSample = ghi === undefined ? sin : { ...sin, raw: ghi, value: ghi };
+    if (this.loi.tagXau?.includes(tag.tagKey)) {
+      return { ...mau, raw: null, value: null, quality: "bad", statusCode: "stub_bad", reason: "device_error" };
     }
-
-    return {
-      close: async () => {
-        clearInterval(timer);
-      },
-    };
+    if (this.loi.tagNghiNgo?.includes(tag.tagKey)) {
+      return { ...mau, quality: "uncertain", statusCode: "stub_uncertain", reason: "device_error" };
+    }
+    return mau;
   }
 
+  /**
+   * MỘT giao dịch (một tag), như Modbus/SLMP/EIP đọc tuần tự. TREO: không được trả lời ⇒ `StubTimeoutError` sau timeoutMs; hết treo trong
+   * hạn ⇒ trả muộn. Rớt hẳn ⇒ DeviceUnreachableError.
+   */
+  private async docMotTag(tag: OtTagAddress): Promise<OtSample> {
+    if (this.loi.treo && !(await this.choHetTreo())) throw new StubTimeoutError("transaction", this.timeoutMs);
+    if (!this.connected || this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
+    return this.mauCoLoi(tag);
+  }
+
+  /**
+   * Đọc tuần tự từng tag. `huyKhiMat` (chỉ đường poll, sau cờ V2) ⇒ lỗi `laLoiHuyTickPoll` (liên kết HOẶC quá hạn — T12 D3) HUỶ cả tick;
+   * ngược lại lỗi theo từng tag thành mẫu bad (như `readTags` công khai của driver thật).
+   */
+  private async docTuanTu(tags: OtTagAddress[], huyKhiMat: boolean): Promise<OtSample[]> {
+    if (!this.connected || this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
+    const v2 = chatLuongV2Bat();
+    const out: OtSample[] = [];
+    for (const t of tags) {
+      try {
+        out.push(await this.docMotTag(t));
+      } catch (err) {
+        if (huyKhiMat && laLoiHuyTickPoll(err)) throw err;
+        this.lastError = (err as Error)?.message || String(err);
+        out.push({
+          tagKey: t.tagKey,
+          raw: null,
+          value: null,
+          quality: "bad",
+          timestamp: new Date(),
+          tsSource: "server",
+          ...(v2 ? chatLuongLoiChung(err) : {}),
+        });
+      }
+    }
+    return out;
+  }
+
+  async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docTuanTu(tags, false);
+  }
+
+  async subscribe(
+    tags: OtTagAddress[],
+    onSample: OnOtSample,
+    intervalMs = 5000,
+    tuyChon?: TuyChonVongPoll,
+  ): Promise<OtSubscriptionHandle> {
+    if (!this.connected) throw new DeviceUnreachableError("stub");
+
+    // Cờ đọc MỘT lần ở đây (cùng mẫu với các driver khác). Vòng poll dùng chung: chống chồng tick, hạn đọc, mẫu xấu MỘT lần khi mất liên lạc (sau cờ).
+    const v2 = chatLuongV2Bat();
+    return taoVongPoll({
+      tags,
+      intervalMs,
+      deadlineMs: tuyChon?.deadlineMs,
+      doc: (t) => this.docTuanTu(t, v2), // đường poll: huỷ tick ở lỗi liên kết/quá hạn (D3), như driver thật
+      onSample,
+      onTick: tuyChon?.onTick,
+      phanLoiLoi: chatLuongLoiChung,
+      chatLuongV2: v2,
+      nhan: "stub",
+    });
+  }
+
+  /** Ghi vào RAM (C9): `readTags` trả lại giá trị đã ghi. Mất kết nối ⇒ ok:false (như thiết bị thật không nhận lệnh). */
   async writeTags(
     writes: Array<{ tagKey: string; address: string; value: unknown }>,
   ): Promise<OtCommandResult[]> {
-    return writes.map((w) => ({
-      tagKey: w.tagKey,
-      ok: false,
-      error: "write disabled in F1.1",
-    }));
+    if (!this.connected || this.matKetNoiHieuLuc()) {
+      return writes.map((w) => ({ tagKey: w.tagKey, ok: false, error: "stub: not connected" }));
+    }
+    if (this.loi.treo) {
+      return writes.map((w) => ({ tagKey: w.tagKey, ok: false, error: "stub: no answer (sim hang)" }));
+    }
+    return writes.map((w) => {
+      const v = w.value;
+      if (typeof v !== "number" && typeof v !== "boolean" && typeof v !== "string") {
+        return { tagKey: w.tagKey, ok: false, error: "stub: unsupported value type" };
+      }
+      this.ram.set(w.tagKey, v);
+      return { tagKey: w.tagKey, ok: true };
+    });
   }
 
   async health(): Promise<OtHealth> {
     return {
       protocol: this.protocol,
-      connected: this.connected,
+      connected: this.isConnected(),
       lastOkAt: this.connectedAt ?? undefined,
       lastError: this.lastError,
     };

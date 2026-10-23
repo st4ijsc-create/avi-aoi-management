@@ -32,6 +32,8 @@ const fake = vi.hoisted(() => ({
   policyOn: false,
   policyVerdict: {} as Record<string, "deny" | "require_approval">,
   interlockBlocked: false,
+  /** SCADA R0 Task 9: cổng chặn vì THIẾU DỮ LIỆU (violation mang lyDo) — để kiểm lyDo đi vào sổ/audit. */
+  interlockThieuDuLieu: false,
   interlockFailClosed: false,
   pinOverride: null as null | Array<{ tagKey: string; value: unknown }>,
   plcRows: [] as Array<Record<string, unknown>>,
@@ -89,7 +91,7 @@ vi.mock("../interlock/interlockGate", async (importOriginal) => {
       fake.interlockFailClosed
         ? { blocked: true, failClosed: true, violations: [] }
         : fake.interlockBlocked
-          ? { blocked: true, failClosed: false, violations: [{ ruleId: 424242, ruleName: "D1T2 rule", action: "stop_line" }] }
+          ? { blocked: true, failClosed: false, violations: [{ ruleId: 424242, ruleName: "D1T2 rule", action: "stop_line", ...(fake.interlockThieuDuLieu ? { lyDo: "thieu_du_lieu" as const } : {}) }] }
           : orig.evaluateInterlockGate(...a),
   };
 });
@@ -361,6 +363,7 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
     fake.policyOn = false;
     fake.policyVerdict = {};
     fake.interlockBlocked = false;
+    fake.interlockThieuDuLieu = false;
     fake.interlockFailClosed = false;
     fake.pinOverride = null;
     process.env.SAFETY_PLC_ADAPTER_ENABLED = "true";
@@ -639,6 +642,26 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
           if (audits.length === 0) await new Promise((r) => setTimeout(r, 50));
         }
         expect(audits).toHaveLength(1);
+      });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("SCADA R0 Task 9: cổng chặn vì THIẾU DỮ LIỆU + stop ghim ⇒ vẫn acked; sổ interlockOverride.violations mang lyDo=thieu_du_lieu và detail nói missing data", async () => {
+    fake.interlockBlocked = true;
+    fake.interlockThieuDuLieu = true;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await withPlcConfigs([SIM], async () => {
+        const inp = await stopInput([{ tagKey: "cmd_stop", value: true }]);
+        const res = await run(inp);
+        expect(res.status).toBe("acked");
+        const rows = await ledger(inp.idempotencyKey);
+        const result = rows.find((r) => (r.ackValue as any)?.ledger === "result");
+        const ov = (result?.ackValue as any)?.interlockOverride;
+        expect(ov.violations).toEqual([{ ruleId: 424242, action: "stop_line", lyDo: "thieu_du_lieu" }]);
+        expect(ov.detail).toMatch(/missing data/);
       });
     } finally {
       warn.mockRestore();

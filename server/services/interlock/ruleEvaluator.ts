@@ -55,6 +55,8 @@ export interface ObservationContext {
   scalar?: number | null;
   /** Count of qualifying rows in the window (used by spc_violation / process_result). */
   count?: number | null;
+  /** SCADA R0 Task 9: nguồn tự phát hiện KHÔNG đánh giá được (vd hàng mới nhất chất lượng xấu) — cổng/engine coi là thiếu dữ liệu. */
+  thieuDuLieu?: NonNullable<KetQuaDanhGia["lyDo"]>;
 }
 
 export type InterlockSourceType = "spc_violation" | "ng_rate" | "process_result" | "telemetry_tag" | "cpk";
@@ -79,4 +81,22 @@ export function deriveObserved(sourceType: InterlockSourceType, ctx: Observation
     default:
       return null;
   }
+}
+
+/**
+ * SCADA R0 Task 9 (D2) — kết quả đánh giá MỘT luật, tách "đúng/sai" khỏi "không đánh giá được".
+ *
+ * `compare()` trả false khi quan sát null — đúng cho phép so sánh thuần, NHƯNG khiến "thiếu dữ liệu" trông giống "an toàn" (fail-open).
+ * Cổng/engine dùng kiểu này để phân biệt: `thieuDuLieu:true` ⇒ không có kết luận (dung luôn false) và người gọi PHẢI quyết định
+ * (cổng inline: chặn theo `khiThieuDuLieu`; engine: không phát hành động, chỉ log).
+ *   khong_co_mau     — không có mẫu / giá trị không phải số / lịch sử ngắn hơn consecutiveCount
+ *   chat_luong_xau   — mẫu q = bad | uncertain
+ *   cu               — mẫu quá hạn (stale)
+ *   mo_ho            — nhiều adapter / nhiều deviceId cùng tagKey trên máy (không chọn bừa)
+ *   cau_hinh         — luật HỎNG CẤU TRÚC (telemetry_tag thiếu machineId hoặc sourceKey): không bao giờ đánh giá được, cần sửa luật
+ */
+export interface KetQuaDanhGia {
+  dung: boolean;
+  thieuDuLieu: boolean;
+  lyDo?: "khong_co_mau" | "chat_luong_xau" | "cu" | "mo_ho" | "cau_hinh";
 }

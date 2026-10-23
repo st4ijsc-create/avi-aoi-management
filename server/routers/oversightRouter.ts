@@ -419,6 +419,26 @@ async function fetchInterlockCoverage(d: Db | null): Promise<{ count: number; de
   }
 }
 
+// SCADA R0 Task 9 — luật interlock ĐANG BẬT + ĐÃ DUYỆT nhưng HỎNG CẤU TRÚC (telemetry_tag thiếu machineId hoặc sourceKey): cổng chặn mọi lệnh
+// nhắm tới nó (lyDo cau_hinh) và engine không bao giờ tự phát hành động ⇒ KHÔNG chức năng. Hiện ở posture để người vận hành thấy mà sửa.
+async function fetchInterlockCauHinhHong(d: Db | null): Promise<{ count: number; degraded: boolean }> {
+  if (!d) return { count: 0, degraded: true };
+  try {
+    const cond = and(
+      eq(interlockRules.enabled, true),
+      isNotNull(interlockRules.approvedBy),
+      eq(interlockRules.sourceType, "telemetry_tag"),
+      or(isNull(interlockRules.machineId), isNull(interlockRules.sourceKey), sql`${interlockRules.sourceKey} ~ '^\\s*$'`),
+    );
+    const [{ c }] = await d.select({ c: sql<number>`count(*)::int` }).from(interlockRules).where(cond);
+    return { count: c ?? 0, degraded: false };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[oversight] posture interlock cau_hinh failed:", err instanceof Error ? err.message : err);
+    return { count: 0, degraded: true };
+  }
+}
+
 export const oversightRouter = router({
   /**
    * Đếm gộp mọi việc đang chờ duyệt/xử lý trên tầng Kỹ thuật & Điều khiển.
@@ -544,6 +564,7 @@ export const oversightRouter = router({
 
       const d = await getDb();
       const coverage = await fetchInterlockCoverage(d);
+      const cauHinhHong = await fetchInterlockCauHinhHong(d);
 
       return {
         otControlEnabled,
@@ -552,7 +573,9 @@ export const oversightRouter = router({
         interlockEngineEnabled,
         interlockAutoBlockEnabled,
         interlockRulesEnabledWithTarget: coverage.count,
-        interlockCoverageDegraded: coverage.degraded,
+        interlockCoverageDegraded: coverage.degraded || cauHinhHong.degraded,
+        // SCADA R0 Task 9 — luật bật+duyệt nhưng KHÔNG CHỨC NĂNG (telemetry_tag thiếu machineId/sourceKey): cổng chặn, engine im.
+        interlockRulesCauHinhHong: cauHinhHong.count,
         // ILK-06 — ghi lệnh thật BẬT (OT hoặc robot) mà engine interlock TẮT.
         writesOnEngineOff: (otControlEnabled || robotControlEnabled) && !interlockEngineEnabled,
         generatedAt: new Date().toISOString(),
@@ -572,5 +595,6 @@ export const _internal = {
   fetchEcnPending,
   fetchChangeoverPending,
   fetchInterlockCoverage,
+  fetchInterlockCauHinhHong,
   canSeeNamesSafe,
 };

@@ -10,7 +10,7 @@
 
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { energyReadings, type InsertEnergyReading } from "../../drizzle/schema/g3";
 import { otTelemetry, type InsertOtTelemetry } from "../../drizzle/schema/ot";
 import { edgeDbRefused } from "./edgeDbTrap";
@@ -241,6 +241,132 @@ export async function queryOtTelemetryLatest(opts: {
     }));
   } catch (error) {
     console.error("[TSDB] queryOtTelemetryLatest failed:", error);
+    if (isConnectionError(error)) degradeTsdb(error);
+    return null;
+  }
+}
+
+/** SCADA R0 Task 7 — hàng ot_telemetry thô theo mã thiết bị (deviceId = adapter.code). */
+export interface TsdbTheoThietBiRow {
+  deviceId: string;
+  metric: string;
+  numValue: number | null;
+  textValue: string | null;
+  boolValue: boolean | null;
+  quality: string;
+  ts: Date;
+  ingestedAt: Date;
+  meta: Record<string, unknown> | null;
+}
+
+/** Lazy: không đụng `otTelemetry` lúc nạp module (test mock `drizzle/schema` không có bảng này). */
+const cotTheoThietBi = () => ({
+  deviceId: otTelemetry.deviceId,
+  metric: otTelemetry.metric,
+  numValue: otTelemetry.numValue,
+  textValue: otTelemetry.textValue,
+  boolValue: otTelemetry.boolValue,
+  quality: otTelemetry.quality,
+  ts: otTelemetry.ts,
+  ingestedAt: otTelemetry.ingestedAt,
+  meta: otTelemetry.meta,
+});
+
+function chuanHoaTheoThietBi(r: {
+  deviceId: string | null;
+  metric: string;
+  numValue: number | null;
+  textValue: string | null;
+  boolValue: boolean | null;
+  quality: string | null;
+  ts: Date | string;
+  ingestedAt: Date | string;
+  meta: Record<string, unknown> | null;
+}): TsdbTheoThietBiRow {
+  return {
+    deviceId: r.deviceId ?? "",
+    metric: r.metric,
+    numValue: r.numValue == null ? null : Number(r.numValue),
+    textValue: r.textValue ?? null,
+    boolValue: r.boolValue ?? null,
+    quality: String(r.quality ?? "good"),
+    ts: new Date(r.ts),
+    ingestedAt: new Date(r.ingestedAt),
+    meta: r.meta ?? null,
+  };
+}
+
+/**
+ * Hàng MỚI NHẤT của mỗi (deviceId, metric) trong `deviceCodes` kể từ `since` (DISTINCT ON). `null` khi TSDB tắt/suy giảm
+ * (caller rơi về DB chính); `[]` khi TSDB bật mà không có hàng.
+ */
+export async function queryOtTelemetryLatestByDevices(
+  deviceCodes: string[],
+  since: Date,
+): Promise<TsdbTheoThietBiRow[] | null> {
+  const db = getTsdb();
+  if (!db) return null;
+  if (deviceCodes.length === 0) return [];
+  try {
+    const rows = await db
+      .selectDistinctOn([otTelemetry.deviceId, otTelemetry.metric], cotTheoThietBi())
+      .from(otTelemetry)
+      .where(and(inArray(otTelemetry.deviceId, deviceCodes), gte(otTelemetry.ts, since)))
+      .orderBy(otTelemetry.deviceId, otTelemetry.metric, desc(otTelemetry.ts));
+    return rows.map(chuanHoaTheoThietBi);
+  } catch (error) {
+    console.error("[TSDB] queryOtTelemetryLatestByDevices failed:", error);
+    if (isConnectionError(error)) degradeTsdb(error);
+    return null;
+  }
+}
+
+/**
+ * SCADA R0 Task 10 fix 1 — buộc hàng thô vào MỘT adapter: `meta->>'adapterId' = adapterId` (chỉ đường OT trong tiến trình ghi khoá này;
+ * ingest ngoài bị gỡ) VÀ `machineId IS NOT DISTINCT FROM machineId` của adapter. `deviceId` dùng chung với ghi khác (MQTT/CFX/`/api/v1`,
+ * thường là machines.code) ⇒ lọc chỉ theo (deviceId, metric) có thể trả hàng của nhà máy khác khi mã trùng.
+ */
+export interface RangBuocAdapter {
+  adapterId: number;
+  machineId: number | null;
+}
+
+/** Điều kiện ràng buộc adapter (dùng chung cho đường TSDB và DB chính). */
+export function dieuKienRangBuocAdapter(rb: RangBuocAdapter) {
+  return and(
+    sql`${otTelemetry.meta}->>'adapterId' = ${String(rb.adapterId)}`,
+    rb.machineId === null ? isNull(otTelemetry.machineId) : eq(otTelemetry.machineId, rb.machineId),
+  );
+}
+
+/**
+ * `limit` hàng mới nhất của một (deviceId, metric), ts giảm dần. `null` khi TSDB tắt/suy giảm. `rangBuoc` (tuỳ chọn) chỉ giữ hàng của
+ * đúng adapter đó — không truyền ⇒ hành vi cũ.
+ */
+export async function queryOtTelemetryRawByDevice(
+  deviceCode: string,
+  metric: string,
+  limit: number,
+  rangBuoc?: RangBuocAdapter,
+): Promise<TsdbTheoThietBiRow[] | null> {
+  const db = getTsdb();
+  if (!db) return null;
+  try {
+    const rows = await db
+      .select(cotTheoThietBi())
+      .from(otTelemetry)
+      .where(
+        and(
+          eq(otTelemetry.deviceId, deviceCode),
+          eq(otTelemetry.metric, metric),
+          ...(rangBuoc ? [dieuKienRangBuocAdapter(rangBuoc)] : []),
+        ),
+      )
+      .orderBy(desc(otTelemetry.ts))
+      .limit(Math.min(Math.max(Math.trunc(limit) || 1, 1), 1000));
+    return rows.map(chuanHoaTheoThietBi);
+  } catch (error) {
+    console.error("[TSDB] queryOtTelemetryRawByDevice failed:", error);
     if (isConnectionError(error)) degradeTsdb(error);
     return null;
   }

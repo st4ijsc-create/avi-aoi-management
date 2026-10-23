@@ -13,6 +13,7 @@ import type { OtDriver, OtTagAddress } from "./otDriver";
 import { readbackMatches } from "./drivers/readbackCompare";
 import { canonicalOtValue } from "./otActionBinding";
 import { withDeadline } from "./drivers/boundedClose";
+import { ghiNhanLenh } from "./boDemTruyenThong";
 import type { DispatchInput, DispatchStatus } from "./commandDispatcher";
 
 /**
@@ -846,7 +847,7 @@ function startStopWatch(
         }
         const tags = readTags.filter((t) => token.tags.has(t.tagKey));
         if (tags.length === 0) break;
-        let samples: Array<{ tagKey: string; value: unknown }> | null = null;
+        let samples: Array<{ tagKey: string; value: unknown; quality?: string }> | null = null;
         if (drvNow) {
           try {
             const got = await withDeadline(Promise.resolve(stopDriver.readTags(tags)), timeoutMs, `adapter ${input.adapterId} STOP watch read`);
@@ -862,7 +863,8 @@ function startStopWatch(
           if (!token.tags.has(t.tagKey)) continue; // released by a newer command while we were reading
           const s = samples?.find((x) => x.tagKey === t.tagKey);
           const expected = writes.find((w) => w.tagKey === t.tagKey)?.value;
-          if (!s || s.value == null) unread.push(t.tagKey);
+          // SCADA R0 (F2) — chỉ mẫu quality "good" mới xác nhận được STOP: uncertain mang giá trị CŨ (last usable), bad không có giá trị.
+          if (!s || s.value == null || s.quality !== "good") unread.push(t.tagKey);
           else if (!readbackMatches(expected, s.value, t.dataType, tol)) {
             const old = abandoned?.writes.find((w) => w.tagKey === t.tagKey);
             drift.push({ tagKey: t.tagKey, expected, actual: s.value as unknown, abandonedValueLanded: old != null && readbackMatches(old.value, s.value, t.dataType, tol) });
@@ -1213,6 +1215,9 @@ export async function executeOtDeviceWrite(a: {
     };
   });
 
+  // SCADA R0 Task 6 (C8) — đếm kết quả GHI theo từng tag (trước read-back: read-back không bao giờ lật ok). Timeout/ném ⇒ lỗi. Không ném.
+  for (const o of outcomes) ghiNhanLenh(input.adapterId, resolved[o.idx].write.tagKey, o.ok);
+
   // ── G2.1 READ-BACK — ONLY when control + read-back enabled AND ≥1 write acked.
   //    A SINGLE driver.readTags() (under the same timeout). readTags throwing /
   //    timing out → ALL acked writes become acked_unverified (WARN only; NO retry).
@@ -1256,14 +1261,19 @@ export async function executeOtDeviceWrite(a: {
       const s = sampleArr.find((x) => x.tagKey === r.write.tagKey);
       const actual = s ? s.value : null;
       const dataType = (r.dataType ?? "float") as OtTagAddress["dataType"];
-      const matched = s != null && readbackMatches(r.write.value, actual, dataType, tol);
+      // SCADA R0 (F2) — chỉ mẫu quality "good" mới xác minh được lệnh ghi: uncertain mang giá trị CŨ (last usable) nên khớp giá trị
+      // không chứng minh gì; uncertain/bad ⇒ acked_unverified.
+      const matched = s != null && s.quality === "good" && readbackMatches(r.write.value, actual, dataType, tol);
       if (matched) {
         o.status = "acked_verified";
         o.readBackValue = actual;
       } else {
         o.status = "acked_unverified";
         o.readBackValue = actual;
-        o.errorText = `readback mismatch: expected=${String(r.write.value)} actual=${String(actual)}`;
+        o.errorText =
+          s != null && s.quality !== "good"
+            ? `readback not verified: sample quality=${String(s.quality)} (expected=${String(r.write.value)} actual=${String(actual)})`
+            : `readback mismatch: expected=${String(r.write.value)} actual=${String(actual)}`;
       }
     }
   }

@@ -83,6 +83,7 @@ export const MODULE_ACCESS_MAP: Record<string, ModuleCode> = {
   fleet: MOD.OT_CONTROL,
   robot: MOD.OT_CONTROL,
   interlock: MOD.OT_CONTROL,
+  scadaDiag: MOD.OT_CONTROL, // SCADA R0 Task 10 (M10)
 
   // ── Engineering & Programming (MOD_ENGINEERING) ────────────────────────────
   ir: MOD.ENGINEERING,
