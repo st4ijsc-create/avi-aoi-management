@@ -337,3 +337,22 @@ describe("không lộ tồn tại + chạy đua + socket máy", () => {
     expect(p.filter((x) => /^(machine|factory|line|workshop):/.test(x))).toEqual([]);
   });
 });
+
+describe("⚠ KHOẢNG TRỐNG ĐÃ BIẾT (việc riêng): phòng `global` — rò theo nhà máy ở tầng PHÁT", () => {
+  // `it.fails`: ca này PASS khi khẳng định bên trong ĐỎ — tức nó GHI NHẬN lỗ còn mở bằng số đo, không ghim nó thành "đúng". Khi phát sự kiện theo
+  // phòng nhà máy (thay vì `io.to("global")`), khẳng định sẽ xanh ⇒ `it.fails` ĐỎ ⇒ nhắc xoá `.fails` và coi đây là ca hồi quy thường.
+  it.fails("B (`subscribe {}` ⇒ vào `global`) KHÔNG được nhận `andon:event` của máy thuộc nhà máy A", async () => {
+    const a = await ketNoi(uA);
+    const b = await ketNoi(uB);
+    const nhanA = ghiNhan(a, "andon:event");
+    const nhanB = ghiNhan(b, "andon:event");
+    a.emit("subscribe", {});
+    b.emit("subscribe", {});
+    await vi.waitFor(() => expect(phongCua(b)).toContain("global"), { timeout: 5000 });
+    await vi.waitFor(() => expect(phongCua(a)).toContain("global"), { timeout: 5000 });
+    socketMod.emitAndonEvent({ id: 1, state: "red", reason: "x", status: "raised", title: "t", machineId: A.mid, lineId: A.lid, raisedBySystem: false, raisedAt: new Date() } as never);
+    await vi.waitFor(() => expect(nhanA.length).toBe(1), { timeout: 5000 });
+    await cho(150);
+    expect(nhanB).toEqual([]); // hiện ĐỎ: B nhận (sự kiện đi `io.to("global")`)
+  });
+});
