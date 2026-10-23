@@ -43,6 +43,8 @@ const FACTORY_ID = 1;
 let sql: ReturnType<typeof postgres>;
 /** Trạng thái gốc của robot bị mượn làm ca dương — để trả lại BYTE-EXACT. */
 let goc: { id: number; status: string } | null = null;
+/** Robot đã mượn ở ca dương + trạng thái gốc — GIỮ LẠI sau khi khôi phục để ca đối chiếu chỉ khẳng định trên ĐÚNG robot của mình. */
+let daMuon: { id: number; ma: string; status: string } | null = null;
 
 describe.skipIf(!DB_URL)("§11 #26 — E-STOP: đường dữ liệu robot ra tới tóm tắt an toàn", () => {
   beforeAll(() => {
@@ -64,21 +66,27 @@ describe.skipIf(!DB_URL)("§11 #26 — E-STOP: đường dữ liệu robot ra t�
     expect(ds.length, "SIM-FAC phải có ít nhất 1 robot đang bật để lưới này có nghĩa").toBeGreaterThan(0);
   });
 
-  it("★★★ CA ÂM — khi KHÔNG robot nào `estop`, `coCanhBao` phải là `false`", async () => {
+  it("★★★ CA ÂM — robot KHÔNG `estop` thì KHÔNG nằm trong danh sách đang nhãn", async () => {
     const ds = await traAnToanRobot(FACTORY_ID);
+    // ⚠ KHÔNG khẳng định "cả nhà máy không có estop": `_test` dùng chung — test/phiên khác có thể để lại robot estop ở đây. Chỉ khẳng định trên robot KHÔNG estop.
     // Ca này chỉ có nghĩa vì ca DƯƠNG bên dưới chứng minh cùng đường mã BIẾT KÊU.
+    const khongEstop = ds.filter((r) => r.status !== "estop");
+    expect(khongEstop.length, "phải có robot không-estop để ca này có nghĩa").toBeGreaterThan(0);
     const tt = tomTatAnToan(ds);
-    expect(tt.dangNhan.filter((r) => r.status === "estop")).toHaveLength(0);
+    const idNhan = new Set(tt.dangNhan.map((r) => r.id));
+    for (const r of khongEstop) expect(idNhan.has(r.id), `robot ${r.ma} (${r.status}) không được bị nhãn estop`).toBe(false);
   });
 
   it("★★★ CA DƯƠNG DỰNG TAY — một robot `estop` PHẢI nổi lên `coCanhBao=true`", async () => {
     const truoc = await traAnToanRobot(FACTORY_ID);
-    expect(tomTatAnToan(truoc).coCanhBao, "nền phải SẠCH trước khi dựng ca dương").toBe(false);
 
-    // Mượn robot ĐẦU TIÊN theo id — tất định, không phụ thuộc thứ tự trả về.
-    const muon = [...truoc].sort((a, b) => a.id - b.id)[0];
+    // Mượn robot KHÔNG-estop có id nhỏ nhất — tất định, và không dính robot estop do test/phiên khác để lại.
+    const muon = [...truoc].filter((r) => r.status !== "estop").sort((a, b) => a.id - b.id)[0];
+    expect(muon, "phải có robot không-estop để mượn").toBeTruthy();
+    expect(tomTatAnToan(truoc).dangNhan.map((r) => r.id), "nền: robot sắp mượn CHƯA bị nhãn").not.toContain(muon.id);
     const [hangGoc] = await sql`SELECT id, status FROM robots WHERE id = ${muon.id}`;
     goc = { id: Number(hangGoc.id), status: String(hangGoc.status) };
+    daMuon = { id: muon.id, ma: muon.ma, status: goc.status };
 
     await sql`UPDATE robots SET status = 'estop' WHERE id = ${muon.id}`;
 
@@ -98,19 +106,16 @@ describe.skipIf(!DB_URL)("§11 #26 — E-STOP: đường dữ liệu robot ra t�
     goc = null;
 
     const lai = await traAnToanRobot(FACTORY_ID);
-    expect(tomTatAnToan(lai).coCanhBao, "khôi phục xong badge PHẢI tắt").toBe(false);
+    expect(tomTatAnToan(lai).dangNhan.map((r) => r.id), "khôi phục xong robot đã mượn PHẢI hết bị nhãn").not.toContain(muon.id);
   });
 
-  it("★★★ ĐỐI CHIẾU TỔNG — khôi phục là THẬT, không phải lời khai", async () => {
-    // Đo bằng đường ĐỘC LẬP (SQL thô), không qua `traAnToanRobot`: nếu hàm đọc
-    // sai thì cả hai nửa cùng sai một kiểu và phép đối chiếu không chứng minh gì
-    // (BG-127 — độc lập phải ở MÔ HÌNH, không ở người đo).
-    const hang = await sql`SELECT status, COUNT(*)::int AS n FROM robots GROUP BY status ORDER BY status`;
-    const theoTrangThai = Object.fromEntries(hang.map((r) => [String(r.status), Number(r.n)]));
-    expect(theoTrangThai["estop"], "KHÔNG được còn hàng `estop` nào sót lại từ ca dương").toBeUndefined();
-    const tong = hang.reduce((s, r) => s + Number(r.n), 0);
-    const [{ n: tongThat }] = await sql`SELECT COUNT(*)::int AS n FROM robots`;
-    expect(tong, "tổng theo phân bố phải khớp tổng đếm thẳng").toBe(Number(tongThat));
+  it("★★★ ĐỐI CHIẾU — robot đã mượn được khôi phục THẬT (đúng trạng thái gốc), không phải lời khai", async () => {
+    // Đo bằng đường ĐỘC LẬP (SQL thô), không qua `traAnToanRobot`: nếu hàm đọc sai thì cả hai nửa cùng sai một kiểu (BG-127 — độc lập phải ở MÔ HÌNH, không ở người đo).
+    // ⚠ CHỈ robot của chính ca này. Trước đây ca đếm phân bố `status` TOÀN BẢNG và đòi "không còn estop nào" ⇒ đỏ 10/10 vì 3 robot estop do TEST KHÁC để lại ở `_test` dùng chung.
+    expect(daMuon, "ca dương phải đã mượn một robot").not.toBeNull();
+    const [hang] = await sql`SELECT status FROM robots WHERE id = ${daMuon!.id}`;
+    expect(String(hang.status), `robot ${daMuon!.ma} phải về đúng trạng thái gốc`).toBe(daMuon!.status);
+    expect(String(hang.status)).not.toBe("estop");
   });
 
   it("★★★ robot KHÔNG có telemetry ⇒ `estop = null` ⇒ `khong_ro`, KHÔNG suy thành `nha`", async () => {

@@ -21,7 +21,7 @@
  *   (5) `traAnToanRobot` THẬT ⇒ `capNhatLuc` của telemetry vừa ghi cách bây giờ vài giây
  *
  * ⚠ Chạy trên DB TEST (vitest.setup ép `DATABASE_URL` → `<db>_test`, một bản clone). Hàng tạm do file này tạo,
- *   xoá trong `afterAll` (đếm trước = sau). Máy/robot lấy từ chuỗi phân cấp CÓ THẬT trong DB test
+ *   xoá trong `afterAll` (kiểm: hàng CỦA CHÍNH file này không còn — không đếm toàn bảng). Máy/robot lấy từ chuỗi phân cấp CÓ THẬT trong DB test
  *   (workshop → line → station → machine); không có chuỗi ⇒ ĐỎ, không skip (đó là môi trường hỏng, không phải
  *   "không có gì để đo").
  */
@@ -42,12 +42,9 @@ let machineId = 0;
 let robotId: number | null = null;
 let mslId = 0;
 let hbId = 0;
-let hbTruoc = 0;
 let teleId: number | null = null;
 /** Mốc ghi — làm tròn tới giây để so sánh không dính mili-giây của `now()` phía DB. */
 const T0 = new Date(Math.floor(Date.now() / 1000) * 1000);
-let mslTruoc = 0;
-let teleTruoc = 0;
 
 beforeAll(async () => {
   const d = await getDb();
@@ -73,7 +70,6 @@ beforeAll(async () => {
   const rb = hang(await db.execute(sql`SELECT id FROM robots WHERE "lineId" = ${lineId} AND "isEnabled" = true ORDER BY id LIMIT 1`))[0];
   robotId = rb ? Number(rb.id) : null;
 
-  mslTruoc = Number(hang(await db.execute(sql`SELECT count(*)::int AS n FROM machine_status_logs`))[0].n);
   const [msl] = await db
     .insert(machineStatusLogs)
     .values({ machineId, status: "online", timestamp: T0 })
@@ -82,14 +78,12 @@ beforeAll(async () => {
   // ★ Đợt 38 (Pareto #2): `traAnhLichSu` lấy MỐC từ NHỊP TIM ≤ mốc (cùng `chonNguonMocTuoi` như live), không từ hàng
   //   log ⇒ chèn thêm một nhịp tim tại T0. Câu SQL thô mới (`machine_heartbeats … AT TIME ZONE 'UTC'`) là đúng đường
   //   mà ca (4) đo; hàng log ở trên vẫn cần cho (1)(2)(3) và cho `trangThaiLichSuTaiMoc` (log online + hb tươi ⇒ running).
-  hbTruoc = Number(hang(await db.execute(sql`SELECT count(*)::int AS n FROM machine_heartbeats`))[0].n);
   const [hb] = await db
     .insert(machineHeartbeats)
     .values({ machineId, status: "running", timestamp: T0 })
     .returning({ id: machineHeartbeats.id });
   hbId = hb.id;
   if (robotId !== null) {
-    teleTruoc = Number(hang(await db.execute(sql`SELECT count(*)::int AS n FROM robot_telemetry`))[0].n);
     const [tele] = await db
       .insert(robotTelemetry)
       .values({ robotId, estop: false, timestamp: T0 })
@@ -103,14 +97,12 @@ afterAll(async () => {
   if (mslId) await db.delete(machineStatusLogs).where(eq(machineStatusLogs.id, mslId));
   if (hbId) await db.delete(machineHeartbeats).where(eq(machineHeartbeats.id, hbId));
   if (teleId !== null) await db.delete(robotTelemetry).where(eq(robotTelemetry.id, teleId));
-  const mslSau = Number(hang(await db.execute(sql`SELECT count(*)::int AS n FROM machine_status_logs`))[0].n);
-  expect(mslSau, "đếm machine_status_logs trước = sau").toBe(mslTruoc);
-  const hbSau = Number(hang(await db.execute(sql`SELECT count(*)::int AS n FROM machine_heartbeats`))[0].n);
-  expect(hbSau, "đếm machine_heartbeats trước = sau").toBe(hbTruoc);
-  if (teleId !== null) {
-    const teleSau = Number(hang(await db.execute(sql`SELECT count(*)::int AS n FROM robot_telemetry`))[0].n);
-    expect(teleSau, "đếm robot_telemetry trước = sau").toBe(teleTruoc);
-  }
+  // ★ CHỈ đếm hàng CỦA CHÍNH ca (theo id đã chèn) — KHÔNG đếm toàn bảng: `_test` dùng chung, phiên/test khác ghi cùng bảng làm số toàn bảng lệch (4179 vs 4177) mà ca không sai.
+  const conLai = async (bang: "machine_status_logs" | "machine_heartbeats" | "robot_telemetry", id: number) =>
+    Number(hang(await db.execute(sql`SELECT count(*)::int AS n FROM ${sql.raw(bang)} WHERE id = ${id}`))[0].n);
+  expect(await conLai("machine_status_logs", mslId), "hàng machine_status_logs của ca đã bị xoá").toBe(0);
+  expect(await conLai("machine_heartbeats", hbId), "hàng machine_heartbeats của ca đã bị xoá").toBe(0);
+  if (teleId !== null) expect(await conLai("robot_telemetry", teleId), "hàng robot_telemetry của ca đã bị xoá").toBe(0);
 });
 
 describe("★★★ G104 — cùng một hàng, ba cách đọc `timestamp` naive", () => {
