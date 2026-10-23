@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { baoThongTinChoBoDem, detachOtAdapter, stopOt } from "./otManager";
-import { __datLaiBoDemHienTai, datThongTinAdapter, layGiaTri, napTuOt, thongTinAdapter } from "../scada/boDemHienTai";
+import { __datLaiBoDemHienTai, coAdapterTrungTamKhaiTag, datThongTinAdapter, layGiaTri, napTuOt, thongTinAdapter } from "../scada/boDemHienTai";
 import type { RuntimeAdapter } from "./deviceAdapter";
 import type { OtSample } from "./otDriver";
 
@@ -59,6 +59,16 @@ describe("baoThongTinChoBoDem - coDeadband", () => {
     process.env.OT_TAG_DEADBAND_ENABLED = "true";
     baoThongTinChoBoDem(adapter([TAG_THUONG]));
     expect(thongTinAdapter(7)?.coDeadband).toBe(false);
+  });
+});
+
+describe("final I2 - baoThongTinChoBoDem khai tagKey cua adapter", () => {
+  it("adapter may 3 voi tag t, u => coAdapterTrungTamKhaiTag(3, t|u) true; tag khac / may khac false", () => {
+    baoThongTinChoBoDem(adapter([TAG_DB, TAG_THUONG]));
+    expect(coAdapterTrungTamKhaiTag(3, "t")).toBe(true);
+    expect(coAdapterTrungTamKhaiTag(3, "u")).toBe(true);
+    expect(coAdapterTrungTamKhaiTag(3, "v")).toBe(false);
+    expect(coAdapterTrungTamKhaiTag(4, "t")).toBe(false);
   });
 });
 

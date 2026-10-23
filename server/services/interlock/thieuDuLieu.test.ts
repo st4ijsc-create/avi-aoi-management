@@ -26,15 +26,18 @@ vi.mock("../../../drizzle/schema", () => ({
 // ── Bộ đệm hiện tại: mock hai hàm Task 7 ────────────────────────────────────────────────────────
 const cache: {
   bat: boolean;
+  /** final I2 — adapter OT trung tâm của máy luật có KHAI tag luật không (mặc định có ⇒ các ca đường bộ đệm cũ giữ nguyên). */
+  khai: boolean;
   mau: any[];
   hoi: Array<[number, string]>;
   adapter: null | { adapterId: number; pollMs: number; coDeadband: boolean; machineId: number | null; code: string };
-} = { bat: true, mau: [], hoi: [], adapter: null };
+} = { bat: true, khai: true, mau: [], hoi: [], adapter: null };
 vi.mock("../scada/boDemHienTai", () => ({
   SO_LICH_SU_TOI_DA: 50,
   NGUONG_DEADBAND_MS: 70_000,
   adapterTheoMa: (code: string | null) => (code && cache.adapter && cache.adapter.code === code ? cache.adapter : null),
   boDemDangBat: () => cache.bat,
+  coAdapterTrungTamKhaiTag: () => cache.khai,
   timTheoMayVaTag: (machineId: number, tagKey: string) => {
     cache.hoi.push([machineId, tagKey]);
     return cache.mau;
@@ -99,7 +102,9 @@ const ADAPTER = 10;
 const MAY = 5;
 
 function mau(over: Partial<any> = {}): any {
-  return { adapterId: ADAPTER, tagKey: "nhiet_do", machineId: MAY, v: 50, q: "good", stale: false, ageMs: 100, lichSu: [50], ts: 1, ...over };
+  const g = { adapterId: ADAPTER, tagKey: "nhiet_do", machineId: MAY, v: 50, q: "good", stale: false, ageMs: 100, lichSu: [50], ts: 1, ...over };
+  // final I3 (c) — mỗi điểm lichSu mang giờ nhận; mặc định: vừa nhận (trong mọi cửa sổ).
+  return { lichSuRx: g.lichSu.map(() => Date.now()), ...g };
 }
 
 /** Luật chặn hợp lệ: nguồn telemetry_tag, ngưỡng gt 80, máy 5. KHÔNG khai `khiThieuDuLieu` (mô phỏng hàng mặc định → phải CHẶN). */
@@ -136,6 +141,7 @@ const params = { adapterId: ADAPTER, machineId: MAY, tagKeys: ["cmd_start"] };
 
 beforeEach(() => {
   cache.bat = true;
+  cache.khai = true;
   cache.mau = [];
   cache.hoi = [];
   cache.adapter = null;

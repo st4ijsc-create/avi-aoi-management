@@ -49,6 +49,8 @@ export function baoThongTinChoBoDem(adapter: RuntimeAdapter): void {
     coDeadband: tagDeadbandEnabled() && adapter.tags.some((t) => t.deadband != null),
     machineId: adapter.machineId,
     code: adapter.code,
+    // final I2 — tag adapter này nuôi vào bộ đệm: interlock chỉ đọc bộ đệm cho (máy, tag) do OT trung tâm khai, còn lại đọc DB.
+    tagKeys: adapter.tags.map((t) => t.tagKey),
   });
 }
 

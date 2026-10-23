@@ -19,6 +19,7 @@ import {
   napTuOt,
   POLL_MAC_DINH_MS,
   adapterTheoMa,
+  coAdapterTrungTamKhaiTag,
   thongTinAdapter,
   timTheoMayVaTag,
   xoaAdapter,
@@ -114,26 +115,30 @@ describe("napTuOt / layGiaTri", () => {
   });
 });
 
-describe("mới nhất theo ts", () => {
-  it("mới (ts=100) rồi cũ (ts=50) ⇒ giữ mới, danh sách khoá đổi rỗng, rx/lichSu không đổi", () => {
+// SCADA R0 final I4 — đường sống trong tiến trình xếp theo THỨ TỰ NHẬN (rx), không theo ts: mẫu xấu mang giờ máy chủ, mẫu tốt OPC UA
+// mang sourceTimestamp thiết bị ⇒ so ts trộn hai đồng hồ và giữ tag ở bad sau khi cắm lại (giá trị không đổi ⇒ ts thiết bị cũ hơn).
+describe("thứ tự nhận (rx) trên đường sống — final I4", () => {
+  it("bad ở giờ máy chủ T, rồi good mang ts thiết bị T−60 s tới SAU ⇒ bộ đệm hiện good", () => {
+    const T = T0 + 120_000;
+    nap([mau({ value: null, quality: "bad", reason: "comm_lost", timestamp: new Date(T) })], T);
+    expect(layGiaTri(7, "t", T)?.q).toBe("bad");
+    expect(nap([mau({ value: 42, quality: "good", tsSource: "device", timestamp: new Date(T - 60_000) })], T + 1000)).toEqual(["7:t"]);
+    expect(layGiaTri(7, "t", T + 1000)).toMatchObject({ q: "good", v: 42, ts: T - 60_000, rx: T + 1000, lichSu: [42] });
+  });
+
+  it("mẫu tới sau với ts cũ hơn VẪN thay (thứ tự nhận thắng), khoá được báo đổi", () => {
     expect(nap([mau({ value: 10, timestamp: new Date(100) })])).toEqual(["7:t"]);
     const cb = vi.fn();
     dangKyThayDoi(cb);
-    expect(nap([mau({ value: 5, timestamp: new Date(50) })], T0 + 5000)).toEqual([]);
-    expect(cb).not.toHaveBeenCalled();
-    expect(layGiaTri(7, "t", T0 + 5000)).toMatchObject({ v: 10, ts: 100, rx: T0, lichSu: [10] });
+    expect(nap([mau({ value: 5, timestamp: new Date(50) })], T0 + 1000)).toEqual(["7:t"]);
+    expect(cb).toHaveBeenCalledWith(["7:t"]);
+    expect(layGiaTri(7, "t", T0 + 1000)).toMatchObject({ v: 5, ts: 50, rx: T0 + 1000, lichSu: [10, 5] });
   });
 
   it("ts bằng nhau ⇒ thay thế", () => {
     nap([mau({ value: 1, timestamp: new Date(100) })]);
     expect(nap([mau({ value: 2, timestamp: new Date(100) })], T0 + 1)).toEqual(["7:t"]);
     expect(layGiaTri(7, "t", T0 + 1)).toMatchObject({ v: 2, lichSu: [1, 2] });
-  });
-
-  it("lô lẫn cũ + mới: chỉ khoá có mẫu mới hơn được báo đổi", () => {
-    nap([mau({ tagKey: "a", timestamp: new Date(100) }), mau({ tagKey: "b", timestamp: new Date(100) })]);
-    const keys = nap([mau({ tagKey: "a", timestamp: new Date(10) }), mau({ tagKey: "b", timestamp: new Date(200) })]);
-    expect(keys).toEqual(["7:b"]);
   });
 });
 
@@ -175,6 +180,40 @@ describe("lichSu", () => {
     expect(layGiaTri(7, "t", T0 + 2)!.lichSu).toEqual([]);
     nap([mau({ value: 3, timestamp: new Date(T0 + 3) })], T0 + 3);
     expect(layGiaTri(7, "t", T0 + 3)!.lichSu).toEqual([3]);
+  });
+});
+
+// SCADA R0 final I3 — lichSu không nối mẫu qua một lần khởi động lại hay một đoạn im lặng; mỗi điểm mang rx (cửa sổ windowSeconds).
+describe("lichSu — final I3", () => {
+  it("(b) khoảng nhận giữa hai mẫu good > ngưỡng stale (3·poll) ⇒ lichSu bắt đầu lại", () => {
+    datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: null, code: "A7" });
+    nap([mau({ value: 1, timestamp: new Date(T0) })], T0);
+    nap([mau({ value: 2, timestamp: new Date(T0 + 1000) })], T0 + 1000);
+    nap([mau({ value: 3, timestamp: new Date(T0 + 4000) })], T0 + 4000); // khoảng 3000 = ngưỡng ⇒ CHƯA vượt
+    expect(layGiaTri(7, "t", T0 + 4000)!.lichSu).toEqual([1, 2, 3]);
+    nap([mau({ value: 4, timestamp: new Date(T0 + 7001) })], T0 + 7001); // khoảng 3001 > 3000 ⇒ im lặng quá ngưỡng ⇒ xoá
+    expect(layGiaTri(7, "t", T0 + 7001)!.lichSu).toEqual([4]);
+  });
+
+  it("(b) có deadband: im lặng 60 s giữa hai mẫu vẫn nối (ngưỡng 70 s), 70,001 s thì bắt đầu lại", () => {
+    datThongTinAdapter(7, { pollMs: 1000, coDeadband: true, machineId: null, code: "A7" });
+    nap([mau({ value: 1, timestamp: new Date(T0) })], T0);
+    nap([mau({ value: 2, timestamp: new Date(T0 + 60_000) })], T0 + 60_000);
+    expect(layGiaTri(7, "t", T0 + 60_000)!.lichSu).toEqual([1, 2]);
+    nap([mau({ value: 3, timestamp: new Date(T0 + 130_001) })], T0 + 130_001);
+    expect(layGiaTri(7, "t", T0 + 130_001)!.lichSu).toEqual([3]);
+  });
+
+  it("(c) mỗi điểm lichSu mang rx của nó (lichSuRx, cùng độ dài, cũ → mới); bị cắt cùng lúc ở 50", () => {
+    datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: null, code: "A7" });
+    for (let i = 1; i <= 60; i++) nap([mau({ value: i, timestamp: new Date(T0 + i * 100) })], T0 + i * 100);
+    const g = layGiaTri(7, "t", T0 + 6000)!;
+    expect(g.lichSu).toHaveLength(50);
+    expect(g.lichSuRx).toHaveLength(50);
+    expect(g.lichSuRx[0]).toBe(T0 + 1100);
+    expect(g.lichSuRx[49]).toBe(T0 + 6000);
+    nap([mau({ value: null, quality: "bad", timestamp: new Date(T0 + 6100) })], T0 + 6100);
+    expect(layGiaTri(7, "t", T0 + 6100)!.lichSuRx).toEqual([]);
   });
 });
 
@@ -408,6 +447,22 @@ describe("khoiDongBoDemHienTai (nạp DB)", () => {
     expect(layGiaTri(7, "t")?.v).toBe(77);
   });
 
+  it("final I3 (a): mục nạp DB bắt đầu với lichSu RỖNG — luật 3 điểm liên tiếp cần đủ 3 mẫu SỐNG (kể cả khi hàng DB còn mới)", async () => {
+    datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: 5, code: "ADP-A" });
+    const bay = Date.now();
+    layMoiNhat.mockResolvedValue([hangDb({ numValue: 90, ts: new Date(bay - 500), ingestedAt: new Date(bay - 500) })]);
+    await khoiDongBoDemHienTai();
+    const g0 = layGiaTri(7, "t", bay)!;
+    expect(g0.v).toBe(90);
+    expect(g0.lichSu).toEqual([]);
+    expect(g0.lichSuRx).toEqual([]);
+    nap([mau({ value: 91, timestamp: new Date(bay + 100) })], bay + 100, 7, 5);
+    nap([mau({ value: 92, timestamp: new Date(bay + 1100) })], bay + 1100, 7, 5);
+    expect(layGiaTri(7, "t", bay + 1100)!.lichSu).toEqual([91, 92]); // 2 mẫu sống: CHƯA đủ 3
+    nap([mau({ value: 93, timestamp: new Date(bay + 2100) })], bay + 2100, 7, 5);
+    expect(layGiaTri(7, "t", bay + 2100)!.lichSu).toEqual([91, 92, 93]);
+  });
+
   it("giá trị sống đến trước khi nạp DB xong không bị DB ghi đè", async () => {
     datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: 5, code: "ADP-A" });
     layMoiNhat.mockImplementation(async () => {
@@ -453,5 +508,42 @@ describe("adapterTheoMa", () => {
     expect(adapterTheoMa("")).toBeNull();
     xoaAdapter(31);
     expect(adapterTheoMa("DEV-31")).toBeNull();
+  });
+});
+
+// SCADA R0 final I2 — interlock chỉ đọc bộ đệm khi một adapter OT TRUNG TÂM đã đăng ký (tiến trình này) cho máy đó KHAI tag đó.
+describe("coAdapterTrungTamKhaiTag — final I2", () => {
+  it("adapter đăng ký với tagKeys của máy 4 ⇒ true đúng (máy, tag); máy/tag khác ⇒ false", () => {
+    datThongTinAdapter(31, { pollMs: 1000, coDeadband: false, machineId: 4, code: "DEV-31", tagKeys: ["nhiet", "ap"] });
+    expect(coAdapterTrungTamKhaiTag(4, "nhiet")).toBe(true);
+    expect(coAdapterTrungTamKhaiTag(4, "ap")).toBe(true);
+    expect(coAdapterTrungTamKhaiTag(4, "khac")).toBe(false);
+    expect(coAdapterTrungTamKhaiTag(5, "nhiet")).toBe(false);
+  });
+
+  it("không khai tagKeys ⇒ không khai gì; thongTinAdapter/adapterTheoMa KHÔNG lộ tagKeys", () => {
+    datThongTinAdapter(31, { pollMs: 1000, coDeadband: false, machineId: 4, code: "DEV-31" });
+    expect(coAdapterTrungTamKhaiTag(4, "nhiet")).toBe(false);
+    datThongTinAdapter(32, { pollMs: 1000, coDeadband: false, machineId: 4, code: "DEV-32", tagKeys: ["nhiet"] });
+    expect(thongTinAdapter(32)).toEqual({ pollMs: 1000, coDeadband: false, machineId: 4, code: "DEV-32" });
+    expect(adapterTheoMa("DEV-32")).toEqual({ adapterId: 32, pollMs: 1000, coDeadband: false, machineId: 4, code: "DEV-32" });
+  });
+
+  it("máy hiệu lực theo đăng ký MỚI NHẤT; xoaAdapter / xoaTatCaAdapter / đăng ký lại không tagKeys ⇒ gỡ khai báo", () => {
+    datThongTinAdapter(31, { pollMs: 1000, coDeadband: false, machineId: 4, code: "DEV-31", tagKeys: ["nhiet"] });
+    datThongTinAdapter(31, { pollMs: 1000, coDeadband: false, machineId: 6, code: "DEV-31", tagKeys: ["nhiet"] });
+    expect(coAdapterTrungTamKhaiTag(4, "nhiet")).toBe(false);
+    expect(coAdapterTrungTamKhaiTag(6, "nhiet")).toBe(true);
+    datThongTinAdapter(31, { pollMs: 1000, coDeadband: false, machineId: 6, code: "DEV-31" });
+    expect(coAdapterTrungTamKhaiTag(6, "nhiet")).toBe(false);
+    datThongTinAdapter(31, { pollMs: 1000, coDeadband: false, machineId: 6, code: "DEV-31", tagKeys: ["nhiet"] });
+    xoaAdapter(31);
+    expect(coAdapterTrungTamKhaiTag(6, "nhiet")).toBe(false);
+    datThongTinAdapter(31, { pollMs: 1000, coDeadband: false, machineId: 6, code: "DEV-31", tagKeys: ["nhiet"] });
+    xoaTatCaAdapter();
+    expect(coAdapterTrungTamKhaiTag(6, "nhiet")).toBe(false);
+    datThongTinAdapter(31, { pollMs: 1000, coDeadband: false, machineId: 6, code: "DEV-31", tagKeys: ["nhiet"] });
+    __datLaiBoDemHienTai();
+    expect(coAdapterTrungTamKhaiTag(6, "nhiet")).toBe(false);
   });
 });

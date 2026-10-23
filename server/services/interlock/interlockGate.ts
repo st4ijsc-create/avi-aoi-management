@@ -34,7 +34,14 @@ import {
   type KetQuaDanhGia,
   type ObservationContext,
 } from "./ruleEvaluator";
-import { NGUONG_DEADBAND_MS, SO_LICH_SU_TOI_DA, adapterTheoMa, boDemDangBat, timTheoMayVaTag } from "../scada/boDemHienTai";
+import {
+  NGUONG_DEADBAND_MS,
+  SO_LICH_SU_TOI_DA,
+  adapterTheoMa,
+  boDemDangBat,
+  coAdapterTrungTamKhaiTag,
+  timTheoMayVaTag,
+} from "../scada/boDemHienTai";
 
 /** Window start = now - windowSeconds (default 300s). */
 function windowStart(rule: InterlockRule): Date {
@@ -164,6 +171,7 @@ export async function fetchObservation(rule: InterlockRule, now: number = Date.n
  * Trả `obs` khi có đúng MỘT mẫu tốt, còn tươi; ngược lại trả lý do thiếu dữ liệu (D2: fail-closed — người gọi quyết định chặn).
  *   - luật không gắn máy ⇒ mo_ho (không đoán máy);   0 mẫu ⇒ khong_co_mau;   >1 adapter cùng tagKey trên máy ⇒ mo_ho (không chọn bừa);
  *   - q !== "good" ⇒ chat_luong_xau;   stale ⇒ cu;   ngược lại series = lichSu (cũ→mới), scalar = v.
+ *   - final I3 (c): series CHỈ gồm điểm có giờ nhận `rx >= now - windowSeconds·1000` (khớp `ts >= since` của đường DB, theo giờ máy chủ).
  */
 function docTuBoDem(rule: InterlockRule, now: number): { obs: ObservationContext } | { lyDo: NonNullable<KetQuaDanhGia["lyDo"]> } {
   if (rule.machineId == null || !rule.sourceKey?.trim()) return { lyDo: "cau_hinh" };
@@ -174,7 +182,9 @@ function docTuBoDem(rule: InterlockRule, now: number): { obs: ObservationContext
   if (m.q !== "good") return { lyDo: "chat_luong_xau" };
   if (m.stale) return { lyDo: "cu" };
   const scalar = typeof m.v === "number" ? m.v : typeof m.v === "boolean" ? Number(m.v) : null;
-  return { obs: { series: m.lichSu.slice(), scalar } };
+  const tuRx = now - (rule.windowSeconds ?? 300) * 1000;
+  const series = m.lichSu.filter((_, i) => (m.lichSuRx[i] ?? Number.NEGATIVE_INFINITY) >= tuRx);
+  return { obs: { series, scalar } };
 }
 
 const NGUON_SO_VO_HUONG: ReadonlySet<string> = new Set(["telemetry_tag", "cpk"]);
@@ -204,7 +214,12 @@ export async function danhGiaLuatChiTiet(
   // Bộ đệm giữ tối đa SO_LICH_SU_TOI_DA mẫu: luật cần "N điểm liên tiếp" với N lớn hơn thì cache KHÔNG đủ ⇒ đọc chuỗi từ DB (vẫn fail-closed
   // nếu DB thiếu mẫu) thay vì chặn vĩnh viễn vì lichSu không bao giờ đủ dài.
   const canChuoiDaiHonBoDem = rule.consecutiveCount != null && rule.consecutiveCount > SO_LICH_SU_TOI_DA;
-  if (sourceType === "telemetry_tag" && boDemDangBat() && !canChuoiDaiHonBoDem) {
+  // SCADA R0 final I2 — bộ đệm CHỈ được nuôi bởi đường OT trung tâm trong tiến trình này: chỉ đọc nó khi một adapter OT trung tâm đã đăng
+  // ký của máy luật KHAI tag luật. Nguồn khác (edge, MQTT, MTConnect, SECS/GEM, CFX, /api/v1, simulator, bản sao không chạy cổng OT) ⇒
+  // đường DB (cùng ngữ nghĩa fail-closed). Không có nhánh này, mọi luật của các nguồn đó CHẶN vĩnh viễn với khong_co_mau khi bật bộ đệm.
+  const boDemNuoiTag =
+    sourceType === "telemetry_tag" && rule.machineId != null && rule.sourceKey != null && coAdapterTrungTamKhaiTag(rule.machineId, rule.sourceKey);
+  if (sourceType === "telemetry_tag" && boDemDangBat() && !canChuoiDaiHonBoDem && boDemNuoiTag) {
     const doc = docTuBoDem(rule, now);
     if ("lyDo" in doc) return thieu(doc.lyDo);
     obs = doc.obs;
