@@ -17,6 +17,7 @@ import {
   khoiDongBoDemHienTai,
   layGiaTri,
   napTuOt,
+  POLL_MAC_DINH_MS,
   thongTinAdapter,
   timTheoMayVaTag,
   xoaAdapter,
@@ -28,8 +29,11 @@ const T0 = 1_800_000_000_000;
 function mau(over: Partial<OtSample> = {}): OtSample {
   return { tagKey: "t", raw: 1, value: 1, quality: "good", timestamp: new Date(T0), ...over };
 }
-/** Nạp qua đường tin cậy: adapter 7 (không gắn máy) trừ khi nói khác. */
+/** Nạp qua đường tin cậy: adapter 7 (không gắn máy) trừ khi nói khác. Adapter chưa đăng ký thì đăng ký trước (napTuOt bỏ adapter lạ). */
 function nap(samples: OtSample[], now: number = T0, adapterId = 7, machineId: number | null = null): string[] {
+  if (thongTinAdapter(adapterId) === null) {
+    datThongTinAdapter(adapterId, { pollMs: POLL_MAC_DINH_MS, coDeadband: false, machineId, code: `A${adapterId}` });
+  }
   return napTuOt({ adapterId, machineId }, samples, now);
 }
 
@@ -173,7 +177,7 @@ describe("stale", () => {
     expect(layGiaTri(7, "t", T0 + 70_001)?.stale).toBe(true);
   });
 
-  it("adapter chưa có thông tin ⇒ pollMs 5000, không deadband (ngưỡng 15 s)", () => {
+  it("nhịp mặc định 5000, không deadband (ngưỡng 15 s)", () => {
     nap([mau()]);
     expect(layGiaTri(7, "t", T0 + 15_000)?.stale).toBe(false);
     expect(layGiaTri(7, "t", T0 + 15_001)?.stale).toBe(true);
@@ -251,13 +255,13 @@ describe("I1 — máy hiệu lực quyết lúc đọc", () => {
     expect(layGiaTri(7, "t", T0 + 1)?.machineId).toBeNull();
   });
 
-  it("chuyển sang máy khác ⇒ theo máy mới ngay; không có thông tin adapter ⇒ dùng giá trị đã lưu", () => {
+  it("chuyển sang máy khác ⇒ theo máy mới ngay", () => {
     datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: 3, code: "A" });
     nap([mau()], T0, 7, 3);
     datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: 4, code: "A" });
     expect(timTheoMayVaTag(3, "t", T0)).toEqual([]);
     expect(timTheoMayVaTag(4, "t", T0)).toHaveLength(1);
-    nap([mau()], T0, 9, 6); // adapter 9 chưa có thông tin
+    nap([mau()], T0, 9, 6);
     expect(timTheoMayVaTag(6, "t", T0)).toHaveLength(1);
   });
 });
@@ -283,6 +287,17 @@ describe("M3 — xoaAdapter / xoaTatCaAdapter", () => {
     expect(layGiaTri(7, "b", T0)).toBeNull();
     expect(thongTinAdapter(7)).toBeNull();
     expect(thongTinAdapter(8)).not.toBeNull();
+  });
+
+  it("mẫu tới muộn sau xoaAdapter(7) KHÔNG tạo lại mục; adapter chưa đăng ký bị bỏ", () => {
+    datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: 3, code: "A" });
+    nap([mau()], T0, 7, 3);
+    xoaAdapter(7);
+    expect(napTuOt({ adapterId: 7, machineId: 3 }, [mau({ timestamp: new Date(T0 + 1) })], T0 + 1)).toEqual([]);
+    expect(layGiaTri(7, "t", T0 + 1)).toBeNull();
+    expect(timTheoMayVaTag(3, "t", T0 + 1)).toEqual([]);
+    expect(napTuOt({ adapterId: 99, machineId: 3 }, [mau()], T0)).toEqual([]);
+    expect(layGiaTri(99, "t", T0)).toBeNull();
   });
 
   it("xoaAdapter(1) không xoá nhầm adapter 12 (tiền tố)", () => {

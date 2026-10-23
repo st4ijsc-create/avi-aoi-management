@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { baoThongTinChoBoDem, detachOtAdapter, stopOt } from "./otManager";
-import { __datLaiBoDemHienTai, layGiaTri, napTuOt, thongTinAdapter } from "../scada/boDemHienTai";
+import { __datLaiBoDemHienTai, datThongTinAdapter, layGiaTri, napTuOt, thongTinAdapter } from "../scada/boDemHienTai";
 import type { RuntimeAdapter } from "./deviceAdapter";
 import type { OtSample } from "./otDriver";
 
@@ -66,6 +66,7 @@ describe("M3 - gỡ adapter khỏi bộ đệm", () => {
   it("detachOtAdapter xoá thông tin + mục của adapter đó, adapter khác giữ", async () => {
     baoThongTinChoBoDem(adapter([TAG_THUONG]));
     napTuOt({ adapterId: 7, machineId: 3 }, [mauT], T0);
+    datThongTinAdapter(8, { pollMs: 1000, coDeadband: false, machineId: 3, code: "A8" });
     napTuOt({ adapterId: 8, machineId: 3 }, [mauT], T0);
     await detachOtAdapter(7);
     expect(layGiaTri(7, "t", T0)).toBeNull();

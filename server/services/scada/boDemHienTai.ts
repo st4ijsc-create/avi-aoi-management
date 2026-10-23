@@ -184,7 +184,7 @@ export function boDemDangBat(): boolean {
 
 /**
  * Nạp mẫu OT từ ĐƯỜNG TRONG TIẾN TRÌNH (`ingest.ts` gọi; KHÔNG phụ thuộc DB ghi được hay không). Khoá lấy từ adapter đáng tin
- * + mẫu, không từ `meta`. No-op rẻ khi SCADA_LIVE_CACHE_ENABLED != "true". Mẫu mang `tsReject` (bus sẽ loại) bị bỏ.
+ * + mẫu, không từ `meta`. No-op rẻ khi SCADA_LIVE_CACHE_ENABLED != "true" hoặc adapter chưa/không còn đăng ký (`datThongTinAdapter`). Mẫu mang `tsReject` (bus sẽ loại) bị bỏ.
  * Trả khoá `"${adapterId}:${tagKey}"` vừa đổi.
  */
 export function napTuOt(
@@ -193,6 +193,9 @@ export function napTuOt(
   now: number = Date.now(),
 ): string[] {
   if (!boDemDangBat() || !samples || samples.length === 0) return [];
+  // Chỉ adapter đã `datThongTinAdapter` mới được quản: mẫu tới muộn sau `xoaAdapter`/stopOt không được tạo lại mục (chỉ tiến trình
+  // OT đang chạy đăng ký adapter; adapter đã gỡ/chuyển edge thì không).
+  if (!thongTin.has(a.adapterId)) return [];
   const mau: Mau[] = [];
   for (const s of samples) {
     if (!s || typeof s.tagKey !== "string" || s.tagKey === "" || s.tsReject) continue;
