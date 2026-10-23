@@ -1,8 +1,8 @@
 /**
  * SCADA R1a Task 6 (K6) - khoa chon (adapter, kenh) cho MOT nguoi, theo DB (`scada_khoa_chon`, PK (adapter_id, tag_key)).
  *
- * Muc dich: hai nguoi khong lenh cung mot kenh cung luc. `request()` (Task 8) giu khoa, `confirm()` (Task 9) kiem `conGiuKhoa`
- * roi nha; khoa het han CUNG luc voi TTL 60 s cua yeu cau (D4): `hetHanLuc` do nguoi goi truyen vao, la cung gia tri ghi vao yeu cau.
+ * Muc dich: hai nguoi khong lenh cung mot kenh cung luc. `request()` (Task 8) giu khoa, `confirm()` (Task 9) kiem-va-gia-han
+ * NGUYEN TU bang `giaHanKhoaChon` (khong dua vao `conGiuKhoa` khong khoa) roi nha sau `dispatch()`; khoa het han CUNG luc voi TTL 60 s cua yeu cau (D4): `hetHanLuc` do nguoi goi truyen vao, la cung gia tri ghi vao yeu cau.
  *
  * QUYET DINH
  *  1. DONG HO: mot nguon duy nhat la DONG HO UNG DUNG. `now` la tham so (test xac dinh); khong truyen thi `new Date()` cua tien trinh.
@@ -83,6 +83,34 @@ export async function nhaKhoaChon(tx: KhoaChonDb, a: KhoaChonKey & { requestId: 
   await tx
     .delete(scadaKhoaChon)
     .where(and(eq(scadaKhoaChon.adapterId, a.adapterId), eq(scadaKhoaChon.tagKey, a.tagKey), eq(scadaKhoaChon.requestId, a.requestId)));
+}
+
+/**
+ * R1a Task 9 (ledger ruling T6) — KIEM VA GIA HAN NGUYEN TU cho `confirm`: MOT cau `UPDATE … SET expires_at = GREATEST(expires_at, denLuc)
+ * WHERE (adapter, tag) AND user_id AND request_id AND expires_at > now RETURNING`. Co hang => khoa con cua dung yeu cau nay VA da duoc
+ * keo toi it nhat `denLuc` (khong bao gio rut ngan). Khong hang => khoa da mat (het han / da nha / da sang yeu cau khac) => `KHOA_MAT`.
+ * Khac `conGiuKhoa` (SELECT khong khoa): giua "kiem" va "het lenh" khong co khe nao de nguoi khac `giuKhoaChon` khi khoa het han giua
+ * chung — vi ngay luc kiem, han da duoc day ra sau cua so gui. Nguoi goi nha bang `nhaKhoaChon` khi `dispatch()` xong/nem.
+ */
+export async function giaHanKhoaChon(
+  tx: KhoaChonDb,
+  a: KhoaChonKey & { userId: number; requestId: string; denLuc: Date },
+  now: Date = new Date(),
+): Promise<boolean> {
+  const rows = await tx
+    .update(scadaKhoaChon)
+    .set({ expiresAt: sql`GREATEST(${scadaKhoaChon.expiresAt}, ${iso(a.denLuc)}::timestamptz)` })
+    .where(
+      and(
+        eq(scadaKhoaChon.adapterId, a.adapterId),
+        eq(scadaKhoaChon.tagKey, a.tagKey),
+        eq(scadaKhoaChon.userId, a.userId),
+        eq(scadaKhoaChon.requestId, a.requestId),
+        sql`${scadaKhoaChon.expiresAt} > ${iso(now)}::timestamptz`,
+      ),
+    )
+    .returning({ adapterId: scadaKhoaChon.adapterId });
+  return rows.length > 0;
 }
 
 /** true CHI KHI hang khop `user_id` VA `request_id` VA `expires_at > now` (het han dung bang `now` => het). */

@@ -1,8 +1,11 @@
 /**
  * SCADA R1a Task 8 — `scadaCommands` (ruling R-2: `scada.commands.*` của kế hoạch = `trpc.scadaCommands.*`): lệnh ghi tag từ HMI.
  *
- *   request (mutation) — bước 1: bản xem trước + khoá chọn + dòng chờ `ai_pending_actions` (tool "hmi.write_tag", TTL 60 s).
- *   confirm / huy / trangThai — Task 9 (KHÔNG có ở đây).
+ *   request (mutation)   — bước 1: bản xem trước + khoá chọn + dòng chờ `ai_pending_actions` (tool "hmi.write_tag", TTL 60 s).
+ *   confirm (mutation)   — bước 2 (R1a Task 9): 2FA theo mức tag HIỆN TẠI, kiểm lại cổng, gia hạn khoá nguyên tử, CAS
+ *                          proposed→confirmed, `dispatch()` hitl hmi.write_tag đọc lại bắt buộc. Thứ tự + quyết định: lenhHmi.ts.
+ *   huy (mutation)       — chủ yêu cầu huỷ: proposed→cancelled, nhả khoá.
+ *   trangThai (query)    — chủ yêu cầu xem: dòng chờ + attempts + command_log theo actionId (không address/errorText).
  *
  * Router MỎNG: logic + thứ tự cổng + nhật ký `scada_command_attempts` ở `server/services/scada/lenhHmi.ts`. Ở đây chỉ: danh tính + phạm
  * vi từ `ctx` (`phamViCua(ctx)`, không bao giờ từ input) và đổi từ chối thành `appError` (mỗi mã MỘT lời gọi literal — cổng
@@ -15,7 +18,7 @@ import { z } from "zod";
 import { router, moduleProcedure } from "../_core/trpc";
 import { appError } from "../_core/appError";
 import { phamViCua } from "./_phamViNguoiXem";
-import { yeuCauGhiTag, type TuChoiYeuCau } from "../services/scada/lenhHmi";
+import { huyYeuCauGhi, trangThaiYeuCauGhi, xacNhanGhiTag, yeuCauGhiTag, type NguoiGoiLenh, type TuChoiYeuCau } from "../services/scada/lenhHmi";
 
 const thuTucLenh = moduleProcedure("MOD_OT_CONTROL");
 
@@ -23,12 +26,28 @@ const lyDoInput = z.string().trim().min(5).max(300);
 
 const so = (n: number | null) => (n === null ? "—" : n);
 
+const requestIdInput = z.object({ requestId: z.string().uuid() });
+
+/** Danh tính người gọi từ `ctx` (không bao giờ từ input). */
+function nguoiGoi(ctx: {
+  user: { id: number; role: string; twoFactorEnabled?: boolean | null };
+  sessionToken?: string | null;
+  __luotXacMinhTotp?: string;
+}): NguoiGoiLenh {
+  return {
+    user: { id: ctx.user.id, role: ctx.user.role, twoFactorEnabled: ctx.user.twoFactorEnabled },
+    sessionToken: ctx.sessionToken ?? null,
+    ...(ctx.__luotXacMinhTotp ? { __luotXacMinhTotp: ctx.__luotXacMinhTotp } : {}),
+  };
+}
+
 /** Từ chối ⇒ appError. `ma` (= reason_code của dòng attempts) luôn có trong params cho M5. */
 export function loiTuChoiLenh(t: TuChoiYeuCau) {
   switch (t.ma) {
     case "FEATURE_DISABLED":
       return appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "scadaCommands", ma: t.ma }, "Lệnh HMI SCADA đang tắt (SCADA_COMMANDS_ENABLED).");
     case "NOT_FOUND":
+      if (t.entity === "scadaRequest") return appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "scadaRequest", ma: t.ma }, "Yêu cầu không tồn tại.");
       return t.entity === "adapter"
         ? appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter", ma: t.ma }, "Adapter không tồn tại.")
         : appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag", ma: t.ma }, t.chiTiet);
@@ -63,6 +82,14 @@ export function loiTuChoiLenh(t: TuChoiYeuCau) {
       return appError("CONFLICT", "OPERATION_FAILED", { operation: "scadaSelectTag", reason: "scadaSelectionLockBusy", ma: t.ma }, t.chiTiet);
     case "DA_XU_LY":
       return appError("CONFLICT", "SCADA_REQUEST_ALREADY_HANDLED", { ma: t.ma }, t.chiTiet);
+    case "HET_HAN":
+      return appError("PRECONDITION_FAILED", "SCADA_REQUEST_EXPIRED", { ma: t.ma }, t.chiTiet);
+    case "KHOA_MAT":
+      return appError("CONFLICT", "SCADA_SELECTION_LOST", { ma: t.ma }, t.chiTiet);
+    case "TOTP_CAN":
+      return appError("PRECONDITION_FAILED", "SCADA_TOTP_REQUIRED", { ma: t.ma, level: t.level }, t.chiTiet);
+    case "TOTP_SAI":
+      return appError("PRECONDITION_FAILED", "SCADA_TOTP_INVALID", { ma: t.ma, level: t.level }, t.chiTiet);
   }
 }
 
@@ -78,15 +105,28 @@ export const scadaCommandsRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const kq = await yeuCauGhiTag(
-        {
-          user: { id: ctx.user.id, role: ctx.user.role, twoFactorEnabled: ctx.user.twoFactorEnabled },
-          sessionToken: ctx.sessionToken ?? null,
-        },
-        phamViCua(ctx),
-        input,
-      );
+      const kq = await yeuCauGhiTag(nguoiGoi(ctx), phamViCua(ctx), input);
       if (!kq.ok) throw loiTuChoiLenh(kq.tuChoi);
       return kq.ketQua;
     }),
+
+  confirm: thuTucLenh
+    .input(z.object({ requestId: z.string().uuid(), totpCode: z.string().length(6).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const kq = await xacNhanGhiTag(nguoiGoi(ctx), phamViCua(ctx), input);
+      if (!kq.ok) throw loiTuChoiLenh(kq.tuChoi);
+      return kq.ketQua;
+    }),
+
+  huy: thuTucLenh.input(requestIdInput).mutation(async ({ ctx, input }) => {
+    const kq = await huyYeuCauGhi(nguoiGoi(ctx), input);
+    if (!kq.ok) throw loiTuChoiLenh(kq.tuChoi);
+    return kq.ketQua;
+  }),
+
+  trangThai: thuTucLenh.input(requestIdInput).query(async ({ ctx, input }) => {
+    const kq = await trangThaiYeuCauGhi(nguoiGoi(ctx), input);
+    if (!kq.ok) throw loiTuChoiLenh(kq.tuChoi);
+    return kq.ketQua;
+  }),
 });

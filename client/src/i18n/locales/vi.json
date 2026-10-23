@@ -3686,6 +3686,7 @@
     },
     "entity": {
       "edgeNode": "node biên (edge)",
+      "scadaRequest": "yêu cầu lệnh SCADA",
       "mqttClient": "thiết bị MQTT",
       "abTestExperiment": "thử nghiệm A/B",
       "adapter": "bộ chuyển đổi thiết bị",
@@ -4517,6 +4518,10 @@
     "SCADA_MACHINE_NOT_REMOTE": "Máy không ở chế độ REMOTE (hoặc không xác định được chế độ) — lệnh từ xa bị từ chối.",
     "SCADA_TAG_SELECTED_BY_OTHER": "Kênh này đang được {{boiTen}} chọn để ra lệnh — chờ yêu cầu của họ xong hoặc hết hạn (tối đa 60 giây).",
     "SCADA_REQUEST_ALREADY_HANDLED": "Yêu cầu này đã được xử lý hoặc đã hết hạn — hãy tạo yêu cầu mới.",
+    "SCADA_REQUEST_EXPIRED": "Yêu cầu đã hết hạn (60 giây) mà chưa được xác nhận — hãy tạo yêu cầu mới.",
+    "SCADA_SELECTION_LOST": "Bạn không còn giữ kênh này (khoá chọn đã hết hạn hoặc đã chuyển sang yêu cầu khác) — hãy tạo yêu cầu mới.",
+    "SCADA_TOTP_REQUIRED": "Kênh mức tác động {{level}} cần mã xác thực 2 lớp (TOTP) — nhập mã rồi xác nhận lại.",
+    "SCADA_TOTP_INVALID": "Mã xác thực 2 lớp không đúng hoặc đã được dùng — nhập mã mới rồi xác nhận lại (kênh mức {{level}}).",
     "TU_DONG_TAT": "Chế độ Agent tự động đang TẮT trên máy chủ (công tắc AI_CODING_TU_TRI_GHI). Dùng chế độ duyệt từng bước, hoặc nhờ quản trị bật công tắc.",
     "THIEU_QUYEN_THUC_THI": "Thiếu quyền chạy lệnh / tự ghi (ai_repo_exec) cho chế độ Agent tự động.",
     "THIEU_QUYEN": "Thiếu quyền đọc repo (ai_repo_read) để chạy Agent.",

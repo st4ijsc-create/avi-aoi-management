@@ -182,6 +182,11 @@ export const APP_ERROR_CODES = [
   "SCADA_MACHINE_NOT_REMOTE",      // params: { ma, lyDo } — máy không ở REMOTE (lyDo = LyDoCheDo của cheDoMay, M5 dịch riêng).
   "SCADA_TAG_SELECTED_BY_OTHER",   // params: { ma, boiUserId, boiTen, hetHanLuc } — người khác đang giữ khoá chọn kênh (K6).
   "SCADA_REQUEST_ALREADY_HANDLED", // params: { ma } — clientRequestId đã dùng cho yêu cầu đã xử lý / hết hạn / lệnh khác.
+  // ── SCADA R1a Task 9 (K1/K6/K8/K9) — từ chối bước 2 `scadaCommands.confirm` (cùng quy ước `ma`) ──
+  "SCADA_REQUEST_EXPIRED",         // params: { ma } — yêu cầu quá TTL 60 s (HET_HAN); tạo yêu cầu mới.
+  "SCADA_SELECTION_LOST",          // params: { ma } — khoá chọn kênh đã mất (KHOA_MAT: hết hạn / yêu cầu mới hơn / người khác).
+  "SCADA_TOTP_REQUIRED",           // params: { ma, level } — kênh mức 4–5 cần mã TOTP (TOTP_CAN); yêu cầu GIỮ, nhập mã rồi xác nhận lại.
+  "SCADA_TOTP_INVALID",            // params: { ma, level } — mã TOTP sai / sai định dạng / đã dùng (TOTP_SAI); yêu cầu GIỮ.
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];

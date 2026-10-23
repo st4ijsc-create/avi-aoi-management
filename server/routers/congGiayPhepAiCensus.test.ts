@@ -517,7 +517,11 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   đổi.** Router MỚI `server/routers/scadaCommandsRouter.ts` (không phải bề mặt AI; `hmi.write_tag` KHÔNG vào registry tool AI) có MỘT
 //   thủ tục `request`, sau `MOD_OT_CONTROL` (xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 117 → 118). Đo: ghim cũ (gốc 4d149497e) đỏ
 //   ĐÚNG +1 sau khi thêm router. `tong` 2393 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2393, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+// ★★ 2026-10-24 · R1a scadaCommands +3 (SCADA R1a Task 9) — **tong 2393 → 2396 · beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong KHÔNG
+//   đổi.** Ba thủ tục MỚI `confirm` / `huy` / `trangThai` của `server/routers/scadaCommandsRouter.ts` (không phải bề mặt AI;
+//   `hmi.write_tag` KHÔNG vào registry tool AI), sau `MOD_OT_CONTROL` (xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 118 → 121). Đo: ghim cũ (gốc
+//   dc4422e7e) đỏ ĐÚNG +3. `tong` 2396 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2396, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
@@ -559,7 +563,10 @@ const GHIM_MODULE_KHAC = {
   // ★ 2026-10-24 · R1a scadaCommands +1 (SCADA R1a Task 8) — 117 → 118: mutation `scadaCommands.request` trên
   //   `moduleProcedure("MOD_OT_CONTROL")` (KHÔNG sàn vai ở procedure: operator được ghi kênh mức 1–3 — sàn theo mức kiểm trong handler
   //   sau khi đọc tag). Không thủ tục cũ nào đổi cổng.
-  MOD_OT_CONTROL: 118,
+  // ★ 2026-10-24 · R1a scadaCommands +3 (SCADA R1a Task 9) — 118 → 121: mutation `confirm` / `huy` + query `trangThai` trên
+  //   `moduleProcedure("MOD_OT_CONTROL")` như `request` (sàn vai + 2FA theo mức kiểm TRONG handler bằng `kiemXacThucTheoMuc` trên tag
+  //   HIỆN TẠI). Không thủ tục cũ nào đổi cổng.
+  MOD_OT_CONTROL: 121,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

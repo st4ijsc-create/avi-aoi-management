@@ -3686,6 +3686,7 @@
     },
     "entity": {
       "edgeNode": "edge node",
+      "scadaRequest": "SCADA command request",
       "mqttClient": "MQTT device",
       "abTestExperiment": "A/B test experiment",
       "adapter": "device adapter",
@@ -4525,6 +4526,10 @@
     "SCADA_MACHINE_NOT_REMOTE": "The machine is not in REMOTE mode (or its mode cannot be determined) — remote commands are refused.",
     "SCADA_TAG_SELECTED_BY_OTHER": "This channel is selected for a command by {{boiTen}} — wait until their request finishes or expires (at most 60 seconds).",
     "SCADA_REQUEST_ALREADY_HANDLED": "This request has already been handled or has expired — create a new request.",
+    "SCADA_REQUEST_EXPIRED": "This request expired (60 seconds) before it was confirmed — create a new request.",
+    "SCADA_SELECTION_LOST": "You no longer hold this channel (the selection lock expired or moved to another request) — create a new request.",
+    "SCADA_TOTP_REQUIRED": "Impact level {{level}} channels need a two-factor (TOTP) code — enter the code and confirm again.",
+    "SCADA_TOTP_INVALID": "The two-factor code is wrong or has already been used — enter a new code and confirm again (level {{level}} channel).",
     "TU_DONG_TAT": "Autonomous agent mode is OFF on the server (AI_CODING_TU_TRI_GHI switch). Use step-by-step approval mode, or ask an admin to enable it.",
     "THIEU_QUYEN_THUC_THI": "Missing run/auto-write permission (ai_repo_exec) for autonomous agent mode.",
     "THIEU_QUYEN": "Missing repository read permission (ai_repo_read) to run the agent.",
