@@ -145,6 +145,7 @@ Chốt theo driver (chỉ khi `OT_CHAT_LUONG_V2_ENABLED=true`, tắt ⇒ đúng 
 - S7 `readAllItems` (`:222-228`): bọc `withDeadline(…, this.timeoutMs + 1000, "s7 readAllItems")` (**không cờ** — C5). Địa chỉ sai một tag (`parseS7Address` `:213`) ⇒ chỉ tag đó bad `config_error`, các tag khác vẫn đọc (**sau cờ**). MC (`:358`) tương tự.
 - EIP: gắn `reason:"device_error"` + statusCode từ `err.code ?? err.message` (cắt 80 ký tự).
 
+- [ ] **Step 0 (bắt buộc, duyệt 23/10):** trước khi sửa, chạy `npx vitest run server/services/ot/drivers server/services/ot/otManager server/services/ot/connectionSupervisor server/services/ot/readback` và ghi **số tệp / số ca xanh** vào báo cáo task. Sau khi sửa chạy lại đúng lệnh đó: số ca cũ phải xanh đủ.
 - [ ] **Step 1: Test đỏ** `chatLuong.drivers.test.ts` (bật cờ bằng `vi.stubEnv`):
   - Modbus thật trong tiến trình (`ServerTCP` như `otManager.boot.test.ts:94-110`) trả exception 2 cho một thanh ghi ⇒ mẫu tag đó `bad`, `statusCode:"modbus_exc_02"`, `reason:"config_error"`; tag khác `good`.
   - Modbus: đóng server giữa chừng, `subscribe(…, 200, {deadlineMs:150})` ⇒ trong ≤ 2 chu kỳ (≤ 400 ms + 150 ms) mọi tag nhận một mẫu `bad`/`comm_lost`.
@@ -152,6 +153,7 @@ Chốt theo driver (chỉ khi `OT_CHAT_LUONG_V2_ENABLED=true`, tắt ⇒ đúng 
   - S7: `readAllItems` không bao giờ resolve ⇒ `readTags` reject trong `timeoutMs + 1000` (fake timers).
   - S7 cờ bật, địa chỉ `"XYZ"` cho tag 2 ⇒ tag 1 good, tag 2 bad `config_error`.
   - Cờ **tắt**: OPC UA `0x40920000` ⇒ `bad` (đúng hành vi cũ) — bảo vệ đường lui.
+  - Cờ **tắt** + Modbus server đóng giữa chừng ⇒ **không** có mẫu nào được phát (đúng hành vi cũ: mất kết nối không sinh mẫu) — ca bắt buộc theo duyệt 23/10.
 - [ ] **Step 2: Chạy** `npx vitest run server/services/ot/drivers/chatLuong.drivers.test.ts` — đỏ.
 - [ ] **Step 3: Cài** theo chốt trên; giữ nguyên chữ ký `readTags`.
 - [ ] **Step 4: Chạy** tệp mới + `npx vitest run server/services/ot` (toàn bộ test OT cũ phải xanh).
@@ -205,7 +207,7 @@ Chốt:
 - Ghi DB khi `OT_GHI_TRANG_THAI_ADAPTER_ENABLED=true`: **ghi ngay** khi đổi trạng thái nếu lần ghi trước của adapter đó đã quá 5 s; nếu chưa, hẹn **một** lần ghi cuối (trailing) đúng lúc tròn 5 s, ghi trạng thái mới nhất. Lỗi ghi DB chỉ log, không ném.
 - Chuyển sang `lost` và `OT_CHAT_LUONG_V2_ENABLED=true` ⇒ `ingestSamples(adapter, mauXauChoMoiTag(tags, statusCodeTừLỗi ?? "comm_lost", "comm_lost", now))` **một lần** cho đợt mất.
 - otManager: legacy — `attemptLegacyStart` thành công ⇒ `connected`; thất bại/`legacyTick` thấy `!isConnected()` ⇒ `lost`; `detachOtAdapter` hoặc `isEnabled=false` ⇒ `disabled`. HA — `buildSupervisor` (`:595`) truyền `onStateChange`: `connected`→connected, `reconnecting|failed`→lost, `connecting|idle`→connecting, `stopped`→disabled.
-- Không đụng adapter do edge sở hữu (trung tâm không chạy chúng).
+- Không đụng adapter do edge sở hữu (trung tâm không chạy chúng): `layTrangThaiAdapter` trả `null` cho chúng; **không bao giờ** ghi `lost` cho adapter edge.
 
 - [ ] **Step 1: Test đỏ** `trangThaiAdapter.test.ts` (fake timers, `__datGhiDb` ghi vào mảng):
   - connecting → connected → lost trong 1 s ⇒ ghi DB lần 1 ngay (connecting), lần 2 trailing lúc 5 s mang `error` (trạng thái mới nhất), tổng 2 lần.
@@ -314,7 +316,7 @@ Chốt: `stale = now - rx > max(3 * pollMs, coDeadband ? 70_000 : 0)`; adapter c
   - ra `scada:error` `{ code: "BAD_REQUEST" | "TOO_MANY_TAGS" | "TOO_MANY_SUBS" | "DISABLED" }`
   - `type GiaTriGoi = [adapterId: number, tagKey: string, v: number | string | boolean | null, q: "good" | "uncertain" | "bad", ts: number, ageMs: number, stale: boolean, reason: string | null]`
 
-Chốt: **không** `socket.join`; trạng thái đăng ký nằm trong `socket.data.__scada`; vòng đẩy là một `setInterval(250)` duy nhất (unref) đi qua các socket có đăng ký và `socket.emit`. Quyền kiểm **từng tag** lúc đăng ký (cache theo `machineId` trong đời đăng ký); tag bị từ chối vào `denied`, không gửi giá trị. Tag chưa có trong bộ đệm nhưng được phép ⇒ có mặt trong snapshot với `v:null, q:"bad", reason:"stale"`. Socket ngắt ⇒ xoá đăng ký. Đăng ký khi `SCADA_SOCKET_ENABLED` hoặc `SCADA_LIVE_CACHE_ENABLED` tắt ⇒ `scada:error {code:"DISABLED"}`.
+Chốt: **không** `socket.join`; trạng thái đăng ký nằm trong `socket.data.__scada`; vòng đẩy là một `setInterval(250)` duy nhất (unref) đi qua các socket có đăng ký và `socket.emit`. **Vòng chỉ chạy khi có ≥ 1 đăng ký** (duyệt 23/10): tạo khi đăng ký đầu tiên xuất hiện, `clearInterval` khi đăng ký cuối cùng bị huỷ/ngắt; export `__vongDangChay(): boolean` cho test. Quyền kiểm **từng tag** lúc đăng ký (cache theo `machineId` trong đời đăng ký); tag bị từ chối vào `denied`, không gửi giá trị. Tag chưa có trong bộ đệm nhưng được phép ⇒ có mặt trong snapshot với `v:null, q:"bad", reason:"stale"`. Socket ngắt ⇒ xoá đăng ký. Đăng ký khi `SCADA_SOCKET_ENABLED` hoặc `SCADA_LIVE_CACHE_ENABLED` tắt ⇒ `scada:error {code:"DISABLED"}`.
 
 - [ ] **Step 1: Test đỏ** `scadaSocket.test.ts` (socket giả: `{ data, emit: vi.fn(), on }`, `__datCongPhamViChoTest` của `socketPhongQuyen.ts:153`):
   - 501 tag ⇒ `scada:error TOO_MANY_TAGS`, **không** snapshot (Review Focus 4); 11 đăng ký ⇒ đăng ký 11 bị `TOO_MANY_SUBS`.
@@ -323,6 +325,7 @@ Chốt: **không** `socket.join`; trạng thái đăng ký nằm trong `socket.d
   - 20 lần `napTuTap` cho cùng tag trong 250 ms ⇒ đúng 1 `scada:delta` mang giá trị **cuối**.
   - socket không phải người dùng (`clientType:"machine"`) ⇒ mọi tag bị từ chối.
   - tag stale hiện `stale:true` và `ageMs` > ngưỡng.
+  - `__vongDangChay()` false lúc đầu; true sau đăng ký đầu; false sau khi huỷ đăng ký cuối hoặc socket ngắt.
 - [ ] **Step 2: Test đỏ** `scadaSocket.db.test.ts` theo khuôn `server/_core/socketPhamViPhong.db.test.ts:80-163`, người dùng tạo bằng `taoNguoiDungTest` + `user_factory_assignments`: client socket.io thật đăng ký tag của 2 nhà máy ⇒ chỉ nhận giá trị nhà máy được gán.
 - [ ] **Step 3: Chạy** `npx vitest run server/services/scada/scadaSocket.test.ts` và `npx vitest run -c vitest.db.config.ts server/services/scada/scadaSocket.db.test.ts` — đỏ.
 - [ ] **Step 4: Cài.** `socket.ts`: trong `io.on("connection")`, nếu `SCADA_SOCKET_ENABLED==="true"` ⇒ `registerScadaHandlers(socket)` (khuôn `registerUnsStreamHandlers` `:1348`).
@@ -352,7 +355,8 @@ Chốt:
 - `telemetry_tag` + `SCADA_LIVE_CACHE_ENABLED` ⇒ đọc `timTheoMayVaTag(rule.machineId, rule.sourceKey)`: 0 phần tử ⇒ `khong_co_mau`; > 1 ⇒ `mo_ho`; `q !== "good"` ⇒ `chat_luong_xau`; `stale` ⇒ `cu`; ngược lại `series = lichSu`, `scalar = v`. `rule.machineId` null ⇒ `mo_ho`.
 - Cờ bộ đệm tắt ⇒ đường DB cũ, nhưng không có hàng / `scalar` null ⇒ `thieuDuLieu:true, lyDo:"khong_co_mau"`.
 - Gate: `thieuDuLieu` ∧ `khiThieuDuLieu === "chan"` ⇒ vi phạm (`lyDo:"thieu_du_lieu"`), `blocked:true`. `cho_qua` ⇒ bỏ qua luật đó.
-- Engine *(quyết định trong kế hoạch, báo phiên điều phối)*: `thieuDuLieu` ⇒ **không** tự phát hành động (không dispatch, không andon), ghi log một lần mỗi đợt; cảnh báo truyền thông gộp theo adapter là việc của R2.
+- Engine (**đã duyệt 23/10**): `thieuDuLieu` ⇒ **không** tự phát hành động (không dispatch, không andon), ghi log **một lần mỗi đợt** với mã ổn định đúng dạng `interlock.thieu_du_lieu ruleId=<id> lyDo=<lyDo>` (R2 sẽ nối vào cảnh báo truyền thông); đợt kết thúc khi luật có lại dữ liệu đủ. Cảnh báo truyền thông gộp theo adapter là việc của R2.
+- **Trước khi áp DEV** (duyệt 23/10): chạy trên DEV và gửi phiên điều phối kết quả `SELECT count(*) FILTER (WHERE enabled AND "approvedBy" IS NOT NULL), count(*) FROM interlock_rules` + danh sách luật đang bật có `sourceType='telemetry_tag'`. Chỉ áp DEV khi: Task 9 xanh + đột biến đã chạy + đã gửi số đếm + phiên điều phối trả lời "áp".
 
 - [ ] **Step 1: Test đỏ** `thieuDuLieu.test.ts` (mock bộ đệm):
   - không có mẫu ⇒ gate `blocked:true`, violation `lyDo:"thieu_du_lieu"`.
@@ -361,7 +365,7 @@ Chốt:
   - `khiThieuDuLieu:"cho_qua"` + không có mẫu ⇒ luật đó không chặn.
   - mẫu tốt vượt ngưỡng ⇒ chặn như cũ; mẫu tốt trong ngưỡng ⇒ không chặn.
   - `consecutiveCount:3` đọc đúng 3 phần tử cuối của `lichSu`.
-  - engine: `thieuDuLieu` ⇒ không gọi `dispatch` và không gọi `raiseAndon`.
+  - engine: `thieuDuLieu` ⇒ không gọi `dispatch` và không gọi `raiseAndon`; 3 lần chạy liền thiếu dữ liệu ⇒ đúng **1** dòng log chứa `interlock.thieu_du_lieu ruleId=` ; có lại dữ liệu rồi thiếu lần nữa ⇒ thêm 1 dòng.
 - [ ] **Step 2: Test đỏ** `thieuDuLieu.db.test.ts`: áp migration 0430 lên DB test (`node scripts/apply-migration-0430.mjs --test-only`), chèn luật đã duyệt chưa có cột ⇒ đọc ra `khiThieuDuLieu==="chan"`.
 - [ ] **Step 3: Chạy** hai tệp — đỏ.
 - [ ] **Step 4: Cài** migration + script (khuôn `apply-migration-0412.mjs`, `verify` kiểm cột tồn tại và DEFAULT `'chan'`) + schema + logic.
@@ -381,14 +385,14 @@ Chốt:
 **Interfaces:**
 - Consumes: Task 5 (`layTrangThaiAdapter`), Task 6 (`layBoDem`), Task 7 (`layGiaTri`, `layMauThoTheoThietBi`), Task 4 (`layStubDangChay`), `resetAdapterSession` (`otManager.ts:889`), `detachOtAdapter` (`:1018`), `getOtAdapterStatus` (`:979`).
 - Produces (`protectedProcedure = moduleProcedure("MOD_OT_CONTROL")` như `interlockRouter.ts:37-44`):
-  - `danhSach` (query, `machine_monitoring.canView`) → `Array<{ adapterId; code; ten; protocol; endpoint; machineId: number | null; soHuu: { loai: "trung_tam" } | { loai: "edge"; edgeNodeId: number }; trangThai: "connecting" | "connected" | "lost" | "disabled" | "khong_ro"; tu: string | null; loi: string | null; soLanMat: number; pollMs: number; p95Ms: number | null; boDem1h: { request; loi; timeout; lenh; lenhLoi }; tag: { tot: number; nghiNgo: number; xau: number } }>` — lọc theo `idsTrongPhamVi("machine", phamViCua(ctx))`; adapter `machineId` null chỉ hiện khi phạm vi `null`.
+  - `danhSach` (query, `machine_monitoring.canView`) → `Array<{ adapterId; code; ten; protocol; endpoint; machineId: number | null; soHuu: { loai: "trung_tam" } | { loai: "edge"; edgeNodeId: number; edgeCode: string | null }; trangThai: "connecting" | "connected" | "lost" | "disabled" | "khong_ro" | "edge_chua_co_so_lieu"; tu: string | null; loi: string | null; soLanMat: number; pollMs: number; p95Ms: number | null; boDem1h: { request; loi; timeout; lenh; lenhLoi }; tag: { tot: number; nghiNgo: number; xau: number } }>` — lọc theo `idsTrongPhamVi("machine", phamViCua(ctx))`; adapter `machineId` null chỉ hiện khi phạm vi `null`.
   - `tagCuaAdapter({ adapterId })` (query) → `Array<{ tagKey; address; v; q; statusCode; reason; ageMs; stale; boDem: {request; loi; good; uncertain; bad} }>`
   - `mauTho({ adapterId, tagKey })` (query) → 100 hàng gần nhất `{ ts; giaTri; quality; statusCode; tsSource }`
   - `ketNoiLai({ adapterId, lyDo: string(5..300) })` (mutation; vai `engineer|admin` + `machine_control.canEdit`; adapter trong phạm vi; không phải edge) → `resetAdapterSession(adapterId, "scada_diag")`; ghi `control_audit_log`
   - `tamTat({ adapterId, lyDo })` (mutation; cùng quyền) → `update device_adapters set isEnabled=false` + `detachOtAdapter` + `baoTrangThaiAdapter(…,"disabled")`; ghi audit
   - `datLoiStub({ adapterId, loi: LoiStub })` (mutation; chỉ khi `SCADA_LAB_ENABLED`, `protocol==="stub"`, vai `engineer|admin`) → `layStubDangChay(endpoint)?.simDatLoi(loi)`; ghi audit
 
-Chốt: trạng thái lấy từ RAM (`layTrangThaiAdapter`) trước, DB sau (`khong_ro` khi cả hai trống); adapter của edge hiện chủ sở hữu, trạng thái `khong_ro` (C4 chưa trong R0). "Thử đọc một địa chỉ (Lab)" và chỉ báo "Truyền thông n/m" trên thanh trên **để R1** (ghi rõ trong commit).
+Chốt: trạng thái lấy từ RAM (`layTrangThaiAdapter`) trước, DB sau (`khong_ro` khi cả hai trống). Adapter do edge sở hữu (duyệt 23/10): `trangThai` = giá trị mới `"edge_chua_co_so_lieu"` (thêm vào union), hiển thị "do edge EN-xx sở hữu — chưa có số liệu R0"; **không bao giờ** trả `"lost"` cho adapter edge (C4 chưa trong R0). Test: adapter có `edgeNodeId` ⇒ `trangThai:"edge_chua_co_so_lieu"` kể cả khi DB `status='error'`. "Thử đọc một địa chỉ (Lab)" và chỉ báo "Truyền thông n/m" trên thanh trên **để R1** (ghi rõ trong commit).
 
 - [ ] **Step 1: Test đỏ** `scadaDiagRouter.db.test.ts` (người dùng bằng `taoNguoiDungTest`; 2 nhà máy, mỗi nơi 1 adapter stub; 1 adapter không gắn máy):
   - viewer nhà máy A ⇒ `danhSach` chỉ có adapter A (không có adapter không gắn máy).
@@ -414,7 +418,7 @@ Chốt: trạng thái lấy từ RAM (`layTrangThaiAdapter`) trước, DB sau (`
 
 **Interfaces:**
 - Consumes: Task 10 (`trpc.scadaDiag.*`).
-- Produces: `chatLuongHienThi.ts`: `export function nhanTrangThai(tt: "connecting" | "connected" | "lost" | "disabled" | "khong_ro", tuMs: number | null, now: number): { nhan: string /* khoá i18n */; thoiGian: string | null; tone: "ok" | "warn" | "bad" | "muted" }` · `export function hienChatLuong(q: "good" | "uncertain" | "bad", stale: boolean): { kieu: "tot" | "nghi_ngo" | "xau" | "cu"; vien: "none" | "dotted-grey" | "purple-strike" }` (D10: uncertain = viền chấm xám; bad/stale = gạch tím).
+- Produces: `chatLuongHienThi.ts`: `export function nhanTrangThai(tt: "connecting" | "connected" | "lost" | "disabled" | "khong_ro" | "edge_chua_co_so_lieu", tuMs: number | null, now: number): { nhan: string /* khoá i18n */; thoiGian: string | null; tone: "ok" | "warn" | "bad" | "muted" }` · `export function hienChatLuong(q: "good" | "uncertain" | "bad", stale: boolean): { kieu: "tot" | "nghi_ngo" | "xau" | "cu"; vien: "none" | "dotted-grey" | "purple-strike" }` (D10: uncertain = viền chấm xám; bad/stale = gạch tím).
 
 Chốt giao diện (báo cáo 4.4):
 - Bảng cột: Adapter · Giao thức·endpoint · Sở hữu · Trạng thái (kèm "Mất kết nối 3 ph") · Poll / p95 · Request·lỗi·timeout (1 h) · Tag tốt / ? / xấu · Lỗi gần nhất. Lọc "chỉ lỗi". Làm mới `refetchInterval: 2000` (đạt "M10 hiện mất kết nối ≤ 5 s").
@@ -452,13 +456,14 @@ Cổng nghiệm thu (đúng hàng R0 của báo cáo):
 - [ ] **Step 3: Chạy** hai tệp — phải **xanh** (mọi task trước đã xong). Đỏ ⇒ quay về task sở hữu, không nới ngưỡng.
 - [ ] **Step 4: Đột biến cấp hệ thống:** tắt `OT_CHAT_LUONG_V2_ENABLED` ⇒ cổng 1 đỏ; tắt `OT_GHI_TRANG_THAI_ADAPTER_ENABLED` ⇒ cổng 3 đỏ. Ghi kết quả.
 - [ ] **Step 5: Viết** `scripts/scada-r0-bench.ts` (chạy tay, không vào CI): `pnpm tsx scripts/scada-r0-bench.ts --endpoint tcp://127.0.0.1:15502 --poll 1000 --tags 18 --container avi-openplc-bench`. Dùng `ModbusDriver` + `taoVongPoll` + `trangThaiAdapter` trong tiến trình (không cần DB); "rút cáp" = `docker pause <container>`, "cắm lại" = `docker unpause`; in bảng thời gian 4 cổng đầu. Bench đề xuất: container `avi-openplc-bench` (ảnh `avi-openplc-bench:v3`, Modbus `127.0.0.1:15502`, web `127.0.0.1:18080`) — đang dừng, bật bằng `docker start avi-openplc-bench`; nếu runtime OpenPLC chưa chạy chương trình thì đăng nhập web `openplc/openplc` bấm Start (theo `scripts/safety-plc-bench.ts:54-74`). Địa chỉ đọc: `holding:0..17` (`%QW0..`). Ghi rõ: bản đồ địa chỉ phải xác nhận trên bench trước khi tin.
-- [ ] **Step 6: Chạy bench** (cần Docker), dán bảng kết quả + phiên bản container vào `2026-10-23-scada-r0-bao-cao-nghiem-thu.md`. Không có Docker ⇒ ghi "chưa chạy bench" và lý do, **không** khai đạt.
+- [ ] **Step 6: Chạy bench** (cần Docker), dán bảng kết quả + phiên bản container vào `2026-10-23-scada-r0-bao-cao-nghiem-thu.md`. Chạy **hai** kiểu rút cáp (duyệt 23/10): `docker pause/unpause` (đường TREO — chỉ timeout cứu) và `docker stop/start` (đường RESET — TCP RST); mỗi kiểu một bảng 4 cổng. Không đụng cổng :8091 hay GPU. Không có Docker ⇒ ghi "chưa chạy bench" và lý do, **không** khai đạt.
 - [ ] **Step 7: Chạy toàn bộ** `npx vitest run server/services/ot server/services/scada server/services/interlock server/_core/socket*` + `npm run check` — xanh; ghi số tệp/test.
 - [ ] **Step 8: Commit** `test(scada): nghiem thu R0 - stub kich ban, OPC UA uncertain, bench OpenPLC + .env.example` -- <tệp>.
 
 ---
 
 ## Bàn giao sau R0 (không làm trong kế hoạch này)
+- Xong R0 ⇒ báo phiên điều phối để gộp. **Không push.**
 - Áp migration 0430 lên **DEV**: gửi SQL cho phiên điều phối, chờ duyệt.
 - Bật cờ ở `.env` dev, build + restart :3000: thuộc phiên điều phối.
 - Để R1: Lab "thử đọc một địa chỉ", chỉ báo "Truyền thông n/m" ở thanh trên, C4 (edge), C6 (đọc khối Modbus), C7 (WAL tạm thời).
