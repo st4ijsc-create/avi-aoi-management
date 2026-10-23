@@ -755,6 +755,15 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   (`GGUF_CODE_MODEL`), KHÔNG định tuyến vai trò ⇒ khác /v1 #2 (27B `code.plc`); số này là của sản phẩm trợ lý như nó đang chạy.
   **Cổng: bat ≥ tat + 4/72 VÀ số lượt bat > 300 s (tới khi khối cuối/`done` xong) ≤ 7/72 (mức /v1 #2).** Báo kèm: TTFT, thời gian tới `done`,
   vòng sửa (sach/da-sua/con-loi/bo-qua), cặp lệch. Đạt ⇒ đề xuất bật mặc định cho `tro-ly` (Cmd+K đo sau nếu cần); không đạt ⇒ giữ tắt.
+  **KẾT QUẢ (2026-10-23 09:04–12:11, `reports/PLC-troly-ab-kiem-q36-35b-1.json`, sổ #18/#19):** TẮT **35/72** (tt 17 · tv 10 · ud 8) · BẬT
+  **38/72** (tt 21 · tv 9 · ud 8) ⇒ **+3/72 < +4 — CỔNG KHÔNG ĐẠT ⇒ `tro-ly` GIỮ TẮT.** Vế thời gian đạt: > 300 s bật 1/72 (tắt 0) ≤ 7;
+  trung vị tới `done` 56 → 64 s, p90 119 → 151 s, TTFT trung vị 52 / 50 s (nghĩ trước chữ đầu). Cặp: bật đạt/tắt trượt 11 · ngược lại 8.
+  Vòng ở nhánh bật: sach 55 (33 đạt) · da-sua 8 (5 đạt) · con-loi 8 (0 đạt) · bo-qua 1. **Vòng cứu BIÊN DỊCH nhưng không cứu NGỮ NGHĨA:**
+  trượt vì không biên dịch được (máy chấm không thấy tổng kết test) 25 → 9, nhưng trượt vì test đỏ 12 → 25. Khác /v1 #2 (+8/72 trên 27B):
+  model ở đây là 35B (đường trợ lý không định tuyến vai trò — thiết kế 26ba9d039 xử lý) và tỉ lệ không biên dịch ở bản đầu của 35B trên
+  đường này cao (25/72). Nhiễu ghi rõ: 09:30–10:40 các lượt dò định tuyến (nhúng CPU, `do.mts --cpu`) chạy song song vài phút mỗi lượt —
+  tải CPU, không GPU. Báo cáo trọn (dungSom null); model :8091 = 35B lúc đầu và cuối (đọc bởi script, `modelDau` của báo cáo null vì
+  pipeline không đọc khe). Hướng sau: đo lại khi trợ lý theo vai trò (27B ở dự án PLC) — vòng có thể đổi dấu theo model.
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
