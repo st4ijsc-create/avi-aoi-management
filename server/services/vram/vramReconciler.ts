@@ -1448,7 +1448,9 @@ function nhanNenDungChung(nen: SharedBaselineRecord, tuoiMs: number): void {
 /**
  * ★★★ Audit orphanHolders 2026-10-22 (P3) — KHOÁ KHE đang hiệu lực? `docKhoaKhe()` (`ai/khoaKhe.ts`) đọc tệp `LLAMA_WATCHDOG_PAUSE_FILE`: JSON
  * `{chu, lyDo, hetHan}` do phép đo / `doi-model.ps1` cầm khi đang dùng llama-server. Tệp KHÔNG mang pid ⇒ không loại RIÊNG một tiến trình được ⇒
- * khoá còn hạn là lý do để KHÔNG nhận nuôi và KHÔNG giết BẤT KỲ llama-server nào. Đọc tệp CỤC BỘ đồng bộ (nhớ đệm 2 s), KHÔNG mạng, KHÔNG /slots.
+ * khoá còn hạn là lý do để KHÔNG nhận nuôi và KHÔNG giết BẤT KỲ llama-server nào.
+ * HỆ QUẢ CHẤP NHẬN (dieu-phoi duyệt 2026-10-22): trong lúc một phép đo cầm khoá, sidecar thị giác MỒ CÔI thật cũng không bị nhận nuôi/thu hồi — byte của nó ở lại
+ * tới khi khoá hết hạn (hướng an toàn: thà chậm thu hồi một sidecar còn hơn giết nhầm một phép đo). Đọc tệp CỤC BỘ đồng bộ (nhớ đệm 2 s), KHÔNG mạng, KHÔNG /slots.
  * ⚠ `await import` (như `vramPreempt` làm với `aiGgufEngine`) để lớp vram không kéo lớp ai lúc nạp module. Đọc HỎNG ⇒ coi như ĐANG GIỮ
  * (chiều CHẶT: thà hoãn một lần nhận nuôi/thu hồi còn hơn giết nhầm một phép đo).
  */
