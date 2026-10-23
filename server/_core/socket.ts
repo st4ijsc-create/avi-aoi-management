@@ -1348,9 +1348,10 @@ export function initializeSocket(server: HttpServer): Server {
     // (flag WS_UNS_STREAM_ENABLED, default OFF → 'uns:subscribe' is a no-op).
     registerUnsStreamHandlers(socket as never);
 
-    // SCADA R0 Task 8 — `scada:subscribe/unsubscribe` (cờ SCADA_SOCKET_ENABLED, mặc định OFF; thêm bộ đệm SCADA_LIVE_CACHE_ENABLED).
+    // SCADA R0 Task 8 — `scada:subscribe/unsubscribe`. Đăng ký KHÔNG điều kiện: handler tự trả `scada:error {code:"DISABLED"}` khi
+    // SCADA_SOCKET_ENABLED / SCADA_LIVE_CACHE_ENABLED tắt (khách thấy lỗi rõ thay vì im lặng; cờ đọc lúc subscribe nên bật/tắt nóng).
     // Kiểm phạm vi TỪNG TAG trong handler; không join phòng, không io.emit (chỉ socket.emit tới socket đã đăng ký).
-    if (process.env.SCADA_SOCKET_ENABLED === "true") registerScadaHandlers(socket as never);
+    registerScadaHandlers(socket as never);
   });
 
   // Initialize notification service with Socket.io

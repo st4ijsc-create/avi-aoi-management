@@ -6,7 +6,7 @@
  *   ra   `scada:snapshot`    { subId; values: GiaTriGoi[]; denied: { adapterId; tagKey }[] }
  *   ra   `scada:delta`       { subId; values: GiaTriGoi[] }   — mỗi đăng ký tối đa 1 khung / 250 ms, MỚI NHẤT mỗi tag, không bỏ tag
  *   vào  `scada:unsubscribe` { subId?: string }               — bỏ trống = tất cả
- *   ra   `scada:error`       { code: "BAD_REQUEST" | "TOO_MANY_TAGS" | "TOO_MANY_SUBS" | "DISABLED" }
+ *   ra   `scada:error`       { code: "BAD_REQUEST" | "TOO_MANY_TAGS" | "TOO_MANY_SUBS" | "DISABLED" | "BUSY" }
  *   GiaTriGoi = [adapterId, tagKey, v, q, ts, ageMs, stale, reason]
  *
  * An toàn (bảo mật — một người dùng KHÔNG BAO GIỜ nhận tag ngoài phạm vi của mình):
@@ -22,12 +22,12 @@
  * dừng khi đăng ký cuối bị huỷ/ngắt). Trạng thái ở `socket.data.__scada`.
  */
 import { randomUUID } from "node:crypto";
-import { duocXemTagScada, type DuLieuSocket } from "../../_core/socketPhongQuyen";
+import { coQuyenXemScada, laSocketNguoiDung, trongPhamViTagScada, type DuLieuSocket } from "../../_core/socketPhongQuyen";
 import { boDemDangBat, dangKyThayDoi, layGiaTri, thongTinAdapter, type GiaTriCoTuoi } from "./boDemHienTai";
 
 export const GIOI_HAN = { tagMoiDangKy: 500, dangKyMoiSocket: 10, chuKyDeltaMs: 250 } as const;
 
-export type MaLoiScada = "BAD_REQUEST" | "TOO_MANY_TAGS" | "TOO_MANY_SUBS" | "DISABLED";
+export type MaLoiScada = "BAD_REQUEST" | "TOO_MANY_TAGS" | "TOO_MANY_SUBS" | "DISABLED" | "BUSY";
 
 /** [adapterId, tagKey, v, q, ts, ageMs, stale, reason] — `ageMs = -1` và `ts = 0` khi bộ đệm CHƯA có mẫu. */
 export type GiaTriGoi = [
@@ -61,9 +61,18 @@ interface DangKy {
   /** Khoá đã đổi từ khung trước; giá trị lấy MỚI NHẤT lúc đẩy. */
   cho: Set<string>;
 }
+interface DangKyDangCho {
+  subId: string;
+  /** unsubscribe{subId} đến khi đăng ký này còn đang chờ ⇒ huỷ. */
+  huy: boolean;
+}
 interface TrangThaiScada {
   subs: Map<string, DangKy>;
   daNgat: boolean;
+  /** Tối đa MỘT lệnh subscribe đang chờ mỗi socket (lệnh thứ hai ⇒ BUSY). */
+  cho: DangKyDangCho | null;
+  /** Tăng mỗi lần unsubscribe-tất-cả: lệnh subscribe bắt đầu trước đó bị huỷ. */
+  the: number;
 }
 
 const khoa = (adapterId: number, tagKey: string): string => `${adapterId}:${tagKey}`;
@@ -96,22 +105,23 @@ function baoLoi(socket: SocketScada, code: MaLoiScada): void {
 }
 
 // ─── tra adapter trong DB (adapter không do trung tâm quản) ──────────────────────────────────────────
-type TraAdapterDb = (adapterId: number) => Promise<{ machineId: number | null } | null>;
+/** MỘT truy vấn cho cả tập id; id không có trong kết quả = adapter không tồn tại. */
+type TraAdapterDb = (adapterIds: number[]) => Promise<Map<number, { machineId: number | null }>>;
 let traAdapterGhiDe: TraAdapterDb | null = null;
-/** Chỉ cho lưới: thay bước tra `device_adapters` (không cần CSDL). `null` ⇒ về mặc định. */
+/** Chỉ cho lưới: thay bước tra `device_adapters` (không cần CSDL; spy đếm số lần gọi). `null` ⇒ về mặc định. */
 export function __datTraAdapterChoTest(f: TraAdapterDb | null): void {
   traAdapterGhiDe = f;
 }
-async function traAdapterTuDb(adapterId: number): Promise<{ machineId: number | null } | null> {
-  if (traAdapterGhiDe) return traAdapterGhiDe(adapterId);
+async function traAdapterTuDb(adapterIds: number[]): Promise<Map<number, { machineId: number | null }>> {
+  if (traAdapterGhiDe) return traAdapterGhiDe(adapterIds);
   // import động: socket.ts không kéo lớp DB lúc khởi động
   const { getDb } = await import("../../db/connection");
   const { deviceAdapters } = await import("../../../drizzle/schema");
-  const { eq } = await import("drizzle-orm");
+  const { inArray } = await import("drizzle-orm");
   const db = await getDb();
   if (!db) throw new Error("db unavailable");
-  const [r] = await db.select({ machineId: deviceAdapters.machineId }).from(deviceAdapters).where(eq(deviceAdapters.id, adapterId)).limit(1);
-  return r ? { machineId: r.machineId ?? null } : null;
+  const rows = await db.select({ id: deviceAdapters.id, machineId: deviceAdapters.machineId }).from(deviceAdapters).where(inArray(deviceAdapters.id, adapterIds));
+  return new Map(rows.map((r) => [r.id, { machineId: r.machineId ?? null }]));
 }
 
 // ─── dựng giá trị gói ───────────────────────────────────────────────────────────────────────────────
@@ -232,37 +242,75 @@ async function xuLyDangKy(socket: SocketScada, st: TrangThaiScada, payload: unkn
   }
 
   const subId = subIdVao ?? randomUUID();
-  if (!st.subs.has(subId) && st.subs.size >= GIOI_HAN.dangKyMoiSocket) return baoLoi(socket, "TOO_MANY_SUBS");
 
-  // 1) máy của từng adapter (trung tâm quản ⇒ thongTinAdapter; ngược lại ⇒ DB; không có ở đâu ⇒ ngoài vòng = denied)
+  // Socket KHÔNG phải người dùng (máy tự khai `clientType:"machine"`, handshake không cần cookie): mọi tag bị từ chối NGAY — KHÔNG truy cập CSDL,
+  // KHÔNG lưu đăng ký, KHÔNG bật vòng. Quyết định (23/10): trả `scada:snapshot` với toàn bộ tag trong `denied` (cùng hình dạng với người
+  // dùng không có quyền ⇒ không phân biệt được qua kênh này).
+  if (!laSocketNguoiDung(socket.data)) {
+    phat(socket, "scada:snapshot", { subId, values: [], denied: [...yeuCau.values()].map(({ adapterId, tagKey }) => ({ adapterId, tagKey })) });
+    return;
+  }
+
+  // Tối đa một lệnh subscribe đang chờ mỗi socket: chặn khuếch đại (mỗi lệnh có thể kéo quyền + phạm vi + một truy vấn adapter).
+  if (st.cho) return baoLoi(socket, "BUSY");
+  if (!st.subs.has(subId) && st.subs.size >= GIOI_HAN.dangKyMoiSocket) return baoLoi(socket, "TOO_MANY_SUBS");
+  const cho: DangKyDangCho = { subId, huy: false };
+  const the = st.the;
+  st.cho = cho;
+  try {
+    await hoanTatDangKy(socket, st, cho, the, subId, yeuCau);
+  } finally {
+    if (st.cho === cho) st.cho = null;
+  }
+}
+
+async function hoanTatDangKy(
+  socket: SocketScada,
+  st: TrangThaiScada,
+  cho: DangKyDangCho,
+  the: number,
+  subId: string,
+  yeuCau: Map<string, { adapterId: number; tagKey: string }>,
+): Promise<void> {
+  // 1) QUYỀN người dùng (machine_monitoring/canView): MỘT lần mỗi lần đăng ký. Không có quyền ⇒ khỏi tra adapter/phạm vi: tất cả denied.
+  const coQuyen = await coQuyenXemScada(socket.data);
+
+  // 2) máy của từng adapter: trung tâm quản ⇒ thongTinAdapter; còn lại ⇒ MỘT truy vấn DB cho cả tập; không có ở đâu ⇒ denied.
   const mayCuaAdapter = new Map<number, { co: boolean; machineId: number | null }>();
-  for (const { adapterId } of yeuCau.values()) {
-    if (mayCuaAdapter.has(adapterId)) continue;
-    const info = thongTinAdapter(adapterId);
-    if (info) {
-      mayCuaAdapter.set(adapterId, { co: true, machineId: info.machineId });
-      continue;
+  if (coQuyen) {
+    const chuaBiet: number[] = [];
+    for (const { adapterId } of yeuCau.values()) {
+      if (mayCuaAdapter.has(adapterId)) continue;
+      const info = thongTinAdapter(adapterId);
+      if (info) mayCuaAdapter.set(adapterId, { co: true, machineId: info.machineId });
+      else {
+        mayCuaAdapter.set(adapterId, { co: false, machineId: null });
+        chuaBiet.push(adapterId);
+      }
     }
-    try {
-      const r = await traAdapterTuDb(adapterId);
-      mayCuaAdapter.set(adapterId, r ? { co: true, machineId: r.machineId } : { co: false, machineId: null });
-    } catch (err) {
-      console.error("[SCADA] tra adapter lỗi:", (err as Error)?.message ?? err);
-      mayCuaAdapter.set(adapterId, { co: false, machineId: null }); // không biết ⇒ chặn
+    if (chuaBiet.length > 0) {
+      try {
+        const tuDb = await traAdapterTuDb(chuaBiet);
+        for (const id of chuaBiet) {
+          const r = tuDb.get(id);
+          if (r) mayCuaAdapter.set(id, { co: true, machineId: r.machineId });
+        }
+      } catch (err) {
+        console.error("[SCADA] tra adapter lỗi:", (err as Error)?.message ?? err); // không biết ⇒ chặn (giữ co:false)
+      }
     }
   }
 
-  // 2) quyền + phạm vi MỘT lần mỗi máy khác nhau (cache trong đời đăng ký này)
+  // 3) PHẠM VI một lần mỗi máy khác nhau (cache trong đời đăng ký này)
   const mayCanKiem = new Set<number | null>();
   for (const m of mayCuaAdapter.values()) if (m.co) mayCanKiem.add(m.machineId);
   const ketQua = new Map<number | null, boolean>();
-  // Tuần tự: số máy khác nhau trong một đăng ký nhỏ; mỗi lần là một `checkPermission` + một cổng phạm vi (không dồn song song vào DB).
-  for (const mid of mayCanKiem) ketQua.set(mid, await duocXemTagScada(socket.data, mid).catch(() => false));
+  // Tuần tự: số máy khác nhau trong một đăng ký nhỏ; mỗi lần là một cổng phạm vi (không dồn song song vào DB).
+  for (const mid of mayCanKiem) ketQua.set(mid, await trongPhamViTagScada(socket.data, mid).catch(() => false));
 
-
-  // Socket ngắt trong lúc chờ ⇒ không tạo đăng ký, không bật vòng.
-  if (st.daNgat) return;
-  if (!st.subs.has(subId) && st.subs.size >= GIOI_HAN.dangKyMoiSocket) return baoLoi(socket, "TOO_MANY_SUBS"); // hai lệnh song song
+  // Socket ngắt / đăng ký bị huỷ (unsubscribe cùng subId, hoặc unsubscribe-tất-cả) trong lúc chờ ⇒ không tạo đăng ký, không snapshot, không bật vòng.
+  if (st.daNgat || cho.huy || st.the !== the) return;
+  if (!st.subs.has(subId) && st.subs.size >= GIOI_HAN.dangKyMoiSocket) return baoLoi(socket, "TOO_MANY_SUBS");
 
   const tags = new Map<string, TagDangKy>();
   const denied: { adapterId: number; tagKey: string }[] = [];
@@ -293,14 +341,19 @@ function xuLyHuy(socket: SocketScada, st: TrangThaiScada, payload: unknown): voi
   if (payload !== undefined && payload !== null && !laObj(payload)) return baoLoi(socket, "BAD_REQUEST");
   const subId = kiemSubId(laObj(payload) ? payload.subId : undefined);
   if (subId === "sai") return baoLoi(socket, "BAD_REQUEST");
-  if (subId === null) st.subs.clear();
-  else st.subs.delete(subId);
+  if (subId === null) {
+    st.subs.clear();
+    st.the++; // huỷ cả lệnh subscribe đang chờ
+  } else {
+    st.subs.delete(subId);
+    if (st.cho && st.cho.subId === subId) st.cho.huy = true;
+  }
   capNhatVong(socket);
 }
 
 export function registerScadaHandlers(socket: SocketScada): void {
   if (socket.data.__scada) return; // đã đăng ký cho socket này
-  const st: TrangThaiScada = { subs: new Map(), daNgat: false };
+  const st: TrangThaiScada = { subs: new Map(), daNgat: false, cho: null, the: 0 };
   socket.data.__scada = st;
 
   socket.on("scada:subscribe", async (payload: unknown) => {

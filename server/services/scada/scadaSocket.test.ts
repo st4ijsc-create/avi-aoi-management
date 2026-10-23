@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OtSample } from "../ot/otDriver";
 
 const kiemQuyen = vi.hoisted(() => vi.fn(async (..._a: unknown[]) => true));
+const traSpy = vi.hoisted(() => vi.fn(async (_ids: number[]) => new Map<number, { machineId: number | null }>()));
 vi.mock("../../_core/accessControl", () => ({ checkPermission: kiemQuyen }));
 vi.mock("../../db/otTelemetry", () => ({ layMoiNhatTheoThietBi: vi.fn(async () => []) }));
 
@@ -51,7 +52,9 @@ beforeEach(() => {
   __datLaiScadaSocket();
   kiemQuyen.mockReset();
   kiemQuyen.mockResolvedValue(true);
-  __datTraAdapterChoTest(async () => null);
+  traSpy.mockReset();
+  traSpy.mockResolvedValue(new Map());
+  __datTraAdapterChoTest(traSpy);
   datPhamVi("toanQuyen");
 });
 afterEach(() => {
@@ -206,7 +209,7 @@ describe("kiem pham vi tung tag", () => {
   });
 
   it("adapter ton tai nhung khong do trung tam: xet pham vi theo machineId DB, tra v:null bad stale", async () => {
-    __datTraAdapterChoTest(async (id) => (id === 30 ? { machineId: 5 } : id === 31 ? { machineId: 6 } : null));
+    traSpy.mockImplementation(async (ids: number[]) => new Map(ids.filter((i) => i === 30 || i === 31).map((i) => [i, { machineId: i === 30 ? 5 : 6 }] as const)));
     datPhamVi([6]);
     const { goi, nhan } = taoSocket();
     await goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 30, tagKey: "t" }, { adapterId: 31, tagKey: "t" }] });
@@ -215,14 +218,153 @@ describe("kiem pham vi tung tag", () => {
     expect(sn.values).toEqual([[31, "t", null, "bad", 0, -1, true, "stale"]]);
   });
 
-  it("quyen duoc kiem MOT lan moi may trong mot dang ky (cache theo machineId)", async () => {
+  it("quyen nguoi dung duoc kiem DUNG MOT lan moi lan dang ky du co nhieu may; pham vi moi may MOT lan", async () => {
     dangKyAdapter(10, 5);
+    dangKyAdapter(11, 6);
+    dangKyAdapter(12, 7);
+    const trongPhamVi = vi.fn(async () => true);
+    __datCongPhamViChoTest({ trongPhamVi, idsTrongPhamVi: async () => null });
     const { goi } = taoSocket();
     await goi("scada:subscribe", {
       subId: "x",
-      tags: [{ adapterId: 10, tagKey: "a" }, { adapterId: 10, tagKey: "b" }, { adapterId: 10, tagKey: "c" }],
+      tags: [10, 11, 12].flatMap((adapterId) => [{ adapterId, tagKey: "a" }, { adapterId, tagKey: "b" }]),
     });
     expect(kiemQuyen).toHaveBeenCalledTimes(1);
+    expect(trongPhamVi).toHaveBeenCalledTimes(3);
+  });
+
+  it("khong co quyen => tat ca denied va KHONG tra CSDL adapter", async () => {
+    kiemQuyen.mockResolvedValue(false);
+    const { goi, nhan } = taoSocket();
+    await goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 700, tagKey: "a" }, { adapterId: 701, tagKey: "a" }] });
+    expect(traSpy).not.toHaveBeenCalled();
+    expect(nhan("scada:snapshot")[0].values).toEqual([]);
+    expect(nhan("scada:snapshot")[0].denied).toHaveLength(2);
+  });
+});
+
+describe("chong khuech dai (I1)", () => {
+  it("socket may (khong phai nguoi dung) + 500 adapter la => 0 lan tra CSDL, 0 lan kiem quyen, tat ca denied, khong luu dang ky, khong vong", async () => {
+    const { goi, nhan, sk } = taoSocket({ clientType: "machine", user: null });
+    const tags = Array.from({ length: 500 }, (_, i) => ({ adapterId: 5000 + i, tagKey: "t" }));
+    await goi("scada:subscribe", { subId: "x", tags });
+    expect(traSpy).not.toHaveBeenCalled();
+    expect(kiemQuyen).not.toHaveBeenCalled();
+    const [sn] = nhan("scada:snapshot");
+    expect(sn.values).toEqual([]);
+    expect(sn.denied).toHaveLength(500);
+    expect(sk.data.__scada.subs.size).toBe(0);
+    expect(__vongDangChay()).toBe(false);
+  });
+
+  it("nguoi dung + 3 adapter la => dung 1 lan tra CSDL mang ca 3 id", async () => {
+    const { goi } = taoSocket();
+    await goi("scada:subscribe", { subId: "x", tags: [900, 901, 902, 900].map((adapterId, i) => ({ adapterId, tagKey: `t${i}` })) });
+    expect(traSpy).toHaveBeenCalledTimes(1);
+    expect([...traSpy.mock.calls[0][0]].sort()).toEqual([900, 901, 902]);
+  });
+
+  it("adapter do trung tam quan khong bi tra CSDL", async () => {
+    dangKyAdapter(10, 5);
+    const { goi } = taoSocket();
+    await goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "a" }] });
+    expect(traSpy).not.toHaveBeenCalled();
+  });
+
+  it("tra CSDL loi => tag la bi denied (khong biet => chan)", async () => {
+    traSpy.mockRejectedValue(new Error("db"));
+    const { goi, nhan } = taoSocket();
+    await goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 900, tagKey: "a" }] });
+    expect(nhan("scada:snapshot")[0]).toEqual({ subId: "x", values: [], denied: [{ adapterId: 900, tagKey: "a" }] });
+  });
+
+  it("subscribe thu hai khi cai dau con dang cho => BUSY; xong cai dau thi nhan lai duoc", async () => {
+    dangKyAdapter(10, 5);
+    let mo!: () => void;
+    kiemQuyen.mockImplementationOnce(() => new Promise<boolean>((r) => { mo = () => r(true); }));
+    const { goi, nhan } = taoSocket();
+    const p1 = goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "t" }] });
+    await vi.advanceTimersByTimeAsync(0);
+    await goi("scada:subscribe", { subId: "y", tags: [{ adapterId: 10, tagKey: "t" }] });
+    expect(nhan("scada:error")).toEqual([{ code: "BUSY" }]);
+    mo();
+    await p1;
+    expect(nhan("scada:snapshot").map((s: any) => s.subId)).toEqual(["x"]);
+    await goi("scada:subscribe", { subId: "y", tags: [{ adapterId: 10, tagKey: "t" }] });
+    expect(nhan("scada:snapshot").map((s: any) => s.subId)).toEqual(["x", "y"]);
+    expect(nhan("scada:error")).toEqual([{ code: "BUSY" }]);
+  });
+
+  it("subscribe loi giua chung van tha co BUSY (khong ket vinh vien)", async () => {
+    dangKyAdapter(10, 5);
+    kiemQuyen.mockRejectedValueOnce(new Error("db"));
+    const { goi, nhan } = taoSocket();
+    await goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "t" }] });
+    await goi("scada:subscribe", { subId: "y", tags: [{ adapterId: 10, tagKey: "t" }] });
+    expect(nhan("scada:error")).toEqual([]);
+    expect(nhan("scada:snapshot")).toHaveLength(2);
+  });
+});
+
+describe("huy khi dang cho (I3)", () => {
+  function chamKiemQuyen() {
+    let mo!: () => void;
+    kiemQuyen.mockImplementationOnce(() => new Promise<boolean>((r) => { mo = () => r(true); }));
+    return () => mo();
+  }
+
+  it("unsubscribe{subId} truoc khi kiem quyen xong => khong snapshot, khong dang ky, vong khong chay", async () => {
+    dangKyAdapter(10, 5);
+    const mo = chamKiemQuyen();
+    const { goi, nhan, sk } = taoSocket();
+    const p = goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "t" }] });
+    await vi.advanceTimersByTimeAsync(0);
+    await goi("scada:unsubscribe", { subId: "x" });
+    mo();
+    await p;
+    expect(nhan("scada:snapshot")).toEqual([]);
+    expect(sk.data.__scada.subs.size).toBe(0);
+    expect(__vongDangChay()).toBe(false);
+  });
+
+  it("unsubscribe tat ca truoc khi kiem quyen xong => khong snapshot, khong dang ky, vong khong chay", async () => {
+    dangKyAdapter(10, 5);
+    const mo = chamKiemQuyen();
+    const { goi, nhan, sk } = taoSocket();
+    const p = goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "t" }] });
+    await vi.advanceTimersByTimeAsync(0);
+    await goi("scada:unsubscribe", {});
+    mo();
+    await p;
+    expect(nhan("scada:snapshot")).toEqual([]);
+    expect(sk.data.__scada.subs.size).toBe(0);
+    expect(__vongDangChay()).toBe(false);
+  });
+
+  it("unsubscribe subId KHAC khong huy lenh dang cho", async () => {
+    dangKyAdapter(10, 5);
+    const mo = chamKiemQuyen();
+    const { goi, nhan } = taoSocket();
+    const p = goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "t" }] });
+    await vi.advanceTimersByTimeAsync(0);
+    await goi("scada:unsubscribe", { subId: "khac" });
+    mo();
+    await p;
+    expect(nhan("scada:snapshot")).toHaveLength(1);
+    expect(__vongDangChay()).toBe(true);
+  });
+
+  it("huy lenh dang cho roi dang ky lai cung subId van duoc", async () => {
+    dangKyAdapter(10, 5);
+    const mo = chamKiemQuyen();
+    const { goi, nhan } = taoSocket();
+    const p = goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "t" }] });
+    await vi.advanceTimersByTimeAsync(0);
+    await goi("scada:unsubscribe", { subId: "x" });
+    mo();
+    await p;
+    await goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "t" }] });
+    expect(nhan("scada:snapshot")).toHaveLength(1);
   });
 });
 

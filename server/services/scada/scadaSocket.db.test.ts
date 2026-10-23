@@ -295,6 +295,40 @@ describe("scada:subscribe qua socket.io that - chi nhan tag trong pham vi nha ma
     await vi.waitFor(() => expect(__vongDangChay()).toBe(false), { timeout: 5000 });
   });
 
+  it("co tat => scada:error DISABLED qua duong dang ky THAT cua socket.ts (khong im lang), khong snapshot, khong vong", async () => {
+    vi.stubEnv("SCADA_SOCKET_ENABLED", "false");
+    try {
+      const a = await ketNoi(uA);
+      const loi = ghiNhan(a, "scada:error");
+      const sn = ghiNhan(a, "scada:snapshot");
+      a.emit("scada:subscribe", { subId: "s", tags: [TAG_A] });
+      await vi.waitFor(() => expect(loi.length).toBe(1), { timeout: 5000 });
+      await cho(200);
+      expect(loi).toEqual([{ code: "DISABLED" }]);
+      expect(sn).toEqual([]);
+      expect(__vongDangChay()).toBe(false);
+      // bat lai nong (cung ket noi): handler doc co luc subscribe
+      vi.stubEnv("SCADA_SOCKET_ENABLED", "true");
+      a.emit("scada:subscribe", { subId: "s", tags: [TAG_A] });
+      await vi.waitFor(() => expect(sn.length).toBe(1), { timeout: 5000 });
+    } finally {
+      vi.stubEnv("SCADA_SOCKET_ENABLED", "true");
+    }
+  });
+
+  it("co bo dem tat (SCADA_LIVE_CACHE_ENABLED=false) => DISABLED", async () => {
+    vi.stubEnv("SCADA_LIVE_CACHE_ENABLED", "false");
+    try {
+      const a = await ketNoi(uA);
+      const loi = ghiNhan(a, "scada:error");
+      a.emit("scada:subscribe", { subId: "s", tags: [TAG_A] });
+      await vi.waitFor(() => expect(loi.length).toBe(1), { timeout: 5000 });
+      expect(loi).toEqual([{ code: "DISABLED" }]);
+    } finally {
+      vi.stubEnv("SCADA_LIVE_CACHE_ENABLED", "true");
+    }
+  });
+
   it("quá 500 tag => scada:error TOO_MANY_TAGS, khong snapshot", async () => {
     const a = await ketNoi(uA);
     const sn = ghiNhan(a, "scada:snapshot");

@@ -266,16 +266,26 @@ export async function tuDongVaoPhongPhamVi(socket: SocketVaoPhong): Promise<bool
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // Socket NGƯỜI DÙNG ∧ quyền `machine_monitoring/canView` (cùng cặp `engineering:*`) ∧ phạm vi: máy có id ⇒ máy NẰM TRONG PHẠM VI;
 // adapter KHÔNG gắn máy (`null`) ⇒ chỉ người có phạm vi TOÀN QUYỀN. Lỗi/không biết ⇒ false (fail-closed).
-export async function duocXemTagScada(data: DuLieuSocket | null | undefined, machineId: number | null): Promise<boolean> {
+export async function coQuyenXemScada(data: DuLieuSocket | null | undefined): Promise<boolean> {
   if (!laSocketNguoiDung(data)) return false;
   try {
     const user = data!.user!;
     const { checkPermission } = await import("./accessControl");
-    const coQuyen = await checkPermission(user.id as number, String(user.role ?? ""), QUYEN_XEM_ENGINEERING.module, QUYEN_XEM_ENGINEERING.action);
-    if (!coQuyen) return false;
-    return machineId != null ? await duocVaoPhongPhamVi(data, "machine", machineId) : await coPhamViToanQuyen(data);
+    return await checkPermission(user.id as number, String(user.role ?? ""), QUYEN_XEM_ENGINEERING.module, QUYEN_XEM_ENGINEERING.action);
   } catch (err) {
     console.error("[Socket.io] loi kiem quyen xem tag SCADA:", (err as Error)?.message ?? err);
     return false;
   }
+}
+
+/** Phần PHẠM VI của cổng: máy có id ⇒ máy trong phạm vi; `null` ⇒ chỉ người toàn quyền. Lỗi ⇒ false (hai hàm nền đã bắt lỗi). */
+export async function trongPhamViTagScada(data: DuLieuSocket | null | undefined, machineId: number | null): Promise<boolean> {
+  if (!laSocketNguoiDung(data)) return false;
+  return machineId != null ? duocVaoPhongPhamVi(data, "machine", machineId) : coPhamViToanQuyen(data);
+}
+
+/** Cổng ĐẦY ĐỦ cho một tag: quyền ∧ phạm vi. `scadaSocket` gọi hai nửa riêng (quyền MỘT lần mỗi đăng ký, phạm vi mỗi máy). */
+export async function duocXemTagScada(data: DuLieuSocket | null | undefined, machineId: number | null): Promise<boolean> {
+  if (!(await coQuyenXemScada(data))) return false;
+  return trongPhamViTagScada(data, machineId);
 }
