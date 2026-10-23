@@ -131,6 +131,30 @@ describe("napTuTap / layGiaTri", () => {
   });
 });
 
+describe("mới nhất theo ts", () => {
+  it("mới (ts=100) rồi cũ (ts=50) ⇒ giữ mới, danh sách khoá đổi rỗng, rx/lichSu không đổi", () => {
+    expect(napTuTap([hang({ numValue: 10, ts: new Date(100) })], T0)).toEqual(["7:t"]);
+    const cb = vi.fn();
+    dangKyThayDoi(cb);
+    expect(napTuTap([hang({ numValue: 5, ts: new Date(50), ingestedAt: new Date(T0 + 5000) })], T0 + 5000)).toEqual([]);
+    expect(cb).not.toHaveBeenCalled();
+    const g = layGiaTri(7, "t", T0 + 5000)!;
+    expect(g).toMatchObject({ v: 10, ts: 100, rx: T0, lichSu: [10] });
+  });
+
+  it("ts bằng nhau ⇒ thay thế", () => {
+    napTuTap([hang({ numValue: 1, ts: new Date(100) })], T0);
+    expect(napTuTap([hang({ numValue: 2, ts: new Date(100) })], T0 + 1)).toEqual(["7:t"]);
+    expect(layGiaTri(7, "t", T0 + 1)).toMatchObject({ v: 2, lichSu: [1, 2] });
+  });
+
+  it("lô lẫn cũ + mới: chỉ khoá có hàng mới hơn được báo đổi", () => {
+    napTuTap([hang({ tagKey: "a", ts: new Date(100) }), hang({ tagKey: "b", ts: new Date(100) })], T0);
+    const keys = napTuTap([hang({ tagKey: "a", ts: new Date(10) }), hang({ tagKey: "b", ts: new Date(200) })], T0);
+    expect(keys).toEqual(["7:b"]);
+  });
+});
+
 describe("lichSu", () => {
   it("60 hàng số liên tiếp ⇒ đúng 50, cuối là mới nhất, cũ → mới", () => {
     for (let i = 1; i <= 60; i++) napTuTap([hang({ numValue: i, ts: new Date(T0 + i) })], T0 + i);

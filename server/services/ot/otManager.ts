@@ -35,10 +35,11 @@ import type { TuyChonVongPoll } from "./otDriver";
 import { datThongTinAdapter } from "../scada/boDemHienTai";
 
 /** SCADA R0 Task 7 — báo cho bộ đệm giá trị hiện tại nhịp poll / deadband / máy / mã của adapter (tính stale). Chiều phụ thuộc otManager → scada. */
-function baoThongTinChoBoDem(adapter: RuntimeAdapter): void {
+export function baoThongTinChoBoDem(adapter: RuntimeAdapter): void {
   datThongTinAdapter(adapter.adapterId, {
     pollMs: adapter.pollIntervalMs,
-    coDeadband: adapter.tags.some((t) => t.deadband != null),
+    // Chỉ khi cờ deadband BẬT mới có report-by-exception (heartbeat 60 s); cờ tắt ⇒ mọi mẫu đều phát ⇒ ngưỡng stale 3·poll.
+    coDeadband: tagDeadbandEnabled() && adapter.tags.some((t) => t.deadband != null),
     machineId: adapter.machineId,
     code: adapter.code,
   });

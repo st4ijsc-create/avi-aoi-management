@@ -30,6 +30,7 @@ export interface GiaTriHienTai {
   reason: LyDoChatLuong | null;
   /** Giờ nguồn của mẫu (ms). */
   ts: number;
+  /** Chỉ có khi `meta.tsSource` của hàng khai; ingest hiện KHÔNG đặt khoá này vào meta ⇒ thực tế luôn null. */
   tsSource: "device" | "server" | null;
   /** Giờ máy chủ nhận (ms): `ingestedAt` của hàng nếu có, không thì lúc tap chạy. */
   rx: number;
@@ -108,6 +109,9 @@ function apMotHang(row: InsertOtTelemetry, now: number, chiNeuChuaCo: boolean): 
 
   const rx = gioMs(row.ingestedAt) ?? now;
   const ts = gioMs(row.ts) ?? rx;
+  // Mới nhất theo ts thắng: hàng cũ hơn (replay store-and-forward…) KHÔNG đè giá trị hiện tại, không đổi rx/lichSu, không thành khoá đổi.
+  // Đồng hồ thiết bị nhảy lùi ⇒ mục đứng yên rồi stale (hỏng nhìn thấy được). ts bằng nhau ⇒ thay.
+  if (cu && ts < cu.ts) return null;
   // uncertain không mang giá trị ⇒ giữ giá trị cuối đã biết; bad giữ nguyên v của hàng (null).
   if (q === "uncertain" && v === null && cu) v = cu.v;
 
