@@ -1280,15 +1280,20 @@ export async function executeOtDeviceWrite(a: {
     const RB_TIMEOUT = Symbol("rb_timeout");
     let samples: Awaited<ReturnType<typeof driver.readTags>> | typeof RB_TIMEOUT | null = null;
     let readbackUnavailable = false;
+    let rbTimer: ReturnType<typeof setTimeout> | undefined;
     try {
       samples = await Promise.race([
         driver.readTags(readTags),
-        new Promise<typeof RB_TIMEOUT>((resolve) => setTimeout(() => resolve(RB_TIMEOUT), timeoutMs)),
+        new Promise<typeof RB_TIMEOUT>((resolve) => {
+          rbTimer = setTimeout(() => resolve(RB_TIMEOUT), timeoutMs);
+        }),
       ]);
       if (samples === RB_TIMEOUT) readbackUnavailable = true;
     } catch {
       // readTags throwing → read-back unavailable (NOT failed, NO retry).
       readbackUnavailable = true;
+    } finally {
+      clearTimeout(rbTimer); // R1a T5 fix round 1 — the race timer no longer lingers for timeoutMs after the read answered
     }
 
     const tol = readbackFloatTolerance();

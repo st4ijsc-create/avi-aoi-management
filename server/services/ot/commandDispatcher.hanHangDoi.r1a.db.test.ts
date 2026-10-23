@@ -308,6 +308,28 @@ describe.skipIf(!DB_URL)("R1a T5 — hạn hàng đợi (K9) + đọc lại bắ
     expect(results[0]!.deadlineMs).toBe(50);
   });
 
+  it("fix round 1 — deadlineMs 0.5 (lẻ, trunc ⇒ 0) KHÔNG tắt hạn: B chờ, đồng hồ +61 s ⇒ QUEUE_EXPIRED với hạn mặc định 60 000 ms", async () => {
+    const release = holdA();
+    const inA = await input({ writes: [{ tagKey: "nhiet_sp", value: 241 }] });
+    const inB = await input({ writes: [{ tagKey: "nhiet_sp", value: 242 }], deadlineMs: 0.5 });
+    const pA = dispatch(inA);
+    await waitDepth(1);
+    const pB = dispatch(inB);
+    await waitDepth(2);
+    const restore = jumpClock(61_000);
+    try {
+      release();
+      const [, rB] = await Promise.all([pA, pB]);
+      expect(rB.reason).toBe("QUEUE_EXPIRED");
+    } finally {
+      restore();
+    }
+    expect(writeCalls).toBe(1);
+    const results = (await ledger(inB.idempotencyKey)).filter((r) => (r.ackValue as { ledger?: string } | null)?.ledger === "result");
+    expect(results).toHaveLength(1);
+    expect(results[0]!.errorText).toMatch(/\(limit 60000 ms\)/);
+  });
+
   it("★ DỪNG ghim chờ sau A treo, đồng hồ +61 s ⇒ VẪN chạy (DỪNG không có hạn)", async () => {
     const release = holdA();
     const inA = await input({ writes: [{ tagKey: "nhiet_sp", value: 241 }] });

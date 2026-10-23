@@ -381,6 +381,17 @@ function commandContext(input: DispatchInput): { correlationId: string | null; d
 }
 
 /**
+ * SCADA R1a Task 5 (K9) — the longest an ORDINARY command may wait in the adapter queue: its sanitised deadlineMs (commandContext), else
+ * HAN_HANG_DOI_MAC_DINH_MS. Fix round 1 (fail-closed) — never 0: a fractional deadline (0.5 ⇒ trunc 0), ≤0, NaN or ∞ falls back to the
+ * default (the queue treats a TTL ≤ 0 as "no TTL", so `0 ?? 60000` used to turn the TTL OFF). Always a finite integer ≥ 1.
+ */
+export function queueTtlMsFor(input: Pick<DispatchInput, "deadlineMs">): number {
+  const d = input.deadlineMs;
+  const t = typeof d === "number" && Number.isFinite(d) ? Math.trunc(d) : 0; // same truncation as commandContext
+  return t >= 1 ? t : HAN_HANG_DOI_MAC_DINH_MS;
+}
+
+/**
  * G1.7 — the timeout used for THIS command's write (and read-back) race:
  *   • deadlineMs absent/invalid → the global env timeout (OT_CONTROL_TIMEOUT_MS,
  *     default 5000ms) — byte-for-byte the prior behaviour.
@@ -1572,7 +1583,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
           // (QUEUE_EXPIRED below). No TTL — never expires — for a protective interlock action (safety direction: stop_line / block /
           // reduce) and for a stop-TYPED command that is not a verified STOP (dropping a stop is the unsafe direction; a verified STOP
           // already cancels it when its values are not the pin's). A verified STOP is the branch above (priorityStop: no TTL).
-          ...(interlock || unverifiedStop ? {} : { queueTtlMs: commandContext(input).deadlineMs ?? HAN_HANG_DOI_MAC_DINH_MS }),
+          ...(interlock || unverifiedStop ? {} : { queueTtlMs: queueTtlMsFor(input) }),
         });
     if (!enq.accepted && enq.reason === "STOP_UNVERIFIED_QUEUE_FULL") {
       // R-11-o (I-1) — the waiting list for unverified stops is full: refused (ledgered) + a durable alert; the operator is told to use the

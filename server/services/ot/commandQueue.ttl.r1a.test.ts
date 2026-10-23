@@ -11,8 +11,11 @@ import {
   tryEnqueueAdapterCommand,
   isQueueExpired,
   HAN_HANG_DOI_MAC_DINH_MS,
+  queueTtlMsFor,
+  isSuperseded,
   _resetAdapterCommandQueuesForTests,
   _adapterCommandQueueCountForTests,
+  _adapterCommandQueueDepthForTests,
 } from "./commandDispatcher";
 
 const ADAPTER = 4343;
@@ -156,6 +159,67 @@ describe("R1a T5 (K9) — hạn hàng đợi lệnh trung tâm", () => {
     expect(log).toEqual(["A", "B"]);
     ctl.get("B")!.resolve("b");
     await expect(rB).resolves.toBe("b");
+  });
+
+  it("fix round 1 — hạn của lệnh không bao giờ TẮT TTL (fail-closed): deadlineMs lẻ / ≤0 / NaN / thiếu ⇒ hạn hợp lệ > 0", () => {
+    expect(queueTtlMsFor({})).toBe(60_000);
+    expect(queueTtlMsFor({ deadlineMs: 2_000 })).toBe(2_000);
+    expect(queueTtlMsFor({ deadlineMs: 0.5 })).toBe(60_000); // trước: trunc(0.5)=0, `0 ?? 60000` = 0 ⇒ hàng đợi coi là KHÔNG hạn
+    expect(queueTtlMsFor({ deadlineMs: 0 })).toBe(60_000);
+    expect(queueTtlMsFor({ deadlineMs: -5 })).toBe(60_000);
+    expect(queueTtlMsFor({ deadlineMs: Number.NaN })).toBe(60_000);
+    expect(queueTtlMsFor({ deadlineMs: Number.POSITIVE_INFINITY })).toBe(60_000);
+    expect(queueTtlMsFor({ deadlineMs: 1.7 })).toBe(1);
+  });
+
+  it("fix round 1 (3a) — job ĐÃ quá hạn mà còn CHỜ khi DỪNG tới ⇒ kết thúc ĐÚNG MỘT lần, là Superseded (không bao giờ chạy, không QueueExpired); depth không âm", async () => {
+    const { log, ctl, job } = makeJobs();
+    const rA = accepted(tryEnqueueAdapterCommand(ADAPTER, job("A"), { queueTtlMs: 60_000 }));
+    let settledB = 0;
+    const rB = accepted(tryEnqueueAdapterCommand(ADAPTER, job("B"), { queueTtlMs: 60_000 }));
+    const outB: unknown[] = [];
+    void rB.then((v) => {
+      settledB++;
+      outB.push(v);
+    });
+    await vi.advanceTimersByTimeAsync(61_000); // B quá hạn nhưng chưa tới lượt (hạn chỉ kiểm ở `run`)
+    const rS = accepted(tryEnqueueAdapterCommand(ADAPTER, job("S"), { priorityStop: true, stopRef: { idempotencyKey: "S" } }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settledB).toBe(1);
+    expect(isSuperseded(outB[0])).toBe(true);
+    expect(isQueueExpired(outB[0])).toBe(false);
+    expect(_adapterCommandQueueDepthForTests(ADAPTER)).toBe(2); // A đang bay + S
+    ctl.get("A")!.resolve("a");
+    await rA;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(log).toEqual(["A", "S"]);
+    ctl.get("S")!.resolve("s");
+    await expect(rS).resolves.toBe("s");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settledB).toBe(1); // không lần thứ hai
+    expect(_adapterCommandQueueDepthForTests(ADAPTER)).toBe(0);
+    expect(_adapterCommandQueueCountForTests()).toBe(0);
+  });
+
+  it("fix round 1 (3b) — OT_CMD_QUEUE_MAX=2: lệnh thứ ba BUSY; lệnh quá hạn vẫn giữ chỗ tới lượt của nó; tới lượt ⇒ hết hạn, nhả chỗ; lệnh mới được nhận và chạy", async () => {
+    process.env.OT_CMD_QUEUE_MAX = "2";
+    const { log, ctl, job } = makeJobs();
+    const rA = accepted(tryEnqueueAdapterCommand(ADAPTER, job("A"), { queueTtlMs: 60_000 }));
+    const rB = accepted(tryEnqueueAdapterCommand(ADAPTER, job("B"), { queueTtlMs: 60_000 }));
+    expect(tryEnqueueAdapterCommand(ADAPTER, job("C"), { queueTtlMs: 60_000 })).toEqual({ accepted: false, depth: 2, max: 2 });
+    await vi.advanceTimersByTimeAsync(61_000);
+    // kiểm hạn lúc tới lượt, không timer ⇒ B quá hạn vẫn đếm trong depth khi A còn bay (giới hạn đã biết, ghi trong báo cáo)
+    expect(tryEnqueueAdapterCommand(ADAPTER, job("C2"), { queueTtlMs: 60_000 }).accepted).toBe(false);
+    ctl.get("A")!.resolve("a");
+    await rA;
+    expect(isQueueExpired(await rB)).toBe(true);
+    expect(_adapterCommandQueueDepthForTests(ADAPTER)).toBe(0);
+    const rD = accepted(tryEnqueueAdapterCommand(ADAPTER, job("D"), { queueTtlMs: 60_000 }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(log).toEqual(["A", "D"]); // B, C, C2 never ran
+    ctl.get("D")!.resolve("d");
+    await expect(rD).resolves.toBe("d");
+    expect(_adapterCommandQueueCountForTests()).toBe(0);
   });
 
   it("lệnh đầu hàng (không phải chờ) chạy NGAY dù hạn rất ngắn: hạn chỉ đếm thời gian CHỜ trong hàng", async () => {

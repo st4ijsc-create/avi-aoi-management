@@ -96,6 +96,19 @@ describe("R1a T5 (K7) — docLai:'bat_buoc' ép đọc lại dù OT_READBACK_ENA
     await d.disconnect();
   });
 
+  it("fix round 1 — hẹn giờ của cuộc đua đọc lại được XOÁ khi đọc xong: không còn timer treo sau lệnh ghi", async () => {
+    vi.useFakeTimers();
+    try {
+      const d = await stub("stub://r1a-t5-timer");
+      const r = await ghi(d, input({ docLai: "bat_buoc" }));
+      expect(r.outcomes[0].status).toBe("acked_verified");
+      expect(vi.getTimerCount()).toBe(0);
+      await d.disconnect();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("KHÔNG docLai + cờ tắt ⇒ như cũ: acked, readTags 0 lần (dù stub lệch)", async () => {
     const d = await stub("stub://r1a-t5-cu");
     d.simDatLoi({ giaTri: { sp: 245 } });
