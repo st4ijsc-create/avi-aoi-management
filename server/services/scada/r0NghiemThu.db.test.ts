@@ -6,7 +6,9 @@
  * `scadaDiag.danhSach` (tRPC caller, người dùng qua `taoNguoiDungTest`). Chỉ hai chỗ giả: bộ nạp adapter lọc đúng hàng của tệp này
  * (CSDL `_test` dùng chung) và hàng của suite khác nhận driver giả (không mở kết nối thật nào).
  *
- * "Rút cáp" = `simDatLoi({matKetNoi:true})` trên instance stub đang chạy; "cắm lại" = `simDatLoi({})`.
+ * "Rút cáp" có HAI kiểu (T12b): `tu-choi` = `simDatLoi({matKetNoi:true})` (cổng đóng/RST: isConnected lật false, đọc ném ngay) và
+ * `treo` = `simDatLoi({treo:true})` (cáp rút SAU switch / PLC đóng băng: TCP nửa mở, isConnected VẪN true, mọi giao dịch quá hạn sau
+ * timeoutMs, connect chờ tới hạn) — đường bench `docker pause` đã chứng minh là đường hỏng. "Cắm lại" = `simDatLoi({})`.
  * Adapter: `pollIntervalMs: 1000`, 18 tag, `connectionOptions.timeoutMs: 800` (như bench).
  *
  * Cổng (đúng hàng R0 của báo cáo; ngưỡng KHÔNG nới — đỏ ⇒ quay về task sở hữu):
@@ -38,6 +40,27 @@ vi.mock("../ot/deviceAdapter", async (importOriginal) => {
     ...real,
     loadEnabledAdapters: async () => (await real.loadEnabledAdapters()).filter((a) => myIds.has(a.adapterId)),
   };
+});
+
+// CHẨN ĐOÁN (không phải cổng, không đổi hành vi): vòng poll CHỜ từng lần ingest (`await onSample`) ⇒ một lần ghi telemetry chậm giữ
+// tick và làm trễ phát hiện. Ghi lại mọi lần ingest > 300 ms (mốc bắt đầu, thời lượng) để tách "mã phát hiện chậm" khỏi "DB chậm".
+const ingestCham = vi.hoisted(() => [] as Array<{ t: number; ms: number }>);
+/** Chẩn đoán: vòng sự kiện bị nghẽn (nhịp 50 ms trễ > 300 ms) — mốc và độ trễ. */
+const vongSuKienTre: Array<{ t: number; ms: number }> = [];
+vi.mock("../ot/ingest", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../ot/ingest")>();
+  const doThoiGian =
+    <A extends unknown[]>(fn: (...a: A) => Promise<void>) =>
+    async (...a: A): Promise<void> => {
+      const t = Date.now();
+      try {
+        await fn(...a);
+      } finally {
+        const ms = Date.now() - t;
+        if (ms > 300) ingestCham.push({ t, ms });
+      }
+    };
+  return { ...real, ingestSample: doThoiGian(real.ingestSample), ingestSamples: doThoiGian(real.ingestSamples) };
 });
 
 import { getDb } from "../../db/connection";
@@ -106,6 +129,10 @@ interface KetQua {
   dbTruocRut: string;
   /** Chẩn đoán (không phải cổng): RAM báo lại `connected` sau khi cắm lại — tách thời gian NỐI LẠI khỏi chu kỳ đọc đầu tiên. */
   noiLaiMs: number;
+  /** Chẩn đoán: các lần ingest > 300 ms từ rút − 3 s, dạng "bắt đầu(ms so với lúc rút)+thời lượng". */
+  ingestCham?: string[];
+  /** Chẩn đoán: nghẽn vòng sự kiện > 300 ms từ rút − 3 s, dạng "mốc(ms so với lúc rút)+độ trễ". */
+  vongSuKienTre?: string[];
 }
 
 async function seedAdapter(code: string): Promise<number> {
@@ -120,7 +147,14 @@ async function seedAdapter(code: string): Promise<number> {
   return id;
 }
 
+let nhipTre: ReturnType<typeof setInterval> | null = null;
 beforeAll(async () => {
+  let truoc = Date.now();
+  nhipTre = setInterval(() => {
+    const now = Date.now();
+    if (now - truoc > 350) vongSuKienTre.push({ t: truoc, ms: now - truoc - 50 });
+    truoc = now;
+  }, 50);
   vi.stubEnv("OT_GATEWAY_ENABLED", "true");
   vi.stubEnv("OT_LEGACY_RECONNECT_MS", "5000"); // mặc định sản phẩm
   vi.stubEnv("OT_STORE_FORWARD_ENABLED", "false");
@@ -155,6 +189,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
+  if (nhipTre) clearInterval(nhipTre);
   try {
     await ot?.stopOt();
   } catch {
@@ -183,15 +218,17 @@ afterAll(async () => {
 }, 60_000);
 
 describe.each([
-  ["legacy", "false"],
-  ["HA (cấu hình .env dev)", "true"],
-] as const)("nghiệm thu R0 — stub kịch bản, nhánh %s", (nhan, haFlag) => {
+  ["legacy", "false", "tu-choi"],
+  ["HA (cấu hình .env dev)", "true", "tu-choi"],
+  ["legacy", "false", "treo"],
+  ["HA (cấu hình .env dev)", "true", "treo"],
+] as const)("nghiệm thu R0 — stub kịch bản, nhánh %s (HA=%s), rút kiểu %s", (nhan, haFlag, kieu) => {
   const kq: KetQua = { cong1Ms: NaN, cong2Ms: NaN, cong3MatMs: NaN, cong3CoLaiMs: NaN, cong4Ms: NaN, dbTruocRut: "", noiLaiMs: NaN };
   let id = 0;
 
   beforeAll(async () => {
     vi.stubEnv("OT_CONN_HA_ENABLED", haFlag);
-    const code = `${RUN}-${haFlag === "true" ? "ha" : "lg"}`;
+    const code = `${RUN}-${haFlag === "true" ? "ha" : "lg"}-${kieu === "treo" ? "tr" : "tc"}`;
     id = await seedAdapter(code);
     myIds.clear();
     myIds.add(id);
@@ -214,7 +251,7 @@ describe.each([
 
     // ── RÚT CÁP ──
     const tRut = Date.now();
-    may.simDatLoi({ matKetNoi: true });
+    may.simDatLoi(kieu === "treo" ? { treo: true } : { matKetNoi: true });
     [kq.cong1Ms, kq.cong2Ms, kq.cong3MatMs] = await Promise.all([
       doDen(tRut, () => moiTag(id, "bad"), 20, HAN_DO_MS),
       doDen(tRut, async () => (await trangThaiM10(id)) === "lost", 100, HAN_DO_MS),
@@ -231,7 +268,9 @@ describe.each([
       doDen(tCam, async () => (await trangThaiDb(id)) === "connected", 100, HAN_DO_MS),
       doDen(tCam, () => tt.layTrangThaiAdapter(id)?.tt === "connected", 10, HAN_DO_MS),
     ]);
-    console.log(`[r0nt] ${nhan}: ${JSON.stringify(kq)}`);
+    kq.ingestCham = ingestCham.filter((x) => x.t >= tRut - 3000).map((x) => `${x.t - tRut}+${x.ms}`);
+    kq.vongSuKienTre = vongSuKienTre.filter((x) => x.t >= tRut - 3000).map((x) => `${x.t - tRut}+${x.ms}`);
+    console.log(`[r0nt] ${nhan} / ${kieu}: ${JSON.stringify(kq)}`);
   }, 120_000);
 
   afterAll(async () => {
