@@ -17,6 +17,7 @@ import {
   trackMachineSocket,
 } from "../services/stateStore/ingest";
 import { registerUnsStreamHandlers } from "../services/stateStore/unsStreamGateway";
+import { registerScadaHandlers } from "../services/scada/scadaSocket";
 // ── doc 56 Đ0-A (RTM-6 + GAP-1) — machine-event auth on the socket channel.
 // `log`/`enforce` accept legacy-OR-mk_ so a rotated (mk_-only) machine keeps
 // presence after runbook 52 §3.f nulls machines.apiKey.
@@ -1346,6 +1347,10 @@ export function initializeSocket(server: HttpServer): Server {
     // G2.17 — UNS snapshot-then-stream subscription handlers
     // (flag WS_UNS_STREAM_ENABLED, default OFF → 'uns:subscribe' is a no-op).
     registerUnsStreamHandlers(socket as never);
+
+    // SCADA R0 Task 8 — `scada:subscribe/unsubscribe` (cờ SCADA_SOCKET_ENABLED, mặc định OFF; thêm bộ đệm SCADA_LIVE_CACHE_ENABLED).
+    // Kiểm phạm vi TỪNG TAG trong handler; không join phòng, không io.emit (chỉ socket.emit tới socket đã đăng ký).
+    if (process.env.SCADA_SOCKET_ENABLED === "true") registerScadaHandlers(socket as never);
   });
 
   // Initialize notification service with Socket.io

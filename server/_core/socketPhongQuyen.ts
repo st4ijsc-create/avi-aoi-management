@@ -260,3 +260,22 @@ export async function tuDongVaoPhongPhamVi(socket: SocketVaoPhong): Promise<bool
     return false;
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ SCADA R0 Task 8 (2026-10-23) — kênh `scada:subscribe`: được xem MỘT tag của máy `machineId` không?
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Socket NGƯỜI DÙNG ∧ quyền `machine_monitoring/canView` (cùng cặp `engineering:*`) ∧ phạm vi: máy có id ⇒ máy NẰM TRONG PHẠM VI;
+// adapter KHÔNG gắn máy (`null`) ⇒ chỉ người có phạm vi TOÀN QUYỀN. Lỗi/không biết ⇒ false (fail-closed).
+export async function duocXemTagScada(data: DuLieuSocket | null | undefined, machineId: number | null): Promise<boolean> {
+  if (!laSocketNguoiDung(data)) return false;
+  try {
+    const user = data!.user!;
+    const { checkPermission } = await import("./accessControl");
+    const coQuyen = await checkPermission(user.id as number, String(user.role ?? ""), QUYEN_XEM_ENGINEERING.module, QUYEN_XEM_ENGINEERING.action);
+    if (!coQuyen) return false;
+    return machineId != null ? await duocVaoPhongPhamVi(data, "machine", machineId) : await coPhamViToanQuyen(data);
+  } catch (err) {
+    console.error("[Socket.io] loi kiem quyen xem tag SCADA:", (err as Error)?.message ?? err);
+    return false;
+  }
+}
