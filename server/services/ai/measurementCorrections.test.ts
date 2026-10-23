@@ -16,6 +16,7 @@
  *  - training export source: getCorrectionTrainingSamples shape.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../../testing/modelSanPhamTest";
 import { initTRPC } from "@trpc/server";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
@@ -92,11 +93,11 @@ beforeAll(async () => {
     machineType: "AOI",
     apiKey: `test_v2_corr_${STAMP}`,
   });
-  productModelId = await dbApi.createProductModel({
+  productModelId = dangKyModelSanPhamTest(await dbApi.createProductModel({
     code: `TP_V2_${STAMP}`,
     name: "V2 product",
     version: "1.0",
-  });
+  }));
   pointDefId = await dbApi.createMeasurementPointDef({
     productModelId,
     code: `MP_V2_${STAMP}`,

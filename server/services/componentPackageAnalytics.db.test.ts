@@ -12,6 +12,7 @@
  *   OK results are never counted; machineId filter isolates the fixture.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import fs from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
@@ -54,7 +55,7 @@ describe.skipIf(!DB_URL)("W8-A package Pareto (0191 linkage chain, seeded)", () 
     const [m] = await sql`INSERT INTO machines ("stationId", code, name, "machineType") VALUES (${ids.station}, ${"M-" + RUN}, 'W8A machine', 'AOI') RETURNING id`;
     ids.machine = m.id;
     const [p] = await sql`INSERT INTO product_models (code, name) VALUES (${"P-" + RUN}, 'W8A product') RETURNING id`;
-    ids.product = p.id;
+    ids.product = dangKyModelSanPhamTest(p.id);
 
     // Package + materials.
     const [pkg] = await sql`

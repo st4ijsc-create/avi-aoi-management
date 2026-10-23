@@ -27,6 +27,7 @@
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 
 // ── Seam ghi-lại: bắt ĐÚNG đối tượng dữ liệu đi vào bộ dựng tài liệu ─────────────────────
 const pptComparisonCalls: Array<{ data: any }> = [];
@@ -185,10 +186,10 @@ beforeAll(async () => {
     machineType: "AOI",
     apiKey: `rssb_${ts}`,
   });
-  productModelId = await db.createProductModel({
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({
     code: `RSSP_${ts}`,
     name: "Report scope product",
-  });
+  }));
   pointDefId = await db.createMeasurementPointDef({
     productModelId,
     machineId,

@@ -32,6 +32,7 @@
  * `measurement_results` KHÔNG WORM — `avi_app` CÓ quyền DELETE — dọn sạch trong `afterAll`.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import postgres from "postgres";
 import { machineApiRouter } from "./machineApiRouters";
 import type { TrpcContext } from "../_core/context";
@@ -93,6 +94,7 @@ describe.skipIf(!DB_URL)("submitInspection v1.x — cuộn verdict lưu trữ = 
       INSERT INTO machines ("stationId", code, name, "machineType", "isActive", "apiKey")
       VALUES (${ids.station}, ${"M-" + RUN}, 'V1CN machine', 'AOI', true, ${API_KEY}) RETURNING id`);
     ids.product = await one(sql`INSERT INTO product_models (code, name) VALUES (${`${RUN}-PM`}, 'V1CN product') RETURNING id`);
+    dangKyModelSanPhamTest(ids.product);
     ids.ptPlain = await one(sql`
       INSERT INTO measurement_point_defs ("productModelId", code, name, "measurementType", "positionX", "positionY")
       VALUES (${ids.product}, ${PT_PLAIN}, 'V1CN point plain', 'DIMENSION', 10, 20) RETURNING id`);

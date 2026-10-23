@@ -23,6 +23,8 @@
  *   • Legacy signatures (variantId absent) behave as base and do not break.
  *   • mergeEffectivePoints is a pure, deterministic merge (unit, no DB).
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "./connection";
@@ -194,28 +196,49 @@ describe("doc55 PV0 — mergeEffectivePoints (pure)", () => {
 // DB-backed suites
 // ════════════════════════════════════════════════════════════════════════════
 describe("doc55 PV0 — 0286 backfill + base variant", () => {
-  it("every live product_models has exactly one live BASE variant", async () => {
+  /**
+   * ★ KHÔNG đếm TOÀN BẢNG (2026-10-23). `_test` là CSDL DÙNG CHUNG: tệp test khác tạo model bằng INSERT thô (không qua ensureBaseVariant) và để lại hàng nghìn model sống thiếu BASE
+   * ⇒ phép đếm toàn bảng đỏ vì rác của người khác chứ không phải vì backfill sai. Ca này chứng minh ĐÚNG điều cần chứng minh — câu BACKFILL của 0286 cho MỌI model sống
+   * đúng một BASE và idempotent — bằng cách chạy chính câu đó (đọc từ drizzle/0286) trong giao dịch BỊ HOÀN TÁC rồi chỉ khẳng định trên các model do chính ca tạo.
+   * Bất biến toàn bảng vẫn thuộc về DEV/production (nơi mọi model đi qua ensureBaseVariant), không phải CSDL test dùng chung.
+   */
+  it("0286 backfill gives every live model (the fixtures') exactly one live BASE, idempotently — rolled back", async () => {
     if (!hasPV0) return;
     const db = (await getDb())!;
-    const [{ orphans }] = (await db.execute(sql`
-      SELECT count(*)::int AS orphans
-        FROM product_models pm
-       WHERE pm."deletedAt" IS NULL
-         AND NOT EXISTS (
-           SELECT 1 FROM product_variants pv
-            WHERE pv."productModelId" = pm."id" AND pv."isBase" = true AND pv."deletedAt" IS NULL
-         )
-    `)) as unknown as Array<{ orphans: number }>;
-    expect(orphans).toBe(0);
-
-    const [{ dupes }] = (await db.execute(sql`
-      SELECT count(*)::int AS dupes FROM (
-        SELECT 1 FROM product_variants
-         WHERE "isBase" = true AND "deletedAt" IS NULL
-         GROUP BY "productModelId" HAVING count(*) > 1
-      ) d
-    `)) as unknown as Array<{ dupes: number }>;
-    expect(dupes).toBe(0);
+    const goc = readFileSync(resolve(__dirname, "../../drizzle/0286_product_variant.sql"), "utf8");
+    const dau = goc.indexOf('INSERT INTO "product_variants"');
+    const cuoi = goc.indexOf(";", goc.indexOf('AND pv."deletedAt" IS NULL', dau));
+    expect(dau, "không thấy câu backfill trong 0286").toBeGreaterThan(-1);
+    const cauBackfill = goc.slice(dau, cuoi);
+    const a = await newModel("bf-a", false);
+    const b = await newModel("bf-b", false);
+    const c = await newModel("bf-c", true); // đã có BASE sẵn: backfill không được thêm bản thứ hai
+    const ds = sql.join([a, b, c].map((i) => sql`${i}`), sql`, `);
+    const demBase = async (tx: { execute: typeof db.execute }) =>
+      (await tx.execute(
+        sql`SELECT "productModelId" AS m, count(*)::int AS n FROM product_variants WHERE "isBase" = true AND "deletedAt" IS NULL AND "productModelId" IN (${ds}) GROUP BY 1 ORDER BY 1`,
+      )) as unknown as Array<{ m: number; n: number }>;
+    class HoanTac extends Error {}
+    let truoc: Array<{ m: number; n: number }> = [];
+    let sau1: Array<{ m: number; n: number }> = [];
+    let sau2: Array<{ m: number; n: number }> = [];
+    await db
+      .transaction(async (tx) => {
+        truoc = await demBase(tx);
+        await tx.execute(sql.raw(cauBackfill));
+        sau1 = await demBase(tx);
+        await tx.execute(sql.raw(cauBackfill)); // idempotent
+        sau2 = await demBase(tx);
+        throw new HoanTac();
+      })
+      .catch((e) => {
+        if (!(e instanceof HoanTac)) throw e;
+      });
+    expect(truoc).toEqual([{ m: c, n: 1 }]); // a, b chưa có BASE
+    expect(sau1).toEqual([a, b, c].sort((x, y) => x - y).map((m) => ({ m, n: 1 })));
+    expect(sau2).toEqual(sau1);
+    // hoàn tác thật: a, b vẫn chưa có BASE ngoài giao dịch (không ghi vào dữ liệu dùng chung)
+    expect(await demBase(db as never)).toEqual([{ m: c, n: 1 }]);
   });
 
   it("ensureBaseVariant is idempotent — same id, one row", async () => {

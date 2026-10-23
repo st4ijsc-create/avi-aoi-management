@@ -8,6 +8,7 @@
  * on the NEXT Asia/Ho_Chi_Minh day — the doc-27 A2 proof for this endpoint).
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import {
   computeTuningHint,
   evaluateThresholdLevel,
@@ -101,7 +102,7 @@ describe("getFalseCallEscapeKpi (DB integration)", () => {
       machineType: "AVI",
       apiKey: `test_fce_${ts}`,
     });
-    productModelId = await db.createProductModel({ code: `PROD_FCE_${ts}`, name: "FCE product", version: "1.0" });
+    productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: `PROD_FCE_${ts}`, name: "FCE product", version: "1.0" }));
 
     // 5 inspections on 2026-03-05 (VN daytime) + 1 NTF at 23:30 UTC on 03-10
     // (VN day 03-11): totals → machineNgCalls 4 (2 NG + 2 NTF), falseCalls 2.

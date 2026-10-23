@@ -30,6 +30,7 @@
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 
 // ── Seam ghi-lại: bắt ĐÚNG đối tượng dữ liệu đi vào bộ dựng tài liệu ─────────────────────
 const pdfCalls: Array<{ data: any; config: any }> = [];
@@ -167,10 +168,10 @@ beforeAll(async () => {
     machineType: "AOI",
     apiKey: `res_${ts}`,
   });
-  const productModelId = await db.createProductModel({
+  const productModelId = dangKyModelSanPhamTest(await db.createProductModel({
     code: `RESP_${ts}`,
     name: "Report export product",
-  });
+  }));
   pointDefId = await db.createMeasurementPointDef({
     productModelId,
     machineId,

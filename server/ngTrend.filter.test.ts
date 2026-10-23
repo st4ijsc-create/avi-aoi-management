@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import { dangKyModelSanPhamTest } from "./testing/modelSanPhamTest";
 import * as db from "./db";
 
 describe("getNGTrendByDay with filters", () => {
@@ -47,11 +48,11 @@ describe("getNGTrendByDay with filters", () => {
       apiKey: `test_api_key_trend_${timestamp}`,
     });
 
-    testProductModelId = await db.createProductModel({
+    testProductModelId = dangKyModelSanPhamTest(await db.createProductModel({
       code: `PROD_TREND_${timestamp}`,
       name: "Product for Trend Test",
       version: "1.0",
-    });
+    }));
 
     testMeasurementPointDefId = await db.createMeasurementPointDef({
       productModelId: testProductModelId,

@@ -13,6 +13,7 @@
  *      NTF_CLASSIFIER_ENABLED, and honest method:'heuristic' fallback when OFF.
  */
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { dangKyModelSanPhamTest } from "../../testing/modelSanPhamTest";
 import { eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import * as dbApi from "../../db";
@@ -215,7 +216,7 @@ beforeAll(async () => {
     machineId = await dbApi.createMachine({
       stationId, code: `TM_NC_${STAMP}`, name: "NC machine", machineType: "AOI", apiKey: `test_nc_${STAMP}`,
     });
-    productModelId = await dbApi.createProductModel({ code: `TP_NC_${STAMP}`, name: "NC product", version: "1.0" });
+    productModelId = dangKyModelSanPhamTest(await dbApi.createProductModel({ code: `TP_NC_${STAMP}`, name: "NC product", version: "1.0" }));
     pointId = await dbApi.createMeasurementPointDef({
       productModelId, code: `MP_NC_${STAMP}`, name: "NC point", measurementType: "DIMENSION",
       lowerLimit: "1.000000", upperLimit: "2.000000", positionX: 10, positionY: 10,

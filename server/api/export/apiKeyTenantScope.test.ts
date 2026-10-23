@@ -39,6 +39,7 @@
  * phân giải phạm vi, vì thứ cần chứng minh chính là SQL sinh ra từ nó có tới nơi hay không.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { dangKyModelSanPhamTest } from "../../testing/modelSanPhamTest";
 import express from "express";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
@@ -304,9 +305,9 @@ beforeAll(async () => {
   machineNC = await dbApi.createMachine({
     stationId: stationNC, code: `AKSMNC_${ts}`, name: "AKS machine NC", machineType: "AOI", apiKey: `aks_mnc_${ts}`,
   });
-  productModelId = await dbApi.createProductModel({
+  productModelId = dangKyModelSanPhamTest(await dbApi.createProductModel({
     code: `AKSP_${ts}`, name: "AKS product", imageWidth: 1000, imageHeight: 800,
-  });
+  }));
   pointDefId = await dbApi.createMeasurementPointDef({
     productModelId, code: `AKSPT_${ts}`, name: "AKS point", measurementType: "VISUAL", positionX: 10, positionY: 10,
   });
