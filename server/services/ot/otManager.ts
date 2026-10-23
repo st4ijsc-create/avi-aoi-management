@@ -32,7 +32,7 @@ import { chatLuongLoiChung } from "./chatLuong";
 import { khoangNoiLaiMs, NOI_LAI_NHANH_TOI_THIEU_MS, thoiGianOnDinhMs, tinhDeadlineMs } from "./reconnectNhanh";
 import { ghiNhanDoc, ghiNhanPhien } from "./boDemTruyenThong";
 import type { TuyChonVongPoll } from "./otDriver";
-import { datThongTinAdapter } from "../scada/boDemHienTai";
+import { datThongTinAdapter, xoaAdapter, xoaTatCaAdapter } from "../scada/boDemHienTai";
 
 /** SCADA R0 Task 7 — báo cho bộ đệm giá trị hiện tại nhịp poll / deadband / máy / mã của adapter (tính stale). Chiều phụ thuộc otManager → scada. */
 export function baoThongTinChoBoDem(adapter: RuntimeAdapter): void {
@@ -968,6 +968,7 @@ export async function stopOt(): Promise<void> {
   // scan #73 — the gateway is OFF: a reconcile / NOTIFY after stopOt never attaches (re-)starts a session; startOt sets it again
   otGatewayOn = false;
   otTriedAtStart.clear();
+  xoaTatCaAdapter(); // SCADA R0 Task 7 - gateway tắt: bộ đệm giá trị hiện tại không còn adapter nào
 }
 
 export function isOtRunning(): boolean {
@@ -1190,6 +1191,7 @@ export async function detachOtAdapter(adapterId: number): Promise<boolean> {
     found = true;
     await boundedQuiet(() => entry.adapter.driver.disconnect(), DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS, "detach disconnect");
   }
+  xoaAdapter(adapterId); // SCADA R0 Task 7 - adapter đã sang edge: bộ đệm không giữ giá trị/thông tin của nó
   if (found) console.log(`[OT] adapter ${adapterId} detached — owned by an edge node now (no polling / ingest / writes here)`);
   return found;
 }

@@ -20,6 +20,7 @@
  * `stale = now - rx > max(3 * pollMs, coDeadband ? 70_000 : 0)`; adapter chưa có thông tin ⇒ pollMs 5000, không deadband.
  */
 import type { LyDoChatLuong, OtQuality, OtSample } from "../ot/otDriver";
+import { checkSampleTs } from "../telemetryBus";
 
 export interface GiaTriHienTai {
   adapterId: number;
@@ -57,6 +58,8 @@ export const POLL_MAC_DINH_MS = 5000;
 export const NGUONG_DEADBAND_MS = 70_000;
 /** Cửa sổ nạp DB khi khởi động. */
 export const NAP_TU_DB_MS = 24 * 3600_000;
+/** Khi nạp DB: ts tối đa vượt ingestedAt của hàng (dung sai đồng hồ). */
+export const TS_VUOT_INGESTED_TOI_DA_MS = 5000;
 
 const LY_DO_HOP_LE: ReadonlySet<string> = new Set(["comm_lost", "device_error", "config_error", "out_of_range", "stale"]);
 const CHAT_LUONG_HOP_LE: ReadonlySet<string> = new Set(["good", "bad", "uncertain"]);
@@ -70,6 +73,20 @@ let dangKhoiDong: Promise<void> | null = null;
 
 export function datThongTinAdapter(adapterId: number, t: ThongTinAdapter): void {
   thongTin.set(adapterId, { pollMs: t.pollMs, coDeadband: t.coDeadband, machineId: t.machineId, code: t.code });
+}
+
+/** Gỡ adapter (detach/stopOt): xoá thông tin + MỌI mục của nó — không còn trả giá trị cũ cho Task 8/9/10. */
+export function xoaAdapter(adapterId: number): void {
+  thongTin.delete(adapterId);
+  const tienTo = `${adapterId}:`;
+  for (const k of [...boDem.keys()]) if (k.startsWith(tienTo)) boDem.delete(k);
+}
+
+/** stopOt: không adapter nào còn do tiến trình này quản ⇒ xoá toàn bộ thông tin + mục (kể cả adapter đang khởi động dở). */
+export function xoaTatCaAdapter(): void {
+  thongTin = new Map();
+  boDem = new Map();
+  dangKhoiDong = null;
 }
 
 export function thongTinAdapter(adapterId: number): ThongTinAdapter | null {
@@ -122,7 +139,7 @@ function apMau(m: Mau, chiNeuChuaCo: boolean): string | null {
   boDem.set(k, {
     adapterId: m.adapterId,
     tagKey: m.tagKey,
-    machineId: m.machineId ?? cu?.machineId ?? null,
+    machineId: m.machineId, // đúng như nguồn khai (null kể cả); máy hiệu lực quyết lúc ĐỌC từ thông tin adapter (lamTuoi)
     v,
     q: m.q,
     statusCode: m.statusCode,
@@ -179,6 +196,9 @@ export function napTuOt(
   const mau: Mau[] = [];
   for (const s of samples) {
     if (!s || typeof s.tagKey !== "string" || s.tagKey === "" || s.tsReject) continue;
+    // Cùng cổng `ts` với bus (invalid_ts / ts_too_far_future): bus loại mẫu thì bộ đệm cũng bỏ — một mẫu năm 2099 không được
+    // đóng băng tag dưới luật mới-nhất-theo-ts.
+    if (checkSampleTs(s.timestamp, now) !== null) continue;
     const q: OtQuality = CHAT_LUONG_HOP_LE.has(s.quality) ? s.quality : "good";
     const v = s.value === undefined ? null : s.value;
     mau.push({
@@ -203,7 +223,10 @@ function lamTuoi(g: GiaTriHienTai, now: number): GiaTriCoTuoi {
   const coDeadband = t?.coDeadband ?? false;
   const nguong = Math.max(3 * pollMs, coDeadband ? NGUONG_DEADBAND_MS : 0);
   const tuoi = now - g.rx;
-  return { ...g, lichSu: g.lichSu.slice(), ageMs: Math.max(0, tuoi), stale: tuoi > nguong };
+  // Máy hiệu lực quyết lúc ĐỌC: adapter đã chuyển/gỡ máy (thongTin.machineId null) ⇒ không còn thuộc máy cũ. Chỉ khi KHÔNG có
+  // thông tin adapter mới dùng giá trị đã lưu.
+  const machineId = t ? t.machineId : g.machineId;
+  return { ...g, machineId, lichSu: g.lichSu.slice(), ageMs: Math.max(0, tuoi), stale: tuoi > nguong };
 }
 
 export function layGiaTri(adapterId: number, tagKey: string, now: number = Date.now()): GiaTriCoTuoi | null {
@@ -215,7 +238,9 @@ export function layGiaTri(adapterId: number, tagKey: string, now: number = Date.
 export function timTheoMayVaTag(machineId: number, tagKey: string, now: number = Date.now()): GiaTriCoTuoi[] {
   const out: GiaTriCoTuoi[] = [];
   for (const g of boDem.values()) {
-    if (g.machineId === machineId && g.tagKey === tagKey) out.push(lamTuoi(g, now));
+    if (g.tagKey !== tagKey) continue;
+    const gt = lamTuoi(g, now);
+    if (gt.machineId === machineId) out.push(gt);
   }
   return out;
 }
@@ -241,8 +266,10 @@ async function napTuDb(): Promise<void> {
     if (adapterId === undefined || !r.metric) continue;
     const info = thongTin.get(adapterId);
     if (!info || info.code !== r.deviceId) continue;
-    const q: OtQuality = CHAT_LUONG_HOP_LE.has(r.quality) ? (r.quality as OtQuality) : "good";
     const m = (r.meta ?? {}) as Record<string, unknown>;
+    // Đường ingest NGOÀI đã bị gỡ meta.adapterId ⇒ chỉ hàng do OT trong tiến trình ghi mới khớp.
+    if (m.adapterId !== adapterId) continue;
+    const q: OtQuality = CHAT_LUONG_HOP_LE.has(r.quality) ? (r.quality as OtQuality) : "good";
     const v = r.numValue ?? r.textValue ?? r.boolValue ?? null;
     const rx = gioMs(r.ingestedAt);
     if (rx === null) continue;
@@ -254,7 +281,8 @@ async function napTuDb(): Promise<void> {
       q,
       statusCode: typeof m.statusCode === "string" ? m.statusCode : null,
       reason: typeof m.reason === "string" && LY_DO_HOP_LE.has(m.reason) ? (m.reason as LyDoChatLuong) : null,
-      ts: gioMs(r.ts) ?? rx,
+      // ts không được vượt ingestedAt quá 5 s (ts tương lai trong DB sẽ đóng băng tag dưới luật mới-nhất-theo-ts).
+      ts: Math.min(gioMs(r.ts) ?? rx, rx + TS_VUOT_INGESTED_TOI_DA_MS),
       tsSource: null,
       rx, // tuổi THẬT của hàng, không phải giờ khởi động
     });

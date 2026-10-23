@@ -3,7 +3,7 @@
  * Co tat => khong co report-by-exception (khong heartbeat 60 s) => nguong stale phai la 3*poll, khong phai 70 s.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { baoThongTinChoBoDem } from "./otManager";
+import { baoThongTinChoBoDem, detachOtAdapter, stopOt } from "./otManager";
 import { __datLaiBoDemHienTai, layGiaTri, napTuOt, thongTinAdapter } from "../scada/boDemHienTai";
 import type { RuntimeAdapter } from "./deviceAdapter";
 import type { OtSample } from "./otDriver";
@@ -59,5 +59,25 @@ describe("baoThongTinChoBoDem - coDeadband", () => {
     process.env.OT_TAG_DEADBAND_ENABLED = "true";
     baoThongTinChoBoDem(adapter([TAG_THUONG]));
     expect(thongTinAdapter(7)?.coDeadband).toBe(false);
+  });
+});
+
+describe("M3 - gỡ adapter khỏi bộ đệm", () => {
+  it("detachOtAdapter xoá thông tin + mục của adapter đó, adapter khác giữ", async () => {
+    baoThongTinChoBoDem(adapter([TAG_THUONG]));
+    napTuOt({ adapterId: 7, machineId: 3 }, [mauT], T0);
+    napTuOt({ adapterId: 8, machineId: 3 }, [mauT], T0);
+    await detachOtAdapter(7);
+    expect(layGiaTri(7, "t", T0)).toBeNull();
+    expect(thongTinAdapter(7)).toBeNull();
+    expect(layGiaTri(8, "t", T0)).not.toBeNull();
+  });
+
+  it("stopOt xoá toàn bộ thông tin + mục", async () => {
+    baoThongTinChoBoDem(adapter([TAG_THUONG]));
+    nap();
+    await stopOt();
+    expect(layGiaTri(7, "t", T0)).toBeNull();
+    expect(thongTinAdapter(7)).toBeNull();
   });
 });

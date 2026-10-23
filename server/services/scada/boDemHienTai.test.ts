@@ -19,6 +19,8 @@ import {
   napTuOt,
   thongTinAdapter,
   timTheoMayVaTag,
+  xoaAdapter,
+  xoaTatCaAdapter,
 } from "./boDemHienTai";
 
 const T0 = 1_800_000_000_000;
@@ -237,6 +239,67 @@ describe("dangKyThayDoi", () => {
   });
 });
 
+describe("I1 — máy hiệu lực quyết lúc đọc", () => {
+  it("adapter ở máy 3 rồi đăng ký lại machineId null, một mẫu sống tới ⇒ timTheoMayVaTag(3) rỗng", () => {
+    datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: 3, code: "A" });
+    nap([mau()], T0, 7, 3);
+    expect(timTheoMayVaTag(3, "t", T0)).toHaveLength(1);
+    datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: null, code: "A" });
+    expect(timTheoMayVaTag(3, "t", T0)).toEqual([]); // ngay cả trước mẫu mới
+    nap([mau({ timestamp: new Date(T0 + 1) })], T0 + 1, 7, null);
+    expect(timTheoMayVaTag(3, "t", T0 + 1)).toEqual([]);
+    expect(layGiaTri(7, "t", T0 + 1)?.machineId).toBeNull();
+  });
+
+  it("chuyển sang máy khác ⇒ theo máy mới ngay; không có thông tin adapter ⇒ dùng giá trị đã lưu", () => {
+    datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: 3, code: "A" });
+    nap([mau()], T0, 7, 3);
+    datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: 4, code: "A" });
+    expect(timTheoMayVaTag(3, "t", T0)).toEqual([]);
+    expect(timTheoMayVaTag(4, "t", T0)).toHaveLength(1);
+    nap([mau()], T0, 9, 6); // adapter 9 chưa có thông tin
+    expect(timTheoMayVaTag(6, "t", T0)).toHaveLength(1);
+  });
+});
+
+describe("I2 — cổng ts như bus", () => {
+  it("mẫu tương lai xa (2099) / ts hỏng bị bỏ; mẫu bình thường sau đó được nhận", () => {
+    expect(nap([mau({ value: 1, timestamp: new Date("2099-01-01T00:00:00Z") })])).toEqual([]);
+    expect(nap([mau({ value: 1, timestamp: new Date(NaN) })])).toEqual([]);
+    expect(layGiaTri(7, "t", T0)).toBeNull();
+    expect(nap([mau({ value: 2 })])).toEqual(["7:t"]);
+    expect(layGiaTri(7, "t", T0)?.v).toBe(2);
+  });
+});
+
+describe("M3 — xoaAdapter / xoaTatCaAdapter", () => {
+  it("xoaAdapter gỡ thông tin + mọi mục của adapter đó, adapter khác giữ nguyên", () => {
+    datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: 3, code: "A" });
+    datThongTinAdapter(8, { pollMs: 1000, coDeadband: false, machineId: 3, code: "B" });
+    nap([mau({ tagKey: "a" }), mau({ tagKey: "b" })], T0, 7, 3);
+    nap([mau({ tagKey: "a" })], T0, 8, 3);
+    xoaAdapter(7);
+    expect(timTheoMayVaTag(3, "a", T0).map((g) => g.adapterId)).toEqual([8]);
+    expect(layGiaTri(7, "b", T0)).toBeNull();
+    expect(thongTinAdapter(7)).toBeNull();
+    expect(thongTinAdapter(8)).not.toBeNull();
+  });
+
+  it("xoaAdapter(1) không xoá nhầm adapter 12 (tiền tố)", () => {
+    nap([mau()], T0, 12, 3);
+    xoaAdapter(1);
+    expect(layGiaTri(12, "t", T0)).not.toBeNull();
+  });
+
+  it("xoaTatCaAdapter gỡ hết", () => {
+    datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: 3, code: "A" });
+    nap([mau()], T0, 7, 3);
+    xoaTatCaAdapter();
+    expect(layGiaTri(7, "t", T0)).toBeNull();
+    expect(thongTinAdapter(7)).toBeNull();
+  });
+});
+
 describe("khoiDongBoDemHienTai (nạp DB)", () => {
   const hangDb = (over: Record<string, unknown> = {}) => ({
     deviceId: "ADP-A",
@@ -247,7 +310,7 @@ describe("khoiDongBoDemHienTai (nạp DB)", () => {
     quality: "good",
     ts: new Date(Date.now() - 10 * 60_000),
     ingestedAt: new Date(Date.now() - 10 * 60_000),
-    meta: null,
+    meta: { adapterId: 7 } as Record<string, unknown> | null,
     ...over,
   });
 
@@ -269,7 +332,7 @@ describe("khoiDongBoDemHienTai (nạp DB)", () => {
   it("khoá lấy từ sổ đăng ký (code → adapterId, metric → tagKey), KHÔNG từ meta giả", async () => {
     datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: 5, code: "ADP-A" });
     datThongTinAdapter(8, { pollMs: 1000, coDeadband: false, machineId: 5, code: "ADP-B" });
-    layMoiNhat.mockResolvedValue([hangDb({ meta: { adapterId: 8, tagKey: "gia" } })]);
+    layMoiNhat.mockResolvedValue([hangDb({ meta: { adapterId: 7, tagKey: "gia" } })]);
     await khoiDongBoDemHienTai();
     expect(layGiaTri(7, "t")?.v).toBe(12);
     expect(layGiaTri(8, "gia")).toBeNull();
@@ -285,6 +348,31 @@ describe("khoiDongBoDemHienTai (nạp DB)", () => {
     await khoiDongBoDemHienTai();
     expect(layGiaTri(7, "t")).toBeNull();
     expect(layGiaTri(7, "ok")?.v).toBe(12);
+  });
+
+  it("SEC: đúng deviceId nhưng thiếu hoặc lệch meta.adapterId ⇒ bỏ", async () => {
+    datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: 5, code: "ADP-A" });
+    layMoiNhat.mockResolvedValue([
+      hangDb({ metric: "khong_meta", meta: null }),
+      hangDb({ metric: "lech", meta: { adapterId: 8 } }),
+      hangDb({ metric: "chuoi", meta: { adapterId: "7" } }),
+      hangDb({ metric: "dung", meta: { adapterId: 7 } }),
+    ]);
+    await khoiDongBoDemHienTai();
+    expect(layGiaTri(7, "khong_meta")).toBeNull();
+    expect(layGiaTri(7, "lech")).toBeNull();
+    expect(layGiaTri(7, "chuoi")).toBeNull();
+    expect(layGiaTri(7, "dung")?.v).toBe(12);
+  });
+
+  it("SEC: ts vượt ingestedAt 1 h ⇒ kẹp ts ≤ ingestedAt + 5 s; mẫu sống bình thường sau đó được nhận", async () => {
+    datThongTinAdapter(7, { pollMs: 1000, coDeadband: false, machineId: 5, code: "ADP-A" });
+    const ing = new Date(Date.now() - 60_000);
+    layMoiNhat.mockResolvedValue([hangDb({ ts: new Date(ing.getTime() + 3600_000), ingestedAt: ing })]);
+    await khoiDongBoDemHienTai();
+    expect(layGiaTri(7, "t")?.ts).toBe(ing.getTime() + 5000);
+    expect(nap([mau({ value: 77, timestamp: new Date() })], Date.now())).toEqual(["7:t"]);
+    expect(layGiaTri(7, "t")?.v).toBe(77);
   });
 
   it("giá trị sống đến trước khi nạp DB xong không bị DB ghi đè", async () => {
