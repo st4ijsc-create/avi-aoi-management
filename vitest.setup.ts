@@ -70,6 +70,16 @@ process.env.EXTERNAL_MQTT_ENABLED ??= "false";
 process.env.NODE_ENV ??= "test";
 
 /**
+ * ★ Cạn kết nối Postgres khi chạy song song (2026-10-23). `_test` và DEV dùng CHUNG một cụm PG (:5434, max_connections=100, 3 dành cho superuser) mà :3000/dev server đã giữ ~20.
+ * Đo (vitest run server/services/edge server/db, 23 worker): ĐỈNH 96/97 kết nối, trong đó 73 là pool của chính test (`aoi_management_test|avi_app`) — mỗi worker mở pool app
+ * tới 25 + pool jobs 8 + pool đọc 15 dù mỗi tệp test chỉ cần vài truy vấn ⇒ "remaining connection slots are reserved…" làm đỏ ca vô tội.
+ * Test KHÔNG cần pool lớn: hạ trần cho mọi worker (chỉ là cấu hình test; mã sản phẩm và mặc định production không đổi; tệp nào cần trần khác tự đặt env như connectionPool.test.ts).
+ */
+process.env.DB_POOL_MAX ??= "4";
+process.env.DB_POOL_MAX_JOBS ??= "2";
+process.env.DB_POOL_MAX_READ ??= "2";
+
+/**
  * doc 81 Đợt 10 final fix wave (I-5) — the central motion-lock "persist pending" markers (robotMotionLockStore) default to
  * ./data/robot-motion-lock-pending: a test must NEVER write under data/. Every test worker gets its own temp directory instead
  * (a test that measures the markers sets its own).
