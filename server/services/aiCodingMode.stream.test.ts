@@ -1614,9 +1614,20 @@ describe("§ĐỢT 9 — trợ lý lập trình theo VAI TRÒ", () => {
     expect(h.modelNhan.every((m) => m === M27)).toBe(true);
   });
 
-  it("★★★ (iv) cờ TẮT (mặc định) ⇒ như cũ: engine KHÔNG nhận model vai trò, usage không có vaiTro", async () => {
+  it("★★★ (iv) cờ đặt TẮT (\"false\"/\"off\"/\"0\"/\"no\" — chủ dự án tắt bằng .env) ⇒ như cũ: engine KHÔNG nhận model vai trò, usage không có vaiTro", async () => {
+    for (const v of ["false", "off", "0", "no"]) {
+      process.env.AI_TRO_LY_THEO_VAI_TRO = v;
+      h.modelNhan = [];
+      const r = await chay("viết hàm cộng hai số nguyên", admin(), { projectId: "plc" });
+      expect(h.modelNhan[0], v).not.toBe(M27);
+      expect(usage(r)?.vaiTro, v).toBeUndefined();
+    }
+  });
+
+  it("★★★ (iv-b) cờ VẮNG ⇒ BẬT (mặc định — dieu-phoi quyết 2026-10-23 sau phép đo 29/48 vs 22/48): dự án PLC ⇒ 27B", async () => {
+    delete process.env.AI_TRO_LY_THEO_VAI_TRO;
     const r = await chay("viết hàm cộng hai số nguyên", admin(), { projectId: "plc" });
-    expect(h.modelNhan[0]).not.toBe(M27);
-    expect(usage(r)?.vaiTro).toBeUndefined();
+    expect(h.modelNhan).toEqual([M27]);
+    expect(usage(r)).toMatchObject({ vaiTro: "code.plc" });
   });
 });

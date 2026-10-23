@@ -13,6 +13,7 @@ import {
   chonVaiTroTacNhan,
   chuanBiLuotChayTheoVaiTro,
   tacNhanTheoVaiTroBat,
+  troLyTheoVaiTroBat,
   uocLuongTokenLuotChay,
   type PhuThuocVaiTro,
 } from "./vaiTroTacNhan";
@@ -55,6 +56,12 @@ function phu(o: Partial<PhuThuocVaiTro> = {}): PhuThuocVaiTro & { planInference:
 const Y = { cauHoi: "thêm hàm tính tổng", gocDuAn: "/x", projectId: "duan", user: { id: 7, role: "engineer" } };
 
 describe("cờ + ước lượng", () => {
+  it("★★★ cờ TRỢ LÝ cùng ngữ nghĩa cờ tác nhân: vắng/rỗng ⇒ BẬT; false/off/0/no ⇒ TẮT", () => {
+    expect(troLyTheoVaiTroBat({})).toBe(true);
+    expect(troLyTheoVaiTroBat({ AI_TRO_LY_THEO_VAI_TRO: "" })).toBe(true);
+    for (const v of ["false", "OFF", "0", "no", " false "]) expect(troLyTheoVaiTroBat({ AI_TRO_LY_THEO_VAI_TRO: v })).toBe(false);
+    for (const v of ["1", "true", "on"]) expect(troLyTheoVaiTroBat({ AI_TRO_LY_THEO_VAI_TRO: v })).toBe(true);
+  });
   it("★★★ cờ: VẮNG ⇒ BẬT (mặc định, dieu-phoi 2026-10-23); false/off/0/no ⇒ TẮT; 1/true/on ⇒ bật", () => {
     expect(tacNhanTheoVaiTroBat({})).toBe(true);
     expect(tacNhanTheoVaiTroBat({ AI_AGENT_THEO_VAI_TRO: "" })).toBe(true);

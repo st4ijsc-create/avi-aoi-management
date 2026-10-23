@@ -802,6 +802,18 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   aiWatcher ⇒ getOrLoadModel, broker từ chối 35B), thoáng qua 10–40 s trên cùng card ⇒ mọi phép đo hôm nay (kể cả #18/#19 và phép đo này)
   có thể chịu nhiễu VRAM/CPU ngắn; từ nay kiem-dinh boot với `DIAG_NO_KB_WARM=1` + `AI_ORCHESTRATION_ENABLED=false`. Quyết định bật mặc
   định: dieu-phoi.
+  **QUYẾT (dieu-phoi 2026-10-23, main 6f44a2bb3): BẬT MẶC ĐỊNH `AI_TRO_LY_THEO_VAI_TRO`** — cổng dư 3, hai nhóm cùng chiều, kiểm nhánh 96/96;
+  tiêu chí "đúng hơn nhanh" ⇒ chấp nhận TTFT +34 s và đổi khe. Ngữ nghĩa CÙNG cờ tác nhân: vắng ⇒ bật; `false`/`off`/`0`/`no` ⇒ tắt (chủ dự
+  án tắt bằng .env). Lưới ghim ba nhánh (vắng / đặt tắt ×4 giá trị / "1") + 2 đột biến đỏ. **THEO DÕI sau khi bật:** mỗi lần đổi khe ghi
+  `vram_events` `doi_khe` (`soModel/kheNangMacDinh.ts`; log console không có giờ); đếm theo giờ bằng `scripts/ai-eval/dem-doi-khe.mjs`
+  (exit 1 khi > 6 lần/giờ) — **> 6 lần/giờ ⇒ báo dieu-phoi** (đổi khe làm câu trả lời KB/vận hành xếp hàng sau). Chỉ đếm được từ khi :3000
+  chạy bản có dòng ghi.
+- **ĐĂNG KÝ TRƯỚC (backlog, CHƯA chạy — chờ dieu-phoi xếp lịch GPU) — vòng kiểm biên dịch `tro-ly` khi trợ lý PLC chạy 27B.** Giả thuyết
+  từ A (sổ #18/#19, 35B: +3/72, cổng trượt): trên 27B (trợ lý theo vai trò, nay mặc định ở dự án PLC) vòng có thể ĐỔI DẤU — /v1 #2 27B được
+  +8/72. Thiết kế: `mot-luot --config pipeline --ab-kiem --project-id <gốc PLC>` trên CÙNG 24 bài #11 × 3, xen kẽ trên CÙNG :3013 (khe 27B suốt
+  đợt, cờ trợ lý theo vai trò bật, cờ kiểm có `tro-ly`; nhánh tắt = `context.kiemBienDichST:false`), triển khai main (`aiLocalKnowledgeCodingKiemST`,
+  sửa = một prompt ghép, tắt nghĩ); harness chấm phần sau "Bản đã sửa sau biên dịch". **Cổng (giống A): bật ≥ tắt + 4/72 VÀ số lượt bật > 300 s
+  ≤ 7/72.** Đạt ⇒ đề xuất bật `tro-ly` CHỈ khi model của lượt là 27B (hoặc theo vai trò `code.plc`); không ⇒ giữ tắt.
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;

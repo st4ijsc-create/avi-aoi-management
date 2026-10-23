@@ -29,15 +29,16 @@ import type { AnhSoModel } from "../soModel/anhSoModel";
 import { dinhTuyenVaiTro, type KetQuaDinhTuyen } from "../soModel/dinhTuyenVaiTro";
 import { laModelHoSoKheNang } from "../soModel/tapKheNang";
 
-/** Cờ. Vắng / rỗng ⇒ BẬT (mặc định); "false"/"off"/"0"/"no" ⇒ TẮT; giá trị khác ⇒ bật. */
 /**
- * ★ Đợt 9 (2026-10-23, thiết kế 26ba9d039) — cờ TRỢ LÝ theo vai trò `AI_TRO_LY_THEO_VAI_TRO`: MẶC ĐỊNH TẮT (chỉ "1"/"true"/"on" ⇒ bật) cho tới khi
- * cổng đo đăng ký trước đạt.
+ * ★ Đợt 9 (2026-10-23, thiết kế 26ba9d039) — cờ TRỢ LÝ theo vai trò `AI_TRO_LY_THEO_VAI_TRO`, CÙNG ngữ nghĩa với cờ tác nhân: vắng / rỗng
+ * ⇒ BẬT (mặc định — dieu-phoi quyết sau phép đo đăng ký trước: 29/48 vs 22/48, cặp 12–5, thời gian 1,59×); "false"/"off"/"0"/"no" ⇒ TẮT
+ * (chủ dự án tắt bằng .env); giá trị khác ⇒ bật.
  */
 export function troLyTheoVaiTroBat(env: NodeJS.ProcessEnv = process.env): boolean {
-  return /^(1|true|on)$/i.test((env.AI_TRO_LY_THEO_VAI_TRO ?? "").trim());
+  return !/^(0|false|off|no)$/i.test((env.AI_TRO_LY_THEO_VAI_TRO ?? "").trim());
 }
 
+/** Cờ tác nhân. Vắng / rỗng ⇒ BẬT (mặc định); "false"/"off"/"0"/"no" ⇒ TẮT; giá trị khác ⇒ bật. */
 export function tacNhanTheoVaiTroBat(env: NodeJS.ProcessEnv = process.env): boolean {
   return !/^(0|false|off|no)$/i.test((env.AI_AGENT_THEO_VAI_TRO ?? "").trim());
 }
