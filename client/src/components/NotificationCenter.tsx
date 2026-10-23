@@ -21,6 +21,7 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { safeInternalPath } from "@shared/internalPath";
+import { createToastStormGate } from "@/lib/toastStormGate";
 
 /**
  * doc 81 Đợt 3b Task 3 — hộp thư của CHÍNH người dùng (bảng `notifications`, router `notification.*` sẵn có; server
@@ -82,17 +83,30 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
     return () => clearTimeout(id);
   }, [snoozed, prefs.snoozeUntil]);
 
+  // Bão thông báo (2026-10-23): tối đa 3 toast riêng / 10 s, phần còn lại gộp vào MỘT toast cùng id (sonner cập nhật tại
+  // chỗ). Danh sách trong chuông vẫn nhận đủ — chỉ bớt toast. Áp cho cả critical: critical vẫn KHÔNG bị tạm tắt giấu (R-3c-a),
+  // nó chỉ bị gộp khi đã có 3 toast trong cửa sổ.
+  const stormGate = useRef(createToastStormGate());
+  const gatedToast = (kind: "error" | "warning", message: string, opts: Parameters<typeof toast.error>[1]) => {
+    const d = stormGate.current.admit(Date.now());
+    if (d.show) {
+      toast[kind](message, opts);
+      return;
+    }
+    toast.error(t("notifications.storm.heldBack", { count: d.heldBack }), { id: "notif-storm", duration: 8000 });
+  };
+
   const handleAlert = (alert: InspectionAlert) => {
     // doc 81 Đợt 3c Task 1 (R-3c-a) — đang tạm tắt ⇒ không toast: cảnh báo socket không có mức "khẩn".
     if (snoozedNow()) return;
     // Show toast notification for important alerts
     if (alert.type === "NG_ALERT") {
-      toast.error(alert.message, {
+      gatedToast("error", alert.message, {
         duration: 5000,
         icon: <XCircle className="h-4 w-4 text-red-500" />,
       });
     } else if (alert.type === "YIELD_WARNING") {
-      toast.warning(alert.message, {
+      gatedToast("warning", alert.message, {
         duration: 5000,
         icon: <TrendingDown className="h-4 w-4 text-amber-500" />,
       });
@@ -115,9 +129,9 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
     seenEcoIds.current.add(evt.id);
     if (evt.severity === "critical") {
       // R-3c-a: mục CRITICAL vẫn toast dù đang tạm tắt (tạm tắt không bao giờ giấu thông tin an toàn — tinh thần R-2-y).
-      toast.error(evt.title, { duration: 6000, icon: <XCircle className="h-4 w-4 text-red-500" /> });
+      gatedToast("error", evt.title, { duration: 6000, icon: <XCircle className="h-4 w-4 text-red-500" /> });
     } else if (evt.severity === "high" && !snoozedNow()) {
-      toast.warning(evt.title, { duration: 5000, icon: <AlertTriangle className="h-4 w-4 text-amber-500" /> });
+      gatedToast("warning", evt.title, { duration: 5000, icon: <AlertTriangle className="h-4 w-4 text-amber-500" /> });
     }
   };
   const { events: ecoAlerts, clear: clearEcoAlerts, dismiss: dismissEcoAlert } = useEcosystemEvents({

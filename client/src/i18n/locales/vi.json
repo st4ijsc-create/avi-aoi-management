@@ -7485,7 +7485,10 @@
     "highPriorityOnly": "Chỉ ưu tiên cao",
     "snooze1h": "Tạm tắt 1 giờ",
     "snoozed": "Đang tạm tắt",
-    "snoozeHint": "Đang tạm tắt: chỉ ẩn số trên chuông và thông báo nổi của mục thường — mục khẩn/nghiêm trọng vẫn báo; danh sách vẫn đầy đủ."
+    "snoozeHint": "Đang tạm tắt: chỉ ẩn số trên chuông và thông báo nổi của mục thường — mục khẩn/nghiêm trọng vẫn báo; danh sách vẫn đầy đủ.",
+    "storm": {
+      "heldBack": "+{{count}} cảnh báo khác đã gộp lại — mở chuông thông báo để xem đủ"
+    }
   },
   "oee": {
     "targetSettingsDescription": "Thiết lập mục tiêu OEE cho máy hoặc dây chuyền",

@@ -7505,7 +7505,10 @@
     "highPriorityOnly": "High priority only",
     "snooze1h": "Snooze 1 hour",
     "snoozed": "Snoozed",
-    "snoozeHint": "Snoozed: only the bell count and pop-ups for normal items are muted — urgent/critical items still alert; the list stays complete."
+    "snoozeHint": "Snoozed: only the bell count and pop-ups for normal items are muted — urgent/critical items still alert; the list stays complete.",
+    "storm": {
+      "heldBack": "+{{count}} more alerts grouped — open notifications to see them all"
+    }
   },
   "oee": {
     "updateTarget": "Update target",

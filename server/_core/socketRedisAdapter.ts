@@ -16,6 +16,28 @@ import type { Server as SocketIOServer } from "socket.io";
 
 let attached = false;
 
+/**
+ * The Redis channel key this process broadcasts on. Instances that share ONE database (real horizontal scaling) share a
+ * key; a process on another database — e.g. a test server on the cloned `_test` database — gets a different key and can
+ * no longer push its rooms' traffic into this server's sockets. With the library default ("socket.io") for everybody,
+ * test runs flooded the dev server with URGENT notifications for factories that do not exist there (2026-10-23).
+ * Override with SOCKET_REDIS_KEY. Never contains credentials or query parameters.
+ */
+export function resolveSocketRedisKey(env: Record<string, string | undefined> = process.env): string {
+  const explicit = env.SOCKET_REDIS_KEY?.trim();
+  if (explicit) return explicit;
+  const raw = env.DATABASE_URL?.trim();
+  if (!raw) return "socket.io";
+  try {
+    const u = new URL(raw);
+    const db = decodeURIComponent(u.pathname.replace(/^\//, ""));
+    if (!u.hostname || !db) return "socket.io";
+    return `socket.io:${u.hostname}:${u.port || "5432"}/${db}`;
+  } catch {
+    return "socket.io";
+  }
+}
+
 export async function attachRedisAdapter(io: SocketIOServer): Promise<boolean> {
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
@@ -51,9 +73,10 @@ export async function attachRedisAdapter(io: SocketIOServer): Promise<boolean> {
     pubClient.on("error", (err: Error) => console.error("[Socket.io][Redis pub] error:", err.message));
     subClient.on("error", (err: Error) => console.error("[Socket.io][Redis sub] error:", err.message));
 
-    io.adapter(createAdapter(pubClient, subClient));
+    const key = resolveSocketRedisKey();
+    io.adapter(createAdapter(pubClient, subClient, { key }));
     attached = true;
-    console.log("[Socket.io] Redis adapter attached — multi-instance broadcasting enabled.");
+    console.log(`[Socket.io] Redis adapter attached — multi-instance broadcasting enabled (key "${key}").`);
     return true;
   } catch (err: any) {
     console.error("[Socket.io] Failed to attach Redis adapter, staying in-memory:", err?.message ?? err);

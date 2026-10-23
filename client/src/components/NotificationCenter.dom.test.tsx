@@ -509,6 +509,29 @@ describe("Đợt 3c Task 1 — tạm tắt phủ cả thông báo server (R-3c-a
     expect(toast.error).toHaveBeenCalledWith("CRIT-after", expect.anything());
   });
 
+  it("bão 300 cảnh báo CRITICAL ⇒ chỉ 3 toast riêng + MỘT toast gộp (cùng id) đếm 297 bị gộp — không treo trang (2026-10-23)", () => {
+    render(<NotificationCenter />);
+    act(() => { for (let i = 0; i < 300; i++) eco.onEvent?.(ecoEvt(`s${i}`, "critical", `CRIT-${i}`)); });
+    const calls = vi.mocked(toast.error).mock.calls;
+    const own = calls.filter(([msg]) => typeof msg === "string" && msg.startsWith("CRIT-"));
+    expect(own.map(([m]) => m)).toEqual(["CRIT-0", "CRIT-1", "CRIT-2"]);
+    const summary = calls.filter(([, o]) => (o as { id?: string } | undefined)?.id === "notif-storm");
+    expect(summary.length).toBeGreaterThan(0);
+    expect(String(summary.at(-1)?.[0])).toContain("297");
+  });
+
+  it("bão gộp chung cả cảnh báo socket NG: 2 critical + 5 NG ⇒ 3 toast riêng, phần còn lại vào toast gộp", () => {
+    render(<NotificationCenter />);
+    act(() => {
+      eco.onEvent?.(ecoEvt("a", "critical", "CRIT-a"));
+      eco.onEvent?.(ecoEvt("b", "critical", "CRIT-b"));
+      for (let i = 0; i < 5; i++) sock.onAlert?.({ type: "NG_ALERT", machineName: "M1", message: `NG-${i}`, timestamp: new Date() });
+    });
+    const calls = vi.mocked(toast.error).mock.calls;
+    expect(calls.filter(([, o]) => (o as { id?: string } | undefined)?.id !== "notif-storm").map(([m]) => m)).toEqual(["CRIT-a", "CRIT-b", "NG-0"]);
+    expect(String(calls.filter(([, o]) => (o as { id?: string } | undefined)?.id === "notif-storm").at(-1)?.[0])).toContain("4");
+  });
+
   it("toast KHÔNG tạm tắt ⇒ như cũ (NG ⇒ toast lỗi; high ⇒ toast cảnh báo)", () => {
     render(<NotificationCenter />);
     act(() => { sock.onAlert?.({ type: "NG_ALERT", machineName: "M1", message: "NG-on", timestamp: new Date() }); });
@@ -527,6 +550,9 @@ describe("i18n vi/en/zh", () => {
     "assignment.entity.ecn", "assignment.entity.recipe", "assignment.entity.interlock_rule", "assignment.entity.changeover", "assignment.entity.orchestration_run",
   ])("final wave: notifications.%s có ở cả ba", (k) => {
     for (const src of [vi_, en_, zh_]) expect(S(`notifications.${k}`, src).length).toBeGreaterThan(0);
+  });
+  it("bão thông báo: notifications.storm.heldBack có ở cả ba và nhận {{count}}", () => {
+    for (const src of [vi_, en_, zh_]) expect(S("notifications.storm.heldBack", src)).toContain("{{count}}");
   });
   it.each(["title", "markAllRead", "linkBlocked", "loadFailed"])("notifications.inbox.%s có ở cả ba", (k) => {
     for (const src of [vi_, en_, zh_]) expect(S(`notifications.inbox.${k}`, src).length).toBeGreaterThan(0);
