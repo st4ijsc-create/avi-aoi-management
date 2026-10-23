@@ -48,16 +48,11 @@ describe("loaiKenh / laKenhGhi / mucTacDongKenh", () => {
     expect(laKenhGhi({ channelKind: null, writable: true })).toBe(true);
     expect(laKenhGhi({ channelKind: null, writable: false })).toBe(false);
   });
-  it("kênh ghi mà actuationLevel NULL ⇒ 5 (fail-closed)", () => {
-    expect(mucTacDongKenh({ channelKind: "output", writable: true, actuationLevel: null })).toBe(5);
-    expect(mucTacDongKenh({ channelKind: null, writable: true, actuationLevel: null })).toBe(5);
+  it("actuationLevel NULL ⇒ 5 (fail-closed), bất kể loại kênh", () => {
+    expect(mucTacDongKenh({ actuationLevel: null })).toBe(5);
   });
   it("actuationLevel đặt rõ được giữ nguyên", () => {
-    expect(mucTacDongKenh({ channelKind: "output", writable: true, actuationLevel: 1 })).toBe(1);
-    expect(mucTacDongKenh({ channelKind: "output", writable: true, actuationLevel: 3 })).toBe(3);
-  });
-  it("kênh không ghi, actuationLevel NULL ⇒ 1 (không tác động)", () => {
-    expect(mucTacDongKenh({ channelKind: "input", writable: false, actuationLevel: null })).toBe(1);
+    for (const m of [1, 3, 4, 5] as const) expect(mucTacDongKenh({ actuationLevel: m })).toBe(m);
   });
 });
 
@@ -147,6 +142,51 @@ describe("kiemGiaTriGhi — float có dải + bước", () => {
   );
 });
 
+describe("kiemGiaTriGhi — dung sai tương đối, dải âm, -0, giá trị khổng lồ", () => {
+  it("1e8 + 0.3 với bước 0.1 (min NULL) ⇒ ok, không OFF_STEP oan", () => {
+    const k = kenh({ writeStep: 0.1 });
+    expect(tot(kiemGiaTriGhi(k, 1e8 + 0.3))).toBe(1e8 + 0.3);
+    expect(tot(kiemGiaTriGhi(k, "100000000.3"))).toBe(100000000.3);
+  });
+  it("1e8 + 0.35 với bước 0.1 vẫn là OFF_STEP (dung sai tương đối không nuốt nửa bước)", () => {
+    expect(loi(kiemGiaTriGhi(kenh({ writeStep: 0.1 }), 1e8 + 0.35)).ma).toBe("OFF_STEP");
+  });
+  it("dải âm min -10, step 0.3: -9.7 ok; -9.75 ⇒ OFF_STEP, goiY trong dải", () => {
+    const k = kenh({ writeMin: -10, writeMax: 0, writeStep: 0.3 });
+    expect(tot(kiemGiaTriGhi(k, -9.7))).toBe(-9.7);
+    const r = loi(kiemGiaTriGhi(k, -9.75));
+    expect(r.ma).toBe("OFF_STEP");
+    expect(r.goiY).toBe(-9.7);
+    expect(r.goiY as number).toBeGreaterThanOrEqual(-10);
+    expect(r.goiY as number).toBeLessThanOrEqual(0);
+  });
+  it("writeMax + writeStep, writeMin NULL: lưới từ 0, goiY kẹp về điểm lưới ≤ max", () => {
+    const k = kenh({ writeMax: 1, writeStep: 0.3 });
+    expect(tot(kiemGiaTriGhi(k, 0.9))).toBe(0.9);
+    expect(tot(kiemGiaTriGhi(k, -0.6))).toBe(-0.6); // không có cận dưới
+    expect(loi(kiemGiaTriGhi(k, 1.1)).ma).toBe("OUT_OF_RANGE");
+    const r = loi(kiemGiaTriGhi(k, 0.99)); // gần 1.2 nhất, nhưng 1.2 > max ⇒ 0.9
+    expect(r.ma).toBe("OFF_STEP");
+    expect(r.goiY).toBe(0.9);
+  });
+  it("-0 chuẩn hoá thành 0 cho int, float và chuỗi", () => {
+    for (const k of [kenh({}), kenh({ dataType: "int" })]) {
+      for (const v of [-0, "-0", "-0.0"]) {
+        if (k.dataType === "int" && v === "-0.0") continue;
+        const g = tot(kiemGiaTriGhi(k, v));
+        expect(Object.is(g, 0)).toBe(true);
+        expect(canonicalOtValue(g)).toBe(canonicalOtValue(0));
+      }
+    }
+    expect(Object.is(tot(kiemGiaTriGhi(kenh({ writeMin: -1, writeMax: 1, writeStep: 0.5 }), -0)), 0)).toBe(true);
+  });
+  it("giá trị khổng lồ với bước: không ném, không NaN, trả ok nguyên giá trị", () => {
+    expect(tot(kiemGiaTriGhi(kenh({ writeStep: 2 }), 1e30))).toBe(1e30);
+    expect(tot(kiemGiaTriGhi(kenh({ writeStep: 0.1 }), 1.7e308))).toBe(1.7e308);
+    expect(tot(kiemGiaTriGhi(kenh({ writeMin: 0, writeMax: 1e300, writeStep: 0.5 }), 1e299))).toBe(1e299);
+  });
+});
+
 describe("kiemGiaTriGhi — cột NULL ⇒ không kiểm phần đó", () => {
   it("mọi cột NULL ⇒ chỉ ép kiểu", () => {
     expect(tot(kiemGiaTriGhi(kenh({}), "-1234.5e2"))).toBe(-123450);
@@ -182,6 +222,15 @@ describe("kiemGiaTriGhi — int", () => {
   });
   it.each([["1e3"], ["abc"], [""], [true], [NaN], [null], ["0x10"]])("%j ⇒ TYPE_MISMATCH", (v) => {
     expect(loi(kiemGiaTriGhi(i, v)).ma).toBe("TYPE_MISMATCH");
+  });
+  it("ngoài miền số nguyên an toàn ⇒ TYPE_MISMATCH với thông điệp riêng", () => {
+    for (const v of [2 ** 53, -(2 ** 53), 1e300, "9007199254740993", "-9007199254740993"]) {
+      const r = loi(kiemGiaTriGhi(i, v));
+      expect(r.ma).toBe("TYPE_MISMATCH");
+      expect(r.chiTiet).toContain("an toàn");
+    }
+    expect(loi(kiemGiaTriGhi(i, 12.5)).chiTiet).not.toContain("an toàn");
+    expect(tot(kiemGiaTriGhi(i, Number.MAX_SAFE_INTEGER))).toBe(Number.MAX_SAFE_INTEGER);
   });
   it("dải + bước áp dụng cho int", () => {
     const k = kenh({ dataType: "int", writeMin: 0, writeMax: 100, writeStep: 5 });
