@@ -134,9 +134,12 @@ describe("trạng thái adapter → device_adapters (OT_GHI_TRANG_THAI_ADAPTER_E
       for (const m of mau) expect(m).toMatchObject({ quality: "bad", value: null, statusCode: "comm_lost", reason: "comm_lost" });
 
       // có lại
-      // stub.connect() ném trong lúc mất ⇒ vòng nối lại của legacy thất bại + backoff; instance giữ nguyên (cùng driver của adapter)
+      // stub.connect() ném trong lúc mất ⇒ legacy nối lại NHANH (mỗi max(poll, 500) = 500 ms, 10 lần đầu rồi backoff): có lại ⇒
+      // trạng thái trong bộ nhớ là connected trong ≤ 3 s (cổng R0: ≤ 2 chu kỳ poll + độ hạt vòng canh).
       stub!.simDatLoi({});
-      await vi.waitFor(async () => expect((await hang()).status).toBe("connected"), { timeout: 30_000, interval: 250 });
+      await vi.waitFor(() => expect(tt.layTrangThaiAdapter(adapterId)?.tt).toBe("connected"), { timeout: 3_000, interval: 50 });
+      // DB: điều tiết 5 s kể từ lần ghi "error" ⇒ lần ghi cuối (trailing) chậm hơn trạng thái bộ nhớ tối đa 5 s.
+      await vi.waitFor(async () => expect((await hang()).status).toBe("connected"), { timeout: 8_000, interval: 250 });
       expect(tt.layTrangThaiAdapter(adapterId)?.tt).toBe("connected");
       expect(ingestSamplesMock).toHaveBeenCalledTimes(1);
     } finally {
@@ -144,7 +147,7 @@ describe("trạng thái adapter → device_adapters (OT_GHI_TRANG_THAI_ADAPTER_E
       tt.__datLaiTrangThaiAdapter();
       vi.unstubAllEnvs();
     }
-  }, 90_000);
+  }, 60_000);
 
   it("isEnabled=false ⇒ status 'disabled' khi startOt (cờ ghi bật): hàng trung tâm đổi, hàng do edge sở hữu giữ nguyên", async () => {
     vi.stubEnv("OT_GATEWAY_ENABLED", "true");

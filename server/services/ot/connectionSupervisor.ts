@@ -47,6 +47,7 @@ import type {
   OtProtocol,
 } from "./otDriver";
 import { chatLuongLoiChung } from "./chatLuong";
+import { khoangNoiLaiMs } from "./reconnectNhanh";
 import { withDeadline } from "./drivers/boundedClose";
 
 /**
@@ -864,8 +865,13 @@ export class ConnectionSupervisor {
 
   /** Exponential backoff with (equal-)jitter, bounded by maxMs. */
   private nextBackoffDelay(): number {
+    // SCADA R0: 10 lần đầu của đợt mất nối lại nhanh (≤ max(poll, 500) ms), sau đó backoff lũy thừa như cũ (reconnectNhanh.ts).
+    return khoangNoiLaiMs(this.consecutiveFailures, this.pollIntervalMs, (n) => this.expBackoffDelay(n));
+  }
+
+  private expBackoffDelay(failures: number): number {
     const { initialMs, maxMs, factor, jitter } = this.backoff;
-    const exp = Math.max(0, this.consecutiveFailures - 1);
+    const exp = Math.max(0, failures - 1);
     const raw = Math.min(maxMs, initialMs * Math.pow(factor, exp));
     const fixed = raw * (1 - jitter);
     const rand = raw * jitter * Math.random();

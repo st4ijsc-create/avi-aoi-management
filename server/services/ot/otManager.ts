@@ -29,6 +29,7 @@ import { withDeadline } from "./drivers/boundedClose";
 import { adapterTargetFingerprint, runtimeAdapterTarget } from "./adapterTarget";
 import { baoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
 import { chatLuongLoiChung } from "./chatLuong";
+import { khoangNoiLaiMs, NOI_LAI_NHANH_TOI_THIEU_MS } from "./reconnectNhanh";
 
 let running = false;
 /**
@@ -293,9 +294,17 @@ function listLegacyEntryIfNeeded(entry: LegacyEntry): void {
   }
 }
 
-function legacyRetryDelay(failures: number): number {
+function legacyExpDelay(failures: number): number {
   const base = legacyReconnectMs();
   return Math.min(OT_LEGACY_RECONNECT_MAX_MS, base * Math.pow(2, Math.max(0, failures - 1)));
+}
+
+/**
+ * Chờ trước lần nối lại kế tiếp sau `failures` lần thất bại liên tiếp của adapter: 10 lần đầu của đợt mất nối lại nhanh
+ * (max(poll, 500) ms, không bao giờ chậm hơn backoff cũ), sau đó backoff lũy thừa như cũ (reconnectNhanh.ts).
+ */
+function legacyRetryDelay(failures: number, pollIntervalMs: number): number {
+  return khoangNoiLaiMs(failures, pollIntervalMs, legacyExpDelay);
 }
 
 /**
@@ -338,7 +347,7 @@ async function legacyTick(myEpoch: number): Promise<void> {
       }
       entry.state = prevState;
       entry.failures += 1;
-      entry.nextRetryAt = Date.now() + legacyRetryDelay(entry.failures);
+      entry.nextRetryAt = Date.now() + legacyRetryDelay(entry.failures, entry.adapter.pollIntervalMs);
       baoLegacy(entry, "lost", entry.lastError);
     });
   }
@@ -373,7 +382,8 @@ function startLegacyWatchdog(myEpoch: number): void {
       .finally(() => {
         ticking = false;
       });
-  }, legacyReconnectMs());
+    // Vòng canh chạy ít nhất mỗi 500 ms để lần nối lại NHANH (theo nextRetryAt của từng adapter) đúng nhịp; chặn thử vẫn do nextRetryAt.
+  }, Math.min(legacyReconnectMs(), NOI_LAI_NHANH_TOI_THIEU_MS));
   if (typeof (timer as { unref?: () => void }).unref === "function") {
     (timer as { unref: () => void }).unref();
   }
@@ -840,7 +850,7 @@ async function startOtOnce(): Promise<boolean> {
     // Protocol chưa triển khai hoặc kết nối lỗi/quá hạn → adapter này 'error', không sập.
     entry.state = "error";
     entry.failures = 1;
-    entry.nextRetryAt = Date.now() + legacyRetryDelay(1);
+    entry.nextRetryAt = Date.now() + legacyRetryDelay(1, entry.adapter.pollIntervalMs);
     baoLegacy(entry, "lost", entry.lastError);
     console.warn(`[OT] adapter "${adapter.code}" (${adapter.protocol}) skipped: ${entry.lastError}`);
   });
@@ -980,7 +990,7 @@ export async function resetAdapterSession(
     const left = end - Date.now();
     if (left <= 0) {
       entry.failures = 1;
-      entry.nextRetryAt = Date.now() + legacyRetryDelay(1);
+      entry.nextRetryAt = Date.now() + legacyRetryDelay(1, entry.adapter.pollIntervalMs);
       baoLegacy(entry, "lost", entry.lastError);
       return { reset: false, via: "legacy", error: `session reset budget ${budgetMs}ms spent before reconnect` };
     }
@@ -991,7 +1001,7 @@ export async function resetAdapterSession(
       return { reset: true, via: "legacy" };
     }
     entry.failures = 1;
-    entry.nextRetryAt = Date.now() + legacyRetryDelay(1);
+    entry.nextRetryAt = Date.now() + legacyRetryDelay(1, entry.adapter.pollIntervalMs);
     baoLegacy(entry, "lost", entry.lastError);
     return { reset: false, via: "legacy", error: entry.lastError ?? "reconnect failed" };
   } catch (err) {
@@ -1154,7 +1164,7 @@ export async function attachOtAdapter(adapter: RuntimeAdapter): Promise<boolean>
       else {
         entry.state = "error";
         entry.failures = 1;
-        entry.nextRetryAt = Date.now() + legacyRetryDelay(1);
+        entry.nextRetryAt = Date.now() + legacyRetryDelay(1, entry.adapter.pollIntervalMs);
         baoLegacy(entry, "lost", entry.lastError);
       }
       if (!legacyTimer) startLegacyWatchdog(myEpoch); // startOt found nothing to start: the reconnect watchdog was never armed
