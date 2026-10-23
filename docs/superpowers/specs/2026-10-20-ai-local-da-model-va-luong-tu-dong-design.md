@@ -824,6 +824,11 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   qua; 22:25 đã 21 GB; không xác định được tiến trình chiếm) — cùng lớp sự cố 18:21 ngày 22. Lượt bật lỗi không có tóm tắt ⇒ KIỂM NHÁNH dừng
   đúng, vứt lượt đó; 134 hàng hợp lệ (17:48–22:20) + 10 hàng NỐI TIẾP cùng mã (22:25–22:55, `--noi-tiep`, như A/B #2); bản 134 hàng giữ ở
   `…-27b-1-134hang.json`. :3013 chết lúc boot 0 lần; :8091 khởi động lại: 2 đổi model theo kế hoạch ×2 lần chạy + 1 lần CHẾT (22:20).
+  **ĐÓNG (dieu-phoi 2026-10-23):** vòng kiểm biên dịch cho `tro-ly` — 35B (#18/#19) và 27B (#24/#25) đều +3/72 < +4 ⇒ GIỮ TẮT, KHÔNG đo thêm.
+  (Vòng `/v1` stream vẫn bật mặc định — đạt +8/72; `compile_st` của tác nhân ở dự án PLC vẫn bật — đạt.) Nguyên nhân sự cố 22:20 (dieu-phoi
+  tra Windows log): System Event 2004 22:20:19 "low virtual memory… llama-server.exe consumed 40.488.398.848 bytes, vmmemWSL 6,17 GB, node 5,26
+  GB" + Event 26 (popup Out of Virtual Memory) ⇒ CHÍNH llama-server 27B giữ ~40 GB commit (model Q4 ~17 GB, `--cache-ram 4096`) — điều tra đo
+  bộ nhớ ở mục kế.
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
