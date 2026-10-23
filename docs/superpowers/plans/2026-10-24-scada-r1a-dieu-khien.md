@@ -217,7 +217,7 @@ Chốt:
 
 **Files:**
 - Create: `server/services/scada/cheDoMay.ts`
-- Modify: `server/services/ot/commandDispatcher.ts`, sau khối phân loại STOP ghim (~:964-991), trước policy (~:1011).
+- Modify: `server/services/ot/commandDispatcher.ts`, trong CÙNG khối cổng sớm của Task 3 (sau kiểm tag, TRƯỚC cổng chế độ OT/nghiệm thu `writeSimulated` ~:928) — ruling R-1 của sổ cái: từ chối LOCAL phải là `rejected` kể cả khi `OT_CONTROL_ENABLED` tắt, nhất quán với cổng dải.
 - Test: `server/services/scada/cheDoMay.test.ts`, `server/services/ot/commandDispatcher.cheDo.r1a.db.test.ts`
 
 **Interfaces:**
@@ -231,9 +231,10 @@ Chốt:
 Chốt:
 - REMOTE **chỉ khi** máy đã khai, bộ đệm bật, có mẫu, `q==="good"`, `!stale`, và `canonicalOtValue(v)` bằng `gia_tri_remote`. Mọi trường hợp khác là LOCAL (D3, fail-closed).
 - `machineId` null ⇒ LOCAL `chua_khai`.
-- Cổng trong `dispatchCore` chỉ chạy khi `congCheDoBat()` **hoặc** `triggeredBy.tool === "hmi.write_tag"`. STOP ghim được miễn.
+- Cổng trong `dispatchCore` chỉ chạy khi `congCheDoBat()` **hoặc** `triggeredBy.tool === "hmi.write_tag"`. STOP ghim được miễn — khớp theo dữ liệu như Task 3 (`isStopCommandType` + `matchPinnedStop` trên hàng tag), vì cổng nằm trước phân loại STOP đầy đủ.
 
 - [ ] **Step 1: Test đỏ:**
+  - DB: cờ bật + máy chưa khai + `OT_CONTROL_ENABLED` TẮT ⇒ vẫn `rejected MODE_LOCAL` (không phải `simulated`).
   - unit (mock `layGiaTri`): bảy `lyDo`, mỗi lý do một ca.
   - DB:
     - cờ tắt + lệnh hitl thường ⇒ không có cổng (hồi quy).
@@ -394,7 +395,7 @@ Chốt:
   - `clientRequestId` lặp ⇒ cùng `requestId`;
   - Review Focus 4: bộ đệm tắt ⇒ `MODE_LOCAL`, kèm preview chưa trả.
 - [ ] **Step 2: Chạy.** Mong đợi: đỏ.
-- [ ] **Step 3: Cài.** Đăng ký router `scadaCommands` hoặc gộp dưới `scada`, theo cách `scadaDiag` được đăng ký (`routers.ts:~553`, `moduleAccessMap.ts:~86`). Thêm khoá i18n.
+- [ ] **Step 3: Cài.** Đăng ký router cấp cao `scadaCommands` (ruling R-2: `scada.commands.*` trong kế hoạch = `trpc.scadaCommands.*`; `scada.kenh.*` = `trpc.scadaKenh.*`), theo cách `scadaDiag` được đăng ký (`routers.ts:~553`, `moduleAccessMap.ts:~86`). Thêm khoá i18n.
 - [ ] **Step 4: Census:** chạy `npx vitest run server/routers/phamViDocCensus.test.ts server/routers/congGiayPhepAiCensus.test.ts server/routers/appErrorParamsCoverage.test.ts`. Mong đợi: đỏ đúng do thủ tục mới. Ghim lại theo số đo, kèm ghi chú ngày. Chạy lại. Mong đợi: xanh.
 - [ ] **Step 5: Đột biến:**
   - bỏ kiểm phạm vi ⇒ ca nhà máy B đỏ;
