@@ -11,6 +11,39 @@ import { sql } from "drizzle-orm";
 
 const RUN = `r0t10${process.pid}${Date.now().toString(36)}`;
 const myIds = new Set<number>();
+/**
+ * fix 1 — sổ ghi THỨ TỰ: mọi `baoTrangThaiAdapter` (kèm NGUỒN: router hay otManager, đọc từ stack đồng bộ) và mọi `resetAdapterSession`
+ * router gọi; `haGia` = adapter router thấy là HA (giả `mode`), `resetGia` = kết quả reset giả (không đụng phiên).
+ */
+const H = vi.hoisted(() => ({ log: [] as string[], haGia: new Set<number>(), resetGia: new Map<number, unknown>() }));
+vi.mock("../services/ot/trangThaiAdapter", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../services/ot/trangThaiAdapter")>();
+  return {
+    ...real,
+    baoTrangThaiAdapter: (...args: Parameters<typeof real.baoTrangThaiAdapter>) => {
+      // khung NGAY sau hàm bọc = nơi gọi trực tiếp (stack async của V8 còn kèm khung "at async …" của người chờ — không dùng)
+      const nguon = /scadaDiagRouter\.ts/.test((new Error().stack ?? "").split("\n")[2] ?? "") ? "router" : "ot";
+      H.log.push(`bao:${args[0].adapterId}:${args[1]}:${nguon}`);
+      return real.baoTrangThaiAdapter(...args);
+    },
+  };
+});
+vi.mock("../services/ot/otManager", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../services/ot/otManager")>();
+  return {
+    ...real,
+    getOtAdapterStatus: (id: number) => {
+      const st = real.getOtAdapterStatus(id);
+      return st && H.haGia.has(id) ? { ...st, mode: "ha" as const } : st;
+    },
+    resetAdapterSession: async (...args: Parameters<typeof real.resetAdapterSession>) => {
+      H.log.push(`reset:${args[0]}`);
+      const gia = H.resetGia.get(args[0]);
+      return gia ? (gia as Awaited<ReturnType<typeof real.resetAdapterSession>>) : real.resetAdapterSession(...args);
+    },
+  };
+});
+const cuaAdapter = (id: number) => H.log.filter((x) => x.startsWith(`bao:${id}:`) || x === `reset:${id}`);
 
 vi.mock("../services/ot/ingest", () => ({
   ingestSample: async (a: { adapterId: number; machineId: number | null }, s: unknown) => {
@@ -54,8 +87,8 @@ interface NhaMay {
 }
 let A!: NhaMay;
 let B!: NhaMay;
-const ad = { a: 0, b: 0, n: 0, e: 0 };
-const ma = { a: `${RUN}-a`, b: `${RUN}-b`, n: `${RUN}-n`, e: `${RUN}-e` };
+const ad = { a: 0, b: 0, n: 0, e: 0, t: 0 };
+const ma = { a: `${RUN}-a`, b: `${RUN}-b`, n: `${RUN}-n`, e: `${RUN}-e`, t: `${RUN}-t` };
 let edgeNodeId = 0;
 const factories: string[] = [];
 
@@ -146,6 +179,7 @@ beforeAll(async () => {
   ad.b = await seedAdapter(ma.b, B.mid, true);
   ad.n = await seedAdapter(ma.n, null, false); // KHÔNG gắn máy
   ad.e = await seedAdapter(ma.e, A.mid, false, "error"); // sẽ do edge sở hữu
+  ad.t = await seedAdapter(ma.t, A.mid, true); // RIÊNG cho ca tamTat (không phụ thuộc thứ tự / .only)
   await dung(sql`UPDATE device_adapters SET "lastError" = 'ETIMEDOUT cũ', "lastErrorAt" = now() WHERE id = ${ad.e}`);
   const [n] = await dung(sql`INSERT INTO edge_nodes (code, name, status) VALUES (${RUN + "-en"}, 'r0t10 edge', 'offline') RETURNING id`);
   edgeNodeId = Number(n.id);
@@ -153,6 +187,7 @@ beforeAll(async () => {
   for (const [id, keys] of [
     [ad.a, ["t1", "t2"]],
     [ad.b, ["t1"]],
+    [ad.t, ["t1"]],
   ] as const) {
     for (const k of keys) {
       await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", "isEnabled") VALUES (${id}, ${k}, ${"addr-" + k}, 'float', true)`);
@@ -160,6 +195,7 @@ beforeAll(async () => {
   }
   myIds.add(ad.a);
   myIds.add(ad.b);
+  myIds.add(ad.t);
 
   viewerA = await seedNguoi("va", "viewer", [A.code], false);
   operatorA = await seedNguoi("oa", "operator", [A.code], true);
@@ -171,6 +207,7 @@ beforeAll(async () => {
     () => {
       expect(tt.layTrangThaiAdapter(ad.a)?.tt).toBe("connected");
       expect(tt.layTrangThaiAdapter(ad.b)?.tt).toBe("connected");
+      expect(tt.layTrangThaiAdapter(ad.t)?.tt).toBe("connected");
     },
     { timeout: 10_000, interval: 100 },
   );
@@ -208,7 +245,7 @@ describe("scadaDiag.danhSach — phạm vi nhà máy", () => {
   it("viewer nhà máy A chỉ thấy adapter gắn máy của A (không B, không adapter KHÔNG gắn máy)", async () => {
     const ds = await viewerA.danhSach();
     const cua = ds.filter((r) => Object.values(ad).includes(r.adapterId)).map((r) => r.adapterId).sort();
-    expect(cua).toEqual([ad.a, ad.e].sort());
+    expect(cua).toEqual([ad.a, ad.e, ad.t].sort());
     // mọi dòng (kể cả hàng của suite khác) phải thuộc máy của A — không dòng machineId null nào lọt
     for (const r of ds) expect(r.machineId).toBe(A.mid);
     const a = ds.find((r) => r.adapterId === ad.a)!;
@@ -216,7 +253,7 @@ describe("scadaDiag.danhSach — phạm vi nhà máy", () => {
     expect(a.tu).toEqual(expect.any(String));
   });
 
-  it("admin (phạm vi toàn quyền) thấy cả bốn, gồm adapter KHÔNG gắn máy", async () => {
+  it("admin (phạm vi toàn quyền) thấy cả năm, gồm adapter KHÔNG gắn máy", async () => {
     const ds = await admin.danhSach();
     const cua = ds.filter((r) => Object.values(ad).includes(r.adapterId)).map((r) => r.adapterId).sort();
     expect(cua).toEqual(Object.values(ad).sort());
@@ -262,6 +299,57 @@ describe("scadaDiag.ketNoiLai", () => {
     expect(dong.reason).toBe("kỹ sư thử nối lại");
     expect(dong.actorId).toEqual(expect.any(Number));
     await vi.waitFor(() => expect(tt.layTrangThaiAdapter(ad.a)?.tt).toBe("connected"), { timeout: 5_000, interval: 100 });
+  });
+
+  it("phán quyết 3: adapter legacy đang active ⇒ router báo 'connecting' TRƯỚC resetAdapterSession; audit before = trạng thái TRƯỚC reset", async () => {
+    await vi.waitFor(() => expect(tt.layTrangThaiAdapter(ad.a)?.tt).toBe("connected"), { timeout: 5_000, interval: 100 });
+    H.log.length = 0;
+    await engA.ketNoiLai({ adapterId: ad.a, lyDo: "kiểm thứ tự báo trạng thái" });
+    const l = cuaAdapter(ad.a);
+    expect(l.indexOf(`bao:${ad.a}:connecting:router`)).toBeGreaterThanOrEqual(0);
+    expect(l.indexOf(`bao:${ad.a}:connecting:router`)).toBeLessThan(l.indexOf(`reset:${ad.a}`));
+    const [dong] = await dung(
+      sql`SELECT "beforeJson" FROM control_audit_log WHERE "entityType" = 'device_adapter' AND "entityId" = ${String(ad.a)} AND action = 'scada_ket_noi_lai' ORDER BY id DESC LIMIT 1`,
+    );
+    expect(dong.beforeJson).toMatchObject({ trangThai: "connected", mode: "legacy" });
+    await vi.waitFor(() => expect(tt.layTrangThaiAdapter(ad.a)?.tt).toBe("connected"), { timeout: 5_000, interval: 100 });
+  });
+
+  it("phán quyết 3: adapter HA (supervisor tự báo) và adapter KHÔNG chạy ở trung tâm ⇒ router KHÔNG báo 'connecting'", async () => {
+    H.log.length = 0;
+    H.haGia.add(ad.b);
+    try {
+      await admin.ketNoiLai({ adapterId: ad.b, lyDo: "adapter HA giả" });
+    } finally {
+      H.haGia.delete(ad.b);
+    }
+    expect(cuaAdapter(ad.b)).toContain(`reset:${ad.b}`);
+    expect(cuaAdapter(ad.b).filter((x) => x.endsWith(":router"))).toEqual([]);
+    // không chạy ở trung tâm (adapter không gắn máy, isEnabled=false): reset "none", không ai báo gì, RAM vẫn trống
+    const kq = await admin.ketNoiLai({ adapterId: ad.n, lyDo: "adapter không chạy" });
+    expect(kq).toMatchObject({ reset: false, via: "none" });
+    expect(cuaAdapter(ad.n)).toEqual([`reset:${ad.n}`]);
+    expect(tt.layTrangThaiAdapter(ad.n)).toBeNull();
+    await vi.waitFor(() => expect(tt.layTrangThaiAdapter(ad.b)?.tt).toBe("connected"), { timeout: 5_000, interval: 100 });
+  });
+
+  it("fix 1: reset KHÔNG thành mà otManager không báo gì ⇒ router TRẢ LẠI trạng thái trước (không kẹt 'connecting', không đếm đợt mất giả)", async () => {
+    await vi.waitFor(() => expect(tt.layTrangThaiAdapter(ad.a)?.tt).toBe("connected"), { timeout: 5_000, interval: 100 });
+    const soLanMat = tt.layTrangThaiAdapter(ad.a)!.soLanMat;
+    H.log.length = 0;
+    H.resetGia.set(ad.a, { reset: false, via: "legacy", error: "OT stopped during the reset" });
+    try {
+      const kq = await engA.ketNoiLai({ adapterId: ad.a, lyDo: "reset giả không thành" });
+      expect(kq).toMatchObject({ reset: false });
+    } finally {
+      H.resetGia.delete(ad.a);
+    }
+    expect(cuaAdapter(ad.a).filter((x) => x.endsWith(":router") || x.startsWith("reset:"))).toEqual([
+      `bao:${ad.a}:connecting:router`,
+      `reset:${ad.a}`,
+      `bao:${ad.a}:connected:router`,
+    ]);
+    expect(tt.layTrangThaiAdapter(ad.a)).toMatchObject({ tt: "connected", soLanMat });
   });
 });
 
@@ -332,6 +420,22 @@ describe("scadaDiag.tagCuaAdapter / mauTho", () => {
     for (let i = 1; i < rows.length; i++) expect(Date.parse(rows[i - 1].ts)).toBeGreaterThan(Date.parse(rows[i].ts));
     expect(rows.find((r) => r.giaTri === 110)).toMatchObject({ quality: "bad", statusCode: "comm_lost" });
   });
+
+  it("★ fix 1 (CRITICAL): hàng nhà máy B TRÙNG mã thiết bị + metric của adapter A KHÔNG lọt vào mauTho của A", async () => {
+    const t0 = Date.now() - 60_000;
+    const chen = async (giay: number, machineId: number | null, meta: Record<string, unknown> | null, giaTri: number) =>
+      dung(sql`INSERT INTO ot_telemetry (ts, "machineId", "deviceId", protocol, metric, "numValue", quality, meta)
+        VALUES (${new Date(t0 + giay * 1000).toISOString()}::timestamptz, ${machineId}, ${ma.a}, 'other', 'mx', ${giaTri}, 'good',
+                ${meta === null ? null : JSON.stringify(meta)}::jsonb)`);
+    await chen(1, A.mid, { adapterId: ad.a, tagKey: "mx" }, 1);
+    await chen(2, A.mid, { adapterId: ad.a, tagKey: "mx" }, 2);
+    // nhà máy B: cùng deviceId (mã adapter A) + metric — MỚI hơn hàng của A
+    await chen(10, B.mid, { adapterId: ad.a, tagKey: "mx" }, 9001); // machineId khác, meta.adapterId trùng
+    await chen(11, B.mid, null, 9002); // ingest ngoài: không meta.adapterId
+    await chen(12, A.mid, { tagKey: "mx" }, 9003); // cùng máy A nhưng không do OT trong tiến trình ghi (không meta.adapterId)
+    const rows = await viewerA.mauTho({ adapterId: ad.a, tagKey: "mx" });
+    expect(rows.map((r) => r.giaTri)).toEqual([2, 1]);
+  });
 });
 
 describe("adapter do EDGE sở hữu", () => {
@@ -352,23 +456,25 @@ describe("adapter do EDGE sở hữu", () => {
 
 describe("scadaDiag.tamTat", () => {
   it("operator ⇒ FORBIDDEN; engineer A với adapter B ⇒ NOT_FOUND", async () => {
-    expect((await loiCua(operatorA.tamTat({ adapterId: ad.a, lyDo: "tắt thử nghiệm" }))).code).toBe("FORBIDDEN");
+    expect((await loiCua(operatorA.tamTat({ adapterId: ad.t, lyDo: "tắt thử nghiệm" }))).code).toBe("FORBIDDEN");
     expect((await loiCua(engA.tamTat({ adapterId: ad.b, lyDo: "tắt thử nghiệm" }))).code).toBe("NOT_FOUND");
     const [b] = await dung(sql`SELECT "isEnabled" FROM device_adapters WHERE id = ${ad.b}`);
     expect(b.isEnabled).toBe(true);
   });
 
-  it("engineer A tắt adapter A ⇒ isEnabled=false, gỡ khỏi OT, trạng thái 'disabled', bộ đếm 1 h GIỮ NGUYÊN, 1 dòng audit", async () => {
-    const truoc = (await dongCua(viewerA, ad.a))!;
-    expect(truoc.boDem1h.request).toBeGreaterThan(0);
-    const kq = await engA.tamTat({ adapterId: ad.a, lyDo: "tạm tắt để bảo trì" });
+  it("engineer A tắt adapter T ⇒ isEnabled=false, gỡ khỏi OT, trạng thái 'disabled', bộ đếm 1 h GIỮ NGUYÊN, 1 dòng audit", async () => {
+    await vi.waitFor(async () => expect((await dongCua(viewerA, ad.t))?.boDem1h.request).toBeGreaterThan(0), { timeout: 5_000, interval: 100 });
+    const truoc = (await dongCua(viewerA, ad.t))!;
+    const kq = await engA.tamTat({ adapterId: ad.t, lyDo: "tạm tắt để bảo trì" });
     expect(kq).toMatchObject({ daGo: true });
-    const [r] = await dung(sql`SELECT "isEnabled" FROM device_adapters WHERE id = ${ad.a}`);
+    const [r] = await dung(sql`SELECT "isEnabled" FROM device_adapters WHERE id = ${ad.t}`);
     expect(r.isEnabled).toBe(false);
-    expect(ot.getOtAdapterStatus(ad.a)).toBeUndefined();
-    const sau = (await dongCua(viewerA, ad.a))!;
+    expect(ot.getOtAdapterStatus(ad.t)).toBeUndefined();
+    const sau = (await dongCua(viewerA, ad.t))!;
     expect(sau.trangThai).toBe("disabled");
     expect(sau.boDem1h.request).toBeGreaterThanOrEqual(truoc.boDem1h.request);
-    expect(await soAudit(ad.a, "scada_tam_tat")).toBe(1);
+    expect(await soAudit(ad.t, "scada_tam_tat")).toBe(1);
+    // adapter khác không bị đụng
+    expect(tt.layTrangThaiAdapter(ad.a)?.tt).not.toBe("disabled");
   });
 });

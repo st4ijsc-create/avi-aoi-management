@@ -7,9 +7,9 @@
 // (= textValue or stringified boolValue) and `timestamp` (= canonical `ts`).
 // All functions are READ-ONLY. No writes.
 import { getDb } from "./connection";
-import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { otTelemetry, deviceTags } from "../../drizzle/schema";
-import type { TsdbTheoThietBiRow } from "./timescale";
+import type { RangBuocAdapter, TsdbTheoThietBiRow } from "./timescale";
 
 export interface TelemetryLatestRow {
   id: number;
@@ -213,12 +213,21 @@ export async function layMoiNhatTheoThietBi(deviceCodes: string[], sinceMs: numb
   return rows.map(chuanHoaTheoThietBi);
 }
 
-/** `limit` hàng thô mới nhất của một (deviceId, metric), ts giảm dần (mới → cũ). */
-export async function layMauThoTheoThietBi(deviceCode: string, metric: string, limit: number): Promise<TelemetryTheoThietBiRow[]> {
+/**
+ * `limit` hàng thô mới nhất của một (deviceId, metric), ts giảm dần (mới → cũ). `rangBuoc` (tuỳ chọn, SCADA R0 Task 10 fix 1) chỉ giữ
+ * hàng của ĐÚNG adapter (`meta->>'adapterId'` + `machineId IS NOT DISTINCT FROM`) trên CẢ đường TSDB lẫn DB chính — không truyền ⇒
+ * hành vi cũ.
+ */
+export async function layMauThoTheoThietBi(
+  deviceCode: string,
+  metric: string,
+  limit: number,
+  rangBuoc?: RangBuocAdapter,
+): Promise<TelemetryTheoThietBiRow[]> {
   const gioiHan = Math.min(Math.max(Math.trunc(limit) || 1, 1), 1000);
   try {
     const { queryOtTelemetryRawByDevice } = await import("./timescale");
-    const tsdbRows = await queryOtTelemetryRawByDevice(deviceCode, metric, gioiHan);
+    const tsdbRows = await queryOtTelemetryRawByDevice(deviceCode, metric, gioiHan, rangBuoc);
     if (tsdbRows !== null) return tsdbRows;
   } catch {
     // fall through to main-DB read
@@ -228,7 +237,18 @@ export async function layMauThoTheoThietBi(deviceCode: string, metric: string, l
   const rows = await db
     .select(cotTheoThietBi())
     .from(otTelemetry)
-    .where(and(eq(otTelemetry.deviceId, deviceCode), eq(otTelemetry.metric, metric)))
+    .where(
+      and(
+        eq(otTelemetry.deviceId, deviceCode),
+        eq(otTelemetry.metric, metric),
+        ...(rangBuoc
+          ? [
+              sql`${otTelemetry.meta}->>'adapterId' = ${String(rangBuoc.adapterId)}`,
+              rangBuoc.machineId === null ? isNull(otTelemetry.machineId) : eq(otTelemetry.machineId, rangBuoc.machineId),
+            ]
+          : []),
+      ),
+    )
     .orderBy(desc(otTelemetry.ts))
     .limit(gioiHan);
   return rows.map(chuanHoaTheoThietBi);

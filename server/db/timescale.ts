@@ -10,7 +10,7 @@
 
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { energyReadings, type InsertEnergyReading } from "../../drizzle/schema/g3";
 import { otTelemetry, type InsertOtTelemetry } from "../../drizzle/schema/ot";
 import { edgeDbRefused } from "./edgeDbTrap";
@@ -321,11 +321,33 @@ export async function queryOtTelemetryLatestByDevices(
   }
 }
 
-/** `limit` hàng mới nhất của một (deviceId, metric), ts giảm dần. `null` khi TSDB tắt/suy giảm. */
+/**
+ * SCADA R0 Task 10 fix 1 — buộc hàng thô vào MỘT adapter: `meta->>'adapterId' = adapterId` (chỉ đường OT trong tiến trình ghi khoá này;
+ * ingest ngoài bị gỡ) VÀ `machineId IS NOT DISTINCT FROM machineId` của adapter. `deviceId` dùng chung với ghi khác (MQTT/CFX/`/api/v1`,
+ * thường là machines.code) ⇒ lọc chỉ theo (deviceId, metric) có thể trả hàng của nhà máy khác khi mã trùng.
+ */
+export interface RangBuocAdapter {
+  adapterId: number;
+  machineId: number | null;
+}
+
+/** Điều kiện ràng buộc adapter (dùng chung cho đường TSDB và DB chính). */
+export function dieuKienRangBuocAdapter(rb: RangBuocAdapter) {
+  return and(
+    sql`${otTelemetry.meta}->>'adapterId' = ${String(rb.adapterId)}`,
+    rb.machineId === null ? isNull(otTelemetry.machineId) : eq(otTelemetry.machineId, rb.machineId),
+  );
+}
+
+/**
+ * `limit` hàng mới nhất của một (deviceId, metric), ts giảm dần. `null` khi TSDB tắt/suy giảm. `rangBuoc` (tuỳ chọn) chỉ giữ hàng của
+ * đúng adapter đó — không truyền ⇒ hành vi cũ.
+ */
 export async function queryOtTelemetryRawByDevice(
   deviceCode: string,
   metric: string,
   limit: number,
+  rangBuoc?: RangBuocAdapter,
 ): Promise<TsdbTheoThietBiRow[] | null> {
   const db = getTsdb();
   if (!db) return null;
@@ -333,7 +355,13 @@ export async function queryOtTelemetryRawByDevice(
     const rows = await db
       .select(cotTheoThietBi())
       .from(otTelemetry)
-      .where(and(eq(otTelemetry.deviceId, deviceCode), eq(otTelemetry.metric, metric)))
+      .where(
+        and(
+          eq(otTelemetry.deviceId, deviceCode),
+          eq(otTelemetry.metric, metric),
+          ...(rangBuoc ? [dieuKienRangBuocAdapter(rangBuoc)] : []),
+        ),
+      )
       .orderBy(desc(otTelemetry.ts))
       .limit(Math.min(Math.max(Math.trunc(limit) || 1, 1), 1000));
     return rows.map(chuanHoaTheoThietBi);

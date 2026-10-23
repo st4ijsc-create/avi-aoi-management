@@ -274,7 +274,10 @@ export const scadaDiagRouter = router({
     .input(z.object({ adapterId: adapterIdInput, tagKey: z.string().min(1).max(128) }))
     .query(async ({ ctx, input }) => {
       const a = await adapterTrongPhamVi(phamViCua(ctx), input.adapterId);
-      const rows = await layMauThoTheoThietBi(a.code, input.tagKey, 100);
+      // fix 1 (CRITICAL) — `ot_telemetry.deviceId` dùng chung với ghi khác (MQTT/CFX/`/api/v1`, thường là machines.code): mã adapter
+      // trùng mã thiết bị nhà máy khác ⇒ lọc (deviceId, metric) trả hàng của họ. Buộc hàng vào ĐÚNG adapter: `meta.adapterId` (chỉ đường
+      // OT trong tiến trình ghi) + `machineId IS NOT DISTINCT FROM` máy của adapter — trên cả đường TSDB lẫn DB chính.
+      const rows = await layMauThoTheoThietBi(a.code, input.tagKey, 100, { adapterId: a.id, machineId: a.machineId });
       return rows.map((r) => {
         const m = (r.meta ?? {}) as Record<string, unknown>;
         return {
@@ -290,7 +293,11 @@ export const scadaDiagRouter = router({
 
   /**
    * Làm mới phiên driver qua đường nối lại SẴN CÓ (`resetAdapterSession`). Adapter legacy đang `active`: báo `connecting` TRƯỚC (reset
-   * không báo gì trong lúc gỡ/nối ⇒ M10 không hiện "connected" cũ); supervisor (HA) tự báo qua callback nên không báo thay.
+   * không báo gì trong lúc gỡ/nối ⇒ M10 không hiện "connected" cũ); supervisor (HA) tự báo qua callback, adapter không chạy ở trung tâm
+   * không có ai báo tiếp ⇒ cả hai KHÔNG được báo thay.
+   * fix 1 — reset KHÔNG thành công mà trạng thái vẫn là `connecting` của chính ta (otManager chưa báo gì: vd "OT stopped during the
+   * reset", "a reconnect is already in flight") ⇒ TRẢ LẠI trạng thái trước (không báo `lost`: phiên có thể chưa hề bị gỡ, `lost` sẽ
+   * đếm một đợt mất giả + phát mẫu xấu giả). Kết cục thật do otManager báo (lost khi hết hạn/nối thất bại, disabled khi stopOt/detach).
    */
   ketNoiLai: kySuProcedure
     .use(requirePermission("machine_control", "canEdit"))
@@ -299,15 +306,20 @@ export const scadaDiagRouter = router({
       const a = await adapterTrongPhamVi(phamViCua(ctx), input.adapterId);
       await tuChoiNeuEdge(a.id, "scadaReconnectAdapter");
       const st = getOtAdapterStatus(a.id);
-      if (st?.mode === "legacy" && st.state === "active") baoTrangThaiAdapter(adapterBao(a), "connecting", null);
+      const truoc = layTrangThaiAdapter(a.id); // đọc TRƯỚC khi báo connecting / reset (audit + trả lại khi reset không thành)
+      const baoConnecting = st?.mode === "legacy" && st.state === "active";
+      if (baoConnecting) baoTrangThaiAdapter(adapterBao(a), "connecting", null);
       const kq = await resetAdapterSession(a.id, "scada_diag");
+      if (baoConnecting && !kq.reset && truoc && layTrangThaiAdapter(a.id)?.tt === "connecting") {
+        baoTrangThaiAdapter(adapterBao(a), truoc.tt, truoc.loi);
+      }
       const db = await getDb();
       await recordAuditEvent(db, {
         entityType: "device_adapter",
         entityId: a.id,
         action: "scada_ket_noi_lai",
         actorId: ctx.user.id,
-        before: { trangThai: layTrangThaiAdapter(a.id)?.tt ?? null, mode: st?.mode ?? null },
+        before: { trangThai: truoc?.tt ?? null, mode: st?.mode ?? null },
         after: kq,
         reason: input.lyDo,
       });
@@ -334,7 +346,7 @@ export const scadaDiagRouter = router({
           reason: input.lyDo,
         });
       });
-      const daGo = await detachOtAdapter(a.id);
+      const daGo = await detachOtAdapter(a.id, "scada_diag: tamTat");
       baoTrangThaiAdapter(adapterBao(a), "disabled", null);
       return { daGo };
     }),

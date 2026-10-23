@@ -1165,7 +1165,7 @@ export function listOtAdapterStatuses(): OtAdapterStatus[] {
  * Stop central's session of ONE adapter now (it moved to an edge node): its supervisor (HA) or legacy entry (subscription +
  * driver) is removed and closed, bounded — no more polling / ingest / writes here. true ⇔ it was running.
  */
-export async function detachOtAdapter(adapterId: number): Promise<boolean> {
+export async function detachOtAdapter(adapterId: number, lyDo?: string): Promise<boolean> {
   detachGen.set(adapterId, detachToken(adapterId) + 1); // scan #73 — an in-flight start / attach of it never registers
   let found = false;
   const sup = supervisors.get(adapterId);
@@ -1192,7 +1192,15 @@ export async function detachOtAdapter(adapterId: number): Promise<boolean> {
     await boundedQuiet(() => entry.adapter.driver.disconnect(), DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS, "detach disconnect");
   }
   xoaAdapter(adapterId); // SCADA R0 Task 7 - adapter đã sang edge: bộ đệm không giữ giá trị/thông tin của nó
-  if (found) console.log(`[OT] adapter ${adapterId} detached — owned by an edge node now (no polling / ingest / writes here)`);
+  // SCADA R0 Task 10 fix 1 — `lyDo` (tuỳ chọn): người gọi KHÔNG phải chuyển sở hữu sang edge (vd M10 tạm tắt) nói đúng lý do; bỏ
+  // trống ⇒ câu cũ cho mọi người gọi hiện có.
+  if (found) {
+    console.log(
+      lyDo
+        ? `[OT] adapter ${adapterId} detached (${lyDo}) — no polling / ingest / writes here`
+        : `[OT] adapter ${adapterId} detached — owned by an edge node now (no polling / ingest / writes here)`,
+    );
+  }
   return found;
 }
 

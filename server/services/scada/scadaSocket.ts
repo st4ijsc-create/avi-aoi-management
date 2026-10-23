@@ -24,6 +24,7 @@
 import { randomUUID } from "node:crypto";
 import { coQuyenXemScada, laSocketNguoiDung, trongPhamViTagScada, type DuLieuSocket } from "../../_core/socketPhongQuyen";
 import { boDemDangBat, dangKyThayDoi, layGiaTri, thongTinAdapter, type GiaTriCoTuoi } from "./boDemHienTai";
+import { DbUnavailableError } from "../../_core/dbErrors";
 
 export const GIOI_HAN = { tagMoiDangKy: 500, dangKyMoiSocket: 10, chuKyDeltaMs: 250 } as const;
 
@@ -119,7 +120,8 @@ async function traAdapterTuDb(adapterIds: number[]): Promise<Map<number, { machi
   const { deviceAdapters } = await import("../../../drizzle/schema");
   const { inArray } = await import("drizzle-orm");
   const db = await getDb();
-  if (!db) throw new Error("db unavailable");
+  // lỗi có kiểu (rawErrorCensus): nơi gọi bắt và chặn (giữ co:false) — hợp đồng mã lỗi socket không đổi
+  if (!db) throw new DbUnavailableError("scada:subscribe: không có kết nối CSDL để tra adapter");
   const rows = await db.select({ id: deviceAdapters.id, machineId: deviceAdapters.machineId }).from(deviceAdapters).where(inArray(deviceAdapters.id, adapterIds));
   return new Map(rows.map((r) => [r.id, { machineId: r.machineId ?? null }]));
 }

@@ -6,7 +6,7 @@
  * Chạy trên DB `_test` (vitest.setup ép DATABASE_URL). Hàng tự chèn mang mã thiết bị riêng, xoá ở afterAll.
  * ⚠ Nếu TSDB_URL được đặt thì hai hàm đọc Timescale trước (rồi mới rơi về DB chính); lưới này đo đường DB chính ⇒ chạy khi TSDB_URL không đặt.
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { inArray } from "drizzle-orm";
 
 import { getDb } from "./connection";
@@ -80,5 +80,54 @@ describe("layMauThoTheoThietBi", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].numValue).toBe(5);
     expect(await layMauThoTheoThietBi(DEV_RONG, "nhiet", 10)).toEqual([]);
+  });
+});
+
+// ── SCADA R0 Task 10 fix 1 (CRITICAL) — ràng buộc adapter cho mẫu thô, CẢ HAI đường ───────────────────────────────────────────────
+describe("layMauThoTheoThietBi / queryOtTelemetryRawByDevice — rangBuoc adapter", () => {
+  const DEV_C = "ZZ-T10-DEV-C";
+  const AD = 990_710;
+  const MAY_A = 990_711;
+  const MAY_B = 990_712;
+
+  beforeAll(async () => {
+    await db.delete(otTelemetry).where(inArray(otTelemetry.deviceId, [DEV_C]));
+    const base = { protocol: "other" as const, quality: "good" as const, deviceId: DEV_C, metric: "m" };
+    await db.insert(otTelemetry).values([
+      { ...base, numValue: 1, ts: phutTruoc(30), machineId: MAY_A, meta: { adapterId: AD, tagKey: "m" } },
+      { ...base, numValue: 2, ts: phutTruoc(20), machineId: MAY_A, meta: { adapterId: AD, tagKey: "m" } },
+      // trùng mã thiết bị + metric, MỚI hơn: máy khác cùng meta.adapterId / không meta.adapterId / adapter khác
+      { ...base, numValue: 91, ts: phutTruoc(5), machineId: MAY_B, meta: { adapterId: AD, tagKey: "m" } },
+      { ...base, numValue: 92, ts: phutTruoc(4), machineId: MAY_A, meta: { tagKey: "m" } },
+      { ...base, numValue: 93, ts: phutTruoc(3), machineId: MAY_A, meta: { adapterId: AD + 1, tagKey: "m" } },
+      { ...base, numValue: 94, ts: phutTruoc(2), machineId: null, meta: { adapterId: AD, tagKey: "m" } },
+    ]);
+  });
+  afterAll(async () => {
+    if (db) await db.delete(otTelemetry).where(inArray(otTelemetry.deviceId, [DEV_C]));
+  });
+
+  it("đường DB chính: chỉ hàng của ĐÚNG adapter + máy; không truyền rangBuoc ⇒ hành vi cũ (mọi hàng)", async () => {
+    expect((await layMauThoTheoThietBi(DEV_C, "m", 10, { adapterId: AD, machineId: MAY_A })).map((r) => r.numValue)).toEqual([2, 1]);
+    // adapter KHÔNG gắn máy: machineId IS NULL
+    expect((await layMauThoTheoThietBi(DEV_C, "m", 10, { adapterId: AD, machineId: null })).map((r) => r.numValue)).toEqual([94]);
+    expect((await layMauThoTheoThietBi(DEV_C, "m", 10)).map((r) => r.numValue)).toEqual([94, 93, 92, 91, 2, 1]);
+  });
+
+  it("đường Timescale (TSDB_URL trỏ vào chính CSDL _test): cùng ràng buộc; không truyền ⇒ hành vi cũ", async () => {
+    vi.resetModules();
+    vi.stubEnv("TSDB_URL", process.env.DATABASE_URL ?? "");
+    const ts = await import("./timescale");
+    try {
+      const buoc = await ts.queryOtTelemetryRawByDevice(DEV_C, "m", 10, { adapterId: AD, machineId: MAY_A });
+      expect(buoc, "đường TSDB phải chạy (không null)").not.toBeNull();
+      expect(buoc!.map((r) => r.numValue)).toEqual([2, 1]);
+      expect((await ts.queryOtTelemetryRawByDevice(DEV_C, "m", 10, { adapterId: AD, machineId: null }))!.map((r) => r.numValue)).toEqual([94]);
+      expect((await ts.queryOtTelemetryRawByDevice(DEV_C, "m", 10))!.map((r) => r.numValue)).toEqual([94, 93, 92, 91, 2, 1]);
+    } finally {
+      await ts.shutdownTsdb();
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
   });
 });
