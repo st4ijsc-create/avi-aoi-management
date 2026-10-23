@@ -114,6 +114,7 @@ import {
   type DeviceTag,
 } from "../../../drizzle/schema";
 import { kiemGiaTriGhi, laKenhGhi, loaiKenh } from "../scada/kenhScada"; // SCADA R1a Task 3 (K4) — the ONE coercion/range/step rule
+import { cheDoMay, congCheDoBat, TOOL_HMI_GHI_TAG } from "../scada/cheDoMay"; // SCADA R1a Task 4 (K2/D3) — machine LOCAL/REMOTE
 import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { foeApprovalDbRefusal, preReadProgramChecksForAction, type PreReadPrograms } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i); Đợt 8 final wave O M2
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
@@ -845,7 +846,7 @@ function epKieuKenh(tag: Pick<DeviceTag, "dataType">, value: unknown) {
  *   4. range, then step ⇒ OUT_OF_RANGE / OFF_STEP (the detail carries `goiY`, a hint only — the value is never altered).
  * ok ⇒ the writes to use downstream: declared tags carry the COERCED value, undeclared ones the caller's write object.
  *
- * R1a Task 4 (ledger R-1) appends its mode gate right after this block in dispatchCore, on the same tag rows.
+ * R1a Task 4 (ledger R-1) appends its mode gate (3c) right after this block in dispatchCore, on the same tag rows.
  */
 export function congKenhSom(commandType: string, writes: ReadonlyArray<DispatchWrite>, tags: ReadonlyArray<TagCongKenh>): KetQuaCongKenhSom {
   const tuChoi = (i: number, ma: MaCongKenh, chiTiet: string): KetQuaCongKenhSom => ({ ok: false, ma, chiTiet, tagKey: writes[i].tagKey, address: tags[i].address });
@@ -1056,7 +1057,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // ── (3b) SCADA R1a Task 3 (K4) — EARLY CHANNEL GATE, every caller (hitl, interlock, Sparkplug, engine). No flag: the mig 0431
   //         columns are NULL by default and an undeclared tag passes unchanged (congKenhSom). Placed BEFORE the driver / OT-mode /
   //         commissioning gates so an out-of-range command is `rejected` (one command_log row, the offending tag) even when
-  //         OT_CONTROL_ENABLED is off — never `simulated`. R1a Task 4 appends its mode gate right after this block.
+  //         OT_CONTROL_ENABLED is off — never `simulated`. R1a Task 4 appends its mode gate (3c) right after this block.
   //
   //         HASH DECISION (coerce before hashing, never break an existing binding): from here on the COERCED writes replace the
   //         caller's everywhere downstream — 5a-stop classification, the HITL binding re-verified in the reservation, the
@@ -1066,24 +1067,48 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //         valid). Both forms describe the SAME value on the wire (the coerced one), so accepting either authorises nothing a
   //         human did not confirm. Gate 1 (requireBoundAction) applies the same two forms (writesEpKieuChoRangBuoc).
   const rawCallerWrites = input.writes;
-  const kenh = congKenhSom(input.commandType, input.writes, tagRowsBuoc3);
-  if (!kenh.ok) {
-    // fix round 1 (I-1) — a STOP-typed command to an adapter central holds no driver for: if an EDGE node owns the adapter,
-    // step 4 turns it into an adapter-wide STOP of the PINNED values (queued for the node / central fallback), ignoring the
-    // caller's values — so the refusal here would protect no wire value and only block a STOP. Route it exactly as step 4
-    // would; not edge-owned (or the owner unreadable — routeEdgeOwnedAdapterCommand alerts) ⇒ the refusal below, as before.
+  /**
+   * The ONE refusal path of the early gate block (3b channel gate, 3c mode gate). fix round 1 (I-1) — a STOP-typed command to an
+   * adapter central holds no driver for: if an EDGE node owns the adapter, step 4 turns it into an adapter-wide STOP of the PINNED
+   * values (queued for the node / central fallback), ignoring the caller's values — so a refusal here would protect no wire value
+   * and only block a STOP. Route it exactly as step 4 would; not edge-owned (or the owner unreadable — routeEdgeOwnedAdapterCommand
+   * alerts) ⇒ refused through writeRejected (command_log, WORM). `tagKey` given ⇒ one row for that write; absent ⇒ one per write.
+   */
+  const tuChoiSom = async (ma: string, chiTiet: string, tagKey?: string, address?: string): Promise<DispatchResult> => {
     if (isStopCommandType(input.commandType) && !getActiveDriver(input.adapterId)) {
       const routed = await routeEdgeOwnedAdapterCommand(db, input);
       if (routed) return routed;
     }
-    const ids = await writeRejected(db, input, kenh.ma, kenh.chiTiet, kenh.tagKey, kenh.address);
-    return { ok: false, simulated: false, status: "rejected", reason: kenh.ma, results: failedResults(input, kenh.ma), commandLogIds: ids };
-  }
+    const ids = await writeRejected(db, input, ma, chiTiet, tagKey, address);
+    return { ok: false, simulated: false, status: "rejected", reason: ma, results: failedResults(input, ma), commandLogIds: ids };
+  };
+  const kenh = congKenhSom(input.commandType, input.writes, tagRowsBuoc3);
+  if (!kenh.ok) return tuChoiSom(kenh.ma, kenh.chiTiet, kenh.tagKey, kenh.address);
   if (kenh.writes.some((w, i) => w !== rawCallerWrites[i])) {
     input = { ...input, writes: kenh.writes };
     resolved.forEach((r, i) => {
       r.write = kenh.writes[i];
     });
+  }
+
+  // ── (3c) SCADA R1a Task 4 (K2/D3) — MACHINE MODE GATE (LOCAL/REMOTE), same early block as 3b (ledger ruling R-1): a LOCAL refusal
+  //         is `rejected` (`MODE_LOCAL: <lyDo>`, one command_log row per write) even when OT_CONTROL_ENABLED is off — never
+  //         `simulated`. Runs ONLY when SCADA_CONG_CHE_DO_ENABLED=true (every caller: hitl, Sparkplug, interlock — ruled "K2 with
+  //         interlock commands": blocked in LOCAL) OR for the SCADA HMI write tool (`hmi.write_tag`, always). Flag off and not HMI ⇒
+  //         nothing here runs, no query: the pre-R1a path byte for byte.
+  //         Machine = input.machineId, else the adapter's (the step-3 row). REMOTE only per cheDoMay (declared channel, buffer on,
+  //         a good, fresh sample equal to gia_tri_remote); anything else LOCAL (fail-closed; cheDoMay never throws).
+  //         PINNED STOP exemption (no software blocks a pinned STOP), matched on DATA as in 3b — WHOLE command only: stop-typed and
+  //         ONE matchPinnedStop over every write (the coerced writes of 3b) against the step-3 pins. A refused stop-typed command still
+  //         takes the edge pre-route of tuChoiSom.
+  if (congCheDoBat() || (input.triggeredBy.kind === "hitl" && input.triggeredBy.tool === TOOL_HMI_GHI_TAG)) {
+    const stopGhim =
+      isStopCommandType(input.commandType) &&
+      matchPinnedStop(stopPinsFromTagRows(step3TagRows), input.writes.map((w) => ({ tagKey: w.tagKey, value: w.value }))).ok;
+    if (!stopGhim) {
+      const cheDo = await cheDoMay(input.machineId ?? adapter.machineId ?? null);
+      if (cheDo.cheDo !== "REMOTE") return tuChoiSom("MODE_LOCAL", cheDo.lyDo);
+    }
   }
 
   // ── (4) Resolve a connected driver. ─────────────────────────────────────────
