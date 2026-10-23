@@ -88,6 +88,10 @@ thoát 0; (3) nếu cổng bị người khác chiếm (đúng ca Apache:8080) t
 và từ chối spawn đè**; (4) spawn tách rời, ghi log vào `logs/llama-server-<stamp>.{out,err}.log`,
 chờ `/health` xanh mới báo thành công.
 
+Prompt cache trên RAM: `--cache-ram` lấy từ `LLAMA_SERVER_CACHE_RAM`, **mặc định 0 = tắt** (2026-10-24). Qwen3.6-27B/35B-A3B là
+model hybrid/recurrent nên cache không được tái dùng; bật thì chỉ tốn commit (+3,3…+4,3 GB ở 4096; mặc định llama.cpp là 8192).
+Số đo nằm trong `.env.example` và `scripts/ai-eval/bo-nho/`.
+
 Mã thoát: `0` sẵn sàng · `2` cấu hình sai · `3` cổng bị chiếm · `4` tiến trình chết ngay ·
 `5` hết giờ chờ `/health`.
 

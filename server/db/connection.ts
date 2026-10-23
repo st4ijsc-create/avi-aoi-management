@@ -155,6 +155,22 @@ export async function getReadDb() {
   return _readDb;
 }
 
+// ── ★ Đợt 8.0 — kết nối PHIÊN RIÊNG cho khoá advisory cấp phiên (bầu chủ Luồng AI) ─────────────────────────────────────────────
+// Khoá `pg_try_advisory_lock` sống theo KẾT NỐI nên cần một kết nối giữ riêng (max 1, không idle) ngoài pool ứng dụng. Nhà máy client này nằm Ở ĐÂY để
+// mọi nơi cần phiên riêng đi qua CÙNG bẫy edge (edgeDbRefused) và tệp gọi (services/flow/bauChu.ts) không phải import driver. Người gọi phải .end().
+// Trên edge: trả null (đếm + log một lần), hoặc ném EdgeDbTrapError khi EDGE_DB_TRAP=throw — KHÔNG mở kết nối, KHÔNG treo.
+export function openSessionClient(name: string, url: string | undefined = process.env.DATABASE_URL): ReturnType<typeof postgres> | null {
+  if (edgeDbRefused(`openSessionClient:${name}`)) return null;
+  if (!url) return null;
+  return postgres(url, {
+    max: 1,
+    idle_timeout: 0,
+    connect_timeout: 10,
+    connection: { application_name: `avi-${name}` },
+    onnotice: () => undefined,
+  });
+}
+
 // ── doc 81 Đợt 12 task P fix 1 (M-1) — the DEDICATED LISTEN / NOTIFY client ────────────────────────────────────────────────────
 // One postgres client OUTSIDE the app pool for the pg channels (`ot_stop_epoch`, `device_owner_changed`): its NOTIFY connection
 // (max 1) carries the cross-replica STOP broadcast and the listeners' heartbeats, and its own LISTEN connection (postgres.js opens one

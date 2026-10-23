@@ -30,6 +30,10 @@ param(
   # 2 luot agentic bi ep ket thuc o 12k van ra ban sua. -1 = khong gioi han (mac dinh cua llama-server) - dung khi A/B.
   # `/props` KHONG lo co nay; xac nhan bang log: "reasoning-budget: activated, budget=N".
   [int]$NganSachNghi = 12000,
+  # Dot 9 (2026-10-24, DO DUOC, dieu-phoi duyet): prompt-cache tren RAM, MiB. MAC DINH 0 = TAT: Qwen3.6-27B/35B-A3B la model
+  # HYBRID/RECURRENT (9/9 luot "forcing full prompt re-processing") => cache khong tai dung, chi ton commit (+3,3..+4,3 GB o 4096) va
+  # ~1,5 s/luot; tat: commit phang, nhanh hon 13-24 %. Su co 2026-10-23 22:20: llama-server 27B giu ~40 GB commit. Spec 2026-10-20 §6.
+  [int]$CacheRam = 0,
   # Dot 9 (2026-10-22): chu khoa nhan BAN GIAO khi /health xanh (vd chu cua khoaKhe.mjs giu cua phep do) - xem khoi KHOA ben duoi.
   [string]$GiuKhoa = ""
 )
@@ -107,14 +111,21 @@ $ten = [System.IO.Path]::GetFileNameWithoutExtension($Model)
 $thamSo = @('-m', $Model, '--host', '127.0.0.1', '--port', '8091', '-c', "$Ctx",
           '-np', '1', '-fa', 'on', '-ngl', '999', '-ctk', 'f16', '-ctv', 'f16',
           '--slots', '--metrics', '--no-webui',
-          # Dot 9 (2026-10-22, dieu-phoi duyet): tran prompt-cache tren RAM MAY = 4 GB. Su co 18:21: llama-server 27B chet giua luc
-          # luu prompt cache (bo nho tam ~5,9 GB/muc) khi Windows het commit ("Virtual Memory Minimum Too Low"). Chi anh huong
-          # TOC DO (dung lai KV), KHONG anh huong dau ra.
-          '--cache-ram', '4096')
+          # Dot 9: 4096 (2026-10-22, sau su co 18:21) -> 0 (2026-10-24, xem -CacheRam). Chi anh huong TOC DO, KHONG anh huong dau ra.
+          '--cache-ram', "$CacheRam")
 if ($NganSachNghi -ge 0) { $thamSo += @('--reasoning-budget', "$NganSachNghi") }
 $thamSo += $ThemArgs
+# Dot 9 (2026-10-24, dieu-phoi duyet P2): log CO DAU GIO, KHONG ghi de (su co 22:20: log luc 27B chet bi lan khoi dong sau xoa mat).
+# Giu 10 ban gan nhat CUA MODEL NAY; chi don trong dung thu muc log nay, dung mau ten ls-<model>-<dau gio>.
+$dauGio = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logOut = "$log\ls-$ten-$dauGio.log"; $logErr = "$log\ls-$ten-$dauGio.err.log"
+Get-ChildItem -LiteralPath $log -Filter "ls-$ten-*.err.log" -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -Skip 9 | ForEach-Object {
+  Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath ($_.FullName -replace '\.err\.log$', '.log') -Force -ErrorAction SilentlyContinue
+}
+"LOG: $logErr"
 Start-Process -FilePath $exe -ArgumentList $thamSo -WindowStyle Hidden `
-  -RedirectStandardOutput "$log\ls-$ten.log" -RedirectStandardError "$log\ls-$ten.err.log"
+  -RedirectStandardOutput $logOut -RedirectStandardError $logErr
 
 # 2. CHO SAN SANG THAT. Nap mot model day mat hang phut; "da goi lenh" khong phai "da san sang".
 $het = (Get-Date).AddSeconds($ChoGiay)
@@ -132,7 +143,7 @@ while ((Get-Date) -lt $het) {
   Start-Sleep -Seconds 3
 }
 Go-TamDung  # that bai cung go: de giam sat dung lai model cua .env thay vi bo trong may
-Write-Error "HET GIO: $ten khong san sang sau $ChoGiay giay - xem $log\ls-$ten.err.log"
+Write-Error "HET GIO: $ten khong san sang sau $ChoGiay giay - xem $logErr"
 exit 2
 }
 finally {
