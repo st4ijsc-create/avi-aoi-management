@@ -747,6 +747,14 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   còn lỗi sau vòng sửa 3 (ST 3), trích bỏ sót 0 — mọi lượt trượt là TEST đỏ (ngữ nghĩa), không phải biên dịch. Trung vị sinh 169 s
   (token ra 11,4k). Báo cáo trọn (không dừng sớm, 27B đầu = cuối). Giới hạn: chấm SCL qua chuẩn hoá SCL→ST + RuSTy — đo NGỮ NGHĨA, không
   đo hợp lệ với trình biên dịch TIA thật (không có trình dịch SCL mở).
+- **ĐĂNG KÝ TRƯỚC — A/B vòng kiểm biên dịch ST trên TRỢ LÝ LẬP TRÌNH** (viết 2026-10-23, TRƯỚC khi chạy; dieu-phoi giao). Đường SẢN PHẨM
+  `/api/ai/local-kb/stream` (`codingMode`, nhánh sinh mã; vòng mới ở e7220eb9e, cờ `AI_KIEM_BIEN_DICH_ST` có `tro-ly`), `mot-luot --config
+  pipeline --ab-kiem`: cùng 24 bài #11 × **3 lượt** (chốt TRƯỚC: ước ~4 h < 7 h — 35B trung vị ~75–90 s/lượt × 144 + vòng sửa), XEN KẼ trên
+  CÙNG server :3013 (nhánh tắt = `context.kiemBienDichST:false`, không đổi server); khoá khe + canh bộ nhớ; kiểm nhánh MỖI lượt (`done.kiemBienDichST`
+  bat phải có, tat phải vắng ⇒ sai thì dừng, vứt số). **Model: 35B** — đường trợ lý dùng model lập trình của bộ định tuyến CỔNG
+  (`GGUF_CODE_MODEL`), KHÔNG định tuyến vai trò ⇒ khác /v1 #2 (27B `code.plc`); số này là của sản phẩm trợ lý như nó đang chạy.
+  **Cổng: bat ≥ tat + 4/72 VÀ số lượt bat > 300 s (tới khi khối cuối/`done` xong) ≤ 7/72 (mức /v1 #2).** Báo kèm: TTFT, thời gian tới `done`,
+  vòng sửa (sach/da-sua/con-loi/bo-qua), cặp lệch. Đạt ⇒ đề xuất bật mặc định cho `tro-ly` (Cmd+K đo sau nếu cần); không đạt ⇒ giữ tắt.
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
