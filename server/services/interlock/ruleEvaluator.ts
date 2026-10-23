@@ -92,10 +92,11 @@ export function deriveObserved(sourceType: InterlockSourceType, ctx: Observation
  *   khong_co_mau     — không có mẫu / giá trị không phải số / lịch sử ngắn hơn consecutiveCount
  *   chat_luong_xau   — mẫu q = bad | uncertain
  *   cu               — mẫu quá hạn (stale)
- *   mo_ho            — nhiều adapter cùng tagKey trên máy, hoặc luật không gắn máy
+ *   mo_ho            — nhiều adapter / nhiều deviceId cùng tagKey trên máy (không chọn bừa)
+ *   cau_hinh         — luật HỎNG CẤU TRÚC (telemetry_tag thiếu machineId hoặc sourceKey): không bao giờ đánh giá được, cần sửa luật
  */
 export interface KetQuaDanhGia {
   dung: boolean;
   thieuDuLieu: boolean;
-  lyDo?: "khong_co_mau" | "chat_luong_xau" | "cu" | "mo_ho";
+  lyDo?: "khong_co_mau" | "chat_luong_xau" | "cu" | "mo_ho" | "cau_hinh";
 }

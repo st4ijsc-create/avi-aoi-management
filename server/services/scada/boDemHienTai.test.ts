@@ -18,6 +18,7 @@ import {
   layGiaTri,
   napTuOt,
   POLL_MAC_DINH_MS,
+  adapterTheoMa,
   thongTinAdapter,
   timTheoMayVaTag,
   xoaAdapter,
@@ -440,5 +441,17 @@ describe("khoiDongBoDemHienTai (nạp DB)", () => {
     __datLaiBoDemHienTai();
     expect(layGiaTri(7, "t")).toBeNull();
     expect(thongTinAdapter(7)).toBeNull();
+  });
+});
+
+describe("adapterTheoMa", () => {
+  it("tra adapter đang đăng ký theo code; không có / null / rỗng ⇒ null; sau xoaAdapter ⇒ null", () => {
+    datThongTinAdapter(31, { pollMs: 2000, coDeadband: true, machineId: 4, code: "DEV-31" });
+    expect(adapterTheoMa("DEV-31")).toEqual({ adapterId: 31, pollMs: 2000, coDeadband: true, machineId: 4, code: "DEV-31" });
+    expect(adapterTheoMa("DEV-32")).toBeNull();
+    expect(adapterTheoMa(null)).toBeNull();
+    expect(adapterTheoMa("")).toBeNull();
+    xoaAdapter(31);
+    expect(adapterTheoMa("DEV-31")).toBeNull();
   });
 });

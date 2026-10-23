@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import postgres from "postgres";
 import { evaluateInterlockGate } from "./interlockGate";
+import { datThongTinAdapter, xoaAdapter } from "../scada/boDemHienTai";
 
 const DB_URL = process.env.DATABASE_URL;
 const MACHINE_ID = 990_430_001;
@@ -35,11 +36,11 @@ async function chenLuat(
 }
 
 /** Chèn hàng telemetry (agoSec = số giây trước now). */
-async function chenTele(machine: number, tag: string, hang: Array<{ agoSec: number; v: number; quality?: string }>): Promise<void> {
+async function chenTele(machine: number, tag: string, hang: Array<{ agoSec: number; v: number; quality?: string; deviceId?: string }>): Promise<void> {
   const now = Date.now();
   for (const h of hang) {
-    await sql`INSERT INTO ot_telemetry (ts, "machineId", protocol, metric, "numValue", quality)
-      VALUES (${new Date(now - h.agoSec * 1000)}, ${machine}, 'mqtt', ${tag}, ${h.v}, ${h.quality ?? "good"})`;
+    await sql`INSERT INTO ot_telemetry (ts, "machineId", "deviceId", protocol, metric, "numValue", quality)
+      VALUES (${new Date(now - h.agoSec * 1000)}, ${machine}, ${h.deviceId ?? null}, 'mqtt', ${tag}, ${h.v}, ${h.quality ?? "good"})`;
   }
 }
 
@@ -89,13 +90,57 @@ describe.skipIf(!DB_URL)("migration 0430 — khiThieuDuLieu", () => {
   describe("chuỗi/chất lượng/máy trên đường DB thật", () => {
     const lech = (n: number) => MACHINE_ID + n;
 
-    it("chuỗi chỉ gồm hàng quality=good: bad ở giữa bị loại ⇒ 3 hàng good liên tiếp vượt ngưỡng ⇒ VI PHẠM (nếu bad lọt vào chuỗi: [10,90,90] ⇒ không)", async () => {
+    it("KHÔNG nối qua đoạn hỏng: good 10, 10, bad, good 90, 90 với N=3 ⇒ chỉ 2 hàng đủ điều kiện ⇒ thiếu dữ liệu ⇒ chặn (vòng 2: thay cho kỳ vọng 'lọc good ⇒ VI PHẠM' cũ, vốn nối mẫu qua hàng bad)", async () => {
       const m = lech(10), tag = DAU + "-loc";
       const id = await chenLuat(null, { machine: m, target: m, tag, consecutive: 3 });
-      await chenTele(m, tag, [{ agoSec: 40, v: 90 }, { agoSec: 30, v: 10, quality: "bad" }, { agoSec: 20, v: 90 }, { agoSec: 10, v: 90 }]);
+      await chenTele(m, tag, [{ agoSec: 5, v: 10 }, { agoSec: 4, v: 10 }, { agoSec: 3, v: 10, quality: "bad" }, { agoSec: 2, v: 90 }, { agoSec: 1, v: 90 }]);
+      expect((await viPham(m, id))?.lyDo).toBe("thieu_du_lieu");
+    });
+
+    it("đủ 3 hàng good SAU hàng bad gần nhất ⇒ đánh giá bình thường ⇒ VI PHẠM (không phải thiếu dữ liệu)", async () => {
+      const m = lech(16), tag = DAU + "-sauhong";
+      const id = await chenLuat(null, { machine: m, target: m, tag, consecutive: 3 });
+      await chenTele(m, tag, [{ agoSec: 6, v: 10 }, { agoSec: 5, v: 10, quality: "bad" }, { agoSec: 3, v: 90 }, { agoSec: 2, v: 90 }, { agoSec: 1, v: 90 }]);
       const v = await viPham(m, id);
       expect(v).toBeDefined();
       expect(v!.lyDo).toBeUndefined();
+    });
+
+    it("60 hàng good nhưng hàng mới nhất cách 60 s, pollMs 1000 (adapter đăng ký) ⇒ cu ⇒ chặn", async () => {
+      const m = lech(17), tag = DAU + "-cu";
+      const id = await chenLuat(null, { machine: m, target: m, tag, consecutive: 60 });
+      await chenTele(m, tag, Array.from({ length: 60 }, (_, i) => ({ agoSec: 60 + i * 0.1, v: 90, deviceId: DAU + "-dev-cu" })));
+      datThongTinAdapter(990_430_100, { pollMs: 1000, coDeadband: false, machineId: m, code: DAU + "-dev-cu" });
+      try {
+        expect((await viPham(m, id))?.lyDo).toBe("thieu_du_lieu");
+      } finally {
+        xoaAdapter(990_430_100);
+      }
+    });
+
+    it("hai deviceId cùng máy + metric ⇒ mo_ho ⇒ chặn", async () => {
+      const m = lech(18), tag = DAU + "-haidev";
+      const id = await chenLuat(null, { machine: m, target: m, tag });
+      await chenTele(m, tag, [{ agoSec: 3, v: 10, deviceId: DAU + "-A" }, { agoSec: 2, v: 10, deviceId: DAU + "-B" }, { agoSec: 1, v: 10, deviceId: DAU + "-A" }]);
+      expect((await viPham(m, id))?.lyDo).toBe("thieu_du_lieu");
+    });
+
+    it("cùng một deviceId ⇒ không mơ hồ: đánh giá bình thường", async () => {
+      const m = lech(19), tag = DAU + "-mot";
+      const id = await chenLuat(null, { machine: m, target: m, tag });
+      await chenTele(m, tag, [{ agoSec: 2, v: 90, deviceId: DAU + "-A" }, { agoSec: 1, v: 95, deviceId: DAU + "-A" }]);
+      const v = await viPham(m, id);
+      expect(v).toBeDefined();
+      expect(v!.lyDo).toBeUndefined();
+    });
+
+    it("hai hàng CÙNG ts: hàng id lớn hơn (bad) là 'mới nhất' ⇒ chat_luong_xau xác định (ORDER BY ts DESC, id DESC)", async () => {
+      const m = lech(20), tag = DAU + "-cungts";
+      const id = await chenLuat(null, { machine: m, target: m, tag });
+      const ts = new Date(Date.now() - 2000);
+      await sql`INSERT INTO ot_telemetry (ts, "machineId", protocol, metric, "numValue", quality) VALUES (${ts}, ${m}, 'mqtt', ${tag}, 90, 'good')`;
+      await sql`INSERT INTO ot_telemetry (ts, "machineId", protocol, metric, "numValue", quality) VALUES (${ts}, ${m}, 'mqtt', ${tag}, 90, 'bad')`;
+      expect((await viPham(m, id))?.lyDo).toBe("thieu_du_lieu");
     });
 
     it("hàng MỚI NHẤT không good ⇒ thiếu dữ liệu (không lùi về mẫu good cũ)", async () => {
@@ -106,18 +151,18 @@ describe.skipIf(!DB_URL)("migration 0430 — khiThieuDuLieu", () => {
       expect(v?.lyDo).toBe("thieu_du_lieu");
     });
 
-    it("luật không gắn máy (machineId NULL) ⇒ mơ hồ ⇒ chặn dù máy đích có dữ liệu tốt", async () => {
+    it("luật không gắn máy (machineId NULL) ⇒ cau_hinh ⇒ chặn dù máy đích có dữ liệu tốt", async () => {
       const m = lech(12), tag = DAU + "-khongmay";
       const id = await chenLuat(null, { machine: null, target: m, tag });
       await chenTele(m, tag, [{ agoSec: 5, v: 10 }]);
       const v = await viPham(m, id);
-      expect(v?.lyDo).toBe("thieu_du_lieu");
+      expect(v?.lyDo).toBe("cau_hinh");
     });
 
     it("consecutiveCount=60 (>50) + bộ đệm BẬT ⇒ đọc 60 hàng DB, đánh giá bình thường (vi phạm, không phải chặn vì thiếu dữ liệu)", async () => {
       const m = lech(13), tag = DAU + "-dai";
       const id = await chenLuat(null, { machine: m, target: m, tag, consecutive: 60 });
-      await chenTele(m, tag, Array.from({ length: 60 }, (_, i) => ({ agoSec: 1 + i * 3, v: 90 })));
+      await chenTele(m, tag, Array.from({ length: 60 }, (_, i) => ({ agoSec: 1 + i * 0.1, v: 90 })));
       const truoc = process.env.SCADA_LIVE_CACHE_ENABLED;
       process.env.SCADA_LIVE_CACHE_ENABLED = "true";
       try {
@@ -133,7 +178,7 @@ describe.skipIf(!DB_URL)("migration 0430 — khiThieuDuLieu", () => {
     it("windowSize=10, consecutiveCount=20 ⇒ đọc 20 hàng, đánh giá bình thường (trước vá: LIMIT 10 < 20 ⇒ chặn vĩnh viễn)", async () => {
       const m = lech(14), tag = DAU + "-cuaso";
       const id = await chenLuat(null, { machine: m, target: m, tag, consecutive: 20, windowSize: 10 });
-      await chenTele(m, tag, Array.from({ length: 25 }, (_, i) => ({ agoSec: 1 + i * 3, v: 90 })));
+      await chenTele(m, tag, Array.from({ length: 25 }, (_, i) => ({ agoSec: 1 + i * 0.1, v: 90 })));
       const v = await viPham(m, id);
       expect(v).toBeDefined();
       expect(v!.lyDo).toBeUndefined();
@@ -142,7 +187,7 @@ describe.skipIf(!DB_URL)("migration 0430 — khiThieuDuLieu", () => {
     it("windowSize=10, consecutiveCount=20 nhưng chỉ có 15 hàng good ⇒ vẫn FAIL-CLOSED (thiếu dữ liệu)", async () => {
       const m = lech(15), tag = DAU + "-it";
       const id = await chenLuat(null, { machine: m, target: m, tag, consecutive: 20, windowSize: 10 });
-      await chenTele(m, tag, Array.from({ length: 15 }, (_, i) => ({ agoSec: 1 + i * 3, v: 90 })));
+      await chenTele(m, tag, Array.from({ length: 15 }, (_, i) => ({ agoSec: 1 + i * 0.1, v: 90 })));
       expect((await viPham(m, id))?.lyDo).toBe("thieu_du_lieu");
     });
   });

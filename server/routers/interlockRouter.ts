@@ -88,6 +88,22 @@ function hasTarget(v: { targetMachineId?: number | null; targetAdapterId?: numbe
   return v.targetMachineId != null || v.targetAdapterId != null || !!(v.commandTag && v.commandTag.length > 0);
 }
 
+/**
+ * SCADA R0 Task 9 — luật `telemetry_tag` PHẢI gắn máy (machineId) và khai tag (sourceKey): cổng đọc giá trị sống theo (máy, tag);
+ * thiếu một trong hai thì luật không bao giờ đánh giá được (cổng chặn mọi lệnh nhắm tới nó — lyDo cau_hinh). Chặn từ nguồn.
+ */
+function assertTelemetryCauHinh(v: { sourceType: string; machineId?: number | null; sourceKey?: string | null }): void {
+  if (v.sourceType !== "telemetry_tag") return;
+  if (v.machineId == null || !v.sourceKey || v.sourceKey.trim().length === 0) {
+    throw appError(
+      "BAD_REQUEST",
+      "FIELD_REQUIRED",
+      { field: v.machineId == null ? "machineId" : "sourceKey" },
+      "Luật nguồn telemetry_tag cần machineId và sourceKey (tên tag) — thiếu một trong hai thì luật không đánh giá được và cổng sẽ chặn mọi lệnh nhắm tới nó.",
+    );
+  }
+}
+
 /** ILK-05 — hành động khác 'alert' (stop_line/reduce_speed/block_downstream…) bắt buộc có đích. */
 function assertTargetIfNotAlert(action: string, target: { targetMachineId?: number | null; targetAdapterId?: number | null; commandTag?: string | null }): void {
   if (action !== "alert" && !hasTarget(target)) {
@@ -210,6 +226,7 @@ export const interlockRouter = router({
       const db = await getDb();
       // ILK-05 — validate BEFORE writing anything.
       assertTargetIfNotAlert(input.action, input);
+      assertTelemetryCauHinh(input);
       // ILK-10 — rule insert + audit row: cùng một transaction.
       return db.transaction(async (tx) => {
         // SAFETY: a freshly-created rule is ALWAYS disabled, unapproved, HITL-gated.
@@ -252,6 +269,12 @@ export const interlockRouter = router({
           targetMachineId: mergedTargetMachineId,
           targetAdapterId: mergedTargetAdapterId,
           commandTag: mergedCommandTag,
+        });
+        // SCADA R0 Task 9 — merge patch lên existing: update không được làm hỏng luật telemetry_tag (bỏ machineId/sourceKey hoặc đổi nguồn sang telemetry_tag).
+        assertTelemetryCauHinh({
+          sourceType: "sourceType" in rest ? (rest.sourceType as string) : existing.sourceType,
+          machineId: "machineId" in rest ? rest.machineId ?? null : existing.machineId,
+          sourceKey: "sourceKey" in rest ? rest.sourceKey ?? null : existing.sourceKey,
         });
 
         const patch: Record<string, unknown> = { ...rest, updatedAt: new Date(), updatedBy: ctx.user.id };
@@ -334,6 +357,7 @@ export const interlockRouter = router({
         // Final review fix #7 — ILK-05 cả ở approve: hàng do AI tool (propose_interlock_rule) / seed
         // ghi thẳng bảng không đi qua create/update.
         assertTargetIfNotAlert(existing.action, existing);
+        assertTelemetryCauHinh(existing); // hàng seed / AI tool ghi thẳng bảng không đi qua create/update
         const [row] = await tx
           .update(interlockRules)
           .set({ approvedBy: ctx.user.id, approvedAt: new Date(), updatedAt: new Date(), updatedBy: ctx.user.id })

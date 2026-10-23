@@ -24,9 +24,16 @@ vi.mock("../../../drizzle/schema", () => ({
 }));
 
 // ── Bộ đệm hiện tại: mock hai hàm Task 7 ────────────────────────────────────────────────────────
-const cache: { bat: boolean; mau: any[]; hoi: Array<[number, string]> } = { bat: true, mau: [], hoi: [] };
+const cache: {
+  bat: boolean;
+  mau: any[];
+  hoi: Array<[number, string]>;
+  adapter: null | { adapterId: number; pollMs: number; coDeadband: boolean; machineId: number | null; code: string };
+} = { bat: true, mau: [], hoi: [], adapter: null };
 vi.mock("../scada/boDemHienTai", () => ({
   SO_LICH_SU_TOI_DA: 50,
+  NGUONG_DEADBAND_MS: 70_000,
+  adapterTheoMa: (code: string | null) => (code && cache.adapter && cache.adapter.code === code ? cache.adapter : null),
   boDemDangBat: () => cache.bat,
   timTheoMayVaTag: (machineId: number, tagKey: string) => {
     cache.hoi.push([machineId, tagKey]);
@@ -38,7 +45,8 @@ vi.mock("../scada/boDemHienTai", () => ({
 // telemetryRows: MỚI NHẤT TRƯỚC (như ORDER BY ts DESC); mỗi hàng { v, t, quality }. limits: các LIMIT n đã được yêu cầu trên ot_telemetry.
 const state: { rules: any[]; telemetryRows: any[]; insertedEvents: any[]; limits: number[] } = { rules: [], telemetryRows: [], insertedEvents: [], limits: [] };
 /** n hàng telemetry tốt giá trị v (mới nhất trước). */
-const hang = (n: number, v: number, quality = "good") => Array.from({ length: n }, () => ({ v: String(v), t: new Date(), quality }));
+const hang = (n: number, v: number, quality = "good", deviceId: string | null = null, tuoiMs = 0) =>
+  Array.from({ length: n }, () => ({ v: String(v), t: new Date(Date.now() - tuoiMs), quality, deviceId }));
 
 function makeBuilder(t: string): any {
   const rows = () => {
@@ -130,6 +138,7 @@ beforeEach(() => {
   cache.bat = true;
   cache.mau = [];
   cache.hoi = [];
+  cache.adapter = null;
   state.rules = [];
   state.telemetryRows = [];
   state.limits = [];
@@ -186,13 +195,18 @@ describe("cổng interlock — thiếu dữ liệu ⇒ CHẶN (D2)", () => {
     expect(kq).toEqual({ dung: false, thieuDuLieu: true, lyDo: "mo_ho" });
   });
 
-  it("luật không gắn máy (machineId null) + bộ đệm bật ⇒ mơ hồ, chặn", async () => {
+  it("luật không gắn máy (machineId null) + bộ đệm bật ⇒ cau_hinh (hỏng cấu trúc), cổng CHẶN với lyDo=cau_hinh, kể cả khiThieuDuLieu=cho_qua", async () => {
     state.rules = [luat({ machineId: null })];
     cache.mau = [mau({ v: 10 })];
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(true);
+    expect(r.violations[0].lyDo).toBe("cau_hinh");
     expect(cache.hoi).toEqual([]); // không đoán máy
-    expect(await danhGiaLuat(luat({ machineId: null }))).toEqual({ dung: false, thieuDuLieu: true, lyDo: "mo_ho" });
+    expect(await danhGiaLuat(luat({ machineId: null }))).toEqual({ dung: false, thieuDuLieu: true, lyDo: "cau_hinh" });
+    state.rules = [luat({ machineId: null, khiThieuDuLieu: "cho_qua" })];
+    const r2 = await evaluateInterlockGate(params);
+    expect(r2.blocked).toBe(true); // cho_qua chỉ áp cho thiếu DỮ LIỆU, không áp cho luật hỏng cấu trúc
+    expect(r2.violations[0].lyDo).toBe("cau_hinh");
   });
 
   it("khiThieuDuLieu=cho_qua + không có mẫu ⇒ luật đó KHÔNG chặn", async () => {
@@ -274,7 +288,7 @@ describe("đường DB cũ (bộ đệm TẮT) — không có hàng ⇒ thiếu 
 
   it("hàng cuối có numValue null ⇒ thiếu dữ liệu", async () => {
     cache.bat = false;
-    state.telemetryRows = [{ v: null, t: new Date(), quality: "good" }];
+    state.telemetryRows = [{ v: null, t: new Date(), quality: "good", deviceId: null }];
     expect(await danhGiaLuat(luat())).toEqual({ dung: false, thieuDuLieu: true, lyDo: "khong_co_mau" });
   });
 
@@ -322,10 +336,50 @@ describe("Task 9 fix round 1 — chuỗi dài hơn bộ đệm + chất lượng
     expect(await danhGiaLuat(luat())).toEqual({ dung: false, thieuDuLieu: true, lyDo: "chat_luong_xau" });
   });
 
-  it("DB path: luật không gắn máy ⇒ mo_ho (cùng quy tắc với đường bộ đệm), kể cả khi có dữ liệu", async () => {
+  it("DB path: luật không gắn máy ⇒ cau_hinh (cùng quy tắc với đường bộ đệm), kể cả khi có dữ liệu; thiếu sourceKey cũng vậy", async () => {
     cache.bat = false;
     state.telemetryRows = hang(5, 95);
-    expect(await danhGiaLuat(luat({ machineId: null }))).toEqual({ dung: false, thieuDuLieu: true, lyDo: "mo_ho" });
+    expect(await danhGiaLuat(luat({ machineId: null }))).toEqual({ dung: false, thieuDuLieu: true, lyDo: "cau_hinh" });
+    expect(await danhGiaLuat(luat({ sourceKey: null }))).toEqual({ dung: false, thieuDuLieu: true, lyDo: "cau_hinh" });
+  });
+});
+
+describe("Task 9 fix round 2 — đường DB khớp ngữ nghĩa bộ đệm (tươi / mơ hồ / không nối qua đoạn hỏng)", () => {
+  beforeEach(() => {
+    cache.bat = false;
+  });
+
+  it("60 hàng good, mới nhất cách 60 s, pollMs 1000 (adapter đăng ký theo deviceId) ⇒ cu", async () => {
+    cache.adapter = { adapterId: ADAPTER, pollMs: 1000, coDeadband: false, machineId: MAY, code: "DEV-A" };
+    state.telemetryRows = hang(60, 95, "good", "DEV-A", 60_000);
+    expect(await danhGiaLuat(luat({ consecutiveCount: 60 }))).toEqual({ dung: false, thieuDuLieu: true, lyDo: "cu" });
+  });
+
+  it("không có adapter đăng ký ⇒ ngưỡng 15 s: 14 s tươi, 16 s cũ", async () => {
+    state.telemetryRows = hang(3, 95, "good", "DEV-X", 14_000);
+    expect(await danhGiaLuat(luat())).toEqual({ dung: true, thieuDuLieu: false });
+    state.telemetryRows = hang(3, 95, "good", "DEV-X", 16_000);
+    expect(await danhGiaLuat(luat())).toEqual({ dung: false, thieuDuLieu: true, lyDo: "cu" });
+  });
+
+  it("pollMs lớn nâng ngưỡng: pollMs 10 000 ⇒ 3 × = 30 s; hàng 20 s vẫn tươi", async () => {
+    cache.adapter = { adapterId: ADAPTER, pollMs: 10_000, coDeadband: false, machineId: MAY, code: "DEV-A" };
+    state.telemetryRows = hang(3, 95, "good", "DEV-A", 20_000);
+    expect(await danhGiaLuat(luat())).toEqual({ dung: true, thieuDuLieu: false });
+  });
+
+  it("hai deviceId cùng máy + metric trong cửa sổ ⇒ mo_ho", async () => {
+    state.telemetryRows = [...hang(2, 95, "good", "DEV-A"), ...hang(2, 95, "good", "DEV-B")];
+    expect(await danhGiaLuat(luat())).toEqual({ dung: false, thieuDuLieu: true, lyDo: "mo_ho" });
+  });
+
+  it("không nối qua đoạn hỏng: good 10, 10, bad, good 90, 90 với N=3 ⇒ chỉ 2 hàng đủ điều kiện ⇒ thiếu dữ liệu", async () => {
+    // newest-first: 90, 90, bad, 10, 10
+    state.telemetryRows = [...hang(2, 90), ...hang(1, 10, "bad"), ...hang(2, 10)];
+    expect(await danhGiaLuat(luat({ consecutiveCount: 3 }))).toEqual({ dung: false, thieuDuLieu: true, lyDo: "khong_co_mau" });
+    // đủ 3 hàng good SAU đoạn hỏng ⇒ đánh giá bình thường
+    state.telemetryRows = [...hang(3, 90), ...hang(1, 10, "bad"), ...hang(2, 10)];
+    expect(await danhGiaLuat(luat({ consecutiveCount: 3 }))).toEqual({ dung: true, thieuDuLieu: false });
   });
 });
 
@@ -367,6 +421,21 @@ describe("engine — thiếu dữ liệu: không dispatch, không Andon, log M�
     await evaluateRule(l);
     await evaluateRule(l);
     expect(dong()).toEqual(["interlock.thieu_du_lieu ruleId=302 lyDo=khong_co_mau", "interlock.thieu_du_lieu ruleId=302 lyDo=cu"]);
+  });
+
+  it("luật hỏng cấu trúc (cau_hinh): engine KHÔNG dispatch, KHÔNG Andon; log `interlock.cau_hinh ruleId=<id>` đúng 1 lần mỗi luật, tách khỏi đợt thiếu dữ liệu", async () => {
+    const hong = luat({ id: 330, machineId: null });
+    await evaluateRule(hong);
+    await evaluateRule(hong);
+    state.rules = [luat({ id: 331, sourceKey: null }), hong];
+    await runOnce();
+    await runOnce();
+    const cauHinh = warn.mock.calls.map((c) => String(c[0])).filter((x) => x.includes("interlock.cau_hinh ruleId="));
+    expect(cauHinh.sort()).toEqual(["interlock.cau_hinh ruleId=330", "interlock.cau_hinh ruleId=331"]);
+    expect(dong()).toEqual([]); // không phải đợt thiếu dữ liệu
+    expect(dispatchSpy).not.toHaveBeenCalled();
+    expect(raiseAndon).not.toHaveBeenCalled();
+    expect(state.insertedEvents).toHaveLength(0);
   });
 
   it("hai luật thiếu dữ liệu ⇒ mỗi luật 1 dòng riêng; runOnce lặp không thêm dòng", async () => {

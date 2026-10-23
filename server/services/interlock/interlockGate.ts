@@ -34,7 +34,7 @@ import {
   type KetQuaDanhGia,
   type ObservationContext,
 } from "./ruleEvaluator";
-import { SO_LICH_SU_TOI_DA, boDemDangBat, timTheoMayVaTag } from "../scada/boDemHienTai";
+import { NGUONG_DEADBAND_MS, SO_LICH_SU_TOI_DA, adapterTheoMa, boDemDangBat, timTheoMayVaTag } from "../scada/boDemHienTai";
 
 /** Window start = now - windowSeconds (default 300s). */
 function windowStart(rule: InterlockRule): Date {
@@ -47,7 +47,10 @@ function windowStart(rule: InterlockRule): Date {
  * derivation happens in ruleEvaluator.deriveObserved(). Each branch is scoped by
  * machine when machineId is set (best-effort; rules may be line/station scoped).
  */
-export async function fetchObservation(rule: InterlockRule): Promise<ObservationContext> {
+/** Độ tươi tối thiểu của hàng telemetry mới nhất khi không biết pollMs của adapter (đường DB). */
+export const DO_TUOI_TOI_THIEU_DB_MS = 15_000;
+
+export async function fetchObservation(rule: InterlockRule, now: number = Date.now()): Promise<ObservationContext> {
   const db = await getDb();
   if (!db) return {};
   const since = windowStart(rule);
@@ -112,24 +115,34 @@ export async function fetchObservation(rule: InterlockRule): Promise<Observation
       // nhiều hơn windowSize mẫu, cổng không bao giờ thấy giá trị mới nhất
       // (tái hiện: 120 mẫu/1h, windowSize 50 → cổng thấy mẫu #1..50, bỏ #51..120).
       //
-      // SCADA R0 Task 9 (D2, fix 3): (a) hàng MỚI NHẤT (không lọc chất lượng) mà không good ⇒ máy đang báo xấu ⇒ thiếu dữ liệu
-      // (chat_luong_xau) — không được "lùi" về mẫu good cũ rồi coi là an toàn; (b) chuỗi chỉ gồm hàng quality=good; (c) giới hạn
-      // max(windowSize, consecutiveCount) để windowSize < consecutiveCount không bao giờ chặn vĩnh viễn.
-      const [moiNhat] = await db
-        .select({ quality: otTelemetry.quality })
+      // SCADA R0 Task 9 (D2, fix 3 + vòng 2) — đường DB phải KHỚP ngữ nghĩa bộ đệm:
+      //   (a) hàng MỚI NHẤT (mọi chất lượng; ORDER BY ts DESC, id DESC để xác định khi ts bằng nhau) không good ⇒ chat_luong_xau —
+      //       không "lùi" về mẫu good cũ;
+      //   (b) hàng trong cửa sổ đến từ >1 deviceId ⇒ mo_ho (không chọn bừa giữa hai nguồn);
+      //   (c) hàng mới nhất cũ hơn max(3 × pollMs, 15 s) (pollMs của adapter đăng ký có code = deviceId; deadband ⇒ ≥ 70 s như bộ đệm) ⇒ cu;
+      //   (d) chuỗi = các hàng good MỚI HƠN hàng không-good gần nhất — không nối mẫu qua một đoạn mất kết nối / giá trị không chắc;
+      //   (e) giới hạn max(windowSize, consecutiveCount) để windowSize < consecutiveCount không chặn vĩnh viễn.
+      const rows = await db
+        .select({ v: otTelemetry.numValue, t: otTelemetry.ts, quality: otTelemetry.quality, deviceId: otTelemetry.deviceId })
         .from(otTelemetry)
         .where(and(...conds))
-        .orderBy(desc(otTelemetry.ts))
-        .limit(1);
-      if (moiNhat && moiNhat.quality !== "good") return { series: [], scalar: null, thieuDuLieu: "chat_luong_xau" };
-      const rows = await db
-        .select({ v: otTelemetry.numValue, t: otTelemetry.ts })
-        .from(otTelemetry)
-        .where(and(...conds, eq(otTelemetry.quality, "good")))
-        .orderBy(desc(otTelemetry.ts))
+        .orderBy(desc(otTelemetry.ts), desc(otTelemetry.id))
         .limit(Math.max(rule.windowSize ?? 50, rule.consecutiveCount ?? 1));
-      rows.reverse();
-      const series = rows.map((r) => (r.v != null ? Number(r.v) : null));
+      if (rows.length === 0) return { series: [], scalar: null };
+      if (rows[0].quality !== "good") return { series: [], scalar: null, thieuDuLieu: "chat_luong_xau" };
+      if (new Set(rows.map((r) => r.deviceId ?? null)).size > 1) return { series: [], scalar: null, thieuDuLieu: "mo_ho" };
+      const adapter = adapterTheoMa(rows[0].deviceId);
+      const nguongCu = Math.max(
+        3 * (adapter?.pollMs ?? 0),
+        DO_TUOI_TOI_THIEU_DB_MS,
+        adapter?.coDeadband ? NGUONG_DEADBAND_MS : 0,
+      );
+      const tMoiNhat = rows[0].t instanceof Date ? rows[0].t.getTime() : new Date(rows[0].t as unknown as string).getTime();
+      if (!Number.isFinite(tMoiNhat) || now - tMoiNhat > nguongCu) return { series: [], scalar: null, thieuDuLieu: "cu" };
+      const batDauNgat = rows.findIndex((r) => r.quality !== "good");
+      const lien = batDauNgat === -1 ? rows : rows.slice(0, batDauNgat); // mới → cũ, chỉ phần liền mạch good
+      lien.reverse();
+      const series = lien.map((r) => (r.v != null ? Number(r.v) : null));
       const latest = series.length ? series[series.length - 1] : null;
       return { series, scalar: latest };
     }
@@ -145,7 +158,7 @@ export async function fetchObservation(rule: InterlockRule): Promise<Observation
  *   - q !== "good" ⇒ chat_luong_xau;   stale ⇒ cu;   ngược lại series = lichSu (cũ→mới), scalar = v.
  */
 function docTuBoDem(rule: InterlockRule, now: number): { obs: ObservationContext } | { lyDo: NonNullable<KetQuaDanhGia["lyDo"]> } {
-  if (rule.machineId == null || !rule.sourceKey) return { lyDo: "mo_ho" };
+  if (rule.machineId == null || !rule.sourceKey) return { lyDo: "cau_hinh" };
   const mau = timTheoMayVaTag(rule.machineId, rule.sourceKey, now);
   if (mau.length === 0) return { lyDo: "khong_co_mau" };
   if (mau.length > 1) return { lyDo: "mo_ho" };
@@ -175,8 +188,9 @@ export async function danhGiaLuatChiTiet(
     observed: null as number | null,
   });
 
-  // Luật telemetry_tag không gắn máy (hoặc không khai tag) ⇒ mơ hồ — cùng quy tắc ở cả hai đường (cache bật/tắt): không đoán máy.
-  if (sourceType === "telemetry_tag" && (rule.machineId == null || !rule.sourceKey)) return thieu("mo_ho");
+  // Luật telemetry_tag không gắn máy (hoặc không khai tag) ⇒ HỎNG CẤU TRÚC (cau_hinh) — cùng quy tắc ở cả hai đường (cache bật/tắt):
+  // không đoán máy, không bao giờ đánh giá được ⇒ cổng CHẶN (fail-closed), engine không tự phát hành động, router từ chối tạo/sửa/duyệt.
+  if (sourceType === "telemetry_tag" && (rule.machineId == null || !rule.sourceKey)) return thieu("cau_hinh");
 
   let obs: ObservationContext;
   // Bộ đệm giữ tối đa SO_LICH_SU_TOI_DA mẫu: luật cần "N điểm liên tiếp" với N lớn hơn thì cache KHÔNG đủ ⇒ đọc chuỗi từ DB (vẫn fail-closed
@@ -187,7 +201,7 @@ export async function danhGiaLuatChiTiet(
     if ("lyDo" in doc) return thieu(doc.lyDo);
     obs = doc.obs;
   } else {
-    obs = await fetchObservation(rule);
+    obs = await fetchObservation(rule, now);
     if (obs.thieuDuLieu) return thieu(obs.thieuDuLieu);
   }
 
@@ -247,7 +261,7 @@ export interface InterlockGateViolation {
   ruleName: string;
   action: string;
   /** "thieu_du_lieu" = bị chặn vì luật KHÔNG đánh giá được (thiếu/xấu/cũ/mơ hồ — D2), không phải vì điều kiện met. */
-  lyDo?: "thieu_du_lieu";
+  lyDo?: "thieu_du_lieu" | "cau_hinh";
 }
 
 export interface InterlockGateResult {
@@ -312,7 +326,10 @@ export async function evaluateInterlockGate(params: {
     for (const rule of relevant) {
       // danhGiaLuat có thể ném → nhảy xuống catch → fail-closed.
       const kq = await danhGiaLuat(rule, now);
-      if (kq.thieuDuLieu) {
+      if (kq.thieuDuLieu && kq.lyDo === "cau_hinh") {
+        // Luật hỏng cấu trúc: LUÔN chặn (cho_qua là chấp nhận thiếu DỮ LIỆU, không phải chấp nhận luật hỏng).
+        violations.push({ ruleId: rule.id, ruleName: rule.name, action: rule.action, lyDo: "cau_hinh" });
+      } else if (kq.thieuDuLieu) {
         // D2 fail-closed: thiếu/xấu/cũ/mơ hồ ⇒ CHẶN, trừ khi chủ luật khai tường minh "cho_qua". Giá trị khác/vắng ⇒ coi như "chan".
         if (rule.khiThieuDuLieu !== "cho_qua") {
           violations.push({ ruleId: rule.id, ruleName: rule.name, action: rule.action, lyDo: "thieu_du_lieu" });

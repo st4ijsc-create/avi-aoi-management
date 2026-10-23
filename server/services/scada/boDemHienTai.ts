@@ -89,6 +89,13 @@ export function xoaTatCaAdapter(): void {
   dangKhoiDong = null;
 }
 
+/** Tra adapter đang đăng ký theo `code` (= `deviceId` của hàng telemetry). SCADA R0 Task 9: cổng interlock (đường DB) lấy pollMs để quyết độ tươi. */
+export function adapterTheoMa(code: string | null | undefined): (ThongTinAdapter & { adapterId: number }) | null {
+  if (!code) return null;
+  for (const [adapterId, t] of thongTin) if (t.code === code) return { adapterId, ...t };
+  return null;
+}
+
 export function thongTinAdapter(adapterId: number): ThongTinAdapter | null {
   const t = thongTin.get(adapterId);
   return t ? { ...t } : null;

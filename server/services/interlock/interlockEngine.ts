@@ -50,9 +50,13 @@ let polling = false;
  */
 const dotThieuDuLieu = new Map<number, string>();
 
-/** Chỉ dùng cho test: xoá trạng thái đợt thiếu dữ liệu. */
+/** Luật HỎNG CẤU TRÚC đã báo trong tiến trình này (mã ổn định `interlock.cau_hinh ruleId=<id>`, MỘT lần mỗi luật mỗi tiến trình). */
+const daBaoCauHinh = new Set<number>();
+
+/** Chỉ dùng cho test: xoá trạng thái đợt thiếu dữ liệu + danh sách đã báo cau_hinh. */
 export function __datLaiDotThieuDuLieu(): void {
   dotThieuDuLieu.clear();
+  daBaoCauHinh.clear();
 }
 
 /**
@@ -157,6 +161,15 @@ export async function evaluateRule(rule: InterlockRule): Promise<{ id: number; s
 
   // D2 (đã duyệt 23/10): thiếu dữ liệu ⇒ KHÔNG tự phát hành động (không dispatch, không Andon, không ghi sự kiện) — engine không được
   // hành động trên dữ liệu nó không có. Chỉ log MỘT dòng mỗi đợt; cổng inline (interlockGate) mới là nơi CHẶN lệnh.
+  if (ketQua.thieuDuLieu && ketQua.lyDo === "cau_hinh") {
+    // Luật hỏng cấu trúc (telemetry_tag thiếu machineId/sourceKey): engine không tự phát hành động; cổng inline vẫn chặn. Log riêng,
+    // MỘT lần mỗi tiến trình mỗi luật (không phải một đợt thiếu dữ liệu — sẽ không tự hết cho tới khi sửa luật).
+    if (!daBaoCauHinh.has(rule.id)) {
+      daBaoCauHinh.add(rule.id);
+      console.warn(`interlock.cau_hinh ruleId=${rule.id}`);
+    }
+    return null;
+  }
   if (ketQua.thieuDuLieu) {
     const lyDo = ketQua.lyDo ?? "khong_co_mau";
     if (!dotThieuDuLieu.has(rule.id)) {
