@@ -358,6 +358,10 @@ describe("★★★ Pha 6 Task 1b — cầu chì của lượng từ", async () 
       //   2FA đi qua ở chế độ nội bộ phải ĐỂ LẠI DẤU audit). Cùng khuôn M3 với ba mục dưới, và
       //   phải **NÓI RA** ở đây thay vì lặng lẽ nở con số ghim.
       "server/_core/cheDo2faTheoTrienKhai.test.ts#lenhChamMay",
+      // ⚠ 2026-10-24 · R1a T7 — `xacThucTheoMuc` (K8/D5) dùng CHUNG cache phiên + sổ mã với chuỗi
+      //   step-up cũ; lưới §6 của nó cần ĐÚNG `deployProcedure` sản xuất để đo hai điều ấy (middleware
+      //   ghi cache ⇒ helper mức 4 thấy; cùng lượt gọi ⇒ helper mức 5 dùng lại dấu lượt). Cùng khuôn M3.
+      "server/_core/xacThucTheoMuc.test.ts#lenhTheoMuc",
       "server/routers/deployStepUpFreshness.test.ts#deployMoi",
       // ⚠ Pha 6 Task 6 — phép thử M3 **thứ ba**, trong lưới chống phát lại. Nó dùng đúng
       //   `deployProcedure` export của `_core/trpc.ts`, nên nó chia sẻ đúng middleware của mã sản
