@@ -32,6 +32,11 @@ vi Máy ở server và form — `.superpowers/sdd/2026-10-23-scada-r0-ket-noi-th
 8. chưa test heartbeat 60 s của deadband.
 9. stub cần nhãn "sim" trong sổ lệnh.
 
+Thêm từ review R0.1 (2026-10-24):
+10. `ruleInput.partial()` vẫn áp `cooldownSeconds.default(300)` ở mọi update một phần (zod 4) — người gọi API vá một phần bị đặt lại cooldown (form luôn gửi đủ nên không dính).
+11. Luật `telemetry_tag` cũ ở phạm vi line/station ĐÃ duyệt + bật vẫn chạy tới khi bị sửa/tắt; `fetchInterlockCauHinhHong` chưa đếm chúng (DEV 2026-10-24: 0 hàng như vậy).
+12. Công cụ AI `propose_interlock_rule` chưa kiểm D11 (telemetry_tag ⇒ scope=machine) lúc chèn — hàng sinh ra trơ và approve/enable đã từ chối, nhưng nên chặn ngay ở `execute`.
+
 ## Fix round 1 (T12b, đo lại 2026-10-24) — bảng hiện hành
 
 Sửa ở commit `0a8c1f49a` theo review T12 + T12b:

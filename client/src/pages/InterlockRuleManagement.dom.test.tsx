@@ -235,7 +235,7 @@ describe("InterlockRuleManagement — R0.1: khiThieuDuLieu + telemetry_tag chỉ
     expect(screen.getByTestId("telemetry-cau-hinh-ly-do")).toHaveTextContent(/phạm vi phải là Máy/);
     expect(saveBtn()).toBeDisabled();
     fireEvent.click(saveBtn());
-    expect(mutations["interlock.create"]?.mutate ?? vi.fn()).not.toHaveBeenCalled();
+    expect(mutations["interlock.create"]!.mutate).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -248,7 +248,7 @@ describe("InterlockRuleManagement — R0.1: khiThieuDuLieu + telemetry_tag chỉ
     expect(screen.getByTestId("telemetry-cau-hinh-ly-do")).toHaveTextContent(lyDo);
     expect(saveBtn()).toBeDisabled();
     fireEvent.click(saveBtn());
-    expect(mutations["interlock.update"]?.mutate ?? vi.fn()).not.toHaveBeenCalled();
+    expect(mutations["interlock.update"]!.mutate).not.toHaveBeenCalled();
   });
 
   it("luật telemetry_tag hợp lệ (phạm vi Máy, đủ máy + tag) ⇒ không có lý do, Lưu được", () => {
