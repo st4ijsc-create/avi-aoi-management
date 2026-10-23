@@ -372,6 +372,20 @@ export function stopIssuedSince(adapterId: number, epochAtGates: number, opts?: 
   return { stoppedBeforeWrite: true, epochAtGates, epochNow, stop: cur?.stop ?? null };
 }
 
+/**
+ * SCADA R1a Task 5 (K9) — hạn mặc định một lệnh THƯỜNG được chờ trong hàng đợi per-adapter (trung tâm) trước khi tới lượt chạy
+ * (Rapid dùng 60 s). Dispatcher đưa `queueTtlMs = input.deadlineMs ?? HAN_HANG_DOI_MAC_DINH_MS` cho lệnh không phải DỪNG / không phải
+ * hành động interlock bảo vệ / không phải lệnh kiểu stop; quá hạn lúc tới lượt ⇒ không bao giờ chạy (`QueueExpired`).
+ */
+export const HAN_HANG_DOI_MAC_DINH_MS = 60_000;
+
+/** R1a T5 (K9) — the job waited in the queue longer than its TTL: it was NEVER run (fn not called, nothing sent to the device). */
+export type QueueExpired = { queueExpired: true; waitedMs: number; ttlMs: number };
+
+export function isQueueExpired(x: unknown): x is QueueExpired {
+  return typeof x === "object" && x !== null && (x as { queueExpired?: unknown }).queueExpired === true;
+}
+
 interface PendingAdapterCommand {
   /** Bắt đầu chạy lệnh (chỉ khi không có lệnh nào đang bay). */
   run: () => void;
@@ -404,6 +418,13 @@ interface PendingAdapterCommand {
   settled: boolean;
   /** R-11-n — callers sharing this job (1 + identical STOPs dropped onto it) — test seam only */
   callers: number;
+  /** R1a T5 (K9) — Date.now() when the command entered the queue (a slot waiter: when it started waiting). */
+  enqueuedAt: number;
+  /**
+   * R1a T5 (K9) — how long it may wait before its turn; null ⇒ never expires: a STOP (priorityStop, pinned or by content), a protective
+   * interlock action (safety direction), or a caller that passed no `queueTtlMs` (the edge front end, unchanged — R1c).
+   */
+  ttlMs: number | null;
 }
 
 /** R-11-o — a command waiting for a slot of a FULL queue (not counted in `depth`). */
@@ -472,7 +493,7 @@ export function _stopCallersForTests(adapterId: number): number {
 }
 
 export type EnqueueOutcome<T> =
-  | { accepted: true; result: Promise<T | Superseded>; /** R-11-n — an identical STOP was already waiting / in flight: this is ITS outcome */ joined?: boolean }
+  | { accepted: true; result: Promise<T | Superseded | QueueExpired>; /** R-11-n — an identical STOP was already waiting / in flight: this is ITS outcome */ joined?: boolean }
   | { accepted: false; depth: number; max: number; /** R-11-o — absent ⇒ BUSY */ reason?: "BUSY" | "STOP_UNVERIFIED_QUEUE_FULL" };
 
 /** R-11-o — admit the waiting commands while the queue has room: interlock actions first, then unverified stops (each FIFO). */
@@ -568,6 +589,12 @@ export function tryEnqueueAdapterCommand<T>(
     waitForSlot?: "interlock" | "unverified";
     /** R-11-n — a pinned STOP's identicalStopKey (null / absent: never shared). */
     identicalStopKey?: string | null;
+    /**
+     * SCADA R1a Task 5 (K9) — the longest this command may WAIT before its turn (finite, > 0; else ignored). Checked when the job reaches
+     * its turn (`run`, no timer): waited longer ⇒ `fn` is never called and the caller gets `QueueExpired`. Ignored for a `priorityStop`
+     * and a `protective` job (they never expire). Absent ⇒ no TTL (byte-identical to before).
+     */
+    queueTtlMs?: number;
     /** R-11-n — the (mutable) intents array this STOP's device write records; an identical STOP's intents are appended to it. */
     shareIntentIds?: number[];
     stopRef?: Record<string, unknown>;
@@ -608,12 +635,12 @@ export function tryEnqueueAdapterCommand<T>(
       if (opts?.shareIntentIds && same.intentIds) same.intentIds.push(...opts.shareIntentIds);
       if (same === queue.running) bumpAdapterStopEpoch(adapterId, opts?.stopRef ?? null);
       cancelWaitingForStop(adapterId, queue, opts?.stopRef); // a newer STOP intent: nothing waiting before it runs after it
-      return { accepted: true, result: same.result as Promise<T | Superseded>, joined: true };
+      return { accepted: true, result: same.result as Promise<T | Superseded | QueueExpired>, joined: true };
     }
   }
 
-  let settle!: { resolve: (v: T | Superseded) => void; reject: (e: unknown) => void };
-  const result = new Promise<T | Superseded>((resolve, reject) => {
+  let settle!: { resolve: (v: T | Superseded | QueueExpired) => void; reject: (e: unknown) => void };
+  const result = new Promise<T | Superseded | QueueExpired>((resolve, reject) => {
     settle = { resolve, reject };
   });
   const job: PendingAdapterCommand = {
@@ -625,7 +652,21 @@ export function tryEnqueueAdapterCommand<T>(
     ...(key !== null ? { result, intentIds: opts?.shareIntentIds } : {}),
     settled: false,
     callers: 1,
+    enqueuedAt: Date.now(),
+    ttlMs:
+      !priorityStop && opts?.protective !== true && typeof opts?.queueTtlMs === "number" && Number.isFinite(opts.queueTtlMs) && opts.queueTtlMs > 0
+        ? opts.queueTtlMs
+        : null,
     run: () => {
+      // R1a T5 (K9) — its turn came too late: never run (nothing sent), the slot is freed and the next command runs.
+      const waitedMs = Date.now() - job.enqueuedAt;
+      if (job.ttlMs !== null && waitedMs > job.ttlMs) {
+        job.settled = true;
+        queue.depth -= 1;
+        settle.resolve({ queueExpired: true, waitedMs, ttlMs: job.ttlMs });
+        pumpAdapterQueue(adapterId, queue);
+        return;
+      }
       queue.inFlight = true;
       queue.running = job;
       const ctl: QueueJobCtl = {
@@ -1221,7 +1262,9 @@ export async function executeOtDeviceWrite(a: {
   // ── G2.1 READ-BACK — ONLY when control + read-back enabled AND ≥1 write acked.
   //    A SINGLE driver.readTags() (under the same timeout). readTags throwing /
   //    timing out → ALL acked writes become acked_unverified (WARN only; NO retry).
-  if (isOtReadbackEnabled() && outcomes.some((o) => o.status === "acked")) {
+  //    SCADA R1a Task 5 (K7) — `input.docLai === "bat_buoc"` (the HMI path) forces this read-back even with OT_READBACK_ENABLED off;
+  //    the comparison below is the same (readbackMatches + quality "good"). Absent ⇒ the flag alone decides, as before.
+  if ((isOtReadbackEnabled() || input.docLai === "bat_buoc") && outcomes.some((o) => o.status === "acked")) {
     const ackedIdx = outcomes.filter((o) => o.status === "acked").map((o) => o.idx);
     const readTags: OtTagAddress[] = ackedIdx.map((i) => {
       const r = resolved[i];

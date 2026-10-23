@@ -124,8 +124,10 @@ import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
 import {
   adapterStopEpoch,
   executeOtDeviceWriteUnlessStopped,
+  HAN_HANG_DOI_MAC_DINH_MS,
   identicalStopKey,
   isCmdSerializeEnabled,
+  isQueueExpired,
   isStoppedBeforeWrite,
   isSuperseded,
   onPinnedStopQueued,
@@ -161,9 +163,12 @@ export {
   adapterStopEpoch,
   bumpAdapterStopEpoch,
   isStoppedBeforeWrite,
+  HAN_HANG_DOI_MAC_DINH_MS,
+  isQueueExpired,
   type Superseded,
   type EnqueueOutcome,
   type StoppedBeforeWrite,
+  type QueueExpired,
 } from "./otDeviceWrite";
 import { adapterTargetFingerprint } from "./adapterTarget";
 import type { AppErrorCode, AppErrorParams } from "../../_core/appErrorCodes";
@@ -350,8 +355,18 @@ export interface DispatchInput {
    * is used INSTEAD of the global OT_CONTROL_TIMEOUT_MS for this command (capped by
    * OT_CONTROL_TIMEOUT_MAX_MS when configured); an unacked write past the deadline
    * → status 'timeout' (the existing flow). Absent → behaviour unchanged.
+   * SCADA R1a Task 5 (K9) — with OT_CMD_SERIALIZE_ENABLED it is ALSO the longest an ordinary command may wait in the adapter's queue
+   * before its turn (absent/invalid ⇒ HAN_HANG_DOI_MAC_DINH_MS = 60 s); waited longer ⇒ never sent, rejected QUEUE_EXPIRED. A STOP, a
+   * protective interlock action and a stop-typed command never expire. The ack timeout above is unchanged (and the queue TTL is NOT
+   * capped by OT_CONTROL_TIMEOUT_MAX_MS: that cap bounds the device call, not the wait).
    */
   deadlineMs?: number;
+  /**
+   * SCADA R1a Task 5 (K7) — "bat_buoc": the device stage reads the written tags back after an acked write EVEN WHEN OT_READBACK_ENABLED
+   * is off (the HMI path always verifies): match + quality "good" ⇒ acked_verified, else acked_unverified with readBackValue. The
+   * comparison is the flag's own (readbackMatches); `ok` is never flipped. Absent ⇒ the flag alone decides, as before.
+   */
+  docLai?: "bat_buoc";
 }
 
 /** G1.7 — the (correlationId, deadlineMs) pair persisted on every ledger row. */
@@ -1553,6 +1568,11 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
           protective: interlock,
           overridesStopPin,
           holdSlot: slotHoldOf,
+          // SCADA R1a Task 5 (K9) — an ORDINARY command waits at most its deadlineMs (else 60 s) for its turn; past it, never sent
+          // (QUEUE_EXPIRED below). No TTL — never expires — for a protective interlock action (safety direction: stop_line / block /
+          // reduce) and for a stop-TYPED command that is not a verified STOP (dropping a stop is the unsafe direction; a verified STOP
+          // already cancels it when its values are not the pin's). A verified STOP is the branch above (priorityStop: no TTL).
+          ...(interlock || unverifiedStop ? {} : { queueTtlMs: commandContext(input).deadlineMs ?? HAN_HANG_DOI_MAC_DINH_MS }),
         });
     if (!enq.accepted && enq.reason === "STOP_UNVERIFIED_QUEUE_FULL") {
       // R-11-o (I-1) — the waiting list for unverified stops is full: refused (ledgered) + a durable alert; the operator is told to use the
@@ -1611,6 +1631,29 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
           ? { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP", appParams: { stopKey } }
           : { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY", appParams: {} },
         message: "This waiting command was cancelled because a STOP command was queued after it — it was not sent to the device; resend it if still needed.",
+      };
+    }
+    if (isQueueExpired(queued)) {
+      // SCADA R1a Task 5 (K9) — its turn came after its queue TTL: never reached driver.writeTags. RESULT row of the intent, like BUSY /
+      // SUPERSEDED_BY_STOP (writeRejected with the intent link — no new ledger path).
+      const ids = await writeRejected(
+        db,
+        input,
+        "QUEUE_EXPIRED",
+        `expired in the adapter command queue: waited ${queued.waitedMs} ms for its turn (limit ${queued.ttlMs} ms) — not sent to the device, resend if still needed`,
+        undefined,
+        undefined,
+        { intentIds, confirmedBy: ledgerConfirmer, ackExtra: { ...ledgerExtra, queueExpired: { waitedMs: queued.waitedMs, ttlMs: queued.ttlMs } } },
+      );
+      return {
+        ok: false,
+        simulated: false,
+        status: "rejected",
+        reason: "QUEUE_EXPIRED",
+        results: failedResults(input, "QUEUE_EXPIRED"),
+        commandLogIds: ids,
+        appError: { appCode: "OT_COMMAND_QUEUE_EXPIRED", appParams: {} },
+        message: "This command waited too long in the device's command queue and expired — it was not sent to the device; resend it if still needed.",
       };
     }
     executed = queued;

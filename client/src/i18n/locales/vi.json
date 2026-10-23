@@ -4502,6 +4502,7 @@
     "OT_COMMAND_SUPERSEDED_BY_STOP": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG ({{stopKey}}) — gửi lại nếu cần.",
     "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần.",
     "OT_STOP_UNVERIFIED_QUEUE_FULL": "Lệnh dừng này không phải DỪNG ghim đã xác minh và đã có quá nhiều lệnh như vậy đang chờ cho thiết bị này — lệnh bị từ chối, không gửi gì. Hãy dùng DỪNG ghim (hoặc nút E-STOP của máy).",
+    "OT_COMMAND_QUEUE_EXPIRED": "Lệnh đã chờ quá lâu trong hàng đợi lệnh của thiết bị và hết hạn — không gửi tới thiết bị; gửi lại nếu còn cần.",
     "TU_DONG_TAT": "Chế độ Agent tự động đang TẮT trên máy chủ (công tắc AI_CODING_TU_TRI_GHI). Dùng chế độ duyệt từng bước, hoặc nhờ quản trị bật công tắc.",
     "THIEU_QUYEN_THUC_THI": "Thiếu quyền chạy lệnh / tự ghi (ai_repo_exec) cho chế độ Agent tự động.",
     "THIEU_QUYEN": "Thiếu quyền đọc repo (ai_repo_read) để chạy Agent.",

@@ -163,6 +163,9 @@ export const APP_ERROR_CODES = [
                           // một lệnh "stop" CHƯA XÁC MINH (không phải DỪNG ghim) bị TỪ CHỐI vì danh sách chờ chỗ của adapter đã đủ
                           // (hàng đợi đầy + đã có OT_STOP_UNVERIFIED_WAIT_MAX lệnh như vậy chờ). Không gửi gì; người vận hành phải
                           // dùng DỪNG ghim (hoặc E-STOP của máy). KHÁC BUSY (một DỪNG không bao giờ được bảo "thử lại sau").
+  "OT_COMMAND_QUEUE_EXPIRED", // no params — SCADA R1a Task 5 (K9): KHÔNG ném: `DispatchResult.appError` của một lệnh OT THƯỜNG đã chờ
+                          // trong hàng đợi per-adapter quá hạn (deadlineMs của lệnh, mặc định 60 s) trước khi tới lượt (reason
+                          // `QUEUE_EXPIRED`). Không gửi gì tới thiết bị; người vận hành gửi lại nếu còn cần. DỪNG không bao giờ hết hạn.
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];
