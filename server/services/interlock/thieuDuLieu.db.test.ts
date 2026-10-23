@@ -36,11 +36,11 @@ async function chenLuat(
 }
 
 /** Chèn hàng telemetry (agoSec = số giây trước now). */
-async function chenTele(machine: number, tag: string, hang: Array<{ agoSec: number; v: number; quality?: string; deviceId?: string }>): Promise<void> {
+async function chenTele(machine: number, tag: string, hang: Array<{ agoSec: number; v: number; quality?: string; deviceId?: string; ingestedAgoSec?: number }>): Promise<void> {
   const now = Date.now();
   for (const h of hang) {
-    await sql`INSERT INTO ot_telemetry (ts, "machineId", "deviceId", protocol, metric, "numValue", quality)
-      VALUES (${new Date(now - h.agoSec * 1000)}, ${machine}, ${h.deviceId ?? null}, 'mqtt', ${tag}, ${h.v}, ${h.quality ?? "good"})`;
+    await sql`INSERT INTO ot_telemetry (ts, "ingestedAt", "machineId", "deviceId", protocol, metric, "numValue", quality)
+      VALUES (${new Date(now - h.agoSec * 1000)}, ${new Date(now - (h.ingestedAgoSec ?? 0) * 1000)}, ${machine}, ${h.deviceId ?? null}, 'mqtt', ${tag}, ${h.v}, ${h.quality ?? "good"})`;
   }
 }
 
@@ -109,7 +109,7 @@ describe.skipIf(!DB_URL)("migration 0430 — khiThieuDuLieu", () => {
     it("60 hàng good nhưng hàng mới nhất cách 60 s, pollMs 1000 (adapter đăng ký) ⇒ cu ⇒ chặn", async () => {
       const m = lech(17), tag = DAU + "-cu";
       const id = await chenLuat(null, { machine: m, target: m, tag, consecutive: 60 });
-      await chenTele(m, tag, Array.from({ length: 60 }, (_, i) => ({ agoSec: 60 + i * 0.1, v: 90, deviceId: DAU + "-dev-cu" })));
+      await chenTele(m, tag, Array.from({ length: 60 }, (_, i) => ({ agoSec: 60 + i * 0.1, ingestedAgoSec: 60 + i * 0.1, v: 90, deviceId: DAU + "-dev-cu" })));
       datThongTinAdapter(990_430_100, { pollMs: 1000, coDeadband: false, machineId: m, code: DAU + "-dev-cu" });
       try {
         expect((await viPham(m, id))?.lyDo).toBe("thieu_du_lieu");
@@ -129,6 +129,22 @@ describe.skipIf(!DB_URL)("migration 0430 — khiThieuDuLieu", () => {
       const m = lech(19), tag = DAU + "-mot";
       const id = await chenLuat(null, { machine: m, target: m, tag });
       await chenTele(m, tag, [{ agoSec: 2, v: 90, deviceId: DAU + "-A" }, { agoSec: 1, v: 95, deviceId: DAU + "-A" }]);
+      const v = await viPham(m, id);
+      expect(v).toBeDefined();
+      expect(v!.lyDo).toBeUndefined();
+    });
+
+    it("★ độ tươi đo từ ingestedAt (giờ máy chủ), KHÔNG từ ts thiết bị: ts = bây giờ nhưng ingestedAt cách 60 s (đồng hồ thiết bị chạy nhanh) ⇒ cu ⇒ chặn", async () => {
+      const m = lech(21), tag = DAU + "-nhanh";
+      const id = await chenLuat(null, { machine: m, target: m, tag });
+      await chenTele(m, tag, [{ agoSec: 0, ingestedAgoSec: 60, v: 90 }]);
+      expect((await viPham(m, id))?.lyDo).toBe("thieu_du_lieu");
+    });
+
+    it("đồng hồ thiết bị CHẬM: ts cách 60 s (vẫn trong cửa sổ 300 s) nhưng ingestedAt = bây giờ ⇒ KHÔNG cu, đánh giá bình thường ⇒ VI PHẠM", async () => {
+      const m = lech(22), tag = DAU + "-cham";
+      const id = await chenLuat(null, { machine: m, target: m, tag });
+      await chenTele(m, tag, [{ agoSec: 60, ingestedAgoSec: 0, v: 90 }]);
       const v = await viPham(m, id);
       expect(v).toBeDefined();
       expect(v!.lyDo).toBeUndefined();

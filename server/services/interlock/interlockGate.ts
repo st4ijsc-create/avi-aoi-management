@@ -119,11 +119,17 @@ export async function fetchObservation(rule: InterlockRule, now: number = Date.n
       //   (a) hàng MỚI NHẤT (mọi chất lượng; ORDER BY ts DESC, id DESC để xác định khi ts bằng nhau) không good ⇒ chat_luong_xau —
       //       không "lùi" về mẫu good cũ;
       //   (b) hàng trong cửa sổ đến từ >1 deviceId ⇒ mo_ho (không chọn bừa giữa hai nguồn);
-      //   (c) hàng mới nhất cũ hơn max(3 × pollMs, 15 s) (pollMs của adapter đăng ký có code = deviceId; deadband ⇒ ≥ 70 s như bộ đệm) ⇒ cu;
+      //   (c) hàng mới nhất cũ hơn max(3 × pollMs, 15 s) (pollMs của adapter đăng ký có code = deviceId; deadband ⇒ ≥ 70 s như bộ đệm) ⇒ cu.
+      //       TUỔI ĐO TỪ `ingestedAt` (giờ MÁY CHỦ nhận — cùng ngữ nghĩa `rx` của bộ đệm), KHÔNG từ `ts` (giờ thiết bị): đồng hồ thiết bị
+      //       chạy NHANH X thì sau khi thiết bị chết, giá trị cuối vẫn "tươi" thêm X ⇒ cổng đánh giá một giá trị đã chết (fail-open); lớp lỗi
+      //       lệch múi giờ naive ±7 h của repo cũng đi cùng đường này. `ingestedAt` null (hàng cũ) ⇒ lùi về `ts`.
+      //       CỬA SỔ vẫn lọc theo `ts` (giữ chỉ mục (machineId, ts)): hàng có `ts` lệch CŨ quá windowSeconds bị cửa sổ loại ⇒ chuỗi rỗng ⇒
+      //       khong_co_mau ⇒ cổng CHẶN (fail-closed) — chọn thế thay vì `OR ingestedAt >= since` vốn phá cắt chunk của hypertable; độ TƯƠI thì
+      //       chỉ xét theo `ingestedAt` nên đồng hồ chạy nhanh KHÔNG thể kéo dài tuổi thọ giá trị;
       //   (d) chuỗi = các hàng good MỚI HƠN hàng không-good gần nhất — không nối mẫu qua một đoạn mất kết nối / giá trị không chắc;
       //   (e) giới hạn max(windowSize, consecutiveCount) để windowSize < consecutiveCount không chặn vĩnh viễn.
       const rows = await db
-        .select({ v: otTelemetry.numValue, t: otTelemetry.ts, quality: otTelemetry.quality, deviceId: otTelemetry.deviceId })
+        .select({ v: otTelemetry.numValue, t: otTelemetry.ts, ingestedAt: otTelemetry.ingestedAt, quality: otTelemetry.quality, deviceId: otTelemetry.deviceId })
         .from(otTelemetry)
         .where(and(...conds))
         .orderBy(desc(otTelemetry.ts), desc(otTelemetry.id))
@@ -137,7 +143,9 @@ export async function fetchObservation(rule: InterlockRule, now: number = Date.n
         DO_TUOI_TOI_THIEU_DB_MS,
         adapter?.coDeadband ? NGUONG_DEADBAND_MS : 0,
       );
-      const tMoiNhat = rows[0].t instanceof Date ? rows[0].t.getTime() : new Date(rows[0].t as unknown as string).getTime();
+      const gioMs = (d: unknown): number => (d instanceof Date ? d.getTime() : d == null ? Number.NaN : new Date(d as string).getTime());
+      const nhan = gioMs(rows[0].ingestedAt);
+      const tMoiNhat = Number.isFinite(nhan) ? nhan : gioMs(rows[0].t); // ingestedAt null (hàng cũ) ⇒ ts
       if (!Number.isFinite(tMoiNhat) || now - tMoiNhat > nguongCu) return { series: [], scalar: null, thieuDuLieu: "cu" };
       const batDauNgat = rows.findIndex((r) => r.quality !== "good");
       const lien = batDauNgat === -1 ? rows : rows.slice(0, batDauNgat); // mới → cũ, chỉ phần liền mạch good
@@ -158,7 +166,7 @@ export async function fetchObservation(rule: InterlockRule, now: number = Date.n
  *   - q !== "good" ⇒ chat_luong_xau;   stale ⇒ cu;   ngược lại series = lichSu (cũ→mới), scalar = v.
  */
 function docTuBoDem(rule: InterlockRule, now: number): { obs: ObservationContext } | { lyDo: NonNullable<KetQuaDanhGia["lyDo"]> } {
-  if (rule.machineId == null || !rule.sourceKey) return { lyDo: "cau_hinh" };
+  if (rule.machineId == null || !rule.sourceKey?.trim()) return { lyDo: "cau_hinh" };
   const mau = timTheoMayVaTag(rule.machineId, rule.sourceKey, now);
   if (mau.length === 0) return { lyDo: "khong_co_mau" };
   if (mau.length > 1) return { lyDo: "mo_ho" };
@@ -190,7 +198,7 @@ export async function danhGiaLuatChiTiet(
 
   // Luật telemetry_tag không gắn máy (hoặc không khai tag) ⇒ HỎNG CẤU TRÚC (cau_hinh) — cùng quy tắc ở cả hai đường (cache bật/tắt):
   // không đoán máy, không bao giờ đánh giá được ⇒ cổng CHẶN (fail-closed), engine không tự phát hành động, router từ chối tạo/sửa/duyệt.
-  if (sourceType === "telemetry_tag" && (rule.machineId == null || !rule.sourceKey)) return thieu("cau_hinh");
+  if (sourceType === "telemetry_tag" && (rule.machineId == null || !rule.sourceKey?.trim())) return thieu("cau_hinh");
 
   let obs: ObservationContext;
   // Bộ đệm giữ tối đa SO_LICH_SU_TOI_DA mẫu: luật cần "N điểm liên tiếp" với N lớn hơn thì cache KHÔNG đủ ⇒ đọc chuỗi từ DB (vẫn fail-closed

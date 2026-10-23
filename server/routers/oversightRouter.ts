@@ -428,7 +428,7 @@ async function fetchInterlockCauHinhHong(d: Db | null): Promise<{ count: number;
       eq(interlockRules.enabled, true),
       isNotNull(interlockRules.approvedBy),
       eq(interlockRules.sourceType, "telemetry_tag"),
-      or(isNull(interlockRules.machineId), isNull(interlockRules.sourceKey), eq(interlockRules.sourceKey, "")),
+      or(isNull(interlockRules.machineId), isNull(interlockRules.sourceKey), sql`${interlockRules.sourceKey} ~ '^\\s*$'`),
     );
     const [{ c }] = await d.select({ c: sql<number>`count(*)::int` }).from(interlockRules).where(cond);
     return { count: c ?? 0, degraded: false };

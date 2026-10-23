@@ -128,5 +128,16 @@ describe.skipIf(!DB_URL)("interlockRouter — luật telemetry_tag hỏng cấu 
     ruleIds.push(ins.id as number);
     const sau = await oversight.fetchInterlockCauHinhHong(d);
     expect(sau.count).toBe(truoc.count + 1);
+    // sourceKey chỉ gồm khoảng trắng (khớp router + cổng) cũng được đếm; luật đủ machineId + sourceKey thì không.
+    const [ws] = await sql`
+      INSERT INTO interlock_rules (name, scope, "machineId", "sourceKey", "sourceType", "comparisonOperator", threshold, action, enabled, "approvedBy", "createdBy")
+      VALUES (${DAU + "-p2"}, 'machine', ${MAY}, E'  	 ', 'telemetry_tag', 'gt', 80, 'alert', true, ${B}, ${A}) RETURNING id`;
+    ruleIds.push(ws.id as number);
+    const [tot] = await sql`
+      INSERT INTO interlock_rules (name, scope, "machineId", "sourceKey", "sourceType", "comparisonOperator", threshold, action, enabled, "approvedBy", "createdBy")
+      VALUES (${DAU + "-p3"}, 'machine', ${MAY}, 'nhiet_do', 'telemetry_tag', 'gt', 80, 'alert', true, ${B}, ${A}) RETURNING id`;
+    ruleIds.push(tot.id as number);
+    const cuoi = await oversight.fetchInterlockCauHinhHong(d);
+    expect(cuoi.count).toBe(sau.count + 1);
   });
 });

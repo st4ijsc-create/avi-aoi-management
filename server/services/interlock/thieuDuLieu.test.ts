@@ -342,6 +342,22 @@ describe("Task 9 fix round 1 — chuỗi dài hơn bộ đệm + chất lượng
     expect(await danhGiaLuat(luat({ machineId: null }))).toEqual({ dung: false, thieuDuLieu: true, lyDo: "cau_hinh" });
     expect(await danhGiaLuat(luat({ sourceKey: null }))).toEqual({ dung: false, thieuDuLieu: true, lyDo: "cau_hinh" });
   });
+
+  it("sourceKey chỉ gồm khoảng trắng (\"   \" / tab) ⇒ cau_hinh ở cả hai đường (khớp router), cổng CHẶN và không chạm bộ đệm", async () => {
+    for (const bat of [false, true]) {
+      cache.bat = bat;
+      cache.hoi = [];
+      state.telemetryRows = hang(5, 95);
+      for (const sourceKey of ["   ", "\t", " \n "]) {
+        expect(await danhGiaLuat(luat({ sourceKey }))).toEqual({ dung: false, thieuDuLieu: true, lyDo: "cau_hinh" });
+      }
+      state.rules = [luat({ sourceKey: "  " })];
+      const r = await evaluateInterlockGate(params);
+      expect(r.blocked).toBe(true);
+      expect(r.violations[0].lyDo).toBe("cau_hinh");
+      expect(cache.hoi).toEqual([]);
+    }
+  });
 });
 
 describe("Task 9 fix round 2 — đường DB khớp ngữ nghĩa bộ đệm (tươi / mơ hồ / không nối qua đoạn hỏng)", () => {
@@ -359,6 +375,15 @@ describe("Task 9 fix round 2 — đường DB khớp ngữ nghĩa bộ đệm (t
     state.telemetryRows = hang(3, 95, "good", "DEV-X", 14_000);
     expect(await danhGiaLuat(luat())).toEqual({ dung: true, thieuDuLieu: false });
     state.telemetryRows = hang(3, 95, "good", "DEV-X", 16_000);
+    expect(await danhGiaLuat(luat())).toEqual({ dung: false, thieuDuLieu: true, lyDo: "cu" });
+  });
+
+  it("tuổi đo từ ingestedAt: ts mới nhưng ingestedAt cũ 60 s ⇒ cu; ingestedAt null (hàng cũ) ⇒ lùi về ts", async () => {
+    state.telemetryRows = [{ v: "95", t: new Date(), ingestedAt: new Date(Date.now() - 60_000), quality: "good", deviceId: null }];
+    expect(await danhGiaLuat(luat())).toEqual({ dung: false, thieuDuLieu: true, lyDo: "cu" });
+    state.telemetryRows = [{ v: "95", t: new Date(Date.now() - 60_000), ingestedAt: new Date(), quality: "good", deviceId: null }];
+    expect(await danhGiaLuat(luat())).toEqual({ dung: true, thieuDuLieu: false });
+    state.telemetryRows = [{ v: "95", t: new Date(Date.now() - 60_000), ingestedAt: null, quality: "good", deviceId: null }];
     expect(await danhGiaLuat(luat())).toEqual({ dung: false, thieuDuLieu: true, lyDo: "cu" });
   });
 
