@@ -27,6 +27,7 @@ import {
 } from "./connectionSupervisor";
 import { withDeadline } from "./drivers/boundedClose";
 import { adapterTargetFingerprint, runtimeAdapterTarget } from "./adapterTarget";
+import { baoTrangThaiAdapter, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
 
 let running = false;
 /**
@@ -155,6 +156,15 @@ function errText(err: unknown): string {
   return (err as Error)?.message || String(err);
 }
 
+/**
+ * SCADA R0 Task 5 — báo trạng thái kết nối của một entry legacy. Chỉ báo khi entry VẪN là entry đang quản adapter đó
+ * (adapter đã detach/đổi thế hệ thì không báo muộn: tránh ghi "lost" cho adapter đã chuyển sang edge).
+ */
+function baoLegacy(entry: LegacyEntry, tt: TrangThaiKetNoi, loi: string | null = null): void {
+  if (legacy.get(entry.adapter.adapterId) !== entry) return;
+  baoTrangThaiAdapter(entry.adapter, tt, loi);
+}
+
 /** Chờ fn() tối đa ms; không bao giờ ném. */
 async function boundedQuiet(fn: () => unknown, ms: number, label: string): Promise<void> {
   try {
@@ -190,6 +200,9 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
   const fingerprint = connectionFingerprintOf(adapter);
   entry.attempts += 1;
   entry.inflight = true;
+  // Nối lại sau khi MẤT không đổi 'lost' thành 'connecting' mỗi lần thử (không chập chờn trạng thái/DB): chỉ lần đầu.
+  const tt0 = layTrangThaiAdapter(adapter.adapterId)?.tt;
+  if (tt0 === undefined || tt0 === "disabled") baoLegacy(entry, "connecting");
   const work = (async (): Promise<OtSubscriptionHandle> => {
     await adapter.driver.connect(adapter.connection);
     const sink = await makeIngestSink(adapter);
@@ -254,7 +267,18 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
   entry.state = "active";
   entry.lastError = null;
   entry.failures = 0;
+  // Driver vừa nối được nhưng tự báo chưa thông (vd stub đang mô phỏng mất kết nối) ⇒ chưa phải "đã nối": legacyTick báo
+  // 'connected' khi isConnected() thật sự true (không chập chờn lost↔connected, không phát lại mẫu xấu mỗi vòng nối lại).
+  if (driverDangNoi(adapter)) baoLegacy(entry, "connected");
   return true;
+}
+
+function driverDangNoi(adapter: RuntimeAdapter): boolean {
+  try {
+    return adapter.driver.isConnected();
+  } catch {
+    return false;
+  }
 }
 
 function listLegacyEntryIfNeeded(entry: LegacyEntry): void {
@@ -286,8 +310,12 @@ async function legacyTick(myEpoch: number): Promise<void> {
       } catch {
         up = false;
       }
-      if (up) continue;
+      if (up) {
+        baoLegacy(entry, "connected"); // no-op khi đã connected; sửa trạng thái nếu nối xong lúc driver chưa thông
+        continue;
+      }
       console.warn(`[OT] adapter "${entry.adapter.code}" (${entry.adapter.protocol}) link lost — reconnecting`);
+      baoLegacy(entry, "lost", "driver reported disconnected");
       await dropLegacySession(entry, "driver reported disconnected");
       if (myEpoch !== epoch) return;
     }
@@ -305,6 +333,7 @@ async function legacyTick(myEpoch: number): Promise<void> {
       entry.state = prevState;
       entry.failures += 1;
       entry.nextRetryAt = Date.now() + legacyRetryDelay(entry.failures);
+      baoLegacy(entry, "lost", entry.lastError);
     });
   }
 }
@@ -615,6 +644,26 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
     // doc 81 Đợt 1B Task 2 (R8) — một lần connect+subscribe không giữ quá hạn khởi động.
     // Fix round 1 — supervisor tự nâng hạn theo timeoutMs của từng endpoint (connectDeadlineFor).
     connectTimeoutMs: adapterStartTimeoutMs(),
+    // SCADA R0 Task 5 (C1/C3) — trạng thái kết nối + mẫu xấu khi mất (xem trangThaiAdapter.ts).
+    onStateChange: (_prev, next, lastError) => {
+      switch (next) {
+        case "connected":
+          baoTrangThaiAdapter(adapter, "connected", null);
+          break;
+        case "reconnecting":
+        case "failed":
+          baoTrangThaiAdapter(adapter, "lost", lastError);
+          break;
+        case "connecting":
+        case "idle":
+          // Đang thử nối lại SAU khi mất vẫn là 'lost' (không chập chờn lost↔connecting mỗi lần backoff).
+          if (layTrangThaiAdapter(adapter.adapterId)?.tt !== "lost") baoTrangThaiAdapter(adapter, "connecting", null);
+          break;
+        case "stopped":
+          baoTrangThaiAdapter(adapter, "disabled", null);
+          break;
+      }
+    },
   });
 }
 
@@ -773,6 +822,7 @@ async function startOtOnce(): Promise<boolean> {
     entry.state = "error";
     entry.failures = 1;
     entry.nextRetryAt = Date.now() + legacyRetryDelay(1);
+    baoLegacy(entry, "lost", entry.lastError);
     console.warn(`[OT] adapter "${adapter.code}" (${adapter.protocol}) skipped: ${entry.lastError}`);
   });
 
@@ -816,6 +866,7 @@ export async function stopOt(): Promise<void> {
     if (h) await boundedQuiet(() => h.close(), DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS, "close");
     await boundedQuiet(() => entry.adapter.driver.disconnect(), DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS, "disconnect");
   }
+  for (const e of legacy.values()) baoLegacy(e, "disabled"); // như nhánh HA (supervisor stopped ⇒ disabled)
   legacy.clear();
   running = false;
   // scan #73 — the gateway is OFF: a reconcile / NOTIFY after stopOt never attaches (re-)starts a session; startOt sets it again
@@ -911,6 +962,7 @@ export async function resetAdapterSession(
     if (left <= 0) {
       entry.failures = 1;
       entry.nextRetryAt = Date.now() + legacyRetryDelay(1);
+      baoLegacy(entry, "lost", entry.lastError);
       return { reset: false, via: "legacy", error: `session reset budget ${budgetMs}ms spent before reconnect` };
     }
     const ok = await attemptLegacyStart(entry, myEpoch, left);
@@ -921,6 +973,7 @@ export async function resetAdapterSession(
     }
     entry.failures = 1;
     entry.nextRetryAt = Date.now() + legacyRetryDelay(1);
+    baoLegacy(entry, "lost", entry.lastError);
     return { reset: false, via: "legacy", error: entry.lastError ?? "reconnect failed" };
   } catch (err) {
     return { reset: false, via: "none", error: errText(err) };
@@ -1025,7 +1078,10 @@ export async function detachOtAdapter(adapterId: number): Promise<boolean> {
     await boundedQuiet(() => sup.supervisor.stop(), DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS, "detach supervisor");
   }
   const entry = legacy.get(adapterId);
-  if (entry) legacy.delete(adapterId);
+  if (entry) {
+    baoLegacy(entry, "disabled"); // trước khi gỡ khỏi `legacy` (baoLegacy chỉ báo cho entry còn được quản)
+    legacy.delete(adapterId);
+  }
   const i = active.findIndex((e) => e.adapter.adapterId === adapterId);
   if (i >= 0) {
     const [a] = active.splice(i, 1);
@@ -1080,6 +1136,7 @@ export async function attachOtAdapter(adapter: RuntimeAdapter): Promise<boolean>
         entry.state = "error";
         entry.failures = 1;
         entry.nextRetryAt = Date.now() + legacyRetryDelay(1);
+        baoLegacy(entry, "lost", entry.lastError);
       }
       if (!legacyTimer) startLegacyWatchdog(myEpoch); // startOt found nothing to start: the reconnect watchdog was never armed
     }

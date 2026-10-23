@@ -159,6 +159,11 @@ export interface SupervisorOptions {
    * (đi endpoint kế / backoff); nếu connect rốt cuộc xong MUỘN, kết nối muộn bị hạ ngay.
    */
   connectTimeoutMs?: number;
+  /**
+   * SCADA R0 Task 5 (C1 ở supervisor, C3) — gọi (đồng bộ, sau khi trạng thái đã đổi) mỗi lần chuyển trạng thái THẬT, kèm
+   * lỗi gần nhất. Callback ném ⇒ bị nuốt (không bao giờ ảnh hưởng vòng kết nối).
+   */
+  onStateChange?: (prev: SupervisorState, next: SupervisorState, lastError: string | null) => void;
 }
 
 /** Snapshot of a supervisor for an internal health getter (future health endpoint). */
@@ -270,6 +275,7 @@ export class ConnectionSupervisor {
   private lastError: string | null = null;
   private lastConnectedAt: number | null = null;
   private lastStateChangeAt: number = Date.now();
+  private readonly onStateChange: SupervisorOptions["onStateChange"] | null;
 
   constructor(opts: SupervisorOptions) {
     this.adapterId = opts.adapterId;
@@ -293,6 +299,7 @@ export class ConnectionSupervisor {
       Math.floor(opts.linkLossFailThreshold ?? linkLossThresholdFromEnv()),
     );
     this.machineId = opts.machineId ?? null;
+    this.onStateChange = opts.onStateChange ?? null;
     this.disconnectTimeoutMs =
       typeof opts.disconnectTimeoutMs === "number" && opts.disconnectTimeoutMs > 0
         ? opts.disconnectTimeoutMs
@@ -520,6 +527,13 @@ export class ConnectionSupervisor {
     if (prev === next) return;
     this.state = next;
     this.lastStateChangeAt = Date.now();
+    if (this.onStateChange) {
+      try {
+        this.onStateChange(prev, next, this.lastError);
+      } catch {
+        // callback của host không được làm hỏng vòng kết nối
+      }
+    }
     // doc 40 MON-F1 — đẩy presence CHỈ trên chuyển tiếp THẬT quanh 'connected':
     //   • vào 'connected'                → online
     //   • RỜI 'connected' sang state khác → offline
