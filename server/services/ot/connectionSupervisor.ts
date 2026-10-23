@@ -46,6 +46,7 @@ import type {
   OnOtSample,
   OtProtocol,
 } from "./otDriver";
+import { chatLuongLoiChung } from "./chatLuong";
 import { withDeadline } from "./drivers/boundedClose";
 
 /**
@@ -161,9 +162,10 @@ export interface SupervisorOptions {
   connectTimeoutMs?: number;
   /**
    * SCADA R0 Task 5 (C1 ở supervisor, C3) — gọi (đồng bộ, sau khi trạng thái đã đổi) mỗi lần chuyển trạng thái THẬT, kèm
-   * lỗi gần nhất. Callback ném ⇒ bị nuốt (không bao giờ ảnh hưởng vòng kết nối).
+   * lỗi gần nhất (+ `statusCode` ngắn của lỗi đó theo chatLuongLoiChung khi có đối tượng lỗi; null = không biết). Callback ném ⇒
+   * bị nuốt (không bao giờ ảnh hưởng vòng kết nối). `stopped` là trạng thái CUỐI: không bao giờ có chuyển tiếp rời nó.
    */
-  onStateChange?: (prev: SupervisorState, next: SupervisorState, lastError: string | null) => void;
+  onStateChange?: (prev: SupervisorState, next: SupervisorState, lastError: string | null, statusCode?: string | null) => void;
 }
 
 /** Snapshot of a supervisor for an internal health getter (future health endpoint). */
@@ -273,6 +275,8 @@ export class ConnectionSupervisor {
   private consecutiveFailures = 0;
   private samplesForwarded = 0;
   private lastError: string | null = null;
+  /** statusCode ngắn (chatLuongLoiChung) của lỗi gần nhất khi có đối tượng lỗi; null = không biết (báo "comm_lost"). */
+  private lastStatusCode: string | null = null;
   private lastConnectedAt: number | null = null;
   private lastStateChangeAt: number = Date.now();
   private readonly onStateChange: SupervisorOptions["onStateChange"] | null;
@@ -441,6 +445,7 @@ export class ConnectionSupervisor {
     this.cycleRunning = true;
     try {
       this.lastError = reason;
+      this.lastStatusCode = null;
       this.setState("reconnecting");
       const h = this.activeHandle;
       this.activeHandle = null;
@@ -460,7 +465,7 @@ export class ConnectionSupervisor {
       try {
         await this.connectAndSubscribe(ep, left());
       } catch (err) {
-        this.failResetCycle(errMsg(err));
+        this.failResetCycle(errMsg(err), chatLuongLoiChung(err).statusCode);
         void this.safeDisconnect(ep); // bounded on its own; never on the caller's budget
         return false;
       }
@@ -485,8 +490,9 @@ export class ConnectionSupervisor {
   }
 
   /** B3 — a reset that did not reconnect: honest state + the normal backoff retry (which may fail over). */
-  private failResetCycle(error: string): void {
+  private failResetCycle(error: string, statusCode: string | null = null): void {
     this.lastError = error;
+    this.lastStatusCode = statusCode;
     this.consecutiveFailures += 1;
     this.setState("failed");
     this.scheduleRetry(this.nextBackoffDelay());
@@ -525,11 +531,14 @@ export class ConnectionSupervisor {
   private setState(next: SupervisorState): void {
     const prev = this.state;
     if (prev === next) return;
+    // 'stopped' là trạng thái CUỐI: một vòng nối/reset đang dở khi stop() chạy không được kéo nó về 'failed'/'reconnecting'.
+    if (prev === "stopped") return;
     this.state = next;
     this.lastStateChangeAt = Date.now();
+    if (next === "connected") this.lastStatusCode = null;
     if (this.onStateChange) {
       try {
-        this.onStateChange(prev, next, this.lastError);
+        this.onStateChange(prev, next, this.lastError, this.lastStatusCode);
       } catch {
         // callback của host không được làm hỏng vòng kết nối
       }
@@ -610,6 +619,7 @@ export class ConnectionSupervisor {
         probeConnected = h.connected !== false;
       } catch (err) {
         this.lastError = errMsg(err);
+        this.lastStatusCode = chatLuongLoiChung(err).statusCode;
         probeThrew = true;
       }
       if (this.state !== "connected") return; // state có thể đã đổi trong lúc await
@@ -639,7 +649,10 @@ export class ConnectionSupervisor {
   /** The active endpoint was detected down → promote standby / reconnect. */
   private async onActiveLost(reason?: string): Promise<void> {
     if (this.stopped) return;
-    if (reason) this.lastError = reason;
+    if (reason) {
+      this.lastError = reason;
+      if (reason !== "health probe threw") this.lastStatusCode = null; // lỗi thật của probe đã ghi statusCode ngay trước đó
+    }
     this.setState("reconnecting");
     await this.closeActiveHandle();
     // preferOther=true → try the OTHER endpoint first (immediate hot-standby promote).
@@ -705,6 +718,7 @@ export class ConnectionSupervisor {
         return true;
       } catch (err) {
         this.lastError = errMsg(err);
+        this.lastStatusCode = chatLuongLoiChung(err).statusCode;
         await this.safeDisconnect(ep);
         // try the next endpoint in this cycle
       }

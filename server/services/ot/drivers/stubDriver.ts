@@ -82,6 +82,10 @@ export class StubDriver implements OtDriver {
   private simProgramFault: "error" | "hang" | null = null;
 
   async connect(cfg: OtConnectionConfig): Promise<void> {
+    // SCADA R0 — đang mô phỏng mất kết nối (`simDatLoi({matKetNoi:true})` hoặc trong cửa sổ `simKichBan` của lần connect trước)
+    // thì nối lại KHÔNG thành công, như một thiết bị thật không với tới: tránh chập chờn connected↔reconnecting của supervisor.
+    // Kiểm TRƯỚC khi tính lại cửa sổ kịch bản (nối lại không được kéo dài/khởi động lại cửa sổ đang chạy).
+    if (this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
     this.connected = true;
     this.connectedAt = new Date();
     this.lastError = undefined;
@@ -172,7 +176,10 @@ export class StubDriver implements OtDriver {
 
   async disconnect(): Promise<void> {
     this.connected = false;
-    // gỡ đăng ký CHỈ khi chính mình còn là instance đang chạy ở endpoint đó (connect mới cùng endpoint đã thay thế)
+    // gỡ đăng ký CHỈ khi chính mình còn là instance đang chạy ở endpoint đó (connect mới cùng endpoint đã thay thế).
+    // Đang mô phỏng mất kết nối THỦ CÔNG (`simDatLoi({matKetNoi:true})`) thì GIỮ đăng ký: connect() ném trong lúc mất, nên nếu gỡ thì
+    // không ai tìm lại được instance để `simDatLoi({})` (nút Lab của M10); kết thúc lỗi/connect lại thì quay về quy tắc thường.
+    if (this.loi.matKetNoi) return;
     if (this.endpoint !== null && stubDangChay.get(this.endpoint) === this) stubDangChay.delete(this.endpoint);
   }
 

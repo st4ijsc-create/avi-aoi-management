@@ -27,7 +27,8 @@ import {
 } from "./connectionSupervisor";
 import { withDeadline } from "./drivers/boundedClose";
 import { adapterTargetFingerprint, runtimeAdapterTarget } from "./adapterTarget";
-import { baoTrangThaiAdapter, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
+import { baoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
+import { chatLuongLoiChung } from "./chatLuong";
 
 let running = false;
 /**
@@ -135,6 +136,8 @@ interface LegacyEntry {
   listed: boolean;
   /** final wave 1 (R-1D-k) — dấu vân tay kết nối ghi lại ở lần nối thành công gần nhất (null = chưa nối). */
   fingerprint?: string | null;
+  /** SCADA R0 Task 5 — mã ngắn (chatLuongLoiChung) của lỗi khởi động/nối lại gần nhất; dùng cho mẫu xấu khi mất. */
+  lastStatusCode?: string | null;
 }
 
 const legacy = new Map<number, LegacyEntry>();
@@ -162,7 +165,7 @@ function errText(err: unknown): string {
  */
 function baoLegacy(entry: LegacyEntry, tt: TrangThaiKetNoi, loi: string | null = null): void {
   if (legacy.get(entry.adapter.adapterId) !== entry) return;
-  baoTrangThaiAdapter(entry.adapter, tt, loi);
+  baoTrangThaiAdapter(entry.adapter, tt, loi, new Date(), tt === "lost" ? entry.lastStatusCode : null);
 }
 
 /** Chờ fn() tối đa ms; không bao giờ ném. */
@@ -220,6 +223,7 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
     handle = await withDeadline(work, timeoutMs, `adapter "${adapter.code}" start`);
   } catch (err) {
     entry.lastError = errText(err);
+    entry.lastStatusCode = chatLuongLoiChung(err).statusCode;
     if (workSettled) {
       // Lỗi thường (vd ECONNREFUSED, protocol chưa triển khai): dọn như cũ nhưng có hạn.
       // B3 — inside a reset budget the cleanup is not awaited (inflight stays set until it is done).
@@ -266,6 +270,7 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
   entry.fingerprint = fingerprint;
   entry.state = "active";
   entry.lastError = null;
+  entry.lastStatusCode = null;
   entry.failures = 0;
   // Driver vừa nối được nhưng tự báo chưa thông (vd stub đang mô phỏng mất kết nối) ⇒ chưa phải "đã nối": legacyTick báo
   // 'connected' khi isConnected() thật sự true (không chập chờn lost↔connected, không phát lại mẫu xấu mỗi vòng nối lại).
@@ -315,6 +320,7 @@ async function legacyTick(myEpoch: number): Promise<void> {
         continue;
       }
       console.warn(`[OT] adapter "${entry.adapter.code}" (${entry.adapter.protocol}) link lost — reconnecting`);
+      entry.lastStatusCode = null; // không có đối tượng lỗi: mẫu xấu dùng "comm_lost"
       baoLegacy(entry, "lost", "driver reported disconnected");
       await dropLegacySession(entry, "driver reported disconnected");
       if (myEpoch !== epoch) return;
@@ -622,6 +628,11 @@ async function makeIngestSink(adapter: RuntimeAdapter): Promise<OnOtSample> {
 
 /** Build a supervisor for one runtime adapter (primary + optional secondary). */
 async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSupervisor> {
+  // SCADA R0 Task 5 — thế hệ (epoch) + dấu detach LÚC DỰNG: sự kiện trạng thái của supervisor đã bị bỏ rơi (stopOt/detach/thế hệ
+  // mới) không được ghi 'lost' (DB 'error' + mẫu xấu) cho adapter không còn do trung tâm quản.
+  const epochLucDung = epoch;
+  const tokLucDung = detachToken(adapter.adapterId);
+  let chinhNo: ConnectionSupervisor | null = null;
   // Coalescing sink keeps the HA ingest path identical in shape to the legacy loop
   // (per-tick batch when OT_POLL_BATCH_ENABLED, else per-sample).
   const onSample = await makeIngestSink(adapter);
@@ -629,7 +640,7 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
   if (adapter.backupConnection) {
     endpoints.push({ label: "secondary", connection: adapter.backupConnection });
   }
-  return new ConnectionSupervisor({
+  const sup = new ConnectionSupervisor({
     adapterId: adapter.adapterId,
     code: adapter.code,
     protocol: adapter.protocol,
@@ -645,14 +656,19 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
     // Fix round 1 — supervisor tự nâng hạn theo timeoutMs của từng endpoint (connectDeadlineFor).
     connectTimeoutMs: adapterStartTimeoutMs(),
     // SCADA R0 Task 5 (C1/C3) — trạng thái kết nối + mẫu xấu khi mất (xem trangThaiAdapter.ts).
-    onStateChange: (_prev, next, lastError) => {
+    onStateChange: (prev, next, lastError, statusCode) => {
+      if (prev === "stopped") return; // 'stopped' là cuối: vòng nối trễ không được kéo adapter đã dừng về 'lost'
+      const hienTai = supervisors.get(adapter.adapterId)?.supervisor;
+      if (hienTai && chinhNo && hienTai !== chinhNo) return; // supervisor thế hệ mới đã nắm adapter này
+      // stopped ⇒ disabled luôn được báo (stopOt/detach vừa đổi epoch/dấu CHÍNH VÌ dừng nó); các sự kiện khác chỉ khi còn cùng thế hệ.
+      if (next !== "stopped" && (epoch !== epochLucDung || detachToken(adapter.adapterId) !== tokLucDung)) return;
       switch (next) {
         case "connected":
           baoTrangThaiAdapter(adapter, "connected", null);
           break;
         case "reconnecting":
         case "failed":
-          baoTrangThaiAdapter(adapter, "lost", lastError);
+          baoTrangThaiAdapter(adapter, "lost", lastError, new Date(), statusCode);
           break;
         case "connecting":
         case "idle":
@@ -665,6 +681,8 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
       }
     },
   });
+  chinhNo = sup;
+  return sup;
 }
 
 /**
@@ -718,6 +736,7 @@ async function startOtOnce(): Promise<boolean> {
 
   if (myEpoch !== epoch) return false; // fix review 4 — a stopOt during the import: the gateway stays off
   otGatewayOn = true; // doc 81 Đợt 10 D fix review 2 (R-10-al) — live attach works whatever the load gives
+  void dongBoTrangThaiAdapterTat(); // SCADA R0 Task 5 — isEnabled=false ⇒ status 'disabled' (chỉ khi cờ ghi trạng thái bật; không chờ)
   let adapters: RuntimeAdapter[] = [];
   try {
     adapters = await loadEnabledAdapters();

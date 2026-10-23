@@ -36,6 +36,31 @@ describe("StubDriver kịch bản (C9)", () => {
     expect((await d.health()).connected).toBe(true);
   });
 
+  it("connect trong lúc mô phỏng mất kết nối ⇒ ném DeviceUnreachableError (không nối lại được); hết lỗi ⇒ nối lại được", async () => {
+    const d = await noi({}, "stub://nl");
+    d.simDatLoi({ matKetNoi: true });
+    await d.disconnect();
+    await expect(d.connect({ endpoint: "stub://nl" })).rejects.toBeInstanceOf(DeviceUnreachableError);
+    expect(d.isConnected()).toBe(false);
+    expect(layStubDangChay("stub://nl")).toBe(d); // giữ đăng ký trong lúc mất thủ công: nút Lab còn tìm được để xoá lỗi
+    d.simDatLoi({});
+    await d.connect({ endpoint: "stub://nl" });
+    expect(d.isConnected()).toBe(true);
+    await d.disconnect();
+    expect(layStubDangChay("stub://nl")).toBeUndefined(); // hết lỗi ⇒ quy tắc thường: gỡ khi disconnect
+  });
+
+  it("connect trong cửa sổ simKichBan đang chạy ⇒ ném và KHÔNG khởi động lại cửa sổ; hết cửa sổ ⇒ nối được", async () => {
+    const d = await noi({ simKichBan: { matKetNoiSauMs: 0, matKetNoiTrongMs: 5000 } }, "stub://kb-nl");
+    expect(d.isConnected()).toBe(false);
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(d.connect({ endpoint: "stub://kb-nl", options: { simKichBan: { matKetNoiSauMs: 0, matKetNoiTrongMs: 5000 } } })).rejects.toBeInstanceOf(
+      DeviceUnreachableError,
+    );
+    await vi.advanceTimersByTimeAsync(3100); // quá 5 s kể từ lần connect ĐẦU (cửa sổ không bị kéo dài bởi lần nối lại hỏng)
+    expect(d.isConnected()).toBe(true);
+  });
+
   it("tagXau: t2 bad (stub_bad/device_error), t1 vẫn good", async () => {
     const d = await noi();
     d.simDatLoi({ tagXau: ["t2"] });

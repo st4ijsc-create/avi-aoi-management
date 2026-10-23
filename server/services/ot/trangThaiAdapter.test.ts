@@ -166,6 +166,32 @@ describe("mẫu xấu khi chuyển 'mất' (C1)", () => {
     expect(layTrangThaiAdapter(AD.adapterId)?.soLanMat).toBe(2);
   });
 
+  it("soLanMat đếm ĐỢT mất: lost → connecting → lost = 1; connected → lost = 2; lost → disabled → lost = 3", () => {
+    batCo(false, false);
+    baoTrangThaiAdapter(AD, "lost", "e"); // không có trạng thái trước ⇒ khởi đầu một đợt
+    baoTrangThaiAdapter(AD, "connecting", null);
+    baoTrangThaiAdapter(AD, "lost", "e");
+    expect(layTrangThaiAdapter(AD.adapterId)?.soLanMat).toBe(1);
+    baoTrangThaiAdapter(AD, "connected", null);
+    baoTrangThaiAdapter(AD, "lost", "e");
+    expect(layTrangThaiAdapter(AD.adapterId)?.soLanMat).toBe(2);
+    baoTrangThaiAdapter(AD, "disabled", null);
+    baoTrangThaiAdapter(AD, "lost", "e");
+    expect(layTrangThaiAdapter(AD.adapterId)?.soLanMat).toBe(3);
+  });
+
+  it("statusCode tuỳ chọn thay cho 'comm_lost' ở mẫu xấu (reason vẫn comm_lost); bỏ trống/rỗng ⇒ 'comm_lost'", async () => {
+    batCo(false, true);
+    baoTrangThaiAdapter(AD, "lost", "e", new Date(), "ECONNRESET");
+    await vi.advanceTimersByTimeAsync(0);
+    baoTrangThaiAdapter(AD, "connected", null);
+    baoTrangThaiAdapter(AD, "lost", "e", new Date(), null);
+    await vi.advanceTimersByTimeAsync(0);
+    const [c1, c2] = ingestSamplesMock.mock.calls as unknown as Array<[unknown, Array<Record<string, unknown>>]>;
+    for (const m of c1[1]) expect(m).toMatchObject({ statusCode: "ECONNRESET", reason: "comm_lost" });
+    for (const m of c2[1]) expect(m).toMatchObject({ statusCode: "comm_lost", reason: "comm_lost" });
+  });
+
   it("chập chờn lost → connecting → lost (nối lại thất bại) CHƯA hết đợt mất ⇒ không phát lại", async () => {
     batCo(false, true);
     baoTrangThaiAdapter(AD, "lost", "e");
@@ -203,10 +229,13 @@ class DriverLoi implements OtDriver {
   async connect(): Promise<void> {
     if (this.failNext > 0) {
       this.failNext -= 1;
-      throw new Error("connect fail");
+      throw Object.assign(new Error("connect fail"), { code: "ECONNREFUSED" });
     }
+    if (this.treConnect) await this.treConnect;
     this.connected = true;
   }
+  /** Nếu đặt: connect() chờ promise này (từ chối ⇒ connect lỗi) — mô phỏng connect đang treo lúc stop(). */
+  treConnect: Promise<void> | null = null;
   async disconnect(): Promise<void> {
     this.connected = false;
   }
@@ -231,7 +260,7 @@ describe("ConnectionSupervisor.onStateChange", () => {
   it("connect lỗi ⇒ connecting→failed (kèm lastError), hết lỗi ⇒ connecting→connected (lastError null); stop ⇒ stopped", async () => {
     const drv = new DriverLoi();
     drv.failNext = 1;
-    const got: Array<[SupervisorState, SupervisorState, string | null]> = [];
+    const got: Array<[SupervisorState, SupervisorState, string | null, string | null | undefined]> = [];
     const sup = new ConnectionSupervisor({
       adapterId: 1,
       code: "ADP",
@@ -243,20 +272,51 @@ describe("ConnectionSupervisor.onStateChange", () => {
       onSample: async () => {},
       healthIntervalMs: 50,
       backoff: { initialMs: 100, maxMs: 1000, factor: 2, jitter: 0 },
-      onStateChange: (prev, next, loi) => got.push([prev, next, loi]),
+      onStateChange: (prev, next, loi, ma) => got.push([prev, next, loi, ma]),
     });
     await sup.start();
-    expect(got[0]).toEqual(["idle", "connecting", null]);
+    expect(got[0]).toEqual(["idle", "connecting", null, null]);
     expect(got[1][0]).toBe("connecting");
     expect(got[1][1]).toBe("failed");
     expect(got[1][2]).toContain("connect fail");
+    expect(got[1][3]).toBe("ECONNREFUSED"); // statusCode theo chatLuongLoiChung
 
     await vi.advanceTimersByTimeAsync(150);
-    expect(got.at(-1)).toEqual(["connecting", "connected", null]);
+    expect(got.at(-1)).toEqual(["connecting", "connected", null, null]);
     expect(got.map((g) => g[1])).toEqual(["connecting", "failed", "connecting", "connected"]);
 
     await sup.stop();
     expect(got.at(-1)?.[1]).toBe("stopped");
+  });
+
+  it("'stopped' là cuối: vòng nối đang dở khi stop() chạy rồi thất bại KHÔNG kéo state về 'failed' và không phát sự kiện nào sau 'stopped'", async () => {
+    const drv = new DriverLoi();
+    let tuChoi!: (e: Error) => void;
+    drv.treConnect = new Promise<void>((_, rej) => {
+      tuChoi = rej;
+    });
+    const got: SupervisorState[] = [];
+    const sup = new ConnectionSupervisor({
+      adapterId: 3,
+      code: "ADP3",
+      protocol: "stub",
+      tags: TAGS,
+      pollIntervalMs: 1000,
+      endpoints: [{ label: "primary", connection: { endpoint: "primary://host" } }],
+      createDriver: () => drv,
+      onSample: async () => {},
+      backoff: { initialMs: 100, maxMs: 1000, factor: 2, jitter: 0 },
+      onStateChange: (_p, next) => got.push(next),
+    });
+    const khoiDong = sup.start(); // connect treo
+    await vi.advanceTimersByTimeAsync(10);
+    await sup.stop();
+    expect(sup.status().state).toBe("stopped");
+    tuChoi(new Error("late connect fail"));
+    await vi.advanceTimersByTimeAsync(5_000);
+    await khoiDong;
+    expect(sup.status().state).toBe("stopped");
+    expect(got).toEqual(["connecting", "stopped"]);
   });
 
   it("callback ném ⇒ supervisor vẫn chạy bình thường", async () => {

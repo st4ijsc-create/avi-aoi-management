@@ -8,8 +8,9 @@
  *
  * Quy tắc:
  *   - Chỉ HÀNH ĐỘNG khi trạng thái ĐỔI (báo lại cùng trạng thái = no-op).
- *   - Mẫu xấu: MỘT lần cho mỗi ĐỢT mất (đợt mất kết thúc khi `connected`); lost → connecting → lost (nối lại thất bại) không
- *     phát lại (chập chờn không kẹt/không spam mỗi tick). Chỉ khi OT_CHAT_LUONG_V2_ENABLED=true.
+ *   - Mẫu xấu: MỘT lần cho mỗi ĐỢT mất (đợt mất kết thúc khi `connected` hoặc `disabled`); lost → connecting → lost (nối lại thất
+ *     bại) không phát lại (chập chờn không kẹt/không spam mỗi tick). Chỉ khi OT_CHAT_LUONG_V2_ENABLED=true. `soLanMat` đếm đúng
+ *     số ĐỢT mất (cùng nhịp với mẫu xấu).
  *   - Ghi DB (chỉ khi OT_GHI_TRANG_THAI_ADAPTER_ENABLED=true) có ĐIỀU TIẾT 5 s mỗi adapter: lần đổi đầu ghi NGAY nếu lần ghi
  *     trước đã ≥ 5 s; nếu chưa, hẹn MỘT lần ghi cuối (trailing) đúng lúc tròn 5 s mang trạng thái MỚI NHẤT. Lỗi ghi chỉ log.
  */
@@ -35,7 +36,9 @@ interface BanGhi {
   tu: Date;
   loi: string | null;
   soLanMat: number;
-  /** Đợt mất hiện tại đã phát mẫu xấu chưa (xoá khi `connected`). */
+  /** Đang trong một đợt mất (đặt ở `lost` đầu đợt, xoá khi `connected`/`disabled`). */
+  trongDotMat: boolean;
+  /** Đợt mất hiện tại đã phát mẫu xấu chưa (xoá cùng `trongDotMat`). */
   daPhatXau: boolean;
   /** Date.now() của lần ghi DB gần nhất (0 = chưa ghi). */
   ghiLuc: number;
@@ -105,39 +108,50 @@ function loadIngest(): Promise<typeof import("./ingest")> {
   return ingestModule;
 }
 
-function phatMauXau(a: Pick<RuntimeAdapter, "adapterId" | "code" | "machineId" | "protocol" | "tags">, at: Date): void {
+function phatMauXau(
+  a: Pick<RuntimeAdapter, "adapterId" | "code" | "machineId" | "protocol" | "tags">,
+  at: Date,
+  statusCode: string,
+): void {
   if (a.tags.length === 0) return;
   void loadIngest()
-    .then((m) => m.ingestSamples(a as RuntimeAdapter, mauXauChoMoiTag(a.tags, "comm_lost", "comm_lost", at)))
+    .then((m) => m.ingestSamples(a as RuntimeAdapter, mauXauChoMoiTag(a.tags, statusCode, "comm_lost", at)))
     .catch((err) => console.warn(`[OT] phát mẫu xấu khi mất kết nối "${a.code}" lỗi: ${(err as Error)?.message ?? err}`));
 }
 
 /**
  * Báo trạng thái kết nối MỚI của một adapter chạy ở trung tâm. Đồng bộ, không bao giờ ném.
- * `loi` chỉ có nghĩa với `lost` (ghi vào `lastError`).
+ * `loi` chỉ có nghĩa với `lost` (ghi vào `lastError`). `statusCode` (tuỳ chọn, chỉ với `lost`) là mã ngắn của lỗi (vd
+ * `chatLuongLoiChung(err).statusCode`) dùng cho mẫu xấu; bỏ trống ⇒ "comm_lost".
  */
 export function baoTrangThaiAdapter(
   a: Pick<RuntimeAdapter, "adapterId" | "code" | "machineId" | "protocol" | "tags">,
   tt: TrangThaiKetNoi,
   loi: string | null,
   now: Date = new Date(),
+  statusCode?: string | null,
 ): void {
   try {
     let b = trangThai.get(a.adapterId);
     if (b && b.tt === tt) return;
     if (!b) {
-      b = { tt, tu: now, loi: null, soLanMat: 0, daPhatXau: false, ghiLuc: 0, hen: null, choGhi: null };
+      b = { tt, tu: now, loi: null, soLanMat: 0, trongDotMat: false, daPhatXau: false, ghiLuc: 0, hen: null, choGhi: null };
       trangThai.set(a.adapterId, b);
     }
     b.tt = tt;
     b.tu = now;
     b.loi = tt === "lost" ? loi : null;
-    if (tt === "lost") b.soLanMat += 1;
-    if (tt === "connected") b.daPhatXau = false;
-
+    if (tt === "connected" || tt === "disabled") {
+      b.trongDotMat = false;
+      b.daPhatXau = false;
+    }
+    if (tt === "lost" && !b.trongDotMat) {
+      b.trongDotMat = true;
+      b.soLanMat += 1;
+    }
     if (tt === "lost" && !b.daPhatXau && chatLuongV2Bat()) {
       b.daPhatXau = true;
-      phatMauXau(a, now);
+      phatMauXau(a, now, statusCode || "comm_lost");
     }
     if (ghiDbBat()) lenLichGhi(a.adapterId, b, { tt, loi: b.loi, at: now });
   } catch (err) {
@@ -164,4 +178,33 @@ export function __datLaiTrangThaiAdapter(): void {
 /** Chỉ cho test: thay hàm ghi DB (null = dùng ghi thật). */
 export function __datGhiDb(fn: GhiDb | null): void {
   ghiDbThay = fn;
+}
+
+/**
+ * isEnabled=false ⇒ disabled: khi OT_GHI_TRANG_THAI_ADAPTER_ENABLED bật, MỘT lệnh UPDATE đặt `status='disabled'` cho mọi hàng
+ * `isEnabled=false` chưa 'disabled' và KHÔNG do edge sở hữu (cùng nguồn sở hữu với loadEnabledAdapters: edgeOwnedAdapterIds).
+ * Gọi lúc startOt (không chờ). Không bao giờ ném; trả số hàng đã đổi (0 khi cờ tắt/không có DB/lỗi).
+ */
+export async function dongBoTrangThaiAdapterTat(): Promise<number> {
+  if (!ghiDbBat()) return 0;
+  try {
+    const { getDb } = await import("../../db/connection");
+    const db = await getDb();
+    if (!db) return 0;
+    const { edgeOwnedAdapterIds } = await import("./deviceAdapter");
+    const edge = [...(await edgeOwnedAdapterIds(db))];
+    const { deviceAdapters } = await import("../../../drizzle/schema");
+    const { and, eq, ne, notInArray } = await import("drizzle-orm");
+    const dieuKien = [eq(deviceAdapters.isEnabled, false), ne(deviceAdapters.status, "disabled")];
+    if (edge.length > 0) dieuKien.push(notInArray(deviceAdapters.id, edge));
+    const rows = await db
+      .update(deviceAdapters)
+      .set({ status: "disabled" })
+      .where(and(...dieuKien))
+      .returning({ id: deviceAdapters.id });
+    return rows.length;
+  } catch (err) {
+    console.warn(`[OT] đồng bộ trạng thái adapter đã tắt lỗi: ${(err as Error)?.message ?? err}`);
+    return 0;
+  }
 }

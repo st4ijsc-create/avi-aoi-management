@@ -138,7 +138,7 @@ export async function loadEnabledAdapters(
 }
 
 /** Ids of adapters owned by an edge node (0374). Schema missing ⇒ none (central unchanged); any other error is thrown. */
-async function edgeOwnedAdapterIds(db: NonNullable<Awaited<ReturnType<typeof import("../../db/connection").getDb>>>): Promise<Set<number>> {
+export async function edgeOwnedAdapterIds(db: NonNullable<Awaited<ReturnType<typeof import("../../db/connection").getDb>>>): Promise<Set<number>> {
   const { adapterOwnership, isEdgeControlSchemaMissing } = await import("../edge/edgeControlSchema");
   const { isNotNull } = await import("drizzle-orm");
   try {
