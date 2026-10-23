@@ -540,6 +540,7 @@ Chốt:
   - **Nhất quán dải ↔ STOP ghim** (điều phối mục 4, đổi lấy việc STOP ghim được miễn dải trong `dispatch()`):
     - khai/đổi `writeMin`/`writeMax`/`writeStep` mà `stop_value` đang ghim của tag nằm ngoài dải mới hoặc lệch bước ⇒ từ chối `STOP_PIN_NGOAI_DAI` (không ghi gì, không audit lẻ);
     - ghim `stop_value` (đường `datStopPin` hiện có) ngoài dải/bước đang khai của tag ⇒ từ chối cùng mã. Dải NULL ⇒ không kiểm (hành vi cũ).
+    - khai/đổi dải mà có luật interlock đang bật nhắm tag này (`targetAdapterId` + `commandTag`) với `commandValue` ngoài dải/bước ⇒ từ chối `INTERLOCK_NGOAI_DAI` (review T3 M-3: nếu không, hành động bảo vệ của interlock sẽ bị `OUT_OF_RANGE` lúc chạy); và `interlockRouter` create/update/approve/enable từ chối `commandValue` ngoài dải đang khai của tag đích. Có test.
 - Hạ mức (5→3) hoặc nới dải không cần người thứ hai trong R1a. Ghi rõ đây là mục R2 nếu điều phối muốn.
 
 - [ ] **Step 1: Test đỏ:**
