@@ -44,6 +44,7 @@ let idSup2fa = 0; // supervisor ĐÃ đăng ký
 let idEngKhong = 0; // engineer CHƯA đăng ký
 let idOper2fa = 0; // operator ĐÃ đăng ký (secret thật) — dưới sàn 4|5
 let idViewer = 0;
+let idEngNull = 0; // engineer ĐÃ đăng ký — RIÊNG cho ca §6 sessionToken:null (khoá `user:{id}` sạch)
 
 let demPhien = 0;
 const phienMoi = (): string => `${TS}-sess-${++demPhien}`;
@@ -69,17 +70,19 @@ beforeAll(async () => {
   idEngKhong = await mk("engkhong", "engineer", false);
   idOper2fa = await mk("oper2fa", "operator", true);
   idViewer = await mk("viewer", "viewer", false);
+  idEngNull = await mk("engnull", "engineer", true);
   await db.insert(userSecrets).values([
     { userId: idEng2fa, twoFactorSecret: SECRET_2FA },
     { userId: idSup2fa, twoFactorSecret: SECRET_2FA },
     { userId: idOper2fa, twoFactorSecret: SECRET_2FA },
+    { userId: idEngNull, twoFactorSecret: SECRET_2FA },
   ]);
 });
 
 beforeEach(async () => {
   if (!coDb) return;
   // Sổ là bảng DÙNG CHUNG + speakeasy trả CÙNG mã suốt nhịp 30 s ⇒ dọn ĐÚNG người của tệp này.
-  await __resetSoTotpChoTest([idEng2fa, idSup2fa, idOper2fa]);
+  await __resetSoTotpChoTest([idEng2fa, idSup2fa, idOper2fa, idEngNull]);
   // Mặc định của ca: cờ step-up cũ TẮT, chế độ nội bộ BẬT — tư thế "lỏng nhất" của hai cờ mà
   // helper phải BỎ QUA. Ca nào cần khác thì tự đặt.
   delete process.env.ACTUATION_STEPUP_2FA;
@@ -91,7 +94,7 @@ afterAll(async () => {
     if (envTruoc[k] === undefined) delete process.env[k];
     else process.env[k] = envTruoc[k];
   }
-  if (coDb) await __resetSoTotpChoTest([idEng2fa, idSup2fa, idOper2fa]);
+  if (coDb) await __resetSoTotpChoTest([idEng2fa, idSup2fa, idOper2fa, idEngNull]);
 });
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -217,6 +220,26 @@ describe("§3 — mức 4: bước 2FA của phiên, cache 10 phút", () => {
   });
 });
 
+describe("§3b — Fix round 1: KHÔNG có sessionToken ⇒ mức 4 không đọc, không ghi cache (như mức 5)", () => {
+  it("cache khoá `user:{id}` đang còn hạn ⇒ mức 4 không token, không mã ⇒ TOTP_CAN (null và \"\")", async () => {
+    ghiStepUpPhien(khoaPhienStepUp({ user: { id: idEng2fa }, sessionToken: null }));
+    expect(stepUpPhienConHan(`user:${idEng2fa}`)).toBe(true); // cache THẬT sự còn
+    expect(await kiemXacThucTheoMuc(ctxCua(idEng2fa, "engineer", true, null), 4)).toEqual({ ok: false, ma: "TOTP_CAN" });
+    expect(await kiemXacThucTheoMuc(ctxCua(idEng2fa, "engineer", true, ""), 4)).toEqual({ ok: false, ma: "TOTP_CAN" });
+  });
+
+  it("mã đúng ở mức 4 / 5 không token ⇒ moi_lan nhưng KHÔNG ghi `user:{id}`; lượt sau không mã ⇒ TOTP_CAN", async () => {
+    if (!coDb) return;
+    const ctx = ctxCua(idSup2fa, "supervisor", true, null);
+    expect(await kiemXacThucTheoMuc(ctx, 4, otp())).toEqual({ ok: true, cach: "moi_lan" });
+    expect(stepUpPhienConHan(`user:${idSup2fa}`)).toBe(false);
+    expect(await kiemXacThucTheoMuc(ctx, 4)).toEqual({ ok: false, ma: "TOTP_CAN" });
+    await __resetSoTotpChoTest([idSup2fa]);
+    expect(await kiemXacThucTheoMuc(ctx, 5, otp())).toEqual({ ok: true, cach: "moi_lan" });
+    expect(stepUpPhienConHan(`user:${idSup2fa}`)).toBe(false);
+  });
+});
+
 describe("§4 — mức 5: TOTP tươi MỖI lượt, mã dùng một lần", () => {
   it("chưa đăng ký ⇒ TOTP_CHUA_DANG_KY", async () => {
     expect(await kiemXacThucTheoMuc(ctxCua(idEngKhong, "engineer", false), 5, "123456")).toEqual({
@@ -261,6 +284,48 @@ describe("§4 — mức 5: TOTP tươi MỖI lượt, mã dùng một lần", ()
   it("cờ phiên nói 'đã đăng ký' nhưng DB không có secret ⇒ TOTP_SAI (fail-closed ở verifyFreshTotp)", async () => {
     // idEngKhong không có hàng user_secrets — giả một phiên cũ còn cờ true.
     expect(await kiemXacThucTheoMuc(ctxCua(idEngKhong, "engineer", true), 5, otp())).toEqual({ ok: false, ma: "TOTP_SAI" });
+  });
+});
+
+describe("§4b — Fix round 1: `muc` NGOÀI MIỀN lúc chạy ⇒ FAIL-CLOSED về đường mức 5", () => {
+  const NGOAI: Array<[string, unknown]> = [
+    ['"5"', "5"],
+    ["2", 2],
+    ["undefined", undefined],
+    ["NaN", Number.NaN],
+    ['"1"', "1"],
+  ];
+
+  it("★★★ sàn vai = ACTUATION_ROLES; operator ĐÃ đăng ký + mã đúng ⇒ ROLE_FLOOR", async () => {
+    for (const [nhan, m] of NGOAI) {
+      expect([...vaiTroDuocGhi(m as never)].sort(), nhan).toEqual([...ACTUATION_ROLES].sort());
+      expect(await kiemXacThucTheoMuc(ctxCua(idOper2fa, "operator", true), m as never, otp()), nhan).toEqual({
+        ok: false,
+        ma: "ROLE_FLOOR",
+      });
+    }
+  });
+
+  it("★★★ chưa đăng ký ⇒ TOTP_CHUA_DANG_KY; cache phiên còn ⇒ vẫn TOTP_CAN (không đọc cache); mã đúng ⇒ moi_lan", async () => {
+    if (!coDb) return;
+    for (const [nhan, m] of NGOAI) {
+      expect(await kiemXacThucTheoMuc(ctxCua(idEngKhong, "engineer", false), m as never), nhan).toEqual({
+        ok: false,
+        ma: "TOTP_CHUA_DANG_KY",
+      });
+      const ctx = ctxCua(idEng2fa, "engineer", true);
+      ghiStepUpPhien(khoaPhienStepUp({ user: ctx.user!, sessionToken: ctx.sessionToken }));
+      expect(await kiemXacThucTheoMuc(ctx, m as never), nhan).toEqual({ ok: false, ma: "TOTP_CAN" });
+      await __resetSoTotpChoTest([idEng2fa]);
+      expect(await kiemXacThucTheoMuc(ctx, m as never, otp()), nhan).toEqual({ ok: true, cach: "moi_lan" });
+    }
+  });
+
+  it("totpCode không phải chuỗi lúc chạy (số 123456) ⇒ TOTP_SAI", async () => {
+    expect(await kiemXacThucTheoMuc(ctxCua(idEng2fa, "engineer", true), 5, 123456 as never)).toEqual({
+      ok: false,
+      ma: "TOTP_SAI",
+    });
   });
 });
 
@@ -318,6 +383,18 @@ describe("§6 — chung cache + chung sổ với chuỗi step-up cũ trên `depl
     await expect(goi(ctx).lenhTheoMuc({ totpCode: otp() })).resolves.toEqual({ ok: true });
     expect(await kiemXacThucTheoMuc(ctx, 4)).toEqual({ ok: true, cach: "phien" });
     expect(await kiemXacThucTheoMuc(ctx, 5)).toEqual({ ok: false, ma: "TOTP_CAN" });
+  });
+
+  it("sessionToken:null — middleware ghi khoá `user:{id}` (ĐÚNG công thức `khoaPhienStepUp`), nhưng helper mức 4 KHÔNG đọc nó (đã siết)", async () => {
+    if (!coDb) return;
+    const ctx = ctxCua(idEngNull, "engineer", true, null);
+    expect(stepUpPhienConHan(khoaPhienStepUp({ user: ctx.user!, sessionToken: null }))).toBe(false); // trước: sạch
+    await expect(goi(ctx).lenhTheoMuc({ totpCode: otp() })).resolves.toEqual({ ok: true });
+    // phép kiểm chéo công thức: middleware (không đổi) đã ghi ĐÚNG khoá helper tính ra
+    expect(stepUpPhienConHan(khoaPhienStepUp({ user: ctx.user!, sessionToken: null }))).toBe(true);
+    expect(khoaPhienStepUp({ user: ctx.user!, sessionToken: null })).toBe(`user:${idEngNull}`);
+    // hành vi đã siết: không token ⇒ không dùng cache
+    expect(await kiemXacThucTheoMuc(ctx, 4)).toEqual({ ok: false, ma: "TOTP_CAN" });
   });
 
   it("CÙNG lượt gọi: chuỗi cũ verify mã rồi helper mức 5 verify LẠI cùng mã ⇒ qua (dùng lại dấu lượt)", async () => {

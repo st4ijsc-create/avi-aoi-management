@@ -25,6 +25,18 @@
  *     (`ctx.__luotXacMinhTotp`) — nếu không, cùng một mã của chính lượt ấy sẽ bị sổ coi là phát
  *     lại. Không có ⇒ đúc dấu mới, nên hai lượt gọi khác nhau với cùng mã ⇒ `TOTP_SAI`.
  *   · Không ném lỗi: trả kết quả thuần; Task 8/9 đổi sang `appError`.
+ *
+ * ⚠⚠ Fix round 1 — FAIL-CLOSED theo mức: CHỈ `1` và `3` (so `===`) là mức thấp. Mọi giá trị khác
+ *   lúc chạy (`"5"`, `2`, `undefined`, `NaN`…, lọt qua một phép ép kiểu) đi đường MỨC 5: sàn
+ *   `ACTUATION_ROLES` + TOTP tươi, không đọc cache.
+ * ⚠⚠ Fix round 1 — KHÔNG có `sessionToken` ⇒ mức 4 KHÔNG đọc và KHÔNG ghi cache phiên (cư xử như
+ *   mức 5). Khoá dự phòng `user:{id}` của middleware cũ là chung cho MỌI phiên không token của
+ *   cùng người, nên nó không phải "bước 2FA của PHIÊN".
+ * ⚠⚠ HỢP ĐỒNG "MỘT MÃ TOTP CHO MỘT LƯỢT GỌI tRPC" (Task 8/9 phải tính tới): dấu lượt
+ *   `ctx.__luotXacMinhTotp` (nếu chuỗi step-up cũ đã đặt) sống suốt lượt gọi, nên một thủ tục gọi
+ *   helper N lần trong CÙNG lượt gọi với CÙNG `totpCode` được phép N lần bằng MỘT mã — sổ coi đó là
+ *   cùng một lượt. Không có dấu ⇒ mỗi lần gọi helper đúc dấu mới ⇒ lần thứ hai cùng mã ⇒ `TOTP_SAI`.
+ *   ⇒ Một thủ tục muốn "mỗi lệnh mức 5 một mã" thì gọi helper ĐÚNG MỘT lần cho mỗi lệnh, mỗi lượt gọi.
  */
 import type { MucRuiRo } from "../services/ot/aiControlGate";
 import { dauLuotGoiMoi } from "./totpOnce";
@@ -41,7 +53,8 @@ const VAI_MUC_THAP: readonly UserRole[] = Object.freeze(["operator", "engineer",
 
 /** Sàn vai được ra lệnh ở mức `muc`. 1|3 ⇒ operator/engineer/supervisor/admin; 4|5 ⇒ `ACTUATION_ROLES`. */
 export function vaiTroDuocGhi(muc: MucRuiRo): readonly UserRole[] {
-  return muc === 4 || muc === 5 ? ACTUATION_ROLES : VAI_MUC_THAP;
+  // Fail-closed: chỉ 1|3 (so `===`) được sàn thấp; mọi giá trị khác lúc chạy ⇒ sàn cao.
+  return muc === 1 || muc === 3 ? VAI_MUC_THAP : ACTUATION_ROLES;
 }
 
 export type KetQuaXacThucTheoMuc =
@@ -62,26 +75,27 @@ export async function kiemXacThucTheoMuc(
   // 1. Sàn vai — TRƯỚC mọi kiểm TOTP.
   if (!user || !vaiTroDuocGhi(muc).includes(user.role as UserRole)) return { ok: false, ma: "ROLE_FLOOR" };
 
-  // 2. Mức 1|3: không cần 2FA.
-  if (muc !== 4 && muc !== 5) return { ok: true, cach: "khong_can" };
+  // 2. Mức 1|3: không cần 2FA. Liệt kê TƯỜNG MINH — mọi giá trị khác rơi xuống đường mức 5.
+  if (muc === 1 || muc === 3) return { ok: true, cach: "khong_can" };
+  const dungCache = muc === 4 && !!ctx.sessionToken; // chỉ mức 4 ĐÚNG, và chỉ khi có phiên thật
 
   // 3. Mức 4|5: phải đăng ký 2FA (cùng nguồn sự thật với adminProcedure/require2FA).
   if (!user.twoFactorEnabled) return { ok: false, ma: "TOTP_CHUA_DANG_KY" };
 
   const khoa = khoaPhienStepUp({ user, sessionToken: ctx.sessionToken });
 
-  // 4. Chỉ mức 4 đọc cache phiên.
-  if (muc === 4 && stepUpPhienConHan(khoa)) return { ok: true, cach: "phien" };
+  // 4. Chỉ mức 4 có sessionToken đọc cache phiên.
+  if (dungCache && stepUpPhienConHan(khoa)) return { ok: true, cach: "phien" };
 
   // 5. Cần mã.
-  if (totpCode === undefined || totpCode === "") return { ok: false, ma: "TOTP_CAN" };
-  if (!/^\d{6}$/.test(totpCode)) return { ok: false, ma: "TOTP_SAI" };
+  if (totpCode === undefined || totpCode === null || totpCode === "") return { ok: false, ma: "TOTP_CAN" };
+  if (typeof totpCode !== "string" || !/^\d{6}$/.test(totpCode)) return { ok: false, ma: "TOTP_SAI" };
 
   const luot = (ctx as { __luotXacMinhTotp?: string }).__luotXacMinhTotp ?? dauLuotGoiMoi();
   const kq = await verifyFreshTotp(user.id, totpCode, luot);
   if (!kq.hopLe) return { ok: false, ma: "TOTP_SAI" };
 
-  // Mã đúng (mức 4 hoặc 5) ⇒ đặt/làm mới cache phiên 10 phút cho mức 4.
-  ghiStepUpPhien(khoa);
+  // Mã đúng (mức 4 hoặc 5) ⇒ đặt/làm mới cache phiên 10 phút cho mức 4 — chỉ khi có sessionToken.
+  if (ctx.sessionToken) ghiStepUpPhien(khoa);
   return { ok: true, cach: "moi_lan" };
 }

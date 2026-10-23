@@ -529,8 +529,12 @@ const stepUpVerifiedUntil = new Map<string, number>();
  * R1a Task 7 (K8/D5) — ba cửa nhỏ vào CÙNG cache step-up của phiên, cho `xacThucTheoMuc.ts`.
  * ⚠ Middleware `stepUpTotpMiddleware` bên dưới KHÔNG gọi chúng (giữ nguyên từng chữ). Ba hàm này
  *   phải trùng công thức của nó: khoá `ctx.sessionToken || "user:{id}"`, TTL `STEPUP_TTL_MS`,
- *   dọn khi Map > 5000. Lưới §6 `xacThucTheoMuc.test.ts` đo hai chiều (middleware ghi ⇒ helper
- *   thấy; helper ghi ⇒ middleware cho qua) — lệch công thức là đỏ.
+ *   dọn khi Map > 5000. Lưới §6 `xacThucTheoMuc.test.ts` đo MỘT chiều trên `deployProcedure` thật
+ *   (middleware ghi ⇒ `stepUpPhienConHan(khoaPhienStepUp(…))` thấy, cả khi có token lẫn khi
+ *   `sessionToken: null` ⇒ khoá `user:{id}`); chiều ngược (helper ghi ⇒ middleware cho qua) KHÔNG
+ *   quan sát được vì `deployProcedure` còn chain `requirePerCallFreshTotp`. TTL dùng chung hằng số.
+ * ⚠ `ghiStepUpPhien` mở cache KHÔNG cần mã ⇒ người nhập bị ghim ở
+ *   `server/_core/xacThucTheoMucCache.census.test.ts` (chỉ `xacThucTheoMuc.ts` + lưới của nó).
  */
 export function khoaPhienStepUp(ctx: { user: { id: number }; sessionToken?: string | null }): string {
   return ctx.sessionToken || `user:${ctx.user.id}`;
