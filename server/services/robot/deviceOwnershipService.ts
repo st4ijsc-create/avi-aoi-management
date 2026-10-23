@@ -683,6 +683,8 @@ export async function checkEdgeOwnedFactoryDrift(): Promise<Array<{ kind: Device
           message: `${d.kind} ${d.id} is owned by edge node ${d.edgeNodeId} (factory ${d.nodeFactory ?? "NONE"}) but now belongs to factory ${d.deviceFactory ?? "NONE"} — the node will not list it (its STOPs fall back to central). Move its ownership or restore its factory / line assignment.`,
           recipients: to,
           dedupKey: `edge_owner_factory_drift:${key}`,
+          // cảnh báo TRẠNG THÁI: bộ nhớ `factoryDriftAlerted` rỗng sau mỗi lần khởi động ⇒ phải khử trùng BỀN VỮNG (không nhân hàng mỗi lần boot)
+          khuTrungBenVung: {},
           retryUntilPersisted: { everyMs: 30_000, attempts: 20 },
           source: d.kind === "robot" ? "robot" : "ot",
           entityType: d.kind === "robot" ? "robot" : "ot_command",
