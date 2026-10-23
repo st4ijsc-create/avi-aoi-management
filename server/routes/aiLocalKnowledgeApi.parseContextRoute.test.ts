@@ -123,3 +123,12 @@ describe("§D — route VẮNG/không phải chuỗi ⇒ hành vi cũ giữ nguy
     expect(ctx?.route).toBeUndefined();
   });
 });
+
+// ★ Đợt 9 (2026-10-23) — opt-out vòng kiểm biên dịch ST của trợ lý: CHỈ `false` boolean được nhận (client tắt được, KHÔNG bật được).
+describe("§Đợt 9 — context.kiemBienDichST", () => {
+  it("false ⇒ giữ false; true / \"false\" / 0 / vắng ⇒ không đặt", () => {
+    expect(parseContext({ codingMode: true, kiemBienDichST: false })?.kiemBienDichST).toBe(false);
+    for (const v of [true, "false", 0, null]) expect(parseContext({ codingMode: true, kiemBienDichST: v })?.kiemBienDichST).toBeUndefined();
+    expect(parseContext({ codingMode: true })?.kiemBienDichST).toBeUndefined();
+  });
+});

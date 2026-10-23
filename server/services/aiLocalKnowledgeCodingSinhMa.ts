@@ -29,6 +29,8 @@ import { kiemNganSachNguCanh } from "./aiLlamaServerClient";
 import { luotDuocNghi } from "./ai/loaiLuot";
 import { nganSachNghiChoLuot, tranMongMuonChoCheDo } from "./ai/nghiSau";
 import { hoSoSamplingCho } from "./ai/hoSoSampling";
+import { chayKiemBienDichTroLy, nenKiemBienDichTroLy, type KetQuaKiemTroLy } from "./ai/st/kiemBienDichTroLy";
+import { planInference } from "./aiGateway";
 /**
  * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
  * thoái hoá + bóc khối mã). Xem `aiCodingAgent.ts` để biết vì sao nó KHÔNG nằm trong `services/ai/`.
@@ -386,6 +388,65 @@ export async function* streamCodingGenerate(
   }
 
   /**
+   * ★ Đợt 9 (2026-10-23) — VÒNG KIỂM BIÊN DỊCH ST của trợ lý (`ai/st/kiemBienDichTroLy.ts`; cờ `AI_KIEM_BIEN_DICH_ST` có `tro-ly`,
+   * lượt không opt-out). Không có mã ST ⇒ bỏ qua, không một byte nào đổi. Lượt sửa đi qua aiGateway của RIÊNG nó (dựng lười ở lượt
+   * sửa đầu: câu trả lời không có ST không tốn rate-limit): prompt ĐÃ CHE, đầu ra qua bộ che, mỗi lượt sửa một hàng đo `recordPhu`.
+   */
+  let vanBan = kq.text;
+  let kiemTomTat: string | undefined;
+  let thayVanBan = false;
+  if (nenKiemBienDichTroLy(context)) {
+    const modelThuc = dungSinhMa?.modelId && dungSinhMa.modelId !== "default" ? dungSinhMa.modelId : undefined;
+    let planSua: Awaited<ReturnType<typeof planInference>> | null = null;
+    const layPlanSua = async () => (planSua ??= await planInference({ task: "code", text: promptCuoi, userId: execCtx?.user?.id, auditTask: "tro_ly_sua_st" }));
+    const itKiem = chayKiemBienDichTroLy({
+      cauTraLoi: kq.text,
+      heThong,
+      prompt: promptCuoi,
+      modelId: modelThuc,
+      maxTokens: tran,
+      ...(execCtx?.signal ? { signal: execCtx.signal } : {}),
+      chat: async (messages, modelId, maxTokens) => {
+        const p = await layPlanSua();
+        const { chatCompletion } = await import("./aiGgufEngine");
+        const tinChe = messages.map((m, i) => (i === 1 ? { ...m, content: p.safeText } : m));
+        return chatCompletion(
+          { messages: tinChe, maxTokens, temperature: 0.25, topP: 0.9, repeatPenalty: 1.05, ...(sinhMaDuocNghi ? {} : { disableThinking: true }) },
+          modelId,
+        );
+      },
+      locRa: (t) => planSua?.sanitizeOutput(t) ?? t,
+      ghiLuotSua: ({ ms, r }) =>
+        planSua?.recordPhu?.({
+          luotPhu: "sua-bien-dich-st",
+          model: modelThuc ?? null,
+          latencyMs: ms,
+          outcome: r ? "ok" : "error",
+          ...(r ? { tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated } : {}),
+        }),
+    });
+    let ketQuaKiem: KetQuaKiemTroLy;
+    for (;;) {
+      const n = await itKiem.next();
+      if (n.done) {
+        ketQuaKiem = n.value;
+        break;
+      }
+      yield n.value;
+    }
+    kiemTomTat = ketQuaKiem.tomTat;
+    if (ketQuaKiem.kq.trangThai !== "bo-qua") {
+      console.log(`[aiLocalKnowledge] trợ lý kiểm biên dịch ST: ${ketQuaKiem.tomTat} · +${ketQuaKiem.kq.msThem} ms`);
+    }
+    if (ketQuaKiem.traLoiCuoi) {
+      if (ketQuaKiem.ghiChu) yield { type: "token", token: ketQuaKiem.ghiChu };
+      vanBan = ketQuaKiem.traLoiCuoi;
+      thayVanBan = ketQuaKiem.daThay;
+    }
+  }
+  const oKiem = kiemTomTat ? { kiemBienDichST: kiemTomTat } : {};
+
+  /**
    * ★★★ CHÂN NGUỒN — nối vào CHUỖI, không chỉ vào một sự kiện SSE. Một phiên đã lưu chỉ giữ
    * `{role, content}` (bất biến `locLuot()`), nên thẻ tool ở trên BIẾN MẤT khi mở lại phiên cũ;
    * chân nguồn sống trong `content` nên nó ở lại. Im lặng ở đây là để người dùng không phân biệt
@@ -402,14 +463,16 @@ export async function* streamCodingGenerate(
    * của các lượt duan trước: biên dịch được 21 → 34, 0 khối đang đúng bị làm hỏng; 228 lời giải C# trục
    * H/M: 0 lần đụng. Tắt để ablation: `AI_CODING_BO_SUNG_USING=0`.
    */
-  const boSung = boSungUsingChoCauTraLoi(kq.text, language);
+  const boSung = boSungUsingChoCauTraLoi(vanBan, language);
   if (boSung) {
     yield { type: "token", token: boSung.thongBao };
     const doneDaSua = doneSinhMa(boSung.text + chan + boSung.thongBao, "ollama") as Extract<StreamEvent, { type: "done" }>;
-    yield { ...doneDaSua, answerRevised: true };
+    yield { ...doneDaSua, answerRevised: true, ...oKiem };
     return "xong";
   }
-  yield doneSinhMa(kq.text + chan, "ollama");
+  const doneCuoi = doneSinhMa(vanBan + chan, "ollama") as Extract<StreamEvent, { type: "done" }>;
+  // ★ Đợt 9 — bản ĐÃ SỬA biên dịch khác bản đã stream ⇒ client THAY (cùng hợp đồng bổ sung `using`).
+  yield { ...doneCuoi, ...(thayVanBan ? { answerRevised: true } : {}), ...oKiem };
   return "xong";
 }
 

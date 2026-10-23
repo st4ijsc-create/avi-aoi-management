@@ -83,7 +83,7 @@ import { stripThinking, StreamingThinkingStripper } from "../services/ai/thinkin
 // fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
 import { defaultModelBasename, resolveLogicalModel, toBasename } from "../services/ai/modelResolver";
 import { kiemModelV1, thongDiepLoiChoKhachV1 } from "../services/ai/kiemModelV1";
-import { cheDoKiemBienDichV1, kiemVaSuaST, nhanKiemBienDich, tranMsVongSuaST, type KetQuaKiemBienDichST } from "../services/ai/st/kiemBienDichSt";
+import { cheDoKiemBienDichV1, headerKiemBienDich, kiemVaSuaST, nhanKiemBienDich, tranMsVongSuaST, type KetQuaKiemBienDichST } from "../services/ai/st/kiemBienDichSt";
 import { trichMaST } from "../services/ai/st/trichMaST";
 import { chayVoiTokenKhe, chonModelKhiVuotTran, tokenKheHienTai, vuotTranDoiKhe } from "../services/ai/soModel/tranDoiKheToken";
 import { laModelKheNangPhu, modelNhaKheNang } from "../services/ai/soModel/tapKheNang";
@@ -404,12 +404,6 @@ function nenKiemBienDichV1(modelLabel: string, body: Record<string, unknown>, co
 }
 
 /** Giá trị header `x-st4i-bien-dich` (nhánh không stream). */
-function headerKiemBienDich(k: KetQuaKiemBienDichST): string {
-  if (k.trangThai === "bo-qua") return "ok=skip";
-  const loiCon = k.chanDoanCuoi.filter((d) => d.mucDo === "error").length;
-  const ok = k.trangThai === "sach" || k.trangThai === "da-sua" ? "1" : k.trangThai === "khong-kiem-duoc" ? "na" : "0";
-  return `ok=${ok}; trang-thai=${k.trangThai}; vong=${k.soVong}; sua=${k.soLoiDaSua}; con=${loiCon}`;
-}
 
 /**
  * ★ Đợt 9 — mẩu AUDIT của vòng kiểm biên dịch (`ai_llm_audit.redactedSnippet` qua `plan.record({auditSnippet})`): CHỈ số liệu

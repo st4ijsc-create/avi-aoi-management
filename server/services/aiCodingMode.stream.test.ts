@@ -159,6 +159,19 @@ vi.mock("./aiGgufEngine", () => ({
   },
 }));
 
+// ★ Đợt 9 (2026-10-23) — trình biên dịch ST GIẢ cho §ĐỢT 9 (vòng kiểm biên dịch của trợ lý): mã có "AND ;" ⇒ lỗi E007. Không chạy docker.
+vi.mock("./flow/lib/bienDichST", async (goc) => {
+  const that = await goc<typeof import("./flow/lib/bienDichST")>();
+  return {
+    ...that,
+    bienDichST: vi.fn(async (ma: string) =>
+      ma.includes("AND ;")
+        ? { ok: false, chanDoan: [{ tep: "ma.st", dong: 4, cot: 13, mucDo: "error", ma: "E007", thongDiep: "Unexpected token ;" }], ms: 3 }
+        : { ok: true, chanDoan: [], ms: 3 },
+    ),
+  };
+});
+
 vi.mock("../db/connection", () => ({
   getDb: vi.fn(async () => ({ insert: () => ({ values: async () => undefined }) })),
 }));
@@ -1425,5 +1438,76 @@ describe("§R2B — bổ sung `using` C# còn thiếu SAU sinh (tất định, t
     } finally {
       delete process.env.AI_CODING_BO_SUNG_USING;
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+describe("§ĐỢT 9 — vòng kiểm biên dịch ST của TRỢ LÝ (AI_KIEM_BIEN_DICH_ST có tro-ly; opt-out context.kiemBienDichST=false)", () => {
+  const CAU = "viết function block ST tên A: đầu ra y bằng đầu vào x";
+  const FB_SAI = ["FUNCTION_BLOCK A", "VAR_INPUT x : BOOL; END_VAR", "VAR_OUTPUT y : BOOL; END_VAR", "  y := x AND ;", "END_FUNCTION_BLOCK"].join("\n");
+  const FB_DUNG = ["FUNCTION_BLOCK A", "VAR_INPUT x : BOOL; END_VAR", "VAR_OUTPUT y : BOOL; END_VAR", "  y := x;", "END_FUNCTION_BLOCK"].join("\n");
+  const RAO = "`".repeat(3);
+  const rao = (ma: string) => ["Mã:", `${RAO}st`, ma, RAO].join("\n");
+  let chatNhan: Array<{ messages: Array<{ role: string; content: string }> }> = [];
+  beforeEach(async () => {
+    chatNhan = [];
+    const eng = await import("./aiGgufEngine");
+    vi.mocked(eng.chatCompletion).mockImplementation((async (o: { messages: Array<{ role: string; content: string }> }) => {
+      chatNhan.push(o);
+      return { text: ["Đã sửa:", `${RAO}st`, FB_DUNG, RAO].join("\n"), tokensPrompt: 5, tokensGenerated: 5, modelId: "gia", totalTimeMs: 1, tokensPerSecond: 1, finishReason: "stop" };
+    }) as never);
+  });
+  afterEach(() => {
+    delete process.env.AI_KIEM_BIEN_DICH_ST;
+  });
+
+  it("★★★ cờ có tro-ly + bản đầu LỖI ⇒ tiến độ compile_st, sửa trong cùng hội thoại, done = BẢN ĐÃ SỬA (answerRevised) + kiemBienDichST", async () => {
+    process.env.AI_KIEM_BIEN_DICH_ST = "tro-ly";
+    h.manh = [rao(FB_SAI)];
+    const r = await chay(CAU, admin());
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    expect(chatNhan).toHaveLength(1);
+    expect(chatNhan[0]!.messages.map((m) => m.role)).toEqual(["system", "user", "assistant", "user"]);
+    expect(chatNhan[0]!.messages[2]!.content).toContain("AND ;");
+    expect(chatNhan[0]!.messages[3]!.content).toContain("E007");
+    expect(r.events.some((e) => e.type === "tool_loop" && e.toolName === "compile_st" && e.phase === "xong")).toBe(true);
+    expect(d.answerRevised).toBe(true);
+    expect(d.answer).toContain(FB_DUNG);
+    expect(d.answer).toContain("Đã tự sửa 1 lỗi biên dịch");
+    expect(d.kiemBienDichST).toMatch(/^ok=1; trang-thai=da-sua; vong=1; sua=1; con=0$/);
+    // token đã stream giữ bản GỐC; client thay bằng done.answer
+    expect(r.chu).toContain("AND ;");
+  });
+
+  it("★★★ opt-out context.kiemBienDichST=false (nhánh 'tắt' của A/B cùng server) ⇒ không biên dịch, không gọi sửa, done như cũ", async () => {
+    process.env.AI_KIEM_BIEN_DICH_ST = "tro-ly";
+    h.manh = [rao(FB_SAI)];
+    const r = await chay(CAU, admin(), { kiemBienDichST: false });
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    expect(chatNhan).toHaveLength(0);
+    expect(d.answerRevised).toBeUndefined();
+    expect(d.kiemBienDichST).toBeUndefined();
+    expect(d.answer).toContain("AND ;");
+  });
+
+  it("cờ mặc định (không có tro-ly) ⇒ y hệt trước: không biên dịch, không kiemBienDichST", async () => {
+    h.manh = [rao(FB_SAI)];
+    const r = await chay(CAU, admin());
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    expect(chatNhan).toHaveLength(0);
+    expect(d.kiemBienDichST).toBeUndefined();
+    expect(r.events.some((e) => e.type === "tool_loop" && e.toolName === "compile_st")).toBe(false);
+  });
+
+  it("mã ST sạch ⇒ không gọi sửa; ghi chú '✓ không lỗi' vào câu trả lời, KHÔNG answerRevised", async () => {
+    process.env.AI_KIEM_BIEN_DICH_ST = "tro-ly";
+    h.manh = [rao(FB_DUNG)];
+    const r = await chay(CAU, admin());
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    expect(chatNhan).toHaveLength(0);
+    expect(d.answerRevised).toBeUndefined();
+    expect(d.answer).toContain("không lỗi");
+    expect(r.chu).toContain("không lỗi");
+    expect(d.kiemBienDichST).toMatch(/^ok=1; trang-thai=sach/);
   });
 });

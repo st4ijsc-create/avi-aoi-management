@@ -237,6 +237,11 @@ export interface KbQueryContext {
    */
   cheDoNghi?: CheDoNghi;
   /**
+   * ★ Đợt 9 (2026-10-23) — opt-out của LƯỢT cho vòng kiểm biên dịch ST của trợ lý (`ai/st/kiemBienDichTroLy.ts`): chỉ `false` có
+   * nghĩa (bỏ vòng dù cờ `AI_KIEM_BIEN_DICH_ST` có `tro-ly`) — nhánh "tắt" của A/B trên CÙNG server. Không mở được vòng khi cờ tắt.
+   */
+  kiemBienDichST?: false;
+  /**
    * ★★★ doc 79 · TRỤC 2 — id DỰ ÁN đang chọn (bộ chọn dự án ở đầu cây tệp). **Là một ID, KHÔNG phải
    * đường dẫn** — server tra danh sách TRẮNG (`repoProjects.gocTheoId`) để ra gốc; id lạ / đường dẫn
    * tự do ⇒ TỪ CHỐI (fail-closed). Chỉ có nghĩa khi `codingMode === true`. Vắng ⇒ dự án mặc định.
@@ -3498,6 +3503,11 @@ export type StreamEvent =
        * client phải THAY văn bản đã tích luỹ bằng `answer` (khác `degraded`: KHÔNG phải từ chối/thoái hoá).
        */
       answerRevised?: boolean;
+      /**
+       * ★ Đợt 9 (2026-10-23) — tóm tắt máy đọc của vòng kiểm biên dịch ST (`ok=…; trang-thai=…; vong=…; sua=…; con=…`, cùng định dạng
+       * header `x-st4i-bien-dich` của /v1). Vắng = vòng không chạy. Kiểm nhánh A/B + tra cứu; UI không cần đọc.
+       */
+      kiemBienDichST?: string;
       /** ★ Hoá đơn nguồn dữ liệu — THÊM MỚI, thuần bổ sung: consumer SSE cũ đọc
        *  `done` theo từng ô sẽ bỏ qua ô lạ mà không đổi hành vi. */
       dataCitations?: KbDataCitation[];

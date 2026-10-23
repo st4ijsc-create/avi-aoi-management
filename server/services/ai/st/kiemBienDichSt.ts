@@ -217,6 +217,14 @@ export function cheDoCompileStTacNhan(env: NodeJS.ProcessEnv = process.env): "mo
 }
 
 /** Dòng ghi chú cho người dùng (không thay lặng lẽ). `null` = không hiển thị gì ("bo-qua"). */
+/** Tóm tắt máy đọc được của một lượt kiểm (header `x-st4i-bien-dich` của /v1, ô `kiemBienDichST` của `done` ở trợ lý). */
+export function headerKiemBienDich(k: KetQuaKiemBienDichST): string {
+  if (k.trangThai === "bo-qua") return "ok=skip";
+  const loiCon = k.chanDoanCuoi.filter((d) => d.mucDo === "error").length;
+  const ok = k.trangThai === "sach" || k.trangThai === "da-sua" ? "1" : k.trangThai === "khong-kiem-duoc" ? "na" : "0";
+  return `ok=${ok}; trang-thai=${k.trangThai}; vong=${k.soVong}; sua=${k.soLoiDaSua}; con=${loiCon}`;
+}
+
 export function nhanKiemBienDich(k: KetQuaKiemBienDichST): string | null {
   switch (k.trangThai) {
     case "bo-qua":
