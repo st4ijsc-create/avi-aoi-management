@@ -638,6 +638,13 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   regex: `\p{L}` trong template thường thành "p" ⇒ ranh giới chữ sai; `\S`/`\d` mất `\` ⇒ dấu vận hành "line N" không bao giờ
   khớp — sửa ở 8509b2f0e). Đợt 9 (a)(b): cổng ý định mã cho tầng 4 + không dấu/đồng nghĩa ⇒ bộ mù 4 (agent viết, commit
   685abed9e trước khi chỉnh) 105 → 109/120. Còn lại ("soạn", "the nao/cai nao" không dấu, "lần gần nhất") chờ bộ mù 5.
+  **Bộ mù 5 (2026-10-23; agent con viết, commit 581521e78 TRƯỚC khi chỉnh; chỉnh trên DEV-4; mã chốt 9b7ffcf72; chấm MỘT lần, GPU như mù
+  1–4):** trước chỉnh 104/120 → **sau 106/120 = 88 %** (+2; DEV-4 83 → 90 ⇒ phần lớn khớp DEV). Sửa được: "lần gần nhất máy AOI-04…",
+  "Soạn giúp… FB bằng ST…". Theo vai trò: code.plc 20 · chat.ops 20 · summarize 19 · code.software 17 · extract 16 · **chat 14/20** (yếu nhất).
+  ⚠ Lần đầu thấy lỗi ĐỘ CHÍNH XÁC tầng 3 trên bộ mù (bộ cũ 100 %): "parse" (tác vụ) thắng ý định mã khi động từ là "soạn"; trích không có
+  từ cấu trúc ("kèm người phụ trách", "các mã… khác nhau") rơi sang vận hành / khái niệm; ý định mã bị PHỦ ĐỊNH ("chưa cần code") hoặc
+  động từ trùng nghĩa thường ("có tạo thread mới không"). Lỗi tầng 4: câu hội thoại/khuyên chung ("soạn email… nguyên tắc", "SMB hay FTP")
+  bị hút về summarize/code. Không chỉnh tiếp trên bộ này (đã dùng) — hướng sau cần bộ mù 6.
 - ★ SỰ CỐ 2026-10-21 14:00: bộ lập lịch khe nặng của :3000 đổi khe sang 35B (start-llama-server.ps1 -Force ⇒ Stop-Process)
   GIỮA lượt đo 27B của tiến trình khác (bằng chứng: vram_events 07:01:50Z "Đổi khe sang … hỏng: kịch bản khởi động thoát 4" +
   logs/llama-server-20261021-140007 thấy 30,9 GB trống). Sửa: KHOÁ KHE — tệp LLAMA_WATCHDOG_PAUSE_FILE mang JSON {chu, lyDo,
