@@ -25,6 +25,7 @@ import { eq, like, sql } from "drizzle-orm";
 
 const fake = vi.hoisted(() => ({
   drivers: new Map<number, unknown>(),
+  fingerprints: new Map<number, string>(),
 }));
 
 // Nguồn safety-PLC nền của facade THẬT được giả (khuôn dot1b): OK ⇒ PLC thật đọc sạch. Endpoint TEST-NET-1, không bao giờ nối.
@@ -57,6 +58,9 @@ vi.mock("./otManager", async importOriginal => {
     ...orig,
     getActiveDriver: (adapterId: number) =>
       fake.drivers.get(adapterId) as ReturnType<typeof orig.getActiveDriver>,
+    // fix round 1 (M-4) — the running connection's fingerprint (5a-stop: the pin is honoured only on a connection made for the
+    // adapter's CURRENT target), as pinnedStop.dot1d.db.test.ts does.
+    getActiveConnectionFingerprint: (adapterId: number) => fake.fingerprints.get(adapterId),
   };
 });
 
@@ -71,6 +75,7 @@ import {
 } from "../../../drizzle/schema";
 import { dispatch, type DispatchInput } from "./commandDispatcher";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
+import { adapterTargetFingerprint } from "./adapterTarget";
 
 const DB_URL = process.env.DATABASE_URL;
 const DAU = `R1AT3-${Date.now()}`;
@@ -285,8 +290,14 @@ describe.skipIf(!DB_URL)(
           dataType: "int",
           writable: true,
         },
+        // fix round 1 (M-1) — a NON-writable tag, for TAG_NOT_WRITABLE at write index ≥ 1
+        { adapterId, tagKey: "ro_kv", address: "D204", dataType: "int", writable: false },
       ]);
       fake.drivers.set(adapterId, fakeDriver);
+      fake.fingerprints.set(
+        adapterId,
+        adapterTargetFingerprint({ protocol: "stub", endpoint: "stub://r1a-t3", machineId: MACHINE, connectionOptions: null }),
+      );
     }, 60_000);
 
     afterAll(async () => {
@@ -510,6 +521,81 @@ describe.skipIf(!DB_URL)(
     });
 
     // ═════════════════ mọi cột NULL ⇒ hành vi cũ ═════════════════
+    // ═════════════════ fix round 1 ═════════════════
+    it("M-2: stop [tag ghim = giá trị ghim (NGOÀI dải), tag khác TRONG dải] ⇒ KHÔNG miễn (miễn chỉ khi CẢ lệnh là STOP ghim) ⇒ OUT_OF_RANGE trên tag ghim", async () => {
+      const inp = input({
+        commandType: "stop",
+        writes: [
+          { tagKey: "toc_do", value: 0 },
+          { tagKey: "nhiet_sp", value: 245 },
+        ],
+      });
+      const res = await dispatch(inp);
+      expect(res.reason).toBe("OUT_OF_RANGE");
+      const rows = await ledger(inp.idempotencyKey);
+      expect(rows.map(r => r.tagKey)).toEqual(["toc_do"]);
+    });
+
+    it("M-2: stop [tag ghim = giá trị ghim, tag khác NGOÀI dải] ⇒ OUT_OF_RANGE", async () => {
+      const res = await dispatch(
+        input({
+          commandType: "stop",
+          writes: [
+            { tagKey: "toc_do", value: 0 },
+            { tagKey: "nhiet_sp", value: 251 },
+          ],
+        })
+      );
+      expect(res.reason).toBe("OUT_OF_RANGE");
+    });
+
+    it("M-1: lệnh nhiều write bị từ chối ở write #1 (OUT_OF_RANGE), gọi lại CÙNG khoá ⇒ trả từ chối đã lưu, không ném, sổ vẫn 1 dòng (khoá mang chỉ số GỐC)", async () => {
+      const inp = input({
+        writes: [
+          { tagKey: "nhiet_sp", value: 245 },
+          { tagKey: "toc_do", value: 101 },
+        ],
+      });
+      const r1 = await dispatch(inp);
+      expect(r1.reason).toBe("OUT_OF_RANGE");
+      const r2 = await dispatch({ ...inp });
+      expect(r2.status).toBe("rejected");
+      expect(r2.reason).toMatch(/^OUT_OF_RANGE: /); // cachedResult: reason = errorText của dòng đã lưu
+      expect(r2.commandLogIds).toEqual(r1.commandLogIds);
+      const rows = await ledger(inp.idempotencyKey);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.idempotencyKey).toBe(`${inp.idempotencyKey}:toc_do:1`);
+    });
+
+    it("M-1: TAG_NOT_WRITABLE ở write #1, gọi lại CÙNG khoá ⇒ cùng hành vi (trả từ chối đã lưu, không ném)", async () => {
+      const inp = input({
+        writes: [
+          { tagKey: "nhiet_sp", value: 245 },
+          { tagKey: "ro_kv", value: 1 },
+        ],
+      });
+      const r1 = await dispatch(inp);
+      expect(r1.reason).toBe("TAG_NOT_WRITABLE");
+      const r2 = await dispatch({ ...inp });
+      expect(r2.status).toBe("rejected");
+      expect(r2.reason).toMatch(/^TAG_NOT_WRITABLE: /);
+      expect(r2.commandLogIds).toEqual(r1.commandLogIds);
+      const rows = await ledger(inp.idempotencyKey);
+      expect(rows.map(r => r.idempotencyKey)).toEqual([`${inp.idempotencyKey}:ro_kv:1`]);
+    });
+
+    it("M-4: STOP ghim gửi \"0\" (ép kiểu ⇒ 0) với OT BẬT, commissioning tắt ⇒ 5a-stop phân loại là STOP GHIM (pinnedStop), thiết bị nhận số 0", async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      const actionId = await makeAction({ commandType: "stop", writes: [{ tagKey: "toc_do", value: 0 }] });
+      const inp = input({ actionId, commandType: "stop", writes: [{ tagKey: "toc_do", value: "0" }] });
+      const res = await dispatch(inp);
+      expect(res.reason).toBeUndefined();
+      expect(res.status).toBe("acked");
+      expect(res.pinnedStop).toBe(true);
+      expect(writtenBatches[0]).toEqual([{ tagKey: "toc_do", value: 0 }]);
+      expect(await pendingStatus(actionId)).toBe("executed");
+    });
+
     it("hồi quy: mọi cột mới NULL ⇒ lệnh hitl hợp lệ đi tới simulated như trước", async () => {
       const inp = input({ writes: [{ tagKey: "cu", value: 42 }] });
       const res = await dispatch(inp);

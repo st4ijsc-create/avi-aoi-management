@@ -828,49 +828,52 @@ function epKieuKenh(tag: Pick<DeviceTag, "dataType">, value: unknown) {
 
 /**
  * PURE — the early channel gate (step 3b of dispatchCore). `tags[i]` is the step-3 row of `writes[i]` (found, enabled,
- * writable). Per write, in order:
+ * writable). Two passes over the writes, each in write order:
+ *   PASS 1 (every write):
  *   1. not a write channel (`laKenhGhi`: channel_kind input / calculated) ⇒ CHANNEL_READ_ONLY. NO stop exemption: a pin
  *      only exists on a writable channel. channel_kind NULL ⇒ derived from `writable` (true here) ⇒ always a write channel.
  *   2. channel model not declared (`kenhDaKhaiGhi` false) ⇒ the write passes UNCHANGED (old behaviour).
  *   3. coerce by dataType (`kiemGiaTriGhi`, never rounds) ⇒ TYPE_MISMATCH on failure.
- *   4. PINNED STOP exemption (coordinator 2026-10-24 item 4: no software blocks a pinned STOP) — matched on DATA here,
- *      since this gate runs before the mode/commissioning gates: a stop-typed command (`isStopCommandType`) whose coerced
- *      value equals the tag's `stop_value` (`stopPinsFromTagRows` + `matchPinnedStop`, the 5a-stop rule) skips range and
- *      step. The full classification (`classifyOtStop`, connection fingerprint …) still runs later, unchanged.
- *      Range ↔ stop_value consistency is checked at CONFIGURATION time (R1a Task 12), not here.
- *   5. range, then step ⇒ OUT_OF_RANGE / OFF_STEP (the detail carries `goiY`, a hint only — the value is never altered).
+ *   PINNED STOP exemption (coordinator 2026-10-24 item 4: no software blocks a pinned STOP; fix round 1 M-2: WHOLE command
+ *   only) — matched on DATA here, since this gate runs before the mode/commissioning gates: a stop-typed command
+ *   (`isStopCommandType`) whose declared writes, coerced, ALL equal their tags' `stop_value` (one `matchPinnedStop` over them,
+ *   the 5a-stop rule: pinned tags, pinned values, no duplicates) skips range and step. A stop that mixes a pin with any other
+ *   declared write is not exempt for any of them. The full classification (`classifyOtStop`, connection fingerprint …)
+ *   still runs later, unchanged. Range ↔ stop_value consistency is checked at CONFIGURATION time (R1a Task 12), not here.
+ *   PASS 2 (declared writes, unless exempt):
+ *   4. range, then step ⇒ OUT_OF_RANGE / OFF_STEP (the detail carries `goiY`, a hint only — the value is never altered).
  * ok ⇒ the writes to use downstream: declared tags carry the COERCED value, undeclared ones the caller's write object.
  *
  * R1a Task 4 (ledger R-1) appends its mode gate right after this block in dispatchCore, on the same tag rows.
  */
 export function congKenhSom(commandType: string, writes: ReadonlyArray<DispatchWrite>, tags: ReadonlyArray<TagCongKenh>): KetQuaCongKenhSom {
-  const laLenhDung = isStopCommandType(commandType);
-  const pins = laLenhDung
-    ? stopPinsFromTagRows(tags.map((t) => ({ tagKey: t.tagKey, dataType: t.dataType, stopValue: t.stopValue, writable: t.writable, isEnabled: t.isEnabled })))
-    : [];
+  const tuChoi = (i: number, ma: MaCongKenh, chiTiet: string): KetQuaCongKenhSom => ({ ok: false, ma, chiTiet, tagKey: writes[i].tagKey, address: tags[i].address });
   const out: DispatchWrite[] = [];
+  const daKhai: number[] = []; // indexes of the declared writes (coerced in `out`)
   for (let i = 0; i < writes.length; i++) {
     const w = writes[i];
     const tag = tags[i];
-    const tuChoi = (ma: MaCongKenh, chiTiet: string): KetQuaCongKenhSom => ({ ok: false, ma, chiTiet, tagKey: w.tagKey, address: tag.address });
-    if (!laKenhGhi(tag)) {
-      return tuChoi("CHANNEL_READ_ONLY", `Tag "${w.tagKey}" is a '${loaiKenh(tag)}' channel — not a write channel`);
-    }
+    if (!laKenhGhi(tag)) return tuChoi(i, "CHANNEL_READ_ONLY", `Tag "${w.tagKey}" is a '${loaiKenh(tag)}' channel — not a write channel`);
     if (!kenhDaKhaiGhi(tag)) {
       out.push(w);
       continue;
     }
     const kieu = epKieuKenh(tag, w.value);
-    if (!kieu.ok) return tuChoi(kieu.ma, `Tag "${w.tagKey}": ${kieu.chiTiet}`);
-    if (laLenhDung && matchPinnedStop(pins, [{ tagKey: w.tagKey, value: kieu.giaTri }]).ok) {
-      out.push({ ...w, value: kieu.giaTri });
-      continue;
-    }
-    const kq = kiemGiaTriGhi(tag, w.value);
-    if (!kq.ok) {
-      return tuChoi(kq.ma, `Tag "${w.tagKey}": ${kq.chiTiet}${kq.goiY !== undefined ? ` (goiY=${kq.goiY})` : ""}`);
-    }
-    out.push({ ...w, value: kq.giaTri });
+    if (!kieu.ok) return tuChoi(i, kieu.ma, `Tag "${w.tagKey}": ${kieu.chiTiet}`);
+    out.push({ ...w, value: kieu.giaTri });
+    daKhai.push(i);
+  }
+  if (daKhai.length === 0) return { ok: true, writes: out };
+
+  if (isStopCommandType(commandType)) {
+    const pins = stopPinsFromTagRows(tags.map((t) => ({ tagKey: t.tagKey, dataType: t.dataType, stopValue: t.stopValue, writable: t.writable, isEnabled: t.isEnabled })));
+    if (matchPinnedStop(pins, daKhai.map((i) => ({ tagKey: out[i].tagKey, value: out[i].value }))).ok) return { ok: true, writes: out };
+  }
+
+  for (const i of daKhai) {
+    const kq = kiemGiaTriGhi(tags[i], writes[i].value);
+    if (!kq.ok) return tuChoi(i, kq.ma, `Tag "${writes[i].tagKey}": ${kq.chiTiet}${kq.goiY !== undefined ? ` (goiY=${kq.goiY})` : ""}`);
+    // kq.giaTri === the pass-1 coerced value (kiemGiaTriGhi never rounds or clamps)
   }
   return { ok: true, writes: out };
 }
@@ -989,6 +992,16 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   if (existing && TERMINAL_STATUSES.has(existing.status)) {
     return cachedResult(input, existing);
   }
+  // SCADA R1a T3 fix round 1 (M-1) — no row for write #0: a refusal of ONE later write (TAG_NOT_FOUND / TAG_NOT_WRITABLE /
+  // the step-3b channel gate) ledgers only that write, under its own index. Look for it too (first in write order), so a
+  // retry returns that cached refusal instead of re-running the gates into the unique constraint. Single-write commands
+  // (and any command whose write #0 has a row) never reach this read.
+  if (!existing && input.writes.length > 1) {
+    const laterKeys = input.writes.slice(1).map((w, i) => perWriteKey(input.idempotencyKey, w.tagKey, i + 1));
+    const later = await db.select().from(commandLog).where(inArray(commandLog.idempotencyKey, laterKeys));
+    const first = laterKeys.map((k) => later.find((r) => r.idempotencyKey === k)).find((r) => !!r && TERMINAL_STATUSES.has(r.status));
+    if (first) return cachedResult(input, first);
+  }
 
   // ── (3) Resolve adapter + tags; assert enabled + writable. ───────────────────
   const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.adapterId)).limit(1);
@@ -1054,6 +1067,14 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   const rawCallerWrites = input.writes;
   const kenh = congKenhSom(input.commandType, input.writes, tagRowsBuoc3);
   if (!kenh.ok) {
+    // fix round 1 (I-1) — a STOP-typed command to an adapter central holds no driver for: if an EDGE node owns the adapter,
+    // step 4 turns it into an adapter-wide STOP of the PINNED values (queued for the node / central fallback), ignoring the
+    // caller's values — so the refusal here would protect no wire value and only block a STOP. Route it exactly as step 4
+    // would; not edge-owned (or the owner unreadable — routeEdgeOwnedAdapterCommand alerts) ⇒ the refusal below, as before.
+    if (isStopCommandType(input.commandType) && !getActiveDriver(input.adapterId)) {
+      const routed = await routeEdgeOwnedAdapterCommand(db, input);
+      if (routed) return routed;
+    }
     const ids = await writeRejected(db, input, kenh.ma, kenh.chiTiet, kenh.tagKey, kenh.address);
     return { ok: false, simulated: false, status: "rejected", reason: kenh.ma, results: failedResults(input, kenh.ma), commandLogIds: ids };
   }
@@ -2261,10 +2282,14 @@ async function writeAll(
   if (link?.confirmedBy != null) who.confirmedBy = link.confirmedBy;
   const trig = triggerCols(input);
   const ctx = commandContext(input); // G1.7 — correlation_id + deadline_ms (rejected/failed too)
-  const writes = onlyTagKey ? input.writes.filter((w) => w.tagKey === onlyTagKey) : input.writes;
-  const list = writes.length > 0 ? writes : [{ tagKey: null as any, value: null }];
+  // SCADA R1a T3 fix round 1 (M-1) — each row keeps the ORIGINAL write index in its per-write key (was the index in the
+  // filtered list: a refusal of write #1 took key `K:<tag>:0`, which the step-2 probe never looks for ⇒ a retry with the same
+  // key re-ran the gates and hit the unique constraint). Unfiltered calls are byte-identical (index === original index).
+  const indexed = input.writes.map((w, idx) => ({ w, idx }));
+  const writes = onlyTagKey ? indexed.filter((e) => e.w.tagKey === onlyTagKey) : indexed;
+  const list = writes.length > 0 ? writes : [{ w: { tagKey: null as any, value: null }, idx: 0 }];
   for (let i = 0; i < list.length; i++) {
-    const w = list[i];
+    const { w, idx } = list[i];
     const [row] = await db
       .insert(commandLog)
       .values({
@@ -2286,7 +2311,7 @@ async function writeAll(
           : link?.ackExtra && Object.keys(link.ackExtra).length > 0
             ? { ackValue: { ...link.ackExtra } as any }
             : {}),
-        idempotencyKey: link?.nullKey ? null : perWriteKey(input.idempotencyKey, w.tagKey ?? "_", i),
+        idempotencyKey: link?.nullKey ? null : perWriteKey(input.idempotencyKey, w.tagKey ?? "_", idx),
       })
       .returning({ id: commandLog.id });
     ids.push(row.id);
