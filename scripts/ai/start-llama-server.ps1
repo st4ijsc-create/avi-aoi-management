@@ -224,6 +224,14 @@ if (-not [string]::IsNullOrWhiteSpace($apiKey)) { $srvArgs += @('--api-key', $ap
 $nganSachNghi = if ($cfg['LLAMA_SERVER_REASONING_BUDGET']) { "$($cfg['LLAMA_SERVER_REASONING_BUDGET'])".Trim() } else { '12000' }
 if ($nganSachNghi -ne '-1') { $srvArgs += @('--reasoning-budget', $nganSachNghi) }
 
+# ── Đợt 9 (2026-10-24, ĐO ĐƯỢC, dieu-phoi duyệt) — PROMPT CACHE TRÊN RAM TẮT mặc định (`--cache-ram 0`) ─────────────────────
+# Trước đây KHÔNG truyền cờ ⇒ mặc định của llama.cpp (8192 MiB). Qwen3.6-27B và 35B-A3B đều là model HYBRID/RECURRENT: 9/9 lượt log
+# "forcing full prompt re-processing due to … hybrid/recurrent memory" ⇒ cache RAM KHÔNG tái dùng được, chỉ tốn commit (+3,3…+4,3 GB ở trần
+# 4096) và ~1,5 s/lượt cập nhật. Tắt: commit PHẲNG (+0,5 GB), nhanh hơn 13–24 % (spec 2026-10-20 §6, `scripts/ai-eval/bo-nho/`). Sự cố
+# 2026-10-23 22:20: llama-server 27B giữ ~40 GB commit ⇒ Windows hết bộ nhớ ảo. Ghi đè bằng LLAMA_SERVER_CACHE_RAM (MiB) trong .env.
+$cacheRam = if ($cfg['LLAMA_SERVER_CACHE_RAM']) { "$($cfg['LLAMA_SERVER_CACHE_RAM'])".Trim() } else { '0' }
+$srvArgs += @('--cache-ram', $cacheRam)
+
 # ── IDEMPOTENT: đã sống thì THOÁT, không spawn cái thứ hai ──────────────────────────────────────
 function Test-ServerAlive {
     try {
