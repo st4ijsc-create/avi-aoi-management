@@ -1,9 +1,104 @@
 # SCADA R0 · Kết nối thật — Báo cáo nghiệm thu (Task 12)
 
-Ngày đo: 2026-10-23 (Task 12) và 2026-10-23/24 (Task 12b, sau sửa D1–D3 — mục ngay dưới) · nhánh `feat/scada-r0` (worktree `D:\SOURCES\_scada_wt`) · máy Windows 11, Docker Desktop 29.8.2 (engine linux).
+Ngày đo: 2026-10-23 (Task 12), 2026-10-23/24 (Task 12b, sau sửa D1–D3) và 2026-10-24 (T12b fix round 1 — mục ngay dưới, bảng HIỆN HÀNH) · nhánh `feat/scada-r0` (worktree `D:\SOURCES\_scada_wt`) · máy Windows 11, Docker Desktop 29.8.2 (engine linux).
 Mọi số dưới đây là **đo bằng đồng hồ thật**; không cổng nào được khai "đạt" mà không có phép đo. Ngưỡng **không nới**.
 
-## Sau sửa D1–D3 (Task 12b, đo 2026-10-23/24)
+## Fix round 1 (T12b, đo lại 2026-10-24) — bảng hiện hành
+
+Sửa ở commit `0a8c1f49a` theo review T12 + T12b:
+- **HA:** D1 hạ phiên ⇒ HẠ transport của endpoint đang hoạt động NGAY (`safeDisconnect`), không chỉ đóng subscription. Trước: với một
+  endpoint, socket nửa mở sống tới lần thử kế.
+- **Driver:** SLMP/EIP/S7 `connect()` lại trên cùng driver hạ transport cũ trước (Modbus/MC vốn đã làm). SLMP `data` có chốt danh tính
+  socket — đã đo được lỗi trước khi sửa: một khung 3E (không serial) tới trên socket đã bị thay được ghi thành GOOD (777) cho giao dịch
+  của phiên mới.
+- **D1 sau cờ `OT_CHAT_LUONG_V2_ENABLED`**, đọc lúc subscribe (như D3): cờ tắt ⇒ đúng hành vi trước R0.
+- **Stub treo ném `StubTimeoutError`** (lớp QUÁ HẠN, không phải `DeviceUnreachableError`); đường poll của stub đọc tuần tự từng tag và huỷ
+  tick qua `laLoiHuyTickPoll` như driver thật ⇒ lưới stub đi đúng đường D3 (đột biến "quá hạn không huỷ tick" làm đỏ test stub).
+- **Lưới nghiệm thu chỉ chạy khi gọi tường minh:**
+  - Bash: `SCADA_R0_NGHIEM_THU=1 npx vitest run -c vitest.db.config.ts server/services/scada/r0NghiemThu.db.test.ts`
+  - PowerShell: `$env:SCADA_R0_NGHIEM_THU='1'; npx vitest run -c vitest.db.config.ts server/services/scada/r0NghiemThu.db.test.ts`
+  - Không đặt biến ⇒ cả tệp bị bỏ qua (16 skipped).
+- **Bench:** không ghi `cong3CoLai = 0` khi DB đã "connected" giả — lượt đó in "GIẢ" và tính KHÔNG ĐẠT.
+
+### Kết luận (fix round 1)
+
+| Cổng R0 | Stub legacy (từ chối / treo) | Stub HA (từ chối / treo) | Bench `pause` legacy / HA | Bench `stop` legacy / HA |
+|---|---|---|---|---|
+| 1. rút ⇒ mọi tag bad ≤ 2000 | 5/5 · 5/5 | 5/5 · 5/5 | 3/3 · 3/3 | 3/3 · 3/3 |
+| 2. M10 "lost" ≤ 5000 | 5/5 · 5/5 | 5/5 · 5/5 | 3/3 · 3/3 | 3/3 · 3/3 |
+| 3. DB `error` / `connected` ≤ 5000 | 5/5 · 5/5 | 5/5 · 5/5 | 3/3 · 3/3 | **2/3** (1 lượt "connected" GIẢ) · 3/3 |
+| 4. cắm lại ⇒ tốt ≤ 2000 | 5/5 · 5/5 | 5/5 · 5/5 | 3/3 · 3/3 | 3/3 · 3/3 |
+
+**Cổng 3 trên bench `stop` legacy CHƯA đạt 3/3.** Proxy cổng của Docker Desktop nhận TCP rồi đóng khi container chưa chạy ⇒ legacy "nối
+được" ⇒ DB ghi `connected` lúc +5011 ms trong khi PLC còn chết. "Connected = TCP lên, chưa phải lần đọc tốt đầu tiên" đã được phán quyết
+hoãn sang R1. Lượt này được ghi là KHÔNG ĐẠT, không phải 0 ms. HA không có hiện tượng này (3/3).
+
+### Lưới stub — 5 lượt tuần tự với `SCADA_R0_NGHIEM_THU=1` (ms) — 16/16 mỗi lượt
+
+Chẩn đoán ingest > 300 ms và nghẽn vòng sự kiện > 300 ms: rỗng ở cả 5 lượt.
+
+| Tổ hợp | Lượt | G1 (≤2000) | G2 (≤5000) | G3 mất (≤5000) | G3 có lại (≤5000) | G4 (≤2000) |
+|---|---|---|---|---|---|---|
+| legacy / tu-choi | 1 | 64 | 69 | 105 | 1965 | 1049 |
+| legacy / tu-choi | 2 | 465 | 512 | 586 | 1941 | 1046 |
+| legacy / tu-choi | 3 | 482 | 560 | 544 | 1959 | 1015 |
+| legacy / tu-choi | 4 | 41 | 80 | 107 | 1972 | 1064 |
+| legacy / tu-choi | 5 | 48 | 67 | 108 | 1974 | 1022 |
+| legacy / treo | 1 | 1850 | 2879 | 2835 | 1975 | 1217 |
+| legacy / treo | 2 | 1824 | 2791 | 2817 | 2077 | 93 |
+| legacy / treo | 3 | 1823 | 2792 | 2839 | 1973 | 1269 |
+| legacy / treo | 4 | 1814 | 2880 | 2851 | 1968 | 1187 |
+| legacy / treo | 5 | 1841 | 2778 | 2825 | 1977 | 62 |
+| HA / tu-choi | 1 | 991 | 1017 | 1096 | 1957 | 346 |
+| HA / tu-choi | 2 | 951 | 1030 | 981 | 1950 | 920 |
+| HA / tu-choi | 3 | 1014 | 1030 | 1076 | 1968 | 171 |
+| HA / tu-choi | 4 | 1013 | 1039 | 1072 | 1969 | 79 |
+| HA / tu-choi | 5 | 20 | 28 | 108 | 1953 | 344 |
+| HA / treo | 1 | 1837 | 2883 | 2839 | 1977 | 62 |
+| HA / treo | 2 | 1843 | 2888 | 2842 | 1984 | 62 |
+| HA / treo | 3 | 1864 | 2878 | 2817 | 1968 | 62 |
+| HA / treo | 4 | 1850 | 2898 | 2835 | 1961 | 75 |
+| HA / treo | 5 | 1827 | 2904 | 2899 | 1969 | 62 |
+
+### Đột biến cờ (Step 4) chạy lại trên tệp 4 tổ hợp đã commit (`0a8c1f49a`) — sửa `vi.stubEnv`, chạy, hoàn tác (`git diff` rỗng sau đó)
+
+| Đột biến | Cổng đỏ | Số đo (legacy-từ chối / HA-từ chối / legacy-treo / HA-treo) |
+|---|---|---|
+| `OT_CHAT_LUONG_V2_ENABLED=false` | **G1 đỏ ở cả 4 tổ hợp**; tổ hợp treo còn đỏ **G2 + G3** (D1 sau cờ ⇒ không bao giờ `lost` — đúng hành vi trước R0); legacy-từ chối đỏ G4 (4212 ms: đợt mất kéo dài vì cổng 1 chờ tới hạn đo ⇒ rơi vào backoff) | G1 = ∞ × 4; G2 67 / 1041 / ∞ / ∞; 9 đỏ / 16 |
+| `OT_GHI_TRANG_THAI_ADAPTER_ENABLED=false` | **G3 đỏ ở cả 4 tổ hợp** (DB trước khi rút = `disabled`, không bao giờ `error`/`connected`); legacy-từ chối đỏ G4 (4533 ms, cùng lý do) | 5 đỏ / 16 |
+
+### Bench OpenPLC — 3 lượt mỗi tổ hợp (cùng lệnh §3)
+
+Ảnh `avi-openplc-bench:v3` `sha256:180893084146…`. Ban đầu Exited ⇒ start + Start qua web; cuối cùng Exited.
+
+| Tổ hợp | G1 bad ≤ 2000 | G2 lost ≤ 5000 | G3a error ≤ 5000 | G3b connected ≤ 5000 | G4 good ≤ 2000 |
+|---|---|---|---|---|---|
+| pause legacy | 1044 / 1600 / 1590 ✓ | 2044 / 2603 / 2593 ✓ | 2030 / 2603 / 2593 ✓ | 1839 / 1866 / 1854 ✓ | 1 / 0 / 1 ✓ |
+| pause HA | 1038 / 931 / 1257 ✓ | 2040 / 1934 / 2267 ✓ | 2025 / 1919 / 2266 ✓ | 1852 / 1850 / 1855 ✓ | 0 / 0 / 0 ✓ |
+| stop legacy | 18 / 24 / 22 ✓ | 18 / 24 / 22 ✓ | 1 / 0 / 1 ✓ | **GIẢ** / 1597 / 1589 — **2/3** | 915 / 226 / 226 ✓ |
+| stop HA | 257 / 21 / 20 ✓ | 257 / 21 / 20 ✓ | 242 / 1 / 1 ✓ | 1596 / 1612 / 1602 ✓ | 924 / 714 / 727 ✓ |
+
+Lệnh ghi DB (ms so với lúc rút):
+- pause: `lost@~1,9–2,6 s`, `connected@~6,9–7,6 s` (điều tiết 5 s).
+- stop legacy lượt 1: `lost@1`, `connected@5011` ← GIẢ, `connected@10021`.
+- stop HA: `lost@~0`, `lost@~5 s`, `connected@~10 s`.
+
+Giới hạn đã biết: xem "Giới hạn đã biết" ở mục T12b bên dưới (vẫn hiện hành; fix round 1 sửa mục 5 — cờ V2 tắt ⇒ đúng trước R0 — và thêm
+mục 7 — hạn đọc 10 s của thư viện EtherNet/IP).
+
+### Chạy lại (fix round 1)
+
+- **Bộ unit set** `npx vitest run server/services/ot server/services/scada server/services/interlock server/_core/socket*`: 124 tệp
+  (1 bỏ qua = lưới nghiệm thu khi không đặt biến), 1738 test — 1709 qua, 28 bỏ qua, 1 đỏ.
+  - Test đỏ: `safetyTarget.dot4.db.test.ts`, "Failed query … user_factory_assignments" dưới tải song song.
+  - Chạy riêng `-c vitest.db.config.ts`: 9/9 xanh.
+- **Các tệp DB liên quan chạy riêng:** `otManager.connFingerprintRealLoader.dot5.db` 3/3, `trangThaiAdapter.db` 3/3,
+  `otAdapterOwnerGate.dot10.db` 2/2.
+- **`npm run check`:** xanh.
+
+---
+
+## Sau sửa D1–D3 (Task 12b, đo 2026-10-23/24) — lần đo trước fix round 1, giữ làm bằng chứng
 
 Sửa ở commit `8c46126a5` (phán quyết T12 D1/D2/D3 trong sổ điều phối). Ngưỡng **không đổi**: poll 1000 ms, `timeoutMs` 800, G1 ≤ 2000,
 G2 ≤ 5000, G3 ≤ 5000 mỗi chiều, G4 ≤ 2000.
@@ -24,11 +119,14 @@ G2 ≤ 5000, G3 ≤ 5000 mỗi chiều, G4 ≤ 2000.
 |---|---|---|---|---|
 | 1. rút ⇒ mọi tag bad ≤ 2000 | 14/14 · 14/14 | 14/14 · **13/14** | 3/3 · 3/3 | 3/3 · 3/3 |
 | 2. M10 "lost" ≤ 5000 | 14/14 · 14/14 | 14/14 · **13/14** | 3/3 · 3/3 | 3/3 · 3/3 |
-| 3. DB `error` / `connected` ≤ 5000 | 14/14 · 14/14 | 14/14 · **13/14** | 3/3 · 3/3 | 3/3 (⚠ 2 lượt "connected" giả) · 3/3 |
+| 3. DB `error` / `connected` ≤ 5000 | 14/14 · 14/14 | 14/14 · **13/14** | 3/3 · 3/3 | **1/3** (2 lượt "connected" GIẢ = KHÔNG ĐẠT; chấm lại ở fix round 1) · 3/3 |
 | 4. cắm lại ⇒ tốt ≤ 2000 | 14/14 · 14/14 | 14/14 · 14/14 | 3/3 · 3/3 | 3/3 · 3/3 |
 | 5. uncertain OPC UA tới màn | — | — | — | — |
 
-Cổng 5 không bị đụng tới (OPC UA không đi qua mã đã sửa ngoài `vongPoll`); `r0OpcuaUncertain.test.ts` xanh trong lần chạy toàn bộ.
+Cổng 5: đường POLL của OPC UA (`OpcuaDriver.subscribe` không dùng monitored items) CÓ đi qua `vongPoll` đã sửa (đọc đầu ngay — D2) và
+D1 (K = 2 tick hỏng ⇒ `lost`) áp cho adapter OPC UA dạng poll như mọi driver poll khác; đường monitored-items (push) không gọi `onTick`
+nên D1 không áp. `r0OpcuaUncertain.test.ts` (đường push tới màn) xanh trong lần chạy toàn bộ. (Sửa câu chữ ở fix round 1: bản trước nói
+"OPC UA không đi qua mã đã sửa" — sai.)
 
 **Đánh giá:** mọi cổng xanh trên bench thật (12/12 lượt) và 55/56 tổ hợp-lượt của lưới stub. Một lượt đỏ duy nhất (lượt 4, HA/treo) bị lệch
 ĐỀU +5,0 s ở cả G1, G2, G3 (6895 / 7895 / 7908 ms so với ~1850 / 2880 / 2830 ms các lượt khác) — chưa giải thích được, KHÔNG tái hiện ở 10
@@ -46,7 +144,7 @@ kiểm kiểu riêng bằng tsc: 0 lỗi.
 
 ### Lưới stub sau sửa — `r0NghiemThu.db.test.ts` (ms)
 
-13 lượt tuần tự `npx vitest run -c vitest.db.config.ts server/services/scada/r0NghiemThu.db.test.ts` + 1 lượt nằm trong lần chạy toàn bộ
+13 lượt tuần tự `npx vitest run -c vitest.db.config.ts server/services/scada/r0NghiemThu.db.test.ts` (lúc đó chưa cần `SCADA_R0_NGHIEM_THU=1`) + 1 lượt nằm trong lần chạy toàn bộ
 song song ("full"). Lượt 1–6 chưa có chẩn đoán; 7–10 có chẩn đoán ingest > 300 ms; 11–13 và "full" thêm nghẽn vòng sự kiện > 300 ms — rỗng ở mọi lượt có đo. Đỏ in đậm.
 Kết quả theo lượt: 16/16, 16/16, 16/16, **13/16**, 16/16, 16/16, 16/16 ×7, full 16/16.
 
@@ -136,7 +234,7 @@ qua web; cuối cùng Exited. 12 lượt, 3 mỗi tổ hợp.
 |---|---|---|---|---|---|
 | pause legacy | 1703 / 981 / 1360 ✓ | 2694 / 1976 / 2360 ✓ | 2680 / 1975 / 2344 ✓ | 1846 / 1853 / 1839 ✓ | 0 / 0 / 0 ✓ |
 | pause HA | 1617 / 1670 / 1584 ✓ | 2623 / 2670 / 2587 ✓ | 2607 / 2655 / 2573 ✓ | 1847 / 1828 / 1848 ✓ | 0 / 0 / 0 ✓ |
-| stop legacy | 17 / 18 / 19 ✓ | 17 / 18 / 19 ✓ | 6 / 0 / 5 ✓ | 0⚠ / 1553 / 0⚠ ✓ | 929 / 211 / 911 ✓ |
+| stop legacy | 17 / 18 / 19 ✓ | 17 / 18 / 19 ✓ | 6 / 0 / 5 ✓ | **GIẢ / 1553 / GIẢ — 1/3 ✗** | 929 / 211 / 911 ✓ |
 | stop HA | 14 / 21 / 176 ✓ | 14 / 21 / 176 ✓ | 0 / 1 / 174 ✓ | 1571 / 1607 / 1594 ✓ | 712 / 712 / 928 ✓ |
 
 Trước sửa (§3, để so): pause legacy G1 2835/2697/2358 ✗, G2/G3 không bao giờ ✗; pause HA G1 1/3, G2/G3 không bao giờ ✗; stop legacy
@@ -148,7 +246,8 @@ Chẩn đoán bench:
   ~1,85 s sau khi Modbus trả lời. G4 = 0 ms: lần nối lại đang chờ (connect qua proxy cổng tới container bị pause) xong ngay khi unpause
   và lần đọc đầu NGAY (D2) cho tag tốt trước cả lần thăm dò độc lập đầu tiên (thăm dò mỗi 100 ms).
 - stop legacy lượt 1 và 3: DB nhận `connected@+5013/5017 ms` khi PLC còn chết (Modbus trả lời ~+8,5 s) — proxy cổng của Docker Desktop
-  nhận TCP rồi đóng ⇒ "connected" giả (giới hạn đã biết, xem dưới); 3b vì vậy ghi 0 ⚠.
+  nhận TCP rồi đóng ⇒ "connected" giả (giới hạn đã biết, xem dưới). Bản đầu của bảng ghi hai lượt này là "0 ⚠ ✓" — SAI: DB nói
+  "connected" khi thiết bị chết là KHÔNG ĐẠT cổng 3; chấm lại 1/3 (fix round 1, bench đã sửa để không ghi 0 nữa).
 - Modbus trả lời 5183–5212 ms sau `docker start` (runtime phải bấm Start qua web), 80–89 ms sau `unpause`.
 
 ### Giới hạn đã biết (chuyển R1, theo phán quyết T12)
@@ -165,12 +264,17 @@ Chẩn đoán bench:
 4. (mới, T12b) **Thiết bị sống-nhưng-chậm chập chờn:** một thiết bị trả lời chậm hơn `timeoutMs` ở 2 tick liên tiếp bị coi là mất (báo
    `lost`, hạ phiên, nối lại) — giá đã chấp nhận của D1. D3 cũng làm MỘT tag treo (thanh ghi không bao giờ trả lời trên một PLC còn sống)
    làm bad cả adapter trong tick đó (thay hành vi F3 cũ "chỉ tag đó bad").
-5. (mới, T12b) **Đường treo với cờ `OT_CHAT_LUONG_V2_ENABLED` TẮT:** không huỷ tick ⇒ Modbus đọc tuần tự 18 × 800 ms; hạn vòng poll 2000 ms
-   cắt lần đọc nhưng chốt chống chồng giữ tới khi lần đọc thật xong (~14 s) nên tick hỏng thứ 2 chỉ tới sau ~14 s ⇒ `lost` chậm. (Suy ra
-   từ mã, CHƯA đo.) Cấu hình nghiệm thu bật cờ.
+5. (mới, T12b; sửa ở fix round 1) **Cờ `OT_CHAT_LUONG_V2_ENABLED` TẮT ⇒ đúng hành vi trước R0:** D3 (huỷ tick vì quá hạn) và D1 (K = 2 tick
+   hỏng ⇒ `lost`) đều sau cờ, đọc lúc subscribe (phán quyết fix round 1). Cờ tắt ⇒ đường TREO không bao giờ báo `lost` (như trước R0;
+   có test `otManager.tickHong.test.ts`). Cấu hình nghiệm thu bật cờ.
 6. (mới, T12b) **Nếu connect THÀNH CÔNG trong lúc thiết bị không trả lời** (proxy/gateway nhận TCP), mỗi phiên mới đó phát thêm MỘT loạt
    mẫu xấu (vòng poll mới bắt đầu ngoài đợt lỗi) và chập chờn `lost`↔`connected` mỗi ~2 tick — bad vẫn là bad ở bộ đệm. (Suy ra từ mã;
    stub treo và bench pause không cho connect thành công nên không đo được.)
+7. (fix round 1) **EtherNet/IP: hạn đọc là của thư viện (10 s), không phải `timeoutMs`:** `st-ethernet-ip` dùng `timeout_sp` 10000 cho
+   `readTag`; driver không nối `timeoutMs` vào đó. Trên EIP, giao dịch treo chỉ ném quá hạn sau 10 s ⇒ D3 (huỷ tick vì quá hạn) không kịp;
+   tick bị cắt ở hạn vòng poll `tinhDeadlineMs` (= max(2 × poll, timeoutMs + 1000), 2000 ms ở poll 1000/timeout 800) ⇒ G1 trên EIP ≈ tới tick
+   kế + 2000 ms (> 2 chu kỳ). Chốt chống chồng giữ tới khi `readTag` thật sự xong (~10 s) nên tick hỏng THỨ HAI (D1) chỉ tới sau ~10 s ⇒
+   `lost` ~10–12 s (> 5 s). (Suy ra từ mã + mặc định thư viện; chưa đo trên PLC EIP.) R1: nối `timeout_sp` = `timeoutMs`.
 
 ---
 
@@ -182,7 +286,7 @@ Chẩn đoán bench:
 |---|---|---|---|---|---|
 | 1. rút ⇒ mọi tag bad ≤ 2 chu kỳ | ĐẠT | ĐẠT | **KHÔNG ĐẠT** (1/6 lượt) | ĐẠT 6/6 | — |
 | 2. M10 "mất kết nối" ≤ 5 s | ĐẠT | ĐẠT | **KHÔNG ĐẠT** (không bao giờ) | ĐẠT 6/6 | — |
-| 3. `device_adapters.status` khớp ≤ 5 s | ĐẠT | ĐẠT | **KHÔNG ĐẠT** (không bao giờ) | ĐẠT 6/6 (⚠ xem 3.3) | — |
+| 3. `device_adapters.status` khớp ≤ 5 s | ĐẠT | ĐẠT | **KHÔNG ĐẠT** (không bao giờ) | **5/6** (1 lượt "connected" GIẢ — xem 3.3; chấm lại ở T12b fix round 1) | — |
 | 4. cắm lại ⇒ tốt ≤ 2 chu kỳ | **KHÔNG ỔN ĐỊNH** (đỏ 10/16 lượt) | sát ngưỡng (đỏ 2/15) | ĐẠT 6/6 | sát ngưỡng (đỏ 1/6) | — |
 | 5. uncertain OPC UA tới màn | — | — | — | — | ĐẠT |
 
@@ -295,7 +399,7 @@ Pha (mẫu good cuối so với lúc bắt đầu lệnh pause): −93 / −258 
 | 1. rút ⇒ mọi tag bad (bộ đệm) | ≤ 2000 ms | 18 / 24 / 13 ms — đạt 3/3 (mẫu `bad/comm_lost/comm_lost`) |
 | 2. M10 "lost" | ≤ 5000 ms | 18 / 24 / 13 ms — đạt 3/3 |
 | 3a. ghi DB `error` | ≤ 5000 ms | 1 / 6 / 3 ms — đạt 3/3 |
-| 3b. ghi DB `connected` sau khi Modbus trả lời | ≤ 5000 ms | 0 ⚠ / 1107 / 1095 ms — đạt 3/3 |
+| 3b. ghi DB `connected` sau khi Modbus trả lời | ≤ 5000 ms | **GIẢ** / 1107 / 1095 ms — đạt **2/3** (chấm lại T12b fix round 1: lượt 1 DB đã "connected" GIẢ lúc +5013 ms khi PLC còn chết; bản đầu ghi "0 ⚠ — đạt 3/3", sai) |
 | 4. Modbus trả lời ⇒ mọi tag good | ≤ 2000 ms | **2377** / 1946 / 1998 ms — đạt 2/3 |
 
 Lệnh `stop -t 0` 481–1088 ms; Modbus trả lời 5197–5268 ms sau `docker start` (runtime OpenPLC phải bấm Start qua web — script tự làm
