@@ -55,12 +55,21 @@ describe("StubDriver", () => {
     expect(received.length).toBe(0);
   });
 
-  it("writeTags is disabled in F1.1 (ok:false)", async () => {
+  // SCADA R0 (C9): writeTags không còn "disabled in F1.1" — ghi vào RAM; chưa kết nối thì ok:false.
+  it("writeTags writes to RAM when connected (ok:true) and reads back", async () => {
+    const d = new StubDriver();
+    await d.connect({ endpoint: "stub://x" });
+    const res = await d.writeTags([{ tagKey: "run", address: "M0.0", value: true }]);
+    expect(res).toEqual([{ tagKey: "run", ok: true }]);
+    expect((await d.readTags(tags)).find((s) => s.tagKey === "run")!.value).toBe(true);
+  });
+
+  it("writeTags is refused (ok:false) when not connected", async () => {
     const d = new StubDriver();
     const res = await d.writeTags([{ tagKey: "run", address: "M0.0", value: true }]);
     expect(res).toHaveLength(1);
     expect(res[0].ok).toBe(false);
-    expect(res[0].error).toMatch(/disabled in F1.1/);
+    expect(res[0].error).toMatch(/not connected/);
   });
 
   it("health reflects connection state", async () => {
