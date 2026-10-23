@@ -34,3 +34,14 @@ export function thoiGianOnDinhMs(pollIntervalMs: number): number {
   const poll = Number.isFinite(pollIntervalMs) && pollIntervalMs > 0 ? pollIntervalMs : 0;
   return Math.max(3 * poll, NOI_LAI_ON_DINH_TOI_THIEU_MS);
 }
+
+/**
+ * Hạn cứng (ms) cho MỘT lần đọc của vòng poll, do otManager truyền xuống driver (SCADA R0 C5):
+ * `max(2 × poll, (timeoutMs ?? 5000) + 1000)`. KHÔNG buộc vào chu kỳ poll: hạn ngắn theo chu kỳ sẽ cắt oan lần đọc chậm-nhưng-khoẻ.
+ * Phát hiện nhanh việc rút cáp đến từ timeout từng giao dịch + huỷ ở tầng liên kết, không từ hạn này.
+ */
+export function tinhDeadlineMs(pollIntervalMs: number, timeoutMs?: number): number {
+  const poll = Number.isFinite(pollIntervalMs) && pollIntervalMs > 0 ? pollIntervalMs : 0;
+  const t = typeof timeoutMs === "number" && Number.isFinite(timeoutMs) ? timeoutMs : 5000;
+  return Math.max(2 * poll, t + 1000);
+}

@@ -29,7 +29,9 @@ import { withDeadline } from "./drivers/boundedClose";
 import { adapterTargetFingerprint, runtimeAdapterTarget } from "./adapterTarget";
 import { baoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
 import { chatLuongLoiChung } from "./chatLuong";
-import { khoangNoiLaiMs, NOI_LAI_NHANH_TOI_THIEU_MS, thoiGianOnDinhMs } from "./reconnectNhanh";
+import { khoangNoiLaiMs, NOI_LAI_NHANH_TOI_THIEU_MS, thoiGianOnDinhMs, tinhDeadlineMs } from "./reconnectNhanh";
+import { ghiNhanDoc, ghiNhanPhien } from "./boDemTruyenThong";
+import type { TuyChonVongPoll } from "./otDriver";
 
 let running = false;
 /**
@@ -221,7 +223,7 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
   const work = (async (): Promise<OtSubscriptionHandle> => {
     await adapter.driver.connect(adapter.connection);
     const sink = await makeIngestSink(adapter);
-    return adapter.driver.subscribe(adapter.tags, sink, adapter.pollIntervalMs);
+    return adapter.driver.subscribe(adapter.tags, sink, adapter.pollIntervalMs, tuyChonPollCua(adapter));
   })();
   // Cờ settle gắn TRƯỚC withDeadline ⇒ khi work reject đúng hạn, cờ đã bật lúc catch chạy.
   let workSettled = false;
@@ -234,6 +236,7 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
   try {
     handle = await withDeadline(work, timeoutMs, `adapter "${adapter.code}" start`);
   } catch (err) {
+    ghiNhanPhien(adapter.adapterId, false);
     entry.lastError = errText(err);
     entry.lastStatusCode = chatLuongLoiChung(err).statusCode;
     if (workSettled) {
@@ -271,6 +274,7 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
   }
 
   entry.inflight = false;
+  ghiNhanPhien(adapter.adapterId, true);
   if (myEpoch !== epoch || legacy.get(adapter.adapterId) !== entry) {
     // stopOt đã chạy trong lúc khởi động: không sống lại, hạ ngay kết nối vừa có.
     // scan #73 — or the adapter was DETACHED meanwhile (moved to an edge node): its entry left `legacy`; never listed again.
@@ -290,6 +294,20 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
   // 'connected' khi isConnected() thật sự true (không chập chờn lost↔connected, không phát lại mẫu xấu mỗi vòng nối lại).
   if (driverDangNoi(adapter)) baoLegacy(entry, "connected");
   return true;
+}
+
+/**
+ * SCADA R0 Task 6 — tham số thứ 4 của subscribe(): hạn cứng một lần đọc (tinhDeadlineMs, theo timeoutMs LỚN NHẤT của các endpoint
+ * để endpoint dự phòng chậm hơn không bị cắt oan) + bộ đếm truyền thông (C8). Adapter push (OPC UA monitored items) không gọi onTick.
+ */
+function tuyChonPollCua(adapter: RuntimeAdapter): TuyChonVongPoll {
+  const t1 = adapter.connection.timeoutMs;
+  const t2 = adapter.backupConnection?.timeoutMs;
+  const timeoutMs = typeof t1 === "number" || typeof t2 === "number" ? Math.max(t1 ?? 0, t2 ?? 0) : undefined;
+  return {
+    deadlineMs: tinhDeadlineMs(adapter.pollIntervalMs, timeoutMs),
+    onTick: (e) => ghiNhanDoc(adapter.adapterId, e),
+  };
 }
 
 function driverDangNoi(adapter: RuntimeAdapter): boolean {
@@ -692,6 +710,8 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
     machineId: adapter.machineId ?? undefined, // doc 40 MON-F1 — bật presence push online/offline từ supervisor
     createDriver: () => createDriver(adapter.protocol),
     onSample,
+    tuyChon: tuyChonPollCua(adapter),
+    onConnectAttempt: (ok) => ghiNhanPhien(adapter.adapterId, ok),
     healthIntervalMs: haHealthIntervalMs(adapter.pollIntervalMs),
     backoff: haBackoffFromEnv(),
     // doc 81 Đợt 1B Task 2 (R8) — một lần connect+subscribe không giữ quá hạn khởi động.

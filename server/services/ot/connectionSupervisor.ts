@@ -45,6 +45,7 @@ import type {
   OtSubscriptionHandle,
   OnOtSample,
   OtProtocol,
+  TuyChonVongPoll,
 } from "./otDriver";
 import { chatLuongLoiChung } from "./chatLuong";
 import { khoangNoiLaiMs, thoiGianOnDinhMs } from "./reconnectNhanh";
@@ -167,6 +168,10 @@ export interface SupervisorOptions {
    * bị nuốt (không bao giờ ảnh hưởng vòng kết nối). `stopped` là trạng thái CUỐI: không bao giờ có chuyển tiếp rời nó.
    */
   onStateChange?: (prev: SupervisorState, next: SupervisorState, lastError: string | null, statusCode?: string | null) => void;
+  /** SCADA R0 Task 6 — tham số thứ 4 của driver.subscribe() (hạn đọc + onTick). Không đặt ⇒ driver dùng mặc định. */
+  tuyChon?: TuyChonVongPoll;
+  /** SCADA R0 Task 6 (C8) — gọi sau MỖI lần thử nối một endpoint (ok = nối + subscribe thành công). Ném ⇒ bị nuốt. */
+  onConnectAttempt?: (ok: boolean) => void;
 }
 
 /** Snapshot of a supervisor for an internal health getter (future health endpoint). */
@@ -283,6 +288,8 @@ export class ConnectionSupervisor {
   private reconnectedAt: number | null = null;
   private lastStateChangeAt: number = Date.now();
   private readonly onStateChange: SupervisorOptions["onStateChange"] | null;
+  private readonly tuyChon: TuyChonVongPoll | undefined;
+  private readonly onConnectAttempt: SupervisorOptions["onConnectAttempt"] | null;
 
   constructor(opts: SupervisorOptions) {
     this.adapterId = opts.adapterId;
@@ -307,6 +314,8 @@ export class ConnectionSupervisor {
     );
     this.machineId = opts.machineId ?? null;
     this.onStateChange = opts.onStateChange ?? null;
+    this.tuyChon = opts.tuyChon;
+    this.onConnectAttempt = opts.onConnectAttempt ?? null;
     this.disconnectTimeoutMs =
       typeof opts.disconnectTimeoutMs === "number" && opts.disconnectTimeoutMs > 0
         ? opts.disconnectTimeoutMs
@@ -713,6 +722,7 @@ export class ConnectionSupervisor {
       this.attempts += 1;
       try {
         await this.connectAndSubscribe(ep);
+        this.baoLanThu(true);
         // doc 81 Đợt 1B Task 1 — stop() đã chạy trong lúc connect: KHÔNG sống lại; hạ ngay
         // kết nối muộn này (không để poll/socket rò sau khi tiến trình đã yêu cầu dừng).
         if (this.stopped) {
@@ -741,6 +751,7 @@ export class ConnectionSupervisor {
         this.setState("connected");
         return true;
       } catch (err) {
+        this.baoLanThu(false);
         this.lastError = errMsg(err);
         this.lastStatusCode = chatLuongLoiChung(err).statusCode;
         await this.safeDisconnect(ep);
@@ -752,6 +763,15 @@ export class ConnectionSupervisor {
     this.consecutiveFailures += 1;
     this.setState("failed");
     return false;
+  }
+
+  /** SCADA R0 Task 6 (C8) — báo kết quả một lần thử nối; người nghe ném không ảnh hưởng vòng kết nối. */
+  private baoLanThu(ok: boolean): void {
+    try {
+      this.onConnectAttempt?.(ok);
+    } catch {
+      // nuốt
+    }
   }
 
   /** Endpoint indices to try: primary-first, or standby-first when promoting. */
@@ -797,7 +817,7 @@ export class ConnectionSupervisor {
     const work = (async (): Promise<OtSubscriptionHandle> => {
       await ep.driver.connect(ep.connection);
       try {
-        return await ep.driver.subscribe(this.tags, this.wrappedOnSample, this.pollIntervalMs);
+        return await ep.driver.subscribe(this.tags, this.wrappedOnSample, this.pollIntervalMs, this.tuyChon);
       } catch (err) {
         await this.safeDisconnect(ep);
         throw err;

@@ -13,6 +13,7 @@ import type { OtDriver, OtTagAddress } from "./otDriver";
 import { readbackMatches } from "./drivers/readbackCompare";
 import { canonicalOtValue } from "./otActionBinding";
 import { withDeadline } from "./drivers/boundedClose";
+import { ghiNhanLenh } from "./boDemTruyenThong";
 import type { DispatchInput, DispatchStatus } from "./commandDispatcher";
 
 /**
@@ -1213,6 +1214,9 @@ export async function executeOtDeviceWrite(a: {
       readBackValue: null,
     };
   });
+
+  // SCADA R0 Task 6 (C8) — đếm kết quả GHI theo từng tag (trước read-back: read-back không bao giờ lật ok). Timeout/ném ⇒ lỗi. Không ném.
+  for (const o of outcomes) ghiNhanLenh(input.adapterId, resolved[o.idx].write.tagKey, o.ok);
 
   // ── G2.1 READ-BACK — ONLY when control + read-back enabled AND ≥1 write acked.
   //    A SINGLE driver.readTags() (under the same timeout). readTags throwing /

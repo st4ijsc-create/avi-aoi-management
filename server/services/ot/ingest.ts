@@ -53,7 +53,13 @@ export function sampleToCanonical(adapter: RuntimeAdapter, sample: OtSample): Ca
     metric: sample.tagKey,
     value: sample.value,
     quality: sample.quality,
-    meta: { adapterId: adapter.adapterId, tagKey: sample.tagKey },
+    // SCADA R0 Task 6 — giữ mã trạng thái giao thức + lý do thô của mẫu không-good (mẫu good không mang hai khoá này).
+    meta: {
+      adapterId: adapter.adapterId,
+      tagKey: sample.tagKey,
+      ...(sample.statusCode !== undefined ? { statusCode: sample.statusCode } : {}),
+      ...(sample.reason !== undefined ? { reason: sample.reason } : {}),
+    },
   };
 }
 
