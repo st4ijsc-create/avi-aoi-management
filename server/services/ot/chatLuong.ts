@@ -85,6 +85,22 @@ function thongDiepNgan(err: unknown): string {
   return s || "unknown";
 }
 
+/** Mã lỗi hệ điều hành nghĩa là LIÊN KẾT hỏng (khác với một giao dịch quá hạn). ETIMEDOUT cố ý KHÔNG có ở đây. */
+const MA_LOI_LIEN_KET = new Set<string>(["ECONNRESET", "ECONNREFUSED", "EPIPE", "EHOSTUNREACH"]);
+
+/**
+ * Lỗi ở mức LIÊN KẾT: socket đã đóng/bị reset, thiết bị không với tới, cổng modbus-serial đã đóng. Đường poll chỉ HUỶ cả tick ở các
+ * lỗi này; một giao dịch quá hạn (timeout) KHÔNG phải lỗi liên kết — chỉ tag đó bad, các tag khác vẫn được đọc (một thanh ghi
+ * không bao giờ đáp không được làm câm các tag khoẻ). Cáp rút kiểu treo do hạn của vòng poll cắt tick.
+ */
+export function laLoiMucLienKet(err: unknown): boolean {
+  if (err instanceof DeviceUnreachableError) return true;
+  if (err == null || typeof err !== "object") return false;
+  if ((err as { name?: unknown }).name === "PortNotOpenError") return true;
+  const code = maLoi(err);
+  return code !== undefined && MA_LOI_LIEN_KET.has(code);
+}
+
 /** Ánh xạ lỗi chung (mọi giao thức) ⇒ (statusCode, reason). */
 export function chatLuongLoiChung(err: unknown): { statusCode: string; reason: LyDoChatLuong } {
   if (laLoiTimeout(err)) return { statusCode: "timeout", reason: "comm_lost" };

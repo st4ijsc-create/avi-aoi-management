@@ -39,7 +39,7 @@ import {
 import { inverseScale } from "./otScale";
 import { closeModbusClient, withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiModbus, chatLuongV2Bat } from "../chatLuong";
+import { chatLuongLoiModbus, chatLuongV2Bat, laLoiMucLienKet } from "../chatLuong";
 
 /**
  * doc 81 Đợt 1B Task 1 — miền giá trị RAW của thanh ghi 1-word theo kiểu khai báo.
@@ -223,10 +223,10 @@ export class ModbusDriver extends NotImplementedDriver {
       } satisfies OtSample;
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
-      // SCADA R0 (C1) — sau cờ: lỗi tầng liên lạc (timeout/rớt socket/cổng đóng) ⇒ HUỶ cả tick, không chờ hạn từng tag còn lại;
-      // vòng poll phát MỘT loạt mẫu xấu cho mọi tag. device_error/config_error (exception của thiết bị) vẫn theo từng tag.
+      // SCADA R0 (C1) — đường poll, sau cờ: lỗi mức LIÊN KẾT (socket đóng/reset, cổng đóng, DeviceUnreachable, ECONNRESET/…) ⇒ HUỶ cả tick;
+      // vòng poll phát MỘT loạt mẫu xấu. Giao dịch QUÁ HẠN, exception thiết bị, config_error vẫn theo từng tag (tag khoẻ không bị câm).
       const v2 = chatLuongV2Bat();
-      if (abortOnCommLost && chatLuongLoiModbus(err).reason === "comm_lost") throw err;
+      if (abortOnCommLost && (laLoiMucLienKet(err) || !this.connected)) throw err;
       return {
         tagKey: tag.tagKey,
         raw: null,
@@ -245,12 +245,12 @@ export class ModbusDriver extends NotImplementedDriver {
   }
 
   /**
-   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi tầng liên lạc đầu tiên HUỶ cả tick (ném) để vòng poll
+   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi mức LIÊN KẾT đầu tiên HUỶ cả tick (ném; quá hạn giao dịch thì KHÔNG) để vòng poll
    * phát MỘT loạt mẫu xấu; cờ TẮT: y hệt `readTags`. `readTags` công khai (readback ghi thiết bị, probe, bộ đọc an toàn) KHÔNG BAO GIỜ huỷ:
    * luôn trả mẫu bad theo từng tag.
    */
-  private docChoVongPoll(tags: OtTagAddress[]): Promise<OtSample[]> {
-    return this.docTuanTu(tags, chatLuongV2Bat());
+  private docChoVongPoll(tags: OtTagAddress[], chatLuongV2: boolean): Promise<OtSample[]> {
+    return this.docTuanTu(tags, chatLuongV2);
   }
 
   private async docTuanTu(tags: OtTagAddress[], abortOnCommLost: boolean): Promise<OtSample[]> {
@@ -277,6 +277,8 @@ export class ModbusDriver extends NotImplementedDriver {
   ): Promise<OtSubscriptionHandle> {
     if (!this.connected) throw new DeviceUnreachableError("modbus");
 
+    // Cờ đọc MỘT lần ở đây: huỷ tick (docChoVongPoll) và phát loạt mẫu xấu (taoVongPoll) không bao giờ lệch nhau.
+    const v2 = chatLuongV2Bat();
     // SCADA R0 — vòng poll DÙNG CHUNG (chống chồng tick, hạn đọc, mẫu xấu một lần khi mất liên lạc sau cờ).
     return taoVongPoll({
       tags,
@@ -284,7 +286,7 @@ export class ModbusDriver extends NotImplementedDriver {
       deadlineMs: tuyChon?.deadlineMs,
       doc: async (t) => {
         try {
-          return await this.docChoVongPoll(t);
+          return await this.docChoVongPoll(t, v2);
         } catch (e) {
           this.lastError = (e as Error)?.message || String(e);
           throw e;
@@ -293,7 +295,7 @@ export class ModbusDriver extends NotImplementedDriver {
       onSample,
       onTick: tuyChon?.onTick,
       phanLoiLoi: chatLuongLoiModbus,
-      chatLuongV2: chatLuongV2Bat(),
+      chatLuongV2: v2,
       nhan: "modbus",
     });
   }

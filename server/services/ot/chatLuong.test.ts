@@ -10,6 +10,7 @@ import {
   chatLuongEndCodeSlmp,
   mauXauChoMoiTag,
   laLoiTimeout,
+  laLoiMucLienKet,
 } from "./chatLuong";
 import type { OtTagAddress } from "./otDriver";
 
@@ -46,6 +47,27 @@ describe("chatLuongOpcua", () => {
     const r = chatLuongOpcua(0x80000000, "Bad (0x80000000)");
     expect(r.quality).toBe("bad");
     expect(r.reason).toBe("device_error");
+  });
+});
+
+describe("laLoiMucLienKet — chỉ lỗi LIÊN KẾT mới huỷ tick đường poll", () => {
+  it.each(["ECONNRESET", "ECONNREFUSED", "EPIPE", "EHOSTUNREACH"])("mã %s => liên kết", (code) => {
+    expect(laLoiMucLienKet(Object.assign(new Error("x"), { code }))).toBe(true);
+  });
+
+  it("DeviceUnreachableError và PortNotOpenError => liên kết", () => {
+    expect(laLoiMucLienKet(new DeviceUnreachableError("modbus"))).toBe(true);
+    expect(laLoiMucLienKet(Object.assign(new Error("Port Not Open"), { name: "PortNotOpenError" }))).toBe(true);
+  });
+
+  it("giao dịch quá hạn, ETIMEDOUT, exception thiết bị, lỗi lạ, giá trị rỗng => KHÔNG phải liên kết", () => {
+    expect(laLoiMucLienKet(Object.assign(new Error("Timed out"), { name: "TransactionTimedOutError" }))).toBe(false);
+    expect(laLoiMucLienKet(new Error("slmp transaction timeout after 5000ms"))).toBe(false);
+    expect(laLoiMucLienKet(Object.assign(new Error("x"), { code: "ETIMEDOUT" }))).toBe(false);
+    expect(laLoiMucLienKet({ modbusCode: 2 })).toBe(false);
+    expect(laLoiMucLienKet(new Error("boom"))).toBe(false);
+    expect(laLoiMucLienKet(null)).toBe(false);
+    expect(laLoiMucLienKet("ECONNRESET")).toBe(false);
   });
 });
 

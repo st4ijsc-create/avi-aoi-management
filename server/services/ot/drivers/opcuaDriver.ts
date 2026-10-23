@@ -112,6 +112,11 @@ function chatLuongMauOpcua(
   const moTa = describeStatus(sc, scVal);
   if (!chatLuongV2Bat()) return { quality: "bad", value: null, statusCode: moTa };
   const cl = chatLuongOpcua(scVal, moTa);
+  // Mức "good" có mã con/bit thông tin (GoodClamped 0x00300000, GoodLocalOverride 0x00960000, bit StructureChanged/…): vẫn là mẫu tốt
+  // với giá trị chuẩn hoá, KHÔNG phải lỗi (như scVal === 0). Không statusCode/reason.
+  if (cl.quality === "good") {
+    return { quality: norm.quality, value: norm.quality === "good" ? norm.value : null };
+  }
   if (cl.quality === "uncertain" && norm.quality === "good") {
     return { quality: "uncertain", value: norm.value, statusCode: cl.statusCode, reason: cl.reason };
   }
@@ -177,6 +182,8 @@ export class OpcuaDriver extends NotImplementedDriver {
   private lastOkAt: Date | undefined;
   private lastError: string | undefined;
   private lastLatencyMs: number | undefined;
+  /** SCADA R0 (C5) — hạn giao dịch đã cấu hình ở connect(); `session.read` có thể treo vô hạn khi cáp rút. */
+  private timeoutMs = 5000;
   // doc 81 Đợt 1B Task 12 — theo PHIÊN (xoá khi connect/disconnect: PLC tải lại project có
   // thể đổi chỉ số namespace và kiểu biến).
   private resolveNodeIdFn: ((s: string) => unknown) | null = null;
@@ -229,6 +236,7 @@ export class OpcuaDriver extends NotImplementedDriver {
     this.MonitoringMode = optionalExport(pkg, "MonitoringMode");
 
     const timeoutMs = cfg.timeoutMs ?? 5000;
+    this.timeoutMs = timeoutMs;
     const createOpts: Record<string, unknown> = {
       endpointMustExist: false,
       connectionStrategy: { maxRetry: 1 },
@@ -450,7 +458,8 @@ export class OpcuaDriver extends NotImplementedDriver {
     let arr: any[] = [];
     if (nodesToRead.length > 0) {
       const t0 = Date.now();
-      const results = await session.read(nodesToRead);
+      // SCADA R0 (C5) — đọc CÓ HẠN (không cờ, sửa lỗi treo), giống S7: hạn không huỷ được yêu cầu đang bay nhưng không giữ vòng mãi mãi.
+      const results = await withDeadline(Promise.resolve(session.read(nodesToRead)), this.timeoutMs + 1000, "opcua read");
       this.lastLatencyMs = Date.now() - t0;
       this.lastOkAt = new Date();
       arr = Array.isArray(results) ? results : [results];

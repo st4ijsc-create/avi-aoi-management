@@ -39,7 +39,7 @@ import type {
 } from "../otDriver";
 import { inverseScale } from "./otScale";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongEndCodeSlmp, chatLuongLoiChung, chatLuongV2Bat } from "../chatLuong";
+import { chatLuongEndCodeSlmp, chatLuongLoiChung, chatLuongV2Bat, laLoiMucLienKet } from "../chatLuong";
 import {
   parseSlmpDevice,
   buildBatchReadWord,
@@ -287,10 +287,10 @@ export class SlmpDriver implements OtDriver {
       return { tagKey: tag.tagKey, raw, value, quality: "good", timestamp: now(), tsSource: "server" } satisfies OtSample; // B6
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
-      // SCADA R0 (C1) — sau cờ: lỗi tầng liên lạc (timeout/rớt socket) ⇒ HUỶ cả tick (một loạt mẫu xấu do vòng poll phát);
-      // lỗi khác (địa chỉ sai, giải mã) vẫn theo từng tag. End code != 0 đi qua badSample, không bao giờ huỷ tick.
+      // SCADA R0 (C1) — đường poll, sau cờ: lỗi mức LIÊN KẾT (socket đóng/reset, mất kết nối) ⇒ HUỶ cả tick (một loạt mẫu xấu do vòng poll phát);
+      // lỗi khác (quá hạn giao dịch, địa chỉ sai, giải mã) theo từng tag. End code != 0 đi qua badSample, không bao giờ huỷ tick.
       const v2 = chatLuongV2Bat();
-      if (abortOnCommLost && chatLuongLoiChung(err).reason === "comm_lost") throw err;
+      if (abortOnCommLost && (laLoiMucLienKet(err) || !this.connected)) throw err;
       return {
         tagKey: tag.tagKey,
         raw: null,
@@ -323,12 +323,12 @@ export class SlmpDriver implements OtDriver {
   }
 
   /**
-   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi tầng liên lạc đầu tiên HUỶ cả tick (ném) để vòng poll
+   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi mức LIÊN KẾT đầu tiên HUỶ cả tick (ném; quá hạn giao dịch thì KHÔNG) để vòng poll
    * phát MỘT loạt mẫu xấu; cờ TẮT: y hệt `readTags`. `readTags` công khai (readback ghi thiết bị, probe, bộ đọc an toàn) KHÔNG BAO GIỜ huỷ:
    * luôn trả mẫu bad theo từng tag.
    */
-  private docChoVongPoll(tags: OtTagAddress[]): Promise<OtSample[]> {
-    return this.docTuanTu(tags, chatLuongV2Bat());
+  private docChoVongPoll(tags: OtTagAddress[], chatLuongV2: boolean): Promise<OtSample[]> {
+    return this.docTuanTu(tags, chatLuongV2);
   }
 
   private async docTuanTu(tags: OtTagAddress[], abortOnCommLost: boolean): Promise<OtSample[]> {
@@ -349,6 +349,8 @@ export class SlmpDriver implements OtDriver {
   ): Promise<OtSubscriptionHandle> {
     if (!this.connected) throw new DeviceUnreachableError("slmp");
 
+    // Cờ đọc MỘT lần ở đây: huỷ tick (docChoVongPoll) và phát loạt mẫu xấu (taoVongPoll) không bao giờ lệch nhau.
+    const v2 = chatLuongV2Bat();
     // SCADA R0 — vòng poll DÙNG CHUNG (chống chồng tick, hạn đọc, mẫu xấu một lần khi mất liên lạc sau cờ).
     return taoVongPoll({
       tags,
@@ -356,7 +358,7 @@ export class SlmpDriver implements OtDriver {
       deadlineMs: tuyChon?.deadlineMs,
       doc: async (t) => {
         try {
-          return await this.docChoVongPoll(t);
+          return await this.docChoVongPoll(t, v2);
         } catch (e) {
           this.lastError = (e as Error)?.message || String(e);
           throw e;
@@ -365,7 +367,7 @@ export class SlmpDriver implements OtDriver {
       onSample,
       onTick: tuyChon?.onTick,
       phanLoiLoi: chatLuongLoiChung,
-      chatLuongV2: chatLuongV2Bat(),
+      chatLuongV2: v2,
       nhan: "slmp",
     });
   }

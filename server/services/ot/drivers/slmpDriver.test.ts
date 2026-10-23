@@ -130,6 +130,7 @@ async function startMock(opts: MockOpts = {}): Promise<MockServer> {
 
 let mock: MockServer | null = null;
 afterEach(async () => {
+  vi.unstubAllEnvs();
   if (mock) await mock.close();
   mock = null;
 });
@@ -250,7 +251,6 @@ describe("SlmpDriver (mock TCP server)", () => {
     expect(s.statusCode).toBe("slmp_end_0xC059");
     expect(s.reason).toBe("config_error");
     await d.disconnect();
-    vi.unstubAllEnvs();
   });
 
   it("SCADA R0 cờ TẮT: end-code != 0 ⇒ bad trần (không statusCode/reason)", async () => {

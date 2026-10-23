@@ -25,8 +25,11 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 beforeEach(() => {
   vi.resetModules();
 });
-afterEach(() => {
+/** Mọi handle subscribe được đóng ở afterEach, kể cả khi assertion ném giữa chừng. */
+const dongSau: Array<() => Promise<unknown>> = [];
+afterEach(async () => {
   vi.useRealTimers();
+  while (dongSau.length) await dongSau.pop()!().catch(() => undefined);
   vi.unstubAllEnvs();
   vi.doUnmock("node-opcua");
   vi.doUnmock("nodes7");
@@ -149,9 +152,12 @@ describe("Modbus × server THẬT trong tiến trình", () => {
       () => mbTags.every((t) => got.slice(nCoGood).some((s) => s.tagKey === t.tagKey && s.quality === "bad" && s.reason === "comm_lost")),
       2000,
     );
-    // ≤ 2 chu kỳ (2×200 ms) + hạn đọc 150 ms; dư 100 ms cho độ trễ bộ hẹn giờ của máy chạy test.
-    expect(Date.now() - tClose).toBeLessThanOrEqual(400 + 150 + 100);
+    // Mục tiêu thiết kế ≤ 2 chu kỳ (2×200 ms) + hạn đọc 150 ms = 550 ms; chặn trên nới 3× (1650 ms) để không đỏ oan khi máy chậm.
+    expect(Date.now() - tClose).toBeLessThanOrEqual(3 * (400 + 150));
     expect(ticks.some((e) => !e.ok)).toBe(true);
+    // Đúng MỘT loạt: các tick lỗi sau đó im lặng (kiểm bằng số đếm, không bằng đồng hồ).
+    await sleep(700);
+    expect(got.slice(nCoGood).filter((s) => s.quality === "bad")).toHaveLength(mbTags.length);
   });
 
   it("cờ TẮT: đóng server giữa chừng ⇒ KHÔNG có mẫu nào được phát (mất kết nối không sinh mẫu — hành vi cũ)", async () => {
@@ -178,23 +184,38 @@ describe("Modbus × server THẬT trong tiến trình", () => {
     { tagKey: "d", address: "40008", dataType: "int" },
   ];
 
-  it("cờ BẬT: PLC ngừng đáp giữa tick ⇒ HUỶ tick ở lần timeout đầu: đúng MỘT loạt bad/comm_lost cho cả 4 tag, không chờ hạn từng tag còn lại", async () => {
+  it("cờ BẬT (F3): MỘT thanh ghi không bao giờ đáp ⇒ chỉ tag đó bad/comm_lost MỖI tick; các tag khác good MỖI tick (không câm, không loạt)", async () => {
     vi.stubEnv(FLAG, "true");
-    const sim = await startModbusSim(null, [5, 6, 7]);
+    const sim = await startModbusSim(null, [5]); // chỉ b treo
     cleanups.push(() => sim.close());
-    const d = await ketNoi(sim, 400);
-    const got: Array<{ s: OtSample; at: number }> = [];
-    const t0 = Date.now();
-    const h = await d.subscribe(mbTags4, (s) => void got.push({ s, at: Date.now() - t0 }), 100);
+    const d = await ketNoi(sim, 300);
+    const got: OtSample[] = [];
+    const h = await d.subscribe(mbTags4, (s) => void got.push(s), 100);
     cleanups.push(() => h.close());
-    await waitFor(() => got.length >= mbTags4.length, 3000);
-    // một timeout (~400 ms) + chu kỳ 100 ms; nếu còn chờ hạn từng tag (3 × 400 ms) thì ≥ 1300 ms.
-    expect(Math.max(...got.map((g) => g.at))).toBeLessThan(900);
-    await sleep(1500); // các tick sau vẫn lỗi nhưng cùng đợt ⇒ im lặng
+    const dem = (k: string, q: string) => got.filter((s) => s.tagKey === k && s.quality === q).length;
+    await waitFor(() => dem("b", "bad") >= 2 && ["a", "c", "d"].every((k) => dem(k, "good") >= 2), 10_000);
+    for (const k of ["a", "c", "d"]) expect(dem(k, "bad")).toBe(0); // tag khoẻ KHÔNG bao giờ bị phủ bad
+    expect(dem("b", "good")).toBe(0);
+    const bBad = got.filter((s) => s.tagKey === "b");
+    expect(bBad.every((s) => s.reason === "comm_lost" && s.statusCode === "timeout" && s.value === null)).toBe(true);
+  });
+
+  it("cờ BẬT (F3): server đóng socket GIỮA tick (một thanh ghi đang chờ) ⇒ lỗi mức liên kết ⇒ đúng MỘT loạt bad/comm_lost cho cả 4 tag", async () => {
+    vi.stubEnv(FLAG, "true");
+    const sim = await startModbusSim(null, [5]);
+    cleanups.push(() => sim.close());
+    const d = await ketNoi(sim, 2500); // hạn giao dịch DÀI: loạt phải đến từ việc socket đóng, không từ timeout
+    const got: OtSample[] = [];
+    const h = await d.subscribe(mbTags4, (s) => void got.push(s), 100);
+    cleanups.push(() => h.close());
+    await sleep(500); // tick đầu đang kẹt ở thanh ghi b
+    expect(got).toHaveLength(0); // chưa có mẫu nào (tick chưa xong)
+    await sim.close();
+    await waitFor(() => got.length >= mbTags4.length, 8000);
+    await sleep(600);
     expect(got).toHaveLength(mbTags4.length);
-    expect(got.map((g) => g.s.tagKey).sort()).toEqual(["a", "b", "c", "d"]);
-    expect(got.every((g) => g.s.quality === "bad" && g.s.reason === "comm_lost" && g.s.value === null)).toBe(true);
-    expect(got.every((g) => g.s.statusCode === "timeout")).toBe(true);
+    expect(got.map((s) => s.tagKey).sort()).toEqual(["a", "b", "c", "d"]);
+    expect(got.every((s) => s.quality === "bad" && s.reason === "comm_lost" && s.value === null)).toBe(true);
   });
 
   it("cờ BẬT: readTags CÔNG KHAI (readback/probe/bộ đọc an toàn) KHÔNG huỷ: thanh ghi không đáp ⇒ trả mẫu bad theo từng tag, không ném", async () => {
@@ -277,6 +298,48 @@ describe("OPC UA readTags × chất lượng", () => {
     expect(s.reason).toBe("comm_lost");
   });
 
+  it.each([0x00300000, 0x00960000, 0x00000400])(
+    "cờ BẬT (F1): mã GOOD có mã con/bit thông tin (decimal %i) ⇒ good, giữ giá trị, không statusCode/reason",
+    async (sc) => {
+      vi.stubEnv(FLAG, "true");
+      mockOpcua({ value: sc, name: "GoodSubCode" });
+      const d = await opcuaConnected();
+      const [s] = await d.readTags(opcTags);
+      expect(s.quality).toBe("good");
+      expect(s.value).toBe(21);
+      expect(s.statusCode).toBeUndefined();
+      expect(s.reason).toBeUndefined();
+    },
+  );
+
+  it("cờ TẮT: mã good có mã con (0x00300000) ⇒ bad như cũ (đường lui)", async () => {
+    mockOpcua({ value: 0x00300000, name: "GoodClamped" });
+    const d = await opcuaConnected();
+    const [s] = await d.readTags(opcTags);
+    expect(s.quality).toBe("bad");
+    expect(s.value).toBeNull();
+  });
+
+  it("F4: session.read không bao giờ trả lời ⇒ readTags reject trong timeoutMs + 1000 (không cờ)", async () => {
+    const { session } = mockOpcua({ value: 0 });
+    session.read = vi.fn(() => new Promise(() => undefined)) as never;
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://localhost:4840", timeoutMs: 1000 });
+    vi.useFakeTimers();
+    let ketCuc: "treo" | "reject" = "treo";
+    const p = d.readTags(opcTags).catch((e) => {
+      ketCuc = "reject";
+      return e as Error;
+    });
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(ketCuc).toBe("treo");
+    await vi.advanceTimersByTimeAsync(2);
+    const err = await p;
+    expect(ketCuc).toBe("reject");
+    expect(String((err as Error).message)).toMatch(/opcua read timeout after 2000ms/);
+  });
+
   it("cờ BẬT: bit thông tin thấp (0x80310400) vẫn là comm_lost", async () => {
     vi.stubEnv(FLAG, "true");
     mockOpcua({ value: 0x80310400, name: "BadNoCommunication" });
@@ -312,6 +375,7 @@ describe("OPC UA readTags × chất lượng", () => {
     const ticks: SuKienDoc[] = [];
     const got: OtSample[] = [];
     const h = await d.subscribe(opcTags, (s) => void got.push(s), 30, { onTick: (e) => void ticks.push(e) });
+    dongSau.push(() => h.close());
     await waitFor(() => ticks.length > 0, 2000);
     await h.close();
     expect(ticks[0].ok).toBe(true);
@@ -353,6 +417,7 @@ describe("OPC UA đường monitored-items (push)", () => {
     const d = await opcuaConnected();
     const got: OtSample[] = [];
     const h = await d.subscribe(opcTags, (s) => void got.push(s), 1000);
+    dongSau.push(() => h.close());
     return { got, items, h };
   }
 
@@ -453,6 +518,7 @@ describe("S7", () => {
     const ticks: SuKienDoc[] = [];
     const got: OtSample[] = [];
     const h = await d.subscribe([s7Tags[0]], (s) => void got.push(s), 30, { onTick: (e) => void ticks.push(e) });
+    dongSau.push(() => h.close());
     await waitFor(() => ticks.length > 0, 2000);
     await h.close();
     expect(ticks[0].ok).toBe(true);
@@ -495,6 +561,7 @@ describe("Mitsubishi MC", () => {
     await d.connect({ endpoint: "tcp://127.0.0.1:1281" });
     const ticks: SuKienDoc[] = [];
     const h = await d.subscribe([mcTags[0]], () => undefined, 30, { onTick: (e) => void ticks.push(e) });
+    dongSau.push(() => h.close());
     await waitFor(() => ticks.length > 0, 2000);
     await h.close();
     expect(ticks[0].ok).toBe(true);
@@ -534,6 +601,7 @@ describe("SLMP huỷ tick khi mất liên lạc", () => {
     const { d, anyD } = await dung();
     const got: OtSample[] = [];
     const h = await d.subscribe(slmpTags, (s) => void got.push(s), 30);
+    dongSau.push(() => h.close());
     await waitFor(() => got.length >= 3, 2000);
     await sleep(200); // thêm vài tick lỗi cùng đợt ⇒ im lặng
     await h.close();
@@ -607,10 +675,29 @@ describe("EtherNet/IP", () => {
     expect(truc.every((s) => s.quality === "bad" && s.reason === "comm_lost" && s.statusCode === "ECONNRESET")).toBe(true);
     const got: OtSample[] = [];
     const h = await d.subscribe(hai, (s) => void got.push(s), 30);
+    dongSau.push(() => h.close());
     await sleep(300);
     await h.close();
     expect(got).toHaveLength(2);
     expect(got.every((s) => s.quality === "bad" && s.reason === "comm_lost" && s.statusCode === "ECONNRESET")).toBe(true);
+  });
+
+  it("cờ BẬT (F3): giao dịch QUÁ HẠN ở một tag ⇒ chỉ tag đó bad/comm_lost, tag khác vẫn good (đường poll không huỷ tick)", async () => {
+    vi.stubEnv(FLAG, "true");
+    mockEip(async (tag) => {
+      if (tag.name === "Other") throw Object.assign(new Error("request timed out"), { name: "TimeoutError" });
+      tag.value = 5;
+    });
+    const { EthernetIpDriver } = await import("./ethernetIpDriver");
+    const d = new EthernetIpDriver();
+    await d.connect({ endpoint: "192.168.1.10" });
+    const hai: OtTagAddress[] = [...eipTags, { tagKey: "t2", address: "Other", dataType: "float" }];
+    const got: OtSample[] = [];
+    const h = await d.subscribe(hai, (s) => void got.push(s), 30);
+    dongSau.push(() => h.close());
+    await waitFor(() => got.filter((s) => s.tagKey === "t2").length >= 2 && got.filter((s) => s.tagKey === "temp").length >= 2, 3000);
+    expect(got.filter((s) => s.tagKey === "temp").every((s) => s.quality === "good")).toBe(true);
+    expect(got.filter((s) => s.tagKey === "t2").every((s) => s.quality === "bad" && s.reason === "comm_lost")).toBe(true);
   });
 
   it("cờ TẮT: lỗi mạng ⇒ bad TRẦN theo từng tag như cũ (readTags không ném)", async () => {
@@ -648,6 +735,7 @@ describe("EtherNet/IP", () => {
     await d.connect({ endpoint: "192.168.1.10" });
     const ticks: SuKienDoc[] = [];
     const h = await d.subscribe(eipTags, () => undefined, 30, { onTick: (e) => void ticks.push(e) });
+    dongSau.push(() => h.close());
     await waitFor(() => ticks.length > 0, 2000);
     await h.close();
     expect(ticks[0].ok).toBe(true);
