@@ -38,7 +38,7 @@ import { parseEipTag, coerceEipValue } from "./eipTag";
 import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiChung, chatLuongV2Bat, laLoiMucLienKet } from "../chatLuong";
+import { chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
 
 /** Ép raw (đã inverse scale) sang kiểu st-ethernet-ip chấp nhận theo dataType. */
 function coerceEipWrite(raw: unknown, dataType: string): number | boolean | string {
@@ -202,9 +202,9 @@ export class EthernetIpDriver extends NotImplementedDriver {
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
       // SCADA R0 (C1) — đường poll, sau cờ: lỗi mức LIÊN KẾT (ECONNRESET/…, mất kết nối) ⇒ HUỶ cả tick (một loạt mẫu xấu do vòng poll phát);
-      // lỗi khác (quá hạn, lỗi thiết bị) theo từng tag.
+      // T12 D3: giao dịch QUÁ HẠN cũng huỷ. Lỗi thiết bị theo từng tag.
       const v2 = chatLuongV2Bat();
-      if (abortOnCommLost && (laLoiMucLienKet(err) || !this.connected)) throw err;
+      if (abortOnCommLost && (laLoiHuyTickPoll(err) || !this.connected)) throw err;
       return {
         tagKey: tag.tagKey,
         raw: null,
@@ -223,7 +223,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
   }
 
   /**
-   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi mức LIÊN KẾT đầu tiên HUỶ cả tick (ném; quá hạn giao dịch thì KHÔNG) để vòng poll
+   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi mức LIÊN KẾT hoặc giao dịch QUÁ HẠN đầu tiên HUỶ cả tick (ném; T12 D3) để vòng poll
    * phát MỘT loạt mẫu xấu; cờ TẮT: y hệt `readTags`. `readTags` công khai (readback ghi thiết bị, probe, bộ đọc an toàn) KHÔNG BAO GIỜ huỷ:
    * luôn trả mẫu bad theo từng tag.
    */

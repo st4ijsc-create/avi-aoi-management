@@ -39,7 +39,7 @@ import {
 import { inverseScale } from "./otScale";
 import { closeModbusClient, withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiModbus, chatLuongV2Bat, laLoiMucLienKet } from "../chatLuong";
+import { chatLuongLoiModbus, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
 
 /**
  * doc 81 Đợt 1B Task 1 — miền giá trị RAW của thanh ghi 1-word theo kiểu khai báo.
@@ -224,9 +224,9 @@ export class ModbusDriver extends NotImplementedDriver {
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
       // SCADA R0 (C1) — đường poll, sau cờ: lỗi mức LIÊN KẾT (socket đóng/reset, cổng đóng, DeviceUnreachable, ECONNRESET/…) ⇒ HUỶ cả tick;
-      // vòng poll phát MỘT loạt mẫu xấu. Giao dịch QUÁ HẠN, exception thiết bị, config_error vẫn theo từng tag (tag khoẻ không bị câm).
+      // vòng poll phát MỘT loạt mẫu xấu. T12 D3: giao dịch QUÁ HẠN cũng huỷ (không trả lời = mất liên lạc). Exception thiết bị, config_error vẫn theo từng tag.
       const v2 = chatLuongV2Bat();
-      if (abortOnCommLost && (laLoiMucLienKet(err) || !this.connected)) throw err;
+      if (abortOnCommLost && (laLoiHuyTickPoll(err) || !this.connected)) throw err;
       return {
         tagKey: tag.tagKey,
         raw: null,
@@ -245,7 +245,7 @@ export class ModbusDriver extends NotImplementedDriver {
   }
 
   /**
-   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi mức LIÊN KẾT đầu tiên HUỶ cả tick (ném; quá hạn giao dịch thì KHÔNG) để vòng poll
+   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi mức LIÊN KẾT hoặc giao dịch QUÁ HẠN đầu tiên HUỶ cả tick (ném; T12 D3) để vòng poll
    * phát MỘT loạt mẫu xấu; cờ TẮT: y hệt `readTags`. `readTags` công khai (readback ghi thiết bị, probe, bộ đọc an toàn) KHÔNG BAO GIỜ huỷ:
    * luôn trả mẫu bad theo từng tag.
    */

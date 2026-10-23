@@ -46,8 +46,10 @@ describe("StubDriver", () => {
     const received: OtSample[] = [];
     const handle = await d.subscribe(tags, (s) => { received.push(s); }, 1000);
 
+    await vi.advanceTimersByTimeAsync(0);
+    expect(received.length).toBe(2); // first read immediately at subscribe (SCADA R0 T12 D2) × 2 tags
     await vi.advanceTimersByTimeAsync(1000);
-    expect(received.length).toBe(2); // one tick × 2 tags
+    expect(received.length).toBe(4); // + one interval tick × 2 tags
 
     await handle.close();
     received.length = 0;

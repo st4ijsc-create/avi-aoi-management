@@ -96,7 +96,11 @@ export interface SuKienDoc {
   ok: boolean;
   timeout: boolean;
   ms: number;
-  tags: { tagKey: string; quality: OtQuality }[];
+  /** Tick tốt: chất lượng từng tag (`reason` khi mẫu mang lý do). Tick lỗi: rỗng. */
+  tags: { tagKey: string; quality: OtQuality; reason?: LyDoChatLuong }[];
+  /** SCADA R0 T12 (D1) — chỉ tick lỗi (`ok:false`): phân loại lỗi của lần đọc (phanLoiLoi của driver). */
+  statusCode?: string;
+  reason?: LyDoChatLuong;
 }
 
 /** SCADA R0 — tuỳ chọn thêm cho vòng poll của driver (tham số 4 của subscribe). */

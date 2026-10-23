@@ -24,6 +24,55 @@ afterEach(() => {
 });
 
 describe("taoVongPoll", () => {
+  it("D2 (T12): lần đọc ĐẦU chạy NGAY lúc subscribe (t=0), rồi mỗi intervalMs", async () => {
+    const lucDoc: number[] = [];
+    const t0 = Date.now();
+    const doc = vi.fn(async (tags: OtTagAddress[]) => {
+      lucDoc.push(Date.now() - t0);
+      return tags.map((t) => mauTot(t.tagKey));
+    });
+    const got: OtSample[] = [];
+    const h = taoVongPoll({
+      tags: TAGS,
+      intervalMs: 1000,
+      doc,
+      onSample: (s) => void got.push(s),
+      phanLoiLoi: phanLoi,
+      chatLuongV2: true,
+      nhan: "t",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(doc).toHaveBeenCalledTimes(1); // không chờ một chu kỳ
+    expect(got).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(lucDoc).toEqual([0, 1000, 2000]);
+    await h.close();
+  });
+
+  it("D2 (T12): lần đọc đầu NGAY vẫn giữ chốt chống chồng tới khi doc() xong (tick 1000 bị bỏ khi đọc đầu kéo 1500 ms)", async () => {
+    const doc = vi.fn(
+      () => new Promise<OtSample[]>((res) => setTimeout(() => res([mauTot("t1")]), 1500)),
+    );
+    const h = taoVongPoll({
+      tags: TAGS,
+      intervalMs: 1000,
+      deadlineMs: 5000,
+      doc,
+      onSample: () => undefined,
+      phanLoiLoi: phanLoi,
+      chatLuongV2: false,
+      nhan: "t",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(doc).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1100); // tick 1000: đọc đầu chưa xong ⇒ bỏ qua
+    expect(doc).toHaveBeenCalledTimes(1);
+    expect(h.soLanChong()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1000); // đọc đầu xong ở 1500; tick 2000 đọc lại
+    expect(doc).toHaveBeenCalledTimes(2);
+    await h.close();
+  });
+
   it("tick tới khi tick trước chưa xong thì bỏ qua và đếm soLanChong", async () => {
     const doc = vi.fn(
       () => new Promise<OtSample[]>((res) => setTimeout(() => res([mauTot("t1")]), 1500)),
@@ -57,7 +106,7 @@ describe("taoVongPoll", () => {
       chatLuongV2: false,
       nhan: "t",
     });
-    await vi.advanceTimersByTimeAsync(6100); // tick đầu ở 1000, đọc xong ở 6000
+    await vi.advanceTimersByTimeAsync(6100); // đọc đầu ở 0 (D2), xong ở 5000; đọc thứ hai (5000) chưa xong
     expect(ticks).toHaveLength(1);
     expect(ticks[0].ok).toBe(true);
     expect(got).toHaveLength(1);
@@ -76,7 +125,7 @@ describe("taoVongPoll", () => {
       chatLuongV2: false,
       nhan: "t",
     });
-    await vi.advanceTimersByTimeAsync(4000 + 7900); // tick ở 4000; hạn 8000 ⇒ 12000
+    await vi.advanceTimersByTimeAsync(7900); // đọc đầu ở 0 (D2); hạn 8000
     expect(ticks).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(200);
     expect(ticks).toHaveLength(1);
@@ -97,7 +146,7 @@ describe("taoVongPoll", () => {
       chatLuongV2: false,
       nhan: "t",
     });
-    await vi.advanceTimersByTimeAsync(1000); // tick bắt đầu ở 1000
+    await vi.advanceTimersByTimeAsync(0); // đọc đầu bắt đầu ngay (D2)
     expect(ticks).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(799);
     expect(ticks).toHaveLength(0);
@@ -128,7 +177,7 @@ describe("taoVongPoll", () => {
       chatLuongV2: true,
       nhan: "t",
     });
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(250); // đọc ở 0 (D2), 100, 200
     expect(n).toBe(3);
     expect(mau).toHaveLength(2); // một loạt = mỗi tag một mẫu
     expect(mau.map((s) => s.tagKey).sort()).toEqual(["t1", "t2"]);
@@ -161,7 +210,7 @@ describe("taoVongPoll", () => {
       chatLuongV2: false,
       nhan: "t",
     });
-    await vi.advanceTimersByTimeAsync(350);
+    await vi.advanceTimersByTimeAsync(250); // đọc ở 0 (D2), 100, 200
     expect(mau).toHaveLength(0);
     expect(ticks.length).toBe(3);
     expect(ticks.every((e) => !e.ok && !e.timeout && e.tags.length === 0)).toBe(true);
@@ -186,7 +235,7 @@ describe("taoVongPoll", () => {
       chatLuongV2: true,
       nhan: "t",
     });
-    await vi.advanceTimersByTimeAsync(250);
+    await vi.advanceTimersByTimeAsync(150); // đọc ở 0 (D2) và 100
     expect(n).toBe(2);
     for (const k of ["t1", "t2"]) {
       const cuoi = [...mau].reverse().find((s) => s.tagKey === k);
@@ -211,7 +260,7 @@ describe("taoVongPoll", () => {
       chatLuongV2: true,
       nhan: "t",
     });
-    await vi.advanceTimersByTimeAsync(120);
+    await vi.advanceTimersByTimeAsync(50); // chỉ lần đọc đầu (D2: ở 0)
     expect(nhan).toEqual(["t1", "t2"]); // t1 ném nhưng t2 vẫn tới
     expect(ticks).toHaveLength(1);
     expect(ticks[0]).toMatchObject({ ok: true, timeout: false });
@@ -240,7 +289,7 @@ describe("taoVongPoll", () => {
       chatLuongV2: true,
       nhan: "t",
     });
-    await vi.advanceTimersByTimeAsync(1100); // tick đang chờ doc
+    await vi.advanceTimersByTimeAsync(100); // lần đọc đầu (D2: ở 0) đang chờ doc
     expect(doc).toHaveBeenCalledTimes(1);
     await h.close();
     await vi.advanceTimersByTimeAsync(5000);
@@ -300,12 +349,12 @@ describe("taoVongPoll", () => {
       chatLuongV2: true,
       nhan: "t",
     });
-    await vi.advanceTimersByTimeAsync(3000); // đọc 1 bắt đầu ở 1000, hạn ở 1300, xong muộn ở 3500 -> chưa
+    await vi.advanceTimersByTimeAsync(2000); // đọc 1 bắt đầu ở 0 (D2), hạn ở 300, xong muộn ở 2500 -> chưa; tick 1000/2000 bị bỏ
     expect(doc).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(600); // 3600: đọc 1 xong muộn (3500), tick 4000 chưa tới
+    await vi.advanceTimersByTimeAsync(600); // 2600: đọc 1 xong muộn (2500), tick 3000 chưa tới
     expect(mau.filter((s) => s.quality === "good")).toHaveLength(0); // kết quả muộn không phát
     expect(ticks).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(500); // 4100: tick 4000 đọc lại
+    await vi.advanceTimersByTimeAsync(500); // 3100: tick 3000 đọc lại
     expect(doc).toHaveBeenCalledTimes(2);
     expect(mau.filter((s) => s.quality === "good")).toHaveLength(2);
     await h.close();
@@ -331,6 +380,7 @@ describe("taoVongPoll", () => {
     await vi.advanceTimersByTimeAsync(1500);
     expect(ticks).toHaveLength(1);
     expect(ticks[0].timeout).toBe(true);
+    expect(ticks[0]).toMatchObject({ statusCode: "sc_timeout", reason: "comm_lost" }); // T12 D1: tick lỗi mang phân loại
     expect(phan).toHaveBeenCalledTimes(1);
     const err = (phan.mock.calls[0] as unknown[])[0];
     expect((err as Error).message).toMatch(/plc1 read timeout after 400ms/);

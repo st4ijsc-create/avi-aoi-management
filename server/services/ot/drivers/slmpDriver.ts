@@ -39,7 +39,7 @@ import type {
 } from "../otDriver";
 import { inverseScale } from "./otScale";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongEndCodeSlmp, chatLuongLoiChung, chatLuongV2Bat, laLoiMucLienKet } from "../chatLuong";
+import { chatLuongEndCodeSlmp, chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
 import {
   parseSlmpDevice,
   buildBatchReadWord,
@@ -288,9 +288,9 @@ export class SlmpDriver implements OtDriver {
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
       // SCADA R0 (C1) — đường poll, sau cờ: lỗi mức LIÊN KẾT (socket đóng/reset, mất kết nối) ⇒ HUỶ cả tick (một loạt mẫu xấu do vòng poll phát);
-      // lỗi khác (quá hạn giao dịch, địa chỉ sai, giải mã) theo từng tag. End code != 0 đi qua badSample, không bao giờ huỷ tick.
+      // T12 D3: giao dịch QUÁ HẠN cũng huỷ. Lỗi khác (địa chỉ sai, giải mã) theo từng tag. End code != 0 đi qua badSample, không bao giờ huỷ tick.
       const v2 = chatLuongV2Bat();
-      if (abortOnCommLost && (laLoiMucLienKet(err) || !this.connected)) throw err;
+      if (abortOnCommLost && (laLoiHuyTickPoll(err) || !this.connected)) throw err;
       return {
         tagKey: tag.tagKey,
         raw: null,
@@ -323,7 +323,7 @@ export class SlmpDriver implements OtDriver {
   }
 
   /**
-   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi mức LIÊN KẾT đầu tiên HUỶ cả tick (ném; quá hạn giao dịch thì KHÔNG) để vòng poll
+   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi mức LIÊN KẾT hoặc giao dịch QUÁ HẠN đầu tiên HUỶ cả tick (ném; T12 D3) để vòng poll
    * phát MỘT loạt mẫu xấu; cờ TẮT: y hệt `readTags`. `readTags` công khai (readback ghi thiết bị, probe, bộ đọc an toàn) KHÔNG BAO GIỜ huỷ:
    * luôn trả mẫu bad theo từng tag.
    */

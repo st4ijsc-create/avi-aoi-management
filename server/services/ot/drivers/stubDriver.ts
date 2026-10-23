@@ -3,7 +3,7 @@
  *
  * Sinh giá trị xác định theo `tagKey` (sin + nhiễu nhẹ), áp scale/offset từ tag.
  * Dùng để E2E pipeline ingest → telemetry → (tuỳ chọn) UNS mà chưa cài driver thật.
- * SCADA R0 (C9) — stub CÓ KỊCH BẢN: `simDatLoi` (rớt kết nối / tag xấu / tag nghi ngờ / ép giá trị), `connectionOptions.simKichBan`
+ * SCADA R0 (C9) — stub CÓ KỊCH BẢN: `simDatLoi` (rớt kết nối / TREO (T12) / tag xấu / tag nghi ngờ / ép giá trị), `connectionOptions.simKichBan`
  * (tự rớt rồi có lại theo thời gian) và writeTags ghi vào RAM (readTags trả lại giá trị đã ghi). Dùng cho nghiệm thu R0 và nút "Lab" (M10).
  */
 import type {
@@ -38,7 +38,14 @@ function hashString(s: string): number {
  * `giaTri` là giá trị kỹ thuật (đã qua scale/offset), ưu tiên hơn giá trị đã ghi RAM và hơn sóng sin.
  */
 export interface LoiStub {
+  /** Rớt hẳn (cổng đóng / RST): isConnected false, đọc/nối ném ngay. */
   matKetNoi?: boolean;
+  /**
+   * SCADA R0 T12 — TREO (cáp rút sau switch, PLC đóng băng; TCP nửa mở): isConnected VẪN true (không ai báo client), mọi giao dịch
+   * không được trả lời ⇒ ném lỗi QUÁ HẠN sau `timeoutMs` của kết nối; connect chờ tới `timeoutMs` rồi ném. Hết treo giữa lúc chờ ⇒
+   * giao dịch/connect đó xong bình thường (câu trả lời tới muộn).
+   */
+  treo?: boolean;
   tagXau?: string[];
   tagNghiNgo?: string[];
   giaTri?: Record<string, number | boolean | string>;
@@ -74,6 +81,8 @@ export class StubDriver implements OtDriver {
   private readonly ram = new Map<string, number | boolean | string>();
   private matTu: number | null = null;
   private matDen = Number.POSITIVE_INFINITY;
+  /** T12 — hạn một giao dịch/connect khi mô phỏng TREO (`cfg.timeoutMs`, mặc định 5000 như driver thật). */
+  private timeoutMs = 5000;
   /**
    * doc 81 Đợt 8 task O1 — the program "loaded in" the simulated controller: `connectionOptions.simProgram` (a string) at
    * connect; null ⇔ no simulated program (the sim then reports supported:false, like a controller without the feature).
@@ -85,6 +94,12 @@ export class StubDriver implements OtDriver {
     // SCADA R0 — đang mô phỏng mất kết nối (`simDatLoi({matKetNoi:true})` hoặc trong cửa sổ `simKichBan` của lần connect trước)
     // thì nối lại KHÔNG thành công, như một thiết bị thật không với tới: tránh chập chờn connected↔reconnecting của supervisor.
     // Kiểm TRƯỚC khi tính lại cửa sổ kịch bản (nối lại không được kéo dài/khởi động lại cửa sổ đang chạy).
+    if (this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
+    this.timeoutMs = typeof cfg?.timeoutMs === "number" && cfg.timeoutMs > 0 ? cfg.timeoutMs : 5000;
+    // T12 — đang TREO: không có SYN-ACK; chờ tới hạn (hết treo giữa chừng ⇒ nối được).
+    if (this.loi.treo && !(await this.choHetTreo())) {
+      throw new DeviceUnreachableError("stub", `sim hang — connect timed out after ${this.timeoutMs}ms`);
+    }
     if (this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
     this.connected = true;
     this.connectedAt = new Date();
@@ -117,6 +132,17 @@ export class StubDriver implements OtDriver {
    */
   simDatLoi(l: LoiStub): void {
     this.loi = { ...l };
+  }
+
+  /** T12 — chờ tới khi hết TREO hoặc hết `timeoutMs`; true ⇔ hết treo trong hạn. */
+  private async choHetTreo(): Promise<boolean> {
+    const han = Date.now() + this.timeoutMs;
+    while (this.loi.treo) {
+      const con = han - Date.now();
+      if (con <= 0) return false;
+      await new Promise<void>((r) => setTimeout(r, Math.min(20, con)));
+    }
+    return true;
   }
 
   /** Đang mất kết nối mô phỏng (đặt tay hoặc trong cửa sổ kịch bản). */
@@ -179,7 +205,7 @@ export class StubDriver implements OtDriver {
     // gỡ đăng ký CHỈ khi chính mình còn là instance đang chạy ở endpoint đó (connect mới cùng endpoint đã thay thế).
     // Đang mô phỏng mất kết nối THỦ CÔNG (`simDatLoi({matKetNoi:true})`) thì GIỮ đăng ký: connect() ném trong lúc mất, nên nếu gỡ thì
     // không ai tìm lại được instance để `simDatLoi({})` (nút Lab của M10); kết thúc lỗi/connect lại thì quay về quy tắc thường.
-    if (this.loi.matKetNoi) return;
+    if (this.loi.matKetNoi || this.loi.treo) return;
     if (this.endpoint !== null && stubDangChay.get(this.endpoint) === this) stubDangChay.delete(this.endpoint);
   }
 
@@ -260,6 +286,11 @@ export class StubDriver implements OtDriver {
 
   async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
     if (!this.connected || this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
+    // T12 — TREO: giao dịch không được trả lời ⇒ quá hạn sau timeoutMs (laLoiTimeout nhận "timed out"); hết treo trong hạn ⇒ trả muộn.
+    if (this.loi.treo && !(await this.choHetTreo())) {
+      throw new DeviceUnreachableError("stub", `sim hang — no answer, transaction timed out after ${this.timeoutMs}ms`);
+    }
+    if (!this.connected || this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
     return tags.map((t) => this.mauCoLoi(t));
   }
 
@@ -292,6 +323,9 @@ export class StubDriver implements OtDriver {
   ): Promise<OtCommandResult[]> {
     if (!this.connected || this.matKetNoiHieuLuc()) {
       return writes.map((w) => ({ tagKey: w.tagKey, ok: false, error: "stub: not connected" }));
+    }
+    if (this.loi.treo) {
+      return writes.map((w) => ({ tagKey: w.tagKey, ok: false, error: "stub: no answer (sim hang)" }));
     }
     return writes.map((w) => {
       const v = w.value;

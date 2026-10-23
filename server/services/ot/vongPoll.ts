@@ -1,6 +1,7 @@
 /**
  * SCADA R0 (C1/C5) — vòng poll DÙNG CHUNG cho mọi driver OT (và stub).
  *
+ *   - Lần đọc ĐẦU chạy ngay lúc tạo vòng (T12 D2), sau đó mỗi `intervalMs`.
  *   - Chống chồng tick: tick tới khi tick trước chưa xong ⇒ BỎ QUA (đếm `soLanChong()`), không dồn hàng đợi.
  *   - Mỗi lần đọc bọc `withDeadline` (`deadlineMs ?? max(2×intervalMs, 6000)`): đọc treo không giữ vòng mãi mãi. Chốt chống chồng chỉ nhả khi
  *     CHÍNH lần đọc xong (hạn không huỷ được đọc): PLC treo ⇒ không dồn đọc song song; kết quả muộn bị nuốt.
@@ -70,11 +71,12 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
         mau = await withDeadline(docP, hanMs, `${o.nhan} read`);
       } catch (err) {
         if (dong) return;
-        baoTick({ ok: false, timeout: laLoiTimeout(err), ms: Date.now() - t0, tags: [] });
+        // SCADA R0 T12 (D1) — tick lỗi mang phân loại (statusCode, reason) để otManager đếm tick hỏng (timeout / comm_lost).
+        const { statusCode, reason } = o.phanLoiLoi(err);
+        baoTick({ ok: false, timeout: laLoiTimeout(err), ms: Date.now() - t0, tags: [], statusCode, reason });
         const dauDot = !dangLoi;
         dangLoi = true;
         if (o.chatLuongV2 && dauDot) {
-          const { statusCode, reason } = o.phanLoiLoi(err);
           for (const s of mauXauChoMoiTag(o.tags, statusCode, reason, new Date())) {
             if (dong) return;
             try {
@@ -98,7 +100,12 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
         }
       }
       if (dong) return;
-      baoTick({ ok: true, timeout: false, ms, tags: mau.map((s) => ({ tagKey: s.tagKey, quality: s.quality })) });
+      baoTick({
+        ok: true,
+        timeout: false,
+        ms,
+        tags: mau.map((s) => (s.reason ? { tagKey: s.tagKey, quality: s.quality, reason: s.reason } : { tagKey: s.tagKey, quality: s.quality })),
+      });
     } finally {
       dangChay = false;
     }
@@ -106,6 +113,9 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
 
   const timer = setInterval(() => void tick(), chuKy);
   if (typeof (timer as NodeJS.Timeout).unref === "function") (timer as NodeJS.Timeout).unref();
+  // SCADA R0 T12 (D2) — lần đọc ĐẦU chạy NGAY lúc subscribe (không chờ một chu kỳ): nối lại xong ⇒ dữ liệu tốt sau MỘT lần đọc,
+  // không phải sau một chu kỳ + một lần đọc. Chốt chống chồng giữ nguyên (tick ở mốc chu kỳ bị bỏ nếu lần đọc đầu chưa xong).
+  void tick();
 
   return {
     close: async () => {

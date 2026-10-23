@@ -89,9 +89,8 @@ function thongDiepNgan(err: unknown): string {
 const MA_LOI_LIEN_KET = new Set<string>(["ECONNRESET", "ECONNREFUSED", "EPIPE", "EHOSTUNREACH"]);
 
 /**
- * Lỗi ở mức LIÊN KẾT: socket đã đóng/bị reset, thiết bị không với tới, cổng modbus-serial đã đóng. Đường poll chỉ HUỶ cả tick ở các
- * lỗi này; một giao dịch quá hạn (timeout) KHÔNG phải lỗi liên kết — chỉ tag đó bad, các tag khác vẫn được đọc (một thanh ghi
- * không bao giờ đáp không được làm câm các tag khoẻ). Cáp rút kiểu treo do hạn của vòng poll cắt tick.
+ * Lỗi ở mức LIÊN KẾT: socket đã đóng/bị reset, thiết bị không với tới, cổng modbus-serial đã đóng. (Đường poll huỷ tick ở các lỗi
+ * này VÀ ở giao dịch quá hạn — xem `laLoiHuyTickPoll`, T12 D3.)
  */
 export function laLoiMucLienKet(err: unknown): boolean {
   if (err instanceof DeviceUnreachableError) return true;
@@ -99,6 +98,16 @@ export function laLoiMucLienKet(err: unknown): boolean {
   if ((err as { name?: unknown }).name === "PortNotOpenError") return true;
   const code = maLoi(err);
   return code !== undefined && MA_LOI_LIEN_KET.has(code);
+}
+
+/**
+ * SCADA R0 T12 (D3) — lỗi làm HUỶ phần còn lại của một tick trên ĐƯỜNG POLL (chỉ đường poll; `readTags` công khai không huỷ):
+ * lỗi mức liên kết (ở trên) HOẶC giao dịch QUÁ HẠN. Quá hạn = thiết bị không trả lời = mất liên lạc (cáp rút sau switch, PLC treo:
+ * socket vẫn mở) — không phải lỗi thiết bị theo từng tag; đọc tiếp các tag còn lại chỉ nhân thời gian chờ lên N lần. Lỗi THIẾT BỊ
+ * (exception Modbus, end code SLMP, tag không tồn tại) vẫn theo từng tag.
+ */
+export function laLoiHuyTickPoll(err: unknown): boolean {
+  return laLoiMucLienKet(err) || laLoiTimeout(err);
 }
 
 /** Ánh xạ lỗi chung (mọi giao thức) ⇒ (statusCode, reason). */

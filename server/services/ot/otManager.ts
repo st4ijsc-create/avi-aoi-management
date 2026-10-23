@@ -29,9 +29,16 @@ import { withDeadline } from "./drivers/boundedClose";
 import { adapterTargetFingerprint, runtimeAdapterTarget } from "./adapterTarget";
 import { baoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
 import { chatLuongLoiChung } from "./chatLuong";
-import { khoangNoiLaiMs, NOI_LAI_NHANH_TOI_THIEU_MS, thoiGianOnDinhMs, tinhDeadlineMs } from "./reconnectNhanh";
+import {
+  khoangNoiLaiMs,
+  NOI_LAI_NHANH_TOI_THIEU_MS,
+  SO_TICK_HONG_DE_MAT,
+  taoDemTickHong,
+  thoiGianOnDinhMs,
+  tinhDeadlineMs,
+} from "./reconnectNhanh";
 import { ghiNhanDoc, ghiNhanPhien } from "./boDemTruyenThong";
-import type { TuyChonVongPoll } from "./otDriver";
+import type { SuKienDoc, TuyChonVongPoll } from "./otDriver";
 import { datThongTinAdapter, xoaAdapter, xoaTatCaAdapter } from "../scada/boDemHienTai";
 
 /** SCADA R0 Task 7 — báo cho bộ đệm giá trị hiện tại nhịp poll / deadband / máy / mã của adapter (tính stale). Chiều phụ thuộc otManager → scada. */
@@ -157,6 +164,9 @@ interface LegacyEntry {
   reconnected?: boolean;
   /** SCADA R0 Task 5 — mã ngắn (chatLuongLoiChung) của lỗi khởi động/nối lại gần nhất; dùng cho mẫu xấu khi mất. */
   lastStatusCode?: string | null;
+  /** SCADA R0 T12 (D1) — số thứ tự lần subscribe (mỗi attemptLegacyStart một số) và phiên đang giữ `handle` (0 = không có). */
+  demPhien?: number;
+  phienHoatDong?: number;
 }
 
 const legacy = new Map<number, LegacyEntry>();
@@ -232,10 +242,17 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
   // Nối lại sau khi MẤT không đổi 'lost' thành 'connecting' mỗi lần thử (không chập chờn trạng thái/DB): chỉ lần đầu.
   const tt0 = layTrangThaiAdapter(adapter.adapterId)?.tt;
   if (tt0 === undefined || tt0 === "disabled") baoLegacy(entry, "connecting");
+  // T12 D1 — mỗi lần subscribe là một PHIÊN có bộ đếm tick hỏng riêng; tick của phiên đã bị thay không hạ được phiên mới.
+  const phien = (entry.demPhien = (entry.demPhien ?? 0) + 1);
   const work = (async (): Promise<OtSubscriptionHandle> => {
     await adapter.driver.connect(adapter.connection);
     const sink = await makeIngestSink(adapter);
-    return adapter.driver.subscribe(adapter.tags, sink, adapter.pollIntervalMs, tuyChonPollCua(adapter));
+    return adapter.driver.subscribe(
+      adapter.tags,
+      sink,
+      adapter.pollIntervalMs,
+      tuyChonPollCua(adapter, (e) => khiTickHongLegacy(entry, phien, myEpoch, e)),
+    );
   })();
   // Cờ settle gắn TRƯỚC withDeadline ⇒ khi work reject đúng hạn, cờ đã bật lúc catch chạy.
   let workSettled = false;
@@ -295,6 +312,7 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
     return false;
   }
   entry.handle = handle;
+  entry.phienHoatDong = phien;
   entry.fingerprint = fingerprint;
   entry.state = "active";
   entry.lastError = null;
@@ -312,14 +330,31 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
  * SCADA R0 Task 6 — tham số thứ 4 của subscribe(): hạn cứng một lần đọc (tinhDeadlineMs, theo timeoutMs LỚN NHẤT của các endpoint
  * để endpoint dự phòng chậm hơn không bị cắt oan) + bộ đếm truyền thông (C8). Adapter push (OPC UA monitored items) không gọi onTick.
  */
-function tuyChonPollCua(adapter: RuntimeAdapter): TuyChonVongPoll {
+function tuyChonPollCua(adapter: RuntimeAdapter, khiTickHong?: (e: SuKienDoc) => void): TuyChonVongPoll {
   const t1 = adapter.connection.timeoutMs;
   const t2 = adapter.backupConnection?.timeoutMs;
   const timeoutMs = typeof t1 === "number" || typeof t2 === "number" ? Math.max(t1 ?? 0, t2 ?? 0) : undefined;
+  // T12 D1 (legacy) — bộ đếm tick hỏng của phiên này; nhánh HA đếm trong ConnectionSupervisor (soTickHongDeMat).
+  const dem = khiTickHong ? taoDemTickHong(SO_TICK_HONG_DE_MAT, khiTickHong) : null;
   return {
     deadlineMs: tinhDeadlineMs(adapter.pollIntervalMs, timeoutMs),
-    onTick: (e) => ghiNhanDoc(adapter.adapterId, e),
+    onTick: (e) => {
+      ghiNhanDoc(adapter.adapterId, e);
+      dem?.(e);
+    },
   };
+}
+
+/**
+ * SCADA R0 T12 (D1, legacy) — phiên `phien` đã có SO_TICK_HONG_DE_MAT tick poll hỏng liên tiếp: liên kết TREO (isConnected() vẫn
+ * true) ⇒ xử lý y như legacyTick thấy mất kết nối (báo lost, hạ phiên; vòng canh nối lại nhanh). Chỉ khi phiên đó VẪN là phiên đang
+ * hoạt động của entry còn quản adapter, cùng thế hệ, và không có khởi động/hạ phiên nào đang chạy.
+ */
+function khiTickHongLegacy(entry: LegacyEntry, phien: number, myEpoch: number, e: SuKienDoc): void {
+  if (myEpoch !== epoch || legacy.get(entry.adapter.adapterId) !== entry) return;
+  if (entry.phienHoatDong !== phien || entry.state !== "active" || entry.inflight) return;
+  const sc = e.statusCode ?? (e.timeout ? "timeout" : "comm_lost");
+  void xuLyMatLegacy(entry, myEpoch, `poll: ${SO_TICK_HONG_DE_MAT} consecutive failed ticks (${sc})`, sc).catch(() => undefined);
 }
 
 function driverDangNoi(adapter: RuntimeAdapter): boolean {
@@ -376,25 +411,9 @@ async function legacyTick(myEpoch: number): Promise<void> {
         }
         continue;
       }
-      console.warn(`[OT] adapter "${entry.adapter.code}" (${entry.adapter.protocol}) link lost — reconnecting`);
-      entry.lastStatusCode = null; // không có đối tượng lỗi: mẫu xấu dùng "comm_lost"
-      baoLegacy(entry, "lost", "driver reported disconnected");
-      // Liên kết vừa được NỐI LẠI mà rớt trước khi ổn định ⇒ tính là một lần thất bại (backoff tích luỹ, lần thử đầu cũng chờ);
-      // liên kết ổn định (hoặc lần nối đầu) rớt ⇒ bộ đếm về 0 và thử nối lại ngay như trước.
-      const khongOnDinh =
-        entry.reconnected === true &&
-        entry.upSince !== undefined &&
-        Date.now() - entry.upSince < thoiGianOnDinhMs(entry.adapter.pollIntervalMs);
-      await dropLegacySession(entry, "driver reported disconnected");
+      // không có đối tượng lỗi: mẫu xấu dùng "comm_lost"
+      await xuLyMatLegacy(entry, myEpoch, "driver reported disconnected", null);
       if (myEpoch !== epoch) return;
-      if (khongOnDinh) {
-        entry.failures += 1;
-        entry.nextRetryAt = Date.now() + legacyRetryDelay(entry.failures, entry.adapter.pollIntervalMs);
-      } else {
-        entry.failures = 0;
-        entry.reconnected = false;
-        entry.nextRetryAt = 0;
-      }
     }
     if (entry.state === "starting" || Date.now() < entry.nextRetryAt) continue;
     const prevState = entry.state;
@@ -417,6 +436,33 @@ async function legacyTick(myEpoch: number): Promise<void> {
 }
 
 /**
+ * Một entry 'active' vừa được phát hiện MẤT liên kết (legacyTick: driver báo ngắt; T12 D1: K tick poll hỏng liên tiếp): báo `lost`,
+ * hạ phiên (có hạn), rồi đặt lịch nối lại theo bộ đếm thất bại. Người gọi đảm bảo entry đang 'active' và không inflight; phần đồng bộ
+ * trước lần await đầu tiên (dropLegacySession lật state/inflight) chặn mọi lần gọi chồng.
+ */
+async function xuLyMatLegacy(entry: LegacyEntry, myEpoch: number, lyDo: string, statusCode: string | null): Promise<void> {
+  console.warn(`[OT] adapter "${entry.adapter.code}" (${entry.adapter.protocol}) link lost (${lyDo}) — reconnecting`);
+  entry.lastStatusCode = statusCode;
+  baoLegacy(entry, "lost", lyDo);
+  // Liên kết vừa được NỐI LẠI mà rớt trước khi ổn định ⇒ tính là một lần thất bại (backoff tích luỹ, lần thử đầu cũng chờ);
+  // liên kết ổn định (hoặc lần nối đầu) rớt ⇒ bộ đếm về 0 và thử nối lại ngay như trước.
+  const khongOnDinh =
+    entry.reconnected === true &&
+    entry.upSince !== undefined &&
+    Date.now() - entry.upSince < thoiGianOnDinhMs(entry.adapter.pollIntervalMs);
+  await dropLegacySession(entry, lyDo);
+  if (myEpoch !== epoch) return;
+  if (khongOnDinh) {
+    entry.failures += 1;
+    entry.nextRetryAt = Date.now() + legacyRetryDelay(entry.failures, entry.adapter.pollIntervalMs);
+  } else {
+    entry.failures = 0;
+    entry.reconnected = false;
+    entry.nextRetryAt = 0;
+  }
+}
+
+/**
  * Legacy link-loss step (shared by legacyTick and resetAdapterSession, doc 81 Đợt 4 Task B3): mark the entry
  * 'reconnecting', close its poll and disconnect the driver — each bounded. The watchdog / caller then restarts it
  * with attemptLegacyStart.
@@ -427,6 +473,7 @@ async function dropLegacySession(entry: LegacyEntry, reason: string, stepMs: num
   entry.nextRetryAt = 0; // người gọi (legacyTick) đặt lại theo bộ đếm thất bại; KHÔNG xoá `failures` ở đây
   const h = entry.handle;
   entry.handle = null;
+  entry.phienHoatDong = 0; // T12 D1 — tick muộn của phiên vừa hạ không còn tác động
   entry.inflight = true;
   if (h) await boundedQuiet(() => h.close(), stepMs, "close");
   await boundedQuiet(() => entry.adapter.driver.disconnect(), stepMs, "disconnect");
@@ -723,6 +770,8 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
     createDriver: () => createDriver(adapter.protocol),
     onSample,
     tuyChon: tuyChonPollCua(adapter),
+    // SCADA R0 T12 (D1) — K tick poll hỏng liên tiếp của phiên đang hoạt động ⇒ supervisor coi như mất (reconnecting ⇒ 'lost' ở dưới).
+    soTickHongDeMat: SO_TICK_HONG_DE_MAT,
     onConnectAttempt: (ok) => ghiNhanPhien(adapter.adapterId, ok),
     healthIntervalMs: haHealthIntervalMs(adapter.pollIntervalMs),
     backoff: haBackoffFromEnv(),
