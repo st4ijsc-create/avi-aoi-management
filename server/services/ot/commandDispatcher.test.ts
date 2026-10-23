@@ -333,6 +333,17 @@ describe("commandDispatcher — G2.1 read-back ack (OT_CONTROL_ENABLED+OT_READBA
     expect(resultRows(cmdLog)[0].errorText).toMatch(/readback mismatch/);
   });
 
+  it("F2: read-back uncertain nhưng GIÁ TRỊ KHỚP ⇒ KHÔNG verified (acked_unverified), ok vẫn true; good + khớp ⇒ verified", async () => {
+    readTagsSpy.mockImplementationOnce(async (rt: any[]) =>
+      rt.map((t) => ({ tagKey: t.tagKey, raw: null, value: true, quality: "uncertain", timestamp: new Date() })),
+    );
+    const r = await dispatch(baseInput());
+    expect(r.ok).toBe(true);
+    expect(r.status).toBe("acked_unverified");
+    expect(resultRows(cmdLog)[0].status).toBe("acked_unverified");
+    expect(resultRows(cmdLog)[0].errorText).toMatch(/quality=uncertain/);
+  });
+
   it("float read-back within tolerance → acked_verified", async () => {
     tags[0].dataType = "float";
     tags[0].scale = "1";

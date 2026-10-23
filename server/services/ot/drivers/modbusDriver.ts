@@ -25,6 +25,7 @@ import type {
   OtWrite,
   OtHealth,
   OnOtSample,
+  TuyChonVongPoll,
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
@@ -37,6 +38,8 @@ import {
 } from "./modbusDecode";
 import { inverseScale } from "./otScale";
 import { closeModbusClient, withDeadline } from "./boundedClose";
+import { taoVongPoll } from "../vongPoll";
+import { chatLuongLoiModbus, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
 
 /**
  * doc 81 Đợt 1B Task 1 — miền giá trị RAW của thanh ghi 1-word theo kiểu khai báo.
@@ -176,7 +179,7 @@ export class ModbusDriver extends NotImplementedDriver {
   }
 
   /** Đọc một tag, trả OtSample. Lỗi → quality:"bad" (không throw). */
-  private async readOne(tag: OtTagAddress): Promise<OtSample> {
+  private async readOne(tag: OtTagAddress, abortOnCommLost = false): Promise<OtSample> {
     const now = () => new Date();
     try {
       const { registerType, register } = parseModbusAddress(tag.address);
@@ -220,6 +223,10 @@ export class ModbusDriver extends NotImplementedDriver {
       } satisfies OtSample;
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
+      // SCADA R0 (C1) — đường poll, sau cờ: lỗi mức LIÊN KẾT (socket đóng/reset, cổng đóng, DeviceUnreachable, ECONNRESET/…) ⇒ HUỶ cả tick;
+      // vòng poll phát MỘT loạt mẫu xấu. T12 D3: giao dịch QUÁ HẠN cũng huỷ (không trả lời = mất liên lạc). Exception thiết bị, config_error vẫn theo từng tag.
+      const v2 = chatLuongV2Bat();
+      if (abortOnCommLost && (laLoiHuyTickPoll(err) || !this.connected)) throw err;
       return {
         tagKey: tag.tagKey,
         raw: null,
@@ -227,11 +234,26 @@ export class ModbusDriver extends NotImplementedDriver {
         quality: "bad",
         timestamp: now(),
         tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
+        // SCADA R0 (C2) — sau cờ: nói VÌ SAO (mã exception Modbus ⇒ config_error/device_error).
+        ...(v2 ? chatLuongLoiModbus(err) : {}),
       } satisfies OtSample;
     }
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docTuanTu(tags, false);
+  }
+
+  /**
+   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi mức LIÊN KẾT hoặc giao dịch QUÁ HẠN đầu tiên HUỶ cả tick (ném; T12 D3) để vòng poll
+   * phát MỘT loạt mẫu xấu; cờ TẮT: y hệt `readTags`. `readTags` công khai (readback ghi thiết bị, probe, bộ đọc an toàn) KHÔNG BAO GIỜ huỷ:
+   * luôn trả mẫu bad theo từng tag.
+   */
+  private docChoVongPoll(tags: OtTagAddress[], chatLuongV2: boolean): Promise<OtSample[]> {
+    return this.docTuanTu(tags, chatLuongV2);
+  }
+
+  private async docTuanTu(tags: OtTagAddress[], abortOnCommLost: boolean): Promise<OtSample[]> {
     if (!this.connected || !this.client) {
       throw new DeviceUnreachableError("modbus");
     }
@@ -241,7 +263,7 @@ export class ModbusDriver extends NotImplementedDriver {
     const out: OtSample[] = [];
     for (const tag of tags) {
       // Modbus TCP nối tiếp theo unit — đọc tuần tự để tránh trùng giao dịch.
-      out.push(await this.readOne(tag));
+      out.push(await this.readOne(tag, abortOnCommLost));
     }
     this.lastLatencyMs = Date.now() - t0;
     return out;
@@ -251,34 +273,31 @@ export class ModbusDriver extends NotImplementedDriver {
     tags: OtTagAddress[],
     onSample: OnOtSample,
     intervalMs = 5000,
+    tuyChon?: TuyChonVongPoll,
   ): Promise<OtSubscriptionHandle> {
     if (!this.connected) throw new DeviceUnreachableError("modbus");
 
-    const tick = async () => {
-      try {
-        const samples = await this.readTags(tags);
-        for (const s of samples) {
-          try {
-            await onSample(s);
-          } catch {
-            // bỏ qua lỗi callback từng mẫu
-          }
+    // Cờ đọc MỘT lần ở đây: huỷ tick (docChoVongPoll) và phát loạt mẫu xấu (taoVongPoll) không bao giờ lệch nhau.
+    const v2 = chatLuongV2Bat();
+    // SCADA R0 — vòng poll DÙNG CHUNG (chống chồng tick, hạn đọc, mẫu xấu một lần khi mất liên lạc sau cờ).
+    return taoVongPoll({
+      tags,
+      intervalMs,
+      deadlineMs: tuyChon?.deadlineMs,
+      doc: async (t) => {
+        try {
+          return await this.docChoVongPoll(t, v2);
+        } catch (e) {
+          this.lastError = (e as Error)?.message || String(e);
+          throw e;
         }
-      } catch (e) {
-        this.lastError = (e as Error)?.message || String(e);
-      }
-    };
-
-    const timer = setInterval(() => void tick(), intervalMs > 0 ? intervalMs : 5000);
-    if (typeof (timer as NodeJS.Timeout).unref === "function") {
-      (timer as NodeJS.Timeout).unref();
-    }
-
-    return {
-      close: async () => {
-        clearInterval(timer);
       },
-    };
+      onSample,
+      onTick: tuyChon?.onTick,
+      phanLoiLoi: chatLuongLoiModbus,
+      chatLuongV2: v2,
+      nhan: "modbus",
+    });
   }
 
   /** Ghi một write; trả OtCommandResult (không throw). */

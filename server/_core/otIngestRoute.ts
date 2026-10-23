@@ -31,6 +31,7 @@ import type { Request, Response } from "express";
 import { ApiHttpError } from "../api/v1/envelope";
 import { rangBuocMauTheoKhoa, type DocThietBiDuocPhep } from "../api/v1/ingestRangBuoc";
 import { truongTsMau } from "../utils/factoryTime";
+import { boKhoaMetaDanhRieng } from "../services/telemetryMetaDanhRieng";
 import type {
   CanonicalSample,
   TelemetryIngestResult,
@@ -73,7 +74,7 @@ export function toOtCanonicalSample(s: any): CanonicalSample {
         : null,
     unit: typeof s?.unit === "string" ? s.unit : null,
     quality: normQuality(s?.quality),
-    meta: s?.meta && typeof s.meta === "object" ? s.meta : null,
+    meta: boKhoaMetaDanhRieng(s?.meta), // SCADA R0 Task 7 - go khoa meta danh rieng cua duong OT trong tien trinh
   };
 }
 

@@ -509,7 +509,11 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   `adminProcedure.use(moduleGate("MOD_AI"))` (admin khai / sửa danh sách host của một bí mật Luồng AI; không đụng giá trị) — CÓ cổng
 //   MOD_AI từ lượt sinh ra. aiMienTru / ngoaiAiCoCong / mọi SKU khác KHÔNG đổi. Đo trước (đỏ đúng +1 ở ba ô trên) / sau. `tong` 2386
 //   trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2386, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+// ★★ 2026-10-23 (SCADA R0 Task 10 — M10 `scadaDiag`) — **tong 2386 → 2392 · beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong KHÔNG đổi.**
+//   Router MỚI `server/routers/scadaDiagRouter.ts` (không phải bề mặt AI) có SÁU thủ tục, đều sau `MOD_OT_CONTROL` (xem
+//   `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 111 → 117). Đo trước (xanh trên ghim cũ, HEAD b899b3483) / sau (đỏ đúng +6). `tong` 2392 trùng
+//   ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2392, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
@@ -544,7 +548,11 @@ const GHIM_MODULE_KHAC = {
   // ★ 2026-10-12 doc 81 Đợt 9 final wave F6 — 107 → 111: bốn thủ tục Đợt 8 (safety-PLC maker-checker, mig 0368) trong
   //   `safetyRouter.ts` — `plcTrustList` · `deleteSafetyPlcConfig` · `approveSafetyPlcConfig` · `rejectSafetyPlcConfig`, cổng đã đọc
   //   (xem lời khai trên GHIM). Không thủ tục cũ nào đổi cổng.
-  MOD_OT_CONTROL: 111,
+  // ★ 2026-10-23 SCADA R0 Task 10 (M10) — 111 → 117: SÁU thủ tục của router MỚI `scadaDiagRouter.ts` (`scadaDiag.*`) — ba query
+  //   `danhSach` / `tagCuaAdapter` / `mauTho` trên `moduleProcedure("MOD_OT_CONTROL")` và ba mutation `ketNoiLai` / `tamTat` /
+  //   `datLoiStub` trên `roleProcedure("admin","engineer").use(require2FA).use(moduleGate("MOD_OT_CONTROL"))`. Cố ý: cùng cổng giấy
+  //   phép với interlock/safety. Không thủ tục cũ nào đổi cổng.
+  MOD_OT_CONTROL: 117,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

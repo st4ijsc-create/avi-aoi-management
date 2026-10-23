@@ -54,6 +54,7 @@ import {
 import { equipmentRegistry, type EquipmentCommand } from "../../services/equipment/equipmentAdapter";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../../services/telemetryBus";
 import { truongTsMau } from "../../utils/factoryTime";
+import { boKhoaMetaDanhRieng } from "../../services/telemetryMetaDanhRieng";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -190,7 +191,7 @@ const normQuality = (q: unknown): TelemetryQuality =>
   typeof q === "string" && OT_QUALITY.has(q) ? (q as TelemetryQuality) : "good";
 
 /** Map one raw JSON sample → CanonicalSample (deviceId preserved for bus-side resolve). */
-function toCanonicalSample(s: unknown): CanonicalSample {
+export function toCanonicalSample(s: unknown): CanonicalSample {
   const o = (s ?? {}) as Record<string, unknown>;
   return {
     // Đợt 1C Task 6 (R-1C-a) — cùng luật với /api/ot/ingest: chuỗi KHÔNG múi giờ ⇒ ts_no_timezone.
@@ -205,7 +206,7 @@ function toCanonicalSample(s: unknown): CanonicalSample {
         : null,
     unit: typeof o.unit === "string" ? o.unit : null,
     quality: normQuality(o.quality),
-    meta: o.meta && typeof o.meta === "object" ? (o.meta as Record<string, unknown>) : null,
+    meta: boKhoaMetaDanhRieng(o.meta), // SCADA R0 Task 7 - go khoa meta danh rieng cua duong OT trong tien trinh
   };
 }
 

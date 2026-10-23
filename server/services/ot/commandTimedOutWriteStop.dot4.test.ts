@@ -92,6 +92,8 @@ const D = vi.hoisted(() => ({
   sticky: new Map<string, unknown>(),
   /** the device answers reads with NO sample (unverifiable). */
   readEmpty: false,
+  /** quality the driver stamps on every read sample ("good" unless a test says otherwise) */
+  readQuality: "good" as string,
   /** reads served by the original driver */
   reads: 0,
   /** the adapter is offline (getActiveDriver ⇒ undefined) */
@@ -121,7 +123,7 @@ const driver = {
   readTags: async (tags: Array<{ tagKey: string }>) =>
     (D.reads++, D.readEmpty ? [] : tags)
       .filter((t) => D.sticky.has(t.tagKey) || D.device.has(t.tagKey))
-      .map((t) => ({ tagKey: t.tagKey, value: D.sticky.has(t.tagKey) ? D.sticky.get(t.tagKey) : D.device.get(t.tagKey), quality: "good", ts: new Date() })),
+      .map((t) => ({ tagKey: t.tagKey, value: D.sticky.has(t.tagKey) ? D.sticky.get(t.tagKey) : D.device.get(t.tagKey), quality: D.readQuality, ts: new Date() })),
   writeTags: (writes: Array<{ tagKey: string; value?: unknown }>) => {
     const tag = writes[0].tagKey;
     const value = writes[0].value;
@@ -227,6 +229,7 @@ beforeEach(() => {
   D.landLateMs = null;
   D.sticky.clear();
   D.readEmpty = false;
+  D.readQuality = "good";
   D.reads = 0;
   D.offline = false;
   alarm.events.length = 0;
@@ -403,6 +406,17 @@ describe("B3 alert-only (R-4-q) — read-only watch after a STOP that followed a
     await new Promise((r) => setTimeout(r, 800));
     expect(alarm.events).toHaveLength(1);
     expect(unverified()[0].after.unread).toEqual(["cmd_run"]);
+    expect(writesAfterStop()).toBe(0);
+  });
+
+  it("★ F2: the STOP's tag reads UNCERTAIN with the matching (stale) value ⇒ NOT confirmed: ONE critical alarm 'unreadable', zero writes", async () => {
+    await hungRunThenStop();
+    D.readQuality = "uncertain"; // the device row still says cmd_run=false (the STOP's value) but it is a last-usable value
+    expect(await until(() => alarm.events.length > 0, 1500)).toBe(true);
+    await new Promise((r) => setTimeout(r, 800));
+    expect(alarm.events).toHaveLength(1);
+    expect(unverified()[0].after.unread).toEqual(["cmd_run"]);
+    expect(unverified()[0].after.drift).toEqual([]);
     expect(writesAfterStop()).toBe(0);
   });
 

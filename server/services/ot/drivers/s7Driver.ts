@@ -36,11 +36,15 @@ import type {
   OtHealth,
   OnOtSample,
   ProgramChecksumResult,
+  TuyChonVongPoll,
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseS7Address, coerceS7Value } from "./s7Address";
 import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
+import { withDeadline } from "./boundedClose";
+import { taoVongPoll } from "../vongPoll";
+import { chatLuongLoiChung, chatLuongV2Bat } from "../chatLuong";
 import { readS7ProgramChecksum, clampS7Deadline, S7_CHECKSUM_SOURCE, type S7ChecksumTarget } from "./s7BlockChecksum";
 
 /** Ép raw (đã inverse scale) sang kiểu NodeS7 chấp nhận theo dataType. */
@@ -91,6 +95,8 @@ export class S7Driver extends NotImplementedDriver {
   private lastOkAt: Date | undefined;
   private lastError: string | undefined;
   private lastLatencyMs: number | undefined;
+  /** SCADA R0 (C5) — hạn giao dịch đã cấu hình ở connect(); readAllItems của nodes7 có thể không bao giờ gọi lại. */
+  private timeoutMs = 5000;
   /** doc 81 Đợt 9 T1 — where the program checksum is read (same host / port / rack / slot as the nodes7 session). */
   private checksumTarget: S7ChecksumTarget | null = null;
 
@@ -100,12 +106,26 @@ export class S7Driver extends NotImplementedDriver {
       throw new Error("nodes7 not installed");
     }
     const NodeS7 = mod.default ?? mod;
+    // T12b fix round 1 — connect lại trên CÙNG driver (supervisor/otManager nối lại khi phiên cũ còn nửa mở hoặc isoConnectionState đã
+    // hạ nhưng transport chưa đóng): hạ phiên cũ trước (capture-and-null như disconnect; KHÔNG chờ — dropConnection có thể không gọi lại),
+    // không rò socket. Listener của phiên cũ đã có chốt danh tính (`this.conn === conn`).
+    const cu = this.conn;
+    if (cu) {
+      this.conn = null;
+      this.connected = false;
+      try {
+        if (typeof cu.dropConnection === "function") cu.dropConnection(() => undefined);
+      } catch {
+        // ignore
+      }
+    }
     const conn = new NodeS7();
 
     const opts = cfg.options ?? {};
     const defaultPort = typeof opts.port === "number" ? opts.port : 102;
     const { host, port } = parseEndpoint(cfg.endpoint, defaultPort);
     const timeoutMs = cfg.timeoutMs ?? 5000;
+    this.timeoutMs = timeoutMs;
     const rack = typeof opts.rack === "number" ? opts.rack : 0;
     // slot 2 cho S7-300/400, slot 1 cho S7-1200/1500 (mặc định 1).
     const slot = typeof opts.slot === "number" ? opts.slot : 1;
@@ -208,28 +228,56 @@ export class S7Driver extends NotImplementedDriver {
     if (tags.length === 0) return [];
 
     // Ánh xạ tagKey → địa chỉ S7 đã validate (translation callback của NodeS7).
+    // SCADA R0 (C2) — sau cờ: địa chỉ sai của MỘT tag ⇒ chỉ tag đó bad/config_error, tag khác vẫn đọc.
+    // Cờ tắt: địa chỉ sai ném cả lô như cũ.
+    const v2 = chatLuongV2Bat();
     const addrByKey = new Map<string, string>();
+    const loiDiaChi = new Map<string, OtSample>();
     for (const t of tags) {
-      addrByKey.set(t.tagKey, parseS7Address(t.address).s7);
+      try {
+        addrByKey.set(t.tagKey, parseS7Address(t.address).s7);
+      } catch (e) {
+        if (!v2) throw e;
+        loiDiaChi.set(t.tagKey, {
+          tagKey: t.tagKey,
+          raw: null,
+          value: null,
+          quality: "bad",
+          timestamp: new Date(),
+          tsSource: "server",
+          statusCode: "invalid_address",
+          reason: "config_error",
+        });
+      }
     }
     this.conn.setTranslationCB((tag: string) => addrByKey.get(tag));
 
-    const keys = tags.map((t) => t.tagKey);
-    this.conn.removeItems(); // xoá item phiên trước
-    this.conn.addItems(keys);
+    let values: Record<string, unknown> = {};
+    if (addrByKey.size > 0) {
+      const keys = tags.filter((t) => addrByKey.has(t.tagKey)).map((t) => t.tagKey);
+      this.conn.removeItems(); // xoá item phiên trước
+      this.conn.addItems(keys);
 
-    const t0 = Date.now();
-    const values: Record<string, unknown> = await new Promise((resolve, reject) => {
-      this.conn.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
-        // anythingBad=true vẫn trả vals (item lỗi mang giá trị BAD) — không reject.
-        if (vals && typeof vals === "object") resolve(vals);
-        else reject(new Error("S7Driver: readAllItems returned no values"));
-      });
-    });
-    this.lastLatencyMs = Date.now() - t0;
-    this.lastOkAt = new Date();
+      const t0 = Date.now();
+      // SCADA R0 (C5) — readAllItems có thể không bao giờ gọi lại ⇒ đọc CÓ HẠN (không cờ, sửa lỗi treo).
+      values = await withDeadline(
+        new Promise<Record<string, unknown>>((resolve, reject) => {
+          this.conn.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
+            // anythingBad=true vẫn trả vals (item lỗi mang giá trị BAD) — không reject.
+            if (vals && typeof vals === "object") resolve(vals);
+            else reject(new Error("S7Driver: readAllItems returned no values"));
+          });
+        }),
+        this.timeoutMs + 1000,
+        "s7 readAllItems",
+      );
+      this.lastLatencyMs = Date.now() - t0;
+      this.lastOkAt = new Date();
+    }
 
     return tags.map((tag) => {
+      const loi = loiDiaChi.get(tag.tagKey);
+      if (loi) return loi;
       const raw = values[tag.tagKey];
       const co = coerceS7Value(raw, tag.dataType);
 
@@ -256,34 +304,29 @@ export class S7Driver extends NotImplementedDriver {
     tags: OtTagAddress[],
     onSample: OnOtSample,
     intervalMs = 5000,
+    tuyChon?: TuyChonVongPoll,
   ): Promise<OtSubscriptionHandle> {
     if (!this.connected) throw new DeviceUnreachableError("s7");
 
-    const tick = async () => {
-      try {
-        const samples = await this.readTags(tags);
-        for (const s of samples) {
-          try {
-            await onSample(s);
-          } catch {
-            // bỏ qua lỗi callback từng mẫu
-          }
+    // SCADA R0 — vòng poll DÙNG CHUNG (chống chồng tick, hạn đọc, mẫu xấu một lần khi mất liên lạc sau cờ).
+    return taoVongPoll({
+      tags,
+      intervalMs,
+      deadlineMs: tuyChon?.deadlineMs,
+      doc: async (t) => {
+        try {
+          return await this.readTags(t);
+        } catch (e) {
+          this.lastError = (e as Error)?.message || String(e);
+          throw e;
         }
-      } catch (e) {
-        this.lastError = (e as Error)?.message || String(e);
-      }
-    };
-
-    const timer = setInterval(() => void tick(), intervalMs > 0 ? intervalMs : 5000);
-    if (typeof (timer as NodeJS.Timeout).unref === "function") {
-      (timer as NodeJS.Timeout).unref();
-    }
-
-    return {
-      close: async () => {
-        clearInterval(timer);
       },
-    };
+      onSample,
+      onTick: tuyChon?.onTick,
+      phanLoiLoi: chatLuongLoiChung,
+      chatLuongV2: chatLuongV2Bat(),
+      nhan: "s7",
+    });
   }
 
   /**

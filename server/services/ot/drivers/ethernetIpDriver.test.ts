@@ -30,6 +30,18 @@ describe("EthernetIpDriver (mocked st-ethernet-ip)", () => {
     return plc;
   }
 
+  it("T12b fix round 1: connect lại trên cùng driver ⇒ Controller cũ bị disconnect (không rò transport)", async () => {
+    const plc = mockEip({ Temperature: 2 });
+    const { EthernetIpDriver } = await import("./ethernetIpDriver");
+    const d = new EthernetIpDriver();
+    await d.connect({ endpoint: "192.168.1.10" });
+    expect(plc.disconnect).toHaveBeenCalledTimes(0);
+    await d.connect({ endpoint: "192.168.1.10" });
+    expect(plc.disconnect).toHaveBeenCalledTimes(1);
+    expect(d.isConnected()).toBe(true);
+    await d.disconnect();
+  });
+
   it("connect → readTags decode + scale/offset; disconnect", async () => {
     mockEip({ Temperature: 2, RunFlag: true });
     const { EthernetIpDriver } = await import("./ethernetIpDriver");

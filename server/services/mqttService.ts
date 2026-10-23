@@ -70,6 +70,7 @@ import mqtt, { MqttClient } from 'mqtt';
 // bridge flag is on and a telemetry frame actually arrives.
 import type { CanonicalSample } from './telemetryBus';
 import { docTsThietBi } from '../utils/factoryTime';
+import { boKhoaMetaDanhRieng } from './telemetryMetaDanhRieng';
 
 // Types
 interface MqttClientInfo {
@@ -356,7 +357,7 @@ export function parseCanonicalTelemetry(topic: string, payload: Buffer | string 
       value,
       unit: typeof m.unit === 'string' ? m.unit : null,
       quality: m.quality === 'good' || m.quality === 'bad' || m.quality === 'uncertain' ? m.quality : 'good',
-      meta: { topic, ...(typeof msg.seq === 'number' ? { seq: msg.seq } : {}) },
+      meta: boKhoaMetaDanhRieng({ topic, ...(typeof msg.seq === 'number' ? { seq: msg.seq } : {}) }), // SCADA R0 Task 7
     });
   }
   return out;

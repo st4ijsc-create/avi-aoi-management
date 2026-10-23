@@ -46,8 +46,10 @@ describe("StubDriver", () => {
     const received: OtSample[] = [];
     const handle = await d.subscribe(tags, (s) => { received.push(s); }, 1000);
 
+    await vi.advanceTimersByTimeAsync(0);
+    expect(received.length).toBe(2); // first read immediately at subscribe (SCADA R0 T12 D2) × 2 tags
     await vi.advanceTimersByTimeAsync(1000);
-    expect(received.length).toBe(2); // one tick × 2 tags
+    expect(received.length).toBe(4); // + one interval tick × 2 tags
 
     await handle.close();
     received.length = 0;
@@ -55,12 +57,21 @@ describe("StubDriver", () => {
     expect(received.length).toBe(0);
   });
 
-  it("writeTags is disabled in F1.1 (ok:false)", async () => {
+  // SCADA R0 (C9): writeTags không còn "disabled in F1.1" — ghi vào RAM; chưa kết nối thì ok:false.
+  it("writeTags writes to RAM when connected (ok:true) and reads back", async () => {
+    const d = new StubDriver();
+    await d.connect({ endpoint: "stub://x" });
+    const res = await d.writeTags([{ tagKey: "run", address: "M0.0", value: true }]);
+    expect(res).toEqual([{ tagKey: "run", ok: true }]);
+    expect((await d.readTags(tags)).find((s) => s.tagKey === "run")!.value).toBe(true);
+  });
+
+  it("writeTags is refused (ok:false) when not connected", async () => {
     const d = new StubDriver();
     const res = await d.writeTags([{ tagKey: "run", address: "M0.0", value: true }]);
     expect(res).toHaveLength(1);
     expect(res[0].ok).toBe(false);
-    expect(res[0].error).toMatch(/disabled in F1.1/);
+    expect(res[0].error).toMatch(/not connected/);
   });
 
   it("health reflects connection state", async () => {

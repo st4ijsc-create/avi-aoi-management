@@ -4052,7 +4052,10 @@
       "flowBiMatXoa": "xoá bí mật của Luồng AI",
       "flowBiMatXem": "xem danh sách bí mật của Luồng AI",
       "flowTaoTuMoTa": "tạo bản nháp Luồng AI từ mô tả",
-      "flowChayThu": "chạy thử một node của Luồng AI"
+      "flowChayThu": "chạy thử một node của Luồng AI",
+      "scadaReconnectAdapter": "kết nối lại adapter",
+      "scadaDisableAdapter": "tạm tắt adapter",
+      "scadaSetStubFault": "đặt lỗi mô phỏng cho stub"
     },
     "field": {
       "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",
@@ -4222,7 +4225,8 @@
       "gem300": "GEM300",
       "kbEvalRuns": "sổ lượt đánh giá Training Studio",
       "kbEvalMa": "đánh giá sinh mã Training Studio",
-      "kbEvalMaRuns": "sổ lượt đánh giá sinh mã Training Studio"
+      "kbEvalMaRuns": "sổ lượt đánh giá sinh mã Training Studio",
+      "scadaLab": "chế độ Lab SCADA"
     },
     "action": {
       "changeMqttDeviceOfOtherScope": "đổi thiết bị MQTT đang gắn với máy ngoài phạm vi của bạn",
@@ -4460,7 +4464,10 @@
       "flowQuaTranDongThoi": "Luồng này đang chạy đủ số lượt đồng thời cho phép — lượt mới bị từ chối (không xếp hàng). Thử lại khi lượt đang chạy xong.",
       "flowDuyetVaiThap": "Bước này chỉ vai '{{vaiYeuCau}}' trở lên (hoặc admin) được duyệt — vai của bạn: '{{vaiCuaBan}}'.",
       "flowDuyetTrungNguoiBat": "Bạn đã bật phiên bản luồng này — người duyệt phải là người khác.",
-      "flowDuyetTrungChuLuot": "Bạn là chủ lượt chạy này (đã kích hoạt hoặc bật) — người duyệt phải là người khác."
+      "flowDuyetTrungChuLuot": "Bạn là chủ lượt chạy này (đã kích hoạt hoặc bật) — người duyệt phải là người khác.",
+      "adapterOwnedByEdge": "Adapter này do một edge node sở hữu — trung tâm không điều khiển phiên của nó.",
+      "adapterNotStub": "Chỉ áp dụng cho adapter giao thức stub.",
+      "stubEndpointShared": "Nhiều adapter stub dùng chung endpoint này — đổi endpoint cho riêng từng adapter trước."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -6915,6 +6922,8 @@
     "andonBoardDesc": "Bảng TV xưởng: yield/NG theo line-máy, chữ lớn, tự xoay vòng",
     "deviceAdapters": "Adapter thiết bị",
     "deviceAdaptersDesc": "Quản lý cấu hình kết nối OT và định nghĩa tag",
+    "scadaDiag": "Chẩn đoán truyền thông SCADA",
+    "scadaDiagDesc": "Trạng thái kết nối, bộ đếm và chất lượng tag của adapter OT; kết nối lại / tạm tắt (kỹ sư)",
     "unsMapping": "UNS Mapping",
     "unsMappingDesc": "Ánh xạ Tag → UNS topic không cần code, xem trước trực tiếp",
     "hotFolders": "Nạp ảnh hot-folder",
@@ -23334,6 +23343,107 @@
         "doi": "đổi",
         "them": "thêm",
         "bo": "bỏ"
+      }
+    }
+  },
+  "scada": {
+    "diag": {
+      "title": "Chẩn đoán truyền thông",
+      "subtitle": "Trạng thái kết nối thật của từng adapter OT, bộ đếm 1 giờ và chất lượng tag — làm mới mỗi 2 giây.",
+      "danhSach": "Adapter ({{count}})",
+      "trong": "Chưa có adapter nào trong phạm vi của bạn.",
+      "khongCoLoi": "Không có adapter lỗi — mọi kết nối đều ổn.",
+      "loiTai": "Không tải được danh sách adapter.",
+      "dangTai": "Đang tải danh sách adapter…",
+      "matKetNoi": "Mất kết nối",
+      "edgeChuaCoSoLieu": "do edge {{edgeCode}} sở hữu — chưa có số liệu R0",
+      "trangThai": {
+        "connected": "Đã kết nối",
+        "connecting": "Đang kết nối",
+        "disabled": "Đã tắt",
+        "khong_ro": "Không rõ"
+      },
+      "soHuu": {
+        "trungTam": "Trung tâm",
+        "edge": "Edge {{code}}"
+      },
+      "donVi": {
+        "giay": "s",
+        "phut": "ph",
+        "gio": "giờ",
+        "ngay": "ngày"
+      },
+      "col": {
+        "adapter": "Adapter",
+        "giaoThuc": "Giao thức · endpoint",
+        "soHuu": "Sở hữu",
+        "trangThai": "Trạng thái",
+        "poll": "Poll / p95",
+        "request": "Request · lỗi · timeout (1 giờ)",
+        "tag": "Tag tốt / ? / xấu",
+        "loiGanNhat": "Lỗi gần nhất",
+        "hanhDong": "Hành động"
+      },
+      "loc": {
+        "chiLoi": "Chỉ lỗi"
+      },
+      "nut": {
+        "ketNoiLai": "Kết nối lại",
+        "tamTat": "Tạm tắt",
+        "mauTho": "100 mẫu thô"
+      },
+      "dialog": {
+        "ketNoiLaiTieuDe": "Kết nối lại adapter {{code}}?",
+        "ketNoiLaiMoTa": "Làm mới phiên kết nối tới thiết bị. Trong lúc nối lại, các tag có thể tạm hiện chất lượng xấu.",
+        "tamTatTieuDe": "Tạm tắt adapter {{code}}?",
+        "tamTatMoTa": "Ngừng đọc thiết bị và đánh dấu adapter tắt cho tới khi được bật lại ở trang Adapter thiết bị.",
+        "lyDo": "Lý do (ghi vào audit)",
+        "lyDoNgan": "Lý do cần tối thiểu {{min}} ký tự",
+        "huy": "Huỷ",
+        "gui": "Xác nhận"
+      },
+      "toast": {
+        "ketNoiLai": "Đã yêu cầu kết nối lại",
+        "ketNoiLaiChuaXong": "Chưa làm mới được phiên — theo dõi trạng thái trên bảng",
+        "tamTat": "Đã tạm tắt adapter"
+      },
+      "tag": {
+        "tieuDe": "Tag của {{code}}",
+        "tag": "Tag",
+        "giaTri": "Giá trị",
+        "chatLuong": "Chất lượng",
+        "tuoi": "Tuổi",
+        "statusCode": "Mã trạng thái",
+        "trong": "Adapter chưa có tag nào đang bật."
+      },
+      "chatLuong": {
+        "tot": "Tốt",
+        "nghi_ngo": "Nghi ngờ (?)",
+        "xau": "Xấu",
+        "cu": "Cũ",
+        "chuaCo": "Chưa có giá trị"
+      },
+      "mauTho": {
+        "tieuDe": "100 mẫu thô — {{tag}}",
+        "thoiGian": "Thời gian",
+        "nguonGio": "Nguồn giờ",
+        "trong": "Chưa có mẫu thô."
+      },
+      "lab": {
+        "tieuDe": "Lab: đặt lỗi stub",
+        "moTa": "Chỉ cho adapter stub ở chế độ Lab. Lỗi áp lên phiên stub đang chạy; “Xoá lỗi” trả về bình thường.",
+        "matKetNoi": "Mô phỏng mất kết nối",
+        "tagXau": "Tag xấu (cách nhau bằng dấu phẩy)",
+        "tagNghiNgo": "Tag nghi ngờ (cách nhau bằng dấu phẩy)",
+        "tagPlaceholder": "TAG1, TAG2",
+        "giaTri": "Ép giá trị (mỗi dòng TAG=giá trị)",
+        "apDung": "Áp dụng lỗi",
+        "xoaLoi": "Xoá lỗi",
+        "daDat": "Đã đặt lỗi stub",
+        "khongChay": "Stub chưa chạy ở trung tâm — lỗi chưa được áp",
+        "dialogApDungTieuDe": "Đặt lỗi stub cho {{code}}?",
+        "dialogXoaLoiTieuDe": "Xoá lỗi stub của {{code}}?",
+        "dialogMoTa": "Thao tác Lab trên adapter mô phỏng. Lý do được ghi vào audit."
       }
     }
   }

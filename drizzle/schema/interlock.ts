@@ -53,6 +53,8 @@ export const interlockRules = pgTable("interlock_rules", {
   approvedBy: integer("approvedBy"),
   approvedAt: timestamp("approvedAt"),
   cooldownSeconds: integer("cooldownSeconds").default(300).notNull(),
+  /** SCADA R0 Task 9 (D2, mig 0430): thiếu/xấu/cũ/mơ hồ dữ liệu ⇒ 'chan' (mặc định, fail-closed) | 'cho_qua' (bỏ qua luật này ở cổng inline). */
+  khiThieuDuLieu: varchar("khiThieuDuLieu", { length: 8 }).$type<"chan" | "cho_qua">().default("chan").notNull(),
   lastFiredAt: timestamp("lastFiredAt"),
   createdBy: integer("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

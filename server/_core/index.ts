@@ -6546,6 +6546,16 @@ async function startServer() {
     async () => {
       const { startOt } = await import("../services/ot");
       await startOt();
+      // SCADA R0 Task 7 — bộ đệm giá trị hiện tại: SAU startOt (các adapter đã khai nhịp poll/deadband/mã qua
+      // datThongTinAdapter để nạp từ DB đúng thiết bị). Chỉ tiến trình API (worker.ts không ingest). Lỗi chỉ log.
+      if (process.env.SCADA_LIVE_CACHE_ENABLED === "true") {
+        try {
+          const { khoiDongBoDemHienTai } = await import("../services/scada/boDemHienTai");
+          await khoiDongBoDemHienTai();
+        } catch (err) {
+          console.error("[SCADA] khởi động bộ đệm giá trị hiện tại lỗi:", (err as Error)?.message || err);
+        }
+      }
     },
     (message, detail) => console.error(message, detail),
   );

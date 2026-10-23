@@ -914,6 +914,17 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "machine_control",
         section: "connect",
       },
+      {
+        // SCADA R0 Task 11 — M10 chẩn đoán truyền thông (xem trạng thái kết nối/bộ đếm/tag của adapter OT; hành động chỉ engineer ở UI + máy chủ)
+        href: "/scada/diag",
+        label: "nav.scadaDiag",
+        icon: <Activity className="h-4 w-4" />,
+        description: "nav.scadaDiagDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "connect",
+        engineerOriented: true,
+      },
       // doc 36 follow-up — /uns-mapping REMOVED: redirects into /connectivity (UNS tab).
       {
         // Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion (CONFIG + status + dry-run)

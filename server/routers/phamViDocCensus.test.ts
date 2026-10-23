@@ -849,7 +849,16 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // allowed-host list (writes only `ai_flow_credentials.hostChoPhep`, never the secret value; guarded by the credential's factory scope)
 // ⇒ D (+1, classified by procedure kind). Measured before (red by exactly +1 D) / after. No baseline row added. `tong` 2386 matches
 // `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 333, B: 8, C: 494, D: 1188, S: 363, tong: 2386 } as const;
+// ★★ 2026-10-23 · R0 scadaDiag +6 (SCADA R0 Task 10 — M10 chẩn đoán truyền thông) — **S 363 → 366 · D 1188 → 1191 · tong 2386 → 2392 ·
+// A/B/C unchanged.** SÁU thủ tục MỚI trong `server/routers/scadaDiagRouter.ts`, CẢ SÁU truyền `phamViCua(ctx)` vào
+// `idsTrongPhamVi("machine", …)` (adapterId từ client ⇒ kiểm lại phạm vi mỗi lượt; ngoài phạm vi = không tồn tại = NOT_FOUND; adapter
+// không gắn máy chỉ với phạm vi toàn quyền):
+//   • query `scadaDiag.danhSach` / `tagCuaAdapter` / `mauTho` (đọc `device_adapters` / `device_tags` / `ot_telemetry`) ⇒ S (+3);
+//   • mutation `scadaDiag.ketNoiLai` / `tamTat` / `datLoiStub` ⇒ D (+3) — bộ suy xếp MỌI mutation vào D (`nhomCua`: `loai !== "query"`),
+//     dù chúng cũng lọc phạm vi như ba query. (Kế hoạch dự kiến "S cho cả 6"; số ĐO được là 3 S + 3 D.)
+//   Đo trước (xanh trên ghim cũ, HEAD b899b3483) / sau (đỏ đúng +3 S, +3 D). No baseline row added. `tong` 2392 matches
+//   `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 333, B: 8, C: 494, D: 1191, S: 366, tong: 2392 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

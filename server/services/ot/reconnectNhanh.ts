@@ -1,0 +1,78 @@
+/**
+ * SCADA R0 (cổng "sau khi nối lại ⇒ good trong ≤ 2 chu kỳ poll") — nối lại NHANH khi đợt mất còn mới.
+ *
+ * MƯỜI lần nối lại đầu của một đợt mất thử mỗi `max(pollIntervalMs, 500)` ms (không để backoff lũy thừa làm chậm quá một chu kỳ
+ * poll khi thiết bị vừa rớt); từ lần thứ 11 trở đi quay về backoff lũy thừa như cũ (bắt đầu lại từ bước đầu, trần không đổi).
+ * Bộ đếm là số lần thất bại liên tiếp của từng adapter và về 0 khi nối thành công (đã có sẵn ở supervisor/otManager).
+ */
+import type { SuKienDoc } from "./otDriver";
+
+export const NOI_LAI_NHANH_SO_LAN = 10;
+export const NOI_LAI_NHANH_TOI_THIEU_MS = 500;
+
+/** Khoảng chờ giữa hai lần nối lại trong pha nhanh. */
+export function khoangNoiLaiNhanhMs(pollIntervalMs: number): number {
+  const poll = Number.isFinite(pollIntervalMs) && pollIntervalMs > 0 ? pollIntervalMs : 0;
+  return Math.max(poll, NOI_LAI_NHANH_TOI_THIEU_MS);
+}
+
+/**
+ * Chọn khoảng chờ sau lần thất bại thứ `failures` (≥ 1). `expDelay(n)` là backoff lũy thừa hiện có theo số lần thất bại n.
+ * Pha nhanh (failures ≤ 10): min(backoff cũ, khoảng nhanh) — không bao giờ CHẬM hơn cấu hình cũ. Sau đó: expDelay(failures − 10).
+ */
+export function khoangNoiLaiMs(failures: number, pollIntervalMs: number, expDelay: (n: number) => number): number {
+  if (failures <= NOI_LAI_NHANH_SO_LAN) return Math.min(expDelay(failures), khoangNoiLaiNhanhMs(pollIntervalMs));
+  return expDelay(failures - NOI_LAI_NHANH_SO_LAN);
+}
+
+/** Tối thiểu (ms) liên kết phải giữ vững sau một lần nối LẠI thì mới coi là ổn định (bộ đếm thất bại về 0, đợt mất kết thúc). */
+export const NOI_LAI_ON_DINH_TOI_THIEU_MS = 5_000;
+
+/**
+ * Thời gian ổn định `max(3 × poll, 5000)` ms. Một liên kết nối được rồi rớt ngay (thiết bị chạm giới hạn kết nối: chấp nhận rồi
+ * đóng) KHÔNG được xoá bộ đếm thất bại — nếu không backoff không bao giờ tích luỹ và vòng nối lại chạy mãi mỗi 500 ms.
+ */
+export function thoiGianOnDinhMs(pollIntervalMs: number): number {
+  const poll = Number.isFinite(pollIntervalMs) && pollIntervalMs > 0 ? pollIntervalMs : 0;
+  return Math.max(3 * poll, NOI_LAI_ON_DINH_TOI_THIEU_MS);
+}
+
+/**
+ * Hạn cứng (ms) cho MỘT lần đọc của vòng poll, do otManager truyền xuống driver (SCADA R0 C5):
+ * `max(2 × poll, (timeoutMs ?? 5000) + 1000)`. KHÔNG buộc vào chu kỳ poll: hạn ngắn theo chu kỳ sẽ cắt oan lần đọc chậm-nhưng-khoẻ.
+ * Phát hiện nhanh việc rút cáp đến từ timeout từng giao dịch + huỷ ở tầng liên kết, không từ hạn này.
+ */
+export function tinhDeadlineMs(pollIntervalMs: number, timeoutMs?: number): number {
+  const poll = Number.isFinite(pollIntervalMs) && pollIntervalMs > 0 ? pollIntervalMs : 0;
+  const t = typeof timeoutMs === "number" && Number.isFinite(timeoutMs) ? timeoutMs : 5000;
+  return Math.max(2 * poll, t + 1000);
+}
+
+/**
+ * SCADA R0 T12 (D1) — liên kết TREO (TCP nửa mở: cáp rút sau switch, PLC đóng băng) không bao giờ làm `isConnected()` lật false.
+ * K tick poll HỎNG LIÊN TIẾP ⇒ người giữ phiên (otManager legacy / ConnectionSupervisor) báo `lost` và HẠ phiên driver để đường nối
+ * lại nhanh chạy. Giá phải trả nếu sai: thiết bị sống-nhưng-chậm chập chờn lost/nối lại mỗi ~K chu kỳ (đã chấp nhận).
+ */
+export const SO_TICK_HONG_DE_MAT = 2;
+
+/** Tick hỏng = quá hạn (giao dịch hoặc hạn vòng poll), lỗi comm_lost cho CẢ tick, hoặc tick "ok" mà MỌI tag bad/comm_lost. */
+export function laTickHong(e: SuKienDoc): boolean {
+  if (!e.ok) return e.timeout || e.reason === "comm_lost";
+  return e.tags.length > 0 && e.tags.every((t) => t.quality === "bad" && t.reason === "comm_lost");
+}
+
+/**
+ * Bộ đếm tick hỏng liên tiếp cho MỘT phiên (mỗi lần subscribe một bộ mới). Từ tick hỏng thứ `k` trở đi gọi `khiDat(e)` mỗi tick hỏng
+ * (người gọi tự chặn khi phiên không còn là phiên đang hoạt động); tick không hỏng ⇒ về 0.
+ */
+export function taoDemTickHong(k: number, khiDat: (e: SuKienDoc) => void): (e: SuKienDoc) => void {
+  let n = 0;
+  return (e) => {
+    if (!laTickHong(e)) {
+      n = 0;
+      return;
+    }
+    n += 1;
+    if (n >= k) khiDat(e);
+  };
+}

@@ -824,6 +824,44 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   qua; 22:25 đã 21 GB; không xác định được tiến trình chiếm) — cùng lớp sự cố 18:21 ngày 22. Lượt bật lỗi không có tóm tắt ⇒ KIỂM NHÁNH dừng
   đúng, vứt lượt đó; 134 hàng hợp lệ (17:48–22:20) + 10 hàng NỐI TIẾP cùng mã (22:25–22:55, `--noi-tiep`, như A/B #2); bản 134 hàng giữ ở
   `…-27b-1-134hang.json`. :3013 chết lúc boot 0 lần; :8091 khởi động lại: 2 đổi model theo kế hoạch ×2 lần chạy + 1 lần CHẾT (22:20).
+  **ĐÓNG (dieu-phoi 2026-10-23):** vòng kiểm biên dịch cho `tro-ly` — 35B (#18/#19) và 27B (#24/#25) đều +3/72 < +4 ⇒ GIỮ TẮT, KHÔNG đo thêm.
+  (Vòng `/v1` stream vẫn bật mặc định — đạt +8/72; `compile_st` của tác nhân ở dự án PLC vẫn bật — đạt.) Nguyên nhân sự cố 22:20 (dieu-phoi
+  tra Windows log): System Event 2004 22:20:19 "low virtual memory… llama-server.exe consumed 40.488.398.848 bytes, vmmemWSL 6,17 GB, node 5,26
+  GB" + Event 26 (popup Out of Virtual Memory) ⇒ CHÍNH llama-server 27B giữ ~40 GB commit (model Q4 ~17 GB, `--cache-ram 4096`) — điều tra đo
+  bộ nhớ ở mục kế.
+- **ĐO BỘ NHỚ llama-server (2026-10-23 22:59 – 10-24 00:01, chỉ đo, không đổi cấu hình; mẫu commit/Private mỗi 10 s, `tmp/bn-*.csv`):**
+  | cấu hình | tải | Private nền | bình nguyên | max | thời gian/lượt |
+  |---|---|---|---|---|---|
+  | 27B mặc định (`--cache-ram 4096`) | 20 lượt 12k tok, ra 200 | 21,8 | ~25,4 | 25,8 | 10,2 s |
+  | 27B `--cache-ram 0` | như trên | 21,8 | 22,3 | 22,3 | 7,8 s |
+  | 27B `--no-mmap` | như trên | 22,5 | ~26,4 | 27,5 | 10,0 s |
+  | 35B mặc định | như trên | 23,5 | 27,6 | 27,8 | 3,0 s |
+  | 27B mặc định | 10 lượt 12k + nghĩ, ra ~6k | 21,8 | ~25,1 | 26,7 | 104 s |
+  | 27B `--cache-ram 0` | như trên | 21,8 | 22,3 phẳng | 22,3 | 90 s |
+  | 35B mặc định | như trên | 23,5 | 27,7 | 27,8 | 30 s |
+  Phát hiện: (1) Private ≈ trọng số đã nằm trên RAM DÙ `-ngl 999` (nền = cỡ tệp model) — `--no-mmap` không đổi gì đáng kể; (2) `--cache-ram 4096`
+  được tôn trọng ở cả hai mẫu tải (bình nguyên +3,3…+4,3 GB, không tăng theo số lần `prompt_save`); (3) **cả 27B lẫn 35B là hybrid/recurrent:
+  9/9 lượt log "forcing full prompt re-processing due to … hybrid/recurrent memory"** ⇒ prompt cache RAM KHÔNG cho tái dùng ở tải này, chỉ tốn
+  bộ nhớ + ~1,5 s/lượt cập nhật cache; tắt cache: commit phẳng, nhanh hơn 13–24 %. (4) **KHÔNG tái hiện được 40 GB** trong ~20 phút/cấu hình —
+  sự cố xảy ra sau 4,5 h phục vụ :3013 (prompt + nghĩ tới ~30k token, cuộc hội thoại xen kẽ) — và log llama-server lúc chết ĐÃ BỊ GHI ĐÈ (doi-model
+  ghi đè log mỗi lần khởi động). Đề xuất gửi dieu-phoi duyệt (chưa đổi gì).
+- **QUYẾT ĐỊNH (dieu-phoi duyệt 2026-10-24) — P1 `--cache-ram 0` MẶC ĐỊNH cho :8091 (27B và 35B)** — lý do: model hybrid ⇒ cache không tái
+  dùng (bảng trên). Đổi ĐỒNG BỘ ở MỌI chỗ dựng llama-server :8091: `scripts/ai/start-llama-server.ps1` (đường khởi động DUY NHẤT của sản
+  phẩm — Task Scheduler, watchdog `giamSatLlamaServer.ts`, API đổi model `doiModelLlamaServer.ts` ⇐ KheNang; trước đây KHÔNG truyền gì ⇒
+  mặc định llama.cpp 8192 MiB) đọc `LLAMA_SERVER_CACHE_RAM` (mặc định 0) + `.env.example`; `doi-model.ps1` (công cụ đo) `-CacheRam 0`
+  (trước: 4096). `.env` cây chính KHÔNG có khoá này ⇒ không cần chủ dự án sửa gì. **P2** doi-model ghi log có dấu giờ
+  `ls-<model>-yyyyMMdd-HHmmss(.err).log`, giữ 10 bản/model. **P3** `canh-bo-nho.sh` thêm dòng `mau` Private llama-server mỗi 30 s. **P4 HOÃN**
+  (chỉ làm nếu sự cố commit tái diễn sau P1). Công cụ đo: `scripts/ai-eval/bo-nho/`.
+  **Cổng kiểm sau đổi (viết TRƯỚC khi chạy):** Tải A (20 lượt ~12k token, nghĩ tắt, ra 200) trên cấu hình MẶC ĐỊNH MỚI, KHÔNG `-ThemArgs`, ở
+  (a) 27B qua `doi-model.ps1` và (b) 35B qua ĐƯỜNG SẢN PHẨM `start-llama-server.ps1 -Force` (`.env` cây chính, chỉ đọc). ĐẠT khi CẢ HAI:
+  (i) log llama-server có "prompt cache is disabled"; (ii) dòng lệnh tiến trình có `--cache-ram 0`; (iii) 20/20 HTTP 200; (iv) Private max −
+  Private mẫu đầu sau nạp ≤ 1,0 GB (phẳng; cache 4096 cho +3,3…+4,3); (v) 0 dòng `prompt_save` trong log.
+  **KẾT QUẢ (2026-10-24 00:09–00:15, `bash scripts/ai-eval/bo-nho/do-bo-nho-llama.sh 27b-moi:doi:27b 35b-sp:sp:35b`, khoá khe + canh-bo-nho
+  30 s): CỔNG ĐẠT cả hai.** (a) 27B/doi-model: "prompt cache is disabled" ✓, `--cache-ram 0` ✓, 20/20 ✓, Private 21,84 → max 22,30 (+0,47 GB)
+  ✓, prompt_save 0 ✓, ~6,7 s/lượt. (b) 35B/start-llama-server.ps1 (`.env` cây chính): ✓ ✓ 20/20, 23,46 → 23,85 (+0,40 GB) ✓, 0 ✓, ~2,6
+  s/lượt; commit trống OS thấp nhất 28,0 GB. Đối chứng không chủ ý: 35B đang chạy TRƯỚC đợt (dựng bằng đường sản phẩm cũ, không truyền
+  `--cache-ram` ⇒ 8192) có Private 27,75 GB = nền 23,46 + 4,3 GB cache. :8091 về 35B qua doi-model; log có dấu giờ
+  `ls-<model>-20261024-*.err.log` ✓. Áp vào sản phẩm khi dieu-phoi gộp main và :8091 của :3000 khởi động lại (watchdog/đổi model).
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
