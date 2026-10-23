@@ -781,6 +781,15 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   `kiem_bien_dich`, thẻ UI, audit `kb_kiem_st`; sửa = MỘT prompt ghép, TẮT nghĩ; bản gốc giữ nguyên + NỐI khối "Bản đã sửa"). Bản main là
   triển khai DUY NHẤT; đã chuyển vào nó: opt-out của lượt, nhịp `dang-kiem` 15 s, `done.kiemBienDichST`; bản e7220eb9e đã xoá. Cổng đã
   trượt và cả hai đều TẮT ⇒ KHÔNG đo lại lúc này; mọi lần đo sau phải trên bản main (harness: chấm phần sau "Bản đã sửa sau biên dịch").
+- **ĐĂNG KÝ TRƯỚC — TRỢ LÝ LẬP TRÌNH THEO VAI TRÒ** (viết 2026-10-23, TRƯỚC khi chạy; thiết kế 26ba9d039 dieu-phoi duyệt; mã 9248dac34,
+  cờ `AI_TRO_LY_THEO_VAI_TRO`). `mot-luot --config pipeline`, cùng 24 bài #11, HAI NHÓM × 1 lượt mỗi nhánh (= 48 lượt/nhánh):
+  **(i) vai trò từ DỰ ÁN PLC** — `projectId` trỏ một gốc PLC NGOÀI repo (`D:/SOURCES/_ai9_nnbai/_plc_troly`: 2 tệp .st chung, KHÔNG phải lời
+  giải bài nào; `AI_REPO_SANDBOX_ROOTS` CHỈ cho :3013); **(ii) vai trò từ CHỮ câu hỏi** — `projectId: "repo"` (không PLC). Tính trước bằng
+  đúng bộ chọn sản phẩm (`tmp/vai-tro-nhom2.mts`): 24/24 câu nhóm (ii) ra `code.plc` (chữ câu hỏi có TON/TOF/R_TRIG + ý định viết) ⇒ cả
+  hai nhóm nhánh bật đều chạy 27B. Thiết kế KHỐI, một lần đổi model (`doi-model -GiuKhoa`): khối BẬT (27B) → khối TẮT (35B, kết thúc ở
+  35B); khoá khe suốt đợt; canh bộ nhớ; vòng kiểm biên dịch `tro-ly` TẮT ở CẢ HAI khối (A không đạt). Kiểm MỖI lượt từ sự kiện `usage`:
+  bật ⇒ `vaiTro=code.plc` + model 27B; tắt ⇒ không `vaiTro` + model 35B — sai ⇒ dừng, vứt số. **Cổng: bật ≥ tắt + 4/48 VÀ trung vị thời
+  gian bật ≤ 2× tắt; báo cáo tách nhóm (i)/(ii), cổng tính trên TỔNG.** Đạt ⇒ đề xuất bật mặc định; không ⇒ giữ tắt. Ước ~3 h.
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;

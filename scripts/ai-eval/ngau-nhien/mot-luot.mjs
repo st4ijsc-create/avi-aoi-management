@@ -149,7 +149,7 @@ async function cham(b, luot, g, nhanh = undefined) {
     totalMs: g.totalMs ?? null, ttftMs: g.ttftMs ?? null, promptTok: g.promptTok ?? null, genTok: g.genTok ?? null,
     finish: g.finish ?? null, cut: !!g.cut, evs: g.evs ?? null, err: g.err ?? null, chamMs: kq.ms,
     tep: tr.tep, vanBanGoc: GOI_MODEL ? (g.text || "").slice(0, 40000) : undefined, vongSua: g.vongSua,
-    hdr: g.hdr ?? undefined, requestId: g.requestId ?? undefined,
+    hdr: g.hdr ?? undefined, requestId: g.requestId ?? undefined, usage: g.usage ?? undefined,
   };
   if (tr.thieu.length && !row.lyDo.includes("THIEU_TEP")) row.lyDo = ["THIEU_TEP:" + tr.thieu.join("+"), ...row.lyDo];
   rows.push(row);
