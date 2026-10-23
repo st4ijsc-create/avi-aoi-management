@@ -32,7 +32,8 @@ if (trung.length) {
 }
 
 const { getLlama } = await import("node-llama-cpp");
-const llama = await getLlama();
+// `--cpu`: nhúng trên CPU (dò DEV trong lúc GPU bận phép đo khác — số chấm CHÍNH THỨC vẫn chạy cấu hình mặc định GPU để so được với bộ mù 1–4).
+const llama = await getLlama(process.argv.includes("--cpu") ? { gpu: false } : undefined);
 const model = await llama.loadModel({ modelPath: MODEL });
 const ctx = await model.createEmbeddingContext();
 const nhung = async (ts: string[]) => {

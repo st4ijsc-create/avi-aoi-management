@@ -100,7 +100,9 @@ const boDanhTuMa = (cauHoi: string) => (cauHoi ?? "").replace(/ngôn ngữ lập
 
 // ★ Đợt 9 (a) — dấu hiệu MÃ DÁN VÀO (ST / Python / SQL / JS / ladder ASCII) — câu "đoạn này lỗi, sửa giúp" kèm mã.
 const RE_SAN_PHAM_MA =
-  /(?<![\p{L}\p{N}])(?:hàm|ham|script|chương trình|chuong trinh|trang|endpoint|truy vấn|truy van|câu lệnh|cau lenh|câu|cau|khối|khoi|module|component|làm giúp|lam giup|dựng|cần|can|help me|build|create|make)(?![\p{L}\p{N}])/iu;
+  // ★ Đợt 9 (2026-10-23, DEV-4) — "soạn/soan" (soạn FB, soạn file workflow) chỉ là ý định mã KHI đi cùng từ khoá miền (vế `mien` ở
+  //   `coYDinhHoacMa`) — "soạn báo cáo ca" không có miền mã ⇒ không đổi.
+  /(?<![\p{L}\p{N}])(?:hàm|ham|script|chương trình|chuong trinh|trang|endpoint|truy vấn|truy van|câu lệnh|cau lenh|câu|cau|khối|khoi|module|component|làm giúp|lam giup|dựng|cần|can|soạn|soan|help me|build|create|make)(?![\p{L}\p{N}])/iu;
 const RE_MA_DAN = /:=|\bEND_(?:IF|FOR|WHILE|CASE|FUNCTION(?:_BLOCK)?|VAR|PROGRAM)\b|\bdef\s+\w+\s*\(|=>|\bSELECT\b[\s\S]*\bFROM\b|--\|/i;
 
 /**
@@ -139,15 +141,20 @@ const RE_TOM_TAT = T("tóm tắt|tom tat|tóm (?:lại|gọn|lược|hộ|giúp)
 const RE_TONG_HOP = T("tổng hợp|tong hop");
 const RE_TRICH = T("trích|trich|trích xuất|bóc tách|boc tach|extract|parse");
 const RE_LAY = T("lấy|lay|lọc|loc|tách|tach|rút|rut|điền|dien|liệt kê|liet ke|gom|chuyển|chuyen|pull|get");
-const RE_TAI_LIEU_KEM = T("này|nay|sau|sau đây|dưới|duoi|dưới đây|đoạn văn|văn bản|this|following|below|attached");
-const RE_DANG_CAU_TRUC = T("json|bảng|bang|danh sách|danh sach|các trường|cac truong|cột|cot|table|list|csv|fields?");
+// ★ Đợt 9 (2026-10-23, DEV-4) — thêm nguồn tài liệu hay gặp ("trong ghi chú bàn giao: …", "từ biên bản …"); và dữ liệu DÁN sau dấu
+//   hai chấm (≥ 25 ký tự cùng dòng, hoặc xuống dòng rồi gạch đầu dòng) cũng là tài liệu kèm.
+const RE_TAI_LIEU_KEM = T("này|nay|sau|sau đây|dưới|duoi|dưới đây|đoạn văn|văn bản|ghi chú|ghi chu|biên bản|bien ban|email|tin nhắn|tin nhan|nhật ký|nhat ky|this|following|below|attached");
+const RE_DU_LIEU_SAU_HAI_CHAM = /:\s*\S[^\n]{24,}|:\s*\n\s*(?:[-•*]|\d+[.)])/u;
+const RE_DANG_CAU_TRUC = T("json|bảng|bang|danh sách|danh sach|các trường|cac truong|cột|cot|mẫu|biểu mẫu|bieu mau|template|form|table|list|csv|fields?");
 const RE_HOI_KHAI_NIEM = T(
-  "là gì|la gi|là sao|khác nhau|khac nhau|khác gì|khác .{1,40} (?:thế nào|ra sao)|so sánh|so sanh|tại sao|tai sao|vì sao|vi sao|giải thích|giai thich|nguyên lý|nguyen ly|nguyên nhân|ưu điểm|nhược điểm|ý nghĩa|ảnh hưởng(?: \\S+){0,6} (?:thế nào|ra sao)|gồm những|gồm gì|hoạt động (?:thế nào|ra sao)|khi nào nên|nên dùng|nên chọn|có nên|what is|what are|what's|why|explain|difference|how does|how do|should i|when to use",
+  "là gì|la gi|là sao|khác nhau|khac nhau|khác gì|khác .{1,40} (?:thế nào|ra sao)|so sánh|so sanh|tại sao|tai sao|vì sao|vi sao|giải thích|giai thich|nguyên lý|nguyen ly|nguyên nhân|ưu điểm|nhược điểm|ý nghĩa|ảnh hưởng(?: \\S+){0,6} (?:thế nào|ra sao)|gồm những|gồm gì|hoạt động (?:thế nào|ra sao)|khi nào nên|nên dùng|nên chọn|có nên|(?:những|các|nhung|cac) bước nào|bước nào|buoc nao|hoat dong (?:the nao|ra sao)|khac .{1,40} (?:the nao|ra sao)|cái nào|cai nao|nen dung|nen chon|co nen|khi nao nen|uu diem|nhuoc diem|y nghia|nguyen ly|nguyen nhan|what is|what are|what's|why|explain|difference|how does|how do|should i|when to use",
 );
 // Câu hỏi SỐ LIỆU HIỆN TẠI của nhà máy (chat.ops) — có các dấu này thì KHÔNG kết luận "chat".
 const RE_DAU_VAN_HANH = T(
-  "hôm nay|hom nay|hôm qua|hom qua|hiện tại|hien tai|hiện (?:đang|nay|giờ|có)|đang|dang|ca này|ca nay|ca sáng|ca chiều|ca đêm|tuần này|tuan nay|tháng này|thang nay|line ?\\d+|máy số ?\\d+|today|yesterday|currently|right now|this (?:shift|week|month)",
+  "hôm nay|hom nay|hôm qua|hom qua|hiện tại|hien tai|hiện (?:đang|nay|giờ|có)|đang|dang|ca này|ca nay|ca sáng|ca chiều|ca đêm|ca trước|ca truoc|tuần này|tuan nay|tháng này|thang nay|lần cuối|lan cuoi|lần gần nhất|lan gan nhat|gần đây nhất|gan day nhat|lần trước|lan truoc|line ?\\d+|máy số ?\\d+|today|yesterday|currently|right now|last time|this (?:shift|week|month)",
 );
+// ★ Đợt 9 (2026-10-23, DEV-4) — mã THIẾT BỊ cụ thể của nhà máy ("SPI-02", "AOI-01", "máy 3", "line 2", "lò 1").
+const RE_THIET_BI = /(?<![\p{L}\p{N}])(?:[A-Z]{2,6}-\d{1,3}|(?:máy|may|line|chuyền|chuyen|lò|lo)\s*(?:số\s*|so\s*)?\d{1,3})(?![\p{L}\p{N}])/u;
 // Câu đính kèm mã/tài liệu ("đoạn này", "code sau") — câu "tại sao…" về MÃ người dùng dán vào không phải hỏi khái niệm.
 const RE_KEM_MA = T("đoạn (?:mã|code|st|này|sau|dưới)|code (?:này|sau|dưới)|chương trình này|this (?:code|snippet|function|rung)");
 
@@ -159,18 +166,35 @@ export function vaiTroTuTacVu(cauHoi: string): { vaiTro: string; bangChung: stri
   const s = boDanhTuMa(cauHoi);
   const m = (re: RegExp) => re.exec(s)?.[0];
   const tomTat = m(RE_TOM_TAT) ?? (!RE_DAU_VAN_HANH.test(s) || RE_TAI_LIEU_KEM.test(s) ? m(RE_TONG_HOP) : undefined);
-  const trich = m(RE_TRICH) ?? (RE_LAY.test(s) && RE_TAI_LIEU_KEM.test(s) && RE_DANG_CAU_TRUC.test(s) ? m(RE_LAY) : undefined);
+  const coTaiLieu = RE_TAI_LIEU_KEM.test(s) || RE_DU_LIEU_SAU_HAI_CHAM.test(s);
+  const trich = m(RE_TRICH) ?? (RE_LAY.test(s) && coTaiLieu && RE_DANG_CAU_TRUC.test(s) ? m(RE_LAY) : undefined);
   if (tomTat && !trich) return { vaiTro: "summarize", bangChung: `từ tác vụ "${tomTat}"` };
   if (trich && !tomTat) return { vaiTro: "extract", bangChung: `từ tác vụ "${trich}"` };
   if (tomTat || trich) return null;
   const hoi = m(RE_HOI_KHAI_NIEM);
-  if (hoi && !RE_MO_LENH.test(s) && !RE_Y_DINH_MA.test(s) && !RE_DAU_VAN_HANH.test(s) && !RE_KEM_MA.test(s)) {
+  // ★ Đợt 9 (2026-10-23) — có MÃ DÁN VÀO (`RE_MA_DAN`: ":=", END_IF, def …) ⇒ "giải thích đoạn SCL này: IF … END_IF" là việc trên MÃ,
+  //   không phải hỏi khái niệm (bộ mù 1, lỗi có sẵn trước bản này).
+  if (hoi && !RE_MO_LENH.test(s) && !RE_Y_DINH_MA.test(s) && !RE_DAU_VAN_HANH.test(s) && !RE_KEM_MA.test(s) && !RE_MA_DAN.test(s)) {
     return { vaiTro: "chat", bangChung: `hỏi khái niệm "${hoi}"` };
   }
   return null;
 }
 
-/** Tầng 3 đầy đủ cho chọn TỰ ĐỘNG: ý định mã (miền) trước, rồi tác vụ. */
+/**
+ * ★ Đợt 9 (2026-10-23, DEV-4) — tầng 3 cho câu VẬN HÀNH (`chat.ops`): THIẾT BỊ cụ thể ("SPI-02", "máy 3") + dấu thời điểm/hiện trạng
+ * ("đang", "lần cuối", "hôm qua", "ca trước"), KHÔNG có ý định viết mã. Trước đây tầng 3 không có đường nào ra `chat.ops` ⇒ câu
+ * "lan cuoi may SPI-02 duoc hieu chuan la khi nao" / "tai sao may AOI-01 dang bat den vang" rơi tầng 4 và bị hút về `chat`.
+ * Xét SAU tác vụ (tóm tắt/trích có tài liệu kèm thắng). Không chắc ⇒ `null`.
+ */
+export function vaiTroVanHanh(cauHoi: string): { vaiTro: string; bangChung: string } | null {
+  const s = boDanhTuMa(cauHoi);
+  const tb = RE_THIET_BI.exec(s)?.[0];
+  const moc = RE_DAU_VAN_HANH.exec(s)?.[0];
+  if (!tb || !moc || coYDinhHoacMa(s)) return null;
+  return { vaiTro: "chat.ops", bangChung: `thiết bị "${tb}" + "${moc}"` };
+}
+
+/** Tầng 3 đầy đủ cho chọn TỰ ĐỘNG: ý định mã (miền) trước, rồi tác vụ, rồi câu vận hành theo thiết bị. */
 export function vaiTroTuCauHoiTuDong(cauHoi: string): { vaiTro: string; bangChung: string } | null {
-  return vaiTroTuCauHoi(cauHoi) ?? vaiTroTuTacVu(cauHoi);
+  return vaiTroTuCauHoi(cauHoi) ?? vaiTroTuTacVu(cauHoi) ?? vaiTroVanHanh(cauHoi);
 }
