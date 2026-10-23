@@ -829,6 +829,22 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   tra Windows log): System Event 2004 22:20:19 "low virtual memory… llama-server.exe consumed 40.488.398.848 bytes, vmmemWSL 6,17 GB, node 5,26
   GB" + Event 26 (popup Out of Virtual Memory) ⇒ CHÍNH llama-server 27B giữ ~40 GB commit (model Q4 ~17 GB, `--cache-ram 4096`) — điều tra đo
   bộ nhớ ở mục kế.
+- **ĐO BỘ NHỚ llama-server (2026-10-23 22:59 – 10-24 00:01, chỉ đo, không đổi cấu hình; mẫu commit/Private mỗi 10 s, `tmp/bn-*.csv`):**
+  | cấu hình | tải | Private nền | bình nguyên | max | thời gian/lượt |
+  |---|---|---|---|---|---|
+  | 27B mặc định (`--cache-ram 4096`) | 20 lượt 12k tok, ra 200 | 21,8 | ~25,4 | 25,8 | 10,2 s |
+  | 27B `--cache-ram 0` | như trên | 21,8 | 22,3 | 22,3 | 7,8 s |
+  | 27B `--no-mmap` | như trên | 22,5 | ~26,4 | 27,5 | 10,0 s |
+  | 35B mặc định | như trên | 23,5 | 27,6 | 27,8 | 3,0 s |
+  | 27B mặc định | 10 lượt 12k + nghĩ, ra ~6k | 21,8 | ~25,1 | 26,7 | 104 s |
+  | 27B `--cache-ram 0` | như trên | 21,8 | 22,3 phẳng | 22,3 | 90 s |
+  | 35B mặc định | như trên | 23,5 | 27,7 | 27,8 | 30 s |
+  Phát hiện: (1) Private ≈ trọng số đã nằm trên RAM DÙ `-ngl 999` (nền = cỡ tệp model) — `--no-mmap` không đổi gì đáng kể; (2) `--cache-ram 4096`
+  được tôn trọng ở cả hai mẫu tải (bình nguyên +3,3…+4,3 GB, không tăng theo số lần `prompt_save`); (3) **cả 27B lẫn 35B là hybrid/recurrent:
+  9/9 lượt log "forcing full prompt re-processing due to … hybrid/recurrent memory"** ⇒ prompt cache RAM KHÔNG cho tái dùng ở tải này, chỉ tốn
+  bộ nhớ + ~1,5 s/lượt cập nhật cache; tắt cache: commit phẳng, nhanh hơn 13–24 %. (4) **KHÔNG tái hiện được 40 GB** trong ~20 phút/cấu hình —
+  sự cố xảy ra sau 4,5 h phục vụ :3013 (prompt + nghĩ tới ~30k token, cuộc hội thoại xen kẽ) — và log llama-server lúc chết ĐÃ BỊ GHI ĐÈ (doi-model
+  ghi đè log mỗi lần khởi động). Đề xuất gửi dieu-phoi duyệt (chưa đổi gì).
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
