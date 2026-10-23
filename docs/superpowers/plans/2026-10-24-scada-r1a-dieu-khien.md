@@ -28,7 +28,7 @@
 
 ---
 
-## Đề xuất tách R1 (cần điều phối duyệt)
+## Tách R1 — ĐÃ DUYỆT (điều phối 2026-10-24)
 
 Toàn bộ phạm vi R1 quá lớn cho một nhánh. Đề xuất tách ba phần. Mỗi phần có cổng nghiệm thu riêng, viết ra trước khi làm:
 
@@ -36,7 +36,7 @@ Toàn bộ phạm vi R1 quá lớn cho một nhánh. Đề xuất tách ba phầ
 |---|---|---|
 | **R1a · Điều khiển lõi** (kế hoạch này) | K1, K2, K4, K5, K6, K7, K8, K9 (hàng đợi trung tâm), K10, K11; M4, M5, M12 | Ma trận 6 ô của hàng R1. Mỗi ô bị từ chối đúng cổng và có dòng WORM. Đọc lại lệch hiện cho người vận hành. Đường vui đọc lại đúng trên OpenPLC bench có safety PLC mô phỏng. |
 | **R1b · Nhật ký + nợ R0** | Xem chi tiết ngay dưới bảng. | Danh sách hàng mục 1-1, mỗi mục có test hoặc đo; M9 lọc phạm vi. |
-| **R1c · Edge** (chờ **Q1**) | Lệnh HMI vào máy do edge sở hữu (Q1: a2 ký Ed25519 dùng một lần / a1 lượt orchestration 1 bước / c chỉ giám sát); K9 phía edge (STOP xếp hàng hiện trên M10); C4 (tag edge thiếu unit/deadband/samplingMs, `tsSource` gán sai); C7 (WAL: lỗi tạm 5xx giữ lại, 4xx bỏ) | Chọn sau khi có Q1 |
+| **R1c · Edge** (Q1 = hướng a2; lập kế hoạch SAU khi R1a gộp, không song song) | Lệnh HMI vào máy do edge sở hữu (Q1: a2 ký Ed25519 dùng một lần / a1 lượt orchestration 1 bước / c chỉ giám sát); K9 phía edge (STOP xếp hàng hiện trên M10); C4 (tag edge thiếu unit/deadband/samplingMs, `tsSource` gán sai); C7 (WAL: lỗi tạm 5xx giữ lại, 4xx bỏ) | Chọn sau khi có Q1 |
 
 Nội dung R1b:
 - M9 nhật ký `/scada/journal`, gồm cả nợ phạm vi của `commandLogRouter`.
@@ -53,7 +53,7 @@ Nội dung R1b:
 
 R1b và R1c sẽ có kế hoạch riêng sau khi R1a được duyệt. R1b không phụ thuộc R1a trừ M9: M9 đọc `scada_command_attempts`, nên làm sau R1a.
 
-## Quyết định cần điều phối / chủ dự án xem (đề xuất của tôi)
+## Quyết định — ĐÃ DUYỆT (điều phối 2026-10-24; điều chỉnh mục 4: STOP ghim miễn dải trong dispatch, kiểm nhất quán lúc cấu hình; mục 2/6/7: M5 nói lý do + cách xử lý; thêm ô nghiệm thu 8; R1c = hướng a2, lập kế hoạch SAU khi R1a gộp)
 
 - **Q4 — vai trò:** `operator` được ghi kênh mức 1–3 khi có `machine_control.canEdit`. Mức 4–5 chỉ `ACTUATION_ROLES` (admin, supervisor, engineer). Theo C.5.
 - **Q6/D5 — 2FA theo mức:** mức 1–3 không cần 2FA. Mức 4 cần bước 2FA của phiên (cache 10 ph như `requireFreshTotp`). Mức 5 cần TOTP mới mỗi lần. Áp **bất kể** `AUTH_2FA_BAT_BUOC` và `ACTUATION_STEPUP_2FA`. Người chưa đăng ký 2FA không bấm được mức 4–5.
@@ -139,13 +139,14 @@ CREATE TABLE scada_command_attempts (       -- §C.5, append-only
   adapter_id integer, tag_key varchar(128), requested_value jsonb, after_formula jsonb,
   stage varchar(24) NOT NULL, outcome varchar(24) NOT NULL, reason_code varchar(64),
   command_log_ids bigint[], at timestamptz NOT NULL DEFAULT now());
--- WORM: REVOKE UPDATE, DELETE ON scada_command_attempts FROM avi_app + trigger BEFORE UPDATE OR DELETE ném lỗi (theo mẫu 0279/0374)
+-- WORM theo khuôn mig 0279 (REVOKE UPDATE, DELETE ON scada_command_attempts FROM avi_app; GRANT SELECT, INSERT; GRANT USAGE trên sequence)
+-- + trigger BEFORE UPDATE OR DELETE ném lỗi (khuôn 0374) để cả owner cũng không sửa được qua đường ứng dụng
 -- CHECK stage IN ('request','confirm','dispatch','huy'); outcome IN ('rejected','proposed','confirmed','dispatched','expired','cancelled')
 ```
 
 - [ ] **Step 1: Viết** SQL (idempotent: `IF NOT EXISTS`, `DO $$ … EXCEPTION WHEN duplicate_object` cho TYPE/CHECK) và script áp. Verify gồm:
   - (a) mọi cột/bảng/CHECK tồn tại đúng kiểu;
-  - (b) trong giao dịch hoàn tác: `actuation_level=2` bị CHECK từ chối (23514); `write_min>write_max` bị từ chối; `avi_app` `UPDATE`/`DELETE` trên `scada_command_attempts` bị từ chối (42501 hoặc lỗi trigger);
+  - (b) trong giao dịch hoàn tác: `actuation_level=2` bị CHECK từ chối (23514); `write_min>write_max` bị từ chối; `avi_app` `UPDATE`/`DELETE` trên `scada_command_attempts` bị từ chối (42501), `INSERT` được; verify QUYỀN bằng `has_table_privilege('avi_app', 'scada_command_attempts', 'UPDATE')` = false, `… 'DELETE'` = false, `… 'INSERT'` = true;
   - (c) `__applied_migrations` có 1 hàng.
 - [ ] **Step 2: Chạy** `node scripts/apply-migration-0431.mjs --test-only`. Mong đợi: `applied + verified`.
 - [ ] **Step 3: Sửa** `drizzle/schema/ot.ts` cho khớp (kiểu `actuationLevel: smallint().$type<1|3|4|5>()`). Thêm vào `.env.example`: `SCADA_COMMANDS_ENABLED=false`, `SCADA_CONG_CHE_DO_ENABLED=false`.
@@ -166,14 +167,14 @@ CREATE TABLE scada_command_attempts (       -- §C.5, append-only
   - `export function loaiKenh(tag: Pick<DeviceTag,"channelKind"|"writable">): LoaiKenh` — NULL ⇒ `writable ? "input_output" : "input"`
   - `export function laKenhGhi(tag): boolean` — `input_output | calculated_output | output`
   - `export function mucTacDongKenh(tag): MucRuiRo` — kênh ghi mà `actuationLevel` NULL ⇒ 5
-  - `export type KetQuaGiaTri = { ok: true; giaTri: number|boolean|string } | { ok: false; ma: "TYPE_MISMATCH"|"OUT_OF_RANGE"|"OFF_STEP"; chiTiet: string }`
+  - `export type KetQuaGiaTri = { ok: true; giaTri: number|boolean|string } | { ok: false; ma: "TYPE_MISMATCH"|"OUT_OF_RANGE"|"OFF_STEP"; chiTiet: string; goiY?: number }` — `goiY` (chỉ với `OFF_STEP`) = bước hợp lệ gần nhất NẰM TRONG dải; chỉ là gợi ý, KHÔNG bao giờ tự thay giá trị (điều phối 2026-10-24, mục 7)
   - `export function kiemGiaTriGhi(tag: Pick<DeviceTag,"dataType"|"writeMin"|"writeMax"|"writeStep">, giaTri: unknown): KetQuaGiaTri` — ép kiểu chuẩn theo `dataType` trước, rồi kiểm dải và bước
 
 - [ ] **Step 1: Test đỏ:**
   - `loaiKenh({channelKind:null, writable:true})==="input_output"`.
   - `mucTacDongKenh({channelKind:"output", actuationLevel:null})===5`.
   - bool: `kiemGiaTriGhi(bool, "1")` / `(bool, 1)` / `(bool, true)` đều cho `{ok:true, giaTri:true}`; `(bool, "x")` cho `TYPE_MISMATCH`.
-  - float {min 240, max 250, step 0.5}: `"240.0"` cho `ok` với `giaTri===240`; `240.2` cho `OFF_STEP`; `250.5` cho `OUT_OF_RANGE`; `239.9999999999` cho `OUT_OF_RANGE`; `245.00000000001` cho `ok` (dung sai bước `1e-9 × max(1,|step|)`).
+  - float {min 240, max 250, step 0.5}: `"240.0"` cho `ok` với `giaTri===240`; `240.2` cho `OFF_STEP` với `goiY===240`; `249.9` với bước 0.5 cho `goiY===250`; `240.0` / `249.9` không bao giờ trả `ok` với giá trị đã làm tròn; `250.5` cho `OUT_OF_RANGE`; `239.9999999999` cho `OUT_OF_RANGE`; `245.00000000001` cho `ok` (dung sai bước `1e-9 × max(1,|step|)`).
   - int: `12.5` cho `TYPE_MISMATCH`.
   - Mọi cột NULL ⇒ chỉ ép kiểu.
   - Hai cách viết cùng một giá trị cho cùng `canonicalOtValue`.
@@ -195,20 +196,21 @@ CREATE TABLE scada_command_attempts (       -- §C.5, append-only
 
 Chốt:
 - Áp cho mọi `triggeredBy`, kể cả lệnh interlock và Sparkplug.
-- STOP ghim **không** được miễn cổng này, vì `stop_value` cũng phải nằm trong dải. Nếu `datStopPin` hiện cho phép ghim ngoài dải: thêm test ghi rõ hành vi, và **từ chối ghim** ngoài dải ở `validateStopValue`.
+- **STOP ghim ĐƯỢC MIỄN kiểm dải/bước** (điều phối 2026-10-24, mục 4: không phần mềm nào được chặn STOP đã ghim). Cổng dải đặt TRƯỚC cổng chế độ OT (để lệnh ngoài dải bị từ chối kể cả khi `OT_CONTROL_ENABLED` tắt), nên việc miễn dựa trên khớp **theo dữ liệu**: `isStopCommandType(commandType)` và giá trị khớp `stop_value` của tag qua `stopPinsFromTagRows` + `matchPinnedStop` (`stopPin.ts:137,104`). Phân loại đầy đủ (`classifyOtStop`, kể cả vân tay kết nối) vẫn chạy sau như cũ. Cổng kiểu kênh (`CHANNEL_READ_ONLY`) KHÔNG miễn: STOP ghim chỉ có trên tag ghi được. Tính nhất quán dải ↔ `stop_value` được kiểm LÚC CẤU HÌNH ở Task 12.
 - Không cờ: cột mới đều NULL, nên hành vi cũ giữ nguyên.
 
 - [ ] **Step 1: Test đỏ (DB thật):**
   - tag `channel_kind='input'` nhưng `writable=true` ⇒ `rejected CHANNEL_READ_ONLY`, 1 dòng `command_log`, driver 0 lần.
   - dải 240..250 + giá trị 251 ⇒ `OUT_OF_RANGE`.
   - bước 0.5 + 240.2 ⇒ `OFF_STEP`.
+  - STOP ghim có `stop_value` ngoài dải (hàng ghi thẳng vào DB, mô phỏng dữ liệu cũ) ⇒ KHÔNG bị `OUT_OF_RANGE` (đi tiếp các cổng như trước); lệnh `stop` với giá trị KHÁC `stop_value` và ngoài dải ⇒ `OUT_OF_RANGE`.
   - mọi cột NULL ⇒ hành vi như trước: test hồi quy với một lệnh hitl hợp lệ đi tới `simulated`.
   - giá trị `"245"` cho float ⇒ driver nhận `245` (số).
   - lệnh hitl gắn `ai_pending_actions` có băm trên `245`, gửi `"245"` ⇒ vẫn khớp ràng buộc. Theo hướng ép kiểu trước khi băm, nếu `verifyActionBinding` so băm trên giá trị thô: ép kiểu ở cả `proposeAction`/`request` (Task 8) và `dispatch` để hai bên dùng cùng giá trị.
 - [ ] **Step 2: Chạy** test. Mong đợi: đỏ.
 - [ ] **Step 3: Cài** cổng bằng `writeRejected(…, "<MÃ>", chiTiet)`.
 - [ ] **Step 4: Chạy lại**, kèm `npx vitest run server/services/ot` (hồi quy). Mong đợi: xanh.
-- [ ] **Step 5: Đột biến:** bỏ kiểm dải ⇒ ca 251 đỏ. Hoàn tác.
+- [ ] **Step 5: Đột biến:** bỏ kiểm dải ⇒ ca 251 đỏ; bỏ miễn STOP ghim ⇒ ca STOP ghim đỏ. Hoàn tác.
 - [ ] **Step 6: Commit** `feat(ot): dispatch kiem loai kenh + dai/buoc ghi cho moi nguoi goi (R1a T3, K4)`.
 
 ### Task 4: `cheDoMay.ts` + cổng K2 trong `dispatchCore` (có cờ)
@@ -356,16 +358,16 @@ Chốt:
   - `scada.commands.request` (mutation)
     - input `{ adapterId: number; tagKey: string; value: number|boolean|string; lyDo: string(5..300); clientRequestId: string(uuid) }`. `lyDo` lưu vào `previewJson.lyDo` và vào dòng attempts.
     - output `{ requestId: string; expiresAt: string; preview: { machine: string; channel: string; unit: string|null; current: { v: number|boolean|string|null; q: "good"|"uncertain"|"bad"; ageMs: number|null }; requested: V; afterFormula: V; range: {min; max; step}|null; level: MucRuiRo; needsTotp: boolean; mode: "real"|"simulated"; simulatedReasons: string[]; route: "central"; warnings: string[] } }`
-  - mã từ chối ở bước request (`scada_command_attempts.reason_code` + `appError`): `FEATURE_DISABLED`, `NOT_FOUND` (không thấy = ngoài phạm vi), `CHANNEL_READ_ONLY`, `TYPE_MISMATCH`, `OUT_OF_RANGE`, `OFF_STEP`, `MODE_LOCAL`, `DANG_DUOC_CHON`, `EDGE_CHUA_HO_TRO`, `ROLE_FLOOR`
+  - mã từ chối ở bước request (`scada_command_attempts.reason_code` + `appError`): `FEATURE_DISABLED`, `NOT_FOUND` (không thấy = ngoài phạm vi), `CHANNEL_READ_ONLY`, `TYPE_MISMATCH`, `OUT_OF_RANGE`, `OFF_STEP`, `MODE_LOCAL`, `DANG_DUOC_CHON`, `EDGE_CHUA_HO_TRO`, `ROLE_FLOOR`, `TOTP_CHUA_DANG_KY`. Lỗi `OFF_STEP` mang `goiY` trong `appError` params để M5 hiện.
   - socket `scada:cmd { requestId, status: "proposed", at }` vào `user:{id}`
 
 Chốt:
 - Thứ tự cổng:
   1. cờ `SCADA_COMMANDS_ENABLED`;
-  2. phạm vi máy;
+  2. phạm vi máy — "phạm vi control theo cây" (điều phối mục 1) = máy nằm trong `idsTrongPhamVi("machine", phamViCua(ctx), {strict:true})` (cây nhà máy → xưởng → line → trạm → máy). Hệ chưa có phạm vi control tách khỏi phạm vi xem (C.8 thuộc R4) ⇒ dùng phạm vi cây hiện có + `machine_control.canEdit`; ghi ruling;
   3. tag bật + `laKenhGhi`;
   4. `kiemGiaTriGhi`;
-  5. vai trò `vaiTroDuocGhi(muc)` + `machine_control.canEdit`;
+  5. vai trò `vaiTroDuocGhi(muc)` + `machine_control.canEdit`; mức ≥ 4 mà người gọi CHƯA đăng ký 2FA ⇒ `TOTP_CHUA_DANG_KY` ngay tại đây (từ chối sớm, có dòng attempts; `confirm` vẫn kiểm lại);
   6. edge ⇒ `EDGE_CHUA_HO_TRO`;
   7. `cheDoMay` = REMOTE;
   8. `giuKhoaChon`;
@@ -511,8 +513,8 @@ Chốt:
 
 **Files:**
 - Create: `server/routers/scadaKenhRouter.ts`
-- Modify: `server/routers.ts`, `moduleAccessMap.ts`, census, i18n
-- Test: `server/routers/scadaKenhRouter.db.test.ts`
+- Modify: `server/routers.ts`, `moduleAccessMap.ts`, census, i18n, `server/services/ot/stopPin.ts` (`validateStopValue` / `datStopPin` ~:308: từ chối ghim ngoài dải/bước của tag)
+- Test: `server/routers/scadaKenhRouter.db.test.ts`, `server/services/ot/stopPin.dai.r1a.db.test.ts`
 
 **Interfaces:**
 - Produces:
@@ -534,6 +536,9 @@ Chốt:
   - mức ∈ {1,3,4,5} hoặc null;
   - kênh chế độ phải là tag của adapter gắn **đúng máy đó**;
   - `giaTriRemote` ép kiểu theo `dataType`, dùng `kiemGiaTriGhi` không có dải.
+  - **Nhất quán dải ↔ STOP ghim** (điều phối mục 4, đổi lấy việc STOP ghim được miễn dải trong `dispatch()`):
+    - khai/đổi `writeMin`/`writeMax`/`writeStep` mà `stop_value` đang ghim của tag nằm ngoài dải mới hoặc lệch bước ⇒ từ chối `STOP_PIN_NGOAI_DAI` (không ghi gì, không audit lẻ);
+    - ghim `stop_value` (đường `datStopPin` hiện có) ngoài dải/bước đang khai của tag ⇒ từ chối cùng mã. Dải NULL ⇒ không kiểm (hành vi cũ).
 - Hạ mức (5→3) hoặc nới dải không cần người thứ hai trong R1a. Ghi rõ đây là mục R2 nếu điều phối muốn.
 
 - [ ] **Step 1: Test đỏ:**
@@ -541,11 +546,13 @@ Chốt:
   - `operator` sửa ⇒ `FORBIDDEN`;
   - audit trong cùng giao dịch: giao dịch lỗi thì không có audit lẻ;
   - kênh chế độ trỏ tag của máy khác ⇒ từ chối;
-  - `danhSach` trả `mucHieuLuc=5` cho kênh ra không khai mức.
+  - `danhSach` trả `mucHieuLuc=5` cho kênh ra không khai mức;
+  - tag có `stop_value=0` đang ghim, khai dải 10..20 ⇒ `STOP_PIN_NGOAI_DAI`, cột không đổi;
+  - tag có dải 10..20, ghim `stop_value=0` ⇒ `STOP_PIN_NGOAI_DAI`; ghim 10 ⇒ ok.
 - [ ] **Step 2: Chạy.** Mong đợi: đỏ.
 - [ ] **Step 3: Cài.**
 - [ ] **Step 4: Census + i18n.** Chạy lại. Mong đợi: xanh.
-- [ ] **Step 5: Đột biến:** bỏ kiểm "đúng máy" ⇒ đỏ. Hoàn tác.
+- [ ] **Step 5: Đột biến:** bỏ kiểm "đúng máy" ⇒ đỏ; bỏ kiểm dải ở `datStopPin` ⇒ ca ghim 0 đỏ. Hoàn tác.
 - [ ] **Step 6: Commit** `feat(scada): router M12 cau hinh kenh + kenh che do may, audit trong giao dich (R1a T12)`.
 
 ### Task 13: Màn M12 `/scada/config/channels`
@@ -606,6 +613,10 @@ Chốt, bám báo cáo §4.5–4.6:
   - Lý do bắt buộc ≥ 5 ký tự, nhập ở faceplate trước khi gọi `request` (trường `lyDo` của Task 8), hiện lại trong M5.
   - Nút "Gửi (mô phỏng)" khi `mode:"simulated"`.
   - Cần TOTP ⇒ ô 6 số.
+  - **Từ chối phải nói lý do và cách xử lý, không chỉ mã** (điều phối mục 2, 6, 7):
+    - `TOTP_CHUA_DANG_KY` ⇒ "Lệnh mức 4–5 cần xác thực hai lớp; tài khoản của bạn chưa đăng ký" + liên kết tới trang đăng ký 2FA hiện có (tìm route trang bảo mật tài khoản trong `App.tsx`; nếu không có trang, dùng hướng dẫn chữ và ghi trong báo cáo);
+    - `EDGE_CHUA_HO_TRO` ⇒ "Máy này do edge {mã} sở hữu — lệnh từ SCADA tới máy edge chưa được hỗ trợ (đợt R1c)";
+    - `OFF_STEP` ⇒ "Giá trị phải theo bước {step}. Giá trị hợp lệ gần nhất: {goiY}" + nút điền `goiY` vào ô (người bấm vẫn phải gửi lại; KHÔNG tự làm tròn).
   - Kết quả theo `nhanKetQua`. `acked_unverified` hiện giá trị đọc lại và "kiểm tra tại máy". `rejected` hiện tên cổng → chữ người đọc (khoá i18n `scada.lenh.cong.<MÃ>`).
   - Đóng hộp thoại khi còn `proposed` ⇒ gọi `huy`.
 
@@ -619,6 +630,7 @@ Chốt, bám báo cáo §4.5–4.6:
     - `acked_verified` ⇒ tự đóng sau 3 s (fake timers);
     - đóng khi `proposed` ⇒ `huy` được gọi;
     - mức 5 ⇒ ô TOTP bắt buộc;
+    - `TOTP_CHUA_DANG_KY` ⇒ có chữ hướng dẫn + liên kết đăng ký; `EDGE_CHUA_HO_TRO` ⇒ chữ tiếng Việt có mã edge; `OFF_STEP` ⇒ hiện `goiY`, bấm gợi ý chỉ điền ô, không gọi `request`;
     - locale `en` ⇒ không chữ Việt.
 - [ ] **Step 2: Chạy.** Mong đợi: đỏ.
 - [ ] **Step 3: Cài.**
@@ -635,7 +647,7 @@ Chốt, bám báo cáo §4.5–4.6:
   - `docs/superpowers/plans/2026-10-24-scada-r1a-bao-cao-nghiem-thu.md`
 - Modify: `.env.example` nếu còn thiếu cờ.
 
-Cổng (hàng R1 của báo cáo): mỗi ô ⇒ **bị từ chối đúng cổng** và **có dòng WORM**. Đọc lại lệch hiện cho người vận hành.
+Cổng (hàng R1 của báo cáo + ô 8 do điều phối thêm 2026-10-24): mỗi ô ⇒ **bị từ chối đúng cổng** và **có dòng WORM**. Đọc lại lệch hiện cho người vận hành.
 
 | Ô | Kích thích | Cổng và mã mong đợi | Dòng WORM |
 |---|---|---|---|
@@ -646,6 +658,7 @@ Cổng (hàng R1 của báo cáo): mỗi ô ⇒ **bị từ chối đúng cổng
 | 5 hết TTL | `confirm` sau `expiresAt` | `HET_HAN`, `dispatch` 0 lần | attempts |
 | 6 interlock thiếu dữ liệu | luật `telemetry_tag` bật, chặn, không có mẫu | `confirm` → `dispatch`: `INTERLOCK_BLOCKED (thieu_du_lieu)` | `command_log` |
 | 7 đọc lại lệch | stub `giaTri` ghi đè | `acked_unverified`, `scada:cmd` mang `readBackValue` | `command_log` (ý định + kết quả) |
+| 8 chưa có 2FA gửi mức 4 | người `engineer` chưa đăng ký 2FA, kênh mức 4 | `request`: `TOTP_CHUA_DANG_KY` (và `confirm` trên yêu cầu tạo trước khi bỏ đăng ký: cùng mã), `dispatch` 0 lần | attempts |
 
 - [ ] **Step 1: Viết** `r1aNghiemThu.db.test.ts`. Dùng stub, `OT_CONTROL_ENABLED=true` **trong tiến trình**, safety theo mẫu `safetySimOnly.dot1c.db.test.ts`: một dòng `safety_plc_configs` backend `modbus` trỏ PLC giả trong tiến trình (`modbus-serial` `ServerTCP`), tức safety adapter mô phỏng như D9. Mỗi ô một `it`. Mỗi ô kiểm đúng mã **và** đếm đúng số dòng WORM tăng thêm.
 - [ ] **Step 2: Chạy** `SCADA_R1A_NGHIEM_THU=1 npx vitest run -c vitest.db.config.ts server/services/scada/r1aNghiemThu.db.test.ts`. Mong đợi: xanh vì mọi task đã xong. Đỏ ⇒ quay về task sở hữu, không nới.
@@ -663,7 +676,7 @@ Cổng (hàng R1 của báo cáo): mỗi ô ⇒ **bị từ chối đúng cổng
   - **Xác nhận trước trên bench rằng thanh ghi holding ghi được và đọc lại giữ giá trị** (runtime OpenPLC có ghi đè mỗi chu kỳ không). Nếu bị ghi đè, ghi rõ và dùng thanh ghi khác.
 - [ ] **Step 5: Chạy bench.** Dán bảng vào báo cáo nghiệm thu. Không có Docker ⇒ ghi "chưa chạy bench" kèm lý do, **không** khai đạt.
 - [ ] **Step 6: Chạy toàn bộ** `npx vitest run server/services/ot server/services/scada server/services/interlock server/routers/scada* server/_core client/src/components/scada client/src/pages/Scada*` + các tệp DB mới (riêng lẻ) + `npm run check`. Ghi số tệp/test.
-- [ ] **Step 7: Commit** `test(scada): nghiem thu R1a - ma tran 7 o, bench OpenPLC + safety PLC mo phong, bao cao`.
+- [ ] **Step 7: Commit** `test(scada): nghiem thu R1a - ma tran 8 o, bench OpenPLC + safety PLC mo phong, bao cao`.
 
 ---
 
