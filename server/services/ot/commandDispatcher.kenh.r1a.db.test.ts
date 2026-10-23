@@ -549,6 +549,21 @@ describe.skipIf(!DB_URL)(
       expect(res.reason).toBe("OUT_OF_RANGE");
     });
 
+    it("fix round 2 (M-2 dư): stop [tag ghim = giá trị ghim (NGOÀI dải), tag CHƯA khai không ghim] ⇒ KHÔNG miễn ⇒ OUT_OF_RANGE trên tag ghim", async () => {
+      const inp = input({
+        commandType: "stop",
+        writes: [
+          { tagKey: "toc_do", value: 0 },
+          { tagKey: "cu", value: 42 },
+        ],
+      });
+      const res = await dispatch(inp);
+      expect(res.status).toBe("rejected");
+      expect(res.reason).toBe("OUT_OF_RANGE");
+      const rows = await ledger(inp.idempotencyKey);
+      expect(rows.map(r => r.tagKey)).toEqual(["toc_do"]);
+    });
+
     it("M-1: lệnh nhiều write bị từ chối ở write #1 (OUT_OF_RANGE), gọi lại CÙNG khoá ⇒ trả từ chối đã lưu, không ném, sổ vẫn 1 dòng (khoá mang chỉ số GỐC)", async () => {
       const inp = input({
         writes: [

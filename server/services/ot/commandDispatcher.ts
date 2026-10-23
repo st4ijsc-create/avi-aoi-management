@@ -836,9 +836,10 @@ function epKieuKenh(tag: Pick<DeviceTag, "dataType">, value: unknown) {
  *   3. coerce by dataType (`kiemGiaTriGhi`, never rounds) ⇒ TYPE_MISMATCH on failure.
  *   PINNED STOP exemption (coordinator 2026-10-24 item 4: no software blocks a pinned STOP; fix round 1 M-2: WHOLE command
  *   only) — matched on DATA here, since this gate runs before the mode/commissioning gates: a stop-typed command
- *   (`isStopCommandType`) whose declared writes, coerced, ALL equal their tags' `stop_value` (one `matchPinnedStop` over them,
- *   the 5a-stop rule: pinned tags, pinned values, no duplicates) skips range and step. A stop that mixes a pin with any other
- *   declared write is not exempt for any of them. The full classification (`classifyOtStop`, connection fingerprint …)
+ *   (`isStopCommandType`) whose writes — ALL of them, declared (coerced) and undeclared (as sent) — equal their tags'
+ *   `stop_value` (one `matchPinnedStop` over every write, the 5a-stop rule: pinned tags, pinned values, no duplicates) skips
+ *   range and step. A stop that mixes a pin with ANY other write (fix round 2: an undeclared, unpinned one too — it is not a
+ *   pinned STOP at 5a-stop either) is not exempt for any of them. The full classification (`classifyOtStop`, connection fingerprint …)
  *   still runs later, unchanged. Range ↔ stop_value consistency is checked at CONFIGURATION time (R1a Task 12), not here.
  *   PASS 2 (declared writes, unless exempt):
  *   4. range, then step ⇒ OUT_OF_RANGE / OFF_STEP (the detail carries `goiY`, a hint only — the value is never altered).
@@ -867,7 +868,7 @@ export function congKenhSom(commandType: string, writes: ReadonlyArray<DispatchW
 
   if (isStopCommandType(commandType)) {
     const pins = stopPinsFromTagRows(tags.map((t) => ({ tagKey: t.tagKey, dataType: t.dataType, stopValue: t.stopValue, writable: t.writable, isEnabled: t.isEnabled })));
-    if (matchPinnedStop(pins, daKhai.map((i) => ({ tagKey: out[i].tagKey, value: out[i].value }))).ok) return { ok: true, writes: out };
+    if (matchPinnedStop(pins, out.map((w) => ({ tagKey: w.tagKey, value: w.value }))).ok) return { ok: true, writes: out };
   }
 
   for (const i of daKhai) {
