@@ -60,6 +60,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   /* B3 — ẨN ở chế độ LOCAL (script bật lại hidden=false NGAY khi danh sách dự án có ít nhất một
      mục SERVER — xem xử lý tin "duAn"). Mặc định ẨN ở markup tĩnh để tránh một cú chớp ô-chọn-rỗng
      trước khi tin đầu tiên tới. */
+  #ghi-chu-quyen { font-size: 11px; opacity: .85; margin: 0 0 6px; padding: 3px 6px; border-left: 2px solid var(--vscode-editorWarning-foreground, var(--vscode-focusBorder)); }
   #o-du-an { width: 100%; margin-bottom: 8px; background: var(--vscode-dropdown-background);
              color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border);
              padding: 4px; }
@@ -194,7 +195,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
        ĐỊNH cho tới khi tin \`muc_quyen\` đầu tiên (đọc từ \`workspaceState\`, hoặc mặc định an toàn nếu
        kho rỗng/hỏng — xem \`bangChat.ts#napMucQuyen\`) tới ghi đè \`.value\`. SVG nội tuyến, CÙNG CÁCH
        G1/G2 đã chọn cho các icon khác — CSP webview không có \`font-src\`. -->
-  <div id="vung-muc-quyen" title="Mức quyền ghi tệp của AI — quyết định AI được tự ý sửa đĩa của bạn tới đâu">
+  <div id="vung-muc-quyen" title="Mức quyền ghi tệp của AI. Tự ghi: sửa/tạo/đổi tên tệp trong workspace KHÔNG hỏi (xoá tệp và chạy lệnh vẫn hỏi). Chỉ áp dụng cho dự án LOCAL — dự án SERVER luôn cần duyệt trên máy chủ.">
     <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
       <path d="M8 1 2.3 3.2v3.9c0 3.9 2.5 7.3 5.7 8.4 3.2-1.1 5.7-4.5 5.7-8.4V3.2L8 1Zm0 1.6 4.2 1.6v3.9c0 3.2-1.9 5.9-4.2 6.8-2.3-.9-4.2-3.6-4.2-6.8V4.2L8 2.6Z" />
     </svg>
@@ -212,6 +213,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     </svg>
   </button>
 </div>
+<!-- 2026-10-24 — ghi chú NÓI THẬT khi dự án đang chọn là SERVER: server không có khái niệm tự-duyệt (confirmAction bắt buộc), nên mức "Tự ghi" ở đó KHÔNG có tác dụng; trước đây UI im lặng. -->
+<div id="ghi-chu-quyen" hidden>Dự án SERVER: mọi lần ghi luôn cần duyệt trên máy chủ — mức quyền chỉ áp dụng cho dự án LOCAL.</div>
 <select id="o-du-an" title="Chọn dự án" hidden></select>
 <!-- ★★★ ĐỢT I / TASK I-5a — HƯỚNG DẪN lần đầu mở, CHƯA từng có lượt nào (markup TĨNH, giống khuôn
      #rong của htmlBoNho.ts). NHÁNH KIA: có lượt rồi ⇒ script ẩn nó NGAY khi bong bóng đầu tiên
@@ -421,6 +424,13 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   // phải ở đây — xem ghi chú tại markup \`#o-muc-quyen\`.
   // ══════════════════════════════════════════════════════════════════════════════════════════
   const oMucQuyen = document.getElementById("o-muc-quyen");
+  // loại (local|server) của từng mục ô dự án — để ghi chú SERVER hiện đúng lúc (extension vẫn là bên quyết định chế độ).
+  let loaiDuAnTheoId = {};
+  const ghiChuQuyen = document.getElementById("ghi-chu-quyen");
+  function capNhatGhiChuQuyen() {
+    const o = document.getElementById("o-du-an");
+    ghiChuQuyen.hidden = loaiDuAnTheoId[o.value] !== "server";
+  }
   oMucQuyen.addEventListener("change", (e) =>
     vscode.postMessage({ loai: "dat_muc_quyen", mucQuyen: e.target.value }));
 
@@ -942,8 +952,10 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   const theDuyet = document.getElementById("the-duyet");
   // ĐỔI DỰ ÁN phải báo NGAY, không đợi tới câu hỏi kế tiếp: một đề xuất ghi đang chờ thuộc về dự án
   // nó sinh ra, nên phía extension cần biết lúc ô chọn đổi để vứt thẻ duyệt đi (xem bangChat.ts).
-  document.getElementById("o-du-an").addEventListener("change", (e) =>
-    vscode.postMessage({ loai: "doi_du_an", duAnId: e.target.value }));
+  document.getElementById("o-du-an").addEventListener("change", (e) => {
+    capNhatGhiChuQuyen();
+    vscode.postMessage({ loai: "doi_du_an", duAnId: e.target.value });
+  });
   document.getElementById("nut-xem-diff").addEventListener("click", () => vscode.postMessage({ loai: "xem_diff" }));
 
   // ★★★ CHỐNG BẤM HAI LẦN (Minor, 2026-08-30) — CHỈ nút GHI, và chỉ nó.
@@ -1082,7 +1094,9 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       o.innerHTML = "";
       let coDuAnServer = false;
       let soGocLocal = 0;
+      loaiDuAnTheoId = {};
       for (const d of m.ds) {
+        loaiDuAnTheoId[d.id] = d.loai;
         const opt = document.createElement("option");
         opt.value = d.id; opt.textContent = d.nhan;
         o.appendChild(opt);
@@ -1103,6 +1117,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // khớp nhiều gốc — một chức năng THẬT, ẩn đi là lấy mất nó (các gốc còn lại vẫn là dự phòng
       // nên không thảm hoạ, nhưng vẫn là mất chức năng — đúng điều Đợt G ban đầu bỏ sót).
       o.hidden = !coDuAnServer && soGocLocal <= 1;
+      capNhatGhiChuQuyen();
     } else if (m.loai === "the_duyet") {
       // Chữ hiển thị (nhãn nguồn, chữ trên nút ghi, tóm tắt +N/-M hay "Tạo tệp mới") do EXTENSION
       // dựng sẵn — webview chỉ đặt textContent, không tự suy luận gì thêm.

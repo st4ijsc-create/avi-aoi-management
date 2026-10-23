@@ -333,6 +333,24 @@ describe("webview — ĐỢT G / TASK G1 / B3: ô chọn dự án ẨN ở LOCAL
     expect(w.nut("o-du-an").hidden).toBe(false);
   });
 
+  it("★★★ 2026-10-24 — dự án SERVER đang chọn ⇒ ghi chú NÓI THẬT \"ghi luôn cần duyệt trên máy chủ\"; chọn LOCAL ⇒ ẩn; markup tĩnh ẩn", () => {
+    expect(dungHtmlBang({ nonce: "n" })).toMatch(/<div id="ghi-chu-quyen" hidden>/);
+    const w = chayWebview();
+    w.banTin({
+      loai: "duAn",
+      ds: [
+        { id: "local:C:\ws", nhan: "LOCAL · C:\ws", loai: "local" },
+        { id: "server:p1", nhan: "SERVER · dự án 1", loai: "server" },
+      ],
+    });
+    w.nut("o-du-an").value = "server:p1";
+    w.nut("o-du-an").kichHoat("change", { target: { value: "server:p1" } });
+    expect(w.nut("ghi-chu-quyen").hidden).toBe(false);
+    w.nut("o-du-an").value = "local:C:\ws";
+    w.nut("o-du-an").kichHoat("change", { target: { value: "local:C:\ws" } });
+    expect(w.nut("ghi-chu-quyen").hidden).toBe(true);
+  });
+
   it("★ danh sách RỖNG ⇒ #o-du-an ẨN (không có gì để chọn)", () => {
     const w = chayWebview();
     w.banTin({ loai: "duAn", ds: [] });
