@@ -86,6 +86,8 @@ type Scope = (typeof SCOPES)[number];
 type SourceType = (typeof SOURCE_TYPES)[number];
 type Operator = (typeof OPERATORS)[number];
 type Action = (typeof ACTIONS)[number];
+/** SCADA R0.1 — luật làm gì khi không có dữ liệu tốt, mới (D2). Vắng (hàng cũ) ⇒ 'chan' như cổng. */
+type KhiThieuDuLieu = "chan" | "cho_qua";
 type EventFilter = "all" | "open" | "resolved";
 
 /** Hàng `interlock.list` — chỉ các trường trang đọc. */
@@ -112,6 +114,7 @@ type RuleRow = {
   cooldownSeconds?: number | null;
   enabled: boolean;
   approvedBy?: number | null;
+  khiThieuDuLieu?: KhiThieuDuLieu | null;
   versionToken: string;
 };
 type EventRow = {
@@ -148,6 +151,7 @@ interface RuleForm {
   // typed edit is unambiguous (no more auto-detecting "1" as text vs number).
   commandValueType: CommandValueType;
   cooldownSeconds: string;
+  khiThieuDuLieu: KhiThieuDuLieu;
 }
 
 const emptyRule: RuleForm = {
@@ -156,6 +160,7 @@ const emptyRule: RuleForm = {
   windowSize: "", consecutiveCount: "", windowSeconds: "", action: "alert",
   targetMachineId: "", targetAdapterId: "", commandTag: "", commandValue: "", commandValueType: "text",
   cooldownSeconds: "300",
+  khiThieuDuLieu: "chan",
 };
 
 function formFromRule(r: RuleRow): RuleForm {
@@ -182,8 +187,30 @@ function formFromRule(r: RuleRow): RuleForm {
     commandValue: serializeCommandValueForEdit(r.commandValue),
     commandValueType: inferCommandValueType(r.commandValue),
     cooldownSeconds: r.cooldownSeconds != null ? String(r.cooldownSeconds) : "300",
+    khiThieuDuLieu: r.khiThieuDuLieu === "cho_qua" ? "cho_qua" : "chan",
   };
 }
+
+/**
+ * SCADA R0.1 (D11) — luật nguồn `telemetry_tag` chỉ hợp lệ khi phạm vi = Máy, gắn một máy và một tên tag (cùng quy tắc server
+ * `assertTelemetryCauHinh`). Trả khoá i18n của lý do (để hiện inline + chặn Lưu) hoặc null khi hợp lệ / nguồn khác.
+ */
+function lyDoTelemetryCauHinh(f: Pick<RuleForm, "sourceType" | "scope" | "machineId" | "sourceKey">):
+  | "interlockRules.telemetryLyDoPhamVi"
+  | "interlockRules.telemetryLyDoThieuMay"
+  | "interlockRules.telemetryLyDoThieuTag"
+  | null {
+  if (f.sourceType !== "telemetry_tag") return null;
+  if (f.scope !== "machine") return "interlockRules.telemetryLyDoPhamVi";
+  if (numOrNull(f.machineId) == null) return "interlockRules.telemetryLyDoThieuMay";
+  if (!f.sourceKey.trim()) return "interlockRules.telemetryLyDoThieuTag";
+  return null;
+}
+const LY_DO_TELEMETRY_MAC_DINH = {
+  "interlockRules.telemetryLyDoPhamVi": "Luật nguồn tag thiết bị phải gắn một máy và một tên tag — phạm vi phải là Máy",
+  "interlockRules.telemetryLyDoThieuMay": "Luật nguồn tag thiết bị phải gắn một máy và một tên tag — thiếu máy",
+  "interlockRules.telemetryLyDoThieuTag": "Luật nguồn tag thiết bị phải gắn một máy và một tên tag — thiếu tên tag",
+} as const;
 
 function sameForm(a: RuleForm, b: RuleForm): boolean {
   return (Object.keys(a) as Array<keyof RuleForm>).every((k) => a[k] === b[k]) && Object.keys(b).length === Object.keys(a).length;
@@ -732,6 +759,10 @@ function RulesListView() {
                   {r.enabled
                     ? <Badge variant="default">{t("interlockRules.enabled")}</Badge>
                     : <Badge variant="outline">{t("interlockRules.disabled")}</Badge>}
+                  {/* SCADA R0.1 — giá trị hiện tại của "Khi thiếu dữ liệu" (vắng ⇒ chặn, như cổng). */}
+                  {r.khiThieuDuLieu === "cho_qua"
+                    ? <Badge variant="outline" data-testid="khi-thieu-du-lieu" className="border-amber-500/60 text-amber-700 dark:text-amber-400">{t("interlockRules.khiThieuDuLieuBadgeChoQua", "Thiếu dữ liệu: cho qua")}</Badge>
+                    : <Badge variant="outline" data-testid="khi-thieu-du-lieu">{t("interlockRules.khiThieuDuLieuBadgeChan", "Thiếu dữ liệu: chặn")}</Badge>}
                 </TableCell>
                 <TableCell className="text-xs">{r.cooldownSeconds}s</TableCell>
                 <TableCell><AssigneeCell row={c.assignments.get(r.id)} className="max-w-[9rem]" /></TableCell>
@@ -1095,7 +1126,11 @@ function RuleEditForm({ rule, onSaved }: { rule: RuleRow | null; onSaved: () => 
     onError: (e) => toastTrpcError(e),
   });
 
+  // SCADA R0.1 (D11) — luật telemetry_tag hỏng cấu trúc (phạm vi ≠ Máy / thiếu máy / thiếu tên tag): lý do inline + chặn Lưu.
+  const lyDoTelemetry = lyDoTelemetryCauHinh(form);
+
   const submitRule = () => {
+    if (lyDoTelemetry) return;
     // Fix round 2 (doc 80 Task 2 review) — resolve commandValue BEFORE building
     // `base`: preserve-if-untouched (exact original, any type) when the field
     // wasn't edited; otherwise parse STRICTLY per the chosen "Kiểu giá trị".
@@ -1141,6 +1176,7 @@ function RuleEditForm({ rule, onSaved }: { rule: RuleRow | null; onSaved: () => 
       commandTag: form.action !== "alert" ? (form.commandTag.trim() || null) : null,
       commandValue,
       cooldownSeconds: numOrNull(form.cooldownSeconds) ?? 300,
+      khiThieuDuLieu: form.khiThieuDuLieu,
     };
     if (form.id != null) updateRule.mutate({ id: form.id, ...base });
     else createRule.mutate(base);
@@ -1190,13 +1226,40 @@ function RuleEditForm({ rule, onSaved }: { rule: RuleRow | null; onSaved: () => 
           <Label htmlFor={`${fid}-srcType`}>{t("interlockRules.sourceType")}</Label>
           <Select value={form.sourceType} onValueChange={(v) => setForm({ ...form, sourceType: v as SourceType })}>
             <SelectTrigger id={`${fid}-srcType`}><SelectValue /></SelectTrigger>
-            <SelectContent>{SOURCE_TYPES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+            {/* R0.1 (D11) — telemetry_tag chỉ được chọn khi phạm vi = Máy; hàng cũ đang mang nó vẫn hiện giá trị (kèm lý do + chặn Lưu). */}
+            <SelectContent>
+              {SOURCE_TYPES.filter((s) => s !== "telemetry_tag" || form.scope === "machine" || form.sourceType === "telemetry_tag").map((s) => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
         <div>
           <Label htmlFor={`${fid}-srcKey`}>{t("interlockRules.sourceKey")}</Label>
           <Input id={`${fid}-srcKey`} value={form.sourceKey} onChange={(e) => setForm({ ...form, sourceKey: e.target.value })} />
         </div>
+      </div>
+      {lyDoTelemetry && (
+        <p data-testid="telemetry-cau-hinh-ly-do" role="alert" className="text-xs text-destructive">
+          {t(lyDoTelemetry, LY_DO_TELEMETRY_MAC_DINH[lyDoTelemetry])}
+        </p>
+      )}
+      {/* SCADA R0.1 (D2) — "Khi thiếu dữ liệu": đổi trên luật đã duyệt đi qua MOC của update (mất duyệt + tắt). */}
+      <div>
+        <Label htmlFor={`${fid}-khi`}>{t("interlockRules.khiThieuDuLieu", "Khi thiếu dữ liệu")}</Label>
+        <Select value={form.khiThieuDuLieu} onValueChange={(v) => setForm({ ...form, khiThieuDuLieu: v as KhiThieuDuLieu })}>
+          <SelectTrigger id={`${fid}-khi`}><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="chan">{t("interlockRules.khiThieuDuLieuChan", "Chặn (an toàn — mặc định)")}</SelectItem>
+            <SelectItem value="cho_qua">{t("interlockRules.khiThieuDuLieuChoQua", "Cho qua (cần duyệt lại)")}</SelectItem>
+          </SelectContent>
+        </Select>
+        <p data-testid="khi-thieu-du-lieu-giai-thich" className="mt-1 text-xs text-muted-foreground">
+          {t(
+            "interlockRules.khiThieuDuLieuGiaiThich",
+            "“Cho qua” cho phép lệnh đi qua khi tag không có dữ liệu tốt, mới; đổi giá trị này trên một luật đã duyệt sẽ làm mất duyệt và tắt luật cho tới khi admin duyệt lại.",
+          )}
+        </p>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -1281,7 +1344,7 @@ function RuleEditForm({ rule, onSaved }: { rule: RuleRow | null; onSaved: () => 
       )}
       <div className="flex justify-end gap-2 border-t pt-3">
         <Button variant="outline" onClick={() => layer.close()}>{t("interlockRules.cancel")}</Button>
-        <Button onClick={submitRule} disabled={createRule.isPending || updateRule.isPending || !form.name.trim()}>
+        <Button onClick={submitRule} disabled={createRule.isPending || updateRule.isPending || !form.name.trim() || lyDoTelemetry != null}>
           {t("interlockRules.save")}
         </Button>
       </div>

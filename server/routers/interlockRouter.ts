@@ -56,6 +56,11 @@ const scopeEnum = z.enum(["line", "station", "machine"]);
 const sourceTypeEnum = z.enum(["spc_violation", "ng_rate", "process_result", "telemetry_tag", "cpk"]);
 const operatorEnum = z.enum(["lt", "lte", "gt", "gte", "eq"]);
 const actionEnum = z.enum(["alert", "block_downstream", "stop_line", "reduce_speed"]);
+/**
+ * SCADA R0.1 (2026-10-24) — luật làm gì khi KHÔNG có dữ liệu tốt, mới để đánh giá (D2): 'chan' (mặc định, fail-closed) | 'cho_qua'.
+ * Đổi giá trị trên rule đã duyệt/đang bật đi qua MOC sẵn có của `update` (ILK-01: mất duyệt + tắt) — không thủ tục riêng.
+ */
+const khiThieuDuLieuEnum = z.enum(["chan", "cho_qua"]);
 
 const ruleInput = z.object({
   name: z.string().min(1).max(255),
@@ -83,6 +88,14 @@ const ruleInput = z.object({
   cooldownSeconds: z.number().int().min(0).max(86400).default(300),
 });
 
+/** R0.1 — create: khiThieuDuLieu tuỳ chọn, mặc định 'chan' (rule tạo ra vẫn chưa duyệt + tắt bất kể giá trị). */
+const createInput = ruleInput.extend({ khiThieuDuLieu: khiThieuDuLieuEnum.default("chan") });
+/**
+ * R0.1 — update: khiThieuDuLieu tuỳ chọn, KHÔNG mặc định. zod 4 áp `.default()` cả bên trong `.partial()` (đo: partial().parse({})
+ * ⇒ trường có default được điền) — nếu dùng createInput.partial() thì mọi lần sửa không khai trường này sẽ âm thầm ghi 'cho_qua' về 'chan'.
+ */
+const updateInput = ruleInput.partial().extend({ id: z.number().int().positive(), khiThieuDuLieu: khiThieuDuLieuEnum.optional() });
+
 /** ILK-05 — true khi rule có ÍT NHẤT một đích lệnh (máy / adapter / tag). */
 function hasTarget(v: { targetMachineId?: number | null; targetAdapterId?: number | null; commandTag?: string | null }): boolean {
   return v.targetMachineId != null || v.targetAdapterId != null || !!(v.commandTag && v.commandTag.length > 0);
@@ -92,8 +105,17 @@ function hasTarget(v: { targetMachineId?: number | null; targetAdapterId?: numbe
  * SCADA R0 Task 9 — luật `telemetry_tag` PHẢI gắn máy (machineId) và khai tag (sourceKey): cổng đọc giá trị sống theo (máy, tag);
  * thiếu một trong hai thì luật không bao giờ đánh giá được (cổng chặn mọi lệnh nhắm tới nó — lyDo cau_hinh). Chặn từ nguồn.
  */
-function assertTelemetryCauHinh(v: { sourceType: string; machineId?: number | null; sourceKey?: string | null }): void {
+function assertTelemetryCauHinh(v: { sourceType: string; scope: string; machineId?: number | null; sourceKey?: string | null }): void {
   if (v.sourceType !== "telemetry_tag") return;
+  // SCADA R0.1 (D11) — luật nguồn tag thiết bị chỉ có nghĩa theo MỘT máy: phạm vi line/station không được (cổng đọc giá trị sống theo (máy, tag)).
+  if (v.scope !== "machine") {
+    throw appError(
+      "BAD_REQUEST",
+      "INVALID_VALUE",
+      { field: "scope", reason: "telemetryTagChiPhamViMay" },
+      "Luật nguồn tag thiết bị (telemetry_tag) chỉ được đặt ở phạm vi Máy — phạm vi phải là Máy (machine), không phải dây chuyền / trạm.",
+    );
+  }
   if (v.machineId == null || !v.sourceKey || v.sourceKey.trim().length === 0) {
     throw appError(
       "BAD_REQUEST",
@@ -221,7 +243,7 @@ export const interlockRouter = router({
 
   create: actuationProcedure
     .use(requirePermission("interlock", "canCreate"))
-    .input(ruleInput)
+    .input(createInput)
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       // ILK-05 — validate BEFORE writing anything.
@@ -250,7 +272,7 @@ export const interlockRouter = router({
 
   update: actuationProcedure
     .use(requirePermission("interlock", "canEdit"))
-    .input(ruleInput.partial().extend({ id: z.number().int().positive() }))
+    .input(updateInput)
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       const { id, threshold, ...rest } = input;
@@ -271,8 +293,10 @@ export const interlockRouter = router({
           commandTag: mergedCommandTag,
         });
         // SCADA R0 Task 9 — merge patch lên existing: update không được làm hỏng luật telemetry_tag (bỏ machineId/sourceKey hoặc đổi nguồn sang telemetry_tag).
+        // R0.1 (D11) — cả phạm vi: đổi scope khỏi 'machine', hoặc đổi nguồn sang telemetry_tag trên hàng phạm vi line/station ⇒ từ chối.
         assertTelemetryCauHinh({
           sourceType: "sourceType" in rest ? (rest.sourceType as string) : existing.sourceType,
+          scope: rest.scope ?? existing.scope,
           machineId: "machineId" in rest ? rest.machineId ?? null : existing.machineId,
           sourceKey: "sourceKey" in rest ? rest.sourceKey ?? null : existing.sourceKey,
         });

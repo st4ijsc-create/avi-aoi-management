@@ -546,6 +546,8 @@ describe("Interlock P3 — sheet sửa rule (luồng đầy đủ)", () => {
         sourceType: "ng_rate", sourceKey: null, comparisonOperator: "gt", threshold: 5, windowSize: null, consecutiveCount: null,
         windowSeconds: null, action: "stop_line", targetMachineId: 1, targetAdapterId: null, commandTag: "line_stop", commandValue: 1,
         cooldownSeconds: 300,
+        // SCADA R0.1 (2026-10-24) — form gửi "Khi thiếu dữ liệu" (fixture không mang trường ⇒ mặc định 'chan').
+        khiThieuDuLieu: "chan",
       },
     ]);
     await waitFor(() => expect(layer("rule")).toBeNull());
@@ -649,6 +651,8 @@ describe("Interlock P3 — thêm rule qua sheet (luồng đầy đủ)", () => {
         sourceType: "ng_rate", sourceKey: null, comparisonOperator: "gt", threshold: 7, windowSize: null, consecutiveCount: null,
         windowSeconds: null, action: "alert", targetMachineId: null, targetAdapterId: null, commandTag: null, commandValue: null,
         cooldownSeconds: 300,
+        // SCADA R0.1 (2026-10-24) — form gửi "Khi thiếu dữ liệu" (fixture không mang trường ⇒ mặc định 'chan').
+        khiThieuDuLieu: "chan",
       },
     ]);
     await waitFor(() => expect(layer("rule-new")).toBeNull());

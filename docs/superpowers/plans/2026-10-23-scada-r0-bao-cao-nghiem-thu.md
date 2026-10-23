@@ -16,6 +16,22 @@ Sửa theo review cuối nhánh (I1–I4, M2, M4); bench KHÔNG chạy lại (ph
   legacy·từ chối 60 / 69 / 106 / 1971 / 1034; HA·từ chối 1008 / 1025 / 1088 / 1969 / 354; legacy·treo 1866 / 2882 / 2835 / 1973 / 1222;
   HA·treo 1819 / 2772 / 2818 / 1969 / 78. Bench OpenPLC KHÔNG chạy lại (phán quyết final review).
 
+## Backlog R1 (review độc lập kiem-dinh, P2)
+
+Review độc lập của phiên kiem-dinh (2026-10-24). P1 đã xử lý: **P1-1 chấp nhận** — đường DB của interlock fail-closed (thiếu dữ liệu
+⇒ chặn) ngay cả khi mọi cờ SCADA tắt, đúng D2; **P1-2 = R0.1** (khiThieuDuLieu sửa được qua MOC duyệt lại + telemetry_tag chỉ phạm
+vi Máy ở server và form — `.superpowers/sdd/2026-10-23-scada-r0-ket-noi-that/r01-report.md`). Các mục P2 dưới chuyển R1, chưa làm:
+
+1. onSample treo giữ dangChay.
+2. callback write SLMP không kiểm danh tính.
+3. EIP Controller thiếu listener 'error'.
+4. danhSach lộ endpoint/lastError cho machine_status.canView.
+5. ketNoiLai không giới hạn tần suất / audit ngoài transaction.
+6. tắt nóng SCADA_SOCKET không dập đăng ký.
+7. chưa có trần tổng tag/người dùng.
+8. chưa test heartbeat 60 s của deadband.
+9. stub cần nhãn "sim" trong sổ lệnh.
+
 ## Fix round 1 (T12b, đo lại 2026-10-24) — bảng hiện hành
 
 Sửa ở commit `0a8c1f49a` theo review T12 + T12b:

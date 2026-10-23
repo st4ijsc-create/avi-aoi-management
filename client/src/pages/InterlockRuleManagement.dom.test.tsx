@@ -4,7 +4,7 @@
 // `versionToken` của hàng đang hiển thị (server so dưới FOR UPDATE, lệch ⇒ CONFLICT), và khi
 // server trả CONFLICT thì danh sách được tải lại (người duyệt thấy nội dung mới trước khi bấm lại).
 // Dựng trang THẬT, chỉ mock hạ tầng nặng (khuôn OrchestrationStudio.dom.test.tsx).
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 // final wave T11b-7 — bản BROWSER của react-resizable-panels như mọi test trang dựng WorkbenchShell (thiếu ⇒ 7× "Panel size not found").
@@ -82,6 +82,7 @@ vi.mock("@/lib/trpc", () => ({
 }));
 
 import InterlockRuleManagement from "./InterlockRuleManagement";
+import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
 
 function rule(id: number, over: Record<string, unknown>) {
   return {
@@ -174,5 +175,117 @@ describe("InterlockRuleManagement — Task 11: cảnh báo TRƯỚC khi lưu rul
     // Doc 81 Đợt 2 Task 5 — sheet đóng bằng lùi lịch sử (popstate bất đồng bộ) ⇒ chờ nút hết `aria-hidden`.
     fireEvent.click(await screen.findByRole("button", { name: /interlockRules\.newRule|Thêm quy tắc|New rule/i }));
     expect(screen.queryByTestId("edit-approved-warning")).not.toBeInTheDocument();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// SCADA R0.1 (2026-10-24, kiem-dinh P1-2) — (a) "Khi thiếu dữ liệu" sửa được; (b) telemetry_tag chỉ ở phạm vi Máy (D11).
+// Trang dựng THẬT; Radix Select mở bằng click (pointerType mặc định ≠ mouse), như ChangeoverQueue.dom.test.tsx.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("InterlockRuleManagement — R0.1: khiThieuDuLieu + telemetry_tag chỉ phạm vi Máy", () => {
+  // i18next THẬT với vi.json (như bộ layout kit): câu tiếng Việt phải đến từ KHOÁ trong vi.json, không phải chuỗi dự phòng.
+  beforeAll(async () => {
+    await initLayoutKitTestI18n();
+  });
+  beforeEach(() => {
+    Element.prototype.scrollIntoView ??= function () {};
+    (Element.prototype as unknown as { hasPointerCapture: () => boolean }).hasPointerCapture ??= () => false;
+    (Element.prototype as unknown as { releasePointerCapture: () => void }).releasePointerCapture ??= () => {};
+    queryData["interlock.list"] = [
+      PENDING, APPROVED, ENABLED_ONLY,
+      // Hàng CŨ hỏng cấu trúc (ghi thẳng bảng / trước vá) — form phải nói rõ lý do và chặn Lưu.
+      rule(51, { name: "tag-thieu-may", sourceType: "telemetry_tag", sourceKey: "nhiet_do", machineId: null, versionToken: "v1:51" }),
+      rule(52, { name: "tag-thieu-ten", sourceType: "telemetry_tag", sourceKey: null, machineId: 5, versionToken: "v1:52" }),
+      rule(53, { name: "tag-pham-vi-line", scope: "line", lineId: 2, sourceType: "telemetry_tag", sourceKey: "nhiet_do", machineId: 5, versionToken: "v1:53" }),
+      rule(54, { name: "tag-cho-qua", sourceType: "telemetry_tag", sourceKey: "nhiet_do", machineId: 5, khiThieuDuLieu: "cho_qua", versionToken: "v1:54" }),
+    ];
+  });
+
+  const openEdit = (rowName: string) =>
+    fireEvent.click(within(rowOf(rowName)).getByRole("button", { name: /interlockRules\.editRule|Sửa quy tắc|Edit rule/i }));
+  const openNew = () => fireEvent.click(screen.getByRole("button", { name: /interlockRules\.newRule|Thêm quy tắc|New rule/i }));
+  const combo = (name: RegExp) => screen.getByRole("combobox", { name });
+  const pick = (comboName: RegExp, option: RegExp) => {
+    fireEvent.click(combo(comboName));
+    fireEvent.click(screen.getByRole("option", { name: option }));
+  };
+  const SCOPE = /interlockRules\.scope|Phạm vi|Scope/i;
+  const SOURCE = /interlockRules\.sourceType|Loại nguồn|Source type/i;
+  const KHI = /Khi thiếu dữ liệu|When data is missing/i;
+  const saveBtn = () => screen.getByRole("button", { name: /^(interlockRules\.save|Lưu|Save)$/i });
+
+  it("telemetry_tag CHỈ có trong danh sách nguồn khi phạm vi = Máy", () => {
+    render(<InterlockRuleManagement />);
+    openNew();
+    fireEvent.click(combo(SOURCE));
+    expect(screen.getByRole("option", { name: "telemetry_tag" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("option", { name: "telemetry_tag" }), { key: "Escape" });
+    pick(SCOPE, /^line$/);
+    fireEvent.click(combo(SOURCE));
+    expect(screen.queryByRole("option", { name: "telemetry_tag" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "ng_rate" })).toBeInTheDocument();
+  });
+
+  it("đã chọn telemetry_tag rồi đổi phạm vi sang Trạm ⇒ lý do inline 'phạm vi phải là Máy' + Lưu bị chặn", () => {
+    render(<InterlockRuleManagement />);
+    openNew();
+    fireEvent.change(screen.getByLabelText(/interlockRules\.name|^Tên|Name/i), { target: { value: "moi" } });
+    pick(SOURCE, /^telemetry_tag$/);
+    pick(SCOPE, /^station$/);
+    expect(screen.getByTestId("telemetry-cau-hinh-ly-do")).toHaveTextContent(/phạm vi phải là Máy/);
+    expect(saveBtn()).toBeDisabled();
+    fireEvent.click(saveBtn());
+    expect(mutations["interlock.create"]?.mutate ?? vi.fn()).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["tag-thieu-may", /Luật nguồn tag thiết bị phải gắn một máy và một tên tag — thiếu máy/],
+    ["tag-thieu-ten", /Luật nguồn tag thiết bị phải gắn một máy và một tên tag — thiếu tên tag/],
+    ["tag-pham-vi-line", /phạm vi phải là Máy/],
+  ])("hàng cũ %s ⇒ lý do inline tiếng Việt cạnh trường + Lưu bị chặn (không đợi toast FIELD_REQUIRED của server)", (name, lyDo) => {
+    render(<InterlockRuleManagement />);
+    openEdit(name);
+    expect(screen.getByTestId("telemetry-cau-hinh-ly-do")).toHaveTextContent(lyDo);
+    expect(saveBtn()).toBeDisabled();
+    fireEvent.click(saveBtn());
+    expect(mutations["interlock.update"]?.mutate ?? vi.fn()).not.toHaveBeenCalled();
+  });
+
+  it("luật telemetry_tag hợp lệ (phạm vi Máy, đủ máy + tag) ⇒ không có lý do, Lưu được", () => {
+    render(<InterlockRuleManagement />);
+    openEdit("tag-cho-qua");
+    expect(screen.queryByTestId("telemetry-cau-hinh-ly-do")).not.toBeInTheDocument();
+    expect(saveBtn()).not.toBeDisabled();
+  });
+
+  it("form có 'Khi thiếu dữ liệu' + câu giải thích; chọn 'Cho qua' ⇒ create gửi khiThieuDuLieu='cho_qua' (mặc định 'chan')", () => {
+    render(<InterlockRuleManagement />);
+    openNew();
+    expect(combo(KHI)).toHaveTextContent(/Chặn \(an toàn — mặc định\)/);
+    expect(screen.getByTestId("khi-thieu-du-lieu-giai-thich")).toHaveTextContent(
+      /Cho qua.*lệnh đi qua.*không có dữ liệu tốt, mới.*mất duyệt và tắt luật.*admin duyệt lại/,
+    );
+    fireEvent.change(screen.getByLabelText(/interlockRules\.name|^Tên|Name/i), { target: { value: "moi" } });
+    fireEvent.click(combo(KHI));
+    expect(screen.getByRole("option", { name: "Chặn (an toàn — mặc định)" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "Cho qua (cần duyệt lại)" }));
+    fireEvent.click(saveBtn());
+    expect(mutations["interlock.create"].mutate).toHaveBeenCalledWith(expect.objectContaining({ khiThieuDuLieu: "cho_qua" }));
+  });
+
+  it("sửa hàng 'cho_qua' ⇒ control hiện giá trị hiện tại; đổi về 'Chặn' ⇒ update gửi khiThieuDuLieu='chan'", () => {
+    render(<InterlockRuleManagement />);
+    openEdit("tag-cho-qua");
+    expect(combo(KHI)).toHaveTextContent(/Cho qua \(cần duyệt lại\)/);
+    pick(KHI, /^Chặn \(an toàn — mặc định\)$/);
+    fireEvent.click(saveBtn());
+    expect(mutations["interlock.update"].mutate).toHaveBeenCalledWith(expect.objectContaining({ id: 54, khiThieuDuLieu: "chan" }));
+  });
+
+  it("danh sách hiện giá trị hiện tại của khiThieuDuLieu trên từng hàng", () => {
+    render(<InterlockRuleManagement />);
+    expect(within(rowOf("tag-cho-qua")).getByTestId("khi-thieu-du-lieu")).toHaveTextContent(/cho qua/i);
+    // hàng không mang trường (fixture cũ) ⇒ mặc định chặn.
+    expect(within(rowOf("rule-41")).getByTestId("khi-thieu-du-lieu")).toHaveTextContent(/chặn/i);
   });
 });
