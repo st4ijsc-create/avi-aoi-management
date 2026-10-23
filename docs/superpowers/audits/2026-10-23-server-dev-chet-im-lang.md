@@ -1,13 +1,13 @@
 # Server app (dev) chết im lặng lúc boot — gốc: worker_thread của `pino-pretty`
 
-Ngày đo: 2026-10-22 → 2026-10-23 · Người đo: kiem-dinh · Công cụ: `scripts/chan-doan/` · Trạng thái: ĐÃ XÁC ĐỊNH TRIỆU CHỨNG VÀ BIẾN GÂY RA; CHƯA sửa mã sản phẩm (quyết định vá thuộc dieu-phoi).
+Ngày đo: 2026-10-22 → 2026-10-23 · Người đo: kiem-dinh · Công cụ: `scripts/chan-doan/` · Trạng thái: ĐÃ XÁC ĐỊNH GỐC VÀ ĐÃ VÁ (2026-10-23, dieu-phoi quyết định): `server/logger.ts` dev dùng `pino-pretty` đồng bộ; nghiệm thu ở §6.
 
 ## 0. Tóm tắt dành cho vận hành
 
 - **:3000 (production) KHÔNG bị lỗi này.** Production không dùng `pino-pretty` nên không tạo worker thread của logger; đo 0/80 lần chết (20 + 60) so với dev ~6–13 %.
 - Lỗi chỉ ảnh hưởng **server dev** (`NODE_ENV=development`: :3012–3015, instance e2e, `npx tsx server/_core/index.ts`): ~6–13 % lần khởi động chết sớm (trước khi cổng nghe) với mã thoát `3221226356` (0xC0000374, STATUS_HEAP_CORRUPTION) hoặc `3221226505` (0xC0000409, fast-fail); lần thử lại thường lên.
 - **Giải pháp tạm không đổi mã**: khởi động dev với `LOG_JSON=1` (tắt pino-pretty ⇒ không worker). Không có tác dụng phụ khác đáng kể ngoài định dạng log JSON và `console.*` đi qua pino.
-- **Phương án vá không đổi gói** (đã đo, chưa áp): ở dev dùng `pino-pretty` như stream ĐỒNG BỘ thay cho `transport` (bản chẩn đoán ở `scripts/chan-doan/diag-boot.patch`, cờ `DIAG_PRETTY_SYNC=1`).
+- **ĐÃ VÁ (không đổi gói)**: ở dev `server/logger.ts` dùng `pino-pretty` như stream ĐỒNG BỘ (`sync: true`) trong tiến trình chính thay cho `transport` (worker). Production giữ nguyên. `LOG_PRETTY_WORKER=1` quay lại transport cũ để đối chứng. Test `server/logger.cheDo.test.ts`; nghiệm thu §6.
 
 ## 1. Bằng chứng (mỗi dòng = số lần khởi động; "chết" = tiến trình thoát TRƯỚC khi cổng nghe)
 
@@ -48,16 +48,27 @@ Node 24.18.0 (đối chứng 22.23.4) · pino 10.3.1 · pino-pretty 13.1.3 · th
 
 ## 4. Việc còn lại / đề xuất (do dieu-phoi quyết)
 
-1. **Vá sản phẩm** (nhỏ, không đổi gói): trong `server/logger.ts`, ở dev dùng `pino(opts, pinoPretty({ sync: true, … }))` thay cho `transport` (đã đo 0/30 dưới bộ khuếch đại; chạy được: in log đúng định dạng). Hoặc chỉ cần mặc định `LOG_JSON=1` cho dev server tự động hoá/e2e.
-2. **Chốt cơ chế bằng dump** (tuỳ chọn, cần admin): WER LocalDumps — TẠO (PowerShell admin):
+1. ~~Vá sản phẩm~~ — ĐÃ LÀM (§6). Nếu vẫn thấy chết trên dev sau bản vá, bật `LOG_JSON=1` và báo.
+2. **Chốt cơ chế bằng dump** — KHÔNG CÒN CẦN (gốc đã khoanh vùng và đã vá; dieu-phoi bỏ khỏi danh sách việc, 2026-10-23). Giữ lệnh để tham khảo (cần admin): WER LocalDumps — TẠO (PowerShell admin):
    `New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\node.exe' -Force; New-Item -ItemType Directory -Force D:\SOURCES\_dumps\node; $k='HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\node.exe'; New-ItemProperty $k -Name DumpFolder -PropertyType ExpandString -Value 'D:\SOURCES\_dumps\node' -Force; New-ItemProperty $k -Name DumpType -PropertyType DWord -Value 2 -Force; New-ItemProperty $k -Name DumpCount -PropertyType DWord -Value 5 -Force`
    GỠ: `Remove-Item -Recurse -Force 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\node.exe'`. Chủ dự án đã đồng ý ghi khoá (2026-10-23); phiên chẩn đoán không có quyền admin nên CHƯA tạo. Máy chưa có `gflags`/`cdb`/`procdump` (thư mục Debuggers chỉ có DLL) — PageHeap/Application Verifier cần cài Windows SDK Debugging Tools; nếu bật chỉ dùng cho `D:\SOURCES\_tools\node22\node.exe` (chậm hẳn): `gflags /p /enable D:\SOURCES\_tools\node22\node.exe /full` — gỡ: `gflags /p /disable D:\SOURCES\_tools\node22\node.exe`.
 3. Không cần đổi cấu hình :3000.
 
+## 6. Bản vá và nghiệm thu bằng số (mã đã vá, KHÔNG cờ `LOG_JSON`/`LOG_PRETTY_WORKER`)
+
+Bản vá: `server/logger.ts` — `chonCheDoLogger(env)` (`json` | `pretty-dong-bo` | `pretty-worker`) và `taoLogger(env, destination?)`; dev ⇒ `pino(opts, pinoPretty({ colorize, translateTime: "SYS:HH:MM:ss", ignore: "pid,hostname", sync: true }))` (import ESM tĩnh); production ⇒ JSON như cũ; `LOG_PRETTY_WORKER=1` ⇒ transport worker cũ (chỉ dev). Test `server/logger.cheDo.test.ts` (10 ca): chọn chế độ; stream dev KHÔNG phải `ThreadStream`; đầu ra có màu/giờ/mức/trường, không pid/hostname; đối chứng dương `LOG_PRETTY_WORKER=1` ⇒ `ThreadStream`; production ⇒ JSON; census: `target: "pino-pretty"` chỉ xuất hiện đúng 1 lần, trong nhánh `pretty-worker`. Đột biến (4/4 bị bắt): dùng lại transport ở nhánh đồng bộ · mặc định worker · production cũng worker · bỏ `sync: true` (qua hằng xuất `PRETTY_DONG_BO`). `tsc --noEmit` toàn dự án sạch.
+
+Nghiệm thu (cờ không-GPU `DIAG_NO_KB_WARM=1`, `AI_ORCHESTRATION_ENABLED=false`, `EDGE_FACTORY_DRIFT_ALERT=off`, trace `getLlama` = 0 lần gọi trong mọi log):
+
+| Loạt | Chết / tổng |
+|---|---|
+| Bộ khuếch đại (`process.report` 4 s), dev, mã đã vá, mặc định | **0/30** (trước vá: 12/30) |
+| Dev thường, mã đã vá, mặc định | **0/60** (trước vá: ~6–13 %) |
+
 ## 5. Tái hiện
 
 ```
-node scripts/chan-doan/boot-lap.mjs 40 DIAG_NO_KB_WARM=1 AI_ORCHESTRATION_ENABLED=false EDGE_FACTORY_DRIFT_ALERT=off      # chết ~6–13 %
-node scripts/chan-doan/boot-lap.mjs 40 DIAG_NO_KB_WARM=1 AI_ORCHESTRATION_ENABLED=false EDGE_FACTORY_DRIFT_ALERT=off LOG_JSON=1   # 0/60
+node scripts/chan-doan/boot-lap.mjs 40 DIAG_NO_KB_WARM=1 AI_ORCHESTRATION_ENABLED=false EDGE_FACTORY_DRIFT_ALERT=off LOG_PRETTY_WORKER=1   # (trước vá: mặc định) chết ~6–13 %; mã đã vá chỉ chết khi bật LOG_PRETTY_WORKER=1
+node scripts/chan-doan/boot-lap.mjs 40 DIAG_NO_KB_WARM=1 AI_ORCHESTRATION_ENABLED=false EDGE_FACTORY_DRIFT_ALERT=off LOG_JSON=1   # 0/60 (mã đã vá: mặc định cũng 0/60)
 ```
 (`DIAG_NO_KB_WARM`, `DIAG_PRETTY_SYNC`, `DIAG_SKIP_VITE`, `DIAG_TRACE_LLAMA`, `DIAG_NO_TAILWIND`, `DIAG_VITE_*` chỉ có hiệu lực khi áp `scripts/chan-doan/diag-boot.patch` vào cây làm việc — KHÔNG commit.) Cổng 3016, DB `_test`; đặt `BOOT_CLEAN_EVERY=5` nếu chưa có bản vá drift.

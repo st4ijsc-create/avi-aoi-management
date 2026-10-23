@@ -19,39 +19,6 @@ index 27254f4ec..4d92c18d7 100644
        allowedHosts: true,
      },
      appType: "custom",
-diff --git a/server/logger.ts b/server/logger.ts
-index 75ba4e6e2..a611417fb 100644
---- a/server/logger.ts
-+++ b/server/logger.ts
-@@ -1,4 +1,5 @@
- import pino from "pino";
-+import { createRequire } from "node:module"; // DIAG (cục bộ, không commit)
- import { getCorrelationId } from "./services/observability/correlation";
- 
- const isProduction = process.env.NODE_ENV === "production";
-@@ -18,10 +19,12 @@ export function correlationMixin(): Record<string, string> {
-   return cid ? { correlation_id: cid } : {};
- }
- 
-+// DIAG_PRETTY_SYNC=1: pino-pretty như stream ĐỒNG BỘ (không worker_thread) thay cho `transport`.
-+const diagPrettySync = usePretty && process.env.DIAG_PRETTY_SYNC === "1";
- export const logger = pino({
-   level: process.env.LOG_LEVEL || (isProduction ? "info" : "debug"),
-   mixin: correlationMixin,
--  ...(usePretty
-+  ...(usePretty && !diagPrettySync
-     ? {
-         transport: {
-           target: "pino-pretty",
-@@ -33,7 +36,7 @@ export const logger = pino({
-         },
-       }
-     : {}),
--});
-+}, diagPrettySync ? (createRequire(import.meta.url)("pino-pretty")({ colorize: true, translateTime: "SYS:HH:MM:ss", ignore: "pid,hostname", sync: true })) : undefined);
- 
- /**
-  * Cầu nối console.* → pino (opt-in).
 diff --git a/server/services/aiGgufEngine.ts b/server/services/aiGgufEngine.ts
 index 0eac464c4..3268a4bfe 100644
 --- a/server/services/aiGgufEngine.ts
