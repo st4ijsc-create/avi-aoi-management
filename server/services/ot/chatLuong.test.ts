@@ -37,6 +37,11 @@ describe("chatLuongOpcua", () => {
     expect(r.reason).toBe("config_error");
   });
 
+  it("bit thong tin o 16 bit thap khong lam truot tap comm_lost/config_error (0x80310400, 0x80340400)", () => {
+    expect(chatLuongOpcua(0x80310400, "BadNoCommunication+info").reason).toBe("comm_lost");
+    expect(chatLuongOpcua(0x80340400, "BadNodeIdUnknown+info").reason).toBe("config_error");
+  });
+
   it("0x80000000 => bad/device_error", () => {
     const r = chatLuongOpcua(0x80000000, "Bad (0x80000000)");
     expect(r.quality).toBe("bad");

@@ -25,12 +25,17 @@ import type {
   OtWrite,
   OtHealth,
   OnOtSample,
+  TuyChonVongPoll,
+  LyDoChatLuong,
+  OtQuality,
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseOpcuaAddress, normalizeOpcuaValue, coerceOpcuaWriteValue, opcuaBuiltinName, OpcuaNodeError } from "./opcuaAddress";
 import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
+import { taoVongPoll } from "../vongPoll";
+import { chatLuongLoiChung, chatLuongOpcua, chatLuongV2Bat } from "../chatLuong";
 import {
   parseOpcuaSecurityOptions,
   resolveOpcuaPkiDir,
@@ -87,6 +92,31 @@ function describeStatus(sc: any, scVal: number): string {
   const hex = `0x${(scVal >>> 0).toString(16).padStart(8, "0")}`;
   const name = typeof sc?.name === "string" && sc.name ? sc.name : undefined;
   return name ? `${name} (${hex})` : hex;
+}
+
+/**
+ * Chất lượng + giá trị + mã trạng thái của MỘT mẫu OPC UA từ StatusCode và giá trị đã chuẩn hoá.
+ *
+ * Cờ TẮT (mặc định): đúng hành vi cũ — StatusCode khác 0 ⇒ `bad`, value null, kèm statusCode.
+ * Cờ OT_CHAT_LUONG_V2_ENABLED BẬT (C2): ánh xạ 3 mức theo 2 bit cao; `uncertain` GIỮ giá trị chuẩn hoá (không null) và
+ * mọi mẫu xấu mang `reason`. Dùng chung cho đường poll (readTags) và đường đẩy (monitored items).
+ */
+function chatLuongMauOpcua(
+  sc: any,
+  scVal: number,
+  norm: { value: number | string | boolean | null; quality: OtQuality },
+): { quality: OtQuality; value: number | string | boolean | null; statusCode?: string; reason?: LyDoChatLuong } {
+  if (scVal === 0) {
+    return { quality: norm.quality, value: norm.quality === "good" ? norm.value : null };
+  }
+  const moTa = describeStatus(sc, scVal);
+  if (!chatLuongV2Bat()) return { quality: "bad", value: null, statusCode: moTa };
+  const cl = chatLuongOpcua(scVal, moTa);
+  if (cl.quality === "uncertain" && norm.quality === "good") {
+    return { quality: "uncertain", value: norm.value, statusCode: cl.statusCode, reason: cl.reason };
+  }
+  // Uncertain nhưng không chuẩn hoá được giá trị ⇒ không có gì để giữ ⇒ bad.
+  return { quality: "bad", value: null, statusCode: moTa, reason: cl.reason ?? "device_error" };
 }
 
 /**
@@ -437,6 +467,8 @@ export class OpcuaDriver extends NotImplementedDriver {
           timestamp: new Date(),
           tsSource: "server", // B6 — no DataValue: stamped on receipt
           statusCode: r.statusCode,
+          // SCADA R0 (C2) — sau cờ: địa chỉ không phân giải ⇒ lỗi cấu hình.
+          ...(chatLuongV2Bat() ? { reason: "config_error" as const } : {}),
         } satisfies OtSample;
       }
       const dv = arr[slot[i]];
@@ -444,21 +476,21 @@ export class OpcuaDriver extends NotImplementedDriver {
       // statusCode: good nếu thiếu hoặc .value === 0 (StatusCodes.Good)
       const sc = dv?.statusCode;
       const scVal = typeof sc?.value === "number" ? sc.value : 0;
-      const scGood = scVal === 0;
 
       const norm = normalizeOpcuaValue(raw, tag.dataType, tag.scale ?? 1, tag.offset ?? 0);
-      const quality = scGood ? norm.quality : "bad";
+      const cl = chatLuongMauOpcua(sc, scVal, norm);
       const { timestamp, tsSource } = opcuaSampleTime(dv);
 
       const sample: OtSample = {
         tagKey: tag.tagKey,
         raw,
-        value: quality === "good" ? norm.value : null,
-        quality,
+        value: cl.value,
+        quality: cl.quality,
         timestamp,
         tsSource,
       };
-      if (!scGood) sample.statusCode = describeStatus(sc, scVal);
+      if (cl.statusCode !== undefined) sample.statusCode = cl.statusCode;
+      if (cl.reason !== undefined) sample.reason = cl.reason;
       return sample;
     });
   }
@@ -467,6 +499,7 @@ export class OpcuaDriver extends NotImplementedDriver {
     tags: OtTagAddress[],
     onSample: OnOtSample,
     intervalMs = 5000,
+    tuyChon?: TuyChonVongPoll,
   ): Promise<OtSubscriptionHandle> {
     if (!this.connected) throw new DeviceUnreachableError("opcua");
 
@@ -487,31 +520,25 @@ export class OpcuaDriver extends NotImplementedDriver {
       }
     }
 
-    const tick = async () => {
-      try {
-        const samples = await this.readTags(tags);
-        for (const s of samples) {
-          try {
-            await onSample(s);
-          } catch {
-            // bỏ qua lỗi callback từng mẫu để không sập poll loop
-          }
+    // SCADA R0 — đường POLL dùng vòng poll CHUNG (chống chồng tick, hạn đọc, mẫu xấu một lần khi mất liên lạc sau cờ); đường monitored-items ở trên giữ cơ chế riêng.
+    return taoVongPoll({
+      tags,
+      intervalMs,
+      deadlineMs: tuyChon?.deadlineMs,
+      doc: async (t) => {
+        try {
+          return await this.readTags(t);
+        } catch (e) {
+          this.lastError = (e as Error)?.message || String(e);
+          throw e;
         }
-      } catch (e) {
-        this.lastError = (e as Error)?.message || String(e);
-      }
-    };
-
-    const timer = setInterval(() => void tick(), intervalMs > 0 ? intervalMs : 5000);
-    if (typeof (timer as NodeJS.Timeout).unref === "function") {
-      (timer as NodeJS.Timeout).unref();
-    }
-
-    return {
-      close: async () => {
-        clearInterval(timer);
       },
-    };
+      onSample,
+      onTick: tuyChon?.onTick,
+      phanLoiLoi: chatLuongLoiChung,
+      chatLuongV2: chatLuongV2Bat(),
+      nhan: "opcua",
+    });
   }
 
   /**
@@ -602,20 +629,20 @@ export class OpcuaDriver extends NotImplementedDriver {
           const raw = dataValue?.value?.value;
           const sc = dataValue?.statusCode;
           const scVal = typeof sc?.value === "number" ? sc.value : 0;
-          const scGood = scVal === 0;
           const norm = normalizeOpcuaValue(raw, tag.dataType, tag.scale ?? 1, tag.offset ?? 0);
-          const quality = scGood ? norm.quality : "bad";
+          const cl = chatLuongMauOpcua(sc, scVal, norm);
           const { timestamp, tsSource } = opcuaSampleTime(dataValue);
           this.lastOkAt = new Date();
           const sample: OtSample = {
             tagKey: tag.tagKey,
             raw,
-            value: quality === "good" ? norm.value : null,
-            quality,
+            value: cl.value,
+            quality: cl.quality,
             timestamp,
             tsSource,
           };
-          if (!scGood) sample.statusCode = describeStatus(sc, scVal);
+          if (cl.statusCode !== undefined) sample.statusCode = cl.statusCode;
+          if (cl.reason !== undefined) sample.reason = cl.reason;
           void Promise.resolve(onSample(sample)).catch(() => {
             // swallow per-sample callback errors so one bad handler can't kill the push
           });
@@ -757,11 +784,15 @@ export class OpcuaDriver extends NotImplementedDriver {
           const overflow = sc?.hasOverflowBit === true || (scVal & 0x0480) === 0x0480;
           const goodSeverity = (scVal & 0xc0000000) === 0;
           const norm = normalizeOpcuaValue(raw, tag.dataType, tag.scale ?? 1, tag.offset ?? 0);
-          const quality = goodSeverity ? norm.quality : "bad";
+          // Mức nghiêm trọng tốt (kể cả bit thông tin/overflow) giữ nguyên đường cũ; còn lại: cờ TẮT ⇒ bad, cờ BẬT ⇒ 3 mức.
+          const cl = goodSeverity
+            ? { quality: norm.quality, value: norm.quality === "good" ? norm.value : null }
+            : chatLuongMauOpcua(sc, scVal, norm);
           const { timestamp, tsSource } = opcuaSampleTime(dv);
           this.lastOkAt = new Date();
-          const sample: OtSample = { tagKey: tag.tagKey, raw, value: quality === "good" ? norm.value : null, quality, timestamp, tsSource };
-          if (!goodSeverity) sample.statusCode = describeStatus(sc, scVal);
+          const sample: OtSample = { tagKey: tag.tagKey, raw, value: cl.value, quality: cl.quality, timestamp, tsSource };
+          if ("statusCode" in cl && cl.statusCode !== undefined) sample.statusCode = cl.statusCode;
+          if ("reason" in cl && cl.reason !== undefined) sample.reason = cl.reason;
           sink.onValue(tag.tagKey, sample, { overflow });
         } catch (e) {
           sink.onValue(tag.tagKey, { tagKey: tag.tagKey, raw: undefined, value: null, quality: "bad", timestamp: new Date(), tsSource: "server", statusCode: `decode failed: ${(e as Error)?.message ?? e}` }, { overflow: false });

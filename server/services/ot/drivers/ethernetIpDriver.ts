@@ -31,11 +31,22 @@ import type {
   OtWrite,
   OtHealth,
   OnOtSample,
+  TuyChonVongPoll,
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseEipTag, coerceEipValue } from "./eipTag";
 import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
+import { taoVongPoll } from "../vongPoll";
+import { chatLuongLoiChung, chatLuongV2Bat } from "../chatLuong";
+
+/** statusCode cho lỗi đọc EIP: `err.code ?? err.message`, cắt 80 ký tự. */
+function maLoiEip(err: unknown): string {
+  const e = err as { code?: unknown; message?: unknown } | null | undefined;
+  const raw = e?.code ?? e?.message ?? (typeof err === "string" ? err : "");
+  const s = String(raw).trim().slice(0, 80);
+  return s || "unknown";
+}
 
 /** Ép raw (đã inverse scale) sang kiểu st-ethernet-ip chấp nhận theo dataType. */
 function coerceEipWrite(raw: unknown, dataType: string): number | boolean | string {
@@ -205,6 +216,8 @@ export class EthernetIpDriver extends NotImplementedDriver {
         quality: "bad",
         timestamp: now(),
         tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
+        // SCADA R0 (C2) — sau cờ: mã lỗi st-ethernet-ip (err.code ?? err.message, cắt 80 ký tự) + reason device_error.
+        ...(chatLuongV2Bat() ? { statusCode: maLoiEip(err), reason: "device_error" as const } : {}),
       } satisfies OtSample;
     }
   }
@@ -228,34 +241,29 @@ export class EthernetIpDriver extends NotImplementedDriver {
     tags: OtTagAddress[],
     onSample: OnOtSample,
     intervalMs = 5000,
+    tuyChon?: TuyChonVongPoll,
   ): Promise<OtSubscriptionHandle> {
     if (!this.connected) throw new DeviceUnreachableError("ethernet-ip");
 
-    const tick = async () => {
-      try {
-        const samples = await this.readTags(tags);
-        for (const s of samples) {
-          try {
-            await onSample(s);
-          } catch {
-            // bỏ qua lỗi callback từng mẫu
-          }
+    // SCADA R0 — vòng poll DÙNG CHUNG (chống chồng tick, hạn đọc, mẫu xấu một lần khi mất liên lạc sau cờ).
+    return taoVongPoll({
+      tags,
+      intervalMs,
+      deadlineMs: tuyChon?.deadlineMs,
+      doc: async (t) => {
+        try {
+          return await this.readTags(t);
+        } catch (e) {
+          this.lastError = (e as Error)?.message || String(e);
+          throw e;
         }
-      } catch (e) {
-        this.lastError = (e as Error)?.message || String(e);
-      }
-    };
-
-    const timer = setInterval(() => void tick(), intervalMs > 0 ? intervalMs : 5000);
-    if (typeof (timer as NodeJS.Timeout).unref === "function") {
-      (timer as NodeJS.Timeout).unref();
-    }
-
-    return {
-      close: async () => {
-        clearInterval(timer);
       },
-    };
+      onSample,
+      onTick: tuyChon?.onTick,
+      phanLoiLoi: chatLuongLoiChung,
+      chatLuongV2: chatLuongV2Bat(),
+      nhan: "ethernet-ip",
+    });
   }
 
   /** Ghi một write; trả OtCommandResult (không throw). */

@@ -25,6 +25,7 @@ import type {
   OtWrite,
   OtHealth,
   OnOtSample,
+  TuyChonVongPoll,
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
@@ -37,6 +38,8 @@ import {
 } from "./modbusDecode";
 import { inverseScale } from "./otScale";
 import { closeModbusClient, withDeadline } from "./boundedClose";
+import { taoVongPoll } from "../vongPoll";
+import { chatLuongLoiModbus, chatLuongV2Bat } from "../chatLuong";
 
 /**
  * doc 81 Đợt 1B Task 1 — miền giá trị RAW của thanh ghi 1-word theo kiểu khai báo.
@@ -227,6 +230,8 @@ export class ModbusDriver extends NotImplementedDriver {
         quality: "bad",
         timestamp: now(),
         tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
+        // SCADA R0 (C2) — sau cờ: nói VÌ SAO (mã exception Modbus ⇒ config_error/device_error; lỗi mạng ⇒ comm_lost).
+        ...(chatLuongV2Bat() ? chatLuongLoiModbus(err) : {}),
       } satisfies OtSample;
     }
   }
@@ -251,34 +256,29 @@ export class ModbusDriver extends NotImplementedDriver {
     tags: OtTagAddress[],
     onSample: OnOtSample,
     intervalMs = 5000,
+    tuyChon?: TuyChonVongPoll,
   ): Promise<OtSubscriptionHandle> {
     if (!this.connected) throw new DeviceUnreachableError("modbus");
 
-    const tick = async () => {
-      try {
-        const samples = await this.readTags(tags);
-        for (const s of samples) {
-          try {
-            await onSample(s);
-          } catch {
-            // bỏ qua lỗi callback từng mẫu
-          }
+    // SCADA R0 — vòng poll DÙNG CHUNG (chống chồng tick, hạn đọc, mẫu xấu một lần khi mất liên lạc sau cờ).
+    return taoVongPoll({
+      tags,
+      intervalMs,
+      deadlineMs: tuyChon?.deadlineMs,
+      doc: async (t) => {
+        try {
+          return await this.readTags(t);
+        } catch (e) {
+          this.lastError = (e as Error)?.message || String(e);
+          throw e;
         }
-      } catch (e) {
-        this.lastError = (e as Error)?.message || String(e);
-      }
-    };
-
-    const timer = setInterval(() => void tick(), intervalMs > 0 ? intervalMs : 5000);
-    if (typeof (timer as NodeJS.Timeout).unref === "function") {
-      (timer as NodeJS.Timeout).unref();
-    }
-
-    return {
-      close: async () => {
-        clearInterval(timer);
       },
-    };
+      onSample,
+      onTick: tuyChon?.onTick,
+      phanLoiLoi: chatLuongLoiModbus,
+      chatLuongV2: chatLuongV2Bat(),
+      nhan: "modbus",
+    });
   }
 
   /** Ghi một write; trả OtCommandResult (không throw). */

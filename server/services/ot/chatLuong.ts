@@ -9,7 +9,7 @@
 import { DeviceUnreachableError } from "../../_core/deviceErrors";
 import type { LyDoChatLuong, OtQuality, OtSample, OtTagAddress } from "./otDriver";
 
-/** OPC UA StatusCode (đã bỏ 2 bit cao không đổi nghĩa) báo MẤT LIÊN LẠC. */
+/** OPC UA StatusCode (mã lõi = 16 bit cao; 16 bit thấp là bit thông tin, đã che) báo MẤT LIÊN LẠC. */
 const OPCUA_MAT_LIEN_LAC = new Set<number>([
   0x80310000, // BadNoCommunication
   0x808a0000, // BadNotConnected
@@ -55,9 +55,11 @@ export function chatLuongOpcua(
   const muc = sc >>> 30;
   if (muc === 0) return { quality: "good" };
   if (muc === 1) return { quality: "uncertain", statusCode: moTa, reason: "device_error" };
-  const reason: LyDoChatLuong = OPCUA_MAT_LIEN_LAC.has(sc)
+  // Tra tập theo mã lõi (16 bit cao): 16 bit thấp là bit thông tin/giới hạn/overflow, không đổi nghĩa mã.
+  const loi = (sc & 0xffff0000) >>> 0;
+  const reason: LyDoChatLuong = OPCUA_MAT_LIEN_LAC.has(loi)
     ? "comm_lost"
-    : OPCUA_SAI_CAU_HINH.has(sc)
+    : OPCUA_SAI_CAU_HINH.has(loi)
       ? "config_error"
       : "device_error";
   return { quality: "bad", statusCode: moTa, reason };
@@ -125,4 +127,9 @@ export function mauXauChoMoiTag(tags: OtTagAddress[], statusCode: string, reason
     statusCode,
     reason,
   }));
+}
+
+/** Cờ OT_CHAT_LUONG_V2_ENABLED (mặc định TẮT): driver phát chất lượng 3 mức + mẫu xấu khi mất liên lạc. Đọc tại điểm dùng. */
+export function chatLuongV2Bat(): boolean {
+  return process.env.OT_CHAT_LUONG_V2_ENABLED === "true";
 }

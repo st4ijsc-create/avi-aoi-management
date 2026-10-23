@@ -4,7 +4,7 @@
  * + link-loss. KHÔNG cần phần cứng (sẵn sàng HW-FAT, KHÔNG tuyên bố đã-validate HW).
  */
 import net from "node:net";
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { SlmpDriver } from "./slmpDriver";
 import {
   buildBatchReadWord,
@@ -237,6 +237,44 @@ describe("SlmpDriver (mock TCP server)", () => {
     expect(samples.every((s) => s.value === null)).toBe(true);
     const h = await d.health();
     expect(h.lastError).toMatch(/c059/i);
+    await d.disconnect();
+  });
+
+  it("SCADA R0 cờ BẬT: end-code 0xC059 ⇒ statusCode slmp_end_0xC059 + reason config_error", async () => {
+    vi.stubEnv("OT_CHAT_LUONG_V2_ENABLED", "true");
+    mock = await startMock({ frame: "3E", endCode: 0xc059 });
+    const d = new SlmpDriver();
+    await d.connect({ endpoint: `tcp://127.0.0.1:${mock.port}` });
+    const [s] = await d.readTags([{ tagKey: "a", address: "D0", dataType: "int" }]);
+    expect(s.quality).toBe("bad");
+    expect(s.statusCode).toBe("slmp_end_0xC059");
+    expect(s.reason).toBe("config_error");
+    await d.disconnect();
+    vi.unstubAllEnvs();
+  });
+
+  it("SCADA R0 cờ TẮT: end-code != 0 ⇒ bad trần (không statusCode/reason)", async () => {
+    mock = await startMock({ frame: "3E", endCode: 0xc059 });
+    const d = new SlmpDriver();
+    await d.connect({ endpoint: `tcp://127.0.0.1:${mock.port}` });
+    const [s] = await d.readTags([{ tagKey: "a", address: "D0", dataType: "int" }]);
+    expect(s.statusCode).toBeUndefined();
+    expect(s.reason).toBeUndefined();
+    await d.disconnect();
+  });
+
+  it("SCADA R0: subscribe đi qua vòng poll chung (onTick)", async () => {
+    mock = await startMock({ frame: "3E", words: [5] });
+    const d = new SlmpDriver();
+    await d.connect({ endpoint: `tcp://127.0.0.1:${mock.port}` });
+    const ticks: Array<{ ok: boolean }> = [];
+    const h = await d.subscribe([{ tagKey: "a", address: "D0", dataType: "int" }], () => undefined, 30, {
+      onTick: (e) => void ticks.push(e),
+    });
+    const t0 = Date.now();
+    while (ticks.length === 0 && Date.now() - t0 < 2000) await new Promise((r) => setTimeout(r, 10));
+    await h.close();
+    expect(ticks[0]?.ok).toBe(true);
     await d.disconnect();
   });
 

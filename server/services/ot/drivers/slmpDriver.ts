@@ -35,8 +35,11 @@ import type {
   OtWrite,
   OtHealth,
   OnOtSample,
+  TuyChonVongPoll,
 } from "../otDriver";
 import { inverseScale } from "./otScale";
+import { taoVongPoll } from "../vongPoll";
+import { chatLuongEndCodeSlmp, chatLuongLoiChung, chatLuongV2Bat } from "../chatLuong";
 import {
   parseSlmpDevice,
   buildBatchReadWord,
@@ -284,13 +287,31 @@ export class SlmpDriver implements OtDriver {
       return { tagKey: tag.tagKey, raw, value, quality: "good", timestamp: now(), tsSource: "server" } satisfies OtSample; // B6
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
-      return { tagKey: tag.tagKey, raw: null, value: null, quality: "bad", timestamp: now(), tsSource: "server" } satisfies OtSample; // B6
+      return {
+        tagKey: tag.tagKey,
+        raw: null,
+        value: null,
+        quality: "bad",
+        timestamp: now(),
+        tsSource: "server", // B6
+        // SCADA R0 (C2) — sau cờ: lỗi giao dịch/socket ⇒ (statusCode, reason) chung (timeout/mất liên lạc ⇒ comm_lost).
+        ...(chatLuongV2Bat() ? chatLuongLoiChung(err) : {}),
+      } satisfies OtSample;
     }
   }
 
   private badSample(tag: OtTagAddress, endCode: number): OtSample {
     this.lastError = `slmp end-code 0x${endCode.toString(16).padStart(4, "0").toUpperCase()} on ${tag.address}`;
-    return { tagKey: tag.tagKey, raw: null, value: null, quality: "bad", timestamp: new Date(), tsSource: "server" }; // B6
+    return {
+      tagKey: tag.tagKey,
+      raw: null,
+      value: null,
+      quality: "bad",
+      timestamp: new Date(),
+      tsSource: "server", // B6
+      // SCADA R0 (C2) — sau cờ: end code SLMP ⇒ slmp_end_0xNNNN + reason (địa chỉ/thiết bị sai ⇒ config_error).
+      ...(chatLuongV2Bat() ? chatLuongEndCodeSlmp(endCode) : {}),
+    };
   }
 
   async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
@@ -303,27 +324,33 @@ export class SlmpDriver implements OtDriver {
     return out;
   }
 
-  async subscribe(tags: OtTagAddress[], onSample: OnOtSample, intervalMs = 5000): Promise<OtSubscriptionHandle> {
+  async subscribe(
+    tags: OtTagAddress[],
+    onSample: OnOtSample,
+    intervalMs = 5000,
+    tuyChon?: TuyChonVongPoll,
+  ): Promise<OtSubscriptionHandle> {
     if (!this.connected) throw new DeviceUnreachableError("slmp");
 
-    const tick = async () => {
-      try {
-        const samples = await this.readTags(tags);
-        for (const s of samples) {
-          try {
-            await onSample(s);
-          } catch {
-            // bỏ qua lỗi callback từng mẫu
-          }
+    // SCADA R0 — vòng poll DÙNG CHUNG (chống chồng tick, hạn đọc, mẫu xấu một lần khi mất liên lạc sau cờ).
+    return taoVongPoll({
+      tags,
+      intervalMs,
+      deadlineMs: tuyChon?.deadlineMs,
+      doc: async (t) => {
+        try {
+          return await this.readTags(t);
+        } catch (e) {
+          this.lastError = (e as Error)?.message || String(e);
+          throw e;
         }
-      } catch (e) {
-        this.lastError = (e as Error)?.message || String(e);
-      }
-    };
-
-    const timer = setInterval(() => void tick(), intervalMs > 0 ? intervalMs : 5000);
-    if (typeof (timer as NodeJS.Timeout).unref === "function") (timer as NodeJS.Timeout).unref();
-    return { close: async () => clearInterval(timer) };
+      },
+      onSample,
+      onTick: tuyChon?.onTick,
+      phanLoiLoi: chatLuongLoiChung,
+      chatLuongV2: chatLuongV2Bat(),
+      nhan: "slmp",
+    });
   }
 
   /** Ghi 1 write; trả OtCommandResult (KHÔNG throw). */
