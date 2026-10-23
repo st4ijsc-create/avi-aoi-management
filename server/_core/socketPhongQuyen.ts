@@ -284,6 +284,30 @@ export async function trongPhamViTagScada(data: DuLieuSocket | null | undefined,
   return machineId != null ? duocVaoPhongPhamVi(data, "machine", machineId) : coPhamViToanQuyen(data);
 }
 
+/**
+ * SCADA R0 final M4 — phạm vi cho CẢ một lần đăng ký `scada:subscribe`: MỘT `idsTrongPhamVi("machine")` (thay một `trongPhamVi` mỗi máy —
+ * tới ~500 lần DB mỗi đăng ký). Trả hàm kiểm thuần, cùng luật `trongPhamViTagScada`: máy có id ⇒ thuộc tập (toàn quyền ⇒ mọi id hợp lệ);
+ * `null` (adapter không gắn máy) ⇒ chỉ toàn quyền. Không phải người dùng / lỗi ⇒ từ chối tất cả (fail-closed).
+ */
+export async function taoKiemPhamViTagScada(data: DuLieuSocket | null | undefined): Promise<(machineId: number | null) => boolean> {
+  const tuChoi = (): boolean => false;
+  if (!laSocketNguoiDung(data)) return tuChoi;
+  try {
+    const { idsTrongPhamVi } = await layCongPhamVi();
+    const ids = await idsTrongPhamVi("machine", pvCuaSocket(data!));
+    if (ids === null) return (mid) => mid === null || idPhongHopLe(mid) !== null;
+    const tap = new Set(ids);
+    return (mid) => {
+      if (mid === null) return false;
+      const n = idPhongHopLe(mid);
+      return n !== null && tap.has(n);
+    };
+  } catch (err) {
+    console.error("[Socket.io] loi kiem pham vi tag SCADA:", (err as Error)?.message ?? err);
+    return tuChoi;
+  }
+}
+
 /** Cổng ĐẦY ĐỦ cho một tag: quyền ∧ phạm vi. `scadaSocket` gọi hai nửa riêng (quyền MỘT lần mỗi đăng ký, phạm vi mỗi máy). */
 export async function duocXemTagScada(data: DuLieuSocket | null | undefined, machineId: number | null): Promise<boolean> {
   if (!(await coQuyenXemScada(data))) return false;

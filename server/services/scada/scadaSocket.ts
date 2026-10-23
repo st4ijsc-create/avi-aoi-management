@@ -11,7 +11,8 @@
  *
  * An toàn (bảo mật — một người dùng KHÔNG BAO GIỜ nhận tag ngoài phạm vi của mình):
  *   • KHÔNG `socket.join`, KHÔNG `io.emit`: chỉ `socket.emit` tới đúng socket đã đăng ký (census phòng/phát không đổi).
- *   • Quyền kiểm TỪNG TAG lúc đăng ký (`duocXemTagScada`, cache theo machineId trong lần đăng ký); tag bị từ chối ⇒ `denied`, KHÔNG gửi giá trị.
+ *   • Quyền kiểm TỪNG TAG lúc đăng ký (quyền MỘT lần + phạm vi MỘT `idsTrongPhamVi("machine")` mỗi đăng ký — `taoKiemPhamViTagScada`,
+ *     final M4); tag bị từ chối ⇒ `denied`, KHÔNG gửi giá trị.
  *     Adapter không tồn tại ⇒ cũng `denied` (cùng kết quả với ngoài phạm vi: không lộ tồn tại).
  *   • Delta chỉ mang tag ĐÃ ĐĂNG KÝ + ĐÃ ĐƯỢC PHÉP. Máy hiệu lực của adapter được bộ đệm quyết lúc ĐỌC; nếu khác máy đã kiểm lúc đăng ký
  *     (adapter bị chuyển máy giữa chừng) ⇒ KHÔNG gửi (người dùng phải đăng ký lại để kiểm lại).
@@ -22,7 +23,7 @@
  * dừng khi đăng ký cuối bị huỷ/ngắt). Trạng thái ở `socket.data.__scada`.
  */
 import { randomUUID } from "node:crypto";
-import { coQuyenXemScada, laSocketNguoiDung, trongPhamViTagScada, type DuLieuSocket } from "../../_core/socketPhongQuyen";
+import { coQuyenXemScada, laSocketNguoiDung, taoKiemPhamViTagScada, type DuLieuSocket } from "../../_core/socketPhongQuyen";
 import { boDemDangBat, dangKyThayDoi, layGiaTri, thongTinAdapter, type GiaTriCoTuoi } from "./boDemHienTai";
 import { DbUnavailableError } from "../../_core/dbErrors";
 
@@ -303,12 +304,10 @@ async function hoanTatDangKy(
     }
   }
 
-  // 3) PHẠM VI một lần mỗi máy khác nhau (cache trong đời đăng ký này)
-  const mayCanKiem = new Set<number | null>();
-  for (const m of mayCuaAdapter.values()) if (m.co) mayCanKiem.add(m.machineId);
-  const ketQua = new Map<number | null, boolean>();
-  // Tuần tự: số máy khác nhau trong một đăng ký nhỏ; mỗi lần là một cổng phạm vi (không dồn song song vào DB).
-  for (const mid of mayCanKiem) ketQua.set(mid, await trongPhamViTagScada(socket.data, mid).catch(() => false));
+  // 3) PHẠM VI: MỘT idsTrongPhamVi("machine") cho cả đăng ký (final M4 — trước: một trongPhamVi mỗi máy, tới ~500 lần DB). Chỉ hỏi khi có
+  // adapter đã biết (không quyền / không adapter nào ⇒ không chạm DB). Mặc định từ chối; adapter không gắn máy ⇒ chỉ toàn quyền.
+  const coAdapterDaBiet = [...mayCuaAdapter.values()].some((m) => m.co);
+  const trongPhamVi = coAdapterDaBiet ? await taoKiemPhamViTagScada(socket.data).catch(() => () => false) : () => false;
 
   // Socket ngắt / đăng ký bị huỷ (unsubscribe cùng subId, hoặc unsubscribe-tất-cả) trong lúc chờ ⇒ không tạo đăng ký, không snapshot, không bật vòng.
   if (st.daNgat || cho.huy || st.the !== the) return;
@@ -318,7 +317,7 @@ async function hoanTatDangKy(
   const denied: { adapterId: number; tagKey: string }[] = [];
   for (const [k, y] of yeuCau) {
     const m = mayCuaAdapter.get(y.adapterId);
-    if (m?.co && ketQua.get(m.machineId) === true) tags.set(k, { adapterId: y.adapterId, tagKey: y.tagKey, machineId: m.machineId });
+    if (m?.co && trongPhamVi(m.machineId) === true) tags.set(k, { adapterId: y.adapterId, tagKey: y.tagKey, machineId: m.machineId });
     else denied.push({ adapterId: y.adapterId, tagKey: y.tagKey });
   }
 

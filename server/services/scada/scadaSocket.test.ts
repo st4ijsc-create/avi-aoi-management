@@ -218,19 +218,44 @@ describe("kiem pham vi tung tag", () => {
     expect(sn.values).toEqual([[31, "t", null, "bad", 0, -1, true, "stale"]]);
   });
 
-  it("quyen nguoi dung duoc kiem DUNG MOT lan moi lan dang ky du co nhieu may; pham vi moi may MOT lan", async () => {
+  // final M4 — phạm vi: MỘT idsTrongPhamVi("machine") mỗi lần đăng ký (không phải một trongPhamVi mỗi máy — tới ~500 lần DB).
+  it("quyen nguoi dung duoc kiem DUNG MOT lan moi lan dang ky du co nhieu may; pham vi: MOT idsTrongPhamVi('machine') moi dang ky, khong trongPhamVi", async () => {
     dangKyAdapter(10, 5);
     dangKyAdapter(11, 6);
     dangKyAdapter(12, 7);
+    dangKyAdapter(13, null);
     const trongPhamVi = vi.fn(async () => true);
-    __datCongPhamViChoTest({ trongPhamVi, idsTrongPhamVi: async () => null });
-    const { goi } = taoSocket();
+    const idsTrongPhamVi = vi.fn(async (_cap: string) => [5, 7]);
+    __datCongPhamViChoTest({ trongPhamVi, idsTrongPhamVi } as never);
+    const { goi, nhan } = taoSocket();
     await goi("scada:subscribe", {
       subId: "x",
-      tags: [10, 11, 12].flatMap((adapterId) => [{ adapterId, tagKey: "a" }, { adapterId, tagKey: "b" }]),
+      tags: [10, 11, 12, 13].flatMap((adapterId) => [{ adapterId, tagKey: "a" }, { adapterId, tagKey: "b" }]),
     });
     expect(kiemQuyen).toHaveBeenCalledTimes(1);
-    expect(trongPhamVi).toHaveBeenCalledTimes(3);
+    expect(trongPhamVi).not.toHaveBeenCalled();
+    expect(idsTrongPhamVi).toHaveBeenCalledTimes(1);
+    expect(idsTrongPhamVi.mock.calls[0][0]).toBe("machine");
+    const [sn] = nhan("scada:snapshot");
+    // may 6 ngoai pham vi; adapter khong gan may (13) chi cho toan quyen ⇒ denied
+    expect(sn.denied).toEqual([
+      { adapterId: 11, tagKey: "a" },
+      { adapterId: 11, tagKey: "b" },
+      { adapterId: 13, tagKey: "a" },
+      { adapterId: 13, tagKey: "b" },
+    ]);
+    expect(sn.values.map((v: unknown[]) => v[0])).toEqual([10, 10, 12, 12]);
+  });
+
+  it("final M4 — toan quyen (idsTrongPhamVi null) ⇒ moi may + adapter khong gan may deu duoc, van MOT lan goi", async () => {
+    dangKyAdapter(10, 5);
+    dangKyAdapter(13, null);
+    const idsTrongPhamVi = vi.fn(async () => null);
+    __datCongPhamViChoTest({ trongPhamVi: vi.fn(async () => false), idsTrongPhamVi } as never);
+    const { goi, nhan } = taoSocket();
+    await goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "a" }, { adapterId: 13, tagKey: "a" }] });
+    expect(idsTrongPhamVi).toHaveBeenCalledTimes(1);
+    expect(nhan("scada:snapshot")[0].denied).toEqual([]);
   });
 
   it("khong co quyen => tat ca denied va KHONG tra CSDL adapter", async () => {
