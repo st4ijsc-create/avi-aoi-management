@@ -4,7 +4,8 @@
  *   - Lần đọc ĐẦU chạy ngay lúc tạo vòng (T12 D2), sau đó mỗi `intervalMs`.
  *   - Chống chồng tick: tick tới khi tick trước chưa xong ⇒ BỎ QUA (đếm `soLanChong()`), không dồn hàng đợi.
  *   - Mỗi lần đọc bọc `withDeadline` (`deadlineMs ?? max(2×intervalMs, 6000)`): đọc treo không giữ vòng mãi mãi. Chốt chống chồng chỉ nhả khi
- *     CHÍNH lần đọc xong (hạn không huỷ được đọc): PLC treo ⇒ không dồn đọc song song; kết quả muộn bị nuốt.
+ *     CHÍNH lần đọc xong (hạn không huỷ được đọc): PLC treo ⇒ không dồn đọc song song. Kết quả muộn: V2 bật ⇒ nuốt; V2 tắt ⇒ VẪN phát
+ *     khi về (final I1, hành vi trước R0), tick đó vẫn báo timeout.
  *   - Mất liên lạc: báo `onTick({ok:false, timeout})`; khi `chatLuongV2` và là tick ĐẦU của đợt lỗi ⇒ phát MỘT loạt
  *     mẫu `bad` (mỗi tag một mẫu). Các tick lỗi tiếp theo im lặng; có lại một tick tốt ⇒ đợt lỗi kết thúc.
  *   - Lỗi `onSample` của một mẫu bị nuốt (giữ hành vi cũ của driver); `close()` dừng hẳn, tick dở dang không phát gì nữa.
@@ -60,17 +61,44 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
     const t0 = Date.now();
     try {
       let mau: OtSample[];
+      let docP: Promise<OtSample[]> | null = null;
+      let docXong = false;
       try {
-        const docP = (async () => o.doc(o.tags))();
+        docP = (async () => o.doc(o.tags))();
         docDangTreo = true;
         const nha = (): void => {
+          docXong = true;
           docDangTreo = false;
         };
-        // Chốt chỉ nhả khi CHÍNH docP xong (không phải ở hạn). Kết quả/lỗi muộn của lần đọc đã bỏ bị nuốt ở đây.
+        // Chốt chỉ nhả khi CHÍNH docP xong (không phải ở hạn). V2 bật: kết quả/lỗi muộn của lần đọc đã bỏ bị nuốt ở đây.
         docP.then(nha, nha);
         mau = await withDeadline(docP, hanMs, `${o.nhan} read`);
       } catch (err) {
         if (dong) return;
+        // SCADA R0 final I1 — cờ V2 TẮT (hành vi trước R0): hạn vòng poll cắt mà docP CHƯA xong ⇒ kết quả muộn VẪN phát khi về
+        // (driver tuần tự: hai thanh ghi không trả lời không được chặn mãi các tag khoẻ). Tick vẫn báo timeout (bộ đếm, D1) như cũ.
+        // Chốt giữ tới khi phát xong (mẫu muộn không xen với mẫu của tick sau). close() ⇒ không phát gì.
+        if (!o.chatLuongV2 && docP && !docXong) {
+          docDangTreo = true;
+          const pMuon = docP;
+          void (async () => {
+            try {
+              const muon = await pMuon;
+              for (const s of muon) {
+                if (dong) return;
+                try {
+                  await o.onSample(s);
+                } catch {
+                  // bỏ qua lỗi callback từng mẫu
+                }
+              }
+            } catch {
+              // lỗi muộn của lần đọc đã bỏ: đã báo tick timeout, nuốt
+            } finally {
+              docDangTreo = false;
+            }
+          })();
+        }
         // SCADA R0 T12 (D1) — tick lỗi mang phân loại (statusCode, reason) để otManager đếm tick hỏng (timeout / comm_lost).
         const { statusCode, reason } = o.phanLoiLoi(err);
         baoTick({ ok: false, timeout: laLoiTimeout(err), ms: Date.now() - t0, tags: [], statusCode, reason });
