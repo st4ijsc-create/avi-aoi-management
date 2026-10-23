@@ -29,7 +29,7 @@ import { withDeadline } from "./drivers/boundedClose";
 import { adapterTargetFingerprint, runtimeAdapterTarget } from "./adapterTarget";
 import { baoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
 import { chatLuongLoiChung } from "./chatLuong";
-import { khoangNoiLaiMs, NOI_LAI_NHANH_TOI_THIEU_MS } from "./reconnectNhanh";
+import { khoangNoiLaiMs, NOI_LAI_NHANH_TOI_THIEU_MS, thoiGianOnDinhMs } from "./reconnectNhanh";
 
 let running = false;
 /**
@@ -137,6 +137,10 @@ interface LegacyEntry {
   listed: boolean;
   /** final wave 1 (R-1D-k) — dấu vân tay kết nối ghi lại ở lần nối thành công gần nhất (null = chưa nối). */
   fingerprint?: string | null;
+  /** SCADA R0 — Date.now() lúc lần nối thành công gần nhất (bộ đếm `failures` chỉ về 0 khi liên kết giữ vững ≥ thoiGianOnDinhMs). */
+  upSince?: number;
+  /** SCADA R0 — lần nối gần nhất là nối LẠI (sau thất bại/mất), không phải lần khởi động đầu. */
+  reconnected?: boolean;
   /** SCADA R0 Task 5 — mã ngắn (chatLuongLoiChung) của lỗi khởi động/nối lại gần nhất; dùng cho mẫu xấu khi mất. */
   lastStatusCode?: string | null;
 }
@@ -166,7 +170,14 @@ function errText(err: unknown): string {
  */
 function baoLegacy(entry: LegacyEntry, tt: TrangThaiKetNoi, loi: string | null = null): void {
   if (legacy.get(entry.adapter.adapterId) !== entry) return;
-  baoTrangThaiAdapter(entry.adapter, tt, loi, new Date(), tt === "lost" ? entry.lastStatusCode : null);
+  baoTrangThaiAdapter(
+    entry.adapter,
+    tt,
+    loi,
+    new Date(),
+    tt === "lost" ? entry.lastStatusCode : null,
+    thoiGianOnDinhMs(entry.adapter.pollIntervalMs),
+  );
 }
 
 /** Chờ fn() tối đa ms; không bao giờ ném. */
@@ -272,7 +283,9 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
   entry.state = "active";
   entry.lastError = null;
   entry.lastStatusCode = null;
-  entry.failures = 0;
+  // KHÔNG đặt entry.failures = 0 ở đây: nối được rồi rớt ngay (thiết bị chấp nhận rồi đóng) phải làm backoff tích luỹ; bộ đếm chỉ
+  // về 0 khi liên kết giữ vững ≥ thoiGianOnDinhMs (legacyTick).
+  entry.upSince = Date.now();
   // Driver vừa nối được nhưng tự báo chưa thông (vd stub đang mô phỏng mất kết nối) ⇒ chưa phải "đã nối": legacyTick báo
   // 'connected' khi isConnected() thật sự true (không chập chờn lost↔connected, không phát lại mẫu xấu mỗi vòng nối lại).
   if (driverDangNoi(adapter)) baoLegacy(entry, "connected");
@@ -326,19 +339,39 @@ async function legacyTick(myEpoch: number): Promise<void> {
       }
       if (up) {
         baoLegacy(entry, "connected"); // no-op khi đã connected; sửa trạng thái nếu nối xong lúc driver chưa thông
+        // Liên kết đã giữ vững đủ lâu ⇒ đợt mất kết thúc: bộ đếm thất bại về 0.
+        if (entry.upSince !== undefined && Date.now() - entry.upSince >= thoiGianOnDinhMs(entry.adapter.pollIntervalMs)) {
+          entry.failures = 0;
+          entry.reconnected = false;
+        }
         continue;
       }
       console.warn(`[OT] adapter "${entry.adapter.code}" (${entry.adapter.protocol}) link lost — reconnecting`);
       entry.lastStatusCode = null; // không có đối tượng lỗi: mẫu xấu dùng "comm_lost"
       baoLegacy(entry, "lost", "driver reported disconnected");
+      // Liên kết vừa được NỐI LẠI mà rớt trước khi ổn định ⇒ tính là một lần thất bại (backoff tích luỹ, lần thử đầu cũng chờ);
+      // liên kết ổn định (hoặc lần nối đầu) rớt ⇒ bộ đếm về 0 và thử nối lại ngay như trước.
+      const khongOnDinh =
+        entry.reconnected === true &&
+        entry.upSince !== undefined &&
+        Date.now() - entry.upSince < thoiGianOnDinhMs(entry.adapter.pollIntervalMs);
       await dropLegacySession(entry, "driver reported disconnected");
       if (myEpoch !== epoch) return;
+      if (khongOnDinh) {
+        entry.failures += 1;
+        entry.nextRetryAt = Date.now() + legacyRetryDelay(entry.failures, entry.adapter.pollIntervalMs);
+      } else {
+        entry.failures = 0;
+        entry.reconnected = false;
+        entry.nextRetryAt = 0;
+      }
     }
     if (entry.state === "starting" || Date.now() < entry.nextRetryAt) continue;
     const prevState = entry.state;
     void attemptLegacyStart(entry, myEpoch).then((ok) => {
       if (myEpoch !== epoch) return;
       if (ok) {
+        entry.reconnected = true;
         listLegacyEntryIfNeeded(entry);
         console.log(
           `[OT] adapter "${entry.adapter.code}" (${entry.adapter.protocol}) ${prevState === "error" ? "started" : "reconnected"}, ${entry.adapter.tags.length} tag(s)`,
@@ -361,8 +394,7 @@ async function legacyTick(myEpoch: number): Promise<void> {
 async function dropLegacySession(entry: LegacyEntry, reason: string, stepMs: number = OT_ADAPTER_START_CLEANUP_GRACE_MS): Promise<void> {
   entry.state = "reconnecting";
   entry.lastError = reason;
-  entry.failures = 0;
-  entry.nextRetryAt = 0;
+  entry.nextRetryAt = 0; // người gọi (legacyTick) đặt lại theo bộ đếm thất bại; KHÔNG xoá `failures` ở đây
   const h = entry.handle;
   entry.handle = null;
   entry.inflight = true;
@@ -674,7 +706,7 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
       if (next !== "stopped" && (epoch !== epochLucDung || detachToken(adapter.adapterId) !== tokLucDung)) return;
       switch (next) {
         case "connected":
-          baoTrangThaiAdapter(adapter, "connected", null);
+          baoTrangThaiAdapter(adapter, "connected", null, new Date(), null, thoiGianOnDinhMs(adapter.pollIntervalMs));
           break;
         case "reconnecting":
         case "failed":
@@ -989,8 +1021,8 @@ export async function resetAdapterSession(
     if (myEpoch !== epoch) return { reset: false, via: "legacy", error: "OT stopped during the reset" };
     const left = end - Date.now();
     if (left <= 0) {
-      entry.failures = 1;
-      entry.nextRetryAt = Date.now() + legacyRetryDelay(1, entry.adapter.pollIntervalMs);
+      entry.failures += 1;
+      entry.nextRetryAt = Date.now() + legacyRetryDelay(entry.failures, entry.adapter.pollIntervalMs);
       baoLegacy(entry, "lost", entry.lastError);
       return { reset: false, via: "legacy", error: `session reset budget ${budgetMs}ms spent before reconnect` };
     }
@@ -1000,8 +1032,8 @@ export async function resetAdapterSession(
       listLegacyEntryIfNeeded(entry);
       return { reset: true, via: "legacy" };
     }
-    entry.failures = 1;
-    entry.nextRetryAt = Date.now() + legacyRetryDelay(1, entry.adapter.pollIntervalMs);
+    entry.failures += 1;
+    entry.nextRetryAt = Date.now() + legacyRetryDelay(entry.failures, entry.adapter.pollIntervalMs);
     baoLegacy(entry, "lost", entry.lastError);
     return { reset: false, via: "legacy", error: entry.lastError ?? "reconnect failed" };
   } catch (err) {

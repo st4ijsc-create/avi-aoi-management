@@ -180,6 +180,27 @@ describe("mẫu xấu khi chuyển 'mất' (C1)", () => {
     expect(layTrangThaiAdapter(AD.adapterId)?.soLanMat).toBe(3);
   });
 
+  it("onDinhMs: connected NGẮN rồi lost vẫn là MỘT đợt (soLanMat 1, 1 loạt mẫu xấu); connected ≥ onDinhMs rồi lost ⇒ đợt mới", async () => {
+    batCo(false, true);
+    const ON_DINH = 5_000;
+    baoTrangThaiAdapter(AD, "lost", "e");
+    for (let i = 0; i < 4; i++) {
+      await vi.advanceTimersByTimeAsync(100);
+      baoTrangThaiAdapter(AD, "connected", null, new Date(), null, ON_DINH);
+      await vi.advanceTimersByTimeAsync(50);
+      baoTrangThaiAdapter(AD, "lost", "e");
+    }
+    expect(layTrangThaiAdapter(AD.adapterId)?.soLanMat).toBe(1);
+    expect(ingestSamplesMock).toHaveBeenCalledTimes(1);
+
+    baoTrangThaiAdapter(AD, "connected", null, new Date(), null, ON_DINH);
+    await vi.advanceTimersByTimeAsync(ON_DINH + 1);
+    baoTrangThaiAdapter(AD, "lost", "e");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(layTrangThaiAdapter(AD.adapterId)?.soLanMat).toBe(2);
+    expect(ingestSamplesMock).toHaveBeenCalledTimes(2);
+  });
+
   it("statusCode tuỳ chọn thay cho 'comm_lost' ở mẫu xấu (reason vẫn comm_lost); bỏ trống/rỗng ⇒ 'comm_lost'", async () => {
     batCo(false, true);
     baoTrangThaiAdapter(AD, "lost", "e", new Date(), "ECONNRESET");

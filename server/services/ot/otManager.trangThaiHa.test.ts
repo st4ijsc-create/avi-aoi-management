@@ -116,10 +116,11 @@ describe("otManager HA — ánh xạ onStateChange → trạng thái adapter", (
 
     s.emit("connected");
     expect(tt()).toBe("connected");
-    s.emit("failed");
+    s.emit("failed"); // rớt ngay sau khi nối (chưa ổn định) ⇒ VẪN là đợt mất cũ: không phát lại mẫu xấu, soLanMat giữ 1
     expect(tt()).toBe("lost");
     await flush();
-    expect(ingestSamplesMock).toHaveBeenCalledTimes(2);
+    expect(ingestSamplesMock).toHaveBeenCalledTimes(1);
+    expect(layTrangThaiAdapter(901)?.soLanMat).toBe(1);
 
     s.emit("stopped");
     expect(tt()).toBe("disabled");
@@ -127,7 +128,31 @@ describe("otManager HA — ánh xạ onStateChange → trạng thái adapter", (
     s.emit("reconnecting");
     expect(tt()).toBe("disabled");
     await flush();
-    expect(ingestSamplesMock).toHaveBeenCalledTimes(2); // không thêm mẫu xấu
+    expect(ingestSamplesMock).toHaveBeenCalledTimes(1); // không thêm mẫu xấu
+  });
+
+  it("liên kết đã ỔN ĐỊNH (giữ ≥ max(3 × poll, 5 s)) rồi rớt ⇒ đợt mất MỚI: soLanMat 2 và mẫu xấu lần 2", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      expect(await ot.startOt()).toBe(true);
+      const s = hoisted.sups[0];
+      s.emit("connected");
+      s.emit("reconnecting");
+      await flush();
+      expect(ingestSamplesMock).toHaveBeenCalledTimes(1);
+      s.emit("connected");
+      vi.setSystemTime(Date.now() + 4_000); // poll 500 ⇒ ổn định = 5 s
+      s.emit("failed");
+      expect(layTrangThaiAdapter(901)?.soLanMat).toBe(1); // 4 s < 5 s: chưa ổn định
+      s.emit("connected");
+      vi.setSystemTime(Date.now() + 6_000);
+      s.emit("failed");
+      expect(layTrangThaiAdapter(901)?.soLanMat).toBe(2);
+      await flush();
+      expect(ingestSamplesMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("statusCode của supervisor được dùng cho mẫu xấu", async () => {

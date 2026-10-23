@@ -20,7 +20,8 @@ import { layTrangThaiAdapter, __datLaiTrangThaiAdapter } from "./trangThaiAdapte
 
 const hoisted = vi.hoisted(() => ({ adapters: [] as unknown[] }));
 vi.mock("./deviceAdapter", () => ({ loadEnabledAdapters: async () => hoisted.adapters }));
-vi.mock("./ingest", () => ({ ingestSample: async () => undefined, ingestSamples: async () => undefined }));
+const ingestSamplesMock = vi.hoisted(() => vi.fn(async (_a: unknown, _s: unknown[]) => undefined));
+vi.mock("./ingest", () => ({ ingestSample: async () => undefined, ingestSamples: ingestSamplesMock }));
 
 const TAGS: OtTagAddress[] = [{ tagKey: "t1", address: "a1", dataType: "float" }];
 
@@ -29,16 +30,21 @@ class DriverGia implements OtDriver {
   readonly protocol = "stub" as const;
   down = false;
   connected = false;
+  /** > 0: liên kết "chấp nhận rồi đóng" — isConnected() thành false `chapChonMs` sau mỗi lần connect thành công. */
+  chapChonMs = 0;
+  private noiLuc = 0;
   connectTimes: number[] = [];
   async connect(_c?: OtConnectionConfig): Promise<void> {
     this.connectTimes.push(Date.now());
     if (this.down) throw new Error("connect refused");
     this.connected = true;
+    this.noiLuc = Date.now();
   }
   async disconnect(): Promise<void> {
     this.connected = false;
   }
   isConnected(): boolean {
+    if (this.chapChonMs > 0 && Date.now() - this.noiLuc >= this.chapChonMs) return false;
     return this.connected && !this.down;
   }
   async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
@@ -61,6 +67,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
   vi.setSystemTime(new Date("2026-10-23T08:00:00Z"));
   __datLaiTrangThaiAdapter();
+  ingestSamplesMock.mockClear();
 });
 afterEach(() => {
   __datLaiTrangThaiAdapter();
@@ -136,7 +143,74 @@ describe("HA — ConnectionSupervisor.nextBackoffDelay", () => {
   });
 });
 
+describe("HA — liên kết nối được rồi rớt ngay (thiết bị chạm giới hạn kết nối)", () => {
+  it("nối lại theo lịch nhanh 10 lần rồi backoff lũy thừa — KHÔNG vòng lặp mỗi chu kỳ health mãi mãi", async () => {
+    const drv = new DriverGia();
+    drv.chapChonMs = 50;
+    const sup = new ConnectionSupervisor({
+      adapterId: 2,
+      code: "ADP2",
+      protocol: "stub",
+      tags: TAGS,
+      pollIntervalMs: 500,
+      endpoints: [{ label: "primary", connection: { endpoint: "primary://host" } }],
+      createDriver: () => drv,
+      onSample: async () => {},
+      healthIntervalMs: 50,
+      backoff: { initialMs: 2000, maxMs: 30_000, factor: 2, jitter: 0 },
+    });
+    await sup.start();
+    await vi.advanceTimersByTimeAsync(120_000);
+    const g = gaps(drv.connectTimes);
+    // chu kỳ đầu: rớt của lần nối ĐẦU được nối lại ngay (như cũ); từ đó mỗi lần rớt-sớm là một thất bại
+    expect(g[0]).toBeLessThanOrEqual(100);
+    for (const x of g.slice(1, 11)) {
+      expect(x).toBeGreaterThanOrEqual(500);
+      expect(x).toBeLessThanOrEqual(700); // max(poll, 500) + độ hạt của vòng health 50 ms
+    }
+    expect(g[11]).toBeGreaterThanOrEqual(2_000); // pha lũy thừa
+    expect(g[12]).toBeGreaterThan(g[11]);
+    expect(g[13]).toBeGreaterThan(g[12]);
+    expect(drv.connectTimes.length).toBeLessThan(30); // vòng 500 ms mãi mãi sẽ là ~240 lần trong 120 s
+    expect(sup.status().consecutiveFailures).toBeGreaterThan(10);
+    await sup.stop();
+  });
+});
+
 describe("legacy — watchdog + nextRetryAt", () => {
+  function batCo(): void {
+    vi.stubEnv("OT_GATEWAY_ENABLED", "true");
+    vi.stubEnv("OT_CONN_HA_ENABLED", "false");
+    vi.stubEnv("OT_CHAT_LUONG_V2_ENABLED", "true");
+    vi.stubEnv("OT_GHI_TRANG_THAI_ADAPTER_ENABLED", "false");
+  }
+
+  it("liên kết nối được rồi rớt ngay: lịch nhanh 10 lần rồi backoff lũy thừa; MỘT đợt mất (soLanMat 1, đúng 1 loạt mẫu xấu)", async () => {
+    batCo();
+    const drv = new DriverGia();
+    drv.chapChonMs = 50;
+    hoisted.adapters = [adapter(drv)];
+    const ot = await import("./otManager");
+    try {
+      expect(await ot.startOt()).toBe(true);
+      await vi.advanceTimersByTimeAsync(300_000);
+      const g = gaps(drv.connectTimes);
+      expect(g[0]).toBeLessThanOrEqual(600); // rớt của lần nối ĐẦU: thử lại ngay ở vòng canh kế (như cũ)
+      for (const x of g.slice(1, 11)) {
+        expect(x).toBeGreaterThanOrEqual(1000);
+        expect(x).toBeLessThanOrEqual(2000); // poll 1000 + phát hiện ở vòng canh 500
+      }
+      expect(g[11]).toBeGreaterThanOrEqual(5_000); // pha lũy thừa (OT_LEGACY_RECONNECT_MS mặc định 5000)
+      expect(g[12]).toBeGreaterThan(g[11]);
+      expect(g[13]).toBeGreaterThan(g[12]);
+      expect(drv.connectTimes.length).toBeLessThan(30); // vòng 500 ms mãi mãi: ~600 lần trong 300 s
+      expect(layTrangThaiAdapter(777)?.soLanMat).toBe(1);
+      expect(ingestSamplesMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await ot.stopOt();
+    }
+  });
+
   function adapter(drv: DriverGia): RuntimeAdapter {
     return {
       adapterId: 777,
@@ -151,10 +225,7 @@ describe("legacy — watchdog + nextRetryAt", () => {
   }
 
   it("mất kết nối ⇒ nối lại mỗi ~poll (không phải 5 s); có lại ⇒ connected trong ≤ 2 × poll", async () => {
-    vi.stubEnv("OT_GATEWAY_ENABLED", "true");
-    vi.stubEnv("OT_CONN_HA_ENABLED", "false");
-    vi.stubEnv("OT_CHAT_LUONG_V2_ENABLED", "false");
-    vi.stubEnv("OT_GHI_TRANG_THAI_ADAPTER_ENABLED", "false");
+    batCo();
     // OT_LEGACY_RECONNECT_MS mặc định 5000: chính cấu hình làm backoff cũ chậm
     const drv = new DriverGia();
     hoisted.adapters = [adapter(drv)];

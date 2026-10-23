@@ -47,7 +47,7 @@ import type {
   OtProtocol,
 } from "./otDriver";
 import { chatLuongLoiChung } from "./chatLuong";
-import { khoangNoiLaiMs } from "./reconnectNhanh";
+import { khoangNoiLaiMs, thoiGianOnDinhMs } from "./reconnectNhanh";
 import { withDeadline } from "./drivers/boundedClose";
 
 /**
@@ -279,6 +279,8 @@ export class ConnectionSupervisor {
   /** statusCode ngắn (chatLuongLoiChung) của lỗi gần nhất khi có đối tượng lỗi; null = không biết (báo "comm_lost"). */
   private lastStatusCode: string | null = null;
   private lastConnectedAt: number | null = null;
+  /** SCADA R0 — Date.now() lúc lần nối LẠI (không phải lần đầu) gần nhất thành công; null khi liên kết đã ổn định/chưa nối lại. */
+  private reconnectedAt: number | null = null;
   private lastStateChangeAt: number = Date.now();
   private readonly onStateChange: SupervisorOptions["onStateChange"] | null;
 
@@ -596,6 +598,11 @@ export class ConnectionSupervisor {
       if (this.stopped || this.state !== "connected") return;
       const ep = this.endpoints[this.activeIndex];
       if (!ep) return;
+      // Liên kết đã giữ vững đủ lâu sau lần nối ⇒ đợt mất kết thúc: bộ đếm thất bại về 0.
+      if (this.lastConnectedAt != null && Date.now() - this.lastConnectedAt >= thoiGianOnDinhMs(this.pollIntervalMs)) {
+        this.consecutiveFailures = 0;
+        this.reconnectedAt = null;
+      }
 
       // ── Tín hiệu CỨNG #1: driver báo isConnected()===false (event transport đã lật,
       // hoặc trạng thái lib thật đã đứt) → mất kết nối NGAY (không đợi ngưỡng). Đây là
@@ -654,8 +661,20 @@ export class ConnectionSupervisor {
       this.lastError = reason;
       if (reason !== "health probe threw") this.lastStatusCode = null; // lỗi thật của probe đã ghi statusCode ngay trước đó
     }
+    // Liên kết vừa được nối LẠI mà rớt trước khi ổn định ⇒ tính là một lần thất bại và CHỜ theo backoff (không nối ngay, nếu không
+    // vòng nối–rớt chạy mãi mỗi chu kỳ health). Liên kết ổn định (hoặc lần nối đầu) rớt ⇒ bộ đếm về 0, thử NGAY như trước.
+    const khongOnDinh = this.reconnectedAt != null && Date.now() - this.reconnectedAt < thoiGianOnDinhMs(this.pollIntervalMs);
+    if (khongOnDinh) this.consecutiveFailures += 1;
+    else {
+      this.consecutiveFailures = 0;
+      this.reconnectedAt = null;
+    }
     this.setState("reconnecting");
     await this.closeActiveHandle();
+    if (khongOnDinh) {
+      this.scheduleRetry(this.nextBackoffDelay());
+      return;
+    }
     // preferOther=true → try the OTHER endpoint first (immediate hot-standby promote).
     await this.runReconnect(true);
   }
@@ -703,12 +722,16 @@ export class ConnectionSupervisor {
         }
         // ── success ──
         this.activeIndex = idx;
-        this.consecutiveFailures = 0;
+        // KHÔNG đặt consecutiveFailures = 0 ở đây: nối được rồi rớt ngay (thiết bị chấp nhận rồi đóng) phải làm backoff tích luỹ;
+        // bộ đếm chỉ về 0 khi liên kết giữ vững ≥ thoiGianOnDinhMs (healthTick) hoặc khi một liên kết ổn định rớt (onActiveLost).
         this.consecutiveProbeFailures = 0; // doc 40 OT-F1 — reset đếm probe-mềm sau khi nối lại
         this.lastError = null;
         this.lastConnectedAt = Date.now();
         const wasConnected = this.hasConnectedOnce;
-        if (wasConnected) this.reconnects += 1;
+        if (wasConnected) {
+          this.reconnects += 1;
+          this.reconnectedAt = Date.now();
+        }
         if (wasConnected && prevIndex >= 0 && prevIndex !== idx) {
           this.failovers += 1;
           // single-writer: drop the endpoint we just left (if still up).

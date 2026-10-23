@@ -36,6 +36,8 @@ interface BanGhi {
   tu: Date;
   loi: string | null;
   soLanMat: number;
+  /** `onDinhMs` của lần báo `connected` gần nhất (0 = kết thúc đợt mất ngay khi connected). */
+  onDinhMs: number;
   /** Đang trong một đợt mất (đặt ở `lost` đầu đợt, xoá khi `connected`/`disabled`). */
   trongDotMat: boolean;
   /** Đợt mất hiện tại đã phát mẫu xấu chưa (xoá cùng `trongDotMat`). */
@@ -121,6 +123,9 @@ function phatMauXau(
 
 /**
  * Báo trạng thái kết nối MỚI của một adapter chạy ở trung tâm. Đồng bộ, không bao giờ ném.
+ * `onDinhMs` (tuỳ chọn, > 0; chỉ có nghĩa với `connected`): đợt mất KHÔNG kết thúc ngay khi `connected` mà khi liên kết đã giữ
+ * vững ≥ onDinhMs — một `lost` đến SAU một lần connected ngắn hơn thế vẫn thuộc đợt mất cũ (không tăng `soLanMat`, không phát
+ * lại mẫu xấu). Liên kết chập chờn (nối được rồi rớt ngay) vì vậy chỉ là MỘT đợt. Trạng thái báo ra vẫn là `connected` ngay.
  * `loi` chỉ có nghĩa với `lost` (ghi vào `lastError`). `statusCode` (tuỳ chọn, chỉ với `lost`) là mã ngắn của lỗi (vd
  * `chatLuongLoiChung(err).statusCode`) dùng cho mẫu xấu; bỏ trống ⇒ "comm_lost".
  */
@@ -130,19 +135,33 @@ export function baoTrangThaiAdapter(
   loi: string | null,
   now: Date = new Date(),
   statusCode?: string | null,
+  onDinhMs?: number,
 ): void {
   try {
     let b = trangThai.get(a.adapterId);
     if (b && b.tt === tt) return;
     if (!b) {
-      b = { tt, tu: now, loi: null, soLanMat: 0, trongDotMat: false, daPhatXau: false, ghiLuc: 0, hen: null, choGhi: null };
+      b = { tt, tu: now, loi: null, soLanMat: 0, onDinhMs: 0, trongDotMat: false, daPhatXau: false, ghiLuc: 0, hen: null, choGhi: null };
       trangThai.set(a.adapterId, b);
     }
+    const truoc = b.tt;
+    const thoiGianConnected = now.getTime() - b.tu.getTime();
     b.tt = tt;
     b.tu = now;
     b.loi = tt === "lost" ? loi : null;
-    if (tt === "connected" || tt === "disabled") {
+    if (tt === "connected") {
+      b.onDinhMs = onDinhMs && onDinhMs > 0 ? onDinhMs : 0;
+      if (b.onDinhMs === 0) {
+        b.trongDotMat = false;
+        b.daPhatXau = false;
+      } // ngược lại: đợt mất còn MỞ tới khi liên kết ổn định (xét lười ở lần `lost` kế tiếp)
+    }
+    if (tt === "disabled") {
       b.trongDotMat = false;
+      b.daPhatXau = false;
+    }
+    if (tt === "lost" && truoc === "connected" && b.onDinhMs > 0 && thoiGianConnected >= b.onDinhMs) {
+      b.trongDotMat = false; // liên kết trước đó đã ổn định ⇒ đây là đợt mất MỚI
       b.daPhatXau = false;
     }
     if (tt === "lost" && !b.trongDotMat) {

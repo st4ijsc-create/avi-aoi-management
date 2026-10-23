@@ -22,3 +22,15 @@ export function khoangNoiLaiMs(failures: number, pollIntervalMs: number, expDela
   if (failures <= NOI_LAI_NHANH_SO_LAN) return Math.min(expDelay(failures), khoangNoiLaiNhanhMs(pollIntervalMs));
   return expDelay(failures - NOI_LAI_NHANH_SO_LAN);
 }
+
+/** Tối thiểu (ms) liên kết phải giữ vững sau một lần nối LẠI thì mới coi là ổn định (bộ đếm thất bại về 0, đợt mất kết thúc). */
+export const NOI_LAI_ON_DINH_TOI_THIEU_MS = 5_000;
+
+/**
+ * Thời gian ổn định `max(3 × poll, 5000)` ms. Một liên kết nối được rồi rớt ngay (thiết bị chạm giới hạn kết nối: chấp nhận rồi
+ * đóng) KHÔNG được xoá bộ đếm thất bại — nếu không backoff không bao giờ tích luỹ và vòng nối lại chạy mãi mỗi 500 ms.
+ */
+export function thoiGianOnDinhMs(pollIntervalMs: number): number {
+  const poll = Number.isFinite(pollIntervalMs) && pollIntervalMs > 0 ? pollIntervalMs : 0;
+  return Math.max(3 * poll, NOI_LAI_ON_DINH_TOI_THIEU_MS);
+}
