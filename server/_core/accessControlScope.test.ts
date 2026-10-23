@@ -43,6 +43,7 @@
  * bộ phân giải phạm vi, vì thứ cần chứng minh chính là SQL sinh ra từ nó có tới nơi hay không.
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { or } from "drizzle-orm";
 import superjson from "superjson";
 import {
@@ -97,17 +98,8 @@ let userNoneId: number;
 let pointDefId: number;
 
 async function mkUser(role: NonNullable<InsertUser["role"]>, tag: string): Promise<number> {
-  const conn = await getDb();
-  const [u] = await conn!
-    .insert(users)
-    .values({
-      openId: `acs_${tag}_${ts}`,
-      username: `acs_${tag}_${ts}`,
-      name: `access scope ${tag}`,
-      role,
-      loginMethod: "local",
-    })
-    .returning({ id: users.id });
+  // Dùng helper chung: TỰ dọn người dùng ở afterAll (xem server/testing/nguoiDungTest.ts) — trước đây tệp này không xoá ⇒ chất người dùng admin ở CSDL _test.
+  const u = await taoNguoiDungTest(tag, role as NonNullable<InsertUser["role"]>, { tienTo: "acs", ten: `access scope ${tag}`, ts });
   return u.id;
 }
 

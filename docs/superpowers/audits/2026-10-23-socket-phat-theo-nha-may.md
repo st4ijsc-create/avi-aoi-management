@@ -62,3 +62,9 @@ Phòng `scada:*` **không đụng** (phiên scada-master đang thiết kế).
 | `__lo…` / `__sw…` | 106 / 69 | `stopAckLockOrder.dot11.db.test.ts` / `centralStopSweepLockOrder.dot11.db.test.ts` |
 
 **Đề xuất fixture tự dọn:** một helper dùng chung `taoNguoiDungTest(tag, role)` (ví dụ `server/testing/nguoiDungTest.ts`) đăng ký `afterAll` xoá `user_factory_assignments`, `permissions`, `notifications`, `user_sessions` rồi `users` của chính các id nó tạo (fallback: `isActive=false` nếu FK chặn); census đọc mã nguồn test: gọi `INSERT INTO users` / `insert(users)` mà không qua helper ⇒ ĐỎ. Thêm kiểm CSDL ở cuối suite: số admin/supervisor hoạt động không tăng sau khi chạy `vitest run` (bắt rò). Việc dọn 1.951 người dùng hiện có KHÔNG làm ở đây (nhiều phiên dùng chung `_test`).
+
+### Cập nhật (cùng ngày): helper + census ĐÃ làm
+- `server/testing/nguoiDungTest.ts` — `taoNguoiDungTest(tag, role, {tienTo, ten, ts, extra})`; `afterAll` tự đăng ký, dọn `user_factory_assignments → permissions → notifications → user_sessions → user_secrets → users` đúng các id nó tạo; FK chặn ⇒ `isActive=false` + `console.warn` lý do.
+- Truy nguồn: `res_admin_` = `reportExportScope.test.ts`, `ss_admin_` = `statisticsScope.test.ts` (cùng dạng `mkUser`). Bảy tệp (acs, rss, hms, scp_hm, cds, res, ss) đã chuyển.
+- Census `nguoiDungTest.census.test.ts`: cấm `insert(users)`/`INSERT INTO users` trong test ngoài helper; hai danh sách miễn `TU_DON` (72, có tự xoá) và `CHUA_DON` (11, RÒ — còn việc: edge*.dot10/dot11, `centralStopSweepLockOrder`, `edge-node-credential.retire`), chỉ được giảm.
+- Đo: `_test` trước/sau hai lần chạy bảy tệp liên tiếp = 5.196 / 5.001 hoạt động / 1.951 admin-supervisor — KHÔNG đổi. Đột biến (bỏ dọn) ⇒ +22 người dùng, +7 admin/supervisor (đã dọn đúng 22 người đó). 1.951 người dùng cũ KHÔNG bị đụng.

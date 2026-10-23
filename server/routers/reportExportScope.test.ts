@@ -29,6 +29,7 @@
  * chạy bộ dựng THẬT và được ghi ở báo cáo — lưới này không thay thế nó.
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 
 // ── Seam ghi-lại: bắt ĐÚNG đối tượng dữ liệu đi vào bộ dựng tài liệu ─────────────────────
 const pdfCalls: Array<{ data: any; config: any }> = [];
@@ -108,18 +109,9 @@ let userA: User;
 let userNone: User;
 
 async function mkUser(role: NonNullable<InsertUser["role"]>, tag: string): Promise<User> {
-  const conn = await getDb();
-  const [u] = await conn!
-    .insert(users)
-    .values({
-      openId: `res_${tag}_${ts}`,
-      username: `res_${tag}_${ts}`,
-      name: `report export ${tag}`,
-      role,
-      loginMethod: "local",
-    })
-    .returning();
-  return u as User;
+  // Dùng helper chung: TỰ dọn người dùng ở afterAll (xem server/testing/nguoiDungTest.ts) — trước đây tệp này không xoá ⇒ chất người dùng admin ở CSDL _test.
+  const u = await taoNguoiDungTest(tag, role as NonNullable<InsertUser["role"]>, { tienTo: "res", ten: `report export ${tag}`, ts });
+  return u;
 }
 
 function callerFor(user: User) {
