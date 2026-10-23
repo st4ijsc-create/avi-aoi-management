@@ -3,6 +3,19 @@
 Ngày đo: 2026-10-23 (Task 12), 2026-10-23/24 (Task 12b, sau sửa D1–D3) và 2026-10-24 (T12b fix round 1 — mục ngay dưới, bảng HIỆN HÀNH) · nhánh `feat/scada-r0` (worktree `D:\SOURCES\_scada_wt`) · máy Windows 11, Docker Desktop 29.8.2 (engine linux).
 Mọi số dưới đây là **đo bằng đồng hồ thật**; không cổng nào được khai "đạt" mà không có phép đo. Ngưỡng **không nới**.
 
+## Final review (2026-10-24) — sửa xuyên task, KHÔNG đo lại bench
+
+Sửa theo review cuối nhánh (I1–I4, M2, M4); bench KHÔNG chạy lại (phán quyết). Bảng "Fix round 1" dưới vẫn là số đo hiện hành.
+- **I1:** cờ V2 TẮT ⇒ lần đọc bị hạn vòng poll cắt vẫn PHÁT kết quả muộn khi về (hành vi trước R0; tick vẫn báo timeout cho bộ đếm/D1).
+- **I2:** interlock chỉ đọc bộ đệm cho (máy, tag) do adapter OT trung tâm khai; nguồn khác đọc DB (giới hạn mục 8).
+- **I3:** `lichSu` của bộ đệm rỗng sau nạp DB, xoá khi khoảng nhận > ngưỡng stale, lọc theo `windowSeconds` trên giờ nhận.
+- **I4:** đường sống của bộ đệm xếp theo thứ tự nhận, không theo `ts` (OPC UA hết kẹt bad sau khi có lại với giá trị không đổi).
+- **M2:** `scadaDiag.datLoiStub` bắt buộc lý do (5..300) và ghi vào audit. **M4:** `scada:subscribe` gọi `idsTrongPhamVi` MỘT lần.
+- Giới hạn mới: mục 8–10 ở "Giới hạn đã biết" dưới.
+- **Lưới stub chạy lại MỘT lần** (`SCADA_R0_NGHIEM_THU=1`, sau I1–I4/M2/M4): 16/16 xanh. Số đo (ms) — cổng 1 / 2 / 3 mất / 3 có lại / 4:
+  legacy·từ chối 60 / 69 / 106 / 1971 / 1034; HA·từ chối 1008 / 1025 / 1088 / 1969 / 354; legacy·treo 1866 / 2882 / 2835 / 1973 / 1222;
+  HA·treo 1819 / 2772 / 2818 / 1969 / 78. Bench OpenPLC KHÔNG chạy lại (phán quyết final review).
+
 ## Fix round 1 (T12b, đo lại 2026-10-24) — bảng hiện hành
 
 Sửa ở commit `0a8c1f49a` theo review T12 + T12b:
@@ -84,7 +97,7 @@ Lệnh ghi DB (ms so với lúc rút):
 - stop HA: `lost@~0`, `lost@~5 s`, `connected@~10 s`.
 
 Giới hạn đã biết: xem "Giới hạn đã biết" ở mục T12b bên dưới (vẫn hiện hành; fix round 1 sửa mục 5 — cờ V2 tắt ⇒ đúng trước R0 — và thêm
-mục 7 — hạn đọc 10 s của thư viện EtherNet/IP).
+mục 7 — hạn đọc 10 s của thư viện EtherNet/IP; final review thêm mục 8–10).
 
 ### Chạy lại (fix round 1)
 
@@ -275,6 +288,18 @@ Chẩn đoán bench:
    tick bị cắt ở hạn vòng poll `tinhDeadlineMs` (= max(2 × poll, timeoutMs + 1000), 2000 ms ở poll 1000/timeout 800) ⇒ G1 trên EIP ≈ tới tick
    kế + 2000 ms (> 2 chu kỳ). Chốt chống chồng giữ tới khi `readTag` thật sự xong (~10 s) nên tick hỏng THỨ HAI (D1) chỉ tới sau ~10 s ⇒
    `lost` ~10–12 s (> 5 s). (Suy ra từ mã + mặc định thư viện; chưa đo trên PLC EIP.) R1: nối `timeout_sp` = `timeoutMs`.
+8. (final review, I2) **Sàn tươi 15 s của đường DB cho nguồn báo-theo-sự-kiện:** khi bật `SCADA_LIVE_CACHE_ENABLED`, interlock chỉ đọc bộ
+   đệm cho (máy, tag) mà một adapter OT TRUNG TÂM đã đăng ký trong tiến trình này khai; mọi nguồn khác (adapter edge, MQTT, MTConnect,
+   SECS/GEM, CFX, `/api/v1`, simulator, bản sao không chạy cổng OT) đọc DB. Đường DB coi hàng mới nhất cũ hơn `max(3 × poll, 15 s)` là
+   `cu` (CHẶN). Nguồn báo-theo-sự-kiện / report-by-exception KHÔNG có nhịp poll đã biết ⇒ luôn rơi vào sàn 15 s cố định: MQTT phát mỗi 30 s,
+   hay tag có deadband chỉ gửi khi đổi (không có heartbeat trên đường DB) ⇒ giữa hai lần gửi luật luôn `cu` ⇒ cổng chặn (fail-closed, không
+   fail-open). R1: khai nhịp/heartbeat cho nguồn ngoài OT trung tâm để đường DB biết ngưỡng đúng.
+9. (final review) **OPC UA mất/có lại liên lạc chưa được bench hay test nào phủ:** bench OpenPLC và lưới stub đo Modbus/stub; cổng 5 chỉ phủ
+   `uncertain` của OPC UA. Đường mất phiên / nối lại của OPC UA (gồm thứ tự mẫu tốt mang `sourceTimestamp` thiết bị sau khi có lại — đã sửa
+   ở bộ đệm theo thứ tự nhận, final I4, chỉ có test đơn vị) chưa có phép đo thật. R1.
+10. (final review, phán quyết M1 — ghi chú khi gộp) **Lệnh ghi tới adapter stub nay THÀNH CÔNG vào RAM:** stub nhận ghi (cần cho nghiệm thu
+    và mô phỏng) ⇒ lệnh DEV gửi tới adapter stub báo `acked_verified`. Không có thiết bị thật nào nhận lệnh đó; người duyệt gộp cần biết
+    trạng thái này không còn nghĩa "đã từ chối".
 
 ---
 
