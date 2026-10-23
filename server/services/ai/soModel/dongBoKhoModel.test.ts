@@ -31,19 +31,30 @@ describe("dongBoKhoModel (DB _test)", () => {
   });
   const tep = (ten: string) => ({ ten, kichThuoc: 1048576 * 3, loai: "sinh-chu" as const, lyDoKhongHoTro: null });
 
+  it("★★★ (2026-10-23, đua CSDL giữa hai tệp lưới) chiTienToMat ⇒ hàng NGOÀI tiền tố (của tệp lưới khác) KHÔNG bị đánh dấu mất", async () => {
+    const db = (await getDb())!;
+    const ngoai = `${TT}x-ngoai`; // KHÔNG khớp tiền tố "${TT}-"
+    await db.insert(aiModelArtifacts).values({ id: ngoai, filePath: `${ngoai}.gguf`, family: "probe" }).onConflictDoNothing();
+    await dongBoKhoModel({ thuMuc: "X", db, chiTienToMat: `${TT}-`, liet: () => [tep(`${TT}-C-7B-Q4_K_M.gguf`)] });
+    const [r] = await db.select().from(aiModelArtifacts).where(like(aiModelArtifacts.filePath, `${ngoai}%`));
+    expect(r?.status).toBe("available");
+    await db.delete(aiModelArtifacts).where(like(aiModelArtifacts.filePath, `${ngoai}%`));
+    await db.delete(aiModelArtifacts).where(like(aiModelArtifacts.filePath, `${TT}-C-%`));
+  });
+
   it("thêm, đánh dấu mất, xuất hiện lại; danh sách rỗng KHÔNG đánh dấu mất", async () => {
     const db = (await getDb())!;
-    const k1 = await dongBoKhoModel({ thuMuc: "X", db, liet: () => [tep(`${TT}-A-7B-Q4_K_M.gguf`), tep(`${TT}-B-1B-Q8_0.gguf`)] });
+    const k1 = await dongBoKhoModel({ thuMuc: "X", db, chiTienToMat: TT, liet: () => [tep(`${TT}-A-7B-Q4_K_M.gguf`), tep(`${TT}-B-1B-Q8_0.gguf`)] });
     expect(k1.them + k1.capNhat).toBe(2);
-    const k2 = await dongBoKhoModel({ thuMuc: "X", db, liet: () => [tep(`${TT}-A-7B-Q4_K_M.gguf`)] });
+    const k2 = await dongBoKhoModel({ thuMuc: "X", db, chiTienToMat: TT, liet: () => [tep(`${TT}-A-7B-Q4_K_M.gguf`)] });
     expect(k2.capNhat).toBe(1);
     const rows = await db.select().from(aiModelArtifacts).where(like(aiModelArtifacts.filePath, `${TT}%`));
     const st = Object.fromEntries(rows.map((r) => [r.filePath, r.status]));
     expect(st).toEqual({ [`${TT}-A-7B-Q4_K_M.gguf`]: "available", [`${TT}-B-1B-Q8_0.gguf`]: "missing" });
     expect(rows.find((r) => r.filePath.startsWith(`${TT}-A`))?.vramWeightsMb).toBe(3);
 
-    expect(await dongBoKhoModel({ thuMuc: "X", db, liet: () => [] })).toEqual({ them: 0, capNhat: 0, mat: 0 });
-    await dongBoKhoModel({ thuMuc: "X", db, liet: () => [tep(`${TT}-A-7B-Q4_K_M.gguf`), tep(`${TT}-B-1B-Q8_0.gguf`)] });
+    expect(await dongBoKhoModel({ thuMuc: "X", db, chiTienToMat: TT, liet: () => [] })).toEqual({ them: 0, capNhat: 0, mat: 0 });
+    await dongBoKhoModel({ thuMuc: "X", db, chiTienToMat: TT, liet: () => [tep(`${TT}-A-7B-Q4_K_M.gguf`), tep(`${TT}-B-1B-Q8_0.gguf`)] });
     const sau = await db.select().from(aiModelArtifacts).where(like(aiModelArtifacts.filePath, `${TT}%`));
     expect(sau.every((r) => r.status === "available")).toBe(true);
   });
