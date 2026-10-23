@@ -38,6 +38,7 @@
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 
 // Router đứng sau `moduleProcedure("MOD_QUALITY")`; cổng license mặc định BẬT và SKU của CSDL
 // test không gồm MOD_QUALITY ⇒ mọi lượt gọi FEATURE_DISABLED trước khi tới đoạn cần đo.
@@ -144,12 +145,12 @@ beforeAll(async () => {
     machineType: "AOI",
     apiKey: `hms_${ts}`,
   });
-  productModelId = await dbApi.createProductModel({
+  productModelId = dangKyModelSanPhamTest(await dbApi.createProductModel({
     code: `HMSP_${ts}`,
     name: "HMS product",
     imageWidth: 1000,
     imageHeight: 800,
-  });
+  }));
   // HAI điểm đo: A chỉ được nhà máy A dùng, B chỉ nhà máy B ⇒ `getRealTimeHotspots` (GROUP BY
   // điểm đo) và `getProductDefectOverlay` (theo điểm đo) phân biệt được hai nhà máy.
   pointDefA = await dbApi.createMeasurementPointDef({

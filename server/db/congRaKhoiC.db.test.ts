@@ -71,6 +71,7 @@
  * Mọi con số kèm `current_database()` (luật Đ-28).
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -213,6 +214,7 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       ids.product = await one(sql`
         INSERT INTO product_models (code, name, "lifecycleStatus")
         VALUES (${MA_SP}, 'Khoi C cong ra menh de 3', 'development') RETURNING id`);
+      dangKyModelSanPhamTest(ids.product);
 
       const key = await issueMachineKey({
         machineId: ids.machine, name: `khoic-cong-ra-${RUN}`, scopes: ["ingest:write", "equipment:read"],

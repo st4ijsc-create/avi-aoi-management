@@ -8,6 +8,7 @@
  * on-demand path. Flag OFF ⇒ commit behavior unchanged.
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import os from "node:os";
 import path from "node:path";
 import { promises as fsp } from "node:fs";
@@ -114,7 +115,7 @@ beforeAll(async () => {
     apiKey: API_KEY,
     isActive: true,
   });
-  productModelId = await db.createProductModel({ code: PM_CODE, name: "W7-A pkg inline PM" });
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: PM_CODE, name: "W7-A pkg inline PM" }));
 
   const d = await db.getDb();
   const [cfg] = await d!

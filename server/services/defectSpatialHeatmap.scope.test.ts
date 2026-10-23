@@ -36,6 +36,7 @@
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { computeSpatialHeatmap } from "./defectSpatialHeatmap";
 import * as db from "../db";
 import { getDb } from "../db/connection";
@@ -90,12 +91,12 @@ beforeAll(async () => {
     machineType: "AOI",
     apiKey: `scope_hm_${ts}`,
   });
-  productModelId = await db.createProductModel({
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({
     code: `SCPP_${ts}`,
     name: "Scope product",
     imageWidth: 1000,
     imageHeight: 800,
-  });
+  }));
   const pointDefId = await db.createMeasurementPointDef({
     productModelId,
     code: `SCPMP_${ts}`,

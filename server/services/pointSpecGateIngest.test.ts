@@ -7,6 +7,7 @@
  *  3. deltaSyncPoints carries the point's 3D limits, criteria, and lighting recipe.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { eq, inArray } from "drizzle-orm";
 import { appRouter } from "../routers";
 import * as db from "../db";
@@ -49,7 +50,7 @@ beforeAll(async () => {
   machineId = await db.createMachine({
     stationId: 1, code: `MP6-${STAMP}`, name: "MP6 spec-gate test", machineType: "AOI", apiKey: API_KEY, isActive: true,
   });
-  productModelId = await db.createProductModel({ code: MODEL_CODE, name: "MP6 test model" });
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: MODEL_CODE, name: "MP6 test model" }));
   pointDefId = await db.createMeasurementPointDef({
     productModelId,
     code: POINT_CODE,

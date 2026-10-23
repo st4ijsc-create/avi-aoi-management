@@ -14,6 +14,7 @@
  *    ("ntfScore" DESC NULLS LAST) + inspection.search accepts the param.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../../testing/modelSanPhamTest";
 import { initTRPC } from "@trpc/server";
 import { eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
@@ -81,11 +82,11 @@ beforeAll(async () => {
     machineType: "AOI",
     apiKey: `test_v3_ntf_${STAMP}`,
   });
-  productModelId = await dbApi.createProductModel({
+  productModelId = dangKyModelSanPhamTest(await dbApi.createProductModel({
     code: `TP_V3_${STAMP}`,
     name: "V3 product",
     version: "1.0",
-  });
+  }));
   offenderPointId = await dbApi.createMeasurementPointDef({
     productModelId,
     code: `MP_V3_OFF_${STAMP}`,

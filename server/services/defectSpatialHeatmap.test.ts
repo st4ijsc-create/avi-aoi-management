@@ -8,6 +8,7 @@
  * labeled as logical (realCoordinates:false).
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import {
   resolveBoardExtent,
   bucketSpatialDefects,
@@ -152,13 +153,13 @@ describe("computeSpatialHeatmap (DB integration)", () => {
       machineType: "AOI",
       apiKey: `test_hm_${ts}`,
     });
-    productModelId = await db.createProductModel({
+    productModelId = dangKyModelSanPhamTest(await db.createProductModel({
       code: `PROD_HM_${ts}`,
       name: "Heatmap product",
       version: "1.0",
       imageWidth: 1000,
       imageHeight: 800,
-    });
+    }));
     const pointDefId = await db.createMeasurementPointDef({
       productModelId,
       code: `MP_HM_${ts}`,

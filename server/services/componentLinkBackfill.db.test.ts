@@ -17,6 +17,7 @@
  *   NG result on point A → after backfill, Pareto returns a NON-UNLINKED bucket.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import fs from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
@@ -63,7 +64,7 @@ describe.skipIf(!DB_URL)("MP1 componentCode BOM backfill + Pareto chain (seeded)
     const [m] = await sql`INSERT INTO machines ("stationId", code, name, "machineType") VALUES (${ids.station}, ${"M-" + RUN}, 'MP1 machine', 'AOI') RETURNING id`;
     ids.machine = m.id;
     const [p] = await sql`INSERT INTO product_models (code, name, "lifecycleStatus") VALUES (${"P-" + RUN}, 'MP1 product', 'development') RETURNING id`;
-    ids.product = p.id;
+    ids.product = dangKyModelSanPhamTest(p.id);
 
     // Package + linked material (MAT), plus an unlinked-to-package material (OTHER).
     const [pkg] = await sql`

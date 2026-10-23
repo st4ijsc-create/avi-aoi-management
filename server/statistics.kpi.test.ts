@@ -8,6 +8,7 @@
  * Runs against the isolated cloned test DB (vitest.setup.ts).
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { dangKyModelSanPhamTest } from "./testing/modelSanPhamTest";
 import * as db from "./db";
 import { getFactoryTimezone } from "./utils/kpi";
 
@@ -69,11 +70,11 @@ describe("canonical KPI + factory-timezone bucketing", () => {
       machineType: "AOI",
       apiKey: `test_kpi_fpy_${timestamp}`,
     });
-    productModelId = await db.createProductModel({
+    productModelId = dangKyModelSanPhamTest(await db.createProductModel({
       code: `PROD_KPI_${timestamp}`,
       name: "KPI test product",
       version: "1.0",
-    });
+    }));
 
     // ── TZ machine: one inspection either side of VN midnight ──
     await db.createProductInspection({

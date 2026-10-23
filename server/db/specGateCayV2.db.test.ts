@@ -58,6 +58,7 @@
  * #7 báo cáo Task 3: khuôn "hai tệp cùng giành hai máy đầu bảng" làm lưới đỏ vì hàng xóm.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -326,6 +327,8 @@ describe.skipIf(!DB_URL || !CO_MAU)(
         VALUES (${ids.station}, ${"M-" + RUN}, 'T4 machine', 'AOI', true) RETURNING id`);
       ids.product = await one(sql`INSERT INTO product_models (code, name) VALUES (${MA_SP}, 'Khoi B Task 4 spec-gate cay') RETURNING id`);
       ids.productV1 = await one(sql`INSERT INTO product_models (code, name) VALUES (${MA_SP_V1}, 'Khoi B Task 4 spec-gate phang v1.x') RETURNING id`);
+      dangKyModelSanPhamTest(ids.product);
+      dangKyModelSanPhamTest(ids.productV1);
 
       // Điểm đo PHẲNG có limit — nền của mệnh đề 3 (đường v1.x KHÔNG được đổi hành vi).
       // Ở SẢN PHẨM RIÊNG: xem chú thích `MA_SP_V1`.
