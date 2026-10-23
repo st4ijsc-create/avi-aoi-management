@@ -237,7 +237,7 @@ Chốt:
   - DB: cờ bật + máy chưa khai + `OT_CONTROL_ENABLED` TẮT ⇒ vẫn `rejected MODE_LOCAL` (không phải `simulated`).
   - unit (mock `layGiaTri`): bảy `lyDo`, mỗi lý do một ca.
   - DB:
-    - cờ tắt + lệnh hitl thường ⇒ không có cổng (hồi quy).
+    - cờ tắt + lệnh hitl thường ⇒ không có cổng (hồi quy) — điều phối yêu cầu test này chứng minh cờ OFF ⇒ đường cũ KHÔNG đổi kết quả: cùng một lệnh (máy chưa khai kênh chế độ) cho cùng `status`/`errorText` với cờ OFF trước và sau thay đổi, cả khi `OT_CONTROL_ENABLED` bật lẫn tắt.
     - cờ bật + máy chưa khai ⇒ `rejected MODE_LOCAL: chua_khai`, 1 dòng WORM, driver 0 lần.
     - cờ bật + STOP ghim ⇒ đi qua.
     - cờ bật + lệnh interlock ⇒ bị chặn (chốt "K2 với lệnh interlock").
@@ -675,7 +675,7 @@ Cổng (hàng R1 của báo cáo + ô 8 do điều phối thêm 2026-10-24): m�
   - Đo đường vui `acked_verified` (đọc lại đúng), ô 2, ô 3.
   - In bảng. Ghi phiên bản container. Trả container về trạng thái tìm thấy.
   - **Xác nhận trước trên bench rằng thanh ghi holding ghi được và đọc lại giữ giá trị** (runtime OpenPLC có ghi đè mỗi chu kỳ không). Nếu bị ghi đè, ghi rõ và dùng thanh ghi khác.
-- [ ] **Step 5: Chạy bench.** Dán bảng vào báo cáo nghiệm thu. Không có Docker ⇒ ghi "chưa chạy bench" kèm lý do, **không** khai đạt.
+- [ ] **Step 5: Chạy bench.** Dán bảng vào báo cáo nghiệm thu. Báo cáo có mục "Giới hạn đã biết" gồm ít nhất: phạm vi control = phạm vi xem (strict) + `machine_control.canEdit` tới khi có C.8 (ruling R-3, điều phối đồng ý 2026-10-24); không có công thức ra; máy edge `EDGE_CHUA_HO_TRO` tới R1c. Mục "Backlog R4" có dòng "control scope tách khỏi view scope". Không có Docker ⇒ ghi "chưa chạy bench" kèm lý do, **không** khai đạt.
 - [ ] **Step 6: Chạy toàn bộ** `npx vitest run server/services/ot server/services/scada server/services/interlock server/routers/scada* server/_core client/src/components/scada client/src/pages/Scada*` + các tệp DB mới (riêng lẻ) + `npm run check`. Ghi số tệp/test.
 - [ ] **Step 7: Commit** `test(scada): nghiem thu R1a - ma tran 8 o, bench OpenPLC + safety PLC mo phong, bao cao`.
 
