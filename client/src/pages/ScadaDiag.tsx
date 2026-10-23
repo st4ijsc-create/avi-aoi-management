@@ -21,6 +21,7 @@ import { navItems } from "@/lib/navigation";
 import { PageHeader, PageContainer, SectionCard, EmptyState } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -121,7 +122,13 @@ export default function ScadaDiag() {
             </div>
           }
         >
-          {q.isError ? (
+          {q.isLoading ? (
+            <div role="status" aria-label={t("scada.diag.dangTai")} className="space-y-2" data-testid="scada-diag-dang-tai">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : q.isError ? (
             <EmptyState variant="error" title={t("scada.diag.loiTai")} compact />
           ) : hienThi.length === 0 ? (
             <EmptyState variant="no-data" title={chiLoi ? t("scada.diag.khongCoLoi") : t("scada.diag.trong")} compact />

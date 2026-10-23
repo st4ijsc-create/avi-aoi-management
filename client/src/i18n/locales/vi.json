@@ -23354,6 +23354,7 @@
       "trong": "Chưa có adapter nào trong phạm vi của bạn.",
       "khongCoLoi": "Không có adapter lỗi — mọi kết nối đều ổn.",
       "loiTai": "Không tải được danh sách adapter.",
+      "dangTai": "Đang tải danh sách adapter…",
       "matKetNoi": "Mất kết nối",
       "edgeChuaCoSoLieu": "do edge {{edgeCode}} sở hữu — chưa có số liệu R0",
       "trangThai": {

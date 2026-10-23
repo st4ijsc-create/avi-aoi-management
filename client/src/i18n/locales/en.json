@@ -23380,6 +23380,7 @@
       "trong": "No adapters in your scope yet.",
       "khongCoLoi": "No faulty adapters — every connection is healthy.",
       "loiTai": "Could not load the adapter list.",
+      "dangTai": "Loading adapters…",
       "matKetNoi": "Connection lost",
       "edgeChuaCoSoLieu": "owned by edge {{edgeCode}} — no R0 data yet",
       "trangThai": {

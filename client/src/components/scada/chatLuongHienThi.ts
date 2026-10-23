@@ -10,8 +10,6 @@ export type TrangThaiM10 = "connecting" | "connected" | "lost" | "disabled" | "k
 export type ToneTrangThai = "ok" | "warn" | "bad" | "muted";
 export type DonViThoiGian = { giay: string; phut: string; gio: string; ngay: string };
 
-const DON_VI_VI: DonViThoiGian = { giay: "s", phut: "ph", gio: "giờ", ngay: "ngày" };
-
 /** Khoảng từ `tuMs` tới `now`, một đơn vị ("5 s", "3 ph", "1 giờ", "2 ngày"). Mốc null / ở tương lai ⇒ null (không in số âm). */
 function khoangThoiGian(tuMs: number | null, now: number, dv: DonViThoiGian): string | null {
   if (tuMs === null || !Number.isFinite(tuMs) || tuMs > now) return null;
@@ -28,7 +26,7 @@ export function nhanTrangThai(
   tt: TrangThaiM10,
   tuMs: number | null,
   now: number,
-  donVi: DonViThoiGian = DON_VI_VI,
+  donVi: DonViThoiGian,
 ): { nhan: string; thoiGian: string | null; tone: ToneTrangThai } {
   switch (tt) {
     case "lost":
@@ -57,12 +55,23 @@ export function hienChatLuong(q: "good" | "uncertain" | "bad", stale: boolean): 
   return { kieu: "tot", vien: "none" };
 }
 
-/** Tuổi hiển thị: null / âm / không hữu hạn ⇒ "—" (máy chủ đã chặn ≥ 0; đây là phòng thủ rẻ). */
-export function dinhDangTuoi(ageMs: number | null | undefined): string {
+/**
+ * Tuổi hiển thị: null / âm / không hữu hạn ⇒ "—" (máy chủ đã chặn ≥ 0; đây là phòng thủ rẻ). Đơn vị VÀ dấu thập phân theo ngôn ngữ
+ * đang dùng (`donVi` từ i18n, `locale` = ngôn ngữ giao diện) — không có mặc định ngầm.
+ */
+export function dinhDangTuoi(ageMs: number | null | undefined, donVi: DonViThoiGian, locale: string): string {
   if (ageMs === null || ageMs === undefined || !Number.isFinite(ageMs) || ageMs < 0) return "—";
-  if (ageMs < 60_000) return `${(ageMs / 1000).toFixed(1).replace(".", ",")} s`;
-  if (ageMs < 3_600_000) return `${Math.floor(ageMs / 60_000)} ph`;
-  return `${Math.floor(ageMs / 3_600_000)} giờ`;
+  if (ageMs < 60_000) {
+    let so: string;
+    try {
+      so = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(ageMs / 1000);
+    } catch {
+      so = (ageMs / 1000).toFixed(1);
+    }
+    return `${so} ${donVi.giay}`;
+  }
+  if (ageMs < 3_600_000) return `${Math.floor(ageMs / 60_000)} ${donVi.phut}`;
+  return `${Math.floor(ageMs / 3_600_000)} ${donVi.gio}`;
 }
 
 /**

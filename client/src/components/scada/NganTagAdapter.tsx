@@ -4,7 +4,7 @@
  *
  * Hiển thị chất lượng theo D10 (xem `chatLuongHienThi.ts`): uncertain ⇒ "?" + viền chấm xám; bad/cũ ⇒ gạch tím + mờ. Tuổi âm/null ⇒ "—".
  */
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BIEN_MAU_GACH_TIM, BIEN_MAU_VIEN_XAM, dinhDangTuoi, hienChatLuong, type VienChatLuong } from "./chatLuongHienThi";
-import { ChipTrangThai, tenEdge, type HangDiag } from "./BangTruyenThong";
+import { ChipTrangThai, tenEdge, useDonViThoiGian, type HangDiag } from "./BangTruyenThong";
 
 const KY_TU_TOI_DA_LAB = 128;
 
@@ -176,9 +176,14 @@ export interface NganTagAdapterProps {
 }
 
 export function NganTagAdapter({ hang, now, canAct, onDong }: NganTagAdapterProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const donVi = useDonViThoiGian();
   const [mauTag, setMauTag] = useState<{ adapterId: number; tagKey: string } | null>(null);
   const adapterId = hang?.adapterId ?? 0;
+  // Đóng ngăn (hang = null) hoặc đổi adapter ⇒ bỏ tag mẫu thô đang xem: mở lại không bắn `mauTho` cũ / không hiện bảng cũ.
+  useEffect(() => {
+    setMauTag(null);
+  }, [hang?.adapterId]);
   const q = trpc.scadaDiag.tagCuaAdapter.useQuery({ adapterId }, { enabled: !!hang, refetchInterval: 2000 });
   const tags = q.data ?? [];
   const mauDangXem = mauTag && hang && mauTag.adapterId === hang.adapterId ? mauTag : null;
@@ -236,7 +241,7 @@ export function NganTagAdapter({ hang, now, canAct, onDong }: NganTagAdapterProp
                           </TableCell>
                           <TableCell className="text-xs">{co ? t(`scada.diag.chatLuong.${ch!.kieu}`) : t("scada.diag.chatLuong.chuaCo")}</TableCell>
                           <TableCell className="whitespace-nowrap text-xs tabular-nums" data-testid="tuoi">
-                            {dinhDangTuoi(g.ageMs)}
+                            {dinhDangTuoi(g.ageMs, donVi, i18n.language)}
                           </TableCell>
                           <TableCell className="text-xs">{g.statusCode ?? "—"}</TableCell>
                           <TableCell>

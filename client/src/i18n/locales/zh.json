@@ -23382,6 +23382,7 @@
       "trong": "您的范围内暂无适配器。",
       "khongCoLoi": "没有故障适配器 —— 所有连接正常。",
       "loiTai": "无法加载适配器列表。",
+      "dangTai": "正在加载适配器列表…",
       "matKetNoi": "连接丢失",
       "edgeChuaCoSoLieu": "由边缘 {{edgeCode}} 持有 —— R0 暂无数据",
       "trangThai": {

@@ -13,7 +13,9 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
+import i18next from "i18next";
 import vi_ from "@/i18n/locales/vi.json";
+import en_ from "@/i18n/locales/en.json";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
 import { resolvePermissionModule } from "@shared/permissions";
 
@@ -53,6 +55,7 @@ const srv = vi.hoisted(() => ({
   mutOpts: {} as Record<string, { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void }>,
   invalidated: [] as string[],
   mauInput: undefined as unknown,
+  loading: false,
 }));
 vi.mock("@/lib/trpc", () => {
   const mut = (proc: string) => ({
@@ -83,7 +86,7 @@ vi.mock("@/lib/trpc", () => {
         danhSach: {
           useQuery: (_i: unknown, o: Record<string, unknown>) => {
             srv.danhSachOpts = o;
-            return { data: srv.rows, isLoading: false, isError: false, refetch: () => undefined };
+            return { data: srv.loading ? undefined : srv.rows, isLoading: srv.loading, isError: false, refetch: () => undefined };
           },
         },
         tagCuaAdapter: {
@@ -163,10 +166,17 @@ beforeEach(() => {
   srv.mutCalls = [];
   srv.mutOpts = {};
   srv.invalidated = [];
+  srv.loading = false;
+  srv.mauInput = undefined;
   toastSuccess.mockReset();
   toastTrpcError.mockReset();
 });
-afterEach(() => cleanup());
+afterEach(async () => {
+  cleanup();
+  await act(async () => {
+    await i18next.changeLanguage("vi");
+  });
+});
 
 const hang = (code: string) => screen.getByText(code).closest("tr") as HTMLElement;
 
@@ -196,6 +206,19 @@ describe("ScadaDiag — bảng", () => {
     expect(screen.queryByText("AD-OK")).toBeNull();
     expect(screen.queryByText("AD-EDGE")).toBeNull();
     expect(screen.getByText("AD-LOST")).toBeInTheDocument();
+  });
+});
+
+describe("ScadaDiag — đang tải", () => {
+  it("isLoading ⇒ khung chờ, KHÔNG nhá 'chưa có adapter trong phạm vi'; có dữ liệu ⇒ hết khung chờ", () => {
+    srv.loading = true;
+    const { unmount } = render(<ScadaDiag />);
+    expect(screen.getByRole("status", { name: S("scada.diag.dangTai") })).toBeInTheDocument();
+    expect(screen.queryByText(S("scada.diag.trong"))).toBeNull();
+    unmount();
+    srv.loading = false;
+    render(<ScadaDiag />);
+    expect(screen.queryByRole("status", { name: S("scada.diag.dangTai") })).toBeNull();
   });
 });
 
@@ -289,6 +312,37 @@ describe("ScadaDiag — ngăn tag của adapter", () => {
     expect(o(sh, "NEG", "gia-tri").getAttribute("data-vien")).toBe("dotted-grey");
     expect(o(sh, "OLD", "gia-tri").getAttribute("data-vien")).toBe("purple-strike");
     expect(o(sh, "TEMP", "gia-tri").getAttribute("data-vien")).toBe("none");
+  });
+
+  it("ngôn ngữ en: tuổi dùng đơn vị + dấu thập phân của en (không 'giờ' / 'ph' / dấu phẩy)", async () => {
+    i18next.addResourceBundle("en", "translation", en_ as Record<string, unknown>, true, true);
+    await act(async () => {
+      await i18next.changeLanguage("en");
+    });
+    srv.tags[2] = [tag({ tagKey: "A1", ageMs: 1500 }), tag({ tagKey: "A2", ageMs: 90_000 }), tag({ tagKey: "A3", ageMs: 5 * 3_600_000, stale: true })];
+    render(<ScadaDiag />);
+    fireEvent.click(screen.getByText("AD-LOST"));
+    const sh = screen.getByRole("dialog");
+    expect(o(sh, "A1", "tuoi")).toHaveTextContent(/^1\.5 s$/);
+    expect(o(sh, "A2", "tuoi")).toHaveTextContent(/^1 min$/);
+    expect(o(sh, "A3", "tuoi")).toHaveTextContent(/^5 h$/);
+    for (const id of ["A1", "A2", "A3"]) expect(o(sh, id, "tuoi").textContent).not.toMatch(/giờ|ph|,/);
+  });
+
+  it("đóng ngăn rồi mở lại ⇒ KHÔNG còn bảng mẫu thô cũ / không bắn mauTho", () => {
+    srv.tags[1] = [tag({ tagKey: "SPD" })];
+    srv.mau = [{ ts: iso(1000), giaTri: 4242, quality: "good", statusCode: "Good", tsSource: "server" }];
+    render(<ScadaDiag />);
+    fireEvent.click(screen.getByText("AD-OK"));
+    fireEvent.click(screen.getByRole("button", { name: S("scada.diag.nut.mauTho") }));
+    expect(screen.getByText("4242")).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    srv.mauInput = undefined;
+    fireEvent.click(screen.getByText("AD-OK"));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.queryByText("4242")).toBeNull();
+    expect(srv.mauInput).toBeUndefined();
   });
 
   it("'100 mẫu thô' ⇒ hỏi mauTho đúng (adapterId, tagKey) và liệt kê mẫu", () => {
