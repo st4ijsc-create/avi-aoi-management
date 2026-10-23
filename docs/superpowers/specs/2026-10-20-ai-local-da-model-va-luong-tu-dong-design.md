@@ -741,6 +741,12 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   trước:** chênh ≤ 6/72 (nhiễu đã đo ±2 bài/lượt × 3) ⇒ `code.plc` dùng chung cho dự án SCL, không gán riêng; SCL thấp hơn > 6/72 ⇒ ghi
   cảnh báo phương ngữ + đề xuất đo model khác cho SCL (KHÔNG đổi gán dựa trên số này). Ghi rõ: mã lời nhắc sửa đã đổi từ #11 (b6e0e3735 →
   lời nhắc chung `shared/stNhacSua.mjs`), nên chênh gồm cả thay đổi đó.
+  **KẾT QUẢ (2026-10-23 08:48, `reports/PLC-scl-vongsua2-q36-27b-1.json`, sổ #17, mã 41d1a3a14):** SCL **50/72 = 69 %** (tt 21 · tv 15 ·
+  ud 14) vs #11 ST 53/72 (tt 23 · tv 16 · ud 14) ⇒ **−3/72, trong ngưỡng 6 ⇒ `code.plc` dùng chung cho dự án SCL, không gán riêng.** Cặp
+  (bài, lượt): SCL đạt/ST trượt 4 · ngược lại 7. Theo bài: tv1 −2, tt4 −1, tt7 −1, tv8 +1. Biên dịch: lỗi ở câu trả lời đầu 13/72 (ST 16),
+  còn lỗi sau vòng sửa 3 (ST 3), trích bỏ sót 0 — mọi lượt trượt là TEST đỏ (ngữ nghĩa), không phải biên dịch. Trung vị sinh 169 s
+  (token ra 11,4k). Báo cáo trọn (không dừng sớm, 27B đầu = cuối). Giới hạn: chấm SCL qua chuẩn hoá SCL→ST + RuSTy — đo NGỮ NGHĨA, không
+  đo hợp lệ với trình biên dịch TIA thật (không có trình dịch SCL mở).
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
