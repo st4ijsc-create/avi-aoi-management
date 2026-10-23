@@ -124,3 +124,104 @@ export function moTaSocket(data: DuLieuSocket | null | undefined): string {
   const uid = data?.user?.id;
   return `type=${ct}${typeof uid === "number" ? ` user=${uid}` : ""}`;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ BẢO MẬT (2026-10-23) — PHẠM VI NHÀ MÁY khi vào phòng `factory:` / `workshop:` / `line:` / `machine:` / `robot:` / `device:` / `telemetry:all`
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Trước bản vá, handler `subscribe` cho MỌI socket người dùng join các phòng này bằng id TỰ KHAI ⇒ người dùng nhà máy B nhận
+// `telemetry:sample` / `machine:*` / `andon:event` của nhà máy A (cùng lớp IDOR đã vá ở Luồng AI). Chỉ `twin:` có kiểm.
+//
+// Luật (MỘT bộ phân giải, KHÔNG có bộ luật thứ hai): `trongPhamVi` / `idsTrongPhamVi` của `db/hierarchy` — CÙNG hàm mọi router đọc dùng
+// (admin / vai toàn quyền ⇒ phạm vi `null` ⇒ qua; người không gán nhà máy ⇒ `[]` ⇒ chặn). "Không biết" rơi về phía CHẶN: lỗi DB ⇒ false.
+// Ngoài phạm vi và KHÔNG TỒN TẠI cho CÙNG kết quả `false` (không lộ tồn tại); nơi gọi phát MỘT lỗi chung không lặp id.
+
+export type CapPhongPhamVi = "factory" | "workshop" | "line" | "machine";
+
+/** Id trong phòng: số nguyên dương HOẶC chuỗi chỉ gồm chữ số; mọi hình dạng khác (mảng, đối tượng, "1e3", "-1", "0x1") ⇒ `null`. */
+export function idPhongHopLe(v: unknown): number | null {
+  const n = typeof v === "number" ? v : typeof v === "string" && /^\d{1,12}$/.test(v) ? Number(v) : Number.NaN;
+  return Number.isSafeInteger(n) && n > 0 && n <= 2_147_483_647 ? n : null;
+}
+
+/** Hai hàm phạm vi của `db/hierarchy` mà cổng phòng dùng — tách ra để test dùng tiêm (`__datCongPhamViChoTest`). */
+interface CongPhamVi {
+  trongPhamVi(cap: CapPhongPhamVi | "line" | "station", id: number, pv: { userId: number; userRole: string }): Promise<boolean>;
+  idsTrongPhamVi(cap: "machine" | "line" | "station", pv: { userId: number; userRole: string }, opts?: { strict?: boolean }): Promise<number[] | null>;
+}
+let congPhamViGhiDe: CongPhamVi | null = null;
+/** Chỉ lưới: thay cổng phạm vi (vd. tệp đo PHÂN QUYỀN PHÒNG không cần CSDL thật). `null` ⇒ về mặc định (`db/hierarchy` THẬT). */
+export function __datCongPhamViChoTest(f: CongPhamVi | null): void {
+  congPhamViGhiDe = f;
+}
+async function layCongPhamVi(): Promise<CongPhamVi> {
+  if (congPhamViGhiDe) return congPhamViGhiDe;
+  return import("../db/hierarchy"); // import động: socket.ts không kéo cây db lúc khởi động
+}
+
+function pvCuaSocket(data: DuLieuSocket): { userId: number; userRole: string } {
+  return { userId: data.user!.id as number, userRole: String(data.user!.role ?? "") };
+}
+
+/** Được vào phòng `{cap}:{id}` không — nhà máy / xưởng / chuyền / máy NẰM TRONG PHẠM VI người dùng? */
+export async function duocVaoPhongPhamVi(data: DuLieuSocket | null | undefined, cap: CapPhongPhamVi, id: unknown): Promise<boolean> {
+  if (!laSocketNguoiDung(data)) return false;
+  const n = idPhongHopLe(id);
+  if (n === null) return false;
+  try {
+    const { trongPhamVi } = await layCongPhamVi();
+    return await trongPhamVi(cap, n, pvCuaSocket(data!));
+  } catch (err) {
+    console.error(`[Socket.io] loi kiem pham vi ${cap}:`, (err as Error)?.message ?? err);
+    return false;
+  }
+}
+
+/** Người dùng có PHẠM VI TOÀN QUYỀN (admin / vai không bị thu hẹp) không? — cùng nguồn `idsTrongPhamVi("machine") === null`. */
+export async function coPhamViToanQuyen(data: DuLieuSocket | null | undefined): Promise<boolean> {
+  if (!laSocketNguoiDung(data)) return false;
+  try {
+    const { idsTrongPhamVi } = await layCongPhamVi();
+    return (await idsTrongPhamVi("machine", pvCuaSocket(data!))) === null;
+  } catch (err) {
+    console.error("[Socket.io] loi kiem pham vi toan quyen:", (err as Error)?.message ?? err);
+    return false;
+  }
+}
+
+/**
+ * Phòng firehose `telemetry:all` mang mẫu của MỌI máy ⇒ CHỈ người toàn quyền (admin telemetry monitor). Người phạm vi hẹp nhận mẫu
+ * của máy mình qua `machine:{id}` (đã kiểm phạm vi).
+ */
+export const duocVaoPhongTelemetryAll = coPhamViToanQuyen;
+
+/** Robot: nằm trong phạm vi qua CHUYỀN hoặc TRẠM của nó (cùng luật `robotInCallerScope`); robot mồ côi ⇒ chỉ người toàn quyền. */
+export async function duocVaoPhongRobot(data: DuLieuSocket | null | undefined, robotId: unknown): Promise<boolean> {
+  if (!laSocketNguoiDung(data)) return false;
+  const n = idPhongHopLe(robotId);
+  if (n === null) return false;
+  try {
+    const { idsTrongPhamVi } = await layCongPhamVi();
+    const pv = pvCuaSocket(data!);
+    const [dong, tram] = await Promise.all([idsTrongPhamVi("line", pv, { strict: true }), idsTrongPhamVi("station", pv, { strict: true })]);
+    if (dong === null) return true; // toàn quyền
+    const { getDb } = await import("../db/connection");
+    const { robots } = await import("../../drizzle/schema");
+    const { eq } = await import("drizzle-orm");
+    const db = await getDb();
+    if (!db) return false;
+    const [r] = await db.select({ lineId: robots.lineId, stationId: robots.stationId }).from(robots).where(eq(robots.id, n)).limit(1);
+    if (!r) return false;
+    return (r.lineId != null && dong.includes(r.lineId)) || (r.stationId != null && (tram ?? []).includes(r.stationId));
+  } catch (err) {
+    console.error("[Socket.io] loi kiem pham vi robot:", (err as Error)?.message ?? err);
+    return false;
+  }
+}
+
+/** Khoá thiết bị logic của phòng `device:` (`"machine:7"` · `"robot:1"`): tách + kiểm theo loại; loại lạ ⇒ false. */
+export async function duocVaoPhongThietBi(data: DuLieuSocket | null | undefined, khoa: unknown): Promise<boolean> {
+  if (typeof khoa !== "string") return false;
+  const m = /^(machine|robot):(\d{1,12})$/.exec(khoa);
+  if (!m) return false;
+  return m[1] === "machine" ? duocVaoPhongPhamVi(data, "machine", m[2]) : duocVaoPhongRobot(data, m[2]);
+}

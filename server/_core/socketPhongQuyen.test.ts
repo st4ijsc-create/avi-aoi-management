@@ -181,6 +181,9 @@ beforeAll(async () => {
   delete process.env.RBAC_SCOPED_ADMIN;
   delete process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED; // Task 11 — mặc định TẮT (admin:* mirror role admin)
   socketMod = await import("./socket");
+  // Tệp này đo PHÂN QUYỀN PHÒNG (vai/quyền). Cổng PHẠM VI của `subscribe` (bản vá 2026-10-23) được đo ở socketPhamViPhong.db.test.ts trên CSDL
+  // thật; ở đây mọi người dùng trình duyệt có phạm vi TOÀN QUYỀN (`null`) để các ca cũ vẫn đo đúng thứ chúng đo.
+  (await import("./socketPhongQuyen")).__datCongPhamViChoTest({ trongPhamVi: async () => true, idsTrongPhamVi: async () => null });
   http = createServer();
   socketMod.initializeSocket(http);
   socketMod.stopTwinBroadcaster();
@@ -234,7 +237,7 @@ describe("★★★ PLT-01 — engineering:subscribe", () => {
     const ndNhan = ghiNhan(nd, "engineering:samples");
     may.emit("engineering:subscribe", { machineId: 5 });
     nd.emit("engineering:subscribe", { machineId: 5 });
-    await vi.waitFor(() => expect(phongCua(nd)).toContain("engineering:5"));
+    await vi.waitFor(() => expect(phongCua(nd)).toContain("engineering:5"), { timeout: 5000 }); // 5 s: lần nạp đầu của accessControl/hierarchy chậm khi máy bận
     await cho(100);
     expect(phongCua(may)).not.toContain("engineering:5");
 
