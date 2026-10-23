@@ -38,8 +38,13 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
   const hanMs = o.deadlineMs !== undefined && o.deadlineMs > 0 ? o.deadlineMs : Math.max(2 * chuKy, HAN_DOC_TOI_THIEU_MS);
   let dong = false;
   let dangChay = false;
-  /** Lần đọc đã bị bỏ khi quá hạn vẫn có thể đang chạy (withDeadline không huỷ được) ⇒ giữ chốt tới khi chính nó xong. */
-  let docDangTreo = false;
+  /**
+   * CHỐT chống chồng của lần đọc đang bay: lần đọc đã bị bỏ khi quá hạn vẫn có thể đang chạy (withDeadline không huỷ được) ⇒ giữ chốt tới khi
+   * chính nó xong. `ma` = số thứ tự lần đọc SỞ HỮU chốt; `giaoMuon` = việc phát kết quả muộn (V2 tắt, final I1) đã nhận quyền sở hữu ⇒ chỉ
+   * nó được nhả (sau khi phát XONG), `nha` của docP thì không. null = không có chốt.
+   */
+  let chot: { ma: number; giaoMuon: boolean } | null = null;
+  let soLanDoc = 0;
   let dangLoi = false;
   let soChong = 0;
 
@@ -53,7 +58,7 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
 
   const tick = async (): Promise<void> => {
     if (dong) return;
-    if (dangChay || docDangTreo) {
+    if (dangChay || chot !== null) {
       soChong++;
       return;
     }
@@ -61,29 +66,35 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
     const t0 = Date.now();
     try {
       let mau: OtSample[];
-      let docP: Promise<OtSample[]> | null = null;
-      let docXong = false;
+      const ma = ++soLanDoc;
+      const KHONG_LOI = Symbol("khong-loi");
+      /** Lỗi do CHÍNH docP ném (phân biệt với lỗi quá hạn của withDeadline). */
+      let loiCuaDoc: unknown = KHONG_LOI;
+      const docP: Promise<OtSample[]> = (async () => o.doc(o.tags))();
+      chot = { ma, giaoMuon: false };
+      // Chốt chỉ nhả khi CHÍNH docP xong (không phải ở hạn) — TRỪ khi việc phát muộn đã nhận quyền sở hữu chốt (nó tự nhả sau khi phát xong).
+      // V2 bật: kết quả/lỗi muộn của lần đọc đã bỏ bị nuốt ở đây.
+      const nha = (): void => {
+        if (chot !== null && chot.ma === ma && !chot.giaoMuon) chot = null;
+      };
+      docP.then(nha, (e: unknown) => {
+        loiCuaDoc = e;
+        nha();
+      });
       try {
-        docP = (async () => o.doc(o.tags))();
-        docDangTreo = true;
-        const nha = (): void => {
-          docXong = true;
-          docDangTreo = false;
-        };
-        // Chốt chỉ nhả khi CHÍNH docP xong (không phải ở hạn). V2 bật: kết quả/lỗi muộn của lần đọc đã bỏ bị nuốt ở đây.
-        docP.then(nha, nha);
         mau = await withDeadline(docP, hanMs, `${o.nhan} read`);
       } catch (err) {
         if (dong) return;
-        // SCADA R0 final I1 — cờ V2 TẮT (hành vi trước R0): hạn vòng poll cắt mà docP CHƯA xong ⇒ kết quả muộn VẪN phát khi về
-        // (driver tuần tự: hai thanh ghi không trả lời không được chặn mãi các tag khoẻ). Tick vẫn báo timeout (bộ đếm, D1) như cũ.
-        // Chốt giữ tới khi phát xong (mẫu muộn không xen với mẫu của tick sau). close() ⇒ không phát gì.
-        if (!o.chatLuongV2 && docP && !docXong) {
-          docDangTreo = true;
-          const pMuon = docP;
+        // SCADA R0 final I1 — cờ V2 TẮT (hành vi trước R0): hạn vòng poll cắt lần đọc ⇒ kết quả muộn VẪN phát khi về (driver tuần tự: hai
+        // thanh ghi không trả lời không được chặn mãi các tag khoẻ). Tick vẫn báo timeout (bộ đếm, D1) như cũ. close() ⇒ không phát gì.
+        // Residual fix: việc phát muộn NHẬN quyền sở hữu chốt NGAY tại đây (đồng bộ, trước mọi await — giữa lúc docP xong và lúc này không
+        // tick nào chạy được) và chỉ nó nhả chốt, SAU khi phát XONG: không lần đọc mới nào chạy giữa lúc phát mẫu muộn (onSample chờ ghi DB),
+        // mẫu cũ không bao giờ tới sau mẫu mới cùng tag (bộ đệm xếp theo thứ tự nhận — I4).
+        if (!o.chatLuongV2 && err !== loiCuaDoc) {
+          chot = { ma, giaoMuon: true };
           void (async () => {
             try {
-              const muon = await pMuon;
+              const muon = await docP;
               for (const s of muon) {
                 if (dong) return;
                 try {
@@ -95,7 +106,7 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
             } catch {
               // lỗi muộn của lần đọc đã bỏ: đã báo tick timeout, nuốt
             } finally {
-              docDangTreo = false;
+              if (chot !== null && chot.ma === ma) chot = null;
             }
           })();
         }

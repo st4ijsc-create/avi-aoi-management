@@ -100,11 +100,19 @@ export function datThongTinAdapter(adapterId: number, t: DangKyAdapter): void {
  * không chạy cổng OT) KHÔNG bao giờ có trong bộ đệm ⇒ interlock phải đọc DB cho chúng. Máy hiệu lực = máy của đăng ký mới nhất.
  */
 export function coAdapterTrungTamKhaiTag(machineId: number, tagKey: string): boolean {
+  return demAdapterTrungTamKhaiTag(machineId, tagKey) > 0;
+}
+
+/**
+ * Số adapter OT trung tâm đã đăng ký của máy `machineId` KHAI `tagKey` (theo sổ đăng ký, KHÔNG theo mục bộ đệm). > 1 ⇒ interlock coi là mơ hồ
+ * (Review Focus 2) dù chỉ một trong số đó đã có mẫu trong bộ đệm.
+ */
+export function demAdapterTrungTamKhaiTag(machineId: number, tagKey: string): number {
+  let n = 0;
   for (const [adapterId, tags] of tagKhai) {
-    if (!tags.has(tagKey)) continue;
-    if (thongTin.get(adapterId)?.machineId === machineId) return true;
+    if (tags.has(tagKey) && thongTin.get(adapterId)?.machineId === machineId) n++;
   }
-  return false;
+  return n;
 }
 
 /** Gỡ adapter (detach/stopOt): xoá thông tin + MỌI mục của nó — không còn trả giá trị cũ cho Task 8/9/10. */

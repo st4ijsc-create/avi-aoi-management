@@ -424,6 +424,89 @@ describe("taoVongPoll", () => {
     expect(mau).toHaveLength(0);
   });
 
+  // Residual fix (re-review final I1) — onSample BẤT ĐỒNG BỘ (sản phẩm: ingestSample chờ ghi DB). Chốt phải do việc phát muộn SỞ HỮU tới khi
+  // phát xong: `nha` của docP chạy TRƯỚC khi việc phát muộn tiếp tục, nên nhả chốt ở `nha` để lần đọc 2 chạy giữa lúc phát mẫu muộn.
+  describe("final I1 residual — onSample bất đồng bộ, V2 tắt", () => {
+    const CHAM_MOI_MAU_MS = 600; // 2 tag ⇒ phát muộn kéo 1200 ms: vượt qua mốc tick 3000
+    function dung(over: { soMauMuon?: number } = {}) {
+      const nhatKy: string[] = [];
+      const phat: Array<{ tagKey: string; v: unknown; luc: number }> = [];
+      const batDauDoc: number[] = [];
+      const t0 = Date.now();
+      let n = 0;
+      const doc = vi.fn((tags: OtTagAddress[]) => {
+        n++;
+        const lan = n;
+        batDauDoc.push(Date.now() - t0);
+        nhatKy.push(`doc${lan}:batdau`);
+        if (lan === 1) {
+          // đọc 1: treo quá hạn (300) rồi xong muộn ở 2500 với giá trị CŨ (v=1)
+          return new Promise<OtSample[]>((res) =>
+            setTimeout(() => res(tags.slice(0, over.soMauMuon ?? tags.length).map((t) => ({ ...mauTot(t.tagKey), value: 1 }))), 2500),
+          );
+        }
+        return Promise.resolve(tags.map((t) => ({ ...mauTot(t.tagKey), value: lan })));
+      });
+      const onSample = async (s: OtSample) => {
+        nhatKy.push(`phat:${s.tagKey}=${String(s.value)}:batdau`);
+        // mẫu muộn (v=1) ghi chậm, mẫu mới ghi nhanh: nếu chốt hở, mẫu mới VƯỢT mẫu cũ cùng tag
+        await new Promise((r) => setTimeout(r, s.value === 1 ? CHAM_MOI_MAU_MS : 10));
+        phat.push({ tagKey: s.tagKey, v: s.value, luc: Date.now() - t0 });
+        nhatKy.push(`phat:${s.tagKey}=${String(s.value)}:xong`);
+      };
+      const h = taoVongPoll({
+        tags: TAGS,
+        intervalMs: 1000,
+        deadlineMs: 300,
+        doc,
+        onSample,
+        phanLoiLoi: phanLoi,
+        chatLuongV2: false,
+        nhan: "t",
+      });
+      return { h, doc, nhatKy, phat, batDauDoc };
+    }
+
+    it("(1) KHÔNG lần đọc mới nào bắt đầu trước khi loạt muộn phát XONG", async () => {
+      const { h, doc, nhatKy, phat, batDauDoc } = dung();
+      await vi.advanceTimersByTimeAsync(3500); // muộn về 2500, phát 2 mẫu × 600 ⇒ xong 3700; tick 3000 phải bị chốt chặn
+      expect(phat.map((p) => p.v)).toEqual([1]); // mới xong 1 mẫu muộn
+      expect(doc).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1000); // 4500: tick 4000 đọc lại sau khi phát muộn xong (3700)
+      expect(doc).toHaveBeenCalledTimes(2);
+      const xongMuon = phat.filter((p) => p.v === 1).map((p) => p.luc);
+      expect(xongMuon).toHaveLength(2);
+      expect(batDauDoc[1]).toBeGreaterThanOrEqual(Math.max(...xongMuon));
+      // không có "doc2:batdau" chen giữa các dòng phát muộn
+      const iDoc2 = nhatKy.indexOf("doc2:batdau");
+      const iMuonCuoi = nhatKy.lastIndexOf("phat:t2=1:xong");
+      expect(iDoc2).toBeGreaterThan(iMuonCuoi);
+      await h.close();
+    });
+
+    it("(2) thứ tự phát: không mẫu muộn (cũ) nào của một tag tới SAU mẫu của tick mới hơn cùng tag", async () => {
+      const { h, phat } = dung();
+      await vi.advanceTimersByTimeAsync(8000);
+      for (const tag of ["t1", "t2"]) {
+        const v = phat.filter((p) => p.tagKey === tag).map((p) => p.v as number);
+        expect(v[0]).toBe(1);
+        for (let i = 1; i < v.length; i++) expect(v[i]).toBeGreaterThanOrEqual(v[i - 1]);
+      }
+      expect(phat.length).toBeGreaterThanOrEqual(4);
+      await h.close();
+    });
+
+    it("(3) close() giữa lúc phát muộn ⇒ không phát thêm gì, không đọc thêm", async () => {
+      const { h, doc, phat } = dung();
+      await vi.advanceTimersByTimeAsync(2700); // muộn về 2500, đang phát mẫu đầu
+      await h.close();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(phat.length).toBeLessThanOrEqual(1); // mẫu đang chờ có thể xong; không mẫu nào BẮT ĐẦU sau close
+      expect(phat.filter((p) => p.tagKey === "t2")).toHaveLength(0);
+      expect(doc).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("chatLuongV2: đường timeout phát loạt xấu mang phanLoiLoi(err) và onTick timeout:true", async () => {
     const mau: OtSample[] = [];
     const ticks: SuKienDoc[] = [];

@@ -123,6 +123,18 @@ describe("final I2 — bộ đệm bật: chỉ (máy, tag) do adapter OT trung 
     expect(db.soLanDocDb).toBe(0);
   });
 
+  it("residual (Review Focus 2): HAI adapter OT trung tâm của máy cùng KHAI tag, mới MỘT có mẫu ⇒ mo_ho (không đánh giá trên mẫu duy nhất)", async () => {
+    datThongTinAdapter(70, { pollMs: 1000, coDeadband: false, machineId: MAY, code: "OT-70", tagKeys: [TAG] });
+    datThongTinAdapter(71, { pollMs: 1000, coDeadband: false, machineId: MAY, code: "OT-71", tagKeys: [TAG] });
+    const now = Date.now();
+    napTuOt({ adapterId: 70, machineId: MAY }, [mauTot(95, now)], now); // chỉ adapter 70 có mục
+    expect(await danhGiaLuat(luat(), now)).toEqual({ dung: false, thieuDuLieu: true, lyDo: "mo_ho" });
+    expect(db.soLanDocDb).toBe(0);
+    // adapter 71 chuyển sang máy khác ⇒ còn một adapter khai ⇒ đánh giá bình thường
+    datThongTinAdapter(71, { pollMs: 1000, coDeadband: false, machineId: MAY + 1, code: "OT-71", tagKeys: [TAG] });
+    expect(await danhGiaLuat(luat(), now)).toEqual({ dung: true, thieuDuLieu: false });
+  });
+
   it("đường DB giữ fail-closed: MQTT im lặng 30 s (> sàn 15 s) ⇒ cu", async () => {
     db.rows = hangMqtt(3, 20, 30_000);
     expect(await danhGiaLuat(luat())).toEqual({ dung: false, thieuDuLieu: true, lyDo: "cu" });

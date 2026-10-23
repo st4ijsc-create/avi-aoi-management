@@ -37,7 +37,7 @@ vi.mock("../scada/boDemHienTai", () => ({
   NGUONG_DEADBAND_MS: 70_000,
   adapterTheoMa: (code: string | null) => (code && cache.adapter && cache.adapter.code === code ? cache.adapter : null),
   boDemDangBat: () => cache.bat,
-  coAdapterTrungTamKhaiTag: () => cache.khai,
+  demAdapterTrungTamKhaiTag: () => (cache.khai ? 1 : 0),
   timTheoMayVaTag: (machineId: number, tagKey: string) => {
     cache.hoi.push([machineId, tagKey]);
     return cache.mau;

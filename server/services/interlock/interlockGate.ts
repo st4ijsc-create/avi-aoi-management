@@ -39,7 +39,7 @@ import {
   SO_LICH_SU_TOI_DA,
   adapterTheoMa,
   boDemDangBat,
-  coAdapterTrungTamKhaiTag,
+  demAdapterTrungTamKhaiTag,
   timTheoMayVaTag,
 } from "../scada/boDemHienTai";
 
@@ -173,8 +173,14 @@ export async function fetchObservation(rule: InterlockRule, now: number = Date.n
  *   - q !== "good" ⇒ chat_luong_xau;   stale ⇒ cu;   ngược lại series = lichSu (cũ→mới), scalar = v.
  *   - final I3 (c): series CHỈ gồm điểm có giờ nhận `rx >= now - windowSeconds·1000` (khớp `ts >= since` của đường DB, theo giờ máy chủ).
  */
-function docTuBoDem(rule: InterlockRule, now: number): { obs: ObservationContext } | { lyDo: NonNullable<KetQuaDanhGia["lyDo"]> } {
+function docTuBoDem(
+  rule: InterlockRule,
+  now: number,
+  soAdapterKhai: number,
+): { obs: ObservationContext } | { lyDo: NonNullable<KetQuaDanhGia["lyDo"]> } {
   if (rule.machineId == null || !rule.sourceKey?.trim()) return { lyDo: "cau_hinh" };
+  // Residual fix (Review Focus 2) — >1 adapter OT trung tâm của máy KHAI tag này ⇒ mơ hồ, kể cả khi mới một adapter có mục trong bộ đệm.
+  if (soAdapterKhai > 1) return { lyDo: "mo_ho" };
   const mau = timTheoMayVaTag(rule.machineId, rule.sourceKey, now);
   if (mau.length === 0) return { lyDo: "khong_co_mau" };
   if (mau.length > 1) return { lyDo: "mo_ho" };
@@ -217,10 +223,10 @@ export async function danhGiaLuatChiTiet(
   // SCADA R0 final I2 — bộ đệm CHỈ được nuôi bởi đường OT trung tâm trong tiến trình này: chỉ đọc nó khi một adapter OT trung tâm đã đăng
   // ký của máy luật KHAI tag luật. Nguồn khác (edge, MQTT, MTConnect, SECS/GEM, CFX, /api/v1, simulator, bản sao không chạy cổng OT) ⇒
   // đường DB (cùng ngữ nghĩa fail-closed). Không có nhánh này, mọi luật của các nguồn đó CHẶN vĩnh viễn với khong_co_mau khi bật bộ đệm.
-  const boDemNuoiTag =
-    sourceType === "telemetry_tag" && rule.machineId != null && rule.sourceKey != null && coAdapterTrungTamKhaiTag(rule.machineId, rule.sourceKey);
-  if (sourceType === "telemetry_tag" && boDemDangBat() && !canChuoiDaiHonBoDem && boDemNuoiTag) {
-    const doc = docTuBoDem(rule, now);
+  const soAdapterKhai =
+    sourceType === "telemetry_tag" && rule.machineId != null && rule.sourceKey != null ? demAdapterTrungTamKhaiTag(rule.machineId, rule.sourceKey) : 0;
+  if (sourceType === "telemetry_tag" && boDemDangBat() && !canChuoiDaiHonBoDem && soAdapterKhai > 0) {
+    const doc = docTuBoDem(rule, now, soAdapterKhai);
     if ("lyDo" in doc) return thieu(doc.lyDo);
     obs = doc.obs;
   } else {
