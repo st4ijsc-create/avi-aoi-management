@@ -208,4 +208,96 @@ describe("taoVongPoll", () => {
     expect(ticks).toHaveLength(0);
     expect(doc).toHaveBeenCalledTimes(1);
   });
+
+  it("hồi quy: doc treo mãi, deadlineMs < intervalMs ⇒ doc gọi đúng 1 lần, soLanChong>0, đúng MỘT loạt xấu timeout", async () => {
+    const mau: OtSample[] = [];
+    const ticks: SuKienDoc[] = [];
+    const doc = vi.fn(() => new Promise<OtSample[]>(() => undefined));
+    const h = taoVongPoll({
+      tags: TAGS,
+      intervalMs: 1000,
+      deadlineMs: 300,
+      doc,
+      onSample: (s) => {
+        mau.push(s);
+      },
+      onTick: (e) => ticks.push(e),
+      phanLoiLoi: phanLoi,
+      chatLuongV2: true,
+      nhan: "t",
+    });
+    await vi.advanceTimersByTimeAsync(5500); // 5 tick
+    expect(doc).toHaveBeenCalledTimes(1);
+    expect(h.soLanChong()).toBeGreaterThan(0);
+    expect(ticks).toHaveLength(1);
+    expect(ticks[0]).toMatchObject({ ok: false, timeout: true });
+    expect(mau).toHaveLength(2);
+    expect(mau.every((s) => s.quality === "bad")).toBe(true);
+    await h.close();
+  });
+
+  it("đọc đã bỏ ở hạn rồi xong muộn: kết quả muộn bị nuốt, chốt nhả, tick sau đọc lại bình thường", async () => {
+    const mau: OtSample[] = [];
+    const ticks: SuKienDoc[] = [];
+    let n = 0;
+    const doc = vi.fn((tags: OtTagAddress[]) => {
+      n++;
+      if (n === 1) {
+        return new Promise<OtSample[]>((res) => setTimeout(() => res(tags.map((t) => mauTot(t.tagKey))), 2500));
+      }
+      return docTot(tags);
+    });
+    const h = taoVongPoll({
+      tags: TAGS,
+      intervalMs: 1000,
+      deadlineMs: 300,
+      doc,
+      onSample: (s) => {
+        mau.push(s);
+      },
+      onTick: (e) => ticks.push(e),
+      phanLoiLoi: phanLoi,
+      chatLuongV2: true,
+      nhan: "t",
+    });
+    await vi.advanceTimersByTimeAsync(3000); // đọc 1 bắt đầu ở 1000, hạn ở 1300, xong muộn ở 3500 -> chưa
+    expect(doc).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(600); // 3600: đọc 1 xong muộn (3500), tick 4000 chưa tới
+    expect(mau.filter((s) => s.quality === "good")).toHaveLength(0); // kết quả muộn không phát
+    expect(ticks).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(500); // 4100: tick 4000 đọc lại
+    expect(doc).toHaveBeenCalledTimes(2);
+    expect(mau.filter((s) => s.quality === "good")).toHaveLength(2);
+    await h.close();
+  });
+
+  it("chatLuongV2: đường timeout phát loạt xấu mang phanLoiLoi(err) và onTick timeout:true", async () => {
+    const mau: OtSample[] = [];
+    const ticks: SuKienDoc[] = [];
+    const phan = vi.fn(() => ({ statusCode: "sc_timeout", reason: "comm_lost" as const }));
+    const h = taoVongPoll({
+      tags: TAGS,
+      intervalMs: 1000,
+      deadlineMs: 400,
+      doc: () => new Promise<OtSample[]>(() => undefined),
+      onSample: (s) => {
+        mau.push(s);
+      },
+      onTick: (e) => ticks.push(e),
+      phanLoiLoi: phan,
+      chatLuongV2: true,
+      nhan: "plc1",
+    });
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(ticks).toHaveLength(1);
+    expect(ticks[0].timeout).toBe(true);
+    expect(phan).toHaveBeenCalledTimes(1);
+    const err = (phan.mock.calls[0] as unknown[])[0];
+    expect((err as Error).message).toMatch(/plc1 read timeout after 400ms/);
+    expect(mau).toHaveLength(2);
+    for (const s of mau) {
+      expect(s).toMatchObject({ quality: "bad", statusCode: "sc_timeout", reason: "comm_lost", value: null });
+    }
+    await h.close();
+  });
 });

@@ -2,7 +2,8 @@
  * SCADA R0 (C1/C5) — vòng poll DÙNG CHUNG cho mọi driver OT (và stub).
  *
  *   - Chống chồng tick: tick tới khi tick trước chưa xong ⇒ BỎ QUA (đếm `soLanChong()`), không dồn hàng đợi.
- *   - Mỗi lần đọc bọc `withDeadline` (`deadlineMs ?? intervalMs`): đọc treo không giữ vòng mãi mãi.
+ *   - Mỗi lần đọc bọc `withDeadline` (`deadlineMs ?? intervalMs`): đọc treo không giữ vòng mãi mãi. Chốt chống chồng chỉ nhả khi
+ *     CHÍNH lần đọc xong (hạn không huỷ được đọc): PLC treo ⇒ không dồn đọc song song; kết quả muộn bị nuốt.
  *   - Mất liên lạc: báo `onTick({ok:false, timeout})`; khi `chatLuongV2` và là tick ĐẦU của đợt lỗi ⇒ phát MỘT loạt
  *     mẫu `bad` (mỗi tag một mẫu). Các tick lỗi tiếp theo im lặng; có lại một tick tốt ⇒ đợt lỗi kết thúc.
  *   - Lỗi `onSample` của một mẫu bị nuốt (giữ hành vi cũ của driver); `close()` dừng hẳn, tick dở dang không phát gì nữa.
@@ -33,6 +34,8 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
   const hanMs = o.deadlineMs !== undefined && o.deadlineMs > 0 ? o.deadlineMs : chuKy;
   let dong = false;
   let dangChay = false;
+  /** Lần đọc đã bị bỏ khi quá hạn vẫn có thể đang chạy (withDeadline không huỷ được) ⇒ giữ chốt tới khi chính nó xong. */
+  let docDangTreo = false;
   let dangLoi = false;
   let soChong = 0;
 
@@ -46,7 +49,7 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
 
   const tick = async (): Promise<void> => {
     if (dong) return;
-    if (dangChay) {
+    if (dangChay || docDangTreo) {
       soChong++;
       return;
     }
@@ -55,11 +58,14 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
     try {
       let mau: OtSample[];
       try {
-        mau = await withDeadline(
-          (async () => o.doc(o.tags))(),
-          hanMs,
-          `${o.nhan} read`,
-        );
+        const docP = (async () => o.doc(o.tags))();
+        docDangTreo = true;
+        const nha = (): void => {
+          docDangTreo = false;
+        };
+        // Chốt chỉ nhả khi CHÍNH docP xong (không phải ở hạn). Kết quả/lỗi muộn của lần đọc đã bỏ bị nuốt ở đây.
+        docP.then(nha, nha);
+        mau = await withDeadline(docP, hanMs, `${o.nhan} read`);
       } catch (err) {
         if (dong) return;
         baoTick({ ok: false, timeout: laLoiTimeout(err), ms: Date.now() - t0, tags: [] });
