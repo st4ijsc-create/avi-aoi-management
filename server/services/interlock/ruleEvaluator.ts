@@ -80,3 +80,20 @@ export function deriveObserved(sourceType: InterlockSourceType, ctx: Observation
       return null;
   }
 }
+
+/**
+ * SCADA R0 Task 9 (D2) — kết quả đánh giá MỘT luật, tách "đúng/sai" khỏi "không đánh giá được".
+ *
+ * `compare()` trả false khi quan sát null — đúng cho phép so sánh thuần, NHƯNG khiến "thiếu dữ liệu" trông giống "an toàn" (fail-open).
+ * Cổng/engine dùng kiểu này để phân biệt: `thieuDuLieu:true` ⇒ không có kết luận (dung luôn false) và người gọi PHẢI quyết định
+ * (cổng inline: chặn theo `khiThieuDuLieu`; engine: không phát hành động, chỉ log).
+ *   khong_co_mau     — không có mẫu / giá trị không phải số / lịch sử ngắn hơn consecutiveCount
+ *   chat_luong_xau   — mẫu q = bad | uncertain
+ *   cu               — mẫu quá hạn (stale)
+ *   mo_ho            — nhiều adapter cùng tagKey trên máy, hoặc luật không gắn máy
+ */
+export interface KetQuaDanhGia {
+  dung: boolean;
+  thieuDuLieu: boolean;
+  lyDo?: "khong_co_mau" | "chat_luong_xau" | "cu" | "mo_ho";
+}

@@ -31,8 +31,10 @@ import {
   deriveObserved,
   type ComparisonOperator,
   type InterlockSourceType,
+  type KetQuaDanhGia,
   type ObservationContext,
 } from "./ruleEvaluator";
+import { boDemDangBat, timTheoMayVaTag } from "../scada/boDemHienTai";
 
 /** Window start = now - windowSeconds (default 300s). */
 function windowStart(rule: InterlockRule): Date {
@@ -126,22 +128,88 @@ export async function fetchObservation(rule: InterlockRule): Promise<Observation
 }
 
 /**
- * Đánh giá ĐỒNG BỘ điều kiện của một rule: fetch feed → derive → compare. Trả về
- * true khi điều kiện của rule đang VI PHẠM (met). Tái dùng bởi cả interlockEngine
- * (poll) và evaluateInterlockGate (inline). Có thể ném lỗi nếu fetchObservation lỗi
- * — caller phải bắt và xử lý fail-closed.
+ * SCADA R0 Task 9 (K3, D11) — đọc quan sát SỐNG của luật `telemetry_tag` từ BỘ ĐỆM GIÁ TRỊ HIỆN TẠI (Task 7) thay vì hàng DB tới 300 s tuổi.
+ * Trả `obs` khi có đúng MỘT mẫu tốt, còn tươi; ngược lại trả lý do thiếu dữ liệu (D2: fail-closed — người gọi quyết định chặn).
+ *   - luật không gắn máy ⇒ mo_ho (không đoán máy);   0 mẫu ⇒ khong_co_mau;   >1 adapter cùng tagKey trên máy ⇒ mo_ho (không chọn bừa);
+ *   - q !== "good" ⇒ chat_luong_xau;   stale ⇒ cu;   ngược lại series = lichSu (cũ→mới), scalar = v.
  */
-export async function evaluateRuleCondition(rule: InterlockRule): Promise<boolean> {
-  const obs = await fetchObservation(rule);
-  const observed = deriveObserved(rule.sourceType as InterlockSourceType, obs);
+function docTuBoDem(rule: InterlockRule, now: number): { obs: ObservationContext } | { lyDo: NonNullable<KetQuaDanhGia["lyDo"]> } {
+  if (rule.machineId == null || !rule.sourceKey) return { lyDo: "mo_ho" };
+  const mau = timTheoMayVaTag(rule.machineId, rule.sourceKey, now);
+  if (mau.length === 0) return { lyDo: "khong_co_mau" };
+  if (mau.length > 1) return { lyDo: "mo_ho" };
+  const m = mau[0];
+  if (m.q !== "good") return { lyDo: "chat_luong_xau" };
+  if (m.stale) return { lyDo: "cu" };
+  const scalar = typeof m.v === "number" ? m.v : typeof m.v === "boolean" ? Number(m.v) : null;
+  return { obs: { series: m.lichSu.slice(), scalar } };
+}
+
+const NGUON_SO_VO_HUONG: ReadonlySet<string> = new Set(["telemetry_tag", "cpk"]);
+
+/**
+ * Đánh giá MỘT luật và trả KẾT QUẢ + giá trị quan sát (engine cần `observed` để ghi sự kiện). `danhGiaLuat` là vỏ chỉ trả kết quả.
+ * Có thể ném lỗi nếu fetchObservation lỗi — caller phải bắt và xử lý fail-closed.
+ *
+ * Thiếu dữ liệu (D2) chỉ áp cho nguồn có GIÁ TRỊ VÔ HƯỚNG có thể vắng (telemetry_tag, cpk): quan sát null ⇒ thieuDuLieu, KHÔNG phải "an toàn".
+ * Nguồn đếm (spc_violation, process_result) và ng_rate luôn có số (0 là câu trả lời hợp lệ).
+ */
+export async function danhGiaLuatChiTiet(
+  rule: InterlockRule,
+  now: number = Date.now(),
+): Promise<{ ketQua: KetQuaDanhGia; observed: number | null }> {
+  const sourceType = rule.sourceType as InterlockSourceType;
+  const thieu = (lyDo: NonNullable<KetQuaDanhGia["lyDo"]>) => ({
+    ketQua: { dung: false, thieuDuLieu: true, lyDo } as KetQuaDanhGia,
+    observed: null as number | null,
+  });
+
+  let obs: ObservationContext;
+  if (sourceType === "telemetry_tag" && boDemDangBat()) {
+    const doc = docTuBoDem(rule, now);
+    if ("lyDo" in doc) return thieu(doc.lyDo);
+    obs = doc.obs;
+  } else {
+    obs = await fetchObservation(rule);
+  }
+
+  const observed = deriveObserved(sourceType, obs);
   const threshold = rule.threshold != null ? Number(rule.threshold) : null;
-  return evaluateCondition(
+  const lienTiep = rule.consecutiveCount != null && rule.consecutiveCount > 1 && Array.isArray(obs.series);
+
+  if (NGUON_SO_VO_HUONG.has(sourceType)) {
+    if (lienTiep) {
+      // Đánh giá "N điểm liên tiếp": chưa đủ N mẫu, hoặc có mẫu không phải số trong N mẫu cuối ⇒ chưa kết luận được (không phải "an toàn").
+      const series = obs.series!;
+      const n = rule.consecutiveCount!;
+      if (series.length < n) return thieu("khong_co_mau");
+      if (series.slice(-n).some((v) => typeof v !== "number" || Number.isNaN(v))) return thieu("khong_co_mau");
+    } else if (observed == null || Number.isNaN(observed)) {
+      return thieu("khong_co_mau");
+    }
+  }
+
+  const dung = evaluateCondition(
     observed,
     rule.comparisonOperator as ComparisonOperator,
     threshold,
     rule.consecutiveCount,
     obs.series,
   );
+  return { ketQua: { dung, thieuDuLieu: false }, observed };
+}
+
+/** Kết quả đánh giá một luật (đúng/sai/thiếu dữ liệu). Dùng chung bởi cổng inline và interlockEngine. */
+export async function danhGiaLuat(rule: InterlockRule, now: number = Date.now()): Promise<KetQuaDanhGia> {
+  return (await danhGiaLuatChiTiet(rule, now)).ketQua;
+}
+
+/**
+ * Đánh giá ĐỒNG BỘ điều kiện của một rule → true khi điều kiện ĐANG vi phạm (met). Giữ cho người gọi cũ; trả `danhGiaLuat(...).dung`
+ * (thiếu dữ liệu ⇒ false ở đây — nơi cần phân biệt phải gọi `danhGiaLuat`). Có thể ném lỗi — caller phải bắt và xử lý fail-closed.
+ */
+export async function evaluateRuleCondition(rule: InterlockRule): Promise<boolean> {
+  return (await danhGiaLuat(rule)).dung;
 }
 
 /**
@@ -160,6 +228,8 @@ export interface InterlockGateViolation {
   ruleId: number;
   ruleName: string;
   action: string;
+  /** "thieu_du_lieu" = bị chặn vì luật KHÔNG đánh giá được (thiếu/xấu/cũ/mơ hồ — D2), không phải vì điều kiện met. */
+  lyDo?: "thieu_du_lieu";
 }
 
 export interface InterlockGateResult {
@@ -205,6 +275,7 @@ export async function evaluateInterlockGate(params: {
   tagKeys: string[];
 }): Promise<InterlockGateResult> {
   try {
+    const now = Date.now();
     const db = await getDb();
     if (!db) return { blocked: true, failClosed: true, violations: [] };
 
@@ -221,9 +292,16 @@ export async function evaluateInterlockGate(params: {
 
     const violations: InterlockGateViolation[] = [];
     for (const rule of relevant) {
-      // evaluateRuleCondition có thể ném → nhảy xuống catch → fail-closed.
-      const met = await evaluateRuleCondition(rule);
-      if (met) violations.push({ ruleId: rule.id, ruleName: rule.name, action: rule.action });
+      // danhGiaLuat có thể ném → nhảy xuống catch → fail-closed.
+      const kq = await danhGiaLuat(rule, now);
+      if (kq.thieuDuLieu) {
+        // D2 fail-closed: thiếu/xấu/cũ/mơ hồ ⇒ CHẶN, trừ khi chủ luật khai tường minh "cho_qua". Giá trị khác/vắng ⇒ coi như "chan".
+        if (rule.khiThieuDuLieu !== "cho_qua") {
+          violations.push({ ruleId: rule.id, ruleName: rule.name, action: rule.action, lyDo: "thieu_du_lieu" });
+        }
+      } else if (kq.dung) {
+        violations.push({ ruleId: rule.id, ruleName: rule.name, action: rule.action });
+      }
     }
 
     return { blocked: violations.length > 0, failClosed: false, violations };

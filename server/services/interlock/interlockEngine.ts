@@ -37,17 +37,23 @@ import {
 } from "../../../drizzle/schema";
 import { raiseAndon, type AndonState } from "../andon/andonService";
 import { dispatch, isInterlockAutoBlockEnabled, isOtControlEnabled } from "../ot/commandDispatcher";
-import {
-  evaluateCondition,
-  deriveObserved,
-  type ComparisonOperator,
-  type InterlockSourceType,
-} from "./ruleEvaluator";
-// fetchObservation ĐÃ CHUYỂN sang interlockGate (dùng chung với cổng inline của dispatcher).
-import { fetchObservation } from "./interlockGate";
+// Đánh giá luật ĐÃ CHUYỂN sang interlockGate (dùng chung với cổng inline của dispatcher): danhGiaLuatChiTiet.
+import { danhGiaLuatChiTiet } from "./interlockGate";
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let polling = false;
+
+/**
+ * SCADA R0 Task 9 (D2) — các luật ĐANG trong một ĐỢT thiếu dữ liệu (ruleId → lyDo đã log). Mỗi đợt log ĐÚNG MỘT dòng mã ổn định
+ * `interlock.thieu_du_lieu ruleId=<id> lyDo=<lyDo>` (R2 sẽ nối vào cảnh báo truyền thông); đợt kết thúc khi luật có lại dữ liệu đủ
+ * (hoặc không còn trong tập luật bật). Trong bộ nhớ — khởi động lại tiến trình = một đợt mới (chấp nhận được: tối đa 1 dòng/luật/lần khởi động).
+ */
+const dotThieuDuLieu = new Map<number, string>();
+
+/** Chỉ dùng cho test: xoá trạng thái đợt thiếu dữ liệu. */
+export function __datLaiDotThieuDuLieu(): void {
+  dotThieuDuLieu.clear();
+}
 
 /**
  * Doc 80 Đợt 1 final wave (item 5) — vị từ DUY NHẤT "engine interlock đang bật". Bảng tư thế của Hub
@@ -107,6 +113,9 @@ export async function runOnce(): Promise<number> {
     const db = await getDb();
     if (!db) return 0;
     const rules = await db.select().from(interlockRules).where(eq(interlockRules.enabled, true));
+    // Luật đã tắt/xoá thì đợt thiếu dữ liệu của nó kết thúc (không rò bản đồ; bật lại = đợt mới).
+    const dangBat = new Set(rules.map((r) => r.id));
+    for (const id of [...dotThieuDuLieu.keys()]) if (!dangBat.has(id)) dotThieuDuLieu.delete(id);
     for (const rule of rules) {
       try {
         const ev = await evaluateRule(rule);
@@ -143,17 +152,21 @@ export async function evaluateRule(rule: InterlockRule): Promise<{ id: number; s
     if (elapsed < (rule.cooldownSeconds ?? 300)) return null;
   }
 
-  const obs = await fetchObservation(rule);
-  const observed = deriveObserved(rule.sourceType as InterlockSourceType, obs);
+  const { ketQua, observed } = await danhGiaLuatChiTiet(rule);
   const threshold = rule.threshold != null ? Number(rule.threshold) : null;
-  const met = evaluateCondition(
-    observed,
-    rule.comparisonOperator as ComparisonOperator,
-    threshold,
-    rule.consecutiveCount,
-    obs.series,
-  );
-  if (!met) return null;
+
+  // D2 (đã duyệt 23/10): thiếu dữ liệu ⇒ KHÔNG tự phát hành động (không dispatch, không Andon, không ghi sự kiện) — engine không được
+  // hành động trên dữ liệu nó không có. Chỉ log MỘT dòng mỗi đợt; cổng inline (interlockGate) mới là nơi CHẶN lệnh.
+  if (ketQua.thieuDuLieu) {
+    const lyDo = ketQua.lyDo ?? "khong_co_mau";
+    if (!dotThieuDuLieu.has(rule.id)) {
+      dotThieuDuLieu.set(rule.id, lyDo);
+      console.warn(`interlock.thieu_du_lieu ruleId=${rule.id} lyDo=${lyDo}`);
+    }
+    return null;
+  }
+  dotThieuDuLieu.delete(rule.id); // có lại dữ liệu đủ ⇒ đợt kết thúc
+  if (!ketQua.dung) return null;
 
   // ── Decide the outcome ────────────────────────────────────────────────────
   const action = rule.action;
