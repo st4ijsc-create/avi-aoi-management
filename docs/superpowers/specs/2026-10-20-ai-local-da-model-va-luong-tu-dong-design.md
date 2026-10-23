@@ -814,6 +814,16 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   đợt, cờ trợ lý theo vai trò bật, cờ kiểm có `tro-ly`; nhánh tắt = `context.kiemBienDichST:false`), triển khai main (`aiLocalKnowledgeCodingKiemST`,
   sửa = một prompt ghép, tắt nghĩ); harness chấm phần sau "Bản đã sửa sau biên dịch". **Cổng (giống A): bật ≥ tắt + 4/72 VÀ số lượt bật > 300 s
   ≤ 7/72.** Đạt ⇒ đề xuất bật `tro-ly` CHỈ khi model của lượt là 27B (hoặc theo vai trò `code.plc`); không ⇒ giữ tắt.
+  **KẾT QUẢ (2026-10-23, `reports/PLC-troly-ab-kiem-q36-27b-2.json`, mã aebd65630):** TẮT **45/72** (tt 17 · tv 13 · ud 15) · BẬT **48/72**
+  (tt 21 · tv 13 · ud 14) ⇒ **+3/72 < +4 — CỔNG KHÔNG ĐẠT ⇒ `tro-ly` GIỮ TẮT** (cả trên 35B lẫn 27B: +3/72 mỗi lần). Vế thời gian đạt: > 300 s
+  bật 1/72 (max 434 s) · tắt 0; trung vị tới `done` 106 → 116 s; TTFT trung vị 97 / 97 s. Cặp: bật đạt/tắt trượt 9 · ngược lại 6. Vòng ở
+  nhánh bật: sach 60 (43 đạt) · **da-sua 5 (5 đạt)** · con-loi 7 (0 đạt). Trượt không biên dịch 13 → 7, test đỏ 14 → 17. ⇒ Khác 35B (da-sua
+  5/8): trên 27B MỌI bản đã sửa đều đạt — vòng làm đúng việc của nó khi sửa được, nhưng số lượt cần sửa ít (12/72) nên biên độ nhỏ; chênh
+  thuần là 9 vs 6 cặp. Kiểm usage 144/144 (code.plc · 27B), kiểm nhánh mỗi lượt. **Sự cố + nối tiếp:** llama-server 27B CHẾT ~22:20 khi đang
+  lưu prompt cache (log dừng ở `prompt_save … 1036 MiB`), ngay sau khi canh-bo-nho báo commit Windows tụt 14–15 → **6,1 GB** lúc 22:17 (thoáng
+  qua; 22:25 đã 21 GB; không xác định được tiến trình chiếm) — cùng lớp sự cố 18:21 ngày 22. Lượt bật lỗi không có tóm tắt ⇒ KIỂM NHÁNH dừng
+  đúng, vứt lượt đó; 134 hàng hợp lệ (17:48–22:20) + 10 hàng NỐI TIẾP cùng mã (22:25–22:55, `--noi-tiep`, như A/B #2); bản 134 hàng giữ ở
+  `…-27b-1-134hang.json`. :3013 chết lúc boot 0 lần; :8091 khởi động lại: 2 đổi model theo kế hoạch ×2 lần chạy + 1 lần CHẾT (22:20).
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
