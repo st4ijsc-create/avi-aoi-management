@@ -4,6 +4,7 @@
  * assert a cpk_history row was written for that point over the window.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { eq, inArray } from "drizzle-orm";
 import { appRouter } from "../routers";
 import * as db from "../db";
@@ -38,7 +39,7 @@ beforeAll(async () => {
   // (MachineAuth từ chối đường yếu — cờ không được nới).
   const cred = await issueMachineKey({ machineId, name: `op9-cpk-${STAMP}`, scopes: ["ingest:write"] });
   API_KEY = cred.plaintextKey;
-  productModelId = await db.createProductModel({ code: MODEL_CODE, name: "OP9 test model" });
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: MODEL_CODE, name: "OP9 test model" }));
   pointDefId = await db.createMeasurementPointDef({
     productModelId,
     code: POINT_CODE,

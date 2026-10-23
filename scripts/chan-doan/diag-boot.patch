@@ -1,0 +1,58 @@
+diff --git a/server/_core/vite.ts b/server/_core/vite.ts
+index 27254f4ec..4d92c18d7 100644
+--- a/server/_core/vite.ts
++++ b/server/_core/vite.ts
+@@ -8,10 +8,15 @@ export async function setupVite(app: Express, server: Server) {
+   // Dynamic imports so vite (devDependency) is not required in production
+   const { createServer: createViteServer } = await import("vite");
+ 
++  // ── DIAG (cục bộ, không commit): bisect lỗi chết lúc boot dev ──
++  if (process.env.DIAG_SKIP_VITE === "1") return; // dev nhưng KHÔNG dựng Vite
++  const dMs = Number(process.env.DIAG_VITE_PRE_DELAY_MS ?? 0);
++  if (dMs > 0) await new Promise((r) => setTimeout(r, dMs));
+   const vite = await createViteServer({
+     server: {
+       middlewareMode: true,
+-      hmr: { server },
++      hmr: process.env.DIAG_VITE_HMR_OFF === "1" ? false : { server },
++      ...(process.env.DIAG_VITE_WATCH_OFF === "1" ? { watch: null } : {}),
+       allowedHosts: true,
+     },
+     appType: "custom",
+diff --git a/server/services/aiGgufEngine.ts b/server/services/aiGgufEngine.ts
+index 0eac464c4..3268a4bfe 100644
+--- a/server/services/aiGgufEngine.ts
++++ b/server/services/aiGgufEngine.ts
+@@ -524,6 +524,7 @@ function ensureModelsDir() {
+  * Get or initialize the llama instance (singleton)
+  */
+ async function getLlama(): Promise<any> {
++  if (process.env.DIAG_TRACE_LLAMA === "1") console.error("[DIAG getLlama]", new Error("trace").stack);
+   if (llamaInstance) return llamaInstance;
+ 
+   // Pha 1.5 Task 2 review vòng 1 (Important) — KHOÁ IN-FLIGHT. `if (llamaInstance) return
+diff --git a/server/services/aiLocalKnowledgeService.ts b/server/services/aiLocalKnowledgeService.ts
+index 863e50cfe..480c818de 100644
+--- a/server/services/aiLocalKnowledgeService.ts
++++ b/server/services/aiLocalKnowledgeService.ts
+@@ -4036,6 +4036,7 @@ export async function* streamAnswer(
+ let warmupStarted = false;
+ export function warmUpOllamaModels(): void {
+   if (warmupStarted) return;
++  if (process.env.DIAG_NO_KB_WARM === "1") return; // DIAG cục bộ (không commit)
+   warmupStarted = true;
+   setTimeout(() => {
+     // doc 48 R1 — WARM ORDER FIX: make a GENERATIVE model resident BEFORE the RAG embedder.
+diff --git a/vite.config.ts b/vite.config.ts
+index 1f45ae0c6..13a5a6505 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -20,7 +20,7 @@ import { pluginGhiLaiLich } from "./scripts/ghi-lai-lich-ban-dung.mjs";
+  * ⇒ Gắn vào `closeBundle` để đường dựng nào cũng ghi. Chỉ chạy khi `build` (`apply: "build"`),
+  *   nên `vite dev` không đụng tới.
+  */
+-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), pluginGhiLaiLich()];
++const plugins = [react(), ...(process.env.DIAG_NO_TAILWIND === "1" ? [] : [tailwindcss()]), jsxLocPlugin(), vitePluginManusRuntime(), pluginGhiLaiLich()];
+ 
+ export default defineConfig({
+   plugins,

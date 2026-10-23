@@ -44,6 +44,7 @@
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { or } from "drizzle-orm";
 import superjson from "superjson";
 import {
@@ -149,10 +150,10 @@ beforeAll(async () => {
   // Điểm đo NG cho bề mặt ④ (`getTopNGMeasurementPoints`): mỗi nhà máy một điểm hỏng, để
   // đường trả về KHÔNG rỗng cũng phải mang nhãn — nếu chỉ đo đường rỗng thì đột biến "gỡ nhãn
   // ở nhánh có dữ liệu" vẫn xanh.
-  const productModelId = await db.createProductModel({
+  const productModelId = dangKyModelSanPhamTest(await db.createProductModel({
     code: `ACSPM_${ts}`,
     name: "Access scope product",
-  });
+  }));
   pointDefId = await db.createMeasurementPointDef({
     productModelId,
     code: `ACSPT_${ts}`,

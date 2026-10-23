@@ -9,6 +9,7 @@
  * lossless and that the sampling-plan reference was remapped by code.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import postgres from "postgres";
 import { exportProductPackage, importProductPackage } from "./productPackageService";
 import { backfillNormalizedCoordsForProduct } from "../db/product";
@@ -29,7 +30,7 @@ describe.skipIf(!DB_URL)("PM3 product package export→import round-trip (seeded
     const [p] = await sql`
       INSERT INTO product_models (code, name, "lifecycleStatus", "imageWidth", "imageHeight")
       VALUES (${"SRC-" + RUN}, 'Package source', 'development', 1000, 500) RETURNING id`;
-    ids.product = p.id;
+    ids.product = dangKyModelSanPhamTest(p.id);
 
     const [plan] = await sql`
       INSERT INTO sampling_plans ("productModelId", code, name, strategy, "sampleSize")
@@ -158,7 +159,7 @@ describe.skipIf(!DB_URL)("PM8 backfillNormalizedCoordsForProduct (seeded)", () =
       const [p] = await s`
         INSERT INTO product_models (code, name, "lifecycleStatus")
         VALUES (${"BF-" + RUN}, 'Backfill product', 'development') RETURNING id`;
-      ids.bfProduct = p.id;
+      ids.bfProduct = dangKyModelSanPhamTest(p.id);
       await s`
         INSERT INTO measurement_point_defs ("productModelId", code, name, "measurementType", "positionX", "positionY", radius)
         VALUES (${p.id}, ${"BFP-" + RUN}, 'pt', 'VISUAL', 100, 50, 10)`;

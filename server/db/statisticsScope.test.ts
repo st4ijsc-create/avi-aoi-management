@@ -44,6 +44,7 @@
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import superjson from "superjson";
@@ -190,7 +191,7 @@ beforeAll(async () => {
     apiKey: `ss_${ts}`,
   });
 
-  productModelId = await db.createProductModel({ code: `SSPM_${ts}`, name: "Stats scope product" });
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: `SSPM_${ts}`, name: "Stats scope product" }));
   workstationId = await db.createWorkstation({
     code: `SSWS_${ts}`,
     name: "Stats scope workstation",

@@ -21,6 +21,7 @@ import postgres from "postgres";
 import { sql as dsql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { taoNguoiDungTest } from "../../testing/nguoiDungTest";
 
 const DB_URL = process.env.DATABASE_URL ?? "";
 const onTest = /_test\b/.test(DB_URL);
@@ -131,7 +132,8 @@ beforeAll(async () => {
                        WHERE s.nspname = 'public' AND p.proname IN ('edge_stop_ack_edge', 'edge_stop_ack_central', 'edge_stop_resolve')
                          AND position('0377 lock order' in p.prosrc) > 0`;
   if (f.n !== 3) throw new Error(`0377 is NOT in force on this _test DB (${f.n}/3 STOP functions carry its device-first body) — re-apply it: node scripts/apply-migration-0377.mjs --test-only`);
-  const [u] = await C`INSERT INTO public.users ("openId", role, "isActive") VALUES (${TAG + "-admin"}, 'admin', true) RETURNING id`;
+  // helper chung: TỰ dọn người dùng ở afterAll (chạy SAU afterAll của tệp này, vì đăng ký trước) — thời điểm tạo giữ nguyên (beforeAll)
+  const u = await taoNguoiDungTest("admin", "admin", { tienTo: TAG, ts: "u" });
   admin = u.id;
   made.users.push(admin);
 });

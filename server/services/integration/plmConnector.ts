@@ -223,8 +223,13 @@ export async function upsertProduct(p: CanonicalProduct): Promise<UpsertResult> 
       id = existing[0].id;
       created = false;
     } else {
-      const [row] = await d.insert(productModels).values(values).returning({ id: productModels.id });
-      id = row.id;
+      // ★ doc55 PV0: model + BASE trong CÙNG giao dịch
+      const { insertBaseVariantInTx } = await import("../../db/product");
+      id = await d.transaction(async (tx: typeof d) => {
+        const [row] = await tx.insert(productModels).values(values).returning({ id: productModels.id });
+        await insertBaseVariantInTx(tx, row.id, 1);
+        return row.id;
+      });
       created = true;
     }
     if (p.externalId) await upsertIdMap({ system: SYSTEM, entityType: "product", externalId: p.externalId, internalId: id });

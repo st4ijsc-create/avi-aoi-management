@@ -55,6 +55,7 @@
  *     bằng FK RESTRICT `fk_product_inspections_machine`.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -254,7 +255,7 @@ describe.skipIf(!DB_URL || !CO_MAU)(
 
       const [p] = await sql<{ id: number }[]>`
         INSERT INTO product_models (code, name) VALUES (${"T3-" + RUN}, 'Khoi B Task 3 cap component') RETURNING id`;
-      ids.product = p.id;
+      ids.product = dangKyModelSanPhamTest(p.id);
 
       const c1 = await issueMachineKey({
         machineId: ids.may1, name: `khoib-task3-m1-${RUN}`, scopes: ["ingest:write", "equipment:read"],
@@ -519,7 +520,7 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       const [p2] = await sql<{ id: number }[]>`
         INSERT INTO product_models (code, name) VALUES (${"T3B-" + RUN}, 'Khoi B Task 3 - san pham thu hai (cay clone)')
         RETURNING id`;
-      ids.product2 = p2.id;
+      ids.product2 = dangKyModelSanPhamTest(p2.id);
       const day2 = await caller().submitMachineTemplate({
         apiKey: apiKey1, productModelCode: `T3B-${RUN}`, template: mauDay(),
       });

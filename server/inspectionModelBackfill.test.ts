@@ -19,6 +19,7 @@
  * (softCount returns NaN → the toBe assertions fail).
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "./testing/modelSanPhamTest";
 import postgres from "postgres";
 import {
   runIntegrityScanNow,
@@ -35,6 +36,19 @@ const SOFT_KEY = "soft:product_inspections.productModel->product_models.code";
 const RUN = `P2C6${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
 
 let sql: ReturnType<typeof postgres>;
+
+/**
+ * Dọn BEST-EFFORT: `product_inspections` là sổ WORM (mig 0279 REVOKE DELETE khỏi vai ứng dụng) nên hàng kiểm tra do test tạo KHÔNG BAO GIỜ xoá được — và mọi thứ trỏ tới nó
+ * (máy → trạm → chuyền → xưởng → nhà máy, kết quả đo) cũng ở lại. Đó là ĐÚNG Ý ĐỒ (không nới quyền WORM), nên afterAll không được chết ở bước đó: từng lệnh dọn chạy riêng, nuốt
+ * đúng hai lỗi dự kiến (permission denied / vi phạm khoá ngoại), lỗi khác vẫn ném.
+ */
+async function be(q: PromiseLike<unknown>): Promise<void> {
+  try {
+    await q;
+  } catch (e) {
+    if (!/permission denied|violates foreign key/i.test(String((e as Error)?.message ?? e))) throw e;
+  }
+}
 const ids = { factory: 0, workshop: 0, line: 0, station: 0, machine: 0 };
 const createdInspections: number[] = [];
 const createdProducts: number[] = [];
@@ -59,6 +73,7 @@ async function insertModel(code: string): Promise<number> {
   const [row] = await sql`
     INSERT INTO product_models (code, name) VALUES (${code}, ${"Model " + code}) RETURNING id`;
   createdProducts.push(row.id);
+  dangKyModelSanPhamTest(row.id);
   return row.id;
 }
 
@@ -79,13 +94,12 @@ describe.skipIf(!DB_URL)("doc51 P2 CASE#6 — inspection backfill + soft-orphan 
 
   afterAll(async () => {
     try {
-      if (createdInspections.length) await sql`DELETE FROM product_inspections WHERE id IN ${sql(createdInspections)}`;
-      if (createdProducts.length) await sql`DELETE FROM product_models WHERE id IN ${sql(createdProducts)}`;
-      if (ids.machine) await sql`DELETE FROM machines WHERE id = ${ids.machine}`;
-      if (ids.station) await sql`DELETE FROM stations WHERE id = ${ids.station}`;
-      if (ids.line) await sql`DELETE FROM production_lines WHERE id = ${ids.line}`;
-      if (ids.workshop) await sql`DELETE FROM workshops WHERE id = ${ids.workshop}`;
-      if (ids.factory) await sql`DELETE FROM factories WHERE id = ${ids.factory}`;
+      if (createdProducts.length) await be(sql`DELETE FROM product_models WHERE id IN ${sql(createdProducts)}`);
+      if (ids.machine) await be(sql`DELETE FROM machines WHERE id = ${ids.machine}`);
+      if (ids.station) await be(sql`DELETE FROM stations WHERE id = ${ids.station}`);
+      if (ids.line) await be(sql`DELETE FROM production_lines WHERE id = ${ids.line}`);
+      if (ids.workshop) await be(sql`DELETE FROM workshops WHERE id = ${ids.workshop}`);
+      if (ids.factory) await be(sql`DELETE FROM factories WHERE id = ${ids.factory}`);
     } finally {
       await sql.end();
     }
@@ -115,6 +129,7 @@ describe.skipIf(!DB_URL)("doc51 P2 CASE#6 — inspection backfill + soft-orphan 
     } as any);
     const res = await caller.create({ code, name: `Model ${RUN}` });
     createdProducts.push(res.id);
+    dangKyModelSanPhamTest(res.id); // afterAll của tệp này bị chặn ở DELETE product_inspections (quyền) nên không tới được bước xoá model — helper dọn thay
 
     // 3. WIRING: the create mutation itself backfilled insp1 (NULL → res.id).
     const [post] = await sql`SELECT "productModelId" AS pmid FROM product_inspections WHERE id = ${insp1}`;

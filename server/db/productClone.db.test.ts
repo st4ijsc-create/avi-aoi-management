@@ -19,12 +19,46 @@ import fs from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
 import { cloneProductModel } from "./product";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 
 const DB_URL = process.env.DATABASE_URL;
 const root = path.resolve(__dirname, "..", "..");
 const RUN = `PM1${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
 
 let sql: ReturnType<typeof postgres>;
+
+/**
+ * Dọn BEST-EFFORT: `product_inspections` là sổ WORM (mig 0279 REVOKE DELETE khỏi vai ứng dụng) nên hàng kiểm tra do test tạo KHÔNG BAO GIỜ xoá được — và mọi thứ trỏ tới nó
+ * (máy → trạm → chuyền → xưởng → nhà máy, kết quả đo) cũng ở lại. Đó là ĐÚNG Ý ĐỒ (không nới quyền WORM), nên afterAll không được chết ở bước đó: từng lệnh dọn chạy riêng, nuốt
+ * đúng hai lỗi dự kiến (permission denied / vi phạm khoá ngoại), lỗi khác vẫn ném.
+ */
+async function be(q: PromiseLike<unknown>): Promise<void> {
+  try {
+    await q;
+  } catch (e) {
+    if (!/permission denied|violates foreign key/i.test(String((e as Error)?.message ?? e))) throw e;
+  }
+}
+
+/**
+ * 0197 là DDL (ALTER TABLE … ADD COLUMN IF NOT EXISTS) — vai ứng dụng KHÔNG phải owner nên 'must be owner of table product_models' làm beforeAll chết và cả tệp bị bỏ qua. Cách đúng:
+ * chỉ áp khi cột/chỉ mục còn THIẾU, và áp bằng kết nối OWNER (MIGRATION_DB_USER/PASSWORD, mặc định aoi/aoi — như script migration); đã đủ ⇒ không đụng DDL.
+ */
+async function ensure0197(app: ReturnType<typeof postgres>): Promise<void> {
+  const [st] = await app`
+    SELECT (SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'product_models' AND column_name IN ('revision', 'clonedFromId')) AS cols,
+           (SELECT count(*)::int FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'idx_product_models_cloned_from') AS idx`;
+  if (st.cols === 2 && st.idx === 1) return;
+  const u = new URL(DB_URL!);
+  u.username = process.env.MIGRATION_DB_USER ?? "aoi";
+  u.password = process.env.MIGRATION_DB_PASSWORD ?? "aoi";
+  const owner = postgres(u.toString(), { max: 1, connect_timeout: 30, onnotice: () => {} });
+  try {
+    await owner.unsafe(fs.readFileSync(path.join(root, "drizzle", "0197_product_revision_clone.sql"), "utf-8"));
+  } finally {
+    await owner.end({ timeout: 5 });
+  }
+}
 const ids = {
   factory: 0, workshop: 0, line: 0, station: 0, machine: 0,
   product: 0, plan: 0, view: 0,
@@ -37,7 +71,7 @@ describe.skipIf(!DB_URL)("PM1 cloneProductModel — deep copy (seeded)", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
     // Idempotent: ensure revision + clonedFromId columns exist on a clone predating 0197.
-    await sql.unsafe(fs.readFileSync(path.join(root, "drizzle", "0197_product_revision_clone.sql"), "utf-8"));
+    await ensure0197(sql);
 
     const [f] = await sql`INSERT INTO factories (code, name) VALUES (${"F-" + RUN}, 'PM1 factory') RETURNING id`;
     ids.factory = f.id;
@@ -55,7 +89,7 @@ describe.skipIf(!DB_URL)("PM1 cloneProductModel — deep copy (seeded)", () => {
       INSERT INTO product_models (code, name, "lifecycleStatus", revision, "referenceImageKey", "imageWidth", "imageHeight")
       VALUES (${"P-" + RUN}, 'PM1 source', 'active', 'A', ${"img/" + RUN + ".png"}, 1024, 768)
       RETURNING id`;
-    ids.product = p.id;
+    ids.product = dangKyModelSanPhamTest(p.id); // product_inspections (WORM) trỏ tới model này ⇒ xoá cứng bị FK chặn ⇒ helper xoá mềm
 
     // A product-scoped sampling plan + product view (to prove remap + view clear).
     const [plan] = await sql`
@@ -121,30 +155,29 @@ describe.skipIf(!DB_URL)("PM1 cloneProductModel — deep copy (seeded)", () => {
       // Clean children of clones first (points/fiducials/plans/panels + boards).
       for (const cid of [ids.clone1, ids.clone2].filter(Boolean)) {
         const panels = await sql`SELECT id FROM product_panel_defs WHERE "productModelId" = ${cid}`;
-        for (const pn of panels) await sql`DELETE FROM product_panel_boards WHERE "panelDefId" = ${pn.id}`;
-        await sql`DELETE FROM product_panel_defs WHERE "productModelId" = ${cid}`;
-        await sql`DELETE FROM measurement_point_defs WHERE "productModelId" = ${cid}`;
-        await sql`DELETE FROM fiducial_marks WHERE "productModelId" = ${cid}`;
-        await sql`DELETE FROM sampling_plans WHERE "productModelId" = ${cid}`;
-        await sql`DELETE FROM product_machine_mappings WHERE "productModelId" = ${cid}`;
-        await sql`DELETE FROM product_models WHERE id = ${cid}`;
+        for (const pn of panels) await be(sql`DELETE FROM product_panel_boards WHERE "panelDefId" = ${pn.id}`);
+        await be(sql`DELETE FROM product_panel_defs WHERE "productModelId" = ${cid}`);
+        await be(sql`DELETE FROM measurement_point_defs WHERE "productModelId" = ${cid}`);
+        await be(sql`DELETE FROM fiducial_marks WHERE "productModelId" = ${cid}`);
+        await be(sql`DELETE FROM sampling_plans WHERE "productModelId" = ${cid}`);
+        await be(sql`DELETE FROM product_machine_mappings WHERE "productModelId" = ${cid}`);
+        await be(sql`DELETE FROM product_models WHERE id = ${cid}`);
       }
-      if (ids.resultA) await sql`DELETE FROM measurement_results WHERE id = ${ids.resultA}`;
-      if (ids.inspection) await sql`DELETE FROM product_inspections WHERE id = ${ids.inspection}`;
-      if (ids.golden) await sql`DELETE FROM golden_sample_references WHERE id = ${ids.golden}`;
-      await sql`DELETE FROM product_machine_mappings WHERE "productModelId" = ${ids.product}`;
-      await sql`DELETE FROM product_panel_boards WHERE "panelDefId" = ${ids.panel}`;
-      if (ids.panel) await sql`DELETE FROM product_panel_defs WHERE id = ${ids.panel}`;
-      await sql`DELETE FROM fiducial_marks WHERE "productModelId" = ${ids.product}`;
-      await sql`DELETE FROM measurement_point_defs WHERE "productModelId" = ${ids.product}`;
-      await sql`DELETE FROM product_views WHERE "productModelId" = ${ids.product}`;
-      await sql`DELETE FROM sampling_plans WHERE "productModelId" = ${ids.product}`;
-      if (ids.product) await sql`DELETE FROM product_models WHERE id = ${ids.product}`;
-      if (ids.machine) await sql`DELETE FROM machines WHERE id = ${ids.machine}`;
-      if (ids.station) await sql`DELETE FROM stations WHERE id = ${ids.station}`;
-      if (ids.line) await sql`DELETE FROM production_lines WHERE id = ${ids.line}`;
-      if (ids.workshop) await sql`DELETE FROM workshops WHERE id = ${ids.workshop}`;
-      if (ids.factory) await sql`DELETE FROM factories WHERE id = ${ids.factory}`;
+      if (ids.resultA) await be(sql`DELETE FROM measurement_results WHERE id = ${ids.resultA}`);
+      if (ids.golden) await be(sql`DELETE FROM golden_sample_references WHERE id = ${ids.golden}`);
+      await be(sql`DELETE FROM product_machine_mappings WHERE "productModelId" = ${ids.product}`);
+      await be(sql`DELETE FROM product_panel_boards WHERE "panelDefId" = ${ids.panel}`);
+      if (ids.panel) await be(sql`DELETE FROM product_panel_defs WHERE id = ${ids.panel}`);
+      await be(sql`DELETE FROM fiducial_marks WHERE "productModelId" = ${ids.product}`);
+      await be(sql`DELETE FROM measurement_point_defs WHERE "productModelId" = ${ids.product}`);
+      await be(sql`DELETE FROM product_views WHERE "productModelId" = ${ids.product}`);
+      await be(sql`DELETE FROM sampling_plans WHERE "productModelId" = ${ids.product}`);
+      if (ids.product) await be(sql`DELETE FROM product_models WHERE id = ${ids.product}`);
+      if (ids.machine) await be(sql`DELETE FROM machines WHERE id = ${ids.machine}`);
+      if (ids.station) await be(sql`DELETE FROM stations WHERE id = ${ids.station}`);
+      if (ids.line) await be(sql`DELETE FROM production_lines WHERE id = ${ids.line}`);
+      if (ids.workshop) await be(sql`DELETE FROM workshops WHERE id = ${ids.workshop}`);
+      if (ids.factory) await be(sql`DELETE FROM factories WHERE id = ${ids.factory}`);
     } finally {
       await sql?.end();
     }
@@ -158,7 +191,7 @@ describe.skipIf(!DB_URL)("PM1 cloneProductModel — deep copy (seeded)", () => {
       newRevision: "B",
       copyMappings: false,
     });
-    ids.clone1 = r.newProductId;
+    ids.clone1 = dangKyModelSanPhamTest(r.newProductId);
 
     // Summary counts.
     expect(r.summary).toMatchObject({
@@ -231,7 +264,7 @@ describe.skipIf(!DB_URL)("PM1 cloneProductModel — deep copy (seeded)", () => {
       newCode: `P-${RUN}-C`,
       copyMappings: true,
     });
-    ids.clone2 = r.newProductId;
+    ids.clone2 = dangKyModelSanPhamTest(r.newProductId);
     expect(r.summary.machineMappings).toBe(1);
     const [maps] = await sql`SELECT count(*)::int AS c FROM product_machine_mappings WHERE "productModelId" = ${r.newProductId}`;
     expect(maps.c).toBe(1);

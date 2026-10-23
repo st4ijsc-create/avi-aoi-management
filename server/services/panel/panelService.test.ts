@@ -2,6 +2,7 @@
  * W8-B (doc 29 §2) — panel def/board CRUD against the isolated cloned test DB.
  */
 import { describe, it, expect, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../../testing/modelSanPhamTest";
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { productPanelDefs, productPanelBoards } from "../../../drizzle/schema";
@@ -31,7 +32,7 @@ afterAll(async () => {
 
 describe("panelService CRUD", () => {
   it("creates a def with quick-generated rows×cols boards and reads it back", async () => {
-    productModelId = await db.createProductModel({ code: `W8B-PNL-${STAMP}`, name: "W8B panel product" });
+    productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: `W8B-PNL-${STAMP}`, name: "W8B panel product" }));
 
     const id = await createPanelDef({
       productModelId,

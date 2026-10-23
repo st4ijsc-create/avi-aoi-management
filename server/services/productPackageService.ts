@@ -25,6 +25,7 @@ import { appError } from "../_core/appError";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../db/connection";
+import { insertBaseVariantInTx } from "../db/product";
 import {
   productModels,
   measurementPointDefs,
@@ -246,6 +247,7 @@ export async function importProductPackage(
     };
     const [created] = await tx.insert(productModels).values(modelInsert as any).returning({ id: productModels.id });
     const pid = created.id;
+    await insertBaseVariantInTx(tx, pid, 1); // ★ doc55 PV0: model nhập từ gói cũng có BASE (cùng giao dịch)
 
     // 2) sampling plans first — capture code → new id for the point remap.
     const planIdByCode = new Map<string, number>();

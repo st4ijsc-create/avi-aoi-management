@@ -30,6 +30,7 @@
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import superjson from "superjson";
 import * as db from "../db";
 import { getDb } from "./connection";
@@ -108,7 +109,7 @@ beforeAll(async () => {
   wsBId = b.workshopId;
   machineBId = b.machineId;
 
-  productModelId = await db.createProductModel({ code: `CDSPM_${ts}`, name: "Daily scope product" });
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: `CDSPM_${ts}`, name: "Daily scope product" }));
 
   // Nhà máy A: 3 bản ghi kiểm · nhà máy B: 2. `factoryCode` trên bản ghi khớp nhà máy sở hữu MÁY,
   // để hai TRỤC KHÁC NHAU (`resolveDataScope` lọc theo `factoryCode`; bộ lọc mới lọc theo chuỗi

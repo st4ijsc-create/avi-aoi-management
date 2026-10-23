@@ -5,6 +5,7 @@
  * sampleSize drops from 10 (exclusion off) to 6 (exclusion on).
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { eq, inArray } from "drizzle-orm";
 import { appRouter } from "../routers";
 import * as db from "../db";
@@ -47,7 +48,7 @@ beforeAll(async () => {
   machineId = await db.createMachine({
     stationId: 1, code: `OP6-${STAMP}`, name: "OP6 advisor corrections test", machineType: "AOI", apiKey: API_KEY, isActive: true,
   });
-  productModelId = await db.createProductModel({ code: MODEL_CODE, name: "OP6 test model" });
+  productModelId = dangKyModelSanPhamTest(await db.createProductModel({ code: MODEL_CODE, name: "OP6 test model" }));
   pointDefId = await db.createMeasurementPointDef({
     productModelId, code: POINT_CODE, name: "OP6 point", measurementType: "DIMENSION",
     positionX: 10, positionY: 10,

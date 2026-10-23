@@ -276,6 +276,15 @@ async function ensureSimProducts() {
       add("product_models(+)", 1);
     }
     const productId = row.id;
+    // ★ doc55 PV0 — mỗi model có ĐÚNG MỘT biến thể BASE (cùng câu với backfill 0286; idempotent; bỏ qua nếu 0286 chưa áp)
+    const [{ co: coBang }] = await sql`SELECT to_regclass('public.product_variants') IS NOT NULL AS co`;
+    if (coBang) {
+      await sql`INSERT INTO product_variants ("productModelId", code, name, "isBase", "pointsConfigVersion", "lifecycleStatus", "createdAt", "updatedAt")
+        SELECT pm.id, 'BASE', 'Base', true, COALESCE(pm."pointsConfigVersion", 1), 'active', now(), now()
+          FROM product_models pm
+         WHERE pm.id = ${productId}
+           AND NOT EXISTS (SELECT 1 FROM product_variants pv WHERE pv."productModelId" = pm.id AND pv."isBase" = true AND pv."deletedAt" IS NULL)`;
+    }
     // điểm đo
     const pointIdByCode = {};
     for (let i = 0; i < p.points.length; i++) {

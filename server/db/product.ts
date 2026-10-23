@@ -53,8 +53,29 @@ import { assertCapGioiHanHopLe, gopCapGioiHanDonGian } from "../utils/measuremen
 export async function createProductModel(data: InsertProductModel) {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
-  const [result] = await db.insert(productModels).values(data).returning({ id: productModels.id });
+  // ★ doc55 PV0 — mọi model đều có ĐÚNG MỘT biến thể BASE (định nghĩa của backfill 0286). Tạo BASE trong CÙNG giao dịch với model: lỗi giữa chừng ⇒ không còn model mồ côi.
+  const result = await db.transaction(async (tx) => {
+    const [row] = await tx.insert(productModels).values(data).returning({ id: productModels.id, v: productModels.pointsConfigVersion });
+    await insertBaseVariantInTx(tx, row.id, Number(row.v ?? 1));
+    return row;
+  });
   return result.id;
+}
+
+/**
+ * ★ BASE trong CÙNG executor/giao dịch với model vừa tạo — cùng định nghĩa với backfill 0286 (code 'BASE', name 'Base', isBase, pointsConfigVersion = của model).
+ * Idempotent (index duy nhất từng phần). Bảng `product_variants` chưa có (0286 chưa áp) ⇒ bỏ qua, hành vi như trước. Mọi đường TẠO `product_models` trong mã sản phẩm phải gọi hàm này.
+ */
+export async function insertBaseVariantInTx(
+  exec: Pick<Awaited<ReturnType<typeof getDb>> & object, "insert" | "execute">,
+  productModelId: number,
+  pointsConfigVersion = 1,
+): Promise<void> {
+  if (!(await productVariantsTableAvailable(exec))) return;
+  await exec
+    .insert(productVariants)
+    .values({ productModelId, code: "BASE", name: "Base", isBase: true, pointsConfigVersion })
+    .onConflictDoNothing();
 }
 
 /**
@@ -77,7 +98,9 @@ export async function ensureSystemProductModel(data: InsertProductModel): Promis
       target: productModels.code,
       set: { deletedAt: null, isActive: true, updatedAt: new Date() },
     })
-    .returning({ id: productModels.id });
+    .returning({ id: productModels.id, v: productModels.pointsConfigVersion });
+  // sentinel hệ thống (__UNMAPPED__…) cũng phải có BASE (idempotent: đã có thì bỏ qua)
+  await insertBaseVariantInTx(db, result.id, Number(result.v ?? 1));
   return result.id;
 }
 
@@ -517,6 +540,7 @@ export async function cloneProductModel(opts: {
       isActive: true,
     }).returning({ id: productModels.id });
     const newProductId = insertedProduct.id;
+    await insertBaseVariantInTx(tx, newProductId, 1); // ★ doc55 PV0: bản sao cũng có BASE (cùng giao dịch)
 
     // 3) Sampling plans first — so point.preferredSamplingPlanId can be remapped.
     const srcPlans = await tx.select().from(samplingPlans)
