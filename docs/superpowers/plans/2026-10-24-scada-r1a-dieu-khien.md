@@ -386,6 +386,7 @@ Chốt:
   - Không đọc safety ở đây: safety do `dispatch()` quyết, preview ghi `warnings:["SAFETY_KIEM_LUC_GUI"]`.
 - `current` lấy từ `layGiaTri`. Bộ đệm tắt hoặc không có mẫu ⇒ `{v:null, q:"bad", ageMs:null}` + `warnings:["KHONG_CO_GIA_TRI_HIEN_TAI"]`.
 - `hmi.write_tag` **không** đăng ký vào registry tool AI.
+- **Kiểm khởi động (điều phối 2026-10-24):** `export function kiemCauHinhLenhHmi(): void` — nếu `SCADA_COMMANDS_ENABLED=true` mà bộ đệm tắt (`!boDemDangBat()`) ⇒ `logger.warn` MỘT lần mỗi tiến trình: "SCADA_COMMANDS bật nhưng SCADA_LIVE_CACHE_ENABLED tắt — mọi máy coi như LOCAL, mọi lệnh HMI sẽ bị từ chối". Gọi lúc khởi động server, cạnh chỗ khởi động bộ đệm (`khoiDongBoDemHienTai`). Test: gọi hai lần ⇒ một lần warn; cờ tắt ⇒ không warn.
 
 - [ ] **Step 1: Test đỏ (DB):**
   - mỗi mã từ chối một ca, kèm đúng 1 dòng attempts với `reason_code` đúng;
@@ -571,7 +572,8 @@ Chốt:
 Chốt:
 - Bảng theo adapter. Mỗi hàng: loại kênh hiệu lực (+ "khai" / "suy từ writable"), dải, bước, mức hiệu lực (kênh ra không khai ⇒ "5 — mặc định đóng"), tên hiển thị.
 - Sửa qua hộp thoại có lý do ≥ 5 ký tự, theo mẫu hộp thoại lý do của `ScadaDiag`.
-- Khối "Kênh chế độ" theo máy: tag, giá trị REMOTE, chế độ hiện tại kèm lý do (`chua_khai` ⇒ "Chưa khai ⇒ coi như LOCAL").
+- Khối "Kênh chế độ" theo máy: tag, giá trị REMOTE, chế độ hiện tại kèm lý do (`chua_khai` ⇒ "Chưa khai ⇒ coi như LOCAL"). Hiện đủ 9 lý do của `cheDoMay` bằng chữ người đọc (vi/en/zh).
+- **Cảnh báo (điều phối 2026-10-24):** kênh chế độ đặt trên tag có `deadband`, HOẶC adapter không phải adapter poll trung tâm (do edge sở hữu, hoặc giao thức đẩy/báo-khi-đổi) ⇒ cảnh báo trong khối và trong hộp thoại đặt kênh: "Kênh chế độ nên là tag poll định kỳ trên adapter trung tâm — nguồn báo-khi-đổi/edge có thể làm máy rơi về LOCAL (giá trị cũ / chưa có mẫu)". Không chặn lưu. `scada.kenh.cheDo.danhSach` trả cờ `canhBaoNguon: "deadband"|"edge"|"bao_khi_doi"|null`.
 - Nút sửa chỉ hiện cho engineer/admin + `canEdit`, cùng cổng với `coTheGanMayMqtt`.
 
 - [ ] **Step 1: Test đỏ (DOM, mock trpc như `ScadaDiag.dom.test.tsx`):**
@@ -579,6 +581,7 @@ Chốt:
   - `operator` không thấy nút sửa;
   - lý do 3 ký tự ⇒ nút gửi khoá;
   - máy chưa khai hiện chữ khoá `scada.kenh.cheDo.chuaKhai`;
+  - kênh chế độ trên tag có deadband ⇒ hiện cảnh báo nguồn;
   - đổi locale `en` thì không còn chữ Việt.
 - [ ] **Step 2: Chạy.** Mong đợi: đỏ.
 - [ ] **Step 3: Cài.**
@@ -619,6 +622,7 @@ Chốt, bám báo cáo §4.5–4.6:
     - `TOTP_CHUA_DANG_KY` ⇒ "Lệnh mức 4–5 cần xác thực hai lớp; tài khoản của bạn chưa đăng ký" + liên kết tới trang đăng ký 2FA hiện có (tìm route trang bảo mật tài khoản trong `App.tsx`; nếu không có trang, dùng hướng dẫn chữ và ghi trong báo cáo);
     - `EDGE_CHUA_HO_TRO` ⇒ "Máy này do edge {mã} sở hữu — lệnh từ SCADA tới máy edge chưa được hỗ trợ (đợt R1c)";
     - `OFF_STEP` ⇒ "Giá trị phải theo bước {step}. Giá trị hợp lệ gần nhất: {goiY}" + nút điền `goiY` vào ô (người bấm vẫn phải gửi lại; KHÔNG tự làm tròn).
+    - `MODE_LOCAL` ⇒ chữ theo `lyDo` (9 lý do của `cheDoMay`); `bo_dem_tat` ⇒ "Bộ đệm giá trị sống đang tắt — mọi máy coi như LOCAL"; `chua_co_mau` trên máy edge ⇒ "Máy do edge sở hữu — chưa có giá trị chế độ tới R1c". Mọi từ chối `MODE_LOCAL` kèm gợi ý: "Cần dừng máy? Dùng STOP đã ghim hoặc E-STOP cứng tại máy" (điều phối 2026-10-24).
   - Kết quả theo `nhanKetQua`. `acked_unverified` hiện giá trị đọc lại và "kiểm tra tại máy". `rejected` hiện tên cổng → chữ người đọc (khoá i18n `scada.lenh.cong.<MÃ>`).
   - Đóng hộp thoại khi còn `proposed` ⇒ gọi `huy`.
 
@@ -632,7 +636,7 @@ Chốt, bám báo cáo §4.5–4.6:
     - `acked_verified` ⇒ tự đóng sau 3 s (fake timers);
     - đóng khi `proposed` ⇒ `huy` được gọi;
     - mức 5 ⇒ ô TOTP bắt buộc;
-    - `TOTP_CHUA_DANG_KY` ⇒ có chữ hướng dẫn + liên kết đăng ký; `EDGE_CHUA_HO_TRO` ⇒ chữ tiếng Việt có mã edge; `OFF_STEP` ⇒ hiện `goiY`, bấm gợi ý chỉ điền ô, không gọi `request`;
+    - `TOTP_CHUA_DANG_KY` ⇒ có chữ hướng dẫn + liên kết đăng ký; `MODE_LOCAL bo_dem_tat` ⇒ chữ "Bộ đệm giá trị sống đang tắt" + gợi ý STOP ghim/E-STOP; `EDGE_CHUA_HO_TRO` ⇒ chữ tiếng Việt có mã edge; `OFF_STEP` ⇒ hiện `goiY`, bấm gợi ý chỉ điền ô, không gọi `request`;
     - locale `en` ⇒ không chữ Việt.
 - [ ] **Step 2: Chạy.** Mong đợi: đỏ.
 - [ ] **Step 3: Cài.**
@@ -676,7 +680,7 @@ Cổng (hàng R1 của báo cáo + ô 8 do điều phối thêm 2026-10-24): m�
   - Đo đường vui `acked_verified` (đọc lại đúng), ô 2, ô 3.
   - In bảng. Ghi phiên bản container. Trả container về trạng thái tìm thấy.
   - **Xác nhận trước trên bench rằng thanh ghi holding ghi được và đọc lại giữ giá trị** (runtime OpenPLC có ghi đè mỗi chu kỳ không). Nếu bị ghi đè, ghi rõ và dùng thanh ghi khác.
-- [ ] **Step 5: Chạy bench.** Dán bảng vào báo cáo nghiệm thu. Báo cáo có mục "Giới hạn đã biết" gồm ít nhất: phạm vi control = phạm vi xem (strict) + `machine_control.canEdit` tới khi có C.8 (ruling R-3, điều phối đồng ý 2026-10-24); không có công thức ra; máy edge `EDGE_CHUA_HO_TRO` tới R1c. Mục "Backlog R4" có dòng "control scope tách khỏi view scope". Không có Docker ⇒ ghi "chưa chạy bench" kèm lý do, **không** khai đạt.
+- [ ] **Step 5: Chạy bench.** Dán bảng vào báo cáo nghiệm thu. Báo cáo có mục "Giới hạn đã biết" gồm ít nhất: phạm vi control = phạm vi xem (strict) + `machine_control.canEdit` tới khi có C.8 (ruling R-3, điều phối đồng ý 2026-10-24); không có công thức ra; máy edge `EDGE_CHUA_HO_TRO` tới R1c. Mục "Backlog R4" có dòng "control scope tách khỏi view scope". Mục "Checklist bật cờ": `SCADA_COMMANDS_ENABLED=true` BẮT BUỘC đi kèm `SCADA_LIVE_CACHE_ENABLED=true` (không có bộ đệm ⇒ mọi máy LOCAL); kênh chế độ nên là tag poll trung tâm không deadband; `OT_CONTROL_ENABLED`/`AI_OT_CONTROL_ENABLED` giữ OFF tới khi có safety PLC (D9). Mục "Backlog R1b": ĐẦU danh sách là test nhịp tim deadband 60 s; Sparkplug Int64 (Long) trên kênh int đã khai; FK/dọn mồ côi `scada_kenh_che_do`/`scada_khoa_chon`. Không có Docker ⇒ ghi "chưa chạy bench" kèm lý do, **không** khai đạt.
 - [ ] **Step 6: Chạy toàn bộ** `npx vitest run server/services/ot server/services/scada server/services/interlock server/routers/scada* server/_core client/src/components/scada client/src/pages/Scada*` + các tệp DB mới (riêng lẻ) + `npm run check`. Ghi số tệp/test.
 - [ ] **Step 7: Commit** `test(scada): nghiem thu R1a - ma tran 8 o, bench OpenPLC + safety PLC mo phong, bao cao`.
 
