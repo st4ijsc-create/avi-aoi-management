@@ -53,7 +53,10 @@ import {
   duocVaoPhongRobot,
   duocVaoPhongThietBi,
   duocVaoPhongTelemetryAll,
+  tuDongVaoPhongPhamVi,
 } from "./socketPhongQuyen";
+// ── P-S1b — sự kiện máy phát theo PHÒNG NHÀ MÁY, không phát vào `global` (xem tệp).
+import { phatTheoNhaMay, phatMangTheoNhaMay } from "./socketPhatTheoNhaMay";
 
 let io: Server | null = null;
 
@@ -329,6 +332,10 @@ export function initializeSocket(server: HttpServer): Server {
     const ct = (socket.data as any)?.clientType ?? "unknown";
     console.log(`[Socket.io] Client connected: ${socket.id} type=${ct}${u ? ` user=${u.id}` : ""}`);
 
+    // ★★★ P-S1b — socket NGƯỜI DÙNG tự vào phòng theo PHẠM VI của họ (`scope:all` hoặc `factory:{id}` mỗi nhà máy trong phạm vi): sự kiện máy chỉ còn
+    // phát vào các phòng đó, KHÔNG vào `global`. Làm ngay khi nối (không đợi `subscribe`) để trang nào đang nghe cũng nhận như trước; `subscribe` thử lại nếu lượt này lỗi.
+    if (laSocketNguoiDung(socket.data)) void tuDongVaoPhongPhamVi(socket as never);
+
     // ★★★ doc 81 Đợt 1B Task 9 (BE3 §L4b) — giới hạn tần suất MỌI gói `machine:*` (theo socket + IP),
     // ở CẢ BA chế độ auth, TRƯỚC mọi listener (kể cả hook state-store additive): gói vượt ngưỡng bị bỏ
     // ⇒ không handler nào chạy ⇒ không tra DB, không ghi DB. Đếm + log gộp ở socketMachineRateLimit.
@@ -417,6 +424,7 @@ export function initializeSocket(server: HttpServer): Server {
       // `subscribe:error {code:"SUBSCRIBE_DENIED"}` (không lặp id). Join bất đồng bộ (hỏi DB) ⇒ vé theo phòng: `unsubscribe` đến TRƯỚC
       // kết quả kiểm ⇒ không join. Admin / vai toàn quyền: phạm vi `null` ⇒ qua (quy tắc sẵn có của `trongPhamVi`).
       const dd: Record<string, unknown> = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+      void tuDongVaoPhongPhamVi(socket as never); // idempotent: không làm gì nếu lượt kết nối đã xong
       let daBaoTuChoi = false;
       const thuVaoPhong = (phong: string, kiem: Promise<boolean>) => {
         const ve = (veVaoPhong.get(phong) ?? 0) + 1;
@@ -659,7 +667,7 @@ export function initializeSocket(server: HttpServer): Server {
           // Notify admin dashboard
           io?.to("admin").emit("machine:disconnected", { machineId, machineCode, timestamp: new Date() });
           // Broadcast status change to all clients
-          io?.emit("machine:status_change", { machineCode, status: "offline" });
+          phatTheoNhaMay(io, "machine:status_change", { machineCode, status: "offline" }, { machineId, machineCode });
           break;
         }
       }
@@ -737,12 +745,12 @@ export function initializeSocket(server: HttpServer): Server {
         }).catch((err) => console.error("[Socket.io] presence refresh failed:", err?.message ?? err));
 
         // Broadcast machine status update
-        io?.to("global").emit("machine:status_update", {
+        phatTheoNhaMay(io, "machine:status_update", {
           machineId,
           status: data.status,
           metrics: data.metrics,
           lastHeartbeat: machineInfo.lastHeartbeat,
-        });
+        }, { machineId });
       }
     });
 
@@ -809,7 +817,7 @@ export function initializeSocket(server: HttpServer): Server {
         });
 
         // Broadcast status change to all clients
-        io?.emit("machine:status_change", { machineCode, status: "online" });
+        phatTheoNhaMay(io, "machine:status_change", { machineCode, status: "online" }, { machineId, machineCode });
       };
 
       if (mode === "off") {
@@ -1289,7 +1297,7 @@ export function initializeSocket(server: HttpServer): Server {
           ipAddress,
           timestamp: new Date(),
         });
-        io?.emit("machine:status_change", { machineCode, status: "syncing" });
+        phatTheoNhaMay(io, "machine:status_change", { machineCode, status: "syncing" }, { machineId, machineCode });
 
         console.log(`[Socket.io] Machine ${machineId} (${machineCode}) started real-time sync`);
       } catch (error: any) {
@@ -1405,8 +1413,7 @@ const UNIFIED_STREAM_TYPES: string[] = [
 function broadcastEcosystemEvent(evt: EcosystemEvent): void {
   if (!io) return;
   // Global room — every subscribed client (the NotificationCenter joins global).
-  io.to("global").emit("ecosystem:event", evt);
-  if (isAlertKind(evt.kind)) io.to("global").emit("alerts:stream", evt);
+  // ★ P-S1b — KHÔNG `global`: tra nhà máy từ `evt.scope` rồi phát vào toàn quyền + `factory:` + phòng line/machine (một lần emit trên hợp phòng).
 
   // Scoped fan-out — mirror to the specific rooms the client may have joined so a
   // machine/line/factory dashboard receives its own slice without the global noise.
@@ -1414,10 +1421,10 @@ function broadcastEcosystemEvent(evt: EcosystemEvent): void {
   if (evt.scope.factoryId != null) rooms.push(`factory:${evt.scope.factoryId}`);
   if (evt.scope.lineId != null) rooms.push(`line:${evt.scope.lineId}`);
   if (evt.scope.machineId != null) rooms.push(`machine:${evt.scope.machineId}`);
-  for (const room of rooms) {
-    io.to(room).emit("ecosystem:event", evt);
-    if (isAlertKind(evt.kind)) io.to(room).emit("alerts:stream", evt);
-  }
+  const pvEco = { factoryId: evt.scope.factoryId, lineId: evt.scope.lineId, machineId: evt.scope.machineId, stationId: (evt.scope as { stationId?: number | null }).stationId };
+  const phongPhuEco = rooms.filter((r) => !r.startsWith("factory:"));
+  phatTheoNhaMay(io, "ecosystem:event", evt, pvEco, phongPhuEco);
+  if (isAlertKind(evt.kind)) phatTheoNhaMay(io, "alerts:stream", evt, pvEco, phongPhuEco);
 }
 
 /**
@@ -1579,11 +1586,8 @@ export function emitInspectionAlert(alert: InspectionAlert): void {
     return;
   }
 
-  // Emit to global room
-  io.to("global").emit("inspection:alert", alert);
-
-  // Also emit to specific machine room
-  io.to(`machine:${alert.machineId}`).emit("inspection:alert", alert);
+  // ★ P-S1b — theo phòng NHÀ MÁY của máy (không `global`) + phòng máy
+  phatTheoNhaMay(io, "inspection:alert", alert, { machineId: alert.machineId, machineCode: alert.machineCode }, [`machine:${alert.machineId}`]);
 
   console.log(`[Socket.io] Emitted ${alert.type} alert for machine ${alert.machineCode}`);
 }
@@ -1723,7 +1727,9 @@ export function startOeeBroadcaster(): void {
       const { getAllMachinesOEELive } = await import("../services/oeeService");
       const metrics = await getAllMachinesOEELive();
       if (metrics.length === 0) return;
-      io.to("global").emit("oee:update", { metrics, at: new Date().toISOString() });
+      // ★ P-S1b — người toàn quyền nhận ĐỦ; mỗi nhà máy chỉ nhận OEE máy của mình
+      const at = new Date().toISOString();
+      phatMangTheoNhaMay(io, "oee:update", metrics, (m) => ({ machineId: (m as { machineId?: number }).machineId }), (sub) => ({ metrics: sub, at }));
     } catch (e) {
       console.error("[Socket.io] OEE broadcast failed:", (e as any)?.message ?? e);
     }
@@ -1744,11 +1750,8 @@ export function emitDashboardUpdate(update: DashboardUpdate): void {
     return;
   }
 
-  io.to("global").emit("dashboard:update", update);
-
-  if (update.machineId) {
-    io.to(`machine:${update.machineId}`).emit("dashboard:update", update);
-  }
+  // ★ P-S1b — theo phòng nhà máy (tra từ machineId/lineId/stationId của gói); không `global`
+  phatTheoNhaMay(io, "dashboard:update", update, { machineId: update.machineId, lineId: (update as { lineId?: number | null }).lineId, stationId: (update as { stationId?: number | null }).stationId }, update.machineId ? [`machine:${update.machineId}`] : []);
 }
 
 // WS-2 — Notify a machine that a new model package is available (signal only).
@@ -1765,10 +1768,7 @@ export function emitMachineModelAvailable(payload: {
     return;
   }
   const event = { ...payload, timestamp: new Date() };
-  io.to("global").emit("machine:model_available", event);
-  if (payload.machineId) {
-    io.to(`machine:${payload.machineId}`).emit("machine:model_available", event);
-  }
+  phatTheoNhaMay(io, "machine:model_available", event, { machineId: payload.machineId }, payload.machineId ? [`machine:${payload.machineId}`] : []);
   console.log(`[Socket.io] Emitted machine:model_available for deployment ${payload.deploymentId} (device ${payload.deviceId})`);
 }
 
@@ -1848,10 +1848,7 @@ export interface SpcViolationAlert {
 export function emitSpcViolationAlert(alert: SpcViolationAlert): void {
   eventBus.publish(EventTypes.SPC_VIOLATION, alert, "socket");
   if (!io) return;
-  io.to("global").emit("spc:violation", alert);
-  if (alert.machineId) {
-    io.to(`machine:${alert.machineId}`).emit("spc:violation", alert);
-  }
+  phatTheoNhaMay(io, "spc:violation", alert, { machineId: alert.machineId, machineCode: alert.machineCode }, alert.machineId ? [`machine:${alert.machineId}`] : []);
   console.log(`[SPC] ${alert.severity.toUpperCase()} violation: ${alert.ruleName} (${alert.metric})`);
 }
 
@@ -1881,9 +1878,8 @@ export interface AndonRealtimeEvent {
 export function emitAndonEvent(event: AndonRealtimeEvent): void {
   eventBus.publish(EventTypes.ANDON, event, "socket");
   if (!io) return;
-  io.to("global").emit("andon:event", event);
-  if (event.lineId) io.to(`line:${event.lineId}`).emit("andon:event", event);
-  if (event.machineId) io.to(`machine:${event.machineId}`).emit("andon:event", event);
+  // ★ P-S1b — nhà máy tra từ machineId/lineId/stationId; không `global`
+  phatTheoNhaMay(io, "andon:event", event, { machineId: event.machineId, lineId: event.lineId, stationId: event.stationId }, [...(event.lineId ? [`line:${event.lineId}`] : []), ...(event.machineId ? [`machine:${event.machineId}`] : [])]);
   console.log(`[Andon] ${event.state.toUpperCase()} (${event.reason}) #${event.id} — ${event.event ?? "raised"}`);
 }
 
@@ -1910,8 +1906,8 @@ export interface SafetyRealtimeEvent {
 export function emitSafetyEvent(event: SafetyRealtimeEvent): void {
   eventBus.publish(EventTypes.SAFETY_EVENT, event, "socket");
   if (!io) return;
-  io.to("global").emit("safety:event", event);
-  if (event.lineId) io.to(`line:${event.lineId}`).emit("safety:event", event);
+  // ★ P-S1b — nhà máy tra từ robotId (qua chuyền/trạm của robot) / lineId / stationId; không `global`
+  phatTheoNhaMay(io, "safety:event", event, { robotId: event.robotId, lineId: event.lineId, stationId: event.stationId }, event.lineId ? [`line:${event.lineId}`] : []);
   console.log(`[Safety] ADVISORY ${event.eventType} #${event.id} (detectedBy ${event.detectedBy ?? "?"}, outcome ${event.outcome})`);
 }
 
@@ -2442,10 +2438,7 @@ export function emitAlertEscalation(event: AlertEscalationEvent): void {
   // see escalations (previously emit-only / a dead end per the audit).
   eventBus.publish("alert.escalation", event, "socket");
   if (!io) return;
-  io.to("global").emit("alert:escalation", event);
-  if (event.machineId) {
-    io.to(`machine:${event.machineId}`).emit("alert:escalation", event);
-  }
+  phatTheoNhaMay(io, "alert:escalation", event, { machineId: event.machineId }, event.machineId ? [`machine:${event.machineId}`] : []);
   console.log(`[Escalation] Alert ${event.alertId} → L${event.toLevel} (${event.severity}): ${event.reason}`);
 }
 
@@ -2459,9 +2452,7 @@ export function emitMqttMessage(event: MqttMessageEvent): void {
     mqttMessageHistory.shift();
   }
   
-  // Emit to global room
-  io.to("global").emit("mqtt:message", event);
-
+  // ★ P-S1b — KHÔNG `global`: nhà máy tra từ mã máy trong topic (không tra ra ⇒ chỉ người toàn quyền) — phát SAU khi biết phòng máy, bên dưới.
   // If machine code is known, emit to the machine-specific room. U1-d BUGFIX: rooms
   // are keyed by NUMERIC machineId (see subscribe: `machine:${machineId}`), NOT the
   // machineCode — the previous `machine:${machineCode}` targeted a room no client
@@ -2471,8 +2462,12 @@ export function emitMqttMessage(event: MqttMessageEvent): void {
     for (const [id, code] of onlineMachineCodesMap) {
       if (code === event.machineCode) { machineId = id; break; }
     }
-    if (machineId != null) io.to(`machine:${machineId}`).emit("mqtt:message", event);
+    if (machineId != null) {
+      phatTheoNhaMay(io, "mqtt:message", event, { machineId, machineCode: event.machineCode }, [`machine:${machineId}`]);
+      return;
+    }
   }
+  phatTheoNhaMay(io, "mqtt:message", event, { machineCode: event.machineCode });
 }
 
 // Get MQTT message history for replay
@@ -2681,8 +2676,7 @@ export function calculateOEE(
   
   // Emit OEE update to clients
   if (io) {
-    io.to("global").emit("oee:update", metrics);
-    io.to(`machine:${machineId}`).emit("oee:update", metrics);
+    phatTheoNhaMay(io, "oee:update", metrics, { machineId }, [`machine:${machineId}`]);
   }
   
   return metrics;
@@ -2776,8 +2770,7 @@ export async function startDowntime(
   eventBus.publish("downtime.start", event, "socket");
   // Emit downtime start event
   if (io) {
-    io.to("global").emit("downtime:start", event);
-    io.to(`machine:${machineId}`).emit("downtime:start", event);
+    phatTheoNhaMay(io, "downtime:start", event, { machineId }, [`machine:${machineId}`]);
   }
 
   return event;
@@ -2820,8 +2813,7 @@ export async function endDowntime(machineId: number, notes?: string): Promise<Do
   eventBus.publish("downtime.end", event, "socket");
   // Emit downtime end event
   if (io) {
-    io.to("global").emit("downtime:end", event);
-    io.to(`machine:${machineId}`).emit("downtime:end", event);
+    phatTheoNhaMay(io, "downtime:end", event, { machineId }, [`machine:${machineId}`]);
   }
 
   return event;
@@ -2986,8 +2978,7 @@ export function calculateMachineHealth(
     // U1 — publish on the bus so the maintenance alert reaches the unified stream.
     eventBus.publish("maintenance.alert", alert, "socket");
     if (io) {
-      io.to("global").emit("maintenance:alert", alert);
-      io.to(`machine:${machineId}`).emit("maintenance:alert", alert);
+      phatTheoNhaMay(io, "maintenance:alert", alert, { machineId }, [`machine:${machineId}`]);
     }
   }
 

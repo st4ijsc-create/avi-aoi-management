@@ -44,6 +44,9 @@ const LUAT: Luat[] = [
   { file: "server/_core/socket.ts", phong: /^`machine:\$\{machineId\}`$/, gate: ["xacDinhMaySuKien("] },
   // ── admin
   { file: "server/_core/socket.ts", phong: /^"admin"$/, gate: ["duocQuanLyDangKyMay("] },
+  // ── P-S1b: tự vào phòng theo PHẠM VI của chính người dùng (idsTrongPhamVi) — không từ lời tự khai
+  { file: "server/_core/socketPhongQuyen.ts", phong: /^PHONG_TOAN_QUYEN_SOCKET$/, gate: ["laSocketNguoiDung(", "idsTrongPhamVi("] },
+  { file: "server/_core/socketPhongQuyen.ts", phong: /^`factory:\$\{id\}`$/, gate: ["laSocketNguoiDung(", "idsTrongPhamVi("] },
   // ── thông báo theo người dùng: chỉ phòng CỦA MÌNH
   { file: "server/services/notificationService.ts", phong: /^`user:\$\{userId\}`$/, gate: ["duocVaoPhongNguoiDung("] },
   // ── MIỄN (có lý do — KHÔNG thêm im lặng)
@@ -149,7 +152,7 @@ const doc = (rel: string) => readFileSync(resolve(GOC, rel), "utf8");
 
 describe("census — mọi socket.join đứng sau cổng hoặc có miễn kèm lý do", () => {
   it("quét TOÀN server/: chỉ các tệp đã biết có socket.join (tệp mới ⇒ phải vào bảng luật)", () => {
-    expect(tepCoJoin()).toEqual(["server/_core/socket.ts", "server/services/notificationService.ts"]);
+    expect(tepCoJoin()).toEqual(["server/_core/socket.ts", "server/_core/socketPhongQuyen.ts", "server/services/notificationService.ts"]);
   });
 
   it("socket.ts + notificationService.ts: 0 vi phạm; mọi luật đều có ≥ 1 lời gọi khớp (không luật mồ côi); miễn có lý do", () => {

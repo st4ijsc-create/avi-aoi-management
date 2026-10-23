@@ -54,6 +54,7 @@ vi.mock("../db/twinCanh", () => ({ traTrangThaiHangLoat: vi.fn(async () => []) }
 vi.mock("../services/oeeService", () => ({ getAllMachinesOEELive: vi.fn(async () => []) }));
 
 import { getDb } from "../db/connection";
+import { phatMangTheoNhaMay, phatTheoNhaMay, thongKePhat, __datLaiPhatTheoNhaMay } from "./socketPhatTheoNhaMay";
 
 const TT = `skpv${Date.now().toString(36)}`;
 type SocketMod = typeof import("./socket");
@@ -68,6 +69,7 @@ let B!: HangNhaMay;
 let uA = 0;
 let uB = 0;
 let uAdmin = 0;
+let uAB = 0;
 const idsDon: { users: number[]; robots: number[]; factories: string[] } = { users: [], robots: [], factories: [] };
 
 const cho = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -143,6 +145,8 @@ beforeAll(async () => {
   uA = await seedNguoi(db, "ua", "engineer", A.code);
   uB = await seedNguoi(db, "ub", "engineer", B.code);
   uAdmin = await seedNguoi(db, "admin", "admin", null);
+  uAB = await seedNguoi(db, "uab", "engineer", A.code);
+  await dung(db, sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uAB}, ${B.code})`);
   socketMod = await import("./socket");
   http = createServer();
   socketMod.initializeSocket(http);
@@ -338,21 +342,104 @@ describe("không lộ tồn tại + chạy đua + socket máy", () => {
   });
 });
 
-describe("⚠ KHOẢNG TRỐNG ĐÃ BIẾT (việc riêng): phòng `global` — rò theo nhà máy ở tầng PHÁT", () => {
-  // `it.fails`: ca này PASS khi khẳng định bên trong ĐỎ — tức nó GHI NHẬN lỗ còn mở bằng số đo, không ghim nó thành "đúng". Khi phát sự kiện theo
-  // phòng nhà máy (thay vì `io.to("global")`), khẳng định sẽ xanh ⇒ `it.fails` ĐỎ ⇒ nhắc xoá `.fails` và coi đây là ca hồi quy thường.
-  it.fails("B (`subscribe {}` ⇒ vào `global`) KHÔNG được nhận `andon:event` của máy thuộc nhà máy A", async () => {
-    const a = await ketNoi(uA);
-    const b = await ketNoi(uB);
-    const nhanA = ghiNhan(a, "andon:event");
-    const nhanB = ghiNhan(b, "andon:event");
-    a.emit("subscribe", {});
-    b.emit("subscribe", {});
-    await vi.waitFor(() => expect(phongCua(b)).toContain("global"), { timeout: 5000 });
-    await vi.waitFor(() => expect(phongCua(a)).toContain("global"), { timeout: 5000 });
-    socketMod.emitAndonEvent({ id: 1, state: "red", reason: "x", status: "raised", title: "t", machineId: A.mid, lineId: A.lid, raisedBySystem: false, raisedAt: new Date() } as never);
-    await vi.waitFor(() => expect(nhanA.length).toBe(1), { timeout: 5000 });
-    await cho(150);
-    expect(nhanB).toEqual([]); // hiện ĐỎ: B nhận (sự kiện đi `io.to("global")`)
+describe("★★★ P-S1b — sự kiện máy phát theo PHÒNG NHÀ MÁY (không `global`)", () => {
+  /**
+   * Một sự kiện của máy/chuyền/trạm thuộc nhà máy A: người A (cùng người A+B và admin) NHẬN đúng MỘT bản; người B, người KHÔNG gán nhà máy, và socket
+   * MÁY không nhận gì. Mọi socket người dùng chỉ `connect` — KHÔNG gửi `subscribe` (tự vào phòng theo phạm vi ngay khi nối, nên trang nào đang nghe cũng nhận).
+   */
+  async function doSuKien(ten: string, phat: () => void): Promise<void> {
+    const db = await getDb();
+    const uKhong = await seedNguoi(db!, `kh${Math.random().toString(36).slice(2, 7)}`, "engineer", null);
+    const [a, b, ab, ad, kh] = await Promise.all([ketNoi(uA), ketNoi(uB), ketNoi(uAB), ketNoi(uAdmin), ketNoi(uKhong)]);
+    const may = await ketNoi(null, true);
+    const nhan = [a, b, ab, ad, kh, may].map((c) => ghiNhan(c, ten));
+    await vi.waitFor(() => {
+      expect(phongCua(a)).toContain(`factory:${A.fid}`);
+      expect(phongCua(b)).toContain(`factory:${B.fid}`);
+      expect(phongCua(ab)).toEqual(expect.arrayContaining([`factory:${A.fid}`, `factory:${B.fid}`]));
+      expect(phongCua(ad)).toContain("scope:all");
+    }, { timeout: 5000 });
+    phat();
+    await vi.waitFor(() => {
+      expect(nhan[0].length, "A").toBe(1);
+      expect(nhan[2].length, "A+B").toBe(1);
+      expect(nhan[3].length, "admin").toBe(1);
+    }, { timeout: 5000 });
+    await cho(300);
+    expect(nhan[0].length, "A đúng một bản").toBe(1);
+    expect(nhan[1], "B (nhà máy khác)").toEqual([]);
+    expect(nhan[4], "người KHÔNG gán nhà máy").toEqual([]);
+    expect(nhan[5], "socket MÁY").toEqual([]);
+    while (clients.length) clients.pop()!.disconnect();
+  }
+
+  const mon = Date.now();
+  const io = () => socketMod.getIO()!;
+
+  it("inspection:alert (machineId + machineCode)", () => doSuKien("inspection:alert", () => socketMod.emitInspectionAlert({ type: "NG_ALERT", machineId: A.mid, machineName: "m", machineCode: A.code, timestamp: new Date(), message: "m" } as never)));
+  it("dashboard:update (machineId)", () => doSuKien("dashboard:update", () => socketMod.emitDashboardUpdate({ machineId: A.mid } as never)));
+  it("andon:event chỉ có machineId", () => doSuKien("andon:event", () => socketMod.emitAndonEvent({ id: 1, state: "red", reason: "x", status: "raised", title: "t", machineId: A.mid, raisedBySystem: false, raisedAt: new Date() } as never)));
+  it("andon:event chỉ có stationId ⇒ tra ngược lên nhà máy qua trạm → chuyền → xưởng", () => doSuKien("andon:event", () => socketMod.emitAndonEvent({ id: 2, state: "red", reason: "x", status: "raised", title: "t", stationId: A.sid, raisedBySystem: false, raisedAt: new Date() } as never)));
+  it("andon:event chỉ có lineId", () => doSuKien("andon:event", () => socketMod.emitAndonEvent({ id: 3, state: "red", reason: "x", status: "raised", title: "t", lineId: A.lid, raisedBySystem: false, raisedAt: new Date() } as never)));
+  it("safety:event (lineId)", () => doSuKien("safety:event", () => socketMod.emitSafetyEvent({ id: 4, eventType: "estop", lineId: A.lid, outcome: "x", isNearMiss: false, createdAt: new Date() } as never)));
+  it("safety:event chỉ có robotId ⇒ tra qua chuyền/trạm của robot", () => doSuKien("safety:event", () => socketMod.emitSafetyEvent({ id: 5, eventType: "estop", robotId: A.robotId, outcome: "x", isNearMiss: false, createdAt: new Date() } as never)));
+  it("spc:violation (machineId)", () => doSuKien("spc:violation", () => socketMod.emitSpcViolationAlert({ machineId: A.mid, machineCode: A.code, severity: "warning", ruleName: "r", metric: "m", pointIndices: [], violationCount: 1, detectedAt: new Date(), message: "m" } as never)));
+  it("alert:escalation (machineId)", () => doSuKien("alert:escalation", () => socketMod.emitAlertEscalation({ alertId: 1, alertTitle: "t", fromLevel: 1, toLevel: 2, severity: "high", reason: "r", machineId: A.mid, escalatedAt: new Date() } as never)));
+  it("mqtt:message chỉ có mã máy ⇒ tra theo machines.code", () => doSuKien("mqtt:message", () => socketMod.emitMqttMessage({ topic: "t", payload: "{}", machineCode: A.code, timestamp: new Date() } as never)));
+  it("machine:model_available (machineId)", () => doSuKien("machine:model_available", () => socketMod.emitMachineModelAvailable({ machineId: A.mid, deviceId: "d", deploymentId: 1 })));
+  it("machine:status_change / status_update (mã máy · id máy) qua bộ phát", async () => {
+    await doSuKien("machine:status_change", () => phatTheoNhaMay(io(), "machine:status_change", { machineCode: A.code, status: "online" }, { machineId: A.mid, machineCode: A.code }));
+    await doSuKien("machine:status_update", () => phatTheoNhaMay(io(), "machine:status_update", { machineId: A.mid, status: "running" }, { machineId: A.mid }));
   });
+
+  it("oee:update (mảng mọi máy): A chỉ thấy máy của A, B chỉ thấy máy của B, admin thấy cả hai", async () => {
+    const [a, b, ad] = await Promise.all([ketNoi(uA), ketNoi(uB), ketNoi(uAdmin)]);
+    const lay = (c: ClientSocket) => {
+      const g: any[] = [];
+      c.on("oee:update", (x) => g.push(x));
+      return g;
+    };
+    const [nhanA, nhanB, nhanAd] = [lay(a), lay(b), lay(ad)];
+    await vi.waitFor(() => {
+      expect(phongCua(a)).toContain(`factory:${A.fid}`);
+      expect(phongCua(ad)).toContain("scope:all");
+    }, { timeout: 5000 });
+    phatMangTheoNhaMay(io(), "oee:update", [{ machineId: A.mid, v: "a" }, { machineId: B.mid, v: "b" }], (m) => ({ machineId: m.machineId }), (sub) => ({ metrics: sub, at: "t" }));
+    await vi.waitFor(() => {
+      expect(nhanA.length).toBe(1);
+      expect(nhanB.length).toBe(1);
+      expect(nhanAd.length).toBe(1);
+    }, { timeout: 5000 });
+    expect(nhanA[0].metrics.map((m: any) => m.v)).toEqual(["a"]);
+    expect(nhanB[0].metrics.map((m: any) => m.v)).toEqual(["b"]);
+    expect(nhanAd[0].metrics.map((m: any) => m.v).sort()).toEqual(["a", "b"]);
+  });
+
+  it("sự kiện TRA KHÔNG RA nhà máy ⇒ KHÔNG ai ngoài toàn quyền nhận; được ĐẾM + cảnh báo (không phát vào global)", async () => {
+    __datLaiPhatTheoNhaMay();
+    const [a, b, ad] = await Promise.all([ketNoi(uA), ketNoi(uB), ketNoi(uAdmin)]);
+    const nhan = [a, b, ad].map((c) => ghiNhan(c, "andon:event"));
+    await vi.waitFor(() => expect(phongCua(ad)).toContain("scope:all"), { timeout: 5000 });
+    await vi.waitFor(() => expect(phongCua(a)).toContain(`factory:${A.fid}`), { timeout: 5000 });
+    const truoc = thongKePhat().theoSuKien["andon:event"] ?? 0;
+    socketMod.emitAndonEvent({ id: 9, state: "red", reason: "x", status: "raised", title: "t", machineId: 2_147_000_000, raisedBySystem: false, raisedAt: new Date() } as never);
+    await vi.waitFor(() => expect(nhan[2].length).toBe(1), { timeout: 5000 });
+    await vi.waitFor(() => expect(thongKePhat().theoSuKien["andon:event"] ?? 0).toBe(truoc + 1), { timeout: 5000 });
+    await cho(300);
+    expect(nhan[0]).toEqual([]);
+    expect(nhan[1]).toEqual([]);
+  });
+
+  it("đúng một bản: người A+B (ở cả hai phòng nhà máy) nhận ĐÚNG MỘT bản dù sự kiện thuộc A và có phòng máy/chuyền (hợp phòng + loại trừ)", async () => {
+    const ab = await ketNoi(uAB);
+    const nhan = ghiNhan(ab, "andon:event");
+    ab.emit("subscribe", { machineId: A.mid, lineId: A.lid, factoryId: A.fid });
+    await vi.waitFor(() => expect(phongCua(ab)).toEqual(expect.arrayContaining([`machine:${A.mid}`, `line:${A.lid}`, `factory:${A.fid}`])), { timeout: 5000 });
+    socketMod.emitAndonEvent({ id: 10, state: "red", reason: "x", status: "raised", title: "t", machineId: A.mid, lineId: A.lid, raisedBySystem: false, raisedAt: new Date() } as never);
+    await vi.waitFor(() => expect(nhan.length).toBeGreaterThanOrEqual(1), { timeout: 5000 });
+    await cho(400);
+    expect(nhan.length).toBe(1);
+  });
+
+  void mon;
 });

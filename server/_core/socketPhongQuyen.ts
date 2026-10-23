@@ -146,7 +146,7 @@ export function idPhongHopLe(v: unknown): number | null {
 /** Hai hàm phạm vi của `db/hierarchy` mà cổng phòng dùng — tách ra để test dùng tiêm (`__datCongPhamViChoTest`). */
 interface CongPhamVi {
   trongPhamVi(cap: CapPhongPhamVi | "line" | "station", id: number, pv: { userId: number; userRole: string }): Promise<boolean>;
-  idsTrongPhamVi(cap: "machine" | "line" | "station", pv: { userId: number; userRole: string }, opts?: { strict?: boolean }): Promise<number[] | null>;
+  idsTrongPhamVi(cap: "factory" | "machine" | "line" | "station", pv: { userId: number; userRole: string }, opts?: { strict?: boolean }): Promise<number[] | null>;
 }
 let congPhamViGhiDe: CongPhamVi | null = null;
 /** Chỉ lưới: thay cổng phạm vi (vd. tệp đo PHÂN QUYỀN PHÒNG không cần CSDL thật). `null` ⇒ về mặc định (`db/hierarchy` THẬT). */
@@ -224,4 +224,39 @@ export async function duocVaoPhongThietBi(data: DuLieuSocket | null | undefined,
   const m = /^(machine|robot):(\d{1,12})$/.exec(khoa);
   if (!m) return false;
   return m[1] === "machine" ? duocVaoPhongPhamVi(data, "machine", m[2]) : duocVaoPhongRobot(data, m[2]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ P-S1b (2026-10-23) — TỰ VÀO PHÒNG THEO PHẠM VI: `scope:all` (toàn quyền) hoặc `factory:{id}` cho MỌI nhà máy trong phạm vi
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Cặp của `socketPhatTheoNhaMay.phatTheoNhaMay`: sự kiện máy chỉ còn phát vào `scope:all` + `factory:{fid}` + phòng phụ, KHÔNG vào `global`.
+// Vì vậy socket NGƯỜI DÙNG phải ở đúng các phòng đó — suy từ phạm vi của CHÍNH họ (cùng `idsTrongPhamVi` mọi router dùng), không từ lời tự khai.
+// Không gán nhà máy nào ⇒ không vào phòng nào (không nhận sự kiện máy). Lỗi ⇒ không join, trả `false` để nơi gọi thử lại ở `subscribe` kế.
+
+/** Phần của `Socket` mà hàm này dùng — tách để test không cần socket thật. */
+export interface SocketVaoPhong {
+  data: DuLieuSocket & Record<string, unknown>;
+  disconnected: boolean;
+  join(phong: string): unknown;
+}
+
+/** Phòng toàn quyền — khai ở đây (không import `socketPhatTheoNhaMay`) để giữ module này không kéo DB lúc nạp; test canh hai hằng khớp nhau. */
+export const PHONG_TOAN_QUYEN_SOCKET = "scope:all";
+
+export async function tuDongVaoPhongPhamVi(socket: SocketVaoPhong): Promise<boolean> {
+  if (!laSocketNguoiDung(socket.data)) return false;
+  if (socket.data.__daVaoPhongPhamVi === true) return true;
+  try {
+    const { idsTrongPhamVi } = await layCongPhamVi();
+    const ids = await idsTrongPhamVi("factory", pvCuaSocket(socket.data));
+    if (socket.disconnected) return false;
+    if (socket.data.__daVaoPhongPhamVi === true) return true; // lượt song song đã xong
+    if (ids === null) socket.join(PHONG_TOAN_QUYEN_SOCKET);
+    else for (const id of ids) socket.join(`factory:${id}`);
+    socket.data.__daVaoPhongPhamVi = true;
+    return true;
+  } catch (err) {
+    console.error("[Socket.io] loi tu dong vao phong pham vi:", (err as Error)?.message ?? err);
+    return false;
+  }
 }

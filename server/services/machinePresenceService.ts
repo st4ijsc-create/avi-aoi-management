@@ -101,7 +101,9 @@ export async function recordPresence(
   try {
     const socketModule = await import("../_core/socket");
     const io = (socketModule as any).io;
-    if (io) io.emit("machine:status_change", { machineId, status, source: opts?.source ?? "presence" });
+    // ★ P-S1b — theo phòng nhà máy của máy (không `io.emit` tới MỌI socket, kể cả socket máy/vô danh)
+    const { phatTheoNhaMay } = await import("../_core/socketPhatTheoNhaMay");
+    phatTheoNhaMay(io, "machine:status_change", { machineId, status, source: opts?.source ?? "presence" }, { machineId });
   } catch {
     // socket.io chưa sẵn sàng → bỏ qua
   }
