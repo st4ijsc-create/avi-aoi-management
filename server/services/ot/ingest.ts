@@ -14,6 +14,19 @@
 import type { OtSample, OtProtocol } from "./otDriver";
 import type { RuntimeAdapter } from "./deviceAdapter";
 import { ingestTelemetry, type CanonicalSample, type TelemetryProtocol } from "../telemetryBus";
+import { napTuOt } from "../scada/boDemHienTai";
+
+/**
+ * SCADA R0 Task 7 - day mau vao bo dem gia tri hien tai TU DUONG OT TRONG TIEN TRINH (khoa = adapter dang tin + mau, khong meta),
+ * TRUOC va doc lap voi viec ghi DB. No-op re khi SCADA_LIVE_CACHE_ENABLED != true. Khong bao gio nem vao ingest.
+ */
+function napBoDem(adapter: RuntimeAdapter, samples: OtSample[]): void {
+  try {
+    napTuOt({ adapterId: adapter.adapterId, machineId: adapter.machineId ?? null }, samples);
+  } catch (err) {
+    console.error("[OT] nap bo dem gia tri hien tai loi:", (err as Error)?.message || err);
+  }
+}
 
 /**
  * Map an OT driver protocol → the canonical telemetryProtocolEnum value.
@@ -73,6 +86,8 @@ function unsTopicFor(adapter: RuntimeAdapter, sample: OtSample): string {
  * republish to UNS. The bus owns persistence + broadcast; this only adds UNS.
  */
 export async function ingestSample(adapter: RuntimeAdapter, sample: OtSample): Promise<void> {
+  napBoDem(adapter, [sample]); // SCADA R0 Task 7 - khong phu thuoc DB
+
   // 1) Canonical path — ONE bus for every protocol (persist + broadcast).
   await ingestTelemetry([sampleToCanonical(adapter, sample)]);
 
@@ -94,6 +109,8 @@ export async function ingestSample(adapter: RuntimeAdapter, sample: OtSample): P
  */
 export async function ingestSamples(adapter: RuntimeAdapter, samples: OtSample[]): Promise<void> {
   if (!samples || samples.length === 0) return;
+
+  napBoDem(adapter, samples); // SCADA R0 Task 7 - khong phu thuoc DB
 
   // 1) Canonical path — ONE bus call for the whole tick (persist + broadcast).
   await ingestTelemetry(samples.map((s) => sampleToCanonical(adapter, s)));

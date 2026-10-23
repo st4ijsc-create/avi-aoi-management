@@ -6,19 +6,20 @@
  * ⚠ CHỈ CHẠY TRONG TIẾN TRÌNH API (nơi ingest chạy — `server/_core/index.ts`, sau `startOt`, sau cờ
  *   `SCADA_LIVE_CACHE_ENABLED`). KHÔNG khởi động trong `worker.ts`: worker không ingest ⇒ bộ đệm ở đó sẽ rỗng/cũ.
  *
- * Nuôi bằng hai đường:
- *   1. `registerTelemetryTap` của telemetryBus — mỗi lô hàng ĐÃ ghi DB + đã broadcast (đường batch: tại flush).
- *   2. Khi khởi động: nạp hàng mới nhất mỗi (thiết bị, tag) từ DB (cửa sổ 24 h). Giá trị nạp mang TUỔI THẬT
- *      (`rx = ingestedAt` của hàng, KHÔNG phải giờ khởi động) ⇒ sau restart chúng hiện `stale`, không giả "tốt, mới".
+ * Nuôi bằng hai đường — CẢ HAI chỉ tin nguồn trong tiến trình, KHÔNG tin `meta` của hàng telemetry:
+ *   1. `napTuOt` — `ingest.ts` (đường OT trong tiến trình) gọi với `RuntimeAdapter` + mẫu OT ngay khi mẫu tới, TRƯỚC và KHÔNG
+ *      phụ thuộc việc ghi DB. Khoá (adapterId, tagKey) lấy từ adapter + mẫu. (Bài học bảo mật: tap chung của telemetryBus nhận cả
+ *      hàng từ ingest NGOÀI — /api/ot/ingest, /api/v1, MQTT — mà `meta` do người gọi tuỳ ý đặt ⇒ giả mạo giá trị vào khoá an toàn.)
+ *   2. Khi khởi động: nạp hàng mới nhất mỗi (thiết bị, tag) từ DB (cửa sổ 24 h) CHỈ cho adapter đã `datThongTinAdapter` và
+ *      hàng có `deviceId === code` của adapter đó; adapterId/tagKey suy từ sổ đăng ký (code → adapterId, metric → tagKey).
+ *      Giá trị nạp mang TUỔI THẬT (`rx = ingestedAt` của hàng, KHÔNG phải giờ khởi động) ⇒ sau restart chúng hiện `stale`.
  *
- * Phụ thuộc một chiều: otManager → module này (`datThongTinAdapter`). Module này KHÔNG import otManager.
+ * Phụ thuộc một chiều: otManager → module này (`datThongTinAdapter`), ingest.ts → module này (`napTuOt`).
+ * Module này KHÔNG import otManager hay ingest.
  *
  * `stale = now - rx > max(3 * pollMs, coDeadband ? 70_000 : 0)`; adapter chưa có thông tin ⇒ pollMs 5000, không deadband.
  */
-import type { InsertOtTelemetry } from "../../../drizzle/schema";
-import type { LyDoChatLuong, OtQuality } from "../ot/otDriver";
-import { registerTelemetryTap } from "../telemetryBus";
-import { layMoiNhatTheoThietBi } from "../../db/otTelemetry";
+import type { LyDoChatLuong, OtQuality, OtSample } from "../ot/otDriver";
 
 export interface GiaTriHienTai {
   adapterId: number;
@@ -30,9 +31,9 @@ export interface GiaTriHienTai {
   reason: LyDoChatLuong | null;
   /** Giờ nguồn của mẫu (ms). */
   ts: number;
-  /** Chỉ có khi `meta.tsSource` của hàng khai; ingest hiện KHÔNG đặt khoá này vào meta ⇒ thực tế luôn null. */
+  /** Mẫu OT khai (`OtSample.tsSource`); nạp từ DB luôn null (cột không có). */
   tsSource: "device" | "server" | null;
-  /** Giờ máy chủ nhận (ms): `ingestedAt` của hàng nếu có, không thì lúc tap chạy. */
+  /** Giờ máy chủ nhận (ms): lúc `napTuOt` chạy; nạp DB = `ingestedAt` của hàng. */
   rx: number;
   /** ≤ 50 giá trị số gần nhất, cũ → mới. */
   lichSu: number[];
@@ -65,7 +66,6 @@ const khoa = (adapterId: number, tagKey: string): string => `${adapterId}:${tagK
 let boDem = new Map<string, GiaTriHienTai>();
 let thongTin = new Map<number, ThongTinAdapter>();
 let nguoiNghe = new Set<(keys: string[]) => void>();
-let huyTap: (() => void) | null = null;
 let dangKhoiDong: Promise<void> | null = null;
 
 export function datThongTinAdapter(adapterId: number, t: ThongTinAdapter): void {
@@ -89,52 +89,47 @@ function gioMs(v: unknown): number | null {
   return null;
 }
 
-/** Áp MỘT hàng vào bộ đệm; trả khoá nếu có đổi. `chiNeuChuaCo`: dùng khi nạp DB — không đè giá trị sống đã tới. */
-function apMotHang(row: InsertOtTelemetry, now: number, chiNeuChuaCo: boolean): string | null {
-  const meta = (row.meta ?? null) as Record<string, unknown> | null;
-  const adapterId = meta?.adapterId;
-  if (typeof adapterId !== "number" || !Number.isFinite(adapterId)) return null;
-  const tagKeyMeta = meta?.tagKey;
-  const tagKey = typeof tagKeyMeta === "string" && tagKeyMeta !== "" ? tagKeyMeta : row.metric;
-  if (typeof tagKey !== "string" || tagKey === "") return null;
-  const k = khoa(adapterId, tagKey);
+/** Một mẫu đã CHUẨN HOÁ từ nguồn tin cậy — khoá (adapterId, tagKey) KHÔNG lấy từ meta. */
+interface Mau {
+  adapterId: number;
+  tagKey: string;
+  machineId: number | null;
+  v: GiaTriHienTai["v"];
+  q: OtQuality;
+  statusCode: string | null;
+  reason: LyDoChatLuong | null;
+  ts: number;
+  tsSource: GiaTriHienTai["tsSource"];
+  rx: number;
+}
+
+/** Áp MỘT mẫu; trả khoá nếu có đổi. `chiNeuChuaCo` (nạp DB): không đè giá trị sống đã tới. */
+function apMau(m: Mau, chiNeuChuaCo: boolean): string | null {
+  const k = khoa(m.adapterId, m.tagKey);
   const cu = boDem.get(k);
   if (cu && chiNeuChuaCo) return null;
-
-  const q: OtQuality = CHAT_LUONG_HOP_LE.has(row.quality as string) ? (row.quality as OtQuality) : "good";
-  let v: GiaTriHienTai["v"] = null;
-  if (row.numValue != null) v = row.numValue;
-  else if (row.textValue != null) v = row.textValue;
-  else if (row.boolValue != null) v = row.boolValue;
-
-  const rx = gioMs(row.ingestedAt) ?? now;
-  const ts = gioMs(row.ts) ?? rx;
-  // Mới nhất theo ts thắng: hàng cũ hơn (replay store-and-forward…) KHÔNG đè giá trị hiện tại, không đổi rx/lichSu, không thành khoá đổi.
+  // Mới nhất theo ts thắng: mẫu cũ hơn (replay…) KHÔNG đè giá trị hiện tại, không đổi rx/lichSu, không thành khoá đổi.
   // Đồng hồ thiết bị nhảy lùi ⇒ mục đứng yên rồi stale (hỏng nhìn thấy được). ts bằng nhau ⇒ thay.
-  if (cu && ts < cu.ts) return null;
-  // uncertain không mang giá trị ⇒ giữ giá trị cuối đã biết; bad giữ nguyên v của hàng (null).
-  if (q === "uncertain" && v === null && cu) v = cu.v;
-
+  if (cu && m.ts < cu.ts) return null;
+  let v = m.v;
+  // uncertain không mang giá trị ⇒ giữ giá trị cuối đã biết; bad giữ nguyên v của mẫu (null).
+  if (m.q === "uncertain" && v === null && cu) v = cu.v;
   const lichSu = cu ? cu.lichSu.slice() : [];
-  if (q !== "bad" && typeof row.numValue === "number" && Number.isFinite(row.numValue)) {
-    lichSu.push(row.numValue);
+  if (m.q !== "bad" && typeof m.v === "number" && Number.isFinite(m.v)) {
+    lichSu.push(m.v);
     if (lichSu.length > SO_LICH_SU_TOI_DA) lichSu.splice(0, lichSu.length - SO_LICH_SU_TOI_DA);
   }
-
-  const tsSourceMeta = meta?.tsSource;
-  const reasonMeta = meta?.reason;
-  const statusMeta = meta?.statusCode;
   boDem.set(k, {
-    adapterId,
-    tagKey,
-    machineId: row.machineId ?? thongTin.get(adapterId)?.machineId ?? null,
+    adapterId: m.adapterId,
+    tagKey: m.tagKey,
+    machineId: m.machineId ?? cu?.machineId ?? null,
     v,
-    q,
-    statusCode: typeof statusMeta === "string" ? statusMeta : null,
-    reason: typeof reasonMeta === "string" && LY_DO_HOP_LE.has(reasonMeta) ? (reasonMeta as LyDoChatLuong) : null,
-    ts,
-    tsSource: tsSourceMeta === "device" || tsSourceMeta === "server" ? tsSourceMeta : null,
-    rx,
+    q: m.q,
+    statusCode: m.statusCode,
+    reason: m.reason,
+    ts: m.ts,
+    tsSource: m.tsSource,
+    rx: m.rx,
     lichSu,
   });
   return k;
@@ -151,14 +146,14 @@ function thongBao(keys: string[]): void {
   }
 }
 
-function napNoiBo(rows: InsertOtTelemetry[], now: number, chiNeuChuaCo: boolean): string[] {
+function napNoiBo(mau: Mau[], chiNeuChuaCo: boolean): string[] {
   const doi = new Set<string>();
-  for (const r of rows) {
+  for (const m of mau) {
     try {
-      const k = apMotHang(r, now, chiNeuChuaCo);
+      const k = apMau(m, chiNeuChuaCo);
       if (k) doi.add(k);
     } catch (err) {
-      console.error("[SCADA] bỏ hàng lỗi khi nạp bộ đệm:", (err as Error)?.message ?? err);
+      console.error("[SCADA] bỏ mẫu lỗi khi nạp bộ đệm:", (err as Error)?.message ?? err);
     }
   }
   const keys = [...doi];
@@ -166,9 +161,40 @@ function napNoiBo(rows: InsertOtTelemetry[], now: number, chiNeuChuaCo: boolean)
   return keys;
 }
 
-/** Nạp một lô hàng ot_telemetry (từ tap). Trả khoá `"${adapterId}:${tagKey}"` vừa đổi; bỏ hàng không có `meta.adapterId`. */
-export function napTuTap(rows: InsertOtTelemetry[], now: number = Date.now()): string[] {
-  return napNoiBo(rows, now, false);
+export function boDemDangBat(): boolean {
+  return process.env.SCADA_LIVE_CACHE_ENABLED === "true";
+}
+
+/**
+ * Nạp mẫu OT từ ĐƯỜNG TRONG TIẾN TRÌNH (`ingest.ts` gọi; KHÔNG phụ thuộc DB ghi được hay không). Khoá lấy từ adapter đáng tin
+ * + mẫu, không từ `meta`. No-op rẻ khi SCADA_LIVE_CACHE_ENABLED != "true". Mẫu mang `tsReject` (bus sẽ loại) bị bỏ.
+ * Trả khoá `"${adapterId}:${tagKey}"` vừa đổi.
+ */
+export function napTuOt(
+  a: { adapterId: number; machineId: number | null },
+  samples: OtSample[],
+  now: number = Date.now(),
+): string[] {
+  if (!boDemDangBat() || !samples || samples.length === 0) return [];
+  const mau: Mau[] = [];
+  for (const s of samples) {
+    if (!s || typeof s.tagKey !== "string" || s.tagKey === "" || s.tsReject) continue;
+    const q: OtQuality = CHAT_LUONG_HOP_LE.has(s.quality) ? s.quality : "good";
+    const v = s.value === undefined ? null : s.value;
+    mau.push({
+      adapterId: a.adapterId,
+      tagKey: s.tagKey,
+      machineId: a.machineId ?? null,
+      v: typeof v === "number" && !Number.isFinite(v) ? null : v,
+      q,
+      statusCode: typeof s.statusCode === "string" ? s.statusCode : null,
+      reason: s.reason !== undefined && LY_DO_HOP_LE.has(s.reason) ? s.reason : null,
+      ts: gioMs(s.timestamp) ?? now,
+      tsSource: s.tsSource === "device" || s.tsSource === "server" ? s.tsSource : null,
+      rx: now,
+    });
+  }
+  return napNoiBo(mau, false);
 }
 
 function lamTuoi(g: GiaTriHienTai, now: number): GiaTriCoTuoi {
@@ -205,48 +231,53 @@ async function napTuDb(): Promise<void> {
   const theoMa = new Map<string, number>();
   for (const [id, t] of thongTin) theoMa.set(t.code, id);
   if (theoMa.size === 0) return;
+  // import động: ingest.ts nạp module này tĩnh; không kéo lớp DB vào mọi nơi nạp ingest (và các test mock schema)
+  const { layMoiNhatTheoThietBi } = await import("../../db/otTelemetry");
   const rows = await layMoiNhatTheoThietBi([...theoMa.keys()], NAP_TU_DB_MS);
-  const now = Date.now();
-  const lo: InsertOtTelemetry[] = [];
+  const mau: Mau[] = [];
   for (const r of rows) {
+    // Chỉ hàng của adapter đã đăng ký: deviceId PHẢI là code của adapter; adapterId/tagKey từ sổ đăng ký (code → adapterId, metric).
+    const adapterId = theoMa.get(r.deviceId);
+    if (adapterId === undefined || !r.metric) continue;
+    const info = thongTin.get(adapterId);
+    if (!info || info.code !== r.deviceId) continue;
+    const q: OtQuality = CHAT_LUONG_HOP_LE.has(r.quality) ? (r.quality as OtQuality) : "good";
     const m = (r.meta ?? {}) as Record<string, unknown>;
-    const adapterId = typeof m.adapterId === "number" ? m.adapterId : theoMa.get(r.deviceId);
-    if (adapterId === undefined) continue;
-    lo.push({
-      ts: r.ts,
-      deviceId: r.deviceId,
-      protocol: "other",
-      metric: r.metric,
-      numValue: r.numValue,
-      textValue: r.textValue,
-      boolValue: r.boolValue,
-      quality: r.quality as InsertOtTelemetry["quality"],
-      meta: { ...m, adapterId, tagKey: typeof m.tagKey === "string" ? m.tagKey : r.metric },
-      ingestedAt: r.ingestedAt,
+    const v = r.numValue ?? r.textValue ?? r.boolValue ?? null;
+    const rx = gioMs(r.ingestedAt);
+    if (rx === null) continue;
+    mau.push({
+      adapterId,
+      tagKey: r.metric,
+      machineId: info.machineId,
+      v,
+      q,
+      statusCode: typeof m.statusCode === "string" ? m.statusCode : null,
+      reason: typeof m.reason === "string" && LY_DO_HOP_LE.has(m.reason) ? (m.reason as LyDoChatLuong) : null,
+      ts: gioMs(r.ts) ?? rx,
+      tsSource: null,
+      rx, // tuổi THẬT của hàng, không phải giờ khởi động
     });
   }
-  // rx = ingestedAt của hàng (tuổi thật). Tap đã đăng ký trước ⇒ giá trị sống tới sớm hơn không bị ghi đè.
-  napNoiBo(lo, now, true);
+  // Giá trị sống đã tới trong lúc truy vấn không bị ghi đè.
+  napNoiBo(mau, true);
 }
 
-/** Đăng ký tap + nạp từ DB các adapter đã `datThongTinAdapter`. Idempotent; lỗi nạp DB chỉ log (bộ đệm vẫn nuôi bằng tap). */
+/** Nạp từ DB các adapter đã `datThongTinAdapter`. Idempotent; lỗi nạp DB chỉ log (bộ đệm vẫn nuôi bằng `napTuOt`). */
 export function khoiDongBoDemHienTai(): Promise<void> {
   if (dangKhoiDong) return dangKhoiDong;
-  if (!huyTap) huyTap = registerTelemetryTap((rows) => void napTuTap(rows));
   dangKhoiDong = (async () => {
     try {
       await napTuDb();
     } catch (err) {
-      console.error("[SCADA] nạp bộ đệm từ DB lỗi (tiếp tục bằng tap):", (err as Error)?.message ?? err);
+      console.error("[SCADA] nạp bộ đệm từ DB lỗi (tiếp tục bằng mẫu sống):", (err as Error)?.message ?? err);
     }
   })();
   return dangKhoiDong;
 }
 
-/** Chỉ cho test: gỡ tap, xoá dữ liệu, thông tin adapter và người nghe. */
+/** Chỉ cho test: xoá dữ liệu, thông tin adapter, người nghe và cờ đã khởi động. */
 export function __datLaiBoDemHienTai(): void {
-  if (huyTap) huyTap();
-  huyTap = null;
   dangKhoiDong = null;
   boDem = new Map();
   thongTin = new Map();

@@ -259,7 +259,8 @@ export interface TsdbTheoThietBiRow {
   meta: Record<string, unknown> | null;
 }
 
-const COT_THEO_THIET_BI = {
+/** Lazy: không đụng `otTelemetry` lúc nạp module (test mock `drizzle/schema` không có bảng này). */
+const cotTheoThietBi = () => ({
   deviceId: otTelemetry.deviceId,
   metric: otTelemetry.metric,
   numValue: otTelemetry.numValue,
@@ -269,7 +270,7 @@ const COT_THEO_THIET_BI = {
   ts: otTelemetry.ts,
   ingestedAt: otTelemetry.ingestedAt,
   meta: otTelemetry.meta,
-} as const;
+});
 
 function chuanHoaTheoThietBi(r: {
   deviceId: string | null;
@@ -308,7 +309,7 @@ export async function queryOtTelemetryLatestByDevices(
   if (deviceCodes.length === 0) return [];
   try {
     const rows = await db
-      .selectDistinctOn([otTelemetry.deviceId, otTelemetry.metric], COT_THEO_THIET_BI)
+      .selectDistinctOn([otTelemetry.deviceId, otTelemetry.metric], cotTheoThietBi())
       .from(otTelemetry)
       .where(and(inArray(otTelemetry.deviceId, deviceCodes), gte(otTelemetry.ts, since)))
       .orderBy(otTelemetry.deviceId, otTelemetry.metric, desc(otTelemetry.ts));
@@ -330,7 +331,7 @@ export async function queryOtTelemetryRawByDevice(
   if (!db) return null;
   try {
     const rows = await db
-      .select(COT_THEO_THIET_BI)
+      .select(cotTheoThietBi())
       .from(otTelemetry)
       .where(and(eq(otTelemetry.deviceId, deviceCode), eq(otTelemetry.metric, metric)))
       .orderBy(desc(otTelemetry.ts))
