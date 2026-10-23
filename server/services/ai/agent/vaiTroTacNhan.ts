@@ -80,10 +80,14 @@ export type KetQuaChuanBi =
   | { ok: true; thongTin: ThongTinModelLuotChay; modelId: string | undefined; plan: GatewayPlan }
   | { ok: false; ma: MaTuChoiVaiTro; thongDiep: string; thongTin?: ThongTinModelLuotChay };
 
-export async function chuanBiLuotChayTheoVaiTro(
-  y: { cauHoi: string; gocDuAn: string; projectId: string; user: { id: number; role: string } },
-  p: PhuThuocVaiTro,
-): Promise<KetQuaChuanBi> {
+/**
+ * ★ Đợt 9 (2026-10-23) — MỘT chỗ: vai trò của lượt (tác nhân HOẶC trợ lý) ⇒ model qua `dinhTuyenVaiTro` (sau khi làm mới khe), kèm
+ * kiểm khoá khe. Dùng chung cho tác nhân (`chuanBiLuotChayTheoVaiTro`) và trợ lý lập trình (thiết kế 26ba9d039) — không bản sao thứ hai.
+ */
+export async function giaiModelTheoVaiTro(
+  y: { cauHoi: string; gocDuAn: string; projectId: string },
+  p: Pick<PhuThuocVaiTro, "layAnh" | "nguCanhKhe" | "laDuAnPlc" | "lamMoiKhe" | "env">,
+): Promise<{ ok: true; thongTin: ThongTinModelLuotChay; modelId: string | undefined } | { ok: false; thongDiep: string; thongTin: ThongTinModelLuotChay }> {
   const env = p.env ?? process.env;
   const chon = chonVaiTroTacNhan({ laDuAnPlc: p.laDuAnPlc(y.gocDuAn), cauHoi: y.cauHoi });
   const anh = p.layAnh();
@@ -96,7 +100,6 @@ export async function chuanBiLuotChayTheoVaiTro(
     nguon: r.nguon,
     bangChung: `${chon.bangChung}; ${r.lyDo.bangChung}`,
   };
-
   // Khoá khe còn hạn và đích cuối là model khe nặng KHÁC model khe đang giữ ⇒ bộ lập lịch khe sẽ từ chối ở lượt model đầu
   // (đo: ablation 2026-10-22 lần 1 — mọi lượt `MODEL_LOI`, 0 tool). Nói thật NGAY, trước mọi token / checkpoint.
   if (khe.kheBiKhoa && r.model && laModelHoSoKheNang(r.model, anh)) {
@@ -104,7 +107,6 @@ export async function chuanBiLuotChayTheoVaiTro(
     if (toBasename(r.model) !== dang) {
       return {
         ok: false,
-        ma: "AI_KHONG_CO_MODEL",
         thongDiep:
           `Khe model đang bị khoá (một phép đo/đổi model đang giữ ${dang || "?"}); vai trò ${chon.vaiTro} cần ${r.model} ` +
           "và không có hồ sơ dự phòng nào dùng được với model đang giữ. Thử lại khi khoá được nhả.",
@@ -112,6 +114,18 @@ export async function chuanBiLuotChayTheoVaiTro(
       };
     }
   }
+  return { ok: true, thongTin, modelId: r.model };
+}
+
+export async function chuanBiLuotChayTheoVaiTro(
+  y: { cauHoi: string; gocDuAn: string; projectId: string; user: { id: number; role: string } },
+  p: PhuThuocVaiTro,
+): Promise<KetQuaChuanBi> {
+  const env = p.env ?? process.env;
+  const g = await giaiModelTheoVaiTro(y, p);
+  if (!g.ok) return { ok: false, ma: "AI_KHONG_CO_MODEL", thongDiep: g.thongDiep, thongTin: g.thongTin };
+  const { thongTin } = g;
+  const r = { model: g.modelId };
 
   try {
     const plan = await p.planInference({
