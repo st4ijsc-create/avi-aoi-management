@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { insertBaseVariantInTx } from "./product";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, gte, lte, like, sql, or, inArray, SQL } from "drizzle-orm";
 import {
@@ -1677,6 +1678,7 @@ export async function seedSampleData() {
     imageHeight: 1080,
   }).returning({ id: productModels.id });
   const productModelId = productModelResult.id;
+  await insertBaseVariantInTx(db, productModelId, 1); // ★ doc55 PV0: dữ liệu mẫu cũng có BASE
 
   // Create sample measurement points (30 points)
   const measurementTypes = ["DIMENSION", "VISUAL", "POSITION", "COLOR", "SURFACE"] as const;

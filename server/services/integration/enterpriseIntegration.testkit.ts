@@ -68,7 +68,7 @@ export function makeFakeDb(): any {
     return chain;
   }
 
-  return {
+  const fake: any = {
     select: (_cols?: unknown) => chainFor(undefined),
     insert: (table: unknown) => ({
       values: (vals: unknown) => {
@@ -100,5 +100,8 @@ export function makeFakeDb(): any {
         return undefined;
       },
     }),
+    // giao dịch giả: chạy thẳng trên chính db giả (đủ cho mã chỉ cần insert/select/update trong một khối)
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(fake),
   };
+  return fake;
 }
