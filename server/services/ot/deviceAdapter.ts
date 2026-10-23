@@ -30,6 +30,16 @@ export interface RuntimeAdapter {
 }
 
 /**
+ * SCADA R0 (C5) — `connectionOptions.timeoutMs` (số nguyên dương ≤ 60000, nhận cả chuỗi số) ⇒ timeout kết nối/đọc của driver.
+ * Giá trị sai/thiếu ⇒ undefined (driver dùng mặc định của nó). Trước đây loadEnabledAdapters luôn truyền `undefined`.
+ */
+export function docTimeoutMs(opts: Record<string, unknown> | null | undefined): number | undefined {
+  const raw = opts?.timeoutMs;
+  const n = typeof raw === "number" ? raw : typeof raw === "string" && /^\s*\d+\s*$/.test(raw) ? Number(raw) : NaN;
+  return Number.isInteger(n) && n > 0 && n <= 60000 ? n : undefined;
+}
+
+/**
  * Parse the optional HA secondary endpoint from an adapter's `connectionOptions`
  * json. Returns undefined unless `connectionOptions.ha.secondaryEndpoint` is a
  * non-empty string. Falls back to the primary's options when `secondaryOptions`
@@ -115,12 +125,12 @@ export async function loadEnabledAdapters(
       connection: {
         endpoint: a.endpoint,
         options: connectionOptions,
-        timeoutMs: undefined,
+        timeoutMs: docTimeoutMs(connectionOptions),
       },
       pollIntervalMs: a.pollIntervalMs ?? 5000,
       tags,
       driver: createDriver(protocol),
-      backupConnection: parseBackupConnection(connectionOptions),
+      backupConnection: parseBackupConnection(connectionOptions, docTimeoutMs(connectionOptions)),
     });
   }
 
