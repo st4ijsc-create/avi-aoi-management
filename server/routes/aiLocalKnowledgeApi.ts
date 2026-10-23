@@ -698,6 +698,8 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
               samplingProfile: evt.samplingProfile,
               latencyMs: evt.latencyMs,
               ...(evt.ctxMax !== undefined ? { ctxMax: evt.ctxMax } : {}),
+              // ★ Đợt 9 — trợ lý theo vai trò (vắng = không định tuyến vai trò).
+              ...(evt.vaiTro ? { vaiTro: evt.vaiTro, nguonVaiTro: evt.nguonVaiTro } : {}),
             });
             break;
           case "done":

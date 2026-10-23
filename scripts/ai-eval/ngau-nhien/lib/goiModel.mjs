@@ -117,12 +117,14 @@ export function taoGoiModel(o) {
     const t0 = Date.now();
     let tFirst = null;
     let kiemBienDich = null;
+    /** ★ Đợt 9 — sự kiện `usage` cuối (model THỰC + vai trò nếu trợ lý định tuyến theo vai trò). */
+    let usage = null;
     const res = await fetchUndici(`${base}/api/ai/local-kb/stream`, {
       dispatcher: KHONG_TRAN,
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: o.cookie ?? "" },
       body: JSON.stringify({ question: cauHoi, topK: 5, history: [], userRole: "admin",
-        context: { route: "/ai-coding-workspace", uiLanguage: "vi", codingMode: true, projectId: "repo", ...(o.cheDoNghi ? { cheDoNghi: o.cheDoNghi } : {}),
+        context: { route: "/ai-coding-workspace", uiLanguage: "vi", codingMode: true, projectId: o.projectId ?? "repo", ...(o.cheDoNghi ? { cheDoNghi: o.cheDoNghi } : {}),
           ...(tatKiem ? { kiemBienDichST: false } : {}) } }),
     });
     if (!res.ok) return { text: "", err: `HTTP ${res.status}`, totalMs: Date.now() - t0, cut: false };
@@ -144,6 +146,7 @@ export function taoGoiModel(o) {
         else if (ev.type === "done" && ev.answerRevised === true && typeof ev.answer === "string") { text = ev.answer; evs.push("done:revised"); }
         else evs.push(ev.type + (ev.stop ? `(${ev.stop})` : ""));
         if (ev.type === "done" && typeof ev.kiemBienDichST === "string") kiemBienDich = ev.kiemBienDichST;
+        if (ev.type === "usage") usage = { luot: ev.luot ?? null, modelId: ev.modelId ?? null, vaiTro: ev.vaiTro ?? null, nguonVaiTro: ev.nguonVaiTro ?? null };
       }
     }
     // ★ Đợt 9 (2026-10-23, hợp nhất vào bản main `aiLocalKnowledgeCodingKiemST`) — vòng kiểm ĐÃ SỬA ⇒ server NỐI khối "Bản đã sửa sau biên
@@ -153,7 +156,7 @@ export function taoGoiModel(o) {
       ? /\n---\n\*\*(?:Bản đã sửa sau biên dịch|Version corrected after compiling|编译后修正的版本)\*\*[^\n]*\n([\s\S]*)$/.exec(text)
       : null;
     return { text: mDaSua ? mDaSua[1] : text, ...(mDaSua ? { textDayDu: text } : {}), ttftMs: tFirst, totalMs: Date.now() - t0, evs,
-      cut: evs.some((e) => /\((length|max_tokens)\)/i.test(e)), kiemBienDich };
+      cut: evs.some((e) => /\((length|max_tokens)\)/i.test(e)), kiemBienDich, usage };
   }
 
   /**
@@ -206,5 +209,7 @@ export function tuyChonTuArgs(args, macDinhMaxTokens = 16000) {
     sampling: arg("--sampling", "hien-tai"),
     model: arg("--model", null),
     cheDoNghi: arg("--che-do-nghi", null),
+    // ★ Đợt 9 (2026-10-23) — dự án của trợ lý (pipeline): id trong AI_REPO_SANDBOX_ROOTS của server đo; vắng ⇒ "repo" như cũ.
+    projectId: arg("--project-id", "repo"),
   };
 }

@@ -297,6 +297,9 @@ export async function* streamCodingGenerate(
         auditTask: "kb_sinh_ma", // ★ Đợt 9 — bề mặt ở ai_llm_audit
         // ★ G4 — tầng model người dùng chọn cho lượt này (bộ chọn ở màn lập trình). Vắng ⇒ mặc định hệ.
         tacVu: (context as { modelTask?: unknown })?.modelTask,
+        // ★ Đợt 9 — trợ lý theo vai trò: model đã định tuyến (vắng ⇒ bộ định tuyến cổng như cũ).
+        ...(context.modelVaiTro?.modelId ? { modelId: context.modelVaiTro.modelId } : {}),
+        ...(context.modelVaiTro ? { nhanVaiTro: { vaiTro: context.modelVaiTro.vaiTro, nguon: context.modelVaiTro.nguon } } : {}),
         systemPrompt: heThong,
         prompt: promptCuoi,
         maxTokens: tran,
@@ -411,7 +414,7 @@ export async function* streamCodingGenerate(
   const kiemST = yield* chayKiemBienDichST({
     beMat: "tro-ly",
     cauTraLoi: kq.text,
-    goiLai: goiLaiBangModel({ heThong, promptGoc: promptCuoi, maxTokens: tran, userId: execCtx?.user?.id, tacVu: (context as { modelTask?: unknown })?.modelTask, signal: execCtx?.signal }),
+    goiLai: goiLaiBangModel({ heThong, promptGoc: promptCuoi, maxTokens: tran, userId: execCtx?.user?.id, tacVu: (context as { modelTask?: unknown })?.modelTask, signal: execCtx?.signal, modelId: context.modelVaiTro?.modelId }),
     signal: execCtx?.signal,
     boiCanh: { tier: dungSinhMa?.tier, model: dungSinhMa?.modelId, userId: execCtx?.user?.id },
     // ★ Đợt 9 (hợp nhất từ e7220eb9e) — opt-out của lượt (nhánh "tắt" của A/B cùng server; cửa `parseContext` chỉ nhận `false`).

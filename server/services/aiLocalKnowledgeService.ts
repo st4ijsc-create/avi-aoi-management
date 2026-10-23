@@ -242,6 +242,11 @@ export interface KbQueryContext {
    */
   kiemBienDichST?: false;
   /**
+   * ★ Đợt 9 (2026-10-23) — SERVER-ONLY: model đã định tuyến theo vai trò cho lượt (trợ lý theo vai trò, `aiLocalKnowledgeCoding.streamCodingAnswer`).
+   * `parseContext` KHÔNG BAO GIỜ đặt ô này (dựng ctx từng ô) ⇒ client không chọn được model qua đây.
+   */
+  modelVaiTro?: { modelId: string | undefined; vaiTro: string; nguon: string; bangChung: string };
+  /**
    * ★★★ doc 79 · TRỤC 2 — id DỰ ÁN đang chọn (bộ chọn dự án ở đầu cây tệp). **Là một ID, KHÔNG phải
    * đường dẫn** — server tra danh sách TRẮNG (`repoProjects.gocTheoId`) để ra gốc; id lạ / đường dẫn
    * tự do ⇒ TỪ CHỐI (fail-closed). Chỉ có nghĩa khi `codingMode === true`. Vắng ⇒ dự án mặc định.

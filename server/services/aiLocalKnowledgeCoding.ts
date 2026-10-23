@@ -80,6 +80,12 @@ import { extractStructuredResponse, resolveLanguage } from "./aiLocalKnowledgeSe
 import { codingErrorMessage, codingNoToolMessage, codingProjectDeniedMessage, } from "./aiLocalKnowledgeCodingThongBao";
 // ★ B8 — luồng SINH MÃ đã tách sang `./aiLocalKnowledgeCodingSinhMa.ts` (xem docblock đầu tệp đó).
 import { streamCodingGenerate } from "./aiLocalKnowledgeCodingSinhMa";
+// ★ Đợt 9 — trợ lý theo vai trò (dùng chung bộ chọn của tác nhân).
+import { giaiModelTheoVaiTro, troLyTheoVaiTroBat } from "./ai/agent/vaiTroTacNhan";
+import { laDuAnPlc } from "./ai/agent/nhanDienDuAnPlc";
+import { layAnhSoModel } from "./ai/soModel/anhSoModel";
+import { nguCanhKhe } from "./ai/modelResolver";
+import { lamMoiKheDangGiu } from "./ai/soModel/kheNangMacDinh";
 // ★ B8 — luồng SỬA (một tệp · tự trị · nhiều tệp) đã tách sang `./aiLocalKnowledgeCodingSua.ts` (xem docblock đầu tệp đó).
 import { streamCodingEdit, streamCodingSuaNhieuTep, streamCodingTuTriGhi } from "./aiLocalKnowledgeCodingSua";
 // ★ B8 — luồng TẠO KHUNG dự án đã tách sang `./aiLocalKnowledgeCodingTaoKhung.ts` (xem docblock đầu tệp đó).
@@ -463,6 +469,29 @@ export async function* streamCodingAnswer(
       yield done(m);
       return;
     }
+  }
+
+  /**
+   * ★ Đợt 9 (2026-10-23, thiết kế 26ba9d039, dieu-phoi duyệt) — TRỢ LÝ THEO VAI TRÒ (cờ `AI_TRO_LY_THEO_VAI_TRO`, mặc định TẮT ⇒ không
+   * một byte nào đổi). MỘT lần mỗi lượt hỏi, DÙNG LẠI bộ chọn của tác nhân (`giaiModelTheoVaiTro`: dự án PLC / chữ câu hỏi ⇒ `code.plc`,
+   * còn lại `code.software`; định tuyến vai trò + khoá khe + khe đang giữ). Người dùng CHỌN TƯỜNG MINH ("fast"/"code" ⇒ `context.modelTask`)
+   * thắng ⇒ không định tuyến. Khoá khe giữ model khác và không có dự phòng ⇒ NÓI THẬT, 0 lượt gọi model. Kết quả đi xuống mọi nhánh
+   * qua ô SERVER-ONLY `context.modelVaiTro` (`parseContext` dựng ctx từng ô ⇒ client không đặt được).
+   */
+  if (troLyTheoVaiTroBat() && !context.modelTask) {
+    const g = await giaiModelTheoVaiTro(
+      { cauHoi: question, gocDuAn: goc.goc ?? "", projectId: idDuAnBaiHoc },
+      { layAnh: layAnhSoModel, nguCanhKhe, laDuAnPlc: (p) => (p ? laDuAnPlc(p) : false), lamMoiKhe: lamMoiKheDangGiu },
+    );
+    if (!g.ok) {
+      yield { type: "token", token: g.thongDiep };
+      yield done(g.thongDiep);
+      return;
+    }
+    context = {
+      ...context,
+      modelVaiTro: { modelId: g.modelId, vaiTro: g.thongTin.vaiTro, nguon: g.thongTin.nguon, bangChung: g.thongTin.bangChung },
+    };
   }
 
   /**
