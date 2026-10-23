@@ -511,6 +511,27 @@ function estimateTokens(text: string): number {
   return Math.max(0, Math.ceil((text || "").length / 4));
 }
 
+/**
+ * ★ Đợt 9 (2026-10-24, dieu-phoi) — `/v1` KHÔNG được vứt ảnh IM LẶNG. `contentToString` chỉ giữ phần `text`; trước đây một phần
+ * `image_url` biến thành "" và model trả lời như thể không có ảnh (hoặc bịa). Hàm này tìm phần nội dung KHÔNG phải chữ đầu tiên
+ * trong mọi message ⇒ route trả 400 có mã TRƯỚC khi tiêu token nào. Ảnh ⇒ `IMAGE_KHONG_HO_TRO`; kiểu lạ khác ⇒
+ * `NOI_DUNG_KHONG_HO_TRO`. Khi đường ảnh được bật (spec 2026-10-24-ai-local-doc-anh-tro-ly-lap-trinh.md) chỗ này là cổng của nó.
+ */
+const KIEU_PHAN_ANH = new Set(["image_url", "input_image", "image"]);
+export function timPhanKhongHoTro(messages: unknown[]): { maLoi: "IMAGE_KHONG_HO_TRO" | "NOI_DUNG_KHONG_HO_TRO"; kieu: string; viTri: number } | null {
+  for (let i = 0; i < messages.length; i++) {
+    const content = (messages[i] as { content?: unknown } | null)?.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (typeof part === "string") continue;
+      const kieu = part && typeof part === "object" ? String((part as { type?: unknown }).type ?? "") : typeof part;
+      if (kieu === "text") continue;
+      return { maLoi: KIEU_PHAN_ANH.has(kieu) ? "IMAGE_KHONG_HO_TRO" : "NOI_DUNG_KHONG_HO_TRO", kieu, viTri: i };
+    }
+  }
+  return null;
+}
+
 /** Flatten an OpenAI message `content` (string | array of parts) to plain text. */
 function contentToString(content: unknown): string {
   if (typeof content === "string") return content;
@@ -928,6 +949,19 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const messages = body.messages;
       if (!Array.isArray(messages) || messages.length === 0) {
         jsonError(res, 400, "`messages` must be a non-empty array.");
+        return;
+      }
+      const phanLa = timPhanKhongHoTro(messages);
+      if (phanLa) {
+        jsonError(
+          res,
+          400,
+          phanLa.maLoi === "IMAGE_KHONG_HO_TRO"
+            ? `Image input is not supported on /v1 yet (messages[${phanLa.viTri}] has a "${phanLa.kieu}" part). Send text only; images are not silently dropped.`
+            : `Unsupported content part type "${phanLa.kieu}" in messages[${phanLa.viTri}]. Only "text" parts are accepted.`,
+          "invalid_request_error",
+          phanLa.maLoi,
+        );
         return;
       }
 
