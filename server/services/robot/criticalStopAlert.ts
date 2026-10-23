@@ -33,19 +33,27 @@ function cuaSoKhuTrungMs(): number {
  * Trong `ids` người nào ĐÃ có hàng thông báo mang đúng `dedupKey` trong cửa sổ? Một truy vấn (index theo userId + createdAt), không ném:
  * lỗi ⇒ tập rỗng (nghiêng về GỬI — cảnh báo an toàn không được mất vì kiểm trùng hỏng).
  */
-async function nguoiDaCoCanhBao(ids: number[], dedupKey: string, windowMs: number): Promise<Set<number>> {
+async function nguoiDaCoCanhBao(ids: number[], dedupKey: string, windowMs: number, nhan: { kind: string; message: string }): Promise<Set<number>> {
   if (ids.length === 0) return new Set();
   try {
     const { getDb } = await import("../../db/connection");
     const db = await getDb();
     if (!db) return new Set();
     const { notifications } = await import("../../../drizzle/schema");
-    const { and, gt, inArray, sql } = await import("drizzle-orm");
+    const { and, eq, gt, inArray, or, sql } = await import("drizzle-orm");
     const tu = new Date(Date.now() - windowMs);
     const rows = await db
       .selectDistinct({ userId: notifications.userId })
       .from(notifications)
-      .where(and(gt(notifications.createdAt, tu), sql`${notifications.metadata}->>'dedupKey' = ${dedupKey}`, inArray(notifications.userId, ids)));
+      .where(
+        and(
+          gt(notifications.createdAt, tu),
+          // khoá mới (metadata.dedupKey) HOẶC hàng CŨ trước bản vá (cùng loại + cùng nội dung — thông điệp của cảnh báo trạng thái là tất định theo thiết bị) ⇒
+          // lần khởi động đầu SAU bản vá không bắn lại những gì đã có
+          or(sql`${notifications.metadata}->>'dedupKey' = ${dedupKey}`, and(sql`${notifications.metadata}->>'kind' = ${nhan.kind}`, eq(notifications.message, nhan.message))),
+          inArray(notifications.userId, ids),
+        ),
+      );
     return new Set(rows.map((r) => Number(r.userId)));
   } catch (err) {
     console.error(`[StopAlert] kiểm trùng bền vững lỗi (gửi như thường): ${String((err as Error)?.message ?? err).slice(0, 160)}`);
@@ -84,7 +92,7 @@ export function raiseCriticalStopAlert(a: {
     const { sendNotification } = await import("../notificationService");
     if (attempt === 0 && a.khuTrungBenVung) {
       // đã có hàng cùng khoá trong cửa sổ ⇒ coi như ĐÃ gửi (rút khỏi hàng đợi; không thử lại)
-      const da = await nguoiDaCoCanhBao([...pending], a.dedupKey, a.khuTrungBenVung.windowMs ?? cuaSoKhuTrungMs());
+      const da = await nguoiDaCoCanhBao([...pending], a.dedupKey, a.khuTrungBenVung.windowMs ?? cuaSoKhuTrungMs(), { kind: a.kind, message: a.message });
       for (const u of da) pending.delete(u);
     }
     for (const userId of [...pending]) {

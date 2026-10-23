@@ -634,8 +634,25 @@ export async function reconcileDeviceOwnership(): Promise<{ attached: string[]; 
  * alert, ONCE per (device, owner, device factory, node factory) in this process. Runs with the ownership reconcile. Never throws.
  */
 const factoryDriftAlerted = new Set<string>();
+/**
+ * Công tắc: `EDGE_FACTORY_DRIFT_ALERT=off|0|false` tắt quét lệch nhà máy (dùng cho instance e2e/CSDL test đông đúc: mỗi lần khởi động quét N thiết bị lệch × M quản trị viên
+ * ⇒ hàng triệu truy vấn làm nghẽn pool). Mặc định BẬT (production giữ nguyên).
+ */
+function quetLechNhaMayTat(): boolean {
+  return /^(0|false|off)$/i.test(String(process.env.EDGE_FACTORY_DRIFT_ALERT ?? "").trim());
+}
+/** Hàng đợi TUẦN TỰ cho các cảnh báo lệch: N thiết bị lệch không được mở N vòng ghi song song (mỗi vòng lặp qua mọi người nhận). */
+let hangDoiCanhBaoLech: Promise<void> = Promise.resolve();
+/**
+ * Lần quét ĐẦU sau khi KHỞI ĐỘNG tiến trình: `factoryDriftAlerted` còn rỗng ⇒ cùng một lệch đã cảnh báo ở lần chạy trước sẽ bắn LẠI cho mọi người nhận ⇒ lần này khử trùng BỀN VỮNG
+ * (CSDL: cùng (người nhận, khoá) trong 24 giờ ⇒ không ghi hàng thứ hai). Các lần quét SAU trong cùng tiến trình giữ NGUYÊN ngữ nghĩa cũ (lệch MỚI / lệch được RE-ARM sau khi hết
+ * lệch ⇒ cảnh báo lại), vì khi ấy Set trong bộ nhớ đã đủ để chống lặp.
+ */
+let quetLechLanDau = true;
 export async function checkEdgeOwnedFactoryDrift(): Promise<Array<{ kind: DeviceKind; id: number; edgeNodeId: number; deviceFactory: string | null; nodeFactory: string | null }>> {
   const out: Array<{ kind: DeviceKind; id: number; edgeNodeId: number; deviceFactory: string | null; nodeFactory: string | null }> = [];
+  if (quetLechNhaMayTat()) return out;
+  const khuTrungLanDau = quetLechLanDau ? ({ khuTrungBenVung: {} } as const) : {};
   try {
     const db = await getDb();
     if (!db) return out;
@@ -676,22 +693,23 @@ export async function checkEdgeOwnedFactoryDrift(): Promise<Array<{ kind: Device
       // durable = an inbox row for the people who can act (active admins / supervisors)
       recipients ??= rowsOf(await withDeadline(Promise.resolve(db.execute(sql`SELECT id FROM public.users WHERE "isActive" = true AND role IN ('admin', 'supervisor')`)), STOP_DB_STEP_DEADLINE_MS, "drift alert recipients").catch(() => [])).map((u) => Number(u.id));
       const to = recipients;
-      void import("./criticalStopAlert").then(({ raiseCriticalStopAlert }) =>
+      hangDoiCanhBaoLech = hangDoiCanhBaoLech.then(() => import("./criticalStopAlert")).then(({ raiseCriticalStopAlert }) =>
         raiseCriticalStopAlert({
           kind: "edge_owner_factory_drift",
           title: `${d.kind} ${d.id}: factory changed while edge node ${d.edgeNodeId} owns it`,
           message: `${d.kind} ${d.id} is owned by edge node ${d.edgeNodeId} (factory ${d.nodeFactory ?? "NONE"}) but now belongs to factory ${d.deviceFactory ?? "NONE"} — the node will not list it (its STOPs fall back to central). Move its ownership or restore its factory / line assignment.`,
           recipients: to,
           dedupKey: `edge_owner_factory_drift:${key}`,
-          // cảnh báo TRẠNG THÁI: bộ nhớ `factoryDriftAlerted` rỗng sau mỗi lần khởi động ⇒ phải khử trùng BỀN VỮNG (không nhân hàng mỗi lần boot)
-          khuTrungBenVung: {},
+          // cảnh báo TRẠNG THÁI: bộ nhớ `factoryDriftAlerted` rỗng sau mỗi lần khởi động ⇒ lần quét ĐẦU phải khử trùng BỀN VỮNG (không nhân hàng mỗi lần boot)
+          ...khuTrungLanDau,
           retryUntilPersisted: { everyMs: 30_000, attempts: 20 },
           source: d.kind === "robot" ? "robot" : "ot",
           entityType: d.kind === "robot" ? "robot" : "ot_command",
           entityId: d.id,
         }),
-      );
+      ).catch(() => undefined); // một cảnh báo hỏng không làm đứt hàng đợi các cảnh báo sau
     }
+    quetLechLanDau = false; // đọc được hàng ⇒ lần quét đầu đã xong
   } catch (err) {
     const { isEdgeControlSchemaMissing } = await import("../edge/edgeControlSchema");
     if (!isEdgeControlSchemaMissing(err)) console.error(`[DeviceOwner] factory-drift check failed: ${errText(err)}`);
@@ -702,9 +720,15 @@ export async function checkEdgeOwnedFactoryDrift(): Promise<Array<{ kind: Device
 export function _factoryDriftAlertedKeysForTests(): string[] {
   return [...factoryDriftAlerted];
 }
+/** Test seam — mô phỏng KHỞI ĐỘNG TIẾN TRÌNH: bộ nhớ rỗng và lần quét kế là lần ĐẦU (khử trùng bền vững). */
+export function __datLaiQuetLechLanDauChoTest(): void {
+  factoryDriftAlerted.clear();
+  quetLechLanDau = true;
+}
 /** Test seam. */
 export function _resetFactoryDriftAlertsForTests(): void {
   factoryDriftAlerted.clear();
+  quetLechLanDau = false; // các lưới cũ mô phỏng 'lần quét sau' (không khử trùng bền vững); lưới khử trùng dùng `__datLaiQuetLechLanDauChoTest`
 }
 
 /**

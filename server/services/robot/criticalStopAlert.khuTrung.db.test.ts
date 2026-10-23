@@ -54,7 +54,7 @@ afterAll(async () => {
 }, 60_000);
 
 const bao = (khoa: string, extra: Partial<Parameters<typeof raiseCriticalStopAlert>[0]> = {}) =>
-  raiseCriticalStopAlert({ kind: `${TT}_drift`, title: "t", message: "m", recipients: users, dedupKey: khoa, entityType: "robot", entityId: 1, ...extra });
+  raiseCriticalStopAlert({ kind: `${TT}_drift`, title: "t", message: `m ${khoa}`, recipients: users, dedupKey: khoa, entityType: "robot", entityId: 1, ...extra });
 
 describe("khuTrungBenVung — boot lại KHÔNG nhân đôi số hàng", () => {
   it("bắn MƯỜI lần cùng khoá (mô phỏng mười lần khởi động: Set trong bộ nhớ rỗng mỗi lần) ⇒ mỗi người nhận ĐÚNG MỘT hàng", async () => {
@@ -133,13 +133,47 @@ describe("khuTrungBenVung — boot lại KHÔNG nhân đôi số hàng", () => {
   });
 });
 
+describe("hàng CŨ trước bản vá (không có metadata.dedupKey) cũng được nhận ra — lần khởi động đầu sau bản vá không bắn lại", () => {
+  it("đã có hàng cùng loại + cùng nội dung trong cửa sổ ⇒ KHÔNG ghi thêm; nội dung khác ⇒ ghi", async () => {
+    const khoa = `${TT}:drift:robot:9:`;
+    const message = `robot 9 ${TT} lệch nhà máy`;
+    await db.execute(sql`INSERT INTO notifications ("userId", type, title, message, priority, metadata) VALUES (${users[0]}, 'ALERT', 't', ${message}, 'URGENT', ${JSON.stringify({ kind: `${TT}_drift` })}::jsonb)`);
+    __quenBoNhoKhuTrungChoTest();
+    await bao(khoa, { khuTrungBenVung: {}, message });
+    const [r] = (await db.execute(sql`SELECT count(*)::int AS n FROM notifications WHERE "userId" = ${users[0]} AND message = ${message}`)) as unknown as { n: number }[];
+    expect(r.n, "người có hàng cũ KHÔNG nhận thêm").toBe(1);
+    const [r1] = (await db.execute(sql`SELECT count(*)::int AS n FROM notifications WHERE "userId" = ${users[1]} AND message = ${message}`)) as unknown as { n: number }[];
+    expect(r1.n, "người chưa có hàng nào VẪN nhận").toBe(1);
+    __quenBoNhoKhuTrungChoTest();
+    const khac = `${message} (khác)`;
+    await bao(`${khoa}x`, { khuTrungBenVung: {}, message: khac });
+    expect(await demKind(users[0], `${TT}_drift`)).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("công tắc EDGE_FACTORY_DRIFT_ALERT + hàng đợi tuần tự", () => {
+  it("EDGE_FACTORY_DRIFT_ALERT=off ⇒ quét lệch trả rỗng, không đọc CSDL, không cảnh báo; mặc định BẬT", async () => {
+    const { checkEdgeOwnedFactoryDrift } = await import("./deviceOwnershipService");
+    process.env.EDGE_FACTORY_DRIFT_ALERT = "off";
+    try {
+      expect(await checkEdgeOwnedFactoryDrift()).toEqual([]);
+    } finally {
+      delete process.env.EDGE_FACTORY_DRIFT_ALERT;
+    }
+    const src = readFileSync(resolve(process.cwd(), "server/services/robot/deviceOwnershipService.ts"), "utf8");
+    expect(src).toMatch(/hangDoiCanhBaoLech = hangDoiCanhBaoLech\.then/); // cảnh báo lệch xếp HÀNG ĐỢI tuần tự, không mở N vòng song song
+    const inst = readFileSync(resolve(process.cwd(), "e2e/flow-studio/instance.ts"), "utf8");
+    expect(inst).toMatch(/EDGE_FACTORY_DRIFT_ALERT:\s*"off"/); // instance e2e tắt quét
+  });
+});
+
 describe("gốc: checkEdgeOwnedFactoryDrift dùng khử trùng bền vững", () => {
   it("lời gọi raiseCriticalStopAlert của quét lệch nhà máy mang khuTrungBenVung (nếu ai bỏ ⇒ mỗi lần boot lại nhân hàng)", () => {
     const src = readFileSync(resolve(process.cwd(), "server/services/robot/deviceOwnershipService.ts"), "utf8");
     const i = src.indexOf('kind: "edge_owner_factory_drift"');
     expect(i).toBeGreaterThan(0);
-    const khoi = src.slice(i, i + 1600);
-    expect(khoi).toMatch(/khuTrungBenVung:\s*\{/);
+    expect(src.slice(i, i + 1600)).toMatch(/\.\.\.khuTrungLanDau/);
+    expect(src).toMatch(/quetLechLanDau \? \(\{ khuTrungBenVung: \{\} \} as const\)/); // lần quét ĐẦU sau khởi động khử trùng bền vững
   });
 });
 
