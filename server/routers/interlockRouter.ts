@@ -387,6 +387,7 @@ export const interlockRouter = router({
         assertExpectedVersion(existing, input.expectedVersion, "activateInterlockRule");
         // Final review fix #7 — ILK-05 cả ở enable (hàng seed có thể đã mang approvedBy sẵn).
         assertTargetIfNotAlert(existing.action, existing);
+        assertTelemetryCauHinh(existing); // luật đã duyệt sẵn (seed / trước vá) mà hỏng cấu trúc không được bật
         const [row] = await tx
           .update(interlockRules)
           .set({ enabled: true, updatedAt: new Date(), updatedBy: ctx.user.id })

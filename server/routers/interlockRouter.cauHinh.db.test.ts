@@ -106,6 +106,18 @@ describe.skipIf(!DB_URL)("interlockRouter — luật telemetry_tag hỏng cấu 
     expect(row.a).toBeNull();
   });
 
+  it("enable: hàng telemetry_tag hỏng ĐÃ duyệt sẵn (seed) ⇒ BAD_REQUEST, KHÔNG bật", async () => {
+    const [ins] = await sql`
+      INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action, "approvedBy", "createdBy")
+      VALUES (${DAU + "-e1"}, 'machine', 'telemetry_tag', 'gt', 80, 'alert', ${B}, ${A}) RETURNING id`;
+    ruleIds.push(ins.id as number);
+    const token = (await caller(A).list()).find((r) => r.id === ins.id)!.versionToken;
+    const err = await caller(A).enable({ id: ins.id as number, expectedVersion: token }).catch((e) => e);
+    expect(trpcCodeOf(err)).toBe("BAD_REQUEST");
+    const [row] = await sql`SELECT enabled FROM interlock_rules WHERE id = ${ins.id}`;
+    expect(row.enabled).toBe(false);
+  });
+
   it("posture (ILK-06): luật BẬT + ĐÃ DUYỆT nhưng hỏng cấu trúc được đếm là KHÔNG chức năng", async () => {
     const d = await getDb();
     const truoc = await oversight.fetchInterlockCauHinhHong(d);
