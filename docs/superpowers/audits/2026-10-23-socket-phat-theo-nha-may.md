@@ -30,7 +30,8 @@
 | `telemetry:sample` | `doEmitTelemetrySamples` | machineId | MachineCockpit, UnifiedDeviceMonitor, DeviceOnboardingWizard | KHÔNG đổi (phòng `machine:`/`telemetry:all` đã có cổng ở `subscribe`) |
 | `twin:update` | `phatTwinUpdateTheoPhamVi` | stationId | useTwinStream, khoTrangThai | KHÔNG đổi (đã lọc từng socket; vẫn dùng membership `global`) |
 | `site:update` | `emitSiteUpdate` | siteCode | FederationDashboard | KHÔNG đổi (phòng `site:`/`sites:global`, cấp site — miễn có lý do ở census join) |
-| `machine:*` tới `admin` | `socket.ts`, `offlineMonitor.ts` | — | admin | KHÔNG đổi (phòng `admin` có cổng `duocQuanLyDangKyMay`) |
+| `machine:offline_alert` | `offlineMonitor.ts` (mỗi 60 s) | machineId, machineCode | **KHÔNG client nào nghe** (grep `client/src` = 0) | H1b: phát MỘT lần mỗi ĐỢT offline (`log.id`), độc lập với việc gửi thông báo; theo `phatTheoNhaMay` (phòng nhà máy) thay vì `admin`. Lý do GIỮ thay vì bỏ: rẻ khi chỉ phát một lần, và là tín hiệu máy mất kết nối cho người trong nhà máy; nếu sau này xác nhận không ai dùng thì bỏ hẳn (một dòng). Trước: 3.400 tin / 75 s vì thông báo chưa cấu hình ⇒ không máy nào được đánh dấu đã gửi ⇒ phát lại mỗi chu kỳ |
+| `machine:*` tới `admin` (còn lại) | `socket.ts` | — | admin | KHÔNG đổi (phòng `admin` có cổng `duocQuanLyDangKyMay`) |
 | `notification:*` | `notificationService` | — | NotificationCenter | KHÔNG đổi (phòng `user:{id}` của chính người dùng) |
 
 Phòng `scada:*` **không đụng** (phiên scada-master đang thiết kế).
