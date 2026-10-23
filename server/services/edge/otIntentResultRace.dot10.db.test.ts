@@ -41,12 +41,6 @@ async function stateAfter<T>(p: Promise<T>, ms: number): Promise<"pending" | "se
   return done ? "settled" : "pending";
 }
 const codeOf = (p: Promise<unknown>) => p.then(() => null, (e: { code?: string }) => e?.code ?? "error");
-/** null = accepted; else "<code> late" when the refusal names the unreviewed late result, "<code> other" otherwise */
-const refusalOf = (p: Promise<unknown>) =>
-  p.then(
-    () => null,
-    (e: { code?: string; message?: string }) => `${e?.code ?? "error"} ${/landed after a manual resolution/.test(String(e?.message)) ? "late" : "other"}`,
-  );
 async function code(tx: Tx, fn: (sp: Tx) => Promise<unknown>): Promise<string | null> {
   try {
     await tx.savepoint((sp) => fn(sp as Tx));
@@ -152,12 +146,33 @@ describe.skipIf(!onTest)("R-10-bk — exactly one result per intent under concur
     a.release();
     b.release();
     const lateRow = late as { id: number; ledger: string; lateAfter: number; k: string } | null;
-    const ownerChangeBeforeReview = await refusalOf(C`UPDATE public.device_adapters SET "edgeNodeId" = ${f.n2} WHERE id = ${f.adapter}`);
-    const review = await codeOf(C`SELECT public.ot_write_late_result_review(${lateRow?.id ?? 0}, ${f.actor}, 'device did write; value checked on site')`);
-    const reviewAgain = await codeOf(C`SELECT public.ot_write_late_result_review(${lateRow?.id ?? 0}, ${f.actor}, 'twice')`);
-    // after the review only the 10-minute timeout window of the manual result is left (refused, but no longer for the late result)
-    const ownerChangeAfterReview = await refusalOf(C`UPDATE public.device_adapters SET "edgeNodeId" = ${f.n2} WHERE id = ${f.adapter}`);
-    const rows = await ledgerRows(C, f.intent);
+    // ★ phần SAU hai phiên (a, b đã commit): xem xét + đổi chủ chạy trong MỘT giao dịch bị HOÀN TÁC — hàng `ot_write_late_result_reviews` là bảng WORM (FK reviewedBy ghim người dùng
+    // mãi mãi); hoàn tác ⇒ không để lại hàng review, người dùng của fixture xoá được. Các lệnh bị TỪ CHỐI chạy trong savepoint (giao dịch không bị huỷ giữa chừng).
+    const lyDo = async (tx: Tx, fn: (sp: Tx) => Promise<unknown>): Promise<string | null> => {
+      try {
+        await tx.savepoint((sp) => fn(sp as Tx));
+        return null;
+      } catch (e) {
+        const m = e as { code?: string; message?: string };
+        return `${m.code ?? "error"} ${/landed after a manual resolution/.test(String(m.message)) ? "late" : "other"}`;
+      }
+    };
+    let ownerChangeBeforeReview: string | null = "chưa chạy";
+    let review: string | null = "chưa chạy";
+    let reviewAgain: string | null = "chưa chạy";
+    let ownerChangeAfterReview: string | null = "chưa chạy";
+    let rows: Awaited<ReturnType<typeof ledgerRows>> = [];
+    await C.begin(async (tx) => {
+      ownerChangeBeforeReview = await lyDo(tx, (sp) => sp`UPDATE public.device_adapters SET "edgeNodeId" = ${f.n2} WHERE id = ${f.adapter}`);
+      review = await code(tx, (sp) => sp`SELECT public.ot_write_late_result_review(${lateRow?.id ?? 0}, ${f.actor}, 'device did write; value checked on site')`);
+      reviewAgain = await code(tx, (sp) => sp`SELECT public.ot_write_late_result_review(${lateRow?.id ?? 0}, ${f.actor}, 'twice')`);
+      // after the review only the 10-minute timeout window of the manual result is left (refused, but no longer for the late result)
+      ownerChangeAfterReview = await lyDo(tx, (sp) => sp`UPDATE public.device_adapters SET "edgeNodeId" = ${f.n2} WHERE id = ${f.adapter}`);
+      rows = await ledgerRows(tx as unknown as Sql, f.intent);
+      throw new Rollback();
+    }).catch((e) => {
+      if (!(e instanceof Rollback)) throw e;
+    });
     expect({
       whileManualOpen,
       devCode,

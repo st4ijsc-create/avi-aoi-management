@@ -47,18 +47,29 @@ export async function donNguoiDungTest(): Promise<{ daXoa: number; voHieuHoa: nu
   const db = await getDb();
   if (!db) return { daXoa: 0, voHieuHoa: 0 };
   const ds = sql.join(ids.map((i) => sql`${i}`), sql`, `);
-  for (const b of BANG_PHU_THUOC) {
+  const donPhuThuoc = async () => {
+   for (const b of BANG_PHU_THUOC) {
     try {
       await db.execute(sql`DELETE FROM ${sql.raw(`public."${b}"`)} WHERE "userId" IN (${ds})`);
     } catch (e) {
       const msg = String((e as Error)?.message ?? e);
       if (!/does not exist/i.test(msg)) console.warn(`[nguoiDungTest] không dọn được ${b}: ${msg.slice(0, 160)}`);
     }
+   }
+  };
+  // Phiên khác chạy chung _test có thể chèn thông báo gửi "mọi admin/supervisor" (gồm người vừa tạo) GIỮA bước xoá thông báo và bước xoá users ⇒ FK chặn thoáng qua. Thử lại tối đa 3 lần trước khi rơi về isActive=false.
+  let loi: unknown;
+  for (let lan = 0; lan < 3; lan++) {
+    await donPhuThuoc();
+    try {
+      await db.execute(sql`DELETE FROM public.users WHERE id IN (${ds})`);
+      return { daXoa: ids.length, voHieuHoa: 0 };
+    } catch (e) {
+      loi = e;
+    }
   }
-  try {
-    await db.execute(sql`DELETE FROM public.users WHERE id IN (${ds})`);
-    return { daXoa: ids.length, voHieuHoa: 0 };
-  } catch (e) {
+  {
+    const e = loi;
     // FK chặn xoá (bảng khác còn trỏ tới người dùng này) ⇒ vô hiệu hoá để không còn là người nhận cảnh báo hoạt động
     const ly = String((e as { cause?: Error })?.cause?.message ?? (e as Error)?.message ?? e).replace(/\s+/g, " ").slice(0, 200); // drizzle bọc: lý do thật (tên ràng buộc FK) nằm ở `cause`
     console.warn(`[nguoiDungTest] FK chặn xoá users (${ly}) ⇒ đặt isActive=false cho ${ids.length} người`);

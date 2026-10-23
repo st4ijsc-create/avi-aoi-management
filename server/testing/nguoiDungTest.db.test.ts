@@ -24,7 +24,7 @@ afterEach(() => {
 conTrongDb("taoNguoiDungTest — dọn", () => {
   it("★ bình thường: người dùng có hàng gán nhà máy ⇒ XOÁ hẳn cả hai, không cảnh báo, registry sạch", async () => {
     const db = (await getDb())!;
-    const u = await taoNguoiDungTest("xoa", "admin", { tienTo: "ndt", ts: TS });
+    const u = await taoNguoiDungTest("xoa", "user", { tienTo: "ndt", ts: TS });
     expect(__idNguoiDungDangGiu()).toContain(u.id);
     const [f] = (await db.execute(sql`SELECT code FROM public.factories ORDER BY id LIMIT 1`)) as unknown as Array<{ code: string }>;
     if (f) await db.execute(sql`INSERT INTO public.user_factory_assignments ("userId", "factoryCode") VALUES (${u.id}, ${f.code})`);
