@@ -139,6 +139,15 @@ describe("commandDispatcher — cổng interlock inline (HITL)", () => {
     expect(resultRows(cmdLog)[0].errorText).toMatch(/#7\(stop_line\)/);
   });
 
+  it("SCADA R0 Task 9: gate chặn vì THIẾU DỮ LIỆU (lyDo) → reject INTERLOCK_BLOCKED, thông điệp nói missing data + mã thieu_du_lieu", async () => {
+    gateResult = { blocked: true, failClosed: false, violations: [{ ruleId: 9, ruleName: "R9", action: "block_downstream", lyDo: "thieu_du_lieu" }] };
+    const r = await dispatch(hitlInput());
+    expect(r.reason).toBe("INTERLOCK_BLOCKED");
+    expect(writeTagsSpy).not.toHaveBeenCalled();
+    expect(resultRows(cmdLog)[0].errorText).toMatch(/#9\(block_downstream; missing data/);
+    expect(resultRows(cmdLog)[0].errorText).toMatch(/thieu_du_lieu/);
+  });
+
   it("gate fail-closed (lỗi đánh giá) → reject INTERLOCK_BLOCKED, writeTags 0×", async () => {
     gateResult = { blocked: true, failClosed: true, violations: [] };
     const r = await dispatch(hitlInput());

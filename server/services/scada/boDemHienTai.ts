@@ -131,8 +131,12 @@ function apMau(m: Mau, chiNeuChuaCo: boolean): string | null {
   let v = m.v;
   // uncertain không mang giá trị ⇒ giữ giá trị cuối đã biết; bad giữ nguyên v của mẫu (null).
   if (m.q === "uncertain" && v === null && cu) v = cu.v;
-  const lichSu = cu ? cu.lichSu.slice() : [];
-  if (m.q !== "bad" && typeof m.v === "number" && Number.isFinite(m.v)) {
+  // SCADA R0 Task 9 (fix 1/2): lichSu CHỈ chứa mẫu GOOD dạng số; mẫu không-good (uncertain/bad) XOÁ nó — cửa sổ "N điểm liên tiếp" của
+  // interlock không bao giờ nối các mẫu qua một đoạn mất kết nối hoặc một giá trị không chắc.
+  let lichSu = cu ? cu.lichSu.slice() : [];
+  if (m.q !== "good") {
+    lichSu = [];
+  } else if (typeof m.v === "number" && Number.isFinite(m.v)) {
     lichSu.push(m.v);
     if (lichSu.length > SO_LICH_SU_TOI_DA) lichSu.splice(0, lichSu.length - SO_LICH_SU_TOI_DA);
   }

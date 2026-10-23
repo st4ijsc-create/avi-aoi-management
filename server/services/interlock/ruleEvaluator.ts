@@ -55,6 +55,8 @@ export interface ObservationContext {
   scalar?: number | null;
   /** Count of qualifying rows in the window (used by spc_violation / process_result). */
   count?: number | null;
+  /** SCADA R0 Task 9: nguồn tự phát hiện KHÔNG đánh giá được (vd hàng mới nhất chất lượng xấu) — cổng/engine coi là thiếu dữ liệu. */
+  thieuDuLieu?: NonNullable<KetQuaDanhGia["lyDo"]>;
 }
 
 export type InterlockSourceType = "spc_violation" | "ng_rate" | "process_result" | "telemetry_tag" | "cpk";

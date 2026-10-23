@@ -26,6 +26,7 @@ vi.mock("../../../drizzle/schema", () => ({
 // ── Bộ đệm hiện tại: mock hai hàm Task 7 ────────────────────────────────────────────────────────
 const cache: { bat: boolean; mau: any[]; hoi: Array<[number, string]> } = { bat: true, mau: [], hoi: [] };
 vi.mock("../scada/boDemHienTai", () => ({
+  SO_LICH_SU_TOI_DA: 50,
   boDemDangBat: () => cache.bat,
   timTheoMayVaTag: (machineId: number, tagKey: string) => {
     cache.hoi.push([machineId, tagKey]);
@@ -34,7 +35,10 @@ vi.mock("../scada/boDemHienTai", () => ({
 }));
 
 // ── DB giả (đường cũ + bảng luật + sự kiện) ─────────────────────────────────────────────────────
-const state: { rules: any[]; telemetryRows: any[]; insertedEvents: any[] } = { rules: [], telemetryRows: [], insertedEvents: [] };
+// telemetryRows: MỚI NHẤT TRƯỚC (như ORDER BY ts DESC); mỗi hàng { v, t, quality }. limits: các LIMIT n đã được yêu cầu trên ot_telemetry.
+const state: { rules: any[]; telemetryRows: any[]; insertedEvents: any[]; limits: number[] } = { rules: [], telemetryRows: [], insertedEvents: [], limits: [] };
+/** n hàng telemetry tốt giá trị v (mới nhất trước). */
+const hang = (n: number, v: number, quality = "good") => Array.from({ length: n }, () => ({ v: String(v), t: new Date(), quality }));
 
 function makeBuilder(t: string): any {
   const rows = () => {
@@ -45,7 +49,10 @@ function makeBuilder(t: string): any {
   const builder: any = {
     where: () => builder,
     orderBy: () => builder,
-    limit: async () => rows(),
+    limit: async (n: number) => {
+      if (t === "ot_telemetry") state.limits.push(n);
+      return rows().slice(0, n);
+    },
     then: (resolve: (v: any) => any, reject?: (e: any) => any) => Promise.resolve(rows()).then(resolve, reject),
   };
   return builder;
@@ -125,6 +132,7 @@ beforeEach(() => {
   cache.hoi = [];
   state.rules = [];
   state.telemetryRows = [];
+  state.limits = [];
   state.insertedEvents = [];
   raiseAndon.mockClear();
   dispatchSpy.mockClear();
@@ -266,14 +274,58 @@ describe("đường DB cũ (bộ đệm TẮT) — không có hàng ⇒ thiếu 
 
   it("hàng cuối có numValue null ⇒ thiếu dữ liệu", async () => {
     cache.bat = false;
-    state.telemetryRows = [{ v: null, t: new Date() }];
+    state.telemetryRows = [{ v: null, t: new Date(), quality: "good" }];
     expect(await danhGiaLuat(luat())).toEqual({ dung: false, thieuDuLieu: true, lyDo: "khong_co_mau" });
   });
 
   it("có hàng vượt ngưỡng ⇒ vi phạm như cũ", async () => {
     cache.bat = false;
-    state.telemetryRows = [{ v: "95", t: new Date() }];
+    state.telemetryRows = hang(1, 95);
     expect(await danhGiaLuat(luat())).toEqual({ dung: true, thieuDuLieu: false });
+  });
+});
+
+describe("Task 9 fix round 1 — chuỗi dài hơn bộ đệm + chất lượng/máy trên đường DB", () => {
+  it("consecutiveCount=60 (>50) + bộ đệm BẬT ⇒ đọc chuỗi từ DB (không chạm bộ đệm), 60 hàng tốt vượt ngưỡng ⇒ đánh giá bình thường (dung=true), KHÔNG chặn vĩnh viễn", async () => {
+    cache.bat = true;
+    cache.mau = [mau({ v: 95, lichSu: [95] })]; // bộ đệm chỉ giữ ≤50 — nếu bị dùng, sẽ thiếu dữ liệu
+    state.telemetryRows = hang(60, 95);
+    expect(await danhGiaLuat(luat({ consecutiveCount: 60 }))).toEqual({ dung: true, thieuDuLieu: false });
+    expect(cache.hoi).toEqual([]);
+    expect(state.limits).toContain(60);
+  });
+
+  it("consecutiveCount=60 + bộ đệm BẬT + DB chỉ có 40 hàng ⇒ vẫn FAIL-CLOSED (thiếu dữ liệu), không cho qua", async () => {
+    state.telemetryRows = hang(40, 95);
+    expect(await danhGiaLuat(luat({ consecutiveCount: 60 }))).toEqual({ dung: false, thieuDuLieu: true, lyDo: "khong_co_mau" });
+  });
+
+  it("consecutiveCount=50 (=giới hạn) vẫn đọc bộ đệm", async () => {
+    cache.mau = [mau({ v: 95, lichSu: Array.from({ length: 50 }, () => 95) })];
+    expect(await danhGiaLuat(luat({ consecutiveCount: 50 }))).toEqual({ dung: true, thieuDuLieu: false });
+    expect(cache.hoi).toEqual([[MAY, "nhiet_do"]]);
+  });
+
+  it("DB path: windowSize=10, consecutiveCount=20 ⇒ LIMIT 20 (max), 20 hàng đánh giá bình thường", async () => {
+    cache.bat = false;
+    state.telemetryRows = hang(25, 95);
+    expect(await danhGiaLuat(luat({ windowSize: 10, consecutiveCount: 20 }))).toEqual({ dung: true, thieuDuLieu: false });
+    expect(state.limits).toContain(20);
+    expect(state.limits).not.toContain(10);
+  });
+
+  it("DB path: hàng MỚI NHẤT chất lượng xấu ⇒ thiếu dữ liệu chat_luong_xau (không lùi về mẫu tốt cũ)", async () => {
+    cache.bat = false;
+    state.telemetryRows = [...hang(1, 10, "bad"), ...hang(5, 10)];
+    expect(await danhGiaLuat(luat())).toEqual({ dung: false, thieuDuLieu: true, lyDo: "chat_luong_xau" });
+    state.telemetryRows = [...hang(1, 10, "uncertain"), ...hang(5, 10)];
+    expect(await danhGiaLuat(luat())).toEqual({ dung: false, thieuDuLieu: true, lyDo: "chat_luong_xau" });
+  });
+
+  it("DB path: luật không gắn máy ⇒ mo_ho (cùng quy tắc với đường bộ đệm), kể cả khi có dữ liệu", async () => {
+    cache.bat = false;
+    state.telemetryRows = hang(5, 95);
+    expect(await danhGiaLuat(luat({ machineId: null }))).toEqual({ dung: false, thieuDuLieu: true, lyDo: "mo_ho" });
   });
 });
 

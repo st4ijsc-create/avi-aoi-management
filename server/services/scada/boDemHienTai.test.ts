@@ -152,11 +152,28 @@ describe("lichSu", () => {
     expect(layGiaTri(7, "t", T0)!.lichSu).toEqual([1]);
   });
 
-  it("mẫu xấu / không phải số không thêm vào lịch sử", () => {
+  it("mẫu tốt không phải số không thêm vào lịch sử (và không xoá nó)", () => {
     nap([mau({ value: 1 })]);
-    nap([mau({ value: null, quality: "bad", timestamp: new Date(T0 + 1) })], T0 + 1);
-    nap([mau({ value: "a", timestamp: new Date(T0 + 2) })], T0 + 2);
-    expect(layGiaTri(7, "t", T0 + 2)!.lichSu).toEqual([1]);
+    nap([mau({ value: "a", timestamp: new Date(T0 + 1) })], T0 + 1);
+    expect(layGiaTri(7, "t", T0 + 1)!.lichSu).toEqual([1]);
+  });
+
+  // SCADA R0 Task 9 (fix 2): lichSu chỉ chứa mẫu GOOD; mẫu không-good XOÁ nó — cửa sổ không nối qua đoạn mất kết nối / giá trị không chắc.
+  it("good 5, uncertain 7, good 6 ⇒ lichSu = [6] (uncertain xoá, không đưa 7 vào)", () => {
+    nap([mau({ value: 5, timestamp: new Date(T0) })], T0);
+    nap([mau({ value: 7, quality: "uncertain", timestamp: new Date(T0 + 1) })], T0 + 1);
+    expect(layGiaTri(7, "t", T0 + 1)!.lichSu).toEqual([]);
+    nap([mau({ value: 6, timestamp: new Date(T0 + 2) })], T0 + 2);
+    expect(layGiaTri(7, "t", T0 + 2)!.lichSu).toEqual([6]);
+  });
+
+  it("bad xoá lịch sử; good sau đó bắt đầu lại từ 1 phần tử", () => {
+    nap([mau({ value: 1 })]);
+    nap([mau({ value: 2, timestamp: new Date(T0 + 1) })], T0 + 1);
+    nap([mau({ value: null, quality: "bad", timestamp: new Date(T0 + 2) })], T0 + 2);
+    expect(layGiaTri(7, "t", T0 + 2)!.lichSu).toEqual([]);
+    nap([mau({ value: 3, timestamp: new Date(T0 + 3) })], T0 + 3);
+    expect(layGiaTri(7, "t", T0 + 3)!.lichSu).toEqual([3]);
   });
 });
 

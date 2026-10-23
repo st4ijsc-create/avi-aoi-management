@@ -1149,7 +1149,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       const detail = gate.failClosed
         ? "interlock evaluation error — fail-closed (no write)"
         : `blocked by active interlock rule(s): ${gate.violations
-            .map((v) => `#${v.ruleId}(${v.action})`)
+            .map((v) => (v.lyDo === "thieu_du_lieu" ? `#${v.ruleId}(${v.action}; missing data — thieu_du_lieu)` : `#${v.ruleId}(${v.action})`))
             .join(", ")}`;
       if (stopCls.pinnedStop) {
         // R-1D-c — an active interlock wants the machine STOPPED; blocking a pinned stop would defeat it. An
@@ -1157,7 +1157,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         stopOverrides.interlockOverride = {
           decision: "INTERLOCK_BLOCKED",
           failClosed: gate.failClosed,
-          violations: gate.violations.map((v) => ({ ruleId: v.ruleId, action: v.action })),
+          violations: gate.violations.map((v) => ({ ruleId: v.ruleId, action: v.action, ...(v.lyDo ? { lyDo: v.lyDo } : {}) })),
           detail,
           ruling: "R-1D-c",
           note: "pinned OT stop is never blocked by the interlock gate — sent anyway",

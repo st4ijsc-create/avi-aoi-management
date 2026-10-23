@@ -16,18 +16,37 @@ const DAU = `T9-${Date.now()}`;
 let sql: ReturnType<typeof postgres>;
 const ruleIds: number[] = [];
 
-async function chenLuat(extra: string | null): Promise<number> {
+async function chenLuat(
+  extra: string | null,
+  o: { machine?: number | null; target?: number; tag?: string; consecutive?: number | null; windowSize?: number } = {},
+): Promise<number> {
   const cols = extra ? `, "khiThieuDuLieu"` : "";
   const vals = extra ? `, '${extra}'` : "";
+  const may = o.machine === undefined ? MACHINE_ID : o.machine;
   const rows = await sql.unsafe(
     `INSERT INTO interlock_rules
-       (name, scope, "machineId", "sourceType", "sourceKey", "comparisonOperator", threshold, "windowSize", "windowSeconds",
+       (name, scope, "machineId", "sourceType", "sourceKey", "comparisonOperator", threshold, "windowSize", "consecutiveCount", "windowSeconds",
         action, "targetMachineId", "targetAdapterId", enabled, "approvedBy"${cols})
-     VALUES ('${DAU}-${extra ?? "mac-dinh"}', 'machine', ${MACHINE_ID}, 'telemetry_tag', '${DAU}-tag', 'gt', 80, 50, 300,
-        'block_downstream', ${MACHINE_ID}, ${ADAPTER_ID}, true, 1${vals}) RETURNING id`,
+     VALUES ('${DAU}-${extra ?? "mac-dinh"}', 'machine', ${may === null ? "NULL" : may}, 'telemetry_tag', '${o.tag ?? DAU + "-tag"}', 'gt', 80, ${o.windowSize ?? 50},
+        ${o.consecutive ?? "NULL"}, 300, 'block_downstream', ${o.target ?? MACHINE_ID}, ${ADAPTER_ID}, true, 1${vals}) RETURNING id`,
   );
   ruleIds.push(rows[0].id as number);
   return rows[0].id as number;
+}
+
+/** Chèn hàng telemetry (agoSec = số giây trước now). */
+async function chenTele(machine: number, tag: string, hang: Array<{ agoSec: number; v: number; quality?: string }>): Promise<void> {
+  const now = Date.now();
+  for (const h of hang) {
+    await sql`INSERT INTO ot_telemetry (ts, "machineId", protocol, metric, "numValue", quality)
+      VALUES (${new Date(now - h.agoSec * 1000)}, ${machine}, 'mqtt', ${tag}, ${h.v}, ${h.quality ?? "good"})`;
+  }
+}
+
+/** Gọi cổng cho máy `machine` và trả violation của luật `id` (hoặc undefined). */
+async function viPham(machine: number, id: number) {
+  const kq = await evaluateInterlockGate({ adapterId: ADAPTER_ID, machineId: machine, tagKeys: [] });
+  return kq.violations.find((v) => v.ruleId === id);
 }
 
 describe.skipIf(!DB_URL)("migration 0430 — khiThieuDuLieu", () => {
@@ -37,7 +56,7 @@ describe.skipIf(!DB_URL)("migration 0430 — khiThieuDuLieu", () => {
 
   afterAll(async () => {
     if (ruleIds.length) await sql`DELETE FROM interlock_rules WHERE id IN ${sql(ruleIds)}`;
-    await sql`DELETE FROM ot_telemetry WHERE "machineId" = ${MACHINE_ID}`;
+    await sql`DELETE FROM ot_telemetry WHERE metric LIKE ${DAU + "%"}`;
     await sql.end();
   });
 
@@ -64,5 +83,67 @@ describe.skipIf(!DB_URL)("migration 0430 — khiThieuDuLieu", () => {
     expect(cuaToi[0].lyDo).toBe("thieu_du_lieu");
     expect(cuaToi.map((v) => v.ruleId)).not.toContain(choQua);
     expect(kq.blocked).toBe(true);
+  });
+
+  // ── Task 9 fix round 1 (đường DB, bộ đệm TẮT trừ khi nói khác) ──
+  describe("chuỗi/chất lượng/máy trên đường DB thật", () => {
+    const lech = (n: number) => MACHINE_ID + n;
+
+    it("chuỗi chỉ gồm hàng quality=good: bad ở giữa bị loại ⇒ 3 hàng good liên tiếp vượt ngưỡng ⇒ VI PHẠM (nếu bad lọt vào chuỗi: [10,90,90] ⇒ không)", async () => {
+      const m = lech(10), tag = DAU + "-loc";
+      const id = await chenLuat(null, { machine: m, target: m, tag, consecutive: 3 });
+      await chenTele(m, tag, [{ agoSec: 40, v: 90 }, { agoSec: 30, v: 10, quality: "bad" }, { agoSec: 20, v: 90 }, { agoSec: 10, v: 90 }]);
+      const v = await viPham(m, id);
+      expect(v).toBeDefined();
+      expect(v!.lyDo).toBeUndefined();
+    });
+
+    it("hàng MỚI NHẤT không good ⇒ thiếu dữ liệu (không lùi về mẫu good cũ)", async () => {
+      const m = lech(11), tag = DAU + "-moinhat";
+      const id = await chenLuat(null, { machine: m, target: m, tag });
+      await chenTele(m, tag, [{ agoSec: 20, v: 10 }, { agoSec: 5, v: 10, quality: "uncertain" }]);
+      const v = await viPham(m, id);
+      expect(v?.lyDo).toBe("thieu_du_lieu");
+    });
+
+    it("luật không gắn máy (machineId NULL) ⇒ mơ hồ ⇒ chặn dù máy đích có dữ liệu tốt", async () => {
+      const m = lech(12), tag = DAU + "-khongmay";
+      const id = await chenLuat(null, { machine: null, target: m, tag });
+      await chenTele(m, tag, [{ agoSec: 5, v: 10 }]);
+      const v = await viPham(m, id);
+      expect(v?.lyDo).toBe("thieu_du_lieu");
+    });
+
+    it("consecutiveCount=60 (>50) + bộ đệm BẬT ⇒ đọc 60 hàng DB, đánh giá bình thường (vi phạm, không phải chặn vì thiếu dữ liệu)", async () => {
+      const m = lech(13), tag = DAU + "-dai";
+      const id = await chenLuat(null, { machine: m, target: m, tag, consecutive: 60 });
+      await chenTele(m, tag, Array.from({ length: 60 }, (_, i) => ({ agoSec: 1 + i * 3, v: 90 })));
+      const truoc = process.env.SCADA_LIVE_CACHE_ENABLED;
+      process.env.SCADA_LIVE_CACHE_ENABLED = "true";
+      try {
+        const v = await viPham(m, id);
+        expect(v).toBeDefined();
+        expect(v!.lyDo).toBeUndefined();
+      } finally {
+        if (truoc === undefined) delete process.env.SCADA_LIVE_CACHE_ENABLED;
+        else process.env.SCADA_LIVE_CACHE_ENABLED = truoc;
+      }
+    });
+
+    it("windowSize=10, consecutiveCount=20 ⇒ đọc 20 hàng, đánh giá bình thường (trước vá: LIMIT 10 < 20 ⇒ chặn vĩnh viễn)", async () => {
+      const m = lech(14), tag = DAU + "-cuaso";
+      const id = await chenLuat(null, { machine: m, target: m, tag, consecutive: 20, windowSize: 10 });
+      await chenTele(m, tag, Array.from({ length: 25 }, (_, i) => ({ agoSec: 1 + i * 3, v: 90 })));
+      const v = await viPham(m, id);
+      expect(v).toBeDefined();
+      expect(v!.lyDo).toBeUndefined();
+    });
+
+    it("windowSize=10, consecutiveCount=20 nhưng chỉ có 15 hàng good ⇒ vẫn FAIL-CLOSED (thiếu dữ liệu)", async () => {
+      const m = lech(15), tag = DAU + "-it";
+      const id = await chenLuat(null, { machine: m, target: m, tag, consecutive: 20, windowSize: 10 });
+      await chenTele(m, tag, Array.from({ length: 15 }, (_, i) => ({ agoSec: 1 + i * 3, v: 90 })));
+      expect((await viPham(m, id))?.lyDo).toBe("thieu_du_lieu");
+    });
   });
 });

@@ -34,7 +34,7 @@ import {
   type KetQuaDanhGia,
   type ObservationContext,
 } from "./ruleEvaluator";
-import { boDemDangBat, timTheoMayVaTag } from "../scada/boDemHienTai";
+import { SO_LICH_SU_TOI_DA, boDemDangBat, timTheoMayVaTag } from "../scada/boDemHienTai";
 
 /** Window start = now - windowSeconds (default 300s). */
 function windowStart(rule: InterlockRule): Date {
@@ -111,12 +111,23 @@ export async function fetchObservation(rule: InterlockRule): Promise<Observation
       // ORDER BY ts ASC LIMIT n lấy N mẫu CŨ NHẤT trong cửa sổ — khi cửa sổ có
       // nhiều hơn windowSize mẫu, cổng không bao giờ thấy giá trị mới nhất
       // (tái hiện: 120 mẫu/1h, windowSize 50 → cổng thấy mẫu #1..50, bỏ #51..120).
-      const rows = await db
-        .select({ v: otTelemetry.numValue, t: otTelemetry.ts })
+      //
+      // SCADA R0 Task 9 (D2, fix 3): (a) hàng MỚI NHẤT (không lọc chất lượng) mà không good ⇒ máy đang báo xấu ⇒ thiếu dữ liệu
+      // (chat_luong_xau) — không được "lùi" về mẫu good cũ rồi coi là an toàn; (b) chuỗi chỉ gồm hàng quality=good; (c) giới hạn
+      // max(windowSize, consecutiveCount) để windowSize < consecutiveCount không bao giờ chặn vĩnh viễn.
+      const [moiNhat] = await db
+        .select({ quality: otTelemetry.quality })
         .from(otTelemetry)
         .where(and(...conds))
         .orderBy(desc(otTelemetry.ts))
-        .limit(rule.windowSize ?? 50);
+        .limit(1);
+      if (moiNhat && moiNhat.quality !== "good") return { series: [], scalar: null, thieuDuLieu: "chat_luong_xau" };
+      const rows = await db
+        .select({ v: otTelemetry.numValue, t: otTelemetry.ts })
+        .from(otTelemetry)
+        .where(and(...conds, eq(otTelemetry.quality, "good")))
+        .orderBy(desc(otTelemetry.ts))
+        .limit(Math.max(rule.windowSize ?? 50, rule.consecutiveCount ?? 1));
       rows.reverse();
       const series = rows.map((r) => (r.v != null ? Number(r.v) : null));
       const latest = series.length ? series[series.length - 1] : null;
@@ -164,13 +175,20 @@ export async function danhGiaLuatChiTiet(
     observed: null as number | null,
   });
 
+  // Luật telemetry_tag không gắn máy (hoặc không khai tag) ⇒ mơ hồ — cùng quy tắc ở cả hai đường (cache bật/tắt): không đoán máy.
+  if (sourceType === "telemetry_tag" && (rule.machineId == null || !rule.sourceKey)) return thieu("mo_ho");
+
   let obs: ObservationContext;
-  if (sourceType === "telemetry_tag" && boDemDangBat()) {
+  // Bộ đệm giữ tối đa SO_LICH_SU_TOI_DA mẫu: luật cần "N điểm liên tiếp" với N lớn hơn thì cache KHÔNG đủ ⇒ đọc chuỗi từ DB (vẫn fail-closed
+  // nếu DB thiếu mẫu) thay vì chặn vĩnh viễn vì lichSu không bao giờ đủ dài.
+  const canChuoiDaiHonBoDem = rule.consecutiveCount != null && rule.consecutiveCount > SO_LICH_SU_TOI_DA;
+  if (sourceType === "telemetry_tag" && boDemDangBat() && !canChuoiDaiHonBoDem) {
     const doc = docTuBoDem(rule, now);
     if ("lyDo" in doc) return thieu(doc.lyDo);
     obs = doc.obs;
   } else {
     obs = await fetchObservation(rule);
+    if (obs.thieuDuLieu) return thieu(obs.thieuDuLieu);
   }
 
   const observed = deriveObserved(sourceType, obs);
