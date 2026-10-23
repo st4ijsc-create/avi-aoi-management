@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const SERVER = process.env.DOT10_TRAP_ROOT || path.resolve(__dirname, "..");
 /** file (relative to server/) → number of client constructions. Adding a file / construction is a reviewed change. */
 const KNOWN: Record<string, number> = {
-  "db/connection.ts": 4, // + getNotifyClient (doc 81 Dot 12 task P fix 1, M-1: dedicated LISTEN/NOTIFY client)
+  "db/connection.ts": 5, // + getNotifyClient (doc 81 Dot 12 task P fix 1, M-1: dedicated LISTEN/NOTIFY client) + openSessionClient (Đợt 8.0: phiên riêng cho advisory lock bầu chủ Luồng AI)
   "db/timescale.ts": 1,
   "services/safety/plc/safetyPlcPollerLeader.ts": 1,
   "_core/workerLeader.ts": 1,
