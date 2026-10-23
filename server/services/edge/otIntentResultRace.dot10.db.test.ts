@@ -15,6 +15,7 @@
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
+import { taoNguoiDungTest } from "../../testing/nguoiDungTest";
 
 const DB_URL = process.env.DATABASE_URL ?? "";
 const onTest = /_test\b/.test(DB_URL);
@@ -64,7 +65,8 @@ async function fixture(c: Sql, k: string, intentPrefix = "intent:") {
   const [n2] = await c`INSERT INTO public.edge_nodes (code, name, status) VALUES (${TAG + k + "b"}, ${TAG}, 'offline') RETURNING id`;
   const [ad] = await c`INSERT INTO public.device_adapters (code, name, protocol, endpoint) VALUES (${TAG + k}, ${TAG}, 'stub', 'stub://r11') RETURNING id`;
   await c`UPDATE public.device_adapters SET "edgeNodeId" = ${n1.id} WHERE id = ${ad.id}`;
-  const [u] = await c`INSERT INTO public.users ("openId", role, "isActive") VALUES (${TAG + k + "u"}, 'admin', true) RETURNING id`;
+  // người dùng của fixture ĐÃ COMMIT: qua helper để afterAll dọn (hàng ở nhánh giao dịch hoàn tác bên dưới vẫn tự biến mất)
+  const u = await taoNguoiDungTest(k + "u", "admin", { tienTo: TAG, ts: "f" });
   const key = `${TAG}${k}:${randomUUID()}`;
   const [i] = await c`INSERT INTO public.command_log ("adapterId", "requestedBy", "confirmedBy", status, "ackValue", "idempotencyKey", "commandType", "createdAt")
                       VALUES (${ad.id}, 1, 1, 'sent', ${c.json({ ledger: "intent" })}, ${intentPrefix + key}, 'write', LOCALTIMESTAMP - interval '30 minutes') RETURNING id`;

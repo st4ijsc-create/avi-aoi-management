@@ -60,7 +60,8 @@ export async function donNguoiDungTest(): Promise<{ daXoa: number; voHieuHoa: nu
     return { daXoa: ids.length, voHieuHoa: 0 };
   } catch (e) {
     // FK chặn xoá (bảng khác còn trỏ tới người dùng này) ⇒ vô hiệu hoá để không còn là người nhận cảnh báo hoạt động
-    console.warn(`[nguoiDungTest] FK chặn xoá users (${String((e as Error)?.message ?? e).slice(0, 160)}) ⇒ đặt isActive=false cho ${ids.length} người`);
+    const ly = String((e as { cause?: Error })?.cause?.message ?? (e as Error)?.message ?? e).replace(/\s+/g, " ").slice(0, 200); // drizzle bọc: lý do thật (tên ràng buộc FK) nằm ở `cause`
+    console.warn(`[nguoiDungTest] FK chặn xoá users (${ly}) ⇒ đặt isActive=false cho ${ids.length} người`);
     try {
       await db.execute(sql`UPDATE public.users SET "isActive" = false WHERE id IN (${ds})`);
     } catch {

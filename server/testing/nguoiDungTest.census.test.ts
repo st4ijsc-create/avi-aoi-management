@@ -6,7 +6,8 @@
  *
  * Hai danh sách MIỄN — chỉ được GIẢM (bậc thang):
  *   • TU_DON  — tệp có tự xoá người dùng (`delete(users)` / `DELETE FROM users`) nên không rò. TODO: chuyển dần sang helper khi sửa tệp.
- *   • CHUA_DON — tệp tạo người dùng mà KHÔNG có lệnh xoá ⇒ RÒ. TODO: chuyển sang `taoNguoiDungTest`. Bắt buộc không có lệnh xoá (nếu đã có xoá ⇒ chuyển sang TU_DON).
+ *   • CHUA_DON — tệp tạo người dùng mà KHÔNG xoá ⇒ RÒ. Đã RỖNG, phải giữ rỗng.
+ *   • HOAN_TAC — tệp tạo người dùng trong giao dịch luôn bị hoàn tác ⇒ không rò, và KHÔNG được chuyển sang helper (đổi điều được đo).
  * Mục lỗi thời (tệp không còn tạo người dùng, hoặc không còn tồn tại) ⇒ ĐỎ, buộc xoá khỏi danh sách.
  */
 import { describe, expect, it } from "vitest";
@@ -95,9 +96,16 @@ export const TU_DON: readonly string[] = [
   "server/services/scheduledReportScope.db.test.ts",
 ];
 
-/** Tệp tạo người dùng KHÔNG xoá ⇒ rò. TODO: chuyển sang `taoNguoiDungTest` (chỉ được GIẢM). */
-export const CHUA_DON: readonly string[] = [
-  "scripts/edge-node-credential.retire.dot12.db.test.ts",
+/** Tệp tạo người dùng KHÔNG xoá ⇒ RÒ. ĐÃ RỖNG (2026-10-23): bốn tệp rò đã chuyển sang `taoNguoiDungTest`, bảy tệp còn lại hoá ra không rò (xem HOAN_TAC). Phải GIỮ rỗng. */
+export const CHUA_DON: readonly string[] = [];
+
+/**
+ * Tệp tạo người dùng TRONG GIAO DỊCH BỊ HOÀN TÁC (`class Rollback` / `ROLLBACK`) ⇒ không bao giờ commit ⇒ KHÔNG rò (đo 2026-10-23: chạy từng tệp, số người dùng ở `_test` không đổi).
+ * KHÔNG chuyển sang helper: helper chèn ở kết nối riêng (commit), còn các ca này đo khoá/thứ tự/đua NGAY TRONG giao dịch ấy — đổi nơi tạo là đổi điều được đo.
+ * Bắt buộc: nguồn tệp có dấu hoàn tác. `otIntentResultRace` còn một fixture ĐÃ COMMIT — đã chuyển sang helper; phần `INSERT INTO users` còn lại nằm trong `tx` bị hoàn tác.
+ * TODO: nếu một tệp ở đây thêm người dùng ngoài giao dịch hoàn tác, census KHÔNG thấy — kiểm bằng đo số người dùng `_test` trước/sau (xem báo cáo).
+ */
+export const HOAN_TAC: readonly string[] = [
   "server/services/edge/edgeControlSchema.dot10.db.test.ts",
   "server/services/edge/edgeDbSearchPath.dot10.db.test.ts",
   "server/services/edge/edgeDbSearchPath0376.dot10.db.test.ts",
@@ -106,12 +114,11 @@ export const CHUA_DON: readonly string[] = [
   "server/services/edge/edgeStopNeverDropped.dot10.db.test.ts",
   "server/services/edge/otIntentResolve.dot10.db.test.ts",
   "server/services/edge/otIntentResultRace.dot10.db.test.ts",
-  "server/services/edge/stopAckLockOrder.dot11.db.test.ts",
-  "server/services/robot/centralStopSweepLockOrder.dot11.db.test.ts",
 ];
 
-/** Trần số tệp CHƯA_DON — hạ khi chuyển thêm. */
-const TRAN_CHUA_DON = 11;
+/** Trần — hạ khi chuyển thêm. */
+const TRAN_CHUA_DON = 0;
+const TRAN_HOAN_TAC = 8;
 const TRAN_TU_DON = 72;
 
 function lietKeTest(): string[] {
@@ -165,7 +172,7 @@ const quetTatCa = () => {
 
 describe("census — test không tự insert(users) ngoài taoNguoiDungTest", () => {
   const ket = quetTatCa();
-  const ngoaiLe = new Set([...TU_DON, ...CHUA_DON]);
+  const ngoaiLe = new Set([...TU_DON, ...CHUA_DON, ...HOAN_TAC]);
 
   it("★ mọi tệp test tạo người dùng đều nằm trong danh sách miễn (hoặc dùng helper)", () => {
     const vi = [...ket].filter(([f, k]) => k.tao && !ngoaiLe.has(f)).map(([f]) => f);
@@ -182,8 +189,20 @@ describe("census — test không tự insert(users) ngoài taoNguoiDungTest", ()
     expect(CHUA_DON.filter((f) => ket.get(f)?.xoa)).toEqual([]);
   });
 
+  it("★ HOAN_TAC thật sự có dấu giao dịch hoàn tác (không thì là RÒ giả danh) và không có lệnh xoá người dùng", () => {
+    const thieu = HOAN_TAC.filter((f) => !/class\s+Rollback|\bROLLBACK\b/.test(fs.readFileSync(path.join(GOC, f), "utf8")));
+    expect(thieu).toEqual([]);
+    expect(HOAN_TAC.filter((f) => ket.get(f)?.xoa)).toEqual([]);
+  });
+
+  it("★ CHUA_DON phải RỖNG — tệp mới tạo người dùng không dọn thì dùng helper, không thêm vào đây", () => {
+    expect(CHUA_DON).toEqual([]);
+  });
+
   it("★ hai danh sách không giao nhau, không trùng, và chỉ được GIẢM (trần)", () => {
-    expect(TU_DON.filter((f) => CHUA_DON.includes(f))).toEqual([]);
+    expect(TU_DON.filter((f) => HOAN_TAC.includes(f))).toEqual([]);
+    expect(new Set(HOAN_TAC).size).toBe(HOAN_TAC.length);
+    expect(HOAN_TAC.length).toBeLessThanOrEqual(TRAN_HOAN_TAC);
     expect(new Set(TU_DON).size).toBe(TU_DON.length);
     expect(new Set(CHUA_DON).size).toBe(CHUA_DON.length);
     expect(CHUA_DON.length).toBeLessThanOrEqual(TRAN_CHUA_DON);

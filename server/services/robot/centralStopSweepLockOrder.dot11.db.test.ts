@@ -13,6 +13,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
+import { taoNguoiDungTest } from "../../testing/nguoiDungTest";
 
 const H = vi.hoisted(() => ({ connected: false, connectedAt: 0, gate: true, release: (() => undefined) as () => void, errors: [] as string[] }));
 vi.mock("./robotManager", () => ({
@@ -50,7 +51,8 @@ const codeOf = (p: Promise<unknown>) => p.then(() => null, (e: { code?: string; 
 describe.skipIf(!onTest)("0377 — the central STOP sweep follows the one lock order (device row first)", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL, { max: 3, onnotice: () => {} });
-    const [u] = await sql`INSERT INTO public.users ("openId", role, "isActive") VALUES (${TAG + "-admin"}, 'admin', true) RETURNING id`;
+    // helper chung: TỰ dọn người dùng ở afterAll cấp tệp (sau afterAll của khối này) — thời điểm tạo giữ nguyên (beforeAll)
+    const u = await taoNguoiDungTest("admin", "admin", { tienTo: TAG, ts: "u" });
     actor = Number(u.id);
     for (const k of ["ROBOT_CONTROL_ENABLED", "ROBOT_COMMISSIONING_REQUIRED"]) env[k] = process.env[k];
     process.env.ROBOT_CONTROL_ENABLED = "true";
