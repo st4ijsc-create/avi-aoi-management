@@ -726,6 +726,9 @@ Chốt:
 - **Hiển thị:**
   - Đăng nhập 2FA và các bên gọi hiện có trả lỗi có mã kèm thời gian còn lại (i18n).
   - M5 (Task 14) hiện "Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau {phút} phút".
+- **Không lộ đếm** (điều phối 2026-10-24): trang đăng nhập và M5 chỉ nói "tạm khoá, thử lại sau N phút". Không bao giờ trả hay hiện số lần sai còn lại trước khi khoá. Lỗi "mã sai" cũng không kèm số lần.
+- **Admin mở khoá:** thủ tục `twoFactor.moKhoaTotp({ userId, lyDo: string(5..300) })` dùng `adminProcedure` của `server/_core/trpc.ts`. Thủ tục xoá hàng `totp_khoa_sai` của người đó và ghi `recordAuditEvent` có `lyDo` trong cùng giao dịch. Đặt vào router 2FA hiện có, hoặc router admin người dùng, tuỳ chỗ nào hợp mẫu hơn. Nâng ghim census `phamViDocCensus` / `congGiayPhepAiCensus` kèm ghi chú ngày. Thêm khoá i18n.
+- **Giới hạn đã biết** (ghi vào báo cáo nghiệm thu, Task 15): kẻ biết mật khẩu có thể cố ý nhập sai để khoá 2FA của nạn nhân 5 phút (DoS ngắn). Đây là mức chấp nhận chuẩn của bộ khoá theo người dùng; admin mở khoá được.
 - **Migration 0432:** chỉ thêm. `avi_app` cần `arwd`, quyền mặc định đã cho; vẫn verify quyền. Gửi SQL cho điều phối như 0431; áp DEV khi được trả lời "áp".
 
 - [ ] **Step 1: Migration 0432 trên TEST.** Viết SQL và script verify:
@@ -742,7 +745,9 @@ Chốt:
   - các lần sai cách nhau quá 5 phút ⇒ không khoá;
   - lỗi DB ở bộ đếm ⇒ từ chối;
   - audit đúng 1 dòng cho lần sai thứ 5, và 1 dòng cho mỗi lần bị từ chối vì khoá;
-  - hai lần sai đồng thời đếm đúng 2 (upsert nguyên tử).
+  - hai lần sai đồng thời đếm đúng 2 (upsert nguyên tử);
+  - phản hồi lỗi (mã sai và tạm khoá) không chứa số lần sai còn lại;
+  - admin `moKhoaTotp` xoá khoá kèm 1 dòng audit; người không phải admin ⇒ `FORBIDDEN`.
 - [ ] **Step 3: Cài.** Cập nhật `kiemXacThucTheoMuc` và các bên gọi; thêm i18n.
 - [ ] **Step 4: Chạy lại** cùng bộ hồi quy step-up/TOTP/đăng nhập 2FA (`server/_core`, `server/routers/twoFactor*`, `server/routers/user*`), `npm run check` và `npm run i18n:check`.
 - [ ] **Step 5: Đột biến:**
