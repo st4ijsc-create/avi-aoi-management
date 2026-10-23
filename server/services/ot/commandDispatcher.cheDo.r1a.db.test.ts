@@ -14,6 +14,10 @@
  *   adapter B — máy MAY_KHAI, kênh chế độ (B, "che_do"), gia_tri_remote = 2
  *     sp      int
  *     che_do  int, writable=false (tag đọc)
+ *   adapter C — CÙNG máy MAY_KHAI, không mang kênh chế độ (fix round 1 M-1: ghi tới C ⇒ cổng đọc kênh của B)
+ *     sp      int
+ *
+ * fix round 1 (M-3): `cheDoMay` được bọc một bộ đếm (gọi xuyên qua mã thật) — cờ OFF ⇒ 0 lần gọi (không truy vấn thêm).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { eq, inArray, like } from "drizzle-orm";
@@ -21,7 +25,19 @@ import { eq, inArray, like } from "drizzle-orm";
 const fake = vi.hoisted(() => ({
   drivers: new Map<number, unknown>(),
   fingerprints: new Map<number, string>(),
+  cheDoMayCalls: [] as unknown[],
 }));
+
+vi.mock("../scada/cheDoMay", async importOriginal => {
+  const orig = await importOriginal<typeof import("../scada/cheDoMay")>();
+  return {
+    ...orig,
+    cheDoMay: (...a: Parameters<typeof orig.cheDoMay>) => {
+      fake.cheDoMayCalls.push(a[0]);
+      return orig.cheDoMay(...a);
+    },
+  };
+});
 
 vi.mock("../safety/plc/safetyPlcAdapter", async importOriginal => {
   const orig = await importOriginal<typeof import("../safety/plc/safetyPlcAdapter")>();
@@ -93,6 +109,7 @@ const fakeDriver = {
 
 let adA = 0;
 let adB = 0;
+let adC = 0;
 let ruleId = 0;
 let seq = 0;
 const nextKey = (label: string) => `${DAU}-${label}-${++seq}`;
@@ -215,15 +232,22 @@ describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL
       .values({ code: `${DAU}-B`, name: `${DAU} adapter B`, protocol: "stub", endpoint: "stub://r1a-t4-b", isEnabled: true, machineId: MAY_KHAI })
       .returning();
     adB = b!.id;
+    const [c] = await x
+      .insert(deviceAdapters)
+      .values({ code: `${DAU}-C`, name: `${DAU} adapter C`, protocol: "stub", endpoint: "stub://r1a-t4-c", isEnabled: true, machineId: MAY_KHAI })
+      .returning();
+    adC = c!.id;
     await x.insert(deviceTags).values([
       { adapterId: adA, tagKey: "sp", address: "D100", dataType: "int", writable: true },
       { adapterId: adA, tagKey: "toc_do", address: "D101", dataType: "int", writable: true, stopValue: 0 },
       { adapterId: adB, tagKey: "sp", address: "D100", dataType: "int", writable: true },
       { adapterId: adB, tagKey: "che_do", address: "D900", dataType: "int", writable: false },
+      { adapterId: adC, tagKey: "sp", address: "D100", dataType: "int", writable: true },
     ]);
     await x.insert(scadaKenhCheDo).values({ machineId: MAY_KHAI, adapterId: adB, tagKey: "che_do", giaTriRemote: 2, updatedBy: OWNER });
     fake.drivers.set(adA, fakeDriver);
     fake.drivers.set(adB, fakeDriver);
+    fake.drivers.set(adC, fakeDriver);
     fake.fingerprints.set(adA, adapterTargetFingerprint({ protocol: "stub", endpoint: "stub://r1a-t4-a", machineId: MAY_CHUA_KHAI, connectionOptions: null }));
   }, 60_000);
 
@@ -236,7 +260,7 @@ describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL
     await x.delete(interlockRules).where(like(interlockRules.name, `${DAU}%`)).catch(() => {});
     await x.delete(aiPendingActions).where(like(aiPendingActions.id, `${DAU}%`));
     await x.delete(scadaKenhCheDo).where(inArray(scadaKenhCheDo.machineId, [MAY_CHUA_KHAI, MAY_KHAI]));
-    for (const id of [adA, adB]) {
+    for (const id of [adA, adB, adC]) {
       if (!id) continue;
       await x.delete(deviceTags).where(eq(deviceTags.adapterId, id));
       await x.delete(deviceAdapters).where(eq(deviceAdapters.id, id));
@@ -250,6 +274,7 @@ describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL
   beforeEach(() => {
     writeCalls = 0;
     writtenBatches = [];
+    fake.cheDoMayCalls = [];
     process.env.OT_CONTROL_ENABLED = "false";
     process.env.OT_COMMISSIONING_REQUIRED = "false";
     process.env.SCADA_LIVE_CACHE_ENABLED = "true";
@@ -269,7 +294,7 @@ describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL
   // Cùng một lệnh, máy CHƯA khai kênh chế độ. Các giá trị kỳ vọng dưới đây là đường cũ, đo trên mã TRƯỚC thay đổi (chạy đỏ/xanh
   // ghi trong báo cáo task 4): cờ OFF phải cho đúng chúng. Ca thứ hai của mỗi cặp bật cờ cho CÙNG lệnh ⇒ MODE_LOCAL — chứng minh
   // cổng có thật cho lệnh này và chỉ cờ (không phải gì khác) để nó qua.
-  it("hồi quy cờ OFF + OT TẮT: lệnh hitl thường (máy chưa khai) ⇒ simulated như trước (status / reason / errorText không đổi)", async () => {
+  it("hồi quy cờ OFF + OT TẮT: lệnh hitl thường (máy chưa khai) ⇒ simulated như trước (status / reason / errorText không đổi), cheDoMay 0 lần", async () => {
     expect(await ketQua(input())).toEqual({
       ok: true,
       simulated: true,
@@ -278,6 +303,7 @@ describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL
       rowStatus: ["simulated"],
       errorText: [null],
     });
+    expect(fake.cheDoMayCalls).toEqual([]);
   });
 
   it("đối chứng cờ BẬT + OT TẮT: CÙNG lệnh ⇒ rejected MODE_LOCAL: chua_khai", async () => {
@@ -290,6 +316,7 @@ describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL
       rowStatus: ["rejected"],
       errorText: ["MODE_LOCAL: chua_khai"],
     });
+    expect(fake.cheDoMayCalls).toEqual([MAY_CHUA_KHAI]); // đối chứng của bộ đếm: cờ bật ⇒ đúng 1 lần
   });
 
   it("hồi quy cờ OFF + OT BẬT: lệnh hitl có action gắn đúng (máy chưa khai) ⇒ acked như trước, driver 1 lần, action executed", async () => {
@@ -306,6 +333,7 @@ describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL
     });
     expect(writeCalls).toBe(1);
     expect(await pendingStatus(actionId)).toBe("executed");
+    expect(fake.cheDoMayCalls).toEqual([]);
   });
 
   it("đối chứng cờ BẬT + OT BẬT: CÙNG lệnh ⇒ rejected MODE_LOCAL, driver 0 lần, action KHÔNG bị tiêu thụ", async () => {
@@ -328,6 +356,7 @@ describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL
   it("hồi quy cờ OFF: máy ĐÃ khai nhưng đang LOCAL (bộ đệm khác REMOTE) — lệnh thường vẫn simulated (cờ OFF ⇒ không đọc chế độ)", async () => {
     napCheDo(1);
     expect((await ketQua(inputB())).status).toBe("simulated");
+    expect(fake.cheDoMayCalls).toEqual([]);
   });
 
   // ═════════════════ cờ bật ═════════════════
@@ -384,7 +413,7 @@ describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL
     expect((await ketQua(inputB())).errorText).toEqual(["MODE_LOCAL: bo_dem_tat"]);
   });
 
-  // ═════════════════ máy nào: input.machineId, không có thì máy của adapter ═════════════════
+  // ═════════════════ máy nào: máy của ADAPTER (fix round 1 ruling 1) ═════════════════
   it("input KHÔNG mang machineId ⇒ dùng máy của adapter (B → máy đã khai, REMOTE ⇒ đi tiếp)", async () => {
     process.env.SCADA_CONG_CHE_DO_ENABLED = "true";
     napCheDo(2);
@@ -393,10 +422,52 @@ describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL
     expect((await ketQua(inputB({ machineId: undefined }))).errorText).toEqual(["MODE_LOCAL: khac_remote"]);
   });
 
-  it("input.machineId được ưu tiên: adapter B nhưng machineId = máy chưa khai ⇒ MODE_LOCAL: chua_khai", async () => {
+  it("fix round 1 (ruling 1): adapter trên máy LOCAL (A), input.machineId = máy REMOTE (B) ⇒ MODE_LOCAL — máy của ADAPTER quyết", async () => {
+    process.env.SCADA_CONG_CHE_DO_ENABLED = "true";
+    napCheDo(2); // máy đã khai đang REMOTE
+    const r = await ketQua(input({ machineId: MAY_KHAI }));
+    expect(r).toMatchObject({ status: "rejected", reason: "MODE_LOCAL", errorText: ["MODE_LOCAL: chua_khai"] });
+    expect(fake.cheDoMayCalls).toEqual([MAY_CHUA_KHAI]);
+    expect(writeCalls).toBe(0);
+  });
+
+  it("fix round 1 (ruling 1): adapter trên máy REMOTE, input.machineId = máy khác ⇒ đi tiếp (lệch machineId KHÔNG tự nó là lý do từ chối)", async () => {
     process.env.SCADA_CONG_CHE_DO_ENABLED = "true";
     napCheDo(2);
-    expect((await ketQua(inputB({ machineId: MAY_CHUA_KHAI }))).errorText).toEqual(["MODE_LOCAL: chua_khai"]);
+    expect((await ketQua(inputB({ machineId: MAY_CHUA_KHAI }))).status).toBe("simulated");
+    expect(fake.cheDoMayCalls).toEqual([MAY_KHAI]);
+  });
+
+  it("fix round 1 (M-1): máy có 2 adapter — kênh chế độ trên B, lệnh ghi tới C ⇒ cổng đọc giá trị của B", async () => {
+    process.env.SCADA_CONG_CHE_DO_ENABLED = "true";
+    napCheDo(2);
+    expect((await ketQua(input({ adapterId: adC, machineId: MAY_KHAI }))).status).toBe("simulated");
+    napCheDo(1);
+    expect((await ketQua(input({ adapterId: adC, machineId: MAY_KHAI }))).errorText).toEqual(["MODE_LOCAL: khac_remote"]);
+  });
+
+  it("fix round 1 (I-1): adapter của kênh (B) bị CHUYỂN sang máy khác ⇒ lệnh tới C (máy đã khai) MODE_LOCAL: kenh_sai_may, dù bộ đệm còn REMOTE", async () => {
+    process.env.SCADA_CONG_CHE_DO_ENABLED = "true";
+    napCheDo(2); // đăng ký OT trong tiến trình chưa theo kịp việc chuyển máy
+    const x = await d();
+    await x.update(deviceAdapters).set({ machineId: MAY_CHUA_KHAI }).where(eq(deviceAdapters.id, adB));
+    try {
+      expect((await ketQua(input({ adapterId: adC, machineId: MAY_KHAI }))).errorText).toEqual(["MODE_LOCAL: kenh_sai_may"]);
+    } finally {
+      await x.update(deviceAdapters).set({ machineId: MAY_KHAI }).where(eq(deviceAdapters.id, adB));
+    }
+  });
+
+  it("fix round 1 (I-1): adapter của kênh (B) bị TẮT ⇒ lệnh tới C MODE_LOCAL: kenh_sai_may", async () => {
+    process.env.SCADA_CONG_CHE_DO_ENABLED = "true";
+    napCheDo(2);
+    const x = await d();
+    await x.update(deviceAdapters).set({ isEnabled: false }).where(eq(deviceAdapters.id, adB));
+    try {
+      expect((await ketQua(input({ adapterId: adC, machineId: MAY_KHAI }))).errorText).toEqual(["MODE_LOCAL: kenh_sai_may"]);
+    } finally {
+      await x.update(deviceAdapters).set({ isEnabled: true }).where(eq(deviceAdapters.id, adB));
+    }
   });
 
   // ═════════════════ STOP ghim được miễn (cả lệnh, khớp theo dữ liệu) ═════════════════

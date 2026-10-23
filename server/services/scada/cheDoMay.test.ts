@@ -1,7 +1,7 @@
 /**
  * SCADA R1a Task 4 (K2/D3) — chế độ máy LOCAL/REMOTE từ kênh chế độ đã khai + bộ đệm giá trị hiện tại.
  * Bộ đệm (`layGiaTri`, `boDemDangBat`) và CSDL (`getDb`) được mock: một db giả trả hàng `scada_kenh_che_do` (+ dataType của tag)
- * theo machineId, hoặc ném lỗi. Bảy `lyDo`, mỗi lý do một ca; fail-closed (lỗi DB / db null ⇒ LOCAL, không ném).
+ * theo machineId, hoặc ném lỗi. Mỗi `lyDo` một ca; fail-closed (lỗi DB / db null ⇒ LOCAL `loi_doc`, không ném).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { GiaTriCoTuoi } from "./boDemHienTai";
@@ -10,7 +10,7 @@ const m = vi.hoisted(() => ({
   layGiaTri: vi.fn(),
   boDemDangBat: vi.fn(),
   /** machineId → hàng kênh chế độ (null = chưa khai); "throw" ⇒ truy vấn ném. */
-  hang: new Map<number, { adapterId: number; tagKey: string; giaTriRemote: unknown; dataType: string | null } | "throw">(),
+  hang: new Map<number, { adapterId: number; tagKey: string; giaTriRemote: unknown; dataType: string | null; adapterMachineId: number | null; adapterEnabled: boolean | null } | "throw">(),
   dbNull: false,
   soTruyVan: 0,
   machineIdHoi: [] as unknown[],
@@ -91,6 +91,11 @@ function gt(over: Partial<GiaTriCoTuoi> = {}): GiaTriCoTuoi {
   };
 }
 
+/** Hàng kênh chế độ của MAY: adapter AD còn thuộc MAY và đang bật trừ khi nói khác. */
+function hangKenh(over: Partial<{ giaTriRemote: unknown; dataType: string | null; adapterMachineId: number | null; adapterEnabled: boolean | null }> = {}) {
+  return { adapterId: AD, tagKey: "che_do", giaTriRemote: 2, dataType: "int" as string | null, adapterMachineId: MAY as number | null, adapterEnabled: true as boolean | null, ...over };
+}
+
 const savedFlag = process.env.SCADA_CONG_CHE_DO_ENABLED;
 
 beforeEach(() => {
@@ -102,14 +107,14 @@ beforeEach(() => {
   m.machineIdHoi = [];
   m.boDemDangBat.mockReturnValue(true);
   m.layGiaTri.mockReturnValue(gt());
-  m.hang.set(MAY, { adapterId: AD, tagKey: "che_do", giaTriRemote: 2, dataType: "int" });
+  m.hang.set(MAY, hangKenh());
 });
 afterEach(() => {
   if (savedFlag === undefined) delete process.env.SCADA_CONG_CHE_DO_ENABLED;
   else process.env.SCADA_CONG_CHE_DO_ENABLED = savedFlag;
 });
 
-describe("cheDoMay — bảy lyDo", () => {
+describe("cheDoMay — mỗi lyDo một ca", () => {
   it("remote: đã khai + bộ đệm bật + có mẫu + good + tươi + v = gia_tri_remote ⇒ REMOTE, mang kênh", async () => {
     const r = await cheDoMay(MAY, NOW);
     expect(r).toEqual({ cheDo: "REMOTE", lyDo: "remote", kenh: { adapterId: AD, tagKey: "che_do" } });
@@ -159,6 +164,33 @@ describe("cheDoMay — bảy lyDo", () => {
   });
 });
 
+describe("cheDoMay — I-1: adapter của kênh phải còn thuộc máy và đang bật", () => {
+  it("adapter của kênh đã CHUYỂN sang máy khác ⇒ LOCAL kenh_sai_may (không đọc bộ đệm — bộ chọn đó của máy khác)", async () => {
+    m.hang.set(MAY, hangKenh({ adapterMachineId: MAY + 1 }));
+    expect(await cheDoMay(MAY, NOW)).toEqual({ cheDo: "LOCAL", lyDo: "kenh_sai_may", kenh: { adapterId: AD, tagKey: "che_do" } });
+    expect(m.layGiaTri).not.toHaveBeenCalled();
+  });
+
+  it("adapter của kênh bị GỠ khỏi máy (machineId null) / không còn (LEFT JOIN null) ⇒ kenh_sai_may", async () => {
+    m.hang.set(MAY, hangKenh({ adapterMachineId: null }));
+    expect((await cheDoMay(MAY, NOW)).lyDo).toBe("kenh_sai_may");
+    m.hang.set(MAY, hangKenh({ adapterMachineId: null, adapterEnabled: null }));
+    expect((await cheDoMay(MAY, NOW)).lyDo).toBe("kenh_sai_may");
+  });
+
+  it("adapter của kênh bị TẮT ⇒ kenh_sai_may", async () => {
+    m.hang.set(MAY, hangKenh({ adapterEnabled: false }));
+    expect((await cheDoMay(MAY, NOW)).lyDo).toBe("kenh_sai_may");
+  });
+
+  it("đối chiếu bộ đệm: mục bộ đệm thuộc máy khác (đăng ký OT chưa theo kịp) ⇒ kenh_sai_may dù giá trị đúng REMOTE", async () => {
+    m.layGiaTri.mockReturnValue(gt({ machineId: MAY + 1 }));
+    expect((await cheDoMay(MAY, NOW)).lyDo).toBe("kenh_sai_may");
+    m.layGiaTri.mockReturnValue(gt({ machineId: null }));
+    expect((await cheDoMay(MAY, NOW)).lyDo).toBe("kenh_sai_may");
+  });
+});
+
 describe("cheDoMay — ép kiểu theo dataType của tag chế độ, so canonical", () => {
   it('int: bộ đệm "2" (chuỗi) vs gia_tri_remote 2 ⇒ REMOTE', async () => {
     m.layGiaTri.mockReturnValue(gt({ v: "2" }));
@@ -166,7 +198,7 @@ describe("cheDoMay — ép kiểu theo dataType của tag chế độ, so canoni
   });
 
   it("bool: bộ đệm 1 vs gia_tri_remote true ⇒ REMOTE; bộ đệm 0 ⇒ khac_remote", async () => {
-    m.hang.set(MAY, { adapterId: AD, tagKey: "che_do", giaTriRemote: true, dataType: "bool" });
+    m.hang.set(MAY, hangKenh({ giaTriRemote: true, dataType: "bool" }));
     m.layGiaTri.mockReturnValue(gt({ v: 1 }));
     expect((await cheDoMay(MAY, NOW)).cheDo).toBe("REMOTE");
     m.layGiaTri.mockReturnValue(gt({ v: 0 }));
@@ -174,7 +206,7 @@ describe("cheDoMay — ép kiểu theo dataType của tag chế độ, so canoni
   });
 
   it("tag chế độ không còn (dataType null) ⇒ so canonical thô: 2 = 2 REMOTE, \"2\" ≠ 2 khac_remote", async () => {
-    m.hang.set(MAY, { adapterId: AD, tagKey: "che_do", giaTriRemote: 2, dataType: null });
+    m.hang.set(MAY, hangKenh({ dataType: null }));
     m.layGiaTri.mockReturnValue(gt({ v: 2 }));
     expect((await cheDoMay(MAY, NOW)).cheDo).toBe("REMOTE");
     m.layGiaTri.mockReturnValue(gt({ v: "2" }));
@@ -182,7 +214,7 @@ describe("cheDoMay — ép kiểu theo dataType của tag chế độ, so canoni
   });
 
   it("v null (mẫu good không mang giá trị) không bao giờ là REMOTE, kể cả gia_tri_remote = null", async () => {
-    m.hang.set(MAY, { adapterId: AD, tagKey: "che_do", giaTriRemote: null, dataType: "json" });
+    m.hang.set(MAY, hangKenh({ giaTriRemote: null, dataType: "json" }));
     m.layGiaTri.mockReturnValue(gt({ v: null }));
     expect((await cheDoMay(MAY, NOW)).lyDo).toBe("khac_remote");
   });
@@ -199,26 +231,26 @@ describe("cheDoMay — fail-closed, không ném", () => {
     expect(m.soTruyVan).toBe(0);
   });
 
-  it("truy vấn ném lỗi ⇒ LOCAL chua_khai (không ném ra ngoài)", async () => {
+  it("truy vấn ném lỗi ⇒ LOCAL loi_doc (không ném ra ngoài)", async () => {
     m.hang.set(MAY, "throw");
     const err = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await expect(cheDoMay(MAY, NOW)).resolves.toEqual({ cheDo: "LOCAL", lyDo: "chua_khai" });
+    await expect(cheDoMay(MAY, NOW)).resolves.toEqual({ cheDo: "LOCAL", lyDo: "loi_doc" });
     err.mockRestore();
   });
 
-  it("getDb() null ⇒ LOCAL chua_khai", async () => {
+  it("getDb() null ⇒ LOCAL loi_doc", async () => {
     m.dbNull = true;
-    await expect(cheDoMay(MAY, NOW)).resolves.toEqual({ cheDo: "LOCAL", lyDo: "chua_khai" });
+    await expect(cheDoMay(MAY, NOW)).resolves.toEqual({ cheDo: "LOCAL", lyDo: "loi_doc" });
   });
 
-  it("layGiaTri ném ⇒ LOCAL (không ném ra ngoài)", async () => {
+  it("layGiaTri ném ⇒ LOCAL loi_doc (không ném ra ngoài)", async () => {
     m.layGiaTri.mockImplementation(() => {
       throw new Error("boom");
     });
     const err = vi.spyOn(console, "warn").mockImplementation(() => {});
     const r = await cheDoMay(MAY, NOW);
     err.mockRestore();
-    expect(r.cheDo).toBe("LOCAL");
+    expect(r).toEqual({ cheDo: "LOCAL", lyDo: "loi_doc", kenh: { adapterId: AD, tagKey: "che_do" } });
   });
 
   it("MỘT truy vấn mỗi lần gọi (không cache: lần gọi thứ hai truy vấn lại)", async () => {

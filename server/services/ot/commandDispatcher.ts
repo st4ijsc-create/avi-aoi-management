@@ -1096,8 +1096,11 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //         `simulated`. Runs ONLY when SCADA_CONG_CHE_DO_ENABLED=true (every caller: hitl, Sparkplug, interlock — ruled "K2 with
   //         interlock commands": blocked in LOCAL) OR for the SCADA HMI write tool (`hmi.write_tag`, always). Flag off and not HMI ⇒
   //         nothing here runs, no query: the pre-R1a path byte for byte.
-  //         Machine = input.machineId, else the adapter's (the step-3 row). REMOTE only per cheDoMay (declared channel, buffer on,
-  //         a good, fresh sample equal to gia_tri_remote); anything else LOCAL (fail-closed; cheDoMay never throws).
+  //         Machine = the ADAPTER's (the step-3 device_adapters row) — authoritative (T4 fix round 1, ruling 1): `input.machineId` never
+  //         overrides it (a caller naming a REMOTE machine must not bypass the LOCAL machine the adapter is on). A differing
+  //         input.machineId is NOT a refusal by itself (that would change existing callers); an adapter on no machine ⇒ null ⇒ LOCAL
+  //         chua_khai. REMOTE only per cheDoMay (declared channel whose adapter is still on this machine and enabled, buffer on, a
+  //         good, fresh sample equal to gia_tri_remote); anything else LOCAL (fail-closed; cheDoMay never throws).
   //         PINNED STOP exemption (no software blocks a pinned STOP), matched on DATA as in 3b — WHOLE command only: stop-typed and
   //         ONE matchPinnedStop over every write (the coerced writes of 3b) against the step-3 pins. A refused stop-typed command still
   //         takes the edge pre-route of tuChoiSom.
@@ -1106,7 +1109,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       isStopCommandType(input.commandType) &&
       matchPinnedStop(stopPinsFromTagRows(step3TagRows), input.writes.map((w) => ({ tagKey: w.tagKey, value: w.value }))).ok;
     if (!stopGhim) {
-      const cheDo = await cheDoMay(input.machineId ?? adapter.machineId ?? null);
+      const cheDo = await cheDoMay(adapter.machineId ?? null);
       if (cheDo.cheDo !== "REMOTE") return tuChoiSom("MODE_LOCAL", cheDo.lyDo);
     }
   }
