@@ -7,8 +7,9 @@
 // (= textValue or stringified boolValue) and `timestamp` (= canonical `ts`).
 // All functions are READ-ONLY. No writes.
 import { getDb } from "./connection";
-import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { otTelemetry, deviceTags } from "../../drizzle/schema";
+import type { TsdbTheoThietBiRow } from "./timescale";
 
 export interface TelemetryLatestRow {
   id: number;
@@ -144,4 +145,90 @@ export async function getTelemetrySeries(opts: {
   return rows
     .filter((r) => r.numValue != null)
     .map((r) => ({ ts: new Date(r.timestamp).getTime(), value: Number(r.numValue) }));
+}
+
+// ── SCADA R0 Task 7 — đọc theo MÃ THIẾT BỊ (deviceId = adapter.code) cho bộ đệm giá trị hiện tại ──
+// Timescale trước (khi TSDB_URL bật), rơi về bảng ot_telemetry của DB chính — cùng thứ tự như getLatestTelemetry.
+
+export type TelemetryTheoThietBiRow = TsdbTheoThietBiRow;
+
+const COT_THEO_THIET_BI = {
+  deviceId: otTelemetry.deviceId,
+  metric: otTelemetry.metric,
+  numValue: otTelemetry.numValue,
+  textValue: otTelemetry.textValue,
+  boolValue: otTelemetry.boolValue,
+  quality: otTelemetry.quality,
+  ts: otTelemetry.ts,
+  ingestedAt: otTelemetry.ingestedAt,
+  meta: otTelemetry.meta,
+} as const;
+
+function chuanHoaTheoThietBi(r: {
+  deviceId: string | null;
+  metric: string;
+  numValue: number | null;
+  textValue: string | null;
+  boolValue: boolean | null;
+  quality: string | null;
+  ts: Date;
+  ingestedAt: Date;
+  meta: Record<string, unknown> | null;
+}): TelemetryTheoThietBiRow {
+  return {
+    deviceId: r.deviceId ?? "",
+    metric: r.metric,
+    numValue: r.numValue == null ? null : Number(r.numValue),
+    textValue: r.textValue ?? null,
+    boolValue: r.boolValue ?? null,
+    quality: String(r.quality ?? "good"),
+    ts: new Date(r.ts),
+    ingestedAt: new Date(r.ingestedAt),
+    meta: r.meta ?? null,
+  };
+}
+
+/**
+ * Hàng MỚI NHẤT của mỗi (deviceId, metric) cho các mã thiết bị trong `deviceCodes`, chỉ xét hàng có `ts >= now - sinceMs`.
+ * `SELECT DISTINCT ON (deviceId, metric) … ORDER BY deviceId, metric, ts DESC`; danh sách thiết bị dùng `inArray`.
+ */
+export async function layMoiNhatTheoThietBi(deviceCodes: string[], sinceMs: number): Promise<TelemetryTheoThietBiRow[]> {
+  if (deviceCodes.length === 0) return [];
+  const since = new Date(Date.now() - Math.max(0, sinceMs));
+  try {
+    const { queryOtTelemetryLatestByDevices } = await import("./timescale");
+    const tsdbRows = await queryOtTelemetryLatestByDevices(deviceCodes, since);
+    if (tsdbRows !== null) return tsdbRows;
+  } catch {
+    // fall through to main-DB read
+  }
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .selectDistinctOn([otTelemetry.deviceId, otTelemetry.metric], COT_THEO_THIET_BI)
+    .from(otTelemetry)
+    .where(and(inArray(otTelemetry.deviceId, deviceCodes), gte(otTelemetry.ts, since)))
+    .orderBy(otTelemetry.deviceId, otTelemetry.metric, desc(otTelemetry.ts));
+  return rows.map(chuanHoaTheoThietBi);
+}
+
+/** `limit` hàng thô mới nhất của một (deviceId, metric), ts giảm dần (mới → cũ). */
+export async function layMauThoTheoThietBi(deviceCode: string, metric: string, limit: number): Promise<TelemetryTheoThietBiRow[]> {
+  const gioiHan = Math.min(Math.max(Math.trunc(limit) || 1, 1), 1000);
+  try {
+    const { queryOtTelemetryRawByDevice } = await import("./timescale");
+    const tsdbRows = await queryOtTelemetryRawByDevice(deviceCode, metric, gioiHan);
+    if (tsdbRows !== null) return tsdbRows;
+  } catch {
+    // fall through to main-DB read
+  }
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select(COT_THEO_THIET_BI)
+    .from(otTelemetry)
+    .where(and(eq(otTelemetry.deviceId, deviceCode), eq(otTelemetry.metric, metric)))
+    .orderBy(desc(otTelemetry.ts))
+    .limit(gioiHan);
+  return rows.map(chuanHoaTheoThietBi);
 }

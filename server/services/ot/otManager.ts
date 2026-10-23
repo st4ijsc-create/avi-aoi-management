@@ -32,6 +32,17 @@ import { chatLuongLoiChung } from "./chatLuong";
 import { khoangNoiLaiMs, NOI_LAI_NHANH_TOI_THIEU_MS, thoiGianOnDinhMs, tinhDeadlineMs } from "./reconnectNhanh";
 import { ghiNhanDoc, ghiNhanPhien } from "./boDemTruyenThong";
 import type { TuyChonVongPoll } from "./otDriver";
+import { datThongTinAdapter } from "../scada/boDemHienTai";
+
+/** SCADA R0 Task 7 — báo cho bộ đệm giá trị hiện tại nhịp poll / deadband / máy / mã của adapter (tính stale). Chiều phụ thuộc otManager → scada. */
+function baoThongTinChoBoDem(adapter: RuntimeAdapter): void {
+  datThongTinAdapter(adapter.adapterId, {
+    pollMs: adapter.pollIntervalMs,
+    coDeadband: adapter.tags.some((t) => t.deadband != null),
+    machineId: adapter.machineId,
+    code: adapter.code,
+  });
+}
 
 let running = false;
 /**
@@ -802,7 +813,10 @@ async function startOtOnce(): Promise<boolean> {
   let adapters: RuntimeAdapter[] = [];
   try {
     adapters = await loadEnabledAdapters();
-    for (const a of adapters) otTriedAtStart.add(a.adapterId);
+    for (const a of adapters) {
+      otTriedAtStart.add(a.adapterId);
+      baoThongTinChoBoDem(a); // SCADA R0 Task 7 — trước khi vòng khởi động (HA lẫn legacy) chạy
+    }
   } catch (err) {
     console.error("[OT] loadEnabledAdapters failed:", (err as Error)?.message || err);
     return false;
@@ -1197,6 +1211,7 @@ export async function attachOtAdapter(adapter: RuntimeAdapter): Promise<boolean>
   if (!isOtGatewayOn() || supervisors.has(adapter.adapterId) || legacy.has(adapter.adapterId) || active.some((e) => e.adapter.adapterId === adapter.adapterId)) return false;
   const myEpoch = epoch;
   const tok = detachToken(adapter.adapterId); // scan #73
+  baoThongTinChoBoDem(adapter); // SCADA R0 Task 7
   try {
     if (isConnHaEnabled()) {
       const fingerprint = connectionFingerprintOf(adapter);
