@@ -359,3 +359,92 @@ describe("SlmpDriver (mock TCP server)", () => {
     ).rejects.toThrow(/not connected/);
   });
 });
+
+// ── T12b fix round 1 — transport CŨ không được rò / đổ dữ liệu vào phiên mới ──────────────────────────────────────────
+describe("SlmpDriver — thay socket (T12b fix round 1)", () => {
+  /** Server IM LẶNG: nhận kết nối, không bao giờ trả lời; giữ socket phía server để test tự gửi khung muộn. */
+  async function serverImLang(): Promise<{ port: number; ss: net.Socket[]; close: () => Promise<void> }> {
+    const ss: net.Socket[] = [];
+    const server = net.createServer((s) => {
+      ss.push(s);
+      s.on("error", () => undefined);
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const port = (server.address() as net.AddressInfo).port;
+    return {
+      port,
+      ss,
+      close: () =>
+        new Promise<void>((r) => {
+          for (const s of ss) s.destroy();
+          server.close(() => r());
+        }),
+    };
+  }
+  /** Khung 3E đọc 1 word, giá trị 777, end code 0 (3E không có serial ⇒ không phân biệt được giao dịch nào). */
+  const khung777 = (): Buffer => {
+    const data = Buffer.alloc(2);
+    data.writeUInt16LE(777, 0);
+    return buildResponse("3E", 0, data, 0);
+  };
+  const choDong = (s: net.Socket, ms: number) =>
+    new Promise<boolean>((r) => {
+      if (s.destroyed) return r(true);
+      const t = setTimeout(() => r(false), ms);
+      s.once("close", () => {
+        clearTimeout(t);
+        r(true);
+      });
+    });
+
+  it("connect lại trên cùng driver ⇒ socket CŨ bị đóng; khung muộn từ phía cũ không hoàn tất giao dịch của phiên mới", async () => {
+    const sv = await serverImLang();
+    try {
+      const d = new SlmpDriver();
+      const ep = { endpoint: `tcp://127.0.0.1:${sv.port}`, timeoutMs: 300 };
+      await d.connect(ep);
+      await vi.waitFor(() => expect(sv.ss).toHaveLength(1));
+      await d.connect(ep); // vd lần nối lại của supervisor khi driver còn giữ transport nửa mở
+      await vi.waitFor(() => expect(sv.ss).toHaveLength(2));
+      expect(await choDong(sv.ss[0], 1000), "socket cũ phải bị đóng khi connect lại").toBe(true);
+      const p = d.readTags([{ tagKey: "a", address: "D0", dataType: "int" }]);
+      await new Promise((r) => setTimeout(r, 50));
+      try {
+        sv.ss[0].write(khung777()); // phía cũ đã đóng ⇒ không tới được
+      } catch {
+        /* đã đóng */
+      }
+      const [s] = await p;
+      expect(s.quality).toBe("bad"); // phiên mới im lặng ⇒ quá hạn, KHÔNG phải 777 "good"
+      expect(s.value).toBeNull();
+      await d.disconnect();
+    } finally {
+      await sv.close();
+    }
+  });
+
+  it("chốt danh tính: 'data' phát trên socket KHÔNG còn là socket hiện tại bị bỏ qua (không hoàn tất giao dịch đang chờ)", async () => {
+    const sv = await serverImLang();
+    try {
+      const d = new SlmpDriver();
+      const ep = { endpoint: `tcp://127.0.0.1:${sv.port}`, timeoutMs: 300 };
+      await d.connect(ep);
+      const cu = (d as unknown as { socket: net.Socket }).socket;
+      // Transport cũ "lì": không gỡ được listener, không huỷ được (lớp phòng thủ thứ hai phải tự đứng).
+      cu.removeAllListeners = (() => cu) as never;
+      cu.destroy = (() => cu) as never;
+      await d.connect(ep);
+      expect((d as unknown as { socket: net.Socket }).socket).not.toBe(cu);
+      const p = d.readTags([{ tagKey: "a", address: "D0", dataType: "int" }]);
+      await new Promise((r) => setTimeout(r, 50));
+      cu.emit("data", khung777());
+      const [s] = await p;
+      expect(s.quality).toBe("bad");
+      expect(s.value).toBeNull();
+      await d.disconnect();
+      net.Socket.prototype.destroy.call(cu);
+    } finally {
+      await sv.close();
+    }
+  });
+});

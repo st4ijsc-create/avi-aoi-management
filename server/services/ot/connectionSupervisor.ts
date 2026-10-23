@@ -175,9 +175,9 @@ export interface SupervisorOptions {
   /**
    * SCADA R0 T12 (D1) — số tick poll HỎNG liên tiếp (laTickHong: timeout / comm_lost cả tick) của phiên ĐANG HOẠT ĐỘNG ⇒ coi như mất
    * liên kết (onActiveLost: `reconnecting` ⇒ host báo lost; hạ phiên; nối lại). Bắt liên kết TREO mà isConnected() không thấy. Không
-   * đặt / ≤ 0 ⇒ tắt (hành vi cũ). Tick của phiên đã bị thay bị bỏ qua.
+   * đặt / ≤ 0 ⇒ tắt (hành vi cũ). Tick của phiên đã bị thay bị bỏ qua. Dạng hàm ⇒ đọc lại MỖI lần subscribe (host gắn cờ vào đây).
    */
-  soTickHongDeMat?: number;
+  soTickHongDeMat?: number | (() => number);
 }
 
 /** Snapshot of a supervisor for an internal health getter (future health endpoint). */
@@ -296,8 +296,8 @@ export class ConnectionSupervisor {
   private readonly onStateChange: SupervisorOptions["onStateChange"] | null;
   private readonly tuyChon: TuyChonVongPoll | undefined;
   private readonly onConnectAttempt: SupervisorOptions["onConnectAttempt"] | null;
-  /** T12 D1 — ngưỡng tick hỏng liên tiếp (0 = tắt). */
-  private readonly soTickHongDeMat: number;
+  /** T12 D1 — ngưỡng tick hỏng liên tiếp (≤ 0 = tắt); hàm ⇒ đọc lại mỗi phiên. */
+  private readonly soTickHongDeMat: number | (() => number);
   /** T12 D1 — số thứ tự phiên subscribe (tăng mỗi lần connectAndSubscribe) và phiên đang là activeHandle (0 = không có). */
   private demPhien = 0;
   private phienHoatDong = 0;
@@ -327,8 +327,7 @@ export class ConnectionSupervisor {
     this.onStateChange = opts.onStateChange ?? null;
     this.tuyChon = opts.tuyChon;
     this.onConnectAttempt = opts.onConnectAttempt ?? null;
-    this.soTickHongDeMat =
-      typeof opts.soTickHongDeMat === "number" && opts.soTickHongDeMat > 0 ? opts.soTickHongDeMat : 0;
+    this.soTickHongDeMat = opts.soTickHongDeMat ?? 0;
     this.disconnectTimeoutMs =
       typeof opts.disconnectTimeoutMs === "number" && opts.disconnectTimeoutMs > 0
         ? opts.disconnectTimeoutMs
@@ -677,7 +676,7 @@ export class ConnectionSupervisor {
   }
 
   /** The active endpoint was detected down → promote standby / reconnect. */
-  private async onActiveLost(reason?: string, statusCode?: string): Promise<void> {
+  private async onActiveLost(reason?: string, statusCode?: string, haTransport = false): Promise<void> {
     if (this.stopped) return;
     if (reason) {
       this.lastError = reason;
@@ -693,7 +692,11 @@ export class ConnectionSupervisor {
       this.reconnectedAt = null;
     }
     this.setState("reconnecting");
+    const epMat = this.endpoints[this.activeIndex];
     await this.closeActiveHandle();
+    // T12b fix round 1 — liên kết TREO (D1): driver vẫn tưởng còn nối (TCP nửa mở) ⇒ HẠ transport NGAY (có hạn), không để socket cũ
+    // sống tới lần thử kế (backoff) hay bị bỏ rơi khi driver thay transport mà không đóng cái cũ (rò socket, phản hồi muộn).
+    if (haTransport && epMat) await this.safeDisconnect(epMat);
     if (khongOnDinh) {
       this.scheduleRetry(this.nextBackoffDelay());
       return;
@@ -862,12 +865,19 @@ export class ConnectionSupervisor {
    * động khi phiên VẪN là phiên hoạt động và supervisor đang 'connected' (không chồng lên vòng nối/reset đang chạy).
    */
   private tuyChonChoPhien(phien: number): TuyChonVongPoll | undefined {
-    if (this.soTickHongDeMat <= 0) return this.tuyChon;
+    let k = 0;
+    try {
+      const v = typeof this.soTickHongDeMat === "function" ? this.soTickHongDeMat() : this.soTickHongDeMat;
+      k = typeof v === "number" && v > 0 ? v : 0;
+    } catch {
+      k = 0;
+    }
+    if (k <= 0) return this.tuyChon;
     const hostOnTick = this.tuyChon?.onTick;
-    const dem = taoDemTickHong(this.soTickHongDeMat, (e) => {
+    const dem = taoDemTickHong(k, (e) => {
       if (this.stopped || this.cycleRunning || this.state !== "connected" || phien !== this.phienHoatDong) return;
       const sc = e.statusCode ?? (e.timeout ? "timeout" : "comm_lost");
-      void this.onActiveLost(`poll: ${this.soTickHongDeMat} consecutive failed ticks (${sc})`, sc);
+      void this.onActiveLost(`poll: ${k} consecutive failed ticks (${sc})`, sc, true);
     });
     return {
       ...this.tuyChon,

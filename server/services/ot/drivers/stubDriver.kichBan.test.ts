@@ -2,10 +2,10 @@
  * SCADA R0 (C9) — stub có kịch bản: rớt kết nối, tag xấu/nghi ngờ, ghi RAM, tự rớt theo thời gian, đăng ký instance.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { StubDriver, layStubDangChay } from "./stubDriver";
+import { StubDriver, StubTimeoutError, layStubDangChay } from "./stubDriver";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import type { OtSample, OtTagAddress, SuKienDoc } from "../otDriver";
-import { laLoiTimeout } from "../chatLuong";
+import { laLoiHuyTickPoll, laLoiMucLienKet, laLoiTimeout } from "../chatLuong";
 
 const t1: OtTagAddress = { tagKey: "t1", address: "DB1.0", dataType: "float" };
 const t2: OtTagAddress = { tagKey: "t2", address: "DB1.4", dataType: "float" };
@@ -193,29 +193,48 @@ describe("StubDriver kịch bản (C9)", () => {
     await h.close();
   });
 
-  it("T12 treo (cáp rút sau switch): isConnected VẪN true; readTags không trả lời tới timeoutMs rồi ném lỗi QUÁ HẠN; hết treo ⇒ đọc được", async () => {
+  it("T12 treo (cáp rút sau switch): isConnected VẪN true; readTags CÔNG KHAI không trả lời tới timeoutMs rồi trả mẫu bad/comm_lost/timeout theo từng tag (không ném); hết treo ⇒ đọc được", async () => {
+    process.env.OT_CHAT_LUONG_V2_ENABLED = "true";
     const d = new StubDriver();
     await d.connect({ endpoint: "stub://treo1", timeoutMs: 800 });
     d.simDatLoi({ treo: true });
     expect(d.isConnected()).toBe(true); // nửa mở: không ai nói với client là đã mất
     expect((await d.health()).connected).toBe(true);
-    let loi: unknown = null;
-    let xong = false;
-    void d.readTags([t1]).then(
-      () => (xong = true),
-      (e) => {
-        loi = e;
-        xong = true;
-      },
-    );
+    let out: OtSample[] | null = null;
+    void d.readTags([t1]).then((o) => {
+      out = o;
+    });
     await vi.advanceTimersByTimeAsync(790);
-    expect(xong).toBe(false); // chưa có câu trả lời nào
+    expect(out).toBeNull(); // chưa có câu trả lời nào
     await vi.advanceTimersByTimeAsync(50);
-    expect(xong).toBe(true);
-    expect(loi).toBeInstanceOf(DeviceUnreachableError);
-    expect(laLoiTimeout(loi)).toBe(true);
+    expect(out).not.toBeNull();
+    expect(out![0]).toMatchObject({ quality: "bad", value: null, reason: "comm_lost", statusCode: "timeout" });
     d.simDatLoi({});
     expect((await d.readTags([t1]))[0].quality).toBe("good");
+    await d.disconnect();
+  });
+
+  it("T12b fix round 1: lỗi treo là lớp QUÁ HẠN (StubTimeoutError) — laLoiHuyTickPoll coi là quá hạn, KHÔNG phải lỗi liên kết; đường poll huỷ ở giao dịch ĐẦU (3 tag ⇒ tick hỏng sau ~1 × timeoutMs, không 3 ×)", async () => {
+    const e = new StubTimeoutError("transaction", 800);
+    expect(laLoiTimeout(e)).toBe(true);
+    expect(laLoiHuyTickPoll(e)).toBe(true);
+    expect(laLoiMucLienKet(e)).toBe(false);
+    expect(e).not.toBeInstanceOf(DeviceUnreachableError);
+
+    process.env.OT_CHAT_LUONG_V2_ENABLED = "true";
+    const d = new StubDriver();
+    await d.connect({ endpoint: "stub://treo4", timeoutMs: 800 });
+    const ticks: SuKienDoc[] = [];
+    const h = await d.subscribe([t1, t2, sp], () => undefined, 5000, { onTick: (ev) => void ticks.push(ev) });
+    await vi.advanceTimersByTimeAsync(0);
+    ticks.length = 0;
+    d.simDatLoi({ treo: true });
+    await vi.advanceTimersByTimeAsync(5000 + 850); // tick 5000, giao dịch đầu quá hạn ở 5800
+    expect(ticks).toHaveLength(1);
+    expect(ticks[0]).toMatchObject({ ok: false, timeout: true, reason: "comm_lost", statusCode: "timeout" });
+    expect(ticks[0].ms).toBeLessThan(1000);
+    await h.close();
+    d.simDatLoi({});
     await d.disconnect();
   });
 
@@ -256,7 +275,7 @@ describe("StubDriver kịch bản (C9)", () => {
     });
     await vi.advanceTimersByTimeAsync(850);
     await p1;
-    expect(loi).toBeInstanceOf(DeviceUnreachableError);
+    expect(loi).toBeInstanceOf(StubTimeoutError);
     expect(laLoiTimeout(loi)).toBe(true);
     expect(d.isConnected()).toBe(false);
 

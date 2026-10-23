@@ -28,7 +28,7 @@ import {
 import { withDeadline } from "./drivers/boundedClose";
 import { adapterTargetFingerprint, runtimeAdapterTarget } from "./adapterTarget";
 import { baoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
-import { chatLuongLoiChung } from "./chatLuong";
+import { chatLuongLoiChung, chatLuongV2Bat } from "./chatLuong";
 import {
   khoangNoiLaiMs,
   NOI_LAI_NHANH_TOI_THIEU_MS,
@@ -251,7 +251,8 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
       adapter.tags,
       sink,
       adapter.pollIntervalMs,
-      tuyChonPollCua(adapter, (e) => khiTickHongLegacy(entry, phien, myEpoch, e)),
+      // T12b fix round 1 — D1 sau cờ OT_CHAT_LUONG_V2_ENABLED, đọc lúc subscribe (như D3): cờ tắt ⇒ đúng hành vi trước R0.
+      tuyChonPollCua(adapter, chatLuongV2Bat() ? (e) => khiTickHongLegacy(entry, phien, myEpoch, e) : undefined),
     );
   })();
   // Cờ settle gắn TRƯỚC withDeadline ⇒ khi work reject đúng hạn, cờ đã bật lúc catch chạy.
@@ -771,7 +772,8 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
     onSample,
     tuyChon: tuyChonPollCua(adapter),
     // SCADA R0 T12 (D1) — K tick poll hỏng liên tiếp của phiên đang hoạt động ⇒ supervisor coi như mất (reconnecting ⇒ 'lost' ở dưới).
-    soTickHongDeMat: SO_TICK_HONG_DE_MAT,
+    // T12b fix round 1 — sau cờ OT_CHAT_LUONG_V2_ENABLED, đọc lại mỗi lần subscribe (cờ tắt ⇒ 0 = tắt, hành vi trước R0).
+    soTickHongDeMat: () => (chatLuongV2Bat() ? SO_TICK_HONG_DE_MAT : 0),
     onConnectAttempt: (ok) => ghiNhanPhien(adapter.adapterId, ok),
     healthIntervalMs: haHealthIntervalMs(adapter.pollIntervalMs),
     backoff: haBackoffFromEnv(),

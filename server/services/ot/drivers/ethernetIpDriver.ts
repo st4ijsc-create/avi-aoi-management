@@ -97,6 +97,18 @@ export class EthernetIpDriver extends NotImplementedDriver {
     if (typeof Controller !== "function") {
       throw new Error("st-ethernet-ip not installed");
     }
+    // T12b fix round 1 — connect lại trên CÙNG driver: hạ Controller cũ trước (capture-and-null như disconnect; không chờ), không rò
+    // socket. Listener mất-kết-nối của Controller cũ đã có chốt danh tính (`this.plc === plc`); mỗi Controller giữ giao dịch riêng.
+    const cu = this.plc;
+    if (cu) {
+      this.plc = null;
+      this.connected = false;
+      try {
+        if (typeof cu.disconnect === "function") void Promise.resolve(cu.disconnect()).catch(() => undefined);
+      } catch {
+        // ignore
+      }
+    }
     const plc = new Controller();
 
     const opts = cfg.options ?? {};

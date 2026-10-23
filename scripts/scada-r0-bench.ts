@@ -283,7 +283,8 @@ async function chayLuot(o: TuyChon, nhanh: "legacy" | "ha", kieu: "pause" | "sto
     // cổng của Docker Desktop (nhận TCP rồi đóng khi container chưa chạy), không phải do thiết bị đã trả lời. Ghi chú riêng.
     const cuoiTruoc = ghi.filter((g) => g.t > tRut && g.t < traLoi.t).at(-1);
     const dbDaConnectedTruoc = coDotMat && cuoiTruoc?.tt === "connected";
-    // Cổng 4 từ lúc Modbus trả lời; tag có thể đã tốt TRƯỚC mốc thăm dò (thăm dò mỗi 100 ms) ⇒ số âm cắt về 0 không xảy ra — in nguyên.
+    // Cổng 4 từ lúc Modbus trả lời. t4 chỉ được hỏi SAU mốc đó nên không bao giờ âm; 0 = mọi tag đã tốt ngay lần hỏi đầu (có thể tốt từ
+    // TRƯỚC mốc: thăm dò độc lập chỉ chạy mỗi 100 ms, còn lần nối lại đang chờ + lần đọc đầu ngay (D2) có thể xong sớm hơn).
     const tu = (t: number | null, goc: number) => (t === null ? null : t - goc);
     const st = ot.getOtAdapterStatus(adapterId);
     return {
@@ -297,7 +298,9 @@ async function chayLuot(o: TuyChon, nhanh: "legacy" | "ha", kieu: "pause" | "sto
       lyDoXau,
       cong2: tu(t2, tRut),
       cong3Mat: tu(tGhiMat, tRut),
-      cong3CoLai: dbDaConnectedTruoc ? 0 : tGhiCoLai === null ? null : tGhiCoLai - traLoi.t,
+      // T12b fix round 1 — KHÔNG ghi 0 khi DB đã 'connected' giả từ trước: số đo giữ nguyên (thường null — trạng thái không đổi nên không
+      // có lần ghi mới), cờ `dbDaConnectedTruoc` là dấu "connected GIẢ" và lượt đó tính KHÔNG ĐẠT cổng 3.
+      cong3CoLai: tGhiCoLai === null ? null : tGhiCoLai - traLoi.t,
       dbDaConnectedTruoc,
       modbusTraLoiSau: traLoi.t - lenhCam.tXong,
       daBamStart: traLoi.daBamStart,
@@ -335,7 +338,7 @@ function inBang(o: TuyChon, k: KetQuaLuot): string {
     `| 1. rút ⇒ mọi tag bad (bộ đệm) | ≤ ${c} ms | ${fmt(k.cong1, c)} (từ lúc BẮT ĐẦU lệnh: ${fmt(k.cong1TuBatDauLenh)}; mẫu: ${k.lyDoXau}) |`,
     `| 2. M10 "lost" (trạng thái RAM mà danhSach hiển thị) | ≤ 5000 ms | ${fmt(k.cong2, 5000)} |`,
     `| 3a. ghi DB status='error' sau khi rút | ≤ 5000 ms | ${fmt(k.cong3Mat, 5000)} |`,
-    `| 3b. ghi DB status='connected' sau khi Modbus trả lời lại | ≤ 5000 ms | ${k.cong3Mat === null && k.cong3CoLai === null ? "không có chuyển trạng thái (adapter chưa từng 'lost')" : fmt(k.cong3CoLai, 5000)}${k.dbDaConnectedTruoc ? " ⚠ DB đã 'connected' TRƯỚC khi Modbus trả lời (chập chờn nhận-rồi-đóng TCP trong lúc thiết bị chưa chạy)" : ""} |`,
+    `| 3b. ghi DB status='connected' sau khi Modbus trả lời lại | ≤ 5000 ms | ${k.dbDaConnectedTruoc ? `KHÔNG ĐẠT — "connected" GIẢ: DB đã ghi 'connected' TRƯỚC khi Modbus trả lời (nhận-rồi-đóng TCP trong lúc thiết bị chưa chạy); lần ghi sau mốc: ${k.cong3CoLai === null ? "không có" : `${k.cong3CoLai} ms`}` : k.cong3Mat === null && k.cong3CoLai === null ? "không có chuyển trạng thái (adapter chưa từng 'lost')" : fmt(k.cong3CoLai, 5000)} |`,
     `| 4. Modbus trả lời lại ⇒ mọi tag good (bộ đệm) | ≤ ${c} ms | ${fmt(k.cong4, c)} (từ lúc lệnh cắm lại trả về: ${fmt(k.cong4TuLenhCam)}) |`,
     ``,
     `Chẩn đoán: mẫu good cuối ${k.nhanh === "ha" ? "n/a (HA: supervisor tự tạo driver)" : `${k.mauTotCuoiTruocRut} ms so với lúc bắt đầu lệnh rút`} · lệnh rút ${k.lenhRut.ms} ms · lệnh cắm ${k.lenhCam.ms} ms · Modbus trả lời sau lệnh cắm ${k.modbusTraLoiSau} ms${k.daBamStart ? " (đã bấm Start qua web)" : ""} · RAM 'connected' lại sau Modbus trả lời ${fmt(k.noiLai)} · lệnh ghi DB (ms so với lúc rút): ${k.ghiDb.join(", ") || "(không)"}`,
@@ -356,7 +359,10 @@ function tongHop(o: TuyChon, ds: KetQuaLuot[]): string {
         const dat = v.filter((x) => x !== null && x <= nguong).length;
         return `${v.map((x) => (x === null ? `>${HAN_DO_MS}` : String(x))).join(" / ")} ms — đạt ${dat}/${v.length}`;
       };
-      const coLai = l.every((k) => k.cong3Mat === null) ? "không có chuyển trạng thái (chưa từng 'lost')" : cot((k) => k.cong3CoLai, 5000);
+      // 3b: lượt có "connected" GIẢ (DB đã 'connected' trước khi Modbus trả lời) hiện là GIẢ và KHÔNG tính đạt.
+      const coLai = l.every((k) => k.cong3Mat === null)
+        ? "không có chuyển trạng thái (chưa từng 'lost')"
+        : `${l.map((k) => (k.dbDaConnectedTruoc ? "GIẢ" : k.cong3CoLai === null ? `>${HAN_DO_MS}` : String(k.cong3CoLai))).join(" / ")} ms — đạt ${l.filter((k) => !k.dbDaConnectedTruoc && k.cong3CoLai !== null && k.cong3CoLai <= 5000).length}/${l.length}`;
       out.push(
         `### ${kieu === "pause" ? "docker pause/unpause (đường TREO)" : "docker stop -t 0/start (đường RESET)"} — nhánh ${nhanh} — ${l.length} lượt`,
         "",
@@ -365,7 +371,7 @@ function tongHop(o: TuyChon, ds: KetQuaLuot[]): string {
         `| 1. rút ⇒ mọi tag bad (bộ đệm) | ≤ ${c} ms | ${cot((k) => k.cong1, c)} |`,
         `| 2. M10 "lost" (RAM, thứ danhSach hiển thị) | ≤ 5000 ms | ${cot((k) => k.cong2, 5000)} |`,
         `| 3a. ghi DB 'error' sau khi rút | ≤ 5000 ms | ${cot((k) => k.cong3Mat, 5000)} |`,
-        `| 3b. ghi DB 'connected' sau khi Modbus trả lời | ≤ 5000 ms | ${coLai}${l.some((k) => k.dbDaConnectedTruoc) ? " (⚠ có lượt DB đã 'connected' TRƯỚC khi Modbus trả lời — chập chờn)" : ""} |`,
+        `| 3b. ghi DB 'connected' sau khi Modbus trả lời | ≤ 5000 ms | ${coLai}${l.some((k) => k.dbDaConnectedTruoc) ? " (GIẢ = DB đã ghi 'connected' TRƯỚC khi Modbus trả lời — \"connected\" giả, KHÔNG ĐẠT)" : ""} |`,
         `| 4. Modbus trả lời ⇒ mọi tag good (bộ đệm) | ≤ ${c} ms | ${cot((k) => k.cong4, c)} |`,
         "",
       );

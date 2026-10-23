@@ -12,7 +12,7 @@
  * Giả: `checkPermission` (quyền xem) và cổng phạm vi (`__datCongPhamViChoTest`, toàn quyền) — phạm vi đã có lưới DB riêng ở Task 8.
  * Đối chứng: cờ OT_CHAT_LUONG_V2_ENABLED TẮT ⇒ cùng biến tới màn là `bad`, `v: null` (hành vi cũ) — chứng minh cổng đo được C2.
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -221,6 +221,11 @@ async function chayDauCuoi(v2: boolean): Promise<{ values: GiaTriGoi[]; denied: 
 }
 
 describe("cổng 5 — uncertain của OPC UA tới màn (driver → ingest → bộ đệm → scada:snapshot)", () => {
+  // T12b fix round 1 — gỡ env SAU MỖI test (kể cả khi assertion ném giữa chừng): cờ không rò sang test/tệp sau.
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("cờ OT_CHAT_LUONG_V2_ENABLED bật ⇒ snapshot mang q:'uncertain' với v = giá trị server (khác null); tag Good vẫn good", async () => {
     const snap = await chayDauCuoi(true);
     expect(snap.denied).toEqual([]);
@@ -248,6 +253,5 @@ describe("cổng 5 — uncertain của OPC UA tới màn (driver → ingest → 
     const u = snap.values.find((x) => x[1] === "u")!;
     expect(u[3]).toBe("bad");
     expect(u[2]).toBeNull();
-    vi.unstubAllEnvs();
   }, 60_000);
 });

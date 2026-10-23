@@ -39,14 +39,18 @@ class NuaMoDriver implements OtDriver {
   disconnectCalls = 0;
   failConnect = false;
   readonly phien: Phien[] = [];
+  /** Nhật ký thứ tự connect/disconnect (fix round 1: socket nửa mở phải bị hạ NGAY khi D1 hạ phiên). */
+  readonly nhatKy: string[] = [];
 
   async connect(_cfg: OtConnectionConfig): Promise<void> {
     this.connectCalls += 1;
+    this.nhatKy.push("connect");
     if (this.failConnect) throw Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
     this.connected = true;
   }
   async disconnect(): Promise<void> {
     this.disconnectCalls += 1;
+    this.nhatKy.push("disconnect");
     this.connected = false;
   }
   isConnected(): boolean {
@@ -105,9 +109,11 @@ function adapterFixture(driver: OtDriver) {
 const ngu = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 describe.each([
-  ["legacy", "false"],
-  ["HA (ConnectionSupervisor thật)", "true"],
-] as const)("otManager D1 — K=2 tick hỏng liên tiếp ⇒ lost + hạ phiên (%s)", (_nhan, ha) => {
+  ["legacy", "false", "true"],
+  ["HA (ConnectionSupervisor thật)", "true", "true"],
+  ["legacy", "false", "false"],
+  ["HA (ConnectionSupervisor thật)", "true", "false"],
+] as const)("otManager D1 — K=2 tick hỏng liên tiếp ⇒ lost + hạ phiên (%s, HA=%s, OT_CHAT_LUONG_V2_ENABLED=%s)", (_nhan, ha, v2) => {
   let ot: typeof import("./otManager");
   let tt: typeof import("./trangThaiAdapter");
   /** Driver đang giữ phiên (legacy: driver của adapter; HA: driver supervisor tạo cho endpoint primary). */
@@ -118,7 +124,8 @@ describe.each([
     vi.unstubAllEnvs();
     vi.stubEnv("OT_GATEWAY_ENABLED", "true");
     vi.stubEnv("OT_CONN_HA_ENABLED", ha);
-    vi.stubEnv("OT_CHAT_LUONG_V2_ENABLED", "true");
+    vi.stubEnv("OT_CHAT_LUONG_V2_ENABLED", v2);
+    vi.stubEnv("OT_CONN_HA_BACKOFF_MS", "2000"); // khoảng nối lại nhanh = min(2000, max(poll,500)) = 1000 ms
     vi.stubEnv("OT_GHI_TRANG_THAI_ADAPTER_ENABLED", "false");
     vi.stubEnv("OT_LEGACY_RECONNECT_MS", "5000");
     vi.stubEnv("OT_CONN_HA_HEALTH_INTERVAL_MS", "100");
@@ -153,7 +160,7 @@ describe.each([
 
   const trangThai = () => tt.layTrangThaiAdapter(4242)?.tt;
 
-  it("1 tick hỏng: chưa gì; tick hỏng thứ 2 liên tiếp ⇒ 'lost' + đóng subscription + disconnect driver; rồi nối lại (phiên mới)", async () => {
+  it.skipIf(v2 !== "true")("1 tick hỏng: chưa gì; tick hỏng thứ 2 liên tiếp ⇒ 'lost' + đóng subscription + disconnect driver; rồi nối lại (phiên mới)", async () => {
     const p1 = drv.phien[0];
     p1.onTick!(TICK_TOAN_COMM_LOST); // tick "ok" nhưng cả tick comm_lost ⇒ hỏng #1
     await ngu(50);
@@ -180,7 +187,7 @@ describe.each([
     );
   });
 
-  it("tick tốt xoá bộ đếm: hỏng, tốt, hỏng ⇒ vẫn connected, không hạ phiên", async () => {
+  it.skipIf(v2 !== "true")("tick tốt xoá bộ đếm: hỏng, tốt, hỏng ⇒ vẫn connected, không hạ phiên", async () => {
     const p1 = drv.phien[0];
     p1.onTick!(TICK_TIMEOUT);
     p1.onTick!(TICK_TOT);
@@ -192,7 +199,7 @@ describe.each([
     expect(drv.phien).toHaveLength(1);
   });
 
-  it("tick của phiên CŨ (đã bị thay) không hạ phiên mới", async () => {
+  it.skipIf(v2 !== "true")("tick của phiên CŨ (đã bị thay) không hạ phiên mới", async () => {
     const p1 = drv.phien[0];
     p1.onTick!(TICK_TIMEOUT);
     p1.onTick!(TICK_TIMEOUT); // phiên 1 bị hạ, nối lại ⇒ phiên 2
@@ -216,7 +223,56 @@ describe.each([
     expect(drv.phien).toHaveLength(2);
   });
 
-  it("stopOt rồi tick muộn của phiên đã dừng ⇒ không báo lost, không nối lại", async () => {
+  it.skipIf(v2 !== "true")("fix round 1: hạ phiên ngay sau một lần NỐI LẠI (chưa ổn định ⇒ chờ backoff) vẫn ĐÓNG socket nửa mở NGAY, không đợi lần thử kế; rồi nối lại được", async () => {
+    const p1 = drv.phien[0];
+    p1.onTick!(TICK_TIMEOUT);
+    p1.onTick!(TICK_TIMEOUT); // liên kết ổn định rớt ⇒ nối lại ngay ⇒ phiên 2
+    await vi.waitFor(
+      () => {
+        expect(drv.phien).toHaveLength(2);
+        expect(trangThai()).toBe("connected");
+      },
+      { timeout: 4000 },
+    );
+    const p2 = drv.phien[1];
+    const ngatTruoc = drv.disconnectCalls;
+    p2.onTick!(TICK_TIMEOUT);
+    p2.onTick!(TICK_TIMEOUT); // vừa nối lại mà rớt ⇒ không ổn định ⇒ lần thử kế chờ ~1000 ms
+    await ngu(150);
+    expect(trangThai()).toBe("lost");
+    expect(p2.closed).toBe(true);
+    expect(drv.disconnectCalls, "socket nửa mở phải bị hạ NGAY khi D1 hạ phiên").toBeGreaterThan(ngatTruoc);
+    expect(drv.connected).toBe(false);
+    expect(drv.phien).toHaveLength(2); // lần thử kế chưa tới
+    await vi.waitFor(
+      () => {
+        expect(drv.phien).toHaveLength(3);
+        expect(trangThai()).toBe("connected");
+      },
+      { timeout: 4000 },
+    );
+    // Mọi lần nối lại đều đi SAU một lần disconnect (không bao giờ connect chồng lên transport cũ).
+    const k = drv.nhatKy;
+    for (let i = 0; i < k.length; i++) {
+      if (k[i] !== "connect") continue;
+      const truoc = k.slice(0, i);
+      const connectTruoc = truoc.lastIndexOf("connect");
+      if (connectTruoc >= 0) expect(truoc.lastIndexOf("disconnect"), `connect #${i} chồng lên transport cũ: ${k.join(",")}`).toBeGreaterThan(connectTruoc);
+    }
+  });
+
+  it.skipIf(v2 !== "false")("cờ OT_CHAT_LUONG_V2_ENABLED TẮT (đọc lúc subscribe) ⇒ K tick hỏng KHÔNG hạ phiên (hành vi trước R0)", async () => {
+    const p1 = drv.phien[0];
+    for (let i = 0; i < 5; i++) p1.onTick!(TICK_TIMEOUT);
+    p1.onTick!(TICK_TOAN_COMM_LOST);
+    await ngu(400);
+    expect(trangThai()).toBe("connected");
+    expect(p1.closed).toBe(false);
+    expect(drv.disconnectCalls).toBe(0);
+    expect(drv.phien).toHaveLength(1);
+  });
+
+  it.skipIf(v2 !== "true")("stopOt rồi tick muộn của phiên đã dừng ⇒ không báo lost, không nối lại", async () => {
     const p1 = drv.phien[0];
     await ot.stopOt();
     const noiTruoc = drv.connectCalls;

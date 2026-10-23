@@ -106,6 +106,19 @@ export class S7Driver extends NotImplementedDriver {
       throw new Error("nodes7 not installed");
     }
     const NodeS7 = mod.default ?? mod;
+    // T12b fix round 1 — connect lại trên CÙNG driver (supervisor/otManager nối lại khi phiên cũ còn nửa mở hoặc isoConnectionState đã
+    // hạ nhưng transport chưa đóng): hạ phiên cũ trước (capture-and-null như disconnect; KHÔNG chờ — dropConnection có thể không gọi lại),
+    // không rò socket. Listener của phiên cũ đã có chốt danh tính (`this.conn === conn`).
+    const cu = this.conn;
+    if (cu) {
+      this.conn = null;
+      this.connected = false;
+      try {
+        if (typeof cu.dropConnection === "function") cu.dropConnection(() => undefined);
+      } catch {
+        // ignore
+      }
+    }
     const conn = new NodeS7();
 
     const opts = cfg.options ?? {};

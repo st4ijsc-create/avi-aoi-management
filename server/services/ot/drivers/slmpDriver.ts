@@ -116,6 +116,21 @@ export class SlmpDriver implements OtDriver {
       octalInputOutput: opts.octalInputOutput === true,
     };
 
+    // T12b fix round 1 — connect lại trên CÙNG driver (supervisor/otManager nối lại khi transport cũ còn nửa mở): hạ transport cũ
+    // TRƯỚC (capture-and-null như disconnect) — không rò socket, giao dịch cũ đang chờ bị huỷ, khung muộn của nó không còn đường vào.
+    const cu = this.socket;
+    if (cu) {
+      this.socket = null;
+      this.connected = false;
+      this.failPending(new Error("slmp reconnect: previous session dropped"));
+      try {
+        cu.removeAllListeners("data");
+        cu.destroy();
+      } catch {
+        // ignore
+      }
+    }
+
     await new Promise<void>((resolve, reject) => {
       const socket = new net.Socket();
       const onError = (err: Error) => {
@@ -143,7 +158,11 @@ export class SlmpDriver implements OtDriver {
         this.connectedAt = new Date();
         this.lastError = undefined;
         this.rxBuf = Buffer.alloc(0);
-        socket.on("data", (chunk) => this.onData(chunk));
+        // T12b fix round 1 — chốt DANH TÍNH (như attachLinkLossHandlers): 3E không có serial, nên một khung tới trên socket đã bị
+        // thay sẽ bị ghép nhầm vào giao dịch của phiên mới (giá trị cũ ghi thành GOOD). Chỉ socket HIỆN TẠI được nạp rxBuf.
+        socket.on("data", (chunk) => {
+          if (this.socket === socket) this.onData(chunk);
+        });
         this.attachLinkLossHandlers(socket);
         resolve();
       });

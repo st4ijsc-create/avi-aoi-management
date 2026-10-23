@@ -22,7 +22,7 @@ import type {
 import { createHash } from "node:crypto";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiChung, chatLuongV2Bat } from "../chatLuong";
+import { chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
 
 /** Hash ổn định từ chuỗi để mỗi tagKey có pha riêng. */
 function hashString(s: string): number {
@@ -49,6 +49,18 @@ export interface LoiStub {
   tagXau?: string[];
   tagNghiNgo?: string[];
   giaTri?: Record<string, number | boolean | string>;
+}
+
+/**
+ * T12b fix round 1 — lỗi QUÁ HẠN của một giao dịch/connect khi mô phỏng TREO. Cùng LỚP lỗi với `TransactionTimedOutError` của
+ * modbus-serial (tên có "Timeout"): `laLoiTimeout`/`laLoiHuyTickPoll` coi là quá hạn, KHÔNG phải lỗi mức liên kết — nên lưới stub đi đúng
+ * đường D3 (huỷ tick vì quá hạn) như driver thật.
+ */
+export class StubTimeoutError extends Error {
+  constructor(viec: "connect" | "transaction", ms: number) {
+    super(`stub (sim hang): ${viec} timed out after ${ms}ms`);
+    this.name = "TimeoutError";
+  }
 }
 
 /** Kịch bản theo thời gian (`connectionOptions.simKichBan`, đọc ở `connect`): mất từ `matKetNoiSauMs` (mặc định 0), kéo dài `matKetNoiTrongMs` (bỏ trống = mãi mãi). */
@@ -97,9 +109,7 @@ export class StubDriver implements OtDriver {
     if (this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
     this.timeoutMs = typeof cfg?.timeoutMs === "number" && cfg.timeoutMs > 0 ? cfg.timeoutMs : 5000;
     // T12 — đang TREO: không có SYN-ACK; chờ tới hạn (hết treo giữa chừng ⇒ nối được).
-    if (this.loi.treo && !(await this.choHetTreo())) {
-      throw new DeviceUnreachableError("stub", `sim hang — connect timed out after ${this.timeoutMs}ms`);
-    }
+    if (this.loi.treo && !(await this.choHetTreo())) throw new StubTimeoutError("connect", this.timeoutMs);
     if (this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
     this.connected = true;
     this.connectedAt = new Date();
@@ -284,14 +294,46 @@ export class StubDriver implements OtDriver {
     return mau;
   }
 
-  async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
+  /**
+   * MỘT giao dịch (một tag), như Modbus/SLMP/EIP đọc tuần tự. TREO: không được trả lời ⇒ `StubTimeoutError` sau timeoutMs; hết treo trong
+   * hạn ⇒ trả muộn. Rớt hẳn ⇒ DeviceUnreachableError.
+   */
+  private async docMotTag(tag: OtTagAddress): Promise<OtSample> {
+    if (this.loi.treo && !(await this.choHetTreo())) throw new StubTimeoutError("transaction", this.timeoutMs);
     if (!this.connected || this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
-    // T12 — TREO: giao dịch không được trả lời ⇒ quá hạn sau timeoutMs (laLoiTimeout nhận "timed out"); hết treo trong hạn ⇒ trả muộn.
-    if (this.loi.treo && !(await this.choHetTreo())) {
-      throw new DeviceUnreachableError("stub", `sim hang — no answer, transaction timed out after ${this.timeoutMs}ms`);
+    return this.mauCoLoi(tag);
+  }
+
+  /**
+   * Đọc tuần tự từng tag. `huyKhiMat` (chỉ đường poll, sau cờ V2) ⇒ lỗi `laLoiHuyTickPoll` (liên kết HOẶC quá hạn — T12 D3) HUỶ cả tick;
+   * ngược lại lỗi theo từng tag thành mẫu bad (như `readTags` công khai của driver thật).
+   */
+  private async docTuanTu(tags: OtTagAddress[], huyKhiMat: boolean): Promise<OtSample[]> {
+    if (!this.connected || this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
+    const v2 = chatLuongV2Bat();
+    const out: OtSample[] = [];
+    for (const t of tags) {
+      try {
+        out.push(await this.docMotTag(t));
+      } catch (err) {
+        if (huyKhiMat && laLoiHuyTickPoll(err)) throw err;
+        this.lastError = (err as Error)?.message || String(err);
+        out.push({
+          tagKey: t.tagKey,
+          raw: null,
+          value: null,
+          quality: "bad",
+          timestamp: new Date(),
+          tsSource: "server",
+          ...(v2 ? chatLuongLoiChung(err) : {}),
+        });
+      }
     }
-    if (!this.connected || this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
-    return tags.map((t) => this.mauCoLoi(t));
+    return out;
+  }
+
+  async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docTuanTu(tags, false);
   }
 
   async subscribe(
@@ -308,7 +350,7 @@ export class StubDriver implements OtDriver {
       tags,
       intervalMs,
       deadlineMs: tuyChon?.deadlineMs,
-      doc: (t) => this.readTags(t),
+      doc: (t) => this.docTuanTu(t, v2), // đường poll: huỷ tick ở lỗi liên kết/quá hạn (D3), như driver thật
       onSample,
       onTick: tuyChon?.onTick,
       phanLoiLoi: chatLuongLoiChung,
