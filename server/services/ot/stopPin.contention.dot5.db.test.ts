@@ -23,11 +23,15 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vites
 const quiet = vi.hoisted(() => {
   const saved = process.env.QUERY_MONITOR_ENABLED;
   process.env.QUERY_MONITOR_ENABLED = "false";
+  // ★ Trần pool RIÊNG (2026-10-24). vitest.setup.ts hạ DB_POOL_MAX xuống 4 cho cả bộ (cụm PG dùng chung cạn kết nối), nhưng ca này ĐO ĐỒNG THỜI: 6 người ghi cùng lúc + người giữ khoá
+  // phải nằm TRÊN MÁY CHỦ chờ khoá (pg_blocking_pids), không xếp hàng trong pool phía client ⇒ cần ≥ 6 kết nối của pool app. Đặt cứng 10 (không ??=) trước khi nạp db.
+  const savedPool = process.env.DB_POOL_MAX;
+  process.env.DB_POOL_MAX = "10";
   const orig = { log: console.log, info: console.info, warn: console.warn };
   console.log = () => {};
   console.info = () => {};
   console.warn = () => {};
-  return { saved, orig };
+  return { saved, savedPool, orig };
 });
 
 import postgres from "postgres";
@@ -49,6 +53,8 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   });
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** pid các backend GIỮ KHOÁ do test này mở — afterAll chấm dứt nốt nếu còn */
+const holderPids = new Set<number>();
 
 const pinNow = async () => (await sql<{ v: unknown }[]>`SELECT stop_value AS v FROM device_tags WHERE id = ${tagId}`)[0].v ?? null;
 
@@ -118,10 +124,14 @@ async function underHeldLock<T>(writers: Array<() => Promise<T>>): Promise<Promi
   const isLocked = new Promise<number>((r) => (locked = r));
   const holder = sql.begin(async (h) => {
     const [{ pid }] = await h<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+    holderPids.add(pid);
+    // ★ Lưới an toàn PHÍA MÁY CHỦ: tiến trình test bị giết/ngắt giữa chừng thì backend giữ FOR UPDATE tự bị Postgres chấm dứt sau 60 s (thay vì mồ côi giữ khoá device_tags mãi).
+    await h`SET LOCAL idle_in_transaction_session_timeout = '60s'`;
     await h`SELECT id FROM device_tags WHERE id = ${tagId} FOR UPDATE`;
     locked(pid);
     await released;
   });
+  try {
   const holderPid = await withTimeout(isLocked, 5000, "holder lock");
   const before = await pinNow();
   let settled = 0;
@@ -140,7 +150,12 @@ async function underHeldLock<T>(writers: Array<() => Promise<T>>): Promise<Promi
   expect(await pinNow()).toEqual(before);
   release();
   await withTimeout(holder, 5000, "holder release");
-  return withTimeout(Promise.allSettled(running), 20_000, "writers");
+  return await withTimeout(Promise.allSettled(running), 20_000, "writers");
+  } finally {
+    // ★ assertion/timeout ném GIỮA CHỪNG vẫn phải nhả khoá + chờ holder đóng (trước đây `release()` chỉ chạy ở cuối ⇒ ca đỏ để lại backend giữ FOR UPDATE)
+    release();
+    await Promise.race([holder.catch(() => undefined), sleep(5000)]);
+  }
 }
 
 const nguoiSua = (n: number) => ({ id: null, name: `G4 writer ${n}` });
@@ -168,7 +183,11 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 5 G4 �
     Object.assign(console, quiet.orig);
     if (quiet.saved === undefined) delete process.env.QUERY_MONITOR_ENABLED;
     else process.env.QUERY_MONITOR_ENABLED = quiet.saved;
+    if (quiet.savedPool === undefined) delete process.env.DB_POOL_MAX;
+    else process.env.DB_POOL_MAX = quiet.savedPool;
     if (!sql) return;
+    // ★ Không để lại backend giữ khoá: chấm dứt mọi người giữ khoá CỦA CHÍNH test này còn sống (ca bị ngắt/timeout giữa chừng).
+    for (const pid of holderPids) await sql`SELECT pg_terminate_backend(${pid})`.catch(() => undefined);
     await sql`DELETE FROM commissioning_records WHERE "adapterId" = ${adapterId}`;
     await sql`DELETE FROM device_tags WHERE "adapterId" = ${adapterId}`;
     await sql`DELETE FROM device_adapters WHERE id = ${adapterId}`;
