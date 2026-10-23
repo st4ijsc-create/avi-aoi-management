@@ -387,6 +387,20 @@ describe("scadaDiag.datLoiStub (Lab)", () => {
   });
 });
 
+describe("scadaDiag.danhSach — labStub (M10 chỉ hiện khối Lab khi API báo có)", () => {
+  it("hàng stub: labStub=true khi SCADA_LAB_ENABLED=true, false khi tắt (không thêm thủ tục)", async () => {
+    vi.stubEnv("SCADA_LAB_ENABLED", "false");
+    expect((await dongCua(viewerA, ad.a))?.labStub).toBe(false);
+    vi.stubEnv("SCADA_LAB_ENABLED", "true");
+    try {
+      expect((await dongCua(viewerA, ad.a))?.labStub).toBe(true);
+    } finally {
+      vi.stubEnv("SCADA_LAB_ENABLED", "false");
+    }
+    expect((await dongCua(viewerA, ad.a))?.labStub).toBe(false);
+  });
+});
+
 describe("scadaDiag.tagCuaAdapter / mauTho", () => {
   it("tagCuaAdapter: mỗi tag bật có địa chỉ, giá trị hiện tại, tuổi và bộ đếm 1 h", async () => {
     await vi.waitFor(

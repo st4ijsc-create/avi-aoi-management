@@ -6942,6 +6942,8 @@
     "andonBoardDesc": "Shopfloor TV board: yield/NG per line & machine, huge type, auto-cycle",
     "deviceAdapters": "Device Adapters",
     "deviceAdaptersDesc": "Manage OT connection config and tag definitions",
+    "scadaDiag": "SCADA communications diagnostics",
+    "scadaDiagDesc": "Connection state, counters and tag quality of OT adapters; reconnect / disable (engineers)",
     "unsMapping": "UNS Mapping",
     "unsMappingDesc": "No-code Tag → UNS topic mapping with live preview",
     "hotFolders": "Hot-folder Ingest",
@@ -23367,6 +23369,103 @@
         "doi": "changed",
         "them": "added",
         "bo": "removed"
+      }
+    }
+  },
+  "scada": {
+    "diag": {
+      "title": "Communications diagnostics",
+      "subtitle": "Real connection state of every OT adapter, 1-hour counters and tag quality — refreshed every 2 seconds.",
+      "danhSach": "Adapters ({{count}})",
+      "trong": "No adapters in your scope yet.",
+      "khongCoLoi": "No faulty adapters — every connection is healthy.",
+      "loiTai": "Could not load the adapter list.",
+      "matKetNoi": "Connection lost",
+      "edgeChuaCoSoLieu": "owned by edge {{edgeCode}} — no R0 data yet",
+      "trangThai": {
+        "connected": "Connected",
+        "connecting": "Connecting",
+        "disabled": "Disabled",
+        "khong_ro": "Unknown"
+      },
+      "soHuu": {
+        "trungTam": "Central",
+        "edge": "Edge {{code}}"
+      },
+      "donVi": {
+        "giay": "s",
+        "phut": "min",
+        "gio": "h",
+        "ngay": "d"
+      },
+      "col": {
+        "adapter": "Adapter",
+        "giaoThuc": "Protocol · endpoint",
+        "soHuu": "Owner",
+        "trangThai": "Status",
+        "poll": "Poll / p95",
+        "request": "Requests · errors · timeouts (1 h)",
+        "tag": "Tags good / ? / bad",
+        "loiGanNhat": "Last error",
+        "hanhDong": "Actions"
+      },
+      "loc": {
+        "chiLoi": "Errors only"
+      },
+      "nut": {
+        "ketNoiLai": "Reconnect",
+        "tamTat": "Disable",
+        "mauTho": "100 raw samples"
+      },
+      "dialog": {
+        "ketNoiLaiTieuDe": "Reconnect adapter {{code}}?",
+        "ketNoiLaiMoTa": "Refreshes the connection session to the device. While reconnecting, tags may briefly show bad quality.",
+        "tamTatTieuDe": "Disable adapter {{code}}?",
+        "tamTatMoTa": "Stops reading the device and marks the adapter disabled until it is re-enabled on the Device Adapters page.",
+        "lyDo": "Reason (recorded in audit)",
+        "lyDoNgan": "The reason needs at least {{min}} characters",
+        "huy": "Cancel",
+        "gui": "Confirm"
+      },
+      "toast": {
+        "ketNoiLai": "Reconnect requested",
+        "ketNoiLaiChuaXong": "The session was not refreshed yet — watch the status in the table",
+        "tamTat": "Adapter disabled"
+      },
+      "tag": {
+        "tieuDe": "Tags of {{code}}",
+        "tag": "Tag",
+        "giaTri": "Value",
+        "chatLuong": "Quality",
+        "tuoi": "Age",
+        "statusCode": "Status code",
+        "trong": "This adapter has no enabled tags."
+      },
+      "chatLuong": {
+        "tot": "Good",
+        "nghi_ngo": "Uncertain (?)",
+        "xau": "Bad",
+        "cu": "Stale",
+        "chuaCo": "No value yet"
+      },
+      "mauTho": {
+        "tieuDe": "100 raw samples — {{tag}}",
+        "thoiGian": "Time",
+        "nguonGio": "Time source",
+        "trong": "No raw samples yet."
+      },
+      "lab": {
+        "tieuDe": "Lab: set stub fault",
+        "moTa": "Stub adapters in Lab mode only. The fault applies to the running stub session; “Clear fault” restores normal behaviour.",
+        "matKetNoi": "Simulate connection loss",
+        "tagXau": "Bad tags (comma-separated)",
+        "tagNghiNgo": "Uncertain tags (comma-separated)",
+        "tagPlaceholder": "TAG1, TAG2",
+        "giaTri": "Force values (one TAG=value per line)",
+        "apDung": "Apply fault",
+        "xoaLoi": "Clear fault",
+        "daDat": "Stub fault set",
+        "khongChay": "The stub is not running on the central server — the fault was not applied"
       }
     }
   }

@@ -211,6 +211,8 @@ export const scadaDiagRouter = router({
     }
     const edge = await soHuuEdge(ids);
     const now = Date.now();
+    // Task 11 — M10 chỉ hiện khối "Lab: đặt lỗi stub" khi API báo có (cùng điều kiện datLoiStub kiểm); không thêm thủ tục.
+    const labBat = process.env.SCADA_LAB_ENABLED === "true";
     return rows.map((r) => {
       const e = edge.get(r.id);
       const st = trangThaiHienThi(r, !!e, layTrangThaiAdapter(r.id));
@@ -223,6 +225,7 @@ export const scadaDiagRouter = router({
         protocol: r.protocol,
         endpoint: r.endpoint,
         machineId: r.machineId,
+        labStub: r.protocol === "stub" && labBat,
         soHuu,
         trangThai: st.trangThai,
         tu: st.tu,

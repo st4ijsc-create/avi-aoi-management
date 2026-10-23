@@ -6723,6 +6723,8 @@
     "andonBoardDesc": "车间电视看板：按产线/设备显示良率与NG，大字体，自动轮播",
     "deviceAdapters": "设备适配器",
     "deviceAdaptersDesc": "管理 OT 连接配置和标签定义",
+    "scadaDiag": "SCADA 通信诊断",
+    "scadaDiagDesc": "OT 适配器的连接状态、计数器和标签质量；重新连接 / 暂停（工程师）",
     "unsMapping": "UNS 映射",
     "unsMappingDesc": "无代码 Tag → UNS 主题映射，实时预览",
     "hotFolders": "热文件夹接入",
@@ -23369,6 +23371,103 @@
         "doi": "已更改",
         "them": "新增",
         "bo": "移除"
+      }
+    }
+  },
+  "scada": {
+    "diag": {
+      "title": "通信诊断",
+      "subtitle": "每个 OT 适配器的真实连接状态、1 小时计数器和标签质量 —— 每 2 秒刷新。",
+      "danhSach": "适配器（{{count}}）",
+      "trong": "您的范围内暂无适配器。",
+      "khongCoLoi": "没有故障适配器 —— 所有连接正常。",
+      "loiTai": "无法加载适配器列表。",
+      "matKetNoi": "连接丢失",
+      "edgeChuaCoSoLieu": "由边缘 {{edgeCode}} 持有 —— R0 暂无数据",
+      "trangThai": {
+        "connected": "已连接",
+        "connecting": "连接中",
+        "disabled": "已停用",
+        "khong_ro": "未知"
+      },
+      "soHuu": {
+        "trungTam": "中心",
+        "edge": "边缘 {{code}}"
+      },
+      "donVi": {
+        "giay": "秒",
+        "phut": "分",
+        "gio": "小时",
+        "ngay": "天"
+      },
+      "col": {
+        "adapter": "适配器",
+        "giaoThuc": "协议 · 端点",
+        "soHuu": "归属",
+        "trangThai": "状态",
+        "poll": "轮询 / p95",
+        "request": "请求 · 错误 · 超时（1 小时）",
+        "tag": "标签 良好 / ? / 不良",
+        "loiGanNhat": "最近错误",
+        "hanhDong": "操作"
+      },
+      "loc": {
+        "chiLoi": "仅显示错误"
+      },
+      "nut": {
+        "ketNoiLai": "重新连接",
+        "tamTat": "暂停",
+        "mauTho": "100 条原始样本"
+      },
+      "dialog": {
+        "ketNoiLaiTieuDe": "重新连接适配器 {{code}}？",
+        "ketNoiLaiMoTa": "刷新到设备的连接会话。重连期间标签可能短暂显示质量不良。",
+        "tamTatTieuDe": "暂停适配器 {{code}}？",
+        "tamTatMoTa": "停止读取设备并将适配器标记为停用，直到在“设备适配器”页面重新启用。",
+        "lyDo": "原因（记入审计）",
+        "lyDoNgan": "原因至少需要 {{min}} 个字符",
+        "huy": "取消",
+        "gui": "确认"
+      },
+      "toast": {
+        "ketNoiLai": "已请求重新连接",
+        "ketNoiLaiChuaXong": "会话尚未刷新 —— 请在表格中观察状态",
+        "tamTat": "适配器已暂停"
+      },
+      "tag": {
+        "tieuDe": "{{code}} 的标签",
+        "tag": "标签",
+        "giaTri": "值",
+        "chatLuong": "质量",
+        "tuoi": "时效",
+        "statusCode": "状态码",
+        "trong": "该适配器没有启用的标签。"
+      },
+      "chatLuong": {
+        "tot": "良好",
+        "nghi_ngo": "存疑 (?)",
+        "xau": "不良",
+        "cu": "过期",
+        "chuaCo": "暂无值"
+      },
+      "mauTho": {
+        "tieuDe": "100 条原始样本 —— {{tag}}",
+        "thoiGian": "时间",
+        "nguonGio": "时间来源",
+        "trong": "暂无原始样本。"
+      },
+      "lab": {
+        "tieuDe": "Lab：设置 stub 故障",
+        "moTa": "仅限 Lab 模式下的 stub 适配器。故障作用于正在运行的 stub 会话；“清除故障”恢复正常。",
+        "matKetNoi": "模拟连接丢失",
+        "tagXau": "不良标签（逗号分隔）",
+        "tagNghiNgo": "存疑标签（逗号分隔）",
+        "tagPlaceholder": "TAG1, TAG2",
+        "giaTri": "强制值（每行 TAG=值）",
+        "apDung": "应用故障",
+        "xoaLoi": "清除故障",
+        "daDat": "已设置 stub 故障",
+        "khongChay": "stub 未在中心运行 —— 故障未生效"
       }
     }
   }
