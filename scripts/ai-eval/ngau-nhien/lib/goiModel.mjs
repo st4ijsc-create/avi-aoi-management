@@ -108,14 +108,22 @@ export function taoGoiModel(o) {
       genTok: u.completion_tokens ?? null, finish, cut: finish === "length", hdr, requestId: j.id ?? null };
   }
 
-  async function chatPipeline(cauHoi) {
+  /**
+   * ★ Đợt 9 (2026-10-23) — `tatKiem` ⇒ `context.kiemBienDichST:false` (nhánh "tắt" của A/B vòng kiểm biên dịch ST trên CÙNG server);
+   * `done.kiemBienDichST` của server ⇒ `kiemBienDich` (kiểm nhánh). undici KHÔNG trần: lượt dài (27B nghĩ + vòng sửa) không bị client
+   * tự cắt — trần thật là của server.
+   */
+  async function chatPipeline(cauHoi, { tatKiem = false } = {}) {
     const t0 = Date.now();
     let tFirst = null;
-    const res = await fetch(`${base}/api/ai/local-kb/stream`, {
+    let kiemBienDich = null;
+    const res = await fetchUndici(`${base}/api/ai/local-kb/stream`, {
+      dispatcher: KHONG_TRAN,
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: o.cookie ?? "" },
       body: JSON.stringify({ question: cauHoi, topK: 5, history: [], userRole: "admin",
-        context: { route: "/ai-coding-workspace", uiLanguage: "vi", codingMode: true, projectId: "repo", ...(o.cheDoNghi ? { cheDoNghi: o.cheDoNghi } : {}) } }),
+        context: { route: "/ai-coding-workspace", uiLanguage: "vi", codingMode: true, projectId: "repo", ...(o.cheDoNghi ? { cheDoNghi: o.cheDoNghi } : {}),
+          ...(tatKiem ? { kiemBienDichST: false } : {}) } }),
     });
     if (!res.ok) return { text: "", err: `HTTP ${res.status}`, totalMs: Date.now() - t0, cut: false };
     let text = "", buf = "";
@@ -135,9 +143,17 @@ export function taoGoiModel(o) {
         // Gương client: `done.answerRevised` ⇒ văn bản đã sửa tất định sau stream THAY văn bản tích luỹ.
         else if (ev.type === "done" && ev.answerRevised === true && typeof ev.answer === "string") { text = ev.answer; evs.push("done:revised"); }
         else evs.push(ev.type + (ev.stop ? `(${ev.stop})` : ""));
+        if (ev.type === "done" && typeof ev.kiemBienDichST === "string") kiemBienDich = ev.kiemBienDichST;
       }
     }
-    return { text, ttftMs: tFirst, totalMs: Date.now() - t0, evs, cut: evs.some((e) => /\((length|max_tokens)\)/i.test(e)) };
+    // ★ Đợt 9 (2026-10-23, hợp nhất vào bản main `aiLocalKnowledgeCodingKiemST`) — vòng kiểm ĐÃ SỬA ⇒ server NỐI khối "Bản đã sửa sau biên
+    //   dịch" (bản gốc giữ nguyên phía trên). Người đọc dùng bản đã sửa ⇒ chấm ĐÚNG phần sau tiêu đề ấy (không để máy chấm nhặt khối dài nhất
+    //   — có thể là bản gốc lỗi). `textDayDu` giữ nguyên văn để tra.
+    const mDaSua = kiemBienDich && /trang-thai=da-sua/.test(kiemBienDich)
+      ? /\n---\n\*\*(?:Bản đã sửa sau biên dịch|Version corrected after compiling|编译后修正的版本)\*\*[^\n]*\n([\s\S]*)$/.exec(text)
+      : null;
+    return { text: mDaSua ? mDaSua[1] : text, ...(mDaSua ? { textDayDu: text } : {}), ttftMs: tFirst, totalMs: Date.now() - t0, evs,
+      cut: evs.some((e) => /\((length|max_tokens)\)/i.test(e)), kiemBienDich };
   }
 
   /**

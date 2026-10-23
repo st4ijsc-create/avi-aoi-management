@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VAI_TRO_GOC, laTenLogicCu, laTenVaiTro, vaiTroTuTinHieu } from "./aiRoles";
+import { VAI_TRO_GOC, coYDinhHoacMa, laTenLogicCu, laTenVaiTro, vaiTroTuCauHoiTuDong, vaiTroTuTinHieu, vaiTroVanHanh } from "./aiRoles";
 
 describe("aiRoles — từ vựng vai trò (Đợt 7.0)", () => {
   it("hình dạng tên vai trò", () => {
@@ -93,5 +93,45 @@ describe("★ Đợt 9 (a)(b) — cổng ý định mã + không dấu / đồng
     const { vaiTroTuTacVu } = await import("./aiRoles");
     expect(vaiTroTuTacVu("cho tôi xem atom tatoo")).toBeNull();
     expect(vaiTroTuTacVu("Tại sao line 3 dừng?")).toBeNull(); // dấu vận hành "line 3" ⇒ không kết luận chat
+  });
+});
+
+// Câu tự viết cho lưới (KHÔNG lấy từ bộ mù 5 — bộ đó chưa ai đọc; cũng không chép nguyên câu DEV-4).
+describe("★ Đợt 9 (2026-10-23, DEV-4) — 'soạn', tài liệu sau hai chấm, mẫu, 'bước nào', câu vận hành theo thiết bị, mã dán", () => {
+  it("'soạn' + miền mã ⇒ có ý định mã; 'soạn báo cáo' (không miền mã) ⇒ KHÔNG", () => {
+    // chỉ "soạn" mang nghĩa sản phẩm mã ở hai câu này (không "chương trình/hàm/script/khối…")
+    expect(coYDinhHoacMa("Soạn giúp FB TON trễ 3 giây cho van xả")).toBe(true);
+    expect(coYDinhHoacMa("soan file docker-compose cho redis va postgres")).toBe(true);
+    expect(coYDinhHoacMa("Soạn giúp báo cáo tổng kết ca đêm gửi quản đốc")).toBe(false);
+  });
+  it("trích có tài liệu DÁN sau dấu hai chấm / vào MẪU ⇒ extract", () => {
+    expect(vaiTroTuCauHoiTuDong("lay danh sach thiet bi can bao tri tu tin nhan cua to truong: may nen khi 2 (xong), bom nuoc 1 (chua), quat hut 4 (chua)")?.vaiTro).toBe("extract");
+    expect(vaiTroTuCauHoiTuDong("Điền vào mẫu gồm người báo, thời gian, mô tả lỗi: anh Nam báo lúc 14h máy dán nhãn 2 kẹt cuộn liên tục")?.vaiTro).toBe("extract");
+  });
+  it("'theo những bước nào' (khái niệm) ⇒ chat; có thiết bị + 'đang' thì không kết luận chat", () => {
+    expect(vaiTroTuCauHoiTuDong("Thông thường lập kế hoạch bảo trì phòng ngừa theo những bước nào?")?.vaiTro).toBe("chat");
+  });
+  it("★★ thiết bị cụ thể + dấu hiện trạng/thời điểm, không ý định mã ⇒ chat.ops", () => {
+    expect(vaiTroVanHanh("vi sao may in kem PRT-03 dang bao loi ap suat")?.vaiTro).toBe("chat.ops");
+    expect(vaiTroVanHanh("lần gần nhất lò 2 được vệ sinh là ngày nào")?.vaiTro).toBe("chat.ops");
+    expect(vaiTroTuCauHoiTuDong("lan cuoi line 4 dung may la luc may gio")?.vaiTro).toBe("chat.ops");
+  });
+  it("★ vận hành: KHÔNG kết luận khi thiếu thiết bị, thiếu dấu thời điểm, hoặc có ý định viết mã", () => {
+    expect(vaiTroVanHanh("máy in kem hoạt động thế nào")).toBeNull(); // không mã thiết bị
+    expect(vaiTroVanHanh("SPI-02 là loại máy gì")).toBeNull(); // không dấu hiện trạng/thời điểm
+    expect(vaiTroVanHanh("viết ST lưu thời điểm lần cuối máy 3 báo động")).toBeNull(); // ý định mã
+    expect(vaiTroTuCauHoiTuDong("viết ST lưu thời điểm lần cuối máy 3 báo động")?.vaiTro).toBe("code.plc");
+  });
+  it("câu hỏi khái niệm có MÃ DÁN (:= / END_IF) ⇒ KHÔNG kết luận chat", () => {
+    // không "đoạn này/code sau" (RE_KEM_MA) — chỉ MÃ DÁN chặn kết luận "chat"
+    expect(vaiTroTuCauHoiTuDong("Giải thích giúp mình: IF Start THEN Motor := TRUE; END_IF;")?.vaiTro).not.toBe("chat");
+  });
+});
+
+describe("★ Đợt 9 (2026-10-23) — hỏi khái niệm KHÔNG DẤU ('cai nao', 'the nao', 'nen dung')", () => {
+  it("không dấu ⇒ chat; có thiết bị + 'dang' ⇒ không kết luận chat", () => {
+    expect(vaiTroTuCauHoiTuDong("profinet voi ethercat cai nao on dinh hon cho robot")?.vaiTro).toBe("chat");
+    expect(vaiTroTuCauHoiTuDong("bo dem cao toc hoat dong the nao")?.vaiTro).toBe("chat");
+    expect(vaiTroTuCauHoiTuDong("cai nao trong 2 may AOI-03 va AOI-04 dang loi")?.vaiTro).not.toBe("chat");
   });
 });

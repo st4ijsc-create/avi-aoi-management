@@ -638,6 +638,18 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   regex: `\p{L}` trong template thường thành "p" ⇒ ranh giới chữ sai; `\S`/`\d` mất `\` ⇒ dấu vận hành "line N" không bao giờ
   khớp — sửa ở 8509b2f0e). Đợt 9 (a)(b): cổng ý định mã cho tầng 4 + không dấu/đồng nghĩa ⇒ bộ mù 4 (agent viết, commit
   685abed9e trước khi chỉnh) 105 → 109/120. Còn lại ("soạn", "the nao/cai nao" không dấu, "lần gần nhất") chờ bộ mù 5.
+  **Bộ mù 5 (2026-10-23; agent con viết, commit 581521e78 TRƯỚC khi chỉnh; chỉnh trên DEV-4; mã chốt 9b7ffcf72; chấm MỘT lần, GPU như mù
+  1–4):** trước chỉnh 104/120 → **sau 106/120 = 88 %** (+2; DEV-4 83 → 90 ⇒ phần lớn khớp DEV). Sửa được: "lần gần nhất máy AOI-04…",
+  "Soạn giúp… FB bằng ST…". Theo vai trò: code.plc 20 · chat.ops 20 · summarize 19 · code.software 17 · extract 16 · **chat 14/20** (yếu nhất).
+  ⚠ Lần đầu thấy lỗi ĐỘ CHÍNH XÁC tầng 3 trên bộ mù (bộ cũ 100 %): "parse" (tác vụ) thắng ý định mã khi động từ là "soạn"; trích không có
+  từ cấu trúc ("kèm người phụ trách", "các mã… khác nhau") rơi sang vận hành / khái niệm; ý định mã bị PHỦ ĐỊNH ("chưa cần code") hoặc
+  động từ trùng nghĩa thường ("có tạo thread mới không"). Lỗi tầng 4: câu hội thoại/khuyên chung ("soạn email… nguyên tắc", "SMB hay FTP")
+  bị hút về summarize/code. Không chỉnh tiếp trên bộ này (đã dùng) — hướng sau cần bộ mù 6.
+  **BACKLOG định tuyến (dieu-phoi 2026-10-23: KHÔNG làm bộ mù 6 lúc này; gom đủ một vòng rồi mới làm bộ mù mới):** tầng 3 — (1) "soạn" +
+  test/parse ("Soạn unit test pytest cho hàm parse_…" → extract); (2) trích xuất KHÔNG có từ cấu trúc ("lấy… kèm người phụ trách" →
+  chat.ops); (3) "khác nhau" trong yêu cầu trích ("các mã alarm khác nhau" → chat); (4) phủ định ý định mã ("chưa cần code" → code.plc);
+  (5) động từ trùng nghĩa thường ("có tạo thread mới không" → code.software). Tầng 4 — (6) xin lời khuyên chung bị hút về summarize/code
+  ("soạn email… nguyên tắc", "SMB hay FTP cái nào hợp hơn"); (7) câu hội thoại có "hôm qua" nhưng hỏi khái niệm ("digital thread là gì").
 - ★ SỰ CỐ 2026-10-21 14:00: bộ lập lịch khe nặng của :3000 đổi khe sang 35B (start-llama-server.ps1 -Force ⇒ Stop-Process)
   GIỮA lượt đo 27B của tiến trình khác (bằng chứng: vram_events 07:01:50Z "Đổi khe sang … hỏng: kịch bản khởi động thoát 4" +
   logs/llama-server-20261021-140007 thấy 30,9 GB trống). Sửa: KHOÁ KHE — tệp LLAMA_WATCHDOG_PAUSE_FILE mang JSON {chu, lyDo,
@@ -747,6 +759,28 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   còn lỗi sau vòng sửa 3 (ST 3), trích bỏ sót 0 — mọi lượt trượt là TEST đỏ (ngữ nghĩa), không phải biên dịch. Trung vị sinh 169 s
   (token ra 11,4k). Báo cáo trọn (không dừng sớm, 27B đầu = cuối). Giới hạn: chấm SCL qua chuẩn hoá SCL→ST + RuSTy — đo NGỮ NGHĨA, không
   đo hợp lệ với trình biên dịch TIA thật (không có trình dịch SCL mở).
+- **ĐĂNG KÝ TRƯỚC — A/B vòng kiểm biên dịch ST trên TRỢ LÝ LẬP TRÌNH** (viết 2026-10-23, TRƯỚC khi chạy; dieu-phoi giao). Đường SẢN PHẨM
+  `/api/ai/local-kb/stream` (`codingMode`, nhánh sinh mã; vòng mới ở e7220eb9e, cờ `AI_KIEM_BIEN_DICH_ST` có `tro-ly`), `mot-luot --config
+  pipeline --ab-kiem`: cùng 24 bài #11 × **3 lượt** (chốt TRƯỚC: ước ~4 h < 7 h — 35B trung vị ~75–90 s/lượt × 144 + vòng sửa), XEN KẼ trên
+  CÙNG server :3013 (nhánh tắt = `context.kiemBienDichST:false`, không đổi server); khoá khe + canh bộ nhớ; kiểm nhánh MỖI lượt (`done.kiemBienDichST`
+  bat phải có, tat phải vắng ⇒ sai thì dừng, vứt số). **Model: 35B** — đường trợ lý dùng model lập trình của bộ định tuyến CỔNG
+  (`GGUF_CODE_MODEL`), KHÔNG định tuyến vai trò ⇒ khác /v1 #2 (27B `code.plc`); số này là của sản phẩm trợ lý như nó đang chạy.
+  **Cổng: bat ≥ tat + 4/72 VÀ số lượt bat > 300 s (tới khi khối cuối/`done` xong) ≤ 7/72 (mức /v1 #2).** Báo kèm: TTFT, thời gian tới `done`,
+  vòng sửa (sach/da-sua/con-loi/bo-qua), cặp lệch. Đạt ⇒ đề xuất bật mặc định cho `tro-ly` (Cmd+K đo sau nếu cần); không đạt ⇒ giữ tắt.
+  **KẾT QUẢ (2026-10-23 09:04–12:11, `reports/PLC-troly-ab-kiem-q36-35b-1.json`, sổ #18/#19):** TẮT **35/72** (tt 17 · tv 10 · ud 8) · BẬT
+  **38/72** (tt 21 · tv 9 · ud 8) ⇒ **+3/72 < +4 — CỔNG KHÔNG ĐẠT ⇒ `tro-ly` GIỮ TẮT.** Vế thời gian đạt: > 300 s bật 1/72 (tắt 0) ≤ 7;
+  trung vị tới `done` 56 → 64 s, p90 119 → 151 s, TTFT trung vị 52 / 50 s (nghĩ trước chữ đầu). Cặp: bật đạt/tắt trượt 11 · ngược lại 8.
+  Vòng ở nhánh bật: sach 55 (33 đạt) · da-sua 8 (5 đạt) · con-loi 8 (0 đạt) · bo-qua 1. **Vòng cứu BIÊN DỊCH nhưng không cứu NGỮ NGHĨA:**
+  trượt vì không biên dịch được (máy chấm không thấy tổng kết test) 25 → 9, nhưng trượt vì test đỏ 12 → 25. Khác /v1 #2 (+8/72 trên 27B):
+  model ở đây là 35B (đường trợ lý không định tuyến vai trò — thiết kế 26ba9d039 xử lý) và tỉ lệ không biên dịch ở bản đầu của 35B trên
+  đường này cao (25/72). Nhiễu ghi rõ: 09:30–10:40 các lượt dò định tuyến (nhúng CPU, `do.mts --cpu`) chạy song song vài phút mỗi lượt —
+  tải CPU, không GPU. Báo cáo trọn (dungSom null); model :8091 = 35B lúc đầu và cuối (đọc bởi script, `modelDau` của báo cáo null vì
+  pipeline không đọc khe). Hướng sau: đo lại khi trợ lý theo vai trò (27B ở dự án PLC) — vòng có thể đổi dấu theo model.
+  **HỢP NHẤT (2026-10-23, dieu-phoi):** sổ #18/#19 đo trên triển khai THỨ HAI e7220eb9e (`ai/st/kiemBienDichTroLy.ts`: sửa đa lượt có nghĩ,
+  thay bản đã sửa qua `answerRevised`). Main đã có triển khai của luong-ui (4fbda1418 + d68bcf22f: `aiLocalKnowledgeCodingKiemST`, sự kiện
+  `kiem_bien_dich`, thẻ UI, audit `kb_kiem_st`; sửa = MỘT prompt ghép, TẮT nghĩ; bản gốc giữ nguyên + NỐI khối "Bản đã sửa"). Bản main là
+  triển khai DUY NHẤT; đã chuyển vào nó: opt-out của lượt, nhịp `dang-kiem` 15 s, `done.kiemBienDichST`; bản e7220eb9e đã xoá. Cổng đã
+  trượt và cả hai đều TẮT ⇒ KHÔNG đo lại lúc này; mọi lần đo sau phải trên bản main (harness: chấm phần sau "Bản đã sửa sau biên dịch").
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;

@@ -28,6 +28,8 @@ import path from "node:path";
 
 const h = vi.hoisted(() => ({
   manh: [] as string[],
+  /** ★ Đợt 9 — mảnh trả lời của lượt HỎI LẠI sau biên dịch (vòng kiểm ST của trợ lý); rỗng ⇒ dùng `manh`. */
+  manhSua: [] as string[],
   systemPromptNhan: "" as string,
   promptNhan: "" as string,
   /** ★ B1 — cờ `disableThinking` THẬT tới engine, theo từng lượt gọi (đo hợp đồng, không đo lời khai). */
@@ -149,15 +151,30 @@ vi.mock("./aiGgufEngine", () => ({
       h.chiSoNem = h.disableThinkingNhan.length - 1;
       throw e;
     }
-    for (const m of h.manh) yield { type: "token", token: m };
+    // ★ Đợt 9 — lượt HỎI LẠI của vòng kiểm biên dịch ST (`goiLaiBangModel`: prompt có "[Phản hồi của trình biên dịch]") ⇒ `h.manhSua`.
+    const manh = String(opt?.prompt ?? "").includes("[Phản hồi của trình biên dịch]") && h.manhSua.length ? h.manhSua : h.manh;
+    for (const m of manh) yield { type: "token", token: m };
     yield {
       type: "done",
       tokensPrompt: 10,
-      tokensGenerated: h.manh.length,
+      tokensGenerated: manh.length,
       ...(h.tokensReasoningGia !== undefined ? { tokensReasoning: h.tokensReasoningGia } : {}),
     };
   },
 }));
+
+// ★ Đợt 9 (2026-10-23) — trình biên dịch ST GIẢ cho §ĐỢT 9 (vòng kiểm biên dịch của trợ lý): mã có "AND ;" ⇒ lỗi E007. Không chạy docker.
+vi.mock("./flow/lib/bienDichST", async (goc) => {
+  const that = await goc<typeof import("./flow/lib/bienDichST")>();
+  return {
+    ...that,
+    bienDichST: vi.fn(async (ma: string) =>
+      ma.includes("AND ;")
+        ? { ok: false, chanDoan: [{ tep: "ma.st", dong: 4, cot: 13, mucDo: "error", ma: "E007", thongDiep: "Unexpected token ;" }], ms: 3 }
+        : { ok: true, chanDoan: [], ms: 3 },
+    ),
+  };
+});
 
 vi.mock("../db/connection", () => ({
   getDb: vi.fn(async () => ({ insert: () => ({ values: async () => undefined }) })),
@@ -246,6 +263,7 @@ const ENV = [
 beforeEach(() => {
   for (const k of ENV) delete process.env[k];
   h.manh = [];
+  h.manhSua = [];
   h.systemPromptNhan = "";
   h.promptNhan = "";
   h.disableThinkingNhan = [];
@@ -1425,5 +1443,65 @@ describe("§R2B — bổ sung `using` C# còn thiếu SAU sinh (tất định, t
     } finally {
       delete process.env.AI_CODING_BO_SUNG_USING;
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// ★ Đợt 9 — vòng kiểm biên dịch ST của TRỢ LÝ (triển khai DUY NHẤT `aiLocalKnowledgeCodingKiemST`; phần hợp nhất từ e7220eb9e: opt-out của
+//   lượt, `done.kiemBienDichST`). Hành vi chính (sự kiện `kiem_bien_dich`, khối bổ sung) có lưới riêng ở aiLocalKnowledgeCodingKiemST.test.
+describe("§ĐỢT 9 — vòng kiểm biên dịch ST của TRỢ LÝ qua streamAnswer (AI_KIEM_BIEN_DICH_ST có tro-ly; opt-out context.kiemBienDichST=false)", () => {
+  const CAU = "viết function block ST tên A: đầu ra y bằng đầu vào x";
+  const NL = String.fromCharCode(10);
+  const FB_SAI = ["FUNCTION_BLOCK A", "VAR_INPUT x : BOOL; END_VAR", "VAR_OUTPUT y : BOOL; END_VAR", "  y := x AND ;", "END_FUNCTION_BLOCK"].join(NL);
+  const FB_DUNG = ["FUNCTION_BLOCK A", "VAR_INPUT x : BOOL; END_VAR", "VAR_OUTPUT y : BOOL; END_VAR", "  y := x;", "END_FUNCTION_BLOCK"].join(NL);
+  const RAO = "`".repeat(3);
+  const rao = (ma: string) => ["Mã:", `${RAO}st`, ma, RAO].join(NL);
+  afterEach(() => {
+    delete process.env.AI_KIEM_BIEN_DICH_ST;
+  });
+
+  it("★★★ cờ có tro-ly + bản đầu LỖI ⇒ kiem_bien_dich dang-kiem → xong(da-sua), khối 'Bản đã sửa' STREAM + trong done, done.kiemBienDichST", async () => {
+    process.env.AI_KIEM_BIEN_DICH_ST = "tro-ly";
+    h.manh = [rao(FB_SAI)];
+    h.manhSua = [rao(FB_DUNG)];
+    const r = await chay(CAU, admin());
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    const kiem = r.events.filter((e) => e.type === "kiem_bien_dich") as Array<Extract<StreamEvent, { type: "kiem_bien_dich" }>>;
+    expect(kiem[0]?.phase).toBe("dang-kiem");
+    expect(kiem.at(-1)).toMatchObject({ phase: "xong", ketQua: { trangThai: "da-sua", soLoiDaSua: 1 } });
+    expect(r.chu).toContain("Bản đã sửa sau biên dịch");
+    expect(d.answer).toContain(FB_DUNG);
+    expect(d.answer).toContain("AND ;"); // bản gốc GIỮ NGUYÊN — không thay lặng lẽ
+    expect(d.kiemBienDichST).toMatch(/^ok=1; trang-thai=da-sua; vong=1; sua=1; con=0$/);
+  });
+
+  it("★★★ opt-out context.kiemBienDichST=false (nhánh 'tắt' của A/B cùng server) ⇒ 0 sự kiện kiem_bien_dich, không lượt hỏi lại, không kiemBienDichST", async () => {
+    process.env.AI_KIEM_BIEN_DICH_ST = "tro-ly";
+    h.manh = [rao(FB_SAI)];
+    h.manhSua = [rao(FB_DUNG)];
+    const truoc = h.promptTheoLuot.length;
+    const r = await chay(CAU, admin(), { kiemBienDichST: false });
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    expect(r.events.some((e) => e.type === "kiem_bien_dich")).toBe(false);
+    expect(h.promptTheoLuot.slice(truoc).some((p) => p.includes("[Phản hồi của trình biên dịch]"))).toBe(false);
+    expect(d.kiemBienDichST).toBeUndefined();
+    expect(d.answer).not.toContain("Bản đã sửa sau biên dịch");
+  });
+
+  it("cờ mặc định (không có tro-ly) ⇒ y hệt trước: không sự kiện, không kiemBienDichST", async () => {
+    h.manh = [rao(FB_SAI)];
+    const r = await chay(CAU, admin());
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    expect(r.events.some((e) => e.type === "kiem_bien_dich")).toBe(false);
+    expect(d.kiemBienDichST).toBeUndefined();
+  });
+
+  it("cờ bật nhưng câu trả lời KHÔNG có mã ST ⇒ không sự kiện, done.kiemBienDichST = 'ok=skip' (nhánh bật vẫn chứng minh được)", async () => {
+    process.env.AI_KIEM_BIEN_DICH_ST = "tro-ly";
+    h.manh = ["Chỉ trả lời bằng chữ, không có khối mã."];
+    const r = await chay(CAU, admin());
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    expect(r.events.some((e) => e.type === "kiem_bien_dich")).toBe(false);
+    expect(d.kiemBienDichST).toBe("ok=skip");
   });
 });

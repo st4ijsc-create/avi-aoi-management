@@ -307,3 +307,28 @@ describe("§B — ĐƯỜNG THẬT: `tool_loop` đi từ service ra tới socket
     expect(khung.some((k) => k.type === "token")).toBe(true);
   });
 });
+
+// ★ Đợt 9 (2026-10-23) — ô `kiemBienDichST` của `done` (vòng kiểm biên dịch ST của trợ lý) phải RA TỚI socket: `done` của tuyến là
+// danh sách TRẮNG từng ô — thiếu dây ⇒ bộ đo A/B không kiểm được nhánh, người tra cứu không thấy.
+describe("§C — `done.kiemBienDichST` đi ra tới socket; vắng thì không bịa", () => {
+  async function chayDone(done: Record<string, unknown>) {
+    h.sukien = [{ type: "token", token: "x" }, done];
+    const { app, tuyen } = appGia();
+    registerAiLocalKnowledgeRoutes(app);
+    const { res, manh } = resGia();
+    await tuyen.get("/api/ai/local-kb/stream")!(reqGia({ question: "q", context: { codingMode: true } }), res);
+    return khungSSE(manh).find((k) => k.type === "done")!;
+  }
+  it("★★★ có ô ⇒ khung done mang đúng chuỗi; answerRevised đi kèm", async () => {
+    const d = await chayDone({
+      type: "done", provider: "ollama", cached: false, followUpSuggestions: [], answer: "a", answerRevised: true,
+      kiemBienDichST: "ok=1; trang-thai=da-sua; vong=1; sua=1; con=0",
+    });
+    expect(d.kiemBienDichST).toBe("ok=1; trang-thai=da-sua; vong=1; sua=1; con=0");
+    expect(d.answerRevised).toBe(true);
+  });
+  it("vắng ô ⇒ khung done KHÔNG có khoá kiemBienDichST", async () => {
+    const d = await chayDone({ type: "done", provider: "ollama", cached: false, followUpSuggestions: [], answer: "a" });
+    expect(Object.prototype.hasOwnProperty.call(d, "kiemBienDichST")).toBe(false);
+  });
+});

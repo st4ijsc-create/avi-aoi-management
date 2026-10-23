@@ -1,0 +1,90 @@
+{"cauHoi":"soan giup FB ST dieu khien 2 quat lam mat tu dien chay luan phien moi 8 gio, quat nao loi thi quat kia chay thay","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Viết ST ghi lại giá trị áp suất lần cuối ngay trước khi máy dừng khẩn cấp để kỹ thuật xem lại.","vaiTro":"code.plc","kho":true}
+{"cauHoi":"lam the nao viet code ST cho den nhap nhay 1Hz bang TON? viet luon nhe","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Viết FB SCL đọc mã vạch qua RS232 bằng khối Receive_P2P rồi so với mã sản phẩm lưu trong DB, sai thì bật cờ lỗi.","vaiTro":"code.plc"}
+{"cauHoi":"Write Structured Text for conveyor jam detection: if the photo-eye stays blocked for more than 4 s, stop the motor and raise an alarm.","vaiTro":"code.plc"}
+{"cauHoi":"Đoạn CTU này không đếm, sửa giúp:\nctr(CU := sensor, RESET := rst, PV := 100);\nIF ctr.Q THEN done := TRUE; END_IF\n(* sensor khai báo kiểu WORD *)","vaiTro":"code.plc"}
+{"cauHoi":"Lập trình ladder cho máy khoan bàn tự động: kẹp phôi, khoan xuống, giữ 2 giây, rút lên, nhả kẹp.","vaiTro":"code.plc"}
+{"cauHoi":"Viết code OpenPLC đọc analog 4-20mA mức bồn rồi điều khiển bơm cấp với vùng trễ 5%.","vaiTro":"code.plc"}
+{"cauHoi":"Tạo UDT và FB trong TIA Portal để quản lý 8 xi lanh giống nhau, mỗi xi lanh có cảm biến đầu và cuối hành trình.","vaiTro":"code.plc"}
+{"cauHoi":"sua code ST giup: hom qua may dung vi bien dem tran INT, doi sang DINT va them reset luc doi ca","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Soạn chương trình ST cho mạch đảo chiều động cơ có khoá liên động và trễ 500 ms khi đổi chiều.","vaiTro":"code.plc"}
+{"cauHoi":"tai sao doan SCL nay bao loi tag not defined, sua lai giup:\n#Out := \"Motor_Run\" AND #Enable;","vaiTro":"code.plc","kho":true}
+{"cauHoi":"Viết ST điều khiển biến tần bơm bằng PID theo áp suất đường ống, có chế độ ngủ khi lưu lượng thấp.","vaiTro":"code.plc"}
+{"cauHoi":"Add an e-stop latch with manual reset to this TwinCAT program:\nIF bStart THEN bRun := TRUE; END_IF\nIF bStop THEN bRun := FALSE; END_IF\nfbMotor(bEnable := bRun);","vaiTro":"code.plc"}
+{"cauHoi":"viet ST tinh bao nhieu san pham moi gio tu xung cam bien, cap nhat moi phut","vaiTro":"code.plc","kho":true}
+{"cauHoi":"soan script python doc file log AOI trong thu muc va dem so loi theo ma, xuat ra CSV","vaiTro":"code.software","kho":true}
+{"cauHoi":"Viết câu SQL lấy lần đăng nhập gần nhất của từng user vào HMI từ bảng login_audit(user_id, ts, station).","vaiTro":"code.software","kho":true}
+{"cauHoi":"lam the nao de goi API REST tu C# co retry 3 lan? cho code mau","vaiTro":"code.software","kho":true}
+{"cauHoi":"Write a TypeScript function that groups downtime events by shift (06-14, 14-22, 22-06), handling events that cross midnight.","vaiTro":"code.software"}
+{"cauHoi":"Sửa lỗi CORS khi frontend gọi server:\nAccess to fetch at 'http://10.0.0.5:3000/api/lines' from origin 'http://localhost:5173' has been blocked by CORS policy\nServer dùng Express 4.","vaiTro":"code.software"}
+{"cauHoi":"Viết Dockerfile cho app Python FastAPI đọc dữ liệu OPC UA, chạy bằng user không phải root.","vaiTro":"code.software"}
+{"cauHoi":"regex kiểm tra địa chỉ MAC dạng AA:BB:CC:DD:EE:FF, viết bằng Python kèm vài test","vaiTro":"code.software"}
+{"cauHoi":"Viết function Postgres tính OEE theo ngày cho từng line, tham số đầu vào là khoảng ngày.","vaiTro":"code.software"}
+{"cauHoi":"Component React vẽ biểu đồ nhiệt độ lò theo thời gian thực bằng Recharts, dữ liệu nhận qua WebSocket, giữ 300 điểm gần nhất.","vaiTro":"code.software"}
+{"cauHoi":"bash: tìm tất cả file .csv trong /data/aoi được tạo hôm qua rồi nén thành một file tar.gz","vaiTro":"code.software","kho":true}
+{"cauHoi":"khac gi giua == va === trong JS? sua luon doan nay cho dung: if (status == 0) setIdle()","vaiTro":"code.software","kho":true}
+{"cauHoi":"Hàm này chạy rất chậm với 1 triệu dòng, tối ưu bằng pandas giúp:\nfor i, r in df.iterrows():\n    df.loc[i, \"ok\"] = r[\"val\"] < r[\"usl\"] and r[\"val\"] > r[\"lsl\"]","vaiTro":"code.software"}
+{"cauHoi":"Viết PowerShell kiểm tra dịch vụ AOI-Agent trên 10 máy trong file hosts.txt, dịch vụ nào dừng thì khởi động lại và ghi log.","vaiTro":"code.software"}
+{"cauHoi":"Soạn file GitHub Actions chạy lint và test cho repo Node mỗi khi có pull request.","vaiTro":"code.software","kho":true}
+{"cauHoi":"Fix this query, it returns each machine many times:\nSELECT m.name, l.name FROM machines m LEFT JOIN defects d ON d.machine_id = m.id LEFT JOIN lines l ON l.id = m.line_id;","vaiTro":"code.software"}
+{"cauHoi":"soan ban tom tat tinh hinh chat luong tuan nay tu so lieu: ty le loi 0,85%, giam 0,1% so voi tuan truoc, loi chinh thieu thiec, 2 khieu nai khach hang da dong","vaiTro":"summarize","kho":true}
+{"cauHoi":"Soạn giúp email gửi khách tóm tắt tiến độ xử lý khiếu nại dựa trên ghi chú: đã xác định nguyên nhân do keo dán, đã đổi nhà cung cấp keo, lô thay thế giao ngày 30/10, báo cáo 8D gửi trước 28/10.","vaiTro":"summarize","kho":true}
+{"cauHoi":"Tóm tắt sự cố lần gần nhất ở lò reflow theo nhật ký kỹ thuật sau: 03:12 báo quá nhiệt zone 7, 03:13 lò tự hạ nhiệt, 03:20 kiểm tra thấy rơ-le SSR bị dính, 04:05 thay SSR, 04:40 chạy profile kiểm tra đạt, 04:50 cho chạy hàng lại.","vaiTro":"summarize","kho":true}
+{"cauHoi":"tom tat bien ban giao ca ca truoc giup: line 1 chay model moi, AOI con nhieu bao gia o tu C, may in 2 da ve sinh, con 2 phieu bao tri chua dong, kho chua cap du thiec","vaiTro":"summarize","kho":true}
+{"cauHoi":"Tóm tắt bài viết sau trong 3 câu: Công nghiệp 4.0 kết hợp cảm biến, kết nối và phân tích dữ liệu để nhà máy tự tối ưu. Doanh nghiệp vừa và nhỏ thường gặp khó vì chi phí đầu tư và thiếu nhân lực dữ liệu. Cách tiếp cận phù hợp là bắt đầu từ một bài toán cụ thể như giám sát dừng máy, chứng minh hiệu quả rồi mới mở rộng.","vaiTro":"summarize"}
+{"cauHoi":"Summarize this audit finding list for the plant manager:\n1. Two fire extinguishers past inspection date\n2. Chemical cabinet missing SDS for IPA\n3. Emergency exit partially blocked by pallets in warehouse\n4. All PPE records complete","vaiTro":"summarize"}
+{"cauHoi":"Rút gọn thông báo nhân sự sau thành tin nhắn ngắn gửi nhóm: Từ ngày 01/11/2026, công ty áp dụng lịch ca mới gồm ca A 6h-14h, ca B 14h-22h, ca C 22h-6h. Nhân viên đăng ký nguyện vọng ca với tổ trưởng trước ngày 27/10. Phụ cấp ca đêm tăng thêm 10%.","vaiTro":"summarize"}
+{"cauHoi":"Nêu ý chính của hướng dẫn an toàn hoá chất dưới đây: Luôn đeo găng tay nitrile và kính khi thao tác IPA. Không để hoá chất gần nguồn nhiệt. Bình chứa phải có nhãn rõ ràng. Khi tràn đổ, dùng vật liệu thấm và báo ngay cho tổ trưởng. Rác thải hoá chất bỏ vào thùng đỏ riêng.","vaiTro":"summarize"}
+{"cauHoi":"tom tat hop dong bao tri nay, cho minh biet nhung diem quan trong voi ben minh: ben B bao tri 4 lan/nam, phan hoi su co trong 24h, linh kien thay the tinh rieng, phat 2% neu cham qua 48h, hop dong 2 nam tu dong gia han","vaiTro":"summarize"}
+{"cauHoi":"Tổng hợp các phản hồi khảo sát căng tin sau thành 3 nhóm ý: \"cơm ca đêm hay nguội\", \"nên có thêm món chay\", \"xếp hàng lâu lúc 11h30\", \"canh hơi mặn\", \"muốn có lò vi sóng hâm đồ\".","vaiTro":"summarize"}
+{"cauHoi":"Viết đoạn tóm tắt kết quả thử nghiệm keo mới từ dữ liệu: 3 lô thử, lực bám trung bình 12,4 N so với 10,1 N của keo cũ, thời gian khô tăng 15 giây, không có bo nào bong sau thử nhiệt 500 chu kỳ.","vaiTro":"summarize"}
+{"cauHoi":"Condense the following maintenance thread into a handover note:\nNight: chiller 2 alarm high temp 01:30\nNight: cleaned condenser fins, alarm cleared 02:15\nDay: alarm again 09:40, suspect refrigerant low\nDay: vendor booked for tomorrow 8am","vaiTro":"summarize"}
+{"cauHoi":"hom qua hop voi khach, day la ghi chu, tom tat lai giup: khach muon tang san luong 20% tu thang 12, yeu cau them kiem tra X-ray cho BGA, dong y gia moi neu giao dung han 3 thang lien","vaiTro":"summarize","kho":true}
+{"cauHoi":"Tóm gọn lịch sử thay đổi chương trình AOI dưới đây thành 1 đoạn:\nv3.0 thêm thư viện linh kiện 0201\nv3.1 nới ngưỡng thiếu thiếc từ 70 lên 75\nv3.2 thêm kiểm tra phân cực tụ tantalum\nv3.3 sửa lỗi nhận nhầm fiducial trên panel 2x4","vaiTro":"summarize"}
+{"cauHoi":"tai sao line 2 lo nhieu? doc bao cao nay roi tom tat nguyen nhan chinh giup: may in 2 lech offset, 2 cuon linh kien sai rev, operator moi chua quen doi model, AOI line 2 chua cap nhat chuong trinh","vaiTro":"summarize","kho":true}
+{"cauHoi":"Trích lần cuối từng máy được vệ sinh từ sổ sau:\nAOI-01 vệ sinh 02/10\nSPI-01 vệ sinh 05/10\nAOI-01 vệ sinh 16/10\nSPI-01 vệ sinh 19/10\nPNP-02 vệ sinh 12/10","vaiTro":"extract","kho":true}
+{"cauHoi":"lay ra danh sach cong viec ca truoc chua xong trong ghi chu ban giao: thay loc may gap 3 (xong), chinh offset may in 1 (chua), kiem tra den AOI-02 (chua), dan nhan khay NG (xong)","vaiTro":"extract","kho":true}
+{"cauHoi":"Soạn bảng từ email sau gồm tên linh kiện, số lượng, ngày giao: \"Bên em giao 20.000 tụ 0402 100nF ngày 28/10, 5.000 IC LDO AMS1117 ngày 02/11 và 1.200 connector JST-PH 4 chân ngày 05/11.\"","vaiTro":"extract","kho":true}
+{"cauHoi":"co bao nhieu nguoi duoc nhac trong email nay, liet ke ten va vai tro cua ho: \"Chao anh Quang (truong QA), em la Vy ben mua hang, em da gui mau cho chi Thu (ky su quy trinh) va anh Long (quan ly kho) roi a.\"","vaiTro":"extract","kho":true}
+{"cauHoi":"Extract the IP address, slot number and firmware version for each module in this rack listing:\nSlot 1 CPU 1515-2 PN 192.168.0.1 FW V2.9\nSlot 2 DI 32x24VDC FW V1.1\nSlot 3 CP 1543-1 192.168.1.10 FW V3.0","vaiTro":"extract"}
+{"cauHoi":"Trích các trường từ phiếu yêu cầu sửa chữa sau: người báo, máy, hiện tượng, mức ưu tiên. \"Người báo: Hoàng Yến, ca B. Máy: băng tải nối line 3. Hiện tượng: kêu to, thỉnh thoảng giật. Ưu tiên: cao.\"","vaiTro":"extract"}
+{"cauHoi":"Đổi danh sách nhân sự sau thành CSV với cột họ tên; bộ phận; số điện thoại:\nĐỗ Văn Hải - Bảo trì - 0903111222\nNgô Thị Lan - QA - 0988333444\nVũ Minh - Kho - 0912555666","vaiTro":"extract"}
+{"cauHoi":"Lấy toạ độ X/Y của các fiducial trong đoạn chương trình gắp đặt sau:\nFID1 X=5.000 Y=5.000\nREF R1 X=12.300 Y=8.100\nFID2 X=145.000 Y=95.000\nFID3 X=5.000 Y=95.000","vaiTro":"extract"}
+{"cauHoi":"Rút ra mọi số lô và hạn dùng từ nội dung tem nhãn được OCR ra sau: \"LOT 26A1145 EXP 2027-03 | LOT 26A1201 EXP 2027-05 | SAC305 500g\"","vaiTro":"extract"}
+{"cauHoi":"Từ log OPC UA dưới đây lấy ra các node id bị lỗi BadNodeIdUnknown:\nread ns=2;s=Line1.Speed Good\nread ns=2;s=Line1.Temp BadNodeIdUnknown\nread ns=2;s=Line2.Count Good\nread ns=3;i=1042 BadNodeIdUnknown","vaiTro":"extract"}
+{"cauHoi":"tach dia chi, MST, ten cong ty tu hoa don sau thanh JSON: \"Cong ty TNHH Dien Tu Minh Phat, MST 0312345678, dia chi 25 duong so 7, KCN Tan Thuan, Q7, TP HCM\"","vaiTro":"extract"}
+{"cauHoi":"List every machine model and its quantity from this quotation: \"2 x Yamaha YSM20R, 1 x Koh Young Zenith Alpha, 1 x Heller 1936 MK7, 3 x conveyor 1m\"","vaiTro":"extract"}
+{"cauHoi":"Trích các yêu cầu kỹ thuật dạng số từ spec khách hàng dưới đây: độ dày PCB 1,6 mm ± 0,1; nhiệt độ làm việc -20 đến 70°C; độ ẩm tối đa 85% RH; dung sai vị trí linh kiện ±0,05 mm.","vaiTro":"extract"}
+{"cauHoi":"cai nao trong log duoi la thao tac ghi tham so? loc ra danh sach gom thoi gian, user, tham so:\n08:01 tuan READ Z1_SP\n08:03 tuan WRITE Z1_SP=152\n08:10 mai READ ConvSpeed\n08:12 mai WRITE ConvSpeed=82","vaiTro":"extract","kho":true}
+{"cauHoi":"Điền thông tin từ biên bản hôm qua vào mẫu gồm ngày, địa điểm, thành phần, quyết định: \"Ngày 22/10/2026 tại phòng họp tầng 2, có anh Tuấn, chị Hoa, anh Bình. Thống nhất thay máy in kem cũ trong tháng 11.\"","vaiTro":"extract","kho":true}
+{"cauHoi":"lan cuoi may SPI-02 duoc hieu chuan la khi nao","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"Hôm qua ca đêm chạy được bao nhiêu board?","vaiTro":"chat.ops"}
+{"cauHoi":"gan day nhat line 4 co bi dung do thieu linh kien khong","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"bao nhieu may dang chay tren toan xuong luc nay","vaiTro":"chat.ops"}
+{"cauHoi":"tai sao may AOI-01 dang bat den vang vay","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"Đã có ai soạn kế hoạch bảo trì tuần tới cho line 1 trên hệ thống chưa?","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"What's the scrap rate on line 2 so far today?","vaiTro":"chat.ops"}
+{"cauHoi":"Nhiệt độ và độ ẩm phòng SMT hiện giờ có nằm trong ngưỡng không?","vaiTro":"chat.ops"}
+{"cauHoi":"Ca này còn bao nhiêu work order chưa bắt đầu?","vaiTro":"chat.ops"}
+{"cauHoi":"cai nao trong may gap dang co ty le nem linh kien cao nhat ca nay","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"Xe AGV số 2 đang ở trạm nào?","vaiTro":"chat.ops"}
+{"cauHoi":"Có feeder nào trên line 3 sắp hết linh kiện không?","vaiTro":"chat.ops"}
+{"cauHoi":"OEE trung bình 7 ngày qua của line 3 là bao nhiêu?","vaiTro":"chat.ops"}
+{"cauHoi":"Ai đã xác nhận cảnh báo quá nhiệt của lò lúc nãy?","vaiTro":"chat.ops","kho":true}
+{"cauHoi":"Has the firmware update on AOI-05 been applied yet?","vaiTro":"chat.ops"}
+{"cauHoi":"OPC UA PubSub la gi, khac gi voi mo hinh client-server","vaiTro":"chat"}
+{"cauHoi":"tai sao cam bien quang hay bi nhieu duoi den LED cong suat lon","vaiTro":"chat"}
+{"cauHoi":"the nao la thiet ke giao dien HMI tot cho cong nhan deo gang tay","vaiTro":"chat","kho":true}
+{"cauHoi":"Người ta thường soạn FMEA quy trình theo những bước nào?","vaiTro":"chat","kho":true}
+{"cauHoi":"Có nên soạn chương trình PLC bằng ST thay vì ladder khi đội bảo trì chỉ quen ladder không?","vaiTro":"chat","kho":true}
+{"cauHoi":"Gần đây nhiều nhà máy chuyển MES lên cloud, ưu nhược điểm của cách này là gì?","vaiTro":"chat","kho":true}
+{"cauHoi":"Explain the difference between a safety relay and a safety PLC.","vaiTro":"chat"}
+{"cauHoi":"Git rebase khác merge thế nào, khi nào nên dùng rebase?","vaiTro":"chat"}
+{"cauHoi":"Hiện tượng head-in-pillow ở BGA là gì và do đâu?","vaiTro":"chat"}
+{"cauHoi":"Tại sao thuật toán Nagle có thể làm trễ gói tin Modbus TCP?","vaiTro":"chat"}
+{"cauHoi":"Poka-yoke là gì, cho vài ví dụ trong lắp ráp điện tử","vaiTro":"chat"}
+{"cauHoi":"Vì sao so sánh bằng hai biến REAL trong PLC thường không tin cậy?","vaiTro":"chat","kho":true}
+{"cauHoi":"How does a CTUD counter differ from a plain CTU?","vaiTro":"chat","kho":true}
+{"cauHoi":"Takt time và cycle time khác nhau ra sao?","vaiTro":"chat"}
+{"cauHoi":"bao nhieu lux la du cho khu vuc kiem tra ngoai quan bang mat","vaiTro":"chat"}
