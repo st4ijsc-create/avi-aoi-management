@@ -50,6 +50,18 @@ describe("chatLuongOpcua", () => {
 });
 
 describe("chatLuongLoiModbus", () => {
+  it("PortNotOpenError cua modbus-serial => port_not_open/comm_lost", () => {
+    const e = Object.assign(new Error("Port Not Open"), { name: "PortNotOpenError", errno: "ECONNREFUSED" });
+    expect(chatLuongLoiModbus(e)).toEqual({ statusCode: "port_not_open", reason: "comm_lost" });
+  });
+
+  it("ma exception van uu tien hon ten loi (modbusCode 2 + ten la)", () => {
+    expect(chatLuongLoiModbus({ modbusCode: 2, name: "PortNotOpenError" })).toEqual({
+      statusCode: "modbus_exc_02",
+      reason: "config_error",
+    });
+  });
+
   it("ma exception 2 => modbus_exc_02/config_error", () => {
     expect(chatLuongLoiModbus({ modbusCode: 2 })).toEqual({ statusCode: "modbus_exc_02", reason: "config_error" });
   });

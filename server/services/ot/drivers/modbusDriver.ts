@@ -223,6 +223,10 @@ export class ModbusDriver extends NotImplementedDriver {
       } satisfies OtSample;
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
+      // SCADA R0 (C1) — sau cờ: lỗi tầng liên lạc (timeout/rớt socket/cổng đóng) ⇒ HUỶ cả tick, không chờ hạn từng tag còn lại;
+      // vòng poll phát MỘT loạt mẫu xấu cho mọi tag. device_error/config_error (exception của thiết bị) vẫn theo từng tag.
+      const v2 = chatLuongV2Bat();
+      if (v2 && chatLuongLoiModbus(err).reason === "comm_lost") throw err;
       return {
         tagKey: tag.tagKey,
         raw: null,
@@ -230,8 +234,8 @@ export class ModbusDriver extends NotImplementedDriver {
         quality: "bad",
         timestamp: now(),
         tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
-        // SCADA R0 (C2) — sau cờ: nói VÌ SAO (mã exception Modbus ⇒ config_error/device_error; lỗi mạng ⇒ comm_lost).
-        ...(chatLuongV2Bat() ? chatLuongLoiModbus(err) : {}),
+        // SCADA R0 (C2) — sau cờ: nói VÌ SAO (mã exception Modbus ⇒ config_error/device_error).
+        ...(v2 ? chatLuongLoiModbus(err) : {}),
       } satisfies OtSample;
     }
   }

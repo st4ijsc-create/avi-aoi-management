@@ -51,12 +51,13 @@ interface ModbusSim {
   close(): Promise<void>;
 }
 
-/** Thanh ghi `loiAddr` trả Modbus exception 2 (Illegal Data Address); các thanh ghi khác trả 100 + địa chỉ. */
-async function startModbusSim(loiAddr: number | null): Promise<ModbusSim> {
+/** Thanh ghi `loiAddr` trả Modbus exception 2 (Illegal Data Address); `treoAddrs` không bao giờ trả lời; còn lại trả 100 + địa chỉ. */
+async function startModbusSim(loiAddr: number | null, treoAddrs: number[] = []): Promise<ModbusSim> {
   const port = await freePort();
   const vector = {
     // 3 tham số ⇒ modbus-serial gọi kiểu callback (cho phép trả exception).
     getHoldingRegister: (addr: number, _unit: number, cb: (err: unknown, v?: number) => void) => {
+      if (treoAddrs.includes(addr)) return; // KHÔNG BAO GIỜ trả lời ⇒ client chờ hạn giao dịch (mô phỏng PLC ngừng đáp giữa tick)
       if (loiAddr !== null && addr === loiAddr) cb({ modbusErrorCode: 2 });
       else cb(null, 100 + addr);
     },
@@ -95,10 +96,10 @@ describe("Modbus × server THẬT trong tiến trình", () => {
     while (cleanups.length) await cleanups.pop()!().catch(() => undefined);
   });
 
-  async function ketNoi(sim: ModbusSim) {
+  async function ketNoi(sim: ModbusSim, timeoutMs = 1000) {
     const { createModbusDriver } = await import("./modbusDriver");
     const d = createModbusDriver();
-    await d.connect({ endpoint: `tcp://127.0.0.1:${sim.port}`, timeoutMs: 1000 });
+    await d.connect({ endpoint: `tcp://127.0.0.1:${sim.port}`, timeoutMs });
     cleanups.push(() => d.disconnect());
     return d;
   }
@@ -167,6 +168,54 @@ describe("Modbus × server THẬT trong tiến trình", () => {
     await sleep(700); // ≥ 6 chu kỳ
     expect(got.length).toBe(nSauDong);
     expect(got.slice(nSauDong)).toEqual([]);
+  });
+
+  // PLC ngừng đáp giữa tick: a đọc được, b/c/d treo (không bao giờ trả lời); hạn giao dịch 400 ms.
+  const mbTags4: OtTagAddress[] = [
+    { tagKey: "a", address: "40001", dataType: "int" },
+    { tagKey: "b", address: "40006", dataType: "int" },
+    { tagKey: "c", address: "40007", dataType: "int" },
+    { tagKey: "d", address: "40008", dataType: "int" },
+  ];
+
+  it("cờ BẬT: PLC ngừng đáp giữa tick ⇒ HUỶ tick ở lần timeout đầu: đúng MỘT loạt bad/comm_lost cho cả 4 tag, không chờ hạn từng tag còn lại", async () => {
+    vi.stubEnv(FLAG, "true");
+    const sim = await startModbusSim(null, [5, 6, 7]);
+    cleanups.push(() => sim.close());
+    const d = await ketNoi(sim, 400);
+    const got: Array<{ s: OtSample; at: number }> = [];
+    const t0 = Date.now();
+    const h = await d.subscribe(mbTags4, (s) => void got.push({ s, at: Date.now() - t0 }), 100);
+    cleanups.push(() => h.close());
+    await waitFor(() => got.length >= mbTags4.length, 3000);
+    // một timeout (~400 ms) + chu kỳ 100 ms; nếu còn chờ hạn từng tag (3 × 400 ms) thì ≥ 1300 ms.
+    expect(Math.max(...got.map((g) => g.at))).toBeLessThan(900);
+    await sleep(1500); // các tick sau vẫn lỗi nhưng cùng đợt ⇒ im lặng
+    expect(got).toHaveLength(mbTags4.length);
+    expect(got.map((g) => g.s.tagKey).sort()).toEqual(["a", "b", "c", "d"]);
+    expect(got.every((g) => g.s.quality === "bad" && g.s.reason === "comm_lost" && g.s.value === null)).toBe(true);
+    expect(got.every((g) => g.s.statusCode === "timeout")).toBe(true);
+  });
+
+  it("cờ BẬT: readTags ném ở lần timeout đầu (không chờ hạn từng tag còn lại)", async () => {
+    vi.stubEnv(FLAG, "true");
+    const sim = await startModbusSim(null, [5, 6, 7]);
+    cleanups.push(() => sim.close());
+    const d = await ketNoi(sim, 400);
+    const t0 = Date.now();
+    await expect(d.readTags(mbTags4)).rejects.toThrow();
+    expect(Date.now() - t0).toBeLessThan(900);
+  });
+
+  it("cờ TẮT: cùng tình huống ⇒ đúng hành vi cũ: đọc tuần tự, mỗi tag treo chờ hạn riêng, mẫu bad TRẦN theo từng tag", async () => {
+    const sim = await startModbusSim(null, [5, 6, 7]);
+    cleanups.push(() => sim.close());
+    const d = await ketNoi(sim, 400);
+    const t0 = Date.now();
+    const out = await d.readTags(mbTags4);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(1100); // 3 × ~400 ms
+    expect(out.map((s) => s.quality)).toEqual(["good", "bad", "bad", "bad"]);
+    expect(out.slice(1).every((s) => s.statusCode === undefined && s.reason === undefined)).toBe(true);
   });
 });
 
@@ -449,6 +498,41 @@ describe("Mitsubishi MC", () => {
   });
 });
 
+// ─────────────────────────────── SLMP (transact giả lỗi mạng) ───────────────────────────────
+describe("SLMP huỷ tick khi mất liên lạc", () => {
+  const slmpTags: OtTagAddress[] = [
+    { tagKey: "a", address: "D0", dataType: "int" },
+    { tagKey: "b", address: "D1", dataType: "int" },
+    { tagKey: "c", address: "D2", dataType: "int" },
+  ];
+
+  async function dung() {
+    const { SlmpDriver } = await import("./slmpDriver");
+    const d = new SlmpDriver();
+    const anyD = d as unknown as { connected: boolean; socket: unknown; transact: ReturnType<typeof vi.fn> };
+    anyD.connected = true;
+    anyD.socket = {};
+    anyD.transact = vi.fn(async () => {
+      throw Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+    });
+    return { d, anyD };
+  }
+
+  it("cờ BẬT: giao dịch đầu lỗi mạng ⇒ readTags ném, chỉ 1 giao dịch (không thử 2 tag còn lại)", async () => {
+    vi.stubEnv(FLAG, "true");
+    const { d, anyD } = await dung();
+    await expect(d.readTags(slmpTags)).rejects.toThrow(/ECONNRESET/);
+    expect(anyD.transact).toHaveBeenCalledTimes(1);
+  });
+
+  it("cờ TẮT: như cũ ⇒ 3 giao dịch, 3 mẫu bad trần", async () => {
+    const { d, anyD } = await dung();
+    const out = await d.readTags(slmpTags);
+    expect(anyD.transact).toHaveBeenCalledTimes(3);
+    expect(out.every((s) => s.quality === "bad" && s.reason === undefined && s.statusCode === undefined)).toBe(true);
+  });
+});
+
 // ─────────────────────────────── EtherNet/IP (package giả) ───────────────────────────────
 describe("EtherNet/IP", () => {
   const eipTags: OtTagAddress[] = [{ tagKey: "temp", address: "Temperature", dataType: "float" }];
@@ -464,21 +548,21 @@ describe("EtherNet/IP", () => {
     vi.doMock("st-ethernet-ip", () => ({ Controller: function () { return plc; } }));
   }
 
-  it("cờ BẬT: lỗi đọc có err.code ⇒ bad / statusCode = code / device_error", async () => {
+  it("cờ BẬT: lỗi thiết bị (không phải mạng) ⇒ bad theo từng tag / statusCode = message / device_error", async () => {
     vi.stubEnv(FLAG, "true");
     mockEip(async () => {
-      throw Object.assign(new Error("ignored message"), { code: "EIP_ERR_17" });
+      throw Object.assign(new Error("tag does not exist"), { code: "EIP_ERR_17" });
     });
     const { EthernetIpDriver } = await import("./ethernetIpDriver");
     const d = new EthernetIpDriver();
     await d.connect({ endpoint: "192.168.1.10" });
     const [s] = await d.readTags(eipTags);
     expect(s.quality).toBe("bad");
-    expect(s.statusCode).toBe("EIP_ERR_17");
+    expect(s.statusCode).toBe("tag does not exist");
     expect(s.reason).toBe("device_error");
   });
 
-  it("cờ BẬT: không có code ⇒ statusCode = message cắt 80 ký tự", async () => {
+  it("cờ BẬT: thông điệp dài ⇒ statusCode cắt 80 ký tự", async () => {
     vi.stubEnv(FLAG, "true");
     mockEip(async () => {
       throw new Error("x".repeat(200));
@@ -489,6 +573,37 @@ describe("EtherNet/IP", () => {
     const [s] = await d.readTags(eipTags);
     expect(s.statusCode).toBe("x".repeat(80));
     expect(s.reason).toBe("device_error");
+  });
+
+  it("cờ BẬT: lỗi mạng (ECONNRESET) ⇒ readTags NÉM ở tag đầu; subscribe phát đúng MỘT loạt bad/comm_lost", async () => {
+    vi.stubEnv(FLAG, "true");
+    mockEip(async () => {
+      throw Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
+    });
+    const { EthernetIpDriver } = await import("./ethernetIpDriver");
+    const d = new EthernetIpDriver();
+    await d.connect({ endpoint: "192.168.1.10" });
+    const hai: OtTagAddress[] = [...eipTags, { tagKey: "t2", address: "Other", dataType: "float" }];
+    await expect(d.readTags(hai)).rejects.toThrow(/socket hang up/);
+    const got: OtSample[] = [];
+    const h = await d.subscribe(hai, (s) => void got.push(s), 30);
+    await sleep(300);
+    await h.close();
+    expect(got).toHaveLength(2);
+    expect(got.every((s) => s.quality === "bad" && s.reason === "comm_lost" && s.statusCode === "ECONNRESET")).toBe(true);
+  });
+
+  it("cờ TẮT: lỗi mạng ⇒ bad TRẦN theo từng tag như cũ (readTags không ném)", async () => {
+    mockEip(async () => {
+      throw Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
+    });
+    const { EthernetIpDriver } = await import("./ethernetIpDriver");
+    const d = new EthernetIpDriver();
+    await d.connect({ endpoint: "192.168.1.10" });
+    const hai: OtTagAddress[] = [...eipTags, { tagKey: "t2", address: "Other", dataType: "float" }];
+    const out = await d.readTags(hai);
+    expect(out).toHaveLength(2);
+    expect(out.every((s) => s.quality === "bad" && s.reason === undefined && s.statusCode === undefined)).toBe(true);
   });
 
   it("cờ TẮT: bad trần, không statusCode/reason", async () => {

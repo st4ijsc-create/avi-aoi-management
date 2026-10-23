@@ -94,7 +94,7 @@ export function chatLuongLoiChung(err: unknown): { statusCode: string; reason: L
   return { statusCode: thongDiepNgan(err), reason: "device_error" };
 }
 
-/** Ánh xạ lỗi Modbus: mã exception của thiết bị trước, rồi rơi về `chatLuongLoiChung`. */
+/** Ánh xạ lỗi Modbus: mã exception của thiết bị trước, rồi `PortNotOpenError` của modbus-serial ⇒ comm_lost, rồi rơi về `chatLuongLoiChung`. */
 export function chatLuongLoiModbus(err: unknown): { statusCode: string; reason: LyDoChatLuong } {
   const mc = (err as { modbusCode?: unknown } | null | undefined)?.modbusCode;
   if (typeof mc === "number" && Number.isInteger(mc) && mc > 0) {
@@ -102,6 +102,10 @@ export function chatLuongLoiModbus(err: unknown): { statusCode: string; reason: 
       statusCode: `modbus_exc_${String(mc).padStart(2, "0")}`,
       reason: MODBUS_SAI_CAU_HINH.has(mc) ? "config_error" : "device_error",
     };
+  }
+  // modbus-serial: cổng/socket đã đóng ("Port Not Open") chỉ mang `errno`, không có `code` ⇒ chatLuongLoiChung không nhận ra.
+  if ((err as { name?: unknown } | null | undefined)?.name === "PortNotOpenError") {
+    return { statusCode: "port_not_open", reason: "comm_lost" };
   }
   return chatLuongLoiChung(err);
 }

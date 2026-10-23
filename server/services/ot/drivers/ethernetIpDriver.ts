@@ -40,14 +40,6 @@ import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiChung, chatLuongV2Bat } from "../chatLuong";
 
-/** statusCode cho lỗi đọc EIP: `err.code ?? err.message`, cắt 80 ký tự. */
-function maLoiEip(err: unknown): string {
-  const e = err as { code?: unknown; message?: unknown } | null | undefined;
-  const raw = e?.code ?? e?.message ?? (typeof err === "string" ? err : "");
-  const s = String(raw).trim().slice(0, 80);
-  return s || "unknown";
-}
-
 /** Ép raw (đã inverse scale) sang kiểu st-ethernet-ip chấp nhận theo dataType. */
 function coerceEipWrite(raw: unknown, dataType: string): number | boolean | string {
   switch (dataType) {
@@ -209,6 +201,10 @@ export class EthernetIpDriver extends NotImplementedDriver {
       } satisfies OtSample;
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
+      // SCADA R0 (C1) — sau cờ: lỗi tầng liên lạc (timeout/ECONNRESET/…) ⇒ HUỶ cả tick (một loạt mẫu xấu do vòng poll phát);
+      // lỗi khác của thiết bị vẫn theo từng tag.
+      const v2 = chatLuongV2Bat();
+      if (v2 && chatLuongLoiChung(err).reason === "comm_lost") throw err;
       return {
         tagKey: tag.tagKey,
         raw: null,
@@ -216,8 +212,8 @@ export class EthernetIpDriver extends NotImplementedDriver {
         quality: "bad",
         timestamp: now(),
         tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
-        // SCADA R0 (C2) — sau cờ: mã lỗi st-ethernet-ip (err.code ?? err.message, cắt 80 ký tự) + reason device_error.
-        ...(chatLuongV2Bat() ? { statusCode: maLoiEip(err), reason: "device_error" as const } : {}),
+        // SCADA R0 (C2) — sau cờ: bộ phân loại chung (mạng ⇒ comm_lost, còn lại device_error + thông điệp cắt 80 ký tự).
+        ...(v2 ? chatLuongLoiChung(err) : {}),
       } satisfies OtSample;
     }
   }

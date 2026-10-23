@@ -44,6 +44,46 @@ describe("taoVongPoll", () => {
     await h.close();
   });
 
+  it("hạn mặc định = max(2×chu kỳ, 6000): lần đọc chậm-nhưng-khoẻ (5 s, chu kỳ 1 s) KHÔNG bị cắt", async () => {
+    const ticks: SuKienDoc[] = [];
+    const got: OtSample[] = [];
+    const h = taoVongPoll({
+      tags: TAGS,
+      intervalMs: 1000,
+      doc: () => new Promise<OtSample[]>((res) => setTimeout(() => res([mauTot("t1")]), 5000)),
+      onSample: (s) => void got.push(s),
+      onTick: (e) => ticks.push(e),
+      phanLoiLoi: phanLoi,
+      chatLuongV2: false,
+      nhan: "t",
+    });
+    await vi.advanceTimersByTimeAsync(6100); // tick đầu ở 1000, đọc xong ở 6000
+    expect(ticks).toHaveLength(1);
+    expect(ticks[0].ok).toBe(true);
+    expect(got).toHaveLength(1);
+    await h.close();
+  });
+
+  it("hạn mặc định: đọc treo mãi bị cắt ở max(2×chu kỳ, 6000) — chu kỳ 4 s ⇒ 8 s, không sớm hơn", async () => {
+    const ticks: SuKienDoc[] = [];
+    const h = taoVongPoll({
+      tags: TAGS,
+      intervalMs: 4000,
+      doc: () => new Promise<OtSample[]>(() => undefined),
+      onSample: () => undefined,
+      onTick: (e) => ticks.push(e),
+      phanLoiLoi: phanLoi,
+      chatLuongV2: false,
+      nhan: "t",
+    });
+    await vi.advanceTimersByTimeAsync(4000 + 7900); // tick ở 4000; hạn 8000 ⇒ 12000
+    expect(ticks).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(ticks).toHaveLength(1);
+    expect(ticks[0]).toMatchObject({ ok: false, timeout: true });
+    await h.close();
+  });
+
   it("doc treo mãi: onTick nhận timeout:true ở khoảng deadlineMs", async () => {
     const ticks: SuKienDoc[] = [];
     const h = taoVongPoll({

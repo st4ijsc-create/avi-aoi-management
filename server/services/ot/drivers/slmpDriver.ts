@@ -287,6 +287,10 @@ export class SlmpDriver implements OtDriver {
       return { tagKey: tag.tagKey, raw, value, quality: "good", timestamp: now(), tsSource: "server" } satisfies OtSample; // B6
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
+      // SCADA R0 (C1) — sau cờ: lỗi tầng liên lạc (timeout/rớt socket) ⇒ HUỶ cả tick (một loạt mẫu xấu do vòng poll phát);
+      // lỗi khác (địa chỉ sai, giải mã) vẫn theo từng tag. End code != 0 đi qua badSample, không bao giờ huỷ tick.
+      const v2 = chatLuongV2Bat();
+      if (v2 && chatLuongLoiChung(err).reason === "comm_lost") throw err;
       return {
         tagKey: tag.tagKey,
         raw: null,
@@ -294,8 +298,8 @@ export class SlmpDriver implements OtDriver {
         quality: "bad",
         timestamp: now(),
         tsSource: "server", // B6
-        // SCADA R0 (C2) — sau cờ: lỗi giao dịch/socket ⇒ (statusCode, reason) chung (timeout/mất liên lạc ⇒ comm_lost).
-        ...(chatLuongV2Bat() ? chatLuongLoiChung(err) : {}),
+        // SCADA R0 (C2) — sau cờ: (statusCode, reason) chung.
+        ...(v2 ? chatLuongLoiChung(err) : {}),
       } satisfies OtSample;
     }
   }
