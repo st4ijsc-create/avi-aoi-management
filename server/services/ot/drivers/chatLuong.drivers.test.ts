@@ -197,14 +197,17 @@ describe("Modbus × server THẬT trong tiến trình", () => {
     expect(got.every((g) => g.s.statusCode === "timeout")).toBe(true);
   });
 
-  it("cờ BẬT: readTags ném ở lần timeout đầu (không chờ hạn từng tag còn lại)", async () => {
+  it("cờ BẬT: readTags CÔNG KHAI (readback/probe/bộ đọc an toàn) KHÔNG huỷ: thanh ghi không đáp ⇒ trả mẫu bad theo từng tag, không ném", async () => {
     vi.stubEnv(FLAG, "true");
     const sim = await startModbusSim(null, [5, 6, 7]);
     cleanups.push(() => sim.close());
     const d = await ketNoi(sim, 400);
     const t0 = Date.now();
-    await expect(d.readTags(mbTags4)).rejects.toThrow();
-    expect(Date.now() - t0).toBeLessThan(900);
+    const out = await d.readTags(mbTags4); // không ném
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(1100); // vẫn đọc tuần tự, mỗi tag treo chờ hạn riêng
+    expect(out.map((s) => s.tagKey)).toEqual(["a", "b", "c", "d"]);
+    expect(out.map((s) => s.quality)).toEqual(["good", "bad", "bad", "bad"]);
+    expect(out[1].reason).toBe("comm_lost"); // vẫn nói vì sao (C2) nhưng không huỷ
   });
 
   it("cờ TẮT: cùng tình huống ⇒ đúng hành vi cũ: đọc tuần tự, mỗi tag treo chờ hạn riêng, mẫu bad TRẦN theo từng tag", async () => {
@@ -518,11 +521,26 @@ describe("SLMP huỷ tick khi mất liên lạc", () => {
     return { d, anyD };
   }
 
-  it("cờ BẬT: giao dịch đầu lỗi mạng ⇒ readTags ném, chỉ 1 giao dịch (không thử 2 tag còn lại)", async () => {
+  it("cờ BẬT: readTags CÔNG KHAI không huỷ ⇒ 3 giao dịch, 3 mẫu bad/comm_lost, không ném", async () => {
     vi.stubEnv(FLAG, "true");
     const { d, anyD } = await dung();
-    await expect(d.readTags(slmpTags)).rejects.toThrow(/ECONNRESET/);
-    expect(anyD.transact).toHaveBeenCalledTimes(1);
+    const out = await d.readTags(slmpTags);
+    expect(anyD.transact).toHaveBeenCalledTimes(3);
+    expect(out.every((s) => s.quality === "bad" && s.reason === "comm_lost" && s.statusCode === "ECONNRESET")).toBe(true);
+  });
+
+  it("cờ BẬT: đường poll HUỶ ở giao dịch đầu ⇒ subscribe phát đúng MỘT loạt 3 mẫu bad/comm_lost (mỗi tick chỉ 1 giao dịch)", async () => {
+    vi.stubEnv(FLAG, "true");
+    const { d, anyD } = await dung();
+    const got: OtSample[] = [];
+    const h = await d.subscribe(slmpTags, (s) => void got.push(s), 30);
+    await waitFor(() => got.length >= 3, 2000);
+    await sleep(200); // thêm vài tick lỗi cùng đợt ⇒ im lặng
+    await h.close();
+    expect(got).toHaveLength(3);
+    expect(got.every((s) => s.quality === "bad" && s.reason === "comm_lost")).toBe(true);
+    // mỗi tick lỗi chỉ tốn 1 giao dịch (huỷ), không phải 3
+    expect(anyD.transact.mock.calls.length).toBeLessThan(3 * 3);
   });
 
   it("cờ TẮT: như cũ ⇒ 3 giao dịch, 3 mẫu bad trần", async () => {
@@ -575,7 +593,7 @@ describe("EtherNet/IP", () => {
     expect(s.reason).toBe("device_error");
   });
 
-  it("cờ BẬT: lỗi mạng (ECONNRESET) ⇒ readTags NÉM ở tag đầu; subscribe phát đúng MỘT loạt bad/comm_lost", async () => {
+  it("cờ BẬT: lỗi mạng (ECONNRESET) ⇒ readTags công khai KHÔNG ném (bad/comm_lost theo từng tag); đường poll phát đúng MỘT loạt", async () => {
     vi.stubEnv(FLAG, "true");
     mockEip(async () => {
       throw Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
@@ -584,7 +602,9 @@ describe("EtherNet/IP", () => {
     const d = new EthernetIpDriver();
     await d.connect({ endpoint: "192.168.1.10" });
     const hai: OtTagAddress[] = [...eipTags, { tagKey: "t2", address: "Other", dataType: "float" }];
-    await expect(d.readTags(hai)).rejects.toThrow(/socket hang up/);
+    const truc = await d.readTags(hai); // công khai: không huỷ
+    expect(truc).toHaveLength(2);
+    expect(truc.every((s) => s.quality === "bad" && s.reason === "comm_lost" && s.statusCode === "ECONNRESET")).toBe(true);
     const got: OtSample[] = [];
     const h = await d.subscribe(hai, (s) => void got.push(s), 30);
     await sleep(300);

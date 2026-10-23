@@ -252,7 +252,7 @@ export class SlmpDriver implements OtDriver {
   }
 
   /** Đọc 1 tag → OtSample (lỗi/endCode != 0 → quality:"bad", KHÔNG throw). */
-  private async readOne(tag: OtTagAddress): Promise<OtSample> {
+  private async readOne(tag: OtTagAddress, abortOnCommLost = false): Promise<OtSample> {
     const now = () => new Date();
     try {
       const dev = parseSlmpDevice(tag.address, this.baseCfg.octalInputOutput);
@@ -290,7 +290,7 @@ export class SlmpDriver implements OtDriver {
       // SCADA R0 (C1) — sau cờ: lỗi tầng liên lạc (timeout/rớt socket) ⇒ HUỶ cả tick (một loạt mẫu xấu do vòng poll phát);
       // lỗi khác (địa chỉ sai, giải mã) vẫn theo từng tag. End code != 0 đi qua badSample, không bao giờ huỷ tick.
       const v2 = chatLuongV2Bat();
-      if (v2 && chatLuongLoiChung(err).reason === "comm_lost") throw err;
+      if (abortOnCommLost && chatLuongLoiChung(err).reason === "comm_lost") throw err;
       return {
         tagKey: tag.tagKey,
         raw: null,
@@ -319,11 +319,24 @@ export class SlmpDriver implements OtDriver {
   }
 
   async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docTuanTu(tags, false);
+  }
+
+  /**
+   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi tầng liên lạc đầu tiên HUỶ cả tick (ném) để vòng poll
+   * phát MỘT loạt mẫu xấu; cờ TẮT: y hệt `readTags`. `readTags` công khai (readback ghi thiết bị, probe, bộ đọc an toàn) KHÔNG BAO GIỜ huỷ:
+   * luôn trả mẫu bad theo từng tag.
+   */
+  private docChoVongPoll(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docTuanTu(tags, chatLuongV2Bat());
+  }
+
+  private async docTuanTu(tags: OtTagAddress[], abortOnCommLost: boolean): Promise<OtSample[]> {
     if (!this.connected || !this.socket) throw new DeviceUnreachableError("slmp");
     if (tags.length === 0) return [];
     const t0 = Date.now();
     const out: OtSample[] = [];
-    for (const tag of tags) out.push(await this.readOne(tag));
+    for (const tag of tags) out.push(await this.readOne(tag, abortOnCommLost));
     this.lastLatencyMs = Date.now() - t0;
     return out;
   }
@@ -343,7 +356,7 @@ export class SlmpDriver implements OtDriver {
       deadlineMs: tuyChon?.deadlineMs,
       doc: async (t) => {
         try {
-          return await this.readTags(t);
+          return await this.docChoVongPoll(t);
         } catch (e) {
           this.lastError = (e as Error)?.message || String(e);
           throw e;

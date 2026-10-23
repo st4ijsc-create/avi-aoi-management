@@ -179,7 +179,7 @@ export class ModbusDriver extends NotImplementedDriver {
   }
 
   /** Đọc một tag, trả OtSample. Lỗi → quality:"bad" (không throw). */
-  private async readOne(tag: OtTagAddress): Promise<OtSample> {
+  private async readOne(tag: OtTagAddress, abortOnCommLost = false): Promise<OtSample> {
     const now = () => new Date();
     try {
       const { registerType, register } = parseModbusAddress(tag.address);
@@ -226,7 +226,7 @@ export class ModbusDriver extends NotImplementedDriver {
       // SCADA R0 (C1) — sau cờ: lỗi tầng liên lạc (timeout/rớt socket/cổng đóng) ⇒ HUỶ cả tick, không chờ hạn từng tag còn lại;
       // vòng poll phát MỘT loạt mẫu xấu cho mọi tag. device_error/config_error (exception của thiết bị) vẫn theo từng tag.
       const v2 = chatLuongV2Bat();
-      if (v2 && chatLuongLoiModbus(err).reason === "comm_lost") throw err;
+      if (abortOnCommLost && chatLuongLoiModbus(err).reason === "comm_lost") throw err;
       return {
         tagKey: tag.tagKey,
         raw: null,
@@ -241,6 +241,19 @@ export class ModbusDriver extends NotImplementedDriver {
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docTuanTu(tags, false);
+  }
+
+  /**
+   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi tầng liên lạc đầu tiên HUỶ cả tick (ném) để vòng poll
+   * phát MỘT loạt mẫu xấu; cờ TẮT: y hệt `readTags`. `readTags` công khai (readback ghi thiết bị, probe, bộ đọc an toàn) KHÔNG BAO GIỜ huỷ:
+   * luôn trả mẫu bad theo từng tag.
+   */
+  private docChoVongPoll(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docTuanTu(tags, chatLuongV2Bat());
+  }
+
+  private async docTuanTu(tags: OtTagAddress[], abortOnCommLost: boolean): Promise<OtSample[]> {
     if (!this.connected || !this.client) {
       throw new DeviceUnreachableError("modbus");
     }
@@ -250,7 +263,7 @@ export class ModbusDriver extends NotImplementedDriver {
     const out: OtSample[] = [];
     for (const tag of tags) {
       // Modbus TCP nối tiếp theo unit — đọc tuần tự để tránh trùng giao dịch.
-      out.push(await this.readOne(tag));
+      out.push(await this.readOne(tag, abortOnCommLost));
     }
     this.lastLatencyMs = Date.now() - t0;
     return out;
@@ -271,7 +284,7 @@ export class ModbusDriver extends NotImplementedDriver {
       deadlineMs: tuyChon?.deadlineMs,
       doc: async (t) => {
         try {
-          return await this.readTags(t);
+          return await this.docChoVongPoll(t);
         } catch (e) {
           this.lastError = (e as Error)?.message || String(e);
           throw e;

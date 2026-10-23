@@ -173,7 +173,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
   }
 
   /** Đọc một tag, trả OtSample. Lỗi → quality:"bad" (không throw). */
-  private async readOne(tag: OtTagAddress): Promise<OtSample> {
+  private async readOne(tag: OtTagAddress, abortOnCommLost = false): Promise<OtSample> {
     const now = () => new Date();
     try {
       const { name, program } = parseEipTag(tag.address);
@@ -204,7 +204,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
       // SCADA R0 (C1) — sau cờ: lỗi tầng liên lạc (timeout/ECONNRESET/…) ⇒ HUỶ cả tick (một loạt mẫu xấu do vòng poll phát);
       // lỗi khác của thiết bị vẫn theo từng tag.
       const v2 = chatLuongV2Bat();
-      if (v2 && chatLuongLoiChung(err).reason === "comm_lost") throw err;
+      if (abortOnCommLost && chatLuongLoiChung(err).reason === "comm_lost") throw err;
       return {
         tagKey: tag.tagKey,
         raw: null,
@@ -219,6 +219,19 @@ export class EthernetIpDriver extends NotImplementedDriver {
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docTuanTu(tags, false);
+  }
+
+  /**
+   * SCADA R0 (C1) — đường ĐỌC CHO VÒNG POLL (chỉ `subscribe` dùng). Cờ BẬT: lỗi tầng liên lạc đầu tiên HUỶ cả tick (ném) để vòng poll
+   * phát MỘT loạt mẫu xấu; cờ TẮT: y hệt `readTags`. `readTags` công khai (readback ghi thiết bị, probe, bộ đọc an toàn) KHÔNG BAO GIỜ huỷ:
+   * luôn trả mẫu bad theo từng tag.
+   */
+  private docChoVongPoll(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docTuanTu(tags, chatLuongV2Bat());
+  }
+
+  private async docTuanTu(tags: OtTagAddress[], abortOnCommLost: boolean): Promise<OtSample[]> {
     if (!this.connected || !this.plc) {
       throw new DeviceUnreachableError("ethernet-ip");
     }
@@ -227,7 +240,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
     const t0 = Date.now();
     const out: OtSample[] = [];
     for (const tag of tags) {
-      out.push(await this.readOne(tag));
+      out.push(await this.readOne(tag, abortOnCommLost));
     }
     this.lastLatencyMs = Date.now() - t0;
     return out;
@@ -248,7 +261,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
       deadlineMs: tuyChon?.deadlineMs,
       doc: async (t) => {
         try {
-          return await this.readTags(t);
+          return await this.docChoVongPoll(t);
         } catch (e) {
           this.lastError = (e as Error)?.message || String(e);
           throw e;
