@@ -44,3 +44,20 @@ Phòng `scada:*` **không đụng** (phiên scada-master đang thiết kế).
 ## Việc còn lại / lưu ý
 - Phạm vi của socket tính **một lần lúc nối**: đổi gán nhà máy giữa phiên chỉ có hiệu lực khi nối lại (cùng hành vi các phòng `factory:` khác).
 - Sự kiện mới thêm phải đi qua `phatTheoNhaMay`; census đỏ nếu quên.
+
+## Backlog (giao kiem-dinh): test tạo người dùng admin/supervisor giả mà KHÔNG dọn — nhân hàng thông báo
+Đo ở `aoi_management_test` (2026-10-23): 5.196 người dùng (5.001 hoạt động), trong đó **1.951 admin/supervisor hoạt động**. Mỗi quét "lệch nhà máy" (và mọi cảnh báo gửi cho "mọi admin/supervisor") nhân hàng thông báo theo số người này (hậu quả: 1,86 triệu hàng `notifications`, instance e2e đăng nhập treo 40–60 s — đã chữa gốc ở `criticalStopAlert.khuTrungBenVung`, nhưng người dùng giả vẫn còn).
+
+| Tiền tố `openId` | Số admin/supervisor | Test tạo (không có xoá người dùng / `afterAll` dọn) |
+|---|---|---|
+| `__r…` | 281 | `edgeHumanResolverAuth.dot10`, `edgeStopOwnerRace.dot10`, `otIntentResolve.dot10` (…`.db.test.ts`), `sessionGrantScan.test.ts` |
+| `acs_admin_…` | 228 | `server/_core/accessControlScope.test.ts` (0 xoá, 0 `afterAll`) |
+| `res_admin_…` | 194 | chưa truy được test nguồn (tiền tố `res`) |
+| `rss_admin_…` | 180 | `server/routers/reportServiceScope.test.ts` (0 xoá, 0 `afterAll`) |
+| `ss_admin_…` | 175 | chưa truy được test nguồn |
+| `hms_admin_…` | 169 | `server/routers/defectHeatmapSavedScope.test.ts` (0 xoá, 0 `afterAll`) |
+| `scp_hm_admin_…` | 132 | `server/services/defectSpatialHeatmap.scope.test.ts` (`mkUser` không dọn) |
+| `cds_admin_…` | 115 | `server/db/statisticsDailyScope.test.ts` (0 xoá, 0 `afterAll`) |
+| `__lo…` / `__sw…` | 106 / 69 | `stopAckLockOrder.dot11.db.test.ts` / `centralStopSweepLockOrder.dot11.db.test.ts` |
+
+**Đề xuất fixture tự dọn:** một helper dùng chung `taoNguoiDungTest(tag, role)` (ví dụ `server/testing/nguoiDungTest.ts`) đăng ký `afterAll` xoá `user_factory_assignments`, `permissions`, `notifications`, `user_sessions` rồi `users` của chính các id nó tạo (fallback: `isActive=false` nếu FK chặn); census đọc mã nguồn test: gọi `INSERT INTO users` / `insert(users)` mà không qua helper ⇒ ĐỎ. Thêm kiểm CSDL ở cuối suite: số admin/supervisor hoạt động không tăng sau khi chạy `vitest run` (bắt rò). Việc dọn 1.951 người dùng hiện có KHÔNG làm ở đây (nhiều phiên dùng chung `_test`).
