@@ -4047,7 +4047,8 @@
       "flowChayThu": "试运行 AI 流程的一个节点",
       "scadaReconnectAdapter": "重新连接适配器",
       "scadaDisableAdapter": "暂停适配器",
-      "scadaSetStubFault": "为模拟器设置故障"
+      "scadaSetStubFault": "为模拟器设置故障",
+      "scadaSelectTag": "选择要下达命令的通道"
     },
     "field": {
       "holderUserId": "密钥的发放对象（必须是现有的在职用户）",
@@ -4220,7 +4221,8 @@
       "kbEvalRuns": "Training Studio 评估记录",
       "kbEvalMa": "Training Studio 代码生成评估",
       "kbEvalMaRuns": "Training Studio 代码生成评估记录",
-      "scadaLab": "SCADA 实验模式"
+      "scadaLab": "SCADA 实验模式",
+      "scadaCommands": "SCADA HMI 命令"
     },
     "action": {
       "changeMqttDeviceOfOtherScope": "更改绑定到您范围外机器的MQTT设备",
@@ -4470,7 +4472,8 @@
       "flowDuyetTrungChuLuot": "您是本次运行的所有者（触发或启用者）— 审批人必须是其他人。",
       "adapterOwnedByEdge": "该适配器由边缘节点拥有——中心服务器不控制其会话。",
       "adapterNotStub": "仅适用于 stub 协议的适配器。",
-      "stubEndpointShared": "多个 stub 适配器共用此端点——请先为每个适配器设置独立端点。"
+      "stubEndpointShared": "多个 stub 适配器共用此端点——请先为每个适配器设置独立端点。",
+      "scadaSelectionLockBusy": "该通道正被争用——请稍后重试。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -4503,6 +4506,17 @@
     "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "等待中的命令已因停止（STOP）命令而被取消——如仍需要，请重新发送。",
     "OT_STOP_UNVERIFIED_QUEUE_FULL": "此停止命令不是已验证的（固定）停止（STOP），且该设备已有过多此类命令在等待——已被拒绝，未发送任何内容。请使用固定停止（STOP）（或机器的急停 E-STOP）。",
     "OT_COMMAND_QUEUE_EXPIRED": "该命令在设备的命令队列中等待过久而过期——未发送到设备；如仍需要，请重新发送。",
+    "SCADA_CHANNEL_READ_ONLY": "通道 {{tagKey}} 不接受写入命令（只读通道）。",
+    "SCADA_VALUE_TYPE_MISMATCH": "该值与通道 {{tagKey}} 的数据类型（{{dataType}}）不符。",
+    "SCADA_VALUE_OUT_OF_RANGE": "该值超出通道 {{tagKey}} 的允许范围（{{min}} 至 {{max}}）。",
+    "SCADA_VALUE_OFF_STEP": "该值不在通道 {{tagKey}} 的步长 {{step}} 上。最接近的有效值：{{goiY}}——请重新选择。",
+    "SCADA_VALUE_OFF_STEP_NO_HINT": "该值不在通道 {{tagKey}} 的步长 {{step}} 上——请重新选择。",
+    "SCADA_ROLE_FLOOR": "您的角色无权对作用等级 {{level}} 的通道下达命令。",
+    "SCADA_TOTP_NOT_ENROLLED": "作用等级 {{level}} 的通道需要双因素认证，但此账户尚未注册 2FA。请在 设置 > 安全 中设置。",
+    "SCADA_EDGE_NOT_SUPPORTED": "此设备由边缘节点 {{edgeCode}} 控制——中央 HMI 暂不支持通过边缘节点下达命令。",
+    "SCADA_MACHINE_NOT_REMOTE": "设备不处于 REMOTE 模式（或无法确定其模式）——远程命令被拒绝。",
+    "SCADA_TAG_SELECTED_BY_OTHER": "此通道正被 {{boiTen}} 选中以下达命令——请等待其请求完成或过期（最长 60 秒）。",
+    "SCADA_REQUEST_ALREADY_HANDLED": "此请求已处理或已过期——请创建新请求。",
     "TU_DONG_TAT": "服务器上的自动 Agent 模式已关闭（AI_CODING_TU_TRI_GHI 开关）。请使用逐步审批模式，或请管理员开启。",
     "THIEU_QUYEN_THUC_THI": "缺少自动 Agent 模式所需的执行/自动写入权限（ai_repo_exec）。",
     "THIEU_QUYEN": "缺少运行 Agent 所需的仓库读取权限（ai_repo_read）。",

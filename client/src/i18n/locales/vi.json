@@ -4055,7 +4055,8 @@
       "flowChayThu": "chạy thử một node của Luồng AI",
       "scadaReconnectAdapter": "kết nối lại adapter",
       "scadaDisableAdapter": "tạm tắt adapter",
-      "scadaSetStubFault": "đặt lỗi mô phỏng cho stub"
+      "scadaSetStubFault": "đặt lỗi mô phỏng cho stub",
+      "scadaSelectTag": "chọn kênh để ra lệnh"
     },
     "field": {
       "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",
@@ -4228,7 +4229,8 @@
       "kbEvalRuns": "sổ lượt đánh giá Training Studio",
       "kbEvalMa": "đánh giá sinh mã Training Studio",
       "kbEvalMaRuns": "sổ lượt đánh giá sinh mã Training Studio",
-      "scadaLab": "chế độ Lab SCADA"
+      "scadaLab": "chế độ Lab SCADA",
+      "scadaCommands": "lệnh HMI SCADA"
     },
     "action": {
       "changeMqttDeviceOfOtherScope": "đổi thiết bị MQTT đang gắn với máy ngoài phạm vi của bạn",
@@ -4470,7 +4472,8 @@
       "flowDuyetTrungChuLuot": "Bạn là chủ lượt chạy này (đã kích hoạt hoặc bật) — người duyệt phải là người khác.",
       "adapterOwnedByEdge": "Adapter này do một edge node sở hữu — trung tâm không điều khiển phiên của nó.",
       "adapterNotStub": "Chỉ áp dụng cho adapter giao thức stub.",
-      "stubEndpointShared": "Nhiều adapter stub dùng chung endpoint này — đổi endpoint cho riêng từng adapter trước."
+      "stubEndpointShared": "Nhiều adapter stub dùng chung endpoint này — đổi endpoint cho riêng từng adapter trước.",
+      "scadaSelectionLockBusy": "Kênh đang bị tranh chấp — thử lại sau giây lát."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -4503,6 +4506,17 @@
     "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần.",
     "OT_STOP_UNVERIFIED_QUEUE_FULL": "Lệnh dừng này không phải DỪNG ghim đã xác minh và đã có quá nhiều lệnh như vậy đang chờ cho thiết bị này — lệnh bị từ chối, không gửi gì. Hãy dùng DỪNG ghim (hoặc nút E-STOP của máy).",
     "OT_COMMAND_QUEUE_EXPIRED": "Lệnh đã chờ quá lâu trong hàng đợi lệnh của thiết bị và hết hạn — không gửi tới thiết bị; gửi lại nếu còn cần.",
+    "SCADA_CHANNEL_READ_ONLY": "Kênh {{tagKey}} không nhận lệnh ghi (kênh chỉ đọc).",
+    "SCADA_VALUE_TYPE_MISMATCH": "Giá trị không đúng kiểu dữ liệu của kênh {{tagKey}} ({{dataType}}).",
+    "SCADA_VALUE_OUT_OF_RANGE": "Giá trị nằm ngoài dải cho phép của kênh {{tagKey}} (từ {{min}} đến {{max}}).",
+    "SCADA_VALUE_OFF_STEP": "Giá trị không nằm trên bước {{step}} của kênh {{tagKey}}. Giá trị hợp lệ gần nhất: {{goiY}} — hãy chọn lại.",
+    "SCADA_VALUE_OFF_STEP_NO_HINT": "Giá trị không nằm trên bước {{step}} của kênh {{tagKey}} — hãy chọn lại.",
+    "SCADA_ROLE_FLOOR": "Vai trò của bạn không được ra lệnh cho kênh mức tác động {{level}}.",
+    "SCADA_TOTP_NOT_ENROLLED": "Kênh mức tác động {{level}} cần xác thực 2 lớp, nhưng tài khoản này chưa đăng ký 2FA. Vào Cài đặt > Bảo mật để thiết lập.",
+    "SCADA_EDGE_NOT_SUPPORTED": "Máy này do edge {{edgeCode}} điều khiển — HMI trung tâm chưa hỗ trợ ra lệnh qua edge.",
+    "SCADA_MACHINE_NOT_REMOTE": "Máy không ở chế độ REMOTE (hoặc không xác định được chế độ) — lệnh từ xa bị từ chối.",
+    "SCADA_TAG_SELECTED_BY_OTHER": "Kênh này đang được {{boiTen}} chọn để ra lệnh — chờ yêu cầu của họ xong hoặc hết hạn (tối đa 60 giây).",
+    "SCADA_REQUEST_ALREADY_HANDLED": "Yêu cầu này đã được xử lý hoặc đã hết hạn — hãy tạo yêu cầu mới.",
     "TU_DONG_TAT": "Chế độ Agent tự động đang TẮT trên máy chủ (công tắc AI_CODING_TU_TRI_GHI). Dùng chế độ duyệt từng bước, hoặc nhờ quản trị bật công tắc.",
     "THIEU_QUYEN_THUC_THI": "Thiếu quyền chạy lệnh / tự ghi (ai_repo_exec) cho chế độ Agent tự động.",
     "THIEU_QUYEN": "Thiếu quyền đọc repo (ai_repo_read) để chạy Agent.",

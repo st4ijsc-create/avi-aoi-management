@@ -4055,7 +4055,8 @@
       "flowChayThu": "test-run a node of an AI flow",
       "scadaReconnectAdapter": "reconnect the adapter",
       "scadaDisableAdapter": "disable the adapter",
-      "scadaSetStubFault": "set a simulated stub fault"
+      "scadaSetStubFault": "set a simulated stub fault",
+      "scadaSelectTag": "select a channel to command"
     },
     "field": {
       "holderUserId": "the user the key is issued to (an existing, active user)",
@@ -4228,7 +4229,8 @@
       "kbEvalRuns": "Training Studio evaluation log",
       "kbEvalMa": "Training Studio code-generation evaluation",
       "kbEvalMaRuns": "Training Studio code-generation evaluation log",
-      "scadaLab": "SCADA Lab mode"
+      "scadaLab": "SCADA Lab mode",
+      "scadaCommands": "SCADA HMI commands"
     },
     "action": {
       "changeMqttDeviceOfOtherScope": "change an MQTT device bound to a machine outside your scope",
@@ -4478,7 +4480,8 @@
       "flowDuyetTrungChuLuot": "You own this run (you triggered or enabled it) — the approver must be someone else.",
       "adapterOwnedByEdge": "This adapter is owned by an edge node — the central server does not control its session.",
       "adapterNotStub": "Only applies to stub-protocol adapters.",
-      "stubEndpointShared": "Several stub adapters share this endpoint — give each adapter its own endpoint first."
+      "stubEndpointShared": "Several stub adapters share this endpoint — give each adapter its own endpoint first.",
+      "scadaSelectionLockBusy": "The channel is contended — try again in a moment."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -4511,6 +4514,17 @@
     "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "The waiting command was cancelled because a STOP command was issued — resend it if still needed.",
     "OT_STOP_UNVERIFIED_QUEUE_FULL": "This stop is not a verified (pinned) STOP and too many such stops are already waiting for this device — it was refused and nothing was sent. Use the pinned STOP (or the machine's E-STOP).",
     "OT_COMMAND_QUEUE_EXPIRED": "The command waited too long in the device's command queue and expired — it was not sent to the device; resend it if still needed.",
+    "SCADA_CHANNEL_READ_ONLY": "Channel {{tagKey}} does not accept write commands (read-only channel).",
+    "SCADA_VALUE_TYPE_MISMATCH": "The value does not match the data type of channel {{tagKey}} ({{dataType}}).",
+    "SCADA_VALUE_OUT_OF_RANGE": "The value is outside the allowed range of channel {{tagKey}} ({{min}} to {{max}}).",
+    "SCADA_VALUE_OFF_STEP": "The value is not on step {{step}} of channel {{tagKey}}. Nearest valid value: {{goiY}} — please choose again.",
+    "SCADA_VALUE_OFF_STEP_NO_HINT": "The value is not on step {{step}} of channel {{tagKey}} — please choose again.",
+    "SCADA_ROLE_FLOOR": "Your role may not command a channel of actuation level {{level}}.",
+    "SCADA_TOTP_NOT_ENROLLED": "A channel of actuation level {{level}} requires two-factor authentication, but this account has not enrolled 2FA. Set it up in Settings > Security.",
+    "SCADA_EDGE_NOT_SUPPORTED": "This machine is controlled by edge {{edgeCode}} — the central HMI cannot send commands through an edge yet.",
+    "SCADA_MACHINE_NOT_REMOTE": "The machine is not in REMOTE mode (or its mode cannot be determined) — remote commands are refused.",
+    "SCADA_TAG_SELECTED_BY_OTHER": "This channel is selected for a command by {{boiTen}} — wait until their request finishes or expires (at most 60 seconds).",
+    "SCADA_REQUEST_ALREADY_HANDLED": "This request has already been handled or has expired — create a new request.",
     "TU_DONG_TAT": "Autonomous agent mode is OFF on the server (AI_CODING_TU_TRI_GHI switch). Use step-by-step approval mode, or ask an admin to enable it.",
     "THIEU_QUYEN_THUC_THI": "Missing run/auto-write permission (ai_repo_exec) for autonomous agent mode.",
     "THIEU_QUYEN": "Missing repository read permission (ai_repo_read) to run the agent.",

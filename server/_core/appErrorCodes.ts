@@ -166,6 +166,22 @@ export const APP_ERROR_CODES = [
   "OT_COMMAND_QUEUE_EXPIRED", // no params — SCADA R1a Task 5 (K9): KHÔNG ném: `DispatchResult.appError` của một lệnh OT THƯỜNG đã chờ
                           // trong hàng đợi per-adapter quá hạn (deadlineMs của lệnh, mặc định 60 s) trước khi tới lượt (reason
                           // `QUEUE_EXPIRED`). Không gửi gì tới thiết bị; người vận hành gửi lại nếu còn cần. DỪNG không bao giờ hết hạn.
+
+  // ── SCADA R1a Task 8 (K1/K5) — từ chối lệnh ghi tag từ HMI (`scadaCommands.request`, server/services/scada/lenhHmi.ts) ──
+  // MỌI lời từ chối mang thêm `ma` (= scada_command_attempts.reason_code: CHANNEL_READ_ONLY, OFF_STEP, …) để M5 chọn câu/hành động
+  // mà không phải đoán từ appCode. Không mã chung nào nói đúng cách gỡ: kênh chỉ đọc ≠ giá trị sai ≠ máy LOCAL ≠ người khác đang giữ.
+  "SCADA_CHANNEL_READ_ONLY",       // params: { ma, tagKey } — kênh không nhận lệnh ghi (input / calculated / writable=false).
+  "SCADA_VALUE_TYPE_MISMATCH",     // params: { ma, tagKey, dataType } — giá trị không ép được về kiểu của kênh.
+  "SCADA_VALUE_OUT_OF_RANGE",      // params: { ma, tagKey, min, max } — min/max "—" khi không khai cận đó.
+  "SCADA_VALUE_OFF_STEP",          // params: { ma, tagKey, step, goiY } — lệch bước; goiY CHỈ là gợi ý, không tự làm tròn.
+  "SCADA_VALUE_OFF_STEP_NO_HINT",  // params: { ma, tagKey, step } — như trên, không có điểm lưới nào trong dải để gợi ý.
+  "SCADA_ROLE_FLOOR",              // params: { ma, level } — vai của người gọi dưới sàn của mức tác động kênh.
+  "SCADA_TOTP_NOT_ENROLLED",       // params: { ma, level } — kênh mức 4–5 cần 2FA mà tài khoản chưa đăng ký. KHÁC
+                                   // TWO_FACTOR_NOT_SET_UP: áp BẤT KỂ AUTH_2FA_BAT_BUOC (D5), câu nói rõ là do mức kênh.
+  "SCADA_EDGE_NOT_SUPPORTED",      // params: { ma, edgeCode } — adapter do edge sở hữu; HMI trung tâm chưa ra lệnh qua edge (R1c).
+  "SCADA_MACHINE_NOT_REMOTE",      // params: { ma, lyDo } — máy không ở REMOTE (lyDo = LyDoCheDo của cheDoMay, M5 dịch riêng).
+  "SCADA_TAG_SELECTED_BY_OTHER",   // params: { ma, boiUserId, boiTen, hetHanLuc } — người khác đang giữ khoá chọn kênh (K6).
+  "SCADA_REQUEST_ALREADY_HANDLED", // params: { ma } — clientRequestId đã dùng cho yêu cầu đã xử lý / hết hạn / lệnh khác.
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];

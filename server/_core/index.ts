@@ -6544,6 +6544,14 @@ async function startServer() {
     port,
     onListening,
     async () => {
+      // SCADA R1a Task 8 (điều phối 2026-10-24) — SCADA_COMMANDS bật mà bộ đệm giá trị hiện tại tắt ⇒ mọi máy LOCAL ⇒ mọi lệnh HMI
+      // bị từ chối: cảnh báo MỘT lần, cạnh chỗ khởi động bộ đệm. Đặt TRƯỚC startOt để một lỗi OT không che mất cảnh báo. Chỉ log.
+      try {
+        const { kiemCauHinhLenhHmi } = await import("../services/scada/lenhHmi");
+        kiemCauHinhLenhHmi();
+      } catch (err) {
+        console.error("[SCADA] kiểm cấu hình lệnh HMI lỗi:", (err as Error)?.message || err);
+      }
       const { startOt } = await import("../services/ot");
       await startOt();
       // SCADA R0 Task 7 — bộ đệm giá trị hiện tại: SAU startOt (các adapter đã khai nhịp poll/deadband/mã qua

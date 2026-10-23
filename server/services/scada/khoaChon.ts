@@ -63,7 +63,19 @@ export async function giuKhoaChon(
     }
     // Hang vua het han / vua bi nha / vua thanh cua chinh ta: thu lai upsert.
   }
-  throw new Error(`khoaChon: khong chot duoc khoa (${a.adapterId}, ${a.tagKey}) sau ${SO_LAN_THU} lan - hang bien doi lien tuc`);
+  throw new LoiKhoaChonTranhChap(`khoaChon: khong chot duoc khoa (${a.adapterId}, ${a.tagKey}) sau ${SO_LAN_THU} lan - hang bien doi lien tuc`);
+}
+
+/**
+ * R1a Task 8 — lop co ma cho lan nem "het luot thu" o tren (message GIU NGUYEN VAN). `lenhHmi.yeuCauGhiTag` bat dung lop nay => dong
+ * attempts KHOA_CHON_LOI + appError co ma (khong 500 tho); moi loi khac (DB …) van di tiep nhu loi ha tang.
+ */
+export class LoiKhoaChonTranhChap extends Error {
+  readonly code = "KHOA_CHON_TRANH_CHAP" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "LoiKhoaChonTranhChap";
+  }
 }
 
 /** Nha khoa CHI KHI `request_id` con khop (yeu cau cu khong xoa khoa cua yeu cau moi cung nguoi). Khong co hang => khong lam gi. */

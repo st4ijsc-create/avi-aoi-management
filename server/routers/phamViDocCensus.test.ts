@@ -858,7 +858,13 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //     dù chúng cũng lọc phạm vi như ba query. (Kế hoạch dự kiến "S cho cả 6"; số ĐO được là 3 S + 3 D.)
 //   Đo trước (xanh trên ghim cũ, HEAD b899b3483) / sau (đỏ đúng +3 S, +3 D). No baseline row added. `tong` 2392 matches
 //   `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 333, B: 8, C: 494, D: 1191, S: 366, tong: 2392 } as const;
+// ★★ 2026-10-24 · R1a scadaCommands +1 (SCADA R1a Task 8 — lệnh ghi tag HMI, bước request) — **D 1191 → 1192 · tong 2392 → 2393 ·
+// A/B/C/S unchanged.** MỘT thủ tục MỚI `scadaCommands.request` (mutation) trong `server/routers/scadaCommandsRouter.ts`: truyền
+// `phamViCua(ctx)` xuống `lenhHmi.yeuCauGhiTag` ⇒ `idsTrongPhamVi("machine", …, {strict:true})` (adapterId từ client ⇒ kiểm lại phạm vi;
+// ngoài phạm vi = không tồn tại = NOT_FOUND; adapter không gắn máy chỉ với phạm vi toàn quyền). Mutation ⇒ D (bộ suy xếp MỌI mutation
+// vào D). Đo: trên ghim cũ (gốc 4d149497e) đỏ ĐÚNG +1 D / +1 tong sau khi thêm router, rồi ghim lại. No baseline row added. `tong` 2393 matches
+// `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 333, B: 8, C: 494, D: 1192, S: 366, tong: 2393 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
