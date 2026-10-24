@@ -906,7 +906,11 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★★ 2026-10-24 (lô L1b): **C 488 → 483 · S 418 → 423 · A/B/D/tong unchanged.** CHÍNH XÁC 5 thủ tục ĐỌC C → S (nhóm "không có cổng" vì bộ suy không thấy cổng; nay đi qua `_adapterPhamVi`): `annotationHistory.list|get|compare`
 // (lịch sử chú thích theo lần kiểm tra của máy trong phạm vi) và `aoiPackage.listDeadLetters|getDeadLetterDetail` (mục dead-letter theo mã máy trong phạm vi). 18 MUTATION cùng router đã vá (sổ nợ ghi −18 ở `phamViGhiBaseline.ts`).
 // Chứng minh: `loAoiGhiPhamVi.db.test.ts` (17 ca CSDL thật; 17/17 đỏ trên mã L1; đột biến 40/40 bị bắt sau khi bổ sung 2 ca).
-const GHIM = { A: 290, B: 8, C: 483, D: 1198, S: 423, tong: 2402 } as const;
+// ★★ 2026-10-24 (lô L2): **A 290 → 270 · S 423 → 443 · B/C/D/tong unchanged.** CHÍNH XÁC 20 thủ tục ĐỌC A → S: traceability.bySerial|byLot · bom.listFeeders|feederReorderStatus|traceForward|traceReverse ·
+// processResult.listBySerial|stats|metricSeries|spcChart|fleetRollup|envSeries|dailyRollup · defectDisposition.listByInspection|listOpen|countOpen|reInspectStatus|repairQueue|listBySerial|repairStats. 20 dòng sổ nợ đã GỠ.
+// Cùng lô vá 6 MUTATION (sổ nợ ghi −6) và processResult.record (chưa nằm trong sổ). Chưa vá, để L7: bom.getDefinition/listDefinitions + CRUD định nghĩa BOM = dữ liệu chủ theo mẫu sản phẩm (không cột nhà máy).
+// Chứng minh: `loTruyXuatPhamVi.db.test.ts` (13 ca CSDL thật; 13/13 đỏ trên mã cũ; đột biến 58/58 bị bắt sau khi bổ sung 3 ca). Kèm vá lỗi CÓ SẴN: getReInspectStatus so sánh thời gian qua Date của JS (lệch múi giờ ⇒ chính hàng gốc bị tính là "muộn hơn").
+const GHIM = { A: 270, B: 8, C: 483, D: 1198, S: 443, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

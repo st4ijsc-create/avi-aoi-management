@@ -19,6 +19,7 @@
  * LỊCH SỬ TRẢ NỢ: 2026-10-24 lô W1 (−14: recipes.create/archive/setGolden/approve · equipmentIntegration.create/archive/release/rollbackRecipeVersion +
  * recordRecipeLoad · aoiOnboarding.saveDraft/deleteDraft/signOff/decommission · bom.recordComponentInstallation) ⇒ 724 → 710.
  * 2026-10-24 lô L1b (−18: inspection.confirmNTF|bulkAcknowledge · measurementResult.updateRemark|analyzeWithAI|batch*|correctResult|classifyDefect · annotation.save|delete|export|copyAnnotations|bulkApplyTemplate · annotationHistory.rollback · annotationComparison.createSession|detectPatterns) ⇒ 710 → 692.
+ * 2026-10-24 lô L2 (−6: bom.assignFeederMaterial|updateFeeder|loadFeeder · defectDisposition.create|updateStatus|transition) ⇒ −6.
  * Còn lại trong cùng router: annotationTemplate.delete — mẫu chú thích DÙNG CHUNG (không dữ liệu theo nhà máy; chỉ người tạo/admin xoá) ⇒ cần MIỄN TRỪ có chủ ý do kiem-dinh khai.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
@@ -233,13 +234,10 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/bomRouter.ts (10) ──
   "server/routers/bomRouter.ts#bomRouter.addLineItem",
   "server/routers/bomRouter.ts#bomRouter.archiveDefinition",
-  "server/routers/bomRouter.ts#bomRouter.assignFeederMaterial",
   "server/routers/bomRouter.ts#bomRouter.bulkAddLineItems",
   "server/routers/bomRouter.ts#bomRouter.createDefinition",
   "server/routers/bomRouter.ts#bomRouter.deleteLineItem",
-  "server/routers/bomRouter.ts#bomRouter.loadFeeder",
   "server/routers/bomRouter.ts#bomRouter.updateDefinition",
-  "server/routers/bomRouter.ts#bomRouter.updateFeeder",
   "server/routers/bomRouter.ts#bomRouter.updateLineItem",
   // ── server/routers/bootstrapRouter.ts (1) ──
   "server/routers/bootstrapRouter.ts#bootstrapRouter.newFactory",
@@ -284,9 +282,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/dataRouters.ts#importRouter.importWorkshops",
   "server/routers/dataRouters.ts#importRouter.importWorkstations",
   // ── server/routers/defectDispositionRouter.ts (3) ──
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.create",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.transition",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.updateStatus",
   // ── server/routers/ecnRouter.ts (2) ──
   "server/routers/ecnRouter.ts#ecnRouter.create",
   "server/routers/ecnRouter.ts#ecnRouter.transition",

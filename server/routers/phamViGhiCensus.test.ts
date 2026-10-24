@@ -25,7 +25,7 @@ const NO = QUET.mutation.filter(laNoGhi);
 const SO = new Set(NO_PHAM_VI_GHI);
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1198, no: 692 } as const;
+const GHIM = { tongMutation: 1198, no: 686 } as const;
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {

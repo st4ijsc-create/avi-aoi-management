@@ -12,7 +12,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { appError } from "../_core/appError";
 import { getDb as getDbRaw } from "../db";
 import { idsTrongPhamVi, type PhamViDoc } from "../db/hierarchy";
-import { commandLog, commissioningRecords, deviceAdapters, deviceTags, safetyEvents } from "../../drizzle/schema";
+import { commandLog, commissioningRecords, deviceAdapters, deviceTags, safetyEvents, wipTracking } from "../../drizzle/schema";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 
 export const khongThayAdapter = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
@@ -229,4 +229,29 @@ export async function chuThichTrongPhamVi(ctx: CoDanhTinh, inspectionId: number 
   const { productInspections } = await import("../../drizzle/schema");
   const rows = await d.select({ m: productInspections.machineId }).from(productInspections).where(eq(productInspections.id, inspectionId)).limit(1);
   return rows.length === 1 && ids.includes(rows[0].m);
+}
+
+/** Điều kiện SQL phạm vi cho `wip_tracking` (theo `lineId` / `currentMachineId`); hàng không định vị được chỉ toàn quyền thấy. `undefined` khi toàn quyền. */
+export async function dieuKienWipTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
+  return dieuKienViTriTrongPhamVi(phamViCua(ctx), { lineId: wipTracking.lineId, machineId: wipTracking.currentMachineId });
+}
+
+/**
+ * phạm vi người dùng (L2 2026-10-24): tập đơn vị (serial) trong `serials` mà người gọi THẤY ĐƯỢC — toàn quyền ⇒ tất cả; ngược lại ⇒ có ≥1 bản ghi bước/kiểm tra/linh kiện ở máy trong phạm vi (cùng luật genealogy
+ * `donViThayDuoc`) HOẶC ≥1 hàng WIP ở dây chuyền/máy trong phạm vi. Không tính "tác giả sự kiện chuỗi" (đặc thù genealogy).
+ */
+export async function donViTrongPhamVi(ctx: CoDanhTinh, serials: string[]): Promise<Set<string>> {
+  const idsMay = await idsMayTrongPhamVi(ctx);
+  if (idsMay === null) return new Set(serials);
+  if (serials.length === 0) return new Set();
+  const { donViThayDuoc } = await import("../api/v1/genealogyApi");
+  const out = await donViThayDuoc(serials, idsMay, null);
+  const con = serials.filter((s) => !out.has(s));
+  if (con.length > 0) {
+    const cong = await dieuKienWipTrongPhamVi(ctx);
+    const d = await layDb();
+    const rows = await d.select({ s: wipTracking.serialNumber }).from(wipTracking).where(cong ? sql`${inArray(wipTracking.serialNumber, con)} AND ${cong}` : inArray(wipTracking.serialNumber, con));
+    for (const r of rows) if (r.s != null) out.add(r.s);
+  }
+  return out;
 }

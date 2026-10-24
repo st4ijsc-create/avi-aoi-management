@@ -25,6 +25,8 @@ vi.mock("../db/processResult", () => ({
 }));
 vi.mock("../db/otTelemetry", () => ({ getTelemetrySeries: (...a: unknown[]) => telemetry(...a) }));
 vi.mock("../services/processResultService", () => ({ recordProcessResult: vi.fn() }));
+// L2 (phạm vi người dùng 2026-10-24): test này kiểm CÁCH NỐI helper, không kiểm phạm vi ⇒ coi người gọi toàn quyền (phạm vi có test CSDL thật riêng: loTruyXuatPhamVi.db.test.ts).
+vi.mock("./_adapterPhamVi", async (orig) => ({ ...(await orig<typeof import("./_adapterPhamVi")>()), idsMayTrongPhamVi: async () => null, mayTrongPhamVi: async () => null }));
 
 const importRouter = async () => (await import("./processResultRouter")).processResultRouter;
 const ctx = { user: { id: 1 } } as never;

@@ -129,11 +129,7 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/apiKeyRouter.ts (1) ─────────────────────────────────────────────────────
   "server/routers/apiKeyRouter.ts#apiKeyRouter.list",
   // ── server/routers/bomRouter.ts (5) ────────────────────────────────────────────────────────
-  "server/routers/bomRouter.ts#bomRouter.feederReorderStatus",
   "server/routers/bomRouter.ts#bomRouter.getDefinition",
-  "server/routers/bomRouter.ts#bomRouter.listFeeders",
-  "server/routers/bomRouter.ts#bomRouter.traceForward",
-  "server/routers/bomRouter.ts#bomRouter.traceReverse",
   // ── server/routers/commandCenterRouter.ts — ĐÃ TRẢ 2026-09-15 (QA lần 11, PH-23) ───────────
   //    `commandCenterRouter.hierarchy` rời sổ: nay phân giải phạm vi từ `ctx.user` qua
   //    `resolveHierarchyScope` (nhóm A → S). Đo được TRƯỚC khi vá: 5 vai nhận CÙNG 450.811
@@ -144,13 +140,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/dashboardStatsRouters.ts (1) ────────────────────────────────────────────
   "server/routers/dashboardStatsRouters.ts#dashboardRouter.overviewCounts",
   // ── server/routers/defectDispositionRouter.ts (7) ──────────────────────────────────────────
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.countOpen",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.listByInspection",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.listBySerial",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.listOpen",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.reInspectStatus",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.repairQueue",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.repairStats",
   // ── server/routers/deviceAdapterRouter.ts — ★ 2026-10-24: 2 mục ĐÃ TRẢ (get · list ⇒ S qua server/routers/_adapterPhamVi.ts), xoá khỏi sổ ──
   // ── server/routers/digitalTwinRouter.ts — ★ ĐỢT 14 LÔ Q1: 5 mục ĐÃ TRẢ, xoá khỏi sổ ────────
   //    twinState · defectHeatmap · wipFlowState · stationLoadHeatmap · predictionOverlay đều đã
@@ -347,13 +336,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/predictiveMaintenanceRouter.ts#predictiveMaintenanceRouter.getRulEstimate",
   "server/routers/predictiveMaintenanceRouter.ts#predictiveMaintenanceRouter.listRulForecast",
   // ── server/routers/processResultRouter.ts (7) ──────────────────────────────────────────────
-  "server/routers/processResultRouter.ts#processResultRouter.dailyRollup",
-  "server/routers/processResultRouter.ts#processResultRouter.envSeries",
-  "server/routers/processResultRouter.ts#processResultRouter.fleetRollup",
-  "server/routers/processResultRouter.ts#processResultRouter.listBySerial",
-  "server/routers/processResultRouter.ts#processResultRouter.metricSeries",
-  "server/routers/processResultRouter.ts#processResultRouter.spcChart",
-  "server/routers/processResultRouter.ts#processResultRouter.stats",
   // ── server/routers/processRouter.ts (2) ────────────────────────────────────────────────────
   "server/routers/processRouter.ts#processRouter.getAssignmentsByProcess",
   "server/routers/processRouter.ts#processRouter.getLineAssignments",
@@ -453,8 +435,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/thresholdSuggestionRouter.ts#thresholdSuggestionRouter.suggestForPoint",
   "server/routers/thresholdSuggestionRouter.ts#thresholdSuggestionRouter.suggestForProductModel",
   // ── server/routers/traceabilityRouter.ts (2) ───────────────────────────────────────────────
-  "server/routers/traceabilityRouter.ts#traceabilityRouter.byLot",
-  "server/routers/traceabilityRouter.ts#traceabilityRouter.bySerial",
   // ── server/routers/twinRouter.ts (2) ───────────────────────────────────────────────────────
   // doc 81 Đợt 4 Task A3: occupancyGrid · replay · sceneGraph · twinModels đã vá (assertTwinFactoryInScope) — đã GỠ.
   "server/routers/twinRouter.ts#twinRouter.models.list",
