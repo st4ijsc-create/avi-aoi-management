@@ -337,3 +337,44 @@ describe("kiem-dinh P1-3 — int có scale/offset: (v − offset)/scale phải N
     expect(tot(kiemGiaTriGhi({ ...kenh({ dataType: "string" }), scale: 10 }, "x"))).toBe("x");
   });
 });
+
+// R1b-1 T10 — Sparkplug B giao số nguyên 64 bit dưới dạng đối tượng kiểu Long ({low, high, unsigned} + toNumber()).
+// Dựng tay (duck-type), KHÔNG import thư viện long (chỉ là phụ thuộc bắc cầu).
+function giaLong(n: bigint, unsigned = false) {
+  const u = BigInt.asUintN(64, n);
+  const low = Number(BigInt.asIntN(32, u & 0xffffffffn));
+  const high = Number(BigInt.asIntN(32, u >> 32n));
+  return { low, high, unsigned, toNumber: () => Number(unsigned ? u : BigInt.asIntN(64, u)) };
+}
+describe("kiemGiaTriGhi — đối tượng kiểu Long (Sparkplug B 64 bit)", () => {
+  const i = kenh({ dataType: "int" });
+  const f = kenh({ dataType: "float" });
+  it("★ int: Long trong miền an toàn (cả dương, âm, unsigned) được nhận bằng đúng số", () => {
+    expect(tot(kiemGiaTriGhi(i, giaLong(12n)))).toBe(12);
+    expect(tot(kiemGiaTriGhi(i, giaLong(-7n)))).toBe(-7);
+    expect(tot(kiemGiaTriGhi(i, giaLong(4_000_000_000n, true)))).toBe(4_000_000_000);
+    expect(tot(kiemGiaTriGhi(i, giaLong(BigInt(Number.MAX_SAFE_INTEGER))))).toBe(Number.MAX_SAFE_INTEGER);
+  });
+  it("★ int: Long NGOÀI miền an toàn ⇒ TYPE_MISMATCH (thông điệp miền an toàn), không làm tròn lặng lẽ", () => {
+    for (const l of [giaLong(2n ** 53n), giaLong(-(2n ** 53n)), giaLong(2n ** 63n - 1n), giaLong(2n ** 64n - 1n, true)]) {
+      const r = loi(kiemGiaTriGhi(i, l));
+      expect(r.ma).toBe("TYPE_MISMATCH");
+      expect(r.chiTiet).toContain("an toàn");
+    }
+  });
+  it("float: Long an toàn được nhận; ngoài miền ⇒ TYPE_MISMATCH", () => {
+    expect(tot(kiemGiaTriGhi(f, giaLong(250n)))).toBe(250);
+    expect(loi(kiemGiaTriGhi(f, giaLong(2n ** 62n))).ma).toBe("TYPE_MISMATCH");
+  });
+  it("đối tượng KHÔNG đủ dấu hiệu Long (thiếu unsigned / toNumber không phải hàm / toNumber ném lỗi) ⇒ TYPE_MISMATCH", () => {
+    expect(loi(kiemGiaTriGhi(i, { low: 1, high: 0, toNumber: () => 1 })).ma).toBe("TYPE_MISMATCH");
+    expect(loi(kiemGiaTriGhi(i, { low: 1, high: 0, unsigned: false, toNumber: 1 })).ma).toBe("TYPE_MISMATCH");
+    expect(loi(kiemGiaTriGhi(i, { low: 1, high: 0, unsigned: false, toNumber: () => { throw new Error("x"); } })).ma).toBe("TYPE_MISMATCH");
+    expect(loi(kiemGiaTriGhi(i, { low: "1", high: 0, unsigned: false, toNumber: () => 1 })).ma).toBe("TYPE_MISMATCH");
+  });
+  it("Long vẫn chịu dải + bước của kênh", () => {
+    const k = kenh({ dataType: "int", writeMin: 0, writeMax: 100, writeStep: 5 });
+    expect(tot(kiemGiaTriGhi(k, giaLong(50n)))).toBe(50);
+    expect(loi(kiemGiaTriGhi(k, giaLong(101n))).ma).toBe("OUT_OF_RANGE");
+  });
+});

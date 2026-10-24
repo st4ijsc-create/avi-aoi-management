@@ -79,6 +79,24 @@ function epBool(v: unknown): boolean | undefined {
   return undefined;
 }
 
+/**
+ * R1b-1 T10 — bộ giải mã Sparkplug B giao số nguyên 64 bit dưới dạng đối tượng kiểu Long (thư viện `long`: {low, high, unsigned} + toNumber()).
+ * Nhận dạng bằng DUCK-TYPE (không import thư viện): low/high là số, unsigned là boolean, toNumber là hàm. Trả số khi toNumber() là số nguyên AN TOÀN;
+ * ngoài miền an toàn (|n| > 2^53−1, toNumber() đã mất chính xác) ⇒ null (người gọi coi là TYPE_MISMATCH). Không phải Long ⇒ undefined.
+ */
+function epLong(v: unknown): number | null | undefined {
+  if (typeof v !== "object" || v === null) return undefined;
+  const o = v as { low?: unknown; high?: unknown; unsigned?: unknown; toNumber?: unknown };
+  if (typeof o.low !== "number" || typeof o.high !== "number" || typeof o.unsigned !== "boolean" || typeof o.toNumber !== "function") return undefined;
+  let n: unknown;
+  try {
+    n = (o.toNumber as () => unknown).call(v);
+  } catch {
+    return undefined;
+  }
+  return typeof n === "number" && Number.isSafeInteger(n) ? n : null;
+}
+
 /** số nguyên an toàn ⇒ số; trông như số nguyên nhưng NGOÀI dải an toàn (|n| > 2^53−1) ⇒ null; còn lại ⇒ undefined. */
 function epInt(v: unknown): number | null | undefined {
   let n: number;
@@ -89,7 +107,7 @@ function epInt(v: unknown): number | null | undefined {
     const s = v.trim();
     if (!RE_INT.test(s)) return undefined;
     n = Number(s);
-  } else return undefined;
+  } else return epLong(v);
   return Number.isSafeInteger(n) ? n : null;
 }
 
@@ -101,7 +119,7 @@ function epFloat(v: unknown): number | undefined {
     const n = Number(s);
     return Number.isFinite(n) ? n : undefined;
   }
-  return undefined;
+  return epLong(v) ?? undefined; // Long ngoài miền an toàn ⇒ undefined ⇒ TYPE_MISMATCH
 }
 
 /** JSON-tương-thích: null, boolean, số hữu hạn, chuỗi, mảng, đối tượng thuần (đệ quy). `undefined`, hàm, bigint, NaN … bị loại. */
