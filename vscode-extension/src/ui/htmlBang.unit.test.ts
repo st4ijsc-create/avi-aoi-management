@@ -2,7 +2,7 @@
  * LƯỚI khung HTML của webview: CSP phải KHOÁ, và script phải chạy bằng nonce. Một webview lỡ mở
  * `script-src *` là lỗ hổng im lặng — không ai thấy cho tới lúc bị lợi dụng.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { dungHtmlBang } from "./htmlBang";
 
 describe("dungHtmlBang", () => {
@@ -333,6 +333,24 @@ describe("webview — ĐỢT G / TASK G1 / B3: ô chọn dự án ẨN ở LOCAL
     expect(w.nut("o-du-an").hidden).toBe(false);
   });
 
+  it("★★★ 2026-10-24 — dự án SERVER đang chọn ⇒ ghi chú NÓI THẬT \"ghi luôn cần duyệt trên máy chủ\"; chọn LOCAL ⇒ ẩn; markup tĩnh ẩn", () => {
+    expect(dungHtmlBang({ nonce: "n" })).toMatch(/<div id="ghi-chu-quyen" hidden>/);
+    const w = chayWebview();
+    w.banTin({
+      loai: "duAn",
+      ds: [
+        { id: "local:C:\ws", nhan: "LOCAL · C:\ws", loai: "local" },
+        { id: "server:p1", nhan: "SERVER · dự án 1", loai: "server" },
+      ],
+    });
+    w.nut("o-du-an").value = "server:p1";
+    w.nut("o-du-an").kichHoat("change", { target: { value: "server:p1" } });
+    expect(w.nut("ghi-chu-quyen").hidden).toBe(false);
+    w.nut("o-du-an").value = "local:C:\ws";
+    w.nut("o-du-an").kichHoat("change", { target: { value: "local:C:\ws" } });
+    expect(w.nut("ghi-chu-quyen").hidden).toBe(true);
+  });
+
   it("★ danh sách RỖNG ⇒ #o-du-an ẨN (không có gì để chọn)", () => {
     const w = chayWebview();
     w.banTin({ loai: "duAn", ds: [] });
@@ -430,6 +448,8 @@ function chayWebview(): {
   nut: (id: string) => PhanTuGia;
   daGui: Array<Record<string, unknown>>;
   banTin: (m: Record<string, unknown>) => void;
+  /** bắn sự kiện lên `document` (paste/drop/dragover của đính kèm ngoài workspace) */
+  banDoc: (loai: string, e: Record<string, unknown>) => void;
 } {
   const ma = dungHtmlBang({ nonce: "N" }).match(/<script nonce="N">([\s\S]*?)<\/script>/)![1];
   const kho = new Map<string, PhanTuGia>();
@@ -439,7 +459,14 @@ function chayWebview(): {
   };
   const daGui: Array<Record<string, unknown>> = [];
   const ngheCuaWindow: Array<(e: { data: Record<string, unknown> }) => void> = [];
-  const documentGia = { getElementById: nut, createElement: () => new PhanTuGia() };
+  const ngheDoc: Record<string, Array<(e: unknown) => void>> = {};
+  const lopBody = new Set<string>();
+  const documentGia = {
+    getElementById: nut,
+    createElement: () => new PhanTuGia(),
+    addEventListener: (l: string, h: (e: unknown) => void) => (ngheDoc[l] ??= []).push(h),
+    body: { classList: { add: (t: string) => lopBody.add(t), remove: (t: string) => lopBody.delete(t), contains: (t: string) => lopBody.has(t) } },
+  };
   const windowGia = {
     addEventListener: (_l: string, h: (e: { data: Record<string, unknown> }) => void) => ngheCuaWindow.push(h),
   };
@@ -450,7 +477,7 @@ function chayWebview(): {
   new Function("document", "window", "acquireVsCodeApi", ma)(documentGia, windowGia, () => ({
     postMessage: (m: Record<string, unknown>) => daGui.push(m),
   }));
-  return { nut, daGui, banTin: (m) => ngheCuaWindow.forEach((h) => h({ data: m })) };
+  return { nut, daGui, banTin: (m) => ngheCuaWindow.forEach((h) => h({ data: m })), banDoc: (l, e) => (ngheDoc[l] ?? []).forEach((h) => h(e)) };
 }
 
 describe("webview — nút GHI không được gửi hai lượt cho một quyết định", () => {
@@ -1651,5 +1678,112 @@ describe("webview — ĐỢT I / TASK I-1: chỉ báo ĐANG CHẠY trong bong b�
     const ma = html.match(/<script nonce="N">([\s\S]*?)<\/script>/)![1];
     expect(ma).not.toContain("setInterval");
     expect(ma).not.toContain("setTimeout");
+  });
+});
+
+/**
+ * ★★★ 2026-10-24 — LỖI 2: không dán được ảnh / kéo được tệp từ ngoài dự án. Chạy script webview THẬT trên DOM giả (không soi chữ).
+ * Webview chỉ GOM + HIỂN THỊ + chuyển tiếp; hàng rào thật ở host (`loi/dinhKemNgoai.ts`).
+ */
+describe("webview — đính kèm NGOÀI workspace (dán ảnh Ctrl+V, kéo-thả tệp)", () => {
+  class FileReaderGia {
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    result: string | null = null;
+    readAsDataURL(f: { type: string }) {
+      this.result = `data:${f.type};base64,QUJD`;
+      queueMicrotask(() => this.onload?.());
+    }
+    readAsText(f: { noiDung?: string }) {
+      this.result = f.noiDung ?? "nội dung";
+      queueMicrotask(() => this.onload?.());
+    }
+  }
+  const tep = (ten: string, type: string, size = 100, noiDung?: string) => ({ name: ten, type, size, noiDung });
+  const doi = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  };
+  const dan = (w: ReturnType<typeof chayWebview>, files: unknown[]) => {
+    let daChan = false;
+    w.nut("o-nhap").kichHoat("paste", { clipboardData: { items: files.map((f) => ({ kind: "file", getAsFile: () => f })) }, preventDefault: () => (daChan = true) });
+    return () => daChan;
+  };
+  beforeEach(() => vi.stubGlobal("FileReader", FileReaderGia));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("★★★ Ctrl+V ảnh PNG ⇒ chip hiện, gửi câu hỏi mang `dinhKemNgoai` (loai anh, base64), chip xoá SAU khi gửi", async () => {
+    const w = chayWebview();
+    const daChan = dan(w, [tep("image.png", "image/png", 2048)]);
+    await doi();
+    expect(daChan()).toBe(true); // ảnh dán vào ⇒ chặn hành vi mặc định
+    expect(w.nut("ds-dinh-kem").hidden).toBe(false);
+    expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 1");
+    w.nut("o-nhap").value = "đọc ảnh này";
+    w.nut("nut-gui").bam();
+    const hoi = w.daGui.find((m) => m.loai === "hoi") as { dinhKemNgoai?: Array<Record<string, unknown>> };
+    expect(hoi.dinhKemNgoai).toEqual([{ loai: "anh", ten: "image.png", kieu: "image/png", kichThuoc: 2048, noiDung: "QUJD" }]);
+    expect(w.nut("ds-dinh-kem").hidden).toBe(true); // một lượt: không gửi lại ảnh nặng ở câu sau
+    expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 0");
+  });
+
+  it("★ dán CHỮ (không có tệp) ⇒ KHÔNG chặn, KHÔNG thêm đính kèm", async () => {
+    const w = chayWebview();
+    let daChan = false;
+    w.nut("o-nhap").kichHoat("paste", { clipboardData: { items: [{ kind: "string", getAsFile: () => null }] }, preventDefault: () => (daChan = true) });
+    await doi();
+    expect(daChan).toBe(false);
+    expect(w.nut("tk-dinh-kem").textContent).not.toBe("Tệp đính kèm: 1");
+  });
+
+  it("★ ảnh định dạng chưa hỗ trợ (GIF) / quá 6 MB / tệp nhị phân ⇒ KHÔNG thành chip, có thông báo", async () => {
+    const w = chayWebview();
+    dan(w, [tep("a.gif", "image/gif"), tep("to.png", "image/png", 7 * 1024 * 1024), tep("x.exe", "application/octet-stream")]);
+    await doi();
+    expect(w.nut("ds-dinh-kem").hidden).toBe(true);
+    expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 0");
+  });
+
+  it("★ kéo-thả tệp văn bản từ máy ⇒ đọc nội dung, chip; gửi mang loai tep", async () => {
+    const w = chayWebview();
+    let daChan = false;
+    w.banDoc("drop", { dataTransfer: { types: ["Files"], files: [tep("loi.log", "text/plain", 20, "ERR 42")], getData: () => "" }, preventDefault: () => (daChan = true) });
+    await doi();
+    expect(daChan).toBe(true);
+    w.nut("o-nhap").value = "giải thích log";
+    w.nut("nut-gui").bam();
+    const hoi = w.daGui.find((m) => m.loai === "hoi") as { dinhKemNgoai?: Array<Record<string, unknown>> };
+    expect(hoi.dinhKemNgoai?.[0]).toMatchObject({ loai: "tep", ten: "loi.log", noiDung: "ERR 42" });
+  });
+
+  it("★ kéo từ Explorer của VSCode (chỉ có uri-list, không có nội dung) ⇒ báo host đọc (`dan_uri`)", () => {
+    const w = chayWebview();
+    w.banDoc("drop", { dataTransfer: { types: ["text/uri-list"], files: [], getData: () => "# ghi chú\nfile:///C:/x/a.txt\nfile:///C:/x/b.png" }, preventDefault: () => undefined });
+    expect(w.daGui.find((m) => m.loai === "dan_uri")).toEqual({ loai: "dan_uri", uris: ["file:///C:/x/a.txt", "file:///C:/x/b.png"] });
+  });
+
+  it("★ CHỈ đính kèm, ô nhập trống ⇒ vẫn gửi được (câu hỏi mặc định); không đính kèm + ô trống ⇒ KHÔNG gửi", async () => {
+    const w = chayWebview();
+    w.nut("nut-gui").bam();
+    expect(w.daGui.filter((m) => m.loai === "hoi")).toHaveLength(0);
+    dan(w, [tep("image.png", "image/png")]);
+    await doi();
+    w.nut("nut-gui").bam();
+    const hoi = w.daGui.find((m) => m.loai === "hoi") as { cauHoi: string };
+    expect(hoi.cauHoi).toMatch(/Hãy xem nội dung đính kèm/);
+  });
+
+  it("★ quá 4 ảnh mỗi lượt ⇒ chỉ giữ 4", async () => {
+    const w = chayWebview();
+    dan(w, Array.from({ length: 6 }, (_, i) => tep(`a${i}.png`, "image/png")));
+    await doi();
+    expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 4");
+  });
+
+  it("★ host trả `them_dinh_kem_ngoai` (Tệp từ máy…) ⇒ chip; mục sai hình dạng bị bỏ", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "them_dinh_kem_ngoai", muc: { loai: "tep", ten: "a.txt", kieu: "text/plain", kichThuoc: 3, noiDung: "abc" } });
+    w.banTin({ loai: "them_dinh_kem_ngoai", muc: { loai: "lạ", ten: "b" } });
+    w.banTin({ loai: "them_dinh_kem_ngoai" });
+    expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 1");
   });
 });

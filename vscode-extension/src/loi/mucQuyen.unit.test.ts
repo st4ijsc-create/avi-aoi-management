@@ -104,3 +104,24 @@ describe("hằng số dùng chung", () => {
     expect(Object.keys(NHAN_MUC_QUYEN).sort()).toEqual(mucList.slice().sort());
   });
 });
+
+import { canDuyetGhiAgent, type LoaiThaoTacGhi, type MucQuyen as MucQuyenT } from "./mucQuyen";
+
+describe("canDuyetGhiAgent — ★★★ 'Tự ghi' ĐỦ để bỏ hỏi sửa/tạo/đổi tên; XOÁ luôn hỏi (2026-10-24)", () => {
+  const goc = { mucQuyen: "tu_ghi" as MucQuyenT, cheDo: "sua" as const, haTuTri: false, coNguonDangNgo: false, thaoTac: "thay" as LoaiThaoTacGhi };
+  it.each<[string, Partial<typeof goc>, boolean]>([
+    ["tu_ghi + sua + sửa ⇒ KHÔNG hỏi (lỗi cũ: vẫn hỏi vì chế độ mặc định là sua)", {}, false],
+    ["tu_ghi + tu-dong + sửa ⇒ không hỏi", { cheDo: "tu-dong" as never }, false],
+    ["tu_ghi + sua + TẠO ⇒ không hỏi", { thaoTac: "tao" }, false],
+    ["tu_ghi + sua + ĐỔI TÊN (ghi thường) ⇒ không hỏi", { thaoTac: "doi-ten" }, false],
+    ["tu_ghi + sua + XOÁ ⇒ HỎI", { thaoTac: "xoa" }, true],
+    ["tu_ghi + tu-dong + XOÁ ⇒ HỎI (trước đây KHÔNG hỏi)", { cheDo: "tu-dong" as never, thaoTac: "xoa" }, true],
+    ["hoi_truoc_khi_ghi ⇒ hỏi", { mucQuyen: "hoi_truoc_khi_ghi" }, true],
+    ["chi_doc ⇒ hỏi (apBanVa còn chặn ở điểm ghi)", { mucQuyen: "chi_doc" }, true],
+    ["chế độ hoi (chỉ đọc) ⇒ hỏi", { cheDo: "hoi" as never }, true],
+    ["lõi đã hạ tự trị ⇒ hỏi", { haTuTri: true }, true],
+    ["bộ thực thi thấy nội dung đáng ngờ ⇒ hỏi", { coNguonDangNgo: true }, true],
+  ])("%s", (_t, chinh, hoi) => {
+    expect(canDuyetGhiAgent({ ...goc, ...chinh })).toBe(hoi);
+  });
+});
