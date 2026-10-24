@@ -4,7 +4,10 @@
  * Luật: chỉ lần kiểm của máy trong phạm vi (lần kiểm không gắn máy bị loại với người hẹp); phạm vi rỗng ⇒ kết quả rỗng; admin không đổi.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { seedHaiNhaMayDo, type HaiNhaMayDo } from "../testing/haiNhaMayDoLuong";
+import { createProductModel } from "../db";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
+import { seedHaiNhaMayDo, type HaiNhaMayDo } from "../testing/__haiNhaMayDoLuong";
 
 const RUN = `l6p${process.pid}${Date.now().toString(36)}`;
 let H!: HaiNhaMayDo;
@@ -15,7 +18,7 @@ const ngayMai = new Date(Date.now() + 86_400_000).toISOString();
 const ngay = (iso: string) => iso.slice(0, 10);
 
 beforeAll(async () => {
-  H = await seedHaiNhaMayDo(RUN, "l6p");
+  H = await seedHaiNhaMayDo(RUN, "l6p", [], dangKyModelSanPhamTest(await createProductModel({ code: RUN + "-PM", name: RUN } as never)), taoNguoiDungTest);
   router = (await import("./paretoAnalysisRouter")).paretoAnalysisRouter;
 }, 240_000);
 afterAll(async () => { await H?.don(); });

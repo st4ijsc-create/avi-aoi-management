@@ -5,7 +5,10 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
-import { seedHaiNhaMayDo, qChuTest, type HaiNhaMayDo } from "../testing/haiNhaMayDoLuong";
+import { createProductModel } from "../db";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
+import { seedHaiNhaMayDo, qChuTest, type HaiNhaMayDo } from "../testing/__haiNhaMayDoLuong";
 
 const RUN = `l6d${process.pid}${Date.now().toString(36)}`;
 let H!: HaiNhaMayDo;
@@ -28,7 +31,7 @@ const caller = async (u: { id: number; role: string; name: string }): Promise<C>
 };
 
 beforeAll(async () => {
-  H = await seedHaiNhaMayDo(RUN, "l6d");
+  H = await seedHaiNhaMayDo(RUN, "l6d", [], dangKyModelSanPhamTest(await createProductModel({ code: RUN + "-PM", name: RUN } as never)), taoNguoiDungTest);
   // mart theo giờ: một hàng mỗi nhà máy trên cùng mẫu sản phẩm / ca
   const gio = new Date().toISOString().slice(0, 13) + ":00:00";
   for (const nm of [H.A, H.B]) {

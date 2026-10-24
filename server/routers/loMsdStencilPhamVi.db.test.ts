@@ -5,7 +5,10 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
-import { seedHaiNhaMayDo, qChuTest, type HaiNhaMayDo } from "../testing/haiNhaMayDoLuong";
+import { createProductModel } from "../db";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
+import { seedHaiNhaMayDo, qChuTest, type HaiNhaMayDo } from "../testing/__haiNhaMayDoLuong";
 
 const RUN = `l6m${process.pid}${Date.now().toString(36)}`;
 let H!: HaiNhaMayDo;
@@ -22,7 +25,7 @@ const caller = async (u: { id: number; role: string; name: string }): Promise<C>
 };
 
 beforeAll(async () => {
-  H = await seedHaiNhaMayDo(RUN, "l6m");
+  H = await seedHaiNhaMayDo(RUN, "l6m", [], dangKyModelSanPhamTest(await createProductModel({ code: RUN + "-PM", name: RUN } as never)), taoNguoiDungTest);
   const old = new Date(Date.now() - 2000 * 3600 * 1000).toISOString().slice(0, 19).replace("T", " ");
   const lay = (rows: any[]) => Number(rows[0].id);
   // msd: một cuộn gắn máy A, một gắn máy B, một không gắn máy — cả ba đã quá hạn sàn (MSL 3 = 168 h)

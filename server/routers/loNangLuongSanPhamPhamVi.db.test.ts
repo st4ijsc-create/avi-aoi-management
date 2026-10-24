@@ -5,7 +5,10 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
-import { seedHaiNhaMayDo, qChuTest, type HaiNhaMayDo } from "../testing/haiNhaMayDoLuong";
+import { createProductModel } from "../db";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
+import { seedHaiNhaMayDo, qChuTest, type HaiNhaMayDo } from "../testing/__haiNhaMayDoLuong";
 import { readAppErrorMeta } from "../_core/appError";
 
 const RUN = `l6e${process.pid}${Date.now().toString(36)}`;
@@ -36,7 +39,7 @@ async function loi(chay: () => Promise<unknown>): Promise<string | null> {
 }
 
 beforeAll(async () => {
-  H = await seedHaiNhaMayDo(RUN, "l6e", [["production", "energy"], ["production", "masterdata"]]);
+  H = await seedHaiNhaMayDo(RUN, "l6e", [["production", "energy"], ["production", "masterdata"]], dangKyModelSanPhamTest(await createProductModel({ code: RUN + "-PM", name: RUN } as never)), taoNguoiDungTest);
   const d = H.dung;
   // hai sản phẩm RIÊNG: A chỉ chạy trên máy A, B chỉ trên máy B (vị từ "sản phẩm trong phạm vi" đi qua lần kiểm tra của máy)
   pmA = (await d(sql`INSERT INTO product_models (code, name) VALUES (${RUN + "-PMA"}, ${RUN}) RETURNING id`))[0].id;

@@ -6,7 +6,9 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
-import { seedHaiNhaMayDo, qChuTest, type HaiNhaMayDo } from "../testing/haiNhaMayDoLuong";
+import { createProductModel } from "../db";
+import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
+import { seedHaiNhaMayDo, qChuTest, type HaiNhaMayDo } from "../testing/__haiNhaMayDoLuong";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { readAppErrorMeta } from "../_core/appError";
 
@@ -32,7 +34,7 @@ async function loi(chay: () => Promise<unknown>): Promise<string | null> {
 }
 
 beforeAll(async () => {
-  H = await seedHaiNhaMayDo(RUN, "l6n", [["machine_control", "machine_control"]]);
+  H = await seedHaiNhaMayDo(RUN, "l6n", [["machine_control", "machine_control"]], dangKyModelSanPhamTest(await createProductModel({ code: RUN + "-PM", name: RUN } as never)), taoNguoiDungTest);
   const d = H.dung;
   pmA = (await d(sql`INSERT INTO product_models (code, name) VALUES (${RUN + "-PMA"}, ${RUN}) RETURNING id`))[0].id;
   pmB = (await d(sql`INSERT INTO product_models (code, name) VALUES (${RUN + "-PMB"}, ${RUN}) RETURNING id`))[0].id;
