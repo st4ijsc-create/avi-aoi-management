@@ -17,12 +17,13 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { quetPhamViGhi, laNoGhi, laKhoaDinhDanh, type MutationGhi } from "./phamViGhiScan";
 import { quetPhamViDoc, nhomCua } from "./phamViDocScan";
-import { NO_PHAM_VI_GHI } from "./phamViGhiBaseline";
+import { MIEN_TRU_GHI, NO_PHAM_VI_GHI } from "./phamViGhiBaseline";
 
 const GOC = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const QUET = quetPhamViGhi(GOC);
 const NO = QUET.mutation.filter(laNoGhi);
 const SO = new Set(NO_PHAM_VI_GHI);
+const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
 const GHIM = { tongMutation: 1198, no: 697 } as const;
@@ -47,7 +48,7 @@ describe("§2 con số ghim", () => {
     expect({ tong: QUET.mutation.length, no: NO.length, sổ: NO_PHAM_VI_GHI.length }).toEqual({
       tong: GHIM.tongMutation,
       no: GHIM.no,
-      sổ: GHIM.no,
+      sổ: GHIM.no - MIEN.size,
     });
   });
   it("in nợ theo bậc (để không ai quên)", () => {
@@ -60,7 +61,7 @@ describe("§2 con số ghim", () => {
 
 describe("§4 mutation MỚI nhận khoá định danh mà không có cổng ⇒ ĐỎ", () => {
   it("không mutation nợ nào ngoài sổ", () => {
-    const moi = NO.map((m) => m.khoa).filter((k) => !SO.has(k));
+    const moi = NO.map((m) => m.khoa).filter((k) => !SO.has(k) && !MIEN.has(k));
     expect(moi, `mutation mới nhận khoá định danh mà không qua bộ phân giải phạm vi:\n${moi.join("\n")}`).toEqual([]);
   });
 });
@@ -70,6 +71,18 @@ describe("§5 mục đã vá mà quên gỡ khỏi sổ ⇒ ĐỎ (chống sổ 
     const nay = new Set(NO.map((m) => m.khoa));
     const ma = NO_PHAM_VI_GHI.filter((k) => !nay.has(k));
     expect(ma, `đã có cổng / đã xoá / đã đổi tên — gỡ dòng khỏi phamViGhiBaseline.ts:\n${ma.join("\n")}`).toEqual([]);
+  });
+});
+
+describe("§5b miễn trừ có lý do — không hoá thạch, không trùng sổ nợ", () => {
+  it("mỗi mục miễn trừ: có lý do, vẫn khớp hình dạng nợ, không nằm trong sổ nợ", () => {
+    const nay = new Set(NO.map((m) => m.khoa));
+    const loi = Object.entries(MIEN_TRU_GHI).flatMap(([k, ly]) => [
+      ...(ly.trim().length < 20 ? [`${k}: lý do quá ngắn`] : []),
+      ...(!nay.has(k) ? [`${k}: không còn khớp hình dạng nợ (đã có cổng / đổi tên) — gỡ miễn trừ`] : []),
+      ...(SO.has(k) ? [`${k}: nằm cả trong sổ nợ`] : []),
+    ]);
+    expect(loi).toEqual([]);
   });
 });
 
@@ -110,7 +123,7 @@ export const zzGhiAoRouter = router({
   it("tệp ảo làm tổng mutation tăng đúng 1 và là nợ MỚI ngoài sổ (đúng đường §4 sẽ đỏ)", () => {
     const r = quetPhamViGhi(GOC, { [T]: khung("const d: any = null; await d.delete(machines).where(eq(machines.id, input.machineId));") });
     expect(r.mutation.length).toBe(QUET.mutation.length + 1);
-    const moi = r.mutation.filter(laNoGhi).map((m) => m.khoa).filter((k) => !SO.has(k));
+    const moi = r.mutation.filter(laNoGhi).map((m) => m.khoa).filter((k) => !SO.has(k) && !MIEN.has(k));
     expect(moi).toEqual([`${T}#zzGhiAoRouter.doi`]);
   });
   it("laKhoaDinhDanh: thực thể có; người thực hiện / siêu dữ liệu không", () => {

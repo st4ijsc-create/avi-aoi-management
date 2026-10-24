@@ -220,8 +220,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/annotationRouters.ts#annotationRouter.export",
   "server/routers/annotationRouters.ts#annotationRouter.save",
   "server/routers/annotationRouters.ts#annotationTemplateRouter.delete",
-  // ── server/routers/aoiOnboardingRouter.ts (1) ──
-  "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.dryRun",
   // ── server/routers/apiKeyRouter.ts (5) ──
   "server/routers/apiKeyRouter.ts#apiKeyRouter.create",
   "server/routers/apiKeyRouter.ts#apiKeyRouter.delete",
@@ -845,3 +843,13 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/services/security/securityIdentityRouter.ts#securityIdentityRouter.revokeServiceIdentity",
   "server/services/security/securityIdentityRouter.ts#securityIdentityRouter.rotateDeviceCert",
 ];
+
+/**
+ * MIỄN TRỪ CÓ LÝ DO — mutation khớp hình dạng "nhận khoá định danh" (theo TÊN trường) nhưng KHÔNG ghi thực thể nào của tenant.
+ * Khác sổ nợ: mục ở đây KHÔNG phải nợ cần trả; census đòi (a) mục vẫn đúng hình dạng nợ (không thì gỡ), (b) lý do không rỗng,
+ * (c) không đồng thời nằm trong sổ nợ. Thêm mục = lời khai công khai, người review phải thấy.
+ */
+export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
+  "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.dryRun":
+    "Hàm THUẦN: chuẩn hoá một mẫu xuất của máy qua adapter rồi trả bản tóm tắt, KHÔNG đọc/ghi CSDL và không giữ trạng thái; `machineCode` chỉ là nhãn truyền vào bộ chuẩn hoá (không tra máy nào). Bộ quét khớp vì tên trường kết thúc bằng Code.",
+};
