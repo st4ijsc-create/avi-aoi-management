@@ -3814,6 +3814,8 @@
       "lineStage": "产线工序",
       "productionOrderTemplate": "生产订单模板",
       "predictiveAlert": "预测性告警",
+      "insight": "分析洞察",
+      "labelQueueItem": "标注队列项",
       "rcaAnalysis": "根本原因分析",
       "recipe": "配方",
       "record": "记录",

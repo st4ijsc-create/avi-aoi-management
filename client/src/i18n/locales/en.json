@@ -3822,6 +3822,8 @@
       "lineStage": "line stage",
       "productionOrderTemplate": "production order template",
       "predictiveAlert": "predictive alert",
+      "insight": "insight",
+      "labelQueueItem": "labeling queue item",
       "rcaAnalysis": "root cause analysis",
       "recipe": "recipe",
       "record": "record",
