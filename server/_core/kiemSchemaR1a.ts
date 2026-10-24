@@ -188,8 +188,7 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
     const h = datNhac(() => {
       void layChayLai()
         .then((chay) => {
-          if (!chay) throw new Error("không có kết nối DB");
-          return kiemSchemaR1a(chay);
+          return chay ? kiemSchemaR1a(chay) : Promise.reject(new Error("không có kết nối DB"));
         })
         .then((lai) => {
           if (trangThai.kieu === "da_kiem") trangThai = { ...trangThai, [ma]: lai[ma], luc: new Date().toISOString() };
@@ -247,8 +246,7 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
       dangKiem = true;
       void layChayLai()
         .then((chay) => {
-          if (!chay) throw new Error("không có kết nối DB");
-          return kiemSchemaR1a(chay);
+          return chay ? kiemSchemaR1a(chay) : Promise.reject(new Error("không có kết nối DB"));
         })
         .then((lai) => {
           trangThai = { kieu: "da_kiem", luc: new Date().toISOString(), ...lai };

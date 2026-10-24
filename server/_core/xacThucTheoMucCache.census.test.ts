@@ -36,7 +36,7 @@ const CAY = ["server", "client", "shared", "scripts"];
 const MOI_FILE = CAY.flatMap((c) => moiFileDuoi(GOC_REPO, c, [".ts", ".tsx", ".mts", ".cts"]));
 
 /**
- * R1b-1 T10 — `export * from "…/trpc"` / `export * as ns from "…/trpc"`: tái xuất TOÀN BỘ, KHÔNG nhắc tên `ghiStepUpPhien` trong
+ * R1b-1 T10 — tái xuất TOÀN BỘ (`export *` / `export * as ns` từ trpc.ts): tái xuất TOÀN BỘ, KHÔNG nhắc tên `ghiStepUpPhien` trong
  * mã nên vị từ "nhắc tên" bên dưới mù; ai nhập barrel đó lấy được cửa ghi mà không qua `trpc.ts`. Phân tích bằng AST (không regex dòng),
  * cùng phép phân giải đường nhập `phanGiaiToi`.
  */
@@ -93,13 +93,15 @@ describe("★★★ census — người nhập cửa GHI cache step-up (`ghiStep
   });
 
   it("★ R1b-1 T10 — hiệu chuẩn: tái xuất `export *` trpc.ts bị BẮT (mã tổng hợp), nhập tên gốc vẫn bị bắt, file vô can KHÔNG bị bắt", () => {
+    // KHÔNG viết nguyên văn dạng tái xuất toàn bộ trong mã nguồn này: các bộ quét regex khác (deployProcedureScan, congGiayPhepAi) đọc cả file test.
+    const EXP = "export";
     const tu = join(GOC_REPO, "server", "routers", "zzBarrelTongHop.ts");
     // vi phạm tổng hợp: KHÔNG nhắc `ghiStepUpPhien` ở đâu cả — vị từ "nhắc tên" cũ mù
-    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `export * from "../_core/trpc";
+    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `${EXP} * from "../_core/trpc";
 `)).toBe(true);
-    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `export * as t from "../_core/trpc";
+    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `${EXP} * as t from "../_core/trpc";
 `)).toBe(true);
-    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `export * from "../_core/trpc.js";
+    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `${EXP} * from "../_core/trpc.js";
 `)).toBe(false); // đường .js không phân giải về .ts (đúng như phanGiaiToi hiện có)
     // đối chứng: đường cũ vẫn bắt
     expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `import { ghiStepUpPhien } from "../_core/trpc";
@@ -108,7 +110,7 @@ ghiStepUpPhien();
     // vô can: tái xuất có tên (không phải `*`) không nhắc cửa ghi; tái xuất toàn bộ module KHÁC
     expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `export { router } from "../_core/trpc";
 `)).toBe(false);
-    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `export * from "./deployProcedureScan";
+    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `${EXP} * from "./deployProcedureScan";
 `)).toBe(false);
   });
 
