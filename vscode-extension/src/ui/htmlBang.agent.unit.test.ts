@@ -33,8 +33,18 @@ class PT {
   addEventListener(l: string, h: (e: unknown) => void) {
     (this.nghe[l] ??= []).push(h);
   }
+  parentNode: PT | null = null;
   appendChild(c?: PT) {
-    if (c) this.con.push(c);
+    if (c) {
+      c.parentNode = this;
+      this.con.push(c);
+    }
+  }
+  static daGo: PT[] = [];
+  removeChild(c: PT) {
+    PT.daGo.push(c);
+    this.con = this.con.filter((x) => x !== c);
+    c.parentNode = null;
   }
   private _ih = "";
   get innerHTML() {
@@ -67,10 +77,11 @@ function chay() {
   const theTao: string[] = [];
   const daGui: Array<Record<string, unknown>> = [];
   const nghe: Array<(e: { data: Record<string, unknown> }) => void> = [];
+  const ngheDoc: Record<string, Array<(e: unknown) => void>> = {};
   new Function("document", "window", "acquireVsCodeApi", ma)(
     {
       getElementById: nut,
-      addEventListener: () => undefined,
+      addEventListener: (l: string, h: (e: unknown) => void) => (ngheDoc[l] ??= []).push(h),
       body: { classList: { add: () => undefined, remove: () => undefined } },
       createElement: (t: string) => {
         theTao.push(String(t).toLowerCase());
@@ -80,7 +91,13 @@ function chay() {
     { addEventListener: (_l: string, h: (e: { data: Record<string, unknown> }) => void) => nghe.push(h) },
     () => ({ postMessage: (m: Record<string, unknown>) => daGui.push(m) }),
   );
-  return { nut, daGui, theTao, banTin: (m: Record<string, unknown>) => nghe.forEach((h) => h({ data: m })) };
+  return {
+    nut,
+    daGui,
+    theTao,
+    banTin: (m: Record<string, unknown>) => nghe.forEach((h) => h({ data: m })),
+    banDoc: (l: string, e: Record<string, unknown>) => (ngheDoc[l] ?? []).forEach((h) => h(e)),
+  };
 }
 
 describe("webview agent — tĩnh", () => {
@@ -500,5 +517,125 @@ describe("thẻ duyệt Agent — thiết kế lại (2026-10-24)", () => {
     const w = mo();
     w.banTin({ loai: "ag_tu_duyet", id: "q", tomTat: "Sửa src/z.ts", duong: "src/z.ts" });
     expect(tatCa(w.nut("hoi-thoai")).some((p) => String(p.textContent).includes("Đã tự duyệt") && String(p.textContent).includes("src/z.ts"))).toBe(true);
+  });
+});
+
+describe("webview — lỗi có Thử lại · Esc = Dừng · Chép/Tạo lại câu trả lời (2026-10-24)", () => {
+  const nutTheoChu = (p: PT, chu: string) => tatCa(p).filter((x) => x.tag === "button" && x.textContent === chu);
+  const soHoi = (w: ReturnType<typeof chay>) => w.daGui.filter((m) => m.loai === "hoi");
+  function hoi(w: ReturnType<typeof chay>, cau = "câu hỏi") {
+    w.nut("o-nhap").value = cau;
+    w.nut("nut-gui").bam();
+  }
+
+  it("★★★ thẻ lỗi có 'Thử lại': gửi LẠI đúng câu hỏi; mỗi thẻ chỉ một lần; khi đang chạy lượt khác thì KHÔNG gửi chồng", () => {
+    const w = chay();
+    hoi(w, "đọc giúp log");
+    w.banTin({ loai: "loi", thongDiep: "Mất kết nối", moSettings: true });
+    w.banTin({ loai: "loi", thongDiep: "Lỗi nữa", moSettings: false });
+    const [a] = nutTheoChu(w.nut("hoi-thoai") as PT, "Thử lại");
+    const nutThuLai = nutTheoChu(w.nut("hoi-thoai") as PT, "Thử lại");
+    expect(nutThuLai).toHaveLength(2);
+    expect(soHoi(w)).toHaveLength(1);
+    a!.bam();
+    expect(soHoi(w)).toHaveLength(2);
+    expect(soHoi(w)[1]).toMatchObject({ cauHoi: "đọc giúp log" });
+    a!.bam(); // cùng thẻ: đã khoá
+    nutThuLai[1]!.bam(); // thẻ khác nhưng lượt đang chạy ⇒ không gửi chồng
+    expect(soHoi(w)).toHaveLength(2);
+    w.banTin({ loai: "ag_xong", lyDo: "hoan-thanh", coHoanTac: false }); // lượt thử lại XONG, nút Dừng ẩn
+    a!.bam(); // bấm lại ĐÚNG thẻ đã dùng ⇒ vẫn khoá (mỗi thẻ một lần)
+    expect(soHoi(w)).toHaveLength(2);
+  });
+
+  it("★★ lỗi mất kết nối có gợi ý + nút Mở Settings; ag_loi DANG_CHAY/KHONG_WORKSPACE KHÔNG có Thử lại, lỗi khác thì có", () => {
+    const w = chay();
+    hoi(w);
+    w.banTin({ loai: "loi", thongDiep: "Mất kết nối", moSettings: true });
+    const hoiThoai = w.nut("hoi-thoai") as PT;
+    expect(tatCa(hoiThoai).some((x) => x.className === "loi-goi-y")).toBe(true);
+    expect(tatCa(hoiThoai).some((x) => x.className === "nut-mo-settings" && String(x.textContent).startsWith("Mở Settings"))).toBe(true);
+    const truoc = nutTheoChu(hoiThoai, "Thử lại").length;
+    w.banTin({ loai: "ag_loi", thongDiep: "Một lượt đang chạy", ma: "DANG_CHAY" });
+    w.banTin({ loai: "ag_loi", thongDiep: "Chưa mở thư mục", ma: "KHONG_WORKSPACE" });
+    expect(nutTheoChu(hoiThoai, "Thử lại")).toHaveLength(truoc);
+    w.banTin({ loai: "ag_loi", thongDiep: "Lượt hỏng", ma: "LOI" });
+    expect(nutTheoChu(hoiThoai, "Thử lại")).toHaveLength(truoc + 1);
+  });
+
+  it("★★ thẻ lỗi nổi bật bằng thuộc tính data-loi (giữ nguyên lớp luot-he-thong); thông báo thường thì không", () => {
+    const w = chay();
+    hoi(w);
+    w.banTin({ loai: "loi", thongDiep: "x" });
+    const luot = (w.nut("hoi-thoai") as PT).con.filter((c) => c.className.includes("luot-he-thong"));
+    expect(luot.some((c) => c.getAttribute("data-loi") === "1")).toBe(true);
+    w.banTin({ loai: "thong_bao", thongDiep: "y" });
+    expect((w.nut("hoi-thoai") as PT).con.filter((c) => c.getAttribute("data-loi") === "1")).toHaveLength(1);
+  });
+
+  it("★★★ ba chấm chờ AI được gỡ bằng removeChild (DOM thật không có trường con — bản cũ chỉ splice trường của DOM giả nên ba chấm kẹt vĩnh viễn ở trình duyệt thật)", () => {
+    const w = chay();
+    PT.daGo.length = 0;
+    hoi(w);
+    w.banTin({ loai: "ag_md", cay: [{ t: "p", c: [{ t: "text", v: "Xong." }] }], chiSoMaDau: 0 });
+    expect(PT.daGo.some((x) => x.className === "cho-ai")).toBe(true);
+    expect(tatCa(w.nut("hoi-thoai") as PT).some((x) => x.className === "cho-ai")).toBe(false);
+  });
+
+  it("★★★ xong thành công ⇒ hàng 'Chép câu trả lời · Tạo lại' (một hàng duy nhất); Chép ⇒ chep_tra_loi; Tạo lại ⇒ hỏi lại đúng câu; bị dừng ⇒ KHÔNG có hàng", () => {
+    const w = chay();
+    hoi(w, "tóm tắt");
+    w.banTin({ loai: "ag_md", cay: [{ t: "p", c: [{ t: "text", v: "Xong." }] }], chiSoMaDau: 0 });
+    w.banTin({ loai: "ag_xong", lyDo: "hoan-thanh", coHoanTac: false });
+    const hoiThoai = w.nut("hoi-thoai") as PT;
+    expect(nutTheoChu(hoiThoai, "Chép câu trả lời")).toHaveLength(1);
+    nutTheoChu(hoiThoai, "Chép câu trả lời")[0]!.bam();
+    expect(w.daGui.filter((m) => m.loai === "chep_tra_loi")).toHaveLength(1);
+    nutTheoChu(hoiThoai, "Tạo lại")[0]!.bam();
+    expect(soHoi(w)).toHaveLength(2);
+    expect(soHoi(w)[1]).toMatchObject({ cauHoi: "tóm tắt" });
+    // lượt mới đang chạy ⇒ hàng cũ đã gỡ
+    expect(nutTheoChu(hoiThoai, "Chép câu trả lời")).toHaveLength(0);
+    w.banTin({ loai: "ag_xong", lyDo: "huy", coHoanTac: false });
+    expect(nutTheoChu(hoiThoai, "Chép câu trả lời")).toHaveLength(0);
+  });
+
+  it("★★ 'Tạo lại' không gửi khi một lượt đang chạy", () => {
+    const w = chay();
+    hoi(w, "a");
+    w.banTin({ loai: "ag_xong", lyDo: "hoan-thanh", coHoanTac: false });
+    const nutLai = nutTheoChu(w.nut("hoi-thoai") as PT, "Tạo lại")[0]!;
+    w.nut("nut-dung").hidden = false; // giả lập lượt khác đang chạy
+    nutLai.bam();
+    expect(soHoi(w)).toHaveLength(1);
+  });
+
+  it("★★★ Esc = DỪNG lượt đang chạy; rảnh thì không gửi gì", () => {
+    const w = chay();
+    // DOM giả mặc định hidden=false; markup thật: menu/gợi ý/nút Dừng đều mang hidden lúc rảnh
+    w.nut("menu-dinh-kem").hidden = true;
+    w.nut("mention-ds").hidden = true;
+    w.nut("nut-dung").hidden = true;
+    w.banDoc("keydown", { key: "Escape" });
+    expect(w.daGui.filter((m) => m.loai === "dung_hoi")).toHaveLength(0);
+    hoi(w);
+    w.banDoc("keydown", { key: "Escape" });
+    expect(w.daGui.filter((m) => m.loai === "dung_hoi")).toHaveLength(1);
+  });
+
+  it("★★★ Esc KHÔNG dừng khi: đang soạn IME (isComposing/229), menu Đính kèm đang mở (chỉ đóng menu), gợi ý @ đang mở", () => {
+    const w = chay();
+    hoi(w);
+    w.banDoc("keydown", { key: "Escape", isComposing: true });
+    w.banDoc("keydown", { key: "Escape", keyCode: 229 });
+    w.nut("menu-dinh-kem").hidden = false;
+    w.banDoc("keydown", { key: "Escape" });
+    expect(w.nut("menu-dinh-kem").hidden).toBe(true);
+    w.nut("mention-ds").hidden = false;
+    w.banDoc("keydown", { key: "Escape" });
+    expect(w.daGui.filter((m) => m.loai === "dung_hoi")).toHaveLength(0);
+    w.nut("mention-ds").hidden = true;
+    w.banDoc("keydown", { key: "Escape" });
+    expect(w.daGui.filter((m) => m.loai === "dung_hoi")).toHaveLength(1);
   });
 });

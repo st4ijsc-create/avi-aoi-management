@@ -544,6 +544,18 @@ export class BangChat {
       // (xem `hoi()`/`duyetDeXuat()`/`huyDeXuat()` bên dưới, và `moTaLoiKhongNoiDuocMayChu`). Webview
       // chỉ báo Ý ĐỊNH — mở đúng lệnh có sẵn của VSCode, lọc thẳng tới ô `aviAiLocal.serverUrl`,
       // cùng lệnh mà `aviAiLocal.doiMayChu` (`extension.ts`) dùng, KHÔNG một đường mở-settings riêng.
+      // ★ 2026-10-24 — "Chép câu trả lời": host giữ văn bản THẬT (lịch sử của lượt), webview không gửi gì lên để chép.
+      if (m.loai === "chep_tra_loi") {
+        const cuoi = [...this.lichSu].reverse().find((l) => l.role === "assistant")?.content ?? "";
+        if (cuoi.trim() === "") {
+          void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: "Chưa có câu trả lời nào để chép." });
+        } else {
+          void Promise.resolve(vscode.env.clipboard.writeText(cuoi)).then(() =>
+            this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: "Đã chép câu trả lời." }),
+          );
+        }
+        return;
+      }
       if (m.loai === "mo_settings_may_chu") {
         void vscode.commands.executeCommand("workbench.action.openSettings", "aviAiLocal.serverUrl");
         return;

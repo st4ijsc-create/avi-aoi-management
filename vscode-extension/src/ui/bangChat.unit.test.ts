@@ -33,6 +33,8 @@ const may = vi.hoisted(() => ({
   tepMay: new Map<string, Buffer>(),
   /** ★ 2026-10-24 — kết quả `showOpenDialog` giả (`undefined` = Esc). */
   hopThoaiChon: undefined as string[] | undefined,
+  /** ★ 2026-10-24 — clipboard giả: mọi `env.clipboard.writeText`. */
+  clipboard: [] as string[],
   /** ★ 2026-10-24 — cài đặt `aviAiLocal.*` giả (khoá → giá trị); thiếu khoá ⇒ mặc định do mã truyền vào. */
   cauHinh: {} as Record<string, unknown>,
   /** ★ 2026-10-24 — số lần `readFile` được gọi (bằng chứng "chặn theo STAT, không nạp tệp quá lớn"). */
@@ -238,6 +240,7 @@ vi.mock("vscode", () => ({
       return undefined;
     },
   },
+  env: { clipboard: { writeText: async (t: string) => void may.clipboard.push(t) } },
   window: {
     createWebviewPanel: () => ({
       webview: {
@@ -403,6 +406,7 @@ beforeEach(() => {
   may.thanGoi = [];
   may.tepMay = new Map();
   may.hopThoaiChon = undefined;
+  may.clipboard = [];
   may.cauHinh = {};
   may.soLanDocTepMay = 0;
   may.globalState = {};
@@ -2368,5 +2372,29 @@ describe("hoi — markdown tăng dần trên đường Chat/SERVER", () => {
     const ht2 = may.daGui.filter((m) => m.loai === "hoan_tat");
     expect(ht2).toHaveLength(2);
     expect(ht2[1]!.chiSoMaDau).toBe(1);
+  });
+});
+
+describe("chép câu trả lời (2026-10-24)", () => {
+  const nhuong = async () => {
+    for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+  it("★★★ chưa có câu trả lời ⇒ báo, không chép; sau một lượt ⇒ clipboard nhận ĐÚNG văn bản câu trả lời và người dùng được báo", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:/ws", nhan: "LOCAL · C:/ws", loai: "local" }];
+    bang.duAnChon = "local:C:/ws";
+    may.daGui = [];
+    may.nhanTin?.({ loai: "chep_tra_loi" });
+    await nhuong();
+    expect(may.clipboard).toEqual([]);
+    expect(may.daGui.some((m) => m.loai === "thong_bao" && /Chưa có câu trả lời/.test(String(m.thongDiep)))).toBe(true);
+    may.hangDoiSse = hangDoiMotVongDonGian("Đây là câu trả lời đầy đủ.");
+    may.nhanTin?.({ loai: "hoi", cauHoi: "x" });
+    await nhuong();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "chep_tra_loi" });
+    await nhuong();
+    expect(may.clipboard).toEqual(["Đây là câu trả lời đầy đủ."]);
+    expect(may.daGui.some((m) => m.loai === "thong_bao" && /Đã chép câu trả lời/.test(String(m.thongDiep)))).toBe(true);
   });
 });
