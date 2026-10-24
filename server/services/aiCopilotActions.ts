@@ -33,6 +33,7 @@ import { aiPendingActions } from "../../drizzle/schema";
 import { otPayloadHash, withOtPayloadHash } from "./ot/otActionBinding";
 import { checkPermission } from "../_core/accessControl";
 import { kiemXacThucTheoMuc, type CtxXacThuc, type KetQuaXacThucTheoMuc } from "../_core/xacThucTheoMuc";
+import { phutConLai } from "../_core/totpKhoaSai";
 import { BoDemTanSuat, kiemCongAi, mucHieuLuc, phanLoaiMuc, type MucRuiRo } from "./ot/aiControlGate";
 import { mucKenhChoAi } from "./ot/aiControlGate.safety";
 import { getTool, isWriteTool, assertExecutable, type ActionPreview, type Tool, type ToolExecContext, type ToolLang } from "./aiLocalTools/toolRegistry";
@@ -196,9 +197,12 @@ export interface ConfirmResult {
   reason?: string;
   /**
    * SCADA R1a T10 — CHỈ có mặt khi tool ghi OT bị từ chối ở sàn vai / xác thực theo mức (`reason` ∈ ROLE_FLOOR |
-   * TOTP_CHUA_DANG_KY | TOTP_CAN | TOTP_SAI): mức đã tính = max(tool, kênh đích). Mọi kết quả khác KHÔNG mang khoá này.
+   * TOTP_CHUA_DANG_KY | TOTP_CAN | TOTP_SAI | TOTP_TAM_KHOA | TOTP_KHONG_KIEM_DUOC — R1a T16): mức đã tính = max(tool, kênh đích).
+   * Mọi kết quả khác KHÔNG mang khoá này.
    */
   level?: MucRuiRo;
+  /** SCADA R1a T16 — CHỈ khi `reason === "TOTP_TAM_KHOA"`: thời gian khoá TOTP còn lại (ms). Không bao giờ có số lần sai. */
+  conLaiMs?: number;
 }
 
 // ── G4.29 — confirm-time contract-enforcement flags / reason codes / seams ──────
@@ -798,24 +802,32 @@ export async function mucGhiOtLucXacNhan(
   }
 }
 
-function xacThucMucMessage(lang: ToolLang, ma: MaXacThucTheoMuc, muc: MucRuiRo): string {
+function xacThucMucMessage(lang: ToolLang, ma: MaXacThucTheoMuc, muc: MucRuiRo, conLaiMs = 0): string {
+  // R1a T16 — phút còn lại của khoá TOTP (làm tròn lên, ≥ 1). Không bao giờ nói số lần sai.
+  const phut = phutConLai(conLaiMs);
   const vi: Record<MaXacThucTheoMuc, string> = {
     ROLE_FLOOR: `Vai trò của bạn không được ra lệnh cho kênh mức tác động ${muc}.`,
     TOTP_CHUA_DANG_KY: `Kênh mức tác động ${muc} cần xác thực 2 lớp, nhưng tài khoản này chưa đăng ký 2FA.`,
     TOTP_CAN: `Kênh mức tác động ${muc} cần mã xác thực 2 lớp (TOTP) — nhập mã rồi xác nhận lại.`,
     TOTP_SAI: `Mã xác thực 2 lớp không đúng hoặc đã được dùng — nhập mã mới rồi xác nhận lại (kênh mức ${muc}).`,
+    TOTP_TAM_KHOA: `Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau ${phut} phút.`,
+    TOTP_KHONG_KIEM_DUOC: "Không kiểm được mã xác thực hai lớp lúc này (lỗi hệ thống) — thử lại sau.",
   };
   const en: Record<MaXacThucTheoMuc, string> = {
     ROLE_FLOOR: `Your role may not command a channel of actuation level ${muc}.`,
     TOTP_CHUA_DANG_KY: `A channel of actuation level ${muc} requires two-factor authentication, but this account has not enrolled 2FA.`,
     TOTP_CAN: `Actuation level ${muc} channels need a two-factor (TOTP) code — enter the code and confirm again.`,
     TOTP_SAI: `The two-factor code is wrong or has already been used — enter a new code and confirm again (level ${muc} channel).`,
+    TOTP_TAM_KHOA: `Two-factor authentication is temporarily locked after too many wrong codes — try again in ${phut} minutes.`,
+    TOTP_KHONG_KIEM_DUOC: "The two-factor code cannot be checked right now (system error) — try again later.",
   };
   const zh: Record<MaXacThucTheoMuc, string> = {
     ROLE_FLOOR: `您的角色无权对作用等级 ${muc} 的通道下达命令。`,
     TOTP_CHUA_DANG_KY: `作用等级 ${muc} 的通道需要双因素认证，但此账户尚未注册 2FA。`,
     TOTP_CAN: `作用等级 ${muc} 的通道需要双因素（TOTP）验证码——请输入验证码后再次确认。`,
     TOTP_SAI: `双因素验证码错误或已被使用——请输入新验证码后再次确认（等级 ${muc} 通道）。`,
+    TOTP_TAM_KHOA: `由于多次输入错误，双因素认证已被临时锁定——请在 ${phut} 分钟后重试。`,
+    TOTP_KHONG_KIEM_DUOC: "暂时无法校验双因素验证码（系统错误）——请稍后重试。",
   };
   return (lang === "en" ? en : lang === "zh" ? zh : vi)[ma];
 }
@@ -936,7 +948,15 @@ export async function confirmAction(
     const xt = await kiemXacThucTheoMuc(ctxXt, mucOt, xacThuc?.totpCode);
     if (!xt.ok) {
       await auditConfirmFailure(user, req, row.tool, actionId, xt.ma);
-      return { ok: false, status: "denied", reason: xt.ma, level: mucOt, message: xacThucMucMessage(lang, xt.ma, mucOt) };
+      const conLaiMs = xt.ma === "TOTP_TAM_KHOA" ? xt.conLaiMs : undefined;
+      return {
+        ok: false,
+        status: "denied",
+        reason: xt.ma,
+        level: mucOt,
+        ...(conLaiMs !== undefined ? { conLaiMs } : {}),
+        message: xacThucMucMessage(lang, xt.ma, mucOt, conLaiMs),
+      };
     }
   }
 

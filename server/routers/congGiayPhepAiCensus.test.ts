@@ -525,7 +525,11 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   đổi.** Router MỚI `server/routers/scadaKenhRouter.ts` (M12 kênh & giới hạn; không phải bề mặt AI) có NĂM thủ tục (`danhSach`,
 //   `capNhat`, `cheDo.danhSach`, `cheDo.dat`, `cheDo.go`), đều sau `MOD_OT_CONTROL` (xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 121 → 126). Đo:
 //   ghim cũ (gốc a65445567) đỏ ĐÚNG +5. `tong` 2401 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2401, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+// ★★ 2026-10-24 · R1a twoFactor.moKhoaTotp +1 (SCADA R1a Task 16) — **tong 2401 → 2402 · beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong
+//   KHÔNG đổi.** Thủ tục MỚI `twoFactor.moKhoaTotp` (`adminProcedure`, admin mở khoá bộ đếm TOTP sai — mig 0432) trong
+//   `server/routers/twoFactorRouter.ts` (không phải bề mặt AI, không cổng module — cùng hình dạng các thủ tục 2FA anh em). Đo: ghim cũ
+//   (gốc c6e2422e7) đỏ ĐÚNG +1. `tong` 2402 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2402, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

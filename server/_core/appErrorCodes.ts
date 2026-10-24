@@ -195,6 +195,10 @@ export const APP_ERROR_CODES = [
                                    // khai báo (khai dải/bước/loại kênh khi đã ghim, hoặc ghim ngoài dải đang khai). Gỡ / đổi ghim hoặc khai lại.
   "INTERLOCK_NGOAI_DAI",           // params: { ma, lyDo, tagKey, min, max, step, ruleId? } — commandValue của luật interlock (đang bật, khi
                                    // khai kênh; hoặc luật đang tạo/sửa/duyệt/bật) không ghi được trên kênh đích ⇒ hành động bảo vệ sẽ bị từ chối.
+  // ── SCADA R1a Task 16 — BỘ ĐẾM TOTP SAI theo người dùng (server/_core/totpKhoaSai.ts, gọi từ verifyTotpOnce ⇒ MỌI bên gọi TOTP) ──
+  "TOTP_TAM_KHOA",                 // params: { remainingMinutes } (+ { ma, level } ở SCADA/copilot) — 5 lần sai / 5 phút ⇒ TOTP khoá 5 phút.
+                                   // ⚠ KHÔNG BAO GIỜ mang số lần sai còn lại (điều phối 2026-10-24). KHÁC ACCOUNT_LOCKED (khoá mật khẩu).
+  "TOTP_KHONG_KIEM_DUOC",          // no params (+ { ma, level } ở SCADA/copilot) — bộ đếm không hỏi/ghi được DB ⇒ từ chối (fail-closed).
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];

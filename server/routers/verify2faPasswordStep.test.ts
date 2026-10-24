@@ -330,3 +330,39 @@ describe("★★★ Task 6 §4 — KHÔNG BẮT NHẦM", () => {
     expect(veTu(kq), "không 2FA ⇒ không có gì để gác ⇒ không cấp vé").toBeNull();
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// SCADA R1a Task 16 — bộ đếm TOTP sai (5 lần / 5 phút ⇒ khoá 5 phút) sống TRONG `verifyTotpOnce`; đăng nhập 2FA chỉ DỊCH kết quả.
+describe("R1a T16 — đăng nhập 2FA khi bộ đếm TOTP sai từ chối", () => {
+  it("đang tạm khoá ⇒ 429 TWOFA_TOTP_LOCKED + remainingMinutes (làm tròn lên), KHÔNG số lần sai, không phiên, không thử mã dự phòng", async () => {
+    totp.verifyTotpOnce.mockResolvedValue({ hopLe: false, phatLai: false, ma: "TOTP_TAM_KHOA", conLaiMs: 181_000 } as never);
+    const a = await loginDung();
+    const b = await goi("POST /api/auth/verify-2fa", { userId: 49, token: "230145" }, headerVe(veTu(a)!));
+    expect(b.status).toBe(429);
+    expect(b.body).toMatchObject({ code: "TWOFA_TOTP_LOCKED", remainingMinutes: 4 });
+    expect(Object.keys(b.body).sort()).toEqual(["code", "error", "remainingMinutes"]);
+    expect(String(b.body.error)).not.toMatch(/\d+\s*lần|còn\s*\d+\s*lần/);
+    expect(coPhien(b)).toBe(false);
+    expect(dbm.verifyBackupCode, "mã 6 số không bao giờ là mã dự phòng — rơi xuống đó chỉ biến 'khoá' thành 'mã sai'").not.toHaveBeenCalled();
+    expect(__soVeDangSong(), "mã không được kiểm ⇒ vé KHÔNG bị tiêu").toBe(1);
+  });
+
+  it("bộ đếm không kiểm được ⇒ 503 TWOFA_TOTP_UNAVAILABLE (fail-closed), không phiên", async () => {
+    totp.verifyTotpOnce.mockResolvedValue({ hopLe: false, phatLai: false, ma: "TOTP_KHONG_KIEM_DUOC" } as never);
+    const a = await loginDung();
+    const b = await goi("POST /api/auth/verify-2fa", { userId: 49, token: "230145" }, headerVe(veTu(a)!));
+    expect(b.status).toBe(503);
+    expect(b.body?.code).toBe("TWOFA_TOTP_UNAVAILABLE");
+    expect(coPhien(b)).toBe(false);
+  });
+
+  it("mã dự phòng (không phải 6 số) KHÔNG đi qua verifyTotpOnce ⇒ không bị bộ đếm tính là lần sai, vẫn là lối thoát khi TOTP bị khoá", async () => {
+    totp.verifyTotpOnce.mockResolvedValue({ hopLe: false, phatLai: false, ma: "TOTP_TAM_KHOA", conLaiMs: 200_000 } as never);
+    dbm.verifyBackupCode.mockResolvedValue(true);
+    const a = await loginDung();
+    const b = await goi("POST /api/auth/verify-2fa", { userId: 49, token: "BACKUP-01" }, headerVe(veTu(a)!));
+    expect(totp.verifyTotpOnce).not.toHaveBeenCalled();
+    expect(b.status).toBe(200);
+    expect(coPhien(b)).toBe(true);
+  });
+});

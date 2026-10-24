@@ -86,6 +86,7 @@
 import speakeasy from "speakeasy";
 import { randomUUID, createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
+import { docKhoaTotp, ghiLanSaiTotp, xoaBoDemTotp, ghiAuditKhoaTotp, SO_LAN_SAI_TOI_DA } from "./totpKhoaSai";
 
 /**
  * Cửa sổ `speakeasy` — **1 nhịp trước/sau** để bù lệch đồng hồ. Giữ **nguyên** giá trị cũ của cả 8
@@ -113,6 +114,16 @@ export interface KetQuaTotp {
    * và để lưới phân biệt được *"chặn vì sổ"* với *"chặn vì mã hỏng"* — hai lý do, hai ca.
    */
   readonly phatLai: boolean;
+  /**
+   * SCADA R1a Task 16 — CHỈ có mặt khi lượt bị từ chối bởi BỘ ĐẾM TOTP SAI (`./totpKhoaSai`), luôn kèm `hopLe: false`:
+   *   · `"TOTP_TAM_KHOA"`        — người dùng đang tạm khoá (5 lần sai / 5 phút ⇒ khoá 5 phút), kèm `conLaiMs`;
+   *   · `"TOTP_KHONG_KIEM_DUOC"` — bộ đếm không hỏi/ghi được DB ⇒ fail-closed.
+   * Vắng ⇒ kết quả như trước Task 16 (đúng / sai / phát lại). Người gọi dịch bằng `loiTotpKhoa()`.
+   * ⚠ KHÔNG BAO GIỜ có ô "số lần sai còn lại" (điều phối 2026-10-24: không lộ đếm).
+   */
+  readonly ma?: "TOTP_TAM_KHOA" | "TOTP_KHONG_KIEM_DUOC";
+  /** Thời gian khoá còn lại (ms) — chỉ khi `ma === "TOTP_TAM_KHOA"`. */
+  readonly conLaiMs?: number;
 }
 
 /**
@@ -371,6 +382,24 @@ export async function verifyTotpOnce(args: {
     return { hopLe: false, phatLai: false };
   }
 
+  /**
+   * ★★★ SCADA R1a Task 16 — BƯỚC 1 CỦA BỘ ĐẾM TOTP SAI: đọc khoá TRƯỚC mọi phép kiểm mã.
+   * Đang khoá ⇒ từ chối NGAY: không `speakeasy`, không chạm sổ `totp_consumed` (mã đúng lúc đang khoá vẫn bị từ chối và KHÔNG bị
+   * tiêu). Mỗi lần từ chối vì khoá là một dòng audit. Không đọc được bộ đếm ⇒ `TOTP_KHONG_KIEM_DUOC` (fail-closed) — một cơ chế
+   * chống dò mà "không biết" lại cho qua là fail-open.
+   */
+  let khoa: { conLaiMs: number };
+  try {
+    khoa = await docKhoaTotp(userId);
+  } catch (e) {
+    console.error(`[TotpOnce] BỘ ĐẾM TOTP SAI không đọc được (${(e as Error)?.message ?? String(e)}) ⇒ TỪ CHỐI (fail-closed).`);
+    return KHONG_KIEM_DUOC;
+  }
+  if (khoa.conLaiMs > 0) {
+    await ghiAuditKhoaTotp(userId, "totp.tu_choi_dang_khoa", { conLaiMs: khoa.conLaiMs });
+    return { hopLe: false, phatLai: false, ma: "TOTP_TAM_KHOA", conLaiMs: khoa.conLaiMs };
+  }
+
   const hopLeTheoMa = speakeasy.totp.verify({
     secret,
     encoding: "base32",
@@ -380,7 +409,8 @@ export async function verifyTotpOnce(args: {
   });
   // ⚠ Mã KHÔNG verify được thì **không ghi sổ**: nếu ghi, ai cũng bơm được số rác vào sổ mà không
   //   cần biết secret ⇒ sổ tự biến thành một bề mặt DoS.
-  if (!hopLeTheoMa) return { hopLe: false, phatLai: false };
+  //   R1a T16: nhưng nó LÀ một lần sai của bộ đếm theo người dùng (bảng khác, một hàng/người ⇒ không phình theo số mã rác).
+  if (!hopLeTheoMa) return ghiLanSai(userId, false);
 
   /**
    * ⚠ `luot ?? randomUUID()` — **đúc dấu TRƯỚC lượt ghi**, giữ nguyên ngữ nghĩa bản cũ: người gọi
@@ -416,12 +446,45 @@ export async function verifyTotpOnce(args: {
   }
 
   // Một lượt gọi KHÁC đang giữ mã và mục còn sống ⇒ PHÁT LẠI.
-  if (giuBoi !== cuaTa) return { hopLe: false, phatLai: true };
+  // ⚠ R1a T16 — QUYẾT ĐỊNH: PHÁT LẠI = MỘT LẦN SAI của bộ đếm. Kẻ cầm một mã đã lộ mà thử lại là một lần thử sai thật; lượt verify
+  //   thứ N của CÙNG lượt gọi (cùng `luot`) không bao giờ tới đây nên chuỗi middleware 2–3 lượt verify không bị đếm oan.
+  if (giuBoi !== cuaTa) return ghiLanSai(userId, true);
 
   // Ta vừa chèn mới / thu lại một mục quá hạn ⇒ đúng lúc bảng CÓ THỂ to thêm ⇒ dọn.
   // ⚠ I-3: dọn **của chính người vừa ghi**, không phải toàn bảng — xem docstring `donSo`.
   await donSo(userId);
+
+  // ★ R1a T16 — BƯỚC 4: mã đúng, không đang khoá ⇒ xoá bộ đếm. Hỏng ⇒ fail-closed (điều phối: MỌI lỗi DB của bộ đếm ⇒ từ chối).
+  try {
+    await xoaBoDemTotp(userId);
+  } catch (e) {
+    console.error(`[TotpOnce] BỘ ĐẾM TOTP SAI không xoá được sau mã đúng (${(e as Error)?.message ?? String(e)}) ⇒ TỪ CHỐI (fail-closed).`);
+    return KHONG_KIEM_DUOC;
+  }
   return { hopLe: true, phatLai: false };
+}
+
+/** R1a T16 — kết quả fail-closed khi bộ đếm TOTP sai không hỏi/ghi được DB. */
+const KHONG_KIEM_DUOC: KetQuaTotp = Object.freeze({ hopLe: false, phatLai: false, ma: "TOTP_KHONG_KIEM_DUOC" as const });
+
+/**
+ * R1a T16 — BƯỚC 3: một lần sai (mã sai, hoặc phát lại) ⇒ upsert nguyên tử. Lượt làm đếm chạm ĐÚNG `SO_LAN_SAI_TOI_DA` là lượt
+ * bắt đầu khoá ⇒ một dòng audit (đồng thời: chỉ một lượt thấy đúng số ấy). Sau câu ghi mà đang khoá ⇒ trả `TOTP_TAM_KHOA`
+ * (lần sai thứ 5 báo luôn "đã khoá" thay vì "mã sai" — không lộ số lần nào trước đó). Ghi hỏng ⇒ `TOTP_KHONG_KIEM_DUOC`.
+ */
+async function ghiLanSai(userId: number, phatLai: boolean): Promise<KetQuaTotp> {
+  let r: { soLanSai: number; conLaiMs: number };
+  try {
+    r = await ghiLanSaiTotp(userId);
+  } catch (e) {
+    console.error(`[TotpOnce] BỘ ĐẾM TOTP SAI không ghi được (${(e as Error)?.message ?? String(e)}) ⇒ TỪ CHỐI (fail-closed).`);
+    return KHONG_KIEM_DUOC;
+  }
+  if (r.soLanSai === SO_LAN_SAI_TOI_DA) {
+    await ghiAuditKhoaTotp(userId, "totp.tam_khoa", { conLaiMs: r.conLaiMs, nguyenNhan: phatLai ? "phat_lai" : "ma_sai" });
+  }
+  if (r.conLaiMs > 0) return { hopLe: false, phatLai, ma: "TOTP_TAM_KHOA", conLaiMs: r.conLaiMs };
+  return { hopLe: false, phatLai };
 }
 
 /** Đúc dấu cho một LƯỢT GỌI mới. Tách ra để người gọi không tự bịa một chuỗi đoán được. */
@@ -464,13 +527,17 @@ export async function __soTotpSize(userIds?: readonly number[]): Promise<number>
 export async function __resetSoTotpChoTest(userIds?: readonly number[]): Promise<void> {
   const db = await layDb();
   if (db === null) return;
-  const { totpConsumed } = await import("../../drizzle/schema/auth");
+  // R1a T16 — bộ đếm TOTP sai (`totp_khoa_sai`) là trạng thái CÙNG họ (bảng DB dùng chung giữa các file test chạy song song) ⇒
+  //   dọn cùng lượt, cùng phạm vi người dùng; nếu không, người dùng test id cố định (42/43…) bị khoá từ lượt chạy trước.
+  const { totpConsumed, totpKhoaSai } = await import("../../drizzle/schema/auth");
   const { inArray } = await import("drizzle-orm");
   if (userIds === undefined || userIds.length === 0) {
     await db.delete(totpConsumed);
+    await db.delete(totpKhoaSai);
     return;
   }
   // ⚠ `inArray()`, KHÔNG `sql\`col = ANY(${jsArray})\`` — cái sau cho 500 `42809`
   //   (GOTCHA đã trả giá ở 10 điểm gọi, memory `drizzle-any-array-antipattern`).
   await db.delete(totpConsumed).where(inArray(totpConsumed.userId, [...userIds]));
+  await db.delete(totpKhoaSai).where(inArray(totpKhoaSai.userId, [...userIds]));
 }

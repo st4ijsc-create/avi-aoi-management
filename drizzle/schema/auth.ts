@@ -397,3 +397,17 @@ export const totpConsumed = pgTable("totp_consumed", {
 
 export type TotpConsumedRow = typeof totpConsumed.$inferSelect;
 export type InsertTotpConsumedRow = typeof totpConsumed.$inferInsert;
+
+/**
+ * SCADA R1a Task 16 (mig 0432) — BỘ ĐẾM TOTP SAI theo người dùng: 5 lần sai trong 5 phút ⇒ khoá TOTP 5 phút.
+ * Chủ duy nhất: `server/_core/totpKhoaSai.ts` (gọi từ `verifyTotpOnce`). Mọi phép so thời gian đọc `now()` của Postgres.
+ * Không FK (cùng khuôn `totp_consumed`): bảng trạng thái ngắn hạn, hàng tự xoá khi nhập đúng / admin mở khoá.
+ */
+export const totpKhoaSai = pgTable("totp_khoa_sai", {
+  userId: integer("user_id").primaryKey(),
+  soLanSai: integer("so_lan_sai").notNull(),
+  cuaSoBatDau: timestamp("cua_so_bat_dau", { withTimezone: true }).notNull(),
+  khoaDen: timestamp("khoa_den", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+export type TotpKhoaSaiRow = typeof totpKhoaSai.$inferSelect;

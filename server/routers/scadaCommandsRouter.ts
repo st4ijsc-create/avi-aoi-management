@@ -17,6 +17,7 @@
 import { z } from "zod";
 import { router, moduleProcedure } from "../_core/trpc";
 import { appError } from "../_core/appError";
+import { loiTotpKhoa } from "../_core/totpKhoaSai";
 import { phamViCua } from "./_phamViNguoiXem";
 import { huyYeuCauGhi, trangThaiYeuCauGhi, xacNhanGhiTag, yeuCauGhiTag, type NguoiGoiLenh, type TuChoiYeuCau } from "../services/scada/lenhHmi";
 
@@ -92,6 +93,11 @@ export function loiTuChoiLenh(t: TuChoiYeuCau) {
       return appError("PRECONDITION_FAILED", "SCADA_TOTP_INVALID", { ma: t.ma, level: t.level }, t.chiTiet);
     case "MAY_DA_DOI":
       return appError("PRECONDITION_FAILED", "SCADA_MACHINE_REBOUND", { ma: t.ma }, t.chiTiet);
+    // R1a Task 16 — bộ đếm TOTP sai (chung mọi bên gọi TOTP): CÙNG mã + câu i18n với đăng nhập / 2FA, thêm `{ ma, level }` cho M5.
+    // M5 chỉ hiện "tạm khoá, thử lại sau N phút" (`remainingMinutes`) — không có số lần sai.
+    case "TOTP_TAM_KHOA":
+    case "TOTP_KHONG_KIEM_DUOC":
+      return loiTotpKhoa(t.ma === "TOTP_TAM_KHOA" ? { ma: t.ma, conLaiMs: t.conLaiMs } : { ma: t.ma }, { ma: t.ma, level: t.level })!;
   }
 }
 

@@ -116,9 +116,13 @@ export default function Login() {
           TWOFA_NOT_ENABLED: 'auth.twoFactor.notEnabled',
           TWOFA_INVALID_TOKEN: 'auth.twoFactor.invalidToken',
           TWOFA_FAILED: 'auth.twoFactor.failed',
+          // SCADA R1a Task 16 — bộ đếm TOTP sai: chỉ nói "tạm khoá, thử lại sau N phút" (không bao giờ số lần còn lại).
+          TWOFA_TOTP_LOCKED: 'auth.twoFactor.totpLocked',
+          TWOFA_TOTP_UNAVAILABLE: 'auth.twoFactor.totpUnavailable',
         };
         const khoa = typeof data?.code === 'string' ? KHOA_2FA[data.code] : undefined;
-        toast.error(khoa ? t(khoa) : (data.error || t('auth.verificationFailed')));
+        const minutes = typeof data?.remainingMinutes === 'number' ? data.remainingMinutes : 5;
+        toast.error(khoa ? t(khoa, { minutes }) : (data.error || t('auth.verificationFailed')));
         return;
       }
 

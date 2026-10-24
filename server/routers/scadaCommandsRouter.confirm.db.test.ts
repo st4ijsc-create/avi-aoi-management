@@ -151,6 +151,8 @@ vi.mock("../services/ot/commandDispatcher", async (importOriginal) => {
 import { getDb } from "../db/connection";
 import { aiPendingActions } from "../../drizzle/schema";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import speakeasy from "speakeasy";
+import { setup2FA, enable2FA } from "../db/auth";
 import { StubDriver } from "../services/ot/drivers/stubDriver";
 
 /** StubDriver THẬT + bộ đếm lần ghi + móc chạy giữa lệnh ghi. */
@@ -320,6 +322,7 @@ beforeAll(async () => {
     await seedTag(ad.a, key, { level: 3 });
   }
   await seedTag(ad.a, "m5", { level: 5 });
+  await seedTag(ad.a, "m5khoa", { level: 5 }); // R1a T16
 
   await dung(sql`INSERT INTO scada_kenh_che_do (machine_id, adapter_id, tag_key, gia_tri_remote, updated_by)
     VALUES (${A.mid}, ${ad.a}, 'che_do', '2'::jsonb, 1)`);
@@ -353,6 +356,7 @@ afterAll(async () => {
   try {
     for (const id of ruleIds) await dung(sql`DELETE FROM interlock_rules WHERE id = ${id}`);
     for (const id of userIds) await dung(sql`DELETE FROM ai_pending_actions WHERE "userId" = ${id} AND tool = 'hmi.write_tag'`);
+    for (const id of userIds) await dung(sql`DELETE FROM totp_khoa_sai WHERE user_id = ${id}`); // R1a T16
     if (ad.a) {
       await dung(sql`DELETE FROM scada_khoa_chon WHERE adapter_id = ${ad.a}`);
       await dung(sql`DELETE FROM scada_kenh_che_do WHERE machine_id = ${A.mid}`);
@@ -551,6 +555,29 @@ describe("2FA theo mức — mức lấy từ tag HIỆN TẠI", () => {
     const loi = await tuChoiXacNhan("engA", requestId, { code: "PRECONDITION_FAILED", appCode: "SCADA_TOTP_REQUIRED", reason: "TOTP_CAN" });
     expect(loi.appParams).toMatchObject({ level: 5 });
     expect(await trangThaiCho(requestId)).toBe("proposed");
+  });
+});
+
+describe("R1a T16 — bộ đếm TOTP sai (chung mọi bên gọi TOTP)", () => {
+  it("engA đang TẠM KHOÁ TOTP ⇒ mã ĐÚNG vẫn bị TOTP_TAM_KHOA {ma, level, remainingMinutes}; KẾT THÚC yêu cầu (denied, khoá chọn nhả), dispatch 0", async () => {
+    const secret = speakeasy.generateSecret({ length: 20 }).base32;
+    await setup2FA(nguoi.engA.id, secret);
+    await enable2FA(nguoi.engA.id);
+    await dung(sql`INSERT INTO totp_khoa_sai (user_id, so_lan_sai, cua_so_bat_dau, khoa_den)
+      VALUES (${nguoi.engA.id}, 5, now(), now() + interval '4 minutes')`);
+    try {
+      const requestId = await yeuCau("engA", "m5khoa");
+      const maDung = speakeasy.totp({ secret, encoding: "base32" });
+      const loi = await tuChoiXacNhan("engA", requestId, { code: "TOO_MANY_REQUESTS", appCode: "TOTP_TAM_KHOA", reason: "TOTP_TAM_KHOA" }, maDung);
+      expect(loi.appParams).toMatchObject({ ma: "TOTP_TAM_KHOA", level: 5, remainingMinutes: 4 });
+      expect(Object.keys(loi.appParams ?? {}).sort(), "không lộ số lần sai").toEqual(["level", "ma", "remainingMinutes"]);
+      expect(await trangThaiCho(requestId)).toBe("denied");
+      expect(await khoa("m5khoa"), "khoá 5 phút > TTL 60 s ⇒ nhả khoá chọn cho người khác").toBeUndefined();
+      const [tieu] = await dung(sql`SELECT count(*)::int AS n FROM totp_consumed WHERE "userId" = ${nguoi.engA.id}`);
+      expect(Number(tieu.n), "đang khoá ⇒ mã không bị tiêu").toBe(0);
+    } finally {
+      await dung(sql`DELETE FROM totp_khoa_sai WHERE user_id = ${nguoi.engA.id}`);
+    }
   });
 });
 

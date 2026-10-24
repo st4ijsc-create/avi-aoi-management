@@ -143,6 +143,13 @@ export async function verifyCredentialAdmin(login: AdminLogin): Promise<{ userId
     if (!twoFa.twoFactorSecret) throw new EdgeCredentialError("notVerified", "2FA is on but has no secret — refused.");
     const { verifyTotpOnce } = await import("../../_core/totpOnce");
     const r = await verifyTotpOnce({ userId: user.id, secret: twoFa.twoFactorSecret, token: otp });
+    // SCADA R1a Task 16 — the per-user failed-TOTP counter (inside verifyTotpOnce, shared with the web): locked ⇒ refused with the
+    // minutes left (never the attempts left), the code was not checked so it is not counted again here; counter unreadable ⇒ refused.
+    if (r.ma === "TOTP_TAM_KHOA") {
+      const { phutConLai } = await import("../../_core/totpKhoaSai");
+      throw new EdgeCredentialError("notVerified", `2FA is temporarily locked after too many wrong codes — try again in ${phutConLai(r.conLaiMs ?? 0)} minute(s).`);
+    }
+    if (r.ma === "TOTP_KHONG_KIEM_DUOC") throw new EdgeCredentialError("dbUnavailable", "The 2FA code could not be checked (database) — refused.");
     if (!r.hopLe) {
       await recordCliTotpFailure(user as { id: number; name?: string | null; loginAttempts?: number | null }, r.phatLai ? "replayed_code" : "wrong_code");
       throw new EdgeCredentialError("notVerified", r.phatLai ? "That 2FA code was already used — wait for the next one." : "Wrong 2FA code.");

@@ -5,7 +5,8 @@ import superjson from "superjson";
 import type { TrpcContext } from "./context";
 // ★★★ Pha 6 Task 6 — CHỦ DUY NHẤT của phép xác minh TOTP (verify + tiêu mã). File này **không
 // còn** nhập `speakeasy`: `totpReplayScan.test.ts` cưỡng chế ∀ trên toàn `server/**`.
-import { verifyTotpOnce, dauLuotGoiMoi } from "./totpOnce";
+import { verifyTotpOnce, dauLuotGoiMoi, type KetQuaTotp } from "./totpOnce";
+import { loiTotpKhoa } from "./totpKhoaSai";
 // Doc 37 P0-3 — server-side per-module license gate (flag-gated pass-through).
 import { moduleGate } from "./moduleGate";
 import { appError, readAppErrorMeta } from "./appError";
@@ -568,7 +569,7 @@ export async function verifyFreshTotp(
   userId: number,
   code: string,
   luot: string,
-): Promise<{ hopLe: boolean; phatLai: boolean }> {
+): Promise<KetQuaTotp> {
   try {
     // ★★★ Pha 7 Task 9 (9c) — hạt giống TOTP nay ở `user_secrets`, cờ 2FA vẫn ở `users`. Thay vì
     // dựng ở đây một câu `JOIN` **thứ hai** cho cùng cặp ô, gọi lại **NGƯỜI ĐỌC DUY NHẤT**
@@ -686,6 +687,9 @@ function stepUpTotpMiddleware(dungCachePhien: boolean) {
 
   const kq = await verifyFreshTotp(ctx.user.id, totpCode, luot);
   if (!kq.hopLe) {
+    // R1a T16 — bộ đếm TOTP sai: đang tạm khoá / không kiểm được ⇒ mã lỗi RIÊNG (TOTP_TAM_KHOA kèm phút còn lại, không số lần).
+    const loiKhoa = loiTotpKhoa(kq);
+    if (loiKhoa) throw loiKhoa;
     throw appError(
       "FORBIDDEN",
       "INVALID_VALUE",

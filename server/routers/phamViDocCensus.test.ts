@@ -878,7 +878,13 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   • mutation `scadaKenh.capNhat` / `scadaKenh.cheDo.dat` / `scadaKenh.cheDo.go` ⇒ D (+3) (bộ suy xếp MỌI mutation vào D).
 //   Đo: trên ghim cũ (gốc a65445567) đỏ ĐÚNG +3 D / +2 S / +5 tong sau khi thêm router, rồi ghim lại. No baseline row added. `tong` 2401
 //   matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 333, B: 8, C: 494, D: 1197, S: 369, tong: 2401 } as const;
+// ★★ 2026-10-24 · R1a twoFactor.moKhoaTotp +1 (SCADA R1a Task 16 — bộ đếm TOTP sai theo người dùng, admin mở khoá) — **D 1197 → 1198 ·
+// tong 2401 → 2402 · A/B/C/S unchanged.** MỘT thủ tục MỚI `twoFactor.moKhoaTotp` (mutation, `adminProcedure`) trong
+// `server/routers/twoFactorRouter.ts`: xoá hàng `totp_khoa_sai` (mig 0432) của một người dùng + một dòng `control_audit_log` (kèm lý do)
+// trong CÙNG giao dịch. Bảng không có cột tenant; admin toàn hệ ⇒ không lọc phạm vi. Mutation ⇒ D (bộ suy xếp MỌI mutation vào D). Đo:
+// trên ghim cũ (gốc c6e2422e7) đỏ ĐÚNG +1 D / +1 tong sau khi thêm, rồi ghim lại. No baseline row added. `tong` 2402 matches
+// `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 333, B: 8, C: 494, D: 1198, S: 369, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

@@ -2189,7 +2189,13 @@
       "userNotFound": "Không tìm thấy người dùng",
       "notEnabled": "2FA chưa được bật cho tài khoản này",
       "invalidToken": "Mã xác thực không hợp lệ",
-      "failed": "Xác thực 2FA thất bại"
+      "failed": "Xác thực 2FA thất bại",
+      "totpLocked": "Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau {{minutes}} phút.",
+      "totpUnavailable": "Không kiểm được mã xác thực hai lớp lúc này (lỗi hệ thống) — thử lại sau.",
+      "adminUnlockTotp": "Mở khoá xác thực hai lớp",
+      "adminUnlockTotpReason": "Lý do mở khoá (5–300 ký tự, được ghi vào nhật ký kiểm toán)",
+      "adminUnlockTotpDone": "Đã mở khoá xác thực hai lớp cho người dùng.",
+      "adminUnlockTotpNotLocked": "Người dùng này không có bộ đếm TOTP sai nào — không có gì để mở khoá."
     }
   },
   "backup": {
@@ -4537,6 +4543,8 @@
     "SCADA_SELECTION_LOST": "Bạn không còn giữ kênh này (khoá chọn đã hết hạn hoặc đã chuyển sang yêu cầu khác) — hãy tạo yêu cầu mới.",
     "SCADA_TOTP_REQUIRED": "Kênh mức tác động {{level}} cần mã xác thực 2 lớp (TOTP) — nhập mã rồi xác nhận lại.",
     "SCADA_TOTP_INVALID": "Mã xác thực 2 lớp không đúng hoặc đã được dùng — nhập mã mới rồi xác nhận lại (kênh mức {{level}}).",
+    "TOTP_TAM_KHOA": "Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau {{remainingMinutes}} phút.",
+    "TOTP_KHONG_KIEM_DUOC": "Không kiểm được mã xác thực hai lớp lúc này (lỗi hệ thống) — thử lại sau.",
     "SCADA_MACHINE_REBOUND": "Thiết bị đã được gán sang máy khác sau khi tạo yêu cầu — hãy tạo yêu cầu mới.",
     "STOP_PIN_NGOAI_DAI": "Kênh {{tagKey}} có giá trị DỪNG ghim ({{stopValue}}) không ghi được với khai báo kênh (dải {{min}} … {{max}}, bước {{step}}, hoặc loại kênh chỉ đọc) — lệnh DỪNG sẽ bị từ chối. Gỡ hoặc đổi giá trị ghim trước, hoặc khai lại dải/bước/loại kênh cho phù hợp.",
     "INTERLOCK_NGOAI_DAI": "Giá trị lệnh của luật interlock không ghi được trên kênh {{tagKey}} theo khai báo kênh (dải {{min}} … {{max}}, bước {{step}}, hoặc loại kênh chỉ đọc) — hành động bảo vệ sẽ bị từ chối lúc chạy. Sửa giá trị lệnh của luật, hoặc khai lại kênh cho phù hợp.",

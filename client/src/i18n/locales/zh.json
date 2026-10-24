@@ -2189,7 +2189,13 @@
       "userNotFound": "未找到用户",
       "notEnabled": "此账户未启用双因素认证",
       "invalidToken": "验证码无效",
-      "failed": "双因素验证失败"
+      "failed": "双因素验证失败",
+      "totpLocked": "由于多次输入错误，双因素认证已被临时锁定——请在 {{minutes}} 分钟后重试。",
+      "totpUnavailable": "暂时无法校验双因素验证码（系统错误）——请稍后重试。",
+      "adminUnlockTotp": "解锁双因素认证",
+      "adminUnlockTotpReason": "解锁原因（5–300 个字符，将写入审计日志）",
+      "adminUnlockTotpDone": "已为该用户解锁双因素认证。",
+      "adminUnlockTotpNotLocked": "该用户没有 TOTP 错误计数——无需解锁。"
     }
   },
   "backup": {
@@ -4537,6 +4543,8 @@
     "SCADA_SELECTION_LOST": "您已不再持有此通道（选择锁已过期或已转给另一个请求）——请创建新请求。",
     "SCADA_TOTP_REQUIRED": "影响等级 {{level}} 的通道需要双因素（TOTP）验证码——请输入验证码后再次确认。",
     "SCADA_TOTP_INVALID": "双因素验证码错误或已被使用——请输入新验证码后再次确认（等级 {{level}} 通道）。",
+    "TOTP_TAM_KHOA": "由于多次输入错误，双因素认证已被临时锁定——请在 {{remainingMinutes}} 分钟后重试。",
+    "TOTP_KHONG_KIEM_DUOC": "暂时无法校验双因素验证码（系统错误）——请稍后重试。",
     "SCADA_MACHINE_REBOUND": "创建请求后该设备已被分配到另一台机器——请创建新请求。",
     "STOP_PIN_NGOAI_DAI": "通道 {{tagKey}} 的固定停止值（{{stopValue}}）在当前通道声明下无法写入（范围 {{min}} … {{max}}，步长 {{step}}，或只读通道类型）——停止命令将被拒绝。请先清除或修改固定值，或重新声明匹配的范围/步长/通道类型。",
     "INTERLOCK_NGOAI_DAI": "联锁规则的命令值在当前通道声明下无法写入通道 {{tagKey}}（范围 {{min}} … {{max}}，步长 {{step}}，或只读通道类型）——保护动作将在运行时被拒绝。请修改规则的命令值，或重新声明匹配的通道。",

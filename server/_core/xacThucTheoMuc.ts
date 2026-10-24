@@ -25,6 +25,8 @@
  *     (`ctx.__luotXacMinhTotp`) — nếu không, cùng một mã của chính lượt ấy sẽ bị sổ coi là phát
  *     lại. Không có ⇒ đúc dấu mới, nên hai lượt gọi khác nhau với cùng mã ⇒ `TOTP_SAI`.
  *   · Không ném lỗi: trả kết quả thuần; Task 8/9 đổi sang `appError`.
+ *   · R1a Task 16: `TOTP_TAM_KHOA` (kèm `conLaiMs`) khi bộ đếm TOTP sai đang khoá người dùng (5 lần sai / 5 phút ⇒ 5 phút), và
+ *     `TOTP_KHONG_KIEM_DUOC` khi bộ đếm không hỏi được DB (fail-closed). Bên tiêu thụ dịch bằng `loiTotpKhoa` (mã i18n riêng).
  *
  * ⚠⚠ Fix round 1 — FAIL-CLOSED theo mức: CHỈ `1` và `3` (so `===`) là mức thấp. Mọi giá trị khác
  *   lúc chạy (`"5"`, `2`, `undefined`, `NaN`…, lọt qua một phép ép kiểu) đi đường MỨC 5: sàn
@@ -59,7 +61,10 @@ export function vaiTroDuocGhi(muc: MucRuiRo): readonly UserRole[] {
 
 export type KetQuaXacThucTheoMuc =
   | { ok: true; cach: "khong_can" | "phien" | "moi_lan" }
-  | { ok: false; ma: "ROLE_FLOOR" | "TOTP_CHUA_DANG_KY" | "TOTP_CAN" | "TOTP_SAI" };
+  | { ok: false; ma: "ROLE_FLOOR" | "TOTP_CHUA_DANG_KY" | "TOTP_CAN" | "TOTP_SAI" }
+  // R1a Task 16 — bộ đếm TOTP sai (trong `verifyTotpOnce`): đang tạm khoá (kèm thời gian còn lại) / bộ đếm hỏng (fail-closed).
+  | { ok: false; ma: "TOTP_TAM_KHOA"; conLaiMs: number }
+  | { ok: false; ma: "TOTP_KHONG_KIEM_DUOC" };
 
 export interface CtxXacThuc {
   user: { id: number; role: string; twoFactorEnabled?: boolean | null } | null | undefined;
@@ -93,7 +98,12 @@ export async function kiemXacThucTheoMuc(
 
   const luot = (ctx as { __luotXacMinhTotp?: string }).__luotXacMinhTotp ?? dauLuotGoiMoi();
   const kq = await verifyFreshTotp(user.id, totpCode, luot);
-  if (!kq.hopLe) return { ok: false, ma: "TOTP_SAI" };
+  if (!kq.hopLe) {
+    // R1a T16 — khoá của bộ đếm đứng TRƯỚC "mã sai": người dùng phải biết chờ bao lâu, không phải gõ lại mã (không lộ số lần).
+    if (kq.ma === "TOTP_TAM_KHOA") return { ok: false, ma: "TOTP_TAM_KHOA", conLaiMs: kq.conLaiMs ?? 0 };
+    if (kq.ma === "TOTP_KHONG_KIEM_DUOC") return { ok: false, ma: "TOTP_KHONG_KIEM_DUOC" };
+    return { ok: false, ma: "TOTP_SAI" };
+  }
 
   // Mã đúng (mức 4 hoặc 5) ⇒ đặt/làm mới cache phiên 10 phút cho mức 4 — chỉ khi có sessionToken.
   if (ctx.sessionToken) ghiStepUpPhien(khoa);

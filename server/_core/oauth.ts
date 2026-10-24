@@ -447,11 +447,27 @@ export function registerOAuthRoutes(app: Express) {
       //   MỘT PHIÊN ĐĂNG NHẬP (`establishSession` bên dưới). Nó phải đứng trên cùng cuốn sổ với
       //   đường step-up, nếu không thì bịt một cửa và để mở cửa kia.
       const { verifyTotpOnce } = await import('./totpOnce');
-      const verified = (await verifyTotpOnce({
-        userId: user.id,
-        secret: twoFAStatus.twoFactorSecret,
-        token: token,
-      })).hopLe;
+      // ★ SCADA R1a Task 16 — chỉ mã 6 SỐ là một lượt TOTP. Mã dự phòng (8 ký tự hex) đi thẳng nhánh dự phòng: không để nó bị bộ
+      //   đếm TOTP sai tính là một lần đoán sai, và để nó còn là LỐI THOÁT của người đang bị khoá TOTP.
+      const laMaTotp = typeof token === 'string' && /^\d{6}$/.test(token);
+      const kqTotp = laMaTotp
+        ? await verifyTotpOnce({ userId: user.id, secret: twoFAStatus.twoFactorSecret, token })
+        : { hopLe: false, phatLai: false };
+      // Bộ đếm TOTP sai (5 lần / 5 phút ⇒ khoá 5 phút, trong `verifyTotpOnce`): đang khoá ⇒ 429 kèm PHÚT còn lại (không bao giờ số
+      // lần sai còn lại); bộ đếm hỏng ⇒ 503 (fail-closed). Không trừ ngân sách vé: mã không được kiểm.
+      if (kqTotp.ma === 'TOTP_TAM_KHOA' || kqTotp.ma === 'TOTP_KHONG_KIEM_DUOC') {
+        const khoa = kqTotp.ma === 'TOTP_TAM_KHOA';
+        await db.createAuditLog({ userId: user.id, userName: user.name, action: 'login_2fa', entityType: 'auth', status: 'failure', details: { reason: khoa ? 'totp_tam_khoa' : 'totp_khong_kiem_duoc' }, ipAddress: req.ip ?? req.socket.remoteAddress, userAgent: req.headers['user-agent'] }).catch(() => {});
+        if (khoa) {
+          const { phutConLai } = await import('./totpKhoaSai');
+          const remainingMinutes = phutConLai(kqTotp.conLaiMs ?? 0);
+          res.status(429).json({ code: "TWOFA_TOTP_LOCKED", remainingMinutes, error: `Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau ${remainingMinutes} phút.` });
+        } else {
+          res.status(503).json({ code: "TWOFA_TOTP_UNAVAILABLE", error: "Không kiểm được mã xác thực hai lớp lúc này — thử lại sau." });
+        }
+        return;
+      }
+      const verified = kqTotp.hopLe;
       
       if (!verified) {
         // Try backup code if TOTP fails

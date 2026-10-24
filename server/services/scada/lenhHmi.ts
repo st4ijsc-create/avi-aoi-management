@@ -112,7 +112,10 @@ export type MaTuChoiYeuCau =
   | "KHOA_MAT"
   | "TOTP_CAN"
   | "TOTP_SAI"
-  | "MAY_DA_DOI";
+  | "MAY_DA_DOI"
+  // R1a Task 16 (bộ đếm TOTP sai, trong verifyTotpOnce)
+  | "TOTP_TAM_KHOA"
+  | "TOTP_KHONG_KIEM_DUOC";
 
 /** Một lần từ chối. `thongTin` là tham số cho appError (chỉ nguyên thuỷ) — router chọn câu i18n theo `ma`. */
 export type TuChoiYeuCau =
@@ -122,7 +125,8 @@ export type TuChoiYeuCau =
   | { ma: "TYPE_MISMATCH"; chiTiet: string; tagKey: string; dataType: string }
   | { ma: "OUT_OF_RANGE"; chiTiet: string; tagKey: string; min: number | null; max: number | null }
   | { ma: "OFF_STEP"; chiTiet: string; tagKey: string; step: number; goiY?: number }
-  | { ma: "ROLE_FLOOR" | "TOTP_CHUA_DANG_KY" | "TOTP_CAN" | "TOTP_SAI"; chiTiet: string; level: MucRuiRo }
+  | { ma: "ROLE_FLOOR" | "TOTP_CHUA_DANG_KY" | "TOTP_CAN" | "TOTP_SAI" | "TOTP_KHONG_KIEM_DUOC"; chiTiet: string; level: MucRuiRo }
+  | { ma: "TOTP_TAM_KHOA"; chiTiet: string; level: MucRuiRo; conLaiMs: number }
   | { ma: "EDGE_CHUA_HO_TRO"; chiTiet: string; edgeCode: string; edgeNodeId: number }
   | { ma: "MODE_LOCAL"; chiTiet: string; lyDo: LyDoCheDo }
   | { ma: "DANG_DUOC_CHON"; chiTiet: string; boiUserId: number; boiTen: string; hetHanLuc: string };
@@ -858,10 +862,18 @@ export async function xacNhanGhiTag(
       TOTP_CHUA_DANG_KY: `Kênh mức ${muc} cần 2FA; tài khoản chưa đăng ký 2FA.`,
       TOTP_CAN: `Kênh mức ${muc} cần mã TOTP.`,
       TOTP_SAI: "Mã TOTP không hợp lệ hoặc đã dùng.",
+      TOTP_TAM_KHOA: "Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau.",
+      TOTP_KHONG_KIEM_DUOC: "Không kiểm được mã TOTP lúc này (lỗi hệ thống) — thử lại sau.",
     };
-    const t: TuChoiYeuCau = { ma: xt.ma, level: muc, chiTiet: chiTiet[xt.ma] };
+    // R1a T16 (QĐ T16-SCADA) — TOTP_TAM_KHOA KẾT THÚC yêu cầu (nhả khoá chọn): khoá TOTP 5 phút > TTL 60 s của yêu cầu, nên giữ
+    //   dòng chờ chỉ giữ chân kênh của người khác mà không lượt thử lại nào trong TTL qua được. TOTP_KHONG_KIEM_DUOC là lỗi thoáng
+    //   qua ⇒ GIỮ như TOTP_* khác (QĐ T9-2), người dùng bấm lại trong TTL.
+    const t: TuChoiYeuCau =
+      xt.ma === "TOTP_TAM_KHOA"
+        ? { ma: xt.ma, level: muc, conLaiMs: xt.conLaiMs, chiTiet: chiTiet[xt.ma] }
+        : { ma: xt.ma, level: muc, chiTiet: chiTiet[xt.ma] };
     // fix round 1 minor 6 — ROLE_FLOOR không sửa được bằng thử lại ⇒ KẾT THÚC (nhả khoá); TOTP_* giữ dòng chờ + khoá (QĐ T9-2).
-    return xt.ma === "ROLE_FLOOR" ? tuChoiKetThuc(t) : tuChoiGiu(t);
+    return xt.ma === "ROLE_FLOOR" || xt.ma === "TOTP_TAM_KHOA" ? tuChoiKetThuc(t) : tuChoiGiu(t);
   }
 
   // 4. cổng 3–7 trên dữ liệu hiện tại

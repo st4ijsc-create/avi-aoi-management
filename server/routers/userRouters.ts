@@ -382,6 +382,7 @@ export const userRouter = router({
     .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean; backupCodes: string[] }>> => {
       // ★★★ Pha 6 Task 6 — MỌI lượt xác minh TOTP đi qua sổ mã đã tiêu (chống phát lại).
       const { verifyTotpOnce } = await import('../_core/totpOnce');
+      const { kiemKhoaTotp } = await import('../_core/totpKhoaSai');
 
       // Get user's 2FA secret
       const status = await db.get2FAStatus(ctx.user.id);
@@ -407,7 +408,9 @@ export const userRouter = router({
       }
 
       // Verify token (base32 encoding, ±1 step for clock drift) — và TIÊU MÃ (Pha 6 Task 6).
-      const valid = (await verifyTotpOnce({
+      // SCADA R1a Task 16 — bộ đếm TOTP sai: tạm khoá / không kiểm được ⇒ `kiemKhoaTotp` NÉM mã lỗi riêng (phút còn lại, không
+      //   số lần sai). Hình dạng `kiemKhoaTotp(await verifyTotpOnce(…)).hopLe` giống hệt tuyến song song `twoFactor.*`.
+      const valid = kiemKhoaTotp(await verifyTotpOnce({
         userId: ctx.user.id,
         secret: status.twoFactorSecret,
         token: input.token,
@@ -438,6 +441,7 @@ export const userRouter = router({
     .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean }>> => {
       // ★★★ Pha 6 Task 6 — MỌI lượt xác minh TOTP đi qua sổ mã đã tiêu (chống phát lại).
       const { verifyTotpOnce } = await import('../_core/totpOnce');
+      const { kiemKhoaTotp } = await import('../_core/totpKhoaSai');
       const bcrypt = await import('bcryptjs');
 
       // Get user
@@ -471,7 +475,9 @@ export const userRouter = router({
       }
 
       // Verify token — và TIÊU MÃ (Pha 6 Task 6).
-      const valid = (await verifyTotpOnce({
+      // SCADA R1a Task 16 — bộ đếm TOTP sai: tạm khoá / không kiểm được ⇒ `kiemKhoaTotp` NÉM mã lỗi riêng (phút còn lại, không
+      //   số lần sai). Hình dạng `kiemKhoaTotp(await verifyTotpOnce(…)).hopLe` giống hệt tuyến song song `twoFactor.*`.
+      const valid = kiemKhoaTotp(await verifyTotpOnce({
         userId: ctx.user.id,
         secret: status.twoFactorSecret,
         token: input.token,

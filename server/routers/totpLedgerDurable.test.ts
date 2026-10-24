@@ -64,6 +64,9 @@ async function donRieng(): Promise<void> {
   const d = await db();
   if (!d) return;
   await d.execute(sql`DELETE FROM "totp_consumed" WHERE "userId" IN (${USER}, ${USER_KHAC})`);
+  // R1a T16 — bộ đếm TOTP sai (mig 0432) là trạng thái DB cùng họ: các ca mã SAI / phát lại của file này cộng dồn vào nó, nên
+  //   không dọn thì hai người dùng id cố định bị TẠM KHOÁ (ở cả lượt chạy sau) và mọi ca "mã đúng vẫn qua" đỏ vì lý do khác.
+  await d.execute(sql`DELETE FROM "totp_khoa_sai" WHERE "user_id" IN (${USER}, ${USER_KHAC})`);
 }
 
 /**
@@ -371,6 +374,7 @@ async function donBa(): Promise<void> {
   const d = await db();
   if (!d) return;
   await d.execute(sql`DELETE FROM "totp_consumed" WHERE "userId" = ${USER_BA}`);
+  await d.execute(sql`DELETE FROM "totp_khoa_sai" WHERE "user_id" = ${USER_BA}`); // R1a T16 — xem `donRieng`
 }
 
 describe("★★★ I-3 — lượt dọn của MỘT người dùng KHÔNG được chạm sổ của người dùng KHÁC", () => {
@@ -507,6 +511,7 @@ describe("★★★★ I-3b — `nowMs` KHÔNG kéo dài/rút ngắn hiệu lự
   const don = async (): Promise<void> => {
     const d = await db();
     if (d) await d.execute(sql`DELETE FROM "totp_consumed" WHERE "userId" = ${USER_TU}`);
+    if (d) await d.execute(sql`DELETE FROM "totp_khoa_sai" WHERE "user_id" = ${USER_TU}`); // R1a T16 — xem `donRieng`
   };
   beforeEach(don);
   afterAll(don);
