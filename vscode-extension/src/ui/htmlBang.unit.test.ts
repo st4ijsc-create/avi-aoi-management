@@ -1962,3 +1962,12 @@ describe("mã build trên khung (2026-10-24)", () => {
     expect(dungHtmlBang({ nonce: "N" })).toMatch(/<span id="ma-build"[^>]*\bhidden\b[^>]*><\/span>/);
   });
 });
+
+describe("bố cục thân trang (2026-10-24)", () => {
+  it("★★ body cao 100vh PHẢI border-box (padding 8px nếu cộng thêm sẽ đẩy hàng cuối — thanh thống kê — ra ngoài khung nhìn; thấy ở ảnh chụp VSCode thật)", () => {
+    const css = dungHtmlBang({ nonce: "N" }).match(/<style[^>]*>([\s\S]*?)<\/style>/)![1]!;
+    const body = css.match(/\n\s*body\s*\{([^}]*)\}/)![1]!;
+    expect(body).toContain("height: 100vh");
+    expect(body).toContain("box-sizing: border-box");
+  });
+});

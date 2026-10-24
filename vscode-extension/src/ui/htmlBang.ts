@@ -39,7 +39,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
       content="default-src 'none'; img-src data:; style-src 'nonce-${n}'; script-src 'nonce-${n}';" />
 <style nonce="${n}">
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
-         margin: 0; padding: 8px; display: flex; flex-direction: column; height: 100vh; }
+         margin: 0; padding: 8px; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
   /* ĐỢT G / TASK G1 / B2 — góc khung, không còn chiếm nguyên một hàng như nút to cũ.
      ĐỢT G / TASK G3 / B4 — nay CHIA HAI ĐẦU: ô chọn mức quyền bên TRÁI, icon tài khoản bên PHẢI. */
   #vung-tai-khoan { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
