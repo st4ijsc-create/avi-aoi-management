@@ -26,7 +26,7 @@ import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { router, protectedProcedure, qualityProcedure } from "../_core/trpc";
 import { sql } from "drizzle-orm";
-import type { CoDanhTinh } from "./_phamViNguoiXem";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { mayTrongPhamVi } from "./_adapterPhamVi";
 import { sanPhamGhiTrongPhamVi } from "./_sanPhamPhamVi";
 import {
@@ -206,11 +206,29 @@ async function luotKiemGoldenGhi(ctx: CoDanhTinh, inspection: { machineId?: numb
   await sanPhamTheoMa(ctx, inspection.productModel);
 }
 
+/**
+ * phạm vi người dùng (L6a 2026-10-25): tập golden người gọi THẤY ĐƯỢC. Golden gắn sản phẩm (productModelId, hoặc productCode → mô hình); thấy ⇔ sản phẩm TRONG phạm vi
+ * (`sanPhamTrongPhamVi`, cùng đường danh sách sản phẩm). Không xác định được sản phẩm ⇒ chỉ toàn quyền (fail-closed). Toàn quyền ⇒ tất cả.
+ */
+async function goldenThayDuocTrongPhamVi<T extends { productModelId?: number | null; productCode?: string | null }>(ctx: CoDanhTinh, rows: T[]): Promise<T[]> {
+  const pv = phamViCua(ctx);
+  const nho = new Map<string, boolean>();
+  const out: T[] = [];
+  for (const r of rows) {
+    let id: number | null = r.productModelId ?? null;
+    if (id == null && r.productCode) id = (await db.getProductModelByCode(r.productCode))?.id ?? null;
+    const khoa = id == null ? "none" : String(id);
+    if (!nho.has(khoa)) nho.set(khoa, await db.sanPhamTrongPhamVi(id ?? -1, pv));
+    if (nho.get(khoa)) out.push(r);
+  }
+  return out;
+}
+
 export const goldenSampleRouter = router({
   /** ACTIVE (approved) golden for a key (exact → product-level fallback), with thumbnail. */
   getActiveForKey: protectedProcedure
     .input(keyInput)
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const resolved = await resolveActiveReference(
         {
           productCode: input.productCode ?? null,
@@ -220,7 +238,7 @@ export const goldenSampleRouter = router({
         },
         { fallbackToProductLevel: input.fallbackToProductLevel ?? true },
       );
-      if (!resolved) return { found: false as const };
+      if (!resolved || (await goldenThayDuocTrongPhamVi(ctx, [resolved.row])).length === 0) return { found: false as const }; // phạm vi người dùng (L6a 2026-10-25)
 
       const { row, matchedLevel } = resolved;
       return {
@@ -240,12 +258,12 @@ export const goldenSampleRouter = router({
       activeOnly: z.boolean().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }))
-    .query(async ({ input }) => {
-      const rows = await listReferences({
+    .query(async ({ input, ctx }) => {
+      const rows = await goldenThayDuocTrongPhamVi(ctx, await listReferences({ // phạm vi người dùng (L6a 2026-10-25)
         productCode: input.productCode,
         activeOnly: input.activeOnly ?? true,
         limit: input.limit ?? 100,
-      });
+      }));
       return rows.map(rowMeta);
     }),
 
@@ -262,16 +280,16 @@ export const goldenSampleRouter = router({
       withThumbnails: z.boolean().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const product = await db.getProductModelById(input.productModelId);
       const limit = input.withThumbnails ? Math.min(input.limit ?? 100, 100) : (input.limit ?? 200);
-      const rows = await listByProduct({
+      const rows = await goldenThayDuocTrongPhamVi(ctx, await listByProduct({ // phạm vi người dùng (L6a 2026-10-25)
         productModelId: input.productModelId,
         productCode: product?.code ?? null,
         activeOnly: input.activeOnly ?? false,
         status: input.status ?? null,
         limit,
-      });
+      }));
       return Promise.all(rows.map(async (r) => ({
         ...rowMeta(r),
         thumbnailDataUrl: input.withThumbnails ? await referenceThumbnailDataUrl(r) : null,
@@ -290,14 +308,14 @@ export const goldenSampleRouter = router({
       withThumbnails: z.boolean().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const limit = input.withThumbnails ? Math.min(input.limit ?? 100, 100) : (input.limit ?? 200);
-      const rows = await listReferences({
+      const rows = await goldenThayDuocTrongPhamVi(ctx, await listReferences({ // phạm vi người dùng (L6a 2026-10-25)
         productCode: input.productCode ?? null,
         status: input.status ?? null,
         activeOnly: input.activeOnly ?? false,
         limit,
-      });
+      }));
       return Promise.all(rows.map(async (r) => ({
         ...rowMeta(r),
         thumbnailDataUrl: input.withThumbnails ? await referenceThumbnailDataUrl(r) : null,
@@ -501,9 +519,9 @@ export const goldenSampleRouter = router({
   /** Full-size preview of one stored golden (PNG data URL). */
   getThumbnail: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const row = await getReferenceById(input.id);
-      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "goldenReference" }, "Golden reference not found");
+      if (!row || (await goldenThayDuocTrongPhamVi(ctx, [row])).length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "goldenReference" }, "Golden reference not found"); // phạm vi người dùng (L6a 2026-10-25)
       return { id: row.id, thumbnailDataUrl: await referenceThumbnailDataUrl(row) };
     }),
 

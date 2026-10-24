@@ -199,6 +199,8 @@ export async function getFullAnalysisData(filters: {
   startDate?: Date;
   endDate?: Date;
   machineId?: number;
+  /** phạm vi người dùng (L6a 2026-10-25): chỉ lần kiểm của các máy này (rỗng ⇒ không lần nào; null / vắng ⇒ không lọc). */
+  machineIds?: number[] | null;
   productModelId?: number;
   limit?: number;
 }) {
@@ -226,6 +228,7 @@ export async function getFullAnalysisData(filters: {
   if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
   if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
   if (filters.machineId) conditions.push(eq(productInspections.machineId, filters.machineId));
+  if (filters.machineIds != null) conditions.push(filters.machineIds.length > 0 ? inArray(productInspections.machineId, filters.machineIds) : sql`false`);
   if (filters.productModelId) conditions.push(eq(productInspections.productModelId, filters.productModelId));
 
   const query = db.select({

@@ -115,6 +115,8 @@ export async function insertEnergyReading(reading: InsertEnergyReading): Promise
  */
 export async function queryEnergyBuckets(params: {
   machineId?: number;
+  /** phạm vi người dùng (L6a 2026-10-25): chỉ máy trong tập này (rỗng ⇒ không hàng; null / vắng ⇒ không lọc). */
+  machineIds?: number[] | null;
   from: Date;
   to: Date;
   bucket?: string; // ví dụ '1 hour', '15 minutes'
@@ -123,7 +125,7 @@ export async function queryEnergyBuckets(params: {
   if (!db) return [];
   const bucket = params.bucket || "1 hour";
   try {
-    const machineFilter = params.machineId != null ? sql`AND "machineId" = ${params.machineId}` : sql``;
+    const machineFilter = sql`${params.machineId != null ? sql`AND "machineId" = ${params.machineId}` : sql``} ${params.machineIds == null ? sql`` : params.machineIds.length > 0 ? sql`AND "machineId" IN (${sql.join(params.machineIds.map((m) => sql`${Number(m)}`), sql`, `)})` : sql`AND false`}`;
     const fromIso = params.from.toISOString();
     const toIso = params.to.toISOString();
     const rows = await db.execute(sql`

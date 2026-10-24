@@ -9,6 +9,12 @@ import { sql } from "drizzle-orm";
 // a text model (un-pinned calls used to land on the 0.6B RAG embedder → repetition garbage).
 import { resolveLogicalModel } from "./ai/modelResolver";
 
+/** phạm vi người dùng (L6a 2026-10-25): mảnh WHERE theo tập máy trong phạm vi (null = toàn quyền ⇒ không lọc; rỗng ⇒ `false`; ảnh/lần kiểm không gắn máy bị loại với người hẹp). Id số do máy chủ suy ra, không phải chuỗi của client. */
+function congMay(machineIds: number[] | null | undefined): string {
+  if (machineIds == null) return "";
+  return machineIds.length > 0 ? ` AND pi."machineId" IN (${machineIds.map((m) => Number(m)).join(",")})` : " AND false";
+}
+
 export interface ParetoItem {
   category: string;
   categoryId?: number;
@@ -37,6 +43,7 @@ export async function paretoByDefectType(params: {
   workshopId?: number;
   lineId?: number;
   machineId?: number;
+  machineIds?: number[] | null;
   limit?: number;
 }): Promise<ParetoAnalysisResult> {
   const { startDate, endDate, factoryId, workshopId, lineId, machineId } = params;
@@ -47,10 +54,11 @@ export async function paretoByDefectType(params: {
   if (workshopId) whereClause += ` AND pl."workshopId" = ${workshopId}`;
   if (lineId) whereClause += ` AND st."lineId" = ${lineId}`;
   if (machineId) whereClause += ` AND pi."machineId" = ${machineId}`;
+  whereClause += congMay(params.machineIds);
 
   const conn = await getDb();
   const result = await conn!.execute(sql.raw(`
-    SELECT 
+    SELECT
       COALESCE(mpd."name", 'Unknown') as category,
       mpd."id" as "categoryId",
       COUNT(*) as count
@@ -80,6 +88,7 @@ export async function paretoByMachine(params: {
   factoryId?: number;
   workshopId?: number;
   lineId?: number;
+  machineIds?: number[] | null;
   limit?: number;
 }): Promise<ParetoAnalysisResult> {
   const { startDate, endDate, factoryId, workshopId, lineId } = params;
@@ -89,10 +98,11 @@ export async function paretoByMachine(params: {
   if (factoryId) whereClause += ` AND w."factoryId" = ${factoryId}`;
   if (workshopId) whereClause += ` AND pl."workshopId" = ${workshopId}`;
   if (lineId) whereClause += ` AND st."lineId" = ${lineId}`;
+  whereClause += congMay(params.machineIds);
 
   const conn = await getDb();
   const result = await conn!.execute(sql.raw(`
-    SELECT 
+    SELECT
       COALESCE(m."name", m."code", 'Unknown') as category,
       pi."machineId" as "categoryId",
       COUNT(*) as count
@@ -118,6 +128,7 @@ export async function paretoByLine(params: {
   endDate: Date;
   factoryId?: number;
   workshopId?: number;
+  machineIds?: number[] | null;
   limit?: number;
 }): Promise<ParetoAnalysisResult> {
   const { startDate, endDate, factoryId, workshopId } = params;
@@ -126,10 +137,11 @@ export async function paretoByLine(params: {
   let whereClause = `WHERE pi."overallResult" = 'NG' AND pi."inspectionTime" BETWEEN '${startDate.toISOString()}' AND '${endDate.toISOString()}'`;
   if (factoryId) whereClause += ` AND w."factoryId" = ${factoryId}`;
   if (workshopId) whereClause += ` AND pl."workshopId" = ${workshopId}`;
+  whereClause += congMay(params.machineIds);
 
   const conn = await getDb();
   const result = await conn!.execute(sql.raw(`
-    SELECT 
+    SELECT
       COALESCE(pl."name", 'Line ' || pl."id", 'Unknown') as category,
       pl."id" as "categoryId",
       COUNT(*) as count
@@ -156,6 +168,7 @@ export async function paretoByTimePeriod(params: {
   groupBy: "hour" | "shift" | "day" | "week";
   factoryId?: number;
   machineId?: number;
+  machineIds?: number[] | null;
   limit?: number;
 }): Promise<ParetoAnalysisResult> {
   const { startDate, endDate, groupBy, factoryId, machineId } = params;
@@ -164,6 +177,7 @@ export async function paretoByTimePeriod(params: {
   let whereClause = `WHERE pi."overallResult" = 'NG' AND pi."inspectionTime" BETWEEN '${startDate.toISOString()}' AND '${endDate.toISOString()}'`;
   if (factoryId) whereClause += ` AND w."factoryId" = ${factoryId}`;
   if (machineId) whereClause += ` AND pi."machineId" = ${machineId}`;
+  whereClause += congMay(params.machineIds);
 
   let timeExpr: string;
   switch (groupBy) {

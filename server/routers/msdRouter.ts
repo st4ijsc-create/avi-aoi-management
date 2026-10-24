@@ -12,6 +12,7 @@
  * ADVISORY only — no hard enforcement. Any scheduler is gated by MSD_TRACKING_ENABLED.
  */
 import { z } from "zod";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import { protectedProcedure, router } from "../_core/trpc";
 import {
   openExposure,
@@ -54,12 +55,12 @@ export const msdRouter = router({
       return closeExposure(input.id, input.closedAt);
     }),
 
-  listActive: protectedProcedure.query(async () => {
-    return listActive();
+  listActive: protectedProcedure.query(async ({ ctx }) => {
+    return listActive(await idsMayTrongPhamVi(ctx)); // phạm vi người dùng (L6a 2026-10-25)
   }),
 
-  expiringSoon: protectedProcedure.query(async () => {
-    return expiringSoon();
+  expiringSoon: protectedProcedure.query(async ({ ctx }) => {
+    return expiringSoon(await idsMayTrongPhamVi(ctx)); // phạm vi người dùng (L6a 2026-10-25)
   }),
 
   mslTable: protectedProcedure.query(async () => {

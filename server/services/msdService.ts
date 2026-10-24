@@ -13,7 +13,7 @@
 import { getDb } from "../db";
 import { appError } from "../_core/appError";
 import { DbUnavailableError } from "../_core/dbErrors";
-import { eq, desc, isNull } from "drizzle-orm";
+import { eq, desc, isNull, inArray, or, and } from "drizzle-orm";
 import { msdExposureLogs, type InsertMsdExposureLog } from "../../drizzle/schema";
 
 export type MsdStatus = "ok" | "warning" | "expired" | "baking";
@@ -194,13 +194,15 @@ function withComputed(row: MsdRow, now: Date): MsdRowWithComputed {
 }
 
 /** List OPEN exposures (not yet closed) with live computed status. */
-export async function listActive(): Promise<MsdRowWithComputed[]> {
+export async function listActive(machineIds: number[] | null = null): Promise<MsdRowWithComputed[]> {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
+  // phạm vi người dùng (L6a 2026-10-25): machineId ∈ phạm vi ⇒ thấy; NULL (kho / tủ khô chung) ⇒ thấy với mọi người. null ⇒ toàn quyền (không lọc).
+  const congPv = machineIds === null ? undefined : machineIds.length > 0 ? or(isNull(msdExposureLogs.machineId), inArray(msdExposureLogs.machineId, machineIds)) : isNull(msdExposureLogs.machineId);
   const rows = await db
     .select()
     .from(msdExposureLogs)
-    .where(isNull(msdExposureLogs.closedAt))
+    .where(and(isNull(msdExposureLogs.closedAt), congPv))
     .orderBy(desc(msdExposureLogs.removedFromDryAt));
   const now = new Date();
   return rows.map((r) => withComputed(r, now));
@@ -211,7 +213,7 @@ export async function listActive(): Promise<MsdRowWithComputed[]> {
  * floor-life is at/below the warning threshold. Computed in-app (not in SQL) so
  * the MSL→hours policy stays in one place.
  */
-export async function expiringSoon(): Promise<MsdRowWithComputed[]> {
-  const active = await listActive();
+export async function expiringSoon(machineIds: number[] | null = null): Promise<MsdRowWithComputed[]> {
+  const active = await listActive(machineIds);
   return active.filter((r) => r.status === "warning" || r.status === "expired");
 }

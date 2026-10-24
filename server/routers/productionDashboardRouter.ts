@@ -17,6 +17,7 @@ import {
 import { statsCache, CACHE_KEYS, CACHE_TTL } from "../_core/cache";
 import { resolveFactoryDateWindow, finalYield as finalYieldPct } from "../utils/kpi";
 import { getFalseCallEscapeKpi } from "../services/falseCallEscapeService";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 
 export const productionDashboardRouter = router({
   /**
@@ -36,8 +37,9 @@ export const productionDashboardRouter = router({
       factoryId: z.number().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const window = resolveFactoryDateWindow(input.startDate, input.endDate);
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6a 2026-10-25)
 
       // Resolve machine scope from hierarchy filters (single machine wins).
       let machineIds: number[] | undefined;
@@ -46,9 +48,11 @@ export const productionDashboardRouter = router({
       } else if (input.lineId || input.factoryId) {
         const database = await getDb();
         machineIds = database
-          ? await resolveMachineIds(database, { factoryId: input.factoryId, lineId: input.lineId })
+          ? await resolveMachineIds(database, { factoryId: input.factoryId, lineId: input.lineId }, idsMay)
           : [];
       }
+      // phạm vi người dùng (L6a 2026-10-25): giao với tập máy trong phạm vi; không khai bộ lọc nào ⇒ chính tập máy trong phạm vi (undefined = toàn quyền)
+      if (idsMay !== null) machineIds = machineIds === undefined ? idsMay : machineIds.filter((m) => idsMay.includes(m));
 
       return getFalseCallEscapeKpi({
         startDate: window.start,
@@ -90,7 +94,9 @@ export const productionDashboardRouter = router({
         measurementPointCount: number;
       };
 
-      const cacheKey = statsCache.generateKey("PRODUCTION_DASHBOARD", input);
+      // phạm vi người dùng (L6a 2026-10-25): kết quả phụ thuộc phạm vi người gọi ⇒ KHÓA bộ nhớ đệm phải mang chữ ký phạm vi (không thì người nhà máy B nhận bản của A)
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      const cacheKey = statsCache.generateKey("PRODUCTION_DASHBOARD", { ...input, phamVi: idsMay === null ? "all" : [...idsMay].sort((a, b) => a - b).join(",") });
       const cached = statsCache.get<StationOverviewRow[]>(cacheKey);
       if (cached) return cached;
 
@@ -99,6 +105,14 @@ export const productionDashboardRouter = router({
 
       // Build station filter conditions
       const stationConditions: SQL[] = [eq(stations.isActive, true)];
+      if (idsMay !== null) {
+        // phạm vi người dùng (L6a 2026-10-25): chỉ trạm có ít nhất một máy trong phạm vi
+        const tramCoMay = idsMay.length > 0
+          ? await database.select({ s: machines.stationId }).from(machines).where(inArray(machines.id, idsMay))
+          : [];
+        const tramIds = [...new Set(tramCoMay.map((r) => r.s).filter((s): s is number => s != null))];
+        stationConditions.push(inArray(stations.id, tramIds.length > 0 ? tramIds : [-1]));
+      }
       if (input.lineId) {
         stationConditions.push(eq(stations.lineId, input.lineId));
       }
@@ -148,7 +162,7 @@ export const productionDashboardRouter = router({
         // Get machines for this station
         const stationMachines = await database.select({ id: machines.id, name: machines.name, code: machines.code })
           .from(machines)
-          .where(and(eq(machines.stationId, row.station.id), eq(machines.isActive, true)));
+          .where(and(eq(machines.stationId, row.station.id), eq(machines.isActive, true), idsMay !== null ? inArray(machines.id, idsMay.length > 0 ? idsMay : [-1]) : undefined));
         
         const machineIds = stationMachines.map(m => m.id);
         if (machineIds.length === 0) {
@@ -292,12 +306,12 @@ export const productionDashboardRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { defectsByType: [], defectsByStation: [] };
 
       // Resolve machine IDs from filters
-      const machineIds = await resolveMachineIds(database, input);
+      const machineIds = await resolveMachineIds(database, input, await idsMayTrongPhamVi(ctx)); // phạm vi người dùng (L6a 2026-10-25)
       if (machineIds.length === 0) return { defectsByType: [], defectsByStation: [] };
 
       const conditions: SQL[] = [
@@ -381,11 +395,11 @@ export const productionDashboardRouter = router({
       endDate: z.date().optional(),
       interval: z.enum(["hour", "day", "week"]).default("day"),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
 
-      const machineIds = await resolveMachineIds(database, input);
+      const machineIds = await resolveMachineIds(database, input, await idsMayTrongPhamVi(ctx)); // phạm vi người dùng (L6a 2026-10-25)
       if (machineIds.length === 0) return [];
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
@@ -440,11 +454,11 @@ export const productionDashboardRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
 
-      const machineIds = await resolveMachineIds(database, input);
+      const machineIds = await resolveMachineIds(database, input, await idsMayTrongPhamVi(ctx)); // phạm vi người dùng (L6a 2026-10-25)
       if (machineIds.length === 0) return [];
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
@@ -580,6 +594,7 @@ export const productionDashboardRouter = router({
 async function resolveMachineIds(
   database: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   input: { factoryId?: number; lineId?: number },
+  idsMay: number[] | null = null, // phạm vi người dùng (L6a 2026-10-25): tập máy trong phạm vi (null = toàn quyền)
 ): Promise<number[]> {
   const stationConditions: SQL[] = [eq(stations.isActive, true)];
 
@@ -608,6 +623,7 @@ async function resolveMachineIds(
     .where(and(
       inArray(machines.stationId, stationRows.map(s => s.id)),
       eq(machines.isActive, true),
+      idsMay !== null ? inArray(machines.id, idsMay.length > 0 ? idsMay : [-1]) : undefined,
     ));
 
   return machineRows.map(m => m.id);

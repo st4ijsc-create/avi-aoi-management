@@ -8,6 +8,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import {
@@ -159,8 +160,8 @@ export const stationTriangulationRouter = router({
       lotCode: z.string().min(1).max(80),
       limit: z.number().int().positive().max(20000).optional(),
     }))
-    .query(async ({ input }) => {
-      const rows = rowsToSampleRows(await db.listSamplesForLot(input.lotCode, input.limit ?? 5000));
+    .query(async ({ input, ctx }) => {
+      const rows = rowsToSampleRows(await db.listSamplesForLot(input.lotCode, input.limit ?? 5000, await idsMayTrongPhamVi(ctx))); // phạm vi người dùng (L6a 2026-10-25)
       const traces = summariseLot(rows);
       return stationCorrelationMatrix(traces);
     }),
