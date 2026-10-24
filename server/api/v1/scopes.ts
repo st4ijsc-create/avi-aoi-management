@@ -66,7 +66,7 @@ export const ALL_SCOPES: ApiScope[] = Object.values(API_SCOPES);
 /** Human-readable description of every scope (surfaced in the OpenAPI doc). */
 export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
   "equipment:read": "Read equipment list, capabilities, telemetry and state.",
-  "equipment:command": "Reserved for the unpublished device-command route (not in this document): every non-STOP command is refused without a confirmed HITL action.",
+  "equipment:command": "Reserved for the unpublished device-command route (not in this document). Non-STOP OT commands on that route are ALWAYS refused: a confirmed HITL action cannot exist for it (action id apiv1-<key>, owner 0).",
   "ingest:write": "Ingest inspection results from external machines/systems.",
   "orchestration:read": "Read orchestration workflows and run status (E2).",
   "orchestration:write": "Create orchestration workflows and start runs (E2).",

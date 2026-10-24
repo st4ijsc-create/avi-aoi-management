@@ -246,7 +246,7 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
         "\n\nWebhook events: " +
         V1_WEBHOOK_EVENTS.map((e) => `\`${e}\``).join(", ") +
         ".\n\nSAFETY: the API never performs a direct device write. The device-command route is not published here (R1a D8); " +
-        "it still routes through the HITL/dry-run dispatcher, which refuses every non-STOP command without a confirmed HITL action.",
+        "it still routes through the HITL/dry-run dispatcher, which ALWAYS refuses non-STOP OT commands there (a confirmed HITL action cannot exist for it: action id apiv1-<key>, owner 0).",
     },
     servers: [{ url: serverUrl }],
     tags: [

@@ -93,6 +93,8 @@ vi.mock("../../db", async (importOriginal) => {
 
 import { getDb } from "../../db/connection";
 import { commandLog, deviceAdapters, deviceTags, robotJobs, aiPendingActions } from "../../../drizzle/schema";
+import { dispatch } from "../../services/ot/commandDispatcher";
+import { otPayloadHash, withOtPayloadHash } from "../../services/ot/otActionBinding";
 import { createV1Router } from "./router";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -308,6 +310,28 @@ describe.skipIf(!DB_URL)("R1a T11 — REST v1 lệnh thiết bị: hành vi th�
     });
   });
 
+  // ═════════ ĐỐI CHỨNG DƯƠNG — oracle `env.writes` THẬT SỰ đếm được một lần ghi ═════════
+  describe("đối chứng dương (oracle ghi thiết bị)", () => {
+    it("★ cùng driver giả + dispatcher thật + hàng ai_pending_actions confirmed, gắn đúng ⇒ env.writes = 1 (các ca \"0 lần ghi\" trên không đạt vì dây mock hỏng)", async () => {
+      const tool = "set_machine_param";
+      const writes = [{ tagKey: "speed_sp", value: 42 }];
+      const actionId = `${DAU}-posctl-act`;
+      const OWNER = 990_111_101;
+      await (await d()).insert(aiPendingActions).values({
+        id: actionId, tool, argsJson: {}, userId: OWNER, userRole: "engineer", summary: `${DAU} positive control`,
+        previewJson: withOtPayloadHash({ entityType: "machine" }, otPayloadHash({ tool, adapterId, machineId: IDS.mOt, commandType: "set_param", writes })),
+        status: "confirmed", idempotencyKey: `${actionId}-idem`, expiresAt: new Date(Date.now() + 600_000),
+      });
+      const res = await dispatch({
+        adapterId, machineId: IDS.mOt, commandType: "set_param", writes,
+        triggeredBy: { kind: "hitl", actionId, tool, confirmedBy: OWNER, requestedBy: OWNER },
+        idempotencyKey: idem("posctl"),
+      });
+      expect(res.ok).toBe(true);
+      expect(env.writes).toEqual([[{ tagKey: "speed_sp", value: 42 }]]);
+    });
+  });
+
   // ═════════ nhóm 2 — robot ═════════
   describe("Robot (ROBOT)", () => {
     const postRobot = (command: string, label: string, extra: Record<string, unknown> = {}) =>
@@ -403,6 +427,8 @@ describe.skipIf(!DB_URL)("R1a T11 — REST v1 lệnh thiết bị: hành vi th�
       expect(spec.paths["/api/v1/equipment/{id}/commands"]).toBeUndefined();
       expect(spec.components.schemas.CommandRequest).toBeUndefined();
       expect(JSON.stringify(spec)).not.toContain("equipment/{id}/commands");
+      expect(JSON.stringify(spec)).not.toContain("equipment.command.executed"); // its only emitter is this route
+      expect(spec.info.description).toContain("ALWAYS refuses non-STOP OT commands");
       expect(spec.paths["/api/v1/equipment"]).toBeTruthy();
       expect(spec.paths["/api/v1/ingest/inspection"]?.post).toBeTruthy();
     });
