@@ -165,7 +165,8 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
 // ★ 2026-10-24 /api/external nhóm ①: A 47→44 · S 52→55.
 // ★ 2026-10-24 /api/external nhóm ②: A 44→41 · S 55→58 (3 tuyến alerts/bulletins đã trích sang routes/externalAlertApi.ts và lọc theo phạm vi).
 // ★ 2026-10-24 /api/external nhóm ③: A 41→29 · S 58→70 (12 tuyến: stations/:id + 6 nhánh, resolve-topic, workstations, workstations/:id, products, products/:id).
-const GHIM = { A: 29, C: 40, D: 96, S: 70, U: 16, tong: 251 } as const;
+// ★ 2026-10-24 /api/external nhóm ④: A 29→25 · S 70→74 (hierarchy/{tree,factory/:factoryId,mqtt-topics,summary}); dashboard/summary + statistics/measurement-points đã trích sang cùng tệp, còn nợ → nhóm ⑤.
+const GHIM = { A: 25, C: 40, D: 96, S: 74, U: 16, tong: 251 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -378,6 +379,7 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
     //   `403 · application/json · image_factory_scope_denied` trên đường dẫn của nhà máy B, và
     //   `200 · image/png` trên đường dẫn của chính A. Xem `phamViTuyenBaseline.ts`.
     expect(cua("S").map(khoaTuyen).sort()).toEqual([
+      // ★ 2026-10-24 /api/external nhóm ④: hierarchy/{tree, factory/:factoryId, mqtt-topics, summary} (trích sang routes/externalHierarchyApi.ts) lọc theo nhà máy được gán. Lưới: externalHierarchyPhamVi.db.test.ts.
       // ★ 2026-10-24 /api/external nhóm ③: stations/:id + 6 nhánh + resolve-topic + workstations(+/:id) (trích sang routes/externalStationApi.ts) và products(+/:id) lọc theo phạm vi người gọi. Lưới: externalStationPhamVi.db.test.ts, externalInspectionPhamVi.db.test.ts.
       // ★ 2026-10-24 /api/external nhóm ②: alerts · alerts/:alertId · bulletins (trích sang routes/externalAlertApi.ts) lọc theo phạm vi người gọi. Lưới: routes/externalAlertPhamVi.db.test.ts.
       // ★ 2026-10-24 /api/external nhóm ①: inspections/images|measurements|events lọc theo máy trong nhà máy được gán (master key không đổi), kèm scopeApplied. Lưới: routes/externalInspectionPhamVi.db.test.ts.
@@ -450,6 +452,10 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/routes/externalAlertApi.ts#GET /api/external/alerts",
       "server/routes/externalAlertApi.ts#GET /api/external/alerts/:alertId",
       "server/routes/externalAlertApi.ts#GET /api/external/bulletins",
+      "server/routes/externalHierarchyApi.ts#GET /api/external/hierarchy/factory/:factoryId",
+      "server/routes/externalHierarchyApi.ts#GET /api/external/hierarchy/mqtt-topics",
+      "server/routes/externalHierarchyApi.ts#GET /api/external/hierarchy/summary",
+      "server/routes/externalHierarchyApi.ts#GET /api/external/hierarchy/tree",
       "server/routes/externalInspectionApi.ts#GET /api/external/inspections/events",
       "server/routes/externalInspectionApi.ts#GET /api/external/inspections/images",
       "server/routes/externalInspectionApi.ts#GET /api/external/inspections/measurements",

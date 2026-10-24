@@ -65,13 +65,7 @@
  * Đừng sửa tay để làm cổng xanh — sửa mã, rồi xoá dòng.
  */
 export const NO_PHAM_VI_TUYEN: readonly string[] = [
-  // ── server/_core/index.ts (6) ─────────────────────────────────────────────────────────────────
-  "server/_core/index.ts#GET /api/external/dashboard/summary",
-  "server/_core/index.ts#GET /api/external/hierarchy/factory/:factoryId",
-  "server/_core/index.ts#GET /api/external/hierarchy/mqtt-topics",
-  "server/_core/index.ts#GET /api/external/hierarchy/summary",
-  "server/_core/index.ts#GET /api/external/hierarchy/tree",
-  "server/_core/index.ts#GET /api/external/statistics/measurement-points",
+  // ── server/_core/index.ts (0) ─────────────────────────────────────────────────────────────────
   // ── server/api/v1/advice.ts (0) ────────────────────────────────────────────────────────────────
   // ── server/api/v1/assets.ts (0) ────────────────────────────────────────────────────────────────
   // ── server/api/v1/events.ts (0) ────────────────────────────────────────────────────────────────
@@ -91,6 +85,10 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   // ── server/api/v1/router.ts (0) ────────────────────────────────────────────────────────────────
   // ── server/api/v1/state.ts (0) ─────────────────────────────────────────────────────────────────
   // ── server/routes/edgeDownload.ts (0) ──────────────────────────────────────────────────────────
+  // ── server/routes/externalHierarchyApi.ts (2) ───────────────────────────────────────────────
+  // ★ 2026-10-24 — trích từ _core/index.ts; hierarchy/{tree,factory/:id,mqtt-topics,summary} đã lọc theo phạm vi (nhóm ④). Hai tuyến dưới còn nợ cho tới nhóm ⑤.
+  "server/routes/externalHierarchyApi.ts#GET /api/external/dashboard/summary",
+  "server/routes/externalHierarchyApi.ts#GET /api/external/statistics/measurement-points",
   // ── server/routes/externalInspectionApi.ts (18) ────────────────────────────────────────────────
   "server/routes/externalInspectionApi.ts#GET /api/external/alerts/summary",
   "server/routes/externalInspectionApi.ts#GET /api/external/fleet/summary",
