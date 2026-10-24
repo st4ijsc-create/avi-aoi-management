@@ -39,6 +39,7 @@
  * 2026-10-25 lô W10 (−17 vá: routing · spcAdvanced · goldenSample · mqttOee machine/OEE/ngừng máy/mục tiêu · equipmentStandards thẻ tenant; −35 MIỄN TRỪ có lý do sau khi đọc mã: repoWorkspace 17 (danh sách trắng theo người gọi), dashboardWidget 13 (cấu hình cá nhân theo userId), aiGguf 5 (tính toán LLM thuần); aiGguf.soModel* = bí danh adminProcedure) ⇒ 407 → 355. CHƯA đụng (cần quyết định): mqttClient.updateFcmToken · mqttAlert.update/delete/toggle/resolve (luật cảnh báo toàn cục, KHÔNG có requirePermission) .
  * 2026-10-25 lô W11a (−5 vá: predictiveAlert acknowledge/resolve/dismiss/generatePredictions theo máy/nhà máy của cảnh báo + lọc dữ liệu quét; mqttClient.updateFcmToken theo trạm của client + requirePermission(machine_alerts)); mqttAlert.update/delete/toggle/resolve ⇒ MIỄN TRỪ (luật toàn cục) NHƯNG nay đòi requirePermission(machine_alerts); equipmentStandards: chuẩn KHÔNG thẻ chỉ admin + engineer ghi ⇒ 355 → 350.
  * 2026-10-25 lô W11b (−15 vá: aiQualityGate · aiFeedback (kể cả lô huấn luyện / xuất chỉ phần trong phạm vi) · aiSegmentation.saveMask · aiModel.runInference theo lần kiểm tra; aiSmartAlertRouting.acknowledge · aiInsight.setStatus · aiActiveLearning theo máy; edge deployments theo máy — router edge hiện BỊ COMMENT khỏi aiAdvancedRouter nên chưa tới được; −42 MIỄN TRỪ có dẫn mã: sở hữu theo người dùng (aiAgent · aiChat · aiCopilot · aiSpecialistAgent · …), tính toán / model toàn cục) ⇒ 350 → 335. CÒN LẠI nhóm AI (W11c): aiVision.proposeDefect · aiRcaCopilot.applyTopFix · aiThresholdAdvisor.applyNgThreshold (đề xuất HITL), aiAdvanced training/abTest (router bị comment), aiAdvancedVision.explainHeatmap, aiModel cards, aiImageSearch (mutation đọc-hình-tìm-kiếm trả ảnh nhiều nhà máy — cần đổi dịch vụ).
+ * 2026-10-25 lô W11c (−11): cổng chung kiemPhamViGhiTool đặt trong proposeAction + confirmAction (aiLocalTools/phamViGhi.ts) — các mutation đề xuất HITL (aiVision.proposeDefect · aiRcaCopilot.applyTopFix · aiThresholdAdvisor.applyNgThreshold) và 8 miễn trừ gọi proposeAction/confirmAction nay có cổng thật ⇒ 295 → 284. Tool repo + set_yield_threshold miễn trừ trong bảng KHOA_PHAM_VI_TOOL (có lý do).
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ──
@@ -56,11 +57,8 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/aiModelRouter.ts#aiModelRouter.createCard",
   "server/routers/aiModelRouter.ts#aiModelRouter.updateCard",
   // ── server/routers/aiRcaCopilotRouter.ts (1) ──
-  "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix",
   // ── server/routers/aiThresholdAdvisorRouter.ts (1) ──
-  "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.applyNgThreshold",
   // ── server/routers/aiVisionRouter.ts (1) ──
-  "server/routers/aiVisionRouter.ts#aiVisionRouter.proposeDefect",
   // ── server/routers/alertEscalationRouter.ts (4) ──
   "server/routers/alertEscalationRouter.ts#alertEscalationRouter.create",
   "server/routers/alertEscalationRouter.ts#alertEscalationRouter.delete",
@@ -325,11 +323,7 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
   "server/routers/aiAgentRouter.ts#aiAgentRouter.startPlaybook":
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
-  "server/routers/aiAgentRouter.ts#aiAgentRouter.duyet":
-    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
   "server/routers/aiAgentRouter.ts#aiAgentRouter.bac":
-    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
-  "server/routers/aiAgentRouter.ts#aiAgentRouter.hoanTac":
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
   "server/routers/aiAgentRouter.ts#aiAgentRouter.nhoDeXuat":
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
@@ -361,8 +355,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
     "projectId của AI chạy ứng dụng phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc, doc 79 trục 2) — tài nguyên thư mục dự án, không phải dữ liệu nhà máy.",
   "server/routers/aiChayUngDungRouter.ts#aiChayUngDungRouter.deXuatLenh":
     "projectId của AI chạy ứng dụng phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc, doc 79 trục 2) — tài nguyên thư mục dự án, không phải dữ liệu nhà máy.",
-  "server/routers/aiCopilotRouter.ts#aiCopilotRouter.confirmAction":
-    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
   "server/routers/aiCopilotRouter.ts#aiCopilotRouter.cancelAction":
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
   "server/routers/aiEvalRouter.ts#aiEvalRouter.evaluate":
@@ -445,12 +437,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
     "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.saveCustomDashboardAsTemplate":
     "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatThayTheLo":
-    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatSuaTay":
-    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.chayKiemChung":
-    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.luuPhien":
     "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.xoaPhien":
@@ -466,10 +452,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.gitChuyenNhanh":
     "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.gitGoiYThongDiep":
-    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatXoaTep":
-    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatDoiTenTep":
     "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.baiHocThem":
     "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",

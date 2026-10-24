@@ -32,7 +32,6 @@ import { getDb } from "../db/connection";
 import { aiPendingActions } from "../../drizzle/schema";
 import { otPayloadHash, withOtPayloadHash } from "./ot/otActionBinding";
 import { checkPermission } from "../_core/accessControl";
-import { kiemPhamViGhiTool } from "./aiLocalTools/phamViGhi";
 import { kiemXacThucTheoMuc, type CtxXacThuc, type KetQuaXacThucTheoMuc } from "../_core/xacThucTheoMuc";
 import { phutConLai } from "../_core/totpKhoaSai";
 import { BoDemTanSuat, kiemCongAi, mucHieuLuc, phanLoaiMuc, type MucRuiRo } from "./ot/aiControlGate";
@@ -312,6 +311,7 @@ export async function proposeAction(
   }
 
   // Phạm vi nhà máy (W11c): khoá định danh trong tham số phải TRONG phạm vi người gọi. Fail-closed, cùng kết quả cho "ngoài phạm vi" và "không tồn tại".
+  const { kiemPhamViGhiTool } = await import("./aiLocalTools/phamViGhi"); // nạp lười: tránh kéo schema/hierarchy vào mọi nơi import tệp này
   const pv = await kiemPhamViGhiTool(tool.name, args, ctx.user);
   if (!pv.ok) {
     await logCrudOperation(buildAuditCtx(ctx.user, ctx.req), {
@@ -1084,6 +1084,7 @@ export async function confirmAction(
   }
 
   // Phạm vi nhà máy lúc THỰC THI (W11c): dùng tham số ĐÃ LƯU trong hàng; phạm vi / gán nhà máy có thể đổi giữa hai lần bấm.
+  const { kiemPhamViGhiTool } = await import("./aiLocalTools/phamViGhi");
   const pvXn = await kiemPhamViGhiTool(row.tool, row.argsJson as Record<string, unknown>, user);
   if (!pvXn.ok) {
     await db.update(aiPendingActions).set({ status: "denied" }).where(eq(aiPendingActions.id, actionId));

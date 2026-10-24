@@ -14,6 +14,7 @@
  *  • MỖI tool GHI đã đăng ký phải có một dòng trong `KHOA_PHAM_VI_TOOL` (hoặc miễn trừ CÓ LÝ DO) — `phamViGhi.census.test.ts` đỏ nếu thiếu.
  */
 import { sql } from "drizzle-orm";
+import { appError } from "../../_core/appError";
 import { getDb } from "../../db/connection";
 import { idsTrongPhamVi } from "../../db/hierarchy";
 import { phamViCua, type CoDanhTinh } from "../../routers/_phamViNguoiXem";
@@ -33,7 +34,7 @@ function so(a: Args, khoa: string): number | null {
 }
 function batBuocSo(a: Args, khoa: string): number {
   const v = so(a, khoa);
-  if (v === null) throw new Error(`thiếu khoá ${khoa}`);
+  if (v === null) throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: khoa }, "thiếu khoá");
   return v;
 }
 function soHoacNull(a: Args, khoa: string): number | null {
@@ -47,9 +48,9 @@ const theoMay: Kiem = async (a, ctx) => ghiViTri(ctx, { machineId: batBuocSo(a, 
 /** Dòng CSDL thô; lỗi / vắng ⇒ ném. */
 async function hang(q: ReturnType<typeof sql>): Promise<Record<string, unknown>> {
   const d = await getDb();
-  if (!d) throw new Error("db");
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "db");
   const r = (await d.execute(q)) as unknown as Array<Record<string, unknown>>;
-  if (!r[0]) throw new Error("không có hàng");
+  if (!r[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "tool-target" }, "không có hàng");
   return r[0];
 }
 const n = (v: unknown): number | null => (v == null ? null : Number(v));
@@ -68,7 +69,7 @@ const theoCanhBaoMqtt: Kiem = async (a, ctx) => {
   const m = n(h.m);
   const f = n(h.f);
   if (m === null && f === null) {
-    if (n(h.u) !== (ctx.user?.id ?? -1)) throw new Error("cảnh báo toàn cục của người khác");
+    if (n(h.u) !== (ctx.user?.id ?? -1)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "alert" }, "cảnh báo toàn cục của người khác");
     return;
   }
   await ghiViTri(ctx, { machineId: m, factoryId: f }, { batBuoc: true });

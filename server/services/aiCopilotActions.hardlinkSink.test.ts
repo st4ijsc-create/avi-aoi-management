@@ -196,3 +196,6 @@ describe("★★★ C-1 — bí mật sau hard link KHÔNG tới được previe
     expect(all).not.toContain("AWS_KEY");
   });
 });
+
+// W11c: cổng phạm vi tool GHI có test riêng (aiLocalTools/phamViGhi*.test.ts); ở đây user giả / CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./aiLocalTools/phamViGhi", () => ({ kiemPhamViGhiTool: async () => ({ ok: true }) }));
