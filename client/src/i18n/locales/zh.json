@@ -4192,7 +4192,8 @@
       "gatewayId": "网关",
       "deviceIds": "允许的设备列表",
       "expectedProjectId": "当前打开的项目（expectedProjectId）",
-      "assigneeUserId": "被分配人"
+      "assigneeUserId": "被分配人",
+      "inspectionId": "检验"
     },
     "feature": {
       "apiKeyHolder": "API 密钥持有人记录（数据库迁移 0369）",
@@ -4327,7 +4328,10 @@
       "secondApproveOwnSafetyPlcConfig": "对您已作出首次批准的安全PLC配置进行第二次批准（需要两名不同的管理员）",
       "flowKichHoatHangCao": "启用对外写入或涉及 OT 的流程（仅管理员）",
       "flowPhamVi": "按工厂使用流程/密钥",
-      "flowDuyet": "审批 AI 流程中等待的步骤"
+      "flowDuyet": "审批 AI 流程中等待的步骤",
+      "verifyChainAcrossFactories": "跨工厂验证追溯链",
+      "manageProductWideProgramRelease": "管理产品级检验程序发布",
+      "authorSharedSop": "编写共享SOP"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
