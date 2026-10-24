@@ -1,3 +1,4 @@
+import { kiemTraTrongPhamVi } from "./_adapterPhamVi";
 import {
   protectedProcedure as thuTucVanHanh,
   moduleProcedure,
@@ -277,7 +278,8 @@ export const aiModelRouter = router({
       measurementResultId: z.number().optional(),
       inputReference: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      if (input.inspectionId != null && !(await kiemTraTrongPhamVi(ctx, [input.inspectionId]))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found"); // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b)
       const imageBuffer = Buffer.from(input.imageBase64, "base64");
       return runInference(input.modelId, imageBuffer, {
         inspectionId: input.inspectionId,

@@ -1,3 +1,7 @@
+import { sql } from "drizzle-orm";
+import type { CoDanhTinh } from "./_phamViNguoiXem";
+import { ghiViTri } from "./_viTriPhamVi";
+import { kiemTraTrongPhamVi } from "./_adapterPhamVi";
 import { z } from "zod";
 import { appError } from "../_core/appError";
 import { router, moduleProcedure, moduleGate, adminProcedure as adminProcedureBase } from "../_core/trpc";
@@ -33,6 +37,22 @@ async function loadImage(imageKey: string): Promise<Buffer> {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, `Image not found: ${imageKey}`);
   }
   return fs.promises.readFile(fullPath);
+}
+
+/** Mục hàng đợi gán nhãn: máy / lần kiểm tra của nó phải trong phạm vi người gọi; ngoài phạm vi ≡ "Queue item not found". */
+async function hangDoiGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  const { getDb } = await import("../db");
+  const d = await getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const rows = (await d.execute(sql`SELECT "machineId" AS m, "inspectionId" AS i FROM ai_label_queue WHERE id = ${id}`)) as unknown as Array<{ m: number | null; i: number | null }>;
+  if (rows.length === 0) return; // không có hàng: để dịch vụ xử như trước
+  try {
+    await ghiViTri(ctx, { machineId: rows[0]!.m });
+    if (rows[0]!.i != null && !(await kiemTraTrongPhamVi(ctx, [Number(rows[0]!.i)]))) throw new Error("ngoai");
+    if (rows[0]!.m == null && rows[0]!.i == null) await ghiViTri(ctx, {}, { batBuoc: true });
+  } catch {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "labelQueueItem" }, "Queue item not found");
+  }
 }
 
 export const aiActiveLearningRouter = router({
@@ -95,6 +115,7 @@ export const aiActiveLearningRouter = router({
       reviewNotes: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await hangDoiGhi(ctx, input.queueId); // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b)
       const userId = (ctx as any).user?.id ?? 0;
       return submitHumanLabel(input.queueId, input.humanLabel, userId, input.reviewNotes);
     }),
@@ -108,6 +129,7 @@ export const aiActiveLearningRouter = router({
       reason: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await hangDoiGhi(ctx, input.queueId); // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b)
       const userId = (ctx as any).user?.id ?? 0;
       return skipQueueItem(input.queueId, userId, input.reason);
     }),

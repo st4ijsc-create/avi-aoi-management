@@ -4,7 +4,10 @@
  * Luật: MỌI id vị trí được nêu phải TRONG phạm vi người gọi (cùng `idsTrongPhamVi` với đường ĐỌC); ngoài phạm vi ≡ không tồn tại ⇒ NOT_FOUND theo
  * loại vị trí; `batBuoc`: người gọi phạm vi HẸP mà không nêu vị trí nào ⇒ BAD_REQUEST (hàng mồ côi chính họ cũng không thấy lại). Toàn quyền (admin) ⇒ bỏ qua.
  */
+import { eq } from "drizzle-orm";
 import { appError } from "../_core/appError";
+import { getDb } from "../db";
+import { predictiveAlerts } from "../../drizzle/schema";
 import { idsTrongPhamVi } from "../db/hierarchy";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { sanPhamGhiTrongPhamVi, diemDoGhiTrongPhamVi } from "./_sanPhamPhamVi";
@@ -58,4 +61,20 @@ export async function ghiDoiTuong(ctx: CoDanhTinh, o: DoiTuongSanXuat, opts: { b
   }
   if (o.productModelId != null) await sanPhamGhiTrongPhamVi(ctx, o.productModelId);
   if (o.measurementPointDefId != null) await diemDoGhiTrongPhamVi(ctx, o.measurementPointDefId);
+}
+
+/**
+ * Phạm vi nhà máy cho GHI cảnh báo dự đoán (rà bảo mật 2026-10-25, lô W11): cảnh báo mang machineId / factoryId — phải trong phạm vi người gọi; cảnh báo không vị trí nào
+ * chỉ người toàn quyền thao tác. Ngoài phạm vi / không tồn tại ≡ "Alert not found". Toàn quyền (admin) ⇒ không kiểm.
+ */
+export async function canhBaoDuDoanGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  const d = await getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+  const [a] = await d.select({ m: predictiveAlerts.machineId, f: predictiveAlerts.factoryId }).from(predictiveAlerts).where(eq(predictiveAlerts.id, id)).limit(1);
+  try {
+    if (!a) throw new Error("none");
+    await ghiViTri(ctx, { machineId: a.m, factoryId: a.f }, { batBuoc: true });
+  } catch {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "predictiveAlert" }, "Alert not found");
+  }
 }

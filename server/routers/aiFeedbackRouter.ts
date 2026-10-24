@@ -1,6 +1,8 @@
 /**
  * AI Feedback Router - User feedback cho AI suggestions để cải thiện model
  */
+import { kiemTraTrongPhamVi, locKiemTraTrongPhamVi } from "./_adapterPhamVi";
+import type { CoDanhTinh } from "./_phamViNguoiXem";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -17,6 +19,18 @@ import {
 } from "../../drizzle/schema";
 import { eq, and, gte, lte, desc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
+
+/** Lọc phản hồi: giữ phản hồi mà gợi ý của nó thuộc lần kiểm tra trong phạm vi (gợi ý mất lần kiểm tra ⇒ giữ). Toàn quyền ⇒ giữ hết. */
+async function locPhanHoiTheoPhamVi<T extends { suggestionId: number }>(ctx: CoDanhTinh, db: NonNullable<Awaited<ReturnType<typeof getDb>>>, hang: T[]): Promise<T[]> {
+  if (hang.length === 0) return hang;
+  const sug = await db.select({ id: aiSuggestions.id, ins: aiSuggestions.inspectionId }).from(aiSuggestions).where(inArray(aiSuggestions.id, hang.map((f) => f.suggestionId)));
+  const trong = new Set(await locKiemTraTrongPhamVi(ctx, sug.map((x) => x.ins)));
+  const insCua = new Map(sug.map((x) => [x.id, x.ins]));
+  return hang.filter((f) => {
+    const i = insCua.get(f.suggestionId);
+    return i === undefined || trong.has(i);
+  });
+}
 
 export const aiFeedbackRouter = router({
   // ============= AI Suggestions =============
@@ -43,7 +57,8 @@ export const aiFeedbackRouter = router({
       modelVersion: z.string().optional(),
       modelName: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      if (!(await kiemTraTrongPhamVi(ctx, [input.inspectionId]))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found"); // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b)
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -152,7 +167,7 @@ export const aiFeedbackRouter = router({
         .from(aiSuggestions)
         .where(eq(aiSuggestions.id, input.suggestionId));
 
-      if (!suggestion) {
+      if (!suggestion || !(await kiemTraTrongPhamVi(ctx, [suggestion.inspectionId]))) { // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b)
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "suggestion" }, "Suggestion không tồn tại");
       }
 
@@ -362,6 +377,9 @@ export const aiFeedbackRouter = router({
           .where(eq(aiFeedback.includedInTraining, false));
       }
 
+      // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b): chỉ gom phản hồi của gợi ý thuộc lần kiểm tra TRONG phạm vi (trước: mọi nhà máy; rồi đánh dấu "đã dùng" cả phản hồi nhà máy khác)
+      feedbackToInclude = await locPhanHoiTheoPhamVi(ctx, db, feedbackToInclude);
+
       const correctSamples = feedbackToInclude.filter(f => f.feedbackType === "CORRECT").length;
       const incorrectSamples = feedbackToInclude.filter(f => f.feedbackType === "INCORRECT").length;
 
@@ -445,7 +463,7 @@ export const aiFeedbackRouter = router({
       correctionsSinceDays: z.number().int().min(1).max(365).optional(),
       correctionsLimit: z.number().int().min(1).max(5000).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -460,7 +478,7 @@ export const aiFeedbackRouter = router({
       }
 
       // Get feedback with suggestions
-      const feedback = await db
+      const feedbackTho = await db
         .select({
           feedback: aiFeedback,
           suggestion: aiSuggestions,
@@ -468,6 +486,9 @@ export const aiFeedbackRouter = router({
         .from(aiFeedback)
         .innerJoin(aiSuggestions, eq(aiFeedback.suggestionId, aiSuggestions.id))
         .where(eq(aiFeedback.trainingBatchId, input.batchId));
+      // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b): chỉ xuất phần thuộc lần kiểm tra trong phạm vi người gọi
+      const trongPV = new Set(await locKiemTraTrongPhamVi(ctx, feedbackTho.map((r) => r.suggestion.inspectionId)));
+      const feedback = feedbackTho.filter((r) => trongPV.has(r.suggestion.inspectionId));
 
       // Format data
       const exportData = feedback.map(({ feedback: fb, suggestion }) => ({

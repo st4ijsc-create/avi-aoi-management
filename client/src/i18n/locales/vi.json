@@ -3822,6 +3822,8 @@
       "lineStage": "công đoạn chuyền",
       "productionOrderTemplate": "mẫu lệnh sản xuất",
       "predictiveAlert": "cảnh báo dự đoán",
+      "insight": "gợi ý phân tích",
+      "labelQueueItem": "mục hàng đợi gán nhãn",
       "rcaAnalysis": "phân tích nguyên nhân gốc",
       "recipe": "công thức",
       "record": "bản ghi",
