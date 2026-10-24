@@ -70,7 +70,13 @@ import { savePlcConfig, deletePlcConfig, decidePlcConfigTrust, listPlcTrust, plc
 // doc 80 Đợt 1 Task 4 (SAF-02) — read-only source-health report for the Safety page.
 import { loadSafetySourceHealth } from "../services/safety/safetySourceHealth";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
-import { dieuKienSuKienAnToanTrongPhamVi } from "./_adapterPhamVi";
+import {
+  dieuKienSuKienAnToanTrongPhamVi,
+  dieuKienVungAnToanTrongPhamVi,
+  dieuKienHieuChuanCameraTrongPhamVi,
+  dieuKienPhienCongTacTrongPhamVi,
+  dieuKienRobotTrongPhamVi,
+} from "./_adapterPhamVi";
 import { resolveTenantFactoryScope } from "../db/reportAggregators";
 import { deviceAdapters, robots, safetyPlcConfigs as safetyPlcConfigsTable, safetyZones as safetyZonesTable, safetyEvents as safetyEventsTable, cameraCalibrations as cameraCalibrationsTable } from "../../drizzle/schema";
 
@@ -665,7 +671,7 @@ export const safetyRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) => listZones(input ?? {})),
+    .query(async ({ input, ctx }) => listZones({ ...(input ?? {}), dieuKienPhamVi: await dieuKienVungAnToanTrongPhamVi(ctx) })), // phạm vi người dùng (L4 2026-10-25)
 
   /** Evaluate a given/simulated human+robot set against zones → 3-level reactions. */
   evaluateZones: protectedProcedure
@@ -684,11 +690,17 @@ export const safetyRouter = router({
         minConfidence: z.number().min(0).max(1).optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       requireSafetyZoneFlag();
+      // phạm vi người dùng (L4 2026-10-25): robot mô phỏng mang id số THẬT / bộ lọc phải trong phạm vi (đường này GHI sự kiện khi SAFETY_AUDIT_ENABLED bật) và chỉ vùng của phạm vi mới được nạp.
+      await assertViTriAnToanTrongPhamVi(ctx, {
+        robotIds: [input.filter?.robotId, ...idSoCuaRobotMoPhong(input.robots)],
+        stationId: input.filter?.stationId,
+        lineId: input.filter?.lineId,
+      });
       // READ-shaped evaluation. Recording is gated by SAFETY_AUDIT_ENABLED inside the
       // service; when audit is off it returns reactions without persisting.
-      return evaluateAndRecord({ ...input, source: "sim" });
+      return evaluateAndRecord({ ...input, filter: { ...(input.filter ?? {}), dieuKienPhamVi: await dieuKienVungAnToanTrongPhamVi(ctx) }, source: "sim" });
     }),
 
   /** Ingest a SIMULATED human track for testing → evaluate + record advisory events. */
@@ -818,7 +830,7 @@ export const safetyRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) => listCalibrations(input ?? {})),
+    .query(async ({ input, ctx }) => listCalibrations({ ...(input ?? {}), dieuKienPhamVi: await dieuKienHieuChuanCameraTrongPhamVi(ctx) })), // phạm vi người dùng (L4 2026-10-25)
 
   /**
    * Upsert a camera calibration (flag-gated). Provide a precomputed homography (9
@@ -1064,12 +1076,13 @@ export const safetyRouter = router({
   listCollaborations: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ phase: z.enum(["human_prep", "robot_work", "human_verify", "done"]).optional(), limit: z.number().int().min(1).max(500).default(100) }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
+      const congPv = await dieuKienPhienCongTacTrongPhamVi(ctx); // phạm vi người dùng (L4 2026-10-25)
       return d
         .select()
         .from(collaborationSessions)
-        .where(input?.phase ? eq(collaborationSessions.phase, input.phase) : undefined)
+        .where(and(input?.phase ? eq(collaborationSessions.phase, input.phase) : undefined, congPv))
         .orderBy(desc(collaborationSessions.startedAt))
         .limit(input?.limit ?? 100);
     }),
@@ -1142,7 +1155,7 @@ export const safetyRouter = router({
   /** Current board — who/which-robot is at each station now (read; always allowed). */
   currentBoard: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => getCurrentBoard()),
+    .query(async ({ ctx }) => getCurrentBoard({ phanCong: assignmentScopeCond(await callerFactoryScope(ctx)), robot: await dieuKienRobotTrongPhamVi(ctx) })), // phạm vi người dùng (L4 2026-10-25)
 
   listAssignments: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))

@@ -41,7 +41,7 @@ import { router, protectedProcedure, actuationProcedure, adminProcedure, ACTUATI
 import { requirePermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
 import { getDb } from "../db";
-import { deviceAdapters, machineRecipes } from "../../drizzle/schema";
+import { deviceAdapters, machineRecipes, machines } from "../../drizzle/schema";
 import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
 import { phamViCua } from "./_phamViNguoiXem";
 import { resolveTenantFactoryScope } from "../db/reportAggregators";
@@ -77,6 +77,16 @@ async function congThucTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], re
     throw khongThay();
   }
   return r.machineId;
+}
+
+/** phạm vi người dùng (L4 2026-10-25): mã máy (machines.code) thuộc phạm vi người gọi? Toàn quyền ⇒ true (kể cả mã chưa khai báo); phạm vi hẹp ⇒ chỉ khi mã khớp một máy TRONG phạm vi (fail-closed). */
+async function maMayTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], machineCode: string): Promise<boolean> {
+  const idsMay = await idsMayTrongPhamVi(ctx);
+  if (idsMay === null) return true;
+  const db = await getDb();
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const [m] = await db.select({ id: machines.id }).from(machines).where(eq(machines.code, machineCode)).limit(1);
+  return !!m && idsMay.includes(m.id);
 }
 
 /**
@@ -240,6 +250,7 @@ export const equipmentIntegrationRouter = router({
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ kind: z.enum(["focas", "euromap"]), machineCode: z.string().min(1).max(64) }))
     .query(({ input }) => {
+      // phạm vi người dùng (L4 2026-10-25) — KHÔNG cần lọc: bộ nhớ đệm của FocasAdapter/EuromapAdapter nằm TRÊN THỂ HIỆN (`private last`), mỗi lượt gọi dựng thể hiện MỚI ⇒ ảnh chụp luôn rỗng, không chứa số đo của máy nào.
       const adapter =
         input.kind === "focas"
           ? new FocasAdapter(input.machineCode)
@@ -269,7 +280,10 @@ export const equipmentIntegrationRouter = router({
         machineId: z.number().int().positive().optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L4 2026-10-25): thăm dò OPC-UA TRỰC TIẾP gắn với một máy — máy / mã máy phải trong phạm vi (người hẹp: phải nêu máy của mình), TRƯỚC khi mở kết nối
+      if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId);
+      if (!(await maMayTrongPhamVi(ctx, input.machineCode))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Máy không tồn tại.");
       const { parseNodeMap, euromapOpcuaOptionsFromEnv } = await import("../services/euromap/euromapOpcuaReader");
       const endpoint = process.env.EUROMAP_OPCUA_ENDPOINT ?? "";
       const nodeMap = parseNodeMap(process.env.EUROMAP_OPCUA_NODEMAP);
@@ -378,13 +392,17 @@ export const equipmentIntegrationRouter = router({
   listLoadHistory: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ machineId: z.number().int().positive(), limit: z.number().int().min(1).max(500).default(100) }))
-    .query(async ({ input }) => listLoadHistory(input.machineId, input.limit)),
+    .query(async ({ input, ctx }) => {
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L4 2026-10-25): máy ngoài phạm vi ⇒ như chưa có lịch sử nạp
+      if (idsMay !== null && !idsMay.includes(input.machineId)) return [];
+      return listLoadHistory(input.machineId, input.limit);
+    }),
 
   /** Recipe genealogy for a code (across machines). */
   listCodeHistory: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ code: z.string().min(1).max(64), limit: z.number().int().min(1).max(500).default(200) }))
-    .query(async ({ input }) => listCodeHistory(input.code, input.limit)),
+    .query(async ({ input, ctx }) => listCodeHistory(input.code, input.limit, await idsMayTrongPhamVi(ctx))), // phạm vi người dùng (L4 2026-10-25): chỉ lượt nạp trên máy trong phạm vi
 
   // ── I1-b — recipe versioning genealogy (mutations, flag-gated) ───────────────
   /** Create a new IMMUTABLE recipe version (draft). */

@@ -298,8 +298,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/userRouters.ts#userRouter.revokeSession",
   "server/routers/userRouters.ts#userSettingsRouter.setUiPrefs",
   // ── server/routers/vda5050Router.ts (2) ──
-  "server/routers/vda5050Router.ts#vda5050Router.sendOrder",
-  "server/routers/vda5050Router.ts#vda5050Router.testConnection",
   // ── server/routers/visionAdapterRouter.ts (2) ──
   "server/routers/visionAdapterRouter.ts#visionAdapterRouter.ingest",
   "server/routers/visionAdapterRouter.ts#visionAdapterRouter.stopAcquisitionWorker",

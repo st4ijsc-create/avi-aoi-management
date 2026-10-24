@@ -20,6 +20,7 @@ import {
   runPredictiveMaintenanceCycle,
 } from "../services/predictiveMaintenanceService";
 import { getMachines } from "../db/hierarchy";
+import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
 
 export const predictiveMaintenanceRouter = router({
   getMachineRisk: protectedProcedure
@@ -27,7 +28,8 @@ export const predictiveMaintenanceRouter = router({
       machineId: z.number().int().positive(),
       windowHours: z.number().int().min(1).max(24 * 90).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await mayTrongPhamVi(ctx, input.machineId); // phạm vi người dùng (L4 2026-10-25): máy ngoài phạm vi ≡ không tồn tại
       return computeFailureRisk(input.machineId, input.windowHours);
     }),
 
@@ -36,7 +38,8 @@ export const predictiveMaintenanceRouter = router({
       machineId: z.number().int().positive(),
       windowHours: z.number().int().min(1).max(24 * 90).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await mayTrongPhamVi(ctx, input.machineId); // phạm vi người dùng (L4 2026-10-25)
       return computeReliabilityStats(input.machineId, input.windowHours);
     }),
 
@@ -44,8 +47,9 @@ export const predictiveMaintenanceRouter = router({
     .input(z.object({
       limit: z.number().int().min(1).max(200).optional(),
     }).optional())
-    .query(async ({ input }) => {
-      const machines = await getMachines();
+    .query(async ({ input, ctx }) => {
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L4 2026-10-25): chỉ máy trong phạm vi (lọc TRƯỚC khi cắt theo limit)
+      const machines = (await getMachines()).filter((m: any) => idsMay === null || idsMay.includes(m.id));
       const limited = machines.slice(0, input?.limit ?? 50);
       const results = await Promise.all(
         limited.map(async (m: any) => {
@@ -97,7 +101,8 @@ export const predictiveMaintenanceRouter = router({
    */
   getRulEstimate: protectedProcedure
     .input(z.object({ machineId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await mayTrongPhamVi(ctx, input.machineId); // phạm vi người dùng (L4 2026-10-25)
       const { getLatestRulEstimate } = await import("../services/ai/rulEstimatorService");
       return getLatestRulEstimate(input.machineId);
     }),

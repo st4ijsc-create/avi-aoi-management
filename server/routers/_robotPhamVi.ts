@@ -28,3 +28,14 @@ export async function robotTrongPhamVi(ctx: CoDanhTinh, robotId: number): Promis
   const lines = [r?.lineId ?? null, r?.stationLine ?? null].filter((x): x is number => x != null);
   if (lines.length === 0 || !lines.every((l) => lineIds.includes(l))) throw khongThayRobot();
 }
+
+/** phạm vi người dùng (L4 2026-10-25): như `robotTrongPhamVi` nhưng trả boolean (robot ngoài phạm vi / không tồn tại ⇒ false) — cho các đường ĐỌC phải trả "như không có" thay vì ném. */
+export async function robotThayDuocNghiem(ctx: CoDanhTinh, robotId: number): Promise<boolean> {
+  try {
+    await robotTrongPhamVi(ctx, robotId);
+    return true;
+  } catch (e) {
+    if ((e as { code?: string })?.code === "NOT_FOUND") return false;
+    throw e;
+  }
+}
