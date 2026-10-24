@@ -32,6 +32,7 @@ import { getDb } from "../db/connection";
 import { aiPendingActions } from "../../drizzle/schema";
 import { otPayloadHash, withOtPayloadHash } from "./ot/otActionBinding";
 import { checkPermission } from "../_core/accessControl";
+import { kiemPhamViGhiTool } from "./aiLocalTools/phamViGhi";
 import { kiemXacThucTheoMuc, type CtxXacThuc, type KetQuaXacThucTheoMuc } from "../_core/xacThucTheoMuc";
 import { phutConLai } from "../_core/totpKhoaSai";
 import { BoDemTanSuat, kiemCongAi, mucHieuLuc, phanLoaiMuc, type MucRuiRo } from "./ot/aiControlGate";
@@ -308,6 +309,22 @@ export async function proposeAction(
       status: "failure",
     });
     return { ok: false, denied: true, reason: "MISSING_PERMISSION", message: denyMessage(ctx.lang, summary) };
+  }
+
+  // Phạm vi nhà máy (W11c): khoá định danh trong tham số phải TRONG phạm vi người gọi. Fail-closed, cùng kết quả cho "ngoài phạm vi" và "không tồn tại".
+  const pv = await kiemPhamViGhiTool(tool.name, args, ctx.user);
+  if (!pv.ok) {
+    await logCrudOperation(buildAuditCtx(ctx.user, ctx.req), {
+      action: AUDIT_ACTIONS.AI_ACTION_DENIED,
+      entityType: ENTITY_TYPES.AI_ACTION,
+      entityName: tool.name,
+      details: {
+        operation: "AI_ACTION_DENIED",
+        metadata: { tool: tool.name, args: sanitizeArgs(args), denyReason: "OUT_OF_SCOPE", stage: "propose" },
+      },
+      status: "failure",
+    });
+    return { ok: false, denied: true, reason: "OUT_OF_SCOPE", message: denyMessage(ctx.lang, summary) };
   }
 
   // Dry-run preview (must NOT mutate the DB).
@@ -1064,6 +1081,20 @@ export async function confirmAction(
       status: "failure",
     });
     return { ok: false, status: "denied", message: denyMessage(lang, row.summary) };
+  }
+
+  // Phạm vi nhà máy lúc THỰC THI (W11c): dùng tham số ĐÃ LƯU trong hàng; phạm vi / gán nhà máy có thể đổi giữa hai lần bấm.
+  const pvXn = await kiemPhamViGhiTool(row.tool, row.argsJson as Record<string, unknown>, user);
+  if (!pvXn.ok) {
+    await db.update(aiPendingActions).set({ status: "denied" }).where(eq(aiPendingActions.id, actionId));
+    await logCrudOperation(buildAuditCtx(user, req), {
+      action: AUDIT_ACTIONS.AI_ACTION_DENIED,
+      entityType: ENTITY_TYPES.AI_ACTION,
+      entityName: row.tool,
+      details: { operation: "AI_ACTION_DENIED", metadata: { actionId, tool: row.tool, denyReason: "OUT_OF_SCOPE", stage: "execute", ...autonomyAuditMeta(autonomy) } },
+      status: "failure",
+    });
+    return { ok: false, status: "denied", reason: "OUT_OF_SCOPE", message: denyMessage(lang, row.summary) };
   }
 
   // ── G4.29/G4.30 — CONFIRM-TIME ADVICE-CONTRACT ENFORCEMENT ────────────────────
