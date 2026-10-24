@@ -3813,6 +3813,7 @@
       "recipeSet": "产线配方集",
       "lineStage": "产线工序",
       "productionOrderTemplate": "生产订单模板",
+      "predictiveAlert": "预测性告警",
       "rcaAnalysis": "根本原因分析",
       "recipe": "配方",
       "record": "记录",

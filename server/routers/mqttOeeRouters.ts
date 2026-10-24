@@ -15,7 +15,9 @@ import { protectedProcedure, writeProcedure, qualityProcedure, router } from "..
 import { requirePermission } from "../_core/accessControl";
 import { adminProcedure } from "./_shared";
 import { createAuditContext } from "../services/auditTrailService";
-import { phamViCua } from "./_phamViNguoiXem";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { ghiViTri } from "./_viTriPhamVi";
+import { sql } from "drizzle-orm";
 import * as db from "../db";
 
 /**
@@ -415,11 +417,24 @@ export const mqttClientRouter = router({
 
   // Update FCM token for push notifications
   updateFcmToken: protectedProcedure
+    .use(requirePermission("machine_alerts", "canEdit")) // lô W11 (2026-10-25): trước đây MỌI người đăng nhập sửa được FCM token của mqtt client bất kỳ
     .input(z.object({
       clientId: z.number(),
       fcmToken: z.string(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi nhà máy: client phải gắn một trạm trong phạm vi người gọi (client không gắn trạm ⇒ chỉ toàn quyền)
+      {
+        const d = await db.getDb();
+        if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+        const rows = (await d.execute(sql`SELECT "stationId" AS s FROM mqtt_clients WHERE id = ${input.clientId}`)) as unknown as Array<{ s: number | null }>;
+        try {
+          if (rows.length === 0) throw new Error("none");
+          await ghiViTri(ctx, { stationId: rows[0]!.s }, { batBuoc: true });
+        } catch {
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, "Station not found");
+        }
+      }
       await db.updateMqttClientFcmToken(input.clientId, input.fcmToken);
       return { success: true };
     }),
@@ -443,7 +458,8 @@ export const mqttClientRouter = router({
         value: z.number().optional(),
       })).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ghiViTri(ctx, { factoryId: input.factoryId, workshopId: input.workshopId, stationId: input.stationId, machineId: input.machineId }, { batBuoc: true });
       const { publishNGAlert, isMqttRunning } = await import('../services/mqttService');
       const { getDb } = await import('../db');
       const drizzleDb = (await getDb())!;
@@ -669,7 +685,8 @@ export const mqttClientRouter = router({
       totalCount: z.number(),
       goodCount: z.number(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ghiViTri(ctx, { machineId: input.machineId }, { batBuoc: true });
       const { computeOEE, persistOEEMetric } = await import('../services/oeeService');
       // Map explicit planned/run minutes onto a synthetic [from,to] window so
       // the canonical SEMI-E10 calculator sees PT=runTime, UD=plannedTime-runTime.
@@ -889,6 +906,7 @@ export const mqttClientRouter = router({
       reason: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiViTri(ctx, { machineId: input.machineId }, { batBuoc: true });
       const { startDowntime } = await import('../_core/socket');
       return startDowntime(input.machineId, input.machineCode, input.category, input.reason, ctx.user?.name ?? undefined);
     }),
@@ -899,7 +917,8 @@ export const mqttClientRouter = router({
       machineId: z.number(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ghiViTri(ctx, { machineId: input.machineId }, { batBuoc: true });
       const { endDowntime } = await import('../_core/socket');
       return endDowntime(input.machineId, input.notes);
     }),
@@ -989,7 +1008,8 @@ export const mqttClientRouter = router({
       cycleTimeVariance: z.number().optional(),
       downtimeFrequency: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ghiViTri(ctx, { machineId: input.machineId }, { batBuoc: true });
       const { calculateMachineHealth } = await import('../_core/socket');
       const score = calculateMachineHealth(input.machineId, input.machineCode, {
         oee: input.oee,
@@ -1179,7 +1199,8 @@ export const mqttClientRouter = router({
       startDate: z.date(),
       endDate: z.date(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      for (const m of input.machines) await ghiViTri(ctx, { machineId: m.machineId, lineId: m.lineId }, { batBuoc: true });
       const { calculateLineBenchmarks } = await import('../_core/socket');
       return calculateLineBenchmarks(input.machines, { start: input.startDate, end: input.endDate });
     }),
@@ -1321,6 +1342,15 @@ export const mqttClientRouter = router({
 // ============================================================
 // OEE Target Router (lines 4380-4493)
 // ============================================================
+/** Mục tiêu OEE theo id (lô W10, 2026-10-25): máy / chuyền của nó phải trong phạm vi người gọi; không thấy / ngoài phạm vi ≡ không tồn tại. */
+async function mucTieuOeeGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  const d = await db.getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const rows = (await d.execute(sql`SELECT "machineId" AS m, "lineId" AS l FROM oee_targets WHERE id = ${id}`)) as unknown as Array<{ m: number | null; l: number | null }>;
+  if (rows.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
+  await ghiViTri(ctx, { machineId: rows[0]!.m, lineId: rows[0]!.l }, { batBuoc: true });
+}
+
 export const oeeRouter = router({
   // List all OEE targets
   listTargets: protectedProcedure.query(async ({ ctx }) => {
@@ -1370,6 +1400,7 @@ export const oeeRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiViTri(ctx, { machineId: input.machineId, lineId: input.lineId }, { batBuoc: true });
       const { getDb } = await import('../db');
       const { oeeTargets } = await import('../../drizzle/schema');
       const db = await getDb();
@@ -1408,7 +1439,9 @@ export const oeeRouter = router({
       criticalThreshold: z.number(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await mucTieuOeeGhi(ctx, input.id);
+      await ghiViTri(ctx, { machineId: input.machineId, lineId: input.lineId });
       const { getDb } = await import('../db');
       const { oeeTargets } = await import('../../drizzle/schema');
       const { eq } = await import('drizzle-orm');
@@ -1438,7 +1471,8 @@ export const oeeRouter = router({
   deleteTarget: writeProcedure
     .use(requirePermission("machine_monitoring", "canEdit"))
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await mucTieuOeeGhi(ctx, input.id);
       const { getDb } = await import('../db');
       const { oeeTargets } = await import('../../drizzle/schema');
       const { eq } = await import('drizzle-orm');
@@ -1472,6 +1506,7 @@ export const mqttAlertRouter = router({
 
   // Create new alert rule
   create: protectedProcedure
+    .use(requirePermission("machine_alerts", "canCreate")) // trước đây MỌI người đăng nhập ghi được luật cảnh báo toàn cục (lô W11, 2026-10-25)
     .input(z.object({
       name: z.string().min(1),
       description: z.string().optional(),
@@ -1496,6 +1531,7 @@ export const mqttAlertRouter = router({
 
   // Update alert rule
   update: protectedProcedure
+    .use(requirePermission("machine_alerts", "canEdit")) // trước đây MỌI người đăng nhập ghi được luật cảnh báo toàn cục (lô W11, 2026-10-25)
     .input(z.object({
       id: z.number(),
       name: z.string().optional(),
@@ -1521,6 +1557,7 @@ export const mqttAlertRouter = router({
 
   // Delete alert rule
   delete: protectedProcedure
+    .use(requirePermission("machine_alerts", "canDelete")) // trước đây MỌI người đăng nhập ghi được luật cảnh báo toàn cục (lô W11, 2026-10-25)
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteMqttAlertRule(input.id);
@@ -1529,6 +1566,7 @@ export const mqttAlertRouter = router({
 
   // Toggle enable/disable
   toggle: protectedProcedure
+    .use(requirePermission("machine_alerts", "canEdit")) // trước đây MỌI người đăng nhập ghi được luật cảnh báo toàn cục (lô W11, 2026-10-25)
     .input(z.object({ id: z.number(), isEnabled: z.boolean() }))
     .mutation(async ({ input }) => {
       await db.updateMqttAlertRule(input.id, { isEnabled: input.isEnabled });
@@ -1549,6 +1587,7 @@ export const mqttAlertRouter = router({
 
   // Resolve an alert
   resolve: protectedProcedure
+    .use(requirePermission("machine_alerts", "canEdit")) // trước đây MỌI người đăng nhập ghi được luật cảnh báo toàn cục (lô W11, 2026-10-25)
     .input(z.object({
       id: z.number(),
       note: z.string().optional(),

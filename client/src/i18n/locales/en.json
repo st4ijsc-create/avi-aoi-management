@@ -3821,6 +3821,7 @@
       "recipeSet": "line recipe set",
       "lineStage": "line stage",
       "productionOrderTemplate": "production order template",
+      "predictiveAlert": "predictive alert",
       "rcaAnalysis": "root cause analysis",
       "recipe": "recipe",
       "record": "record",

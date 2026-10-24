@@ -20,6 +20,10 @@ import { moduleProcedure, router } from "../_core/trpc";
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { requirePermission } from "../_core/accessControl";
+import { sql } from "drizzle-orm";
+import { getDb } from "../db";
+import type { CoDanhTinh } from "./_phamViNguoiXem";
+import { sanPhamGhiTrongPhamVi } from "./_sanPhamPhamVi";
 import {
   createRouting,
   listRoutings,
@@ -61,6 +65,23 @@ const canCreate = requirePermission("production_orders", "canCreate");
 const canEdit = requirePermission("production_orders", "canEdit");
 const canDelete = requirePermission("production_orders", "canDelete");
 
+/**
+ * Phạm vi nhà máy cho GHI định tuyến (rà bảo mật 2026-10-25, lô W10): định tuyến thuộc MỘT sản phẩm ⇒ dùng LUẬT GHI THEO SẢN PHẨM (chủ dự án duyệt 2026-10-24: trong phạm vi
+ * hoặc nháp). Bước định tuyến suy qua định tuyến cha. Không thấy / ngoài phạm vi ≡ NOT_FOUND "routing" / "productModel".
+ */
+async function dinhTuyenGhi(ctx: CoDanhTinh, routingId: number): Promise<void> {
+  const row = await getRoutingById(routingId);
+  if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "routing" }, `Routing ${routingId} not found`);
+  await sanPhamGhiTrongPhamVi(ctx, row.productModelId);
+}
+async function buocGhi(ctx: CoDanhTinh, stepId: number): Promise<void> {
+  const d = await getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const rows = (await d.execute(sql`SELECT "routingId" AS r FROM routing_steps WHERE id = ${stepId}`)) as unknown as Array<{ r: number | null }>;
+  if (rows.length === 0 || rows[0]?.r == null) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "routing" }, "Routing step not found");
+  await dinhTuyenGhi(ctx, Number(rows[0].r));
+}
+
 export const routingRouter = router({
   list: protectedProcedure
     .input(z.object({
@@ -94,6 +115,7 @@ export const routingRouter = router({
       steps: z.array(stepInput).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      await sanPhamGhiTrongPhamVi(ctx, input.productModelId);
       try {
         return await createRouting({ ...input, createdBy: ctx.user.id });
       } catch (err) {
@@ -110,7 +132,8 @@ export const routingRouter = router({
       name: z.string().max(255).nullable().optional(),
       description: z.string().max(4000).nullable().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await dinhTuyenGhi(ctx, input.id);
       try {
         return await updateRouting(input);
       } catch (err) {
@@ -121,7 +144,8 @@ export const routingRouter = router({
   activate: protectedProcedure
     .use(canEdit)
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await dinhTuyenGhi(ctx, input.id);
       try {
         return await activateRouting(input.id);
       } catch (err) {
@@ -132,7 +156,8 @@ export const routingRouter = router({
   archive: protectedProcedure
     .use(canEdit)
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await dinhTuyenGhi(ctx, input.id);
       try {
         return await archiveRouting(input.id);
       } catch (err) {
@@ -143,7 +168,8 @@ export const routingRouter = router({
   delete: protectedProcedure
     .use(canDelete)
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await dinhTuyenGhi(ctx, input.id);
       try {
         return await deleteRouting(input.id);
       } catch (err) {
@@ -155,7 +181,8 @@ export const routingRouter = router({
   addStep: protectedProcedure
     .use(canEdit)
     .input(z.object({ routingId: z.number().int().positive() }).and(stepInput))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await dinhTuyenGhi(ctx, input.routingId);
       try {
         return await addStep(input);
       } catch (err) {
@@ -173,7 +200,8 @@ export const routingRouter = router({
       standardTimeSec: z.number().int().min(0).nullable().optional(),
       description: z.string().max(4000).nullable().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await buocGhi(ctx, input.id);
       try {
         return await updateStep(input);
       } catch (err) {
@@ -184,7 +212,8 @@ export const routingRouter = router({
   deleteStep: protectedProcedure
     .use(canEdit)
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await buocGhi(ctx, input.id);
       try {
         return await deleteStep(input.id);
       } catch (err) {
@@ -198,7 +227,8 @@ export const routingRouter = router({
       routingId: z.number().int().positive(),
       steps: z.array(stepInput),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await dinhTuyenGhi(ctx, input.routingId);
       try {
         return await replaceSteps(input.routingId, input.steps);
       } catch (err) {
@@ -255,6 +285,7 @@ export const routingRouter = router({
       for (const g of groups.values()) {
         try {
           const product = await getProductModelByCode(g.productCode);
+          if (product) await sanPhamGhiTrongPhamVi(ctx, product.id); // phạm vi nhà máy: nhóm lỗi ⇒ đếm failed, không ghi
           if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Không tìm thấy sản phẩm "${g.productCode}"`);
           const seen = new Set<number>();
           const steps = g.rows
