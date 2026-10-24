@@ -136,8 +136,8 @@ const giaTriJsonb = customType<{ data: unknown; driverData: unknown }>({
 
 /** K2: một kênh chế độ cho mỗi máy. `giaTriRemote` = giá trị (đã chuẩn hoá) nghĩa là REMOTE. */
 export const scadaKenhCheDo = pgTable("scada_kenh_che_do", {
-  machineId: integer("machine_id").primaryKey(),
-  adapterId: integer("adapter_id").notNull(),
+  machineId: integer("machine_id").primaryKey().references(() => machines.id, { onDelete: "cascade" }), // mig 0433: xoá máy ⇒ kênh chế độ biến mất
+  adapterId: integer("adapter_id").notNull().references(() => deviceAdapters.id, { onDelete: "cascade" }),
   tagKey: varchar("tag_key", { length: 128 }).notNull(),
   giaTriRemote: giaTriJsonb("gia_tri_remote").notNull(),
   updatedBy: integer("updated_by").notNull(),
@@ -148,7 +148,7 @@ export type InsertScadaKenhCheDo = typeof scadaKenhCheDo.$inferInsert;
 
 /** K6: khoá chọn (adapter, tag) cho một người; hết hạn theo `expiresAt`. */
 export const scadaKhoaChon = pgTable("scada_khoa_chon", {
-  adapterId: integer("adapter_id").notNull(),
+  adapterId: integer("adapter_id").notNull().references(() => deviceAdapters.id, { onDelete: "cascade" }), // mig 0433
   tagKey: varchar("tag_key", { length: 128 }).notNull(),
   userId: integer("user_id").notNull(),
   requestId: varchar("request_id", { length: 64 }).notNull(),
@@ -176,6 +176,7 @@ export const scadaCommandAttempts = pgTable("scada_command_attempts", {
   stage: varchar("stage", { length: 24 }).$type<"request" | "confirm" | "dispatch" | "huy">().notNull(),
   outcome: varchar("outcome", { length: 24 }).$type<"rejected" | "proposed" | "confirmed" | "dispatched" | "expired" | "cancelled">().notNull(),
   reasonCode: varchar("reason_code", { length: 64 }),
+  lyDo: varchar("ly_do", { length: 300 }), // mig 0433 (R1b-1 T6): lý do đi kèm lần thử lệnh; NULL = không khai
   commandLogIds: bigint("command_log_ids", { mode: "number" }).array(),
   at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
