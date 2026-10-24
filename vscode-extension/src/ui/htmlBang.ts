@@ -25,8 +25,11 @@
  * một đường tiêm HTML mới. Tên tài khoản luôn tới qua tin `trang_thai_dang_nhap`, kể cả khi nó chỉ
  * đi vào `title`/`aria-label` của `#nut-tai-khoan` thay vì `textContent` của một `<span>` riêng.
  */
-export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): string {
+import { thoatHtml } from "../loi/thoatHtml";
+
+export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?: string }): string {
   const n = dv.nonce;
+  const maBuild = typeof dv.maBuild === "string" && dv.maBuild.trim() !== "" ? thoatHtml(dv.maBuild.trim().slice(0, 60)) : "";
   const daDangNhap = dv.daDangNhap === true;
   return `<!DOCTYPE html>
 <html lang="vi">
@@ -44,6 +47,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
      cảnh — đây là một cấu hình PHỤ, không phải hành động chính của khung. */
   #vung-muc-quyen { display: flex; align-items: center; gap: 4px; font-size: 11px; opacity: .9; }
   #vung-muc-quyen[hidden] { display: none; }
+  #ma-build { font-size: 10px; opacity: .55; font-family: var(--vscode-editor-font-family, monospace); user-select: all; }
+  #ma-build[hidden] { display: none; }
   #o-muc-quyen { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground);
                  border: 1px solid var(--vscode-dropdown-border); font-size: 11px; padding: 2px 4px; }
   /* B2+B4 — nút ICON dùng chung: nền trong suốt, chỉ nổi lên khi hover/focus, giống nút icon gốc
@@ -247,6 +252,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
      chỉ title/aria-label/lớp CSS đổi, KHÔNG BAO GIỜ dựng lại HTML, để một câu hỏi đang gõ dở
      trong #o-nhap không bị mất khi trạng thái đăng nhập đổi (B4, xem xử lý tin trang_thai_dang_nhap). -->
 <div id="vung-tai-khoan">
+  <span id="ma-build" title="Bản AI Local đang chạy (phiên bản+commit). Báo mã này khi báo lỗi; -dirty = build từ cây chưa commit."${maBuild ? "" : " hidden"}>${maBuild}</span>
   <!-- ★★★ ĐỢT G / TASK G3 / B4 — Ô CHỌN MỨC QUYỀN (chế độ tự trị). ⚠⚠⚠ ĐÂY LÀ MỘT CỔNG THÊM,
        KHÔNG PHẢI HÀNG RÀO: webview CHỈ báo Ý ĐỊNH đổi mức (\`dat_muc_quyen\`) và HIỂN THỊ mức đang áp
        (\`muc_quyen\`, do extension gửi lại sau khi tự kiểm bằng \`laMucQuyenHopLe\`) — đúng nguyên tắc

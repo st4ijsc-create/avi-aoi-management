@@ -35,6 +35,8 @@ const may = vi.hoisted(() => ({
   hopThoaiChon: undefined as string[] | undefined,
   /** ★ 2026-10-24 — clipboard giả: mọi `env.clipboard.writeText`. */
   clipboard: [] as string[],
+  /** ★ 2026-10-24 — HTML mà host gán cho webview lần gần nhất. */
+  htmlGanNhat: "",
   /** ★ 2026-10-24 — cài đặt `aviAiLocal.*` giả (khoá → giá trị); thiếu khoá ⇒ mặc định do mã truyền vào. */
   cauHinh: {} as Record<string, unknown>,
   /** ★ 2026-10-24 — số lần `readFile` được gọi (bằng chứng "chặn theo STAT, không nạp tệp quá lớn"). */
@@ -244,7 +246,9 @@ vi.mock("vscode", () => ({
   window: {
     createWebviewPanel: () => ({
       webview: {
-        html: "",
+        set html(v: string) {
+          may.htmlGanNhat = v;
+        },
         onDidReceiveMessage: (h: (m: Record<string, unknown>) => void) => {
           may.nhanTin = h;
         },
@@ -2396,5 +2400,12 @@ describe("chép câu trả lời (2026-10-24)", () => {
     await nhuong();
     expect(may.clipboard).toEqual(["Đây là câu trả lời đầy đủ."]);
     expect(may.daGui.some((m) => m.loai === "thong_bao" && /Đã chép câu trả lời/.test(String(m.thongDiep)))).toBe(true);
+  });
+});
+
+describe("mã build trên khung chat (2026-10-24)", () => {
+  it("★★ host gán HTML có #ma-build mang mã build (test không qua bundle ⇒ 'dev') — đường nối maBuild → dungHtmlBang không bị đứt", () => {
+    moBang();
+    expect(may.htmlGanNhat).toMatch(/<span id="ma-build"[^>]*>dev<\/span>/);
   });
 });

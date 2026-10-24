@@ -1949,3 +1949,16 @@ describe("CSS không được đè thuộc tính hidden (2026-10-24)", () => {
     expect(loi).toEqual([]);
   });
 });
+
+describe("mã build trên khung (2026-10-24)", () => {
+  it("★★ có maBuild ⇒ hiện trong #ma-build (đã thoát HTML, cắt 60 ký tự); không có ⇒ phần tử mang hidden", () => {
+    const co = dungHtmlBang({ nonce: "N", maBuild: "0.3.0+abc1234-dirty" });
+    expect(co).toMatch(/<span id="ma-build"[^>]*>0\.3\.0\+abc1234-dirty<\/span>/);
+    expect(co).not.toMatch(/<span id="ma-build"[^>]*\bhidden\b/);
+    const doc = dungHtmlBang({ nonce: "N", maBuild: '<img src=x onerror="alert(1)">' });
+    expect(doc).not.toContain("<img src=x");
+    expect(doc).toContain("&lt;img");
+    expect(dungHtmlBang({ nonce: "N", maBuild: "x".repeat(200) })).toContain(">" + "x".repeat(60) + "</span>");
+    expect(dungHtmlBang({ nonce: "N" })).toMatch(/<span id="ma-build"[^>]*\bhidden\b[^>]*><\/span>/);
+  });
+});

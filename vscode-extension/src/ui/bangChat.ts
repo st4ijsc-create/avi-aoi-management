@@ -37,6 +37,7 @@ import { tomTatDiff } from "../loi/tomTatDiff";
 import { coDuocHienTheDuyet, suyCheDo } from "../loi/kiemTraCheDo";
 import { phanTichMarkdown, khoiMa as layKhoiMaMd } from "../loi/markdownAnToan";
 import { BoDemMdTangDan } from "../loi/mdTangDan";
+import { MA_BUILD } from "../loi/maBuild";
 import {
   anhChoKb,
   boAnh,
@@ -338,7 +339,7 @@ export class BangChat {
     // nơi gọi constructor phải truyền một hàm rỗng).
     private readonly lamHienRo?: () => void,
   ) {
-    this.panel.webview.html = dungHtmlBang({ nonce: chuoiNgauNhien() });
+    this.panel.webview.html = dungHtmlBang({ nonce: chuoiNgauNhien(), maBuild: MA_BUILD });
     this.phienAgent = new PhienAgent({
       context: this.context,
       gui: (m) => void this.panel.webview.postMessage(m),
