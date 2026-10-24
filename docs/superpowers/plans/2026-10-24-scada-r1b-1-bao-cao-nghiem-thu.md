@@ -102,7 +102,7 @@ ngưỡng nào. `OT_CONTROL_ENABLED` / `AI_OT_CONTROL_ENABLED` chỉ được đ
 **Trạng thái: ĐÃ CHẠY 2026-10-25 — 15/15 bước ĐẠT (3 lượt), thanh ghi trả về gốc, container trả về `exited`.**
 
 Điều kiện của điều phối (2026-10-25) và cách đã làm:
-1. Trước khi start: `docker update --memory 1g --memory-swap 1g avi-openplc-bench` (trước đó: không giới hạn, `Memory=0`). Giới hạn 1 GiB ĐỂ LẠI trên container sau phép đo — điều phối quyết có gỡ hay không.
+1. Trước khi start: `docker update --memory 1g --memory-swap 1g avi-openplc-bench` (trước đó: không giới hạn, `Memory=0`). Giới hạn 1 GiB ĐỂ LẠI trên container. `avi-openplc-bench` chạy với `--memory 1g` (điều phối 2026-10-25: GIỮ — máy dùng chung với llama-server, container từng bị giết vì áp lực bộ nhớ); gỡ bằng `docker update --memory 0 --memory-swap -1 avi-openplc-bench` nếu cần.
 2. Commit trống (Win32_OperatingSystem.FreeVirtualMemory) ngay trước start: **18,9 GB** (≥ 10 GB). Sau khi chạy + dừng container: **14,5 GB**. (Lần đo đầu 11,3 GB < ngưỡng 15 GB cũ ⇒ không chạy, báo điều phối; điều phối drop_caches trong docker-desktop + hạ ngưỡng còn 10 GB.)
 3. Lệnh: `npx tsx scripts/scada-r1b-bench.ts --lap 3 --start-neu-tat` — start container, bấm Start, bước 0 kiểm 18 thanh ghi giữ giá trị (ghi 12000+i, đọc lại @200/1000/2500 ms ⇒ GIỮ), chạy 3 lượt, trả thanh ghi `holding 0..17` = 0 ⇒ KHỚP gốc, trả container về `exited` (ban đầu `exited`). CSDL = `aoi_management_test`. Không chạm :3000 / :8091 / GPU.
 
@@ -410,7 +410,7 @@ ngoài OT trung tâm; `congOtLuong` dùng mức kênh; audit điều tiết báo
 tag, kiểm nhất quán từng tag — cần trước `AI_OT_CONTROL_ENABLED`).
 
 **Phát sinh trong R1b-1 (sổ):**
-1. ~~Bench OpenPLC R1b-1~~ — ĐÃ CHẠY 2026-10-25, 15/15 (§3). Điều phối quyết: gỡ hay giữ giới hạn 1 GiB của container.
+1. ~~Bench OpenPLC R1b-1~~ — ĐÃ CHẠY 2026-10-25, 15/15 (§3). `avi-openplc-bench` chạy với `--memory 1g` (điều phối 2026-10-25: GIỮ — máy dùng chung với llama-server, container từng bị giết vì áp lực bộ nhớ); gỡ bằng `docker update --memory 0 --memory-swap -1 avi-openplc-bench` nếu cần.
 2. T3: ghi trong lúc phiên chờ lần đọc tốt đầu tiên (c2); push đếm đọc tốt theo "máy chủ đã trả lời" (good | uncertain | bad không phải comm);
    reset HA tính là mất còn legacy thì không; push không có watchdog thừa mẫu; thứ tự canh `sinkPhien` legacy.
 3. T4: khi DB treo vẫn nạp `napTuOt` (bộ đệm không cũ theo DB); thử lại lô mẫu xấu bị bỏ.

@@ -11,6 +11,8 @@
  *   • `--khong-docker`: bỏ mọi lệnh docker (chạy khô trên một endpoint Modbus bất kỳ, vd. máy chủ mô phỏng trong tiến trình) — KHÔNG phải
  *     bench OpenPLC; dùng để kiểm mã của script.
  *
+ * Container: avi-openplc-bench chạy với --memory 1g (điều phối 2026-10-25 — máy dùng chung với llama-server); gỡ bằng
+ *   docker update --memory 0 --memory-swap -1 avi-openplc-bench nếu cần.
  * Trong tiến trình, KHÔNG đụng :3000 / :8091 / GPU. CSDL = `_test` (suy từ DATABASE_URL của .env như vitest.setup.ts: chỉ đọc MỘT khoá đó,
  * thêm hậu tố `_test`; tên phải chứa "test" và khác DB dev, nếu không script dừng). Mọi cờ đặt TƯỜNG MINH trong tiến trình — `.env` không
  * được nạp; `OT_CONTROL_ENABLED=true` CHỈ ở đây (D9).
