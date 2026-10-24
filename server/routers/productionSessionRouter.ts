@@ -98,7 +98,7 @@ async function phienGhi(ctx: CoDanhTinh, id: number): Promise<void> {
   if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   const [r] = await d.select({ f: productionSessions.factoryId, w: productionSessions.workshopId, l: productionSessions.lineId }).from(productionSessions).where(eq(productionSessions.id, id));
   try {
-    if (!r) throw new Error("none");
+    if (!r) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "none");
     await ghiViTri(ctx, { factoryId: r.f, workshopId: r.w, lineId: r.l }, { batBuoc: true });
   } catch {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Production session not found");

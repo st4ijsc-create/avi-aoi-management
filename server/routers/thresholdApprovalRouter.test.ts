@@ -249,3 +249,6 @@ describe("revert — OP8 restore prior limits + audit", () => {
     expect(updateSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+// W13: cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW13.db.test.ts); ở đây CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./_sanPhamPhamVi", () => ({ sanPhamGhiTrongPhamVi: async () => undefined, diemDoGhiTrongPhamVi: async () => undefined }));

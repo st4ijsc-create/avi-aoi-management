@@ -3888,6 +3888,7 @@
       "lateWriteResult": "kết quả ghi đến muộn"
     },
     "operation": {
+      "dieuKienViTriTrongPhamVi": "dựng điều kiện phạm vi theo vị trí",
       "retireEdgeNode": "cho node biên ngừng hoạt động vĩnh viễn",
       "updateApiKey": "cập nhật khoá API",
       "changeApiKeyHolder": "đổi người được cấp khoá API",
@@ -4080,6 +4081,7 @@
       "scadaKenhCapNhat": "cập nhật khai báo kênh"
     },
     "field": {
+      "location": "Vị trí (nhà máy, xưởng, chuyền, trạm hoặc máy)",
       "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",
       "settingKey": "Khoá cài đặt",
       "uiPrefs": "tuỳ chọn giao diện",
@@ -4260,6 +4262,7 @@
       "scadaCommands": "lệnh HMI SCADA"
     },
     "action": {
+      "writeCorporateEquipmentStandard": "ghi tiêu chuẩn thiết bị cấp tập đoàn",
       "changeMqttDeviceOfOtherScope": "đổi thiết bị MQTT đang gắn với máy ngoài phạm vi của bạn",
       "selfApproveProgramDeploy": "tự duyệt yêu cầu deploy chương trình của chính mình",
       "viewOthersPermissions": "xem quyền của người khác",

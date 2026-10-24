@@ -32,7 +32,7 @@
  * DB THẬT — không mock `../db` hay `accessControl` (giống các lưới permission khác trong repo):
  * `checkPermission` tự query bảng `permissions` qua `getDb()`.
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { users, permissions, factoryLayouts } from "../../drizzle/schema";
@@ -184,3 +184,6 @@ describe.skipIf(!DB_URL)("Lô 5 Mục 1 — cổng analytics_oee đo bằng user
   // đã nhận: người có analytics_oee (không có settings_factory) nay sửa được bố cục xưởng — chủ
   // dự án chấp nhận rủi ro này khi chốt ruling (A) 2026-09-05 (xem lo-6-report.md).
 });
+
+// W13: cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW13.db.test.ts); ở đây CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./_cauHinhPhamVi", async (orig) => ({ ...(await orig<typeof import("./_cauHinhPhamVi")>()), viTriHopLe: async () => undefined, boCucGhi: async () => undefined, viTriMayBoCucGhi: async () => undefined }));

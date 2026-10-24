@@ -5,6 +5,7 @@ import { appError } from "../_core/appError";
 import * as db from "../db";
 import { requireAnyPermission } from "../_core/accessControl";
 import { createAuditContext, logCrudOperation } from "../services/auditTrailService";
+import { viTriHopLe, boCucGhi, viTriMayBoCucGhi } from "./_cauHinhPhamVi";
 
 // doc 42 #18 — RBAC split-brain: bố trí xưởng là master-data của "Quản lý dữ liệu".
 // FE gate module `settings_factory`; BE khớp permission thay vì hardgate role==='admin'.
@@ -85,6 +86,7 @@ export const layoutRouter = router({
       backgroundImageUrl: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await viTriHopLe(ctx, { workshopId: input.workshopId }, "workshop"); // phạm vi nhà máy (W13)
       const id = await db.createFactoryLayout(input);
       await logCrudOperation(createAuditContext(ctx), {
         action: "create",
@@ -109,6 +111,7 @@ export const layoutRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      await boCucGhi(ctx, id);
       const existing = await db.getFactoryLayoutById(id);
       if (!existing) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'factoryLayout' }, 'Layout not found');
@@ -130,6 +133,7 @@ export const layoutRouter = router({
   delete: canDelete
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      await boCucGhi(ctx, input.id);
       const existing = await db.getFactoryLayoutById(input.id);
       if (!existing) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'factoryLayout' }, 'Layout not found');
@@ -158,6 +162,8 @@ export const layoutRouter = router({
       rotation: z.number().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await boCucGhi(ctx, input.layoutId);
+      await viTriHopLe(ctx, { machineId: input.machineId }, "machine"); // máy đặt lên bố cục cũng phải trong phạm vi
       const id = await db.createMachinePosition(input);
       await logCrudOperation(createAuditContext(ctx), {
         action: "create",
@@ -182,6 +188,7 @@ export const layoutRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      await viTriMayBoCucGhi(ctx, id);
       await db.updateMachinePosition(id, data);
       // ⚠ Không đọc "before": mutation này KHÔNG có kiểm NOT_FOUND sẵn (khác `update` bố cục ở
       // trên) nên đọc trước sẽ là một truy vấn MỚI, không tái dùng được. Theo đúng khuyến nghị
@@ -200,6 +207,7 @@ export const layoutRouter = router({
   removeMachinePosition: canDelete
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      await viTriMayBoCucGhi(ctx, input.id);
       await db.deleteMachinePosition(input.id);
       // Cùng lý do trên: không có kiểm NOT_FOUND sẵn ⇒ không "before" mà không thêm truy vấn.
       await logCrudOperation(createAuditContext(ctx), {

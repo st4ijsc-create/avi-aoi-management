@@ -155,3 +155,6 @@ describe("measurementPoint.remapUnmapped — __UNMAPPED__ guards (MP3/WB-2)", ()
     expect(auditSpy.mock.calls[0][0]).toMatchObject({ action: "measurementPoint.remapUnmapped", entityName: "PCB-REAL" });
   });
 });
+
+// Cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW*.db.test.ts); ở đây CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./_sanPhamPhamVi", () => ({ sanPhamGhiTrongPhamVi: async () => undefined, diemDoGhiTrongPhamVi: async () => undefined }));

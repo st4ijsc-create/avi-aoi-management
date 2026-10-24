@@ -611,7 +611,7 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       expect(await mineIds("engViewer")).not.toContain(ruleId);
       expect(await sup.assignments({ entityType: "interlock_rule", entityIds: [ruleId] })).toEqual([]);
       // sửa rule đã duyệt (ILK-01 reset duyệt) ⇒ chờ duyệt LẠI, đợt mới ⇒ người cũ KHÔNG thấy
-      await interlockRouter.createCaller(ctxOf("engAuthor")).update({ id: ruleId, description: "sua sau duyet" });
+      await interlockRouter.createCaller(ctxOf("adminA")).update({ id: ruleId, description: "sua sau duyet" }); // W7 (phamViGhi): luật không gắn vị trí nào là luật toàn cục — chỉ toàn quyền sửa
       const [r] = await sql`SELECT "approvedBy" FROM interlock_rules WHERE id = ${ruleId}`;
       expect(r.approvedBy).toBeNull();
       expect(await mineIds("engViewer")).not.toContain(ruleId);
@@ -799,7 +799,7 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       await give("interlock_rule", stale);
       const v = ((await interlockRouter.createCaller(ctxOf("adminA")).get({ id: stale })) as any).versionToken;
       await interlockRouter.createCaller(ctxOf("adminA")).approve({ id: stale, expectedVersion: v });
-      await interlockRouter.createCaller(ctxOf("engAuthor")).update({ id: stale, description: "m5 sua sau duyet" });
+      await interlockRouter.createCaller(ctxOf("adminA")).update({ id: stale, description: "m5 sua sau duyet" });
       // run: một còn sống; một sang gate khác (đợt mới)
       await give("orchestration_run", await mkRun("held"));
       const runStale = await mkRun("held");

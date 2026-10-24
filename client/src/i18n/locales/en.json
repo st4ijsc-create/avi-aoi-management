@@ -3888,6 +3888,7 @@
       "lateWriteResult": "late write result"
     },
     "operation": {
+      "dieuKienViTriTrongPhamVi": "build the location scope condition",
       "retireEdgeNode": "retire the edge node",
       "updateApiKey": "update the API key",
       "changeApiKeyHolder": "change who the API key is issued to",
@@ -4080,6 +4081,7 @@
       "scadaKenhCapNhat": "update the channel declaration"
     },
     "field": {
+      "location": "Location (factory, workshop, line, station or machine)",
       "holderUserId": "the user the key is issued to (an existing, active user)",
       "settingKey": "Setting key",
       "uiPrefs": "interface preferences",
@@ -4260,6 +4262,7 @@
       "scadaCommands": "SCADA HMI commands"
     },
     "action": {
+      "writeCorporateEquipmentStandard": "write a corporate-level equipment standard",
       "changeMqttDeviceOfOtherScope": "change an MQTT device bound to a machine outside your scope",
       "selfApproveProgramDeploy": "approve your own program deploy request",
       "viewOthersPermissions": "view another user's permissions",

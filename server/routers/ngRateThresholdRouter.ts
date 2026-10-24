@@ -35,6 +35,8 @@ import {
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte, asc, isNull, or } from "drizzle-orm";
 import { getNgRateStatsForStation, checkNgRateAfterInspection } from "../services/ngRateAlertService";
+import { ghiDoiTuong } from "./_viTriPhamVi";
+import { nguongNgGhi, canhBaoNgGhi } from "./_cauHinhPhamVi";
 
 export const ngRateThresholdRouter = router({
   /**
@@ -156,6 +158,12 @@ export const ngRateThresholdRouter = router({
       if (input.criticalThreshold < input.warningThreshold) {
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "criticalThreshold" }, "Ngưỡng nghiêm trọng phải lớn hơn hoặc bằng ngưỡng cảnh báo");
       }
+      // phạm vi nhà máy (W13): trạm · máy · điểm đo · sản phẩm khai trong ngưỡng đều phải trong phạm vi người gọi
+      try {
+        await ghiDoiTuong(ctx, { stationId: input.stationId, machineId: input.machineId ?? null, measurementPointDefId: input.measurementPointId ?? null, productModelId: input.productModelId ?? null }, { batBuoc: true });
+      } catch {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, "Station not found");
+      }
 
       const [result] = await db
         .insert(mqttNgRateThresholds)
@@ -203,11 +211,18 @@ export const ngRateThresholdRouter = router({
         productModelId: z.number().nullable().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       const { id, ...updateData } = input;
+      await nguongNgGhi(ctx, id); // phạm vi nhà máy (W13)
+      // đích MỚI (máy / điểm đo / sản phẩm đổi sang) cũng phải trong phạm vi
+      try {
+        await ghiDoiTuong(ctx, { machineId: updateData.machineId ?? null, measurementPointDefId: updateData.measurementPointId ?? null, productModelId: updateData.productModelId ?? null });
+      } catch {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ngRateThreshold" }, "Threshold not found");
+      }
       const setData: any = { updatedAt: new Date() };
 
       if (updateData.name !== undefined) setData.name = updateData.name;
@@ -253,10 +268,11 @@ export const ngRateThresholdRouter = router({
    */
   delete: qualityProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
+      await nguongNgGhi(ctx, input.id);
       await db.delete(mqttNgRateThresholds).where(eq(mqttNgRateThresholds.id, input.id));
       return { success: true };
     }),
@@ -266,10 +282,11 @@ export const ngRateThresholdRouter = router({
    */
   toggle: qualityProcedure
     .input(z.object({ id: z.number(), isEnabled: z.boolean() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
+      await nguongNgGhi(ctx, input.id);
       await db
         .update(mqttNgRateThresholds)
         .set({ isEnabled: input.isEnabled, updatedAt: new Date() })
@@ -338,6 +355,7 @@ export const ngRateThresholdRouter = router({
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
+      await canhBaoNgGhi(ctx, input.id);
       await db
         .update(mqttNgRateAlertHistory)
         .set({

@@ -10,6 +10,7 @@ import { withDbErrors } from "../_core/dbErrors";
 import { requirePermission } from "../_core/accessControl";
 import * as cachedStats from "../functions/cachedStatistics";
 import { scheduleReport, stopScheduledReport } from "../services/reportScheduler";
+import { viTriHopLe, congTramGhi } from "./_cauHinhPhamVi";
 
 // doc 42 Đợt 4B (H2 — "Gán máy vào trạm") — bảng nối workstation ↔ machine
 // (migration 0244). Định nghĩa tại đây (không thuộc lãnh thổ schema chung của Đợt 4B)
@@ -92,7 +93,8 @@ export const workstationRouter = router({
       processType: z.enum(['SMT', 'DIP', 'ASSEMBLY', 'TESTING', 'PACKAGING', 'OTHER']).optional(),
       orderIndex: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await viTriHopLe(ctx, { factoryId: input.factoryId, workshopId: input.workshopId, lineId: input.lineId }, "workstation"); // phạm vi nhà máy (W13)
       const id = await withDbErrors(() => db.createWorkstation(input), { conflictMessage: `Mã trạm '${input.code}' đã tồn tại` });
       return { id };
     }),
@@ -110,15 +112,21 @@ export const workstationRouter = router({
       orderIndex: z.number().optional(),
       isActive: z.boolean().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      await congTramGhi(ctx, id);
+      // vị trí MỚI (đổi nhà máy / xưởng / chuyền của công trạm) cũng phải trong phạm vi
+      if (data.factoryId != null || data.workshopId != null || data.lineId != null) {
+        await viTriHopLe(ctx, { factoryId: data.factoryId, workshopId: data.workshopId, lineId: data.lineId }, "workstation");
+      }
       await db.updateWorkstation(id, data);
       return { success: true };
     }),
 
   delete: wsCanDelete
     .input(z.number())
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await congTramGhi(ctx, input);
       await db.deleteWorkstation(input);
       return { success: true };
     }),
@@ -129,7 +137,8 @@ export const workstationRouter = router({
 
   restore: wsCanEdit
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await congTramGhi(ctx, input.id);
       await db.restoreWorkstation(input.id);
       return { success: true };
     }),
@@ -173,7 +182,9 @@ export const workstationRouter = router({
       machineId: z.number(),
       orderIndex: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await congTramGhi(ctx, input.workstationId); // phạm vi nhà máy (W13): công trạm VÀ máy cùng trong phạm vi
+      await viTriHopLe(ctx, { machineId: input.machineId }, "machine");
       const database = await db.getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const { eq, and } = await import("drizzle-orm");
@@ -203,7 +214,8 @@ export const workstationRouter = router({
   // Gỡ máy khỏi trạm (hard-delete cặp; không để lại tombstone chặn gán lại).
   unassignMachine: wsCanEdit
     .input(z.object({ workstationId: z.number(), machineId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await congTramGhi(ctx, input.workstationId);
       const database = await db.getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const { eq, and } = await import("drizzle-orm");

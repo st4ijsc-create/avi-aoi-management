@@ -48,7 +48,7 @@ async function hangDoiGhi(ctx: CoDanhTinh, id: number): Promise<void> {
   if (rows.length === 0) return; // không có hàng: để dịch vụ xử như trước
   try {
     await ghiViTri(ctx, { machineId: rows[0]!.m });
-    if (rows[0]!.i != null && !(await kiemTraTrongPhamVi(ctx, [Number(rows[0]!.i)]))) throw new Error("ngoai");
+    if (rows[0]!.i != null && !(await kiemTraTrongPhamVi(ctx, [Number(rows[0]!.i)]))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "ngoai");
     if (rows[0]!.m == null && rows[0]!.i == null) await ghiViTri(ctx, {}, { batBuoc: true });
   } catch {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "labelQueueItem" }, "Queue item not found");

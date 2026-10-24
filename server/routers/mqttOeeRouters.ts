@@ -429,7 +429,7 @@ export const mqttClientRouter = router({
         if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
         const rows = (await d.execute(sql`SELECT "stationId" AS s FROM mqtt_clients WHERE id = ${input.clientId}`)) as unknown as Array<{ s: number | null }>;
         try {
-          if (rows.length === 0) throw new Error("none");
+          if (rows.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "none");
           await ghiViTri(ctx, { stationId: rows[0]!.s }, { batBuoc: true });
         } catch {
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, "Station not found");

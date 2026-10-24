@@ -3880,6 +3880,7 @@
       "lateWriteResult": "迟到的写入结果"
     },
     "operation": {
+      "dieuKienViTriTrongPhamVi": "构建位置范围条件",
       "retireEdgeNode": "永久停用边缘节点",
       "updateApiKey": "更新 API 密钥",
       "changeApiKeyHolder": "更改 API 密钥的发放对象",
@@ -4072,6 +4073,7 @@
       "scadaKenhCapNhat": "更新通道声明"
     },
     "field": {
+      "location": "位置（工厂、车间、产线、工位或机台）",
       "holderUserId": "密钥的发放对象（必须是现有的在职用户）",
       "settingKey": "设置键",
       "uiPrefs": "界面偏好",
@@ -4252,6 +4254,7 @@
       "scadaCommands": "SCADA HMI 命令"
     },
     "action": {
+      "writeCorporateEquipmentStandard": "写入集团级设备标准",
       "changeMqttDeviceOfOtherScope": "更改绑定到您范围外机器的MQTT设备",
       "selfApproveProgramDeploy": "审批自己提交的程序部署请求",
       "viewOthersPermissions": "查看他人的权限",
