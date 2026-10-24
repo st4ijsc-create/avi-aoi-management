@@ -22,7 +22,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { appErrorLechBuoc, congKenhSom, type TagCongKenh } from "./commandDispatcher";
-import { kiemLenhInterlockTrenKenh, kiemNhatQuanKenh, viPhamInterlock } from "../scada/nhatQuanKenh";
+import { kiemLenhInterlockTrenKenh, kiemNhatQuanKenh, thamSoNgoaiDaiInterlock, viPhamInterlock } from "../scada/nhatQuanKenh";
 
 const GOC = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const rel = (p: string) => relative(GOC, p).split(sep).join("/");
@@ -212,5 +212,47 @@ describe("T13 (C) — lúc cấu hình: lệnh interlock nhắm tag int CHƯA kh
 
   it("kiemNhatQuanKenh (ghim DỪNG) trên tag CHƯA khai ⇒ KHÔNG kiểm (ghim được miễn lúc chạy ⇒ không lệch cấu hình ↔ chạy)", () => {
     expect(kiemNhatQuanKenh(chuaKhai, 25)).toEqual({ ok: true });
+  });
+});
+
+// ─── R1b-1 T13 polish (m1 + m3) ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+describe("T13 polish m3 — congKenhSom: tag int CHƯA khai scale −10 / offset −5", () => {
+  it("scale −10: 30 ⇒ ok (write nguyên vẹn); 25 ⇒ OFF_STEP goiY 20, appError step 10", () => {
+    const t = tag({ tagKey: "am", scale: "-10.000000" });
+    const w = { tagKey: "am", value: 30 };
+    const ok = congKenhSom("set_param", [w], [t]);
+    expect(ok.ok && ok.writes[0]).toBe(w);
+    const kq = congKenhSom("set_param", [{ tagKey: "am", value: 25 }], [t]);
+    expect(kq).toMatchObject({ ok: false, ma: "OFF_STEP", buoc: 10, goiY: 20 });
+    expect(appErrorLechBuoc(kq)?.appParams).toEqual({ ma: "OFF_STEP", tagKey: "am", step: 10, goiY: 20 });
+  });
+  it("offset −5 scale 10: 25 ⇒ ok; 20 ⇒ OFF_STEP goiY 25", () => {
+    const t = tag({ tagKey: "o5", offset: "-5.000000" });
+    expect(congKenhSom("set_param", [{ tagKey: "o5", value: 25 }], [t]).ok).toBe(true);
+    expect(congKenhSom("set_param", [{ tagKey: "o5", value: 20 }], [t])).toMatchObject({ ok: false, ma: "OFF_STEP", buoc: 10, goiY: 25 });
+  });
+});
+
+describe("T13 polish m1 — tham số INTERLOCK_NGOAI_DAI nêu ĐÚNG lưới (không 'bước —' khi tag không khai write_step)", () => {
+  const chuaKhai = { dataType: "int" as const, channelKind: null, writable: true, writeMin: null, writeMax: null, writeStep: null };
+  it("lưới thô chưa khai (scale 10 offset −5): 20 ⇒ step 10, goc −5, goiY 25, min/max '—'", () => {
+    const k = { ...chuaKhai, scale: "10", offset: "-5" };
+    const kq = kiemLenhInterlockTrenKenh(k, 20);
+    expect(kq).toMatchObject({ ok: false, ma: "OFF_STEP", luoi: { buoc: 10, gocLuoi: -5, goiY: 25 } });
+    expect(thamSoNgoaiDaiInterlock(k, kq.ok ? { ma: "" } : kq)).toEqual({ min: "—", max: "—", step: 10, goc: -5, goiY: 25 });
+  });
+  it("viPhamInterlock mang lưới; tag ĐÃ khai lệch bước (bước 5 từ min 10) ⇒ step 5, goc 10, goiY 15", () => {
+    const vp = viPhamInterlock([{ id: 7, name: "r", action: "reduce_speed", enabled: true, commandValue: 25 }], { ...chuaKhai, scale: "-10", offset: "0" });
+    expect(vp).toMatchObject({ ruleId: 7, ma: "OFF_STEP", luoi: { buoc: 10, gocLuoi: 0, goiY: 20 } });
+    const khai = { ...chuaKhai, writeMin: 10, writeMax: 100, writeStep: 5, scale: "1", offset: "0" };
+    const kq = kiemLenhInterlockTrenKenh(khai, 17);
+    expect(thamSoNgoaiDaiInterlock(khai, kq.ok ? { ma: "" } : kq)).toEqual({ min: 10, max: 100, step: 5, goc: 10, goiY: 15 });
+  });
+  it("không phải OFF_STEP (ngoài dải) ⇒ step = write_step khai báo, goc / goiY '—'", () => {
+    const khai = { ...chuaKhai, writeMin: 10, writeMax: 100, writeStep: 5 };
+    const kq = kiemLenhInterlockTrenKenh(khai, 200);
+    expect(kq).toMatchObject({ ok: false, ma: "OUT_OF_RANGE" });
+    expect(thamSoNgoaiDaiInterlock(khai, kq.ok ? { ma: "" } : kq)).toEqual({ min: 10, max: 100, step: 5, goc: "—", goiY: "—" });
   });
 });

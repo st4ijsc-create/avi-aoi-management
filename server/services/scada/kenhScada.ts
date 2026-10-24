@@ -46,7 +46,8 @@ export function mucTacDongKenh(tag: Pick<DeviceTag, "actuationLevel">): MucRuiRo
 export type KetQuaGiaTri =
   | { ok: true; giaTri: number | boolean | string }
   // `buoc` (chỉ OFF_STEP) = lưới vừa trượt: `writeStep`, hoặc |scale| khi lệch lưới THÔ của tag int có scale (kiem-dinh P1-3).
-  | { ok: false; ma: "TYPE_MISMATCH" | "OUT_OF_RANGE" | "OFF_STEP"; chiTiet: string; goiY?: number; buoc?: number };
+  // `gocLuoi` (chỉ OFF_STEP, R1b-1 T13 polish m1) = gốc của lưới đó: `writeMin ?? 0` cho bước, `offset` cho lưới thô (lưới = gocLuoi + k·buoc).
+  | { ok: false; ma: "TYPE_MISMATCH" | "OUT_OF_RANGE" | "OFF_STEP"; chiTiet: string; goiY?: number; buoc?: number; gocLuoi?: number };
 
 /**
  * `scale` / `offset` TUỲ CHỌN (kiem-dinh P1-3): vắng ⇒ 1 / 0 (hành vi cũ). Cột decimal ⇒ drizzle trả CHUỖI ("10.000000") — nhận cả số.
@@ -59,12 +60,13 @@ type KenhGhiThuan = Pick<DeviceTag, "dataType" | "writeMin" | "writeMax" | "writ
 const RE_INT = /^[+-]?\d+$/;
 const RE_FLOAT = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
-const sai = (ma: "TYPE_MISMATCH" | "OUT_OF_RANGE" | "OFF_STEP", chiTiet: string, goiY?: number, buoc?: number): KetQuaGiaTri => ({
+const sai = (ma: "TYPE_MISMATCH" | "OUT_OF_RANGE" | "OFF_STEP", chiTiet: string, goiY?: number, buoc?: number, gocLuoi?: number): KetQuaGiaTri => ({
   ok: false,
   ma,
   chiTiet,
   ...(goiY === undefined ? {} : { goiY }),
   ...(buoc === undefined ? {} : { buoc }),
+  ...(gocLuoi === undefined ? {} : { gocLuoi }),
 });
 
 function epBool(v: unknown): boolean | undefined {
@@ -196,6 +198,7 @@ function kiemLuoiTho(tag: KenhGhiThuan, v: number, goiYPhaiNguyen = true): KetQu
     `Giá trị ${v} không ghi đúng được: thiết bị lưu số thô (giá trị − ${o}) / ${s} phải nguyên — lưới ${Math.abs(s)}.`,
     goiY,
     Math.abs(s),
+    o,
   );
 }
 
@@ -294,7 +297,7 @@ export function kiemGiaTriGhi(tag: KenhGhiThuan, giaTri: unknown): KetQuaGiaTri 
       if (max != null) g = Math.min(g, max);
       goiY = g;
     }
-    return sai("OFF_STEP", `Giá trị ${v} không nằm trên bước ${step} (tính từ ${base}).`, goiY, step);
+    return sai("OFF_STEP", `Giá trị ${v} không nằm trên bước ${step} (tính từ ${base}).`, goiY, step, base);
   }
   return kiemLuoiTho(tag, v);
 }

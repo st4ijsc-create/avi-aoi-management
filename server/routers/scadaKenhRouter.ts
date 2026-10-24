@@ -50,7 +50,7 @@ import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { isEdgeControlSchemaMissing } from "../services/edge/edgeControlSchema";
 import { kiemGiaTriGhi, laKenhGhi, loaiKenh, mucTacDongKenh, type LoaiKenh } from "../services/scada/kenhScada";
 import { cheDoMay, nguongTuoiCheDoMs, TUOI_MAU_CHE_DO_TOI_DA_MS, type CheDo } from "../services/scada/cheDoMay";
-import { khoaLuatNhamTagTx, kiemNhatQuanKenh, soHienThi, viPhamInterlock, type KenhNhatQuan } from "../services/scada/nhatQuanKenh";
+import { khoaLuatNhamTagTx, kiemNhatQuanKenh, soHienThi, thamSoNgoaiDaiInterlock, viPhamInterlock, type KenhNhatQuan } from "../services/scada/nhatQuanKenh";
 import { khoaAdapterTx } from "../services/scada/troLaiKenh";
 import { tagDeadbandEnabled } from "../services/ot/otManager";
 import { TAG_DUNG_MAC_DINH } from "../services/ot/tagLenhMacDinh";
@@ -607,9 +607,7 @@ export const scadaKenhRouter = router({
                   ma: "INTERLOCK_NGOAI_DAI",
                   lyDo: vp.ma,
                   tagKey: tag.tagKey,
-                  min: soHienThi(sau.writeMin),
-                  max: soHienThi(sau.writeMax),
-                  step: soHienThi(sau.writeStep),
+                  ...thamSoNgoaiDaiInterlock(sau, vp), // R1b-1 T13 polish m1: lưới thật (bước / |scale|, gốc, goiY)
                   ruleId: vp.ruleId,
                 },
                 `Luật interlock đang bật #${vp.ruleId} (${vp.ruleName}) ghi một giá trị không ghi được với khai báo mới (${vp.chiTiet}).`,

@@ -66,6 +66,9 @@ describe.skipIf(!DB_URL)("interlockRouter — commandValue ↔ dải/bước c�
     // R1b-1 T13 — int KHÔNG khai kênh, scale 10: dispatch kiểm lưới thô ⇒ cấu hình interlock cũng phải kiểm
     await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", scale)
       VALUES (${adapterId}, 'sc10cu', 'addr-sc10cu', 'int', true, true, 10)`;
+    // R1b-1 T13 polish (m1 + m3) — int KHÔNG khai kênh, scale 10 offset −5 (lưới …, 15, 25, 35, …)
+    await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", scale, "offset")
+      VALUES (${adapterId}, 'so5', 'addr-so5', 'int', true, true, 10, -5)`;
   }, 60_000);
 
   afterAll(async () => {
@@ -93,11 +96,25 @@ describe.skipIf(!DB_URL)("interlockRouter — commandValue ↔ dải/bước c�
   it("R1b-1 T13 create: tag int KHÔNG khai kênh, scale 10 — commandValue 25 ⇒ INTERLOCK_NGOAI_DAI (OFF_STEP), không ghi hàng; 30 ⇒ OK (dispatch gửi raw 3)", async () => {
     const e = await loiCua(caller(TAC_GIA).create(input("t13-25", { commandTag: "sc10cu", commandValue: 25 })));
     expect(e).toMatchObject({ code: "BAD_REQUEST", appCode: "INTERLOCK_NGOAI_DAI" });
-    expect(e.appParams).toMatchObject({ ma: "INTERLOCK_NGOAI_DAI", lyDo: "OFF_STEP" });
+    // polish m1 — câu vi/en/zh nêu ĐÚNG lưới thô: bước = |scale|, gốc = offset, giá trị gần nhất; tag không khai dải ⇒ min/max "—"
+    expect(e.appParams).toEqual({ ma: "INTERLOCK_NGOAI_DAI", lyDo: "OFF_STEP", tagKey: "sc10cu", min: "—", max: "—", step: 10, goc: 0, goiY: 30 });
     expect((await sql`SELECT id FROM interlock_rules WHERE name = ${DAU + "-t13-25"}`).length).toBe(0);
     const ok = await caller(TAC_GIA).create(input("t13-30", { commandTag: "sc10cu", commandValue: 30 }));
     ruleIds.push(ok.id);
     expect(ok.id).toBeGreaterThan(0);
+  });
+
+  it("R1b-1 T13 polish m1 + m3: offset −5 scale 10 — 20 ⇒ INTERLOCK_NGOAI_DAI {step 10, goc −5, goiY 25}; 25 ⇒ OK. Tag ĐÃ khai: lệch bước ⇒ {step 5, goc 0, goiY 50}; ngoài dải ⇒ goc/goiY \"—\"", async () => {
+    const e = await loiCua(caller(TAC_GIA).create(input("t13-o20", { commandTag: "so5", commandValue: 20 })));
+    expect(e.appParams).toEqual({ ma: "INTERLOCK_NGOAI_DAI", lyDo: "OFF_STEP", tagKey: "so5", min: "—", max: "—", step: 10, goc: -5, goiY: 25 });
+    const ok = await caller(TAC_GIA).create(input("t13-o25", { commandTag: "so5", commandValue: 25 }));
+    ruleIds.push(ok.id);
+    expect((await loiCua(caller(TAC_GIA).create(input("t13-buoc", { commandValue: 52 })))).appParams).toEqual({
+      ma: "INTERLOCK_NGOAI_DAI", lyDo: "OFF_STEP", tagKey: "sp", min: 0, max: 100, step: 5, goc: 0, goiY: 50,
+    });
+    expect((await loiCua(caller(TAC_GIA).create(input("t13-ngoai", { commandValue: 150 })))).appParams).toEqual({
+      ma: "INTERLOCK_NGOAI_DAI", lyDo: "OUT_OF_RANGE", tagKey: "sp", min: 0, max: 100, step: 5, goc: "—", goiY: "—",
+    });
   });
 
   it("create: trong dải + đúng bước ⇒ OK; tag không khai kênh ⇒ không kiểm; luật alert / không có đích ⇒ không kiểm", async () => {

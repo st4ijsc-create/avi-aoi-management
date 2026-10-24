@@ -47,7 +47,7 @@ import { deviceAdapters, deviceTags, interlockRules, scadaKenhCheDo, type Device
 import { appError } from "../../_core/appError";
 import { validateStopValue } from "../ot/stopPin";
 import { laKenhGhi } from "./kenhScada";
-import { giaTriLenhInterlock, kiemLenhInterlockTrenKenh, kiemNhatQuanKenh, luatCoGhiLenh, soHienThi, type DbHoacTx, type KenhNhatQuan, type LuatNhamTag, type MaViPham } from "./nhatQuanKenh";
+import { giaTriLenhInterlock, kiemLenhInterlockTrenKenh, kiemNhatQuanKenh, luatCoGhiLenh, soHienThi, thamSoNgoaiDaiInterlock, type DbHoacTx, type KenhNhatQuan, type LuatNhamTag, type LuoiLech, type MaViPham } from "./nhatQuanKenh";
 
 /** Cột TRỎ LẠI của một tag (brief: address/scale/offset/dataType/writable/tagKey; + adapterId — tags.update chuyển được tag sang adapter khác). */
 export const COT_TRO_LAI = ["adapterId", "tagKey", "address", "dataType", "scale", "offset", "writable"] as const;
@@ -376,7 +376,11 @@ function loiGoGhimTruoc(cu: Pick<DeviceTag, "tagKey" | "stopValue">, viec: strin
   );
 }
 
-function loiNgoaiDai(tagKey: string, cu: Pick<DeviceTag, "writeMin" | "writeMax" | "writeStep"> | null, vp: { ruleId: number; ruleName: string; ma: MaViPham; chiTiet: string }): never {
+function loiNgoaiDai(
+  tagKey: string,
+  cu: Pick<DeviceTag, "writeMin" | "writeMax" | "writeStep"> | null,
+  vp: { ruleId: number; ruleName: string; ma: MaViPham; chiTiet: string; luoi?: LuoiLech },
+): never {
   throw appError(
     "BAD_REQUEST",
     "INTERLOCK_NGOAI_DAI",
@@ -384,9 +388,7 @@ function loiNgoaiDai(tagKey: string, cu: Pick<DeviceTag, "writeMin" | "writeMax"
       ma: "INTERLOCK_NGOAI_DAI",
       lyDo: vp.ma,
       tagKey,
-      min: soHienThi(cu?.writeMin),
-      max: soHienThi(cu?.writeMax),
-      step: soHienThi(cu?.writeStep),
+      ...thamSoNgoaiDaiInterlock(cu, vp), // R1b-1 T13 polish m1: lưới thật (bước / |scale|, gốc, goiY)
       ruleId: vp.ruleId,
     },
     `Luật interlock đang bật #${vp.ruleId} (${vp.ruleName}) ghi một giá trị không ghi được lên tag ${tagKey} (${vp.chiTiet}).`,
@@ -412,14 +414,14 @@ export function loiQuaNhieuKenhDaKhai(soTag: number): never {
 export function viPhamInterlockSauSua(
   luat: ReadonlyArray<LuatNhamTag>,
   kenhMoi: KenhNhatQuan,
-): { ruleId: number; ruleName: string; ma: MaViPham; chiTiet: string } | null {
+): { ruleId: number; ruleName: string; ma: MaViPham; chiTiet: string; luoi?: LuoiLech } | null {
   for (const r of luat) {
     if (!luatBatCoGhi(r)) continue;
     if (kenhMoi.writable !== true) {
       return { ruleId: r.id, ruleName: r.name, ma: "CHANNEL_READ_ONLY", chiTiet: "Tag không cho phép ghi (writable=false) — dispatch từ chối mọi lệnh ghi." };
     }
     const kq = kiemLenhInterlockTrenKenh(kenhMoi, giaTriLenhInterlock(r)); // R1b-1 T13: kênh chưa khai ⇒ lưới thô (int có scale/offset)
-    if (!kq.ok) return { ruleId: r.id, ruleName: r.name, ma: kq.ma, chiTiet: kq.chiTiet };
+    if (!kq.ok) return { ruleId: r.id, ruleName: r.name, ma: kq.ma, chiTiet: kq.chiTiet, ...(kq.luoi ? { luoi: kq.luoi } : {}) };
   }
   return null;
 }

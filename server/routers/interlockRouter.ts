@@ -45,7 +45,7 @@ const adminProcedure = adminBase.use(moduleGate("MOD_OT_CONTROL"));
 import { interlockRules, interlockEvents, controlAuditLog, deviceAdapters, deviceTags, type InterlockRule } from "../../drizzle/schema";
 import { evaluateCondition, deriveObserved, type ComparisonOperator, type InterlockSourceType } from "../services/interlock/ruleEvaluator";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
-import { kiemLenhInterlockTx, luatCoGhiLenh, soHienThi, type DbHoacTx } from "../services/scada/nhatQuanKenh";
+import { kiemLenhInterlockTx, luatCoGhiLenh, thamSoNgoaiDaiInterlock, type DbHoacTx } from "../services/scada/nhatQuanKenh";
 import { telemetryTagDungPhamVi } from "../services/interlock/d11";
 
 async function getDb() {
@@ -159,9 +159,7 @@ async function assertLenhTrongDaiKenh(
       ma: "INTERLOCK_NGOAI_DAI",
       lyDo: vp.ma,
       tagKey: vp.tag.tagKey,
-      min: soHienThi(vp.tag.writeMin),
-      max: soHienThi(vp.tag.writeMax),
-      step: soHienThi(vp.tag.writeStep),
+      ...thamSoNgoaiDaiInterlock(vp.tag, vp), // R1b-1 T13 polish m1: OFF_STEP ⇒ lưới thật (bước / |scale|, gốc, goiY), không "bước —"
       ...(ruleId != null ? { ruleId } : {}),
     },
     `Giá trị lệnh của luật không ghi được trên kênh ${vp.tag.tagKey} theo khai báo hiện tại (${vp.chiTiet}) — hành động bảo vệ sẽ bị từ chối lúc chạy.`,
@@ -224,7 +222,7 @@ async function assertDichNguonSanSang(tx: DbHoacTx, luat: InterlockRule): Promis
       throw appError(
         "BAD_REQUEST",
         "INTERLOCK_NGOAI_DAI",
-        { ma: "INTERLOCK_NGOAI_DAI", lyDo: "CHANNEL_READ_ONLY", tagKey: luat.commandTag, min: "—", max: "—", step: "—", ruleId: luat.id },
+        { ma: "INTERLOCK_NGOAI_DAI", lyDo: "CHANNEL_READ_ONLY", tagKey: luat.commandTag, min: "—", max: "—", step: "—", goc: "—", goiY: "—", ruleId: luat.id },
         `Tag đích ${luat.commandTag} không cho phép ghi (writable=false) — dispatch sẽ từ chối mọi lệnh của luật #${luat.id}.`,
       );
     }

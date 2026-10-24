@@ -4572,7 +4572,7 @@
     "SCADA_CONFIG_TOTP_INVALID": "The two-factor code is wrong or has already been used — wait for a new code in your authenticator app and save again.",
     "SCADA_CONFIG_TOTP_NOT_ENROLLED": "Changing channel configuration requires two-factor authentication, but this account has not enrolled 2FA. Set it up in Settings > Security.",
     "STOP_PIN_NGOAI_DAI": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) that cannot be written under the channel declaration (range {{min}} … {{max}}, step {{step}}, or a read-only channel kind) — the STOP command would be refused. Clear or change the pinned value first, or declare a matching range/step/channel kind.",
-    "INTERLOCK_NGOAI_DAI": "The interlock rule's command value cannot be written on channel {{tagKey}} under the channel declaration (range {{min}} … {{max}}, step {{step}}, or a read-only channel kind) — the protective action would be refused at run time. Fix the rule's command value, or declare a matching channel.",
+    "INTERLOCK_NGOAI_DAI": "The interlock rule's command value cannot be written on channel {{tagKey}} under the channel declaration (range {{min}} … {{max}}, step {{step}} from {{goc}}, or a read-only channel kind). Nearest valid value: {{goiY}}. The protective action would be refused at run time — fix the rule's command value, or declare a matching channel.",
     "TU_DONG_TAT": "Autonomous agent mode is OFF on the server (AI_CODING_TU_TRI_GHI switch). Use step-by-step approval mode, or ask an admin to enable it.",
     "THIEU_QUYEN_THUC_THI": "Missing run/auto-write permission (ai_repo_exec) for autonomous agent mode.",
     "THIEU_QUYEN": "Missing repository read permission (ai_repo_read) to run the agent.",

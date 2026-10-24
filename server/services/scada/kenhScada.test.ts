@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { canonicalOtValue } from "../ot/otActionBinding";
+import { inverseScale } from "../ot/drivers/otScale";
 import { canKiemLuoiThoChuaKhai, kiemGiaTriGhi, kiemLuoiThoChuaKhai, laKenhGhi, loaiKenh, mucTacDongKenh, type KetQuaGiaTri } from "./kenhScada";
 
 type KenhThu = {
@@ -448,5 +449,23 @@ describe("R1b-1 T13 — tag int CHƯA khai có scale/offset: lưới thô kiểm
     const k = { dataType: "int" as const, scale: "2", offset: "1" };
     expect(loi(kiemLuoiThoChuaKhai(k, 4))).toMatchObject({ goiY: 5, buoc: 2 });
     expect(tot(kiemLuoiThoChuaKhai(k, 5))).toBe(5);
+  });
+});
+
+describe("R1b-1 T13 polish m3 — tag int CHƯA khai: scale ÂM và offset ÂM (đúng lưới ⇒ ok + raw đúng; lệch ⇒ OFF_STEP + goiY đúng)", () => {
+  it("scale −10: 30 ⇒ ok, raw −3; 25 ⇒ OFF_STEP goiY 20 (driver: round(−2.5) = −2 ⇒ 20 — đúng giá trị driver từng ghi im lặng), buoc 10, gocLuoi 0", () => {
+    const k = { dataType: "int" as const, scale: "-10.000000", offset: "0.000000" };
+    expect(tot(kiemLuoiThoChuaKhai(k, 30))).toBe(30);
+    expect(inverseScale(30, "int", -10, 0)).toBe(-3);
+    expect(loi(kiemLuoiThoChuaKhai(k, 25))).toMatchObject({ ma: "OFF_STEP", goiY: 20, buoc: 10, gocLuoi: 0 });
+    expect(inverseScale(25, "int", -10, 0)).toBe(-2); // = raw của goiY 20
+    expect(loi(kiemLuoiThoChuaKhai(k, -35)).goiY).toBe(-40); // round(3.5) = 4 ⇒ −40
+  });
+  it("offset −5, scale 10: 25 ⇒ ok, raw 3; 20 ⇒ OFF_STEP goiY 25 (round(2.5) = 3 ⇒ 25), buoc 10, gocLuoi −5", () => {
+    const k = { dataType: "int" as const, scale: "10.000000", offset: "-5.000000" };
+    expect(tot(kiemLuoiThoChuaKhai(k, 25))).toBe(25);
+    expect(inverseScale(25, "int", 10, -5)).toBe(3);
+    expect(loi(kiemLuoiThoChuaKhai(k, 20))).toMatchObject({ ma: "OFF_STEP", goiY: 25, buoc: 10, gocLuoi: -5 });
+    expect(inverseScale(20, "int", 10, -5)).toBe(3); // = raw của goiY 25
   });
 });

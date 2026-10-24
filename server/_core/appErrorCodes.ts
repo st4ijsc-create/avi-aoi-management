@@ -201,9 +201,11 @@ export const APP_ERROR_CODES = [
   // (CHANNEL_READ_ONLY | TYPE_MISMATCH | OUT_OF_RANGE | OFF_STEP); min/max/step "—" khi không khai cận đó.
   "STOP_PIN_NGOAI_DAI",            // params: { ma, lyDo, tagKey, stopValue, min, max, step } — giá trị DỪNG ghim không ghi được trên kênh theo
                                    // khai báo (khai dải/bước/loại kênh khi đã ghim, hoặc ghim ngoài dải đang khai). Gỡ / đổi ghim hoặc khai lại.
-  "INTERLOCK_NGOAI_DAI",           // params: { ma, lyDo, tagKey, min, max, step, ruleId? } — commandValue của luật interlock (đang bật, khi
+  "INTERLOCK_NGOAI_DAI",           // params: { ma, lyDo, tagKey, min, max, step, goc, goiY, ruleId? } — commandValue của luật interlock (đang bật, khi
                                    // khai kênh; hoặc luật đang tạo/sửa/duyệt/bật) không ghi được trên kênh đích ⇒ hành động bảo vệ sẽ bị từ chối.
                                    // R1b-1 T9: cả khi deviceAdapter.tags.update / mappingAsCode.applyImport đổi dataType/writable/scale/offset của tag đích.
+                                   // R1b-1 T13 polish m1: lyDo OFF_STEP ⇒ step = bước vừa trượt (write_step hoặc |scale|), goc = gốc lưới (write_min ?? 0 hoặc
+                                   // offset), goiY = giá trị hợp lệ gần nhất; còn lại goc / goiY = "—" (thamSoNgoaiDaiInterlock).
   // ── SCADA R1b-1 Task 9 — trỏ lại tag (server/services/scada/troLaiKenh.ts) ──
   "INTERLOCK_MAT_DICH",            // params: { ma, tagKey, ruleId } — đổi tên / chuyển adapter / tắt / xoá tag mà một luật interlock ĐANG BẬT ghi
                                    // lệnh lên ⇒ hành động bảo vệ mất đích. Sửa đích của luật (hoặc tắt luật) trước.
