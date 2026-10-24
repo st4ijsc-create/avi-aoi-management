@@ -860,6 +860,8 @@ export async function proposeTopFix(rcaId: number, user: CopilotUser, lang: Tool
 
     const res = await proposeAction(tool, parsed.data as Record<string, unknown>, { user, lang });
     if (!res.ok || !res.pendingAction) {
+      // Ngoài phạm vi nhà máy ≡ phân tích không tồn tại (cùng kết quả — không lộ id RCA của nhà máy khác); W11c, 2026-10-25.
+      if (res.reason === "OUT_OF_SCOPE") return { ok: false, reason: "NOT_FOUND" };
       return { ok: false, reason: res.reason ?? "PROPOSE_FAILED", message: res.message };
     }
     return { ok: true, actionId: res.pendingAction.actionId };

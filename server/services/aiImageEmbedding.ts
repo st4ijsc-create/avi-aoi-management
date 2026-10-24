@@ -12,7 +12,7 @@ import path from "path";
 import fs from "fs";
 import { getDb } from "../db/connection";
 import { aiImageEmbeddings } from "../../drizzle/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { getAiModelById, getActiveModelForProduct, getAiModels } from "../db/ai";
 import type { AiModel } from "../../drizzle/schema";
 import { describeDefect } from "./aiVisionLanguage";
@@ -355,6 +355,8 @@ async function searchByMetadataFallback(
     defectType?: string;
     minSimilarity?: number;
     excludeId?: number;
+    /** Phạm vi nhà máy của người gọi (W12): chỉ ảnh của các máy này; mảng rỗng ⇒ không ảnh nào; null / vắng ⇒ không lọc (toàn quyền). */
+    machineIds?: number[] | null;
   },
 ): Promise<{ results: SimilarImage[]; embedding: EmbeddingResult }> {
   const db = await getDb();
@@ -389,6 +391,7 @@ async function searchByMetadataFallback(
   const conditions: ReturnType<typeof eq>[] = [] as any;
   if (filters?.excludeId != null) conditions.push(sql`id != ${Number(filters.excludeId)}` as any);
   if (filters?.machineId != null) conditions.push(eq(aiImageEmbeddings.machineId, Number(filters.machineId)) as any);
+  if (filters?.machineIds != null) conditions.push((filters.machineIds.length > 0 ? inArray(aiImageEmbeddings.machineId, filters.machineIds) : sql`false`) as any);
   if (filters?.productModelId != null) conditions.push(eq(aiImageEmbeddings.productModelId, Number(filters.productModelId)) as any);
   if (filters?.label) conditions.push(eq(aiImageEmbeddings.label, filters.label) as any);
   if (filters?.defectType) conditions.push(eq(aiImageEmbeddings.defectType, filters.defectType) as any);
@@ -816,6 +819,8 @@ export async function storeEmbedding(params: {
 
 export interface VectorSearchFilters {
   machineId?: number;
+  /** Phạm vi nhà máy của người gọi (W12): chỉ ảnh của các máy này (ảnh không gắn máy bị loại); mảng rỗng ⇒ không ảnh nào; null / vắng ⇒ không lọc (toàn quyền). */
+  machineIds?: number[] | null;
   productModelId?: number;
   label?: string;
   defectType?: string;
@@ -838,6 +843,9 @@ function buildVectorWhere(filters?: VectorSearchFilters, opts?: { requireVecCol?
   const whereParts: ReturnType<typeof sql>[] = [];
   if (filters?.excludeId != null) whereParts.push(sql`id != ${Number(filters.excludeId)}`);
   if (filters?.machineId != null) whereParts.push(sql`"machineId" = ${Number(filters.machineId)}`);
+  if (filters?.machineIds != null) {
+    whereParts.push(filters.machineIds.length > 0 ? sql`"machineId" IN (${sql.join(filters.machineIds.map((m) => sql`${Number(m)}`), sql`, `)})` : sql`false`);
+  }
   if (filters?.productModelId != null) whereParts.push(sql`"productModelId" = ${Number(filters.productModelId)}`);
   if (filters?.label) whereParts.push(sql`"label" = ${filters.label}`);
   if (filters?.defectType) whereParts.push(sql`"defectType" = ${filters.defectType}`);
@@ -876,6 +884,7 @@ async function bruteForceCosine(
   const conditions = [];
   if (filters?.excludeId != null) conditions.push(sql`id != ${Number(filters.excludeId)}` as any);
   if (filters?.machineId != null) conditions.push(eq(aiImageEmbeddings.machineId, Number(filters.machineId)));
+  if (filters?.machineIds != null) conditions.push(filters.machineIds.length > 0 ? inArray(aiImageEmbeddings.machineId, filters.machineIds) : sql`false`);
   if (filters?.productModelId != null) conditions.push(eq(aiImageEmbeddings.productModelId, Number(filters.productModelId)));
   if (filters?.label) conditions.push(eq(aiImageEmbeddings.label, filters.label));
   if (filters?.defectType) conditions.push(eq(aiImageEmbeddings.defectType, filters.defectType));

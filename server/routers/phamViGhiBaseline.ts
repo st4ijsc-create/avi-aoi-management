@@ -48,9 +48,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/aiAdvancedRouter.ts#abTestRouter.submitFeedback",
   // ── server/routers/aiAdvancedVisionRouter.ts (1) ──
   "server/routers/aiAdvancedVisionRouter.ts#aiAdvancedVisionRouter.explainHeatmap",
-  // ── server/routers/aiImageSearchRouter.ts (2) ──
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByUpload",
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByVector",
   // ── server/routers/aiModelRouter.ts (3) ──
   "server/routers/aiModelRouter.ts#aiModelRouter.approveCard",
   "server/routers/aiModelRouter.ts#aiModelRouter.createCard",
@@ -310,7 +307,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
  */
 export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
   // ── Phạm vi QUA CỔNG TOOL kiemPhamViGhiTool (aiLocalTools/phamViGhi.ts) — mỗi mục có test DB cấp THỦ TỤC, gỡ cổng ⇒ đỏ (dieu-phoi 2026-10-25) ──
-  "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix": "phạm vi qua cổng tool kiemPhamViGhiTool (create_maintenance_workorder … khoá machineId thật) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiRcaCopilot.applyTopFix' (A→được, B→OUT_OF_SCOPE, đột biến 3/3 đỏ) — 2026-10-25. Giới hạn: id phân tích của nhà máy khác trả OUT_OF_SCOPE còn id không có thật trả NOT_FOUND",
+  "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix": "phạm vi qua cổng tool kiemPhamViGhiTool (create_maintenance_workorder … khoá machineId thật) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiRcaCopilot.applyTopFix' (A→được, B→OUT_OF_SCOPE, đột biến 3/3 đỏ) — 2026-10-25. Id phân tích nhà máy khác ≡ id không có thật (cùng NOT_FOUND, có test)",
   "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.applyNgThreshold": "phạm vi qua cổng tool kiemPhamViGhiTool (adjust_ng_threshold, khoá thresholdId → trạm / máy / điểm đo / sản phẩm) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiThresholdAdvisor.applyNgThreshold' (A→được, B→OUT_OF_SCOPE, đột biến đỏ) — 2026-10-25",
   "server/routers/aiVisionRouter.ts#aiVisionRouter.proposeDefect": "phạm vi qua cổng tool kiemPhamViGhiTool (propose_defect_from_vision, khoá inspectionId / measurementResultId → máy của lần kiểm tra) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiVision.proposeDefect' (A→được, B và measurementResult B→OUT_OF_SCOPE, đột biến đỏ) — 2026-10-25",
   "server/routers/aiAgentRouter.ts#aiAgentRouter.approvePlan":

@@ -14,6 +14,7 @@ const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import path from "path";
 import fs from "fs";
 import { resolveSafeImagePath } from "../utils/safeImagePath";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import {
   extractEmbedding,
   storeEmbedding,
@@ -133,9 +134,10 @@ export const aiImageSearchRouter = router({
       defectType: z.string().optional(),
       minSimilarity: z.number().min(0).max(1).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const imageBuffer = await loadImage(input.imageKey);
       const { results, embedding, searchMode, embeddingSource } = await searchByImage(input.modelId, imageBuffer, input.limit, {
+        machineIds: await idsMayTrongPhamVi(ctx), // phạm vi nhà máy (W12): chỉ trả ảnh của máy trong phạm vi
         machineId: input.machineId,
         productModelId: input.productModelId,
         label: input.label,
@@ -164,7 +166,7 @@ export const aiImageSearchRouter = router({
       defectType: z.string().optional(),
       minSimilarity: z.number().min(0).max(1).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       // Chỉ chấp nhận không gian D=1024 (mxbai-embed-large) — tránh trộn vector khác chiều.
       if (input.dim !== DEFAULT_EMBEDDING_DIM || input.embedding.length !== DEFAULT_EMBEDDING_DIM) {
         throw appError(
@@ -180,6 +182,7 @@ export const aiImageSearchRouter = router({
         input.dim,
         input.limit,
         {
+          machineIds: await idsMayTrongPhamVi(ctx), // phạm vi nhà máy (W12)
           machineId: input.machineId,
           productModelId: input.productModelId,
           label: input.label,
