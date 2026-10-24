@@ -19,6 +19,7 @@
  * ctx.user is the source of truth.
  * ════════════════════════════════════════════════════════════════════════════
  */
+import { viTriHopLe } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -123,11 +124,16 @@ export const fieldRouter = router({
         endpoint: z.string().min(1).max(255),
         rootNodeId: z.string().max(255).optional(),
         timeoutMs: z.number().int().min(500).max(30000).optional(),
+        /** Nhà máy sở hữu mạng được dò (W14b): người bị thu hẹp phạm vi PHẢI nêu và phải trong phạm vi; toàn quyền không cần. */
+        factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireFlag();
-      return discoverDevices(input);
+      // phạm vi nhà máy (W14b): kiểm TRƯỚC khi mở bất kỳ kết nối nào; không đổi hành vi dò
+      await viTriHopLe(ctx, { factoryId: input.factoryId ?? null }, "factory");
+      const { factoryId: _bo, ...thamSoDo } = input;
+      return discoverDevices(thamSoDo);
     }),
 
   /** Register a discovered candidate into the registry WITHOUT a restart (disabled). */
@@ -146,8 +152,9 @@ export const fieldRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireFlag();
+      await viTriHopLe(ctx, { factoryId: input.factoryId ?? null }, "factory"); // phạm vi nhà máy (W14b)
       return registerDiscoveredDevice(input);
     }),
 });

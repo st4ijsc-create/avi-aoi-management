@@ -9,6 +9,7 @@
  * Mutation trả result-union {ok:false, code} NGUYÊN TRẠNG cho lý do nghiệp vụ
  * (dải sai/thiếu target) — không ném TRPCError.
  */
+import { hangRaoGhi, hangRaoTheoIdGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { protectedProcedure, actuationProcedure, router } from "../_core/trpc";
 import {
@@ -47,8 +48,9 @@ export const parameterGuardrailRouter = router({
         })
         .strict(),
     )
-    .mutation(async ({ input, ctx }) =>
-      setGuardrail({
+    .mutation(async ({ input, ctx }) => {
+      await hangRaoGhi(ctx, { scope: input.scope, machineId: input.machineId }); // phạm vi nhà máy (W14b) — không đổi logic guardrail
+      return setGuardrail({
         scope: input.scope,
         machineId: input.machineId ?? null,
         machineType: input.machineType ?? null,
@@ -60,12 +62,15 @@ export const parameterGuardrailRouter = router({
         requiresTwinValidation: input.requiresTwinValidation ?? false,
         notes: input.notes ?? null,
         setBy: ctx.user.id,
-      }),
-    ),
+      });
+    }),
 
   delete: actuationProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => ({ ok: await deleteGuardrail(input.id) })),
+    .mutation(async ({ input, ctx }) => {
+      await hangRaoTheoIdGhi(ctx, input.id); // phạm vi nhà máy (W14b)
+      return { ok: await deleteGuardrail(input.id) };
+    }),
 
   // ── Change log (read-only) ────────────────────────────────────────────────────
   changeLog: protectedProcedure

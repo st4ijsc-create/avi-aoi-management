@@ -20,6 +20,7 @@
  * (so an admin can inspect state before enabling the flag).
  * ════════════════════════════════════════════════════════════════════════════
  */
+import { oauthClientMoiGhi, oauthClientGhi, deadLetterDuocThuLai } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import { desc, eq } from "drizzle-orm";
@@ -117,6 +118,7 @@ export const erpAdminRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       ensureOauthEnabled();
+      await oauthClientMoiGhi(ctx, input.corporateCode); // phạm vi tập đoàn không rộng hơn người cấp (W14b)
       const d = await db();
       const { clientId, clientSecret } = generateClientCredentials();
       const [row] = await d
@@ -140,8 +142,9 @@ export const erpAdminRouter = router({
   rotateOauthClientSecret: protectedProcedure
     .use(requirePermission("admin_system", "canEdit"))
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       ensureOauthEnabled();
+      await oauthClientGhi(ctx, input.id); // W14b
       const d = await db();
       const [existing] = await d.select().from(erpOauthClients).where(eq(erpOauthClients.id, input.id)).limit(1);
       if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "oauthClient" }, `OAuth client ${input.id} not found`);
@@ -158,7 +161,8 @@ export const erpAdminRouter = router({
   setOauthClientEnabled: protectedProcedure
     .use(requirePermission("admin_system", "canEdit"))
     .input(z.object({ id: z.number().int().positive(), enabled: z.boolean() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await oauthClientGhi(ctx, input.id); // W14b
       const d = await db();
       const [row] = await d
         .update(erpOauthClients)
@@ -180,7 +184,8 @@ export const erpAdminRouter = router({
         scopes: scopeSchema.optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await oauthClientGhi(ctx, input.id); // W14b
       const d = await db();
       const [existing] = await d.select().from(erpOauthClients).where(eq(erpOauthClients.id, input.id)).limit(1);
       if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "oauthClient" }, `OAuth client ${input.id} not found`);
@@ -215,7 +220,11 @@ export const erpAdminRouter = router({
   retryOutboxDeadLetters: protectedProcedure
     .use(requirePermission("admin_system", "canEdit"))
     .input(z.object({ ids: z.array(z.number().int().positive()).optional() }).optional())
-    .mutation(async ({ input }) => {
-      return retryDeadLetters(input?.ids);
+    .mutation(async ({ input, ctx }) => {
+      // W14b: người hẹp chỉ thử lại dòng của tập đoàn trong phạm vi (mảng rỗng của retryDeadLetters nghĩa là "tất cả" ⇒ không gọi khi không còn dòng nào)
+      const duoc = await deadLetterDuocThuLai(ctx, input?.ids);
+      if (duoc === null) return retryDeadLetters(input?.ids);
+      if (duoc.length === 0) return { requeued: 0 };
+      return retryDeadLetters(duoc);
     }),
 });

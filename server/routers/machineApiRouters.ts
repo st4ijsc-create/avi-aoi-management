@@ -1,3 +1,4 @@
+import { khoaMayGhi, tramCungNhaMayVoiMay } from "./_cauHinhPhamVi";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -3282,6 +3283,10 @@ export async function processProcessResultSubmission(
   // corporateCode), nhưng nó là ĐÚNG lớp lỗi ấy: một chuỗi trong JSON quyết định
   // dây chuyền nào "sở hữu" chu kỳ này. Suy từ máy, đối chiếu lời khai, lệch ⇒ từ chối.
   const macTenantProcess = await macTenantChoGhi(machine, { lineCode: input.lineCode });
+  // W14b — `stationId` cũng là lời TỰ KHAI của máy: trạm phải cùng nhà máy với máy gửi (khoá máy A không ghi chu kỳ vào trạm nhà máy B).
+  if (input.stationId != null && !(await tramCungNhaMayVoiMay(machine.id, input.stationId))) {
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "stationId" }, "stationId không thuộc nhà máy của máy gửi.");
+  }
 
   // Waveform TOTAL byte cap — permanent (BAD_REQUEST), never buffered.
   if (input.waveforms && input.waveforms.length > 0) {
@@ -4593,12 +4598,18 @@ export const machineApiRouter = router({
   rotateKey: protectedProcedure
     .use(requirePermission("admin_system", "canEdit"))
     .input(z.object({ keyId: z.number().int().positive() }))
-    .mutation(async ({ input, ctx }) => rotateMachineKey(input.keyId, ctx.user?.id ?? null)),
+    .mutation(async ({ input, ctx }) => {
+      await khoaMayGhi(ctx, input.keyId); // phạm vi nhà máy (W14b): máy của khoá phải trong phạm vi người gọi
+      return rotateMachineKey(input.keyId, ctx.user?.id ?? null);
+    }),
 
   revokeKey: protectedProcedure
     .use(requirePermission("admin_system", "canEdit"))
     .input(z.object({ keyId: z.number().int().positive() }))
-    .mutation(async ({ input }) => revokeMachineKey(input.keyId)),
+    .mutation(async ({ input, ctx }) => {
+      await khoaMayGhi(ctx, input.keyId); // phạm vi nhà máy (W14b)
+      return revokeMachineKey(input.keyId);
+    }),
 
   // Upload image for measurement
   uploadImage: publicProcedure
