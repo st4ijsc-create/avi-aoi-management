@@ -90,6 +90,8 @@ export function loiTuChoiLenh(t: TuChoiYeuCau) {
       return appError("PRECONDITION_FAILED", "SCADA_TOTP_REQUIRED", { ma: t.ma, level: t.level }, t.chiTiet);
     case "TOTP_SAI":
       return appError("PRECONDITION_FAILED", "SCADA_TOTP_INVALID", { ma: t.ma, level: t.level }, t.chiTiet);
+    case "MAY_DA_DOI":
+      return appError("PRECONDITION_FAILED", "SCADA_MACHINE_REBOUND", { ma: t.ma }, t.chiTiet);
   }
 }
 

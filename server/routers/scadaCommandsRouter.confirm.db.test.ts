@@ -24,7 +24,27 @@ const H = vi.hoisted(() => ({
   dispatchNem: false,
   /** chạy MỘT lần bên trong lệnh ghi thiết bị kế tiếp (giữa "kiểm khoá" và "hết dispatch") */
   trongKhiGhi: null as null | (() => Promise<void>),
+  /** fix round 1 — chạy MỘT lần ngay sau `giaHanKhoaChon` thật (giữa bước 5 và CAS bước 6) */
+  sauGiaHan: null as null | (() => Promise<void>),
+  /** fix round 1 — thay dispatch: mô phỏng "đặt chỗ đã CAS confirmed→executed rồi bị từ chối không gửi" (QUEUE_EXPIRED) */
+  tuChoiSauDatCho: false,
 }));
+
+vi.mock("../services/scada/khoaChon", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../services/scada/khoaChon")>();
+  return {
+    ...real,
+    giaHanKhoaChon: async (...a: Parameters<typeof real.giaHanKhoaChon>) => {
+      const kq = await real.giaHanKhoaChon(...a);
+      const moc = H.sauGiaHan;
+      if (moc) {
+        H.sauGiaHan = null;
+        await moc();
+      }
+      return kq;
+    },
+  };
+});
 
 vi.mock("../_core/socket", async (importOriginal) => {
   const real = await importOriginal<typeof import("../_core/socket")>();
@@ -75,6 +95,14 @@ vi.mock("../services/ot/commandDispatcher", async (importOriginal) => {
     dispatch: async (...a: Parameters<typeof real.dispatch>) => {
       H.dispatchCalls += 1;
       if (H.dispatchNem) throw new Error("r1a9: dispatch nem (mo phong loi ha tang)");
+      if (H.tuChoiSauDatCho) {
+        const { getDb: g } = await import("../db/connection");
+        const { sql: q } = await import("drizzle-orm");
+        const d = await g();
+        const id = (a[0].triggeredBy as { actionId?: string }).actionId;
+        await d!.execute(q`UPDATE ai_pending_actions SET status = 'executed', "executedAt" = now() WHERE id = ${id} AND status = 'confirmed'`);
+        return { ok: false, simulated: false, status: "rejected" as const, reason: "QUEUE_EXPIRED", results: [], commandLogIds: [] };
+      }
       return real.dispatch(...a);
     },
   };
@@ -109,6 +137,7 @@ let lenhHmi: typeof import("../services/scada/lenhHmi");
 let stub!: StubDem;
 
 let A!: { fid: number; mid: number; code: string };
+let B!: { fid: number; mid: number; code: string };
 const ad = { a: 0 };
 const ma = { a: `${RUN}-a` };
 let edgeNodeId = 0;
@@ -246,7 +275,8 @@ beforeAll(async () => {
   edgeNodeId = Number(n.id);
 
   await seedTag(ad.a, "che_do", { kind: "input", writable: false, level: null, dataType: "int" });
-  for (const key of ["vui", "lech", "het", "song", "local", "tat", "edge", "len", "il", "otoff", "huy", "chiem", "nem", "treo", "tt"]) {
+  for (const key of ["vui", "lech", "het", "song", "local", "tat", "edge", "len", "il", "otoff", "huy", "chiem", "nem", "treo", "tt",
+    "maydoi", "khoamat", "hep", "san", "casmiss", "cashet", "qexp"]) {
     await seedTag(ad.a, key, { level: 3 });
   }
   await seedTag(ad.a, "m5", { level: 5 });
@@ -263,6 +293,8 @@ beforeAll(async () => {
   await seedNguoi("opA", "operator", A.code);
   await seedNguoi("opA2", "operator", A.code);
   await seedNguoi("engA", "engineer", A.code);
+  B = await seedNhaMay("b");
+  await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${nguoi.opA.id}, ${B.code})`);
 }, 60_000);
 
 afterAll(async () => {
@@ -598,6 +630,97 @@ describe("huy + trangThai", () => {
     } finally {
       vi.stubEnv("SCADA_COMMANDS_ENABLED", "true");
     }
+  });
+});
+
+describe("fix round 1 — máy đổi, mất khoá, dải hẹp, sàn vai, CAS trượt, từ chối sau đặt chỗ", () => {
+  it("SECURITY — adapter gán sang máy khác (vẫn trong phạm vi) giữa request và confirm ⇒ MAY_DA_DOI, denied, khoá nhả, dispatch 0 lần", async () => {
+    const requestId = await yeuCau("opA", "maydoi");
+    await dung(sql`UPDATE device_adapters SET "machineId" = ${B.mid} WHERE id = ${ad.a}`);
+    try {
+      await tuChoiXacNhan("opA", requestId, { code: "PRECONDITION_FAILED", appCode: "SCADA_MACHINE_REBOUND", reason: "MAY_DA_DOI" });
+    } finally {
+      await dung(sql`UPDATE device_adapters SET "machineId" = ${A.mid} WHERE id = ${ad.a}`);
+    }
+    expect(await trangThaiCho(requestId)).toBe("denied");
+    expect(await khoa("maydoi")).toBeUndefined();
+  });
+
+  it("Review Focus 2 — KHOA_MAT: opA yêu cầu R1 rồi R2 cùng kênh, confirm R1 ⇒ KHOA_MAT, R1 denied, khoá của R2 NGUYÊN VẸN, dispatch 0", async () => {
+    const r1 = await yeuCau("opA", "khoamat", 100);
+    const r2 = await yeuCau("opA", "khoamat", 120);
+    const truoc = await khoa("khoamat");
+    expect(truoc?.request_id).toBe(r2);
+    await tuChoiXacNhan("opA", r1, { code: "CONFLICT", appCode: "SCADA_SELECTION_LOST", reason: "KHOA_MAT" });
+    expect(await trangThaiCho(r1)).toBe("denied");
+    expect(await khoa("khoamat")).toEqual(truoc);
+    expect(await trangThaiCho(r2)).toBe("proposed");
+  });
+
+  it("dải bị hẹp lại (writeMax < giá trị yêu cầu) giữa request và confirm ⇒ OUT_OF_RANGE, denied, khoá nhả, dispatch 0", async () => {
+    const requestId = await yeuCau("opA", "hep", 200);
+    await dung(sql`UPDATE device_tags SET write_max = 150 WHERE "adapterId" = ${ad.a} AND "tagKey" = 'hep'`);
+    const loi = await tuChoiXacNhan("opA", requestId, { code: "BAD_REQUEST", appCode: "SCADA_VALUE_OUT_OF_RANGE", reason: "OUT_OF_RANGE" });
+    expect(loi.appParams).toMatchObject({ max: 150 });
+    expect(await trangThaiCho(requestId)).toBe("denied");
+    expect(await khoa("hep")).toBeUndefined();
+  });
+
+  it("minor 6 — mức nâng 3 → 4 làm operator dưới sàn ⇒ ROLE_FLOOR KẾT THÚC yêu cầu (denied, khoá nhả) — không giữ như TOTP", async () => {
+    const requestId = await yeuCau("opA", "san");
+    await dung(sql`UPDATE device_tags SET actuation_level = 4 WHERE "adapterId" = ${ad.a} AND "tagKey" = 'san'`);
+    const loi = await tuChoiXacNhan("opA", requestId, { code: "FORBIDDEN", appCode: "SCADA_ROLE_FLOOR", reason: "ROLE_FLOOR" });
+    expect(loi.appParams).toMatchObject({ level: 4 });
+    expect(await trangThaiCho(requestId)).toBe("denied");
+    expect(await khoa("san")).toBeUndefined();
+  });
+
+  it("minor 1 — dòng chờ bị dời sang 'expired' (expireStaleActions) giữa gia hạn khoá và CAS ⇒ HET_HAN, khoá vừa gia hạn ĐƯỢC NHẢ, dispatch 0", async () => {
+    const requestId = await yeuCau("opA", "casmiss");
+    H.sauGiaHan = async () => {
+      await dung(sql`UPDATE ai_pending_actions SET status = 'expired' WHERE id = ${requestId}`);
+    };
+    try {
+      await tuChoiXacNhan("opA", requestId, { code: "PRECONDITION_FAILED", appCode: "SCADA_REQUEST_EXPIRED", reason: "HET_HAN" });
+    } finally {
+      H.sauGiaHan = null;
+    }
+    expect(await khoa("casmiss")).toBeUndefined();
+  });
+
+  it("minor 2 — hết hạn ĐÚNG lúc CAS (expiresAt lùi về quá khứ sau bước 2) ⇒ CAS có điều kiện hạn trượt ⇒ HET_HAN sạch (expired), dispatch 0", async () => {
+    const requestId = await yeuCau("opA", "cashet");
+    H.sauGiaHan = async () => {
+      await db.update(aiPendingActions).set({ expiresAt: new Date(Date.now() - 5_000) }).where(eq(aiPendingActions.id, requestId));
+    };
+    try {
+      await tuChoiXacNhan("opA", requestId, {
+        code: "PRECONDITION_FAILED",
+        appCode: "SCADA_REQUEST_EXPIRED",
+        reason: "HET_HAN",
+        outcome: "expired",
+      });
+    } finally {
+      H.sauGiaHan = null;
+    }
+    expect(await trangThaiCho(requestId)).toBe("expired");
+    expect(await khoa("cashet")).toBeUndefined();
+  });
+
+  it("minor 4 — dispatcher trả rejected SAU đặt chỗ (QUEUE_EXPIRED: hàng đã 'executed', không gửi) ⇒ dòng chờ bi_tu_choi_ghi, không 'executed'", async () => {
+    const requestId = await yeuCau("opA", "qexp");
+    H.tuChoiSauDatCho = true;
+    try {
+      const kq = await nguoi.opA.caller.confirm({ requestId });
+      expect(kq).toMatchObject({ status: "rejected", ok: false, reason: "QUEUE_EXPIRED" });
+    } finally {
+      H.tuChoiSauDatCho = false;
+    }
+    expect(await trangThaiCho(requestId)).toBe("bi_tu_choi_ghi");
+    expect(await khoa("qexp")).toBeUndefined();
+    const tt = await nguoi.opA.caller.trangThai({ requestId });
+    expect(tt.request.status).toBe("bi_tu_choi_ghi");
+    expect((await thuCua(requestId)).at(-1)).toMatchObject({ stage: "dispatch", outcome: "dispatched", reason_code: "QUEUE_EXPIRED" });
   });
 });
 

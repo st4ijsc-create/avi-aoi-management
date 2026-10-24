@@ -187,6 +187,7 @@ export const APP_ERROR_CODES = [
   "SCADA_SELECTION_LOST",          // params: { ma } — khoá chọn kênh đã mất (KHOA_MAT: hết hạn / yêu cầu mới hơn / người khác).
   "SCADA_TOTP_REQUIRED",           // params: { ma, level } — kênh mức 4–5 cần mã TOTP (TOTP_CAN); yêu cầu GIỮ, nhập mã rồi xác nhận lại.
   "SCADA_TOTP_INVALID",            // params: { ma, level } — mã TOTP sai / sai định dạng / đã dùng (TOTP_SAI); yêu cầu GIỮ.
+  "SCADA_MACHINE_REBOUND",         // params: { ma } — adapter đã gán sang máy khác sau request (MAY_DA_DOI); tạo yêu cầu mới.
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];

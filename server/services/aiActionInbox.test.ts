@@ -99,10 +99,11 @@ vi.mock("drizzle-orm", () => ({
   gt: () => () => true,
   desc: () => () => true,
   inArray: () => () => true,
+  notLike: () => () => true, // SCADA R1a T9 fix round 1 — bộ lọc `tool NOT LIKE 'hmi.%'` (thử trên DB thật ở aiCopilotActions.hmi.r1a9.db.test.ts)
 }));
 
 vi.mock("../../drizzle/schema", () => ({
-  aiPendingActions: { __table: "proposals", id: {}, userId: {}, status: {}, expiresAt: {}, createdAt: {} },
+  aiPendingActions: { __table: "proposals", id: {}, userId: {}, status: {}, expiresAt: {}, createdAt: {}, tool: {} },
   aiInsights: { __table: "insights", id: {}, status: {}, machineCode: {}, createdAt: {} },
   machines: { __table: "machines", id: {}, code: {}, stationId: {} },
   stations: { __table: "stations", id: {}, lineId: {} },

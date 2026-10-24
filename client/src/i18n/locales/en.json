@@ -4530,6 +4530,7 @@
     "SCADA_SELECTION_LOST": "You no longer hold this channel (the selection lock expired or moved to another request) — create a new request.",
     "SCADA_TOTP_REQUIRED": "Impact level {{level}} channels need a two-factor (TOTP) code — enter the code and confirm again.",
     "SCADA_TOTP_INVALID": "The two-factor code is wrong or has already been used — enter a new code and confirm again (level {{level}} channel).",
+    "SCADA_MACHINE_REBOUND": "The device was assigned to a different machine after this request was created — create a new request.",
     "TU_DONG_TAT": "Autonomous agent mode is OFF on the server (AI_CODING_TU_TRI_GHI switch). Use step-by-step approval mode, or ask an admin to enable it.",
     "THIEU_QUYEN_THUC_THI": "Missing run/auto-write permission (ai_repo_exec) for autonomous agent mode.",
     "THIEU_QUYEN": "Missing repository read permission (ai_repo_read) to run the agent.",

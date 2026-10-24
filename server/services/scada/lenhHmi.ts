@@ -45,7 +45,7 @@
  * ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
  */
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags, machines, scadaCommandAttempts, users, type DeviceTag } from "../../../drizzle/schema";
 import { getDb } from "../../db/connection";
 import { idsTrongPhamVi, type PhamViNguoiXem } from "../../db/hierarchy";
@@ -111,11 +111,12 @@ export type MaTuChoiYeuCau =
   | "HET_HAN"
   | "KHOA_MAT"
   | "TOTP_CAN"
-  | "TOTP_SAI";
+  | "TOTP_SAI"
+  | "MAY_DA_DOI";
 
 /** Một lần từ chối. `thongTin` là tham số cho appError (chỉ nguyên thuỷ) — router chọn câu i18n theo `ma`. */
 export type TuChoiYeuCau =
-  | { ma: "FEATURE_DISABLED" | "PERMISSION_DENIED" | "KHOA_CHON_LOI" | "DA_XU_LY" | "HET_HAN" | "KHOA_MAT"; chiTiet: string }
+  | { ma: "FEATURE_DISABLED" | "PERMISSION_DENIED" | "KHOA_CHON_LOI" | "DA_XU_LY" | "HET_HAN" | "KHOA_MAT" | "MAY_DA_DOI"; chiTiet: string }
   | { ma: "NOT_FOUND"; chiTiet: string; entity: "adapter" | "deviceTag" | "scadaRequest" }
   | { ma: "CHANNEL_READ_ONLY"; chiTiet: string; tagKey: string }
   | { ma: "TYPE_MISMATCH"; chiTiet: string; tagKey: string; dataType: string }
@@ -611,6 +612,7 @@ export async function yeuCauGhiTag(
 //   1. dòng chờ của CHÍNH người gọi, tool hmi.write_tag ⇒ NOT_FOUND (entity scadaRequest; của người khác = không tồn tại)
 //   2. status 'expired' ⇒ HET_HAN · status khác 'proposed' ⇒ DA_XU_LY · expiresAt <= now ⇒ CAS proposed→expired, nhả khoá, HET_HAN
 //   (2b) phạm vi: adapter của yêu cầu còn trong phạm vi người gọi ⇒ không thì NOT_FOUND (adapter)
+//   (2c) fix round 1 — máy HIỆN TẠI của adapter ≠ argsJson.machineId (gán lại sau request) ⇒ MAY_DA_DOI (kết thúc, dispatch 0 lần)
 //   3. `kiemXacThucTheoMuc(mức của tag HIỆN TẠI)`  ⇒ ROLE_FLOOR | TOTP_CHUA_DANG_KY | TOTP_CAN | TOTP_SAI (GIỮ dòng chờ + khoá — QĐ T9-2)
 //   4. cổng 3–7 của Task 8 trên dữ liệu HIỆN TẠI (kênh + giá trị + vai/quyền + edge + chế độ máy của ADAPTER hiện tại)
 //   5. `giaHanKhoaChon` — kiểm và gia hạn NGUYÊN TỬ (QĐ T9-1)   ⇒ KHOA_MAT
@@ -623,14 +625,19 @@ export async function yeuCauGhiTag(
 //        dispatch chờ hàng đợi tối đa deadlineMs (K9), rồi chờ ack tối đa deadlineMs (effectiveTimeoutMs, có thể bị OT_CONTROL_TIMEOUT_MAX_MS
 //        cắt ngắn hơn), rồi đọc lại + ghi sổ (dư 30 s). Khoá không bao giờ bị rút ngắn (GREATEST). Đường thường nhả ngay sau dispatch; cửa
 //        sổ chỉ có nghĩa khi tiến trình chết giữa chừng (khoá tự hết sau ≤ 150 s).
-//   QĐ T9-2 Từ chối 2FA (TOTP_CAN/TOTP_SAI/TOTP_CHUA_DANG_KY/ROLE_FLOOR của bước 3) GIỮ dòng chờ 'proposed' VÀ GIỮ khoá: người dùng nhập
+//   QĐ T9-2 Từ chối 2FA (TOTP_CAN/TOTP_SAI/TOTP_CHUA_DANG_KY của bước 3) GIỮ dòng chờ 'proposed' VÀ GIỮ khoá: người dùng nhập
 //        mã rồi bấm lại trong TTL; nhả khoá ở đây sẽ làm lần thử lại gặp KHOA_MAT. Khoá vẫn hết hạn cùng yêu cầu (60 s).
-//   QĐ T9-3 Mọi từ chối KHÁC trước dispatch (phạm vi, cổng 3–7, KHOA_MAT) KẾT THÚC yêu cầu: CAS proposed→'denied' rồi mới nhả khoá. CAS
+//        fix round 1 minor 6: ROLE_FLOOR không sửa được bằng thử lại ⇒ đi đường KẾT THÚC (QĐ T9-3).
+//   QĐ T9-3 Mọi từ chối KHÁC trước dispatch (phạm vi, MAY_DA_DOI, ROLE_FLOOR, cổng 3–7, KHOA_MAT) KẾT THÚC yêu cầu: CAS proposed→'denied' rồi mới nhả khoá. CAS
 //        trượt ⇒ một tab khác đã xử lý (đang dispatch) ⇒ trả DA_XU_LY và KHÔNG nhả khoá — nhả lúc đó sẽ mở khe chiếm khoá giữa lúc tab kia
 //        đang ghi. Cũng vì vậy DA_XU_LY không bao giờ nhả khoá.
 //   QĐ T9-4 Sau dispatch, dòng chờ còn 'confirmed' (dispatch không tới bước đặt chỗ: simulated / rejected / failed trước đặt chỗ) ⇒ chốt
 //        'executed' (simulated) hoặc 'bi_tu_choi_ghi' (không gửi gì) + resultJson — không để lại một uỷ quyền 'confirmed' còn hạn.
-//        Đã qua đặt chỗ ⇒ dispatcher đã CAS confirmed→executed (kể cả QUEUE_EXPIRED / BUSY: "chưa gửi — tạo yêu cầu mới", M5 dịch).
+//        Đã qua đặt chỗ ⇒ dispatcher đã CAS confirmed→executed; fix round 1 minor 4: kết quả `rejected` (QUEUE_EXPIRED / BUSY /
+//        SUPERSEDED — không gửi) ⇒ executed→bi_tu_choi_ghi. Thứ tự: chốt dòng chờ TRƯỚC, nhả khoá SAU (minor 3).
+//   QĐ T9-7 (fix round 1 minor 1/2) CAS proposed→confirmed có điều kiện `expiresAt > now`. Trượt ⇒ đọc lại: confirmed/executed ⇒
+//        DA_XU_LY, không nhả; còn proposed ⇒ hết hạn đúng lúc ⇒ proposed→expired, HET_HAN; bị dời đi (expired / cancelled …) ⇒ nhả
+//        khoá vừa gia hạn, 'expired' ⇒ HET_HAN, khác ⇒ DA_XU_LY.
 //   QĐ T9-5 attempts `dispatch/dispatched`: reason_code = `reason` của dispatch, hoặc STATUS viết hoa khi không ok mà không có reason
 //        (`timeout` ⇒ "TIMEOUT" — M5 hiện "không rõ"); ok ⇒ NULL (status thật nằm ở command_log).
 //   QĐ T9-6 dispatch ném ⇒ nhả khoá, chốt 'bi_tu_choi_ghi' nếu còn 'confirmed', attempts `dispatch/rejected DISPATCH_LOI`, socket, NÉM TIẾP.
@@ -687,11 +694,20 @@ async function doiTrangThaiCho(
   tu: TrangThaiCho,
   den: TrangThaiCho,
   them: { executedAt?: Date; resultJson?: Record<string, unknown> } = {},
+  /** có ⇒ chỉ đổi khi `expiresAt > conHanSau` (fix round 1 minor 2: hết hạn đúng lúc CAS ⇒ HET_HAN sạch) */
+  conHanSau?: Date,
 ): Promise<boolean> {
   const rows = await d
     .update(aiPendingActions)
     .set({ status: den, ...them })
-    .where(and(eq(aiPendingActions.id, requestId), eq(aiPendingActions.userId, userId), eq(aiPendingActions.status, tu)))
+    .where(
+      and(
+        eq(aiPendingActions.id, requestId),
+        eq(aiPendingActions.userId, userId),
+        eq(aiPendingActions.status, tu),
+        ...(conHanSau ? [gt(aiPendingActions.expiresAt, conHanSau)] : []),
+      ),
+    )
     .returning({ id: aiPendingActions.id });
   return rows.length === 1;
 }
@@ -814,6 +830,11 @@ export async function xacNhanGhiTag(
   // 2b. phạm vi hiện tại của người gọi
   const a = await adapterTrongPhamViLenh(db, pv, args.adapterId);
   if (!a) return tuChoiKetThuc({ ma: "NOT_FOUND", entity: "adapter", chiTiet: "Adapter không tồn tại." });
+  // 2c. (fix round 1, security MEDIUM) adapter đã gán sang MÁY KHÁC sau request ⇒ cổng (chế độ…) xét máy MỚI mà dispatch/sổ/interlock
+  //     mang `args.machineId` (máy CŨ, một phần của băm) — hai máy cho một lệnh. Kết thúc yêu cầu, không dispatch.
+  if (a.machineId !== args.machineId) {
+    return tuChoiKetThuc({ ma: "MAY_DA_DOI", chiTiet: "Thiết bị đã được gán sang máy khác sau khi tạo yêu cầu — hãy tạo yêu cầu mới." });
+  }
 
   // 3. 2FA theo mức của tag HIỆN TẠI (đọc lại DB — không tin preview)
   const tag = await docTagLenh(db, a.id, args.tagKey);
@@ -830,7 +851,9 @@ export async function xacNhanGhiTag(
       TOTP_CAN: `Kênh mức ${muc} cần mã TOTP.`,
       TOTP_SAI: "Mã TOTP không hợp lệ hoặc đã dùng.",
     };
-    return tuChoiGiu({ ma: xt.ma, level: muc, chiTiet: chiTiet[xt.ma] });
+    const t: TuChoiYeuCau = { ma: xt.ma, level: muc, chiTiet: chiTiet[xt.ma] };
+    // fix round 1 minor 6 — ROLE_FLOOR không sửa được bằng thử lại ⇒ KẾT THÚC (nhả khoá); TOTP_* giữ dòng chờ + khoá (QĐ T9-2).
+    return xt.ma === "ROLE_FLOOR" ? tuChoiKetThuc(t) : tuChoiGiu(t);
   }
 
   // 4. cổng 3–7 trên dữ liệu hiện tại
@@ -851,7 +874,24 @@ export async function xacNhanGhiTag(
   }
 
   // 6. CAS proposed→confirmed — đúng MỘT tab thắng (Review Focus 1)
-  if (!(await doiTrangThaiCho(db, requestId, userId, "proposed", "confirmed"))) return tuChoiGiu(DA_XU_LY_CONFIRM);
+  if (!(await doiTrangThaiCho(db, requestId, userId, "proposed", "confirmed", {}, nowDate))) {
+    // fix round 1 minor 1/2 — CAS trượt: đọc lại. 'confirmed'/'executed' ⇒ tab khác ĐANG/ĐÃ gửi ⇒ DA_XU_LY, KHÔNG nhả khoá. Còn
+    // 'proposed' ⇒ hết hạn đúng lúc CAS ⇒ CAS proposed→expired. Bị dời đi chỗ khác (expireStaleActions ⇒ 'expired', AI cancelAction
+    // …) ⇒ không ai gửi ⇒ NHẢ khoá vừa gia hạn; 'expired' ⇒ HET_HAN.
+    let st = (await docDongChoTheoId(db, requestId))?.status;
+    if (st === "proposed") {
+      if (await doiTrangThaiCho(db, requestId, userId, "proposed", "expired")) {
+        await nhaKhoaChon(db, khoaKey);
+        await thu("confirm", "expired", "HET_HAN");
+        await phat({ status: "expired", reason: "HET_HAN" });
+        return { ok: false, tuChoi: hetHan };
+      }
+      st = (await docDongChoTheoId(db, requestId))?.status;
+    }
+    if (st === "confirmed" || st === "executed") return tuChoiGiu(DA_XU_LY_CONFIRM);
+    await nhaKhoaChon(db, khoaKey);
+    return tuChoiGiu(st === "expired" ? hetHan : DA_XU_LY_CONFIRM);
+  }
   await thu("confirm", "confirmed", null);
   await phat({ status: "confirmed" });
 
@@ -877,20 +917,26 @@ export async function xacNhanGhiTag(
     });
   } catch (err) {
     // QĐ T9-6 — 8. nhả khoá, chốt dòng chờ, attempts có mã, rồi NÉM TIẾP
-    await nhaAnToan();
+    // fix round 1 minor 3 — chốt dòng chờ TRƯỚC, nhả khoá SAU
     await doiTrangThaiCho(db, requestId, userId, "confirmed", "bi_tu_choi_ghi", { resultJson: { ma: "DISPATCH_LOI" } });
+    await nhaAnToan();
     await thu("dispatch", "rejected", "DISPATCH_LOI");
     await phat({ status: "rejected", reason: "DISPATCH_LOI" });
     throw err;
   }
+  // QĐ T9-4 — chưa qua đặt chỗ ⇒ không để lại uỷ quyền 'confirmed'. fix round 1 minor 4 — dispatcher trả `rejected` (KHÔNG gửi:
+  // QUEUE_EXPIRED / BUSY / SUPERSEDED_BY_STOP … sau khi đặt chỗ đã CAS confirmed→executed) ⇒ executed→bi_tu_choi_ghi: trangThai không
+  // được nói 'executed' cho một lệnh chưa từng tới thiết bị. fix round 1 minor 3 — chốt TRƯỚC, nhả khoá SAU.
+  const ketCuc = { resultJson: { status: kq.status, reason: kq.reason ?? null, commandLogIds: kq.commandLogIds } };
+  const khongGui = !kq.simulated && kq.status === "rejected";
+  if (!(await doiTrangThaiCho(db, requestId, userId, "confirmed", kq.simulated ? "executed" : "bi_tu_choi_ghi", {
+    ...(kq.simulated ? { executedAt: luc() } : {}),
+    ...ketCuc,
+  })) && khongGui) {
+    await doiTrangThaiCho(db, requestId, userId, "executed", "bi_tu_choi_ghi", ketCuc);
+  }
   // 8. nhả khoá
   await nhaAnToan();
-
-  // QĐ T9-4 — chưa qua đặt chỗ ⇒ không để lại uỷ quyền 'confirmed'
-  await doiTrangThaiCho(db, requestId, userId, "confirmed", kq.simulated ? "executed" : "bi_tu_choi_ghi", {
-    ...(kq.simulated ? { executedAt: luc() } : {}),
-    resultJson: { status: kq.status, reason: kq.reason ?? null, commandLogIds: kq.commandLogIds },
-  });
 
   // giá trị đọc lại (đường HMI luôn đọc lại — Review Focus 5) nằm ở hàng KẾT QUẢ của command_log
   let readBackValue: unknown;

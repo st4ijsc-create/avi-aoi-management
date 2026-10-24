@@ -27,7 +27,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { and, eq, gt, lt } from "drizzle-orm";
+import { and, eq, gt, lt, notLike } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { aiPendingActions } from "../../drizzle/schema";
 import { otPayloadHash, withOtPayloadHash } from "./ot/otActionBinding";
@@ -254,6 +254,11 @@ function denyMessage(lang: ToolLang, summary: string): string {
     default:
       return `Bạn không có quyền thực hiện thao tác này: ${summary}. Vui lòng liên hệ quản trị viên.`;
   }
+}
+
+/** SCADA R1a T9 fix 1 — hàng `ai_pending_actions` của lệnh HMI (`scadaCommands`, tool `hmi.*`) — KHÔNG phải hành động AI. */
+export function laLenhHmi(tool: string | null | undefined): boolean {
+  return typeof tool === "string" && tool.startsWith("hmi.");
 }
 
 /**
@@ -532,6 +537,7 @@ export async function listPendingActionsForUser(userId: number): Promise<Pending
         eq(aiPendingActions.userId, userId),
         eq(aiPendingActions.status, "proposed"),
         gt(aiPendingActions.expiresAt, new Date()),
+        notLike(aiPendingActions.tool, "hmi.%"), // SCADA R1a T9 fix 1 — lệnh HMI không phải đề xuất AI
       ),
     );
   return rows
@@ -569,6 +575,7 @@ export async function getPendingActionForUser(
         eq(aiPendingActions.userId, userId),
         eq(aiPendingActions.status, "proposed"),
         gt(aiPendingActions.expiresAt, new Date()),
+        notLike(aiPendingActions.tool, "hmi.%"), // SCADA R1a T9 fix 1
       ),
     )
     .limit(1);
@@ -769,6 +776,9 @@ export async function confirmAction(
 
   const [row] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
   if (!row) return { ok: false, status: "not_found", message: "Action không tồn tại." };
+  // SCADA R1a T9 fix 1 — một lệnh HMI (`hmi.*`) chỉ được xác nhận qua `scadaCommands.confirm` (2FA theo mức, kiểm lại cổng, khoá
+  // chọn). Ở đây coi như KHÔNG tồn tại: không trả kết quả cache, không đổi trạng thái (kể cả lật 'expired'). Task 10 thêm từ chối cứng.
+  if (laLenhHmi(row.tool)) return { ok: false, status: "not_found", message: "Action không tồn tại." };
 
   // Token bound to userId — both must match the session user.
   if (token !== row.id || row.userId !== user.id) {
@@ -1083,6 +1093,9 @@ export async function cancelAction(
 
   const [row] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
   if (!row) return { ok: false, status: "not_found", message: "Action không tồn tại." };
+  // SCADA R1a T9 fix 1 — lệnh HMI huỷ qua `scadaCommands.huy` (nhả khoá chọn, attempts); huỷ ở đây có thể đè một hàng 'confirmed'
+  // đang dispatch. Coi như không tồn tại.
+  if (laLenhHmi(row.tool)) return { ok: false, status: "not_found", message: "Action không tồn tại." };
   if (row.userId !== user.id) return { ok: false, status: "invalid", message: "Người dùng không khớp." };
   if (row.status === "executed") return { ok: false, status: "executed", message: "Đã thực thi, không thể hủy." };
   if (row.status !== "proposed" && row.status !== "confirmed") {

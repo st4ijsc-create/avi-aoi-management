@@ -4522,6 +4522,7 @@
     "SCADA_SELECTION_LOST": "您已不再持有此通道（选择锁已过期或已转给另一个请求）——请创建新请求。",
     "SCADA_TOTP_REQUIRED": "影响等级 {{level}} 的通道需要双因素（TOTP）验证码——请输入验证码后再次确认。",
     "SCADA_TOTP_INVALID": "双因素验证码错误或已被使用——请输入新验证码后再次确认（等级 {{level}} 通道）。",
+    "SCADA_MACHINE_REBOUND": "创建请求后该设备已被分配到另一台机器——请创建新请求。",
     "TU_DONG_TAT": "服务器上的自动 Agent 模式已关闭（AI_CODING_TU_TRI_GHI 开关）。请使用逐步审批模式，或请管理员开启。",
     "THIEU_QUYEN_THUC_THI": "缺少自动 Agent 模式所需的执行/自动写入权限（ai_repo_exec）。",
     "THIEU_QUYEN": "缺少运行 Agent 所需的仓库读取权限（ai_repo_read）。",
