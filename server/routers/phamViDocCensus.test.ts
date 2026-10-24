@@ -917,7 +917,11 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // predictiveMaintenance.getMachineRisk|getReliabilityStats|getRulEstimate|listRulForecast (interlock.events: C→S). 25 dòng sổ nợ đọc GỠ; 6 thủ tục khai MIỄN TRỪ (edgeDeployment ×4 adminProcedure; listRecipeVersions = danh mục dùng chung;
 // frameworkSnapshot = cache theo thể hiện ⇒ luôn rỗng) — miễn trừ 10 → 16 (vẫn nhóm A theo bộ quét). Sổ ghi −2 (vda5050.sendOrder|testConnection).
 // Chứng minh: `loThietBiPhamVi.db.test.ts` (12 ca; 12/12 đỏ trên mã cũ; đột biến 38/39 — còn 1: vda5050.status cần adapter AGV sống; frameworkSnapshot đã gỡ vì không rò).
-const GHIM = { A: 229, B: 8, C: 475, D: 1198, S: 492, tong: 2402 } as const;
+// ★★ 2026-10-25 (lô L5): **A 229 → 211 · C 475 → 474 · S 492 → 511 · B/D/tong unchanged.** 19 thủ tục ĐỌC → S (18 A→S + 1 C→S): orderLifecycle.list|detail|trace · productionSession.list|getById|verifySignoff ·
+// lineController.listStates|getState|stages|readiness|transitions|recipeSet.list|get|lockStatus (status: C→S) · wip.list|summary|dwellByStation|dispatch. 18 dòng sổ nợ đọc GỠ (4 khối).
+// Chứng minh: `loSanXuatPhamVi.db.test.ts` (17 ca CSDL thật; 14/14 đỏ trên mã cũ; đột biến 38/38 bị bắt sau khi bổ sung 3 ca, trừ 1 đột biến TƯƠNG ĐƯƠNG: setThayDuocTrongPhamVi "không tồn tại" true↔false — cả hai ra null).
+// Còn lại có chủ ý: lineController.status vẫn trả lastSweepStats = số đếm tổng của MỌI tuyến (chỉ recentEvents được lọc).
+const GHIM = { A: 211, B: 8, C: 474, D: 1198, S: 511, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
