@@ -19,6 +19,7 @@
  * Mọi bước đều guard/try-catch — RUM tuyệt đối không được làm hỏng app.
  */
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import { TRPC_MAX_BATCH_SIZE } from "../../../shared/trpcBatch";
 import superjson from "superjson";
 import type { AppRouter } from "../../../server/routers";
 
@@ -60,6 +61,7 @@ function makeRumClient() {
       httpBatchLink({
         url: "/api/trpc",
         transformer: superjson,
+        maxItems: TRPC_MAX_BATCH_SIZE,
         fetch(input, init) {
           return globalThis.fetch(input, {
             ...(init ?? {}),

@@ -19,7 +19,8 @@ import path from "node:path";
 import { initTRPC } from "@trpc/server";
 import superjson from "superjson";
 import { z } from "zod";
-import { createTrpcMiddleware, trpcProcedureType } from "./trpcAdapter";
+import { createTrpcMiddleware, trpcBatchLimitMiddleware, trpcProcedureType } from "./trpcAdapter";
+import { TRPC_MAX_BATCH_SIZE } from "../../shared/trpcBatch";
 
 // Final wave item 4 — hai module NẶNG mà middleware giấy phép kéo theo (`license-service`, `license-guard`
 // → khoá RSA, DB…) chiếm ~2,1 s của ca giấy phép dưới đây. Thay bằng stub: middleware THẬT vẫn chạy, chỉ
@@ -156,5 +157,110 @@ describe("index.ts gắn đúng middleware của task (dòng giữ nguyên số)
     expect(src).toMatch(/app\.use\("\/api\/trpc", licenseEnforcementMiddleware\(\{ procedureType: \(p\) => trpcProcedureType\(appRouter, p\) \}\)\);/);
     expect(src).toMatch(/"\/api\/trpc",\s*\n\s*createTrpcMiddleware\(\{/);
     expect(src).not.toMatch(/\bcreateExpressMiddleware\(/);
+  });
+});
+
+/**
+ * ★★★ Trần số thủ tục trong một batch (rà bảo mật 2026-10-24: 30 lần thử TOTP trong MỘT yêu cầu HTTP lách bộ giới hạn 300/phút).
+ * Vượt trần ⇒ 400 `TRPC_BATCH_QUA_LON` và KHÔNG thủ tục nào chạy; đúng trần ⇒ chạy đủ.
+ */
+describe("trpcBatchLimitMiddleware — trần số thủ tục trong một batch", () => {
+  let srv: http.Server;
+  let url = "";
+  let srvMacDinh: http.Server;
+  let urlMacDinh = "";
+  let srvChiAdapter: http.Server;
+  let urlChiAdapter = "";
+  const mo = async (app: express.Express): Promise<[http.Server, string]> => {
+    const s = http.createServer(app);
+    await new Promise<void>((r) => s.listen(0, "127.0.0.1", () => r()));
+    return [s, `http://127.0.0.1:${(s.address() as AddressInfo).port}/api/trpc`];
+  };
+  beforeAll(async () => {
+    const a1 = express();
+    a1.use(express.json());
+    a1.use("/api/trpc", trpcBatchLimitMiddleware(5));
+    a1.use("/api/trpc", createTrpcMiddleware({ router: testRouter, createContext: () => ({}) }));
+    [srv, url] = await mo(a1);
+    const a2 = express();
+    a2.use(express.json());
+    a2.use("/api/trpc", trpcBatchLimitMiddleware());
+    a2.use("/api/trpc", createTrpcMiddleware({ router: testRouter, createContext: () => ({}) }));
+    [srvMacDinh, urlMacDinh] = await mo(a2);
+    // KHÔNG gắn middleware trần riêng: chỉ lớp phòng thủ thứ hai (maxBatchSize của chính adapter)
+    const a3 = express();
+    a3.use(express.json());
+    a3.use("/api/trpc", createTrpcMiddleware({ router: testRouter, createContext: () => ({}) }));
+    [srvChiAdapter, urlChiAdapter] = await mo(a3);
+  });
+  afterAll(async () => {
+    for (const s of [srv, srvMacDinh, srvChiAdapter]) await new Promise<void>((r) => s.close(() => r()));
+  });
+
+  const duongBatch = (ten: string, n: number) => Array.from({ length: n }, () => ten).join(",");
+  const bodyBatch = (n: number) => JSON.stringify(Object.fromEntries(Array.from({ length: n }, (_, i) => [String(i), superjson.serialize({ s: "x" + i })])));
+
+  it("★★★ batch VƯỢT trần ⇒ 400 TRPC_BATCH_QUA_LON (mã rõ, số thủ tục + trần), KHÔNG xử lý một phần: mutation không chạy cái nào", async () => {
+    ghiMutation.mockClear();
+    const res = await fetch(`${url}/${duongBatch("ghi", 6)}?batch=1`, { method: "POST", headers: { "content-type": "application/json" }, body: bodyBatch(6) });
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: { json: { message: string; data: { appCode: string; soThuTuc: number; tran: number; httpStatus: number } } } };
+    expect(json.error.json.data).toMatchObject({ appCode: "TRPC_BATCH_QUA_LON", soThuTuc: 6, tran: 5, httpStatus: 400 });
+    expect(json.error.json.message).toContain("6");
+    expect(ghiMutation).not.toHaveBeenCalled();
+  });
+
+  it("★★★ batch ĐÚNG trần ⇒ chạy đủ cả 5 thủ tục", async () => {
+    ghiMutation.mockClear();
+    const res = await fetch(`${url}/${duongBatch("ghi", 5)}?batch=1`, { method: "POST", headers: { "content-type": "application/json" }, body: bodyBatch(5) });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as unknown[]).length).toBe(5);
+    expect(ghiMutation).toHaveBeenCalledTimes(5);
+  });
+
+  it("★★ batch GET (query) vượt trần cũng bị chặn; dưới trần thì qua", async () => {
+    const input = (n: number) => encodeURIComponent(bodyBatch(n));
+    expect((await fetch(`${url}/${duongBatch("dem", 9)}?batch=1&input=${input(9)}`)).status).toBe(400);
+    expect((await fetch(`${url}/${duongBatch("dem", 3)}?batch=1&input=${input(3)}`)).status).toBe(200);
+  });
+
+  it("★★★ không né được bằng mã hoá dấu phẩy (%2C)", async () => {
+    ghiMutation.mockClear();
+    const res = await fetch(`${url}/${duongBatch("ghi", 8).replace(/,/g, "%2C")}?batch=1`, { method: "POST", headers: { "content-type": "application/json" }, body: bodyBatch(8) });
+    expect(res.status).toBe(400);
+    expect(ghiMutation).not.toHaveBeenCalled();
+  });
+
+  it("★★ yêu cầu ĐƠN (không batch) không bị ảnh hưởng", async () => {
+    const res = await fetch(`${url}/dem?input=${encodeURIComponent(JSON.stringify(superjson.serialize({ s: "abc" })))}`);
+    expect(res.status).toBe(200);
+  });
+
+  it("★★★ trần MẶC ĐỊNH = TRPC_MAX_BATCH_SIZE: đúng trần chạy, trần+1 ⇒ 400 (client chia theo cùng hằng này)", async () => {
+    ghiMutation.mockClear();
+    const ok = await fetch(`${urlMacDinh}/${duongBatch("ghi", TRPC_MAX_BATCH_SIZE)}?batch=1`, { method: "POST", headers: { "content-type": "application/json" }, body: bodyBatch(TRPC_MAX_BATCH_SIZE) });
+    expect(ok.status).toBe(200);
+    expect(ghiMutation).toHaveBeenCalledTimes(TRPC_MAX_BATCH_SIZE);
+    ghiMutation.mockClear();
+    const qua = await fetch(`${urlMacDinh}/${duongBatch("ghi", TRPC_MAX_BATCH_SIZE + 1)}?batch=1`, { method: "POST", headers: { "content-type": "application/json" }, body: bodyBatch(TRPC_MAX_BATCH_SIZE + 1) });
+    expect(qua.status).toBe(400);
+    expect(ghiMutation).not.toHaveBeenCalled();
+  });
+
+  it("★★ lớp phòng thủ thứ hai: KHÔNG có middleware trần riêng, adapter tRPC tự từ chối batch quá trần (400, không chạy phần nào)", async () => {
+    ghiMutation.mockClear();
+    const res = await fetch(`${urlChiAdapter}/${duongBatch("ghi", TRPC_MAX_BATCH_SIZE + 1)}?batch=1`, { method: "POST", headers: { "content-type": "application/json" }, body: bodyBatch(TRPC_MAX_BATCH_SIZE + 1) });
+    expect(res.status).toBe(400);
+    expect(ghiMutation).not.toHaveBeenCalled();
+  });
+
+  it("★★★ index.ts gắn middleware trần TRƯỚC giấy phép/tRPC (nguồn)", () => {
+    const nguon = readFileSync(path.resolve(__dirname, "index.ts"), "utf8");
+    const iTran = nguon.indexOf('app.use("/api/trpc", trpcBatchLimitMiddleware())');
+    const iGiayPhep = nguon.indexOf('app.use("/api/trpc", licenseEnforcementMiddleware(');
+    const iTrpc = nguon.indexOf("createTrpcMiddleware({\n      router: appRouter");
+    expect(iTran).toBeGreaterThan(-1);
+    expect(iTran).toBeLessThan(iGiayPhep);
+    expect(iGiayPhep).toBeLessThan(iTrpc);
   });
 });
