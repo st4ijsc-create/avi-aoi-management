@@ -46,9 +46,10 @@ import type {
   OnOtSample,
   OtProtocol,
   TuyChonVongPoll,
+  SuKienDoc,
 } from "./otDriver";
 import { chatLuongLoiChung } from "./chatLuong";
-import { khoangNoiLaiMs, taoDemTickHong, thoiGianOnDinhMs } from "./reconnectNhanh";
+import { khoangNoiLaiMs, laDocTot, taoDemTickHong, thoiGianOnDinhMs } from "./reconnectNhanh";
 import { withDeadline } from "./drivers/boundedClose";
 
 /**
@@ -178,6 +179,19 @@ export interface SupervisorOptions {
    * đặt / ≤ 0 ⇒ tắt (hành vi cũ). Tick của phiên đã bị thay bị bỏ qua. Dạng hàm ⇒ đọc lại MỖI lần subscribe (host gắn cờ vào đây).
    */
   soTickHongDeMat?: number | (() => number);
+  /**
+   * SCADA R1b-1 T3 — đọc lúc subscribe MỖI phiên (host gắn cờ OT_CHAT_LUONG_V2_ENABLED vào đây): true ⇒ phiên đó "chờ đọc tốt" —
+   * host chỉ coi adapter là `connected` sau tick ĐỌC TỐT đầu tiên của phiên (xem `dangChoDocTot()` / `onDocTotDauTien`). KHÔNG đổi
+   * trạng thái supervisor: state vẫn 'connected' khi TCP + subscribe xong (getActiveDriver, D1, healthTick, presence giữ nguyên).
+   * Không đặt / false ⇒ hành vi cũ.
+   */
+  choDocTotDauTien?: () => boolean;
+  /**
+   * SCADA R1b-1 T3 — tick đọc tốt (`laDocTot`) ĐẦU TIÊN của phiên đang hoạt động, khi phiên đó đang chờ và supervisor đang
+   * 'connected'. Tick tốt về TRƯỚC khi phiên thành hoạt động (lần đọc đầu tức thì) không gọi hàm này: nó được ghi lại và
+   * `dangChoDocTot()` trả false ngay khi supervisor vào 'connected'. Ném ⇒ bị nuốt.
+   */
+  onDocTotDauTien?: () => void;
 }
 
 /** Snapshot of a supervisor for an internal health getter (future health endpoint). */
@@ -301,6 +315,11 @@ export class ConnectionSupervisor {
   /** T12 D1 — số thứ tự phiên subscribe (tăng mỗi lần connectAndSubscribe) và phiên đang là activeHandle (0 = không có). */
   private demPhien = 0;
   private phienHoatDong = 0;
+  /** R1b-1 T3 — phiên MỚI NHẤT có "chờ đọc tốt" (0 = phiên mới nhất không chờ) và phiên mới nhất đã có tick đọc tốt (0 = chưa). */
+  private phienChoDocTot = 0;
+  private phienDaDocTot = 0;
+  private readonly choDocTotDauTien: (() => boolean) | null;
+  private readonly onDocTotDauTien: (() => void) | null;
 
   constructor(opts: SupervisorOptions) {
     this.adapterId = opts.adapterId;
@@ -328,6 +347,8 @@ export class ConnectionSupervisor {
     this.tuyChon = opts.tuyChon;
     this.onConnectAttempt = opts.onConnectAttempt ?? null;
     this.soTickHongDeMat = opts.soTickHongDeMat ?? 0;
+    this.choDocTotDauTien = opts.choDocTotDauTien ?? null;
+    this.onDocTotDauTien = opts.onDocTotDauTien ?? null;
     this.disconnectTimeoutMs =
       typeof opts.disconnectTimeoutMs === "number" && opts.disconnectTimeoutMs > 0
         ? opts.disconnectTimeoutMs
@@ -568,6 +589,8 @@ export class ConnectionSupervisor {
       }
     }
     // doc 40 MON-F1 — đẩy presence CHỈ trên chuyển tiếp THẬT quanh 'connected':
+    // (SCADA R1b-1 T3: presence GIỮ theo TCP — state supervisor — KHÔNG chờ lần đọc tốt đầu tiên như trạng thái adapter
+    // `connected` (RAM/DB) của host khi OT_CHAT_LUONG_V2_ENABLED. Cố ý không đổi trong T3.)
     //   • vào 'connected'                → online
     //   • RỜI 'connected' sang state khác → offline
     // KHÔNG đẩy 'offline' cho idle→connecting→failed lúc mới khởi động (máy chưa từng
@@ -872,13 +895,25 @@ export class ConnectionSupervisor {
     } catch {
       k = 0;
     }
-    if (k <= 0) return this.tuyChon;
+    // R1b-1 T3 — phiên này có "chờ đọc tốt" không: đọc MỘT lần lúc subscribe (như soTickHongDeMat). Chỉ phiên MỚI NHẤT có thể thành
+    // phiên hoạt động (connectAndSubscribe chạy tuần tự; phiên quá hạn bị reapLateConnect hạ) ⇒ một cặp số là đủ.
+    let cho = false;
+    try {
+      cho = this.choDocTotDauTien?.() === true;
+    } catch {
+      cho = false;
+    }
+    this.phienChoDocTot = cho ? phien : 0;
+    if (k <= 0 && !cho) return this.tuyChon;
     const hostOnTick = this.tuyChon?.onTick;
-    const dem = taoDemTickHong(k, (e) => {
-      if (this.stopped || this.cycleRunning || this.state !== "connected" || phien !== this.phienHoatDong) return;
-      const sc = e.statusCode ?? (e.timeout ? "timeout" : "comm_lost");
-      void this.onActiveLost(`poll: ${k} consecutive failed ticks (${sc})`, sc, true);
-    });
+    const dem =
+      k > 0
+        ? taoDemTickHong(k, (e) => {
+            if (this.stopped || this.cycleRunning || this.state !== "connected" || phien !== this.phienHoatDong) return;
+            const sc = e.statusCode ?? (e.timeout ? "timeout" : "comm_lost");
+            void this.onActiveLost(`poll: ${k} consecutive failed ticks (${sc})`, sc, true);
+          })
+        : null;
     return {
       ...this.tuyChon,
       onTick: (e) => {
@@ -887,9 +922,34 @@ export class ConnectionSupervisor {
         } catch {
           // người nghe của host không được làm hỏng bộ đếm
         }
-        dem(e);
+        if (cho) this.ghiNhanDocTot(phien, e);
+        dem?.(e);
       },
     };
+  }
+
+  /**
+   * R1b-1 T3 — tick của phiên `phien` (đang chờ đọc tốt). Đọc tốt đầu tiên của phiên MỚI NHẤT ⇒ ghi lại; nếu phiên đó đã là phiên hoạt
+   * động và supervisor đang 'connected' ⇒ báo host (onDocTotDauTien). Tick của phiên cũ (đã bị thay) không ghi, không báo.
+   */
+  private ghiNhanDocTot(phien: number, e: SuKienDoc): void {
+    if (phien !== this.demPhien || this.phienDaDocTot === phien || !laDocTot(e)) return;
+    this.phienDaDocTot = phien;
+    if (this.stopped || this.state !== "connected" || phien !== this.phienHoatDong) return; // vào 'connected' sau ⇒ dangChoDocTot() = false
+    try {
+      this.onDocTotDauTien?.();
+    } catch {
+      // người nghe của host không được làm hỏng vòng poll
+    }
+  }
+
+  /**
+   * R1b-1 T3 — phiên ĐANG hoạt động được mở với "chờ đọc tốt" và chưa có tick đọc tốt nào ⇒ host chưa được báo `connected`.
+   * false khi không có phiên hoạt động hoặc phiên không chờ (cờ tắt lúc subscribe).
+   */
+  dangChoDocTot(): boolean {
+    const p = this.phienHoatDong;
+    return p !== 0 && this.phienChoDocTot === p && this.phienDaDocTot !== p;
   }
 
   /** Fix round 1 — hạn một lần nối endpoint: không ngắn hơn timeoutMs của chính endpoint + biên. */

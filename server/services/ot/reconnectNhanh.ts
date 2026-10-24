@@ -62,6 +62,15 @@ export function laTickHong(e: SuKienDoc): boolean {
 }
 
 /**
+ * SCADA R1b-1 T3 — "đọc tốt" = giao dịch đọc THÀNH CÔNG (`ok:true`: thiết bị đã trả lời) và không phải tick mà D1 coi là hỏng.
+ * ok:true mà mọi tag bad vì lý do khác mất liên lạc (config_error / device_error / out_of_range…) VẪN là đọc tốt: liên lạc đã thông.
+ * ok:true mà MỌI tag bad/comm_lost (laTickHong) KHÔNG phải: D1 đếm nó là tick hỏng, coi nó là đọc tốt sẽ báo connected rồi lost ngay.
+ */
+export function laDocTot(e: SuKienDoc): boolean {
+  return e.ok === true && !laTickHong(e);
+}
+
+/**
  * Bộ đếm tick hỏng liên tiếp cho MỘT phiên (mỗi lần subscribe một bộ mới). Từ tick hỏng thứ `k` trở đi gọi `khiDat(e)` mỗi tick hỏng
  * (người gọi tự chặn khi phiên không còn là phiên đang hoạt động); tick không hỏng ⇒ về 0.
  */
