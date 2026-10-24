@@ -372,6 +372,30 @@ describe("kiemGiaTriGhi — đối tượng kiểu Long (Sparkplug B 64 bit)", (
     expect(loi(kiemGiaTriGhi(i, { low: 1, high: 0, unsigned: false, toNumber: () => { throw new Error("x"); } })).ma).toBe("TYPE_MISMATCH");
     expect(loi(kiemGiaTriGhi(i, { low: "1", high: 0, unsigned: false, toNumber: () => 1 })).ma).toBe("TYPE_MISMATCH");
   });
+  it("★ M-1 — toNumber() NÓI DỐI so với low/high ⇒ TYPE_MISMATCH (cả hai kênh); khớp thì nhận", () => {
+    const that = giaLong(12n);
+    expect(tot(kiemGiaTriGhi(i, that))).toBe(12);
+    expect(loi(kiemGiaTriGhi(i, { ...that, toNumber: () => 5 })).ma).toBe("TYPE_MISMATCH"); // low/high nói 12, toNumber nói 5
+    expect(loi(kiemGiaTriGhi(f, { ...that, toNumber: () => 5 })).ma).toBe("TYPE_MISMATCH");
+    expect(loi(kiemGiaTriGhi(i, { ...that, toNumber: () => 12.5 })).ma).toBe("TYPE_MISMATCH");
+    // toNumber nói "an toàn" nhưng low/high là số khổng lồ ⇒ tin low/high ⇒ ngoài miền an toàn
+    const lon = giaLong(2n ** 62n);
+    const r = loi(kiemGiaTriGhi(i, { ...lon, toNumber: () => 7 }));
+    expect(r.ma).toBe("TYPE_MISMATCH");
+    expect(r.chiTiet).toContain("an toàn");
+    // low/high không phải số nguyên
+    expect(loi(kiemGiaTriGhi(i, { low: 1.5, high: 0, unsigned: false, toNumber: () => 1.5 })).ma).toBe("TYPE_MISMATCH");
+    expect(loi(kiemGiaTriGhi(i, { low: 1, high: Number.NaN, unsigned: false, toNumber: () => 1 })).ma).toBe("TYPE_MISMATCH");
+  });
+  it("M-1 — Long 0 mà toNumber() trả -0 ⇒ nhận (BigInt không có -0), kết quả là +0; âm / unsigned khớp bù hai", () => {
+    const khong = { ...giaLong(0n), toNumber: () => -0 };
+    const v = tot(kiemGiaTriGhi(i, khong));
+    expect(Object.is(v, 0)).toBe(true);
+    expect(tot(kiemGiaTriGhi(i, giaLong(-1n)))).toBe(-1);
+    expect(tot(kiemGiaTriGhi(i, giaLong(-(2n ** 40n))))).toBe(-(2 ** 40));
+    // cùng bit 0xFFFFFFFF.. nhưng unsigned ⇒ 2^64−1 ⇒ ngoài miền; signed ⇒ −1
+    expect(loi(kiemGiaTriGhi(i, giaLong(2n ** 64n - 1n, true))).ma).toBe("TYPE_MISMATCH");
+  });
   it("Long vẫn chịu dải + bước của kênh", () => {
     const k = kenh({ dataType: "int", writeMin: 0, writeMax: 100, writeStep: 5 });
     expect(tot(kiemGiaTriGhi(k, giaLong(50n)))).toBe(50);

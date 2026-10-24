@@ -81,20 +81,26 @@ function epBool(v: unknown): boolean | undefined {
 
 /**
  * R1b-1 T10 — bộ giải mã Sparkplug B giao số nguyên 64 bit dưới dạng đối tượng kiểu Long (thư viện `long`: {low, high, unsigned} + toNumber()).
- * Nhận dạng bằng DUCK-TYPE (không import thư viện): low/high là số, unsigned là boolean, toNumber là hàm. Trả số khi toNumber() là số nguyên AN TOÀN;
- * ngoài miền an toàn (|n| > 2^53−1, toNumber() đã mất chính xác) ⇒ null (người gọi coi là TYPE_MISMATCH). Không phải Long ⇒ undefined.
+ * Nhận dạng bằng DUCK-TYPE (không import thư viện): low/high là số, unsigned là boolean, toNumber là hàm. Giá trị dựng lại từ low/high phải là số nguyên AN TOÀN VÀ khớp toNumber();
+ * ngoài miền an toàn (|n| > 2^53−1) ⇒ null (người gọi coi là TYPE_MISMATCH). Không phải Long ⇒ undefined.
  */
 function epLong(v: unknown): number | null | undefined {
   if (typeof v !== "object" || v === null) return undefined;
   const o = v as { low?: unknown; high?: unknown; unsigned?: unknown; toNumber?: unknown };
   if (typeof o.low !== "number" || typeof o.high !== "number" || typeof o.unsigned !== "boolean" || typeof o.toNumber !== "function") return undefined;
-  let n: unknown;
+  // Giá trị DỰNG LẠI từ low/high (hai nửa 32 bit, bù hai; unsigned ⇒ nửa cao không dấu) — nguồn sự thật. `toNumber()` chỉ được phép XÁC NHẬN nó.
+  if (!Number.isInteger(o.low) || !Number.isInteger(o.high)) return undefined;
+  const lo = BigInt(o.low >>> 0);
+  const goc = o.unsigned ? BigInt.asUintN(64, (BigInt(o.high >>> 0) << 32n) | lo) : BigInt.asIntN(64, (BigInt(o.high | 0) << 32n) | lo);
+  if (goc > BigInt(Number.MAX_SAFE_INTEGER) || goc < -BigInt(Number.MAX_SAFE_INTEGER)) return null; // ngoài miền an toàn
+  const n = Number(goc); // +0 (BigInt không có -0)
+  let bao: unknown;
   try {
-    n = (o.toNumber as () => unknown).call(v);
+    bao = (o.toNumber as () => unknown).call(v);
   } catch {
     return undefined;
   }
-  return typeof n === "number" && Number.isSafeInteger(n) ? n : null;
+  return bao === n ? n : undefined; // toNumber() nói khác low/high (đối tượng nói dối / hỏng) ⇒ không tin cái nào ⇒ TYPE_MISMATCH
 }
 
 /** số nguyên an toàn ⇒ số; trông như số nguyên nhưng NGOÀI dải an toàn (|n| > 2^53−1) ⇒ null; còn lại ⇒ undefined. */
