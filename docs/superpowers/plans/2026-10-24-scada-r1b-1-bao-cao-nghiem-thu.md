@@ -17,6 +17,7 @@ ngưỡng nào. `OT_CONTROL_ENABLED` / `AI_OT_CONTROL_ENABLED` chỉ được đ
 | Census (mọi tệp `*census*`) | 57 tệp, 963 ca: 960 qua, 3 bỏ qua, **0 đỏ** |
 | Lưới nghiệm thu opt-in R0 / R1a / R1b-1 | **42/42** (16 + 10 + 16), một lượt chung |
 | `npm run check` (8 GB) · `npm run i18n:check` | rc 0 · sạch |
+| **Kiểm định độc lập (2026-10-25) — vòng sửa (§13)** | H1 / I1 / I2 / I3 / N-1 / M6 đã sửa (6 commit) + I4 vào §4 mục 2b; mig **0434** áp TEST, **DEV chờ điều phối**; census 58 tệp 0 đỏ; opt-in 42/42; tsc 0 |
 
 **Đánh giá:**
 - **LOGIC.** STOP HMI (`scadaCommands.dungMay`) tới thiết bị bằng đúng giá trị ghim ở REMOTE, ở LOCAL (cả khi cờ cổng chế độ tắt lẫn bật),
@@ -167,7 +168,7 @@ hạ về STOP không ghim) — nó KHÔNG thay cho bench trên PLC thật.
 
 ## 4. Thứ tự triển khai
 
-1. **Migration 0431, 0432, 0433 trên MỌI DB, SAU ĐÓ mới chạy bản build.**
+1. **Migration 0431, 0432, 0433, 0434 trên MỌI DB, SAU ĐÓ mới chạy bản build.**
    - **0431** (`drizzle/0431_scada_kenh_lenh.sql`): thiếu ⇒ toàn bộ OT hỏng (R1a §4 mục 1). Máy chủ BỎ QUA `startOt`, `/health` `degraded`.
    - **0432** (`drizzle/0432_totp_khoa_sai.sql`): thiếu ⇒ mọi người dùng có 2FA bị khoá ngoài (R1a §4 mục 2).
    - **0433** (`drizzle/0433_scada_ly_do_fk.sql`, `scripts/apply-migration-0433.mjs`, R1b-1 T6): cột `scada_command_attempts.ly_do varchar(300)` +
@@ -178,6 +179,18 @@ hạ về STOP không ghim) — nó KHÔNG thay cho bench trên PLC thật.
      - Thiếu 0433 với bản build R1b-1: mọi lần ghi attempts (có `ly_do`) lỗi ⇒ `request`/`confirm` HMI fail-closed; `dungMay` (STOP) VẪN gửi vì
        mọi lần ghi attempts của nó bắt lỗi.
      - ⚠ Không chạy lại verify của 0431 trên DB đã có 0433 bằng bản cũ (đếm đúng 12 cột) — bản trên nhánh đã sửa (T6 I2: tập cột bao trùm).
+   - **0434** (`drizzle/0434_interlock_bam_dinh_nghia_duyet.sql`, `scripts/apply-migration-0434.mjs`, kiem-dinh I1 a): cột
+     `interlock_rules."approvedDefHash" varchar(80) NULL` (bám định nghĩa tag nguồn / đích chụp lúc duyệt), không backfill, không đổi quyền.
+     - Áp TEST 2026-10-25 (hai lần — idempotent; verify: cột, quyền `avi_app` SELECT/INSERT/UPDATE + UPDATE cột, giá trị 81 ký tự ⇒ 22001,
+       probe hoàn tác, sổ 1 dòng). **DEV CHƯA ÁP** — SQL gửi điều phối duyệt trước.
+     - **Thiếu 0434 với bản build này ⇒ MỌI truy vấn `interlock_rules` của drizzle (`select()` có cột mới) lỗi:** trang interlock hỏng, engine
+       không đánh giá được, cổng interlock inline fail-closed (CHẶN mọi lệnh HITL nhắm thiết bị có luật; STOP ghim vẫn đi vì miễn interlock).
+       Máy chủ CHƯA tự kiểm 0434 lúc khởi động (`kiemSchemaR1a` — việc R1b-2a cùng M3) ⇒ áp 0434 TRƯỚC bản build là bắt buộc.
+     - Hệ quả có chủ ý (fail-closed): mọi luật đã duyệt trước 0434 có `approvedDefHash` NULL ⇒ **CHƯA DUYỆT LẠI**: không bật được, engine không tự
+       chặn, dispatcher từ chối lệnh interlock; cổng inline vẫn chặn theo điều kiện. Đếm TRƯỚC triển khai (chỉ đọc):
+       `SELECT count(*) FILTER (WHERE "approvedBy" IS NOT NULL) AS da_duyet, count(*) FILTER (WHERE "approvedBy" IS NOT NULL AND enabled) AS dang_bat FROM interlock_rules;`
+       — TEST 2026-10-25: 38 đã duyệt / 20 đang bật (rác lưới). Sau triển khai: admin duyệt lại từng luật (trang interlock hiện huy hiệu
+       "Cần duyệt lại"). Với `INTERLOCK_AUTO_BLOCK_ENABLED` bật, tự chặn của luật cũ NGỪNG cho tới khi duyệt lại.
 2. **BẮT BUỘC, TRƯỚC bản build, trên MỌI DB (rà soát cuối I-1): truy vấn CHỈ ĐỌC luật interlock lệch lưới thô.** T13 làm `dispatch()` từ chối
    `OFF_STEP` một giá trị lệch lưới thô trên tag int chưa khai có `scale ≠ 1` / `offset ≠ 0` (trước đó driver làm tròn im lặng: scale 10, lệnh 25 ⇒
    thô 3 = 30). Kiểm lúc cấu hình của T13 chỉ chạy khi create / update / approve / enable ⇒ một luật **đã bật** từ trước với `commandValue` lệch
@@ -236,6 +249,28 @@ hạ về STOP không ghim) — nó KHÔNG thay cho bench trên PLC thật.
    - Sau khi chạy bản build, cùng điều kiện được **đếm vào posture** `interlockRulesCauHinhHong` (`oversightRouter.fetchInterlockCauHinhHong`,
      phán bằng CHÍNH hàm cổng dispatch dùng — tập posture ⊇ tập câu trên: tag đã khai còn được kiểm dải / bước / kiểu) và một **khối
      `console.error` lúc khởi động** liệt kê id / tên / mã (`canhBaoLuatLenhLechLuoiKhiKhoiDong`, chỉ log, không chặn khởi động).
+2b. **BẮT BUỘC, TRƯỚC bản build, trên PRODUCTION (kiem-dinh I4): census OFF_STEP của T13 (task-13-report §1.3).** Hành vi mới của T13: MỌI
+   người gọi (HMI, AI, interlock, FOE, REST) bị `OFF_STEP` trên tag int CHƯA khai có `scale ≠ 1` hoặc `offset ≠ 0` — ví dụ lệnh bool
+   start / stop / reset ghi vào tag int scale 10 từng bị driver làm tròn im lặng, nay bị TỪ CHỐI. Mục 2 chỉ bắt luật interlock; câu dưới bắt cả
+   TAG (mọi người gọi). Chạy chỉ đọc trên từng DB đích (nguyên văn task-13-report §1.3):
+
+   ```sql
+   -- tag int có lưới thô khác số nguyên
+   SELECT t.id, t."adapterId", t."tagKey", t.scale, t."offset", t.writable, t.stop_value,
+          (t.channel_kind IS NOT NULL OR t.write_min IS NOT NULL OR t.write_max IS NOT NULL OR t.write_step IS NOT NULL) AS da_khai
+   FROM device_tags t
+   WHERE t."dataType" = 'int' AND (COALESCE(NULLIF(t.scale, 0), 1) <> 1 OR COALESCE(t."offset", 0) <> 0);
+   -- luật interlock nhắm các tag đó: so commandValue (null ⇒ true ⇒ 1) với lưới offset + k·scale
+   SELECT r.id, r.name, r.enabled, r."commandValue", t.scale, t."offset"
+   FROM interlock_rules r JOIN device_tags t ON t."adapterId" = r."targetAdapterId" AND t."tagKey" = r."commandTag"
+   WHERE r.action::text <> 'alert' AND t."dataType" = 'int' AND (COALESCE(NULLIF(t.scale, 0), 1) <> 1 OR COALESCE(t."offset", 0) <> 0);
+   ```
+
+   - Số đo đã có: DEV `device_tags` 42 hàng, TEST 323 hàng — **0 tag thuộc diện** ở cả hai (kiem-dinh đo; TEST đo lại 2026-10-25 trong giao dịch
+     READ ONLY: 323 tag, 0 tag int scale / offset khác mặc định). **PRODUCTION CHƯA ĐO.**
+   - Có hàng ⇒ trước bản build: với từng tag, xác định ai ghi vào nó (HMI / AI / interlock / tích hợp) và giá trị họ gửi; giá trị lệch lưới sẽ bị
+     từ chối sau triển khai ⇒ sửa bên gọi gửi điểm lưới, hoặc khai mô hình ghi cho tag (M12), hoặc chấp nhận có văn bản. Edge
+     (`otEdgeDispatch`) không đi qua cổng này (tài liệu R1c).
 3. **Kiểm lại hôm nay (2026-10-25, CHỈ ĐỌC, `default_transaction_read_only = on`):** cả `aoi_management` (DEV) lẫn `aoi_management_test`: 4 bảng
    (`scada_command_attempts`, `scada_kenh_che_do`, `scada_khoa_chon`, `totp_khoa_sai`), 7/7 cột 0431 trên `device_tags`, `ly_do` có mặt
    (attempts 13 cột), 3 FK `ON DELETE CASCADE` đúng như trên.
@@ -255,7 +290,9 @@ hạ về STOP không ghim) — nó KHÔNG thay cho bench trên PLC thật.
    ĐƯỢC BẢO VỆ (đã khai mức / loại kênh / dải, là kênh chế độ, hoặc là đích / nguồn telemetry của luật interlock không-alert đang bật HOẶC đã
    duyệt) hay một khoá mồ côi đòi TOTP tươi mức 5 (`kiemTotpCauHinh`: vai ACTUATION + **đã đăng ký 2FA** + mã mỗi lượt): `deviceAdapter.tags.create /
    update / delete`, `deviceAdapter.update` (đổi đích / tắt / đổi máy), `deviceAdapter.delete`, `scadaDiag.tamTat`, `mappingAsCode.applyImport`,
-   M12 `scadaKenh.capNhat / cheDo.*`. Kỹ sư chưa đăng ký 2FA nhận `SCADA_CONFIG_TOTP_NOT_ENROLLED` dù MỌI cờ SCADA tắt (2FA không phải tiên quyết
+   M12 `scadaKenh.capNhat / cheDo.*`; kiem-dinh R1b-1 thêm: **`deviceAdapter.tags.setStopPin`** (MỌI lượt đặt / gỡ ghim DỪNG, sàn vai
+   admin / supervisor / engineer — H1 a) và **`interlock.update` / `interlock.delete`** của luật ghi lệnh đang bật hoặc đã duyệt có đích / nguồn
+   tag (I1 b). Kỹ sư chưa đăng ký 2FA nhận `SCADA_CONFIG_TOTP_NOT_ENROLLED` dù MỌI cờ SCADA tắt (2FA không phải tiên quyết
    của dự án ⇒ đây là thay đổi hành vi thấy được). Việc phải làm: mọi người sửa tag đã khai / kênh chế độ / đích luật interlock **đăng ký 2FA**;
    đếm trước trên từng DB số tag được bảo vệ, ví dụ (chỉ đọc):
    `SELECT count(*) FROM device_tags t WHERE t.actuation_level IS NOT NULL OR t.channel_kind IS NOT NULL OR t.write_min IS NOT NULL OR
@@ -317,6 +354,11 @@ kèm khai muộn bench R1a (đỏ có sẵn trên main). Mọi đỏ còn lại 
 **STOP HMI (T2)**
 1. `dungMay` tuân cờ chủ `SCADA_COMMANDS_ENABLED` (ruling T2): cờ tắt ⇒ không có STOP HMI, người vận hành dùng E-STOP cứng.
 2. STOP HMI chỉ gửi giá trị ĐÃ GHIM (`device_tags.stop_value`) tới adapter BẬT của máy; không tự đoán tag. Máy chưa ghim ⇒ `CHUA_GHIM_STOP`.
+   kiem-dinh H1 b: CHỈ ghim của tag `actuationLevel ≤ 1`; tag mức 3 / 4 / 5 và tag CHƯA KHAI mức (NULL ⇒ 5) bị BỎ QUA từng tag (kết quả `boQua`,
+   audit `ghimBoQua`, M4 / M10 / M12 "không tới bằng STOP HMI"); có ghim mà mọi ghim mức cao ⇒ `GHIM_MUC_CAO`. ⇒ Sau triển khai, máy có ghim trên
+   tag chưa khai mức sẽ KHÔNG còn nhận STOP HMI cho tới khi khai mức 1 (§7). Luật lọc chỉ ở STOP HMI và bộ khảo sát của nó: đường miễn STOP-ghim
+   trong `dispatch()` (5a-stop) vẫn xét mọi ghim — các bên gọi khác đã qua cổng mức của riêng mình (HMI `write_tag` đòi vai + TOTP theo mức tag;
+   AI từ chối mức ≥ 4; REST v1 OT 501).
 3. Ghim lệch lưới thô (ví dụ `stop_value` 25 trên tag int chưa khai scale 10) vẫn được gửi (miễn cả lệnh) và driver làm tròn ⇒ phát hiện CẤU HÌNH,
    không phải từ chối (T13). `datStopPin` chưa từ chối ghim lệch lưới trên tag chưa khai có scale (R1b-2).
 4. Một authenticated `canEdit` có thể spam STOP (miễn `apiLimiter` cho POST `dungMay` KHÔNG batch, ruling T2 I1) — hướng an toàn; dòng
@@ -348,9 +390,20 @@ kèm khai muộn bench R1a (đỏ có sẵn trên main). Mọi đỏ còn lại 
     (`STOP_PIN_GO_TRUOC`) kể cả có mã. Đổi IP PLC có tag đã khai đang ghim ⇒ gỡ ghim + ghim lại (ruling T9 r2; hiếm, có chủ ý).
 16. `tags.create/update/delete`, `deviceAdapter.update` miễn nhóm giới hạn "2fa" (ruling T9 a/r2, lý do NAT nhà máy; khoá TOTP theo tài khoản
     T16 chặn dò mã). Mỗi lần lưu thay đổi được bảo vệ cần một mã MỚI.
-17. CLI `scripts/mappings-import.mjs` vẫn trỏ lại tag được bảo vệ không TOTP (công cụ vận hành cần quyền DB; R1b-2: `--apply` từ chối tag được bảo vệ).
+17. ~~CLI `scripts/mappings-import.mjs` vẫn trỏ lại tag được bảo vệ không TOTP~~ — kiem-dinh I2: `--apply` TỪ CHỐI lô đụng tag được bảo vệ (cùng
+    định nghĩa T9, truy vấn `scripts/lib/tagBaoVeCli.mjs` so với hàm TS); ngoại lệ tường minh `--cho-phep-tag-bao-ve` cho người có quyền host +
+    DB (ghi vào metadata audit). Người có quyền DB vẫn ghi thẳng bảng được — bám định nghĩa lúc duyệt (I1 a) làm duyệt cũ hết hiệu lực.
 18. `interlock.approve` không chạy kiểm tồn tại đích/nguồn (chỉ `enable`); luật đã duyệt mà đích chết vô hại khi còn tắt. Nhãn nút hộp mã đổi
     "Xác nhận và lưu" → "Xác nhận" (chấp nhận, T10b).
+18a. **Bám định nghĩa lúc duyệt (kiem-dinh I1 a / I3):** phủ address, dataType, scale / offset (chuẩn hoá như đường đọc), adapterId và
+    `edgeNodeId` của adapter cho tag ĐÍCH và mọi tag NGUỒN telemetry của máy. KHÔNG phủ endpoint / protocol / connectionOptions / máy của adapter
+    (đổi đích kiểu này của adapter có tag được bảo vệ đã cần TOTP ở `congAdapterTx`, nhưng KHÔNG bỏ duyệt luật) — ứng viên R1b-2a. Bám chỉ áp ở
+    `enable`, engine (tự chặn) và dispatcher (xác minh lệnh interlock); CỐ Ý KHÔNG áp ở cổng inline `interlockGate` (luật bật vẫn CHẶN) và
+    `troLaiKenh.luatBaoVe` (luật đã duyệt, dù lệch bám, vẫn bảo vệ tag) — ở hai chỗ đó "coi là chưa duyệt" là nới an toàn (fail-open).
+    `oversight` (đếm chờ duyệt, posture) vẫn theo `approvedBy` thô: luật "cần duyệt lại" không vào hàng chờ duyệt của EngineeringHub (R1b-2a).
+    UI duyệt chưa hiện bản thân định nghĩa tag (chỉ huy hiệu "Cần duyệt lại" + token CONFLICT khi định nghĩa đổi giữa lúc xem và lúc bấm).
+18b. `setStopPin` (H1 a) miễn nhóm giới hạn "2fa" (khuôn tags.*: khoá TOTP theo tài khoản T16); mỗi lượt đặt / gỡ một mã mới. `interlock.update /
+    delete` chỉ đòi mã với luật ghi lệnh đang bật / đã duyệt có đích hoặc nguồn tag; luật nháp / alert không đòi.
 
 **Giá trị lệnh (T13)**
 19. Tag int CHƯA khai với scale = 1 / offset = 0 vẫn làm tròn giá trị không nguyên (điều phối Q-T13 (a), R1b-1); R1b-2 (b): `OFF_STEP` cho MỌI tag
@@ -399,7 +452,7 @@ kèm khai muộn bench R1a (đỏ có sẵn trên main). Mọi đỏ còn lại 
       chỉ khi ĐỦ cả năm điều kiện (rà soát cuối M-2):
       1. `SCADA_COMMANDS_ENABLED=true`;
       2. `SCADA_LIVE_CACHE_ENABLED=true`;
-      3. máy đã ghim `stop_value`;
+      3. máy đã ghim `stop_value` **trên tag khai `actuationLevel = 1`** (kiem-dinh H1 b — ghim của tag mức cao / chưa khai mức bị bỏ qua);
       4. **`OT_CONTROL_ENABLED=true`** — tắt ⇒ dispatcher bước 5 trả `simulated`, KHÔNG ghi gì (UI báo `mo_phong`);
       5. **adapter đã nghiệm thu** (`commissioning_records`) khi `OT_COMMISSIONING_REQUIRED` bật (mặc định) — chưa ⇒ bước 5a trả `simulated`.
 
@@ -409,6 +462,16 @@ kèm khai muộn bench R1a (đỏ có sẵn trên main). Mọi đỏ còn lại 
       theo DB; chỉ có hộp 10 s "dùng E-STOP cứng" của client) — R1b-2 (§10).
 - [ ] **MỌI máy cần dừng từ xa phải ghim `stop_value`** cho tag dừng (M12). Máy chưa ghim ⇒ `CHUA_GHIM_STOP` (M4/M10 hiện cảnh báo
       `CanhBaoChuaGhimStop` / khảo sát khả năng dừng `chua_ghim`, `mat_ket_noi`, `qua_edge`, `khong_kiem_duoc`).
+- [ ] **kiem-dinh H1 b — muốn STOP HMI tới tag nào thì khai `actuationLevel = 1` cho tag đó** (trang Kênh & giới hạn, M12; cần TOTP). STOP HMI
+      chỉ gửi ghim của tag mức ≤ 1; tag mức 3 / 4 / 5 hoặc CHƯA khai mức (NULL ⇒ 5, fail-closed) bị bỏ qua (khảo sát `ghim_muc_cao` / "bỏ qua ghim
+      của tag mức > 1"; máy mà mọi ghim mức cao ⇒ `GHIM_MUC_CAO` + "dùng E-STOP cứng"). Đếm trước trên từng DB (chỉ đọc):
+      `SELECT count(*) FROM device_tags WHERE stop_value IS NOT NULL AND "isEnabled" AND writable AND (actuation_level IS NULL OR actuation_level > 1);`
+      — mỗi hàng là một ghim sẽ KHÔNG được STOP HMI gửi sau triển khai.
+- [ ] **kiem-dinh H1 a — ghim DỪNG chỉ kỹ sư trở lên (admin / supervisor / engineer) ĐÃ ĐĂNG KÝ 2FA, mỗi lượt một mã TOTP tươi** (`setStopPin`, cả
+      đặt lẫn gỡ). Operator có `machine_control.canEdit` không còn ghim / gỡ ghim được (`SCADA_ROLE_FLOOR`).
+- [ ] **kiem-dinh I1 — sau khi áp 0434, admin DUYỆT LẠI mọi luật interlock đã duyệt trước đó** (huy hiệu "Cần duyệt lại"; câu đếm ở §4 mục 1):
+      tới lúc đó luật không bật được, không tự chặn, dispatcher từ chối lệnh interlock của nó (cổng inline vẫn chặn theo điều kiện). Mọi lần đổi
+      định nghĩa tag nguồn / đích (UI có TOTP, CLI có `--cho-phep-tag-bao-ve`, đổi chủ edge của adapter) cũng đưa luật về "Cần duyệt lại".
 - [ ] `SCADA_COMMANDS_ENABLED=true` BẮT BUỘC đi kèm `SCADA_LIVE_CACHE_ENABLED=true` (không có bộ đệm ⇒ mọi máy LOCAL `bo_dem_tat`, mọi lệnh ghi thường bị
       chặn; STOP ghim được miễn cổng chế độ theo dữ liệu nên vẫn đi — suy từ mã + S2, chưa đo riêng với bộ đệm tắt).
 - [ ] **Kênh chế độ:** tag poll trung tâm, **poll ≤ 10 s, không deadband** (cổng chế độ kẹp tuổi mẫu min(3·poll, 30 s) — chậm hơn ⇒ máy LOCAL `cu`,
@@ -417,12 +480,12 @@ kèm khai muộn bench R1a (đỏ có sẵn trên main). Mọi đỏ còn lại 
       `connected` mãi (đo ở đối chứng C1).
 - [ ] **`OT_CONTROL_ENABLED` / `AI_OT_CONTROL_ENABLED` giữ OFF tới khi có safety PLC thật** (D9). Hệ quả: STOP HMI là mô phỏng (mục đầu,
       điều kiện 4) — người vận hành dùng E-STOP cứng. ⚠ `.env` hiện có `OT_CONTROL_ENABLED=true` (§6 mục 33).
-- [ ] MỌI kênh dừng phải có mức 1 hoặc `stop_value` ghim (R1a). Kênh dừng chưa khai mức là mức 5 ⇒ AI không dừng được, người cần TOTP (đường
-      `write_tag`); STOP HMI không phụ thuộc mức vì đi giá trị ghim.
+- [ ] MỌI kênh dừng phải khai mức 1 (R1a; kiem-dinh H1 b: nay BẮT BUỘC cả cho STOP HMI — ghim trên tag chưa khai mức / mức > 1 bị bỏ qua). Kênh
+      dừng chưa khai mức là mức 5 ⇒ AI không dừng được, người cần TOTP (đường `write_tag`), STOP HMI không gửi ghim của nó.
 - [ ] **Tích hợp dùng REST v1 `POST /equipment/:id/commands` cho máy OT phải chuyển sang HMI SCADA** (nay 501). Robot `abort` / `e_stop` giữ nguyên.
 - [ ] Đặt `OT_CONTROL_TIMEOUT_MAX_MS` (R1a ruling T9) cho bên gọi có `deadlineMs`.
 - [ ] `OT_COMMISSIONING_REQUIRED` giữ mặc định BẬT (adapter cần `commissioning_records`, nếu không lệnh chỉ `simulated`).
-- [ ] Thứ tự migration theo §4: **0431, 0432, 0433** trên mọi DB trước bản build; sau khởi động `GET /health` không có `schemaR1a` (không
+- [ ] Thứ tự migration theo §4: **0431, 0432, 0433, 0434** trên mọi DB trước bản build (0434: kiem-dinh I1 a — chưa có kiểm lúc khởi động, xem §4 mục 1); sau khởi động `GET /health` không có `schemaR1a` (không
       `trangThai:"thieu"`, không `trangThai:"chua_kiem_duoc"`).
 - [ ] Đổi IP / endpoint / protocol / máy của adapter có tag được bảo vệ cần TOTP tươi; còn tag đã khai đang ghim ⇒ gỡ ghim trước rồi ghim lại.
 - [ ] **Kỹ sư bảo trì thiết bị đã đăng ký 2FA TRƯỚC triển khai** (T9, rà soát cuối M-3; chi tiết + câu đếm ở §4 mục 6): sửa / tạo / xoá / tắt tag
@@ -516,7 +579,7 @@ tag, kiểm nhất quán từng tag — cần trước `AI_OT_CONTROL_ENABLED`).
 3. T4: khi DB treo vẫn nạp `napTuOt` (bộ đệm không cũ theo DB); thử lại lô mẫu xấu bị bỏ.
 4. T7: không có canh 0433 ở đầu `request`/`confirm` (M-3/M-4); tổng kết `DIEU_TIET` cho người ngừng hẳn.
 5. T8: người thắng bị `MA_DU_PHONG_TAM_KHOA` dưới ≥ 10 lượt song song (đo lại ở B1 quan sát).
-6. T9: CLI `mappings-import.mjs --apply` từ chối tag được bảo vệ.
+6. ~~T9: CLI `mappings-import.mjs --apply` từ chối tag được bảo vệ.~~ — ĐÃ LÀM ở vòng sửa kiem-dinh (I2, §13).
 7. T10a: M-2 điểm mù census (`import * as t`, helper khác tệp); M-3 dispatcher join `edge_nodes`; M-4 leo thang `chua_kiem_duoc`; M-5
    `performance.now` khi máy ngủ; loại tệp test khỏi hai ca census `confirmAction` kèm lý do có ngày; DOM test I-2 cho mọi hộp (nay chỉ Guided).
 8. T13: m2 đường FOE thật tới số thô; m4 `datStopPin` lệch lưới trên tag chưa khai có scale; m5 HMI `TYPE_MISMATCH` trên int scale 0,5 trong khi
@@ -532,6 +595,23 @@ tag, kiểm nhất quán từng tag — cần trước `AI_OT_CONTROL_ENABLED`).
     `SCADA_CONFIG_TOTP_REQUIRED` mà không có ô mã: định tuyến lỗi qua `useHopMaTotpTroLai` hoặc hiện câu "dùng trang Device Adapter".
 13. Rà soát cuối I-1 — posture `interlockRulesCauHinhHong` (nay gồm luật lệch lưới thô) CHƯA được client nào hiển thị (đo: không tệp
     `client/src` nào đọc trường này); đưa lên EngineeringHub / trang interlock cạnh "độ phủ interlock".
+
+**R1b-2a — hoãn từ kiểm định độc lập R1b-1 (quyết định điều phối 2026-10-25, KHÔNG làm ở vòng sửa §13):**
+14. Limiter `dungMay`: đổi miễn tuyệt đối → trần theo NGƯỜI rộng (~600 / phút). Lý do kiem-dinh: vé đã thu hồi nhưng còn hạn vẫn được miễn
+    (kiểm stateless) ⇒ người có vé ký hợp lệ gửi `dungMay` không giới hạn; mỗi lượt vẫn qua `createContext` (áp lực pool DB).
+15. kiem-dinh M1 — dung sai lưới tuyệt đối 1e-9·max(1,|s|) nuốt phần lệch khi |scale| ≲ 2e-9 và |raw| ≥ 2^53 (lý thuyết; 1200 giá trị đối chiếu
+    `inverseScale` thật: 0 từ chối nhầm).
+16. kiem-dinh M2 — NaN / Infinity / "abc" trên tag int có scale chưa khai vẫn đi qua (hành vi cũ).
+17. kiem-dinh M3 — `kiemSchemaR1a` không kiểm 3 FK của 0433 (script áp có verify `confdeltype` / `convalidated`). **Cùng việc:** thêm kiểm cột
+    0434 (`interlock_rules."approvedDefHash"`) lúc khởi động — thiếu 0434 hiện làm mọi truy vấn interlock lỗi mà `/health` không nói (§4 mục 1).
+18. kiem-dinh M4 — `samplingMs` / `deadband` / `unit` sửa được trên tag được bảo vệ không TOTP (nguồn luật trễ tối đa 60 s khi
+    `OT_TAG_DEADBAND_ENABLED` bật, mặc định tắt). CLI mappings-import cũng không coi ba cột này là chạm bảo vệ (cùng luật UI).
+19. kiem-dinh M5 — phạm vi nhà máy chỉ kiểm TRƯỚC giao dịch, không kiểm lại dưới khoá adapter (chỉ `scadaKenh.capNhat` làm đúng; cần hai thao tác
+    đồng thời đổi `machineId`).
+20. kiem-dinh M7 — import `mappingAsCode` khoá tag không ORDER BY (≈:720) ⇒ có thể 40P01; `kiemTotpCauHinh` chiếm thêm 1 kết nối pool trong giao
+    dịch (nay cả `setStopPin` và `interlock.update / delete`).
+21. Phát sinh ở vòng sửa §13: bám định nghĩa phủ thêm endpoint / protocol / connectionOptions / máy của adapter đích (§6 mục 18a); luật "Cần duyệt
+    lại" vào hàng chờ duyệt của oversight / EngineeringHub; hộp duyệt hiện định nghĩa tag nguồn / đích đang được duyệt.
 
 **Từ backlog R1b của R1a (§8) chưa thuộc R1b-1:** mục 2 (phần còn lại, đã vào danh sách R1b-2 trên), 6 (UI M9), 7 (M4 chạy khô), 10
 (`congOtLuong`), 14 (audit điều tiết đúng cỡ), 16 (M12), 21 (khoá TOTP leo thang / cảnh báo `tam_khoa` lặp), 22 (màn admin mở khoá TOTP), 23
@@ -562,11 +642,69 @@ Nhánh `feat/scada-r1b`, gốc `feat/scada-r1a` `9c7b8054d`. Gộp main hai lầ
   router scadaCommands / oversight / interlock + `trpcLinks` 187 tệp 2575 qua / 13 bỏ qua; lô DB tuần tự cùng phạm vi 43 tệp (3 bỏ qua) 633 qua /
   42 bỏ qua; `npm run check` rc 0; `npm run i18n:check` sạch.
 
+- **Kiểm định độc lập — sửa (§13):** `3256c6808` (M6), `75c150213` (N-1), `80ac53ce5` (H1 a), `fb05faa25` (H1 b), `ebac0dcd6` (I1 + I3, mig 0434),
+  `085824598` (I2) và commit chữ báo cáo kế tiếp (I4, §4 / §6 / §7 / §10 / §13).
+
 **Migration:** 0433 (`scripts/apply-migration-0433.mjs`): TEST ở T6; DEV 2026-10-24 sau "ÁP". 0431 / 0432 như R1a. Cả ba kiểm lại có mặt trên DEV
-và TEST hôm nay (§4).
+và TEST hôm nay (§4). **0434** (`scripts/apply-migration-0434.mjs`, kiem-dinh I1 a): TEST 2026-10-25; **DEV chưa áp** (chờ điều phối duyệt SQL).
 
 ## 12. Bàn giao
 
 - Không push. Không cờ mới (`.env.example` không đổi bởi R1b-1).
 - Container bench: chạy theo cho phép của điều phối rồi trả về **exited** như lúc tìm thấy (giới hạn 1 GiB để lại). `_test` sạch, chỉ còn hàng WORM của lưới + bench, đúng thiết kế.
 - Việc tiếp: rà soát cuối cả nhánh → kiem-dinh → gộp.
+- 2026-10-25: kiem-dinh trên `abcd3ea58` — "KHÔNG ĐẠT có điều kiện"; vòng sửa ở §13. Việc tiếp: điều phối duyệt SQL 0434 → áp DEV → gộp main mới
+  nhất (`f15291ed6`) → đo lại GHIM census trên cây đã gộp → lưới đầy đủ → kiem-dinh lại.
+
+## 13. Kiểm định độc lập R1b-1 — sửa
+
+Kiem-dinh trên `abcd3ea58`: **KHÔNG ĐẠT có điều kiện**. Quyết định điều phối 2026-10-25 (brief `kiemdinh-fix-brief.md`): sửa H1, I1, I2, I3, N-1, M6
+trước gộp; I4 vào điều kiện triển khai; limiter `dungMay` + M1/M2/M3/M4/M5/M7 sang R1b-2a (§10 mục 14–21).
+
+| Mục | Lỗi kiem-dinh | Sửa | Commit |
+|---|---|---|---|
+| **H1** (Cao) | `setStopPin` chỉ cần `machine_control.canEdit`, nhận mọi tag writable + giá trị bất kỳ; `dungMay` gửi ghim một bước (mức 1, miễn chế độ / dải / policy / interlock) ⇒ operator ghim tag mức 4/5 giá trị X rồi bấm DỪNG = thiết bị nhận X (vượt TOTP, sàn vai, LOCAL) | (a) `setStopPin`: sàn vai admin / supervisor / engineer TRƯỚC mọi đọc (`SCADA_ROLE_FLOOR`), kiểm hợp lệ, rồi TOTP tươi mức 5 (`kiemTotpCauHinh`) CUỐI trong giao dịch, cả đặt lẫn gỡ; census `kiemXacThucTheoMuc` (miễn "2fa" có lý do ghi ngày); UI hộp mã 6 số dùng chung + ghi chú tag mức > 1. (b) `dungMay` chỉ gửi ghim của tag `actuationLevel ≤ 1` (NULL ⇒ 5); ghim mức cao BỎ QUA từng tag + `boQua` trong kết quả + audit; không bao giờ chặn ghim hợp lệ khác; mọi ghim mức cao ⇒ `GHIM_MUC_CAO` ("dùng E-STOP cứng"); khảo sát `khaNangDung` + M4/M10/M12 cùng luật (`ghim_muc_cao`, `ghimBoQua`) | `80ac53ce5` (a), `fb05faa25` (b) |
+| **I1** | sửa / xoá luật interlock tự bỏ duyệt KHÔNG đòi TOTP ⇒ tag hết được bảo vệ ⇒ đổi address / kiểu không cần mã ⇒ admin duyệt lại mà không thấy định nghĩa đã đổi | (a) bám định nghĩa tag nguồn / đích (address, dataType, scale / offset, adapterId, `edgeNodeId` của adapter) chụp vào `approvedDefHash` lúc `approve` (mig **0434**) VÀ nằm trong `versionToken` v2; duyệt chỉ còn hiệu lực khi bám khớp — `enable` từ chối (`interlockDefinitionChanged`), engine không tự chặn, dispatcher `INTERLOCK_NOT_APPROVED`; cố ý KHÔNG áp ở cổng inline và `luatBaoVe` (fail-open ở đó); UI huy hiệu "Cần duyệt lại". (b) `kiemTotpCauHinh` khi sửa / xoá luật ghi lệnh đang bật hoặc đã duyệt có đích / nguồn tag, kiểm hợp lệ TRƯỚC, mã CUỐI; UI hộp mã | `ebac0dcd6` |
+| **I2** | `scripts/mappings-import.mjs` ghi SQL thẳng vào `device_tags`, né T9 | mặc định TỪ CHỐI lô đụng tag được bảo vệ (cùng định nghĩa `troLaiKenh`, SQL `scripts/lib/tagBaoVeCli.mjs` có test so với hàm TS), kiểm cả trước và trong giao dịch; ngoại lệ tường minh `--cho-phep-tag-bao-ve` (quyền host + DB, ghi vào metadata audit); tài liệu `contracts/mappings/README.md`; nhờ I1 a, duyệt cũ tự mất hiệu lực | `085824598` |
+| **I3** | `changeDeviceOwner` đổi `edgeNodeId` = đổi đích | `edgeNodeId` nằm trong bám I1 a ⇒ luật đã duyệt nhắm (đích) hoặc đọc (nguồn) adapter đó trở về chưa duyệt; không thêm TOTP ở đường robot. Test với `changeDeviceOwner` THẬT (đích, nguồn, cả hai) | `ebac0dcd6` |
+| **N-1** | SQL trước triển khai trả NULL (bỏ sót) cho chuỗi hex / TAB / NBSP mà JS đọc được | mọi `commandValue` không phải số / boolean / null / chuỗi số thập phân sạch ⇒ hàng `ket_luan = 'KHONG_PARSE_DUOC'` (đếm là chặn); khối SQL §4 mục 2 = hằng `TRUY_VAN_TRUOC_TRIEN_KHAI` nguyên văn (test so từng ký tự) | `75c150213` |
+| **M6** | `tags.update` / `tags.delete` trả `NOT_FOUND{deviceTag}` (không tồn tại) khác `NOT_FOUND{adapter}` (ngoài phạm vi) ⇒ lộ id tag nhà máy khác | `adapterCuaTag` đổi lỗi phạm vi về đúng `NOT_FOUND {entity:"deviceTag"}`; test: ngoài phạm vi ≡ không tồn tại (code + appCode + params) | `3256c6808` |
+| **I4** | census OFF_STEP T13 chưa đo trên PRODUCTION | §4 mục 2b: chạy task-13-report §1.3 trên PRODUCTION trước triển khai (DEV 42 tag / TEST 323 tag — 0 thuộc diện) | commit chứa báo cáo này |
+
+**Migration 0434** (cấp dải 0434–0436 cho vòng này; chỉ dùng 0434): cần thật — `versionToken` không được lưu và các cột duyệt hiện có
+(`approvedBy`, `approvedAt`) không chứa được bám. Áp TEST (`node scripts/apply-migration-0434.mjs --test-only`, hai lần). **DEV CHƯA ÁP — SQL
+`drizzle/0434_interlock_bam_dinh_nghia_duyet.sql` gửi điều phối.**
+
+**Test + đột biến (mỗi cổng đỏ rồi hoàn tác):**
+- H1 a — `deviceAdapterRouter.stopPinTotp.r1b.db.test.ts` (operator ghim tag mức 4 ⇒ từ chối, cả gỡ / tag chỉ đọc / tag không tồn tại;
+  engineer không mã ⇒ TOTP_CAN; mã sai / chưa 2FA; kiểm hợp lệ trước mã — mã không bị tiêu; gỡ cũng cần mã) + DOM. Đột biến: bỏ sàn vai ⇒ đỏ 1;
+  bỏ TOTP ⇒ đỏ 3.
+- H1 b — `scadaCommandsRouter.dungMay.db.test.ts` (ghim mức 4 + ghim chưa khai mức gieo thẳng ⇒ thiết bị chỉ nhận ghim mức 1, kết quả + audit liệt
+  kê 2 tag; máy chỉ ghim mức cao ⇒ `GHIM_MUC_CAO`, 0 dispatch; khảo sát + `coGhimStop` cùng luật), `stopPin.mucHmi.test.ts`, DOM 5 ca. Đột biến:
+  gửi mọi mức ⇒ đỏ 3; NULL ⇒ 1 ⇒ đỏ 1.
+- I1 / I3 — `interlockRouter.kiemDinh.r1b.db.test.ts` (13 ca), `dinhNghiaDuyet.test.ts`, engine + dispatcher (ca lệch bám), DOM. Đột biến: approve
+  không chụp bám ⇒ đỏ 4; `enable` bỏ kiểm bám ⇒ đỏ 3; update bỏ TOTP ⇒ đỏ 1; delete bỏ TOTP ⇒ đỏ 1; bám bỏ `edgeNodeId` đích ⇒ đỏ 1; bỏ
+  `edgeNodeId` nguồn ⇒ đỏ 1; token bỏ bám ⇒ đỏ 1; dispatcher bỏ kiểm ⇒ đỏ 1; engine bỏ kiểm ⇒ đỏ 1.
+- I2 — `scripts/mappings-import.tagBaoVe.db.test.ts` (CLI THẬT; tương đương SQL ↔ TS). Đột biến: CLI luôn cho phép ⇒ đỏ 3; SQL bỏ điều kiện
+  `approvedBy` ⇒ đỏ 3.
+- N-1 — `interlockRouter.r1b.db.test.ts` §5 ("0x19", TAB, NBSP, `[25]`, " 25 "), `lenhInterlockLechLuoi.baoCao.test.ts`. Đột biến: WHERE về
+  `v IS NOT NULL AND` ⇒ đỏ 2.
+- M6 — `adapterPhamVi.db.test.ts`. Đột biến: bản cũ ⇒ đỏ 1.
+- Fixture (không đổi assertion): luật "đã duyệt" gieo thẳng ⇒ `server/testing/dauDuyetInterlock.ts` chụp bám (như approve); tệp chỉ kiểm ngữ nghĩa
+  ghim / MOC / token bằng người gọi id giả ⇒ mock `kiemTotpCauHinh`; tag CÓ ghim trong `dungMay.db` mặc định khai mức 1; unit dispatcher / engine
+  mock `luatDuyetConHieuLuc` (FakeDb không có raw SQL).
+
+**Đo sau sửa (2026-10-25, trên `085824598` + báo cáo; CHƯA gộp main mới — GHIM census đo lại khi gộp):**
+
+| Lô | Kết quả |
+|---|---|
+| Không-DB: `server/_core`, `services/scada`, `services/ot`, `services/interlock`, router interlock* / deviceAdapter* / scadaCommands* / scadaDiag* / scadaKenh*, `client` scada + DeviceAdapterManagement + InterlockRuleManagement + ScadaDiag, `scripts/lib` | 205 tệp, 2911 qua / 13 bỏ qua / **0 đỏ** |
+| DB tuần tự (`vitest.db.config.ts`) cùng phạm vi + adapterPhamVi, commissioningRouter, engineeringAssignment, oversight, edgeAuthorize | 59 tệp (3 bỏ qua = lưới opt-in), 889 qua / 42 bỏ qua / **2 đỏ** — cả hai ở `engineeringAssignment.db.test.ts` (§8 fix 1, §10 M-5), **có sẵn**: chạy lại với `interlockRouter.ts` của `abcd3ea58` ⇒ cùng 2 đỏ (`luatTrongPhamVi` NOT_FOUND cho luật không vị trí + kỹ sư có phạm vi — lô phạm vi W8 của main, không thuộc vòng này) |
+| CLI DB (`scripts/mappings-import.*.db.test.ts` + `scripts/lib`, cấu hình mặc định) | 4 tệp 20/20 |
+| Census (mọi `*census*.test.ts(x)` trong git) | 58 tệp, 978 qua / 3 bỏ qua / **0 đỏ** |
+| Opt-in R0 + R1a + R1b-1 (`SCADA_R0/R1A/R1B_NGHIEM_THU=1`, một lượt) | **42/42** (S1–S6 không cần đổi fixture: tag dừng đã khai mức 1) |
+| `npx tsc --noEmit` (12 GB) · `npm run i18n:check` | 0 lỗi · sạch |
+
+**Quyết định của người sửa cần điều phối xem:** (1) bám lệch KHÔNG làm luật "chưa duyệt" ở `interlockGate` và `troLaiKenh.luatBaoVe` (ở hai chỗ đó
+coi là chưa duyệt = gỡ chặn / tag mất bảo vệ — chiều fail-open), khác chữ "engine / gate / luatBaoVe" của brief; (2) đối tượng / mảng
+`commandValue` cũng thành hàng `KHONG_PARSE_DUOC` (JS đọc được `[25]`); (3) `setStopPin` miễn nhóm "2fa" (ghim thành loạt lúc commissioning).
