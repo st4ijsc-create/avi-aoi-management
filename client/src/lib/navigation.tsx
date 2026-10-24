@@ -925,6 +925,17 @@ export const navGroups: NavGroup[] = [
         section: "connect",
         engineerOriented: true,
       },
+      {
+        // SCADA R1a Task 13 — M12 kênh & giới hạn (loại kênh, dải, bước, mức tác động, kênh chế độ theo máy; sửa chỉ engineer ở UI + máy chủ)
+        href: "/scada/config/channels",
+        label: "nav.scadaKenh",
+        icon: <SlidersHorizontal className="h-4 w-4" />,
+        description: "nav.scadaKenhDesc",
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
+        section: "connect",
+        engineerOriented: true,
+      },
       // doc 36 follow-up — /uns-mapping REMOVED: redirects into /connectivity (UNS tab).
       {
         // Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion (CONFIG + status + dry-run)

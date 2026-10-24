@@ -7233,7 +7233,9 @@
     "productionShiftsDesc": "按班次的操作员分配与现场看板",
     "productionShiftsAlias": "人力 → 生产 › 班次",
     "aiFlows": "AI 流程",
-    "aiFlowsDesc": "带 AI 与人工审批节点的 n8n 风格自动化"
+    "aiFlowsDesc": "带 AI 与人工审批节点的 n8n 风格自动化",
+    "scadaKenh": "SCADA 通道与限值",
+    "scadaKenhDesc": "各设备的通道类型、范围、步长、作用等级和模式通道（工程师）"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",
@@ -23522,6 +23524,108 @@
         "dialogApDungTieuDe": "为 {{code}} 设置 stub 故障？",
         "dialogXoaLoiTieuDe": "清除 {{code}} 的 stub 故障？",
         "dialogMoTa": "对模拟适配器的 Lab 操作。原因将记录到审计日志。"
+      }
+    },
+    "kenh": {
+      "title": "通道与限值",
+      "subtitle": "声明每个标签的通道类型、范围、步长和作用等级，以及每台设备的模式通道。所有更改都会连同原因记入审计。",
+      "adapter": "适配器",
+      "khongCoAdapter": "您的权限范围内没有适配器。",
+      "dangTai": "加载中…",
+      "loiTai": "无法加载数据。",
+      "trong": "该适配器没有标签。",
+      "tieuDeBang": "适配器 {{code}} 的通道（{{count}}）",
+      "col": {
+        "tag": "标签",
+        "loai": "通道类型",
+        "dai": "写入范围",
+        "buoc": "步长",
+        "muc": "作用等级",
+        "tenHienThi": "显示名称",
+        "hanhDong": "操作"
+      },
+      "loai": {
+        "input": "输入",
+        "input_output": "输入 / 输出",
+        "calculated": "计算",
+        "calculated_output": "计算（输出）",
+        "output": "输出"
+      },
+      "nguon": {
+        "khai": "已声明",
+        "suy": "由 writable 推断"
+      },
+      "mucMacDinhDong": "5 — 默认关闭",
+      "laKenhCheDo": "模式通道",
+      "daTat": "标签已禁用",
+      "canhBaoKenhDung": "停止通道未声明等级 — AI 和远程命令无法停止此设备；请设为等级 1 或固定 stop_value",
+      "canhBaoNguon": "模式通道应为中心适配器上定期轮询的标签 — 变化上报/边缘来源可能使设备回落到 LOCAL（旧值 / 无样本）",
+      "canhBaoNguonLoai": {
+        "deadband": "标签使用死区过滤 / 稀疏采样",
+        "edge": "适配器由边缘节点持有",
+        "bao_khi_doi": "变化上报协议（OPC UA 监控项）"
+      },
+      "nut": {
+        "sua": "编辑",
+        "datKenhCheDo": "设置模式通道",
+        "goKenhCheDo": "移除模式通道"
+      },
+      "cheDo": {
+        "tieuDe": "各设备的模式通道",
+        "moTa": "该标签表明设备处于 REMOTE 还是 LOCAL。仅当标签等于已声明的 REMOTE 值，且样本新鲜、质量良好时，设备才接受远程命令；其他情况均为 LOCAL。",
+        "trong": "您的权限范围内没有设备。",
+        "col": {
+          "may": "设备",
+          "adapter": "适配器",
+          "tag": "标签",
+          "giaTriRemote": "REMOTE 值",
+          "cheDo": "当前模式",
+          "hanhDong": "操作"
+        },
+        "remote": "模式通道等于 REMOTE 值",
+        "chuaKhai": "未声明 ⇒ 视为 LOCAL",
+        "boDemTat": "值缓冲已关闭 ⇒ 视为 LOCAL",
+        "chuaCoMau": "模式通道尚无样本 ⇒ 视为 LOCAL",
+        "chatLuongXau": "模式通道样本质量差 ⇒ 视为 LOCAL",
+        "cu": "模式通道的值已过期 ⇒ 视为 LOCAL",
+        "khacRemote": "模式通道不等于 REMOTE 值 ⇒ LOCAL",
+        "loiDoc": "读取模式通道出错 ⇒ 视为 LOCAL",
+        "kenhSaiMay": "模式通道不属于本设备的适配器 ⇒ 视为 LOCAL",
+        "kenhAn": "通道已隐藏（超出您的权限范围）"
+      },
+      "dialog": {
+        "suaTieuDe": "编辑通道 {{tagKey}}",
+        "suaMoTa": "仅发送您修改的字段。字段留空表示清除声明。",
+        "loaiKenh": "通道类型",
+        "loaiSuyRa": "未声明（由 writable 推断）",
+        "tenHienThi": "显示名称",
+        "dinhDang": "显示格式",
+        "min": "下限",
+        "max": "上限",
+        "buoc": "步长",
+        "muc": "作用等级",
+        "mucChuaKhai": "未声明（默认 5 — 关闭）",
+        "daiLoi": "下限必须 ≤ 上限，步长必须 > 0。",
+        "daiChiSo": "范围和步长仅适用于数值通道（int / float）。",
+        "lyDo": "原因（必填，≥ 5 个字符）",
+        "lyDoNgan": "原因至少需要 {{min}} 个字符。",
+        "huy": "取消",
+        "gui": "保存",
+        "datTieuDe": "设置模式通道 — 设备 {{code}}",
+        "datMoTa": "选择挂在此设备上的适配器的标签，以及使设备处于 REMOTE 的值。",
+        "adapter": "适配器",
+        "tag": "标签",
+        "giaTriRemote": "REMOTE 值",
+        "giaTriSai": "REMOTE 值与标签的数据类型不符。",
+        "khongCoAdapterMay": "您的权限范围内此设备没有适配器。",
+        "goTieuDe": "移除模式通道 — 设备 {{code}}",
+        "goMoTa": "在重新声明通道之前，设备将视为 LOCAL（未声明）。"
+      },
+      "toast": {
+        "capNhat": "通道声明已更新。",
+        "capNhatKhongDoi": "没有任何更改。",
+        "datCheDo": "已设置模式通道。",
+        "goCheDo": "已移除模式通道。"
       }
     }
   }

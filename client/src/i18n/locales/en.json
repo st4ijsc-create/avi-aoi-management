@@ -7450,7 +7450,9 @@
     "productionShiftsDesc": "Operator assignments per shift and the current station board",
     "productionShiftsAlias": "Workforce → Production › Shifts",
     "aiFlows": "AI Flows",
-    "aiFlowsDesc": "n8n-style automation with AI and human-approval nodes"
+    "aiFlowsDesc": "n8n-style automation with AI and human-approval nodes",
+    "scadaKenh": "SCADA channels & limits",
+    "scadaKenhDesc": "Channel kind, range, step, actuation level and per-machine mode channel (engineers)"
   },
   "aboutPage": {
     "layoutTitle": "About System",
@@ -23520,6 +23522,108 @@
         "dialogApDungTieuDe": "Apply stub fault to {{code}}?",
         "dialogXoaLoiTieuDe": "Clear stub fault on {{code}}?",
         "dialogMoTa": "Lab action on a simulated adapter. The reason is recorded in the audit log."
+      }
+    },
+    "kenh": {
+      "title": "Channels & limits",
+      "subtitle": "Declare each tag's channel kind, range, step and actuation level, and each machine's mode channel. Every change is audited with a reason.",
+      "adapter": "Adapter",
+      "khongCoAdapter": "There are no adapters in your scope.",
+      "dangTai": "Loading…",
+      "loiTai": "Could not load the data.",
+      "trong": "This adapter has no tags.",
+      "tieuDeBang": "Channels of adapter {{code}} ({{count}})",
+      "col": {
+        "tag": "Tag",
+        "loai": "Channel kind",
+        "dai": "Write range",
+        "buoc": "Step",
+        "muc": "Actuation level",
+        "tenHienThi": "Display name",
+        "hanhDong": "Actions"
+      },
+      "loai": {
+        "input": "Input",
+        "input_output": "Input / output",
+        "calculated": "Calculated",
+        "calculated_output": "Calculated (output)",
+        "output": "Output"
+      },
+      "nguon": {
+        "khai": "declared",
+        "suy": "inferred from writable"
+      },
+      "mucMacDinhDong": "5 — closed by default",
+      "laKenhCheDo": "Mode channel",
+      "daTat": "tag disabled",
+      "canhBaoKenhDung": "Stop channel has no declared level — AI and remote commands cannot stop this machine; set level 1 or pin stop_value",
+      "canhBaoNguon": "The mode channel should be a periodically polled tag on a central adapter — a report-by-exception / edge source can drop the machine to LOCAL (stale value / no sample)",
+      "canhBaoNguonLoai": {
+        "deadband": "Tag uses deadband filtering / sparse sampling",
+        "edge": "Adapter is owned by an edge node",
+        "bao_khi_doi": "Report-by-exception protocol (OPC UA monitored items)"
+      },
+      "nut": {
+        "sua": "Edit",
+        "datKenhCheDo": "Set mode channel",
+        "goKenhCheDo": "Unlink mode channel"
+      },
+      "cheDo": {
+        "tieuDe": "Mode channel per machine",
+        "moTa": "The tag says whether the machine is REMOTE or LOCAL. The machine accepts remote commands only when the tag equals the declared REMOTE value with a fresh sample of good quality; every other case is LOCAL.",
+        "trong": "There are no machines in your scope.",
+        "col": {
+          "may": "Machine",
+          "adapter": "Adapter",
+          "tag": "Tag",
+          "giaTriRemote": "REMOTE value",
+          "cheDo": "Current mode",
+          "hanhDong": "Actions"
+        },
+        "remote": "Mode channel equals the REMOTE value",
+        "chuaKhai": "Not declared ⇒ treated as LOCAL",
+        "boDemTat": "Value buffer is off ⇒ treated as LOCAL",
+        "chuaCoMau": "No sample yet from the mode channel ⇒ treated as LOCAL",
+        "chatLuongXau": "Mode channel sample quality is bad ⇒ treated as LOCAL",
+        "cu": "Mode channel value is stale ⇒ treated as LOCAL",
+        "khacRemote": "Mode channel differs from the REMOTE value ⇒ LOCAL",
+        "loiDoc": "Could not read the mode channel ⇒ treated as LOCAL",
+        "kenhSaiMay": "Mode channel is not on this machine's adapter ⇒ treated as LOCAL",
+        "kenhAn": "Channel hidden (outside your scope)"
+      },
+      "dialog": {
+        "suaTieuDe": "Edit channel {{tagKey}}",
+        "suaMoTa": "Only the fields you change are sent. Leave a field empty to clear it.",
+        "loaiKenh": "Channel kind",
+        "loaiSuyRa": "Not declared (inferred from writable)",
+        "tenHienThi": "Display name",
+        "dinhDang": "Display format",
+        "min": "Lower limit",
+        "max": "Upper limit",
+        "buoc": "Step",
+        "muc": "Actuation level",
+        "mucChuaKhai": "Not declared (default 5 — closed)",
+        "daiLoi": "Lower limit must be ≤ upper limit and step must be > 0.",
+        "daiChiSo": "Range and step apply to numeric channels only (int / float).",
+        "lyDo": "Reason (required, ≥ 5 characters)",
+        "lyDoNgan": "The reason must be at least {{min}} characters.",
+        "huy": "Cancel",
+        "gui": "Save",
+        "datTieuDe": "Set mode channel — machine {{code}}",
+        "datMoTa": "Pick a tag of an adapter attached to this machine and the value that makes the machine REMOTE.",
+        "adapter": "Adapter",
+        "tag": "Tag",
+        "giaTriRemote": "REMOTE value",
+        "giaTriSai": "The REMOTE value does not match the tag's data type.",
+        "khongCoAdapterMay": "This machine has no adapter in your scope.",
+        "goTieuDe": "Unlink mode channel — machine {{code}}",
+        "goMoTa": "The machine will be treated as LOCAL (not declared) until a channel is declared again."
+      },
+      "toast": {
+        "capNhat": "Channel declaration updated.",
+        "capNhatKhongDoi": "Nothing changed.",
+        "datCheDo": "Mode channel set.",
+        "goCheDo": "Mode channel unlinked."
       }
     }
   }

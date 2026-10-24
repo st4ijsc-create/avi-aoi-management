@@ -7430,7 +7430,9 @@
     "productionShiftsDesc": "Phân công người vận hành theo ca và bảng hiện trường",
     "productionShiftsAlias": "Nhân lực → Sản xuất › Ca",
     "aiFlows": "Luồng AI",
-    "aiFlowsDesc": "Tự động hoá kiểu n8n với node AI, duyệt người"
+    "aiFlowsDesc": "Tự động hoá kiểu n8n với node AI, duyệt người",
+    "scadaKenh": "Kênh & giới hạn SCADA",
+    "scadaKenhDesc": "Loại kênh, dải, bước, mức tác động và kênh chế độ của từng máy (kỹ sư)"
   },
   "aboutPage": {
     "layoutTitle": "Giới thiệu hệ thống",
@@ -23494,6 +23496,108 @@
         "dialogApDungTieuDe": "Đặt lỗi stub cho {{code}}?",
         "dialogXoaLoiTieuDe": "Xoá lỗi stub của {{code}}?",
         "dialogMoTa": "Thao tác Lab trên adapter mô phỏng. Lý do được ghi vào audit."
+      }
+    },
+    "kenh": {
+      "title": "Kênh & giới hạn",
+      "subtitle": "Khai báo loại kênh, dải, bước, mức tác động của từng tag và kênh chế độ của từng máy. Mọi thay đổi ghi audit kèm lý do.",
+      "adapter": "Adapter",
+      "khongCoAdapter": "Chưa có adapter nào trong phạm vi của bạn.",
+      "dangTai": "Đang tải…",
+      "loiTai": "Không tải được dữ liệu.",
+      "trong": "Adapter này chưa có tag nào.",
+      "tieuDeBang": "Kênh của adapter {{code}} ({{count}})",
+      "col": {
+        "tag": "Tag",
+        "loai": "Loại kênh",
+        "dai": "Dải ghi",
+        "buoc": "Bước",
+        "muc": "Mức tác động",
+        "tenHienThi": "Tên hiển thị",
+        "hanhDong": "Hành động"
+      },
+      "loai": {
+        "input": "Vào",
+        "input_output": "Vào / ra",
+        "calculated": "Tính toán",
+        "calculated_output": "Tính toán (ra)",
+        "output": "Ra"
+      },
+      "nguon": {
+        "khai": "khai",
+        "suy": "suy từ writable"
+      },
+      "mucMacDinhDong": "5 — mặc định đóng",
+      "laKenhCheDo": "Kênh chế độ",
+      "daTat": "tag tắt",
+      "canhBaoKenhDung": "Kênh dừng chưa khai mức — AI và lệnh từ xa không dừng được máy này; đặt mức 1 hoặc ghim stop_value",
+      "canhBaoNguon": "Kênh chế độ nên là tag poll định kỳ trên adapter trung tâm — nguồn báo-khi-đổi/edge có thể làm máy rơi về LOCAL (giá trị cũ / chưa có mẫu)",
+      "canhBaoNguonLoai": {
+        "deadband": "Tag đang lọc deadband / lấy mẫu thưa",
+        "edge": "Adapter do edge sở hữu",
+        "bao_khi_doi": "Giao thức báo-khi-đổi (OPC UA monitored items)"
+      },
+      "nut": {
+        "sua": "Sửa",
+        "datKenhCheDo": "Đặt kênh chế độ",
+        "goKenhCheDo": "Gỡ kênh chế độ"
+      },
+      "cheDo": {
+        "tieuDe": "Kênh chế độ theo máy",
+        "moTa": "Tag cho biết máy đang REMOTE hay LOCAL. Chỉ khi tag bằng đúng giá trị REMOTE đã khai, còn mẫu tươi và chất lượng tốt thì máy mới nhận lệnh từ xa; mọi trường hợp khác là LOCAL.",
+        "trong": "Chưa có máy nào trong phạm vi của bạn.",
+        "col": {
+          "may": "Máy",
+          "adapter": "Adapter",
+          "tag": "Tag",
+          "giaTriRemote": "Giá trị REMOTE",
+          "cheDo": "Chế độ hiện tại",
+          "hanhDong": "Hành động"
+        },
+        "remote": "Kênh chế độ đang bằng giá trị REMOTE",
+        "chuaKhai": "Chưa khai ⇒ coi như LOCAL",
+        "boDemTat": "Bộ đệm giá trị đang tắt ⇒ coi như LOCAL",
+        "chuaCoMau": "Chưa có mẫu từ kênh chế độ ⇒ coi như LOCAL",
+        "chatLuongXau": "Chất lượng mẫu kênh chế độ xấu ⇒ coi như LOCAL",
+        "cu": "Giá trị kênh chế độ đã cũ ⇒ coi như LOCAL",
+        "khacRemote": "Kênh chế độ khác giá trị REMOTE ⇒ LOCAL",
+        "loiDoc": "Lỗi đọc kênh chế độ ⇒ coi như LOCAL",
+        "kenhSaiMay": "Kênh chế độ không thuộc adapter của máy này ⇒ coi như LOCAL",
+        "kenhAn": "Kênh không hiển thị (ngoài phạm vi của bạn)"
+      },
+      "dialog": {
+        "suaTieuDe": "Sửa kênh {{tagKey}}",
+        "suaMoTa": "Chỉ các trường bạn đổi mới được gửi. Để trống để bỏ khai báo.",
+        "loaiKenh": "Loại kênh",
+        "loaiSuyRa": "Không khai (suy từ writable)",
+        "tenHienThi": "Tên hiển thị",
+        "dinhDang": "Định dạng hiển thị",
+        "min": "Giới hạn dưới",
+        "max": "Giới hạn trên",
+        "buoc": "Bước",
+        "muc": "Mức tác động",
+        "mucChuaKhai": "Chưa khai (mặc định 5 — đóng)",
+        "daiLoi": "Giới hạn dưới phải ≤ giới hạn trên và bước phải > 0.",
+        "daiChiSo": "Dải và bước chỉ áp cho kênh số (int / float).",
+        "lyDo": "Lý do (bắt buộc, ≥ 5 ký tự)",
+        "lyDoNgan": "Lý do phải có ít nhất {{min}} ký tự.",
+        "huy": "Huỷ",
+        "gui": "Lưu",
+        "datTieuDe": "Đặt kênh chế độ — máy {{code}}",
+        "datMoTa": "Chọn tag của adapter gắn đúng máy này và giá trị khiến máy được coi là REMOTE.",
+        "adapter": "Adapter",
+        "tag": "Tag",
+        "giaTriRemote": "Giá trị REMOTE",
+        "giaTriSai": "Giá trị REMOTE không đúng kiểu của tag.",
+        "khongCoAdapterMay": "Máy này chưa có adapter nào trong phạm vi của bạn.",
+        "goTieuDe": "Gỡ kênh chế độ — máy {{code}}",
+        "goMoTa": "Máy sẽ được coi là LOCAL (chưa khai) cho tới khi khai lại kênh."
+      },
+      "toast": {
+        "capNhat": "Đã cập nhật khai báo kênh.",
+        "capNhatKhongDoi": "Không có gì thay đổi.",
+        "datCheDo": "Đã đặt kênh chế độ.",
+        "goCheDo": "Đã gỡ kênh chế độ."
       }
     }
   }
