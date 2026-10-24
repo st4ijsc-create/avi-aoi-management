@@ -221,6 +221,28 @@ export function isMachineIngestRequest(req: Request): boolean {
   return false;
 }
 
+// ── SCADA R1b-1 Task 2 fix round 1 (important 1) — STOP HMI is NEVER refused by the general /api limiter ─────
+/**
+ * tRPC procedures the general `/api` limiter (300/60 per IP / credential) never counts: the one-step HMI STOP. SCADA screens poll
+ * every 2–5 s and HMI terminals behind one proxy share an IP, so a 429 here would block a STOP ("STOP không bao giờ bị phần mềm
+ * chặn"). The exemption is EXACT and NARROW (`isHmiStopRequest`): a NON-batched `POST /api/trpc/scadaCommands.dungMay` only. A batch —
+ * even a batch of one, or one that bundles the STOP with any other call — is counted as before (nothing can ride the exemption). The
+ * client sends `scadaCommands.dungMay` through a non-batching `httpLink` (client/src/lib/trpcLinks.ts `isStopOnlyOp`).
+ */
+export const API_LIMITER_EXEMPT_TRPC: ReadonlySet<string> = new Set(["scadaCommands.dungMay"]);
+
+/** True ⇔ a non-batched POST of exactly one exempt procedure (no `batch` query param, no comma-joined path). */
+export function isHmiStopRequest(req: Request): boolean {
+  if (String(req.method ?? "").toUpperCase() !== "POST") return false;
+  const q = (req as { query?: Record<string, unknown> }).query;
+  if (q && Object.prototype.hasOwnProperty.call(q, "batch")) return false;
+  const raw = String((req as { originalUrl?: string }).originalUrl ?? (req as { url?: string }).url ?? "");
+  const hoi = raw.indexOf("?");
+  if (hoi >= 0 && new URLSearchParams(raw.slice(hoi + 1)).has("batch")) return false;
+  const procs = trpcProcedures(duongDinhTuyenGoc(req));
+  return !!procs && procs.length === 1 && API_LIMITER_EXEMPT_TRPC.has(procs[0]);
+}
+
 // ── Store selection (B6) ─────────────────────────────────────────────────────
 
 export type RateLimitStoreKind = "redis" | "memory";
@@ -556,7 +578,8 @@ export function createApiLimiter() {
     // machineApi tRPC procedures) — governed by createMachineIngestLimiter. Each path
     // is counted by EXACTLY ONE limiter, so the tiers can never double-count.
     // Browser/tRPC traffic is unaffected (skip returns false for every other path).
-    skip: (req: Request) => isOtIngestRequest(req) || isMachineIngestRequest(req),
+    // SCADA R1b-1 T2 fix round 1: likewise EXEMPT a non-batched HMI STOP (`isHmiStopRequest`) — no software ever blocks a STOP.
+    skip: (req: Request) => isOtIngestRequest(req) || isMachineIngestRequest(req) || isHmiStopRequest(req),
     passOnStoreError: true, // Redis down → allow (fail-open), never 500 all traffic
     ...storeOption("rl:api:"),
   });

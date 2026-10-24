@@ -23821,7 +23821,24 @@
       "chuaXacMinh": "Unverified",
       "daGuiEdge": "Sent to the edge — the edge node will carry out the STOP; not yet confirmed that the machine stopped",
       "dungEstop": "Use the hardwired E-STOP at the machine",
-      "canhBaoChuaGhim": "The machine has no pinned STOP — the HMI stop button cannot be used"
+      "canhBaoChuaGhim": "The machine has no pinned STOP — the HMI stop button cannot be used",
+      "chuaRo": "Result unknown — use the hardwired E-STOP at the machine",
+      "khaNangTieuDe": "What will happen on each adapter:",
+      "mayTieuDe": "Machine {{code}}",
+      "khaNang": {
+        "duoc": "Will send the pinned STOP",
+        "duocEdge": "Will send the STOP to the edge node",
+        "moPhongChuaNghiemThu": "Simulation only — adapter not commissioned, the STOP will not reach the machine",
+        "moPhongOtTat": "Simulation only — OT control is off on the server, the STOP will not reach the machine",
+        "ghimCuKetNoiCu": "Pins not in effect — the adapter must be reconnected (the STOP will be checked like an ordinary command)",
+        "ghimCuKhongKetNoi": "Adapter not connected — the STOP will not reach the machine",
+        "chuaGhim": "No pinned STOP — nothing is sent"
+      },
+      "canhBao": {
+        "ghimCu": "Pinned STOP not in effect — reconnect adapter {{code}}",
+        "moPhong": "STOP is simulation only — adapter {{code}} is not commissioned",
+        "moPhongOtTat": "STOP is simulation only — OT control is off on the server"
+      }
     }
   }
 }

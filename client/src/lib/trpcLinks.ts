@@ -50,7 +50,9 @@ export function isLicenseOp(op: { path: string }): boolean {
  * other call is authenticated the normal, unbounded way, so a STOP would wait behind a slow DB.
  */
 export function isStopOnlyOp(op: { path: string }): boolean {
-  return op.path === "robot.consoleStop";
+  // SCADA R1b-1 T2 fix round 1 — the HMI STOP likewise goes ALONE: the server exempts ONLY a non-batched
+  // `POST /api/trpc/scadaCommands.dungMay` from the general /api limiter (rateLimitConfig `isHmiStopRequest`).
+  return op.path === "robot.consoleStop" || op.path === "scadaCommands.dungMay";
 }
 
 /** Chỉ QUERY có input > ngưỡng mới đi nhánh POST; mutation vốn đã POST, subscription không đổi. */

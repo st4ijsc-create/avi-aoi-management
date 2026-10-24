@@ -69,7 +69,7 @@ vi.mock("@/lib/trpc", () => {
 });
 
 import { Faceplate } from "./Faceplate";
-import { HopDungMay, NutDungMay } from "./DungMay";
+import { CanhBaoKhaNangDung, HopDungMay, NutDungMay, QUA_HAN_GUI_MS } from "./DungMay";
 import { KenhCheDoMay } from "./KenhCheDoMay";
 
 const kenh = (o: Row): Row => ({
@@ -337,5 +337,106 @@ describe("ruling R-2 — gợi ý MODE_LOCAL ở locale en", () => {
     });
     expect(within(fp2).getByTestId("goi-y-stop")).toHaveTextContent(E("scada.lenh.loi.goiYStopKhongGhim"));
     expect(CHU_VIET.test(within(fp2).getByTestId("khoi-dung-may").textContent ?? "")).toBe(false);
+  });
+});
+
+describe("fix round 1 — khảo sát khả năng dừng (hộp xác nhận + cảnh báo cấp máy) + quá hạn gửi", () => {
+  const kn = (adapters: Array<Record<string, unknown>>, tongHop = "mot_phan") => ({ machineId: 10, adapters, tongHop }) as never;
+
+  it("★ hộp xác nhận liệt kê TRƯỚC khi gửi điều sẽ xảy ra với TỪNG adapter (mọi kết luận)", () => {
+    veHop({
+      khaNang: kn([
+        { adapterId: 1, code: "PLC-A", trangThai: "duoc" },
+        { adapterId: 2, code: "PLC-E", trangThai: "duoc", lyDo: "edge" },
+        { adapterId: 3, code: "PLC-C", trangThai: "mo_phong", lyDo: "chua_nghiem_thu" },
+        { adapterId: 4, code: "PLC-O", trangThai: "mo_phong", lyDo: "ot_control_tat" },
+        { adapterId: 5, code: "PLC-G", trangThai: "ghim_cu", lyDo: "ket_noi_cu" },
+        { adapterId: 6, code: "PLC-K", trangThai: "ghim_cu", lyDo: "khong_ket_noi" },
+        { adapterId: 7, code: "PLC-N", trangThai: "chua_ghim" },
+      ]),
+    });
+    const h = hop();
+    expect(within(h).getByText(S("scada.dungMay.khaNangTieuDe"))).toBeInTheDocument();
+    const mong: Array<[number, string, string]> = [
+      [1, "duoc", "scada.dungMay.khaNang.duoc"],
+      [2, "duoc", "scada.dungMay.khaNang.duocEdge"],
+      [3, "mo_phong", "scada.dungMay.khaNang.moPhongChuaNghiemThu"],
+      [4, "mo_phong", "scada.dungMay.khaNang.moPhongOtTat"],
+      [5, "ghim_cu", "scada.dungMay.khaNang.ghimCuKetNoiCu"],
+      [6, "ghim_cu", "scada.dungMay.khaNang.ghimCuKhongKetNoi"],
+      [7, "chua_ghim", "scada.dungMay.khaNang.chuaGhim"],
+    ];
+    for (const [id, tt, k] of mong) {
+      const li = within(h).getByTestId(`kha-nang-${id}`);
+      expect(li).toHaveAttribute("data-trang-thai", tt);
+      expect(li).toHaveTextContent(S(k));
+    }
+    // vẫn MỘT bước: nút mặc định có focus, gửi được
+    expect(nutMacDinh()).toHaveFocus();
+  });
+
+  it("★ cảnh báo cấp máy: ghim_cu ⇒ 'cần kết nối lại adapter {code}'; mo_phong chưa nghiệm thu ⇒ 'adapter {code} chưa nghiệm thu'; OT tắt ⇒ MỘT dòng riêng; mọi adapter chưa ghim ⇒ 'Máy chưa ghim STOP'; mọi adapter được ⇒ không cảnh báo", () => {
+    render(
+      <CanhBaoKhaNangDung
+        khaNang={kn([
+          { adapterId: 1, code: "PLC-G", trangThai: "ghim_cu", lyDo: "ket_noi_cu" },
+          { adapterId: 2, code: "PLC-C", trangThai: "mo_phong", lyDo: "chua_nghiem_thu" },
+          { adapterId: 3, code: "PLC-O", trangThai: "mo_phong", lyDo: "ot_control_tat" },
+          { adapterId: 4, code: "PLC-P", trangThai: "mo_phong", lyDo: "ot_control_tat" },
+          { adapterId: 5, code: "PLC-A", trangThai: "duoc" },
+        ])}
+      />,
+    );
+    const cb = screen.getByTestId("canh-bao-kha-nang-dung");
+    expect(cb).toHaveTextContent("Ghim STOP chưa có hiệu lực — cần kết nối lại adapter PLC-G");
+    expect(cb).toHaveTextContent("STOP chỉ mô phỏng — adapter PLC-C chưa nghiệm thu");
+    expect(cb).toHaveTextContent(S("scada.dungMay.canhBao.moPhongOtTat"));
+    expect(cb.querySelectorAll("p")).toHaveLength(3); // OT tắt gộp một dòng
+    expect(cb.getAttribute("style") ?? "").toContain("--packml-abort");
+    cleanup();
+    render(<CanhBaoKhaNangDung khaNang={kn([{ adapterId: 1, code: "A", trangThai: "chua_ghim" }, { adapterId: 2, code: "B", trangThai: "chua_ghim" }], "khong")} />);
+    expect(screen.getByTestId("canh-bao-chua-ghim-stop")).toHaveTextContent("Máy chưa ghim STOP — nút dừng HMI không dùng được");
+    cleanup();
+    const { container } = render(<CanhBaoKhaNangDung khaNang={kn([{ adapterId: 1, code: "A", trangThai: "duoc" }], "duoc")} />);
+    expect(container.textContent).toBe("");
+  });
+
+  it("★ faceplate (M4): cảnh báo theo khaNangDung của hàng máy (ghim chưa hiệu lực) và chuyển danh sách vào hộp xác nhận", () => {
+    srv.cheDo = [may({ khaNangDung: { machineId: 10, adapters: [{ adapterId: 1, code: "PLC-G", trangThai: "ghim_cu", lyDo: "ket_noi_cu" }], tongHop: "khong" } })];
+    veFaceplate();
+    expect(screen.getByTestId("canh-bao-kha-nang-dung")).toHaveTextContent("Ghim STOP chưa có hiệu lực — cần kết nối lại adapter PLC-G");
+    fireEvent.click(screen.getByTestId("nut-dung-may"));
+    expect(within(hop()).getByTestId("kha-nang-1")).toHaveTextContent(S("scada.dungMay.khaNang.ghimCuKetNoiCu"));
+  });
+
+  it("★ đang gửi quá 10 s ⇒ 'Kết quả chưa rõ — dùng E-STOP cứng tại máy' + nút Đóng mở", async () => {
+    vi.useFakeTimers();
+    try {
+      const { onDong } = veHop();
+      fireEvent.click(nutMacDinh());
+      const dong = within(hop()).getByRole("button", { name: S("scada.dungMay.nutDong") });
+      expect(dong).toBeDisabled();
+      expect(within(hop()).queryByTestId("chua-ro")).toBeNull();
+      await act(async () => {
+        vi.advanceTimersByTime(QUA_HAN_GUI_MS - 1);
+      });
+      expect(within(hop()).queryByTestId("chua-ro")).toBeNull();
+      await act(async () => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(within(hop()).getByTestId("chua-ro")).toHaveTextContent("Kết quả chưa rõ — dùng E-STOP cứng tại máy");
+      const dong2 = within(hop()).getByRole("button", { name: S("scada.dungMay.nutDong") });
+      expect(dong2).toBeEnabled();
+      fireEvent.click(dong2);
+      expect(onDong).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("chữ khả năng dừng / cảnh báo / quá hạn ở en + zh không có chữ Việt", () => {
+    for (const k of ["chuaRo", "khaNangTieuDe", "mayTieuDe", "khaNang.duoc", "khaNang.duocEdge", "khaNang.moPhongChuaNghiemThu", "khaNang.moPhongOtTat", "khaNang.ghimCuKetNoiCu", "khaNang.ghimCuKhongKetNoi", "khaNang.chuaGhim", "canhBao.ghimCu", "canhBao.moPhong", "canhBao.moPhongOtTat"]) {
+      expect(CHU_VIET.test(E(`scada.dungMay.${k}`)), k).toBe(false);
+    }
   });
 });

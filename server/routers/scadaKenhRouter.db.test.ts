@@ -528,9 +528,14 @@ describe("scadaKenh.cheDo — kênh chế độ máy", () => {
       expect(m2).toMatchObject({ kenh: null, kenhAn: true, canhBaoNguon: null, cheDo: "LOCAL", lyDo: "kenh_sai_may" });
       const m1 = ds.find((x) => x.machineId === A.mid)!;
       expect(m1).toMatchObject({ kenh: null, kenhAn: true, canhBaoNguon: null, cheDo: "LOCAL", lyDo: "kenh_sai_may" });
-      const tho = JSON.stringify([m1, m2]);
+      // R1b-1 T2 fix round 1 (2026-10-24) — `khaNangDung` liệt kê adapter CỦA CHÍNH máy (máy trong phạm vi ⇒ adapter của nó thấy được,
+      // cùng tập `scadaDiag.danhSach`); điều canh ở đây là chi tiết của KÊNH bị che ⇒ bỏ khaNangDung khỏi phép soi chuỗi, và soi riêng
+      // rằng adapter ngoài phạm vi (ad.b) không lọt ở BẤT KỲ đâu trong hàng.
+      const tho = JSON.stringify([m1, m2].map(({ khaNangDung: _k, ...r }) => r));
       expect(tho).not.toContain(`"adapterId"`);
       expect(tho).not.toContain(`"tagKey"`);
+      expect(JSON.stringify([m1, m2])).not.toContain(`"adapterId":${ad.b}`);
+      for (const k of [m1.khaNangDung, m2.khaNangDung]) for (const a of k.adapters) expect([ad.a, ad.a2]).toContain(a.adapterId);
       // admin (toàn quyền) cũng không thấy chi tiết của kênh SAI MÁY
       expect((await admin.cheDo.danhSach()).find((x) => x.machineId === A.mid)).toMatchObject({ kenh: null, kenhAn: true });
     } finally {

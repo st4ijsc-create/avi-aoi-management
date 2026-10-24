@@ -25,7 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { BangTruyenThong, coLoi, type HangDiag } from "@/components/scada/BangTruyenThong";
+import { BangTruyenThong, coLoi, type HangDiag, type MayDung } from "@/components/scada/BangTruyenThong";
 import { NganTagAdapter } from "@/components/scada/NganTagAdapter";
 
 /** Chu kỳ làm mới (ms): ≤ 5 s theo mục tiêu "M10 hiện mất kết nối". */
@@ -47,6 +47,9 @@ export default function ScadaDiag() {
   const utils = trpc.useUtils();
   const q = trpc.scadaDiag.danhSach.useQuery(undefined, { refetchInterval: CHU_KY_LAM_MOI_MS });
   const rows = (q.data ?? []) as HangDiag[];
+  // R1b-1 T2 fix round 1 — máy (chế độ + khả năng dừng) cho hàng đầu nhóm có nút DỪNG MÁY; cùng chu kỳ 5 s với faceplate
+  const mayQ = trpc.scadaKenh.cheDo.danhSach.useQuery(undefined, { refetchInterval: 5000 });
+  const may = (mayQ.data ?? []) as MayDung[];
 
   // `now` sống theo nhịp làm mới để "Mất kết nối 3 ph" tăng dần giữa hai lần kéo dữ liệu.
   const [now, setNow] = useState(() => Date.now());
@@ -135,6 +138,7 @@ export default function ScadaDiag() {
           ) : (
             <BangTruyenThong
               rows={hienThi}
+              may={may}
               now={now}
               canAct={canAct}
               onChon={(h) => setChonId(h.adapterId)}

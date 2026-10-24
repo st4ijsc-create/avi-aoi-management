@@ -30,7 +30,20 @@ const H = vi.hoisted(() => ({
   estop: false,
   alerts: [] as Array<{ kind: string; message: string }>,
   fallback: [] as number[],
+  /** fix round 1 — audit TREO (mô phỏng khoá advisory chuỗi băm không hạn khi SEC_PLATFORM bật) */
+  auditTreo: false,
 }));
+
+vi.mock("../services/audit/controlAuditService", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../services/audit/controlAuditService")>();
+  return {
+    ...real,
+    recordAuditEvent: ((...a: Parameters<typeof real.recordAuditEvent>) =>
+      H.auditTreo && (a[1] as { action?: string }).action === "scada_hmi_stop"
+        ? new Promise<never>(() => undefined)
+        : real.recordAuditEvent(...a)) as typeof real.recordAuditEvent,
+  };
+});
 
 vi.mock("../_core/socket", async (importOriginal) => {
   const real = await importOriginal<typeof import("../_core/socket")>();
@@ -219,6 +232,21 @@ async function auditSau(idMoc: number, machineId: number) {
     afterJson: any;
     reason: string;
   }>;
+}
+/**
+ * fix round 1 — audit là fire-and-forget: chờ (có hạn) hàng audit CỦA lần bấm này (theo clientRequestId — audit của lần bấm trước có thể
+ * ghi muộn hơn mốc). Trả mọi hàng của lần bấm đó (đúng MỘT mong đợi).
+ */
+async function choAudit(idMoc: number, machineId: number, clientRequestId: string) {
+  let rows: Awaited<ReturnType<typeof auditSau>> = [];
+  await vi.waitFor(
+    async () => {
+      rows = (await auditSau(idMoc, machineId)).filter((r) => r.afterJson?.clientRequestId === clientRequestId);
+      if (rows.length < 1) throw new Error("audit chưa ghi");
+    },
+    { timeout: 5_000, interval: 50 },
+  );
+  return rows;
 }
 async function mocAudit(): Promise<number> {
   const [r] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
@@ -439,9 +467,10 @@ describe("Review Focus 1 — LOCAL / khoá chọn của người khác / chưa 2
 
   it("lyDo TUỲ CHỌN: có lyDo ⇒ vẫn gửi, lyDo vào audit", async () => {
     const a = await mocAudit();
-    const kq = await nguoi.opA.caller.dungMay({ machineId: may.L.mid, lyDo: "ket phoi o bang tai", clientRequestId: uuid() });
+    const crid = uuid();
+    const kq = await nguoi.opA.caller.dungMay({ machineId: may.L.mid, lyDo: "ket phoi o bang tai", clientRequestId: crid });
     expect(kq.ketQua[0].ok).toBe(true);
-    const [au] = await auditSau(a, may.L.mid);
+    const [au] = await choAudit(a, may.L.mid, crid);
     expect(au.reason).toBe("ket phoi o bang tai");
   });
 });
@@ -455,6 +484,11 @@ describe("Review Focus 2 — adapter do edge sở hữu", () => {
     expect(kq.ketQua[0].reason).not.toBe("MODE_LOCAL");
     const [row] = await dung(sql`SELECT kind, "edgeNodeId" FROM robot_motion_lock_requests WHERE "adapterId" = ${ad.E} ORDER BY id DESC LIMIT 1`);
     expect(row).toMatchObject({ kind: "stop", edgeNodeId });
+    // fix round 1 (minor 4) — STOP đã xếp hàng cho edge ⇒ dòng chờ 'executed' (không 'bi_tu_choi_ghi') + chi tiết edge trong resultJson
+    const actionId = (H.dispatchInputs.at(-1)!.triggeredBy as { actionId: string }).actionId;
+    const [cho] = await dung(sql`SELECT status::text AS status, "resultJson" FROM ai_pending_actions WHERE id = ${actionId}`);
+    expect(cho.status).toBe("executed");
+    expect(cho.resultJson).toMatchObject({ reason: "ADAPTER_OWNED_BY_EDGE", edgeStopRequest: { edgeNodeId } });
   });
 });
 
@@ -530,8 +564,9 @@ describe("AI không bao giờ đi đường hmi.stop", () => {
 describe("audit bắt buộc — MỘT recordAuditEvent mỗi lần bấm", () => {
   it("★ ai bấm, máy, từng adapter + giá trị ghim đã gửi + kết quả (status, edgeStopRequest)", async () => {
     const a = await mocAudit();
-    const kq = await nguoi.opA.caller.dungMay({ machineId: may.R.mid, clientRequestId: uuid() });
-    const rows = await auditSau(a, may.R.mid);
+    const crid = uuid();
+    const kq = await nguoi.opA.caller.dungMay({ machineId: may.R.mid, clientRequestId: crid });
+    const rows = await choAudit(a, may.R.mid, crid);
     expect(rows).toHaveLength(1);
     const au = rows[0];
     expect(au).toMatchObject({ entityType: "machine", entityId: String(may.R.mid), action: "scada_hmi_stop", actorId: nguoi.opA.id, reason: "HMI DỪNG MÁY" });
@@ -557,11 +592,13 @@ describe("audit bắt buộc — MỘT recordAuditEvent mỗi lần bấm", () =
   it("máy edge ⇒ audit ghi edgeStopRequest true; máy không ghim ⇒ audit ketCuc CHUA_GHIM_STOP, adapters rỗng", async () => {
     (await import("../services/edge/edgeNodeCommands")).noteEdgeNodePull(edgeNodeId);
     const a = await mocAudit();
-    await nguoi.opA2.caller.dungMay({ machineId: may.E.mid, clientRequestId: uuid() });
-    const [e] = await auditSau(a, may.E.mid);
+    const c1 = uuid();
+    await nguoi.opA2.caller.dungMay({ machineId: may.E.mid, clientRequestId: c1 });
+    const [e] = await choAudit(a, may.E.mid, c1);
     expect(e.afterJson.adapters).toEqual([expect.objectContaining({ adapterId: ad.E, edgeStopRequest: true, ghimDaGui: [{ tagKey: "stop_cmd", value: true }] })]);
-    await loiCua(nguoi.opA2.caller.dungMay({ machineId: may.N.mid, clientRequestId: uuid() }));
-    const [n] = await auditSau(a, may.N.mid);
+    const c2 = uuid();
+    await loiCua(nguoi.opA2.caller.dungMay({ machineId: may.N.mid, clientRequestId: c2 }));
+    const [n] = await choAudit(a, may.N.mid, c2);
     expect(n.afterJson).toMatchObject({ ketCuc: "CHUA_GHIM_STOP", adapters: [] });
   });
 });
@@ -576,5 +613,97 @@ describe("scadaKenh.cheDo.danhSach — cờ coGhimStop cho cảnh báo cấp má
     expect(theo(may.L.mid)).toMatchObject({ coGhimStop: true, soAdapterGhimStop: 1 });
     expect(theo(may.E.mid)).toMatchObject({ coGhimStop: true, soAdapterGhimStop: 1 });
     expect(theo(may.N.mid)).toMatchObject({ coGhimStop: false, soAdapterGhimStop: 0 });
+  });
+});
+
+describe("fix round 1 (important 2) — audit treo KHÔNG giữ kết quả STOP", () => {
+  it("★ recordAuditEvent không bao giờ trả lời ⇒ dungMay vẫn trả kết quả ngay (< 3 s), STOP đã tới thiết bị", async () => {
+    H.auditTreo = true;
+    try {
+      const ghiTruoc = stub.R.ghi.length;
+      const t0 = Date.now();
+      const kq = await nguoi.opA2.caller.dungMay({ machineId: may.R.mid, clientRequestId: uuid() });
+      expect(Date.now() - t0).toBeLessThan(3_000);
+      expect(kq.ketQua[0]).toMatchObject({ adapterId: ad.R, status: "acked_verified", ok: true });
+      expect(stub.R.ghi.length - ghiTruoc).toBe(1);
+      // máy không ghim: lời từ chối cũng không chờ sổ
+      const t1 = Date.now();
+      const loi = await loiCua(nguoi.opA2.caller.dungMay({ machineId: may.N.mid, clientRequestId: uuid() }));
+      expect(Date.now() - t1).toBeLessThan(3_000);
+      expect(loi.appCode).toBe("SCADA_STOP_NOT_PINNED");
+    } finally {
+      H.auditTreo = false;
+    }
+  });
+});
+
+describe("fix round 1 — khảo sát khả năng dừng (khaoSatKhaNangDung, MỘT kết luận / adapter theo thứ tự dispatchCore)", () => {
+  const ks = async (machineId: number) => (await import("../services/scada/khaNangDung")).khaoSatKhaNangDung(db, machineId);
+
+  it("★ duoc: driver + vân tay khớp + OT bật + (không đòi nghiệm thu) ⇒ duoc; tongHop của máy R: 'mot_phan' (R2 bật mà chưa ghim)", async () => {
+    const k = await ks(may.R.mid);
+    expect(k.adapters.map((a) => [a.adapterId, a.trangThai, a.lyDo ?? null])).toEqual([
+      [ad.R, "duoc", null],
+      [ad.R2, "chua_ghim", null],
+    ]); // Rtat (tắt) không có mặt
+    expect(k.tongHop).toBe("mot_phan");
+    expect((await ks(may.L.mid)).tongHop).toBe("duoc");
+  });
+
+  it("★ chua_ghim: máy N ⇒ mọi adapter chua_ghim, tongHop 'khong'", async () => {
+    const k = await ks(may.N.mid);
+    expect(k.adapters).toEqual([{ adapterId: ad.N, code: `${RUN}-n`, trangThai: "chua_ghim" }]);
+    expect(k.tongHop).toBe("khong");
+  });
+
+  it("★ duoc (edge): adapter do edge sở hữu ⇒ duoc, lyDo 'edge' (không driver trung tâm vẫn được)", async () => {
+    const k = await ks(may.E.mid);
+    expect(k.adapters).toEqual([{ adapterId: ad.E, code: `${RUN}-e`, trangThai: "duoc", lyDo: "edge" }]);
+  });
+
+  it("★ ghim_cu: vân tay kết nối ĐANG CHẠY khác hàng adapter (sửa adapter chưa nối lại) ⇒ ghim_cu 'ket_noi_cu'; không driver ⇒ ghim_cu 'khong_ket_noi'", async () => {
+    const that = H.fingerprints.get(ad.L)!;
+    H.fingerprints.set(ad.L, "van-tay-cua-thiet-bi-cu");
+    try {
+      expect((await ks(may.L.mid)).adapters[0]).toMatchObject({ trangThai: "ghim_cu", lyDo: "ket_noi_cu" });
+    } finally {
+      H.fingerprints.set(ad.L, that);
+    }
+    const drv = H.drivers.get(ad.L);
+    H.drivers.delete(ad.L);
+    try {
+      const k = await ks(may.L.mid);
+      expect(k.adapters[0]).toMatchObject({ trangThai: "ghim_cu", lyDo: "khong_ket_noi" });
+      expect(k.tongHop).toBe("khong");
+    } finally {
+      H.drivers.set(ad.L, drv);
+    }
+  });
+
+  it("★ mo_phong: OT_CONTROL tắt ⇒ 'ot_control_tat'; đòi nghiệm thu mà adapter chưa có bản ký ⇒ 'chua_nghiem_thu'; có bản ký ⇒ duoc", async () => {
+    vi.stubEnv("OT_CONTROL_ENABLED", "false");
+    try {
+      expect((await ks(may.L.mid)).adapters[0]).toMatchObject({ trangThai: "mo_phong", lyDo: "ot_control_tat" });
+    } finally {
+      vi.stubEnv("OT_CONTROL_ENABLED", "true");
+    }
+    vi.stubEnv("OT_COMMISSIONING_REQUIRED", "true");
+    try {
+      expect((await ks(may.L.mid)).adapters[0]).toMatchObject({ trangThai: "mo_phong", lyDo: "chua_nghiem_thu" });
+      await dung(sql`INSERT INTO commissioning_records ("adapterId", status, "signedBy", "fatReference") VALUES (${ad.L}, 'active', 1, ${RUN})`);
+      expect((await ks(may.L.mid)).adapters[0]).toMatchObject({ trangThai: "duoc" });
+    } finally {
+      vi.stubEnv("OT_COMMISSIONING_REQUIRED", "false");
+      await dung(sql`DELETE FROM commissioning_records WHERE "adapterId" = ${ad.L}`).catch(() => undefined);
+    }
+  });
+
+  it("★ khaNangDung có trong hàng scadaKenh.cheDo.danhSach (cùng hàm)", async () => {
+    const { scadaKenhRouter } = await import("./scadaKenhRouter");
+    const c = scadaKenhRouter.createCaller({ user: { id: nguoi.opA2.id, role: "operator", name: "x", twoFactorEnabled: true } } as never);
+    const rows = (await c.cheDo.danhSach()) as Array<{ machineId: number; khaNangDung: { tongHop: string; adapters: Array<{ trangThai: string }> } }>;
+    const r = rows.find((x) => x.machineId === may.R.mid)!;
+    expect(r.khaNangDung).toEqual(await ks(may.R.mid));
+    expect(rows.find((x) => x.machineId === may.N.mid)!.khaNangDung.tongHop).toBe("khong");
   });
 });

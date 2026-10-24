@@ -23823,7 +23823,24 @@
       "chuaXacMinh": "未验证",
       "daGuiEdge": "已发送至边缘节点 — 边缘节点将执行 STOP；尚未确认设备已停止",
       "dungEstop": "请在设备处使用硬接线急停（E-STOP）",
-      "canhBaoChuaGhim": "设备尚未固定 STOP — HMI 停机按钮无法使用"
+      "canhBaoChuaGhim": "设备尚未固定 STOP — HMI 停机按钮无法使用",
+      "chuaRo": "结果未知 — 请在设备处使用硬接线急停（E-STOP）",
+      "khaNangTieuDe": "各适配器将发生的情况：",
+      "mayTieuDe": "设备 {{code}}",
+      "khaNang": {
+        "duoc": "将发送已固定的 STOP",
+        "duocEdge": "将把 STOP 发送至边缘节点",
+        "moPhongChuaNghiemThu": "仅模拟 — 适配器未调试验收，STOP 不会到达设备",
+        "moPhongOtTat": "仅模拟 — 服务器上的 OT 控制已关闭，STOP 不会到达设备",
+        "ghimCuKetNoiCu": "固定值尚未生效 — 需要重新连接适配器（STOP 将按普通命令检查）",
+        "ghimCuKhongKetNoi": "适配器未连接 — STOP 不会到达设备",
+        "chuaGhim": "未固定 STOP — 不发送任何内容"
+      },
+      "canhBao": {
+        "ghimCu": "固定的 STOP 尚未生效 — 需要重新连接适配器 {{code}}",
+        "moPhong": "STOP 仅为模拟 — 适配器 {{code}} 未调试验收",
+        "moPhongOtTat": "STOP 仅为模拟 — 服务器上的 OT 控制已关闭"
+      }
     }
   }
 }

@@ -56,6 +56,8 @@ const srv = vi.hoisted(() => ({
   mutCalls: [] as Array<{ proc: string; vars: unknown }>,
   mutOpts: {} as Record<string, { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void }>,
   invalidated: [] as string[],
+  /** R1b-1 T2 fix round 1 — hàng `scadaKenh.cheDo.danhSach` (máy + khả năng dừng) cho hàng đầu nhóm có nút DỪNG MÁY */
+  may: [] as Record<string, unknown>[],
   mauInput: undefined as unknown,
   loading: false,
 }));
@@ -85,7 +87,9 @@ vi.mock("@/lib/trpc", () => {
         },
       }),
       // R1a T14 — ngăn tag hỏi kênh (writable / loaiKenh) để biết hàng nào có nút Faceplate
+      scadaCommands: { dungMay: mut("dungMay") },
       scadaKenh: {
+        cheDo: { danhSach: { useQuery: () => ({ data: srv.may, isLoading: false, isError: false }) } },
         danhSach: {
           useQuery: (i: { adapterId: number }, o?: { enabled?: boolean }) => {
             srv.kenhOpts.push({ i, o });
@@ -188,6 +192,7 @@ beforeEach(() => {
   srv.invalidated = [];
   srv.loading = false;
   srv.mauInput = undefined;
+  srv.may = [];
   toastSuccess.mockReset();
   toastTrpcError.mockReset();
 });
@@ -203,7 +208,8 @@ const hang = (code: string) => screen.getByText(code).closest("tr") as HTMLEleme
 describe("ScadaDiag — bảng", () => {
   it("render 3 hàng; hàng lost có chữ 'Mất kết nối' + thời gian '3 ph'; làm mới mỗi 2000 ms", () => {
     render(<ScadaDiag />);
-    expect(screen.getAllByRole("row")).toHaveLength(1 + 3);
+    // R1b-1 T2 fix round 1 — + MỘT hàng đầu nhóm cho máy 1 (cả 3 adapter cùng máy) có nút DỪNG MÁY
+    expect(screen.getAllByRole("row")).toHaveLength(1 + 1 + 3);
     expect(within(hang("AD-LOST")).getByText(new RegExp(`${S("scada.diag.matKetNoi")}\\s*3 ph`))).toBeInTheDocument();
     expect(within(hang("AD-OK")).queryByText(S("scada.diag.matKetNoi"))).toBeNull();
     expect(srv.danhSachOpts).toMatchObject({ refetchInterval: 2000 });
@@ -463,5 +469,65 @@ describe("ScadaDiag — Lab stub", () => {
     render(<ScadaDiag />);
     fireEvent.click(screen.getByText("AD-STUB"));
     expect(screen.queryByText(S("scada.diag.lab.tieuDe"))).toBeNull();
+  });
+});
+
+describe("ScadaDiag — R1b-1 T2 fix round 1: nút DỪNG MÁY cấp máy + cảnh báo khả năng dừng (M10)", () => {
+  const khaNang = (adapters: Array<Record<string, unknown>>, tongHop = "mot_phan") => ({ machineId: 1, adapters, tongHop });
+
+  it("★ một hàng đầu cho máy 1 với nút DỪNG MÁY — hiện với CẢ người không có canAct (operator); bấm ⇒ hộp xác nhận liệt kê từng adapter", () => {
+    who.role = "operator";
+    who.canEdit = false;
+    srv.may = [
+      {
+        machineId: 1,
+        code: "RF-2",
+        ten: "Reflow 2",
+        coGhimStop: true,
+        soAdapterGhimStop: 2,
+        khaNangDung: khaNang([
+          { adapterId: 1, code: "AD-OK", trangThai: "duoc" },
+          { adapterId: 3, code: "AD-EDGE", trangThai: "duoc", lyDo: "edge" },
+        ], "duoc"),
+      },
+    ];
+    render(<ScadaDiag />);
+    const dau = screen.getByTestId("may-dung-1");
+    expect(dau).toHaveTextContent(S("scada.dungMay.mayTieuDe", { code: "RF-2" }));
+    expect(screen.queryByRole("button", { name: S("scada.diag.nut.ketNoiLai") })).toBeNull(); // không canAct
+    fireEvent.click(within(dau).getByTestId("nut-dung-may"));
+    const hop = screen.getByTestId("hop-dung-may");
+    expect(within(hop).getByText(S("scada.dungMay.moTa", { n: 2 }))).toBeInTheDocument();
+    expect(within(hop).getByTestId("kha-nang-1")).toHaveTextContent(S("scada.dungMay.khaNang.duoc"));
+    expect(within(hop).getByTestId("kha-nang-3")).toHaveTextContent(S("scada.dungMay.khaNang.duocEdge"));
+    fireEvent.click(within(hop).getByTestId("nut-xac-nhan-dung"));
+    expect(srv.mutCalls.filter((c) => c.proc === "dungMay")).toHaveLength(1);
+    expect((srv.mutCalls.find((c) => c.proc === "dungMay")!.vars as Record<string, unknown>).machineId).toBe(1);
+  });
+
+  it("★ cảnh báo cấp máy trên M10: ghim chưa hiệu lực / chỉ mô phỏng (chưa nghiệm thu) theo adapter", () => {
+    srv.may = [
+      {
+        machineId: 1,
+        code: "RF-2",
+        ten: "Reflow 2",
+        coGhimStop: true,
+        soAdapterGhimStop: 2,
+        khaNangDung: khaNang([
+          { adapterId: 1, code: "AD-OK", trangThai: "ghim_cu", lyDo: "ket_noi_cu" },
+          { adapterId: 2, code: "AD-LOST", trangThai: "mo_phong", lyDo: "chua_nghiem_thu" },
+        ], "khong"),
+      },
+    ];
+    render(<ScadaDiag />);
+    const cb = within(screen.getByTestId("may-dung-1")).getByTestId("canh-bao-kha-nang-dung");
+    expect(cb).toHaveTextContent(S("scada.dungMay.canhBao.ghimCu", { code: "AD-OK" }));
+    expect(cb).toHaveTextContent(S("scada.dungMay.canhBao.moPhong", { code: "AD-LOST" }));
+  });
+
+  it("máy mà mọi adapter chưa ghim ⇒ cảnh báo 'Máy chưa ghim STOP' trên M10", () => {
+    srv.may = [{ machineId: 1, code: "RF-2", ten: "Reflow 2", coGhimStop: false, soAdapterGhimStop: 0, khaNangDung: khaNang([{ adapterId: 1, code: "AD-OK", trangThai: "chua_ghim" }], "khong") }];
+    render(<ScadaDiag />);
+    expect(within(screen.getByTestId("may-dung-1")).getByTestId("canh-bao-chua-ghim-stop")).toHaveTextContent(S("scada.dungMay.canhBaoChuaGhim"));
   });
 });

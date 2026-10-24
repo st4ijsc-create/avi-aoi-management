@@ -6,6 +6,9 @@
  * Nút "Kết nối lại" / "Tạm tắt" chỉ HIỆN khi `canAct` (engineer|admin + machine_control.canEdit) — KHÔNG phải ranh giới bảo mật (máy chủ
  * kiểm lại vai, 2FA, quyền và phạm vi mỗi lần gọi). Adapter do edge sở hữu: không có nút (trung tâm không điều khiển phiên của nó).
  * Màu chỉ lấy token ISA có sẵn (`--isa-*`, `--alarm-*`); màu không bao giờ là kênh duy nhất (chấm + chữ).
+ * SCADA R1b-1 Task 2 fix round 1 — khi có `may` (hàng `scadaKenh.cheDo.danhSach`), adapter được NHÓM theo máy: mỗi máy một hàng đầu có
+ * nút "DỪNG MÁY" (`NutDungMay`, cùng hộp xác nhận với faceplate) + cảnh báo khả năng dừng (`CanhBaoKhaNangDung`). Nút hiện với MỌI người
+ * xem (máy chủ kiểm vai / quyền / phạm vi) — không phụ thuộc `canAct`.
  */
 import type { inferRouterOutputs } from "@trpc/server";
 import { useTranslation } from "react-i18next";
@@ -14,6 +17,7 @@ import type { AppRouter } from "../../../../server/routers";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BIEN_MAU_TONE, nhanTrangThai, type DonViThoiGian } from "./chatLuongHienThi";
+import { NutDungMay, type KhaNangDung } from "./DungMay";
 
 export type HangDiag = inferRouterOutputs<AppRouter>["scadaDiag"]["danhSach"][number];
 
@@ -57,8 +61,20 @@ export function ChipTrangThai({ hang, now }: { hang: HangDiag; now: number }) {
   );
 }
 
+/** Hàng máy cho nhóm + nút DỪNG MÁY (tập con của `scadaKenh.cheDo.danhSach`). */
+export interface MayDung {
+  machineId: number;
+  code: string;
+  ten: string;
+  coGhimStop?: boolean;
+  soAdapterGhimStop?: number;
+  khaNangDung?: KhaNangDung;
+}
+
 export interface BangTruyenThongProps {
   rows: HangDiag[];
+  /** R1b-1 T2 fix round 1 — có ⇒ nhóm theo máy, mỗi máy một hàng đầu có nút DỪNG MÁY */
+  may?: MayDung[];
   now: number;
   canAct: boolean;
   onChon: (h: HangDiag) => void;
@@ -66,8 +82,43 @@ export interface BangTruyenThongProps {
   onTamTat: (h: HangDiag) => void;
 }
 
-export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamTat }: BangTruyenThongProps) {
+export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamTat, may }: BangTruyenThongProps) {
   const { t } = useTranslation();
+  const soCot = canAct ? 9 : 8;
+  // nhóm theo máy giữ thứ tự xuất hiện; adapter không gắn máy: không có hàng đầu (không có máy để dừng)
+  const nhom: Array<{ machineId: number | null; hangs: HangDiag[] }> = [];
+  if (may) {
+    for (const h of rows) {
+      const g = nhom.find((x) => x.machineId === (h.machineId ?? null));
+      if (g) g.hangs.push(h);
+      else nhom.push({ machineId: h.machineId ?? null, hangs: [h] });
+    }
+  } else nhom.push({ machineId: null, hangs: rows });
+  const hangDauMay = (machineId: number, hangs: HangDiag[]) => {
+    const m = may?.find((x) => x.machineId === machineId);
+    return (
+      <TableRow key={`may-${machineId}`} data-testid={`may-dung-${machineId}`} className="bg-muted/30 hover:bg-muted/30">
+        <TableCell colSpan={soCot}>
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="min-w-[160px] pt-1">
+              <div className="font-semibold">{t("scada.dungMay.mayTieuDe", { code: m?.code ?? `#${machineId}` })}</div>
+              {m?.ten && <div className="text-xs text-muted-foreground">{m.ten}</div>}
+            </div>
+            <div className="min-w-[220px] max-w-md flex-1">
+              <NutDungMay
+                machineId={machineId}
+                tenMay={m ? `${m.code} · ${m.ten}` : `#${machineId}`}
+                soAdapter={m?.soAdapterGhimStop}
+                coGhimStop={m?.coGhimStop}
+                khaNang={m?.khaNangDung}
+                laEdge={hangs.some((h) => h.soHuu.loai === "edge")}
+              />
+            </div>
+          </div>
+        </TableCell>
+      </TableRow>
+    );
+  };
   return (
     <Table>
       <TableHeader>
@@ -84,7 +135,9 @@ export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamT
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((h) => {
+        {nhom.flatMap((g) => [
+          ...(may && g.machineId !== null ? [hangDauMay(g.machineId, g.hangs)] : []),
+          ...g.hangs.map((h) => {
           const edge = tenEdge(h);
           const hanhDong = canAct && h.soHuu.loai !== "edge";
           return (
@@ -148,7 +201,8 @@ export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamT
               )}
             </TableRow>
           );
-        })}
+          }),
+        ])}
       </TableBody>
     </Table>
   );

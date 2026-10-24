@@ -62,6 +62,8 @@ import { boDemDangBat, layGiaTri } from "./boDemHienTai";
 import { cheDoMay, TOOL_HMI_GHI_TAG, TOOL_HMI_STOP, type LyDoCheDo } from "./cheDoMay";
 import { loadStopPins } from "../ot/stopPin";
 import { recordAuditEvent } from "../audit/controlAuditService";
+import { withDeadline } from "../ot/drivers/boundedClose";
+import { OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS } from "../ot/otDeviceWrite";
 import { kiemGiaTriGhi, laKenhGhi, mucTacDongKenh } from "./kenhScada";
 import { giaHanKhoaChon, giuKhoaChon, LoiKhoaChonTranhChap, nhaKhoaChon } from "./khoaChon";
 import { appError } from "../../_core/appError";
@@ -1216,7 +1218,8 @@ export async function trangThaiYeuCauGhi(
 //        (+ resultJson) như QĐ T9-4 — không để lại uỷ quyền 'confirmed' còn hạn; đã qua đặt chỗ mà `rejected` ⇒ executed→bi_tu_choi_ghi.
 //   QĐ D-4 attempts: stage 'dispatch' (CHECK của mig 0431 không có stage riêng), tag_key NULL (nhiều tag), requested_value = các ghim đã gửi;
 //        outcome 'dispatched' + reason_code như QĐ T9-5; dispatch ném ⇒ 'rejected' DISPATCH_LOI. `ly_do` thêm ở Task 7 (ruling R-1).
-//   QĐ D-5 Audit ghi SAU khi gửi (STOP không chờ sổ); lỗi ghi audit chỉ log — không che kết quả STOP đã gửi khỏi người vận hành.
+//   QĐ D-5 Audit ghi SAU khi gửi, FIRE-AND-FORGET dưới hạn HMI_STOP_AUDIT_DEADLINE_MS (fix round 1): STOP không chờ sổ; lỗi / quá hạn
+//        chỉ log — không che kết quả STOP đã gửi khỏi người vận hành.
 //   QĐ D-6 Cờ `SCADA_COMMANDS_ENABLED` vẫn là công tắc tắt hẳn của mọi lệnh HMI (cùng request/confirm); tắt ⇒ dùng E-STOP cứng.
 // ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -1224,6 +1227,8 @@ export async function trangThaiYeuCauGhi(
 export const COMMAND_TYPE_HMI_STOP = "stop";
 /** TTL của dòng chờ `hmi.stop` (chỉ để dispatcher xác minh ràng buộc — dòng được tạo đã 'confirmed' rồi gửi ngay). */
 export const HMI_STOP_TTL_MS = 30_000;
+/** fix round 1 — hạn của audit fire-and-forget (cùng hạn audit override STOP ghim của dispatcher). */
+export const HMI_STOP_AUDIT_DEADLINE_MS = OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS;
 export { TOOL_HMI_STOP };
 
 export interface DauVaoDungMay {
@@ -1339,12 +1344,15 @@ async function guiStopMotAdapter(
       ...(kq.edgeStopRequest ? { edgeStopRequest: kq.edgeStopRequest } : {}),
     },
   };
+  // fix round 1 (minor 4) — STOP đã RA KHỎI trung tâm (mô phỏng, đã xếp hàng cho edge, hoặc gửi được mà dòng chưa bị đặt chỗ tiêu thụ —
+  // vd. kết quả cache) ⇒ 'executed' (+ chi tiết edge trong resultJson); chỉ từ chối KHÔNG gửi gì mới là 'bi_tu_choi_ghi'.
+  const daRa = kq.simulated || edge || kq.ok;
   try {
-    const doi = await doiTrangThaiCho(db, actionId, userId, "confirmed", kq.simulated ? "executed" : "bi_tu_choi_ghi", {
-      ...(kq.simulated ? { executedAt: new Date() } : {}),
+    const doi = await doiTrangThaiCho(db, actionId, userId, "confirmed", daRa ? "executed" : "bi_tu_choi_ghi", {
+      ...(daRa ? { executedAt: new Date() } : {}),
       ...ketCuc,
     });
-    if (!doi && !kq.simulated && kq.status === "rejected") await doiTrangThaiCho(db, actionId, userId, "executed", "bi_tu_choi_ghi", ketCuc);
+    if (!doi && !daRa && kq.status === "rejected") await doiTrangThaiCho(db, actionId, userId, "executed", "bi_tu_choi_ghi", ketCuc);
   } catch (e) {
     ghiLoiChot(e, actionId, "hmi_stop_sau_dispatch");
   }
@@ -1376,7 +1384,8 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
   const userId = nguoi.user.id;
   const lyDo = input.lyDo?.trim() ? input.lyDo.trim() : null;
   const tuChoiMay = async (t: TuChoiYeuCau): Promise<KetQuaDungMay> => {
-    await ghiThuLenh(db, { userId, stage: "dispatch", outcome: "rejected", reasonCode: t.ma });
+    // fix round 1 (minor 5) — sổ hỏng không được nuốt chữ từ chối (M5 vẫn phải nói "dùng E-STOP cứng")
+    await ghiThuLenh(db, { userId, stage: "dispatch", outcome: "rejected", reasonCode: t.ma }).catch((e) => ghiLoiChot(e, "-", "attempts_hmi_stop_tu_choi"));
     return { ok: false, tuChoi: t };
   };
 
@@ -1399,11 +1408,22 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
     .orderBy(asc(deviceAdapters.id));
   const dich: DichDung[] = [];
   const loiDoc: KetQuaDungMayAdapter[] = [];
-  for (const a of adapters) {
-    try {
-      const pins = await loadStopPins(db, a.id);
-      if (pins.length > 0) dich.push({ id: a.id, code: a.code, writes: pins.map((p) => ({ tagKey: p.tagKey, value: p.value })) });
-    } catch (err) {
+  // fix round 1 (minor 7) — đọc ghim SONG SONG (một STOP không chờ N lượt đọc nối tiếp); thứ tự kết quả giữ theo adapterId
+  const docGhim = await Promise.all(
+    adapters.map(async (a) => {
+      try {
+        return { a, pins: await loadStopPins(db, a.id), err: undefined };
+      } catch (err) {
+        return { a, pins: null, err };
+      }
+    }),
+  );
+  for (const g of docGhim) {
+    const a = g.a;
+    if (g.pins) {
+      if (g.pins.length > 0) dich.push({ id: a.id, code: a.code, writes: g.pins.map((p) => ({ tagKey: p.tagKey, value: p.value })) });
+    } else {
+      const err = g.err;
       // QĐ D-2 — ghim không đọc được ⇒ không gửi gì tới adapter này (ghim là dữ liệu an toàn), các adapter khác vẫn gửi
       logger.error({ err: (err as Error)?.message ?? String(err), adapterId: a.id }, "[SCADA] STOP HMI: đọc ghim lỗi — adapter này KHÔNG được gửi");
       await ghiThuLenh(db, { userId, adapterId: a.id, stage: "dispatch", outcome: "rejected", reasonCode: "GHIM_LOI_DOC" }).catch((e) =>
@@ -1413,43 +1433,49 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
     }
   }
 
-  const ghiAudit = async (ketQua: KetQuaDungMayAdapter[], ketCuc: "DA_GUI" | "CHUA_GHIM_STOP") => {
-    try {
-      await recordAuditEvent(db, {
-        entityType: "machine",
-        entityId: may.id,
-        action: "scada_hmi_stop",
-        actorId: userId,
-        before: null,
-        after: {
-          ketCuc,
-          nguoiBam: { userId, role: nguoi.user.role },
-          machineId: may.id,
-          machineCode: may.code,
-          clientRequestId: input.clientRequestId,
-          adapters: ketQua.map((k) => ({
-            adapterId: k.adapterId,
-            code: k.code,
-            ghimDaGui: k.writes,
-            status: k.status,
-            ok: k.ok,
-            simulated: k.simulated,
-            reason: k.reason ?? null,
-            edgeStopRequest: k.edgeStopRequest === true,
-            commandLogIds: k.commandLogIds,
-          })),
-        },
-        reason: lyDo ?? "HMI DỪNG MÁY",
-      });
-    } catch (err) {
-      // QĐ D-5 — STOP đã gửi; sổ hỏng không được che kết quả khỏi người vận hành
-      logger.error({ err: (err as Error)?.message ?? String(err), machineId: may.id }, "[SCADA] STOP HMI: ghi audit lỗi");
-    }
+  /**
+   * fix round 1 (important 2) — FIRE-AND-FORGET dưới hạn (khuôn `auditPinnedStopOverride` của dispatcher): với SEC_PLATFORM bật,
+   * `recordAuditEvent` chờ khoá advisory của chuỗi băm KHÔNG có hạn — kết quả STOP của người vận hành không được treo theo sổ. Lỗi / quá hạn
+   * ⇒ log (không bí mật); kết quả trả ngay.
+   */
+  const ghiAudit = (ketQua: KetQuaDungMayAdapter[], ketCuc: "DA_GUI" | "CHUA_GHIM_STOP"): void => {
+    const viec = recordAuditEvent(db, {
+      entityType: "machine",
+      entityId: may.id,
+      action: "scada_hmi_stop",
+      actorId: userId,
+      before: null,
+      after: {
+        ketCuc,
+        nguoiBam: { userId, role: nguoi.user.role },
+        machineId: may.id,
+        machineCode: may.code,
+        clientRequestId: input.clientRequestId,
+        adapters: ketQua.map((k) => ({
+          adapterId: k.adapterId,
+          code: k.code,
+          ghimDaGui: k.writes,
+          status: k.status,
+          ok: k.ok,
+          simulated: k.simulated,
+          reason: k.reason ?? null,
+          edgeStopRequest: k.edgeStopRequest === true,
+          commandLogIds: k.commandLogIds,
+        })),
+      },
+      reason: lyDo ?? "HMI DỪNG MÁY",
+    });
+    // QĐ D-5 — STOP đã gửi; sổ hỏng / treo không được che kết quả khỏi người vận hành
+    void withDeadline(viec, HMI_STOP_AUDIT_DEADLINE_MS, "HMI STOP audit").catch((err) =>
+      logger.error({ err: (err as Error)?.message ?? String(err), machineId: may.id }, "[SCADA] STOP HMI: ghi audit lỗi hoặc quá hạn (STOP đã gửi)"),
+    );
   };
 
   if (dich.length === 0 && loiDoc.length === 0) {
-    await ghiThuLenh(db, { userId, stage: "dispatch", outcome: "rejected", reasonCode: "CHUA_GHIM_STOP" });
-    await ghiAudit([], "CHUA_GHIM_STOP");
+    await ghiThuLenh(db, { userId, stage: "dispatch", outcome: "rejected", reasonCode: "CHUA_GHIM_STOP" }).catch((e) =>
+      ghiLoiChot(e, "-", "attempts_hmi_stop_chua_ghim"),
+    );
+    ghiAudit([], "CHUA_GHIM_STOP");
     return {
       ok: false,
       tuChoi: { ma: "CHUA_GHIM_STOP", chiTiet: "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng." },
@@ -1461,6 +1487,6 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
   const ketQua = [...daGui, ...loiDoc].sort((p, q) => p.adapterId - q.adapterId);
 
   // 6. audit
-  await ghiAudit(ketQua, "DA_GUI");
+  ghiAudit(ketQua, "DA_GUI");
   return { ok: true, ketQua: { ketQua } };
 }

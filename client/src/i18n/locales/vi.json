@@ -23795,7 +23795,24 @@
       "chuaXacMinh": "Chưa xác minh",
       "daGuiEdge": "Đã gửi tới edge — node edge sẽ thực hiện STOP; chưa xác nhận máy đã dừng",
       "dungEstop": "Dùng E-STOP cứng tại máy",
-      "canhBaoChuaGhim": "Máy chưa ghim STOP — nút dừng HMI không dùng được"
+      "canhBaoChuaGhim": "Máy chưa ghim STOP — nút dừng HMI không dùng được",
+      "chuaRo": "Kết quả chưa rõ — dùng E-STOP cứng tại máy",
+      "khaNangTieuDe": "Điều sẽ xảy ra với từng adapter:",
+      "mayTieuDe": "Máy {{code}}",
+      "khaNang": {
+        "duoc": "Sẽ gửi STOP đã ghim",
+        "duocEdge": "Sẽ gửi STOP tới node edge",
+        "moPhongChuaNghiemThu": "Chỉ mô phỏng — adapter chưa nghiệm thu, STOP không tới máy",
+        "moPhongOtTat": "Chỉ mô phỏng — điều khiển OT trên máy chủ đang tắt, STOP không tới máy",
+        "ghimCuKetNoiCu": "Ghim chưa có hiệu lực — cần kết nối lại adapter (STOP sẽ bị kiểm như lệnh thường)",
+        "ghimCuKhongKetNoi": "Adapter chưa kết nối — STOP không tới máy",
+        "chuaGhim": "Chưa ghim STOP — không gửi gì"
+      },
+      "canhBao": {
+        "ghimCu": "Ghim STOP chưa có hiệu lực — cần kết nối lại adapter {{code}}",
+        "moPhong": "STOP chỉ mô phỏng — adapter {{code}} chưa nghiệm thu",
+        "moPhongOtTat": "STOP chỉ mô phỏng — điều khiển OT trên máy chủ đang tắt"
+      }
     }
   }
 }

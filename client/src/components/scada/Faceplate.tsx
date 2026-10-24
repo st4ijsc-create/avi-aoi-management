@@ -38,7 +38,7 @@ import {
 import { TruongLyDo, lyDoDuDai } from "./TruongLyDo";
 import { HopThoaiLenh, ThongBaoLoiLenh, useDinhDangGiaTri, type YeuCauLenh } from "./HopThoaiLenh";
 import { khoaLyDoLocal, moTaLoiLenh, type MoTaLoi } from "./ketQuaLenh";
-import { NutDungMay } from "./DungMay";
+import { NutDungMay, type KhaNangDung } from "./DungMay";
 import type { HangKenh } from "./BangKenh";
 
 const CHU_KY_GIA_TRI_MS = 2000;
@@ -54,6 +54,8 @@ type HangCheDo = {
   /** R1b-1 T2 — máy có ≥ 1 adapter bật mang ghim DỪNG / số adapter đó */
   coGhimStop?: boolean;
   soAdapterGhimStop?: number;
+  /** R1b-1 T2 fix round 1 — khảo sát khả năng dừng từng adapter (cảnh báo cấp máy + danh sách trong hộp xác nhận) */
+  khaNangDung?: KhaNangDung;
 };
 type GiaTriGui = number | boolean | string;
 
@@ -210,6 +212,7 @@ export function Faceplate({ adapterId, tagKey, machineId, edgeCode, onDong }: Fa
             tenMay={may ? `${may.code} · ${may.ten}` : `#${machineId}`}
             soAdapter={may?.soAdapterGhimStop}
             coGhimStop={may?.coGhimStop}
+            khaNang={may?.khaNangDung}
             laEdge={!!edgeCode}
           />
         )}
