@@ -617,8 +617,10 @@ export async function yeuCauGhiTag(
 //   2. status 'expired' ⇒ HET_HAN · status khác 'proposed' ⇒ DA_XU_LY · expiresAt <= now ⇒ CAS proposed→expired, nhả khoá, HET_HAN
 //   (2b) phạm vi: adapter của yêu cầu còn trong phạm vi người gọi ⇒ không thì NOT_FOUND (adapter)
 //   (2c) fix round 1 — máy HIỆN TẠI của adapter ≠ argsJson.machineId (gán lại sau request) ⇒ MAY_DA_DOI (kết thúc, dispatch 0 lần)
-//   3. `kiemXacThucTheoMuc(mức của tag HIỆN TẠI)`  ⇒ ROLE_FLOOR | TOTP_CHUA_DANG_KY | TOTP_CAN | TOTP_SAI (GIỮ dòng chờ + khoá — QĐ T9-2)
+//   3. tag HIỆN TẠI (đọc lại) ⇒ mức
 //   4. cổng 3–7 của Task 8 trên dữ liệu HIỆN TẠI (kênh + giá trị + vai/quyền + edge + chế độ máy của ADAPTER hiện tại)
+//   4b. `kiemXacThucTheoMuc(mức của tag HIỆN TẠI)` — R1a final M-3: SAU cổng (không tiêu mã / không tính lượt T16 cho lệnh cổng từ chối)
+//       ⇒ ROLE_FLOOR | TOTP_CHUA_DANG_KY | TOTP_CAN | TOTP_SAI (TOTP_* GIỮ dòng chờ + khoá — QĐ T9-2)
 //   5. `giaHanKhoaChon` — kiểm và gia hạn NGUYÊN TỬ (QĐ T9-1)   ⇒ KHOA_MAT
 //   6. CAS proposed→confirmed                     ⇒ 0 hàng: DA_XU_LY
 //   7. `dispatch()` hitl hmi.write_tag requireBoundAction, docLai bat_buoc, queueTtlMs = còn lại tới expiresAt (CHỈ hạn chờ — R1a final
@@ -632,7 +634,7 @@ export async function yeuCauGhiTag(
 //        ngay sau dispatch; cửa sổ chỉ có nghĩa khi tiến trình chết giữa chừng.
 //   QĐ final I-2 SÀN CÒN LẠI: conLai < CON_LAI_TOI_THIEU_MS (3 s) ⇒ coi như HẾT HẠN (bước 2: CAS proposed→expired, nhả khoá, attempts
 //        expired/HET_HAN); CAS bước 6 cũng đòi expiresAt > lúc CAS + 3 s (đồng hồ đọc lại), nên queueTtlMs truyền đi luôn ≥ ~3 s.
-//   QĐ T9-2 Từ chối 2FA (TOTP_CAN/TOTP_SAI/TOTP_CHUA_DANG_KY của bước 3) GIỮ dòng chờ 'proposed' VÀ GIỮ khoá: người dùng nhập
+//   QĐ T9-2 Từ chối 2FA (TOTP_CAN/TOTP_SAI/TOTP_CHUA_DANG_KY của bước 4b, hoặc TOTP_CHUA_DANG_KY của cổng vai ở bước 4) GIỮ dòng chờ 'proposed' VÀ GIỮ khoá: người dùng nhập
 //        mã rồi bấm lại trong TTL; nhả khoá ở đây sẽ làm lần thử lại gặp KHOA_MAT. Khoá vẫn hết hạn cùng yêu cầu (60 s).
 //        fix round 1 minor 6: ROLE_FLOOR không sửa được bằng thử lại ⇒ đi đường KẾT THÚC (QĐ T9-3).
 //   QĐ T9-3 Mọi từ chối KHÁC trước dispatch (phạm vi, MAY_DA_DOI, ROLE_FLOOR, cổng 3–7, KHOA_MAT) KẾT THÚC yêu cầu: CAS proposed→'denied' rồi mới nhả khoá. CAS
@@ -856,13 +858,28 @@ export async function xacNhanGhiTag(
     return tuChoiKetThuc({ ma: "MAY_DA_DOI", chiTiet: "Thiết bị đã được gán sang máy khác sau khi tạo yêu cầu — hãy tạo yêu cầu mới." });
   }
 
-  // 3. 2FA theo mức của tag HIỆN TẠI (đọc lại DB — không tin preview)
+  // 3. tag HIỆN TẠI (đọc lại DB — không tin preview); mức lấy từ đây, 2FA kiểm ở 4b (sau cổng — R1a final M-3)
   const tag = await docTagLenh(db, a.id, args.tagKey);
   if (!tag || !tag.isEnabled) {
     const k = kiemCongKenhVaGiaTri(tag, args.tagKey, args.value);
     return tuChoiKetThuc(k.ok ? { ma: "NOT_FOUND", entity: "deviceTag", chiTiet: `Tag "${args.tagKey}" không tồn tại hoặc đang tắt.` } : k.tuChoi);
   }
   const muc = mucTacDongKenh(tag);
+
+  // 4. cổng 3–7 trên dữ liệu hiện tại
+  const kenh = kiemCongKenhVaGiaTri(tag, args.tagKey, args.value);
+  if (!kenh.ok) return tuChoiKetThuc(kenh.tuChoi);
+  const vai = await kiemCongVaiTro(nguoi, muc);
+  // R1a final M-3 — cổng vai giờ chạy TRƯỚC bước 2FA: TOTP_CHUA_DANG_KY của nó GIỮ dòng chờ + khoá như trước (QĐ T9-2), không kết thúc
+  if (!vai.ok) return vai.tuChoi.ma === "TOTP_CHUA_DANG_KY" ? tuChoiGiu(vai.tuChoi) : tuChoiKetThuc(vai.tuChoi);
+  const edge = await kiemCongEdge(db, a.id);
+  if (!edge.ok) return tuChoiKetThuc(edge.tuChoi);
+  const cheDo = await kiemCongCheDo(a.machineId, now);
+  if (!cheDo.ok) return tuChoiKetThuc(cheDo.tuChoi);
+
+  // 4b. 2FA theo mức của tag HIỆN TẠI — R1a final M-3: SAU cổng 3–7, ngay trước gia hạn khoá. Một lệnh mà cổng sẽ từ chối (LOCAL, dải,
+  //     edge, …) không được tiêu mã TOTP (totp_consumed) hay tính lượt khoá sai T16. Ngữ nghĩa giữ nguyên: TOTP_* GIỮ dòng chờ + khoá
+  //     (QĐ T9-2), ROLE_FLOOR / TOTP_TAM_KHOA kết thúc yêu cầu.
   const xt = await kiemXacThucTheoMuc(nguoi, muc, input.totpCode);
   if (!xt.ok) {
     const chiTiet: Record<typeof xt.ma, string> = {
@@ -883,16 +900,6 @@ export async function xacNhanGhiTag(
     // fix round 1 minor 6 — ROLE_FLOOR không sửa được bằng thử lại ⇒ KẾT THÚC (nhả khoá); TOTP_* giữ dòng chờ + khoá (QĐ T9-2).
     return xt.ma === "ROLE_FLOOR" || xt.ma === "TOTP_TAM_KHOA" ? tuChoiKetThuc(t) : tuChoiGiu(t);
   }
-
-  // 4. cổng 3–7 trên dữ liệu hiện tại
-  const kenh = kiemCongKenhVaGiaTri(tag, args.tagKey, args.value);
-  if (!kenh.ok) return tuChoiKetThuc(kenh.tuChoi);
-  const vai = await kiemCongVaiTro(nguoi, muc);
-  if (!vai.ok) return tuChoiKetThuc(vai.tuChoi);
-  const edge = await kiemCongEdge(db, a.id);
-  if (!edge.ok) return tuChoiKetThuc(edge.tuChoi);
-  const cheDo = await kiemCongCheDo(a.machineId, now);
-  if (!cheDo.ok) return tuChoiKetThuc(cheDo.tuChoi);
 
   // 5. khoá: kiểm + gia hạn NGUYÊN TỬ qua cửa sổ gửi (QĐ T9-1)
   const conLai = r.expiresAt.getTime() - now;

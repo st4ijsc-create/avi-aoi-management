@@ -609,6 +609,61 @@ describe("R1a T16 — bộ đếm TOTP sai (chung mọi bên gọi TOTP)", () =>
   });
 });
 
+describe("R1a final M-3 — TOTP kiểm SAU cổng 3–7 (không tiêu mã / không tính lượt cho lệnh mà cổng sẽ từ chối)", () => {
+  it("mức 5, máy chuyển LOCAL ⇒ MODE_LOCAL; mã ĐÚNG không bị tiêu (totp_consumed), mã SAI không tính lượt T16 (totp_khoa_sai)", async () => {
+    const secret = speakeasy.generateSecret({ length: 20 }).base32;
+    await setup2FA(nguoi.engA.id, secret);
+    await enable2FA(nguoi.engA.id);
+    await dung(sql`DELETE FROM totp_khoa_sai WHERE user_id = ${nguoi.engA.id}`);
+    const demTieu = async () => Number((await dung(sql`SELECT count(*)::int AS n FROM totp_consumed WHERE "userId" = ${nguoi.engA.id}`))[0].n);
+    const demSai = async () => (await dung(sql`SELECT loai, so_lan_sai FROM totp_khoa_sai WHERE user_id = ${nguoi.engA.id}`)) as Array<{ loai: string; so_lan_sai: number }>;
+    const tieuTruoc = await demTieu();
+    const r1 = await yeuCau("engA", "m5local");
+    boDem.napTuOt({ adapterId: ad.a, machineId: A.mid }, [mauOt("che_do", 1)]);
+    try {
+      const maDung = speakeasy.totp({ secret, encoding: "base32" });
+      const loi = await tuChoiXacNhan("engA", r1, { code: "PRECONDITION_FAILED", appCode: "SCADA_MACHINE_NOT_REMOTE", reason: "MODE_LOCAL" }, maDung);
+      expect(loi.appParams).toMatchObject({ lyDo: "khac_remote" });
+      expect(await demTieu(), "mã đúng KHÔNG bị tiêu khi cổng chế độ từ chối").toBe(tieuTruoc);
+      expect(await trangThaiCho(r1)).toBe("denied");
+
+      // yêu cầu thứ hai (r1 đã kết thúc + nhả khoá): mã SAI 6 số ⇒ vẫn MODE_LOCAL (không TOTP_SAI) và KHÔNG có lượt T16 nào bị tính
+      boDem.napTuOt({ adapterId: ad.a, machineId: A.mid }, [mauOt("che_do", 2)]);
+      const r2 = await yeuCau("engA", "m5local");
+      boDem.napTuOt({ adapterId: ad.a, machineId: A.mid }, [mauOt("che_do", 1)]);
+      const maSai = String((Number(speakeasy.totp({ secret, encoding: "base32" })) + 500_000) % 1_000_000).padStart(6, "0");
+      await tuChoiXacNhan("engA", r2, { code: "PRECONDITION_FAILED", appCode: "SCADA_MACHINE_NOT_REMOTE", reason: "MODE_LOCAL" }, maSai);
+      expect(await demSai(), "không tính lượt sai TOTP khi cổng chế độ từ chối").toEqual([]);
+      expect(await demTieu()).toBe(tieuTruoc);
+    } finally {
+      boDem.napTuOt({ adapterId: ad.a, machineId: A.mid }, [mauOt("che_do", 2)]);
+      await dung(sql`DELETE FROM totp_khoa_sai WHERE user_id = ${nguoi.engA.id}`);
+    }
+    expect(await khoa("m5local")).toBeUndefined();
+  });
+
+  it("mức 5, phiên mất 2FA giữa request và confirm ⇒ TOTP_CHUA_DANG_KY (cổng vai giờ chạy trước) VẪN GIỮ dòng chờ + khoá như trước (QĐ T9-2)", async () => {
+    const requestId = await yeuCau("engA", "m5local");
+    const khong2fa = scadaCommandsRouter.createCaller({ user: { id: nguoi.engA.id, role: "engineer", name: "R1A9 engA", twoFactorEnabled: false } } as never);
+    const m = await moc();
+    const loi = await loiCua(khong2fa.confirm({ requestId }));
+    expect(loi).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_TOTP_NOT_ENROLLED", appParams: { ma: "TOTP_CHUA_DANG_KY", level: 5 } });
+    expect((await thuSau(m, nguoi.engA.id)).map((t) => [t.stage, t.outcome, t.reason_code])).toEqual([["confirm", "rejected", "TOTP_CHUA_DANG_KY"]]);
+    expect(await trangThaiCho(requestId)).toBe("proposed");
+    expect((await khoa("m5local"))?.request_id).toBe(requestId);
+    await nguoi.engA.caller.huy({ requestId });
+  });
+
+  it("mức 5, cổng qua, thiếu mã ⇒ VẪN TOTP_CAN giữ dòng chờ + khoá (ngữ nghĩa QĐ T9-2 không đổi sau khi dời bước TOTP)", async () => {
+    const requestId = await yeuCau("engA", "m5local");
+    await tuChoiXacNhan("engA", requestId, { code: "PRECONDITION_FAILED", appCode: "SCADA_TOTP_REQUIRED", reason: "TOTP_CAN" });
+    expect(await trangThaiCho(requestId)).toBe("proposed");
+    expect((await khoa("m5local"))?.request_id).toBe(requestId);
+    await nguoi.engA.caller.huy({ requestId });
+    expect(await khoa("m5local")).toBeUndefined();
+  });
+});
+
 describe("dispatch quyết — interlock, OT tắt, quá hạn ack, ném lỗi", () => {
   it("interlock nhắm adapter này thiếu dữ liệu ⇒ rejected INTERLOCK_BLOCKED, command_log có thieu_du_lieu, thiết bị 0 lần", async () => {
     const [r] = await dung(sql`INSERT INTO interlock_rules
