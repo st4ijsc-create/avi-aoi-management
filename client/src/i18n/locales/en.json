@@ -3816,6 +3816,8 @@
       "qualityGateResult": "quality gate result",
       "qualityGateTemplate": "quality gate template",
       "quarantineItem": "quarantine item",
+      "factoryZone": "floor-plan zone",
+      "mapping": "product–machine mapping",
       "rcaAnalysis": "root cause analysis",
       "recipe": "recipe",
       "record": "record",

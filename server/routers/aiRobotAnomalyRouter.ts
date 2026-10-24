@@ -24,6 +24,7 @@ import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { and, desc, eq } from "drizzle-orm";
 import { robotBehaviorAnomalies, modelRollbackEvents } from "../../drizzle/schema";
+import { robotTrongPhamVi } from "./_robotPhamVi";
 import { isRobotAnomalyEnabled } from "../services/ai/robotBehaviorAnomaly";
 import { detectAndRaiseForRobot } from "../services/ai/robotBehaviorAnomalyService";
 import {
@@ -71,6 +72,15 @@ export const aiRobotAnomalyRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
+      // phạm vi nhà máy (rà bảo mật 2026-10-24): bất thường của robot ngoài phạm vi ≡ "Anomaly not found" — kiểm TRƯỚC khi ghi
+      const [cu] = await db.select({ robotId: robotBehaviorAnomalies.robotId }).from(robotBehaviorAnomalies).where(eq(robotBehaviorAnomalies.id, input.id)).limit(1);
+      if (cu) {
+        try {
+          await robotTrongPhamVi(ctx, cu.robotId);
+        } catch {
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "anomaly" }, "Anomaly not found");
+        }
+      }
       const [row] = await db
         .update(robotBehaviorAnomalies)
         .set({ status: "acknowledged", acknowledgedBy: ctx.user.id, acknowledgedAt: new Date() })
@@ -84,7 +94,8 @@ export const aiRobotAnomalyRouter = router({
   scanRobot: protectedProcedure
     .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({ robotId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await robotTrongPhamVi(ctx, input.robotId); // phạm vi nhà máy (rà bảo mật 2026-10-24): quét robot nhà máy khác ≡ không tồn tại
       if (!isRobotAnomalyEnabled()) {
         throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "robotAnomalyDetection" }, "Robot anomaly detection disabled (set AI_ROBOT_ANOMALY_ENABLED=true)");
       }

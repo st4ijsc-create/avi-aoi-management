@@ -8,6 +8,25 @@ import { sql, eq } from "drizzle-orm";
 import { predictiveAlerts, rootCauseAnalysis } from "../../drizzle/schema";
 import { pearsonCorrelation, correlationPValue } from "../utils/statistics";
 import { generateRCAInsights } from "../services/aiInsightsService";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { resolveTenantFactoryScope } from "../db/reportAggregators";
+import { mayTrongPhamVi } from "./_adapterPhamVi";
+
+/**
+ * Phạm vi nhà máy của một bản phân tích nguyên nhân gốc đã lưu (rà bảo mật 2026-10-24, kiểm định phamViGhi): bản có máy ⇒ máy phải trong
+ * phạm vi; có nhà máy ⇒ nhà máy phải trong phạm vi; không có cả hai ⇒ chỉ người yêu cầu. Ngoài phạm vi ≡ "Analysis not found". Toàn quyền ⇒ không kiểm.
+ */
+async function phanTichTrongPhamVi(ctx: CoDanhTinh & { user: { id: number } }, row: { machineId: number | null; factoryId: number | null; requestedBy: number | null }): Promise<void> {
+  const pv = phamViCua(ctx);
+  const sc = (await resolveTenantFactoryScope(pv)).factoryIds;
+  if (sc === null) return;
+  let ok = true;
+  if (row.machineId != null) ok = ((await idsTrongPhamVi("machine", pv, { strict: true })) ?? []).includes(row.machineId);
+  if (ok && row.factoryId != null) ok = sc.includes(row.factoryId);
+  if (ok && row.machineId == null && row.factoryId == null) ok = row.requestedBy === ctx.user.id;
+  if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "rcaAnalysis" }, "Analysis not found");
+}
 
 // ============ ROOT CAUSE ANALYSIS ROUTER ============
 export const rootCauseRouter = router({
@@ -27,6 +46,17 @@ export const rootCauseRouter = router({
       
       const startTime = Date.now();
       
+      // phạm vi nhà máy (rà bảo mật 2026-10-24): máy / nhà máy khai kèm phải trong phạm vi; dữ liệu quét CHỈ gồm kiểm tra của nhà máy
+      // trong phạm vi (trước: mọi nhà máy). Toàn quyền (admin) ⇒ không lọc.
+      const phamVi = phamViCua(ctx);
+      const nhaMayTrongPhamVi = (await resolveTenantFactoryScope(phamVi)).factoryIds;
+      if (nhaMayTrongPhamVi !== null) {
+        if (input.machineId) await mayTrongPhamVi(ctx, input.machineId);
+        if (input.factoryId && !nhaMayTrongPhamVi.includes(input.factoryId)) {
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, "Factory not found");
+        }
+      }
+
       // Build parameterized conditions  
       const conditions: ReturnType<typeof sql>[] = [
         sql`i."createdAt" BETWEEN ${input.startDate} AND ${input.endDate}`
@@ -34,6 +64,9 @@ export const rootCauseRouter = router({
       if (input.machineId) conditions.push(sql`m.id = ${input.machineId}`);
       if (input.productModelId) conditions.push(sql`pm.id = ${input.productModelId}`);
       if (input.factoryId) conditions.push(sql`f.id = ${input.factoryId}`);
+      if (nhaMayTrongPhamVi !== null) {
+        conditions.push(nhaMayTrongPhamVi.length > 0 ? sql`f.id IN (${sql.join(nhaMayTrongPhamVi.map((x) => sql`${x}`), sql`, `)})` : sql`1 = 0`);
+      }
 
       const whereClause = sql.join(conditions, sql` AND `);
 
@@ -206,7 +239,8 @@ export const rootCauseRouter = router({
         machineCode,
         productModelId: input.productModelId ?? null,
         productModelCode,
-        factoryId: input.factoryId ?? null,
+        // nhà máy đóng dấu: do client khai (đã kiểm phạm vi) › phạm vi đúng MỘT nhà máy › null (admin / nhiều nhà máy ⇒ bản của người yêu cầu)
+        factoryId: input.factoryId ?? (nhaMayTrongPhamVi !== null && nhaMayTrongPhamVi.length === 1 ? nhaMayTrongPhamVi[0] : null),
         startDate: input.startDate,
         endDate: input.endDate,
         dataPointsAnalyzed: rows.length,
@@ -351,7 +385,7 @@ export const rootCauseRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const existingResult = await db.execute(
-        sql`SELECT id, "aiInsights" FROM root_cause_analysis WHERE id = ${input.id}`
+        sql`SELECT id, "aiInsights", "machineId", "factoryId", "requestedBy" FROM root_cause_analysis WHERE id = ${input.id}`
       ) as any;
       // W0-1 fix (doc 69): db.execute() rows come back directly, not under
       // `.rows` — `existingResult.rows?.length` was always undefined, so this
@@ -362,6 +396,7 @@ export const rootCauseRouter = router({
       }
 
       const existingRow = existingRows[0];
+      await phanTichTrongPhamVi(ctx, existingRow); // phạm vi nhà máy: bản của nhà máy khác ≡ không tồn tại — kiểm TRƯỚC khi ghi
       const aiInsights = typeof existingRow.aiInsights === 'string'
         ? JSON.parse(existingRow.aiInsights)
         : (existingRow.aiInsights ?? {});
@@ -397,17 +432,19 @@ export const rootCauseRouter = router({
   delete: protectedProcedure
     .use(requirePermission("analytics_root_cause", "canDelete"))
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const existingResult = await db.execute(
-        sql`SELECT id FROM root_cause_analysis WHERE id = ${input.id}`
+        sql`SELECT id, "machineId", "factoryId", "requestedBy" FROM root_cause_analysis WHERE id = ${input.id}`
       ) as any;
       // W0-1 fix (doc 69): db.execute() rows come back directly, not under `.rows`.
-      if (!((existingResult.rows ?? existingResult ?? []) as any[]).length) {
+      const existingRows = (existingResult.rows ?? existingResult ?? []) as any[];
+      if (!existingRows.length) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'rcaAnalysis' }, 'Analysis not found');
       }
+      await phanTichTrongPhamVi(ctx, existingRows[0]); // phạm vi nhà máy (rà bảo mật 2026-10-24): kiểm TRƯỚC khi xoá
 
       await db.execute(sql`DELETE FROM root_cause_analysis WHERE id = ${input.id}`);
       return { success: true, id: input.id, deleted: true };

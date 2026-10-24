@@ -19,8 +19,6 @@ import { resolvePermissionModule } from "@shared/permissions";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 
 const RUN = `pgd${process.pid}${Date.now().toString(36)}`;
-/** =1 ⇒ chạy các ca xuyên nhà máy như test thường (để thấy ĐỎ nguyên văn). Mặc định: `it.fails` (ghi nhận lỗ đã đo). */
-const cross = process.env.PHAMVI_GHI_DO === "1" ? it : it.fails;
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 let db: Db;
@@ -213,7 +211,7 @@ describe("safety.updateZone — sửa vùng an toàn (ngưỡng dừng) của tr
     await userA.saf.updateZone({ id, stopDistanceMm: 900 });
     expect((await dung(sql`SELECT "stopDistanceMm" AS v FROM safety_zones WHERE id = ${id}`))[0]?.v).toBe(900);
   });
-  cross("xuyên nhà máy: vùng trạm B ⇒ phải bị từ chối, ngưỡng dừng vẫn 1000 mm", async () => {
+  it("xuyên nhà máy: vùng trạm B ⇒ phải bị từ chối, ngưỡng dừng vẫn 1000 mm", async () => {
     const id = await seedZone(`${RUN}-zb`, B.sid);
     const loi = await maLoi(() => userA.saf.updateZone({ id, stopDistanceMm: 600 }));
     const v = (await dung(sql`SELECT "stopDistanceMm" AS v FROM safety_zones WHERE id = ${id}`))[0]?.v;
@@ -244,6 +242,18 @@ describe("equipmentIntegration — phiên bản/nạp công thức máy nhà má
     const id = await seedRecipe(`${RUN}-eb`, B.mid);
     const loi = await maLoi(() => userA.eq.archiveRecipeVersion({ recipeId: id }));
     expect({ loi, tt: (await dung(sql`SELECT status AS v FROM machine_recipes WHERE id = ${id}`))[0]?.v }).toEqual({ loi: "NOT_FOUND", tt: "draft" });
+  });
+  it("W3: dấu tenant (factoryId/corporateCode/scope) do client khai bị BỎ, suy từ máy — không gắn nhãn hàng genealogy là nhà máy khác", async () => {
+    const r = (await userA.eq.createRecipeVersion({ code: `${RUN}-dau`, name: "dau", payload: {}, machineId: A.mid, factoryId: B.fid, corporateCode: "EVIL", scope: "gia" })) as any;
+    const id = Number(r.recipe.id);
+    const ev = (await dung(sql`SELECT "factoryId" AS f, "corporateCode" AS c, scope AS s FROM recipe_load_log WHERE "recipeId" = ${id} AND action = 'create'`))[0];
+    expect({ f: Number(ev?.f), c: ev?.c ?? null, s: ev?.s ?? null }).toEqual({ f: A.fid, c: null, s: null });
+    // release (công thức máy A) với dấu giả cũng bị bỏ
+    const rb = await seedRecipe(`${RUN}-dau2`, A.mid);
+    await dung(sql`UPDATE machine_recipes SET "approvedBy" = ${(await dung(sql`SELECT id FROM users LIMIT 1`))[0].id} WHERE id = ${rb}`);
+    await maLoi(() => userA.eq.archiveRecipeVersion({ recipeId: rb, factoryId: B.fid, scope: "gia" }));
+    const ev2 = (await dung(sql`SELECT "factoryId" AS f, scope AS s FROM recipe_load_log WHERE "recipeId" = ${rb} ORDER BY id DESC LIMIT 1`))[0];
+    expect({ f: Number(ev2?.f), s: ev2?.s ?? null }).toEqual({ f: A.fid, s: null });
   });
   it("recordRecipeLoad: máy B hoặc công thức B ⇒ NOT_FOUND, không dòng nhật ký nạp", async () => {
     const rA = await seedRecipe(`${RUN}-la`, A.mid);
