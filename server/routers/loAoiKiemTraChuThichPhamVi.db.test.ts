@@ -146,17 +146,11 @@ describe("★★★ aoiPackage — gói ảnh kiểm tra của máy nhà máy kh
     expect(a2).not.toBe("NOT_FOUND:ENTITY_NOT_FOUND:aoiPackage");
   });
   it("★★★ getImage — path traversal / đường tuyệt đối trong fileName và pointCode: KHÔNG BAO GIỜ trả ảnh/tệp ngoài gói", async () => {
-    // Đường tuyệt đối ⇒ BAD_REQUEST. Chuỗi `..`: bộ lọc hiện CẮT các `..` đầu rồi tra `images/<tên>` BÊN TRONG ZIP + khoá cache được kiểm nằm trong CACHE_DIR ⇒ không thoát được;
-    // kết quả là lỗi (BAD_REQUEST hoặc NOT_FOUND vì gói thử không có ZIP/ảnh), KHÔNG BAO GIỜ thành công. Ghi nhận: bộ lọc cắt chứ không từ chối (vô hại, nhưng nên là BAD_REQUEST).
-    for (const fileName of ["/etc/passwd"]) {
+    // Đường tuyệt đối và mọi chuỗi có `..` ⇒ BAD_REQUEST (L1b: TỪ CHỐI, không còn cắt-rồi-tra). Bộ test đầy đủ ở loAoiGhiPhamVi.db.test.ts.
+    for (const fileName of ["/etc/passwd", "../../etc/passwd", "..\\..\\boot.ini", "a/../../b.jpg", "x/../../../y"]) {
       expect(await chiTiet(() => R.aoiPackage.getImage({ packageId: A.pkgCode, fileName })), fileName).toBe("BAD_REQUEST:INVALID_VALUE:fileName");
     }
-    for (const fileName of ["../../etc/passwd", "..\..\boot.ini", "a/../../b.jpg", "x/../../../y"]) {
-      const kq = await chiTiet(() => R.aoiPackage.getImage({ packageId: A.pkgCode, fileName }));
-      expect(kq, fileName).not.toBeNull();
-      expect(kq, fileName).not.toBe("NOT_FOUND:ENTITY_NOT_FOUND:aoiPackage"); // qua cổng phạm vi, chết ở bước lấy ảnh
-    }
-    expect(await chiTiet(() => R.aoiPackage.getImage({ packageId: A.pkgCode, pointCode: "../../../secret" }))).not.toBeNull();
+    expect(await chiTiet(() => R.aoiPackage.getImage({ packageId: A.pkgCode, pointCode: "../../../secret" }))).toBe("BAD_REQUEST:INVALID_VALUE:fileName");
   });
   it("listPackages / getUploadStats / getQueueStatus — chỉ máy của A", async () => {
     const ds = await R.aoiPackage.listPackages({ page: 1, pageSize: 500 });

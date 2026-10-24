@@ -24,6 +24,15 @@ import { eq, and, desc, gte, lte, sql, like, inArray, count } from "drizzle-orm"
 import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 
 /** phạm vi người dùng (L1 rà bảo mật 2026-10-24): gói của máy NGOÀI phạm vi ≡ "không tồn tại" (CÙNG NOT_FOUND aoiPackage), kiểm TRƯỚC mọi đọc ZIP/ảnh/nhật ký. */
+/** phạm vi người dùng (L1b 2026-10-24): tập mã máy (machines.code) của các máy trong phạm vi. */
+async function maMayTrongPhamVi(idsMay: number[]): Promise<Set<string>> {
+  if (idsMay.length === 0) return new Set();
+  const database = await getDb();
+  if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+  const rows = await database.select({ code: machines.code }).from(machines).where(inArray(machines.id, idsMay));
+  return new Set(rows.map((r) => r.code));
+}
+
 async function chanGoiNgoaiPhamVi(ctx: unknown, machineId: number): Promise<void> {
   const ids = await idsMayTrongPhamVi(ctx as never);
   if (ids !== null && !ids.includes(machineId)) {
@@ -379,12 +388,16 @@ async function getOrExtractImage(
   watermarkLines: string[],
 ): Promise<{ buffer: Buffer; fromCache: boolean }> {
   // Validate fileName to prevent path traversal (zip-slip)
-  const normalizedName = path.normalize(fileName).replace(/^(\.\.(\/|\\|$))+/, '');
-  if (normalizedName.includes('..') || path.isAbsolute(normalizedName)) {
+  // L1b 2026-10-24: TỪ CHỐI (BAD_REQUEST) mọi tên có "..", đường dẫn tuyệt đối (POSIX `/x`, Windows `\x` / `C:`) hoặc NUL —
+  // TRƯỚC đây bộ lọc CẮT các "../" đầu rồi vẫn tra ZIP bằng tên GỐC.
+  if (fileName.includes('..') || fileName.includes('\0') || /^([\\/]|[A-Za-z]:)/.test(fileName) || path.isAbsolute(fileName)) {
     throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "fileName" }, "Invalid file name");
   }
+  const normalizedName = path.normalize(fileName);
 
-  const cacheKey = `${pkg.packageId}/${normalizedName}`;
+  // Khoá cache GỒM danh tính watermark: ảnh trong cache đã đóng dấu tên người yêu cầu ⇒ người khác KHÔNG được nhận lại bản đóng dấu tên người trước.
+  const dauVet = createHash("sha256").update(watermarkLines.join("\n")).digest("hex").slice(0, 12);
+  const cacheKey = `${pkg.packageId}/${normalizedName}.wm-${dauVet}`;
   const cachePath = path.join(CACHE_DIR, cacheKey);
 
   // Verify cache path stays within CACHE_DIR
@@ -2499,7 +2512,16 @@ export const aoiPackageRouter = router({
       offset: z.number().int().min(0).default(0),
       limit: z.number().int().min(1).max(200).default(20),
     }))
-    .query(async ({ input }) => listDeadLetterEntries(input)),
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L1b 2026-10-24): mục dead-letter mang mã máy thật — người dùng phạm vi hẹp chỉ thấy mục của máy trong phạm vi (mục không có mã máy chỉ toàn quyền thấy).
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      if (idsMay === null) return listDeadLetterEntries(input);
+      const maMay = await maMayTrongPhamVi(idsMay);
+      const tat = await listDeadLetterEntries({ offset: 0, limit: Number.MAX_SAFE_INTEGER });
+      const thay = tat.entries.filter((e) => e.machineCode !== null && maMay.has(e.machineCode));
+      // totalBytes là kích thước CẢ tệp (gồm mục máy khác) ⇒ không công bố cho người dùng hẹp.
+      return { entries: thay.slice(input.offset, input.offset + input.limit), total: thay.length, totalBytes: 0 };
+    }),
 
   /**
    * 12. Lô 4 Mục 3 (BG-36) — chi tiết MỘT mục dead-letter theo `key`. Payload đã
@@ -2510,5 +2532,11 @@ export const aoiPackageRouter = router({
   getDeadLetterDetail: protectedProcedure
     .use(requirePermission("admin_system", "canView"))
     .input(z.object({ key: z.string().min(1) }))
-    .query(async ({ input }) => getDeadLetterDetail(input.key)),
+    .query(async ({ input, ctx }) => {
+      const chiTiet = await getDeadLetterDetail(input.key);
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L1b 2026-10-24): mục của máy ngoài phạm vi ≡ không tìm thấy (null)
+      if (idsMay === null || chiTiet === null) return chiTiet;
+      const maMay = await maMayTrongPhamVi(idsMay);
+      return chiTiet.machineCode !== null && maMay.has(chiTiet.machineCode) ? chiTiet : null;
+    }),
 });

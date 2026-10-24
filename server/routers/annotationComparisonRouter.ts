@@ -107,6 +107,13 @@ export function detectComparisonPatterns(results: Array<{ pointDefId: number; re
   return patterns;
 }
 
+/** phạm vi người dùng (L1/L1b 2026-10-24): phiên so sánh NGOÀI phạm vi ⇔ chứa lần kiểm tra của máy ngoài phạm vi, hoặc khai báo máy ngoài phạm vi. */
+async function phienNgoaiPhamVi(ctx: Parameters<typeof idsMayTrongPhamVi>[0], session: { inspectionIds: unknown; machineId: number | null }): Promise<boolean> {
+  const dsKiemTra = (session.inspectionIds as number[]) ?? [];
+  const idsMay = await idsMayTrongPhamVi(ctx);
+  return !(await kiemTraTrongPhamVi(ctx, dsKiemTra)) || (idsMay !== null && session.machineId != null && !idsMay.includes(session.machineId));
+}
+
 export const annotationComparisonRouter = router({
   // Tạo phiên so sánh mới
   createSession: protectedProcedure
@@ -130,6 +137,14 @@ export const annotationComparisonRouter = router({
       
       if (inspections.length !== input.inspectionIds.length) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Một hoặc nhiều inspection không tồn tại");
+      }
+      // phạm vi người dùng (L1b 2026-10-24): lần kiểm tra / máy khai báo ngoài phạm vi ≡ không tồn tại
+      if (!(await kiemTraTrongPhamVi(ctx, input.inspectionIds))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Một hoặc nhiều inspection không tồn tại");
+      }
+      const idsMayTao = await idsMayTrongPhamVi(ctx);
+      if (idsMayTao !== null && input.machineId != null && !idsMayTao.includes(input.machineId)) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
       }
 
       const [result] = await db.insert(annotationComparisonSessions).values({
@@ -222,9 +237,7 @@ export const annotationComparisonRouter = router({
       }
 
       // phạm vi người dùng (L1 rà bảo mật 2026-10-24): phiên chứa lần kiểm tra của máy NGOÀI phạm vi ≡ không tồn tại
-      const dsKiemTra = (session.inspectionIds as number[]) ?? [];
-      const idsMay = await idsMayTrongPhamVi(ctx);
-      if (!(await kiemTraTrongPhamVi(ctx, dsKiemTra)) || (idsMay !== null && session.machineId != null && !idsMay.includes(session.machineId))) {
+      if (await phienNgoaiPhamVi(ctx, session)) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "comparisonSession" }, "Session không tồn tại");
       }
       // Get inspection details
@@ -311,7 +324,7 @@ export const annotationComparisonRouter = router({
     .input(z.object({
       sessionId: z.number(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -320,7 +333,8 @@ export const annotationComparisonRouter = router({
         .from(annotationComparisonSessions)
         .where(eq(annotationComparisonSessions.id, input.sessionId));
 
-      if (!session) {
+      // phạm vi người dùng (L1b 2026-10-24): phiên ngoài phạm vi ≡ không tồn tại (TRƯỚC khi đọc kết quả đo / ghi phiên)
+      if (!session || (await phienNgoaiPhamVi(ctx, session))) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "comparisonSession" }, "Session không tồn tại");
       }
 
@@ -464,7 +478,8 @@ export const annotationComparisonRouter = router({
           .then(r => r[0]),
       ]);
 
-      if (!inspection1 || !inspection2) {
+      // phạm vi người dùng (L1b 2026-10-24): lần kiểm tra ngoài phạm vi ≡ không tồn tại (TRƯỚC khi đọc kết quả đo / dựng PDF)
+      if (!inspection1 || !inspection2 || !(await kiemTraTrongPhamVi(ctx, [input.inspectionId1, input.inspectionId2]))) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection không tồn tại");
       }
 

@@ -3871,7 +3871,8 @@
       "safetyPlcConfig": "安全PLC配置",
       "edgePendingStop": "待处理的停止指令",
       "orphanedWriteIntent": "孤立的 OT 写入意图",
-      "lateWriteResult": "迟到的写入结果"
+      "lateWriteResult": "迟到的写入结果",
+      "mapping": "产品-设备映射"
     },
     "operation": {
       "retireEdgeNode": "永久停用边缘节点",

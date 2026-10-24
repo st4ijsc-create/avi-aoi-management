@@ -208,3 +208,25 @@ export async function kiemTraTrongPhamVi(ctx: CoDanhTinh, inspectionIds: number[
   const rows = await d.select({ m: productInspections.machineId }).from(productInspections).where(inArray(productInspections.id, inspectionIds));
   return rows.every((r) => ids.includes(r.m));
 }
+
+/** Lọc danh sách id lần kiểm tra: BỎ các id TỒN TẠI nhưng thuộc máy ngoài phạm vi (id không tồn tại giữ nguyên — thao tác sau tự bỏ qua như cũ). Toàn quyền ⇒ trả nguyên. Dùng cho mutation hàng loạt. */
+export async function locKiemTraTrongPhamVi(ctx: CoDanhTinh, inspectionIds: number[]): Promise<number[]> {
+  const ids = await idsMayTrongPhamVi(ctx);
+  if (ids === null || inspectionIds.length === 0) return inspectionIds;
+  const d = await layDb();
+  const { productInspections } = await import("../../drizzle/schema");
+  const rows = await d.select({ id: productInspections.id, m: productInspections.machineId }).from(productInspections).where(inArray(productInspections.id, inspectionIds));
+  const ngoai = new Set(rows.filter((r) => !ids.includes(r.m)).map((r) => r.id));
+  return inspectionIds.filter((x) => !ngoai.has(x));
+}
+
+/** Chú thích (hàng `image_annotations`) thấy được ⇔ toàn quyền HOẶC gắn một lần kiểm tra thuộc máy trong phạm vi (chú thích không gắn lần kiểm tra ⇒ chỉ toàn quyền thấy — cùng luật đọc L1). */
+export async function chuThichTrongPhamVi(ctx: CoDanhTinh, inspectionId: number | null | undefined): Promise<boolean> {
+  const ids = await idsMayTrongPhamVi(ctx);
+  if (ids === null) return true;
+  if (inspectionId == null) return false;
+  const d = await layDb();
+  const { productInspections } = await import("../../drizzle/schema");
+  const rows = await d.select({ m: productInspections.machineId }).from(productInspections).where(eq(productInspections.id, inspectionId)).limit(1);
+  return rows.length === 1 && ids.includes(rows[0].m);
+}

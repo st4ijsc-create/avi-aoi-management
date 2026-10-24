@@ -149,16 +149,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/alertRouters.ts#alertRouter.update",
   "server/routers/alertRouters.ts#yieldThresholdRouter.update",
   "server/routers/alertRouters.ts#yieldThresholdRouter.updateWithHistory",
-  // ── server/routers/annotationComparisonRouter.ts (2) ──
-  "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.createSession",
-  "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.detectPatterns",
-  // ── server/routers/annotationRouters.ts (6) ──
-  "server/routers/annotationRouters.ts#annotationHistoryRouter.rollback",
-  "server/routers/annotationRouters.ts#annotationRouter.bulkApplyTemplate",
-  "server/routers/annotationRouters.ts#annotationRouter.copyAnnotations",
-  "server/routers/annotationRouters.ts#annotationRouter.delete",
-  "server/routers/annotationRouters.ts#annotationRouter.export",
-  "server/routers/annotationRouters.ts#annotationRouter.save",
   // ── server/routers/apiKeyRouter.ts (4) ──
   "server/routers/apiKeyRouter.ts#apiKeyRouter.create",
   "server/routers/apiKeyRouter.ts#apiKeyRouter.delete",
@@ -267,17 +257,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.reject",
   "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.release",
   "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.submit",
-  // ── server/routers/inspectionRouters.ts (10) ──
-  "server/routers/inspectionRouters.ts#inspectionRouter.bulkAcknowledge",
-  "server/routers/inspectionRouters.ts#inspectionRouter.confirmNTF",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.analyzeWithAI",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.batchAcknowledge",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.batchAddNote",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.batchAddTag",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.batchArchive",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.classifyDefect",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.correctResult",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.updateRemark",
   // ── server/routers/inspectionVariantRouter.ts (1) ──
   "server/routers/inspectionVariantRouter.ts#inspectionVariantRouter.setVariant",
   // ── server/routers/interlockRouter.ts (4) ──
