@@ -3879,8 +3879,7 @@
       "safetyPlcConfig": "safety-PLC configuration",
       "edgePendingStop": "pending STOP",
       "orphanedWriteIntent": "orphaned OT write intent",
-      "lateWriteResult": "late write result",
-      "mapping": "product–machine mapping"
+      "lateWriteResult": "late write result"
     },
     "operation": {
       "retireEdgeNode": "retire the edge node",
