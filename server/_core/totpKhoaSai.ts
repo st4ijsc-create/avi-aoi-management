@@ -43,6 +43,7 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { appError, readAppErrorMeta, type AppErrorParams } from "./appError";
+import { biet0432Thieu } from "./kiemSchemaR1a";
 
 /** TOTP — số lần thử tối đa trong một cửa sổ; lượt thứ này sai ⇒ khoá. */
 export const SO_LAN_SAI_TOI_DA = 5;
@@ -82,6 +83,23 @@ export class LoiBoDemTotp extends Error {
     super(message, options);
     this.name = "LoiBoDemTotp";
   }
+}
+
+/**
+ * kiem-dinh P1-6 — câu nguyên nhân cho log khi bộ đếm hỏng (⇒ `TOTP_KHONG_KIEM_DUOC`): lỗi postgres 42P01 (bảng không tồn tại) / 42703 (cột
+ * không tồn tại) ở bất kỳ tầng `cause` nào, hoặc tiến trình đã thấy thiếu 0432 lúc khởi động (`kiemSchemaR1a`) ⇒ gọi đích danh
+ * "thiếu migration 0432". Lỗi khác ⇒ chỉ thông điệp gốc. UI giữ câu chung ("lỗi hệ thống").
+ */
+export function nguyenNhanBoDemHong(e: unknown): string {
+  const goc = (e as Error)?.message ?? String(e);
+  let thieuBang = false;
+  for (let x: unknown = e, i = 0; x && typeof x === "object" && i < 6; x = (x as { cause?: unknown }).cause, i++) {
+    const code = (x as { code?: unknown }).code;
+    if (code === "42P01" || code === "42703") thieuBang = true;
+  }
+  return thieuBang || biet0432Thieu()
+    ? `${goc} — NGUYÊN NHÂN: thiếu migration 0432 (bảng totp_khoa_sai / cột loai): chạy scripts/apply-migration-0432.mjs`
+    : goc;
 }
 
 async function layDbBatBuoc() {
@@ -418,7 +436,7 @@ export async function kiemMaDuPhongCoBoDem(userId: number, kiem: () => Promise<b
   try {
     nap = await napLuotThu(userId, "backup", luotThu);
   } catch (e) {
-    console.error(`[TotpKhoaSai] bộ đếm MÃ DỰ PHÒNG không ghi được (${(e as Error)?.message ?? String(e)}) ⇒ TỪ CHỐI (fail-closed).`);
+    console.error(`[TotpKhoaSai] bộ đếm MÃ DỰ PHÒNG không ghi được (${nguyenNhanBoDemHong(e)}) ⇒ TỪ CHỐI (fail-closed).`);
     throw loiKhongKiemDuoc();
   }
   if (!duocKiem(nap, "backup")) {
@@ -437,7 +455,7 @@ export async function kiemMaDuPhongCoBoDem(userId: number, kiem: () => Promise<b
   try {
     xoa = await xoaSauKhiDung(userId, "backup", luotThu);
   } catch (e) {
-    console.error(`[TotpKhoaSai] bộ đếm MÃ DỰ PHÒNG không xoá được sau mã đúng (${(e as Error)?.message ?? String(e)}) ⇒ TỪ CHỐI.`);
+    console.error(`[TotpKhoaSai] bộ đếm MÃ DỰ PHÒNG không xoá được sau mã đúng (${nguyenNhanBoDemHong(e)}) ⇒ TỪ CHỐI.`);
     throw loiKhongKiemDuoc();
   }
   if (xoa.conLaiMs > 0) throw loiMaDuPhongTamKhoa(xoa.conLaiMs);

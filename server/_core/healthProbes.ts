@@ -34,6 +34,7 @@
 import type { Request, Response } from "express";
 import { sql } from "drizzle-orm";
 import { edgeDbRefused } from "../db/edgeDbTrap";
+import { lyDoSchemaR1a } from "./kiemSchemaR1a";
 
 /** Hạn một lượt `SELECT 1` (brief T11: "vd 1500 ms"; nghiệm thu: 503 trong ≤ 2 s). */
 export const DB_PING_TIMEOUT_MS = 1500;
@@ -313,6 +314,8 @@ export async function readinessProbe(deps: ReadinessDeps = {}): Promise<Readines
 export interface ProbeHandlerDeps {
   pinger?: DbPinger;
   checkBroker?: ReadinessDeps["checkBroker"];
+  /** kiem-dinh P1-6 — lý do schema R1a (thiếu mig 0431/0432) của lần kiểm khởi động; mặc định `kiemSchemaR1a.lyDoSchemaR1a`. */
+  schemaR1a?: () => { ok: false; thieuMigration: string[]; lyDo: string } | null;
 }
 
 /**
@@ -347,9 +350,12 @@ export function createHealthHandler(deps: ProbeHandlerDeps = {}) {
     const r = await pinger.ping({ maxAgeMs: HEALTH_DB_CACHE_MS });
     const db = trangThaiDb(r);
     const mem = process.memoryUsage();
+    // kiem-dinh P1-6 — thiếu migration R1a ⇒ degraded + lý do (vẫn 200: liveness — khởi động lại không chữa được một migration thiếu).
+    const schemaR1a = (deps.schemaR1a ?? lyDoSchemaR1a)();
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({
-      status: db === "connected" ? "ok" : "degraded",
+      status: db === "connected" && !schemaR1a ? "ok" : "degraded",
+      ...(schemaR1a ? { schemaR1a } : {}),
       db,
       ...(r.ok ? {} : { dbReason: r.reason }),
       dbPingMs: r.ms,

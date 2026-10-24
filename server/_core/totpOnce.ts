@@ -86,7 +86,7 @@
 import speakeasy from "speakeasy";
 import { randomUUID, createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { napLuotThu, duocKiem, xoaSauKhiDung, ghiAuditBatDauKhoa, ghiTuChoiDangKhoa, maLuotThuMoi, THOI_GIAN_KHOA_MS, type KetQuaNapLuot } from "./totpKhoaSai";
+import { napLuotThu, duocKiem, xoaSauKhiDung, ghiAuditBatDauKhoa, ghiTuChoiDangKhoa, maLuotThuMoi, nguyenNhanBoDemHong, THOI_GIAN_KHOA_MS, type KetQuaNapLuot } from "./totpKhoaSai";
 
 /**
  * Cửa sổ `speakeasy` — **1 nhịp trước/sau** để bù lệch đồng hồ. Giữ **nguyên** giá trị cũ của cả 8
@@ -395,7 +395,7 @@ export async function verifyTotpOnce(args: {
   try {
     nap = await napLuotThu(userId, "totp", luotThu);
   } catch (e) {
-    console.error(`[TotpOnce] BỘ ĐẾM TOTP SAI không ghi được (${(e as Error)?.message ?? String(e)}) ⇒ TỪ CHỐI (fail-closed).`);
+    console.error(`[TotpOnce] BỘ ĐẾM TOTP SAI không ghi được (${nguyenNhanBoDemHong(e)}) ⇒ TỪ CHỐI (fail-closed).`);
     return KHONG_KIEM_DUOC;
   }
   if (!duocKiem(nap, "totp")) {
@@ -463,7 +463,7 @@ export async function verifyTotpOnce(args: {
   try {
     sauXoa = await xoaSauKhiDung(userId, "totp", luotThu);
   } catch (e) {
-    console.error(`[TotpOnce] BỘ ĐẾM TOTP SAI không xoá được sau mã đúng (${(e as Error)?.message ?? String(e)}) ⇒ TỪ CHỐI (fail-closed).`);
+    console.error(`[TotpOnce] BỘ ĐẾM TOTP SAI không xoá được sau mã đúng (${nguyenNhanBoDemHong(e)}) ⇒ TỪ CHỐI (fail-closed).`);
     return KHONG_KIEM_DUOC;
   }
   if (sauXoa.conLaiMs > 0) return { hopLe: false, phatLai: false, ma: "TOTP_TAM_KHOA", conLaiMs: sauXoa.conLaiMs };
