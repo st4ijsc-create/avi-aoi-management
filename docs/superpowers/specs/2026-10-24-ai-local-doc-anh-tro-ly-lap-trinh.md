@@ -130,5 +130,17 @@ Lần chạy 06:45 trước đó HỎNG ở thiết bị đo (biến `URL` che m
   model hybrid TÍCH LUỸ (35B 62,8 MiB/cái, 27B 149,6 MiB/cái), TRẦN 32 cái = 2,0 GB (35B) / 4,8 GB (27B). Tải A chữ không có câu hệ
   thống chung ⇒ mỗi lượt về checkpoint 1. ⇒ Suy luận (chưa đo riêng): cùng tăng có trần này có ở hội thoại CHỮ chung tiền tố (agent/KB) hôm
   nay, không do mmproj. Phát hiện kèm: ngưỡng VRAM sidecar 8.500 bản đầu LỌT với 35B sẵn sàng 23.958 MiB (8.649 trống) ⇒ sửa 11.000 (`ff8a5a060`).
+- **Cổng (A) — dieu-phoi DUYỆT mức 2026-10-24, viết TRƯỚC lần đo lại (đo lại TỪ ĐẦU, không dùng số cũ):** mỗi model M ∈ {35B, 27B},
+  đường sản phẩm (bản sao tạm `.env` + `LLAMA_SERVER_MMPROJ`), hai cấu hình chạy CÙNG tải: **auto** = pha X Tải A 20 lượt chữ (không tiền
+  tố chung) + pha Y 13 câu ẢNH chung câu hệ thống; **off (đối chứng)** = pha X giống hệt + pha Y' 13 câu CHỮ chung đúng câu hệ thống ấy
+  (`thi-giac/tai-chung-tien-to.mjs`, mỗi câu một đoạn tài liệu khác nhau ~6k ký tự, nghĩ bật, ra ≤ 8000). ĐẠT khi CẢ HAI model:
+  (1) auto: `/props` vision=true + đúng mmproj; off: vision=false; cả hai `--cache-ram 0`;
+  (2) VRAM CẢ CARD (nvidia-smi 2 s): **p99 ≤ 27,5 GB** (= 28.160 MiB), ghi kèm max;
+  (3) Private max − mẫu đầu sau nạp của auto ≤ 32 × cỡ checkpoint + 1,0 GB (35B ≤ 3,0 GB · 27B ≤ 5,8 GB) VÀ |tăng auto − tăng off| ≤ 1,0 GB
+      (checkpoint không do mmproj);
+  (4) ảnh ≥ 11/13; (5) chữ 20/20 HTTP 200 (cả hai cấu hình).
+  e2e :3013 trên 35B auto: `/v1` VÀ KB stream, mỗi đường 3 ảnh (#04 interlock, #08 tài liệu, #12 lỗi tsc) — chấm NỘI DUNG bằng đúng nhóm từ
+  khoá của `bo-anh.json` (KB: `done.answer`); ĐẠT khi ≥ 2/3 mỗi đường và KB `vision` nguon=model-chinh 3/3.
+  ĐẠT ⇒ đổi mặc định trong mã sang `auto`.
 - ⚠ Rủi ro HIỆN TẠI (không phụ thuộc đề xuất): đường KB gửi ảnh ⇒ sidecar VL-8B nạp CÙNG LÚC 35B ⇒ đo được 31,9 GB VRAM, chữ chậm ×4,
   commit trống 3–5 GB. Extension chưa gửi ảnh nên chưa lộ; khi luong-ui bật đính ảnh cho Trợ lý, lỗ này mở.
