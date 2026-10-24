@@ -206,6 +206,124 @@ describe("khoiDongOtCoKiemSchema — kiểm TRƯỚC startOt", () => {
   });
 });
 
+describe("★ R1b-1 T10 — không kiểm được lúc khởi động: /health nói thẳng + KIỂM LẠI định kỳ tới khi kiểm được", () => {
+  function chayHong(bo: string[] = []) {
+    const st = { ok: false, soLan: 0 };
+    const chay = async (q: SQL) => {
+      st.soLan++;
+      if (!st.ok) throw new Error("ECONNREFUSED 127.0.0.1:5434");
+      return gia(bo).chay(q);
+    };
+    return { st, chay };
+  }
+  function hen() {
+    const h = { fn: null as null | (() => void), ms: 0, unref: vi.fn(), huy: vi.fn(), soLanDat: 0 };
+    const handle = { unref: h.unref };
+    return {
+      h,
+      datNhac: (fn: () => void, ms: number) => {
+        h.fn = fn;
+        h.ms = ms;
+        h.soLanDat++;
+        return handle;
+      },
+      boNhac: (x: unknown) => h.huy(x),
+      handle,
+    };
+  }
+  async function goiHealth(): Promise<Record<string, unknown>> {
+    const app = express();
+    app.get("/health", createHealthHandler({ pinger: { ping: async () => ({ ok: true, ms: 1 }) } as never }));
+    const srv = app.listen(0);
+    try {
+      const r = await fetch(`http://127.0.0.1:${(srv.address() as AddressInfo).port}/health`);
+      return (await r.json()) as Record<string, unknown>;
+    } finally {
+      srv.close();
+    }
+  }
+
+  it("/health: schemaR1a \"chua_kiem_duoc\" + schemaR1aLyDo (nguyên nhân); status vẫn ok (không biết ≠ thiếu); khởi động vẫn fail-open", async () => {
+    const { chay } = chayHong();
+    const startOt = vi.fn(async () => undefined);
+    const w = hen();
+    expect(await khoiDongOtCoKiemSchema({ chay, startOt, logLoi: vi.fn(), datNhac: w.datNhac, boNhac: w.boNhac })).toBe("da_start");
+    expect(startOt).toHaveBeenCalledTimes(1);
+    const body = await goiHealth();
+    expect(body.schemaR1a).toBe("chua_kiem_duoc");
+    expect(String(body.schemaR1aLyDo)).toContain("ECONNREFUSED");
+    expect(body.status).toBe("ok");
+  });
+
+  it("kiểm lại mỗi 5 phút bằng hẹn giờ unref; còn hỏng ⇒ giữ nguyên, KHÔNG dừng hẹn giờ; kiểm được ⇒ dừng hẹn giờ + /health hết \"chua_kiem_duoc\"", async () => {
+    const { chay, st } = chayHong();
+    const w = hen();
+    const logLoi = vi.fn();
+    await khoiDongOtCoKiemSchema({ chay, startOt: vi.fn(async () => undefined), logLoi, datNhac: w.datNhac, boNhac: w.boNhac });
+    expect(w.h.ms).toBe(CHU_KY_NHAC_MS);
+    expect(w.h.unref).toHaveBeenCalledTimes(1);
+    const truoc = st.soLan;
+    w.h.fn!();
+    await vi.waitFor(() => expect(logLoi.mock.calls.some((c) => String(c[0]).includes("vẫn KHÔNG được"))).toBe(true));
+    expect(st.soLan).toBeGreaterThan(truoc);
+    expect(w.h.huy).not.toHaveBeenCalled();
+    expect(trangThaiSchemaR1a().kieu).toBe("khong_kiem_duoc");
+    expect((await goiHealth()).schemaR1a).toBe("chua_kiem_duoc");
+
+    st.ok = true;
+    w.h.fn!();
+    await vi.waitFor(() => expect(w.h.huy).toHaveBeenCalledTimes(1));
+    expect(w.h.huy).toHaveBeenCalledWith(w.handle);
+    expect(trangThaiSchemaR1a()).toMatchObject({ kieu: "da_kiem", thieu0431: [], thieu0432: [], thieu0433: [] });
+    const body = await goiHealth();
+    expect(body.schemaR1a).toBeUndefined();
+    expect(body.schemaR1aLyDo).toBeUndefined();
+    expect(body.status).toBe("ok");
+    // đã dừng: không còn hẹn giờ nào được đặt thêm (đủ schema ⇒ không nhắc 0432/0433)
+    expect(w.h.soLanDat).toBe(1);
+  });
+
+  it("kiểm được MUỘN mà thiếu 0431 ⇒ /health degraded + khối lỗi nói rõ phát hiện muộn; thiếu 0432 ⇒ bắt đầu nhắc định kỳ như lúc khởi động", async () => {
+    const { chay, st } = chayHong(["device_tags.write_min", "totp_khoa_sai"]);
+    const w = hen();
+    const logLoi = vi.fn();
+    const startOt = vi.fn(async () => undefined);
+    await khoiDongOtCoKiemSchema({ chay, startOt, logLoi, datNhac: w.datNhac, boNhac: w.boNhac });
+    st.ok = true;
+    w.h.fn!();
+    await vi.waitFor(() => expect(w.h.huy).toHaveBeenCalledTimes(1));
+    expect(startOt).toHaveBeenCalledTimes(1); // OT không bị khởi động lại / chặn muộn
+    const tat = logLoi.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(tat).toContain("THIẾU MIGRATION 0431");
+    expect(tat).toContain("phát hiện MUỘN");
+    expect(tat).toContain("THIẾU MIGRATION 0432");
+    expect(w.h.soLanDat).toBe(2); // + bộ nhắc 0432
+    const body = await goiHealth();
+    expect(body.status).toBe("degraded");
+    expect(body.schemaR1a).toMatchObject({ ok: false, thieuMigration: ["0431", "0432"] });
+  });
+
+  it("mặc định (không truyền datNhac): setInterval THẬT mỗi CHU_KY_NHAC_MS, unref, tự dừng khi kiểm được — dùng layChay (kết nối mới)", async () => {
+    vi.useFakeTimers();
+    const { chay, st } = chayHong();
+    let laiChay: typeof chay | null = null; // DB chưa có lúc boot
+    const layChay = vi.fn(async () => laiChay);
+    await khoiDongOtCoKiemSchema({ chay: null, startOt: vi.fn(async () => undefined), logLoi: vi.fn(), layChay });
+    expect(trangThaiSchemaR1a()).toMatchObject({ kieu: "khong_kiem_duoc", loi: "không có kết nối DB" });
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(CHU_KY_NHAC_MS);
+    expect(layChay).toHaveBeenCalledTimes(1);
+    expect(trangThaiSchemaR1a().kieu).toBe("khong_kiem_duoc"); // vẫn chưa có kết nối
+    laiChay = chay;
+    st.ok = true;
+    await vi.advanceTimersByTimeAsync(CHU_KY_NHAC_MS);
+    expect(trangThaiSchemaR1a().kieu).toBe("da_kiem");
+    expect(vi.getTimerCount()).toBe(0); // dừng hẳn
+    await vi.advanceTimersByTimeAsync(CHU_KY_NHAC_MS * 3);
+    expect(layChay).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("/health (route THẬT — `/api/health` là SPA catch-all) mang lý do schema", () => {
   async function goiHealth(): Promise<{ status: number; body: Record<string, unknown> }> {
     const app = express();

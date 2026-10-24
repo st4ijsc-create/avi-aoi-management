@@ -4727,6 +4727,11 @@ async function startServer() {
       const dbKiemSchema = await layDbKiemSchema().catch(() => null);
       await khoiDongOtCoKiemSchema({
         chay: dbKiemSchema ? async (q) => (await dbKiemSchema.execute(q)) as unknown as Array<Record<string, unknown>> : null,
+        // R1b-1 T10 — các lần KIỂM LẠI (mỗi 5 phút khi lúc khởi động không kiểm được) lấy kết nối mới: DB chưa sẵn lúc boot thì lần sau có thể sẵn.
+        layChay: async () => {
+          const d = await layDbKiemSchema().catch(() => null);
+          return d ? async (q) => (await d.execute(q)) as unknown as Array<Record<string, unknown>> : null;
+        },
         startOt: async () => {
           const { startOt } = await import("../services/ot");
           await startOt();

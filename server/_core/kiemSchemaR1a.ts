@@ -20,7 +20,10 @@
  *   · Thiếu 0432 ⇒ `startOt` vẫn chạy; lỗi được log lặp lại mỗi `CHU_KY_NHAC_MS` (5 phút) tới khi bảng có mặt; `/health` degraded; mỗi
  *     lần bộ đếm TOTP hỏng, log mang nguyên nhân "thiếu migration 0432" (`nguyenNhanBoDemHong`, totpKhoaSai.ts / totpOnce.ts).
  *   · Không kiểm được (DB chưa sẵn / truy vấn lỗi) ⇒ ghi cảnh báo và để `startOt` chạy như trước (nó tự thất bại nếu DB hỏng) — trạng
- *     thái `khong_kiem_duoc`, `/health` không vì thế mà degraded.
+ *     thái `khong_kiem_duoc` (FAIL-OPEN lúc khởi động, giữ nguyên). R1b-1 T10: `/health` KHÔNG im lặng về chuyện đó —
+ *     `schemaR1a: "chua_kiem_duoc"` + `schemaR1aLyDo` (status vẫn "ok": không biết ≠ thiếu), và tiến trình KIỂM LẠI mỗi
+ *     `CHU_KY_NHAC_MS` (hẹn giờ unref, tự dừng khi kiểm được) — kiểm được ⇒ trạng thái thật (thiếu 0431/0432/0433 ⇒ degraded + khối lỗi,
+ *     0432/0433 ⇒ nhắc định kỳ như lúc khởi động).
  * Không kéo DB lúc import: `chay` do người gọi truyền (test giả `information_schema`).
  */
 import { sql, type SQL } from "drizzle-orm";
@@ -125,6 +128,14 @@ export function lyDoSchemaR1a(t: TrangThaiSchemaR1a = trangThai): { ok: false; t
   return thieu.length ? { ok: false, thieuMigration: thieu, lyDo: phan.join("; ") } : null;
 }
 
+/**
+ * R1b-1 T10 — lần kiểm khởi động KHÔNG đọc được information_schema ⇒ `/health` nói thẳng "chưa kiểm được" (kèm lý do). Không phải
+ * "thiếu migration" (không biết) nên KHÔNG làm `status` thành degraded. null = không có gì để báo (chưa kiểm / đã kiểm).
+ */
+export function lyDoChuaKiemDuocR1a(t: TrangThaiSchemaR1a = trangThai): { schemaR1a: "chua_kiem_duoc"; lyDo: string } | null {
+  return t.kieu === "khong_kiem_duoc" ? { schemaR1a: "chua_kiem_duoc", lyDo: t.loi } : null;
+}
+
 function khoiLoi(dong: string[]): string {
   const vien = "█".repeat(100);
   return ["", vien, ...dong.map((d) => `█  ${d}`), vien, ""].join("\n");
@@ -140,6 +151,10 @@ export interface DepsKhoiDongOt {
   /** hẹn giờ nhắc (test truyền giả) */
   datNhac?: (fn: () => void, ms: number) => { unref?: () => void } | unknown;
   boNhac?: (h: unknown) => void;
+  /**
+   * R1b-1 T10 — lấy kết nối cho các lần KIỂM LẠI (DB chưa sẵn lúc khởi động thì lần sau có thể sẵn). Vắng ⇒ dùng `chay`; trả null ⇒ bỏ lượt này.
+   */
+  layChay?: () => Promise<ChayTruyVan | null>;
 }
 
 /**
@@ -161,16 +176,21 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
     logLoi("[SCADA R1a] KHÔNG kiểm được schema: không có kết nối DB — vẫn khởi động OT như trước.");
   }
 
+  const layChayLai = async (): Promise<ChayTruyVan | null> => (deps.layChay ? deps.layChay() : deps.chay);
+  const datNhac = deps.datNhac ?? ((fn: () => void, ms: number) => setInterval(fn, ms));
+  const boNhac = deps.boNhac ?? ((h: unknown) => clearInterval(h as NodeJS.Timeout));
+
   // 0432 / 0433: OT vẫn chạy; khối lỗi nổi bật + nhắc lại mỗi 5 phút tới khi đối tượng có mặt (mỗi mã một bộ hẹn giờ).
-  const nhacTheoMa = (ma: "thieu0432" | "thieu0433", dongLoi: (thieu: string[]) => string[], macDinhThieu: string[]) => {
-    if (!kq || !kq[ma].length) return;
+  const nhacTheoMa = (kq: KetQuaSchemaR1a, ma: "thieu0432" | "thieu0433", dongLoi: (thieu: string[]) => string[], macDinhThieu: string[]) => {
+    if (!kq[ma].length) return;
     const bao = (thieu: string[]) => logLoi(khoiLoi(dongLoi(thieu)));
     bao(kq[ma]);
-    const chay = deps.chay!;
-    const datNhac = deps.datNhac ?? ((fn: () => void, ms: number) => setInterval(fn, ms));
-    const boNhac = deps.boNhac ?? ((h: unknown) => clearInterval(h as NodeJS.Timeout));
     const h = datNhac(() => {
-      void kiemSchemaR1a(chay)
+      void layChayLai()
+        .then((chay) => {
+          if (!chay) throw new Error("không có kết nối DB");
+          return kiemSchemaR1a(chay);
+        })
         .then((lai) => {
           if (trangThai.kieu === "da_kiem") trangThai = { ...trangThai, [ma]: lai[ma], luc: new Date().toISOString() };
           if (lai[ma].length) bao(lai[ma]);
@@ -187,7 +207,9 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
     }, CHU_KY_NHAC_MS);
     (h as { unref?: () => void } | null)?.unref?.();
   };
+  const nhacCaHai = (kq: KetQuaSchemaR1a) => {
   nhacTheoMa(
+    kq,
     "thieu0432",
     (thieu) => [
       "[SCADA R1a] THIẾU MIGRATION 0432 (bộ đếm TOTP sai).",
@@ -198,6 +220,7 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
     ["totp_khoa_sai"],
   );
   nhacTheoMa(
+    kq,
     "thieu0433",
     (thieu) => [
       "[SCADA R1b] THIẾU MIGRATION 0433 (cột lý do của nhật ký thử lệnh HMI).",
@@ -208,6 +231,52 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
     ],
     ["scada_command_attempts.ly_do"],
   );
+  };
+
+  if (kq) nhacCaHai(kq);
+
+  /**
+   * R1b-1 T10 — `khong_kiem_duoc` lúc khởi động: KIỂM LẠI mỗi CHU_KY_NHAC_MS (hẹn giờ unref) tới khi kiểm được rồi dừng hẳn. Kiểm được ⇒ trạng
+   * thái thật vào `/health`; thiếu 0431 (OT đã khởi động fail-open trước đó) ⇒ khối lỗi nói rõ "áp 0431 rồi khởi động lại"; thiếu 0432 / 0433 ⇒
+   * nhắc định kỳ như lúc khởi động. Một lượt kiểm chưa xong thì lượt sau bỏ qua (không chồng).
+   */
+  if (!kq) {
+    let dangKiem = false;
+    const hLai = datNhac(() => {
+      if (dangKiem) return;
+      dangKiem = true;
+      void layChayLai()
+        .then((chay) => {
+          if (!chay) throw new Error("không có kết nối DB");
+          return kiemSchemaR1a(chay);
+        })
+        .then((lai) => {
+          trangThai = { kieu: "da_kiem", luc: new Date().toISOString(), ...lai };
+          boNhac(hLai);
+          logLoi("[SCADA R1a] đã kiểm được schema (information_schema) sau lần không kiểm được lúc khởi động.");
+          if (lai.thieu0431.length) {
+            logLoi(
+              khoiLoi([
+                "[SCADA R1a] THIẾU MIGRATION 0431 (kênh SCADA / lệnh HMI) — phát hiện MUỘN: lúc khởi động không kiểm được nên OT đã được khởi động như trước.",
+                `Còn thiếu: ${lai.thieu0431.join(", ")}.`,
+                "Hậu quả: truy vấn device_tags của OT gãy (adapter không nạp được).",
+                "/health báo status \"degraded\" + schemaR1a.",
+                "Sửa: chạy scripts/apply-migration-0431.mjs trên DB này RỒI KHỞI ĐỘNG LẠI tiến trình.",
+              ]),
+            );
+          }
+          nhacCaHai(lai);
+        })
+        .catch((err) => {
+          if (trangThai.kieu === "khong_kiem_duoc") trangThai = { kieu: "khong_kiem_duoc", loi: (err as Error)?.message ?? String(err) };
+          logLoi(`[SCADA R1a] kiểm lại schema vẫn KHÔNG được: ${(err as Error)?.message ?? String(err)} — thử lại sau ${CHU_KY_NHAC_MS / 60_000} phút.`);
+        })
+        .finally(() => {
+          dangKiem = false;
+        });
+    }, CHU_KY_NHAC_MS);
+    (hLai as { unref?: () => void } | null)?.unref?.();
+  }
 
   if (kq && kq.thieu0431.length) {
     logLoi(
