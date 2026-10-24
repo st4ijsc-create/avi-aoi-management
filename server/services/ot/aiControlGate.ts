@@ -345,7 +345,7 @@ export function kiemCongAi(input: DauVaoCongAi): KetQuaCongAi {
         ? `lệnh này LÀM TĂNG năng lượng của máy (trục có thể bắt đầu chuyển động)`
         : `lệnh này gây CHUYỂN ĐỘNG VẬT LÝ hoặc chạm tham số an toàn/interlock`;
     const nguon = doKenh
-      ? `kênh đích được kỹ sư khai mức tác động ${muc} (actuation_level; để trống = 5), cao hơn mức ${mucTool} của tool — ${viSao}`
+      ? `kênh đích của lệnh ở mức tác động ${muc} (actuation_level kỹ sư khai; để trống hoặc không xác định được = 5), cao hơn mức ${mucTool} của tool — ${viSao}`
       : viSao;
     return {
       choPhep: false,

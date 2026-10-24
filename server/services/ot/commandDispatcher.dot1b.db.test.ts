@@ -680,13 +680,15 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     const tool = getTool("set_machine_param")!;
     const admin = { id: OWNER, role: "admin", name: "t6" };
     const params = { machineId: MACHINE, tagKey: "speed_sp", value: 55 };
-    // SCADA R1a T10 (K5) — tool ghi OT tính mức = max(tool, actuation_level kênh); kênh để trống = 5 ⇒ confirm đòi 2FA mức 5 và
-    // cổng AI chặn. Ca này đo đường HITL → dispatch nên kênh được KHAI mức 3 (đúng hợp đồng mới), trả về NULL sau ca.
-    await (await d()).update(deviceTags).set({ actuationLevel: 3 }).where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, "speed_sp")));
-    const proposed = await proposeAction(tool, params, { user: admin, lang: "vi" });
-    expect(proposed.ok).toBe(true);
-    const actionId = (proposed as { pendingAction: { actionId: string } }).pendingAction.actionId;
+    // SCADA R1a T10 (K5) — tool ghi OT tính mức = max(tool, actuation_level kênh); kênh để trống = 5 ⇒ confirm từ chối MUC_QUA_CAO và
+    // cổng AI chặn. Ca này đo đường HITL → dispatch nên kênh được KHAI mức 3 (đúng hợp đồng mới) TRONG try, trả về NULL ở finally.
+    const tagSpeed = and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, "speed_sp"));
+    let actionId: string | null = null;
     try {
+      await (await d()).update(deviceTags).set({ actuationLevel: 3 }).where(tagSpeed);
+      const proposed = await proposeAction(tool, params, { user: admin, lang: "vi" });
+      expect(proposed.ok).toBe(true);
+      actionId = (proposed as { pendingAction: { actionId: string } }).pendingAction.actionId;
       const [row] = await (await d()).select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
       expect(row!.previewJson).toHaveProperty("__otPayloadHash");
       const res = await confirmAction(actionId, actionId, admin, "vi");
@@ -698,8 +700,8 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
       expect(again.status).toBe("executed");
       expect(writeCalls).toBe(1);
     } finally {
-      await (await d()).delete(aiPendingActions).where(eq(aiPendingActions.id, actionId));
-      await (await d()).update(deviceTags).set({ actuationLevel: null }).where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, "speed_sp")));
+      if (actionId) await (await d()).delete(aiPendingActions).where(eq(aiPendingActions.id, actionId));
+      await (await d()).update(deviceTags).set({ actuationLevel: null }).where(tagSpeed);
     }
   });
 });

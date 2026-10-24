@@ -125,14 +125,15 @@ async function runDispatch(
   // Đọc safety CHỈ-ĐỌC rồi truyền vào cổng (cổng là hàm thuần, không tự đọc).
   const safety = await preflightSafetyChoAi(args.adapterId, args.machineId);
   // SCADA R1a T10 (K5) — mức KÊNH của MỌI tag sắp ghi (tag không có / actuation_level NULL ⇒ 5); cổng lấy max(tool, kênh).
-  const mucKenh = await mucKenhChoAi(args.adapterId, args.writes.map((x) => x.tagKey));
+  // Fix round 1 (c1) — DỪNG GHIM (lệnh dừng, mọi write = stop_value) ⇒ mức của TOOL, không truyền mức kênh.
+  const kenh = await mucKenhChoAi(args.adapterId, args.writes, args.commandType);
   const cong = kiemCongAi({
     toolName: args.toolName,
     tagKey: args.tagKeyDoModelChon ?? null,
     userId: ctx.user.id,
     adapterId: args.adapterId,
     safety,
-    mucKenh,
+    ...(kenh.dungGhim ? {} : { mucKenh: kenh.muc }),
   });
   if (!cong.choPhep) {
     return ketQuaTuChoiChoTool(cong, args.toolName) as ToolExecuteResult;

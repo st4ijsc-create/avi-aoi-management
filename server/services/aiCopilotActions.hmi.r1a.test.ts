@@ -11,7 +11,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Row = Record<string, any>;
 const store = new Map<string, Row>();
-const H = vi.hoisted(() => ({ soUpdate: 0, mucKenh: 3 as number, mucKenhCalls: [] as Array<[number, readonly string[]]> }));
+const H = vi.hoisted(() => ({
+  soUpdate: 0,
+  mucKenh: 3 as number,
+  dungGhim: false,
+  mucKenhCalls: [] as Array<[number, readonly string[]]>,
+  mucKenhCmd: [] as Array<string | null | undefined>,
+  soKiemXacThuc: 0,
+}));
 
 function makeFakeDb() {
   return {
@@ -77,11 +84,23 @@ vi.mock("./auditTrailService", () => ({
 // Mức kênh tiêm được: cổng đọc DB thật nằm ở lưới DB.
 vi.mock("./ot/aiControlGate.safety", () => ({
   preflightSafetyChoAi: vi.fn(async () => "UNKNOWN"),
-  mucKenhChoAi: vi.fn(async (adapterId: number, tagKeys: readonly string[]) => {
-    H.mucKenhCalls.push([adapterId, tagKeys]);
-    return H.mucKenh;
+  mucKenhChoAi: vi.fn(async (adapterId: number, writes: ReadonlyArray<{ tagKey: string }>, commandType?: string | null) => {
+    H.mucKenhCalls.push([adapterId, writes.map((x) => x.tagKey)]);
+    H.mucKenhCmd.push(commandType);
+    return H.dungGhim ? { dungGhim: true } : { dungGhim: false, muc: H.mucKenh };
   }),
 }));
+// Fix round 1 (c2) — đếm lượt kiểm xác thực theo mức (helper THẬT, chỉ bọc đếm): mức ≥ 4 không được chạm tới nó.
+vi.mock("../_core/xacThucTheoMuc", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../_core/xacThucTheoMuc")>();
+  return {
+    ...real,
+    kiemXacThucTheoMuc: async (...a: Parameters<typeof real.kiemXacThucTheoMuc>) => {
+      H.soKiemXacThuc += 1;
+      return real.kiemXacThucTheoMuc(...a);
+    },
+  };
+});
 
 import { getTool, registerTool, type Tool } from "./aiLocalTools/toolRegistry";
 import { confirmAction, getAction, proposeAction } from "./aiCopilotActions";
@@ -110,8 +129,18 @@ const toolThuong = {
   otWriteBinding: undefined,
   execute: execThuong,
 } as unknown as Tool<any, any>;
+// Fix round 1 (c1) — tool loại DỪNG giả (mức 1 trong bảng tra), tag tên khuôn an toàn để chứng minh dừng ghim không bị phân loại theo tên.
+const execDung = vi.fn(async () => ({ type: "action_result", title: "dung", data: { ok: true }, textSummary: "dung" }));
+const toolDung = {
+  ...toolOt,
+  name: "machine_stop",
+  requiredPermission: { module: "machine_control", action: "canCreate" },
+  otWriteBinding: async () => ({ adapterId: 41, machineId: 9, commandType: "stop", writes: [{ tagKey: "estop_req", value: true }] }),
+  execute: execDung,
+} as unknown as Tool<any, any>;
 registerTool(toolOt);
 registerTool(toolThuong);
+registerTool(toolDung);
 
 const U = {
   viewer: { id: 11, role: "viewer", name: "V" },
@@ -130,7 +159,11 @@ beforeEach(() => {
   H.soUpdate = 0;
   H.mucKenh = 3;
   H.mucKenhCalls = [];
+  H.mucKenhCmd = [];
+  H.dungGhim = false;
+  H.soKiemXacThuc = 0;
   execOt.mockClear();
+  execDung.mockClear();
   execThuong.mockClear();
   checkPermission.mockClear();
   logCrudOperation.mockClear();
@@ -201,30 +234,35 @@ describe("(2) tool ghi OT — sàn vai + xác thực theo mức = max(tool, kên
     expect(execOt).toHaveBeenCalledTimes(1);
   });
 
-  it("kênh mức 4 nâng tool mức 3: operator ⇒ ROLE_FLOOR level 4; engineer chưa 2FA ⇒ TOTP_CHUA_DANG_KY; engineer có 2FA không mã ⇒ TOTP_CAN; mã sai dạng ⇒ TOTP_SAI", async () => {
+  it("c2 — kênh mức 4 nâng tool mức 3 ⇒ MUC_QUA_CAO NGAY lúc confirm (operator lẫn engineer có 2FA + mã): không kiểm/tiêu TOTP, hàng không đổi, không UPDATE", async () => {
     H.mucKenh = 4;
     const a = await deXuat(toolOt, U.operator);
-    expect(await confirmAction(a, a, U.operator, "vi")).toMatchObject({ ok: false, reason: "ROLE_FLOOR", level: 4 });
     const b = await deXuat(toolOt, U.engineer);
-    expect(await confirmAction(b, b, U.engineer, "vi")).toMatchObject({ ok: false, reason: "TOTP_CHUA_DANG_KY", level: 4 });
-    expect(await confirmAction(b, b, U.engineer, "vi", undefined, {}, undefined, undefined, { twoFactorEnabled: true })).toMatchObject({
-      ok: false,
-      reason: "TOTP_CAN",
-      level: 4,
-    });
-    expect(
-      await confirmAction(b, b, U.engineer, "vi", undefined, {}, undefined, undefined, { twoFactorEnabled: true, totpCode: "12ab56" }),
-    ).toMatchObject({ ok: false, reason: "TOTP_SAI", level: 4 });
+    H.soUpdate = 0;
+    expect(await confirmAction(a, a, U.operator, "vi")).toMatchObject({ ok: false, status: "denied", reason: "MUC_QUA_CAO", level: 4 });
+    const kb = await confirmAction(b, b, U.engineer, "vi", undefined, {}, undefined, undefined, { twoFactorEnabled: true, sessionToken: "s", totpCode: "123456" });
+    expect(kb).toMatchObject({ ok: false, status: "denied", reason: "MUC_QUA_CAO", level: 4 });
+    expect(kb.message).toMatch(/Mức 4/);
+    expect(H.soKiemXacThuc, "không kiểm (không tiêu) TOTP").toBe(0);
+    expect(H.soUpdate, "không UPDATE").toBe(0);
     expect(store.get(a)!.status).toBe("proposed");
     expect(store.get(b)!.status).toBe("proposed");
     expect(execOt).not.toHaveBeenCalled();
+    expect(checkPermission).toHaveBeenCalledTimes(2); // chỉ RBAC#1 của hai lượt propose
   });
 
-  it("tag an toàn trong đích (phanLoaiMuc ⇒ 5) dù kênh 1 ⇒ level 5", async () => {
+  it("đối chứng: mức 3 THẬT SỰ đi qua kiemXacThucTheoMuc (bộ đếm không mù)", async () => {
+    const id = await deXuat(toolOt, U.operator);
+    await confirmAction(id, id, U.operator, "vi");
+    expect(H.soKiemXacThuc).toBe(1);
+  });
+
+  it("tag an toàn trong đích (phanLoaiMuc ⇒ 5) dù kênh 1 ⇒ MUC_QUA_CAO level 5", async () => {
     H.mucKenh = 1;
     binding = async () => ({ adapterId: 41, machineId: 9, commandType: "set_param", writes: [{ tagKey: "safety_door_bypass", value: 1 }] });
     const id = await deXuat(toolOt, U.operator);
-    expect(await confirmAction(id, id, U.operator, "vi")).toMatchObject({ ok: false, reason: "ROLE_FLOOR", level: 5 });
+    expect(await confirmAction(id, id, U.operator, "vi")).toMatchObject({ ok: false, reason: "MUC_QUA_CAO", level: 5 });
+    expect(H.soKiemXacThuc).toBe(0);
   });
 
   it("không dựng được đích (binding ném / null / writes rỗng) ⇒ mức 5 (fail-closed), không đọc kênh", async () => {
@@ -238,12 +276,34 @@ describe("(2) tool ghi OT — sàn vai + xác thực theo mức = max(tool, kên
       const id = await deXuat(toolOt, U.operator);
       binding = b;
       H.mucKenhCalls = [];
-      expect(await confirmAction(id, id, U.operator, "vi")).toMatchObject({ ok: false, reason: "ROLE_FLOOR", level: 5 });
+      expect(await confirmAction(id, id, U.operator, "vi")).toMatchObject({ ok: false, reason: "MUC_QUA_CAO", level: 5 });
       expect(H.mucKenhCalls).toHaveLength(0);
       expect(store.get(id)!.status).toBe("proposed");
       binding = async () => ({ adapterId: 41, machineId: 9, commandType: "set_param", writes: [{ tagKey: "sp1", value: 1 }] });
     }
     expect(execOt).not.toHaveBeenCalled();
+  });
+});
+
+describe("c1 — DỪNG GHIM dùng mức của TOOL lúc confirm", () => {
+  it("machine_stop, mọi write = stop_value (mucKenhChoAi ⇒ dungGhim) trên kênh chưa khai ⇒ mức 1: operator ⇒ executed; tag tên khuôn an toàn không nâng mức", async () => {
+    H.dungGhim = true;
+    const id = await deXuat(toolDung, U.operator);
+    expect(await confirmAction(id, id, U.operator, "vi")).toMatchObject({ ok: true, status: "executed" });
+    expect(execDung).toHaveBeenCalledTimes(1);
+    expect(H.mucKenhCmd.at(-1)).toBe("stop");
+    // viewer vẫn dưới sàn vai của mức 1
+    const v = await deXuat(toolDung, U.viewer);
+    expect(await confirmAction(v, v, U.viewer, "vi")).toMatchObject({ ok: false, reason: "ROLE_FLOOR", level: 1 });
+  });
+
+  it("cùng tool, KHÔNG phải dừng ghim (dungGhim false, kênh chưa khai = 5) ⇒ MUC_QUA_CAO level 5", async () => {
+    H.dungGhim = false;
+    H.mucKenh = 5;
+    const id = await deXuat(toolDung, U.operator);
+    expect(await confirmAction(id, id, U.operator, "vi")).toMatchObject({ ok: false, reason: "MUC_QUA_CAO", level: 5 });
+    expect(execDung).not.toHaveBeenCalled();
+    expect(store.get(id)!.status).toBe("proposed");
   });
 });
 

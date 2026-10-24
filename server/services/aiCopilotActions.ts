@@ -33,7 +33,7 @@ import { aiPendingActions } from "../../drizzle/schema";
 import { otPayloadHash, withOtPayloadHash } from "./ot/otActionBinding";
 import { checkPermission } from "../_core/accessControl";
 import { kiemXacThucTheoMuc, type CtxXacThuc, type KetQuaXacThucTheoMuc } from "../_core/xacThucTheoMuc";
-import { mucHieuLuc, type MucRuiRo } from "./ot/aiControlGate";
+import { BoDemTanSuat, kiemCongAi, mucHieuLuc, phanLoaiMuc, type MucRuiRo } from "./ot/aiControlGate";
 import { mucKenhChoAi } from "./ot/aiControlGate.safety";
 import { getTool, isWriteTool, assertExecutable, type ActionPreview, type Tool, type ToolExecContext, type ToolLang } from "./aiLocalTools/toolRegistry";
 // ★★★ ĐỢT 3 (2026-08-23) — DUYỆT THEO KHỐI THẬT: server import THẲNG bộ vị từ khối của client
@@ -783,10 +783,13 @@ export async function mucGhiOtLucXacNhan(
     if (!dich || writes.length === 0) return 5;
     const keys = writes.map((x) => x.tagKey);
     if (keys.some((k) => typeof k !== "string" || k === "")) return 5;
-    const mucKenh = await mucKenhChoAi(dich.adapterId, keys);
+    const kenh = await mucKenhChoAi(dich.adapterId, writes, dich.commandType);
+    // Fix round 1 (c1) — DỪNG GHIM (lệnh dừng, mọi write = stop_value của tag): mức của TOOL — không max với kênh chưa khai (= 5)
+    // và không phân loại theo tên tag (một tag ghim tên "estop_req" không được biến lệnh dừng thành mức 5). Cùng luật ở execute.
+    if (kenh.dungGhim) return phanLoaiMuc(tool.name);
     let muc: MucRuiRo = 1;
     for (const k of keys) {
-      const m = mucHieuLuc(tool.name, k, mucKenh);
+      const m = mucHieuLuc(tool.name, k, kenh.muc);
       if (m > muc) muc = m;
     }
     return muc;
@@ -907,6 +910,24 @@ export async function confirmAction(
    */
   const mucOt = await mucGhiOtLucXacNhan(tool, row.argsJson as Record<string, unknown>, { user, lang, req, actionId });
   if (mucOt !== null) {
+    /**
+     * Fix round 1 (phán quyết c2) — mức ≥ 4 ⇒ từ chối NGAY bằng ĐÚNG `kiemCongAi` (mã `MUC_QUA_CAO`, cùng lý do), TRƯỚC
+     * `kiemXacThucTheoMuc`: AI không bao giờ hành động ở mức ≥ 4, nên không được hỏi và không được TIÊU một mã TOTP mà lượt này
+     * không bao giờ dùng được. Hàng giữ nguyên trạng thái; không quota (`tieuQuota:false`, bộ đếm riêng), không đọc cờ/safety
+     * (kiểm mức đứng đầu cổng).
+     */
+    if (mucOt >= 4) {
+      const cong = kiemCongAi({
+        toolName: row.tool,
+        userId: user.id,
+        adapterId: 0,
+        mucKenh: mucOt,
+        boDem: new BoDemTanSuat(),
+        tieuQuota: false,
+      });
+      await auditConfirmFailure(user, req, row.tool, actionId, cong.ma);
+      return { ok: false, status: "denied", reason: cong.ma, level: cong.muc, message: cong.lyDo };
+    }
     const ctxXt: CtxXacThuc & { __luotXacMinhTotp?: string } = {
       user: { id: user.id, role: user.role, twoFactorEnabled: xacThuc?.twoFactorEnabled ?? false },
       sessionToken: xacThuc?.sessionToken ?? null,
