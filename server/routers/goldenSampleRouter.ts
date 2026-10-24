@@ -25,6 +25,10 @@ import fs from "fs";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { router, protectedProcedure, qualityProcedure } from "../_core/trpc";
+import { sql } from "drizzle-orm";
+import type { CoDanhTinh } from "./_phamViNguoiXem";
+import { mayTrongPhamVi } from "./_adapterPhamVi";
+import { sanPhamGhiTrongPhamVi } from "./_sanPhamPhamVi";
 import {
   resolveActiveReference,
   referenceThumbnailDataUrl,
@@ -179,6 +183,29 @@ function mapGoldenError(err: unknown): never {
   throw err;
 }
 
+/**
+ * Phạm vi nhà máy cho GHI / so sánh golden sample (rà bảo mật 2026-10-25, lô W10): golden thuộc MỘT sản phẩm (theo mã hoặc productModelId) ⇒ LUẬT GHI THEO SẢN PHẨM
+ * (trong phạm vi hoặc nháp). Lượt kiểm tra phải thuộc máy trong phạm vi. Ngoài phạm vi ≡ không tồn tại. Mã sản phẩm KHÔNG tồn tại (golden cũ theo mã) giữ hành vi cũ.
+ */
+async function sanPhamTheoMa(ctx: CoDanhTinh, code: string | null | undefined): Promise<void> {
+  if (!code) return;
+  const p = await db.getProductModelByCode(code);
+  if (p) await sanPhamGhiTrongPhamVi(ctx, p.id);
+}
+async function mauGoldenGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  const d = await db.getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const rows = (await d.execute(sql`SELECT "productModelId" AS p, "productCode" AS c FROM golden_sample_references WHERE id = ${id}`)) as unknown as Array<{ p: number | null; c: string | null }>;
+  const r = rows[0];
+  if (!r) return; // không có hàng: để dịch vụ trả NOT_FOUND như trước
+  if (r.p != null) await sanPhamGhiTrongPhamVi(ctx, Number(r.p));
+  else await sanPhamTheoMa(ctx, r.c);
+}
+async function luotKiemGoldenGhi(ctx: CoDanhTinh, inspection: { machineId?: number | null; productModel?: string | null }): Promise<void> {
+  if (inspection.machineId != null) await mayTrongPhamVi(ctx, inspection.machineId);
+  await sanPhamTheoMa(ctx, inspection.productModel);
+}
+
 export const goldenSampleRouter = router({
   /** ACTIVE (approved) golden for a key (exact → product-level fallback), with thumbnail. */
   getActiveForKey: protectedProcedure
@@ -288,6 +315,7 @@ export const goldenSampleRouter = router({
       notes: z.string().max(2000).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await sanPhamTheoMa(ctx, input.productCode);
       const image = decodeBase64Image(input.imageBase64);
       // Doc 31 PM5 — resolve the FK from the product code so a rename can't orphan
       // this golden. Legacy/unknown codes stay NULL (still work via productCode).
@@ -347,6 +375,7 @@ export const goldenSampleRouter = router({
       }
       const inspection = await db.getProductInspectionById(m.inspectionId);
       if (!inspection) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
+      await luotKiemGoldenGhi(ctx, inspection); // phạm vi nhà máy: lượt kiểm tra phải thuộc máy trong phạm vi, sản phẩm theo luật ghi theo sản phẩm
       const productCode = inspection.productModel;
       if (!productCode) {
         throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "captureGoldenSample" }, "Inspection has no product model — cannot key the golden");
@@ -400,6 +429,7 @@ export const goldenSampleRouter = router({
   approve: qualityProcedure
     .input(z.object({ id: z.number().int().positive(), note: z.string().max(2000).optional() }))
     .mutation(async ({ input, ctx }) => {
+      await mauGoldenGhi(ctx, input.id);
       const row = await approveReference({ id: input.id, approvedBy: ctx.user.id, note: input.note ?? null })
         .catch(mapGoldenError);
       await db.createAuditLog({
@@ -418,6 +448,7 @@ export const goldenSampleRouter = router({
   reject: qualityProcedure
     .input(z.object({ id: z.number().int().positive(), note: z.string().max(2000).optional() }))
     .mutation(async ({ input, ctx }) => {
+      await mauGoldenGhi(ctx, input.id);
       const row = await rejectReference(input.id, input.note ?? null).catch(mapGoldenError);
       await db.createAuditLog({
         userId: ctx.user.id,
@@ -435,6 +466,7 @@ export const goldenSampleRouter = router({
   retire: qualityProcedure
     .input(z.object({ id: z.number().int().positive(), note: z.string().max(2000).optional() }))
     .mutation(async ({ input, ctx }) => {
+      await mauGoldenGhi(ctx, input.id);
       const row = await retireReference(input.id, input.note ?? null).catch(mapGoldenError);
       await db.createAuditLog({
         userId: ctx.user.id,
@@ -452,6 +484,7 @@ export const goldenSampleRouter = router({
   setAlignBeforeDiff: qualityProcedure
     .input(z.object({ id: z.number().int().positive(), enabled: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
+      await mauGoldenGhi(ctx, input.id);
       const row = await setAlignBeforeDiff(input.id, input.enabled).catch(mapGoldenError);
       await db.createAuditLog({
         userId: ctx.user.id,
@@ -484,10 +517,11 @@ export const goldenSampleRouter = router({
       measurementResultId: z.number().int().positive(),
       normalize: z.boolean().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const m = await db.getMeasurementResultById(input.measurementResultId);
       if (!m) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementResult" }, "Measurement result not found");
       const inspection = await db.getProductInspectionById(m.inspectionId);
+      if (inspection) await luotKiemGoldenGhi(ctx, inspection); // phạm vi nhà máy
       if (!inspection?.productModel) {
         throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "resolveGoldenSample" }, "Inspection has no product model — cannot resolve a golden");
       }
@@ -536,7 +570,8 @@ export const goldenSampleRouter = router({
       candidateBase64: z.string().min(16),
       normalize: z.boolean().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await sanPhamTheoMa(ctx, input.productCode);
       const candidate = decodeBase64Image(input.candidateBase64);
       const r = await goldenDiffForKey(
         {

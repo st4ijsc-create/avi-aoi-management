@@ -36,6 +36,8 @@
  * 2026-10-24 lô W9 (−27, sản xuất: productionOrder create/update/delete/reschedule, template, createFromTemplate/optimizeSchedule/whatIf · lineStage · lineProductAssignment · orderLifecycle allocate/hold/resume/cancel · productionSession open/pause/resume/close/handover/supervisorSignOff) ⇒ 438 → 411.
  * 2026-10-24 W7b: chứng chỉ kỹ năng theo NGƯỜI được cấp (skills.grant/update/revokeCertification · userCertifications.assign/revoke); 8 danh mục chuẩn dùng chung (skills · uom · unit_conversions · material_classes) + safety.abortCollaboration (L-7) chuyển sang MIỄN TRỪ có lý do.
  * 2026-10-25 lô W7c (−1: msaAdvanced.anovaOfStudy) — migration 0421 `measurement_instruments."factoryId"`: thiết bị đo / hiệu chuẩn / MSA theo NHÀ MÁY (đọc + tên thiết bị suy qua instrumentId; NULL ⇒ chỉ toàn quyền) ⇒ 408 → 407.
+ * 2026-10-25 lô W10 (−17 vá: routing · spcAdvanced · goldenSample · mqttOee machine/OEE/ngừng máy/mục tiêu · equipmentStandards thẻ tenant; −35 MIỄN TRỪ có lý do sau khi đọc mã: repoWorkspace 17 (danh sách trắng theo người gọi), dashboardWidget 13 (cấu hình cá nhân theo userId), aiGguf 5 (tính toán LLM thuần); aiGguf.soModel* = bí danh adminProcedure) ⇒ 407 → 355. CHƯA đụng (cần quyết định): mqttClient.updateFcmToken · mqttAlert.update/delete/toggle/resolve (luật cảnh báo toàn cục, KHÔNG có requirePermission) .
+ * 2026-10-25 lô W11a (−5 vá: predictiveAlert acknowledge/resolve/dismiss/generatePredictions theo máy/nhà máy của cảnh báo + lọc dữ liệu quét; mqttClient.updateFcmToken theo trạm của client + requirePermission(machine_alerts)); mqttAlert.update/delete/toggle/resolve ⇒ MIỄN TRỪ (luật toàn cục) NHƯNG nay đòi requirePermission(machine_alerts); equipmentStandards: chuẩn KHÔNG thẻ chỉ admin + engineer ghi ⇒ 355 → 350.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ──
@@ -91,15 +93,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.submitFeedback",
   // ── server/routers/aiGatewayTokenRouter.ts (1) ──
   "server/routers/aiGatewayTokenRouter.ts#aiGatewayTokenRouter.thuHoi",
-  // ── server/routers/aiGgufRouter.ts (8) ──
-  "server/routers/aiGgufRouter.ts#aiGgufRouter.analyzeDefect",
-  "server/routers/aiGgufRouter.ts#aiGgufRouter.chat",
-  "server/routers/aiGgufRouter.ts#aiGgufRouter.embedding",
-  "server/routers/aiGgufRouter.ts#aiGgufRouter.generate",
-  "server/routers/aiGgufRouter.ts#aiGgufRouter.qualityInsights",
-  "server/routers/aiGgufRouter.ts#aiGgufRouter.soModelDatGan",
-  "server/routers/aiGgufRouter.ts#aiGgufRouter.soModelSuaArtifact",
-  "server/routers/aiGgufRouter.ts#aiGgufRouter.soModelTaoHoSo",
   // ── server/routers/aiImageSearchRouter.ts (2) ──
   "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByUpload",
   "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByVector",
@@ -122,11 +115,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/aiRobotAnomalyRouter.ts (2) ──
   "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.evaluateRollback",
   "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.manualRollback",
-  // ── server/routers/aiRouters.ts (4) ──
-  "server/routers/aiRouters.ts#predictiveAlertRouter.acknowledge",
-  "server/routers/aiRouters.ts#predictiveAlertRouter.dismiss",
-  "server/routers/aiRouters.ts#predictiveAlertRouter.generatePredictions",
-  "server/routers/aiRouters.ts#predictiveAlertRouter.resolve",
   // ── server/routers/aiSegmentationRouter.ts (3) ──
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.deleteMask",
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.runSegmentation",
@@ -188,20 +176,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/componentLibraryRouter.ts#componentLibraryRouter.packages.update",
   // ── server/routers/dashboardStatsRouters.ts (1) ──
   "server/routers/dashboardStatsRouters.ts#dashboardRouter.applyTemplate",
-  // ── server/routers/dashboardWidgetRouters.ts (13) ──
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.applySharedTemplate",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.applyStylePreset",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.cloneSharedPreset",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.createCustomDashboard",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.deleteCustomDashboard",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.deleteStylePreset",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.duplicateCustomDashboard",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.saveCustomDashboardAsTemplate",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.saveLayout",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.toggleCustomDashboardFavorite",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.toggleCustomDashboardPublic",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.updateCustomDashboard",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.updateStylePreset",
   // ── server/routers/dataRouters.ts (6) ──
   "server/routers/dataRouters.ts#exportRouter.exportMeasurementPoints",
   "server/routers/dataRouters.ts#importRouter.importLines",
@@ -220,15 +194,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/energyRouter.ts (2) ──
   "server/routers/energyRouter.ts#energyRouter.recordReading",
   "server/routers/energyRouter.ts#energyRouter.snapshotEnpi",
-  // ── server/routers/equipmentStandardsRouter.ts (8) ──
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.deleteMasterAlarm",
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.publishChangeRequest",
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.registerDeviceType",
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.reviewChangeRequest",
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.shelveMasterAlarm",
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.submitChangeRequest",
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.upsertAlarmMapping",
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.upsertMasterAlarm",
   // ── server/routers/erpAdminRouter.ts (5) ──
   "server/routers/erpAdminRouter.ts#erpAdminRouter.createOauthClient",
   "server/routers/erpAdminRouter.ts#erpAdminRouter.retryOutboxDeadLetters",
@@ -242,15 +207,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/fieldRouter.ts#fieldRouter.registerDiscovered",
   // ── server/routers/fleetRouter.ts (1) ──
   "server/routers/fleetRouter.ts#fleetRouter.createVariant",
-  // ── server/routers/goldenSampleRouter.ts (8) ──
-  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.approve",
-  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.captureFromInspection",
-  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.captureFromUpload",
-  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.diffForMeasurement",
-  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.diffWithUpload",
-  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.reject",
-  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.retire",
-  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.setAlignBeforeDiff",
   // ── server/routers/hierarchyRouters.ts (3) ──
   "server/routers/hierarchyRouters.ts#machineRouter.claimKey",
   "server/routers/hierarchyRouters.ts#machineRouter.enroll",
@@ -317,21 +273,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.deleteSetting",
   "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.toggleEnabled",
   "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.upsertSetting",
-  // ── server/routers/mqttOeeRouters.ts (14) ──
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.delete",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.resolve",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.toggle",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.update",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.calculateBenchmarks",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.calculateMachineHealth",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.calculateOEE",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.endDowntime",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.startDowntime",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.testNGAlert",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.updateFcmToken",
-  "server/routers/mqttOeeRouters.ts#oeeRouter.createTarget",
-  "server/routers/mqttOeeRouters.ts#oeeRouter.deleteTarget",
-  "server/routers/mqttOeeRouters.ts#oeeRouter.updateTarget",
   // ── server/routers/msdRouter.ts (3) ──
   "server/routers/msdRouter.ts#msdRouter.closeExposure",
   "server/routers/msdRouter.ts#msdRouter.openExposure",
@@ -389,35 +330,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/reportBuilderRouter.ts#reportBuilderRouter.duplicate",
   "server/routers/reportBuilderRouter.ts#reportBuilderRouter.save",
   "server/routers/reportBuilderRouter.ts#reportBuilderRouter.update",
-  // ── server/routers/repoWorkspaceRouter.ts (17) ──
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.baiHocSua",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.baiHocThem",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.baiHocXoa",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.chayKiemChung",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatDoiTenTep",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatSuaTay",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatThayTheLo",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatXoaTep",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.doiTenDuAnCaNhan",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.doiTenPhien",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.gitChuyenNhanh",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.gitCommit",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.gitGoiYThongDiep",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.gitTaoNhanh",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.luuPhien",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.xoaDuAnCaNhan",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.xoaPhien",
-  // ── server/routers/routingRouter.ts (10) ──
-  "server/routers/routingRouter.ts#routingRouter.activate",
-  "server/routers/routingRouter.ts#routingRouter.addStep",
-  "server/routers/routingRouter.ts#routingRouter.archive",
-  "server/routers/routingRouter.ts#routingRouter.create",
-  "server/routers/routingRouter.ts#routingRouter.delete",
-  "server/routers/routingRouter.ts#routingRouter.deleteStep",
-  "server/routers/routingRouter.ts#routingRouter.importRouting",
-  "server/routers/routingRouter.ts#routingRouter.replaceSteps",
-  "server/routers/routingRouter.ts#routingRouter.update",
-  "server/routers/routingRouter.ts#routingRouter.updateStep",
   // ── server/routers/secsGemRouter.ts (1) ──
   "server/routers/secsGemRouter.ts#secsGemRouter.testConnection",
   // ── server/routers/sessionRouter.ts (1) ──
@@ -428,22 +340,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.update",
   // ── server/routers/simTargetsRouter.ts (1) ──
   "server/routers/simTargetsRouter.ts#simTargetsRouter.validateUrscript",
-  // ── server/routers/sopRouter.ts (10) ──
-  // ── server/routers/spcAdvancedRouter.ts (14) ──
-  "server/routers/spcAdvancedRouter.ts#correlationRouter.save",
-  "server/routers/spcAdvancedRouter.ts#cpkTrendRouter.calculate",
-  "server/routers/spcAdvancedRouter.ts#qualityGateRouter.acknowledgeEvent",
-  "server/routers/spcAdvancedRouter.ts#qualityGateRouter.create",
-  "server/routers/spcAdvancedRouter.ts#qualityGateRouter.delete",
-  "server/routers/spcAdvancedRouter.ts#qualityGateRouter.resolveEvent",
-  "server/routers/spcAdvancedRouter.ts#qualityGateRouter.triggerEvent",
-  "server/routers/spcAdvancedRouter.ts#qualityGateRouter.update",
-  "server/routers/spcAdvancedRouter.ts#spcConfigRouter.create",
-  "server/routers/spcAdvancedRouter.ts#spcConfigRouter.delete",
-  "server/routers/spcAdvancedRouter.ts#spcConfigRouter.update",
-  "server/routers/spcAdvancedRouter.ts#spcRuleViolationRouter.acknowledge",
-  "server/routers/spcAdvancedRouter.ts#spcRuleViolationRouter.resolve",
-  "server/routers/spcAdvancedRouter.ts#spcRuleViolationRouter.saveViolations",
   // ── server/routers/stationTriangulationRouter.ts (2) ──
   "server/routers/stationTriangulationRouter.ts#stationTriangulationRouter.recomputeForLot",
   "server/routers/stationTriangulationRouter.ts#stationTriangulationRouter.recomputeForSerial",
@@ -499,6 +395,84 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
  * (c) không đồng thời nằm trong sổ nợ. Thêm mục = lời khai công khai, người review phải thấy.
  */
 export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
+  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.update":
+    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
+  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.delete":
+    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
+  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.toggle":
+    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
+  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.resolve":
+    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
+  "server/routers/aiGgufRouter.ts#aiGgufRouter.generate":
+    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25).",
+  "server/routers/aiGgufRouter.ts#aiGgufRouter.chat":
+    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25).",
+  "server/routers/aiGgufRouter.ts#aiGgufRouter.analyzeDefect":
+    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25).",
+  "server/routers/aiGgufRouter.ts#aiGgufRouter.qualityInsights":
+    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25).",
+  "server/routers/aiGgufRouter.ts#aiGgufRouter.embedding":
+    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25).",
+  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.saveLayout":
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.applySharedTemplate":
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.updateStylePreset":
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.deleteStylePreset":
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.applyStylePreset":
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.cloneSharedPreset":
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.createCustomDashboard":
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.updateCustomDashboard":
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.deleteCustomDashboard":
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.duplicateCustomDashboard":
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.toggleCustomDashboardFavorite":
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.toggleCustomDashboardPublic":
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.saveCustomDashboardAsTemplate":
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatThayTheLo":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatSuaTay":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.chayKiemChung":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.luuPhien":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.xoaPhien":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.doiTenDuAnCaNhan":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.xoaDuAnCaNhan":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.gitCommit":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.gitTaoNhanh":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.gitChuyenNhanh":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.gitGoiYThongDiep":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatXoaTep":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatDoiTenTep":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.baiHocThem":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.baiHocSua":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.baiHocXoa":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.doiTenPhien":
+    "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
   "server/routers/masterDataRouter.ts#skillsRouter.update":
     "Danh mục CHUẨN DÙNG CHUNG toàn tập đoàn — chủ dự án duyệt 2026-10-24 (cùng nguyên tắc danh mục lỗi / loại phép đo; không có cột nhà máy); ghi cần masterdata/canEdit|canDelete (vai quản trị / kỹ sư), không chỉ đăng nhập.",
   "server/routers/masterDataRouter.ts#skillsRouter.delete":

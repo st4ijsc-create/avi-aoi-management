@@ -59,7 +59,7 @@ import {
 import { sql } from "drizzle-orm";
 import { phamViCua } from "./_phamViNguoiXem";
 import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
-import { sanPhamGhiTrongPhamVi } from "./_sanPhamPhamVi";
+import { sanPhamGhiTrongPhamVi, diemDoGhiTrongPhamVi } from "./_sanPhamPhamVi";
 import { idsTrongPhamVi } from "../db/hierarchy";
 import { tuChoiNgoaiPhamVi } from "./publicProductScope";
 // Doc 31 UX2/PM9 (WD-2) — product config-completeness ("readiness") score.
@@ -2022,15 +2022,6 @@ async function thietBiTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], ins
   const rows = (await d.execute(sql`SELECT "factoryId" AS f FROM measurement_instruments WHERE id = ${instrumentId} AND "deletedAt" IS NULL`)) as unknown as Array<{ f: number | null }>;
   const f = rows[0]?.f;
   return f != null && ids.includes(Number(f));
-}
-
-/** Điểm đo → sản phẩm của nó (luật ở trên). Điểm không tồn tại ⇒ NOT_FOUND "measurementPoint". */
-async function diemDoGhiTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], pointDefId: number): Promise<void> {
-  const d = await db.getDb();
-  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
-  const rows = (await d.execute(sql`SELECT "productModelId" AS p FROM measurement_point_defs WHERE id = ${pointDefId}`)) as unknown as Array<{ p: number | null }>;
-  if (rows.length === 0 || rows[0]?.p == null) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Điểm đo không tồn tại");
-  await sanPhamGhiTrongPhamVi(ctx, Number(rows[0].p));
 }
 
 /** Tài liệu sản phẩm → sản phẩm của nó. Không có ⇒ NOT_FOUND "productModel". */
