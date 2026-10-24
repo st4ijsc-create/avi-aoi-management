@@ -29,6 +29,8 @@ import { sql } from "drizzle-orm";
 // ★★★ Vé ảnh ngắn hạn — chủ DUY NHẤT của phép ký là `_core/anhKyUrl`. Xem khối chú thích tại mỗi
 //     lời gọi `kyAnhTrongThan` bên dưới để biết vì sao ký ở BIÊN phản hồi chứ không từng trường.
 import { kyAnhTrongThan } from "../_core/anhKyUrl";
+import { andTrongPhamVi } from "./phamViExternal";
+import { phamViGoiNgoai, nguoiXemCuaPhamVi, phamViDaAp } from "./_phamViNgoai"; // 2026-10-24 — phạm vi người dùng/master cho /api/external
 import { docGioTuongNhaMay } from "../utils/factoryTime";
 // Canonical KPI math + factory-timezone bucketing (doc 27 decision #4, gaps A2/A3/A4).
 import {
@@ -674,6 +676,10 @@ export function registerExternalInspectionRoutes(
 
       const startStr = startDate.toISOString();
       const endStr = endDate.toISOString();
+      // phạm vi người dùng (rà bảo mật 2026-10-24): master key ⇒ không lọc; tài khoản Bearer ⇒ chỉ máy trong nhà máy được gán
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai);
+      const congMay = await andTrongPhamVi(nguoiXemNgoai, "machine", sql.raw('pi."machineId"'));
 
       // Count total for pagination
       const countResult = await db.execute(sql`
@@ -688,6 +694,7 @@ export function registerExternalInspectionRoutes(
           ${pointDefId ? sql`AND mr."pointDefId" = ${pointDefId}` : sql``}
           ${stationId ? sql`AND m."stationId" = ${stationId}` : sql``}
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
+          ${congMay}
       `);
 
       const totalRows = (countResult as any).rows || (countResult as any);
@@ -730,6 +737,7 @@ export function registerExternalInspectionRoutes(
           ${pointDefId ? sql`AND mr."pointDefId" = ${pointDefId}` : sql``}
           ${stationId ? sql`AND m."stationId" = ${stationId}` : sql``}
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
+          ${congMay}
         ORDER BY pi."inspectionTime" DESC, mr.id DESC
         LIMIT ${limit} OFFSET ${offset}
       `);
@@ -776,6 +784,7 @@ export function registerExternalInspectionRoutes(
               dateRange: { startDate: startStr, endDate: endStr },
               pagination: { total, limit, offset, hasMore: offset + limit < total },
               images,
+              scopeApplied: phamViDaAp(pvNgoai),
             },
           },
           "anh",
@@ -815,6 +824,10 @@ export function registerExternalInspectionRoutes(
 
       const startStr = startDate.toISOString();
       const endStr = endDate.toISOString();
+      // phạm vi người dùng (rà bảo mật 2026-10-24): master key ⇒ không lọc; tài khoản Bearer ⇒ chỉ máy trong nhà máy được gán
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai);
+      const congMay = await andTrongPhamVi(nguoiXemNgoai, "machine", sql.raw('pal."machineId"'));
 
       const validEvents = [
         "presign", "upload_start", "upload_success", "upload_fail",
@@ -839,6 +852,7 @@ export function registerExternalInspectionRoutes(
           ${stationId ? sql`AND m."stationId" = ${stationId}` : sql``}
           ${packageId ? sql`AND pal."packageId" = ${packageId}` : sql``}
           ${eventType ? sql`AND pal.event = ${eventType}` : sql``}
+          ${congMay}
       `);
 
       const totalRows = (countResult as any).rows || (countResult as any);
@@ -872,6 +886,7 @@ export function registerExternalInspectionRoutes(
           ${stationId ? sql`AND m."stationId" = ${stationId}` : sql``}
           ${packageId ? sql`AND pal."packageId" = ${packageId}` : sql``}
           ${eventType ? sql`AND pal.event = ${eventType}` : sql``}
+          ${congMay}
         ORDER BY pal."createdAt" DESC
         LIMIT ${limit} OFFSET ${offset}
       `);
@@ -900,6 +915,7 @@ export function registerExternalInspectionRoutes(
           dateRange: { startDate: startStr, endDate: endStr },
           pagination: { total, limit, offset, hasMore: offset + limit < total },
           events,
+          scopeApplied: phamViDaAp(pvNgoai),
         },
       });
     } catch (error: any) {
@@ -950,6 +966,10 @@ export function registerExternalInspectionRoutes(
 
       const startStr = startDate.toISOString();
       const endStr = endDate.toISOString();
+      // phạm vi người dùng (rà bảo mật 2026-10-24): master key ⇒ không lọc; tài khoản Bearer ⇒ chỉ máy trong nhà máy được gán
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai);
+      const congMay = await andTrongPhamVi(nguoiXemNgoai, "machine", sql.raw('pi."machineId"'));
 
       // Get point definition info
       const pointDefResult = await db.execute(sql`
@@ -977,6 +997,7 @@ export function registerExternalInspectionRoutes(
           AND pi."inspectionTime" <= ${endStr}::timestamp
           ${stationId ? sql`AND m."stationId" = ${stationId}` : sql``}
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
+          ${congMay}
       `);
       const totalRows2 = (countResult as any).rows || (countResult as any);
       const total = Number((totalRows2 as any[])[0]?.total || 0);
@@ -1007,6 +1028,7 @@ export function registerExternalInspectionRoutes(
           AND pi."inspectionTime" <= ${endStr}::timestamp
           ${stationId ? sql`AND m."stationId" = ${stationId}` : sql``}
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
+          ${congMay}
         ORDER BY pi."inspectionTime" DESC
         LIMIT ${limit} OFFSET ${offset}
       `);
@@ -1054,6 +1076,7 @@ export function registerExternalInspectionRoutes(
               dateRange: { startDate: startStr, endDate: endStr },
               pagination: { total, limit, offset, hasMore: offset + limit < total },
               measurements,
+              scopeApplied: phamViDaAp(pvNgoai),
             },
           },
           "anh",

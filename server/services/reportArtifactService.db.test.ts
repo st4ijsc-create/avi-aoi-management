@@ -178,6 +178,13 @@ describe.skipIf(!DB_URL)("R2-B reportArtifactService (isolated test DB, storage 
     await expect(getDownloadTarget(expired.id, creator)).rejects.toBeInstanceOf(ArtifactError);
   });
 
+  it("2026-10-24 (xác nhận để chuyển MIỄN TRỪ tuyến /api/reports/artifacts/:id/download): getDownloadTarget của người KHÔNG đặc quyền chỉ cho tệp CỦA MÌNH; admin tải được mọi tệp", async () => {
+    const mine = await persistArtifact({ buffer: Buffer.from("mine"), format: "pdf", reportType: RT, createdBy: USER });
+    await expect(getDownloadTarget(mine.id, other)).rejects.toMatchObject({ reason: "forbidden" });
+    await expect(getDownloadTarget(mine.id, creator)).resolves.toMatchObject({ downloadUrl: `/api/reports/artifacts/${mine.id}/download` });
+    await expect(getDownloadTarget(mine.id, admin)).resolves.toMatchObject({ downloadUrl: `/api/reports/artifacts/${mine.id}/download` });
+  });
+
   it("cleanup deletes ONLY expired artifacts (row + storage object)", async () => {
     const live = await persistArtifact({
       buffer: Buffer.from("keep me — not expired"),

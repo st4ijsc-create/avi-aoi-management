@@ -103,9 +103,8 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   // ── server/api/v1/pdmHealth.ts (0) ─────────────────────────────────────────────────────────────
   // ── server/api/v1/router.ts (0) ────────────────────────────────────────────────────────────────
   // ── server/api/v1/state.ts (0) ─────────────────────────────────────────────────────────────────
-  // ── server/routes/edgeDownload.ts (1) ──────────────────────────────────────────────────────────
-  "server/routes/edgeDownload.ts#GET /api/edge/download/:deploymentId",
-  // ── server/routes/externalInspectionApi.ts (23) ────────────────────────────────────────────────
+  // ── server/routes/edgeDownload.ts (0) ──────────────────────────────────────────────────────────
+  // ── server/routes/externalInspectionApi.ts (20) ────────────────────────────────────────────────
   "server/routes/externalInspectionApi.ts#GET /api/external/alerts/summary",
   "server/routes/externalInspectionApi.ts#GET /api/external/fleet/summary",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/ai-analysis",
@@ -114,11 +113,8 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/control-chart",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/defect-pareto",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/diagnostics",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/events",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/fail-history",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/histogram",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/images",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/measurements",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/scatter",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/stratification",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/summary",
@@ -129,14 +125,13 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   "server/routes/externalInspectionApi.ts#GET /api/external/products",
   "server/routes/externalInspectionApi.ts#GET /api/external/products/:id",
   "server/routes/externalInspectionApi.ts#GET /api/external/safety/summary",
-  // ── server/routes/reportArtifactRoutes.ts (1) ──────────────────────────────────────────────────
+  // ── server/routes/reportArtifactRoutes.ts (0) ──────────────────────────────────────────────────
   // ⚠ MỘT MỤC "TRONG SỔ VÌ BAO ĐÓNG, KHÔNG VÌ CÓ LỖ" — đọc trước khi ai đó đi vá nó. Tuyến này CÓ
   //   lọc theo người xem (`getDownloadTarget(id, viewer)`, `viewer` suy từ `authenticateExportRequest`).
   //   Nó ở nhóm (A) vì `chamTenant` bật do BAO ĐÓNG NGƯỢC: chính hàm XÁC THỰC đọc `api_keys` — một
   //   bảng CÓ `factoryCode` — nên mọi tuyến gọi nó đều "chạm dữ liệu tenant". Còn `report_artifacts`
   //   thì không thuộc tenant, nên `getDownloadTarget` không nằm trên đường đọc mà vị từ đo được.
   //   Cùng lớp với `systemRouters.ts#corporateFactoryStatsRouter.warmingStats` ở sổ tRPC.
-  "server/routes/reportArtifactRoutes.ts#GET /api/reports/artifacts/:id/download",
 ];
 
 /**
@@ -147,5 +142,7 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
 export const MIEN_TRU_TUYEN_CO_CHU_Y: Readonly<Record<string, string>> = {
   "server/api/v1/moduleReads.ts#GET /standards/alarm-taxonomy": "danh mục phân loại cảnh báo dùng chung toàn tập đoàn — duyệt mức kỹ thuật 2026-10-24 (cùng nguyên tắc danh mục công thức, chủ dự án duyệt)",
   "server/api/v1/moduleReads.ts#GET /standards/device-types": "danh mục kiểu thiết bị chuẩn dùng chung toàn tập đoàn — duyệt mức kỹ thuật 2026-10-24 (cùng nguyên tắc danh mục công thức, chủ dự án duyệt)",
+  "server/routes/edgeDownload.ts#GET /api/edge/download/:deploymentId": "tải gói mô hình theo apiKey MÁY: deployment phải thuộc đúng máy gọi (403 chéo máy, 401 thiếu khoá) — đã kiểm bằng server/edgeDownloadProxy.test.ts, duyệt mức kỹ thuật 2026-10-24",
+  "server/routes/reportArtifactRoutes.ts#GET /api/reports/artifacts/:id/download": "tệp báo cáo thuộc NGƯỜI TẠO (không thuộc nhà máy): getDownloadTarget từ chối người không đặc quyền khác (forbidden), admin tải được — đã kiểm bằng server/services/reportArtifactService.db.test.ts, duyệt mức kỹ thuật 2026-10-24",
   "server/api/v1/moduleReads.ts#GET /twin/models": "registry mô hình 3D dùng chung toàn tập đoàn — duyệt mức kỹ thuật 2026-10-24 (cùng nguyên tắc danh mục công thức, chủ dự án duyệt)",
 };
