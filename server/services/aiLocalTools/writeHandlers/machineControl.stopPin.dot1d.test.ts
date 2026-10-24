@@ -36,12 +36,18 @@ vi.mock("../../../../drizzle/schema", () => ({
 }));
 vi.mock("../../../db/machineRecipe", () => ({ getActiveRecipe: vi.fn(async () => null) }));
 
-const pinsState = vi.hoisted(() => ({ pins: [] as Array<{ tagKey: string; value: unknown }>, throws: false, calls: [] as number[] }));
+// kiem-dinh R1b-1 I-A (fix round 2) — tool đọc ghim qua `loadStopPinsHmi` (luật phân loại `phanLoaiGhimStopHmi` có test riêng:
+// stopPin.mucHmi.test.ts, và test DB aiCopilotRouter.confirm.r1a). FIXTURE: ghim mặc định ở tag mức 1 (`muc` ghi đè; null = chưa khai ⇒ 5).
+const pinsState = vi.hoisted(() => ({ pins: [] as Array<{ tagKey: string; value: unknown; muc?: number | null }>, throws: false, calls: [] as number[] }));
 vi.mock("../../ot/stopPin", () => ({
-  loadStopPins: async (_db: unknown, adapterId: number) => {
+  loadStopPinsHmi: async (_db: unknown, adapterId: number) => {
     pinsState.calls.push(adapterId);
     if (pinsState.throws) throw new Error("D1T2 pin read failed");
-    return pinsState.pins;
+    const muc = (x: { muc?: number | null }) => (x.muc === undefined ? 1 : (x.muc ?? 5));
+    return {
+      gui: pinsState.pins.filter((x) => muc(x) <= 1).map((x) => ({ tagKey: x.tagKey, value: x.value })),
+      boQua: pinsState.pins.filter((x) => muc(x) > 1).map((x) => ({ tagKey: x.tagKey, ly_do: "muc_cao", muc: muc(x) })),
+    };
   },
 }));
 
@@ -121,6 +127,30 @@ describe("machine_stop — tag DỪNG ghim (doc 81 Đợt 1D Task 2)", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it("★ kiem-dinh I-A: ghim trên tag mức 4 / chưa khai mức bị BỎ QUA (cùng luật STOP HMI): chỉ ghim mức 1 được gửi + bind; preview + kết quả báo tag bị bỏ qua", async () => {
+    pinsState.pins = [
+      { tagKey: "cmd_stop", value: true },
+      { tagKey: "van_m4", value: 7, muc: 4 },
+      { tagKey: "chua_khai", value: 3, muc: null },
+    ];
+    const r = await tool("machine_stop").execute({ machineId: 5 }, ctx);
+    expect((dispatchSpy.mock.calls[0][0] as any).writes).toEqual([{ tagKey: "cmd_stop", value: true }]);
+    expect(await tool("machine_stop").otWriteBinding({ machineId: 5 })).toEqual({ adapterId: 10, machineId: 5, commandType: "stop", writes: [{ tagKey: "cmd_stop", value: true }] });
+    expect(r.textSummary).toMatch(/Skipped pins on tags with actuation level > 1: van_m4 \(4\), chua_khai \(5\)/);
+    const pv = await tool("machine_stop").preview({ machineId: 5 }, ctx);
+    expect(pv.changes[0].newValue).toBe("cmd_stop=true");
+    expect(pv.warnings.join(" ")).toMatch(/Skipped pins on tags with actuation level > 1/);
+  });
+
+  it("★ kiem-dinh I-A: máy CÓ ghim mà KHÔNG ghim nào đủ điều kiện (mọi ghim mức > 1) ⇒ TỪ CHỐI (execute + propose), 0 dispatch, không rơi về tag mặc định", async () => {
+    pinsState.pins = [{ tagKey: "van_m5", value: 1, muc: 5 }];
+    await expect(tool("machine_stop").execute({ machineId: 5 }, ctx)).rejects.toThrow(/actuation level > 1 \(van_m5 \(5\)\).*hardwired E-STOP/);
+    await expect(tool("machine_stop").otWriteBinding({ machineId: 5 })).rejects.toThrow(/van_m5/);
+    expect(dispatchSpy).not.toHaveBeenCalled();
+    const pv = await tool("machine_stop").preview({ machineId: 5 }, ctx);
+    expect(pv.warnings.join(" ")).toMatch(/assistant sends nothing/);
   });
 
   it("machine_start / pause / reset KHÔNG đọc ghim, gửi tag của mình (ghim chỉ áp cho lệnh dừng)", async () => {

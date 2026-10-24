@@ -202,6 +202,8 @@ function mucHieuLuc(level: number | null | undefined): number {
 }
 
 /**
+ * MỘT LUẬT DUY NHẤT (kiem-dinh R1b-1 I-A, fix round 2) cho: STOP HMI `dungMayHmi` (qua `loadStopPinsHmi`), tool AI `machine_stop` (qua
+ * `loadStopPinsHmi`) + cổng mức AI `mucKenhChoAi` (dừng ghim chỉ tính ghim `gui`), và khảo sát khả năng dừng `khaNangDung`.
  * THUẦN — tách ghim DỪNG hợp lệ (`stopPinsFromTagRows`: enabled + writable + giá trị còn đúng kiểu) của một adapter thành ghim STOP HMI GỬI được
  * (mức hiệu lực là số nguyên trong [1, MUC_TOI_DA_STOP_HMI]) và ghim BỎ QUA (mọi mức khác — kể cả giá trị lạ lúc chạy: fail-closed).
  */
@@ -378,8 +380,11 @@ export async function datStopPin(input: {
   reason: string;
   nguoiSua: NguoiSuaStopPin;
   phamViMay: ReadonlyArray<number> | null;
-  /** kiem-dinh R1b-1 H1 (a) — kiểm CUỐI trong giao dịch (TOTP), ném để từ chối. */
-  kiemCuoi?: () => Promise<void>;
+  /**
+   * kiem-dinh R1b-1 H1 (a) — kiểm CUỐI trong giao dịch (TOTP), ném để từ chối. BẮT BUỘC (fix round 2, m-1): một bên gọi mới quên truyền ⇒
+   * lỗi BIÊN DỊCH, không phải một ghim không mã. Bên gọi không cần mã (test, công cụ nội bộ) phải truyền `async () => {}` TƯỜNG MINH.
+   */
+  kiemCuoi: () => Promise<void>;
 }): Promise<KetQuaStopPin> {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
@@ -441,7 +446,7 @@ async function datStopPinTx(
     }
 
     // kiem-dinh R1b-1 H1 (a) — TOTP CUỐI: sau kiểm hợp lệ (không tiêu mã cho lượt sai), trước no-op / lượt ghi.
-    if (input.kiemCuoi) await input.kiemCuoi();
+    await input.kiemCuoi();
 
     const truoc = tag.stopValue ?? null;
     if (cungGiaTri(truoc, sau)) {
