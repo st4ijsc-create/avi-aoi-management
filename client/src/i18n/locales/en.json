@@ -4571,7 +4571,8 @@
     "AI_GIOI_HAN_TAN_SUAT": "You're sending AI requests too fast — wait a moment and try again.",
     "AI_HET_HAN_MUC": "Today's AI token quota is used up (including the estimate reserved for one Agent run). Try again tomorrow or ask an administrator to raise the quota.",
     "AI_CHAN_AN_TOAN": "The request was blocked by the AI safety layer because it looks like a prompt injection. Please rephrase it.",
-    "AI_CHUA_CAP_PHEP": "The current edition / licence does not include AI (MOD_AI)."
+    "AI_CHUA_CAP_PHEP": "The current edition / licence does not include AI (MOD_AI).",
+    "SCADA_STOP_NOT_PINNED": "The machine has no pinned STOP values — an engineer pins them at /scada/config/channels; stop it with the hardwired E-STOP."
   },
   "export": {
     "reportMenu": {
@@ -23765,7 +23766,7 @@
         "OFF_STEP": "The value must follow step {{step}}. Nearest valid value: {{goiY}}",
         "OFF_STEP_NO_HINT": "The value must follow step {{step}} — enter it again.",
         "MODE_LOCAL": "The machine does not accept remote commands: {{lyDo}}",
-        "goiYStop": "Need to stop the machine? Use the hardwired E-STOP or the stop button at the machine cabinet — the R1a HMI screen has no dedicated STOP command yet",
+        "goiYStop": "Need to stop the machine? Use the STOP MACHINE button (sends the pinned STOP) or the hardwired E-STOP at the machine",
         "DANG_DUOC_CHON": "The channel is selected by {{ten}} until {{den}} — wait until they finish or it expires, then try again.",
         "EDGE_CHUA_HO_TRO": "This machine is owned by edge {{edge}} — SCADA commands to edge machines are not supported yet (phase R1c)",
         "ROLE_FLOOR": "Your role may not command level {{level}} channels — ask someone with a higher role (engineer or administrator).",
@@ -23787,7 +23788,9 @@
         "khacXacNhan": "The command was not sent: {{chiTiet}}",
         "vuotTanSuat": "Not sent — rate limit exceeded, try again later",
         "nutDungGoiY": "Use {{goiY}}",
-        "ma": "Code: {{ma}}"
+        "ma": "Code: {{ma}}",
+        "CHUA_GHIM_STOP": "The machine has no pinned STOP values — an engineer pins them at /scada/config/channels; stop it with the hardwired E-STOP",
+        "goiYStopKhongGhim": "Need to stop the machine? Use the hardwired E-STOP or the stop button at the machine cabinet"
       },
       "local": {
         "remote": "the machine is in REMOTE",
@@ -23802,6 +23805,23 @@
         "kenhSaiMay": "the mode channel does not belong to this machine's adapter — treated as LOCAL",
         "khongRo": "mode could not be determined ({{lyDo}}) — treated as LOCAL"
       }
+    },
+    "dungMay": {
+      "nut": "STOP MACHINE",
+      "tieuDe": "Stop machine {{may}}?",
+      "moTa": "Sends the pinned STOP to {{n}} adapter(s).",
+      "moTaKhongRo": "Sends the pinned STOP to every enabled adapter of the machine.",
+      "nutXacNhan": "Stop machine",
+      "nutHuy": "Cancel",
+      "nutDong": "Close",
+      "dangGui": "Sending STOP…",
+      "ketQuaTieuDe": "Result per adapter",
+      "dat": "Passed",
+      "khongDat": "Failed",
+      "chuaXacMinh": "Unverified",
+      "daGuiEdge": "Sent to the edge — the edge node will carry out the STOP; not yet confirmed that the machine stopped",
+      "dungEstop": "Use the hardwired E-STOP at the machine",
+      "canhBaoChuaGhim": "The machine has no pinned STOP — the HMI stop button cannot be used"
     }
   }
 }

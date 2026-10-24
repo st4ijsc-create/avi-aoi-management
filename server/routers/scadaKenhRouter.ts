@@ -7,7 +7,9 @@
  *                                                             mức tác động (đã khai + hiệu lực, NULL ⇒ 5), có phải kênh chế độ không.
  *   capNhat({tagId, patch, lyDo})                           — khai / sửa các cột kênh (mig 0431) của MỘT tag.
  *   cheDo.danhSach()                                        — máy trong phạm vi (có adapter hoặc đã khai kênh chế độ) + kênh chế độ +
- *                                                             `cheDoMay` hiện tại + `canhBaoNguon`.
+ *                                                             `cheDoMay` hiện tại + `canhBaoNguon` + (R1b-1 Task 2) `coGhimStop` /
+ *                                                             `soAdapterGhimStop`: số adapter BẬT của máy mang ≥ 1 ghim DỪNG hợp lệ
+ *                                                             (CÙNG luật `stopPinsFromTagRows` mà `loadStopPins` / `dungMay` dùng).
  *   cheDo.dat({machineId, adapterId, tagKey, giaTriRemote, lyDo}) / cheDo.go({machineId, lyDo}) — khai / gỡ kênh chế độ của máy.
  *
  * QUYỀN: query = MOD_OT_CONTROL + `machine_control.canView`; mutation = vai admin|engineer + 2FA + MOD_OT_CONTROL +
@@ -29,7 +31,7 @@
  * ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
-import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { router, moduleProcedure, moduleGate, roleProcedure, require2FA } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
@@ -44,7 +46,7 @@ import { cheDoMay, type CheDo } from "../services/scada/cheDoMay";
 import { khoaLuatNhamTagTx, kiemNhatQuanKenh, soHienThi, viPhamInterlock, type KenhNhatQuan } from "../services/scada/nhatQuanKenh";
 import { tagDeadbandEnabled } from "../services/ot/otManager";
 import { TAG_DUNG_MAC_DINH } from "../services/ot/tagLenhMacDinh";
-import { validateStopValue } from "../services/ot/stopPin";
+import { stopPinsFromTagRows, validateStopValue, type StopPinTagRow } from "../services/ot/stopPin";
 import { canonicalOtValue } from "../services/ot/otActionBinding";
 import type { MucRuiRo } from "../services/ot/aiControlGate";
 
@@ -194,6 +196,49 @@ function canhBaoCua(
   return null;
 }
 
+/**
+ * R1b-1 Task 2 — số adapter BẬT của mỗi máy có ≥ 1 ghim DỪNG hợp lệ: tag bật + ghi được + stop_value khác NULL + hợp lệ với dataType HIỆN TẠI
+ * (`stopPinsFromTagRows` — đúng luật `loadStopPins` mà `scadaCommands.dungMay` gửi). Một truy vấn cho mọi máy. Máy vắng ⇒ 0 (nút DỪNG MÁY
+ * không gửi được gì ⇒ cảnh báo cấp máy "Máy chưa ghim STOP").
+ */
+async function soAdapterGhimStopTheoMay(machineIds: number[]): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  if (machineIds.length === 0) return out;
+  const db = await getDb();
+  const rows = await db
+    .select({
+      adapterId: deviceTags.adapterId,
+      machineId: deviceAdapters.machineId,
+      tagKey: deviceTags.tagKey,
+      dataType: deviceTags.dataType,
+      stopValue: deviceTags.stopValue,
+      writable: deviceTags.writable,
+      isEnabled: deviceTags.isEnabled,
+    })
+    .from(deviceTags)
+    .innerJoin(deviceAdapters, eq(deviceAdapters.id, deviceTags.adapterId))
+    .where(
+      and(
+        inArray(deviceAdapters.machineId, machineIds),
+        eq(deviceAdapters.isEnabled, true),
+        eq(deviceTags.isEnabled, true),
+        eq(deviceTags.writable, true),
+        isNotNull(deviceTags.stopValue),
+      ),
+    );
+  const theoAdapter = new Map<number, { machineId: number; rows: StopPinTagRow[] }>();
+  for (const r of rows) {
+    if (r.machineId == null) continue;
+    const g = theoAdapter.get(r.adapterId) ?? { machineId: r.machineId, rows: [] };
+    g.rows.push(r);
+    theoAdapter.set(r.adapterId, g);
+  }
+  for (const g of theoAdapter.values()) {
+    if (stopPinsFromTagRows(g.rows).length > 0) out.set(g.machineId, (out.get(g.machineId) ?? 0) + 1);
+  }
+  return out;
+}
+
 const cheDoRouter = router({
   danhSach: protectedProcedure.use(requirePermission("machine_control", "canView")).query(async ({ ctx }) => {
     const db = await getDb();
@@ -235,6 +280,7 @@ const cheDoRouter = router({
       );
     const theoMay = new Map(kenhs.map((k) => [k.machineId, k] as const));
     const edge = await adapterEdge([...new Set(kenhs.map((k) => k.adapterId))]);
+    const ghimStop = await soAdapterGhimStopTheoMay(mays.map((m) => m.id));
     return Promise.all(
       mays.map(async (m) => {
         const k = theoMay.get(m.id);
@@ -261,6 +307,9 @@ const cheDoRouter = router({
             : null,
           cheDo: cd.cheDo,
           lyDo: cd.lyDo,
+          // R1b-1 Task 2 — nút DỪNG MÁY gửi được tới bao nhiêu adapter (0 ⇒ cảnh báo "Máy chưa ghim STOP")
+          soAdapterGhimStop: ghimStop.get(m.id) ?? 0,
+          coGhimStop: (ghimStop.get(m.id) ?? 0) > 0,
           canhBaoNguon: hien
             ? canhBaoCua(
                 {

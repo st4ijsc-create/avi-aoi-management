@@ -7,6 +7,8 @@
  *
  * Nút "Đặt kênh chế độ" / "Gỡ" chỉ HIỆN khi `canAct` (engineer|admin + machine_control.canEdit; máy chủ vẫn kiểm lại vai, 2FA, quyền, phạm vi).
  * Kênh bị che (`kenhAn`: ngoài phạm vi người xem / sai máy) ⇒ chỉ hiện chế độ + lý do, không lộ adapter / tag.
+ * R1b-1 Task 2 — máy không có adapter bật nào mang ghim DỪNG (`coGhimStop` false) ⇒ cảnh báo cấp máy "Máy chưa ghim STOP — nút dừng HMI
+ * không dùng được" trong ô chế độ.
  */
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -24,6 +26,7 @@ import { BIEN_MAU_TONE } from "./chatLuongHienThi";
 import { KhoiCanhBao } from "./BangKenh";
 import { KHOA_LY_DO, epGiaTriRemote, toneCheDo, type LyDoCheDo } from "./kenhHienThi";
 import { LOP_O_CHON, TruongLyDo, lyDoDuDai } from "./TruongLyDo";
+import { CanhBaoChuaGhimStop } from "./DungMay";
 
 export type HangCheDo = inferRouterOutputs<AppRouter>["scadaKenh"]["cheDo"]["danhSach"][number];
 type CanhBaoNguon = HangCheDo["canhBaoNguon"];
@@ -243,6 +246,11 @@ export function KenhCheDoMay({ rows, adapters, canAct }: KenhCheDoMayProps) {
                   {m.canhBaoNguon && (
                     <div className="mt-1">
                       <CanhBaoNguonKenh nguon={m.canhBaoNguon} />
+                    </div>
+                  )}
+                  {m.coGhimStop === false && (
+                    <div className="mt-1">
+                      <CanhBaoChuaGhimStop />
                     </div>
                   )}
                 </TableCell>

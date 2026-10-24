@@ -4563,7 +4563,8 @@
     "AI_GIOI_HAN_TAN_SUAT": "您发送 AI 请求过快 — 请稍等片刻再试。",
     "AI_HET_HAN_MUC": "今日 AI 令牌额度已用完（含为一次智能体运行预留的估算量）。请明天再试，或请管理员提高额度。",
     "AI_CHAN_AN_TOAN": "该请求因疑似提示注入被 AI 安全层拦截。请换种方式表述。",
-    "AI_CHUA_CAP_PHEP": "当前版本/许可不包含 AI（MOD_AI）。"
+    "AI_CHUA_CAP_PHEP": "当前版本/许可不包含 AI（MOD_AI）。",
+    "SCADA_STOP_NOT_PINNED": "设备尚未固定 STOP 值 — 请工程师在 /scada/config/channels 固定；请使用硬接线急停（E-STOP）停机。"
   },
   "export": {
     "reportMenu": {
@@ -23767,7 +23768,7 @@
         "OFF_STEP": "值必须符合步长 {{step}}。最接近的有效值：{{goiY}}",
         "OFF_STEP_NO_HINT": "值必须符合步长 {{step}} — 请重新输入。",
         "MODE_LOCAL": "设备不接受远程命令：{{lyDo}}",
-        "goiYStop": "需要停机？请使用硬接线急停（E-STOP）或设备柜上的停止按钮 — R1a 的 HMI 画面尚无专用 STOP 命令",
+        "goiYStop": "需要停机？请使用“停机”按钮（发送已固定的 STOP）或设备处的硬接线急停（E-STOP）",
         "DANG_DUOC_CHON": "该通道正被 {{ten}} 选中至 {{den}} — 请等待其完成或过期后重试。",
         "EDGE_CHUA_HO_TRO": "此设备由边缘节点 {{edge}} 拥有 — 尚不支持从 SCADA 向边缘设备发送命令（R1c 阶段）",
         "ROLE_FLOOR": "您的角色不能对等级 {{level}} 的通道下达命令 — 请找更高角色的人员（工程师或管理员）。",
@@ -23789,7 +23790,9 @@
         "khacXacNhan": "命令未发送：{{chiTiet}}",
         "vuotTanSuat": "未发送 — 超过频率限制，请稍后重试",
         "nutDungGoiY": "使用 {{goiY}}",
-        "ma": "代码：{{ma}}"
+        "ma": "代码：{{ma}}",
+        "CHUA_GHIM_STOP": "设备尚未固定 STOP 值 — 请工程师在 /scada/config/channels 固定；请使用硬接线急停（E-STOP）停机",
+        "goiYStopKhongGhim": "需要停机？请使用硬接线急停（E-STOP）或设备柜上的停止按钮"
       },
       "local": {
         "remote": "设备处于 REMOTE",
@@ -23804,6 +23807,23 @@
         "kenhSaiMay": "模式通道不属于此设备的适配器 — 视为 LOCAL",
         "khongRo": "无法确定模式（{{lyDo}}）— 视为 LOCAL"
       }
+    },
+    "dungMay": {
+      "nut": "停机",
+      "tieuDe": "停止设备 {{may}}？",
+      "moTa": "向 {{n}} 个适配器发送已固定的 STOP。",
+      "moTaKhongRo": "向设备所有已启用的适配器发送已固定的 STOP。",
+      "nutXacNhan": "停机",
+      "nutHuy": "取消",
+      "nutDong": "关闭",
+      "dangGui": "正在发送 STOP…",
+      "ketQuaTieuDe": "各适配器结果",
+      "dat": "通过",
+      "khongDat": "未通过",
+      "chuaXacMinh": "未验证",
+      "daGuiEdge": "已发送至边缘节点 — 边缘节点将执行 STOP；尚未确认设备已停止",
+      "dungEstop": "请在设备处使用硬接线急停（E-STOP）",
+      "canhBaoChuaGhim": "设备尚未固定 STOP — HMI 停机按钮无法使用"
     }
   }
 }

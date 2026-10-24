@@ -188,6 +188,9 @@ export const APP_ERROR_CODES = [
   "SCADA_TOTP_REQUIRED",           // params: { ma, level } — kênh mức 4–5 cần mã TOTP (TOTP_CAN); yêu cầu GIỮ, nhập mã rồi xác nhận lại.
   "SCADA_TOTP_INVALID",            // params: { ma, level } — mã TOTP sai / sai định dạng / đã dùng (TOTP_SAI); yêu cầu GIỮ.
   "SCADA_MACHINE_REBOUND",         // params: { ma } — adapter đã gán sang máy khác sau request (MAY_DA_DOI); tạo yêu cầu mới.
+  // ── SCADA R1b-1 Task 2 — STOP HMI một bước (`scadaCommands.dungMay`) ──
+  "SCADA_STOP_NOT_PINNED",         // params: { ma } — máy không có adapter bật nào mang tag ghim giá trị DỪNG (CHUA_GHIM_STOP): không gửi gì;
+                                   // kỹ sư ghim ở /scada/config/channels, dừng bằng E-STOP cứng.
   // ── SCADA R1a Task 12 (M12, điều phối mục 4 + review T3 M-3) — NHẤT QUÁN lúc cấu hình giữa khai báo kênh (loại / dải / bước) và giá trị
   // đã cam kết sẽ ghi xuống kênh đó (server/services/scada/nhatQuanKenh.ts). `ma` = chính mã; `lyDo` = kết cục của cổng kênh
   // (CHANNEL_READ_ONLY | TYPE_MISMATCH | OUT_OF_RANGE | OFF_STEP); min/max/step "—" khi không khai cận đó.

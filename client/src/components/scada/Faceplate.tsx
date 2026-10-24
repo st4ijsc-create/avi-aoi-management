@@ -11,6 +11,8 @@
  *   • Từ chối của request ⇒ `ThongBaoLoiLenh` (lý do + cách xử lý). OFF_STEP ⇒ nút "Dùng {goiY}" CHỈ điền ô — người dùng vẫn phải bấm
  *     "Đổi…" lại (không tự gửi, không tự làm tròn).
  *   • Danh sách "Điều kiện cho phép" (request chạy khô) để R1b.
+ *   • R1b-1 Task 2 — nút "DỪNG MÁY" (`NutDungMay`, STOP HMI một bước) LUÔN hiện khi kênh thuộc một máy — kể cả LOCAL, kênh chỉ đọc, kênh
+ *     đang tải; cảnh báo cấp máy "Máy chưa ghim STOP" khi `coGhimStop` false. Gợi ý MODE_LOCAL theo `coGhimStop` (ruling R-2).
  */
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -36,13 +38,23 @@ import {
 import { TruongLyDo, lyDoDuDai } from "./TruongLyDo";
 import { HopThoaiLenh, ThongBaoLoiLenh, useDinhDangGiaTri, type YeuCauLenh } from "./HopThoaiLenh";
 import { khoaLyDoLocal, moTaLoiLenh, type MoTaLoi } from "./ketQuaLenh";
+import { NutDungMay } from "./DungMay";
 import type { HangKenh } from "./BangKenh";
 
 const CHU_KY_GIA_TRI_MS = 2000;
 const CHU_KY_CHE_DO_MS = 5000;
 
 type HangSong = { tagKey: string; v: unknown; q: "good" | "uncertain" | "bad" | null; ageMs: number | null; stale: boolean };
-type HangCheDo = { machineId: number; code: string; ten: string; cheDo: "REMOTE" | "LOCAL"; lyDo: string };
+type HangCheDo = {
+  machineId: number;
+  code: string;
+  ten: string;
+  cheDo: "REMOTE" | "LOCAL";
+  lyDo: string;
+  /** R1b-1 T2 — máy có ≥ 1 adapter bật mang ghim DỪNG / số adapter đó */
+  coGhimStop?: boolean;
+  soAdapterGhimStop?: number;
+};
 type GiaTriGui = number | boolean | string;
 
 /** UUID v4 cho `clientRequestId` (crypto.randomUUID khi có; dự phòng getRandomValues). */
@@ -192,6 +204,16 @@ export function Faceplate({ adapterId, tagKey, machineId, edgeCode, onDong }: Fa
           </DialogDescription>
         </DialogHeader>
 
+        {machineId !== null && (
+          <NutDungMay
+            machineId={machineId}
+            tenMay={may ? `${may.code} · ${may.ten}` : `#${machineId}`}
+            soAdapter={may?.soAdapterGhimStop}
+            coGhimStop={may?.coGhimStop}
+            laEdge={!!edgeCode}
+          />
+        )}
+
         {kenhQ.isLoading ? (
           <p role="status" className="text-sm text-muted-foreground">
             {t("scada.faceplate.dangTai")}
@@ -281,7 +303,7 @@ export function Faceplate({ adapterId, tagKey, machineId, edgeCode, onDong }: Fa
                   </div>
                 )}
                 <TruongLyDo id="faceplate-ly-do" value={lyDo} onChange={setLyDo} />
-                {loi && <ThongBaoLoiLenh moTa={loi.moTa} chiTiet={loi.chiTiet} onDungGoiY={dungGoiY} />}
+                {loi && <ThongBaoLoiLenh moTa={loi.moTa} chiTiet={loi.chiTiet} onDungGoiY={dungGoiY} coGhimStop={may?.coGhimStop} />}
                 <div className="flex justify-end">
                   <Button onClick={doi} disabled={!doiDuoc}>
                     {request.isPending ? t("scada.faceplate.dangTao") : t("scada.faceplate.nutDoi")}
@@ -300,6 +322,7 @@ export function Faceplate({ adapterId, tagKey, machineId, edgeCode, onDong }: Fa
             dinhDang={hang?.displayFormat ?? null}
             dataType={dataType}
             edgeCode={edgeCode}
+            coGhimStop={may?.coGhimStop}
             onDong={() => {
               dangBayRef.current = false;
               setYeuCau(null);

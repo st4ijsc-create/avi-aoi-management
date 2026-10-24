@@ -328,8 +328,17 @@ describe("M5 — từ chối nói lý do + cách xử lý", () => {
     await traLoi("confirm", "onError", loi("SCADA_MACHINE_NOT_REMOTE", { ma: "MODE_LOCAL", lyDo: "bo_dem_tat" }));
     const tb = within(hop()).getByTestId("loi-lenh");
     expect(tb).toHaveTextContent("Bộ đệm giá trị sống đang tắt — mọi máy coi như LOCAL");
-    expect(tb).toHaveTextContent("Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy — màn HMI R1a chưa có lệnh STOP riêng");
+    // R1b-1 T2 (ruling R-2) — máy KHÔNG ghim STOP (coGhimStop vắng/false) ⇒ chữ E-STOP cứng thuần
+    expect(tb).toHaveTextContent("Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy");
+    expect(tb).not.toHaveTextContent("DỪNG MÁY");
     expect(nutGui()).toBeDisabled();
+  });
+
+  it("R1b-1 T2 (ruling R-2) — MODE_LOCAL trên máy CÓ ghim STOP ⇒ gợi ý nút DỪNG MÁY (gửi STOP đã ghim) hoặc E-STOP cứng", async () => {
+    ve({ coGhimStop: true });
+    bamGui();
+    await traLoi("confirm", "onError", loi("SCADA_MACHINE_NOT_REMOTE", { ma: "MODE_LOCAL", lyDo: "khac_remote" }));
+    expect(within(hop()).getByTestId("goi-y-stop")).toHaveTextContent("Cần dừng máy? Dùng nút DỪNG MÁY (gửi STOP đã ghim) hoặc E-STOP cứng tại máy");
   });
 
   it("MODE_LOCAL chua_co_mau trên máy edge ⇒ chữ R1c", async () => {
@@ -338,7 +347,7 @@ describe("M5 — từ chối nói lý do + cách xử lý", () => {
     await traLoi("confirm", "onError", loi("SCADA_MACHINE_NOT_REMOTE", { ma: "MODE_LOCAL", lyDo: "chua_co_mau" }));
     const tb = within(hop()).getByTestId("loi-lenh");
     expect(tb).toHaveTextContent("Máy do edge sở hữu — chưa có giá trị chế độ tới R1c");
-    expect(tb).toHaveTextContent(S("scada.lenh.loi.goiYStop"));
+    expect(tb).toHaveTextContent(S("scada.lenh.loi.goiYStopKhongGhim"));
   });
 
   it("EDGE_CHUA_HO_TRO ⇒ chữ tiếng Việt có mã edge", async () => {
@@ -523,7 +532,7 @@ describe("M5 — ngôn ngữ", () => {
     bamGui();
     await traLoi("confirm", "onError", loi("SCADA_MACHINE_NOT_REMOTE", { ma: "MODE_LOCAL", lyDo: "bo_dem_tat" }));
     const txt = hop().textContent ?? "";
-    expect(txt).toContain((en_ as any).scada.lenh.loi.goiYStop);
+    expect(txt).toContain((en_ as any).scada.lenh.loi.goiYStopKhongGhim);
     expect(CHU_VIET.test(txt)).toBe(false);
   });
 
@@ -546,12 +555,17 @@ describe("M5 — fix round 1", () => {
     await traLoi("confirm", "onSuccess", { status: "rejected", ok: false, simulated: false, reason: "MODE_LOCAL", commandLogIds: [3] });
     const kq = within(hop()).getByTestId("ket-qua");
     expect(kq).toHaveTextContent(S("scada.lenh.cong.MODE_LOCAL"));
-    expect(kq).toHaveTextContent("Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy — màn HMI R1a chưa có lệnh STOP riêng");
+    expect(kq).toHaveTextContent("Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy");
+    cleanup();
+    ve({ coGhimStop: true });
+    bamGui();
+    await traLoi("confirm", "onSuccess", { status: "rejected", ok: false, simulated: false, reason: "MODE_LOCAL", commandLogIds: [3] });
+    expect(within(hop()).getByTestId("ket-qua")).toHaveTextContent("Cần dừng máy? Dùng nút DỪNG MÁY (gửi STOP đã ghim) hoặc E-STOP cứng tại máy");
     cleanup();
     ve();
     bamGui();
     await traLoi("confirm", "onSuccess", { status: "rejected", ok: false, simulated: false, reason: "BUSY", commandLogIds: [3] });
-    expect(within(hop()).getByTestId("ket-qua")).not.toHaveTextContent(S("scada.lenh.loi.goiYStop"));
+    expect(within(hop()).getByTestId("ket-qua")).not.toHaveTextContent("Cần dừng máy?");
   });
 
   it("IMPORTANT 2 — gỡ hộp khi còn proposed (điều hướng / đổi hàng / đổi adapter) ⇒ huy ĐÚNG một lần", () => {

@@ -884,7 +884,12 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // trong CÙNG giao dịch. Bảng không có cột tenant; admin toàn hệ ⇒ không lọc phạm vi. Mutation ⇒ D (bộ suy xếp MỌI mutation vào D). Đo:
 // trên ghim cũ (gốc c6e2422e7) đỏ ĐÚNG +1 D / +1 tong sau khi thêm, rồi ghim lại. No baseline row added. `tong` 2402 matches
 // `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 333, B: 8, C: 494, D: 1198, S: 369, tong: 2402 } as const;
+// ★★ 2026-10-24 · R1b-1 scadaCommands.dungMay +1 (SCADA R1b-1 Task 2 — STOP HMI một bước) — **D 1198 → 1199 · tong 2402 → 2403 ·
+// A/B/C/S unchanged.** MỘT thủ tục MỚI `scadaCommands.dungMay` (mutation) trong `server/routers/scadaCommandsRouter.ts`: truyền
+// `phamViCua(ctx)` xuống `lenhHmi.dungMayHmi` ⇒ `idsTrongPhamVi("machine", …, {strict:true})` (machineId từ client ⇒ kiểm lại phạm vi;
+// ngoài phạm vi = không tồn tại = NOT_FOUND). Mutation ⇒ D (bộ suy xếp MỌI mutation vào D). Đo: trên ghim cũ (gốc f5f8f40d9) đỏ ĐÚNG
+// +1 D / +1 tong sau khi thêm, rồi ghim lại. No baseline row added. `tong` 2403 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 333, B: 8, C: 494, D: 1199, S: 369, tong: 2403 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

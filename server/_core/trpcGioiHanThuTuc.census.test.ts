@@ -214,6 +214,63 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
   }, 120_000);
 });
 
+/**
+ * ★★★ R1b-1 Task 2 (điều phối 2026-10-24) — thủ tục tRPC CỐ Ý KHÔNG thuộc nhóm giới hạn nào dù nằm cạnh các thủ tục xác minh TOTP: STOP HMI.
+ * Khuôn miễn trừ của `aiCopilot.confirmAction` / `scadaCommands.confirm` ở trên — nhưng `dungMay` KHÔNG gọi `kiemXacThucTheoMuc` /
+ * `verifyTotpOnce` nên không vào bảng trên được; bảng riêng này giữ cùng ràng buộc: thủ tục THẬT, `phanNhomThuTuc` trả null (không nhóm
+ * nào — kể cả "2fa"), hàm dịch vụ không xác minh TOTP (AST), và lý do bằng văn bản. Thêm nó vào nhóm ⇒ ĐỎ (phải xoá miễn trừ + phán quyết mới).
+ */
+const MIEN_TRU_KHONG_GIOI_HAN: Record<string, { thuTuc: string; routerFile: string; ham: string; hamFile: string; mienTru: string }> = {
+  "scadaCommands.dungMay": {
+    thuTuc: "scadaCommands.dungMay",
+    routerFile: "server/routers/scadaCommandsRouter.ts",
+    ham: "dungMayHmi",
+    hamFile: "server/services/scada/lenhHmi.ts",
+    mienTru: "STOP không bao giờ bị phần mềm chặn; không xác minh TOTP",
+  },
+};
+
+/** Thân của một hàm khai báo tên `ham` trong file (AST); null nếu không có. */
+function thanHam(duong: string, ham: string): ts.FunctionDeclaration | null {
+  const src = ts.createSourceFile(duong, readFileSync(duong, "utf8"), ts.ScriptTarget.Latest, true);
+  let ra: ts.FunctionDeclaration | null = null;
+  const visit = (n: ts.Node): void => {
+    if (ts.isFunctionDeclaration(n) && n.name?.text === ham) ra = n;
+    ts.forEachChild(n, visit);
+  };
+  visit(src);
+  return ra;
+}
+
+/** Tên mọi hàm được GỌI trong một nút (AST), kể cả lồng. */
+function tenHamDuocGoi(n: ts.Node, ra = new Set<string>()): Set<string> {
+  if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) ra.add(n.expression.text);
+  ts.forEachChild(n, (c) => void tenHamDuocGoi(c, ra));
+  return ra;
+}
+
+describe("census miễn trừ giới hạn — STOP HMI không bao giờ bị bộ giới hạn theo thủ tục chặn", () => {
+  it("★★★ mỗi mục là thủ tục THẬT, router gọi hàm dịch vụ, KHÔNG thuộc nhóm nào (phanNhomThuTuc = null), hàm không xác minh TOTP", () => {
+    const tap = layTapThuTucStepUp(appRouter, [requireFreshTotp, requirePerCallFreshTotp]);
+    let dem = 0;
+    for (const [p, m] of Object.entries(MIEN_TRU_KHONG_GIOI_HAN)) {
+      expect(m.thuTuc).toBe(p);
+      expect(m.mienTru.length, `${p}: phải có lý do bằng văn bản`).toBeGreaterThan(20);
+      const loaiTT = trpcProcedureType(appRouter, p);
+      expect(loaiTT, `${p} không tồn tại ở appRouter`).toBe("mutation");
+      expect(fileGoiHam(path.join(GOC, m.routerFile), m.ham), `${m.routerFile} không gọi ${m.ham}`).toBe(true);
+      expect(phanNhomThuTuc(p, loaiTT, tap), `${p} có miễn trừ nhưng bị xếp vào một nhóm giới hạn`).toBeNull();
+      expect(tap.has(p), `${p} đứng trên bước nâng cấp 2FA (requireFreshTotp)`).toBe(false);
+      const fn = thanHam(path.join(GOC, m.hamFile), m.ham);
+      expect(fn, `${m.hamFile}: không thấy hàm ${m.ham}`).not.toBeNull();
+      const goi = tenHamDuocGoi(fn!);
+      for (const cam of ["verifyTotpOnce", "kiemXacThucTheoMuc", "verifyFreshTotp"]) expect(goi.has(cam), `${m.ham} gọi ${cam}`).toBe(false);
+      dem++;
+    }
+    expect(dem).toBe(1);
+  }, 120_000);
+});
+
 describe("gắn middleware trong index.ts", () => {
   it("★★★ thứ tự: trần batch → giới hạn theo thủ tục → giấy phép → tRPC; có truyền bước nâng cấp 2FA", () => {
     const nguon = readFileSync(path.resolve(__dirname, "index.ts"), "utf8");

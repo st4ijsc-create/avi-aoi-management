@@ -114,7 +114,7 @@ import {
   type DeviceTag,
 } from "../../../drizzle/schema";
 import { kiemGiaTriGhi, laKenhGhi, loaiKenh } from "../scada/kenhScada"; // SCADA R1a Task 3 (K4) — the ONE coercion/range/step rule
-import { cheDoMay, congCheDoBat, TOOL_HMI_GHI_TAG } from "../scada/cheDoMay"; // SCADA R1a Task 4 (K2/D3) — machine LOCAL/REMOTE
+import { cheDoMay, congCheDoBat, laToolHmiCongCheDo } from "../scada/cheDoMay"; // SCADA R1a Task 4 (K2/D3) — machine LOCAL/REMOTE
 import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { foeApprovalDbRefusal, preReadProgramChecksForAction, type PreReadPrograms } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i); Đợt 8 final wave O M2
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
@@ -1147,7 +1147,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //         PINNED STOP exemption (no software blocks a pinned STOP), matched on DATA as in 3b — WHOLE command only: stop-typed and
   //         ONE matchPinnedStop over every write (the coerced writes of 3b) against the step-3 pins. A refused stop-typed command still
   //         takes the edge pre-route of tuChoiSom.
-  if (congCheDoBat() || (input.triggeredBy.kind === "hitl" && input.triggeredBy.tool === TOOL_HMI_GHI_TAG)) {
+  //         SCADA R1b-1 Task 2 — the HMI STOP tool (`hmi.stop`) is gated here ALWAYS too (stricter, never looser): its payload is built
+  //         from the pins, so the data exemption above lets it through in LOCAL; any other payload under that tool is refused MODE_LOCAL.
+  if (congCheDoBat() || (input.triggeredBy.kind === "hitl" && laToolHmiCongCheDo(input.triggeredBy.tool))) {
     const stopGhim =
       isStopCommandType(input.commandType) &&
       matchPinnedStop(stopPinsFromTagRows(step3TagRows), input.writes.map((w) => ({ tagKey: w.tagKey, value: w.value }))).ok;

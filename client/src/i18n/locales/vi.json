@@ -4563,7 +4563,8 @@
     "AI_GIOI_HAN_TAN_SUAT": "Bạn gửi yêu cầu AI quá nhanh — chờ một lát rồi thử lại.",
     "AI_HET_HAN_MUC": "Đã hết hạn mức token AI trong ngày (kể cả phần ước lượng cho một lượt Agent). Thử lại vào ngày mai hoặc nhờ quản trị viên nâng hạn mức.",
     "AI_CHAN_AN_TOAN": "Yêu cầu bị lớp an toàn AI chặn vì có dấu hiệu tiêm lệnh. Hãy diễn đạt lại yêu cầu.",
-    "AI_CHUA_CAP_PHEP": "Phiên bản / giấy phép hiện tại không gồm tính năng AI (MOD_AI)."
+    "AI_CHUA_CAP_PHEP": "Phiên bản / giấy phép hiện tại không gồm tính năng AI (MOD_AI).",
+    "SCADA_STOP_NOT_PINNED": "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng."
   },
   "export": {
     "reportMenu": {
@@ -23739,7 +23740,7 @@
         "OFF_STEP": "Giá trị phải theo bước {{step}}. Giá trị hợp lệ gần nhất: {{goiY}}",
         "OFF_STEP_NO_HINT": "Giá trị phải theo bước {{step}} — nhập lại.",
         "MODE_LOCAL": "Máy không nhận lệnh từ xa: {{lyDo}}",
-        "goiYStop": "Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy — màn HMI R1a chưa có lệnh STOP riêng",
+        "goiYStop": "Cần dừng máy? Dùng nút DỪNG MÁY (gửi STOP đã ghim) hoặc E-STOP cứng tại máy",
         "DANG_DUOC_CHON": "Kênh đang được {{ten}} chọn để ra lệnh tới {{den}} — chờ họ xong hoặc hết hạn rồi thử lại.",
         "EDGE_CHUA_HO_TRO": "Máy này do edge {{edge}} sở hữu — lệnh từ SCADA tới máy edge chưa được hỗ trợ (đợt R1c)",
         "ROLE_FLOOR": "Vai trò của bạn không được ra lệnh kênh mức {{level}} — nhờ người có vai cao hơn (kỹ sư hoặc quản trị).",
@@ -23761,7 +23762,9 @@
         "khacXacNhan": "Lệnh không được gửi: {{chiTiet}}",
         "vuotTanSuat": "Không gửi — vượt giới hạn tần suất, thử lại sau",
         "nutDungGoiY": "Dùng {{goiY}}",
-        "ma": "Mã: {{ma}}"
+        "ma": "Mã: {{ma}}",
+        "CHUA_GHIM_STOP": "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng",
+        "goiYStopKhongGhim": "Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy"
       },
       "local": {
         "remote": "máy đang ở REMOTE",
@@ -23776,6 +23779,23 @@
         "kenhSaiMay": "kênh chế độ không thuộc adapter của máy này — coi như LOCAL",
         "khongRo": "không xác định được chế độ ({{lyDo}}) — coi như LOCAL"
       }
+    },
+    "dungMay": {
+      "nut": "DỪNG MÁY",
+      "tieuDe": "Dừng máy {{may}}?",
+      "moTa": "Gửi STOP đã ghim tới {{n}} adapter.",
+      "moTaKhongRo": "Gửi STOP đã ghim tới mọi adapter đang bật của máy.",
+      "nutXacNhan": "Dừng máy",
+      "nutHuy": "Huỷ",
+      "nutDong": "Đóng",
+      "dangGui": "Đang gửi STOP…",
+      "ketQuaTieuDe": "Kết quả theo adapter",
+      "dat": "Đạt",
+      "khongDat": "Không đạt",
+      "chuaXacMinh": "Chưa xác minh",
+      "daGuiEdge": "Đã gửi tới edge — node edge sẽ thực hiện STOP; chưa xác nhận máy đã dừng",
+      "dungEstop": "Dùng E-STOP cứng tại máy",
+      "canhBaoChuaGhim": "Máy chưa ghim STOP — nút dừng HMI không dùng được"
     }
   }
 }

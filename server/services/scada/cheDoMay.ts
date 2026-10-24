@@ -40,6 +40,18 @@ export type CheDo = {
 /** Tool của lệnh ghi từ HMI SCADA (R1a Task 8/9): cổng chế độ LUÔN chạy cho nó, bất kể cờ. */
 export const TOOL_HMI_GHI_TAG = "hmi.write_tag";
 
+/**
+ * SCADA R1b-1 Task 2 — tool của STOP HMI một bước (`scadaCommands.dungMay`): ghi ĐÚNG các giá trị DỪNG đã ghim của adapter. Cổng chế độ
+ * của `dispatch()` cũng LUÔN chạy cho nó (như `hmi.write_tag`); một STOP khớp ghim được miễn theo DỮ LIỆU (3c), một payload khác thì không.
+ * KHÔNG có trong registry tool AI; lõi `confirmAction` từ chối mọi `hmi.*`.
+ */
+export const TOOL_HMI_STOP = "hmi.stop";
+
+/** Tool HMI mà cổng chế độ của `dispatch()` luôn xét (bất kể `SCADA_CONG_CHE_DO_ENABLED`). */
+export function laToolHmiCongCheDo(tool: string | undefined): boolean {
+  return tool === TOOL_HMI_GHI_TAG || tool === TOOL_HMI_STOP;
+}
+
 /** Cổng K2 trong `dispatch()` cho người gọi KHÔNG phải HMI (mặc định OFF). */
 export function congCheDoBat(): boolean {
   return process.env.SCADA_CONG_CHE_DO_ENABLED === "true";

@@ -529,7 +529,11 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   KHÔNG đổi.** Thủ tục MỚI `twoFactor.moKhoaTotp` (`adminProcedure`, admin mở khoá bộ đếm TOTP sai — mig 0432) trong
 //   `server/routers/twoFactorRouter.ts` (không phải bề mặt AI, không cổng module — cùng hình dạng các thủ tục 2FA anh em). Đo: ghim cũ
 //   (gốc c6e2422e7) đỏ ĐÚNG +1. `tong` 2402 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2402, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+// ★★ 2026-10-24 · R1b-1 scadaCommands.dungMay +1 (SCADA R1b-1 Task 2) — **tong 2402 → 2403 · beMatAi / aiCoCong / aiMienTru /
+//   ngoaiAiCoCong KHÔNG đổi.** Thủ tục MỚI `scadaCommands.dungMay` (STOP HMI một bước) của `server/routers/scadaCommandsRouter.ts` (không
+//   phải bề mặt AI; tool `hmi.stop` KHÔNG vào registry tool AI), sau `MOD_OT_CONTROL` (xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 126 → 127).
+//   Đo: ghim cũ (gốc f5f8f40d9) đỏ ĐÚNG +1. `tong` 2403 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2403, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
@@ -578,7 +582,10 @@ const GHIM_MODULE_KHAC = {
   //   `moduleProcedure("MOD_OT_CONTROL")` (+ `machine_control.canView`) và mutation `scadaKenh.capNhat` / `scadaKenh.cheDo.dat` /
   //   `scadaKenh.cheDo.go` trên `roleProcedure("admin","engineer").use(require2FA).use(moduleGate("MOD_OT_CONTROL"))` (+ `canEdit`), khuôn
   //   `scadaDiag`. Không thủ tục cũ nào đổi cổng.
-  MOD_OT_CONTROL: 126,
+  // ★ 2026-10-24 · R1b-1 scadaCommands.dungMay +1 (SCADA R1b-1 Task 2) — 126 → 127: mutation `scadaCommands.dungMay` trên
+  //   `moduleProcedure("MOD_OT_CONTROL")` như các thủ tục anh em (sàn vai mức 1 + `machine_control.canEdit` kiểm TRONG handler; không 2FA).
+  //   Không thủ tục cũ nào đổi cổng.
+  MOD_OT_CONTROL: 127,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

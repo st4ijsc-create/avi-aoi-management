@@ -6,6 +6,8 @@
  *                          proposed→confirmed, `dispatch()` hitl hmi.write_tag đọc lại bắt buộc. Thứ tự + quyết định: lenhHmi.ts.
  *   huy (mutation)       — chủ yêu cầu huỷ: proposed→cancelled, nhả khoá.
  *   trangThai (query)    — chủ yêu cầu xem: dòng chờ + attempts + command_log theo actionId (không address/errorText).
+ *   dungMay (mutation)   — R1b-1 Task 2: STOP HMI MỘT bước — giá trị DỪNG ĐÃ GHIM tới mọi adapter bật của máy qua `dispatch()` (không khoá
+ *                          chọn, không kiểm chế độ, không 2FA, mức 1; miễn nhóm giới hạn "2fa" — census trpcGioiHanThuTuc). Thứ tự: lenhHmi.ts.
  *
  * Router MỎNG: logic + thứ tự cổng + nhật ký `scada_command_attempts` ở `server/services/scada/lenhHmi.ts`. Ở đây chỉ: danh tính + phạm
  * vi từ `ctx` (`phamViCua(ctx)`, không bao giờ từ input) và đổi từ chối thành `appError` (mỗi mã MỘT lời gọi literal — cổng
@@ -19,7 +21,15 @@ import { router, moduleProcedure } from "../_core/trpc";
 import { appError } from "../_core/appError";
 import { loiTotpKhoa } from "../_core/totpKhoaSai";
 import { phamViCua } from "./_phamViNguoiXem";
-import { huyYeuCauGhi, trangThaiYeuCauGhi, xacNhanGhiTag, yeuCauGhiTag, type NguoiGoiLenh, type TuChoiYeuCau } from "../services/scada/lenhHmi";
+import {
+  dungMayHmi,
+  huyYeuCauGhi,
+  trangThaiYeuCauGhi,
+  xacNhanGhiTag,
+  yeuCauGhiTag,
+  type NguoiGoiLenh,
+  type TuChoiYeuCau,
+} from "../services/scada/lenhHmi";
 
 const thuTucLenh = moduleProcedure("MOD_OT_CONTROL");
 
@@ -49,6 +59,8 @@ export function loiTuChoiLenh(t: TuChoiYeuCau) {
       return appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "scadaCommands", ma: t.ma }, "Lệnh HMI SCADA đang tắt (SCADA_COMMANDS_ENABLED).");
     case "NOT_FOUND":
       if (t.entity === "scadaRequest") return appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "scadaRequest", ma: t.ma }, "Yêu cầu không tồn tại.");
+      // R1b-1 Task 2 — dungMay: máy không tồn tại = ngoài phạm vi (cùng một lỗi)
+      if (t.entity === "machine") return appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine", ma: t.ma }, "Máy không tồn tại.");
       return t.entity === "adapter"
         ? appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter", ma: t.ma }, "Adapter không tồn tại.")
         : appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag", ma: t.ma }, t.chiTiet);
@@ -93,6 +105,9 @@ export function loiTuChoiLenh(t: TuChoiYeuCau) {
       return appError("PRECONDITION_FAILED", "SCADA_TOTP_INVALID", { ma: t.ma, level: t.level }, t.chiTiet);
     case "MAY_DA_DOI":
       return appError("PRECONDITION_FAILED", "SCADA_MACHINE_REBOUND", { ma: t.ma }, t.chiTiet);
+    // R1b-1 Task 2 — STOP HMI: máy không có adapter bật nào mang tag ghim DỪNG ⇒ không gửi được gì; dùng E-STOP cứng
+    case "CHUA_GHIM_STOP":
+      return appError("PRECONDITION_FAILED", "SCADA_STOP_NOT_PINNED", { ma: t.ma }, t.chiTiet);
     // R1a Task 16 — bộ đếm TOTP sai (chung mọi bên gọi TOTP): CÙNG mã + câu i18n với đăng nhập / 2FA, thêm `{ ma, level }` cho M5.
     // M5 chỉ hiện "tạm khoá, thử lại sau N phút" (`remainingMinutes`) — không có số lần sai.
     case "TOTP_TAM_KHOA":
@@ -137,4 +152,22 @@ export const scadaCommandsRouter = router({
     if (!kq.ok) throw loiTuChoiLenh(kq.tuChoi);
     return kq.ketQua;
   }),
+
+  /**
+   * R1b-1 Task 2 — STOP HMI một bước. `lyDo` TUỲ CHỌN (không bắt gõ lý do khi dừng máy). Phạm vi + sàn vai mức 1 + `machine_control.canEdit`
+   * kiểm trong lenhHmi; KHÔNG 2FA, KHÔNG khoá chọn, KHÔNG kiểm chế độ (dispatcher miễn STOP khớp ghim).
+   */
+  dungMay: thuTucLenh
+    .input(
+      z.object({
+        machineId: z.number().int().positive(),
+        lyDo: z.string().trim().max(300).optional(),
+        clientRequestId: z.string().uuid(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const kq = await dungMayHmi(nguoiGoi(ctx), phamViCua(ctx), input);
+      if (!kq.ok) throw loiTuChoiLenh(kq.tuChoi);
+      return kq.ketQua;
+    }),
 });

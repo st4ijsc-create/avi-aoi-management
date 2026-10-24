@@ -113,7 +113,8 @@ export function nhanKetQua(
     case "rejected":
     default: {
       const c = khoaCong(ctx.reason);
-      // fix round 1 — máy chuyển LOCAL giữa cổng của confirm và dispatch ⇒ cùng gợi ý dừng (E-STOP cứng / nút dừng tại tủ — HMI R1a KHÔNG phải đường STOP, final I-3) như từ chối MODE_LOCAL
+      // fix round 1 — máy chuyển LOCAL giữa cổng của confirm và dispatch ⇒ cùng gợi ý dừng như từ chối MODE_LOCAL (R1b-1 T2 / ruling R-2: nút
+      // DỪNG MÁY khi máy có ghim — `khoaGoiYStop`; không ghim ⇒ E-STOP cứng / nút dừng tại tủ)
       return { khoa: c.khoa, tuDongDongMs: null, thamSo: { ma: c.ma }, ...(c.ma === "MODE_LOCAL" ? { goiYStop: true } : {}) };
     }
   }
@@ -145,6 +146,8 @@ export const MA_LOI_LENH = [
   "TOTP_KHONG_KIEM_DUOC",
   "DISPATCH_LOI",
   "TIMEOUT",
+  // R1b-1 Task 2 — STOP HMI (`dungMay`): máy không có adapter bật nào mang ghim DỪNG
+  "CHUA_GHIM_STOP",
 ] as const;
 const MA_LOI_SET: ReadonlySet<string> = new Set(MA_LOI_LENH);
 
@@ -212,7 +215,7 @@ export interface MoTaLoi {
   /** OFF_STEP: giá trị hợp lệ gần nhất (nút "Dùng {goiY}" CHỈ điền ô) */
   goiY?: number;
   lienKet2FA?: boolean;
-  /** MODE_LOCAL: gợi ý dừng bằng E-STOP cứng / nút dừng tại tủ (R1a final I-3: màn HMI chưa có lệnh STOP riêng) */
+  /** MODE_LOCAL: gợi ý cách dừng máy — chữ theo `khoaGoiYStop(coGhimStop)` (R1b-1 T2 / ruling R-2) */
   goiYStop?: boolean;
   /** lỗi không có mã: cần chữ chi tiết đã dịch (`mapTrpcError`) cho `{{chiTiet}}` */
   canChiTiet?: boolean;
@@ -327,4 +330,36 @@ export function conLaiTuLucNhan(expiresAt: string, nhanLuc: number, now: number)
   const tho = Date.parse(expiresAt) - nhanLuc;
   const luc = Number.isFinite(tho) && tho > 0 && tho <= TTL_YEU_CAU_MS ? tho : TTL_YEU_CAU_MS;
   return Math.max(0, luc - Math.max(0, now - nhanLuc));
+}
+
+// ─── R1b-1 Task 2 — STOP HMI một bước (`scadaCommands.dungMay`) ─────────────────────────────────────────────────────────────────
+/**
+ * Ruling R-2 — chữ gợi ý dừng của MODE_LOCAL: máy CÓ ghim STOP ⇒ "Dùng nút DỪNG MÁY (gửi STOP đã ghim) hoặc E-STOP cứng tại máy"; KHÔNG
+ * ghim hoặc chưa biết (`undefined` — chiều an toàn: không hứa một nút không gửi được gì) ⇒ chữ E-STOP cứng / nút dừng tại tủ.
+ */
+export function khoaGoiYStop(coGhimStop: boolean | undefined): string {
+  return coGhimStop === true ? "scada.lenh.loi.goiYStop" : "scada.lenh.loi.goiYStopKhongGhim";
+}
+
+/** Một hàng kết quả theo adapter của `dungMay` (đủ cho phân loại — khớp `KetQuaDungMayAdapter` của lenhHmi). */
+export interface HangKetQuaDung {
+  status: string;
+  ok: boolean;
+  simulated: boolean;
+  reason?: string;
+  edgeStopRequest?: boolean;
+}
+
+export type LoaiKetQuaDung = "dat" | "khongDat" | "chuaXacMinh";
+
+/**
+ * Đạt / không đạt / chưa xác minh của MỘT adapter (điều phối 2026-10-24). CHỈ `acked_verified` (máy nhận + đọc lại khớp ghim) là đạt.
+ * Edge (đã xếp hàng cho node, trung tâm không thấy máy dừng), mô phỏng (không gửi), acked không đọc lại / lệch, sent, timeout ⇒ chưa xác
+ * minh. `rejected` / `failed` ⇒ không đạt. Mọi loại ≠ đạt ⇒ UI hiện dòng đỏ + "Dùng E-STOP cứng tại máy".
+ */
+export function phanLoaiKetQuaDung(r: HangKetQuaDung): LoaiKetQuaDung {
+  if (r.edgeStopRequest) return "chuaXacMinh";
+  if (r.status === "acked_verified" && r.ok && !r.simulated) return "dat";
+  if (r.status === "rejected" || r.status === "failed") return "khongDat";
+  return "chuaXacMinh";
 }
