@@ -21,10 +21,13 @@ vi.mock("./db", () => ({
     const last = genealogyRows[genealogyRows.length - 1];
     return last ? last.currHash : null;
   }),
-  insertGenealogyChainRow: vi.fn(async (row: any) => {
+  // Dịch vụ dùng appendGenealogyChainRow(build) từ bản sửa R4 (đọc đuôi → tính currHash → chèn NGUYÊN TỬ): mock đọc đuôi giả rồi gọi build(prevHash), như hợp đồng thật.
+  appendGenealogyChainRow: vi.fn(async (build: (prevHash: string) => any) => {
+    const last = genealogyRows[genealogyRows.length - 1];
+    const row = build(last ? last.currHash : "0".repeat(64));
     const inserted = { id: genealogyRows.length + 1, ...row };
     genealogyRows.push(inserted);
-    return { id: inserted.id, currHash: inserted.currHash };
+    return { id: inserted.id, prevHash: inserted.prevHash, currHash: inserted.currHash };
   }),
 }));
 
@@ -54,7 +57,7 @@ describe("F2 — recordProcessResult", () => {
     );
 
     expect(db.insertProcessResult).toHaveBeenCalledTimes(1);
-    expect(db.insertGenealogyChainRow).toHaveBeenCalledTimes(1);
+    expect(db.appendGenealogyChainRow).toHaveBeenCalledTimes(1);
     expect(out.processResultId).toBe(100);
     expect(out.genealogy).not.toBeNull();
 
@@ -85,7 +88,7 @@ describe("F2 — recordProcessResult", () => {
   });
 
   it("keeps the process result even if genealogy append throws", async () => {
-    (db.insertGenealogyChainRow as any).mockRejectedValueOnce(new Error("chain down"));
+    (db.appendGenealogyChainRow as any).mockRejectedValueOnce(new Error("chain down"));
     const out = await recordProcessResult(
       { serialNumber: "SN-F2-002", machineId: 1, stepType: "x", result: "fail" },
       null,

@@ -195,9 +195,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/dataRouters.ts#importRouter.importWorkshops",
   "server/routers/dataRouters.ts#importRouter.importWorkstations",
   // ── server/routers/defectDispositionRouter.ts (3) ──
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.create",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.transition",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.updateStatus",
   // ── server/routers/defectHeatmapRouter.ts (1) ──
   "server/routers/defectHeatmapRouter.ts#defectHeatmapRouter.generate",
   // ── server/routers/ecnRouter.ts (2) ──
