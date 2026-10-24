@@ -28,7 +28,47 @@ const H = vi.hoisted(() => ({
   sauGiaHan: null as null | (() => Promise<void>),
   /** fix round 1 — thay dispatch: mô phỏng "đặt chỗ đã CAS confirmed→executed rồi bị từ chối không gửi" (QUEUE_EXPIRED) */
   tuChoiSauDatCho: false,
+  /** fix round 2 — làm câu UPDATE chốt dòng chờ SAU dispatch ném lỗi (status executed / bi_tu_choi_ghi qua `db`, không qua tx) */
+  chotNem: false,
 }));
+
+// fix round 2 — getDb THẬT bọc Proxy: khi `H.chotNem`, `db.update(ai_pending_actions).set({status: executed|bi_tu_choi_ghi})` NÉM
+// (mô phỏng lỗi DB đúng ở bước chốt). Đặt chỗ của dispatcher chạy trong `tx` (không qua Proxy) nên không bị ảnh hưởng.
+vi.mock("../db/connection", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../db/connection")>();
+  const { aiPendingActions: bang } = await import("../../drizzle/schema");
+  return {
+    ...real,
+    getDb: async () => {
+      const d = await real.getDb();
+      if (!d) return d;
+      return new Proxy(d, {
+        get(t, p) {
+          if (p === "update") {
+            return (tbl: unknown) => {
+              const b = (t as any).update(tbl);
+              if (tbl !== bang) return b;
+              return new Proxy(b, {
+                get(bt, bp) {
+                  if (bp === "set") {
+                    return (v: { status?: string }) => {
+                      if (H.chotNem && (v?.status === "executed" || v?.status === "bi_tu_choi_ghi")) throw new Error("r1a9: chot nem (mo phong loi DB)");
+                      return (bt as any).set(v);
+                    };
+                  }
+                  const x = Reflect.get(bt, bp, bt);
+                  return typeof x === "function" ? x.bind(bt) : x;
+                },
+              });
+            };
+          }
+          const x = Reflect.get(t, p, t);
+          return typeof x === "function" ? x.bind(t) : x;
+        },
+      });
+    },
+  };
+});
 
 vi.mock("../services/scada/khoaChon", async (importOriginal) => {
   const real = await importOriginal<typeof import("../services/scada/khoaChon")>();
@@ -276,7 +316,7 @@ beforeAll(async () => {
 
   await seedTag(ad.a, "che_do", { kind: "input", writable: false, level: null, dataType: "int" });
   for (const key of ["vui", "lech", "het", "song", "local", "tat", "edge", "len", "il", "otoff", "huy", "chiem", "nem", "treo", "tt",
-    "maydoi", "khoamat", "hep", "san", "casmiss", "cashet", "qexp"]) {
+    "maydoi", "khoamat", "hep", "san", "casmiss", "cashet", "qexp", "chot1", "chot2"]) {
     await seedTag(ad.a, key, { level: 3 });
   }
   await seedTag(ad.a, "m5", { level: 5 });
@@ -680,31 +720,71 @@ describe("fix round 1 — máy đổi, mất khoá, dải hẹp, sàn vai, CAS t
     H.sauGiaHan = async () => {
       await dung(sql`UPDATE ai_pending_actions SET status = 'expired' WHERE id = ${requestId}`);
     };
+    H.emits.length = 0;
     try {
       await tuChoiXacNhan("opA", requestId, { code: "PRECONDITION_FAILED", appCode: "SCADA_REQUEST_EXPIRED", reason: "HET_HAN" });
     } finally {
       H.sauGiaHan = null;
     }
     expect(await khoa("casmiss")).toBeUndefined();
+    // fix round 2 — đường "bị dời đi chỗ khác" cũng báo M5
+    expect(H.emits.map((e) => [e.room, e.payload.status, e.payload.reason])).toEqual([[`user:${nguoi.opA.id}`, "expired", "HET_HAN"]]);
   });
 
-  it("minor 2 — hết hạn ĐÚNG lúc CAS (expiresAt lùi về quá khứ sau bước 2) ⇒ CAS có điều kiện hạn trượt ⇒ HET_HAN sạch (expired), dispatch 0", async () => {
+  it("minor 2 (fix round 2) — TTL hết GIỮA bước 2 và CAS (đồng hồ trôi, KHÔNG sửa expiresAt) ⇒ CAS dùng đồng hồ đọc lại ⇒ HET_HAN sạch, dispatch 0", async () => {
     const requestId = await yeuCau("opA", "cashet");
-    H.sauGiaHan = async () => {
-      await db.update(aiPendingActions).set({ expiresAt: new Date(Date.now() - 5_000) }).where(eq(aiPendingActions.id, requestId));
-    };
+    const [row] = await db.select({ e: aiPendingActions.expiresAt }).from(aiPendingActions).where(eq(aiPendingActions.id, requestId));
+    // Gốc đồng hồ của lượt confirm = 40 ms TRƯỚC hạn ⇒ bước 2 qua; móc ngay trước CAS cho 150 ms trôi ⇒ lúc CAS đã quá hạn.
+    const nowDate = new Date(row.e.getTime() - 40);
+    H.sauGiaHan = () => new Promise((r) => setTimeout(r, 150));
+    const truoc = H.dispatchCalls;
+    const m = await moc();
+    let kq: Awaited<ReturnType<typeof lenhHmi.xacNhanGhiTag>>;
     try {
-      await tuChoiXacNhan("opA", requestId, {
-        code: "PRECONDITION_FAILED",
-        appCode: "SCADA_REQUEST_EXPIRED",
-        reason: "HET_HAN",
-        outcome: "expired",
-      });
+      kq = await lenhHmi.xacNhanGhiTag(
+        { user: { id: nguoi.opA.id, role: "operator", twoFactorEnabled: true } },
+        { userId: nguoi.opA.id, userRole: "operator" },
+        { requestId },
+        nowDate,
+      );
     } finally {
       H.sauGiaHan = null;
     }
+    expect(kq, JSON.stringify(kq)).toMatchObject({ ok: false, tuChoi: { ma: "HET_HAN" } });
+    expect(H.dispatchCalls - truoc).toBe(0);
+    expect(await dongLenh(requestId)).toHaveLength(0);
     expect(await trangThaiCho(requestId)).toBe("expired");
     expect(await khoa("cashet")).toBeUndefined();
+    expect((await thuSau(m, nguoi.opA.id)).map((t) => [t.stage, t.outcome, t.reason_code])).toEqual([["confirm", "expired", "HET_HAN"]]);
+  });
+
+  it("fix round 2 — chốt dòng chờ NÉM sau dispatch thành công ⇒ khoá VẪN nhả, attempts dispatched VẪN ghi, trả kết quả thật", async () => {
+    const requestId = await yeuCau("opA", "chot1");
+    H.chotNem = true;
+    let kq: Awaited<ReturnType<typeof nguoi.opA.caller.confirm>>;
+    try {
+      kq = await nguoi.opA.caller.confirm({ requestId });
+    } finally {
+      H.chotNem = false;
+    }
+    expect(kq).toMatchObject({ ok: true, status: "acked_verified" });
+    expect(await khoa("chot1")).toBeUndefined();
+    expect((await thuCua(requestId)).at(-1)).toMatchObject({ stage: "dispatch", outcome: "dispatched" });
+  });
+
+  it("fix round 2 — dispatch NÉM + chốt cũng NÉM ⇒ ném lại lỗi GỐC của dispatch (không bị che), khoá nhả, attempts DISPATCH_LOI", async () => {
+    const requestId = await yeuCau("opA", "chot2");
+    H.chotNem = true;
+    H.dispatchNem = true;
+    try {
+      await expect(nguoi.opA.caller.confirm({ requestId })).rejects.toThrow(/dispatch nem/);
+    } finally {
+      H.chotNem = false;
+      H.dispatchNem = false;
+    }
+    expect(await khoa("chot2")).toBeUndefined();
+    expect((await thuCua(requestId)).at(-1)).toMatchObject({ stage: "dispatch", outcome: "rejected", reason_code: "DISPATCH_LOI" });
+    expect(await trangThaiCho(requestId)).toBe("confirmed"); // chốt đã lỗi (mô phỏng) — log nói rõ; dispatch không tới đặt chỗ
   });
 
   it("minor 4 — dispatcher trả rejected SAU đặt chỗ (QUEUE_EXPIRED: hàng đã 'executed', không gửi) ⇒ dòng chờ bi_tu_choi_ghi, không 'executed'", async () => {

@@ -643,6 +643,14 @@ export async function yeuCauGhiTag(
 //   QĐ T9-6 dispatch ném ⇒ nhả khoá, chốt 'bi_tu_choi_ghi' nếu còn 'confirmed', attempts `dispatch/rejected DISPATCH_LOI`, socket, NÉM TIẾP.
 // ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
+/** fix round 2 — chốt dòng chờ sau dispatch lỗi: chỉ ghi log (không che kết quả/lỗi gốc của dispatch, không chặn nhả khoá). */
+function ghiLoiChot(err: unknown, requestId: string, cho: string): void {
+  logger.error(
+    { err: (err as Error)?.message ?? String(err), requestId, cho },
+    "[SCADA] chốt dòng chờ / ghi sổ sau dispatch lỗi — trạng thái dòng chờ có thể chưa đúng kết cục",
+  );
+}
+
 /** Dư cho đọc lại + ghi sổ sau hai cửa sổ của dispatch (QĐ T9-1). */
 export const DU_PHONG_CUA_SO_GUI_MS = 30_000;
 
@@ -874,7 +882,9 @@ export async function xacNhanGhiTag(
   }
 
   // 6. CAS proposed→confirmed — đúng MỘT tab thắng (Review Focus 1)
-  if (!(await doiTrangThaiCho(db, requestId, userId, "proposed", "confirmed", {}, nowDate))) {
+  // fix round 2 (M2) — hạn so với đồng hồ ĐỌC LẠI ngay lúc CAS (`luc()` = gốc tiêm vào + thời gian đơn điệu đã trôi), KHÔNG phải
+  // `nowDate` (thời điểm bước 2 đã kiểm): TTL hết giữa bước 2 và CAS ⇒ CAS trượt ⇒ HET_HAN sạch.
+  if (!(await doiTrangThaiCho(db, requestId, userId, "proposed", "confirmed", {}, luc()))) {
     // fix round 1 minor 1/2 — CAS trượt: đọc lại. 'confirmed'/'executed' ⇒ tab khác ĐANG/ĐÃ gửi ⇒ DA_XU_LY, KHÔNG nhả khoá. Còn
     // 'proposed' ⇒ hết hạn đúng lúc CAS ⇒ CAS proposed→expired. Bị dời đi chỗ khác (expireStaleActions ⇒ 'expired', AI cancelAction
     // …) ⇒ không ai gửi ⇒ NHẢ khoá vừa gia hạn; 'expired' ⇒ HET_HAN.
@@ -890,7 +900,10 @@ export async function xacNhanGhiTag(
     }
     if (st === "confirmed" || st === "executed") return tuChoiGiu(DA_XU_LY_CONFIRM);
     await nhaKhoaChon(db, khoaKey);
-    return tuChoiGiu(st === "expired" ? hetHan : DA_XU_LY_CONFIRM);
+    const t = st === "expired" ? hetHan : DA_XU_LY_CONFIRM;
+    // fix round 2 — báo M5 trên đường "bị dời đi chỗ khác" (bi_tu_choi_ghi: tab kia đã gửi xong và tự báo kết cục — không báo trùng)
+    if (st !== "bi_tu_choi_ghi") await phat({ status: st === "expired" ? "expired" : "rejected", reason: t.ma });
+    return tuChoiGiu(t);
   }
   await thu("confirm", "confirmed", null);
   await phat({ status: "confirmed" });
@@ -917,11 +930,21 @@ export async function xacNhanGhiTag(
     });
   } catch (err) {
     // QĐ T9-6 — 8. nhả khoá, chốt dòng chờ, attempts có mã, rồi NÉM TIẾP
-    // fix round 1 minor 3 — chốt dòng chờ TRƯỚC, nhả khoá SAU
-    await doiTrangThaiCho(db, requestId, userId, "confirmed", "bi_tu_choi_ghi", { resultJson: { ma: "DISPATCH_LOI" } });
-    await nhaAnToan();
-    await thu("dispatch", "rejected", "DISPATCH_LOI");
-    await phat({ status: "rejected", reason: "DISPATCH_LOI" });
+    // fix round 1 minor 3 — chốt dòng chờ TRƯỚC, nhả khoá SAU. fix round 2 — chốt/ghi sổ lỗi KHÔNG được bỏ qua việc nhả khoá và
+    // KHÔNG được che lỗi GỐC của dispatch: mỗi bước tự bắt + ghi log, rồi ném lại đúng `err`.
+    try {
+      await doiTrangThaiCho(db, requestId, userId, "confirmed", "bi_tu_choi_ghi", { resultJson: { ma: "DISPATCH_LOI" } });
+    } catch (e) {
+      ghiLoiChot(e, requestId, "dispatch_nem");
+    } finally {
+      await nhaAnToan();
+    }
+    try {
+      await thu("dispatch", "rejected", "DISPATCH_LOI");
+      await phat({ status: "rejected", reason: "DISPATCH_LOI" });
+    } catch (e) {
+      ghiLoiChot(e, requestId, "attempts_dispatch_nem");
+    }
     throw err;
   }
   // QĐ T9-4 — chưa qua đặt chỗ ⇒ không để lại uỷ quyền 'confirmed'. fix round 1 minor 4 — dispatcher trả `rejected` (KHÔNG gửi:
@@ -929,14 +952,21 @@ export async function xacNhanGhiTag(
   // được nói 'executed' cho một lệnh chưa từng tới thiết bị. fix round 1 minor 3 — chốt TRƯỚC, nhả khoá SAU.
   const ketCuc = { resultJson: { status: kq.status, reason: kq.reason ?? null, commandLogIds: kq.commandLogIds } };
   const khongGui = !kq.simulated && kq.status === "rejected";
-  if (!(await doiTrangThaiCho(db, requestId, userId, "confirmed", kq.simulated ? "executed" : "bi_tu_choi_ghi", {
-    ...(kq.simulated ? { executedAt: luc() } : {}),
-    ...ketCuc,
-  })) && khongGui) {
-    await doiTrangThaiCho(db, requestId, userId, "executed", "bi_tu_choi_ghi", ketCuc);
+  // fix round 2 — chốt lỗi (DB) ⇒ ghi log, VẪN nhả khoá (finally) và VẪN ghi attempts + trả kết quả thật của dispatch (lệnh đã tới
+  // dispatcher; command_log là sự thật). Dòng chờ có thể còn 'confirmed'/'executed' — log nói rõ.
+  try {
+    if (!(await doiTrangThaiCho(db, requestId, userId, "confirmed", kq.simulated ? "executed" : "bi_tu_choi_ghi", {
+      ...(kq.simulated ? { executedAt: luc() } : {}),
+      ...ketCuc,
+    })) && khongGui) {
+      await doiTrangThaiCho(db, requestId, userId, "executed", "bi_tu_choi_ghi", ketCuc);
+    }
+  } catch (e) {
+    ghiLoiChot(e, requestId, "sau_dispatch");
+  } finally {
+    // 8. nhả khoá
+    await nhaAnToan();
   }
-  // 8. nhả khoá
-  await nhaAnToan();
 
   // giá trị đọc lại (đường HMI luôn đọc lại — Review Focus 5) nằm ở hàng KẾT QUẢ của command_log
   let readBackValue: unknown;

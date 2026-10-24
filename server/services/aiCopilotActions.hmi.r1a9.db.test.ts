@@ -11,6 +11,7 @@ import { aiPendingActions } from "../../drizzle/schema";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { cancelAction, confirmAction, getPendingActionForUser, laLenhHmi, listPendingActionsForUser } from "./aiCopilotActions";
 import { countInbox, listInbox } from "./aiActionInbox";
+import { getCommandCenterReadModel } from "./aiAgentCenterService";
 
 const RUN = `r1a9ai${process.pid}${Date.now().toString(36)}`;
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -82,6 +83,13 @@ describe("lệnh HMI không đi qua các đường AI", () => {
       expect(kq).toMatchObject({ ok: false, status: "not_found" });
       expect(await trangThai(id)).toBe(truoc);
     }
+  });
+
+  it("fix round 2 — Agent Center taskFeed không có hàng HMI, có hàng AI", async () => {
+    const { taskFeed } = await getCommandCenterReadModel({ limit: 200 });
+    const feedIds = taskFeed.map((t) => t.id);
+    expect(feedIds).toContain(`action:${ids.ai}`);
+    for (const id of [ids.hmi, ids.hmiHet, ids.hmiCho]) expect(feedIds).not.toContain(`action:${id}`);
   });
 
   it("cancelAction trên hàng HMI (proposed hay confirmed đang gửi) ⇒ not_found, trạng thái giữ nguyên", async () => {
