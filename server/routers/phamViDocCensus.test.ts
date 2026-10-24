@@ -910,15 +910,9 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // processResult.listBySerial|stats|metricSeries|spcChart|fleetRollup|envSeries|dailyRollup · defectDisposition.listByInspection|listOpen|countOpen|reInspectStatus|repairQueue|listBySerial|repairStats. 20 dòng sổ nợ đã GỠ.
 // Cùng lô vá 6 MUTATION (sổ nợ ghi −6) và processResult.record (chưa nằm trong sổ). Chưa vá, để L7: bom.getDefinition/listDefinitions + CRUD định nghĩa BOM = dữ liệu chủ theo mẫu sản phẩm (không cột nhà máy).
 // Chứng minh: `loTruyXuatPhamVi.db.test.ts` (13 ca CSDL thật; 13/13 đỏ trên mã cũ; đột biến 58/58 bị bắt sau khi bổ sung 3 ca). Kèm vá lỗi CÓ SẴN: getReInspectStatus so sánh thời gian qua Date của JS (lệch múi giờ ⇒ chính hàng gốc bị tính là "muộn hơn").
-// ★★ 2026-10-25 (điểm mù bộ quét ĐỌC, đối chiếu phamViGhiScan 44b4bc20b): **A 270 → 277 → 276 (rootCause.get đã vá ⇒ S) · S 443 → 436 → 437 · B/C/D/tong unchanged.** `nhomCua` đòi S = danh tính RỜI TAY **VÀ ĐI VÀO CỔNG**
-// (lời gọi tới bộ phân giải gốc `TEN_PHAN_GIAI`, hàm dẫn xuất tới được nó [bao đóng ngược `congDoc`], hoặc hàm đặt tên `*TrongPhamVi`/`*TheoPhamVi`; đối số mang `ctx`/`ctx.user…`/biến gán từ chúng).
-// CHÍNH XÁC 7 thủ tục S → A (đo trên cây): rootCause.get (LỖ THẬT) · alert.list · changeover.listMine · repoWorkspace.listFiles|readFile|grep · scadaCommands.trangThai — xem khối ghi chú ở cuối `phamViDocBaseline.ts`.
-// Mutation trong bộ ghi KHÔNG đổi. Kiểm: hoàn nguyên bản vá ⇒ S/A trở lại 443/270 (xem ca §6 "danh tính không vào cổng").
-// ★★ 2026-10-25 (lô L3): **A 276 → 254 · S 437 → 459 · B/C/D/tong unchanged.** CHÍNH XÁC 22 thủ tục ĐỌC A → S: programming.listProjects|getProject|listArtifacts|getArtifact|listBuilds|listDeployments|listDeployApprovals|fleetVersionMatrix|listSymbols ·
-// ir.listFlows|getFlow|diffVersions|mergeVersions · inspectionProgram.list|get|getActive|compare · sop.list|get|resolveActive|executions|execution. 22 dòng sổ nợ đọc đã GỠ. Cùng lô vá 33 MUTATION (sổ nợ ghi −33).
-// Quyết chủ dự án 2026-10-25: chương trình kiểm tra cấp SẢN PHẨM + SOP không gắn trạm = dùng chung (đọc chung, ghi chỉ toàn quyền). Chứng minh: `loChuongTrinhPhamVi.db.test.ts` (17 ca; 17/17 đỏ trên mã cũ; đột biến 73/73 bị bắt
-// + đột biến KÉP cho cặp cổng dư meta/handler của deployBuild·deployToFleet). Lỗ nặng nhất: deployBuild/requestDeployApproval/deployToFleet chỉ kiểm phạm vi khi người gọi TỰ gửi expectedProjectId.
-const GHIM = { A: 254, B: 8, C: 483, D: 1198, S: 459, tong: 2402 } as const;
+// 2026-10-25 (kiểm định, lô W7c, migration 0421): thiết bị đo + hiệu chuẩn + MSA ĐỌC theo nhà máy ⇒ 7 thủ tục đọc C → S (instrument.list|getById · calibration.list|health · msaRecord.list · msaWizard.getStudy|listByProduct): C 483 → 476 · S 423 → 430.
+// 2026-10-25 gộp L2 (A270/C483/S443) với W7c (7 C→S) ⇒ A270 · C476 · S450 (đo bằng census).
+const GHIM = { A: 270, B: 8, C: 476, D: 1198, S: 450, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

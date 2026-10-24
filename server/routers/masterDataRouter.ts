@@ -190,7 +190,137 @@ async function congSanPhamTho(bieuThuc: string, scope?: PhamViNguoiXem): Promise
   return sql`(${sql.join(ids.map((f) => congSanPhamTrongNhaMay(sql.raw(bieuThuc), f)), sql` OR `)})`;
 }
 
-async function insertOne(table: any, values: Record<string, any>): Promise<number> {
+// ═══════════════════════════════════════════════════════════════════════════════
+// PHẠM VI GHI (rà bảo mật 2026-10-24, lô W7 — kiểm định phamViGhi). Trước: create/update/delete/bulk/import ghi lên BẤT KỲ hàng nào theo id / mã client
+// gửi và để client TỰ KHAI `factoryCode`/`corporateCode` của hàng mới ⇒ người nhà máy A sửa/xoá/ghi đè (import upsert theo code!) danh mục nhà máy B. Luật:
+// hàng thấy được ⇔ ĐÚNG vị từ ĐỌC (`congMaTenant`; bảng con chiếu qua cha: ngày lịch→lịch, ca của ngày→ngày→lịch, vị trí kho→kho, tồn kho→kho theo mã);
+// hàng ngoài phạm vi ≡ không tồn tại (NOT_FOUND "record"); hàng MỚI phải mang mã tenant TRONG phạm vi (không khai: đúng MỘT nhà máy được gán ⇒ đóng dấu,
+// nhiều nhà máy ⇒ BAD_REQUEST); `scope` bỏ trống / admin ⇒ giữ nguyên hành vi cũ. Chỉ truyền `scope` ở router mà bảng có mã tenant — danh mục KHÔNG có mã tenant
+// (skills · units_of_measure · unit_conversions · material_classes · user_certifications) CHƯA được phạm vi hoá (chờ quyết định chủ dự án: dùng chung hay thêm cột).
+// ═══════════════════════════════════════════════════════════════════════════════
+const khongThayHang = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "record" }, "Bản ghi không tồn tại.");
+
+/** Có nên kiểm không: người gọi có danh tính, KHÔNG phải admin (phạm vi toàn quyền). */
+const canKiemPhamVi = (scope?: PhamViNguoiXem): scope is PhamViNguoiXem => !!scope?.userId && scope.userRole !== "admin";
+
+async function maDuocGan(scope: PhamViNguoiXem): Promise<{ corporateCodes: string[]; factoryCodes: string[]; isAdmin: boolean }> {
+  const { getUserAssignmentCodes } = await import("../_core/accessControl");
+  return getUserAssignmentCodes(scope.userId!, scope.userRole ?? "user");
+}
+
+/** Hàng với (factoryCode, corporateCode) này có thấy được không — CÙNG phép HOẶC-hai-danh-sách của `congMaTenant`. */
+function maTenantThayDuoc(fc: unknown, cc: unknown, g: { corporateCodes: string[]; factoryCodes: string[] }): boolean {
+  return (typeof fc === "string" && g.factoryCodes.includes(fc)) || (typeof cc === "string" && g.corporateCodes.includes(cc));
+}
+
+/** Hàng `id` của `table` có trong phạm vi người gọi không (chiếu qua cha cho bảng con). Toàn quyền ⇒ true. */
+async function hangThayDuocGhi(table: any, id: number, scope?: PhamViNguoiXem): Promise<boolean> {
+  if (!canKiemPhamVi(scope)) return true;
+  const db = await getDb();
+  if (!db) return false;
+  if (table === calendarDays || table === calendarDayShifts) {
+    const cong = await congMaTenant(cotMaTenant(plantCalendars), scope);
+    if (!cong) return true;
+    const nhanh =
+      table === calendarDays
+        ? db.select({ id: calendarDays.id }).from(calendarDays).innerJoin(plantCalendars, eq(plantCalendars.id, calendarDays.calendarId)).where(and(eq(calendarDays.id, id), cong))
+        : db.select({ id: calendarDayShifts.id }).from(calendarDayShifts)
+            .innerJoin(calendarDays, eq(calendarDays.id, calendarDayShifts.calendarDayId))
+            .innerJoin(plantCalendars, eq(plantCalendars.id, calendarDays.calendarId))
+            .where(and(eq(calendarDayShifts.id, id), cong));
+    return (await nhanh.limit(1)).length > 0;
+  }
+  if (table === storageLocations) {
+    const cong = await congMaTenant(cotMaTenant(warehouses), scope);
+    if (!cong) return true;
+    return (await db.select({ id: storageLocations.id }).from(storageLocations).innerJoin(warehouses, eq(warehouses.id, storageLocations.warehouseId)).where(and(eq(storageLocations.id, id), cong)).limit(1)).length > 0;
+  }
+  if (table === inventoryBalances) {
+    const cong = await congMaTenant(cotMaTenant(warehouses), scope);
+    if (!cong) return true;
+    return (await db.select({ id: inventoryBalances.id }).from(inventoryBalances).innerJoin(warehouses, eq(warehouses.code, inventoryBalances.warehouseCode)).where(and(eq(inventoryBalances.id, id), cong)).limit(1)).length > 0;
+  }
+  if (Object.keys(cotMaTenant(table)).length === 0) return true; // danh mục KHÔNG có mã tenant: chưa phạm vi hoá (xem ghi chú đầu khối)
+  return (await getOne(table, id, scope)) != null;
+}
+
+async function kiemQuyenHangGhi(table: any, id: number, scope?: PhamViNguoiXem): Promise<void> {
+  if (!(await hangThayDuocGhi(table, id, scope))) throw khongThayHang();
+}
+
+/** Giá trị tenant của hàng MỚI: trong phạm vi, hoặc đóng dấu nhà máy duy nhất được gán; bảng con: cha phải trong phạm vi. */
+async function datTenantGhi(table: any, values: Record<string, any>, scope?: PhamViNguoiXem): Promise<Record<string, any>> {
+  if (!canKiemPhamVi(scope)) return values;
+  if (table === calendarDays) {
+    if (values.calendarId != null) await kiemQuyenHangGhi(plantCalendars, Number(values.calendarId), scope);
+    return values;
+  }
+  if (table === storageLocations) {
+    if (values.warehouseId != null) await kiemQuyenHangGhi(warehouses, Number(values.warehouseId), scope);
+    return values;
+  }
+  const cot = cotMaTenant(table);
+  if (Object.keys(cot).length === 0) return values;
+  const g = await maDuocGan(scope);
+  if (g.isAdmin) return values;
+  const fc = values.factoryCode ?? null;
+  const cc = values.corporateCode ?? null;
+  if (fc == null && cc == null) {
+    if (cot.factoryCode !== undefined && g.factoryCodes.length === 1) return { ...values, factoryCode: g.factoryCodes[0] };
+    throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "factoryCode" }, "Cần chọn nhà máy thuộc phạm vi của bạn (factoryCode).");
+  }
+  if (!maTenantThayDuoc(fc, cc, g)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, "Factory not found");
+  return values;
+}
+
+/** Bản vá có đổi mã tenant: hàng SAU khi vá vẫn phải thấy được (không "đẩy" hàng sang nhà máy khác). */
+async function datTenantSuaGhi(table: any, id: number, patch: Record<string, any>, scope?: PhamViNguoiXem): Promise<void> {
+  if (!canKiemPhamVi(scope)) return;
+  if (!("factoryCode" in patch) && !("corporateCode" in patch)) return;
+  if (Object.keys(cotMaTenant(table)).length === 0) return;
+  const g = await maDuocGan(scope);
+  if (g.isAdmin) return;
+  const cu = (await getOne(table, id, scope)) as Record<string, unknown> | null;
+  const sau = { ...(cu ?? {}), ...patch };
+  if (!maTenantThayDuoc(sau.factoryCode, sau.corporateCode, g)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, "Factory not found");
+}
+
+/**
+ * Chứng chỉ kỹ năng của MỘT NGƯỜI (lô W7b, chủ dự án duyệt 2026-10-24): ghi chỉ khi người được cấp thuộc phạm vi người gọi — tức phạm vi nhà máy ĐƯỢC GÁN của họ
+ * giao với phạm vi người gọi — hoặc người gọi toàn quyền. Người được cấp toàn quyền / chưa gán nhà máy nào KHÔNG được người gọi hẹp phạm vi cấp chứng chỉ. Ngoài phạm vi ≡
+ * không tồn tại (NOT_FOUND "user"). `chungChiThuocPhamVi`: cùng luật cho thao tác theo id chứng chỉ (sửa / thu hồi).
+ */
+async function nguoiCapChungChiTrongPhamVi(scope: PhamViNguoiXem | undefined, userId: number): Promise<void> {
+  if (!canKiemPhamVi(scope)) return;
+  const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+  const nguoiGoi = (await resolveTenantFactoryScope(scope)).factoryIds;
+  if (nguoiGoi === null) return;
+  const db = await getDb();
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+  const [u] = await db.select({ id: users.id, role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, userId)).limit(1);
+  let ok = false;
+  if (u && u.isActive) {
+    const duocCap = (await resolveTenantFactoryScope({ userId: u.id, userRole: u.role })).factoryIds;
+    ok = duocCap !== null && duocCap.some((f) => nguoiGoi.includes(f));
+  }
+  if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
+}
+
+async function chungChiThuocPhamVi(scope: PhamViNguoiXem | undefined, certId: number): Promise<void> {
+  if (!canKiemPhamVi(scope)) return;
+  const db = await getDb();
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+  const [c] = await db.select({ userId: userCertifications.userId }).from(userCertifications).where(eq(userCertifications.id, certId)).limit(1);
+  if (!c) throw khongThayHang();
+  try {
+    await nguoiCapChungChiTrongPhamVi(scope, c.userId);
+  } catch {
+    throw khongThayHang();
+  }
+}
+
+async function insertOne(table: any, values: Record<string, any>, scope?: PhamViNguoiXem): Promise<number> {
+  values = await datTenantGhi(table, values, scope);
   const db = await getDb();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   try {
@@ -201,7 +331,9 @@ async function insertOne(table: any, values: Record<string, any>): Promise<numbe
   }
 }
 
-async function updateOne(table: any, id: number, patch: Record<string, any>) {
+async function updateOne(table: any, id: number, patch: Record<string, any>, scope?: PhamViNguoiXem) {
+  await kiemQuyenHangGhi(table, id, scope);
+  await datTenantSuaGhi(table, id, patch, scope);
   const db = await getDb();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   try {
@@ -216,7 +348,8 @@ async function updateOne(table: any, id: number, patch: Record<string, any>) {
   }
 }
 
-async function deleteOne(table: any, id: number) {
+async function deleteOne(table: any, id: number, scope?: PhamViNguoiXem) {
+  await kiemQuyenHangGhi(table, id, scope);
   const db = await getDb();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   await db.delete(table).where(eq(table.id, id));
@@ -284,6 +417,8 @@ async function importByCode(
   opts: {
     transform?: (v: any) => Record<string, any>;
     validateRefs?: (v: any) => Promise<void>;
+    /** Phạm vi người gọi: hàng ngoài phạm vi trùng code ⇒ lỗi dòng (KHÔNG ghi đè); hàng mới đóng dấu tenant trong phạm vi. */
+    scope?: PhamViNguoiXem;
   } = {},
 ): Promise<ImportOutcome> {
   const db = await getDb();
@@ -299,11 +434,13 @@ async function importByCode(
       const code = values.code;
       const [existing] = await db.select({ id: table.id }).from(table).where(eq(table.code, code)).limit(1);
       if (existing) {
+        // mã đã có nhưng thuộc nhà máy KHÁC ⇒ coi như mã trùng (không ghi đè, không lộ sự tồn tại)
+        if (!(await hangThayDuocGhi(table, existing.id, opts.scope))) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "record" }, "Mã đã tồn tại");
         const { code: _omitCode, ...patch } = values;
         await db.update(table).set({ ...patch, updatedAt: new Date() }).where(eq(table.id, existing.id));
         out.updated++;
       } else {
-        await db.insert(table).values(values);
+        await db.insert(table).values(await datTenantGhi(table, values, opts.scope));
         out.inserted++;
       }
     } catch (err) {
@@ -335,12 +472,13 @@ const bulkSetActiveInput = bulkIdsInput.extend({ isActive: z.boolean() });
  * KHÔNG chặn id khác — trả tổng kết {deleted,failed,errors}. Message lỗi đi qua
  * importErrMessage (ẩn SQL thô, unique → "Mã đã tồn tại").
  */
-async function bulkDeleteByIds(table: any, ids: number[]): Promise<BulkOutcome> {
+async function bulkDeleteByIds(table: any, ids: number[], scope?: PhamViNguoiXem): Promise<BulkOutcome> {
   const db = await getDb();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   const out: BulkOutcome = { deleted: 0, failed: 0, errors: [] };
   for (const id of ids) {
     try {
+      await kiemQuyenHangGhi(table, id, scope);
       await db.delete(table).where(eq(table.id, id));
       out.deleted! += 1;
     } catch (err) {
@@ -352,12 +490,13 @@ async function bulkDeleteByIds(table: any, ids: number[]): Promise<BulkOutcome> 
 }
 
 /** Bật/tắt isActive hàng loạt theo id (cập nhật updatedAt). Đếm updated/failed như trên. */
-async function bulkSetActiveByIds(table: any, ids: number[], isActive: boolean): Promise<BulkOutcome> {
+async function bulkSetActiveByIds(table: any, ids: number[], isActive: boolean, scope?: PhamViNguoiXem): Promise<BulkOutcome> {
   const db = await getDb();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   const out: BulkOutcome = { updated: 0, failed: 0, errors: [] };
   for (const id of ids) {
     try {
+      await kiemQuyenHangGhi(table, id, scope);
       await db.update(table).set({ isActive, updatedAt: new Date() }).where(eq(table.id, id));
       out.updated! += 1;
     } catch (err) {
@@ -412,9 +551,9 @@ const suppliersRouter = router({
       factoryCode: z.string().max(50).optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { rating, ...rest } = input;
-      const id = await insertOne(suppliers, { ...rest, ...(rating != null ? { rating: String(rating) } : {}) } as InsertSupplier);
+      const id = await insertOne(suppliers, { ...rest, ...(rating != null ? { rating: String(rating) } : {}) } as InsertSupplier, phamViCua(ctx));
       return { id };
     }),
   update: protectedProcedure
@@ -434,29 +573,30 @@ const suppliersRouter = router({
       factoryCode: z.string().max(50).nullish(),
       notes: z.string().nullish(),
     }))
-    .mutation(({ input }) => {
+    .mutation(({ input, ctx }) => {
       const { id, rating, ...rest } = input;
-      return updateOne(suppliers, id, clean({ ...rest, ...(rating != null ? { rating: String(rating) } : {}) }));
+      return updateOne(suppliers, id, clean({ ...rest, ...(rating != null ? { rating: String(rating) } : {}) }), phamViCua(ctx));
     }),
   delete: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(suppliers, input.id)),
+    .mutation(({ input, ctx }) => deleteOne(suppliers, input.id, phamViCua(ctx))),
   /** Doc 42 Đợt 4C J1 — xoá hàng loạt NCC đã chọn (gate canDelete). */
   bulkDelete: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(bulkIdsInput)
-    .mutation(({ input }) => bulkDeleteByIds(suppliers, input.ids)),
+    .mutation(({ input, ctx }) => bulkDeleteByIds(suppliers, input.ids, phamViCua(ctx))),
   /** Doc 42 Đợt 4C J1 — bật/tắt trạng thái hàng loạt NCC đã chọn (gate canEdit). */
   bulkSetActive: protectedProcedure
     .use(requirePermission(MODULE, "canEdit"))
     .input(bulkSetActiveInput)
-    .mutation(({ input }) => bulkSetActiveByIds(suppliers, input.ids, input.isActive)),
+    .mutation(({ input, ctx }) => bulkSetActiveByIds(suppliers, input.ids, input.isActive, phamViCua(ctx))),
   /** Doc 42 Đợt 4A #1 — nhập hàng loạt NCC (upsert theo code). */
   importRows: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(importInput)
-    .mutation(({ input }) => importByCode(suppliers, input.rows, supplierImportSchema, {
+    .mutation(({ input, ctx }) => importByCode(suppliers, input.rows, supplierImportSchema, {
+      scope: phamViCua(ctx),
       transform: (v) => {
         const { rating, ...rest } = v;
         return { ...rest, ...(rating != null ? { rating: String(rating) } : {}) };
@@ -577,11 +717,11 @@ const materialsRouter = router({
       factoryCode: z.string().max(50).optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       // doc 42 Đợt 4A #2 — mã tham chiếu phải TỒN TẠI (chặn đường API trực tiếp).
       await requireRef(input.materialClass, materialClasses, "Nhóm vật tư");
       await requireRef(input.unit, unitsOfMeasure, "Đơn vị");
-      return { id: await insertOne(materials, input as InsertMaterial) };
+      return { id: await insertOne(materials, input as InsertMaterial, phamViCua(ctx)) };
     }),
   update: protectedProcedure
     .use(requirePermission(MODULE, "canEdit"))
@@ -601,32 +741,33 @@ const materialsRouter = router({
       factoryCode: z.string().max(50).nullish(),
       notes: z.string().nullish(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...rest } = input;
       // Chỉ validate khi có mã (null = xoá tham chiếu → bỏ qua).
       await requireRef(rest.materialClass, materialClasses, "Nhóm vật tư");
       await requireRef(rest.unit, unitsOfMeasure, "Đơn vị");
-      return updateOne(materials, id, clean(rest));
+      return updateOne(materials, id, clean(rest), phamViCua(ctx));
     }),
   delete: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(materials, input.id)),
+    .mutation(({ input, ctx }) => deleteOne(materials, input.id, phamViCua(ctx))),
   /** Doc 42 Đợt 4C J1 — xoá hàng loạt vật tư đã chọn (gate canDelete). */
   bulkDelete: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(bulkIdsInput)
-    .mutation(({ input }) => bulkDeleteByIds(materials, input.ids)),
+    .mutation(({ input, ctx }) => bulkDeleteByIds(materials, input.ids, phamViCua(ctx))),
   /** Doc 42 Đợt 4C J1 — bật/tắt trạng thái hàng loạt vật tư đã chọn (gate canEdit). */
   bulkSetActive: protectedProcedure
     .use(requirePermission(MODULE, "canEdit"))
     .input(bulkSetActiveInput)
-    .mutation(({ input }) => bulkSetActiveByIds(materials, input.ids, input.isActive)),
+    .mutation(({ input, ctx }) => bulkSetActiveByIds(materials, input.ids, input.isActive, phamViCua(ctx))),
   /** Doc 42 Đợt 4A #1 — nhập hàng loạt vật tư (upsert theo code + validate ref). */
   importRows: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(importInput)
-    .mutation(({ input }) => importByCode(materials, input.rows, materialImportSchema, {
+    .mutation(({ input, ctx }) => importByCode(materials, input.rows, materialImportSchema, {
+      scope: phamViCua(ctx),
       validateRefs: async (v) => {
         await requireRef(v.materialClass, materialClasses, "Nhóm vật tư");
         await requireRef(v.unit, unitsOfMeasure, "Đơn vị");
@@ -675,7 +816,7 @@ const customersRouter = router({
       factoryCode: z.string().max(50).optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => ({ id: await insertOne(customers, input as InsertCustomer) })),
+    .mutation(async ({ input, ctx }) => ({ id: await insertOne(customers, input as InsertCustomer, phamViCua(ctx)) })),
   update: protectedProcedure
     .use(requirePermission(MODULE, "canEdit"))
     .input(idInput.extend({
@@ -690,29 +831,29 @@ const customersRouter = router({
       factoryCode: z.string().max(50).nullish(),
       notes: z.string().nullish(),
     }))
-    .mutation(({ input }) => {
+    .mutation(({ input, ctx }) => {
       const { id, ...rest } = input;
-      return updateOne(customers, id, clean(rest));
+      return updateOne(customers, id, clean(rest), phamViCua(ctx));
     }),
   delete: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(customers, input.id)),
+    .mutation(({ input, ctx }) => deleteOne(customers, input.id, phamViCua(ctx))),
   /** Doc 42 Đợt 4C J1 — xoá hàng loạt khách hàng đã chọn (gate canDelete). */
   bulkDelete: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(bulkIdsInput)
-    .mutation(({ input }) => bulkDeleteByIds(customers, input.ids)),
+    .mutation(({ input, ctx }) => bulkDeleteByIds(customers, input.ids, phamViCua(ctx))),
   /** Doc 42 Đợt 4C J1 — bật/tắt trạng thái hàng loạt khách hàng đã chọn (gate canEdit). */
   bulkSetActive: protectedProcedure
     .use(requirePermission(MODULE, "canEdit"))
     .input(bulkSetActiveInput)
-    .mutation(({ input }) => bulkSetActiveByIds(customers, input.ids, input.isActive)),
+    .mutation(({ input, ctx }) => bulkSetActiveByIds(customers, input.ids, input.isActive, phamViCua(ctx))),
   /** Doc 42 Đợt 4A #1 — nhập hàng loạt khách hàng (upsert theo code). */
   importRows: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
     .input(importInput)
-    .mutation(({ input }) => importByCode(customers, input.rows, customerImportSchema)),
+    .mutation(({ input, ctx }) => importByCode(customers, input.rows, customerImportSchema, { scope: phamViCua(ctx) })),
 });
 
 // ─── Skills + User certifications ───────────────────────────────────────────
@@ -776,6 +917,7 @@ const skillsRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await nguoiCapChungChiTrongPhamVi(phamViCua(ctx), input.userId); // phạm vi nhà máy: người được cấp
       const id = await insertOne(userCertifications, {
         userId: input.userId,
         skillId: input.skillId,
@@ -794,8 +936,9 @@ const skillsRouter = router({
       isActive: z.boolean().optional(),
       notes: z.string().nullish(),
     }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, expiresAt, ...rest } = input;
+      await chungChiThuocPhamVi(phamViCua(ctx), id); // phạm vi nhà máy: người sở hữu chứng chỉ
       return updateOne(userCertifications, id, clean({
         ...rest,
         ...(expiresAt !== undefined ? { expiresAt: expiresAt ? new Date(expiresAt) : null } : {}),
@@ -804,7 +947,10 @@ const skillsRouter = router({
   revokeCertification: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(userCertifications, input.id)),
+    .mutation(async ({ input, ctx }) => {
+      await chungChiThuocPhamVi(phamViCua(ctx), input.id); // phạm vi nhà máy: người sở hữu chứng chỉ
+      return deleteOne(userCertifications, input.id);
+    }),
 });
 
 // ─── Skill matrix: user × skill certifications (doc 42 Đợt 4B H1) ────────────
@@ -860,6 +1006,7 @@ const userCertificationsRouter = router({
       notes: z.string().nullish(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await nguoiCapChungChiTrongPhamVi(phamViCua(ctx), input.userId); // phạm vi nhà máy: người được cấp
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const expires = input.expiresAt ? new Date(input.expiresAt) : null;
@@ -895,7 +1042,10 @@ const userCertificationsRouter = router({
   revoke: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(userCertifications, input.id)),
+    .mutation(async ({ input, ctx }) => {
+      await chungChiThuocPhamVi(phamViCua(ctx), input.id); // phạm vi nhà máy: người sở hữu chứng chỉ
+      return deleteOne(userCertifications, input.id);
+    }),
 });
 
 // ─── Tools / Fixtures / Consumables ─────────────────────────────────────────
@@ -926,7 +1076,7 @@ const toolsRouter = router({
       factoryCode: z.string().max(50).optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => ({ id: await insertOne(tools, input as InsertTool) })),
+    .mutation(async ({ input, ctx }) => ({ id: await insertOne(tools, input as InsertTool, phamViCua(ctx)) })),
   update: protectedProcedure
     .use(requirePermission(MODULE, "canEdit"))
     .input(idInput.extend({
@@ -942,14 +1092,14 @@ const toolsRouter = router({
       factoryCode: z.string().max(50).nullish(),
       notes: z.string().nullish(),
     }))
-    .mutation(({ input }) => {
+    .mutation(({ input, ctx }) => {
       const { id, ...rest } = input;
-      return updateOne(tools, id, clean(rest));
+      return updateOne(tools, id, clean(rest), phamViCua(ctx));
     }),
   delete: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(tools, input.id)),
+    .mutation(({ input, ctx }) => deleteOne(tools, input.id, phamViCua(ctx))),
 });
 
 // ─── Units of Measure (+conversions) ────────────────────────────────────────
@@ -1059,7 +1209,7 @@ const calendarRouter = router({
       isActive: z.boolean().optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => ({ id: await insertOne(plantCalendars, input as InsertPlantCalendar) })),
+    .mutation(async ({ input, ctx }) => ({ id: await insertOne(plantCalendars, input as InsertPlantCalendar, phamViCua(ctx)) })),
   update: protectedProcedure
     .use(requirePermission(MODULE, "canEdit"))
     .input(idInput.extend({
@@ -1069,14 +1219,14 @@ const calendarRouter = router({
       isActive: z.boolean().optional(),
       notes: z.string().nullish(),
     }))
-    .mutation(({ input }) => {
+    .mutation(({ input, ctx }) => {
       const { id, ...rest } = input;
-      return updateOne(plantCalendars, id, clean(rest));
+      return updateOne(plantCalendars, id, clean(rest), phamViCua(ctx));
     }),
   delete: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(plantCalendars, input.id)),
+    .mutation(({ input, ctx }) => deleteOne(plantCalendars, input.id, phamViCua(ctx))),
 
   // Calendar days (working / holiday / planned_downtime)
   listDays: protectedProcedure
@@ -1098,7 +1248,7 @@ const calendarRouter = router({
       dayType: calendarDayType.optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => ({ id: await insertOne(calendarDays, input as InsertCalendarDay) })),
+    .mutation(async ({ input, ctx }) => ({ id: await insertOne(calendarDays, input as InsertCalendarDay, phamViCua(ctx)) })),
   updateDay: protectedProcedure
     .use(requirePermission(MODULE, "canEdit"))
     .input(idInput.extend({
@@ -1106,14 +1256,14 @@ const calendarRouter = router({
       dayType: calendarDayType.optional(),
       notes: z.string().nullish(),
     }))
-    .mutation(({ input }) => {
+    .mutation(({ input, ctx }) => {
       const { id, ...rest } = input;
-      return updateOne(calendarDays, id, clean(rest));
+      return updateOne(calendarDays, id, clean(rest), phamViCua(ctx));
     }),
   deleteDay: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(calendarDays, input.id)),
+    .mutation(({ input, ctx }) => deleteOne(calendarDays, input.id, phamViCua(ctx))),
 
   // ── doc 42 T9 — ca làm việc áp dụng cho từng ngày lịch (junction) ───────────
   // Bảng nối calendar_days ↔ shift_configs: 1 ngày chạy nhiều ca. TÁI DÙNG
@@ -1180,9 +1330,18 @@ const calendarRouter = router({
       calendarDayId: z.number().int().positive(),
       shiftConfigId: z.number().int().positive(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+      // phạm vi nhà máy (rà bảo mật 2026-10-24): ngày lịch phải thuộc lịch trong phạm vi VÀ ca phải thuộc nhà máy trong phạm vi (cùng `listShiftConfigs`)
+      if (canKiemPhamVi(phamViCua(ctx))) {
+        if (!(await hangThayDuocGhi(calendarDays, input.calendarDayId, phamViCua(ctx)))) throw khongThayHang();
+        const idsNhaMay = await idsTrongPhamVi("factory", phamViCua(ctx));
+        if (idsNhaMay !== null) {
+          const [ca] = await db.select({ f: shiftConfigs.factoryId }).from(shiftConfigs).where(eq(shiftConfigs.id, input.shiftConfigId)).limit(1);
+          if (!ca || ca.f == null || !idsNhaMay.includes(Number(ca.f))) throw khongThayHang();
+        }
+      }
       const [row] = await withDbErrors(async () => db
         .insert(calendarDayShifts)
         .values({
@@ -1201,7 +1360,7 @@ const calendarRouter = router({
   unassignShift: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(calendarDayShifts, input.id)),
+    .mutation(({ input, ctx }) => deleteOne(calendarDayShifts, input.id, phamViCua(ctx))),
 });
 
 // ─── Inventory: Warehouses + Storage locations + Balances ───────────────────
@@ -1227,7 +1386,7 @@ const inventoryRouter = router({
       isActive: z.boolean().optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => ({ id: await insertOne(warehouses, input as InsertWarehouse) })),
+    .mutation(async ({ input, ctx }) => ({ id: await insertOne(warehouses, input as InsertWarehouse, phamViCua(ctx)) })),
   updateWarehouse: protectedProcedure
     .use(requirePermission(MODULE, "canEdit"))
     .input(idInput.extend({
@@ -1237,14 +1396,14 @@ const inventoryRouter = router({
       isActive: z.boolean().optional(),
       notes: z.string().nullish(),
     }))
-    .mutation(({ input }) => {
+    .mutation(({ input, ctx }) => {
       const { id, ...rest } = input;
-      return updateOne(warehouses, id, clean(rest));
+      return updateOne(warehouses, id, clean(rest), phamViCua(ctx));
     }),
   deleteWarehouse: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(warehouses, input.id)),
+    .mutation(({ input, ctx }) => deleteOne(warehouses, input.id, phamViCua(ctx))),
 
   // Storage locations
   listLocations: protectedProcedure
@@ -1276,7 +1435,7 @@ const inventoryRouter = router({
       isActive: z.boolean().optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => ({ id: await insertOne(storageLocations, input as InsertStorageLocation) })),
+    .mutation(async ({ input, ctx }) => ({ id: await insertOne(storageLocations, input as InsertStorageLocation, phamViCua(ctx)) })),
   updateLocation: protectedProcedure
     .use(requirePermission(MODULE, "canEdit"))
     .input(idInput.extend({
@@ -1286,14 +1445,14 @@ const inventoryRouter = router({
       isActive: z.boolean().optional(),
       notes: z.string().nullish(),
     }))
-    .mutation(({ input }) => {
+    .mutation(({ input, ctx }) => {
       const { id, ...rest } = input;
-      return updateOne(storageLocations, id, clean(rest));
+      return updateOne(storageLocations, id, clean(rest), phamViCua(ctx));
     }),
   deleteLocation: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(storageLocations, input.id)),
+    .mutation(({ input, ctx }) => deleteOne(storageLocations, input.id, phamViCua(ctx))),
 
   // Inventory balances
   listBalances: protectedProcedure
@@ -1348,9 +1507,14 @@ const inventoryRouter = router({
       uomCode: z.string().max(32).optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+      // phạm vi nhà máy (rà bảo mật 2026-10-24): kho đích phải trong phạm vi người gọi (theo mã); ngoài phạm vi ≡ không tồn tại
+      if (canKiemPhamVi(phamViCua(ctx))) {
+        const [kho] = await db.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.code, input.warehouseCode)).limit(1);
+        if (!kho || !(await hangThayDuocGhi(warehouses, kho.id, phamViCua(ctx)))) throw khongThayHang();
+      }
       // doc 42 Đợt 4A #2 — mã vật tư / kho / đơn vị phải TỒN TẠI (chặn mã rác qua API).
       await requireRef(input.materialCode, materials, "Vật tư");
       await requireRef(input.warehouseCode, warehouses, "Kho");
@@ -1387,19 +1551,19 @@ const inventoryRouter = router({
       lotCode: z.string().max(64).nullish(),
       notes: z.string().nullish(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, quantityOnHand, ...rest } = input;
       // doc 42 Đợt 4A #2 — nếu đổi đơn vị thì đơn vị mới phải TỒN TẠI.
       await requireRef(rest.uomCode, unitsOfMeasure, "Đơn vị");
       return updateOne(inventoryBalances, id, clean({
         ...rest,
         ...(quantityOnHand != null ? { quantityOnHand: String(quantityOnHand) } : {}),
-      }));
+      }), phamViCua(ctx));
     }),
   deleteBalance: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(inventoryBalances, input.id)),
+    .mutation(({ input, ctx }) => deleteOne(inventoryBalances, input.id, phamViCua(ctx))),
 });
 
 // ─── doc 42 Đợt 5 K1 — Data-quality dashboard (governance) ───────────────────
