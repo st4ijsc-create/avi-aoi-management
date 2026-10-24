@@ -65,10 +65,7 @@
  * Đừng sửa tay để làm cổng xanh — sửa mã, rồi xoá dòng.
  */
 export const NO_PHAM_VI_TUYEN: readonly string[] = [
-  // ── server/_core/index.ts (19) ─────────────────────────────────────────────────────────────────
-  "server/_core/index.ts#GET /api/external/alerts",
-  "server/_core/index.ts#GET /api/external/alerts/:alertId",
-  "server/_core/index.ts#GET /api/external/bulletins",
+  // ── server/_core/index.ts (16) ─────────────────────────────────────────────────────────────────
   "server/_core/index.ts#GET /api/external/dashboard/summary",
   "server/_core/index.ts#GET /api/external/hierarchy/factory/:factoryId",
   "server/_core/index.ts#GET /api/external/hierarchy/mqtt-topics",
