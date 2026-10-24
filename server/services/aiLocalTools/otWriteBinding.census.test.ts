@@ -59,6 +59,41 @@ function nhacToi(n: ts.Node, ten: string): boolean {
   return co;
 }
 
+/**
+ * R1b-1 T10 — đồ thị gọi ĐƠN GIẢN TRONG TỆP: tập tên hàm (khai báo `function` hoặc `const x = (…) => …` / `function` expression) mà thân
+ * NHẮC `runDispatch` hoặc nhắc một hàm khác đã trong tập — bao đóng bắc cầu tới điểm cố định. Bảo thủ (nhắc, không chỉ gọi): thà
+ * bắt thừa một hàm trung gian rồi người viết thêm `otWriteBinding` còn hơn để một tool `execute → chayLenh() → runDispatch()` lọt.
+ * `runDispatch` luôn có mặt trong tập (kể cả khi khai ở tệp khác và chỉ được nhập).
+ */
+function hamToiRunDispatch(sf: ts.SourceFile): Set<string> {
+  const than = new Map<string, ts.Node>();
+  const thu = (n: ts.Node) => {
+    if (ts.isFunctionDeclaration(n) && n.name && n.body) than.set(n.name.text, n.body);
+    else if (
+      ts.isVariableDeclaration(n) &&
+      ts.isIdentifier(n.name) &&
+      n.initializer &&
+      (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer))
+    ) {
+      than.set(n.name.text, n.initializer);
+    }
+    ts.forEachChild(n, thu);
+  };
+  thu(sf);
+  const tap = new Set<string>(["runDispatch"]);
+  for (let doi = true; doi; ) {
+    doi = false;
+    for (const [ten, nd] of than) {
+      if (tap.has(ten)) continue;
+      if ([...tap].some((t) => nhacToi(nd, t))) {
+        tap.add(ten);
+        doi = true;
+      }
+    }
+  }
+  return tap;
+}
+
 interface ViPham {
   tep: string;
   dong: number;
@@ -71,6 +106,7 @@ function quetTep(tepRel: string, maNguon: string): { viPham: ViPham[]; soToolOt:
   const viPham: ViPham[] = [];
   let soToolOt = 0;
   const dong = (n: ts.Node) => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
+  const toiRun = hamToiRunDispatch(sf);
   const di = (n: ts.Node, trongRunDispatch: boolean) => {
     const vao = trongRunDispatch || (ts.isFunctionDeclaration(n) && n.name?.text === "runDispatch");
     if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "dispatch" && !vao) {
@@ -79,7 +115,7 @@ function quetTep(tepRel: string, maNguon: string): { viPham: ViPham[]; soToolOt:
     if (ts.isObjectLiteralExpression(n)) {
       const tenProp = (p: ts.ObjectLiteralElementLike) => (p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : null);
       const exec = n.properties.find((p) => tenProp(p) === "execute");
-      if (exec && nhacToi(exec, "runDispatch")) {
+      if (exec && [...toiRun].some((t) => nhacToi(exec, t))) {
         soToolOt++;
         if (!n.properties.some((p) => tenProp(p) === "otWriteBinding")) {
           viPham.push({ tep: tepRel, dong: dong(n), loai: "execute_runDispatch_thieu_otWriteBinding" });
@@ -144,6 +180,20 @@ describe("census — tool AI tới runDispatch ⇒ có otWriteBinding", () => {
     const a = quetTep("server/services/aiLocalTools/writeHandlers/__gia.ts", thieuHook);
     expect(a.soToolOt).toBe(2);
     expect(a.viPham.map((v) => v.loai)).toEqual(["execute_runDispatch_thieu_otWriteBinding"]);
+
+    // R1b-1 T10 — qua helper TRUNG GIAN trong tệp (execute → chayLenh → … → runDispatch): đồ thị gọi trong tệp phải thấy; helper bắc cầu hai nấc cũng thấy
+    const quaHelper = `
+      async function runDispatch(ctx, args) { return dispatch(args); }
+      async function chayLenh(ctx, p) { return runDispatch(ctx, p); }
+      const baoBoc = async (ctx, p) => chayLenh(ctx, p);
+      registerTool({ name: "h1", kind: "write", execute: async (p, ctx) => chayLenh(ctx, p) });
+      registerTool({ name: "h2", kind: "write", execute: async (p, ctx) => baoBoc(ctx, p) });
+      registerTool({ name: "h3", kind: "write", otWriteBinding: async () => null, execute: async (p, ctx) => baoBoc(ctx, p) });
+      registerTool({ name: "ro", kind: "read", execute: async () => lamGiDoKhac() });`;
+    const h = quetTep("server/services/aiLocalTools/writeHandlers/__gia3.ts", quaHelper);
+    expect(h.soToolOt).toBe(3);
+    expect(h.viPham.map((v) => v.loai)).toEqual(["execute_runDispatch_thieu_otWriteBinding", "execute_runDispatch_thieu_otWriteBinding"]);
+    expect(h.viPham.map((v) => v.dong)).toEqual([5, 6]);
 
     const dispatchLac = `
       async function runDispatch(ctx, args) { return dispatch(args); }
