@@ -889,7 +889,16 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // `phamViCua(ctx)` xuống `lenhHmi.dungMayHmi` ⇒ `idsTrongPhamVi("machine", …, {strict:true})` (machineId từ client ⇒ kiểm lại phạm vi;
 // ngoài phạm vi = không tồn tại = NOT_FOUND). Mutation ⇒ D (bộ suy xếp MỌI mutation vào D). Đo: trên ghim cũ (gốc f5f8f40d9) đỏ ĐÚNG
 // +1 D / +1 tong sau khi thêm, rồi ghim lại. No baseline row added. `tong` 2403 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 333, B: 8, C: 494, D: 1199, S: 369, tong: 2403 } as const;
+// ★★ 2026-10-24 · R1b-1 T6 (mig 0433, FK cascade kênh chế độ / khoá chọn) — **A 333 → 338 · C 494 → 489 · B/D/S/tong unchanged (2403).** KHÔNG thêm thủ tục nào;
+// 5 thủ tục đổi nhóm C → A vì lược đồ drizzle được KHAI THÊM FK (`drizzle/schema/ot.ts`: `scadaKenhCheDo.machineId → machines`, `.adapterId → deviceAdapters`,
+// `scadaKhoaChon.adapterId → deviceAdapters`). CƠ CHẾ (`phamViDocScan.ts` §A): luật 2 — bảng có FK khai báo tới bảng tenant thành tenant; luật 3 —
+// "quy ước học từ chính các FK đã khai": cột `adapterId` lần đầu có FK tới `device_adapters` nên MỌI bảng có cột `adapterId` (commissioning_records, device_tags,
+// uns_tag_mappings) nay được xếp là tenant (adapter → machine). ĐỌC MÃ từng thủ tục: cả 5 nhận `adapterId`/`id` từ client, đọc hàng khoá theo adapter
+// và chỉ có `requirePermission` (vai trò) — KHÔNG lọc phạm vi nhà xưởng ⇒ KHÔNG phải dương tính giả; là nợ CÓ SẴN trước 0433, nay thước thấy:
+//   commissioningRouter.list · commissioningRouter.status · deviceAdapterRouter.tags.listByAdapter · unsMappingRouter.get · unsMappingRouter.list.
+// Đã ghi vào SỔ NỢ (`phamViDocBaseline.ts`, kèm ghi chú ngày); sửa rò = backlog R1b-2, NGOÀI phạm vi T6. Đo: ở 403ca87ac xanh 17/17; đặt lại CHỈ `drizzle/schema/ot.ts`
+// của 403ca87ac thì xanh lại ⇒ nguyên nhân duy nhất là `.references()`. Không gỡ `.references()` cho xanh. `tong` 2403 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 338, B: 8, C: 489, D: 1199, S: 369, tong: 2403 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

@@ -20,7 +20,7 @@
  * fix round 1 (M-3): `cheDoMay` được bọc một bộ đếm (gọi xuyên qua mã thật) — cờ OFF ⇒ 0 lần gọi (không truy vấn thêm).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
-import { eq, inArray, like } from "drizzle-orm";
+import { eq, inArray, like, sql } from "drizzle-orm";
 
 const fake = vi.hoisted(() => ({
   drivers: new Map<number, unknown>(),
@@ -209,6 +209,21 @@ const ENV_KEYS = [
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
+/**
+ * mig 0433: `scada_kenh_che_do.machine_id` -> machines(id) ON DELETE CASCADE, nên MAY_KHAI / MAY_CHUA_KHAI phải là hàng `machines` THẬT.
+ * Chỉ điền cột NOT NULL (mượn stationId + machineType của một máy có sẵn), id cố định, code/tên riêng của bài. Dọn ở afterAll
+ * (xoá máy ⇒ CASCADE dọn nốt hàng kênh chế độ nếu còn).
+ */
+async function xoaMayThat(x: Awaited<ReturnType<typeof d>>) {
+  await x.execute(sql`DELETE FROM machines WHERE id IN (${MAY_CHUA_KHAI}, ${MAY_KHAI})`);
+}
+async function taoMayThat(x: Awaited<ReturnType<typeof d>>) {
+  await xoaMayThat(x);
+  await x.execute(sql`INSERT INTO machines (id, "stationId", code, name, "machineType")
+    SELECT v.id, m."stationId", ${DAU}::text || '-' || v.hau, ${DAU}::text || ' máy ' || v.hau, m."machineType"
+      FROM (VALUES (${MAY_CHUA_KHAI}::int, 'A'), (${MAY_KHAI}::int, 'B')) AS v(id, hau), (SELECT "stationId", "machineType" FROM machines ORDER BY id LIMIT 1) m`);
+}
+
 describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL/REMOTE) trong khối cổng sớm (DB thật)", () => {
   beforeAll(async () => {
     expect(DB_URL).toMatch(/_test/); // cầu chì: không bao giờ chạy trên DB dev
@@ -222,6 +237,7 @@ describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL
       await x.delete(deviceAdapters).where(eq(deviceAdapters.id, a.id));
     }
     await x.delete(scadaKenhCheDo).where(inArray(scadaKenhCheDo.machineId, [MAY_CHUA_KHAI, MAY_KHAI]));
+    await taoMayThat(x); // mig 0433: scada_kenh_che_do.machine_id có FK → machines(id) ON DELETE CASCADE
     const [a] = await x
       .insert(deviceAdapters)
       .values({ code: `${DAU}-A`, name: `${DAU} adapter A`, protocol: "stub", endpoint: "stub://r1a-t4-a", isEnabled: true, machineId: MAY_CHUA_KHAI })
@@ -265,6 +281,7 @@ describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL
       await x.delete(deviceTags).where(eq(deviceTags.adapterId, id));
       await x.delete(deviceAdapters).where(eq(deviceAdapters.id, id));
     }
+    await xoaMayThat(x);
     for (const k of ENV_KEYS) {
       if (savedEnv[k] === undefined) delete process.env[k];
       else process.env[k] = savedEnv[k];

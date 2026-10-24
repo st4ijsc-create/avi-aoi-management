@@ -163,6 +163,13 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/commandLogRouter.ts#commandLogRouter.get",
   "server/routers/commandLogRouter.ts#commandLogRouter.list",
   "server/routers/commandLogRouter.ts#commandLogRouter.stats",
+  // ── server/routers/commissioningRouter.ts (2) ──────────────────────────────────────────────
+  // ★ 2026-10-24 · R1b-1 T6 (mig 0433) — NỢ CÓ SẴN, được thước ĐO THẤY (không phải lỗ mới): `.references()` thêm vào `scadaKenhCheDo` /
+  //   `scadaKhoaChon` (→ machines, → device_adapters) làm cột `adapterId` thành quy ước FK ĐÃ KHAI (luật 3 của `phamViDocScan.ts`), nên MỌI bảng khoá
+  //   theo adapter (commissioning_records, device_tags, uns_tag_mappings) nay thuộc tenant (adapter → machine). Cả 5 mục dưới đây nhận `adapterId`/`id` từ
+  //   client, đọc hàng khoá theo adapter, chỉ có requirePermission (vai trò), KHÔNG lọc phạm vi nhà xưởng ⇒ rò đã tồn tại TRƯỚC 0433. Vá: backlog R1b-2.
+  "server/routers/commissioningRouter.ts#commissioningRouter.list",
+  "server/routers/commissioningRouter.ts#commissioningRouter.status",
   // ── server/routers/componentLibraryRouter.ts (1) ───────────────────────────────────────────
   "server/routers/componentLibraryRouter.ts#componentLibraryRouter.linkStats",
   // ── server/routers/dashboardStatsRouters.ts (1) ────────────────────────────────────────────
@@ -175,9 +182,12 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/defectDispositionRouter.ts#defectDispositionRouter.reInspectStatus",
   "server/routers/defectDispositionRouter.ts#defectDispositionRouter.repairQueue",
   "server/routers/defectDispositionRouter.ts#defectDispositionRouter.repairStats",
-  // ── server/routers/deviceAdapterRouter.ts (2) ──────────────────────────────────────────────
+  // ── server/routers/deviceAdapterRouter.ts (3) ──────────────────────────────────────────────
   "server/routers/deviceAdapterRouter.ts#deviceAdapterRouter.get",
   "server/routers/deviceAdapterRouter.ts#deviceAdapterRouter.list",
+  // ↓ 2026-10-24 · R1b-1 T6 (mig 0433): nợ có sẵn thước mới ĐO THẤY — đọc `device_tags` theo `adapterId` của client, không lọc phạm vi (xem khối
+  //   `commissioningRouter.ts` ở trên). Vá: backlog R1b-2.
+  "server/routers/deviceAdapterRouter.ts#deviceAdapterRouter.tags.listByAdapter",
   // ── server/routers/digitalTwinRouter.ts — ★ ĐỢT 14 LÔ Q1: 5 mục ĐÃ TRẢ, xoá khỏi sổ ────────
   //    twinState · defectHeatmap · wipFlowState · stationLoadHeatmap · predictionOverlay đều đã
   //    mang `phamViCua(ctx)` xuống tầng dữ liệu. Nghiệm thu hai chiều trên CSDL thật ở
@@ -509,6 +519,11 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // doc 81 Đợt 4 Task A3: occupancyGrid · replay · sceneGraph · twinModels đã vá (assertTwinFactoryInScope) — đã GỠ.
   "server/routers/twinRouter.ts#twinRouter.models.list",
   "server/routers/twinRouter.ts#twinRouter.models.resolve",
+  // ── server/routers/unsMappingRouter.ts (2) ─────────────────────────────────────────────────
+  // ↓ 2026-10-24 · R1b-1 T6 (mig 0433): nợ có sẵn thước mới ĐO THẤY — đọc `uns_tag_mappings` theo `adapterId`/`id` của client (hoặc TOÀN BẢNG khi không
+  //   truyền adapterId), không lọc phạm vi (xem khối `commissioningRouter.ts`). Vá: backlog R1b-2.
+  "server/routers/unsMappingRouter.ts#unsMappingRouter.get",
+  "server/routers/unsMappingRouter.ts#unsMappingRouter.list",
   // ── server/routers/userRouters.ts (1) ──────────────────────────────────────────────────────
   "server/routers/userRouters.ts#userAssignmentRouter.getAllUserAssignments",
   // ── server/routers/vda5050Router.ts (2) ────────────────────────────────────────────────────
