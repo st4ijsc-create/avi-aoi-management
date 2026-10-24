@@ -33,8 +33,18 @@ class PT {
   addEventListener(l: string, h: (e: unknown) => void) {
     (this.nghe[l] ??= []).push(h);
   }
+  parentNode: PT | null = null;
   appendChild(c?: PT) {
-    if (c) this.con.push(c);
+    if (c) {
+      c.parentNode = this;
+      this.con.push(c);
+    }
+  }
+  static daGo: PT[] = [];
+  removeChild(c: PT) {
+    PT.daGo.push(c);
+    this.con = this.con.filter((x) => x !== c);
+    c.parentNode = null;
   }
   private _ih = "";
   get innerHTML() {
@@ -67,10 +77,11 @@ function chay() {
   const theTao: string[] = [];
   const daGui: Array<Record<string, unknown>> = [];
   const nghe: Array<(e: { data: Record<string, unknown> }) => void> = [];
+  const ngheDoc: Record<string, Array<(e: unknown) => void>> = {};
   new Function("document", "window", "acquireVsCodeApi", ma)(
     {
       getElementById: nut,
-      addEventListener: () => undefined,
+      addEventListener: (l: string, h: (e: unknown) => void) => (ngheDoc[l] ??= []).push(h),
       body: { classList: { add: () => undefined, remove: () => undefined } },
       createElement: (t: string) => {
         theTao.push(String(t).toLowerCase());
@@ -80,7 +91,13 @@ function chay() {
     { addEventListener: (_l: string, h: (e: { data: Record<string, unknown> }) => void) => nghe.push(h) },
     () => ({ postMessage: (m: Record<string, unknown>) => daGui.push(m) }),
   );
-  return { nut, daGui, theTao, banTin: (m: Record<string, unknown>) => nghe.forEach((h) => h({ data: m })) };
+  return {
+    nut,
+    daGui,
+    theTao,
+    banTin: (m: Record<string, unknown>) => nghe.forEach((h) => h({ data: m })),
+    banDoc: (l: string, e: Record<string, unknown>) => (ngheDoc[l] ?? []).forEach((h) => h(e)),
+  };
 }
 
 describe("webview agent — tĩnh", () => {
@@ -180,7 +197,7 @@ describe("webview agent — hành vi", () => {
     diff1.bam();
     ok1.bam();
     ok1.bam();
-    const [, , bac2] = nutCua(the[1]);
+    const bac2 = nutCua(the[1]).find((p) => p.textContent === "Bác")!;
     tatCa(the[1]).find((p) => p.tag === "input")!.value = "giữ API cũ";
     bac2.bam();
     expect(w.daGui.filter((m) => String(m.loai).startsWith("ag_"))).toEqual([
@@ -300,5 +317,325 @@ describe("webview agent — 👍/👎 câu trả lời cuối (Đợt 5.1 VSCode
     expect(tatCa(w.nut("hoi-thoai")).length).toBe(soLuotTruoc);
     w.banTin({ loai: "ag_phan_hoi_kq", luotId: LUOT, ok: true });
     expect(tatCa(vung).some((p) => p.textContent === "Đã ghi phản hồi.")).toBe(true);
+  });
+});
+
+/**
+ * ★★★ 2026-10-24 — LỖI 1: markdown dựng TĂNG DẦN (không còn khối chữ đặc / ### ** ``` hiện nguyên), trên cả đường Agent lẫn đường Chat/SERVER; cuộn thông minh; thứ bậc tiêu đề.
+ */
+describe("webview — markdown tăng dần (ag_md_dang / md_dang) + cây cuối trong hoan_tat", () => {
+  const cayA = [{ t: "h", cap: 2, con: [{ t: "text", chu: "Tiêu đề" }] }, { t: "p", con: [{ t: "strong", con: [{ t: "text", chu: "đậm" }] }] }, { t: "code", ngonNgu: "bash", ma: "npm i" }];
+  const khungAi = (w: ReturnType<typeof chay>) => {
+    const bb = w.nut("hoi-thoai").con;
+    return bb[bb.length - 1]!.con[1]!; // [nhãn, nội dung] của bong bóng AI cuối
+  };
+
+  it("★★★ ĐƯỜNG AGENT: ag_md_dang thay nội dung bằng CÂY (thẻ h4/strong/pre) — KHÔNG còn chữ thô '###'/'**'; khối mã đang stream KHÔNG có nút hành động", () => {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "ag_md_dang", cay: cayA });
+    const cac = tatCa(w.nut("hoi-thoai"));
+    const tag = cac.map((p) => p.tag);
+    expect(tag).toContain("h4"); // cap 2 ⇒ h4
+    expect(tag).toContain("strong");
+    expect(tag).toContain("pre");
+    expect(cac.map((p) => p.textContent).join("|")).not.toMatch(/[#*]{2}/);
+    expect(cac.filter((p) => p.tag === "button")).toEqual([]); // dangStream ⇒ chưa có Chép/Chèn/Áp dụng
+    // bản KẾ TIẾP thay THẾ (không cộng dồn): chỉ còn đúng một đoạn
+    w.banTin({ loai: "ag_md_dang", cay: [{ t: "p", con: [{ t: "text", chu: "bản mới" }] }] });
+    const doan = tatCa(w.nut("hoi-thoai")).filter((p) => p.className.includes("ag-doan"));
+    expect(doan).toHaveLength(1);
+    expect(tatCa(doan[0]!).map((p) => p.textContent).join("|")).toContain("bản mới");
+    expect(tatCa(doan[0]!).map((p) => p.textContent).join("|")).not.toContain("Tiêu đề");
+    // bản CUỐI (ag_md) có nút hành động
+    w.banTin({ loai: "ag_md", chiSoMaDau: 0, cay: cayA });
+    expect(tatCa(w.nut("hoi-thoai")).filter((p) => p.tag === "button" && p.className === "nut-khoi-ma").length).toBe(3);
+  });
+
+  it("★★★ ĐƯỜNG CHAT/SERVER: token thô CHỈ tới md_dang đầu; sau đó cây là nguồn duy nhất; hoan_tat mang cây CUỐI (có nút khối mã)", () => {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "token", chu: "### Cách chạy" });
+    expect(khungAi(w).textContent).toBe("### Cách chạy"); // trước md_dang: chữ thô (≤ một nhịp tiết lưu)
+    w.banTin({ loai: "md_dang", cay: cayA });
+    expect(khungAi(w).textContent).toBe(""); // thay bằng cây
+    expect(tatCa(khungAi(w)).map((p) => p.tag)).toContain("h4");
+    w.banTin({ loai: "token", chu: " thêm chữ thô" }); // sau md_dang: token KHÔNG cộng chữ thô vào khối
+    expect(tatCa(khungAi(w)).map((p) => p.textContent).join("|")).not.toContain("thêm chữ thô");
+    expect(khungAi(w).textContent).toBe(""); // khối KHÔNG nhận chữ thô nào sau md_dang
+    expect(tatCa(khungAi(w)).filter((p) => p.tag === "button")).toEqual([]);
+    w.banTin({ loai: "hoan_tat", vanBanCuoi: null, canhBao: null, cay: cayA, chiSoMaDau: 7 });
+    const nut = tatCa(khungAi(w)).filter((p) => p.tag === "button" && p.className === "nut-khoi-ma");
+    expect(nut).toHaveLength(3);
+    nut[0]!.bam();
+    expect(w.daGui.find((m) => m.loai === "ag_khoi_ma")).toEqual({ loai: "ag_khoi_ma", chiSo: 7, hanhDong: "chep" });
+  });
+
+  it("★ hoan_tat KHÔNG có cây (host cũ) ⇒ hành vi cũ: textContent = vanBanCuoi", () => {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "token", chu: "thô" });
+    w.banTin({ loai: "hoan_tat", vanBanCuoi: "bản đã lọc", canhBao: null });
+    expect(khungAi(w).textContent).toBe("bản đã lọc");
+  });
+
+  it("★ lịch sử khôi phục: lượt AI có `cay` ⇒ dựng markdown; lượt người dùng giữ chữ", () => {
+    const w = chay();
+    w.banTin({ loai: "khoi_phuc_hoi_thoai", luot: [{ vaiTro: "user", noiDung: "câu hỏi" }, { vaiTro: "assistant", noiDung: "## T", cay: [{ t: "h", cap: 2, con: [{ t: "text", chu: "T" }] }] }], soLuot: 1, soKyTu: 5 });
+    const bb = w.nut("hoi-thoai").con.filter((p) => p.className.includes("luot"));
+    expect(bb[0]!.con[1]!.textContent).toBe("câu hỏi");
+    expect(tatCa(bb[1]!).map((p) => p.tag)).toContain("h4");
+  });
+
+  it("★ bảng nằm trong khung cuộn riêng (.bang-cuon) — không đẩy rộng cả khung chat", () => {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "ag_md", chiSoMaDau: 0, cay: [{ t: "table", dau: [[{ t: "text", chu: "A" }]], hang: [[[{ t: "text", chu: "1" }]]] }] });
+    const cuon = tatCa(w.nut("hoi-thoai")).find((p) => p.className === "bang-cuon");
+    expect(cuon).toBeTruthy();
+    expect(cuon!.con[0]!.tag).toBe("table");
+  });
+});
+
+describe("webview — CSS thứ bậc tiêu đề + nhãn vai (2026-10-24)", () => {
+  const html = dungHtmlBang({ nonce: "N" });
+  const coChu = (nhan: string) => {
+    const i = html.indexOf(nhan);
+    expect(i, nhan).toBeGreaterThan(-1);
+    return parseFloat(html.slice(i + nhan.length));
+  };
+  it("★★★ h3 > h4 > h5 > h6 ≥ chữ thường 13 px (trước đây ### = 10,8 px NHỎ HƠN chữ thường)", () => {
+    const h3 = coChu(".ag-md h3 { font-size: ");
+    const h4 = coChu(".ag-md h4 { font-size: ");
+    const h5 = coChu(".ag-md h5 { font-size: ");
+    const h6 = coChu(".ag-md h6 { font-size: ");
+    expect(h3).toBeGreaterThan(h4);
+    expect(h4).toBeGreaterThan(h5);
+    expect(h5).toBeGreaterThan(h6);
+    expect(h6).toBeGreaterThanOrEqual(13);
+  });
+  it("★ trích dẫn có viền trái + nền; nhãn vai trong lượt: ≥ 12 px, KHÔNG in hoa, KHÔNG mờ", () => {
+    expect(html).toMatch(/\.ag-md blockquote \{[^}]*border-left: 3px solid[^}]*background:/);
+    const i = html.indexOf(".luot > .nhan {");
+    const khoi = html.slice(i, html.indexOf("}", i));
+    expect(khoi).toContain("font-size: 12px");
+    expect(khoi).toContain("text-transform: none");
+    expect(khoi).toContain("opacity: 1");
+  });
+});
+
+describe("webview — cuộn thông minh (chỉ tự cuộn khi đang ở đáy)", () => {
+  type Co = { scrollTop: number; scrollHeight: number; clientHeight?: number };
+  it("★★★ ĐANG Ở ĐÁY ⇒ tin ag_* mới kéo xuống đáy; ĐANG CUỘN LÊN ĐỌC ⇒ KHÔNG đổi scrollTop và hiện '↓ Tin mới'; bấm pill ⇒ xuống đáy và ẩn", () => {
+    const w = chay();
+    const ht = w.nut("hoi-thoai") as unknown as Co;
+    ht.scrollHeight = 2000;
+    ht.clientHeight = 500;
+    ht.scrollTop = 1500; // đúng đáy
+    w.banTin({ loai: "ag_md", chiSoMaDau: 0, cay: [{ t: "p", con: [{ t: "text", chu: "a" }] }] });
+    expect(ht.scrollTop).toBe(2000);
+    expect(w.nut("pill-moi").hidden).toBe(true);
+    // người dùng cuộn lên đọc
+    ht.scrollTop = 300;
+    w.banTin({ loai: "ag_md", chiSoMaDau: 0, cay: [{ t: "p", con: [{ t: "text", chu: "b" }] }] });
+    expect(ht.scrollTop).toBe(300); // KHÔNG giật về đáy
+    expect(w.nut("pill-moi").hidden).toBe(false);
+    w.nut("pill-moi").bam();
+    expect(ht.scrollTop).toBe(ht.scrollHeight);
+    expect(w.nut("pill-moi").hidden).toBe(true);
+  });
+});
+
+describe("thẻ duyệt Agent — thiết kế lại (2026-10-24)", () => {
+  const nut = (t: PT, chu: string) => tatCa(t).find((p) => p.tag === "button" && p.textContent === chu);
+  function mo() {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    return w;
+  }
+  const theCuoi = (w: ReturnType<typeof chay>) => tatCa(w.nut("hoi-thoai")).filter((p) => p.className === "ag-the").at(-1)!;
+  const HET = "Duyệt, tự duyệt các lần sửa tiếp trong lượt này";
+
+  it("★★★ XOÁ: nút riêng 'Xác nhận xoá…' + cảnh báo; lần bấm đầu KHÔNG gửi gì, lần hai mới gửi ag_duyet; không có nút duyệt-hết-lượt", () => {
+    const w = mo();
+    w.banTin({ loai: "ag_the_duyet", id: "x1", loaiDuyet: "ghi", thaoTac: "xoa", tomTat: "Xoá src/cu.ts", duong: "src/cu.ts", coDiff: true, coTheDuyetHet: false });
+    const the = theCuoi(w);
+    expect(tatCa(the).some((p) => String(p.textContent).includes("sẽ bị xoá khỏi workspace"))).toBe(true);
+    expect(nut(the, "Duyệt")).toBeUndefined();
+    const nutXoa = nut(the, "Xác nhận xoá…")!;
+    expect(nutXoa.className).toBe("nut-nguy");
+    nutXoa.bam();
+    expect(w.daGui.filter((m) => m.loai === "ag_duyet")).toHaveLength(0);
+    expect(nutXoa.textContent).toBe("Xoá tệp này");
+    nutXoa.bam();
+    nutXoa.bam();
+    expect(w.daGui.filter((m) => m.loai === "ag_duyet")).toEqual([{ loai: "ag_duyet", id: "x1" }]);
+    expect(nut(the, HET)!.hidden).toBe(true);
+  });
+
+  it("★★★ ghi thường: nút duyệt-hết-lượt CHỈ hiện khi host cho phép; bấm ⇒ ag_duyet_het (một lần) và khoá cả thẻ", () => {
+    const w = mo();
+    w.banTin({ loai: "ag_the_duyet", id: "g1", loaiDuyet: "ghi", thaoTac: "thay", tomTat: "Sửa a.ts", duong: "a.ts", coDiff: true, coTheDuyetHet: true });
+    w.banTin({ loai: "ag_the_duyet", id: "g2", loaiDuyet: "ghi", thaoTac: "thay", tomTat: "Sửa b.ts", duong: "b.ts", coDiff: true, coTheDuyetHet: false });
+    const [t1, t2] = tatCa(w.nut("hoi-thoai")).filter((p) => p.className === "ag-the");
+    expect(nut(t1, HET)!.hidden).toBe(false);
+    expect(nut(t2, HET)!.hidden).toBe(true);
+    nut(t1, HET)!.bam();
+    nut(t1, HET)!.bam();
+    nut(t1, "Duyệt")!.bam();
+    expect(w.daGui.filter((m) => String(m.loai).startsWith("ag_duyet"))).toEqual([{ loai: "ag_duyet_het", id: "g1" }]);
+  });
+
+  it("★★ Bác nhẹ hơn Duyệt (lớp nut-nhe vs nut-chinh); ô lý do ẨN tới khi bấm 'Thêm lý do'", () => {
+    const w = mo();
+    w.banTin({ loai: "ag_the_duyet", id: "b1", loaiDuyet: "ghi", thaoTac: "tao", tomTat: "Tạo c.ts", duong: "c.ts", coDiff: true });
+    const the = theCuoi(w);
+    expect(nut(the, "Duyệt")!.className).toBe("nut-chinh");
+    expect(nut(the, "Bác")!.className).toBe("nut-nhe");
+    const o = tatCa(the).find((p) => p.tag === "input")!;
+    expect(o.hidden).toBe(true);
+    nut(the, "Thêm lý do")!.bam();
+    expect(o.hidden).toBe(false);
+  });
+
+  it("★★ thẻ CHẠY LỆNH giữ nghĩa cũ: 'Chạy' + 'Bác', không có nút duyệt-hết-lượt", () => {
+    const w = mo();
+    w.banTin({ loai: "ag_the_duyet", id: "l1", loaiDuyet: "lenh", tomTat: "npm test", lenh: "npm test", coDiff: false, coTheDuyetHet: false });
+    const the = theCuoi(w);
+    expect(nut(the, "Chạy")).toBeDefined();
+    expect(nut(the, HET)!.hidden).toBe(true);
+    nut(the, "Chạy")!.bam();
+    expect(w.daGui.filter((m) => m.loai === "ag_duyet")).toEqual([{ loai: "ag_duyet", id: "l1" }]);
+  });
+
+  it("★★ ag_tu_duyet ⇒ một dòng 'Đã tự duyệt' nêu tệp (người dùng thấy cái gì đã đi qua)", () => {
+    const w = mo();
+    w.banTin({ loai: "ag_tu_duyet", id: "q", tomTat: "Sửa src/z.ts", duong: "src/z.ts" });
+    expect(tatCa(w.nut("hoi-thoai")).some((p) => String(p.textContent).includes("Đã tự duyệt") && String(p.textContent).includes("src/z.ts"))).toBe(true);
+  });
+});
+
+describe("webview — lỗi có Thử lại · Esc = Dừng · Chép/Tạo lại câu trả lời (2026-10-24)", () => {
+  const nutTheoChu = (p: PT, chu: string) => tatCa(p).filter((x) => x.tag === "button" && x.textContent === chu);
+  const soHoi = (w: ReturnType<typeof chay>) => w.daGui.filter((m) => m.loai === "hoi");
+  function hoi(w: ReturnType<typeof chay>, cau = "câu hỏi") {
+    w.nut("o-nhap").value = cau;
+    w.nut("nut-gui").bam();
+  }
+
+  it("★★★ thẻ lỗi có 'Thử lại': gửi LẠI đúng câu hỏi; mỗi thẻ chỉ một lần; khi đang chạy lượt khác thì KHÔNG gửi chồng", () => {
+    const w = chay();
+    hoi(w, "đọc giúp log");
+    w.banTin({ loai: "loi", thongDiep: "Mất kết nối", moSettings: true });
+    w.banTin({ loai: "loi", thongDiep: "Lỗi nữa", moSettings: false });
+    const [a] = nutTheoChu(w.nut("hoi-thoai") as PT, "Thử lại");
+    const nutThuLai = nutTheoChu(w.nut("hoi-thoai") as PT, "Thử lại");
+    expect(nutThuLai).toHaveLength(2);
+    expect(soHoi(w)).toHaveLength(1);
+    a!.bam();
+    expect(soHoi(w)).toHaveLength(2);
+    expect(soHoi(w)[1]).toMatchObject({ cauHoi: "đọc giúp log" });
+    a!.bam(); // cùng thẻ: đã khoá
+    nutThuLai[1]!.bam(); // thẻ khác nhưng lượt đang chạy ⇒ không gửi chồng
+    expect(soHoi(w)).toHaveLength(2);
+    w.banTin({ loai: "ag_xong", lyDo: "hoan-thanh", coHoanTac: false }); // lượt thử lại XONG, nút Dừng ẩn
+    a!.bam(); // bấm lại ĐÚNG thẻ đã dùng ⇒ vẫn khoá (mỗi thẻ một lần)
+    expect(soHoi(w)).toHaveLength(2);
+  });
+
+  it("★★ lỗi mất kết nối có gợi ý + nút Mở Settings; ag_loi DANG_CHAY/KHONG_WORKSPACE KHÔNG có Thử lại, lỗi khác thì có", () => {
+    const w = chay();
+    hoi(w);
+    w.banTin({ loai: "loi", thongDiep: "Mất kết nối", moSettings: true });
+    const hoiThoai = w.nut("hoi-thoai") as PT;
+    expect(tatCa(hoiThoai).some((x) => x.className === "loi-goi-y")).toBe(true);
+    expect(tatCa(hoiThoai).some((x) => x.className === "nut-mo-settings" && String(x.textContent).startsWith("Mở Settings"))).toBe(true);
+    const truoc = nutTheoChu(hoiThoai, "Thử lại").length;
+    w.banTin({ loai: "ag_loi", thongDiep: "Một lượt đang chạy", ma: "DANG_CHAY" });
+    w.banTin({ loai: "ag_loi", thongDiep: "Chưa mở thư mục", ma: "KHONG_WORKSPACE" });
+    expect(nutTheoChu(hoiThoai, "Thử lại")).toHaveLength(truoc);
+    w.banTin({ loai: "ag_loi", thongDiep: "Lượt hỏng", ma: "LOI" });
+    expect(nutTheoChu(hoiThoai, "Thử lại")).toHaveLength(truoc + 1);
+  });
+
+  it("★★ thẻ lỗi nổi bật bằng thuộc tính data-loi (giữ nguyên lớp luot-he-thong); thông báo thường thì không", () => {
+    const w = chay();
+    hoi(w);
+    w.banTin({ loai: "loi", thongDiep: "x" });
+    const luot = (w.nut("hoi-thoai") as PT).con.filter((c) => c.className.includes("luot-he-thong"));
+    expect(luot.some((c) => c.getAttribute("data-loi") === "1")).toBe(true);
+    w.banTin({ loai: "thong_bao", thongDiep: "y" });
+    expect((w.nut("hoi-thoai") as PT).con.filter((c) => c.getAttribute("data-loi") === "1")).toHaveLength(1);
+  });
+
+  it("★★★ ba chấm chờ AI được gỡ bằng removeChild (DOM thật không có trường con — bản cũ chỉ splice trường của DOM giả nên ba chấm kẹt vĩnh viễn ở trình duyệt thật)", () => {
+    const w = chay();
+    PT.daGo.length = 0;
+    hoi(w);
+    w.banTin({ loai: "ag_md", cay: [{ t: "p", c: [{ t: "text", v: "Xong." }] }], chiSoMaDau: 0 });
+    expect(PT.daGo.some((x) => x.className === "cho-ai")).toBe(true);
+    expect(tatCa(w.nut("hoi-thoai") as PT).some((x) => x.className === "cho-ai")).toBe(false);
+  });
+
+  it("★★★ xong thành công ⇒ hàng 'Chép câu trả lời · Tạo lại' (một hàng duy nhất); Chép ⇒ chep_tra_loi; Tạo lại ⇒ hỏi lại đúng câu; bị dừng ⇒ KHÔNG có hàng", () => {
+    const w = chay();
+    hoi(w, "tóm tắt");
+    w.banTin({ loai: "ag_md", cay: [{ t: "p", c: [{ t: "text", v: "Xong." }] }], chiSoMaDau: 0 });
+    w.banTin({ loai: "ag_xong", lyDo: "hoan-thanh", coHoanTac: false });
+    const hoiThoai = w.nut("hoi-thoai") as PT;
+    expect(nutTheoChu(hoiThoai, "Chép câu trả lời")).toHaveLength(1);
+    nutTheoChu(hoiThoai, "Chép câu trả lời")[0]!.bam();
+    expect(w.daGui.filter((m) => m.loai === "chep_tra_loi")).toHaveLength(1);
+    nutTheoChu(hoiThoai, "Tạo lại")[0]!.bam();
+    expect(soHoi(w)).toHaveLength(2);
+    expect(soHoi(w)[1]).toMatchObject({ cauHoi: "tóm tắt" });
+    // lượt mới đang chạy ⇒ hàng cũ đã gỡ
+    expect(nutTheoChu(hoiThoai, "Chép câu trả lời")).toHaveLength(0);
+    w.banTin({ loai: "ag_xong", lyDo: "huy", coHoanTac: false });
+    expect(nutTheoChu(hoiThoai, "Chép câu trả lời")).toHaveLength(0);
+  });
+
+  it("★★ 'Tạo lại' không gửi khi một lượt đang chạy", () => {
+    const w = chay();
+    hoi(w, "a");
+    w.banTin({ loai: "ag_xong", lyDo: "hoan-thanh", coHoanTac: false });
+    const nutLai = nutTheoChu(w.nut("hoi-thoai") as PT, "Tạo lại")[0]!;
+    w.nut("nut-dung").hidden = false; // giả lập lượt khác đang chạy
+    nutLai.bam();
+    expect(soHoi(w)).toHaveLength(1);
+  });
+
+  it("★★★ Esc = DỪNG lượt đang chạy; rảnh thì không gửi gì", () => {
+    const w = chay();
+    // DOM giả mặc định hidden=false; markup thật: menu/gợi ý/nút Dừng đều mang hidden lúc rảnh
+    w.nut("menu-dinh-kem").hidden = true;
+    w.nut("mention-ds").hidden = true;
+    w.nut("nut-dung").hidden = true;
+    w.banDoc("keydown", { key: "Escape" });
+    expect(w.daGui.filter((m) => m.loai === "dung_hoi")).toHaveLength(0);
+    hoi(w);
+    w.banDoc("keydown", { key: "Escape" });
+    expect(w.daGui.filter((m) => m.loai === "dung_hoi")).toHaveLength(1);
+  });
+
+  it("★★★ Esc KHÔNG dừng khi: đang soạn IME (isComposing/229), menu Đính kèm đang mở (chỉ đóng menu), gợi ý @ đang mở", () => {
+    const w = chay();
+    hoi(w);
+    w.banDoc("keydown", { key: "Escape", isComposing: true });
+    w.banDoc("keydown", { key: "Escape", keyCode: 229 });
+    w.nut("menu-dinh-kem").hidden = false;
+    w.banDoc("keydown", { key: "Escape" });
+    expect(w.nut("menu-dinh-kem").hidden).toBe(true);
+    w.nut("mention-ds").hidden = false;
+    w.banDoc("keydown", { key: "Escape" });
+    expect(w.daGui.filter((m) => m.loai === "dung_hoi")).toHaveLength(0);
+    w.nut("mention-ds").hidden = true;
+    w.banDoc("keydown", { key: "Escape" });
+    expect(w.daGui.filter((m) => m.loai === "dung_hoi")).toHaveLength(1);
   });
 });

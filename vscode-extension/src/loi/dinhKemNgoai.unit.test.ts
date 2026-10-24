@@ -3,6 +3,8 @@ import {
   TOI_DA_ANH,
   TOI_DA_TEP,
   TRAN_ANH_BYTE,
+  TRAN_TONG_ANH_BYTE,
+  boAnh,
   TRAN_TEP_BYTE,
   anhChoKb,
   coAnh,
@@ -43,6 +45,20 @@ describe("kiemTraDinhKemNgoai — ảnh", () => {
     const r = kiemTraDinhKemNgoai(Array.from({ length: TOI_DA_ANH + 2 }, (_, i) => anh(`a${i}.png`)));
     expect(r.ds).toHaveLength(TOI_DA_ANH);
     expect(r.tuChoi).toHaveLength(2);
+  });
+  it("★★ TỔNG ảnh một lượt vượt 12 MB ⇒ nhận phần còn trong trần, báo phần dư (khớp 413 ANH_QUA_LON của /v1)", () => {
+    const to = (ten: string) => anh(ten, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]), Buffer.alloc(5.5 * 1024 * 1024)]).toString("base64"));
+    const r = kiemTraDinhKemNgoai([to("a.png"), to("b.png"), to("c.png")]);
+    expect(r.ds.map((d) => d.ten)).toEqual(["a.png", "b.png"]);
+    expect(r.tuChoi).toHaveLength(1);
+    expect(r.tuChoi[0]).toMatch(/tổng dung lượng ảnh vượt 12\.0 MB/);
+    expect(TRAN_TONG_ANH_BYTE).toBe(12 * 1024 * 1024);
+  });
+  it("boAnh: bỏ MỌI ảnh, giữ tệp văn bản, đếm số ảnh bỏ", () => {
+    const r = kiemTraDinhKemNgoai([anh("a.png"), tep("l.log"), anh("b.png")]);
+    const b = boAnh(r.ds);
+    expect(b.soAnhBo).toBe(2);
+    expect(b.ds.map((d) => d.ten)).toEqual(["l.log"]);
   });
   it("base64 sai ⇒ từ chối", () => {
     expect(kiemTraDinhKemNgoai([anh("x.png", "***không phải base64***")]).tuChoi[0]).toMatch(/base64 sai/);

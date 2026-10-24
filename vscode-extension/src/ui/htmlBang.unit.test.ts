@@ -1027,10 +1027,15 @@ describe("dungHtmlBang — ĐỢT G / TASK G2 / B1-B3: markup tĩnh", () => {
  * danh sách/gỡ/hợp nhất `tepMention` đúng như KẾ HOẠCH B2 đòi.
  */
 describe("webview — ĐỢT G / TASK G2 / B1+B2: danh sách tệp đính kèm", () => {
-  it("★★★ bấm nút đính kèm ⇒ extension nhận ĐÚNG MỘT tin 'xin_dinh_kem'", () => {
+  it("★★★ nút Đính kèm mở MENU; mục 'Tệp trong dự án' ⇒ extension nhận ĐÚNG MỘT tin 'xin_dinh_kem' và menu đóng", () => {
     const w = chayWebview();
+    w.nut("menu-dinh-kem").hidden = true;
     w.nut("nut-dinh-kem").bam();
+    expect(w.nut("menu-dinh-kem").hidden).toBe(false);
+    expect(w.daGui.filter((m) => m.loai === "xin_dinh_kem")).toHaveLength(0); // mở menu CHƯA gửi gì
+    w.nut("mn-dinh-kem-ws").bam();
     expect(w.daGui.filter((m) => m.loai === "xin_dinh_kem")).toHaveLength(1);
+    expect(w.nut("menu-dinh-kem").hidden).toBe(true);
   });
 
   it("★★★ nhận 'them_dinh_kem' ⇒ #ds-dinh-kem HIỆN, có ĐÚNG một mục mang tên tệp + nút gỡ", () => {
@@ -1785,5 +1790,184 @@ describe("webview — đính kèm NGOÀI workspace (dán ảnh Ctrl+V, kéo-th�
     w.banTin({ loai: "them_dinh_kem_ngoai", muc: { loai: "lạ", ten: "b" } });
     w.banTin({ loai: "them_dinh_kem_ngoai" });
     expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 1");
+  });
+});
+
+describe("webview — chế độ agent: đổi ⇒ báo host lưu; tin che_do ⇒ vẽ lại ô (2026-10-24)", () => {
+  it("★★★ đổi ô chế độ ⇒ dat_che_do; che_do hợp lệ ⇒ ô đổi giá trị; chuỗi lạ ⇒ bị bỏ", () => {
+    const w = chayWebview();
+    w.nut("o-che-do").value = "tu-dong";
+    w.nut("o-che-do").kichHoat("change", {});
+    expect(w.daGui.find((m) => m.loai === "dat_che_do")).toEqual({ loai: "dat_che_do", cheDo: "tu-dong" });
+    w.banTin({ loai: "che_do", cheDo: "hoi" });
+    expect(w.nut("o-che-do").value).toBe("hoi");
+    w.banTin({ loai: "che_do", cheDo: "toan_quyen" });
+    expect(w.nut("o-che-do").value).toBe("hoi");
+  });
+});
+
+describe("webview — ô soạn (2026-10-24): Enter gửi · Shift+Enter xuống dòng · IME · tự giãn · menu · chế độ gộp", () => {
+  function phim(w: ReturnType<typeof chayWebview>, e: Record<string, unknown>): { daChan: boolean } {
+    const kq = { daChan: false };
+    w.nut("o-nhap").kichHoat("keydown", { preventDefault: () => (kq.daChan = true), ...e });
+    return kq;
+  }
+  const soHoi = (w: ReturnType<typeof chayWebview>): number => w.daGui.filter((m) => m.loai === "hoi").length;
+
+  it("★★★ Enter ⇒ GỬI đúng một câu hỏi và chặn xuống dòng mặc định", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "xin chào";
+    const kq = phim(w, { key: "Enter" });
+    expect(soHoi(w)).toBe(1);
+    expect(kq.daChan).toBe(true);
+    expect(w.daGui.find((m) => m.loai === "hoi")).toMatchObject({ cauHoi: "xin chào" });
+  });
+
+  it("★★★ Shift+Enter (và Alt+Enter) ⇒ KHÔNG gửi, KHÔNG chặn (để trình duyệt xuống dòng)", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "dòng một";
+    expect(phim(w, { key: "Enter", shiftKey: true }).daChan).toBe(false);
+    expect(phim(w, { key: "Enter", altKey: true }).daChan).toBe(false);
+    expect(soHoi(w)).toBe(0);
+  });
+
+  it("★★★ IME (gõ Telex/VNI): Enter chốt từ khi isComposing ⇒ KHÔNG gửi", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "xin chao";
+    const kq = phim(w, { key: "Enter", isComposing: true });
+    expect(soHoi(w)).toBe(0);
+    expect(kq.daChan).toBe(false);
+  });
+
+  it("★★★ IME: Enter có keyCode 229 (Chromium/Electron báo thế lúc chốt từ) ⇒ KHÔNG gửi", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "xin chao";
+    phim(w, { key: "Enter", keyCode: 229 });
+    expect(soHoi(w)).toBe(0);
+    // ngay sau khi chốt xong, Enter thường ⇒ gửi
+    phim(w, { key: "Enter", keyCode: 13, isComposing: false });
+    expect(soHoi(w)).toBe(1);
+  });
+
+  it("Ctrl+Enter và Cmd+Enter vẫn GỬI (thói quen cũ); phím khác Enter không gửi; ô rỗng không gửi", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "a";
+    phim(w, { key: "Enter", ctrlKey: true });
+    w.nut("o-nhap").value = "b";
+    phim(w, { key: "Enter", metaKey: true });
+    expect(soHoi(w)).toBe(2);
+    w.nut("o-nhap").value = "c";
+    phim(w, { key: "a" });
+    expect(soHoi(w)).toBe(2);
+    w.nut("o-nhap").value = "   ";
+    phim(w, { key: "Enter" });
+    expect(soHoi(w)).toBe(2);
+  });
+
+  it("★★ ô soạn tự giãn theo nội dung, chặn ở 160px", () => {
+    const w = chayWebview();
+    const o = w.nut("o-nhap") as unknown as { style: { height: string }; scrollHeight: number };
+    o.style = { height: "" };
+    o.scrollHeight = 60;
+    w.nut("o-nhap").kichHoat("input", {});
+    expect(o.style.height).toBe("62px");
+    o.scrollHeight = 900;
+    w.nut("o-nhap").kichHoat("input", {});
+    expect(o.style.height).toBe("160px");
+  });
+
+  it("★★ menu Đính kèm: mục 'từ máy' ⇒ xin_dinh_kem_ngoai + đóng; bấm ra ngoài ⇒ đóng; aria-expanded theo trạng thái", () => {
+    const w = chayWebview();
+    w.nut("menu-dinh-kem").hidden = true;
+    w.nut("nut-dinh-kem").bam();
+    expect(w.nut("nut-dinh-kem").getAttribute("aria-expanded")).toBe("true");
+    w.nut("nut-dinh-kem-may").bam();
+    expect(w.daGui.filter((m) => m.loai === "xin_dinh_kem_ngoai")).toHaveLength(1);
+    expect(w.nut("menu-dinh-kem").hidden).toBe(true);
+    w.nut("nut-dinh-kem").bam();
+    expect(w.nut("menu-dinh-kem").hidden).toBe(false);
+    w.banDoc("click", { target: {} });
+    expect(w.nut("menu-dinh-kem").hidden).toBe(true);
+    expect(w.nut("nut-dinh-kem").getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("★★★ chế độ GỘP: chọn 'tự ghi' ⇒ lưu CẢ chế độ lẫn mức quyền tu_ghi; chọn 'duyệt' ⇒ hoi_truoc_khi_ghi; chọn 'hỏi' ⇒ không đổi mức quyền", () => {
+    const w = chayWebview();
+    w.nut("o-che-do").value = "tu-dong";
+    w.nut("o-che-do").kichHoat("change", {});
+    expect(w.daGui.filter((m) => m.loai === "dat_che_do" || m.loai === "dat_muc_quyen")).toEqual([
+      { loai: "dat_che_do", cheDo: "tu-dong" },
+      { loai: "dat_muc_quyen", mucQuyen: "tu_ghi" },
+    ]);
+    w.daGui.length = 0;
+    w.nut("o-che-do").value = "sua";
+    w.nut("o-che-do").kichHoat("change", {});
+    expect(w.daGui).toEqual([
+      { loai: "dat_che_do", cheDo: "sua" },
+      { loai: "dat_muc_quyen", mucQuyen: "hoi_truoc_khi_ghi" },
+    ]);
+    w.daGui.length = 0;
+    w.nut("o-che-do").value = "hoi";
+    w.nut("o-che-do").kichHoat("change", {});
+    expect(w.daGui).toEqual([{ loai: "dat_che_do", cheDo: "hoi" }]);
+  });
+
+  it("★★★ ô chế độ HIỂN THỊ suy từ CẢ HAI giá trị host đã lưu (không nói dối): sua+tu_ghi ⇒ 'tự ghi'; tu-dong+hoi_truoc ⇒ 'duyệt'; chi_doc ⇒ 'hỏi'", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "che_do", cheDo: "sua" });
+    w.banTin({ loai: "muc_quyen", mucQuyen: "tu_ghi" });
+    expect(w.nut("o-che-do").value).toBe("tu-dong");
+    w.banTin({ loai: "che_do", cheDo: "tu-dong" });
+    w.banTin({ loai: "muc_quyen", mucQuyen: "hoi_truoc_khi_ghi" });
+    expect(w.nut("o-che-do").value).toBe("sua");
+    w.banTin({ loai: "muc_quyen", mucQuyen: "chi_doc" });
+    expect(w.nut("o-che-do").value).toBe("hoi");
+    w.banTin({ loai: "che_do", cheDo: "chat-cu" });
+    expect(w.nut("o-che-do").value).toBe("chat-cu");
+  });
+
+  it("★★ dòng mô tả chế độ cập nhật theo lựa chọn; ô mức quyền riêng bị ẩn khỏi giao diện", () => {
+    const w = chayWebview();
+    w.nut("o-che-do").value = "tu-dong";
+    w.nut("o-che-do").kichHoat("change", {});
+    expect(w.nut("mo-ta-che-do").textContent).toContain("Xoá tệp và chạy lệnh vẫn hỏi");
+    expect(dungHtmlBang({ nonce: "N" })).toMatch(/<div id="vung-muc-quyen" hidden/);
+  });
+});
+
+describe("CSS không được đè thuộc tính hidden (2026-10-24)", () => {
+  it("★★★ phần tử có `hidden` trong markup tĩnh mà CSS đặt `display` cho chính id đó ⇒ phải có luật #id[hidden] { display: none } (nếu không, hidden bị đè và phần tử luôn hiện)", () => {
+    const html = dungHtmlBang({ nonce: "N" });
+    const css = html.match(/<style[^>]*>([\s\S]*?)<\/style>/)![1];
+    const ids = [...html.matchAll(/<[a-z0-9]+\b[^>]*\bid="([\w-]+)"[^>]*\bhidden\b/g)].map((m) => m[1]!);
+    expect(ids.length).toBeGreaterThan(3); // bộ lọc không rỗng
+    const loi = ids.filter((id) => {
+      const coDisplay = new RegExp("#" + id + "\\s*\\{[^}]*display\\s*:").test(css);
+      const coLuatAn = new RegExp("#" + id + "\\[hidden\\]\\s*\\{[^}]*display\\s*:\\s*none").test(css);
+      return coDisplay && !coLuatAn;
+    });
+    expect(loi).toEqual([]);
+  });
+});
+
+describe("mã build trên khung (2026-10-24)", () => {
+  it("★★ có maBuild ⇒ hiện trong #ma-build (đã thoát HTML, cắt 60 ký tự); không có ⇒ phần tử mang hidden", () => {
+    const co = dungHtmlBang({ nonce: "N", maBuild: "0.3.0+abc1234-dirty" });
+    expect(co).toMatch(/<span id="ma-build"[^>]*>0\.3\.0\+abc1234-dirty<\/span>/);
+    expect(co).not.toMatch(/<span id="ma-build"[^>]*\bhidden\b/);
+    const doc = dungHtmlBang({ nonce: "N", maBuild: '<img src=x onerror="alert(1)">' });
+    expect(doc).not.toContain("<img src=x");
+    expect(doc).toContain("&lt;img");
+    expect(dungHtmlBang({ nonce: "N", maBuild: "x".repeat(200) })).toContain(">" + "x".repeat(60) + "</span>");
+    expect(dungHtmlBang({ nonce: "N" })).toMatch(/<span id="ma-build"[^>]*\bhidden\b[^>]*><\/span>/);
+  });
+});
+
+describe("bố cục thân trang (2026-10-24)", () => {
+  it("★★ body cao 100vh PHẢI border-box (padding 8px nếu cộng thêm sẽ đẩy hàng cuối — thanh thống kê — ra ngoài khung nhìn; thấy ở ảnh chụp VSCode thật)", () => {
+    const css = dungHtmlBang({ nonce: "N" }).match(/<style[^>]*>([\s\S]*?)<\/style>/)![1]!;
+    const body = css.match(/\n\s*body\s*\{([^}]*)\}/)![1]!;
+    expect(body).toContain("height: 100vh");
+    expect(body).toContain("box-sizing: border-box");
   });
 });

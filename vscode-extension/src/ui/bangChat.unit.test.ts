@@ -33,6 +33,12 @@ const may = vi.hoisted(() => ({
   tepMay: new Map<string, Buffer>(),
   /** ★ 2026-10-24 — kết quả `showOpenDialog` giả (`undefined` = Esc). */
   hopThoaiChon: undefined as string[] | undefined,
+  /** ★ 2026-10-24 — clipboard giả: mọi `env.clipboard.writeText`. */
+  clipboard: [] as string[],
+  /** ★ 2026-10-24 — HTML mà host gán cho webview lần gần nhất. */
+  htmlGanNhat: "",
+  /** ★ 2026-10-24 — cài đặt `aviAiLocal.*` giả (khoá → giá trị); thiếu khoá ⇒ mặc định do mã truyền vào. */
+  cauHinh: {} as Record<string, unknown>,
   /** ★ 2026-10-24 — số lần `readFile` được gọi (bằng chứng "chặn theo STAT, không nạp tệp quá lớn"). */
   soLanDocTepMay: 0,
   /** ★★★ H3 — thân POST (`dungYeuCauStream(...)`) của TỪNG lượt gọi SSE, theo đúng thứ tự vòng. */
@@ -236,10 +242,13 @@ vi.mock("vscode", () => ({
       return undefined;
     },
   },
+  env: { clipboard: { writeText: async (t: string) => void may.clipboard.push(t) } },
   window: {
     createWebviewPanel: () => ({
       webview: {
-        html: "",
+        set html(v: string) {
+          may.htmlGanNhat = v;
+        },
         onDidReceiveMessage: (h: (m: Record<string, unknown>) => void) => {
           may.nhanTin = h;
         },
@@ -279,7 +288,7 @@ vi.mock("vscode", () => ({
     get workspaceFolders() {
       return may.thuMucWorkspace.map((p) => ({ uri: { fsPath: p } }));
     },
-    getConfiguration: () => ({ get: <T>(_k: string, mm: T) => mm }),
+    getConfiguration: () => ({ get: <T>(k: string, mm: T) => (k in may.cauHinh ? (may.cauHinh[k] as T) : mm) }),
     fs: {
       stat: async (u: { fsPath: string }) => {
         if (u.fsPath.endsWith("THUMUC")) return { type: 2, size: 0 };
@@ -401,6 +410,8 @@ beforeEach(() => {
   may.thanGoi = [];
   may.tepMay = new Map();
   may.hopThoaiChon = undefined;
+  may.clipboard = [];
+  may.cauHinh = {};
   may.soLanDocTepMay = 0;
   may.globalState = {};
   may.workspaceState = {};
@@ -1358,7 +1369,7 @@ describe("ĐỢT F / TASK 2 — lưu hội thoại BỀN qua workspaceState", ()
     expect(khoiPhuc).toHaveLength(1);
     expect(khoiPhuc[0]!.luot).toEqual([
       { vaiTro: "user", noiDung: "Câu hỏi từ phiên trước" },
-      { vaiTro: "assistant", noiDung: "Trả lời từ phiên trước" },
+      { vaiTro: "assistant", noiDung: "Trả lời từ phiên trước", cay: expect.any(Array) },
     ]);
   });
 
@@ -1699,7 +1710,7 @@ describe("ĐỢT F / TASK 3 / B4 — 'Lịch sử'", () => {
     expect(khoiPhuc).toHaveLength(1);
     expect(khoiPhuc[0]!.luot).toEqual([
       { vaiTro: "user", noiDung: "Câu hỏi A" },
-      { vaiTro: "assistant", noiDung: "Trả lời A" },
+      { vaiTro: "assistant", noiDung: "Trả lời A", cay: expect.any(Array) },
     ]);
     // Không một mẩu nào của hội thoại B (KHÔNG được chọn) lọt vào tin nạp lại.
     expect(JSON.stringify(khoiPhuc)).not.toContain("Câu hỏi B");
@@ -2082,6 +2093,9 @@ describe("ĐỢT G / TASK G3 / B4 — người dùng đổi mức quyền ('dat_
  * `/api/ai/local-kb/stream` (hợp đồng máy chủ đã đo); Agent chưa gửi được ảnh qua /v1 ⇒ lượt có ảnh đi đường Chat và NÓI RÕ.
  */
 describe("đính kèm NGOÀI workspace — host", () => {
+  beforeEach(() => {
+    may.cauHinh.anhChoTroLy = true; // các ca ảnh dưới đây giả định quản trị ĐÃ bật; ca mặc-định-tắt tự xoá khoá
+  });
   const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
   const anh = { loai: "anh", ten: "man-hinh.png", kieu: "image/png", kichThuoc: 70, noiDung: PNG_B64 };
   const tep = (ten: string, noiDung: string) => ({ loai: "tep", ten, kieu: "text/plain", kichThuoc: noiDung.length, noiDung });
@@ -2096,6 +2110,53 @@ describe("đính kèm NGOÀI workspace — host", () => {
     return bang;
   }
   const thongBao = () => may.daGui.filter((m) => m.loai === "thong_bao").map((m) => String(m.thongDiep));
+
+  it("★★★ MẶC ĐỊNH đọc ảnh cho Trợ lý TẮT: ảnh bị bỏ + được NÓI RÕ, tệp văn bản vẫn đi, thân POST KHÔNG có image", async () => {
+    chuanBiLocal();
+    delete may.cauHinh.anhChoTroLy;
+    may.hangDoiSse = hangDoiMotVongDonGian("ok");
+    may.nhanTin?.({ loai: "hoi", cauHoi: "xem giúp", dinhKemNgoai: [anh, tep("loi.log", "ERR 9")] });
+    await nhuong();
+    expect(may.thanGoi).toHaveLength(1);
+    expect(may.thanGoi[0]!.image).toBeUndefined();
+    expect(String(may.thanGoi[0]!.question)).toContain("ERR 9");
+    expect(thongBao().some((t) => /đọc ảnh cho Trợ lý đang TẮT \(1 ảnh\).*aviAiLocal\.anhChoTroLy/.test(t))).toBe(true);
+  });
+
+  it("★★ cài đặt TẮT + chế độ Agent + ảnh ⇒ ảnh bỏ và lượt Agent chạy BÌNH THƯỜNG (không rơi về đường Chat)", async () => {
+    chuanBiLocal();
+    delete may.cauHinh.anhChoTroLy;
+    may.nhanTin?.({ loai: "hoi", cauHoi: "đọc giúp ảnh", cheDoAgent: "sua", dinhKemNgoai: [anh] });
+    await nhuong();
+    expect(thongBao().some((t) => /đang TẮT/.test(t))).toBe(true);
+    expect(thongBao().some((t) => /dùng đường Chat/.test(t))).toBe(false);
+  });
+
+  it("★ vision ok:false kèm chiTiet/nguon ⇒ người dùng thấy lý do thật; ok:true ⇒ nêu nguồn", async () => {
+    may.cauHinh.anhChoTroLy = true;
+    chuanBiLocal();
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "vision", ok: false, reason: "thieu-tai-nguyen", chiTiet: "GPU còn 8649 MiB trống, cần 11000 MiB" });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "x", dinhKemNgoai: [anh] });
+    await nhuong();
+    expect(thongBao().some((t) => /thiếu tài nguyên GPU.*Chi tiết: GPU còn 8649 MiB/.test(t))).toBe(true);
+    may.daGui = [];
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "vision", ok: true, visionText: "AL.32", nguon: "model-chinh" });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "x", dinhKemNgoai: [anh] });
+    await nhuong();
+    expect(thongBao().some((t) => /Đã đọc ảnh bằng model chính/.test(t))).toBe(true);
+  });
 
   it("★★★ Chat cũ + ảnh dán ⇒ thân POST mang `image` (data URL) + `imageMimeType`, đúng hợp đồng máy chủ; sự kiện `vision` ok ⇒ báo 'Đã đọc ảnh'", async () => {
     chuanBiLocal();
@@ -2223,5 +2284,128 @@ describe("đính kèm NGOÀI workspace — host", () => {
     await nhuong();
     expect(may.daGui.filter((m) => m.loai === "them_dinh_kem_ngoai").map((m) => (m.muc as { ten: string }).ten)).toEqual(["a.txt"]);
     expect(thongBao().some((t) => /chỉ nhận tệp trên máy/.test(t))).toBe(true);
+  });
+});
+
+/**
+ * ★★★ 2026-10-24 — CHẾ ĐỘ AGENT được LƯU theo workspace (kiểm định độc lập: "mức vẫn Tự ghi nhưng chế độ về 'duyệt từng bước' khi mở lại cửa sổ ⇒ hỏi lại").
+ */
+describe("chế độ agent — lưu theo workspace ('dat_che_do' / 'che_do')", () => {
+  const tinCheDo = () => may.daGui.filter((m) => m.loai === "che_do").map((m) => m.cheDo);
+  const nhuong = () => new Promise((r) => setTimeout(r, 0));
+
+  it("★★★ kho rỗng ⇒ 'san_sang' gửi mặc định AN TOÀN 'sua'", async () => {
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await nhuong();
+    expect(tinCheDo()).toEqual(["sua"]);
+  });
+
+  it("★★★ ĐỔI chế độ ⇒ lưu VÀ xác nhận; MỞ LẠI cửa sổ (reload) ⇒ chế độ KHÔNG về mặc định", async () => {
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "dat_che_do", cheDo: "tu-dong" });
+    await nhuong();
+    expect(may.workspaceState["aviAiLocal.cheDoAgent"]).toBe("tu-dong");
+    expect(tinCheDo()).toEqual(["tu-dong"]);
+    // reload: đóng khung (dispose) rồi dựng khung MỚI — workspaceState (kho giả) vẫn còn
+    may.don?.();
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await nhuong();
+    expect(tinCheDo()).toEqual(["tu-dong"]);
+  });
+
+  it("★★ kho HỎNG (sai kiểu/chuỗi lạ) ⇒ rơi về 'sua', KHÔNG bao giờ 'tu-dong'", async () => {
+    for (const hong of [5, null, "vo_han", {}, ["tu-dong"]]) {
+      may.workspaceState["aviAiLocal.cheDoAgent"] = hong;
+      moBang();
+      may.daGui = [];
+      may.nhanTin?.({ loai: "san_sang" });
+      await nhuong();
+      expect(tinCheDo(), JSON.stringify(hong)).toEqual(["sua"]);
+      may.don?.();
+    }
+  });
+
+  it("★★ giá trị lạ từ webview ⇒ BỎ QUA HOÀN TOÀN (không ghi, không gửi lại)", async () => {
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "dat_che_do", cheDo: "toan_quyen" });
+    await nhuong();
+    expect(may.workspaceState["aviAiLocal.cheDoAgent"]).toBeUndefined();
+    expect(tinCheDo()).toEqual([]);
+  });
+});
+
+/** ★★★ 2026-10-24 — đường Chat: markdown dựng TĂNG DẦN + cây cuối trong `hoan_tat`. */
+describe("hoi — markdown tăng dần trên đường Chat/SERVER", () => {
+  const nhuong = async () => {
+    for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+  it("★★★ token ⇒ `md_dang` mang CÂY (tiêu đề, khối mã); `hoan_tat` mang cây CUỐI + chỉ số khối mã đã đăng ký; bản tăng dần không bắn trễ sau hoan_tat", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:/ws", nhan: "LOCAL · C:/ws", loai: "local" }];
+    bang.duAnChon = "local:C:/ws";
+    may.daGui = [];
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "token", token: "### Cách chạy\n\n```bash\nnpm i" });
+        dv.nhan({ type: "token", token: "nstall\n```\n" });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "chạy sao?" });
+    await nhuong();
+    const dang = may.daGui.filter((m) => m.loai === "md_dang");
+    expect(dang.length).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(dang[0]!.cay)).toContain('"t":"h"');
+    const ht = may.daGui.filter((m) => m.loai === "hoan_tat");
+    expect(ht).toHaveLength(1);
+    expect(JSON.stringify(ht[0]!.cay)).toContain("npm install"); // cây CUỐI của văn bản đầy đủ (hai mảnh nối liền)
+    expect(ht[0]!.chiSoMaDau).toBe(0);
+    const viTri = may.daGui.indexOf(ht[0]!);
+    expect(may.daGui.slice(viTri + 1).some((m) => m.loai === "md_dang")).toBe(false);
+    // lượt kế tiếp đăng ký khối mã tiếp nối chỉ số (không đè)
+    may.hangDoiSse = [async (dv) => { dv.nhan({ type: "token", token: "```ts\nlet x = 1;\n```" }); dv.nhan({ type: "done" }); return { hong: [] }; }];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "tiếp" });
+    await nhuong();
+    const ht2 = may.daGui.filter((m) => m.loai === "hoan_tat");
+    expect(ht2).toHaveLength(2);
+    expect(ht2[1]!.chiSoMaDau).toBe(1);
+  });
+});
+
+describe("chép câu trả lời (2026-10-24)", () => {
+  const nhuong = async () => {
+    for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+  it("★★★ chưa có câu trả lời ⇒ báo, không chép; sau một lượt ⇒ clipboard nhận ĐÚNG văn bản câu trả lời và người dùng được báo", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:/ws", nhan: "LOCAL · C:/ws", loai: "local" }];
+    bang.duAnChon = "local:C:/ws";
+    may.daGui = [];
+    may.nhanTin?.({ loai: "chep_tra_loi" });
+    await nhuong();
+    expect(may.clipboard).toEqual([]);
+    expect(may.daGui.some((m) => m.loai === "thong_bao" && /Chưa có câu trả lời/.test(String(m.thongDiep)))).toBe(true);
+    may.hangDoiSse = hangDoiMotVongDonGian("Đây là câu trả lời đầy đủ.");
+    may.nhanTin?.({ loai: "hoi", cauHoi: "x" });
+    await nhuong();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "chep_tra_loi" });
+    await nhuong();
+    expect(may.clipboard).toEqual(["Đây là câu trả lời đầy đủ."]);
+    expect(may.daGui.some((m) => m.loai === "thong_bao" && /Đã chép câu trả lời/.test(String(m.thongDiep)))).toBe(true);
+  });
+});
+
+describe("mã build trên khung chat (2026-10-24)", () => {
+  it("★★ host gán HTML có #ma-build mang mã build (test không qua bundle ⇒ 'dev') — đường nối maBuild → dungHtmlBang không bị đứt", () => {
+    moBang();
+    expect(may.htmlGanNhat).toMatch(/<span id="ma-build"[^>]*>dev<\/span>/);
   });
 });

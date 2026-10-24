@@ -2,7 +2,7 @@
   "name": "avi-ai-local",
   "displayName": "AI Local (ST4I)",
   "description": "Trợ lý lập trình AI chạy nội bộ — agent sửa trực tiếp dự án qua lõi agent dùng chung, mọi lượt ghi qua một điểm ghi có kiểm toán.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "st4i",
   "private": true,
   "license": "UNLICENSED",
@@ -231,6 +231,11 @@
           "scope": "machine",
           "default": "http://localhost:3000",
           "description": "Địa chỉ máy chủ AI Local (box chạy model)."
+        },
+        "aviAiLocal.anhChoTroLy": {
+          "type": "boolean",
+          "default": false,
+          "description": "Cho phép đính ảnh (dán/kéo/chọn) khi hỏi Trợ lý. Mặc định TẮT: máy chủ phải nạp model thị giác (tốn VRAM, thêm độ trễ). Chỉ bật khi quản trị đã bật đọc ảnh."
         },
         "aviAiLocal.nganSachNguCanh": {
           "type": "number",

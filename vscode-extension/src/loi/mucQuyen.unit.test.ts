@@ -9,6 +9,7 @@
 import { describe, it, expect } from "vitest";
 import {
   MUC_QUYEN_MAC_DINH,
+  coTheDuyetHetLuot,
   laMucQuyenHopLe,
   chuanHoaMucQuyen,
   duocPhepGhiTheoMucQuyen,
@@ -123,5 +124,26 @@ describe("canDuyetGhiAgent — ★★★ 'Tự ghi' ĐỦ để bỏ hỏi sửa
     ["bộ thực thi thấy nội dung đáng ngờ ⇒ hỏi", { coNguonDangNgo: true }, true],
   ])("%s", (_t, chinh, hoi) => {
     expect(canDuyetGhiAgent({ ...goc, ...chinh })).toBe(hoi);
+  });
+});
+
+import { chuanHoaCheDoAgent, laCheDoAgentHopLe } from "./mucQuyen";
+describe("chế độ agent lưu theo workspace — chuẩn hoá", () => {
+  it.each(["hoi", "sua", "tu-dong", "chat-cu"])("%s hợp lệ, giữ nguyên", (c) => {
+    expect(laCheDoAgentHopLe(c)).toBe(true);
+    expect(chuanHoaCheDoAgent(c)).toBe(c);
+  });
+  it.each([undefined, null, 5, "", "TU-DONG", "tu_ghi", {}, ["sua"]])("%j ⇒ mặc định an toàn 'sua'", (c) => {
+    expect(chuanHoaCheDoAgent(c)).toBe("sua");
+  });
+});
+
+describe("coTheDuyetHetLuot (2026-10-24)", () => {
+  it("chỉ GHI không-xoá, thao tác đã biết, không nội dung đáng ngờ", () => {
+    for (const t of ["thay", "tao", "doi-ten"] as const) expect(coTheDuyetHetLuot({ loai: "ghi", thaoTac: t, coNguonDangNgo: false })).toBe(true);
+    expect(coTheDuyetHetLuot({ loai: "ghi", thaoTac: "xoa", coNguonDangNgo: false })).toBe(false);
+    expect(coTheDuyetHetLuot({ loai: "ghi", thaoTac: undefined, coNguonDangNgo: false })).toBe(false);
+    expect(coTheDuyetHetLuot({ loai: "ghi", thaoTac: "thay", coNguonDangNgo: true })).toBe(false);
+    expect(coTheDuyetHetLuot({ loai: "lenh", thaoTac: "thay", coNguonDangNgo: false })).toBe(false);
   });
 });

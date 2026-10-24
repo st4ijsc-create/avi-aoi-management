@@ -25,8 +25,11 @@
  * một đường tiêm HTML mới. Tên tài khoản luôn tới qua tin `trang_thai_dang_nhap`, kể cả khi nó chỉ
  * đi vào `title`/`aria-label` của `#nut-tai-khoan` thay vì `textContent` của một `<span>` riêng.
  */
-export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): string {
+import { thoatHtml } from "../loi/thoatHtml";
+
+export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?: string }): string {
   const n = dv.nonce;
+  const maBuild = typeof dv.maBuild === "string" && dv.maBuild.trim() !== "" ? thoatHtml(dv.maBuild.trim().slice(0, 60)) : "";
   const daDangNhap = dv.daDangNhap === true;
   return `<!DOCTYPE html>
 <html lang="vi">
@@ -36,13 +39,16 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       content="default-src 'none'; img-src data:; style-src 'nonce-${n}'; script-src 'nonce-${n}';" />
 <style nonce="${n}">
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
-         margin: 0; padding: 8px; display: flex; flex-direction: column; height: 100vh; }
+         margin: 0; padding: 8px; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
   /* ĐỢT G / TASK G1 / B2 — góc khung, không còn chiếm nguyên một hàng như nút to cũ.
      ĐỢT G / TASK G3 / B4 — nay CHIA HAI ĐẦU: ô chọn mức quyền bên TRÁI, icon tài khoản bên PHẢI. */
   #vung-tai-khoan { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
   /* ĐỢT G / TASK G3 / B4 — ô chọn mức quyền (chế độ tự trị). Chữ NHỎ, giống thanh trạng thái ngữ
      cảnh — đây là một cấu hình PHỤ, không phải hành động chính của khung. */
   #vung-muc-quyen { display: flex; align-items: center; gap: 4px; font-size: 11px; opacity: .9; }
+  #vung-muc-quyen[hidden] { display: none; }
+  #ma-build { font-size: 10px; opacity: .55; font-family: var(--vscode-editor-font-family, monospace); user-select: all; }
+  #ma-build[hidden] { display: none; }
   #o-muc-quyen { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground);
                  border: 1px solid var(--vscode-dropdown-border); font-size: 11px; padding: 2px 4px; }
   /* B2+B4 — nút ICON dùng chung: nền trong suốt, chỉ nổi lên khi hover/focus, giống nút icon gốc
@@ -82,6 +88,14 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
      màu chữ-mô-tả của theme, khác cả hai màu trên để không bị nhầm là một câu trả lời của AI. */
   .luot-he-thong { border-left-color: var(--vscode-descriptionForeground); }
   .nhan { opacity: .7; font-size: 11px; text-transform: uppercase; }
+  /* 2026-10-24 — NHÃN VAI của một lượt hội thoại (khác .nhan dùng cho nhãn thẻ): 12 px ĐẬM, không in hoa, không mờ, kèm chữ cái đầu trong vòng tròn — "Bạn" / "AI Local" không còn là thứ
+     nhỏ và xám nhất trên màn hình. Chữ cái là CSS thuần (::before) nên cấu trúc DOM của lượt (nhãn + nội dung) không đổi. */
+  .luot > .nhan { display: flex; align-items: center; gap: 6px; opacity: 1; font-size: 12px; font-weight: 600; text-transform: none; margin-bottom: 2px; }
+  .luot > .nhan::before { content: "•"; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; font-weight: 700;
+                          background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+  .luot-nguoi-dung > .nhan::before { content: "B"; }
+  .luot-ai > .nhan::before { content: "AI"; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .luot-he-thong > .nhan::before { content: "!"; background: transparent; color: var(--vscode-descriptionForeground); border: 1px solid var(--vscode-descriptionForeground); }
   /* ★★★ ĐỢT I / TASK I-1a — CHỈ BÁO ĐANG CHẠY. Bong bóng AI KHÔNG được rỗng-im-lìm trong lúc model
      nghĩ (3-58s đo được) — người dùng phải THẤY nó còn sống. Thuần CSS @keyframes (không JS
      timer): trình duyệt tự chạy animation, không tốn một setInterval nào để dọn khi lượt kết
@@ -112,7 +126,20 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   #hang-nhap { display: flex; gap: 6px; margin-top: 8px; position: relative; }
   #o-nhap { flex: 1; background: var(--vscode-input-background);
             color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border);
-            padding: 6px; font-family: inherit; }
+            padding: 6px; font-family: inherit; line-height: 1.4; resize: none; overflow-y: auto;
+            min-height: 34px; max-height: 160px; box-sizing: border-box; }
+  /* 2026-10-24 — menu Đính kèm (một nút, ba đường) neo lên TRÊN hàng nhập. */
+  #nut-dinh-kem { padding: 6px; }
+  #menu-dinh-kem { position: absolute; left: 0; bottom: 100%; margin-bottom: 4px; min-width: 220px;
+                   background: var(--vscode-menu-background, var(--vscode-dropdown-background));
+                   color: var(--vscode-menu-foreground, var(--vscode-dropdown-foreground));
+                   border: 1px solid var(--vscode-dropdown-border); border-radius: 4px; padding: 4px; z-index: 20;
+                   font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+  #menu-dinh-kem[hidden] { display: none; }
+  #menu-dinh-kem button { background: transparent; color: inherit; border: 0; text-align: left; padding: 6px 8px; cursor: pointer; font: inherit; border-radius: 3px; }
+  #menu-dinh-kem button:hover, #menu-dinh-kem button:focus-visible { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.2)); }
+  #menu-dinh-kem .mn-goi-y { opacity: .7; padding: 4px 8px 2px; font-size: 11px; }
+  #mo-ta-che-do { font-size: 11px; opacity: .8; margin: 2px 0 0; flex-basis: 100%; }
   /* TASK 5 — dropdown gợi ý @-mention. Neo lên TRÊN ô nhập (ô nhập nằm ở đáy khung chat) qua
      #hang-nhap position:relative ở trên — relative không phá layout flex hiện có. */
   #mention-ds { position: absolute; left: 0; right: 88px; bottom: 100%; margin-bottom: 4px;
@@ -124,6 +151,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
      tĩnh (script tự bật lại khi có ít nhất một tệp — xem B2 "nhánh kia": gỡ hết ⇒ tự ẩn lại, không
      để lại khung rỗng lơ lửng). */
   #ds-dinh-kem { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  #ds-dinh-kem[hidden] { display: none; }
   .dinh-kem-muc { display: inline-flex; align-items: center; gap: 4px;
                   background: var(--vscode-badge-background, rgba(128,128,128,.15));
                   color: var(--vscode-badge-foreground, var(--vscode-foreground));
@@ -156,13 +184,30 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
               border: 1px solid var(--vscode-dropdown-border); font-size: 11px; padding: 2px 4px; }
   #dong-ho-token { opacity: .75; }
   .nut-phu { font-size: 11px; padding: 2px 8px; }
-  .ag-md { white-space: normal; }
-  .ag-md p { margin: 4px 0; }
-  .ag-md pre { white-space: pre; overflow-x: auto; margin: 0; padding: 6px;
-               background: var(--vscode-textCodeBlock-background); font-family: var(--vscode-editor-font-family); }
-  .ag-md code { font-family: var(--vscode-editor-font-family); background: var(--vscode-textCodeBlock-background); }
-  .ag-md table { border-collapse: collapse; }
-  .ag-md th, .ag-md td { border: 1px solid var(--vscode-panel-border); padding: 2px 6px; }
+  /* ★ 2026-10-24 — TYPOGRAPHY của markdown (đường Agent VÀ đường Chat/SERVER): thứ bậc tiêu đề rõ (h3 16 > h4 14,5 > h5 13,5 > h6 13 > chữ 13 — trước đây ### = 10,8 px NHỎ HƠN chữ thường),
+     khoảng thở giữa đoạn/danh sách/bảng, trích dẫn có viền+nền, bảng cuộn ngang trong khung riêng. */
+  .ag-md { white-space: normal; line-height: 1.55; overflow-wrap: anywhere; }
+  .ag-md > :first-child { margin-top: 0; }
+  .ag-md > :last-child { margin-bottom: 0; }
+  .ag-md p { margin: 0 0 .7em; }
+  .ag-md h3, .ag-md h4, .ag-md h5, .ag-md h6 { line-height: 1.3; margin: 1.1em 0 .45em; font-weight: 600; }
+  .ag-md h3 { font-size: 16px; } .ag-md h4 { font-size: 14.5px; } .ag-md h5 { font-size: 13.5px; } .ag-md h6 { font-size: 13px; }
+  .ag-md ul, .ag-md ol { margin: 0 0 .7em; padding-left: 20px; }
+  .ag-md li { margin: .2em 0; }
+  .ag-md blockquote { margin: 0 0 .7em; padding: 6px 10px; border-left: 3px solid var(--vscode-focusBorder); background: var(--vscode-textBlockQuote-background); border-radius: 0 6px 6px 0; }
+  .ag-md blockquote p { margin: 0; }
+  .ag-md pre { white-space: pre; overflow-x: auto; margin: 0; padding: 8px 10px;
+               background: var(--vscode-textCodeBlock-background); font-family: var(--vscode-editor-font-family); font-size: 12px; line-height: 1.5; }
+  .ag-md code { font-family: var(--vscode-editor-font-family); font-size: 12px; background: var(--vscode-textCodeBlock-background); padding: 1px 5px; border-radius: 4px; }
+  .ag-md pre code { padding: 0; background: transparent; }
+  .bang-cuon { overflow-x: auto; margin: 0 0 .8em; border: 1px solid var(--vscode-panel-border); border-radius: 6px; }
+  .ag-md table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .ag-md th, .ag-md td { padding: 5px 9px; text-align: left; white-space: nowrap; }
+  .ag-md th { background: var(--vscode-textBlockQuote-background); font-weight: 600; border-bottom: 1px solid var(--vscode-panel-border); }
+  .ag-md tr:nth-child(even) td { background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); }
+  /* ↓ Tin mới: hiện khi có nội dung mới mà người dùng đang cuộn lên đọc (không giật về đáy) */
+  #pill-moi { position: fixed; left: 50%; transform: translateX(-50%); bottom: 96px; z-index: 20; padding: 3px 12px; border-radius: 999px; font-size: 11.5px;
+              box-shadow: 0 2px 10px rgba(0,0,0,.35); }
   .khoi-ma { border: 1px solid var(--vscode-panel-border); margin: 6px 0; }
   .khoi-ma-dau { display: flex; gap: 4px; align-items: center; padding: 2px 4px; font-size: 11px;
                  background: var(--vscode-editorWidget-background); }
@@ -176,6 +221,21 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
             background: var(--vscode-editorWidget-background); padding: 6px; margin: 6px 0; font-size: 12px; }
   .ag-the input { width: 100%; box-sizing: border-box; margin-top: 4px; background: var(--vscode-input-background);
                   color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); }
+  .ag-the .nut-chinh { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; padding: 4px 12px; font-weight: 600; cursor: pointer; }
+  .ag-the .nut-phu { background: var(--vscode-button-secondaryBackground, transparent); color: var(--vscode-button-secondaryForeground, inherit); border: 0; padding: 4px 10px; cursor: pointer; }
+  .ag-the .nut-nhe { background: transparent; color: var(--vscode-descriptionForeground, inherit); border: 0; padding: 4px 6px; cursor: pointer; text-decoration: underline; }
+  .ag-the .nut-nguy { background: var(--vscode-errorForeground, #c33); color: #fff; border: 0; padding: 4px 12px; font-weight: 600; cursor: pointer; }
+  .ag-the .canh-bao-xoa { margin-top: 4px; padding: 4px 6px; border-left: 3px solid var(--vscode-errorForeground, #c33); font-size: 12px; }
+  .ag-the .the-duyet-nut { flex-wrap: wrap; align-items: center; }
+  .ag-the .nut-nhe, .ag-the .nut-phu, .ag-the .nut-chinh, .ag-the .nut-nguy { white-space: nowrap; }
+  .ag-the .nut-het { flex-basis: 100%; order: 9; white-space: normal; text-align: left; border: 1px solid var(--vscode-focusBorder, currentColor); background: transparent; }
+  .ag-the .tieu-de { font-weight: 600; margin-bottom: 2px; }
+  .ag-the button:disabled { opacity: .5; cursor: default; }
+  .ag-tu-duyet { font-size: 11px; opacity: .75; margin: 2px 0; }
+  .luot[data-loi] { border-left: 3px solid var(--vscode-errorForeground, #c33); padding-left: 8px; }
+  .loi-goi-y { font-size: 11px; opacity: .8; margin-top: 4px; }
+  .hang-hanh-dong { display: flex; gap: 4px; margin: 4px 0 8px; }
+  .hang-hanh-dong button { background: transparent; color: var(--vscode-descriptionForeground, inherit); border: 0; padding: 2px 6px; cursor: pointer; font-size: 11px; text-decoration: underline; }
   .ag-phan-hoi { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0; font-size: 11px; }
   .ag-phan-hoi button { font-size: 12px; padding: 0 6px; opacity: .7; }
   .ag-phan-hoi button.chon { opacity: 1; outline: 1px solid var(--vscode-focusBorder); }
@@ -192,6 +252,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
      chỉ title/aria-label/lớp CSS đổi, KHÔNG BAO GIỜ dựng lại HTML, để một câu hỏi đang gõ dở
      trong #o-nhap không bị mất khi trạng thái đăng nhập đổi (B4, xem xử lý tin trang_thai_dang_nhap). -->
 <div id="vung-tai-khoan">
+  <span id="ma-build" title="Bản AI Local đang chạy (phiên bản+commit). Báo mã này khi báo lỗi; -dirty = build từ cây chưa commit."${maBuild ? "" : " hidden"}>${maBuild}</span>
   <!-- ★★★ ĐỢT G / TASK G3 / B4 — Ô CHỌN MỨC QUYỀN (chế độ tự trị). ⚠⚠⚠ ĐÂY LÀ MỘT CỔNG THÊM,
        KHÔNG PHẢI HÀNG RÀO: webview CHỈ báo Ý ĐỊNH đổi mức (\`dat_muc_quyen\`) và HIỂN THỊ mức đang áp
        (\`muc_quyen\`, do extension gửi lại sau khi tự kiểm bằng \`laMucQuyenHopLe\`) — đúng nguyên tắc
@@ -202,7 +263,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
        ĐỊNH cho tới khi tin \`muc_quyen\` đầu tiên (đọc từ \`workspaceState\`, hoặc mặc định an toàn nếu
        kho rỗng/hỏng — xem \`bangChat.ts#napMucQuyen\`) tới ghi đè \`.value\`. SVG nội tuyến, CÙNG CÁCH
        G1/G2 đã chọn cho các icon khác — CSP webview không có \`font-src\`. -->
-  <div id="vung-muc-quyen" title="Mức quyền ghi tệp của AI. Tự ghi: sửa/tạo/đổi tên tệp trong workspace KHÔNG hỏi (xoá tệp và chạy lệnh vẫn hỏi). Chỉ áp dụng cho dự án LOCAL — dự án SERVER luôn cần duyệt trên máy chủ.">
+  <div id="vung-muc-quyen" hidden title="Mức quyền ghi tệp của AI. Tự ghi: sửa/tạo/đổi tên tệp trong workspace KHÔNG hỏi (xoá tệp và chạy lệnh vẫn hỏi). Chỉ áp dụng cho dự án LOCAL — dự án SERVER luôn cần duyệt trên máy chủ.">
     <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
       <path d="M8 1 2.3 3.2v3.9c0 3.9 2.5 7.3 5.7 8.4 3.2-1.1 5.7-4.5 5.7-8.4V3.2L8 1Zm0 1.6 4.2 1.6v3.9c0 3.2-1.9 5.9-4.2 6.8-2.3-.9-4.2-3.6-4.2-6.8V4.2L8 2.6Z" />
     </svg>
@@ -231,7 +292,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   <div id="rong-lan-dau">
     <p>Hỏi AI Local về mã trong workspace này — ví dụ: "hàm này làm gì", "sửa lỗi ở dòng X".</p>
     <p>Gõ <code>@</code> để chèn tệp vào câu hỏi.</p>
-    <p><code>Ctrl+Enter</code> để gửi.</p>
+    <p><code>Enter</code> để gửi, <code>Shift+Enter</code> để xuống dòng.</p>
   </div>
 </div>
 <div id="the-duyet" hidden>
@@ -269,16 +330,18 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
      thuộc tính selected: lưới G3/B4 đòi đúng MỘT thuộc tính chọn sẵn trong cả markup, dành cho mức quyền an toàn). "Chat cũ" giữ
      đường hỏi-đáp cũ qua máy chủ. Tự động chỉ bỏ bước duyệt khi mức quyền là "Tự ghi" (extension kiểm, không phải ô này). -->
 <div id="vung-agent">
-  <select id="o-che-do" aria-label="Chế độ làm việc của AI" title="Chế độ: Hỏi chỉ đọc · Agent duyệt từng tệp · Agent tự động (chỉ khi mức quyền Tự ghi) · Chat cũ">
+  <select id="o-che-do" aria-label="Chế độ làm việc và mức quyền của AI" title="Một ô duy nhất cho chế độ và mức quyền ghi. Được lưu theo workspace.">
     <option value="sua">Agent — duyệt từng bước</option>
     <option value="hoi">Hỏi (chỉ đọc)</option>
-    <option value="tu-dong">Agent — tự động</option>
+    <option value="tu-dong">Agent — tự ghi trong workspace</option>
     <option value="chat-cu">Chat cũ (máy chủ)</option>
   </select>
+  <div id="mo-ta-che-do"></div>
   <button id="nut-token" class="nut-phu" hidden title="Lấy token cổng /v1 bằng trình duyệt (device flow)">Đăng nhập AI Local</button>
   <span id="dong-ho-token" title="Token ngữ cảnh gửi model ở lượt gần nhất (~ = ước lượng 2,8 ký tự/token khi cổng /v1 không trả usage lúc stream)">Ngữ cảnh: —</span>
   <button id="nut-hoan-tac" class="nut-phu" hidden>Hoàn tác lượt chạy</button>
 </div>
+<button id="pill-moi" type="button" hidden>↓ Tin mới</button>
 <div id="hang-nhap">
   <!-- TASK 5 — dropdown gợi ý @-mention. MẶC ĐỊNH ẨN: chỉ hiện khi đang gõ "@..." VÀ extension đã
        trả về ít nhất một gợi ý. Nội dung (danh sách tệp) do EXTENSION dựng — webview chỉ hiển thị
@@ -288,21 +351,21 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
        THẬT (danh sách + hàng rào rời máy) nằm ở phía extension (\`bangChat.moBoChonDinhKem\`), đúng
        nguyên tắc "hiển thị + chuyển tiếp" đã áp cho thẻ duyệt/nút Dừng/@-mention. SVG nội tuyến,
        cùng cách G1 đã chọn cho icon tài khoản — CSP webview không có font-src. -->
-  <button id="nut-dinh-kem" class="nut-icon" title="Đính kèm tệp hoặc ảnh (trong workspace hoặc từ máy). Cũng có thể dán ảnh bằng Ctrl+V hoặc kéo tệp vào khung." aria-label="Đính kèm tệp hoặc ảnh để gửi kèm câu hỏi">
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true" focusable="false">
+  <button id="nut-dinh-kem" class="nut-icon" aria-haspopup="menu" aria-expanded="false" title="Đính kèm: tệp trong dự án, tệp hoặc ảnh từ máy. Cũng có thể dán ảnh (Ctrl+V) hoặc kéo tệp vào khung." aria-label="Đính kèm tệp hoặc ảnh để gửi kèm câu hỏi">
+    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true" focusable="false">
       <path d="M11.3 4.6 6.4 9.5a1.9 1.9 0 1 0 2.7 2.7l4.6-4.6a3.4 3.4 0 1 0-4.8-4.8L3.8 7.9" stroke-linecap="round" stroke-linejoin="round" />
     </svg>
   </button>
-  <!-- 2026-10-24 — đính kèm tệp/ảnh TỪ MÁY (ngoài workspace). Webview chỉ báo ý định; host mở hộp thoại chọn tệp, đọc, kiểm trần/chữ ký/tên nhạy cảm rồi trả lại tin them_dinh_kem_ngoai. -->
-  <button id="nut-dinh-kem-may" class="nut-icon" title="Đính kèm tệp hoặc ảnh từ máy (ngoài workspace)" aria-label="Đính kèm tệp hoặc ảnh từ máy, ngoài workspace">
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true" focusable="false">
-      <path d="M8 10.5V2.5M5 5.2 8 2.3l3 2.9M2.5 10v3.5h11V10" stroke-linecap="round" stroke-linejoin="round" />
-    </svg>
-  </button>
-  <textarea id="o-nhap" rows="2" placeholder="Hỏi AI Local… (Ctrl+Enter để gửi, @ chèn tệp, Ctrl+V dán ảnh, kéo tệp vào đây)"></textarea>
+  <!-- Menu Đính kèm: webview chỉ BÁO Ý ĐỊNH; bộ chọn thật và mọi hàng rào (trần, chữ ký, tên nhạy cảm) nằm ở host. -->
+  <div id="menu-dinh-kem" role="menu" hidden>
+    <button id="mn-dinh-kem-ws" type="button" role="menuitem">Tệp trong dự án…</button>
+    <button id="nut-dinh-kem-may" type="button" role="menuitem" title="Tệp hoặc ảnh từ máy (ngoài workspace)">Tệp hoặc ảnh từ máy…</button>
+    <div class="mn-goi-y">Hoặc dán ảnh bằng Ctrl+V · kéo tệp vào khung</div>
+  </div>
+  <textarea id="o-nhap" rows="1" placeholder="Hỏi AI Local…  Enter gửi · Shift+Enter xuống dòng · @ chèn tệp"></textarea>
   <!-- ĐỢT G / TASK G1 / B4 — icon nhỏ gọn thay chữ "Gửi"; aria-label GIỮ nhãn cho trình đọc màn
        hình (nhỏ gọn không đồng nghĩa vô danh) — hành vi bấm/Ctrl+Enter không đổi (vẫn gọi gui()). -->
-  <button id="nut-gui" class="nut-icon" title="Gửi (Ctrl+Enter)" aria-label="Gửi (Ctrl+Enter)">
+  <button id="nut-gui" class="nut-icon" title="Gửi (Enter)" aria-label="Gửi (Enter)">
     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
       <path d="M1.2 1.4 14.8 8 1.2 14.6l2.6-6.1H9.5V7.5H3.8Z" />
     </svg>
@@ -332,6 +395,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   const hoiThoai = document.getElementById("hoi-thoai");
   const oNhap = document.getElementById("o-nhap");
   let khoiTraLoi = null;
+  let coMdDang = false;
   // ★★★ H3(b) (review toàn nhánh 2026-08-30) — cờ báo lượt "hoi" SẮP GỬI đến từ Cmd+K
   // ("dat_cau_hoi_tu_lenh") chứ không phải người dùng tự gõ. gui() đọc cờ này rồi ĐÍNH KÈM vào
   // postMessage({loai:"hoi"}) — đây là cách DUY NHẤT phía extension (bangChat.ts) biết một lượt hỏi
@@ -377,7 +441,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     const dong2 = document.createElement("p");
     dong2.textContent = "Gõ @ để chèn tệp vào câu hỏi.";
     const dong3 = document.createElement("p");
-    dong3.textContent = "Ctrl+Enter để gửi.";
+    dong3.textContent = "Enter để gửi, Shift+Enter để xuống dòng.";
     d.appendChild(dong1); d.appendChild(dong2); d.appendChild(dong3);
     hoiThoai.appendChild(d);
     rongLanDau = d;
@@ -388,6 +452,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     // "luot-nguoi_dung" → "luot-nguoi-dung": tên lớp CSS kebab-case, tên vai trong script snake_case
     // — chỉ đổi ký hiệu nối chữ, KHÔNG đổi sự thật (vẫn CÙNG một chuỗi \`vai\` truyền vào).
     d.className = "luot luot-" + vai.replace(/_/g, "-");
+    if (nhanTuyChon === "Lỗi") d.setAttribute("data-loi", "1");
     const t = document.createElement("div");
     t.className = "nhan";
     t.textContent = nhanTuyChon || NHAN_THEO_VAI[vai];
@@ -636,11 +701,30 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     capNhatThanhNguCanh();
   }
 
-  document.getElementById("nut-dinh-kem").addEventListener("click", () =>
-    vscode.postMessage({ loai: "xin_dinh_kem" }));
-
-  document.getElementById("nut-dinh-kem-may").addEventListener("click", () =>
-    vscode.postMessage({ loai: "xin_dinh_kem_ngoai" }));
+  const nutDinhKem = document.getElementById("nut-dinh-kem");
+  const menuDinhKem = document.getElementById("menu-dinh-kem");
+  function datMenuDinhKem(mo) {
+    menuDinhKem.hidden = !mo;
+    nutDinhKem.setAttribute("aria-expanded", mo ? "true" : "false");
+  }
+  nutDinhKem.addEventListener("click", (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    datMenuDinhKem(menuDinhKem.hidden !== false);
+  });
+  document.getElementById("mn-dinh-kem-ws").addEventListener("click", () => {
+    datMenuDinhKem(false);
+    vscode.postMessage({ loai: "xin_dinh_kem" });
+  });
+  document.getElementById("nut-dinh-kem-may").addEventListener("click", () => {
+    datMenuDinhKem(false);
+    vscode.postMessage({ loai: "xin_dinh_kem_ngoai" });
+  });
+  document.addEventListener("click", (e) => {
+    if (menuDinhKem.hidden) return;
+    const dich = e && e.target;
+    if (dich && menuDinhKem.contains && menuDinhKem.contains(dich)) return;
+    datMenuDinhKem(false);
+  });
   // ★★★ 2026-10-24 — DÁN ẢNH (Ctrl+V) và KÉO-THẢ TỆP. Trước đây webview không có trình nghe nào: ảnh chụp màn hình trong clipboard bị bỏ, tệp kéo vào bị trình duyệt xử lý mặc định.
   // Dán CHỮ vẫn như cũ (không có tệp trong clipboard ⇒ không chặn).
   oNhap.addEventListener("paste", (e) => {
@@ -705,9 +789,13 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
    */
   let choAiHienTai = null;
   function xoaChiBaoChoAi() {
-    if (choAiHienTai && khoiTraLoi && khoiTraLoi.con) {
-      const i = khoiTraLoi.con.indexOf(choAiHienTai);
-      if (i >= 0) khoiTraLoi.con.splice(i, 1);
+    if (choAiHienTai) {
+      // DOM THẬT: gỡ khỏi cha. (Bản cũ chỉ splice trường con của DOM GIẢ trong test nên ba chấm KHÔNG BAO GIỜ biến mất ở trình duyệt thật khi khung được dựng bằng appendChild.)
+      if (choAiHienTai.parentNode && choAiHienTai.parentNode.removeChild) choAiHienTai.parentNode.removeChild(choAiHienTai);
+      else if (khoiTraLoi && khoiTraLoi.con) {
+        const i = khoiTraLoi.con.indexOf(choAiHienTai);
+        if (i >= 0) khoiTraLoi.con.splice(i, 1);
+      }
     }
     choAiHienTai = null;
   }
@@ -719,6 +807,58 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     if (!choAiHienTai) return;
     choAiHienTai.className = "cho-ai-chu";
     choAiHienTai.textContent = chu;
+  }
+
+  // ★ 2026-10-24 — khung trả lời mới của một lượt (dùng cho gửi mới VÀ thử lại/tạo lại, không thêm bong bóng người dùng thứ hai).
+  function batDauLuotAi() {
+    xoaChiBaoChoAi(); // lượt TRƯỚC (nếu còn sót chỉ báo vì lý do bất thường) không được dính sang lượt này.
+    xoaHangHanhDong();
+    khoiTraLoi = themLuot("ai", "");
+    // Ba chấm nhấp nháy CHUNG CHUNG mặc định — thay bằng dòng CÓ NGHĨA ngay khi thong_bao đầu tiên
+    // của lượt này tới (xem xử lý tin "thong_bao" bên dưới).
+    choAiHienTai = document.createElement("span");
+    choAiHienTai.className = "cho-ai";
+    choAiHienTai.appendChild(document.createElement("span"));
+    choAiHienTai.appendChild(document.createElement("span"));
+    choAiHienTai.appendChild(document.createElement("span"));
+    khoiTraLoi.appendChild(choAiHienTai);
+    nutDung.hidden = false;
+  }
+  let tinHoiCuoi = null;
+  /** Gửi LẠI đúng câu hỏi (kèm đính kèm/@tệp) của lượt gần nhất — chỉ khi không có lượt nào đang chạy. */
+  function guiLaiTinCuoi() {
+    if (!tinHoiCuoi || nutDung.hidden === false) return;
+    batDauLuotAi();
+    anMenuMention();
+    agBatDauLuot();
+    vscode.postMessage(tinHoiCuoi);
+  }
+  function xoaHangHanhDong() {
+    if (hangHanhDongHienTai && hangHanhDongHienTai.parentNode && hangHanhDongHienTai.parentNode.removeChild) hangHanhDongHienTai.parentNode.removeChild(hangHanhDongHienTai);
+    hangHanhDongHienTai = null;
+  }
+  let hangHanhDongHienTai = null;
+  /** Hàng "Chép câu trả lời · Tạo lại" dưới câu trả lời VỪA XONG (một hàng duy nhất, hàng cũ bị gỡ). */
+  function themHangHanhDong() {
+    xoaHangHanhDong();
+    if (!khoiTraLoi || !khoiTraLoi.parentNode) return;
+    const hang = taoPhan("div", "hang-hanh-dong");
+    const nutChep = taoPhan("button", "", "Chép câu trả lời");
+    nutChep.addEventListener("click", () => vscode.postMessage({ loai: "chep_tra_loi" }));
+    const nutLai = taoPhan("button", "", "Tạo lại");
+    nutLai.setAttribute("title", "Hỏi lại đúng câu vừa rồi");
+    nutLai.addEventListener("click", guiLaiTinCuoi);
+    hang.appendChild(nutChep);
+    hang.appendChild(nutLai);
+    khoiTraLoi.parentNode.appendChild(hang);
+    hangHanhDongHienTai = hang;
+  }
+  /** Nút "Thử lại" trên thẻ lỗi (gửi lại câu hỏi cuối, đúng một lần cho mỗi thẻ). */
+  function themNutThuLai(c) {
+    if (!tinHoiCuoi || !c) return;
+    const b = taoPhan("button", "nut-mo-settings", "Thử lại");
+    b.addEventListener("click", () => { if (b.disabled) return; b.disabled = true; guiLaiTinCuoi(); });
+    c.appendChild(b);
   }
 
   function gui() {
@@ -736,17 +876,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     dinhKemNgoaiHienTai = [];
     veLaiDsDinhKem();
     oNhap.value = "";
-    xoaChiBaoChoAi(); // lượt TRƯỚC (nếu còn sót chỉ báo vì lý do bất thường) không được dính sang lượt này.
-    khoiTraLoi = themLuot("ai", "");
-    // Ba chấm nhấp nháy CHUNG CHUNG mặc định — thay bằng dòng CÓ NGHĨA ngay khi \`thong_bao\` đầu tiên
-    // của lượt này tới (xem xử lý tin "thong_bao" bên dưới).
-    choAiHienTai = document.createElement("span");
-    choAiHienTai.className = "cho-ai";
-    choAiHienTai.appendChild(document.createElement("span"));
-    choAiHienTai.appendChild(document.createElement("span"));
-    choAiHienTai.appendChild(document.createElement("span"));
-    khoiTraLoi.appendChild(choAiHienTai);
-    nutDung.hidden = false;
+    canChinhODoCao();
+    batDauLuotAi();
     anMenuMention();
     // ★★★ ĐỢT G / TASK G2 / B1+B2 — HỢP NHẤT hai nguồn tệp: @-mention gõ TRONG câu hỏi này
     // (\`mentionsHienTai\`, dùng MỘT LẦN rồi xoá) và tệp đính kèm CHỦ Ý qua nút (\`tepDinhKemHienTai\`,
@@ -766,6 +897,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     if (ngoai.length > 0) tin.dinhKemNgoai = ngoai;
     if (!tuLenh && cheDo !== "chat-cu") tin.cheDoAgent = cheDo;
     agBatDauLuot();
+    tinHoiCuoi = tin;
     vscode.postMessage(tin);
   }
 
@@ -773,6 +905,35 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   //      setAttribute; innerHTML chỉ được gán chuỗi RỖNG để dọn. Cây markdown đến từ host đã qua danh sách trắng
   //      (loi/markdownAnToan.ts) và được lọc LẦN HAI ở veNutMd (loại lạ ⇒ bỏ). ════
   const oCheDo = document.getElementById("o-che-do");
+  // ★ 2026-10-24 — chế độ được LƯU theo workspace: đổi ở đây ⇒ báo host lưu; host gửi lại tin che_do lúc san_sang (và sau mỗi lần đổi) để ô vẽ ĐÚNG chế độ đã lưu.
+  // ★ 2026-10-24 — MỘT ô cho chế độ + mức quyền ghi: giá trị hiển thị suy ra từ CẢ HAI giá trị host đã lưu (nên không bao giờ nói dối),
+  // và chọn ở đây báo host lưu CẢ HAI (host mới là nơi quyết định, ô này chỉ hiển thị + chuyển tiếp).
+  const MO_TA_CHE_DO = {
+    "hoi": "Chỉ đọc và trả lời — không sửa tệp, không chạy lệnh.",
+    "sua": "AI đề xuất, bạn duyệt từng thay đổi. Lệnh shell luôn hỏi.",
+    "tu-dong": "Tự sửa/tạo/đổi tên tệp trong workspace, không hỏi. Xoá tệp và chạy lệnh vẫn hỏi.",
+    "chat-cu": "Hỏi–đáp qua máy chủ AOI. Dự án SERVER luôn cần duyệt trên máy chủ."
+  };
+  let cheDoLuu = "sua";
+  let mucQuyenLuu = "hoi_truoc_khi_ghi";
+  function cheDoHienThi(cheDo, mucQuyen) {
+    if (cheDo === "hoi" || cheDo === "chat-cu") return cheDo;
+    if (mucQuyen === "chi_doc") return "hoi";
+    return mucQuyen === "tu_ghi" ? "tu-dong" : "sua";
+  }
+  const moTaCheDo = document.getElementById("mo-ta-che-do");
+  function veOCheDo() {
+    oCheDo.value = cheDoHienThi(cheDoLuu, mucQuyenLuu);
+    moTaCheDo.textContent = MO_TA_CHE_DO[oCheDo.value] || "";
+  }
+  oCheDo.addEventListener("change", () => {
+    const v = oCheDo.value;
+    vscode.postMessage({ loai: "dat_che_do", cheDo: v });
+    if (v === "tu-dong") vscode.postMessage({ loai: "dat_muc_quyen", mucQuyen: "tu_ghi" });
+    else if (v === "sua") vscode.postMessage({ loai: "dat_muc_quyen", mucQuyen: "hoi_truoc_khi_ghi" });
+    moTaCheDo.textContent = MO_TA_CHE_DO[v] || "";
+  });
+  moTaCheDo.textContent = MO_TA_CHE_DO.sua;
   const nutToken = document.getElementById("nut-token");
   const dongHoToken = document.getElementById("dong-ho-token");
   const nutHoanTac = document.getElementById("nut-hoan-tac");
@@ -783,7 +944,14 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   let agKeHoach = null;
   let agTool = {};
   const agThe = {};
-  function agBatDauLuot() { agDoan = null; agNghi = null; agKeHoach = null; agTool = {}; }
+  function agBatDauLuot() { agDoan = null; agNghi = null; agKeHoach = null; agTool = {}; coMdDang = false; }
+  /** Thay TOÀN BỘ nội dung một khối bằng cây markdown (đường Chat/SERVER + lịch sử). Chỉ createElement/textContent — innerHTML chỉ nhận chuỗi rỗng để dọn. */
+  function veLaiKhoiMd(el, cay, chiSoMaDau, dangStream) {
+    el.textContent = "";
+    el.innerHTML = "";
+    if (typeof el.className === "string" && el.className.indexOf("ag-md") < 0) el.className = (el.className + " ag-md").trim();
+    veMd(cay, chiSoMaDau, el, dangStream);
+  }
   function agKhung() { if (!khoiTraLoi) khoiTraLoi = themLuot("ai", ""); return khoiTraLoi; }
   function taoPhan(the, lop, chu) {
     const e = document.createElement(the);
@@ -822,7 +990,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       const k = taoPhan("div", "khoi-ma");
       const dau = taoPhan("div", "khoi-ma-dau");
       dau.appendChild(taoPhan("span", "", String(n.ngonNgu || "mã")));
-      for (const [hanhDong, nhan, goiY] of HANH_DONG_MA) {
+      // đang stream: khối chưa ĐĂNG KÝ chỉ số ở host (chỉ bản cuối mới đăng ký) ⇒ chưa hiện Chép/Chèn/Áp dụng, tránh nút chết
+      for (const [hanhDong, nhan, goiY] of demMa.dangStream ? [] : HANH_DONG_MA) {
         const b = taoPhan("button", "nut-khoi-ma", nhan);
         b.title = goiY;
         b.addEventListener("click", () => vscode.postMessage({ loai: "ag_khoi_ma", chiSo, hanhDong }));
@@ -845,7 +1014,9 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
         (h || []).forEach((o) => { const td = document.createElement("td"); (o || []).forEach((c) => veNutMd(c, td, demMa)); tr.appendChild(td); });
         b.appendChild(tr);
       });
-      cha.appendChild(b);
+      const cuon = taoPhan("div", "bang-cuon"); // bảng rộng cuộn ngang TRONG khung riêng, không đẩy rộng cả khung chat
+      cuon.appendChild(b);
+      cha.appendChild(cuon);
       return;
     }
     const the = THE_KHOI[n.t];
@@ -855,8 +1026,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     (n.con || []).forEach((c) => veNutMd(c, e, demMa));
     cha.appendChild(e);
   }
-  function veMd(cay, chiSoMaDau, cha) {
-    const demMa = { tiep: chiSoMaDau | 0 };
+  function veMd(cay, chiSoMaDau, cha, dangStream) {
+    const demMa = { tiep: chiSoMaDau | 0, dangStream: dangStream === true };
     (Array.isArray(cay) ? cay : []).forEach((n) => veNutMd(n, cha, demMa));
   }
   const NHAN_LY_DO = {
@@ -907,35 +1078,53 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     agKhung().appendChild(vung);
   }
   function agTheDuyet(m) {
+    const laLenh = m.loaiDuyet === "lenh";
+    const laXoa = !laLenh && m.thaoTac === "xoa";
     const the = taoPhan("div", "ag-the");
-    the.appendChild(taoPhan("div", "nhan", m.loaiDuyet === "lenh" ? "AI muốn CHẠY LỆNH" : "Đề xuất thay đổi tệp"));
-    the.appendChild(taoPhan("div", "", String(m.tomTat || "")));
+    the.appendChild(taoPhan("div", "nhan tieu-de", laLenh ? "AI muốn CHẠY LỆNH" : laXoa ? "AI muốn XOÁ tệp" : "Đề xuất thay đổi tệp"));
+    if (!(m.lenh && String(m.tomTat || "") === String(m.lenh))) the.appendChild(taoPhan("div", "", String(m.tomTat || "")));
     if (m.lenh) the.appendChild(taoPhan("code", "", String(m.lenh)));
+    if (laXoa) the.appendChild(taoPhan("div", "canh-bao-xoa", "Tệp sẽ bị xoá khỏi workspace. Việc này không nằm trong nút Duyệt thông thường — cần xác nhận riêng."));
     const lyDo = document.createElement("input");
     lyDo.setAttribute("placeholder", "Lý do bác (tuỳ chọn)");
+    lyDo.hidden = true;
     const hang = taoPhan("div", "the-duyet-nut");
-    const nutDiff = taoPhan("button", "", "Xem diff");
-    const nutOk = taoPhan("button", "", m.loaiDuyet === "lenh" ? "Chạy" : "Duyệt");
-    const nutBac = taoPhan("button", "", "Bác");
+    const nutDiff = taoPhan("button", "nut-phu", "Xem diff");
+    const nutOk = taoPhan("button", laXoa ? "nut-nguy" : "nut-chinh", laLenh ? "Chạy" : laXoa ? "Xác nhận xoá…" : "Duyệt");
+    const nutHet = taoPhan("button", "nut-phu nut-het", "Duyệt, tự duyệt các lần sửa tiếp trong lượt này");
+    const nutBac = taoPhan("button", "nut-nhe", "Bác");
+    const nutLyDo = taoPhan("button", "nut-nhe", "Thêm lý do");
     nutDiff.hidden = !m.coDiff;
+    nutHet.hidden = m.coTheDuyetHet !== true;
+    nutHet.setAttribute("title", "Chỉ cho SỬA/TẠO/ĐỔI TÊN tệp trong lượt này. Xoá tệp, chạy lệnh và nội dung đáng ngờ vẫn hỏi. Hết hiệu lực khi lượt kết thúc.");
     nutDiff.addEventListener("click", () => vscode.postMessage({ loai: "ag_xem_diff", id: m.id }));
     let daGui = false;
+    let daHoiXoa = false;
+    const khoaTatCa = () => { daGui = true; nutOk.disabled = true; nutBac.disabled = true; nutHet.disabled = true; };
     nutOk.addEventListener("click", () => {
       if (daGui) return;
-      daGui = true; nutOk.disabled = true; nutBac.disabled = true;
+      // XOÁ: hai bước — lần bấm đầu chỉ ĐỔI NHÃN nút (không gửi gì); lần hai mới gửi duyệt.
+      if (laXoa && !daHoiXoa) { daHoiXoa = true; nutOk.textContent = "Xoá tệp này"; return; }
+      khoaTatCa();
       vscode.postMessage({ loai: "ag_duyet", id: m.id });
+    });
+    nutHet.addEventListener("click", () => {
+      if (daGui) return;
+      khoaTatCa();
+      vscode.postMessage({ loai: "ag_duyet_het", id: m.id });
     });
     nutBac.addEventListener("click", () => {
       if (daGui) return;
-      daGui = true; nutOk.disabled = true; nutBac.disabled = true;
+      khoaTatCa();
       vscode.postMessage({ loai: "ag_bac", id: m.id, lyDo: lyDo.value || "" });
     });
-    hang.appendChild(nutDiff); hang.appendChild(nutOk); hang.appendChild(nutBac);
+    nutLyDo.addEventListener("click", () => { lyDo.hidden = false; nutLyDo.hidden = true; });
+    hang.appendChild(nutDiff); hang.appendChild(nutOk); hang.appendChild(nutHet); hang.appendChild(nutBac); hang.appendChild(nutLyDo);
     the.appendChild(hang);
     the.appendChild(lyDo);
     const trangThai = taoPhan("div", "nhan", "");
     the.appendChild(trangThai);
-    agThe[m.id] = { the, nutOk, nutBac, nutDiff, lyDo, trangThai };
+    agThe[m.id] = { the, nutOk, nutBac, nutDiff, nutHet, lyDo, trangThai };
     agKhung().appendChild(the);
     agDoan = null;
   }
@@ -945,6 +1134,15 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       xoaChiBaoChoAi();
       if (!agDoan) { agDoan = taoPhan("div", "ag-doan ag-md"); agKhung().appendChild(agDoan); }
       agDoan.textContent += m.chu;
+      return;
+    }
+    if (m.loai === "ag_md_dang") {
+      // ★ 2026-10-24 — cây markdown TĂNG DẦN (host dựng lại văn bản đã nhận, tiết lưu): thay nội dung khối đang stream, KHÔNG nối chữ thô.
+      xoaChiBaoChoAi();
+      if (!agDoan) { agDoan = taoPhan("div", "ag-doan ag-md"); agKhung().appendChild(agDoan); }
+      agDoan.textContent = "";
+      agDoan.innerHTML = "";
+      veMd(m.cay, 0, agDoan, true);
       return;
     }
     if (m.loai === "ag_md") {
@@ -998,9 +1196,10 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       return;
     }
     if (m.loai === "ag_the_duyet") { xoaChiBaoChoAi(); agTheDuyet(m); return; }
+    if (m.loai === "ag_tu_duyet") { xoaChiBaoChoAi(); agKhung().appendChild(taoPhan("div", "ag-tu-duyet", "✓ Đã tự duyệt (theo lựa chọn của bạn trong lượt này): " + String(m.tomTat || m.duong || ""))); agDoan = null; return; }
     if (m.loai === "ag_an_the_duyet") {
       const t = agThe[m.id];
-      if (t) { t.nutOk.disabled = true; t.nutBac.disabled = true; t.trangThai.textContent = m.ketQua === "duyet" ? "Đã duyệt" : "Đã bác / huỷ"; }
+      if (t) { t.nutOk.disabled = true; t.nutBac.disabled = true; if (t.nutHet) t.nutHet.disabled = true; t.trangThai.textContent = m.ketQua === "duyet" ? "Đã duyệt" : "Đã bác / huỷ"; }
       return;
     }
     if (m.loai === "ag_de_xuat_nho") {
@@ -1035,6 +1234,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       nutHoanTac.hidden = !m.coHoanTac;
       nutHoanTac.disabled = false;
       if (m.phanHoi) agNutPhanHoi(m.phanHoi);
+      if (m.lyDo === "hoan-thanh") themHangHanhDong();
       khoiTraLoi = null;
       return;
     }
@@ -1046,6 +1246,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     if (m.loai === "ag_loi") {
       xoaChiBaoChoAi();
       const c = themLuot("he_thong", String(m.thongDiep || ""), false, "Lỗi");
+      if (m.ma !== "DANG_CHAY" && m.ma !== "KHONG_WORKSPACE") themNutThuLai(c);
       if (MA_CAN_TOKEN[m.ma]) {
         const b = taoPhan("button", "nut-mo-settings", "Đăng nhập AI Local (device flow)");
         b.addEventListener("click", () => vscode.postMessage({ loai: "ag_dang_nhap_thiet_bi" }));
@@ -1075,15 +1276,42 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   }
 
   document.getElementById("nut-gui").addEventListener("click", gui);
+  // ★ 2026-10-24 — Enter = GỬI, Shift+Enter = xuống dòng (Ctrl/Cmd+Enter vẫn gửi). BẮT BUỘC kiểm IME: gõ tiếng Việt
+  // (Telex/VNI) dùng Enter để CHỐT từ đang soạn — lúc đó isComposing = true hoặc keyCode = 229 và TUYỆT ĐỐI không được gửi.
+  function laPhimGui(e) {
+    if (!e || e.key !== "Enter") return false;
+    if (e.isComposing === true || e.keyCode === 229) return false;
+    if (e.shiftKey || e.altKey) return false;
+    return true;
+  }
   oNhap.addEventListener("keydown", (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); gui(); }
+    if (!laPhimGui(e)) return;
+    // gợi ý @-mention đang mở: Enter CHỌN gợi ý đầu (như Tab), không gửi dở câu
+    if (goiYHienTai.length > 0 && !(e.ctrlKey || e.metaKey)) { e.preventDefault(); chonGoiY(goiYHienTai[0]); return; }
+    e.preventDefault();
+    gui();
   });
+  /** Ô nhập tự giãn theo nội dung (tối đa 160px — quá thì cuộn trong ô). */
+  function canChinhODoCao() {
+    if (!oNhap.style) return;
+    oNhap.style.height = "auto";
+    const cao = Number(oNhap.scrollHeight);
+    if (cao > 0) oNhap.style.height = Math.min(cao + 2, 160) + "px";
+  }
+  oNhap.addEventListener("input", canChinhODoCao);
   // TASK 5 — Tab CHỌN gợi ý ĐẦU TIÊN đang hiện (bàn phím-trước, không bắt buộc dùng chuột); Escape
   // đóng dropdown mà KHÔNG chèn gì. Đặt ở listener RIÊNG, tách khỏi listener Ctrl+Enter phía trên
   // để mỗi khối chỉ lo một việc.
   oNhap.addEventListener("keydown", (e) => {
     if (e.key === "Tab" && goiYHienTai.length > 0) { e.preventDefault(); chonGoiY(goiYHienTai[0]); return; }
-    if (e.key === "Escape" && !mentionDs.hidden) { anMenuMention(); }
+    if (e.key === "Escape" && !mentionDs.hidden) { anMenuMention(); if (e.stopPropagation) e.stopPropagation(); }
+  });
+  // ★ 2026-10-24 — Esc = DỪNG lượt đang chạy (như nút Dừng). Không cướp Esc của: IME đang soạn, menu Đính kèm, gợi ý @-mention.
+  document.addEventListener("keydown", (e) => {
+    if (!e || e.key !== "Escape" || e.isComposing === true || e.keyCode === 229) return;
+    if (menuDinhKem.hidden === false) { datMenuDinhKem(false); return; }
+    if (!mentionDs.hidden) return;
+    if (nutDung.hidden === false) vscode.postMessage({ loai: "dung_hoi" });
   });
 
   // Thẻ duyệt (chế độ SERVER): webview chỉ HIỂN THỊ chữ do extension đã dựng sẵn và CHUYỂN TIẾP
@@ -1187,9 +1415,23 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     veLaiDsDinhKem();
   }
 
+  // ★ 2026-10-24 — CUỘN THÔNG MINH: chỉ tự cuộn xuống khi người dùng ĐANG Ở ĐÁY; đang cuộn lên đọc thì giữ nguyên chỗ và hiện "↓ Tin mới" (trước đây mỗi mảnh stream ép về đáy).
+  const pillMoi = document.getElementById("pill-moi");
+  function dangODay() {
+    const kc = hoiThoai.scrollHeight - hoiThoai.scrollTop - (hoiThoai.clientHeight || 0);
+    return !(kc >= 48); // NaN (DOM giả) ⇒ coi là đang ở đáy
+  }
+  function cuonNeuODay(odDay) {
+    if (odDay) { hoiThoai.scrollTop = hoiThoai.scrollHeight; pillMoi.hidden = true; }
+    else pillMoi.hidden = false;
+  }
+  hoiThoai.addEventListener("scroll", () => { if (dangODay()) pillMoi.hidden = true; });
+  pillMoi.addEventListener("click", () => { hoiThoai.scrollTop = hoiThoai.scrollHeight; pillMoi.hidden = true; });
+
   window.addEventListener("message", (e) => {
     const m = e.data;
-    if (typeof m.loai === "string" && m.loai.indexOf("ag_") === 0) { xuLyTinAgent(m); hoiThoai.scrollTop = hoiThoai.scrollHeight; return; }
+    const odDay = dangODay() || m.loai === "khoi_phuc_hoi_thoai" || m.loai === "chat_moi";
+    if (typeof m.loai === "string" && m.loai.indexOf("ag_") === 0) { xuLyTinAgent(m); cuonNeuODay(odDay); return; }
     // ★★★ ĐỢT I / TASK I-1a — token ĐẦU TIÊN của lượt là tín hiệu "model đã bắt đầu trả lời thật":
     // xoá chỉ báo đang-chờ NGAY TRƯỚC khi ghi chữ, không sau — DOM giả của lưới không tự dọn hộ
     // (xem docblock \`xoaChiBaoChoAi\`), và kể cả trên browser thật thì cũng phải TỰ xoá thay vì trông
@@ -1197,19 +1439,34 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     // \`<span>\` ba-chấm vẫn nằm nguyên trong DOM cạnh chữ vừa ghi nếu không dọn tay).
     if (m.loai === "token" && khoiTraLoi) {
       xoaChiBaoChoAi();
-      khoiTraLoi.textContent += m.chu;
+      // chữ thô CHỈ tới khi md_dang đầu tiên tới (≤ 1 nhịp tiết lưu); từ đó cây markdown của host là nguồn hiển thị duy nhất
+      if (!coMdDang) khoiTraLoi.textContent += m.chu;
+    }
+    else if (m.loai === "md_dang" && khoiTraLoi) {
+      coMdDang = true;
+      xoaChiBaoChoAi();
+      veLaiKhoiMd(khoiTraLoi, m.cay, 0, true);
     }
     // ★★★ ĐỢT I / TASK I-1b — NHÁNH KIA của I-1a: LỖI (bao gồm mất-kết-nối, cùng gói tin \`loi\` với
     // \`moSettings:true\` — xem \`bangChat.ts#laLoiKhongNoiDuocMayChu\`) phải XOÁ chỉ báo, không được
     // để nó quay mãi trong một bong bóng AI rỗng đứng lại vĩnh viễn cạnh bong bóng lỗi mới.
-    else if (m.loai === "loi") { xoaChiBaoChoAi(); themLuot("he_thong", m.thongDiep, m.moSettings === true, "Lỗi"); nutDung.hidden = true; }
+    else if (m.loai === "loi") {
+      xoaChiBaoChoAi();
+      const c = themLuot("he_thong", m.thongDiep, m.moSettings === true, "Lỗi");
+      if (m.moSettings === true) c.appendChild(taoPhan("div", "loi-goi-y", "Kiểm tra máy chủ AI Local đang chạy, rồi bấm Thử lại."));
+      themNutThuLai(c);
+      nutDung.hidden = true;
+    }
     else if (m.loai === "hoan_tat") {
       // ★★★ ĐỢT I / TASK I-1b — NHÁNH KIA: XONG lẫn DỪNG đều đi qua \`hoan_tat\` (xem docblock
       // \`bangChat.ts\`) — chỉ báo phải biến mất ở CẢ HAI, không chỉ đường "xong bình thường". Xoá
       // TRƯỚC khi (có thể) ghi \`vanBanCuoi\` — cùng lý do với nhánh "token" ở trên.
       xoaChiBaoChoAi();
       // vanBanCuoi chỉ có khi server bảo THAY chữ đã stream (degraded) — không phải mọi lượt.
-      if (m.vanBanCuoi != null && khoiTraLoi) khoiTraLoi.textContent = m.vanBanCuoi;
+      // ★ 2026-10-24 — cây markdown CUỐI của chính văn bản được hiển thị (host dựng, đã đăng ký khối mã); không có cây (host cũ) ⇒ hành vi cũ.
+      if (Array.isArray(m.cay) && khoiTraLoi) veLaiKhoiMd(khoiTraLoi, m.cay, m.chiSoMaDau | 0, false);
+      else if (m.vanBanCuoi != null && khoiTraLoi) khoiTraLoi.textContent = m.vanBanCuoi;
+      coMdDang = false;
       // Cắt ngang hoặc khung hỏng: KHÔNG được im lặng — phải hiện, kể cả khi câu trả lời trông
       // như đã xong.
       if (m.canhBao) themLuot("he_thong", m.canhBao, false, "Lưu ý");
@@ -1218,6 +1475,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // Ẩn nút Dừng Ở ĐÂY, không đoán qua bất kỳ tín hiệu nào khác (token/thong_bao vẫn có thể bắn
       // giữa các vòng của MỘT lượt hỏi đang chạy — ẩn theo chúng sẽ ẩn nhầm lúc còn đang chạy).
       nutDung.hidden = true;
+      if (khoiTraLoi && !m.canhBao) themHangHanhDong();
       // ★★★ ĐỢT G / TASK G2 / B3 — thống kê ngữ cảnh của lượt VỪA XONG (extension đã tính trên
       // \`this.lichSu\` THẬT — xem \`thongKeHoiThoaiHienTai\` ở \`bangChat.ts\`).
       thongKeHoiThoai = { soLuot: m.soLuot ?? 0, soKyTu: m.soKyTu ?? 0 };
@@ -1368,6 +1626,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       const nhanTaiKhoan = (daDangNhap ? (m.tenTaiKhoan || "Đã đăng nhập") + " — bấm để đăng xuất" : "Đăng nhập") + dongMayChu;
       nutTaiKhoan.title = nhanTaiKhoan;
       nutTaiKhoan.setAttribute("aria-label", nhanTaiKhoan);
+    } else if (m.loai === "che_do") {
+      if (m.cheDo === "hoi" || m.cheDo === "sua" || m.cheDo === "tu-dong" || m.cheDo === "chat-cu") { cheDoLuu = m.cheDo; veOCheDo(); }
     } else if (m.loai === "muc_quyen") {
       // ★★★ ĐỢT G / TASK G3 / B4 — extension gửi tin này NGAY sau "san_sang" (mức đã lưu, hoặc
       // mặc định AN TOÀN nếu kho rỗng/hỏng) và SAU MỖI lần "dat_muc_quyen" (xác nhận giá trị THẬT
@@ -1376,6 +1636,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // KHÔNG có trong ba \`<option>\` tĩnh.
       if (m.mucQuyen === "chi_doc" || m.mucQuyen === "hoi_truoc_khi_ghi" || m.mucQuyen === "tu_ghi") {
         oMucQuyen.value = m.mucQuyen;
+        mucQuyenLuu = m.mucQuyen;
+        veOCheDo();
       }
     } else if (m.loai === "chat_moi") {
       // ★★★ ĐỢT F / TASK 3 / B3 — "Chat mới": khung TRẮNG, không còn dấu vết gì của phiên cũ, KỂ CẢ
@@ -1397,13 +1659,17 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // hội thoại cũ (hay khung vừa khởi động, lúc \`o-nhap\` chắc chắn còn rỗng) — không phải chủ
       // động "rời phiên" như "Chat mới", nên nháp đang gõ (nếu có) phải CÒN NGUYÊN sau khi xem xong.
       xoaKhungChoPhienKhac(false);
-      for (const l of m.luot || []) themLuot(l.vaiTro === "user" ? "nguoi_dung" : "ai", l.noiDung);
+      for (const l of m.luot || []) {
+        const khung = themLuot(l.vaiTro === "user" ? "nguoi_dung" : "ai", l.noiDung);
+        // trả lời của AI trong lịch sử cũng dựng markdown (host gửi kèm cây); khối mã chưa đăng ký chỉ số ⇒ không hiện nút hành động
+        if (l.vaiTro !== "user" && Array.isArray(l.cay)) veLaiKhoiMd(khung, l.cay, 0, true);
+      }
       // ★★★ ĐỢT G / TASK G2 / B3 — thống kê của ĐÚNG hội thoại vừa vẽ lại (extension gửi kèm
       // \`soLuot\`/\`soKyTu\` của bản ghi vừa khôi phục — xem \`khoiPhucHoiThoaiGanNhat\`/\`moLichSu\`).
       thongKeHoiThoai = { soLuot: m.soLuot ?? 0, soKyTu: m.soKyTu ?? 0 };
       capNhatThanhNguCanh();
     }
-    hoiThoai.scrollTop = hoiThoai.scrollHeight;
+    cuonNeuODay(odDay);
   });
   // Bắt tay chống ĐUA: extension có thể gửi danh sách dự án TRƯỚC khi script này kịp đăng ký
   // listener ở trên ⇒ danh sách rơi mất mà không có lỗi nào. Báo "san_sang" NGAY SAU khi đã lắng

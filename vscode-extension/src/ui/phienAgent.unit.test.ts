@@ -310,3 +310,80 @@ describe("phiên agent — 👍/👎 câu trả lời cuối (Đợt 5.1 VSCode)
     expect(d2.tin.find((m) => m.loai === "ag_xong")!.phanHoi).toBeUndefined();
   });
 });
+
+describe("phiên agent — markdown tăng dần (2026-10-24)", () => {
+  it("★★★ chữ stream ⇒ `ag_md_dang` mang CÂY (không còn `ag_chu` thô); bản CUỐI vẫn là `ag_md`; mảnh dồn dập được tiết lưu nhưng bản mới nhất không bao giờ mất", async () => {
+    const d = dung((luot) =>
+      luot === 1 ? [{ loai: "chu", noiDung: "### Tiêu " }, { loai: "chu", noiDung: "đề\n\nVăn **bản** mới." }, { loai: "xong", toolCalls: [] }] : [],
+    );
+    await d.phien.chay("giải thích", "hoi");
+    expect(d.tin.some((m) => m.loai === "ag_chu")).toBe(false);
+    const dang = d.tin.filter((m) => m.loai === "ag_md_dang");
+    expect(dang.length).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(dang[0]!.cay)).toContain('"t":"h"'); // mảnh đầu "### Tiêu " đã dựng thành tiêu đề, không phải chữ thô
+    const md = d.tin.filter((m) => m.loai === "ag_md");
+    expect(md).toHaveLength(1);
+    expect(JSON.stringify(md[0]!.cay)).toContain("Văn");
+    // bản cuối đứng SAU mọi bản tăng dần (hẹn giờ treo đã bị huỷ — không có ag_md_dang trễ sau ag_md)
+    const viTriMd = d.tin.indexOf(md[0]!);
+    expect(d.tin.slice(viTriMd + 1).some((m) => m.loai === "ag_md_dang")).toBe(false);
+  });
+
+  it("★ themKhoiMa: đường Chat đăng ký khối mã chung chỉ số với agent (trả chỉ số đầu, tăng dần)", () => {
+    const d = dung(() => []);
+    expect(d.phien.themKhoiMa([{ ngonNgu: "ts", ma: "a" }, { ngonNgu: "", ma: "b" }])).toBe(0);
+    expect(d.phien.themKhoiMa([{ ngonNgu: "sh", ma: "c" }])).toBe(2);
+  });
+});
+
+describe("phiên agent — duyệt hết lượt (2026-10-24)", () => {
+  const ghiTep = (id: string, p: string) => goiTool(id, "write_file", { path: p, content: "x\n" });
+  const caThe = (d: ReturnType<typeof dung>) => d.tin.filter((m) => m.loai === "ag_the_duyet");
+
+  it("★★★ bấm 'duyệt hết lượt' ở tệp 1 ⇒ tệp 2 CÙNG lượt ghi không hỏi (ag_tu_duyet), cả hai đều qua apBanVa", async () => {
+    const d = dung((luot) => (luot === 1 ? [ghiTep("c1", "src/a.ts")] : luot === 2 ? [ghiTep("c2", "src/b.ts")] : [{ loai: "xong", toolCalls: [] }]), { tuDuyet: false });
+    const p = d.phien.chay("tạo hai tệp", "sua");
+    await vi.waitFor(() => expect(caThe(d)).toHaveLength(1));
+    expect(caThe(d)[0]).toMatchObject({ thaoTac: "tao", coTheDuyetHet: true });
+    d.phien.duyetVaTuDuyetLuot(String(caThe(d)[0]!.id));
+    await p;
+    expect(caThe(d)).toHaveLength(1);
+    expect(d.tin.filter((m) => m.loai === "ag_tu_duyet")).toHaveLength(1);
+    expect(d.ap.map((a) => basename(a.duongTuyetDoi))).toEqual(["a.ts", "b.ts"]);
+  });
+
+  it("★★★ XOÁ vẫn HỎI dù đã duyệt-hết-lượt; thẻ xoá không cho phép duyệt-hết; id không đủ điều kiện bị BỎ QUA (không duyệt gì)", async () => {
+    may.tep.set(join(WS, "src", "cu.ts"), "x\n");
+    const d = dung(
+      (luot) => (luot === 1 ? [ghiTep("c1", "src/a.ts")] : luot === 2 ? [goiTool("c2", "delete_file", { path: "src/cu.ts" })] : [{ loai: "xong", toolCalls: [] }]),
+      { tuDuyet: false },
+    );
+    const p = d.phien.chay("tạo rồi xoá", "sua");
+    await vi.waitFor(() => expect(caThe(d)).toHaveLength(1));
+    d.phien.duyetVaTuDuyetLuot(String(caThe(d)[0]!.id));
+    await vi.waitFor(() => expect(caThe(d)).toHaveLength(2));
+    expect(caThe(d)[1]).toMatchObject({ thaoTac: "xoa", coTheDuyetHet: false });
+    const idXoa = String(caThe(d)[1]!.id);
+    d.phien.duyetVaTuDuyetLuot(idXoa);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(d.ap.map((a) => a.thaoTac?.loai)).toEqual(["tao"]);
+    d.phien.quyet(idXoa, { duyet: true });
+    await p;
+    expect(d.ap.map((a) => a.thaoTac?.loai)).toEqual(["tao", "xoa"]);
+  });
+
+  it("★★ cờ KHÔNG sống sang lượt sau: lượt kế hỏi lại bình thường", async () => {
+    const d = dung(
+      (luot) => (luot === 1 ? [ghiTep("c1", "src/a.ts")] : luot === 2 ? [{ loai: "xong", toolCalls: [] }] : luot === 3 ? [ghiTep("c3", "src/b.ts")] : [{ loai: "xong", toolCalls: [] }]),
+      { tuDuyet: false },
+    );
+    const p1 = d.phien.chay("một", "sua");
+    await vi.waitFor(() => expect(caThe(d)).toHaveLength(1));
+    d.phien.duyetVaTuDuyetLuot(String(caThe(d)[0]!.id));
+    await p1;
+    const p2 = d.phien.chay("hai", "sua");
+    await vi.waitFor(() => expect(caThe(d)).toHaveLength(2));
+    d.phien.quyet(String(caThe(d)[1]!.id), { duyet: false });
+    await p2;
+  });
+});
