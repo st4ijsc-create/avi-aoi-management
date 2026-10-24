@@ -45,6 +45,7 @@ import { toastTrpcError } from "@/lib/trpcErrors";
 import ManualHelp from "@/components/ManualHelp";
 import JsonSchemaForm, { jsonSchemaDefaults } from "@/components/JsonSchemaForm";
 import { lyDoGoStopPinKhiSuaTag, type TagChoLuatGoGhim } from "@shared/stopPinTagRule";
+import { useHopMaTotpTroLai } from "@/components/scada/HopMaTotpTroLai";
 
 const PROTOCOLS = ["stub", "opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip"] as const;
 const DATA_TYPES = ["bool", "int", "float", "string", "json"] as const;
@@ -536,11 +537,17 @@ export default function DeviceAdapterManagement() {
     onSuccess: (res) => {
       toast.success(t("deviceAdapter.toast.tagUpdated", "Đã cập nhật tag"));
       notifyStopPinAutoClear(res, t); // final wave 3 (M4)
+      troLaiTotp.daXong();
       setTagForm(emptyTag);
       invalidateTags();
     },
-    onError: (e) => toastTrpcError(e),
+    // SCADA R1b-1 Task 9 — trỏ lại tag ĐÃ KHAI ⇒ máy chủ đòi mã TOTP (SCADA_CONFIG_TOTP_REQUIRED) ⇒ hộp mã mở, gửi lại CHÍNH lượt đó kèm mã.
+    onError: (e, bien) => {
+      if (troLaiTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
   });
+  const troLaiTotp = useHopMaTotpTroLai<Parameters<typeof updateTag.mutate>[0]>((bien) => updateTag.mutate(bien), updateTag.isPending);
   const deleteTag = trpc.deviceAdapter.tags.delete.useMutation({
     onSuccess: () => { toast.success(t("deviceAdapter.toast.tagDeleted", "Đã xoá tag")); invalidateTags(); },
     onError: (e) => toastTrpcError(e),
@@ -931,6 +938,7 @@ export default function DeviceAdapterManagement() {
       </Sheet>
 
       {tagEditGuard.dialog}
+      {troLaiTotp.hop}
 
       {/* ── Delete adapter confirmation ── */}
       <AlertDialog open={adapterToDelete != null} onOpenChange={(o) => { if (!o) setAdapterToDelete(null); }}>
