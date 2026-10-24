@@ -34,6 +34,9 @@ param(
   # HYBRID/RECURRENT (9/9 luot "forcing full prompt re-processing") => cache khong tai dung, chi ton commit (+3,3..+4,3 GB o 4096) va
   # ~1,5 s/luot; tat: commit phang, nhanh hon 13-24 %. Su co 2026-10-23 22:20: llama-server 27B giu ~40 GB commit. Spec 2026-10-20 §6.
   [int]$CacheRam = 0,
+  # Dot 9 (2026-10-24, dieu-phoi duyet): bo chieu thi giac --mmproj THEO MODEL: off | auto | <duong dan>. auto = cung quy tac
+  # scripts/ai/tim-mmproj.ps1 voi start-llama-server.ps1 (<ten model bo duoi luong tu>-mmproj-F16.gguf canh model).
+  [string]$Mmproj = "off",
   # Dot 9 (2026-10-22): chu khoa nhan BAN GIAO khi /health xanh (vd chu cua khoaKhe.mjs giu cua phep do) - xem khoi KHOA ben duoi.
   [string]$GiuKhoa = ""
 )
@@ -114,6 +117,9 @@ $thamSo = @('-m', $Model, '--host', '127.0.0.1', '--port', '8091', '-c', "$Ctx",
           # Dot 9: 4096 (2026-10-22, sau su co 18:21) -> 0 (2026-10-24, xem -CacheRam). Chi anh huong TOC DO, KHONG anh huong dau ra.
           '--cache-ram', "$CacheRam")
 if ($NganSachNghi -ge 0) { $thamSo += @('--reasoning-budget', "$NganSachNghi") }
+. (Join-Path $PSScriptRoot '..\..\ai\tim-mmproj.ps1')
+$mm = Resolve-Mmproj -ModelPath $Model -CheDo $Mmproj
+if ($mm) { $thamSo += @('--mmproj', $mm); "MMPROJ: $mm" }
 $thamSo += $ThemArgs
 # Dot 9 (2026-10-24, dieu-phoi duyet P2): log CO DAU GIO, KHONG ghi de (su co 22:20: log luc 27B chet bi lan khoi dong sau xoa mat).
 # Giu 10 ban gan nhat CUA MODEL NAY; chi don trong dung thu muc log nay, dung mau ten ls-<model>-<dau gio>.
