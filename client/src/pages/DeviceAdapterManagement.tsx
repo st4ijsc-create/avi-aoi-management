@@ -524,9 +524,14 @@ export default function DeviceAdapterManagement() {
   });
   const adapterTotp = useHopMaTotpTroLai<Parameters<typeof updateAdapter.mutate>[0]>((bien) => updateAdapter.mutate(bien), updateAdapter.isPending);
   const deleteAdapter = trpc.deviceAdapter.delete.useMutation({
-    onSuccess: () => { toast.success(t("deviceAdapter.toast.deleted", "Đã xoá adapter")); invalidateAdapters(); },
-    onError: (e) => toastTrpcError(e),
+    onSuccess: () => { toast.success(t("deviceAdapter.toast.deleted", "Đã xoá adapter")); xoaAdapterTotp.daXong(); invalidateAdapters(); },
+    // R1b-1 T9 fix round 3 (N3) — xoá adapter còn tag được bảo vệ ⇒ máy chủ đòi mã ⇒ hộp mã, gửi lại chính lượt đó.
+    onError: (e, bien) => {
+      if (xoaAdapterTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
   });
+  const xoaAdapterTotp = useHopMaTotpTroLai<Parameters<typeof deleteAdapter.mutate>[0]>((bien) => deleteAdapter.mutate(bien), deleteAdapter.isPending);
   const testConnection = trpc.deviceAdapter.testConnection.useMutation({
     onSuccess: (res) => {
       if (res.ok) toast.success(t("deviceAdapter.toast.connOk", "Kết nối OK ({{ms}}ms)", { ms: res.latencyMs }));
@@ -958,6 +963,7 @@ export default function DeviceAdapterManagement() {
       {taoTagTotp.hop}
       {xoaTagTotp.hop}
       {adapterTotp.hop}
+      {xoaAdapterTotp.hop}
 
       {/* ── Delete adapter confirmation ── */}
       <AlertDialog open={adapterToDelete != null} onOpenChange={(o) => { if (!o) setAdapterToDelete(null); }}>

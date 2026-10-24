@@ -150,7 +150,12 @@ const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<
   // deviceAdapter.update (đổi đích / tắt adapter, I5; fix round 2) MIỄN TRỪ theo thủ tục (phán quyết T9 a).
   "server/services/scada/totpCauHinh.ts": {
     kiemTotpCauHinh: {
-      routerFile: ["server/routers/scadaKenhRouter.ts", "server/routers/deviceAdapterRouter.ts", "server/routers/mappingAsCodeRouter.ts"],
+      routerFile: [
+        "server/routers/scadaKenhRouter.ts",
+        "server/routers/deviceAdapterRouter.ts",
+        "server/routers/mappingAsCodeRouter.ts",
+        "server/routers/scadaDiagRouter.ts",
+      ],
       thuTuc: [
         "scadaKenh.capNhat",
         "scadaKenh.cheDo.dat",
@@ -160,6 +165,8 @@ const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<
         "deviceAdapter.tags.create",
         "deviceAdapter.tags.update",
         "deviceAdapter.tags.delete",
+        "deviceAdapter.delete",
+        "scadaDiag.tamTat",
       ],
       mienTru: {
         "deviceAdapter.tags.create": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
@@ -167,6 +174,9 @@ const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<
         "deviceAdapter.tags.delete": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
         // 2026-10-24 · R1b-1 T9 fix round 2 — deviceAdapter.update RA khỏi nhóm (phán quyết a mở rộng).
         "deviceAdapter.update": "Phán quyết T9 a (2026-10-24, fix round 2): chỉ xác minh TOTP khi đổi đích / tắt adapter có tag được bảo vệ; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt lưu adapter / công tắc Bật thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa.",
+        // 2026-10-24 · R1b-1 T9 fix round 3 (N1/N3) — xoá adapter + tạm tắt adapter (scadaDiag) đi qua cùng cổng adapter ⇒ cùng miễn trừ.
+        "deviceAdapter.delete": "Phán quyết T9 a (2026-10-24, fix round 2): chỉ xác minh TOTP khi đổi đích / tắt adapter có tag được bảo vệ; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt lưu adapter / công tắc Bật thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa.",
+        "scadaDiag.tamTat": "Phán quyết T9 a (2026-10-24, fix round 2): chỉ xác minh TOTP khi đổi đích / tắt adapter có tag được bảo vệ; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt lưu adapter / công tắc Bật thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa.",
       },
     },
   },
@@ -252,9 +262,10 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
     // 2026-10-24 · R1b-1 T9 fix round 1: 7 → 10 — tags.update RA khỏi nhóm (miễn trừ, phán quyết T9 a); + deviceAdapter.update (nhóm, I5);
     //   + deviceAdapter.tags.create / tags.delete (miễn trừ, cùng lý do với tags.update).
     // 2026-10-24 · R1b-1 T9 fix round 2: deviceAdapter.update RA khỏi nhóm (miễn trừ, phán quyết a) — dem 5 → 4, mien 5 → 6, tổng giữ 10.
-    expect(dem + mien).toBe(10);
+    // 2026-10-24 · R1b-1 T9 fix round 3 (N1/N3): + deviceAdapter.delete / scadaDiag.tamTat (miễn trừ, cùng lý do) — mien 6 → 8, tổng 10 → 12.
+    expect(dem + mien).toBe(12);
     expect(dem).toBe(4); // scadaKenh ×3 + mappingAsCode.applyImport
-    expect(mien).toBe(6); // aiCopilot.confirmAction + scadaCommands.confirm (R1a final I-1) + deviceAdapter.tags.create/update/delete + deviceAdapter.update (T9 a)
+    expect(mien).toBe(8); // aiCopilot.confirmAction + scadaCommands.confirm (R1a final I-1) + deviceAdapter.tags.create/update/delete + deviceAdapter.update/delete + scadaDiag.tamTat (T9 a)
   }, 120_000);
 });
 

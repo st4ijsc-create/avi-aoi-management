@@ -84,6 +84,10 @@ vi.mock("../../../drizzle/schema", () => ({
     commandValue: "interlockRules.commandValue",
     commandTag: "interlockRules.commandTag",
     targetAdapterId: "interlockRules.targetAdapterId",
+    approvedBy: "interlockRules.approvedBy",
+    sourceKey: "interlockRules.sourceKey",
+    sourceType: "interlockRules.sourceType",
+    machineId: "interlockRules.machineId",
   },
   scadaKenhCheDo: { machineId: "scadaKenhCheDo.machineId", adapterId: "scadaKenhCheDo.adapterId", tagKey: "scadaKenhCheDo.tagKey" },
 }));

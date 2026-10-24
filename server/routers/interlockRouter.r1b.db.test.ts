@@ -17,6 +17,7 @@ import postgres from "postgres";
 import { interlockRouter } from "./interlockRouter";
 import { deviceAdapterRouter } from "./deviceAdapterRouter";
 import { mappingAsCodeRouter } from "./mappingAsCodeRouter";
+import { scadaDiagRouter } from "./scadaDiagRouter";
 import { _internal as oversight } from "./oversightRouter";
 import { getDb } from "../db/connection";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
@@ -46,6 +47,7 @@ let sql: ReturnType<typeof postgres>;
 let adapterId = 0;
 let dev!: ReturnType<typeof deviceAdapterRouter.createCaller>;
 let mac!: ReturnType<typeof mappingAsCodeRouter.createCaller>;
+let diag!: ReturnType<typeof scadaDiagRouter.createCaller>;
 let version = 0;
 const tg: Record<string, number> = {};
 
@@ -55,12 +57,17 @@ async function seedTag(tagKey: string, cot: { dataType?: string; channel_kind?: 
   return Number(r.id);
 }
 
-/** Luật ghi thẳng bảng (đã duyệt), nhắm (adapterId, commandTag). */
-async function seedLuat(ten: string, commandTag: string, commandValue: unknown, o: { enabled?: boolean; action?: string } = {}): Promise<number> {
+/** Luật ghi thẳng bảng (mặc định ĐÃ duyệt), nhắm (adapterId, commandTag). */
+async function seedLuat(
+  ten: string,
+  commandTag: string,
+  commandValue: unknown,
+  o: { enabled?: boolean; action?: string; duyet?: boolean } = {},
+): Promise<number> {
   const [r] = await sql`INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action, "targetAdapterId",
       "commandTag", "commandValue", enabled, "approvedBy", "createdBy")
     VALUES (${DAU + "-" + ten}, 'machine', 'ng_rate', 'gt', 5, ${o.action ?? "reduce_speed"}, ${adapterId}, ${commandTag},
-      ${sql.json(commandValue as never)}, ${o.enabled ?? true}, ${DUYET}, ${TAC_GIA}) RETURNING id`;
+      ${sql.json(commandValue as never)}, ${o.enabled ?? true}, ${o.duyet === false ? null : DUYET}, ${TAC_GIA}) RETURNING id`;
   return Number(r.id);
 }
 
@@ -76,6 +83,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — interloc
     const u = await taoNguoiDungTest("ad", "admin", { tienTo: "ilkr1b", ts: DAU.replace(/[^A-Za-z0-9]/g, ""), ten: "ILK R1b admin" });
     dev = deviceAdapterRouter.createCaller({ user: { id: u.id, role: "admin", name: u.name, twoFactorEnabled: true } } as never);
     mac = mappingAsCodeRouter.createCaller({ user: { id: u.id, role: "admin", name: u.name, twoFactorEnabled: true } } as never);
+    diag = scadaDiagRouter.createCaller({ user: { id: u.id, role: "admin", name: u.name, twoFactorEnabled: true } } as never);
   }, 60_000);
 
   beforeEach(async () => {
@@ -123,11 +131,25 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — interloc
       expect(await loiCua(dev.tags.update({ id: tg.f, dataType: "int" }))).toMatchObject({ appCode: "INTERLOCK_NGOAI_DAI" });
     });
 
-    it("luật TẮT hoặc luật `alert` ⇒ không kiểm (thôi writable qua được)", async () => {
-      await seedLuat("tat", "cu", 1, { enabled: false });
+    it("luật TẮT CHƯA duyệt hoặc luật `alert` ⇒ không bảo vệ, không kiểm (thôi writable qua được, không mã)", async () => {
+      await seedLuat("tat", "cu", 1, { enabled: false, duyet: false });
       await seedLuat("al", "cu", 1, { action: "alert" });
       await dev.tags.update({ id: tg.cu, writable: false });
       expect((await hang(tg.cu)).writable).toBe(false);
+    });
+
+    it("★ fix round 3 (N2): luật TẮT nhưng ĐÃ DUYỆT vẫn bảo vệ đích ⇒ thôi writable / đổi address cần mã (TOTP_CAN)", async () => {
+      await seedLuat("tatduyet", "cu", 1, { enabled: false });
+      expect(await loiCua(dev.tags.update({ id: tg.cu, writable: false }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect(await loiCua(dev.tags.update({ id: tg.cu, address: "x" }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+    });
+
+    it("★ fix round 3 (N2): chuỗi TẮT luật (router thật) → đổi address đích → bật lại bị chặn ở bước đổi address (TOTP_CAN)", async () => {
+      const r = await seedLuat("chuoi", "cu", 1);
+      await ilk(TAC_GIA).disable({ id: r, reason: "thu chuoi N2" });
+      expect((await sql`SELECT enabled, "approvedBy" AS a FROM interlock_rules WHERE id = ${r}`)[0]).toEqual({ enabled: false, a: DUYET });
+      expect(await loiCua(dev.tags.update({ id: tg.cu, address: "dia-chi-moi" }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect((await sql`SELECT address FROM device_tags WHERE id = ${tg.cu}`)[0].address).toBe("addr-cu");
     });
 
     it("đổi unit của tag chưa khai là đích luật bật ⇒ qua, không mã; ★ I7: đổi ADDRESS của nó ⇒ tag được bảo vệ ⇒ TOTP_CAN", async () => {
@@ -161,6 +183,25 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — interloc
       } finally {
         await sql`UPDATE device_adapters SET "isEnabled" = false WHERE id = ${adapterId}`;
       }
+    });
+
+    it("★ fix round 3 (N1): scadaDiag.tamTat adapter mà luật bật ghi lệnh lên tag của nó ⇒ INTERLOCK_MAT_DICH, adapter vẫn bật", async () => {
+      const r = await seedLuat("tamtat", "cu", 1);
+      await sql`UPDATE device_adapters SET "isEnabled" = true WHERE id = ${adapterId}`;
+      try {
+        const e = await loiCua(diag.tamTat({ adapterId, lyDo: "thu tam tat N1" }));
+        expect(e).toMatchObject({ appCode: "INTERLOCK_MAT_DICH", appParams: { tagKey: "cu", ruleId: r } });
+        expect((await sql`SELECT "isEnabled" AS b FROM device_adapters WHERE id = ${adapterId}`)[0].b).toBe(true);
+      } finally {
+        await sql`UPDATE device_adapters SET "isEnabled" = false WHERE id = ${adapterId}`;
+      }
+    });
+
+    it("★ fix round 3 (N3): xoá adapter (đã tắt) mà luật bật ghi lệnh lên tag của nó ⇒ INTERLOCK_MAT_DICH, adapter + tag còn nguyên", async () => {
+      const r = await seedLuat("xoaad", "cu", 1);
+      expect(await loiCua(dev.delete({ id: adapterId }))).toMatchObject({ appCode: "INTERLOCK_MAT_DICH", appParams: { ruleId: r } });
+      expect((await sql`SELECT id FROM device_adapters WHERE id = ${adapterId}`).length).toBe(1);
+      expect((await sql`SELECT id FROM device_tags WHERE id = ${tg.cu}`).length).toBe(1);
     });
 
     it("chuyển tag đích của luật bật sang adapter khác ⇒ INTERLOCK_MAT_DICH", async () => {

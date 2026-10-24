@@ -4514,7 +4514,8 @@
       "scadaKenhThuLai": "The channel was changed concurrently — reload and try again.",
       "scadaKenhCheDoKhongDoiAdapter": "This tag is a machine's mode channel — it cannot be moved to another adapter. Remove or re-declare the mode channel on the Channels & limits page first.",
       "scadaKenhCheDoGoTruoc": "This tag is a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the tag.",
-      "scadaKenhCheDoDoiMay": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page before assigning the adapter to another machine."
+      "scadaKenhCheDoDoiMay": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page before assigning the adapter to another machine.",
+      "scadaKenhCheDoGoTruocXoaAdapter": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the adapter."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -4585,7 +4586,7 @@
     "AI_CHAN_AN_TOAN": "The request was blocked by the AI safety layer because it looks like a prompt injection. Please rephrase it.",
     "AI_CHUA_CAP_PHEP": "The current edition / licence does not include AI (MOD_AI).",
     "SCADA_STOP_NOT_PINNED": "The machine has no pinned STOP values — an engineer pins them at /scada/config/channels; stop it with the hardwired E-STOP.",
-    "INTERLOCK_MAT_DICH": "Enabled interlock rule #{{ruleId}} writes to tag {{tagKey}} — renaming, moving, disabling or deleting the tag would leave the protective action without a target. Fix the rule's target (or disable the rule) first.",
+    "INTERLOCK_MAT_DICH": "Enabled interlock rule #{{ruleId}} uses tag {{tagKey}} (as its command target or its source) — renaming, moving, disabling or deleting the tag or its adapter would leave the protective action without a target or a source. Fix the rule (or disable it) first.",
     "QUA_NHIEU_KENH_DA_KHAI": "This import touches {{soTag}} declared / protected channel tags — at most {{toiDa}} per import. Split the file and import again.",
     "STOP_PIN_GO_TRUOC": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) — changing its address, type, scale, offset, writable flag or adapter, disabling or deleting it would lose STOP. Unpin it first (Software stop tag, with a reason), then try again."
   },

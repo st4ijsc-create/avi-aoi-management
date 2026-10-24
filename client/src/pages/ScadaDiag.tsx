@@ -27,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BangTruyenThong, coLoi, type HangDiag, type MayDung } from "@/components/scada/BangTruyenThong";
 import { NganTagAdapter } from "@/components/scada/NganTagAdapter";
+import { useHopMaTotpTroLai } from "@/components/scada/HopMaTotpTroLai";
 
 /** Chu kỳ làm mới (ms): ≤ 5 s theo mục tiêu "M10 hiện mất kết nối". */
 const CHU_KY_LAM_MOI_MS = 2000;
@@ -86,11 +87,17 @@ export default function ScadaDiag() {
   const tamTat = trpc.scadaDiag.tamTat.useMutation({
     onSuccess: () => {
       toast.success(t("scada.diag.toast.tamTat"));
+      tamTatTotp.daXong();
       lamMoi();
       dong();
     },
-    onError: (e: unknown) => toastTrpcError(e as never),
+    // SCADA R1b-1 T9 fix round 3 (N1) — tắt adapter còn tag được bảo vệ ⇒ máy chủ đòi mã TOTP ⇒ hộp mã, gửi lại chính lượt đó.
+    onError: (e: unknown, bien: { adapterId: number; lyDo: string; totpCode?: string }) => {
+      if (tamTatTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e as never);
+    },
   });
+  const tamTatTotp = useHopMaTotpTroLai<{ adapterId: number; lyDo: string }>((bien) => tamTat.mutate(bien), tamTat.isPending);
   const dangGui = ketNoiLai.isPending || tamTat.isPending;
   const lyDoCat = lyDo.trim();
   const lyDoDu = lyDoCat.length >= LY_DO_TOI_THIEU;
@@ -219,6 +226,7 @@ export default function ScadaDiag() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {tamTatTotp.hop}
       </PageContainer>
     </DashboardLayout>
   );

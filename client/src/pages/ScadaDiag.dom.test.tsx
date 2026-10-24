@@ -54,7 +54,7 @@ const srv = vi.hoisted(() => ({
   mau: [] as Record<string, unknown>[],
   danhSachOpts: undefined as Record<string, unknown> | undefined,
   mutCalls: [] as Array<{ proc: string; vars: unknown }>,
-  mutOpts: {} as Record<string, { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void }>,
+  mutOpts: {} as Record<string, { onSuccess?: (r: unknown) => void; onError?: (e: unknown, v?: unknown) => void }>,
   invalidated: [] as string[],
   /** R1b-1 T2 fix round 1 — hàng `scadaKenh.cheDo.danhSach` (máy + khả năng dừng) cho hàng đầu nhóm có nút DỪNG MÁY */
   may: [] as Record<string, unknown>[],
@@ -66,7 +66,7 @@ const srv = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/trpc", () => {
   const mut = (proc: string) => ({
-    useMutation: (opts: { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void }) => {
+    useMutation: (opts: { onSuccess?: (r: unknown) => void; onError?: (e: unknown, v?: unknown) => void }) => {
       srv.mutOpts[proc] = opts;
       return { mutate: (vars: unknown) => srv.mutCalls.push({ proc, vars }), isPending: false };
     },
@@ -295,6 +295,20 @@ describe("ScadaDiag — hộp xác nhận lý do", () => {
     fireEvent.change(within(screen.getByRole("dialog")).getByLabelText(S("scada.diag.dialog.lyDo")), { target: { value: "bảo trì định kỳ" } });
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: S("scada.diag.dialog.gui") }));
     expect(srv.mutCalls).toEqual([{ proc: "tamTat", vars: { adapterId: 1, lyDo: "bảo trì định kỳ" } }]);
+  });
+
+  it("R1b-1 T9 fix round 3 (N1): tamTat ⇒ máy chủ đòi mã TOTP ⇒ hộp mã 6 số (không toast lỗi); nhập + xác nhận ⇒ gửi lại {adapterId, lyDo, totpCode}", () => {
+    render(<ScadaDiag />);
+    fireEvent.click(within(hang("AD-OK")).getByRole("button", { name: S("scada.diag.nut.tamTat") }));
+    fireEvent.change(within(screen.getByRole("dialog")).getByLabelText(S("scada.diag.dialog.lyDo")), { target: { value: "bảo trì định kỳ" } });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: S("scada.diag.dialog.gui") }));
+    const vars = { adapterId: 1, lyDo: "bảo trì định kỳ" };
+    act(() => srv.mutOpts.tamTat.onError?.({ data: { appCode: "SCADA_CONFIG_TOTP_REQUIRED" } }, vars as never));
+    expect(toastTrpcError).not.toHaveBeenCalled();
+    const o = screen.getByLabelText(S("scada.kenh.dialog.totp"));
+    fireEvent.change(o, { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: S("deviceAdapter.troLai.submit") }));
+    expect(srv.mutCalls.at(-1)).toEqual({ proc: "tamTat", vars: { adapterId: 1, lyDo: "bảo trì định kỳ", totpCode: "123456" } });
   });
 
   it("thành công ⇒ làm mới danhSach + tagCuaAdapter, toast, đóng hộp; lỗi máy chủ ⇒ toastTrpcError, hộp giữ mở", () => {

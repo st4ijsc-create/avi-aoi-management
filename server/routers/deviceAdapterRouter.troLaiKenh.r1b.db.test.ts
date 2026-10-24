@@ -16,6 +16,7 @@ import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { setup2FA, enable2FA } from "../db/auth";
 import { deviceAdapterRouter } from "./deviceAdapterRouter";
 import { mappingAsCodeRouter } from "./mappingAsCodeRouter";
+import { scadaDiagRouter } from "./scadaDiagRouter";
 
 const DB_URL = process.env.DATABASE_URL;
 const RUN = `r1bt9tl${process.pid}${Date.now().toString(36)}`;
@@ -25,6 +26,7 @@ let uid = 0;
 let secret = "";
 let caller!: ReturnType<typeof deviceAdapterRouter.createCaller>;
 let mac!: ReturnType<typeof mappingAsCodeRouter.createCaller>;
+let diag!: ReturnType<typeof scadaDiagRouter.createCaller>;
 const ids = { fac: 0, may: 0, ad: 0, ad2: 0, adCap: 0 };
 const tg: Record<string, number> = {};
 let version = 0;
@@ -94,6 +96,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — trỏ l�
     uid = u.id;
     caller = deviceAdapterRouter.createCaller({ user: { id: u.id, role: "admin", name: u.name, twoFactorEnabled: true } } as never);
     mac = mappingAsCodeRouter.createCaller({ user: { id: u.id, role: "admin", name: u.name, twoFactorEnabled: true } } as never);
+    diag = scadaDiagRouter.createCaller({ user: { id: u.id, role: "admin", name: u.name, twoFactorEnabled: true } } as never);
   }, 60_000);
 
   beforeEach(async () => {
@@ -297,10 +300,14 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — trỏ l�
       expect(await hang(tg.dkpin)).toMatchObject({ address: "addr-dkpin", stopValue: 3 });
     });
 
-    it("phán quyết b: tắt tag đã khai đang ghim ⇒ STOP_PIN_GO_TRUOC; tắt tag đã khai KHÔNG ghim ⇒ qua, không cần mã", async () => {
+    it("phán quyết b: tắt tag đã khai đang ghim ⇒ STOP_PIN_GO_TRUOC; ★ fix round 3 (N7): tắt tag đã khai KHÔNG ghim ⇒ TOTP_CAN, có mã ⇒ tắt; tag chưa khai ⇒ không mã", async () => {
       expect(await loiCua(caller.tags.update({ id: tg.dkpin, isEnabled: false }))).toMatchObject({ appCode: "STOP_PIN_GO_TRUOC" });
-      await caller.tags.update({ id: tg.dk, isEnabled: false });
+      expect(await loiCua(caller.tags.update({ id: tg.dk, isEnabled: false }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect((await sql`SELECT "isEnabled" AS b FROM device_tags WHERE id = ${tg.dk}`)[0].b).toBe(true);
+      await caller.tags.update({ id: tg.dk, isEnabled: false, totpCode: await maMoi() });
       expect((await sql`SELECT "isEnabled" AS b FROM device_tags WHERE id = ${tg.dk}`)[0].b).toBe(false);
+      expect(await loiCua(caller.tags.update({ id: tg.mode, isEnabled: false }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" }); // kênh chế độ
+      await caller.tags.update({ id: tg.cu, isEnabled: false });
     });
 
     it("phán quyết b: CHỈ đổi tên tag đã khai đang ghim ⇒ được (có mã), ghim giữ nguyên", async () => {
@@ -438,6 +445,95 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — trỏ l�
       // adapter không có tag được bảo vệ ⇒ tắt như cũ, không mã
       await sql`UPDATE device_adapters SET "isEnabled" = true WHERE id = ${ids.adCap}`;
       await caller.update({ id: ids.adCap, isEnabled: false });
+    });
+
+    // ── Fix round 3 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    it("★ fix round 3 (N4): tag là NGUỒN telemetry_tag của luật (không alert) ĐÃ DUYỆT ⇒ đổi address không mã ⇒ TOTP_CAN; luật nguồn alert ⇒ không bảo vệ", async () => {
+      const chen = (ten: string, action: string, enabled: boolean, duyet: boolean) =>
+        sql`INSERT INTO interlock_rules (name, scope, "machineId", "sourceKey", "sourceType", "comparisonOperator", threshold, action, enabled, "approvedBy", "createdBy")
+          VALUES (${RUN + "-" + ten}, 'machine', ${ids.may}, 'cu', 'telemetry_tag', 'gt', 80, ${action}, ${enabled}, ${duyet ? uid : null}, ${uid})`;
+      try {
+        await chen("nguon-al", "alert", true, true);
+        await caller.tags.update({ id: tg.cu, unit: "x", address: "addr-cu-1" }); // chỉ luật alert ⇒ không mã
+        await chen("nguon-stop", "stop_line", false, true);
+        expect(await loiCua(caller.tags.update({ id: tg.cu, address: "addr-cu-2" }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+        expect((await hang(tg.cu)).address).toBe("addr-cu-1");
+      } finally {
+        await sql`DELETE FROM interlock_rules WHERE name LIKE ${RUN + "-nguon-%"}`;
+      }
+    });
+
+    it("fix round 3 (N4): tag là nguồn của luật ĐANG BẬT ⇒ đổi tên / tắt / xoá ⇒ INTERLOCK_MAT_DICH", async () => {
+      await sql`INSERT INTO interlock_rules (name, scope, "machineId", "sourceKey", "sourceType", "comparisonOperator", threshold, action, enabled, "approvedBy", "createdBy")
+        VALUES (${RUN + "-nguon-bat"}, 'machine', ${ids.may}, 'cu', 'telemetry_tag', 'gt', 80, 'stop_line', true, ${uid}, ${uid})`;
+      try {
+        const m = await maMoi();
+        expect(await loiCua(caller.tags.update({ id: tg.cu, tagKey: "cu2", totpCode: m }))).toMatchObject({ appCode: "INTERLOCK_MAT_DICH", appParams: { tagKey: "cu" } });
+        expect(await loiCua(caller.tags.update({ id: tg.cu, isEnabled: false, totpCode: m }))).toMatchObject({ appCode: "INTERLOCK_MAT_DICH" });
+        expect(await loiCua(caller.tags.delete({ id: tg.cu, totpCode: m }))).toMatchObject({ appCode: "INTERLOCK_MAT_DICH" });
+      } finally {
+        await sql`DELETE FROM interlock_rules WHERE name = ${RUN + "-nguon-bat"}`;
+      }
+    });
+
+    it("★ fix round 3 (N1): scadaDiag.tamTat adapter có tag đã khai đang ghim ⇒ STOP_PIN_GO_TRUOC; gỡ ghim ⇒ không mã TOTP_CAN; có mã ⇒ tắt + audit adapter_bao_ve_tat", async () => {
+      await sql`UPDATE device_adapters SET "isEnabled" = true WHERE id = ${ids.ad}`;
+      expect(await loiCua(diag.tamTat({ adapterId: ids.ad, lyDo: "thu tam tat 1", totpCode: await maMoi() }))).toMatchObject({
+        appCode: "STOP_PIN_GO_TRUOC",
+        appParams: { tagKey: "dkpin" },
+      });
+      await sql`UPDATE device_tags SET stop_value = NULL WHERE id = ${tg.dkpin}`;
+      expect(await loiCua(diag.tamTat({ adapterId: ids.ad, lyDo: "thu tam tat 2" }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect((await sql`SELECT "isEnabled" AS b FROM device_adapters WHERE id = ${ids.ad}`)[0].b).toBe(true);
+      await diag.tamTat({ adapterId: ids.ad, lyDo: "thu tam tat 3", totpCode: await maMoi() });
+      expect((await sql`SELECT "isEnabled" AS b FROM device_adapters WHERE id = ${ids.ad}`)[0].b).toBe(false);
+      const au = await sql`SELECT reason FROM control_audit_log WHERE "entityType" = 'device_adapter' AND "entityId" = ${String(ids.ad)} AND action = 'adapter_bao_ve_tat' AND reason = 'thu tam tat 3'`;
+      expect(au).toHaveLength(1);
+    });
+
+    it("★ fix round 3 (N3): xoá adapter còn kênh chế độ ⇒ scadaKenhCheDoGoTruocXoaAdapter; adapter có tag đã khai đang ghim ⇒ STOP_PIN_GO_TRUOC; gỡ ghim ⇒ TOTP_CAN; có mã ⇒ xoá + audit", async () => {
+      expect(await loiCua(caller.delete({ id: ids.ad, totpCode: await maMoi() }))).toMatchObject({
+        appCode: "INVALID_VALUE",
+        appParams: { field: "adapterId", reason: "scadaKenhCheDoGoTruocXoaAdapter" },
+      });
+      const [x] = await sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "isEnabled")
+        VALUES (NULL, ${RUN + "-xoa"}, ${RUN + "-xoa"}, 'stub', 'stub://xoa', false) RETURNING id`;
+      const adX = Number(x.id);
+      try {
+        const tX = await seedTag(adX, "kx", { write_min: 0, write_max: 10, stop: 1 });
+        expect(await loiCua(caller.delete({ id: adX }))).toMatchObject({ appCode: "STOP_PIN_GO_TRUOC", appParams: { tagKey: "kx" } });
+        await sql`UPDATE device_tags SET stop_value = NULL WHERE id = ${tX}`;
+        expect(await loiCua(caller.delete({ id: adX }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+        expect((await sql`SELECT id FROM device_adapters WHERE id = ${adX}`).length).toBe(1);
+        await caller.delete({ id: adX, totpCode: await maMoi() });
+        expect((await sql`SELECT id FROM device_adapters WHERE id = ${adX}`).length).toBe(0);
+        const au = await sql`SELECT action FROM control_audit_log WHERE "entityType" = 'device_adapter' AND "entityId" = ${String(adX)} AND action = 'adapter_bao_ve_xoa'`;
+        expect(au).toHaveLength(1);
+      } finally {
+        await sql`DELETE FROM device_tags WHERE "adapterId" = ${adX}`;
+        await sql`DELETE FROM device_adapters WHERE id = ${adX}`;
+      }
+    });
+
+    it("M5/N9: tài khoản đang TẠM KHOÁ TOTP ⇒ tags.update có mã đúng vẫn TOTP_TAM_KHOA (TOO_MANY_REQUESTS), hàng giữ nguyên", async () => {
+      await sql`INSERT INTO totp_khoa_sai (user_id, loai, so_lan_sai, cua_so_bat_dau, khoa_den) VALUES (${uid}, 'totp', 5, now(), now() + interval '4 minutes')`;
+      const e = await loiCua(caller.tags.update({ id: tg.dk, scale: 2, totpCode: speakeasy.totp({ secret, encoding: "base32" }) }));
+      expect(e).toMatchObject({ code: "TOO_MANY_REQUESTS", appCode: "TOTP_TAM_KHOA" });
+      expect((await hang(tg.dk)).scale).toBe(1);
+    });
+
+    it("M5/M6: đổi tagKey CHỈ khác hoa/thường hoặc address CHỈ thêm khoảng trắng = MỘT thay đổi (chiều an toàn) ⇒ tag đã khai cần mã; tag chưa khai qua", async () => {
+      expect(await loiCua(caller.tags.update({ id: tg.dk, tagKey: "DK" }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect(await loiCua(caller.tags.update({ id: tg.dk, address: "addr-dk " }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      await caller.tags.update({ id: tg.cu, tagKey: "CU" });
+      expect((await hang(tg.cu)).tagKey).toBe("CU");
+    });
+
+    it("N8: đổi mã adapter trùng một adapter khác ⇒ ENTITY_DUPLICATE TRƯỚC kiểm mã (cùng mã TOTP dùng lại được)", async () => {
+      const m = await maMoi();
+      const e = await loiCua(caller.update({ id: ids.ad, code: `${RUN}-cap`, endpoint: "stub://khac", totpCode: m }));
+      expect(e).toMatchObject({ code: "CONFLICT", appCode: "ENTITY_DUPLICATE" });
+      await caller.tags.update({ id: tg.dk, scale: 2, totpCode: m });
     });
 
     it("I5 deviceAdapter.update: đổi máy khi adapter còn kênh chế độ ⇒ scadaKenhCheDoDoiMay (kể cả có mã); sửa tên ⇒ không mã", async () => {

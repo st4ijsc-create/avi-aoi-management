@@ -57,12 +57,15 @@ import {
   AUDIT_XOA_DA_KHAI,
   TRAN_KENH_DA_KHAI_MOT_LO,
   anhTroLai,
+  khoaAdapterTx,
+  khoaLuatNguonTx,
   khoaLuatNhamAdapterTx,
   kiemSuaTag,
   kiemTaoTag,
   kiemXoaTag,
   loiQuaNhieuKenhDaKhai,
   luatCuaTag,
+  nguonCuaTag,
 } from "../scada/troLaiKenh";
 import { appError } from "../../_core/appError";
 import { recordAuditEvent } from "../audit/controlAuditService";
@@ -737,9 +740,11 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
   let diffApply: MappingDiff = diff;
 
   await d.transaction(async (tx) => {
-    // SCADA R1b-1 Task 9 — thứ tự khoá LUẬT → TAG → KÊNH CHẾ ĐỘ (như scadaKenh.capNhat / interlockRouter / cheDo.dat): mọi luật interlock
-    // nhắm adapter, FOR SHARE, TRƯỚC khi khoá tag FOR UPDATE.
+    // SCADA R1b-1 Task 9 — thứ tự khoá DUY NHẤT ADAPTER → LUẬT → TAG → KÊNH CHẾ ĐỘ (server/services/scada/troLaiKenh.ts, fix round 3 N6):
+    // adapter FOR SHARE (lấy máy hiện tại — quyết luật NGUỒN), mọi luật nhắm adapter + luật telemetry_tag của máy FOR SHARE, rồi tag FOR UPDATE.
+    const mayHienTai = (await khoaAdapterTx(tx, [adapter.id])).get(adapter.id)?.machineId ?? null;
     const luatAdapter = await khoaLuatNhamAdapterTx(tx, adapter.id);
+    const luatNguonMay = await khoaLuatNguonTx(tx, mayHienTai);
     // doc 81 Đợt 1D Task 1 fix round 1 — KHOÁ mọi tag của adapter (FOR UPDATE) trước khi upsert/xoá:
     // tag đang GHIM DỪNG mà file đổi nghĩa (address/dataType/scale/offset), thôi writable, tắt, hoặc bị
     // prune ⇒ ghim bị gỡ trong CÙNG tx + audit (lyDoGoStopPinKhiSuaTag / ghiAuditGoStopPinTx). Upsert
@@ -787,9 +792,10 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
       const record = recordCua(t);
       const cu = tagHienCo.get(name);
       const luat = luatCuaTag(luatAdapter, name);
+      const nguon = nguonCuaTag(luatNguonMay, name);
       const laKenhCheDo = kenhCheDoTag.has(name);
       if (cu) {
-        const kq = kiemSuaTag({ cu, patch: record, luatCu: luat, kenhCheDoCu: laKenhCheDo });
+        const kq = kiemSuaTag({ cu, patch: record, luatCu: luat, nguonCu: nguon, kenhCheDoCu: laKenhCheDo });
         if (kq.canTotp) {
           canMa.push({
             tagKey: name,
@@ -807,7 +813,7 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
         }
       } else {
         const moi = { adapterId: adapter.id, tagKey: name, ...record };
-        const kt = kiemTaoTag({ moi, luat, coKenhCheDo: laKenhCheDo });
+        const kt = kiemTaoTag({ moi, luat, nguon, coKenhCheDo: laKenhCheDo });
         if (kt.canTotp) {
           canMa.push({
             tagKey: name,
@@ -817,7 +823,7 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
                 entityId: `${adapter.id}:${name}`,
                 action: AUDIT_TAO_KHOA_MO_COI,
                 actorId: opts.actorId ?? null,
-                before: { kenhCheDo: laKenhCheDo, luat: luat.map((r) => r.id) },
+                before: { kenhCheDo: laKenhCheDo, luat: luat.map((r) => r.id), nguon: nguon.map((r) => r.id) },
                 after: anhTroLai(moi),
                 reason: `mappingAsCode.import v${file.version}`,
               }),
@@ -829,7 +835,7 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
       for (const name of dx.tags.deletes) {
         const cu = tagHienCo.get(name);
         if (!cu) continue;
-        const kx = kiemXoaTag({ cu, luat: luatCuaTag(luatAdapter, name), coKenhCheDo: kenhCheDoTag.has(name) });
+        const kx = kiemXoaTag({ cu, luat: luatCuaTag(luatAdapter, name), nguon: nguonCuaTag(luatNguonMay, name), coKenhCheDo: kenhCheDoTag.has(name) });
         if (kx.canTotp) {
           canMa.push({
             tagKey: name,

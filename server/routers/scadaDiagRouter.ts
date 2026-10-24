@@ -39,6 +39,9 @@ import { layGiaTri, thongTinAdapter } from "../services/scada/boDemHienTai";
 import { layStubDangChay, type LoiStub } from "../services/ot/drivers/stubDriver";
 import { detachOtAdapter, getOtAdapterStatus, resetAdapterSession } from "../services/ot/otManager";
 import type { RuntimeAdapter } from "../services/ot/deviceAdapter";
+// SCADA R1b-1 Task 9 fix round 3 (N1) — cổng ADAPTER dùng chung (tắt adapter có tag được bảo vệ) + TOTP tươi mức 5
+import { congAdapterTx } from "../services/scada/troLaiKenh";
+import { kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
 
 // Doc 37 P0-3 — mọi thủ tục sau giấy phép MOD_OT_CONTROL (cờ LICENSE_MODULE_GATE_ENABLED, mặc định tắt ⇒ đi qua), khuôn interlockRouter.
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
@@ -330,15 +333,37 @@ export const scadaDiagRouter = router({
       return kq;
     }),
 
-  /** `isEnabled=false` + audit (một transaction), rồi gỡ khỏi OT (`detachOtAdapter`) và báo `disabled`. Bộ đếm 1 h KHÔNG bị xoá. */
+  /**
+   * `isEnabled=false` + audit (một transaction), rồi gỡ khỏi OT (`detachOtAdapter`) và báo `disabled`. Bộ đếm 1 h KHÔNG bị xoá.
+   * SCADA R1b-1 Task 9 fix round 3 (N1) — tắt adapter ĐANG BẬT đi qua CÙNG cổng với `deviceAdapter.update` tắt (`congAdapterTx`, viec "tat"):
+   * một tag là đích / nguồn của luật interlock đang bật ⇒ INTERLOCK_MAT_DICH; tag đã khai đang ghim ⇒ "gỡ ghim trước"; còn tag được bảo vệ /
+   * kênh chế độ ⇒ TOTP tươi (`totpCode`) + audit `adapter_bao_ve_tat`. Mọi kiểm TRƯỚC mã. Adapter đã tắt ⇒ không đổi gì, không đòi mã.
+   */
   tamTat: kySuProcedure
     .use(requirePermission("machine_control", "canEdit"))
-    .input(z.object({ adapterId: adapterIdInput, lyDo: lyDoInput }))
+    .input(z.object({ adapterId: adapterIdInput, lyDo: lyDoInput, totpCode: totpCauHinhInput }))
     .mutation(async ({ ctx, input }) => {
       const a = await adapterTrongPhamVi(phamViCua(ctx), input.adapterId);
       await tuChoiNeuEdge(a.id, "scadaDisableAdapter");
       const db = await getDb();
       await db.transaction(async (tx) => {
+        const [cu] = await tx.select().from(deviceAdapters).where(eq(deviceAdapters.id, a.id)).for("update"); // ADAPTER (thứ tự khoá)
+        if (!cu) throw khongThay();
+        if (cu.isEnabled === true) {
+          const cong = await congAdapterTx(tx, { adapterId: a.id, code: cu.code, machineId: cu.machineId ?? null, viec: "tat" });
+          if (cong.canTotp) {
+            await kiemTotpCauHinh(ctx, input.totpCode); // CUỐI — ngay trước lượt ghi
+            await recordAuditEvent(tx, {
+              entityType: "device_adapter",
+              entityId: a.id,
+              action: cong.auditAction,
+              actorId: ctx.user.id,
+              before: { isEnabled: true, protocol: cu.protocol, endpoint: cu.endpoint, machineId: cu.machineId ?? null },
+              after: { isEnabled: false },
+              reason: input.lyDo,
+            });
+          }
+        }
         await tx.update(deviceAdapters).set({ isEnabled: false, updatedAt: new Date() }).where(eq(deviceAdapters.id, a.id));
         await recordAuditEvent(tx, {
           entityType: "device_adapter",

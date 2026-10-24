@@ -4506,7 +4506,8 @@
       "scadaKenhThuLai": "通道刚被并发修改——请刷新后重试。",
       "scadaKenhCheDoKhongDoiAdapter": "该标签是某台机器的模式通道——不能移到其他适配器。请先在“通道与限值”页面移除或重新声明模式通道。",
       "scadaKenhCheDoGoTruoc": "该标签是某台机器的模式通道——删除标签前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。",
-      "scadaKenhCheDoDoiMay": "该适配器承载某台机器的模式通道——将适配器分配给其他机器前，请先在“通道与限值”页面移除模式通道。"
+      "scadaKenhCheDoDoiMay": "该适配器承载某台机器的模式通道——将适配器分配给其他机器前，请先在“通道与限值”页面移除模式通道。",
+      "scadaKenhCheDoGoTruocXoaAdapter": "该适配器承载某台机器的模式通道——删除适配器前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -4577,7 +4578,7 @@
     "AI_CHAN_AN_TOAN": "该请求因疑似提示注入被 AI 安全层拦截。请换种方式表述。",
     "AI_CHUA_CAP_PHEP": "当前版本/许可不包含 AI（MOD_AI）。",
     "SCADA_STOP_NOT_PINNED": "设备尚未固定 STOP 值 — 请工程师在 /scada/config/channels 固定；请使用硬接线急停（E-STOP）停机。",
-    "INTERLOCK_MAT_DICH": "已启用的联锁规则 #{{ruleId}} 向标签 {{tagKey}} 写入命令——重命名、移动、停用或删除该标签会使保护动作失去目标。请先修改规则的目标（或停用规则）。",
+    "INTERLOCK_MAT_DICH": "已启用的联锁规则 #{{ruleId}} 使用标签 {{tagKey}}（作为命令目标或数据源）——重命名、移动、停用或删除该标签或其适配器会使保护动作失去目标或数据源。请先修改规则（或停用规则）。",
     "QUA_NHIEU_KENH_DA_KHAI": "本次导入涉及 {{soTag}} 个已声明/受保护通道的标签——每次最多 {{toiDa}} 个。请拆分文件后重新导入。",
     "STOP_PIN_GO_TRUOC": "通道 {{tagKey}} 已固定停止值（{{stopValue}}）——修改其地址、类型、比例、偏移、可写标志或适配器，或停用、删除该标签，都会失去 STOP。请先解除固定（软件停止标签，需填写原因），然后重试。"
   },
