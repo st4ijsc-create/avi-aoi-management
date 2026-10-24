@@ -142,5 +142,21 @@ Lần chạy 06:45 trước đó HỎNG ở thiết bị đo (biến `URL` che m
   e2e :3013 trên 35B auto: `/v1` VÀ KB stream, mỗi đường 3 ảnh (#04 interlock, #08 tài liệu, #12 lỗi tsc) — chấm NỘI DUNG bằng đúng nhóm từ
   khoá của `bo-anh.json` (KB: `done.answer`); ĐẠT khi ≥ 2/3 mỗi đường và KB `vision` nguon=model-chinh 3/3.
   ĐẠT ⇒ đổi mặc định trong mã sang `auto`.
+  **KẾT QUẢ (A) (08:02–08:41, `do-cong-a.sh` + `do-e2e-lai.sh`, `tmp/thi-giac/cong-a/`, `e2e-lai/`):**
+
+  | | (1) | (2) VRAM p99 / max (MiB) | (3) tăng Private · đối chứng off · chênh | (4) ảnh | (5) chữ | checkpoint |
+  |---|---|---|---|---|---|---|
+  | 35B auto / off | ✓ / ✓ | 27.889 / 27.893 ✓ (gồm :3013 e2e) · off 24.070 | 1,71 ≤ 3,0 · 1,15 · **0,56** ✓ | 13/13 | 20/20 · 20/20 | 13 × 62,8 MiB cả hai |
+  | 27B auto / off | ✓ / ✓ | 23.929 ✓ · off 22.440 | 2,79 ≤ 5,8 · 2,23 · **0,56** ✓ | 12/13 ¹ | 20/20 · 20/20 | 13 × 149,6 MiB cả hai |
+
+  ¹ #12 là âm tính giả bộ chấm (lần hai): "Lỗi ở dòng:** 7 … TS2322" đúng; giữ điểm máy. ⇒ Đối chứng XÁC NHẬN: checkpoint tích luỹ y hệt ở hội thoại
+  CHỮ chung tiền tố khi mmproj TẮT (13 cái mỗi bên) ⇒ không do mmproj. Commit trống thấp nhất 17,1 GB.
+  **e2e:** `/v1` **3/3 ĐÚNG** (cả hai lần chạy; 2,9–5,6 s). **KB stream: KHÔNG ĐẠT** — lần 1 (08:05) 0/3 do MÔI TRƯỜNG: worktree thiếu tệp tri
+  thức sinh ra (`knowledge/chunks.jsonl`… .gitignore) ⇒ KB phát `error "Knowledge artifacts missing"` (bộ đo lần 1 không in sự kiện error — đã
+  thấy khi gọi tay); chép tệp sinh ra từ cây chính rồi chạy lại (08:39): **1/3**, `vision` ok:true nguon=model-chinh **3/3**. Câu trả lời KB
+  BỎ QUA bản đọc ảnh: #04 ⇒ công cụ tra mã lỗi "Không tìm thấy mã lỗi L1" · #12 ⇒ công cụ OEE "thiếu quyền analytics_oee" (chữ `tinhOee` trong
+  bản đọc ảnh kéo bộ chọn công cụ) · #08 khớp từ khoá nhưng câu mở đầu "Tôi không có thông tin chính xác … trong tài liệu". Gốc (THIẾT KẾ có từ
+  trước, không do mmproj): bản đọc ảnh được GỘP VÀO câu hỏi ⇒ nó lái bộ chọn công cụ + truy hồi, còn lời dặn "chỉ trả lời theo tài liệu" của KB
+  khiến model không coi ảnh là nguồn. ⇒ **Cổng (A) CHƯA ĐẠT ở phần e2e KB — mặc định GIỮ `off`, chờ dieu-phoi.**
 - ⚠ Rủi ro HIỆN TẠI (không phụ thuộc đề xuất): đường KB gửi ảnh ⇒ sidecar VL-8B nạp CÙNG LÚC 35B ⇒ đo được 31,9 GB VRAM, chữ chậm ×4,
   commit trống 3–5 GB. Extension chưa gửi ảnh nên chưa lộ; khi luong-ui bật đính ảnh cho Trợ lý, lỗ này mở.
