@@ -90,12 +90,8 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   // ── server/api/v1/assets.ts (0) ────────────────────────────────────────────────────────────────
   // ── server/api/v1/events.ts (1) ────────────────────────────────────────────────────────────────
   "server/api/v1/events.ts#GET /events",
-  // ── server/api/v1/genealogyApi.ts (1) ──────────────────────────────────────────────────────────
-  "server/api/v1/genealogyApi.ts#GET /genealogy/:unitId",
-  // ── server/api/v1/lines.ts (3) ─────────────────────────────────────────────────────────────────
-  "server/api/v1/lines.ts#GET /lines",
-  "server/api/v1/lines.ts#GET /lines/:id/stages",
-  "server/api/v1/lines.ts#GET /lines/:id/state",
+  // ── server/api/v1/genealogyApi.ts (0) ──────────────────────────────────────────────────────────
+  // ── server/api/v1/lines.ts (0) ─────────────────────────────────────────────────────────────────
   // ── server/api/v1/metricsApi.ts (1) ────────────────────────────────────────────────────────────
   "server/api/v1/metricsApi.ts#GET /metrics/:metric",
   // ── server/api/v1/moduleReads.ts (4) ──────────────────────────────────────────────────────────
@@ -110,10 +106,7 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   "server/api/v1/moduleReads.ts#GET /standards/compliance",
   "server/api/v1/moduleReads.ts#GET /standards/device-types",
   "server/api/v1/moduleReads.ts#GET /twin/models",
-  // ── server/api/v1/ordersLifecycle.ts (3) ───────────────────────────────────────────────────────
-  "server/api/v1/ordersLifecycle.ts#GET /orders",
-  "server/api/v1/ordersLifecycle.ts#GET /orders/:id",
-  "server/api/v1/ordersLifecycle.ts#GET /orders/:id/trace",
+  // ── server/api/v1/ordersLifecycle.ts (0) ───────────────────────────────────────────────────────
   // ── server/api/v1/pdmHealth.ts (2) ─────────────────────────────────────────────────────────────
   "server/api/v1/pdmHealth.ts#GET /health/assets/:id",
   "server/api/v1/pdmHealth.ts#GET /predictions",

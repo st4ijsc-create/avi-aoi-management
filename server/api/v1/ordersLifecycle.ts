@@ -31,6 +31,8 @@ import { z } from "zod";
 import { requireScope } from "./auth";
 import type { ApiScope } from "./scopes";
 import { sendOk, sendError, wrap, ApiHttpError } from "./envelope";
+import type { ApiKeyTenantScope } from "./apiKeyScope";
+import { dieuKienKhoa, canTrongPhamVi, phamViCuaKhoa } from "./phamViKhoa"; // 2026-10-24 — phạm vi khoá API
 import {
   orderLifecycleEnabled,
   OrderLifecycleError,
@@ -80,6 +82,24 @@ function toApiError(err: unknown): never {
   throw err;
 }
 
+/**
+ * phạm vi KHOÁ API (rà bảo mật 2026-10-24): lệnh sản xuất của nhà máy ngoài phạm vi khoá ≡ "không tồn tại" (CÙNG câu 404), kiểm TRƯỚC mọi đọc/ghi.
+ * Khoá TOÀN CỤC ⇒ không kiểm.
+ */
+async function donTrongPhamVi(tenantScope: ApiKeyTenantScope | null | undefined, id: number): Promise<void> {
+  const pv = await phamViCuaKhoa(tenantScope);
+  if (!pv) return;
+  const [{ getDb }, { productionOrders }, { eq }, { trongPhamVi }] = await Promise.all([
+    import("../../db/connection"),
+    import("../../../drizzle/schema"),
+    import("drizzle-orm"),
+    import("../../db/hierarchy"),
+  ]);
+  const d = await getDb();
+  const [row] = d ? await d.select({ factoryId: productionOrders.factoryId }).from(productionOrders).where(eq(productionOrders.id, id)).limit(1) : [];
+  if (!row || !(await trongPhamVi("factory", row.factoryId, pv))) throw new ApiHttpError(404, "not_found", `Order ${id} not found.`);
+}
+
 function actorOf(req: Request): string {
   return `api-key:${req.apiPrincipal?.name ?? "unknown"}`;
 }
@@ -116,7 +136,9 @@ export function registerOrdersLifecycleRoutes(r: Router): void {
       if (!parsed.success) {
         throw new ApiHttpError(400, "bad_request", "Invalid list query.", { issues: parsed.error.issues });
       }
-      const result = await listOrders(parsed.data).catch(toApiError);
+      const { productionOrders } = await import("../../../drizzle/schema");
+      const dieuKienPhamVi = await dieuKienKhoa(req.apiPrincipal?.tenantScope, { factoryId: productionOrders.factoryId, lineId: productionOrders.lineId }); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
+      const result = await listOrders({ ...parsed.data, dieuKienPhamVi }).catch(toApiError);
       sendOk(res, result);
     }),
   );
@@ -128,6 +150,7 @@ export function registerOrdersLifecycleRoutes(r: Router): void {
     wrap(async (req, res) => {
       if (!ensureLifecycleEnabled(res)) return;
       const id = parseOrderId(req);
+      await donTrongPhamVi(req.apiPrincipal?.tenantScope, id);
       const detail = await getOrderDetail(id).catch(toApiError);
       if (!detail) throw new ApiHttpError(404, "not_found", `Order ${id} not found.`);
       sendOk(res, detail);
@@ -141,6 +164,7 @@ export function registerOrdersLifecycleRoutes(r: Router): void {
     wrap(async (req, res) => {
       if (!ensureLifecycleEnabled(res)) return;
       const id = parseOrderId(req);
+      await donTrongPhamVi(req.apiPrincipal?.tenantScope, id);
       const trace = await traceOrder(id).catch(toApiError);
       if (!trace) throw new ApiHttpError(404, "not_found", `Order ${id} not found.`);
       sendOk(res, trace);
@@ -158,6 +182,8 @@ export function registerOrdersLifecycleRoutes(r: Router): void {
       if (!parsed.success) {
         throw new ApiHttpError(400, "bad_request", "Invalid allocate body.", { issues: parsed.error.issues });
       }
+      await donTrongPhamVi(req.apiPrincipal?.tenantScope, id);
+      if (parsed.data.lineId != null) await canTrongPhamVi(req.apiPrincipal?.tenantScope, "line", parsed.data.lineId, "Line"); // chuyền đích cũng phải trong phạm vi
       const result = await allocateOrder(id, {
         lineId: parsed.data.lineId,
         reason: parsed.data.reason,
@@ -180,6 +206,7 @@ export function registerOrdersLifecycleRoutes(r: Router): void {
       if (!parsed.success) {
         throw new ApiHttpError(400, "bad_request", "Invalid body.", { issues: parsed.error.issues });
       }
+      await donTrongPhamVi(req.apiPrincipal?.tenantScope, id);
       const result = await holdOrder(id, { reason: parsed.data.reason, actor: actorOf(req) }).catch(toApiError);
       sendOk(res, result);
     }),
@@ -196,6 +223,7 @@ export function registerOrdersLifecycleRoutes(r: Router): void {
       if (!parsed.success) {
         throw new ApiHttpError(400, "bad_request", "Invalid body.", { issues: parsed.error.issues });
       }
+      await donTrongPhamVi(req.apiPrincipal?.tenantScope, id);
       const result = await resumeOrder(id, { reason: parsed.data.reason, actor: actorOf(req) }).catch(toApiError);
       sendOk(res, result);
     }),
@@ -213,6 +241,7 @@ export function registerOrdersLifecycleRoutes(r: Router): void {
       if (!parsed.success) {
         throw new ApiHttpError(400, "bad_request", "Invalid body.", { issues: parsed.error.issues });
       }
+      await donTrongPhamVi(req.apiPrincipal?.tenantScope, id);
       const result = await cancelOrder(id, parsed.data.reason, { actor: actorOf(req) }).catch(toApiError);
       sendOk(res, result);
     }),

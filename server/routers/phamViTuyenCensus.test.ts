@@ -160,7 +160,8 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
 
 // ★ 2026-10-24 — A 80→71 · S 19→28 (chín tuyến `moduleReads.ts`: safety/events|zones, fleet/tasks|zones, programs, programs/:id/deployments, anomaly/events, twin/scene-graph, pdm/risk).
 // ★ 2026-10-24 nhóm 1 (equipment + assets + gateways + state): A 71→60 · S 28→39.
-const GHIM = { A: 60, C: 40, D: 96, S: 39, U: 16, tong: 251 } as const;
+// ★ 2026-10-24 nhóm 2 (orders + genealogy + lines): A 60→53 · S 39→46.
+const GHIM = { A: 53, C: 40, D: 96, S: 46, U: 16, tong: 251 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -360,6 +361,7 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
     //   `403 · application/json · image_factory_scope_denied` trên đường dẫn của nhà máy B, và
     //   `200 · image/png` trên đường dẫn của chính A. Xem `phamViTuyenBaseline.ts`.
     expect(cua("S").map(khoaTuyen).sort()).toEqual([
+      // ★ 2026-10-24 nhóm 2 (orders/genealogy/lines): lệnh sản xuất, truy xuất đơn vị và chuyền của nhà máy khác ⇒ 404; danh sách lọc theo phạm vi khoá (phamViKhoa.ts). Lưới: ordersGenealogyLinesPhamViKhoa.db.test.ts.
       // ★ 2026-10-24 nhóm 1 (equipment/assets/state): khoá API một nhà máy chỉ chạm máy/tài sản/nút biên của nhà máy mình (phamViKhoa.ts). Lưới: equipmentAssetsStatePhamViKhoa.db.test.ts.
       // ★ 2026-09-15 (PH-23) — bề mặt SONG SINH của `/ecosystem/kpi`, và nó nằm ngay TRÊN kpi
       //   trong cùng file mà bị bỏ quên suốt từ 2026-08-18: cùng `req.apiPrincipal.tenantScope`
@@ -393,6 +395,10 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/api/v1/assets.ts#GET /assets/:id/health",
       "server/api/v1/assets.ts#GET /assets/:id/tags",
       "server/api/v1/assets.ts#GET /gateways/:id/status",
+      "server/api/v1/genealogyApi.ts#GET /genealogy/:unitId",
+      "server/api/v1/lines.ts#GET /lines",
+      "server/api/v1/lines.ts#GET /lines/:id/stages",
+      "server/api/v1/lines.ts#GET /lines/:id/state",
       "server/api/v1/moduleReads.ts#GET /anomaly/events",
       "server/api/v1/moduleReads.ts#GET /ecosystem/hierarchy",
       "server/api/v1/moduleReads.ts#GET /ecosystem/kpi",
@@ -406,6 +412,9 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/api/v1/moduleReads.ts#GET /safety/events",
       "server/api/v1/moduleReads.ts#GET /safety/zones",
       "server/api/v1/moduleReads.ts#GET /twin/scene-graph",
+      "server/api/v1/ordersLifecycle.ts#GET /orders",
+      "server/api/v1/ordersLifecycle.ts#GET /orders/:id",
+      "server/api/v1/ordersLifecycle.ts#GET /orders/:id/trace",
       "server/api/v1/router.ts#GET /equipment",
       "server/api/v1/router.ts#GET /equipment/:id/capabilities",
       "server/api/v1/router.ts#GET /equipment/:id/state",

@@ -21,6 +21,8 @@ import { type Router, type Request, type Response } from "express";
 import { requireScope } from "./auth";
 import { API_SCOPES } from "./scopes";
 import { sendOk, wrap, ApiHttpError } from "./envelope";
+import type { ApiKeyTenantScope } from "./apiKeyScope";
+import { phamViCuaKhoa } from "./phamViKhoa"; // 2026-10-24 — phạm vi khoá API
 import {
   listLinesWithState,
   getLineStateDetail,
@@ -46,6 +48,19 @@ function parseLineId(req: Request): number {
     throw new ApiHttpError(400, "bad_request", "Line id phải là số nguyên dương.");
   }
   return id;
+}
+
+/**
+ * phạm vi KHOÁ API (rà bảo mật 2026-10-24): chuyền ngoài phạm vi khoá ≡ "không tìm thấy" (CÙNG câu 404 với id không tồn tại), kiểm TRƯỚC mọi đọc/lệnh.
+ * Trả tập id chuyền trong phạm vi (null = khoá toàn cục).
+ */
+async function dongTrongPhamVi(tenantScope: ApiKeyTenantScope | null | undefined, id?: number): Promise<number[] | null> {
+  const pv = await phamViCuaKhoa(tenantScope);
+  if (!pv) return null;
+  const { idsTrongPhamVi } = await import("../../db/hierarchy");
+  const ids = (await idsTrongPhamVi("line", pv)) ?? [];
+  if (id != null && !ids.includes(id)) throw new ApiHttpError(404, "not_found", `Không tìm thấy production line id=${id}.`);
+  return ids;
 }
 
 /** Map một TransitionResult thất bại → ApiHttpError (status + code envelope). */
@@ -105,8 +120,9 @@ export function registerLineRoutes(r: Router): void {
   r.get(
     "/lines",
     requireScope(LINES_READ_SCOPE),
-    wrap(async (_req: Request, res: Response) => {
-      const lines = await listLinesWithState();
+    wrap(async (req: Request, res: Response) => {
+      const cho = await dongTrongPhamVi(req.apiPrincipal?.tenantScope);
+      const lines = (await listLinesWithState()).filter((l) => cho === null || cho.includes(l.lineId));
       sendOk(res, { lines, count: lines.length });
     }),
   );
@@ -117,6 +133,7 @@ export function registerLineRoutes(r: Router): void {
     requireScope(LINES_READ_SCOPE),
     wrap(async (req: Request, res: Response) => {
       const id = parseLineId(req);
+      await dongTrongPhamVi(req.apiPrincipal?.tenantScope, id);
       const detail = await getLineStateDetail(id);
       if (!detail) throw new ApiHttpError(404, "not_found", `Không tìm thấy production line id=${id}.`);
       sendOk(res, detail);
@@ -129,6 +146,7 @@ export function registerLineRoutes(r: Router): void {
     requireScope(LINES_READ_SCOPE),
     wrap(async (req: Request, res: Response) => {
       const id = parseLineId(req);
+      await dongTrongPhamVi(req.apiPrincipal?.tenantScope, id);
       const stages = await getLineStages(id);
       if (!stages) throw new ApiHttpError(404, "not_found", `Không tìm thấy production line id=${id}.`);
       sendOk(res, stages);
@@ -156,6 +174,7 @@ export function registerLineRoutes(r: Router): void {
           ? body.recipeSetRef.trim().slice(0, 200)
           : undefined;
 
+      await dongTrongPhamVi(req.apiPrincipal?.tenantScope, id);
       const result = await executeLineCommand(id, command as LineCommand, {
         reason,
         recipeSetRef,
@@ -196,6 +215,7 @@ export function registerLineRoutes(r: Router): void {
       }
       const notes = typeof body.notes === "string" ? body.notes.slice(0, 2000) : undefined;
 
+      await dongTrongPhamVi(req.apiPrincipal?.tenantScope, id);
       const result = await distributeRecipeSetByCode(id, code, {
         actor: `api:${req.apiPrincipal?.name ?? "unknown"}`,
         notes,
