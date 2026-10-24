@@ -310,3 +310,28 @@ describe("phiên agent — 👍/👎 câu trả lời cuối (Đợt 5.1 VSCode)
     expect(d2.tin.find((m) => m.loai === "ag_xong")!.phanHoi).toBeUndefined();
   });
 });
+
+describe("phiên agent — markdown tăng dần (2026-10-24)", () => {
+  it("★★★ chữ stream ⇒ `ag_md_dang` mang CÂY (không còn `ag_chu` thô); bản CUỐI vẫn là `ag_md`; mảnh dồn dập được tiết lưu nhưng bản mới nhất không bao giờ mất", async () => {
+    const d = dung((luot) =>
+      luot === 1 ? [{ loai: "chu", noiDung: "### Tiêu " }, { loai: "chu", noiDung: "đề\n\nVăn **bản** mới." }, { loai: "xong", toolCalls: [] }] : [],
+    );
+    await d.phien.chay("giải thích", "hoi");
+    expect(d.tin.some((m) => m.loai === "ag_chu")).toBe(false);
+    const dang = d.tin.filter((m) => m.loai === "ag_md_dang");
+    expect(dang.length).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(dang[0]!.cay)).toContain('"t":"h"'); // mảnh đầu "### Tiêu " đã dựng thành tiêu đề, không phải chữ thô
+    const md = d.tin.filter((m) => m.loai === "ag_md");
+    expect(md).toHaveLength(1);
+    expect(JSON.stringify(md[0]!.cay)).toContain("Văn");
+    // bản cuối đứng SAU mọi bản tăng dần (hẹn giờ treo đã bị huỷ — không có ag_md_dang trễ sau ag_md)
+    const viTriMd = d.tin.indexOf(md[0]!);
+    expect(d.tin.slice(viTriMd + 1).some((m) => m.loai === "ag_md_dang")).toBe(false);
+  });
+
+  it("★ themKhoiMa: đường Chat đăng ký khối mã chung chỉ số với agent (trả chỉ số đầu, tăng dần)", () => {
+    const d = dung(() => []);
+    expect(d.phien.themKhoiMa([{ ngonNgu: "ts", ma: "a" }, { ngonNgu: "", ma: "b" }])).toBe(0);
+    expect(d.phien.themKhoiMa([{ ngonNgu: "sh", ma: "c" }])).toBe(2);
+  });
+});

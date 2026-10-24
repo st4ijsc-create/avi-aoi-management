@@ -302,3 +302,133 @@ describe("webview agent — 👍/👎 câu trả lời cuối (Đợt 5.1 VSCode
     expect(tatCa(vung).some((p) => p.textContent === "Đã ghi phản hồi.")).toBe(true);
   });
 });
+
+/**
+ * ★★★ 2026-10-24 — LỖI 1: markdown dựng TĂNG DẦN (không còn khối chữ đặc / ### ** ``` hiện nguyên), trên cả đường Agent lẫn đường Chat/SERVER; cuộn thông minh; thứ bậc tiêu đề.
+ */
+describe("webview — markdown tăng dần (ag_md_dang / md_dang) + cây cuối trong hoan_tat", () => {
+  const cayA = [{ t: "h", cap: 2, con: [{ t: "text", chu: "Tiêu đề" }] }, { t: "p", con: [{ t: "strong", con: [{ t: "text", chu: "đậm" }] }] }, { t: "code", ngonNgu: "bash", ma: "npm i" }];
+  const khungAi = (w: ReturnType<typeof chay>) => {
+    const bb = w.nut("hoi-thoai").con;
+    return bb[bb.length - 1]!.con[1]!; // [nhãn, nội dung] của bong bóng AI cuối
+  };
+
+  it("★★★ ĐƯỜNG AGENT: ag_md_dang thay nội dung bằng CÂY (thẻ h4/strong/pre) — KHÔNG còn chữ thô '###'/'**'; khối mã đang stream KHÔNG có nút hành động", () => {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "ag_md_dang", cay: cayA });
+    const cac = tatCa(w.nut("hoi-thoai"));
+    const tag = cac.map((p) => p.tag);
+    expect(tag).toContain("h4"); // cap 2 ⇒ h4
+    expect(tag).toContain("strong");
+    expect(tag).toContain("pre");
+    expect(cac.map((p) => p.textContent).join("|")).not.toMatch(/[#*]{2}/);
+    expect(cac.filter((p) => p.tag === "button")).toEqual([]); // dangStream ⇒ chưa có Chép/Chèn/Áp dụng
+    // bản KẾ TIẾP thay THẾ (không cộng dồn): chỉ còn đúng một đoạn
+    w.banTin({ loai: "ag_md_dang", cay: [{ t: "p", con: [{ t: "text", chu: "bản mới" }] }] });
+    const doan = tatCa(w.nut("hoi-thoai")).filter((p) => p.className.includes("ag-doan"));
+    expect(doan).toHaveLength(1);
+    expect(tatCa(doan[0]!).map((p) => p.textContent).join("|")).toContain("bản mới");
+    expect(tatCa(doan[0]!).map((p) => p.textContent).join("|")).not.toContain("Tiêu đề");
+    // bản CUỐI (ag_md) có nút hành động
+    w.banTin({ loai: "ag_md", chiSoMaDau: 0, cay: cayA });
+    expect(tatCa(w.nut("hoi-thoai")).filter((p) => p.tag === "button" && p.className === "nut-khoi-ma").length).toBe(3);
+  });
+
+  it("★★★ ĐƯỜNG CHAT/SERVER: token thô CHỈ tới md_dang đầu; sau đó cây là nguồn duy nhất; hoan_tat mang cây CUỐI (có nút khối mã)", () => {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "token", chu: "### Cách chạy" });
+    expect(khungAi(w).textContent).toBe("### Cách chạy"); // trước md_dang: chữ thô (≤ một nhịp tiết lưu)
+    w.banTin({ loai: "md_dang", cay: cayA });
+    expect(khungAi(w).textContent).toBe(""); // thay bằng cây
+    expect(tatCa(khungAi(w)).map((p) => p.tag)).toContain("h4");
+    w.banTin({ loai: "token", chu: " thêm chữ thô" }); // sau md_dang: token KHÔNG cộng chữ thô vào khối
+    expect(tatCa(khungAi(w)).map((p) => p.textContent).join("|")).not.toContain("thêm chữ thô");
+    expect(khungAi(w).textContent).toBe(""); // khối KHÔNG nhận chữ thô nào sau md_dang
+    expect(tatCa(khungAi(w)).filter((p) => p.tag === "button")).toEqual([]);
+    w.banTin({ loai: "hoan_tat", vanBanCuoi: null, canhBao: null, cay: cayA, chiSoMaDau: 7 });
+    const nut = tatCa(khungAi(w)).filter((p) => p.tag === "button" && p.className === "nut-khoi-ma");
+    expect(nut).toHaveLength(3);
+    nut[0]!.bam();
+    expect(w.daGui.find((m) => m.loai === "ag_khoi_ma")).toEqual({ loai: "ag_khoi_ma", chiSo: 7, hanhDong: "chep" });
+  });
+
+  it("★ hoan_tat KHÔNG có cây (host cũ) ⇒ hành vi cũ: textContent = vanBanCuoi", () => {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "token", chu: "thô" });
+    w.banTin({ loai: "hoan_tat", vanBanCuoi: "bản đã lọc", canhBao: null });
+    expect(khungAi(w).textContent).toBe("bản đã lọc");
+  });
+
+  it("★ lịch sử khôi phục: lượt AI có `cay` ⇒ dựng markdown; lượt người dùng giữ chữ", () => {
+    const w = chay();
+    w.banTin({ loai: "khoi_phuc_hoi_thoai", luot: [{ vaiTro: "user", noiDung: "câu hỏi" }, { vaiTro: "assistant", noiDung: "## T", cay: [{ t: "h", cap: 2, con: [{ t: "text", chu: "T" }] }] }], soLuot: 1, soKyTu: 5 });
+    const bb = w.nut("hoi-thoai").con.filter((p) => p.className.includes("luot"));
+    expect(bb[0]!.con[1]!.textContent).toBe("câu hỏi");
+    expect(tatCa(bb[1]!).map((p) => p.tag)).toContain("h4");
+  });
+
+  it("★ bảng nằm trong khung cuộn riêng (.bang-cuon) — không đẩy rộng cả khung chat", () => {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "ag_md", chiSoMaDau: 0, cay: [{ t: "table", dau: [[{ t: "text", chu: "A" }]], hang: [[[{ t: "text", chu: "1" }]]] }] });
+    const cuon = tatCa(w.nut("hoi-thoai")).find((p) => p.className === "bang-cuon");
+    expect(cuon).toBeTruthy();
+    expect(cuon!.con[0]!.tag).toBe("table");
+  });
+});
+
+describe("webview — CSS thứ bậc tiêu đề + nhãn vai (2026-10-24)", () => {
+  const html = dungHtmlBang({ nonce: "N" });
+  const coChu = (nhan: string) => {
+    const i = html.indexOf(nhan);
+    expect(i, nhan).toBeGreaterThan(-1);
+    return parseFloat(html.slice(i + nhan.length));
+  };
+  it("★★★ h3 > h4 > h5 > h6 ≥ chữ thường 13 px (trước đây ### = 10,8 px NHỎ HƠN chữ thường)", () => {
+    const h3 = coChu(".ag-md h3 { font-size: ");
+    const h4 = coChu(".ag-md h4 { font-size: ");
+    const h5 = coChu(".ag-md h5 { font-size: ");
+    const h6 = coChu(".ag-md h6 { font-size: ");
+    expect(h3).toBeGreaterThan(h4);
+    expect(h4).toBeGreaterThan(h5);
+    expect(h5).toBeGreaterThan(h6);
+    expect(h6).toBeGreaterThanOrEqual(13);
+  });
+  it("★ trích dẫn có viền trái + nền; nhãn vai trong lượt: ≥ 12 px, KHÔNG in hoa, KHÔNG mờ", () => {
+    expect(html).toMatch(/\.ag-md blockquote \{[^}]*border-left: 3px solid[^}]*background:/);
+    const i = html.indexOf(".luot > .nhan {");
+    const khoi = html.slice(i, html.indexOf("}", i));
+    expect(khoi).toContain("font-size: 12px");
+    expect(khoi).toContain("text-transform: none");
+    expect(khoi).toContain("opacity: 1");
+  });
+});
+
+describe("webview — cuộn thông minh (chỉ tự cuộn khi đang ở đáy)", () => {
+  type Co = { scrollTop: number; scrollHeight: number; clientHeight?: number };
+  it("★★★ ĐANG Ở ĐÁY ⇒ tin ag_* mới kéo xuống đáy; ĐANG CUỘN LÊN ĐỌC ⇒ KHÔNG đổi scrollTop và hiện '↓ Tin mới'; bấm pill ⇒ xuống đáy và ẩn", () => {
+    const w = chay();
+    const ht = w.nut("hoi-thoai") as unknown as Co;
+    ht.scrollHeight = 2000;
+    ht.clientHeight = 500;
+    ht.scrollTop = 1500; // đúng đáy
+    w.banTin({ loai: "ag_md", chiSoMaDau: 0, cay: [{ t: "p", con: [{ t: "text", chu: "a" }] }] });
+    expect(ht.scrollTop).toBe(2000);
+    expect(w.nut("pill-moi").hidden).toBe(true);
+    // người dùng cuộn lên đọc
+    ht.scrollTop = 300;
+    w.banTin({ loai: "ag_md", chiSoMaDau: 0, cay: [{ t: "p", con: [{ t: "text", chu: "b" }] }] });
+    expect(ht.scrollTop).toBe(300); // KHÔNG giật về đáy
+    expect(w.nut("pill-moi").hidden).toBe(false);
+    w.nut("pill-moi").bam();
+    expect(ht.scrollTop).toBe(ht.scrollHeight);
+    expect(w.nut("pill-moi").hidden).toBe(true);
+  });
+});

@@ -41,6 +41,7 @@ import { SoCheckpoint } from "../loi/checkpoint";
 import { KHOA_TOKEN_GATEWAY } from "../loi/thietBi";
 import { chuanHoaMucQuyen, NHAN_MUC_QUYEN, type MucQuyen } from "../loi/mucQuyen";
 import { phanTichMarkdown, khoiMa as layKhoiMa } from "../loi/markdownAnToan";
+import { BoDemMdTangDan } from "../loi/mdTangDan";
 import { docLenhGach, dungCauHoiLenhGach } from "../loi/lenhGach";
 import { docTheDacBiet, dungCauHoiAgent, dungNguCanhDuAnExtension, LENH_DUOC_PHEP_HIEN_THI, TEP_QUY_UOC, type DinhKemAgent } from "../loi/nguCanhAgent";
 import { dinhDangChanDoan, type MucChanDoan } from "../loi/congCuDoc";
@@ -137,6 +138,8 @@ export class PhienAgent {
   private readonly yeuCauDuyet = new Map<string, YeuCauDuyet>();
   private readonly deXuatNho = new Map<string, string>();
   private readonly dsKhoiMa: Array<{ ngonNgu: string; ma: string }> = [];
+  /** ★ 2026-10-24 — dựng markdown TĂNG DẦN khi stream (thay `ag_chu` thô): host phân tích lại văn bản đã nhận (tiết lưu) và gửi cây `ag_md_dang`; bản cuối vẫn là `ag_md`. */
+  private readonly dungMd = new BoDemMdTangDan((cay) => this.pt.gui({ loai: "ag_md_dang", cay }));
   private doan = "";
   private dangChay = false;
   /** Sự kiện lõi của lượt đang chạy (để tìm khối trả lời CUỐI theo luật gộp dùng chung). */
@@ -336,7 +339,7 @@ export class PhienAgent {
         break;
       case "chu":
         this.doan += e.noiDung;
-        this.pt.gui({ loai: "ag_chu", chu: e.noiDung });
+        this.dungMd.capNhat(this.doan);
         break;
       case "nghi":
         this.pt.gui({ loai: "ag_nghi", chu: e.noiDung });
@@ -387,8 +390,16 @@ export class PhienAgent {
     }
   }
 
+  /** ★ 2026-10-24 — đường CHAT (không phải agent) dựng khối mã đánh số TOÀN CỤC chung với agent để nút Chép/Chèn/Áp dụng của câu trả lời Chat cũng hoạt động; trả chỉ số đầu. */
+  themKhoiMa(ds: Array<{ ngonNgu: string; ma: string }>): number {
+    const dau = this.dsKhoiMa.length;
+    this.dsKhoiMa.push(...ds);
+    return dau;
+  }
+
   /** Đoạn chữ đang stream ⇒ cây markdown an toàn (khối mã đánh số TOÀN CỤC cho nút Chép/Chèn/Áp dụng). */
   private xaDoan(): void {
+    this.dungMd.dung(); // huỷ bản tăng dần còn treo: bản CUỐI (`ag_md`) ngay dưới là bản đúng
     if (!this.doan.trim()) {
       this.doan = "";
       return;

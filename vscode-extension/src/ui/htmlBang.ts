@@ -82,6 +82,14 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
      màu chữ-mô-tả của theme, khác cả hai màu trên để không bị nhầm là một câu trả lời của AI. */
   .luot-he-thong { border-left-color: var(--vscode-descriptionForeground); }
   .nhan { opacity: .7; font-size: 11px; text-transform: uppercase; }
+  /* 2026-10-24 — NHÃN VAI của một lượt hội thoại (khác .nhan dùng cho nhãn thẻ): 12 px ĐẬM, không in hoa, không mờ, kèm chữ cái đầu trong vòng tròn — "Bạn" / "AI Local" không còn là thứ
+     nhỏ và xám nhất trên màn hình. Chữ cái là CSS thuần (::before) nên cấu trúc DOM của lượt (nhãn + nội dung) không đổi. */
+  .luot > .nhan { display: flex; align-items: center; gap: 6px; opacity: 1; font-size: 12px; font-weight: 600; text-transform: none; margin-bottom: 2px; }
+  .luot > .nhan::before { content: "•"; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; font-weight: 700;
+                          background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+  .luot-nguoi-dung > .nhan::before { content: "B"; }
+  .luot-ai > .nhan::before { content: "AI"; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .luot-he-thong > .nhan::before { content: "!"; background: transparent; color: var(--vscode-descriptionForeground); border: 1px solid var(--vscode-descriptionForeground); }
   /* ★★★ ĐỢT I / TASK I-1a — CHỈ BÁO ĐANG CHẠY. Bong bóng AI KHÔNG được rỗng-im-lìm trong lúc model
      nghĩ (3-58s đo được) — người dùng phải THẤY nó còn sống. Thuần CSS @keyframes (không JS
      timer): trình duyệt tự chạy animation, không tốn một setInterval nào để dọn khi lượt kết
@@ -156,13 +164,30 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
               border: 1px solid var(--vscode-dropdown-border); font-size: 11px; padding: 2px 4px; }
   #dong-ho-token { opacity: .75; }
   .nut-phu { font-size: 11px; padding: 2px 8px; }
-  .ag-md { white-space: normal; }
-  .ag-md p { margin: 4px 0; }
-  .ag-md pre { white-space: pre; overflow-x: auto; margin: 0; padding: 6px;
-               background: var(--vscode-textCodeBlock-background); font-family: var(--vscode-editor-font-family); }
-  .ag-md code { font-family: var(--vscode-editor-font-family); background: var(--vscode-textCodeBlock-background); }
-  .ag-md table { border-collapse: collapse; }
-  .ag-md th, .ag-md td { border: 1px solid var(--vscode-panel-border); padding: 2px 6px; }
+  /* ★ 2026-10-24 — TYPOGRAPHY của markdown (đường Agent VÀ đường Chat/SERVER): thứ bậc tiêu đề rõ (h3 16 > h4 14,5 > h5 13,5 > h6 13 > chữ 13 — trước đây ### = 10,8 px NHỎ HƠN chữ thường),
+     khoảng thở giữa đoạn/danh sách/bảng, trích dẫn có viền+nền, bảng cuộn ngang trong khung riêng. */
+  .ag-md { white-space: normal; line-height: 1.55; overflow-wrap: anywhere; }
+  .ag-md > :first-child { margin-top: 0; }
+  .ag-md > :last-child { margin-bottom: 0; }
+  .ag-md p { margin: 0 0 .7em; }
+  .ag-md h3, .ag-md h4, .ag-md h5, .ag-md h6 { line-height: 1.3; margin: 1.1em 0 .45em; font-weight: 600; }
+  .ag-md h3 { font-size: 16px; } .ag-md h4 { font-size: 14.5px; } .ag-md h5 { font-size: 13.5px; } .ag-md h6 { font-size: 13px; }
+  .ag-md ul, .ag-md ol { margin: 0 0 .7em; padding-left: 20px; }
+  .ag-md li { margin: .2em 0; }
+  .ag-md blockquote { margin: 0 0 .7em; padding: 6px 10px; border-left: 3px solid var(--vscode-focusBorder); background: var(--vscode-textBlockQuote-background); border-radius: 0 6px 6px 0; }
+  .ag-md blockquote p { margin: 0; }
+  .ag-md pre { white-space: pre; overflow-x: auto; margin: 0; padding: 8px 10px;
+               background: var(--vscode-textCodeBlock-background); font-family: var(--vscode-editor-font-family); font-size: 12px; line-height: 1.5; }
+  .ag-md code { font-family: var(--vscode-editor-font-family); font-size: 12px; background: var(--vscode-textCodeBlock-background); padding: 1px 5px; border-radius: 4px; }
+  .ag-md pre code { padding: 0; background: transparent; }
+  .bang-cuon { overflow-x: auto; margin: 0 0 .8em; border: 1px solid var(--vscode-panel-border); border-radius: 6px; }
+  .ag-md table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .ag-md th, .ag-md td { padding: 5px 9px; text-align: left; white-space: nowrap; }
+  .ag-md th { background: var(--vscode-textBlockQuote-background); font-weight: 600; border-bottom: 1px solid var(--vscode-panel-border); }
+  .ag-md tr:nth-child(even) td { background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); }
+  /* ↓ Tin mới: hiện khi có nội dung mới mà người dùng đang cuộn lên đọc (không giật về đáy) */
+  #pill-moi { position: fixed; left: 50%; transform: translateX(-50%); bottom: 96px; z-index: 20; padding: 3px 12px; border-radius: 999px; font-size: 11.5px;
+              box-shadow: 0 2px 10px rgba(0,0,0,.35); }
   .khoi-ma { border: 1px solid var(--vscode-panel-border); margin: 6px 0; }
   .khoi-ma-dau { display: flex; gap: 4px; align-items: center; padding: 2px 4px; font-size: 11px;
                  background: var(--vscode-editorWidget-background); }
@@ -279,6 +304,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   <span id="dong-ho-token" title="Token ngữ cảnh gửi model ở lượt gần nhất (~ = ước lượng 2,8 ký tự/token khi cổng /v1 không trả usage lúc stream)">Ngữ cảnh: —</span>
   <button id="nut-hoan-tac" class="nut-phu" hidden>Hoàn tác lượt chạy</button>
 </div>
+<button id="pill-moi" type="button" hidden>↓ Tin mới</button>
 <div id="hang-nhap">
   <!-- TASK 5 — dropdown gợi ý @-mention. MẶC ĐỊNH ẨN: chỉ hiện khi đang gõ "@..." VÀ extension đã
        trả về ít nhất một gợi ý. Nội dung (danh sách tệp) do EXTENSION dựng — webview chỉ hiển thị
@@ -332,6 +358,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   const hoiThoai = document.getElementById("hoi-thoai");
   const oNhap = document.getElementById("o-nhap");
   let khoiTraLoi = null;
+  let coMdDang = false;
   // ★★★ H3(b) (review toàn nhánh 2026-08-30) — cờ báo lượt "hoi" SẮP GỬI đến từ Cmd+K
   // ("dat_cau_hoi_tu_lenh") chứ không phải người dùng tự gõ. gui() đọc cờ này rồi ĐÍNH KÈM vào
   // postMessage({loai:"hoi"}) — đây là cách DUY NHẤT phía extension (bangChat.ts) biết một lượt hỏi
@@ -785,7 +812,14 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   let agKeHoach = null;
   let agTool = {};
   const agThe = {};
-  function agBatDauLuot() { agDoan = null; agNghi = null; agKeHoach = null; agTool = {}; }
+  function agBatDauLuot() { agDoan = null; agNghi = null; agKeHoach = null; agTool = {}; coMdDang = false; }
+  /** Thay TOÀN BỘ nội dung một khối bằng cây markdown (đường Chat/SERVER + lịch sử). Chỉ createElement/textContent — innerHTML chỉ nhận chuỗi rỗng để dọn. */
+  function veLaiKhoiMd(el, cay, chiSoMaDau, dangStream) {
+    el.textContent = "";
+    el.innerHTML = "";
+    if (typeof el.className === "string" && el.className.indexOf("ag-md") < 0) el.className = (el.className + " ag-md").trim();
+    veMd(cay, chiSoMaDau, el, dangStream);
+  }
   function agKhung() { if (!khoiTraLoi) khoiTraLoi = themLuot("ai", ""); return khoiTraLoi; }
   function taoPhan(the, lop, chu) {
     const e = document.createElement(the);
@@ -824,7 +858,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       const k = taoPhan("div", "khoi-ma");
       const dau = taoPhan("div", "khoi-ma-dau");
       dau.appendChild(taoPhan("span", "", String(n.ngonNgu || "mã")));
-      for (const [hanhDong, nhan, goiY] of HANH_DONG_MA) {
+      // đang stream: khối chưa ĐĂNG KÝ chỉ số ở host (chỉ bản cuối mới đăng ký) ⇒ chưa hiện Chép/Chèn/Áp dụng, tránh nút chết
+      for (const [hanhDong, nhan, goiY] of demMa.dangStream ? [] : HANH_DONG_MA) {
         const b = taoPhan("button", "nut-khoi-ma", nhan);
         b.title = goiY;
         b.addEventListener("click", () => vscode.postMessage({ loai: "ag_khoi_ma", chiSo, hanhDong }));
@@ -847,7 +882,9 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
         (h || []).forEach((o) => { const td = document.createElement("td"); (o || []).forEach((c) => veNutMd(c, td, demMa)); tr.appendChild(td); });
         b.appendChild(tr);
       });
-      cha.appendChild(b);
+      const cuon = taoPhan("div", "bang-cuon"); // bảng rộng cuộn ngang TRONG khung riêng, không đẩy rộng cả khung chat
+      cuon.appendChild(b);
+      cha.appendChild(cuon);
       return;
     }
     const the = THE_KHOI[n.t];
@@ -857,8 +894,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     (n.con || []).forEach((c) => veNutMd(c, e, demMa));
     cha.appendChild(e);
   }
-  function veMd(cay, chiSoMaDau, cha) {
-    const demMa = { tiep: chiSoMaDau | 0 };
+  function veMd(cay, chiSoMaDau, cha, dangStream) {
+    const demMa = { tiep: chiSoMaDau | 0, dangStream: dangStream === true };
     (Array.isArray(cay) ? cay : []).forEach((n) => veNutMd(n, cha, demMa));
   }
   const NHAN_LY_DO = {
@@ -947,6 +984,15 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       xoaChiBaoChoAi();
       if (!agDoan) { agDoan = taoPhan("div", "ag-doan ag-md"); agKhung().appendChild(agDoan); }
       agDoan.textContent += m.chu;
+      return;
+    }
+    if (m.loai === "ag_md_dang") {
+      // ★ 2026-10-24 — cây markdown TĂNG DẦN (host dựng lại văn bản đã nhận, tiết lưu): thay nội dung khối đang stream, KHÔNG nối chữ thô.
+      xoaChiBaoChoAi();
+      if (!agDoan) { agDoan = taoPhan("div", "ag-doan ag-md"); agKhung().appendChild(agDoan); }
+      agDoan.textContent = "";
+      agDoan.innerHTML = "";
+      veMd(m.cay, 0, agDoan, true);
       return;
     }
     if (m.loai === "ag_md") {
@@ -1189,9 +1235,23 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     veLaiDsDinhKem();
   }
 
+  // ★ 2026-10-24 — CUỘN THÔNG MINH: chỉ tự cuộn xuống khi người dùng ĐANG Ở ĐÁY; đang cuộn lên đọc thì giữ nguyên chỗ và hiện "↓ Tin mới" (trước đây mỗi mảnh stream ép về đáy).
+  const pillMoi = document.getElementById("pill-moi");
+  function dangODay() {
+    const kc = hoiThoai.scrollHeight - hoiThoai.scrollTop - (hoiThoai.clientHeight || 0);
+    return !(kc >= 48); // NaN (DOM giả) ⇒ coi là đang ở đáy
+  }
+  function cuonNeuODay(odDay) {
+    if (odDay) { hoiThoai.scrollTop = hoiThoai.scrollHeight; pillMoi.hidden = true; }
+    else pillMoi.hidden = false;
+  }
+  hoiThoai.addEventListener("scroll", () => { if (dangODay()) pillMoi.hidden = true; });
+  pillMoi.addEventListener("click", () => { hoiThoai.scrollTop = hoiThoai.scrollHeight; pillMoi.hidden = true; });
+
   window.addEventListener("message", (e) => {
     const m = e.data;
-    if (typeof m.loai === "string" && m.loai.indexOf("ag_") === 0) { xuLyTinAgent(m); hoiThoai.scrollTop = hoiThoai.scrollHeight; return; }
+    const odDay = dangODay() || m.loai === "khoi_phuc_hoi_thoai" || m.loai === "chat_moi";
+    if (typeof m.loai === "string" && m.loai.indexOf("ag_") === 0) { xuLyTinAgent(m); cuonNeuODay(odDay); return; }
     // ★★★ ĐỢT I / TASK I-1a — token ĐẦU TIÊN của lượt là tín hiệu "model đã bắt đầu trả lời thật":
     // xoá chỉ báo đang-chờ NGAY TRƯỚC khi ghi chữ, không sau — DOM giả của lưới không tự dọn hộ
     // (xem docblock \`xoaChiBaoChoAi\`), và kể cả trên browser thật thì cũng phải TỰ xoá thay vì trông
@@ -1199,7 +1259,13 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     // \`<span>\` ba-chấm vẫn nằm nguyên trong DOM cạnh chữ vừa ghi nếu không dọn tay).
     if (m.loai === "token" && khoiTraLoi) {
       xoaChiBaoChoAi();
-      khoiTraLoi.textContent += m.chu;
+      // chữ thô CHỈ tới khi md_dang đầu tiên tới (≤ 1 nhịp tiết lưu); từ đó cây markdown của host là nguồn hiển thị duy nhất
+      if (!coMdDang) khoiTraLoi.textContent += m.chu;
+    }
+    else if (m.loai === "md_dang" && khoiTraLoi) {
+      coMdDang = true;
+      xoaChiBaoChoAi();
+      veLaiKhoiMd(khoiTraLoi, m.cay, 0, true);
     }
     // ★★★ ĐỢT I / TASK I-1b — NHÁNH KIA của I-1a: LỖI (bao gồm mất-kết-nối, cùng gói tin \`loi\` với
     // \`moSettings:true\` — xem \`bangChat.ts#laLoiKhongNoiDuocMayChu\`) phải XOÁ chỉ báo, không được
@@ -1211,7 +1277,10 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // TRƯỚC khi (có thể) ghi \`vanBanCuoi\` — cùng lý do với nhánh "token" ở trên.
       xoaChiBaoChoAi();
       // vanBanCuoi chỉ có khi server bảo THAY chữ đã stream (degraded) — không phải mọi lượt.
-      if (m.vanBanCuoi != null && khoiTraLoi) khoiTraLoi.textContent = m.vanBanCuoi;
+      // ★ 2026-10-24 — cây markdown CUỐI của chính văn bản được hiển thị (host dựng, đã đăng ký khối mã); không có cây (host cũ) ⇒ hành vi cũ.
+      if (Array.isArray(m.cay) && khoiTraLoi) veLaiKhoiMd(khoiTraLoi, m.cay, m.chiSoMaDau | 0, false);
+      else if (m.vanBanCuoi != null && khoiTraLoi) khoiTraLoi.textContent = m.vanBanCuoi;
+      coMdDang = false;
       // Cắt ngang hoặc khung hỏng: KHÔNG được im lặng — phải hiện, kể cả khi câu trả lời trông
       // như đã xong.
       if (m.canhBao) themLuot("he_thong", m.canhBao, false, "Lưu ý");
@@ -1401,13 +1470,17 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // hội thoại cũ (hay khung vừa khởi động, lúc \`o-nhap\` chắc chắn còn rỗng) — không phải chủ
       // động "rời phiên" như "Chat mới", nên nháp đang gõ (nếu có) phải CÒN NGUYÊN sau khi xem xong.
       xoaKhungChoPhienKhac(false);
-      for (const l of m.luot || []) themLuot(l.vaiTro === "user" ? "nguoi_dung" : "ai", l.noiDung);
+      for (const l of m.luot || []) {
+        const khung = themLuot(l.vaiTro === "user" ? "nguoi_dung" : "ai", l.noiDung);
+        // trả lời của AI trong lịch sử cũng dựng markdown (host gửi kèm cây); khối mã chưa đăng ký chỉ số ⇒ không hiện nút hành động
+        if (l.vaiTro !== "user" && Array.isArray(l.cay)) veLaiKhoiMd(khung, l.cay, 0, true);
+      }
       // ★★★ ĐỢT G / TASK G2 / B3 — thống kê của ĐÚNG hội thoại vừa vẽ lại (extension gửi kèm
       // \`soLuot\`/\`soKyTu\` của bản ghi vừa khôi phục — xem \`khoiPhucHoiThoaiGanNhat\`/\`moLichSu\`).
       thongKeHoiThoai = { soLuot: m.soLuot ?? 0, soKyTu: m.soKyTu ?? 0 };
       capNhatThanhNguCanh();
     }
-    hoiThoai.scrollTop = hoiThoai.scrollHeight;
+    cuonNeuODay(odDay);
   });
   // Bắt tay chống ĐUA: extension có thể gửi danh sách dự án TRƯỚC khi script này kịp đăng ký
   // listener ở trên ⇒ danh sách rơi mất mà không có lỗi nào. Báo "san_sang" NGAY SAU khi đã lắng

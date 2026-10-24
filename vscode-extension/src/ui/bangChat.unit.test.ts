@@ -1358,7 +1358,7 @@ describe("ĐỢT F / TASK 2 — lưu hội thoại BỀN qua workspaceState", ()
     expect(khoiPhuc).toHaveLength(1);
     expect(khoiPhuc[0]!.luot).toEqual([
       { vaiTro: "user", noiDung: "Câu hỏi từ phiên trước" },
-      { vaiTro: "assistant", noiDung: "Trả lời từ phiên trước" },
+      { vaiTro: "assistant", noiDung: "Trả lời từ phiên trước", cay: expect.any(Array) },
     ]);
   });
 
@@ -1699,7 +1699,7 @@ describe("ĐỢT F / TASK 3 / B4 — 'Lịch sử'", () => {
     expect(khoiPhuc).toHaveLength(1);
     expect(khoiPhuc[0]!.luot).toEqual([
       { vaiTro: "user", noiDung: "Câu hỏi A" },
-      { vaiTro: "assistant", noiDung: "Trả lời A" },
+      { vaiTro: "assistant", noiDung: "Trả lời A", cay: expect.any(Array) },
     ]);
     // Không một mẩu nào của hội thoại B (KHÔNG được chọn) lọt vào tin nạp lại.
     expect(JSON.stringify(khoiPhuc)).not.toContain("Câu hỏi B");
@@ -2276,5 +2276,44 @@ describe("chế độ agent — lưu theo workspace ('dat_che_do' / 'che_do')", 
     await nhuong();
     expect(may.workspaceState["aviAiLocal.cheDoAgent"]).toBeUndefined();
     expect(tinCheDo()).toEqual([]);
+  });
+});
+
+/** ★★★ 2026-10-24 — đường Chat: markdown dựng TĂNG DẦN + cây cuối trong `hoan_tat`. */
+describe("hoi — markdown tăng dần trên đường Chat/SERVER", () => {
+  const nhuong = async () => {
+    for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+  it("★★★ token ⇒ `md_dang` mang CÂY (tiêu đề, khối mã); `hoan_tat` mang cây CUỐI + chỉ số khối mã đã đăng ký; bản tăng dần không bắn trễ sau hoan_tat", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:/ws", nhan: "LOCAL · C:/ws", loai: "local" }];
+    bang.duAnChon = "local:C:/ws";
+    may.daGui = [];
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "token", token: "### Cách chạy\n\n```bash\nnpm i" });
+        dv.nhan({ type: "token", token: "nstall\n```\n" });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "chạy sao?" });
+    await nhuong();
+    const dang = may.daGui.filter((m) => m.loai === "md_dang");
+    expect(dang.length).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(dang[0]!.cay)).toContain('"t":"h"');
+    const ht = may.daGui.filter((m) => m.loai === "hoan_tat");
+    expect(ht).toHaveLength(1);
+    expect(JSON.stringify(ht[0]!.cay)).toContain("npm install"); // cây CUỐI của văn bản đầy đủ (hai mảnh nối liền)
+    expect(ht[0]!.chiSoMaDau).toBe(0);
+    const viTri = may.daGui.indexOf(ht[0]!);
+    expect(may.daGui.slice(viTri + 1).some((m) => m.loai === "md_dang")).toBe(false);
+    // lượt kế tiếp đăng ký khối mã tiếp nối chỉ số (không đè)
+    may.hangDoiSse = [async (dv) => { dv.nhan({ type: "token", token: "```ts\nlet x = 1;\n```" }); dv.nhan({ type: "done" }); return { hong: [] }; }];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "tiếp" });
+    await nhuong();
+    const ht2 = may.daGui.filter((m) => m.loai === "hoan_tat");
+    expect(ht2).toHaveLength(2);
+    expect(ht2[1]!.chiSoMaDau).toBe(1);
   });
 });
