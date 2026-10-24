@@ -338,3 +338,73 @@ describe("Faceplate — request ⇒ M5 / lỗi request", () => {
     expect(tb).toHaveTextContent("Cần dừng máy? Dùng STOP đã ghim hoặc E-STOP cứng tại máy");
   });
 });
+
+describe("Faceplate — fix round 1 (khuôn × kiểu, chặn gửi bằng ref)", () => {
+  it("MINOR 3 — khuôn bool: trên kênh int ⇒ hai nút gửi 0 / 1", () => {
+    srv.kenh = [kenh({ dataType: "int", displayFormat: "bool:Dung,Chay", writeMin: null, writeMax: null, writeStep: null })];
+    srv.tags = [live({ v: 0 })];
+    ve();
+    expect(within(fp()).getByTestId("gia-tri-song")).toHaveTextContent("Dung");
+    fireEvent.click(within(fp()).getByRole("button", { name: "Chay" }));
+    fireEvent.change(oLyDo(), { target: { value: "Chay may Z7" } });
+    fireEvent.click(nutDoi());
+    expect((goi("request")[0].vars as Record<string, unknown>).value).toBe(1);
+  });
+
+  it("MINOR 3 — khuôn enum trên kênh bool, ĐÚNG 2 giá trị ⇒ chỉ số 0 = false, 1 = true", () => {
+    srv.kenh = [kenh({ dataType: "bool", displayFormat: "enum:Shut,Open", writeMin: null, writeMax: null, writeStep: null })];
+    srv.tags = [live({ v: true })];
+    ve();
+    expect(within(fp()).getByTestId("gia-tri-song")).toHaveTextContent("Open");
+    fireEvent.click(within(fp()).getByRole("button", { name: "Shut" }));
+    fireEvent.change(oLyDo(), { target: { value: "Dong van Z7" } });
+    fireEvent.click(nutDoi());
+    expect((goi("request")[0].vars as Record<string, unknown>).value).toBe(false);
+  });
+
+  it("MINOR 3 — khuôn enum trên kênh bool KHÁC 2 giá trị ⇒ khoá nút + gợi ý sửa cấu hình, không gửi được", () => {
+    srv.kenh = [kenh({ dataType: "bool", displayFormat: "enum:A,B,C", writeMin: null, writeMax: null, writeStep: null })];
+    ve();
+    for (const n of ["A", "B", "C"]) expect(within(fp()).getByRole("button", { name: n })).toBeDisabled();
+    expect(within(fp()).getByText(S("scada.faceplate.enumBoolSai", { n: 3 }))).toBeInTheDocument();
+    fireEvent.change(oLyDo(), { target: { value: "Thu doi gia tri" } });
+    expect(nutDoi()).toBeDisabled();
+  });
+
+  it("MINOR 4 — hai cú bấm 'Đổi…' trong CÙNG một lượt render ⇒ request đúng một lần (chặn bằng ref)", () => {
+    ve();
+    fireEvent.change(oSo(), { target: { value: "245" } });
+    fireEvent.change(oLyDo(), { target: { value: "Giam SP Z7" } });
+    const n = nutDoi();
+    act(() => {
+      n.click();
+      n.click();
+    });
+    expect(goi("request")).toHaveLength(1);
+  });
+
+  it("request bị từ chối ⇒ gửi lại được (ref nhả khi lỗi)", async () => {
+    ve();
+    fireEvent.change(oSo(), { target: { value: "245" } });
+    fireEvent.change(oLyDo(), { target: { value: "Giam SP Z7" } });
+    fireEvent.click(nutDoi());
+    await act(async () => {
+      srv.opts.request.onError?.(loi("SCADA_TAG_SELECTED_BY_OTHER", { ma: "KHOA_CHON_LOI" }));
+    });
+    fireEvent.click(nutDoi());
+    expect(goi("request")).toHaveLength(2);
+  });
+
+  it("faceplate đã gỡ khi request mới trả về ⇒ huy yêu cầu đó ngay (không giữ khoá chọn tới hết TTL)", async () => {
+    ve();
+    fireEvent.change(oSo(), { target: { value: "245" } });
+    fireEvent.change(oLyDo(), { target: { value: "Giam SP Z7" } });
+    fireEvent.click(nutDoi());
+    const onSuccess = srv.opts.request.onSuccess;
+    cleanup();
+    await act(async () => {
+      onSuccess?.({ requestId: RID, expiresAt: new Date(Date.now() + 60_000).toISOString(), preview: {} });
+    });
+    expect(goi("huy")).toEqual([{ proc: "huy", vars: { requestId: RID } }]);
+  });
+});

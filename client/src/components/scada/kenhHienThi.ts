@@ -139,13 +139,30 @@ export function phanTichDinhDang(fmt: string | null | undefined, dataType: strin
 const laDung = (v: unknown) => v === true || v === 1 || v === "1" || v === "true";
 const laSai = (v: unknown) => v === false || v === 0 || v === "0" || v === "false";
 
-/** Giá trị của nút enum thứ `i` theo kiểu dữ liệu (kênh số ⇒ chỉ số; còn lại ⇒ nhãn). */
-export function giaTriEnum(dataType: string, nhan: string[], i: number): number | string {
+/**
+ * Giá trị của nút enum thứ `i` theo kiểu dữ liệu: kênh số ⇒ chỉ số; kênh bool ⇒ 0 = false, 1 = true (CHỈ khi đúng 2 nhãn — xem
+ * `enumDungDuoc`); kênh chuỗi ⇒ nhãn.
+ */
+export function giaTriEnum(dataType: string, nhan: string[], i: number): number | string | boolean {
+  if (dataType === "bool") return i === 1;
   return dataType === "int" || dataType === "float" ? i : nhan[i];
+}
+
+/** fix round 1 — `enum:` trên kênh bool chỉ dùng được với ĐÚNG 2 nhãn (0 ⇒ false, 1 ⇒ true); khác ⇒ khoá ô + gợi ý sửa cấu hình. */
+export function enumDungDuoc(dataType: string, nhan: string[]): boolean {
+  return dataType !== "bool" || nhan.length === 2;
+}
+
+/** fix round 1 — giá trị của hai nút `bool:` theo kiểu kênh: bool ⇒ false/true; số ⇒ 0/1; chuỗi ⇒ chính nhãn. */
+export function giaTriBool(dataType: string, nhan: [string, string], b: boolean): boolean | number | string {
+  if (dataType === "int" || dataType === "float") return b ? 1 : 0;
+  if (dataType === "bool") return b;
+  return b ? nhan[1] : nhan[0];
 }
 
 /** Chỉ số nhãn enum ứng với một giá trị (số ⇒ chỉ số; chuỗi ⇒ trùng nhãn); không khớp ⇒ -1. */
 export function chiSoEnum(v: unknown, nhan: string[]): number {
+  if (typeof v === "boolean") return nhan.length === 2 ? (v ? 1 : 0) : -1;
   if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < nhan.length) return v;
   if (typeof v === "string") {
     const i = nhan.indexOf(v);
@@ -187,4 +204,29 @@ export function dinhDangGiaTri(v: unknown, dd: DinhDangKenh, locale: string, nha
       break;
   }
   return typeof v === "object" ? JSON.stringify(v) : String(v);
+}
+
+/** Số chữ thập phân CỦA CHÍNH giá trị (240.25 ⇒ 2; 245 ⇒ 0); dạng mũ (1e-7) ⇒ null (để Intl tự quyết, tối đa 20). */
+function soLeCuaGiaTri(n: number): number | null {
+  const s = String(n);
+  if (/e/i.test(s)) return null;
+  const i = s.indexOf(".");
+  return i < 0 ? 0 : Math.min(20, s.length - i - 1);
+}
+
+/**
+ * fix round 1 — giá trị ĐẦY ĐỦ độ chính xác cho bước xác nhận cuối (M5): số in đúng số chữ thập phân của chính nó (không làm tròn theo
+ * khuôn `0.0` — 240.25 không bao giờ thành "240,3"; đọc lại 240.26 ≠ 240.25 phải thấy được). Nhãn `bool:` / `enum:` vẫn giữ.
+ */
+export function dinhDangGiaTriChinhXac(v: unknown, dd: DinhDangKenh, locale: string, nhanBool?: [string, string]): string {
+  if (dd.kieu === "bool" || dd.kieu === "enum") return dinhDangGiaTri(v, dd, locale, nhanBool);
+  if (typeof v === "number" && Number.isFinite(v)) {
+    const le = soLeCuaGiaTri(v);
+    try {
+      return new Intl.NumberFormat(locale, le === null ? { maximumFractionDigits: 20 } : { minimumFractionDigits: le, maximumFractionDigits: le }).format(v);
+    } catch {
+      return String(v);
+    }
+  }
+  return dinhDangGiaTri(v, dd.kieu === "so" ? { kieu: "so", soLe: null } : dd, locale, nhanBool);
 }

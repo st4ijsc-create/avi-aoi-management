@@ -157,7 +157,7 @@ describe("M5 — bản xem trước", () => {
     expect(truong("may")).toHaveTextContent("RF-2");
     expect(truong("kenh")).toHaveTextContent("zone7_top.sp");
     expect(truong("kenh")).toHaveTextContent("°C");
-    expect(truong("hienTai")).toHaveTextContent("245,0");
+    expect(truong("hienTai")).toHaveTextContent("245"); // giá trị chính xác (fix round 1), không "245,0" theo khuôn 0.0
     expect(truong("hienTai")).toHaveTextContent(S("scada.diag.chatLuong.tot"));
     expect(truong("hienTai")).toHaveTextContent(`0,6 ${S("scada.diag.donVi.giay")}`);
     expect(truong("yeuCau")).toHaveTextContent("240,5");
@@ -362,7 +362,7 @@ describe("M5 — kết quả", () => {
     const { onDong } = ve();
     bamGui();
     await traLoi("confirm", "onSuccess", { status: "acked_unverified", ok: true, simulated: false, commandLogIds: [7], readBackValue: 245 });
-    expect(within(hop()).getByTestId("ket-qua")).toHaveTextContent("Đã ghi nhưng đọc lại ra 245,0 — kiểm tra tại máy");
+    expect(within(hop()).getByTestId("ket-qua")).toHaveTextContent("Đã ghi nhưng đọc lại ra 245 — kiểm tra tại máy");
     await act(async () => {
       vi.advanceTimersByTime(120_000);
     });
@@ -458,7 +458,7 @@ describe("M5 — đóng / huy / socket", () => {
     await act(async () => {
       phat("scada:cmd", { requestId: RID, status: "acked_unverified", at: new Date().toISOString(), readBackValue: 241 });
     });
-    expect(within(hop()).getByTestId("ket-qua")).toHaveTextContent("Đã ghi nhưng đọc lại ra 241,0 — kiểm tra tại máy");
+    expect(within(hop()).getByTestId("ket-qua")).toHaveTextContent("Đã ghi nhưng đọc lại ra 241 — kiểm tra tại máy");
   });
 
   it("gỡ hộp ⇒ gỡ listener scada:cmd", () => {
@@ -494,5 +494,120 @@ describe("M5 — ngôn ngữ", () => {
     await traLoi("confirm", "onSuccess", { status: "acked_verified", ok: true, simulated: false, commandLogIds: [1], readBackValue: 240 });
     const kq = within(hop()).getByTestId("ket-qua").textContent ?? "";
     expect(kq).toContain(String((zh_ as any).scada.lenh.ketQua.ackedVerified).split("{{")[0]);
+  });
+});
+
+describe("M5 — fix round 1", () => {
+  it("IMPORTANT 1 — kết quả dispatch rejected MODE_LOCAL ⇒ khối kết quả có gợi ý STOP ghim / E-STOP; cổng khác thì không", async () => {
+    ve();
+    bamGui();
+    await traLoi("confirm", "onSuccess", { status: "rejected", ok: false, simulated: false, reason: "MODE_LOCAL", commandLogIds: [3] });
+    const kq = within(hop()).getByTestId("ket-qua");
+    expect(kq).toHaveTextContent(S("scada.lenh.cong.MODE_LOCAL"));
+    expect(kq).toHaveTextContent("Cần dừng máy? Dùng STOP đã ghim hoặc E-STOP cứng tại máy");
+    cleanup();
+    ve();
+    bamGui();
+    await traLoi("confirm", "onSuccess", { status: "rejected", ok: false, simulated: false, reason: "BUSY", commandLogIds: [3] });
+    expect(within(hop()).getByTestId("ket-qua")).not.toHaveTextContent(S("scada.lenh.loi.goiYStop"));
+  });
+
+  it("IMPORTANT 2 — gỡ hộp khi còn proposed (điều hướng / đổi hàng / đổi adapter) ⇒ huy ĐÚNG một lần", () => {
+    ve();
+    expect(goi("huy")).toHaveLength(0);
+    cleanup();
+    expect(goi("huy")).toEqual([{ proc: "huy", vars: { requestId: RID } }]);
+  });
+
+  it("IMPORTANT 2 — bấm Huỷ rồi gỡ ⇒ vẫn chỉ MỘT huy; gỡ sau khi có kết quả ⇒ không huy", async () => {
+    ve();
+    fireEvent.click(within(hop()).getByRole("button", { name: S("scada.lenh.nut.huy") }));
+    cleanup();
+    expect(goi("huy")).toHaveLength(1);
+    srv.calls = [];
+    ve();
+    bamGui();
+    await traLoi("confirm", "onSuccess", { status: "acked_unverified", ok: true, simulated: false, commandLogIds: [1], readBackValue: 1 });
+    cleanup();
+    expect(goi("huy")).toHaveLength(0);
+  });
+
+  it("IMPORTANT 3 — giá trị chính xác: 240.25 với khuôn 0.0 hiện 240,25 (không 240,3); đọc lại 240.26 ≠ 240.25 thấy được", async () => {
+    ve({ yeuCau: yeuCau({ requested: 240.25, afterFormula: 240.25, current: { v: 240.25, q: "good", ageMs: 100 } }), dinhDang: "0.0" });
+    const truong = (k: string) => within(hop()).getByTestId("truong-" + k);
+    expect(truong("yeuCau")).toHaveTextContent(/^240,25$/);
+    expect(truong("sauCongThuc")).toHaveTextContent(/^240,25$/);
+    expect(truong("hienTai")).toHaveTextContent("240,25");
+    expect(hop().textContent ?? "").not.toContain("240,3");
+    bamGui();
+    await traLoi("confirm", "onSuccess", { status: "acked_unverified", ok: true, simulated: false, commandLogIds: [1], readBackValue: 240.26 });
+    expect(within(hop()).getByTestId("ket-qua")).toHaveTextContent("Đã ghi nhưng đọc lại ra 240,26 — kiểm tra tại máy");
+    expect(truong("yeuCau")).toHaveTextContent(/^240,25$/);
+  });
+
+  it("IMPORTANT 3 — khuôn bool/enum vẫn hiện NHÃN", () => {
+    ve({
+      yeuCau: yeuCau({ requested: true, afterFormula: true, current: { v: false, q: "good", ageMs: 100 }, range: null }),
+      dinhDang: "bool:Dong,Mo",
+      dataType: "bool",
+    });
+    expect(within(hop()).getByTestId("truong-yeuCau")).toHaveTextContent(/^Mo$/);
+    expect(within(hop()).getByTestId("truong-hienTai")).toHaveTextContent("Dong");
+  });
+
+  it("MINOR 1 — TOTP_CHUA_DANG_KY (máy chủ GIỮ yêu cầu) ⇒ đóng vẫn gọi huy", async () => {
+    ve({ yeuCau: yeuCau({ level: 5, needsTotp: true }) });
+    fireEvent.change(within(hop()).getByLabelText(S("scada.lenh.totp.nhan")), { target: { value: "123456" } });
+    bamGui();
+    await traLoi("confirm", "onError", loi("SCADA_TOTP_NOT_ENROLLED", { ma: "TOTP_CHUA_DANG_KY", level: 5 }));
+    expect(nutGui()).toBeDisabled();
+    fireEvent.click(within(hop()).getByRole("button", { name: S("scada.lenh.nut.dong") }));
+    expect(goi("huy")).toEqual([{ proc: "huy", vars: { requestId: RID } }]);
+  });
+
+  it("MINOR 1 — lỗi mạng / không mã ở confirm ⇒ đóng vẫn gọi huy (tốt-nhất-có-thể)", async () => {
+    ve();
+    bamGui();
+    await traLoi("confirm", "onError", new Error("Failed to fetch"));
+    fireEvent.click(within(hop()).getByRole("button", { name: S("scada.lenh.nut.dong") }));
+    expect(goi("huy")).toHaveLength(1);
+  });
+
+  it("MINOR 2 — đếm ngược neo vào lúc nhận: đồng hồ máy khách chậm (expiresAt − now > TTL) ⇒ 60 s; nhanh (expiresAt đã qua) ⇒ 60 s", () => {
+    vi.useFakeTimers(FAKE);
+    ve({ yeuCau: yeuCau({}, 180_000) });
+    expect(within(hop()).getByTestId("dem-nguoc")).toHaveTextContent(S("scada.lenh.conLai", { giay: 60 }));
+    cleanup();
+    srv.calls = [];
+    ve({ yeuCau: yeuCau({}, -5_000) });
+    expect(within(hop()).getByTestId("dem-nguoc")).toHaveTextContent(S("scada.lenh.conLai", { giay: 60 }));
+    expect(nutGui()).toBeEnabled();
+  });
+
+  it("MINOR 2 — nhanLuc: thời gian còn lại = (expiresAt − lúc nhận) − (now − lúc nhận)", () => {
+    vi.useFakeTimers(FAKE);
+    const now = Date.now();
+    ve({ yeuCau: { requestId: RID, expiresAt: new Date(now + 30_000).toISOString(), preview: preview() }, nhanLuc: now - 10_000 });
+    // tại lúc nhận còn 40 s, đã trôi 10 s ⇒ 30 s
+    expect(within(hop()).getByTestId("dem-nguoc")).toHaveTextContent(S("scada.lenh.conLai", { giay: 30 }));
+  });
+
+  it("MINOR 4 — hai cú bấm Gửi trong CÙNG một lượt render ⇒ confirm đúng một lần (chặn bằng ref)", () => {
+    ve();
+    const n = nutGui();
+    act(() => {
+      n.click();
+      n.click();
+    });
+    expect(goi("confirm")).toHaveLength(1);
+  });
+
+  it("MINOR 5 — mã lạ ở confirm ⇒ chữ 'Lệnh không được gửi', KHÔNG 'Không tạo được yêu cầu'", async () => {
+    ve();
+    bamGui();
+    await traLoi("confirm", "onError", loi("SOMETHING_NEW", { ma: "MA_MOI" }));
+    const tb = within(hop()).getByTestId("loi-lenh");
+    expect(tb).toHaveTextContent("Lệnh không được gửi:");
+    expect(tb).not.toHaveTextContent("Không tạo được yêu cầu");
   });
 });

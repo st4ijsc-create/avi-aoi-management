@@ -22,7 +22,10 @@ import {
   khoaLyDoLocal,
   moTaLoiLenh,
   nhanKetQua,
+  TTL_YEU_CAU_MS,
+  conLaiTuLucNhan,
 } from "./ketQuaLenh";
+import { chiSoEnum, dinhDangGiaTriChinhXac, enumDungDuoc, giaTriBool, giaTriEnum, phanTichDinhDang } from "./kenhHienThi";
 
 const BUNDLE = { vi: vi_, en: en_, zh: zh_ } as Record<string, unknown>;
 const lay = (lng: string, k: string): unknown => k.split(".").reduce<unknown>((x, p) => (x as Record<string, unknown> | undefined)?.[p], BUNDLE[lng]);
@@ -263,4 +266,65 @@ describe("i18n — scada.lenh / scada.faceplate", () => {
       }
     });
   }
+});
+
+describe("fix round 1 — thuần", () => {
+  const loi = (appCode: string, appParams: Record<string, unknown>) => ({ data: { appCode, appParams } });
+  const ctx = { laEdge: false, locale: "vi" };
+
+  it("nhanKetQua rejected MODE_LOCAL ⇒ goiYStop; cổng khác ⇒ không", () => {
+    expect(nhanKetQua("rejected", { reason: "MODE_LOCAL", requested: 1 }).goiYStop).toBe(true);
+    for (const r of ["BUSY", "QUEUE_EXPIRED", "SAFETY_UNKNOWN", undefined]) {
+      expect(nhanKetQua("rejected", { reason: r, requested: 1 }).goiYStop, String(r)).toBeUndefined();
+    }
+  });
+
+  it("huyKhiDong: mã giữ yêu cầu + TOTP_CHUA_DANG_KY + lỗi không mã ⇒ true; từ chối kết thúc ⇒ false", () => {
+    for (const ma of ["TOTP_CAN", "TOTP_SAI", "TOTP_KHONG_KIEM_DUOC", "TOTP_CHUA_DANG_KY"]) {
+      expect(moTaLoiLenh(loi("X", { ma, level: 5 }), "confirm", ctx).huyKhiDong, ma).toBe(true);
+    }
+    expect(moTaLoiLenh(new Error("net"), "confirm", ctx).huyKhiDong).toBe(true);
+    for (const ma of ["MODE_LOCAL", "MAY_DA_DOI", "KHOA_MAT", "HET_HAN", "DA_XU_LY", "ROLE_FLOOR", "TOTP_TAM_KHOA"]) {
+      expect(moTaLoiLenh(loi("X", { ma }), "confirm", ctx).huyKhiDong, ma).toBe(false);
+    }
+  });
+
+  it("mã lạ: confirm ⇒ khacXacNhan ('Lệnh không được gửi'); request ⇒ khac", () => {
+    expect(moTaLoiLenh(loi("X", { ma: "MA_MOI" }), "confirm", ctx).khoa).toBe("scada.lenh.loi.khacXacNhan");
+    expect(moTaLoiLenh(loi("X", { ma: "MA_MOI" }), "request", ctx).khoa).toBe("scada.lenh.loi.khac");
+    expect(S("scada.lenh.loi.khacXacNhan", { chiTiet: "x" })).toBe("Lệnh không được gửi: x");
+  });
+
+  it("dinhDangGiaTriChinhXac: số theo số lẻ CỦA CHÍNH nó (không theo khuôn 0.0); nhãn bool/enum giữ", () => {
+    const so = phanTichDinhDang("0.0", "float");
+    expect(dinhDangGiaTriChinhXac(240.25, so, "vi")).toBe("240,25");
+    expect(dinhDangGiaTriChinhXac(240.26, so, "vi")).not.toBe(dinhDangGiaTriChinhXac(240.25, so, "vi"));
+    expect(dinhDangGiaTriChinhXac(245, so, "vi")).toBe("245");
+    expect(dinhDangGiaTriChinhXac(240.25, so, "en")).toBe("240.25");
+    expect(dinhDangGiaTriChinhXac(null, so, "vi")).toBe("—");
+    expect(dinhDangGiaTriChinhXac(true, phanTichDinhDang("bool:Off,On", "bool"), "vi")).toBe("On");
+    expect(dinhDangGiaTriChinhXac(2, phanTichDinhDang("enum:A,B,C", "int"), "vi")).toBe("C");
+  });
+
+  it("khuôn × kiểu: bool trên số ⇒ 0/1; enum trên bool ⇒ index 0/1 → false/true, chỉ khi đúng 2 nhãn", () => {
+    expect(giaTriBool("int", ["a", "b"], true)).toBe(1);
+    expect(giaTriBool("float", ["a", "b"], false)).toBe(0);
+    expect(giaTriBool("bool", ["a", "b"], true)).toBe(true);
+    expect(giaTriEnum("bool", ["x", "y"], 0)).toBe(false);
+    expect(giaTriEnum("bool", ["x", "y"], 1)).toBe(true);
+    expect(enumDungDuoc("bool", ["x", "y"])).toBe(true);
+    expect(enumDungDuoc("bool", ["x", "y", "z"])).toBe(false);
+    expect(enumDungDuoc("int", ["x", "y", "z"])).toBe(true);
+    expect(chiSoEnum(true, ["x", "y"])).toBe(1);
+  });
+
+  it("conLaiTuLucNhan: trong (0, TTL] dùng nguyên; ngoài (lệch đồng hồ) ⇒ TTL; đếm từ lúc nhận", () => {
+    const t0 = 1_000_000;
+    const iso = (ms: number) => new Date(ms).toISOString();
+    expect(conLaiTuLucNhan(iso(t0 + 45_000), t0, t0)).toBe(45_000);
+    expect(conLaiTuLucNhan(iso(t0 + 45_000), t0, t0 + 5_000)).toBe(40_000);
+    expect(conLaiTuLucNhan(iso(t0 + 600_000), t0, t0)).toBe(TTL_YEU_CAU_MS);
+    expect(conLaiTuLucNhan(iso(t0 - 10_000), t0, t0 + 1_000)).toBe(TTL_YEU_CAU_MS - 1_000);
+    expect(conLaiTuLucNhan(iso(t0 + 5_000), t0, t0 + 9_000)).toBe(0);
+  });
 });

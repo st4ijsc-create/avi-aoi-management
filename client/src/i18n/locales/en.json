@@ -23662,7 +23662,8 @@
       "bool": {
         "false": "Off",
         "true": "On"
-      }
+      },
+      "enumBoolSai": "Channel misconfigured: an enum format on a bool channel needs exactly 2 values (it has {{n}}) — ask an engineer to fix it on the Channels & limits screen."
     },
     "lenh": {
       "tieuDe": "Confirm command",
@@ -23783,6 +23784,7 @@
         "DISPATCH_LOI": "Error while sending the command ({{chiTiet}}) — unknown whether the machine received it; read the value back before sending again.",
         "TIMEOUT": "Unknown whether the machine received it — read the value back before sending again.",
         "khac": "Could not create the request: {{chiTiet}}",
+        "khacXacNhan": "The command was not sent: {{chiTiet}}",
         "nutDungGoiY": "Use {{goiY}}",
         "ma": "Code: {{ma}}"
       },

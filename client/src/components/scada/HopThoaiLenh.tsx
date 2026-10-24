@@ -28,9 +28,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useScadaCmd, type SuKienScadaCmd } from "@/hooks/useScadaCmd";
 import { dinhDangTuoi, hienChatLuong } from "./chatLuongHienThi";
 import { useDonViThoiGian } from "./BangTruyenThong";
-import { dinhDangGiaTri, dinhDangSo, phanTichDinhDang } from "./kenhHienThi";
+import { dinhDangGiaTri, dinhDangGiaTriChinhXac, dinhDangSo, phanTichDinhDang } from "./kenhHienThi";
 import {
   LIEN_KET_DANG_KY_2FA,
+  conLaiTuLucNhan,
   laTrangThaiKetQua,
   moTaLoiLenh,
   nhanKetQua,
@@ -46,6 +47,9 @@ const VIEN_TRUNG_TINH = "var(--isa-graphic)";
 
 const MA_TOTP_DAI = 6;
 
+// fix round 1 — đồng hồ đếm neo lúc nhận: logic thuần ở ketQuaLenh.ts
+export { TTL_YEU_CAU_MS, conLaiTuLucNhan } from "./ketQuaLenh";
+
 /** Kiểu dữ liệu suy từ giá trị khi người gọi không truyền (chỉ để chọn khuôn hiển thị; máy chủ đã ép kiểu). */
 function suyKieu(v: unknown): string {
   if (typeof v === "boolean") return "bool";
@@ -53,12 +57,15 @@ function suyKieu(v: unknown): string {
   return "string";
 }
 
-/** Hàm định dạng giá trị theo khuôn kênh + ngôn ngữ (dùng chung M4/M5). */
-export function useDinhDangGiaTri(displayFormat: string | null | undefined, dataType: string): (v: unknown) => string {
+/**
+ * Hàm định dạng giá trị theo khuôn kênh + ngôn ngữ (dùng chung M4/M5). `chinhXac` (M5) ⇒ số in ĐỦ chữ thập phân của chính nó, không
+ * làm tròn theo khuôn số (fix round 1); nhãn bool/enum vẫn theo khuôn.
+ */
+export function useDinhDangGiaTri(displayFormat: string | null | undefined, dataType: string, chinhXac = false): (v: unknown) => string {
   const { t, i18n } = useTranslation();
   const dd = phanTichDinhDang(displayFormat, dataType);
   const nhanBool: [string, string] = [t("scada.faceplate.bool.false"), t("scada.faceplate.bool.true")];
-  return (v: unknown) => dinhDangGiaTri(v, dd, i18n.language, nhanBool);
+  return (v: unknown) => (chinhXac ? dinhDangGiaTriChinhXac : dinhDangGiaTri)(v, dd, i18n.language, nhanBool);
 }
 
 /** Một từ chối của request/confirm thành chữ + cách xử lý (+ liên kết 2FA / gợi ý STOP / nút điền gợi ý OFF_STEP). */
@@ -113,6 +120,8 @@ export interface HopThoaiLenhProps {
   dataType?: string;
   /** mã edge nếu adapter do edge sở hữu (chữ MODE_LOCAL chua_co_mau) */
   edgeCode: string | null;
+  /** lúc nhận phản hồi `request` (Date.now()); vắng ⇒ lúc hộp gắn — neo đồng hồ đếm (`conLaiTuLucNhan`) */
+  nhanLuc?: number;
   onDong: () => void;
 }
 
@@ -127,12 +136,13 @@ function Truong({ k, nhan, children }: { k: string; nhan: string; children: Reac
   );
 }
 
-export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, onDong }: HopThoaiLenhProps) {
+export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanLuc, onDong }: HopThoaiLenhProps) {
   const { t, i18n } = useTranslation();
   const donVi = useDonViThoiGian();
   const p: BanXemTruoc = yeuCau.preview;
   const requestId = yeuCau.requestId;
-  const fmt = useDinhDangGiaTri(dinhDang, dataType ?? suyKieu(p.requested));
+  // fix round 1 — bước kiểm cuối của người vận hành: giá trị CHÍNH XÁC (240.25 không thành "240,3" theo khuôn 0.0)
+  const fmt = useDinhDangGiaTri(dinhDang, dataType ?? suyKieu(p.requested), true);
   const so = (v: number | null | undefined) => dinhDangSo(v, i18n.language);
 
   const [pha, setPha] = useState<Pha>("proposed");
@@ -145,15 +155,20 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, onDon
   const [loi, setLoi] = useState<{ moTa: MoTaLoi; chiTiet: string } | null>(null);
   const [maTotp, setMaTotp] = useState("");
   const [mayDoiMa, setMayDoiMa] = useState(false);
+  /**
+   * fix round 1 — máy chủ CÓ THỂ còn giữ yêu cầu `proposed` + khoá chọn ⇒ đóng / gỡ hộp phải gọi `huy`. true lúc đầu; false khi đang
+   * gửi / có kết quả / từ chối kết thúc; true lại sau từ chối mà máy chủ giữ yêu cầu (MoTaLoi.huyKhiDong). Đặt false ngay khi đã huy.
+   */
+  const canHuyRef = useRef(true);
 
   // ── đếm ngược tới expiresAt ──
-  const hetHanMs = Date.parse(yeuCau.expiresAt);
+  const [lucNhan] = useState(() => nhanLuc ?? Date.now());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(id);
   }, []);
-  const conLaiMs = Number.isFinite(hetHanMs) ? Math.max(0, hetHanMs - now) : 0;
+  const conLaiMs = conLaiTuLucNhan(yeuCau.expiresAt, lucNhan, now);
   const hetGio = conLaiMs <= 0;
 
   const onDongRef = useRef(onDong);
@@ -163,6 +178,7 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, onDon
 
   const confirm = trpc.scadaCommands.confirm.useMutation({
     onSuccess: (kq: { status: string; reason?: string; readBackValue?: unknown }) => {
+      canHuyRef.current = false;
       setLoi(null);
       setKetQua({
         status: laTrangThaiKetQua(kq.status) ? kq.status : "failed",
@@ -175,6 +191,7 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, onDon
       const moTa = moTaLoiLenh(e, "confirm", { laEdge: !!edgeCode, locale: i18n.language });
       setLoi({ moTa, chiTiet: mapTrpcError(e) });
       setKetQua(null);
+      canHuyRef.current = moTa.huyKhiDong;
       if (moTa.ma === "TOTP_CAN" || moTa.ma === "TOTP_SAI") setMayDoiMa(true);
       if (moTa.giuYeuCau) setMaTotp("");
       doiPha(moTa.giuYeuCau ? "proposed" : "ketThuc");
@@ -182,6 +199,16 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, onDon
   });
   // Huỷ là dọn dẹp tốt-nhất-có-thể (khoá chọn tự hết sau TTL): không toast lỗi sau khi hộp đã đóng.
   const huy = trpc.scadaCommands.huy.useMutation({ onError: () => undefined });
+  const huyRef = useRef(huy.mutate);
+  huyRef.current = huy.mutate;
+  /** Huỷ MỘT lần (đóng hộp, hoặc gỡ hộp khi điều hướng / đổi hàng / đổi adapter). */
+  const huyNeuCan = useCallback(() => {
+    if (!canHuyRef.current) return;
+    canHuyRef.current = false;
+    huyRef.current({ requestId });
+  }, [requestId]);
+  // fix round 1 — gỡ hộp khi yêu cầu còn proposed (back/forward, đổi hàng ngăn tag, đổi adapter ở M12) ⇒ huy tốt-nhất-có-thể
+  useEffect(() => () => huyNeuCan(), [huyNeuCan]);
 
   // ── scada:cmd — chỉ khi đang gửi; kết quả/ lỗi của confirm đến sau vẫn ghi đè ──
   const nhanSuKien = useCallback((e: SuKienScadaCmd) => {
@@ -192,6 +219,7 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, onDon
         ...(e.reason ? { reason: e.reason } : {}),
         ...("readBackValue" in e ? { readBackValue: e.readBackValue } : {}),
       });
+      canHuyRef.current = false;
       phaRef.current = "ketQua";
       setPha("ketQua");
     }
@@ -210,17 +238,19 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, onDon
   const coOTotp = p.needsTotp || p.level >= 4 || mayDoiMa;
   const batBuocTotp = p.needsTotp || p.level === 5 || mayDoiMa;
   const maHopLe = maTotp.length === MA_TOTP_DAI;
-  const guiDuoc =
-    pha === "proposed" && !hetGio && !confirm.isPending && (batBuocTotp ? maHopLe : maTotp.length === 0 || maHopLe);
+  const maDuDieuKien = batBuocTotp ? maHopLe : maTotp.length === 0 || maHopLe;
+  const guiDuoc = pha === "proposed" && !hetGio && !confirm.isPending && maDuDieuKien;
 
   const gui = () => {
-    if (!guiDuoc) return;
+    // fix round 1 — chặn bằng REF (hai cú bấm trong cùng một lượt render không gửi hai lần), không bằng state của lần render
+    if (phaRef.current !== "proposed" || hetGio || !maDuDieuKien) return;
     setLoi(null);
+    canHuyRef.current = false;
     doiPha("dangGui");
     confirm.mutate({ requestId, ...(maHopLe ? { totpCode: maTotp } : {}) });
   };
   const dong = () => {
-    if (phaRef.current === "proposed") huy.mutate({ requestId });
+    huyNeuCan();
     onDong();
   };
 
@@ -335,6 +365,7 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, onDon
           >
             <p className="font-medium">{t(nhan.khoa, nhan.thamSo)}</p>
             {ketQua.status === "simulated" && tenMoPhong && <p>{t("scada.lenh.ketQua.lyDoMoPhong", { lyDo: tenMoPhong })}</p>}
+            {nhan.goiYStop && <p>{t("scada.lenh.loi.goiYStop")}</p>}
             {(ketQua.status === "rejected" || ketQua.status === "failed") && (
               <p className="text-xs text-muted-foreground">{t("scada.lenh.ketQua.ma", { ma: nhan.thamSo.ma })}</p>
             )}

@@ -23636,7 +23636,8 @@
       "bool": {
         "false": "Tắt",
         "true": "Bật"
-      }
+      },
+      "enumBoolSai": "Cấu hình kênh sai: khuôn enum trên kênh bool phải có đúng 2 giá trị (đang có {{n}}) — nhờ kỹ sư sửa ở màn Kênh & giới hạn."
     },
     "lenh": {
       "tieuDe": "Xác nhận lệnh",
@@ -23757,6 +23758,7 @@
         "DISPATCH_LOI": "Lỗi khi gửi lệnh ({{chiTiet}}) — không rõ máy đã nhận hay chưa; đọc lại giá trị trước khi gửi lần nữa.",
         "TIMEOUT": "Không rõ máy đã nhận hay chưa — đọc lại giá trị trước khi gửi lần nữa.",
         "khac": "Không tạo được yêu cầu: {{chiTiet}}",
+        "khacXacNhan": "Lệnh không được gửi: {{chiTiet}}",
         "nutDungGoiY": "Dùng {{goiY}}",
         "ma": "Mã: {{ma}}"
       },

@@ -90,7 +90,7 @@ export interface NguCanhKetQua {
 export function nhanKetQua(
   status: TrangThaiKetQua,
   ctx: NguCanhKetQua,
-): { khoa: string; tuDongDongMs: number | null; thamSo: Record<string, string> } {
+): { khoa: string; tuDongDongMs: number | null; thamSo: Record<string, string>; goiYStop?: boolean } {
   const dd = ctx.dinhDang ?? chuoi;
   const coDoc = ctx.readBack !== null && ctx.readBack !== undefined;
   switch (status) {
@@ -113,7 +113,8 @@ export function nhanKetQua(
     case "rejected":
     default: {
       const c = khoaCong(ctx.reason);
-      return { khoa: c.khoa, tuDongDongMs: null, thamSo: { ma: c.ma } };
+      // fix round 1 — máy chuyển LOCAL giữa cổng của confirm và dispatch ⇒ cùng gợi ý STOP ghim / E-STOP như từ chối MODE_LOCAL
+      return { khoa: c.khoa, tuDongDongMs: null, thamSo: { ma: c.ma }, ...(c.ma === "MODE_LOCAL" ? { goiYStop: true } : {}) };
     }
   }
 }
@@ -199,8 +200,13 @@ export interface MoTaLoi {
   goiYStop?: boolean;
   /** lỗi không có mã: cần chữ chi tiết đã dịch (`mapTrpcError`) cho `{{chiTiet}}` */
   canChiTiet?: boolean;
-  /** true ⇒ yêu cầu còn `proposed` ở máy chủ (gửi lại được, đóng ⇒ huy) */
+  /** true ⇒ yêu cầu còn `proposed` ở máy chủ VÀ gửi lại được trong TTL */
   giuYeuCau: boolean;
+  /**
+   * fix round 1 — true ⇒ máy chủ CÓ THỂ còn giữ yêu cầu `proposed` + khoá chọn ⇒ đóng hộp phải gọi `huy` (tốt-nhất-có-thể):
+   * mọi mã giữ yêu cầu, TOTP_CHUA_DANG_KY (máy chủ giữ — QĐ T9-2 — nhưng không sửa được trong TTL) và lỗi KHÔNG mã (mạng / ném).
+   */
+  huyKhiDong: boolean;
 }
 
 function soTheoNgonNgu(v: unknown, locale: string): string {
@@ -228,6 +234,12 @@ function lucTheoNgonNgu(iso: unknown, locale: string): string {
  *   - ở `request` ⇒ dự phòng chung (chưa có gì được gửi).
  */
 export function moTaLoiLenh(err: unknown, giaiDoan: "request" | "confirm", ctx: { laEdge: boolean; locale: string }): MoTaLoi {
+  const m = moTaLoiThan(err, giaiDoan, ctx);
+  const huyKhiDong = m.giuYeuCau || m.ma === null || m.ma === "TOTP_CHUA_DANG_KY";
+  return { ...m, huyKhiDong };
+}
+
+function moTaLoiThan(err: unknown, giaiDoan: "request" | "confirm", ctx: { laEdge: boolean; locale: string }): Omit<MoTaLoi, "huyKhiDong"> {
   const app = docLoiApp(err);
   const p = app?.appParams ?? {};
   const ma = typeof p.ma === "string" ? p.ma : null;
@@ -237,7 +249,8 @@ export function moTaLoiLenh(err: unknown, giaiDoan: "request" | "confirm", ctx: 
 
   if (!ma || !MA_LOI_SET.has(ma)) {
     if (!ma && giaiDoan === "confirm") return { ma: null, khoa: khoa("DISPATCH_LOI"), thamSo: {}, canChiTiet: true, giuYeuCau: false };
-    return { ma, khoa: khoa("khac"), thamSo: {}, canChiTiet: true, giuYeuCau: false };
+    // mã có cấu trúc nhưng client chưa biết: ở confirm là từ chối TRƯỚC dispatch (loiTuChoiLenh) ⇒ "lệnh không được gửi", không phải "không tạo được yêu cầu"
+    return { ma, khoa: khoa(giaiDoan === "confirm" ? "khacXacNhan" : "khac"), thamSo: {}, canChiTiet: true, giuYeuCau: false };
   }
   switch (ma) {
     case "CHANNEL_READ_ONLY":
@@ -279,4 +292,21 @@ export function moTaLoiLenh(err: unknown, giaiDoan: "request" | "confirm", ctx: 
     default:
       return { ma, khoa: khoa(ma), thamSo: {}, giuYeuCau: giu };
   }
+}
+
+// ─── Đồng hồ đếm của M5 (fix round 1) ───────────────────────────────────────────────────────────────────────────────────────
+/** TTL của yêu cầu ở máy chủ (`LENH_HMI_TTL_MS` của lenhHmi.ts — client không import được mã máy chủ có DB). */
+export const TTL_YEU_CAU_MS = 60_000;
+
+/**
+ * fix round 1 — thời gian còn lại, NEO vào lúc nhận phản hồi `request` (không tin đồng hồ máy khách khớp máy chủ):
+ *   conLaiLucNhan = expiresAt − nhanLuc. Máy chủ chỉ trả yêu cầu CÒN hạn (tạo mới: +60 s; gửi lại QĐ-5: kiểm expiresAt > now), nên
+ *   một giá trị ngoài (0, TTL] chỉ có thể là LỆCH ĐỒNG HỒ ⇒ dùng TTL đếm từ lúc nhận. Sau đó đếm lùi bằng đồng hồ máy khách kể từ
+ *   lúc nhận: còn lại = conLaiLucNhan − (now − nhanLuc). Lệch đồng hồ không làm sai đồng hồ đếm; chỉ thời gian bay của phản hồi
+ *   (thường < 1 s) làm nó dư — máy chủ vẫn là ranh giới (HET_HAN).
+ */
+export function conLaiTuLucNhan(expiresAt: string, nhanLuc: number, now: number): number {
+  const tho = Date.parse(expiresAt) - nhanLuc;
+  const luc = Number.isFinite(tho) && tho > 0 && tho <= TTL_YEU_CAU_MS ? tho : TTL_YEU_CAU_MS;
+  return Math.max(0, luc - Math.max(0, now - nhanLuc));
 }

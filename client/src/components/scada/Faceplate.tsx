@@ -12,7 +12,7 @@
  *     "Đổi…" lại (không tự gửi, không tự làm tròn).
  *   • Danh sách "Điều kiện cho phép" (request chạy khô) để R1b.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { mapTrpcError } from "@/lib/trpcErrors";
@@ -22,7 +22,17 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BIEN_MAU_VIEN_XAM, dinhDangTuoi, hienChatLuong, kieuVien, type VienChatLuong } from "./chatLuongHienThi";
 import { useDonViThoiGian } from "./BangTruyenThong";
-import { chiSoEnum, dinhDangSo, docSoNhap, giaTriEnum, laLoaiKenhGhi, mucHienThi, phanTichDinhDang } from "./kenhHienThi";
+import {
+  chiSoEnum,
+  dinhDangSo,
+  docSoNhap,
+  enumDungDuoc,
+  giaTriBool,
+  giaTriEnum,
+  laLoaiKenhGhi,
+  mucHienThi,
+  phanTichDinhDang,
+} from "./kenhHienThi";
 import { TruongLyDo, lyDoDuDai } from "./TruongLyDo";
 import { HopThoaiLenh, ThongBaoLoiLenh, useDinhDangGiaTri, type YeuCauLenh } from "./HopThoaiLenh";
 import { khoaLyDoLocal, moTaLoiLenh, type MoTaLoi } from "./ketQuaLenh";
@@ -80,22 +90,42 @@ export function Faceplate({ adapterId, tagKey, machineId, edgeCode, onDong }: Fa
   const [chon, setChon] = useState<GiaTriGui | null>(null);
   const [lyDo, setLyDo] = useState("");
   const [loi, setLoi] = useState<{ moTa: MoTaLoi; chiTiet: string } | null>(null);
-  const [yeuCau, setYeuCau] = useState<{ kq: YeuCauLenh; lyDo: string } | null>(null);
+  const [yeuCau, setYeuCau] = useState<{ kq: YeuCauLenh; lyDo: string; nhanLuc: number } | null>(null);
+  /** fix round 1 — chặn gửi bằng REF: true từ lúc gọi request tới khi lỗi / M5 đóng (hai cú bấm cùng lượt render ⇒ MỘT request). */
+  const dangBayRef = useRef(false);
+  const conGanRef = useRef(true);
+  useEffect(() => {
+    conGanRef.current = true;
+    return () => {
+      conGanRef.current = false;
+    };
+  }, []);
+  // yêu cầu tạo xong SAU khi faceplate đã gỡ (không còn M5 để đóng) ⇒ huỷ ngay, không giữ khoá chọn tới hết TTL
+  const huy = trpc.scadaCommands.huy.useMutation({ onError: () => undefined });
   // lý do của lượt request đang bay (ref: onSuccess đọc đúng lượt, không phụ thuộc lần render)
   const lyDoDaGui = useRef("");
 
   const request = trpc.scadaCommands.request.useMutation({
     onSuccess: (kq: YeuCauLenh) => {
+      if (!conGanRef.current) {
+        huy.mutate({ requestId: kq.requestId });
+        return;
+      }
       setLoi(null);
-      setYeuCau({ kq, lyDo: lyDoDaGui.current });
+      // nhanLuc — neo đồng hồ đếm của M5 vào lúc nhận phản hồi (conLaiTuLucNhan)
+      setYeuCau({ kq, lyDo: lyDoDaGui.current, nhanLuc: Date.now() });
     },
-    onError: (e: unknown) => setLoi({ moTa: moTaLoiLenh(e, "request", { laEdge: !!edgeCode, locale: i18n.language }), chiTiet: mapTrpcError(e) }),
+    onError: (e: unknown) => {
+      dangBayRef.current = false;
+      setLoi({ moTa: moTaLoiLenh(e, "request", { laEdge: !!edgeCode, locale: i18n.language }), chiTiet: mapTrpcError(e) });
+    },
   });
 
   // ── giá trị sẽ gửi theo khuôn ──
   let giaTri: GiaTriGui | null = null;
   let nhapLoi = false;
-  if (dd.kieu === "bool" || dd.kieu === "enum") giaTri = chon;
+  const enumHong = dd.kieu === "enum" && !enumDungDuoc(dataType, dd.nhan);
+  if (dd.kieu === "bool" || dd.kieu === "enum") giaTri = enumHong ? null : chon;
   else if (dd.kieu === "so") {
     const n = docSoNhap(nhap);
     if (n === "loi" || (n !== null && dataType === "int" && !Number.isInteger(n))) nhapLoi = true;
@@ -107,7 +137,8 @@ export function Faceplate({ adapterId, tagKey, machineId, edgeCode, onDong }: Fa
   const doiDuoc = giaTri !== null && lyDoDuDai(lyDo) && !request.isPending && !yeuCau;
 
   const doi = () => {
-    if (!doiDuoc || giaTri === null) return;
+    if (dangBayRef.current || giaTri === null || !lyDoDuDai(lyDo)) return;
+    dangBayRef.current = true;
     const ly = lyDo.trim();
     setLoi(null);
     lyDoDaGui.current = ly;
@@ -126,10 +157,18 @@ export function Faceplate({ adapterId, tagKey, machineId, edgeCode, onDong }: Fa
   const coDai = !!hang && (hang.writeMin !== null || hang.writeMax !== null);
   const nhanBool: [string, string] = dd.kieu === "bool" && dd.nhan ? dd.nhan : [t("scada.faceplate.bool.false"), t("scada.faceplate.bool.true")];
 
-  const nutChon = (nhan: string, v: GiaTriGui, key: string) => {
+  const nutChon = (nhan: string, v: GiaTriGui, key: string, khoa = false) => {
     const dangChon = chon === v;
     return (
-      <Button key={key} type="button" size="sm" variant={dangChon ? "default" : "outline"} aria-pressed={dangChon} onClick={() => setChon(v)}>
+      <Button
+        key={key}
+        type="button"
+        size="sm"
+        variant={dangChon ? "default" : "outline"}
+        aria-pressed={dangChon}
+        disabled={khoa}
+        onClick={() => setChon(v)}
+      >
         {nhan}
       </Button>
     );
@@ -209,17 +248,18 @@ export function Faceplate({ adapterId, tagKey, machineId, edgeCode, onDong }: Fa
                   <div className="space-y-1">
                     <span className="text-sm font-medium">{t("scada.faceplate.giaTriMoi")}</span>
                     <div className="flex flex-wrap gap-2">
-                      {nutChon(nhanBool[0], false, "f")}
-                      {nutChon(nhanBool[1], true, "t")}
+                      {nutChon(nhanBool[0], giaTriBool(dataType, nhanBool, false), "f")}
+                      {nutChon(nhanBool[1], giaTriBool(dataType, nhanBool, true), "t")}
                     </div>
                   </div>
                 ) : dd.kieu === "enum" ? (
                   <div className="space-y-1">
                     <span className="text-sm font-medium">{t("scada.faceplate.giaTriMoi")}</span>
                     <div className="flex flex-wrap gap-2">
-                      {dd.nhan.map((n, i) => nutChon(n, giaTriEnum(dataType, dd.nhan, i), `e${i}`))}
+                      {dd.nhan.map((n, i) => nutChon(n, giaTriEnum(dataType, dd.nhan, i), `e${i}`, enumHong))}
                     </div>
                     {chon !== null && chiSoEnum(chon, dd.nhan) < 0 && <p className="text-xs">{String(chon)}</p>}
+                    {enumHong && <p className="text-xs text-muted-foreground">{t("scada.faceplate.enumBoolSai", { n: dd.nhan.length })}</p>}
                   </div>
                 ) : (
                   <div className="space-y-1">
@@ -256,10 +296,14 @@ export function Faceplate({ adapterId, tagKey, machineId, edgeCode, onDong }: Fa
           <HopThoaiLenh
             yeuCau={yeuCau.kq}
             lyDo={yeuCau.lyDo}
+            nhanLuc={yeuCau.nhanLuc}
             dinhDang={hang?.displayFormat ?? null}
             dataType={dataType}
             edgeCode={edgeCode}
-            onDong={() => setYeuCau(null)}
+            onDong={() => {
+              dangBayRef.current = false;
+              setYeuCau(null);
+            }}
           />
         )}
       </DialogContent>
