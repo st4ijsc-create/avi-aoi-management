@@ -84,7 +84,8 @@ const MIEN_TRU_DONG: Array<{ file: string; dong: number; lyDo: string }> = [
   // ⚠ 3719 → 3729 (2026-10-20, AI Local Đợt 8.1 Task 4): ô này ĐÃ ĐỎ trước lượt này (đo trên cây trước khi sửa: dòng 3727 — lệch
   // +8 từ các lượt Đợt 7.0/7.1 thêm import/lời gọi phía trên), Đợt 8.1 thêm +2 (import `registerFlowWebhookRoutes` + chú thích
   // cạnh `rawUploadPaths`). Cùng dòng `const fpy = t > 0 ? …` — không có công thức mới.
-  { file: "server/_core/index.ts",                          dong: 3729, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
+  { file: "server/_core/index.ts",                          dong: 3731, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
+  // ⚠ 3729 → 3731 (2026-10-24, rà bảo mật tRPC): +2 dòng `import` ở đầu `_core/index.ts` (`trpcGioiHanThuTucMiddleware`, `requireFreshTotp/requirePerCallFreshTotp`). Dòng fpy KHÔNG đổi nội dung, chỉ dịch.
 
   // aiInspectionAnalytics.ts: `pass` ở BỐN dòng này KHÔNG phải OK-only — nó là
   // COUNT(*) FILTER (WHERE finalYieldPassCondSql(...)) tính Ở SQL, tức đã CHÍNH LÀ

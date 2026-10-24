@@ -210,10 +210,12 @@ describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến khô
     // ⚠ Đợt 7.1 (khe nặng): **680 → 682** — +1 import `batTuDoiKheNang` + 1 lời gọi ở thân module điểm vào.
     // ⚠ Đợt 8.1 (Luồng AI, webhook): **682 → 684** — +1 import `registerFlowWebhookRoutes` + 1 dòng chú thích cạnh
     //   `rawUploadPaths` (webhook tự đọc thân 256 KB). Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`.
+    // ⚠ Rà bảo mật 2026-10-24 (trần batch + giới hạn theo thủ tục tRPC): **684 → 686** — +2 dòng `import` (`trpcGioiHanThuTucMiddleware`,
+    //   `requireFreshTotp/requirePerCallFreshTotp`); hai dòng `app.use("/api/trpc", …)` mới nằm SAU dòng ghim. Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`.
     // ⚠ Đợt 7.0 (sổ model): **674 → 680** — +2 import (`khoiChayDongBoSoModel`, `dongBoKhoModel`) + 4 dòng (chú thích + hai
     //   lời gọi) ở thân module điểm vào. Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`.
     expect(QUET.tuyenTinh.map((s) => s.split(" — ")[0])).toEqual([
-      "server/_core/index.ts:684",
+      "server/_core/index.ts:686",
       "server/_core/vite.ts:58",
     ]);
   });
