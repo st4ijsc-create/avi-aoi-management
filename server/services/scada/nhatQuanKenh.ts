@@ -27,7 +27,9 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 /** db drizzle đã resolve HOẶC một transaction của nó. */
 export type DbHoacTx = Db | Tx;
 
-export type KenhNhatQuan = Pick<DeviceTag, "dataType" | "channelKind" | "writable" | "writeMin" | "writeMax" | "writeStep">;
+export type KenhNhatQuan = Pick<DeviceTag, "dataType" | "channelKind" | "writable" | "writeMin" | "writeMax" | "writeStep"> &
+  // kiem-dinh P1-3 — cùng luật lưới thô (int có scale/offset) với `dispatch()` cho kênh ĐÃ khai.
+  Partial<Pick<DeviceTag, "scale" | "offset">>;
 
 export type KetQuaNhatQuan =
   | { ok: true }
@@ -120,6 +122,8 @@ export async function kiemLenhInterlockTx(
       writeMin: deviceTags.writeMin,
       writeMax: deviceTags.writeMax,
       writeStep: deviceTags.writeStep,
+      scale: deviceTags.scale,
+      offset: deviceTags.offset,
     })
     .from(deviceTags)
     .where(and(eq(deviceTags.adapterId, luat.targetAdapterId), eq(deviceTags.tagKey, luat.commandTag)))

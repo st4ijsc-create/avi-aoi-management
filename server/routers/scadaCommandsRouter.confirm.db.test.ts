@@ -17,6 +17,8 @@ import { eq, sql } from "drizzle-orm";
 const RUN = `r1a9${process.pid}${Date.now().toString(36)}`;
 
 const H = vi.hoisted(() => ({
+  /** kiem-dinh P1-3 — số THÔ mà một driver thật sẽ ghi: `inverseScale(value, dataType, scale, offset)` trên đúng write driver nhận */
+  rawGhi: [] as Array<{ tagKey: string; value: unknown; raw: unknown }>,
   emits: [] as Array<{ room: string; ev: string; payload: Record<string, unknown> }>,
   drivers: new Map<number, unknown>(),
   writeCalls: 0,
@@ -157,11 +159,15 @@ import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import speakeasy from "speakeasy";
 import { setup2FA, enable2FA } from "../db/auth";
 import { StubDriver } from "../services/ot/drivers/stubDriver";
+import { inverseScale } from "../services/ot/drivers/otScale";
 
 /** StubDriver THẬT + bộ đếm lần ghi + móc chạy giữa lệnh ghi. */
 class StubDem extends StubDriver {
   override async writeTags(writes: Array<{ tagKey: string; address: string; value: unknown }>) {
     H.writeCalls += 1;
+    for (const w of writes as Array<{ tagKey: string; value: unknown; dataType?: "int" | "float"; scale?: number; offset?: number }>) {
+      H.rawGhi.push({ tagKey: w.tagKey, value: w.value, raw: w.dataType ? inverseScale(w.value, w.dataType, w.scale ?? 1, w.offset ?? 0) : w.value });
+    }
     const moc = H.trongKhiGhi;
     if (moc) {
       H.trongKhiGhi = null;
@@ -327,6 +333,12 @@ beforeAll(async () => {
   await seedTag(ad.a, "m5", { level: 5 });
   await seedTag(ad.a, "m5khoa", { level: 5 }); // R1a T16
   await seedTag(ad.a, "m5local", { level: 5 }); // R1a final M-3
+  // kiem-dinh P1-3 — int, scale 10 (thiết bị lưu số thô = giá trị kỹ thuật / 10), dải 0..300, KHÔNG bước
+  for (const key of ["sc10", "sc10doi"]) {
+    await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", unit, writable, "isEnabled",
+        channel_kind, display_name, write_min, write_max, write_step, actuation_level, scale, "offset")
+      VALUES (${ad.a}, ${key}, ${"DB1." + key}, 'int', 'rpm', true, true, 'input_output'::scada_channel_kind, ${"Kenh " + key}, 0, 300, NULL, 3, 10, 0)`);
+  }
 
   await dung(sql`INSERT INTO scada_kenh_che_do (machine_id, adapter_id, tag_key, gia_tri_remote, updated_by)
     VALUES (${A.mid}, ${ad.a}, 'che_do', '2'::jsonb, 1)`);
@@ -939,5 +951,25 @@ describe("dispatch quyết — quá hạn ack (cuối tệp)", () => {
     expect(thu.at(-1)).toMatchObject({ stage: "dispatch", outcome: "dispatched", reason_code: "TIMEOUT" });
     expect(await khoa("treo")).toBeUndefined();
     await new Promise((r) => setTimeout(r, 700)); // để lệnh ghi treo của stub kết thúc trước ca sau
+  });
+});
+
+describe("kiem-dinh P1-3 — 'xác nhận = ghi': tag int scale 10 — không để driver làm tròn im lặng", () => {
+  it("confirm 30 ⇒ dispatch, driver nhận giá trị 30 + scale 10 ⇒ số THÔ 3 (inverseScale)", async () => {
+    H.rawGhi = [];
+    const requestId = await yeuCau("opA", "sc10", 30);
+    const kq = await nguoi.opA.caller.confirm({ requestId });
+    expect(kq.ok).toBe(true);
+    expect(H.rawGhi.filter((w) => w.tagKey === "sc10")).toEqual([{ tagKey: "sc10", value: 30, raw: 3 }]);
+  });
+
+  it("scale đổi 1 → 10 GIỮA request và confirm: confirm 25 ⇒ OFF_STEP {goiY 30, step 10}, KHÔNG dispatch (không thành raw 3 = 30)", async () => {
+    await dung(sql`UPDATE device_tags SET scale = 1 WHERE "adapterId" = ${ad.a} AND "tagKey" = 'sc10doi'`);
+    const requestId = await yeuCau("opA", "sc10doi", 25);
+    await dung(sql`UPDATE device_tags SET scale = 10 WHERE "adapterId" = ${ad.a} AND "tagKey" = 'sc10doi'`);
+    H.rawGhi = [];
+    const loi = await tuChoiXacNhan("opA", requestId, { code: "BAD_REQUEST", appCode: "SCADA_VALUE_OFF_STEP", reason: "OFF_STEP" });
+    expect(loi.appParams).toMatchObject({ ma: "OFF_STEP", tagKey: "sc10doi", goiY: 30, step: 10 });
+    expect(H.rawGhi).toEqual([]);
   });
 });

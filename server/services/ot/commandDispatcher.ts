@@ -846,7 +846,9 @@ async function isStopByContent(
 export type TagCongKenh = Pick<
   DeviceTag,
   "tagKey" | "address" | "dataType" | "writable" | "isEnabled" | "stopValue" | "channelKind" | "writeMin" | "writeMax" | "writeStep"
->;
+> &
+  // kiem-dinh P1-3 — scale/offset (hàng bước 3 là hàng đầy đủ): int của tag ĐÃ KHAI phải nằm trên lưới thô, không thì OFF_STEP.
+  Partial<Pick<DeviceTag, "scale" | "offset">>;
 
 /** Refusal codes of the early channel gate (command_log.errorText `<CODE>: <detail>`). */
 export type MaCongKenh = "CHANNEL_READ_ONLY" | "TYPE_MISMATCH" | "OUT_OF_RANGE" | "OFF_STEP";
@@ -887,6 +889,10 @@ function epKieuKenh(tag: Pick<DeviceTag, "dataType">, value: unknown) {
  *   still runs later, unchanged. Range ↔ stop_value consistency is checked at CONFIGURATION time (R1a Task 12), not here.
  *   PASS 2 (declared writes, unless exempt):
  *   4. range, then step ⇒ OUT_OF_RANGE / OFF_STEP (the detail carries `goiY`, a hint only — the value is never altered).
+ *   5. kiem-dinh P1-3 (2026-10-24) — int with scale/offset: (v − offset)/scale must be an integer, else OFF_STEP (goiY = the raw-grid
+ *      value the driver's `inverseScale` would have rounded to). DECLARED tags only, like 3–4: an undeclared tag keeps the pre-R1a
+ *      behaviour byte for byte (flags-off equivalence) — and so the driver still rounds silently there (known limit; R1b backlog).
+ *      A pinned STOP is exempt (whole-command rule above), like range/step.
  * ok ⇒ the writes to use downstream: declared tags carry the COERCED value, undeclared ones the caller's write object.
  *
  * R1a Task 4 (ledger R-1) appends its mode gate (3c) right after this block in dispatchCore, on the same tag rows.

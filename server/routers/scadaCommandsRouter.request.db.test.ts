@@ -229,6 +229,10 @@ beforeAll(async () => {
   await seedTag(ad.a, { key: "sp4", ...sp, level: 4 });
   await seedTag(ad.a, { key: "doc", dataType: "float", kind: "input", writable: false, level: null });
   await seedTag(ad.a, { key: "tat", ...sp, enabled: false });
+  // kiem-dinh P1-3 — int scale 10: một kênh ĐÃ khai (dải 0..300) và một kênh CHƯA khai (mọi cột 0431 NULL) — đường HMI kiểm CẢ HAI
+  await seedTag(ad.a, { key: "sc10", dataType: "int", min: 0, max: 300, level: 3 });
+  await seedTag(ad.a, { key: "sc10cu", dataType: "int", kind: null, level: 3 });
+  await dung(sql`UPDATE device_tags SET scale = 10, "offset" = 0 WHERE "adapterId" = ${ad.a} AND "tagKey" IN ('sc10', 'sc10cu')`);
   await seedTag(ad.b, { key: "sp3", ...sp, level: 3 });
   await seedTag(ad.e, { key: "sp3", ...sp, level: 3 });
   await seedTag(ad.n, { key: "sp3", ...sp, level: 3 });
@@ -556,5 +560,16 @@ describe("clientRequestId gửi lại", () => {
     const dong = await dongThuSau(m, u.id);
     expect(dong.filter((d) => d.outcome === "proposed")).toHaveLength(1);
     expect(dong.filter((d) => d.outcome !== "proposed")).toHaveLength(0);
+  });
+});
+
+describe("kiem-dinh P1-3 — cổng giá trị biết scale/offset (int): (v − offset)/scale không nguyên ⇒ OFF_STEP + goiY", () => {
+  it("kênh đã khai, scale 10, 25 ⇒ OFF_STEP {goiY 30 (hoà ⇒ Math.round lên), step 10}", async () => {
+    const { loi } = await tuChoi("opA", { adapterId: ad.a, tagKey: "sc10", value: 25 }, { code: "BAD_REQUEST", appCode: "SCADA_VALUE_OFF_STEP", reason: "OFF_STEP" });
+    expect(loi.appParams).toMatchObject({ ma: "OFF_STEP", tagKey: "sc10", goiY: 30, step: 10 });
+  });
+  it("kênh CHƯA khai (cột 0431 NULL), scale 10, 24 ⇒ VẪN OFF_STEP {goiY 20} — đường HMI luôn kiểm", async () => {
+    const { loi } = await tuChoi("opA", { adapterId: ad.a, tagKey: "sc10cu", value: 24 }, { code: "BAD_REQUEST", appCode: "SCADA_VALUE_OFF_STEP", reason: "OFF_STEP" });
+    expect(loi.appParams).toMatchObject({ ma: "OFF_STEP", goiY: 20, step: 10 });
   });
 });

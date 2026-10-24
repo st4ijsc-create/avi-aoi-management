@@ -576,6 +576,8 @@ export const scadaKenhRouter = router({
               writeMin: sau.writeMin,
               writeMax: sau.writeMax,
               writeStep: sau.writeStep,
+              scale: tag.scale, // kiem-dinh P1-3 — lưới thô (int) như dispatch()
+              offset: tag.offset,
             };
             // Ghim DỪNG (kể cả khi tag đang tắt — bật lại thì ghim có hiệu lực ngay). Ghim không còn hợp lệ với dataType ⇒ dispatch bỏ qua nó.
             if (tag.stopValue !== null && tag.stopValue !== undefined) {

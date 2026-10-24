@@ -192,7 +192,10 @@ type TagLenh = Pick<
   | "writeMax"
   | "writeStep"
   | "actuationLevel"
->;
+> &
+  // kiem-dinh P1-3 — scale/offset để cổng giá trị từ chối giá trị mà driver sẽ làm tròn im lặng (int). Đường HMI kiểm LUÔN (kể cả tag
+  // chưa khai cột 0431) ở cả request lẫn confirm (`docTagLenh` đọc lại tag hiện tại).
+  Partial<Pick<DeviceTag, "scale" | "offset">>;
 
 // ─── Nhật ký thử lệnh (WORM) ───────────────────────────────────────────────────────────────────────────────────────────────────
 type DbHoacTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -263,6 +266,8 @@ export async function docTagLenh(db: Db, adapterId: number, tagKey: string): Pro
       writeMax: deviceTags.writeMax,
       writeStep: deviceTags.writeStep,
       actuationLevel: deviceTags.actuationLevel,
+      scale: deviceTags.scale,
+      offset: deviceTags.offset,
     })
     .from(deviceTags)
     .where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, tagKey)))
@@ -291,7 +296,8 @@ export function kiemCongKenhVaGiaTri(tag: TagLenh | null, tagKey: string, value:
     case "OFF_STEP":
       return {
         ok: false,
-        tuChoi: { ma: "OFF_STEP", tagKey, step: tag.writeStep as number, ...(kq.goiY !== undefined ? { goiY: kq.goiY } : {}), chiTiet: kq.chiTiet },
+        // `kq.buoc` = lưới vừa trượt (writeStep, hoặc |scale| — kiem-dinh P1-3)
+        tuChoi: { ma: "OFF_STEP", tagKey, step: kq.buoc ?? (tag.writeStep as number), ...(kq.goiY !== undefined ? { goiY: kq.goiY } : {}), chiTiet: kq.chiTiet },
       };
   }
 }
