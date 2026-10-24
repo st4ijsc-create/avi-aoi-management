@@ -317,7 +317,7 @@ export interface ProbeHandlerDeps {
   /** kiem-dinh P1-6 — lý do schema R1a (thiếu mig 0431/0432/0433) của lần kiểm khởi động; mặc định `kiemSchemaR1a.lyDoSchemaR1a`. */
   schemaR1a?: () => { ok: false; thieuMigration: string[]; lyDo: string } | null;
   /** R1b-1 T10 — lần kiểm schema khởi động KHÔNG đọc được information_schema; mặc định `kiemSchemaR1a.lyDoChuaKiemDuocR1a`. */
-  schemaR1aChuaKiem?: () => { schemaR1a: "chua_kiem_duoc"; lyDo: string } | null;
+  schemaR1aChuaKiem?: () => { schemaR1a: "chua_kiem_duoc"; lyDo: string } | null; // lyDo = LỚP NGẮN (không văn bản lỗi: /health không xác thực)
 }
 
 /**

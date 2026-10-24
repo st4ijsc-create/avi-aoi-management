@@ -55,9 +55,36 @@ export interface KetQuaSchemaR1a {
   thieu0433: string[];
 }
 
+/**
+ * Lớp lỗi NGẮN của lần kiểm thất bại — cái DUY NHẤT `/health` (không xác thực) được phép nói. Nội dung lỗi thô (`err.message` của postgres.js có thể mang
+ * host:port, tên user DB, tên bảng) chỉ nằm ở log máy chủ và ở trường `loi` nội bộ.
+ */
+export type LoaiLoiKiem = "ket_noi_tu_choi" | "het_thoi_gian" | "quyen" | "khong_co_ket_noi_db" | "khac";
+
+/** Lỗi ⇒ lớp ngắn. Ưu tiên mã (SQLSTATE / errno, kể cả trong `cause`); không có mã thì mới nhìn thông điệp — chỉ để PHÂN LỚP, không trả lại văn bản. */
+export function phanLoaiLoiKiem(err: unknown): LoaiLoiKiem {
+  const lay = (e: unknown): string => {
+    const x = e as { code?: unknown; errno?: unknown; cause?: { code?: unknown } } | null | undefined;
+    const c = x?.code ?? x?.cause?.code ?? x?.errno;
+    return typeof c === "string" || typeof c === "number" ? String(c).toUpperCase() : "";
+  };
+  const ma = lay(err);
+  if (/^28/.test(ma) || ma === "42501") return "quyen";
+  if (["ETIMEDOUT", "CONNECT_TIMEOUT", "ESOCKETTIMEDOUT", "57014"].includes(ma)) return "het_thoi_gian";
+  if (/^08/.test(ma) || ["ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN", "EPIPE", "CONNECTION_CLOSED", "CONNECTION_ENDED", "57P01", "57P02", "57P03", "53300", "3D000"].includes(ma)) {
+    return "ket_noi_tu_choi";
+  }
+  if (ma) return "khac";
+  const m = String((err as { message?: unknown } | null)?.message ?? err).toLowerCase();
+  if (/timed? ?out|timeout|etimedout/.test(m)) return "het_thoi_gian";
+  if (/password|permission denied|authentication|not authorized/.test(m)) return "quyen";
+  if (/econnrefused|econnreset|enotfound|connection (closed|terminated|ended)|connect /.test(m)) return "ket_noi_tu_choi";
+  return "khac";
+}
+
 export type TrangThaiSchemaR1a =
   | { kieu: "chua_kiem" }
-  | { kieu: "khong_kiem_duoc"; loi: string }
+  | { kieu: "khong_kiem_duoc"; loi: string; loai: LoaiLoiKiem }
   | ({ kieu: "da_kiem"; luc: string } & KetQuaSchemaR1a);
 
 let trangThai: TrangThaiSchemaR1a = { kieu: "chua_kiem" };
@@ -132,8 +159,9 @@ export function lyDoSchemaR1a(t: TrangThaiSchemaR1a = trangThai): { ok: false; t
  * R1b-1 T10 — lần kiểm khởi động KHÔNG đọc được information_schema ⇒ `/health` nói thẳng "chưa kiểm được" (kèm lý do). Không phải
  * "thiếu migration" (không biết) nên KHÔNG làm `status` thành degraded. null = không có gì để báo (chưa kiểm / đã kiểm).
  */
-export function lyDoChuaKiemDuocR1a(t: TrangThaiSchemaR1a = trangThai): { schemaR1a: "chua_kiem_duoc"; lyDo: string } | null {
-  return t.kieu === "khong_kiem_duoc" ? { schemaR1a: "chua_kiem_duoc", lyDo: t.loi } : null;
+export function lyDoChuaKiemDuocR1a(t: TrangThaiSchemaR1a = trangThai): { schemaR1a: "chua_kiem_duoc"; lyDo: LoaiLoiKiem } | null {
+  // CHỈ lớp ngắn — `t.loi` (văn bản lỗi thô) không bao giờ ra `/health`.
+  return t.kieu === "khong_kiem_duoc" ? { schemaR1a: "chua_kiem_duoc", lyDo: t.loai } : null;
 }
 
 function khoiLoi(dong: string[]): string {
@@ -168,11 +196,11 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
       kq = await kiemSchemaR1a(deps.chay);
       trangThai = { kieu: "da_kiem", luc: new Date().toISOString(), ...kq };
     } catch (err) {
-      trangThai = { kieu: "khong_kiem_duoc", loi: (err as Error)?.message ?? String(err) };
+      trangThai = { kieu: "khong_kiem_duoc", loi: (err as Error)?.message ?? String(err), loai: phanLoaiLoiKiem(err) };
       logLoi(`[SCADA R1a] KHÔNG kiểm được schema (information_schema): ${trangThai.loi} — vẫn khởi động OT như trước.`);
     }
   } else {
-    trangThai = { kieu: "khong_kiem_duoc", loi: "không có kết nối DB" };
+    trangThai = { kieu: "khong_kiem_duoc", loi: "không có kết nối DB", loai: "khong_co_ket_noi_db" };
     logLoi("[SCADA R1a] KHÔNG kiểm được schema: không có kết nối DB — vẫn khởi động OT như trước.");
   }
 
@@ -266,7 +294,13 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
           nhacCaHai(lai);
         })
         .catch((err) => {
-          if (trangThai.kieu === "khong_kiem_duoc") trangThai = { kieu: "khong_kiem_duoc", loi: (err as Error)?.message ?? String(err) };
+          if (trangThai.kieu === "khong_kiem_duoc") {
+            trangThai = {
+              kieu: "khong_kiem_duoc",
+              loi: (err as Error)?.message ?? String(err),
+              loai: (err as Error)?.message === "không có kết nối DB" ? "khong_co_ket_noi_db" : phanLoaiLoiKiem(err),
+            };
+          }
           logLoi(`[SCADA R1a] kiểm lại schema vẫn KHÔNG được: ${(err as Error)?.message ?? String(err)} — thử lại sau ${CHU_KY_NHAC_MS / 60_000} phút.`);
         })
         .finally(() => {

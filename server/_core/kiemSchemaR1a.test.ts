@@ -16,6 +16,7 @@ import {
   khoiDongOtCoKiemSchema,
   kiemSchemaR1a,
   lyDoSchemaR1a,
+  phanLoaiLoiKiem,
   trangThaiSchemaR1a,
 } from "./kiemSchemaR1a";
 import { createHealthHandler } from "./healthProbes";
@@ -211,7 +212,7 @@ describe("★ R1b-1 T10 — không kiểm được lúc khởi động: /health 
     const st = { ok: false, soLan: 0 };
     const chay = async (q: SQL) => {
       st.soLan++;
-      if (!st.ok) throw new Error("ECONNREFUSED 127.0.0.1:5434");
+      if (!st.ok) throw Object.assign(new Error("connect ECONNREFUSED 10.20.30.40:5434 (user \"aoi_secret_user\", db \"aoi_management\")"), { code: "ECONNREFUSED" });
       return gia(bo).chay(q);
     };
     return { st, chay };
@@ -243,16 +244,41 @@ describe("★ R1b-1 T10 — không kiểm được lúc khởi động: /health 
     }
   }
 
-  it("/health: schemaR1a \"chua_kiem_duoc\" + schemaR1aLyDo (nguyên nhân); status vẫn ok (không biết ≠ thiếu); khởi động vẫn fail-open", async () => {
+  it("★ I-1 — /health (KHÔNG xác thực): schemaR1a \"chua_kiem_duoc\" + schemaR1aLyDo là LỚP NGẮN; TUYỆT ĐỐI không host / port / user / tên DB / văn bản lỗi; log máy chủ vẫn giữ nguyên văn; status ok; khởi động fail-open", async () => {
     const { chay } = chayHong();
     const startOt = vi.fn(async () => undefined);
     const w = hen();
-    expect(await khoiDongOtCoKiemSchema({ chay, startOt, logLoi: vi.fn(), datNhac: w.datNhac, boNhac: w.boNhac })).toBe("da_start");
+    const logLoi = vi.fn();
+    expect(await khoiDongOtCoKiemSchema({ chay, startOt, logLoi, datNhac: w.datNhac, boNhac: w.boNhac })).toBe("da_start");
     expect(startOt).toHaveBeenCalledTimes(1);
     const body = await goiHealth();
     expect(body.schemaR1a).toBe("chua_kiem_duoc");
-    expect(String(body.schemaR1aLyDo)).toContain("ECONNREFUSED");
+    expect(body.schemaR1aLyDo).toBe("ket_noi_tu_choi");
     expect(body.status).toBe("ok");
+    const thoBody = JSON.stringify(body);
+    for (const cam of ["10.20.30.40", "5434", "aoi_secret_user", "aoi_management", "ECONNREFUSED", "connect "]) {
+      expect(thoBody, `/health không được lộ "${cam}"`).not.toContain(cam);
+    }
+    // nguyên văn CHỈ ở log máy chủ
+    expect(logLoi.mock.calls.map((c) => String(c[0])).join("\n")).toContain("10.20.30.40:5434");
+  });
+
+  it("I-1 — phanLoaiLoiKiem: SQLSTATE / errno ⇒ lớp ngắn; không mã thì phân lớp theo thông điệp; lạ ⇒ khac", () => {
+    const e = (code: string | undefined, message = "x") => Object.assign(new Error(message), code ? { code } : {});
+    expect(phanLoaiLoiKiem(e("ECONNREFUSED"))).toBe("ket_noi_tu_choi");
+    expect(phanLoaiLoiKiem(e("CONNECTION_CLOSED"))).toBe("ket_noi_tu_choi");
+    expect(phanLoaiLoiKiem(e("57P03"))).toBe("ket_noi_tu_choi");
+    expect(phanLoaiLoiKiem(e("ETIMEDOUT"))).toBe("het_thoi_gian");
+    expect(phanLoaiLoiKiem(e("CONNECT_TIMEOUT"))).toBe("het_thoi_gian");
+    expect(phanLoaiLoiKiem(e("28P01"))).toBe("quyen");
+    expect(phanLoaiLoiKiem(e("42501"))).toBe("quyen");
+    expect(phanLoaiLoiKiem(Object.assign(new Error("wrap"), { cause: { code: "ECONNREFUSED" } }))).toBe("ket_noi_tu_choi");
+    expect(phanLoaiLoiKiem(e("XX000"))).toBe("khac");
+    expect(phanLoaiLoiKiem(e(undefined, "Query read timeout"))).toBe("het_thoi_gian");
+    expect(phanLoaiLoiKiem(e(undefined, "password authentication failed for user \"aoi\""))).toBe("quyen");
+    expect(phanLoaiLoiKiem(e(undefined, "connect ECONNREFUSED 1.2.3.4:5"))).toBe("ket_noi_tu_choi");
+    expect(phanLoaiLoiKiem("boom")).toBe("khac");
+    expect(phanLoaiLoiKiem(null)).toBe("khac");
   });
 
   it("kiểm lại mỗi 5 phút bằng hẹn giờ unref; còn hỏng ⇒ giữ nguyên, KHÔNG dừng hẹn giờ; kiểm được ⇒ dừng hẹn giờ + /health hết \"chua_kiem_duoc\"", async () => {
@@ -309,7 +335,7 @@ describe("★ R1b-1 T10 — không kiểm được lúc khởi động: /health 
     let laiChay: typeof chay | null = null; // DB chưa có lúc boot
     const layChay = vi.fn(async () => laiChay);
     await khoiDongOtCoKiemSchema({ chay: null, startOt: vi.fn(async () => undefined), logLoi: vi.fn(), layChay });
-    expect(trangThaiSchemaR1a()).toMatchObject({ kieu: "khong_kiem_duoc", loi: "không có kết nối DB" });
+    expect(trangThaiSchemaR1a()).toMatchObject({ kieu: "khong_kiem_duoc", loi: "không có kết nối DB", loai: "khong_co_ket_noi_db" });
     expect(vi.getTimerCount()).toBe(1);
     await vi.advanceTimersByTimeAsync(CHU_KY_NHAC_MS);
     expect(layChay).toHaveBeenCalledTimes(1);
