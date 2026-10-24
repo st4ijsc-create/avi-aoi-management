@@ -892,7 +892,10 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // Ba dòng sổ nợ `phamViDocBaseline.ts` đã GỠ (trả nợ nhìn thấy được trong diff). Các thủ tục GHI cùng lớp (commissioning.create|revoke, deviceAdapter.create|update|delete|testConnection,
 // tags.create|update|delete, unsMapping.create|update|delete, mappingAsCode.preview|applyImport) cũng được khoá phạm vi nhưng KHÔNG đổi nhóm (mọi mutation vào D).
 // Chứng minh hành vi trên CSDL thật: `server/routers/adapterPhamVi.db.test.ts` (18 ca; 15 đỏ trước khi vá). Số đo: trên ghim cũ đỏ ĐÚNG −3 A / −6 C / +9 S sau khi vá, rồi ghim lại.
-const GHIM = { A: 330, B: 8, C: 488, D: 1198, S: 378, tong: 2402 } as const;
+// ★ 2026-10-24 (đợt 2 cùng lớp "id client gửi ⇒ dữ liệu nhà máy khác"): `commandLog.list|get|stats|avgDurations` (sổ lệnh ghi xuống máy) và `machineRecipe`: `recipes.getActive`, `deployments.list`, `machines.list`,
+// `changeover.list|recipeOptions` — CHÍN thủ tục A → S qua `_adapterPhamVi.ts` (`mayTrongPhamVi`, `dieuKienLenhTrongPhamVi`); chín dòng sổ nợ đã GỠ. Các thủ tục GHI `recipes.deploy|rollback`, `changeover.request|approve|reject` cũng khoá phạm vi (mọi mutation vào D, không đổi nhóm).
+// Còn nợ (cố ý, hỏi chủ dự án): `recipes.listCodes|listVersions|get|genealogy` = danh mục công thức dùng chung nhiều nhà máy. Chứng minh: `lenhCongThucPhamVi.db.test.ts` (12 ca; 8 đỏ trước khi vá; 8 đột biến bị bắt).
+const GHIM = { A: 321, B: 8, C: 488, D: 1198, S: 387, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

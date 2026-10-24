@@ -7,11 +7,11 @@
  * `strict: true` — không phân giải được phạm vi (DB) ⇒ NÉM, không đoán "toàn quyền" (fail-closed).
  * Danh tính LUÔN từ `ctx.user` (`phamViCua`), không bao giờ từ `input`.
  */
-import { eq, inArray, type SQL } from "drizzle-orm";
+import { eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import { appError } from "../_core/appError";
 import { getDb as getDbRaw } from "../db";
 import { idsTrongPhamVi } from "../db/hierarchy";
-import { commissioningRecords, deviceAdapters, deviceTags } from "../../drizzle/schema";
+import { commandLog, commissioningRecords, deviceAdapters, deviceTags } from "../../drizzle/schema";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 
 export const khongThayAdapter = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
@@ -124,4 +124,21 @@ export async function maAdapterTrongPhamVi(ctx: CoDanhTinh): Promise<Set<string>
   const db = await layDb();
   const rows = await db.select({ code: deviceAdapters.code }).from(deviceAdapters).where(inArray(deviceAdapters.machineId, idsMay));
   return new Set(rows.map((r) => r.code));
+}
+
+/** Một MÁY id client gửi phải trong phạm vi; ngoài phạm vi / không tồn tại ⇒ cùng NOT_FOUND "machine". Trả tập id máy (null = toàn quyền) để tái dùng. */
+export async function mayTrongPhamVi(ctx: CoDanhTinh, machineId: number): Promise<number[] | null> {
+  const idsMay = await idsMayTrongPhamVi(ctx);
+  if (idsMay !== null && !idsMay.includes(machineId)) throw khongThayMay();
+  return idsMay;
+}
+
+/** Điều kiện SQL cho `command_log`: lệnh của máy trong phạm vi HOẶC của adapter gắn máy trong phạm vi. `undefined` khi toàn quyền. */
+export function dieuKienLenhTrongPhamVi(idsMay: number[] | null): SQL | undefined {
+  if (idsMay === null) return undefined;
+  const ids = idsMay.length > 0 ? idsMay : [-1];
+  return or(
+    inArray(commandLog.machineId, ids),
+    inArray(commandLog.adapterId, sql`(select ${deviceAdapters.id} from ${deviceAdapters} where ${inArray(deviceAdapters.machineId, ids)})`),
+  );
 }

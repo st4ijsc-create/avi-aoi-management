@@ -18,6 +18,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb as getDbRaw } from "../db";
 import { commandLog } from "../../drizzle/schema";
+import { adapterTrongPhamVi, dieuKienLenhTrongPhamVi, idsMayTrongPhamVi, mayTrongPhamVi, adapterNhinThay } from "./_adapterPhamVi";
 
 async function getDb() {
   const db = await getDbRaw();
@@ -41,9 +42,14 @@ export const commandLogRouter = router({
       since: z.coerce.date().optional(),
       limit: z.number().int().min(1).max(500).default(100),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       const conds = [];
+      // phạm vi nhà máy (rà bảo mật 2026-10-24): chỉ lệnh của máy/adapter trong phạm vi; lọc id ngoài phạm vi ≡ NOT_FOUND
+      if (input?.machineId != null) await mayTrongPhamVi(ctx, input.machineId);
+      if (input?.adapterId != null) await adapterTrongPhamVi(ctx, input.adapterId);
+      const cong = dieuKienLenhTrongPhamVi(await idsMayTrongPhamVi(ctx));
+      if (cong) conds.push(cong);
       if (input?.machineId != null) conds.push(eq(commandLog.machineId, input.machineId));
       if (input?.adapterId != null) conds.push(eq(commandLog.adapterId, input.adapterId));
       if (input?.triggerKind != null) conds.push(eq(commandLog.triggerKind, input.triggerKind));
@@ -60,9 +66,10 @@ export const commandLogRouter = router({
   get: protectedProcedure
     .use(requirePermission("machine_control", "canView"))
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
-      const [row] = await db.select().from(commandLog).where(eq(commandLog.id, input.id)).limit(1);
+      const cong = dieuKienLenhTrongPhamVi(await idsMayTrongPhamVi(ctx)); // phạm vi nhà máy (rà bảo mật 2026-10-24)
+      const [row] = await db.select().from(commandLog).where(and(eq(commandLog.id, input.id), cong)).limit(1);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "commandLog" }, "Command log không tồn tại.");
       return row;
     }),
@@ -83,10 +90,18 @@ export const commandLogRouter = router({
       sinceHours: z.number().int().min(1).max(24 * 90).default(24),
       adapterId: z.number().int().positive().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       const since = new Date(Date.now() - (input?.sinceHours ?? 24) * 3600 * 1000);
+      // phạm vi nhà máy (rà bảo mật 2026-10-24): adapter chỉ định ngoài phạm vi ⇒ trả rỗng (không phải NOT_FOUND: thống kê, không lộ tồn tại); không chỉ định ⇒ chỉ lệnh trong phạm vi
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      if (input?.adapterId != null) {
+        try { await adapterTrongPhamVi(ctx, input.adapterId); } catch {
+          return { byStatus: [], byTrigger: [], intents: { total: 0, open: 0 } };
+        }
+      }
       const inWindow = and(
+        dieuKienLenhTrongPhamVi(idsMay),
         gte(commandLog.createdAt, since),
         input?.adapterId != null ? eq(commandLog.adapterId, input.adapterId) : undefined,
       );
@@ -123,8 +138,9 @@ export const commandLogRouter = router({
   avgDurations: protectedProcedure
     .use(requirePermission("machine_control", "canView"))
     .input(z.object({ sinceHours: z.number().int().min(1).max(24 * 90).default(24 * 30) }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
+      const cong = dieuKienLenhTrongPhamVi(await idsMayTrongPhamVi(ctx)); // phạm vi nhà máy (rà bảo mật 2026-10-24)
       const sinceHours = input?.sinceHours ?? 24 * 30;
       const since = new Date(Date.now() - sinceHours * 3600 * 1000);
       const rows = await db
@@ -136,6 +152,7 @@ export const commandLogRouter = router({
         .from(commandLog)
         .where(
           and(
+            cong,
             gte(commandLog.createdAt, since),
             isNotNull(commandLog.sentAt),
             isNotNull(commandLog.ackedAt),

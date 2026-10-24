@@ -158,11 +158,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   //    `resolveHierarchyScope` (nhóm A → S). Đo được TRƯỚC khi vá: 5 vai nhận CÙNG 450.811
   //    byte, CÙNG md5, kể cả tài khoản 0 gán nhà máy. Lưới hai chiều:
   //    `server/routers/commandCenterHierarchyScope.db.test.ts`.
-  // ── server/routers/commandLogRouter.ts (4) ─────────────────────────────────────────────────
-  "server/routers/commandLogRouter.ts#commandLogRouter.avgDurations",
-  "server/routers/commandLogRouter.ts#commandLogRouter.get",
-  "server/routers/commandLogRouter.ts#commandLogRouter.list",
-  "server/routers/commandLogRouter.ts#commandLogRouter.stats",
   // ── server/routers/componentLibraryRouter.ts (1) ───────────────────────────────────────────
   "server/routers/componentLibraryRouter.ts#componentLibraryRouter.linkStats",
   // ── server/routers/dashboardStatsRouters.ts (1) ────────────────────────────────────────────
@@ -300,14 +295,9 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/lineControllerRouter.ts#lineControllerRouter.transitions",
   // ── server/routers/machineApiRouters.ts (1) ────────────────────────────────────────────────
   "server/routers/machineApiRouters.ts#machineApiRouter.listKeys",
-  // ── server/routers/machineRecipeRouter.ts (9) ──────────────────────────────────────────────
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.changeover.list",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.changeover.recipeOptions",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.deployments.list",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.machines.list",
+  // ── server/routers/machineRecipeRouter.ts (4) ──────────────────────────────────────────────
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.genealogy",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.get",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.getActive",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listCodes",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listVersions",
   // ── server/routers/maintenanceRouter.ts (1) ────────────────────────────────────────────────
