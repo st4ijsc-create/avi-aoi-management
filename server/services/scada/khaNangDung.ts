@@ -23,7 +23,7 @@
  * tongHop: mọi adapter `duoc` ⇒ "duoc"; không adapter nào `duoc` (kể cả máy không có adapter bật / lỗi khảo sát) ⇒ "khong"; còn lại ⇒
  * "mot_phan". `qua_edge` không tính là `duoc`.
  */
-import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { deviceAdapters, deviceTags } from "../../../drizzle/schema";
 import type { getDb } from "../../db/connection";
 import { logger } from "../../logger";
@@ -31,7 +31,7 @@ import { getActiveDriver } from "../ot/otManager";
 import { isOtControlEnabled, runningConnectionMatchesAdapterRow } from "../ot/commandDispatcher";
 import { isCommissioned, isCommissioningRequired } from "../ot/commissioningService";
 import { stopPinsFromTagRows, type StopPinTagRow } from "../ot/stopPin";
-import { isEdgeControlSchemaMissing } from "../edge/edgeControlSchema";
+import { adapterOwnedByEdge } from "../ot/otAdapterOwnerGate";
 import { edgeNodeReachability } from "../edge/edgeNodeCommands";
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { STOP_DB_STEP_DEADLINE_MS } from "../robot/stopJob";
@@ -66,41 +66,19 @@ export function tongHopKhaNang(adapters: ReadonlyArray<KhaNangDungAdapter>): Kha
   return duoc === 0 ? "khong" : "mot_phan";
 }
 
-type HangAdapter = { id: number; code: string; machineId: number; edgeNodeId: number | null; edgeCode: string | null };
+type HangAdapter = { id: number; code: string; machineId: number };
 
-/** Adapter bật của các máy + chủ edge (mig 0374; thiếu cột ⇒ không adapter nào thuộc edge). */
+/**
+ * Adapter bật của các máy. Chủ edge KHÔNG đọc ở đây: R1b-1 T10 — một truy vấn chủ edge duy nhất cho cả dispatcher lẫn HMI
+ * (`adapterOwnedByEdge`, mã edge kèm theo), hỏi từng adapter CÓ GHIM ở `ketLuanCoGhim`.
+ */
 async function docAdapterBat(db: Db, machineIds: number[]): Promise<HangAdapter[]> {
-  const ids = sql.join(
-    machineIds.map((i) => sql`${i}`),
-    sql`, `,
-  );
-  try {
-    const rows = (await db.execute(sql`SELECT a."id" AS id, a."code" AS code, a."machineId" AS "machineId", a."edgeNodeId" AS "edgeNodeId",
-        n."code" AS "edgeCode"
-      FROM device_adapters a LEFT JOIN edge_nodes n ON n."id" = a."edgeNodeId"
-      WHERE a."isEnabled" = true AND a."machineId" IN (${ids}) ORDER BY a."id"`)) as unknown as Array<{
-      id: number;
-      code: string;
-      machineId: number;
-      edgeNodeId: number | null;
-      edgeCode: string | null;
-    }>;
-    return rows.map((r) => ({
-      id: Number(r.id),
-      code: r.code,
-      machineId: Number(r.machineId),
-      edgeNodeId: r.edgeNodeId === null || r.edgeNodeId === undefined ? null : Number(r.edgeNodeId),
-      edgeCode: r.edgeCode ?? null,
-    }));
-  } catch (err) {
-    if (!isEdgeControlSchemaMissing(err)) throw err;
-    const rows = await db
-      .select({ id: deviceAdapters.id, code: deviceAdapters.code, machineId: deviceAdapters.machineId })
-      .from(deviceAdapters)
-      .where(and(inArray(deviceAdapters.machineId, machineIds), eq(deviceAdapters.isEnabled, true)))
-      .orderBy(asc(deviceAdapters.id));
-    return rows.map((r) => ({ id: r.id, code: r.code, machineId: r.machineId as number, edgeNodeId: null, edgeCode: null }));
-  }
+  const rows = await db
+    .select({ id: deviceAdapters.id, code: deviceAdapters.code, machineId: deviceAdapters.machineId })
+    .from(deviceAdapters)
+    .where(and(inArray(deviceAdapters.machineId, machineIds), eq(deviceAdapters.isEnabled, true)))
+    .orderBy(asc(deviceAdapters.id));
+  return rows.map((r) => ({ id: r.id, code: r.code, machineId: r.machineId as number }));
 }
 
 /** Bộ nhớ đệm "node edge tới được không" của MỘT lần khảo sát (khoá: edgeNodeId). */
@@ -125,8 +103,9 @@ function edgeToiDuoc(dem: DemToiEdge, nodeId: number): Promise<boolean> {
 
 /** Một adapter có ghim: các bước 2–7 (thứ tự dispatchCore). Có thể ném — nơi gọi đổi thành `khong_kiem_duoc`. */
 async function ketLuanCoGhim(db: Db, a: HangAdapter, dem: DemToiEdge): Promise<Omit<KhaNangDungAdapter, "adapterId" | "code">> {
-  if (a.edgeNodeId !== null) {
-    return { trangThai: "qua_edge", edgeCode: a.edgeCode ?? String(a.edgeNodeId), edgeToiDuoc: await edgeToiDuoc(dem, a.edgeNodeId) };
+  const chu = await adapterOwnedByEdge(db, a.id);
+  if (chu) {
+    return { trangThai: "qua_edge", edgeCode: chu.edgeCode, edgeToiDuoc: await edgeToiDuoc(dem, chu.edgeNodeId) };
   }
   if (!getActiveDriver(a.id)) return { trangThai: "mat_ket_noi" };
   if (!isOtControlEnabled()) return { trangThai: "mo_phong", lyDo: "ot_control_tat" };

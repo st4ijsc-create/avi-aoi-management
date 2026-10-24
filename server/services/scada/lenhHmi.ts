@@ -45,7 +45,7 @@
  * ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
  */
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags, machines, scadaCommandAttempts, users, type DeviceTag } from "../../../drizzle/schema";
 import { getDb } from "../../db/connection";
 import { idsTrongPhamVi, type PhamViNguoiXem } from "../../db/hierarchy";
@@ -57,7 +57,7 @@ import type { MucRuiRo } from "../ot/aiControlGate";
 import { ackTimeoutMacDinhMs, dispatch, isOtControlEnabled, type DispatchResult, type DispatchStatus } from "../ot/commandDispatcher";
 import { isCommissioned, isCommissioningRequired } from "../ot/commissioningService";
 import { canonicalOtValue, otPayloadHash, withOtPayloadHash } from "../ot/otActionBinding";
-import { isEdgeControlSchemaMissing } from "../edge/edgeControlSchema";
+import { adapterOwnedByEdgeInTx } from "../ot/otAdapterOwnerGate";
 import { boDemDangBat, layGiaTri } from "./boDemHienTai";
 import { cheDoMay, TOOL_HMI_GHI_TAG, TOOL_HMI_STOP, type LyDoCheDo } from "./cheDoMay";
 import { loadStopPins } from "../ot/stopPin";
@@ -381,18 +381,10 @@ export async function kiemCongVaiTro(nguoi: NguoiGoiLenh, muc: MucRuiRo): Promis
  * adapter nào thuộc edge; lỗi khác ⇒ ném (không đoán "trung tâm").
  */
 export async function kiemCongEdge(db: Db, adapterId: number): Promise<Cong<object>> {
-  let rows: Array<{ edgeNodeId: number | null; edgeCode: string | null }>;
-  try {
-    rows = (await db.execute(sql`SELECT a."edgeNodeId" AS "edgeNodeId", n."code" AS "edgeCode"
-      FROM device_adapters a LEFT JOIN edge_nodes n ON n."id" = a."edgeNodeId" WHERE a."id" = ${adapterId}`)) as unknown as typeof rows;
-  } catch (err) {
-    if (isEdgeControlSchemaMissing(err)) return { ok: true };
-    throw err;
-  }
-  const r = rows[0];
-  if (!r || r.edgeNodeId === null || r.edgeNodeId === undefined) return { ok: true };
-  const edgeNodeId = Number(r.edgeNodeId);
-  const edgeCode = r.edgeCode ?? String(edgeNodeId);
+  // R1b-1 T10 — MỘT truy vấn chủ edge cho cả dispatcher lẫn HMI (`adapterOwnedByEdgeInTx`, đọc FOR SHARE + mã edge); lỗi ngoài "thiếu 0374" ném.
+  const chu = await adapterOwnedByEdgeInTx(db, adapterId);
+  if (!chu) return { ok: true };
+  const { edgeNodeId, edgeCode } = chu;
   return {
     ok: false,
     tuChoi: { ma: "EDGE_CHUA_HO_TRO", edgeCode, edgeNodeId, chiTiet: `Adapter do edge ${edgeCode} sở hữu — HMI trung tâm chưa ra lệnh qua edge (R1c).` },

@@ -9,7 +9,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { sql } from "drizzle-orm";
 import postgres from "postgres";
 import { getDb } from "../../db/connection";
-import { adapterOwnedByEdgeInTx, ADAPTER_OWNED_BY_EDGE } from "./otAdapterOwnerGate";
+import { adapterOwnedByEdge, adapterOwnedByEdgeInTx, ADAPTER_OWNED_BY_EDGE } from "./otAdapterOwnerGate";
 
 const DB_URL = process.env.DATABASE_URL ?? "";
 const onTest = /_test\b/.test(DB_URL);
@@ -77,6 +77,34 @@ describe.skipIf(!onTest)("scan #73 — adapter owner check at reservation (_test
       expect(blockedCode).toBe("55P03"); // lock_not_available: the owner change waited on the reservation
       const [after] = await raw`SELECT "edgeNodeId" FROM device_adapters WHERE id = ${a.id}`;
       expect(after.edgeNodeId).toBeNull();
+    } finally {
+      await raw.end();
+    }
+  });
+
+  it("★ R1b-1 T10 — chủ edge trả kèm MÃ edge (edge_nodes.code); bản không giao dịch (adapterOwnedByEdge) đọc cùng kết quả mà KHÔNG khoá hàng", async () => {
+    const raw = postgres(DB_URL, { max: 1 });
+    try {
+      const [n] = await raw`INSERT INTO edge_nodes (code, name, status) VALUES (${`${TAG}-n3`}, 'n', 'offline') RETURNING id`;
+      made.nodes.push(Number(n.id));
+      const [a] = await raw`INSERT INTO device_adapters (code, name, protocol, endpoint, "edgeNodeId") VALUES (${`${TAG}-a3`}, 'a', 'stub', 'stub://t', ${n.id}) RETURNING id`;
+      made.adapters.push(Number(a.id));
+      const [trong] = await raw`INSERT INTO device_adapters (code, name, protocol, endpoint) VALUES (${`${TAG}-a4`}, 'a', 'stub', 'stub://t') RETURNING id`;
+      made.adapters.push(Number(trong.id));
+      const d = (await getDb())!;
+      expect(await adapterOwnedByEdgeInTx(d, Number(a.id))).toMatchObject({ code: ADAPTER_OWNED_BY_EDGE, edgeNodeId: Number(n.id), edgeCode: `${TAG}-n3` });
+      expect(await adapterOwnedByEdge(d, Number(a.id))).toMatchObject({ code: ADAPTER_OWNED_BY_EDGE, edgeNodeId: Number(n.id), edgeCode: `${TAG}-n3` });
+      expect(await adapterOwnedByEdge(d, Number(trong.id))).toBeNull();
+      expect(await adapterOwnedByEdge(d, 2_000_000_000)).toBeNull(); // không có hàng ⇒ null
+      // không khoá: trong một giao dịch đọc xong, giao dịch khác ĐỔI chủ adapter ngay (không chờ)
+      await inRolledBackTx(async (tx) => {
+        expect(await adapterOwnedByEdge(tx, Number(trong.id))).toBeNull();
+        await raw.begin(async (t) => {
+          await t`SET LOCAL lock_timeout = '300ms'`;
+          await t`UPDATE device_adapters SET "edgeNodeId" = ${n.id} WHERE id = ${trong.id}`;
+          await t`UPDATE device_adapters SET "edgeNodeId" = NULL WHERE id = ${trong.id}`;
+        });
+      });
     } finally {
       await raw.end();
     }
