@@ -79,6 +79,8 @@ vi.mock("../../../drizzle/schema", () => ({
   andonEvents: { __mockName: "andonEvents", raisedAt: "raisedAt", machineId: "machineId" },
   safetyEvents: { __mockName: "safetyEvents", createdAt: "createdAt" },
   interlockEvents: { __mockName: "interlockEvents", firedAt: "firedAt" },
+  // 2026-10-24 — handler dựng cổng phạm vi khoá API trên các bảng này (khoá master = toàn cục ⇒ không dựng); phạm vi thật đo ở eventsMetricsAdvicePdmPhamViKhoa.db.test.ts
+  interlockRules: { __mockName: "interlockRules" },
   stations: { __mockName: "stations" },
   productionLines: { __mockName: "productionLines" },
   workshops: { __mockName: "workshops" },

@@ -85,16 +85,13 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   "server/_core/index.ts#GET /api/external/statistics/measurement-points",
   "server/_core/index.ts#GET /api/external/workstations",
   "server/_core/index.ts#GET /api/external/workstations/:id",
-  // ── server/api/v1/advice.ts (1) ────────────────────────────────────────────────────────────────
-  "server/api/v1/advice.ts#GET /recommendations",
+  // ── server/api/v1/advice.ts (0) ────────────────────────────────────────────────────────────────
   // ── server/api/v1/assets.ts (0) ────────────────────────────────────────────────────────────────
-  // ── server/api/v1/events.ts (1) ────────────────────────────────────────────────────────────────
-  "server/api/v1/events.ts#GET /events",
+  // ── server/api/v1/events.ts (0) ────────────────────────────────────────────────────────────────
   // ── server/api/v1/genealogyApi.ts (0) ──────────────────────────────────────────────────────────
   // ── server/api/v1/lines.ts (0) ─────────────────────────────────────────────────────────────────
-  // ── server/api/v1/metricsApi.ts (1) ────────────────────────────────────────────────────────────
-  "server/api/v1/metricsApi.ts#GET /metrics/:metric",
-  // ── server/api/v1/moduleReads.ts (4) ──────────────────────────────────────────────────────────
+  // ── server/api/v1/metricsApi.ts (0) ────────────────────────────────────────────────────────────
+  // ── server/api/v1/moduleReads.ts (0) ──────────────────────────────────────────────────────────
   // ★ Đợt 42 — `GET /machines/:id/detail` + `GET /robots/:id/detail` RỜI sổ: phạm vi của khoá
   //   (`req.apiPrincipal.tenantScope`, trục ②) nay đi vào `machineDetail`/`robotDetail` (đo trước vá:
   //   khoá SIM-FAC đọc identity máy 257 của NM18 — `.qa-dot41/api-vai/http-v1.json`).
@@ -102,14 +99,8 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   //   `commandCenter.hierarchy`, chỉ khác trục (khoá API thay vì người dùng). Nay chiếu
   //   `req.apiPrincipal.tenantScope` → `resolveTenantCodeFactoryIds` → `buildHierarchy(scope, tenant)`,
   //   đúng khuôn `GET /ecosystem/kpi` đã vá 2026-08-18 ngay bên dưới nó trong cùng file.
-  "server/api/v1/moduleReads.ts#GET /standards/alarm-taxonomy",
-  "server/api/v1/moduleReads.ts#GET /standards/compliance",
-  "server/api/v1/moduleReads.ts#GET /standards/device-types",
-  "server/api/v1/moduleReads.ts#GET /twin/models",
   // ── server/api/v1/ordersLifecycle.ts (0) ───────────────────────────────────────────────────────
-  // ── server/api/v1/pdmHealth.ts (2) ─────────────────────────────────────────────────────────────
-  "server/api/v1/pdmHealth.ts#GET /health/assets/:id",
-  "server/api/v1/pdmHealth.ts#GET /predictions",
+  // ── server/api/v1/pdmHealth.ts (0) ─────────────────────────────────────────────────────────────
   // ── server/api/v1/router.ts (0) ────────────────────────────────────────────────────────────────
   // ── server/api/v1/state.ts (0) ─────────────────────────────────────────────────────────────────
   // ── server/routes/edgeDownload.ts (1) ──────────────────────────────────────────────────────────
@@ -147,3 +138,14 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   //   Cùng lớp với `systemRouters.ts#corporateFactoryStatsRouter.warmingStats` ở sổ tRPC.
   "server/routes/reportArtifactRoutes.ts#GET /api/reports/artifacts/:id/download",
 ];
+
+/**
+ * ★★★ 2026-10-24 — MIỄN TRỪ CÓ CHỦ Ý cho TUYẾN (khác SỔ NỢ: đây KHÔNG phải nợ chờ trả mà là quyết định ĐÃ DUYỆT, mỗi mục MỘT lý do thật có ngày).
+ * Tuyến vẫn ở nhóm (A) theo bộ quét nhưng việc không lọc theo phạm vi là CỐ Ý: dữ liệu là DANH MỤC/REGISTRY dùng chung toàn tập đoàn.
+ * §4 coi mục ở đây là đã khai; §5 giữ nó không hoá thạch (còn tồn tại · còn nhóm A · lý do ≥ 20 ký tự có ngày · không đồng thời nằm trong sổ nợ). Thêm mục = thêm quyết định.
+ */
+export const MIEN_TRU_TUYEN_CO_CHU_Y: Readonly<Record<string, string>> = {
+  "server/api/v1/moduleReads.ts#GET /standards/alarm-taxonomy": "danh mục phân loại cảnh báo dùng chung toàn tập đoàn — duyệt mức kỹ thuật 2026-10-24 (cùng nguyên tắc danh mục công thức, chủ dự án duyệt)",
+  "server/api/v1/moduleReads.ts#GET /standards/device-types": "danh mục kiểu thiết bị chuẩn dùng chung toàn tập đoàn — duyệt mức kỹ thuật 2026-10-24 (cùng nguyên tắc danh mục công thức, chủ dự án duyệt)",
+  "server/api/v1/moduleReads.ts#GET /twin/models": "registry mô hình 3D dùng chung toàn tập đoàn — duyệt mức kỹ thuật 2026-10-24 (cùng nguyên tắc danh mục công thức, chủ dự án duyệt)",
+};

@@ -31,7 +31,7 @@ import type { DeviceTypeNode } from "../../services/standards/deviceTypeRegistry
 import type { AlarmMapping } from "../../services/standards/alarmTaxonomy";
 import type { TenantCodeScope } from "../../_core/tenantCodeScope";
 import type { PhamViMaTenant } from "../../db/hierarchy";
-import { phamViCuaKhoa, dieuKienKhoa, canTrongPhamVi } from "./phamViKhoa"; // 2026-10-24 — bộ phân giải phạm vi khoá dùng chung các tuyến /api/v1
+import { phamViCuaKhoa, dieuKienKhoa, canTrongPhamVi, idsMayCuaKhoa } from "./phamViKhoa"; // 2026-10-24 — bộ phân giải phạm vi khoá dùng chung các tuyến /api/v1
 
 /** Parse a positive-integer path/query param or throw a 400. */
 function posInt(raw: unknown, label: string): number {
@@ -330,13 +330,14 @@ export function registerModuleReadRoutes(r: Router): void {
   r.get(
     "/standards/compliance",
     requireScope(API_SCOPES.STANDARDS_READ),
-    wrap(async (_req, res) => {
+    wrap(async (req, res) => {
       const { getDb } = await import("../../db/connection");
       const { loadComplianceMetrics } = await import("../../services/standards/complianceService");
       // doc 80 Đợt 1 Task 3 (STD-01) — the SAME loader as equipmentStandardsRouter.complianceMetrics
       // (machines.device_type_key ↔ published device_types; conformance over device_types), so the
       // public read can never drift back to the seed-constant tautology the router used to share.
-      sendOk(res, await loadComplianceMetrics(await getDb()));
+      // phạm vi KHOÁ API (rà bảo mật 2026-10-24): đếm TỔNG trên mọi máy là lộ số lượng nhà máy khác ⇒ khoá hẹp chỉ đếm máy trong phạm vi.
+      sendOk(res, await loadComplianceMetrics(await getDb(), await idsMayCuaKhoa(req.apiPrincipal)));
     }),
   );
 

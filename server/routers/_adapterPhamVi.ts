@@ -150,6 +150,7 @@ export interface CotViTri {
   stationId?: AnyPgColumn;
   factoryId?: AnyPgColumn;
   robotId?: AnyPgColumn;
+  machineId?: AnyPgColumn;
 }
 
 /**
@@ -158,12 +159,13 @@ export interface CotViTri {
  * `phamVi`: trục ① (`phamViCua(ctx)`, người dùng) HOẶC trục ② (`{ tenantScope }`, khoá API) — cùng bộ phân giải `idsTrongPhamVi`.
  */
 export async function dieuKienViTriTrongPhamVi(phamVi: PhamViDoc, cot: CotViTri): Promise<SQL | undefined> {
-  const [dong, tram, nhaMay] = await Promise.all([
+  const [dong, tram, nhaMay, may] = await Promise.all([
     idsTrongPhamVi("line", phamVi, { strict: true }),
     idsTrongPhamVi("station", phamVi, { strict: true }),
     idsTrongPhamVi("factory", phamVi, { strict: true }),
+    idsTrongPhamVi("machine", phamVi, { strict: true }),
   ]);
-  if (dong === null && tram === null && nhaMay === null) return undefined;
+  if (dong === null && tram === null && nhaMay === null && may === null) return undefined;
   const d = (a: number[] | null) => sql.join((a && a.length > 0 ? a : [-1]).map((x) => sql`${x}`), sql`, `);
   const co = Object.values(cot).filter(Boolean) as AnyPgColumn[];
   if (co.length === 0) throw new Error("dieuKienViTriTrongPhamVi: bảng không có cột định vị nào");
@@ -172,6 +174,7 @@ export async function dieuKienViTriTrongPhamVi(phamVi: PhamViDoc, cot: CotViTri)
   if (cot.lineId) mach.push(sql`(${cot.lineId} IS NULL OR ${cot.lineId} IN (${d(dong)}))`);
   if (cot.stationId) mach.push(sql`(${cot.stationId} IS NULL OR ${cot.stationId} IN (${d(tram)}))`);
   if (cot.factoryId) mach.push(sql`(${cot.factoryId} IS NULL OR ${cot.factoryId} IN (${d(nhaMay)}))`);
+  if (cot.machineId) mach.push(sql`(${cot.machineId} IS NULL OR ${cot.machineId} IN (${d(may)}))`);
   if (cot.robotId) {
     mach.push(sql`(${cot.robotId} IS NULL OR ${cot.robotId} IN (
       SELECT r."id" FROM robots r LEFT JOIN stations st ON st."id" = r."stationId"

@@ -45,7 +45,7 @@ import {
   type NhomTuyen,
   type TuyenExpress,
 } from "./phamViDocScan";
-import { NO_PHAM_VI_TUYEN } from "./phamViTuyenBaseline";
+import { MIEN_TRU_TUYEN_CO_CHU_Y, NO_PHAM_VI_TUYEN } from "./phamViTuyenBaseline";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const GOC_REPO = join(TEST_DIR, "..", "..");
@@ -161,7 +161,8 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
 // ★ 2026-10-24 — A 80→71 · S 19→28 (chín tuyến `moduleReads.ts`: safety/events|zones, fleet/tasks|zones, programs, programs/:id/deployments, anomaly/events, twin/scene-graph, pdm/risk).
 // ★ 2026-10-24 nhóm 1 (equipment + assets + gateways + state): A 71→60 · S 28→39.
 // ★ 2026-10-24 nhóm 2 (orders + genealogy + lines): A 60→53 · S 39→46.
-const GHIM = { A: 53, C: 40, D: 96, S: 46, U: 16, tong: 251 } as const;
+// ★ 2026-10-24 nhóm 3 (events + metrics + advice + pdmHealth + compliance): A 53→47 · S 46→52.
+const GHIM = { A: 47, C: 40, D: 96, S: 52, U: 16, tong: 251 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -265,7 +266,7 @@ describe("§3 — CON SỐ GHIM", () => {
 
 describe("§4 — RÒ RỈ MỚI ⇒ ĐỎ (lý do tồn tại của cổng này)", () => {
   it("★★★ mọi tuyến nhóm (A) phải đã có tên trong SỔ NỢ", () => {
-    const so = new Set(NO_PHAM_VI_TUYEN);
+    const so = new Set([...NO_PHAM_VI_TUYEN, ...Object.keys(MIEN_TRU_TUYEN_CO_CHU_Y)]);
     const moi = cua("A")
       .filter((t) => !so.has(khoaTuyen(t)))
       .map(
@@ -287,6 +288,19 @@ describe("§4 — RÒ RỈ MỚI ⇒ ĐỎ (lý do tồn tại của cổng này
 });
 
 describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
+  it("★★ MIỄN TRỪ CÓ CHỦ Ý (tuyến): còn tồn tại · còn nhóm (A) · lý do thật có ngày duyệt · không trùng sổ nợ · ghim số = 3", () => {
+    const nhomTheoKhoa = new Map(QUET.tuyen.map((t) => [khoaTuyen(t), nhomTuyenCua(t)]));
+    const loi: string[] = [];
+    for (const [k, lyDo] of Object.entries(MIEN_TRU_TUYEN_CO_CHU_Y)) {
+      if (!nhomTheoKhoa.has(k)) loi.push(`${k} — không còn là tuyến`);
+      else if (nhomTheoKhoa.get(k) !== "A") loi.push(`${k} — nay là nhóm ${nhomTheoKhoa.get(k)}: gỡ khỏi miễn trừ`);
+      if (NO_PHAM_VI_TUYEN.includes(k)) loi.push(`${k} — vừa nợ vừa miễn trừ`);
+      if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
+    }
+    expect(loi).toEqual([]);
+    expect(Object.keys(MIEN_TRU_TUYEN_CO_CHU_Y).length, "thêm miễn trừ = quyết định, ghi lý do ở đây").toBe(3);
+  });
+
   it("★ mọi mục trong sổ vẫn còn là một tuyến CÓ THẬT", () => {
     const co = new Set(QUET.tuyen.map(khoaTuyen));
     const chet = NO_PHAM_VI_TUYEN.filter((k) => !co.has(k));
@@ -361,6 +375,7 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
     //   `403 · application/json · image_factory_scope_denied` trên đường dẫn của nhà máy B, và
     //   `200 · image/png` trên đường dẫn của chính A. Xem `phamViTuyenBaseline.ts`.
     expect(cua("S").map(khoaTuyen).sort()).toEqual([
+      // ★ 2026-10-24 nhóm 3 (events/metrics/advice/pdmHealth/compliance): sự kiện, chỉ số, đề xuất, sức khoẻ và đếm tuân thủ chỉ trong phạm vi khoá (phamViKhoa.ts). Lưới: eventsMetricsAdvicePdmPhamViKhoa.db.test.ts.
       // ★ 2026-10-24 nhóm 2 (orders/genealogy/lines): lệnh sản xuất, truy xuất đơn vị và chuyền của nhà máy khác ⇒ 404; danh sách lọc theo phạm vi khoá (phamViKhoa.ts). Lưới: ordersGenealogyLinesPhamViKhoa.db.test.ts.
       // ★ 2026-10-24 nhóm 1 (equipment/assets/state): khoá API một nhà máy chỉ chạm máy/tài sản/nút biên của nhà máy mình (phamViKhoa.ts). Lưới: equipmentAssetsStatePhamViKhoa.db.test.ts.
       // ★ 2026-09-15 (PH-23) — bề mặt SONG SINH của `/ecosystem/kpi`, và nó nằm ngay TRÊN kpi
@@ -389,16 +404,19 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/api/export/exportRouter.ts#GET /^\\/(yield|oee|defect-pareto)\\.(csv|json|xlsx)$/",
       "server/api/export/exportRouter.ts#GET /^\\/inspections\\.(csv|json|xlsx|pdf)$/",
       "server/api/export/exportRouter.ts#GET /^\\/measurements\\.(csv|json|xlsx|pdf)$/",
+      "server/api/v1/advice.ts#GET /recommendations",
       "server/api/v1/assets.ts#GET /assets",
       "server/api/v1/assets.ts#GET /assets/:id",
       "server/api/v1/assets.ts#GET /assets/:id/config-drift",
       "server/api/v1/assets.ts#GET /assets/:id/health",
       "server/api/v1/assets.ts#GET /assets/:id/tags",
       "server/api/v1/assets.ts#GET /gateways/:id/status",
+      "server/api/v1/events.ts#GET /events",
       "server/api/v1/genealogyApi.ts#GET /genealogy/:unitId",
       "server/api/v1/lines.ts#GET /lines",
       "server/api/v1/lines.ts#GET /lines/:id/stages",
       "server/api/v1/lines.ts#GET /lines/:id/state",
+      "server/api/v1/metricsApi.ts#GET /metrics/:metric",
       "server/api/v1/moduleReads.ts#GET /anomaly/events",
       "server/api/v1/moduleReads.ts#GET /ecosystem/hierarchy",
       "server/api/v1/moduleReads.ts#GET /ecosystem/kpi",
@@ -411,10 +429,13 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/api/v1/moduleReads.ts#GET /robots/:id/detail",
       "server/api/v1/moduleReads.ts#GET /safety/events",
       "server/api/v1/moduleReads.ts#GET /safety/zones",
+      "server/api/v1/moduleReads.ts#GET /standards/compliance",
       "server/api/v1/moduleReads.ts#GET /twin/scene-graph",
       "server/api/v1/ordersLifecycle.ts#GET /orders",
       "server/api/v1/ordersLifecycle.ts#GET /orders/:id",
       "server/api/v1/ordersLifecycle.ts#GET /orders/:id/trace",
+      "server/api/v1/pdmHealth.ts#GET /health/assets/:id",
+      "server/api/v1/pdmHealth.ts#GET /predictions",
       "server/api/v1/router.ts#GET /equipment",
       "server/api/v1/router.ts#GET /equipment/:id/capabilities",
       "server/api/v1/router.ts#GET /equipment/:id/state",
