@@ -51,9 +51,9 @@ type HangCheDo = {
   ten: string;
   cheDo: "REMOTE" | "LOCAL";
   lyDo: string;
-  /** R1b-1 T2 — máy có ≥ 1 adapter bật mang ghim DỪNG / số adapter đó */
-  coGhimStop?: boolean;
-  soAdapterGhimStop?: number;
+  /** R1b-1 T2 — máy có ≥ 1 adapter bật mang ghim DỪNG / số adapter đó; null = KHÔNG BIẾT (khảo sát lỗi — fix round 3) */
+  coGhimStop?: boolean | null;
+  soAdapterGhimStop?: number | null;
   /** R1b-1 T2 fix round 1 — khảo sát khả năng dừng từng adapter (cảnh báo cấp máy + danh sách trong hộp xác nhận) */
   khaNangDung?: KhaNangDung;
 };
@@ -210,7 +210,7 @@ export function Faceplate({ adapterId, tagKey, machineId, edgeCode, onDong }: Fa
           <NutDungMay
             machineId={machineId}
             tenMay={may ? `${may.code} · ${may.ten}` : `#${machineId}`}
-            soAdapter={may?.soAdapterGhimStop}
+            soAdapter={may?.soAdapterGhimStop ?? undefined}
             coGhimStop={may?.coGhimStop}
             khaNang={may?.khaNangDung}
             laEdge={!!edgeCode}
@@ -306,7 +306,7 @@ export function Faceplate({ adapterId, tagKey, machineId, edgeCode, onDong }: Fa
                   </div>
                 )}
                 <TruongLyDo id="faceplate-ly-do" value={lyDo} onChange={setLyDo} />
-                {loi && <ThongBaoLoiLenh moTa={loi.moTa} chiTiet={loi.chiTiet} onDungGoiY={dungGoiY} coGhimStop={may?.coGhimStop} />}
+                {loi && <ThongBaoLoiLenh moTa={loi.moTa} chiTiet={loi.chiTiet} onDungGoiY={dungGoiY} coGhimStop={may?.coGhimStop ?? undefined} />}
                 <div className="flex justify-end">
                   <Button onClick={doi} disabled={!doiDuoc}>
                     {request.isPending ? t("scada.faceplate.dangTao") : t("scada.faceplate.nutDoi")}
@@ -325,7 +325,7 @@ export function Faceplate({ adapterId, tagKey, machineId, edgeCode, onDong }: Fa
             dinhDang={hang?.displayFormat ?? null}
             dataType={dataType}
             edgeCode={edgeCode}
-            coGhimStop={may?.coGhimStop}
+            coGhimStop={may?.coGhimStop ?? undefined}
             onDong={() => {
               dangBayRef.current = false;
               setYeuCau(null);

@@ -49,8 +49,16 @@ import { TAG_DUNG_MAC_DINH } from "../services/ot/tagLenhMacDinh";
 import { validateStopValue } from "../services/ot/stopPin";
 import { khaoSatKhaNangDungNhieu, type KhaNangDungMay } from "../services/scada/khaNangDung";
 
-/** R1b-1 T2 — số adapter bật có ≥ 1 ghim DỪNG hợp lệ (mọi kết luận ≠ chua_ghim). */
-const soCoGhim = (k: KhaNangDungMay | undefined): number => (k ? k.adapters.filter((a) => a.trangThai !== "chua_ghim").length : 0);
+/**
+ * R1b-1 T2 — số adapter bật có ≥ 1 ghim DỪNG hợp lệ (mọi kết luận ≠ chua_ghim). fix round 3: khảo sát LỖI (`loiKhaoSat`) / vắng ⇒ null
+ * (KHÔNG BIẾT — không được đọc thành "chưa ghim" / 0 adapter).
+ */
+const soCoGhim = (k: KhaNangDungMay | undefined): number | null =>
+  !k || k.loiKhaoSat ? null : k.adapters.filter((a) => a.trangThai !== "chua_ghim").length;
+const coGhim = (k: KhaNangDungMay | undefined): boolean | null => {
+  const n = soCoGhim(k);
+  return n === null ? null : n > 0;
+};
 import { canonicalOtValue } from "../services/ot/otActionBinding";
 import type { MucRuiRo } from "../services/ot/aiControlGate";
 
@@ -271,7 +279,7 @@ const cheDoRouter = router({
           lyDo: cd.lyDo,
           // R1b-1 Task 2 — nút DỪNG MÁY gửi tới bao nhiêu adapter (adapter có ghim; 0 ⇒ "Máy chưa ghim STOP") + khả năng dừng từng adapter
           soAdapterGhimStop: soCoGhim(khaNang.get(m.id)),
-          coGhimStop: soCoGhim(khaNang.get(m.id)) > 0,
+          coGhimStop: coGhim(khaNang.get(m.id)),
           khaNangDung: khaNang.get(m.id) ?? { machineId: m.id, adapters: [], tongHop: "khong" as const },
           canhBaoNguon: hien
             ? canhBaoCua(

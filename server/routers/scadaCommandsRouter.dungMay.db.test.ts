@@ -36,7 +36,23 @@ const H = vi.hoisted(() => ({
   commNem: false,
   /** fix round 2 — hàng đợi edge từ chối ⇒ nhánh STOP dự phòng của trung tâm */
   enqueueNem: false,
+  /** fix round 3 — đọc "node edge tới được không" TREO + đếm số lượt hỏi */
+  reachTreo: false,
+  reachCalls: 0,
+  /** fix round 3 — khảo sát trả lỗi chung (loiKhaoSat) cho mọi máy */
+  khaoSatHong: false,
 }));
+
+vi.mock("../services/scada/khaNangDung", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../services/scada/khaNangDung")>();
+  return {
+    ...real,
+    khaoSatKhaNangDungNhieu: (async (...a: Parameters<typeof real.khaoSatKhaNangDungNhieu>) => {
+      if (!H.khaoSatHong) return real.khaoSatKhaNangDungNhieu(...a);
+      return new Map(a[1].map((m) => [m, { machineId: m, adapters: [], tongHop: "khong" as const, loiKhaoSat: true as const }]));
+    }) as typeof real.khaoSatKhaNangDungNhieu,
+  };
+});
 
 vi.mock("../services/ot/commissioningService", async (importOriginal) => {
   const real = await importOriginal<typeof import("../services/ot/commissioningService")>();
@@ -57,6 +73,10 @@ vi.mock("../services/edge/edgeNodeCommands", async (importOriginal) => {
       if (H.enqueueNem) throw new Error("r1b2: edge queue refused (simulated)");
       return real.enqueueEdgeDeviceRequest(...a);
     }) as typeof real.enqueueEdgeDeviceRequest,
+    edgeNodeReachability: ((...a: Parameters<typeof real.edgeNodeReachability>) => {
+      H.reachCalls += 1;
+      return H.reachTreo ? new Promise<never>(() => undefined) : real.edgeNodeReachability(...a);
+    }) as typeof real.edgeNodeReachability,
   };
 });
 
@@ -782,6 +802,57 @@ describe("fix round 2 — khảo sát không bao giờ làm hỏng danh sách; n
       expect(cho.resultJson).toMatchObject({ reason: "ADAPTER_OWNED_BY_EDGE", centralFallbackStop: { sent: true } });
     } finally {
       H.enqueueNem = false;
+    }
+  });
+});
+
+describe("fix round 3 — hạn đọc node edge, bộ nhớ đệm theo lượt, khảo sát lỗi ⇒ KHÔNG BIẾT (null)", () => {
+  const kn = () => import("../services/scada/khaNangDung");
+
+  it("★ đọc 'node edge tới được không' TREO ⇒ khảo sát vẫn trả nhanh (< 3 s), qua_edge + edgeToiDuoc false (cảnh báo); cheDo.danhSach không treo", async () => {
+    H.reachTreo = true;
+    try {
+      const t0 = Date.now();
+      const k = await (await kn()).khaoSatKhaNangDung(db, may.E.mid);
+      expect(Date.now() - t0).toBeLessThan(3_000);
+      expect(k.adapters[0]).toMatchObject({ adapterId: ad.E, trangThai: "qua_edge", edgeToiDuoc: false });
+      const { scadaKenhRouter } = await import("./scadaKenhRouter");
+      const c = scadaKenhRouter.createCaller({ user: { id: nguoi.opA2.id, role: "operator", name: "x", twoFactorEnabled: true } } as never);
+      const t1 = Date.now();
+      await c.cheDo.danhSach();
+      expect(Date.now() - t1).toBeLessThan(3_000);
+    } finally {
+      H.reachTreo = false;
+    }
+  });
+
+  it("★ hai adapter cùng node edge ⇒ MỘT lượt hỏi trong một lần khảo sát", async () => {
+    const [r] = await dung(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "pollIntervalMs", "isEnabled", status, "edgeNodeId")
+      VALUES (${may.E.mid}, ${`${RUN}-e2`}, ${`${RUN}-e2`}, 'stub', ${`stub://${RUN}-e2`}, 60000, true, 'disabled', ${edgeNodeId}) RETURNING id`);
+    const e2 = Number(r.id);
+    try {
+      await seedTag(e2, "stop_cmd", { dataType: "bool", stop: true });
+      const truoc = H.reachCalls;
+      const k = await (await kn()).khaoSatKhaNangDung(db, may.E.mid);
+      expect(k.adapters.map((a) => a.trangThai)).toEqual(["qua_edge", "qua_edge"]);
+      expect(H.reachCalls - truoc).toBe(1);
+    } finally {
+      await dung(sql`DELETE FROM device_tags WHERE "adapterId" = ${e2}`);
+      await dung(sql`UPDATE device_adapters SET "edgeNodeId" = NULL WHERE id = ${e2}`);
+      await dung(sql`DELETE FROM device_adapters WHERE id = ${e2}`);
+    }
+  });
+
+  it("★ khảo sát LỖI ⇒ cheDo.danhSach: coGhimStop null + soAdapterGhimStop null (KHÔNG 'chưa ghim' / 0), khaNangDung.loiKhaoSat", async () => {
+    H.khaoSatHong = true;
+    try {
+      const { scadaKenhRouter } = await import("./scadaKenhRouter");
+      const c = scadaKenhRouter.createCaller({ user: { id: nguoi.opA2.id, role: "operator", name: "x", twoFactorEnabled: true } } as never);
+      const rows = (await c.cheDo.danhSach()) as Array<{ machineId: number; coGhimStop: boolean | null; soAdapterGhimStop: number | null; khaNangDung: { loiKhaoSat?: boolean } }>;
+      const r = rows.find((x) => x.machineId === may.R.mid)!;
+      expect(r).toMatchObject({ coGhimStop: null, soAdapterGhimStop: null, khaNangDung: { loiKhaoSat: true } });
+    } finally {
+      H.khaoSatHong = false;
     }
   });
 });

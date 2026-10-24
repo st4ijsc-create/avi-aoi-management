@@ -43,7 +43,7 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
 const toastSuccess = vi.hoisted(() => vi.fn());
 const toastTrpcError = vi.hoisted(() => vi.fn());
 vi.mock("sonner", () => ({ toast: { success: toastSuccess, error: vi.fn(), warning: vi.fn() } }));
-vi.mock("@/lib/trpcErrors", () => ({ toastTrpcError }));
+vi.mock("@/lib/trpcErrors", () => ({ toastTrpcError, mapTrpcError: (e: unknown) => String((e as { message?: string })?.message ?? e) }));
 
 type Row = Record<string, unknown>;
 const srv = vi.hoisted(() => ({
@@ -572,5 +572,35 @@ describe("ScadaDiag — R1b-1 T2 fix round 2: hàng DỪNG MÁY không phụ thu
     srv.mayLoi = true;
     render(<ScadaDiag />);
     expect(screen.getByTestId("dung-may-loi-tai-may")).toHaveTextContent(S("scada.dungMay.loiTaiMay"));
+  });
+});
+
+describe("ScadaDiag — R1b-1 T2 fix round 3: hàng DỪNG MÁY khi danh sách adapter đang tải; cờ edge từ danh sách ĐẦY ĐỦ", () => {
+  const may1 = { machineId: 1, code: "RF-2", ten: "Reflow 2", coGhimStop: true, soAdapterGhimStop: 1, khaNangDung: { machineId: 1, adapters: [{ adapterId: 1, code: "AD-OK", trangThai: "duoc" }], tongHop: "duoc" } };
+
+  it("★ adapter đang tải (khung xương) mà danh sách MÁY đã có ⇒ nút DỪNG MÁY hiện NGAY, khung xương vẫn còn cho phần adapter", () => {
+    srv.loading = true;
+    srv.may = [may1];
+    render(<ScadaDiag />);
+    expect(screen.getByTestId("scada-diag-dang-tai")).toBeInTheDocument();
+    expect(within(screen.getByTestId("may-dung-1")).getByTestId("nut-dung-may")).toBeInTheDocument();
+    cleanup();
+    srv.may = [];
+    render(<ScadaDiag />);
+    expect(screen.getByTestId("scada-diag-dang-tai")).toBeInTheDocument();
+    expect(screen.queryByTestId("nut-dung-may")).toBeNull();
+  });
+
+  it("★ bộ lọc 'chỉ lỗi' ẩn hàng adapter EDGE ⇒ hộp DỪNG MÁY vẫn biết máy có edge (MODE_LOCAL chua_co_mau ⇒ chữ R1c của edge)", async () => {
+    srv.may = [may1];
+    render(<ScadaDiag />);
+    fireEvent.click(screen.getByRole("switch", { name: S("scada.diag.loc.chiLoi") }));
+    expect(screen.queryByText("AD-EDGE")).toBeNull(); // hàng edge đã bị lọc
+    fireEvent.click(within(screen.getByTestId("may-dung-1")).getByTestId("nut-dung-may"));
+    fireEvent.click(within(screen.getByTestId("hop-dung-may")).getByTestId("nut-xac-nhan-dung"));
+    await act(async () => {
+      srv.mutOpts.dungMay.onError?.({ message: "x", data: { appCode: "SCADA_MACHINE_NOT_REMOTE", appParams: { ma: "MODE_LOCAL", lyDo: "chua_co_mau" } } });
+    });
+    expect(within(screen.getByTestId("hop-dung-may")).getByTestId("loi-lenh")).toHaveTextContent(S("scada.lenh.local.chuaCoMauEdge"));
   });
 });

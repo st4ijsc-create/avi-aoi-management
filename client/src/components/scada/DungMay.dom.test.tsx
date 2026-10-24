@@ -504,3 +504,43 @@ describe("fix round 2 — kết luận mới + cảnh báo một phần + nhánh
     expect(within(e).getByTestId("dung-estop")).toBeInTheDocument();
   });
 });
+
+describe("fix round 3 — khảo sát LỖI ⇒ 'không kiểm được', không bao giờ 'chưa ghim'", () => {
+  const KKD = "Không kiểm được khả năng dừng — dùng E-STOP cứng nếu cần";
+
+  it("★ faceplate (M4): coGhimStop null + loiKhaoSat ⇒ 'không kiểm được', KHÔNG 'Máy chưa ghim STOP'; hộp xác nhận không nói '0 adapter'", () => {
+    srv.cheDo = [may({ coGhimStop: null, soAdapterGhimStop: null, khaNangDung: { machineId: 10, adapters: [], tongHop: "khong", loiKhaoSat: true } })];
+    veFaceplate();
+    expect(screen.getByTestId("canh-bao-kha-nang-dung")).toHaveTextContent(KKD);
+    expect(screen.queryByTestId("canh-bao-chua-ghim-stop")).toBeNull();
+    fireEvent.click(screen.getByTestId("nut-dung-may"));
+    expect(within(hop()).getByText(S("scada.dungMay.moTaKhongRo"))).toBeInTheDocument();
+    expect(within(hop()).queryByText(S("scada.dungMay.moTa", { n: 0 }))).toBeNull();
+    expect(within(hop()).getByTestId("kha-nang-dung-loi")).toHaveTextContent(KKD);
+  });
+
+  it("★ faceplate: MODE_LOCAL khi KHÔNG BIẾT có ghim ⇒ gợi ý E-STOP cứng thuần (không hứa nút DỪNG MÁY, không nói 'chưa ghim')", async () => {
+    srv.cheDo = [may({ coGhimStop: null, soAdapterGhimStop: null, khaNangDung: { machineId: 10, adapters: [], tongHop: "khong", loiKhaoSat: true } })];
+    veFaceplate();
+    const fp = screen.getByTestId("faceplate");
+    fireEvent.change(within(fp).getByLabelText(S("scada.faceplate.giaTriMoi")), { target: { value: "245" } });
+    fireEvent.change(within(fp).getByLabelText(S("scada.kenh.dialog.lyDo")), { target: { value: "Giam SP Z7" } });
+    fireEvent.click(within(fp).getByRole("button", { name: S("scada.faceplate.nutDoi") }));
+    await act(async () => {
+      srv.opts.request.onError?.({ message: "x", data: { appCode: "SCADA_MACHINE_NOT_REMOTE", appParams: { ma: "MODE_LOCAL", lyDo: "khac_remote" } } });
+    });
+    const g = within(fp).getByTestId("goi-y-stop");
+    expect(g).toHaveTextContent(S("scada.lenh.loi.goiYStopKhongGhim"));
+    expect(g).not.toHaveTextContent("chưa ghim");
+  });
+
+  it("★ NutDungMay chỉ có coGhimStop null (chưa có khaNang) ⇒ 'không kiểm được'; M12 coGhimStop null ⇒ 'không kiểm được', không 'chưa ghim'", () => {
+    render(<NutDungMay machineId={10} tenMay="RF-2" coGhimStop={null} />);
+    expect(screen.getByTestId("canh-bao-kha-nang-dung")).toHaveTextContent(KKD);
+    expect(screen.queryByTestId("canh-bao-chua-ghim-stop")).toBeNull();
+    cleanup();
+    render(<KenhCheDoMay rows={[may({ machineId: 10, coGhimStop: null, soAdapterGhimStop: null })] as never} adapters={[]} canAct={false} />);
+    expect(screen.getByTestId("canh-bao-kha-nang-dung")).toHaveTextContent(KKD);
+    expect(screen.queryByTestId("canh-bao-chua-ghim-stop")).toBeNull();
+  });
+});

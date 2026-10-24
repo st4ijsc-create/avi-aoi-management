@@ -26,7 +26,7 @@ import { BIEN_MAU_TONE } from "./chatLuongHienThi";
 import { KhoiCanhBao } from "./BangKenh";
 import { KHOA_LY_DO, epGiaTriRemote, toneCheDo, type LyDoCheDo } from "./kenhHienThi";
 import { LOP_O_CHON, TruongLyDo, lyDoDuDai } from "./TruongLyDo";
-import { CanhBaoChuaGhimStop } from "./DungMay";
+import { CanhBaoChuaGhimStop, CanhBaoKhaNangDung } from "./DungMay";
 
 export type HangCheDo = inferRouterOutputs<AppRouter>["scadaKenh"]["cheDo"]["danhSach"][number];
 type CanhBaoNguon = HangCheDo["canhBaoNguon"];
@@ -251,6 +251,12 @@ export function KenhCheDoMay({ rows, adapters, canAct }: KenhCheDoMayProps) {
                   {m.coGhimStop === false && (
                     <div className="mt-1">
                       <CanhBaoChuaGhimStop />
+                    </div>
+                  )}
+                  {/* fix round 3 — khảo sát lỗi (coGhimStop null) ⇒ "không kiểm được", KHÔNG BAO GIỜ "chưa ghim" */}
+                  {m.coGhimStop === null && (
+                    <div className="mt-1">
+                      <CanhBaoKhaNangDung khaNang={{ machineId: m.machineId, adapters: [], tongHop: "khong", loiKhaoSat: true }} />
                     </div>
                   )}
                 </TableCell>

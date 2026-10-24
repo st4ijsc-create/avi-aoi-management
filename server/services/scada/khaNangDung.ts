@@ -9,7 +9,9 @@
  *   1. không ghim DỪNG hợp lệ (`stopPinsFromTagRows` — luật của `loadStopPins`)  ⇒ `chua_ghim` (dungMay không gửi gì tới adapter này)
  *   2. adapter do edge sở hữu                                                    ⇒ `qua_edge` (dispatcher định tuyến STOP sang node edge;
  *      chỉ xác nhận khi edge báo lại — KHÔNG tính là `duoc`); kèm `edgeCode` + `edgeToiDuoc` (`edgeNodeReachability`: lượt kéo trong
- *      tiến trình này, không có thì tuổi heartbeat — MỘT lượt đọc rẻ; không đọc được ⇒ coi như KHÔNG tới được)
+ *      tiến trình này, không có thì tuổi heartbeat — MỘT lượt đọc rẻ). fix round 3: dưới hạn STOP_DB_STEP_DEADLINE_MS (khuôn của
+ *      dispatcher ở routeEdgeOwnedAdapterCommand), quá hạn / lỗi ⇒ KHÔNG tới được (chiều an toàn cho cảnh báo); MỘT lượt hỏi mỗi node
+ *      trong một lần khảo sát (bộ nhớ đệm theo lượt gọi)
  *   3. trung tâm không giữ driver (`getActiveDriver`)                            ⇒ `mat_ket_noi` (dispatch bước 4: ADAPTER_OFFLINE, không gửi gì)
  *   4. `!isOtControlEnabled()`                                                    ⇒ `mo_phong`, lyDo "ot_control_tat" (bước 5: writeSimulated)
  *   5. `isCommissioningRequired() && !isCommissioned(adapter)`                    ⇒ `mo_phong`, lyDo "chua_nghiem_thu" (bước 5a: writeSimulated)
@@ -31,6 +33,8 @@ import { isCommissioned, isCommissioningRequired } from "../ot/commissioningServ
 import { stopPinsFromTagRows, type StopPinTagRow } from "../ot/stopPin";
 import { isEdgeControlSchemaMissing } from "../edge/edgeControlSchema";
 import { edgeNodeReachability } from "../edge/edgeNodeCommands";
+import { withDeadline } from "../ot/drivers/boundedClose";
+import { STOP_DB_STEP_DEADLINE_MS } from "../robot/stopJob";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -99,11 +103,30 @@ async function docAdapterBat(db: Db, machineIds: number[]): Promise<HangAdapter[
   }
 }
 
+/** Bộ nhớ đệm "node edge tới được không" của MỘT lần khảo sát (khoá: edgeNodeId). */
+type DemToiEdge = Map<number, Promise<boolean>>;
+
+/** fix round 3 — tới được node edge? Dưới hạn; quá hạn / lỗi ⇒ false (không bao giờ treo danh sách, không bao giờ nói "tới được" khi không biết). */
+function edgeToiDuoc(dem: DemToiEdge, nodeId: number): Promise<boolean> {
+  let p = dem.get(nodeId);
+  if (!p) {
+    p = withDeadline(
+      Promise.resolve().then(() => edgeNodeReachability(nodeId)),
+      STOP_DB_STEP_DEADLINE_MS,
+      `edge node ${nodeId} reachability (khảo sát khả năng dừng)`,
+    ).then(
+      (r) => r.reachable === true,
+      () => false,
+    );
+    dem.set(nodeId, p);
+  }
+  return p;
+}
+
 /** Một adapter có ghim: các bước 2–7 (thứ tự dispatchCore). Có thể ném — nơi gọi đổi thành `khong_kiem_duoc`. */
-async function ketLuanCoGhim(db: Db, a: HangAdapter): Promise<Omit<KhaNangDungAdapter, "adapterId" | "code">> {
+async function ketLuanCoGhim(db: Db, a: HangAdapter, dem: DemToiEdge): Promise<Omit<KhaNangDungAdapter, "adapterId" | "code">> {
   if (a.edgeNodeId !== null) {
-    const reach = await edgeNodeReachability(a.edgeNodeId);
-    return { trangThai: "qua_edge", edgeCode: a.edgeCode ?? String(a.edgeNodeId), edgeToiDuoc: reach.reachable };
+    return { trangThai: "qua_edge", edgeCode: a.edgeCode ?? String(a.edgeNodeId), edgeToiDuoc: await edgeToiDuoc(dem, a.edgeNodeId) };
   }
   if (!getActiveDriver(a.id)) return { trangThai: "mat_ket_noi" };
   if (!isOtControlEnabled()) return { trangThai: "mo_phong", lyDo: "ot_control_tat" };
@@ -151,12 +174,13 @@ export async function khaoSatKhaNangDungNhieu(db: Db, machineIds: number[]): Pro
     for (const v of out.values()) v.loiKhaoSat = true;
     return out;
   }
+  const dem: DemToiEdge = new Map();
   const ketLuan = await Promise.all(
     adapters.map(async (a): Promise<KhaNangDungAdapter & { machineId: number }> => {
       const co = { machineId: a.machineId, adapterId: a.id, code: a.code };
       try {
         if (stopPinsFromTagRows(ghim.get(a.id) ?? []).length === 0) return { ...co, trangThai: "chua_ghim" };
-        return { ...co, ...(await ketLuanCoGhim(db, a)) };
+        return { ...co, ...(await ketLuanCoGhim(db, a, dem)) };
       } catch (err) {
         // fix round 2 — lỗi khi kiểm MỘT adapter ⇒ chỉ adapter đó "không kiểm được"
         logger.error({ err: (err as Error)?.message ?? String(err), adapterId: a.id }, "[SCADA] khảo sát khả năng dừng: kiểm adapter lỗi");

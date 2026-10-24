@@ -66,8 +66,8 @@ export interface MayDung {
   machineId: number;
   code: string;
   ten: string;
-  coGhimStop?: boolean;
-  soAdapterGhimStop?: number;
+  coGhimStop?: boolean | null;
+  soAdapterGhimStop?: number | null;
   khaNangDung?: KhaNangDung;
 }
 
@@ -75,6 +75,8 @@ export interface BangTruyenThongProps {
   rows: HangDiag[];
   /** R1b-1 T2 fix round 1 — có ⇒ nhóm theo máy, mỗi máy một hàng đầu có nút DỪNG MÁY */
   may?: MayDung[];
+  /** fix round 3 — MỌI adapter (trước bộ lọc "chỉ lỗi") để biết máy có adapter edge không; vắng ⇒ `rows` */
+  tatCaRows?: HangDiag[];
   now: number;
   canAct: boolean;
   onChon: (h: HangDiag) => void;
@@ -82,7 +84,7 @@ export interface BangTruyenThongProps {
   onTamTat: (h: HangDiag) => void;
 }
 
-export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamTat, may }: BangTruyenThongProps) {
+export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamTat, may, tatCaRows }: BangTruyenThongProps) {
   const { t } = useTranslation();
   const soCot = canAct ? 9 : 8;
   // fix round 2 — hàng đầu DỪNG MÁY lấy từ DANH SÁCH MÁY ĐẦY ĐỦ (`may`), bất kể bộ lọc "chỉ lỗi" đã ẩn adapter nào: một máy khoẻ vẫn
@@ -97,8 +99,12 @@ export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamT
       else nhom.push({ machineId: h.machineId ?? null, hangs: [h] });
     }
   } else nhom.push({ machineId: null, hangs: rows });
-  const hangDauMay = (machineId: number, hangs: HangDiag[]) => {
+  const hangDauMay = (machineId: number) => {
     const m = may?.find((x) => x.machineId === machineId);
+    // fix round 3 — từ danh sách ĐẦY ĐỦ (bộ lọc không làm mất cờ edge) + khảo sát của máy
+    const laEdge =
+      (tatCaRows ?? rows).some((h) => (h.machineId ?? null) === machineId && h.soHuu.loai === "edge") ||
+      !!m?.khaNangDung?.adapters.some((a) => a.trangThai === "qua_edge");
     return (
       <TableRow key={`may-${machineId}`} data-testid={`may-dung-${machineId}`} className="bg-muted/30 hover:bg-muted/30">
         <TableCell colSpan={soCot}>
@@ -111,10 +117,10 @@ export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamT
               <NutDungMay
                 machineId={machineId}
                 tenMay={m ? `${m.code} · ${m.ten}` : `#${machineId}`}
-                soAdapter={m?.soAdapterGhimStop}
+                soAdapter={m?.soAdapterGhimStop ?? undefined}
                 coGhimStop={m?.coGhimStop}
                 khaNang={m?.khaNangDung}
-                laEdge={hangs.some((h) => h.soHuu.loai === "edge")}
+                laEdge={laEdge}
               />
             </div>
           </div>
@@ -139,7 +145,7 @@ export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamT
       </TableHeader>
       <TableBody>
         {nhom.flatMap((g) => [
-          ...(may && g.machineId !== null ? [hangDauMay(g.machineId, g.hangs)] : []),
+          ...(may && g.machineId !== null ? [hangDauMay(g.machineId)] : []),
           ...g.hangs.map((h) => {
           const edge = tenEdge(h);
           const hanhDong = canAct && h.soHuu.loai !== "edge";

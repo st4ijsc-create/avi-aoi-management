@@ -365,8 +365,9 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
 }
 
 export interface NutDungMayProps extends Omit<HopDungMayProps, "onDong"> {
+  // fix round 3 — null = KHÔNG BIẾT (khảo sát lỗi): không bao giờ đọc thành "chưa ghim"
   /** `false` ⇒ cảnh báo cấp máy "Máy chưa ghim STOP"; vắng (chưa tải) ⇒ không cảnh báo */
-  coGhimStop?: boolean;
+  coGhimStop?: boolean | null;
 }
 
 /** Nút "DỪNG MÁY" + cảnh báo cấp máy. Luôn hiện (kể cả LOCAL); máy chủ là ranh giới (CHUA_GHIM_STOP). */
@@ -385,7 +386,13 @@ export function NutDungMay({ coGhimStop, ...hop }: NutDungMayProps) {
       >
         {t("scada.dungMay.nut")}
       </Button>
-      {khaNang ? <CanhBaoKhaNangDung khaNang={khaNang} /> : coGhimStop === false && <CanhBaoChuaGhimStop />}
+      {khaNang ? (
+        <CanhBaoKhaNangDung khaNang={khaNang} />
+      ) : coGhimStop === false ? (
+        <CanhBaoChuaGhimStop />
+      ) : coGhimStop === null ? (
+        <CanhBaoKhaNangDung khaNang={{ machineId: hop.machineId, adapters: [], tongHop: "khong", loiKhaoSat: true }} />
+      ) : null}
       {mo && <HopDungMay {...hop} onDong={() => setMo(false)} />}
     </div>
   );

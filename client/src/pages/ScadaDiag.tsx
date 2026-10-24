@@ -126,10 +126,24 @@ export default function ScadaDiag() {
           }
         >
           {q.isLoading ? (
-            <div role="status" aria-label={t("scada.diag.dangTai")} className="space-y-2" data-testid="scada-diag-dang-tai">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
+            // fix round 3 — danh sách MÁY đã có thì vẽ ngay hàng DỪNG MÁY; khung xương chỉ thay cho phần adapter đang tải
+            <div className="space-y-2">
+              {may.length > 0 && (
+                <BangTruyenThong
+                  rows={[]}
+                  may={may}
+                  now={now}
+                  canAct={canAct}
+                  onChon={(h) => setChonId(h.adapterId)}
+                  onKetNoiLai={(h) => setHanhDong({ kieu: "ketNoiLai", hang: h })}
+                  onTamTat={(h) => setHanhDong({ kieu: "tamTat", hang: h })}
+                />
+              )}
+              <div role="status" aria-label={t("scada.diag.dangTai")} className="space-y-2" data-testid="scada-diag-dang-tai">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
             </div>
           ) : (
             // fix round 2 — nút DỪNG MÁY (hàng đầu theo máy, từ `scadaKenh.cheDo.danhSach`) KHÔNG phụ thuộc bộ lọc "chỉ lỗi" hay việc
@@ -154,6 +168,7 @@ export default function ScadaDiag() {
               {((!q.isError && hienThi.length > 0) || may.length > 0) && (
                 <BangTruyenThong
                   rows={q.isError ? [] : hienThi}
+                  tatCaRows={q.isError ? [] : rows}
                   may={may}
                   now={now}
                   canAct={canAct}
