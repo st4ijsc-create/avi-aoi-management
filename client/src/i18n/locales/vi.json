@@ -3819,6 +3819,8 @@
       "factoryZone": "vùng mặt bằng",
       "mapping": "ánh xạ sản phẩm–máy",
       "recipeSet": "bộ công thức tuyến",
+      "lineStage": "công đoạn chuyền",
+      "productionOrderTemplate": "mẫu lệnh sản xuất",
       "rcaAnalysis": "phân tích nguyên nhân gốc",
       "recipe": "công thức",
       "record": "bản ghi",

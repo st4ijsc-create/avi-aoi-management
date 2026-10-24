@@ -197,16 +197,20 @@ describe("safety còn lại — sự kiện · phiên cộng tác · hiệu chu�
     const r = await one(sql`SELECT "auditedBy" AS a FROM safety_events WHERE id = ${e.id}`);
     expect({ loi, daKy: r?.a != null }).toEqual({ loi: NF, daKy: false });
   });
-  it("signalHandshake / advancePhase / abortCollaboration phiên robot B ⇒ NOT_FOUND, phiên nguyên vẹn", async () => {
+  it("signalHandshake / advancePhase phiên robot B ⇒ NOT_FOUND, phiên nguyên vẹn; abortCollaboration được phép nhưng có audit", async () => {
     const [c] = await dung(sql`INSERT INTO collaboration_sessions ("operationCode", "robotDeviceId", phase, "handshakeState") VALUES (${RUN + "-cs"}, ${B.rid}, 'human_prep', 'pending') RETURNING id`);
     const id = Number(c.id);
     const l = [
       await maLoi(() => userA.saf.signalHandshake({ sessionId: id, state: "ack" })),
       await maLoi(() => userA.saf.advancePhase({ sessionId: id })),
-      await maLoi(() => userA.saf.abortCollaboration({ sessionId: id, reason: "hack" })),
     ];
     const r = await one(sql`SELECT phase AS p, "handshakeState" AS h, "endedAt" AS e FROM collaboration_sessions WHERE id = ${id}`);
-    expect({ l, p: r.p, h: r.h, ended: r.e != null }).toEqual({ l: [NF, NF, NF], p: "human_prep", h: "pending", ended: false });
+    expect({ l, p: r.p, h: r.h, ended: r.e != null }).toEqual({ l: [NF, NF], p: "human_prep", h: "pending", ended: false });
+    // abortCollaboration CỐ Ý không chặn theo nhà máy (L-7: hướng giảm năng lượng, chủ dự án duyệt) — nhưng PHẢI để lại audit (ai huỷ phiên nào)
+    await userA.saf.abortCollaboration({ sessionId: id, reason: "dung khan" });
+    const sau = await one(sql`SELECT "endedAt" AS e, "abortedBy" AS a FROM collaboration_sessions WHERE id = ${id}`);
+    const audit = Number((await one(sql`SELECT count(*)::int AS n FROM control_audit_log WHERE "entityType" = 'collaboration_session' AND "entityId" = ${String(id)} AND action = 'abort'`)).n);
+    expect({ ended: sau.e != null, abortedBy: sau.a != null, audit }).toEqual({ ended: true, abortedBy: true, audit: 1 });
   });
   it("upsertCameraCalibration: robot B ⇒ NOT_FOUND không hàng; robot A ⇒ qua cổng", async () => {
     const homo = [1, 0, 0, 0, 1, 0, 0, 0, 1];

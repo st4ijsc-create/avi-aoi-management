@@ -1129,7 +1129,8 @@ export const safetyRouter = router({
     .input(z.object({ sessionId: z.number().int().positive(), reason: z.string().max(2000).optional() }))
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
-      await phienCongTacGhiTrongPhamVi(ctx, input.sessionId); // phạm vi nhà máy
+      // CỐ Ý KHÔNG chặn theo nhà máy (chủ dự án duyệt 2026-10-24, nguyên tắc L-7 như robot.consoleStop): huỷ phiên cộng tác là hướng GIẢM năng lượng /
+      // an toàn. Vẫn đòi đăng nhập + machine_control/canCreate; `abortCollaboration` ghi sổ audit bất biến (ai · phiên nào · trước/sau, kèm factoryId của phiên).
       const row = await abortCollaboration(input.sessionId, input.reason, ctx.user.id);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "collaboration" }, `Collaboration ${input.sessionId} not found`);
       return row;

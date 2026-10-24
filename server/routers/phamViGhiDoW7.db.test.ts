@@ -159,3 +159,30 @@ describe("kho (vị trí + tồn) — chiếu qua kho", () => {
     expect({ l, q, lx }).toEqual({ l: [NF, NF, NF, NF, NF, NF, NF, NF], q: 5, lx: 0 });
   });
 });
+
+describe("chứng chỉ kỹ năng — theo NGƯỜI được cấp (lô W7b)", () => {
+  it("cấp / sửa / thu hồi cho người nhà máy B hoặc người chưa gán nhà máy ⇒ NOT_FOUND; người nhà máy A ⇒ được", async () => {
+    const [sk] = await dung(sql`INSERT INTO skills (code, name) VALUES (${RUN + "-sk"}, 'sk') RETURNING id`);
+    const uA = await taoNguoiDungTest("xa", "engineer", { tienTo: "pw7", ts: RUN, ten: "PW7 xa" });
+    const uB = await taoNguoiDungTest("xb", "engineer", { tienTo: "pw7", ts: RUN, ten: "PW7 xb" });
+    const uZ = await taoNguoiDungTest("xz", "engineer", { tienTo: "pw7", ts: RUN, ten: "PW7 xz" });
+    await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uA.id}, ${fA})`);
+    await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uB.id}, ${fB})`);
+    const skillId = Number(sk.id);
+    const ok = await md.skills.grantCertification({ userId: uA.id, skillId });
+    const [cb] = await dung(sql`INSERT INTO user_certifications ("userId", "skillId", level) VALUES (${uB.id}, ${skillId}, 'trainee') RETURNING id`);
+    const l = [
+      await maLoi(() => md.skills.grantCertification({ userId: uB.id, skillId })),
+      await maLoi(() => md.skills.grantCertification({ userId: uZ.id, skillId })),
+      await maLoi(() => md.userCertifications.assign({ userId: uB.id, skillId })),
+      await maLoi(() => md.skills.updateCertification({ id: Number(cb.id), level: "expert" } as never)),
+      await maLoi(() => md.skills.revokeCertification({ id: Number(cb.id) })),
+      await maLoi(() => md.userCertifications.revoke({ id: Number(cb.id) })),
+    ];
+    const lv = (await one(sql`SELECT level AS l FROM user_certifications WHERE id = ${cb.id}`))?.l;
+    await md.skills.revokeCertification({ id: ok.id });
+    expect({ l, lv }).toEqual({ l: [NF, NF, NF, NF, NF, NF], lv: "trainee" });
+    await dung(sql`DELETE FROM user_certifications WHERE "skillId" = ${skillId}`);
+    await dung(sql`DELETE FROM skills WHERE id = ${skillId}`);
+  });
+});

@@ -285,6 +285,40 @@ async function datTenantSuaGhi(table: any, id: number, patch: Record<string, any
   if (!maTenantThayDuoc(sau.factoryCode, sau.corporateCode, g)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, "Factory not found");
 }
 
+/**
+ * Chứng chỉ kỹ năng của MỘT NGƯỜI (lô W7b, chủ dự án duyệt 2026-10-24): ghi chỉ khi người được cấp thuộc phạm vi người gọi — tức phạm vi nhà máy ĐƯỢC GÁN của họ
+ * giao với phạm vi người gọi — hoặc người gọi toàn quyền. Người được cấp toàn quyền / chưa gán nhà máy nào KHÔNG được người gọi hẹp phạm vi cấp chứng chỉ. Ngoài phạm vi ≡
+ * không tồn tại (NOT_FOUND "user"). `chungChiThuocPhamVi`: cùng luật cho thao tác theo id chứng chỉ (sửa / thu hồi).
+ */
+async function nguoiCapChungChiTrongPhamVi(scope: PhamViNguoiXem | undefined, userId: number): Promise<void> {
+  if (!canKiemPhamVi(scope)) return;
+  const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+  const nguoiGoi = (await resolveTenantFactoryScope(scope)).factoryIds;
+  if (nguoiGoi === null) return;
+  const db = await getDb();
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+  const [u] = await db.select({ id: users.id, role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, userId)).limit(1);
+  let ok = false;
+  if (u && u.isActive) {
+    const duocCap = (await resolveTenantFactoryScope({ userId: u.id, userRole: u.role })).factoryIds;
+    ok = duocCap !== null && duocCap.some((f) => nguoiGoi.includes(f));
+  }
+  if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
+}
+
+async function chungChiThuocPhamVi(scope: PhamViNguoiXem | undefined, certId: number): Promise<void> {
+  if (!canKiemPhamVi(scope)) return;
+  const db = await getDb();
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+  const [c] = await db.select({ userId: userCertifications.userId }).from(userCertifications).where(eq(userCertifications.id, certId)).limit(1);
+  if (!c) throw khongThayHang();
+  try {
+    await nguoiCapChungChiTrongPhamVi(scope, c.userId);
+  } catch {
+    throw khongThayHang();
+  }
+}
+
 async function insertOne(table: any, values: Record<string, any>, scope?: PhamViNguoiXem): Promise<number> {
   values = await datTenantGhi(table, values, scope);
   const db = await getDb();
@@ -883,6 +917,7 @@ const skillsRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await nguoiCapChungChiTrongPhamVi(phamViCua(ctx), input.userId); // phạm vi nhà máy: người được cấp
       const id = await insertOne(userCertifications, {
         userId: input.userId,
         skillId: input.skillId,
@@ -901,8 +936,9 @@ const skillsRouter = router({
       isActive: z.boolean().optional(),
       notes: z.string().nullish(),
     }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, expiresAt, ...rest } = input;
+      await chungChiThuocPhamVi(phamViCua(ctx), id); // phạm vi nhà máy: người sở hữu chứng chỉ
       return updateOne(userCertifications, id, clean({
         ...rest,
         ...(expiresAt !== undefined ? { expiresAt: expiresAt ? new Date(expiresAt) : null } : {}),
@@ -911,7 +947,10 @@ const skillsRouter = router({
   revokeCertification: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(userCertifications, input.id)),
+    .mutation(async ({ input, ctx }) => {
+      await chungChiThuocPhamVi(phamViCua(ctx), input.id); // phạm vi nhà máy: người sở hữu chứng chỉ
+      return deleteOne(userCertifications, input.id);
+    }),
 });
 
 // ─── Skill matrix: user × skill certifications (doc 42 Đợt 4B H1) ────────────
@@ -967,6 +1006,7 @@ const userCertificationsRouter = router({
       notes: z.string().nullish(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await nguoiCapChungChiTrongPhamVi(phamViCua(ctx), input.userId); // phạm vi nhà máy: người được cấp
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const expires = input.expiresAt ? new Date(input.expiresAt) : null;
@@ -1002,7 +1042,10 @@ const userCertificationsRouter = router({
   revoke: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(idInput)
-    .mutation(({ input }) => deleteOne(userCertifications, input.id)),
+    .mutation(async ({ input, ctx }) => {
+      await chungChiThuocPhamVi(phamViCua(ctx), input.id); // phạm vi nhà máy: người sở hữu chứng chỉ
+      return deleteOne(userCertifications, input.id);
+    }),
 });
 
 // ─── Tools / Fixtures / Consumables ─────────────────────────────────────────

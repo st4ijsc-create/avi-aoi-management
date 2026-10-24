@@ -615,6 +615,8 @@ export const measurementInstruments = pgTable("measurement_instruments", {
   nextCalibrationAt: timestamp("nextCalibrationAt"),
   msaMethod: varchar("msaMethod", { length: 50 }),
   notes: text("notes"),
+  /** Nhà máy sở hữu thiết bị (0421, 2026-10-25). NULL = chưa gán ⇒ chỉ người dùng toàn quyền thấy. Hiệu chuẩn / MSA suy qua instrumentId. FK factories(id) ON DELETE SET NULL (ở CSDL). */
+  factoryId: integer("factoryId"),
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),

@@ -33,6 +33,9 @@
  * 2026-10-24 sửa điểm mù bộ quét: `.input(idInput)` (đối số là một ĐỊNH DANH hằng schema cấp file) trước bị coi "không khoá" ⇒ delete, bulk, import của masterData… không vào sổ; nay +36 nợ lộ ra (masterData 22, componentLibrary 3, interlock 2, aiSpecialistAgent 2…) ⇒ 457 → 493.
  * 2026-10-24 lô W7 (−36, masterDataRouter: suppliers/materials/customers/tools/plantCalendars(+ngày,+ca)/warehouses(+vị trí,+tồn kho) create-update-delete-bulk-import theo vị từ ĐỌC congMaTenant, hàng mới đóng dấu tenant trong phạm vi) ⇒ 493 → 457. CÒN LẠI ở masterData (12): skills · uom · unit_conversions · material_classes · user_certifications — danh mục KHÔNG có mã tenant, chờ quyết định chủ dự án.
  * 2026-10-24 lô W8 (điều khiển: interlock create/update/delete/enable/disable/resolveEvent · lineController transition/command/recipeSet.* · safety recordEvent/auditEvent/upsertCameraCalibration/signalHandshake/advancePhase/abortCollaboration) + 2 miễn trừ (robot.consoleStop · scadaCommands.huy).
+ * 2026-10-24 lô W9 (−27, sản xuất: productionOrder create/update/delete/reschedule, template, createFromTemplate/optimizeSchedule/whatIf · lineStage · lineProductAssignment · orderLifecycle allocate/hold/resume/cancel · productionSession open/pause/resume/close/handover/supervisorSignOff) ⇒ 438 → 411.
+ * 2026-10-24 W7b: chứng chỉ kỹ năng theo NGƯỜI được cấp (skills.grant/update/revokeCertification · userCertifications.assign/revoke); 8 danh mục chuẩn dùng chung (skills · uom · unit_conversions · material_classes) + safety.abortCollaboration (L-7) chuyển sang MIỄN TRỪ có lý do.
+ * 2026-10-25 lô W7c (−1: msaAdvanced.anovaOfStudy) — migration 0421 `measurement_instruments."factoryId"`: thiết bị đo / hiệu chuẩn / MSA theo NHÀ MÁY (đọc + tên thiết bị suy qua instrumentId; NULL ⇒ chỉ toàn quyền) ⇒ 408 → 407.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ──
@@ -294,19 +297,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.remove",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.setEnabled",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.update",
-  // ── server/routers/masterDataRouter.ts (12) ──
-  "server/routers/masterDataRouter.ts#materialsRouter.deleteClass",
-  "server/routers/masterDataRouter.ts#materialsRouter.updateClass",
-  "server/routers/masterDataRouter.ts#skillsRouter.delete",
-  "server/routers/masterDataRouter.ts#skillsRouter.revokeCertification",
-  "server/routers/masterDataRouter.ts#skillsRouter.update",
-  "server/routers/masterDataRouter.ts#skillsRouter.updateCertification",
-  "server/routers/masterDataRouter.ts#uomRouter.delete",
-  "server/routers/masterDataRouter.ts#uomRouter.deleteConversion",
-  "server/routers/masterDataRouter.ts#uomRouter.update",
-  "server/routers/masterDataRouter.ts#uomRouter.updateConversion",
-  "server/routers/masterDataRouter.ts#userCertificationsRouter.assign",
-  "server/routers/masterDataRouter.ts#userCertificationsRouter.revoke",
   // ── server/routers/mesControlTowerRouter.ts (3) ──
   "server/routers/mesControlTowerRouter.ts#mesControlTowerRouter.createLotDisposition",
   "server/routers/mesControlTowerRouter.ts#mesControlTowerRouter.createMaterialReceipt",
@@ -368,11 +358,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/operatorBadgeRouter.ts (2) ──
   "server/routers/operatorBadgeRouter.ts#operatorBadgeRouter.revoke",
   "server/routers/operatorBadgeRouter.ts#operatorBadgeRouter.update",
-  // ── server/routers/orderLifecycleRouter.ts (4) ──
-  "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.allocate",
-  "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.cancel",
-  "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.hold",
-  "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.resume",
   // ── server/routers/parameterGuardrailRouter.ts (2) ──
   "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.delete",
   "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.set",
@@ -387,31 +372,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/processRouter.ts#processRouter.reorderLineAssignments",
   "server/routers/processRouter.ts#processRouter.update",
   "server/routers/processRouter.ts#processRouter.updateLineAssignment",
-  // ── server/routers/productionRouters.ts (17) ──
-  "server/routers/productionRouters.ts#lineProductAssignmentRouter.create",
-  "server/routers/productionRouters.ts#lineProductAssignmentRouter.delete",
-  "server/routers/productionRouters.ts#lineProductAssignmentRouter.update",
-  "server/routers/productionRouters.ts#lineStageRouter.create",
-  "server/routers/productionRouters.ts#lineStageRouter.delete",
-  "server/routers/productionRouters.ts#lineStageRouter.reorder",
-  "server/routers/productionRouters.ts#lineStageRouter.update",
-  "server/routers/productionRouters.ts#productionOrderRouter.create",
-  "server/routers/productionRouters.ts#productionOrderRouter.createFromTemplate",
-  "server/routers/productionRouters.ts#productionOrderRouter.createTemplate",
-  "server/routers/productionRouters.ts#productionOrderRouter.delete",
-  "server/routers/productionRouters.ts#productionOrderRouter.deleteTemplate",
-  "server/routers/productionRouters.ts#productionOrderRouter.optimizeSchedule",
-  "server/routers/productionRouters.ts#productionOrderRouter.reschedule",
-  "server/routers/productionRouters.ts#productionOrderRouter.update",
-  "server/routers/productionRouters.ts#productionOrderRouter.updateTemplate",
-  "server/routers/productionRouters.ts#productionOrderRouter.whatIf",
-  // ── server/routers/productionSessionRouter.ts (6) ──
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.close",
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.handover",
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.open",
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.pause",
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.resume",
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.supervisorSignOff",
   // ── server/routers/productOnboardingRouter.ts (3) ──
   "server/routers/productOnboardingRouter.ts#productOnboardingRouter.complete",
   "server/routers/productOnboardingRouter.ts#productOnboardingRouter.deleteDraft",
@@ -421,8 +381,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productPanelRouter.ts#productPanelRouter.remove",
   "server/routers/productPanelRouter.ts#productPanelRouter.saveBoards",
   "server/routers/productPanelRouter.ts#productPanelRouter.update",
-  // ── server/routers/productRouters.ts (1) ──
-  "server/routers/productRouters.ts#msaAdvancedRouter.anovaOfStudy",
   // ── server/routers/productVariantRouter.ts (3) ──
   "server/routers/productVariantRouter.ts#productVariantRouter.createVariant",
   "server/routers/productVariantRouter.ts#productVariantRouter.deleteVariant",
@@ -574,6 +532,24 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
  * (c) không đồng thời nằm trong sổ nợ. Thêm mục = lời khai công khai, người review phải thấy.
  */
 export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
+  "server/routers/masterDataRouter.ts#skillsRouter.update":
+    "Danh mục CHUẨN DÙNG CHUNG toàn tập đoàn — chủ dự án duyệt 2026-10-24 (cùng nguyên tắc danh mục lỗi / loại phép đo; không có cột nhà máy); ghi cần masterdata/canEdit|canDelete (vai quản trị / kỹ sư), không chỉ đăng nhập.",
+  "server/routers/masterDataRouter.ts#skillsRouter.delete":
+    "Danh mục CHUẨN DÙNG CHUNG toàn tập đoàn — chủ dự án duyệt 2026-10-24 (cùng nguyên tắc danh mục lỗi / loại phép đo; không có cột nhà máy); ghi cần masterdata/canEdit|canDelete (vai quản trị / kỹ sư), không chỉ đăng nhập.",
+  "server/routers/masterDataRouter.ts#uomRouter.update":
+    "Danh mục CHUẨN DÙNG CHUNG toàn tập đoàn — chủ dự án duyệt 2026-10-24 (cùng nguyên tắc danh mục lỗi / loại phép đo; không có cột nhà máy); ghi cần masterdata/canEdit|canDelete (vai quản trị / kỹ sư), không chỉ đăng nhập.",
+  "server/routers/masterDataRouter.ts#uomRouter.delete":
+    "Danh mục CHUẨN DÙNG CHUNG toàn tập đoàn — chủ dự án duyệt 2026-10-24 (cùng nguyên tắc danh mục lỗi / loại phép đo; không có cột nhà máy); ghi cần masterdata/canEdit|canDelete (vai quản trị / kỹ sư), không chỉ đăng nhập.",
+  "server/routers/masterDataRouter.ts#uomRouter.updateConversion":
+    "Danh mục CHUẨN DÙNG CHUNG toàn tập đoàn — chủ dự án duyệt 2026-10-24 (cùng nguyên tắc danh mục lỗi / loại phép đo; không có cột nhà máy); ghi cần masterdata/canEdit|canDelete (vai quản trị / kỹ sư), không chỉ đăng nhập.",
+  "server/routers/masterDataRouter.ts#uomRouter.deleteConversion":
+    "Danh mục CHUẨN DÙNG CHUNG toàn tập đoàn — chủ dự án duyệt 2026-10-24 (cùng nguyên tắc danh mục lỗi / loại phép đo; không có cột nhà máy); ghi cần masterdata/canEdit|canDelete (vai quản trị / kỹ sư), không chỉ đăng nhập.",
+  "server/routers/masterDataRouter.ts#materialsRouter.updateClass":
+    "Danh mục CHUẨN DÙNG CHUNG toàn tập đoàn — chủ dự án duyệt 2026-10-24 (cùng nguyên tắc danh mục lỗi / loại phép đo; không có cột nhà máy); ghi cần masterdata/canEdit|canDelete (vai quản trị / kỹ sư), không chỉ đăng nhập.",
+  "server/routers/masterDataRouter.ts#materialsRouter.deleteClass":
+    "Danh mục CHUẨN DÙNG CHUNG toàn tập đoàn — chủ dự án duyệt 2026-10-24 (cùng nguyên tắc danh mục lỗi / loại phép đo; không có cột nhà máy); ghi cần masterdata/canEdit|canDelete (vai quản trị / kỹ sư), không chỉ đăng nhập.",
+  "server/routers/safetyRouter.ts#safetyRouter.abortCollaboration":
+    "Huỷ phiên cộng tác người–robot là hướng GIẢM năng lượng / an toàn ⇒ KHÔNG chặn theo nhà máy (chủ dự án duyệt 2026-10-24, nguyên tắc L-7 như robot.consoleStop). Vẫn đòi đăng nhập + machine_control/canCreate; abortCollaboration ghi sổ audit bất biến (ai · phiên nào · trước/sau, kèm factoryId của phiên). signalHandshake / advancePhase giữ cổng phạm vi.",
   "server/routers/robotRouter.ts#robotRouter.consoleStop":
     "Có cổng phạm vi RIÊNG cho STOP (stopScopeForActuate → decideStopScope, doc 81 Đợt 10 R-10-bc, nguyên tắc L-7): STOP là hướng GIẢM năng lượng nên chỉ bị từ chối khi BIẾT CHẮC hai phạm vi khác nhau; không biết ⇒ cho đi + cảnh báo + audit. Bộ quét không nhận ra cổng này theo tên; KHÔNG được siết thêm kẻo chặn một lệnh dừng khẩn cấp.",
   "server/routers/scadaCommandsRouter.ts#scadaCommandsRouter.huy":

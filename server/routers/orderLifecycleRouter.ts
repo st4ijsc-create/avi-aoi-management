@@ -18,6 +18,14 @@ import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { getProductionOrderById } from "../db";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { ghiViTri } from "./_viTriPhamVi";
+
+/** Phạm vi nhà máy cho GHI vòng đời lệnh sản xuất (lô W9): lệnh ngoài phạm vi ≡ không tồn tại (cùng getter ĐỌC có phamViCua). */
+async function donHangGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  if (!(await getProductionOrderById(id, phamViCua(ctx)))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionOrder" }, "Production order not found");
+}
 import {
   orderLifecycleEnabled,
   OrderLifecycleError,
@@ -123,6 +131,8 @@ export const orderLifecycleRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      await donHangGhi(ctx, input.orderId);
+      await ghiViTri(ctx, { lineId: input.lineId });
       ensureEnabled();
       try {
         return await allocateOrder(input.orderId, {
@@ -140,6 +150,7 @@ export const orderLifecycleRouter = router({
     .use(canEdit)
     .input(z.object({ orderId: z.number().int().positive(), reason: z.string().max(1000).optional() }))
     .mutation(async ({ ctx, input }) => {
+      await donHangGhi(ctx, input.orderId);
       ensureEnabled();
       try {
         return await holdOrder(input.orderId, { reason: input.reason, actor: `user:${ctx.user.id}` });
@@ -153,6 +164,7 @@ export const orderLifecycleRouter = router({
     .use(canEdit)
     .input(z.object({ orderId: z.number().int().positive(), reason: z.string().max(1000).optional() }))
     .mutation(async ({ ctx, input }) => {
+      await donHangGhi(ctx, input.orderId);
       ensureEnabled();
       try {
         return await resumeOrder(input.orderId, { reason: input.reason, actor: `user:${ctx.user.id}` });
@@ -166,6 +178,7 @@ export const orderLifecycleRouter = router({
     .use(canEdit)
     .input(z.object({ orderId: z.number().int().positive(), reason: z.string().max(1000).optional() }))
     .mutation(async ({ ctx, input }) => {
+      await donHangGhi(ctx, input.orderId);
       ensureEnabled();
       try {
         return await cancelOrder(input.orderId, input.reason, { actor: `user:${ctx.user.id}` });

@@ -910,7 +910,9 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // processResult.listBySerial|stats|metricSeries|spcChart|fleetRollup|envSeries|dailyRollup · defectDisposition.listByInspection|listOpen|countOpen|reInspectStatus|repairQueue|listBySerial|repairStats. 20 dòng sổ nợ đã GỠ.
 // Cùng lô vá 6 MUTATION (sổ nợ ghi −6) và processResult.record (chưa nằm trong sổ). Chưa vá, để L7: bom.getDefinition/listDefinitions + CRUD định nghĩa BOM = dữ liệu chủ theo mẫu sản phẩm (không cột nhà máy).
 // Chứng minh: `loTruyXuatPhamVi.db.test.ts` (13 ca CSDL thật; 13/13 đỏ trên mã cũ; đột biến 58/58 bị bắt sau khi bổ sung 3 ca). Kèm vá lỗi CÓ SẴN: getReInspectStatus so sánh thời gian qua Date của JS (lệch múi giờ ⇒ chính hàng gốc bị tính là "muộn hơn").
-const GHIM = { A: 270, B: 8, C: 483, D: 1198, S: 443, tong: 2402 } as const;
+// 2026-10-25 (kiểm định, lô W7c, migration 0421): thiết bị đo + hiệu chuẩn + MSA ĐỌC theo nhà máy ⇒ 7 thủ tục đọc C → S (instrument.list|getById · calibration.list|health · msaRecord.list · msaWizard.getStudy|listByProduct): C 483 → 476 · S 423 → 430.
+// 2026-10-25 gộp L2 (A270/C483/S443) với W7c (7 C→S) ⇒ A270 · C476 · S450 (đo bằng census).
+const GHIM = { A: 270, B: 8, C: 476, D: 1198, S: 450, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

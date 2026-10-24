@@ -60,6 +60,7 @@ import { sql } from "drizzle-orm";
 import { phamViCua } from "./_phamViNguoiXem";
 import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
 import { sanPhamGhiTrongPhamVi } from "./_sanPhamPhamVi";
+import { idsTrongPhamVi } from "../db/hierarchy";
 import { tuChoiNgoaiPhamVi } from "./publicProductScope";
 // Doc 31 UX2/PM9 (WD-2) — product config-completeness ("readiness") score.
 import {
@@ -2008,6 +2009,21 @@ export const measurementPointRouter = router({
 });
 
 // ============ PRODUCT MACHINE MAPPING ROUTER ============
+/**
+ * THIẾT BỊ ĐO theo NHÀ MÁY (0421, chủ dự án duyệt 2026-10-24): thiết bị thấy / thao tác được ⇔ `measurement_instruments."factoryId"` ∈ phạm vi người gọi; NULL ⇒ chỉ toàn quyền.
+ * Hiệu chuẩn · bản ghi MSA · nghiên cứu MSA suy nhà máy QUA `instrumentId` (không cột riêng). Ngoài phạm vi ≡ không tồn tại. Toàn quyền (admin) ⇒ luôn true.
+ */
+async function thietBiTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], instrumentId: number | null | undefined): Promise<boolean> {
+  const ids = await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true });
+  if (ids === null) return true;
+  if (instrumentId == null) return false;
+  const d = await db.getDb();
+  if (!d) return false;
+  const rows = (await d.execute(sql`SELECT "factoryId" AS f FROM measurement_instruments WHERE id = ${instrumentId} AND "deletedAt" IS NULL`)) as unknown as Array<{ f: number | null }>;
+  const f = rows[0]?.f;
+  return f != null && ids.includes(Number(f));
+}
+
 /** Điểm đo → sản phẩm của nó (luật ở trên). Điểm không tồn tại ⇒ NOT_FOUND "measurementPoint". */
 async function diemDoGhiTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], pointDefId: number): Promise<void> {
   const d = await db.getDb();
@@ -2778,13 +2794,14 @@ export const defectCatalogRouter = router({
         instrumentType: z.string().optional(),
         includeInactive: z.boolean().optional(),
       }).optional())
-      .query(async ({ input }) => {
-        return db.listMeasurementInstruments(input);
+      .query(async ({ input, ctx }) => {
+        return db.listMeasurementInstruments(input, phamViCua(ctx));
       }),
 
     getById: protectedProcedure
       .input(z.object({ id: z.number().int().positive() }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        if (!(await thietBiTrongPhamVi(ctx, input.id))) return undefined; // ngoài phạm vi ≡ không tồn tại
         return db.getMeasurementInstrumentById(input.id);
       }),
 
@@ -2806,6 +2823,7 @@ export const defectCatalogRouter = router({
         msaMethod: z.string().max(50).optional(),
         notes: z.string().optional(),
         isActive: z.boolean().optional(),
+        factoryId: z.number().int().positive().nullable().optional(), // 0421: nhà máy sở hữu (admin gán; NULL = chưa gán)
       }))
       .mutation(async ({ ctx, input }) => {
         const id = await db.createMeasurementInstrument(input);
@@ -2841,6 +2859,7 @@ export const defectCatalogRouter = router({
         msaMethod: z.string().max(50).optional(),
         notes: z.string().optional(),
         isActive: z.boolean().optional(),
+        factoryId: z.number().int().positive().nullable().optional(), // 0421: nhà máy sở hữu (admin gán; NULL = chưa gán)
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
@@ -3192,15 +3211,20 @@ export const msaWizardRouter = router({
       productModelId: z.number().int().positive(),
       includeInactive: z.boolean().optional(),
     }))
-    .query(async ({ input }) => {
-      return db.listMsaStudiesByProduct(input.productModelId, { includeInactive: input.includeInactive });
+    .query(async ({ input, ctx }) => {
+      const ds = await db.listMsaStudiesByProduct(input.productModelId, { includeInactive: input.includeInactive });
+      // phạm vi nhà máy (0421): nghiên cứu thấy được ⇔ thiết bị của nó thuộc phạm vi
+      if ((await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true })) === null) return ds;
+      const giu: typeof ds = [];
+      for (const st of ds) if (await thietBiTrongPhamVi(ctx, st.instrumentId)) giu.push(st);
+      return giu;
     }),
 
   getStudy: protectedProcedure
     .input(z.object({ studyId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const study = await db.getMsaStudyById(input.studyId);
-      if (!study) {
+      if (!study || !(await thietBiTrongPhamVi(ctx, study.instrumentId))) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       }
       const observations = await db.listMsaObservationsByStudy(input.studyId);
@@ -3482,13 +3506,15 @@ export const msaWizardRouter = router({
 export const instrumentCalibrationRouter = router({
   list: protectedProcedure
     .input(z.object({ instrumentId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (!(await thietBiTrongPhamVi(ctx, input.instrumentId))) return []; // phạm vi nhà máy (0421): thiết bị ngoài phạm vi ≡ không tồn tại
       return db.listInstrumentCalibrations(input.instrumentId);
     }),
 
   health: protectedProcedure
     .input(z.object({ instrumentId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (!(await thietBiTrongPhamVi(ctx, input.instrumentId))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, "Instrument not found");
       return db.getInstrumentHealth(input.instrumentId);
     }),
 
@@ -3553,7 +3579,8 @@ export const instrumentCalibrationRouter = router({
 export const instrumentMsaRecordRouter = router({
   list: protectedProcedure
     .input(z.object({ instrumentId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (!(await thietBiTrongPhamVi(ctx, input.instrumentId))) return []; // phạm vi nhà máy (0421)
       return db.listInstrumentMsaRecords(input.instrumentId);
     }),
 
@@ -3994,7 +4021,12 @@ export const msaAdvancedRouter = router({
       studyId: z.number().int().positive(),
       tolerance: z.number().positive().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi nhà máy (0421): nghiên cứu của thiết bị ngoài phạm vi ≡ không tồn tại
+      const study = await db.getMsaStudyById(input.studyId);
+      if (!study || !(await thietBiTrongPhamVi(ctx, study.instrumentId))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
+      }
       const obs = await db.listMsaObservationsByStudy(input.studyId);
       const adapted = obs.map((o: any) => ({
         operator: String(o.operatorName ?? "?"),
