@@ -2,7 +2,7 @@
   "name": "avi-ai-local",
   "displayName": "AI Local (ST4I)",
   "description": "Trợ lý lập trình AI chạy nội bộ — agent sửa trực tiếp dự án qua lõi agent dùng chung, mọi lượt ghi qua một điểm ghi có kiểm toán.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "st4i",
   "private": true,
   "license": "UNLICENSED",

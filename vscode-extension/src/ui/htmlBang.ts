@@ -136,6 +136,11 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
                    border: 1px solid var(--vscode-dropdown-border); border-radius: 4px; padding: 4px; z-index: 20;
                    font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
   #menu-dinh-kem[hidden] { display: none; }
+  #menu-dinh-kem { left: 6px; right: 6px; min-width: 0; padding: 4px; border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.35); background: var(--vscode-editorWidget-background); border-color: var(--vscode-input-border); }
+  #menu-dinh-kem .ti-de { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--vscode-descriptionForeground); padding: 6px 8px 2px; }
+  #menu-dinh-kem button { display: flex; flex-direction: column; gap: 1px; padding: 7px 8px; border-radius: 6px; }
+  #menu-dinh-kem button b { font-weight: 600; font-size: 12.5px; }
+  #menu-dinh-kem button span { color: var(--vscode-descriptionForeground); font-size: 11.5px; line-height: 1.4; }
   #menu-dinh-kem button { background: transparent; color: inherit; border: 0; text-align: left; padding: 6px 8px; cursor: pointer; font: inherit; border-radius: 3px; }
   #menu-dinh-kem button:hover, #menu-dinh-kem button:focus-visible { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.2)); }
   #menu-dinh-kem .mn-goi-y { opacity: .7; padding: 4px 8px 2px; font-size: 11px; }
@@ -224,7 +229,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
   .ag-the .nut-chinh { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; padding: 4px 12px; font-weight: 600; cursor: pointer; }
   .ag-the .nut-phu { background: var(--vscode-button-secondaryBackground, transparent); color: var(--vscode-button-secondaryForeground, inherit); border: 0; padding: 4px 10px; cursor: pointer; }
   .ag-the .nut-nhe { background: transparent; color: var(--vscode-descriptionForeground, inherit); border: 0; padding: 4px 6px; cursor: pointer; text-decoration: underline; }
-  .ag-the .nut-nguy { background: var(--vscode-errorForeground, #c33); color: #fff; border: 0; padding: 4px 12px; font-weight: 600; cursor: pointer; }
+  .ag-the .nut-nguy { background: var(--vscode-errorForeground, #c33); color: var(--vscode-editor-background, #fff); border: 0; padding: 4px 12px; font-weight: 600; cursor: pointer; }
   .ag-the .canh-bao-xoa { margin-top: 4px; padding: 4px 6px; border-left: 3px solid var(--vscode-errorForeground, #c33); font-size: 12px; }
   .ag-the .the-duyet-nut { flex-wrap: wrap; align-items: center; }
   .ag-the .nut-nhe, .ag-the .nut-phu, .ag-the .nut-chinh, .ag-the .nut-nguy { white-space: nowrap; }
@@ -242,6 +247,43 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
   .ag-phan-hoi input { flex: 1; min-width: 120px; background: var(--vscode-input-background);
                        color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); }
   .ag-phan-hoi .nhan { opacity: .7; }
+  /* ══ 0.3.1 — khớp mockup đã duyệt: thanh trên · trạng thái rỗng có thẻ gợi ý · hộp soạn một khối · hàng dưới ô nhập ══ */
+  #vung-tai-khoan { justify-content: flex-start; gap: 8px; padding: 2px 0 6px; border-bottom: 1px solid var(--vscode-panel-border); margin-bottom: 6px; }
+  #vung-tai-khoan .ten { font-weight: 600; font-size: 12px; letter-spacing: .02em; }
+  #vung-tai-khoan #nut-tai-khoan { margin-left: auto; }
+  #rong-lan-dau { opacity: 1; font-size: 13px; line-height: 1.5; padding: 18px 4px 8px; display: flex; flex-direction: column; gap: 12px; }
+  #rong-lan-dau[hidden] { display: none; }
+  #rong-lan-dau h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  #rong-lan-dau p { margin: 0; color: var(--vscode-descriptionForeground); font-size: 12px; }
+  #rong-lan-dau p[hidden] { display: none; }
+  .goi-y { display: grid; gap: 6px; }
+  .goi-y button { text-align: left; display: grid; grid-template-columns: 34px 1fr; gap: 8px; align-items: start; padding: 8px 10px; border: 1px solid var(--vscode-panel-border);
+                  border-radius: 8px; background: var(--vscode-editorWidget-background); color: var(--vscode-foreground); cursor: pointer; font-size: 12.5px; }
+  .goi-y button:hover, .goi-y button:focus-visible { border-color: var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); }
+  .goi-y .bieu-tuong { font-size: 9.5px; font-weight: 700; text-align: center; padding: 3px 0; border-radius: 4px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+  .goi-y small { display: block; color: var(--vscode-descriptionForeground); font-size: 11px; }
+  #vung-agent { margin-top: 4px; gap: 6px; }
+  #vung-agent button[hidden] { display: none; }
+  #hang-nhap { display: block; margin-top: 6px; border: 1px solid var(--vscode-input-border); border-radius: 8px; background: var(--vscode-input-background); position: relative; }
+  #hang-nhap:focus-within { border-color: var(--vscode-focusBorder); }
+  #hang-nhap #o-nhap { display: block; width: 100%; border: 0; outline: none; background: transparent; padding: 8px 10px 4px; border-radius: 8px 8px 0 0; }
+  #hang-nhap #ds-dinh-kem { padding: 8px 8px 0; margin-top: 0; }
+  .soan-thanh { display: flex; align-items: center; gap: 4px; padding: 4px 6px 6px; }
+  .soan-thanh #nut-dinh-kem { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; font-size: 12px; border-radius: 6px; }
+  .soan-thanh #o-che-do { -webkit-appearance: none; appearance: none; background: transparent url('data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2710%27 height=%2710%27 viewBox=%270 0 10 10%27><path d=%27M2 3.5l3 3 3-3%27 fill=%27none%27 stroke=%27%23999%27 stroke-width=%271.4%27/></svg>') no-repeat right 4px center;
+                          color: var(--vscode-foreground); border: 1px solid transparent; border-radius: 6px; padding: 3px 18px 3px 8px; font-size: 12px; cursor: pointer; max-width: 55%; }
+  .soan-thanh #o-che-do { field-sizing: content; }
+  .soan-thanh #o-che-do:hover { background-color: var(--vscode-list-hoverBackground); }
+  .soan-thanh #nut-gui { margin-left: auto; width: 28px; height: 28px; padding: 0; border-radius: 6px; }
+  .soan-thanh #nut-dung { margin-left: auto; padding: 3px 10px; font-size: 12px; border-radius: 6px; background: transparent; color: var(--vscode-foreground); border: 1px solid var(--vscode-input-border); }
+  .soan-thanh #nut-dung:not([hidden]) + #nut-gui, .soan-thanh #nut-gui + #nut-dung { margin-left: 4px; }
+  .mo-ta-nho { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; color: var(--vscode-descriptionForeground); padding: 3px 2px 0; }
+  #mo-ta-che-do { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; flex-basis: auto; }
+  .dong-ho { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+  #dong-ho-thanh { width: 56px; height: 4px; border-radius: 2px; background: var(--vscode-panel-border); overflow: hidden; display: inline-block; }
+  #dong-ho-thanh i { display: block; height: 100%; width: 0; background: var(--vscode-charts-blue); }
+  #dong-ho-thanh.cao i { background: var(--vscode-charts-yellow); }
+  #thanh-ngu-canh[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -252,6 +294,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
      chỉ title/aria-label/lớp CSS đổi, KHÔNG BAO GIỜ dựng lại HTML, để một câu hỏi đang gõ dở
      trong #o-nhap không bị mất khi trạng thái đăng nhập đổi (B4, xem xử lý tin trang_thai_dang_nhap). -->
 <div id="vung-tai-khoan">
+  <span class="ten">AI LOCAL</span>
   <span id="ma-build" title="Bản AI Local đang chạy (phiên bản+commit). Báo mã này khi báo lỗi; -dirty = build từ cây chưa commit."${maBuild ? "" : " hidden"}>${maBuild}</span>
   <!-- ★★★ ĐỢT G / TASK G3 / B4 — Ô CHỌN MỨC QUYỀN (chế độ tự trị). ⚠⚠⚠ ĐÂY LÀ MỘT CỔNG THÊM,
        KHÔNG PHẢI HÀNG RÀO: webview CHỈ báo Ý ĐỊNH đổi mức (\`dat_muc_quyen\`) và HIỂN THỊ mức đang áp
@@ -289,11 +332,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
      được thêm (xem themLuot); khôi phục lịch sử cũng ẩn nó TRƯỚC khi vẽ (xem xoaKhungChoPhienKhac
      gọi anRongLanDau()) — không hiện lại giữa các lượt của một hội thoại đã có nội dung. -->
 <div id="hoi-thoai">
-  <div id="rong-lan-dau">
-    <p>Hỏi AI Local về mã trong workspace này — ví dụ: "hàm này làm gì", "sửa lỗi ở dòng X".</p>
-    <p>Gõ <code>@</code> để chèn tệp vào câu hỏi.</p>
-    <p><code>Enter</code> để gửi, <code>Shift+Enter</code> để xuống dòng.</p>
-  </div>
+  <div id="rong-lan-dau"></div>
 </div>
 <div id="the-duyet" hidden>
   <div class="nhan">Đề xuất ghi tệp</div>
@@ -330,62 +369,53 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
      thuộc tính selected: lưới G3/B4 đòi đúng MỘT thuộc tính chọn sẵn trong cả markup, dành cho mức quyền an toàn). "Chat cũ" giữ
      đường hỏi-đáp cũ qua máy chủ. Tự động chỉ bỏ bước duyệt khi mức quyền là "Tự ghi" (extension kiểm, không phải ô này). -->
 <div id="vung-agent">
-  <select id="o-che-do" aria-label="Chế độ làm việc và mức quyền của AI" title="Một ô duy nhất cho chế độ và mức quyền ghi. Được lưu theo workspace.">
-    <option value="sua">Agent — duyệt từng bước</option>
-    <option value="hoi">Hỏi (chỉ đọc)</option>
-    <option value="tu-dong">Agent — tự ghi trong workspace</option>
-    <option value="chat-cu">Chat cũ (máy chủ)</option>
-  </select>
-  <div id="mo-ta-che-do"></div>
   <button id="nut-token" class="nut-phu" hidden title="Lấy token cổng /v1 bằng trình duyệt (device flow)">Đăng nhập AI Local</button>
-  <span id="dong-ho-token" title="Token ngữ cảnh gửi model ở lượt gần nhất (~ = ước lượng 2,8 ký tự/token khi cổng /v1 không trả usage lúc stream)">Ngữ cảnh: —</span>
   <button id="nut-hoan-tac" class="nut-phu" hidden>Hoàn tác lượt chạy</button>
 </div>
 <button id="pill-moi" type="button" hidden>↓ Tin mới</button>
 <div id="hang-nhap">
-  <!-- TASK 5 — dropdown gợi ý @-mention. MẶC ĐỊNH ẨN: chỉ hiện khi đang gõ "@..." VÀ extension đã
-       trả về ít nhất một gợi ý. Nội dung (danh sách tệp) do EXTENSION dựng — webview chỉ hiển thị
-       và chuyển tiếp lựa chọn, đúng nguyên tắc đã áp cho thẻ duyệt. -->
+  <!-- Gợi ý @-mention (host dựng danh sách; webview chỉ hiển thị + chuyển tiếp lựa chọn). -->
   <div id="mention-ds" hidden></div>
-  <!-- ĐỢT G / TASK G2 / B1 — nút "đính kèm tệp". Webview chỉ BÁO Ý ĐỊNH (\`xin_dinh_kem\`) — bộ chọn
-       THẬT (danh sách + hàng rào rời máy) nằm ở phía extension (\`bangChat.moBoChonDinhKem\`), đúng
-       nguyên tắc "hiển thị + chuyển tiếp" đã áp cho thẻ duyệt/nút Dừng/@-mention. SVG nội tuyến,
-       cùng cách G1 đã chọn cho icon tài khoản — CSP webview không có font-src. -->
-  <button id="nut-dinh-kem" class="nut-icon" aria-haspopup="menu" aria-expanded="false" title="Đính kèm: tệp trong dự án, tệp hoặc ảnh từ máy. Cũng có thể dán ảnh (Ctrl+V) hoặc kéo tệp vào khung." aria-label="Đính kèm tệp hoặc ảnh để gửi kèm câu hỏi">
-    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true" focusable="false">
-      <path d="M11.3 4.6 6.4 9.5a1.9 1.9 0 1 0 2.7 2.7l4.6-4.6a3.4 3.4 0 1 0-4.8-4.8L3.8 7.9" stroke-linecap="round" stroke-linejoin="round" />
-    </svg>
-  </button>
   <!-- Menu Đính kèm: webview chỉ BÁO Ý ĐỊNH; bộ chọn thật và mọi hàng rào (trần, chữ ký, tên nhạy cảm) nằm ở host. -->
   <div id="menu-dinh-kem" role="menu" hidden>
-    <button id="mn-dinh-kem-ws" type="button" role="menuitem">Tệp trong dự án…</button>
-    <button id="nut-dinh-kem-may" type="button" role="menuitem" title="Tệp hoặc ảnh từ máy (ngoài workspace)">Tệp hoặc ảnh từ máy…</button>
+    <div class="ti-de">Đính kèm từ</div>
+    <button id="mn-dinh-kem-ws" type="button" role="menuitem"><b>Tệp trong dự án…</b><span>Chọn trong dự án đang mở (đã lọc tệp nhạy cảm)</span></button>
+    <button id="nut-dinh-kem-may" type="button" role="menuitem" title="Tệp hoặc ảnh từ máy (ngoài workspace)"><b>Tệp hoặc ảnh từ máy…</b><span>Ngoài workspace — chỉ tệp bạn chọn mới được gửi</span></button>
     <div class="mn-goi-y">Hoặc dán ảnh bằng Ctrl+V · kéo tệp vào khung</div>
   </div>
-  <textarea id="o-nhap" rows="1" placeholder="Hỏi AI Local…  Enter gửi · Shift+Enter xuống dòng · @ chèn tệp"></textarea>
-  <!-- ĐỢT G / TASK G1 / B4 — icon nhỏ gọn thay chữ "Gửi"; aria-label GIỮ nhãn cho trình đọc màn
-       hình (nhỏ gọn không đồng nghĩa vô danh) — hành vi bấm/Ctrl+Enter không đổi (vẫn gọi gui()). -->
-  <button id="nut-gui" class="nut-icon" title="Gửi (Enter)" aria-label="Gửi (Enter)">
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
-      <path d="M1.2 1.4 14.8 8 1.2 14.6l2.6-6.1H9.5V7.5H3.8Z" />
-    </svg>
-  </button>
-  <!-- TASK 4 — nút DỪNG. MẶC ĐỊNH ẨN: chỉ có ý nghĩa khi một lượt hỏi đang chạy (đang chờ SSE
-       hoặc đang giữa vòng lặp tác nhân), không phải lúc rảnh. Hàm gui() hiện nó khi bắn câu hỏi;
-       nơi DUY NHẤT ẩn lại là lúc nhận được tín hiệu 'lượt này đã xong' (hoan_tat/loi) — xem dưới. -->
-  <button id="nut-dung" hidden>Dừng</button>
+  <!-- Chip đính kèm (tên · kích thước · ảnh thu nhỏ) nằm TRONG hộp soạn, phía trên ô nhập. -->
+  <div id="ds-dinh-kem" hidden></div>
+  <textarea id="o-nhap" rows="1" placeholder="Hỏi AI Local… (Enter gửi, @ chèn tệp)"></textarea>
+  <div class="soan-thanh">
+    <button id="nut-dinh-kem" class="nut-icon" aria-haspopup="menu" aria-expanded="false" title="Đính kèm: tệp trong dự án, tệp hoặc ảnh từ máy. Cũng có thể dán ảnh (Ctrl+V) hoặc kéo tệp vào khung." aria-label="Đính kèm tệp hoặc ảnh để gửi kèm câu hỏi">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true" focusable="false">
+        <path d="M11.3 4.6 6.4 9.5a1.9 1.9 0 1 0 2.7 2.7l4.6-4.6a3.4 3.4 0 1 0-4.8-4.8L3.8 7.9" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      <span id="dinh-kem-chu">Đính kèm</span>
+    </button>
+    <!-- Chế độ + mức quyền GỘP một điều khiển (mặc định TĨNH = Agent duyệt, option ĐẦU — lưới G3/B4 đòi đúng MỘT mặc định an toàn). -->
+    <select id="o-che-do" aria-label="Chế độ làm việc và mức quyền của AI" title="Một điều khiển duy nhất cho chế độ và mức quyền ghi. Được lưu theo workspace.">
+      <option value="sua">Agent · duyệt</option>
+      <option value="hoi">Hỏi · chỉ đọc</option>
+      <option value="tu-dong">Agent · tự ghi</option>
+      <option value="chat-cu">Chat cũ (máy chủ)</option>
+    </select>
+    <button id="nut-gui" class="nut-icon" title="Gửi (Enter)" aria-label="Gửi (Enter)">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+        <path d="M1.2 1.4 14.8 8 1.2 14.6l2.6-6.1H9.5V7.5H3.8Z" />
+      </svg>
+    </button>
+    <!-- Nút DỪNG: chỉ hiện khi một lượt đang chạy; nơi DUY NHẤT ẩn lại là tín hiệu "lượt đã xong". -->
+    <button id="nut-dung" hidden>Dừng</button>
+  </div>
 </div>
-<!-- ĐỢT G / TASK G2 / B2 — danh sách tệp ĐANG ĐÍNH KÈM, DƯỚI ô nhập. MẶC ĐỊNH ẨN — script chỉ bật
-     lại khi có ít nhất một tệp (xem hàm \`veLaiDsDinhKem\`); gỡ hết ⇒ tự ẩn lại, không để lại khung
-     rỗng lơ lửng. -->
-<div id="ds-dinh-kem" hidden></div>
-<!-- ĐỢT G / TASK G2 / B3 — THANH TRẠNG THÁI NGỮ CẢNH. ★★★ KHÔNG BỊA SỐ TOKEN: ba đơn vị ĐO ĐƯỢC
-     THẬT (số lượt hội thoại, tổng ký tự lịch sử — chính phần sẽ được gửi lại làm "history" cho câu
-     hỏi kế tiếp, số tệp đính kèm) — mỗi nhãn nói ĐÚNG TÊN thứ nó đếm, không đoán ra một con số
-     token không đo được ở tầng extension. \`title\` nhắc lại đây KHÔNG phải kế toán token, phòng khi
-     ai đó lướt qua tưởng đây là % ngữ cảnh model. -->
+<div class="mo-ta-nho">
+  <div id="mo-ta-che-do"></div>
+  <span class="dong-ho"><span id="dong-ho-token" title="Token ngữ cảnh gửi model ở lượt gần nhất (~ = ước lượng 2,8 ký tự/token khi cổng /v1 không trả usage lúc stream)">Ngữ cảnh: —</span><span id="dong-ho-thanh"><i></i></span></span>
+</div>
+<!-- Thống kê DEV (lượt · ký tự lịch sử · tệp đính kèm): KHÔNG hiện trên giao diện nữa, giữ trong DOM + tooltip đồng hồ ngữ cảnh. Đơn vị ĐO ĐƯỢC THẬT, không phải token. -->
 <div id="thanh-ngu-canh"
-     title="Đơn vị ĐO ĐƯỢC THẬT — ký tự, tệp, lượt — KHÔNG PHẢI số token (chưa đo được token thật ở tầng extension)">
+     title="Đơn vị ĐO ĐƯỢC THẬT — ký tự, tệp, lượt — KHÔNG PHẢI số token (chưa đo được token thật ở tầng extension)" hidden>
   <span id="tk-luot">Lượt hội thoại: 0</span> ·
   <span id="tk-ky-tu">Ký tự lịch sử: 0</span> ·
   <span id="tk-dinh-kem">Tệp đính kèm: 0</span>
@@ -433,19 +463,74 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
   }
   /** Dựng lại hướng dẫn lần-đầu bằng ĐÚNG nội dung tĩnh ban đầu — dùng khi \`#hoi-thoai\` vừa bị dọn
    *  sạch (\`innerHTML = ""\`) và cần hiện lại vì khung THẬT SỰ trống (không có lượt nào để vẽ). */
+  // 0.3.1 — nội dung trạng thái rỗng dựng từ MỘT nơi (lần đầu + dựng lại khi dọn khung). Thẻ gợi ý theo nghề PLC/AOI; bấm = điền vào ô nhập (KHÔNG tự gửi).
+  let anChoTroLyBat = false;
+  const GOI_Y_RONG = [
+    { bieu: "ST", tieu: "Giải thích tệp đang mở", phu: "Đọc tệp hiện tại + chẩn đoán", cau: "Giải thích tệp đang mở trong editor." },
+    { bieu: "FB", tieu: "Viết FB điều khiển van 2 vị trí", phu: "Sinh mã IEC 61131-3 và biên dịch thử", cau: "Viết function block IEC 61131-3 (ST) điều khiển van 2 vị trí, có cờ lỗi và timeout." },
+    { bieu: "HMI", tieu: "Đọc ảnh màn hình HMI báo lỗi", phu: "Dán ảnh (Ctrl+V) hoặc kéo vào khung", cau: "Đọc ảnh màn hình HMI đính kèm và cho biết mã lỗi nghĩa là gì.", anh: true },
+    { bieu: "Test", tieu: "Tìm nguyên nhân test đỏ", phu: "Chạy test, đọc log, đề xuất bản sửa", cau: "Chạy test của dự án, đọc log lỗi và đề xuất bản sửa." },
+  ];
+  function tenDuAnDangChon() {
+    const o = document.getElementById("o-du-an");
+    const opt = o && o.options && o.selectedIndex >= 0 ? o.options[o.selectedIndex] : null;
+    return opt && opt.textContent ? String(opt.textContent) : "";
+  }
+  let dongDuAnEl = null;
+  function capNhatDongDuAn() {
+    const e = dongDuAnEl;
+    if (!e) return;
+    const ten = tenDuAnDangChon();
+    e.textContent = ten ? "Đang làm việc trên: " + ten : "";
+    e.hidden = !ten;
+  }
+  function dungNoiDungRong(d) {
+    d.textContent = "";
+    d.innerHTML = "";
+    const h = document.createElement("h3");
+    h.textContent = "Hỏi về mã, tài liệu máy, hoặc nhờ AI sửa trong workspace";
+    const p = document.createElement("p");
+    p.id = "rong-du-an";
+    dongDuAnEl = p;
+    const luoi = document.createElement("div");
+    luoi.className = "goi-y";
+    for (const g of GOI_Y_RONG) {
+      if (g.anh && !anChoTroLyBat) continue;
+      const b = document.createElement("button");
+      b.setAttribute("type", "button");
+      const bt = document.createElement("span");
+      bt.className = "bieu-tuong";
+      bt.textContent = g.bieu;
+      const nd = document.createElement("span");
+      nd.textContent = g.tieu;
+      const nho = document.createElement("small");
+      nho.textContent = g.phu;
+      nd.appendChild(nho);
+      b.appendChild(bt);
+      b.appendChild(nd);
+      b.addEventListener("click", () => {
+        oNhap.value = g.cau;
+        canChinhODoCao();
+        if (oNhap.focus) oNhap.focus();
+      });
+      luoi.appendChild(b);
+    }
+    const goiY = document.createElement("p");
+    goiY.textContent = "Gõ @ để chèn tệp · Enter gửi, Shift+Enter xuống dòng.";
+    d.appendChild(h);
+    d.appendChild(p);
+    d.appendChild(luoi);
+    d.appendChild(goiY);
+    capNhatDongDuAn();
+  }
   function hienLaiRongLanDau() {
     const d = document.createElement("div");
     d.id = "rong-lan-dau";
-    const dong1 = document.createElement("p");
-    dong1.textContent = "Hỏi AI Local về mã trong workspace này — ví dụ: \\"hàm này làm gì\\", \\"sửa lỗi ở dòng X\\".";
-    const dong2 = document.createElement("p");
-    dong2.textContent = "Gõ @ để chèn tệp vào câu hỏi.";
-    const dong3 = document.createElement("p");
-    dong3.textContent = "Enter để gửi, Shift+Enter để xuống dòng.";
-    d.appendChild(dong1); d.appendChild(dong2); d.appendChild(dong3);
+    dungNoiDungRong(d);
     hoiThoai.appendChild(d);
     rongLanDau = d;
   }
+  if (rongLanDau) dungNoiDungRong(rongLanDau);
   function themLuot(vai, chu, moSettings, nhanTuyChon) {
     anRongLanDau();
     const d = document.createElement("div");
@@ -773,7 +858,12 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
   function capNhatThanhNguCanh() {
     tkLuot.textContent = "Lượt hội thoại: " + thongKeHoiThoai.soLuot;
     tkKyTu.textContent = "Ký tự lịch sử: " + thongKeHoiThoai.soKyTu;
-    tkDinhKem.textContent = "Tệp đính kèm: " + (tepDinhKemHienTai.length + dinhKemNgoaiHienTai.length);
+    const soDinhKem = tepDinhKemHienTai.length + dinhKemNgoaiHienTai.length;
+    tkDinhKem.textContent = "Tệp đính kèm: " + soDinhKem;
+    const chuDinhKem = document.getElementById("dinh-kem-chu");
+    if (chuDinhKem) chuDinhKem.textContent = soDinhKem > 0 ? "Đính kèm (" + soDinhKem + ")" : "Đính kèm";
+    const dh = document.getElementById("dong-ho-token");
+    if (dh) dh.title = "Token ngữ cảnh gửi model ở lượt gần nhất. Hội thoại: " + thongKeHoiThoai.soLuot + " lượt · " + thongKeHoiThoai.soKyTu + " ký tự lịch sử · " + soDinhKem + " tệp đính kèm (đơn vị đo được, không phải token).";
   }
 
   /**
@@ -1224,6 +1314,13 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
       const k = Number(m.vao) || 0;
       dongHoToken.textContent = "Ngữ cảnh: " + (m.uocLuong ? "~" : "") + (k >= 1000 ? (k / 1000).toFixed(1) + "k" : String(k)) +
         " token (" + (Number(m.ctxPhanTram) || 0) + "%)" + (m.ra ? " · ra " + m.ra : "");
+      const pt = Math.max(0, Math.min(100, Number(m.ctxPhanTram) || 0));
+      const thanh = document.getElementById("dong-ho-thanh");
+      if (thanh) {
+        const i = thanh.con && thanh.con[0] ? thanh.con[0] : thanh.firstChild;
+        if (i && i.style) i.style.width = pt + "%";
+        thanh.className = pt >= 75 ? "cao" : "";
+      }
       return;
     }
     if (m.loai === "ag_checkpoint") { nutHoanTac.textContent = "Hoàn tác lượt chạy (" + (m.soTep | 0) + " tệp)"; return; }
@@ -1322,6 +1419,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
   // nó sinh ra, nên phía extension cần biết lúc ô chọn đổi để vứt thẻ duyệt đi (xem bangChat.ts).
   document.getElementById("o-du-an").addEventListener("change", (e) => {
     capNhatGhiChuQuyen();
+    capNhatDongDuAn();
     vscode.postMessage({ loai: "doi_du_an", duAnId: e.target.value });
   });
   document.getElementById("nut-xem-diff").addEventListener("click", () => vscode.postMessage({ loai: "xem_diff" }));
@@ -1494,6 +1592,9 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
         dinhKemNgoaiHienTai.push(m.muc);
         veLaiDsDinhKem();
       }
+    } else if (m.loai === "cau_hinh_anh") {
+      anChoTroLyBat = m.bat === true;
+      if (rongLanDau && rongLanDau.hidden !== true) dungNoiDungRong(rongLanDau);
     } else if (m.loai === "duAn") {
       const o = document.getElementById("o-du-an");
       o.innerHTML = "";

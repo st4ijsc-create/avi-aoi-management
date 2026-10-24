@@ -423,6 +423,8 @@ export class BangChat {
         void this.panel.webview.postMessage({ loai: "muc_quyen", mucQuyen: this.mucQuyenHienTai });
         // ★ 2026-10-24 — CHẾ ĐỘ agent đã lưu (cùng kho/khuôn với mức quyền): mở lại cửa sổ ⇒ chế độ KHÔNG về mặc định.
         void this.panel.webview.postMessage({ loai: "che_do", cheDo: chuanHoaCheDoAgent(this.khoHoiThoaiTho().doc<unknown>(KHOA_CHE_DO_AGENT)) });
+        // ★ 0.3.1 — webview chỉ gợi ý "đọc ảnh" khi cài đặt cho phép (mặc định TẮT, xem aviAiLocal.anhChoTroLy).
+        void this.panel.webview.postMessage({ loai: "cau_hinh_anh", bat: vscode.workspace.getConfiguration("aviAiLocal").get<boolean>("anhChoTroLy", false) === true });
         void this.phienAgent.guiTrangThaiToken();
         return;
       }
