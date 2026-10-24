@@ -878,6 +878,23 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   - **Bổ sung (dieu-phoi duyệt 2026-10-24, viết TRƯỚC khi chạy):** khoá áp cho CẢ 35B ⇒ sau khi chọn N trên 27B, vòng XÁC NHẬN trên 35B + mmproj:
     pha DÀI (40 lượt liên tiếp), N đã chọn so với 32, mỗi bên 1 vòng (thứ tự 32 → N). Kiểm (2)(3)(4) như trên; (1) dùng 62,8 MiB/checkpoint.
     35B không đạt ⇒ đề xuất N theo model (27B = N, 35B = 32) qua `tim-mmproj.ps1`/`start-llama-server.ps1`. Báo số; chưa đổi mặc định.
+  - **KẾT QUẢ (2026-10-24 09:26–09:50, sau khi luong-ui báo xong e2e; `bash scripts/ai-eval/bo-nho/do-ctx-checkpoints.sh` rồi `CHI_35B=1 N_35B=8 …`,
+    `tmp/bo-nho/ctxcp/`, canh-bo-nho suốt đợt; mọi dòng lệnh kiểm có `--cache-ram 0 --mmproj … --ctx-checkpoints N`):**
+
+    | cấu hình | lượt (lỗi) | Private tăng · trần (1) | pha DÀI trung vị | tổng prompt_n | checkpoint max · restored |
+    |---|---|---|---|---|---|
+    | 27B N=32 (a) | 116 (0) | **5,02 GB** | 1.911 ms | 270.613 | 32/32 · 78 |
+    | 27B N=16 | 116 (0) | 2,67 ≤ 3,39 ✓ | 1.849 (0,981×) ✓ | 270.418 (0,999×) ✓ | 16/16 · 78 |
+    | 27B **N=8** | 116 (0) | **1,50 ≤ 2,17 ✓** | 1.821,5 (**0,967×**) ✓ | 270.259 (**0,999×**) ✓ | 8/8 · 78 |
+    | 27B N=32 (b, trôi) | 58 (0) | 5,02 GB | 1.842 ms | 131.149 (1 vòng) | 32/32 · 39 |
+    | 35B N=32 | 40 (0) | 2,32 GB | 752 ms | 55.335 | 32/32 · 39 |
+    | 35B **N=8** | 40 (0) | **0,85 ≤ 1,49 ✓** | 757 (**1,007×**) ✓ | 55.444 (**1,002×**) ✓ | 8/8 · 39 |
+
+    Trung vị pha DÀI N=32 gộp (a)+(b) = 1.884 ms. ⇒ **N=8 ĐẠT cả 4 tiêu chí ở 27B VÀ ở vòng xác nhận 35B** (N nhỏ nhất trong bộ đo). Lý do không mất
+    tốc độ: hội thoại tuyến tính chỉ khôi phục checkpoint MỚI NHẤT (`restored` bằng nhau ở mọi N) — 24 checkpoint cũ hơn của N=32 là commit
+    chết; đổi cuộc thì checkpoint của cuộc trước vô dụng ở mọi N. Tiết kiệm: 27B −3,5 GB commit đỉnh (5,02 → 1,50), 35B −1,5 GB. Không
+    có trôi (32 a/b cùng 5,02 GB). Commit trống thấp nhất 18,6 GB. **Đề xuất (chờ duyệt, CHƯA đổi):** `LLAMA_SERVER_CTX_CHECKPOINTS` mặc
+    định 8 cho cả hai model trong `start-llama-server.ps1` (+ `doi-model.ps1 -CtxCheckpoints 8`), `.env.example` ghi cách đặt lại 32.
   - Phối hợp: luong-ui chạy xong e2e extension TRƯỚC khi giữ khe; nhắc kiem-dinh/luong-ui boot dev với `AI_KB_WARM_ON_BOOT=false
     AI_ORCHESTRATION_ENABLED=false` trong đợt; cuối đợt :8091 về 35B + mmproj (mặc định).
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
