@@ -3877,7 +3877,8 @@
       "safetyPlcConfig": "cấu hình safety-PLC",
       "edgePendingStop": "lệnh DỪNG chờ xử lý",
       "orphanedWriteIntent": "lệnh ghi OT mồ côi",
-      "lateWriteResult": "kết quả ghi đến muộn"
+      "lateWriteResult": "kết quả ghi đến muộn",
+      "mapping": "ánh xạ sản phẩm–máy"
     },
     "operation": {
       "retireEdgeNode": "cho node biên ngừng hoạt động vĩnh viễn",
