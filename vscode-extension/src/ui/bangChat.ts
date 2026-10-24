@@ -423,8 +423,8 @@ export class BangChat {
         void this.panel.webview.postMessage({ loai: "muc_quyen", mucQuyen: this.mucQuyenHienTai });
         // ★ 2026-10-24 — CHẾ ĐỘ agent đã lưu (cùng kho/khuôn với mức quyền): mở lại cửa sổ ⇒ chế độ KHÔNG về mặc định.
         void this.panel.webview.postMessage({ loai: "che_do", cheDo: chuanHoaCheDoAgent(this.khoHoiThoaiTho().doc<unknown>(KHOA_CHE_DO_AGENT)) });
-        // ★ 0.3.1 — webview chỉ gợi ý "đọc ảnh" khi cài đặt cho phép (mặc định TẮT, xem aviAiLocal.anhChoTroLy).
-        void this.panel.webview.postMessage({ loai: "cau_hinh_anh", bat: vscode.workspace.getConfiguration("aviAiLocal").get<boolean>("anhChoTroLy", false) === true });
+        // ★ 0.3.1/0.3.3 — webview chỉ gợi ý "đọc ảnh" khi cài đặt cho phép (mặc định BẬT từ 0.3.3, xem aviAiLocal.anhChoTroLy).
+        void this.panel.webview.postMessage({ loai: "cau_hinh_anh", bat: vscode.workspace.getConfiguration("aviAiLocal").get<boolean>("anhChoTroLy", true) === true });
         void this.phienAgent.guiTrangThaiToken();
         return;
       }
@@ -456,12 +456,12 @@ export class BangChat {
         // ★ 2026-10-24 — ĐỌC ẢNH cho TRỢ LÝ/Chat (đường /api/ai/local-kb) mặc định TẮT (nạp model thị giác tốn VRAM/độ trễ; do-model + chủ dự án duyệt mới bật). Tắt ⇒ ảnh bị bỏ và NÓI RÕ, tệp văn bản vẫn đi.
         // ★ 0.3.2 — ĐƯỜNG AGENT (/v1) gửi ảnh thẳng (ANH_QUA_V1) và KHÔNG chịu cài đặt này: nó đọc bằng chính model đang chạy, không nạp sidecar.
         const duongAgent = cheDoAgent !== undefined && m.tuLenh !== true && this.cheDoHienTai()?.loai !== "server";
-        if (coAnh(ngoai.ds) && !(duongAgent && ANH_QUA_V1) && vscode.workspace.getConfiguration("aviAiLocal").get<boolean>("anhChoTroLy", false) !== true) {
+        if (coAnh(ngoai.ds) && !(duongAgent && ANH_QUA_V1) && vscode.workspace.getConfiguration("aviAiLocal").get<boolean>("anhChoTroLy", true) !== true) {
           const kq = boAnh(ngoai.ds);
           ngoai.ds = kq.ds;
           void this.panel.webview.postMessage({
             loai: "thong_bao",
-            thongDiep: `Đính kèm bị bỏ — đọc ảnh cho Trợ lý đang TẮT (${kq.soAnhBo} ảnh). Bật cài đặt "aviAiLocal.anhChoTroLy" khi quản trị đã bật thị giác máy.`,
+            thongDiep: `Đính kèm bị bỏ — đọc ảnh cho Trợ lý đang TẮT (${kq.soAnhBo} ảnh). Bật lại cài đặt "aviAiLocal.anhChoTroLy" để gửi ảnh cho Trợ lý.`,
           });
         }
         if (cheDoAgent && m.tuLenh !== true && this.cheDoHienTai()?.loai !== "server") {
@@ -1463,7 +1463,11 @@ export class BangChat {
           // model xin một khả năng chắc chắn bị chặn (xem docblock `dayLenhDoc.ts`).
           choPhepChayLenh: duocPhepGhiTheoMucQuyen(this.mucQuyenHienTai).ok,
         });
-        if (vong === 1 && anhKb.image) Object.assign(than, { image: anhKb.image, imageMimeType: anhKb.imageMimeType });
+        if (vong === 1 && anhKb.image) {
+          Object.assign(than, { image: anhKb.image, imageMimeType: anhKb.imageMimeType });
+          // ★ 0.3.3 — KB kèm ảnh chậm (8–58 s, model nghĩ): chỉ báo tiến độ để người dùng không tưởng treo. Đổi sang "Đang trả lời…" khi sự kiện SSE `vision` tới.
+          void this.panel.webview.postMessage({ loai: "tien_do", chu: "Đang đọc ảnh…" });
+        }
         let tt = trangThaiBanDau();
         const { hong } = await moDongSse({
           serverUrl: cfg.get<string>("serverUrl", "http://localhost:3000"),
@@ -1486,6 +1490,7 @@ export class BangChat {
               if (sk.ok === true && vt) khoiVision = vt;
               const chiTietVision = typeof sk.chiTiet === "string" && sk.chiTiet.trim() ? ` Chi tiết: ${sk.chiTiet.trim().slice(0, 300)}` : "";
               const nguonVision = sk.nguon === "model-chinh" ? "model chính" : sk.nguon === "sidecar" ? "model thị giác phụ" : "thị giác máy";
+              void this.panel.webview.postMessage({ loai: "tien_do", chu: "Đang trả lời…" });
               void this.panel.webview.postMessage({
                 loai: "thong_bao",
                 thongDiep: sk.ok === true ? `Đã đọc ảnh bằng ${nguonVision}.` : `Không đọc được ảnh (${lyDoVision(sk.reason)}) — AI trả lời chỉ dựa trên chữ.${chiTietVision}`,

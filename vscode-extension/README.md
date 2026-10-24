@@ -152,7 +152,7 @@ của agent.
 |---|---|---|
 | `aviAiLocal.serverUrl` | `http://localhost:3000` | Địa chỉ máy chủ AI Local. Phạm vi **Máy**. |
 | `aviAiLocal.uiLanguage` | `vi` | Ngôn ngữ trả lời (`vi` / `en` / `zh`). |
-| `aviAiLocal.anhChoTroLy` | `false` | Cho phép đính ảnh (dán/kéo/chọn) khi hỏi Trợ lý. Mặc định TẮT vì máy chủ phải nạp model thị giác (tốn VRAM, thêm độ trễ); chỉ bật khi quản trị đã bật đọc ảnh. |
+| `aviAiLocal.anhChoTroLy` | `true` | Cho phép đính ảnh (dán/kéo/chọn) khi hỏi Trợ lý (đường Chat/KB). Mặc định BẬT từ 0.3.3; tắt nếu máy chủ không có thị giác — ảnh khi đó bị bỏ kèm thông báo. Đường Agent (`/v1`) không phụ thuộc cài đặt này. |
 | `aviAiLocal.nganSachNguCanh` | `24000` | Trần số ký tự mã gửi kèm mỗi lượt hỏi ở Chat cũ. |
 | `aviAiLocal.mcpServers` | `{}` | MCP server ngoài (xem trên). Phạm vi **Máy**. |
 | `aviAiLocal.agentModel` | `chat` | Model logic của cổng `/v1` cho agent (`chat` / `code`). Phạm vi **Máy**. |
@@ -166,7 +166,7 @@ mở một repo thù địch là đủ để chuyển cookie/token sang máy ch�
 ## Cài đặt offline
 
 ```
-code --install-extension avi-ai-local-0.3.2.vsix
+code --install-extension avi-ai-local-0.3.3.vsix
 ```
 
 Đóng gói từ gốc repo:
@@ -176,7 +176,7 @@ npm run ext:build
 npm run ext:package
 ```
 
-Lệnh sinh `vscode-extension/avi-ai-local-0.3.2.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.3.2+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
+Lệnh sinh `vscode-extension/avi-ai-local-0.3.3.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.3.3+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
 
 ## Giới hạn đã biết
 

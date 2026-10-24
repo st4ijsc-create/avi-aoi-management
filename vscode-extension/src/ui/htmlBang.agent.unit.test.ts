@@ -777,3 +777,27 @@ describe("lỗi máy chủ chưa đọc ảnh ⇒ 'Gửi lại không kèm ảnh
     expect("dinhKemNgoai" in (hoi[1] as object)).toBe(false);
   });
 });
+
+describe("tin tien_do (0.3.3)", () => {
+  it("★★★ tien_do đổi CHỮ chỉ báo chờ của khung AI (không tạo bong bóng mới); token/kết thúc vẫn xoá chỉ báo", () => {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    const hoiThoai = w.nut("hoi-thoai") as PT;
+    const soBong = hoiThoai.con.length;
+    w.banTin({ loai: "tien_do", chu: "Đang đọc ảnh…" });
+    const cho = tatCa(hoiThoai).find((x) => x.className === "cho-ai-chu")!;
+    expect(cho.textContent).toBe("Đang đọc ảnh…");
+    w.banTin({ loai: "tien_do", chu: "Đang trả lời…" });
+    expect(cho.textContent).toBe("Đang trả lời…");
+    expect(hoiThoai.con.length).toBe(soBong);
+    w.banTin({ loai: "ag_md", cay: [{ t: "p", c: [{ t: "text", v: "Xong." }] }], chiSoMaDau: 0 });
+    expect(tatCa(hoiThoai).some((x) => x.className === "cho-ai-chu")).toBe(false);
+  });
+
+  it("★ tien_do khi KHÔNG có lượt chờ ⇒ bỏ qua êm (không ném lỗi, không vẽ gì)", () => {
+    const w = chay();
+    expect(() => w.banTin({ loai: "tien_do", chu: "Đang trả lời…" })).not.toThrow();
+    expect((w.nut("hoi-thoai") as PT).con).toHaveLength(0);
+  });
+});

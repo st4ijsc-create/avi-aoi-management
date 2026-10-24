@@ -1716,6 +1716,9 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
     } else if (m.loai === "an_the_duyet_lenh") {
       theDuyetLenh.hidden = true;
       moKhoaNutDuyetLenh();
+    } else if (m.loai === "tien_do") {
+      // ★ 0.3.3 — CHỈ cập nhật dòng chỉ báo chờ (không tạo bong bóng): "Đang đọc ảnh…" → "Đang trả lời…". Token đầu tiên tự xoá chỉ báo.
+      capNhatChiBaoChoAi(String(m.chu || ""));
     } else if (m.loai === "thong_bao") {
       // ⚠⚠ MỞ KHOÁ Ở ĐÂY LÀ BẮT BUỘC, không phải cho gọn. Đường SERVER có một ca CỐ Ý **giữ thẻ
       // lại**: "KHÔNG RÕ KẾT CỤC" (mất mạng giữa chừng) chỉ gửi \`thong_bao\` và KHÔNG gửi

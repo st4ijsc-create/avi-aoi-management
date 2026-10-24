@@ -10,6 +10,8 @@
  *   mô phỏng thứ hai để rồi trôi khỏi bản kia.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const may = vi.hoisted(() => ({
   /** Hàm nhận tin nhắn từ webview mà `BangChat` đăng ký. */
@@ -2111,9 +2113,9 @@ describe("đính kèm NGOÀI workspace — host", () => {
   }
   const thongBao = () => may.daGui.filter((m) => m.loai === "thong_bao").map((m) => String(m.thongDiep));
 
-  it("★★★ MẶC ĐỊNH đọc ảnh cho Trợ lý TẮT: ảnh bị bỏ + được NÓI RÕ, tệp văn bản vẫn đi, thân POST KHÔNG có image", async () => {
+  it("★★★ Cài đặt anhChoTroLy TẮT: ảnh bị bỏ + được NÓI RÕ, tệp văn bản vẫn đi, thân POST KHÔNG có image", async () => {
     chuanBiLocal();
-    delete may.cauHinh.anhChoTroLy;
+    may.cauHinh.anhChoTroLy = false;
     may.hangDoiSse = hangDoiMotVongDonGian("ok");
     may.nhanTin?.({ loai: "hoi", cauHoi: "xem giúp", dinhKemNgoai: [anh, tep("loi.log", "ERR 9")] });
     await nhuong();
@@ -2123,9 +2125,9 @@ describe("đính kèm NGOÀI workspace — host", () => {
     expect(thongBao().some((t) => /đọc ảnh cho Trợ lý đang TẮT \(1 ảnh\).*aviAiLocal\.anhChoTroLy/.test(t))).toBe(true);
   });
 
-  it("★★★ 0.3.2 — Agent + ảnh ⇒ ảnh ĐI THẲNG cho phiên Agent (/v1), kể cả khi anhChoTroLy TẮT; không thông báo 'đang TẮT', không rơi về đường Chat (không POST KB)", async () => {
+  it("★★★ 0.3.2/0.3.3 — Agent + ảnh ⇒ ảnh ĐI THẲNG cho phiên Agent (/v1), kể cả khi anhChoTroLy TẮT; không thông báo 'đang TẮT', không rơi về đường Chat (không POST KB)", async () => {
     const bang = chuanBiLocal();
-    delete may.cauHinh.anhChoTroLy;
+    may.cauHinh.anhChoTroLy = false;
     const chay = vi.spyOn(bang.phienAgent as { chay: (...a: unknown[]) => Promise<void> }, "chay").mockResolvedValue(undefined);
     may.nhanTin?.({ loai: "hoi", cauHoi: "đọc giúp ảnh", cheDoAgent: "sua", dinhKemNgoai: [anh, tep("loi.log", "ERR 9")] });
     await nhuong();
@@ -2420,16 +2422,75 @@ describe("cau_hinh_anh gửi cho webview (2026-10-24)", () => {
   const nhuong = async () => {
     for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
   };
-  it("★★ san_sang ⇒ cau_hinh_anh phản ánh cài đặt aviAiLocal.anhChoTroLy (mặc định TẮT, bật ⇒ true)", async () => {
+  it("★★ san_sang ⇒ cau_hinh_anh phản ánh cài đặt aviAiLocal.anhChoTroLy (mặc định BẬT từ 0.3.3, tắt ⇒ false)", async () => {
     moBang();
     may.daGui = [];
     may.nhanTin?.({ loai: "san_sang" });
     await nhuong();
-    expect(may.daGui.find((m) => m.loai === "cau_hinh_anh")).toEqual({ loai: "cau_hinh_anh", bat: false });
-    may.cauHinh.anhChoTroLy = true;
+    expect(may.daGui.find((m) => m.loai === "cau_hinh_anh")).toEqual({ loai: "cau_hinh_anh", bat: true });
+    may.cauHinh.anhChoTroLy = false;
     may.daGui = [];
     may.nhanTin?.({ loai: "san_sang" });
     await nhuong();
-    expect(may.daGui.find((m) => m.loai === "cau_hinh_anh")).toEqual({ loai: "cau_hinh_anh", bat: true });
+    expect(may.daGui.find((m) => m.loai === "cau_hinh_anh")).toEqual({ loai: "cau_hinh_anh", bat: false });
+  });
+
+  it("★★★ manifest: aviAiLocal.anhChoTroLy mặc định TRUE (package.json khớp mã — mã đọc get(..., true))", () => {
+    const pj = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf8")) as { contributes: { configuration: { properties: Record<string, { default: unknown }> } } };
+    expect(pj.contributes.configuration.properties["aviAiLocal.anhChoTroLy"]!.default).toBe(true);
+  });
+});
+
+describe("chỉ báo tiến độ khi KB kèm ảnh chậm (0.3.3)", () => {
+  const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const anh = { loai: "anh", ten: "m.png", kieu: "image/png", kichThuoc: 70, noiDung: PNG_B64 };
+  const nhuong = async () => {
+    for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+  const tienDo = () => may.daGui.filter((m) => m.loai === "tien_do").map((m) => String(m.chu));
+  function chuanBi() {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:/ws", nhan: "LOCAL · C:/ws", loai: "local" }];
+    bang.duAnChon = "local:C:/ws";
+    may.daGui = [];
+  }
+
+  it("★★★ có ảnh ⇒ 'Đang đọc ảnh…' ngay khi gửi, rồi 'Đang trả lời…' khi sự kiện vision tới (đúng thứ tự, không tạo bong bóng thông báo thừa cho hai chữ này)", async () => {
+    chuanBi();
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "vision", ok: true, visionText: "AL.32", nguon: "model-chinh" });
+        dv.nhan({ type: "token", token: "Mã AL.32." });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "mã này là gì?", dinhKemNgoai: [anh] });
+    await nhuong();
+    expect(tienDo()).toEqual(["Đang đọc ảnh…", "Đang trả lời…"]);
+    expect(may.daGui.some((m) => m.loai === "thong_bao" && /Đang đọc ảnh|Đang trả lời/.test(String(m.thongDiep)))).toBe(false);
+  });
+
+  it("★★ vision KHÔNG đọc được ⇒ vẫn chuyển 'Đang trả lời…' (model trả lời chỉ dựa trên chữ) và nói rõ lý do ở bong bóng", async () => {
+    chuanBi();
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "vision", ok: false, reason: "thieu-tai-nguyen" });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "x", dinhKemNgoai: [anh] });
+    await nhuong();
+    expect(tienDo()).toEqual(["Đang đọc ảnh…", "Đang trả lời…"]);
+    expect(may.daGui.some((m) => m.loai === "thong_bao" && /Không đọc được ảnh/.test(String(m.thongDiep)))).toBe(true);
+  });
+
+  it("★★ KHÔNG có ảnh ⇒ không có chỉ báo tiến độ ảnh nào", async () => {
+    chuanBi();
+    may.hangDoiSse = hangDoiMotVongDonGian("ok");
+    may.nhanTin?.({ loai: "hoi", cauHoi: "câu thường" });
+    await nhuong();
+    expect(tienDo()).toEqual([]);
   });
 });
