@@ -3182,6 +3182,11 @@ export function cauHoiTheoAnh(question: string, context?: KbQueryContext): { cau
   return { cauHoiCongCu: goc, cauHoiTruyVanAnh: [goc, ...(context?.maTuAnh ?? [])].join(" ") };
 }
 
+/** Có ảnh đính kèm ĐÃ ĐỌC được (máy chủ đặt `cauHoiGoc`) — xem `cauHoiTheoAnh`. */
+export function coAnhDaDoc(context?: KbQueryContext): boolean {
+  return typeof context?.cauHoiGoc === "string" && context.cauHoiGoc.trim().length > 0;
+}
+
 export function getCacheKey(question: string, topK: number, userRole: UserRole = "engineer", studioEligible = false): string {
   return `${userRole}|${normalizeText(question)}|k=${topK}|studio=${studioEligible ? 1 : 0}`;
 }
@@ -3214,7 +3219,9 @@ export async function answerQuestion(
   // because they reflect live database state.
   // G2-C — `tryExecuteToolLoop` uỷ quyền NGUYÊN VẸN cho `tryExecuteTool` khi cờ
   // `AI_TOOL_LOOP_ENABLED` TẮT (mặc định) ⇒ đường mặc định không đổi một byte nào.
-  const toolExec = await tryExecuteToolLoop(cauHoiCongCu, context, execCtx);
+  // ★ Đợt 9 (2026-10-24, e2e KB) — có ẢNH đã đọc ⇒ KHÔNG chạy vòng công cụ dữ liệu sống (cùng hình dạng route vscode): câu hỏi kèm ảnh
+  // là câu hỏi VỀ ẢNH; đo được: chữ trong câu/ảnh ("oee", "L1") kéo tool OEE/tra mã lỗi và câu trả lời bỏ qua ảnh.
+  const toolExec = coAnhDaDoc(context) ? KHONG_TOOL_VSCODE : await tryExecuteToolLoop(cauHoiCongCu, context, execCtx);
   const toolResult = toolExec.result;
   const loop = toolExec.loop;
   const clarifyMessage = toolExec.decision.clarifyMessage ?? null;
@@ -3281,7 +3288,7 @@ export async function answerQuestion(
   // ★ PDCA vòng 5 — câu lạc đề cùng miền (không tool, không vscode) ⇒ từ chối chuẩn thay vì để model suy diễn.
   //   Chỉ xét khi đường cũ SẼ gọi model (confidence ≥ 0.30) — dưới ngưỡng đó đường cũ đã từ chối, tự kiểm là phí.
   const lacDeNS =
-    !toolResult && kbContext?.route !== "vscode" && retrieve.confidence >= 0.30 && (await laCauLacDe(cauHoiTruyVanAnh, retrieve, execCtx?.user?.id));
+    !toolResult && !coAnhDaDoc(context) && kbContext?.route !== "vscode" && retrieve.confidence >= 0.30 && (await laCauLacDe(cauHoiTruyVanAnh, retrieve, execCtx?.user?.id));
 
   // Step 2 — If we have live data, short-circuit when the tool's textSummary
   // is already substantial (Lever 8.B). LLM augmentation adds 10-15s latency
@@ -3383,6 +3390,7 @@ export async function answerQuestion(
     answer = cauTuChoiChuan(retrieve.language); // câu hỏi lại (nếu có) được nối ở bước chung bên dưới
   } else if (
     retrieve.confidence >= 0.30 ||
+    coAnhDaDoc(context) || // Đợt 9 — ảnh đã đọc: câu trả lời TRÍCH (không LLM) không dùng được bản đọc ảnh
     (kbContext?.route === "vscode" && !looksLikeLiveFactoryDataQuestion(cauHoiCongCu))
   ) {
     // ★★★ TASK V11 — NHÁNH KIA của `streamAnswer`'s `shouldUseLlm` (xem docblock lớn cạnh
@@ -3644,6 +3652,8 @@ export async function* streamAnswer(
       laVscodeDaBocGiaoThuc = true;
     }
     toolExec = KHONG_TOOL_VSCODE;
+  } else if (coAnhDaDoc(context)) {
+    toolExec = KHONG_TOOL_VSCODE; // Đợt 9 — xem cùng nhánh ở `answerQuestion`
   } else {
     toolExec = yield* chayVongLapToolPhatTienDo(cauHoiCongCu, context, execCtx);
   }
@@ -3840,6 +3850,7 @@ export async function* streamAnswer(
     (!!toolResult ||
       retrieve.confidence >= 0.30 ||
       laVscodeDaBocGiaoThuc ||
+      coAnhDaDoc(context) || // Đợt 9 — ảnh đã đọc ⇒ luôn LLM (trả lời trích không dùng được bản đọc ảnh)
       (context?.route === "vscode" && !looksLikeLiveFactoryDataQuestion(cauHoiTruyVan))) &&
     !toolKhongCoGiDeNoi(toolResult, loop?.rounds.length ?? 1);
 
@@ -3874,7 +3885,7 @@ export async function* streamAnswer(
   }
 
   // ★ PDCA vòng 5 — câu lạc đề cùng miền (không tool, không vscode) ⇒ từ chối chuẩn, KHÔNG gọi model trả lời.
-  if (shouldUseLlm && !accumulated && !toolResult && context?.route !== "vscode" && (await laCauLacDe(cauHoiTruyVan, retrieve, execCtx?.user?.id))) {
+  if (shouldUseLlm && !accumulated && !toolResult && !coAnhDaDoc(context) && context?.route !== "vscode" && (await laCauLacDe(cauHoiTruyVan, retrieve, execCtx?.user?.id))) {
     accumulated = cauTuChoiChuan(retrieve.language);
     provider = "extractive";
     yield { type: "token", token: accumulated };
