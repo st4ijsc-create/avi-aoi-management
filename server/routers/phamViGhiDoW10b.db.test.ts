@@ -33,7 +33,13 @@ let eng!: {
   oee: ReturnType<typeof import("./mqttOeeRouters").oeeRouter.createCaller>;
   es: ReturnType<typeof import("./equipmentStandardsRouter").equipmentStandardsRouter.createCaller>;
 };
-let sup!: { gs: ReturnType<typeof import("./goldenSampleRouter").goldenSampleRouter.createCaller> };
+let sup!: {
+  gs: ReturnType<typeof import("./goldenSampleRouter").goldenSampleRouter.createCaller>;
+  es: ReturnType<typeof import("./equipmentStandardsRouter").equipmentStandardsRouter.createCaller>;
+  alert: ReturnType<typeof import("./mqttOeeRouters").mqttAlertRouter.createCaller>;
+};
+let engAlert!: ReturnType<typeof import("./mqttOeeRouters").mqttAlertRouter.createCaller>;
+let engPred!: ReturnType<typeof import("./aiRouters").predictiveAlertRouter.createCaller>;
 
 async function seedNhaMay(ten: string): Promise<NhaMay> {
   const code = `${RUN}${ten}`;
@@ -70,7 +76,7 @@ beforeAll(async () => {
   for (const k of ["a", "b", "nhap"]) pm[k] = Number((await dung(sql`INSERT INTO product_models (code, name) VALUES (${`${RUN}-${k}`}, ${RUN}) RETURNING id`))[0].id);
   await dung(sql`INSERT INTO product_machine_mappings ("productModelId", "machineId", priority, "isActive") VALUES (${pm.a}, ${A.mid}, 1, true)`);
   await dung(sql`INSERT INTO product_machine_mappings ("productModelId", "machineId", priority, "isActive") VALUES (${pm.b}, ${B.mid}, 1, true)`);
-  const mk = async (ten: string, role: "engineer" | "supervisor") => {
+  const mk = async (ten: string, role: "engineer" | "supervisor", alertPerm = false) => {
     const u = await taoNguoiDungTest(ten, role, { tienTo: "pw10b", ts: RUN, ten: `PW10b ${ten}` });
     await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${u.id}, ${A.code})`);
     for (const [cat, mod] of [
@@ -80,9 +86,12 @@ beforeAll(async () => {
     ] as const) {
       await dung(sql`INSERT INTO permissions ("userId", category, "moduleName", "canView", "canCreate", "canEdit", "canDelete") VALUES (${u.id}, ${cat}, ${mod}, true, true, true, true)`);
     }
+    if (alertPerm) {
+      await dung(sql`INSERT INTO permissions ("userId", category, "moduleName", "canView", "canCreate", "canEdit", "canDelete") VALUES (${u.id}, 'machine_monitoring', ${resolvePermissionModule("machine_alerts")}, true, true, true, true)`);
+    }
     return { user: { id: u.id, role, name: u.name, twoFactorEnabled: true } } as never;
   };
-  const ce = await mk("eng", "engineer");
+  const ce = await mk("eng", "engineer", true);
   const cs = await mk("sup", "supervisor");
   const spc = await import("./spcAdvancedRouter");
   const mqo = await import("./mqttOeeRouters");
@@ -95,7 +104,13 @@ beforeAll(async () => {
     oee: mqo.oeeRouter.createCaller(ce),
     es: (await import("./equipmentStandardsRouter")).equipmentStandardsRouter.createCaller(ce),
   };
-  sup = { gs: (await import("./goldenSampleRouter")).goldenSampleRouter.createCaller(cs) };
+  sup = {
+    gs: (await import("./goldenSampleRouter")).goldenSampleRouter.createCaller(cs),
+    es: (await import("./equipmentStandardsRouter")).equipmentStandardsRouter.createCaller(cs),
+    alert: mqo.mqttAlertRouter.createCaller(cs),
+  };
+  engAlert = mqo.mqttAlertRouter.createCaller(ce);
+  engPred = (await import("./aiRouters")).predictiveAlertRouter.createCaller(ce);
 }, 120_000);
 
 afterAll(async () => {
@@ -115,6 +130,10 @@ afterAll(async () => {
   await dung(sql`DELETE FROM oee_targets WHERE "machineId" IN (${A.mid}, ${B.mid})`).catch(() => undefined);
   await dung(sql`DELETE FROM downtime_events WHERE "machineCode" LIKE ${like}`).catch(() => undefined);
   await dung(sql`DELETE FROM master_alarms WHERE "alarmKey" LIKE ${like}`).catch(() => undefined);
+  await dung(sql`DELETE FROM mqtt_alert_history WHERE "ruleName" LIKE ${like}`).catch(() => undefined);
+  await dung(sql`DELETE FROM mqtt_alert_rules WHERE name LIKE ${like}`).catch(() => undefined);
+  await dung(sql`DELETE FROM mqtt_clients WHERE "clientId" LIKE ${like}`).catch(() => undefined);
+  await dung(sql`DELETE FROM predictive_alerts WHERE title LIKE ${like}`).catch(() => undefined);
   await dung(sql`DELETE FROM device_type_change_requests WHERE "crKey" LIKE ${like} OR "targetTypeKey" LIKE ${like}`).catch(() => undefined);
   await dung(sql`DELETE FROM product_machine_mappings WHERE "productModelId" IN (${P})`).catch(() => undefined);
   await dung(sql`DELETE FROM product_models WHERE id IN (${P})`).catch(() => undefined);
@@ -238,5 +257,54 @@ describe("equipmentStandards — thẻ tenant", () => {
     expect({ l, con: await dem(sql`SELECT count(*)::int AS n FROM master_alarms WHERE id = ${mb.id}`) }).toEqual({ l: Array(7).fill(NF), con: 1 });
     expect(await maLoi(() => eng.es.shelveMasterAlarm({ id: Number(mg.id), shelvedUntil: null } as never))).toBeNull();
     expect(await maLoi(() => eng.es.upsertMasterAlarm({ alarmKey: `${RUN}-ok`, consequence: "minor", factoryId: A.fid } as never))).toBeNull();
+  });
+});
+
+describe("lô W11 — cảnh báo dự đoán · luật cảnh báo MQTT · FCM token · chuẩn toàn tập đoàn", () => {
+  it("predictiveAlert acknowledge / resolve / dismiss cảnh báo máy B ⇒ NOT_FOUND, vẫn ACTIVE; cảnh báo máy A ⇒ được; generatePredictions nhắm nhà máy B ⇒ NOT_FOUND", async () => {
+    const mk = async (ten: string, mid: number | null) => Number((await one(sql`INSERT INTO predictive_alerts ("alertType", title, description, "machineId") VALUES ('DEFECT_SPIKE', ${`${RUN}-${ten}`}, 'd', ${mid}) RETURNING id`)).id);
+    const ib = await mk("pb", B.mid);
+    const ia = await mk("pa", A.mid);
+    const io = await mk("po", null);
+    const l = [
+      await maLoi(() => engPred.acknowledge({ id: ib } as never)),
+      await maLoi(() => engPred.resolve({ id: ib } as never)),
+      await maLoi(() => engPred.dismiss({ id: ib } as never)),
+      await maLoi(() => engPred.acknowledge({ id: io } as never)),
+      await maLoi(() => engPred.generatePredictions({ factoryId: B.fid } as never)),
+      await maLoi(() => engPred.generatePredictions({ machineId: B.mid } as never)),
+    ];
+    await engPred.acknowledge({ id: ia } as never);
+    const st = async (id: number) => (await one(sql`SELECT status AS s FROM predictive_alerts WHERE id = ${id}`)).s;
+    expect({ l, b: await st(ib), a: await st(ia) }).toEqual({ l: Array(6).fill(NF), b: "ACTIVE", a: "ACKNOWLEDGED" });
+  });
+  it("mqttAlert: người thiếu quyền machine_alerts ⇒ FORBIDDEN (create / update / delete / toggle / resolve), luật còn nguyên; người có quyền ⇒ được", async () => {
+    const [r] = await dung(sql`INSERT INTO mqtt_alert_rules (name, "ruleType", "thresholdValue") VALUES (${RUN + "-rule"}, 'LATENCY_THRESHOLD', 5) RETURNING id`);
+    const [h] = await dung(sql`INSERT INTO mqtt_alert_history ("ruleId", "ruleName", "ruleType", "triggeredValue", "thresholdValue", message) VALUES (${r.id}, ${RUN + "-rule"}, 'LATENCY_THRESHOLD', 9, 5, 'm') RETURNING id`);
+    const id = Number(r.id);
+    const l = [
+      await maLoi(() => sup.alert.create({ name: `${RUN}-rule2`, ruleType: "LATENCY_THRESHOLD", thresholdValue: 1 } as never)),
+      await maLoi(() => sup.alert.update({ id, name: `${RUN}-hack` } as never)),
+      await maLoi(() => sup.alert.toggle({ id, isEnabled: false } as never)),
+      await maLoi(() => sup.alert.resolve({ id: Number(h.id) } as never)),
+      await maLoi(() => sup.alert.delete({ id } as never)),
+    ];
+    expect({ l, con: await dem(sql`SELECT count(*)::int AS n FROM mqtt_alert_rules WHERE id = ${id} AND name = ${RUN + "-rule"}`) }).toEqual({ l: Array(5).fill("FORBIDDEN"), con: 1 });
+    await engAlert.toggle({ id, isEnabled: false } as never);
+    expect(await maLoi(() => engAlert.delete({ id } as never))).toBeNull();
+  });
+  it("mqttClient.updateFcmToken: client gắn trạm B ⇒ NOT_FOUND, token không đổi; thiếu quyền ⇒ FORBIDDEN", async () => {
+    const [st] = await dung(sql`SELECT id FROM stations WHERE code = ${B.code}`);
+    const [c] = await dung(sql`INSERT INTO mqtt_clients ("clientId", "deviceId", "stationId", "fcmToken") VALUES (${RUN + "-cli"}, 'dev', ${st.id}, 'cu') RETURNING id`);
+    const l1 = await maLoi(() => eng.mq.updateFcmToken({ clientId: Number(c.id), fcmToken: "moi" } as never));
+    const l2 = await maLoi(() => (async () => { const m = await import("./mqttOeeRouters"); return m.mqttClientRouter.createCaller({ user: { id: 1, role: "supervisor", twoFactorEnabled: true } } as never).updateFcmToken({ clientId: Number(c.id), fcmToken: "x" } as never); })());
+    expect({ l1, l2: l2 === "FORBIDDEN" || l2 === NF, tok: (await one(sql`SELECT "fcmToken" AS t FROM mqtt_clients WHERE id = ${c.id}`)).t }).toEqual({ l1: NF, l2: true, tok: "cu" });
+  });
+  it("equipmentStandards: chuẩn KHÔNG thẻ chỉ admin + kỹ sư — giám sát viên bị FORBIDDEN; chuẩn gắn nhà máy A thì giám sát viên A ghi được", async () => {
+    const [mg] = await dung(sql`INSERT INTO master_alarms ("alarmKey") VALUES (${RUN + "-mag2"}) RETURNING id`);
+    const l1 = await maLoi(() => sup.es.upsertMasterAlarm({ alarmKey: `${RUN}-glob`, consequence: "minor" } as never));
+    const l2 = await maLoi(() => sup.es.shelveMasterAlarm({ id: Number(mg.id), shelvedUntil: null } as never));
+    const l3 = await maLoi(() => sup.es.upsertMasterAlarm({ alarmKey: `${RUN}-a2`, consequence: "minor", factoryId: A.fid } as never));
+    expect({ l1, l2, l3, hangGlob: await dem(sql`SELECT count(*)::int AS n FROM master_alarms WHERE "alarmKey" = ${RUN + "-glob"}`) }).toEqual({ l1: "FORBIDDEN", l2: "FORBIDDEN", l3: null, hangGlob: 0 });
   });
 });

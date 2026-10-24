@@ -417,11 +417,24 @@ export const mqttClientRouter = router({
 
   // Update FCM token for push notifications
   updateFcmToken: protectedProcedure
+    .use(requirePermission("machine_alerts", "canEdit")) // lô W11 (2026-10-25): trước đây MỌI người đăng nhập sửa được FCM token của mqtt client bất kỳ
     .input(z.object({
       clientId: z.number(),
       fcmToken: z.string(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi nhà máy: client phải gắn một trạm trong phạm vi người gọi (client không gắn trạm ⇒ chỉ toàn quyền)
+      {
+        const d = await db.getDb();
+        if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+        const rows = (await d.execute(sql`SELECT "stationId" AS s FROM mqtt_clients WHERE id = ${input.clientId}`)) as unknown as Array<{ s: number | null }>;
+        try {
+          if (rows.length === 0) throw new Error("none");
+          await ghiViTri(ctx, { stationId: rows[0]!.s }, { batBuoc: true });
+        } catch {
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, "Station not found");
+        }
+      }
       await db.updateMqttClientFcmToken(input.clientId, input.fcmToken);
       return { success: true };
     }),
@@ -1493,6 +1506,7 @@ export const mqttAlertRouter = router({
 
   // Create new alert rule
   create: protectedProcedure
+    .use(requirePermission("machine_alerts", "canCreate")) // trước đây MỌI người đăng nhập ghi được luật cảnh báo toàn cục (lô W11, 2026-10-25)
     .input(z.object({
       name: z.string().min(1),
       description: z.string().optional(),
@@ -1517,6 +1531,7 @@ export const mqttAlertRouter = router({
 
   // Update alert rule
   update: protectedProcedure
+    .use(requirePermission("machine_alerts", "canEdit")) // trước đây MỌI người đăng nhập ghi được luật cảnh báo toàn cục (lô W11, 2026-10-25)
     .input(z.object({
       id: z.number(),
       name: z.string().optional(),
@@ -1542,6 +1557,7 @@ export const mqttAlertRouter = router({
 
   // Delete alert rule
   delete: protectedProcedure
+    .use(requirePermission("machine_alerts", "canDelete")) // trước đây MỌI người đăng nhập ghi được luật cảnh báo toàn cục (lô W11, 2026-10-25)
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteMqttAlertRule(input.id);
@@ -1550,6 +1566,7 @@ export const mqttAlertRouter = router({
 
   // Toggle enable/disable
   toggle: protectedProcedure
+    .use(requirePermission("machine_alerts", "canEdit")) // trước đây MỌI người đăng nhập ghi được luật cảnh báo toàn cục (lô W11, 2026-10-25)
     .input(z.object({ id: z.number(), isEnabled: z.boolean() }))
     .mutation(async ({ input }) => {
       await db.updateMqttAlertRule(input.id, { isEnabled: input.isEnabled });
@@ -1570,6 +1587,7 @@ export const mqttAlertRouter = router({
 
   // Resolve an alert
   resolve: protectedProcedure
+    .use(requirePermission("machine_alerts", "canEdit")) // trước đây MỌI người đăng nhập ghi được luật cảnh báo toàn cục (lô W11, 2026-10-25)
     .input(z.object({
       id: z.number(),
       note: z.string().optional(),

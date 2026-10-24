@@ -37,6 +37,7 @@
  * 2026-10-24 W7b: chứng chỉ kỹ năng theo NGƯỜI được cấp (skills.grant/update/revokeCertification · userCertifications.assign/revoke); 8 danh mục chuẩn dùng chung (skills · uom · unit_conversions · material_classes) + safety.abortCollaboration (L-7) chuyển sang MIỄN TRỪ có lý do.
  * 2026-10-25 lô W7c (−1: msaAdvanced.anovaOfStudy) — migration 0421 `measurement_instruments."factoryId"`: thiết bị đo / hiệu chuẩn / MSA theo NHÀ MÁY (đọc + tên thiết bị suy qua instrumentId; NULL ⇒ chỉ toàn quyền) ⇒ 408 → 407.
  * 2026-10-25 lô W10 (−17 vá: routing · spcAdvanced · goldenSample · mqttOee machine/OEE/ngừng máy/mục tiêu · equipmentStandards thẻ tenant; −35 MIỄN TRỪ có lý do sau khi đọc mã: repoWorkspace 17 (danh sách trắng theo người gọi), dashboardWidget 13 (cấu hình cá nhân theo userId), aiGguf 5 (tính toán LLM thuần); aiGguf.soModel* = bí danh adminProcedure) ⇒ 407 → 355. CHƯA đụng (cần quyết định): mqttClient.updateFcmToken · mqttAlert.update/delete/toggle/resolve (luật cảnh báo toàn cục, KHÔNG có requirePermission) .
+ * 2026-10-25 lô W11a (−5 vá: predictiveAlert acknowledge/resolve/dismiss/generatePredictions theo máy/nhà máy của cảnh báo + lọc dữ liệu quét; mqttClient.updateFcmToken theo trạm của client + requirePermission(machine_alerts)); mqttAlert.update/delete/toggle/resolve ⇒ MIỄN TRỪ (luật toàn cục) NHƯNG nay đòi requirePermission(machine_alerts); equipmentStandards: chuẩn KHÔNG thẻ chỉ admin + engineer ghi ⇒ 355 → 350.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ──
@@ -114,11 +115,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/aiRobotAnomalyRouter.ts (2) ──
   "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.evaluateRollback",
   "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.manualRollback",
-  // ── server/routers/aiRouters.ts (4) ──
-  "server/routers/aiRouters.ts#predictiveAlertRouter.acknowledge",
-  "server/routers/aiRouters.ts#predictiveAlertRouter.dismiss",
-  "server/routers/aiRouters.ts#predictiveAlertRouter.generatePredictions",
-  "server/routers/aiRouters.ts#predictiveAlertRouter.resolve",
   // ── server/routers/aiSegmentationRouter.ts (3) ──
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.deleteMask",
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.runSegmentation",
@@ -290,12 +286,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.deleteSetting",
   "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.toggleEnabled",
   "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.upsertSetting",
-  // ── server/routers/mqttOeeRouters.ts (5) ──
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.delete",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.resolve",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.toggle",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.update",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.updateFcmToken",
   // ── server/routers/msdRouter.ts (3) ──
   "server/routers/msdRouter.ts#msdRouter.closeExposure",
   "server/routers/msdRouter.ts#msdRouter.openExposure",
@@ -446,6 +436,14 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
  * (c) không đồng thời nằm trong sổ nợ. Thêm mục = lời khai công khai, người review phải thấy.
  */
 export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
+  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.update":
+    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
+  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.delete":
+    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
+  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.toggle":
+    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
+  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.resolve":
+    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.generate":
     "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25).",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.chat":

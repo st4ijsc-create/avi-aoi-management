@@ -127,11 +127,21 @@ const CONSEQUENCE_ENUM = z.enum(ALARM_CONSEQUENCES as unknown as [string, ...str
  * Phạm vi nhà máy cho GHI chuẩn thiết bị (rà bảo mật 2026-10-25, lô W10): thẻ tenant do client khai (factoryId · corporateCode) phải trong phạm vi người gọi; hàng đã có thẻ
  * ngoài phạm vi ≡ không tồn tại (NOT_FOUND); hàng chuẩn KHÔNG thẻ (toàn tập đoàn) giữ nguyên — danh mục chuẩn dùng chung, ai có machine_control/canCreate đều thao tác.
  */
+/** Chuẩn KHÔNG thẻ (toàn tập đoàn) — chủ dự án 2026-10-25: chỉ vai quản trị / kỹ sư được ghi (ngoài quyền machine_control đã kiểm ở middleware). */
+function chuanToanTapDoanChiAdminKySu(ctx: CoDanhTinh, the: { factoryId?: number | null; corporateCode?: string | null } | undefined | null): void {
+  if (!the || the.factoryId != null || the.corporateCode != null) return;
+  const role = (ctx as { user?: { role?: string | null } | null }).user?.role;
+  if (role !== "admin" && role !== "engineer") {
+    throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "writeCorporateEquipmentStandard" }, "Chỉ vai quản trị / kỹ sư được ghi chuẩn thiết bị toàn tập đoàn (không gắn nhà máy).");
+  }
+}
 async function theKhaiGhi(ctx: CoDanhTinh, the: { factoryId?: number | null; corporateCode?: string | null }): Promise<void> {
   if (!(await theTenantHopLe(ctx, the))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, "Factory not found");
+  chuanToanTapDoanChiAdminKySu(ctx, the);
 }
 async function hangTheGhi(ctx: CoDanhTinh, row: { factoryId?: number | null; corporateCode?: string | null } | undefined | null): Promise<void> {
   if (row && !(await theTenantHopLe(ctx, row))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "record" }, "Record not found");
+  chuanToanTapDoanChiAdminKySu(ctx, row);
 }
 
 export const equipmentStandardsRouter = router({
