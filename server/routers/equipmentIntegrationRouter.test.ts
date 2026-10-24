@@ -18,7 +18,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeDb, makeEq, makeAnd, makeDesc } from "./__otFakeDb";
-import { deviceAdapters } from "../../drizzle/schema";
+import { deviceAdapters, machineRecipes } from "../../drizzle/schema";
 import { registerDriver, _clearRegistry } from "../services/ot/driverRegistry";
 import type { OtDriver, OtSample, OtTagAddress } from "../services/ot/otDriver";
 
@@ -62,6 +62,11 @@ vi.mock("../services/equipment/recipeVersioningService", () => ({
 // (permissions table) via checkPermission — mocking it keeps this a pure unit test, same
 // convention as machineRecipeRouter.test.ts.
 const granted = new Set<string>();
+// Phạm vi nhà máy (rà bảo mật 2026-10-24) có test DB thật ở phamViGhiDo.db.test.ts — ở đây (FakeDb) coi người gọi là toàn quyền.
+vi.mock("./_adapterPhamVi", () => ({
+  mayTrongPhamVi: vi.fn(async () => null),
+  idsMayTrongPhamVi: vi.fn(async () => null),
+}));
 vi.mock("../_core/accessControl", () => ({
   requirePermission: (moduleName: string, action: string) => async ({ ctx, next }: any) => {
     if (ctx.user?.role === "admin" || granted.has(`${moduleName}:${action}`)) return next({ ctx });
@@ -103,6 +108,8 @@ beforeEach(() => {
   calls.length = 0;
   granted.clear();
   fake.store.clear();
+  // công thức không gắn máy ⇒ cổng phạm vi nhà máy (congThucTrongPhamVi) cho qua; id không có thật ⇒ NOT_FOUND (có test DB thật riêng)
+  fake.seed(machineRecipes, [5, 7, 9].map((id) => ({ id, code: `R${id}`, machineId: null })));
   process.env.EQ_INTEG_ENABLED = "true";
 });
 afterEach(() => {

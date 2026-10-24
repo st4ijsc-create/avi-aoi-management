@@ -42,6 +42,11 @@ vi.mock("../db", () => ({
 }));
 
 const perm = { allow: true };
+// Phạm vi nhà máy (rà bảo mật 2026-10-24) có test DB thật ở phamViGhiDo.db.test.ts — ở đây (FakeDb) coi người gọi là toàn quyền.
+vi.mock("./_adapterPhamVi", () => ({
+  mayTrongPhamVi: vi.fn(async () => null),
+  idsMayTrongPhamVi: vi.fn(async () => null),
+}));
 vi.mock("../_core/accessControl", () => ({
   requirePermission: () => async ({ ctx, next }: any) => {
     if (!perm.allow) {
