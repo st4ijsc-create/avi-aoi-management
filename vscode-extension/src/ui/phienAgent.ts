@@ -176,7 +176,7 @@ export class PhienAgent {
 
   // ─── LƯỢT CHẠY ───────────────────────────────────────────────────────────────────────────────
 
-  async chay(cauHoiTho: string, cheDoChon: CheDoAgent, tepMention: string[] = []): Promise<void> {
+  async chay(cauHoiTho: string, cheDoChon: CheDoAgent, tepMention: string[] = [], khoiTepNgoai = ""): Promise<void> {
     if (this.dangChay) {
       this.pt.gui({ loai: "ag_loi", thongDiep: "Một lượt agent đang chạy — bấm Dừng trước khi hỏi tiếp.", ma: "DANG_CHAY" });
       return;
@@ -240,6 +240,10 @@ export class PhienAgent {
         if (the.git) dk.gitDiff = await this.chayLenhDoc("git diff", goc[0]);
         cauHoi = dungCauHoiAgent(the.conLai || cauHoiTho, dk);
       }
+
+      // ★ 2026-10-24 — tệp VĂN BẢN người dùng dán/kéo/chọn từ ngoài workspace: nối vào câu hỏi (nhãn nguồn "không thuộc workspace"). Ảnh KHÔNG đi đường này
+      //   (/v1 chưa nhận ảnh — host chuyển lượt có ảnh sang đường Chat, xem bangChat.ts).
+      if (khoiTepNgoai) cauHoi = `${cauHoi}\n\n${khoiTepNgoai}`;
 
       const mucQuyen = chuanHoaMucQuyen(this.pt.mucQuyen());
       if (cheDo === "tu-dong" && mucQuyen !== "tu_ghi") {

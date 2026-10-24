@@ -33,7 +33,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
 <head>
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'nonce-${n}'; script-src 'nonce-${n}';" />
+      content="default-src 'none'; img-src data:; style-src 'nonce-${n}'; script-src 'nonce-${n}';" />
 <style nonce="${n}">
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
          margin: 0; padding: 8px; display: flex; flex-direction: column; height: 100vh; }
@@ -128,6 +128,13 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
                   background: var(--vscode-badge-background, rgba(128,128,128,.15));
                   color: var(--vscode-badge-foreground, var(--vscode-foreground));
                   border-radius: 4px; padding: 2px 6px; font-size: 12px; }
+  /* 2026-10-24 — đính kèm NGOÀI workspace (dán/kéo/chọn từ máy): chip có ảnh thu nhỏ + kích thước; vùng thả viền nét đứt khi đang kéo tệp vào. */
+  .dinh-kem-muc img, .dinh-kem-trong-luot img { width: 28px; height: 28px; object-fit: cover; border-radius: 3px; }
+  .dinh-kem-muc .kt { opacity: .7; font-size: 11px; }
+  .dinh-kem-trong-luot { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .dinh-kem-trong-luot .dk { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; opacity: .85;
+                              background: var(--vscode-badge-background, rgba(128,128,128,.15)); color: var(--vscode-badge-foreground, var(--vscode-foreground)); border-radius: 4px; padding: 2px 6px; }
+  body.keo-tha { outline: 2px dashed var(--vscode-focusBorder); outline-offset: -4px; }
   .dinh-kem-muc button { background: transparent; border: none; color: inherit; cursor: pointer;
                           padding: 0 2px; font-size: 13px; line-height: 1; }
   /* ĐỢT G / TASK G2 / B3 — thanh trạng thái NGỮ CẢNH: chữ NHỎ, mờ (phụ, không phải hành động) —
@@ -281,12 +288,18 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
        THẬT (danh sách + hàng rào rời máy) nằm ở phía extension (\`bangChat.moBoChonDinhKem\`), đúng
        nguyên tắc "hiển thị + chuyển tiếp" đã áp cho thẻ duyệt/nút Dừng/@-mention. SVG nội tuyến,
        cùng cách G1 đã chọn cho icon tài khoản — CSP webview không có font-src. -->
-  <button id="nut-dinh-kem" class="nut-icon" title="Đính kèm tệp" aria-label="Đính kèm tệp trong workspace để gửi kèm câu hỏi">
+  <button id="nut-dinh-kem" class="nut-icon" title="Đính kèm tệp hoặc ảnh (trong workspace hoặc từ máy). Cũng có thể dán ảnh bằng Ctrl+V hoặc kéo tệp vào khung." aria-label="Đính kèm tệp hoặc ảnh để gửi kèm câu hỏi">
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true" focusable="false">
       <path d="M11.3 4.6 6.4 9.5a1.9 1.9 0 1 0 2.7 2.7l4.6-4.6a3.4 3.4 0 1 0-4.8-4.8L3.8 7.9" stroke-linecap="round" stroke-linejoin="round" />
     </svg>
   </button>
-  <textarea id="o-nhap" rows="2" placeholder="Hỏi AI Local… (Ctrl+Enter để gửi, @ để chèn tệp)"></textarea>
+  <!-- 2026-10-24 — đính kèm tệp/ảnh TỪ MÁY (ngoài workspace). Webview chỉ báo ý định; host mở hộp thoại chọn tệp, đọc, kiểm trần/chữ ký/tên nhạy cảm rồi trả lại tin them_dinh_kem_ngoai. -->
+  <button id="nut-dinh-kem-may" class="nut-icon" title="Đính kèm tệp hoặc ảnh từ máy (ngoài workspace)" aria-label="Đính kèm tệp hoặc ảnh từ máy, ngoài workspace">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true" focusable="false">
+      <path d="M8 10.5V2.5M5 5.2 8 2.3l3 2.9M2.5 10v3.5h11V10" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  </button>
+  <textarea id="o-nhap" rows="2" placeholder="Hỏi AI Local… (Ctrl+Enter để gửi, @ chèn tệp, Ctrl+V dán ảnh, kéo tệp vào đây)"></textarea>
   <!-- ĐỢT G / TASK G1 / B4 — icon nhỏ gọn thay chữ "Gửi"; aria-label GIỮ nhãn cho trình đọc màn
        hình (nhỏ gọn không đồng nghĩa vô danh) — hành vi bấm/Ctrl+Enter không đổi (vẫn gọi gui()). -->
   <button id="nut-gui" class="nut-icon" title="Gửi (Ctrl+Enter)" aria-label="Gửi (Ctrl+Enter)">
@@ -519,9 +532,88 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   // ══════════════════════════════════════════════════════════════════════════════════════════
   const dsDinhKem = document.getElementById("ds-dinh-kem");
   let tepDinhKemHienTai = [];
+  // ★★★ 2026-10-24 — đính kèm NGOÀI workspace (người dùng CHỦ ĐỘNG dán ảnh / kéo tệp / chọn "Tệp từ máy…"): {loai, ten, kieu, kichThuoc, noiDung}.
+  // MỘT LẦN (khác tệp workspace sống qua nhiều lượt): gửi kèm câu hỏi kế tiếp rồi xoá — ảnh nặng không được gửi lại mỗi lượt. Webview chỉ GOM + HIỂN THỊ; host kiểm lại
+  // mọi thứ (trần, chữ ký ảnh, tên nhạy cảm) ở loi/dinhKemNgoai.ts.
+  let dinhKemNgoaiHienTai = [];
+  const TRAN_ANH = 6 * 1024 * 1024;
+  const TRAN_TEP = 200 * 1024;
+  const TOI_DA_ANH = 4;
+  const TOI_DA_TEP = 5;
+  const KIEU_ANH = ["image/png", "image/jpeg", "image/webp"];
+  const DUOI_VAN_BAN = ["txt","md","log","csv","tsv","json","xml","yaml","yml","ini","cfg","conf","toml","st","scl","awl","sql","py","js","ts","tsx","jsx","cs","c","h","cpp","hpp","java","go","rs","sh","ps1","bat","html","css","gcode","nc"];
+  function dinhDangByte(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B"; }
+  function baoLoiDinhKem(chu) { themLuot("he_thong", chu, false, "Đính kèm"); }
+  function docFileDinhKem(file) {
+    return new Promise((resolve) => {
+      const kieu = String(file.type || "").toLowerCase();
+      const ten = file.name || (kieu.indexOf("image/") === 0 ? "anh-dan." + kieu.slice(6) : "tep");
+      if (kieu.indexOf("image/") === 0) {
+        if (KIEU_ANH.indexOf(kieu) < 0) { baoLoiDinhKem("Ảnh " + ten + " (" + kieu + ") chưa hỗ trợ — dùng PNG, JPEG hoặc WEBP."); resolve(null); return; }
+        if (file.size > TRAN_ANH) { baoLoiDinhKem("Ảnh " + ten + " quá lớn (" + dinhDangByte(file.size) + ", tối đa " + dinhDangByte(TRAN_ANH) + ")."); resolve(null); return; }
+        const fr = new FileReader();
+        fr.onload = () => { const s = String(fr.result); resolve({ loai: "anh", ten, kieu, kichThuoc: file.size, noiDung: s.slice(s.indexOf(",") + 1) }); };
+        fr.onerror = () => { baoLoiDinhKem("Không đọc được ảnh " + ten + "."); resolve(null); };
+        fr.readAsDataURL(file);
+        return;
+      }
+      const duoi = ten.indexOf(".") >= 0 ? ten.split(".").pop().toLowerCase() : "";
+      const laVanBan = kieu.indexOf("text/") === 0 || kieu === "application/json" || kieu === "application/xml" || DUOI_VAN_BAN.indexOf(duoi) >= 0;
+      if (!laVanBan) { baoLoiDinhKem("Tệp " + ten + " không phải ảnh hay văn bản — chưa hỗ trợ."); resolve(null); return; }
+      if (file.size > TRAN_TEP) { baoLoiDinhKem("Tệp " + ten + " quá lớn (" + dinhDangByte(file.size) + ", tối đa " + dinhDangByte(TRAN_TEP) + ")."); resolve(null); return; }
+      const fr = new FileReader();
+      fr.onload = () => resolve({ loai: "tep", ten, kieu: "text/plain", kichThuoc: file.size, noiDung: String(fr.result) });
+      fr.onerror = () => { baoLoiDinhKem("Không đọc được tệp " + ten + "."); resolve(null); };
+      fr.readAsText(file);
+    });
+  }
+  async function themFileDinhKem(files) {
+    for (const f of files) {
+      const soAnh = dinhKemNgoaiHienTai.filter((d) => d.loai === "anh").length;
+      const soTep = dinhKemNgoaiHienTai.filter((d) => d.loai === "tep").length;
+      const laAnh = String(f.type || "").toLowerCase().indexOf("image/") === 0;
+      if (laAnh && soAnh >= TOI_DA_ANH) { baoLoiDinhKem("Tối đa " + TOI_DA_ANH + " ảnh mỗi lượt — bỏ " + (f.name || "ảnh") + "."); continue; }
+      if (!laAnh && soTep >= TOI_DA_TEP) { baoLoiDinhKem("Tối đa " + TOI_DA_TEP + " tệp từ máy mỗi lượt — bỏ " + (f.name || "tệp") + "."); continue; }
+      const m = await docFileDinhKem(f);
+      if (m) dinhKemNgoaiHienTai.push(m);
+    }
+    veLaiDsDinhKem();
+  }
+  /** Một chip (cả trong danh sách chờ lẫn trong bong bóng người dùng): thumbnail nếu là ảnh + tên + kích thước. */
+  function dungChipNgoai(m, lop) {
+    const dong = document.createElement("span");
+    dong.className = lop;
+    if (m.loai === "anh") {
+      const im = document.createElement("img");
+      im.setAttribute("src", "data:" + m.kieu + ";base64," + m.noiDung);
+      im.setAttribute("alt", m.ten);
+      dong.appendChild(im);
+    }
+    const nhan = document.createElement("span");
+    nhan.textContent = m.ten;
+    const kt = document.createElement("span");
+    kt.className = "kt";
+    kt.textContent = dinhDangByte(m.kichThuoc);
+    dong.appendChild(nhan);
+    dong.appendChild(kt);
+    return dong;
+  }
 
   function veLaiDsDinhKem() {
     dsDinhKem.innerHTML = "";
+    for (const m of dinhKemNgoaiHienTai) {
+      const dong = dungChipNgoai(m, "dinh-kem-muc");
+      const nutGo = document.createElement("button");
+      nutGo.textContent = "×";
+      nutGo.title = "Gỡ tệp đính kèm này";
+      nutGo.setAttribute("aria-label", "Gỡ " + m.ten + " khỏi danh sách đính kèm");
+      nutGo.addEventListener("click", () => {
+        dinhKemNgoaiHienTai = dinhKemNgoaiHienTai.filter((d) => d !== m);
+        veLaiDsDinhKem();
+      });
+      dong.appendChild(nutGo);
+      dsDinhKem.appendChild(dong);
+    }
     for (const duong of tepDinhKemHienTai) {
       const dong = document.createElement("div");
       dong.className = "dinh-kem-muc";
@@ -540,12 +632,49 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       dsDinhKem.appendChild(dong);
     }
     // ★ NHÁNH KIA (B2) — gỡ tệp CUỐI CÙNG ⇒ danh sách BIẾN MẤT GỌN, không để lại khung rỗng lơ lửng.
-    dsDinhKem.hidden = tepDinhKemHienTai.length === 0;
+    dsDinhKem.hidden = tepDinhKemHienTai.length === 0 && dinhKemNgoaiHienTai.length === 0;
     capNhatThanhNguCanh();
   }
 
   document.getElementById("nut-dinh-kem").addEventListener("click", () =>
     vscode.postMessage({ loai: "xin_dinh_kem" }));
+
+  document.getElementById("nut-dinh-kem-may").addEventListener("click", () =>
+    vscode.postMessage({ loai: "xin_dinh_kem_ngoai" }));
+  // ★★★ 2026-10-24 — DÁN ẢNH (Ctrl+V) và KÉO-THẢ TỆP. Trước đây webview không có trình nghe nào: ảnh chụp màn hình trong clipboard bị bỏ, tệp kéo vào bị trình duyệt xử lý mặc định.
+  // Dán CHỮ vẫn như cũ (không có tệp trong clipboard ⇒ không chặn).
+  oNhap.addEventListener("paste", (e) => {
+    const items = e.clipboardData && e.clipboardData.items ? Array.from(e.clipboardData.items) : [];
+    const files = items.filter((i) => i.kind === "file").map((i) => i.getAsFile()).filter(Boolean);
+    if (files.length === 0) return;
+    e.preventDefault();
+    themFileDinhKem(files);
+  });
+  function coTepKeoVao(e) {
+    const t = e.dataTransfer;
+    if (!t) return false;
+    if (t.types && Array.from(t.types).some((k) => k === "Files" || k === "text/uri-list" || k === "resourceurls")) return true;
+    return false;
+  }
+  document.addEventListener("dragover", (e) => {
+    if (!coTepKeoVao(e)) return;
+    e.preventDefault();
+    document.body.classList.add("keo-tha");
+  });
+  document.addEventListener("dragleave", (e) => {
+    if (e.relatedTarget === null) document.body.classList.remove("keo-tha");
+  });
+  document.addEventListener("drop", (e) => {
+    document.body.classList.remove("keo-tha");
+    if (!coTepKeoVao(e)) return;
+    e.preventDefault();
+    const t = e.dataTransfer;
+    const files = t.files ? Array.from(t.files) : [];
+    if (files.length > 0) { themFileDinhKem(files); return; }
+    // kéo từ Explorer của VSCode: chỉ có đường dẫn (không có nội dung) ⇒ host đọc (người dùng CHỦ ĐỘNG kéo), cùng trần/hàng rào.
+    const uris = String(t.getData("text/uri-list") || "").split("\\n").map((x) => x.trim()).filter((x) => x && x.charAt(0) !== "#");
+    if (uris.length > 0) vscode.postMessage({ loai: "dan_uri", uris });
+  });
 
   // ══════════════════════════════════════════════════════════════════════════════════════════
   // ★★★ ĐỢT G / TASK G2 / B3 — THANH TRẠNG THÁI NGỮ CẢNH. \`thongKeHoiThoai\` (số lượt + tổng ký tự
@@ -560,7 +689,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   function capNhatThanhNguCanh() {
     tkLuot.textContent = "Lượt hội thoại: " + thongKeHoiThoai.soLuot;
     tkKyTu.textContent = "Ký tự lịch sử: " + thongKeHoiThoai.soKyTu;
-    tkDinhKem.textContent = "Tệp đính kèm: " + tepDinhKemHienTai.length;
+    tkDinhKem.textContent = "Tệp đính kèm: " + (tepDinhKemHienTai.length + dinhKemNgoaiHienTai.length);
   }
 
   /**
@@ -593,9 +722,19 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   }
 
   function gui() {
-    const cauHoi = oNhap.value.trim();
+    const ngoai = dinhKemNgoaiHienTai.slice();
+    const cauHoi = oNhap.value.trim() || (ngoai.length > 0 ? "Hãy xem nội dung đính kèm và cho biết bạn thấy gì." : "");
     if (!cauHoi) return;
-    themLuot("nguoi_dung", cauHoi);
+    const khungNguoi = themLuot("nguoi_dung", cauHoi);
+    if (ngoai.length > 0) {
+      // người dùng thấy RÕ đã đính kèm gì (tên · kích thước · ảnh thu nhỏ) ngay trong câu hỏi của mình
+      const hang = document.createElement("div");
+      hang.className = "dinh-kem-trong-luot";
+      for (const m of ngoai) hang.appendChild(dungChipNgoai(m, "dk"));
+      khungNguoi.appendChild(hang);
+    }
+    dinhKemNgoaiHienTai = [];
+    veLaiDsDinhKem();
     oNhap.value = "";
     xoaChiBaoChoAi(); // lượt TRƯỚC (nếu còn sót chỉ báo vì lý do bất thường) không được dính sang lượt này.
     khoiTraLoi = themLuot("ai", "");
@@ -624,6 +763,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     // ★★★ ĐỢT 4B — chế độ agent đi kèm lượt hỏi (Cmd+K và "Chat cũ" KHÔNG kèm ⇒ đường cũ). Ô rỗng ⇒ mặc định "sua".
     const cheDo = oCheDo.value || "sua";
     const tin = { loai: "hoi", cauHoi, duAnId: document.getElementById("o-du-an").value, tepMention, tuLenh };
+    if (ngoai.length > 0) tin.dinhKemNgoai = ngoai;
     if (!tuLenh && cheDo !== "chat-cu") tin.cheDoAgent = cheDo;
     agBatDauLuot();
     vscode.postMessage(tin);
@@ -1043,6 +1183,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     // duyệt/nút Dừng ở trên — một tệp đính kèm của hội thoại A tự động đi theo sang hội thoại B là
     // một rò rỉ ngữ cảnh giữa hai cuộc trò chuyện không liên quan.
     tepDinhKemHienTai = [];
+    dinhKemNgoaiHienTai = [];
     veLaiDsDinhKem();
   }
 
@@ -1087,6 +1228,12 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // đúng tệp đã đính kèm không đẻ thêm một chip thứ hai.
       if (!tepDinhKemHienTai.includes(m.duong)) {
         tepDinhKemHienTai.push(m.duong);
+        veLaiDsDinhKem();
+      }
+    } else if (m.loai === "them_dinh_kem_ngoai") {
+      // host đã đọc + kiểm (trần, chữ ký ảnh, tên nhạy cảm) một tệp người dùng chọn/kéo từ máy — webview chỉ hiển thị + giữ để gửi kèm.
+      if (m.muc && typeof m.muc.ten === "string" && (m.muc.loai === "anh" || m.muc.loai === "tep")) {
+        dinhKemNgoaiHienTai.push(m.muc);
         veLaiDsDinhKem();
       }
     } else if (m.loai === "duAn") {

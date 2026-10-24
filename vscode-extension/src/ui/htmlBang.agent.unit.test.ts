@@ -70,6 +70,8 @@ function chay() {
   new Function("document", "window", "acquireVsCodeApi", ma)(
     {
       getElementById: nut,
+      addEventListener: () => undefined,
+      body: { classList: { add: () => undefined, remove: () => undefined } },
       createElement: (t: string) => {
         theTao.push(String(t).toLowerCase());
         return new PT(String(t).toLowerCase());
@@ -84,7 +86,9 @@ function chay() {
 describe("webview agent — tĩnh", () => {
   const html = dungHtmlBang({ nonce: "N" });
   it("★★★ CSP KHOÁ giữ nguyên: default-src 'none', script chỉ bằng nonce, không unsafe-inline/eval", () => {
-    expect(html).toContain(`default-src 'none'; style-src 'nonce-N'; script-src 'nonce-N';`);
+    // 2026-10-24: chỉ MỞ THÊM `img-src data:` (ảnh thu nhỏ của chip đính kèm do CHÍNH webview tạo bằng FileReader) — không nguồn ngoài nào khác.
+    expect(html).toContain(`default-src 'none'; img-src data:; style-src 'nonce-N'; script-src 'nonce-N';`);
+    expect(html).not.toMatch(/img-src[^;]*(https?:|\*)/);
     expect(html).not.toMatch(/unsafe-(inline|eval)/);
   });
   it("★★★ script KHÔNG gán innerHTML với nội dung (chỉ được dọn bằng chuỗi rỗng)", () => {

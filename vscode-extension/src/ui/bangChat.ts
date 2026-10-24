@@ -35,6 +35,17 @@ import { trangThaiBanDau, apDungSuKienChat, ketLuanLuotChat } from "../loi/suKie
 import { docDeXuatGhi, laTaoTepMoi, type DeXuatGhi } from "../loi/deXuatGhi";
 import { tomTatDiff } from "../loi/tomTatDiff";
 import { coDuocHienTheDuyet, suyCheDo } from "../loi/kiemTraCheDo";
+import {
+  anhChoKb,
+  coAnh,
+  dungKhoiTepNgoai,
+  kiemTraDinhKemNgoai,
+  laTenNhayCam,
+  lamSachTen,
+  TRAN_ANH_BYTE,
+  TRAN_TEP_BYTE,
+  type DinhKemNgoai,
+} from "../loi/dinhKemNgoai";
 import { goiDuyet, goiHuy, daBiTuChoiGhi, maTuChoiGhi } from "../mang/duyetGhi";
 import type { KhoDeXuat } from "./diffDeXuat";
 import { docDeXuatCucBo, type DeXuatCucBo } from "../loi/deXuatCucBo";
@@ -107,6 +118,24 @@ import {
   boQuaBuocHoi,
   type MucQuyen,
 } from "../loi/mucQuyen";
+
+/**
+ * ★ 2026-10-24 — `/v1/chat/completions` (đường Agent) hiện VỨT phần `image_url` (server/routes/openaiGateway.ts contentToString chỉ giữ `type:"text"`), nên ảnh chỉ đọc được qua đường Chat
+ * (`/api/ai/local-kb/stream`, trường `image`). Khi máy chủ nhận ảnh ở /v1 (việc của do-model), bật hằng này (hoặc chuyển thành cài đặt) để lượt Agent gửi ảnh thẳng.
+ */
+const ANH_QUA_V1 = false;
+
+/** Lý do máy chủ không đọc được ảnh (`vision.reason`) → tiếng Việt cho người dùng. */
+function lyDoVision(reason: unknown): string {
+  switch (reason) {
+    case "type": return "định dạng không hỗ trợ, chỉ nhận PNG/JPEG/WEBP";
+    case "size": return "ảnh quá lớn";
+    case "decode": return "ảnh hỏng";
+    case "unavailable": return "máy chủ chưa bật thị giác máy";
+    case "empty": return "model không đọc ra nội dung";
+    default: return "lỗi khi đọc ảnh";
+  }
+}
 // ★★★ ĐỢT H / TASK H3 — bộ nhớ dài hạn. `khoBoNho.ts` (THUẦN) chỉ biết lưu/đọc/xoá; tệp này CHỈ đọc
 // mục nhớ để đính vào câu hỏi (B4: đi thẳng vào `question` GỬI ĐI qua `dungYeuCauStream`, KHÔNG BAO
 // GIỜ đọc lại bằng `docYeuCauDoc`/`docDeXuatCucBo`) và xử lý đề xuất nhớ AI phát ra (`docDeXuatNho`,
@@ -358,6 +387,9 @@ export class BangChat {
         lyDo?: unknown;
         chiSo?: unknown;
         hanhDong?: unknown;
+        // ★ 2026-10-24 — đính kèm NGOÀI workspace (THÔ — kiểm lại hoàn toàn ở loi/dinhKemNgoai.ts) + danh sách URI kéo từ Explorer.
+        dinhKemNgoai?: unknown;
+        uris?: unknown;
         // (Đợt 5.1) phiếu 👍/👎 — THÔ, kiểm trước khi dùng; văn bản do host giữ, webview chỉ gửi định danh.
         luotId?: unknown;
         chiSoKhoi?: unknown;
@@ -404,11 +436,23 @@ export class BangChat {
         // ★★★ ĐỢT 4B — lượt AGENT: chỉ khi webview nói rõ chế độ agent hợp lệ, KHÔNG phải Cmd+K, và dự án đang chọn
         // là workspace LOCAL (agent chạy trên đĩa máy này; dự án SERVER vẫn đi đường cũ — hộp cát máy chủ).
         const cheDoAgent = m.cheDoAgent === "hoi" || m.cheDoAgent === "sua" || m.cheDoAgent === "tu-dong" ? m.cheDoAgent : undefined;
+        // ★★★ 2026-10-24 — đính kèm NGOÀI workspace: host KIỂM LẠI toàn bộ (trần, chữ ký ảnh, tên nhạy cảm) và BÁO từng mục bị bỏ — không im lặng.
+        const ngoai = kiemTraDinhKemNgoai(m.dinhKemNgoai);
+        for (const lyDo of ngoai.tuChoi) void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Đính kèm bị bỏ — ${lyDo}` });
         if (cheDoAgent && m.tuLenh !== true && this.cheDoHienTai()?.loai !== "server") {
-          void this.phienAgent.chay(m.cauHoi, cheDoAgent, tepMention);
+          if (!ANH_QUA_V1 && coAnh(ngoai.ds)) {
+            // /v1/chat/completions chưa nhận ảnh (máy chủ vứt phần image_url): lượt có ảnh đi đường CHAT để ảnh THẬT SỰ được đọc (Qwen3-VL), và nói rõ cho người dùng.
+            void this.panel.webview.postMessage({
+              loai: "thong_bao",
+              thongDiep: "Lượt này dùng đường Chat (máy chủ) để đọc ảnh — chế độ Agent chưa gửi được ảnh. Agent không chạy công cụ ở lượt này.",
+            });
+            void this.hoi(m.cauHoi, tepMention, false, ngoai.ds);
+            return;
+          }
+          void this.phienAgent.chay(m.cauHoi, cheDoAgent, tepMention, dungKhoiTepNgoai(ngoai.ds));
           return;
         }
-        void this.hoi(m.cauHoi, tepMention, m.tuLenh === true);
+        void this.hoi(m.cauHoi, tepMention, m.tuLenh === true, ngoai.ds);
         return;
       }
       // ★★★ ĐỢT 4B — tin của phiên agent (thẻ duyệt từng tệp, diff, hoàn tác, nhớ, khối mã, đăng nhập device flow).
@@ -443,6 +487,21 @@ export class BangChat {
       // ★★★ ĐỢT G / TASK G2 / B1 — nút "đính kèm tệp". KHÔNG một hàng rào thứ hai: xem
       // `moBoChonDinhKem` (dùng lại đúng `danhSachTepGoiY` mà `guiGoiYMention` ở trên dùng).
       if (m.loai === "xin_dinh_kem") { void this.moBoChonDinhKem(); return; }
+      // ★ 2026-10-24 — đính kèm từ MÁY (ngoài workspace): hộp thoại chọn tệp / kéo từ Explorer. Người dùng CHỦ ĐỘNG chọn; host đọc + kiểm.
+      if (m.loai === "xin_dinh_kem_ngoai") { void this.moHopThoaiTepTuMay(); return; }
+      if (m.loai === "dan_uri") {
+        const uris = Array.isArray(m.uris) ? m.uris.filter((x): x is string => typeof x === "string").slice(0, 10) : [];
+        const ds: vscode.Uri[] = [];
+        for (const u of uris) {
+          try {
+            ds.push(vscode.Uri.parse(u, true));
+          } catch {
+            /* URI hỏng: bỏ */
+          }
+        }
+        void this.nhanTepTuMay(ds);
+        return;
+      }
       if (m.loai === "xem_diff") { void this.xemDiff(); return; }
       if (m.loai === "duyet") { void this.duyetDeXuat(); return; }
       if (m.loai === "huy") { void this.huyDeXuat(); return; }
@@ -574,6 +633,70 @@ export class BangChat {
       loai: "goi_y_mention",
       ds: locDanhSachMention(ds, truy),
     });
+  }
+
+  /** Hộp thoại chọn tệp/ảnh từ MÁY (ngoài workspace). Người dùng tự chọn; không có đường đọc nào khác. */
+  private async moHopThoaiTepTuMay(): Promise<void> {
+    const chon = await vscode.window.showOpenDialog({
+      canSelectMany: true,
+      canSelectFiles: true,
+      canSelectFolders: false,
+      openLabel: "Đính kèm",
+      title: "Chọn tệp hoặc ảnh để gửi kèm câu hỏi (ảnh PNG/JPEG/WEBP ≤ 6 MB, tệp văn bản ≤ 200 KB)",
+    });
+    if (!chon || chon.length === 0) return; // Esc
+    await this.nhanTepTuMay([...chon]);
+  }
+
+  /**
+   * ★★★ 2026-10-24 — đọc các tệp NGƯỜI DÙNG vừa chọn/kéo từ máy (ngoài workspace), kiểm (trần theo STAT trước khi đọc, tên nhạy cảm, chữ ký ảnh, UTF-8) rồi trả cho webview
+   * (`them_dinh_kem_ngoai`). KHÔNG phải quyền đọc tuỳ ý: chỉ những URI người dùng tự đưa vào từ hộp thoại/kéo-thả; `read_file` của agent không đổi.
+   */
+  private async nhanTepTuMay(uris: vscode.Uri[]): Promise<void> {
+    const bao = (thongDiep: string) => void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
+    for (const u of uris.slice(0, 10)) {
+      const ten = lamSachTen(u.fsPath || u.path);
+      if (u.scheme !== "file") {
+        bao(`Đính kèm bị bỏ — "${ten}": chỉ nhận tệp trên máy này.`);
+        continue;
+      }
+      if (laTenNhayCam(ten)) {
+        bao(`Đính kèm bị bỏ — "${ten}": tên tệp thuộc loại nhạy cảm (khoá/bí mật/.env) — không gửi lên máy chủ.`);
+        continue;
+      }
+      let kichThuoc = 0;
+      try {
+        const st = await vscode.workspace.fs.stat(u);
+        if (st.type & vscode.FileType.Directory) {
+          bao(`Đính kèm bị bỏ — "${ten}": là thư mục.`);
+          continue;
+        }
+        kichThuoc = st.size;
+      } catch (e) {
+        bao(`Đính kèm bị bỏ — "${ten}": không đọc được (${(e as Error).message}).`);
+        continue;
+      }
+      const duoi = ten.includes(".") ? ten.split(".").pop()!.toLowerCase() : "";
+      const laAnh = duoi === "png" || duoi === "jpg" || duoi === "jpeg" || duoi === "webp";
+      // chặn theo STAT trước khi đọc (không nạp một tệp 2 GB vào bộ nhớ rồi mới từ chối)
+      if (kichThuoc > (laAnh ? TRAN_ANH_BYTE : TRAN_TEP_BYTE)) {
+        bao(`Đính kèm bị bỏ — "${ten}": quá lớn (${Math.round(kichThuoc / 1024)} KB, tối đa ${laAnh ? "6 MB" : "200 KB"}).`);
+        continue;
+      }
+      let buf: Buffer;
+      try {
+        buf = Buffer.from(await vscode.workspace.fs.readFile(u));
+      } catch (e) {
+        bao(`Đính kèm bị bỏ — "${ten}": không đọc được (${(e as Error).message}).`);
+        continue;
+      }
+      const muc = laAnh
+        ? { loai: "anh", ten, kieu: "", kichThuoc: buf.length, noiDung: buf.toString("base64") }
+        : { loai: "tep", ten, kieu: "text/plain", kichThuoc: buf.length, noiDung: buf.toString("utf8") };
+      const kq = kiemTraDinhKemNgoai([muc]);
+      for (const lyDo of kq.tuChoi) bao(`Đính kèm bị bỏ — ${lyDo}`);
+      for (const d of kq.ds) void this.panel.webview.postMessage({ loai: "them_dinh_kem_ngoai", muc: d });
+    }
   }
 
   /**
@@ -1124,7 +1247,7 @@ export class BangChat {
    * một câu hỏi mang giao thức Cmd+K — hai giao thức cạnh tranh trong cùng một `question` khiến
    * model chọn đọc trước và nuốt mất chỉ dẫn `de_xuat_sua_doan`, Cmd+K im lặng không đẻ thẻ duyệt.
    */
-  private async hoi(cauHoi: string, tepMention: string[] = [], laCmdK = false): Promise<void> {
+  private async hoi(cauHoi: string, tepMention: string[] = [], laCmdK = false, ngoai: DinhKemNgoai[] = []): Promise<void> {
     // ★★★ LƯỢT HỎI MỚI ⇒ ĐỀ XUẤT CŨ HẾT HIỆU LỰC TRÊN GIAO DIỆN. Trước đây thẻ duyệt của lượt
     // trước ở lại NGUYÊN trên bảng trong khi câu trả lời mới đang stream — người dùng đọc câu mới
     // rồi bấm cái nút của câu CŨ. `xuLyDeXuat` có quên đề xuất cũ, nhưng chỉ khi một đề xuất MỚI
@@ -1194,6 +1317,18 @@ export class BangChat {
       }
       nguCanhVong = `${nguCanhVong ?? ""}\n${doanMention.join("\n\n")}`;
     }
+    // ★★★ 2026-10-24 — đính kèm NGOÀI workspace: tệp văn bản vào ngữ cảnh (nhãn "không thuộc workspace"); ảnh qua trường `image` của /api/ai/local-kb/stream
+    // (máy chủ đọc bằng Qwen3-VL rồi gộp vào câu hỏi — hợp đồng đã đo ở server/routes/aiLocalKnowledgeApi.ts). Máy chủ nhận ĐÚNG MỘT ảnh/lượt.
+    const khoiTepNgoai = dungKhoiTepNgoai(ngoai);
+    if (khoiTepNgoai) nguCanhVong = `${nguCanhVong ?? ""}\n${khoiTepNgoai}`;
+    const anhKb = anhChoKb(ngoai);
+    if (anhKb.boQua > 0) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Đường Chat chỉ đọc MỘT ảnh mỗi lượt — đã dùng ảnh đầu, bỏ ${anhKb.boQua} ảnh còn lại.`,
+      });
+    }
+    let khoiVision: string | null = null;
     let traLoiCuoi = "";
     // ★★★ PDCA vòng 2 (round 2, `pdca3-report.md`) — nối NGUYÊN VĂN `traLoiCuoi` của MỌI vòng, KHÔNG
     // dấu phân cách — đúng những gì webview ĐÃ hiển thị SỐNG qua các `postMessage({loai:"token"})`
@@ -1280,6 +1415,7 @@ export class BangChat {
           // model xin một khả năng chắc chắn bị chặn (xem docblock `dayLenhDoc.ts`).
           choPhepChayLenh: duocPhepGhiTheoMucQuyen(this.mucQuyenHienTai).ok,
         });
+        if (vong === 1 && anhKb.image) Object.assign(than, { image: anhKb.image, imageMimeType: anhKb.imageMimeType });
         let tt = trangThaiBanDau();
         const { hong } = await moDongSse({
           serverUrl: cfg.get<string>("serverUrl", "http://localhost:3000"),
@@ -1294,6 +1430,14 @@ export class BangChat {
             // (server/routes/aiLocalKnowledgeApi.ts:595) — KHÔNG phải `text`.
             if (sk.type === "token" && typeof sk.token === "string") {
               void this.panel.webview.postMessage({ loai: "token", chu: sk.token });
+            } else if (sk.type === "vision") {
+              // ★ 2026-10-24 — máy chủ báo bước ĐỌC ẢNH (Qwen3-VL): nói thật kết cục, và giữ bản đọc cho các vòng sau của lượt này.
+              const vt = typeof sk.visionText === "string" ? sk.visionText : "";
+              if (sk.ok === true && vt) khoiVision = vt;
+              void this.panel.webview.postMessage({
+                loai: "thong_bao",
+                thongDiep: sk.ok === true ? "Đã đọc ảnh bằng thị giác máy (Qwen3-VL)." : `Không đọc được ảnh (${lyDoVision(sk.reason)}) — AI trả lời chỉ dựa trên chữ.`,
+              });
             } else if (sk.type === "error") {
               // Máy chủ gửi chi tiết ở `error` (aiLocalKnowledgeApi.ts:628), KHÔNG phải `message`.
               // Nhận cả hai để phòng đường khác, nhưng `error` phải đứng TRƯỚC.
@@ -1392,7 +1536,11 @@ export class BangChat {
         // KẾ TIẾP. Lượt VỪA XONG (câu hỏi + trả lời) vào lịch sử của VÒNG này để model lượt sau còn
         // nhớ nó vừa xin đọc gì — lịch sử này KHÔNG đụng `this.lichSu` (bộ nhớ NGOÀI của bảng chat),
         // xem ghi chú ở cuối hàm.
-        lichSuVong = [...lichSuVong, { role: "user", content: cauHoiVong }, { role: "assistant", content: traLoiCuoi }];
+        lichSuVong = [
+          ...lichSuVong,
+          { role: "user", content: cauHoiVong + (vong === 1 && khoiVision ? `\n\n[Nội dung ảnh đính kèm — do thị giác máy đọc]:\n${khoiVision}` : "") },
+          { role: "assistant", content: traLoiCuoi },
+        ];
         const dsGoc = this.dsGocDoc();
         const doanKetQua: string[] = [];
         for (const y of yeuCau) {

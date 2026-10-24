@@ -29,6 +29,12 @@ const may = vi.hoisted(() => ({
   hangDoiSse: [] as Array<
     (dv: { nhan: (sk: Record<string, unknown>) => void; tinHieu?: AbortSignal }) => Promise<{ hong: string[] }>
   >,
+  /** ★ 2026-10-24 — đĩa giả cho đính kèm TỪ MÁY: đường (fsPath) → byte; `stat`/`readFile` của `vscode.workspace.fs` đọc từ đây. */
+  tepMay: new Map<string, Buffer>(),
+  /** ★ 2026-10-24 — kết quả `showOpenDialog` giả (`undefined` = Esc). */
+  hopThoaiChon: undefined as string[] | undefined,
+  /** ★ 2026-10-24 — số lần `readFile` được gọi (bằng chứng "chặn theo STAT, không nạp tệp quá lớn"). */
+  soLanDocTepMay: 0,
   /** ★★★ H3 — thân POST (`dungYeuCauStream(...)`) của TỪNG lượt gọi SSE, theo đúng thứ tự vòng. */
   thanGoi: [] as Array<Record<string, unknown>>,
   // ★★★ ĐỢT F / TASK 1 — mô phỏng CẶP nơi `extension.ts` ghi CÙNG LÚC lúc đăng nhập/đăng xuất
@@ -202,7 +208,16 @@ vi.mock("../mang/duyetGhi", async (importOriginal) => {
 
 vi.mock("vscode", () => ({
   ViewColumn: { Beside: 2 },
-  Uri: { file: (p: string) => ({ fsPath: p, toString: () => `file://${p}` }) },
+  Uri: {
+    file: (p: string) => ({ scheme: "file", fsPath: p, path: p, toString: () => `file://${p}` }),
+    parse: (u: string) => {
+      const m = /^([a-z]+):\/\/\/?(.*)$/i.exec(u);
+      if (!m) throw new Error("URI sai");
+      const duong = decodeURIComponent(m[2]!);
+      return { scheme: m[1]!.toLowerCase(), fsPath: duong, path: duong, toString: () => u };
+    },
+  },
+  FileType: { File: 1, Directory: 2 },
   // ★★★ ĐỢT F / TASK 1 — bản giả TỐI THIỂU của `aviAiLocal.dangNhap`/`aviAiLocal.dangXuat`. Lưới
   // này KHÔNG đo `extension.ts` (đã có lưới riêng ở `extension.unit.test.ts`) — nó chỉ cần một
   // hàm mô phỏng ĐÚNG hai điều đo được ở mã thật: (1) `executeCommand` trả về ĐÚNG promise của cả
@@ -239,6 +254,7 @@ vi.mock("vscode", () => ({
       reveal: () => undefined,
     }),
     activeTextEditor: undefined,
+    showOpenDialog: async () => (may.hopThoaiChon ? may.hopThoaiChon.map((p) => ({ scheme: "file", fsPath: p, path: p })) : undefined),
     // ★★★ ĐỢT F / TASK 3 — "Lịch sử" (`moLichSu()`). `undefined` khi `may.quickPickChonChiSo`
     // không đặt ⇒ mô phỏng Esc/bấm ra ngoài, KHÔNG chọn gì.
     // ★★★ ĐỢT G / TASK G2 / B1 — MỘT bản giả `showQuickPick` dùng cho HAI luồng ("Lịch sử" — mảng
@@ -264,6 +280,18 @@ vi.mock("vscode", () => ({
       return may.thuMucWorkspace.map((p) => ({ uri: { fsPath: p } }));
     },
     getConfiguration: () => ({ get: <T>(_k: string, mm: T) => mm }),
+    fs: {
+      stat: async (u: { fsPath: string }) => {
+        if (u.fsPath.endsWith("THUMUC")) return { type: 2, size: 0 };
+        const b = may.tepMay.get(u.fsPath);
+        if (!b) throw new Error("ENOENT");
+        return { type: 1, size: b.length };
+      },
+      readFile: async (u: { fsPath: string }) => {
+        may.soLanDocTepMay++;
+        return new Uint8Array(may.tepMay.get(u.fsPath)!);
+      },
+    },
   },
 }));
 
@@ -371,6 +399,9 @@ beforeEach(() => {
   may.thuMucWorkspace = [];
   may.hangDoiSse = [];
   may.thanGoi = [];
+  may.tepMay = new Map();
+  may.hopThoaiChon = undefined;
+  may.soLanDocTepMay = 0;
   may.globalState = {};
   may.workspaceState = {};
   may.lenhGoi = [];
@@ -2044,3 +2075,153 @@ describe("ĐỢT G / TASK G3 / B4 — người dùng đổi mức quyền ('dat_
   });
 });
 
+
+/**
+ * ★★★ 2026-10-24 — LỖI 2 phía HOST: đính kèm từ NGOÀI workspace (dán ảnh / kéo tệp / "Tệp từ máy…").
+ * Hàng rào thật: `loi/dinhKemNgoai.ts` (trần, chữ ký ảnh, tên nhạy cảm) + chặn theo STAT trước khi đọc. Đường Chat gửi ảnh qua trường `image` của
+ * `/api/ai/local-kb/stream` (hợp đồng máy chủ đã đo); Agent chưa gửi được ảnh qua /v1 ⇒ lượt có ảnh đi đường Chat và NÓI RÕ.
+ */
+describe("đính kèm NGOÀI workspace — host", () => {
+  const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const anh = { loai: "anh", ten: "man-hinh.png", kieu: "image/png", kichThuoc: 70, noiDung: PNG_B64 };
+  const tep = (ten: string, noiDung: string) => ({ loai: "tep", ten, kieu: "text/plain", kichThuoc: noiDung.length, noiDung });
+  const nhuong = async () => {
+    for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+  function chuanBiLocal() {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:/ws", nhan: "LOCAL · C:/ws", loai: "local" }];
+    bang.duAnChon = "local:C:/ws";
+    may.daGui = [];
+    return bang;
+  }
+  const thongBao = () => may.daGui.filter((m) => m.loai === "thong_bao").map((m) => String(m.thongDiep));
+
+  it("★★★ Chat cũ + ảnh dán ⇒ thân POST mang `image` (data URL) + `imageMimeType`, đúng hợp đồng máy chủ; sự kiện `vision` ok ⇒ báo 'Đã đọc ảnh'", async () => {
+    chuanBiLocal();
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "vision", ok: true, visionText: "AL.32 — quá dòng" });
+        dv.nhan({ type: "token", token: "Mã AL.32 là quá dòng." });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "mã này là gì?", dinhKemNgoai: [anh] });
+    await nhuong();
+    expect(may.thanGoi).toHaveLength(1);
+    expect(may.thanGoi[0]!.image).toBe(`data:image/png;base64,${PNG_B64}`);
+    expect(may.thanGoi[0]!.imageMimeType).toBe("image/png");
+    expect(thongBao().some((t) => /Đã đọc ảnh/.test(t))).toBe(true);
+  });
+
+  it("★ máy chủ báo `vision` KHÔNG đọc được (chưa bật VL) ⇒ người dùng được NÓI, không im lặng", async () => {
+    chuanBiLocal();
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "vision", ok: false, reason: "unavailable" });
+        dv.nhan({ type: "token", token: "…" });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "x", dinhKemNgoai: [anh] });
+    await nhuong();
+    expect(thongBao().some((t) => /Không đọc được ảnh.*chưa bật thị giác máy/.test(t))).toBe(true);
+  });
+
+  it("★★★ chế độ AGENT + ảnh ⇒ lượt đi đường CHAT (ảnh THẬT SỰ tới máy chủ) và được báo rõ; KHÔNG chạy agent", async () => {
+    chuanBiLocal();
+    may.hangDoiSse = hangDoiMotVongDonGian("ok");
+    may.nhanTin?.({ loai: "hoi", cauHoi: "đọc giúp ảnh", cheDoAgent: "sua", dinhKemNgoai: [anh] });
+    await nhuong();
+    expect(thongBao().some((t) => /dùng đường Chat \(máy chủ\) để đọc ảnh/.test(t))).toBe(true);
+    expect(may.thanGoi[0]?.image).toBe(`data:image/png;base64,${PNG_B64}`);
+    expect(may.daGui.some((m) => String(m.loai).startsWith("ag_"))).toBe(false);
+  });
+
+  it("★★ nhiều ảnh ở đường Chat ⇒ gửi ảnh ĐẦU, báo số ảnh bị bỏ", async () => {
+    chuanBiLocal();
+    may.hangDoiSse = hangDoiMotVongDonGian("ok");
+    may.nhanTin?.({ loai: "hoi", cauHoi: "x", dinhKemNgoai: [anh, { ...anh, ten: "hai.png" }, { ...anh, ten: "ba.png" }] });
+    await nhuong();
+    expect(thongBao().some((t) => /chỉ đọc MỘT ảnh.*bỏ 2 ảnh/.test(t))).toBe(true);
+  });
+
+  it("★★★ tệp văn bản ngoài workspace ⇒ vào ngữ cảnh với nhãn 'KHÔNG thuộc workspace'", async () => {
+    chuanBiLocal();
+    may.hangDoiSse = hangDoiMotVongDonGian("ok");
+    may.nhanTin?.({ loai: "hoi", cauHoi: "giải thích log", dinhKemNgoai: [tep("loi.log", "ERR 42 tại dòng 7")] });
+    await nhuong();
+    const q = String(may.thanGoi[0]!.question);
+    expect(q).toContain("KHÔNG thuộc workspace");
+    expect(q).toContain("ERR 42 tại dòng 7");
+    expect(may.thanGoi[0]!.image).toBeUndefined();
+  });
+
+  it("★★★ TÊN NHẠY CẢM (.env), ảnh giả, tệp nhị phân ⇒ KHÔNG vào câu hỏi và người dùng được báo từng mục", async () => {
+    chuanBiLocal();
+    may.hangDoiSse = hangDoiMotVongDonGian("ok");
+    may.nhanTin?.({
+      loai: "hoi",
+      cauHoi: "câu hỏi",
+      dinhKemNgoai: [tep(".env", "DB_PASSWORD=hunter2"), { ...anh, ten: "gia.png", noiDung: Buffer.from("không phải ảnh").toString("base64") }, tep("x.bin", "a\u0000b")],
+    });
+    await nhuong();
+    const q = String(may.thanGoi[0]!.question);
+    expect(q).not.toContain("hunter2");
+    expect(may.thanGoi[0]!.image).toBeUndefined();
+    const tb = thongBao().filter((t) => t.startsWith("Đính kèm bị bỏ"));
+    expect(tb).toHaveLength(3);
+    expect(tb.join("\n")).toMatch(/nhạy cảm/);
+    expect(tb.join("\n")).toMatch(/không phải ảnh/);
+    expect(tb.join("\n")).toMatch(/nhị phân/);
+  });
+
+  it("★★★ 'Tệp từ máy…': hộp thoại → host đọc, kiểm → webview nhận `them_dinh_kem_ngoai` (tệp văn bản + ảnh)", async () => {
+    chuanBiLocal();
+    may.tepMay.set("C:/x/ghi-chu.txt", Buffer.from("nội dung ghi chú"));
+    may.tepMay.set("C:/x/anh.png", Buffer.from(PNG_B64, "base64"));
+    may.hopThoaiChon = ["C:/x/ghi-chu.txt", "C:/x/anh.png"];
+    may.nhanTin?.({ loai: "xin_dinh_kem_ngoai" });
+    await nhuong();
+    const them = may.daGui.filter((m) => m.loai === "them_dinh_kem_ngoai").map((m) => m.muc as Record<string, unknown>);
+    expect(them.map((m) => [m.loai, m.ten])).toEqual([["tep", "ghi-chu.txt"], ["anh", "anh.png"]]);
+    expect(them[0]!.noiDung).toBe("nội dung ghi chú");
+    expect(them[1]!.kieu).toBe("image/png");
+  });
+
+  it("★★★ hộp thoại: .env ⇒ KHÔNG đọc (readFile không được gọi); thư mục / không tồn tại / quá lớn ⇒ báo, KHÔNG đọc", async () => {
+    chuanBiLocal();
+    may.tepMay.set("C:/x/.env", Buffer.from("SECRET=1"));
+    may.tepMay.set("C:/x/to.png", Buffer.alloc(6 * 1024 * 1024 + 1));
+    may.tepMay.set("C:/x/lon.log", Buffer.alloc(200 * 1024 + 1));
+    may.hopThoaiChon = ["C:/x/.env", "C:/x/THUMUC", "C:/x/khong-co.txt", "C:/x/to.png", "C:/x/lon.log"];
+    may.nhanTin?.({ loai: "xin_dinh_kem_ngoai" });
+    await nhuong();
+    expect(may.soLanDocTepMay).toBe(0); // chặn theo STAT/tên TRƯỚC khi nạp byte nào
+    expect(may.daGui.filter((m) => m.loai === "them_dinh_kem_ngoai")).toEqual([]);
+    const tb = thongBao().join("\n");
+    expect(tb).toMatch(/nhạy cảm/);
+    expect(tb).toMatch(/là thư mục/);
+    expect(tb).toMatch(/không đọc được/);
+    expect(tb).toMatch(/quá lớn/);
+  });
+
+  it("★ Esc ở hộp thoại ⇒ im lặng, không đính kèm gì", async () => {
+    chuanBiLocal();
+    may.hopThoaiChon = undefined;
+    may.nhanTin?.({ loai: "xin_dinh_kem_ngoai" });
+    await nhuong();
+    expect(may.daGui).toEqual([]);
+  });
+
+  it("★★ kéo từ Explorer (`dan_uri`): file:// ⇒ đọc; http(s):// ⇒ TỪ CHỐI (chỉ nhận tệp trên máy)", async () => {
+    chuanBiLocal();
+    may.tepMay.set("C:/x/a.txt", Buffer.from("AAA"));
+    may.nhanTin?.({ loai: "dan_uri", uris: ["file:///C:/x/a.txt", "https://evil.example/x.txt", 5, null] });
+    await nhuong();
+    expect(may.daGui.filter((m) => m.loai === "them_dinh_kem_ngoai").map((m) => (m.muc as { ten: string }).ten)).toEqual(["a.txt"]);
+    expect(thongBao().some((t) => /chỉ nhận tệp trên máy/.test(t))).toBe(true);
+  });
+});
