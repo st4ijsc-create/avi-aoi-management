@@ -20,6 +20,7 @@
  * recordRecipeLoad · aoiOnboarding.saveDraft/deleteDraft/signOff/decommission · bom.recordComponentInstallation) ⇒ 724 → 710.
  * 2026-10-24 lô W2 (−13: safety.createZone/updateZone/ingestProximity/ingestSimulatedHuman/ingestDetectionFrame/startCollaboration ·
  * aiRobotAnomaly.scanRobot/acknowledgeAnomaly · twin.pipeline.convertUrdf/convertStep · rootCause.analyze/update/delete) ⇒ 710 → 697.
+ * 2026-10-24 lô W4a (−3, khoá theo MÁY: productMachineMapping.update/delete · measurementSamples.ingest) ⇒ 697 → 694 (693 trong sổ + 1 miễn trừ).
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (8) ──
@@ -599,7 +600,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productPanelRouter.ts#productPanelRouter.remove",
   "server/routers/productPanelRouter.ts#productPanelRouter.saveBoards",
   "server/routers/productPanelRouter.ts#productPanelRouter.update",
-  // ── server/routers/productRouters.ts (57) ──
+  // ── server/routers/productRouters.ts (54) ──
   "server/routers/productRouters.ts#cadImportRouter.applyCoordinates",
   "server/routers/productRouters.ts#cadImportRouter.applyJob",
   "server/routers/productRouters.ts#cadImportRouter.centroidApply",
@@ -624,7 +625,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productRouters.ts#measurementPointRouter.backfillComponentCodesFromBom",
   "server/routers/productRouters.ts#measurementPointRouter.create",
   "server/routers/productRouters.ts#measurementPointRouter.revertPointsConfigToVersion",
-  "server/routers/productRouters.ts#measurementSamplesRouter.ingest",
   "server/routers/productRouters.ts#measurementTypeCatalogRouter.delete",
   "server/routers/productRouters.ts#measurementTypeCatalogRouter.update",
   "server/routers/productRouters.ts#mpLightingProfileRouter.create",
@@ -645,8 +645,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productRouters.ts#productCategoryRouter.updateCount",
   "server/routers/productRouters.ts#productDocumentRouter.delete",
   "server/routers/productRouters.ts#productDocumentRouter.upload",
-  "server/routers/productRouters.ts#productMachineMappingRouter.delete",
-  "server/routers/productRouters.ts#productMachineMappingRouter.update",
   "server/routers/productRouters.ts#productModelRouter.backfillImageDimensions",
   "server/routers/productRouters.ts#productModelRouter.create",
   "server/routers/productRouters.ts#productModelRouter.delete",
