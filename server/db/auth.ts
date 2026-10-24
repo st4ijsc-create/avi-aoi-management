@@ -647,14 +647,15 @@ export async function verifyBackupCode(userId: number, code: string) {
 /**
  * ★ SCADA R1b-1 Task 8 — TIÊU MÃ DỰ PHÒNG NGUYÊN TỬ (hết double-spend).
  *
- * Trước: `SELECT` mã chưa dùng → `bcrypt.compare` → `UPDATE … WHERE id = $1` (KHÔNG kiểm `is_used`). Hai lượt SONG SONG cùng một mã đều
- * đọc được hàng khi nó còn `is_used = false`, đều khớp, đều UPDATE (lượt hai ghi đè lượt một, không lỗi) ⇒ cả hai trả `true`: một mã
+ * Trước: `SELECT` mã chưa dùng → `bcrypt.compare` → `UPDATE … WHERE id = $1` (KHÔNG kiểm `"isUsed"`). Hai lượt SONG SONG cùng một mã đều
+ * đọc được hàng khi nó còn `"isUsed" = false`, đều khớp, đều UPDATE (lượt hai ghi đè lượt một, không lỗi) ⇒ cả hai trả `true`: một mã
  * "dùng một lần" tiêu được N lần chỉ cần N yêu cầu đồng thời.
  *
- * Lưu trữ thật: bảng riêng `backup_codes` (băm bcrypt, cột `is_used`/`used_at`), nên bcrypt BẮT BUỘC đọc trước. Khuôn: so bcrypt ngoài
- * khoá (chậm, không giữ khoá hàng), rồi ĐÁNH DẤU bằng MỘT câu có điều kiện trên đúng hàng khớp:
- *     UPDATE backup_codes SET is_used = true, used_at = now() WHERE id = $1 AND is_used = false RETURNING id
- * Postgres khoá hàng lúc UPDATE và (READ COMMITTED) đánh giá lại `is_used = false` trên phiên bản mới nhất sau khi lượt kia commit ⇒
+ * Lưu trữ thật: bảng riêng `backup_codes` (băm bcrypt, cột camelCase `"userId"` / `"isUsed"` / `"usedAt"`), nên bcrypt BẮT BUỘC đọc
+ * trước. Khuôn: so bcrypt ngoài khoá (chậm, không giữ khoá hàng), rồi ĐÁNH DẤU bằng MỘT câu có điều kiện trên đúng hàng khớp (= câu drizzle
+ * bên dưới):
+ *     UPDATE backup_codes SET "isUsed" = true, "usedAt" = now() WHERE id = $1 AND "userId" = $2 AND "isUsed" = false RETURNING id
+ * Postgres khoá hàng lúc UPDATE và (READ COMMITTED) đánh giá lại `"isUsed" = false` trên phiên bản mới nhất sau khi lượt kia commit ⇒
  * đúng MỘT lượt nhận lại hàng; lượt thua có 0 hàng RETURNING ⇒ coi như mã không hợp lệ (`false`). Tương đương `SELECT … FOR UPDATE` +
  * đánh dấu nhưng không cần giao dịch / giữ khoá qua bcrypt.
  * ⚠ KHÔNG chạm bộ đếm T16 (charge-before-verify nằm ở `kiemMaDuPhongCoBoDem`, bọc ngoài hàm này).
@@ -677,7 +678,7 @@ export async function tieuMaDuPhongNguyenTu(userId: number, code: string): Promi
   for (const backupCode of codes) {
     const isMatch = await khopMaDuPhong(code, backupCode.code);
     if (isMatch) {
-      // Mark as used — nguyên tử: chỉ lượt NÀO đổi được `is_used` false→true mới thắng.
+      // Mark as used — nguyên tử: chỉ lượt NÀO đổi được `"isUsed"` false→true mới thắng.
       const tieu = await db.update(backupCodes)
         .set({ isUsed: true, usedAt: new Date() })
         .where(
