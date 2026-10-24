@@ -19,8 +19,6 @@ import { resolvePermissionModule } from "@shared/permissions";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 
 const RUN = `pgd${process.pid}${Date.now().toString(36)}`;
-/** =1 ⇒ chạy các ca xuyên nhà máy như test thường (để thấy ĐỎ nguyên văn). Mặc định: `it.fails` (ghi nhận lỗ đã đo). */
-const cross = process.env.PHAMVI_GHI_DO === "1" ? it : it.fails;
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 let db: Db;
@@ -213,7 +211,7 @@ describe("safety.updateZone — sửa vùng an toàn (ngưỡng dừng) của tr
     await userA.saf.updateZone({ id, stopDistanceMm: 900 });
     expect((await dung(sql`SELECT "stopDistanceMm" AS v FROM safety_zones WHERE id = ${id}`))[0]?.v).toBe(900);
   });
-  cross("xuyên nhà máy: vùng trạm B ⇒ phải bị từ chối, ngưỡng dừng vẫn 1000 mm", async () => {
+  it("xuyên nhà máy: vùng trạm B ⇒ phải bị từ chối, ngưỡng dừng vẫn 1000 mm", async () => {
     const id = await seedZone(`${RUN}-zb`, B.sid);
     const loi = await maLoi(() => userA.saf.updateZone({ id, stopDistanceMm: 600 }));
     const v = (await dung(sql`SELECT "stopDistanceMm" AS v FROM safety_zones WHERE id = ${id}`))[0]?.v;

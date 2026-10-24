@@ -18,6 +18,8 @@
  *
  * LỊCH SỬ TRẢ NỢ: 2026-10-24 lô W1 (−14: recipes.create/archive/setGolden/approve · equipmentIntegration.create/archive/release/rollbackRecipeVersion +
  * recordRecipeLoad · aoiOnboarding.saveDraft/deleteDraft/signOff/decommission · bom.recordComponentInstallation) ⇒ 724 → 710.
+ * 2026-10-24 lô W2 (−13: safety.createZone/updateZone/ingestProximity/ingestSimulatedHuman/ingestDetectionFrame/startCollaboration ·
+ * aiRobotAnomaly.scanRobot/acknowledgeAnomaly · twin.pipeline.convertUrdf/convertStep · rootCause.analyze/update/delete) ⇒ 710 → 697.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (8) ──
@@ -163,19 +165,14 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.updateEnsemble",
   // ── server/routers/aiRcaCopilotRouter.ts (1) ──
   "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix",
-  // ── server/routers/aiRobotAnomalyRouter.ts (4) ──
-  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.acknowledgeAnomaly",
+  // ── server/routers/aiRobotAnomalyRouter.ts (2) ──
   "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.evaluateRollback",
   "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.manualRollback",
-  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.scanRobot",
-  // ── server/routers/aiRouters.ts (7) ──
+  // ── server/routers/aiRouters.ts (4) ──
   "server/routers/aiRouters.ts#predictiveAlertRouter.acknowledge",
   "server/routers/aiRouters.ts#predictiveAlertRouter.dismiss",
   "server/routers/aiRouters.ts#predictiveAlertRouter.generatePredictions",
   "server/routers/aiRouters.ts#predictiveAlertRouter.resolve",
-  "server/routers/aiRouters.ts#rootCauseRouter.analyze",
-  "server/routers/aiRouters.ts#rootCauseRouter.delete",
-  "server/routers/aiRouters.ts#rootCauseRouter.update",
   // ── server/routers/aiSegmentationRouter.ts (4) ──
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.buildDataset",
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.deleteMask",
@@ -728,18 +725,12 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/routingRouter.ts#routingRouter.replaceSteps",
   "server/routers/routingRouter.ts#routingRouter.update",
   "server/routers/routingRouter.ts#routingRouter.updateStep",
-  // ── server/routers/safetyRouter.ts (12) ──
+  // ── server/routers/safetyRouter.ts (6) ──
   "server/routers/safetyRouter.ts#safetyRouter.abortCollaboration",
   "server/routers/safetyRouter.ts#safetyRouter.advancePhase",
   "server/routers/safetyRouter.ts#safetyRouter.auditEvent",
-  "server/routers/safetyRouter.ts#safetyRouter.createZone",
-  "server/routers/safetyRouter.ts#safetyRouter.ingestDetectionFrame",
-  "server/routers/safetyRouter.ts#safetyRouter.ingestProximity",
-  "server/routers/safetyRouter.ts#safetyRouter.ingestSimulatedHuman",
   "server/routers/safetyRouter.ts#safetyRouter.recordEvent",
   "server/routers/safetyRouter.ts#safetyRouter.signalHandshake",
-  "server/routers/safetyRouter.ts#safetyRouter.startCollaboration",
-  "server/routers/safetyRouter.ts#safetyRouter.updateZone",
   "server/routers/safetyRouter.ts#safetyRouter.upsertCameraCalibration",
   // ── server/routers/secsGemRouter.ts (1) ──
   "server/routers/secsGemRouter.ts#secsGemRouter.testConnection",
@@ -823,12 +814,10 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.updateTag",
   // ── server/routers/twinGovRouter.ts (1) ──
   "server/routers/twinGovRouter.ts#twinGovRouter.runFidelityCheck",
-  // ── server/routers/twinRouter.ts (5) ──
+  // ── server/routers/twinRouter.ts (3) ──
   "server/routers/twinRouter.ts#twinRouter.models.archive",
   "server/routers/twinRouter.ts#twinRouter.models.register",
   "server/routers/twinRouter.ts#twinRouter.models.uploadAndRegister",
-  "server/routers/twinRouter.ts#twinRouter.pipeline.convertStep",
-  "server/routers/twinRouter.ts#twinRouter.pipeline.convertUrdf",
   // ── server/routers/userRouters.ts (8) ──
   "server/routers/userRouters.ts#userAssignmentRouter.assignCorporate",
   "server/routers/userRouters.ts#userAssignmentRouter.assignFactory",
