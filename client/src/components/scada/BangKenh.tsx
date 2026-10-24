@@ -7,12 +7,14 @@
  *   • Nút "Sửa" chỉ HIỆN khi `canAct` (engineer|admin + machine_control.canEdit) — chỉ là tiện lợi; ranh giới bảo mật là máy chủ
  *     (vai + 2FA + giấy phép + quyền + phạm vi mỗi lần gọi). Lỗi máy chủ (STOP_PIN_NGOAI_DAI, INTERLOCK_NGOAI_DAI, …) đi qua `toastTrpcError`.
  *   • Sửa qua hộp thoại bắt buộc lý do ≥ 5 ký tự; CHỈ trường đổi được gửi (trường vắng = giữ, `null` = bỏ khai).
+ *   • R1a Task 14 — cột "Faceplate" (khi trang truyền `onFaceplate`): nút trên kênh GHI ĐƯỢC (writable + kênh ra + bật) mở M4. Không
+ *     khoá theo `canAct`: operator được ghi kênh mức 1–3 (Q4); máy chủ quyết ở `scadaCommands.request`.
  * Màu chỉ lấy token ISA có sẵn (`--isa-*`, `--alarm-*`); màu không bao giờ là kênh duy nhất (biểu tượng + chữ).
  */
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { AlertTriangle, Pencil } from "lucide-react";
+import { AlertTriangle, Gauge, Pencil } from "lucide-react";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 import { trpc } from "@/lib/trpc";
@@ -23,7 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BIEN_MAU_TONE } from "./chatLuongHienThi";
-import { dinhDangSo, docSoNhap, mucHienThi } from "./kenhHienThi";
+import { dinhDangSo, docSoNhap, laLoaiKenhGhi, mucHienThi } from "./kenhHienThi";
 import { LOP_O_CHON, TruongLyDo, lyDoDuDai } from "./TruongLyDo";
 
 export type HangKenh = inferRouterOutputs<AppRouter>["scadaKenh"]["danhSach"][number];
@@ -205,9 +207,14 @@ function HopSuaKenh({ hang, onDong }: { hang: HangKenh; onDong: () => void }) {
 export interface BangKenhProps {
   rows: HangKenh[];
   canAct: boolean;
+  /** R1a T14 — mở faceplate M4 của một kênh ghi được (vắng ⇒ không có cột) */
+  onFaceplate?: (h: HangKenh) => void;
 }
 
-export function BangKenh({ rows, canAct }: BangKenhProps) {
+/** Kênh nhận lệnh từ faceplate: cùng điều kiện cổng 3 của request (writable + kênh ra) + đang bật. */
+export const kenhGhiDuoc = (h: HangKenh): boolean => h.writable && h.isEnabled && laLoaiKenhGhi(h.loaiKenh);
+
+export function BangKenh({ rows, canAct, onFaceplate }: BangKenhProps) {
   const { t, i18n } = useTranslation();
   const [sua, setSua] = useState<HangKenh | null>(null);
   const so = (v: number | null) => dinhDangSo(v, i18n.language);
@@ -223,6 +230,7 @@ export function BangKenh({ rows, canAct }: BangKenhProps) {
             <TableHead>{t("scada.kenh.col.buoc")}</TableHead>
             <TableHead>{t("scada.kenh.col.muc")}</TableHead>
             <TableHead>{t("scada.kenh.col.tenHienThi")}</TableHead>
+            {onFaceplate && <TableHead>{t("scada.faceplate.nutMo")}</TableHead>}
             {canAct && <TableHead>{t("scada.kenh.col.hanhDong")}</TableHead>}
           </TableRow>
         </TableHeader>
@@ -270,6 +278,16 @@ export function BangKenh({ rows, canAct }: BangKenhProps) {
                   <div>{h.displayName ?? "—"}</div>
                   {h.displayFormat && <div className="text-xs text-muted-foreground">{h.displayFormat}</div>}
                 </TableCell>
+                {onFaceplate && (
+                  <TableCell className="align-top">
+                    {kenhGhiDuoc(h) && (
+                      <Button variant="outline" size="sm" onClick={() => onFaceplate(h)}>
+                        <Gauge className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                        {t("scada.faceplate.nutMo")}
+                      </Button>
+                    )}
+                  </TableCell>
+                )}
                 {canAct && (
                   <TableCell className="align-top">
                     <Button variant="outline" size="sm" onClick={() => setSua(h)}>

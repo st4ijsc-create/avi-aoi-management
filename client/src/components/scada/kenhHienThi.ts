@@ -102,3 +102,89 @@ export function docSoNhap(s: string): number | null | "loi" {
   const n = Number(t);
   return Number.isFinite(n) ? n : "loi";
 }
+
+// ─── R1a Task 14 — khuôn hiển thị `displayFormat` của kênh (M4 faceplate / M5 hộp thoại lệnh) ───────────────────────────────
+/**
+ * Khuôn hiển thị của kênh (cột `displayFormat`, khai ở M12):
+ *   `bool:Tắt,Bật` ⇒ hai nhãn [false, true]; `enum:A,B,C` ⇒ mỗi giá trị một nhãn (kênh số: chỉ số 0..n-1 · kênh chuỗi: chính nhãn);
+ *   `0.00` ⇒ số với đúng 2 chữ thập phân. Không khai / khuôn lạ ⇒ theo `dataType` (bool ⇒ nhãn mặc định của i18n: `nhan: null`).
+ * Quyết định T14 (chưa có định nghĩa ở máy chủ): enum trên kênh số gửi CHỈ SỐ; trên kênh chuỗi gửi NHÃN. Máy chủ vẫn ép + kiểm.
+ */
+export type DinhDangKenh =
+  | { kieu: "so"; soLe: number | null }
+  | { kieu: "bool"; nhan: [string, string] | null }
+  | { kieu: "enum"; nhan: string[] }
+  | { kieu: "chuoi" };
+
+const KHUON_SO = /^0(?:\.(0+))?$/;
+
+export function phanTichDinhDang(fmt: string | null | undefined, dataType: string): DinhDangKenh {
+  const f = (fmt ?? "").trim();
+  if (f.startsWith("bool:")) {
+    const nhan = f.slice(5).split(",").map((s) => s.trim());
+    if (nhan.length === 2 && nhan[0] && nhan[1]) return { kieu: "bool", nhan: [nhan[0], nhan[1]] };
+  }
+  if (f.startsWith("enum:")) {
+    const nhan = f.slice(5).split(",").map((s) => s.trim()).filter(Boolean);
+    if (nhan.length > 0) return { kieu: "enum", nhan };
+  }
+  if (dataType === "bool") return { kieu: "bool", nhan: null };
+  if (dataType === "int" || dataType === "float") {
+    const m = KHUON_SO.exec(f);
+    return { kieu: "so", soLe: m ? (m[1]?.length ?? 0) : null };
+  }
+  return { kieu: "chuoi" };
+}
+
+const laDung = (v: unknown) => v === true || v === 1 || v === "1" || v === "true";
+const laSai = (v: unknown) => v === false || v === 0 || v === "0" || v === "false";
+
+/** Giá trị của nút enum thứ `i` theo kiểu dữ liệu (kênh số ⇒ chỉ số; còn lại ⇒ nhãn). */
+export function giaTriEnum(dataType: string, nhan: string[], i: number): number | string {
+  return dataType === "int" || dataType === "float" ? i : nhan[i];
+}
+
+/** Chỉ số nhãn enum ứng với một giá trị (số ⇒ chỉ số; chuỗi ⇒ trùng nhãn); không khớp ⇒ -1. */
+export function chiSoEnum(v: unknown, nhan: string[]): number {
+  if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < nhan.length) return v;
+  if (typeof v === "string") {
+    const i = nhan.indexOf(v);
+    if (i >= 0) return i;
+    if (/^\d+$/.test(v) && Number(v) < nhan.length) return Number(v);
+  }
+  return -1;
+}
+
+/**
+ * Chữ hiển thị của một giá trị theo khuôn kênh + ngôn ngữ. null / vắng ⇒ "—". `nhanBool` = nhãn mặc định [false, true] khi khuôn bool
+ * không khai nhãn. Giá trị không khớp khuôn (enum ngoài dải, bool lạ) ⇒ in nguyên giá trị (không đoán).
+ */
+export function dinhDangGiaTri(v: unknown, dd: DinhDangKenh, locale: string, nhanBool?: [string, string]): string {
+  if (v === null || v === undefined) return "—";
+  switch (dd.kieu) {
+    case "bool": {
+      const nhan = dd.nhan ?? nhanBool;
+      if (nhan && laDung(v)) return nhan[1];
+      if (nhan && laSai(v)) return nhan[0];
+      break;
+    }
+    case "enum": {
+      const i = chiSoEnum(v, dd.nhan);
+      if (i >= 0) return dd.nhan[i];
+      break;
+    }
+    case "so": {
+      const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+      if (!Number.isFinite(n)) break;
+      if (dd.soLe === null) return dinhDangSo(n, locale);
+      try {
+        return new Intl.NumberFormat(locale, { minimumFractionDigits: dd.soLe, maximumFractionDigits: dd.soLe }).format(n);
+      } catch {
+        return n.toFixed(dd.soLe);
+      }
+    }
+    default:
+      break;
+  }
+  return typeof v === "object" ? JSON.stringify(v) : String(v);
+}

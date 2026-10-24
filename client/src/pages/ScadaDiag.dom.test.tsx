@@ -49,6 +49,8 @@ type Row = Record<string, unknown>;
 const srv = vi.hoisted(() => ({
   rows: [] as Record<string, unknown>[],
   tags: {} as Record<number, Record<string, unknown>[]>,
+  kenh: {} as Record<number, Record<string, unknown>[]>,
+  kenhOpts: [] as Array<{ i: unknown; o?: { enabled?: boolean } }>,
   mau: [] as Record<string, unknown>[],
   danhSachOpts: undefined as Record<string, unknown> | undefined,
   mutCalls: [] as Array<{ proc: string; vars: unknown }>,
@@ -82,6 +84,15 @@ vi.mock("@/lib/trpc", () => {
           },
         },
       }),
+      // R1a T14 — ngăn tag hỏi kênh (writable / loaiKenh) để biết hàng nào có nút Faceplate
+      scadaKenh: {
+        danhSach: {
+          useQuery: (i: { adapterId: number }, o?: { enabled?: boolean }) => {
+            srv.kenhOpts.push({ i, o });
+            return { data: o?.enabled === false ? undefined : (srv.kenh[i.adapterId] ?? []), isLoading: false, isError: false };
+          },
+        },
+      },
       scadaDiag: {
         danhSach: {
           useQuery: (_i: unknown, o: Record<string, unknown>) => {
@@ -108,6 +119,13 @@ vi.mock("@/lib/trpc", () => {
     },
   };
 });
+
+// R1a T14 — Faceplate thật có test riêng (Faceplate.dom.test.tsx); ở đây chỉ kiểm điểm vào + đạo cụ truyền xuống.
+vi.mock("@/components/scada/Faceplate", () => ({
+  Faceplate: (p: { adapterId: number; tagKey: string; machineId: number | null; edgeCode: string | null }) => (
+    <div data-testid="faceplate-stub">{JSON.stringify({ adapterId: p.adapterId, tagKey: p.tagKey, machineId: p.machineId, edgeCode: p.edgeCode })}</div>
+  ),
+}));
 
 import ScadaDiag from "./ScadaDiag";
 
@@ -162,6 +180,8 @@ beforeEach(() => {
   who.canEdit = true;
   srv.rows = rows3();
   srv.tags = {};
+  srv.kenh = {};
+  srv.kenhOpts = [];
   srv.mau = [];
   srv.mutCalls = [];
   srv.mutOpts = {};
@@ -353,6 +373,37 @@ describe("ScadaDiag — ngăn tag của adapter", () => {
     fireEvent.click(screen.getByRole("button", { name: S("scada.diag.nut.mauTho") }));
     expect(srv.mauInput).toEqual({ adapterId: 1, tagKey: "SPD" });
     expect(screen.getByText("4242")).toBeInTheDocument();
+  });
+});
+
+describe("ScadaDiag — nút Faceplate trên hàng tag ghi được (R1a T14)", () => {
+  const tag = (o: Row): Row => ({ tagKey: "T", address: "a", v: 1, q: "good", statusCode: "Good", reason: null, ageMs: 100, stale: false, boDem: { request: 1, loi: 0, good: 1, uncertain: 0, bad: 0 }, ...o });
+  const kenh = (o: Row): Row => ({ tagKey: "T", writable: false, isEnabled: true, loaiKenh: "input", ...o });
+  const nutFp = (tr: HTMLElement) => within(tr).queryByRole("button", { name: S("scada.faceplate.nutMo") });
+
+  it("CHỈ hàng ghi được (writable + kênh ra + bật) có nút; bấm ⇒ Faceplate nhận adapterId/tagKey/machineId/edgeCode", () => {
+    who.role = "operator"; // operator được ghi kênh mức 1–3 (Q4) — nút không bị khoá theo vai, máy chủ quyết
+    srv.tags[1] = [tag({ tagKey: "SP" }), tag({ tagKey: "PV" }), tag({ tagKey: "OFF" }), tag({ tagKey: "RO" })];
+    srv.kenh[1] = [
+      kenh({ tagKey: "SP", writable: true, loaiKenh: "input_output" }),
+      kenh({ tagKey: "PV" }),
+      kenh({ tagKey: "OFF", writable: true, loaiKenh: "output", isEnabled: false }),
+      kenh({ tagKey: "RO", writable: false, loaiKenh: "output" }),
+    ];
+    render(<ScadaDiag />);
+    fireEvent.click(screen.getByText("AD-OK"));
+    const sh = screen.getByRole("dialog");
+    expect(srv.kenhOpts.at(-1)).toEqual({ i: { adapterId: 1 }, o: { enabled: true } });
+    const tr = (k: string) => within(sh).getByText(k).closest("tr") as HTMLElement;
+    expect(nutFp(tr("SP"))).not.toBeNull();
+    for (const k of ["PV", "OFF", "RO"]) expect(nutFp(tr(k)), k).toBeNull();
+    fireEvent.click(nutFp(tr("SP"))!);
+    expect(JSON.parse(screen.getByTestId("faceplate-stub").textContent ?? "{}")).toEqual({ adapterId: 1, tagKey: "SP", machineId: 1, edgeCode: null });
+  });
+
+  it("ngăn đóng ⇒ không hỏi kênh", () => {
+    render(<ScadaDiag />);
+    expect(srv.kenhOpts.every((x) => x.o?.enabled === false)).toBe(true);
   });
 });
 

@@ -5,6 +5,8 @@
  * (2) BẢNG KÊNH của MỘT adapter (`BangKenh`): loại kênh, dải, bước, mức tác động, tên hiển thị, cảnh báo kênh dừng chưa khai mức.
  * Danh sách adapter để chọn lấy từ `scadaDiag.danhSach` (đã lọc phạm vi ở máy chủ) — không thêm thủ tục.
  *
+ * R1a Task 14 — nút "Faceplate" trên kênh ghi được mở M4 (`Faceplate`) cho adapter đang chọn (máy + mã edge lấy từ `scadaDiag.danhSach`).
+ *
  * QUYỀN: nút sửa chỉ hiện với engineer|admin có `machine_control.canEdit` (cùng cổng `canAct` của ScadaDiag) — chỉ là tiện lợi; ranh giới
  * bảo mật là máy chủ (vai + 2FA + giấy phép + quyền + phạm vi mỗi lần gọi). Lỗi máy chủ đi qua `toastTrpcError` (mã AppError đã i18n).
  */
@@ -22,12 +24,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BangKenh } from "@/components/scada/BangKenh";
 import { KenhCheDoMay, type AdapterChon, type HangCheDo } from "@/components/scada/KenhCheDoMay";
 import { LOP_O_CHON } from "@/components/scada/TruongLyDo";
+import { Faceplate } from "@/components/scada/Faceplate";
 import type { HangKenh } from "@/components/scada/BangKenh";
 
 /** Chế độ máy đổi theo mẫu thật (nhấp nháy REMOTE/LOCAL) ⇒ làm mới định kỳ; bảng kênh chỉ làm mới khi sửa. */
 const CHU_KY_CHE_DO_MS = 5000;
 
-type HangAdapterDiag = { adapterId: number; code: string; ten: string; machineId: number | null; soHuu: { loai: string } };
+type HangAdapterDiag = {
+  adapterId: number;
+  code: string;
+  ten: string;
+  machineId: number | null;
+  soHuu: { loai: string; edgeCode?: string | null; edgeNodeId?: number };
+};
 
 function KhungCho({ nhan }: { nhan: string }) {
   return (
@@ -61,6 +70,9 @@ export default function ScadaKenh() {
   const kenhQ = trpc.scadaKenh.danhSach.useQuery({ adapterId: adapter?.adapterId ?? 0 }, { enabled: adapter !== null });
   const kenhs = (kenhQ.data ?? []) as HangKenh[];
   const cheDos = (cheDoQ.data ?? []) as HangCheDo[];
+  const [fpTag, setFpTag] = useState<{ adapterId: number; tagKey: string } | null>(null);
+  const diagChon = ((adapterQ.data ?? []) as HangAdapterDiag[]).find((a) => a.adapterId === adapter?.adapterId);
+  const edgeCode = diagChon?.soHuu.loai === "edge" ? (diagChon.soHuu.edgeCode ?? String(diagChon.soHuu.edgeNodeId ?? "")) : null;
 
   return (
     <DashboardLayout title={t("scada.kenh.title")} navItems={navItems} currentPath="/scada/config/channels">
@@ -115,9 +127,18 @@ export default function ScadaKenh() {
           ) : kenhs.length === 0 ? (
             <EmptyState variant="no-data" title={t("scada.kenh.trong")} compact />
           ) : (
-            <BangKenh rows={kenhs} canAct={canAct} />
+            <BangKenh rows={kenhs} canAct={canAct} onFaceplate={(h) => adapter && setFpTag({ adapterId: adapter.adapterId, tagKey: h.tagKey })} />
           )}
         </SectionCard>
+        {fpTag && adapter && fpTag.adapterId === adapter.adapterId && (
+          <Faceplate
+            adapterId={fpTag.adapterId}
+            tagKey={fpTag.tagKey}
+            machineId={adapter.machineId}
+            edgeCode={edgeCode}
+            onDong={() => setFpTag(null)}
+          />
+        )}
       </PageContainer>
     </DashboardLayout>
   );

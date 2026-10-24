@@ -98,6 +98,13 @@ vi.mock("@/lib/trpc", () => {
   };
 });
 
+// R1a T14 — Faceplate thật có test riêng (Faceplate.dom.test.tsx); ở đây chỉ kiểm nút mở + đạo cụ truyền xuống.
+vi.mock("@/components/scada/Faceplate", () => ({
+  Faceplate: (p: { adapterId: number; tagKey: string; machineId: number | null; edgeCode: string | null }) => (
+    <div data-testid="faceplate-stub">{JSON.stringify({ adapterId: p.adapterId, tagKey: p.tagKey, machineId: p.machineId, edgeCode: p.edgeCode })}</div>
+  ),
+}));
+
 import ScadaKenh from "./ScadaKenh";
 
 const NOW_ISO = new Date().toISOString();
@@ -252,6 +259,32 @@ describe("ScadaKenh — bảng kênh theo adapter", () => {
     render(<ScadaKenh />);
     expect(within(hangTag("mode_sel")).getByText(S("scada.kenh.laKenhCheDo"))).toBeInTheDocument();
     expect(within(hangTag("temp")).queryByText(S("scada.kenh.laKenhCheDo"))).toBeNull();
+  });
+});
+
+describe("ScadaKenh — nút Faceplate (R1a T14)", () => {
+  const nutFp = (tr: HTMLElement) => within(tr).queryByRole("button", { name: S("scada.faceplate.nutMo") });
+  it("CHỈ kênh ghi được (writable + kênh ra + bật) có nút — kể cả operator (không cần quyền sửa kênh)", () => {
+    who.role = "operator";
+    who.canEdit = false;
+    render(<ScadaKenh />);
+    for (const k of ["cmd_stop", "speed_sp", "valve"]) expect(nutFp(hangTag(k)), k).not.toBeNull();
+    for (const k of ["temp", "mode_sel", "off_tag"]) expect(nutFp(hangTag(k)), k).toBeNull();
+    expect(within(hangTag("speed_sp")).queryByRole("button", { name: S("scada.kenh.nut.sua") })).toBeNull();
+  });
+
+  it("bấm ⇒ Faceplate nhận adapterId / tagKey / machineId của adapter đang chọn", () => {
+    render(<ScadaKenh />);
+    fireEvent.click(nutFp(hangTag("speed_sp"))!);
+    expect(JSON.parse(screen.getByTestId("faceplate-stub").textContent ?? "{}")).toEqual({ adapterId: 1, tagKey: "speed_sp", machineId: 10, edgeCode: null });
+  });
+
+  it("adapter edge ⇒ Faceplate nhận mã edge", () => {
+    srv.kenh[2] = [tag({ tagId: 202, tagKey: "edge_sp", writable: true, loaiKenh: "output" })];
+    render(<ScadaKenh />);
+    fireEvent.change(screen.getByLabelText(S("scada.kenh.adapter")), { target: { value: "2" } });
+    fireEvent.click(nutFp(hangTag("edge_sp"))!);
+    expect(JSON.parse(screen.getByTestId("faceplate-stub").textContent ?? "{}")).toEqual({ adapterId: 2, tagKey: "edge_sp", machineId: 11, edgeCode: "E7" });
   });
 });
 
@@ -596,7 +629,8 @@ describe("ScadaKenh — ngôn ngữ", () => {
     );
     render(<ScadaKenh />);
     expect(hangTag("cmd_stop")).toBeInTheDocument();
-    fireEvent.click(within(hangTag("speed_sp")).getByRole("button", { name: new RegExp(".+") }));
+    // R1a T14 — hàng có thêm nút Faceplate ⇒ chọn đúng nút Sửa theo tên đã dịch của ngôn ngữ đang dùng
+    fireEvent.click(within(hangTag("speed_sp")).getByRole("button", { name: i18next.t("scada.kenh.nut.sua") }));
     const text = () => document.body.textContent ?? "";
     expect(text()).not.toMatch(CHU_VIET);
     expect(text()).not.toMatch(/scada\.kenh\./);

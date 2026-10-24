@@ -5,6 +5,7 @@
  * D10 (spec §H): `uncertain` ⇒ viền chấm XÁM (không vàng — trùng cảnh báo medium); `bad` / cũ (stale) ⇒ gạch tím "không tin được".
  * `edge_chua_co_so_lieu` (adapter do edge sở hữu, R0 chưa có số liệu) là MUTED — không bao giờ `bad`/mất kết nối.
  */
+import type { CSSProperties } from "react";
 
 export type TrangThaiM10 = "connecting" | "connected" | "lost" | "disabled" | "khong_ro" | "edge_chua_co_so_lieu";
 export type ToneTrangThai = "ok" | "warn" | "bad" | "muted";
@@ -86,3 +87,18 @@ export const BIEN_MAU_TONE: Record<ToneTrangThai, string> = {
 };
 export const BIEN_MAU_GACH_TIM = "--packml-held";
 export const BIEN_MAU_VIEN_XAM = "--isa-graphic-muted";
+
+/** Kiểu CSS của ô giá trị theo viền D10 — chỉ token ISA có sẵn, không màu cứng. */
+export function kieuVien(vien: VienChatLuong, cu: boolean): CSSProperties {
+  if (vien === "purple-strike") {
+    return {
+      textDecorationLine: "line-through",
+      textDecorationColor: `var(${BIEN_MAU_GACH_TIM})`,
+      textDecorationThickness: "2px",
+      borderBottom: `2px solid var(${BIEN_MAU_GACH_TIM})`,
+      opacity: cu ? 0.6 : 1,
+    };
+  }
+  if (vien === "dotted-grey") return { border: `1px dotted var(${BIEN_MAU_VIEN_XAM})`, borderRadius: 4, padding: "0 4px" };
+  return {};
+}

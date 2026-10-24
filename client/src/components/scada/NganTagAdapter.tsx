@@ -3,9 +3,12 @@
  * "đặt lỗi stub" CHỈ khi API báo `labStub` cho hàng này VÀ người xem là engineer/admin có quyền sửa (`canAct`; máy chủ vẫn kiểm lại).
  * final M2 — đặt / xoá lỗi Lab đi qua hộp lý do (cùng mẫu với Kết nối lại / Tạm tắt ở `ScadaDiag.tsx`): lý do 5..300 ký tự, ghi audit.
  *
+ * R1a Task 14 — nút "Faceplate" trên hàng tag GHI ĐƯỢC (writable + kênh ra + bật, theo `scadaKenh.danhSach`) mở M4 (`Faceplate`).
+ *   Không khoá theo vai: operator được ghi kênh mức 1–3 (Q4) — máy chủ quyết (sàn vai + quyền + 2FA + phạm vi ở `request`).
+ *
  * Hiển thị chất lượng theo D10 (xem `chatLuongHienThi.ts`): uncertain ⇒ "?" + viền chấm xám; bad/cũ ⇒ gạch tím + mờ. Tuổi âm/null ⇒ "—".
  */
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -18,28 +21,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BIEN_MAU_GACH_TIM, BIEN_MAU_VIEN_XAM, dinhDangTuoi, hienChatLuong, type VienChatLuong } from "./chatLuongHienThi";
+import { dinhDangTuoi, hienChatLuong, kieuVien, type VienChatLuong } from "./chatLuongHienThi";
 import { ChipTrangThai, tenEdge, useDonViThoiGian, type HangDiag } from "./BangTruyenThong";
+import { laLoaiKenhGhi } from "./kenhHienThi";
+import { Faceplate } from "./Faceplate";
+import type { HangKenh } from "./BangKenh";
 
 const KY_TU_TOI_DA_LAB = 128;
 /** Khớp `lyDoInput` ở máy chủ (`trim().min(5).max(300)`), như hộp lý do của ScadaDiag. */
 const LY_DO_TOI_THIEU = 5;
 const LY_DO_TOI_DA = 300;
 
-/** Kiểu CSS của ô giá trị theo viền D10 — chỉ token ISA có sẵn, không màu cứng. */
-export function kieuVien(vien: VienChatLuong, cu: boolean): CSSProperties {
-  if (vien === "purple-strike") {
-    return {
-      textDecorationLine: "line-through",
-      textDecorationColor: `var(${BIEN_MAU_GACH_TIM})`,
-      textDecorationThickness: "2px",
-      borderBottom: `2px solid var(${BIEN_MAU_GACH_TIM})`,
-      opacity: cu ? 0.6 : 1,
-    };
-  }
-  if (vien === "dotted-grey") return { border: `1px dotted var(${BIEN_MAU_VIEN_XAM})`, borderRadius: 4, padding: "0 4px" };
-  return {};
-}
+/** Kiểu CSS của ô giá trị theo viền D10 — chuyển sang chatLuongHienThi.ts (R1a T14, dùng chung với Faceplate); giữ tên xuất ở đây. */
+export { kieuVien };
 
 function chuoiGiaTri(v: unknown): string {
   if (v === null || v === undefined) return "—";
@@ -232,13 +226,22 @@ export function NganTagAdapter({ hang, now, canAct, onDong }: NganTagAdapterProp
   const { t, i18n } = useTranslation();
   const donVi = useDonViThoiGian();
   const [mauTag, setMauTag] = useState<{ adapterId: number; tagKey: string } | null>(null);
+  const [fpTag, setFpTag] = useState<{ adapterId: number; tagKey: string } | null>(null);
   const adapterId = hang?.adapterId ?? 0;
   // Đóng ngăn (hang = null) hoặc đổi adapter ⇒ bỏ tag mẫu thô đang xem: mở lại không bắn `mauTho` cũ / không hiện bảng cũ.
   useEffect(() => {
     setMauTag(null);
+    setFpTag(null);
   }, [hang?.adapterId]);
   const q = trpc.scadaDiag.tagCuaAdapter.useQuery({ adapterId }, { enabled: !!hang, refetchInterval: 2000 });
   const tags = q.data ?? [];
+  // R1a T14 — tag nào ghi được (cùng điều kiện cổng 3 của request: writable + kênh ra + bật; máy chủ vẫn kiểm lại)
+  const coBang = !!hang && hang.trangThai !== "edge_chua_co_so_lieu";
+  const kenhQ = trpc.scadaKenh.danhSach.useQuery({ adapterId }, { enabled: coBang });
+  const ghiDuoc = new Set(
+    ((kenhQ.data ?? []) as HangKenh[]).filter((k) => k.writable && k.isEnabled && laLoaiKenhGhi(k.loaiKenh)).map((k) => k.tagKey),
+  );
+  const fpDangMo = fpTag && hang && fpTag.adapterId === hang.adapterId ? fpTag : null;
   const mauDangXem = mauTag && hang && mauTag.adapterId === hang.adapterId ? mauTag : null;
   return (
     <Sheet open={!!hang} onOpenChange={(o) => !o && onDong()}>
@@ -297,10 +300,15 @@ export function NganTagAdapter({ hang, now, canAct, onDong }: NganTagAdapterProp
                             {dinhDangTuoi(g.ageMs, donVi, i18n.language)}
                           </TableCell>
                           <TableCell className="text-xs">{g.statusCode ?? "—"}</TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <Button size="sm" variant="ghost" onClick={() => setMauTag({ adapterId: hang.adapterId, tagKey: g.tagKey })}>
                               {t("scada.diag.nut.mauTho")}
                             </Button>
+                            {ghiDuoc.has(g.tagKey) && (
+                              <Button size="sm" variant="outline" onClick={() => setFpTag({ adapterId: hang.adapterId, tagKey: g.tagKey })}>
+                                {t("scada.faceplate.nutMo")}
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       );
@@ -310,6 +318,15 @@ export function NganTagAdapter({ hang, now, canAct, onDong }: NganTagAdapterProp
               )}
               {mauDangXem && <MauTho adapterId={mauDangXem.adapterId} tagKey={mauDangXem.tagKey} />}
               {canAct && hang.labStub && <KhoiLab adapterId={hang.adapterId} code={hang.code} />}
+              {fpDangMo && (
+                <Faceplate
+                  adapterId={fpDangMo.adapterId}
+                  tagKey={fpDangMo.tagKey}
+                  machineId={hang.machineId}
+                  edgeCode={tenEdge(hang)}
+                  onDong={() => setFpTag(null)}
+                />
+              )}
             </div>
           </>
         )}
