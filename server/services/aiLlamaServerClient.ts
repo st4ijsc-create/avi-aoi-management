@@ -281,8 +281,17 @@ function lapCoSampling(
  * ⚠ Bản cũ là `({ role: m.role, content: m.content })` — nó IM LẶNG đánh rơi `tool_call_id` và
  * `tool_calls`, tức làm đứt đúng mắt xích giữa của vòng đời tool-call.
  */
-function chuyenMessageLenDay(m: GgufChatMessage): Record<string, unknown> {
-  const ra: Record<string, unknown> = { role: m.role, content: m.content };
+export function chuyenMessageLenDay(m: GgufChatMessage): Record<string, unknown> {
+  // ★ Đợt 9 (2026-10-24) — ảnh (chỉ vai `user`) ⇒ mảng phần OpenAI `[text, image_url…]` mà llama-server `--mmproj` hiểu. Không ảnh ⇒
+  // `content` chuỗi như cũ (bit-đối-bit). Ảnh trên vai KHÁC ⇒ ném (không bỏ im lặng).
+  if (m.anh?.length && m.role !== "user") throw new Error(`[llama-server] ảnh chỉ được gắn trên vai user (gặp vai ${m.role})`);
+  const coAnh = !!m.anh?.length;
+  const ra: Record<string, unknown> = {
+    role: m.role,
+    content: coAnh
+      ? [{ type: "text", text: m.content }, ...m.anh!.map((url) => ({ type: "image_url", image_url: { url } }))]
+      : m.content,
+  };
   if (m.tool_call_id) ra.tool_call_id = m.tool_call_id;
   // ★★★ V-dot4-2 — `arguments` hỏng trong lịch sử ⇒ llama.cpp 500 ở MỌI lượt sau. Chốt chặn CUỐI cho mọi đường (agent
   //   máy chủ, `/v1` của extension, lịch sử cũ): chỉ object JSON chặt lên dây, còn lại `{}` (KHÔNG vớt). Bản sao — không
@@ -657,6 +666,34 @@ export async function modelServerDangChay(timeoutMs = 2000): Promise<string | nu
   } finally {
     clearTimeout(t);
   }
+}
+
+/**
+ * ★ Đợt 9 (2026-10-24) — khe llama-server ĐANG đọc được ảnh không: `GET /props` ⇒ `modalities.vision === true` (đo trên b9814:
+ * true khi nạp `--mmproj`, false khi không). Hỏi THẲNG server (khe hoán đổi 35B↔27B, phép đo `doi-model.ps1`), không suy từ env.
+ * Không đọc được ⇒ `false` (đóng theo mặc định: không gửi ảnh tới server không hiểu ảnh). Đệm 10 s.
+ */
+let demThiGiac: { luc: number; url: string; coThiGiac: boolean } | null = null;
+export async function kheDangCoThiGiac(timeoutMs = 2000, bayGio = Date.now()): Promise<boolean> {
+  if (!llamaServerEnabled()) return false;
+  const url = baseUrl();
+  if (demThiGiac && demThiGiac.url === url && bayGio - demThiGiac.luc < 10_000) return demThiGiac.coThiGiac;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  let coThiGiac = false;
+  try {
+    const res = await fetch(`${url}/props`, { headers: authHeaders(), signal: ctrl.signal });
+    if (res.ok) coThiGiac = ((await res.json()) as { modalities?: { vision?: unknown } })?.modalities?.vision === true;
+  } catch {
+    coThiGiac = false;
+  } finally {
+    clearTimeout(t);
+  }
+  demThiGiac = { luc: bayGio, url, coThiGiac };
+  return coThiGiac;
+}
+export function __xoaDemThiGiac(): void {
+  demThiGiac = null;
 }
 
 /** Short timeout (default 2s) for the PRE-generation preflight probe below — deliberately much
