@@ -20,7 +20,7 @@ import { appError } from "../_core/appError";
 import { getDb } from "../db";
 import { idsTrongPhamVi } from "../db/hierarchy";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
-import { mayTrongPhamVi } from "./_adapterPhamVi";
+import { mayTrongPhamVi, recipeSetThayDuocTrongPhamVi } from "./_adapterPhamVi";
 import { sanPhamGhiTrongPhamVi } from "./_sanPhamPhamVi";
 import {
   listLinesWithState,
@@ -58,6 +58,27 @@ async function tuyenTrongPhamVi(ctx: CoDanhTinh, lineId: number): Promise<void> 
   if (ids !== null && !ids.includes(lineId)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, "Line not found");
 }
 
+/** phạm vi người dùng (L5 2026-10-25): tuyến người gọi THẤY ĐƯỢC (cùng `idsTrongPhamVi("line")` với đường GHI); toàn quyền ⇒ luôn thấy. */
+async function tuyenThayDuocTrongPhamVi(ctx: CoDanhTinh, lineId: number): Promise<boolean> {
+  const ids = await idsTrongPhamVi("line", phamViCua(ctx), { strict: true });
+  return ids === null || ids.includes(lineId);
+}
+
+/** phạm vi người dùng (L5 2026-10-25): recipe set (theo id HOẶC code) người gọi thấy được ⇔ không tồn tại (dịch vụ tự trả null) HOẶC thuộc phạm vi theo luật GHI (mọi máy trong item). */
+async function setThayDuocTrongPhamVi(ctx: CoDanhTinh, ref: { id?: number; code?: string }): Promise<boolean> {
+  if ((await idsTrongPhamVi("machine", phamViCua(ctx), { strict: true })) === null) return true;
+  const d = await getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const [set] = await d
+    .select({ id: recipeSets.id })
+    .from(recipeSets)
+    .where(ref.id != null ? eq(recipeSets.id, ref.id) : eq(recipeSets.code, ref.code ?? ""))
+    .limit(1);
+  if (!set) return true;
+  const thay = await recipeSetThayDuocTrongPhamVi(ctx, [set.id]);
+  return thay === null || thay.has(set.id);
+}
+
 async function setTrongPhamVi(ctx: CoDanhTinh, ref: { id?: number; code?: string }): Promise<void> {
   const ids = await idsTrongPhamVi("machine", phamViCua(ctx), { strict: true });
   if (ids === null) return;
@@ -87,8 +108,9 @@ export const lineControllerRouter = router({
   // (lines→workshops, 1 query) rồi lọc kết quả. Không truyền = y hệt cũ.
   listStates: protectedProcedure
     .input(z.object({ factoryId: z.number().int().positive().optional() }).optional())
-    .query(async ({ input }) => {
-      const all = await listLinesWithState();
+    .query(async ({ input, ctx }) => {
+      const idsTuyen = await idsTrongPhamVi("line", phamViCua(ctx), { strict: true }); // phạm vi người dùng (L5 2026-10-25)
+      const all = (await listLinesWithState()).filter((l: { lineId: number }) => idsTuyen === null || idsTuyen.includes(l.lineId));
       if (input?.factoryId === undefined) return all;
       const { getDb } = await import("../db/connection");
       const { productionLines, workshops } = await import("../../drizzle/schema");
@@ -107,33 +129,42 @@ export const lineControllerRouter = router({
   /** Trạng thái + nhịp/bottleneck + readiness cache + transitions gần nhất. */
   getState: protectedProcedure
     .input(z.object({ lineId: lineIdSchema }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (!(await tuyenThayDuocTrongPhamVi(ctx, input.lineId))) return null; // phạm vi người dùng (L5 2026-10-25): ngoài phạm vi ≡ không tồn tại
       return getLineStateDetail(input.lineId);
     }),
 
   /** Trạng thái từng trạm: máy, op-state, dwell, blocked/starved (spec §13.2). */
   stages: protectedProcedure
     .input(z.object({ lineId: lineIdSchema }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (!(await tuyenThayDuocTrongPhamVi(ctx, input.lineId))) return null; // phạm vi người dùng (L5 2026-10-25)
       return getLineStages(input.lineId);
     }),
 
   /** Chạy checklist sẵn sàng MỚI (không dùng cache) — spec §6.2. */
   readiness: protectedProcedure
     .input(z.object({ lineId: lineIdSchema, requireRecipe: z.boolean().optional() }))
-    .query(async ({ input }) => {
-      return checkLineReadiness(input.lineId, { requireRecipe: input.requireRecipe ?? false });
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L5 2026-10-25): tuyến ngoài phạm vi ≡ id không có thật (-1) — cùng kết quả checklist, không lộ máy/trạm của nhà máy khác
+      const lineId = (await tuyenThayDuocTrongPhamVi(ctx, input.lineId)) ? input.lineId : -1;
+      return checkLineReadiness(lineId, { requireRecipe: input.requireRecipe ?? false });
     }),
 
   /** Lịch sử transition (audit append-only, gồm cả row POLICY_DENIED). */
   transitions: protectedProcedure
     .input(z.object({ lineId: lineIdSchema, limit: z.number().int().min(1).max(200).default(20) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (!(await tuyenThayDuocTrongPhamVi(ctx, input.lineId))) return []; // phạm vi người dùng (L5 2026-10-25)
       return listTransitions(input.lineId, input.limit);
     }),
 
   /** Trạng thái runtime của sweep scheduler + events gần nhất. */
-  status: protectedProcedure.query(() => getLineControllerStatus()),
+  status: protectedProcedure.query(async ({ ctx }) => {
+    const st = getLineControllerStatus();
+    const idsTuyen = await idsTrongPhamVi("line", phamViCua(ctx), { strict: true }); // phạm vi người dùng (L5 2026-10-25): sự kiện chỉ của tuyến trong phạm vi
+    return idsTuyen === null ? st : { ...st, recentEvents: st.recentEvents.filter((e) => idsTuyen.includes(e.lineId)) };
+  }),
 
   /**
    * Chuyển trạng thái tường minh (FSM validate + readiness khi vào 'ready' +
@@ -189,15 +220,28 @@ export const lineControllerRouter = router({
     /** Catalog set (mới nhất trước) + số item. */
     list: protectedProcedure
       .input(z.object({ limit: z.number().int().min(1).max(500).default(100) }).optional())
-      .query(async ({ input }) => listRecipeSets(input?.limit ?? 100)),
+      .query(async ({ input, ctx }) => {
+        const sets = await listRecipeSets(input?.limit ?? 100);
+        const thay = await recipeSetThayDuocTrongPhamVi(ctx, sets.map((s) => s.id)); // phạm vi người dùng (L5 2026-10-25)
+        return thay === null ? sets : sets.filter((s) => thay.has(s.id));
+      }),
 
     /** Set + items (join phiên bản recipe + máy). Null khi không tồn tại. */
-    get: protectedProcedure.input(recipeSetRefSchema).query(async ({ input }) => getRecipeSetDetail(input)),
+    get: protectedProcedure.input(recipeSetRefSchema).query(async ({ input, ctx }) => {
+      if (!(await setThayDuocTrongPhamVi(ctx, input))) return null; // phạm vi người dùng (L5 2026-10-25): ngoài phạm vi ≡ không tồn tại
+      return getRecipeSetDetail(input);
+    }),
 
     /** Trạng thái khóa (locked/lockedBy/lockedAt) + các tuyến đang dùng set. */
     lockStatus: protectedProcedure
       .input(recipeSetRefSchema)
-      .query(async ({ input }) => getRecipeSetLockStatus(input)),
+      .query(async ({ input, ctx }) => {
+        if (!(await setThayDuocTrongPhamVi(ctx, input))) return null; // phạm vi người dùng (L5 2026-10-25)
+        const st = await getRecipeSetLockStatus(input);
+        if (!st) return st;
+        const idsTuyen = await idsTrongPhamVi("line", phamViCua(ctx), { strict: true });
+        return idsTuyen === null ? st : { ...st, linesUsing: st.linesUsing.filter((l) => idsTuyen.includes(l.lineId)) };
+      }),
 
     /** Tạo set draft (khóa/active chỉ qua distribute + xác nhận nạp). */
     create: actuationProcedure

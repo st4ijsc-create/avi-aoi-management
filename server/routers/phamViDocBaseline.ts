@@ -73,10 +73,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.getDashboardStats",
   "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.getPendingSuggestions",
   "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.getSuggestionsByInspection",
-  // ── server/routers/aiImageSearchRouter.ts (3) ──────────────────────────────────────────────
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.clusterDefects",
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.findSimilar",
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.stats",
   // ── server/routers/aiInsightRouter.ts (1) ──────────────────────────────────────────────────
   "server/routers/aiInsightRouter.ts#aiInsightRouter.list",
   // ── server/routers/aiLocalTrainingRouter.ts (1) ────────────────────────────────────────────
@@ -221,15 +217,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/layoutRouters.ts (2) ────────────────────────────────────────────────────
   "server/routers/layoutRouters.ts#layoutRouter.getById",
   "server/routers/layoutRouters.ts#layoutRouter.listByWorkshop",
-  // ── server/routers/lineControllerRouter.ts (8) ─────────────────────────────────────────────
-  "server/routers/lineControllerRouter.ts#lineControllerRouter.getState",
-  "server/routers/lineControllerRouter.ts#lineControllerRouter.listStates",
-  "server/routers/lineControllerRouter.ts#lineControllerRouter.readiness",
-  "server/routers/lineControllerRouter.ts#lineControllerRouter.recipeSet.get",
-  "server/routers/lineControllerRouter.ts#lineControllerRouter.recipeSet.list",
-  "server/routers/lineControllerRouter.ts#lineControllerRouter.recipeSet.lockStatus",
-  "server/routers/lineControllerRouter.ts#lineControllerRouter.stages",
-  "server/routers/lineControllerRouter.ts#lineControllerRouter.transitions",
   // ── server/routers/machineApiRouters.ts (1) ────────────────────────────────────────────────
   "server/routers/machineApiRouters.ts#machineApiRouter.listKeys",
   // ── server/routers/maintenanceRouter.ts (1) ────────────────────────────────────────────────
@@ -279,10 +266,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.list",
   "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.status",
   // ── server/routers/orchestrationRouter.ts — 2026-10-10 (doc 81 Đợt 5 E2): simulate đã vá (nhóm S), dòng đã gỡ.
-  // ── server/routers/orderLifecycleRouter.ts (3) ─────────────────────────────────────────────
-  "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.detail",
-  "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.list",
-  "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.trace",
   // ── server/routers/oversightRouter.ts (1) ──────────────────────────────────────────────────
   // 2026-09-27 (doc 80 Đợt 1 Task 2, HUB-02) — `pendingSummary` giờ nhận `ctx` (để tính
   // showNames qua `checkPermission(ctx.user.id, ctx.user.role, …)`) ⇒ danh tính RỜI TAY
@@ -319,10 +302,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/productionDashboardRouter.ts#productionDashboardRouter.getSpcSummary",
   "server/routers/productionDashboardRouter.ts#productionDashboardRouter.getStationOverview",
   "server/routers/productionDashboardRouter.ts#productionDashboardRouter.getTrendData",
-  // ── server/routers/productionSessionRouter.ts (3) ──────────────────────────────────────────
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.getById",
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.list",
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.verifySignoff",
   // ── server/routers/productVariantRouter.ts (2) ─────────────────────────────────────────────
   "server/routers/productVariantRouter.ts#productVariantRouter.getEffectivePoints",
   "server/routers/productVariantRouter.ts#productVariantRouter.getVariant",
@@ -393,11 +372,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/userRouters.ts#userAssignmentRouter.getAllUserAssignments",
   // ── server/routers/vda5050Router.ts (2) ────────────────────────────────────────────────────
   // ↓ cùng lời khai "thước vừa sắc hơn" như khối `aiCalibrationRouter.ts` ở trên.
-  // ── server/routers/wipRouter.ts (4) ────────────────────────────────────────────────────────
-  "server/routers/wipRouter.ts#wipRouter.dispatch",
-  "server/routers/wipRouter.ts#wipRouter.dwellByStation",
-  "server/routers/wipRouter.ts#wipRouter.list",
-  "server/routers/wipRouter.ts#wipRouter.summary",
 ];
 
 /**
@@ -425,5 +399,5 @@ export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
   "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.getUnifiedFleetStatus": "adminProcedure ⇒ vai admin = phạm vi TOÀN QUYỀN trong hệ thống này (cùng lý do system.exportConfig); dieu-phoi duyệt mức kỹ thuật 2026-10-25",
   "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.listDeployments": "adminProcedure ⇒ vai admin = phạm vi TOÀN QUYỀN trong hệ thống này (cùng lý do system.exportConfig); dieu-phoi duyệt mức kỹ thuật 2026-10-25",
   "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.listRecipeVersions": "danh mục phiên bản công thức dùng chung toàn tập đoàn (cùng quyết định với recipes.listVersions) — dieu-phoi duyệt mức kỹ thuật 2026-10-25",
-  "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.frameworkSnapshot": "bộ nhớ đệm FocasAdapter/EuromapAdapter nằm TRÊN THỂ HIỆN và mỗi lượt gọi dựng thể hiện mới ⇒ ảnh chụp luôn rỗng, không chứa số đo nhà máy nào (đã đọc mã focasAdapter.ts) — 2026-10-25",
+  "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.frameworkSnapshot": "bộ nhớ đệm FocasAdapter/EuromapAdapter nằm TRÊN THỂ HIỆN và mỗi lượt gọi dựng thể hiện mới ⇒ ảnh chụp luôn rỗng, không chứa số đo nhà máy nào (đã đọc mã focasAdapter.ts) — 2026-10-25. ⚠ PHẢI XEM LẠI khi nối connector FOCAS/Euromap thật (cache theo máy/chia sẻ giữa lượt gọi ⇒ có thể chứa số đo nhà máy) — dieu-phoi duyệt 2026-10-25",
 };

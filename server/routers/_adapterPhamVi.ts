@@ -12,7 +12,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { appError } from "../_core/appError";
 import { getDb as getDbRaw } from "../db";
 import { idsTrongPhamVi, type PhamViDoc } from "../db/hierarchy";
-import { cameraCalibrations, collaborationSessions, commandLog, commissioningRecords, deviceAdapters, deviceTags, robots, safetyEvents, safetyZones, wipTracking } from "../../drizzle/schema";
+import { cameraCalibrations, collaborationSessions, commandLog, commissioningRecords, deviceAdapters, deviceTags, lineBalanceMetrics, productionOrders, productionSessions, recipeSetItems, robots, safetyEvents, safetyZones, stationDwellTime, wipTracking } from "../../drizzle/schema";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 
 export const khongThayAdapter = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
@@ -268,4 +268,53 @@ export async function dieuKienPhienCongTacTrongPhamVi(ctx: CoDanhTinh): Promise<
 }
 export async function dieuKienRobotTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
   return dieuKienViTriTrongPhamVi(phamViCua(ctx), { lineId: robots.lineId, stationId: robots.stationId });
+}
+
+/**
+ * phạm vi người dùng (L5 2026-10-25): điều kiện phạm vi cho `production_orders` — lệnh thấy được ⇔ `lineId` ∈ chuyền trong phạm vi (cùng luật `getProductionOrderById`/`getProductionOrders`); `undefined` khi toàn quyền.
+ */
+export async function dieuKienLenhSanXuatTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
+  const dong = await idsTrongPhamVi("line", phamViCua(ctx), { strict: true });
+  return dong === null ? undefined : inArray(productionOrders.lineId, dong.length > 0 ? dong : [-1]);
+}
+
+/**
+ * phạm vi người dùng (L5 2026-10-25): điều kiện phạm vi cho `production_sessions` — cùng luật GHI (`ghiViTri`): nhà máy + xưởng phải trong phạm vi, chuyền (nếu có) phải trong phạm vi. `undefined` khi toàn quyền.
+ */
+export async function dieuKienPhienSanXuatTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
+  const pv = phamViCua(ctx);
+  const [nhaMay, xuong, dong] = await Promise.all([
+    idsTrongPhamVi("factory", pv, { strict: true }),
+    idsTrongPhamVi("workshop", pv, { strict: true }),
+    idsTrongPhamVi("line", pv, { strict: true }),
+  ]);
+  if (nhaMay === null && xuong === null && dong === null) return undefined;
+  const d = (a: number[] | null) => sql.join((a && a.length > 0 ? a : [-1]).map((x) => sql`${x}`), sql`, `);
+  const ps = productionSessions;
+  return sql`(${ps.factoryId} IN (${d(nhaMay)}) AND ${ps.workshopId} IN (${d(xuong)}) AND (${ps.lineId} IS NULL OR ${ps.lineId} IN (${d(dong)})))`;
+}
+
+/** phạm vi người dùng (L5 2026-10-25): `station_dwell_time` theo chuyền + trạm (hàng không định vị chỉ toàn quyền thấy). */
+export async function dieuKienDwellTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
+  return dieuKienViTriTrongPhamVi(phamViCua(ctx), { lineId: stationDwellTime.lineId, stationId: stationDwellTime.stationId });
+}
+
+/** phạm vi người dùng (L5 2026-10-25): `line_balance_metrics` theo chuyền. */
+export async function dieuKienCanBangChuyenTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
+  return dieuKienViTriTrongPhamVi(phamViCua(ctx), { lineId: lineBalanceMetrics.lineId });
+}
+
+/**
+ * phạm vi người dùng (L5 2026-10-25): tập recipe set (trong `setIds`) mà người gọi THẤY ĐƯỢC — cùng luật GHI (`setTrongPhamVi`): MỌI máy trong item của set phải thuộc phạm vi; set không item (nháp) ai cũng thấy.
+ * `null` khi toàn quyền (không lọc).
+ */
+export async function recipeSetThayDuocTrongPhamVi(ctx: CoDanhTinh, setIds: number[]): Promise<Set<number> | null> {
+  const may = await idsMayTrongPhamVi(ctx);
+  if (may === null) return null;
+  if (setIds.length === 0) return new Set();
+  const d = await layDb();
+  const rows = await d.select({ s: recipeSetItems.recipeSetId, m: recipeSetItems.machineId }).from(recipeSetItems).where(inArray(recipeSetItems.recipeSetId, setIds));
+  const ngoai = new Set<number>();
+  for (const r of rows) if (!may.includes(r.m)) ngoai.add(r.s);
+  return new Set(setIds.filter((s) => !ngoai.has(s)));
 }
