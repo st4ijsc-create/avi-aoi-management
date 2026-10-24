@@ -14,6 +14,20 @@ import { landingPathForRole } from "@/lib/roleLanding";
 import { BRAND } from "@/config/brand";
 import { loginNextPath } from "@/lib/loginNext";
 
+/**
+ * kiem-dinh mục 5 (2026-10-24) — màn 2FA nhận HAI loại mã, khớp `/api/auth/verify-2fa` (oauth.ts: đúng 6 số ⇒ TOTP, còn lại ⇒ mã dự phòng):
+ *   · TOTP: đúng 6 chữ số;  · mã dự phòng: đúng 8 ký tự hex (`backupCodeSecret.sinhMaDuPhong` = hex HOA; máy chủ so không phân biệt hoa thường).
+ * Mã dự phòng là LỐI THOÁT khi TOTP bị tạm khoá (bộ đếm T16: khoá TOTP không bao giờ chặn mã dự phòng, và ngược lại).
+ */
+export type LoaiMa2FA = "totp" | "backup";
+export function loaiMa2FA(ma: string): LoaiMa2FA | null {
+  if (/^\d{6}$/.test(ma)) return "totp";
+  if (/^[0-9A-F]{8}$/.test(ma)) return "backup";
+  return null;
+}
+/** Ô nhập: chỉ giữ ký tự hex, viết HOA, tối đa 8. */
+export const chuanHoaMa2FA = (v: string): string => v.toUpperCase().replace(/[^0-9A-F]/g, "").slice(0, 8);
+
 export default function Login() {
   const { t } = useTranslation();
   const BrandMark = BRAND.logoIcon;
@@ -28,6 +42,21 @@ export default function Login() {
   const [requires2FA, setRequires2FA] = useState(false);
   const [userId, setUserId] = useState<number | null>(null);
   const [otpToken, setOtpToken] = useState("");
+  // kiem-dinh mục 5 — khoá tạm của bộ đếm 2FA (429 + remainingMinutes): hạn mở theo đồng hồ máy khách, theo TỪNG loại mã. Không lưu số lần.
+  const [khoaDen, setKhoaDen] = useState<Partial<Record<LoaiMa2FA, number>>>({});
+  const [bayGio, setBayGio] = useState(() => Date.now());
+  const coKhoa = Object.values(khoaDen).some((d) => d !== undefined && d > bayGio);
+  useEffect(() => {
+    if (!coKhoa) return;
+    const id = setInterval(() => setBayGio(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [coKhoa]);
+  const phutConLai = (loai: LoaiMa2FA): number => {
+    const d = khoaDen[loai];
+    return d !== undefined && d > bayGio ? Math.ceil((d - bayGio) / 60_000) : 0;
+  };
+  const loaiMa = loaiMa2FA(otpToken);
+  const maBiKhoa = loaiMa !== null && phutConLai(loaiMa) > 0;
 
   const loginMutation = trpc.auth.login.useMutation();
   const { data: setupCheck } = trpc.auth.checkSetupRequired.useQuery();
@@ -87,10 +116,12 @@ export default function Login() {
   const handle2FAVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!otpToken || otpToken.length !== 6) {
-      toast.error(t('auth.pleaseEnter6DigitCode'));
+    const loai = loaiMa2FA(otpToken);
+    if (!loai) {
+      toast.error(t('auth.twoFactor.nhapMaHopLe'));
       return;
     }
+    if (phutConLai(loai) > 0) return; // đang khoá loại mã này — nút đã khoá, Enter cũng không gửi
 
     setIsLoading(true);
     try {
@@ -123,6 +154,13 @@ export default function Login() {
         };
         const khoa = typeof data?.code === 'string' ? KHOA_2FA[data.code] : undefined;
         const minutes = typeof data?.remainingMinutes === 'number' ? data.remainingMinutes : 5;
+        // kiem-dinh mục 5 — khoá ⇒ khoá nút cho loại mã bị khoá + đếm ngược (phút từ máy chủ; không bao giờ số lần)
+        if (data?.code === 'TWOFA_TOTP_LOCKED' || data?.code === 'TWOFA_BACKUP_LOCKED') {
+          const loaiKhoa: LoaiMa2FA = data.code === 'TWOFA_TOTP_LOCKED' ? 'totp' : 'backup';
+          const nay = Date.now();
+          setBayGio(nay);
+          setKhoaDen((k) => ({ ...k, [loaiKhoa]: nay + minutes * 60_000 }));
+        }
         toast.error(khoa ? t(khoa, { minutes }) : (data.error || t('auth.verificationFailed')));
         return;
       }
@@ -142,6 +180,7 @@ export default function Login() {
     setRequires2FA(false);
     setUserId(null);
     setOtpToken("");
+    setKhoaDen({});
   };
 
   // doc 81 Đợt 3b final wave (R-3b-c): ?next= chỉ nhận đường NỘI BỘ (safeInternalPath) — trước `startsWith("/")` để lọt
@@ -206,11 +245,21 @@ export default function Login() {
                     id="otp"
                     placeholder="000000"
                     value={otpToken}
-                    onChange={(e) => setOtpToken(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    onChange={(e) => setOtpToken(chuanHoaMa2FA(e.target.value))}
                     className="bg-slate-700/50 border-slate-600 text-white text-center text-2xl tracking-widest font-mono"
-                    maxLength={6}
+                    maxLength={9}
+                    autoComplete="one-time-code"
+                    autoCapitalize="characters"
+                    aria-describedby="otp-goi-y"
                     autoFocus
                   />
+                  <p id="otp-goi-y" className="text-xs text-slate-400">{t('auth.twoFactor.maHoacMaDuPhong')}</p>
+                  {(phutConLai('totp') > 0 || phutConLai('backup') > 0) && (
+                    <div data-testid="dem-nguoc-khoa-2fa" role="status" className="space-y-1 text-sm text-amber-300">
+                      {phutConLai('totp') > 0 && <p>{t('auth.twoFactor.demNguocTotp', { minutes: phutConLai('totp') })}</p>}
+                      {phutConLai('backup') > 0 && <p>{t('auth.twoFactor.demNguocBackup', { minutes: phutConLai('backup') })}</p>}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-2">
@@ -225,7 +274,7 @@ export default function Login() {
                   </Button>
                   <Button
                     type="submit"
-                    disabled={isLoading || otpToken.length !== 6}
+                    disabled={isLoading || loaiMa === null || maBiKhoa}
                     className="flex-1 bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700"
                   >
                     {isLoading ? (
