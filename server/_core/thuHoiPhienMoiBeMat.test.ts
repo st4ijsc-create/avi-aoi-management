@@ -109,6 +109,15 @@ const BE_MAT_MIEN_TRU: { duong: string; vi_sao: string; canh_boi: string }[] = [
       "definite refusal wins; the degraded fallback only uses a SESSION-bound <= 15 min memory dropped on logout / revoke / disable / role " +
       "/ permission / scope change (robotStopAuthMemo, R-10-be), STOP verbs only — server/routers/robotStopDegradedAuth.dot10.db.test.ts",
   },
+  {
+    duong: "server/_core/trpcGioiHanThuTuc.ts",
+    vi_sao:
+      "rà bảo mật 2026-10-24 (giới hạn tốc độ theo SỐ THỦ TỤC nhạy cảm): middleware này chỉ kiểm CHỮ KÝ JWT của phiên (sdk.verifySession) để lấy openId làm KHOÁ ĐẾM giới hạn tốc độ — " +
+      "chỉ làm khoá giới hạn tốc độ, không cấp quyền: không gắn danh tính vào req, không trả dữ liệu, không bỏ qua bước nào; mọi quyết định cho/chặn vẫn ở context tRPC.",
+    canh_boi:
+      "xác thực thật vẫn ở tầng sau: createContext → sdk.authenticateRequest + thuTucGoc (sổ phiên · users.isActive · cổng buộc-đổi-mật-khẩu). Chứng minh bằng DB thật: phiên ĐÃ THU HỒI / tài khoản BỊ TẮT / " +
+      "người BỊ BUỘC ĐỔI MẬT KHẨU đi qua middleware (chỉ bị đếm) mà thủ tục VẪN KHÔNG chạy — server/_core/trpcGioiHanThuTuc.xacThuc.db.test.ts §2–§4",
+  },
 ];
 
 const MOI_FILE_SX = moiFileDuoi(GOC, "server", [".ts", ".tsx"]).filter((f) => !laFileTest(f.duong));
@@ -331,7 +340,7 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-1 — ∀ điểm xác thực
     expect(
       BE_MAT_MIEN_TRU.map((b) => b.duong),
       "tập bề mặt được tha đã đổi — đây là một quyết định an ninh, phải viết ra",
-    ).toEqual(["server/services/robot/robotStopAuth.ts"]);
+    ).toEqual(["server/services/robot/robotStopAuth.ts", "server/_core/trpcGioiHanThuTuc.ts"]);
     const ma = BE_MAT_MIEN_TRU.filter((b) => !MOI_DIEM.some((d) => d.duong === b.duong));
     expect(ma.map((b) => b.duong), "mục ma vẫn tiếp tục THA cho một điểm mới trùng đường dẫn").toEqual([]);
   });

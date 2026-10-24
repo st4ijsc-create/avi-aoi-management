@@ -130,6 +130,15 @@ const BE_MAT_TU_CANH: { duong: string; vi_sao: string; canh_boi: string }[] = [
       "không có đường nào biết mình phải đổi mật khẩu ⇒ NHÀ TÙ (Pha 7 đã deploy một lần, 4/4 tài khoản).",
     canh_boi: "server/_core/trpc.ts::thuTucGoc (chanKhiPhaiDoiMatKhau) + server/_core/buocDoiMatKhau.test.ts",
   },
+  {
+    duong: "server/_core/trpcGioiHanThuTuc.ts",
+    vi_sao:
+      "rà bảo mật 2026-10-24 (giới hạn tốc độ theo SỐ THỦ TỤC nhạy cảm): middleware này chỉ kiểm CHỮ KÝ JWT của phiên (sdk.verifySession) để lấy openId làm KHOÁ ĐẾM giới hạn tốc độ — " +
+      "chỉ làm khoá giới hạn tốc độ, không cấp quyền: không gắn danh tính vào req, không trả dữ liệu, không bỏ qua bước nào; mọi quyết định cho/chặn vẫn ở context tRPC.",
+    canh_boi:
+      "xác thực thật vẫn ở tầng sau: createContext → sdk.authenticateRequest + thuTucGoc (sổ phiên · users.isActive · cổng buộc-đổi-mật-khẩu). Chứng minh bằng DB thật: phiên ĐÃ THU HỒI / tài khoản BỊ TẮT / " +
+      "người BỊ BUỘC ĐỔI MẬT KHẨU đi qua middleware (chỉ bị đếm) mà thủ tục VẪN KHÔNG chạy — server/_core/trpcGioiHanThuTuc.xacThuc.db.test.ts §2–§4",
+  },
 ];
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -344,7 +353,7 @@ describe("★★★★ Pha 8 Task 1 — ∀ điểm xác thực HTTP/socket: c�
     expect(
       BE_MAT_TU_CANH.map((b) => b.duong),
       "tập bề mặt được phép vòng qua điểm chung đã đổi — đây là một quyết định an ninh",
-    ).toEqual(["server/services/robot/robotStopAuth.ts", "server/_core/context.ts"]);
+    ).toEqual(["server/services/robot/robotStopAuth.ts", "server/_core/context.ts", "server/_core/trpcGioiHanThuTuc.ts"]);
     expect(BE_MAT_TU_CANH.every((b) => b.canh_boi.length > 0), "mỗi mục phải nêu cơ chế canh THAY THẾ").toBe(true);
   });
 
