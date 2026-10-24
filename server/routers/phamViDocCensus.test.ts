@@ -895,7 +895,9 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★ 2026-10-24 (đợt 2 cùng lớp "id client gửi ⇒ dữ liệu nhà máy khác"): `commandLog.list|get|stats|avgDurations` (sổ lệnh ghi xuống máy) và `machineRecipe`: `recipes.getActive`, `deployments.list`, `machines.list`,
 // `changeover.list|recipeOptions` — CHÍN thủ tục A → S qua `_adapterPhamVi.ts` (`mayTrongPhamVi`, `dieuKienLenhTrongPhamVi`); chín dòng sổ nợ đã GỠ. Các thủ tục GHI `recipes.deploy|rollback`, `changeover.request|approve|reject` cũng khoá phạm vi (mọi mutation vào D, không đổi nhóm).
 // Còn nợ (cố ý, hỏi chủ dự án): `recipes.listCodes|listVersions|get|genealogy` = danh mục công thức dùng chung nhiều nhà máy. Chứng minh: `lenhCongThucPhamVi.db.test.ts` (12 ca; 8 đỏ trước khi vá; 8 đột biến bị bắt).
-const GHIM = { A: 321, B: 8, C: 488, D: 1198, S: 387, tong: 2402 } as const;
+// ★ 2026-10-24 (đợt 3 cùng lớp): `safety.feed` và `safety.nearMissTrend` A → S qua `dieuKienSuKienAnToanTrongPhamVi` (`_adapterPhamVi.ts`): sự kiện thấy được ⇔ toàn quyền HOẶC ≥1 thuộc tính định vị
+// (line/station/factory/robot) và MỌI thuộc tính đều trong phạm vi; sự kiện không định vị chỉ toàn quyền thấy. Hai dòng sổ nợ đã GỠ. Chứng minh: `safetyPhamVi.db.test.ts` (5 ca; 4 đỏ trước khi vá; 6 đột biến bị bắt).
+const GHIM = { A: 319, B: 8, C: 488, D: 1198, S: 389, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

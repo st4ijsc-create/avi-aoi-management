@@ -70,6 +70,7 @@ import { savePlcConfig, deletePlcConfig, decidePlcConfigTrust, listPlcTrust, plc
 // doc 80 Đợt 1 Task 4 (SAF-02) — read-only source-health report for the Safety page.
 import { loadSafetySourceHealth } from "../services/safety/safetySourceHealth";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { dieuKienSuKienAnToanTrongPhamVi } from "./_adapterPhamVi";
 import { resolveTenantFactoryScope } from "../db/reportAggregators";
 import { deviceAdapters, robots, safetyPlcConfigs as safetyPlcConfigsTable } from "../../drizzle/schema";
 
@@ -492,12 +493,13 @@ export const safetyRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) => queryFeed(input ?? {})),
+    // phạm vi nhà máy (rà bảo mật 2026-10-24): chỉ sự kiện định vị được vào line/station/factory/robot của người xem
+    .query(async ({ input, ctx }) => queryFeed({ ...(input ?? {}), dieuKienPhamVi: await dieuKienSuKienAnToanTrongPhamVi(ctx) })),
 
   nearMissTrend: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ sinceDays: z.number().int().min(1).max(365).default(30) }).optional())
-    .query(async ({ input }) => nearMissTrend(input?.sinceDays ?? 30)),
+    .query(async ({ input, ctx }) => nearMissTrend(input?.sinceDays ?? 30, await dieuKienSuKienAnToanTrongPhamVi(ctx))),
 
   /** Manually record an advisory safety event (flag-gated). */
   recordEvent: protectedProcedure

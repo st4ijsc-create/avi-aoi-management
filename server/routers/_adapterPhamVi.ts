@@ -11,7 +11,7 @@ import { eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import { appError } from "../_core/appError";
 import { getDb as getDbRaw } from "../db";
 import { idsTrongPhamVi } from "../db/hierarchy";
-import { commandLog, commissioningRecords, deviceAdapters, deviceTags } from "../../drizzle/schema";
+import { commandLog, commissioningRecords, deviceAdapters, deviceTags, safetyEvents } from "../../drizzle/schema";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 
 export const khongThayAdapter = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
@@ -141,4 +141,30 @@ export function dieuKienLenhTrongPhamVi(idsMay: number[] | null): SQL | undefine
     inArray(commandLog.machineId, ids),
     inArray(commandLog.adapterId, sql`(select ${deviceAdapters.id} from ${deviceAdapters} where ${inArray(deviceAdapters.machineId, ids)})`),
   );
+}
+
+/**
+ * Điều kiện SQL cho `safety_events` (phạm vi nhà máy): sự kiện nhìn thấy được ⇔ toàn quyền, HOẶC có ÍT NHẤT MỘT thuộc tính định vị (line/station/factory/robot) VÀ MỌI thuộc tính khác null
+ * đều trong phạm vi (robot ⇒ line hoặc line của station của nó). Sự kiện không định vị được (cả bốn null) chỉ phạm vi toàn quyền thấy — fail-closed. `deviceId` không dùng định vị (không suy được nhà máy).
+ * `undefined` khi toàn quyền.
+ */
+export async function dieuKienSuKienAnToanTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
+  const phamVi = phamViCua(ctx);
+  const [dong, tram, nhaMay] = await Promise.all([
+    idsTrongPhamVi("line", phamVi, { strict: true }),
+    idsTrongPhamVi("station", phamVi, { strict: true }),
+    idsTrongPhamVi("factory", phamVi, { strict: true }),
+  ]);
+  if (dong === null && tram === null && nhaMay === null) return undefined;
+  const d = (a: number[] | null) => sql.join((a && a.length > 0 ? a : [-1]).map((x) => sql`${x}`), sql`, `);
+  const se = safetyEvents;
+  return sql`(
+    (${se.lineId} IS NOT NULL OR ${se.stationId} IS NOT NULL OR ${se.factoryId} IS NOT NULL OR ${se.robotId} IS NOT NULL)
+    AND (${se.lineId} IS NULL OR ${se.lineId} IN (${d(dong)}))
+    AND (${se.stationId} IS NULL OR ${se.stationId} IN (${d(tram)}))
+    AND (${se.factoryId} IS NULL OR ${se.factoryId} IN (${d(nhaMay)}))
+    AND (${se.robotId} IS NULL OR ${se.robotId} IN (
+      SELECT r."id" FROM robots r LEFT JOIN stations st ON st."id" = r."stationId"
+      WHERE r."lineId" IN (${d(dong)}) OR st."lineId" IN (${d(dong)})))
+  )`;
 }
