@@ -30,9 +30,31 @@ import {
   releaseProgram,
   submitForApproval,
 } from "../services/inspectionProgramService";
+import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
+
+/**
+ * phạm vi người dùng (L3 2026-10-25) — QUYẾT CỦA CHỦ DỰ ÁN (dieu-phoi chuyển 2026-10-25): bản phát hành chương trình kiểm tra GẮN MÁY (machineId ≠ null) ⇒ theo phạm vi nhà máy của máy đó (ngoài phạm vi ≡ không tồn tại);
+ * bản cấp SẢN PHẨM (machineId NULL, là phương án dự phòng cho MỌI máy mọi nhà máy) ⇒ ĐỌC được với mọi người có quyền, nhưng tạo/gửi duyệt/duyệt/từ chối/phát hành CHỈ người phạm vi toàn quyền
+ * (phát hành bản sản phẩm-cấp đổi chương trình của máy nhà máy khác).
+ */
+const khongThayBan = (id: number) => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, `Program release #${id} not found`);
+const tuChoiSanPhamCap = () =>
+  appError("FORBIDDEN", "PERMISSION_DENIED", { action: "manageProductWideProgramRelease" }, "Bản chương trình kiểm tra cấp sản phẩm áp cho mọi nhà máy — chỉ người có phạm vi toàn quyền được tạo/duyệt/phát hành.");
+/** bản (đã tồn tại) thấy được: cấp sản phẩm ⇒ ai cũng đọc; gắn máy ⇒ máy trong phạm vi. */
+const banThay = (idsMay: number[] | null, r: { machineId: number | null }): boolean => idsMay === null || r.machineId == null || idsMay.includes(r.machineId);
+/** ghi lên bản đã có: ngoài phạm vi ⇒ như không tồn tại; cấp sản phẩm mà người gọi hẹp ⇒ FORBIDDEN. Bản không tồn tại ⇒ để dịch vụ ném như cũ. */
+async function chanGhiBan(ctx: unknown, releaseId: number): Promise<void> {
+  const idsMay = await idsMayTrongPhamVi(ctx as never);
+  if (idsMay === null) return;
+  const r = await getReleaseById(releaseId);
+  if (!r) return;
+  if (r.machineId == null) throw tuChoiSanPhamCap();
+  if (!idsMay.includes(r.machineId)) throw khongThayBan(releaseId);
+}
 
 /** Map service-layer Errors (state guards, SoD) onto proper tRPC codes. */
 function rethrow(err: unknown): never {
+  if (err instanceof TRPCError) throw err; // lỗi đã có mã (kể cả cổng phạm vi L3) đi qua NGUYÊN VẸN
   const message = err instanceof Error ? err.message : String(err);
   if (message.includes("Segregation of duties")) {
     throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfApproveProgramRelease" }, message);
@@ -56,13 +78,17 @@ export const inspectionProgramRouter = router({
   list: protectedProcedure
     .use(requirePermission("settings_products", "canView"))
     .input(z.object({ productModelId: z.number().int().positive() }))
-    .query(async ({ input }) => listReleases(input.productModelId)),
+    .query(async ({ input, ctx }) => {
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      return (await listReleases(input.productModelId)).filter((r) => banThay(idsMay, r)); // phạm vi người dùng (L3 2026-10-25)
+    }),
 
   get: protectedProcedure
     .use(requirePermission("settings_products", "canView"))
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const row = await getReleaseById(input.id);
+      if (row && !banThay(await idsMayTrongPhamVi(ctx), row)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, "Bản phát hành không tồn tại."); // phạm vi người dùng (L3 2026-10-25)
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, "Bản phát hành không tồn tại.");
       return row;
     }),
@@ -74,9 +100,12 @@ export const inspectionProgramRouter = router({
       productModelId: z.number().int().positive(),
       machineId: z.number().int().positive().nullable().optional(),
     }))
-    .query(async ({ input }) =>
-      getActiveRelease({ productModelId: input.productModelId, machineId: input.machineId ?? null }),
-    ),
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L3 2026-10-25): máy ngoài phạm vi ≡ máy không tồn tại ⇒ chỉ rơi về bản cấp sản phẩm
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      const machineId = input.machineId != null && idsMay !== null && !idsMay.includes(input.machineId) ? null : input.machineId ?? null;
+      return getActiveRelease({ productModelId: input.productModelId, machineId });
+    }),
 
   /** Structural field-level diff between two releases of the same product. */
   compare: protectedProcedure
@@ -85,8 +114,13 @@ export const inspectionProgramRouter = router({
       aId: z.number().int().positive(),
       bId: z.number().int().positive(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       try {
+        const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L3 2026-10-25)
+        for (const id of [input.aId, input.bId]) {
+          const r = await getReleaseById(id);
+          if (r && !banThay(idsMay, r)) throw khongThayBan(id);
+        }
         return await compareReleases(input.aId, input.bId);
       } catch (err) {
         rethrow(err);
@@ -103,6 +137,9 @@ export const inspectionProgramRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       try {
+        // phạm vi người dùng (L3 2026-10-25): gắn máy ⇒ máy phải trong phạm vi; cấp sản phẩm (machineId null) ⇒ chỉ phạm vi toàn quyền
+        if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId);
+        else if ((await idsMayTrongPhamVi(ctx)) !== null) throw tuChoiSanPhamCap();
         return await createRelease({
           productModelId: input.productModelId,
           machineId: input.machineId ?? null,
@@ -119,6 +156,7 @@ export const inspectionProgramRouter = router({
     .input(z.object({ releaseId: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
       try {
+        await chanGhiBan(ctx, input.releaseId); // phạm vi người dùng (L3 2026-10-25)
         return await submitForApproval({ releaseId: input.releaseId, userId: ctx.user.id });
       } catch (err) {
         rethrow(err);
@@ -133,6 +171,7 @@ export const inspectionProgramRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       try {
+        await chanGhiBan(ctx, input.releaseId); // phạm vi người dùng (L3 2026-10-25)
         return await approveRelease({ releaseId: input.releaseId, approvedBy: ctx.user.id, note: input.note ?? null });
       } catch (err) {
         rethrow(err);
@@ -146,6 +185,7 @@ export const inspectionProgramRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       try {
+        await chanGhiBan(ctx, input.releaseId); // phạm vi người dùng (L3 2026-10-25)
         return await rejectRelease({ releaseId: input.releaseId, rejectedBy: ctx.user.id, reason: input.reason });
       } catch (err) {
         rethrow(err);
@@ -157,6 +197,7 @@ export const inspectionProgramRouter = router({
     .input(z.object({ releaseId: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
       try {
+        await chanGhiBan(ctx, input.releaseId); // phạm vi người dùng (L3 2026-10-25)
         return await releaseProgram({ releaseId: input.releaseId, releasedBy: ctx.user.id });
       } catch (err) {
         rethrow(err);

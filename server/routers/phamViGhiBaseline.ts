@@ -246,11 +246,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/hotFolderRouter.ts#hotFolderRouter.processNow",
   "server/routers/hotFolderRouter.ts#hotFolderRouter.updateConfig",
   // ── server/routers/inspectionProgramRouter.ts (5) ──
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.approve",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.createDraft",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.reject",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.release",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.submit",
   // ── server/routers/inspectionVariantRouter.ts (1) ──
   "server/routers/inspectionVariantRouter.ts#inspectionVariantRouter.setVariant",
   // ── server/routers/interlockRouter.ts (4) ──
@@ -259,8 +254,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/interlockRouter.ts#interlockRouter.enable",
   "server/routers/interlockRouter.ts#interlockRouter.resolveEvent",
   // ── server/routers/irRouter.ts (2) ──
-  "server/routers/irRouter.ts#irRouter.requestBuild",
-  "server/routers/irRouter.ts#irRouter.saveFlow",
   // ── server/routers/kbStudioRouter.ts (2) ──
   "server/routers/kbStudioRouter.ts#kbStudioRouter.huyEvalMa",
   "server/routers/kbStudioRouter.ts#kbStudioRouter.startFinetune",
@@ -441,22 +434,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productVariantRouter.ts#productVariantRouter.deleteVariant",
   "server/routers/productVariantRouter.ts#productVariantRouter.updateVariant",
   // ── server/routers/programmingRouter.ts (16) ──
-  "server/routers/programmingRouter.ts#programmingRouter.approveDeployment",
-  "server/routers/programmingRouter.ts#programmingRouter.buildArtifact",
-  "server/routers/programmingRouter.ts#programmingRouter.createArtifact",
-  "server/routers/programmingRouter.ts#programmingRouter.createProject",
-  "server/routers/programmingRouter.ts#programmingRouter.deleteProject",
-  "server/routers/programmingRouter.ts#programmingRouter.deleteSymbol",
-  "server/routers/programmingRouter.ts#programmingRouter.rejectDeployment",
-  "server/routers/programmingRouter.ts#programmingRouter.requestVersionReview",
-  "server/routers/programmingRouter.ts#programmingRouter.reviewArtifact",
-  "server/routers/programmingRouter.ts#programmingRouter.rollbackDeployment",
-  "server/routers/programmingRouter.ts#programmingRouter.simulateBuild",
-  "server/routers/programmingRouter.ts#programmingRouter.startWatch",
-  "server/routers/programmingRouter.ts#programmingRouter.stopWatch",
-  "server/routers/programmingRouter.ts#programmingRouter.updateProject",
-  "server/routers/programmingRouter.ts#programmingRouter.upsertSymbol",
-  "server/routers/programmingRouter.ts#programmingRouter.validateArtifact",
   // ── server/routers/qualityGateTemplateRouter.ts (3) ──
   "server/routers/qualityGateTemplateRouter.ts#qualityGateTemplateRouter.applyToLine",
   "server/routers/qualityGateTemplateRouter.ts#qualityGateTemplateRouter.deleteCustom",
@@ -515,16 +492,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/simTargetsRouter.ts (1) ──
   "server/routers/simTargetsRouter.ts#simTargetsRouter.validateUrscript",
   // ── server/routers/sopRouter.ts (10) ──
-  "server/routers/sopRouter.ts#sopRouter.abandonExecution",
-  "server/routers/sopRouter.ts#sopRouter.cloneNewVersion",
-  "server/routers/sopRouter.ts#sopRouter.confirmStep",
-  "server/routers/sopRouter.ts#sopRouter.create",
-  "server/routers/sopRouter.ts#sopRouter.delete",
-  "server/routers/sopRouter.ts#sopRouter.finishExecution",
-  "server/routers/sopRouter.ts#sopRouter.replaceSteps",
-  "server/routers/sopRouter.ts#sopRouter.setStatus",
-  "server/routers/sopRouter.ts#sopRouter.startExecution",
-  "server/routers/sopRouter.ts#sopRouter.update",
   // ── server/routers/spcAdvancedRouter.ts (14) ──
   "server/routers/spcAdvancedRouter.ts#correlationRouter.save",
   "server/routers/spcAdvancedRouter.ts#cpkTrendRouter.calculate",

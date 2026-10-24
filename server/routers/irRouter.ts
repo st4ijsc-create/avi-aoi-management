@@ -28,7 +28,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { router, moduleProcedure, moduleGate, writeProcedure as writeBase } from "../_core/trpc";
@@ -44,6 +44,7 @@ import { requirePermission } from "../_core/accessControl";
 import { isUniqueViolation } from "../_core/dbErrors";
 import { getDb } from "../db/connection";
 import { programProjects, programArtifacts } from "../../drizzle/schema";
+import { chanArtifact, chanDuAn, dieuKienDuAn } from "./_chuongTrinhPhamVi";
 import {
   validateArtifact,
   buildArtifact,
@@ -103,7 +104,9 @@ function parseOrThrow(content: string | null): Flow {
 async function loadArtifactFlow(
   d: Awaited<ReturnType<typeof db>>,
   artifactId: number,
+  ctx: Parameters<typeof chanArtifact>[0],
 ): Promise<{ flow: Flow; branch: string; version: number; projectId: number }> {
+  await chanArtifact(ctx, artifactId); // phạm vi người dùng (L3 2026-10-25): phiên bản của dự án ngoài phạm vi ≡ không tồn tại
   const [row] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
   if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${artifactId} not found`);
   if (row.kind !== "ir-flow") throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "artifactKind" }, `Artifact ${artifactId} is not an ir-flow.`);
@@ -120,12 +123,13 @@ export const irRouter = router({
   listFlows: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ projectId: z.number().int().positive().optional(), limit: z.number().int().min(1).max(500).default(200) }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
+      const congDuAn = await dieuKienDuAn(ctx); // phạm vi người dùng (L3 2026-10-25): chỉ flow của dự án trong phạm vi
       let rows = await d
         .select()
         .from(programArtifacts)
-        .where(eq(programArtifacts.kind, "ir-flow"))
+        .where(congDuAn ? and(eq(programArtifacts.kind, "ir-flow"), sql`${programArtifacts.projectId} IN (SELECT ${programProjects.id} FROM ${programProjects} WHERE ${congDuAn})`) : eq(programArtifacts.kind, "ir-flow"))
         .orderBy(desc(programArtifacts.id))
         .limit(input?.limit ?? 200);
       if (input?.projectId) rows = rows.filter((r) => r.projectId === input.projectId);
@@ -146,8 +150,9 @@ export const irRouter = router({
   getFlow: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ artifactId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
+      await chanArtifact(ctx, input.artifactId); // phạm vi người dùng (L3 2026-10-25)
       const [row] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, input.artifactId)).limit(1);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${input.artifactId} not found`);
       if (row.kind !== "ir-flow") throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "artifactKind" }, `Artifact ${input.artifactId} is not an ir-flow.`);
@@ -188,10 +193,10 @@ export const irRouter = router({
   diffVersions: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ beforeArtifactId: z.number().int().positive(), afterArtifactId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
-      const before = await loadArtifactFlow(d, input.beforeArtifactId);
-      const after = await loadArtifactFlow(d, input.afterArtifactId);
+      const before = await loadArtifactFlow(d, input.beforeArtifactId, ctx);
+      const after = await loadArtifactFlow(d, input.afterArtifactId, ctx);
       return {
         diff: diffFlows(before.flow, after.flow),
         before: { artifactId: input.beforeArtifactId, branch: before.branch, version: before.version },
@@ -221,11 +226,11 @@ export const irRouter = router({
       oursArtifactId: z.number().int().positive(),
       theirsArtifactId: z.number().int().positive(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
-      const base = await loadArtifactFlow(d, input.baseArtifactId);
-      const ours = await loadArtifactFlow(d, input.oursArtifactId);
-      const theirs = await loadArtifactFlow(d, input.theirsArtifactId);
+      const base = await loadArtifactFlow(d, input.baseArtifactId, ctx);
+      const ours = await loadArtifactFlow(d, input.oursArtifactId, ctx);
+      const theirs = await loadArtifactFlow(d, input.theirsArtifactId, ctx);
       return {
         result: mergeFlows(base.flow, ours.flow, theirs.flow),
         base: { artifactId: input.baseArtifactId, branch: base.branch, version: base.version },
@@ -251,6 +256,7 @@ export const irRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireFlag();
       const d = await db();
+      await chanDuAn(ctx, input.projectId); // phạm vi người dùng (L3 2026-10-25)
       const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, input.projectId)).limit(1);
       if (!proj) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.projectId} not found`);
       if (proj.kind !== "ir-flow") {
@@ -347,6 +353,7 @@ export const irRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireFlag();
       const d = await db();
+      await chanArtifact(ctx, input.artifactId); // phạm vi người dùng (L3 2026-10-25)
       const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, input.artifactId)).limit(1);
       if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${input.artifactId} not found`);
       if (art.kind !== "ir-flow") throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "artifactKind" }, `Artifact ${input.artifactId} is not an ir-flow.`);

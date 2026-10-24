@@ -32,17 +32,7 @@
 export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ───────────────────────────────────────────────────────
   "server/_core/systemRouter.ts#systemRouter.exportConfig",
-  // ── server/routers/scadaCommandsRouter.ts (1) ──
-  // ★ 2026-10-25 (điểm mù đọc) của scada-master: nhờ họ xác nhận phạm vi trong trangThaiYeuCauGhi.
-  "server/routers/scadaCommandsRouter.ts#scadaCommandsRouter.trangThai",
-  // ── server/routers/repoWorkspaceRouter.ts (1) ──
-  // ★ 2026-10-25 (điểm mù đọc) listFiles|readFile|grep đọc CÂY MÃ NGUỒN repo (không phải dữ liệu nhà máy) — ứng viên MIỄN TRỪ; RBAC ai_repo_read.
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.grep",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.listFiles",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.readFile",
   // ── server/routers/machineRecipeRouter.ts (1) ──
-  // ★ 2026-10-25 (điểm mù đọc) lọc theo CHỦ (requestedBy = người gọi) — ứng viên MIỄN TRỪ 'dữ liệu cá nhân'.
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.changeover.listMine",
   // ── server/routers/aiActiveLearningRouter.ts (6) ───────────────────────────────────────────
   "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.checkRetrain",
   "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.diversitySampling",
@@ -111,8 +101,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/aiRouters.ts#predictiveAlertRouter.get",
   "server/routers/aiRouters.ts#predictiveAlertRouter.list",
   "server/routers/aiRouters.ts#predictiveAlertRouter.stats",
-  // ★ 2026-10-25 LỖ THẬT: SELECT root_cause_analysis theo id, không lọc (từng ở S chỉ vì ctx đi vào suggestActions — không phải cổng).
-  "server/routers/aiRouters.ts#rootCauseRouter.get",
   "server/routers/aiRouters.ts#rootCauseRouter.list",
   // ── server/routers/aiSegmentationRouter.ts (1) ─────────────────────────────────────────────
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.listMasks",
@@ -130,8 +118,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.recommendNgThreshold",
   // ── server/routers/alertRouters.ts (2) ─────────────────────────────────────────────────────
   "server/routers/alertRouters.ts#alertRouter.getById",
-  // ★ 2026-10-25 (điểm mù đọc) lọc theo CHỦ (userId = người gọi) — ứng viên MIỄN TRỪ 'dữ liệu cá nhân'.
-  "server/routers/alertRouters.ts#alertRouter.list",
   "server/routers/alertRouters.ts#alertRouter.listAll",
   // ── server/routers/annotationComparisonRouter.ts (4) ───────────────────────────────────────
   // ── server/routers/annotationRouters.ts (7) ────────────────────────────────────────────────
@@ -241,20 +227,12 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/hotFolderRouter.ts#hotFolderRouter.recentFiles",
   "server/routers/hotFolderRouter.ts#hotFolderRouter.status",
   // ── server/routers/inspectionProgramRouter.ts (4) ──────────────────────────────────────────
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.compare",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.get",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.getActive",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.list",
   // ── server/routers/inspectionRouters.ts (5) ────────────────────────────────────────────────
   // ── server/routers/interlockRouter.ts (3) ──────────────────────────────────────────────────
   "server/routers/interlockRouter.ts#interlockRouter.get",
   "server/routers/interlockRouter.ts#interlockRouter.list",
   "server/routers/interlockRouter.ts#interlockRouter.testEvaluate",
   // ── server/routers/irRouter.ts (4) ─────────────────────────────────────────────────────────
-  "server/routers/irRouter.ts#irRouter.diffVersions",
-  "server/routers/irRouter.ts#irRouter.getFlow",
-  "server/routers/irRouter.ts#irRouter.listFlows",
-  "server/routers/irRouter.ts#irRouter.mergeVersions",
   // ── server/routers/layoutRouters.ts (2) ────────────────────────────────────────────────────
   "server/routers/layoutRouters.ts#layoutRouter.getById",
   "server/routers/layoutRouters.ts#layoutRouter.listByWorkshop",
@@ -368,15 +346,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/productVariantRouter.ts#productVariantRouter.getEffectivePoints",
   "server/routers/productVariantRouter.ts#productVariantRouter.getVariant",
   // ── server/routers/programmingRouter.ts (9) ────────────────────────────────────────────────
-  "server/routers/programmingRouter.ts#programmingRouter.fleetVersionMatrix",
-  "server/routers/programmingRouter.ts#programmingRouter.getArtifact",
-  "server/routers/programmingRouter.ts#programmingRouter.getProject",
-  "server/routers/programmingRouter.ts#programmingRouter.listArtifacts",
-  "server/routers/programmingRouter.ts#programmingRouter.listBuilds",
-  "server/routers/programmingRouter.ts#programmingRouter.listDeployApprovals",
-  "server/routers/programmingRouter.ts#programmingRouter.listDeployments",
-  "server/routers/programmingRouter.ts#programmingRouter.listProjects",
-  "server/routers/programmingRouter.ts#programmingRouter.listSymbols",
   // ★★★ 2026-08-18 — 8 mục của `server/routers/publicProductApiRouter.ts` ĐÃ ĐƯỢC TRẢ, xoá khỏi
   // đây. Tám thủ tục ấy nay thu hẹp về nhà máy của MÁY GỌI (`publicProductScope.ts`) và bộ suy
   // xếp chúng vào nhóm **B** — xem `phamViDocCensus.test.ts` §8, nơi tập ấy được ghim TỪNG TÊN.
@@ -425,11 +394,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/sitesRouter.ts#sitesRouter.get",
   "server/routers/sitesRouter.ts#sitesRouter.list",
   // ── server/routers/sopRouter.ts (5) ────────────────────────────────────────────────────────
-  "server/routers/sopRouter.ts#sopRouter.execution",
-  "server/routers/sopRouter.ts#sopRouter.executions",
-  "server/routers/sopRouter.ts#sopRouter.get",
-  "server/routers/sopRouter.ts#sopRouter.list",
-  "server/routers/sopRouter.ts#sopRouter.resolveActive",
   // ── server/routers/spcAnalysisRouter.ts (2) ────────────────────────────────────────────────
   "server/routers/spcAnalysisRouter.ts#spcAnalysisRouter.controlChart",
   "server/routers/spcAnalysisRouter.ts#spcAnalysisRouter.topNGPoints",
@@ -481,4 +445,10 @@ export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
     "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listVersions":
     "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
+  "server/routers/alertRouters.ts#alertRouter.list": "dữ liệu của CHÍNH người gọi (lọc theo chủ) — dieu-phoi duyệt mức kỹ thuật 2026-10-25: getAlertSettings(ctx.user.id) = WHERE userId = người gọi",
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.changeover.listMine": "dữ liệu của CHÍNH người gọi (lọc theo chủ) — dieu-phoi duyệt mức kỹ thuật 2026-10-25: WHERE requestedBy = người gọi",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.grep": "cây mã nguồn repo, RBAC ai_repo_read, không phải dữ liệu nhà máy — dieu-phoi duyệt mức kỹ thuật 2026-10-25",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.listFiles": "cây mã nguồn repo, RBAC ai_repo_read, không phải dữ liệu nhà máy — dieu-phoi duyệt mức kỹ thuật 2026-10-25",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.readFile": "cây mã nguồn repo, RBAC ai_repo_read, không phải dữ liệu nhà máy — dieu-phoi duyệt mức kỹ thuật 2026-10-25",
+  "server/routers/scadaCommandsRouter.ts#scadaCommandsRouter.trangThai": "dữ liệu của CHÍNH người gọi (lọc theo chủ) — dieu-phoi duyệt mức kỹ thuật 2026-10-25: lenhHmi.dongChoCuaNguoi lọc userId từ ctx, attempts theo requestId+userId (scada-master xác nhận). Giới hạn chấp nhận: người mất phạm vi sau khi tạo yêu cầu vẫn xem trạng thái yêu cầu của mình tới khi hết hạn",
 };
