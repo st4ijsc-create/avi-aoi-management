@@ -38,6 +38,8 @@ import {
 import { raiseAndon, type AndonState } from "../andon/andonService";
 import { dispatch, isInterlockAutoBlockEnabled, isOtControlEnabled } from "../ot/commandDispatcher";
 import { giaTriLenhInterlock } from "./giaTriLenh";
+// kiem-dinh R1b-1 I1 (a) — duyệt chỉ còn hiệu lực khi bám định nghĩa tag nguồn / đích khớp bám chụp lúc duyệt (fail-closed)
+import { luatDuyetConHieuLuc } from "./dinhNghiaDuyet";
 // Đánh giá luật ĐÃ CHUYỂN sang interlockGate (dùng chung với cổng inline của dispatcher): danhGiaLuatChiTiet.
 import { danhGiaLuatChiTiet } from "./interlockGate";
 
@@ -187,12 +189,16 @@ export async function evaluateRule(rule: InterlockRule): Promise<{ id: number; s
   // An auto-block candidate = a block/stop/reduce rule that does NOT require a
   // human confirm. The actual write only happens when BOTH F5b flags are on AND
   // the dispatcher re-authorizes the rule.
-  const isAutoCandidate =
+  const ungVienCauTruc =
     action !== "alert" &&
     rule.requiresHumanConfirm === false &&
     rule.approvedBy != null &&
     !!rule.targetAdapterId &&
     !!rule.commandTag;
+  // kiem-dinh R1b-1 I1 (a) — bám định nghĩa tag nguồn / đích lệch bám chụp lúc duyệt (hoặc chưa chụp: duyệt trước mig 0434) ⇒ luật CHƯA DUYỆT:
+  // không tự chặn (chỉ Andon đỏ + sự kiện 'skipped'). Không bao giờ ném (lỗi đọc ⇒ false).
+  const duyetHieuLuc = ungVienCauTruc ? await luatDuyetConHieuLuc(db as never, rule) : false;
+  const isAutoCandidate = ungVienCauTruc && duyetHieuLuc;
 
   let status: "alert_only" | "proposed" | "skipped" | "fired";
   let andonState: AndonState;
@@ -221,7 +227,9 @@ export async function evaluateRule(rule: InterlockRule): Promise<{ id: number; s
     } else {
       // Missing a flag (or not a clean auto candidate) → no write. Red Andon only.
       status = "skipped";
-      note = !isAutoCandidate
+      note = ungVienCauTruc && !duyetHieuLuc
+        ? "auto-block skipped — source/target tag definition (address, type, scale/offset, adapter, edge node) changed since approval, or approved before mig 0434: re-approve the rule."
+        : !isAutoCandidate
         ? "auto-block not configured (needs requiresHumanConfirm=false + approved + targetAdapterId + commandTag)."
         : `auto-block skipped — flags off (INTERLOCK_AUTO_BLOCK_ENABLED=${isInterlockAutoBlockEnabled()}, OT_CONTROL_ENABLED=${isOtControlEnabled()}).`;
     }

@@ -4515,7 +4515,8 @@
       "scadaKenhCheDoKhongDoiAdapter": "该标签是某台机器的模式通道——不能移到其他适配器。请先在“通道与限值”页面移除或重新声明模式通道。",
       "scadaKenhCheDoGoTruoc": "该标签是某台机器的模式通道——删除标签前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。",
       "scadaKenhCheDoDoiMay": "该适配器承载某台机器的模式通道——将适配器分配给其他机器前，请先在“通道与限值”页面移除模式通道。",
-      "scadaKenhCheDoGoTruocXoaAdapter": "该适配器承载某台机器的模式通道——删除适配器前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。"
+      "scadaKenhCheDoGoTruocXoaAdapter": "该适配器承载某台机器的模式通道——删除适配器前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。",
+      "interlockDefinitionChanged": "源 / 目标标签的定义（地址、类型、比例 / 偏移、适配器、边缘节点）在审批后已更改 — 或该规则是在本次更新之前审批的。启用前需要重新审批。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -14263,7 +14264,10 @@
     },
     "openEventsPanel": "打开事件面板",
     "eventsButton": "事件",
-    "unresolvedCount": "{{count}} 未处理"
+    "unresolvedCount": "{{count}} 未处理",
+    "canDuyetLai": "需要重新审批",
+    "canDuyetLaiGiaiThich": "源 / 目标标签的定义（地址、类型、比例 / 偏移、适配器、边缘节点）在审批后已更改，或该规则是在本次更新之前审批的 — 重新审批之前无法启用，也不会自动拦截。",
+    "totpBody": "编辑或删除已启用或已审批（带标签目标 / 源）的联锁规则属于安全变更：规则将失去审批，其标签可能失去保护。需要新的 TOTP 验证码。"
   },
   "quickIssue": {
     "button": "报告异常",

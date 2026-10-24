@@ -115,6 +115,10 @@ const luatBatCoGhi = (r: LuatNhamTag): boolean => r.enabled === true && luatCoGh
  * N2 (fix round 3) — luật BẢO VỆ tag: không phải `alert`, ĐANG BẬT HOẶC ĐÃ DUYỆT (tắt luật không gỡ được bảo vệ của nó).
  * R1b-1 T10b (n2) — `approvedBy` BẮT BUỘC trong kiểu (`number | null`, không `?`): một bộ nạp quên chọn cột sẽ lỗi BIÊN DỊCH thay vì lặng lẽ
  * rơi về "chỉ luật đang bật". `undefined` lọt qua lúc chạy (dữ liệu không qua kiểu) ⇒ coi như ĐÃ DUYỆT (chiều an toàn: bảo vệ thừa, không thiếu).
+ * kiem-dinh R1b-1 I1 (a) (2026-10-25) — CỐ Ý dùng `approvedBy !== null` THÔ, KHÔNG dùng "duyệt còn hiệu lực" (bám định nghĩa khớp —
+ * `interlock/dinhNghiaDuyet.ts`): ở đây "đã duyệt" MỞ RỘNG bảo vệ (tag cần TOTP). Coi luật lệch bám là chưa duyệt sẽ làm tag HẾT được bảo vệ
+ * đúng sau một lần đổi định nghĩa — chiều fail-open. Lệch bám chỉ làm luật mất quyền bật / tự chặn (enable, engine, dispatcher), không bao giờ
+ * làm tag mất bảo vệ.
  */
 export const luatBaoVe = (r: LuatNhamTag & { approvedBy: number | null }): boolean =>
   luatCoGhiLenh(r.action) && (r.enabled === true || r.approvedBy !== null);

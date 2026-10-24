@@ -75,6 +75,7 @@ import {
   interlockRules,
   scadaKenhCheDo,
 } from "../../../drizzle/schema";
+import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
 import { dispatch, type DispatchInput } from "./commandDispatcher";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
@@ -568,6 +569,7 @@ describe.skipIf(!DB_URL)("R1a T4 — dispatch: cổng chế độ máy K2 (LOCAL
       })
       .returning();
     ruleId = rule!.id;
+    await dongDauDuyetLuat(ruleId); // kiem-dinh R1b-1 I1 (a) FIXTURE — "đã duyệt" gieo thẳng mang bám định nghĩa hiện tại
     const ev = async () => (await x.insert(interlockEvents).values({ ruleId, action: "reduce_speed", status: "fired" }).returning())[0]!.id;
     const il = async (): Promise<DispatchInput> => ({
       adapterId: adA,

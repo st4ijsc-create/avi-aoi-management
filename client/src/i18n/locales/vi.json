@@ -4515,7 +4515,8 @@
       "scadaKenhCheDoKhongDoiAdapter": "Tag này là kênh chế độ của một máy — không chuyển sang adapter khác được. Gỡ hoặc khai lại kênh chế độ ở trang Kênh & giới hạn trước.",
       "scadaKenhCheDoGoTruoc": "Tag này là kênh chế độ của một máy — gỡ kênh chế độ ở trang Kênh & giới hạn (cần mã xác thực) trước khi xoá tag.",
       "scadaKenhCheDoDoiMay": "Adapter đang mang kênh chế độ của máy — gỡ kênh chế độ ở trang Kênh & giới hạn trước khi gán adapter sang máy khác.",
-      "scadaKenhCheDoGoTruocXoaAdapter": "Adapter đang mang kênh chế độ của máy — gỡ kênh chế độ ở trang Kênh & giới hạn (cần mã xác thực) trước khi xoá adapter."
+      "scadaKenhCheDoGoTruocXoaAdapter": "Adapter đang mang kênh chế độ của máy — gỡ kênh chế độ ở trang Kênh & giới hạn (cần mã xác thực) trước khi xoá adapter.",
+      "interlockDefinitionChanged": "Định nghĩa tag nguồn / đích (địa chỉ, kiểu, scale / offset, adapter, node edge) đã đổi sau khi duyệt — hoặc quy tắc được duyệt trước bản cập nhật. Cần duyệt lại trước khi bật."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -14460,7 +14461,10 @@
     },
     "openEventsPanel": "Mở panel Sự kiện",
     "eventsButton": "Sự kiện",
-    "unresolvedCount": "{{count}} chưa xử lý"
+    "unresolvedCount": "{{count}} chưa xử lý",
+    "canDuyetLai": "Cần duyệt lại",
+    "canDuyetLaiGiaiThich": "Định nghĩa tag nguồn / đích (địa chỉ, kiểu, scale / offset, adapter, node edge) đã đổi sau khi duyệt, hoặc quy tắc được duyệt trước bản cập nhật — không bật được, không tự chặn cho tới khi duyệt lại.",
+    "totpBody": "Sửa hoặc xoá một quy tắc khoá liên động đang bật hoặc đã duyệt (có đích / nguồn tag) là thay đổi an toàn: quy tắc mất duyệt và tag của nó có thể mất bảo vệ. Cần mã TOTP mới."
   },
   "quickIssue": {
     "button": "Báo sự cố",

@@ -34,6 +34,8 @@ function reset() {
 
 // doc 81 Đợt 1B Task 6 — + inArray/sql for the write-ahead reservation (see commandDispatcher.testkit.ts).
 vi.mock("drizzle-orm", async () => (await import("./commandDispatcher.testkit")).fakeOrm);
+// kiem-dinh R1b-1 I1 (a) (2026-10-25) — FIXTURE: bám định nghĩa tag đọc DB thật (raw SQL) mà FakeDb không có; mặc định "duyệt còn hiệu lực".
+vi.mock("../interlock/dinhNghiaDuyet", () => ({ luatDuyetConHieuLuc: vi.fn(async () => true) }));
 
 function matches(row: Row, pred: any): boolean {
   if (!pred) return true;

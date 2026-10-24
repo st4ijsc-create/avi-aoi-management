@@ -4523,7 +4523,8 @@
       "scadaKenhCheDoKhongDoiAdapter": "This tag is a machine's mode channel — it cannot be moved to another adapter. Remove or re-declare the mode channel on the Channels & limits page first.",
       "scadaKenhCheDoGoTruoc": "This tag is a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the tag.",
       "scadaKenhCheDoDoiMay": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page before assigning the adapter to another machine.",
-      "scadaKenhCheDoGoTruocXoaAdapter": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the adapter."
+      "scadaKenhCheDoGoTruocXoaAdapter": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the adapter.",
+      "interlockDefinitionChanged": "The source / target tag definition (address, type, scale / offset, adapter, edge node) changed after approval — or the rule was approved before this update. Re-approve it before enabling."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -14480,7 +14481,10 @@
     },
     "openEventsPanel": "Open Events panel",
     "eventsButton": "Events",
-    "unresolvedCount": "{{count}} open"
+    "unresolvedCount": "{{count}} open",
+    "canDuyetLai": "Re-approval needed",
+    "canDuyetLaiGiaiThich": "The source / target tag definition (address, type, scale / offset, adapter, edge node) changed after approval, or the rule was approved before this update — it cannot be enabled and will not auto-block until re-approved.",
+    "totpBody": "Editing or deleting an interlock rule that is enabled or approved (with a tag target / source) is a safety change: the rule loses its approval and its tags may lose protection. A fresh TOTP code is required."
   },
   "quickIssue": {
     "button": "Report issue",

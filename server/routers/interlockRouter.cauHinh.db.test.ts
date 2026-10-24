@@ -5,8 +5,16 @@
  *
  * CSDL THẬT (`_test`). Số tổng hợp, tự dọn (control_audit_log là WORM — dòng audit ở lại vô hại).
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
+import { dongDauDuyetLuat } from "../testing/dauDuyetInterlock";
+
+// kiem-dinh R1b-1 I1 (b) (2026-10-25) — sửa / xoá luật bảo vệ nay đòi TOTP tươi mức 5 (cổng có test riêng: interlockRouter.kiemDinh.r1b.db.test.ts).
+// Tệp này kiểm cấu trúc / MOC / SoD bằng người gọi id giả (không có 2FA thật) ⇒ FIXTURE: mã luôn hợp lệ.
+vi.mock("../services/scada/totpCauHinh", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/scada/totpCauHinh")>()),
+  kiemTotpCauHinh: async () => undefined,
+}));
 import { interlockRouter } from "./interlockRouter";
 import { _internal as oversight } from "./oversightRouter";
 import { getDb } from "../db/connection";
@@ -115,6 +123,7 @@ describe.skipIf(!DB_URL)("interlockRouter — luật telemetry_tag hỏng cấu 
       INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action, "approvedBy", "createdBy")
       VALUES (${DAU + "-e1"}, 'machine', 'telemetry_tag', 'gt', 80, 'alert', ${B}, ${A}) RETURNING id`;
     ruleIds.push(ins.id as number);
+    await dongDauDuyetLuat(ins.id as number); // I1 (a) FIXTURE — "đã duyệt" gieo thẳng mang bám định nghĩa hiện tại
     const token = (await caller(A).list()).find((r) => r.id === ins.id)!.versionToken;
     const err = await caller(A).enable({ id: ins.id as number, expectedVersion: token }).catch((e) => e);
     expect(trpcCodeOf(err)).toBe("BAD_REQUEST");
@@ -279,6 +288,7 @@ describe.skipIf(!DB_URL)("interlockRouter — luật telemetry_tag hỏng cấu 
         INSERT INTO interlock_rules (name, scope, "stationId", "machineId", "sourceKey", "sourceType", "comparisonOperator", threshold, action, "approvedBy", "createdBy")
         VALUES (${DAU + "-s4e"}, 'station', 1, ${MAY}, 'nhiet_do', 'telemetry_tag', 'gt', 80, 'alert', ${B}, ${A}) RETURNING id`;
       ruleIds.push(e.id as number);
+      await dongDauDuyetLuat(e.id as number); // I1 (a) FIXTURE — "đã duyệt" gieo thẳng mang bám định nghĩa hiện tại
       const e2 = await caller(A).enable({ id: e.id as number, expectedVersion: (await caller(A).get({ id: e.id as number })).versionToken }).catch((x) => x);
       expect(loiPhamVi(e2)).toEqual(LOI);
       expect((await sql`SELECT enabled FROM interlock_rules WHERE id = ${e.id}`)[0].enabled).toBe(false);

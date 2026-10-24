@@ -24,6 +24,7 @@ import { and, like, sql as drzSql } from "drizzle-orm";
 import { interlockRules } from "../../drizzle/schema";
 import { getDb } from "../db/connection";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
+import { dongDauDuyetLuat } from "../testing/dauDuyetInterlock";
 import { getTool } from "../services/aiLocalTools/toolRegistry";
 import { canhBaoLuatLenhLechLuoiKhiKhoiDong, luatLenhLechLuoi, TRUY_VAN_TRUOC_TRIEN_KHAI } from "../services/scada/lenhInterlockLechLuoi";
 import "../services/aiLocalTools/writeHandlers/interlock";
@@ -72,6 +73,8 @@ async function seedLuat(
       "commandTag", "commandValue", enabled, "approvedBy", "createdBy")
     VALUES (${DAU + "-" + ten}, 'machine', 'ng_rate', 'gt', 5, ${o.action ?? "reduce_speed"}, ${adapterId}, ${commandTag},
       ${sql.json(commandValue as never)}, ${o.enabled ?? true}, ${o.duyet === false ? null : DUYET}, ${TAC_GIA}) RETURNING id`;
+  // kiem-dinh R1b-1 I1 (a) — FIXTURE: luật "đã duyệt" gieo thẳng bảng mang bám định nghĩa HIỆN TẠI (như approve chụp).
+  await dongDauDuyetLuat(Number(r.id));
   return Number(r.id);
 }
 
@@ -253,7 +256,12 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — interloc
   });
 
   describe("1b — R1b-1 T10b: interlock.enable đòi đích / nguồn còn TỒN TẠI + BẬT (chiều ngược của I2)", () => {
-    const bat = async (id: number) => ilk(TAC_GIA).enable({ id, expectedVersion: (await ilk(TAC_GIA).get({ id })).versionToken });
+    // kiem-dinh R1b-1 I1 (a) — FIXTURE: các ca dưới đổi tag / adapter nguồn / đích giữa các lần bật để kiểm "đích / nguồn sẵn sàng" (T10b); mỗi
+    // lần bật mô phỏng một lần DUYỆT LẠI trên định nghĩa hiện tại (đóng dấu bám) — cổng "định nghĩa đổi sau duyệt" có test riêng (I1 a bên dưới).
+    const bat = async (id: number) => {
+      await dongDauDuyetLuat(id);
+      return ilk(TAC_GIA).enable({ id, expectedVersion: (await ilk(TAC_GIA).get({ id })).versionToken });
+    };
     const dangBat = async (id: number) => (await sql`SELECT enabled FROM interlock_rules WHERE id = ${id}`)[0].enabled as boolean;
     const datAdapter = (b: boolean) => sql`UPDATE device_adapters SET "isEnabled" = ${b} WHERE id = ${adapterId}`;
 

@@ -329,6 +329,9 @@ function isTargeted(
  * FAIL-CLOSED: bất kỳ lỗi nào (không có DB, query lỗi, evaluator ném) → trả
  * { blocked:true, failClosed:true } để dispatcher TỪ CHỐI ghi (an toàn hơn cho phép).
  * Rule proposed/chưa duyệt KHÔNG chặn (không nằm trong tập enabled+approved).
+ * kiem-dinh R1b-1 I1 (a) (2026-10-25) — CỐ Ý dùng `approvedBy != null` THÔ, không dùng "duyệt còn hiệu lực" (bám định nghĩa tag khớp —
+ * `dinhNghiaDuyet.ts`): cổng này CHỈ CHẶN; coi luật lệch bám là chưa duyệt sẽ GỠ chặn (fail-open). Luật lệch bám vẫn chặn theo điều kiện như
+ * trước; nó chỉ mất quyền bật lại / tự gửi lệnh (enable, engine, dispatcher).
  */
 export async function evaluateInterlockGate(params: {
   adapterId: number;
