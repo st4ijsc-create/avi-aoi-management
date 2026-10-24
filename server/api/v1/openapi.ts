@@ -1438,7 +1438,10 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             "Requires scope `data:read`. Wraps semantics/metricRegistry.computeMetric — the ONE governed " +
             "definition (contracts/metrics/*.yaml); the response always carries `definition_version` " +
             "(e.g. OEE@v1). Errors: unknown metric → 404, undeclared scope / missing scopeId / unsupported " +
-            "window → 400, DB down → 503. from/to default to the trailing 24 h.",
+            "window → 400, DB down → 503. from/to default to the trailing 24 h. " +
+            "KEY SCOPE (2026-10-24): a key declared for ONE factory MUST pass `scope` (equipment|machine|line|station|factory) AND `scopeId` of an entity inside its factory — " +
+            "missing scopeId or an unmappable scope → 400 `scope_id_required`; an entity outside the key's factory → 404 (same as nonexistent). Global keys are unchanged; undeclared keys get 404. " +
+            "Example: GET /api/v1/metrics/OEE?scope=line&scopeId=12 with a factory-A key → 200 if line 12 is in factory A, 404 otherwise.",
           parameters: [
             { name: "metric", in: "path", required: true, schema: { type: "string" }, description: "OEE | FPY | Throughput | DPMO | Availability | Performance | Quality" },
             { name: "scope", in: "query", required: true, schema: { type: "string" }, description: "equipment | line | factory (per definition)" },
