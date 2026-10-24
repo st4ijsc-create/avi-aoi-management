@@ -85,29 +85,9 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   // ── server/api/v1/router.ts (0) ────────────────────────────────────────────────────────────────
   // ── server/api/v1/state.ts (0) ─────────────────────────────────────────────────────────────────
   // ── server/routes/edgeDownload.ts (0) ──────────────────────────────────────────────────────────
-  // ── server/routes/externalHierarchyApi.ts (2) ───────────────────────────────────────────────
+  // ── server/routes/externalHierarchyApi.ts (0) ───────────────────────────────────────────────
   // ★ 2026-10-24 — trích từ _core/index.ts; hierarchy/{tree,factory/:id,mqtt-topics,summary} đã lọc theo phạm vi (nhóm ④). Hai tuyến dưới còn nợ cho tới nhóm ⑤.
-  "server/routes/externalHierarchyApi.ts#GET /api/external/dashboard/summary",
-  "server/routes/externalHierarchyApi.ts#GET /api/external/statistics/measurement-points",
-  // ── server/routes/externalInspectionApi.ts (18) ────────────────────────────────────────────────
-  "server/routes/externalInspectionApi.ts#GET /api/external/alerts/summary",
-  "server/routes/externalInspectionApi.ts#GET /api/external/fleet/summary",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/ai-analysis",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/cause-effect",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/check-sheet",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/control-chart",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/defect-pareto",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/diagnostics",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/fail-history",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/histogram",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/scatter",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/stratification",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/summary",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/trend",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/yield-comparison",
-  "server/routes/externalInspectionApi.ts#GET /api/external/oee/summary",
-  "server/routes/externalInspectionApi.ts#GET /api/external/pdm/summary",
-  "server/routes/externalInspectionApi.ts#GET /api/external/safety/summary",
+  // ── server/routes/externalInspectionApi.ts (0) ────────────────────────────────────────────────
   // ── server/routes/reportArtifactRoutes.ts (0) ──────────────────────────────────────────────────
   // ⚠ MỘT MỤC "TRONG SỔ VÌ BAO ĐÓNG, KHÔNG VÌ CÓ LỖ" — đọc trước khi ai đó đi vá nó. Tuyến này CÓ
   //   lọc theo người xem (`getDownloadTarget(id, viewer)`, `viewer` suy từ `authenticateExportRequest`).

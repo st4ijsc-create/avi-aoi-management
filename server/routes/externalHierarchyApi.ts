@@ -7,7 +7,8 @@ import { getDb } from "../db";
 import { docGioTuongNhaMay } from "../utils/factoryTime";
 import { finalYield } from "../utils/kpi";
 import { phamViGoiNgoai, nguoiXemCuaPhamVi, phamViDaAp, thanTuChoiPhamViNgoai } from "./_phamViNgoai";
-import { idsCapExternal, idTrongPhamViExternal } from "./phamViExternal";
+import { idsCapExternal, idTrongPhamViExternal, andSanPhamTrongPhamVi } from "./phamViExternal";
+import { congPhamVi } from "./externalAlertApi";
 import { kyAnhTrongThan } from "../_core/anhKyUrl";
 
 // BG-96: chuỗi người dùng gõ đọc theo giờ tường NHÀ MÁY (cùng bản trong _core/index.ts; call site đã guard isNaN).
@@ -206,11 +207,25 @@ export function registerExternalHierarchyRoutes(app: express.Express, validateMa
         });
       }
 
+      // phạm vi người gọi (rà bảo mật 2026-10-24): master key/admin ⇒ không lọc; tài khoản Bearer ⇒ chỉ dữ liệu của nhà máy được gán; stationId ngoài phạm vi ⇒ 403 external_factory_scope_denied: sản phẩm ngoài phạm vi ⇒ 403; số đếm CHỈ tính kiểm tra của nhà máy được gán (các hàm thống kê nhận sẵn userId/userRole)
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai);
+      {
+        const { sql } = await import("drizzle-orm");
+        const { productModels } = await import("../../drizzle/schema");
+        const congSp = await andSanPhamTrongPhamVi(nguoiXemNgoai, productModels.id);
+        const db2 = await getDb();
+        const trong = db2 ? await db2.execute(sql`SELECT 1 AS ok FROM product_models WHERE id = ${productModel.id} ${congSp} LIMIT 1`) : null;
+        const trongRows = trong ? ((trong as any).rows || (trong as any)) : [];
+        if ((trongRows as any[]).length === 0) return res.status(403).json(thanTuChoiPhamViNgoai("product", String(productModel.id)));
+      }
+
       // Get statistics
       const stats = await getMeasurementPointStatsByProduct({
         productModelId: productModel.id,
         startDate: parsedStart,
         endDate: parsedEnd,
+        ...(nguoiXemNgoai ?? {}),
       });
 
       // Optionally include images
@@ -221,6 +236,7 @@ export function registerExternalHierarchyRoutes(app: express.Express, validateMa
           productModelId: productModel.id,
           startDate: parsedStart,
           endDate: parsedEnd,
+          ...(nguoiXemNgoai ?? {}),
         });
       }
 
@@ -241,6 +257,7 @@ export function registerExternalHierarchyRoutes(app: express.Express, validateMa
       //     `?includeImages=true` — đúng loại trường mà một bộ ký theo-tên-trường sẽ bỏ sót.
       res.json(kyAnhTrongThan({
         success: true,
+        scopeApplied: phamViDaAp(pvNgoai),
         data: {
           productModel: {
             id: productModel.id,
@@ -286,6 +303,15 @@ export function registerExternalHierarchyRoutes(app: express.Express, validateMa
       // thật — khác biệt nằm ở tầng drizzle, không ở tầng driver.
       const { sql, count, eq: eqOp, gte, and, isNull } = await import("drizzle-orm");
 
+      // phạm vi người gọi (rà bảo mật 2026-10-24): master key/admin ⇒ không lọc; tài khoản Bearer ⇒ chỉ dữ liệu của nhà máy được gán; stationId ngoài phạm vi ⇒ 403 external_factory_scope_denied
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai);
+      const congAh = await congPhamVi(nguoiXemNgoai, "alert");
+      const congMqtt = await congPhamVi(nguoiXemNgoai, "mqtt");
+      const congConn = await congPhamVi(nguoiXemNgoai, "conn");
+      const tramTrongPhamVi = await idsCapExternal(nguoiXemNgoai, "station");
+      const congBulletin = tramTrongPhamVi === null ? undefined : (await import("drizzle-orm")).inArray(mqttBulletinHistory.stationId, tramTrongPhamVi.length > 0 ? tramTrongPhamVi : [-1]);
+
       // Default: today's summary
       const sinceParam = req.query.since as string | undefined;
       const since = sinceParam ? new Date(sinceParam) : new Date(new Date().setHours(0, 0, 0, 0));
@@ -294,29 +320,29 @@ export function registerExternalHierarchyRoutes(app: express.Express, validateMa
       const [alertCount] = await database
         .select({ total: count() })
         .from(alertHistory)
-        .where(gte(alertHistory.createdAt, since));
+        .where(and(gte(alertHistory.createdAt, since), congAh));
 
       const [alertPending] = await database
         .select({ total: count() })
         .from(alertHistory)
-        .where(and(gte(alertHistory.createdAt, since), isNull(alertHistory.acknowledgedAt)));
+        .where(and(gte(alertHistory.createdAt, since), isNull(alertHistory.acknowledgedAt), congAh));
 
       // MQTT alert counts
       const [mqttAlertCount] = await database
         .select({ total: count() })
         .from(mqttAlertHistory)
-        .where(gte(mqttAlertHistory.triggeredAt, since));
+        .where(and(gte(mqttAlertHistory.triggeredAt, since), congMqtt));
 
       const [mqttAlertPending] = await database
         .select({ total: count() })
         .from(mqttAlertHistory)
-        .where(and(gte(mqttAlertHistory.triggeredAt, since), eqOp(mqttAlertHistory.isResolved, false)));
+        .where(and(gte(mqttAlertHistory.triggeredAt, since), eqOp(mqttAlertHistory.isResolved, false), congMqtt));
 
       // Connection alert counts
       const [connAlertCount] = await database
         .select({ total: count() })
         .from(mqttConnectionAlerts)
-        .where(gte(mqttConnectionAlerts.triggeredAt, since));
+        .where(and(gte(mqttConnectionAlerts.triggeredAt, since), congConn));
 
       const [connAlertPending] = await database
         .select({ total: count() })
@@ -325,16 +351,18 @@ export function registerExternalHierarchyRoutes(app: express.Express, validateMa
           gte(mqttConnectionAlerts.triggeredAt, since),
           eqOp(mqttConnectionAlerts.isResolved, false),
           eqOp(mqttConnectionAlerts.isAcknowledged, false),
+          congConn,
         ));
 
       // Recent bulletins count
       const [bulletinCount] = await database
         .select({ total: count() })
         .from(mqttBulletinHistory)
-        .where(gte(mqttBulletinHistory.createdAt, since));
+        .where(and(gte(mqttBulletinHistory.createdAt, since), congBulletin));
 
       res.json({
         success: true,
+        scopeApplied: phamViDaAp(pvNgoai),
         data: {
           since: since.toISOString(),
           alerts: {

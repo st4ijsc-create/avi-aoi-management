@@ -166,7 +166,8 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
 // ★ 2026-10-24 /api/external nhóm ②: A 44→41 · S 55→58 (3 tuyến alerts/bulletins đã trích sang routes/externalAlertApi.ts và lọc theo phạm vi).
 // ★ 2026-10-24 /api/external nhóm ③: A 41→29 · S 58→70 (12 tuyến: stations/:id + 6 nhánh, resolve-topic, workstations, workstations/:id, products, products/:id).
 // ★ 2026-10-24 /api/external nhóm ④: A 29→25 · S 70→74 (hierarchy/{tree,factory/:factoryId,mqtt-topics,summary}); dashboard/summary + statistics/measurement-points đã trích sang cùng tệp, còn nợ → nhóm ⑤.
-const GHIM = { A: 25, C: 40, D: 96, S: 74, U: 16, tong: 251 } as const;
+// ★ 2026-10-24 /api/external nhóm ⑤: A 25→5 · S 74→94 (20 tuyến tổng hợp). A=5 còn lại ĐÚNG là năm MIỄN TRỪ CÓ CHỦ Ý (standards/device-types|alarm-taxonomy, twin/models, edge/download, reports/artifacts) — sổ nợ tuyến /api/* RỖNG.
+const GHIM = { A: 5, C: 40, D: 96, S: 94, U: 16, tong: 251 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -379,6 +380,7 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
     //   `403 · application/json · image_factory_scope_denied` trên đường dẫn của nhà máy B, và
     //   `200 · image/png` trên đường dẫn của chính A. Xem `phamViTuyenBaseline.ts`.
     expect(cua("S").map(khoaTuyen).sort()).toEqual([
+      // ★ 2026-10-24 /api/external nhóm ⑤: 20 tuyến tổng hợp (inspections analytics ×13, oee|fleet|safety|pdm|alerts summary, dashboard/summary, statistics/measurement-points) lọc theo phạm vi người gọi; stationId ngoài phạm vi ⇒ 403. Lưới: externalTongHopPhamVi.db.test.ts.
       // ★ 2026-10-24 /api/external nhóm ④: hierarchy/{tree, factory/:factoryId, mqtt-topics, summary} (trích sang routes/externalHierarchyApi.ts) lọc theo nhà máy được gán. Lưới: externalHierarchyPhamVi.db.test.ts.
       // ★ 2026-10-24 /api/external nhóm ③: stations/:id + 6 nhánh + resolve-topic + workstations(+/:id) (trích sang routes/externalStationApi.ts) và products(+/:id) lọc theo phạm vi người gọi. Lưới: externalStationPhamVi.db.test.ts, externalInspectionPhamVi.db.test.ts.
       // ★ 2026-10-24 /api/external nhóm ②: alerts · alerts/:alertId · bulletins (trích sang routes/externalAlertApi.ts) lọc theo phạm vi người gọi. Lưới: routes/externalAlertPhamVi.db.test.ts.
@@ -452,15 +454,35 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/routes/externalAlertApi.ts#GET /api/external/alerts",
       "server/routes/externalAlertApi.ts#GET /api/external/alerts/:alertId",
       "server/routes/externalAlertApi.ts#GET /api/external/bulletins",
+      "server/routes/externalHierarchyApi.ts#GET /api/external/dashboard/summary",
       "server/routes/externalHierarchyApi.ts#GET /api/external/hierarchy/factory/:factoryId",
       "server/routes/externalHierarchyApi.ts#GET /api/external/hierarchy/mqtt-topics",
       "server/routes/externalHierarchyApi.ts#GET /api/external/hierarchy/summary",
       "server/routes/externalHierarchyApi.ts#GET /api/external/hierarchy/tree",
+      "server/routes/externalHierarchyApi.ts#GET /api/external/statistics/measurement-points",
+      "server/routes/externalInspectionApi.ts#GET /api/external/alerts/summary",
+      "server/routes/externalInspectionApi.ts#GET /api/external/fleet/summary",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/ai-analysis",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/cause-effect",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/check-sheet",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/control-chart",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/defect-pareto",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/diagnostics",
       "server/routes/externalInspectionApi.ts#GET /api/external/inspections/events",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/fail-history",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/histogram",
       "server/routes/externalInspectionApi.ts#GET /api/external/inspections/images",
       "server/routes/externalInspectionApi.ts#GET /api/external/inspections/measurements",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/scatter",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/stratification",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/summary",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/trend",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/yield-comparison",
+      "server/routes/externalInspectionApi.ts#GET /api/external/oee/summary",
+      "server/routes/externalInspectionApi.ts#GET /api/external/pdm/summary",
       "server/routes/externalInspectionApi.ts#GET /api/external/products",
       "server/routes/externalInspectionApi.ts#GET /api/external/products/:id",
+      "server/routes/externalInspectionApi.ts#GET /api/external/safety/summary",
       "server/routes/externalStationApi.ts#GET /api/external/stations",
       "server/routes/externalStationApi.ts#GET /api/external/stations/:id",
       "server/routes/externalStationApi.ts#GET /api/external/stations/:id/fail-history",
