@@ -8,9 +8,10 @@
  * Danh tính LUÔN từ `ctx.user` (`phamViCua`), không bao giờ từ `input`.
  */
 import { eq, inArray, or, sql, type SQL } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { appError } from "../_core/appError";
 import { getDb as getDbRaw } from "../db";
-import { idsTrongPhamVi } from "../db/hierarchy";
+import { idsTrongPhamVi, type PhamViDoc } from "../db/hierarchy";
 import { commandLog, commissioningRecords, deviceAdapters, deviceTags, safetyEvents } from "../../drizzle/schema";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 
@@ -143,13 +144,20 @@ export function dieuKienLenhTrongPhamVi(idsMay: number[] | null): SQL | undefine
   );
 }
 
+/** Cột định vị của một bảng tenant (bỏ trống cột nào bảng không có). `deviceId` không bao giờ dùng định vị. */
+export interface CotViTri {
+  lineId?: AnyPgColumn;
+  stationId?: AnyPgColumn;
+  factoryId?: AnyPgColumn;
+  robotId?: AnyPgColumn;
+}
+
 /**
- * Điều kiện SQL cho `safety_events` (phạm vi nhà máy): sự kiện nhìn thấy được ⇔ toàn quyền, HOẶC có ÍT NHẤT MỘT thuộc tính định vị (line/station/factory/robot) VÀ MỌI thuộc tính khác null
- * đều trong phạm vi (robot ⇒ line hoặc line của station của nó). Sự kiện không định vị được (cả bốn null) chỉ phạm vi toàn quyền thấy — fail-closed. `deviceId` không dùng định vị (không suy được nhà máy).
- * `undefined` khi toàn quyền.
+ * Điều kiện SQL phạm vi nhà máy cho một bảng tenant theo CỘT ĐỊNH VỊ (line/station/factory/robot): hàng thấy được ⇔ toàn quyền, HOẶC có ÍT NHẤT MỘT thuộc tính định vị khác null VÀ MỌI thuộc tính
+ * khác null đều trong phạm vi (robot ⇒ line của nó hoặc line của station của nó). Hàng không định vị được chỉ phạm vi toàn quyền thấy — fail-closed. `undefined` khi toàn quyền.
+ * `phamVi`: trục ① (`phamViCua(ctx)`, người dùng) HOẶC trục ② (`{ tenantScope }`, khoá API) — cùng bộ phân giải `idsTrongPhamVi`.
  */
-export async function dieuKienSuKienAnToanTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
-  const phamVi = phamViCua(ctx);
+export async function dieuKienViTriTrongPhamVi(phamVi: PhamViDoc, cot: CotViTri): Promise<SQL | undefined> {
   const [dong, tram, nhaMay] = await Promise.all([
     idsTrongPhamVi("line", phamVi, { strict: true }),
     idsTrongPhamVi("station", phamVi, { strict: true }),
@@ -157,14 +165,23 @@ export async function dieuKienSuKienAnToanTrongPhamVi(ctx: CoDanhTinh): Promise<
   ]);
   if (dong === null && tram === null && nhaMay === null) return undefined;
   const d = (a: number[] | null) => sql.join((a && a.length > 0 ? a : [-1]).map((x) => sql`${x}`), sql`, `);
-  const se = safetyEvents;
-  return sql`(
-    (${se.lineId} IS NOT NULL OR ${se.stationId} IS NOT NULL OR ${se.factoryId} IS NOT NULL OR ${se.robotId} IS NOT NULL)
-    AND (${se.lineId} IS NULL OR ${se.lineId} IN (${d(dong)}))
-    AND (${se.stationId} IS NULL OR ${se.stationId} IN (${d(tram)}))
-    AND (${se.factoryId} IS NULL OR ${se.factoryId} IN (${d(nhaMay)}))
-    AND (${se.robotId} IS NULL OR ${se.robotId} IN (
+  const co = Object.values(cot).filter(Boolean) as AnyPgColumn[];
+  if (co.length === 0) throw new Error("dieuKienViTriTrongPhamVi: bảng không có cột định vị nào");
+  const mot = sql.join(co.map((c) => sql`${c} IS NOT NULL`), sql` OR `);
+  const mach: SQL[] = [];
+  if (cot.lineId) mach.push(sql`(${cot.lineId} IS NULL OR ${cot.lineId} IN (${d(dong)}))`);
+  if (cot.stationId) mach.push(sql`(${cot.stationId} IS NULL OR ${cot.stationId} IN (${d(tram)}))`);
+  if (cot.factoryId) mach.push(sql`(${cot.factoryId} IS NULL OR ${cot.factoryId} IN (${d(nhaMay)}))`);
+  if (cot.robotId) {
+    mach.push(sql`(${cot.robotId} IS NULL OR ${cot.robotId} IN (
       SELECT r."id" FROM robots r LEFT JOIN stations st ON st."id" = r."stationId"
-      WHERE r."lineId" IN (${d(dong)}) OR st."lineId" IN (${d(dong)})))
-  )`;
+      WHERE r."lineId" IN (${d(dong)}) OR st."lineId" IN (${d(dong)})))`);
+  }
+  return sql`((${mot}) AND ${sql.join(mach, sql` AND `)})`;
+}
+
+/** `safety_events` theo người dùng (tRPC). */
+export async function dieuKienSuKienAnToanTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
+  const se = safetyEvents;
+  return dieuKienViTriTrongPhamVi(phamViCua(ctx), { lineId: se.lineId, stationId: se.stationId, factoryId: se.factoryId, robotId: se.robotId });
 }

@@ -104,7 +104,7 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   "server/api/v1/lines.ts#GET /lines/:id/state",
   // ── server/api/v1/metricsApi.ts (1) ────────────────────────────────────────────────────────────
   "server/api/v1/metricsApi.ts#GET /metrics/:metric",
-  // ── server/api/v1/moduleReads.ts (13) ──────────────────────────────────────────────────────────
+  // ── server/api/v1/moduleReads.ts (4) ──────────────────────────────────────────────────────────
   // ★ Đợt 42 — `GET /machines/:id/detail` + `GET /robots/:id/detail` RỜI sổ: phạm vi của khoá
   //   (`req.apiPrincipal.tenantScope`, trục ②) nay đi vào `machineDetail`/`robotDetail` (đo trước vá:
   //   khoá SIM-FAC đọc identity máy 257 của NM18 — `.qa-dot41/api-vai/http-v1.json`).
@@ -112,19 +112,10 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   //   `commandCenter.hierarchy`, chỉ khác trục (khoá API thay vì người dùng). Nay chiếu
   //   `req.apiPrincipal.tenantScope` → `resolveTenantCodeFactoryIds` → `buildHierarchy(scope, tenant)`,
   //   đúng khuôn `GET /ecosystem/kpi` đã vá 2026-08-18 ngay bên dưới nó trong cùng file.
-  "server/api/v1/moduleReads.ts#GET /anomaly/events",
-  "server/api/v1/moduleReads.ts#GET /fleet/tasks",
-  "server/api/v1/moduleReads.ts#GET /fleet/zones",
-  "server/api/v1/moduleReads.ts#GET /pdm/risk",
-  "server/api/v1/moduleReads.ts#GET /programs",
-  "server/api/v1/moduleReads.ts#GET /programs/:id/deployments",
-  "server/api/v1/moduleReads.ts#GET /safety/events",
-  "server/api/v1/moduleReads.ts#GET /safety/zones",
   "server/api/v1/moduleReads.ts#GET /standards/alarm-taxonomy",
   "server/api/v1/moduleReads.ts#GET /standards/compliance",
   "server/api/v1/moduleReads.ts#GET /standards/device-types",
   "server/api/v1/moduleReads.ts#GET /twin/models",
-  "server/api/v1/moduleReads.ts#GET /twin/scene-graph",
   // ── server/api/v1/ordersLifecycle.ts (3) ───────────────────────────────────────────────────────
   "server/api/v1/ordersLifecycle.ts#GET /orders",
   "server/api/v1/ordersLifecycle.ts#GET /orders/:id",

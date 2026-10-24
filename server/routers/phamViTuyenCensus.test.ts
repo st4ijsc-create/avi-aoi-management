@@ -158,7 +158,8 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
   'server/_core/vite.ts — app.use(express.static(distPath))',
 ];
 
-const GHIM = { A: 80, C: 40, D: 96, S: 19, U: 16, tong: 251 } as const;
+// ★ 2026-10-24 — A 80→71 · S 19→28 (chín tuyến `moduleReads.ts`: safety/events|zones, fleet/tasks|zones, programs, programs/:id/deployments, anomaly/events, twin/scene-graph, pdm/risk).
+const GHIM = { A: 71, C: 40, D: 96, S: 28, U: 16, tong: 251 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -375,11 +376,22 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       // ★ 2026-09-15 (PH-23) — bề mặt SONG SINH của `/ecosystem/kpi`, và nó nằm ngay TRÊN kpi
       //   trong cùng file mà bị bỏ quên suốt từ 2026-08-18: cùng `req.apiPrincipal.tenantScope`
       //   → `resolveTenantCodeFactoryIds` → tham số `tenant` của `buildHierarchy`.
+      // ★ Đợt 42 — hai tuyến cockpit: `machineDetail(id, phamViCuaKhoa(req.apiPrincipal?.tenantScope))`.
+      // ★ 2026-10-24 — chín tuyến còn lại cùng lớp (khoá của nhà máy A đọc nhà máy B): `dieuKienKhoa` (cột định vị → `dieuKienViTriTrongPhamVi`, trục ②) hoặc `canTrongPhamVi` (id từ client).
+      //   Lưới: `server/api/v1/moduleReadsPhamViKhoa.db.test.ts`.
+      "server/api/v1/moduleReads.ts#GET /anomaly/events",
       "server/api/v1/moduleReads.ts#GET /ecosystem/hierarchy",
       "server/api/v1/moduleReads.ts#GET /ecosystem/kpi",
-      // ★ Đợt 42 — hai tuyến cockpit: `machineDetail(id, phamViCuaKhoa(req.apiPrincipal?.tenantScope))`.
+      "server/api/v1/moduleReads.ts#GET /fleet/tasks",
+      "server/api/v1/moduleReads.ts#GET /fleet/zones",
       "server/api/v1/moduleReads.ts#GET /machines/:id/detail",
+      "server/api/v1/moduleReads.ts#GET /pdm/risk",
+      "server/api/v1/moduleReads.ts#GET /programs",
+      "server/api/v1/moduleReads.ts#GET /programs/:id/deployments",
       "server/api/v1/moduleReads.ts#GET /robots/:id/detail",
+      "server/api/v1/moduleReads.ts#GET /safety/events",
+      "server/api/v1/moduleReads.ts#GET /safety/zones",
+      "server/api/v1/moduleReads.ts#GET /twin/scene-graph",
       // ★ 2026-10-10 (doc 81 Đợt 5 E2) — `runVisibleTo(view.run, orchestrationScopeOf(req.apiPrincipal?.tenantScope))`.
       "server/api/v1/router.ts#GET /orchestration/runs/:id",
       // ⚠ `reportArtifactRoutes.ts#GET /api/reports/artifacts/:id/download` **KHÔNG** ở đây, và nó
