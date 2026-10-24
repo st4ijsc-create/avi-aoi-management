@@ -45,8 +45,9 @@ export function dieuKienNoiDichLenh(): SQL {
  * Giá trị gửi như `giaTriLenhInterlock` + `Number()` của `kiemLuoiThoChuaKhai`: NULL / JSON null ⇒ 1 (true), boolean ⇒ 1 / 0, số ⇒ chính nó,
  * chuỗi số thập phân (cắt khoảng trắng) ⇒ số, chuỗi rỗng ⇒ 0; còn lại (đối tượng, chuỗi chữ) ⇒ không kiểm (driver không làm tròn được).
  * Lệch lưới ⇔ |v − (o + round((v − o)/s)·s)| > 1e-9·max(1, |s|) (numeric chính xác ⇒ không cần vế dung sai tương đối của bản double).
- * Khác bản JS ở biên hiếm: chuỗi hex / "Infinity", |(v − o)/s| ≥ 2^53 (JS bỏ qua, SQL vẫn báo) — chiều báo DƯ, an toàn cho một cổng chặn
- * triển khai. Tag đã khai cũng chỉ được kiểm lưới thô ở đây (posture kiểm đủ dải / bước / kiểu). `interlockRouter.r1b.db.test.ts` §5 chạy
+ * Khác bản JS ở biên hiếm theo CẢ HAI chiều: |(v − o)/s| ≥ 2^53 ⇒ SQL báo DƯ; chuỗi hex / 0b / 0o / có khoảng trắng lạ (TAB, NBSP…) mà JS đọc được
+ *   ("0x19" = 25) ⇒ SQL BỎ SÓT (rà soát cuối N-1). Posture + log khởi động dùng hàm JS nên vẫn bắt sau triển khai. Backlog R1b-2.
+ * Tag đã khai cũng chỉ được kiểm lưới thô ở đây (posture kiểm đủ dải / bước / kiểu). `interlockRouter.r1b.db.test.ts` §5 chạy
  * chính chuỗi này trên `_test` và so với `luatLenhLechLuoi`.
  */
 export const TRUY_VAN_TRUOC_TRIEN_KHAI = String.raw`WITH ung_vien AS (

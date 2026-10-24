@@ -218,7 +218,7 @@ hạ về STOP không ghim) — nó KHÔNG thay cho bench trên PLC thật.
    - Giá trị gửi tính như engine + driver: `commandValue` NULL ⇒ `true` ⇒ 1; boolean ⇒ 1 / 0; chuỗi số ⇒ số; đối tượng / chuỗi chữ ⇒ không kiểm.
      Chuỗi SQL này là bản NGUYÊN VĂN của hằng `TRUY_VAN_TRUOC_TRIEN_KHAI` (`server/services/scada/lenhInterlockLechLuoi.ts`); lưới
      `interlockRouter.r1b.db.test.ts` §5 chạy chính chuỗi ấy trên `_test` và so với hàm JS dùng chung của cổng dispatch (25 / NULL / "25" ⇒ có;
-     30 / tắt / alert / đối tượng / scale 1 ⇒ không). Khác bản JS chỉ ở biên hiếm (chuỗi hex, `|v/s| ≥ 2^53`) theo chiều báo DƯ.
+     30 / tắt / alert / đối tượng / scale 1 ⇒ không). Khác bản JS ở biên hiếm theo CẢ HAI chiều (rà soát lại cuối, N-1): `|v/s| ≥ 2^53` ⇒ SQL báo DƯ; nhưng chuỗi số dạng hex / `0b` / `0o` hoặc có TAB / xuống dòng / NBSP (JS đọc được, vd `"0x19"` = 25 ⇒ dispatch từ chối) ⇒ SQL BỎ SÓT. Hiếm trong thực tế; sau triển khai posture + dòng log khởi động (dùng hàm JS) vẫn bắt. Backlog R1b-2: SQL báo mọi chuỗi không phải số thập phân thay vì bỏ qua.
    - Đo 2026-10-25 trên `aoi_management_test` (chỉ đọc, `default_transaction_read_only = on`): ứng viên 0, lệch lưới **0 hàng**. DEV KHÔNG chạy
      ở rà soát này (luật cứng); T13 đã đo DEV chỉ đọc: 0 luật nhắm tag int có scale (§6 mục 30) — vẫn phải chạy lại câu trên ngay trước khi triển khai.
    - Sau khi chạy bản build, cùng điều kiện được **đếm vào posture** `interlockRulesCauHinhHong` (`oversightRouter.fetchInterlockCauHinhHong`,
