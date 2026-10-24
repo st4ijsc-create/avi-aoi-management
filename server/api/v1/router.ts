@@ -135,6 +135,15 @@ function operationStatusToPackml(status: string): string {
   }
 }
 
+/** Robot-family adapter kinds — the ONLY kinds `POST /equipment/:id/commands` still serves (R1b-1 T5, D8). */
+function isRobotAdapterKind(kind: string): boolean {
+  return kind === "robot" || kind === "vda5050";
+}
+
+/** 501 body message for any non-robot command over REST v1 (R1b-1 T5, D8). */
+const OT_REST_501_MESSAGE =
+  "Lệnh OT qua REST v1 không được hỗ trợ — dùng HMI SCADA (scadaCommands) hoặc STOP ghim. Xem docs/ECOSYSTEM/ADAPTER_SDK.md.";
+
 /**
  * Build the EquipmentCommand envelope for the dispatcher from a capability command
  * + the request body args. Translates known verbs into the dispatcher's `writes`
@@ -149,7 +158,7 @@ function buildCommand(
   idempotencyKey: string,
   principalName: string,
 ): EquipmentCommand {
-  const isRobot = capability.adapterKind === "robot" || capability.adapterKind === "vda5050";
+  const isRobot = isRobotAdapterKind(capability.adapterKind);
   const cmd: EquipmentCommand = {
     name: descriptor.name,
     machineId,
@@ -342,6 +351,12 @@ export function createV1Router(): Router {
         throw new ApiHttpError(400, "unsupported_command", `Command "${commandName}" is not supported by this machine.`, {
           supported: capability.supportedCommands.map((c) => c.name),
         });
+      }
+      // SCADA R1b-1 Task 5 (D8) — lệnh KHÔNG phải robot (OT/PLC/vision/mtconnect/...) KHÔNG đi REST v1: 501 TRƯỚC
+      // idempotencyKey/buildCommand/dispatcher ⇒ không hàng command_log, không ghi thiết bị, không webhook.
+      // Đường robot (abort/e_stop — robotStopExempt, robotAbortNeverOrder) giữ nguyên; cùng bộ phân biệt với buildCommand.
+      if (!isRobotAdapterKind(capability.adapterKind)) {
+        throw new ApiHttpError(501, "not_implemented", OT_REST_501_MESSAGE);
       }
       const args = (body.args ?? {}) as Record<string, unknown>;
       const idempotencyKey = body.idempotencyKey?.trim() || nanoid();

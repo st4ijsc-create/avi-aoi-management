@@ -130,7 +130,7 @@ Three credential kinds are accepted:
 | Scope | Grants |
 |---|---|
 | `equipment:read` | List equipment, capabilities, telemetry, state. |
-| `equipment:command` | Propose/dispatch equipment commands (HITL dry-run). |
+| `equipment:command` | Robot STOP commands (`abort` / `e_stop`) over REST v1. Every non-robot (OT) command returns **501** — use the SCADA HMI (R1b-1 D8). |
 | `ingest:write` | Ingest inspection results. |
 | `orchestration:read` | Read workflows / run status (E2). |
 | `orchestration:write` | Create workflows / start runs (E2). |
@@ -153,7 +153,7 @@ Wildcards: `*` = all scopes; `equipment:*` = the whole `equipment` namespace. Mi
 | `GET /api/v1/equipment/:id/capabilities` | `equipment:read` | Resolved `EquipmentCapability`. |
 | `GET /api/v1/equipment/:id/telemetry?from=&to=` | `equipment:read` | Recent telemetry (latest known). |
 | `GET /api/v1/equipment/:id/state` | `equipment:read` | PackML state projection + allowed commands. |
-| `POST /api/v1/equipment/:id/commands` | `equipment:command` | `{ command, args, idempotencyKey }` → HITL dispatcher (dry-run). **Never a direct write.** |
+| `POST /api/v1/equipment/:id/commands` | `equipment:command` | `{ command, args, idempotencyKey }`. **OT commands return `501 not_implemented`** (R1b-1 D8): they never reach the dispatcher and write no `command_log` row; use the SCADA HMI (`scadaCommands`) or the pinned STOP. Only robot machines (`robot` / `vda5050` adapter kinds) are still served, so the robot STOP paths (`abort` / `e_stop`) are unchanged. **Never a direct write.** |
 | `POST /api/v1/ingest/inspection` | `ingest:write` | Ingest an inspection (reuses `submitInspection`). |
 | `POST /api/v1/orchestration/workflows` | `orchestration:write` | **501** — coming in E2. |
 | `POST /api/v1/orchestration/runs` | `orchestration:write` | **501** — coming in E2. |
@@ -195,22 +195,21 @@ Every response uses a consistent envelope:
 { "ok": false, "error": { "code": "forbidden", "message": "...", "details": { } } }
 ```
 
-Status codes: `200` ok · `201` ingest committed · `400` bad request · `401` unauthorized · `403` forbidden · `404` not found · `501` not implemented (E2). Handlers are fail-safe — an unexpected throw becomes a structured `500` envelope, never a process crash.
+Status codes: `200` ok · `201` ingest committed · `400` bad request · `401` unauthorized · `403` forbidden · `404` not found · `501` not implemented (E2 orchestration; OT commands on `POST /equipment/:id/commands`, R1b-1 D8). Handlers are fail-safe — an unexpected throw becomes a structured `500` envelope, never a process crash.
 
-### 4.5 Command POST — example
+### 4.5 Command POST — OT returns 501
 
 ```bash
-curl -X POST "$HOST/api/v1/equipment/1/commands" \
-  -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
-  -d '{ "command": "start", "idempotencyKey": "run-2026-06-28-001" }'
+curl -X POST "$HOST/api/v1/equipment/1/commands"   -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json"   -d '{ "command": "start", "idempotencyKey": "run-2026-06-28-001" }'
 ```
 
 ```jsonc
-// with the control flag OFF (default) — dispatcher SIMULATED, nothing written:
-{ "ok": true, "data": { "machineId": 1, "command": "start",
-  "routedTo": "ot-dispatcher", "status": "simulated", "accepted": true,
-  "detail": { "simulated": true } } }
+// machine 1 is an OT machine — HTTP 501, never reaches the dispatcher, no command_log row:
+{ "ok": false, "error": { "code": "not_implemented",
+  "message": "Lệnh OT qua REST v1 không được hỗ trợ — dùng HMI SCADA (scadaCommands) hoặc STOP ghim. Xem docs/ECOSYSTEM/ADAPTER_SDK.md." } }
 ```
+
+OT commands are issued from the SCADA HMI (`scadaCommands`) or the pinned STOP. Robot machines keep the existing route: `abort` / `e_stop` are unchanged.
 
 ---
 
@@ -218,7 +217,9 @@ curl -X POST "$HOST/api/v1/equipment/1/commands" \
 
 External systems subscribe to events via the existing webhook subscriptions (`webhook_configs` table / `webhookRouter`). The `/api/v1` layer fans these events out, **HMAC-signed** (`X-Webhook-Signature: sha256=...` using the subscription `secret`), with retry, fully fail-safe (delivery never blocks the emitter).
 
-Published event types: `inspection.committed`, `andon.raised`, `equipment.command.executed`, `spc.violation`, `ng.alert`.
+Published event types: `inspection.committed`, `andon.raised`, `spc.violation`, `ng.alert`.
+
+> `equipment.command.executed` is **no longer published** (R1a D8) and is now emitted **only for robot commands** on the REST v1 command route; OT commands over REST v1 return 501 and emit nothing (R1b-1 D8).
 
 > **Flag-gated:** outbound delivery is enabled only when **`WEBHOOKS_ENABLED=true`** (default OFF). Subscriptions can be registered at any time; only the actual POST is gated.
 

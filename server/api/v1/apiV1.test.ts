@@ -47,9 +47,11 @@ const MACHINE = {
   stationId: 5,
   apiKey: "MACHINE_KEY",
 };
+// R1b-1 T5 (D8): máy robot id 2 — đường robot của POST /equipment/:id/commands vẫn tới adapter.
+const ROBOT_MACHINE = { ...MACHINE, id: 2, code: "ROBOT-01", name: "Robot One", machineType: "ROBOT", apiKey: "ROBOT_KEY" };
 vi.mock("../../db", () => ({
   getDb: vi.fn(async () => null), // no api_keys table in test → only master/machine paths
-  getMachineById: vi.fn(async (id: number) => (id === 1 ? MACHINE : undefined)),
+  getMachineById: vi.fn(async (id: number) => (id === 1 ? MACHINE : id === 2 ? ROBOT_MACHINE : undefined)),
   getMachines: vi.fn(async () => [MACHINE]),
   getMachineByApiKey: vi.fn(async (k: string) => (k === "MACHINE_KEY" ? MACHINE : undefined)),
 }));
@@ -206,20 +208,33 @@ describe("/api/v1 reads", () => {
   });
 });
 
-describe("/api/v1 commands → HITL dispatcher (dry-run)", () => {
-  it("routes a supported command through sendCommand (simulated)", async () => {
+describe("/api/v1 commands → robot đi dispatcher; OT/không-robot ⇒ 501 (R1b-1 D8)", () => {
+  it("máy KHÔNG phải robot (AOI) ⇒ 501 not_implemented, KHÔNG tới sendCommand", async () => {
     h.sendCommandMock.mockClear();
     const res = await call("/api/v1/equipment/1/commands", {
       key: "MASTER",
       method: "POST",
       body: JSON.stringify({ command: "start", idempotencyKey: "k1" }),
     });
+    expect(res.status).toBe(501);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("not_implemented");
+    expect(h.sendCommandMock).not.toHaveBeenCalled();
+  });
+
+  it("máy robot ⇒ vẫn tới sendCommand (đường robot giữ nguyên), kèm HITL provenance", async () => {
+    h.sendCommandMock.mockClear();
+    const res = await call("/api/v1/equipment/2/commands", {
+      key: "MASTER",
+      method: "POST",
+      body: JSON.stringify({ command: "abort", idempotencyKey: "k2" }),
+    });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.data.status).toBe("simulated");
     expect(h.sendCommandMock).toHaveBeenCalledTimes(1);
-    // HITL provenance present; no direct device write.
     const arg = h.sendCommandMock.mock.calls[0][0] as any;
     expect(arg.hitl.actionId).toContain("apiv1-");
   });

@@ -211,102 +211,86 @@ describe.skipIf(!DB_URL)("R1a T11 — REST v1 lệnh thiết bị: hành vi th�
     delete process.env.SCADA_CONG_CHE_DO_ENABLED;
   });
 
-  // ═════════ nhóm 1 — OT (AUTOMATION, adapter ot-opcua ⇒ OtEquipmentAdapter ⇒ dispatch()) ═════════
+  // ═════════ nhóm 1 — OT (AUTOMATION, adapter ot-opcua) — R1b-1 T5 (D8): MỌI lệnh OT qua REST v1 ⇒ 501, không tới dispatcher ═════════
+  const MSG_501 = "Lệnh OT qua REST v1 không được hỗ trợ — dùng HMI SCADA (scadaCommands) hoặc STOP ghim. Xem docs/ECOSYSTEM/ADAPTER_SDK.md.";
+  /** 501 + KHÔNG hàng command_log + KHÔNG ghi/đọc thiết bị + KHÔNG phát webhook. */
+  async function expect501(res: { status: number; body: any }, key: string) {
+    expect(res.status).toBe(501);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toMatchObject({ code: "not_implemented", message: MSG_501 });
+    expect(res.body.data).toBeUndefined();
+    expect(env.writes).toHaveLength(0);
+    expect(env.reads).toBe(0);
+    expect(await ledger(key)).toHaveLength(0);
+  }
+
   describe("OT / PLC (AUTOMATION)", () => {
-    it("★ write_tag (ghi thường) ⇒ 200 status=rejected reason NOT_CONFIRMED; 1 hàng command_log rejected; 0 lần ghi thiết bị", async () => {
+    it("★ write_tag (ghi thường) ⇒ 501 not_implemented; 0 hàng command_log; 0 lần ghi thiết bị", async () => {
       const k = idem("wt");
-      const { status, body } = await post(IDS.mOt, { command: "write_tag", args: { adapterId, tagKey: "speed_sp", value: 42 }, idempotencyKey: k });
-      expect(status).toBe(200);
-      expect(body.data).toMatchObject({ accepted: false, status: "rejected", routedTo: "ot-dispatcher" });
-      expect(body.data.detail.reason).toBe("NOT_CONFIRMED");
-      expect(env.writes).toHaveLength(0);
-      const rows = await ledger(k);
-      expect(rows).toHaveLength(1);
-      expect(rows[0].status).toBe("rejected");
-      expect(rows[0].errorText).toMatch(/NOT_CONFIRMED/);
+      await expect501(await post(IDS.mOt, { command: "write_tag", args: { adapterId, tagKey: "speed_sp", value: 42 }, idempotencyKey: k }), k);
     });
 
-    it("★ `writes[]` nhiều tag dưới tên lệnh `start` (tên lệnh không quyết định) ⇒ NOT_CONFIRMED, 0 lần ghi; 1 hàng sổ mỗi tag", async () => {
+    it("★ `writes[]` nhiều tag dưới tên lệnh `start` ⇒ 501; 0 hàng sổ; 0 lần ghi", async () => {
       const k = idem("start-writes");
-      const { body } = await post(IDS.mOt, {
-        command: "start",
-        args: { adapterId, writes: [{ tagKey: "speed_sp", value: 7 }, { tagKey: "toc_do", value: 50 }] },
-        idempotencyKey: k,
-      });
-      expect(body.data.status).toBe("rejected");
-      expect(body.data.detail.reason).toBe("NOT_CONFIRMED");
-      expect(env.writes).toHaveLength(0);
-      const rows = await ledger(k);
-      expect(rows.length).toBeGreaterThanOrEqual(1);
-      expect(rows.every((r) => r.status === "rejected")).toBe(true);
+      await expect501(
+        await post(IDS.mOt, { command: "start", args: { adapterId, writes: [{ tagKey: "speed_sp", value: 7 }, { tagKey: "toc_do", value: 50 }] }, idempotencyKey: k }),
+        k,
+      );
     });
 
-    it.each(["start", "pause", "reset", "acknowledge_machine_alarm"])("lệnh `%s` không có writes ⇒ NOT_CONFIRMED, 0 lần ghi", async (command) => {
+    it.each(["start", "pause", "reset", "acknowledge_machine_alarm"])("★ lệnh `%s` không có writes ⇒ 501, 0 hàng sổ, 0 lần ghi", async (command) => {
       const k = idem(command);
-      const { status, body } = await post(IDS.mOt, { command, args: { adapterId }, idempotencyKey: k });
-      expect(status).toBe(200);
-      expect(body.data.status).toBe("rejected");
-      expect(body.data.detail.reason).toBe("NOT_CONFIRMED");
-      expect(env.writes).toHaveLength(0);
+      await expect501(await post(IDS.mOt, { command, args: { adapterId }, idempotencyKey: k }), k);
     });
 
-    it("set_machine_param (paramKey/paramValue không thành writes) ⇒ NOT_CONFIRMED, 0 lần ghi", async () => {
-      const { body } = await post(IDS.mOt, { command: "set_machine_param", args: { adapterId, paramKey: "speed_sp", paramValue: "9" }, idempotencyKey: idem("sp") });
-      expect(body.data.status).toBe("rejected");
-      expect(body.data.detail.reason).toBe("NOT_CONFIRMED");
-      expect(env.writes).toHaveLength(0);
+    it("set_machine_param ⇒ 501, 0 lần ghi", async () => {
+      const k = idem("sp");
+      await expect501(await post(IDS.mOt, { command: "set_machine_param", args: { adapterId, paramKey: "speed_sp", paramValue: "9" }, idempotencyKey: k }), k);
     });
 
-    it("read_tag đi cùng đường dispatch (dạng writes[{tagKey}]) ⇒ NOT_CONFIRMED; không đọc, không ghi", async () => {
-      const { body } = await post(IDS.mOt, { command: "read_tag", args: { adapterId, tagKey: "speed_sp" }, idempotencyKey: idem("rt") });
-      expect(body.data.status).toBe("rejected");
-      expect(body.data.detail.reason).toBe("NOT_CONFIRMED");
-      expect(env.writes).toHaveLength(0);
-      expect(env.reads).toBe(0);
+    it("read_tag ⇒ 501; không đọc, không ghi, không hàng sổ", async () => {
+      const k = idem("rt");
+      await expect501(await post(IDS.mOt, { command: "read_tag", args: { adapterId, tagKey: "speed_sp" }, idempotencyKey: k }), k);
     });
 
-    it("★ `stop` ghi đúng giá trị GHIM (toc_do = 0) qua REST ⇒ ghi lại hành vi hiện có (OT KHÔNG có miễn trừ STOP ở kiểm HITL cũ)", async () => {
+    it("★ `stop` ghi đúng giá trị GHIM (toc_do = 0) qua REST ⇒ 501 (STOP OT đi bằng HMI SCADA, không đi REST v1); 0 hàng sổ, 0 lần ghi", async () => {
       const k = idem("stop-pin");
-      const { status, body } = await post(IDS.mOt, { command: "stop", args: { adapterId, writes: [{ tagKey: "toc_do", value: 0 }] }, idempotencyKey: k });
-      expect(status).toBe(200);
-      // Đặc tả hiện trạng: kiểm HITL cũ ở bước (1) chạy TRƯỚC mọi miễn trừ dữ liệu ⇒ stop OT qua REST cũng NOT_CONFIRMED.
-      expect(body.data.status).toBe("rejected");
-      expect(body.data.detail.reason).toBe("NOT_CONFIRMED");
-      expect(env.writes).toHaveLength(0);
-      expect((await ledger(k)).length).toBeGreaterThanOrEqual(1);
+      await expect501(await post(IDS.mOt, { command: "stop", args: { adapterId, writes: [{ tagKey: "toc_do", value: 0 }] }, idempotencyKey: k }), k);
     });
 
-    it("`stop` KHÔNG writes ⇒ NOT_CONFIRMED, 0 lần ghi", async () => {
-      const { body } = await post(IDS.mOt, { command: "stop", args: { adapterId }, idempotencyKey: idem("stop-bare") });
-      expect(body.data.status).toBe("rejected");
-      expect(body.data.detail.reason).toBe("NOT_CONFIRMED");
-      expect(env.writes).toHaveLength(0);
+    it("★ `stop` KHÔNG writes ⇒ 501, 0 hàng sổ, 0 lần ghi", async () => {
+      const k = idem("stop-bare");
+      await expect501(await post(IDS.mOt, { command: "stop", args: { adapterId }, idempotencyKey: k }), k);
     });
 
-    it("★ idempotencyKey khớp một hàng ai_pending_actions KHÁC id `apiv1-…` không cứu được lệnh (id bắt buộc đúng `apiv1-<khoá>` và chủ userId 0)", async () => {
+    it("★ hàng ai_pending_actions confirmed KHÁC id không cứu được lệnh: vẫn 501, 0 lần ghi", async () => {
       const k = idem("decoy");
       await (await d()).insert(aiPendingActions).values({
         id: `${DAU}-decoy-${seq}`, tool: "set_machine_param", argsJson: {}, userId: 990_111_001, userRole: "engineer", summary: `${DAU} decoy`,
         previewJson: {}, status: "confirmed", idempotencyKey: `${DAU}-decoy-idem-${seq}`, expiresAt: new Date(Date.now() + 600_000),
       });
-      const { body } = await post(IDS.mOt, { command: "write_tag", args: { adapterId, tagKey: "speed_sp", value: 1 }, idempotencyKey: k });
-      expect(body.data.detail.reason).toBe("NOT_CONFIRMED");
-      expect(env.writes).toHaveLength(0);
+      await expect501(await post(IDS.mOt, { command: "write_tag", args: { adapterId, tagKey: "speed_sp", value: 1 }, idempotencyKey: k }), k);
     });
 
-    it("không truyền args.adapterId ⇒ route lấy adapterId = machineId (không phải adapter của máy) ⇒ vẫn bị từ chối, 0 lần ghi", async () => {
-      const { status, body } = await post(IDS.mOt, { command: "write_tag", args: { tagKey: "speed_sp", value: 3 }, idempotencyKey: idem("noadapter") });
-      expect(status).toBe(200);
-      expect(body.data.status).toBe("rejected");
-      expect(env.writes).toHaveLength(0);
+    it("không truyền args.adapterId ⇒ 501, 0 lần ghi", async () => {
+      const k = idem("noadapter");
+      await expect501(await post(IDS.mOt, { command: "write_tag", args: { tagKey: "speed_sp", value: 3 }, idempotencyKey: k }), k);
     });
 
-    it("OT_CONTROL_ENABLED tắt (mặc định) ⇒ cùng kết cục từ chối: kiểm HITL không phụ thuộc cờ điều khiển", async () => {
+    it("OT_CONTROL_ENABLED tắt (mặc định) ⇒ cùng kết cục 501: nhánh 501 không phụ thuộc cờ điều khiển", async () => {
       delete process.env.OT_CONTROL_ENABLED;
-      const { body } = await post(IDS.mOt, { command: "write_tag", args: { adapterId, tagKey: "speed_sp", value: 5 }, idempotencyKey: idem("flagoff") });
-      expect(body.data.status).toBe("rejected");
-      expect(body.data.detail.reason).toBe("NOT_CONFIRMED");
-      expect(env.writes).toHaveLength(0);
+      const k = idem("flagoff");
+      await expect501(await post(IDS.mOt, { command: "write_tag", args: { adapterId, tagKey: "speed_sp", value: 5 }, idempotencyKey: k }), k);
+    });
+
+    it("★ không phát webhook `equipment.command.executed` cho lệnh OT bị từ chối", async () => {
+      const emitSpy = vi.spyOn(await import("./webhookBridge"), "emit");
+      try {
+        await post(IDS.mOt, { command: "write_tag", args: { adapterId, tagKey: "speed_sp", value: 6 }, idempotencyKey: idem("nohook") });
+        expect(emitSpy).not.toHaveBeenCalled();
+      } finally {
+        emitSpy.mockRestore();
+      }
     });
   });
 
@@ -372,29 +356,26 @@ describe.skipIf(!DB_URL)("R1a T11 — REST v1 lệnh thiết bị: hành vi th�
 
   // ═════════ nhóm 3 — adapter chỉ-đọc (vision / mtconnect) ═════════
   describe("Adapter chỉ-đọc", () => {
-    it("AOI (vision) start ⇒ rejected 'telemetry-only', KHÔNG có hàng command_log (không tới dispatcher)", async () => {
+    it("AOI (vision) start ⇒ 501 (không phải robot), KHÔNG có hàng command_log (không tới dispatcher)", async () => {
       const k = idem("aoi");
       const { status, body } = await post(IDS.mAoi, { command: "start", idempotencyKey: k });
-      expect(status).toBe(200);
-      expect(body.data).toMatchObject({ accepted: false, status: "rejected" });
-      expect(body.data.error).toMatch(/telemetry-only/);
+      expect(status).toBe(501);
+      expect(body.error.code).toBe("not_implemented");
       expect(await ledger(k)).toHaveLength(0);
     });
 
-    it("CMM (mtconnect) stop ⇒ rejected 'telemetry-only'", async () => {
-      const { body } = await post(IDS.mCmm, { command: "stop", idempotencyKey: idem("cmm") });
-      expect(body.data).toMatchObject({ accepted: false, status: "rejected" });
-      expect(body.data.error).toMatch(/telemetry-only/);
+    it("CMM (mtconnect) stop ⇒ 501", async () => {
+      const { status, body } = await post(IDS.mCmm, { command: "stop", idempotencyKey: idem("cmm") });
+      expect(status).toBe(501);
+      expect(body.error.code).toBe("not_implemented");
     });
   });
 
   // ═════════ nhóm 4 — ot-stub (IOT_SENSOR chỉ có read_tag) ═════════
   describe("ot-stub (IOT_SENSOR)", () => {
-    it("read_tag ⇒ OT adapter ⇒ NOT_CONFIRMED (vẫn qua dispatcher, 1 hàng sổ, 0 lần ghi)", async () => {
-      const { status, body } = await post(IDS.mSensor, { command: "read_tag", args: { adapterId, tagKey: "speed_sp" }, idempotencyKey: idem("sensor") });
-      expect(status).toBe(200);
-      expect(body.data.status).toBe("rejected");
-      expect(env.writes).toHaveLength(0);
+    it("read_tag ⇒ 501 (không tới dispatcher, 0 hàng sổ, 0 lần ghi)", async () => {
+      const k = idem("sensor");
+      await expect501(await post(IDS.mSensor, { command: "read_tag", args: { adapterId, tagKey: "speed_sp" }, idempotencyKey: k }), k);
     });
   });
 
@@ -428,7 +409,7 @@ describe.skipIf(!DB_URL)("R1a T11 — REST v1 lệnh thiết bị: hành vi th�
       expect(spec.components.schemas.CommandRequest).toBeUndefined();
       expect(JSON.stringify(spec)).not.toContain("equipment/{id}/commands");
       expect(JSON.stringify(spec)).not.toContain("equipment.command.executed"); // its only emitter is this route
-      expect(spec.info.description).toContain("ALWAYS refuses non-STOP OT commands");
+      expect(spec.info.description).toContain("answers 501 for every non-robot (OT) command");
       expect(spec.paths["/api/v1/equipment"]).toBeTruthy();
       expect(spec.paths["/api/v1/ingest/inspection"]?.post).toBeTruthy();
     });
