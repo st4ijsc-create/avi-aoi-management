@@ -380,13 +380,22 @@ describe('PostgreSQL CRUD Operations', () => {
     });
 
     afterAll(async () => {
-      // Cleanup
-      await pool.query(`DELETE FROM product_inspections WHERE id = $1`, [testInspectionId]);
-      await pool.query(`DELETE FROM machines WHERE id = $1`, [testMachineId]);
-      await pool.query(`DELETE FROM stations WHERE id = $1`, [testStationId]);
-      await pool.query(`DELETE FROM production_lines WHERE id = $1`, [testLineId]);
-      await pool.query(`DELETE FROM workshops WHERE id = $1`, [testWorkshopId]);
-      await pool.query(`DELETE FROM factories WHERE id = $1`, [testFactoryId]);
+      // Cleanup — 2026-10-25: `product_inspections` là WORM (avi_app không DELETE/UPDATE được) và máy/trạm/chuyền/xưởng/nhà máy còn bị hàng kiểm tra tham chiếu ⇒ KHÔNG dọn được bằng vai ứng dụng.
+      // Mỗi lệnh dọn thử riêng, lỗi quyền/khoá ngoại là chuyện CÓ THIẾT KẾ (không làm hỏng cả khối). Hàng mồ côi này mang mã `*_FOR_INSP_*` để nhận diện.
+      for (const [bang, id] of [
+        ['product_inspections', testInspectionId],
+        ['machines', testMachineId],
+        ['stations', testStationId],
+        ['production_lines', testLineId],
+        ['workshops', testWorkshopId],
+        ['factories', testFactoryId],
+      ] as const) {
+        try {
+          await pool.query(`DELETE FROM ${bang} WHERE id = $1`, [id]);
+        } catch {
+          /* WORM / FK — có chủ ý */
+        }
+      }
     });
 
     it('should CREATE a product inspection', async () => {
