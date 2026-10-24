@@ -12,7 +12,7 @@ ngưỡng nào. `OT_CONTROL_ENABLED` / `AI_OT_CONTROL_ENABLED` chỉ được đ
 |---|---|
 | Ma trận 10 ô của brief + 3 ô điều phối (`r1bNghiemThu.db.test.ts`, stub + safety PLC mô phỏng + CSDL `_test`) | **13/13 ô đúng mã và đúng số dòng WORM**: 16 test (gồm 1 quan sát B1 và 1 đối chứng C1), **3 lượt tuần tự 16/16**; không đặt biến ⇒ 16 skipped |
 | Đột biến cấp hệ thống | `lenhHmi.dungMayHmi` kiểm chế độ trước khi gửi ⇒ **S2 đỏ** (và S5, S6); 13 test còn lại xanh; hoàn tác, `git diff` rỗng |
-| Bench OpenPLC (`scripts/scada-r1b-bench.ts`) | **bench not run — container unavailable**: `avi-openplc-bench` ở trạng thái `exited` (mã 137, dừng 2026-10-24T09:14:54Z); container dùng chung, theo luật điều phối KHÔNG khởi động. Chạy khô trên máy chủ Modbus giả trong tiến trình: 15/15 (KHÔNG phải số đo OpenPLC) |
+| Bench OpenPLC (`scripts/scada-r1b-bench.ts`) | **15/15 ĐẠT, 3 lượt, PLC thật** (2026-10-25, điều phối cho phép: giới hạn 1 GiB, commit trống 18,9 → 14,5 GB): STOP HMI REMOTE + LOCAL ⇒ thanh ghi = ghim 0 (đọc lại độc lập), ghi thường ở LOCAL ⇒ MODE_LOCAL, X2 OFF_STEP 25 / 30 ⇒ thô 3; thanh ghi + container trả về gốc (§3) |
 | Chạy toàn bộ (lô thường song song + lô DB tuần tự + lô nặng) | 2352 tệp, **33 481 ca: 33 382 qua, 26 đỏ (14 tệp), 73 bỏ qua**; serial 7 tệp 66/66. **0 đỏ do mã R1b-1**; 1 census đỏ do bench mới của T12 (chưa khai trong bản liệt kê VRAM) — đã sửa; còn lại có sẵn trên main / môi trường / tải (§5) |
 | Census (mọi tệp `*census*`) | 57 tệp, 963 ca: 960 qua, 3 bỏ qua, **0 đỏ** |
 | Lưới nghiệm thu opt-in R0 / R1a / R1b-1 | **42/42** (16 + 10 + 16), một lượt chung |
@@ -25,8 +25,8 @@ ngưỡng nào. `OT_CONTROL_ENABLED` / `AI_OT_CONTROL_ENABLED` chỉ được đ
   nhánh legacy lẫn HA, có đối chứng cờ tắt cho thấy phép đo nhìn thấy được `connected`. REST v1 trả 501 cho lệnh OT và không ghi sổ lệnh.
   Bộ điều tiết giữ 100 lần `DA_XU_LY` ở 30 dòng; mã an toàn không bị điều tiết. Mã dự phòng không tiêu được hai lần.
 - **DỮ LIỆU.** 0431 / 0432 / 0433 có đủ trên DEV và TEST (kiểm chỉ đọc hôm nay, §4). `_test` sạch sau mỗi lượt (chỉ còn hàng WORM, đúng thiết kế).
-- **VẬN HÀNH.** Bench OpenPLC chưa chạy được (container tắt, không được phép khởi động). Đường STOP trên PLC thật vì vậy CHƯA có số đo của
-  R1b-1; cổng "STOP HMI dừng được máy ở cả REMOTE lẫn LOCAL trên bench" của kế hoạch còn MỞ cho tới khi điều phối cho chạy bench (một lệnh, §3).
+- **VẬN HÀNH.** Bench OpenPLC đã chạy 2026-10-25 (điều phối cho phép): 15/15, STOP HMI dừng PLC thật ở cả REMOTE lẫn LOCAL — cổng của kế hoạch ĐÓNG (§3).
+  Container `avi-openplc-bench` để lại giới hạn bộ nhớ 1 GiB (đặt theo điều kiện của điều phối), trạng thái `exited` như lúc tìm thấy.
 
 ---
 
@@ -87,7 +87,7 @@ ngưỡng nào. `OT_CONTROL_ENABLED` / `AI_OT_CONTROL_ENABLED` chỉ được đ
   `scada_khoa_chon` 0, `scada_kenh_che_do` 0, `safety_plc_configs` còn đúng 3 hàng có sẵn (kiểm chỉ đọc).
 
 **Giới hạn của lưới:**
-- Thiết bị S1–S4 / X2 là stub (RAM). PLC thật chỉ đo được ở bench, mà bench chưa chạy được (§3).
+- Thiết bị S1–S4 / X2 trong lưới là stub (RAM); PLC thật đo ở bench (§3: S1, S2, X2 — 15/15). S3/S4/S5/S6, C1, R1, W1, B1, X1, X3 chỉ có số đo trên lưới.
 - W1 dời đồng hồ `Date` +61 s (khuôn T7) thay vì chờ 61 s thật.
 - X1 dùng người dùng admin (bỏ qua `requirePermission`); phạm vi IDOR của `tags.*` do luong-ui đo ở main (§9).
 
@@ -99,7 +99,37 @@ ngưỡng nào. `OT_CONTROL_ENABLED` / `AI_OT_CONTROL_ENABLED` chỉ được đ
 
 ## 3. Bench OpenPLC — `scripts/scada-r1b-bench.ts`
 
-**Trạng thái: bench not run — container unavailable.**
+**Trạng thái: ĐÃ CHẠY 2026-10-25 — 15/15 bước ĐẠT (3 lượt), thanh ghi trả về gốc, container trả về `exited`.**
+
+Điều kiện của điều phối (2026-10-25) và cách đã làm:
+1. Trước khi start: `docker update --memory 1g --memory-swap 1g avi-openplc-bench` (trước đó: không giới hạn, `Memory=0`). Giới hạn 1 GiB ĐỂ LẠI trên container sau phép đo — điều phối quyết có gỡ hay không.
+2. Commit trống (Win32_OperatingSystem.FreeVirtualMemory) ngay trước start: **18,9 GB** (≥ 10 GB). Sau khi chạy + dừng container: **14,5 GB**. (Lần đo đầu 11,3 GB < ngưỡng 15 GB cũ ⇒ không chạy, báo điều phối; điều phối drop_caches trong docker-desktop + hạ ngưỡng còn 10 GB.)
+3. Lệnh: `npx tsx scripts/scada-r1b-bench.ts --lap 3 --start-neu-tat` — start container, bấm Start, bước 0 kiểm 18 thanh ghi giữ giá trị (ghi 12000+i, đọc lại @200/1000/2500 ms ⇒ GIỮ), chạy 3 lượt, trả thanh ghi `holding 0..17` = 0 ⇒ KHỚP gốc, trả container về `exited` (ban đầu `exited`). CSDL = `aoi_management_test`. Không chạm :3000 / :8091 / GPU.
+
+Dùng: dừng (ghim 0) = reg 0 (`holding:1`), chế độ = reg 1 (`holding:2`, poll THẬT của otManager: good = 2 REMOTE), X2 int scale 10 = reg 2 (`holding:3`). Đọc lại bằng client Modbus RIÊNG.
+
+| Lượt | Ô | Bước | Mong đợi | Đo được | ms | Thanh ghi (client riêng) | Kết quả |
+|---|---|---|---|---|---|---|---|
+| 1 | S1 | STOP HMI, máy REMOTE (chế độ = 2) | acked_verified, thanh ghi dừng = ghim 0 | acked_verified ok=true · 1 adapter · command_log +2 | 158 | 77 → 0 | ĐẠT |
+| 1 | S2-ĐC | request dung=50 ở LOCAL (chế độ=1 thấy sau 428 ms) | MODE_LOCAL, thanh ghi không đổi | MODE_LOCAL (khac_remote) | 64 | 77 → 77 | ĐẠT |
+| 1 | S2 | STOP HMI, máy LOCAL (chế độ = 1) | acked_verified, thanh ghi dừng = ghim 0 | acked_verified ok=true · 1 adapter · command_log +2 | 156 | 77 → 0 | ĐẠT |
+| 1 | X2 | dispatch AI sc10cu=25 (int chưa khai, scale 10) | rejected OFF_STEP goiY 30, thanh ghi không đổi | rejected OFF_STEP goiY=30 · command_log +1 | 30 | 0 → 0 | ĐẠT |
+| 1 | X2 | dispatch AI sc10cu=30 | gửi, thanh ghi = số thô 3 | acked ok=true | 114 | 0 → 3 | ĐẠT |
+| 2 | S1 | STOP HMI, máy REMOTE | acked_verified, ghim 0 | acked_verified ok=true · command_log +2 | 93 | 77 → 0 | ĐẠT |
+| 2 | S2-ĐC | request ở LOCAL (thấy sau 241 ms) | MODE_LOCAL | MODE_LOCAL (khac_remote) | 102 | 77 → 77 | ĐẠT |
+| 2 | S2 | STOP HMI, máy LOCAL | acked_verified, ghim 0 | acked_verified ok=true · command_log +2 | 120 | 77 → 0 | ĐẠT |
+| 2 | X2 | AI 25 lên int scale 10 | OFF_STEP goiY 30 | rejected OFF_STEP goiY=30 | 21 | 0 → 0 | ĐẠT |
+| 2 | X2 | AI 30 | thô 3 | acked ok=true | 108 | 0 → 3 | ĐẠT |
+| 3 | S1 | STOP HMI, máy REMOTE | acked_verified, ghim 0 | acked_verified ok=true · command_log +2 | 89 | 77 → 0 | ĐẠT |
+| 3 | S2-ĐC | request ở LOCAL (thấy sau 204 ms) | MODE_LOCAL | MODE_LOCAL (khac_remote) | 32 | 77 → 77 | ĐẠT |
+| 3 | S2 | STOP HMI, máy LOCAL | acked_verified, ghim 0 | acked_verified ok=true · command_log +2 | 86 | 77 → 0 | ĐẠT |
+| 3 | X2 | AI 25 lên int scale 10 | OFF_STEP goiY 30 | rejected OFF_STEP goiY=30 | 49 | 0 → 0 | ĐẠT |
+| 3 | X2 | AI 30 | thô 3 | acked ok=true | 172 | 0 → 3 | ĐẠT |
+
+Kết luận bench: STOP HMI dừng được PLC thật ở CẢ REMOTE lẫn LOCAL (giá trị ghim tới thanh ghi, đọc lại độc lập), trong khi lệnh ghi thường ở LOCAL bị từ chối `MODE_LOCAL` và thanh ghi không đổi; OFF_STEP chặn 25 trên tag int scale 10 và 30 ⇒ thô 3 trên PLC thật. Cổng "STOP HMI trên bench" của kế hoạch: **ĐÓNG**.
+
+Lịch sử (giữ nguyên để đối chiếu): lần gọi đầu 2026-10-25 không có `--start-neu-tat` ⇒ "bench not run — container unavailable" (container `exited` mã 137); bằng chứng lần đó ở dưới.
+
 
 Bằng chứng (đo 2026-10-25, trước khi chạm bất cứ gì):
 ```
@@ -284,7 +314,7 @@ kèm khai muộn bench R1a (đỏ có sẵn trên main). Mọi đỏ còn lại 
 
 ### VẬN HÀNH
 
-31. **Bench OpenPLC chưa chạy** (§3). STOP HMI trên PLC thật chưa có số đo R1b-1.
+31. Bench OpenPLC chỉ phủ S1 / S2 / X2 trên PLC thật (§3); các ô khác chỉ có số đo lưới.
 32. Safety PLC trong lưới / bench là PLC giả (D9), không phải safety PLC thật.
 33. `.env` của cây chính và worktree vẫn `OT_CONTROL_ENABLED=true` (dòng 586, có từ trước) — trái checklist D9; không sửa (luật), điều phối / chủ dự
     án quyết.
@@ -380,7 +410,7 @@ ngoài OT trung tâm; `congOtLuong` dùng mức kênh; audit điều tiết báo
 tag, kiểm nhất quán từng tag — cần trước `AI_OT_CONTROL_ENABLED`).
 
 **Phát sinh trong R1b-1 (sổ):**
-1. **Bench OpenPLC R1b-1** (`npx tsx scripts/scada-r1b-bench.ts --lap 3`) khi container được phép chạy — đóng cổng "STOP HMI trên bench" của kế hoạch.
+1. ~~Bench OpenPLC R1b-1~~ — ĐÃ CHẠY 2026-10-25, 15/15 (§3). Điều phối quyết: gỡ hay giữ giới hạn 1 GiB của container.
 2. T3: ghi trong lúc phiên chờ lần đọc tốt đầu tiên (c2); push đếm đọc tốt theo "máy chủ đã trả lời" (good | uncertain | bad không phải comm);
    reset HA tính là mất còn legacy thì không; push không có watchdog thừa mẫu; thứ tự canh `sinkPhien` legacy.
 3. T4: khi DB treo vẫn nạp `napTuOt` (bộ đệm không cũ theo DB); thử lại lô mẫu xấu bị bỏ.
@@ -425,5 +455,5 @@ và TEST hôm nay (§4).
 ## 12. Bàn giao
 
 - Không push. Không cờ mới (`.env.example` không đổi bởi R1b-1).
-- Container bench vẫn **exited** như lúc tìm thấy (không khởi động). `_test` sạch, chỉ còn hàng WORM của lưới, đúng thiết kế.
-- Việc tiếp: điều phối quyết chạy bench (§3) → kiem-dinh → gộp.
+- Container bench: chạy theo cho phép của điều phối rồi trả về **exited** như lúc tìm thấy (giới hạn 1 GiB để lại). `_test` sạch, chỉ còn hàng WORM của lưới + bench, đúng thiết kế.
+- Việc tiếp: rà soát cuối cả nhánh → kiem-dinh → gộp.
