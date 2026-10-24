@@ -118,6 +118,7 @@ vi.mock("../ot/commandDispatcher", () => ({
 
 // Import AFTER mocks.
 import { runOnce, evaluateRule } from "./interlockEngine";
+import { giaTriLenhInterlock } from "./giaTriLenh";
 
 function baseRule(over: Partial<any> = {}): any {
   return {
@@ -248,6 +249,19 @@ describe("interlockEngine — F5b auto-block (deterministic, human-approved)", (
     const update = state.ruleUpdates.find((u) => u.table === "interlock_events" && u.patch.status === "auto_blocked");
     expect(update).toBeTruthy();
     expect(update.patch.commandLogId).toBe(555);
+  });
+
+  it("R1a T12 fix 1 (c1): giá trị gửi = giaTriLenhInterlock(rule) — commandValue null ⇒ true; giá trị khai ⇒ nguyên giá trị", async () => {
+    flags.autoBlock = true;
+    flags.otControl = true;
+    state.observationCount = 5;
+    await evaluateRule(autoRule({ commandValue: null }));
+    expect(dispatchSpy.mock.calls[0][0].writes[0].value).toBe(true);
+    expect(giaTriLenhInterlock({ commandValue: null })).toBe(true);
+    dispatchSpy.mockClear();
+    await evaluateRule(autoRule({ commandValue: 7 }));
+    expect(dispatchSpy.mock.calls[0][0].writes[0].value).toBe(7);
+    expect(giaTriLenhInterlock({ commandValue: 7 })).toBe(7);
   });
 
   it("dispatch returns ok:false → event 'failed'", async () => {

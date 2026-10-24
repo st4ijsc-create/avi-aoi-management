@@ -122,6 +122,109 @@ describe("census nhóm 2fa của giới hạn theo thủ tục", () => {
   }, 120_000);
 });
 
+/**
+ * ★★★ Bề mặt thứ HAI xác minh TOTP: `kiemXacThucTheoMuc` (→ `verifyFreshTotp` → `verifyTotpOnce`) KHÔNG đi qua middleware step-up nên tập suy từ appRouter không thấy.
+ * Mỗi file sản xuất GỌI nó phải có mặt ở bảng dưới: hàm bao ngoài (AST) → thủ tục tRPC của router gọi hàm ấy. File mới / hàm mới gọi nó mà bảng chưa cập nhật ⇒ ĐỎ.
+ * Thủ tục phải thuộc nhóm "2fa", TRỪ khi có `mienTru` (lý do bằng văn bản).
+ */
+const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<string, Record<string, { routerFile: string; thuTuc: string | string[]; mienTru?: string }>> = {
+  "server/services/scada/lenhHmi.ts": {
+    xacNhanGhiTag: {
+      routerFile: "server/routers/scadaCommandsRouter.ts",
+      thuTuc: "scadaCommands.confirm",
+      // R1a final I-1 (2026-10-24) — ĐẢO "Ruling (merge follow-up)".
+      mienTru:
+        "Dò TOTP đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 lần / 5 phút, tính lượt TRƯỚC khi xác minh nên batch không lách được). Nhóm 20 / 15 phút dùng chung theo IP và theo người với deploy và twoFactor sẽ bóp các lệnh đổi giá trị đặt HMI mức 1/3 thường ngày.",
+    },
+  },
+  // kiem-dinh P1-2 (2026-10-24) — đổi cấu hình kênh / chế độ M12 đòi TOTP TƯƠI (mức 5) ⇒ THUỘC nhóm 2fa (việc cấu hình hiếm; bóp tần suất chấp nhận được).
+  "server/routers/scadaKenhRouter.ts": {
+    kiemTotpCauHinh: {
+      routerFile: "server/routers/scadaKenhRouter.ts",
+      thuTuc: ["scadaKenh.capNhat", "scadaKenh.cheDo.dat", "scadaKenh.cheDo.go"],
+    },
+  },
+  "server/services/aiCopilotActions.ts": {
+    confirmAction: {
+      routerFile: "server/routers/aiCopilotRouter.ts",
+      thuTuc: "aiCopilot.confirmAction",
+      mienTru:
+        "Sau T10 confirmAction KHÔNG BAO GIỜ xác minh TOTP thật: mức >= 4 bị từ chối TRƯỚC mọi kiểm TOTP, mức 1/3 trả khong_can. Xếp vào nhóm 2fa (20/15 phút) sẽ bóp MỌI xác nhận AI, kể cả tác nhân lập trình.",
+    },
+  },
+};
+
+/** Mọi lời gọi `kiemXacThucTheoMuc(...)` trong file → tên hàm khai báo bao ngoài gần nhất ("?" nếu không phải hàm có tên). */
+function hamGoiKiemXacThucTheoMuc(duong: string): string[] {
+  const src = ts.createSourceFile(duong, readFileSync(duong, "utf8"), ts.ScriptTarget.Latest, true);
+  const ra: string[] = [];
+  const visit = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "kiemXacThucTheoMuc") {
+      let ten = "?";
+      for (let cur: ts.Node | undefined = n.parent; cur; cur = cur.parent) {
+        if (ts.isFunctionDeclaration(cur) && cur.name) {
+          ten = cur.name.text;
+          break;
+        }
+      }
+      ra.push(ten);
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(src);
+  return ra;
+}
+
+/** File có MỘT lời gọi tên `ham(` (đã bỏ chú thích) — để chứng minh router thật gọi hàm dịch vụ. */
+function fileGoiHam(duong: string, ham: string): boolean {
+  const nguon = readFileSync(duong, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  return new RegExp(`\\b${ham}\\s*\\(`).test(nguon);
+}
+
+describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mức rủi ro cũng thuộc nhóm 2fa", () => {
+  it("★★★ MỌI file sản xuất gọi kiemXacThucTheoMuc (ngoài định nghĩa) có trong bảng; mỗi hàm bao ngoài có mục riêng (file/hàm mới ⇒ ĐỎ)", () => {
+    const file = moiFileTs(path.join(GOC, "server"))
+      .map((p) => path.relative(GOC, p).split(path.sep).join("/"))
+      .filter((r) => r !== "server/_core/xacThucTheoMuc.ts")
+      .filter((r) => /\bkiemXacThucTheoMuc\s*\(/.test(readFileSync(path.join(GOC, r), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")))
+      .sort();
+    expect(file).toEqual(Object.keys(BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC).sort());
+    for (const f of file) {
+      const ham = [...new Set(hamGoiKiemXacThucTheoMuc(path.join(GOC, f)))].sort();
+      expect(ham, `${f}: hàm gọi kiemXacThucTheoMuc không khớp bảng`).toEqual(Object.keys(BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC[f]!).sort());
+    }
+  }, 60_000);
+
+  it("★★★ MỖI thủ tục tRPC trong bảng là thủ tục THẬT của appRouter, router thật gọi hàm dịch vụ, và thuộc nhóm 2fa (trừ mục miễn trừ có lý do)", () => {
+    const tap = layTapThuTucStepUp(appRouter, [requireFreshTotp, requirePerCallFreshTotp]);
+    let dem = 0;
+    let mien = 0;
+    for (const [file, hams] of Object.entries(BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC)) {
+      for (const [ham, m] of Object.entries(hams)) {
+        expect(fileGoiHam(path.join(GOC, m.routerFile), ham), `${m.routerFile} không gọi ${ham} (${file})`).toBe(true);
+        for (const thuTuc of Array.isArray(m.thuTuc) ? m.thuTuc : [m.thuTuc]) {
+          const loaiTT = trpcProcedureType(appRouter, thuTuc);
+          expect(loaiTT, `${thuTuc} không tồn tại ở appRouter`).toBeDefined();
+          const nhom = phanNhomThuTuc(thuTuc, loaiTT, tap);
+          if (m.mienTru) {
+            expect(m.mienTru.length, `${thuTuc}: lý do miễn trừ quá ngắn`).toBeGreaterThan(40);
+            // Miễn trừ là RÀNG BUỘC: thủ tục miễn trừ KHÔNG được nằm trong nhóm 2fa (thêm lại vào nhóm ⇒ phải xoá miễn trừ, kèm phán quyết mới).
+            expect(nhom, `${thuTuc} có miễn trừ nhưng vẫn thuộc nhóm 2fa`).not.toBe("2fa");
+            mien++;
+          } else {
+            expect(nhom, `${thuTuc} xác minh TOTP qua kiemXacThucTheoMuc (${ham}) nhưng KHÔNG thuộc nhóm 2fa`).toBe("2fa");
+            dem++;
+          }
+        }
+      }
+    }
+    // 2026-10-24 · kiem-dinh P1-2: 2 → 5 (+ scadaKenh.capNhat / cheDo.dat / cheDo.go, THUỘC nhóm 2fa).
+    expect(dem + mien).toBe(5);
+    expect(dem).toBe(3);
+    expect(mien).toBe(2); // aiCopilot.confirmAction + scadaCommands.confirm — miễn trừ có lý do (R1a final I-1)
+  }, 120_000);
+});
+
 describe("gắn middleware trong index.ts", () => {
   it("★★★ thứ tự: trần batch → giới hạn theo thủ tục → giấy phép → tRPC; có truyền bước nâng cấp 2FA", () => {
     const nguon = readFileSync(path.resolve(__dirname, "index.ts"), "utf8");

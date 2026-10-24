@@ -25,7 +25,7 @@
  * to their userFactoryAssignments).
  */
 
-import { and, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, notLike } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { getUserFactoryAssignments } from "../db/auth";
 import {
@@ -151,6 +151,8 @@ async function listProposals(user: InboxUser, limit: number): Promise<InboxItem[
           eq(aiPendingActions.userId, user.id),
           eq(aiPendingActions.status, "proposed"),
           gt(aiPendingActions.expiresAt, new Date()),
+          // SCADA R1a T9 fix 1 — lệnh HMI (`hmi.*`, scadaCommands) KHÔNG phải đề xuất AI: duyệt/huỷ ở M4/M5, không ở hộp thư AI.
+          notLike(aiPendingActions.tool, "hmi.%"),
         ),
       )
       .orderBy(desc(aiPendingActions.createdAt))
@@ -309,6 +311,8 @@ export async function countInbox(user: InboxUser): Promise<{ count: number }> {
           eq(aiPendingActions.userId, user.id),
           eq(aiPendingActions.status, "proposed"),
           gt(aiPendingActions.expiresAt, new Date()),
+          // SCADA R1a T9 fix 1 — lệnh HMI (`hmi.*`, scadaCommands) KHÔNG phải đề xuất AI: duyệt/huỷ ở M4/M5, không ở hộp thư AI.
+          notLike(aiPendingActions.tool, "hmi.%"),
         ),
       );
     let count = proposalRows.length;

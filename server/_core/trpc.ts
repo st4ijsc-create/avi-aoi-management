@@ -5,7 +5,8 @@ import superjson from "superjson";
 import type { TrpcContext } from "./context";
 // ★★★ Pha 6 Task 6 — CHỦ DUY NHẤT của phép xác minh TOTP (verify + tiêu mã). File này **không
 // còn** nhập `speakeasy`: `totpReplayScan.test.ts` cưỡng chế ∀ trên toàn `server/**`.
-import { verifyTotpOnce, dauLuotGoiMoi } from "./totpOnce";
+import { verifyTotpOnce, dauLuotGoiMoi, type KetQuaTotp } from "./totpOnce";
+import { loiTotpKhoa } from "./totpKhoaSai";
 // Doc 37 P0-3 — server-side per-module license gate (flag-gated pass-through).
 import { moduleGate } from "./moduleGate";
 import { appError, readAppErrorMeta } from "./appError";
@@ -526,18 +527,49 @@ const STEPUP_TTL_MS = 10 * 60_000; // 10 phút
 const stepUpVerifiedUntil = new Map<string, number>();
 
 /**
+ * R1a Task 7 (K8/D5) — ba cửa nhỏ vào CÙNG cache step-up của phiên, cho `xacThucTheoMuc.ts`.
+ * ⚠ Middleware `stepUpTotpMiddleware` bên dưới KHÔNG gọi chúng (giữ nguyên từng chữ). Ba hàm này
+ *   phải trùng công thức của nó: khoá `ctx.sessionToken || "user:{id}"`, TTL `STEPUP_TTL_MS`,
+ *   dọn khi Map > 5000. Lưới §6 `xacThucTheoMuc.test.ts` đo MỘT chiều trên `deployProcedure` thật
+ *   (middleware ghi ⇒ `stepUpPhienConHan(khoaPhienStepUp(…))` thấy, cả khi có token lẫn khi
+ *   `sessionToken: null` ⇒ khoá `user:{id}`); chiều ngược (helper ghi ⇒ middleware cho qua) KHÔNG
+ *   quan sát được vì `deployProcedure` còn chain `requirePerCallFreshTotp`. TTL dùng chung hằng số.
+ * ⚠ `ghiStepUpPhien` mở cache KHÔNG cần mã ⇒ người nhập bị ghim ở
+ *   `server/_core/xacThucTheoMucCache.census.test.ts` (chỉ `xacThucTheoMuc.ts` + lưới của nó).
+ */
+export function khoaPhienStepUp(ctx: { user: { id: number }; sessionToken?: string | null }): string {
+  return ctx.sessionToken || `user:${ctx.user.id}`;
+}
+
+/** Cache step-up của phiên còn hạn tại `now`? */
+export function stepUpPhienConHan(sessionKey: string, now: number = Date.now()): boolean {
+  const until = stepUpVerifiedUntil.get(sessionKey);
+  return until !== undefined && until > now;
+}
+
+/** Ghi cache step-up của phiên: hết hạn `now + 10 phút`. `now` chỉ để lưới ghi một mốc quá khứ. */
+export function ghiStepUpPhien(sessionKey: string, now: number = Date.now()): void {
+  stepUpVerifiedUntil.set(sessionKey, now + STEPUP_TTL_MS);
+  if (stepUpVerifiedUntil.size > 5000) {
+    const bayGio = Date.now();
+    for (const [k, v] of stepUpVerifiedUntil) if (v <= bayGio) stepUpVerifiedUntil.delete(k);
+  }
+}
+
+/**
  * Verify một OTP TƯƠI trên secret 2FA của user, **và tiêu mã** (Pha 6 Task 6). Fail-closed.
  *
  * ⚠ Lượt verify đi qua `verifyTotpOnce` — chủ DUY NHẤT của `speakeasy.totp.verify` trong
  * `server/**`. `luot` là dấu của **lượt gọi tRPC hiện tại**: chuỗi `deployProcedure` gọi hàm này
  * **2–3 lần cho MỘT lượt bấm nút** (khối I-4 bên dưới), nên không có `luot` thì sổ mã đã tiêu sẽ
  * **tự chặn mình** ngay ở lượt verify thứ hai và giết 100 % lệnh VRAM/deploy.
+ * R1a Task 7 — export cho `xacThucTheoMuc.ts` (thân hàm không đổi).
  */
-async function verifyFreshTotp(
+export async function verifyFreshTotp(
   userId: number,
   code: string,
   luot: string,
-): Promise<{ hopLe: boolean; phatLai: boolean }> {
+): Promise<KetQuaTotp> {
   try {
     // ★★★ Pha 7 Task 9 (9c) — hạt giống TOTP nay ở `user_secrets`, cờ 2FA vẫn ở `users`. Thay vì
     // dựng ở đây một câu `JOIN` **thứ hai** cho cùng cặp ô, gọi lại **NGƯỜI ĐỌC DUY NHẤT**
@@ -655,6 +687,9 @@ function stepUpTotpMiddleware(dungCachePhien: boolean) {
 
   const kq = await verifyFreshTotp(ctx.user.id, totpCode, luot);
   if (!kq.hopLe) {
+    // R1a T16 — bộ đếm TOTP sai: đang tạm khoá / không kiểm được ⇒ mã lỗi RIÊNG (TOTP_TAM_KHOA kèm phút còn lại, không số lần).
+    const loiKhoa = loiTotpKhoa(kq);
+    if (loiKhoa) throw loiKhoa;
     throw appError(
       "FORBIDDEN",
       "INVALID_VALUE",

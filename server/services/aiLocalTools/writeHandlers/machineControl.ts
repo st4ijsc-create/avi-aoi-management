@@ -18,6 +18,7 @@
  */
 
 import { z } from "zod";
+import { TAG_LENH_MAC_DINH } from "../../ot/tagLenhMacDinh";
 import { DbUnavailableError } from "../../../_core/dbErrors";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
@@ -30,7 +31,8 @@ import {
   ketQuaTuChoiChoTool,
   type KetQuaDispatchToiThieu,
 } from "../../ot/aiControlGate";
-import { preflightSafetyChoAi } from "../../ot/aiControlGate.safety";
+import { mucKenhChoAi, preflightSafetyChoAi } from "../../ot/aiControlGate.safety";
+import { boDemDangBat, layGiaTri } from "../../scada/boDemHienTai";
 import type { OtWriteTarget } from "../../ot/otActionBinding";
 import { loadStopPins } from "../../ot/stopPin";
 import {
@@ -81,6 +83,17 @@ async function resolveTarget(machineId: number, tagKey: string | null, lang: Too
   return { adapterId: adapter.id, adapterEnabled: adapter.isEnabled, warnings };
 }
 
+/**
+ * SCADA R1a T10 — giá trị hiện tại của `(adapterId, tagKey)` từ bộ đệm (`boDemHienTai`) cho bản xem trước: CHỈ khi bộ đệm bật, có
+ * mẫu, `q === "good"`, không cũ và `v !== null`. Mọi trường hợp khác ⇒ null (người gọi thêm cảnh báo). Không đọc thiết bị.
+ */
+function giaTriCuTuBoDem(adapterId: number | undefined, tagKey: string): number | string | boolean | null {
+  if (adapterId == null || !boDemDangBat()) return null;
+  const g = layGiaTri(adapterId, tagKey);
+  if (!g || g.q !== "good" || g.stale) return null;
+  return g.v ?? null;
+}
+
 function w(lang: ToolLang, vi: string, en: string, zh: string): string {
   return lang === "en" ? en : lang === "zh" ? zh : vi;
 }
@@ -112,12 +125,16 @@ async function runDispatch(
   // ── L-7 CỔNG AI — TRƯỚC dispatcher, KHÔNG thay dispatcher ────────────────
   // Đọc safety CHỈ-ĐỌC rồi truyền vào cổng (cổng là hàm thuần, không tự đọc).
   const safety = await preflightSafetyChoAi(args.adapterId, args.machineId);
+  // SCADA R1a T10 (K5) — mức KÊNH của MỌI tag sắp ghi (tag không có / actuation_level NULL ⇒ 5); cổng lấy max(tool, kênh).
+  // Fix round 1 (c1) — DỪNG GHIM (lệnh dừng, mọi write = stop_value) ⇒ mức của TOOL, không truyền mức kênh.
+  const kenh = await mucKenhChoAi(args.adapterId, args.writes, args.commandType);
   const cong = kiemCongAi({
     toolName: args.toolName,
     tagKey: args.tagKeyDoModelChon ?? null,
     userId: ctx.user.id,
     adapterId: args.adapterId,
     safety,
+    ...(kenh.dungGhim ? {} : { mucKenh: kenh.muc }),
   });
   if (!cong.choPhep) {
     return ketQuaTuChoiChoTool(cong, args.toolName) as ToolExecuteResult;
@@ -216,11 +233,12 @@ interface LifecycleCfg {
   descVi: string;
 }
 
+// Tên tag mặc định sống ở `ot/tagLenhMacDinh.ts` (M12 nhận ra kênh dừng bằng CHÍNH hằng này — R1a T12 fix round 1).
 const lifecycle: LifecycleCfg[] = [
-  { name: "machine_start", verb: "start", defaultTag: "cmd_start", triggers: ["khởi động máy", "chạy máy", "start machine", "启动机器"], descVi: "khởi động" },
-  { name: "machine_stop", verb: "stop", defaultTag: "cmd_stop", triggers: ["dừng máy", "stop machine", "停止机器"], descVi: "dừng" },
-  { name: "machine_pause", verb: "pause", defaultTag: "cmd_pause", triggers: ["tạm dừng máy", "pause machine", "暂停机器"], descVi: "tạm dừng" },
-  { name: "machine_reset", verb: "reset", defaultTag: "cmd_reset", triggers: ["reset máy", "đặt lại máy", "reset machine", "重置机器"], descVi: "đặt lại (reset)" },
+  { name: "machine_start", verb: "start", defaultTag: TAG_LENH_MAC_DINH.start, triggers: ["khởi động máy", "chạy máy", "start machine", "启动机器"], descVi: "khởi động" },
+  { name: "machine_stop", verb: "stop", defaultTag: TAG_LENH_MAC_DINH.stop, triggers: ["dừng máy", "stop machine", "停止机器"], descVi: "dừng" },
+  { name: "machine_pause", verb: "pause", defaultTag: TAG_LENH_MAC_DINH.pause, triggers: ["tạm dừng máy", "pause machine", "暂停机器"], descVi: "tạm dừng" },
+  { name: "machine_reset", verb: "reset", defaultTag: TAG_LENH_MAC_DINH.reset, triggers: ["reset máy", "đặt lại máy", "reset machine", "重置机器"], descVi: "đặt lại (reset)" },
 ];
 
 for (const cfg of lifecycle) {
@@ -463,10 +481,22 @@ registerTool<SetParamParams, unknown>({
         /* preview guardrail check is best-effort — never block the preview */
       }
     }
+    // SCADA R1a T10 — giá trị cũ = giá trị HIỆN TẠI trong bộ đệm khi bật + good + không cũ; không thì null + cảnh báo (không bịa).
+    const oldValue = giaTriCuTuBoDem(r.adapterId, p.tagKey);
+    if (oldValue === null) {
+      r.warnings.push(
+        w(
+          ctx.lang,
+          "Không có giá trị hiện tại tin cậy từ bộ đệm (bộ đệm tắt, chưa có mẫu, mẫu cũ hoặc chất lượng không tốt) — giá trị cũ để trống.",
+          "No trustworthy current value from the live buffer (buffer off, no sample, stale or not good quality) — old value left empty.",
+          "实时缓存中没有可信的当前值（缓存关闭、无样本、样本过期或质量不佳）— 旧值留空。",
+        ),
+      );
+    }
     return {
       entityType: "machine",
       entityId: p.machineId,
-      changes: [{ field: p.tagKey, oldValue: null, newValue: String(p.value), displayName: p.tagKey }],
+      changes: [{ field: p.tagKey, oldValue, newValue: String(p.value), displayName: p.tagKey }],
       warnings: r.warnings,
       humanSummary: summarizeSetParam(p, ctx.lang),
     };

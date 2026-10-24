@@ -163,6 +163,48 @@ export const APP_ERROR_CODES = [
                           // một lệnh "stop" CHƯA XÁC MINH (không phải DỪNG ghim) bị TỪ CHỐI vì danh sách chờ chỗ của adapter đã đủ
                           // (hàng đợi đầy + đã có OT_STOP_UNVERIFIED_WAIT_MAX lệnh như vậy chờ). Không gửi gì; người vận hành phải
                           // dùng DỪNG ghim (hoặc E-STOP của máy). KHÁC BUSY (một DỪNG không bao giờ được bảo "thử lại sau").
+  "OT_COMMAND_QUEUE_EXPIRED", // no params — SCADA R1a Task 5 (K9): KHÔNG ném: `DispatchResult.appError` của một lệnh OT THƯỜNG đã chờ
+                          // trong hàng đợi per-adapter quá hạn (deadlineMs của lệnh, mặc định 60 s) trước khi tới lượt (reason
+                          // `QUEUE_EXPIRED`). Không gửi gì tới thiết bị; người vận hành gửi lại nếu còn cần. DỪNG không bao giờ hết hạn.
+
+  // ── SCADA R1a Task 8 (K1/K5) — từ chối lệnh ghi tag từ HMI (`scadaCommands.request`, server/services/scada/lenhHmi.ts) ──
+  // MỌI lời từ chối mang thêm `ma` (= scada_command_attempts.reason_code: CHANNEL_READ_ONLY, OFF_STEP, …) để M5 chọn câu/hành động
+  // mà không phải đoán từ appCode. Không mã chung nào nói đúng cách gỡ: kênh chỉ đọc ≠ giá trị sai ≠ máy LOCAL ≠ người khác đang giữ.
+  "SCADA_CHANNEL_READ_ONLY",       // params: { ma, tagKey } — kênh không nhận lệnh ghi (input / calculated / writable=false).
+  "SCADA_VALUE_TYPE_MISMATCH",     // params: { ma, tagKey, dataType } — giá trị không ép được về kiểu của kênh.
+  "SCADA_VALUE_OUT_OF_RANGE",      // params: { ma, tagKey, min, max } — min/max "—" khi không khai cận đó.
+  "SCADA_VALUE_OFF_STEP",          // params: { ma, tagKey, step, goiY } — lệch bước; goiY CHỈ là gợi ý, không tự làm tròn.
+  "SCADA_VALUE_OFF_STEP_NO_HINT",  // params: { ma, tagKey, step } — như trên, không có điểm lưới nào trong dải để gợi ý.
+  "SCADA_ROLE_FLOOR",              // params: { ma, level } — vai của người gọi dưới sàn của mức tác động kênh.
+  "SCADA_TOTP_NOT_ENROLLED",       // params: { ma, level } — kênh mức 4–5 cần 2FA mà tài khoản chưa đăng ký. KHÁC
+                                   // TWO_FACTOR_NOT_SET_UP: áp BẤT KỂ AUTH_2FA_BAT_BUOC (D5), câu nói rõ là do mức kênh.
+  "SCADA_EDGE_NOT_SUPPORTED",      // params: { ma, edgeCode } — adapter do edge sở hữu; HMI trung tâm chưa ra lệnh qua edge (R1c).
+  "SCADA_MACHINE_NOT_REMOTE",      // params: { ma, lyDo } — máy không ở REMOTE (lyDo = LyDoCheDo của cheDoMay, M5 dịch riêng).
+  "SCADA_TAG_SELECTED_BY_OTHER",   // params: { ma, boiUserId, boiTen, hetHanLuc } — người khác đang giữ khoá chọn kênh (K6).
+  "SCADA_REQUEST_ALREADY_HANDLED", // params: { ma } — clientRequestId đã dùng cho yêu cầu đã xử lý / hết hạn / lệnh khác.
+  // ── SCADA R1a Task 9 (K1/K6/K8/K9) — từ chối bước 2 `scadaCommands.confirm` (cùng quy ước `ma`) ──
+  "SCADA_REQUEST_EXPIRED",         // params: { ma } — yêu cầu quá TTL 60 s (HET_HAN); tạo yêu cầu mới.
+  "SCADA_SELECTION_LOST",          // params: { ma } — khoá chọn kênh đã mất (KHOA_MAT: hết hạn / yêu cầu mới hơn / người khác).
+  "SCADA_TOTP_REQUIRED",           // params: { ma, level } — kênh mức 4–5 cần mã TOTP (TOTP_CAN); yêu cầu GIỮ, nhập mã rồi xác nhận lại.
+  "SCADA_TOTP_INVALID",            // params: { ma, level } — mã TOTP sai / sai định dạng / đã dùng (TOTP_SAI); yêu cầu GIỮ.
+  "SCADA_MACHINE_REBOUND",         // params: { ma } — adapter đã gán sang máy khác sau request (MAY_DA_DOI); tạo yêu cầu mới.
+  // ── kiem-dinh P1-2 (2026-10-24) — đổi cấu hình kênh / chế độ M12 (scadaKenh.capNhat, cheDo.dat, cheDo.go) đòi TOTP TƯƠI mỗi lượt.
+  "SCADA_CONFIG_TOTP_REQUIRED",    // params: { ma } — thiếu mã TOTP (TOTP_CAN); nhập mã 6 số rồi lưu lại.
+  "SCADA_CONFIG_TOTP_INVALID",     // params: { ma } — mã TOTP sai / sai định dạng / đã dùng (TOTP_SAI); chờ mã mới rồi lưu lại.
+  "SCADA_CONFIG_TOTP_NOT_ENROLLED",// params: { ma } — tài khoản chưa đăng ký 2FA (TOTP_CHUA_DANG_KY) ⇒ không đổi được cấu hình kênh.
+  // ── SCADA R1a Task 12 (M12, điều phối mục 4 + review T3 M-3) — NHẤT QUÁN lúc cấu hình giữa khai báo kênh (loại / dải / bước) và giá trị
+  // đã cam kết sẽ ghi xuống kênh đó (server/services/scada/nhatQuanKenh.ts). `ma` = chính mã; `lyDo` = kết cục của cổng kênh
+  // (CHANNEL_READ_ONLY | TYPE_MISMATCH | OUT_OF_RANGE | OFF_STEP); min/max/step "—" khi không khai cận đó.
+  "STOP_PIN_NGOAI_DAI",            // params: { ma, lyDo, tagKey, stopValue, min, max, step } — giá trị DỪNG ghim không ghi được trên kênh theo
+                                   // khai báo (khai dải/bước/loại kênh khi đã ghim, hoặc ghim ngoài dải đang khai). Gỡ / đổi ghim hoặc khai lại.
+  "INTERLOCK_NGOAI_DAI",           // params: { ma, lyDo, tagKey, min, max, step, ruleId? } — commandValue của luật interlock (đang bật, khi
+                                   // khai kênh; hoặc luật đang tạo/sửa/duyệt/bật) không ghi được trên kênh đích ⇒ hành động bảo vệ sẽ bị từ chối.
+  // ── SCADA R1a Task 16 — BỘ ĐẾM TOTP SAI theo người dùng (server/_core/totpKhoaSai.ts, gọi từ verifyTotpOnce ⇒ MỌI bên gọi TOTP) ──
+  "TOTP_TAM_KHOA",                 // params: { remainingMinutes } (+ { ma, level } ở SCADA/copilot) — 5 lần sai / 5 phút ⇒ TOTP khoá 5 phút.
+                                   // ⚠ KHÔNG BAO GIỜ mang số lần sai còn lại (điều phối 2026-10-24). KHÁC ACCOUNT_LOCKED (khoá mật khẩu).
+  "TOTP_KHONG_KIEM_DUOC",          // no params (+ { ma, level } ở SCADA/copilot) — bộ đếm không hỏi/ghi được DB ⇒ từ chối (fail-closed).
+  "MA_DU_PHONG_TAM_KHOA",          // params: { remainingMinutes } — fix round 1: bộ đếm MÃ DỰ PHÒNG riêng (10 lần / 60 phút ⇒ từ chối tới hết giờ ấy),
+                                   // trong `db.verifyBackupCode`. ĐỘC LẬP với TOTP_TAM_KHOA. Không bao giờ mang số lần sai.
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];

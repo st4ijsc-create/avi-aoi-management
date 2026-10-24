@@ -37,6 +37,7 @@ import {
 } from "../../../drizzle/schema";
 import { raiseAndon, type AndonState } from "../andon/andonService";
 import { dispatch, isInterlockAutoBlockEnabled, isOtControlEnabled } from "../ot/commandDispatcher";
+import { giaTriLenhInterlock } from "./giaTriLenh";
 // Đánh giá luật ĐÃ CHUYỂN sang interlockGate (dùng chung với cổng inline của dispatcher): danhGiaLuatChiTiet.
 import { danhGiaLuatChiTiet } from "./interlockGate";
 
@@ -317,7 +318,7 @@ export async function evaluateRule(rule: InterlockRule): Promise<{ id: number; s
         adapterId: rule.targetAdapterId!,
         machineId: rule.targetMachineId,
         commandType: rule.action,
-        writes: [{ tagKey: rule.commandTag!, value: rule.commandValue ?? true }],
+        writes: [{ tagKey: rule.commandTag!, value: giaTriLenhInterlock(rule) }], // R1a T12 fix 1 (c1): một hàm với kiểm lúc cấu hình
         triggeredBy: { kind: "interlock", ruleId: rule.id, eventId: event.id, approvedBy: rule.approvedBy! },
         idempotencyKey: `il-${rule.id}-${event.id}`,
       });

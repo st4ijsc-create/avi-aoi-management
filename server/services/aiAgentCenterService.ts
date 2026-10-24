@@ -45,7 +45,7 @@
  * fabricated precision the brief explicitly forbids ("do NOT invent one here").
  */
 
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, notLike, sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { aiPendingActions, aiSpecialistSessions, aiSpecialistSessionSteps, aiGatewayMetrics } from "../../drizzle/schema";
 import { listSessionsForOps, type OpsSessionSummary } from "./aiAgentOrchestrator";
@@ -422,7 +422,8 @@ async function buildProactiveAgentEntry(): Promise<AgentRosterEntry> {
     const rows = await db
       .select({ summary: aiPendingActions.summary, createdAt: aiPendingActions.createdAt })
       .from(aiPendingActions)
-      .where(and(eq(aiPendingActions.status, "proposed"), gte(aiPendingActions.expiresAt, new Date())))
+      // SCADA R1a T9 fix round 2 — lệnh HMI (`hmi.*`) không phải việc của agent AI
+      .where(and(eq(aiPendingActions.status, "proposed"), gte(aiPendingActions.expiresAt, new Date()), notLike(aiPendingActions.tool, "hmi.%")))
       .orderBy(desc(aiPendingActions.createdAt))
       .limit(1);
 
@@ -604,6 +605,7 @@ async function buildTaskFeed(cap: number, sessions: OpsSessionSummary[]): Promis
           createdAt: aiPendingActions.createdAt,
         })
         .from(aiPendingActions)
+        .where(notLike(aiPendingActions.tool, "hmi.%")) // SCADA R1a T9 fix round 2 — lệnh HMI không phải hành động HITL của AI
         .orderBy(desc(aiPendingActions.createdAt))
         .limit(cap);
 

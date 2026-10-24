@@ -43,6 +43,8 @@ beforeAll(async () => {
 afterAll(async () => {
   const db = await getDb();
   await db?.execute(sql`DELETE FROM public.totp_consumed WHERE "userId" = ${USER_ID}`);
+  // SCADA R1a T16 — the wrong / replayed codes above are counted by the per-user failed-TOTP counter (mig 0432): clean its row too.
+  await db?.execute(sql`DELETE FROM public.totp_khoa_sai WHERE user_id = ${USER_ID}`);
 });
 
 describe("totpReplayScan §2b — the CLI admin proof and the web path share ONE TOTP ledger", () => {

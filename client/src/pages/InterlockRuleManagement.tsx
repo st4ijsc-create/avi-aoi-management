@@ -206,11 +206,7 @@ function lyDoTelemetryCauHinh(f: Pick<RuleForm, "sourceType" | "scope" | "machin
   if (!f.sourceKey.trim()) return "interlockRules.telemetryLyDoThieuTag";
   return null;
 }
-const LY_DO_TELEMETRY_MAC_DINH = {
-  "interlockRules.telemetryLyDoPhamVi": "Luật nguồn tag thiết bị phải gắn một máy và một tên tag — phạm vi phải là Máy",
-  "interlockRules.telemetryLyDoThieuMay": "Luật nguồn tag thiết bị phải gắn một máy và một tên tag — thiếu máy",
-  "interlockRules.telemetryLyDoThieuTag": "Luật nguồn tag thiết bị phải gắn một máy và một tên tag — thiếu tên tag",
-} as const;
+// R1a T14 fix round 1 — bỏ bản đồ chữ Việt dự phòng (viStringCoverage hình-3): ba khoá có đủ vi/en/zh, t(khoá) là đủ.
 
 function sameForm(a: RuleForm, b: RuleForm): boolean {
   return (Object.keys(a) as Array<keyof RuleForm>).every((k) => a[k] === b[k]) && Object.keys(b).length === Object.keys(a).length;
@@ -1241,7 +1237,7 @@ function RuleEditForm({ rule, onSaved }: { rule: RuleRow | null; onSaved: () => 
       </div>
       {lyDoTelemetry && (
         <p data-testid="telemetry-cau-hinh-ly-do" role="alert" className="text-xs text-destructive">
-          {t(lyDoTelemetry, LY_DO_TELEMETRY_MAC_DINH[lyDoTelemetry])}
+          {t(lyDoTelemetry)}
         </p>
       )}
       {/* SCADA R0.1 (D2) — "Khi thiếu dữ liệu": đổi trên luật đã duyệt đi qua MOC của update (mất duyệt + tắt). */}

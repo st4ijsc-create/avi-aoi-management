@@ -111,7 +111,10 @@ import {
   interlockEvents,
   type AiPendingAction,
   type CommandLog,
+  type DeviceTag,
 } from "../../../drizzle/schema";
+import { kiemGiaTriGhi, laKenhGhi, loaiKenh } from "../scada/kenhScada"; // SCADA R1a Task 3 (K4) — the ONE coercion/range/step rule
+import { cheDoMay, congCheDoBat, TOOL_HMI_GHI_TAG } from "../scada/cheDoMay"; // SCADA R1a Task 4 (K2/D3) — machine LOCAL/REMOTE
 import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { foeApprovalDbRefusal, preReadProgramChecksForAction, type PreReadPrograms } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i); Đợt 8 final wave O M2
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
@@ -121,8 +124,10 @@ import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
 import {
   adapterStopEpoch,
   executeOtDeviceWriteUnlessStopped,
+  HAN_HANG_DOI_MAC_DINH_MS,
   identicalStopKey,
   isCmdSerializeEnabled,
+  isQueueExpired,
   isStoppedBeforeWrite,
   isSuperseded,
   onPinnedStopQueued,
@@ -158,9 +163,12 @@ export {
   adapterStopEpoch,
   bumpAdapterStopEpoch,
   isStoppedBeforeWrite,
+  HAN_HANG_DOI_MAC_DINH_MS,
+  isQueueExpired,
   type Superseded,
   type EnqueueOutcome,
   type StoppedBeforeWrite,
+  type QueueExpired,
 } from "./otDeviceWrite";
 import { adapterTargetFingerprint } from "./adapterTarget";
 import type { AppErrorCode, AppErrorParams } from "../../_core/appErrorCodes";
@@ -178,6 +186,7 @@ import { getCorrelationId } from "../observability/correlation";
 import { adapterOwnedByEdgeInTx } from "./otAdapterOwnerGate"; // doc 81 Đợt 10 D fix review 3 (scan #73)
 // doc 81 Đợt 1D Task 2 — per-tag pinned STOP values (mig 0362, Task 1).
 import { loadStopPins, matchPinnedStop, stopPinsFromTagRows, validateStopValue, type MatchPinnedStopResult, type StopPin, type StopPinTagRow } from "./stopPin";
+import { giaTriLenhInterlock } from "../interlock/giaTriLenh"; // R1a T12 fix 1 (c1): giá trị luật GỬI = giá trị so ở đây = giá trị kiểm lúc cấu hình
 import { cachedStopPinPresence } from "./stopPinPresence"; // doc 81 Đợt 12 final fix wave residual (R-12-f item 1)
 import { otStopEpochSyncSeesPeers } from "./otStopEpochSync"; // R-12-f item 1
 
@@ -347,8 +356,25 @@ export interface DispatchInput {
    * is used INSTEAD of the global OT_CONTROL_TIMEOUT_MS for this command (capped by
    * OT_CONTROL_TIMEOUT_MAX_MS when configured); an unacked write past the deadline
    * → status 'timeout' (the existing flow). Absent → behaviour unchanged.
+   * SCADA R1a Task 5 (K9) — with OT_CMD_SERIALIZE_ENABLED it is ALSO the longest an ordinary command may wait in the adapter's queue
+   * before its turn (absent/invalid ⇒ HAN_HANG_DOI_MAC_DINH_MS = 60 s); waited longer ⇒ never sent, rejected QUEUE_EXPIRED. A STOP, a
+   * protective interlock action and a stop-typed command never expire. The ack timeout above is unchanged (and the queue TTL is NOT
+   * capped by OT_CONTROL_TIMEOUT_MAX_MS: that cap bounds the device call, not the wait).
    */
   deadlineMs?: number;
+  /**
+   * SCADA R1a final I-2 — the queue wait ONLY: with OT_CMD_SERIALIZE_ENABLED, the longest an ordinary command may wait in the adapter's
+   * queue for its turn (finite, ≥ 1 after truncation; otherwise ignored ⇒ deadlineMs / 60 s as before). It NEVER sets the device ack /
+   * read-back timeout and is not persisted as deadline_ms: those stay `effectiveTimeoutMs(deadlineMs)` (absent ⇒ OT_CONTROL_TIMEOUT_MS).
+   * The HMI confirm passes its remaining request TTL here (and no deadlineMs), so a confirm late in the TTL never shrinks the ack window.
+   */
+  queueTtlMs?: number;
+  /**
+   * SCADA R1a Task 5 (K7) — "bat_buoc": the device stage reads the written tags back after an acked write EVEN WHEN OT_READBACK_ENABLED
+   * is off (the HMI path always verifies): match + quality "good" ⇒ acked_verified, else acked_unverified with readBackValue. The
+   * comparison is the flag's own (readbackMatches); `ok` is never flipped. Absent ⇒ the flag alone decides, as before.
+   */
+  docLai?: "bat_buoc";
 }
 
 /** G1.7 — the (correlationId, deadlineMs) pair persisted on every ledger row. */
@@ -363,12 +389,32 @@ function commandContext(input: DispatchInput): { correlationId: string | null; d
 }
 
 /**
+ * SCADA R1a Task 5 (K9) — the longest an ORDINARY command may wait in the adapter queue: its sanitised deadlineMs (commandContext), else
+ * HAN_HANG_DOI_MAC_DINH_MS. Fix round 1 (fail-closed) — never 0: a fractional deadline (0.5 ⇒ trunc 0), ≤0, NaN or ∞ falls back to the
+ * default (the queue treats a TTL ≤ 0 as "no TTL", so `0 ?? 60000` used to turn the TTL OFF). Always a finite integer ≥ 1.
+ */
+export function queueTtlMsFor(input: Pick<DispatchInput, "deadlineMs" | "queueTtlMs">): number {
+  // R1a final I-2 — an explicit queue wait wins (same fail-closed sanitising: never 0 / NaN / ∞)
+  const q = input.queueTtlMs;
+  const tq = typeof q === "number" && Number.isFinite(q) ? Math.trunc(q) : 0;
+  if (tq >= 1) return tq;
+  const d = input.deadlineMs;
+  const t = typeof d === "number" && Number.isFinite(d) ? Math.trunc(d) : 0; // same truncation as commandContext
+  return t >= 1 ? t : HAN_HANG_DOI_MAC_DINH_MS;
+}
+
+/**
  * G1.7 — the timeout used for THIS command's write (and read-back) race:
  *   • deadlineMs absent/invalid → the global env timeout (OT_CONTROL_TIMEOUT_MS,
  *     default 5000ms) — byte-for-byte the prior behaviour.
  *   • deadlineMs provided → min(deadlineMs, OT_CONTROL_TIMEOUT_MAX_MS) when the
  *     max is configured, else deadlineMs as-is.
  */
+/** SCADA R1a final I-2 — the ack/read-back timeout a command WITHOUT deadlineMs gets (OT_CONTROL_TIMEOUT_MS); the HMI sizes its lock window with it. */
+export function ackTimeoutMacDinhMs(): number {
+  return effectiveTimeoutMs(undefined);
+}
+
 function effectiveTimeoutMs(deadlineMs?: number): number {
   const envDefault = Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000;
   if (typeof deadlineMs !== "number" || !Number.isFinite(deadlineMs) || deadlineMs <= 0) return envDefault;
@@ -794,6 +840,131 @@ async function isStopByContent(
   }
 }
 
+// ─── SCADA R1a Task 3 (K4) — EARLY CHANNEL GATE: channel kind + write type/range/step, every caller ───────────────────────────
+
+/** The device_tags columns the early channel gate reads (the step-3 row of each written tag). */
+export type TagCongKenh = Pick<
+  DeviceTag,
+  "tagKey" | "address" | "dataType" | "writable" | "isEnabled" | "stopValue" | "channelKind" | "writeMin" | "writeMax" | "writeStep"
+> &
+  // kiem-dinh P1-3 — scale/offset (hàng bước 3 là hàng đầy đủ): int của tag ĐÃ KHAI phải nằm trên lưới thô, không thì OFF_STEP.
+  Partial<Pick<DeviceTag, "scale" | "offset">>;
+
+/** Refusal codes of the early channel gate (command_log.errorText `<CODE>: <detail>`). */
+export type MaCongKenh = "CHANNEL_READ_ONLY" | "TYPE_MISMATCH" | "OUT_OF_RANGE" | "OFF_STEP";
+
+export type KetQuaCongKenhSom =
+  | { ok: true; writes: DispatchWrite[] }
+  | { ok: false; ma: MaCongKenh; chiTiet: string; tagKey: string; address: string };
+
+/**
+ * Does this tag DECLARE a write channel model (mig 0431 columns)? Only then are its written values coerced and checked
+ * (type, range, step). All NULL ⇒ the pre-R1a behaviour, byte for byte: the caller's value goes on as sent, uncoerced
+ * (plan R1a: "NULL = hành vi cũ"; the ' "42" ≠ 42 ' binding test and the ' "0" is not the int pin 0 ' stop-pin test stay
+ * true on an undeclared tag). `actuationLevel` / `displayName` / `displayFormat` describe, they do not constrain a write.
+ */
+export function kenhDaKhaiGhi(tag: Pick<DeviceTag, "channelKind" | "writeMin" | "writeMax" | "writeStep">): boolean {
+  return tag.channelKind != null || tag.writeMin != null || tag.writeMax != null || tag.writeStep != null;
+}
+
+/** Type-only coercion (kenhScada's rule, no range/step) — the value a declared tag would carry if it were in range. */
+function epKieuKenh(tag: Pick<DeviceTag, "dataType">, value: unknown) {
+  return kiemGiaTriGhi({ dataType: tag.dataType, writeMin: null, writeMax: null, writeStep: null }, value);
+}
+
+/**
+ * PURE — the early channel gate (step 3b of dispatchCore). `tags[i]` is the step-3 row of `writes[i]` (found, enabled,
+ * writable). Two passes over the writes, each in write order:
+ *   PASS 1 (every write):
+ *   1. not a write channel (`laKenhGhi`: channel_kind input / calculated) ⇒ CHANNEL_READ_ONLY. NO stop exemption: a pin
+ *      only exists on a writable channel. channel_kind NULL ⇒ derived from `writable` (true here) ⇒ always a write channel.
+ *   2. channel model not declared (`kenhDaKhaiGhi` false) ⇒ the write passes UNCHANGED (old behaviour).
+ *   3. coerce by dataType (`kiemGiaTriGhi`, never rounds) ⇒ TYPE_MISMATCH on failure.
+ *   PINNED STOP exemption (coordinator 2026-10-24 item 4: no software blocks a pinned STOP; fix round 1 M-2: WHOLE command
+ *   only) — matched on DATA here, since this gate runs before the mode/commissioning gates: a stop-typed command
+ *   (`isStopCommandType`) whose writes — ALL of them, declared (coerced) and undeclared (as sent) — equal their tags'
+ *   `stop_value` (one `matchPinnedStop` over every write, the 5a-stop rule: pinned tags, pinned values, no duplicates) skips
+ *   range and step. A stop that mixes a pin with ANY other write (fix round 2: an undeclared, unpinned one too — it is not a
+ *   pinned STOP at 5a-stop either) is not exempt for any of them. The full classification (`classifyOtStop`, connection fingerprint …)
+ *   still runs later, unchanged. Range ↔ stop_value consistency is checked at CONFIGURATION time (R1a Task 12), not here.
+ *   PASS 2 (declared writes, unless exempt):
+ *   4. range, then step ⇒ OUT_OF_RANGE / OFF_STEP (the detail carries `goiY`, a hint only — the value is never altered).
+ *   5. kiem-dinh P1-3 (2026-10-24) — int with scale/offset: (v − offset)/scale must be an integer, else OFF_STEP (goiY = the raw-grid
+ *      value the driver's `inverseScale` would have rounded to). DECLARED tags only, like 3–4: an undeclared tag keeps the pre-R1a
+ *      behaviour byte for byte (flags-off equivalence) — and so the driver still rounds silently there (known limit; R1b backlog).
+ *      A pinned STOP is exempt (whole-command rule above), like range/step.
+ * ok ⇒ the writes to use downstream: declared tags carry the COERCED value, undeclared ones the caller's write object.
+ *
+ * R1a Task 4 (ledger R-1) appends its mode gate (3c) right after this block in dispatchCore, on the same tag rows.
+ */
+export function congKenhSom(commandType: string, writes: ReadonlyArray<DispatchWrite>, tags: ReadonlyArray<TagCongKenh>): KetQuaCongKenhSom {
+  const tuChoi = (i: number, ma: MaCongKenh, chiTiet: string): KetQuaCongKenhSom => ({ ok: false, ma, chiTiet, tagKey: writes[i].tagKey, address: tags[i].address });
+  const out: DispatchWrite[] = [];
+  const daKhai: number[] = []; // indexes of the declared writes (coerced in `out`)
+  for (let i = 0; i < writes.length; i++) {
+    const w = writes[i];
+    const tag = tags[i];
+    if (!laKenhGhi(tag)) return tuChoi(i, "CHANNEL_READ_ONLY", `Tag "${w.tagKey}" is a '${loaiKenh(tag)}' channel — not a write channel`);
+    if (!kenhDaKhaiGhi(tag)) {
+      out.push(w);
+      continue;
+    }
+    const kieu = epKieuKenh(tag, w.value);
+    if (!kieu.ok) return tuChoi(i, kieu.ma, `Tag "${w.tagKey}": ${kieu.chiTiet}`);
+    out.push({ ...w, value: kieu.giaTri });
+    daKhai.push(i);
+  }
+  if (daKhai.length === 0) return { ok: true, writes: out };
+
+  if (isStopCommandType(commandType)) {
+    const pins = stopPinsFromTagRows(tags.map((t) => ({ tagKey: t.tagKey, dataType: t.dataType, stopValue: t.stopValue, writable: t.writable, isEnabled: t.isEnabled })));
+    if (matchPinnedStop(pins, out.map((w) => ({ tagKey: w.tagKey, value: w.value }))).ok) return { ok: true, writes: out };
+  }
+
+  for (const i of daKhai) {
+    const kq = kiemGiaTriGhi(tags[i], writes[i].value);
+    if (!kq.ok) return tuChoi(i, kq.ma, `Tag "${writes[i].tagKey}": ${kq.chiTiet}${kq.goiY !== undefined ? ` (goiY=${kq.goiY})` : ""}`);
+    // kq.giaTri === the pass-1 coerced value (kiemGiaTriGhi never rounds or clamps)
+  }
+  return { ok: true, writes: out };
+}
+
+/**
+ * Gate 1 (requireBoundAction) verifies the binding BEFORE step 3 reads the tags. To accept the same coerced form step 3b
+ * will produce, this reads the written tags' declarations and returns the type-coerced writes — or null when nothing
+ * would change, or the read fails (⇒ the raw verdict stands: fail-closed). Read-only.
+ */
+async function writesEpKieuChoRangBuoc(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, input: DispatchInput): Promise<DispatchWrite[] | null> {
+  try {
+    const keys = input.writes.map((w) => w.tagKey);
+    if (keys.length === 0) return null;
+    const rows = await db
+      .select({
+        tagKey: deviceTags.tagKey,
+        dataType: deviceTags.dataType,
+        channelKind: deviceTags.channelKind,
+        writeMin: deviceTags.writeMin,
+        writeMax: deviceTags.writeMax,
+        writeStep: deviceTags.writeStep,
+      })
+      .from(deviceTags)
+      .where(and(eq(deviceTags.adapterId, input.adapterId), inArray(deviceTags.tagKey, keys)));
+    const theoKhoa = new Map(rows.map((r) => [r.tagKey, r]));
+    let doi = false;
+    const out = input.writes.map((w) => {
+      const tag = theoKhoa.get(w.tagKey);
+      if (!tag || !kenhDaKhaiGhi(tag)) return w;
+      const kieu = epKieuKenh(tag, w.value);
+      if (!kieu.ok || canonicalOtValue(kieu.giaTri) === canonicalOtValue(w.value)) return w;
+      doi = true;
+      return { ...w, value: kieu.giaTri };
+    });
+    return doi ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // doc 81 Đợt 11 K-fix (R-11-d) — FIRST, before any await: the adapter's STOP epoch as this command's gates begin. Read-only;
   // K-fix 2 (R-11-i b): nothing here moves it — only a TRUE stop does, when it is SENT (device stage).
@@ -815,7 +986,16 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         return { ok: false, simulated: false, status: "rejected", reason: "PRECONDITION_FAILED", results: failedResults(input, "PRECONDITION_FAILED"), commandLogIds: ids };
       }
       const [pending] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, t.actionId)).limit(1);
-      const bound = verifyActionBinding(pending, input, t);
+      let bound = verifyActionBinding(pending, input, t);
+      if (!bound.ok && bound.reason === "ACTION_BINDING_MISMATCH") {
+        // SCADA R1a Task 3 — the binding may have been hashed on the COERCED value step 3b will send (declared tags only;
+        // see the hash decision at step 3b). Same verifier, raw form first; neither form matches ⇒ the raw verdict stands.
+        const epKieu = await writesEpKieuChoRangBuoc(db, input);
+        if (epKieu) {
+          const lai = verifyActionBinding(pending, { ...input, writes: epKieu }, t);
+          if (lai.ok) bound = lai;
+        }
+      }
       if (!bound.ok) {
         const ids = await writeRejected(db, input, bound.reason, bound.detail);
         return { ok: false, simulated: false, status: "rejected", reason: bound.reason, results: failedResults(input, bound.reason), commandLogIds: ids };
@@ -863,6 +1043,16 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   if (existing && TERMINAL_STATUSES.has(existing.status)) {
     return cachedResult(input, existing);
   }
+  // SCADA R1a T3 fix round 1 (M-1) — no row for write #0: a refusal of ONE later write (TAG_NOT_FOUND / TAG_NOT_WRITABLE /
+  // the step-3b channel gate) ledgers only that write, under its own index. Look for it too (first in write order), so a
+  // retry returns that cached refusal instead of re-running the gates into the unique constraint. Single-write commands
+  // (and any command whose write #0 has a row) never reach this read.
+  if (!existing && input.writes.length > 1) {
+    const laterKeys = input.writes.slice(1).map((w, i) => perWriteKey(input.idempotencyKey, w.tagKey, i + 1));
+    const later = await db.select().from(commandLog).where(inArray(commandLog.idempotencyKey, laterKeys));
+    const first = laterKeys.map((k) => later.find((r) => r.idempotencyKey === k)).find((r) => !!r && TERMINAL_STATUSES.has(r.status));
+    if (first) return cachedResult(input, first);
+  }
 
   // ── (3) Resolve adapter + tags; assert enabled + writable. ───────────────────
   const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.adapterId)).limit(1);
@@ -883,6 +1073,8 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
    * THIS snapshot, so the pins it checks and the rows the driver writes with come from one read.
    */
   const step3TagRows: StopPinTagRow[] = [];
+  /** SCADA R1a Task 3 — the full step-3 row of each write (same snapshot), for the early channel gate (3b). */
+  const tagRowsBuoc3: TagCongKenh[] = [];
   for (const w of input.writes) {
     const [tag] = await db
       .select()
@@ -900,6 +1092,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       return { ok: false, simulated: false, status: "rejected", reason: "TAG_NOT_WRITABLE", results: failedResults(input, "TAG_NOT_WRITABLE"), commandLogIds: ids };
     }
     step3TagRows.push({ tagKey: tag.tagKey, dataType: tag.dataType, stopValue: tag.stopValue, writable: tag.writable, isEnabled: tag.isEnabled });
+    tagRowsBuoc3.push(tag);
     resolved.push({
       write: w,
       address: tag.address,
@@ -908,6 +1101,66 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       scale: tag.scale != null ? Number(tag.scale) : undefined,
       offset: tag.offset != null ? Number(tag.offset) : undefined,
     });
+  }
+
+  // ── (3b) SCADA R1a Task 3 (K4) — EARLY CHANNEL GATE, every caller (hitl, interlock, Sparkplug, engine). No flag: the mig 0431
+  //         columns are NULL by default and an undeclared tag passes unchanged (congKenhSom). Placed BEFORE the driver / OT-mode /
+  //         commissioning gates so an out-of-range command is `rejected` (one command_log row, the offending tag) even when
+  //         OT_CONTROL_ENABLED is off — never `simulated`. R1a Task 4 appends its mode gate (3c) right after this block.
+  //
+  //         HASH DECISION (coerce before hashing, never break an existing binding): from here on the COERCED writes replace the
+  //         caller's everywhere downstream — 5a-stop classification, the HITL binding re-verified in the reservation, the
+  //         driver, command_log.requestedValue, idempotency (keyed by tagKey only, unaffected). The binding is accepted when the
+  //         stored `__otPayloadHash` matches EITHER the coerced writes (an HMI request hashes the coerced value: "245" ⇒ 245) OR
+  //         the caller's raw writes (proposeAction hashes the AI tool's raw params, e.g. "1" for a bool — such an action stays
+  //         valid). Both forms describe the SAME value on the wire (the coerced one), so accepting either authorises nothing a
+  //         human did not confirm. Gate 1 (requireBoundAction) applies the same two forms (writesEpKieuChoRangBuoc).
+  const rawCallerWrites = input.writes;
+  /**
+   * The ONE refusal path of the early gate block (3b channel gate, 3c mode gate). fix round 1 (I-1) — a STOP-typed command to an
+   * adapter central holds no driver for: if an EDGE node owns the adapter, step 4 turns it into an adapter-wide STOP of the PINNED
+   * values (queued for the node / central fallback), ignoring the caller's values — so a refusal here would protect no wire value
+   * and only block a STOP. Route it exactly as step 4 would; not edge-owned (or the owner unreadable — routeEdgeOwnedAdapterCommand
+   * alerts) ⇒ refused through writeRejected (command_log, WORM). `tagKey` given ⇒ one row for that write; absent ⇒ one per write.
+   */
+  const tuChoiSom = async (ma: string, chiTiet: string, tagKey?: string, address?: string): Promise<DispatchResult> => {
+    if (isStopCommandType(input.commandType) && !getActiveDriver(input.adapterId)) {
+      const routed = await routeEdgeOwnedAdapterCommand(db, input);
+      if (routed) return routed;
+    }
+    const ids = await writeRejected(db, input, ma, chiTiet, tagKey, address);
+    return { ok: false, simulated: false, status: "rejected", reason: ma, results: failedResults(input, ma), commandLogIds: ids };
+  };
+  const kenh = congKenhSom(input.commandType, input.writes, tagRowsBuoc3);
+  if (!kenh.ok) return tuChoiSom(kenh.ma, kenh.chiTiet, kenh.tagKey, kenh.address);
+  if (kenh.writes.some((w, i) => w !== rawCallerWrites[i])) {
+    input = { ...input, writes: kenh.writes };
+    resolved.forEach((r, i) => {
+      r.write = kenh.writes[i];
+    });
+  }
+
+  // ── (3c) SCADA R1a Task 4 (K2/D3) — MACHINE MODE GATE (LOCAL/REMOTE), same early block as 3b (ledger ruling R-1): a LOCAL refusal
+  //         is `rejected` (`MODE_LOCAL: <lyDo>`, one command_log row per write) even when OT_CONTROL_ENABLED is off — never
+  //         `simulated`. Runs ONLY when SCADA_CONG_CHE_DO_ENABLED=true (every caller: hitl, Sparkplug, interlock — ruled "K2 with
+  //         interlock commands": blocked in LOCAL) OR for the SCADA HMI write tool (`hmi.write_tag`, always). Flag off and not HMI ⇒
+  //         nothing here runs, no query: the pre-R1a path byte for byte.
+  //         Machine = the ADAPTER's (the step-3 device_adapters row) — authoritative (T4 fix round 1, ruling 1): `input.machineId` never
+  //         overrides it (a caller naming a REMOTE machine must not bypass the LOCAL machine the adapter is on). A differing
+  //         input.machineId is NOT a refusal by itself (that would change existing callers); an adapter on no machine ⇒ null ⇒ LOCAL
+  //         chua_khai. REMOTE only per cheDoMay (declared channel whose adapter is still on this machine and enabled, buffer on, a
+  //         good, fresh sample equal to gia_tri_remote); anything else LOCAL (fail-closed; cheDoMay never throws).
+  //         PINNED STOP exemption (no software blocks a pinned STOP), matched on DATA as in 3b — WHOLE command only: stop-typed and
+  //         ONE matchPinnedStop over every write (the coerced writes of 3b) against the step-3 pins. A refused stop-typed command still
+  //         takes the edge pre-route of tuChoiSom.
+  if (congCheDoBat() || (input.triggeredBy.kind === "hitl" && input.triggeredBy.tool === TOOL_HMI_GHI_TAG)) {
+    const stopGhim =
+      isStopCommandType(input.commandType) &&
+      matchPinnedStop(stopPinsFromTagRows(step3TagRows), input.writes.map((w) => ({ tagKey: w.tagKey, value: w.value }))).ok;
+    if (!stopGhim) {
+      const cheDo = await cheDoMay(adapter.machineId ?? null);
+      if (cheDo.cheDo !== "REMOTE") return tuChoiSom("MODE_LOCAL", cheDo.lyDo);
+    }
   }
 
   // ── (4) Resolve a connected driver. ─────────────────────────────────────────
@@ -1199,7 +1452,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // ── (5b-0) doc 81 Đợt 1B Task 6 — WRITE-AHEAD RESERVATION (advisory lock → re-probe →
   //         bind + consume the HITL action → INSERT intent rows), committed BEFORE the
   //         driver is called. Refused / failed ⇒ return; driver.writeTags is never reached.
-  const reservation = await reserveRealWrite(db, input, resolved, { bindingInput: callerInput, ledgerExtra, pinnedStop: stopCls.pinnedStop });
+  const reservation = await reserveRealWrite(db, input, resolved, { bindingInput: callerInput, rawBindingWrites: rawCallerWrites, ledgerExtra, pinnedStop: stopCls.pinnedStop });
   if (!reservation.ok) return reservation.result;
   const { intentIds } = reservation;
   const ledgerConfirmer = reservation.boundConfirmer ?? who.confirmedBy;
@@ -1349,6 +1602,11 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
           protective: interlock,
           overridesStopPin,
           holdSlot: slotHoldOf,
+          // SCADA R1a Task 5 (K9) — an ORDINARY command waits at most its queueTtlMs (R1a final I-2), else deadlineMs, else 60 s for its turn; past it, never sent
+          // (QUEUE_EXPIRED below). No TTL — never expires — for a protective interlock action (safety direction: stop_line / block /
+          // reduce) and for a stop-TYPED command that is not a verified STOP (dropping a stop is the unsafe direction; a verified STOP
+          // already cancels it when its values are not the pin's). A verified STOP is the branch above (priorityStop: no TTL).
+          ...(interlock || unverifiedStop ? {} : { queueTtlMs: queueTtlMsFor(input) }),
         });
     if (!enq.accepted && enq.reason === "STOP_UNVERIFIED_QUEUE_FULL") {
       // R-11-o (I-1) — the waiting list for unverified stops is full: refused (ledgered) + a durable alert; the operator is told to use the
@@ -1407,6 +1665,29 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
           ? { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP", appParams: { stopKey } }
           : { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY", appParams: {} },
         message: "This waiting command was cancelled because a STOP command was queued after it — it was not sent to the device; resend it if still needed.",
+      };
+    }
+    if (isQueueExpired(queued)) {
+      // SCADA R1a Task 5 (K9) — its turn came after its queue TTL: never reached driver.writeTags. RESULT row of the intent, like BUSY /
+      // SUPERSEDED_BY_STOP (writeRejected with the intent link — no new ledger path).
+      const ids = await writeRejected(
+        db,
+        input,
+        "QUEUE_EXPIRED",
+        `expired in the adapter command queue: waited ${queued.waitedMs} ms for its turn (limit ${queued.ttlMs} ms) — not sent to the device, resend if still needed`,
+        undefined,
+        undefined,
+        { intentIds, confirmedBy: ledgerConfirmer, ackExtra: { ...ledgerExtra, queueExpired: { waitedMs: queued.waitedMs, ttlMs: queued.ttlMs } } },
+      );
+      return {
+        ok: false,
+        simulated: false,
+        status: "rejected",
+        reason: "QUEUE_EXPIRED",
+        results: failedResults(input, "QUEUE_EXPIRED"),
+        commandLogIds: ids,
+        appError: { appCode: "OT_COMMAND_QUEUE_EXPIRED", appParams: {} },
+        message: "This command waited too long in the device's command queue and expired — it was not sent to the device; resend it if still needed.",
       };
     }
     executed = queued;
@@ -1626,7 +1907,14 @@ function verifyActionBinding(
   input: DispatchInput,
   t: HitlTrigger,
   /** doc 81 Đợt 4 Task A5 — true ⇔ the dispatcher classified THIS command as a PINNED stop (data-verified). */
-  opts: { pinnedStop?: boolean } = {},
+  opts: {
+    pinnedStop?: boolean;
+    /**
+     * SCADA R1a Task 3 — a second form of the SAME writes (the caller's raw values when `input` carries the step-3b coerced
+     * ones). The stored hash may match either; every other field (tool/adapter/machine/commandType) comes from `input`.
+     */
+    altWrites?: ReadonlyArray<DispatchWrite>;
+  } = {},
 ): BindingVerdict {
   if (!pending) return { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action not found" };
   if (pending.status !== "confirmed") {
@@ -1666,7 +1954,17 @@ function verifyActionBinding(
     commandType: input.commandType,
     writes: input.writes,
   });
-  if (stored !== expected) {
+  const altMatches = () =>
+    !!opts.altWrites &&
+    stored ===
+      otPayloadHash({
+        tool: pending.tool,
+        adapterId: input.adapterId,
+        machineId: input.machineId ?? null,
+        commandType: input.commandType,
+        writes: opts.altWrites,
+      });
+  if (stored !== expected && !altMatches()) {
     return {
       ok: false,
       reason: "ACTION_BINDING_MISMATCH",
@@ -1714,6 +2012,8 @@ async function reserveRealWrite(
     ledgerExtra?: Record<string, unknown>;
     /** doc 81 Đợt 4 Task A5 — this command is a PINNED stop (stopCls.pinnedStop): exempt from the engine-self-approval refusal. */
     pinnedStop?: boolean;
+    /** SCADA R1a Task 3 — the caller's RAW writes (before step-3b coercion): the binding may match these OR `bindingInput`'s. */
+    rawBindingWrites?: ReadonlyArray<DispatchWrite>;
   } = {},
 ): Promise<Reservation> {
   const resultKeys = resolved.map((r, i) => perWriteKey(input.idempotencyKey, r.write.tagKey, i));
@@ -1784,7 +2084,7 @@ async function reserveRealWrite(
             .from(aiPendingActions)
             .where(eq(aiPendingActions.id, t.actionId))
             .for("update");
-          verdict = verifyActionBinding(pending, opts.bindingInput ?? input, t, { pinnedStop: opts.pinnedStop === true });
+          verdict = verifyActionBinding(pending, opts.bindingInput ?? input, t, { pinnedStop: opts.pinnedStop === true, altWrites: opts.rawBindingWrites });
           // doc 81 Đợt 4 fix round 1 (R-4-i) — an orchestration-engine action: re-derive the run owner and the gate
           // approver from the DB rows (run + gate + workflow) under this transaction; previewJson only points at the run.
           // A PINNED stop is exempt (L-7).
@@ -1928,7 +2228,7 @@ async function verifyInterlockAuthorization(
   if (!rule.commandTag || input.writes[0].tagKey !== rule.commandTag) {
     return { ok: false, reason: "INTERLOCK_TAG_MISMATCH", detail: "Rule commandTag does not match the written tag" };
   }
-  if (canonicalOtValue(input.writes[0].value) !== canonicalOtValue(rule.commandValue ?? true)) {
+  if (canonicalOtValue(input.writes[0].value) !== canonicalOtValue(giaTriLenhInterlock(rule))) {
     return { ok: false, reason: "INTERLOCK_VALUE_MISMATCH", detail: "Written value differs from the rule's commandValue" };
   }
   if (input.commandType !== rule.action) {
@@ -2088,10 +2388,14 @@ async function writeAll(
   if (link?.confirmedBy != null) who.confirmedBy = link.confirmedBy;
   const trig = triggerCols(input);
   const ctx = commandContext(input); // G1.7 — correlation_id + deadline_ms (rejected/failed too)
-  const writes = onlyTagKey ? input.writes.filter((w) => w.tagKey === onlyTagKey) : input.writes;
-  const list = writes.length > 0 ? writes : [{ tagKey: null as any, value: null }];
+  // SCADA R1a T3 fix round 1 (M-1) — each row keeps the ORIGINAL write index in its per-write key (was the index in the
+  // filtered list: a refusal of write #1 took key `K:<tag>:0`, which the step-2 probe never looks for ⇒ a retry with the same
+  // key re-ran the gates and hit the unique constraint). Unfiltered calls are byte-identical (index === original index).
+  const indexed = input.writes.map((w, idx) => ({ w, idx }));
+  const writes = onlyTagKey ? indexed.filter((e) => e.w.tagKey === onlyTagKey) : indexed;
+  const list = writes.length > 0 ? writes : [{ w: { tagKey: null as any, value: null }, idx: 0 }];
   for (let i = 0; i < list.length; i++) {
-    const w = list[i];
+    const { w, idx } = list[i];
     const [row] = await db
       .insert(commandLog)
       .values({
@@ -2113,7 +2417,7 @@ async function writeAll(
           : link?.ackExtra && Object.keys(link.ackExtra).length > 0
             ? { ackValue: { ...link.ackExtra } as any }
             : {}),
-        idempotencyKey: link?.nullKey ? null : perWriteKey(input.idempotencyKey, w.tagKey ?? "_", i),
+        idempotencyKey: link?.nullKey ? null : perWriteKey(input.idempotencyKey, w.tagKey ?? "_", idx),
       })
       .returning({ id: commandLog.id });
     ids.push(row.id);

@@ -143,6 +143,16 @@ export async function verifyCredentialAdmin(login: AdminLogin): Promise<{ userId
     if (!twoFa.twoFactorSecret) throw new EdgeCredentialError("notVerified", "2FA is on but has no secret — refused.");
     const { verifyTotpOnce } = await import("../../_core/totpOnce");
     const r = await verifyTotpOnce({ userId: user.id, secret: twoFa.twoFactorSecret, token: otp });
+    // SCADA R1a Task 16 — the per-user failed-TOTP counter (inside verifyTotpOnce, shared with the web): locked ⇒ refused with the
+    // minutes left (never the attempts left), the code was not checked so it is not counted again here; counter unreadable ⇒ refused.
+    if (r.ma === "TOTP_TAM_KHOA") {
+      // fix round 1 (minor 6) — a CLI attempt refused by the lock is still a failed CLI 2FA attempt: audit it + count it into the
+      // account lockout BEFORE throwing, like a wrong code (the web lock alone would let a CLI loop retry forever without trace).
+      await recordCliTotpFailure(user as { id: number; name?: string | null; loginAttempts?: number | null }, "totp_locked");
+      const { phutConLai } = await import("../../_core/totpKhoaSai");
+      throw new EdgeCredentialError("notVerified", `2FA is temporarily locked after too many wrong codes — try again in ${phutConLai(r.conLaiMs)} minute(s).`);
+    }
+    if (r.ma === "TOTP_KHONG_KIEM_DUOC") throw new EdgeCredentialError("dbUnavailable", "The 2FA code could not be checked (database) — refused.");
     if (!r.hopLe) {
       await recordCliTotpFailure(user as { id: number; name?: string | null; loginAttempts?: number | null }, r.phatLai ? "replayed_code" : "wrong_code");
       throw new EdgeCredentialError("notVerified", r.phatLai ? "That 2FA code was already used — wait for the next one." : "Wrong 2FA code.");
@@ -161,7 +171,7 @@ export async function verifyCredentialAdmin(login: AdminLogin): Promise<{ userId
  * value read BEFORE that reset (the returned user row): attempts = previous + 1; at MAX_LOGIN_ATTEMPTS the account is locked for
  * LOCKOUT_MINUTES — the same constants as the password check. Best effort (a failed write never turns the refusal into a pass).
  */
-async function recordCliTotpFailure(user: { id: number; name?: string | null; loginAttempts?: number | null }, reason: "wrong_code" | "replayed_code"): Promise<void> {
+async function recordCliTotpFailure(user: { id: number; name?: string | null; loginAttempts?: number | null }, reason: "wrong_code" | "replayed_code" | "totp_locked"): Promise<void> {
   const [{ MAX_LOGIN_ATTEMPTS, LOCKOUT_MINUTES }, { updateUserLoginAttempts }, { createAuditLog }] = await Promise.all([
     import("../../_core/authService"),
     import("../../db/auth"),

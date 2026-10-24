@@ -145,6 +145,8 @@ import { aiVisionRouter } from "./routers/aiVisionRouter"; // P4-F: vision-close
 import { andonRouter } from "./routers/andonRouter"; // F5a: Andon (ALERT-ONLY)
 import { interlockRouter } from "./routers/interlockRouter"; // F5a: Interlock rules (ALERT-ONLY, no command path)
 import { scadaDiagRouter } from "./routers/scadaDiagRouter"; // SCADA R0 Task 10: M10 chan doan truyen thong (doc + ket noi lai / tam tat / Lab stub, co audit)
+import { scadaCommandsRouter } from "./routers/scadaCommandsRouter"; // SCADA R1a Task 8: lenh ghi tag HMI (request: xem truoc + khoa chon + ban ghi cho hmi.write_tag TTL 60 s)
+import { scadaKenhRouter } from "./routers/scadaKenhRouter"; // SCADA R1a Task 12: M12 cau hinh kenh + kenh che do may (audit trong giao dich, nhat quan dai <-> STOP ghim / interlock)
 import { deviceAdapterRouter } from "./routers/deviceAdapterRouter"; // G2.2a: OT adapter/tag CONFIG + read-only testConnection (no write path)
 import { mappingAsCodeRouter } from "./routers/mappingAsCodeRouter"; // W2-B3 (doc 44 G1.13): mapping-as-code — export/preview/apply YAML per-adapter (contracts/mappings, versioned trong Git)
 import { visionAdapterRouter } from "./routers/visionAdapterRouter"; // P1a: vendor-agnostic vision/inspection adapter ingest (VISION_ADAPTERS_ENABLED)
@@ -551,6 +553,8 @@ export const appRouter = router({
   andon: andonRouter,
   interlock: interlockRouter,
   scadaDiag: scadaDiagRouter, // SCADA R0 Task 10 (M10)
+  scadaCommands: scadaCommandsRouter, // SCADA R1a Task 8 (K1/K5; ruling R-2: scada.commands.* = trpc.scadaCommands.*)
+  scadaKenh: scadaKenhRouter, // SCADA R1a Task 12 (M12; ruling R-2: scada.kenh.* = trpc.scadaKenh.*, scadaKenh.cheDo.* long nhau)
 
   // G2.2a — OT machine-control CONFIG + audit (config/query only; no write-to-device path)
   deviceAdapter: deviceAdapterRouter,

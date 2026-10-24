@@ -277,7 +277,8 @@ describe("/api/v1/openapi.json", () => {
     const spec = await res.json();
     expect(spec.openapi).toMatch(/^3\./);
     expect(spec.paths["/api/v1/equipment"]).toBeTruthy();
-    expect(spec.paths["/api/v1/equipment/{id}/commands"].post).toBeTruthy();
+    // R1a T11 (D8): the device-command route is not published (equipmentCommands.r1a.db.test.ts pins its real behaviour).
+    expect(spec.paths["/api/v1/equipment/{id}/commands"]).toBeUndefined();
     expect(spec.paths["/api/v1/ingest/inspection"].post).toBeTruthy();
     expect(spec.paths["/api/v1/orchestration/runs/{id}"].get).toBeTruthy();
     expect(spec.components.securitySchemes.bearerAuth).toBeTruthy();

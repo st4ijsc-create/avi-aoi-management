@@ -5,9 +5,9 @@
 //   - deviceAdapters: one configured connection to a PLC/SCADA/device (protocol + endpoint)
 //   - deviceTags:     individual addressable points read from an adapter
 //   - otTelemetry:    time-series samples ingested from tags
-import { pgTable, serial, bigserial, integer, text, timestamp, varchar, decimal, boolean, doublePrecision, json, jsonb, index, unique, uniqueIndex, customType } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key; `uniqueIndex` used by the partial active-recipe index
+import { pgTable, serial, bigserial, integer, text, timestamp, varchar, decimal, boolean, doublePrecision, json, jsonb, index, unique, uniqueIndex, customType, smallint, bigint, primaryKey } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key; `uniqueIndex` used by the partial active-recipe index
 import { sql } from "drizzle-orm"; // partial-index predicate (WHERE status='active')
-import { otProtocolEnum, otDataTypeEnum, otAdapterStatusEnum, machineTypeEnum, recipeStatusEnum, deploymentStatusEnum, commandStatusEnum, commandTriggerKindEnum, telemetryProtocolEnum, telemetryQualityEnum } from "./enums";
+import { otProtocolEnum, otDataTypeEnum, otAdapterStatusEnum, machineTypeEnum, recipeStatusEnum, deploymentStatusEnum, commandStatusEnum, commandTriggerKindEnum, telemetryProtocolEnum, telemetryQualityEnum, scadaChannelKindEnum } from "./enums";
 // W3-A (doc 27 M1, 0180): machineRecipes/recipeDeployments now carry real FKs to machines.
 import { machines } from "./hierarchy";
 
@@ -100,6 +100,16 @@ export const deviceTags = pgTable("device_tags", {
   stopValue: stopValueJsonb("stop_value"),
   stopPinnedBy: varchar("stop_pinned_by", { length: 64 }),
   stopPinnedAt: timestamp("stop_pinned_at", { withTimezone: true }),
+  // ── SCADA R1a Task 1 (migration 0431 — additive, nullable; NULL = hành vi cũ) ───────────────────────
+  // channelKind: loại kênh. displayName/displayFormat: nhãn + khuôn hiển thị HMI. writeMin/Max/Step: dải + bước cho phép khi ghi
+  // (CHECK min<=max, step>0). actuationLevel: mức tác động lên thiết bị, CHECK IN (1,3,4,5).
+  channelKind: scadaChannelKindEnum("channel_kind"),
+  displayName: varchar("display_name", { length: 128 }),
+  displayFormat: varchar("display_format", { length: 64 }),
+  writeMin: doublePrecision("write_min"),
+  writeMax: doublePrecision("write_max"),
+  writeStep: doublePrecision("write_step"),
+  actuationLevel: smallint("actuation_level").$type<1 | 3 | 4 | 5>(),
 }, (table) => [
   index("idx_device_tags_adapter").on(table.adapterId),
   unique("uq_device_tags_adapter_key").on(table.adapterId, table.tagKey),
@@ -107,6 +117,73 @@ export const deviceTags = pgTable("device_tags", {
 
 export type DeviceTag = typeof deviceTags.$inferSelect;
 export type InsertDeviceTag = typeof deviceTags.$inferInsert;
+
+/**
+ * SCADA R1a Task 1 (migration 0431) — cột jsonb cho giá trị vô hướng/null của lệnh (cùng lý do với `stopValueJsonb`: postgres-js
+ * đã parse jsonb, `jsonb()` dựng sẵn của drizzle lại JSON.parse chuỗi lần nữa ⇒ "1" thành số 1). Giá trị từ driver giữ NGUYÊN.
+ */
+const giaTriJsonb = customType<{ data: unknown; driverData: unknown }>({
+  dataType() {
+    return "jsonb";
+  },
+  toDriver(value) {
+    return JSON.stringify(value);
+  },
+  fromDriver(value) {
+    return value;
+  },
+});
+
+/** K2: một kênh chế độ cho mỗi máy. `giaTriRemote` = giá trị (đã chuẩn hoá) nghĩa là REMOTE. */
+export const scadaKenhCheDo = pgTable("scada_kenh_che_do", {
+  machineId: integer("machine_id").primaryKey(),
+  adapterId: integer("adapter_id").notNull(),
+  tagKey: varchar("tag_key", { length: 128 }).notNull(),
+  giaTriRemote: giaTriJsonb("gia_tri_remote").notNull(),
+  updatedBy: integer("updated_by").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+export type ScadaKenhCheDo = typeof scadaKenhCheDo.$inferSelect;
+export type InsertScadaKenhCheDo = typeof scadaKenhCheDo.$inferInsert;
+
+/** K6: khoá chọn (adapter, tag) cho một người; hết hạn theo `expiresAt`. */
+export const scadaKhoaChon = pgTable("scada_khoa_chon", {
+  adapterId: integer("adapter_id").notNull(),
+  tagKey: varchar("tag_key", { length: 128 }).notNull(),
+  userId: integer("user_id").notNull(),
+  requestId: varchar("request_id", { length: 64 }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.adapterId, table.tagKey] }),
+  index("idx_scada_khoa_chon_expires").on(table.expiresAt),
+]);
+export type ScadaKhoaChon = typeof scadaKhoaChon.$inferSelect;
+export type InsertScadaKhoaChon = typeof scadaKhoaChon.$inferInsert;
+
+/**
+ * §C.5: nhật ký MỖI lần thử lệnh trước `dispatch()`. APPEND-ONLY: `avi_app` chỉ SELECT + INSERT (REVOKE UPDATE, DELETE, khuôn 0279)
+ * và trigger BEFORE UPDATE OR DELETE/TRUNCATE ném lỗi cả với owner (khuôn 0374). Không bao giờ .update()/.delete() bảng này.
+ * `commandLogIds`: id command_log (bigint[] ở DB, ép số ở đây vì command_log.id là serial).
+ */
+export const scadaCommandAttempts = pgTable("scada_command_attempts", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  requestId: varchar("request_id", { length: 64 }),
+  userId: integer("user_id").notNull(),
+  adapterId: integer("adapter_id"),
+  tagKey: varchar("tag_key", { length: 128 }),
+  requestedValue: giaTriJsonb("requested_value"),
+  afterFormula: giaTriJsonb("after_formula"),
+  stage: varchar("stage", { length: 24 }).$type<"request" | "confirm" | "dispatch" | "huy">().notNull(),
+  outcome: varchar("outcome", { length: 24 }).$type<"rejected" | "proposed" | "confirmed" | "dispatched" | "expired" | "cancelled">().notNull(),
+  reasonCode: varchar("reason_code", { length: 64 }),
+  commandLogIds: bigint("command_log_ids", { mode: "number" }).array(),
+  at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_scada_command_attempts_request").on(table.requestId),
+  index("idx_scada_command_attempts_user_at").on(table.userId, table.at),
+]);
+export type ScadaCommandAttempt = typeof scadaCommandAttempts.$inferSelect;
+export type InsertScadaCommandAttempt = typeof scadaCommandAttempts.$inferInsert;
 
 /**
  * OT Telemetry — THE single canonical telemetry sample store (doc 12 §5 / P2).

@@ -233,7 +233,7 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
       version: "1.0.0",
       description:
         "The single, versioned integration contract (Phase E1) external machines and systems " +
-        "use to read equipment capabilities/telemetry/state, issue HITL-gated commands, ingest " +
+        "use to read equipment capabilities/telemetry/state, ingest " +
         "inspection results, and subscribe to webhooks.\n\n" +
         "U4a extends the READ surface to the upper-layer modules — fleet, safety (advisory), " +
         "digital twin, device programs, predictive maintenance, robot anomalies (advisory), " +
@@ -245,12 +245,12 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
         scopeDoc +
         "\n\nWebhook events: " +
         V1_WEBHOOK_EVENTS.map((e) => `\`${e}\``).join(", ") +
-        ".\n\nSAFETY: command POSTs ALWAYS route through the existing HITL/dry-run dispatcher; " +
-        "the API never performs a direct device write.",
+        ".\n\nSAFETY: the API never performs a direct device write. The device-command route is not published here (R1a D8); " +
+        "it still routes through the HITL/dry-run dispatcher, which ALWAYS refuses non-STOP OT commands there (a confirmed HITL action cannot exist for it: action id apiv1-<key>, owner 0).",
     },
     servers: [{ url: serverUrl }],
     tags: [
-      { name: "Equipment", description: "List equipment, capabilities, telemetry, state, commands." },
+      { name: "Equipment", description: "List equipment, capabilities, telemetry, state." },
       { name: "Ingest", description: "Inbound data from external machines/systems." },
       { name: "ERP", description: "R0 — inbound ERP/MES intake: production orders & BOM master data (idempotent, versioned)." },
       { name: "OAuth", description: "K0+ — OAuth2 client-credentials token for ERP/MES partners (alternative Bearer)." },
@@ -280,15 +280,6 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
       schemas: {
         ApiEnvelope: envelopeOk,
         ApiError: envelopeError,
-        CommandRequest: {
-          type: "object",
-          required: ["command"],
-          properties: {
-            command: { type: "string", example: "start", description: "Canonical command verb from the capability." },
-            args: { type: "object", additionalProperties: true, description: "Command arguments (e.g. recipeCode, tag writes)." },
-            idempotencyKey: { type: "string", description: "Client-supplied de-dup key (generated if omitted)." },
-          },
-        },
         // GENERATED from machineDataContract latest (v1.1 — doc 56 API-2 drift fix) via zod v4.
         InspectionIngest: inspectionIngestSchema,
         // GENERATED from machineProcessResultContractV1 (ST4I Standard Process Feed v1) via zod v4.
@@ -373,22 +364,9 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses({ "404": { description: "Machine not found", content: jsonErr() } }) },
         },
       },
-      "/api/v1/equipment/{id}/commands": {
-        post: {
-          tags: ["Equipment"],
-          summary: "Propose/dispatch a command (HITL/dry-run)",
-          description:
-            "Requires scope `equipment:command`. Routes through the existing HITL dispatcher; " +
-            "with the control flag off (default) it returns a `simulated` result and writes nothing.",
-          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
-          requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/CommandRequest" } } } },
-          responses: {
-            "200": { description: "Routed (dispatched or simulated)", content: jsonOk() },
-            "400": { description: "Bad request — unknown command / missing args", content: jsonErr() },
-            ...errResponses({ "404": { description: "Machine not found", content: jsonErr() } }),
-          },
-        },
-      },
+      // SCADA R1a Task 11 (K10 / D8) — `POST /api/v1/equipment/{id}/commands` is deliberately NOT published here. The route still runs
+      // (robot STOP callers) but every non-STOP command is refused by the dispatcher without a confirmed HITL action; see
+      // server/api/v1/equipmentCommands.r1a.db.test.ts for the measured behaviour.
       "/api/v1/ingest/inspection": {
         post: {
           tags: ["Ingest"],

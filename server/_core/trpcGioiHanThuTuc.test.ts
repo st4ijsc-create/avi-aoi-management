@@ -105,6 +105,9 @@ describe("phanNhomThuTuc — phân loại", () => {
   it("danh sách chính xác đếm MỌI loại thủ tục", () => {
     expect(phanNhomThuTuc("user.verify2FA", "mutation", tap)).toBe("2fa");
     expect(phanNhomThuTuc("user.disable2FA", "mutation", tap)).toBe("2fa");
+    // R1a final I-1 (2026-10-24): scadaCommands.confirm MIỄN nhóm 2fa — TOTP đã chặn theo TÀI KHOẢN bởi T16 (verifyTotpOnce 5/5 phút, tính TRƯỚC khi xác minh);
+    // nhóm 20/15 phút chung IP + người với deploy/twoFactor sẽ bóp các lệnh đặt giá trị HMI mức 1/3 thường ngày. Census kiemXacThucTheoMuc ghi miễn trừ.
+    expect(phanNhomThuTuc("scadaCommands.confirm", "mutation", tap)).toBeNull();
     expect(phanNhomThuTuc("auth.login", "mutation", tap)).toBe("auth");
     expect(phanNhomThuTuc("user.changePassword", "mutation", tap)).toBe("auth");
     expect(phanNhomThuTuc("auth.login", "query", tap)).toBe("auth");

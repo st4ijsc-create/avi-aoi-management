@@ -633,29 +633,39 @@ export async function verifyBackupCode(userId: number, code: string) {
   const db = await getDb();
   if (!db) return false;
 
-  // Get all unused backup codes for user
-  const codes = await db.select()
-    .from(backupCodes)
-    .where(
-      and(
-        eq(backupCodes.userId, userId),
-        eq(backupCodes.isUsed, false)
-      )
-    );
+  /**
+   * ★ SCADA R1a Task 16 fix round 1 (IMPORTANT 4) — mã dự phòng 32 bit (`sinhMaDuPhong`: 4 byte) KHÔNG có bộ đếm thì dò được.
+   * Bộ đếm RIÊNG (`totp_khoa_sai` loai='backup': 10 lần / 60 phút ⇒ từ chối tới hết giờ ấy), tính TRƯỚC khi đối chiếu, ở NGƯỜI TIÊU
+   * DUY NHẤT này ⇒ mọi bên gọi (đăng nhập REST, `twoFactor.disable`/`verify`) dùng chung. Bị khoá ⇒ NÉM `MA_DU_PHONG_TAM_KHOA`
+   * (TRPCError có mã — tRPC tự trả đúng mã; đường REST bắt bằng `laLoiBoDemMaDuPhong`); bộ đếm hỏng ⇒ NÉM `TOTP_KHONG_KIEM_DUOC`.
+   * ⚠ Khoá TOTP KHÔNG chạm tới đây: mã dự phòng là lối thoát của người bị khoá TOTP.
+   */
+  const { kiemMaDuPhongCoBoDem } = await import('../_core/totpKhoaSai');
+  return kiemMaDuPhongCoBoDem(userId, async () => {
+    // Get all unused backup codes for user
+    const codes = await db.select()
+      .from(backupCodes)
+      .where(
+        and(
+          eq(backupCodes.userId, userId),
+          eq(backupCodes.isUsed, false)
+        )
+      );
 
-  // Đối chiếu qua chủ duy nhất (chuẩn hoá HOA + bcrypt.compare) — không giữ bản sao vị từ ở đây.
-  for (const backupCode of codes) {
-    const isMatch = await khopMaDuPhong(code, backupCode.code);
-    if (isMatch) {
-      // Mark as used
-      await db.update(backupCodes)
-        .set({ isUsed: true, usedAt: new Date() })
-        .where(eq(backupCodes.id, backupCode.id));
-      return true;
+    // Đối chiếu qua chủ duy nhất (chuẩn hoá HOA + bcrypt.compare) — không giữ bản sao vị từ ở đây.
+    for (const backupCode of codes) {
+      const isMatch = await khopMaDuPhong(code, backupCode.code);
+      if (isMatch) {
+        // Mark as used
+        await db.update(backupCodes)
+          .set({ isUsed: true, usedAt: new Date() })
+          .where(eq(backupCodes.id, backupCode.id));
+        return true;
+      }
     }
-  }
-  
-  return false;
+
+    return false;
+  });
 }
 
 /**

@@ -27,11 +27,15 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { and, eq, gt, lt } from "drizzle-orm";
+import { and, eq, gt, lt, notLike } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { aiPendingActions } from "../../drizzle/schema";
 import { otPayloadHash, withOtPayloadHash } from "./ot/otActionBinding";
 import { checkPermission } from "../_core/accessControl";
+import { kiemXacThucTheoMuc, type CtxXacThuc, type KetQuaXacThucTheoMuc } from "../_core/xacThucTheoMuc";
+import { phutConLai } from "../_core/totpKhoaSai";
+import { BoDemTanSuat, kiemCongAi, mucHieuLuc, phanLoaiMuc, type MucRuiRo } from "./ot/aiControlGate";
+import { mucKenhChoAi } from "./ot/aiControlGate.safety";
 import { getTool, isWriteTool, assertExecutable, type ActionPreview, type Tool, type ToolExecContext, type ToolLang } from "./aiLocalTools/toolRegistry";
 // ★★★ ĐỢT 3 (2026-08-23) — DUYỆT THEO KHỐI THẬT: server import THẲNG bộ vị từ khối của client
 // (`keHoachKhoiDuyet` + `chieuTheoChiSoKhoi`) — tiền lệ đã có (`aiCodingCli/cli.ts` import
@@ -191,6 +195,14 @@ export interface ConfirmResult {
    * legacy rejects (ownership/expiry/RBAC) so the ConfirmResult stays bit-compat.
    */
   reason?: string;
+  /**
+   * SCADA R1a T10 — CHỈ có mặt khi tool ghi OT bị từ chối ở sàn vai / xác thực theo mức (`reason` ∈ ROLE_FLOOR |
+   * TOTP_CHUA_DANG_KY | TOTP_CAN | TOTP_SAI | TOTP_TAM_KHOA | TOTP_KHONG_KIEM_DUOC — R1a T16): mức đã tính = max(tool, kênh đích).
+   * Mọi kết quả khác KHÔNG mang khoá này.
+   */
+  level?: MucRuiRo;
+  /** SCADA R1a T16 — CHỈ khi `reason === "TOTP_TAM_KHOA"`: thời gian khoá TOTP còn lại (ms). Không bao giờ có số lần sai. */
+  conLaiMs?: number;
 }
 
 // ── G4.29 — confirm-time contract-enforcement flags / reason codes / seams ──────
@@ -254,6 +266,11 @@ function denyMessage(lang: ToolLang, summary: string): string {
     default:
       return `Bạn không có quyền thực hiện thao tác này: ${summary}. Vui lòng liên hệ quản trị viên.`;
   }
+}
+
+/** SCADA R1a T9 fix 1 — hàng `ai_pending_actions` của lệnh HMI (`scadaCommands`, tool `hmi.*`) — KHÔNG phải hành động AI. */
+export function laLenhHmi(tool: string | null | undefined): boolean {
+  return typeof tool === "string" && tool.startsWith("hmi.");
 }
 
 /**
@@ -532,6 +549,7 @@ export async function listPendingActionsForUser(userId: number): Promise<Pending
         eq(aiPendingActions.userId, userId),
         eq(aiPendingActions.status, "proposed"),
         gt(aiPendingActions.expiresAt, new Date()),
+        notLike(aiPendingActions.tool, "hmi.%"), // SCADA R1a T9 fix 1 — lệnh HMI không phải đề xuất AI
       ),
     );
   return rows
@@ -569,6 +587,7 @@ export async function getPendingActionForUser(
         eq(aiPendingActions.userId, userId),
         eq(aiPendingActions.status, "proposed"),
         gt(aiPendingActions.expiresAt, new Date()),
+        notLike(aiPendingActions.tool, "hmi.%"), // SCADA R1a T9 fix 1
       ),
     )
     .limit(1);
@@ -733,6 +752,87 @@ export function cauKetCucThucThi(trangThai: TrangThaiSauThucThi): string {
 }
 
 /**
+ * SCADA R1a T10 — dữ liệu xác thực của LƯỢT GỌI xác nhận (router điền từ `ctx`; từ input chỉ có `totpCode`). Mọi caller cũ
+ * (CLI · MCP · autonomy · agent) bỏ trống ⇒ tool ghi OT mức 1|3 chỉ còn sàn vai; mức 4|5 ⇒ `TOTP_CHUA_DANG_KY` (fail-closed).
+ * Hợp đồng T7: MỘT mã TOTP cho MỘT lượt gọi tRPC — `confirmAction` gọi `kiemXacThucTheoMuc` ĐÚNG MỘT lần mỗi lượt.
+ */
+export interface XacThucXacNhan {
+  totpCode?: string;
+  sessionToken?: string | null;
+  twoFactorEnabled?: boolean | null;
+  /** Dấu lượt gọi TOTP của chuỗi step-up cũ, nếu nó đã verify trong CÙNG lượt gọi (xem `kiemXacThucTheoMuc`). */
+  __luotXacMinhTotp?: string;
+}
+
+export type MaXacThucTheoMuc = Extract<KetQuaXacThucTheoMuc, { ok: false }>["ma"];
+
+/**
+ * SCADA R1a T10 (K5) — mức tác động của một hàng TOOL GHI OT lúc xác nhận; `null` ⇔ tool KHÔNG ghi OT (không có
+ * `otWriteBinding`) ⇒ hành vi cũ, từng chữ.
+ *
+ * Đích = `tool.otWriteBinding(args từ CSDL)` — CÙNG hàm plan mà `execute()` sẽ dispatch (và propose đã băm), nên mức tính trên
+ * đúng các kênh sắp ghi. Mức = max qua mọi tag đích của `mucHieuLuc(tool, tag, mức kênh)`: ≥ mức `kiemCongAi` tính ở execute
+ * (cổng chỉ phân loại tên tag model chọn) — lệch, nếu có, chỉ về phía chặt hơn.
+ * ★ FAIL-CLOSED: binding ném / null / không có tag ⇒ 5; tag không có / `actuation_level` NULL ⇒ 5 (`mucKenhChoAi`).
+ */
+export async function mucGhiOtLucXacNhan(
+  tool: Tool<any, any>,
+  args: Record<string, unknown>,
+  ctx: ToolExecContext,
+): Promise<MucRuiRo | null> {
+  if (typeof tool.otWriteBinding !== "function") return null;
+  try {
+    const dich = await tool.otWriteBinding(args, ctx);
+    const writes = dich && Array.isArray(dich.writes) ? dich.writes : [];
+    if (!dich || writes.length === 0) return 5;
+    const keys = writes.map((x) => x.tagKey);
+    if (keys.some((k) => typeof k !== "string" || k === "")) return 5;
+    const kenh = await mucKenhChoAi(dich.adapterId, writes, dich.commandType);
+    // Fix round 1 (c1) — DỪNG GHIM (lệnh dừng, mọi write = stop_value của tag): mức của TOOL — không max với kênh chưa khai (= 5)
+    // và không phân loại theo tên tag (một tag ghim tên "estop_req" không được biến lệnh dừng thành mức 5). Cùng luật ở execute.
+    if (kenh.dungGhim) return phanLoaiMuc(tool.name);
+    let muc: MucRuiRo = 1;
+    for (const k of keys) {
+      const m = mucHieuLuc(tool.name, k, kenh.muc);
+      if (m > muc) muc = m;
+    }
+    return muc;
+  } catch {
+    return 5;
+  }
+}
+
+function xacThucMucMessage(lang: ToolLang, ma: MaXacThucTheoMuc, muc: MucRuiRo, conLaiMs?: number): string {
+  // R1a T16 — phút còn lại của khoá TOTP (làm tròn lên, ≥ 1). Không bao giờ nói số lần sai.
+  const phut = phutConLai(conLaiMs);
+  const vi: Record<MaXacThucTheoMuc, string> = {
+    ROLE_FLOOR: `Vai trò của bạn không được ra lệnh cho kênh mức tác động ${muc}.`,
+    TOTP_CHUA_DANG_KY: `Kênh mức tác động ${muc} cần xác thực 2 lớp, nhưng tài khoản này chưa đăng ký 2FA.`,
+    TOTP_CAN: `Kênh mức tác động ${muc} cần mã xác thực 2 lớp (TOTP) — nhập mã rồi xác nhận lại.`,
+    TOTP_SAI: `Mã xác thực 2 lớp không đúng hoặc đã được dùng — nhập mã mới rồi xác nhận lại (kênh mức ${muc}).`,
+    TOTP_TAM_KHOA: `Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau ${phut} phút.`,
+    TOTP_KHONG_KIEM_DUOC: "Không kiểm được mã xác thực hai lớp lúc này (lỗi hệ thống) — thử lại sau.",
+  };
+  const en: Record<MaXacThucTheoMuc, string> = {
+    ROLE_FLOOR: `Your role may not command a channel of actuation level ${muc}.`,
+    TOTP_CHUA_DANG_KY: `A channel of actuation level ${muc} requires two-factor authentication, but this account has not enrolled 2FA.`,
+    TOTP_CAN: `Actuation level ${muc} channels need a two-factor (TOTP) code — enter the code and confirm again.`,
+    TOTP_SAI: `The two-factor code is wrong or has already been used — enter a new code and confirm again (level ${muc} channel).`,
+    TOTP_TAM_KHOA: `Two-factor authentication is temporarily locked after too many wrong codes — try again in ${phut} minutes.`,
+    TOTP_KHONG_KIEM_DUOC: "The two-factor code cannot be checked right now (system error) — try again later.",
+  };
+  const zh: Record<MaXacThucTheoMuc, string> = {
+    ROLE_FLOOR: `您的角色无权对作用等级 ${muc} 的通道下达命令。`,
+    TOTP_CHUA_DANG_KY: `作用等级 ${muc} 的通道需要双因素认证，但此账户尚未注册 2FA。`,
+    TOTP_CAN: `作用等级 ${muc} 的通道需要双因素（TOTP）验证码——请输入验证码后再次确认。`,
+    TOTP_SAI: `双因素验证码错误或已被使用——请输入新验证码后再次确认（等级 ${muc} 通道）。`,
+    TOTP_TAM_KHOA: `由于多次输入错误，双因素认证已被临时锁定——请在 ${phut} 分钟后重试。`,
+    TOTP_KHONG_KIEM_DUOC: "暂时无法校验双因素验证码（系统错误）——请稍后重试。",
+  };
+  return (lang === "en" ? en : lang === "zh" ? zh : vi)[ma];
+}
+
+/**
  * Phase 2 — confirm. Verifies ownership/expiry/token, re-checks RBAC, then
  * executes with args from the DB row. Idempotent: a second confirm on an
  * already-executed action returns the cached result without re-running.
@@ -763,12 +863,23 @@ export async function confirmAction(
    * với đĩa trong `execute`) giữ nguyên, và confirm-lại idempotent vẫn trả kết quả cache như cũ.
    */
   selectedHunkIds?: readonly number[],
+  /** SCADA R1a T10 — xác thực theo mức cho tool ghi OT (xem `XacThucXacNhan`). Vắng ⇒ chỉ sàn vai cho mức 1|3. */
+  xacThuc?: XacThucXacNhan,
 ): Promise<ConfirmResult> {
   const db = await getDb();
   if (!db) return { ok: false, status: "invalid", message: "DB_UNAVAILABLE" };
 
   const [row] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
   if (!row) return { ok: false, status: "not_found", message: "Action không tồn tại." };
+  /**
+   * ★★★ SCADA R1a T9 fix 1 + T10 (K11) — TỪ CHỐI CỨNG hàng lệnh HMI (`hmi.*`), kiểm ĐẦU TIÊN ngay sau lượt đọc hàng: trước
+   * kiểm token/chủ, trước nhánh cache-return, trước lật 'expired', trước MỌI phép CAS/UPDATE.
+   *   · Lệnh HMI chỉ được xác nhận qua `scadaCommands.confirm` (sàn vai + 2FA theo mức, kiểm lại cổng, khoá chọn, attempts).
+   *     Đi qua đây là bỏ cả bộ đó và dispatch bằng danh tính HITL của AI.
+   *   · KHÔNG dựa vào "`hmi.write_tag` không có trong sổ tool": một lần đăng ký nhầm sẽ mở cửa — kiểm theo TIỀN TỐ tên ở hàng.
+   *   · Trả `not_found` (không phải mã riêng): đường AI không được biết một lệnh HMI tồn tại (cùng lỗi với "không thấy").
+   */
+  if (laLenhHmi(row.tool)) return { ok: false, status: "not_found", message: "Action không tồn tại." };
 
   // Token bound to userId — both must match the session user.
   if (token !== row.id || row.userId !== user.id) {
@@ -801,6 +912,53 @@ export async function confirmAction(
   }
   assertExecutable(tool);
   const perm = row.requiredPermissionJson ?? tool.requiredPermission!;
+
+  /**
+   * ★★★ SCADA R1a T10 (K5) — TOOL GHI OT: sàn vai + xác thực theo mức, TRƯỚC phép giành quyền (CAS) và trước RBAC #2.
+   * Mức = max(phanLoaiMuc(tool, tag), actuation_level kênh đích) (`mucGhiOtLucXacNhan`; không dựng được ⇒ 5). `kiemCongAi` ở
+   * execute vẫn chặn AI ở mức ≥ 4, nên thực tế chỉ mức 1|3 đi tiếp và chỉ cần sàn vai (operator/engineer/supervisor/admin).
+   * Từ chối ⇒ hàng giữ NGUYÊN trạng thái (thử lại được trong TTL, vd. nhập mã TOTP), không UPDATE, một dòng audit DENIED.
+   * Tool không ghi OT ⇒ `null` ⇒ khối này không làm gì (hành vi cũ, từng chữ).
+   */
+  const mucOt = await mucGhiOtLucXacNhan(tool, row.argsJson as Record<string, unknown>, { user, lang, req, actionId });
+  if (mucOt !== null) {
+    /**
+     * Fix round 1 (phán quyết c2) — mức ≥ 4 ⇒ từ chối NGAY bằng ĐÚNG `kiemCongAi` (mã `MUC_QUA_CAO`, cùng lý do), TRƯỚC
+     * `kiemXacThucTheoMuc`: AI không bao giờ hành động ở mức ≥ 4, nên không được hỏi và không được TIÊU một mã TOTP mà lượt này
+     * không bao giờ dùng được. Hàng giữ nguyên trạng thái; không quota (`tieuQuota:false`, bộ đếm riêng), không đọc cờ/safety
+     * (kiểm mức đứng đầu cổng).
+     */
+    if (mucOt >= 4) {
+      const cong = kiemCongAi({
+        toolName: row.tool,
+        userId: user.id,
+        adapterId: 0,
+        mucKenh: mucOt,
+        boDem: new BoDemTanSuat(),
+        tieuQuota: false,
+      });
+      await auditConfirmFailure(user, req, row.tool, actionId, cong.ma);
+      return { ok: false, status: "denied", reason: cong.ma, level: cong.muc, message: cong.lyDo };
+    }
+    const ctxXt: CtxXacThuc & { __luotXacMinhTotp?: string } = {
+      user: { id: user.id, role: user.role, twoFactorEnabled: xacThuc?.twoFactorEnabled ?? false },
+      sessionToken: xacThuc?.sessionToken ?? null,
+      ...(xacThuc?.__luotXacMinhTotp ? { __luotXacMinhTotp: xacThuc.__luotXacMinhTotp } : {}),
+    };
+    const xt = await kiemXacThucTheoMuc(ctxXt, mucOt, xacThuc?.totpCode);
+    if (!xt.ok) {
+      await auditConfirmFailure(user, req, row.tool, actionId, xt.ma);
+      const conLaiMs = xt.ma === "TOTP_TAM_KHOA" ? xt.conLaiMs : undefined;
+      return {
+        ok: false,
+        status: "denied",
+        reason: xt.ma,
+        level: mucOt,
+        ...(conLaiMs !== undefined ? { conLaiMs } : {}),
+        message: xacThucMucMessage(lang, xt.ma, mucOt, conLaiMs),
+      };
+    }
+  }
 
   /**
    * ★★★ ĐỢT 3 — LỰA CHỌN KHỐI: xác thực + chiếu **TRƯỚC** phép giành quyền (thuần, không I/O), để
@@ -1083,6 +1241,9 @@ export async function cancelAction(
 
   const [row] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
   if (!row) return { ok: false, status: "not_found", message: "Action không tồn tại." };
+  // SCADA R1a T9 fix 1 — lệnh HMI huỷ qua `scadaCommands.huy` (nhả khoá chọn, attempts); huỷ ở đây có thể đè một hàng 'confirmed'
+  // đang dispatch. Coi như không tồn tại.
+  if (laLenhHmi(row.tool)) return { ok: false, status: "not_found", message: "Action không tồn tại." };
   if (row.userId !== user.id) return { ok: false, status: "invalid", message: "Người dùng không khớp." };
   if (row.status === "executed") return { ok: false, status: "executed", message: "Đã thực thi, không thể hủy." };
   if (row.status !== "proposed" && row.status !== "confirmed") {
@@ -1106,6 +1267,10 @@ export async function getAction(actionId: string, user: CopilotUser) {
   if (!db) return null;
   const [row] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
   if (!row || row.userId !== user.id) return null;
+  // SCADA R1a T10 — hàng lệnh HMI (`hmi.*`) không phải hành động AI: kể cả CHÍNH chủ cũng không đọc qua đây (cùng "không thấy").
+  // Người gọi (copilot.getAction, bộ thực thi agent, phản hồi đề xuất) chỉ dành cho hàng AI; trạng thái lệnh HMI đọc qua
+  // `scadaCommands.trangThai` (`lenhHmi.trangThaiYeuCauGhi`, không dùng hàm này).
+  if (laLenhHmi(row.tool)) return null;
   return row;
 }
 

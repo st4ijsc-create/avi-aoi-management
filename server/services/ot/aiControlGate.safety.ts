@@ -19,7 +19,77 @@
  *   đó ở đó `"UNKNOWN"` nghĩa là CHO QUA.)
  */
 
-import type { TrangThaiSafety } from "./aiControlGate";
+import { and, eq, inArray } from "drizzle-orm";
+import type { MucRuiRo, TrangThaiSafety } from "./aiControlGate";
+import { getDb } from "../../db/connection";
+import { deviceTags } from "../../../drizzle/schema";
+import { mucTacDongKenh } from "../scada/kenhScada";
+
+/**
+ * SCADA R1a T10 (K5) — mức KÊNH của một lệnh AI `(adapterId, writes, commandType)` cho cổng AI (`DauVaoCongAi.mucKenh`) và cho
+ * sàn vai + 2FA lúc `confirmAction`. CHỈ ĐỌC `device_tags`.
+ *
+ * Hai kết cục:
+ *   · `{ dungGhim: true }` — fix round 1, phán quyết c1: lệnh là một DỪNG GHIM — lệnh loại dừng (`isStopCommandType`, cùng hàm
+ *     dispatcher) mà TOÀN BỘ writes khớp `device_tags.stop_value` (MỘT `matchPinnedStop` trên `stopPinsFromTagRows` của chính các
+ *     hàng tag đích — đúng luật cả-lệnh của dispatcher: tag ghim, giá trị ghim, không trùng). Người gọi dùng mức của TOOL, KHÔNG
+ *     lấy max với mức kênh (kênh chưa khai = 5 không được chặn một DỪNG ghim). Lệnh dừng trộn ghim với BẤT KỲ write nào khác /
+ *     sai giá trị ⇒ không phải dừng ghim ⇒ nhánh dưới.
+ *   · `{ dungGhim: false, muc }` — mức CAO NHẤT của các kênh đích.
+ *
+ * ★ FAIL-CLOSED: không có write / tagKey không phải chuỗi khác rỗng / adapter không hợp lệ / CSDL vắng / truy vấn ném / MỘT tag
+ *   không tìm thấy ⇒ `muc: 5`. Cột `actuation_level` NULL ⇒ 5 (`mucTacDongKenh`). Lỗi ở nhánh ghim ⇒ không phải dừng ghim.
+ */
+export type MucKenhAi = { dungGhim: true } | { dungGhim: false; muc: MucRuiRo };
+
+const MUC_5: MucKenhAi = Object.freeze({ dungGhim: false, muc: 5 }) as MucKenhAi;
+
+export async function mucKenhChoAi(
+  adapterId: number,
+  writes: ReadonlyArray<{ tagKey: string; value: unknown }>,
+  commandType?: string | null,
+): Promise<MucKenhAi> {
+  try {
+    if (!Number.isInteger(adapterId) || adapterId <= 0) return MUC_5;
+    if (!Array.isArray(writes) || writes.length === 0) return MUC_5;
+    if (writes.some((x) => !x || typeof x.tagKey !== "string" || x.tagKey === "")) return MUC_5;
+    const keys = [...new Set(writes.map((x) => x.tagKey))];
+    const db = await getDb();
+    if (!db) return MUC_5;
+    const rows = await db
+      .select({
+        tagKey: deviceTags.tagKey,
+        actuationLevel: deviceTags.actuationLevel,
+        dataType: deviceTags.dataType,
+        stopValue: deviceTags.stopValue,
+        writable: deviceTags.writable,
+        isEnabled: deviceTags.isEnabled,
+      })
+      .from(deviceTags)
+      .where(and(eq(deviceTags.adapterId, adapterId), inArray(deviceTags.tagKey, keys)));
+
+    if (typeof commandType === "string" && commandType !== "") {
+      // import động: giữ mô-đun này nhẹ (dispatcher + stopPin kéo cả dây chuyền audit/bảo mật).
+      const { isStopCommandType } = await import("./commandDispatcher");
+      if (isStopCommandType(commandType)) {
+        const { matchPinnedStop, stopPinsFromTagRows } = await import("./stopPin");
+        const ghim = matchPinnedStop(stopPinsFromTagRows(rows), writes.map((x) => ({ tagKey: x.tagKey, value: x.value })));
+        if (ghim.ok) return { dungGhim: true };
+      }
+    }
+
+    let muc: MucRuiRo = 1;
+    for (const k of keys) {
+      const r = rows.find((x) => x.tagKey === k);
+      if (!r) return MUC_5;
+      const m = mucTacDongKenh(r);
+      if (m > muc) muc = m;
+    }
+    return { dungGhim: false, muc };
+  } catch {
+    return MUC_5;
+  }
+}
 
 /**
  * Đọc trạng thái safety-PLC cho một adapter, dùng CHÍNH đường đọc mà dispatcher

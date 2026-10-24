@@ -858,7 +858,33 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //     dù chúng cũng lọc phạm vi như ba query. (Kế hoạch dự kiến "S cho cả 6"; số ĐO được là 3 S + 3 D.)
 //   Đo trước (xanh trên ghim cũ, HEAD b899b3483) / sau (đỏ đúng +3 S, +3 D). No baseline row added. `tong` 2392 matches
 //   `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 333, B: 8, C: 494, D: 1191, S: 366, tong: 2392 } as const;
+// ★★ 2026-10-24 · R1a scadaCommands +1 (SCADA R1a Task 8 — lệnh ghi tag HMI, bước request) — **D 1191 → 1192 · tong 2392 → 2393 ·
+// A/B/C/S unchanged.** MỘT thủ tục MỚI `scadaCommands.request` (mutation) trong `server/routers/scadaCommandsRouter.ts`: truyền
+// `phamViCua(ctx)` xuống `lenhHmi.yeuCauGhiTag` ⇒ `idsTrongPhamVi("machine", …, {strict:true})` (adapterId từ client ⇒ kiểm lại phạm vi;
+// ngoài phạm vi = không tồn tại = NOT_FOUND; adapter không gắn máy chỉ với phạm vi toàn quyền). Mutation ⇒ D (bộ suy xếp MỌI mutation
+// vào D). Đo: trên ghim cũ (gốc 4d149497e) đỏ ĐÚNG +1 D / +1 tong sau khi thêm router, rồi ghim lại. No baseline row added. `tong` 2393 matches
+// `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+// ★★ 2026-10-24 · R1a scadaCommands +3 (SCADA R1a Task 9 — lệnh ghi tag HMI, bước 2) — **D 1192 → 1194 · S 366 → 367 · tong 2393 →
+// 2396 · A/B/C unchanged.** BA thủ tục MỚI trong `server/routers/scadaCommandsRouter.ts`: `confirm` + `huy` (mutation ⇒ D) và `trangThai`
+// (query ⇒ S). `confirm` truyền `phamViCua(ctx)` xuống `lenhHmi.xacNhanGhiTag` ⇒ kiểm lại phạm vi adapter của yêu cầu
+// (`idsTrongPhamVi("machine", …, {strict:true})`); `huy`/`trangThai` chỉ cho CHỦ yêu cầu (người khác = NOT_FOUND), không nhận
+// adapterId/machineId từ client. Đo: trên ghim cũ (gốc dc4422e7e) đỏ ĐÚNG +2 D / +1 S / +3 tong sau khi thêm, rồi ghim lại. No baseline
+// row added. `tong` 2396 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+// ★★ 2026-10-24 · R1a scadaKenh +5 (SCADA R1a Task 12 — M12 kênh & giới hạn, kênh chế độ máy) — **D 1194 → 1197 · S 367 → 369 · tong 2396 →
+// 2401 · A/B/C unchanged.** NĂM thủ tục MỚI trong `server/routers/scadaKenhRouter.ts` (router top-level `scadaKenh`, ruling R-2; `cheDo`
+// lồng nhau), CẢ NĂM truyền `phamViCua(ctx)` vào `idsTrongPhamVi("machine", …, {strict:true})` (adapterId / tagId / machineId từ client ⇒
+// kiểm lại phạm vi mỗi lượt; ngoài phạm vi = không tồn tại = NOT_FOUND; adapter không gắn máy chỉ với phạm vi toàn quyền):
+//   • query `scadaKenh.danhSach` / `scadaKenh.cheDo.danhSach` (đọc `device_tags` / `machines` / `scada_kenh_che_do`) ⇒ S (+2);
+//   • mutation `scadaKenh.capNhat` / `scadaKenh.cheDo.dat` / `scadaKenh.cheDo.go` ⇒ D (+3) (bộ suy xếp MỌI mutation vào D).
+//   Đo: trên ghim cũ (gốc a65445567) đỏ ĐÚNG +3 D / +2 S / +5 tong sau khi thêm router, rồi ghim lại. No baseline row added. `tong` 2401
+//   matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+// ★★ 2026-10-24 · R1a twoFactor.moKhoaTotp +1 (SCADA R1a Task 16 — bộ đếm TOTP sai theo người dùng, admin mở khoá) — **D 1197 → 1198 ·
+// tong 2401 → 2402 · A/B/C/S unchanged.** MỘT thủ tục MỚI `twoFactor.moKhoaTotp` (mutation, `adminProcedure`) trong
+// `server/routers/twoFactorRouter.ts`: xoá hàng `totp_khoa_sai` (mig 0432) của một người dùng + một dòng `control_audit_log` (kèm lý do)
+// trong CÙNG giao dịch. Bảng không có cột tenant; admin toàn hệ ⇒ không lọc phạm vi. Mutation ⇒ D (bộ suy xếp MỌI mutation vào D). Đo:
+// trên ghim cũ (gốc c6e2422e7) đỏ ĐÚNG +1 D / +1 tong sau khi thêm, rồi ghim lại. No baseline row added. `tong` 2402 matches
+// `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 333, B: 8, C: 494, D: 1198, S: 369, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

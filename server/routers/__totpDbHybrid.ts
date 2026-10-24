@@ -19,7 +19,7 @@
  */
 
 /** Những bảng **BẮT BUỘC** đi xuống Postgres thật. */
-const BANG_THAT = new Set(["totp_consumed"]);
+const BANG_THAT = new Set(["totp_consumed", "totp_khoa_sai"]); // R1a T16: bộ đếm TOTP sai cũng là trạng thái xuyên tiến trình
 
 /** Tên bảng mà drizzle gắn vào đối tượng bảng. `""` ⇒ không phải một bảng drizzle. */
 const tenBang = (x: unknown): string =>

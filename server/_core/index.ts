@@ -6550,18 +6550,38 @@ async function startServer() {
     port,
     onListening,
     async () => {
-      const { startOt } = await import("../services/ot");
-      await startOt();
-      // SCADA R0 Task 7 — bộ đệm giá trị hiện tại: SAU startOt (các adapter đã khai nhịp poll/deadband/mã qua
-      // datThongTinAdapter để nạp từ DB đúng thiết bị). Chỉ tiến trình API (worker.ts không ingest). Lỗi chỉ log.
-      if (process.env.SCADA_LIVE_CACHE_ENABLED === "true") {
-        try {
-          const { khoiDongBoDemHienTai } = await import("../services/scada/boDemHienTai");
-          await khoiDongBoDemHienTai();
-        } catch (err) {
-          console.error("[SCADA] khởi động bộ đệm giá trị hiện tại lỗi:", (err as Error)?.message || err);
-        }
+      // SCADA R1a Task 8 (điều phối 2026-10-24) — SCADA_COMMANDS bật mà bộ đệm giá trị hiện tại tắt ⇒ mọi máy LOCAL ⇒ mọi lệnh HMI
+      // bị từ chối: cảnh báo MỘT lần, cạnh chỗ khởi động bộ đệm. Đặt TRƯỚC startOt để một lỗi OT không che mất cảnh báo. Chỉ log.
+      try {
+        const { kiemCauHinhLenhHmi } = await import("../services/scada/lenhHmi");
+        kiemCauHinhLenhHmi();
+      } catch (err) {
+        console.error("[SCADA] kiểm cấu hình lệnh HMI lỗi:", (err as Error)?.message || err);
       }
+      // kiem-dinh P1-6 (2026-10-24) — kiểm schema R1a (information_schema, CHỈ ĐỌC) TRƯỚC startOt: thiếu mig 0431 ⇒ khối lỗi nổi bật +
+      // /health degraded + KHÔNG startOt (không chạy với danh sách adapter rỗng); thiếu 0432 ⇒ lỗi nhắc mỗi 5 phút (kiemSchemaR1a.ts).
+      const { khoiDongOtCoKiemSchema } = await import("./kiemSchemaR1a");
+      const { getDb: layDbKiemSchema } = await import("../db/connection");
+      const dbKiemSchema = await layDbKiemSchema().catch(() => null);
+      await khoiDongOtCoKiemSchema({
+        chay: dbKiemSchema ? async (q) => (await dbKiemSchema.execute(q)) as unknown as Array<Record<string, unknown>> : null,
+        startOt: async () => {
+          const { startOt } = await import("../services/ot");
+          await startOt();
+        },
+        // SCADA R0 Task 7 — bộ đệm giá trị hiện tại: SAU startOt (các adapter đã khai nhịp poll/deadband/mã qua
+        // datThongTinAdapter để nạp từ DB đúng thiết bị). Chỉ tiến trình API (worker.ts không ingest). Lỗi chỉ log.
+        sauStartOt: async () => {
+          if (process.env.SCADA_LIVE_CACHE_ENABLED === "true") {
+            try {
+              const { khoiDongBoDemHienTai } = await import("../services/scada/boDemHienTai");
+              await khoiDongBoDemHienTai();
+            } catch (err) {
+              console.error("[SCADA] khởi động bộ đệm giá trị hiện tại lỗi:", (err as Error)?.message || err);
+            }
+          }
+        },
+      });
     },
     (message, detail) => console.error(message, detail),
   );

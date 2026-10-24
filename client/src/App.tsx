@@ -137,6 +137,7 @@ const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage")
 const OpsConsole = React.lazy(() => import("./pages/OpsConsole")); // P1 (doc 12 §8): unified Ops Console / War-Room (consolidates Andon + Predictive + alert sources)
 const DeviceAdapterManagement = React.lazy(() => import("./pages/DeviceAdapterManagement")); // G2.2a: OT adapter/tag CONFIG
 const ScadaDiag = React.lazy(() => import("./pages/ScadaDiag")); // SCADA R0 Task 11: M10 chan doan truyen thong
+const ScadaKenh = React.lazy(() => import("./pages/ScadaKenh")); // SCADA R1a Task 13: M12 kenh & gioi han + kenh che do
 const SystemHealth = React.lazy(() => import("./pages/SystemHealth")); // Tier-1b (doc 24): OT store-and-forward + connection HA supervisors + DINOv2 model health + commissioning + twin export
 const ControlReadiness = React.lazy(() => import("./pages/ControlReadiness")); // doc 40 Wave 3A (§11): Trust & Enforcement Center — READ-ONLY gate/flag readiness matrix
 const RecipeManagement = React.lazy(() => import("./pages/RecipeManagement")); // G2.2b: recipe catalog + deploy ledger (CONFIG/VIEW)
@@ -579,6 +580,7 @@ function Router() {
       <Route path="/machine-registration"><RouteGuard navHref="/machine-registration"><MachineRegistration /></RouteGuard></Route>
       <Route path="/device-adapters"><RouteGuard navHref="/device-adapters"><DeviceAdapterManagement /></RouteGuard></Route>
       <Route path="/scada/diag"><RouteGuard navHref="/scada/diag"><ScadaDiag /></RouteGuard></Route>
+      <Route path="/scada/config/channels"><RouteGuard navHref="/scada/config/channels"><ScadaKenh /></RouteGuard></Route>
       <Route path="/uns-mapping"><Redirect to="/connectivity?tab=uns" /></Route>
       <Route path="/system-health"><RouteGuard requirePermission="machine_status"><AIPageWrapper><SystemHealth /></AIPageWrapper></RouteGuard></Route>
       {/* doc 40 Wave 3A (§11): Trust & Enforcement Center — READ-ONLY gate/flag readiness matrix (QA + audit). RBAC machine_control (admin bypass). */}

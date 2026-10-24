@@ -153,6 +153,9 @@ vi.mock("../interlock/interlockGate", () => ({
 const checkPermission = vi.fn(async () => true);
 vi.mock("../../_core/accessControl", () => ({ checkPermission: (...a: unknown[]) => (checkPermission as any)(...a) }));
 vi.mock("../_core/accessControl", () => ({ checkPermission: (...a: unknown[]) => (checkPermission as any)(...a) }));
+// SCADA R1a T10 — sàn vai + 2FA theo mức lúc CONFIRM cho tool ghi OT có lưới riêng (aiCopilotActions.hmi.r1a.test.ts,
+// aiCopilotRouter.confirm.r1a.db.test.ts). Tệp này đo cổng AI L-7 ở EXECUTE, nên lớp confirm được cho qua ở đây.
+vi.mock("../../_core/xacThucTheoMuc", () => ({ kiemXacThucTheoMuc: async () => ({ ok: true, cach: "khong_can" }), vaiTroDuocGhi: () => [] }));
 
 // ── audit (silence) ──
 const logCrudOperation = vi.fn(async () => ({ id: 1 }));
@@ -270,7 +273,8 @@ describe("(c) confirmed proposal routes through dispatch — SIMULATED on uncomm
     expect(cmdLog).toHaveLength(0);
 
     const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, USER, "vi");
-    expect(c.status).toBe("bi_tu_choi_ghi"); // lượt ghi bị TỪ CHỐI
+    // SCADA R1a T10 fix round 1 (c2) — mức 5 ⇒ cổng AI từ chối NGAY lúc confirm (MUC_QUA_CAO), trước execute.
+    expect(c).toMatchObject({ status: "denied", reason: "MUC_QUA_CAO" }); // lượt ghi bị TỪ CHỐI
     expect(writeTagsSpy).not.toHaveBeenCalled();
     expect(cmdLog).toHaveLength(0); // ★ KHÔNG tới dispatcher ⇒ không có dòng sổ
     // 20s: ca đầu tiên của tệp phải nạp cả cây module (Redis fallback + dispatcher
@@ -281,7 +285,7 @@ describe("(c) confirmed proposal routes through dispatch — SIMULATED on uncomm
   it("★ L-7 ÂM TÍNH: spi_printer_offset (Mức 5) cũng bị chặn", async () => {
     const p = await proposeAction(tool("spi_printer_offset"), { machineId: 5, offsetXUm: -6, offsetYUm: 2.5 }, ctx());
     const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, USER, "vi");
-    expect(c.status).toBe("bi_tu_choi_ghi");
+    expect(c).toMatchObject({ status: "denied", reason: "MUC_QUA_CAO" }); // R1a T10 c2: chặn ngay lúc confirm
     expect(writeTagsSpy).not.toHaveBeenCalled();
     expect(cmdLog).toHaveLength(0);
   });
@@ -295,7 +299,7 @@ describe("(c) confirmed proposal routes through dispatch — SIMULATED on uncomm
     process.env.AI_OT_CONTROL_ENABLED = "true";
     const p = await proposeAction(tool("reject_divert"), { machineId: 5, unitRef: "55" }, ctx());
     const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, USER, "vi");
-    expect(c.status).toBe("bi_tu_choi_ghi");
+    expect(c).toMatchObject({ status: "denied", reason: "MUC_QUA_CAO" }); // R1a T10 c2: chặn ngay lúc confirm
     expect(writeTagsSpy).not.toHaveBeenCalled(); // ★ KHÔNG một byte nào rời đi
     expect(cmdLog).toHaveLength(0);
   });
@@ -320,7 +324,7 @@ describe("GATE-INTACT: HITL + allowlist are never bypassed", () => {
     tags[0].writable = true; // ★ tag GHI ĐƯỢC — hàng rào cũ đã mở
     const p = await proposeAction(tool("reject_divert"), { machineId: 5 }, ctx());
     const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, USER, "vi");
-    expect(c.status).toBe("bi_tu_choi_ghi");
+    expect(c).toMatchObject({ status: "denied", reason: "MUC_QUA_CAO" }); // R1a T10 c2: chặn ngay lúc confirm
     expect(writeTagsSpy).not.toHaveBeenCalled();
     expect(cmdLog).toHaveLength(0); // chặn ở CỔNG ⇒ dispatcher chưa từng chạy
   });

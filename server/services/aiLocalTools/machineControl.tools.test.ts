@@ -112,7 +112,12 @@ vi.mock("../ot/commandDispatcher", () => ({
 const safetyChoAi = vi.fn(async () => "OK" as const);
 vi.mock("../ot/aiControlGate.safety", () => ({
   preflightSafetyChoAi: (...a: unknown[]) => safetyChoAi(...a),
+  // SCADA R1a T10 — mức KÊNH đích (actuation_level). 1 = kênh không nâng mức: các ca dưới đo mức của TOOL như trước.
+  mucKenhChoAi: async () => ({ dungGhim: false, muc: 1 }),
 }));
+// SCADA R1a T10 — sàn vai + 2FA theo mức lúc CONFIRM cho tool ghi OT có lưới riêng (aiCopilotActions.hmi.r1a.test.ts,
+// aiCopilotRouter.confirm.r1a.db.test.ts). Tệp này đo cổng AI L-7 ở EXECUTE, nên lớp confirm được cho qua ở đây.
+vi.mock("../../_core/xacThucTheoMuc", () => ({ kiemXacThucTheoMuc: async () => ({ ok: true, cach: "khong_can" }), vaiTroDuocGhi: () => [] }));
 
 // audit — silence.
 const logCrudOperation = vi.fn(async () => ({ id: 1 }));
@@ -199,11 +204,10 @@ describe("machine_start — HITL flow", () => {
     const p = await proposeAction(tool("machine_start"), { machineId: 5 }, ctx(ADMIN));
     expect(dispatchSpy).not.toHaveBeenCalled();
     const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
-    // ★ Vòng đời HITL chạy hết và kết thúc ở `bi_tu_choi_ghi` — một giá trị enum
-    //   ĐÃ CÓ SẴN (drizzle/0341) nghĩa là "lượt ghi bị TỪ CHỐI". Cổng L-7 rơi
-    //   đúng vào ô đó mà không cần enum mới, và `/api/v1/advice?status=` lọc
-    //   được ngay. KHÔNG phải "executed": lệnh này không hề được thực thi.
-    expect(c.status).toBe("bi_tu_choi_ghi");
+    // ★ SCADA R1a T10 fix round 1 (phán quyết c2) — tool ghi OT mức ≥ 4 bị cổng AI từ chối NGAY lúc confirm (cùng
+    //   `kiemCongAi`, mã MUC_QUA_CAO), TRƯỚC giành quyền: không hỏi/tiêu TOTP, hàng giữ nguyên. Trước đây vòng đời chạy
+    //   tới execute rồi kết thúc ở `bi_tu_choi_ghi`; nay dừng sớm hơn. KHÔNG phải "executed": lệnh không hề được thực thi.
+    expect(c).toMatchObject({ status: "denied", reason: "MUC_QUA_CAO" });
     expect(dispatchSpy).not.toHaveBeenCalled(); // ★ KHÔNG một byte nào tới thiết bị
   });
 

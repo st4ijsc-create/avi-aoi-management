@@ -192,7 +192,7 @@ const SEED_MODULES: SystemModule[] = [
       "/mqtt-dashboard", "/mqtt-clients", "/mqtt-topics", "/mqtt-replay",
       "/mqtt-profiles", "/mqtt-bulletin", "/mqtt-ng-rate", "/mqtt-alerts",
       "/oee-dashboard", "/machine-health", "/factory-live-map", "/field-devices",
-      "/device-adapters", "/scada/diag", "/uns-mapping", "/hot-folders", "/edge-nodes",
+      "/device-adapters", "/scada/diag", "/scada/config/channels", "/uns-mapping", "/hot-folders", "/edge-nodes",
       "/system-health", "/digital-twin-center",
       "/technician-copilot", "/work-orders",
       "/alerts", "/monitoring-setting",

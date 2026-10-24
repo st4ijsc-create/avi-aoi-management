@@ -9,8 +9,7 @@
  *
  * Sources:
  *   • the internal eventBus (NG alerts, Andon, SPC) → mapped to public event names.
- *   • direct emit() calls from the /api/v1 router (e.g. equipment.command.executed,
- *     inspection.committed) for events not already on the bus.
+ *   • direct emit() calls from the /api/v1 router (e.g. inspection.committed) for events not already on the bus.
  *
  * SAFETY: flag-gated by WEBHOOKS_ENABLED (default OFF). When off, emit() is a no-op
  * so no outbound HTTP ever leaves the box. Subscribing to the bus is harmless and
@@ -23,7 +22,7 @@ import { eventBus, EventTypes, type DomainEvent } from "../../_core/eventBus";
 export const V1_WEBHOOK_EVENTS = [
   "inspection.committed",
   "andon.raised",
-  "equipment.command.executed",
+  // R1a T11 (D8): `equipment.command.executed` is no longer advertised — its only emitter is the unpublished device-command route.
   "spc.violation",
   "ng.alert",
 ] as const;
