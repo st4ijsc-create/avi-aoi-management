@@ -188,3 +188,23 @@ export async function dieuKienSuKienAnToanTrongPhamVi(ctx: CoDanhTinh): Promise<
   const se = safetyEvents;
   return dieuKienViTriTrongPhamVi(phamViCua(ctx), { lineId: se.lineId, stationId: se.stationId, factoryId: se.factoryId, robotId: se.robotId });
 }
+
+/**
+ * Mảnh SQL thô `<col> IN (id máy trong phạm vi)` cho truy vấn viết tay (bí danh `i`, `ia`, …); `undefined` khi phạm vi toàn quyền. Phạm vi rỗng ⇒ `IN (-1)` (0 hàng, KHÔNG phải "không lọc").
+ * `col` là cột/biểu thức SQL thô, vd `sql.raw('i."machineId"')`.
+ */
+export async function dieuKienMaySql(ctx: CoDanhTinh, col: SQL): Promise<SQL | undefined> {
+  const ids = await idsMayTrongPhamVi(ctx);
+  if (ids === null) return undefined;
+  return sql`${col} IN (${sql.join((ids.length > 0 ? ids : [-1]).map((x) => sql`${x}`), sql`, `)})`;
+}
+
+/** `lần kiểm tra thuộc máy trong phạm vi`: tập id lần kiểm tra → máy; true khi toàn quyền hoặc MỌI lần kiểm tra tồn tại đều thuộc máy trong phạm vi (id không tồn tại bị bỏ qua). */
+export async function kiemTraTrongPhamVi(ctx: CoDanhTinh, inspectionIds: number[]): Promise<boolean> {
+  const ids = await idsMayTrongPhamVi(ctx);
+  if (ids === null || inspectionIds.length === 0) return true;
+  const d = await layDb();
+  const { productInspections } = await import("../../drizzle/schema");
+  const rows = await d.select({ m: productInspections.machineId }).from(productInspections).where(inArray(productInspections.id, inspectionIds));
+  return rows.every((r) => ids.includes(r.m));
+}
