@@ -43,9 +43,46 @@ const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 const actuationProcedure = actuationBase.use(moduleGate("MOD_OT_CONTROL"));
 const adminProcedure = adminBase.use(moduleGate("MOD_OT_CONTROL"));
 import { interlockRules, interlockEvents, controlAuditLog, type InterlockRule } from "../../drizzle/schema";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { adapterTrongPhamVi } from "./_adapterPhamVi";
 import { evaluateCondition, deriveObserved, type ComparisonOperator, type InterlockSourceType } from "../services/interlock/ruleEvaluator";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { kiemLenhInterlockTx, soHienThi, type DbHoacTx } from "../services/scada/nhatQuanKenh";
+
+/**
+ * Phạm vi nhà máy cho GHI interlock (rà bảo mật 2026-10-24, lô W8 — kiểm định phamViGhi): một luật interlock có thể DỪNG LINE / GIẢM TỐC / HẠ CHẶN máy ở
+ * chuyền / trạm / máy của nó và ra lệnh tới máy / adapter ĐÍCH. Trước: người nhà máy A tạo / sửa / xoá / bật / tắt luật và đóng sự kiện của nhà máy B.
+ * Luật: MỌI vị trí luật nhắc tới (lineId · stationId · machineId · targetMachineId · targetAdapterId) phải TRONG phạm vi người gọi; luật không nêu vị trí nào
+ * (không tồn tại trong thực tế: scope ∈ line|station|machine) chỉ toàn quyền. Ngoài phạm vi ≡ không tồn tại: NOT_FOUND "interlockRule" (cùng lỗi id không
+ * có thật). Toàn quyền (admin) ⇒ không kiểm. Kiểm TRƯỚC khi ghi (và với `update`: cả luật HIỆN CÓ lẫn luật SAU KHI vá).
+ */
+async function luatTrongPhamVi(
+  ctx: CoDanhTinh,
+  r: { lineId?: number | null; stationId?: number | null; machineId?: number | null; targetMachineId?: number | null; targetAdapterId?: number | null },
+): Promise<void> {
+  const pv = phamViCua(ctx);
+  const [dong, tram, may] = await Promise.all([
+    idsTrongPhamVi("line", pv, { strict: true }),
+    idsTrongPhamVi("station", pv, { strict: true }),
+    idsTrongPhamVi("machine", pv, { strict: true }),
+  ]);
+  if (dong === null && tram === null && may === null) return;
+  const ngoai = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
+  const coViTri = r.lineId != null || r.stationId != null || r.machineId != null || r.targetMachineId != null || r.targetAdapterId != null;
+  if (!coViTri) throw ngoai();
+  if (r.lineId != null && !(dong ?? []).includes(r.lineId)) throw ngoai();
+  if (r.stationId != null && !(tram ?? []).includes(r.stationId)) throw ngoai();
+  if (r.machineId != null && !(may ?? []).includes(r.machineId)) throw ngoai();
+  if (r.targetMachineId != null && !(may ?? []).includes(r.targetMachineId)) throw ngoai();
+  if (r.targetAdapterId != null) {
+    try {
+      await adapterTrongPhamVi(ctx, r.targetAdapterId);
+    } catch {
+      throw ngoai();
+    }
+  }
+}
 
 async function getDb() {
   const db = await getDbRaw();
@@ -281,6 +318,7 @@ export const interlockRouter = router({
     .input(createInput)
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
+      await luatTrongPhamVi(ctx, input); // phạm vi nhà máy: luật mới không được nhắm vị trí / đích ngoài phạm vi
       // ILK-05 — validate BEFORE writing anything.
       assertTargetIfNotAlert(input.action, input);
       assertTelemetryCauHinh(input);
@@ -317,6 +355,8 @@ export const interlockRouter = router({
       return db.transaction(async (tx) => {
         const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, id)).limit(1).for("update");
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
+        await luatTrongPhamVi(ctx, existing); // phạm vi nhà máy: luật HIỆN CÓ phải trong phạm vi
+        await luatTrongPhamVi(ctx, { ...existing, ...rest }); // … và luật SAU KHI vá (không "đẩy" luật sang vị trí / đích ngoài phạm vi)
 
         // ILK-05 — merge patch lên existing rồi kiểm: một update KHÔNG được âm
         // thầm bỏ đích cuối cùng của một rule action khác 'alert'.
@@ -387,6 +427,7 @@ export const interlockRouter = router({
       return db.transaction(async (tx) => {
         const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1).for("update");
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
+        await luatTrongPhamVi(ctx, existing); // phạm vi nhà máy
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: input.id, action: "delete", actorId: ctx.user.id, before: existing, after: null, reason: input.reason });
         await tx.delete(interlockRules).where(eq(interlockRules.id, input.id));
         return { success: true };
@@ -456,6 +497,7 @@ export const interlockRouter = router({
       return db.transaction(async (tx) => {
         const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1).for("update");
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
+        await luatTrongPhamVi(ctx, existing); // phạm vi nhà máy
         // SAFETY: cannot enable a rule that has not been approved.
         if (existing.approvedBy == null) {
           throw appError("FORBIDDEN", "OPERATION_FAILED", { operation: "activateInterlockRule" }, "Rule chưa được duyệt (approvedBy=null) — không thể bật.");
@@ -487,6 +529,7 @@ export const interlockRouter = router({
       return db.transaction(async (tx) => {
         const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1).for("update");
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
+        await luatTrongPhamVi(ctx, existing); // phạm vi nhà máy
         const [row] = await tx
           .update(interlockRules)
           .set({ enabled: false, updatedAt: new Date(), updatedBy: ctx.user.id })
@@ -525,6 +568,13 @@ export const interlockRouter = router({
       return db.transaction(async (tx) => {
         const [existing] = await tx.select().from(interlockEvents).where(eq(interlockEvents.id, input.id)).limit(1);
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockEvent" }, "Event không tồn tại.");
+        // phạm vi nhà máy: sự kiện của luật ngoài phạm vi ≡ không tồn tại
+        const [luat] = existing.ruleId != null ? await tx.select().from(interlockRules).where(eq(interlockRules.id, existing.ruleId)).limit(1) : [];
+        try {
+          await luatTrongPhamVi(ctx, luat ?? {});
+        } catch {
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockEvent" }, "Event không tồn tại.");
+        }
         const [row] = await tx
           .update(interlockEvents)
           .set({ status: "resolved", resolvedAt: new Date(), resolvedBy: ctx.user.id, notes: input.notes ?? input.reason })

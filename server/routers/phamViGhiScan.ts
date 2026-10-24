@@ -451,6 +451,14 @@ export function quetPhamViGhi(goc: string, ghiDe: Readonly<Record<string, string
       }
       ts.forEachChild(x, nhat);
     };
+    // `.input(idInput)`: đối số CHÍNH LÀ một định danh — `nhat` bỏ qua `x === n`, nên phải phân giải hằng schema cấp file TẠI ĐÂY
+    // (trước đó mọi `.input(idInput)` / `bulkIdsInput` / `importInput` bị coi "không khoá" ⇒ delete/bulk/import không vào sổ).
+    if (ts.isIdentifier(n)) {
+      const gt = khai(f).get(n.text);
+      if (gt !== undefined) for (const k of khoaCuaSchema(f, gt, sau + 1, mo)) ra.add(k);
+      else mo.v = true;
+      return ra;
+    }
     nhat(n);
     return ra;
   };
@@ -568,7 +576,7 @@ export function laNoGhi(m: MutationGhi): boolean {
 /**
  * Sàn `adminProcedure` (chỉ `role === "admin"`): admin có phạm vi TOÀN QUYỀN theo thiết kế (`resolveTenantFactoryScope`: `userRole === "admin"` ⇒
  * `factoryIds: null`) ⇒ không có "nhà máy khác" nào để vượt ⇒ KHÔNG phải nợ phạm vi. Tiền đề này được canh bằng test (`phamViGhiCensus` §5c): nếu ai đó
- * thu hẹp phạm vi admin thì test ĐỎ và quy tắc này mất hiệu lực. `superAdminProcedure` cùng nhóm.
+ * thu hẹp phạm vi admin (vd. thêm vai "admin nhà máy" phạm vi hẹp) thì test ĐỎ và quy tắc này PHẢI BỎ. `superAdminProcedure` cùng nhóm.
  */
 export function laSanToanQuyen(m: Pick<MutationGhi, "san">): boolean {
   return /^(adminProcedure|superAdminProcedure)$/.test(m.san);
