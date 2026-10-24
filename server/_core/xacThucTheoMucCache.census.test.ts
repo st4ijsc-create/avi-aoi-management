@@ -16,6 +16,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { moiFileDuoi, phanGiaiToi } from "../routers/deployProcedureScan";
 import { moiDuongNhap } from "./quetDiemXacThuc";
 
@@ -34,14 +35,43 @@ const NGUOI_NHAP_DUOC_PHEP = ["server/_core/xacThucTheoMuc.test.ts", "server/_co
 const CAY = ["server", "client", "shared", "scripts"];
 const MOI_FILE = CAY.flatMap((c) => moiFileDuoi(GOC_REPO, c, [".ts", ".tsx", ".mts", ".cts"]));
 
+/**
+ * R1b-1 T10 — `export * from "…/trpc"` / `export * as ns from "…/trpc"`: tái xuất TOÀN BỘ, KHÔNG nhắc tên `ghiStepUpPhien` trong
+ * mã nên vị từ "nhắc tên" bên dưới mù; ai nhập barrel đó lấy được cửa ghi mà không qua `trpc.ts`. Phân tích bằng AST (không regex dòng),
+ * cùng phép phân giải đường nhập `phanGiaiToi`.
+ */
+export function taiXuatToanBo(tuFile: string, ma: string, dich: string): boolean {
+  const src = ts.createSourceFile(tuFile, ma, ts.ScriptTarget.Latest, true);
+  let thay = false;
+  const di = (n: ts.Node): void => {
+    if (
+      ts.isExportDeclaration(n) &&
+      n.moduleSpecifier !== undefined &&
+      ts.isStringLiteral(n.moduleSpecifier) &&
+      (n.exportClause === undefined || ts.isNamespaceExport(n.exportClause)) &&
+      phanGiaiToi(tuFile, n.moduleSpecifier.text, dich)
+    ) {
+      thay = true;
+    }
+    n.forEachChild(di);
+  };
+  di(src);
+  return thay;
+}
+
+/** Một file (đường tương đối `duong`, đường thật `that`, mã `ma`) có phải người nhập cửa ghi không: nhắc tên + nhập từ trpc, HOẶC tái xuất toàn bộ trpc. */
+export function laNguoiNhapCuaGhi(duong: string, that: string, ma: string, dich: string = CORE_TRPC): boolean {
+  if (that === dich) return false;
+  if (taiXuatToanBo(that, ma, dich)) return true;
+  if (!CUA_GHI.some((ten) => new RegExp(`\\b${ten}\\b`).test(ma))) return false;
+  return moiDuongNhap(duong, ma).some((sp) => phanGiaiToi(that, sp, dich));
+}
+
 function nguoiNhapCuaGhi(): string[] {
   const ra: string[] = [];
   for (const f of MOI_FILE) {
     if (f.that === CORE_TRPC) continue;
-    const ma = readFileSync(f.that, "utf8");
-    if (!CUA_GHI.some((ten) => new RegExp(`\\b${ten}\\b`).test(ma))) continue;
-    if (!moiDuongNhap(f.duong, ma).some((s) => phanGiaiToi(f.that, s, CORE_TRPC))) continue;
-    ra.push(f.duong);
+    if (laNguoiNhapCuaGhi(f.duong, f.that, readFileSync(f.that, "utf8"))) ra.push(f.duong);
   }
   return ra.sort();
 }
@@ -60,6 +90,26 @@ describe("★★★ census — người nhập cửa GHI cache step-up (`ghiStep
     // Ghi vào Map chỉ ở HAI chỗ: middleware cũ (sau verify) + `ghiStepUpPhien`. Chỗ thứ ba ⇒ một cửa
     // ghi mới chưa khai ở `CUA_GHI`.
     expect(ma.match(/stepUpVerifiedUntil\.set\(/g)?.length).toBe(2);
+  });
+
+  it("★ R1b-1 T10 — hiệu chuẩn: tái xuất `export *` trpc.ts bị BẮT (mã tổng hợp), nhập tên gốc vẫn bị bắt, file vô can KHÔNG bị bắt", () => {
+    const tu = join(GOC_REPO, "server", "routers", "zzBarrelTongHop.ts");
+    // vi phạm tổng hợp: KHÔNG nhắc `ghiStepUpPhien` ở đâu cả — vị từ "nhắc tên" cũ mù
+    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `export * from "../_core/trpc";
+`)).toBe(true);
+    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `export * as t from "../_core/trpc";
+`)).toBe(true);
+    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `export * from "../_core/trpc.js";
+`)).toBe(false); // đường .js không phân giải về .ts (đúng như phanGiaiToi hiện có)
+    // đối chứng: đường cũ vẫn bắt
+    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `import { ghiStepUpPhien } from "../_core/trpc";
+ghiStepUpPhien();
+`)).toBe(true);
+    // vô can: tái xuất có tên (không phải `*`) không nhắc cửa ghi; tái xuất toàn bộ module KHÁC
+    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `export { router } from "../_core/trpc";
+`)).toBe(false);
+    expect(laNguoiNhapCuaGhi("server/routers/zzBarrelTongHop.ts", tu, `export * from "./deployProcedureScan";
+`)).toBe(false);
   });
 
   it("★★★ ∀ người nhập `trpc.ts` nhắc cửa ghi ⇒ nằm trong GHIM (không thừa, không thiếu)", () => {
