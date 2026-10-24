@@ -2,7 +2,7 @@
  * ★★★ 2026-10-24 — **SỔ NỢ "THỦ TỤC GHI (mutation) NHẬN KHOÁ ĐỊNH DANH THỰC THỂ MÀ KHÔNG QUA BỘ PHÂN GIẢI PHẠM VI".**
  *
  * ⚠⚠⚠ ĐÂY KHÔNG PHẢI DANH SÁCH CHO PHÉP. ĐÂY LÀ **MỘT CÁI TRẦN, VÀ NÓ CHỈ ĐƯỢC CO LẠI** (khuôn `phamViDocBaseline.ts`).
- * 724 mục dưới đây là **nợ CÓ SẴN đo được 2026-10-24** (kiểm định, chưa ai vá). Mỗi mục là một `.mutation` mà
+ * Các mục dưới đây là **nợ CÓ SẴN đo được 2026-10-24** (kiểm định, chưa ai vá). Mỗi mục là một `.mutation` mà
  * `.input(...)` có ≥ 1 khoá định danh thực thể (id · machineId · stationId · lineId · factoryId · adapterId · robotId · serial ·
  * lotId · orderId …) và chuỗi gọi của nó KHÔNG với tới bộ phân giải phạm vi nào (phamViCua · idsTrongPhamVi · adapterTrongPhamVi ·
  * mayTrongPhamVi · assert*InScope · trongPhamVi …) trước khi ghi. Người dùng nhà máy A gọi được mutation lên thực thể nhà máy B
@@ -15,6 +15,9 @@
  *
  * ⚠ "Có cổng" là bằng chứng THEO TÊN (chuỗi gọi với tới một bộ phân giải), không chứng minh cổng áp lên đúng khoá nhận được.
  * Sinh bởi `quetPhamViGhi()` + `laNoGhi()` (`phamViGhiScan.ts`). Đừng sửa tay để làm cổng xanh — sửa mã, rồi xoá dòng.
+ *
+ * LỊCH SỬ TRẢ NỢ: 2026-10-24 lô W1 (−14: recipes.create/archive/setGolden/approve · equipmentIntegration.create/archive/release/rollbackRecipeVersion +
+ * recordRecipeLoad · aoiOnboarding.saveDraft/deleteDraft/signOff/decommission · bom.recordComponentInstallation) ⇒ 724 → 710.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (8) ──
@@ -220,12 +223,8 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/annotationRouters.ts#annotationRouter.export",
   "server/routers/annotationRouters.ts#annotationRouter.save",
   "server/routers/annotationRouters.ts#annotationTemplateRouter.delete",
-  // ── server/routers/aoiOnboardingRouter.ts (5) ──
-  "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.decommission",
-  "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.deleteDraft",
+  // ── server/routers/aoiOnboardingRouter.ts (1) ──
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.dryRun",
-  "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.saveDraft",
-  "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.signOff",
   // ── server/routers/apiKeyRouter.ts (5) ──
   "server/routers/apiKeyRouter.ts#apiKeyRouter.create",
   "server/routers/apiKeyRouter.ts#apiKeyRouter.delete",
@@ -238,7 +237,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/backupRouter.ts#backupRouter.restoreBackup",
   "server/routers/backupRouter.ts#backupRouter.toggleScheduled",
   "server/routers/backupRouter.ts#backupRouter.updateScheduled",
-  // ── server/routers/bomRouter.ts (11) ──
+  // ── server/routers/bomRouter.ts (10) ──
   "server/routers/bomRouter.ts#bomRouter.addLineItem",
   "server/routers/bomRouter.ts#bomRouter.archiveDefinition",
   "server/routers/bomRouter.ts#bomRouter.assignFeederMaterial",
@@ -246,7 +245,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/bomRouter.ts#bomRouter.createDefinition",
   "server/routers/bomRouter.ts#bomRouter.deleteLineItem",
   "server/routers/bomRouter.ts#bomRouter.loadFeeder",
-  "server/routers/bomRouter.ts#bomRouter.recordComponentInstallation",
   "server/routers/bomRouter.ts#bomRouter.updateDefinition",
   "server/routers/bomRouter.ts#bomRouter.updateFeeder",
   "server/routers/bomRouter.ts#bomRouter.updateLineItem",
@@ -310,12 +308,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/energyRouter.ts#energyRouter.snapshotEnpi",
   // ── server/routers/enterpriseIntegrationRouter.ts (1) ──
   "server/routers/enterpriseIntegrationRouter.ts#enterpriseIntegrationRouter.wmsPullInventory",
-  // ── server/routers/equipmentIntegrationRouter.ts (6) ──
-  "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.archiveRecipeVersion",
-  "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.createRecipeVersion",
-  "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.recordRecipeLoad",
-  "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.releaseRecipeVersion",
-  "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.rollbackRecipeVersion",
+  // ── server/routers/equipmentIntegrationRouter.ts (1) ──
   "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.testEuromapOpcuaConnection",
   // ── server/routers/equipmentStandardsRouter.ts (8) ──
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.deleteMasterAlarm",
@@ -429,11 +422,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/lineControllerRouter.ts#lineControllerRouter.transition",
   // ── server/routers/machineApiRouters.ts (1) ──
   "server/routers/machineApiRouters.ts#machineApiRouter.revokeKey",
-  // ── server/routers/machineRecipeRouter.ts (4) ──
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.approve",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.archive",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.create",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.setGolden",
   // ── server/routers/maintenanceRouter.ts (4) ──
   "server/routers/maintenanceRouter.ts#maintenanceRouter.closeWorkOrder",
   "server/routers/maintenanceRouter.ts#maintenanceRouter.deleteWorkOrder",

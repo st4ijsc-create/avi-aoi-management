@@ -41,7 +41,8 @@ import { router, protectedProcedure, actuationProcedure, adminProcedure, ACTUATI
 import { requirePermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
 import { getDb } from "../db";
-import { deviceAdapters } from "../../drizzle/schema";
+import { deviceAdapters, machineRecipes } from "../../drizzle/schema";
+import { mayTrongPhamVi } from "./_adapterPhamVi";
 import { equipmentRegistry } from "../services/equipment/equipmentAdapter";
 import {
   isEqIntegEnabled,
@@ -56,6 +57,24 @@ import {
 } from "../services/equipment/recipeVersioningService";
 import { FocasAdapter, FOCAS_CAVEAT, FOCAS_READ_FUNCTIONS, FOCAS_VENDOR } from "../services/focas/focasAdapter";
 import { EuromapAdapter, mapEuromapToUem, EUROMAP_CAVEAT, EUROMAP_TRANSPORTS, EUROMAP_VENDOR_DEFAULT } from "../services/euromap/euromapAdapter";
+
+/**
+ * Phạm vi nhà máy cho GHI công thức theo id client gửi (rà bảo mật 2026-10-24, kiểm định phamViGhi): công thức gắn máy ngoài
+ * phạm vi ≡ "Recipe không tồn tại" (cùng NOT_FOUND với id không có thật); công thức không gắn máy giữ hành vi cũ. Kiểm TRƯỚC khi ghi.
+ */
+async function congThucTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], recipeId: number): Promise<void> {
+  const khongThay = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
+  const db = await getDb();
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const [r] = await db.select({ machineId: machineRecipes.machineId }).from(machineRecipes).where(eq(machineRecipes.id, recipeId)).limit(1);
+  if (!r) throw khongThay();
+  if (r.machineId == null) return;
+  try {
+    await mayTrongPhamVi(ctx, r.machineId);
+  } catch {
+    throw khongThay();
+  }
+}
 
 /** Guard mutations behind the flag (matches equipmentStandardsRouter discipline). */
 function requireFlag(): void {
@@ -351,6 +370,7 @@ export const equipmentIntegrationRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       requireFlag();
+      if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId); // phạm vi nhà máy: không gắn công thức vào máy nhà máy khác
       try {
         return await createVersion({
           code: input.code,
@@ -386,6 +406,7 @@ export const equipmentIntegrationRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       requireFlag();
+      await congThucTrongPhamVi(ctx, input.recipeId);
       try {
         return await releaseVersion(input.recipeId, ctx.user.id, {
           scope: input.scope, corporateCode: input.corporateCode, factoryId: input.factoryId,
@@ -406,6 +427,7 @@ export const equipmentIntegrationRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       requireFlag();
+      await congThucTrongPhamVi(ctx, input.recipeId);
       try {
         return await archiveVersion(input.recipeId, ctx.user.id, {
           scope: input.scope, corporateCode: input.corporateCode, factoryId: input.factoryId,
@@ -431,6 +453,7 @@ export const equipmentIntegrationRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       requireFlag();
+      await congThucTrongPhamVi(ctx, input.toRecipeId);
       try {
         return await rollbackToVersion(input.toRecipeId, ctx.user.id, {
           scope: input.scope, corporateCode: input.corporateCode, factoryId: input.factoryId,
@@ -464,6 +487,8 @@ export const equipmentIntegrationRouter = router({
     })
     .mutation(async ({ input, ctx }) => {
       requireFlag();
+      await mayTrongPhamVi(ctx, input.machineId); // phạm vi nhà máy: máy đích
+      await congThucTrongPhamVi(ctx, input.recipeId); // phạm vi nhà máy: công thức được nạp
       try {
         return await recordLoad({
           recipeId: input.recipeId,

@@ -53,6 +53,7 @@ import { getVisionAdapter, listVisionAdapters } from "../services/vision";
 import "../services/vision"; // side-effect: register built-in vendor adapters
 import type { CanonicalInspection } from "../services/vision";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
+import { mayTrongPhamVi } from "./_adapterPhamVi";
 import {
   getAoiIngestMode,
   getDraftRecord,
@@ -76,7 +77,8 @@ async function db() {
 }
 
 /** Assert the machine exists (drizzle-direct so tests can use the FakeDb). */
-async function requireMachine(machineId: number) {
+async function requireMachine(ctx: Parameters<typeof mayTrongPhamVi>[0], machineId: number) {
+  await mayTrongPhamVi(ctx, machineId); // phạm vi nhà máy (rà bảo mật 2026-10-24): máy ngoài phạm vi ≡ không tồn tại — kiểm TRƯỚC mọi lượt ghi
   const d = await db();
   const [m] = await d.select().from(machines).where(eq(machines.id, machineId)).limit(1);
   if (!m) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine #${machineId} không tồn tại.`);
@@ -345,7 +347,7 @@ export const aoiOnboardingRouter = router({
       configSnapshot: snapshotSchema,
     }))
     .mutation(async ({ input, ctx }) => {
-      await requireMachine(input.machineId);
+      await requireMachine(ctx, input.machineId);
       const snapshot = sanitizeSnapshot(input.configSnapshot) as Record<string, unknown>;
       return saveDraftRecord({
         machineId: input.machineId,
@@ -358,7 +360,8 @@ export const aoiOnboardingRouter = router({
   deleteDraft: protectedProcedure
     .use(requirePermission("machine_monitoring", "canCreate"))
     .input(z.object({ machineId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await requireMachine(ctx, input.machineId);
       const deleted = await deleteDraftRecord(input.machineId);
       return { deleted };
     }),
@@ -427,7 +430,7 @@ export const aoiOnboardingRouter = router({
       overrideReason: z.string().max(2000).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const machine = await requireMachine(input.machineId);
+      const machine = await requireMachine(ctx, input.machineId);
       const draft = await getDraftRecord(input.machineId);
       if (!draft) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "onboardingDraft" }, "Chưa có bản nháp onboarding cho máy này — hoàn thành các bước wizard trước khi ký.");
@@ -520,7 +523,7 @@ export const aoiOnboardingRouter = router({
       reason: z.string().min(5).max(2000),
     }))
     .mutation(async ({ input, ctx }) => {
-      const machine = await requireMachine(input.machineId);
+      const machine = await requireMachine(ctx, input.machineId);
       const row = await decommissionMachine({
         machineId: input.machineId,
         actorId: ctx.user.id,

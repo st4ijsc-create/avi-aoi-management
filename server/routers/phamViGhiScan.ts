@@ -469,7 +469,9 @@ export function quetPhamViGhi(goc: string, ghiDe: Readonly<Record<string, string
           khoa = [...ks].filter(laKhoaDinhDanh).sort();
         }
         // input là một hằng nhập từ file khác ⇒ mở
-        if (inputArg !== null && ts.isIdentifier(inputArg) && !khai(f).has(inputArg.text)) moInput.v = true;
+        // inputArg được gán trong closure `di` ⇒ TS thu hẹp sai về `null`; đọc lại qua một biến có kiểu rõ.
+        const inputNode = inputArg as ts.Node | null;
+        if (inputNode !== null && ts.isIdentifier(inputNode) && !khai(f).has(inputNode.text)) moInput.v = true;
 
         // cổng
         const congTim: string[] = [];

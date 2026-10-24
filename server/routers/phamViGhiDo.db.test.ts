@@ -39,16 +39,22 @@ const recipeIds: number[] = [];
 const zoneIds: number[] = [];
 
 type Callers = {
+  eq: ReturnType<typeof import("./equipmentIntegrationRouter").equipmentIntegrationRouter.createCaller>;
+  bom: ReturnType<typeof import("./bomRouter").bomRouter.createCaller>;
   rec: ReturnType<typeof import("./machineRecipeRouter").machineRecipeRouter.createCaller>;
   onb: ReturnType<typeof import("./aoiOnboardingRouter").aoiOnboardingRouter.createCaller>;
   saf: ReturnType<typeof import("./safetyRouter").safetyRouter.createCaller>;
 };
 let userA!: Callers;
+let userKhongBom!: Callers;
 let rt: {
   machineRecipeRouter: typeof import("./machineRecipeRouter").machineRecipeRouter;
   aoiOnboardingRouter: typeof import("./aoiOnboardingRouter").aoiOnboardingRouter;
   safetyRouter: typeof import("./safetyRouter").safetyRouter;
+  equipmentIntegrationRouter: typeof import("./equipmentIntegrationRouter").equipmentIntegrationRouter;
+  bomRouter: typeof import("./bomRouter").bomRouter;
 };
+const eqCu = process.env.EQ_INTEG_ENABLED;
 const envCu = process.env.SAFETY_ZONE_SW_ENABLED;
 
 async function seedNhaMay(ten: string): Promise<NhaMay> {
@@ -94,6 +100,7 @@ const snap = { step: 1, notes: "do-do-that" };
 
 beforeAll(async () => {
   process.env.SAFETY_ZONE_SW_ENABLED = "true";
+  process.env.EQ_INTEG_ENABLED = "true";
   const d = await getDb();
   if (!d) throw new Error("không có CSDL test");
   db = d;
@@ -101,12 +108,16 @@ beforeAll(async () => {
     machineRecipeRouter: (await import("./machineRecipeRouter")).machineRecipeRouter,
     aoiOnboardingRouter: (await import("./aoiOnboardingRouter")).aoiOnboardingRouter,
     safetyRouter: (await import("./safetyRouter")).safetyRouter,
+    equipmentIntegrationRouter: (await import("./equipmentIntegrationRouter")).equipmentIntegrationRouter,
+    bomRouter: (await import("./bomRouter")).bomRouter,
   };
   A = await seedNhaMay("a");
   B = await seedNhaMay("b");
   const u = await taoNguoiDungTest("ua", "engineer", { tienTo: "pgd", ts: RUN, ten: "PGD ua" });
   await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${u.id}, ${A.code})`);
-  for (const cat of ["machine_control", "machine_monitoring"]) {
+  const u2 = await taoNguoiDungTest("un", "engineer", { tienTo: "pgd", ts: RUN, ten: "PGD un" });
+  await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${u2.id}, ${A.code})`);
+  for (const cat of ["machine_control", "machine_monitoring", "mes_bom"]) {
     await dung(
       sql`INSERT INTO permissions ("userId", category, "moduleName", "canView", "canCreate", "canEdit", "canDelete") VALUES (${u.id}, ${cat}, ${resolvePermissionModule(cat)}, true, true, true, false)`,
     );
@@ -116,15 +127,22 @@ beforeAll(async () => {
     rec: rt.machineRecipeRouter.createCaller(ctx),
     onb: rt.aoiOnboardingRouter.createCaller(ctx),
     saf: rt.safetyRouter.createCaller(ctx),
+    eq: rt.equipmentIntegrationRouter.createCaller(ctx),
+    bom: rt.bomRouter.createCaller(ctx),
   };
+  userKhongBom = { bom: rt.bomRouter.createCaller({ user: { id: u2.id, role: "engineer", name: u2.name, twoFactorEnabled: true } } as never) } as Callers;
 }, 120_000);
 
 afterAll(async () => {
+  if (eqCu === undefined) delete process.env.EQ_INTEG_ENABLED;
+  else process.env.EQ_INTEG_ENABLED = eqCu;
   if (envCu === undefined) delete process.env.SAFETY_ZONE_SW_ENABLED;
   else process.env.SAFETY_ZONE_SW_ENABLED = envCu;
   if (!db) return;
   const ms = [A?.mid, B?.mid].filter(Boolean) as number[];
   if (recipeIds.length) await dung(sql`DELETE FROM machine_recipes WHERE id IN (${sql.join(recipeIds.map((i) => sql`${i}`), sql`, `)})`).catch(() => undefined);
+  await dung(sql`DELETE FROM recipe_load_log WHERE "machineId" IN (${A?.mid ?? 0}, ${B?.mid ?? 0})`).catch(() => undefined);
+  await dung(sql`DELETE FROM component_installations WHERE "serialNumber" LIKE ${RUN + "%"}`).catch(() => undefined);
   await dung(sql`DELETE FROM machine_recipes WHERE code LIKE ${RUN + "%"}`).catch(() => undefined);
   if (zoneIds.length) await dung(sql`DELETE FROM safety_zones WHERE id IN (${sql.join(zoneIds.map((i) => sql`${i}`), sql`, `)})`).catch(() => undefined);
   await dung(sql`DELETE FROM safety_zones WHERE code LIKE ${RUN + "%"}`).catch(() => undefined);
@@ -144,7 +162,7 @@ describe("recipes.create — gắn công thức vào máy (machineId) nhà máy 
     const r = await userA.rec.recipes.create({ code: `${RUN}-ca`, name: "ca", payload: {}, machineId: A.mid });
     expect(r).toBeTruthy();
   });
-  cross("xuyên nhà máy: máy nhà máy B ⇒ phải bị từ chối, không có hàng nào gắn máy B", async () => {
+  it("xuyên nhà máy: máy nhà máy B ⇒ phải bị từ chối, không có hàng nào gắn máy B", async () => {
     const loi = await maLoi(() => userA.rec.recipes.create({ code: `${RUN}-cb`, name: "cb", payload: {}, machineId: B.mid }));
     const hang = await dem(sql`SELECT count(*)::int AS n FROM machine_recipes WHERE "machineId" = ${B.mid} AND code = ${RUN + "-cb"}`);
     expect({ loi, hangGhiLenB: hang }).toEqual({ loi: expect.stringMatching(/FORBIDDEN|NOT_FOUND/), hangGhiLenB: 0 });
@@ -157,13 +175,13 @@ describe("recipes.archive / setGolden — lưu trữ / đánh dấu golden công
     await userA.rec.recipes.archive({ id });
     expect(await dem(sql`SELECT count(*)::int AS n FROM machine_recipes WHERE id = ${id} AND status = 'archived'`)).toBe(1);
   });
-  cross("archive xuyên nhà máy: công thức máy B ⇒ phải bị từ chối, trạng thái vẫn 'draft'", async () => {
+  it("archive xuyên nhà máy: công thức máy B ⇒ phải bị từ chối, trạng thái vẫn 'draft'", async () => {
     const id = await seedRecipe(`${RUN}-rb`, B.mid);
     const loi = await maLoi(() => userA.rec.recipes.archive({ id }));
     const tt = (await dung(sql`SELECT status FROM machine_recipes WHERE id = ${id}`))[0]?.status;
     expect({ loi, trangThai: tt }).toEqual({ loi: expect.stringMatching(/FORBIDDEN|NOT_FOUND/), trangThai: "draft" });
   });
-  cross("setGolden xuyên nhà máy: công thức máy B ⇒ phải bị từ chối, isGolden vẫn false", async () => {
+  it("setGolden xuyên nhà máy: công thức máy B ⇒ phải bị từ chối, isGolden vẫn false", async () => {
     const id = await seedRecipe(`${RUN}-rg`, B.mid);
     const loi = await maLoi(() => userA.rec.recipes.setGolden({ id, isGolden: true }));
     const g = (await dung(sql`SELECT "isGolden" FROM machine_recipes WHERE id = ${id}`))[0]?.isGolden;
@@ -176,12 +194,12 @@ describe("aoiOnboarding.saveDraft / deleteDraft — bản nháp nghiệm thu má
     await userA.onb.saveDraft({ machineId: A.mid, configSnapshot: snap });
     expect(await dem(sql`SELECT count(*)::int AS n FROM aoi_commissioning_records WHERE "machineId" = ${A.mid} AND status = 'draft'`)).toBe(1);
   });
-  cross("saveDraft xuyên nhà máy: máy B ⇒ phải bị từ chối, không có bản nháp máy B", async () => {
+  it("saveDraft xuyên nhà máy: máy B ⇒ phải bị từ chối, không có bản nháp máy B", async () => {
     const loi = await maLoi(() => userA.onb.saveDraft({ machineId: B.mid, configSnapshot: snap }));
     const hang = await dem(sql`SELECT count(*)::int AS n FROM aoi_commissioning_records WHERE "machineId" = ${B.mid}`);
     expect({ loi, hangGhiLenB: hang }).toEqual({ loi: expect.stringMatching(/FORBIDDEN|NOT_FOUND/), hangGhiLenB: 0 });
   });
-  cross("deleteDraft xuyên nhà máy: nháp máy B ⇒ phải bị từ chối, nháp còn nguyên", async () => {
+  it("deleteDraft xuyên nhà máy: nháp máy B ⇒ phải bị từ chối, nháp còn nguyên", async () => {
     await dung(sql`INSERT INTO aoi_commissioning_records ("machineId", status, "configSnapshot") VALUES (${B.mid}, 'draft', '{}'::jsonb)`);
     const loi = await maLoi(() => userA.onb.deleteDraft({ machineId: B.mid }));
     const con = await dem(sql`SELECT count(*)::int AS n FROM aoi_commissioning_records WHERE "machineId" = ${B.mid} AND status = 'draft'`);
@@ -200,5 +218,76 @@ describe("safety.updateZone — sửa vùng an toàn (ngưỡng dừng) của tr
     const loi = await maLoi(() => userA.saf.updateZone({ id, stopDistanceMm: 600 }));
     const v = (await dung(sql`SELECT "stopDistanceMm" AS v FROM safety_zones WHERE id = ${id}`))[0]?.v;
     expect({ loi, stopDistanceMm: v }).toEqual({ loi: expect.stringMatching(/FORBIDDEN|NOT_FOUND/), stopDistanceMm: 1000 });
+  });
+});
+
+describe("recipes.approve — duyệt công thức máy nhà máy khác (W1)", () => {
+  it("xuyên nhà máy: công thức máy B ⇒ NOT_FOUND, không có chữ ký duyệt", async () => {
+    const id = await seedRecipe(`${RUN}-ap`, B.mid);
+    const loi = await maLoi(() => userA.rec.recipes.approve({ recipeId: id }));
+    const dd = (await dung(sql`SELECT "approvedBy" AS v FROM machine_recipes WHERE id = ${id}`))[0]?.v;
+    expect({ loi, approvedBy: dd }).toEqual({ loi: "NOT_FOUND", approvedBy: null });
+  });
+  it("id công thức không tồn tại ≡ cùng NOT_FOUND (không lộ sự tồn tại)", async () => {
+    expect(await maLoi(() => userA.rec.recipes.approve({ recipeId: 2147483000 }))).toBe("NOT_FOUND");
+  });
+});
+
+describe("equipmentIntegration — phiên bản/nạp công thức máy nhà máy khác (W1)", () => {
+  it("createRecipeVersion máy B ⇒ NOT_FOUND, không hàng; máy A ⇒ được", async () => {
+    const loi = await maLoi(() => userA.eq.createRecipeVersion({ code: `${RUN}-ev`, name: "ev", payload: {}, machineId: B.mid }));
+    expect({ loi, hang: await dem(sql`SELECT count(*)::int AS n FROM machine_recipes WHERE code = ${RUN + "-ev"}`) }).toEqual({ loi: "NOT_FOUND", hang: 0 });
+    const ok = await userA.eq.createRecipeVersion({ code: `${RUN}-ev`, name: "ev", payload: {}, machineId: A.mid });
+    expect(ok).toBeTruthy();
+  });
+  it("archiveRecipeVersion công thức máy B ⇒ NOT_FOUND, vẫn 'draft'", async () => {
+    const id = await seedRecipe(`${RUN}-eb`, B.mid);
+    const loi = await maLoi(() => userA.eq.archiveRecipeVersion({ recipeId: id }));
+    expect({ loi, tt: (await dung(sql`SELECT status AS v FROM machine_recipes WHERE id = ${id}`))[0]?.v }).toEqual({ loi: "NOT_FOUND", tt: "draft" });
+  });
+  it("recordRecipeLoad: máy B hoặc công thức B ⇒ NOT_FOUND, không dòng nhật ký nạp", async () => {
+    const rA = await seedRecipe(`${RUN}-la`, A.mid);
+    const rB = await seedRecipe(`${RUN}-lb`, B.mid);
+    const l1 = await maLoi(() => userA.eq.recordRecipeLoad({ recipeId: rA, machineId: B.mid }));
+    const l2 = await maLoi(() => userA.eq.recordRecipeLoad({ recipeId: rB, machineId: A.mid }));
+    const n = await dem(sql`SELECT count(*)::int AS n FROM recipe_load_log WHERE "recipeId" IN (${rA}, ${rB})`);
+    expect({ l1, l2, n }).toEqual({ l1: "NOT_FOUND", l2: "NOT_FOUND", n: 0 });
+  });
+});
+
+describe("aoiOnboarding.signOff / decommission — máy nhà máy khác (W1)", () => {
+  it("signOff / decommission máy B ⇒ NOT_FOUND, không bản ghi nào của máy B", async () => {
+    // máy B ĐÃ nghiệm thu: nếu cổng hỏng, decommission sẽ chuyển hàng này sang 'decommissioned'
+    await dung(sql`INSERT INTO aoi_commissioning_records ("machineId", status, "configSnapshot", "signedAt") VALUES (${B.mid}, 'commissioned', '{}'::jsonb, now())`);
+    const l1 = await maLoi(() => userA.onb.signOff({ machineId: B.mid } as never));
+    const l2 = await maLoi(() => userA.onb.decommission({ machineId: B.mid, reason: "do pham vi ghi" }));
+    expect({ l1, l2 }).toEqual({ l1: "NOT_FOUND", l2: "NOT_FOUND" });
+    expect(await dem(sql`SELECT count(*)::int AS n FROM aoi_commissioning_records WHERE "machineId" = ${B.mid} AND status = 'commissioned'`)).toBe(1);
+    expect(await dem(sql`SELECT count(*)::int AS n FROM aoi_commissioning_records WHERE "machineId" = ${B.mid} AND status = 'decommissioned'`)).toBe(0);
+  });
+});
+
+describe("bom.recordComponentInstallation — quyền + phạm vi (W1)", () => {
+  const nhap = (serial: string, machineId?: number) => ({ serialNumber: serial, componentCode: "C-DO", ...(machineId ? { machineId } : {}) });
+  const dem1 = (serial: string) => dem(sql`SELECT count(*)::int AS n FROM component_installations WHERE "serialNumber" = ${serial}`);
+  it("thiếu quyền mes_bom ⇒ FORBIDDEN (trước đây mọi người đăng nhập ghi được)", async () => {
+    const sr = `${RUN}-sq`;
+    expect(await maLoi(() => userKhongBom.bom.recordComponentInstallation(nhap(sr, A.mid)))).toBe("FORBIDDEN");
+    expect(await dem1(sr)).toBe(0);
+  });
+  it("đối chứng: máy A + có quyền ⇒ ghi được", async () => {
+    const sr = `${RUN}-sa`;
+    await userA.bom.recordComponentInstallation(nhap(sr, A.mid));
+    expect(await dem1(sr)).toBe(1);
+  });
+  it("máy B ⇒ NOT_FOUND, không hàng", async () => {
+    const sr = `${RUN}-sb`;
+    expect(await maLoi(() => userA.bom.recordComponentInstallation(nhap(sr, B.mid)))).toBe("NOT_FOUND");
+    expect(await dem1(sr)).toBe(0);
+  });
+  it("phạm vi hẹp mà không nêu máy ⇒ BAD_REQUEST (fail-closed), không hàng", async () => {
+    const sr = `${RUN}-sn`;
+    expect(await maLoi(() => userA.bom.recordComponentInstallation(nhap(sr)))).toBe("BAD_REQUEST");
+    expect(await dem1(sr)).toBe(0);
   });
 });

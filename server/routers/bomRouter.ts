@@ -27,6 +27,7 @@ import { getDb } from "../db/connection";
 import { chayTheoPhamViTenantHienTai } from "../db/tenantContext";
 import { materials } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
 import { recordComponentInstallation } from "../services/componentInstallationService";
 
 const MODULE = "mes_bom";
@@ -281,6 +282,7 @@ export const bomRouter = router({
   // SAFETY: telemetry of an install OUTCOME — no machine write. Any authenticated
   // user may submit (line operator), like processResult.
   recordComponentInstallation: protectedProcedure
+    .use(requirePermission(MODULE, "canCreate")) // trước đây MỌI người đăng nhập ghi được (rà bảo mật 2026-10-24)
     .input(z.object({
       serialNumber: z.string().min(1).max(128),
       componentCode: z.string().min(1).max(100),
@@ -293,7 +295,15 @@ export const bomRouter = router({
       refDesignator: z.string().max(120).optional(),
       lotCode: z.string().max(80).optional(),
     }))
-    .mutation(({ input, ctx }) => recordComponentInstallation(input, ctx.user?.id ?? null)),
+    .mutation(async ({ input, ctx }) => {
+      // Phạm vi nhà máy: máy nhận linh kiện phải trong phạm vi người gọi; người gọi phạm vi hẹp BẮT BUỘC nêu máy (không có máy ⇒ không
+      // có gì để so ⇒ fail-closed). Phạm vi toàn quyền (admin) giữ nguyên. Kiểm TRƯỚC khi ghi.
+      if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId);
+      else if ((await idsMayTrongPhamVi(ctx)) !== null) {
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "machineId" }, "Cần machineId (máy thuộc phạm vi của bạn).");
+      }
+      return recordComponentInstallation(input, ctx.user?.id ?? null);
+    }),
 
   // ─── Two-way trace ────────────────────────────────────────────────────────
   traceForward: protectedProcedure
