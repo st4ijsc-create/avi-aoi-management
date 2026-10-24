@@ -384,7 +384,9 @@ const chatVisionDepsMacDinh: ChatVisionDeps = {
       temperature: 0.1,
       disableThinking: true,
     });
-    return r.text ?? "";
+    // chữ đọc ảnh được gộp vào câu hỏi + hiện ở thông báo ⇒ cắt chuỗi suy luận TẠI CHỖ (disableThinking không phải bảo đảm)
+    const { stripThinking } = await import("../services/ai/thinkingStrip");
+    return stripThinking(r.text ?? "").answer;
   },
   sidecarCauHinh: () => isVisionSidecarAvailable(),
   sidecarDangChay: () => sidecarDangChay(),
