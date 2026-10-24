@@ -14,7 +14,14 @@
  */
 import { z } from "zod";
 import { protectedProcedure, actuationProcedure, router } from "../_core/trpc";
-import { LINE_STATES } from "../../drizzle/schema";
+import { LINE_STATES, recipeSets, recipeSetItems, machineRecipes } from "../../drizzle/schema";
+import { and, eq } from "drizzle-orm";
+import { appError } from "../_core/appError";
+import { getDb } from "../db";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { mayTrongPhamVi } from "./_adapterPhamVi";
+import { sanPhamGhiTrongPhamVi } from "./_sanPhamPhamVi";
 import {
   listLinesWithState,
   getLineStateDetail,
@@ -38,6 +45,33 @@ import {
 } from "../services/lineController/recipeSetService";
 
 const lineIdSchema = z.number().int().positive();
+
+/**
+ * Phạm vi nhà máy cho GHI điều khiển tuyến (rà bảo mật 2026-10-24, lô W8 — kiểm định phamViGhi): chuyển trạng thái / ra lệnh / phân phối recipe set
+ * tới một TUYẾN, và sửa recipe set chạm MÁY. Trước: người nhà máy A start/hold/changeover tuyến nhà máy B, nạp recipe set vào máy nhà máy B.
+ *  • tuyến: lineId phải trong phạm vi (cùng `idsTrongPhamVi("line")`) ⇒ NOT_FOUND "line";
+ *  • recipe set: KHÔNG có cột nhà máy; set thuộc phạm vi ⇔ MỌI máy trong item của nó thuộc phạm vi (set rỗng = nháp: ai cũng thao tác); set có máy ngoài
+ *    phạm vi ≡ không tồn tại ⇒ NOT_FOUND "recipeSet". Toàn quyền (admin) ⇒ không kiểm.
+ */
+async function tuyenTrongPhamVi(ctx: CoDanhTinh, lineId: number): Promise<void> {
+  const ids = await idsTrongPhamVi("line", phamViCua(ctx), { strict: true });
+  if (ids !== null && !ids.includes(lineId)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, "Line not found");
+}
+
+async function setTrongPhamVi(ctx: CoDanhTinh, ref: { id?: number; code?: string }): Promise<void> {
+  const ids = await idsTrongPhamVi("machine", phamViCua(ctx), { strict: true });
+  if (ids === null) return;
+  const d = await getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const [set] = await d
+    .select({ id: recipeSets.id })
+    .from(recipeSets)
+    .where(ref.id != null ? eq(recipeSets.id, ref.id) : eq(recipeSets.code, ref.code ?? ""))
+    .limit(1);
+  if (!set) return; // không tồn tại: để dịch vụ trả lỗi nghiệp vụ như trước (không lộ gì)
+  const items = await d.select({ m: recipeSetItems.machineId }).from(recipeSetItems).where(eq(recipeSetItems.recipeSetId, set.id));
+  if (items.some((i) => !ids.includes(i.m))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipeSet" }, "Recipe set not found");
+}
 
 /** Tham chiếu một recipe set theo id HOẶC code (ít nhất một). */
 const recipeSetRefSchema = z
@@ -117,6 +151,7 @@ export const lineControllerRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await tuyenTrongPhamVi(ctx, input.lineId); // phạm vi nhà máy
       return transitionLine(input.lineId, input.to, {
         reason: input.reason,
         heldReason: input.heldReason,
@@ -137,6 +172,7 @@ export const lineControllerRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await tuyenTrongPhamVi(ctx, input.lineId); // phạm vi nhà máy
       return executeLineCommand(input.lineId, input.command, {
         reason: input.reason,
         recipeSetRef: input.recipeSetRef,
@@ -173,15 +209,16 @@ export const lineControllerRouter = router({
           notes: z.string().max(2000).nullable().optional(),
         }),
       )
-      .mutation(async ({ input, ctx }) =>
-        createRecipeSet({
+      .mutation(async ({ input, ctx }) => {
+        if (input.productModelId != null) await sanPhamGhiTrongPhamVi(ctx, input.productModelId); // luật ghi theo sản phẩm
+        return createRecipeSet({
           code: input.code,
           productModelId: input.productModelId ?? null,
           version: input.version,
           notes: input.notes ?? null,
           actor: String(ctx.user.id),
-        }),
-      ),
+        });
+      }),
 
     /** Thêm item: máy nào nạp recipe VERSION nào (machineRecipeId = row versioned). */
     addItem: actuationProcedure
@@ -194,12 +231,29 @@ export const lineControllerRouter = router({
           required: z.boolean().optional(),
         }),
       )
-      .mutation(async ({ input }) => addRecipeSetItem(input)),
+      .mutation(async ({ input, ctx }) => {
+        // phạm vi nhà máy: set + máy + trạm + máy của phiên bản recipe đều phải trong phạm vi
+        await setTrongPhamVi(ctx, { id: input.recipeSetId });
+        await mayTrongPhamVi(ctx, input.machineId);
+        if (input.stationId != null) {
+          const tram = await idsTrongPhamVi("station", phamViCua(ctx), { strict: true });
+          if (tram !== null && !tram.includes(input.stationId)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, "Station not found");
+        }
+        const d = await getDb();
+        if (d) {
+          const [rc] = await d.select({ m: machineRecipes.machineId }).from(machineRecipes).where(eq(machineRecipes.id, input.machineRecipeId)).limit(1);
+          if (rc?.m != null) await mayTrongPhamVi(ctx, rc.m);
+        }
+        return addRecipeSetItem(input);
+      }),
 
     /** Gỡ item khỏi set draft (set khóa → LOCKED). */
     removeItem: actuationProcedure
       .input(z.object({ recipeSetId: z.number().int().positive(), itemId: z.number().int().positive() }))
-      .mutation(async ({ input }) => removeRecipeSetItem(input.itemId, input.recipeSetId)),
+      .mutation(async ({ input, ctx }) => {
+        await setTrongPhamVi(ctx, { id: input.recipeSetId }); // phạm vi nhà máy
+        return removeRecipeSetItem(input.itemId, input.recipeSetId);
+      }),
 
     /**
      * Phân phối set tới tuyến qua đường deploy sẵn có + XÁC NHẬN NẠP (spec
@@ -213,22 +267,25 @@ export const lineControllerRouter = router({
           notes: z.string().max(2000).optional(),
         }),
       )
-      .mutation(async ({ input, ctx }) =>
-        distributeRecipeSet(input.lineId, input.recipeSetId, {
+      .mutation(async ({ input, ctx }) => {
+        await tuyenTrongPhamVi(ctx, input.lineId); // phạm vi nhà máy: tuyến đích
+        await setTrongPhamVi(ctx, { id: input.recipeSetId }); // … và set phân phối
+        return distributeRecipeSet(input.lineId, input.recipeSetId, {
           actor: String(ctx.user.id),
           actorId: ctx.user.id,
           notes: input.notes ?? null,
-        }),
-      ),
+        });
+      }),
 
     /** Gỡ khóa — chỉ khi mọi tuyến dùng set ở idle/completing/fault (§6.1). */
     unlock: actuationProcedure
       .input(recipeSetRefSchema.and(z.object({ reason: z.string().max(500).optional() })))
-      .mutation(async ({ input, ctx }) =>
-        unlockRecipeSet(
+      .mutation(async ({ input, ctx }) => {
+        await setTrongPhamVi(ctx, { id: input.id, code: input.code }); // phạm vi nhà máy
+        return unlockRecipeSet(
           { id: input.id, code: input.code },
           { actor: String(ctx.user.id), reason: input.reason },
-        ),
-      ),
+        );
+      }),
   }),
 });

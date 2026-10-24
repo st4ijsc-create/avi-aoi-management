@@ -3818,6 +3818,7 @@
       "quarantineItem": "quarantine item",
       "factoryZone": "floor-plan zone",
       "mapping": "product–machine mapping",
+      "recipeSet": "line recipe set",
       "rcaAnalysis": "root cause analysis",
       "recipe": "recipe",
       "record": "record",

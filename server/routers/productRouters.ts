@@ -59,6 +59,7 @@ import {
 import { sql } from "drizzle-orm";
 import { phamViCua } from "./_phamViNguoiXem";
 import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
+import { sanPhamGhiTrongPhamVi } from "./_sanPhamPhamVi";
 import { tuChoiNgoaiPhamVi } from "./publicProductScope";
 // Doc 31 UX2/PM9 (WD-2) — product config-completeness ("readiness") score.
 import {
@@ -2007,29 +2008,6 @@ export const measurementPointRouter = router({
 });
 
 // ============ PRODUCT MACHINE MAPPING ROUTER ============
-/**
- * LUẬT GHI THEO SẢN PHẨM (chủ dự án duyệt 2026-10-24). `product_models` KHÔNG có cột nhà máy; sản phẩm tới nhà máy qua ba bảng liên kết
- * (`product_machine_mappings` · `measurement_point_defs` · `product_inspections`, vị từ hợp `congSanPhamTrongNhaMay` — cùng đường ĐỌC). Ghi được khi:
- *   (1) sản phẩm TRONG phạm vi người gọi (có liên kết tới một nhà máy của họ), HOẶC
- *   (2) sản phẩm CHƯA gắn nhà máy nào (nháp — vừa tạo, chưa ánh xạ máy / điểm đo gắn máy / lượt kiểm tra);
- * chặn khi sản phẩm chỉ gắn nhà máy NGOÀI phạm vi ⇒ NOT_FOUND "productModel" (cùng lỗi id không có thật). Toàn quyền (admin) ⇒ không kiểm.
- * ⚠ GIỚI HẠN (đã chốt): sản phẩm DÙNG CHUNG nhiều nhà máy ⇒ kỹ sư của BẤT KỲ nhà máy có gắn đều sửa được, tức "sửa ở A ảnh hưởng B".
- * Không chặn được nếu không đổi chính sách (vd. chỉ admin sửa sản phẩm đa nhà máy).
- */
-async function sanPhamGhiTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], productModelId: number): Promise<void> {
-  const pv = phamViCua(ctx);
-  if (await db.sanPhamTrongPhamVi(productModelId, pv)) return;
-  const d = await db.getDb();
-  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
-  const rows = (await d.execute(sql`SELECT (
-      NOT EXISTS (SELECT 1 FROM product_machine_mappings WHERE "productModelId" = ${productModelId})
-      AND NOT EXISTS (SELECT 1 FROM measurement_point_defs WHERE "productModelId" = ${productModelId} AND "machineId" IS NOT NULL)
-      AND NOT EXISTS (SELECT 1 FROM product_inspections WHERE "productModelId" = ${productModelId} AND "machineId" IS NOT NULL)
-    ) AS nhap`)) as unknown as Array<{ nhap: boolean }>;
-  if (rows[0]?.nhap === true) return;
-  throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, "Sản phẩm không tồn tại");
-}
-
 /** Điểm đo → sản phẩm của nó (luật ở trên). Điểm không tồn tại ⇒ NOT_FOUND "measurementPoint". */
 async function diemDoGhiTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], pointDefId: number): Promise<void> {
   const d = await db.getDb();
