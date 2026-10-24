@@ -67,6 +67,18 @@ vi.mock("../../../drizzle/schema", () => ({
   unsTagMappings: { adapterId: "unsTagMappings.adapterId", tag: "unsTagMappings.tag" },
   configSnapshots: { entityType: "configSnapshots.entityType", entityId: "configSnapshots.entityId" },
   machines: { id: "machines.id", code: "machines.code" },
+  // SCADA R1b-1 Task 9 — apply khoá luật interlock nhắm adapter (FOR SHARE) + đọc kênh chế độ của adapter; fake: không có (select tx ⇒ [])
+  // ⇒ không tag nào đã khai / bị luật nhắm (có test DB riêng: deviceAdapterRouter.troLaiKenh.r1b.db.test.ts, interlockRouter.r1b.db.test.ts).
+  interlockRules: {
+    id: "interlockRules.id",
+    name: "interlockRules.name",
+    action: "interlockRules.action",
+    enabled: "interlockRules.enabled",
+    commandValue: "interlockRules.commandValue",
+    commandTag: "interlockRules.commandTag",
+    targetAdapterId: "interlockRules.targetAdapterId",
+  },
+  scadaKenhCheDo: { machineId: "scadaKenhCheDo.machineId", adapterId: "scadaKenhCheDo.adapterId", tagKey: "scadaKenhCheDo.tagKey" },
 }));
 vi.mock("drizzle-orm", () => ({
   and: (...a: unknown[]) => a,

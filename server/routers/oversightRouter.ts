@@ -39,7 +39,7 @@
  * đúng mức mà `machineRecipeRouter`/`ecnRouter`/`interlockRouter` đòi hỏi.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, desc, eq, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, isNotNull, ne, or, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission, checkPermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
@@ -421,6 +421,8 @@ async function fetchInterlockCoverage(d: Db | null): Promise<{ count: number; de
 
 // SCADA R0 Task 9 — luật interlock ĐANG BẬT + ĐÃ DUYỆT nhưng HỎNG CẤU TRÚC (telemetry_tag thiếu machineId hoặc sourceKey): cổng chặn mọi lệnh
 // nhắm tới nó (lyDo cau_hinh) và engine không bao giờ tự phát hành động ⇒ KHÔNG chức năng. Hiện ở posture để người vận hành thấy mà sửa.
+// R1b-1 Task 9 (nợ R0.1, D11) — đếm cả luật telemetry_tag có `scope <> 'machine'` (hàng cũ / ghi thẳng bảng trước D11): cùng luật với
+// `services/interlock/d11.ts#telemetryTagDungPhamVi` mà create / update / approve / enable / propose_interlock_rule chặn từ nguồn.
 async function fetchInterlockCauHinhHong(d: Db | null): Promise<{ count: number; degraded: boolean }> {
   if (!d) return { count: 0, degraded: true };
   try {
@@ -428,7 +430,12 @@ async function fetchInterlockCauHinhHong(d: Db | null): Promise<{ count: number;
       eq(interlockRules.enabled, true),
       isNotNull(interlockRules.approvedBy),
       eq(interlockRules.sourceType, "telemetry_tag"),
-      or(isNull(interlockRules.machineId), isNull(interlockRules.sourceKey), sql`${interlockRules.sourceKey} ~ '^\\s*$'`),
+      or(
+        isNull(interlockRules.machineId),
+        isNull(interlockRules.sourceKey),
+        sql`${interlockRules.sourceKey} ~ '^\\s*$'`,
+        ne(interlockRules.scope, "machine"),
+      ),
     );
     const [{ c }] = await d.select({ c: sql<number>`count(*)::int` }).from(interlockRules).where(cond);
     return { count: c ?? 0, degraded: false };

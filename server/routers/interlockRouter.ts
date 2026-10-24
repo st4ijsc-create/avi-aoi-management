@@ -46,6 +46,7 @@ import { interlockRules, interlockEvents, controlAuditLog, type InterlockRule } 
 import { evaluateCondition, deriveObserved, type ComparisonOperator, type InterlockSourceType } from "../services/interlock/ruleEvaluator";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { kiemLenhInterlockTx, soHienThi, type DbHoacTx } from "../services/scada/nhatQuanKenh";
+import { telemetryTagDungPhamVi } from "../services/interlock/d11";
 
 async function getDb() {
   const db = await getDbRaw();
@@ -86,11 +87,16 @@ const ruleInput = z.object({
   // insert null bất kể form nhập gì, trong khi UI ghi chú "được GHI NHẬN"). Chấp
   // nhận bất kỳ giá trị JSON nào (bool/number/string/object) — khớp cột jsonb.
   commandValue: z.unknown().nullable().optional(),
-  cooldownSeconds: z.number().int().min(0).max(86400).default(300),
+  // R1b-1 Task 9 (nợ R0.1) — KHÔNG `.default()` ở schema gốc: zod 4 áp default cả bên trong `.partial()` ⇒ mọi `update` không khai trường
+  // này từng âm thầm đặt lại cooldown về 300. Mặc định 300 chỉ gắn ở `createInput`.
+  cooldownSeconds: z.number().int().min(0).max(86400),
 });
 
-/** R0.1 — create: khiThieuDuLieu tuỳ chọn, mặc định 'chan' (rule tạo ra vẫn chưa duyệt + tắt bất kể giá trị). */
-const createInput = ruleInput.extend({ khiThieuDuLieu: khiThieuDuLieuEnum.default("chan") });
+/** R0.1 — create: khiThieuDuLieu tuỳ chọn, mặc định 'chan' (rule tạo ra vẫn chưa duyệt + tắt bất kể giá trị). R1b-1 T9: cooldown mặc định 300 ở ĐÂY. */
+const createInput = ruleInput.extend({
+  khiThieuDuLieu: khiThieuDuLieuEnum.default("chan"),
+  cooldownSeconds: ruleInput.shape.cooldownSeconds.default(300),
+});
 /**
  * R0.1 — update: khiThieuDuLieu tuỳ chọn, KHÔNG mặc định. zod 4 áp `.default()` cả bên trong `.partial()` (đo: partial().parse({})
  * ⇒ trường có default được điền) — nếu dùng createInput.partial() thì mọi lần sửa không khai trường này sẽ âm thầm ghi 'cho_qua' về 'chan'.
@@ -109,7 +115,8 @@ function hasTarget(v: { targetMachineId?: number | null; targetAdapterId?: numbe
 function assertTelemetryCauHinh(v: { sourceType: string; scope: string; machineId?: number | null; sourceKey?: string | null }): void {
   if (v.sourceType !== "telemetry_tag") return;
   // SCADA R0.1 (D11) — luật nguồn tag thiết bị chỉ có nghĩa theo MỘT máy: phạm vi line/station không được (cổng đọc giá trị sống theo (máy, tag)).
-  if (v.scope !== "machine") {
+  // R1b-1 T9 — luật nằm ở helper dùng chung với tool AI `propose_interlock_rule` (`services/interlock/d11.ts`).
+  if (!telemetryTagDungPhamVi(v)) {
     throw appError(
       "BAD_REQUEST",
       "INVALID_VALUE",

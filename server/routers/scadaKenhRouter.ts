@@ -68,47 +68,12 @@ const coGhim = (k: KhaNangDungMay | undefined): boolean | null => {
 };
 import { canonicalOtValue } from "../services/ot/otActionBinding";
 import type { MucRuiRo } from "../services/ot/aiControlGate";
-import { kiemXacThucTheoMuc, type CtxXacThuc } from "../_core/xacThucTheoMuc";
-import { loiTotpKhoa } from "../_core/totpKhoaSai";
+// kiem-dinh P1-2 — TOTP TƯƠI (mức 5) + ánh xạ lỗi: R1b-1 Task 9 chuyển sang `services/scada/totpCauHinh.ts` để `deviceAdapter.tags.update` và
+// `mappingAsCode.applyImport` (trỏ lại kênh đã khai) dùng CHUNG một bộ mã lỗi / khoá i18n.
+import { kiemTotpCauHinh, totpCauHinhInput as totpInput } from "../services/scada/totpCauHinh";
 
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 const kySuProcedure = roleProcedure("admin", "engineer").use(require2FA).use(moduleGate("MOD_OT_CONTROL"));
-
-/** Mã TOTP 6 số của ba mutation cấu hình (vắng ⇒ `TOTP_CAN` ở handler, không phải lỗi zod — UI hiện đúng câu "cần mã"). */
-const totpInput = z.string().max(16).optional();
-
-/**
- * kiem-dinh P1-2 — TOTP TƯƠI cho mọi thay đổi cấu hình kênh / chế độ (xem đầu tệp). Mức 5 cố định: sàn vai ACTUATION_ROLES (admin/
- * engineer của `kySuProcedure` đều thuộc), phải đăng ký 2FA, mã 6 số mỗi lượt, không cache phiên, không đọc cờ env. Từ chối ⇒ NÉM appError.
- */
-async function kiemTotpCauHinh(ctx: CtxXacThuc, totpCode: string | undefined): Promise<void> {
-  const kq = await kiemXacThucTheoMuc(ctx, 5, totpCode);
-  if (kq.ok) return;
-  switch (kq.ma) {
-    case "TOTP_CAN":
-      throw appError("PRECONDITION_FAILED", "SCADA_CONFIG_TOTP_REQUIRED", { ma: kq.ma }, "Đổi cấu hình kênh cần mã xác thực 2 lớp (TOTP) — nhập mã rồi lưu lại.");
-    case "TOTP_SAI":
-      throw appError(
-        "PRECONDITION_FAILED",
-        "SCADA_CONFIG_TOTP_INVALID",
-        { ma: kq.ma },
-        "Mã xác thực 2 lớp không đúng hoặc đã được dùng — chờ mã mới rồi lưu lại.",
-      );
-    case "TOTP_CHUA_DANG_KY":
-      throw appError(
-        "PRECONDITION_FAILED",
-        "SCADA_CONFIG_TOTP_NOT_ENROLLED",
-        { ma: kq.ma },
-        "Đổi cấu hình kênh cần xác thực 2 lớp, nhưng tài khoản này chưa đăng ký 2FA.",
-      );
-    case "ROLE_FLOOR":
-      // không xảy ra với kySuProcedure (admin/engineer ∈ ACTUATION_ROLES) — giữ fail-closed nếu sàn vai đổi
-      throw appError("FORBIDDEN", "SCADA_ROLE_FLOOR", { ma: kq.ma, level: 5 }, "Vai trò không được đổi cấu hình kênh.");
-    case "TOTP_TAM_KHOA":
-    case "TOTP_KHONG_KIEM_DUOC":
-      throw loiTotpKhoa(kq.ma === "TOTP_TAM_KHOA" ? { ma: kq.ma, conLaiMs: kq.conLaiMs } : { ma: kq.ma }, { ma: kq.ma })!;
-  }
-}
 
 async function getDb() {
   const db = await getDbRaw();

@@ -45,12 +45,13 @@ function soHoacNull(v: unknown): number | null {
 /**
  * scale/offset HIỆU LỰC trên dây — cùng quy ước `inverseScale` (drivers/otScale.ts): scale null/0 ⇒ 1,
  * offset null ⇒ 0. So theo hiệu lực để form gửi ô trống (null) cho tag đang 1/0 không gỡ oan.
+ * SCADA R1b-1 Task 9 — export: `server/services/scada/troLaiKenh.ts` so cột trỏ lại theo CÙNG quy ước (form gửi lại giá trị cũ ⇒ không đòi TOTP).
  */
-function scaleHieuLuc(v: unknown): number | null {
+export function scaleHieuLuc(v: unknown): number | null {
   const n = soHoacNull(v);
   return n === null || n === 0 ? 1 : n;
 }
-function offsetHieuLuc(v: unknown): number | null {
+export function offsetHieuLuc(v: unknown): number | null {
   const n = soHoacNull(v);
   return n === null ? 0 : n;
 }

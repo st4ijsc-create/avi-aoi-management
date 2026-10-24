@@ -47,7 +47,19 @@ export const NHOM_THU_TUC_NHAY_CAM: Readonly<Record<NhomNhayCam, CauHinhNhom>> =
     // ⚠ scadaCommands.dungMay (STOP HMI, R1b-1 Task 2) CỐ Ý KHÔNG thuộc nhóm nào: STOP không bao giờ bị phần mềm chặn; không xác minh TOTP
     // (census MIEN_TRU_KHONG_GIOI_HAN).
     // kiem-dinh P1-2 (2026-10-24): ba mutation cấu hình kênh / chế độ M12 xác minh TOTP tươi qua kiemXacThucTheoMuc (mức 5) ⇒ thuộc nhóm (việc hiếm).
-    chinhXac: ["user.setup2FA", "user.verify2FA", "user.disable2FA", "scadaKenh.capNhat", "scadaKenh.cheDo.dat", "scadaKenh.cheDo.go"],
+    // R1b-1 Task 9 (2026-10-24, kiem-dinh "trỏ lại kênh không cần TOTP"): deviceAdapter.tags.update + mappingAsCode.applyImport nhận `totpCode` và
+    // xác minh qua CÙNG `kiemTotpCauHinh` khi trỏ lại tag đã khai ⇒ thuộc nhóm. ⚠ Nhóm đếm theo PATH ở rìa (trước khi đọc input) ⇒ MỌI lượt
+    // tags.update (cả sửa tag chưa khai / công tắc bật-ghi) tính vào 20 / 15 phút — xem báo cáo T9 (mục lo ngại).
+    chinhXac: [
+      "user.setup2FA",
+      "user.verify2FA",
+      "user.disable2FA",
+      "scadaKenh.capNhat",
+      "scadaKenh.cheDo.dat",
+      "scadaKenh.cheDo.go",
+      "deviceAdapter.tags.update",
+      "mappingAsCode.applyImport",
+    ],
   },
   auth: {
     cuaSoMs: AUTH_RATE_LIMIT.windowMs,

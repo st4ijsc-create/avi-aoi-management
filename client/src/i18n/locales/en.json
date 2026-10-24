@@ -4190,7 +4190,9 @@
       "gatewayId": "gateway",
       "deviceIds": "allowed device list",
       "expectedProjectId": "open project (expectedProjectId)",
-      "assigneeUserId": "assignee"
+      "assigneeUserId": "assignee",
+      "writable": "writable",
+      "dataType": "data type (dataType)"
     },
     "feature": {
       "apiKeyHolder": "API key holder record (database migration 0369)",
@@ -4509,7 +4511,8 @@
       "scadaGiaTriRemoteSaiKieu": "The REMOTE value does not match the data type of the mode tag.",
       "scadaKenhCheDoTagTat": "The mode channel's tag is disabled — enable the tag first, then declare the channel again.",
       "scadaKenhGhiTrenTagKhongGhi": "This channel kind accepts writes, but the tag is not writable — make the tag writable or choose a read-only channel kind.",
-      "scadaKenhThuLai": "The channel was changed concurrently — reload and try again."
+      "scadaKenhThuLai": "The channel was changed concurrently — reload and try again.",
+      "scadaKenhCheDoKhongDoiAdapter": "This tag is a machine's mode channel — it cannot be moved to another adapter. Remove or re-declare the mode channel on the Channels & limits page first."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -4579,7 +4582,9 @@
     "AI_HET_HAN_MUC": "Today's AI token quota is used up (including the estimate reserved for one Agent run). Try again tomorrow or ask an administrator to raise the quota.",
     "AI_CHAN_AN_TOAN": "The request was blocked by the AI safety layer because it looks like a prompt injection. Please rephrase it.",
     "AI_CHUA_CAP_PHEP": "The current edition / licence does not include AI (MOD_AI).",
-    "SCADA_STOP_NOT_PINNED": "The machine has no pinned STOP values — an engineer pins them at /scada/config/channels; stop it with the hardwired E-STOP."
+    "SCADA_STOP_NOT_PINNED": "The machine has no pinned STOP values — an engineer pins them at /scada/config/channels; stop it with the hardwired E-STOP.",
+    "INTERLOCK_MAT_DICH": "Enabled interlock rule #{{ruleId}} writes to tag {{tagKey}} — renaming the tag or moving it to another adapter would leave the protective action without a target. Fix the rule's target (or disable the rule) first.",
+    "QUA_NHIEU_KENH_DA_KHAI": "This import re-points {{soTag}} declared channel tags — at most {{toiDa}} per import. Split the file and import again."
   },
   "export": {
     "reportMenu": {
@@ -16440,7 +16445,12 @@
     "writableNote": "Writable only DECLARES a tag as a possible write target; actual writes execute only via HITL confirmation or an approved interlock.",
     "manualHelp": "Manual",
     "autoForm": "Configuration from the manifest (auto-generated) — host + port build the endpoint below",
-    "defaultPortHint": "Default {{protocol}} port: {{port}}"
+    "defaultPortHint": "Default {{protocol}} port: {{port}}",
+    "troLai": {
+      "title": "Two-factor code required",
+      "body": "This tag is a declared channel (actuation level, channel kind, range — or a machine's mode channel). Changing its address, type, scale, offset, writable flag or tag key needs a fresh TOTP code.",
+      "submit": "Confirm and save"
+    }
   },
   "engineering": {
     "rollbackFailed": "Rollback did NOT succeed — the target deployment keeps its status",

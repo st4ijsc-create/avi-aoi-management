@@ -4190,7 +4190,9 @@
       "gatewayId": "gateway",
       "deviceIds": "danh sách thiết bị được phép",
       "expectedProjectId": "dự án đang mở (expectedProjectId)",
-      "assigneeUserId": "người được giao"
+      "assigneeUserId": "người được giao",
+      "writable": "cho phép ghi (writable)",
+      "dataType": "kiểu dữ liệu (dataType)"
     },
     "feature": {
       "apiKeyHolder": "bản ghi người được cấp khoá API (migration CSDL 0369)",
@@ -4501,7 +4503,8 @@
       "scadaGiaTriRemoteSaiKieu": "Giá trị REMOTE không đúng kiểu dữ liệu của tag chế độ.",
       "scadaKenhCheDoTagTat": "Tag của kênh chế độ đang tắt — bật tag trước rồi khai lại.",
       "scadaKenhGhiTrenTagKhongGhi": "Loại kênh này nhận lệnh ghi, nhưng tag không cho phép ghi — bật \"cho phép ghi\" cho tag hoặc chọn loại kênh chỉ đọc.",
-      "scadaKenhThuLai": "Kênh vừa bị thay đổi đồng thời — tải lại rồi thử lại."
+      "scadaKenhThuLai": "Kênh vừa bị thay đổi đồng thời — tải lại rồi thử lại.",
+      "scadaKenhCheDoKhongDoiAdapter": "Tag này là kênh chế độ của một máy — không chuyển sang adapter khác được. Gỡ hoặc khai lại kênh chế độ ở trang Kênh & giới hạn trước."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -4571,7 +4574,9 @@
     "AI_HET_HAN_MUC": "Đã hết hạn mức token AI trong ngày (kể cả phần ước lượng cho một lượt Agent). Thử lại vào ngày mai hoặc nhờ quản trị viên nâng hạn mức.",
     "AI_CHAN_AN_TOAN": "Yêu cầu bị lớp an toàn AI chặn vì có dấu hiệu tiêm lệnh. Hãy diễn đạt lại yêu cầu.",
     "AI_CHUA_CAP_PHEP": "Phiên bản / giấy phép hiện tại không gồm tính năng AI (MOD_AI).",
-    "SCADA_STOP_NOT_PINNED": "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng."
+    "SCADA_STOP_NOT_PINNED": "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng.",
+    "INTERLOCK_MAT_DICH": "Luật interlock đang bật #{{ruleId}} ghi lệnh lên tag {{tagKey}} — đổi tên hoặc chuyển tag sang adapter khác sẽ làm hành động bảo vệ mất đích. Sửa đích của luật (hoặc tắt luật) trước.",
+    "QUA_NHIEU_KENH_DA_KHAI": "Lô import trỏ lại {{soTag}} tag đã khai kênh — tối đa {{toiDa}} tag mỗi lô. Chia nhỏ file rồi nhập lại."
   },
   "export": {
     "reportMenu": {
@@ -16420,7 +16425,12 @@
     "writableNote": "writable chỉ KHAI BÁO tag có thể là đích ghi; lệnh ghi thực tế chỉ thực hiện qua xác nhận HITL hoặc interlock đã duyệt.",
     "manualHelp": "Sổ tay",
     "autoForm": "Cấu hình theo manifest (tự sinh) — host + cổng sẽ tạo endpoint bên dưới",
-    "defaultPortHint": "Cổng mặc định {{protocol}}: {{port}}"
+    "defaultPortHint": "Cổng mặc định {{protocol}}: {{port}}",
+    "troLai": {
+      "title": "Cần mã xác thực hai lớp",
+      "body": "Tag này đã khai kênh (mức tác động, loại kênh, dải — hoặc là kênh chế độ của máy). Đổi địa chỉ, kiểu, scale, offset, cho phép ghi hoặc tên tag cần mã TOTP mới.",
+      "submit": "Xác nhận và lưu"
+    }
   },
   "engineering": {
     "rollbackFailed": "Khôi phục KHÔNG thành công — deployment đích giữ nguyên trạng thái",

@@ -46,10 +46,26 @@ import path from "node:path";
 import { z } from "zod";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { and, asc, eq } from "drizzle-orm";
-import { deviceAdapters, deviceTags, unsTagMappings, configSnapshots, machines } from "../../../drizzle/schema";
+import { deviceAdapters, deviceTags, unsTagMappings, configSnapshots, machines, scadaKenhCheDo } from "../../../drizzle/schema";
 import type { ConfigSnapshotEntityType } from "../../../drizzle/schema/assetRegistry";
 import type { UnsTagTransform } from "../../../drizzle/schema/ot";
 import { lyDoGoStopPinKhiSuaTag, ghiAuditGoStopPinTx, GO_STOP_PIN_PATCH, type NguoiSuaStopPin } from "./stopPin";
+// SCADA R1b-1 Task 9 — lô import trỏ lại tag ĐÃ KHAI: MỘT TOTP cho cả lô + trần + kiểm lại nhất quán từng tag (cả lô hoặc không gì)
+import {
+  AUDIT_TRO_LAI,
+  TRAN_KENH_DA_KHAI_MOT_LO,
+  anhTroLai,
+  cotTroLaiDoi,
+  giaTriSauTroLai,
+  khoaLuatNhamAdapterTx,
+  kiemInterlockSauSua,
+  kiemNhatQuanSauTroLai,
+  loiQuaNhieuKenhDaKhai,
+  tagDaKhaiKenh,
+  type CotTroLai,
+} from "../scada/troLaiKenh";
+import { appError } from "../../_core/appError";
+import { recordAuditEvent } from "../audit/controlAuditService";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -618,6 +634,12 @@ export interface ImportOptions {
   actorName?: string | null;
   /** Nguồn audit (mặc định "system" — CLI/cron; router truyền "trpc"). */
   source?: "web" | "api" | "mqtt" | "system" | "scheduler" | "trpc" | "orchestration";
+  /**
+   * SCADA R1b-1 Task 9 — xác thực TOTP TƯƠI cho một lô trỏ lại ≥ 1 tag ĐÃ KHAI kênh (router: `kiemTotpCauHinh(ctx, input.totpCode)`). Gọi
+   * ĐÚNG MỘT lần cho cả lô, trong giao dịch, SAU mọi kiểm nhất quán và NGAY TRƯỚC lượt ghi đầu tiên (lỗi kiểm không tiêu mã). Vắng ⇒ lô đụng
+   * tag đã khai bị từ chối `SCADA_CONFIG_TOTP_REQUIRED` (fail-closed — không có đường import nào trỏ lại kênh đã khai mà không qua mã).
+   */
+  xacThucKenhDaKhai?: (e: { soTag: number; tagKeys: string[] }) => Promise<void>;
 }
 
 export interface AppliedCounts {
@@ -715,6 +737,9 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
   const nguoiSua: NguoiSuaStopPin = { id: opts.actorId ?? null, name: opts.actorName ?? null };
 
   await d.transaction(async (tx) => {
+    // SCADA R1b-1 Task 9 — thứ tự khoá LUẬT → TAG (như scadaKenh.capNhat / interlockRouter): mọi luật interlock nhắm adapter, FOR SHARE,
+    // TRƯỚC khi khoá tag FOR UPDATE.
+    const luatAdapter = await khoaLuatNhamAdapterTx(tx, adapter.id);
     // doc 81 Đợt 1D Task 1 fix round 1 — KHOÁ mọi tag của adapter (FOR UPDATE) trước khi upsert/xoá:
     // tag đang GHIM DỪNG mà file đổi nghĩa (address/dataType/scale/offset), thôi writable, tắt, hoặc bị
     // prune ⇒ ghim bị gỡ trong CÙNG tx + audit (lyDoGoStopPinKhiSuaTag / ghiAuditGoStopPinTx). Upsert
@@ -724,21 +749,62 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
     );
     // device_tags: upsert theo (adapterId, tagKey) — chỉ những tag có thay đổi.
     const tagNamesToWrite = [...diff.tags.creates, ...diff.tags.updates.map((u) => u.name)];
+    const recordCua = (t: MappingFileTag) => ({
+      address: t.address,
+      dataType: t.datatype as (typeof deviceTags.$inferInsert)["dataType"],
+      unit: t.unit ?? null,
+      scale: String(t.scale ?? 1),
+      offset: String(t.offset ?? 0),
+      writable: t.writable,
+      isEnabled: t.enabled,
+      deadband: t.deadband ?? null,
+      samplingMs: t.sampling_ms ?? null,
+      updatedAt: now,
+    });
+
+    // ── SCADA R1b-1 Task 9 — LƯỢT KIỂM (chưa ghi gì): tag hiện có bị trỏ lại (cột so với hàng ĐÃ KHOÁ, theo hiệu lực) ⇒
+    //    mọi tag: luật interlock đang bật nhắm nó còn ghi được; tag ĐÃ KHAI: trần lô, nhất quán sau khi đổi, rồi MỘT mã TOTP cho cả lô.
+    //    Hỏng một tag ⇒ ném (appError nêu tagKey) ⇒ cả giao dịch rollback, không tag nào đổi.
+    const kenhCheDoTag = new Set(
+      (await tx.select({ tagKey: scadaKenhCheDo.tagKey }).from(scadaKenhCheDo).where(eq(scadaKenhCheDo.adapterId, adapter.id))).map((r) => r.tagKey),
+    );
+    const troLaiDaKhai: Array<{ cu: (typeof deviceTags.$inferSelect); sau: ReturnType<typeof giaTriSauTroLai>; doi: CotTroLai[] }> = [];
+    const kiemLai: Array<() => void> = [];
+    for (const name of diff.tags.updates.map((u) => u.name)) {
+      const t = fileTagsByName.get(name);
+      const cu = tagHienCo.get(name);
+      if (!t || !cu) continue; // tag mới (create) chưa khai gì; tag biến mất giữa diff và khoá ⇒ upsert tạo mới như cũ
+      const sau = giaTriSauTroLai(cu, recordCua(t));
+      const doi = cotTroLaiDoi(cu, sau);
+      if (doi.length === 0) continue;
+      const laKenhCheDo = kenhCheDoTag.has(name);
+      const daKhai = tagDaKhaiKenh(cu, laKenhCheDo);
+      if (daKhai) troLaiDaKhai.push({ cu, sau, doi });
+      const luat = luatAdapter.filter((r) => r.commandTag === name);
+      kiemLai.push(() => {
+        if (daKhai) kiemNhatQuanSauTroLai(cu, sau, doi, laKenhCheDo);
+        kiemInterlockSauSua(cu, sau, doi, luat);
+      });
+    }
+    if (troLaiDaKhai.length > TRAN_KENH_DA_KHAI_MOT_LO) loiQuaNhieuKenhDaKhai(troLaiDaKhai.length);
+    for (const k of kiemLai) k();
+    if (troLaiDaKhai.length > 0) {
+      const tagKeys = troLaiDaKhai.map((x) => x.cu.tagKey);
+      if (!opts.xacThucKenhDaKhai) {
+        throw appError(
+          "PRECONDITION_FAILED",
+          "SCADA_CONFIG_TOTP_REQUIRED",
+          { ma: "TOTP_CAN" },
+          `Lô import trỏ lại ${tagKeys.length} tag đã khai kênh (${tagKeys.slice(0, 5).join(", ")}${tagKeys.length > 5 ? ", …" : ""}) — cần mã xác thực 2 lớp.`,
+        );
+      }
+      await opts.xacThucKenhDaKhai({ soTag: tagKeys.length, tagKeys }); // CUỐI — ngay trước lượt ghi đầu tiên
+    }
+
     for (const name of tagNamesToWrite) {
       const t = fileTagsByName.get(name);
       if (!t) continue; // không thể xảy ra (diff sinh từ file) — phòng thủ
-      const record = {
-        address: t.address,
-        dataType: t.datatype as (typeof deviceTags.$inferInsert)["dataType"],
-        unit: t.unit ?? null,
-        scale: String(t.scale ?? 1),
-        offset: String(t.offset ?? 0),
-        writable: t.writable,
-        isEnabled: t.enabled,
-        deadband: t.deadband ?? null,
-        samplingMs: t.sampling_ms ?? null,
-        updatedAt: now,
-      };
+      const record = recordCua(t);
       const cu = tagHienCo.get(t.name);
       const nguonGo = cu ? lyDoGoStopPinKhiSuaTag(cu, record) : null;
       const set = nguonGo ? { ...record, ...GO_STOP_PIN_PATCH } : record;
@@ -749,6 +815,18 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
       if (cu && nguonGo) {
         await ghiAuditGoStopPinTx(tx, { tag: cu, nguon: nguonGo, nguoiSua, thaoTac: "mappingAsCode.import" });
       }
+    }
+    // R1b-1 T9 — audit WORM cho từng tag ĐÃ KHAI bị trỏ lại (cùng giao dịch: audit hỏng ⇒ cả lô rollback).
+    for (const x of troLaiDaKhai) {
+      await recordAuditEvent(tx, {
+        entityType: "device_tag",
+        entityId: x.cu.id,
+        action: AUDIT_TRO_LAI,
+        actorId: opts.actorId ?? null,
+        before: anhTroLai(x.cu),
+        after: { ...anhTroLai(x.sau), doi: x.doi },
+        reason: `mappingAsCode.import v${file.version}`,
+      });
     }
     if (prune) {
       for (const name of diff.tags.deletes) {

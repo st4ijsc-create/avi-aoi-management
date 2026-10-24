@@ -202,6 +202,11 @@ export const APP_ERROR_CODES = [
                                    // khai báo (khai dải/bước/loại kênh khi đã ghim, hoặc ghim ngoài dải đang khai). Gỡ / đổi ghim hoặc khai lại.
   "INTERLOCK_NGOAI_DAI",           // params: { ma, lyDo, tagKey, min, max, step, ruleId? } — commandValue của luật interlock (đang bật, khi
                                    // khai kênh; hoặc luật đang tạo/sửa/duyệt/bật) không ghi được trên kênh đích ⇒ hành động bảo vệ sẽ bị từ chối.
+                                   // R1b-1 T9: cả khi deviceAdapter.tags.update / mappingAsCode.applyImport đổi dataType/writable/scale/offset của tag đích.
+  // ── SCADA R1b-1 Task 9 — trỏ lại tag (server/services/scada/troLaiKenh.ts) ──
+  "INTERLOCK_MAT_DICH",            // params: { ma, tagKey, ruleId } — đổi tên / chuyển adapter của tag mà một luật interlock ĐANG BẬT ghi lệnh lên
+                                   // ⇒ hành động bảo vệ mất đích. Sửa đích của luật trước.
+  "QUA_NHIEU_KENH_DA_KHAI",        // params: { soTag, toiDa } — một lô import trỏ lại quá `toiDa` (200) tag đã khai kênh; chia nhỏ file.
   // ── SCADA R1a Task 16 — BỘ ĐẾM TOTP SAI theo người dùng (server/_core/totpKhoaSai.ts, gọi từ verifyTotpOnce ⇒ MỌI bên gọi TOTP) ──
   "TOTP_TAM_KHOA",                 // params: { remainingMinutes } (+ { ma, level } ở SCADA/copilot) — 5 lần sai / 5 phút ⇒ TOTP khoá 5 phút.
                                    // ⚠ KHÔNG BAO GIỜ mang số lần sai còn lại (điều phối 2026-10-24). KHÁC ACCOUNT_LOCKED (khoá mật khẩu).

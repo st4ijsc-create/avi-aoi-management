@@ -127,7 +127,7 @@ describe("census nhóm 2fa của giới hạn theo thủ tục", () => {
  * Mỗi file sản xuất GỌI nó phải có mặt ở bảng dưới: hàm bao ngoài (AST) → thủ tục tRPC của router gọi hàm ấy. File mới / hàm mới gọi nó mà bảng chưa cập nhật ⇒ ĐỎ.
  * Thủ tục phải thuộc nhóm "2fa", TRỪ khi có `mienTru` (lý do bằng văn bản).
  */
-const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<string, Record<string, { routerFile: string; thuTuc: string | string[]; mienTru?: string }>> = {
+const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<string, Record<string, { routerFile: string | string[]; thuTuc: string | string[]; mienTru?: string }>> = {
   "server/services/scada/lenhHmi.ts": {
     xacNhanGhiTag: {
       routerFile: "server/routers/scadaCommandsRouter.ts",
@@ -138,10 +138,12 @@ const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<string, Record<string, { routerF
     },
   },
   // kiem-dinh P1-2 (2026-10-24) — đổi cấu hình kênh / chế độ M12 đòi TOTP TƯƠI (mức 5) ⇒ THUỘC nhóm 2fa (việc cấu hình hiếm; bóp tần suất chấp nhận được).
-  "server/routers/scadaKenhRouter.ts": {
+  // 2026-10-24 · R1b-1 T9 — `kiemTotpCauHinh` chuyển từ scadaKenhRouter.ts sang services/scada/totpCauHinh.ts; thêm hai bên gọi trỏ lại tag đã khai
+  // (deviceAdapter.tags.update, mappingAsCode.applyImport qua `xacThucKenhDaKhai`) — cũng THUỘC nhóm 2fa.
+  "server/services/scada/totpCauHinh.ts": {
     kiemTotpCauHinh: {
-      routerFile: "server/routers/scadaKenhRouter.ts",
-      thuTuc: ["scadaKenh.capNhat", "scadaKenh.cheDo.dat", "scadaKenh.cheDo.go"],
+      routerFile: ["server/routers/scadaKenhRouter.ts", "server/routers/deviceAdapterRouter.ts", "server/routers/mappingAsCodeRouter.ts"],
+      thuTuc: ["scadaKenh.capNhat", "scadaKenh.cheDo.dat", "scadaKenh.cheDo.go", "deviceAdapter.tags.update", "mappingAsCode.applyImport"],
     },
   },
   "server/services/aiCopilotActions.ts": {
@@ -201,7 +203,9 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
     let mien = 0;
     for (const [file, hams] of Object.entries(BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC)) {
       for (const [ham, m] of Object.entries(hams)) {
-        expect(fileGoiHam(path.join(GOC, m.routerFile), ham), `${m.routerFile} không gọi ${ham} (${file})`).toBe(true);
+        for (const rf of Array.isArray(m.routerFile) ? m.routerFile : [m.routerFile]) {
+          expect(fileGoiHam(path.join(GOC, rf), ham), `${rf} không gọi ${ham} (${file})`).toBe(true);
+        }
         for (const thuTuc of Array.isArray(m.thuTuc) ? m.thuTuc : [m.thuTuc]) {
           const loaiTT = trpcProcedureType(appRouter, thuTuc);
           expect(loaiTT, `${thuTuc} không tồn tại ở appRouter`).toBeDefined();
@@ -219,8 +223,9 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
       }
     }
     // 2026-10-24 · kiem-dinh P1-2: 2 → 5 (+ scadaKenh.capNhat / cheDo.dat / cheDo.go, THUỘC nhóm 2fa).
-    expect(dem + mien).toBe(5);
-    expect(dem).toBe(3);
+    // 2026-10-24 · R1b-1 T9: 5 → 7 (+ deviceAdapter.tags.update / mappingAsCode.applyImport, THUỘC nhóm 2fa).
+    expect(dem + mien).toBe(7);
+    expect(dem).toBe(5);
     expect(mien).toBe(2); // aiCopilot.confirmAction + scadaCommands.confirm — miễn trừ có lý do (R1a final I-1)
   }, 120_000);
 });
