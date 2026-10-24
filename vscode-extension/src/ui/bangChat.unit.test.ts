@@ -2409,3 +2409,21 @@ describe("mã build trên khung chat (2026-10-24)", () => {
     expect(may.htmlGanNhat).toMatch(/<span id="ma-build"[^>]*>dev<\/span>/);
   });
 });
+
+describe("cau_hinh_anh gửi cho webview (2026-10-24)", () => {
+  const nhuong = async () => {
+    for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+  it("★★ san_sang ⇒ cau_hinh_anh phản ánh cài đặt aviAiLocal.anhChoTroLy (mặc định TẮT, bật ⇒ true)", async () => {
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await nhuong();
+    expect(may.daGui.find((m) => m.loai === "cau_hinh_anh")).toEqual({ loai: "cau_hinh_anh", bat: false });
+    may.cauHinh.anhChoTroLy = true;
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await nhuong();
+    expect(may.daGui.find((m) => m.loai === "cau_hinh_anh")).toEqual({ loai: "cau_hinh_anh", bat: true });
+  });
+});

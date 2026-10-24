@@ -639,3 +639,105 @@ describe("webview — lỗi có Thử lại · Esc = Dừng · Chép/Tạo lại
     expect(w.daGui.filter((m) => m.loai === "dung_hoi")).toHaveLength(1);
   });
 });
+
+describe("khớp mockup 0.3.1: trạng thái rỗng · hộp soạn · đồng hồ ngữ cảnh (2026-10-24)", () => {
+  const nutRong = (w: ReturnType<typeof chay>) => tatCa(w.nut("rong-lan-dau") as PT).filter((x) => x.tag === "button");
+
+  it("★★★ trạng thái rỗng = thẻ gợi ý theo nghề PLC/AOI bấm được (không phải ba dòng chữ rời); ảnh TẮT ⇒ 3 thẻ, không có thẻ đọc ảnh", () => {
+    const w = chay();
+    const nut = nutRong(w);
+    expect(nut).toHaveLength(3);
+    const chu = nut.map((b) => tatCa(b).map((x) => x.textContent).join("|"));
+    expect(chu.some((c) => c.includes("Viết FB điều khiển van 2 vị trí"))).toBe(true);
+    expect(chu.some((c) => c.includes("HMI"))).toBe(false);
+  });
+
+  it("★★ cau_hinh_anh bat:true ⇒ thêm thẻ 'Đọc ảnh màn hình HMI'; bat:false ⇒ bỏ lại", () => {
+    const w = chay();
+    w.banTin({ loai: "cau_hinh_anh", bat: true });
+    expect(nutRong(w)).toHaveLength(4);
+    expect(tatCa(w.nut("rong-lan-dau") as PT).some((x) => x.textContent === "Đọc ảnh màn hình HMI báo lỗi")).toBe(true);
+    w.banTin({ loai: "cau_hinh_anh", bat: false });
+    expect(nutRong(w)).toHaveLength(3);
+  });
+
+  it("★★★ bấm thẻ gợi ý ⇒ ĐIỀN câu hỏi vào ô nhập, KHÔNG tự gửi", () => {
+    const w = chay();
+    nutRong(w)[1]!.bam();
+    expect(String(w.nut("o-nhap").value)).toContain("function block IEC 61131-3");
+    expect(w.daGui.filter((m) => m.loai === "hoi")).toHaveLength(0);
+  });
+
+  it("★★ dòng 'Đang làm việc trên' theo dự án đang chọn; chưa có dự án ⇒ ẩn", () => {
+    const w = chay();
+    const dong = () => tatCa(w.nut("rong-lan-dau") as PT).find((x) => x.id === "rong-du-an")!;
+    expect(dong().hidden).toBe(true);
+    const o = w.nut("o-du-an") as unknown as { options: unknown[]; selectedIndex: number };
+    o.options = [{ textContent: "aoi-management" }];
+    o.selectedIndex = 0;
+    (w.nut("o-du-an") as PT).bam();
+    (w.nut("o-du-an") as unknown as { kichHoat?: unknown });
+    // sự kiện change
+    for (const h of ((w.nut("o-du-an") as unknown as { nghe: Record<string, Array<(e: unknown) => void>> }).nghe.change ?? [])) h({ target: { value: "x" } });
+    expect(dong().textContent).toBe("Đang làm việc trên: aoi-management");
+    expect(dong().hidden).toBe(false);
+  });
+
+  it("★★ nút Đính kèm hiện SỐ tệp: 'Đính kèm' → 'Đính kèm (2)'", () => {
+    const w = chay();
+    expect(w.nut("dinh-kem-chu").textContent).toBe("");
+    w.banTin({ loai: "them_dinh_kem_ngoai", muc: { loai: "tep", ten: "a.log", kieu: "text/plain", kichThuoc: 5, noiDung: "x" } });
+    expect(w.nut("dinh-kem-chu").textContent).toBe("Đính kèm (1)");
+    w.banTin({ loai: "them_dinh_kem_ngoai", muc: { loai: "tep", ten: "b.log", kieu: "text/plain", kichThuoc: 5, noiDung: "y" } });
+    expect(w.nut("dinh-kem-chu").textContent).toBe("Đính kèm (2)");
+  });
+
+  it("★★ thanh ngữ cảnh: độ rộng theo % ngữ cảnh, chuyển cảnh báo (lớp cao) từ 75%", () => {
+    const w = chay();
+    const i = { style: { width: "" } };
+    (w.nut("dong-ho-thanh") as unknown as { con: unknown[] }).con = [i];
+    w.banTin({ loai: "ag_usage", vao: 8400, ra: 0, ctxPhanTram: 13, uocLuong: false });
+    expect(i.style.width).toBe("13%");
+    expect(w.nut("dong-ho-thanh").className).toBe("");
+    w.banTin({ loai: "ag_usage", vao: 52000, ra: 0, ctxPhanTram: 80, uocLuong: false });
+    expect(i.style.width).toBe("80%");
+    expect(w.nut("dong-ho-thanh").className).toBe("cao");
+  });
+
+  it("★★ tooltip đồng hồ ngữ cảnh mang thống kê (lượt · ký tự · tệp) thay cho thanh thống kê dev đã bỏ", () => {
+    const w = chay();
+    w.banTin({ loai: "ag_thong_ke", soLuot: 3, soKyTu: 4213 });
+    expect(w.nut("dong-ho-token").title).toContain("3 lượt");
+    expect(w.nut("dong-ho-token").title).toContain("4213 ký tự");
+  });
+});
+
+describe("khớp mockup 0.3.1: bố cục tĩnh", () => {
+  const html = dungHtmlBang({ nonce: "N" });
+  it("★★★ chế độ nằm TRONG hàng dưới ô nhập (Đính kèm · chế độ · Gửi), không còn select riêng phía trên; mặc định tĩnh = Agent · duyệt", () => {
+    const hang = html.match(/<div class="soan-thanh">([\s\S]*?)<\/div>\s*<\/div>\s*<div class="mo-ta-nho">/)![1]!;
+    expect(hang.indexOf('id="nut-dinh-kem"')).toBeGreaterThan(-1);
+    expect(hang.indexOf('id="o-che-do"')).toBeGreaterThan(hang.indexOf('id="nut-dinh-kem"'));
+    expect(hang.indexOf('id="nut-gui"')).toBeGreaterThan(hang.indexOf('id="o-che-do"'));
+    expect(html.match(/<select id="o-che-do"[\s\S]*?<option value="(\w+)"/)![1]).toBe("sua");
+    expect(html).toMatch(/<option value="sua">Agent · duyệt<\/option>/);
+  });
+  it("★★ nút Đính kèm CÓ CHỮ (không chỉ biểu tượng kẹp giấy)", () => {
+    expect(html).toMatch(/<span id="dinh-kem-chu">Đính kèm<\/span>/);
+  });
+  it("★★ thanh thống kê dev bị ẩn khỏi giao diện (còn trong DOM cho tooltip)", () => {
+    expect(html).toMatch(/<div id="thanh-ngu-canh"[^>]*\bhidden>/);
+  });
+  it("★★ thanh trên: tên + mã build + tài khoản; đăng nhập token / hoàn tác nằm hàng riêng, không chung với chế độ", () => {
+    expect(html).toMatch(/<div id="vung-tai-khoan">\s*<span class="ten">AI LOCAL<\/span>/);
+    const vungAgent = html.match(/<div id="vung-agent">([\s\S]*?)<\/div>/)![1]!;
+    expect(vungAgent).toContain('id="nut-token"');
+    expect(vungAgent).not.toContain('id="o-che-do"');
+    expect(vungAgent).not.toContain('id="dong-ho-token"');
+  });
+  it("★★ chip đính kèm nằm TRONG hộp soạn, phía trên ô nhập", () => {
+    const hop = html.match(/<div id="hang-nhap">([\s\S]*?)<div class="soan-thanh">/)![1]!;
+    expect(hop.indexOf('id="ds-dinh-kem"')).toBeGreaterThan(-1);
+    expect(hop.indexOf('id="ds-dinh-kem"')).toBeLessThan(hop.indexOf('id="o-nhap"'));
+  });
+});
