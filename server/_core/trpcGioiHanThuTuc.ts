@@ -52,6 +52,8 @@ export const NHOM_THU_TUC_NHAY_CAM: Readonly<Record<NhomNhayCam, CauHinhNhom>> =
     // (fix round 3) CỐ Ý KHÔNG có ở đây (phán quyết T9 a):
     // nhóm đếm theo PATH ở rìa ⇒ mọi lượt sửa tag / adapter thường ngày (kể cả công tắc Bật) sẽ ăn chung xô 20 / 15 phút theo IP với 2FA /
     // deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa; dò mã đã chặn theo TÀI KHOẢN bởi T16. Miễn trừ ghi ở census kiemXacThucTheoMuc.
+    // ⚠ deviceAdapter.tags.setStopPin (kiem-dinh R1b-1 H1 a, 2026-10-25 — TOTP mức 5 MỖI lượt) CỐ Ý KHÔNG có ở đây: ghim theo từng tag, thành
+    // loạt lúc commissioning; cùng lý do T16. Miễn trừ ghi ở census kiemXacThucTheoMuc.
     chinhXac: [
       "user.setup2FA",
       "user.verify2FA",

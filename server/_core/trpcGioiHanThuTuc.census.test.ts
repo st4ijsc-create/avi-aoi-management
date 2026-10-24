@@ -167,8 +167,12 @@ const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<
         "deviceAdapter.tags.delete",
         "deviceAdapter.delete",
         "scadaDiag.tamTat",
+        // 2026-10-25 · kiem-dinh R1b-1 H1 (a) — ghim DỪNG (STOP HMI gửi ghim một bước, mức 1) ⇒ sàn vai ACTUATION + TOTP tươi mức 5 MỖI lượt.
+        "deviceAdapter.tags.setStopPin",
       ],
       mienTru: {
+        // 2026-10-25 · kiem-dinh R1b-1 H1 (a) — miễn nhóm 2fa (cùng khuôn lý do với tags.*: khoá T16 theo tài khoản).
+        "deviceAdapter.tags.setStopPin": "kiem-dinh R1b-1 H1 a (điều phối 2026-10-25): ghim DỪNG đặt / gỡ THEO TỪNG TAG, thành loạt lúc commissioning (mỗi tag một lượt, mỗi lượt một mã tươi mức 5); dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ một đợt ghim 20+ tag ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn tags.update).",
         "deviceAdapter.tags.create": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
         "deviceAdapter.tags.update": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
         "deviceAdapter.tags.delete": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
@@ -264,9 +268,10 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
     //   + deviceAdapter.tags.create / tags.delete (miễn trừ, cùng lý do với tags.update).
     // 2026-10-24 · R1b-1 T9 fix round 2: deviceAdapter.update RA khỏi nhóm (miễn trừ, phán quyết a) — dem 5 → 4, mien 5 → 6, tổng giữ 10.
     // 2026-10-24 · R1b-1 T9 fix round 3 (N1/N3): + deviceAdapter.delete / scadaDiag.tamTat (miễn trừ, cùng lý do) — mien 6 → 8, tổng 10 → 12.
-    expect(dem + mien).toBe(12);
+    // 2026-10-25 · kiem-dinh R1b-1 H1 (a): + deviceAdapter.tags.setStopPin (miễn trừ, khuôn tags.*) — mien 8 → 9, tổng 12 → 13.
+    expect(dem + mien).toBe(13);
     expect(dem).toBe(4); // scadaKenh ×3 + mappingAsCode.applyImport
-    expect(mien).toBe(8); // aiCopilot.confirmAction + scadaCommands.confirm (R1a final I-1) + deviceAdapter.tags.create/update/delete + deviceAdapter.update/delete + scadaDiag.tamTat (T9 a)
+    expect(mien).toBe(9); // aiCopilot.confirmAction + scadaCommands.confirm (R1a final I-1) + deviceAdapter.tags.create/update/delete + deviceAdapter.update/delete + scadaDiag.tamTat (T9 a) + deviceAdapter.tags.setStopPin (H1 a)
   }, 120_000);
 });
 

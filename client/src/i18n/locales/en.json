@@ -16452,7 +16452,10 @@
         "confirm": "Turn off and remove pin",
         "bodyEdit": "This tag has a pinned STOP value; saving this change (not writable / disabled / new address, type, scale or offset) removes the pin.",
         "confirmEdit": "Save and remove pin"
-      }
+      },
+      "totpBody": "Setting or clearing a STOP pin is a safety change: the STOP MACHINE button sends these pins in one step, exempt from mode / range / interlock checks. Engineers and above only, with a fresh TOTP code each time.",
+      "mucCao": "Actuation level {{muc}} tag — the STOP MACHINE button (HMI STOP) will SKIP this pin; only pins on tags declared at level 1 are sent. For HMI STOP to reach this tag, declare actuation level 1 on the Channels & limits page.",
+      "mucChuaKhai": "This tag has no actuation level declared (treated as level 5) — the STOP MACHINE button (HMI STOP) will SKIP this pin. For HMI STOP to reach this tag, declare actuation level 1 on the Channels & limits page."
     },
     "toast": {
       "connFail": "Connection failed: {{err}}",

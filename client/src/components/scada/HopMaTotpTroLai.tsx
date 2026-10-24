@@ -18,7 +18,15 @@ export function laLoiCanMaTotp(e: unknown): boolean {
   return (e as { data?: { appCode?: string } } | null)?.data?.appCode === "SCADA_CONFIG_TOTP_REQUIRED";
 }
 
-export function useHopMaTotpTroLai<V extends object>(guiLai: (bien: V & { totpCode: string }) => void, dangGui: boolean) {
+/**
+ * kiem-dinh R1b-1 (2026-10-25) — `khoaChu` (tuỳ chọn): khoá i18n tiêu đề / thân của hộp cho bên gọi KHÔNG phải trỏ lại tag (ghim DỪNG —
+ * `deviceAdapter.tags.setStopPin`; sửa / xoá luật interlock). Vắng ⇒ câu trỏ lại tag của T9 như cũ.
+ */
+export function useHopMaTotpTroLai<V extends object>(
+  guiLai: (bien: V & { totpCode: string }) => void,
+  dangGui: boolean,
+  khoaChu?: { tieuDe: string; than: string },
+) {
   const { t } = useTranslation();
   const idO = `tro-lai-totp-${useId()}`; // nhiều hộp trên một trang (sửa / tạo / xoá tag, sửa adapter)
   const [cho, setChoState] = useState<V | null>(null);
@@ -63,8 +71,8 @@ export function useHopMaTotpTroLai<V extends object>(guiLai: (bien: V & { totpCo
     <Dialog open={cho !== null} onOpenChange={(o) => !o && !dangGui && daXong()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{t("deviceAdapter.troLai.title")}</DialogTitle>
-          <DialogDescription>{t("deviceAdapter.troLai.body")}</DialogDescription>
+          <DialogTitle>{t(khoaChu?.tieuDe ?? "deviceAdapter.troLai.title")}</DialogTitle>
+          <DialogDescription>{t(khoaChu?.than ?? "deviceAdapter.troLai.body")}</DialogDescription>
         </DialogHeader>
         <TruongTotp id={idO} value={ma} onChange={setMa} disabled={dangGui} />
         <DialogFooter>

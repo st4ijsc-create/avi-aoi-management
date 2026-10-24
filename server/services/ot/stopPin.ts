@@ -309,6 +309,8 @@ async function ghiAuditStopPinTx(
  *   • tag phải thuộc ĐÚNG adapter đó (tra theo cặp adapterId + tagKey) — tag của adapter khác ⇒
  *     không tìm thấy;
  *   • ĐẶT: tag writable + enabled, giá trị đúng kiểu; GỠ luôn được (thu hẹp);
+ *   • kiem-dinh R1b-1 H1 (a): `kiemCuoi` (router: TOTP tươi mức 5 — `kiemTotpCauHinh`) chạy SAU mọi kiểm hợp lệ, TRƯỚC lượt ghi (cả đặt lẫn
+ *     gỡ, cả lượt không đổi gì) — một lỗi kiểm hợp lệ không tiêu mã; mã sai ⇒ ném, giao dịch rollback, ghim không đổi;
  *   • không đổi gì ⇒ không ghi, không audit (`changed: false`).
  */
 export async function datStopPin(input: {
@@ -318,6 +320,8 @@ export async function datStopPin(input: {
   reason: string;
   nguoiSua: NguoiSuaStopPin;
   phamViMay: ReadonlyArray<number> | null;
+  /** kiem-dinh R1b-1 H1 (a) — kiểm CUỐI trong giao dịch (TOTP), ném để từ chối. */
+  kiemCuoi?: () => Promise<void>;
 }): Promise<KetQuaStopPin> {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
@@ -377,6 +381,9 @@ async function datStopPinTx(
       }
       sau = v.value;
     }
+
+    // kiem-dinh R1b-1 H1 (a) — TOTP CUỐI: sau kiểm hợp lệ (không tiêu mã cho lượt sai), trước no-op / lượt ghi.
+    if (input.kiemCuoi) await input.kiemCuoi();
 
     const truoc = tag.stopValue ?? null;
     if (cungGiaTri(truoc, sau)) {

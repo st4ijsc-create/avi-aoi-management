@@ -16432,7 +16432,10 @@
         "confirm": "Tắt và gỡ ghim",
         "bodyEdit": "Tag này đang được ghim DỪNG; lưu thay đổi này (không ghi được / tắt / đổi địa chỉ, kiểu, scale, offset) sẽ gỡ ghim.",
         "confirmEdit": "Lưu và gỡ ghim"
-      }
+      },
+      "totpBody": "Đặt hoặc gỡ ghim giá trị DỪNG là thay đổi an toàn: nút DỪNG MÁY gửi các ghim này một bước, miễn chế độ / dải / interlock. Chỉ kỹ sư trở lên, mỗi lượt một mã TOTP mới.",
+      "mucCao": "Tag mức tác động {{muc}} — nút DỪNG MÁY (STOP HMI) sẽ BỎ QUA ghim này; chỉ ghim của tag khai mức 1 được gửi. Muốn STOP HMI tới tag này: khai mức tác động 1 ở trang Kênh & giới hạn.",
+      "mucChuaKhai": "Tag chưa khai mức tác động (coi là mức 5) — nút DỪNG MÁY (STOP HMI) sẽ BỎ QUA ghim này. Muốn STOP HMI tới tag này: khai mức tác động 1 ở trang Kênh & giới hạn."
     },
     "toast": {
       "connFail": "Kết nối thất bại: {{err}}",

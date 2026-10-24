@@ -179,6 +179,8 @@ export interface StopPinTagRow {
   dataType: DataType;
   writable: boolean;
   stopValue?: unknown;
+  /** kiem-dinh R1b-1 H1 (b) — mức tác động khai (NULL ⇒ coi là 5, fail-closed): > 1 ⇒ nút DỪNG MÁY bỏ qua ghim này. */
+  actuationLevel?: number | null;
 }
 
 /** doc 81 Đợt 1D Task 3 — "Tag dừng" chip: rendered in the tag table for a PINNED tag. */
@@ -238,10 +240,23 @@ export function TagStopPinEditor({
         );
       }
       setReason("");
+      ghimTotp.daXong();
       onSaved?.();
     },
-    onError: (e) => toastTrpcError(e),
+    // kiem-dinh R1b-1 H1 (a) — mọi lượt đặt / gỡ ghim cần TOTP tươi mức 5: máy chủ kiểm hợp lệ TRƯỚC rồi trả SCADA_CONFIG_TOTP_REQUIRED ⇒
+    // hộp mã 6 số (hộp dùng chung của T9), gửi lại CHÍNH lượt đó kèm mã.
+    onError: (e, bien) => {
+      if (ghimTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
   });
+  const ghimTotp = useHopMaTotpTroLai<Parameters<typeof setStopPin.mutate>[0]>((bien) => setStopPin.mutate(bien), setStopPin.isPending, {
+    tieuDe: "deviceAdapter.troLai.title",
+    than: "deviceAdapter.stopPin.totpBody",
+  });
+  // kiem-dinh R1b-1 H1 (b) — cùng luật với máy chủ (`mucTacDongKenh`: NULL ⇒ 5): STOP HMI chỉ gửi ghim của tag mức ≤ 1.
+  const mucTag = tag.actuationLevel ?? null;
+  const mucCao = mucTag === null || mucTag > 1;
 
   if (!tag.writable || tag.dataType === "json") {
     return (
@@ -328,9 +343,17 @@ export function TagStopPinEditor({
           onChange={(e) => setReason(e.target.value)}
         />
       </div>
+      {mucCao && (
+        <p data-testid="stop-pin-muc-cao" role="note" className="rounded-md border p-2 text-xs">
+          {mucTag === null
+            ? t("deviceAdapter.stopPin.mucChuaKhai")
+            : t("deviceAdapter.stopPin.mucCao", { muc: mucTag })}
+        </p>
+      )}
       <Button size="sm" disabled={!canSave} onClick={handleSave}>
         {t("deviceAdapter.stopPin.save", "Lưu ghim")}
       </Button>
+      {ghimTotp.hop}
     </div>
   );
 }
