@@ -65,6 +65,7 @@ Nội dung R1b-2:
 - Nhịp cho nguồn ngoài OT trung tâm.
 - `congOtLuong` dùng mức kênh.
 - Audit điều tiết báo đúng cỡ đợt burst.
+- **Khai mức hàng loạt** (điều phối 2026-10-24): một TOTP tươi cho N tag, trần N = 200, audit từng tag, kiểm nhất quán từng tag. Cần trước khi bật `AI_OT_CONTROL_ENABLED` (P1-1).
 
 ## Quyết định — ĐÃ DUYỆT (điều phối 2026-10-24; bổ sung: hộp xác nhận STOP mặc định "Dừng máy", audit từng adapter, cảnh báo máy chưa ghim; mồ côi gửi số đếm trước; không điều tiết mã từ chối thật)
 
@@ -366,6 +367,15 @@ Chốt:
 - **`cooldownSeconds`:** update một phần không được đặt lại về 300. Bỏ `.default()` khỏi schema gốc, chỉ áp mặc định trong create.
 - **Posture:** đếm luật `telemetry_tag` có `scope <> 'machine'` trong `interlockRulesCauHinhHong`.
 - **`propose_interlock_rule`:** kiểm D11 (`telemetry_tag` ⇒ scope machine) trước khi chèn. Xuất helper kiểm D11 dùng chung với `interlockRouter`.
+- **Trỏ lại kênh không cần TOTP** (kiem-dinh, điều phối duyệt 2026-10-24): `deviceAdapter.tags.update` và `mappingAsCode.applyImport` có thể đổi `address`, `scale`, `offset`, `dataType`, `writable`, `tagKey` trên một tag.
+  - Áp khi tag ĐÃ KHAI mức hoặc kiểu kênh (`actuationLevel` hoặc `channelKind` hoặc dải khác NULL), HOẶC tag là kênh chế độ của một máy.
+  - Điều kiện: đòi TOTP TƯƠI (`kiemXacThucTheoMuc(ctx, 5, totpCode)`) VÀ kiểm lại nhất quán sau khi đổi: dải ↔ `stop_value`, dải ↔ `commandValue` của interlock, kiểu kênh ↔ `writable`.
+  - Tag chưa khai: giữ như cũ.
+  - Import hàng loạt: một TOTP cho cả lô, kèm trần số tag bị đụng.
+  - Đưa các thủ tục này vào nhóm "2fa" và census `kiemXacThucTheoMuc`.
+  - Cập nhật UI chỗ gọi (trang device adapters / mapping) bằng ô mã 6 số.
+  - Test: tag đã khai đổi `scale` không có mã ⇒ `TOTP_CAN`; có mã nhưng làm `stop_value` lệch lưới ⇒ `STOP_PIN_NGOAI_DAI`; tag chưa khai ⇒ như cũ.
+  - Đột biến: bỏ kiểm TOTP ⇒ đỏ.
 
 - [ ] **Step 1: Test đỏ:** mỗi mục một ca.
 - [ ] **Step 2–4:** cài, chạy lại, rồi `server/routers/interlock*` + `server/services/interlock` + `server/routers/deviceAdapter*`.
@@ -384,7 +394,11 @@ Chốt:
 - `server/_core/xacThucTheoMuc.importCensus.test.ts`: bắt re-export `export *` của `ghiStepUpPhien`.
 - `server/services/aiLocalTools/otWriteBinding.census.test.ts`: bắt `runDispatch` gọi qua helper trung gian (theo đồ thị gọi trong tệp).
 - `server/routers/scadaKenhRouter.ts` `capNhat`: đọc `adapter.machineId` để kiểm phạm vi KHI đã khoá hàng adapter (`FOR SHARE`).
-- `server/services/scada/lenhHmi.ts`: thay truy vấn edge riêng bằng `adapterOwnedByEdgeInTx` (mở rộng helper để trả mã edge).
+- `server/services/scada/lenhHmi.ts`: thay truy vấn edge riêng bằng `adapterOwnedByEdgeInTx` (mở rộng helper để trả mã edge). Làm tương tự cho `khaNangDung.ts`.
+- `server/_core/kiemSchemaR1a.ts` + `healthProbes.ts` (điều phối 2026-10-24): khi không đọc được `information_schema` lúc khởi động (trạng thái `khong_kiem_duoc`):
+  - `/health` hiện rõ `schemaR1a: "chua_kiem_duoc"` kèm lý do;
+  - thử kiểm lại định kỳ (ví dụ mỗi 5 phút) cho tới khi kiểm được.
+  - Hành vi khởi động giữ fail-open như cũ.
 - Test: mỗi mục một ca. Đột biến: mỗi mục một lần đỏ, ghi vào commit.
 
 - [ ] **Step 1–5:** test đỏ → cài → xanh → đột biến từng mục.
@@ -437,6 +451,26 @@ Cổng:
 - [ ] **Step 6: Commit** `test(scada): nghiem thu R1b-1 - STOP HMI LOCAL/REMOTE/edge, connected doc tot, REST 501, dieu tiet attempts, ma du phong`.
 
 ---
+
+### Task 13: dispatch làm tròn âm thầm trên tag int chưa khai (điều phối 2026-10-24)
+
+Đã đo ở R1a (kiem-dinh P1-3): tag int `scale = 10`, ghi 25 ⇒ driver nhận raw 3, tức ghi 30. Có test ghim hành vi này.
+
+**Files:** census mới `server/services/ot/lamTronScaleCensus.test.ts`; nếu được duyệt thì sửa `server/services/ot/commandDispatcher.ts` (`congKenhSom`) và `server/services/scada/kenhScada.ts`.
+
+- [ ] **Step 1: Census + đo.**
+  - Liệt kê mọi bên gọi `dispatch()` có thể ghi vào tag int có `scale ≠ 1` hoặc `offset ≠ 0`: AI `set_machine_param` / máy, FOE recipe, Sparkplug DCMD, interlock engine, edge, adapterFacade/UNS, lệnh STOP ghim.
+  - Với từng bên: giá trị đến từ đâu, và có thể không nằm trên lưới raw không.
+  - Đo trên DB TEST và trong dữ liệu seed: tag int nào có `scale ≠ 1`; luật interlock / công thức / ghim `stop_value` nào đang lệch lưới.
+  - Ghi bảng vào báo cáo task.
+- [ ] **Step 2: Quyết.**
+  - **Không ai dựa vào việc làm tròn** ⇒ từ chối `OFF_STEP` (kèm `goiY`) cho MỌI tag int khi `(v − offset)/scale` không nguyên, ở `congKenhSom`, kể cả tag chưa khai. Không có cờ: đây là sửa lỗi đúng/sai. STOP ghim vẫn đi qua theo quy tắc miễn dải; nếu ghim lệch lưới thì ghi rõ.
+  - **Có bên dựa vào** ⇒ DỪNG, báo bộ điều khiển kèm bảng; bộ điều khiển báo điều phối trước khi sửa.
+- [ ] **Step 3** (nếu không ai dựa vào):
+  - Test đỏ: AI / interlock / FOE ghi 25 lên int `scale = 10` ⇒ `OFF_STEP`; 30 ⇒ raw 3.
+  - Cài. Sửa test ghim cũ thành hành vi mới.
+  - Đột biến: bỏ kiểm ⇒ đỏ. Hoàn tác.
+  - Commit `fix(ot): tu choi gia tri lech luoi raw (scale/offset) cho moi tag int o dispatch, khong lam tron am tham (R1b-1 T13)`.
 
 ## Bàn giao sau R1b-1
 
