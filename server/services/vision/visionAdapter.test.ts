@@ -249,3 +249,6 @@ describe("visionAdapterRouter", () => {
     await expect(caller.listAdapters()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
+
+// W14b: cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW14b.db.test.ts); ở đây CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("../../routers/_cauHinhPhamVi", () => ({ mayTheoMaGhi: async () => undefined }));

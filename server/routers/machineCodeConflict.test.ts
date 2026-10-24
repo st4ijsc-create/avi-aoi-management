@@ -97,25 +97,14 @@ describe("M7 — register generated SN-code collision (suffix-retry policy)", ()
   });
 });
 
-describe("M2 — register vs decommissioned/retired assets", () => {
-  it.each(["retired", "decommissioned"] as const)("existing %s machine cannot re-register (CONFLICT)", async (state) => {
-    dbm.getMachineBySerialNumber.mockResolvedValue({ id: 8, code: "AOI-08", lifecycleStatus: state });
-    await expect(machineRouter.createCaller(pubCtx).register({
-      serialNumber: "SN8", name: "AOI 8", machineType: "AOI",
-    })).rejects.toMatchObject({
-      code: "CONFLICT",
-      message: expect.stringContaining(state),
-    });
+describe("M2/W15 — register công khai vs máy ĐÃ CÓ (mọi trạng thái)", () => {
+  // W15 (phamViGhi, 2026-10-25): đường công khai không sửa trường nào của máy đã có, không đổi registrationStatus, phản hồi y hệt máy mới (không lộ serial, không trả id).
+  it.each(["retired", "decommissioned", "active", "commissioning"] as const)("máy %s đã có: không sửa gì, không CONFLICT, phản hồi chung", async (state) => {
+    dbm.getMachineBySerialNumber.mockResolvedValue({ id: 8, code: "AOI-08", lifecycleStatus: state, registrationStatus: "approved" });
+    const r = await machineRouter.createCaller(pubCtx).register({ serialNumber: "SN8", name: "AOI 8", machineType: "AOI" });
+    expect(r).toEqual({ registrationStatus: "pending", message: "Machine registered, awaiting admin approval" });
     expect(dbm.updateMachine).not.toHaveBeenCalled();
-  });
-
-  it("existing active machine still updates in place (unchanged behaviour)", async () => {
-    dbm.getMachineBySerialNumber.mockResolvedValue({ id: 8, code: "AOI-08", lifecycleStatus: "active" });
-    const r = await machineRouter.createCaller(pubCtx).register({
-      serialNumber: "SN8", name: "AOI 8", machineType: "AOI",
-    });
-    expect(r.id).toBe(8);
-    expect(dbm.updateMachine).toHaveBeenCalled();
+    expect(dbm.createMachine).not.toHaveBeenCalled();
   });
 });
 

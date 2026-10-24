@@ -54,11 +54,13 @@ beforeEach(async () => {
   resetSeq();
   perm.allow = true;
   process.env.HOT_FOLDER_INGEST_ENABLED = "false";
+  process.env.HOT_FOLDER_ROOTS = WATCH; // W15: hot-folder chỉ trong gốc cho phép
   fake.seed(machines, [{ id: 7, code: "AOI-07", name: "AOI 7" }]);
   fake.setUnique(hotFolderFiles, [["idempotencyKey"]]);
 });
 
 afterEach(async () => {
+  delete process.env.HOT_FOLDER_ROOTS;
   await __resetHotFolderRuntimeForTests();
 });
 
