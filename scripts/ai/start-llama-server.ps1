@@ -235,6 +235,13 @@ if ($nganSachNghi -ne '-1') { $srvArgs += @('--reasoning-budget', $nganSachNghi)
 $cacheRam = if ($cfg['LLAMA_SERVER_CACHE_RAM']) { "$($cfg['LLAMA_SERVER_CACHE_RAM'])".Trim() } else { '0' }
 $srvArgs += @('--cache-ram', $cacheRam)
 
+# ── Đợt 9 (2026-10-24, ĐO ĐƯỢC, dieu-phoi duyệt) — TRẦN CONTEXT CHECKPOINT mỗi slot (`--ctx-checkpoints`, mặc định llama.cpp 32) ──────────
+# Model hybrid lưu một checkpoint mỗi lượt chung tiền tố (27B 149,6 MiB, 35B 62,8 MiB) nhưng hội thoại tuyến tính chỉ KHÔI PHỤC cái MỚI NHẤT ⇒
+# 32 = tới 4,8 GB commit chết ở 27B. Đo 32/16/8 (spec 2026-10-20 §6, scripts/ai-eval/bo-nho/do-ctx-checkpoints.sh): N=8 commit đỉnh 27B
+# 5,02 → 1,50 GB, 35B 2,32 → 0,85 GB; thời gian/lượt 0,967× / 1,007×; prompt_n như nhau. Đặt lại bằng LLAMA_SERVER_CTX_CHECKPOINTS (vd 32).
+$ctxCheckpoints = if ($cfg['LLAMA_SERVER_CTX_CHECKPOINTS']) { "$($cfg['LLAMA_SERVER_CTX_CHECKPOINTS'])".Trim() } else { '8' }
+$srvArgs += @('--ctx-checkpoints', $ctxCheckpoints)
+
 # ── Đợt 9 (2026-10-24, ĐO ĐƯỢC, dieu-phoi duyệt (a)) — ĐỌC ẢNH: bộ chiếu thị giác `--mmproj` THEO MODEL ─────────────────────────
 # LLAMA_SERVER_MMPROJ = off | auto | <đường dẫn>. auto = `<tên model bỏ đuôi lượng tử>-mmproj-F16.gguf` cạnh model (scripts/ai/tim-mmproj.ps1)
 # ⇒ khe đổi 35B↔27B (KheNang gọi script này với -Model) thì mmproj đổi theo; model không có mmproj ⇒ chạy chữ như cũ.

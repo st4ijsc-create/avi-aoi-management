@@ -69,4 +69,12 @@ describe.runIf(WIN)("start-llama-server.ps1 — --mmproj theo model", () => {
     expect(mmprojCua(chay("Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", null))).toBe("Qwen3.6-35B-A3B-mmproj-F16.gguf");
     expect(mmprojCua(chay("Qwen3.6-27B-UD-Q4_K_XL.gguf", null))).toBe("Qwen3.6-27B-mmproj-F16.gguf");
   }, 60_000);
+  it("Đợt 9 — mặc định --ctx-checkpoints 8 và --cache-ram 0 cho CẢ 35B lẫn 27B (vắng khoá)", () => {
+    for (const m of ["Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", "Qwen3.6-27B-UD-Q4_K_XL.gguf"]) {
+      const r = chay(m, null);
+      if (!("args" in r)) throw new Error(JSON.stringify(r));
+      expect(r.args[r.args.indexOf("--ctx-checkpoints") + 1]).toBe("8");
+      expect(r.args[r.args.indexOf("--cache-ram") + 1]).toBe("0");
+    }
+  }, 120_000);
 });

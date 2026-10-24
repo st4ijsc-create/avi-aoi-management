@@ -38,6 +38,9 @@ param(
   # scripts/ai/tim-mmproj.ps1 voi start-llama-server.ps1 (<ten model bo duoi luong tu>-mmproj-F16.gguf canh model).
   # Mac dinh "auto" (2026-10-24, cung mac dinh san pham sau cong (A)) - "off" de do duong chu khong mmproj.
   [string]$Mmproj = "auto",
+  # Dot 9 (2026-10-24, dieu-phoi duyet): tran context checkpoint/slot. 8 = mac dinh san pham (27B commit dinh 5,02 -> 1,50 GB, toc do 0,967x);
+  # 32 = mac dinh llama.cpp. Spec 2026-10-20 §6.
+  [int]$CtxCheckpoints = 8,
   # Dot 9 (2026-10-22): chu khoa nhan BAN GIAO khi /health xanh (vd chu cua khoaKhe.mjs giu cua phep do) - xem khoi KHOA ben duoi.
   [string]$GiuKhoa = ""
 )
@@ -116,7 +119,7 @@ $thamSo = @('-m', $Model, '--host', '127.0.0.1', '--port', '8091', '-c', "$Ctx",
           '-np', '1', '-fa', 'on', '-ngl', '999', '-ctk', 'f16', '-ctv', 'f16',
           '--slots', '--metrics', '--no-webui',
           # Dot 9: 4096 (2026-10-22, sau su co 18:21) -> 0 (2026-10-24, xem -CacheRam). Chi anh huong TOC DO, KHONG anh huong dau ra.
-          '--cache-ram', "$CacheRam")
+          '--cache-ram', "$CacheRam", '--ctx-checkpoints', "$CtxCheckpoints")
 if ($NganSachNghi -ge 0) { $thamSo += @('--reasoning-budget', "$NganSachNghi") }
 . (Join-Path $PSScriptRoot '..\..\ai\tim-mmproj.ps1')
 $mm = Resolve-Mmproj -ModelPath $Model -CheDo $Mmproj

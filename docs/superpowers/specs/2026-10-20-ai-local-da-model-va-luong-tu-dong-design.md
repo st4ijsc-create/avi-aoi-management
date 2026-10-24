@@ -895,6 +895,9 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
     chết; đổi cuộc thì checkpoint của cuộc trước vô dụng ở mọi N. Tiết kiệm: 27B −3,5 GB commit đỉnh (5,02 → 1,50), 35B −1,5 GB. Không
     có trôi (32 a/b cùng 5,02 GB). Commit trống thấp nhất 18,6 GB. **Đề xuất (chờ duyệt, CHƯA đổi):** `LLAMA_SERVER_CTX_CHECKPOINTS` mặc
     định 8 cho cả hai model trong `start-llama-server.ps1` (+ `doi-model.ps1 -CtxCheckpoints 8`), `.env.example` ghi cách đặt lại 32.
+  - **QUYẾT ĐỊNH (dieu-phoi duyệt 2026-10-24):** mặc định `--ctx-checkpoints 8` cho CẢ HAI model — `start-llama-server.ps1` (`LLAMA_SERVER_CTX_CHECKPOINTS`,
+    đặt lại bằng 32) + `doi-model.ps1 -CtxCheckpoints 8`; test powershell `-InThamSo` ghim. Áp vào :8091 ở lần khởi động lại TỰ NHIÊN kế tiếp /
+    lần đổi khe cho việc khác (không restart chỉ để áp); khi áp kiểm CommandLine đủ `--mmproj`, `--cache-ram 0`, `--ctx-checkpoints 8`.
   - Phối hợp: luong-ui chạy xong e2e extension TRƯỚC khi giữ khe; nhắc kiem-dinh/luong-ui boot dev với `AI_KB_WARM_ON_BOOT=false
     AI_ORCHESTRATION_ENABLED=false` trong đợt; cuối đợt :8091 về 35B + mmproj (mặc định).
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
