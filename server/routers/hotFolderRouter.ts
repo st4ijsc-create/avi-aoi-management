@@ -18,6 +18,7 @@
  * create/processNow/dryRun → machine_control/canCreate; update → canEdit;
  * delete → canDelete.
  */
+import { viTriHopLe, hotFolderGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -73,7 +74,8 @@ export const hotFolderRouter = router({
   createConfig: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object(configShape))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await viTriHopLe(ctx, { machineId: input.machineId }, "machine"); // phạm vi nhà máy (W14b)
       try {
         return await createHotFolderConfig(input);
       } catch (err) {
@@ -90,7 +92,9 @@ export const hotFolderRouter = router({
         patch: z.object(configShape).partial(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await hotFolderGhi(ctx, input.id); // W14b
+      if (input.patch.machineId != null) await viTriHopLe(ctx, { machineId: input.patch.machineId }, "machine"); // máy MỚI cũng phải trong phạm vi
       try {
         return await updateHotFolderConfig(input.id, input.patch);
       } catch (err) {
@@ -102,7 +106,8 @@ export const hotFolderRouter = router({
   deleteConfig: protectedProcedure
     .use(requirePermission("machine_control", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await hotFolderGhi(ctx, input.id); // W14b
       try {
         return await deleteHotFolderConfig(input.id);
       } catch (err) {
@@ -118,7 +123,8 @@ export const hotFolderRouter = router({
   processNow: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ configId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await hotFolderGhi(ctx, input.configId); // W14b: quét thư mục = ghi lần kiểm tra của máy đó
       if (!hotFolderIngestEnabled()) {
         return {
           enabled: false as const,

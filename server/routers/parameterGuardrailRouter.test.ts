@@ -72,3 +72,6 @@ describe("read surfaces — protectedProcedure", () => {
     expect(await caller.materialForecast.machine({ machineId: 5 })).toEqual([]);
   });
 });
+
+// W14b: cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW14b.db.test.ts); ở đây kiểm đúng điều test này đo ⇒ cho qua.
+vi.mock("./_cauHinhPhamVi", () => ({ hangRaoGhi: async () => undefined, hangRaoTheoIdGhi: async () => undefined }));

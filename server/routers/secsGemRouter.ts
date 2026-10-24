@@ -21,6 +21,7 @@
  *     // inside the appRouter object:
  *     secsGem: secsGemRouter,
  */
+import { chiToanQuyenGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { router, moduleProcedure } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_OT_CONTROL (moduleGate = pass-through
@@ -83,7 +84,9 @@ export const secsGemRouter = router({
         deviceId: z.number().int().min(0).max(0x7fff).optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi (W14b): thử kết nối TCP tới host:port TỰ DO — không có thực thể nhà máy để đối chiếu ⇒ chỉ toàn quyền; flag mặc định tắt (không mở socket)
+      await chiToanQuyenGhi(ctx, "secsGemTarget");
       // Flag gate: no socket opened when disabled.
       if (!isSecsGemEnabled()) {
         return {
