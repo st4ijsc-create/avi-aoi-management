@@ -227,6 +227,10 @@ export const genealogyRouter = router({
     }))
     .query(async ({ input, ctx }) => {
       let rows: any[] = [];
+      // phạm vi (rà bảo mật 2026-10-24): kiểm toàn chuỗi/theo lô trả id đơn vị + lý do của MỌI nhà máy ⇒ chỉ phạm vi toàn quyền (admin)
+      if (input.scope !== "serial" && (await idsMayTrongPhamVi(ctx)) !== null) {
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "verifyChainAcrossFactories" }, "Chỉ vai toàn quyền mới kiểm toàn chuỗi/theo lô; dùng scope=serial cho đơn vị của bạn.");
+      }
       if (input.scope === "serial") {
         if (!input.serialNumber) {
           throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "serialNumber" }, "serialNumber required for scope=serial");

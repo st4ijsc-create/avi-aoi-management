@@ -126,6 +126,12 @@ describe("★★★ genealogy.getBySerial / getByLot / verify / getLineage", () 
     expect((await userA.verify({ scope: "serial", serialNumber: serial.chB })).total).toBe(0);
     expect((await admin.verify({ scope: "serial", serialNumber: serial.chB })).total).toBeGreaterThan(0);
   });
+  it("verify scope=lot|all — người dùng hẹp ⇒ FORBIDDEN; admin vẫn kiểm được (đối chứng dương)", async () => {
+    expect(await maLoi(() => userA.verify({ scope: "lot", lotCode: LOT }))).toBe("FORBIDDEN");
+    expect(await maLoi(() => userA.verify({ scope: "all", limit: 10 }))).toBe("FORBIDDEN");
+    expect(await maLoi(() => admin.verify({ scope: "lot", lotCode: LOT }))).toBeNull();
+    expect(await maLoi(() => userA.verify({ scope: "serial", serialNumber: serial.a }))).toBeNull();
+  });
   it("getLineage — gốc ngoài phạm vi ⇒ found:false; gốc của A có cha là đơn vị B ⇒ cha bị cắt khỏi cây", async () => {
     const ngoai = await userA.getLineage({ serialNumber: serial.b, direction: "descendants" });
     expect(ngoai.found).toBe(false);
