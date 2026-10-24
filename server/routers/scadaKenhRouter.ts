@@ -12,6 +12,13 @@
  *
  * QUYỀN: query = MOD_OT_CONTROL + `machine_control.canView`; mutation = vai admin|engineer + 2FA + MOD_OT_CONTROL +
  *   `machine_control.canEdit` (khuôn `kySuProcedure` của scadaDiagRouter).
+ * TOTP TƯƠI (kiem-dinh P1-2, 2026-10-24): ba mutation (capNhat, cheDo.dat, cheDo.go) hạ được `actuation_level` và đổi cổng LOCAL/REMOTE
+ *   ⇒ MỖI lượt có thay đổi phải mang `totpCode` tươi: `kiemTotpCauHinh` = `kiemXacThucTheoMuc(ctx, 5, totpCode)`.
+ *   Vì sao mức 5 trong handler, không phải middleware `requireFreshTotp`: middleware ấy là pass-through khi `ACTUATION_STEPUP_2FA` tắt
+ *   (dev hiện tại) và cache 10 phút theo phiên; `kiemXacThucTheoMuc` mức 5 KHÔNG đọc cờ env nào, không đọc cache, mã dùng một lần, dùng
+ *   chung khoá sai T16 (`TOTP_TAM_KHOA`). Kiểm ĐẶT CUỐI — ngay trước lượt ghi, sau phạm vi / kiểm hợp lệ / nhất quán — để một lỗi kiểm hợp
+ *   lệ không tiêu mã (cùng nguyên tắc R1a final M-3). Lượt không đổi gì (`changed:false`, `daGo:false`) không ghi ⇒ không đòi mã.
+ *   Ba thủ tục thuộc nhóm giới hạn "2fa" (trpcGioiHanThuTuc.ts) — việc cấu hình hiếm, bóp tần suất chấp nhận được.
  * PHẠM VI: MỌI thủ tục kiểm lại ở máy chủ (`idsTrongPhamVi("machine", phamViCua(ctx), {strict:true})`); adapter không gắn máy chỉ với
  *   phạm vi toàn quyền; "không tồn tại" và "ngoài phạm vi" trả CÙNG một NOT_FOUND.
  * AUDIT: mỗi mutation có thay đổi ghi `recordAuditEvent` bằng CHÍNH `tx` của thay đổi (before / after / lyDo) — lỗi ⇒ cả hai rollback.
@@ -47,9 +54,47 @@ import { TAG_DUNG_MAC_DINH } from "../services/ot/tagLenhMacDinh";
 import { validateStopValue } from "../services/ot/stopPin";
 import { canonicalOtValue } from "../services/ot/otActionBinding";
 import type { MucRuiRo } from "../services/ot/aiControlGate";
+import { kiemXacThucTheoMuc, type CtxXacThuc } from "../_core/xacThucTheoMuc";
+import { loiTotpKhoa } from "../_core/totpKhoaSai";
 
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 const kySuProcedure = roleProcedure("admin", "engineer").use(require2FA).use(moduleGate("MOD_OT_CONTROL"));
+
+/** Mã TOTP 6 số của ba mutation cấu hình (vắng ⇒ `TOTP_CAN` ở handler, không phải lỗi zod — UI hiện đúng câu "cần mã"). */
+const totpInput = z.string().max(16).optional();
+
+/**
+ * kiem-dinh P1-2 — TOTP TƯƠI cho mọi thay đổi cấu hình kênh / chế độ (xem đầu tệp). Mức 5 cố định: sàn vai ACTUATION_ROLES (admin/
+ * engineer của `kySuProcedure` đều thuộc), phải đăng ký 2FA, mã 6 số mỗi lượt, không cache phiên, không đọc cờ env. Từ chối ⇒ NÉM appError.
+ */
+async function kiemTotpCauHinh(ctx: CtxXacThuc, totpCode: string | undefined): Promise<void> {
+  const kq = await kiemXacThucTheoMuc(ctx, 5, totpCode);
+  if (kq.ok) return;
+  switch (kq.ma) {
+    case "TOTP_CAN":
+      throw appError("PRECONDITION_FAILED", "SCADA_CONFIG_TOTP_REQUIRED", { ma: kq.ma }, "Đổi cấu hình kênh cần mã xác thực 2 lớp (TOTP) — nhập mã rồi lưu lại.");
+    case "TOTP_SAI":
+      throw appError(
+        "PRECONDITION_FAILED",
+        "SCADA_CONFIG_TOTP_INVALID",
+        { ma: kq.ma },
+        "Mã xác thực 2 lớp không đúng hoặc đã được dùng — chờ mã mới rồi lưu lại.",
+      );
+    case "TOTP_CHUA_DANG_KY":
+      throw appError(
+        "PRECONDITION_FAILED",
+        "SCADA_CONFIG_TOTP_NOT_ENROLLED",
+        { ma: kq.ma },
+        "Đổi cấu hình kênh cần xác thực 2 lớp, nhưng tài khoản này chưa đăng ký 2FA.",
+      );
+    case "ROLE_FLOOR":
+      // không xảy ra với kySuProcedure (admin/engineer ∈ ACTUATION_ROLES) — giữ fail-closed nếu sàn vai đổi
+      throw appError("FORBIDDEN", "SCADA_ROLE_FLOOR", { ma: kq.ma, level: 5 }, "Vai trò không được đổi cấu hình kênh.");
+    case "TOTP_TAM_KHOA":
+    case "TOTP_KHONG_KIEM_DUOC":
+      throw loiTotpKhoa(kq.ma === "TOTP_TAM_KHOA" ? { ma: kq.ma, conLaiMs: kq.conLaiMs } : { ma: kq.ma }, { ma: kq.ma })!;
+  }
+}
 
 async function getDb() {
   const db = await getDbRaw();
@@ -291,6 +336,7 @@ const cheDoRouter = router({
         tagKey: z.string().min(1).max(128),
         giaTriRemote: z.union([z.number().finite(), z.boolean(), z.string().max(256)]),
         lyDo: lyDoInput,
+        totpCode: totpInput,
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -358,6 +404,7 @@ const cheDoRouter = router({
         ) {
           return { changed: false, machineId: may.id, ...sau };
         }
+        await kiemTotpCauHinh(ctx, input.totpCode); // P1-2: cuối, ngay trước lượt ghi
         const now = new Date();
         await tx
           .insert(scadaKenhCheDo)
@@ -379,7 +426,7 @@ const cheDoRouter = router({
   /** Gỡ kênh chế độ của máy (máy thành LOCAL `chua_khai`). Không có kênh ⇒ `daGo: false`, không audit. */
   go: kySuProcedure
     .use(requirePermission("machine_control", "canEdit"))
-    .input(z.object({ machineId: z.number().int().positive(), lyDo: lyDoInput }))
+    .input(z.object({ machineId: z.number().int().positive(), lyDo: lyDoInput, totpCode: totpInput }))
     .mutation(async ({ ctx, input }) => {
       const idsMay = await idsMayCua(ctx);
       const db = await getDb();
@@ -388,6 +435,7 @@ const cheDoRouter = router({
         if (!may || !nhinThay(may.id, idsMay)) throw khongThayMay();
         const [cu] = await tx.select().from(scadaKenhCheDo).where(eq(scadaKenhCheDo.machineId, may.id)).limit(1).for("update");
         if (!cu) return { daGo: false };
+        await kiemTotpCauHinh(ctx, input.totpCode); // P1-2: cuối, ngay trước lượt ghi
         await tx.delete(scadaKenhCheDo).where(eq(scadaKenhCheDo.machineId, may.id));
         await recordAuditEvent(tx, {
           entityType: "scada_kenh_che_do",
@@ -454,7 +502,7 @@ export const scadaKenhRouter = router({
    */
   capNhat: kySuProcedure
     .use(requirePermission("machine_control", "canEdit"))
-    .input(z.object({ tagId: z.number().int().positive(), patch: patchInput, lyDo: lyDoInput }))
+    .input(z.object({ tagId: z.number().int().positive(), patch: patchInput, lyDo: lyDoInput, totpCode: totpInput }))
     .mutation(async ({ ctx, input }) => {
       const patch: Partial<KhaiKenh> = {};
       for (const k of COT_KENH) {
@@ -569,6 +617,7 @@ export const scadaKenhRouter = router({
             }
           }
 
+          await kiemTotpCauHinh(ctx, input.totpCode); // P1-2: cuối, ngay trước lượt ghi (sau kiểm hợp lệ + nhất quán)
           await tx
             .update(deviceTags)
             .set({ ...patch, updatedAt: new Date() })

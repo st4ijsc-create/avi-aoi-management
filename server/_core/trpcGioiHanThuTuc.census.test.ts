@@ -127,7 +127,7 @@ describe("census nhóm 2fa của giới hạn theo thủ tục", () => {
  * Mỗi file sản xuất GỌI nó phải có mặt ở bảng dưới: hàm bao ngoài (AST) → thủ tục tRPC của router gọi hàm ấy. File mới / hàm mới gọi nó mà bảng chưa cập nhật ⇒ ĐỎ.
  * Thủ tục phải thuộc nhóm "2fa", TRỪ khi có `mienTru` (lý do bằng văn bản).
  */
-const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<string, Record<string, { routerFile: string; thuTuc: string; mienTru?: string }>> = {
+const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<string, Record<string, { routerFile: string; thuTuc: string | string[]; mienTru?: string }>> = {
   "server/services/scada/lenhHmi.ts": {
     xacNhanGhiTag: {
       routerFile: "server/routers/scadaCommandsRouter.ts",
@@ -135,6 +135,13 @@ const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<string, Record<string, { routerF
       // R1a final I-1 (2026-10-24) — ĐẢO "Ruling (merge follow-up)".
       mienTru:
         "Dò TOTP đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 lần / 5 phút, tính lượt TRƯỚC khi xác minh nên batch không lách được). Nhóm 20 / 15 phút dùng chung theo IP và theo người với deploy và twoFactor sẽ bóp các lệnh đổi giá trị đặt HMI mức 1/3 thường ngày.",
+    },
+  },
+  // kiem-dinh P1-2 (2026-10-24) — đổi cấu hình kênh / chế độ M12 đòi TOTP TƯƠI (mức 5) ⇒ THUỘC nhóm 2fa (việc cấu hình hiếm; bóp tần suất chấp nhận được).
+  "server/routers/scadaKenhRouter.ts": {
+    kiemTotpCauHinh: {
+      routerFile: "server/routers/scadaKenhRouter.ts",
+      thuTuc: ["scadaKenh.capNhat", "scadaKenh.cheDo.dat", "scadaKenh.cheDo.go"],
     },
   },
   "server/services/aiCopilotActions.ts": {
@@ -195,21 +202,25 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
     for (const [file, hams] of Object.entries(BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC)) {
       for (const [ham, m] of Object.entries(hams)) {
         expect(fileGoiHam(path.join(GOC, m.routerFile), ham), `${m.routerFile} không gọi ${ham} (${file})`).toBe(true);
-        const loaiTT = trpcProcedureType(appRouter, m.thuTuc);
-        expect(loaiTT, `${m.thuTuc} không tồn tại ở appRouter`).toBeDefined();
-        const nhom = phanNhomThuTuc(m.thuTuc, loaiTT, tap);
-        if (m.mienTru) {
-          expect(m.mienTru.length, `${m.thuTuc}: lý do miễn trừ quá ngắn`).toBeGreaterThan(40);
-          // Miễn trừ là RÀNG BUỘC: thủ tục miễn trừ KHÔNG được nằm trong nhóm 2fa (thêm lại vào nhóm ⇒ phải xoá miễn trừ, kèm phán quyết mới).
-          expect(nhom, `${m.thuTuc} có miễn trừ nhưng vẫn thuộc nhóm 2fa`).not.toBe("2fa");
-          mien++;
-        } else {
-          expect(nhom, `${m.thuTuc} xác minh TOTP qua kiemXacThucTheoMuc (${ham}) nhưng KHÔNG thuộc nhóm 2fa`).toBe("2fa");
-          dem++;
+        for (const thuTuc of Array.isArray(m.thuTuc) ? m.thuTuc : [m.thuTuc]) {
+          const loaiTT = trpcProcedureType(appRouter, thuTuc);
+          expect(loaiTT, `${thuTuc} không tồn tại ở appRouter`).toBeDefined();
+          const nhom = phanNhomThuTuc(thuTuc, loaiTT, tap);
+          if (m.mienTru) {
+            expect(m.mienTru.length, `${thuTuc}: lý do miễn trừ quá ngắn`).toBeGreaterThan(40);
+            // Miễn trừ là RÀNG BUỘC: thủ tục miễn trừ KHÔNG được nằm trong nhóm 2fa (thêm lại vào nhóm ⇒ phải xoá miễn trừ, kèm phán quyết mới).
+            expect(nhom, `${thuTuc} có miễn trừ nhưng vẫn thuộc nhóm 2fa`).not.toBe("2fa");
+            mien++;
+          } else {
+            expect(nhom, `${thuTuc} xác minh TOTP qua kiemXacThucTheoMuc (${ham}) nhưng KHÔNG thuộc nhóm 2fa`).toBe("2fa");
+            dem++;
+          }
         }
       }
     }
-    expect(dem + mien).toBe(2);
+    // 2026-10-24 · kiem-dinh P1-2: 2 → 5 (+ scadaKenh.capNhat / cheDo.dat / cheDo.go, THUỘC nhóm 2fa).
+    expect(dem + mien).toBe(5);
+    expect(dem).toBe(3);
     expect(mien).toBe(2); // aiCopilot.confirmAction + scadaCommands.confirm — miễn trừ có lý do (R1a final I-1)
   }, 120_000);
 });

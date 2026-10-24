@@ -44,7 +44,8 @@ export const NHOM_THU_TUC_NHAY_CAM: Readonly<Record<NhomNhayCam, CauHinhNhom>> =
     tienTo: ["twoFactor."],
     // ⚠ scadaCommands.confirm CỐ Ý KHÔNG có ở đây (R1a final I-1, 2026-10-24): TOTP của nó đã chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce;
     // nhóm 20/15 phút chung IP + người sẽ bóp lệnh HMI mức 1/3 thường ngày. Miễn trừ ghi ở census kiemXacThucTheoMuc (trpcGioiHanThuTuc.census.test.ts).
-    chinhXac: ["user.setup2FA", "user.verify2FA", "user.disable2FA"],
+    // kiem-dinh P1-2 (2026-10-24): ba mutation cấu hình kênh / chế độ M12 xác minh TOTP tươi qua kiemXacThucTheoMuc (mức 5) ⇒ thuộc nhóm (việc hiếm).
+    chinhXac: ["user.setup2FA", "user.verify2FA", "user.disable2FA", "scadaKenh.capNhat", "scadaKenh.cheDo.dat", "scadaKenh.cheDo.go"],
   },
   auth: {
     cuaSoMs: AUTH_RATE_LIMIT.windowMs,
