@@ -239,7 +239,7 @@ export function KenhCheDoMay({ rows, adapters, canAct }: KenhCheDoMayProps) {
                     <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: mau }} aria-hidden="true" />
                     {m.cheDo}
                   </span>
-                  <div className="text-xs text-muted-foreground">{khoaLyDo ? t(khoaLyDo) : m.lyDo}</div>
+                  <div className="text-xs text-muted-foreground">{khoaLyDo ? t(khoaLyDo) : t("scada.kenh.cheDo.khongRo", { lyDo: m.lyDo })}</div>
                   {m.canhBaoNguon && (
                     <div className="mt-1">
                       <CanhBaoNguonKenh nguon={m.canhBaoNguon} />

@@ -139,15 +139,39 @@ function HopSuaKenh({ hang, onDong }: { hang: HangKenh; onDong: () => void }) {
           </div>
           <div className="space-y-1">
             <Label htmlFor={id("min")}>{t("scada.kenh.dialog.min")}</Label>
-            <Input id={id("min")} type="number" step="any" disabled={!so} value={min} onChange={(e) => setMin(e.target.value)} />
+            <Input
+              id={id("min")}
+              inputMode="decimal"
+              autoComplete="off"
+              disabled={!so}
+              value={min}
+              aria-invalid={so && docSoNhap(min) === "loi" ? true : undefined}
+              onChange={(e) => setMin(e.target.value)}
+            />
           </div>
           <div className="space-y-1">
             <Label htmlFor={id("max")}>{t("scada.kenh.dialog.max")}</Label>
-            <Input id={id("max")} type="number" step="any" disabled={!so} value={max} onChange={(e) => setMax(e.target.value)} />
+            <Input
+              id={id("max")}
+              inputMode="decimal"
+              autoComplete="off"
+              disabled={!so}
+              value={max}
+              aria-invalid={so && docSoNhap(max) === "loi" ? true : undefined}
+              onChange={(e) => setMax(e.target.value)}
+            />
           </div>
           <div className="space-y-1">
             <Label htmlFor={id("buoc")}>{t("scada.kenh.dialog.buoc")}</Label>
-            <Input id={id("buoc")} type="number" step="any" disabled={!so} value={buoc} onChange={(e) => setBuoc(e.target.value)} />
+            <Input
+              id={id("buoc")}
+              inputMode="decimal"
+              autoComplete="off"
+              disabled={!so}
+              value={buoc}
+              aria-invalid={so && docSoNhap(buoc) === "loi" ? true : undefined}
+              onChange={(e) => setBuoc(e.target.value)}
+            />
           </div>
           <div className="space-y-1">
             <Label htmlFor={id("muc")}>{t("scada.kenh.dialog.muc")}</Label>
@@ -161,7 +185,8 @@ function HopSuaKenh({ hang, onDong }: { hang: HangKenh; onDong: () => void }) {
             </select>
           </div>
           {!so && <p className="text-xs text-muted-foreground sm:col-span-2">{t("scada.kenh.dialog.daiChiSo")}</p>}
-          {!daiHopLe && <p className="text-xs text-destructive sm:col-span-2">{t("scada.kenh.dialog.daiLoi")}</p>}
+          {!soHopLe && <p className="text-xs text-destructive sm:col-span-2">{t("scada.kenh.dialog.soLoi")}</p>}
+          {soHopLe && !daiHopLe && <p className="text-xs text-destructive sm:col-span-2">{t("scada.kenh.dialog.daiLoi")}</p>}
         </div>
         <TruongLyDo id={id("ly-do")} value={lyDo} onChange={setLyDo} />
         <DialogFooter>

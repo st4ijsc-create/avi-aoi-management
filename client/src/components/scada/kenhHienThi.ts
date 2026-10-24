@@ -47,12 +47,13 @@ export type MucHienThi =
   | { kieu: "khongApDung" };
 
 /**
- * Mức tác động HIỂN THỊ: đã khai ⇒ số đó; kênh RA chưa khai ⇒ "5 — mặc định đóng" (máy chủ fail-closed NULL ⇒ 5); kênh vào / tính toán
- * không nhận lệnh ghi ⇒ mức không áp dụng ("—").
+ * Mức tác động HIỂN THỊ — CHỈ định dạng, KHÔNG tự suy: con số luôn là `mucHieuLuc` do máy chủ trả (NULL ⇒ 5 là luật của máy chủ).
+ * Kênh RA mà `actuationLevel` chưa khai (null) ⇒ "5 — mặc định đóng"; kênh vào / tính toán không nhận lệnh ghi và chưa khai ⇒ "—".
  */
-export function mucHienThi(h: { actuationLevel: number | null; loaiKenh: LoaiKenh }): MucHienThi {
-  if (h.actuationLevel !== null && h.actuationLevel !== undefined) return { kieu: "khai", muc: h.actuationLevel };
-  return laLoaiKenhGhi(h.loaiKenh) ? { kieu: "macDinhDong" } : { kieu: "khongApDung" };
+export function mucHienThi(h: { actuationLevel: number | null; mucHieuLuc: number; loaiKenh: LoaiKenh }): MucHienThi {
+  if (h.actuationLevel !== null && h.actuationLevel !== undefined) return { kieu: "khai", muc: h.mucHieuLuc };
+  if (!laLoaiKenhGhi(h.loaiKenh)) return { kieu: "khongApDung" };
+  return h.mucHieuLuc === 5 ? { kieu: "macDinhDong" } : { kieu: "khai", muc: h.mucHieuLuc };
 }
 
 /** Số theo ngôn ngữ giao diện (dấu thập phân); null ⇒ "—". */
@@ -87,10 +88,17 @@ export function epGiaTriRemote(dataType: string | null | undefined, nhap: string
   }
 }
 
-/** Số trong ô nhập: "" ⇒ null (bỏ khai), không phải số hữu hạn ⇒ "loi". */
+/** Số thập phân/khoa học hợp lệ, dấu "." (không hex, không "-", "1e" gõ dở, không dấu phẩy). */
+const SO_NHAP = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
+/**
+ * Số trong ô nhập (đọc từ CHỮ THÔ, không từ `<input type=number>` vốn trả "" cho "-" / "1e" gõ dở): CHỈ ô người dùng thực sự xoá trắng
+ * ("" / khoảng trắng) mới cho null (bỏ khai); chữ gõ dở hoặc không phải số ⇒ "loi" (khoá nút gửi, không lặng lẽ bỏ giới hạn).
+ */
 export function docSoNhap(s: string): number | null | "loi" {
   const t = s.trim();
   if (t === "") return null;
+  if (!SO_NHAP.test(t)) return "loi";
   const n = Number(t);
   return Number.isFinite(n) ? n : "loi";
 }

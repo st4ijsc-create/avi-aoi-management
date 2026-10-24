@@ -222,6 +222,18 @@ describe("ScadaKenh — bảng kênh theo adapter", () => {
     expect(within(hangTag("temp")).getByTestId("muc")).toHaveTextContent(/^—$/);
   });
 
+  it("mức hiển thị là mucHieuLuc của MÁY CHỦ (không tự suy): khai 3 nhưng máy chủ nói 4 ⇒ \"4\"; chưa khai + kênh ra + máy chủ nói 5 ⇒ mặc định đóng", () => {
+    srv.kenh[1] = [
+      tag({ tagId: 301, tagKey: "sv_muc", writable: true, loaiKenh: "output", actuationLevel: 3, mucHieuLuc: 4 }),
+      tag({ tagId: 302, tagKey: "sv_macdinh", writable: true, loaiKenh: "output", actuationLevel: null, mucHieuLuc: 5 }),
+      tag({ tagId: 303, tagKey: "sv_vao", loaiKenh: "input", actuationLevel: null, mucHieuLuc: 5 }),
+    ];
+    render(<ScadaKenh />);
+    expect(within(hangTag("sv_muc")).getByTestId("muc")).toHaveTextContent(/^4$/);
+    expect(within(hangTag("sv_macdinh")).getByTestId("muc")).toHaveTextContent(S("scada.kenh.mucMacDinhDong"));
+    expect(within(hangTag("sv_vao")).getByTestId("muc")).toHaveTextContent(/^—$/);
+  });
+
   it("loại kênh hiệu lực kèm 'khai' / 'suy từ writable'; dải, bước, tên hiển thị", () => {
     render(<ScadaKenh />);
     const khai = hangTag("valve");
@@ -287,6 +299,15 @@ describe("ScadaKenh — khối kênh chế độ theo máy", () => {
     LY_DO.forEach((ly, i) => {
       expect(within(hangMay(`MX-${ly}`)).getByText(chu[i])).toBeInTheDocument();
     });
+  });
+
+  it("lý do KHÔNG có trong bản đồ (máy chủ thêm lý do mới) ⇒ vẫn hiện chế độ + câu dự phòng có mã, không sập", () => {
+    srv.cheDo = [may({ cheDo: "LOCAL", lyDo: "ly_do_moi" })];
+    render(<ScadaKenh />);
+    const h = hangMay("M-10");
+    expect(within(h).getByText("LOCAL")).toBeInTheDocument();
+    expect(within(h).getByText(S("scada.kenh.cheDo.khongRo", { lyDo: "ly_do_moi" }))).toBeInTheDocument();
+    expect(h.textContent).not.toMatch(/scada.kenh./);
   });
 
   it("kênh bị che (kenhAn) ⇒ chữ 'kênh không hiển thị', vẫn hiện chế độ + lý do, không lộ tag", () => {
@@ -428,6 +449,55 @@ describe("ScadaKenh — hộp thoại sửa kênh (lý do ≥ 5 ký tự)", () =
     expect(srv.mutCalls).toEqual([
       { proc: "capNhat", vars: { tagId: 102, patch: { displayName: null, actuationLevel: null, writeMin: 5 }, lyDo: "dọn khai báo" } },
     ]);
+  });
+
+  it("xoá trắng ô giới hạn dưới đang khai ⇒ gửi writeMin: null (chỉ ô NGƯỜI DÙNG xoá mới thành null)", () => {
+    render(<ScadaKenh />);
+    const dlg = moSua("speed_sp");
+    fireEvent.change(within(dlg).getByLabelText(S("scada.kenh.dialog.min")), { target: { value: "" } });
+    fireEvent.change(within(dlg).getByLabelText(S("scada.kenh.dialog.lyDo")), { target: { value: "bỏ giới hạn dưới" } });
+    fireEvent.click(within(dlg).getByRole("button", { name: S("scada.kenh.dialog.gui") }));
+    expect(srv.mutCalls).toEqual([{ proc: "capNhat", vars: { tagId: 102, patch: { writeMin: null }, lyDo: "bỏ giới hạn dưới" } }]);
+  });
+
+  it("chọn lại \"Không khai (suy từ writable)\" ở loại kênh đang khai ⇒ gửi channelKind: null", () => {
+    render(<ScadaKenh />);
+    const dlg = moSua("valve");
+    fireEvent.change(within(dlg).getByLabelText(S("scada.kenh.dialog.loaiKenh")), { target: { value: "" } });
+    fireEvent.change(within(dlg).getByLabelText(S("scada.kenh.dialog.lyDo")), { target: { value: "bỏ khai loại kênh" } });
+    fireEvent.click(within(dlg).getByRole("button", { name: S("scada.kenh.dialog.gui") }));
+    expect(srv.mutCalls).toEqual([{ proc: "capNhat", vars: { tagId: 104, patch: { channelKind: null }, lyDo: "bỏ khai loại kênh" } }]);
+  });
+
+  // An toàn: <input type=number> trả "" cho chữ gõ dở ("-", "1e") ⇒ trước đây thành null và LẶNG LẼ bỏ một giới hạn đã khai (nới dải ngoài ý muốn).
+  it.each(["-", "1e", "1.2.3", "abc", "0x10", "1,5"])("giới hạn dưới gõ dở / không phải số %j ⇒ nút gửi khoá + báo lỗi, KHÔNG gửi null", (go) => {
+    render(<ScadaKenh />);
+    const dlg = moSua("speed_sp");
+    fireEvent.change(within(dlg).getByLabelText(S("scada.kenh.dialog.min")), { target: { value: go } });
+    fireEvent.change(within(dlg).getByLabelText(S("scada.kenh.dialog.lyDo")), { target: { value: "lý do đủ dài" } });
+    const gui = within(dlg).getByRole("button", { name: S("scada.kenh.dialog.gui") });
+    expect(gui).toBeDisabled();
+    expect(within(dlg).getByText(S("scada.kenh.dialog.soLoi"))).toBeInTheDocument();
+    expect(within(dlg).getByLabelText(S("scada.kenh.dialog.min"))).toHaveAttribute("aria-invalid", "true");
+    fireEvent.click(gui);
+    expect(srv.mutCalls).toEqual([]);
+    // sửa lại thành số hợp lệ ⇒ mở khoá, gửi số (không null)
+    fireEvent.change(within(dlg).getByLabelText(S("scada.kenh.dialog.min")), { target: { value: "-5" } });
+    expect(within(dlg).queryByText(S("scada.kenh.dialog.soLoi"))).toBeNull();
+    fireEvent.click(gui);
+    expect(srv.mutCalls).toEqual([{ proc: "capNhat", vars: { tagId: 102, patch: { writeMin: -5 }, lyDo: "lý do đủ dài" } }]);
+  });
+
+  it("bước và giới hạn trên gõ dở cũng khoá nút gửi", () => {
+    render(<ScadaKenh />);
+    const dlg = moSua("speed_sp");
+    fireEvent.change(within(dlg).getByLabelText(S("scada.kenh.dialog.lyDo")), { target: { value: "lý do đủ dài" } });
+    for (const nhan of ["scada.kenh.dialog.max", "scada.kenh.dialog.buoc"]) {
+      const o = within(dlg).getByLabelText(S(nhan));
+      fireEvent.change(o, { target: { value: "-" } });
+      expect(within(dlg).getByRole("button", { name: S("scada.kenh.dialog.gui") })).toBeDisabled();
+      fireEvent.change(o, { target: { value: nhan.endsWith("max") ? "100" : "0.5" } });
+    }
   });
 
   it("dải sai (min > max) hoặc bước ≤ 0 ⇒ nút gửi khoá + báo lỗi", () => {

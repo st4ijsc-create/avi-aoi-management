@@ -23563,7 +23563,8 @@
         "khacRemote": "Kênh chế độ khác giá trị REMOTE ⇒ LOCAL",
         "loiDoc": "Lỗi đọc kênh chế độ ⇒ coi như LOCAL",
         "kenhSaiMay": "Kênh chế độ không thuộc adapter của máy này ⇒ coi như LOCAL",
-        "kenhAn": "Kênh không hiển thị (ngoài phạm vi của bạn)"
+        "kenhAn": "Kênh không hiển thị (ngoài phạm vi của bạn)",
+        "khongRo": "Lý do không xác định ({{lyDo}}) ⇒ coi như LOCAL"
       },
       "dialog": {
         "suaTieuDe": "Sửa kênh {{tagKey}}",
@@ -23591,7 +23592,8 @@
         "giaTriSai": "Giá trị REMOTE không đúng kiểu của tag.",
         "khongCoAdapterMay": "Máy này chưa có adapter nào trong phạm vi của bạn.",
         "goTieuDe": "Gỡ kênh chế độ — máy {{code}}",
-        "goMoTa": "Máy sẽ được coi là LOCAL (chưa khai) cho tới khi khai lại kênh."
+        "goMoTa": "Máy sẽ được coi là LOCAL (chưa khai) cho tới khi khai lại kênh.",
+        "soLoi": "Giá trị số không hợp lệ (đang gõ dở?) — dùng dấu chấm thập phân, hoặc xoá trắng ô để bỏ khai báo."
       },
       "toast": {
         "capNhat": "Đã cập nhật khai báo kênh.",

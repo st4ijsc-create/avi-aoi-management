@@ -23589,7 +23589,8 @@
         "khacRemote": "Mode channel differs from the REMOTE value ⇒ LOCAL",
         "loiDoc": "Could not read the mode channel ⇒ treated as LOCAL",
         "kenhSaiMay": "Mode channel is not on this machine's adapter ⇒ treated as LOCAL",
-        "kenhAn": "Channel hidden (outside your scope)"
+        "kenhAn": "Channel hidden (outside your scope)",
+        "khongRo": "Unknown reason ({{lyDo}}) ⇒ treated as LOCAL"
       },
       "dialog": {
         "suaTieuDe": "Edit channel {{tagKey}}",
@@ -23617,7 +23618,8 @@
         "giaTriSai": "The REMOTE value does not match the tag's data type.",
         "khongCoAdapterMay": "This machine has no adapter in your scope.",
         "goTieuDe": "Unlink mode channel — machine {{code}}",
-        "goMoTa": "The machine will be treated as LOCAL (not declared) until a channel is declared again."
+        "goMoTa": "The machine will be treated as LOCAL (not declared) until a channel is declared again.",
+        "soLoi": "Invalid number (half-typed?) — use a decimal point, or empty the field to clear the declaration."
       },
       "toast": {
         "capNhat": "Channel declaration updated.",

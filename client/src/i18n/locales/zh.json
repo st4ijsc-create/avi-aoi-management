@@ -23591,7 +23591,8 @@
         "khacRemote": "模式通道不等于 REMOTE 值 ⇒ LOCAL",
         "loiDoc": "读取模式通道出错 ⇒ 视为 LOCAL",
         "kenhSaiMay": "模式通道不属于本设备的适配器 ⇒ 视为 LOCAL",
-        "kenhAn": "通道已隐藏（超出您的权限范围）"
+        "kenhAn": "通道已隐藏（超出您的权限范围）",
+        "khongRo": "未知原因（{{lyDo}}）⇒ 视为 LOCAL"
       },
       "dialog": {
         "suaTieuDe": "编辑通道 {{tagKey}}",
@@ -23619,7 +23620,8 @@
         "giaTriSai": "REMOTE 值与标签的数据类型不符。",
         "khongCoAdapterMay": "您的权限范围内此设备没有适配器。",
         "goTieuDe": "移除模式通道 — 设备 {{code}}",
-        "goMoTa": "在重新声明通道之前，设备将视为 LOCAL（未声明）。"
+        "goMoTa": "在重新声明通道之前，设备将视为 LOCAL（未声明）。",
+        "soLoi": "数值无效（输入未完成？）— 请使用小数点，或清空字段以取消声明。"
       },
       "toast": {
         "capNhat": "通道声明已更新。",
