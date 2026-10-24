@@ -164,7 +164,8 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
 // ★ 2026-10-24 nhóm 3 (events + metrics + advice + pdmHealth + compliance): A 53→47 · S 46→52.
 // ★ 2026-10-24 /api/external nhóm ①: A 47→44 · S 52→55.
 // ★ 2026-10-24 /api/external nhóm ②: A 44→41 · S 55→58 (3 tuyến alerts/bulletins đã trích sang routes/externalAlertApi.ts và lọc theo phạm vi).
-const GHIM = { A: 41, C: 40, D: 96, S: 58, U: 16, tong: 251 } as const;
+// ★ 2026-10-24 /api/external nhóm ③: A 41→29 · S 58→70 (12 tuyến: stations/:id + 6 nhánh, resolve-topic, workstations, workstations/:id, products, products/:id).
+const GHIM = { A: 29, C: 40, D: 96, S: 70, U: 16, tong: 251 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -350,7 +351,7 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
     "server/_core/index.ts#GET /api/public/products/:productCode/reference-image-file",
     "server/_core/index.ts#GET /api/external/machines",
     "server/_core/index.ts#GET /api/external/machines/by-code/:code",
-    "server/_core/index.ts#GET /api/external/stations",
+    "server/routes/externalStationApi.ts#GET /api/external/stations",
   ] as const;
 
   for (const k of CA_CHUAN) {
@@ -377,6 +378,7 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
     //   `403 · application/json · image_factory_scope_denied` trên đường dẫn của nhà máy B, và
     //   `200 · image/png` trên đường dẫn của chính A. Xem `phamViTuyenBaseline.ts`.
     expect(cua("S").map(khoaTuyen).sort()).toEqual([
+      // ★ 2026-10-24 /api/external nhóm ③: stations/:id + 6 nhánh + resolve-topic + workstations(+/:id) (trích sang routes/externalStationApi.ts) và products(+/:id) lọc theo phạm vi người gọi. Lưới: externalStationPhamVi.db.test.ts, externalInspectionPhamVi.db.test.ts.
       // ★ 2026-10-24 /api/external nhóm ②: alerts · alerts/:alertId · bulletins (trích sang routes/externalAlertApi.ts) lọc theo phạm vi người gọi. Lưới: routes/externalAlertPhamVi.db.test.ts.
       // ★ 2026-10-24 /api/external nhóm ①: inspections/images|measurements|events lọc theo máy trong nhà máy được gán (master key không đổi), kèm scopeApplied. Lưới: routes/externalInspectionPhamVi.db.test.ts.
       // ★ 2026-10-24 nhóm 3 (events/metrics/advice/pdmHealth/compliance): sự kiện, chỉ số, đề xuất, sức khoẻ và đếm tuân thủ chỉ trong phạm vi khoá (phamViKhoa.ts). Lưới: eventsMetricsAdvicePdmPhamViKhoa.db.test.ts.
@@ -398,7 +400,6 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/_core/index.ts#GET /api/aoi/image/:packageId/:fileName",
       "server/_core/index.ts#GET /api/external/machines",
       "server/_core/index.ts#GET /api/external/machines/by-code/:code",
-      "server/_core/index.ts#GET /api/external/stations",
       "server/_core/index.ts#GET /api/inspection/:id/images",
       "server/_core/index.ts#GET /api/measurement-point/:id/reference-image",
       "server/_core/index.ts#GET /api/product-model/:id/reference-images",
@@ -452,6 +453,19 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/routes/externalInspectionApi.ts#GET /api/external/inspections/events",
       "server/routes/externalInspectionApi.ts#GET /api/external/inspections/images",
       "server/routes/externalInspectionApi.ts#GET /api/external/inspections/measurements",
+      "server/routes/externalInspectionApi.ts#GET /api/external/products",
+      "server/routes/externalInspectionApi.ts#GET /api/external/products/:id",
+      "server/routes/externalStationApi.ts#GET /api/external/stations",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id/fail-history",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id/inspection-points",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id/measurement-stats",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id/point-detail",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id/products",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id/statistics",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/resolve-topic",
+      "server/routes/externalStationApi.ts#GET /api/external/workstations",
+      "server/routes/externalStationApi.ts#GET /api/external/workstations/:id",
     ]);
   });
 });

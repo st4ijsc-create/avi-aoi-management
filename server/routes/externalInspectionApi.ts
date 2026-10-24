@@ -29,7 +29,8 @@ import { sql } from "drizzle-orm";
 // ★★★ Vé ảnh ngắn hạn — chủ DUY NHẤT của phép ký là `_core/anhKyUrl`. Xem khối chú thích tại mỗi
 //     lời gọi `kyAnhTrongThan` bên dưới để biết vì sao ký ở BIÊN phản hồi chứ không từng trường.
 import { kyAnhTrongThan } from "../_core/anhKyUrl";
-import { andTrongPhamVi } from "./phamViExternal";
+import { andTrongPhamVi, andSanPhamTrongPhamVi } from "./phamViExternal";
+import { thanTuChoiPhamViNgoai } from "./_phamViNgoai";
 import { phamViGoiNgoai, nguoiXemCuaPhamVi, phamViDaAp } from "./_phamViNgoai"; // 2026-10-24 — phạm vi người dùng/master cho /api/external
 import { docGioTuongNhaMay } from "../utils/factoryTime";
 // Canonical KPI math + factory-timezone bucketing (doc 27 decision #4, gaps A2/A3/A4).
@@ -1103,6 +1104,12 @@ export function registerExternalInspectionRoutes(
       const db = await getDb();
       if (!db) return res.status(500).json({ success: false, message: "Database unavailable" });
 
+      // phạm vi người gọi (rà bảo mật 2026-10-24): master key/admin ⇒ không lọc; tài khoản Bearer ⇒ chỉ sản phẩm gắn máy/điểm đo/kiểm tra của nhà máy được gán
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai);
+      const { productModels } = await import("../../drizzle/schema");
+      const congSp = await andSanPhamTrongPhamVi(nguoiXemNgoai, productModels.id);
+
       // Count total
       const countResult = await db.execute(sql`
         SELECT COUNT(*) AS total
@@ -1110,6 +1117,7 @@ export function registerExternalInspectionRoutes(
         WHERE 1=1
           ${search ? sql`AND (code ILIKE ${"%" + search + "%"} OR name ILIKE ${"%" + search + "%"})` : sql``}
           ${lifecycleStatus ? sql`AND "lifecycleStatus" = ${lifecycleStatus}` : sql``}
+          ${congSp}
       `);
       const totalRows = (countResult as any).rows || (countResult as any);
       const total = Number((totalRows as any[])[0]?.total || 0);
@@ -1125,6 +1133,7 @@ export function registerExternalInspectionRoutes(
         WHERE 1=1
           ${search ? sql`AND (code ILIKE ${"%" + search + "%"} OR name ILIKE ${"%" + search + "%"})` : sql``}
           ${lifecycleStatus ? sql`AND "lifecycleStatus" = ${lifecycleStatus}` : sql``}
+          ${congSp}
         ORDER BY code ASC
         LIMIT ${limit} OFFSET ${offset}
       `);
@@ -1153,6 +1162,7 @@ export function registerExternalInspectionRoutes(
           pagination: { total, limit, offset, hasMore: offset + limit < total },
           products,
         },
+        scopeApplied: phamViDaAp(pvNgoai),
       });
     } catch (error: any) {
       console.error("[External] products list error:", error);
@@ -1192,6 +1202,15 @@ export function registerExternalInspectionRoutes(
       const product = (productRows as any[])[0];
       if (!product) {
         return res.status(404).json({ success: false, message: `Product with ID ${id} not found` });
+      }
+      // phạm vi người gọi (rà bảo mật 2026-10-24): master key/admin ⇒ không lọc; tài khoản Bearer ⇒ chỉ sản phẩm gắn máy/điểm đo/kiểm tra của nhà máy được gán: sản phẩm CÓ TỒN TẠI nhưng ngoài phạm vi ⇒ 403 mã máy-đọc-được
+      {
+        const nguoiXemNgoai = nguoiXemCuaPhamVi(phamViGoiNgoai(req));
+        const { productModels } = await import("../../drizzle/schema");
+        const congSp = await andSanPhamTrongPhamVi(nguoiXemNgoai, productModels.id);
+        const trong = await db.execute(sql`SELECT 1 AS ok FROM product_models WHERE id = ${id} ${congSp} LIMIT 1`);
+        const trongRows = (trong as any).rows || (trong as any);
+        if ((trongRows as any[]).length === 0) return res.status(403).json(thanTuChoiPhamViNgoai("product", String(id)));
       }
 
       // Get measurement points

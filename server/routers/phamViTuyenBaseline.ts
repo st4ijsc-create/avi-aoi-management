@@ -65,23 +65,13 @@
  * Đừng sửa tay để làm cổng xanh — sửa mã, rồi xoá dòng.
  */
 export const NO_PHAM_VI_TUYEN: readonly string[] = [
-  // ── server/_core/index.ts (16) ─────────────────────────────────────────────────────────────────
+  // ── server/_core/index.ts (6) ─────────────────────────────────────────────────────────────────
   "server/_core/index.ts#GET /api/external/dashboard/summary",
   "server/_core/index.ts#GET /api/external/hierarchy/factory/:factoryId",
   "server/_core/index.ts#GET /api/external/hierarchy/mqtt-topics",
   "server/_core/index.ts#GET /api/external/hierarchy/summary",
   "server/_core/index.ts#GET /api/external/hierarchy/tree",
-  "server/_core/index.ts#GET /api/external/stations/:id",
-  "server/_core/index.ts#GET /api/external/stations/:id/fail-history",
-  "server/_core/index.ts#GET /api/external/stations/:id/inspection-points",
-  "server/_core/index.ts#GET /api/external/stations/:id/measurement-stats",
-  "server/_core/index.ts#GET /api/external/stations/:id/point-detail",
-  "server/_core/index.ts#GET /api/external/stations/:id/products",
-  "server/_core/index.ts#GET /api/external/stations/:id/statistics",
-  "server/_core/index.ts#GET /api/external/stations/resolve-topic",
   "server/_core/index.ts#GET /api/external/statistics/measurement-points",
-  "server/_core/index.ts#GET /api/external/workstations",
-  "server/_core/index.ts#GET /api/external/workstations/:id",
   // ── server/api/v1/advice.ts (0) ────────────────────────────────────────────────────────────────
   // ── server/api/v1/assets.ts (0) ────────────────────────────────────────────────────────────────
   // ── server/api/v1/events.ts (0) ────────────────────────────────────────────────────────────────
@@ -101,7 +91,7 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   // ── server/api/v1/router.ts (0) ────────────────────────────────────────────────────────────────
   // ── server/api/v1/state.ts (0) ─────────────────────────────────────────────────────────────────
   // ── server/routes/edgeDownload.ts (0) ──────────────────────────────────────────────────────────
-  // ── server/routes/externalInspectionApi.ts (20) ────────────────────────────────────────────────
+  // ── server/routes/externalInspectionApi.ts (18) ────────────────────────────────────────────────
   "server/routes/externalInspectionApi.ts#GET /api/external/alerts/summary",
   "server/routes/externalInspectionApi.ts#GET /api/external/fleet/summary",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/ai-analysis",
@@ -119,8 +109,6 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/yield-comparison",
   "server/routes/externalInspectionApi.ts#GET /api/external/oee/summary",
   "server/routes/externalInspectionApi.ts#GET /api/external/pdm/summary",
-  "server/routes/externalInspectionApi.ts#GET /api/external/products",
-  "server/routes/externalInspectionApi.ts#GET /api/external/products/:id",
   "server/routes/externalInspectionApi.ts#GET /api/external/safety/summary",
   // ── server/routes/reportArtifactRoutes.ts (0) ──────────────────────────────────────────────────
   // ⚠ MỘT MỤC "TRONG SỔ VÌ BAO ĐÓNG, KHÔNG VÌ CÓ LỖ" — đọc trước khi ai đó đi vá nó. Tuyến này CÓ

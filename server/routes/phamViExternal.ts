@@ -9,7 +9,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import { idsTrongPhamVi, type PhamViNguoiXem } from "../db/hierarchy";
 
-export type CapPhanCapExternal = "factory" | "workshop" | "line" | "station" | "machine";
+export type CapPhanCapExternal = "factory" | "workshop" | "line" | "station" | "machine" | "workstation";
 
 /** Tập id cấp phân cấp trong phạm vi người gọi: `null` = toàn quyền (`nguoiXem` undefined); `[]` = rỗng. Không phân giải được phạm vi ⇒ NÉM (fail-closed). */
 export async function idsCapExternal(nguoiXem: PhamViNguoiXem | undefined, cap: CapPhanCapExternal): Promise<number[] | null> {
@@ -30,4 +30,16 @@ export async function andTrongPhamVi(nguoiXem: PhamViNguoiXem | undefined, cap: 
 export async function idTrongPhamViExternal(nguoiXem: PhamViNguoiXem | undefined, cap: CapPhanCapExternal, id: number): Promise<boolean> {
   const ids = await idsCapExternal(nguoiXem, cap);
   return ids === null || ids.includes(id);
+}
+
+/**
+ * Mảnh SQL thô `AND (<cột sản phẩm> thuộc ≥1 nhà máy trong phạm vi)` — dùng LẠI nguyên thuỷ `congSanPhamTrongNhaMay` của `publicProductScope.ts` (hợp ba đường: ánh xạ máy · điểm đo · kiểm tra),
+ * KHÔNG dựng luật thứ hai. Mảnh rỗng khi toàn quyền; phạm vi rỗng ⇒ `AND 1 = 0`. Sản phẩm chưa gắn máy/điểm đo/kiểm tra nào ⇒ ẩn với người dùng hẹp (fail-closed).
+ */
+export async function andSanPhamTrongPhamVi(nguoiXem: PhamViNguoiXem | undefined, cot: import("drizzle-orm").AnyColumn): Promise<SQL> {
+  const fids = await idsCapExternal(nguoiXem, "factory");
+  if (fids === null) return sql``;
+  if (fids.length === 0) return sql`AND 1 = 0`;
+  const { congSanPhamTrongNhaMay } = await import("../routers/publicProductScope");
+  return sql`AND (${sql.join(fids.map((f) => congSanPhamTrongNhaMay(cot, f)), sql` OR `)})`;
 }

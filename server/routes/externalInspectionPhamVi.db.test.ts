@@ -20,7 +20,7 @@ let server: Server | null = null;
 let base = "";
 const x = <T>(r: unknown): T => (r as T[])[0]!;
 
-interface Nm { factoryId: number; code: string; machineId: number; stationId: number; inspId: number; mrId: number; userId: number; anh: string }
+interface Nm { pmId: number; factoryId: number; code: string; machineId: number; stationId: number; inspId: number; mrId: number; userId: number; anh: string }
 let A!: Nm;
 let B!: Nm;
 let admin!: { id: number; role: string };
@@ -53,7 +53,7 @@ async function taoNhanh(ten: string, pmId: number): Promise<Nm> {
   const pk = x<{ id: number }>(await sql`INSERT INTO inspection_packages ("machineId", "packageId") VALUES (${m.id}, ${DAU + "-P" + ten}) RETURNING id`);
   pkgId = pk.id;
   await sql`INSERT INTO package_activity_logs ("packageDbId", "packageId", "machineId", event, message) VALUES (${pk.id}, ${DAU + "-P" + ten}, ${m.id}, ${await nhan("package_activity_logs", "event")}, ${DAU})`;
-  return { factoryId: f.id, code, machineId: m.id, stationId: s.id, inspId: pi.id, mrId: mr.id, userId: u.id, anh };
+  return { pmId, factoryId: f.id, code, machineId: m.id, stationId: s.id, inspId: pi.id, mrId: mr.id, userId: u.id, anh };
 }
 async function goi(path: string, who: "master" | number): Promise<{ status: number; body: any }> {
   const r = await fetch(`${base}${path}`, { headers: { "x-test-who": String(who) } });
@@ -64,12 +64,13 @@ const KHOANG = "startDate=2020-01-01&endDate=2099-01-01";
 describe.skipIf(!DB_URL)("external inspections images/measurements/events — phạm vi người dùng", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, onnotice: () => {} });
-    const pm = x<{ id: number }>(await sql`INSERT INTO product_models (code, name) VALUES (${DAU + "-PM"}, ${DAU}) RETURNING id`);
+    const pmA = x<{ id: number }>(await sql`INSERT INTO product_models (code, name) VALUES (${DAU + "-PMA"}, ${DAU}) RETURNING id`).id;
+    const pmB = x<{ id: number }>(await sql`INSERT INTO product_models (code, name) VALUES (${DAU + "-PMB"}, ${DAU}) RETURNING id`).id;
     const pd = x<{ id: number }>(await sql`INSERT INTO measurement_point_defs ("productModelId", code, name, "measurementType", "positionX", "positionY")
-      VALUES (${pm.id}, ${DAU + "-PD"}, ${DAU}, ${await nhan("measurement_point_defs", "measurementType")}, 1, 1) RETURNING id`);
+      VALUES (${pmA}, ${DAU + "-PD"}, ${DAU}, ${await nhan("measurement_point_defs", "measurementType")}, 1, 1) RETURNING id`);
     pdId = pd.id;
-    A = await taoNhanh("A", pm.id);
-    B = await taoNhanh("B", pm.id);
+    A = await taoNhanh("A", pmA);
+    B = await taoNhanh("B", pmB);
     const ad = await taoNguoiDungTest("ad", "admin", { tienTo: "exi", ts: DAU, ten: "EXI ad" });
     admin = { id: ad.id, role: "admin" };
     usersById.set(admin.id, admin);
@@ -147,6 +148,27 @@ describe.skipIf(!DB_URL)("external inspections images/measurements/events — ph
     expect(may).toContain(A.machineId);
     expect(may).not.toContain(B.machineId);
     expect(r.body.data.pagination.total).toBe(1);
+  });
+  it("★★★ GET /products (danh sách) — chỉ sản phẩm gắn nhà máy A; /products/:id của B ⇒ 403; của A ⇒ 200", async () => {
+    const r = await goi(`/api/external/products?search=${DAU}&limit=200`, A.userId);
+    expect(r.status).toBe(200);
+    const ids: number[] = r.body.data.products.map((p: { id: number }) => p.id);
+    expect(ids).toContain(A.pmId);
+    expect(ids).not.toContain(B.pmId);
+    expect(r.body.data.pagination.total).toBe(1);
+    expect(r.body.scopeApplied).toBe(true);
+    const b = await goi(`/api/external/products/${B.pmId}`, A.userId);
+    expect(b.status).toBe(403);
+    expect(b.body.code).toBe("external_factory_scope_denied");
+    expect((await goi(`/api/external/products/${A.pmId}`, A.userId)).status).toBe(200);
+    expect((await goi(`/api/external/products?search=${DAU}&limit=200`, userRong.id)).body.data.products).toEqual([]);
+  });
+  it("đối chứng DƯƠNG: master/admin thấy sản phẩm của cả A và B", async () => {
+    for (const who of ["master", admin.id] as const) {
+      const ids: number[] = (await goi(`/api/external/products?search=${DAU}&limit=200`, who)).body.data.products.map((p: { id: number }) => p.id);
+      expect(ids, String(who)).toEqual(expect.arrayContaining([A.pmId, B.pmId]));
+      expect((await goi(`/api/external/products/${B.pmId}`, who)).status, String(who)).toBe(200);
+    }
   });
   it("người dùng không gán nhà máy ⇒ rỗng", async () => {
     const r = await goi(`/api/external/inspections/images?${KHOANG}&pointDefId=${pdId}`, userRong.id);
