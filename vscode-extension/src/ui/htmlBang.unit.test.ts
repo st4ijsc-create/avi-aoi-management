@@ -368,6 +368,17 @@ describe("webview — ĐỢT G / TASK G1 / B3: ô chọn dự án ẨN ở LOCAL
  *   thứ hai để rồi nó trôi khỏi trình duyệt thật.
  */
 class PhanTuGia {
+  /** 0.3.2 — canvas giả cho thu nhỏ ảnh: ghi lại kích thước canvas ở lần toDataURL gần nhất. */
+  static canvasCuoi: { width: number; height: number } | null = null;
+  width = 0;
+  height = 0;
+  getContext(): { drawImage: () => void } {
+    return { drawImage: () => undefined };
+  }
+  toDataURL(kieu: string): string {
+    PhanTuGia.canvasCuoi = { width: this.width, height: this.height };
+    return "data:" + kieu + ";base64,RESIZED";
+  }
   hidden = false;
   disabled = false;
   textContent = "";
@@ -1706,7 +1717,7 @@ describe("webview — đính kèm NGOÀI workspace (dán ảnh Ctrl+V, kéo-th�
   }
   const tep = (ten: string, type: string, size = 100, noiDung?: string) => ({ name: ten, type, size, noiDung });
   const doi = async () => {
-    for (let i = 0; i < 10; i++) await Promise.resolve();
+    for (let i = 0; i < 60; i++) await Promise.resolve();
   };
   const dan = (w: ReturnType<typeof chayWebview>, files: unknown[]) => {
     let daChan = false;
@@ -1969,5 +1980,83 @@ describe("bố cục thân trang (2026-10-24)", () => {
     const body = css.match(/\n\s*body\s*\{([^}]*)\}/)![1]!;
     expect(body).toContain("height: 100vh");
     expect(body).toContain("box-sizing: border-box");
+  });
+});
+
+describe("webview — ảnh lớn thu nhỏ trước khi đính (0.3.2)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const doiMoi = async () => {
+    for (let i = 0; i < 80; i++) await Promise.resolve();
+  };
+  function giaLapAnh(rong: number, cao: number) {
+    const veRa: Array<{ w: number; h: number; kieu: string }> = [];
+    class ImGia {
+      naturalWidth = rong;
+      naturalHeight = cao;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_v: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+    vi.stubGlobal("Image", ImGia);
+    return veRa;
+  }
+  const filePng = () => ({ name: "to.png", type: "image/png", size: 100, _noiDung: "ORIGINAL" });
+  function chayCoFile() {
+    // FileReader giả: đọc ra data URL cố định
+    class FRGia {
+      result = "";
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      readAsDataURL(f: { _noiDung: string; type: string }) {
+        this.result = "data:" + f.type + ";base64," + f._noiDung;
+        queueMicrotask(() => this.onload?.());
+      }
+      readAsText() {}
+    }
+    vi.stubGlobal("FileReader", FRGia);
+  }
+  const dan = (w: ReturnType<typeof chayWebview>, f: unknown) => {
+    w.nut("o-nhap").kichHoat("paste", { clipboardData: { items: [{ kind: "file", getAsFile: () => f }] }, preventDefault: () => undefined });
+  };
+
+  it("★★★ ảnh cạnh dài > 2048 ⇒ vẽ lại bằng canvas nhỏ hơn (tỉ lệ giữ nguyên) rồi mới đính", async () => {
+    chayCoFile();
+    giaLapAnh(4000, 3000);
+    PhanTuGia.canvasCuoi = null;
+    const w = chayWebview();
+    dan(w, filePng());
+    await doiMoi();
+    // canvas giả (PhanTuGia) nhận width/height theo tỉ lệ 2048/4000
+    expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 1");
+    expect(PhanTuGia.canvasCuoi).toMatchObject({ width: 2048, height: 1536 });
+  });
+
+  it("★★ ảnh ≤ 2048 ⇒ KHÔNG đụng tới canvas, giữ nguyên bản gốc", async () => {
+    chayCoFile();
+    giaLapAnh(1200, 800);
+    PhanTuGia.canvasCuoi = null;
+    const w = chayWebview();
+    dan(w, filePng());
+    await doiMoi();
+    expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 1");
+    expect(PhanTuGia.canvasCuoi).toBeNull();
+  });
+
+  it("★★ Image lỗi tải (onerror) ⇒ giữ nguyên bản gốc, vẫn đính (host sẽ kiểm lại)", async () => {
+    chayCoFile();
+    class ImLoi {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_v: string) {
+        queueMicrotask(() => this.onerror?.());
+      }
+    }
+    vi.stubGlobal("Image", ImLoi);
+    const w = chayWebview();
+    dan(w, filePng());
+    await doiMoi();
+    expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 1");
   });
 });

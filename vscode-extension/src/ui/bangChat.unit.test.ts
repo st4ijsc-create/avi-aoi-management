@@ -2123,13 +2123,21 @@ describe("đính kèm NGOÀI workspace — host", () => {
     expect(thongBao().some((t) => /đọc ảnh cho Trợ lý đang TẮT \(1 ảnh\).*aviAiLocal\.anhChoTroLy/.test(t))).toBe(true);
   });
 
-  it("★★ cài đặt TẮT + chế độ Agent + ảnh ⇒ ảnh bỏ và lượt Agent chạy BÌNH THƯỜNG (không rơi về đường Chat)", async () => {
-    chuanBiLocal();
+  it("★★★ 0.3.2 — Agent + ảnh ⇒ ảnh ĐI THẲNG cho phiên Agent (/v1), kể cả khi anhChoTroLy TẮT; không thông báo 'đang TẮT', không rơi về đường Chat (không POST KB)", async () => {
+    const bang = chuanBiLocal();
     delete may.cauHinh.anhChoTroLy;
-    may.nhanTin?.({ loai: "hoi", cauHoi: "đọc giúp ảnh", cheDoAgent: "sua", dinhKemNgoai: [anh] });
+    const chay = vi.spyOn(bang.phienAgent as { chay: (...a: unknown[]) => Promise<void> }, "chay").mockResolvedValue(undefined);
+    may.nhanTin?.({ loai: "hoi", cauHoi: "đọc giúp ảnh", cheDoAgent: "sua", dinhKemNgoai: [anh, tep("loi.log", "ERR 9")] });
     await nhuong();
-    expect(thongBao().some((t) => /đang TẮT/.test(t))).toBe(true);
-    expect(thongBao().some((t) => /dùng đường Chat/.test(t))).toBe(false);
+    expect(chay).toHaveBeenCalledTimes(1);
+    const [cau, cheDo, , khoiTep, dsAnh] = chay.mock.calls[0]!;
+    expect(cau).toBe("đọc giúp ảnh");
+    expect(cheDo).toBe("sua");
+    expect(String(khoiTep)).toContain("ERR 9"); // tệp văn bản vẫn vào ngữ cảnh
+    expect(dsAnh).toHaveLength(1); // CHỈ ảnh (tệp văn bản không nằm trong danh sách ảnh)
+    expect((dsAnh as Array<{ kieu: string }>)[0]!.kieu).toBe("image/png");
+    expect(thongBao().some((t) => /đang TẮT/.test(t))).toBe(false);
+    expect(may.thanGoi).toHaveLength(0);
   });
 
   it("★ vision ok:false kèm chiTiet/nguon ⇒ người dùng thấy lý do thật; ok:true ⇒ nêu nguồn", async () => {
@@ -2191,14 +2199,12 @@ describe("đính kèm NGOÀI workspace — host", () => {
     expect(thongBao().some((t) => /Không đọc được ảnh.*chưa bật thị giác máy/.test(t))).toBe(true);
   });
 
-  it("★★★ chế độ AGENT + ảnh ⇒ lượt đi đường CHAT (ảnh THẬT SỰ tới máy chủ) và được báo rõ; KHÔNG chạy agent", async () => {
+  it("★★ Chat cũ (không phải Agent) + ảnh + anhChoTroLy BẬT ⇒ vẫn đi đường KB với trường image", async () => {
     chuanBiLocal();
     may.hangDoiSse = hangDoiMotVongDonGian("ok");
-    may.nhanTin?.({ loai: "hoi", cauHoi: "đọc giúp ảnh", cheDoAgent: "sua", dinhKemNgoai: [anh] });
+    may.nhanTin?.({ loai: "hoi", cauHoi: "đọc giúp ảnh", dinhKemNgoai: [anh] });
     await nhuong();
-    expect(thongBao().some((t) => /dùng đường Chat \(máy chủ\) để đọc ảnh/.test(t))).toBe(true);
     expect(may.thanGoi[0]?.image).toBe(`data:image/png;base64,${PNG_B64}`);
-    expect(may.daGui.some((m) => String(m.loai).startsWith("ag_"))).toBe(false);
   });
 
   it("★★ nhiều ảnh ở đường Chat ⇒ gửi ảnh ĐẦU, báo số ảnh bị bỏ", async () => {

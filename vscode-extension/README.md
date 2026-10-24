@@ -166,7 +166,7 @@ mở một repo thù địch là đủ để chuyển cookie/token sang máy ch�
 ## Cài đặt offline
 
 ```
-code --install-extension avi-ai-local-0.3.1.vsix
+code --install-extension avi-ai-local-0.3.2.vsix
 ```
 
 Đóng gói từ gốc repo:
@@ -176,7 +176,7 @@ npm run ext:build
 npm run ext:package
 ```
 
-Lệnh sinh `vscode-extension/avi-ai-local-0.3.1.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.3.1+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
+Lệnh sinh `vscode-extension/avi-ai-local-0.3.2.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.3.2+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
 
 ## Giới hạn đã biết
 

@@ -15,6 +15,8 @@ export const TRAN_TEP_BYTE = 200 * 1024;
 export const TOI_DA_ANH = 4;
 /** Trần TỔNG byte ảnh một lượt — khớp hợp đồng /v1 (413 ANH_QUA_LON khi tổng > 12 MB). */
 export const TRAN_TONG_ANH_BYTE = 12 * 1024 * 1024;
+/** Cạnh dài tối đa (px) của một ảnh gửi đi — webview thu nhỏ trước; host đọc tiêu đề ảnh và TỪ CHỐI nếu vẫn lớn hơn (không tin webview). */
+export const TRAN_CANH_DAI_ANH = 2048;
 export const TOI_DA_TEP = 5;
 export const KIEU_ANH_HOP_LE: readonly string[] = ["image/png", "image/jpeg", "image/webp"];
 
@@ -59,6 +61,42 @@ export function kieuAnhTheoChuKy(b: Buffer): string | null {
   if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
   if (b.length >= 12 && b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WEBP") return "image/webp";
   return null;
+}
+
+/** Đọc kích thước pixel từ TIÊU ĐỀ PNG / JPEG / WEBP (không giải mã ảnh). null = không đọc được (ảnh lạ/hỏng ⇒ phía gọi quyết). */
+export function kichThuocAnh(b: Buffer): { rong: number; cao: number } | null {
+  if (b.length >= 24 && b[0] === 0x89 && b[1] === 0x50 && b.toString("ascii", 12, 16) === "IHDR") {
+    return { rong: b.readUInt32BE(16), cao: b.readUInt32BE(20) };
+  }
+  if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) { i++; continue; }
+      const m = b[i + 1]!;
+      if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; }
+      const len = b.readUInt16BE(i + 2);
+      if ((m >= 0xc0 && m <= 0xcf) && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+        return { cao: b.readUInt16BE(i + 5), rong: b.readUInt16BE(i + 7) };
+      }
+      i += 2 + len;
+    }
+    return null;
+  }
+  if (b.length >= 30 && b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WEBP") {
+    const loai = b.toString("ascii", 12, 16);
+    if (loai === "VP8X") return { rong: 1 + b.readUIntLE(24, 3), cao: 1 + b.readUIntLE(27, 3) };
+    if (loai === "VP8 ") return { rong: b.readUInt16LE(26) & 0x3fff, cao: b.readUInt16LE(28) & 0x3fff };
+    if (loai === "VP8L" && b[20] === 0x2f) {
+      const v = b.readUInt32LE(21);
+      return { rong: 1 + (v & 0x3fff), cao: 1 + ((v >>> 14) & 0x3fff) };
+    }
+  }
+  return null;
+}
+
+/** Ghi chú thay ảnh ở các lượt CŨ (chỉ ảnh của lượt hiện tại được gửi lại cho model; lượt cũ chỉ còn chữ này). */
+export function ghiChuAnhLuotTruoc(ds: ReadonlyArray<{ ten: string }>): string {
+  return ds.length === 0 ? "" : `\n[ảnh đã gửi ở lượt trước: ${ds.map((d) => d.ten).join(", ")}]`;
 }
 
 const BASE64_HOP_LE = /^[A-Za-z0-9+/]*={0,2}$/;
@@ -123,6 +161,11 @@ export function kiemTraDinhKemNgoai(raw: unknown): { ds: DinhKemNgoai[]; tuChoi:
       const that = kieuAnhTheoChuKy(buf);
       if (!that) {
         tuChoi.push(`"${ten}": không phải ảnh PNG/JPEG/WEBP hợp lệ.`);
+        continue;
+      }
+      const kt = kichThuocAnh(buf);
+      if (kt && Math.max(kt.rong, kt.cao) > TRAN_CANH_DAI_ANH) {
+        tuChoi.push(`"${ten}": ảnh ${kt.rong}×${kt.cao} px vượt ${TRAN_CANH_DAI_ANH} px cạnh dài (thu nhỏ rồi đính kèm lại).`);
         continue;
       }
       if (tongAnh + buf.length > TRAN_TONG_ANH_BYTE) {

@@ -111,6 +111,15 @@ export function phanLoaiLoiSuyLuan(thongDiep: string | undefined, ma: string | u
   return null;
 }
 
+export const LOI_ANH_V1: Record<string, (chiTiet: string) => string> = {
+  IMAGE_KHONG_HO_TRO: () =>
+    "Máy chủ AI chưa bật đọc ảnh — sẽ có sau khi llama-server khởi động lại. Gửi lại không kèm ảnh, hoặc thử lại sau khi máy chủ khởi động lại model.",
+  ANH_QUA_LON: () => "Ảnh quá lớn (tối đa 6 MB mỗi ảnh, 12 MB mỗi lượt).",
+  QUA_NHIEU_ANH: () => "Quá nhiều ảnh (tối đa 4 ảnh mỗi lượt, tính cả lịch sử).",
+  ANH_SAI_DINH_DANG: () => "Ảnh không đúng định dạng (chỉ nhận PNG/JPEG/WebP).",
+  NOI_DUNG_KHONG_HO_TRO: () => "Nội dung đính kèm không được hỗ trợ.",
+};
+
 /** Thông điệp tiếng Việt cho lỗi HTTP của cổng `/v1` — nói ĐÚNG việc phải làm. */
 export function moTaLoiHttpV1(status: number, than: unknown, retryAfter?: string | null): { thongDiep: string; ma: string; tamThoi: boolean } {
   const e = (than && typeof than === "object" ? (than as { error?: unknown }).error : undefined) as
@@ -144,6 +153,10 @@ export function moTaLoiHttpV1(status: number, than: unknown, retryAfter?: string
     const giay = retryAfter && /^\d+$/.test(retryAfter) ? ` Thử lại sau ~${retryAfter} giây.` : "";
     const loai = code === "quota_exceeded" ? "hết hạn mức token" : "vượt trần số lượt/phút của token";
     return { ma: "GIOI_HAN_429", tamThoi: false, thongDiep: `Máy chủ chặn tạm (429 — ${loai}).${giay}` };
+  }
+  // ★ 0.3.2 — mã lỗi ẢNH của /v1 (do-model): nói ĐÚNG việc phải làm bằng tiếng Việt, không thử lại im lặng. Đứng TRƯỚC nhánh "tool" (thông điệp tiếng Anh có thể chứa chữ khác).
+  if (code in LOI_ANH_V1) {
+    return { ma: code, tamThoi: false, thongDiep: LOI_ANH_V1[code]!(chiTiet) };
   }
   if (status === 400 && /native|tool/i.test(code + msg)) {
     return {

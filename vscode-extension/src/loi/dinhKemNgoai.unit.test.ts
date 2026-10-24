@@ -4,7 +4,10 @@ import {
   TOI_DA_TEP,
   TRAN_ANH_BYTE,
   TRAN_TONG_ANH_BYTE,
+  TRAN_CANH_DAI_ANH,
   boAnh,
+  ghiChuAnhLuotTruoc,
+  kichThuocAnh,
   TRAN_TEP_BYTE,
   anhChoKb,
   coAnh,
@@ -132,5 +135,74 @@ describe("dungKhoiTepNgoai / anhChoKb / kieuAnhTheoChuKy", () => {
   it("chữ ký byte", () => {
     expect(kieuAnhTheoChuKy(Buffer.from(PNG_B64, "base64"))).toBe("image/png");
     expect(kieuAnhTheoChuKy(Buffer.from("GIF89a"))).toBeNull();
+  });
+});
+
+describe("kích thước ảnh từ tiêu đề + trần cạnh dài (0.3.2)", () => {
+  const png = (w: number, h: number) => {
+    const b = Buffer.alloc(33);
+    b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+    b.writeUInt32BE(13, 8);
+    b.write("IHDR", 12, "ascii");
+    b.writeUInt32BE(w, 16);
+    b.writeUInt32BE(h, 20);
+    return b;
+  };
+  const jpeg = (w: number, h: number) => {
+    const b = Buffer.alloc(30);
+    b[0] = 0xff; b[1] = 0xd8;
+    b[2] = 0xff; b[3] = 0xe0; b.writeUInt16BE(4, 4); // APP0 rỗng (len 4)
+    b[8] = 0xff; b[9] = 0xc0; b.writeUInt16BE(11, 10); b[12] = 8;
+    b.writeUInt16BE(h, 13);
+    b.writeUInt16BE(w, 15);
+    return b;
+  };
+  const webpX = (w: number, h: number) => {
+    const b = Buffer.alloc(32);
+    b.write("RIFF", 0, "ascii"); b.write("WEBP", 8, "ascii"); b.write("VP8X", 12, "ascii");
+    b.writeUIntLE(w - 1, 24, 3); b.writeUIntLE(h - 1, 27, 3);
+    return b;
+  };
+  const webpL = (w: number, h: number) => {
+    const b = Buffer.alloc(32);
+    b.write("RIFF", 0, "ascii"); b.write("WEBP", 8, "ascii"); b.write("VP8L", 12, "ascii");
+    b[20] = 0x2f;
+    b.writeUInt32LE((w - 1) | ((h - 1) << 14), 21);
+    return b;
+  };
+  const webpLossy = (w: number, h: number) => {
+    const b = Buffer.alloc(32);
+    b.write("RIFF", 0, "ascii"); b.write("WEBP", 8, "ascii"); b.write("VP8 ", 12, "ascii");
+    b.writeUInt16LE(w, 26); b.writeUInt16LE(h, 28);
+    return b;
+  };
+
+  it("★★ đọc đúng PNG / JPEG / WEBP (VP8X, VP8L, VP8); ảnh lạ ⇒ null", () => {
+    expect(kichThuocAnh(png(1920, 1080))).toEqual({ rong: 1920, cao: 1080 });
+    expect(kichThuocAnh(jpeg(4000, 3000))).toEqual({ rong: 4000, cao: 3000 });
+    expect(kichThuocAnh(webpX(2500, 1200))).toEqual({ rong: 2500, cao: 1200 });
+    expect(kichThuocAnh(webpL(800, 600))).toEqual({ rong: 800, cao: 600 });
+    expect(kichThuocAnh(webpLossy(640, 480))).toEqual({ rong: 640, cao: 480 });
+    expect(kichThuocAnh(Buffer.from("không phải ảnh"))).toBeNull();
+  });
+
+  it("★★★ cạnh dài > 2048 ⇒ host TỪ CHỐI (không tin webview), ≤ 2048 ⇒ nhận; biên đúng 2048 nhận, 2049 từ chối", () => {
+    const b64 = (b: Buffer) => b.toString("base64");
+    const r = kiemTraDinhKemNgoai([
+      anh("lon.png", b64(png(4000, 3000))),
+      anh("vua.png", b64(png(2048, 1000))),
+      anh("sat.png", b64(png(2049, 100))),
+      anh("doc.jpg", b64(jpeg(900, 5000))),
+      anh("nho.jpg", b64(jpeg(1600, 900))),
+    ]);
+    expect(r.ds.map((d) => d.ten)).toEqual(["vua.png", "nho.jpg"]);
+    expect(r.tuChoi).toHaveLength(3);
+    expect(r.tuChoi[0]).toMatch(/4000×3000 px vượt 2048 px/);
+    expect(TRAN_CANH_DAI_ANH).toBe(2048);
+  });
+
+  it("ghi chú thay ảnh ở lượt cũ nêu tên từng ảnh; không ảnh ⇒ rỗng", () => {
+    expect(ghiChuAnhLuotTruoc([{ ten: "a.png" }, { ten: "b.jpg" }])).toBe("\n[ảnh đã gửi ở lượt trước: a.png, b.jpg]");
+    expect(ghiChuAnhLuotTruoc([])).toBe("");
   });
 });

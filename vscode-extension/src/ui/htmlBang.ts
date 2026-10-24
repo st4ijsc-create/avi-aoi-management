@@ -694,6 +694,37 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
   const DUOI_VAN_BAN = ["txt","md","log","csv","tsv","json","xml","yaml","yml","ini","cfg","conf","toml","st","scl","awl","sql","py","js","ts","tsx","jsx","cs","c","h","cpp","hpp","java","go","rs","sh","ps1","bat","html","css","gcode","nc"];
   function dinhDangByte(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B"; }
   function baoLoiDinhKem(chu) { themLuot("he_thong", chu, false, "Đính kèm"); }
+  const TRAN_CANH_DAI = 2048;
+  /** Thu nhỏ ảnh nếu cạnh dài > TRAN_CANH_DAI. Không có Image/canvas (hoặc lỗi) ⇒ giữ nguyên bản gốc (host sẽ từ chối nếu vẫn quá lớn). */
+  function thuNhoAnh(dataUrl, kieu) {
+    return new Promise((resolve) => {
+      const giuNguyen = () => resolve({ dataUrl, kieu, kichThuoc: null });
+      if (typeof Image !== "function") { giuNguyen(); return; }
+      try {
+        const im = new Image();
+        im.onload = () => {
+          try {
+            const rong = im.naturalWidth || im.width || 0;
+            const cao = im.naturalHeight || im.height || 0;
+            const dai = Math.max(rong, cao);
+            if (!(dai > TRAN_CANH_DAI)) { giuNguyen(); return; }
+            const ti = TRAN_CANH_DAI / dai;
+            const cv = document.createElement("canvas");
+            cv.width = Math.max(1, Math.round(rong * ti));
+            cv.height = Math.max(1, Math.round(cao * ti));
+            const ctx = cv.getContext("2d");
+            ctx.drawImage(im, 0, 0, cv.width, cv.height);
+            const kieuRa = kieu === "image/png" ? "image/png" : kieu === "image/webp" ? "image/webp" : "image/jpeg";
+            const ra = cv.toDataURL(kieuRa, 0.92);
+            const kieuThat = ra.slice(5, ra.indexOf(";"));
+            resolve({ dataUrl: ra, kieu: KIEU_ANH.indexOf(kieuThat) >= 0 ? kieuThat : kieu, kichThuoc: Math.floor((ra.length - ra.indexOf(",") - 1) * 3 / 4) });
+          } catch (e) { giuNguyen(); }
+        };
+        im.onerror = giuNguyen;
+        im.src = dataUrl;
+      } catch (e) { giuNguyen(); }
+    });
+  }
   function docFileDinhKem(file) {
     return new Promise((resolve) => {
       const kieu = String(file.type || "").toLowerCase();
@@ -702,7 +733,11 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
         if (KIEU_ANH.indexOf(kieu) < 0) { baoLoiDinhKem("Ảnh " + ten + " (" + kieu + ") chưa hỗ trợ — dùng PNG, JPEG hoặc WEBP."); resolve(null); return; }
         if (file.size > TRAN_ANH) { baoLoiDinhKem("Ảnh " + ten + " quá lớn (" + dinhDangByte(file.size) + ", tối đa " + dinhDangByte(TRAN_ANH) + ")."); resolve(null); return; }
         const fr = new FileReader();
-        fr.onload = () => { const s = String(fr.result); resolve({ loai: "anh", ten, kieu, kichThuoc: file.size, noiDung: s.slice(s.indexOf(",") + 1) }); };
+        fr.onload = () => {
+          const s = String(fr.result);
+          // ★ 0.3.2 — cạnh dài > 2048 px: thu nhỏ bằng canvas TRƯỚC khi đính (host vẫn kiểm lại tiêu đề ảnh và từ chối nếu còn lớn).
+          thuNhoAnh(s, kieu).then((r) => resolve({ loai: "anh", ten, kieu: r.kieu, kichThuoc: r.kichThuoc != null ? r.kichThuoc : file.size, noiDung: r.dataUrl.slice(r.dataUrl.indexOf(",") + 1) }));
+        };
         fr.onerror = () => { baoLoiDinhKem("Không đọc được ảnh " + ten + "."); resolve(null); };
         fr.readAsDataURL(file);
         return;
@@ -942,6 +977,21 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
     hang.appendChild(nutLai);
     khoiTraLoi.parentNode.appendChild(hang);
     hangHanhDongHienTai = hang;
+  }
+  /** Máy chủ chưa bật đọc ảnh: gửi LẠI cùng câu hỏi nhưng bỏ ảnh (tệp văn bản vẫn đi) — do NGƯỜI DÙNG bấm, không tự thử lại. */
+  function themNutGuiLaiKhongAnh(c) {
+    if (!tinHoiCuoi || !c) return;
+    const b = taoPhan("button", "nut-mo-settings", "Gửi lại không kèm ảnh");
+    b.addEventListener("click", () => {
+      if (b.disabled || !tinHoiCuoi) return;
+      b.disabled = true;
+      const con = (tinHoiCuoi.dinhKemNgoai || []).filter((d) => d.loai !== "anh");
+      const tin = Object.assign({}, tinHoiCuoi);
+      if (con.length > 0) tin.dinhKemNgoai = con; else delete tin.dinhKemNgoai;
+      tinHoiCuoi = tin;
+      guiLaiTinCuoi();
+    });
+    c.appendChild(b);
   }
   /** Nút "Thử lại" trên thẻ lỗi (gửi lại câu hỏi cuối, đúng một lần cho mỗi thẻ). */
   function themNutThuLai(c) {
@@ -1344,6 +1394,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
       xoaChiBaoChoAi();
       const c = themLuot("he_thong", String(m.thongDiep || ""), false, "Lỗi");
       if (m.ma !== "DANG_CHAY" && m.ma !== "KHONG_WORKSPACE") themNutThuLai(c);
+      if (m.ma === "IMAGE_KHONG_HO_TRO") themNutGuiLaiKhongAnh(c);
       if (MA_CAN_TOKEN[m.ma]) {
         const b = taoPhan("button", "nut-mo-settings", "Đăng nhập AI Local (device flow)");
         b.addEventListener("click", () => vscode.postMessage({ loai: "ag_dang_nhap_thiet_bi" }));

@@ -31,6 +31,7 @@ import {
   type SuKienAgent,
   type TinNhan,
 } from "../../../shared/agentCore/index";
+import { ghiChuAnhLuotTruoc, type DinhKemNgoai } from "../loi/dinhKemNgoai";
 import { taoGoiModelV1, TRAN_TOKEN_MOT_LUOT_MAC_DINH, type CauHinhGoiModelV1 } from "../mang/goiModelV1";
 import { guiPhanHoiAgent, type KetQuaGuiPhanHoi, type PhieuPhanHoi } from "../mang/phanHoiAgent";
 import { traLoiCuoiTuSuKien } from "../../../shared/phanHoiAgent";
@@ -181,7 +182,7 @@ export class PhienAgent {
 
   // ─── LƯỢT CHẠY ───────────────────────────────────────────────────────────────────────────────
 
-  async chay(cauHoiTho: string, cheDoChon: CheDoAgent, tepMention: string[] = [], khoiTepNgoai = ""): Promise<void> {
+  async chay(cauHoiTho: string, cheDoChon: CheDoAgent, tepMention: string[] = [], khoiTepNgoai = "", anh: DinhKemNgoai[] = []): Promise<void> {
     if (this.dangChay) {
       this.pt.gui({ loai: "ag_loi", thongDiep: "Một lượt agent đang chạy — bấm Dừng trước khi hỏi tiếp.", ma: "DANG_CHAY" });
       return;
@@ -282,7 +283,7 @@ export class PhienAgent {
         cheDo,
         runId,
         nguCanhDuAn,
-        goiModel: this.goiModelCoDongHo(),
+        goiModel: this.goiModelCoDongHo(anh, this.lichSu.length),
         boThucThi,
         phat: (e) => this.xuLySuKien(e),
         signal: ac.signal,
@@ -291,7 +292,11 @@ export class PhienAgent {
         kiemDacTa: kiemDacTaBat(process.env.AI_AGENT_KIEM_DAC_TA),
       });
       this.xaDoan();
+      const truocLuot = this.lichSu.length;
       this.lichSu = kq.tinNhan.filter((m) => m.role !== "system");
+      // ★ 0.3.2 — ảnh CHỈ gửi ở lượt hiện tại: trong lịch sử, tin câu hỏi của lượt này mang ghi chú chữ thay cho ảnh (server đếm ảnh trên cả lịch sử).
+      const tinCauHoi = this.lichSu[truocLuot];
+      if (anh.length > 0 && tinCauHoi?.role === "user") tinCauHoi.content += ghiChuAnhLuotTruoc(anh);
       cuoi = [...kq.tinNhan].reverse().find((m) => m.role === "assistant" && m.content.trim())?.content ?? "";
       const phanHoi = this.ghiNhoLuotChoPhanHoi(runId, cauHoiTho, goc[0]);
       this.pt.gui({ loai: "ag_xong", lyDo: kq.lyDo, coHoanTac: !so.rong, soTep: so.danhSach().length, ...(phanHoi ? { phanHoi } : {}) });
@@ -312,8 +317,10 @@ export class PhienAgent {
     }
   }
 
-  private goiModelCoDongHo(): GoiModel {
+  private goiModelCoDongHo(anh: DinhKemNgoai[] = [], soTinNhanLichSu = 0): GoiModel {
     const ch: CauHinhGoiModelV1 = {
+      anhLuotNay: anh.map((a) => ({ kieu: a.kieu, noiDung: a.noiDung })),
+      soTinNhanLichSu,
       serverUrl: this.serverUrl(),
       layToken: async () => this.pt.context.secrets.get(KHOA_TOKEN_GATEWAY),
       model: this.cfg().get<string>("agentModel", "chat"),

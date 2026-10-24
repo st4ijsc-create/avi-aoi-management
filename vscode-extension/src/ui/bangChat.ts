@@ -127,10 +127,10 @@ import {
 } from "../loi/mucQuyen";
 
 /**
- * ★ 2026-10-24 — `/v1/chat/completions` (đường Agent) hiện VỨT phần `image_url` (server/routes/openaiGateway.ts contentToString chỉ giữ `type:"text"`), nên ảnh chỉ đọc được qua đường Chat
- * (`/api/ai/local-kb/stream`, trường `image`). Khi máy chủ nhận ảnh ở /v1 (việc của do-model), bật hằng này (hoặc chuyển thành cài đặt) để lượt Agent gửi ảnh thẳng.
+ * ★ 0.3.2 — `/v1/chat/completions` (đường Agent) NHẬN ảnh (do-model, feat/ai-do-model 3b1503467; dieu-phoi duyệt bật 2026-10-24): content = [{type:"text"},{type:"image_url"}] ở vai user của LƯỢT HIỆN TẠI;
+ * khe :8091 chưa có thị giác ⇒ 400 IMAGE_KHONG_HO_TRO (đã có thông điệp tiếng Việt riêng, xem `loi/luongV1.ts#LOI_ANH_V1`). Trước đó (2026-10-24 sáng) /v1 vứt `image_url` nên hằng này là false và lượt có ảnh rơi về đường Chat.
  */
-const ANH_QUA_V1 = false;
+const ANH_QUA_V1 = true;
 
 /** Lý do máy chủ không đọc được ảnh (`vision.reason`) → tiếng Việt cho người dùng. */
 function lyDoVision(reason: unknown): string {
@@ -453,8 +453,10 @@ export class BangChat {
         // ★★★ 2026-10-24 — đính kèm NGOÀI workspace: host KIỂM LẠI toàn bộ (trần, chữ ký ảnh, tên nhạy cảm) và BÁO từng mục bị bỏ — không im lặng.
         const ngoai = kiemTraDinhKemNgoai(m.dinhKemNgoai);
         for (const lyDo of ngoai.tuChoi) void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Đính kèm bị bỏ — ${lyDo}` });
-        // ★ 2026-10-24 — ĐỌC ẢNH cho Trợ lý mặc định TẮT (nạp model thị giác tốn VRAM/độ trễ của máy chủ; do-model + chủ dự án duyệt mới bật). Tắt ⇒ ảnh bị bỏ và NÓI RÕ, tệp văn bản vẫn đi.
-        if (coAnh(ngoai.ds) && vscode.workspace.getConfiguration("aviAiLocal").get<boolean>("anhChoTroLy", false) !== true) {
+        // ★ 2026-10-24 — ĐỌC ẢNH cho TRỢ LÝ/Chat (đường /api/ai/local-kb) mặc định TẮT (nạp model thị giác tốn VRAM/độ trễ; do-model + chủ dự án duyệt mới bật). Tắt ⇒ ảnh bị bỏ và NÓI RÕ, tệp văn bản vẫn đi.
+        // ★ 0.3.2 — ĐƯỜNG AGENT (/v1) gửi ảnh thẳng (ANH_QUA_V1) và KHÔNG chịu cài đặt này: nó đọc bằng chính model đang chạy, không nạp sidecar.
+        const duongAgent = cheDoAgent !== undefined && m.tuLenh !== true && this.cheDoHienTai()?.loai !== "server";
+        if (coAnh(ngoai.ds) && !(duongAgent && ANH_QUA_V1) && vscode.workspace.getConfiguration("aviAiLocal").get<boolean>("anhChoTroLy", false) !== true) {
           const kq = boAnh(ngoai.ds);
           ngoai.ds = kq.ds;
           void this.panel.webview.postMessage({
@@ -472,7 +474,7 @@ export class BangChat {
             void this.hoi(m.cauHoi, tepMention, false, ngoai.ds);
             return;
           }
-          void this.phienAgent.chay(m.cauHoi, cheDoAgent, tepMention, dungKhoiTepNgoai(ngoai.ds));
+          void this.phienAgent.chay(m.cauHoi, cheDoAgent, tepMention, dungKhoiTepNgoai(ngoai.ds), ANH_QUA_V1 ? ngoai.ds.filter((d) => d.loai === "anh") : []);
           return;
         }
         void this.hoi(m.cauHoi, tepMention, m.tuLenh === true, ngoai.ds);

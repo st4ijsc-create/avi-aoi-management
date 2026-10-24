@@ -4,7 +4,7 @@
  * Khung SSE lấy ĐÚNG hình dạng `server/routes/openaiGateway.ts` phát (đọc mã 2026-10-17).
  */
 import { describe, it, expect } from "vitest";
-import { taoGoiModelV1 } from "./goiModelV1";
+import { taoGoiModelV1, sangTinNhanWire } from "./goiModelV1";
 import type { ManhModel } from "../../../shared/agentCore/index";
 
 function sse(...khung: unknown[]): string {
@@ -287,4 +287,72 @@ describe("GoiModel /v1 — lượt bị cắt ở trần token", () => {
     const ra = await gom(taoGoiModelV1({ serverUrl: "http://may:3000", layToken: async () => "avgw_abc", fetch: f })(vaoMau()));
     expect((ra.at(-1) as Extract<ManhModel, { loai: "xong" }>).biCat).toBeUndefined();
   });
+});
+
+describe("GoiModel /v1 — ảnh (0.3.2)", () => {
+  const ANH = [{ kieu: "image/png", noiDung: "AAAA" }];
+
+  it("★★★ ảnh gắn vào ĐÚNG tin câu hỏi của lượt (không phải lịch sử, không phải lời nhắc user chèn sau): content = [text, image_url data URL]", () => {
+    const tin = [
+      { role: "system" as const, content: "hệ thống" },
+      { role: "user" as const, content: "câu cũ" },
+      { role: "assistant" as const, content: "đáp cũ" },
+      { role: "user" as const, content: "câu mới" },
+      { role: "assistant" as const, content: "", tool_calls: [{ id: "c", type: "function" as const, function: { name: "read_file", arguments: "{}" } }] },
+      { role: "tool" as const, content: "kq", tool_call_id: "c" },
+      { role: "user" as const, content: "lời nhắc chèn" },
+    ];
+    const w = sangTinNhanWire(tin, ANH, 2);
+    expect(w[1]!.content).toBe("câu cũ");
+    expect(w[3]!.content).toEqual([
+      { type: "text", text: "câu mới" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+    ]);
+    expect(w[6]!.content).toBe("lời nhắc chèn");
+    expect(w[0]!.content).toBe("hệ thống");
+  });
+
+  it("★★ không có ảnh ⇒ content vẫn là CHUỖI ở mọi tin (không đổi hành vi cũ)", () => {
+    const w = sangTinNhanWire([{ role: "user", content: "x" }]);
+    expect(w[0]!.content).toBe("x");
+  });
+
+  it("★★★ đầu-cuối: thân POST mang ảnh ở vai user của lượt hiện tại, chỉ ở vai user", async () => {
+    const than: Array<{ messages: Array<{ role: string; content: unknown }> }> = [];
+    const f = (async (_u: string, init: { body: string }) => {
+      than.push(JSON.parse(init.body));
+      return dapStream(sse(delta({ content: "ok" }, "stop"), "[DONE]"));
+    }) as unknown as typeof fetch;
+    await gom(
+      taoGoiModelV1({ serverUrl: "http://m", layToken: async () => "avgw_x", fetch: f, anhLuotNay: ANH, soTinNhanLichSu: 0 })({
+        tinNhan: [{ role: "user", content: "nhìn ảnh" }],
+        congCu: [],
+        signal: new AbortController().signal,
+      }),
+    );
+    const parts = than[0]!.messages[0]!.content as Array<{ type: string }>;
+    expect(parts.map((p) => p.type)).toEqual(["text", "image_url"]);
+    expect(than[0]!.messages.filter((m) => Array.isArray(m.content)).map((m) => m.role)).toEqual(["user"]);
+  });
+
+  const loiAnh: Array<[number, string, RegExp]> = [
+    [400, "IMAGE_KHONG_HO_TRO", /chưa bật đọc ảnh — sẽ có sau khi llama-server khởi động lại/],
+    [413, "ANH_QUA_LON", /tối đa 6 MB mỗi ảnh, 12 MB mỗi lượt/],
+    [400, "QUA_NHIEU_ANH", /tối đa 4 ảnh mỗi lượt, tính cả lịch sử/],
+    [400, "ANH_SAI_DINH_DANG", /chỉ nhận PNG\/JPEG\/WebP/],
+    [400, "NOI_DUNG_KHONG_HO_TRO", /không được hỗ trợ/],
+  ];
+  for (const [status, ma, re] of loiAnh) {
+    it("★★★ " + status + " " + ma + " ⇒ thông điệp tiếng Việt đúng việc phải làm, mã giữ nguyên, KHÔNG tạm thời (không thử lại im lặng)", async () => {
+      let goi = 0;
+      const f = (async () => {
+        goi++;
+        return dapLoi(status, { error: { code: ma, message: "image input unsupported (tool image)" } });
+      }) as unknown as typeof fetch;
+      const p = gom(taoGoiModelV1({ serverUrl: "http://m", layToken: async () => "avgw_x", fetch: f, anhLuotNay: ANH })(vaoMau()));
+      await expect(p).rejects.toMatchObject({ ma, tamThoi: false });
+      await expect(p).rejects.toThrow(re);
+      expect(goi).toBe(1);
+    });
+  }
 });

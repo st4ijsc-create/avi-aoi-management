@@ -65,6 +65,7 @@ function dung(
   const ap: DauVaoApBanVa[] = [];
   const vaoModel: Array<{ tinNhan: TinNhan[]; congCu: WireTool[] }> = [];
   const lenh: string[][] = [];
+  const cauHinhGoiModel: Array<{ anhLuotNay?: ReadonlyArray<{ kieu: string; noiDung: string }>; soTinNhanLichSu?: number }> = [];
   const luu: Array<[string, string]> = [];
   let luot = 0;
   const goiModel: GoiModel = (vao) =>
@@ -92,7 +93,10 @@ function dung(
     mucQuyen: () => "hoi_truoc_khi_ghi",
     goc: () => [WS],
     ghiLuot: (q, a) => luu.push([q, a]),
-    taoGoiModel: () => goiModel,
+    taoGoiModel: (ch) => {
+      cauHinhGoiModel.push(ch);
+      return goiModel;
+    },
     guiPhanHoi: o.guiPhanHoi,
     ghiNhatKy: (d) => nhatKy.push(d),
     apBanVa: async (dv) => {
@@ -106,7 +110,7 @@ function dung(
       return { ok: true, output: o.diffStaged ?? "", exitCode: 0, signal: null, timedOut: false, daCatSom: false, durationMs: 1 };
     },
   });
-  return { phien, tin, ap, vaoModel, lenh, luu, nhatKy };
+  return { phien, tin, ap, vaoModel, lenh, luu, nhatKy, cauHinhGoiModel };
 }
 
 const goiTool = (id: string, ten: string, args: unknown): ManhModel => ({
@@ -385,5 +389,30 @@ describe("phiên agent — duyệt hết lượt (2026-10-24)", () => {
     await vi.waitFor(() => expect(caThe(d)).toHaveLength(2));
     d.phien.quyet(String(caThe(d)[1]!.id), { duyet: false });
     await p2;
+  });
+});
+
+describe("phiên agent — ảnh qua /v1 (0.3.2)", () => {
+  const anh = [{ loai: "anh" as const, ten: "hmi.png", kieu: "image/png", kichThuoc: 4, noiDung: "AAAA" }];
+
+  it("★★★ ảnh CHỈ ở lượt hiện tại: lượt 1 có anhLuotNay; lịch sử ghi chú chữ thay ảnh; lượt 2 không còn ảnh, thấy ghi chú trong lịch sử", async () => {
+    const d = dung(() => [{ loai: "chu", noiDung: "ok" }, { loai: "xong", toolCalls: [] }]);
+    await d.phien.chay("đọc ảnh HMI", "hoi", [], "", anh);
+    expect(d.cauHinhGoiModel[0]!.anhLuotNay).toEqual([{ kieu: "image/png", noiDung: "AAAA" }]);
+    expect(d.cauHinhGoiModel[0]!.soTinNhanLichSu).toBe(0);
+    await d.phien.chay("hỏi tiếp", "hoi");
+    expect(d.cauHinhGoiModel[1]!.anhLuotNay).toEqual([]);
+    expect(d.cauHinhGoiModel[1]!.soTinNhanLichSu).toBeGreaterThan(0);
+    const tinLuot2 = d.vaoModel.at(-1)!.tinNhan.map((m) => m.content).join("\n");
+    expect(tinLuot2).toContain("[ảnh đã gửi ở lượt trước: hmi.png]");
+    expect(tinLuot2).not.toContain("AAAA");
+  });
+
+  it("★★ lượt không ảnh ⇒ anhLuotNay rỗng, lịch sử không có ghi chú", async () => {
+    const d = dung(() => [{ loai: "chu", noiDung: "ok" }, { loai: "xong", toolCalls: [] }]);
+    await d.phien.chay("câu thường", "hoi");
+    expect(d.cauHinhGoiModel[0]!.anhLuotNay).toEqual([]);
+    await d.phien.chay("tiếp", "hoi");
+    expect(d.vaoModel.at(-1)!.tinNhan.map((m) => m.content).join("\n")).not.toContain("ảnh đã gửi");
   });
 });

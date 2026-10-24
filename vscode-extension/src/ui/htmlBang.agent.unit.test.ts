@@ -741,3 +741,39 @@ describe("khớp mockup 0.3.1: bố cục tĩnh", () => {
     expect(hop.indexOf('id="ds-dinh-kem"')).toBeLessThan(hop.indexOf('id="o-nhap"'));
   });
 });
+
+describe("lỗi máy chủ chưa đọc ảnh ⇒ 'Gửi lại không kèm ảnh' (0.3.2)", () => {
+  const nutTheoChu = (p: PT, chu: string) => tatCa(p).filter((x) => x.tag === "button" && x.textContent === chu);
+  it("★★★ IMAGE_KHONG_HO_TRO: nút gửi lại bỏ ẢNH nhưng GIỮ tệp văn bản; mỗi thẻ một lần; lỗi khác không có nút này", () => {
+    const w = chay();
+    w.banTin({ loai: "them_dinh_kem_ngoai", muc: { loai: "anh", ten: "a.png", kieu: "image/png", kichThuoc: 4, noiDung: "AAAA" } });
+    w.banTin({ loai: "them_dinh_kem_ngoai", muc: { loai: "tep", ten: "l.log", kieu: "text/plain", kichThuoc: 3, noiDung: "ERR" } });
+    w.nut("o-nhap").value = "đọc giúp";
+    w.nut("nut-gui").bam();
+    const hoi = () => w.daGui.filter((m) => m.loai === "hoi");
+    expect((hoi()[0] as { dinhKemNgoai: unknown[] }).dinhKemNgoai).toHaveLength(2);
+    w.banTin({ loai: "ag_loi", thongDiep: "Máy chủ AI chưa bật đọc ảnh", ma: "IMAGE_KHONG_HO_TRO" });
+    w.banTin({ loai: "ag_xong", lyDo: "loi-model", coHoanTac: false });
+    const [nut] = nutTheoChu(w.nut("hoi-thoai") as PT, "Gửi lại không kèm ảnh");
+    expect(nut).toBeDefined();
+    nut!.bam();
+    nut!.bam();
+    expect(hoi()).toHaveLength(2);
+    expect((hoi()[1] as { dinhKemNgoai: Array<{ loai: string }> }).dinhKemNgoai.map((d) => d.loai)).toEqual(["tep"]);
+    w.banTin({ loai: "ag_loi", thongDiep: "Lỗi khác", ma: "LOI" });
+    expect(nutTheoChu(w.nut("hoi-thoai") as PT, "Gửi lại không kèm ảnh")).toHaveLength(1);
+  });
+
+  it("★★ chỉ có ảnh ⇒ gửi lại KHÔNG còn trường dinhKemNgoai", () => {
+    const w = chay();
+    w.banTin({ loai: "them_dinh_kem_ngoai", muc: { loai: "anh", ten: "a.png", kieu: "image/png", kichThuoc: 4, noiDung: "AAAA" } });
+    w.nut("o-nhap").value = "đọc giúp";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "ag_loi", thongDiep: "chưa bật đọc ảnh", ma: "IMAGE_KHONG_HO_TRO" });
+    w.banTin({ loai: "ag_xong", lyDo: "loi-model", coHoanTac: false });
+    nutTheoChu(w.nut("hoi-thoai") as PT, "Gửi lại không kèm ảnh")[0]!.bam();
+    const hoi = w.daGui.filter((m) => m.loai === "hoi");
+    expect(hoi).toHaveLength(2);
+    expect("dinhKemNgoai" in (hoi[1] as object)).toBe(false);
+  });
+});
