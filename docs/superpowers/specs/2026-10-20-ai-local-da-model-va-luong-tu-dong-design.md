@@ -875,6 +875,9 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   - **ĐẠT cho một N < 32 khi:** (1) Private max − mẫu đầu sau nạp ≤ N × 149,6 MiB + 1,0 GB; (2) trung vị thời gian/lượt PHA DÀI ≤ 1,10 × trung vị của
     N=32 (gộp hai lượt 32), pha xen kẽ báo kèm; (3) tổng `prompt_n` ≤ 1,25 × của N=32 (cùng số vòng); (4) 100 % HTTP 200, llama-server không chết. **Chọn N nhỏ nhất ĐẠT**; không N nào
     đạt ⇒ giữ 32 (báo số). Đổi mặc định (`LLAMA_SERVER_CTX_CHECKPOINTS` trong `start-llama-server.ps1`) chỉ sau khi dieu-phoi duyệt số.
+  - **Bổ sung (dieu-phoi duyệt 2026-10-24, viết TRƯỚC khi chạy):** khoá áp cho CẢ 35B ⇒ sau khi chọn N trên 27B, vòng XÁC NHẬN trên 35B + mmproj:
+    pha DÀI (40 lượt liên tiếp), N đã chọn so với 32, mỗi bên 1 vòng (thứ tự 32 → N). Kiểm (2)(3)(4) như trên; (1) dùng 62,8 MiB/checkpoint.
+    35B không đạt ⇒ đề xuất N theo model (27B = N, 35B = 32) qua `tim-mmproj.ps1`/`start-llama-server.ps1`. Báo số; chưa đổi mặc định.
   - Phối hợp: luong-ui chạy xong e2e extension TRƯỚC khi giữ khe; nhắc kiem-dinh/luong-ui boot dev với `AI_KB_WARM_ON_BOOT=false
     AI_ORCHESTRATION_ENABLED=false` trong đợt; cuối đợt :8091 về 35B + mmproj (mặc định).
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
