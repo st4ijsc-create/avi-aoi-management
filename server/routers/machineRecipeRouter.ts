@@ -82,6 +82,22 @@ async function yeuCauTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], mach
   }
 }
 
+/**
+ * Phạm vi nhà máy cho GHI lên công thức theo `machineId` của CÔNG THỨC (rà bảo mật 2026-10-24, kiểm định phamViGhi).
+ * Công thức gắn máy ngoài phạm vi người gọi ≡ "Recipe không tồn tại" (cùng NOT_FOUND với id không có thật). Công thức KHÔNG gắn máy
+ * (`machineId` null — mẫu theo loại máy) giữ hành vi cũ: không có nhà máy nào để so. Kiểm TRƯỚC khi ghi.
+ */
+async function congThucTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], recipeId: number): Promise<void> {
+  const existing = await getRecipeById(recipeId);
+  if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
+  if (existing.machineId == null) return;
+  try {
+    await mayTrongPhamVi(ctx, existing.machineId);
+  } catch {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
+  }
+}
+
 async function getDb() {
   const db = await getDbRaw();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
@@ -322,6 +338,7 @@ export const machineRecipeRouter = router({
         notes: z.string().max(2000).nullable().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId); // phạm vi nhà máy: không tạo công thức gắn máy nhà máy khác
         // Doc 56 Đ4 — typed-schema governance at authoring (RECIPE_TYPED_SCHEMA_MODE).
         // off (default) ⇒ no-op → byte-identical.
         assertRecipePayloadValid(input.machineType ?? null, input.payload);
@@ -350,6 +367,7 @@ export const machineRecipeRouter = router({
       .use(requirePermission("machine_control", "canEdit"))
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ input, ctx }) => {
+        await congThucTrongPhamVi(ctx, input.id);
         const existing = await getRecipeById(input.id);
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
         await archiveRecipe(input.id);
@@ -369,7 +387,8 @@ export const machineRecipeRouter = router({
     setGolden: protectedProcedure
       .use(requirePermission("machine_control", "canEdit"))
       .input(z.object({ id: z.number().int().positive(), isGolden: z.boolean() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        await congThucTrongPhamVi(ctx, input.id);
         const existing = await getRecipeById(input.id);
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
         return setGoldenRecipe(input.id, input.isGolden);
@@ -387,6 +406,7 @@ export const machineRecipeRouter = router({
         note: z.string().max(2000).nullable().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        await congThucTrongPhamVi(ctx, input.recipeId); // phạm vi nhà máy: duyệt công thức máy nhà máy khác ≡ không tồn tại
         // Doc 56 Đ4 — governance BEFORE sign-off: typed-schema re-check + guardrail
         // TEETH (CONFIG-SYNC-5). Only engaged when RECIPE_TYPED_SCHEMA_MODE != off (a
         // typed payload to map); default off ⇒ the approve path is byte-identical.

@@ -32,6 +32,7 @@
 export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ───────────────────────────────────────────────────────
   "server/_core/systemRouter.ts#systemRouter.exportConfig",
+  // ── server/routers/machineRecipeRouter.ts (1) ──
   // ── server/routers/aiActiveLearningRouter.ts (6) ───────────────────────────────────────────
   "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.checkRetrain",
   "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.diversitySampling",
@@ -119,40 +120,17 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/alertRouters.ts#alertRouter.getById",
   "server/routers/alertRouters.ts#alertRouter.listAll",
   // ── server/routers/annotationComparisonRouter.ts (4) ───────────────────────────────────────
-  "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.compareTwo",
-  "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.getById",
-  "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.getTrendData",
-  "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.list",
   // ── server/routers/annotationRouters.ts (7) ────────────────────────────────────────────────
-  "server/routers/annotationRouters.ts#annotationRouter.comparison",
-  "server/routers/annotationRouters.ts#annotationRouter.getByImage",
-  "server/routers/annotationRouters.ts#annotationRouter.getByInspection",
-  "server/routers/annotationRouters.ts#annotationRouter.heatmapData",
-  "server/routers/annotationRouters.ts#annotationRouter.search",
-  "server/routers/annotationRouters.ts#annotationRouter.statistics",
-  "server/routers/annotationRouters.ts#annotationRouter.trendPrediction",
   // ── server/routers/aoiOnboardingRouter.ts (4) ──────────────────────────────────────────────
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.getDraft",
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.listAoiMachines",
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.listRecords",
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.status",
   // ── server/routers/aoiPackageRouter.ts (8) ─────────────────────────────────────────────────
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.downloadZip",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.getImage",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.getPackage",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.getPackageImages",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.getPackageLogs",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.getQueueStatus",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.getUploadStats",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.listPackages",
   // ── server/routers/apiKeyRouter.ts (1) ─────────────────────────────────────────────────────
   "server/routers/apiKeyRouter.ts#apiKeyRouter.list",
   // ── server/routers/bomRouter.ts (5) ────────────────────────────────────────────────────────
-  "server/routers/bomRouter.ts#bomRouter.feederReorderStatus",
   "server/routers/bomRouter.ts#bomRouter.getDefinition",
-  "server/routers/bomRouter.ts#bomRouter.listFeeders",
-  "server/routers/bomRouter.ts#bomRouter.traceForward",
-  "server/routers/bomRouter.ts#bomRouter.traceReverse",
   // ── server/routers/commandCenterRouter.ts — ĐÃ TRẢ 2026-09-15 (QA lần 11, PH-23) ───────────
   //    `commandCenterRouter.hierarchy` rời sổ: nay phân giải phạm vi từ `ctx.user` qua
   //    `resolveHierarchyScope` (nhóm A → S). Đo được TRƯỚC khi vá: 5 vai nhận CÙNG 450.811
@@ -163,13 +141,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/dashboardStatsRouters.ts (1) ────────────────────────────────────────────
   "server/routers/dashboardStatsRouters.ts#dashboardRouter.overviewCounts",
   // ── server/routers/defectDispositionRouter.ts (7) ──────────────────────────────────────────
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.countOpen",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.listByInspection",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.listBySerial",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.listOpen",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.reInspectStatus",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.repairQueue",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.repairStats",
   // ── server/routers/deviceAdapterRouter.ts — ★ 2026-10-24: 2 mục ĐÃ TRẢ (get · list ⇒ S qua server/routers/_adapterPhamVi.ts), xoá khỏi sổ ──
   // ── server/routers/digitalTwinRouter.ts — ★ ĐỢT 14 LÔ Q1: 5 mục ĐÃ TRẢ, xoá khỏi sổ ────────
   //    twinState · defectHeatmap · wipFlowState · stationLoadHeatmap · predictionOverlay đều đã
@@ -256,25 +227,12 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/hotFolderRouter.ts#hotFolderRouter.recentFiles",
   "server/routers/hotFolderRouter.ts#hotFolderRouter.status",
   // ── server/routers/inspectionProgramRouter.ts (4) ──────────────────────────────────────────
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.compare",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.get",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.getActive",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.list",
   // ── server/routers/inspectionRouters.ts (5) ────────────────────────────────────────────────
-  "server/routers/inspectionRouters.ts#inspectionRouter.aiAnalysis",
-  "server/routers/inspectionRouters.ts#inspectionRouter.defectPatternClusters",
-  "server/routers/inspectionRouters.ts#inspectionRouter.getById",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.getById",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.getByInspection",
   // ── server/routers/interlockRouter.ts (3) ──────────────────────────────────────────────────
   "server/routers/interlockRouter.ts#interlockRouter.get",
   "server/routers/interlockRouter.ts#interlockRouter.list",
   "server/routers/interlockRouter.ts#interlockRouter.testEvaluate",
   // ── server/routers/irRouter.ts (4) ─────────────────────────────────────────────────────────
-  "server/routers/irRouter.ts#irRouter.diffVersions",
-  "server/routers/irRouter.ts#irRouter.getFlow",
-  "server/routers/irRouter.ts#irRouter.listFlows",
-  "server/routers/irRouter.ts#irRouter.mergeVersions",
   // ── server/routers/layoutRouters.ts (2) ────────────────────────────────────────────────────
   "server/routers/layoutRouters.ts#layoutRouter.getById",
   "server/routers/layoutRouters.ts#layoutRouter.listByWorkshop",
@@ -371,13 +329,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/predictiveMaintenanceRouter.ts#predictiveMaintenanceRouter.getRulEstimate",
   "server/routers/predictiveMaintenanceRouter.ts#predictiveMaintenanceRouter.listRulForecast",
   // ── server/routers/processResultRouter.ts (7) ──────────────────────────────────────────────
-  "server/routers/processResultRouter.ts#processResultRouter.dailyRollup",
-  "server/routers/processResultRouter.ts#processResultRouter.envSeries",
-  "server/routers/processResultRouter.ts#processResultRouter.fleetRollup",
-  "server/routers/processResultRouter.ts#processResultRouter.listBySerial",
-  "server/routers/processResultRouter.ts#processResultRouter.metricSeries",
-  "server/routers/processResultRouter.ts#processResultRouter.spcChart",
-  "server/routers/processResultRouter.ts#processResultRouter.stats",
   // ── server/routers/processRouter.ts (2) ────────────────────────────────────────────────────
   "server/routers/processRouter.ts#processRouter.getAssignmentsByProcess",
   "server/routers/processRouter.ts#processRouter.getLineAssignments",
@@ -395,15 +346,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/productVariantRouter.ts#productVariantRouter.getEffectivePoints",
   "server/routers/productVariantRouter.ts#productVariantRouter.getVariant",
   // ── server/routers/programmingRouter.ts (9) ────────────────────────────────────────────────
-  "server/routers/programmingRouter.ts#programmingRouter.fleetVersionMatrix",
-  "server/routers/programmingRouter.ts#programmingRouter.getArtifact",
-  "server/routers/programmingRouter.ts#programmingRouter.getProject",
-  "server/routers/programmingRouter.ts#programmingRouter.listArtifacts",
-  "server/routers/programmingRouter.ts#programmingRouter.listBuilds",
-  "server/routers/programmingRouter.ts#programmingRouter.listDeployApprovals",
-  "server/routers/programmingRouter.ts#programmingRouter.listDeployments",
-  "server/routers/programmingRouter.ts#programmingRouter.listProjects",
-  "server/routers/programmingRouter.ts#programmingRouter.listSymbols",
   // ★★★ 2026-08-18 — 8 mục của `server/routers/publicProductApiRouter.ts` ĐÃ ĐƯỢC TRẢ, xoá khỏi
   // đây. Tám thủ tục ấy nay thu hẹp về nhà máy của MÁY GỌI (`publicProductScope.ts`) và bộ suy
   // xếp chúng vào nhóm **B** — xem `phamViDocCensus.test.ts` §8, nơi tập ấy được ghim TỪNG TÊN.
@@ -452,11 +394,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/sitesRouter.ts#sitesRouter.get",
   "server/routers/sitesRouter.ts#sitesRouter.list",
   // ── server/routers/sopRouter.ts (5) ────────────────────────────────────────────────────────
-  "server/routers/sopRouter.ts#sopRouter.execution",
-  "server/routers/sopRouter.ts#sopRouter.executions",
-  "server/routers/sopRouter.ts#sopRouter.get",
-  "server/routers/sopRouter.ts#sopRouter.list",
-  "server/routers/sopRouter.ts#sopRouter.resolveActive",
   // ── server/routers/spcAnalysisRouter.ts (2) ────────────────────────────────────────────────
   "server/routers/spcAnalysisRouter.ts#spcAnalysisRouter.controlChart",
   "server/routers/spcAnalysisRouter.ts#spcAnalysisRouter.topNGPoints",
@@ -477,8 +414,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/thresholdSuggestionRouter.ts#thresholdSuggestionRouter.suggestForPoint",
   "server/routers/thresholdSuggestionRouter.ts#thresholdSuggestionRouter.suggestForProductModel",
   // ── server/routers/traceabilityRouter.ts (2) ───────────────────────────────────────────────
-  "server/routers/traceabilityRouter.ts#traceabilityRouter.byLot",
-  "server/routers/traceabilityRouter.ts#traceabilityRouter.bySerial",
   // ── server/routers/twinRouter.ts (2) ───────────────────────────────────────────────────────
   // doc 81 Đợt 4 Task A3: occupancyGrid · replay · sceneGraph · twinModels đã vá (assertTwinFactoryInScope) — đã GỠ.
   "server/routers/twinRouter.ts#twinRouter.models.list",
@@ -510,4 +445,10 @@ export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
     "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listVersions":
     "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
+  "server/routers/alertRouters.ts#alertRouter.list": "dữ liệu của CHÍNH người gọi (lọc theo chủ) — dieu-phoi duyệt mức kỹ thuật 2026-10-25: getAlertSettings(ctx.user.id) = WHERE userId = người gọi",
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.changeover.listMine": "dữ liệu của CHÍNH người gọi (lọc theo chủ) — dieu-phoi duyệt mức kỹ thuật 2026-10-25: WHERE requestedBy = người gọi",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.grep": "cây mã nguồn repo, RBAC ai_repo_read, không phải dữ liệu nhà máy — dieu-phoi duyệt mức kỹ thuật 2026-10-25",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.listFiles": "cây mã nguồn repo, RBAC ai_repo_read, không phải dữ liệu nhà máy — dieu-phoi duyệt mức kỹ thuật 2026-10-25",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.readFile": "cây mã nguồn repo, RBAC ai_repo_read, không phải dữ liệu nhà máy — dieu-phoi duyệt mức kỹ thuật 2026-10-25",
+  "server/routers/scadaCommandsRouter.ts#scadaCommandsRouter.trangThai": "dữ liệu của CHÍNH người gọi (lọc theo chủ) — dieu-phoi duyệt mức kỹ thuật 2026-10-25: lenhHmi.dongChoCuaNguoi lọc userId từ ctx, attempts theo requestId+userId (scada-master xác nhận). Giới hạn chấp nhận: người mất phạm vi sau khi tạo yêu cầu vẫn xem trạng thái yêu cầu của mình tới khi hết hạn",
 };

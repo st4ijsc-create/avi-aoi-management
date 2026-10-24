@@ -19,6 +19,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { CanhBaoChuaGanNhaMay, OChonNhaMayThietBi, TheNhaMayThietBi, type NhaMayLuaChon } from "@/components/quality/InstrumentFactory";
 import {
   Gauge, AlertTriangle, ShieldCheck, ShieldAlert, Clock, Plus, FileText, FlaskConical,
 } from "lucide-react";
@@ -66,11 +67,13 @@ function InstrumentRow({
   selected,
   onSelect,
   onStatus,
+  factories,
 }: {
   inst: any;
   selected: boolean;
   onSelect: () => void;
   onStatus: (id: number, status: HealthStatus) => void;
+  factories: readonly NhaMayLuaChon[];
 }) {
   const healthQuery = trpc.instrumentCalibration.health.useQuery({ instrumentId: inst.id });
   const status = healthQuery.data?.status as HealthStatus | undefined;
@@ -89,6 +92,9 @@ function InstrumentRow({
       <TableCell className="font-medium">{inst.code}</TableCell>
       <TableCell>{inst.name}</TableCell>
       <TableCell className="text-muted-foreground">{inst.instrumentType}</TableCell>
+      <TableCell>
+        <TheNhaMayThietBi factoryId={inst.factoryId} factories={factories} />
+      </TableCell>
       <TableCell>
         {healthQuery.isLoading ? (
           <span className="text-xs text-muted-foreground">…</span>
@@ -214,9 +220,17 @@ function CreateCalibrationDialog({ instrumentId, onDone }: { instrumentId: numbe
 }
 
 // ── Detail: cert history + MSA records for the selected instrument ──────────
-function InstrumentDetail({ inst, isAdmin }: { inst: any; isAdmin: boolean }) {
+function InstrumentDetail({ inst, isAdmin, factories }: { inst: any; isAdmin: boolean; factories: readonly NhaMayLuaChon[] }) {
   const { t } = useTranslation();
   const utils = trpc.useUtils();
+  // 0421: nhà máy sở hữu — CHỈ admin gán (API measurementInstrument.update là adminProcedure)
+  const doiNhaMay = trpc.measurementInstrument.update.useMutation({
+    onSuccess: () => {
+      toast.success(t("common.updated"));
+      void utils.measurementInstrument.list.invalidate();
+    },
+    onError: (e) => toastTrpcError(e),
+  });
   const calQuery = trpc.instrumentCalibration.list.useQuery({ instrumentId: inst.id });
   const msaQuery = trpc.instrumentMsaRecord.list.useQuery({ instrumentId: inst.id });
   const healthQuery = trpc.instrumentCalibration.health.useQuery({ instrumentId: inst.id });
@@ -261,6 +275,16 @@ function InstrumentDetail({ inst, isAdmin }: { inst: any; isAdmin: boolean }) {
           </div>
           {isAdmin && <CreateCalibrationDialog instrumentId={inst.id} onDone={refresh} />}
         </div>
+        {isAdmin && (
+          <div className="mt-3 max-w-xs">
+            <OChonNhaMayThietBi
+              value={inst.factoryId}
+              factories={factories}
+              disabled={doiNhaMay.isPending}
+              onChange={(factoryId) => doiNhaMay.mutate({ id: inst.id, factoryId })}
+            />
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Calibration certificate history */}
@@ -346,6 +370,8 @@ export function InstrumentCalibrationPanel() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const instrumentsQuery = trpc.measurementInstrument.list.useQuery({ includeInactive: true });
+  const factoriesQuery = trpc.factory.list.useQuery(undefined);
+  const factories: readonly NhaMayLuaChon[] = (factoriesQuery.data as NhaMayLuaChon[] | undefined) ?? [];
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [statusMap, setStatusMap] = useState<Record<number, HealthStatus>>({});
 
@@ -371,6 +397,8 @@ export function InstrumentCalibrationPanel() {
   }, [instruments, statusMap]);
 
   const selected = (instruments as any[]).find((i) => i.id === selectedId) ?? null;
+  // 0421: thiết bị chưa gán nhà máy chỉ admin thấy ⇒ nhắc admin (người dùng nhà máy không thấy chúng nên không có gì để nhắc)
+  const soChuaGan = (instruments as any[]).filter((i) => i.factoryId == null).length;
 
   return (
     <div className="space-y-4">
@@ -406,6 +434,8 @@ export function InstrumentCalibrationPanel() {
         </Card>
       )}
 
+      {isAdmin && <CanhBaoChuaGanNhaMay soLuong={soChuaGan} />}
+
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -428,6 +458,7 @@ export function InstrumentCalibrationPanel() {
                   <TableHead>{t("common.code")}</TableHead>
                   <TableHead>{t("common.name")}</TableHead>
                   <TableHead>{t("instrumentCal.type")}</TableHead>
+                  <TableHead>{t("instrumentCal.factoryColumn")}</TableHead>
                   <TableHead>{t("instrumentCal.status")}</TableHead>
                   <TableHead>{t("instrumentCal.calValidUntil")}</TableHead>
                   <TableHead>{t("instrumentCal.msaValidUntil")}</TableHead>
@@ -441,6 +472,7 @@ export function InstrumentCalibrationPanel() {
                     selected={inst.id === selectedId}
                     onSelect={() => setSelectedId(inst.id)}
                     onStatus={onStatus}
+                    factories={factories}
                   />
                 ))}
               </TableBody>
@@ -449,7 +481,7 @@ export function InstrumentCalibrationPanel() {
         </CardContent>
       </Card>
 
-      {selected && <InstrumentDetail inst={selected} isAdmin={isAdmin} />}
+      {selected && <InstrumentDetail inst={selected} isAdmin={isAdmin} factories={factories} />}
     </div>
   );
 }

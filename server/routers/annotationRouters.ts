@@ -5,6 +5,19 @@ import { appError } from "../_core/appError";
 import * as db from "../db";
 import { getDb } from "../db";
 import { sql } from "drizzle-orm";
+import { dieuKienMaySql, chuThichTrongPhamVi, idsMayTrongPhamVi } from "./_adapterPhamVi";
+
+/** phạm vi người dùng (L1 rà bảo mật 2026-10-24): điều kiện SQL "chú thích thuộc lần kiểm tra của máy trong phạm vi" (cột `ia."inspectionId"`); `undefined` khi toàn quyền. Chú thích không gắn lần kiểm tra nào ⇒ ẩn với người dùng hẹp. */
+async function congChuThichTrongPhamVi(ctx: unknown, cotInspectionId: ReturnType<typeof sql.raw>) {
+  const cong = await dieuKienMaySql(ctx as never, sql.raw('"machineId"'));
+  return cong ? sql`${cotInspectionId} IN (SELECT id FROM product_inspections WHERE ${cong})` : undefined;
+}
+
+/** phạm vi người dùng (L1b 2026-10-24): điều kiện SQL "phiên bản lịch sử thuộc chú thích của lần kiểm tra trong phạm vi" (cột `annotationId` của annotation_history); `undefined` khi toàn quyền. */
+async function congLichSuTrongPhamVi(ctx: unknown, cotAnnotationId: ReturnType<typeof sql.raw>) {
+  const cong = await congChuThichTrongPhamVi(ctx, sql.raw('"inspectionId"'));
+  return cong ? sql`${cotAnnotationId} IN (SELECT id FROM image_annotations WHERE ${cong})` : undefined;
+}
 import { nanoid } from "nanoid";
 import { invokeLLM } from "../_core/llm";
 import { finalYield } from "../utils/kpi";
@@ -271,6 +284,25 @@ export const annotationRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+      // phạm vi người dùng (L1b 2026-10-24): người dùng phạm vi hẹp chỉ chú thích lên lần kiểm tra của máy mình (suy ra từ measurementResultId nếu thiếu inspectionId)
+      let inspectionIdGhi: number | null = input.inspectionId || null;
+      if ((await idsMayTrongPhamVi(ctx)) !== null) {
+        if (input.measurementResultId != null) {
+          const mr = await db.execute(sql`SELECT "inspectionId" FROM measurement_results WHERE id = ${input.measurementResultId}`) as any;
+          const mrInsp: number | null = mr[0]?.inspectionId ?? null;
+          if (mrInsp == null || (inspectionIdGhi != null && inspectionIdGhi !== mrInsp)) {
+            throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
+          }
+          inspectionIdGhi = mrInsp;
+        }
+        if (inspectionIdGhi == null) {
+          throw appError('BAD_REQUEST', 'FIELD_REQUIRED', { field: 'inspectionId' }, 'inspectionId is required');
+        }
+        if (!(await chuThichTrongPhamVi(ctx, inspectionIdGhi))) {
+          // cùng thực thể với lời khai: đi theo measurementResultId thì báo measurementResult, theo inspectionId thì báo inspection
+          throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: input.measurementResultId != null && !input.inspectionId ? 'measurementResult' : 'inspection' }, 'Not found');
+        }
+      }
       // Check if annotation exists for this image
       const existing = await db.execute(
         sql`SELECT id FROM image_annotations WHERE "imageUrl" = ${input.imageUrl} AND "createdBy" = ${ctx.user.id} LIMIT 1`
@@ -285,7 +317,7 @@ export const annotationRouter = router({
       } else {
         // Create new
         const result = await db.execute(
-          sql`INSERT INTO image_annotations ("inspectionId", "measurementResultId", "imageUrl", annotations, "createdBy") VALUES (${input.inspectionId || null}, ${input.measurementResultId || null}, ${input.imageUrl}, ${JSON.stringify(input.annotations)}, ${ctx.user.id}) RETURNING id`
+          sql`INSERT INTO image_annotations ("inspectionId", "measurementResultId", "imageUrl", annotations, "createdBy") VALUES (${inspectionIdGhi}, ${input.measurementResultId || null}, ${input.imageUrl}, ${JSON.stringify(input.annotations)}, ${ctx.user.id}) RETURNING id`
         );
         return { success: true, id: (result as any)[0]?.id };
       }
@@ -294,11 +326,12 @@ export const annotationRouter = router({
   // Get annotations for an image
   getByImage: protectedProcedure
     .input(z.object({ imageUrl: z.string() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+      const cong = await congChuThichTrongPhamVi(ctx, sql.raw('"inspectionId"'));
       const result = await db.execute(
-        sql`SELECT * FROM image_annotations WHERE "imageUrl" = ${input.imageUrl} ORDER BY "updatedAt" DESC LIMIT 1`
+        sql`SELECT * FROM image_annotations WHERE "imageUrl" = ${input.imageUrl} ${cong ? sql`AND ${cong}` : sql``} ORDER BY "updatedAt" DESC LIMIT 1`
       ) as any;
       if (!result.length) return null;
       const row = result[0];
@@ -317,11 +350,12 @@ export const annotationRouter = router({
   // Get all annotations for an inspection
   getByInspection: protectedProcedure
     .input(z.object({ inspectionId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+      const cong = await congChuThichTrongPhamVi(ctx, sql.raw('"inspectionId"'));
       const result = await db.execute(
-        sql`SELECT * FROM image_annotations WHERE "inspectionId" = ${input.inspectionId} ORDER BY "createdAt" DESC`
+        sql`SELECT * FROM image_annotations WHERE "inspectionId" = ${input.inspectionId} ${cong ? sql`AND ${cong}` : sql``} ORDER BY "createdAt" DESC`
       ) as any;
       return (result || []).map((row: any) => ({
         id: row.id,
@@ -344,13 +378,14 @@ export const annotationRouter = router({
       dateFrom: z.date().optional(),
       dateTo: z.date().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Get all annotations and filter in memory for complex JSON queries
+      const cong = await congChuThichTrongPhamVi(ctx, sql.raw('"inspectionId"')); // phạm vi người dùng (L1 rà bảo mật 2026-10-24)
       const result = await db.execute(
-        sql`SELECT * FROM image_annotations ORDER BY "createdAt" DESC LIMIT 500`
+        sql`SELECT * FROM image_annotations ${cong ? sql`WHERE ${cong}` : sql``} ORDER BY "createdAt" DESC LIMIT 500`
       ) as any;
       
       let annotations = (result || []).map((row: any) => {
@@ -424,7 +459,7 @@ export const annotationRouter = router({
       machineId: z.number().optional(),
       productModelId: z.number().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
@@ -447,6 +482,9 @@ export const annotationRouter = router({
         LEFT JOIN product_models pm ON i."productModelId" = pm.id
         WHERE 1=1
       `;
+      // phạm vi người dùng (L1 rà bảo mật 2026-10-24): chỉ chú thích của lần kiểm tra thuộc máy trong phạm vi
+      const congMay = await dieuKienMaySql(ctx, sql.raw('i."machineId"'));
+      if (congMay) query = sql`${query} AND ${congMay}`;
       
       // Note: For simplicity, we'll filter in memory. In production, use proper SQL conditions.
       const result = await db.execute(query) as any;
@@ -545,16 +583,18 @@ export const annotationRouter = router({
         : templateResult[0].annotations;
       
       // Apply to each image
+      const congBulk = await congChuThichTrongPhamVi(ctx, sql.raw('"inspectionId"'));
       let successCount = 0;
       for (let i = 0; i < input.imageUrls.length; i++) {
         const imageUrl = input.imageUrls[i];
         const inspectionId = input.inspectionIds?.[i] || null;
         
-        // Check if annotation exists
+        // Check if annotation exists (phạm vi người dùng (L1b 2026-10-24): chỉ xét chú thích trong phạm vi)
         const existing = await db.execute(
-          sql`SELECT id, annotations FROM image_annotations WHERE "imageUrl" = ${imageUrl} LIMIT 1`
+          sql`SELECT id, annotations FROM image_annotations WHERE "imageUrl" = ${imageUrl} ${congBulk ? sql`AND ${congBulk}` : sql``} LIMIT 1`
         ) as any;
-        
+
+        if (existing.length === 0 && !(await chuThichTrongPhamVi(ctx, inspectionId))) continue; // tạo mới phải gắn lần kiểm tra trong phạm vi
         if (existing.length > 0) {
           // Merge with existing annotations
           const existingAnnotations = typeof existing[0].annotations === 'string'
@@ -586,9 +626,10 @@ export const annotationRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       let deletedCount = 0;
+      const congXoa = await congChuThichTrongPhamVi(ctx, sql.raw('"inspectionId"')); // phạm vi người dùng (L1b 2026-10-24)
       for (const imageUrl of input.imageUrls) {
         const result = await db.execute(
-          sql`DELETE FROM image_annotations WHERE "imageUrl" = ${imageUrl} AND ("createdBy" = ${ctx.user.id} OR ${ctx.user.role} = 'admin')`
+          sql`DELETE FROM image_annotations WHERE "imageUrl" = ${imageUrl} AND ("createdBy" = ${ctx.user.id} OR ${ctx.user.role} = 'admin') ${congXoa ? sql`AND ${congXoa}` : sql``}`
         ) as any;
         deletedCount += result.count || 0;
       }
@@ -607,9 +648,10 @@ export const annotationRouter = router({
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
-      // Get source annotations
+      // Get source annotations (phạm vi người dùng (L1b 2026-10-24): nguồn và đích chỉ trong phạm vi)
+      const congCopy = await congChuThichTrongPhamVi(ctx, sql.raw('"inspectionId"'));
       const sourceResult = await db.execute(
-        sql`SELECT annotations FROM image_annotations WHERE "imageUrl" = ${input.sourceImageUrl} ORDER BY "updatedAt" DESC LIMIT 1`
+        sql`SELECT annotations FROM image_annotations WHERE "imageUrl" = ${input.sourceImageUrl} ${congCopy ? sql`AND ${congCopy}` : sql``} ORDER BY "updatedAt" DESC LIMIT 1`
       ) as any;
       if (!sourceResult.length) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotation' }, 'Source image has no annotations');
@@ -626,9 +668,10 @@ export const annotationRouter = router({
         
         // Check if annotation exists
         const existing = await db.execute(
-          sql`SELECT id FROM image_annotations WHERE "imageUrl" = ${targetUrl} LIMIT 1`
+          sql`SELECT id FROM image_annotations WHERE "imageUrl" = ${targetUrl} ${congCopy ? sql`AND ${congCopy}` : sql``} LIMIT 1`
         ) as any;
-        
+        if (existing.length === 0 && !(await chuThichTrongPhamVi(ctx, inspectionId))) continue; // tạo mới phải gắn lần kiểm tra trong phạm vi
+
         const newAnnotations = sourceAnnotations.map((a: any) => ({ ...a, id: nanoid() }));
         
         if (existing.length > 0) {
@@ -806,9 +849,10 @@ Respond in JSON format with an array of findings.`
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       // Check ownership
       const existing = await db.execute(
-        sql`SELECT "createdBy" FROM image_annotations WHERE id = ${input.id}`
+        sql`SELECT "createdBy", "inspectionId" FROM image_annotations WHERE id = ${input.id}`
       ) as any;
-      if (!existing.length) {
+      // phạm vi người dùng (L1b 2026-10-24): chú thích ngoài phạm vi ≡ không tồn tại (kiểm TRƯỚC quyền sở hữu để không lộ sự tồn tại)
+      if (!existing.length || !(await chuThichTrongPhamVi(ctx, existing[0].inspectionId))) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotation' }, 'Annotation not found');
       }
       if (existing[0].createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
@@ -829,12 +873,14 @@ Respond in JSON format with an array of findings.`
       dateTo: z.string().optional(),
       limit: z.number().default(10),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic conditions using parameterized queries
       const conditions = [sql`mr."imageUrl" IS NOT NULL`];
+      const congMay = await dieuKienMaySql(ctx, sql.raw('i."machineId"')); // phạm vi người dùng (L1 rà bảo mật 2026-10-24)
+      if (congMay) conditions.push(congMay);
       if (input.serialNumber) conditions.push(sql`i."serialNumber" = ${input.serialNumber}`);
       if (input.productModelId) conditions.push(sql`i."productModelId" = ${input.productModelId}`);
       if (input.measurementPointId) conditions.push(sql`mr."pointDefId" = ${input.measurementPointId}`);
@@ -920,12 +966,14 @@ Respond in JSON format with an array of findings.`
       dateTo: z.string().optional(),
       annotationType: z.string().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic conditions using parameterized queries
       const conditions = [sql`ia.annotations IS NOT NULL`];
+      const congMay = await dieuKienMaySql(ctx, sql.raw('i."machineId"')); // phạm vi người dùng (L1 rà bảo mật 2026-10-24)
+      if (congMay) conditions.push(congMay);
       if (input.machineId) conditions.push(sql`i."machineId" = ${input.machineId}`);
       if (input.productModelId) conditions.push(sql`i."productModelId" = ${input.productModelId}`);
       if (input.dateFrom) conditions.push(sql`i."inspectionTime" >= ${input.dateFrom}`);
@@ -1071,7 +1119,7 @@ Respond in JSON format with an array of findings.`
       days: z.number().default(30), // Historical days
       predictionDays: z.number().default(7), // Days to predict
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
@@ -1080,6 +1128,8 @@ Respond in JSON format with an array of findings.`
         sql`ia.annotations IS NOT NULL`,
         sql`i."inspectionTime" >= NOW() - INTERVAL '1 day' * ${input.days}`,
       ];
+      const congMay = await dieuKienMaySql(ctx, sql.raw('i."machineId"')); // phạm vi người dùng (L1 rà bảo mật 2026-10-24)
+      if (congMay) conditions.push(congMay);
       if (input.machineId) conditions.push(sql`i."machineId" = ${input.machineId}`);
       if (input.productModelId) conditions.push(sql`i."productModelId" = ${input.productModelId}`);
       
@@ -1197,12 +1247,14 @@ Respond in JSON format with an array of findings.`
       dateTo: z.string().optional(),
       annotationType: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      
+
       // Build dynamic conditions using parameterized queries
       const conditions = [sql`ia.annotations IS NOT NULL`];
+      const congMay = await dieuKienMaySql(ctx, sql.raw('i."machineId"')); // phạm vi người dùng (L1b 2026-10-24): chỉ xuất chú thích của máy trong phạm vi
+      if (congMay) conditions.push(congMay);
       if (input.machineId) conditions.push(sql`i."machineId" = ${input.machineId}`);
       if (input.productModelId) conditions.push(sql`i."productModelId" = ${input.productModelId}`);
       if (input.dateFrom) conditions.push(sql`i."inspectionTime" >= ${input.dateFrom}`);
@@ -1321,6 +1373,7 @@ Respond in JSON format with an array of findings.`
         let imported = 0;
         let skipped = 0;
         let errors: string[] = [];
+        const congNhap = await congChuThichTrongPhamVi(ctx, sql.raw('"inspectionId"')); // phạm vi người dùng (L1b 2026-10-24)
         
         for (const item of importData) {
           try {
@@ -1329,16 +1382,16 @@ Respond in JSON format with an array of findings.`
               continue;
             }
             
-            // Check if annotation exists for this image
+            // Check if annotation exists for this image (phạm vi người dùng (L1b 2026-10-24): chỉ xét chú thích trong phạm vi; sửa kèm: chọn cả annotations để merge không xoá dữ liệu cũ)
             const existing = await db.execute(
-              sql`SELECT id FROM image_annotations WHERE "imageUrl" = ${item.imageUrl} LIMIT 1`
+              sql`SELECT id, annotations FROM image_annotations WHERE "imageUrl" = ${item.imageUrl} ${congNhap ? sql`AND ${congNhap}` : sql``} LIMIT 1`
             ) as any;
             
             if (existing.length > 0) {
               if (input.mode === 'replace') {
                 // Update existing
                 await db.execute(
-                  sql`UPDATE image_annotations SET annotations = ${JSON.stringify(item.annotations)}, "updatedAt" = NOW() WHERE "imageUrl" = ${item.imageUrl}`
+                  sql`UPDATE image_annotations SET annotations = ${JSON.stringify(item.annotations)}, "updatedAt" = NOW() WHERE "imageUrl" = ${item.imageUrl} ${congNhap ? sql`AND ${congNhap}` : sql``}`
                 );
                 imported++;
               } else {
@@ -1349,13 +1402,13 @@ Respond in JSON format with an array of findings.`
                   : existingRow.annotations;
                 const mergedAnnotations = [...(existingAnnotations || []), ...(item.annotations || [])];
                 await db.execute(
-                  sql`UPDATE image_annotations SET annotations = ${JSON.stringify(mergedAnnotations)}, "updatedAt" = NOW() WHERE "imageUrl" = ${item.imageUrl}`
+                  sql`UPDATE image_annotations SET annotations = ${JSON.stringify(mergedAnnotations)}, "updatedAt" = NOW() WHERE "imageUrl" = ${item.imageUrl} ${congNhap ? sql`AND ${congNhap}` : sql``}`
                 );
                 imported++;
               }
             } else {
               // Need inspectionId to create new annotation
-              if (item.inspectionId) {
+              if (item.inspectionId && (await chuThichTrongPhamVi(ctx, Number(item.inspectionId)))) {
                 await db.execute(
                   sql`INSERT INTO image_annotations ("imageUrl", "inspectionId", annotations, "createdBy") VALUES (${item.imageUrl}, ${item.inspectionId}, ${JSON.stringify(item.annotations)}, ${ctx.user.id})`
                 );
@@ -1485,15 +1538,17 @@ export const annotationHistoryRouter = router({
       imageUrl: z.string().optional(),
       limit: z.number().min(1).max(100).default(50),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      
+
+      const congLs = await congLichSuTrongPhamVi(ctx, sql.raw('"annotationId"')); // phạm vi người dùng (L1b 2026-10-24)
+      const dkLs = congLs ? sql`AND ${congLs}` : sql``;
       let query;
       if (input.annotationId) {
-        query = sql`SELECT * FROM annotation_history WHERE "annotationId" = ${input.annotationId} ORDER BY "versionNumber" DESC LIMIT ${input.limit}`;
+        query = sql`SELECT * FROM annotation_history WHERE "annotationId" = ${input.annotationId} ${dkLs} ORDER BY "versionNumber" DESC LIMIT ${input.limit}`;
       } else if (input.imageUrl) {
-        query = sql`SELECT * FROM annotation_history WHERE "imageUrl" = ${input.imageUrl} ORDER BY "versionNumber" DESC LIMIT ${input.limit}`;
+        query = sql`SELECT * FROM annotation_history WHERE "imageUrl" = ${input.imageUrl} ${dkLs} ORDER BY "versionNumber" DESC LIMIT ${input.limit}`;
       } else {
         throw appError('BAD_REQUEST', 'FIELD_REQUIRED', { field: 'annotationIdOrImageUrl' }, 'Either annotationId or imageUrl is required');
       }
@@ -1516,12 +1571,13 @@ export const annotationHistoryRouter = router({
   // Get specific version
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      
+
+      const congLs = await congLichSuTrongPhamVi(ctx, sql.raw('"annotationId"')); // phạm vi người dùng (L1b 2026-10-24): ngoài phạm vi ≡ không tồn tại
       const result = await db.execute(
-        sql`SELECT * FROM annotation_history WHERE id = ${input.id}`
+        sql`SELECT * FROM annotation_history WHERE id = ${input.id} ${congLs ? sql`AND ${congLs}` : sql``}`
       ) as any;
       
       if (!result.length) {
@@ -1550,9 +1606,10 @@ export const annotationHistoryRouter = router({
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
-      // Get the history record
+      // Get the history record (phạm vi người dùng (L1b 2026-10-24): ngoài phạm vi ≡ không tồn tại)
+      const congLs = await congLichSuTrongPhamVi(ctx, sql.raw('"annotationId"'));
       const historyResult = await db.execute(
-        sql`SELECT * FROM annotation_history WHERE id = ${input.historyId}`
+        sql`SELECT * FROM annotation_history WHERE id = ${input.historyId} ${congLs ? sql`AND ${congLs}` : sql``}`
       ) as any;
       
       if (!historyResult.length) {
@@ -1590,12 +1647,13 @@ export const annotationHistoryRouter = router({
       versionId1: z.number(),
       versionId2: z.number(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      
+
+      const congLs = await congLichSuTrongPhamVi(ctx, sql.raw('"annotationId"')); // phạm vi người dùng (L1b 2026-10-24): ngoài phạm vi ≡ không tồn tại
       const result = await db.execute(
-        sql`SELECT * FROM annotation_history WHERE id IN (${input.versionId1}, ${input.versionId2})`
+        sql`SELECT * FROM annotation_history WHERE id IN (${input.versionId1}, ${input.versionId2}) ${congLs ? sql`AND ${congLs}` : sql``}`
       ) as any;
       
       if (result.length !== 2) {

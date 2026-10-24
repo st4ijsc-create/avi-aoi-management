@@ -4,11 +4,36 @@ import { requirePermission } from "../_core/accessControl";
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { adminProcedure } from "./_shared";
-import { phamViCua } from "./_phamViNguoiXem";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { sql } from "drizzle-orm";
+import { ghiViTri } from "./_viTriPhamVi";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import * as db from "../db";
+
+/**
+ * Phạm vi nhà máy cho GHI sản xuất (rà bảo mật 2026-10-24, lô W9 — kiểm định phamViGhi): đơn / mẫu đơn / công đoạn / gán sản phẩm-chuyền theo id client gửi.
+ * Hàng THẤY được ⇔ cùng getter ĐỌC có `phamViCua(ctx)` (đơn · mẫu · công đoạn) hoặc chuyền của nó trong phạm vi (gán sản phẩm-chuyền); ngoài phạm vi ≡ không tồn tại.
+ * Vị trí MỚI khai trong input (factoryId · workshopId · lineId · stationId) cũng phải trong phạm vi (`ghiViTri`).
+ */
+async function donHangGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  if (!(await db.getProductionOrderById(id, phamViCua(ctx)))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionOrder" }, "Production order not found");
+}
+async function mauGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  if (!(await db.getOrderTemplate(id, phamViCua(ctx)))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionOrderTemplate" }, "Production order template not found");
+}
+async function congDoanGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  const cd = await db.getLineStageById(id, phamViCua(ctx)); // trả MẢNG (hợp đồng cũ): ngoài phạm vi ⇒ mảng RỖNG
+  if (!cd || (Array.isArray(cd) && cd.length === 0)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "lineStage" }, "Line stage not found");
+}
+async function ganGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  const d = await db.getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const rows = (await d.execute(sql`SELECT "lineId" AS l FROM line_product_assignments WHERE id = ${id}`)) as unknown as Array<{ l: number | null }>;
+  if (rows.length === 0 || rows[0]?.l == null) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, "Line not found");
+  await ghiViTri(ctx, { lineId: Number(rows[0].l) });
+}
 
 export const productionOrderRouter = router({
   list: protectedProcedure
@@ -52,6 +77,7 @@ export const productionOrderRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiViTri(ctx, { factoryId: input.factoryId, workshopId: input.workshopId, lineId: input.lineId }, { batBuoc: true });
       const id = await db.createProductionOrder({
         ...input,
         createdBy: ctx.user.id,
@@ -75,7 +101,9 @@ export const productionOrderRouter = router({
       plannedEndDate: z.date().optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await donHangGhi(ctx, input.id);
+      await ghiViTri(ctx, { factoryId: input.factoryId, workshopId: input.workshopId, lineId: input.lineId });
       const { id, ...data } = input;
 
       // Doc 38 T-1 (P0 #4) — feeder-verify RUN-GATE. Transitioning an order to
@@ -108,7 +136,8 @@ export const productionOrderRouter = router({
 
   delete: writeProcedure.use(requirePermission("production_orders", "canDelete"))
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await donHangGhi(ctx, input.id);
       await db.deleteProductionOrder(input.id);
       return { success: true };
     }),
@@ -169,6 +198,8 @@ export const productionOrderRouter = router({
       forceOverride: z.boolean().optional(), // Allow override overlap
     }))
     .mutation(async ({ input, ctx }) => {
+      await donHangGhi(ctx, input.id);
+      await ghiViTri(ctx, { lineId: input.lineId });
       const order = await db.getProductionOrderById(input.id);
       if (!order) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productionOrder' }, 'Production order not found');
@@ -333,6 +364,7 @@ export const productionOrderRouter = router({
       defaultNotes: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiViTri(ctx, { factoryId: input.factoryId, workshopId: input.workshopId }, { batBuoc: true });
       return db.createOrderTemplate({ ...input, createdBy: ctx.user.id });
     }),
 
@@ -349,7 +381,9 @@ export const productionOrderRouter = router({
       defaultNotes: z.string().optional(),
       isActive: z.boolean().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await mauGhi(ctx, input.id);
+      await ghiViTri(ctx, { factoryId: input.factoryId, workshopId: input.workshopId });
       const { id, ...data } = input;
       await db.updateOrderTemplate(id, data);
       return { success: true };
@@ -357,7 +391,8 @@ export const productionOrderRouter = router({
 
   deleteTemplate: writeProcedure.use(requirePermission("production_orders", "canDelete"))
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await mauGhi(ctx, input.id);
       await db.deleteOrderTemplate(input.id);
       return { success: true };
     }),
@@ -376,7 +411,9 @@ export const productionOrderRouter = router({
       scheduledStartDate: z.date().optional(),
       scheduledEndDate: z.date().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await mauGhi(ctx, input.templateId);
+      await ghiViTri(ctx, { lineId: input.lineId });
       const template = await db.getOrderTemplate(input.templateId);
       if (!template) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "orderTemplate" }, "Template not found");
 
@@ -418,7 +455,8 @@ export const productionOrderRouter = router({
       factoryId: z.number(),
       algorithm: z.enum(["fifo", "priority", "edf"]).optional().default("priority"),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ghiViTri(ctx, { factoryId: input.factoryId });
       try {
         // Try advanced scheduling with algorithm
         const { scheduleFIFO, schedulePriority, scheduleEDF } = await import("../services/productionSchedulingService");
@@ -670,7 +708,8 @@ export const productionOrderRouter = router({
       extraDowntimeHours: z.number().min(0).max(720).optional(),
       capacityReductionPct: z.number().min(0).max(100).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ghiViTri(ctx, { factoryId: input.factoryId, lineId: input.lineId });
       const { simulateWhatIf } = await import("../services/productionSchedulingService");
 
       const orders = await db.getProductionOrders(
@@ -783,7 +822,8 @@ export const lineStageRouter = router({
       stationId: z.number().optional(),
       cycleTimeTarget: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ghiViTri(ctx, { lineId: input.lineId, stationId: input.stationId }, { batBuoc: true });
       const id = await db.createLineStage(input);
       return { id };
     }),
@@ -799,7 +839,9 @@ export const lineStageRouter = router({
       cycleTimeTarget: z.string().optional(),
       isActive: z.boolean().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await congDoanGhi(ctx, input.id);
+      await ghiViTri(ctx, { stationId: input.stationId });
       const { id, ...data } = input;
       await db.updateLineStage(id, data);
       return { success: true };
@@ -807,7 +849,8 @@ export const lineStageRouter = router({
 
   delete: writeProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await congDoanGhi(ctx, input.id);
       await db.deleteLineStage(input.id);
       return { success: true };
     }),
@@ -817,7 +860,8 @@ export const lineStageRouter = router({
       lineId: z.number(),
       stageIds: z.array(z.number()),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ghiViTri(ctx, { lineId: input.lineId }, { batBuoc: true });
       await db.reorderLineStages(input.lineId, input.stageIds);
       return { success: true };
     }),
@@ -845,7 +889,9 @@ export const lineProductAssignmentRouter = router({
       endDate: z.date().optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ghiViTri(ctx, { lineId: input.lineId }, { batBuoc: true });
+      if (input.productionOrderId != null) await donHangGhi(ctx, input.productionOrderId);
       const id = await db.createLineProductAssignment(input);
       return { id };
     }),
@@ -861,7 +907,10 @@ export const lineProductAssignmentRouter = router({
       endDate: z.date().optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ganGhi(ctx, input.id);
+      await ghiViTri(ctx, { lineId: input.lineId });
+      if (input.productionOrderId != null) await donHangGhi(ctx, input.productionOrderId);
       const { id, ...data } = input;
       await db.updateLineProductAssignment(id, data);
       return { success: true };
@@ -869,7 +918,8 @@ export const lineProductAssignmentRouter = router({
 
   delete: writeProcedure.use(requirePermission("production_line_assignments", "canDelete"))
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ganGhi(ctx, input.id);
       await db.deleteLineProductAssignment(input.id);
       return { success: true };
     }),

@@ -17,7 +17,8 @@ import { moduleProcedure, router } from "../_core/trpc";
 const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { getDb } from "../db/connection";
 import { listInstallationsBySerial } from "../db/bom"; // G2.4: component installs for a serial
-import { eq, or } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
+import { dieuKienWipTrongPhamVi, donViTrongPhamVi, idsMayTrongPhamVi } from "./_adapterPhamVi";
 import {
   wipTracking,
   lotDisposition,
@@ -29,23 +30,31 @@ export const traceabilityRouter = router({
   // Cây genealogy 2 chiều cho 1 serial number.
   bySerial: protectedProcedure
     .input(z.object({ serialNumber: z.string().min(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) {
         return { serialNumber: input.serialNumber, found: false, wip: [], upstream: [], downstream: [], components: [] };
       }
+      // phạm vi người dùng (L2 2026-10-24): đơn vị ngoài phạm vi ≡ chưa có dữ liệu (cùng dạng trả về "không tìm thấy")
+      if (!(await donViTrongPhamVi(ctx, [input.serialNumber])).has(input.serialNumber)) {
+        return { serialNumber: input.serialNumber, found: false, wip: [], upstream: [], downstream: [], components: [] };
+      }
+      const congWip = await dieuKienWipTrongPhamVi(ctx);
 
       // WIP record(s) cho serial (kèm chuỗi cha qua parentSerialNumber).
       const wipRows = await database
         .select()
         .from(wipTracking)
-        .where(or(
-          eq(wipTracking.serialNumber, input.serialNumber),
-          eq(wipTracking.parentSerialNumber, input.serialNumber),
+        .where(and(
+          or(
+            eq(wipTracking.serialNumber, input.serialNumber),
+            eq(wipTracking.parentSerialNumber, input.serialNumber),
+          ),
+          congWip,
         ));
 
       // G2.4 (additive): component installations for this serial (component → board).
-      const components = await listInstallationsBySerial(input.serialNumber);
+      const components = await listInstallationsBySerial(input.serialNumber, 1000, await idsMayTrongPhamVi(ctx));
 
       // Disposition liên quan serial (downstream: rework/scrap/return + customerReturnRef).
       const dispRows = await database
@@ -105,19 +114,27 @@ export const traceabilityRouter = router({
   // Tra cứu theo lotNumber: serial trong lot + các disposition.
   byLot: protectedProcedure
     .input(z.object({ lotNumber: z.string().min(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { lotNumber: input.lotNumber, found: false, wip: [], dispositions: [] };
 
+      // phạm vi người dùng (L2 2026-10-24): lô thấy được ⇔ có hàng WIP ở dây chuyền/máy trong phạm vi; xử lý theo serial chỉ khi serial thấy được
       const wipRows = await database
         .select()
         .from(wipTracking)
-        .where(eq(wipTracking.lotNumber, input.lotNumber));
+        .where(and(eq(wipTracking.lotNumber, input.lotNumber), await dieuKienWipTrongPhamVi(ctx)));
 
-      const dispRows = await database
+      let dispRows = await database
         .select()
         .from(lotDisposition)
         .where(eq(lotDisposition.lotNumber, input.lotNumber));
+      if ((await idsMayTrongPhamVi(ctx)) !== null) {
+        if (wipRows.length === 0) dispRows = [];
+        else {
+          const thay = await donViTrongPhamVi(ctx, dispRows.map((d) => d.serialNumber).filter((s): s is string => !!s));
+          dispRows = dispRows.filter((d) => d.serialNumber == null || thay.has(d.serialNumber));
+        }
+      }
 
       return {
         lotNumber: input.lotNumber,

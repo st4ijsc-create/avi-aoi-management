@@ -5,6 +5,7 @@
  * defect spike / yield drop detection, and routing statistics.
  */
 
+import { canhBaoDuDoanGhi } from "./_viTriPhamVi";
 import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import {
@@ -57,6 +58,7 @@ export const aiSmartAlertRoutingRouter = router({
   acknowledge: protectedProcedure
     .input(z.object({ alertId: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
+      await canhBaoDuDoanGhi(ctx, input.alertId); // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b)
       const userId = ctx.user.id;
       const success = await acknowledgeAlert(input.alertId, userId);
       return { success };

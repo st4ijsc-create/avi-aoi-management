@@ -29,7 +29,19 @@ import { sql } from "drizzle-orm";
 // ★★★ Vé ảnh ngắn hạn — chủ DUY NHẤT của phép ký là `_core/anhKyUrl`. Xem khối chú thích tại mỗi
 //     lời gọi `kyAnhTrongThan` bên dưới để biết vì sao ký ở BIÊN phản hồi chứ không từng trường.
 import { kyAnhTrongThan } from "../_core/anhKyUrl";
-import { andTrongPhamVi, andSanPhamTrongPhamVi } from "./phamViExternal";
+import { andTrongPhamVi, andSanPhamTrongPhamVi, idTrongPhamViExternal, dieuKienViTri } from "./phamViExternal";
+import type { PhamViNguoiXem } from "../db/hierarchy";
+
+/**
+ * phạm vi người gọi (rà bảo mật 2026-10-24): master key/admin ⇒ không lọc; tài khoản Bearer ⇒ chỉ dữ liệu của nhà máy được gán; stationId ngoài phạm vi ⇒ 403 external_factory_scope_denied
+ * Trả `true` (đã gửi 403) nếu trạm client gửi nằm NGOÀI phạm vi; `undefined` ⇒ không lọc theo trạm (handler tự xử).
+ */
+async function chanTramNgoai(res: express.Response, nguoiXem: PhamViNguoiXem | undefined, stationId: number | undefined): Promise<boolean> {
+  if (stationId === undefined || !Number.isFinite(stationId)) return false;
+  if (await idTrongPhamViExternal(nguoiXem, "station", stationId)) return false;
+  res.status(403).json(thanTuChoiPhamViNgoai("station", String(stationId)));
+  return true;
+}
 import { thanTuChoiPhamViNgoai } from "./_phamViNgoai";
 import { phamViGoiNgoai, nguoiXemCuaPhamVi, phamViDaAp } from "./_phamViNgoai"; // 2026-10-24 — phạm vi người dùng/master cho /api/external
 import { docGioTuongNhaMay } from "../utils/factoryTime";
@@ -116,10 +128,13 @@ export function registerExternalInspectionRoutes(
   // ================================================================
 
   // GET /api/external/oee/summary — estate OEE (units-weighted average of live OEE).
-  app.get("/api/external/oee/summary", validateExternalAuth, async (_req, res) => {
+  app.get("/api/external/oee/summary", validateExternalAuth, async (req, res) => {
     try {
       const { getAllMachinesOEELive } = await import("../services/oeeService");
-      const metrics = await getAllMachinesOEELive();
+      // phạm vi người gọi (rà bảo mật 2026-10-24): bộ tính OEE đã nhận phạm vi người xem (OeeViewerScope)
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai);
+      const metrics = await getAllMachinesOEELive({ ...(nguoiXemNgoai ?? {}) });
       // Units-weighted average across machines that actually have an OEE value.
       let wSum = 0;
       let wTot = 0;
@@ -133,7 +148,7 @@ export function registerExternalInspectionRoutes(
         }
       }
       const oee = wTot > 0 ? Number((wSum / wTot).toFixed(2)) : null; // honest null if no OEE data
-      res.json({ success: true, data: { oee, machinesWithOee: (metrics as any[]).filter((m) => typeof m?.oee === "number").length } });
+      res.json({ success: true, scopeApplied: phamViDaAp(pvNgoai), data: { oee, machinesWithOee: (metrics as any[]).filter((m) => typeof m?.oee === "number").length } });
     } catch (error: any) {
       console.error("[External] oee/summary error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get OEE summary" });
@@ -141,22 +156,26 @@ export function registerExternalInspectionRoutes(
   });
 
   // GET /api/external/fleet/summary — task + robot counts (NOT re-running allocation).
-  app.get("/api/external/fleet/summary", validateExternalAuth, async (_req, res) => {
+  app.get("/api/external/fleet/summary", validateExternalAuth, async (req, res) => {
     try {
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai); // phạm vi người gọi (rà bảo mật 2026-10-24)
       const { getDb } = await import("../db");
       const db = await getDb();
       if (!db) return res.json({ success: true, data: { tasksPending: null, tasksRunning: null, robotsOnline: null, robotsTotal: null } });
       const { tasks, robots } = await import("../../drizzle/schema");
-      const taskRows = await db.select({ status: tasks.status }).from(tasks);
+      const congTask = await dieuKienViTri(nguoiXemNgoai, { factoryId: tasks.factoryId });
+      const taskRows = await db.select({ status: tasks.status }).from(tasks).where(congTask);
       let tasksPending = 0;
       let tasksRunning = 0;
       for (const t of taskRows) {
         if (t.status === "pending" || t.status === "assigned") tasksPending++;
         else if (t.status === "running") tasksRunning++;
       }
-      const robotRows = await db.select({ status: robots.status }).from(robots);
+      const congRobot = await dieuKienViTri(nguoiXemNgoai, { lineId: robots.lineId, stationId: robots.stationId });
+      const robotRows = await db.select({ status: robots.status }).from(robots).where(congRobot);
       const robotsOnline = robotRows.filter((r) => r.status !== "offline").length;
-      res.json({ success: true, data: { tasksPending, tasksRunning, robotsOnline, robotsTotal: robotRows.length } });
+      res.json({ success: true, scopeApplied: phamViDaAp(pvNgoai), data: { tasksPending, tasksRunning, robotsOnline, robotsTotal: robotRows.length } });
     } catch (error: any) {
       console.error("[External] fleet/summary error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get fleet summary" });
@@ -164,16 +183,19 @@ export function registerExternalInspectionRoutes(
   });
 
   // GET /api/external/safety/summary — open safety events / near-misses (ADVISORY).
-  app.get("/api/external/safety/summary", validateExternalAuth, async (_req, res) => {
+  app.get("/api/external/safety/summary", validateExternalAuth, async (req, res) => {
     try {
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai); // phạm vi người gọi (rà bảo mật 2026-10-24)
       const { getDb } = await import("../db");
       const db = await getDb();
       if (!db) return res.json({ success: true, data: { openEvents: null, nearMisses: null, critical: null } });
       const { safetyEvents } = await import("../../drizzle/schema");
-      const rows = await db.select({ isNearMiss: safetyEvents.isNearMiss }).from(safetyEvents);
+      const congSafety = await dieuKienViTri(nguoiXemNgoai, { lineId: safetyEvents.lineId, stationId: safetyEvents.stationId, factoryId: safetyEvents.factoryId, robotId: safetyEvents.robotId });
+      const rows = await db.select({ isNearMiss: safetyEvents.isNearMiss }).from(safetyEvents).where(congSafety);
       const nearMisses = rows.filter((r) => r.isNearMiss === true).length;
       const critical = rows.filter((r) => r.isNearMiss === false).length; // advisory: non-near-miss ≈ critical
-      res.json({ success: true, data: { advisory: true, openEvents: rows.length, nearMisses, critical } });
+      res.json({ success: true, scopeApplied: phamViDaAp(pvNgoai), data: { advisory: true, openEvents: rows.length, nearMisses, critical } });
     } catch (error: any) {
       console.error("[External] safety/summary error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get safety summary" });
@@ -181,19 +203,23 @@ export function registerExternalInspectionRoutes(
   });
 
   // GET /api/external/pdm/summary — open predictive work orders.
-  app.get("/api/external/pdm/summary", validateExternalAuth, async (_req, res) => {
+  app.get("/api/external/pdm/summary", validateExternalAuth, async (req, res) => {
     try {
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai); // phạm vi người gọi (rà bảo mật 2026-10-24)
       const { getDb } = await import("../db");
       const db = await getDb();
       if (!db) return res.json({ success: true, data: { openPredictiveWos: null, highRiskMachines: null } });
       const { maintenanceWorkOrders } = await import("../../drizzle/schema");
+      const congWo = await dieuKienViTri(nguoiXemNgoai, { machineId: maintenanceWorkOrders.machineId, factoryId: maintenanceWorkOrders.factoryId });
       const rows = await db
         .select({ status: maintenanceWorkOrders.status, type: maintenanceWorkOrders.type })
-        .from(maintenanceWorkOrders);
+        .from(maintenanceWorkOrders)
+        .where(congWo);
       const openPredictiveWos = rows.filter(
         (r) => r.type === "PREDICTIVE" && r.status !== "COMPLETED" && r.status !== "CANCELLED",
       ).length;
-      res.json({ success: true, data: { openPredictiveWos, highRiskMachines: null } });
+      res.json({ success: true, scopeApplied: phamViDaAp(pvNgoai), data: { openPredictiveWos, highRiskMachines: null } });
     } catch (error: any) {
       console.error("[External] pdm/summary error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get PdM summary" });
@@ -201,19 +227,24 @@ export function registerExternalInspectionRoutes(
   });
 
   // GET /api/external/alerts/summary — compact open-alert roll-up (andon + safety).
-  app.get("/api/external/alerts/summary", validateExternalAuth, async (_req, res) => {
+  app.get("/api/external/alerts/summary", validateExternalAuth, async (req, res) => {
     try {
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai); // phạm vi người gọi (rà bảo mật 2026-10-24)
       const { getDb } = await import("../db");
       const db = await getDb();
       if (!db) return res.json({ success: true, data: { open: 0, critical: 0, nearMiss: null, top: [] } });
       const { andonEvents, safetyEvents } = await import("../../drizzle/schema");
+      const congAndon = await dieuKienViTri(nguoiXemNgoai, { lineId: andonEvents.lineId, stationId: andonEvents.stationId, machineId: andonEvents.machineId });
       const andonRows = await db
         .select({ state: andonEvents.state, status: andonEvents.status, title: andonEvents.title, raisedAt: andonEvents.raisedAt })
-        .from(andonEvents);
+        .from(andonEvents)
+        .where(congAndon);
       const openAndon = andonRows.filter((a) => a.status !== "resolved");
       let critical = 0;
       for (const a of openAndon) if (a.state === "red" || a.state === "call") critical++;
-      const safetyRows = await db.select({ isNearMiss: safetyEvents.isNearMiss }).from(safetyEvents);
+      const congSafetyA = await dieuKienViTri(nguoiXemNgoai, { lineId: safetyEvents.lineId, stationId: safetyEvents.stationId, factoryId: safetyEvents.factoryId, robotId: safetyEvents.robotId });
+      const safetyRows = await db.select({ isNearMiss: safetyEvents.isNearMiss }).from(safetyEvents).where(congSafetyA);
       const nearMiss = safetyRows.filter((s) => s.isNearMiss === true).length;
       const safetyCritical = safetyRows.filter((s) => s.isNearMiss === false).length;
       critical += safetyCritical;
@@ -234,7 +265,7 @@ export function registerExternalInspectionRoutes(
       }
       if (safetyCritical > 0) top.push({ kind: "safety", severity: "critical", count: safetyCritical, title: "Safety events (advisory)", at: null });
       if (nearMiss > 0) top.push({ kind: "safety", severity: "medium", count: nearMiss, title: "Near-misses", at: null });
-      res.json({ success: true, data: { open, critical, nearMiss, top } });
+      res.json({ success: true, scopeApplied: phamViDaAp(pvNgoai), data: { open, critical, nearMiss, top } });
     } catch (error: any) {
       console.error("[External] alerts/summary error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get alert summary" });
@@ -277,6 +308,11 @@ export function registerExternalInspectionRoutes(
 
       const startStr = startDate.toISOString();
       const endStr = endDate.toISOString();
+      // phạm vi người gọi (rà bảo mật 2026-10-24): master key/admin ⇒ không lọc; tài khoản Bearer ⇒ chỉ dữ liệu của nhà máy được gán; stationId ngoài phạm vi ⇒ 403 external_factory_scope_denied
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai);
+      if (await chanTramNgoai(res, nguoiXemNgoai, stationId)) return;
+      const congMay = await andTrongPhamVi(nguoiXemNgoai, "machine", sql.raw('pi."machineId"'));
 
       const result = await db.execute(sql`
         SELECT
@@ -305,6 +341,7 @@ export function registerExternalInspectionRoutes(
           AND pi."inspectionTime" <= ${endStr}::timestamp
           ${stationId ? sql`AND s.id = ${stationId}` : sql``}
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
+          ${congMay}
         GROUP BY pi."machineId", m.code, m.name, s.id, s.code, s.name, pm.id, pm.code, pm.name
         ORDER BY s.code, m.code, pm.code
       `);
@@ -343,6 +380,7 @@ export function registerExternalInspectionRoutes(
 
       res.json({
         success: true,
+        scopeApplied: phamViDaAp(pvNgoai),
         data: {
           dateRange: { startDate: startStr, endDate: endStr },
           totals: {
@@ -404,6 +442,11 @@ export function registerExternalInspectionRoutes(
 
       const startStr = startDate.toISOString();
       const endStr = endDate.toISOString();
+      // phạm vi người gọi (rà bảo mật 2026-10-24): master key/admin ⇒ không lọc; tài khoản Bearer ⇒ chỉ dữ liệu của nhà máy được gán; stationId ngoài phạm vi ⇒ 403 external_factory_scope_denied
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai);
+      if (await chanTramNgoai(res, nguoiXemNgoai, stationId)) return;
+      const congMay = await andTrongPhamVi(nguoiXemNgoai, "machine", sql.raw('pi."machineId"'));
 
       // Build date truncation expression — factory-local buckets (gap A2).
       const dateTrunc = factoryDateTruncSql(
@@ -445,6 +488,7 @@ export function registerExternalInspectionRoutes(
             AND pi."inspectionTime" <= ${endStr}::timestamp
             AND mr."pointDefId" = ${pointDefId}
             ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
+            ${congMay}
             ${stationId ? sql`AND pi."machineId" IN (SELECT id FROM machines WHERE "stationId" = ${stationId})` : sql``}
           GROUP BY ${dateTrunc}
           ORDER BY "period" ASC
@@ -453,6 +497,7 @@ export function registerExternalInspectionRoutes(
         const rows = (result as any).rows || (result as any);
         return res.json({
           success: true,
+          scopeApplied: phamViDaAp(pvNgoai),
           data: {
             groupBy,
             dateRange: { startDate: startStr, endDate: endStr },
@@ -492,6 +537,7 @@ export function registerExternalInspectionRoutes(
           AND pi."inspectionTime" <= ${endStr}::timestamp
           ${stationId ? sql`AND m."stationId" = ${stationId}` : sql``}
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
+          ${congMay}
         GROUP BY ${dateTrunc}
         ORDER BY "period" ASC
       `);
@@ -499,6 +545,7 @@ export function registerExternalInspectionRoutes(
       const rows = (result as any).rows || (result as any);
       res.json({
         success: true,
+        scopeApplied: phamViDaAp(pvNgoai),
         data: {
           groupBy,
           dateRange: { startDate: startStr, endDate: endStr },
@@ -555,6 +602,12 @@ export function registerExternalInspectionRoutes(
 
       const startStr = startDate.toISOString();
       const endStr = endDate.toISOString();
+      // phạm vi người gọi (rà bảo mật 2026-10-24): master key/admin ⇒ không lọc; tài khoản Bearer ⇒ chỉ dữ liệu của nhà máy được gán; stationId ngoài phạm vi ⇒ 403 external_factory_scope_denied
+      const pvNgoai = phamViGoiNgoai(req);
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(pvNgoai);
+      if (await chanTramNgoai(res, nguoiXemNgoai, stationId)) return;
+      const congMay = await andTrongPhamVi(nguoiXemNgoai, "machine", sql.raw('pi."machineId"'));
+      const congMay2 = await andTrongPhamVi(nguoiXemNgoai, "machine", sql.raw('pi2."machineId"'));
 
       // Get NG counts grouped by measurement point definition
       const result = await db.execute(sql`
@@ -576,6 +629,7 @@ export function registerExternalInspectionRoutes(
               AND pi2."inspectionTime" <= ${endStr}::timestamp
               ${stationId ? sql`AND pi2."machineId" IN (SELECT id FROM machines WHERE "stationId" = ${stationId})` : sql``}
               ${resolvedProductModelId ? sql`AND pi2."productModelId" = ${resolvedProductModelId}` : sql``}
+              ${congMay2}
           ) AS "totalCount"
         FROM measurement_results mr
         INNER JOIN product_inspections pi ON mr."inspectionId" = pi.id
@@ -586,6 +640,7 @@ export function registerExternalInspectionRoutes(
           AND pi."inspectionTime" <= ${endStr}::timestamp
           ${stationId ? sql`AND pi."machineId" IN (SELECT id FROM machines WHERE "stationId" = ${stationId})` : sql``}
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
+          ${congMay}
         GROUP BY mpd.id, mpd.code, mpd.name, mpd."measurementType", pm.id, pm.code, pm.name
         ORDER BY COUNT(mr.id) DESC
         LIMIT ${limit}
@@ -622,6 +677,7 @@ export function registerExternalInspectionRoutes(
 
       res.json({
         success: true,
+        scopeApplied: phamViDaAp(pvNgoai),
         data: {
           dateRange: { startDate: startStr, endDate: endStr },
           totalNGCount: totalNG,
@@ -1293,6 +1349,8 @@ export function registerExternalInspectionRoutes(
       if (!stationId) {
         return res.status(400).json({ success: false, message: "stationId is required" });
       }
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(phamViGoiNgoai(req)); // phạm vi người gọi (rà bảo mật 2026-10-24)
+      if (await chanTramNgoai(res, nguoiXemNgoai, stationId)) return;
       if (!startDate || !endDate) {
         return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
       }
@@ -1527,6 +1585,8 @@ export function registerExternalInspectionRoutes(
       if (!stationId) {
         return res.status(400).json({ success: false, message: "stationId is required" });
       }
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(phamViGoiNgoai(req)); // phạm vi người gọi (rà bảo mật 2026-10-24)
+      if (await chanTramNgoai(res, nguoiXemNgoai, stationId)) return;
       if (!startDate || !endDate) {
         return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
       }
@@ -1649,6 +1709,8 @@ export function registerExternalInspectionRoutes(
       if (!stationId) {
         return res.status(400).json({ success: false, message: "stationId is required" });
       }
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(phamViGoiNgoai(req)); // phạm vi người gọi (rà bảo mật 2026-10-24)
+      if (await chanTramNgoai(res, nguoiXemNgoai, stationId)) return;
       if (!startDate || !endDate) {
         return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
       }
@@ -1776,6 +1838,8 @@ export function registerExternalInspectionRoutes(
       if (!stationId) {
         return res.status(400).json({ success: false, message: "stationId is required" });
       }
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(phamViGoiNgoai(req)); // phạm vi người gọi (rà bảo mật 2026-10-24)
+      if (await chanTramNgoai(res, nguoiXemNgoai, stationId)) return;
       if (!startDate || !endDate) {
         return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
       }
@@ -1915,6 +1979,8 @@ export function registerExternalInspectionRoutes(
       if (!stationId) {
         return res.status(400).json({ success: false, message: "stationId is required" });
       }
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(phamViGoiNgoai(req)); // phạm vi người gọi (rà bảo mật 2026-10-24)
+      if (await chanTramNgoai(res, nguoiXemNgoai, stationId)) return;
       if (!startDate || !endDate) {
         return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
       }
@@ -2145,6 +2211,8 @@ export function registerExternalInspectionRoutes(
       if (!stationId) {
         return res.status(400).json({ success: false, message: "stationId is required" });
       }
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(phamViGoiNgoai(req)); // phạm vi người gọi (rà bảo mật 2026-10-24)
+      if (await chanTramNgoai(res, nguoiXemNgoai, stationId)) return;
       if (!startDate || !endDate) {
         return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
       }
@@ -2239,6 +2307,8 @@ export function registerExternalInspectionRoutes(
       if (!stationId) {
         return res.status(400).json({ success: false, message: "stationId is required" });
       }
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(phamViGoiNgoai(req)); // phạm vi người gọi (rà bảo mật 2026-10-24)
+      if (await chanTramNgoai(res, nguoiXemNgoai, stationId)) return;
       if (!startDate || !endDate) {
         return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
       }
@@ -2341,6 +2411,8 @@ export function registerExternalInspectionRoutes(
       if (!stationId) {
         return res.status(400).json({ success: false, message: "stationId is required" });
       }
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(phamViGoiNgoai(req)); // phạm vi người gọi (rà bảo mật 2026-10-24)
+      if (await chanTramNgoai(res, nguoiXemNgoai, stationId)) return;
       if (!startDate || !endDate) {
         return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
       }
@@ -2496,6 +2568,8 @@ export function registerExternalInspectionRoutes(
       if (!stationId) {
         return res.status(400).json({ success: false, message: "stationId is required" });
       }
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(phamViGoiNgoai(req)); // phạm vi người gọi (rà bảo mật 2026-10-24)
+      if (await chanTramNgoai(res, nguoiXemNgoai, stationId)) return;
       if (!startDate || !endDate) {
         return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
       }
@@ -2689,6 +2763,8 @@ export function registerExternalInspectionRoutes(
       if (!stationId) {
         return res.status(400).json({ success: false, message: "stationId is required" });
       }
+      const nguoiXemNgoai = nguoiXemCuaPhamVi(phamViGoiNgoai(req)); // phạm vi người gọi (rà bảo mật 2026-10-24)
+      if (await chanTramNgoai(res, nguoiXemNgoai, stationId)) return;
       if (!startDate || !endDate) {
         return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
       }

@@ -15,7 +15,7 @@
  * applied, or no machine exists to hang inspections on (product_inspections
  * has a REAL FK to machines), the suite is skipped — not silently green.
  */
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, vi } from "vitest";
 import { sql, eq, like } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import {
@@ -36,6 +36,8 @@ import {
 // tests within one file run sequentially, so the global-delta assertions below
 // never race with the disposition writes of the router tests (vitest runs FILES
 // in parallel workers; this file is the single writer of defect_dispositions).
+// L2 (phạm vi người dùng 2026-10-24): test này kiểm RBAC + luật chuyển trạng thái, không kiểm phạm vi ⇒ coi người gọi toàn quyền (phạm vi có test CSDL thật riêng: loTruyXuatPhamVi.db.test.ts).
+vi.mock("../routers/_adapterPhamVi", async (orig) => ({ ...(await orig<typeof import("../routers/_adapterPhamVi")>()), idsMayTrongPhamVi: async () => null, mayTrongPhamVi: async () => null }));
 import { defectDispositionRouter } from "../routers/defectDispositionRouter";
 import {
   defectDispositions,
@@ -370,19 +372,20 @@ describe.skipIf(!ready)("repair-station service additions (real DB, W8-C)", () =
     expect(await listDispositionsBySerial("   ")).toEqual([]);
   });
 
+  // L2: thống kê theo CHÍNH máy của bài thử (idsMay=[machineId]) — miễn nhiễm với test khác ghi song song (vd. loTruyXuatPhamVi.db.test.ts) và đồng thời phủ nhánh theo phạm vi.
   it("getRepairStats: repaired/closed today, pair count and lanes move by the expected deltas", async () => {
-    const before = await getRepairStats();
+    const before = await getRepairStats(new Date(), [machineId]);
 
     const insp = await seed8(`${PREFIX8}-STATS`);
     const d = await createDisposition({ inspectionId: insp.id, disposition: "repair" }, ACTOR);
 
-    const afterCreate = await getRepairStats();
+    const afterCreate = await getRepairStats(new Date(), [machineId]);
     expect(afterCreate.openByLane.open).toBe(before.openByLane.open + 1);
 
     await updateDispositionStatus({ id: d.id, status: "in_repair" }, ACTOR);
     await updateDispositionStatus({ id: d.id, status: "repaired" }, ACTOR);
 
-    const afterRepair = await getRepairStats();
+    const afterRepair = await getRepairStats(new Date(), [machineId]);
     expect(afterRepair.repairedToday).toBe(before.repairedToday + 1);
     expect(afterRepair.repairPairCount).toBe(before.repairPairCount + 1);
     expect(afterRepair.openByLane.repaired).toBe(before.openByLane.repaired + 1);
@@ -393,7 +396,7 @@ describe.skipIf(!ready)("repair-station service additions (real DB, W8-C)", () =
     expect(afterRepair.windowDays).toBe(7);
 
     await updateDispositionStatus({ id: d.id, status: "closed" }, ACTOR);
-    const afterClose = await getRepairStats();
+    const afterClose = await getRepairStats(new Date(), [machineId]);
     expect(afterClose.closedToday).toBe(before.closedToday + 1);
     expect(afterClose.openByLane.repaired).toBe(before.openByLane.repaired);
   });

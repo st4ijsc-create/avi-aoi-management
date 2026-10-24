@@ -9,7 +9,9 @@ import { router, moduleProcedure } from "../_core/trpc";
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_QUALITY");
 import * as db from "../db";
-import { phamViCua } from "./_phamViNguoiXem";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { sql } from "drizzle-orm";
+import { ghiDoiTuong } from "./_viTriPhamVi";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import {
@@ -164,6 +166,31 @@ async function computeWorstCaseCpk(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─── SPC Configuration Router ───────────────────────────────────────────────
+/**
+ * Phạm vi nhà máy cho GHI SPC / cổng chất lượng (rà bảo mật 2026-10-25, lô W10): cấu hình · cổng theo id dùng CÙNG getter ĐỌC có phạm vi (getSpcConfiguration · getQualityGate);
+ * vi phạm SPC suy qua điểm đo; sự kiện cổng suy qua cổng. Khoá khai trong input (máy · công trạm · sản phẩm · điểm đo · chuyền) phải trong phạm vi (`ghiDoiTuong`).
+ */
+async function cauHinhSpcGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  if (!(await db.getSpcConfiguration(id, phamViCua(ctx)))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "spcConfiguration" }, "SPC configuration not found");
+}
+async function congChatLuongGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  if (!(await db.getQualityGate(id, phamViCua(ctx)))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateConfig" }, `Quality gate ${id} not found`);
+}
+async function viPhamSpcGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  const d = await db.getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const rows = (await d.execute(sql`SELECT "measurementPointDefId" AS p FROM spc_rule_violations WHERE id = ${id}`)) as unknown as Array<{ p: number | null }>;
+  if (rows.length === 0 || rows[0]?.p == null) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Điểm đo không tồn tại");
+  await ghiDoiTuong(ctx, { measurementPointDefId: Number(rows[0].p) });
+}
+async function suKienCongGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  const d = await db.getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const rows = (await d.execute(sql`SELECT "qualityGateId" AS g FROM quality_gate_events WHERE id = ${id}`)) as unknown as Array<{ g: number | null }>;
+  if (rows.length === 0 || rows[0]?.g == null) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateConfig" }, "Quality gate event not found");
+  await congChatLuongGhi(ctx, Number(rows[0].g));
+}
+
 export const spcConfigRouter = router({
   list: protectedProcedure
     .input(z.object({
@@ -199,6 +226,7 @@ export const spcConfigRouter = router({
       movingRangeSpan: z.number().min(2).max(10).default(2),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiDoiTuong(ctx, input, { batBuoc: true });
       const data: any = { ...input, createdBy: ctx.user?.id };
       if (input.manualUCL !== undefined) data.manualUCL = String(input.manualUCL);
       if (input.manualLCL !== undefined) data.manualLCL = String(input.manualLCL);
@@ -217,7 +245,8 @@ export const spcConfigRouter = router({
       manualCenterLine: z.number().optional(),
       isActive: z.boolean().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await cauHinhSpcGhi(ctx, input.id);
       const { id, ...data } = input;
       const updateData: any = { ...data };
       if (data.manualUCL !== undefined) updateData.manualUCL = String(data.manualUCL);
@@ -228,7 +257,8 @@ export const spcConfigRouter = router({
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await cauHinhSpcGhi(ctx, input.id);
       await db.deleteSpcConfiguration(input.id);
       return { success: true };
     }),
@@ -449,6 +479,7 @@ export const correlationRouter = router({
       strongCorrelations: z.any().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiDoiTuong(ctx, { machineId: input.machineId, productModelId: input.productModelId, workstationId: input.workstationId }, { batBuoc: true });
       return db.saveCorrelationAnalysis({
         ...input,
         analysisDate: new Date(),
@@ -548,7 +579,8 @@ export const spcRuleViolationRouter = router({
       })),
       controlLimits: z.any().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ghiDoiTuong(ctx, input, { batBuoc: true });
       const results = [];
       for (const v of input.violations) {
         const result = await db.createSpcRuleViolation({
@@ -593,6 +625,7 @@ export const spcRuleViolationRouter = router({
   acknowledge: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      await viPhamSpcGhi(ctx, input.id);
       if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED', undefined, 'Authentication required to acknowledge SPC violation');
       await db.acknowledgeSpcViolation(input.id, ctx.user.id);
       return { success: true };
@@ -602,6 +635,7 @@ export const spcRuleViolationRouter = router({
   resolve: protectedProcedure
     .input(z.object({ id: z.number(), notes: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
+      await viPhamSpcGhi(ctx, input.id);
       if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED', undefined, 'Authentication required to resolve SPC violation');
       await db.resolveSpcViolation(input.id, ctx.user.id, input.notes);
       return { success: true };
@@ -628,7 +662,8 @@ export const cpkTrendRouter = router({
       endDate: z.string(),
       machineId: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ghiDoiTuong(ctx, { machineId: input.machineId, measurementPointDefId: input.measurementPointDefId }, { batBuoc: true });
       const rawData = await db.getMeasurementValuesForSPC({
         measurementPointDefId: input.measurementPointDefId,
         startDate: new Date(input.startDate),
@@ -816,6 +851,7 @@ export const qualityGateRouter = router({
       notifyRoles: z.array(z.string()).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiDoiTuong(ctx, input, { batBuoc: true });
       return db.createQualityGate({
         ...input,
         threshold: String(input.threshold),
@@ -839,7 +875,8 @@ export const qualityGateRouter = router({
       autoResumeAfterMinutes: z.number().nullable().optional(),
       notifyRoles: z.array(z.string()).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await congChatLuongGhi(ctx, input.id);
       const { id, ...data } = input;
       const updateData: any = { ...data };
       if (data.threshold != null) updateData.threshold = String(data.threshold);
@@ -849,7 +886,8 @@ export const qualityGateRouter = router({
   /** Delete quality gate */
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await congChatLuongGhi(ctx, input.id);
       await db.deleteQualityGate(input.id);
       return { success: true };
     }),
@@ -991,7 +1029,9 @@ export const qualityGateRouter = router({
       productionOrderId: z.number().optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await congChatLuongGhi(ctx, input.qualityGateId);
+      await ghiDoiTuong(ctx, { machineId: input.machineId });
       const gate = await db.getQualityGate(input.qualityGateId);
       if (!gate) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'qualityGateConfig' }, `Quality gate ${input.qualityGateId} not found`);
 
@@ -1010,6 +1050,7 @@ export const qualityGateRouter = router({
   acknowledgeEvent: protectedProcedure
     .input(z.object({ id: z.number(), notes: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
+      await suKienCongGhi(ctx, input.id);
       if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED', undefined, 'Authentication required to acknowledge quality gate event');
       await db.acknowledgeQualityGateEvent(input.id, ctx.user.id, input.notes);
       return { success: true };
@@ -1019,6 +1060,7 @@ export const qualityGateRouter = router({
   resolveEvent: protectedProcedure
     .input(z.object({ id: z.number(), notes: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
+      await suKienCongGhi(ctx, input.id);
       if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED', undefined, 'Authentication required to resolve quality gate event');
       await db.resolveQualityGateEvent(input.id, ctx.user.id, input.notes);
       return { success: true };

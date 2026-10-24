@@ -1,7 +1,7 @@
 // Sprint F2 — DB access for generic process results (parallel to inspection).
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
-import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { processResults, processStepTypes, processResultDaily, InsertProcessResult } from "../../drizzle/schema";
 
 /** Insert one process-result row; returns the new id. */
@@ -16,13 +16,15 @@ export async function insertProcessResult(row: InsertProcessResult): Promise<num
 }
 
 /** List all process-result rows for a serial, oldest first. */
-export async function listProcessResultsBySerial(serialNumber: string, limit = 1000) {
+export async function listProcessResultsBySerial(serialNumber: string, limit = 1000, machineIds?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
+  // phạm vi người dùng (L2 2026-10-24): machineIds = tập máy trong phạm vi người gọi (null/undefined = toàn quyền)
+  const cong = machineIds != null ? inArray(processResults.machineId, machineIds.length > 0 ? machineIds : [-1]) : undefined;
   return db
     .select()
     .from(processResults)
-    .where(eq(processResults.serialNumber, serialNumber))
+    .where(cong ? and(eq(processResults.serialNumber, serialNumber), cong) : eq(processResults.serialNumber, serialNumber))
     .orderBy(asc(processResults.id))
     .limit(limit);
 }
@@ -70,6 +72,8 @@ export interface ProcessResultStats {
  * `serialNumber`/`machineId`/`stepType` are all optional (AND-combined).
  */
 export async function aggregateProcessResultStats(filter: {
+  /** phạm vi người dùng (L2 2026-10-24): tập máy trong phạm vi người gọi (null/undefined = toàn quyền). */
+  machineIds?: number[] | null;
   machineId?: number;
   serialNumber?: string;
   stepType?: string;
@@ -78,6 +82,7 @@ export async function aggregateProcessResultStats(filter: {
   const db = await getDb();
   if (!db) return { pass: 0, fail: 0, warn: 0, skip: 0 };
   const conds = [gte(processResults.measuredAt, filter.since)];
+  if (filter.machineIds != null) conds.push(inArray(processResults.machineId, filter.machineIds.length > 0 ? filter.machineIds : [-1]));
   if (filter.machineId != null) conds.push(eq(processResults.machineId, filter.machineId));
   if (filter.serialNumber) conds.push(eq(processResults.serialNumber, filter.serialNumber));
   if (filter.stepType) conds.push(eq(processResults.stepType, filter.stepType));
@@ -113,6 +118,8 @@ export interface MetricSeriesPoint {
  * (`metrics ? key AND metrics->>key ~ '^-?[0-9.]+$'`).
  */
 export async function getProcessMetricSeries(opts: {
+  /** phạm vi người dùng (L2 2026-10-24): tập máy trong phạm vi người gọi (null/undefined = toàn quyền). */
+  machineIds?: number[] | null;
   machineId?: number;
   stepType?: string;
   metricKey: string;
@@ -128,6 +135,7 @@ export async function getProcessMetricSeries(opts: {
     sql`${processResults.metrics} ? ${key}`,
     sql`${processResults.metrics}->>${key} ~ '^-?[0-9.]+$'`,
   ];
+  if (opts.machineIds != null) conds.push(inArray(processResults.machineId, opts.machineIds.length > 0 ? opts.machineIds : [-1]));
   if (opts.machineId != null) conds.push(eq(processResults.machineId, opts.machineId));
   if (opts.stepType) conds.push(eq(processResults.stepType, opts.stepType));
   const truncUnit = bucket === "day" ? sql`'day'` : sql`'hour'`;
@@ -193,6 +201,8 @@ export interface MetricPoint {
  * guard as getProcessMetricSeries (key present AND text value matches a number).
  */
 export async function getProcessMetricPoints(opts: {
+  /** phạm vi người dùng (L2 2026-10-24): tập máy trong phạm vi người gọi (null/undefined = toàn quyền). */
+  machineIds?: number[] | null;
   machineId?: number;
   stepType?: string;
   metricKey: string;
@@ -207,6 +217,7 @@ export async function getProcessMetricPoints(opts: {
     sql`${processResults.metrics} ? ${key}`,
     sql`${processResults.metrics}->>${key} ~ '^-?[0-9.]+$'`,
   ];
+  if (opts.machineIds != null) conds.push(inArray(processResults.machineId, opts.machineIds.length > 0 ? opts.machineIds : [-1]));
   if (opts.machineId != null) conds.push(eq(processResults.machineId, opts.machineId));
   if (opts.stepType) conds.push(eq(processResults.stepType, opts.stepType));
   const rows = await db
@@ -235,12 +246,15 @@ export interface TypeRollupRow {
  * from machineType in code). Live aggregate over the raw rows since `since`.
  */
 export async function aggregateProcessResultStatsByType(filter: {
+  /** phạm vi người dùng (L2 2026-10-24): tập máy trong phạm vi người gọi (null/undefined = toàn quyền). */
+  machineIds?: number[] | null;
   since: Date;
   machineType?: string;
 }): Promise<TypeRollupRow[]> {
   const db = await getDb();
   if (!db) return [];
   const conds = [gte(processResults.measuredAt, filter.since)];
+  if (filter.machineIds != null) conds.push(inArray(processResults.machineId, filter.machineIds.length > 0 ? filter.machineIds : [-1]));
   if (filter.machineType) conds.push(eq(processResults.machineType, filter.machineType as TypeRollupRow["machineType"] as never));
   const rows = await db
     .select({
@@ -313,6 +327,8 @@ export interface DailyRollupRow {
 
 /** Read the daily mart for a trailing window, newest day first. */
 export async function readProcessResultDaily(opts: {
+  /** phạm vi người dùng (L2 2026-10-24): tập máy trong phạm vi người gọi (null/undefined = toàn quyền). */
+  machineIds?: number[] | null;
   sinceDays?: number;
   machineId?: number;
   machineType?: string;
@@ -322,6 +338,7 @@ export async function readProcessResultDaily(opts: {
   if (!db) return [];
   const since = new Date(Date.now() - Math.min(Math.max(opts.sinceDays ?? 30, 1), 365) * 24 * 60 * 60 * 1000);
   const conds = [gte(processResultDaily.day, sql`${since.toISOString()}::date`)];
+  if (opts.machineIds != null) conds.push(inArray(processResultDaily.machineId, opts.machineIds.length > 0 ? opts.machineIds : [-1]));
   if (opts.machineId != null) conds.push(eq(processResultDaily.machineId, opts.machineId));
   if (opts.machineType) conds.push(eq(processResultDaily.machineType, opts.machineType as DailyRollupRow["machineType"] as never));
   const rows = await db

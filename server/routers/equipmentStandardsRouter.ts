@@ -31,6 +31,8 @@ import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
+import { theTenantHopLe } from "./_theTenantPhamVi";
+import type { CoDanhTinh } from "./_phamViNguoiXem";
 import {
   deviceTypes,
   alarmTaxonomy,
@@ -121,6 +123,27 @@ function computeCrConformanceStatus(
 const SEVERITY_ENUM = z.enum(ALARM_SEVERITIES as unknown as [string, ...string[]]);
 const CONSEQUENCE_ENUM = z.enum(ALARM_CONSEQUENCES as unknown as [string, ...string[]]);
 
+/**
+ * Phạm vi nhà máy cho GHI chuẩn thiết bị (rà bảo mật 2026-10-25, lô W10): thẻ tenant do client khai (factoryId · corporateCode) phải trong phạm vi người gọi; hàng đã có thẻ
+ * ngoài phạm vi ≡ không tồn tại (NOT_FOUND); hàng chuẩn KHÔNG thẻ (toàn tập đoàn) giữ nguyên — danh mục chuẩn dùng chung, ai có machine_control/canCreate đều thao tác.
+ */
+/** Chuẩn KHÔNG thẻ (toàn tập đoàn) — chủ dự án 2026-10-25: chỉ vai quản trị / kỹ sư được ghi (ngoài quyền machine_control đã kiểm ở middleware). */
+function chuanToanTapDoanChiAdminKySu(ctx: CoDanhTinh, the: { factoryId?: number | null; corporateCode?: string | null } | undefined | null): void {
+  if (!the || the.factoryId != null || the.corporateCode != null) return;
+  const role = (ctx as { user?: { role?: string | null } | null }).user?.role;
+  if (role !== "admin" && role !== "engineer") {
+    throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "writeCorporateEquipmentStandard" }, "Chỉ vai quản trị / kỹ sư được ghi chuẩn thiết bị toàn tập đoàn (không gắn nhà máy).");
+  }
+}
+async function theKhaiGhi(ctx: CoDanhTinh, the: { factoryId?: number | null; corporateCode?: string | null }): Promise<void> {
+  if (!(await theTenantHopLe(ctx, the))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, "Factory not found");
+  chuanToanTapDoanChiAdminKySu(ctx, the);
+}
+async function hangTheGhi(ctx: CoDanhTinh, row: { factoryId?: number | null; corporateCode?: string | null } | undefined | null): Promise<void> {
+  if (row && !(await theTenantHopLe(ctx, row))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "record" }, "Record not found");
+  chuanToanTapDoanChiAdminKySu(ctx, row);
+}
+
 export const equipmentStandardsRouter = router({
   /** UI gating hint — is the governance flag on? */
   status: protectedProcedure
@@ -201,6 +224,8 @@ export const equipmentStandardsRouter = router({
       const vendor = input.vendor.trim().toLowerCase();
       const [existing] = await d.select().from(alarmTaxonomy)
         .where(and(eq(alarmTaxonomy.vendor, vendor), eq(alarmTaxonomy.nativeCode, input.nativeCode))).limit(1);
+      await theKhaiGhi(ctx, input); // phạm vi nhà máy: thẻ khai
+      await hangTheGhi(ctx, existing); // … và hàng sẽ bị ghi đè
       const values = {
         vendor, nativeCode: input.nativeCode, standardCode: input.standardCode,
         severity: input.severity, machineType: input.machineType, deviceTypeKey: input.deviceTypeKey,
@@ -287,6 +312,8 @@ export const equipmentStandardsRouter = router({
           ? and(eq(masterAlarms.alarmKey, values.alarmKey), eq(masterAlarms.assetType, assetType))
           : and(eq(masterAlarms.alarmKey, values.alarmKey), isNull(masterAlarms.assetType)))
         .limit(1);
+      await theKhaiGhi(ctx, input); // phạm vi nhà máy: thẻ khai
+      await hangTheGhi(ctx, existing); // … và hàng sẽ bị ghi đè
       let row;
       if (existing) {
         [row] = await d.update(masterAlarms).set(values).where(eq(masterAlarms.id, existing.id)).returning();
@@ -307,6 +334,7 @@ export const equipmentStandardsRouter = router({
       const d = await db();
       const [before] = await d.select().from(masterAlarms).where(eq(masterAlarms.id, input.id)).limit(1);
       if (!before) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "masterAlarm" }, `Master alarm ${input.id} not found`);
+      await hangTheGhi(ctx, before); // phạm vi nhà máy
       const [row] = await d.update(masterAlarms)
         .set({ shelvedUntil: input.shelvedUntil ? new Date(input.shelvedUntil) : null, updatedAt: new Date() })
         .where(eq(masterAlarms.id, input.id)).returning();
@@ -323,6 +351,7 @@ export const equipmentStandardsRouter = router({
       const d = await db();
       const [before] = await d.select().from(masterAlarms).where(eq(masterAlarms.id, input.id)).limit(1);
       if (!before) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "masterAlarm" }, `Master alarm ${input.id} not found`);
+      await hangTheGhi(ctx, before); // phạm vi nhà máy
       await d.delete(masterAlarms).where(eq(masterAlarms.id, input.id));
       await recordAuditEvent(d, { entityType: "master_alarm", entityId: input.id, action: "delete", actorId: ctx.user.id, before, after: null });
       return { id: input.id, deleted: true };
@@ -381,6 +410,7 @@ export const equipmentStandardsRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireFlag();
       const d = await db();
+      await theKhaiGhi(ctx, input); // phạm vi nhà máy: thẻ khai
       const [row] = await d.insert(deviceTypes).values({
         typeKey: input.typeKey, parentTypeKey: input.parentTypeKey, version: input.version,
         status: "draft", origin: "manual", label: input.label, description: input.description,
@@ -425,6 +455,7 @@ export const equipmentStandardsRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireFlag();
       const d = await db();
+      await theKhaiGhi(ctx, input); // phạm vi nhà máy: thẻ khai
       const [row] = await d.insert(deviceTypeChangeRequests).values({
         crKey: generateCrKey(), targetTypeKey: input.targetTypeKey, kind: input.kind,
         proposedSchema: input.proposedSchema as never, requestedBy: ctx.user.id,
@@ -453,6 +484,7 @@ export const equipmentStandardsRouter = router({
       const d = await db();
       const [cr] = await d.select().from(deviceTypeChangeRequests).where(eq(deviceTypeChangeRequests.id, input.crId)).limit(1);
       if (!cr) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTypeChangeRequest" }, `Change request ${input.crId} not found`);
+      await hangTheGhi(ctx, cr); // phạm vi nhà máy
       // Doc 54 Wave B — Separation of Duties: the reviewer (reviewedBy=ctx.user) MUST
       // differ from the requester (requestedBy). A requester cannot self-review/approve.
       if (cr.requestedBy != null && cr.requestedBy === ctx.user.id) {
@@ -495,6 +527,7 @@ export const equipmentStandardsRouter = router({
         const [cr] = await tx.select().from(deviceTypeChangeRequests)
           .where(eq(deviceTypeChangeRequests.id, input.crId)).for("update").limit(1);
         if (!cr) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTypeChangeRequest" }, `Change request ${input.crId} not found`);
+        await hangTheGhi(ctx, cr); // phạm vi nhà máy
         // Doc 54 Wave B — Separation of Duties: the publisher (ctx.user) MUST differ
         // from the requester (requestedBy). A requester cannot self-publish their CR.
         if (cr.requestedBy != null && cr.requestedBy === ctx.user.id) {

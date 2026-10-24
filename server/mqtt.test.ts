@@ -4,14 +4,16 @@ import type { TrpcContext } from "./_core/context";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
-function createAuthContext(): { ctx: TrpcContext } {
+function createAuthContext(role: AuthenticatedUser["role"] = "user"): { ctx: TrpcContext } {
   const user: AuthenticatedUser = {
     id: 1,
     openId: "test-user",
     email: "test@example.com",
     name: "Test User",
     loginMethod: "manus",
-    role: "user",
+    role,
+    // sàn vai có 2FA (qualityProcedure / requirePermission) đọc cờ này; vai thường không dùng
+    ...({ twoFactorEnabled: true } as object),
     createdAt: new Date(),
     updatedAt: new Date(),
     lastSignedIn: new Date(),
@@ -135,6 +137,15 @@ describe("mqttClient router", () => {
   });
 
   describe("testNGAlert", () => {
+    // Hợp đồng (doc 54 Wave B + lô W10, 2026-10-25): sàn vai admin/supervisor/quality_inspector + 2FA, và khoá phạm vi (factory/workshop/station) trong phạm vi người gọi.
+    it("vai thường (user) bị từ chối — sàn vai chất lượng", async () => {
+      const { ctx } = createAuthContext("user");
+      const caller = appRouter.createCaller(ctx);
+      await expect(
+        caller.mqttClient.testNGAlert({ factoryId: 1, workshopId: 1, stationId: 1, serialNumber: "SN-DENY" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+
     // V3: testNGAlert was redesigned to take factory/workshop/station IDs and resolve
     // machine/station from the DB (the old machineName/ngPointName/ngValue signature is gone).
     // These tests were updated to the current schema. No live broker is required:
@@ -142,7 +153,7 @@ describe("mqttClient router", () => {
     // (EXTERNAL_MQTT_ENABLED=false in vitest.setup), so the procedure still builds and
     // returns its testData deterministically.
     it("publishes test NG alert successfully", async () => {
-      const { ctx } = createAuthContext();
+      const { ctx } = createAuthContext("admin");
       const caller = appRouter.createCaller(ctx);
 
       const result = await caller.mqttClient.testNGAlert({
@@ -162,7 +173,7 @@ describe("mqttClient router", () => {
     });
 
     it("generates unique inspection ID for each call", async () => {
-      const { ctx } = createAuthContext();
+      const { ctx } = createAuthContext("admin");
       const caller = appRouter.createCaller(ctx);
 
       const result1 = await caller.mqttClient.testNGAlert({
@@ -224,7 +235,7 @@ describe("mqttAlert router", () => {
 
   describe("create", () => {
     it("creates a new alert rule", async () => {
-      const { ctx } = createAuthContext();
+      const { ctx } = createAuthContext("admin");
       const caller = appRouter.createCaller(ctx);
 
       const result = await caller.mqttAlert.create({
@@ -300,8 +311,16 @@ describe("Alert Evaluation Service", () => {
   });
 
   describe("alert rule CRUD", () => {
+    it("vai thường (user) không có machine_alerts bị từ chối khi tạo luật cảnh báo toàn cục (lô W11)", async () => {
+      const { ctx } = createAuthContext("user");
+      const caller = appRouter.createCaller(ctx);
+      await expect(
+        caller.mqttAlert.create({ name: "deny", ruleType: "LATENCY_THRESHOLD", thresholdValue: 1 } as never),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+
     it("creates and retrieves alert rule", async () => {
-      const { ctx } = createAuthContext();
+      const { ctx } = createAuthContext("admin");
       const caller = appRouter.createCaller(ctx);
 
       const created = await caller.mqttAlert.create({
@@ -327,7 +346,7 @@ describe("Alert Evaluation Service", () => {
     });
 
     it("toggles alert rule enabled status", async () => {
-      const { ctx } = createAuthContext();
+      const { ctx } = createAuthContext("admin");
       const caller = appRouter.createCaller(ctx);
 
       const created = await caller.mqttAlert.create({
@@ -352,7 +371,7 @@ describe("Alert Evaluation Service", () => {
     });
 
     it("deletes alert rule", async () => {
-      const { ctx } = createAuthContext();
+      const { ctx } = createAuthContext("admin");
       const caller = appRouter.createCaller(ctx);
 
       const created = await caller.mqttAlert.create({

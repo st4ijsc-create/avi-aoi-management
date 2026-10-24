@@ -16,6 +16,7 @@ import {
 } from "../../drizzle/schema";
 import { eq, and, inArray, desc, sql, between } from "drizzle-orm";
 import { renderReport, resolveBranding, type ReportLocale } from "../services/universalExportService";
+import { idsMayTrongPhamVi, kiemTraTrongPhamVi } from "./_adapterPhamVi";
 
 // ── Pure comparison helpers (exported for unit tests) ────────────────────────
 
@@ -106,6 +107,13 @@ export function detectComparisonPatterns(results: Array<{ pointDefId: number; re
   return patterns;
 }
 
+/** phạm vi người dùng (L1/L1b 2026-10-24): phiên so sánh NGOÀI phạm vi ⇔ chứa lần kiểm tra của máy ngoài phạm vi, hoặc khai báo máy ngoài phạm vi. */
+async function phienNgoaiPhamVi(ctx: Parameters<typeof idsMayTrongPhamVi>[0], session: { inspectionIds: unknown; machineId: number | null }): Promise<boolean> {
+  const dsKiemTra = (session.inspectionIds as number[]) ?? [];
+  const idsMay = await idsMayTrongPhamVi(ctx);
+  return !(await kiemTraTrongPhamVi(ctx, dsKiemTra)) || (idsMay !== null && session.machineId != null && !idsMay.includes(session.machineId));
+}
+
 export const annotationComparisonRouter = router({
   // Tạo phiên so sánh mới
   createSession: protectedProcedure
@@ -129,6 +137,14 @@ export const annotationComparisonRouter = router({
       
       if (inspections.length !== input.inspectionIds.length) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Một hoặc nhiều inspection không tồn tại");
+      }
+      // phạm vi người dùng (L1b 2026-10-24): lần kiểm tra / máy khai báo ngoài phạm vi ≡ không tồn tại
+      if (!(await kiemTraTrongPhamVi(ctx, input.inspectionIds))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Một hoặc nhiều inspection không tồn tại");
+      }
+      const idsMayTao = await idsMayTrongPhamVi(ctx);
+      if (idsMayTao !== null && input.machineId != null && !idsMayTao.includes(input.machineId)) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
       }
 
       const [result] = await db.insert(annotationComparisonSessions).values({
@@ -159,12 +175,19 @@ export const annotationComparisonRouter = router({
       limit: z.number().min(1).max(100).default(20),
       offset: z.number().min(0).default(0),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { sessions: [], total: 0 };
 
       const conditions = [];
-      
+      // phạm vi người dùng (L1 rà bảo mật 2026-10-24): phiên so sánh chỉ hiện khi MỌI lần kiểm tra của nó thuộc máy trong phạm vi (và máy khai báo, nếu có, cũng trong phạm vi)
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      if (idsMay !== null) {
+        const ds = sql.join((idsMay.length > 0 ? idsMay : [-1]).map((x) => sql`${x}`), sql`, `);
+        conditions.push(sql`(${annotationComparisonSessions.machineId} IS NULL OR ${annotationComparisonSessions.machineId} IN (${ds}))`);
+        conditions.push(sql`NOT EXISTS (SELECT 1 FROM json_array_elements_text(${annotationComparisonSessions.inspectionIds}) e(v) WHERE NOT EXISTS (SELECT 1 FROM product_inspections pi WHERE pi.id = e.v::int AND pi."machineId" IN (${ds})))`);
+      }
+
       if (input.productModelId) {
         conditions.push(eq(annotationComparisonSessions.productModelId, input.productModelId));
       }
@@ -200,7 +223,7 @@ export const annotationComparisonRouter = router({
   // Lấy chi tiết session
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -213,6 +236,10 @@ export const annotationComparisonRouter = router({
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "comparisonSession" }, "Session không tồn tại");
       }
 
+      // phạm vi người dùng (L1 rà bảo mật 2026-10-24): phiên chứa lần kiểm tra của máy NGOÀI phạm vi ≡ không tồn tại
+      if (await phienNgoaiPhamVi(ctx, session)) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "comparisonSession" }, "Session không tồn tại");
+      }
       // Get inspection details
       const inspections = await db
         .select()
@@ -231,10 +258,14 @@ export const annotationComparisonRouter = router({
       inspectionId1: z.number(),
       inspectionId2: z.number(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
+      // phạm vi người dùng (L1 rà bảo mật 2026-10-24): lần kiểm tra ngoài phạm vi ≡ không tồn tại
+      if (!(await kiemTraTrongPhamVi(ctx, [input.inspectionId1, input.inspectionId2]))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
+      }
       const [results1, results2] = await Promise.all([
         db.select().from(measurementResults)
           .where(eq(measurementResults.inspectionId, input.inspectionId1)),
@@ -293,7 +324,7 @@ export const annotationComparisonRouter = router({
     .input(z.object({
       sessionId: z.number(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -302,7 +333,8 @@ export const annotationComparisonRouter = router({
         .from(annotationComparisonSessions)
         .where(eq(annotationComparisonSessions.id, input.sessionId));
 
-      if (!session) {
+      // phạm vi người dùng (L1b 2026-10-24): phiên ngoài phạm vi ≡ không tồn tại (TRƯỚC khi đọc kết quả đo / ghi phiên)
+      if (!session || (await phienNgoaiPhamVi(ctx, session))) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "comparisonSession" }, "Session không tồn tại");
       }
 
@@ -446,7 +478,8 @@ export const annotationComparisonRouter = router({
           .then(r => r[0]),
       ]);
 
-      if (!inspection1 || !inspection2) {
+      // phạm vi người dùng (L1b 2026-10-24): lần kiểm tra ngoài phạm vi ≡ không tồn tại (TRƯỚC khi đọc kết quả đo / dựng PDF)
+      if (!inspection1 || !inspection2 || !(await kiemTraTrongPhamVi(ctx, [input.inspectionId1, input.inspectionId2]))) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection không tồn tại");
       }
 
@@ -558,12 +591,14 @@ export const annotationComparisonRouter = router({
       dateTo: z.string().optional(),
       groupBy: z.enum(["day", "week", "month"]).default("day"),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { trends: [], summary: { totalInspections: 0, totalDefects: 0, avgDefectRate: 0 } };
 
       const conditions = [];
-      
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L1 rà bảo mật 2026-10-24)
+      if (idsMay !== null) conditions.push(inArray(productInspections.machineId, idsMay.length > 0 ? idsMay : [-1]));
+
       if (input.machineId) {
         conditions.push(eq(productInspections.machineId, input.machineId));
       }
@@ -607,9 +642,10 @@ export const annotationComparisonRouter = router({
         .orderBy(sql`TO_CHAR(${productInspections.inspectionTime}, ${sql.raw(`'${dateFormat}'`)})`);
 
       // Calculate summary
+      // COUNT(*)/SUM(...) về dạng CHUỖI từ PostgreSQL (bigint) — phải ép số, nếu không `+=` NỐI CHUỖI ("0"+"1" = "01"); lỗi có sẵn, lộ ra khi đo phạm vi L1 2026-10-24
       const summary = trendData.reduce((acc, item) => {
-        acc.totalInspections += item.totalInspections;
-        acc.totalDefects += item.ngCount;
+        acc.totalInspections += Number(item.totalInspections);
+        acc.totalDefects += Number(item.ngCount);
         return acc;
       }, { totalInspections: 0, totalDefects: 0, avgDefectRate: 0 });
 

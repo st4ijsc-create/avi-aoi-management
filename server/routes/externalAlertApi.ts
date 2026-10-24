@@ -22,7 +22,7 @@ function parseLocalDate(dateStr: string, endOfDay = false): Date {
  *   • mqtt_ng_rate_alert_history ⇒ stationId.
  * `undefined` = không áp cổng nào (master key).
  */
-async function congPhamVi(nguoiXem: PhamViNguoiXem | undefined, nguon: "alert" | "mqtt" | "conn" | "ngrate") {
+export async function congPhamVi(nguoiXem: PhamViNguoiXem | undefined, nguon: "alert" | "mqtt" | "conn" | "ngrate") {
   if (nguoiXem === undefined) return undefined;
   const { sql } = await import("drizzle-orm");
   const sch = await import("../../drizzle/schema");

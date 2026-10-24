@@ -4,6 +4,8 @@
  * Endpoints for managing quality gate configs, processing inspections,
  * and reviewing AI decisions.
  */
+import { kiemTraTrongPhamVi } from "./_adapterPhamVi";
+import type { CoDanhTinh } from "./_phamViNguoiXem";
 import { moduleProcedure, moduleGate, router } from "../_core/trpc";
 import { adminProcedure as adminProcedureBase } from "./_shared";
 // ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
@@ -38,6 +40,15 @@ import {
 } from "../services/aiABTesting";
 import fs from "fs";
 import path from "path";
+
+/** Lần kiểm tra phải thuộc máy trong phạm vi người gọi (dùng chung với inspectionRouters — kiemTraTrongPhamVi); ngoài phạm vi ≡ không tồn tại. */
+async function luotKiemAiGhi(ctx: CoDanhTinh, inspectionId: number | null | undefined, entity: "inspection" | "qualityGateResult" = "inspection"): Promise<void> {
+  if (inspectionId == null) return;
+  if (!(await kiemTraTrongPhamVi(ctx, [inspectionId]))) {
+    if (entity === "qualityGateResult") throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateResult" }, "Quality gate result not found");
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
+  }
+}
 
 export const aiQualityGateRouter = router({
   // ─── Config Management ──────────────────────────────────
@@ -170,7 +181,8 @@ export const aiQualityGateRouter = router({
         imageKey: z.string(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await luotKiemAiGhi(ctx, input.inspectionId); // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b)
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -248,6 +260,11 @@ export const aiQualityGateRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+      {
+        // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b): kết quả cổng của lần kiểm tra thuộc máy ngoài phạm vi ≡ không tồn tại — kiểm TRƯỚC khi ghi
+        const [truoc] = await db.select({ i: aiQualityGateResults.inspectionId }).from(aiQualityGateResults).where(eq(aiQualityGateResults.id, input.resultId)).limit(1);
+        if (truoc) await luotKiemAiGhi(ctx, truoc.i, "qualityGateResult");
+      }
       const [result] = await db
         .update(aiQualityGateResults)
         .set({

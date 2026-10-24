@@ -9,7 +9,7 @@
  * KHÔNG có đường ghi xuống máy — đây là catalog + sổ thao tác tay (genealogy con
  * người). Mọi hàm đọc DB fail-safe: DB null → ném rõ ràng (router bọc).
  */
-import { and, asc, desc, eq, ne, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ne, gte, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { appError } from "../_core/appError";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "../db/connection";
@@ -41,6 +41,8 @@ async function db() {
 // ─── Định nghĩa SOP: đọc ──────────────────────────────────────────────────────
 
 export interface ListSopFilter {
+  /** phạm vi người dùng (L3 2026-10-25): tập TRẠM trong phạm vi người gọi (null/undefined = toàn quyền). SOP không gắn trạm = tài liệu dùng chung (ai cũng đọc). */
+  tramTrongPhamVi?: number[] | null;
   status?: SopStatus;
   productModelId?: number | null;
   stationId?: number | null;
@@ -56,6 +58,9 @@ export async function listSops(filter: ListSopFilter = {}): Promise<Array<SopRow
   if (filter.productModelId != null) conds.push(eq(sops.productModelId, filter.productModelId));
   if (filter.stationId != null) conds.push(eq(sops.stationId, filter.stationId));
   if (filter.code) conds.push(eq(sops.code, filter.code));
+  if (filter.tramTrongPhamVi != null) {
+    conds.push(or(isNull(sops.stationId), inArray(sops.stationId, filter.tramTrongPhamVi.length > 0 ? filter.tramTrongPhamVi : [-1])) as SQL);
+  }
 
   const rows = await d
     .select()
@@ -91,9 +96,12 @@ export async function getSop(id: number): Promise<(SopRow & { steps: SopStepRow[
 export async function resolveActiveSop(ctx: {
   productModelId?: number | null;
   stationId?: number | null;
+  /** phạm vi người dùng (L3 2026-10-25): tập TRẠM trong phạm vi người gọi (null/undefined = toàn quyền) — SOP gắn trạm NGOÀI tập bị loại khỏi ứng viên (≡ trạm đó không tồn tại). */
+  tramTrongPhamVi?: number[] | null;
 }): Promise<(SopRow & { steps: SopStepRow[] }) | null> {
   const d = await db();
-  const active = await d.select().from(sops).where(eq(sops.status, "active"));
+  const tatCa = await d.select().from(sops).where(eq(sops.status, "active"));
+  const active = ctx.tramTrongPhamVi != null ? tatCa.filter((s) => s.stationId == null || ctx.tramTrongPhamVi!.includes(s.stationId)) : tatCa;
   if (active.length === 0) return null;
 
   const pid = ctx.productModelId ?? null;
@@ -394,12 +402,12 @@ export async function getExecution(id: number): Promise<
 }
 
 /** Lịch sử phiên của một SOP (mới nhất trước). */
-export async function listExecutions(sopId: number, limit = 50): Promise<SopExecutionRow[]> {
+export async function listExecutions(sopId: number, limit = 50, cong?: SQL): Promise<SopExecutionRow[]> {
   const d = await db();
   return d
     .select()
     .from(sopExecutions)
-    .where(eq(sopExecutions.sopId, sopId))
+    .where(cong ? and(eq(sopExecutions.sopId, sopId), cong) : eq(sopExecutions.sopId, sopId))
     .orderBy(desc(sopExecutions.startedAt))
     .limit(Math.min(Math.max(limit, 1), 200));
 }

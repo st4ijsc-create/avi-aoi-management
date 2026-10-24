@@ -3816,6 +3816,14 @@
       "qualityGateResult": "kết quả cổng chất lượng",
       "qualityGateTemplate": "mẫu cổng chất lượng",
       "quarantineItem": "mục cách ly",
+      "factoryZone": "vùng mặt bằng",
+      "mapping": "ánh xạ sản phẩm–máy",
+      "recipeSet": "bộ công thức tuyến",
+      "lineStage": "công đoạn chuyền",
+      "productionOrderTemplate": "mẫu lệnh sản xuất",
+      "predictiveAlert": "cảnh báo dự đoán",
+      "insight": "gợi ý phân tích",
+      "labelQueueItem": "mục hàng đợi gán nhãn",
       "rcaAnalysis": "phân tích nguyên nhân gốc",
       "recipe": "công thức",
       "record": "bản ghi",
@@ -14959,6 +14967,13 @@
     "offline": "Ngoại tuyến"
   },
   "instrumentCal": {
+    "factoryColumn": "Nhà máy",
+    "factory": {
+      "label": "Nhà máy sở hữu",
+      "unassigned": "Chưa gán nhà máy",
+      "unassignedHint": "Chỉ quản trị thấy cho tới khi gán nhà máy",
+      "unassignedBanner": "{{count}} thiết bị đo chưa gán nhà máy — chỉ quản trị thấy cho tới khi gán nhà máy (người dùng nhà máy sẽ không thấy)."
+    },
     "title": "Hiệu chuẩn & tình trạng thiết bị đo",
     "subtitle": "Chứng chỉ hiệu chuẩn, hồ sơ MSA và tình trạng RAG phù-hợp-sử-dụng cho mọi thiết bị đo. Chọn một dòng để xem chi tiết.",
     "type": "Loại",

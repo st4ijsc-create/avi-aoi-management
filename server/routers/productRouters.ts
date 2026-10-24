@@ -56,7 +56,11 @@ import {
   getUnmappedProductModelId,
   type UnmappedRateFilter,
 } from "../services/measurementPointResolver";
+import { sql } from "drizzle-orm";
 import { phamViCua } from "./_phamViNguoiXem";
+import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
+import { sanPhamGhiTrongPhamVi, diemDoGhiTrongPhamVi } from "./_sanPhamPhamVi";
+import { idsTrongPhamVi } from "../db/hierarchy";
 import { tuChoiNgoaiPhamVi } from "./publicProductScope";
 // Doc 31 UX2/PM9 (WD-2) — product config-completeness ("readiness") score.
 import {
@@ -574,6 +578,8 @@ export const productModelRouter = router({
       changeReason: z.string().max(500).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      await sanPhamGhiTrongPhamVi(ctx, input.id);
       const { id, changeReason, ...rest } = input;
       const data = rest;
       let finalData = { ...data };
@@ -693,6 +699,8 @@ export const productModelRouter = router({
   delete: protectedProcedure.use(requirePermission("settings_products", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      await sanPhamGhiTrongPhamVi(ctx, input.id);
       const existing = await db.getProductModelById(input.id);
       await db.deleteProductModel(input.id);
       try {
@@ -727,6 +735,8 @@ export const productModelRouter = router({
       copyMappings: z.boolean().optional().default(false),
     }))
     .mutation(async ({ ctx, input }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      await sanPhamGhiTrongPhamVi(ctx, input.sourceId);
       const source = await db.getProductModelById(input.sourceId);
       if (!source) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, "Sản phẩm nguồn không tồn tại");
@@ -1112,6 +1122,9 @@ export const measurementPointRouter = router({
       refDesignator: z.string().trim().max(64).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      await sanPhamGhiTrongPhamVi(ctx, input.productModelId);
+      if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId);
       // P1: when caller supplies a geometry, derive legacy positionX/Y/radius
       // from the geometry centroid so legacy clients stay correct.
       let positionX = input.positionX;
@@ -1749,6 +1762,8 @@ export const measurementPointRouter = router({
   delete: protectedProcedure.use(requirePermission("settings_measurement_points", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      await diemDoGhiTrongPhamVi(ctx, input.id);
       const existing = await db.getMeasurementPointDefById(input.id);
       // Doc 51 P1 (R4 + CASE #4): deleteMeasurementPointDef bumps pointsConfigVersion
       // and stamps the tombstone's deletedAtVersion INSIDE its own transaction — the
@@ -1941,6 +1956,8 @@ export const measurementPointRouter = router({
       reason: z.string().max(500).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      await sanPhamGhiTrongPhamVi(ctx, input.productModelId);
       // BG-126 — chặn Ở INPUT, TRƯỚC bất kỳ đọc/ghi DB nào.
       assertChangeReasonKhongGiaTienToBienThe(input.reason, "reason");
       const result = await withDbErrors(() =>
@@ -1992,6 +2009,57 @@ export const measurementPointRouter = router({
 });
 
 // ============ PRODUCT MACHINE MAPPING ROUTER ============
+/**
+ * THIẾT BỊ ĐO theo NHÀ MÁY (0421, chủ dự án duyệt 2026-10-24): thiết bị thấy / thao tác được ⇔ `measurement_instruments."factoryId"` ∈ phạm vi người gọi; NULL ⇒ chỉ toàn quyền.
+ * Hiệu chuẩn · bản ghi MSA · nghiên cứu MSA suy nhà máy QUA `instrumentId` (không cột riêng). Ngoài phạm vi ≡ không tồn tại. Toàn quyền (admin) ⇒ luôn true.
+ */
+async function thietBiTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], instrumentId: number | null | undefined): Promise<boolean> {
+  const ids = await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true });
+  if (ids === null) return true;
+  if (instrumentId == null) return false;
+  const d = await db.getDb();
+  if (!d) return false;
+  const rows = (await d.execute(sql`SELECT "factoryId" AS f FROM measurement_instruments WHERE id = ${instrumentId} AND "deletedAt" IS NULL`)) as unknown as Array<{ f: number | null }>;
+  const f = rows[0]?.f;
+  return f != null && ids.includes(Number(f));
+}
+
+/** Tài liệu sản phẩm → sản phẩm của nó. Không có ⇒ NOT_FOUND "productModel". */
+async function taiLieuGhiTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], docId: number): Promise<void> {
+  const d = await db.getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const rows = (await d.execute(sql`SELECT "productModelId" AS p FROM product_documents WHERE id = ${docId}`)) as unknown as Array<{ p: number | null }>;
+  if (rows.length === 0 || rows[0]?.p == null) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, "Sản phẩm không tồn tại");
+  await sanPhamGhiTrongPhamVi(ctx, Number(rows[0].p));
+}
+
+/** Cảnh báo SPC → điểm đo → sản phẩm. Không có ⇒ NOT_FOUND "measurementPoint". */
+async function canhBaoSpcGhiTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], alertId: number): Promise<void> {
+  const d = await db.getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const rows = (await d.execute(sql`SELECT "pointDefId" AS p FROM mp_spc_alerts WHERE id = ${alertId}`)) as unknown as Array<{ p: number | null }>;
+  if (rows.length === 0 || rows[0]?.p == null) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Điểm đo không tồn tại");
+  await diemDoGhiTrongPhamVi(ctx, Number(rows[0].p));
+}
+
+/**
+ * Phạm vi nhà máy cho GHI lên một ánh xạ sản phẩm↔máy theo id (rà bảo mật 2026-10-24, lô W4 — kiểm định phamViGhi): ánh xạ của máy ngoài
+ * phạm vi ≡ "Mapping not found" (cùng NOT_FOUND với id không có thật); kiểm TRƯỚC khi ghi. Toàn quyền (admin) ⇒ không kiểm.
+ */
+async function anhXaTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], id: number): Promise<void> {
+  if ((await idsMayTrongPhamVi(ctx)) === null) return;
+  const d = await db.getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const rows = (await d.execute(sql`SELECT "machineId" AS m FROM product_machine_mappings WHERE id = ${id}`)) as unknown as Array<{ m: number | null }>;
+  const khongThay = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "mapping" }, "Mapping not found");
+  if (rows.length === 0 || rows[0]?.m == null) throw khongThay();
+  try {
+    await mayTrongPhamVi(ctx, Number(rows[0].m));
+  } catch {
+    throw khongThay();
+  }
+}
+
 export const productMachineMappingRouter = router({
   list: protectedProcedure
     .input(z.object({
@@ -2024,6 +2092,9 @@ export const productMachineMappingRouter = router({
       force: z.boolean().optional().default(false),
     }))
     .mutation(async ({ ctx, input }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      await mayTrongPhamVi(ctx, input.machineId);
+      await sanPhamGhiTrongPhamVi(ctx, input.productModelId);
       // Doc 42 #40 — orphan guard: chặn tạo mapping trỏ tới sản phẩm/máy không tồn
       // tại (hoặc đã xoá) — nguồn gốc của các mapping mồ côi "N/A".
       const [product, machine] = await Promise.all([
@@ -2088,6 +2159,7 @@ export const productMachineMappingRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
+      await anhXaTrongPhamVi(ctx, id);
       await db.updateProductMachineMapping(id, data);
       try {
         await db.createAuditLog({
@@ -2108,6 +2180,7 @@ export const productMachineMappingRouter = router({
   delete: writeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
+      await anhXaTrongPhamVi(ctx, input.id);
       await db.deleteProductMachineMapping(input.id);
       try {
         await db.createAuditLog({
@@ -2266,6 +2339,8 @@ export const productDocumentRouter = router({
       ),
     }))
     .mutation(async ({ ctx, input }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      await sanPhamGhiTrongPhamVi(ctx, input.productModelId);
       const { productDocuments } = await import("../../drizzle/schema/product");
       const database = await db.getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
@@ -2291,7 +2366,9 @@ export const productDocumentRouter = router({
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      await taiLieuGhiTrongPhamVi(ctx, input.id);
       const { productDocuments } = await import("../../drizzle/schema/product");
       const { eq } = await import("drizzle-orm");
       const database = await db.getDb();
@@ -2708,13 +2785,14 @@ export const defectCatalogRouter = router({
         instrumentType: z.string().optional(),
         includeInactive: z.boolean().optional(),
       }).optional())
-      .query(async ({ input }) => {
-        return db.listMeasurementInstruments(input);
+      .query(async ({ input, ctx }) => {
+        return db.listMeasurementInstruments(input, phamViCua(ctx));
       }),
 
     getById: protectedProcedure
       .input(z.object({ id: z.number().int().positive() }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        if (!(await thietBiTrongPhamVi(ctx, input.id))) return undefined; // ngoài phạm vi ≡ không tồn tại
         return db.getMeasurementInstrumentById(input.id);
       }),
 
@@ -2736,6 +2814,7 @@ export const defectCatalogRouter = router({
         msaMethod: z.string().max(50).optional(),
         notes: z.string().optional(),
         isActive: z.boolean().optional(),
+        factoryId: z.number().int().positive().nullable().optional(), // 0421: nhà máy sở hữu (admin gán; NULL = chưa gán)
       }))
       .mutation(async ({ ctx, input }) => {
         const id = await db.createMeasurementInstrument(input);
@@ -2771,6 +2850,7 @@ export const defectCatalogRouter = router({
         msaMethod: z.string().max(50).optional(),
         notes: z.string().optional(),
         isActive: z.boolean().optional(),
+        factoryId: z.number().int().positive().nullable().optional(), // 0421: nhà máy sở hữu (admin gán; NULL = chưa gán)
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
@@ -3062,6 +3142,8 @@ export const msaWizardRouter = router({
       }),
     }))
     .mutation(async ({ ctx, input }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      await sanPhamGhiTrongPhamVi(ctx, input.productModelId);
       if (input.instrumentId) {
         const inst = await db.getMeasurementInstrumentById(input.instrumentId);
         if (!inst) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, `Instrument ID ${input.instrumentId} not found`);
@@ -3094,6 +3176,12 @@ export const msaWizardRouter = router({
   deleteCsvMappingPreset: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
+      // phạm vi nhà máy (lô W6): preset → sản phẩm của nó (luật ghi theo sản phẩm)
+      const dd = await db.getDb();
+      if (!dd) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+      const pr = (await dd.execute(sql`SELECT "productModelId" AS p FROM msa_csv_mapping_presets WHERE id = ${input.id}`)) as unknown as Array<{ p: number | null }>;
+      if (pr.length === 0 || pr[0]?.p == null) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, "Sản phẩm không tồn tại");
+      await sanPhamGhiTrongPhamVi(ctx, Number(pr[0].p));
       await db.softDeleteMsaCsvMappingPreset(input.id, ctx.user.id);
 
       await db.createAuditLog({
@@ -3114,15 +3202,20 @@ export const msaWizardRouter = router({
       productModelId: z.number().int().positive(),
       includeInactive: z.boolean().optional(),
     }))
-    .query(async ({ input }) => {
-      return db.listMsaStudiesByProduct(input.productModelId, { includeInactive: input.includeInactive });
+    .query(async ({ input, ctx }) => {
+      const ds = await db.listMsaStudiesByProduct(input.productModelId, { includeInactive: input.includeInactive });
+      // phạm vi nhà máy (0421): nghiên cứu thấy được ⇔ thiết bị của nó thuộc phạm vi
+      if ((await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true })) === null) return ds;
+      const giu: typeof ds = [];
+      for (const st of ds) if (await thietBiTrongPhamVi(ctx, st.instrumentId)) giu.push(st);
+      return giu;
     }),
 
   getStudy: protectedProcedure
     .input(z.object({ studyId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const study = await db.getMsaStudyById(input.studyId);
-      if (!study) {
+      if (!study || !(await thietBiTrongPhamVi(ctx, study.instrumentId))) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       }
       const observations = await db.listMsaObservationsByStudy(input.studyId);
@@ -3404,13 +3497,15 @@ export const msaWizardRouter = router({
 export const instrumentCalibrationRouter = router({
   list: protectedProcedure
     .input(z.object({ instrumentId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (!(await thietBiTrongPhamVi(ctx, input.instrumentId))) return []; // phạm vi nhà máy (0421): thiết bị ngoài phạm vi ≡ không tồn tại
       return db.listInstrumentCalibrations(input.instrumentId);
     }),
 
   health: protectedProcedure
     .input(z.object({ instrumentId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (!(await thietBiTrongPhamVi(ctx, input.instrumentId))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, "Instrument not found");
       return db.getInstrumentHealth(input.instrumentId);
     }),
 
@@ -3475,7 +3570,8 @@ export const instrumentCalibrationRouter = router({
 export const instrumentMsaRecordRouter = router({
   list: protectedProcedure
     .input(z.object({ instrumentId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (!(await thietBiTrongPhamVi(ctx, input.instrumentId))) return []; // phạm vi nhà máy (0421)
       return db.listInstrumentMsaRecords(input.instrumentId);
     }),
 
@@ -3660,7 +3756,15 @@ export const measurementSamplesRouter = router({
         sampledAt: z.coerce.date(),
       })).min(1).max(5000),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24): mỗi máy khai trong lô phải trong phạm vi; người gọi phạm vi HẸP bắt buộc nêu máy ở mọi dòng
+      // (dòng không máy không có nhà máy để so ⇒ fail-closed). Toàn quyền (admin) ⇒ giữ nguyên.
+      if ((await idsMayTrongPhamVi(ctx)) !== null) {
+        if (input.rows.some((r) => r.machineId == null)) {
+          throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "machineId" }, "Mỗi dòng mẫu cần machineId thuộc phạm vi của bạn.");
+        }
+        for (const mid of new Set(input.rows.map((r) => r.machineId as number))) await mayTrongPhamVi(ctx, mid);
+      }
       // P4.B G19 — hard gate: validate every distinct instrumentId referenced
       // in the batch is fit-for-use (active, in-date calibration, valid MSA).
       const instrumentIds = Array.from(new Set(
@@ -3710,7 +3814,9 @@ export const measurementSamplesRouter = router({
       persistAlerts: z.boolean().default(false),
       persistRolling: z.boolean().default(false),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      if (input.persistAlerts || input.persistRolling) await diemDoGhiTrongPhamVi(ctx, input.pointDefId);
       const samples = await db.listMeasurementSamples({
         pointDefId: input.pointDefId,
         windowSize: input.windowSize,
@@ -3806,6 +3912,8 @@ export const spcAlertsRouter = router({
       note: z.string().max(500).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      await canhBaoSpcGhiTrongPhamVi(ctx, input.id);
       await db.ackSpcAlert(input.id, ctx.user.id, input.note);
       return { success: true };
     }),
@@ -3904,7 +4012,12 @@ export const msaAdvancedRouter = router({
       studyId: z.number().int().positive(),
       tolerance: z.number().positive().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi nhà máy (0421): nghiên cứu của thiết bị ngoài phạm vi ≡ không tồn tại
+      const study = await db.getMsaStudyById(input.studyId);
+      if (!study || !(await thietBiTrongPhamVi(ctx, study.instrumentId))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
+      }
       const obs = await db.listMsaObservationsByStudy(input.studyId);
       const adapted = obs.map((o: any) => ({
         operator: String(o.operatorName ?? "?"),
@@ -4177,7 +4290,9 @@ export const cadImportRouter = router({
       parseOptions: centroidParseOptionsSchema.optional(),
       transformOptions: centroidTransformOptionsSchema.optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      await sanPhamGhiTrongPhamVi(ctx, input.productModelId);
       const text = input.isBase64
         ? Buffer.from(input.content, "base64").toString("utf-8")
         : input.content;
@@ -4201,6 +4316,8 @@ export const cadImportRouter = router({
       transformOptions: centroidTransformOptionsSchema.optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24, lô W6, luật chủ dự án 2026-10-24): ghi được khi sản phẩm trong phạm vi HOẶC chưa gắn nhà máy nào (nháp)
+      await sanPhamGhiTrongPhamVi(ctx, input.productModelId);
       const text = input.isBase64
         ? Buffer.from(input.content, "base64").toString("utf-8")
         : input.content;

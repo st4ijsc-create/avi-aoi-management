@@ -101,9 +101,21 @@ async function requireDb() {
  * the measurement result must belong to that inspection, a linked WO must
  * exist. serialNumber is denormalised from the inspection at create time.
  */
+/**
+ * phạm vi người dùng (L2 2026-10-24): điều kiện SQL "bản ghi xử lý thuộc lần kiểm tra của máy trong phạm vi". `idsMay`: `null`/`undefined` = toàn quyền (không lọc);
+ * mảng (kể cả rỗng) = chỉ máy trong tập. Xử lý mà lần kiểm tra không còn / không có máy ⇒ ẩn với người dùng hẹp (fail-closed).
+ */
+function congPhamVi(idsMay: number[] | null | undefined) {
+  if (idsMay == null) return undefined;
+  const ds = sql.join((idsMay.length > 0 ? idsMay : [-1]).map((x) => sql`${x}`), sql`, `);
+  return sql`${defectDispositions.inspectionId} IN (SELECT id FROM product_inspections WHERE "machineId" IN (${ds}))`;
+}
+
 export async function createDisposition(
   input: CreateDispositionInput,
   actor: Actor,
+  /** phạm vi người dùng (L2 2026-10-24): tập máy trong phạm vi người gọi (null/undefined = toàn quyền). Lần kiểm tra của máy ngoài tập ≡ không tồn tại. */
+  idsMay?: number[] | null,
 ): Promise<DefectDisposition> {
   const db = await requireDb();
 
@@ -112,11 +124,12 @@ export async function createDisposition(
       id: productInspections.id,
       serialNumber: productInspections.serialNumber,
       overallResult: productInspections.overallResult,
+      machineId: productInspections.machineId,
     })
     .from(productInspections)
     .where(eq(productInspections.id, input.inspectionId))
     .limit(1);
-  if (!inspection) {
+  if (!inspection || (idsMay != null && !idsMay.includes(inspection.machineId))) {
     throw new DispositionError("NOT_FOUND", `Inspection ${input.inspectionId} not found`);
   }
 
@@ -191,13 +204,16 @@ export async function createDisposition(
 export async function updateDispositionStatus(
   input: { id: number; status: DefectDispositionStatus; assignee?: number | null; note?: string | null },
   actor: Actor,
+  /** phạm vi người dùng (L2 2026-10-24): tập máy trong phạm vi người gọi (null/undefined = toàn quyền). Xử lý thuộc máy ngoài tập ≡ không tồn tại. */
+  idsMay?: number[] | null,
 ): Promise<DefectDisposition> {
   const db = await requireDb();
 
+  const cong = congPhamVi(idsMay);
   const [existing] = await db
     .select()
     .from(defectDispositions)
-    .where(eq(defectDispositions.id, input.id))
+    .where(cong ? and(eq(defectDispositions.id, input.id), cong) : eq(defectDispositions.id, input.id))
     .limit(1);
   if (!existing) {
     throw new DispositionError("NOT_FOUND", `Disposition ${input.id} not found`);
@@ -269,38 +285,41 @@ async function withUserNames(rows: DefectDisposition[]): Promise<DispositionWith
 }
 
 /** All dispositions of one inspection, newest first (read-only; [] on no DB). */
-export async function listDispositionsByInspection(inspectionId: number): Promise<DispositionWithNames[]> {
+export async function listDispositionsByInspection(inspectionId: number, idsMay?: number[] | null): Promise<DispositionWithNames[]> {
   const db = await getDb();
   if (!db) return [];
+  const cong = congPhamVi(idsMay);
   const rows = await db
     .select()
     .from(defectDispositions)
-    .where(eq(defectDispositions.inspectionId, inspectionId))
+    .where(cong ? and(eq(defectDispositions.inspectionId, inspectionId), cong) : eq(defectDispositions.inspectionId, inspectionId))
     .orderBy(desc(defectDispositions.createdAt), desc(defectDispositions.id));
   return withUserNames(rows);
 }
 
 /** Open (non-closed) dispositions — the repair queue. Newest first. */
-export async function listOpenDispositions(limit = 100): Promise<DispositionWithNames[]> {
+export async function listOpenDispositions(limit = 100, idsMay?: number[] | null): Promise<DispositionWithNames[]> {
   const db = await getDb();
   if (!db) return [];
+  const cong = congPhamVi(idsMay);
   const rows = await db
     .select()
     .from(defectDispositions)
-    .where(ne(defectDispositions.status, "closed"))
+    .where(cong ? and(ne(defectDispositions.status, "closed"), cong) : ne(defectDispositions.status, "closed"))
     .orderBy(desc(defectDispositions.createdAt), desc(defectDispositions.id))
     .limit(Math.min(Math.max(limit, 1), 500));
   return withUserNames(rows);
 }
 
 /** Count of open (non-closed) dispositions — for the QualityHome badge. */
-export async function countOpenDispositions(): Promise<number> {
+export async function countOpenDispositions(idsMay?: number[] | null): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
+  const cong = congPhamVi(idsMay);
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(defectDispositions)
-    .where(ne(defectDispositions.status, "closed"));
+    .where(cong ? and(ne(defectDispositions.status, "closed"), cong) : ne(defectDispositions.status, "closed"));
   return row?.n ?? 0;
 }
 
@@ -322,7 +341,7 @@ export interface ReInspectStatus {
  * tiebreaker for identical timestamps). "Later" = the board went through the
  * line again after rework — its verdict verifies (or refutes) the repair.
  */
-export async function getReInspectStatus(inspectionId: number): Promise<ReInspectStatus> {
+export async function getReInspectStatus(inspectionId: number, idsMay?: number[] | null): Promise<ReInspectStatus> {
   const db = await getDb();
   if (!db) return { found: false, laterCount: 0 };
 
@@ -331,18 +350,20 @@ export async function getReInspectStatus(inspectionId: number): Promise<ReInspec
       id: productInspections.id,
       serialNumber: productInspections.serialNumber,
       inspectionTime: productInspections.inspectionTime,
+      machineId: productInspections.machineId,
     })
     .from(productInspections)
     .where(eq(productInspections.id, inspectionId))
     .limit(1);
   if (!base?.serialNumber) return { found: false, laterCount: 0 };
+  // phạm vi người dùng (L2 2026-10-24): lần kiểm tra gốc của máy ngoài phạm vi ≡ không có; các lần kiểm tra "muộn hơn" cũng chỉ tính máy trong phạm vi
+  if (idsMay != null && !idsMay.includes(base.machineId)) return { found: false, laterCount: 0 };
 
   const laterCond = and(
     eq(productInspections.serialNumber, base.serialNumber),
-    or(
-      gt(productInspections.inspectionTime, base.inspectionTime),
-      and(eq(productInspections.inspectionTime, base.inspectionTime), gt(productInspections.id, base.id)),
-    ),
+    // So sánh (thời gian, id) NGAY TRONG SQL: đi vòng qua Date của JS làm lệch múi giờ của cột timestamp "naive" (±7 h) ⇒ chính hàng gốc bị tính là "muộn hơn".
+    sql`(${productInspections.inspectionTime}, ${productInspections.id}) > (SELECT "inspectionTime", id FROM product_inspections WHERE id = ${base.id})`,
+    idsMay != null ? inArray(productInspections.machineId, idsMay.length > 0 ? idsMay : [-1]) : undefined,
   );
 
   const [countRow] = await db
@@ -384,6 +405,8 @@ export async function getReInspectStatus(inspectionId: number): Promise<ReInspec
 // ════════════════════════════════════════════════════════════════════════════
 
 export interface RepairQueueFilters {
+  /** phạm vi người dùng (L2 2026-10-24): tập máy trong phạm vi người gọi (null/undefined = toàn quyền). */
+  idsMay?: number[] | null;
   machineId?: number | null;
   lineId?: number | null;
   disposition?: DefectDispositionType | null;
@@ -412,6 +435,8 @@ export async function listRepairQueue(filters: RepairQueueFilters = {}): Promise
   if (!db) return [];
 
   const conds = [ne(defectDispositions.status, "closed")];
+  const congRq = congPhamVi(filters.idsMay);
+  if (congRq) conds.push(congRq);
   if (filters.machineId != null) conds.push(eq(productInspections.machineId, filters.machineId));
   if (filters.lineId != null) conds.push(eq(stations.lineId, filters.lineId));
   if (filters.disposition != null) conds.push(eq(defectDispositions.disposition, filters.disposition));
@@ -458,15 +483,16 @@ export async function listRepairQueue(filters: RepairQueueFilters = {}): Promise
  * closed history together; the client separates them. Serial is matched exactly
  * (denormalised at create time from the inspection).
  */
-export async function listDispositionsBySerial(serial: string): Promise<DispositionWithNames[]> {
+export async function listDispositionsBySerial(serial: string, idsMay?: number[] | null): Promise<DispositionWithNames[]> {
   const db = await getDb();
   if (!db) return [];
   const trimmed = serial.trim();
   if (!trimmed) return [];
+  const cong = congPhamVi(idsMay);
   const rows = await db
     .select()
     .from(defectDispositions)
-    .where(eq(defectDispositions.serialNumber, trimmed))
+    .where(cong ? and(eq(defectDispositions.serialNumber, trimmed), cong) : eq(defectDispositions.serialNumber, trimmed))
     .orderBy(desc(defectDispositions.createdAt), desc(defectDispositions.id));
   return withUserNames(rows);
 }
@@ -539,7 +565,7 @@ const STATS_EVENT_LIMIT = 5000; // bound per-call work; window is small in pract
  * ledger the service already writes on every transition (details JSON carries
  * {from,to}). `now` is injectable for tests.
  */
-export async function getRepairStats(now: Date = new Date()): Promise<RepairStats> {
+export async function getRepairStats(now: Date = new Date(), idsMay?: number[] | null): Promise<RepairStats> {
   const empty: RepairStats = {
     openByLane: { open: 0, in_repair: 0, repaired: 0, re_inspect_pending: 0 },
     repairedToday: 0,
@@ -553,10 +579,12 @@ export async function getRepairStats(now: Date = new Date()): Promise<RepairStat
   if (!db) return empty;
 
   // 1. Backlog by lane + oldest age (one grouped query + one min query).
+  const congTk = congPhamVi(idsMay); // phạm vi người dùng (L2 2026-10-24)
+  const mo = congTk ? and(ne(defectDispositions.status, "closed"), congTk) : ne(defectDispositions.status, "closed");
   const laneRows = await db
     .select({ status: defectDispositions.status, n: sql<number>`count(*)::int` })
     .from(defectDispositions)
-    .where(ne(defectDispositions.status, "closed"))
+    .where(mo)
     .groupBy(defectDispositions.status);
   const openByLane = { ...empty.openByLane };
   for (const r of laneRows) {
@@ -567,7 +595,7 @@ export async function getRepairStats(now: Date = new Date()): Promise<RepairStat
   const [oldest] = await db
     .select({ createdAt: defectDispositions.createdAt })
     .from(defectDispositions)
-    .where(ne(defectDispositions.status, "closed"))
+    .where(mo)
     .orderBy(asc(defectDispositions.createdAt))
     .limit(1);
   const oldestOpenMinutes = oldest
@@ -587,7 +615,12 @@ export async function getRepairStats(now: Date = new Date()): Promise<RepairStat
       createdAt: auditLogs.createdAt,
     })
     .from(auditLogs)
-    .where(and(eq(auditLogs.action, "defectDisposition.updateStatus"), gte(auditLogs.createdAt, since)))
+    .where(and(
+      eq(auditLogs.action, "defectDisposition.updateStatus"),
+      gte(auditLogs.createdAt, since),
+      // phạm vi người dùng (L2 2026-10-24): chỉ sự kiện của xử lý thuộc máy trong phạm vi
+      congTk ? sql`${auditLogs.entityId} IN (SELECT id FROM defect_dispositions WHERE ${congTk})` : undefined,
+    ))
     .orderBy(asc(auditLogs.createdAt), asc(auditLogs.id))
     .limit(STATS_EVENT_LIMIT);
 

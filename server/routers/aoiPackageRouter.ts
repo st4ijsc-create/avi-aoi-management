@@ -21,6 +21,24 @@ import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { nanoid } from "nanoid";
 import { eq, and, desc, gte, lte, sql, like, inArray, count } from "drizzle-orm";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
+
+/** phạm vi người dùng (L1 rà bảo mật 2026-10-24): gói của máy NGOÀI phạm vi ≡ "không tồn tại" (CÙNG NOT_FOUND aoiPackage), kiểm TRƯỚC mọi đọc ZIP/ảnh/nhật ký. */
+/** phạm vi người dùng (L1b 2026-10-24): tập mã máy (machines.code) của các máy trong phạm vi. */
+async function maMayTrongPhamVi(idsMay: number[]): Promise<Set<string>> {
+  if (idsMay.length === 0) return new Set();
+  const database = await getDb();
+  if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+  const rows = await database.select({ code: machines.code }).from(machines).where(inArray(machines.id, idsMay));
+  return new Set(rows.map((r) => r.code));
+}
+
+async function chanGoiNgoaiPhamVi(ctx: unknown, machineId: number): Promise<void> {
+  const ids = await idsMayTrongPhamVi(ctx as never);
+  if (ids !== null && !ids.includes(machineId)) {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "Package not found");
+  }
+}
 import { getDb } from "../db";
 import * as db from "../db";
 import { storagePut, storageGet } from "../storage";
@@ -370,12 +388,16 @@ async function getOrExtractImage(
   watermarkLines: string[],
 ): Promise<{ buffer: Buffer; fromCache: boolean }> {
   // Validate fileName to prevent path traversal (zip-slip)
-  const normalizedName = path.normalize(fileName).replace(/^(\.\.(\/|\\|$))+/, '');
-  if (normalizedName.includes('..') || path.isAbsolute(normalizedName)) {
+  // L1b 2026-10-24: TỪ CHỐI (BAD_REQUEST) mọi tên có "..", đường dẫn tuyệt đối (POSIX `/x`, Windows `\x` / `C:`) hoặc NUL —
+  // TRƯỚC đây bộ lọc CẮT các "../" đầu rồi vẫn tra ZIP bằng tên GỐC.
+  if (fileName.includes('..') || fileName.includes('\0') || /^([\\/]|[A-Za-z]:)/.test(fileName) || path.isAbsolute(fileName)) {
     throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "fileName" }, "Invalid file name");
   }
+  const normalizedName = path.normalize(fileName);
 
-  const cacheKey = `${pkg.packageId}/${normalizedName}`;
+  // Khoá cache GỒM danh tính watermark: ảnh trong cache đã đóng dấu tên người yêu cầu ⇒ người khác KHÔNG được nhận lại bản đóng dấu tên người trước.
+  const dauVet = createHash("sha256").update(watermarkLines.join("\n")).digest("hex").slice(0, 12);
+  const cacheKey = `${pkg.packageId}/${normalizedName}.wm-${dauVet}`;
   const cachePath = path.join(CACHE_DIR, cacheKey);
 
   // Verify cache path stays within CACHE_DIR
@@ -1966,11 +1988,13 @@ export const aoiPackageRouter = router({
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const conditions: any[] = [];
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L1 rà bảo mật 2026-10-24)
+      if (idsMay !== null) conditions.push(inArray(inspectionPackages.machineId, idsMay.length > 0 ? idsMay : [-1]));
 
       if (input.machineId) conditions.push(eq(inspectionPackages.machineId, input.machineId));
       if (input.machineCode) conditions.push(eq(inspectionPackages.machineCode, input.machineCode));
@@ -2040,7 +2064,7 @@ export const aoiPackageRouter = router({
     }).refine(data => data.packageId || data.id, {
       message: "Either packageId or id must be provided",
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -2057,6 +2081,7 @@ export const aoiPackageRouter = router({
       if (pkgs.length === 0) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "Package not found");
       }
+      await chanGoiNgoaiPhamVi(ctx, pkgs[0].machineId);
 
       // Get images
       const images = await database
@@ -2109,6 +2134,7 @@ export const aoiPackageRouter = router({
       }
 
       const pkg = pkgs[0];
+      await chanGoiNgoaiPhamVi(ctx, pkg.machineId); // phạm vi người dùng (L1 rà bảo mật 2026-10-24): TRƯỚC khi mở ZIP/cache
 
       // Determine file name
       let targetFileName = input.fileName;
@@ -2183,16 +2209,18 @@ export const aoiPackageRouter = router({
       packageId: z.string().optional(),
       id: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       let pkgId: number;
       if (input.id) {
         pkgId = input.id;
+        const [goi] = await database.select({ machineId: inspectionPackages.machineId }).from(inspectionPackages).where(eq(inspectionPackages.id, input.id)).limit(1);
+        if (goi) await chanGoiNgoaiPhamVi(ctx, goi.machineId); // phạm vi người dùng (L1 rà bảo mật 2026-10-24)
       } else if (input.packageId) {
         const pkgs = await database
-          .select({ id: inspectionPackages.id })
+          .select({ id: inspectionPackages.id, machineId: inspectionPackages.machineId })
           .from(inspectionPackages)
           .where(eq(inspectionPackages.packageId, input.packageId))
           .limit(1);
@@ -2200,6 +2228,7 @@ export const aoiPackageRouter = router({
         if (pkgs.length === 0) {
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "Package not found");
         }
+        await chanGoiNgoaiPhamVi(ctx, pkgs[0].machineId);
         pkgId = pkgs[0].id;
       } else {
         throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "idOrPackageId" }, "id or packageId required");
@@ -2221,7 +2250,7 @@ export const aoiPackageRouter = router({
       id: z.number().optional(),
       limit: z.number().default(100),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -2231,14 +2260,15 @@ export const aoiPackageRouter = router({
       if (input.id) {
         pkgDbId = input.id;
         const pkg = await database
-          .select({ packageId: inspectionPackages.packageId })
+          .select({ packageId: inspectionPackages.packageId, machineId: inspectionPackages.machineId })
           .from(inspectionPackages)
           .where(eq(inspectionPackages.id, input.id))
           .limit(1);
+        if (pkg[0]) await chanGoiNgoaiPhamVi(ctx, pkg[0].machineId); // phạm vi người dùng (L1 rà bảo mật 2026-10-24)
         pkgPackageId = pkg[0]?.packageId || "";
       } else if (input.packageId) {
         const pkgs = await database
-          .select({ id: inspectionPackages.id, packageId: inspectionPackages.packageId })
+          .select({ id: inspectionPackages.id, packageId: inspectionPackages.packageId, machineId: inspectionPackages.machineId })
           .from(inspectionPackages)
           .where(eq(inspectionPackages.packageId, input.packageId))
           .limit(1);
@@ -2246,6 +2276,7 @@ export const aoiPackageRouter = router({
         if (pkgs.length === 0) {
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "Package not found");
         }
+        await chanGoiNgoaiPhamVi(ctx, pkgs[0].machineId);
         pkgDbId = pkgs[0].id;
         pkgPackageId = pkgs[0].packageId;
       } else {
@@ -2286,7 +2317,7 @@ export const aoiPackageRouter = router({
     .input(z.object({
       packageId: z.string(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -2301,6 +2332,7 @@ export const aoiPackageRouter = router({
       }
 
       const pkg = pkgs[0];
+      await chanGoiNgoaiPhamVi(ctx, pkg.machineId); // phạm vi người dùng (L1 rà bảo mật 2026-10-24): TRƯỚC khi cấp URL kho
       if (!pkg.storageKey) {
         throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "downloadPackageZip" }, "ZIP file not available");
       }
@@ -2371,10 +2403,13 @@ export const aoiPackageRouter = router({
     .input(z.object({
       machineId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
+      // phạm vi người dùng (L1 rà bảo mật 2026-10-24): chỉ máy trong phạm vi (máy ngoài phạm vi ⇒ rỗng, như chưa có số đo)
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      const congPhamVi = idsMay === null ? undefined : inArray(uploadQueueMetrics.machineId, idsMay.length > 0 ? idsMay : [-1]);
       // Get latest metric per machine
       const query = database
         .select({
@@ -2394,10 +2429,10 @@ export const aoiPackageRouter = router({
         .limit(input.machineId ? 1 : 50);
 
       if (input.machineId) {
-        return query.where(eq(uploadQueueMetrics.machineId, input.machineId));
+        return query.where(congPhamVi ? and(congPhamVi, eq(uploadQueueMetrics.machineId, input.machineId)) : eq(uploadQueueMetrics.machineId, input.machineId));
       }
 
-      return query;
+      return congPhamVi ? query.where(congPhamVi) : query;
     }),
 
   /**
@@ -2408,11 +2443,13 @@ export const aoiPackageRouter = router({
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const conditions: any[] = [];
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L1 rà bảo mật 2026-10-24)
+      if (idsMay !== null) conditions.push(inArray(inspectionPackages.machineId, idsMay.length > 0 ? idsMay : [-1]));
       if (input.dateFrom) conditions.push(gte(inspectionPackages.createdAt, new Date(input.dateFrom)));
       if (input.dateTo) conditions.push(lte(inspectionPackages.createdAt, new Date(input.dateTo)));
 
@@ -2475,7 +2512,16 @@ export const aoiPackageRouter = router({
       offset: z.number().int().min(0).default(0),
       limit: z.number().int().min(1).max(200).default(20),
     }))
-    .query(async ({ input }) => listDeadLetterEntries(input)),
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L1b 2026-10-24): mục dead-letter mang mã máy thật — người dùng phạm vi hẹp chỉ thấy mục của máy trong phạm vi (mục không có mã máy chỉ toàn quyền thấy).
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      if (idsMay === null) return listDeadLetterEntries(input);
+      const maMay = await maMayTrongPhamVi(idsMay);
+      const tat = await listDeadLetterEntries({ offset: 0, limit: Number.MAX_SAFE_INTEGER });
+      const thay = tat.entries.filter((e) => e.machineCode !== null && maMay.has(e.machineCode));
+      // totalBytes là kích thước CẢ tệp (gồm mục máy khác) ⇒ không công bố cho người dùng hẹp.
+      return { entries: thay.slice(input.offset, input.offset + input.limit), total: thay.length, totalBytes: 0 };
+    }),
 
   /**
    * 12. Lô 4 Mục 3 (BG-36) — chi tiết MỘT mục dead-letter theo `key`. Payload đã
@@ -2486,5 +2532,11 @@ export const aoiPackageRouter = router({
   getDeadLetterDetail: protectedProcedure
     .use(requirePermission("admin_system", "canView"))
     .input(z.object({ key: z.string().min(1) }))
-    .query(async ({ input }) => getDeadLetterDetail(input.key)),
+    .query(async ({ input, ctx }) => {
+      const chiTiet = await getDeadLetterDetail(input.key);
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L1b 2026-10-24): mục của máy ngoài phạm vi ≡ không tìm thấy (null)
+      if (idsMay === null || chiTiet === null) return chiTiet;
+      const maMay = await maMayTrongPhamVi(idsMay);
+      return chiTiet.machineCode !== null && maMay.has(chiTiet.machineCode) ? chiTiet : null;
+    }),
 });

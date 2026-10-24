@@ -39,6 +39,7 @@ import {
   DEFECT_DISPOSITION_STATUSES,
   LEGAL_TRANSITIONS,
 } from "../services/defectDispositionService";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 
 /**
  * W8-C (doc 27 V10) — repair-bench procedure: the REPAIR WALK (start repair /
@@ -86,7 +87,7 @@ export const defectDispositionRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       try {
-        return await createDisposition(input, { id: ctx.user.id, name: ctx.user.name });
+        return await createDisposition(input, { id: ctx.user.id, name: ctx.user.name }, await idsMayTrongPhamVi(ctx)); // phạm vi người dùng (L2 2026-10-24)
       } catch (err) {
         rethrow(err);
       }
@@ -102,7 +103,7 @@ export const defectDispositionRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       try {
-        return await updateDispositionStatus(input, { id: ctx.user.id, name: ctx.user.name });
+        return await updateDispositionStatus(input, { id: ctx.user.id, name: ctx.user.name }, await idsMayTrongPhamVi(ctx)); // phạm vi người dùng (L2 2026-10-24)
       } catch (err) {
         rethrow(err);
       }
@@ -111,17 +112,17 @@ export const defectDispositionRouter = router({
   // ── reads (any authenticated user) ─────────────────────────────────────────
   listByInspection: protectedProcedure
     .input(z.object({ inspectionId: z.number().int().positive() }))
-    .query(({ input }) => listDispositionsByInspection(input.inspectionId)),
+    .query(async ({ input, ctx }) => listDispositionsByInspection(input.inspectionId, await idsMayTrongPhamVi(ctx))), // phạm vi người dùng (L2 2026-10-24)
 
   listOpen: protectedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(500).optional() }).optional())
-    .query(({ input }) => listOpenDispositions(input?.limit ?? 100)),
+    .query(async ({ input, ctx }) => listOpenDispositions(input?.limit ?? 100, await idsMayTrongPhamVi(ctx))), // phạm vi người dùng (L2 2026-10-24)
 
-  countOpen: protectedProcedure.query(() => countOpenDispositions()),
+  countOpen: protectedProcedure.query(async ({ ctx }) => countOpenDispositions(await idsMayTrongPhamVi(ctx))), // phạm vi người dùng (L2 2026-10-24)
 
   reInspectStatus: protectedProcedure
     .input(z.object({ inspectionId: z.number().int().positive() }))
-    .query(({ input }) => getReInspectStatus(input.inspectionId)),
+    .query(async ({ input, ctx }) => getReInspectStatus(input.inspectionId, await idsMayTrongPhamVi(ctx))), // phạm vi người dùng (L2 2026-10-24)
 
   // Legal-transition map so the client renders exactly the actions the server
   // will accept (single source of truth stays in the service).
@@ -139,15 +140,15 @@ export const defectDispositionRouter = router({
         limit: z.number().int().min(1).max(500).optional(),
       }).optional(),
     )
-    .query(({ input }) => listRepairQueue(input ?? {})),
+    .query(async ({ input, ctx }) => listRepairQueue({ ...(input ?? {}), idsMay: await idsMayTrongPhamVi(ctx) })), // phạm vi người dùng (L2 2026-10-24)
 
   /** Scan workflow: all dispositions of one serial (open + closed history), newest first. */
   listBySerial: protectedProcedure
     .input(z.object({ serial: z.string().trim().min(1).max(100) }))
-    .query(({ input }) => listDispositionsBySerial(input.serial)),
+    .query(async ({ input, ctx }) => listDispositionsBySerial(input.serial, await idsMayTrongPhamVi(ctx))), // phạm vi người dùng (L2 2026-10-24)
 
   /** Stats strip: backlog by lane, repaired/closed today, avg time in repair (audit-derived). */
-  repairStats: protectedProcedure.query(() => getRepairStats()),
+  repairStats: protectedProcedure.query(async ({ ctx }) => getRepairStats(new Date(), await idsMayTrongPhamVi(ctx))), // phạm vi người dùng (L2 2026-10-24)
 
   /**
    * Repair-walk transition (start repair / mark repaired / send re-inspect) for
@@ -182,6 +183,7 @@ export const defectDispositionRouter = router({
         return await updateDispositionStatus(
           { id: input.id, status: input.status, note: input.note },
           { id: ctx.user.id, name: ctx.user.name },
+          await idsMayTrongPhamVi(ctx), // phạm vi người dùng (L2 2026-10-24)
         );
       } catch (err) {
         rethrow(err);

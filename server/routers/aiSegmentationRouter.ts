@@ -12,6 +12,7 @@
  * Degrade trung thực: thiếu model seg → PRECONDITION_FAILED (MODEL_NOT_AVAILABLE),
  * KHÔNG crash. Thiếu calibration µm/pixel → đơn vị "px", cờ degraded.
  */
+import { kiemTraTrongPhamVi } from "./_adapterPhamVi";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -92,6 +93,7 @@ export const aiSegmentationRouter = router({
       umPerPx: z.number().positive().nullish(),
     }))
     .mutation(async ({ ctx, input }) => {
+      if (input.inspectionId != null && !(await kiemTraTrongPhamVi(ctx, [input.inspectionId]))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found"); // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b)
       const m = measureFromMaskData(input.maskData, input.umPerPx ?? null);
       const row = await insertDefectSegmentation({
         measurementResultId: input.measurementResultId ?? null,

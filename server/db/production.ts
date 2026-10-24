@@ -190,6 +190,10 @@ export async function getLineStages(lineId?: number, scope?: PhamViNguoiXem) {
     .orderBy(lineStages.orderIndex);
 }
 
+/**
+ * ⚠⚠ TRẢ VỀ MẢNG (hợp đồng cũ, không sửa): không tìm thấy HOẶC ngoài phạm vi ⇒ mảng RỖNG `[]`, mà `[]` là TRUTHY. Nơi gọi muốn biết "có hàng không" PHẢI kiểm
+ * `Array.isArray(r) && r.length === 0` — `if (!r)` cho qua hàng ngoài phạm vi (lỗi đã xảy ra ở lô W9, kiểm định phamViGhi 2026-10-25: sửa / xoá công đoạn nhà máy khác lọt).
+ */
 export async function getLineStageById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;

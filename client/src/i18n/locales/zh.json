@@ -3808,6 +3808,14 @@
       "qualityGateResult": "质量门结果",
       "qualityGateTemplate": "质量门模板",
       "quarantineItem": "隔离项",
+      "factoryZone": "厂区平面区域",
+      "mapping": "产品-机台映射",
+      "recipeSet": "产线配方集",
+      "lineStage": "产线工序",
+      "productionOrderTemplate": "生产订单模板",
+      "predictiveAlert": "预测性告警",
+      "insight": "分析洞察",
+      "labelQueueItem": "标注队列项",
       "rcaAnalysis": "根本原因分析",
       "recipe": "配方",
       "record": "记录",
@@ -14762,6 +14770,13 @@
     "offline": "离线"
   },
   "instrumentCal": {
+    "factoryColumn": "工厂",
+    "factory": {
+      "label": "所属工厂",
+      "unassigned": "未分配工厂",
+      "unassignedHint": "分配工厂之前仅管理员可见",
+      "unassignedBanner": "有 {{count}} 台测量仪器尚未分配工厂 — 分配工厂之前仅管理员可见（工厂用户看不到）。"
+    },
     "title": "仪器校准与健康",
     "subtitle": "每台测量仪器的校准证书、MSA 记录及 RAG 适用性状态。选择某行查看详情。",
     "type": "类型",

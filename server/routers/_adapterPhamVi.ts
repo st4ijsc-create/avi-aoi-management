@@ -12,7 +12,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { appError } from "../_core/appError";
 import { getDb as getDbRaw } from "../db";
 import { idsTrongPhamVi, type PhamViDoc } from "../db/hierarchy";
-import { commandLog, commissioningRecords, deviceAdapters, deviceTags, safetyEvents } from "../../drizzle/schema";
+import { commandLog, commissioningRecords, deviceAdapters, deviceTags, safetyEvents, wipTracking } from "../../drizzle/schema";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 
 export const khongThayAdapter = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
@@ -187,4 +187,71 @@ export async function dieuKienViTriTrongPhamVi(phamVi: PhamViDoc, cot: CotViTri)
 export async function dieuKienSuKienAnToanTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
   const se = safetyEvents;
   return dieuKienViTriTrongPhamVi(phamViCua(ctx), { lineId: se.lineId, stationId: se.stationId, factoryId: se.factoryId, robotId: se.robotId });
+}
+
+/**
+ * Mảnh SQL thô `<col> IN (id máy trong phạm vi)` cho truy vấn viết tay (bí danh `i`, `ia`, …); `undefined` khi phạm vi toàn quyền. Phạm vi rỗng ⇒ `IN (-1)` (0 hàng, KHÔNG phải "không lọc").
+ * `col` là cột/biểu thức SQL thô, vd `sql.raw('i."machineId"')`.
+ */
+export async function dieuKienMaySql(ctx: CoDanhTinh, col: SQL): Promise<SQL | undefined> {
+  const ids = await idsMayTrongPhamVi(ctx);
+  if (ids === null) return undefined;
+  return sql`${col} IN (${sql.join((ids.length > 0 ? ids : [-1]).map((x) => sql`${x}`), sql`, `)})`;
+}
+
+/** `lần kiểm tra thuộc máy trong phạm vi`: tập id lần kiểm tra → máy; true khi toàn quyền hoặc MỌI lần kiểm tra tồn tại đều thuộc máy trong phạm vi (id không tồn tại bị bỏ qua). */
+export async function kiemTraTrongPhamVi(ctx: CoDanhTinh, inspectionIds: number[]): Promise<boolean> {
+  const ids = await idsMayTrongPhamVi(ctx);
+  if (ids === null || inspectionIds.length === 0) return true;
+  const d = await layDb();
+  const { productInspections } = await import("../../drizzle/schema");
+  const rows = await d.select({ m: productInspections.machineId }).from(productInspections).where(inArray(productInspections.id, inspectionIds));
+  return rows.every((r) => ids.includes(r.m));
+}
+
+/** Lọc danh sách id lần kiểm tra: BỎ các id TỒN TẠI nhưng thuộc máy ngoài phạm vi (id không tồn tại giữ nguyên — thao tác sau tự bỏ qua như cũ). Toàn quyền ⇒ trả nguyên. Dùng cho mutation hàng loạt. */
+export async function locKiemTraTrongPhamVi(ctx: CoDanhTinh, inspectionIds: number[]): Promise<number[]> {
+  const ids = await idsMayTrongPhamVi(ctx);
+  if (ids === null || inspectionIds.length === 0) return inspectionIds;
+  const d = await layDb();
+  const { productInspections } = await import("../../drizzle/schema");
+  const rows = await d.select({ id: productInspections.id, m: productInspections.machineId }).from(productInspections).where(inArray(productInspections.id, inspectionIds));
+  const ngoai = new Set(rows.filter((r) => !ids.includes(r.m)).map((r) => r.id));
+  return inspectionIds.filter((x) => !ngoai.has(x));
+}
+
+/** Chú thích (hàng `image_annotations`) thấy được ⇔ toàn quyền HOẶC gắn một lần kiểm tra thuộc máy trong phạm vi (chú thích không gắn lần kiểm tra ⇒ chỉ toàn quyền thấy — cùng luật đọc L1). */
+export async function chuThichTrongPhamVi(ctx: CoDanhTinh, inspectionId: number | null | undefined): Promise<boolean> {
+  const ids = await idsMayTrongPhamVi(ctx);
+  if (ids === null) return true;
+  if (inspectionId == null) return false;
+  const d = await layDb();
+  const { productInspections } = await import("../../drizzle/schema");
+  const rows = await d.select({ m: productInspections.machineId }).from(productInspections).where(eq(productInspections.id, inspectionId)).limit(1);
+  return rows.length === 1 && ids.includes(rows[0].m);
+}
+
+/** Điều kiện SQL phạm vi cho `wip_tracking` (theo `lineId` / `currentMachineId`); hàng không định vị được chỉ toàn quyền thấy. `undefined` khi toàn quyền. */
+export async function dieuKienWipTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
+  return dieuKienViTriTrongPhamVi(phamViCua(ctx), { lineId: wipTracking.lineId, machineId: wipTracking.currentMachineId });
+}
+
+/**
+ * phạm vi người dùng (L2 2026-10-24): tập đơn vị (serial) trong `serials` mà người gọi THẤY ĐƯỢC — toàn quyền ⇒ tất cả; ngược lại ⇒ có ≥1 bản ghi bước/kiểm tra/linh kiện ở máy trong phạm vi (cùng luật genealogy
+ * `donViThayDuoc`) HOẶC ≥1 hàng WIP ở dây chuyền/máy trong phạm vi. Không tính "tác giả sự kiện chuỗi" (đặc thù genealogy).
+ */
+export async function donViTrongPhamVi(ctx: CoDanhTinh, serials: string[]): Promise<Set<string>> {
+  const idsMay = await idsMayTrongPhamVi(ctx);
+  if (idsMay === null) return new Set(serials);
+  if (serials.length === 0) return new Set();
+  const { donViThayDuoc } = await import("../api/v1/genealogyApi");
+  const out = await donViThayDuoc(serials, idsMay, null);
+  const con = serials.filter((s) => !out.has(s));
+  if (con.length > 0) {
+    const cong = await dieuKienWipTrongPhamVi(ctx);
+    const d = await layDb();
+    const rows = await d.select({ s: wipTracking.serialNumber }).from(wipTracking).where(cong ? sql`${inArray(wipTracking.serialNumber, con)} AND ${cong}` : inArray(wipTracking.serialNumber, con));
+    for (const r of rows) if (r.s != null) out.add(r.s);
+  }
+  return out;
 }

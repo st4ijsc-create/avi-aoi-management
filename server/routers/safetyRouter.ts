@@ -72,7 +72,7 @@ import { loadSafetySourceHealth } from "../services/safety/safetySourceHealth";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { dieuKienSuKienAnToanTrongPhamVi } from "./_adapterPhamVi";
 import { resolveTenantFactoryScope } from "../db/reportAggregators";
-import { deviceAdapters, robots, safetyPlcConfigs as safetyPlcConfigsTable } from "../../drizzle/schema";
+import { deviceAdapters, robots, safetyPlcConfigs as safetyPlcConfigsTable, safetyZones as safetyZonesTable, safetyEvents as safetyEventsTable, cameraCalibrations as cameraCalibrationsTable } from "../../drizzle/schema";
 
 /**
  * doc 81 Đợt 4 fix round 1 (security scan on 7a0dd5632) — every id of a `safety.sourceHealth` target must resolve
@@ -110,6 +110,76 @@ async function assertSourceHealthTargetInScope(
   }
   if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Safety target not found");
 }
+
+/**
+ * Vị trí mà một thủ tục GHI an toàn tuyên bố (robot · thiết bị · trạm · chuyền · nhà máy) — rà bảo mật 2026-10-24, lô W2 (kiểm định
+ * phamViGhi): trước đây người nhà máy A tạo/sửa vùng an toàn, bơm sự kiện người-gần-robot, mở phiên cộng tác lên robot/trạm/chuyền của
+ * nhà máy B. Luật: mỗi id phải TRONG phạm vi người gọi; ngoài phạm vi ≡ không tồn tại (NOT_FOUND). `deviceId` ở miền an toàn là id ROBOT
+ * (xem `robotId = det.robotId ?? det.deviceId` ở bộ đánh giá). Robot thuộc phạm vi ⇔ chuyền của nó và chuyền của trạm của nó (mỗi cái đã
+ * đặt) đều trong phạm vi và có ít nhất một (robot chưa đặt chỗ thì không có gì trong phạm vi). Người gọi toàn quyền (admin) ⇒ không kiểm.
+ * `yeuCauViTri`: người gọi phạm vi hẹp mà KHÔNG nêu vị trí nào ⇒ BAD_REQUEST (fail-closed: sự kiện/vùng không vị trí là hàng mồ côi, chính
+ * người tạo cũng không thấy lại). Kiểm TRƯỚC khi ghi. Đường ingest của MÁY/dịch vụ (khoá máy, edge) KHÔNG đi qua tRPC này nên không bị ảnh hưởng.
+ */
+async function assertViTriAnToanTrongPhamVi(
+  ctx: CoDanhTinh,
+  t: { robotIds?: Array<number | null | undefined>; stationId?: number | null; lineId?: number | null; factoryId?: number | null },
+  opts: { yeuCauViTri?: boolean } = {},
+): Promise<void> {
+  const scope = await callerFactoryScope(ctx);
+  if (scope === null) return;
+  const robotIds = (t.robotIds ?? []).filter((x): x is number => x != null);
+  const coViTri = robotIds.length > 0 || t.stationId != null || t.lineId != null || t.factoryId != null;
+  if (!coViTri) {
+    if (opts.yeuCauViTri) throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "location" }, "Cần nêu robot, trạm, chuyền hoặc nhà máy thuộc phạm vi của bạn.");
+    return;
+  }
+  const pv = phamViCua(ctx);
+  const d = await db();
+  if (t.factoryId != null && !inFactoryScope(scope, t.factoryId)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, "Factory not found");
+  if (t.lineId != null && !((await idsTrongPhamVi("line", pv)) ?? []).includes(t.lineId)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, "Line not found");
+  if (t.stationId != null && !((await idsTrongPhamVi("station", pv)) ?? []).includes(t.stationId)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, "Station not found");
+  if (robotIds.length > 0) {
+    const lineIds = (await idsTrongPhamVi("line", pv)) ?? [];
+    for (const rid of robotIds) {
+      const [r] = await d
+        .select({ lineId: robots.lineId, stationLine: stations.lineId })
+        .from(robots)
+        .leftJoin(stations, eq(stations.id, robots.stationId))
+        .where(eq(robots.id, rid))
+        .limit(1);
+      const lines = [r?.lineId ?? null, r?.stationLine ?? null].filter((x): x is number => x != null);
+      if (lines.length === 0 || !lines.every((l) => lineIds.includes(l))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "Robot not found");
+    }
+  }
+}
+
+/** Sự kiện an toàn `id` phải có vị trí TRONG phạm vi người gọi; không thấy / ngoài phạm vi ≡ NOT_FOUND "safetyEvent". */
+async function suKienAnToanGhiTrongPhamVi(ctx: CoDanhTinh, id: number): Promise<void> {
+  if ((await callerFactoryScope(ctx)) === null) return;
+  const [e] = await (await db()).select().from(safetyEventsTable).where(eq(safetyEventsTable.id, id)).limit(1);
+  try {
+    if (!e) throw new Error("none");
+    await assertViTriAnToanTrongPhamVi(ctx, { robotIds: [e.robotId], stationId: e.stationId, lineId: e.lineId, factoryId: e.factoryId }, { yeuCauViTri: true });
+  } catch {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "safetyEvent" }, `Safety event ${id} not found`);
+  }
+}
+
+/** Phiên cộng tác `id` phải có robot / nhà máy TRONG phạm vi người gọi; không thấy / ngoài phạm vi ≡ NOT_FOUND "collaboration". */
+async function phienCongTacGhiTrongPhamVi(ctx: CoDanhTinh, id: number): Promise<void> {
+  if ((await callerFactoryScope(ctx)) === null) return;
+  const [c] = await (await db()).select().from(collaborationSessions).where(eq(collaborationSessions.id, id)).limit(1);
+  try {
+    if (!c) throw new Error("none");
+    await assertViTriAnToanTrongPhamVi(ctx, { robotIds: [c.robotDeviceId], factoryId: c.factoryId }, { yeuCauViTri: true });
+  } catch {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "collaboration" }, `Collaboration ${id} not found`);
+  }
+}
+
+/** Id số trong danh sách robot mô phỏng (id chuỗi không phải số là nhãn điểm thử, không phải hàng robots ⇒ bỏ qua). */
+const idSoCuaRobotMoPhong = (robotsIn: ReadonlyArray<{ id: string | number }> | undefined): number[] =>
+  (robotsIn ?? []).map((r) => (typeof r.id === "number" ? r.id : /^[0-9]+$/.test(r.id) ? Number(r.id) : NaN)).filter((n) => Number.isInteger(n) && n > 0);
 
 async function db() {
   const d = await getDb();
@@ -521,8 +591,9 @@ export const safetyRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireSafetyFlag();
+      await assertViTriAnToanTrongPhamVi(ctx, { robotIds: [input.robotId, input.deviceId], stationId: input.stationId, lineId: input.lineId, factoryId: input.factoryId }, { yeuCauViTri: true });
       // operator-recorded events default handledBy=operator (honest provenance).
       return recordSafetyEvent({ ...input, handledBy: "operator" });
     }),
@@ -533,6 +604,7 @@ export const safetyRouter = router({
     .input(z.object({ eventId: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
       requireSafetyFlag();
+      await suKienAnToanGhiTrongPhamVi(ctx, input.eventId); // phạm vi nhà máy
       const row = await auditEvent(input.eventId, ctx.user.id);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "safetyEvent" }, `Safety event ${input.eventId} not found`);
       return row;
@@ -560,8 +632,9 @@ export const safetyRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireSafetyFlag();
+      await assertViTriAnToanTrongPhamVi(ctx, { robotIds: [input.robotId, input.deviceId], stationId: input.stationId, lineId: input.lineId, factoryId: input.factoryId }, { yeuCauViTri: true });
       // S1 near-miss advisory (unchanged behaviour).
       const nearMiss = await processDetection(input);
       // S2a (ADDITIVE) — when SAFETY_ZONE_SW_ENABLED, ALSO drive the zone evaluator
@@ -638,8 +711,13 @@ export const safetyRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireSafetyZoneFlag();
+      await assertViTriAnToanTrongPhamVi(
+        ctx,
+        { robotIds: [input.filter?.robotId, ...idSoCuaRobotMoPhong(input.robots)], stationId: input.filter?.stationId, lineId: input.filter?.lineId, factoryId: input.factoryId },
+        { yeuCauViTri: true },
+      );
       return evaluateAndRecord({ ...input, source: "sim" });
     }),
 
@@ -665,8 +743,9 @@ export const safetyRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireSafetyZoneFlag();
+      await assertViTriAnToanTrongPhamVi(ctx, { robotIds: [input.robotId, input.deviceId], stationId: input.stationId, lineId: input.lineId, factoryId: input.factoryId }, { yeuCauViTri: true });
       const r = await createZone(input);
       if (!r.ok && r.enabled) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "createSafetyZone" }, r.message ?? "invalid safety zone");
       return r;
@@ -692,8 +771,18 @@ export const safetyRouter = router({
         notes: z.string().max(2000).nullable().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireSafetyZoneFlag();
+      // vùng HIỆN CÓ phải trong phạm vi (ngoài phạm vi ≡ không tồn tại) VÀ vị trí MỚI (nếu đổi) cũng phải trong phạm vi
+      const [cu] = await (await db()).select().from(safetyZonesTable).where(eq(safetyZonesTable.id, input.id)).limit(1);
+      if (cu) {
+        try {
+          await assertViTriAnToanTrongPhamVi(ctx, { robotIds: [cu.robotId, cu.deviceId], stationId: cu.stationId, lineId: cu.lineId, factoryId: cu.factoryId }, { yeuCauViTri: true });
+        } catch {
+          throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "updateSafetyZone" }, `safety zone ${input.id} not found`);
+        }
+      }
+      await assertViTriAnToanTrongPhamVi(ctx, { robotIds: [input.robotId, input.deviceId], stationId: input.stationId, lineId: input.lineId });
       const r = await updateZone(input);
       if (!r.ok && r.enabled) throw appError(r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", "OPERATION_FAILED", { operation: "updateSafetyZone" }, r.message ?? "update failed");
       return r;
@@ -758,8 +847,25 @@ export const safetyRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireSafetyVisionFlag();
+      // phạm vi nhà máy: vị trí khai + vùng an toàn gắn kèm + (khi sửa) hiệu chuẩn HIỆN CÓ đều phải trong phạm vi
+      await assertViTriAnToanTrongPhamVi(ctx, { robotIds: [input.robotId], stationId: input.stationId, lineId: input.lineId, factoryId: input.factoryId }, { yeuCauViTri: true });
+      if (input.safetyZoneId != null) {
+        const [z] = await (await db()).select().from(safetyZonesTable).where(eq(safetyZonesTable.id, input.safetyZoneId)).limit(1);
+        if (!z) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "Robot not found");
+        await assertViTriAnToanTrongPhamVi(ctx, { robotIds: [z.robotId, z.deviceId], stationId: z.stationId, lineId: z.lineId, factoryId: z.factoryId });
+      }
+      if (input.id != null) {
+        const [cu] = await (await db()).select().from(cameraCalibrationsTable).where(eq(cameraCalibrationsTable.id, input.id)).limit(1);
+        if (cu) {
+          try {
+            await assertViTriAnToanTrongPhamVi(ctx, { robotIds: [cu.robotId], stationId: cu.stationId, lineId: cu.lineId, factoryId: cu.factoryId }, { yeuCauViTri: true });
+          } catch {
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "Robot not found");
+          }
+        }
+      }
       const r = await upsertCalibration({
         ...input,
         homography: input.homography as
@@ -788,8 +894,16 @@ export const safetyRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireSafetyVisionFlag();
+      // máy ảnh đã hiệu chuẩn thuộc vị trí nào thì vị trí ấy phải trong phạm vi; robot mô phỏng + nhà máy khai kèm cũng vậy
+      const cal = (await listCalibrations({ cameraId: input.cameraId, onlyEnabled: true })).at(-1);
+      await assertViTriAnToanTrongPhamVi(
+        ctx,
+        { robotIds: [cal?.robotId, ...idSoCuaRobotMoPhong(input.robots)], stationId: cal?.stationId, lineId: cal?.lineId, factoryId: cal?.factoryId ?? input.factoryId },
+        { yeuCauViTri: true },
+      );
+      if (input.factoryId != null) await assertViTriAnToanTrongPhamVi(ctx, { factoryId: input.factoryId });
       return produce({
         cameraId: input.cameraId,
         detections: input.detections as PersonDetection[],
@@ -973,16 +1087,29 @@ export const safetyRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
+      await assertViTriAnToanTrongPhamVi(ctx, { robotIds: [input.robotDeviceId], factoryId: input.factoryId }, { yeuCauViTri: true });
+      if (input.humanOperatorId != null) {
+        // người vận hành phải thuộc phạm vi người gọi (cùng luật assertAssignmentInputsInScope); ngoài phạm vi ≡ không tồn tại
+        const sc = await callerFactoryScope(ctx);
+        if (sc !== null) {
+          const [op] = await (await db()).select({ id: users.id, role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, input.humanOperatorId)).limit(1);
+          const opScope = op && op.isActive ? (await resolveTenantFactoryScope({ userId: op.id, userRole: op.role })).factoryIds : undefined;
+          if (!op || !op.isActive || (opScope !== null && !(opScope ?? []).some((f) => sc.includes(f)))) {
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "Operator not found");
+          }
+        }
+      }
       return startCollaboration(input);
     }),
 
   signalHandshake: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ sessionId: z.number().int().positive(), state: z.enum(["pending", "ack", "clear"]) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
+      await phienCongTacGhiTrongPhamVi(ctx, input.sessionId); // phạm vi nhà máy
       const row = await signalHandshake(input.sessionId, input.state);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "collaboration" }, `Collaboration ${input.sessionId} not found`);
       return row;
@@ -991,8 +1118,9 @@ export const safetyRouter = router({
   advancePhase: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ sessionId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
+      await phienCongTacGhiTrongPhamVi(ctx, input.sessionId); // phạm vi nhà máy
       return advancePhase(input.sessionId);
     }),
 
@@ -1001,6 +1129,8 @@ export const safetyRouter = router({
     .input(z.object({ sessionId: z.number().int().positive(), reason: z.string().max(2000).optional() }))
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
+      // CỐ Ý KHÔNG chặn theo nhà máy (chủ dự án duyệt 2026-10-24, nguyên tắc L-7 như robot.consoleStop): huỷ phiên cộng tác là hướng GIẢM năng lượng /
+      // an toàn. Vẫn đòi đăng nhập + machine_control/canCreate; `abortCollaboration` ghi sổ audit bất biến (ai · phiên nào · trước/sau, kèm factoryId của phiên).
       const row = await abortCollaboration(input.sessionId, input.reason, ctx.user.id);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "collaboration" }, `Collaboration ${input.sessionId} not found`);
       return row;

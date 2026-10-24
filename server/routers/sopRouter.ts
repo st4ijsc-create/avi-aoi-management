@@ -12,7 +12,12 @@
  * result-union {ok:false, code} NGUYÊN TRẠNG cho lý do nghiệp vụ (cổng chưa thỏa).
  */
 import { z } from "zod";
+import { sql } from "drizzle-orm";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure, roleProcedure, operatorProcedure } from "../_core/trpc";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
+import { sopExecutions } from "../../drizzle/schema";
 import {
   listSops,
   getSop,
@@ -32,6 +37,41 @@ import {
 } from "../services/sopService";
 
 const authorProcedure = roleProcedure("admin", "supervisor", "engineer");
+
+/**
+ * phạm vi người dùng (L3 2026-10-25) — QUYẾT CỦA CHỦ DỰ ÁN (dieu-phoi chuyển 2026-10-25): SOP gắn TRẠM ⇒ theo phạm vi trạm; SOP KHÔNG gắn trạm là tài liệu DÙNG CHUNG ⇒ ai có quyền cũng ĐỌC, nhưng soạn/sửa/xoá/đổi trạng thái
+ * CHỈ người phạm vi toàn quyền. Lượt thực thi (sop_executions) thấy được ⇔ trạm của lượt ∈ phạm vi, hoặc (không trạm) dây chuyền ∈ phạm vi, hoặc (không cả hai) CHÍNH người vận hành.
+ * Ngoài phạm vi ≡ không tồn tại (cùng dạng trả về với id không tồn tại).
+ */
+interface PhamViSop { tram: number[]; dong: number[] }
+async function phamViSop(ctx: unknown): Promise<PhamViSop | null> {
+  const pv = phamViCua(ctx as never);
+  const [tram, dong] = await Promise.all([idsTrongPhamVi("station", pv, { strict: true }), idsTrongPhamVi("line", pv, { strict: true })]);
+  if (tram === null && dong === null) return null;
+  return { tram: tram ?? [], dong: dong ?? [] };
+}
+const sopThay = (p: PhamViSop | null, s: { stationId: number | null }): boolean => p === null || s.stationId == null || p.tram.includes(s.stationId);
+const sopGhi = (p: PhamViSop | null, s: { stationId: number | null }): boolean => p === null || (s.stationId != null && p.tram.includes(s.stationId));
+const tuChoiDungChung = () =>
+  appError("FORBIDDEN", "PERMISSION_DENIED", { action: "authorSharedSop" }, "SOP không gắn trạm là tài liệu dùng chung — chỉ người có phạm vi toàn quyền được soạn/sửa/xoá.");
+/** ghi lên SOP đã có: "khong" = ngoài phạm vi (≡ không tồn tại) · ném FORBIDDEN khi là SOP dùng chung mà người gọi hẹp. */
+async function quyenGhiSop(ctx: unknown, sopId: number): Promise<"ok" | "khong"> {
+  const p = await phamViSop(ctx);
+  if (p === null) return "ok";
+  const s = await getSop(sopId);
+  if (!s) return "ok"; // không tồn tại thật ⇒ để dịch vụ trả đúng như cũ
+  if (s.stationId == null) throw tuChoiDungChung();
+  return sopGhi(p, s) ? "ok" : "khong";
+}
+const thucThiThay = (p: PhamViSop | null, userId: number, e: { stationId: number | null; lineId: number | null; operatorId: number | null }): boolean =>
+  p === null
+    ? true
+    : e.stationId != null
+      ? p.tram.includes(e.stationId)
+      : e.lineId != null
+        ? p.dong.includes(e.lineId)
+        : e.operatorId === userId;
+const khongCoSop = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "sop" }, "SOP not found");
 
 const stepInput = z.object({
   stepNo: z.number().int().min(1),
@@ -55,11 +95,17 @@ export const sopRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) => listSops(input ?? {})),
+    .query(async ({ input, ctx }) => {
+      const p = await phamViSop(ctx);
+      return listSops({ ...(input ?? {}), tramTrongPhamVi: p === null ? null : p.tram }); // phạm vi người dùng (L3 2026-10-25)
+    }),
 
   get: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => getSop(input.id)),
+    .query(async ({ input, ctx }) => {
+      const s = await getSop(input.id);
+      return s && sopThay(await phamViSop(ctx), s) ? s : null; // phạm vi người dùng (L3 2026-10-25): SOP gắn trạm ngoài phạm vi ≡ không tồn tại
+    }),
 
   /** Chọn SOP đang hiệu lực theo ngữ cảnh sản phẩm/trạm (dùng cho SopViewer). */
   resolveActive: protectedProcedure
@@ -69,15 +115,29 @@ export const sopRouter = router({
         stationId: z.number().int().positive().nullable().optional(),
       }),
     )
-    .query(async ({ input }) => resolveActiveSop(input)),
+    .query(async ({ input, ctx }) => {
+      const p = await phamViSop(ctx);
+      return resolveActiveSop({ ...input, tramTrongPhamVi: p === null ? null : p.tram }); // phạm vi người dùng (L3 2026-10-25)
+    }),
 
   executions: protectedProcedure
     .input(z.object({ sopId: z.number().int().positive(), limit: z.number().int().min(1).max(200).optional() }))
-    .query(async ({ input }) => listExecutions(input.sopId, input.limit ?? 50)),
+    .query(async ({ input, ctx }) => {
+      const p = await phamViSop(ctx);
+      const s = await getSop(input.sopId);
+      if (p !== null && s && !sopThay(p, s)) return []; // phạm vi người dùng (L3 2026-10-25)
+      const cong = p === null ? undefined : sql`(CASE WHEN ${sopExecutions.stationId} IS NOT NULL THEN ${sopExecutions.stationId} IN (${sql.join((p.tram.length ? p.tram : [-1]).map((x) => sql`${x}`), sql`, `)})
+        WHEN ${sopExecutions.lineId} IS NOT NULL THEN ${sopExecutions.lineId} IN (${sql.join((p.dong.length ? p.dong : [-1]).map((x) => sql`${x}`), sql`, `)})
+        ELSE ${sopExecutions.operatorId} = ${ctx.user.id} END)`;
+      return listExecutions(input.sopId, input.limit ?? 50, cong);
+    }),
 
   execution: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => getExecution(input.id)),
+    .query(async ({ input, ctx }) => {
+      const e = await getExecution(input.id);
+      return e && thucThiThay(await phamViSop(ctx), ctx.user.id, e) ? e : null; // phạm vi người dùng (L3 2026-10-25)
+    }),
 
   // ── Soạn / quản trị SOP (engineer/admin/supervisor) ───────────────────────────
   create: authorProcedure
@@ -93,7 +153,15 @@ export const sopRouter = router({
         steps: z.array(stepInput).max(200).optional(),
       }),
     )
-    .mutation(async ({ input, ctx }) => createSop({ ...input, createdBy: ctx.user.id })),
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi người dùng (L3 2026-10-25): trạm đích phải thuộc phạm vi; SOP không gắn trạm (dùng chung) chỉ phạm vi toàn quyền được tạo
+      const p = await phamViSop(ctx);
+      if (p !== null) {
+        if (input.stationId == null) throw tuChoiDungChung();
+        if (!p.tram.includes(input.stationId)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, "Station not found");
+      }
+      return createSop({ ...input, createdBy: ctx.user.id });
+    }),
 
   update: authorProcedure
     .input(
@@ -106,23 +174,42 @@ export const sopRouter = router({
         steps: z.array(stepInput).max(200).optional(),
       }),
     )
-    .mutation(async ({ input }) => updateSop(input)),
+    .mutation(async ({ input, ctx }) => {
+      if ((await quyenGhiSop(ctx, input.id)) === "khong") return null; // phạm vi người dùng (L3 2026-10-25)
+      const p = await phamViSop(ctx);
+      if (p !== null && input.stationId !== undefined && (input.stationId === null ? true : !p.tram.includes(input.stationId))) {
+        throw input.stationId === null ? tuChoiDungChung() : appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, "Station not found");
+      }
+      return updateSop(input);
+    }),
 
   replaceSteps: authorProcedure
     .input(z.object({ sopId: z.number().int().positive(), steps: z.array(stepInput).max(200) }))
-    .mutation(async ({ input }) => replaceSteps(input.sopId, input.steps)),
+    .mutation(async ({ input, ctx }) => {
+      if ((await quyenGhiSop(ctx, input.sopId)) === "khong") throw khongCoSop(); // phạm vi người dùng (L3 2026-10-25)
+      return replaceSteps(input.sopId, input.steps);
+    }),
 
   setStatus: authorProcedure
     .input(z.object({ id: z.number().int().positive(), status: z.enum(["draft", "active", "retired"]) }))
-    .mutation(async ({ input }) => setSopStatus(input.id, input.status)),
+    .mutation(async ({ input, ctx }) => {
+      if ((await quyenGhiSop(ctx, input.id)) === "khong") return null; // phạm vi người dùng (L3 2026-10-25)
+      return setSopStatus(input.id, input.status);
+    }),
 
   cloneNewVersion: authorProcedure
     .input(z.object({ sopId: z.number().int().positive() }))
-    .mutation(async ({ input, ctx }) => cloneAsNewVersion(input.sopId, ctx.user.id)),
+    .mutation(async ({ input, ctx }) => {
+      if ((await quyenGhiSop(ctx, input.sopId)) === "khong") return null; // phạm vi người dùng (L3 2026-10-25)
+      return cloneAsNewVersion(input.sopId, ctx.user.id);
+    }),
 
   delete: authorProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => deleteSop(input.id)),
+    .mutation(async ({ input, ctx }) => {
+      if ((await quyenGhiSop(ctx, input.id)) === "khong") return { ok: false, code: "NOT_FOUND" }; // phạm vi người dùng (L3 2026-10-25)
+      return deleteSop(input.id);
+    }),
 
   // ── Thực thi (operator) ───────────────────────────────────────────────────────
   startExecution: operatorProcedure
@@ -134,7 +221,17 @@ export const sopRouter = router({
         stationId: z.number().int().positive().nullable().optional(),
       }),
     )
-    .mutation(async ({ input, ctx }) => startExecution({ ...input, operatorId: ctx.user.id })),
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi người dùng (L3 2026-10-25): SOP phải thấy được; trạm/dây chuyền khai báo phải thuộc phạm vi
+      const p = await phamViSop(ctx);
+      if (p !== null) {
+        const s = await getSop(input.sopId);
+        if (s && !sopThay(p, s)) throw khongCoSop();
+        if (input.stationId != null && !p.tram.includes(input.stationId)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, "Station not found");
+        if (input.lineId != null && !p.dong.includes(input.lineId)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, "Line not found");
+      }
+      return startExecution({ ...input, operatorId: ctx.user.id });
+    }),
 
   confirmStep: operatorProcedure
     .input(
@@ -144,13 +241,25 @@ export const sopRouter = router({
         input: z.string().max(255).nullable().optional(),
       }),
     )
-    .mutation(async ({ input, ctx }) => confirmStep(input.executionId, input.stepNo, input.input, ctx.user.id)),
+    .mutation(async ({ input, ctx }) => {
+      const e = await getExecution(input.executionId);
+      if (e && !thucThiThay(await phamViSop(ctx), ctx.user.id, e)) return { ok: false, code: "NOT_FOUND" as const }; // phạm vi người dùng (L3 2026-10-25)
+      return confirmStep(input.executionId, input.stepNo, input.input, ctx.user.id);
+    }),
 
   finishExecution: operatorProcedure
     .input(z.object({ executionId: z.number().int().positive() }))
-    .mutation(async ({ input }) => finishExecution(input.executionId)),
+    .mutation(async ({ input, ctx }) => {
+      const e = await getExecution(input.executionId);
+      if (e && !thucThiThay(await phamViSop(ctx), ctx.user.id, e)) return { ok: false, code: "NOT_FOUND" as const }; // phạm vi người dùng (L3 2026-10-25)
+      return finishExecution(input.executionId);
+    }),
 
   abandonExecution: operatorProcedure
     .input(z.object({ executionId: z.number().int().positive() }))
-    .mutation(async ({ input }) => abandonExecution(input.executionId)),
+    .mutation(async ({ input, ctx }) => {
+      const e = await getExecution(input.executionId);
+      if (e && !thucThiThay(await phamViSop(ctx), ctx.user.id, e)) return null; // phạm vi người dùng (L3 2026-10-25)
+      return abandonExecution(input.executionId);
+    }),
 });

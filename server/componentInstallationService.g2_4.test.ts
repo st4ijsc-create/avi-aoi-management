@@ -41,10 +41,13 @@ vi.mock("./db", () => ({
     const last = genealogyRows[genealogyRows.length - 1];
     return last ? last.currHash : null;
   }),
-  insertGenealogyChainRow: vi.fn(async (row: any) => {
+  // Dịch vụ dùng appendGenealogyChainRow(build) (bản sửa R4 fork-fix: đọc đuôi → tính currHash → chèn nguyên tử): mock đọc đuôi giả rồi gọi build(prevHash).
+  appendGenealogyChainRow: vi.fn(async (build: (prevHash: string) => any) => {
+    const last = genealogyRows[genealogyRows.length - 1];
+    const row = build(last ? last.currHash : "0".repeat(64));
     const inserted = { id: genealogyRows.length + 1, ...row };
     genealogyRows.push(inserted);
-    return { id: inserted.id, currHash: inserted.currHash };
+    return { id: inserted.id, prevHash: inserted.prevHash, currHash: inserted.currHash };
   }),
 }));
 
@@ -101,7 +104,7 @@ describe("G2.4 — recordComponentInstallation", () => {
     );
 
     expect(db.insertComponentInstallation).toHaveBeenCalledTimes(1);
-    expect(db.insertGenealogyChainRow).toHaveBeenCalledTimes(1);
+    expect(db.appendGenealogyChainRow).toHaveBeenCalledTimes(1);
     expect(out.installationId).toBe(500);
     expect(out.genealogy).not.toBeNull();
 
@@ -118,7 +121,7 @@ describe("G2.4 — recordComponentInstallation", () => {
   });
 
   it("keeps the install even if genealogy append throws (hash null)", async () => {
-    (db.insertGenealogyChainRow as any).mockRejectedValueOnce(new Error("chain down"));
+    (db.appendGenealogyChainRow as any).mockRejectedValueOnce(new Error("chain down"));
     const out = await recordComponentInstallation(
       { serialNumber: "BOARD-2", componentCode: "C-1" },
       null,

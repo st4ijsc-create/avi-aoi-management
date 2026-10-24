@@ -286,6 +286,12 @@ export interface ThuTuc {
   readonly loai: "query" | "mutation" | "subscription";
   /** Handler có đưa danh tính (`ctx` / `ctx.user…`) **RỜI TAY** không — xem §C. */
   readonly danhTinhRoiTay: boolean;
+  /**
+   * ★★★ 2026-10-25 (điểm mù đối chiếu `phamViGhiScan` 44b4bc20b): danh tính có đi vào lời gọi tới một **CỔNG** không — lời gọi mà callee là bộ phân giải gốc
+   * (`TEN_PHAN_GIAI`) hoặc một hàm DẪN XUẤT tới được bộ phân giải (bao đóng ngược `congDoc`), và đối số mang danh tính (`ctx`/`ctx.user…`/`ctx.tenantScope`, hoặc một biến
+   * được gán từ biểu thức mang danh tính). `danhTinhRoiTay` một mình là XANH GIẢ: `db.getXById(ctx.user.id)` hay `audit(ctx)` có danh tính rời tay nhưng không lọc gì.
+   */
+  readonly danhTinhVaoCong: boolean;
   /** Handler với tới được một lượt ĐỌC bảng tenant không. */
   readonly chamTenant: boolean;
   /**
@@ -632,6 +638,47 @@ export function quetPhamViDoc(goc: string, ghiDe: Readonly<Record<string, string
     if (them === 0) break;
   }
 
+  // ── bao đóng NGƯỢC của CỔNG: ai gọi tới được một bộ phân giải phạm vi (xem `danhTinhVaoCong`) ─────────
+  /** Tên cuối của callee (`f` · `a.f` · `m.f` của `import(…).then((m) => m.f(…))` — dạng nhập động mà thamChieu không phân giải được). */
+  const tenCuoiCallee = (e: ts.Expression): string | undefined =>
+    ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : undefined;
+  /** Hàm CỔNG theo QUY ƯỚC TÊN (`machineIdsTrongPhamVi`, `mayTrongPhamVi`, `kiemTraTrongPhamVi`, `donViTheoPhamVi`…) — cùng tinh thần `laTenCong` của phamViGhiScan. */
+  const RE_TEN_CONG = /(?:TrongPhamVi|TheoPhamVi)$/;
+  const congDoc = new Set(hatPhamVi);
+  for (const f of files) {
+    const rel = duong(f);
+    for (const [ten, than] of khai(f)) {
+      let co = false;
+      const di = (x: ts.Node): void => {
+        if (!co && ts.isCallExpression(x)) {
+          const t = tenCuoiCallee(x.expression);
+          if (t !== undefined && RE_TEN_CONG.test(t)) co = true;
+        }
+        if (!co) ts.forEachChild(x, di);
+      };
+      di(than);
+      if (co) congDoc.add(`${rel}#${ten}`);
+    }
+  }
+  for (let vong = 0; vong < 15; vong++) {
+    let them = 0;
+    for (const f of files) {
+      const rel = duong(f);
+      for (const [ten, than] of khai(f)) {
+        const id = `${rel}#${ten}`;
+        if (congDoc.has(id)) continue;
+        for (const q of thamChieu(f, than)) {
+          if (congDoc.has(q)) {
+            congDoc.add(id);
+            them++;
+            break;
+          }
+        }
+      }
+    }
+    if (them === 0) break;
+  }
+
   // ── §C + phân loại thủ tục ───────────────────────────────────────────────────────────────
   const thuTuc: ThuTuc[] = [];
   for (const f of files) {
@@ -704,6 +751,45 @@ export function quetPhamViDoc(goc: string, ghiDe: Readonly<Record<string, string
           };
           diCtx(thanNode);
 
+          // §C-2 — danh tính có ĐI VÀO một lời gọi tới CỔNG không (biến gán từ biểu thức mang danh tính cũng mang danh tính)
+          const nhiem = new Set<string>();
+          const mangDT = (x: ts.Node): boolean => {
+            if (laDanhTinh(x)) return true;
+            if (ts.isIdentifier(x) && nhiem.has(x.text)) return true;
+            let r = false;
+            ts.forEachChild(x, (c) => {
+              if (!r && mangDT(c)) r = true;
+            });
+            return r;
+          };
+          const tenRang = (b: ts.BindingName, ra: string[]): void => {
+            if (ts.isIdentifier(b)) ra.push(b.text);
+            else for (const e of b.elements) if (ts.isBindingElement(e)) tenRang(e.name, ra);
+          };
+          for (let lan = 0; lan < 6; lan++) {
+            let doi = false;
+            const quet = (x: ts.Node): void => {
+              if (ts.isVariableDeclaration(x) && x.initializer !== undefined && mangDT(x.initializer)) {
+                const tn: string[] = [];
+                tenRang(x.name, tn);
+                for (const t of tn) if (!nhiem.has(t)) { nhiem.add(t); doi = true; }
+              }
+              ts.forEachChild(x, quet);
+            };
+            quet(thanNode);
+            if (!doi) break;
+          }
+          let danhTinhVaoCong = false;
+          const diCong = (x: ts.Node): void => {
+            if (ts.isCallExpression(x) && !danhTinhVaoCong && x.arguments.some((a) => mangDT(a))) {
+              const refs = [...thamChieu(f, x.expression)];
+              const tc = tenCuoiCallee(x.expression);
+              if (refs.some((q) => congDoc.has(q) || TEN_PHAN_GIAI.has(q.split("#")[1] ?? "")) || (tc !== undefined && RE_TEN_CONG.test(tc))) danhTinhVaoCong = true;
+            }
+            ts.forEachChild(x, diCong);
+          };
+          diCong(thanNode);
+
           const nut = thamChieu(f, thanNode);
           const chamTenant =
             chamBangTrucTiep(f, thanNode) || [...nut].some((q) => docTenant.has(q));
@@ -715,6 +801,7 @@ export function quetPhamViDoc(goc: string, ghiDe: Readonly<Record<string, string
             san,
             loai,
             danhTinhRoiTay,
+            danhTinhVaoCong,
             chamTenant,
             tuPhanGiaiPhamVi: !danhTinhRoiTay && [...nut].some((q) => hatPhamVi.has(q)),
             bangChung: [...nut].filter((q) => docTenant.has(q)).sort().slice(0, 4),
@@ -1314,7 +1401,8 @@ export type NhomPhamVi = "A" | "B" | "C" | "D" | "S";
 export function nhomCua(t: ThuTuc): NhomPhamVi {
   if (t.loai !== "query") return "D";
   if (!t.chamTenant) return "C";
-  if (t.danhTinhRoiTay) return "S";
+  // S đòi danh tính ĐI VÀO CỔNG (không chỉ "rời tay"): db.getXById(ctx.user.id) không lọc phạm vi nhà máy.
+  if (t.danhTinhRoiTay && t.danhTinhVaoCong) return "S";
   if (t.tuPhanGiaiPhamVi) return "B";
   return "A";
 }

@@ -3816,6 +3816,14 @@
       "qualityGateResult": "quality gate result",
       "qualityGateTemplate": "quality gate template",
       "quarantineItem": "quarantine item",
+      "factoryZone": "floor-plan zone",
+      "mapping": "product–machine mapping",
+      "recipeSet": "line recipe set",
+      "lineStage": "line stage",
+      "productionOrderTemplate": "production order template",
+      "predictiveAlert": "predictive alert",
+      "insight": "insight",
+      "labelQueueItem": "labeling queue item",
       "rcaAnalysis": "root cause analysis",
       "recipe": "recipe",
       "record": "record",
@@ -14979,6 +14987,13 @@
     "offline": "Offline"
   },
   "instrumentCal": {
+    "factoryColumn": "Factory",
+    "factory": {
+      "label": "Owning factory",
+      "unassigned": "No factory assigned",
+      "unassignedHint": "Only administrators can see it until a factory is assigned",
+      "unassignedBanner": "{{count}} measuring instrument(s) have no factory assigned — only administrators can see them until a factory is assigned (plant users will not see them)."
+    },
     "title": "Instrument calibration & health",
     "subtitle": "Calibration certificates, MSA records and RAG fitness-for-use for every measurement instrument. Select a row for detail.",
     "type": "Type",

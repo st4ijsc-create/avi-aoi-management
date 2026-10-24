@@ -1444,10 +1444,16 @@ export async function remapMeasurementPoints(opts: {
 }
 
 // ============ P3 FOUNDATION FUNCTIONS ============
-export async function listMeasurementInstruments(filters?: { instrumentType?: string; includeInactive?: boolean }) {
+export async function listMeasurementInstruments(filters?: { instrumentType?: string; includeInactive?: boolean }, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   const conds: SQL[] = [isNull(measurementInstruments.deletedAt)];
+  // ★ 0421 (2026-10-25): phạm vi nhà máy — thiết bị thấy được ⇔ factoryId ∈ phạm vi (NULL ⇒ chỉ toàn quyền). `scope` bỏ trống = không lọc (các nơi gọi cũ giữ nguyên).
+  if (scope) {
+    const { idsTrongPhamVi } = await import("./hierarchy");
+    const ids = await idsTrongPhamVi("factory", scope);
+    if (ids !== null) conds.push(ids.length > 0 ? inArray(measurementInstruments.factoryId, ids) : sql`1 = 0`);
+  }
   if (!filters?.includeInactive) {
     conds.push(eq(measurementInstruments.isActive, true));
   }

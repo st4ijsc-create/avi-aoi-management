@@ -27,6 +27,7 @@ import {
 import { buildProcessControlChart } from "../services/processSpc";
 import { getTelemetrySeries } from "../db/otTelemetry";
 import { MACHINE_TYPES, deviceClassOf } from "../constants/machineTypes";
+import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
 
 const recordInput = z
   .object({
@@ -57,6 +58,7 @@ export const processResultRouter = router({
   record: protectedProcedure
     .input(recordInput)
     .mutation(async ({ input, ctx }) => {
+      await mayTrongPhamVi(ctx, input.machineId); // phạm vi người dùng (L2 2026-10-24): ghi kết quả công đoạn cho máy ngoài phạm vi ≡ máy không tồn tại (TRƯỚC khi ghi)
       const userId = (ctx as any)?.user?.id ?? null;
       return recordProcessResult(input, userId);
     }),
@@ -68,8 +70,8 @@ export const processResultRouter = router({
         limit: z.number().int().positive().max(5000).optional(),
       }),
     )
-    .query(async ({ input }) => {
-      return listProcessResultsBySerial(input.serialNumber, input.limit ?? 1000);
+    .query(async ({ input, ctx }) => {
+      return listProcessResultsBySerial(input.serialNumber, input.limit ?? 1000, await idsMayTrongPhamVi(ctx)); // phạm vi người dùng (L2 2026-10-24)
     }),
 
   // ── doc 56 Đ3 — ProcessAnalytics reads (RBAC: any authenticated user) ──────
@@ -82,9 +84,10 @@ export const processResultRouter = router({
         sinceDays: z.number().int().positive().max(365).optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       if (!processAnalyticsEnabled()) return { pass: 0, fail: 0, warn: 0, skip: 0 };
       return aggregateProcessResultStats({
+        machineIds: await idsMayTrongPhamVi(ctx), // phạm vi người dùng (L2 2026-10-24)
         machineId: input.machineId,
         serialNumber: input.serialNumber,
         stepType: input.stepType,
@@ -102,9 +105,10 @@ export const processResultRouter = router({
         bucket: z.enum(["hour", "day"]).optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       if (!processAnalyticsEnabled()) return [];
       return getProcessMetricSeries({
+        machineIds: await idsMayTrongPhamVi(ctx), // phạm vi người dùng (L2 2026-10-24)
         machineId: input.machineId,
         stepType: input.stepType,
         metricKey: input.metricKey,
@@ -134,13 +138,14 @@ export const processResultRouter = router({
         limit: z.number().int().positive().max(5000).optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const empty = {
         ok: false, n: 0, metricKey: input.metricKey, limits: null,
         estimatedSigma: 0, outOfControlCount: 0, points: [], capability: null,
       };
       if (!processAnalyticsEnabled()) return empty;
       const points = await getProcessMetricPoints({
+        machineIds: await idsMayTrongPhamVi(ctx), // phạm vi người dùng (L2 2026-10-24)
         machineId: input.machineId,
         stepType: input.stepType,
         metricKey: input.metricKey,
@@ -158,9 +163,10 @@ export const processResultRouter = router({
         machineType: z.string().max(40).optional(),
       }).optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       if (!processAnalyticsEnabled()) return [];
       const rows = await aggregateProcessResultStatsByType({
+        machineIds: await idsMayTrongPhamVi(ctx), // phạm vi người dùng (L2 2026-10-24)
         since: sinceFromDays(input?.sinceDays ?? 7),
         machineType: input?.machineType,
       });
@@ -180,8 +186,10 @@ export const processResultRouter = router({
         sinceDays: z.number().int().positive().max(365).optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       if (!processAnalyticsEnabled()) return [];
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L2 2026-10-24): máy ngoài phạm vi ⇒ chuỗi rỗng (như chưa có số đo)
+      if (idsMay !== null && !idsMay.includes(input.machineId)) return [];
       return getTelemetrySeries({
         machineId: input.machineId,
         tagKey: input.tagKey,
@@ -199,9 +207,10 @@ export const processResultRouter = router({
         limit: z.number().int().positive().max(5000).optional(),
       }).optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       if (!processAnalyticsEnabled()) return [];
       return readProcessResultDaily({
+        machineIds: await idsMayTrongPhamVi(ctx), // phạm vi người dùng (L2 2026-10-24)
         sinceDays: input?.sinceDays,
         machineId: input?.machineId,
         machineType: input?.machineType,

@@ -36,12 +36,15 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { router, protectedProcedure, actuationProcedure, adminProcedure, ACTUATION_ROLES, PRIVILEGED_ROLES, batBuoc2FA } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
 import { getDb } from "../db";
-import { deviceAdapters } from "../../drizzle/schema";
+import { deviceAdapters, machineRecipes } from "../../drizzle/schema";
+import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
+import { phamViCua } from "./_phamViNguoiXem";
+import { resolveTenantFactoryScope } from "../db/reportAggregators";
 import { equipmentRegistry } from "../services/equipment/equipmentAdapter";
 import {
   isEqIntegEnabled,
@@ -56,6 +59,54 @@ import {
 } from "../services/equipment/recipeVersioningService";
 import { FocasAdapter, FOCAS_CAVEAT, FOCAS_READ_FUNCTIONS, FOCAS_VENDOR } from "../services/focas/focasAdapter";
 import { EuromapAdapter, mapEuromapToUem, EUROMAP_CAVEAT, EUROMAP_TRANSPORTS, EUROMAP_VENDOR_DEFAULT } from "../services/euromap/euromapAdapter";
+
+/**
+ * Phạm vi nhà máy cho GHI công thức theo id client gửi (rà bảo mật 2026-10-24, kiểm định phamViGhi): công thức gắn máy ngoài
+ * phạm vi ≡ "Recipe không tồn tại" (cùng NOT_FOUND với id không có thật); công thức không gắn máy giữ hành vi cũ. Kiểm TRƯỚC khi ghi.
+ */
+async function congThucTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], recipeId: number): Promise<number | null> {
+  const khongThay = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
+  const db = await getDb();
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const [r] = await db.select({ machineId: machineRecipes.machineId }).from(machineRecipes).where(eq(machineRecipes.id, recipeId)).limit(1);
+  if (!r) throw khongThay();
+  if (r.machineId == null) return null;
+  try {
+    await mayTrongPhamVi(ctx, r.machineId);
+  } catch {
+    throw khongThay();
+  }
+  return r.machineId;
+}
+
+/**
+ * Dấu tenant (scope · corporateCode · factoryId) của hàng genealogy sắp ghi (rà bảo mật 2026-10-24, lô W3): các trường này TỪ TRƯỚC do
+ * CLIENT khai trong input ⇒ người nhà máy A gắn nhãn hàng của mình là nhà máy B (hoặc bỏ trống để lẩn). Nay, với người gọi PHẠM VI HẸP,
+ * giá trị client khai bị BỎ và suy từ MÁY (máy → trạm → chuyền → xưởng → nhà máy); công thức không gắn máy ⇒ từ phạm vi của chính người gọi
+ * khi đúng MỘT nhà máy; không suy được ⇒ để trống (không tin client). Người gọi toàn quyền (admin) giữ nguyên giá trị khai (tin cậy).
+ */
+async function dauNhaMay(
+  ctx: Parameters<typeof mayTrongPhamVi>[0],
+  khai: { scope?: string; corporateCode?: string; factoryId?: number },
+  machineId: number | null,
+): Promise<{ scope?: string; corporateCode?: string; factoryId?: number }> {
+  const idsMay = await idsMayTrongPhamVi(ctx);
+  if (idsMay === null) return { scope: khai.scope, corporateCode: khai.corporateCode, factoryId: khai.factoryId };
+  const db = await getDb();
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  let fid: number | null = null;
+  if (machineId != null) {
+    const rows = (await db.execute(sql`SELECT w."factoryId" AS f FROM machines m JOIN stations s ON s."id" = m."stationId"
+      JOIN production_lines l ON l."id" = s."lineId" JOIN workshops w ON w."id" = l."workshopId" WHERE m."id" = ${machineId}`)) as unknown as Array<{ f: number | null }>;
+    fid = rows[0]?.f ?? null;
+  } else {
+    const sc = (await resolveTenantFactoryScope(phamViCua(ctx))).factoryIds;
+    if (sc !== null && sc.length === 1) fid = sc[0] ?? null;
+  }
+  if (fid == null) return {};
+  const fr = (await db.execute(sql`SELECT "corporateCode" AS c FROM factories WHERE "id" = ${fid}`)) as unknown as Array<{ c: string | null }>;
+  return { corporateCode: fr[0]?.c ?? undefined, factoryId: fid };
+}
 
 /** Guard mutations behind the flag (matches equipmentStandardsRouter discipline). */
 function requireFlag(): void {
@@ -351,6 +402,8 @@ export const equipmentIntegrationRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       requireFlag();
+      if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId); // phạm vi nhà máy: không gắn công thức vào máy nhà máy khác
+      const dau = await dauNhaMay(ctx, input, input.machineId ?? null);
       try {
         return await createVersion({
           code: input.code,
@@ -359,9 +412,9 @@ export const equipmentIntegrationRouter = router({
           machineId: input.machineId ?? null,
           notes: input.notes ?? null,
           createdBy: ctx.user.id,
-          scope: input.scope,
-          corporateCode: input.corporateCode,
-          factoryId: input.factoryId,
+          scope: dau.scope,
+          corporateCode: dau.corporateCode,
+          factoryId: dau.factoryId,
         });
       } catch (err) {
         throw toTrpc(err);
@@ -386,10 +439,9 @@ export const equipmentIntegrationRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       requireFlag();
+      const dau = await dauNhaMay(ctx, input, await congThucTrongPhamVi(ctx, input.recipeId));
       try {
-        return await releaseVersion(input.recipeId, ctx.user.id, {
-          scope: input.scope, corporateCode: input.corporateCode, factoryId: input.factoryId,
-        });
+        return await releaseVersion(input.recipeId, ctx.user.id, dau);
       } catch (err) {
         throw toTrpc(err);
       }
@@ -406,10 +458,9 @@ export const equipmentIntegrationRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       requireFlag();
+      const dau = await dauNhaMay(ctx, input, await congThucTrongPhamVi(ctx, input.recipeId));
       try {
-        return await archiveVersion(input.recipeId, ctx.user.id, {
-          scope: input.scope, corporateCode: input.corporateCode, factoryId: input.factoryId,
-        });
+        return await archiveVersion(input.recipeId, ctx.user.id, dau);
       } catch (err) {
         throw toTrpc(err);
       }
@@ -431,10 +482,9 @@ export const equipmentIntegrationRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       requireFlag();
+      const dau = await dauNhaMay(ctx, input, await congThucTrongPhamVi(ctx, input.toRecipeId));
       try {
-        return await rollbackToVersion(input.toRecipeId, ctx.user.id, {
-          scope: input.scope, corporateCode: input.corporateCode, factoryId: input.factoryId,
-        });
+        return await rollbackToVersion(input.toRecipeId, ctx.user.id, dau);
       } catch (err) {
         throw toTrpc(err);
       }
@@ -464,6 +514,9 @@ export const equipmentIntegrationRouter = router({
     })
     .mutation(async ({ input, ctx }) => {
       requireFlag();
+      await mayTrongPhamVi(ctx, input.machineId); // phạm vi nhà máy: máy đích
+      await congThucTrongPhamVi(ctx, input.recipeId); // phạm vi nhà máy: công thức được nạp
+      const dau = await dauNhaMay(ctx, input, input.machineId);
       try {
         return await recordLoad({
           recipeId: input.recipeId,
@@ -471,7 +524,7 @@ export const equipmentIntegrationRouter = router({
           performedBy: ctx.user.id,
           deploy: input.deploy,
           notes: input.notes ?? null,
-          scope: input.scope, corporateCode: input.corporateCode, factoryId: input.factoryId,
+          scope: dau.scope, corporateCode: dau.corporateCode, factoryId: dau.factoryId,
         });
       } catch (err) {
         throw toTrpc(err);

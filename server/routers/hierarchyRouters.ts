@@ -1,6 +1,8 @@
 import { publicProcedure, protectedProcedure, router, roleProcedure } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
-import { phamViCua } from "./_phamViNguoiXem";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -252,6 +254,33 @@ function requireBatKyQuyenNao() {
 }
 
 // ============ FACTORY ROUTER ============
+/**
+ * Phạm vi nhà máy cho GHI lên cây phân cấp theo id client gửi (rà bảo mật 2026-10-24, lô W5 — kiểm định phamViGhi): nhà máy / xưởng / chuyền / trạm /
+ * máy ngoài phạm vi người gọi ≡ không tồn tại (cùng NOT_FOUND với id không có thật); kiểm TRƯỚC khi ghi. Cùng `idsTrongPhamVi` với đường ĐỌC (không lọc
+ * isActive nên khôi phục từ thùng rác vẫn đúng). `id` null/undefined ⇒ bỏ qua (tham số tuỳ chọn). Toàn quyền (admin) ⇒ không kiểm.
+ */
+async function ghiThucTheTrongPhamVi(ctx: CoDanhTinh, cap: "factory" | "workshop" | "line" | "station" | "machine", id: number | null | undefined): Promise<void> {
+  if (id == null) return;
+  const ids = await idsTrongPhamVi(cap, phamViCua(ctx), { strict: true });
+  if (ids === null || ids.includes(id)) return;
+  if (cap === "factory") throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, "Factory not found");
+  if (cap === "workshop") throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workshop" }, "Workshop not found");
+  if (cap === "line") throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, "Line not found");
+  if (cap === "station") throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, "Station not found");
+  throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
+}
+
+/** Vùng mặt bằng `zoneId` phải thuộc nhà máy trong phạm vi người gọi; không thấy / ngoài phạm vi ⇒ NOT_FOUND "factoryZone". */
+async function vungTrongPhamVi(ctx: CoDanhTinh, zoneId: number): Promise<void> {
+  const ids = await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true });
+  if (ids === null) return;
+  const d = await db.getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+  const rows = (await d.execute(sql`SELECT "factoryId" AS f FROM factory_zones WHERE id = ${zoneId}`)) as unknown as Array<{ f: number | null }>;
+  const f = rows[0]?.f;
+  if (f == null || !ids.includes(Number(f))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factoryZone" }, "Factory zone not found");
+}
+
 export const factoryRouter = router({
   // ★ NHÓM A #1 — trước bản vá: `async () => db.getFactories()`, KHÔNG nhận `ctx`, không lọc ⇒ ai
   // đăng nhập cũng liệt kê được MỌI nhà máy (tên, mã, địa chỉ) của mọi tenant. `ctx.user` là
@@ -295,6 +324,7 @@ export const factoryRouter = router({
       mapPositionY: z.number().min(0).max(1).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "factory", input.id);
       const { id, mapPositionX, mapPositionY, ...rest } = input;
       const data: Record<string, unknown> = { ...rest };
       if (mapPositionX !== undefined) data.mapPositionX = mapPositionX.toString();
@@ -312,6 +342,7 @@ export const factoryRouter = router({
       mapPositionY: z.number().min(0).max(1),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "factory", input.id);
       await db.updateFactory(input.id, {
         mapPositionX: input.mapPositionX.toString(),
         mapPositionY: input.mapPositionY.toString(),
@@ -334,6 +365,7 @@ export const factoryRouter = router({
       contentType: z.string().min(1).max(100),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "factory", input.id);
       const { id, imageData, fileName, contentType } = input;
       const buffer = Buffer.from(imageData, "base64");
       const fileKey = `factories/${id}/floorplan-${Date.now()}-${fileName}`;
@@ -357,6 +389,7 @@ export const factoryRouter = router({
       clearImage: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "factory", input.id);
       const { id, floorWidthM, floorDepthM, clearImage } = input;
       const data: Record<string, unknown> = {};
       if (floorWidthM !== undefined) data.floorWidthM = floorWidthM.toString();
@@ -371,6 +404,7 @@ export const factoryRouter = router({
   delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "factory", input.id);
       const before = await db.getFactoryById(input.id);
       if (input.cascade) {
         await db.cascadeDeleteFactory(input.id);
@@ -395,6 +429,7 @@ export const factoryRouter = router({
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "factory", input.id);
       await db.restoreFactory(input.id);
       await auditAction(ctx, { action: "factory.restore", entityType: ENTITY_TYPES.FACTORY, entityId: input.id });
       return { success: true };
@@ -424,6 +459,7 @@ export const factoryZoneRouter = router({
       points: zonePointsSchema.optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "factory", input.factoryId);
       const id = await db.createFactoryZone({
         factoryId: input.factoryId,
         name: input.name,
@@ -446,6 +482,7 @@ export const factoryZoneRouter = router({
       points: zonePointsSchema.optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await vungTrongPhamVi(ctx, input.id);
       const { id, ...rest } = input;
       await db.updateFactoryZone(id, rest);
       await auditAction(ctx, {
@@ -459,6 +496,7 @@ export const factoryZoneRouter = router({
     .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      await vungTrongPhamVi(ctx, input.id);
       await db.deleteFactoryZone(input.id);
       await auditAction(ctx, { action: "delete", entityType: "factory_zone", entityId: input.id });
       return { success: true };
@@ -485,6 +523,7 @@ export const workshopRouter = router({
       description: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "factory", input.factoryId);
       const id = await withDbErrors(() => db.createWorkshop(input), { conflictMessage: `Mã xưởng '${input.code}' đã tồn tại` });
       await logCreate(createAuditContext(ctx), ENTITY_TYPES.WORKSHOP, id, input.name, input);
       return { id };
@@ -499,6 +538,8 @@ export const workshopRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      await ghiThucTheTrongPhamVi(ctx, "workshop", id);
+      await ghiThucTheTrongPhamVi(ctx, "factory", data.factoryId);
       const before = await db.getWorkshopById(id);
       await db.updateWorkshop(id, data);
       await logUpdate(createAuditContext(ctx), ENTITY_TYPES.WORKSHOP, id, before?.name ?? `workshop#${id}`, pickBefore(before, Object.keys(data)), data);
@@ -508,6 +549,7 @@ export const workshopRouter = router({
   delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "workshop", input.id);
       const before = await db.getWorkshopById(input.id);
       if (input.cascade) {
         await db.cascadeDeleteWorkshop(input.id);
@@ -532,6 +574,7 @@ export const workshopRouter = router({
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "workshop", input.id);
       await db.restoreWorkshop(input.id);
       await auditAction(ctx, { action: "workshop.restore", entityType: ENTITY_TYPES.WORKSHOP, entityId: input.id });
       return { success: true };
@@ -558,6 +601,7 @@ export const lineRouter = router({
       description: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "workshop", input.workshopId);
       const id = await withDbErrors(() => db.createProductionLine(input), { conflictMessage: `Mã line '${input.code}' đã tồn tại` });
       await logCreate(createAuditContext(ctx), ENTITY_TYPES.LINE, id, input.name, input);
       return { id };
@@ -572,6 +616,8 @@ export const lineRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      await ghiThucTheTrongPhamVi(ctx, "line", id);
+      await ghiThucTheTrongPhamVi(ctx, "workshop", data.workshopId);
       const before = await db.getLineById(id);
       await db.updateProductionLine(id, data);
       await logUpdate(createAuditContext(ctx), ENTITY_TYPES.LINE, id, before?.name ?? `line#${id}`, pickBefore(before, Object.keys(data)), data);
@@ -581,6 +627,7 @@ export const lineRouter = router({
   delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "line", input.id);
       const before = await db.getLineById(input.id);
       if (input.cascade) {
         await db.cascadeDeleteLine(input.id);
@@ -605,6 +652,7 @@ export const lineRouter = router({
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "line", input.id);
       await db.restoreLine(input.id);
       await auditAction(ctx, { action: "line.restore", entityType: ENTITY_TYPES.LINE, entityId: input.id });
       return { success: true };
@@ -632,6 +680,7 @@ export const stationRouter = router({
       orderIndex: z.number().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "line", input.lineId);
       const id = await withDbErrors(() => db.createStation(input), { conflictMessage: `Mã trạm '${input.code}' đã tồn tại` });
       await logCreate(createAuditContext(ctx), ENTITY_TYPES.STATION, id, input.name, input);
       return { id };
@@ -647,6 +696,8 @@ export const stationRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      await ghiThucTheTrongPhamVi(ctx, "station", id);
+      await ghiThucTheTrongPhamVi(ctx, "line", data.lineId);
       const before = await db.getStationById(id);
       await db.updateStation(id, data);
       await logUpdate(createAuditContext(ctx), ENTITY_TYPES.STATION, id, before?.name ?? `station#${id}`, pickBefore(before, Object.keys(data)), data);
@@ -656,6 +707,7 @@ export const stationRouter = router({
   delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "station", input.id);
       const before = await db.getStationById(input.id);
       if (input.cascade) {
         await db.cascadeDeleteStation(input.id);
@@ -680,6 +732,7 @@ export const stationRouter = router({
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "station", input.id);
       await db.restoreStation(input.id);
       await auditAction(ctx, { action: "station.restore", entityType: ENTITY_TYPES.STATION, entityId: input.id });
       return { success: true };
@@ -1604,6 +1657,7 @@ export const machineRouter = router({
     .mutation(async ({ input, ctx }) => {
       // M7: pre-check duplicate code among ACTIVE machines → clean CONFLICT
       // instead of a raw 500 from the unique index.
+      await ghiThucTheTrongPhamVi(ctx, "station", input.stationId);
       const dup = await db.getMachineByCode(input.code);
       if (dup) {
         throw appError(
@@ -1688,6 +1742,8 @@ export const machineRouter = router({
           "Chỉ admin được đổi trạng thái đăng ký máy (dùng duyệt/approve).",
         );
       }
+      await ghiThucTheTrongPhamVi(ctx, "machine", id);
+      await ghiThucTheTrongPhamVi(ctx, "station", data.stationId);
       const before = await db.getMachineById(id);
 
       // ── M13 tier-1/tier-2 soft gate (only when the caller touches capabilities) ──
@@ -1805,6 +1861,7 @@ export const machineRouter = router({
     .mutation(async ({ input, ctx }) => {
       // M3: soft-delete keeps the code as a tombstone (partial unique index
       // frees it for re-registration) and force-stamps lifecycle 'retired'.
+      await ghiThucTheTrongPhamVi(ctx, "machine", input.id);
       const before = await db.getMachineById(input.id);
       await db.deleteMachine(input.id);
       await logDelete(createAuditContext(ctx), ENTITY_TYPES.MACHINE, input.id, before?.code ?? `machine#${input.id}`, {
@@ -1823,6 +1880,7 @@ export const machineRouter = router({
     .mutation(async ({ input, ctx }) => {
       // M3: restoring a tombstone whose code was reused by a newer active
       // machine is a CONFLICT (clear message from db.restoreMachine).
+      await ghiThucTheTrongPhamVi(ctx, "machine", input.id);
       try {
         await db.restoreMachine(input.id);
       } catch (e) {
@@ -1857,6 +1915,7 @@ export const machineRouter = router({
       reason: z.string().max(500).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "machine", input.id);
       if ((input.status === "decommissioned" || input.status === "retired") && !input.reason?.trim()) {
         throw appError(
           "BAD_REQUEST",
@@ -1936,6 +1995,7 @@ export const machineRouter = router({
       layoutPositionY: z.number().min(0).max(1),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "machine", input.id);
       const { id, layoutPositionX, layoutPositionY } = input;
       await db.updateMachine(id, {
         layoutPositionX: layoutPositionX.toString(),
@@ -1961,6 +2021,7 @@ export const machineRouter = router({
       footprintD: z.number().min(0.3).max(20).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await ghiThucTheTrongPhamVi(ctx, "machine", input.id);
       const { id, x, y, rotationDeg, footprintW, footprintD } = input;
       await db.updateMachine(id, {
         layoutPositionX: x.toString(),
