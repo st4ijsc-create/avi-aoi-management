@@ -607,6 +607,43 @@ describe("2FA theo mức — mức lấy từ tag HIỆN TẠI", () => {
   });
 });
 
+describe("R1b-1 T7 fix round 1 (M-5) — TOTP_CAN ở confirm bị điều tiết; sau cửa sổ ⇒ dòng tổng kết DIEU_TIET", () => {
+  it("★ 35 lần confirm mức 5 thiếu mã ⇒ client luôn nhận TOTP_CAN, 30 dòng; +61 s ⇒ DIEU_TIET '5 lần TOTP_CAN bị gộp' rồi dòng TOTP_CAN; dispatch 0 lần; dòng chờ + khoá vẫn giữ", async () => {
+    const dt = await import("../services/scada/dieuTietThuLenh");
+    dt.__datLaiDieuTiet();
+    const u = nguoi.engA;
+    const requestId = await yeuCau("engA", "m5");
+    // giữ dòng chờ còn hạn suốt phép thử (TOTP_CAN đến TRƯỚC bước khoá) — chỉ để cửa sổ giả +61 s không làm HET_HAN
+    await db.update(aiPendingActions).set({ expiresAt: new Date(Date.now() + 10 * 60_000) }).where(eq(aiPendingActions.id, requestId));
+    const truocDispatch = H.dispatchCalls;
+    dt.__datLaiDieuTiet(); // bỏ mọi TOTP_CAN do các bước trước (yeuCau) gây ra
+    const m = await moc();
+    const goi = async () => {
+      const loi = await loiCua(u.caller.confirm({ requestId }));
+      expect(loi).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_TOTP_REQUIRED" });
+    };
+    try {
+      for (let i = 0; i < 35; i++) await goi();
+      expect(await thuSau(m, u.id)).toHaveLength(30);
+      vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 61_000 });
+      await goi();
+    } finally {
+      vi.useRealTimers();
+    }
+    const dong = await thuSau(m, u.id);
+    expect(dong).toHaveLength(32);
+    expect(dong.slice(30).map((t) => [t.stage, t.outcome, t.reason_code])).toEqual([
+      ["confirm", "rejected", "DIEU_TIET"],
+      ["confirm", "rejected", "TOTP_CAN"],
+    ]);
+    const ly = await dung(sql`SELECT ly_do FROM scada_command_attempts WHERE id > ${m} AND user_id = ${u.id} AND reason_code = 'DIEU_TIET'`);
+    expect(ly.map((r) => r.ly_do)).toEqual(["5 lần TOTP_CAN bị gộp"]);
+    expect(H.dispatchCalls - truocDispatch).toBe(0);
+    expect(await trangThaiCho(requestId)).toBe("proposed");
+    expect((await khoa("m5"))?.request_id).toBe(requestId);
+  }, 60_000);
+});
+
 describe("R1a T16 — bộ đếm TOTP sai (chung mọi bên gọi TOTP)", () => {
   it("engA đang TẠM KHOÁ TOTP ⇒ mã ĐÚNG vẫn bị TOTP_TAM_KHOA {ma, level, remainingMinutes}; KẾT THÚC yêu cầu (denied, khoá chọn nhả), dispatch 0", async () => {
     const secret = speakeasy.generateSecret({ length: 20 }).base32;

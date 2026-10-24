@@ -14,6 +14,15 @@
  *   · Chỉ trong RAM của tiến trình (khởi động lại = đếm lại; nhiều tiến trình = mỗi tiến trình một bộ đếm — chấp nhận, mục đích là
  *     chặn phình bảng chứ không phải hạn mức chính xác). `now` tiêm vào để test.
  *   · Dọn khoá: mỗi cửa sổ 60 s quét một lần, bỏ khoá đã hết hạn >60 s và KHÔNG còn tổng kết treo; trần cứng `TRAN_KHOA`.
+ *
+ * ĐÁNH ĐỔI CÓ CHỦ Ý (review T7 M-1, M-2):
+ *   · M-1 — `TOTP_CAN` nằm trong `MA_ON` THEO THIẾT KẾ (brief T7): nó là lời nhắc "kênh mức 4–5 cần mã", người dùng bấm lại liên tục khi
+ *     chưa nhập mã. Từ dòng thứ 31 trong 60 s của một người, các dòng TOTP_CAN chỉ được ĐẾM (vào dòng tổng kết `DIEU_TIET`), không ghi từng
+ *     dòng. Client vẫn nhận đúng TOTP_CAN và lệnh KHÔNG hề được gửi — cổng an toàn vẫn chặn; chỉ nhật ký bị gộp. Mã sai (`TOTP_SAI`,
+ *     `TOTP_TAM_KHOA`) KHÔNG nằm trong `MA_ON` nên luôn có dòng riêng.
+ *   · M-2 — dòng tổng kết đang treo (đã có dòng bị gộp mà cửa sổ chưa kết thúc / chưa có lần gọi kế tiếp) MẤT khi: (a) tiến trình khởi động
+ *     lại; (b) trần cứng `TRAN_KHOA` loại khoá cũ nhất. Đó là đánh đổi có chủ ý của lưu trữ trong RAM (không bảng phụ, không timer): số
+ *     dòng bị gộp là thông tin gợi ý, không phải bằng chứng; bằng chứng (30 dòng đầu mỗi cửa sổ + mã gửi về client) vẫn đủ để dò vết.
  */
 export const MA_ON = Object.freeze(["DA_XU_LY", "HET_HAN", "NOT_FOUND", "TOTP_CAN"] as const);
 export const TRAN_MOI_PHUT = 30;

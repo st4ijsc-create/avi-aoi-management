@@ -604,6 +604,28 @@ describe("từ chối", () => {
   });
 });
 
+describe("R1b-1 T7 fix round 1 — NUL trong lyDo của dungMay (I-1)", () => {
+  it("router: lyDo chứa NUL ⇒ BAD_REQUEST, không dispatch, không dòng attempts", async () => {
+    const m = await moc();
+    const dTruoc = H.dispatchInputs.length;
+    const loi = await loiCua(nguoi.opA2.caller.dungMay({ machineId: may.N.mid, lyDo: "ab\u0000cd", clientRequestId: uuid() }));
+    expect(loi.code).toBe("BAD_REQUEST");
+    expect(await lyDoSau(m, nguoi.opA2.id)).toHaveLength(0);
+    expect(H.dispatchInputs.length - dTruoc).toBe(0);
+  });
+  it("service (qua mặt zod): lyDo có NUL + máy chưa ghim ⇒ từ chối CHUA_GHIM_STOP có mã; dòng attempts ghi ly_do đã LỌC NUL", async () => {
+    const { dungMayHmi } = await import("../services/scada/lenhHmi");
+    const m = await moc();
+    const kq = await dungMayHmi(
+      { user: { id: nguoi.opA2.id, role: "operator", twoFactorEnabled: true } },
+      { userId: nguoi.opA2.id, userRole: "operator" },
+      { machineId: may.N.mid, lyDo: "ket\u0000 bang tai", clientRequestId: uuid() },
+    );
+    expect(kq).toMatchObject({ ok: false, tuChoi: { ma: "CHUA_GHIM_STOP" } });
+    expect(await lyDoSau(m, nguoi.opA2.id)).toEqual(["ket bang tai"]);
+  });
+});
+
 describe("AI không bao giờ đi đường hmi.stop", () => {
   it("★ aiCopilot.confirmAction trên một dòng hmi.stop ⇒ not_found như mọi hmi.*; trạng thái giữ nguyên; tool không có trong registry AI", async () => {
     expect(getTool("hmi.stop")).toBeUndefined();

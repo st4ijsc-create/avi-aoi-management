@@ -30,7 +30,7 @@
  *        channel_kind khai là kênh ghi (dispatch bước 3 cũng đòi writable: từ chối sớm cùng một lý do).
  *   QĐ-3 Thiếu `machine_control.canEdit` ⇒ mã riêng `PERMISSION_DENIED` (không gộp vào ROLE_FLOOR: cách gỡ khác — xin quyền, không đổi vai).
  *   QĐ-4 Băm (`__otPayloadHash`) tính trên giá trị ĐÃ ÉP KIỂU, `commandType "write_tag"`, `machineId` = máy của adapter — đúng cái
- *        Task 9 truyền vào `dispatch()` (argsJson). `lyDo` chỉ lưu ở `previewJson.lyDo` (attempts KHÔNG có cột lyDo; không đổi schema).
+ *        Task 9 truyền vào `dispatch()` (argsJson). `lyDo` lưu ở `previewJson.lyDo` VÀ (R1b-1 T7, mig 0433) ở cột `scada_command_attempts.ly_do` của MỌI dòng có lý do.
  *   QĐ-5 Gửi lại: khoá `idempotencyKey = "hmi:" + userId + ":" + clientRequestId`. Dòng còn `proposed` + chưa hết hạn + CÙNG lệnh
  *        (adapter, tag, giá trị thô) ⇒ trả lại requestId/expiresAt/preview cũ, KHÔNG ghi attempts mới (cùng một lần thử). Ngược lại ⇒
  *        DA_XU_LY (có attempts, request_id = dòng cũ). Hai yêu cầu giống hệt cùng lúc: ràng buộc unique của idempotencyKey quyết;
@@ -208,6 +208,9 @@ type DbHoacTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 /** Độ dài tối đa của `ly_do` (cột varchar(300), mig 0433). */
 export const LY_DO_TOI_DA = 300;
+/** C0 trừ TAB (U+0009), LF (U+000A), CR (U+000D). */
+// eslint-disable-next-line no-control-regex
+const KY_TU_DIEU_KHIEN_C0 = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
 
 /**
  * R1b-1 T7 — chuẩn hoá chữ vào cột `ly_do`: trim, rỗng ⇒ NULL, cắt 300 ký tự theo điểm mã (không xé cặp thay thế UTF-16 — Postgres
@@ -215,7 +218,9 @@ export const LY_DO_TOI_DA = 300;
  * (người gọi không truyền `input.totpCode`).
  */
 export function catLyDo(s: string | null | undefined): string | null {
-  const t = (s ?? "").trim();
+  // R1b-1 T7 fix round 1 (I-1): Postgres KHÔNG lưu được U+0000 (text/varchar/jsonb) ⇒ INSERT ném, một từ chối có mã thành 500. Bỏ
+  // NUL và các ký tự điều khiển C0 khác (giữ TAB, LF, CR) TRƯỚC khi trim/cắt. Mọi chữ vào `ly_do` (kể cả câu hệ thống) đi qua đây.
+  const t = (s ?? "").replace(KY_TU_DIEU_KHIEN_C0, "").trim();
   if (!t) return null;
   const cp = Array.from(t);
   return cp.length > LY_DO_TOI_DA ? cp.slice(0, LY_DO_TOI_DA).join("") : t;
@@ -251,13 +256,22 @@ export async function ghiThuLenh(
     if (q.ghi === "tong_ket") tongKet = q.soLan;
   }
   if (tongKet > 0) {
-    await d.insert(scadaCommandAttempts).values({
-      userId: dong.userId,
-      stage: dong.stage,
-      outcome: "rejected",
-      reasonCode: "DIEU_TIET",
-      lyDo: catLyDo(`${tongKet} lần ${dong.reasonCode} bị gộp`),
-    });
+    // Dòng tổng kết là SỔ PHỤ: lỗi ghi nó (R1b-1 T7 fix round 1, I-2) chỉ được log, KHÔNG được chặn dòng hiện tại và không đổi kết
+    // quả cho client. (Dòng `rejected` mã ồn không bao giờ nằm trong transaction ⇒ lỗi câu lệnh không làm hỏng transaction của ai.)
+    try {
+      await d.insert(scadaCommandAttempts).values({
+        userId: dong.userId,
+        stage: dong.stage,
+        outcome: "rejected",
+        reasonCode: "DIEU_TIET",
+        lyDo: catLyDo(`${tongKet} lần ${dong.reasonCode} bị gộp`),
+      });
+    } catch (err) {
+      logger.error(
+        { err: (err as Error)?.message ?? String(err), userId: dong.userId, reasonCode: dong.reasonCode, soLan: tongKet },
+        "[SCADA] ghi dòng tổng kết DIEU_TIET lỗi — bỏ qua, dòng hiện tại vẫn được ghi",
+      );
+    }
   }
   await d.insert(scadaCommandAttempts).values({
     lyDo: catLyDo(dong.lyDo),
@@ -518,9 +532,12 @@ export type KetQuaYeuCauGhi = { ok: true; ketQua: KetQuaYeuCau; moi: boolean } |
 export async function yeuCauGhiTag(
   nguoi: NguoiGoiLenh,
   pv: PhamViNguoiXem,
-  input: DauVaoYeuCau,
+  dauVao: DauVaoYeuCau,
   nowDate: Date = new Date(),
 ): Promise<KetQuaYeuCauGhi> {
+  // R1b-1 T7 fix round 1 (I-1) — phòng thủ chiều sâu: router đã từ chối NUL, nhưng `lyDo` còn vào jsonb của dòng chờ + cột ly_do; lọc ở đây
+  // để một lối gọi khác (hoặc router sửa sau này) không biến một từ chối có mã thành 500.
+  const input: DauVaoYeuCau = { ...dauVao, lyDo: catLyDo(dauVao.lyDo) ?? "" };
   // 1. cờ — không chạm DB
   if (!lenhHmiBat()) return { ok: false, tuChoi: { ma: "FEATURE_DISABLED", chiTiet: "SCADA_COMMANDS_ENABLED tắt." } };
 
@@ -1470,7 +1487,8 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
   const db = await getDb();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   const userId = nguoi.user.id;
-  const lyDo = input.lyDo?.trim() ? input.lyDo.trim() : null;
+  // R1b-1 T7 fix round 1 (I-1) — lọc NUL / điều khiển: `lyDo` vào jsonb của dòng chờ hmi.stop (NUL làm INSERT ném ⇒ STOP KHÔNG được gửi) + audit
+  const lyDo = catLyDo(input.lyDo);
   const tuChoiMay = async (t: TuChoiYeuCau): Promise<KetQuaDungMay> => {
     // fix round 1 (minor 5) — sổ hỏng không được nuốt chữ từ chối (M5 vẫn phải nói "dùng E-STOP cứng")
     await ghiThuLenh(db, { userId, stage: "dispatch", outcome: "rejected", reasonCode: t.ma, lyDo: lyDo ?? t.chiTiet }).catch((e) => ghiLoiChot(e, "-", "attempts_hmi_stop_tu_choi"));

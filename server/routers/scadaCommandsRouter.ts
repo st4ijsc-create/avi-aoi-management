@@ -33,7 +33,10 @@ import {
 
 const thuTucLenh = moduleProcedure("MOD_OT_CONTROL");
 
-const lyDoInput = z.string().trim().min(5).max(300);
+// R1b-1 T7 fix round 1 (I-1): NUL (U+0000) không lưu được vào Postgres (jsonb của dòng chờ + cột ly_do của attempts) ⇒ từ chối rõ ràng ở cửa vào.
+const khongNul = (v: string) => !v.includes("\u0000");
+const THONG_BAO_NUL = "Lý do không được chứa ký tự NUL (U+0000).";
+const lyDoInput = z.string().trim().min(5).max(300).refine(khongNul, { message: THONG_BAO_NUL });
 
 const so = (n: number | null) => (n === null ? "—" : n);
 
@@ -161,7 +164,7 @@ export const scadaCommandsRouter = router({
     .input(
       z.object({
         machineId: z.number().int().positive(),
-        lyDo: z.string().trim().max(300).optional(),
+        lyDo: z.string().trim().max(300).refine(khongNul, { message: THONG_BAO_NUL }).optional(),
         clientRequestId: z.string().uuid(),
       }),
     )

@@ -666,3 +666,37 @@ describe("R1b-1 T7 — bộ điều tiết attempts theo người dùng (MA_ON)"
     dt.__datLaiDieuTiet();
   });
 });
+
+// ── R1b-1 T7 fix round 1 (I-1): NUL / ký tự điều khiển trong lyDo ────────────────────────────────────────────────────────────
+describe("R1b-1 T7 fix round 1 — NUL trong lyDo (I-1)", () => {
+  const NUL = "\u0000";
+
+  it("router: lyDo chứa NUL ⇒ BAD_REQUEST (validation zod rõ ràng), không ghi dòng attempts nào, không dòng chờ", async () => {
+    const u = nguoi.opA;
+    const m = await moc();
+    const cho = await soDongCho(u.id);
+    const loi = await loiCua(u.caller.request({ adapterId: ad.a, tagKey: "sp3", value: 100, lyDo: `abc${NUL}defgh`, clientRequestId: uuid() }));
+    expect(loi.code).toBe("BAD_REQUEST");
+    expect(String(loi.message)).toContain("NUL");
+    expect(await lyDoSau(m, u.id)).toHaveLength(0);
+    expect(await soDongCho(u.id)).toBe(cho);
+  });
+
+  it("★ service (qua mặt zod): lyDo chứa NUL trên đường từ chối MODE_LOCAL ⇒ VẪN trả từ chối có mã (không ném 500), dòng attempts ghi ly_do đã LỌC NUL", async () => {
+    const { yeuCauGhiTag } = await import("../services/scada/lenhHmi");
+    const u = nguoi.opA2;
+    boDem.napTuOt({ adapterId: ad.a, machineId: A.mid }, [mauOt("che_do", 1)]);
+    try {
+      const m = await moc();
+      const kq = await yeuCauGhiTag(
+        { user: { id: u.id, role: "operator", twoFactorEnabled: true } },
+        { userId: u.id, userRole: "operator" },
+        { adapterId: ad.a, tagKey: "sp3", value: 100, lyDo: `chinh${NUL} nhiet${"\u0001"}`, clientRequestId: uuid() },
+      );
+      expect(kq).toMatchObject({ ok: false, tuChoi: { ma: "MODE_LOCAL" } });
+      expect(await lyDoSau(m, u.id)).toEqual([{ outcome: "rejected", reason_code: "MODE_LOCAL", ly_do: "chinh nhiet" }]);
+    } finally {
+      boDem.napTuOt({ adapterId: ad.a, machineId: A.mid }, [mauOt("che_do", 2)]);
+    }
+  });
+});
