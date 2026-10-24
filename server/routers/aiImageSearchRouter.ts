@@ -105,8 +105,9 @@ export const aiImageSearchRouter = router({
       defectType: z.string().optional(),
       minSimilarity: z.number().min(0).max(1).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { results, searchMode } = await findSimilarByIdWithMode(input.embeddingId, input.limit, {
+        machineIds: await idsMayTrongPhamVi(ctx), // phạm vi người dùng (L5b 2026-10-25)
         machineId: input.machineId,
         productModelId: input.productModelId,
         label: input.label,
@@ -203,8 +204,9 @@ export const aiImageSearchRouter = router({
       maxClusters: z.number().min(1).max(50).default(20),
       limit: z.number().min(10).max(1000).default(500),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const clusters = await clusterDefects({
+        machineIds: await idsMayTrongPhamVi(ctx), // phạm vi người dùng (L5b 2026-10-25)
         machineId: input.machineId,
         productModelId: input.productModelId,
         label: input.label,
@@ -221,8 +223,8 @@ export const aiImageSearchRouter = router({
       machineId: z.number().optional(),
       productModelId: z.number().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return getEmbeddingStats(input);
+    .query(async ({ input, ctx }) => {
+      return getEmbeddingStats({ ...(input ?? {}), machineIds: await idsMayTrongPhamVi(ctx) }); // phạm vi người dùng (L5b 2026-10-25)
     }),
 
   // ─── Upload image for temporary search ─────────────────────────────────────

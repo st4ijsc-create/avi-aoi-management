@@ -73,10 +73,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.getDashboardStats",
   "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.getPendingSuggestions",
   "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.getSuggestionsByInspection",
-  // ── server/routers/aiImageSearchRouter.ts (3) ──────────────────────────────────────────────
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.clusterDefects",
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.findSimilar",
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.stats",
   // ── server/routers/aiInsightRouter.ts (1) ──────────────────────────────────────────────────
   "server/routers/aiInsightRouter.ts#aiInsightRouter.list",
   // ── server/routers/aiLocalTrainingRouter.ts (1) ────────────────────────────────────────────
