@@ -105,6 +105,7 @@ describe("phanNhomThuTuc — phân loại", () => {
   it("danh sách chính xác đếm MỌI loại thủ tục", () => {
     expect(phanNhomThuTuc("user.verify2FA", "mutation", tap)).toBe("2fa");
     expect(phanNhomThuTuc("user.disable2FA", "mutation", tap)).toBe("2fa");
+    expect(phanNhomThuTuc("scadaCommands.confirm", "mutation", tap)).toBe("2fa"); // xác minh TOTP qua kiemXacThucTheoMuc, không qua step-up
     expect(phanNhomThuTuc("auth.login", "mutation", tap)).toBe("auth");
     expect(phanNhomThuTuc("user.changePassword", "mutation", tap)).toBe("auth");
     expect(phanNhomThuTuc("auth.login", "query", tap)).toBe("auth");

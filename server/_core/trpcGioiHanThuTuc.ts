@@ -42,7 +42,8 @@ export const NHOM_THU_TUC_NHAY_CAM: Readonly<Record<NhomNhayCam, CauHinhNhom>> =
     cuaSoMs: 15 * 60 * 1000,
     toiDa: 20,
     tienTo: ["twoFactor."],
-    chinhXac: ["user.setup2FA", "user.verify2FA", "user.disable2FA"],
+    // scadaCommands.confirm xác minh TOTP qua kiemXacThucTheoMuc → verifyFreshTotp (KHÔNG qua middleware step-up) nên tập step-up suy từ router không thấy nó — liệt kê tay (census kiemXacThucTheoMuc canh).
+    chinhXac: ["user.setup2FA", "user.verify2FA", "user.disable2FA", "scadaCommands.confirm"],
   },
   auth: {
     cuaSoMs: AUTH_RATE_LIMIT.windowMs,

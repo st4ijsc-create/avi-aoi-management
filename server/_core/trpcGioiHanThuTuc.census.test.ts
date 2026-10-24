@@ -122,6 +122,90 @@ describe("census nhóm 2fa của giới hạn theo thủ tục", () => {
   }, 120_000);
 });
 
+/**
+ * ★★★ Bề mặt thứ HAI xác minh TOTP: `kiemXacThucTheoMuc` (→ `verifyFreshTotp` → `verifyTotpOnce`) KHÔNG đi qua middleware step-up nên tập suy từ appRouter không thấy.
+ * Mỗi file sản xuất GỌI nó phải có mặt ở bảng dưới: hàm bao ngoài (AST) → thủ tục tRPC của router gọi hàm ấy. File mới / hàm mới gọi nó mà bảng chưa cập nhật ⇒ ĐỎ.
+ * Thủ tục phải thuộc nhóm "2fa", TRỪ khi có `mienTru` (lý do bằng văn bản).
+ */
+const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<string, Record<string, { routerFile: string; thuTuc: string; mienTru?: string }>> = {
+  "server/services/scada/lenhHmi.ts": {
+    xacNhanGhiTag: { routerFile: "server/routers/scadaCommandsRouter.ts", thuTuc: "scadaCommands.confirm" },
+  },
+  "server/services/aiCopilotActions.ts": {
+    confirmAction: {
+      routerFile: "server/routers/aiCopilotRouter.ts",
+      thuTuc: "aiCopilot.confirmAction",
+      mienTru:
+        "Sau T10 confirmAction KHÔNG BAO GIỜ xác minh TOTP thật: mức >= 4 bị từ chối TRƯỚC mọi kiểm TOTP, mức 1/3 trả khong_can. Xếp vào nhóm 2fa (20/15 phút) sẽ bóp MỌI xác nhận AI, kể cả tác nhân lập trình.",
+    },
+  },
+};
+
+/** Mọi lời gọi `kiemXacThucTheoMuc(...)` trong file → tên hàm khai báo bao ngoài gần nhất ("?" nếu không phải hàm có tên). */
+function hamGoiKiemXacThucTheoMuc(duong: string): string[] {
+  const src = ts.createSourceFile(duong, readFileSync(duong, "utf8"), ts.ScriptTarget.Latest, true);
+  const ra: string[] = [];
+  const visit = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "kiemXacThucTheoMuc") {
+      let ten = "?";
+      for (let cur: ts.Node | undefined = n.parent; cur; cur = cur.parent) {
+        if (ts.isFunctionDeclaration(cur) && cur.name) {
+          ten = cur.name.text;
+          break;
+        }
+      }
+      ra.push(ten);
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(src);
+  return ra;
+}
+
+/** File có MỘT lời gọi tên `ham(` (đã bỏ chú thích) — để chứng minh router thật gọi hàm dịch vụ. */
+function fileGoiHam(duong: string, ham: string): boolean {
+  const nguon = readFileSync(duong, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  return new RegExp(`\\b${ham}\\s*\\(`).test(nguon);
+}
+
+describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mức rủi ro cũng thuộc nhóm 2fa", () => {
+  it("★★★ MỌI file sản xuất gọi kiemXacThucTheoMuc (ngoài định nghĩa) có trong bảng; mỗi hàm bao ngoài có mục riêng (file/hàm mới ⇒ ĐỎ)", () => {
+    const file = moiFileTs(path.join(GOC, "server"))
+      .map((p) => path.relative(GOC, p).split(path.sep).join("/"))
+      .filter((r) => r !== "server/_core/xacThucTheoMuc.ts")
+      .filter((r) => /\bkiemXacThucTheoMuc\s*\(/.test(readFileSync(path.join(GOC, r), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")))
+      .sort();
+    expect(file).toEqual(Object.keys(BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC).sort());
+    for (const f of file) {
+      const ham = [...new Set(hamGoiKiemXacThucTheoMuc(path.join(GOC, f)))].sort();
+      expect(ham, `${f}: hàm gọi kiemXacThucTheoMuc không khớp bảng`).toEqual(Object.keys(BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC[f]!).sort());
+    }
+  }, 60_000);
+
+  it("★★★ MỖI thủ tục tRPC trong bảng là thủ tục THẬT của appRouter, router thật gọi hàm dịch vụ, và thuộc nhóm 2fa (trừ mục miễn trừ có lý do)", () => {
+    const tap = layTapThuTucStepUp(appRouter, [requireFreshTotp, requirePerCallFreshTotp]);
+    let dem = 0;
+    let mien = 0;
+    for (const [file, hams] of Object.entries(BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC)) {
+      for (const [ham, m] of Object.entries(hams)) {
+        expect(fileGoiHam(path.join(GOC, m.routerFile), ham), `${m.routerFile} không gọi ${ham} (${file})`).toBe(true);
+        const loaiTT = trpcProcedureType(appRouter, m.thuTuc);
+        expect(loaiTT, `${m.thuTuc} không tồn tại ở appRouter`).toBeDefined();
+        const nhom = phanNhomThuTuc(m.thuTuc, loaiTT, tap);
+        if (m.mienTru) {
+          expect(m.mienTru.length, `${m.thuTuc}: lý do miễn trừ quá ngắn`).toBeGreaterThan(40);
+          mien++;
+        } else {
+          expect(nhom, `${m.thuTuc} xác minh TOTP qua kiemXacThucTheoMuc (${ham}) nhưng KHÔNG thuộc nhóm 2fa`).toBe("2fa");
+          dem++;
+        }
+      }
+    }
+    expect(dem).toBeGreaterThanOrEqual(1);
+    expect(mien).toBe(1); // aiCopilot.confirmAction — miễn trừ có lý do
+  }, 120_000);
+});
+
 describe("gắn middleware trong index.ts", () => {
   it("★★★ thứ tự: trần batch → giới hạn theo thủ tục → giấy phép → tRPC; có truyền bước nâng cấp 2FA", () => {
     const nguon = readFileSync(path.resolve(__dirname, "index.ts"), "utf8");
