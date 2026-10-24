@@ -1,0 +1,429 @@
+# SCADA R1b-1 · An toàn điều khiển + nợ R1a — Báo cáo nghiệm thu (Task 12)
+
+Ngày đo: 2026-10-25 · nhánh `feat/scada-r1b` (worktree `D:\SOURCES\_scada_wt`), gốc đo `39ce0b0cf` · máy Windows 11, Node 24.18.0,
+Docker Desktop engine 29.8.2 (linux) · CSDL `aoi_management_test` (PG :5434). Không đụng :3000 / :8091 / GPU. Không push. Không sửa `.env`.
+
+Mọi số dưới đây là **đo thật** (khẳng định của test hoặc dòng in của script). Không ô nào được khai "đạt" mà không có phép đo; không nới
+ngưỡng nào. `OT_CONTROL_ENABLED` / `AI_OT_CONTROL_ENABLED` chỉ được đặt trong tiến trình test/bench (D9).
+
+## Kết luận ngắn
+
+| Phần | Kết quả đo |
+|---|---|
+| Ma trận 10 ô của brief + 3 ô điều phối (`r1bNghiemThu.db.test.ts`, stub + safety PLC mô phỏng + CSDL `_test`) | **13/13 ô đúng mã và đúng số dòng WORM**: 16 test (gồm 1 quan sát B1 và 1 đối chứng C1), **3 lượt tuần tự 16/16**; không đặt biến ⇒ 16 skipped |
+| Đột biến cấp hệ thống | `lenhHmi.dungMayHmi` kiểm chế độ trước khi gửi ⇒ **S2 đỏ** (và S5, S6); 13 test còn lại xanh; hoàn tác, `git diff` rỗng |
+| Bench OpenPLC (`scripts/scada-r1b-bench.ts`) | **bench not run — container unavailable**: `avi-openplc-bench` ở trạng thái `exited` (mã 137, dừng 2026-10-24T09:14:54Z); container dùng chung, theo luật điều phối KHÔNG khởi động. Chạy khô trên máy chủ Modbus giả trong tiến trình: 15/15 (KHÔNG phải số đo OpenPLC) |
+| Chạy toàn bộ (lô thường song song + lô DB tuần tự + lô nặng) | 2352 tệp, **33 481 ca: 33 382 qua, 26 đỏ (14 tệp), 73 bỏ qua**; serial 7 tệp 66/66. **0 đỏ do mã R1b-1**; 1 census đỏ do bench mới của T12 (chưa khai trong bản liệt kê VRAM) — đã sửa; còn lại có sẵn trên main / môi trường / tải (§5) |
+| Census (mọi tệp `*census*`) | 57 tệp, 963 ca: 960 qua, 3 bỏ qua, **0 đỏ** |
+| Lưới nghiệm thu opt-in R0 / R1a / R1b-1 | **42/42** (16 + 10 + 16), một lượt chung |
+| `npm run check` (8 GB) · `npm run i18n:check` | rc 0 · sạch |
+
+**Đánh giá:**
+- **LOGIC.** STOP HMI (`scadaCommands.dungMay`) tới thiết bị bằng đúng giá trị ghim ở REMOTE, ở LOCAL (cả khi cờ cổng chế độ tắt lẫn bật),
+  khi người khác giữ khoá chọn kênh dừng, khi người bấm chưa có 2FA; máy edge được định tuyến sang node edge; máy chưa ghim bị từ chối có mã
+  và đúng một dòng WORM. "connected" không bao giờ hiện khi TCP lên mà mọi đọc quá hạn (cờ V2), đo trên otManager + ModbusDriver THẬT ở cả
+  nhánh legacy lẫn HA, có đối chứng cờ tắt cho thấy phép đo nhìn thấy được `connected`. REST v1 trả 501 cho lệnh OT và không ghi sổ lệnh.
+  Bộ điều tiết giữ 100 lần `DA_XU_LY` ở 30 dòng; mã an toàn không bị điều tiết. Mã dự phòng không tiêu được hai lần.
+- **DỮ LIỆU.** 0431 / 0432 / 0433 có đủ trên DEV và TEST (kiểm chỉ đọc hôm nay, §4). `_test` sạch sau mỗi lượt (chỉ còn hàng WORM, đúng thiết kế).
+- **VẬN HÀNH.** Bench OpenPLC chưa chạy được (container tắt, không được phép khởi động). Đường STOP trên PLC thật vì vậy CHƯA có số đo của
+  R1b-1; cổng "STOP HMI dừng được máy ở cả REMOTE lẫn LOCAL trên bench" của kế hoạch còn MỞ cho tới khi điều phối cho chạy bench (một lệnh, §3).
+
+---
+
+## 1. Ma trận ô — `server/services/scada/r1bNghiemThu.db.test.ts`
+
+**Chỉ chạy khi gọi tường minh (như R0 / R1a):**
+- Bash: `SCADA_R1B_NGHIEM_THU=1 npx vitest run -c vitest.db.config.ts server/services/scada/r1bNghiemThu.db.test.ts`
+- PowerShell: `$env:SCADA_R1B_NGHIEM_THU='1'; npx vitest run -c vitest.db.config.ts server/services/scada/r1bNghiemThu.db.test.ts`
+- Không đặt biến: cả tệp bị bỏ qua (đo được: 16 skipped).
+
+**Đường chạy thật:**
+- STOP HMI: `scadaCommands.dungMay` qua tRPC caller; người dùng tạo bằng `taoNguoiDungTest`; `ctx.user` dựng từ hàng `users` (cờ 2FA đọc từ
+  DB như phiên thật); phạm vi `idsTrongPhamVi` thật; quyền `machine_control` thật.
+- `lenhHmi.dungMayHmi` → `dispatch()` thật: binding `requireBoundAction`, cổng kênh 3b, cổng chế độ 3c (luôn chạy cho `hmi.*`), phân loại STOP
+  ghim 5a-stop với dấu vân tay kết nối THẬT (`adapterTargetFingerprint` của chính hàng adapter), đặt chỗ ghi trước, đọc lại bắt buộc.
+  `OT_COMMISSIONING_REQUIRED=true` (adapter có `commissioning_records` thật), preflight safety thật.
+- Safety PLC mô phỏng (D9): hàng `safety_plc_configs` thật backend `modbus`, phạm vi trạm, trỏ `ServerTCP` trong tiến trình; khoá seed độc quyền.
+- Edge (S5): `edge_nodes` + `device_adapters.edgeNodeId` thật ⇒ `enqueueEdgeDeviceRequest` thật.
+- C1: otManager thật (`startOt`) + ModbusDriver thật trên một máy chủ TCP IM LẶNG trong tiến trình (nhận kết nối, nhận yêu cầu, không bao giờ trả
+  lời ⇒ TCP lên, mọi đọc quá hạn 800 ms; poll 1 s). Ghi `device_adapters.status` thật.
+- R1: router REST v1 thật (`createV1Router`) trên express, máy `AUTOMATION` thật trong `_test`.
+- W1: `scadaCommands.confirm` lặp trên một yêu cầu đã xử lý, qua bộ điều tiết thật (`dieuTietThuLenh`).
+- B1: `tieuMaDuPhongNguyenTu` thật trên `backup_codes` (băm bcrypt); pool client test = 4 (> 1, song song thật).
+- X1: `deviceAdapter.tags.update` thật, TOTP thật (speakeasy + `setup2FA`/`enable2FA`; `kiemXacThucTheoMuc` + bộ đếm T16 thật).
+
+**Chỗ giả (hạ tầng, không phải cổng):** `getActiveDriver` / `getActiveConnectionFingerprint` (stub + vân tay tính từ hàng adapter); `getIO`;
+`dispatch` được BỌC để đếm (gọi xuyên mã thật); `raiseCriticalStopAlert` + `sendCentralAdapterStop` ghi lại (không gửi thông báo / phiên tạm);
+`baoTrangThaiAdapter` được BỌC để ghi MỌI trạng thái báo ra (C1, gọi xuyên mã thật); khoá master REST "MASTER" (R1, như
+`equipmentCommands.r1a.db.test.ts`).
+
+**Đếm WORM theo khoá của tệp** (`_test` dùng chung): attempts theo `user_id` của người dùng tệp, `command_log` theo `adapterId` của adapter tệp.
+
+| Ô | Kích thích | Mã / kết cục đo được | Dòng WORM tăng thêm (đo) |
+|---|---|---|---|
+| **S1** | STOP HMI, máy REMOTE (kênh chế độ = 2), operator có 2FA | `acked_verified`, `ok`, `simulated:false`; driver nhận ĐÚNG `{dung: 0, stop_cmd: true}` (một lô); `dispatch` 1 lần; 4 hàng sổ đều `ackValue.pinnedStop = true` | attempts +1 (`dispatch/dispatched`, `ly_do` "STOP: acked_verified") · command_log +4 (intent ×2 `sent`, result ×2 `acked_verified`) |
+| **S2** | STOP HMI, máy LOCAL (kênh chế độ = 1), lặp với `SCADA_CONG_CHE_DO_ENABLED` = false rồi = true | **cả hai lần** `acked_verified`, `reason` ≠ `MODE_LOCAL`, driver nhận đúng ghim; không hàng sổ nào `MODE_LOCAL`. Đối chứng trên cùng máy: `request` thường ⇒ `SCADA_MACHINE_NOT_REMOTE {khac_remote}`; `cheDoMay` = LOCAL `khac_remote` | mỗi lần: attempts +1 · command_log +4 |
+| **S3** | opB `request` kênh `dung` (giữ khoá chọn), rồi opA bấm STOP | `acked_verified`, driver nhận đúng ghim; khoá của opB giữ nguyên (`user_id`, `request_id` không đổi). Đối chứng: `request` của opA trên `dung` ⇒ `SCADA_TAG_SELECTED_BY_OTHER {DANG_DUOC_CHON, boiUserId = opB}` | attempts +1 · command_log +4 |
+| **S4** | operator `two_factor_enabled = false` (đọc từ DB) bấm STOP | `acked_verified`, driver nhận đúng ghim (mức 1, không 2FA) | attempts +1 · command_log +4 |
+| **S5** | STOP HMI máy do edge sở hữu (node `online`, vừa kéo lệnh) | `edgeStopRequest: true`, `reason ADAPTER_OWNED_BY_EDGE`, `ok:false` (trung tâm không tự chạy); hàng `robot_motion_lock_requests` `kind stop` cho đúng node; KHÔNG STOP dự phòng trung tâm; không `MODE_LOCAL` | attempts +1 · command_log +1 (`ADAPTER_OWNED_BY_EDGE: … STOP queued for it as request #N`) |
+| **S6** | máy có adapter bật nhưng không tag nào ghim | `PRECONDITION_FAILED / SCADA_STOP_NOT_PINNED {CHUA_GHIM_STOP}`; `dispatch` 0 lần | attempts **+1** (`dispatch/rejected/CHUA_GHIM_STOP`, `adapter_id` NULL, `ly_do` chứa "E-STOP") · command_log 0 |
+| **C1** | cờ `OT_CHAT_LUONG_V2_ENABLED=true`; TCP lên, mọi đọc quá hạn; cửa sổ 9 s + 6 s xả lần ghi DB hẹn | **legacy:** 4 kết nối TCP, 84 byte yêu cầu tới nơi; RAM báo `connecting → lost → lost → lost → disabled`; DB thấy `connecting, error, disabled` — **không bao giờ `connected`**. **HA:** 4 kết nối, 96 byte; RAM `connecting, connecting, lost ×3, disabled`; DB `disabled, connecting, error` — **không bao giờ `connected`** (log supervisor vẫn in `state=connected` — trạng thái TCP nội bộ, xem §6) | không áp dụng (không lệnh) |
+| C1 đối chứng | CÙNG kích thích, cờ V2 **tắt**, legacy | RAM báo `connected` (18 lần gọi trong 9 s), DB ghi `connected`; chỉ 1 kết nối TCP — phiên không bao giờ bị hạ dù mọi đọc quá hạn. Phép đo NHÌN THẤY được `connected` | — |
+| **R1** | REST v1 `POST /api/v1/equipment/:id/commands` trên máy `AUTOMATION`: `write_tag`, `set_machine_param`, `stop` có ghim, `stop` trần | cả 4 ⇒ **HTTP 501** `{ok:false, error:{code:"not_implemented"}}`; `dispatch` 0 lần; thiết bị 0 lần | command_log **0** (theo adapter và theo khoá idempotency của 4 lệnh) · attempts 0 |
+| **W1** | opA `request`+`confirm` (acked_verified), rồi 100 lần `confirm` cùng `requestId` trong < 1 phút | client nhận `CONFLICT / SCADA_REQUEST_ALREADY_HANDLED` cả 100 lần | attempts **+30** (≤ 31; đều `confirm/DA_XU_LY`) · command_log 0. Đồng hồ +61 s ⇒ lần kế ghi `DIEU_TIET` "70 lần DA_XU_LY bị gộp" rồi `DA_XU_LY`. Đối chứng: 40 lần `MODE_LOCAL` ⇒ **+40** (mã an toàn không bị điều tiết) |
+| **B1** | 10 lượt SONG SONG `tieuMaDuPhongNguyenTu` cùng một mã | **đúng 1 `true`, 9 `false`**; đúng 1 mã `isUsed`; dùng lại sau đó ⇒ `false` | không áp dụng |
+| B1 quan sát (không phải cổng) | 10 lượt song song qua `verifyBackupCode` ĐẦY ĐỦ (bộ đếm T16, trần 10/giờ) | 3 lượt đo, cả 3 như nhau: `true` 0, `false` 8, ném 2 (`MA_DU_PHONG_TAM_KHOA`), mã đã tiêu **1** — không tiêu hai lần, nhưng người thắng bị khoá (mục backlog T8, §10) | — |
+| **X1** | `tags.update` đổi `scale` 1→2 trên tag ĐÃ KHAI, không mã | `PRECONDITION_FAILED / SCADA_CONFIG_TOTP_REQUIRED {TOTP_CAN}`; hàng giữ scale 1 | — |
+| X1 | có mã TOTP đúng, tag đã khai đang ghim DỪNG 3, scale 2 làm ghim lệch lưới | `BAD_REQUEST / STOP_PIN_NGOAI_DAI {lyDo OFF_STEP, tagKey dkpin}`; hàng nguyên; **cùng mã** dùng tiếp được cho một lượt hợp lệ ⇒ lượt bị từ chối không tiêu mã | — |
+| X1 | tag CHƯA khai đổi scale + address, không mã | qua như cũ (scale 5, address mới) | — |
+| **X2** | dispatch AI (`set_machine_param`, dòng chờ đã xác nhận) 25 lên tag int CHƯA khai scale 10 | `rejected OFF_STEP`, `appError {SCADA_VALUE_OFF_STEP, step 10, goiY 30}`, errorText `… (goiY=30)`; thiết bị 0 lần | command_log +1 · attempts 0 |
+| X2 | cùng tag, 30 | `ok`, driver nhận NGUYÊN 30 kèm `dataType int, scale 10` ⇒ số thô `inverseScale` = **3** | — |
+| **X3** | kênh chế độ REMOTE nhận cách đây 31 s, adapter poll 60 s | bộ đệm: `stale = false` (ngưỡng max(3·60 s)), `ageMs ≥ 31 000`; `cheDoMay` = **LOCAL `cu`** (kẹp min(3·poll, 30 s)); `request` HMI ⇒ `SCADA_MACHINE_NOT_REMOTE {cu}`; dispatch AI với cổng bật ⇒ `rejected MODE_LOCAL: cu`, thiết bị 0. Đối chứng: tuổi 20 s ⇒ REMOTE, `request` được nhận | request: attempts +1 (`MODE_LOCAL`) · dispatch: command_log +1 |
+
+**Lượt chạy:**
+- 3 lượt tuần tự `-c vitest.db.config.ts`, mỗi lượt 16/16 (lượt đầu 89 s cho phần test; 45 s là ba cửa sổ C1). Số in của C1 và B1 giống hệt ở cả 3 lượt.
+- Không đặt biến: 16 skipped.
+- Sau lượt: `_test` không còn adapter / nhà máy / máy / người dùng / node edge / `safety_plc_configs` / dòng chờ mang tiền tố `r1bnt`;
+  `scada_khoa_chon` 0, `scada_kenh_che_do` 0, `safety_plc_configs` còn đúng 3 hàng có sẵn (kiểm chỉ đọc).
+
+**Giới hạn của lưới:**
+- Thiết bị S1–S4 / X2 là stub (RAM). PLC thật chỉ đo được ở bench, mà bench chưa chạy được (§3).
+- W1 dời đồng hồ `Date` +61 s (khuôn T7) thay vì chờ 61 s thật.
+- X1 dùng người dùng admin (bỏ qua `requirePermission`); phạm vi IDOR của `tags.*` do luong-ui đo ở main (§9).
+
+## 2. Đột biến cấp hệ thống (Step 2) — chạy rồi hoàn tác; sau đó `git diff` rỗng
+
+| Đột biến | Ô đỏ | Số đo |
+|---|---|---|
+| `lenhHmi.dungMayHmi` kiểm chế độ cho STOP: ngay sau cổng vai, `const d = await kiemCongCheDo(may.id); if (!d.ok) return tuChoiMay(d.tuChoi);` | **S2** + S5 + S6, 3/16 đỏ | S2: `TRPCError: Máy không ở REMOTE (khac_remote).` (STOP bị chặn ở LOCAL — đúng nguy cơ D3 muốn tránh). S5: máy edge không khai kênh chế độ ⇒ LOCAL `chua_khai` ⇒ STOP bị chặn. S6: trả `MODE_LOCAL` thay cho `CHUA_GHIM_STOP`. S1/S3/S4 (máy REMOTE) và 10 ô khác xanh |
+
+## 3. Bench OpenPLC — `scripts/scada-r1b-bench.ts`
+
+**Trạng thái: bench not run — container unavailable.**
+
+Bằng chứng (đo 2026-10-25, trước khi chạm bất cứ gì):
+```
+docker ps -a --filter name=avi-openplc-bench   ⇒ avi-openplc-bench Exited (137) 8 hours ago
+docker inspect -f "{{.State.Status}}"           ⇒ exited
+[bench] container avi-openplc-bench: trạng thái ban đầu=exited; avi-openplc-bench:v3
+        sha256:180893084146519c837b7c54bfdf8a1b6b1174ba739390eac9256b0678ebf2df created=2026-10-14T05:51:00.670703593Z
+        exit=137 finished=2026-10-24T09:14:54.216341111Z; Docker engine 29.8.2
+[bench] bench not run — container unavailable (trạng thái "exited", không --start-neu-tat: container dùng chung, không khởi động)
+exit=3
+```
+Sau lần gọi: container vẫn `exited` (không đổi gì). Theo luật của điều phối (container dùng chung; không chạy ⇒ không khởi động hạ tầng), bench
+KHÔNG được chạy. Mã thoát 137 (SIGKILL) ở 09:14Z hôm trước — không rõ ai dừng; không điều tra thêm.
+
+**Script (đã viết, sẵn sàng):** khuôn `scripts/scada-r1a-bench.ts`.
+- Mặc định KHÔNG khởi động container: không `running` hoặc Modbus không trả lời ⇒ in "bench not run — container unavailable" + bằng chứng, thoát 3.
+- `--start-neu-tat`: hành vi R1a (start / unpause, bấm Start qua web, cuối cùng trả đúng trạng thái ban đầu) — chỉ khi điều phối cho phép.
+- Trước khi chạm: đọc và GHI giá trị gốc của MỌI thanh ghi `holding:1..18` (reg 0..17); cuối cùng ghi trả lại và đọc kiểm "KHỚP gốc".
+- Bước 0 (giữ giá trị) trên reg 0..17; cần ≥ 3 thanh ghi giữ: dừng (`dung`, int mức 1, dải 0..100, `stop_value` 0), kênh chế độ (REMOTE = 2),
+  và một tag int CHƯA khai scale 10 (X2).
+- otManager thật (legacy, cờ V2 bật) qua seam `setAdapterSource` + ModbusDriver thật ⇒ kênh chế độ là tag poll trung tâm đọc từ PLC.
+- Mỗi lượt (mặc định 3): S1 STOP HMI ở REMOTE (thanh ghi dừng đặt 77 trước, mong 0 sau); đối chứng `request` thường ở LOCAL ⇒ `MODE_LOCAL`, thanh
+  ghi không đổi; S2 STOP HMI ở LOCAL (77 → 0); X2 dispatch AI 25 ⇒ `OFF_STEP goiY 30`, thanh ghi không đổi; 30 ⇒ thanh ghi = **3**.
+- Oracle độc lập: client Modbus RIÊNG (kết nối mới) đọc thanh ghi trước/sau mỗi bước.
+- Safety PLC giả trong tiến trình + hàng `safety_plc_configs` thật; `commissioning_records` thật; `_test` dọn sạch.
+
+**Lệnh khi được phép:** `npx tsx scripts/scada-r1b-bench.ts --lap 3` (container đang chạy) hoặc thêm `--start-neu-tat` (container tắt, có cho phép).
+
+**Chạy khô để kiểm mã script (KHÔNG phải số đo OpenPLC):** `--khong-docker --endpoint tcp://127.0.0.1:15602` trên một máy chủ Modbus giả trong
+tiến trình (18 thanh ghi giữ giá trị, script nháp ngoài repo). Mọi đường sản phẩm khác đều thật (otManager, ModbusDriver, dispatch, phân loại STOP
+ghim với vân tay của otManager thật). Kết quả 3 lượt: **15/15 bước đạt** — S1 77 → 0 (86–109 ms), S2-ĐC `MODE_LOCAL (khac_remote)` 77 → 77, S2
+77 → 0 (80–115 ms), X2 25 ⇒ `OFF_STEP goiY=30` 0 → 0, X2 30 ⇒ 0 → 3; giá trị gốc 18 thanh ghi trả lại "KHỚP gốc"; `_test` sạch tiền tố
+`r1bbench`. Phép chạy khô chứng minh script chạy hết đường và đường STOP ghim nhận đúng vân tay của otManager THẬT (`acked_verified`, không bị
+hạ về STOP không ghim) — nó KHÔNG thay cho bench trên PLC thật.
+
+## 4. Thứ tự triển khai
+
+1. **Migration 0431, 0432, 0433 trên MỌI DB, SAU ĐÓ mới chạy bản build.**
+   - **0431** (`drizzle/0431_scada_kenh_lenh.sql`): thiếu ⇒ toàn bộ OT hỏng (R1a §4 mục 1). Máy chủ BỎ QUA `startOt`, `/health` `degraded`.
+   - **0432** (`drizzle/0432_totp_khoa_sai.sql`): thiếu ⇒ mọi người dùng có 2FA bị khoá ngoài (R1a §4 mục 2).
+   - **0433** (`drizzle/0433_scada_ly_do_fk.sql`, `scripts/apply-migration-0433.mjs`, R1b-1 T6): cột `scada_command_attempts.ly_do varchar(300)` +
+     3 FK `ON DELETE CASCADE` (`scada_kenh_che_do.machine_id → machines`, `scada_kenh_che_do.adapter_id → device_adapters`,
+     `scada_khoa_chon.adapter_id → device_adapters`); trước FK xoá và ĐẾM dòng mồ côi (DEV 0 / TEST 0 khi đếm).
+     - Áp TEST ở T6; **DEV 2026-10-24** sau điều phối "ÁP" (`--dev-only`; verify xanh: 13 cột, 3 FK CASCADE, `avi_app` chỉ INSERT trên attempts,
+       cascade thử trong giao dịch hoàn tác, sổ migration 1 dòng).
+     - Thiếu 0433 với bản build R1b-1: mọi lần ghi attempts (có `ly_do`) lỗi ⇒ `request`/`confirm` HMI fail-closed; `dungMay` (STOP) VẪN gửi vì
+       mọi lần ghi attempts của nó bắt lỗi.
+     - ⚠ Không chạy lại verify của 0431 trên DB đã có 0433 bằng bản cũ (đếm đúng 12 cột) — bản trên nhánh đã sửa (T6 I2: tập cột bao trùm).
+2. **Kiểm lại hôm nay (2026-10-25, CHỈ ĐỌC, `default_transaction_read_only = on`):** cả `aoi_management` (DEV) lẫn `aoi_management_test`: 4 bảng
+   (`scada_command_attempts`, `scada_kenh_che_do`, `scada_khoa_chon`, `totp_khoa_sai`), 7/7 cột 0431 trên `device_tags`, `ly_do` có mặt
+   (attempts 13 cột), 3 FK `ON DELETE CASCADE` đúng như trên.
+3. **Máy chủ tự kiểm lúc khởi động (`server/_core/kiemSchemaR1a.ts`), TRƯỚC `startOt()`:**
+   - thiếu 0431 ⇒ bỏ `startOt`, `/health` `status:"degraded"` + `schemaR1a.thieuMigration`;
+   - thiếu 0432 ⇒ OT vẫn chạy, nhắc mỗi 5 phút, `/health` `degraded`;
+   - **thiếu 0433 ⇒ `/health` `degraded`** (`schemaR1a.thieuMigration` có "0433", khối `console.error` gọi tên `scripts/apply-migration-0433.mjs`,
+     nhắc mỗi 5 phút); `startOt` VẪN chạy (OT không đọc `ly_do`) — T7;
+   - **không đọc được `information_schema`** ⇒ `/health` hiện `schemaR1a: "chua_kiem_duoc"` + lớp lỗi ngắn (`ket_noi_tu_choi` / `het_thoi_gian` /
+     `quyen` / `khong_co_ket_noi_db` / `khac`, không lộ host/port/user), `status` vẫn `"ok"`, kiểm lại mỗi 5 phút tới khi kiểm được; khởi động
+     fail-open như cũ — T10a.
+   - `/health` vẫn trả 200 (liveness). ⚠ `/api/health` không phải route — kiểm `/health`.
+4. Sau khi khởi động: `GET /health` không được có `schemaR1a`.
+
+## 5. Chạy toàn bộ (Step 5)
+
+**Cách chạy:** `node scripts/luoi-truoc-gop.mjs --nang server shared client/src scripts vscode-extension/src` (= mọi `include` của
+`vitest.config.ts`) trên gốc `39ce0b0cf`: lô thường song song (loại `*.db.test.ts`, 10 fork) → lô DB tuần tự (`vitest.db.config.ts`) → lô nặng tuần tự
+→ chạy LẠI RIÊNG từng tệp đỏ để tách đỏ thật / đỏ do tải. Sau đó, riêng: lô serial (`vitest.serial.config.ts`), mọi census, ba lưới nghiệm thu opt-in,
+`npm run check`, `npm run i18n:check`. Không chạy song song hai lô nặng (tránh cạn bộ nhớ ảo / kết nối PG).
+
+| Lô | Tệp | Ca | Qua | Đỏ | Bỏ qua |
+|---|---|---|---|---|---|
+| Thường (song song) | 2086 | 30 410 | 30 356 | 23 (13 tệp) | 31 |
+| DB (tuần tự) | 263 | 2 989 | 2 944 | 3 (1 tệp) | 42 |
+| Nặng (tuần tự) | 3 | 82 | 82 | 0 | 0 |
+| **Tổng lưới** | **2352** | **33 481** | **33 382** | **26 (14 tệp)** | **73** |
+| Serial (`vitest.serial.config.ts`, E2E edge) | 7 | 66 | 66 | 0 | 0 |
+| **Census** (mọi tệp `*census*` `.test.ts(x)` trong git) | 57 | 963 | 960 | **0** | 3 |
+| **Opt-in** R0 + R1a + R1b-1 (`SCADA_R0/R1A/R1B_NGHIEM_THU=1`, một lượt chung) | 3 | 42 | 42 | **0** | 0 |
+
+R0 trong lượt chung (ms, ngưỡng G1/G4 ≤ 2000, G2/G3 ≤ 5000): legacy/từ chối 400 / 475 / 436·2038 / 1262; HA/từ chối 907 / 960 / 994·1946 / 278;
+legacy/treo 1894 / 2846 / 2856·2059 / 139; HA/treo 1852 / 2826 / 2826·2089 / 136 — đều đạt.
+
+**`npm run check`** (tsc, 8 GB): rc 0. Hai tệp mới (bị `tsconfig` loại: `*.test.ts`, `scripts/`) kiểm riêng bằng tsconfig tạm ngoài repo: **0 lỗi** ở hai
+tệp; 5 lỗi ở `server/services/twin/pipeline/stepToGltf.ts` chỉ do tsconfig tạm thiếu khai báo kiểu cục bộ của repo (không có trong `npm run check`).
+**`npm run i18n:check`**: sạch (0 lệch placeholder, 0 khoá mới thiếu; 332 + 20 nợ đóng băng có từ trước).
+
+**Phân loại 14 tệp đỏ** (so với main bằng đọc mã — không checkout main; gốc gộp main gần nhất `58ee02c5e`):
+
+| Tệp | Chạy riêng | Phân loại | Bằng chứng |
+|---|---|---|---|
+| `server/services/vram/vramAllocationSites.test.ts` (2 ca) | xanh sau sửa | **DO NHÁNH (T12) + có sẵn trên main — ĐÃ SỬA** | Chưa khai: `scripts/scada-r1b-bench.ts` (execFileSync ×4 + child_process, mới ở T12) VÀ `scripts/scada-r1a-bench.ts` (×4 + 1; R1a đã gộp main mà chưa khai — `git show main:…vramAllocationSites.ts` không có dòng nào). Đã khai 10 dòng (docker CPU, chạy tay, không GPU), `KNOWN_ALLOCATION_SITE_ROW_COUNT` 291 → 301; tệp 12/12 xanh |
+| `server/routers/appErrorCoverage.test.ts` (2) | đỏ | có sẵn trên main | `throw new Error` ở `server/routers/_adapterPhamVi.ts:171` — tệp của luong-ui (main `7388c6bcd`), giống hệt trên main; nhánh không sửa tệp |
+| `server/routers/appErrorParamsCoverage.test.ts` (1) | đỏ | có sẵn trên main | `genealogyRouter.ts` `action="verifyChainAcrossFactories"` thiếu khoá `errors.action.*` ở vi/en/zh; main có cùng dòng (`dbe57b130`) và locale main cũng thiếu khoá; nhánh không đụng `genealogyRouter` |
+| `server/services/ai/thinkingSurfaces.quantifier.test.ts` (1) | đỏ | có sẵn trên main | điểm gọi `server/routes/aiLocalKnowledgeApi.ts::docBangModelChinh::chatCompletion` chưa phân loại — tệp có trên main y hệt, nhánh không đụng |
+| `server/auth.setupAdmin.test.ts` (3) | đỏ | có sẵn (trạng thái `_test`) | "Admin already exists" — `_test` dùng chung đã có admin; nhánh không đụng auth setup |
+| `server/crud-operations.test.ts` (suite) | đỏ | có sẵn (quyền DB) | `permission denied for table product_inspections` (vai `avi_app`); nhánh không đụng |
+| `server/machineTypeEnum.f2.test.ts` (1) | đỏ | có sẵn trên main | test ghim 21 giá trị, enum có 24; test và enum không nằm trong diff của nhánh |
+| `server/mqtt.test.ts` (2) | đỏ | có sẵn trên main | `Required role: admin or supervisor or quality_inspector`; nhánh không đụng |
+| `server/componentInstallationService.g2_4.test.ts` (2), `server/processResultService.f2.test.ts` (1) | đỏ | có sẵn trên main | spy chuỗi genealogy 0 lần; main `013612d7f` (nhánh khác) đã sửa đúng ca `processResultService.f2` (mock `appendGenealogyChainRow`) — chưa gộp vào nhánh này |
+| `server/routers/machineConfigSync.test.ts` (2) | đỏ | có sẵn trên main | mock `../_core/accessControl` thiếu `resolveDataScope` (export mới từ các lô phạm vi của main); nhánh không đụng |
+| `server/services/ai/doiModelLlamaServer.test.ts` (5) | đỏ | có sẵn (môi trường) | chạy THẬT `start-llama-server.ps1`, nhận chuỗi rỗng; vùng AI, nhánh không đụng |
+| `server/services/cpkSnapshotScheduler.test.ts` (1) | xanh | đỏ do tải | quá hạn 180 s chỉ trong lô song song |
+| `server/services/flow/ot/otMoPhong.db.test.ts` (3) | xanh | đỏ do trạng thái `_test` dùng chung | "đang có 100 lượt chạy (trần maxConcurrentRuns=100)"; chạy riêng xanh |
+
+**Kết luận:** 0 tệp đỏ do mã R1b-1. Một census đỏ do tệp của chính T12 (bench mới chưa khai trong bản liệt kê VRAM) — đã sửa trong commit báo cáo,
+kèm khai muộn bench R1a (đỏ có sẵn trên main). Mọi đỏ còn lại không nằm trong 125 tệp nhánh đổi so với `58ee02c5e` và có cùng nguyên nhân trên main.
+
+## 6. Giới hạn đã biết
+
+### LOGIC
+
+**STOP HMI (T2)**
+1. `dungMay` tuân cờ chủ `SCADA_COMMANDS_ENABLED` (ruling T2): cờ tắt ⇒ không có STOP HMI, người vận hành dùng E-STOP cứng.
+2. STOP HMI chỉ gửi giá trị ĐÃ GHIM (`device_tags.stop_value`) tới adapter BẬT của máy; không tự đoán tag. Máy chưa ghim ⇒ `CHUA_GHIM_STOP`.
+3. Ghim lệch lưới thô (ví dụ `stop_value` 25 trên tag int chưa khai scale 10) vẫn được gửi (miễn cả lệnh) và driver làm tròn ⇒ phát hiện CẤU HÌNH,
+   không phải từ chối (T13). `datStopPin` chưa từ chối ghim lệch lưới trên tag chưa khai có scale (R1b-2).
+4. Một authenticated `canEdit` có thể spam STOP (miễn `apiLimiter` cho POST `dungMay` KHÔNG batch, ruling T2 I1) — hướng an toàn; dòng
+   `dispatched` không bị điều tiết. Batch có `dungMay` vẫn bị đếm.
+5. Hai STOP ghim giống hệt khi `OT_CMD_SERIALIZE_ENABLED` bật dùng chung một lần ghi thiết bị (R-11-o có sẵn); lần bấm thứ hai có thể báo kết
+   quả dùng chung. Lưới chạy với cờ tắt.
+6. Audit `scada_hmi_stop` fire-and-forget có hạn 10 s: sổ hỏng/treo không che kết quả STOP, nhưng có thể thiếu dòng audit (chỉ log).
+7. Máy edge: kết quả `ok:false` + `edgeStopRequest` (trung tâm không tự chạy); node không tới được ⇒ STOP dự phòng trung tâm trên phiên tạm +
+   cảnh báo `stop_undelivered`.
+
+**Kết nối / ingest (T3, T4)**
+8. Cờ V2 bật: ghi qua dispatcher KHÔNG bị chặn trong lúc phiên chờ lần đọc tốt đầu tiên (ruling T3 c2; dispatcher có cổng driver/ADAPTER_OFFLINE riêng).
+9. Presence (và log supervisor HA `state=connected`) vẫn theo TCP: máy có thể "online" trong khi adapter `connecting`/`lost` (đo lại ở C1 HA).
+10. Cờ V2 TẮT: TCP lên + mọi đọc quá hạn ⇒ `connected` mãi, phiên không bao giờ bị hạ (đo ở đối chứng C1: 1 kết nối, 18 lần báo `connected`
+    trong 9 s). Đây là hành vi cờ tắt có chủ ý — xem checklist §7.
+11. Reset phiên legacy khi cờ V2 bật hiện `connected → connecting → connected` trong khoảng một lần đọc.
+12. Đường push (OPC UA monitored items) đếm "đọc tốt" chỉ khi quality `good`; poll đếm mọi tick `ok` (kể cả uncertain / lỗi cấu hình) — lệch
+    nhẹ (R1b-2). Push không có watchdog thừa mẫu (có từ trước).
+13. DB treo: back-pressure bỏ qua `ingestSample` ⇒ bộ đệm hiện tại cũ cho mọi tag (fail-closed: interlock chặn, máy LOCAL); lô mẫu xấu bị bỏ không
+    thử lại (bộ đệm hiện `stale` thay vì `bad`). Cờ V2 tắt: một lần đọc khoẻ nhưng chậm vắt qua một tick nay hạ phiên (ruling T4 c2).
+
+**Chế độ máy (T10b N5)**
+14. Cổng chế độ tin mẫu kênh chế độ tối đa **min(3·poll, 30 s)**: poll ≥ 10 s, hoặc kênh chế độ có deadband (nhịp tim 60 s), ⇒ máy LOCAL `cu`
+    giữa hai mẫu (fail-closed; đo ở X3). M12 cảnh báo `poll_cham` (> 10 s) và `deadband`.
+
+**Cấu hình được bảo vệ (T9, T10b)**
+15. "Tag được bảo vệ" = đã khai (mức | loại kênh | dải) HOẶC kênh chế độ HOẶC đích / nguồn telemetry của luật interlock (không alert) đang BẬT
+    hoặc ĐÃ DUYỆT. Trỏ lại / xoá / tắt / tạo lên khoá mồ côi ⇒ TOTP tươi + kiểm nhất quán; ghim DỪNG đang có ⇒ "gỡ ghim trước"
+    (`STOP_PIN_GO_TRUOC`) kể cả có mã. Đổi IP PLC có tag đã khai đang ghim ⇒ gỡ ghim + ghim lại (ruling T9 r2; hiếm, có chủ ý).
+16. `tags.create/update/delete`, `deviceAdapter.update` miễn nhóm giới hạn "2fa" (ruling T9 a/r2, lý do NAT nhà máy; khoá TOTP theo tài khoản
+    T16 chặn dò mã). Mỗi lần lưu thay đổi được bảo vệ cần một mã MỚI.
+17. CLI `scripts/mappings-import.mjs` vẫn trỏ lại tag được bảo vệ không TOTP (công cụ vận hành cần quyền DB; R1b-2: `--apply` từ chối tag được bảo vệ).
+18. `interlock.approve` không chạy kiểm tồn tại đích/nguồn (chỉ `enable`); luật đã duyệt mà đích chết vô hại khi còn tắt. Nhãn nút hộp mã đổi
+    "Xác nhận và lưu" → "Xác nhận" (chấp nhận, T10b).
+
+**Giá trị lệnh (T13)**
+19. Tag int CHƯA khai với scale = 1 / offset = 0 vẫn làm tròn giá trị không nguyên (điều phối Q-T13 (a), R1b-1); R1b-2 (b): `OFF_STEP` cho MỌI tag
+    int + bộ đề xuất SPI làm tròn theo lưới tag, cùng một task.
+20. HMI từ chối 2,5 trên tag int scale 0,5 là `TYPE_MISMATCH` trong khi dispatch nhận (có từ trước; R1b-2).
+21. Đường FOE thật tới số thô chỉ đo tới cổng (cần cả chuỗi duyệt; R1b-2).
+
+**Nhật ký WORM (T7)**
+22. Bộ điều tiết RAM theo tiến trình: nhiều tiến trình ⇒ trần thực tế 30 × số tiến trình; tổng kết `DIEU_TIET` chỉ ghi khi chính khoá (người, mã)
+    được gọi lại — người ngừng hẳn / khởi động lại ⇒ số bị gộp có thể không bao giờ được tổng kết.
+23. Dòng `rejected` ở `request` mang lý do NGƯỜI DÙNG; câu từ chối hệ thống nằm ở `reason_code`. STOP không bao giờ bị từ chối vì chữ lý do
+    (NUL / > 2000 ký tự ⇒ lọc + cắt 300).
+
+**Mã dự phòng (T8)**
+24. ≥ 10 lượt song song cùng một mã qua đường đầy đủ: không tiêu hai lần, nhưng người thắng có thể bị `MA_DU_PHONG_TAM_KHOA` dù mã đã tiêu (đo ở
+    B1 quan sát: true 0 / false 8 / khoá 2 / tiêu 1). Có từ T16; R1b-2.
+
+**Hợp đồng**
+25. `copilot.confirmAction` mức ≥ 4 nay NÉM `FORBIDDEN SCADA_AI_LEVEL_TOO_HIGH` thay vì trả `{ok:false, reason:"MUC_QUA_CAO"}` (T10a; 6 bề mặt web +
+    extension đã đóng thẻ ở `denied`). Gọi trực tiếp `confirmAction()` (CLI/MCP/REST) vẫn nhận đối tượng kết quả.
+26. REST v1: mọi lệnh không phải robot (OT, vision AOI/AVI, mtconnect/CMM) ⇒ 501, kể cả loại trước đây trả 200 "telemetry-only" (ruling T5).
+    Robot-ness lấy từ hồ sơ mặc định của `machineType`, KHÔNG từ `capabilities.adapterKind`.
+
+**Census**
+27. Điểm mù đã biết: `import * as t`, helper khác tệp (T10a M-2); kiểm (B) thời chạy của `otWriteBinding` chưa theo helper.
+
+### DỮ LIỆU
+
+28. `_test` còn rác của hai lượt chạy sớm nhất T2: 4 adapter `r1b2…` (id 26336/26337/26342/26343) + tag + máy + 2 node edge — STOP edge chưa ack
+    với `ownerEpoch` đã đổi; cần vai owner hoặc `edge_stop_resolve` của admin để dọn (không làm ở đây: luật không ghi DEV, và dọn `_test` cần
+    owner). Lưới nghiệm thu này ack STOP edge TRƯỚC khi gỡ `edgeNodeId` (đã sạch).
+29. Hàng WORM của lưới / bench ở lại `_test` (đúng thiết kế).
+30. DEV đo chỉ đọc (T13): 42 tag / 21 int, 0 tag scale/offset khác mặc định, 0 luật interlock nhắm tag int có scale ⇒ đổi T13 không làm vỡ dữ liệu DEV.
+
+### VẬN HÀNH
+
+31. **Bench OpenPLC chưa chạy** (§3). STOP HMI trên PLC thật chưa có số đo R1b-1.
+32. Safety PLC trong lưới / bench là PLC giả (D9), không phải safety PLC thật.
+33. `.env` của cây chính và worktree vẫn `OT_CONTROL_ENABLED=true` (dòng 586, có từ trước) — trái checklist D9; không sửa (luật), điều phối / chủ dự
+    án quyết.
+
+## 7. Checklist bật cờ (trước khi bật điều khiển trên một hệ)
+
+- [ ] **HMI ĐÃ LÀ đường STOP** qua `scadaCommands.dungMay` (nút DỪNG MÁY ở faceplate M4 và đầu máy M10): một bước, giá trị ĐÃ GHIM, miễn chế độ
+      LOCAL / khoá chọn / 2FA / `apiLimiter` (POST không batch). Điều kiện: `SCADA_COMMANDS_ENABLED=true` + `SCADA_LIVE_CACHE_ENABLED=true` +
+      máy đã ghim `stop_value`. E-STOP cứng vẫn là lớp cuối.
+- [ ] **MỌI máy cần dừng từ xa phải ghim `stop_value`** cho tag dừng (M12). Máy chưa ghim ⇒ `CHUA_GHIM_STOP` (M4/M10 hiện cảnh báo
+      `CanhBaoChuaGhimStop` / khảo sát khả năng dừng `chua_ghim`, `mat_ket_noi`, `qua_edge`, `khong_kiem_duoc`).
+- [ ] `SCADA_COMMANDS_ENABLED=true` BẮT BUỘC đi kèm `SCADA_LIVE_CACHE_ENABLED=true` (không có bộ đệm ⇒ mọi máy LOCAL `bo_dem_tat`, mọi lệnh ghi thường bị
+      chặn; STOP ghim được miễn cổng chế độ theo dữ liệu nên vẫn đi — suy từ mã + S2, chưa đo riêng với bộ đệm tắt).
+- [ ] **Kênh chế độ:** tag poll trung tâm, **poll ≤ 10 s, không deadband** (cổng chế độ kẹp tuổi mẫu min(3·poll, 30 s) — chậm hơn ⇒ máy LOCAL `cu`,
+      fail-closed). M12 cảnh báo `poll_cham` / `deadband` / `edge` / `bao_khi_doi`. Trên edge thì luôn `chua_co_mau`.
+- [ ] **`OT_CHAT_LUONG_V2_ENABLED=true`** để "connected" nghĩa là "đã đọc được" (C1). Cờ tắt: TCP lên mà thiết bị không trả lời vẫn hiện
+      `connected` mãi (đo ở đối chứng C1).
+- [ ] **`OT_CONTROL_ENABLED` / `AI_OT_CONTROL_ENABLED` giữ OFF tới khi có safety PLC thật** (D9). ⚠ `.env` hiện có `OT_CONTROL_ENABLED=true` (§6 mục 33).
+- [ ] MỌI kênh dừng phải có mức 1 hoặc `stop_value` ghim (R1a). Kênh dừng chưa khai mức là mức 5 ⇒ AI không dừng được, người cần TOTP (đường
+      `write_tag`); STOP HMI không phụ thuộc mức vì đi giá trị ghim.
+- [ ] **Tích hợp dùng REST v1 `POST /equipment/:id/commands` cho máy OT phải chuyển sang HMI SCADA** (nay 501). Robot `abort` / `e_stop` giữ nguyên.
+- [ ] Đặt `OT_CONTROL_TIMEOUT_MAX_MS` (R1a ruling T9) cho bên gọi có `deadlineMs`.
+- [ ] `OT_COMMISSIONING_REQUIRED` giữ mặc định BẬT (adapter cần `commissioning_records`, nếu không lệnh chỉ `simulated`).
+- [ ] Thứ tự migration theo §4: **0431, 0432, 0433** trên mọi DB trước bản build; sau khởi động `GET /health` không có `schemaR1a` (không
+      `degraded`, không `chua_kiem_duoc`).
+- [ ] Đổi IP / endpoint / protocol / máy của adapter có tag được bảo vệ cần TOTP tươi; còn tag đã khai đang ghim ⇒ gỡ ghim trước rồi ghim lại.
+- [ ] **P1-1 — Trước khi bật `AI_OT_CONTROL_ENABLED` trên một DB đã có tag ghi được: khai mức tác động hàng loạt (M12) cho mọi kênh AI cần ghi**
+      (khai hàng loạt một TOTP cho N ≤ 200 tag là việc R1b-2). Tag chưa khai mức = mức 5 ⇒ AI bị từ chối (fail-closed).
+- [ ] P1-7: "Trước khi bật OT_CMD_SERIALIZE_ENABLED: rà các bên gọi qua adapterFacade (UNS/edge) có deadline_ms ngắn; lệnh thường chờ hàng đợi quá hạn sẽ QUEUE_EXPIRED; STOP ghim không hết hạn."
+- [ ] P1-8: "Trước khi bật SCADA_CONG_CHE_DO_ENABLED: mọi máy nhận lệnh từ xa phải khai kênh chế độ; máy LOCAL/chưa khai sẽ từ chối cả STOP không ghim và hành động bảo vệ của interlock (chỉ STOP ghim đi qua) — ghim stop_value cho máy cần dừng từ xa."
+      (R1b-1: STOP HMI là STOP ghim nên đi qua; cổng chế độ luôn chạy cho `hmi.*` bất kể cờ — đo ở S2.)
+
+## 8. Quyết định của bộ điều khiển và điều phối (sổ R1b-1)
+
+**Điều phối (2026-10-24 / 25)**
+- Kế hoạch duyệt (quyết định 1–6, bổ sung: hộp xác nhận STOP mặc định "Dừng máy", audit từng adapter, cảnh báo máy chưa ghim, đếm mồ côi trước,
+  không điều tiết mã từ chối thật).
+- (1) dispatch làm tròn im lặng trên tag int chưa khai scale ≠ 1 ⇒ census người gọi + đo; không ai dựa vào ⇒ `OFF_STEP`, không cờ (Task 13).
+  Q-T13: R1b-1 giữ làm tròn cho int scale = 1 / offset = 0 chưa khai; R1b-2 `OFF_STEP` mọi int + SPI theo lưới; `datStopPin` lệch lưới ⇒ R1b-2.
+- (2) Trỏ lại không TOTP gộp vào T9 (TOTP tươi + kiểm nhất quán cho tag đã khai / kênh chế độ; tag chưa khai giữ nguyên).
+- (3) Khai mức hàng loạt (một TOTP cho N ≤ 200, audit từng tag) ⇒ R1b-2.
+- (4) `/health` hiện "chưa kiểm được" ⇒ T10.
+- R1a gộp main `1c743a38a` (265 tệp 3789 xanh, DB 29 tệp 363, tsc 0); merge vào R1b ở ranh giới T2/T3 (`482037684`).
+- 0433 "ÁP" DEV (verify xanh). 0433 vào checklist triển khai (§4).
+- 5 thủ tục IDOR do luong-ui sửa NGOÀI nhánh (§9); merge main (`60b074f02`) ở điểm dừng T9: dòng phạm vi đặt TRƯỚC cổng TOTP/nhất quán T9; giữ
+  GHIM đo được của luong-ui.
+- Miễn trừ "2fa" của T9 đồng ý; luong-ui tiếp tục sửa phạm vi `/api/external` (giữ ghim của họ khi gộp).
+
+**Bộ điều khiển (ruling, theo task)**
+- R-1: `dungMay` (T2) dùng `ghiThuLenh` như cũ; T7 thêm `ly_do` cho mọi đường. R-2: T11 (chữ `goiYStop`) gộp vào T2.
+- T2: I1 miễn `apiLimiter` cho POST `dungMay` không batch + client gửi không batch + census ghim; I2 audit fire-and-forget có hạn; I3 nút DỪNG MÁY ở
+  M10; minor: STOP qua edge ⇒ dòng chờ `executed`; `.catch` trên attempts nhánh từ chối; hộp đóng được sau 10 s "kết quả chưa rõ — dùng E-STOP
+  cứng"; đọc ghim song song. Khảo sát khả năng dừng (`khaoSatKhaNangDung`) với `mat_ket_noi`, `qua_edge`, `khong_kiem_duoc`; hạn 1 s đọc node edge.
+- T3: c1 `ok:true` mà MỌI tag `bad/comm_lost` không là đọc tốt (khớp D1); lỗi cấu hình vẫn tính; c2 ghi trong lúc chờ không chặn (R1b-2 ứng viên).
+- T4: c2 đọc treo quá hạn ⇒ tick bị chặn báo tick hỏng (D1 K=2 hạ phiên); `ingest_treo` của lần đọc chính tính là đọc tốt.
+- T5: vision / mtconnect cũng 501 (nhất quán "không phải robot ⇒ 501"); robot-ness từ `machineType`.
+- T6: không gỡ `.references()` để census xanh; 5 thủ tục lộ phạm vi ghi SỔ NỢ + GHIM (nay đã sửa ở main, §9); verify 0431 chạy lại được.
+- T7: khoá cửa sổ (userId, reasonCode); tổng kết ghi `DIEU_TIET` + dòng hiện tại; `kiemSchemaR1a` thêm `thieu0433`; STOP không bao giờ bị từ chối vì
+  chữ lý do (zod `max(2000)`, service lọc + cắt).
+- T9: a miễn "2fa" cho `tags.update` (+ create/delete, `deviceAdapter.update`); b tag đã khai đang ghim ⇒ "gỡ ghim trước"; C1/I2/I3/I5/I6/I7 sửa
+  ngay (định nghĩa tag được bảo vệ, xoá/prune/tạo lên khoá mồ côi, import trong tx, tắt đích interlock, đổi đích adapter cần TOTP); I1 so sánh
+  theo đường đọc (null ⇒ 1, 0 giữ 0); r3 mở rộng tag được bảo vệ (nguồn telemetry, luật đã duyệt), một cổng adapter chung, một thứ tự khoá
+  adapter → luật → tag → kênh chế độ; N5 chuyển sang T10.
+- T10 tách T10a (gói brief) / T10b (dư T9 + N5 + JSDoc T8). T10a: giữ NÉM `MUC_QUA_CAO`, sửa thẻ client; `/health` chỉ lộ lớp lỗi ngắn; kiểm edge
+  trước dùng bản không khoá; `epLong` đối chiếu low/high.
+- T10b: I-1 cho phép nguồn không tag thiết bị nào khai (đường `ot_telemetry`); `poll_cham`; `INTERLOCK_NGUON_MO_HO`.
+- T13: vòng đánh bóng m1 + m3; m2 / m4 / m5 ⇒ backlog / điều phối.
+
+## 9. Năm thủ tục IDOR — đã sửa ở main và đã gộp
+
+T6 làm lộ (qua `.references()` của 0433, census `phamViDoc` chuyển 5 thủ tục C → A) năm thủ tục đọc theo `adapterId` không lọc phạm vi nhà máy.
+Ghi SỔ NỢ + GHIM ngày 2026-10-24; điều phối giao luong-ui sửa NGOÀI nhánh:
+1. `commissioning.list`
+2. `commissioning.status`
+3. `deviceAdapter.tags.listByAdapter`
+4. `unsMapping.get`
+5. `unsMapping.list`
+
+Sửa ở main **`7388c6bcd`** (luong-ui): bộ phân giải chung `server/routers/_adapterPhamVi.ts` (`adapterCuaTag` / `adapterTrongPhamVi`) cho
+commissioning (list/status/create/revoke), deviceAdapter (list/get/create/update/delete/testConnection/tags.*), unsMapping (list/get/create/update/
+delete), mappingAsCode (list/exportOne/preview/applyImport); ngoài phạm vi = `NOT_FOUND`, danh sách chỉ trả mục trong phạm vi, admin giữ nguyên.
+Gộp vào nhánh ở **`60b074f02`** (merge main `58ee02c5e`): `deviceAdapterRouter.ts` giữ dòng phạm vi TRƯỚC cổng T9; `phamViDocBaseline.ts` theo main
+(5 dòng nợ T6 gỡ); GHIM `phamViDocCensus` đo lại A314 B8 C488 D1199 S394 tổng 2403. Kiểm hôm nay: `git merge-base --is-ancestor 7388c6bcd HEAD`
+đúng. (Kéo theo: concern T9 "`tags.update` không có kiểm phạm vi" đã đóng bởi cùng commit.)
+
+## 10. Backlog R1b-2
+
+**Từ kế hoạch R1b-2 (đã duyệt tách):** M9 `/scada/journal` (UI + nợ phạm vi `commandLogRouter`); M4 "Điều kiện cho phép" chạy khô; M12 tìm kiếm,
+cảnh báo deadband trước khi lưu, ca biên ô chọn adapter; chip "Truyền thông n/m"; Lab "thử đọc một địa chỉ"; `danhSach` lộ endpoint / `lastError`;
+`ketNoiLai` giới hạn tần suất + audit trong giao dịch; tắt nóng `SCADA_SOCKET`; trần tổng tag / người dùng; nhãn "sim" cho lệnh stub; EIP listener
+`'error'` + `timeout_sp`; định danh callback ghi SLMP; tắt sạch không ghi `disabled`; C6 đọc khối Modbus; đo mất / có lại OPC UA; nhịp cho nguồn
+ngoài OT trung tâm; `congOtLuong` dùng mức kênh; audit điều tiết báo đúng cỡ đợt burst; **khai mức hàng loạt** (một TOTP cho N ≤ 200, audit từng
+tag, kiểm nhất quán từng tag — cần trước `AI_OT_CONTROL_ENABLED`).
+
+**Phát sinh trong R1b-1 (sổ):**
+1. **Bench OpenPLC R1b-1** (`npx tsx scripts/scada-r1b-bench.ts --lap 3`) khi container được phép chạy — đóng cổng "STOP HMI trên bench" của kế hoạch.
+2. T3: ghi trong lúc phiên chờ lần đọc tốt đầu tiên (c2); push đếm đọc tốt theo "máy chủ đã trả lời" (good | uncertain | bad không phải comm);
+   reset HA tính là mất còn legacy thì không; push không có watchdog thừa mẫu; thứ tự canh `sinkPhien` legacy.
+3. T4: khi DB treo vẫn nạp `napTuOt` (bộ đệm không cũ theo DB); thử lại lô mẫu xấu bị bỏ.
+4. T7: không có canh 0433 ở đầu `request`/`confirm` (M-3/M-4); tổng kết `DIEU_TIET` cho người ngừng hẳn.
+5. T8: người thắng bị `MA_DU_PHONG_TAM_KHOA` dưới ≥ 10 lượt song song (đo lại ở B1 quan sát).
+6. T9: CLI `mappings-import.mjs --apply` từ chối tag được bảo vệ.
+7. T10a: M-2 điểm mù census (`import * as t`, helper khác tệp); M-3 dispatcher join `edge_nodes`; M-4 leo thang `chua_kiem_duoc`; M-5
+   `performance.now` khi máy ngủ; loại tệp test khỏi hai ca census `confirmAction` kèm lý do có ngày; DOM test I-2 cho mọi hộp (nay chỉ Guided).
+8. T13: m2 đường FOE thật tới số thô; m4 `datStopPin` lệch lưới trên tag chưa khai có scale; m5 HMI `TYPE_MISMATCH` trên int scale 0,5 trong khi
+   dispatch nhận; Q-T13 (b) `OFF_STEP` mọi tag int + bộ đề xuất SPI theo lưới tag (cùng task, có test).
+9. Dọn rác `_test` của T2 (4 adapter `r1b2…`, 2 node edge) bằng vai owner / `edge_stop_resolve` (§6 mục 28).
+10. Hai hộp chồng nhau ở ScadaDiag (lý do + mã TOTP) — gộp ở một vòng UX.
+
+**Từ backlog R1b của R1a (§8) chưa thuộc R1b-1:** mục 2 (phần còn lại, đã vào danh sách R1b-2 trên), 6 (UI M9), 7 (M4 chạy khô), 10
+(`congOtLuong`), 14 (audit điều tiết đúng cỡ), 16 (M12), 21 (khoá TOTP leo thang / cảnh báo `tam_khoa` lặp), 22 (màn admin mở khoá TOTP), 23
+(`NganTagAdapter` đòi `machine_control.canView`), 24 (i18n `TRPC_GIOI_HAN_THU_TUC`), 25 (P2 còn lại của kiem-dinh — chờ danh sách của điều phối).
+
+## 11. Commit R1b-1
+
+Nhánh `feat/scada-r1b`, gốc `feat/scada-r1a` `9c7b8054d`. Gộp main hai lần: `482037684` (R1a đã gộp, ranh giới T2/T3) và `60b074f02` (main
+`58ee02c5e`, điểm dừng T9 — IDOR `7388c6bcd`).
+
+- **Kế hoạch:** `cc5c1f5b2`, `1a4780b67`, `94d486bb7`.
+- **T1** nhịp tim deadband: `f5f8f40d9`.
+- **T2** STOP HMI (+ T11 gộp): `3fea3af45`, `21fbb862e`, `e339cf249`, `1c939424f`.
+- **T3** connected = đọc tốt: `6b4f66499`, `9367833d8`.
+- **T4** ingest treo: `44e9875fe`, `f89d53738`.
+- **T5** REST v1 501: `eeddf1adc`, `403ca87ac`.
+- **T6** mig 0433: `2fbdc93a2`, `181896881`.
+- **T7** `ly_do` + điều tiết: `7587aec92`, `760d6d0f8`, `99033ce83`.
+- **T8** mã dự phòng: `f2238233d`.
+- **T9** trỏ lại cần TOTP + interlock: `8d1f065b9`, `8957285db`, `b46cecc9e`, `8a430ef1f`, `607b890e8`; sau gộp `ec4120a80`.
+- **T10a:** `e18225ceb`, `cdd8329f6`, `e6e7b1bdc`, `5a1390b0a`, `3ea92b425`, `917acadfb`, `cd830fcf8`, `045334512`, `e1d57fa03`, `dcb8bbcea`,
+  `f3230206f`, `6efd9e39d`, `4536ed037`, `eab0464f9`.
+- **T10b:** `b0de45175`, `ae67c389f`, `abaa9220a`, `40bd580b2`.
+- **T13:** `60f7304e7`, `9bd9a5354`.
+- **T12:** `39ce0b0cf` (lưới + bench) và commit chứa báo cáo này (kèm khai hai bench SCADA trong `server/services/vram/vramAllocationSites.ts`).
+
+**Migration:** 0433 (`scripts/apply-migration-0433.mjs`): TEST ở T6; DEV 2026-10-24 sau "ÁP". 0431 / 0432 như R1a. Cả ba kiểm lại có mặt trên DEV
+và TEST hôm nay (§4).
+
+## 12. Bàn giao
+
+- Không push. Không cờ mới (`.env.example` không đổi bởi R1b-1).
+- Container bench vẫn **exited** như lúc tìm thấy (không khởi động). `_test` sạch, chỉ còn hàng WORM của lưới, đúng thiết kế.
+- Việc tiếp: điều phối quyết chạy bench (§3) → kiem-dinh → gộp.
