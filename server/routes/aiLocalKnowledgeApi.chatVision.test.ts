@@ -116,3 +116,36 @@ describe("§E — MIME theo byte đầu", () => {
     expect(r).toEqual({ effectiveQuestion: "x", vision: null });
   });
 });
+
+// ★ Đợt 9 (2026-10-24, e2e KB 1/3) — bản đọc ảnh KHÔNG được lái bộ chọn công cụ; câu gốc + mã từ ảnh cho truy hồi; lời dặn nguồn.
+import { trichMaTuAnh, ngCanhVoiAnh, augmentQuestionWithVision, parseContext } from "./aiLocalKnowledgeApi";
+import { cauHoiTheoAnh } from "../services/aiLocalKnowledgeService";
+import { UNTRUSTED_CLOSE } from "../services/ai/aiSafety";
+
+describe("§F — tách câu hỏi theo việc khi có ảnh", () => {
+  it("trichMaTuAnh lấy mã kỹ thuật, bỏ chữ thường", () => {
+    const ds = trichMaTuAnh("Ma loi E082: ap suat thap. error TS2322 o dong 7. Recipe SCRW-RECIPE-01, AL.32, tinhOee");
+    for (const m of ["E082", "TS2322", "SCRW-RECIPE-01", "AL.32"]) expect(ds).toContain(m);
+    expect(ds).not.toContain("tinhOee");
+  });
+  it("ngCanhVoiAnh: đọc được ⇒ cauHoiGoc + maTuAnh; không đọc được ⇒ ngữ cảnh nguyên vẹn", () => {
+    const c = ngCanhVoiAnh({ route: "vscode" }, "Lỗi gì?", { ok: true, visionText: "E082 áp suất" });
+    expect(c).toMatchObject({ route: "vscode", cauHoiGoc: "Lỗi gì?", maTuAnh: ["E082"] });
+    const goc = { route: "vscode" };
+    expect(ngCanhVoiAnh(goc, "x", { ok: false, reason: "thieu-tai-nguyen" })).toBe(goc);
+  });
+  it("cauHoiTheoAnh: có cauHoiGoc ⇒ công cụ = câu gốc (KHÔNG có bản đọc ảnh), truy hồi = gốc + mã; vắng ⇒ y nguyên", () => {
+    const q = augmentQuestionWithVision("Lỗi gì?", "return { oee: tinhOee(...) } TS2322", "vi", "model-chinh");
+    const r = cauHoiTheoAnh(q, { cauHoiGoc: "Lỗi gì?", maTuAnh: ["TS2322"] });
+    expect(r.cauHoiCongCu).toBe("Lỗi gì?");
+    expect(r.cauHoiTruyVanAnh).toBe("Lỗi gì? TS2322");
+    expect(cauHoiTheoAnh(q)).toEqual({ cauHoiCongCu: q, cauHoiTruyVanAnh: q });
+  });
+  it("client KHÔNG đặt được cauHoiGoc/maTuAnh qua body (parseContext bỏ)", () => {
+    expect(parseContext({ route: "vscode", cauHoiGoc: "giả", maTuAnh: ["X1"] })).toEqual({ route: "vscode" });
+  });
+  it("lời dặn 'ảnh là nguồn hợp lệ' nằm NGOÀI khối dữ liệu không tin cậy (sau dấu đóng)", () => {
+    const q = augmentQuestionWithVision("Hỏi", "nội dung", "vi");
+    expect(q.indexOf("NGUỒN hợp lệ")).toBeGreaterThan(q.indexOf(UNTRUSTED_CLOSE));
+  });
+});

@@ -158,5 +158,21 @@ Lần chạy 06:45 trước đó HỎNG ở thiết bị đo (biến `URL` che m
   bản đọc ảnh kéo bộ chọn công cụ) · #08 khớp từ khoá nhưng câu mở đầu "Tôi không có thông tin chính xác … trong tài liệu". Gốc (THIẾT KẾ có từ
   trước, không do mmproj): bản đọc ảnh được GỘP VÀO câu hỏi ⇒ nó lái bộ chọn công cụ + truy hồi, còn lời dặn "chỉ trả lời theo tài liệu" của KB
   khiến model không coi ảnh là nguồn. ⇒ **Cổng (A) CHƯA ĐẠT ở phần e2e KB — mặc định GIỮ `off`, chờ dieu-phoi.**
+- **QUYẾT ĐỊNH (dieu-phoi 2026-10-24, sau cổng (A)): BẬT `auto` làm MẶC ĐỊNH TRONG MÃ** (`start-llama-server.ps1`, `doi-model.ps1 -Mmproj`) —
+  model/bộ nhớ/e2e `/v1` đạt; KB không lộ vì extension 0.3.0 để `aviAiLocal.anhChoTroLy=false` mặc định. Tắt: `LLAMA_SERVER_MMPROJ=off`.
+  Kiểm khi :8091 khởi động lại TỰ NHIÊN / lần đổi khe kế tiếp: CommandLine có `--mmproj` + `/props` vision=true (không restart chỉ để kiểm).
+  Song song: SỬA KB (câu hỏi gốc cho bộ chọn công cụ/intent; truy hồi = câu hỏi gốc + mã/nhãn từ ảnh; ảnh là NGUỒN có nhãn không tin
+  cậy) rồi đo lại e2e KB 3 ảnh, cổng giữ nguyên; đạt ⇒ luong-ui đổi `anhChoTroLy` mặc định sang true.
+- **SỬA KB + đo lại e2e (cổng giữ nguyên: ≥ 2/3 mỗi đường, KB vision nguon=model-chinh 3/3; `do-e2e-lai.sh`, `tmp/do-e2e-3.out`, `-4.out`):**
+  - `0296c7295` — bộ chọn công cụ/intent theo câu GỐC (`cauHoiTheoAnh`), truy hồi = câu gốc + mã trích từ ảnh (`trichMaTuAnh`), lời dặn máy chủ
+    "ảnh là NGUỒN hợp lệ" NGOÀI khối dữ liệu không tin cậy, model chính đọc ảnh trần ra ≥ 1024. **Lần 3 (08:49): web KB 0/3** — #12 vẫn tool OEE
+    vì CHÍNH câu hỏi gốc có chữ "oee"; #04/#08 đi nhánh TRÍCH (độ tin < 0,30, không LLM) nên không dùng được bản đọc ảnh. Tham khảo đúng hình
+    dạng extension: vscode-local 3/3, vscode-server 3/3 (route vscode vốn không chạy công cụ, luôn qua LLM).
+  - `ed8522c82` — ảnh đã đọc ⇒ KHÔNG chạy vòng công cụ dữ liệu sống, LUÔN qua LLM, bỏ cổng lạc đề (cả `/ask` lẫn stream; test pipeline thật).
+    **Lần 4 (08:58): CỔNG ĐẠT** — `/v1` **3/3** (2,9–20,2 s) · KB web **3/3** (7,8–47,9 s) · vision nguon=model-chinh **3/3**. Tham khảo:
+    vscode-local 3/3 (14–58 s), vscode-server 2/3 (#12 trả bản sửa mã đúng nhưng không nêu số dòng). Token id=30 đã thu hồi.
+  - **e2e `/v1` đúng dạng payload extension 0.3.2** (content mảng `text` + `image_url` data URL, 1 ảnh/lượt) qua :3013 = chính các lượt `/v1`
+    trên (3/3 nội dung đúng). :8091 nay chạy 35B + `--mmproj Qwen3.6-35B-A3B-mmproj-F16.gguf`, `/props` vision=true — GIỮ (mặc định mới); lần đo
+    lần 4 không khởi động lại :8091 (khe đã đúng cấu hình).
 - ⚠ Rủi ro HIỆN TẠI (không phụ thuộc đề xuất): đường KB gửi ảnh ⇒ sidecar VL-8B nạp CÙNG LÚC 35B ⇒ đo được 31,9 GB VRAM, chữ chậm ×4,
   commit trống 3–5 GB. Extension chưa gửi ảnh nên chưa lộ; khi luong-ui bật đính ảnh cho Trợ lý, lỗ này mở.
