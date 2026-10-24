@@ -91,6 +91,14 @@ Lý do:
   - Mặc định dry-run.
   - KHÔNG BAO GIỜ chạy trên DEV (bảng WORM).
 - **Migration:** R1b-2a không có migration. Giữ 0434 cho vòng sửa R1b-1 nếu cần; SQL gửi điều phối trước khi áp DEV.
+- **Bổ sung Task 12 (điều phối 2026-10-25): lọc phạm vi nhà máy cho `oversight.posture`.**
+  - Hiện trạng: đây là thủ tục ĐỌC chưa lọc phạm vi; nó có tên trong sổ nợ đọc, nhóm A (`phamViDocBaseline.ts`).
+  - Việc phải làm:
+    - Lọc mọi số đếm posture theo adapter / máy nằm trong phạm vi của người gọi, dùng `adapterTrongPhamVi` / `idsTrongPhamVi("machine", phamViCua(ctx), { strict: true })`. Danh tính lấy từ `ctx`, không bao giờ từ input. Admin hoặc phạm vi toàn quyền thấy toàn bộ.
+    - Áp lọc cho cả số đếm mới `interlockRulesCauHinhHong`, gồm luật lệch lưới.
+  - Test DB hai chiều A/B: người dùng nhà máy A không thấy luật / adapter của B; admin thấy cả hai. Mỗi test có đột biến bỏ lọc ⇒ đỏ.
+  - Gỡ dòng sổ nợ đọc của `oversight.posture`, rồi đo lại ghim `phamViDocCensus` trên cây hiện tại và ghi lý do có ngày.
+  - luong-ui sẽ không đụng thủ tục này.
 
 ## Global Constraints
 
