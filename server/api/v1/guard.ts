@@ -41,7 +41,7 @@ const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * Evidence (server/api/v1/router.ts + erpIntake.ts + erpOauth.ts):
  *   • POST /ingest/inspection        (INGEST_WRITE)      — inspection data ingest
  *   • POST /orders, POST /bom        (ERP_WRITE)         — inbound ERP master/tx data
- *   • POST /equipment/:id/commands   (EQUIPMENT_COMMAND) — HITL/dry-run-gated control
+ *   • POST /equipment/:id/commands   (EQUIPMENT_COMMAND) — HITL/dry-run-gated control (not in the OpenAPI doc since R1a T11)
  *   • POST /orchestration/runs       (ORCHESTRATION_WRITE) — start a production run
  *   • POST /edge/sync                (EDGE_SYNC)         — edge runtime result sync-back
  *   • POST /oauth/token              (public, ERP_OAUTH) — M2M auth token issuance
