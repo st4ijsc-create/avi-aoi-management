@@ -26,7 +26,7 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1198, no: 694 } as const;
+const GHIM = { tongMutation: 1198, no: 736 } as const;
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {
@@ -125,6 +125,14 @@ export const zzGhiAoRouter = router({
     expect(r.mutation.length).toBe(QUET.mutation.length + 1);
     const moi = r.mutation.filter(laNoGhi).map((m) => m.khoa).filter((k) => !SO.has(k) && !MIEN.has(k));
     expect(moi).toEqual([`${T}#zzGhiAoRouter.doi`]);
+  });
+  it("hàm dẫn xuất tới cổng mà phạm vi là tham số TUỲ CHỌN: gọi KHÔNG truyền danh tính ⇒ vẫn là nợ; truyền ctx ⇒ có cổng", () => {
+    const hamLay = "async function layMay(id: number, scope?: unknown) { if (scope) await mayTrongPhamVi(scope as never, id); return id; }";
+    const kh = (g: string) => khung(g).replace("export const zzGhiAoRouter", hamLay + "\nexport const zzGhiAoRouter").replace("import { phamViCua }", "import { mayTrongPhamVi } from \"./_adapterPhamVi\";\nimport { phamViCua }");
+    const ghi = "const d: any = null; await d.update(machines).set({ name: 'x' }).where(eq(machines.id, input.machineId));";
+    const khong = tim(kh("await layMay(input.machineId); " + ghi));
+    const co = tim(kh("await layMay(input.machineId, ctx); " + ghi));
+    expect({ khong: laNoGhi(khong!), co: laNoGhi(co!) }).toEqual({ khong: true, co: false });
   });
   it("laKhoaDinhDanh: thực thể có; người thực hiện / siêu dữ liệu không", () => {
     for (const k of ["id", "machineId", "stationId", "lineId", "factoryId", "adapterId", "robotId", "serialNumber", "lotId", "orderId"]) expect(laKhoaDinhDanh(k), k).toBe(true);

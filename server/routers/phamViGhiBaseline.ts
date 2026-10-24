@@ -21,6 +21,9 @@
  * 2026-10-24 lô W2 (−13: safety.createZone/updateZone/ingestProximity/ingestSimulatedHuman/ingestDetectionFrame/startCollaboration ·
  * aiRobotAnomaly.scanRobot/acknowledgeAnomaly · twin.pipeline.convertUrdf/convertStep · rootCause.analyze/update/delete) ⇒ 710 → 697.
  * 2026-10-24 lô W4a (−3, khoá theo MÁY: productMachineMapping.update/delete · measurementSamples.ingest) ⇒ 697 → 694 (693 trong sổ + 1 miễn trừ).
+ * 2026-10-24 bộ quét CHÍNH XÁC HƠN: hàm dẫn xuất tới được cổng chỉ tính là cổng khi lời gọi TRUYỀN danh tính (ctx, user, scope, phamVi..., cổng gốc) —
+ * `db.getFactoryById(id)` (phạm vi là tham số tuỳ chọn, bỏ trống = không lọc) trước đó bị tính là cổng ⇒ +42 nợ THẬT bị che (factoryRouter.update/delete,
+ * machineRouter.create/update/delete, productModelRouter.update …) ⇒ 694 → 736 (735 trong sổ + 1 miễn trừ); không mục nào biến mất.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (8) ──
@@ -281,8 +284,10 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.updateCustomDashboard",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.updateSharedTemplate",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.updateStylePreset",
-  // ── server/routers/dataRouters.ts (4) ──
+  // ── server/routers/dataRouters.ts (6) ──
+  "server/routers/dataRouters.ts#exportRouter.exportMeasurementPoints",
   "server/routers/dataRouters.ts#importRouter.importLines",
+  "server/routers/dataRouters.ts#importRouter.importMachines",
   "server/routers/dataRouters.ts#importRouter.importStations",
   "server/routers/dataRouters.ts#importRouter.importWorkshops",
   "server/routers/dataRouters.ts#importRouter.importWorkstations",
@@ -290,10 +295,13 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/defectDispositionRouter.ts#defectDispositionRouter.create",
   "server/routers/defectDispositionRouter.ts#defectDispositionRouter.transition",
   "server/routers/defectDispositionRouter.ts#defectDispositionRouter.updateStatus",
+  // ── server/routers/defectHeatmapRouter.ts (1) ──
+  "server/routers/defectHeatmapRouter.ts#defectHeatmapRouter.generate",
   // ── server/routers/ecnRouter.ts (2) ──
   "server/routers/ecnRouter.ts#ecnRouter.create",
   "server/routers/ecnRouter.ts#ecnRouter.transition",
-  // ── server/routers/edgeDeploymentRouter.ts (2) ──
+  // ── server/routers/edgeDeploymentRouter.ts (3) ──
+  "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.deployModel",
   "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.redeploy",
   "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.rollback",
   // ── server/routers/edgeRuntimeRouter.ts (2) ──
@@ -328,15 +336,20 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/fieldRouter.ts#fieldRouter.registerDiscovered",
   // ── server/routers/fleetRouter.ts (1) ──
   "server/routers/fleetRouter.ts#fleetRouter.createVariant",
-  // ── server/routers/goldenSampleRouter.ts (6) ──
+  // ── server/routers/goldenSampleRouter.ts (8) ──
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.approve",
+  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.captureFromInspection",
+  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.captureFromUpload",
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.diffForMeasurement",
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.diffWithUpload",
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.reject",
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.retire",
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.setAlignBeforeDiff",
-  // ── server/routers/hierarchyRouters.ts (26) ──
+  // ── server/routers/hierarchyRouters.ts (36) ──
+  "server/routers/hierarchyRouters.ts#factoryRouter.delete",
   "server/routers/hierarchyRouters.ts#factoryRouter.restore",
+  "server/routers/hierarchyRouters.ts#factoryRouter.update",
+  "server/routers/hierarchyRouters.ts#factoryRouter.updateFloorDims",
   "server/routers/hierarchyRouters.ts#factoryRouter.updateMapPosition",
   "server/routers/hierarchyRouters.ts#factoryRouter.uploadFloorPlan",
   "server/routers/hierarchyRouters.ts#factoryZoneRouter.create",
@@ -346,11 +359,18 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/hierarchyRouters.ts#lineRouter.delete",
   "server/routers/hierarchyRouters.ts#lineRouter.restore",
   "server/routers/hierarchyRouters.ts#lineRouter.update",
+  "server/routers/hierarchyRouters.ts#machineRouter.claimKey",
+  "server/routers/hierarchyRouters.ts#machineRouter.create",
+  "server/routers/hierarchyRouters.ts#machineRouter.delete",
+  "server/routers/hierarchyRouters.ts#machineRouter.enroll",
+  "server/routers/hierarchyRouters.ts#machineRouter.issueClaimToken",
   "server/routers/hierarchyRouters.ts#machineRouter.regenerateApiKey",
+  "server/routers/hierarchyRouters.ts#machineRouter.register",
   "server/routers/hierarchyRouters.ts#machineRouter.reject",
   "server/routers/hierarchyRouters.ts#machineRouter.restore",
   "server/routers/hierarchyRouters.ts#machineRouter.revokeEnrollmentToken",
   "server/routers/hierarchyRouters.ts#machineRouter.setLifecycleStatus",
+  "server/routers/hierarchyRouters.ts#machineRouter.update",
   "server/routers/hierarchyRouters.ts#machineRouter.updateLayout",
   "server/routers/hierarchyRouters.ts#machineRouter.updateLayoutPosition",
   "server/routers/hierarchyRouters.ts#machineRouter.uploadImage",
@@ -459,6 +479,8 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/mesControlTowerRouter.ts#mesControlTowerRouter.createLotDisposition",
   "server/routers/mesControlTowerRouter.ts#mesControlTowerRouter.createMaterialReceipt",
   "server/routers/mesControlTowerRouter.ts#mesControlTowerRouter.createSupplierLot",
+  // ── server/routers/mpVariantSubformRouter.ts (1) ──
+  "server/routers/mpVariantSubformRouter.ts#mpVariantSubformRouter.setExtra",
   // ── server/routers/mqttBulletinRouter.ts (7) ──
   "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.bulkToggle",
   "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.deleteSetting",
@@ -566,7 +588,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/processRouter.ts#processRouter.reorderLineAssignments",
   "server/routers/processRouter.ts#processRouter.update",
   "server/routers/processRouter.ts#processRouter.updateLineAssignment",
-  // ── server/routers/productionRouters.ts (15) ──
+  // ── server/routers/productionRouters.ts (22) ──
   "server/routers/productionRouters.ts#lineProductAssignmentRouter.create",
   "server/routers/productionRouters.ts#lineProductAssignmentRouter.delete",
   "server/routers/productionRouters.ts#lineProductAssignmentRouter.update",
@@ -577,11 +599,18 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productionRouters.ts#productionOrderRouter.applyScheduleRun",
   "server/routers/productionRouters.ts#productionOrderRouter.applyScheduleSuggestion",
   "server/routers/productionRouters.ts#productionOrderRouter.create",
+  "server/routers/productionRouters.ts#productionOrderRouter.createFromTemplate",
   "server/routers/productionRouters.ts#productionOrderRouter.createTemplate",
   "server/routers/productionRouters.ts#productionOrderRouter.delete",
   "server/routers/productionRouters.ts#productionOrderRouter.deleteTemplate",
   "server/routers/productionRouters.ts#productionOrderRouter.dismissScheduleRun",
+  "server/routers/productionRouters.ts#productionOrderRouter.generateApsScheduleRun",
+  "server/routers/productionRouters.ts#productionOrderRouter.generateScheduleRun",
+  "server/routers/productionRouters.ts#productionOrderRouter.optimizeSchedule",
+  "server/routers/productionRouters.ts#productionOrderRouter.reschedule",
+  "server/routers/productionRouters.ts#productionOrderRouter.update",
   "server/routers/productionRouters.ts#productionOrderRouter.updateTemplate",
+  "server/routers/productionRouters.ts#productionOrderRouter.whatIf",
   // ── server/routers/productionSessionRouter.ts (6) ──
   "server/routers/productionSessionRouter.ts#productionSessionRouter.close",
   "server/routers/productionSessionRouter.ts#productionSessionRouter.handover",
@@ -600,7 +629,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productPanelRouter.ts#productPanelRouter.remove",
   "server/routers/productPanelRouter.ts#productPanelRouter.saveBoards",
   "server/routers/productPanelRouter.ts#productPanelRouter.update",
-  // ── server/routers/productRouters.ts (54) ──
+  // ── server/routers/productRouters.ts (62) ──
   "server/routers/productRouters.ts#cadImportRouter.applyCoordinates",
   "server/routers/productRouters.ts#cadImportRouter.applyJob",
   "server/routers/productRouters.ts#cadImportRouter.centroidApply",
@@ -624,7 +653,11 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productRouters.ts#measurementInstrumentRouter.update",
   "server/routers/productRouters.ts#measurementPointRouter.backfillComponentCodesFromBom",
   "server/routers/productRouters.ts#measurementPointRouter.create",
+  "server/routers/productRouters.ts#measurementPointRouter.delete",
+  "server/routers/productRouters.ts#measurementPointRouter.remapUnmapped",
   "server/routers/productRouters.ts#measurementPointRouter.revertPointsConfigToVersion",
+  "server/routers/productRouters.ts#measurementPointRouter.uploadCroppedImage",
+  "server/routers/productRouters.ts#measurementSamplesRouter.analyze",
   "server/routers/productRouters.ts#measurementTypeCatalogRouter.delete",
   "server/routers/productRouters.ts#measurementTypeCatalogRouter.update",
   "server/routers/productRouters.ts#mpLightingProfileRouter.create",
@@ -638,6 +671,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productRouters.ts#msaWizardRouter.deleteCsvMappingPreset",
   "server/routers/productRouters.ts#msaWizardRouter.generateMatrix",
   "server/routers/productRouters.ts#msaWizardRouter.saveCsvMappingPreset",
+  "server/routers/productRouters.ts#msaWizardRouter.startStudy",
   "server/routers/productRouters.ts#productCategoryRouter.create",
   "server/routers/productRouters.ts#productCategoryRouter.delete",
   "server/routers/productRouters.ts#productCategoryRouter.reorder",
@@ -645,9 +679,12 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productRouters.ts#productCategoryRouter.updateCount",
   "server/routers/productRouters.ts#productDocumentRouter.delete",
   "server/routers/productRouters.ts#productDocumentRouter.upload",
+  "server/routers/productRouters.ts#productMachineMappingRouter.create",
   "server/routers/productRouters.ts#productModelRouter.backfillImageDimensions",
+  "server/routers/productRouters.ts#productModelRouter.clone",
   "server/routers/productRouters.ts#productModelRouter.create",
   "server/routers/productRouters.ts#productModelRouter.delete",
+  "server/routers/productRouters.ts#productModelRouter.update",
   "server/routers/productRouters.ts#productViewRouter.create",
   "server/routers/productRouters.ts#productViewRouter.delete",
   "server/routers/productRouters.ts#productViewRouter.update",
@@ -711,13 +748,14 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/robotRouter.ts#robotRouter.setEnabled",
   "server/routers/robotRouter.ts#robotRouter.testConnection",
   "server/routers/robotRouter.ts#robotRouter.update",
-  // ── server/routers/routingRouter.ts (9) ──
+  // ── server/routers/routingRouter.ts (10) ──
   "server/routers/routingRouter.ts#routingRouter.activate",
   "server/routers/routingRouter.ts#routingRouter.addStep",
   "server/routers/routingRouter.ts#routingRouter.archive",
   "server/routers/routingRouter.ts#routingRouter.create",
   "server/routers/routingRouter.ts#routingRouter.delete",
   "server/routers/routingRouter.ts#routingRouter.deleteStep",
+  "server/routers/routingRouter.ts#routingRouter.importRouting",
   "server/routers/routingRouter.ts#routingRouter.replaceSteps",
   "server/routers/routingRouter.ts#routingRouter.update",
   "server/routers/routingRouter.ts#routingRouter.updateStep",
@@ -755,12 +793,14 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/sopRouter.ts#sopRouter.setStatus",
   "server/routers/sopRouter.ts#sopRouter.startExecution",
   "server/routers/sopRouter.ts#sopRouter.update",
-  // ── server/routers/spcAdvancedRouter.ts (12) ──
+  // ── server/routers/spcAdvancedRouter.ts (14) ──
   "server/routers/spcAdvancedRouter.ts#correlationRouter.save",
+  "server/routers/spcAdvancedRouter.ts#cpkTrendRouter.calculate",
   "server/routers/spcAdvancedRouter.ts#qualityGateRouter.acknowledgeEvent",
   "server/routers/spcAdvancedRouter.ts#qualityGateRouter.create",
   "server/routers/spcAdvancedRouter.ts#qualityGateRouter.delete",
   "server/routers/spcAdvancedRouter.ts#qualityGateRouter.resolveEvent",
+  "server/routers/spcAdvancedRouter.ts#qualityGateRouter.triggerEvent",
   "server/routers/spcAdvancedRouter.ts#qualityGateRouter.update",
   "server/routers/spcAdvancedRouter.ts#spcConfigRouter.create",
   "server/routers/spcAdvancedRouter.ts#spcConfigRouter.delete",
@@ -771,10 +811,12 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/stationTriangulationRouter.ts (2) ──
   "server/routers/stationTriangulationRouter.ts#stationTriangulationRouter.recomputeForLot",
   "server/routers/stationTriangulationRouter.ts#stationTriangulationRouter.recomputeForSerial",
-  // ── server/routers/statusTemplateRouters.ts (8) ──
+  // ── server/routers/statusTemplateRouters.ts (10) ──
   "server/routers/statusTemplateRouters.ts#bulkImportRouter.measurementPoints",
   "server/routers/statusTemplateRouters.ts#machineStatusRouter.markNotificationSent",
+  "server/routers/statusTemplateRouters.ts#manualMappingRouter.create",
   "server/routers/statusTemplateRouters.ts#manualMappingRouter.delete",
+  "server/routers/statusTemplateRouters.ts#manualMappingRouter.testConnection",
   "server/routers/statusTemplateRouters.ts#manualMappingRouter.update",
   "server/routers/statusTemplateRouters.ts#manualMappingRouter.updateStatus",
   "server/routers/statusTemplateRouters.ts#templateRouter.clone",
@@ -782,9 +824,14 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/statusTemplateRouters.ts#templateRouter.update",
   // ── server/routers/stencilRouter.ts (1) ──
   "server/routers/stencilRouter.ts#stencilRouter.recordPrints",
-  // ── server/routers/systemRouters.ts (10) ──
+  // ── server/routers/systemRouters.ts (15) ──
+  "server/routers/systemRouters.ts#scheduledReportRouter.create",
+  "server/routers/systemRouters.ts#scheduledReportRouter.createFromTemplate",
   "server/routers/systemRouters.ts#scheduledReportRouter.delete",
+  "server/routers/systemRouters.ts#scheduledReportRouter.retryDelivery",
   "server/routers/systemRouters.ts#scheduledReportRouter.sendStatisticsReport",
+  "server/routers/systemRouters.ts#scheduledReportRouter.sendTest",
+  "server/routers/systemRouters.ts#scheduledReportRouter.update",
   "server/routers/systemRouters.ts#smtpRouter.deleteEmailTemplate",
   "server/routers/systemRouters.ts#smtpRouter.setDefaultEmailTemplate",
   "server/routers/systemRouters.ts#smtpRouter.updateEmailTemplate",

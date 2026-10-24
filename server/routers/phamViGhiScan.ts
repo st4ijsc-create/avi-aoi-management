@@ -301,6 +301,41 @@ export function quetPhamViGhi(goc: string, ghiDe: Readonly<Record<string, string
     return ra;
   };
 
+  /**
+   * Tên các lời gọi trong `n` mà ĐỐI SỐ mang danh tính/phạm vi người gọi (`ctx` · `user` · `scope` · `phamVi*` hoặc một lời gọi cổng gốc).
+   * Một hàm DẪN XUẤT tới được cổng (`hamCong`) chỉ tính là cổng ở mutation khi lời gọi truyền danh tính: `db.getFactoryById(id)` (phạm vi là
+   * tham số TUỲ CHỌN, bỏ trống = không lọc) KHÔNG phải cổng, `db.getFactoryById(id, phamViCua(ctx))` mới là. Cổng gốc (`laTenCong`) không cần.
+   */
+  const coDanhTinhCua = new Map<ts.Node, Set<string>>();
+  const goiCoDanhTinh = (n: ts.Node): Set<string> => {
+    const co = coDanhTinhCua.get(n);
+    if (co !== undefined) return co;
+    const ra = new Set<string>();
+    coDanhTinhCua.set(n, ra);
+    const mangDanhTinh = (x: ts.Node): boolean => {
+      if (ts.isIdentifier(x) && /^(ctx|user|scope|phamViw*|ngCanh)$/i.test(x.text)) return true;
+      if (ts.isPropertyAccessExpression(x) && /^(ctx|user)$/i.test(x.name.text)) return true;
+      if (ts.isCallExpression(x)) {
+        const t = tenCuaLoiGoi(x.expression);
+        if (t !== null && laTenCong(t)) return true;
+      }
+      let thay = false;
+      ts.forEachChild(x, (c) => {
+        if (!thay && mangDanhTinh(c)) thay = true;
+      });
+      return thay;
+    };
+    const di = (x: ts.Node): void => {
+      if (ts.isCallExpression(x)) {
+        const t = tenCuaLoiGoi(x.expression);
+        if (t !== null && x.arguments.some((a) => mangDanhTinh(a))) ra.add(t);
+      }
+      ts.forEachChild(x, di);
+    };
+    di(n);
+    return ra;
+  };
+
   // ── bao đóng NGƯỢC: tên nào tới được bộ phân giải phạm vi ──────────────────────────
   const hamCong = new Set<string>();
   for (let vong = 0; vong < TRAN_VONG; vong++) {
@@ -475,8 +510,9 @@ export function quetPhamViGhi(goc: string, ghiDe: Readonly<Record<string, string
 
         // cổng
         const congTim: string[] = [];
+        const coDT = goiCoDanhTinh(thanNode);
         for (const g of cacLoiGoi(thanNode)) {
-          if (laTenCong(g) || hamCong.has(g)) congTim.push(g);
+          if (laTenCong(g) || (hamCong.has(g) && coDT.has(g))) congTim.push(g);
         }
         // middleware của chuỗi thủ tục cũng có thể là cổng phạm vi
         for (const m of mw) if (laTenCong(m) || hamCong.has(m)) congTim.push(`use:${m}`);
