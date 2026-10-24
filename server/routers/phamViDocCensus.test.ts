@@ -899,7 +899,11 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // (line/station/factory/robot) và MỌI thuộc tính đều trong phạm vi; sự kiện không định vị chỉ toàn quyền thấy. Hai dòng sổ nợ đã GỠ. Chứng minh: `safetyPhamVi.db.test.ts` (5 ca; 4 đỏ trước khi vá; 6 đột biến bị bắt).
 // ★ 2026-10-24 (đợt 4): `genealogy.getFullHistory|getBySerial|getByLot|getLineage|verify` A → S (luật: đơn vị thấy được ⇔ có bản ghi ở máy trong phạm vi, hoặc chính người gọi đã ghi sự kiện chuỗi; `appendEvent` vào đơn vị đã tồn tại ngoài phạm vi ⇒ NOT_FOUND).
 // Chứng minh: `genealogyPhamVi.db.test.ts` (9 ca; 8 đỏ trước khi vá; 10 đột biến bị bắt). Năm dòng sổ nợ đã GỠ. Kèm vá lỗi CÓ SẴN: CTE đệ quy của `getLineage` lỗi 42804 trên CSDL thật (varchar[] vs text[]) ⇒ luôn 500.
-const GHIM = { A: 314, B: 8, C: 488, D: 1198, S: 394, tong: 2402 } as const;
+// ★★ 2026-10-24 (lô L1 rà bảo mật tRPC nhóm A — phạm vi người dùng cho AOI): **A 314 → 290 · S 394 → 418 · B/C/D/tong unchanged (2402).** CHÍNH XÁC 24 thủ tục A → S, đo bằng `nhomCua`:
+// `aoiPackage` ×8 (getPackage|getImage|getPackageImages|getPackageLogs|downloadZip|listPackages|getUploadStats|getQueueStatus), `inspection.getById|aiAnalysis|defectPatternClusters` + `measurementResult.getById|getByInspection`,
+// `annotation.getByImage|getByInspection|search|statistics|comparison|heatmapData|trendPrediction`, `annotationComparison.list|getById|compareTwo|getTrendData`. Ngoài phạm vi ≡ NOT_FOUND (cùng thực thể với "không tồn tại") hoặc rỗng.
+// 24 dòng sổ nợ đã GỠ. Chứng minh: `loAoiKiemTraChuThichPhamVi.db.test.ts` (13 ca trên CSDL thật; kèm path traversal ở `getImage`); đột biến 33/33 bị bắt (4 sống sót lần đầu ⇒ thêm ca phiên khai báo máy B + bỏ nhánh thừa của getQueueStatus).
+const GHIM = { A: 290, B: 8, C: 488, D: 1198, S: 418, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

@@ -75,6 +75,8 @@ export async function getDailyStatistics(params: {
   machineId?: number;
   startDate?: Date;
   endDate?: Date;
+  /** Phạm vi người dùng (L1 2026-10-24): chỉ các máy này; null/undefined = toàn quyền. */
+  machineIds?: number[] | null;
 } | number, startDateArg?: Date, endDateArg?: Date) {
   const db = await getDb();
   if (!db) return [];
@@ -83,6 +85,7 @@ export async function getDailyStatistics(params: {
   let machineId: number | undefined;
   let startDate: Date | undefined;
   let endDate: Date | undefined;
+  let machineIds: number[] | null | undefined;
 
   if (typeof params === 'number') {
     // Old API: getDailyStatistics(machineId, startDate, endDate)
@@ -94,9 +97,11 @@ export async function getDailyStatistics(params: {
     machineId = params.machineId;
     startDate = params.startDate;
     endDate = params.endDate;
+    machineIds = params.machineIds;
   }
 
   const conditions = [];
+  if (machineIds != null) conditions.push(inArray(dailyStatistics.machineId, machineIds.length > 0 ? machineIds : [-1]));
   if (machineId) conditions.push(eq(dailyStatistics.machineId, machineId));
   if (startDate) conditions.push(gte(dailyStatistics.date, startDate));
   if (endDate) conditions.push(lte(dailyStatistics.date, endDate));

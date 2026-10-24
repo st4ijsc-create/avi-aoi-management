@@ -119,32 +119,13 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/alertRouters.ts#alertRouter.getById",
   "server/routers/alertRouters.ts#alertRouter.listAll",
   // ── server/routers/annotationComparisonRouter.ts (4) ───────────────────────────────────────
-  "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.compareTwo",
-  "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.getById",
-  "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.getTrendData",
-  "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.list",
   // ── server/routers/annotationRouters.ts (7) ────────────────────────────────────────────────
-  "server/routers/annotationRouters.ts#annotationRouter.comparison",
-  "server/routers/annotationRouters.ts#annotationRouter.getByImage",
-  "server/routers/annotationRouters.ts#annotationRouter.getByInspection",
-  "server/routers/annotationRouters.ts#annotationRouter.heatmapData",
-  "server/routers/annotationRouters.ts#annotationRouter.search",
-  "server/routers/annotationRouters.ts#annotationRouter.statistics",
-  "server/routers/annotationRouters.ts#annotationRouter.trendPrediction",
   // ── server/routers/aoiOnboardingRouter.ts (4) ──────────────────────────────────────────────
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.getDraft",
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.listAoiMachines",
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.listRecords",
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.status",
   // ── server/routers/aoiPackageRouter.ts (8) ─────────────────────────────────────────────────
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.downloadZip",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.getImage",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.getPackage",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.getPackageImages",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.getPackageLogs",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.getQueueStatus",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.getUploadStats",
-  "server/routers/aoiPackageRouter.ts#aoiPackageRouter.listPackages",
   // ── server/routers/apiKeyRouter.ts (1) ─────────────────────────────────────────────────────
   "server/routers/apiKeyRouter.ts#apiKeyRouter.list",
   // ── server/routers/bomRouter.ts (5) ────────────────────────────────────────────────────────
@@ -261,11 +242,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.getActive",
   "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.list",
   // ── server/routers/inspectionRouters.ts (5) ────────────────────────────────────────────────
-  "server/routers/inspectionRouters.ts#inspectionRouter.aiAnalysis",
-  "server/routers/inspectionRouters.ts#inspectionRouter.defectPatternClusters",
-  "server/routers/inspectionRouters.ts#inspectionRouter.getById",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.getById",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.getByInspection",
   // ── server/routers/interlockRouter.ts (3) ──────────────────────────────────────────────────
   "server/routers/interlockRouter.ts#interlockRouter.get",
   "server/routers/interlockRouter.ts#interlockRouter.list",

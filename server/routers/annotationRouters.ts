@@ -5,6 +5,13 @@ import { appError } from "../_core/appError";
 import * as db from "../db";
 import { getDb } from "../db";
 import { sql } from "drizzle-orm";
+import { dieuKienMaySql } from "./_adapterPhamVi";
+
+/** phạm vi người dùng (L1 rà bảo mật 2026-10-24): điều kiện SQL "chú thích thuộc lần kiểm tra của máy trong phạm vi" (cột `ia."inspectionId"`); `undefined` khi toàn quyền. Chú thích không gắn lần kiểm tra nào ⇒ ẩn với người dùng hẹp. */
+async function congChuThichTrongPhamVi(ctx: unknown, cotInspectionId: ReturnType<typeof sql.raw>) {
+  const cong = await dieuKienMaySql(ctx as never, sql.raw('"machineId"'));
+  return cong ? sql`${cotInspectionId} IN (SELECT id FROM product_inspections WHERE ${cong})` : undefined;
+}
 import { nanoid } from "nanoid";
 import { invokeLLM } from "../_core/llm";
 import { finalYield } from "../utils/kpi";
@@ -294,11 +301,12 @@ export const annotationRouter = router({
   // Get annotations for an image
   getByImage: protectedProcedure
     .input(z.object({ imageUrl: z.string() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+      const cong = await congChuThichTrongPhamVi(ctx, sql.raw('"inspectionId"'));
       const result = await db.execute(
-        sql`SELECT * FROM image_annotations WHERE "imageUrl" = ${input.imageUrl} ORDER BY "updatedAt" DESC LIMIT 1`
+        sql`SELECT * FROM image_annotations WHERE "imageUrl" = ${input.imageUrl} ${cong ? sql`AND ${cong}` : sql``} ORDER BY "updatedAt" DESC LIMIT 1`
       ) as any;
       if (!result.length) return null;
       const row = result[0];
@@ -317,11 +325,12 @@ export const annotationRouter = router({
   // Get all annotations for an inspection
   getByInspection: protectedProcedure
     .input(z.object({ inspectionId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+      const cong = await congChuThichTrongPhamVi(ctx, sql.raw('"inspectionId"'));
       const result = await db.execute(
-        sql`SELECT * FROM image_annotations WHERE "inspectionId" = ${input.inspectionId} ORDER BY "createdAt" DESC`
+        sql`SELECT * FROM image_annotations WHERE "inspectionId" = ${input.inspectionId} ${cong ? sql`AND ${cong}` : sql``} ORDER BY "createdAt" DESC`
       ) as any;
       return (result || []).map((row: any) => ({
         id: row.id,
@@ -344,13 +353,14 @@ export const annotationRouter = router({
       dateFrom: z.date().optional(),
       dateTo: z.date().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Get all annotations and filter in memory for complex JSON queries
+      const cong = await congChuThichTrongPhamVi(ctx, sql.raw('"inspectionId"')); // phạm vi người dùng (L1 rà bảo mật 2026-10-24)
       const result = await db.execute(
-        sql`SELECT * FROM image_annotations ORDER BY "createdAt" DESC LIMIT 500`
+        sql`SELECT * FROM image_annotations ${cong ? sql`WHERE ${cong}` : sql``} ORDER BY "createdAt" DESC LIMIT 500`
       ) as any;
       
       let annotations = (result || []).map((row: any) => {
@@ -424,7 +434,7 @@ export const annotationRouter = router({
       machineId: z.number().optional(),
       productModelId: z.number().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
@@ -447,6 +457,9 @@ export const annotationRouter = router({
         LEFT JOIN product_models pm ON i."productModelId" = pm.id
         WHERE 1=1
       `;
+      // phạm vi người dùng (L1 rà bảo mật 2026-10-24): chỉ chú thích của lần kiểm tra thuộc máy trong phạm vi
+      const congMay = await dieuKienMaySql(ctx, sql.raw('i."machineId"'));
+      if (congMay) query = sql`${query} AND ${congMay}`;
       
       // Note: For simplicity, we'll filter in memory. In production, use proper SQL conditions.
       const result = await db.execute(query) as any;
@@ -829,12 +842,14 @@ Respond in JSON format with an array of findings.`
       dateTo: z.string().optional(),
       limit: z.number().default(10),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic conditions using parameterized queries
       const conditions = [sql`mr."imageUrl" IS NOT NULL`];
+      const congMay = await dieuKienMaySql(ctx, sql.raw('i."machineId"')); // phạm vi người dùng (L1 rà bảo mật 2026-10-24)
+      if (congMay) conditions.push(congMay);
       if (input.serialNumber) conditions.push(sql`i."serialNumber" = ${input.serialNumber}`);
       if (input.productModelId) conditions.push(sql`i."productModelId" = ${input.productModelId}`);
       if (input.measurementPointId) conditions.push(sql`mr."pointDefId" = ${input.measurementPointId}`);
@@ -920,12 +935,14 @@ Respond in JSON format with an array of findings.`
       dateTo: z.string().optional(),
       annotationType: z.string().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic conditions using parameterized queries
       const conditions = [sql`ia.annotations IS NOT NULL`];
+      const congMay = await dieuKienMaySql(ctx, sql.raw('i."machineId"')); // phạm vi người dùng (L1 rà bảo mật 2026-10-24)
+      if (congMay) conditions.push(congMay);
       if (input.machineId) conditions.push(sql`i."machineId" = ${input.machineId}`);
       if (input.productModelId) conditions.push(sql`i."productModelId" = ${input.productModelId}`);
       if (input.dateFrom) conditions.push(sql`i."inspectionTime" >= ${input.dateFrom}`);
@@ -1071,7 +1088,7 @@ Respond in JSON format with an array of findings.`
       days: z.number().default(30), // Historical days
       predictionDays: z.number().default(7), // Days to predict
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
@@ -1080,6 +1097,8 @@ Respond in JSON format with an array of findings.`
         sql`ia.annotations IS NOT NULL`,
         sql`i."inspectionTime" >= NOW() - INTERVAL '1 day' * ${input.days}`,
       ];
+      const congMay = await dieuKienMaySql(ctx, sql.raw('i."machineId"')); // phạm vi người dùng (L1 rà bảo mật 2026-10-24)
+      if (congMay) conditions.push(congMay);
       if (input.machineId) conditions.push(sql`i."machineId" = ${input.machineId}`);
       if (input.productModelId) conditions.push(sql`i."productModelId" = ${input.productModelId}`);
       
