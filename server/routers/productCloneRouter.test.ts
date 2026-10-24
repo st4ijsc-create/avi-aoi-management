@@ -18,6 +18,7 @@ vi.mock("../db", () => ({
   getProductModelById: (...a: any[]) => getByIdSpy(...a),
   getProductModelByCode: (...a: any[]) => getByCodeSpy(...a),
   cloneProductModel: (...a: any[]) => cloneSpy(...a),
+  sanPhamTrongPhamVi: async () => true, // lô W6: cổng phạm vi ghi theo sản phẩm — test này coi người gọi là toàn quyền
   createAuditLog: (...a: any[]) => auditSpy(...a),
 }));
 
