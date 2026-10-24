@@ -100,7 +100,10 @@ export interface KetQuaTaiNguyen {
 }
 
 /**
- * Đủ chỗ nạp sidecar VL-8B CẠNH khe nặng không. Ngưỡng từ số đo 2026-10-24: sidecar 7.825 MiB VRAM + biên 700 ⇒ 8.500 MiB trống;
+ * Đủ chỗ nạp sidecar VL-8B CẠNH khe nặng không. Ngưỡng từ số đo 2026-10-24: sidecar 7.825 MiB VRAM; phép đo (b) với 35B (8.239 MiB
+ * trống lúc sẵn sàng) cho đỉnh 31.884 MiB — còn ~700 MiB — và đường chữ CHẬM ×4 (tràn sang bộ nhớ chia sẻ khi prompt dài cần bộ đệm tính).
+ * ⇒ biên phải lớn: 7.825 + ~3.200 ⇒ 11.000 MiB trống. Hệ quả có chủ ý: khe giữ 35B/27B (≈ 24 GB) ⇒ KHÔNG BAO GIỜ nạp sidecar chồng;
+ * sidecar chỉ dùng khi khe trống/giữ model nhỏ. (Bản đầu 8.500 sai: 35B sẵn sàng ở 23.958 MiB có 8.649 trống ⇒ lọt.)
  * Private sidecar ≈ 6,3 GB (model + mmproj) + sàn cảnh báo 8 GB của canh-bo-nho ⇒ 15 GB commit trống. Không đọc được VRAM ⇒ KHÔNG đủ
  * (đóng theo mặc định); không đọc được commit (không phải Windows) ⇒ chỉ xét VRAM.
  */
@@ -108,7 +111,7 @@ export async function kiemTaiNguyenSidecar(
   doc: { vram: () => Promise<{ usedBytes: number; totalBytes: number } | null>; commit: () => Promise<number | null> },
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<KetQuaTaiNguyen> {
-  const canVram = soDuong(env.AI_ANH_SIDECAR_VRAM_TRONG_MB, 8500);
+  const canVram = soDuong(env.AI_ANH_SIDECAR_VRAM_TRONG_MB, 11000);
   const canCommit = soDuong(env.AI_ANH_SIDECAR_COMMIT_TRONG_GB, 15);
   const v = await doc.vram().catch(() => null);
   const vramTrongMb = v ? Math.round((v.totalBytes - v.usedBytes) / 1024 / 1024) : null;

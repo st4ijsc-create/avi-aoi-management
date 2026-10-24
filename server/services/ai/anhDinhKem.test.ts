@@ -42,22 +42,25 @@ describe("kiemDanhSachAnh", () => {
   });
 });
 
-describe("kiemTaiNguyenSidecar — ngưỡng từ số đo (8.500 MiB VRAM trống, 15 GB commit trống)", () => {
+describe("kiemTaiNguyenSidecar — ngưỡng từ số đo (11.000 MiB VRAM trống, 15 GB commit trống)", () => {
   const GiB = 1024 ** 3, MiB = 1024 ** 2;
   const vram = (trongMb: number) => async () => ({ totalBytes: 32 * GiB, usedBytes: 32 * GiB - trongMb * MiB });
+  it("35B thường sẵn sàng (đo: 23.958 MiB dùng ⇒ còn 8.649) ⇒ KHÔNG đủ — bản ngưỡng 8.500 đầu tiên LỌT ca này", async () => {
+    expect((await kiemTaiNguyenSidecar({ vram: vram(8649), commit: async () => 24 }, {})).du).toBe(false);
+  });
   it("35B thường (đo: còn ~8.200 MiB) ⇒ KHÔNG đủ, lý do nêu số", async () => {
     const r = await kiemTaiNguyenSidecar({ vram: vram(8200), commit: async () => 24 }, {});
     expect(r.du).toBe(false);
     expect(r.lyDo).toContain("8200 MiB");
   });
   it("VRAM đủ nhưng commit trống thấp ⇒ KHÔNG đủ", async () => {
-    const r = await kiemTaiNguyenSidecar({ vram: vram(9000), commit: async () => 10 }, {});
+    const r = await kiemTaiNguyenSidecar({ vram: vram(12000), commit: async () => 10 }, {});
     expect(r).toMatchObject({ du: false });
     expect(r.lyDo).toContain("bộ nhớ ảo");
   });
   it("đủ cả hai ⇒ đủ; commit không đọc được (không phải Windows) ⇒ chỉ xét VRAM", async () => {
-    expect((await kiemTaiNguyenSidecar({ vram: vram(9000), commit: async () => 20 }, {})).du).toBe(true);
-    expect((await kiemTaiNguyenSidecar({ vram: vram(9000), commit: async () => null }, {})).du).toBe(true);
+    expect((await kiemTaiNguyenSidecar({ vram: vram(11500), commit: async () => 20 }, {})).du).toBe(true);
+    expect((await kiemTaiNguyenSidecar({ vram: vram(11500), commit: async () => null }, {})).du).toBe(true);
   });
   it("VRAM không đọc được ⇒ KHÔNG đủ (đóng theo mặc định)", async () => {
     expect((await kiemTaiNguyenSidecar({ vram: async () => null, commit: async () => 30 }, {})).du).toBe(false);
