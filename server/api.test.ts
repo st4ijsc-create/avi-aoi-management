@@ -4,6 +4,15 @@ import type { TrpcContext } from "./_core/context";
 import { readAppErrorMeta } from "./_core/appError";
 
 // Mock database functions with correct names
+// L1/L1b (phạm vi người dùng 2026-10-24): test này kiểm cách NỐI router, không kiểm phạm vi ⇒ người gọi toàn quyền (phạm vi có test CSDL thật: routers/loAoiKiemTraChuThichPhamVi.db.test.ts).
+vi.mock("./routers/_adapterPhamVi", async (orig) => ({
+  ...(await orig<typeof import("./routers/_adapterPhamVi")>()),
+  idsMayTrongPhamVi: async () => null,
+  kiemTraTrongPhamVi: async () => true,
+  locKiemTraTrongPhamVi: async (_c: unknown, ids: number[]) => ids,
+  chuThichTrongPhamVi: async () => true,
+  dieuKienMaySql: async () => undefined,
+}));
 vi.mock("./db", () => ({
   // ★ Pha 7 Task 9 (9b) — `auth.me` nay kèm ô SUY RA `mustChangePassword`, đọc DB MỚI (KHÔNG suy
   //   từ `ctx.user`, thứ đã bị `redactServerOnlyUserFields` làm rỗng). Thiếu ô này thì `auth.me` đỏ.
