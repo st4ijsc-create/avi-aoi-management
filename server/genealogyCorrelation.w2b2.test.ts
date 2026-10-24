@@ -26,14 +26,15 @@ vi.mock("./db", () => ({
   consumeFeederMaterial: vi.fn(async () => ({ found: false, remaining: 0, reorderFlag: false, status: null })),
   consumeSupplierLot: vi.fn(async () => ({ found: false, remaining: 0, status: null })),
   // shared genealogy ledger
-  getLastGenealogyHash: vi.fn(async () => {
+  // 2026-10-24: các service ghi chuỗi qua `appendGenealogyChainRow(build)` (R4 fork-fix, 2026-07-13) — mock cũ chỉ có getLastGenealogyHash+insertGenealogyChainRow nên 5 ca ĐỎ từ đó (không do lượt rà phạm vi).
+  // Mock mô phỏng đúng hợp đồng: đọc đuôi → build(prevHash) → chèn → trả {id, prevHash, currHash}.
+  appendGenealogyChainRow: vi.fn(async (build: (prevHash: string) => any) => {
     const last = genealogyRows[genealogyRows.length - 1];
-    return last ? last.currHash : null;
-  }),
-  insertGenealogyChainRow: vi.fn(async (row: any) => {
+    const prevHash = last ? last.currHash : "0".repeat(64);
+    const row = build(prevHash);
     const inserted = { id: genealogyRows.length + 1, ...row };
     genealogyRows.push(inserted);
-    return { id: inserted.id, currHash: inserted.currHash };
+    return { id: inserted.id, prevHash, currHash: inserted.currHash };
   }),
 }));
 
@@ -77,7 +78,7 @@ describe("G5.17 — processResultService correlation stamping", () => {
         55,
       ),
     );
-    expect(db.insertGenealogyChainRow).toHaveBeenCalledTimes(1);
+    expect(db.appendGenealogyChainRow).toHaveBeenCalledTimes(1);
     expect(genealogyRows[0].correlationId).toBe("corr-PR-1");
   });
 
