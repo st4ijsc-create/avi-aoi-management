@@ -27,6 +27,9 @@ const env = {
   GGUF_WARM_DEEP_MODEL_ON_BOOT: "false",
   LLAMA_SERVER_ENABLED: "false",
   LLAMA_WATCHDOG_ENABLED: "false",
+  // Không-GPU mặc định (census VRAM): aiWatcher tắt; DIAG_NO_KB_WARM chỉ có hiệu lực khi áp diag-boot.patch (nếu không, warmUp KB nạp CUDA backend + embedder 0.6B).
+  AI_ORCHESTRATION_ENABLED: "false",
+  DIAG_NO_KB_WARM: "1",
   VITEST: "", // không phải môi trường test
   ...GHI_DE,
 };
