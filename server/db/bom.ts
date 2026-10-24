@@ -10,7 +10,7 @@
  */
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
-import { and, asc, desc, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import {
   bomDefinitions, InsertBomDefinition,
   bomLineItems, InsertBomLineItem,
@@ -193,10 +193,12 @@ export async function consumeFeederMaterial(id: number, qty: number): Promise<Co
 }
 
 /** Feeders at/below their reorder level (active only). */
-export async function listFeedersBelowReorder(machineId?: number) {
+export async function listFeedersBelowReorder(machineId?: number, machineIds?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
   const conds = [lte(feederMaterials.qtyOnFeeder, feederMaterials.reorderLevel)];
+  // phạm vi người dùng (L2 2026-10-24): machineIds = tập máy trong phạm vi người gọi (null/undefined = toàn quyền)
+  if (machineIds != null) conds.push(inArray(feederMaterials.machineId, machineIds.length > 0 ? machineIds : [-1]));
   if (machineId != null) conds.push(eq(feederMaterials.machineId, machineId));
   return db.select().from(feederMaterials).where(and(...conds)).orderBy(asc(feederMaterials.qtyOnFeeder));
 }
@@ -258,37 +260,40 @@ export async function updateComponentInstallationGenealogyHash(id: number, genea
 }
 
 /** Forward trace: all components installed onto a board serial, oldest first. */
-export async function listInstallationsBySerial(serialNumber: string, limit = 1000) {
+export async function listInstallationsBySerial(serialNumber: string, limit = 1000, machineIds?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
+  const cong = machineIds != null ? inArray(componentInstallations.machineId, machineIds.length > 0 ? machineIds : [-1]) : undefined; // phạm vi người dùng (L2 2026-10-24)
   return db
     .select()
     .from(componentInstallations)
-    .where(eq(componentInstallations.serialNumber, serialNumber))
+    .where(cong ? and(eq(componentInstallations.serialNumber, serialNumber), cong) : eq(componentInstallations.serialNumber, serialNumber))
     .orderBy(asc(componentInstallations.id))
     .limit(limit);
 }
 
 /** Reverse trace: all serials that consumed a given supplier lot. */
-export async function listInstallationsBySupplierLot(supplierLotId: number, limit = 5000) {
+export async function listInstallationsBySupplierLot(supplierLotId: number, limit = 5000, machineIds?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
+  const cong = machineIds != null ? inArray(componentInstallations.machineId, machineIds.length > 0 ? machineIds : [-1]) : undefined; // phạm vi người dùng (L2 2026-10-24)
   return db
     .select()
     .from(componentInstallations)
-    .where(eq(componentInstallations.supplierLotId, supplierLotId))
+    .where(cong ? and(eq(componentInstallations.supplierLotId, supplierLotId), cong) : eq(componentInstallations.supplierLotId, supplierLotId))
     .orderBy(asc(componentInstallations.id))
     .limit(limit);
 }
 
 /** Reverse trace: all serials that consumed a given component code. */
-export async function listInstallationsByComponentCode(componentCode: string, limit = 5000) {
+export async function listInstallationsByComponentCode(componentCode: string, limit = 5000, machineIds?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
+  const cong = machineIds != null ? inArray(componentInstallations.machineId, machineIds.length > 0 ? machineIds : [-1]) : undefined; // phạm vi người dùng (L2 2026-10-24)
   return db
     .select()
     .from(componentInstallations)
-    .where(eq(componentInstallations.componentCode, componentCode))
+    .where(cong ? and(eq(componentInstallations.componentCode, componentCode), cong) : eq(componentInstallations.componentCode, componentCode))
     .orderBy(asc(componentInstallations.id))
     .limit(limit);
 }

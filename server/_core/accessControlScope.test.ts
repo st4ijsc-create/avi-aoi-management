@@ -481,24 +481,25 @@ describe("★★★ BỀ MẶT ④ — sáu hàm thống kê phải mang nhãn, 
   });
 
   // ── ④.4 getTopBottomMachines ──────────────────────────────────────────────────────────
+  // L2 2026-10-24: limit 100000 (không phải 50) — mỗi lần chạy file này để lại 1 máy trong cửa sổ 2019 (hàng product_inspections WORM không xoá được; đo: 61 máy phân biệt) nên top-50 sẽ đẩy máy của bài thử ra ngoài ⇒ đỏ chập chờn.
   describe("getTopBottomMachines", () => {
     const ours = (r: { top: Array<{ id: number | null; total: number }> }) =>
       r.top.find((m) => m.id === machineId);
 
     it("CHIỀU DƯƠNG: admin xếp hạng máy này với ĐỦ 5 bản ghi", async () => {
-      const r = await db.getTopBottomMachines({ ...win, limit: 50, ...who(adminId, "admin") });
+      const r = await db.getTopBottomMachines({ ...win, limit: 100000, ...who(adminId, "admin") });
       expect(ours(r)?.total).toBe(5);
       expect(r.scopeEmptyReason).toBeNull();
     });
 
     it("CHIỀU ÂM + DƯƠNG: người gán A xếp hạng cùng máy nhưng CHỈ 2 bản ghi của A", async () => {
-      const r = await db.getTopBottomMachines({ ...win, limit: 50, ...who(userAId, "engineer") });
+      const r = await db.getTopBottomMachines({ ...win, limit: 100000, ...who(userAId, "engineer") });
       expect(ours(r)?.total).toBe(2);
       expect(r.scopeEmptyReason).toBeNull();
     });
 
     it("NHÃN: người 0 gán nhận bảng xếp hạng RỖNG kèm lý do", async () => {
-      const r = await db.getTopBottomMachines({ ...win, limit: 50, ...who(userNoneId, "engineer") });
+      const r = await db.getTopBottomMachines({ ...win, limit: 100000, ...who(userNoneId, "engineer") });
       expect(r.top).toEqual([]);
       expect(r.bottom).toEqual([]);
       expect(r.scopeEmptyReason).toBe("no_factory_assignment");

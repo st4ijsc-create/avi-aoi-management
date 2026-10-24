@@ -35,6 +35,8 @@ vi.mock("../services/inspectionProgramService", () => ({
 }));
 
 // list/get/createDraft/submit gate through requirePermission — allow.
+// L3 (phạm vi người dùng 2026-10-25): test này kiểm cách NỐI + ánh xạ lỗi, không kiểm phạm vi ⇒ người gọi toàn quyền (phạm vi có test CSDL thật: loChuongTrinhPhamVi.db.test.ts).
+vi.mock("./_adapterPhamVi", () => ({ idsMayTrongPhamVi: async () => null, mayTrongPhamVi: async () => null }));
 vi.mock("../_core/accessControl", () => ({
   requirePermission: () => async ({ ctx, next }: any) => next({ ctx }),
 }));

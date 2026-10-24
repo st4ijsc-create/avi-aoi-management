@@ -302,6 +302,7 @@ export default function ProductModels() {
   const [newInstrumentCode, setNewInstrumentCode] = useState("");
   const [newInstrumentName, setNewInstrumentName] = useState("");
   const [newInstrumentType, setNewInstrumentType] = useState("caliper");
+  const [newInstrumentFactoryId, setNewInstrumentFactoryId] = useState<number | null>(null); // 0421
   const [newSamplingCode, setNewSamplingCode] = useState("");
   const [newSamplingName, setNewSamplingName] = useState("");
   const [newSamplingStrategy, setNewSamplingStrategy] = useState<"fixed_n" | "aql" | "risk_based">("fixed_n");
@@ -792,6 +793,7 @@ export default function ProductModels() {
       setNewInstrumentCode("");
       setNewInstrumentName("");
       setNewInstrumentType("caliper");
+      setNewInstrumentFactoryId(null);
     },
     onError: (error) => {
       toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
@@ -1548,6 +1550,7 @@ export default function ProductModels() {
       name: newInstrumentName.trim(),
       instrumentType: newInstrumentType,
       isActive: true,
+      ...(newInstrumentFactoryId != null ? { factoryId: newInstrumentFactoryId } : {}),
     });
   };
 
@@ -3006,6 +3009,7 @@ export default function ProductModels() {
                 <ProductFoundationTab
                   createInstrumentMutation={createInstrumentMutation} createProductViewMutation={createProductViewMutation} createSamplingPlanMutation={createSamplingPlanMutation}
                   deleteInstrumentMutation={deleteInstrumentMutation} deleteProductViewMutation={deleteProductViewMutation} deleteSamplingPlanMutation={deleteSamplingPlanMutation}
+                  newInstrumentFactoryId={newInstrumentFactoryId} setNewInstrumentFactoryId={setNewInstrumentFactoryId}
                   handleCreateInstrument={handleCreateInstrument} handleCreateProductView={handleCreateProductView} handleCreateSamplingPlan={handleCreateSamplingPlan}
                   measurementInstruments={measurementInstruments} msaStudies={msaStudies} newInstrumentCode={newInstrumentCode}
                   newInstrumentName={newInstrumentName} newInstrumentType={newInstrumentType} newSamplingCode={newSamplingCode}

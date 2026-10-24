@@ -385,6 +385,28 @@ export async function assertDeployTargetInScopeAndProject(
   if (art.projectId !== o.expectedProjectId) throw loiBuildKhacDuAn(o.buildId, o.expectedProjectId);
 }
 
+/**
+ * phạm vi người dùng (L3 2026-10-25) — PHẠM VI của đường deploy, KHÔNG phụ thuộc `expectedProjectId` (tuỳ chọn). Trước đây `deployBuild`/`requestDeployApproval`/`deployToFleet` chỉ kiểm phạm vi khi người gọi TỰ gửi
+ * `expectedProjectId` — bỏ trường ấy là lách được. Build/dự án/thiết bị đích ngoài phạm vi ⇒ NOT_FOUND giống hệt không tồn tại. `deviceIds` rỗng ⇒ thiết bị của dự án.
+ */
+export async function assertDeployTargetsInScope(
+  o: { buildId: number; deviceIds: ReadonlyArray<number | null | undefined> },
+  scope?: PhamViNguoiXem,
+): Promise<void> {
+  const { b, proj, projectDeviceId } = await loadDeployCtx(o.buildId);
+  const dich = o.deviceIds.length > 0 ? o.deviceIds : [null];
+  for (const dv of dich) {
+    await assertPreviewInScope(scope, {
+      buildId: o.buildId,
+      kind: String(b.adapterKind),
+      projectFactoryId: proj?.factoryId ?? null,
+      projectDeviceId,
+      projectExists: proj != null,
+      deviceId: dv ?? projectDeviceId ?? null,
+    });
+  }
+}
+
 export async function previewDeploy(
   input: DeployPreviewInput,
   caller: DeployPreviewCaller,

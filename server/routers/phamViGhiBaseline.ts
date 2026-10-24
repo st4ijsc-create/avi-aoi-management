@@ -82,13 +82,10 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/bomRouter.ts (10) ──
   "server/routers/bomRouter.ts#bomRouter.addLineItem",
   "server/routers/bomRouter.ts#bomRouter.archiveDefinition",
-  "server/routers/bomRouter.ts#bomRouter.assignFeederMaterial",
   "server/routers/bomRouter.ts#bomRouter.bulkAddLineItems",
   "server/routers/bomRouter.ts#bomRouter.createDefinition",
   "server/routers/bomRouter.ts#bomRouter.deleteLineItem",
-  "server/routers/bomRouter.ts#bomRouter.loadFeeder",
   "server/routers/bomRouter.ts#bomRouter.updateDefinition",
-  "server/routers/bomRouter.ts#bomRouter.updateFeeder",
   "server/routers/bomRouter.ts#bomRouter.updateLineItem",
   // ── server/routers/causalGraphRouter.ts (4) ──
   "server/routers/causalGraphRouter.ts#causalGraphRouter.addNode",
@@ -113,9 +110,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/dataRouters.ts#importRouter.importWorkshops",
   "server/routers/dataRouters.ts#importRouter.importWorkstations",
   // ── server/routers/defectDispositionRouter.ts (3) ──
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.create",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.transition",
-  "server/routers/defectDispositionRouter.ts#defectDispositionRouter.updateStatus",
   // ── server/routers/defectHeatmapRouter.ts (1) ──
   "server/routers/defectHeatmapRouter.ts#defectHeatmapRouter.generate",
   // ── server/routers/ecnRouter.ts (2) ──
@@ -149,16 +143,8 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/hotFolderRouter.ts#hotFolderRouter.processNow",
   "server/routers/hotFolderRouter.ts#hotFolderRouter.updateConfig",
   // ── server/routers/inspectionProgramRouter.ts (5) ──
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.approve",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.createDraft",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.reject",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.release",
-  "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.submit",
   // ── server/routers/inspectionVariantRouter.ts (1) ──
   "server/routers/inspectionVariantRouter.ts#inspectionVariantRouter.setVariant",
-  // ── server/routers/irRouter.ts (2) ──
-  "server/routers/irRouter.ts#irRouter.requestBuild",
-  "server/routers/irRouter.ts#irRouter.saveFlow",
   // ── server/routers/layoutRouters.ts (6) ──
   "server/routers/layoutRouters.ts#layoutRouter.addMachinePosition",
   "server/routers/layoutRouters.ts#layoutRouter.create",
@@ -234,7 +220,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/pdfReportRouter.ts (1) ──
   "server/routers/pdfReportRouter.ts#pdfReportRouter.generateInspectionPDF",
   // ── server/routers/processResultRouter.ts (1) ──
-  "server/routers/processResultRouter.ts#processResultRouter.record",
   // ── server/routers/processRouter.ts (7) ──
   "server/routers/processRouter.ts#processRouter.createLineAssignment",
   "server/routers/processRouter.ts#processRouter.delete",
@@ -257,22 +242,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productVariantRouter.ts#productVariantRouter.deleteVariant",
   "server/routers/productVariantRouter.ts#productVariantRouter.updateVariant",
   // ── server/routers/programmingRouter.ts (16) ──
-  "server/routers/programmingRouter.ts#programmingRouter.approveDeployment",
-  "server/routers/programmingRouter.ts#programmingRouter.buildArtifact",
-  "server/routers/programmingRouter.ts#programmingRouter.createArtifact",
-  "server/routers/programmingRouter.ts#programmingRouter.createProject",
-  "server/routers/programmingRouter.ts#programmingRouter.deleteProject",
-  "server/routers/programmingRouter.ts#programmingRouter.deleteSymbol",
-  "server/routers/programmingRouter.ts#programmingRouter.rejectDeployment",
-  "server/routers/programmingRouter.ts#programmingRouter.requestVersionReview",
-  "server/routers/programmingRouter.ts#programmingRouter.reviewArtifact",
-  "server/routers/programmingRouter.ts#programmingRouter.rollbackDeployment",
-  "server/routers/programmingRouter.ts#programmingRouter.simulateBuild",
-  "server/routers/programmingRouter.ts#programmingRouter.startWatch",
-  "server/routers/programmingRouter.ts#programmingRouter.stopWatch",
-  "server/routers/programmingRouter.ts#programmingRouter.updateProject",
-  "server/routers/programmingRouter.ts#programmingRouter.upsertSymbol",
-  "server/routers/programmingRouter.ts#programmingRouter.validateArtifact",
   // ── server/routers/qualityGateTemplateRouter.ts (3) ──
   "server/routers/qualityGateTemplateRouter.ts#qualityGateTemplateRouter.applyToLine",
   "server/routers/qualityGateTemplateRouter.ts#qualityGateTemplateRouter.deleteCustom",
@@ -293,17 +262,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.update",
   // ── server/routers/simTargetsRouter.ts (1) ──
   "server/routers/simTargetsRouter.ts#simTargetsRouter.validateUrscript",
-  // ── server/routers/sopRouter.ts (10) ──
-  "server/routers/sopRouter.ts#sopRouter.abandonExecution",
-  "server/routers/sopRouter.ts#sopRouter.cloneNewVersion",
-  "server/routers/sopRouter.ts#sopRouter.confirmStep",
-  "server/routers/sopRouter.ts#sopRouter.create",
-  "server/routers/sopRouter.ts#sopRouter.delete",
-  "server/routers/sopRouter.ts#sopRouter.finishExecution",
-  "server/routers/sopRouter.ts#sopRouter.replaceSteps",
-  "server/routers/sopRouter.ts#sopRouter.setStatus",
-  "server/routers/sopRouter.ts#sopRouter.startExecution",
-  "server/routers/sopRouter.ts#sopRouter.update",
   // ── server/routers/stationTriangulationRouter.ts (2) ──
   "server/routers/stationTriangulationRouter.ts#stationTriangulationRouter.recomputeForLot",
   "server/routers/stationTriangulationRouter.ts#stationTriangulationRouter.recomputeForSerial",

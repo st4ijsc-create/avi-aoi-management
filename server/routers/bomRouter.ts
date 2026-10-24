@@ -54,6 +54,14 @@ async function lookupMaterialId(code: string): Promise<number | null> {
   }
 }
 
+/** phạm vi người dùng (L2 2026-10-24): feeder thuộc máy trong phạm vi? (feeder không tồn tại ⇒ true để thao tác sau tự trả null như cũ). */
+async function feederTrongPhamVi(ctx: Parameters<typeof idsMayTrongPhamVi>[0], id: number): Promise<boolean> {
+  const idsMay = await idsMayTrongPhamVi(ctx);
+  if (idsMay === null) return true;
+  const f = await db.getFeederMaterialById(id);
+  return f == null ? true : idsMay.includes(f.machineId);
+}
+
 export const bomRouter = router({
   // ─── BOM definitions ──────────────────────────────────────────────────────
   listDefinitions: protectedProcedure
@@ -208,7 +216,12 @@ export const bomRouter = router({
   listFeeders: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ machineId: z.number().int().positive() }))
-    .query(({ input }) => db.listFeederMaterialsByMachine(input.machineId)),
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L2 2026-10-24): máy ngoài phạm vi ⇒ không có feeder (≡ máy không tồn tại)
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      if (idsMay !== null && !idsMay.includes(input.machineId)) return [];
+      return db.listFeederMaterialsByMachine(input.machineId);
+    }),
 
   assignFeederMaterial: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))
@@ -223,6 +236,7 @@ export const bomRouter = router({
       reorderLevel: z.number().min(0).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await mayTrongPhamVi(ctx, input.machineId); // phạm vi người dùng (L2 2026-10-24): gắn feeder vào máy ngoài phạm vi ≡ máy không tồn tại
       const id = await db.createFeederMaterial({
         machineId: input.machineId,
         slotCode: input.slotCode ?? null,
@@ -248,8 +262,9 @@ export const bomRouter = router({
       consumptionRatePerHour: z.number().min(0).optional(),
       status: z.enum(["active", "depleted", "removed"]).optional(),
     }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, reorderLevel, consumptionRatePerHour, ...rest } = input;
+      if (!(await feederTrongPhamVi(ctx, id))) return null; // phạm vi người dùng (L2 2026-10-24): feeder của máy ngoài phạm vi ≡ không tồn tại
       return db.updateFeederMaterial(id, {
         ...rest,
         ...(reorderLevel != null ? { reorderLevel: String(reorderLevel) } : {}),
@@ -265,18 +280,21 @@ export const bomRouter = router({
       qtyOnFeeder: z.number().min(0),
       supplierLotId: z.number().int().positive().optional(),
     }))
-    .mutation(({ input, ctx }) => db.updateFeederMaterial(input.id, {
-      qtyOnFeeder: String(input.qtyOnFeeder),
-      ...(input.supplierLotId != null ? { supplierLotId: input.supplierLotId } : {}),
-      status: "active",
-      loadedAt: new Date(),
-      loadedBy: ctx.user.id,
-    })),
+    .mutation(async ({ input, ctx }) => {
+      if (!(await feederTrongPhamVi(ctx, input.id))) return null; // phạm vi người dùng (L2 2026-10-24): feeder của máy ngoài phạm vi ≡ không tồn tại
+      return db.updateFeederMaterial(input.id, {
+        qtyOnFeeder: String(input.qtyOnFeeder),
+        ...(input.supplierLotId != null ? { supplierLotId: input.supplierLotId } : {}),
+        status: "active",
+        loadedAt: new Date(),
+        loadedBy: ctx.user.id,
+      });
+    }),
 
   feederReorderStatus: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ machineId: z.number().int().positive().optional() }))
-    .query(({ input }) => db.listFeedersBelowReorder(input.machineId)),
+    .query(async ({ input, ctx }) => db.listFeedersBelowReorder(input.machineId, await idsMayTrongPhamVi(ctx))), // phạm vi người dùng (L2 2026-10-24)
 
   // ─── Component installation (telemetry) ───────────────────────────────────
   // SAFETY: telemetry of an install OUTCOME — no machine write. Any authenticated
@@ -309,9 +327,10 @@ export const bomRouter = router({
   traceForward: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ serialNumber: z.string().min(1).max(128) }))
-    .query(async ({ input }) => ({
+    .query(async ({ input, ctx }) => ({
       serialNumber: input.serialNumber,
-      components: await db.listInstallationsBySerial(input.serialNumber),
+      // phạm vi người dùng (L2 2026-10-24): chỉ linh kiện lắp tại máy trong phạm vi
+      components: await db.listInstallationsBySerial(input.serialNumber, 1000, await idsMayTrongPhamVi(ctx)),
     })),
 
   traceReverse: protectedProcedure
@@ -322,10 +341,11 @@ export const bomRouter = router({
     }).refine((v) => v.supplierLotId != null || v.componentCode != null, {
       message: "Provide supplierLotId or componentCode",
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L2 2026-10-24): truy ngược chỉ qua lắp đặt tại máy trong phạm vi
       const installations = input.supplierLotId != null
-        ? await db.listInstallationsBySupplierLot(input.supplierLotId)
-        : await db.listInstallationsByComponentCode(input.componentCode!);
+        ? await db.listInstallationsBySupplierLot(input.supplierLotId, 5000, idsMay)
+        : await db.listInstallationsByComponentCode(input.componentCode!, 5000, idsMay);
       return {
         supplierLotId: input.supplierLotId ?? null,
         componentCode: input.componentCode ?? null,

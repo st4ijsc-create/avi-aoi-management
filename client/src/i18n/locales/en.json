@@ -3885,8 +3885,7 @@
       "safetyPlcConfig": "safety-PLC configuration",
       "edgePendingStop": "pending STOP",
       "orphanedWriteIntent": "orphaned OT write intent",
-      "lateWriteResult": "late write result",
-      "mapping": "product–machine mapping"
+      "lateWriteResult": "late write result"
     },
     "operation": {
       "retireEdgeNode": "retire the edge node",
@@ -14975,6 +14974,13 @@
     "offline": "Offline"
   },
   "instrumentCal": {
+    "factoryColumn": "Factory",
+    "factory": {
+      "label": "Owning factory",
+      "unassigned": "No factory assigned",
+      "unassignedHint": "Only administrators can see it until a factory is assigned",
+      "unassignedBanner": "{{count}} measuring instrument(s) have no factory assigned — only administrators can see them until a factory is assigned (plant users will not see them)."
+    },
     "title": "Instrument calibration & health",
     "subtitle": "Calibration certificates, MSA records and RAG fitness-for-use for every measurement instrument. Select a row for detail.",
     "type": "Type",
