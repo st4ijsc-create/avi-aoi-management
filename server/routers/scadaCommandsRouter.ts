@@ -164,7 +164,9 @@ export const scadaCommandsRouter = router({
     .input(
       z.object({
         machineId: z.number().int().positive(),
-        lyDo: z.string().trim().max(300).refine(khongNul, { message: THONG_BAO_NUL }).optional(),
+        // STOP KHÔNG BAO GIỜ bị từ chối vì chữ lý do (rà soát T7 vòng 1): NUL/ký tự điều khiển + quá 300 ký tự ⇒ service LỌC + CẮT (catLyDo),
+        // không BAD_REQUEST. Trần 2000 chỉ chặn thân yêu cầu khổng lồ.
+        lyDo: z.string().max(2000).optional(),
         clientRequestId: z.string().uuid(),
       }),
     )

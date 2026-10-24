@@ -605,13 +605,18 @@ describe("từ chối", () => {
 });
 
 describe("R1b-1 T7 fix round 1 — NUL trong lyDo của dungMay (I-1)", () => {
-  it("router: lyDo chứa NUL ⇒ BAD_REQUEST, không dispatch, không dòng attempts", async () => {
+  // Phán quyết bộ điều khiển (rà soát lại T7 vòng 1): STOP KHÔNG BAO GIỜ bị từ chối vì chữ lý do — router không BAD_REQUEST
+  // trên NUL / ký tự điều khiển / >300 ký tự; service lọc + cắt (catLyDo) rồi đi tiếp tới cổng thật.
+  it("router: lyDo chứa NUL / dài 400 ký tự ⇒ KHÔNG BAD_REQUEST — tới cổng thật (máy chưa ghim ⇒ CHUA_GHIM_STOP có mã); ly_do đã lọc + cắt 300", async () => {
     const m = await moc();
-    const dTruoc = H.dispatchInputs.length;
     const loi = await loiCua(nguoi.opA2.caller.dungMay({ machineId: may.N.mid, lyDo: "ab\u0000cd", clientRequestId: uuid() }));
-    expect(loi.code).toBe("BAD_REQUEST");
-    expect(await lyDoSau(m, nguoi.opA2.id)).toHaveLength(0);
-    expect(H.dispatchInputs.length - dTruoc).toBe(0);
+    expect(loi).toMatchObject({ code: "PRECONDITION_FAILED", appParams: { ma: "CHUA_GHIM_STOP" } });
+    const loi2 = await loiCua(nguoi.opA2.caller.dungMay({ machineId: may.N.mid, lyDo: "x".repeat(400), clientRequestId: uuid() }));
+    expect(loi2).toMatchObject({ code: "PRECONDITION_FAILED", appParams: { ma: "CHUA_GHIM_STOP" } });
+    const ly = await lyDoSau(m, nguoi.opA2.id);
+    expect(ly).toHaveLength(2);
+    expect(ly[0]).toBe("abcd");
+    expect(ly[1]).toHaveLength(300);
   });
   it("service (qua mặt zod): lyDo có NUL + máy chưa ghim ⇒ từ chối CHUA_GHIM_STOP có mã; dòng attempts ghi ly_do đã LỌC NUL", async () => {
     const { dungMayHmi } = await import("../services/scada/lenhHmi");
