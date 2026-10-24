@@ -26,7 +26,7 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1198, no: 457 } as const;
+const GHIM = { tongMutation: 1198, no: 493 } as const;
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {
@@ -144,6 +144,15 @@ export const zzGhiAoRouter = router({
     const khong = tim(kh("await layMay(input.machineId); " + ghi));
     const co = tim(kh("await layMay(input.machineId, ctx); " + ghi));
     expect({ khong: laNoGhi(khong!), co: laNoGhi(co!) }).toEqual({ khong: true, co: false });
+  });
+  it(".input(<hằng schema cấp file>) — đối số là một ĐỊNH DANH — vẫn phân giải ra khoá (trước đây coi \"không khoá\")", () => {
+    const src = khung("const d: any = null; await d.delete(machines).where(eq(machines.id, input.machineId));").replace(
+      ".input(z.object({ machineId: z.number().int() }))",
+      ".input(idIn)",
+    ).replace("export const zzGhiAoRouter", "const idIn = z.object({ machineId: z.number().int() });\nexport const zzGhiAoRouter");
+    const m = tim(src);
+    expect(m!.khoaDinhDanh).toContain("machineId");
+    expect(laNoGhi(m!)).toBe(true);
   });
   it("laKhoaDinhDanh: thực thể có; người thực hiện / siêu dữ liệu không", () => {
     for (const k of ["id", "machineId", "stationId", "lineId", "factoryId", "adapterId", "robotId", "serialNumber", "lotId", "orderId"]) expect(laKhoaDinhDanh(k), k).toBe(true);
