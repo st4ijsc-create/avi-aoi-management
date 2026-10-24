@@ -58,7 +58,7 @@ function loiXacThucTheoMuc(kq: ConfirmResult) {
       return appError("PRECONDITION_FAILED", "SCADA_TOTP_INVALID", { ma, level }, chiTiet);
     // R1a T16 — bộ đếm TOTP sai: CÙNG mã + câu i18n với scadaCommands / đăng nhập (phút còn lại, không số lần sai).
     case "TOTP_TAM_KHOA":
-      return loiTotpKhoa({ ma: "TOTP_TAM_KHOA", conLaiMs: kq.conLaiMs ?? 0 }, { ma, level });
+      return loiTotpKhoa({ ma: "TOTP_TAM_KHOA", conLaiMs: kq.conLaiMs }, { ma, level }); // thiếu ⇒ phutConLai dự phòng THOI_GIAN_KHOA_MS
     case "TOTP_KHONG_KIEM_DUOC":
       return loiTotpKhoa({ ma: "TOTP_KHONG_KIEM_DUOC" }, { ma, level });
     default:

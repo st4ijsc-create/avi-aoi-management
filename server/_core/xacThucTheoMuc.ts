@@ -42,6 +42,7 @@
  */
 import type { MucRuiRo } from "../services/ot/aiControlGate";
 import { dauLuotGoiMoi } from "./totpOnce";
+import { THOI_GIAN_KHOA_MS } from "./totpKhoaSai";
 import {
   ACTUATION_ROLES,
   ghiStepUpPhien,
@@ -100,7 +101,7 @@ export async function kiemXacThucTheoMuc(
   const kq = await verifyFreshTotp(user.id, totpCode, luot);
   if (!kq.hopLe) {
     // R1a T16 — khoá của bộ đếm đứng TRƯỚC "mã sai": người dùng phải biết chờ bao lâu, không phải gõ lại mã (không lộ số lần).
-    if (kq.ma === "TOTP_TAM_KHOA") return { ok: false, ma: "TOTP_TAM_KHOA", conLaiMs: kq.conLaiMs ?? 0 };
+    if (kq.ma === "TOTP_TAM_KHOA") return { ok: false, ma: "TOTP_TAM_KHOA", conLaiMs: kq.conLaiMs ?? THOI_GIAN_KHOA_MS }; // minor 7: một dự phòng
     if (kq.ma === "TOTP_KHONG_KIEM_DUOC") return { ok: false, ma: "TOTP_KHONG_KIEM_DUOC" };
     return { ok: false, ma: "TOTP_SAI" };
   }

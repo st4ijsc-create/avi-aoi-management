@@ -2193,6 +2193,7 @@
       "failed": "Two-factor verification failed",
       "totpLocked": "Two-factor authentication is temporarily locked after too many wrong codes — try again in {{minutes}} minutes.",
       "totpUnavailable": "The two-factor code cannot be checked right now (system error) — try again later.",
+      "backupLocked": "Backup codes are temporarily locked after too many wrong codes — try again in {{minutes}} minutes.",
       "adminUnlockTotp": "Unlock two-factor authentication",
       "adminUnlockTotpReason": "Reason for unlocking (5–300 characters, written to the audit log)",
       "adminUnlockTotpDone": "Two-factor authentication has been unlocked for the user.",
@@ -4352,6 +4353,7 @@
       "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published."
     },
     "reason": {
+      "totpSelfUnlock": "You cannot unlock your own two-factor authentication — another administrator must do it.",
       "edgeNodeBusy": "The node is being changed by another operation (a device assignment, a credential rotation…). Nothing was changed — retry in a moment.",
       "edgeNodeRetireBlocked": "The node still has: {{blockers}}. Release its devices to central, let its STOPs / lock requests be acknowledged (or resolved) and finish its runs, then retry. Nothing was changed.",
       "edgeNodeAlreadyRetired": "This node is already retired.",
@@ -4553,6 +4555,7 @@
     "SCADA_TOTP_INVALID": "The two-factor code is wrong or has already been used — enter a new code and confirm again (level {{level}} channel).",
     "TOTP_TAM_KHOA": "Two-factor authentication is temporarily locked after too many wrong codes — try again in {{remainingMinutes}} minutes.",
     "TOTP_KHONG_KIEM_DUOC": "The two-factor code cannot be checked right now (system error) — try again later.",
+    "MA_DU_PHONG_TAM_KHOA": "Backup codes are temporarily locked after too many wrong codes — try again in {{remainingMinutes}} minutes.",
     "SCADA_MACHINE_REBOUND": "The device was assigned to a different machine after this request was created — create a new request.",
     "STOP_PIN_NGOAI_DAI": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) that cannot be written under the channel declaration (range {{min}} … {{max}}, step {{step}}, or a read-only channel kind) — the STOP command would be refused. Clear or change the pinned value first, or declare a matching range/step/channel kind.",
     "INTERLOCK_NGOAI_DAI": "The interlock rule's command value cannot be written on channel {{tagKey}} under the channel declaration (range {{min}} … {{max}}, step {{step}}, or a read-only channel kind) — the protective action would be refused at run time. Fix the rule's command value, or declare a matching channel.",

@@ -460,7 +460,7 @@ export function registerOAuthRoutes(app: Express) {
         await db.createAuditLog({ userId: user.id, userName: user.name, action: 'login_2fa', entityType: 'auth', status: 'failure', details: { reason: khoa ? 'totp_tam_khoa' : 'totp_khong_kiem_duoc' }, ipAddress: req.ip ?? req.socket.remoteAddress, userAgent: req.headers['user-agent'] }).catch(() => {});
         if (khoa) {
           const { phutConLai } = await import('./totpKhoaSai');
-          const remainingMinutes = phutConLai(kqTotp.conLaiMs ?? 0);
+          const remainingMinutes = phutConLai(kqTotp.conLaiMs);
           res.status(429).json({ code: "TWOFA_TOTP_LOCKED", remainingMinutes, error: `Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau ${remainingMinutes} phút.` });
         } else {
           res.status(503).json({ code: "TWOFA_TOTP_UNAVAILABLE", error: "Không kiểm được mã xác thực hai lớp lúc này — thử lại sau." });
@@ -471,7 +471,24 @@ export function registerOAuthRoutes(app: Express) {
       
       if (!verified) {
         // Try backup code if TOTP fails
-        const isBackupCode = await db.verifyBackupCode(userId, token);
+        // ★ R1a T16 fix round 1 — chỉ chuỗi KHÔNG phải 6 số mới là một lượt mã dự phòng (mã dự phòng = 8 ký tự hex): một mã TOTP sai
+        //   không được tính vào bộ đếm MÃ DỰ PHÒNG (nếu không, dò TOTP sẽ khoá luôn lối thoát). Bộ đếm mã dự phòng (10 lần / 60 phút,
+        //   trong `db.verifyBackupCode`) NÉM khi khoá / hỏng ⇒ 429 TWOFA_BACKUP_LOCKED / 503 — không trừ ngân sách vé.
+        let isBackupCode = false;
+        try {
+          isBackupCode = !laMaTotp && await db.verifyBackupCode(userId, token);
+        } catch (loiDuPhong) {
+          const { laLoiBoDemMaDuPhong } = await import('./totpKhoaSai');
+          const bd = laLoiBoDemMaDuPhong(loiDuPhong);
+          if (!bd) throw loiDuPhong;
+          await db.createAuditLog({ userId: user.id, userName: user.name, action: 'login_2fa', entityType: 'auth', status: 'failure', details: { reason: bd.ma === 'MA_DU_PHONG_TAM_KHOA' ? 'ma_du_phong_tam_khoa' : 'totp_khong_kiem_duoc' }, ipAddress: req.ip ?? req.socket.remoteAddress, userAgent: req.headers['user-agent'] }).catch(() => {});
+          if (bd.ma === 'MA_DU_PHONG_TAM_KHOA') {
+            res.status(429).json({ code: "TWOFA_BACKUP_LOCKED", remainingMinutes: bd.remainingMinutes, error: `Mã dự phòng đang tạm khoá do nhập sai nhiều lần — thử lại sau ${bd.remainingMinutes} phút.` });
+          } else {
+            res.status(503).json({ code: "TWOFA_TOTP_UNAVAILABLE", error: "Không kiểm được mã xác thực hai lớp lúc này — thử lại sau." });
+          }
+          return;
+        }
         if (!isBackupCode) {
           // ★ Pha 7 Task 6 — một lượt OTP sai TRỪ ngân sách của vé; hết ngân sách thì vé chết và
           //   người dùng quay lại bước mật khẩu. Không có dòng này, MỘT vé = vô hạn lượt đoán.

@@ -802,7 +802,7 @@ export async function mucGhiOtLucXacNhan(
   }
 }
 
-function xacThucMucMessage(lang: ToolLang, ma: MaXacThucTheoMuc, muc: MucRuiRo, conLaiMs = 0): string {
+function xacThucMucMessage(lang: ToolLang, ma: MaXacThucTheoMuc, muc: MucRuiRo, conLaiMs?: number): string {
   // R1a T16 — phút còn lại của khoá TOTP (làm tròn lên, ≥ 1). Không bao giờ nói số lần sai.
   const phut = phutConLai(conLaiMs);
   const vi: Record<MaXacThucTheoMuc, string> = {

@@ -119,6 +119,7 @@ export default function Login() {
           // SCADA R1a Task 16 — bộ đếm TOTP sai: chỉ nói "tạm khoá, thử lại sau N phút" (không bao giờ số lần còn lại).
           TWOFA_TOTP_LOCKED: 'auth.twoFactor.totpLocked',
           TWOFA_TOTP_UNAVAILABLE: 'auth.twoFactor.totpUnavailable',
+          TWOFA_BACKUP_LOCKED: 'auth.twoFactor.backupLocked',
         };
         const khoa = typeof data?.code === 'string' ? KHOA_2FA[data.code] : undefined;
         const minutes = typeof data?.remainingMinutes === 'number' ? data.remainingMinutes : 5;

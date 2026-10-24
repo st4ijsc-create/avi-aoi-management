@@ -399,15 +399,21 @@ export type TotpConsumedRow = typeof totpConsumed.$inferSelect;
 export type InsertTotpConsumedRow = typeof totpConsumed.$inferInsert;
 
 /**
- * SCADA R1a Task 16 (mig 0432) — BỘ ĐẾM TOTP SAI theo người dùng: 5 lần sai trong 5 phút ⇒ khoá TOTP 5 phút.
- * Chủ duy nhất: `server/_core/totpKhoaSai.ts` (gọi từ `verifyTotpOnce`). Mọi phép so thời gian đọc `now()` của Postgres.
- * Không FK (cùng khuôn `totp_consumed`): bảng trạng thái ngắn hạn, hàng tự xoá khi nhập đúng / admin mở khoá.
+ * SCADA R1a Task 16 (mig 0432, fix round 1) — BỘ ĐẾM XÁC THỰC 2 LỚP SAI theo (người dùng, loại): `totp` (5 lần / 5 phút ⇒ khoá 5 phút)
+ * và `backup` (10 lần / 60 phút ⇒ khoá tới hết cửa sổ). Hai bộ đếm ĐỘC LẬP. Chủ duy nhất: `server/_core/totpKhoaSai.ts` (gọi từ
+ * `verifyTotpOnce` và `db.verifyBackupCode`). Mọi phép so thời gian đọc `now()` của Postgres. Không FK (cùng khuôn `totp_consumed`).
  */
 export const totpKhoaSai = pgTable("totp_khoa_sai", {
-  userId: integer("user_id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  loai: varchar("loai", { length: 8 }).notNull(),
   soLanSai: integer("so_lan_sai").notNull(),
   cuaSoBatDau: timestamp("cua_so_bat_dau", { withTimezone: true }).notNull(),
   khoaDen: timestamp("khoa_den", { withTimezone: true }),
+  khoaBoi: varchar("khoa_boi", { length: 64 }),
+  tuChoiDem: integer("tu_choi_dem").default(0).notNull(),
+  tuChoiAuditLuc: timestamp("tu_choi_audit_luc", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  primaryKey({ name: "totp_khoa_sai_pkey", columns: [table.userId, table.loai] }),
+]);
 export type TotpKhoaSaiRow = typeof totpKhoaSai.$inferSelect;

@@ -86,7 +86,7 @@
 import speakeasy from "speakeasy";
 import { randomUUID, createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { docKhoaTotp, ghiLanSaiTotp, xoaBoDemTotp, ghiAuditKhoaTotp, SO_LAN_SAI_TOI_DA } from "./totpKhoaSai";
+import { napLuotThu, duocKiem, xoaSauKhiDung, ghiAuditBatDauKhoa, ghiTuChoiDangKhoa, maLuotThuMoi, THOI_GIAN_KHOA_MS, type KetQuaNapLuot } from "./totpKhoaSai";
 
 /**
  * Cửa sổ `speakeasy` — **1 nhịp trước/sau** để bù lệch đồng hồ. Giữ **nguyên** giá trị cũ của cả 8
@@ -383,21 +383,24 @@ export async function verifyTotpOnce(args: {
   }
 
   /**
-   * ★★★ SCADA R1a Task 16 — BƯỚC 1 CỦA BỘ ĐẾM TOTP SAI: đọc khoá TRƯỚC mọi phép kiểm mã.
-   * Đang khoá ⇒ từ chối NGAY: không `speakeasy`, không chạm sổ `totp_consumed` (mã đúng lúc đang khoá vẫn bị từ chối và KHÔNG bị
-   * tiêu). Mỗi lần từ chối vì khoá là một dòng audit. Không đọc được bộ đếm ⇒ `TOTP_KHONG_KIEM_DUOC` (fail-closed) — một cơ chế
-   * chống dò mà "không biết" lại cho qua là fail-open.
+   * ★★★ SCADA R1a Task 16 (fix round 1) — BƯỚC 1 CỦA BỘ ĐẾM TOTP SAI: TÍNH lượt thử TRƯỚC mọi phép kiểm mã ("charge before verify").
+   * Một câu upsert nguyên tử (`napLuotThu`) cộng lượt và trả trạng thái mới; các lượt đồng thời (kể cả hàng trăm lượt trong MỘT lô
+   * tRPC) xếp hàng trên hàng của người dùng ⇒ mỗi cửa sổ NHIỀU NHẤT `SO_LAN_SAI_TOI_DA` lượt tới được `speakeasy`.
+   * Bị từ chối (quá ngưỡng / đang khoá) ⇒ `TOTP_TAM_KHOA` NGAY: không `speakeasy`, không chạm sổ `totp_consumed` (mã đúng lúc đang
+   * khoá vẫn bị từ chối và KHÔNG bị tiêu). Không ghi được bộ đếm ⇒ `TOTP_KHONG_KIEM_DUOC` (fail-closed).
+   * ⚠ Bản đầu ĐỌC khoá rồi mới đếm sau khi kiểm ⇒ đo được 30 lượt đồng thời đều được kiểm và mã đúng lọt qua (fix round 1, CRITICAL 1).
    */
-  let khoa: { conLaiMs: number };
+  const luotThu = maLuotThuMoi();
+  let nap: KetQuaNapLuot;
   try {
-    khoa = await docKhoaTotp(userId);
+    nap = await napLuotThu(userId, "totp", luotThu);
   } catch (e) {
-    console.error(`[TotpOnce] BỘ ĐẾM TOTP SAI không đọc được (${(e as Error)?.message ?? String(e)}) ⇒ TỪ CHỐI (fail-closed).`);
+    console.error(`[TotpOnce] BỘ ĐẾM TOTP SAI không ghi được (${(e as Error)?.message ?? String(e)}) ⇒ TỪ CHỐI (fail-closed).`);
     return KHONG_KIEM_DUOC;
   }
-  if (khoa.conLaiMs > 0) {
-    await ghiAuditKhoaTotp(userId, "totp.tu_choi_dang_khoa", { conLaiMs: khoa.conLaiMs });
-    return { hopLe: false, phatLai: false, ma: "TOTP_TAM_KHOA", conLaiMs: khoa.conLaiMs };
+  if (!duocKiem(nap, "totp")) {
+    await ghiTuChoiDangKhoa(userId, "totp", nap.conLaiMs);
+    return { hopLe: false, phatLai: false, ma: "TOTP_TAM_KHOA", conLaiMs: nap.conLaiMs > 0 ? nap.conLaiMs : THOI_GIAN_KHOA_MS };
   }
 
   const hopLeTheoMa = speakeasy.totp.verify({
@@ -409,8 +412,8 @@ export async function verifyTotpOnce(args: {
   });
   // ⚠ Mã KHÔNG verify được thì **không ghi sổ**: nếu ghi, ai cũng bơm được số rác vào sổ mà không
   //   cần biết secret ⇒ sổ tự biến thành một bề mặt DoS.
-  //   R1a T16: nhưng nó LÀ một lần sai của bộ đếm theo người dùng (bảng khác, một hàng/người ⇒ không phình theo số mã rác).
-  if (!hopLeTheoMa) return ghiLanSai(userId, false);
+  //   R1a T16: lượt này ĐÃ được tính ở bộ đếm theo người dùng (bảng khác, một hàng/người ⇒ không phình theo số mã rác).
+  if (!hopLeTheoMa) return thatBai(userId, nap, false);
 
   /**
    * ⚠ `luot ?? randomUUID()` — **đúc dấu TRƯỚC lượt ghi**, giữ nguyên ngữ nghĩa bản cũ: người gọi
@@ -448,19 +451,22 @@ export async function verifyTotpOnce(args: {
   // Một lượt gọi KHÁC đang giữ mã và mục còn sống ⇒ PHÁT LẠI.
   // ⚠ R1a T16 — QUYẾT ĐỊNH: PHÁT LẠI = MỘT LẦN SAI của bộ đếm. Kẻ cầm một mã đã lộ mà thử lại là một lần thử sai thật; lượt verify
   //   thứ N của CÙNG lượt gọi (cùng `luot`) không bao giờ tới đây nên chuỗi middleware 2–3 lượt verify không bị đếm oan.
-  if (giuBoi !== cuaTa) return ghiLanSai(userId, true);
+  if (giuBoi !== cuaTa) return thatBai(userId, nap, true);
 
   // Ta vừa chèn mới / thu lại một mục quá hạn ⇒ đúng lúc bảng CÓ THỂ to thêm ⇒ dọn.
   // ⚠ I-3: dọn **của chính người vừa ghi**, không phải toàn bảng — xem docstring `donSo`.
   await donSo(userId);
 
-  // ★ R1a T16 — BƯỚC 4: mã đúng, không đang khoá ⇒ xoá bộ đếm. Hỏng ⇒ fail-closed (điều phối: MỌI lỗi DB của bộ đếm ⇒ từ chối).
+  // ★ R1a T16 — BƯỚC 4: mã đúng ⇒ xoá bộ đếm — MỘT câu, chỉ khi không có khoá hiệu lực hoặc khoá do CHÍNH lượt này đặt. Khoá do
+  //   lượt KHÁC đặt trong lúc ta kiểm ⇒ TẠM KHOÁ (mã đã tiêu — chấp nhận được). Hỏng ⇒ fail-closed (MỌI lỗi DB của bộ đếm ⇒ từ chối).
+  let sauXoa: { conLaiMs: number };
   try {
-    await xoaBoDemTotp(userId);
+    sauXoa = await xoaSauKhiDung(userId, "totp", luotThu);
   } catch (e) {
     console.error(`[TotpOnce] BỘ ĐẾM TOTP SAI không xoá được sau mã đúng (${(e as Error)?.message ?? String(e)}) ⇒ TỪ CHỐI (fail-closed).`);
     return KHONG_KIEM_DUOC;
   }
+  if (sauXoa.conLaiMs > 0) return { hopLe: false, phatLai: false, ma: "TOTP_TAM_KHOA", conLaiMs: sauXoa.conLaiMs };
   return { hopLe: true, phatLai: false };
 }
 
@@ -468,23 +474,14 @@ export async function verifyTotpOnce(args: {
 const KHONG_KIEM_DUOC: KetQuaTotp = Object.freeze({ hopLe: false, phatLai: false, ma: "TOTP_KHONG_KIEM_DUOC" as const });
 
 /**
- * R1a T16 — BƯỚC 3: một lần sai (mã sai, hoặc phát lại) ⇒ upsert nguyên tử. Lượt làm đếm chạm ĐÚNG `SO_LAN_SAI_TOI_DA` là lượt
- * bắt đầu khoá ⇒ một dòng audit (đồng thời: chỉ một lượt thấy đúng số ấy). Sau câu ghi mà đang khoá ⇒ trả `TOTP_TAM_KHOA`
- * (lần sai thứ 5 báo luôn "đã khoá" thay vì "mã sai" — không lộ số lần nào trước đó). Ghi hỏng ⇒ `TOTP_KHONG_KIEM_DUOC`.
+ * R1a T16 — BƯỚC 3: lượt đã được tính và kiểm ra SAI (mã sai, hoặc phát lại). Không ghi gì thêm vào bộ đếm. Nếu CHÍNH lượt này đặt
+ * khoá (lượt thứ N) ⇒ ĐÚNG MỘT dòng audit bắt đầu khoá + trả `TOTP_TAM_KHOA` (lần sai thứ N báo luôn "đã khoá" — không lộ số lần
+ * nào trước đó).
  */
-async function ghiLanSai(userId: number, phatLai: boolean): Promise<KetQuaTotp> {
-  let r: { soLanSai: number; conLaiMs: number };
-  try {
-    r = await ghiLanSaiTotp(userId);
-  } catch (e) {
-    console.error(`[TotpOnce] BỘ ĐẾM TOTP SAI không ghi được (${(e as Error)?.message ?? String(e)}) ⇒ TỪ CHỐI (fail-closed).`);
-    return KHONG_KIEM_DUOC;
-  }
-  if (r.soLanSai === SO_LAN_SAI_TOI_DA) {
-    await ghiAuditKhoaTotp(userId, "totp.tam_khoa", { conLaiMs: r.conLaiMs, nguyenNhan: phatLai ? "phat_lai" : "ma_sai" });
-  }
-  if (r.conLaiMs > 0) return { hopLe: false, phatLai, ma: "TOTP_TAM_KHOA", conLaiMs: r.conLaiMs };
-  return { hopLe: false, phatLai };
+async function thatBai(userId: number, nap: KetQuaNapLuot, phatLai: boolean): Promise<KetQuaTotp> {
+  if (!nap.vuaKhoa) return { hopLe: false, phatLai };
+  await ghiAuditBatDauKhoa(userId, "totp", { conLaiMs: nap.conLaiMs, nguyenNhan: phatLai ? "phat_lai" : "ma_sai" });
+  return { hopLe: false, phatLai, ma: "TOTP_TAM_KHOA", conLaiMs: nap.conLaiMs };
 }
 
 /** Đúc dấu cho một LƯỢT GỌI mới. Tách ra để người gọi không tự bịa một chuỗi đoán được. */

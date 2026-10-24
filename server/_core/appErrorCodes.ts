@@ -199,6 +199,8 @@ export const APP_ERROR_CODES = [
   "TOTP_TAM_KHOA",                 // params: { remainingMinutes } (+ { ma, level } ở SCADA/copilot) — 5 lần sai / 5 phút ⇒ TOTP khoá 5 phút.
                                    // ⚠ KHÔNG BAO GIỜ mang số lần sai còn lại (điều phối 2026-10-24). KHÁC ACCOUNT_LOCKED (khoá mật khẩu).
   "TOTP_KHONG_KIEM_DUOC",          // no params (+ { ma, level } ở SCADA/copilot) — bộ đếm không hỏi/ghi được DB ⇒ từ chối (fail-closed).
+  "MA_DU_PHONG_TAM_KHOA",          // params: { remainingMinutes } — fix round 1: bộ đếm MÃ DỰ PHÒNG riêng (10 lần / 60 phút ⇒ từ chối tới hết giờ ấy),
+                                   // trong `db.verifyBackupCode`. ĐỘC LẬP với TOTP_TAM_KHOA. Không bao giờ mang số lần sai.
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];

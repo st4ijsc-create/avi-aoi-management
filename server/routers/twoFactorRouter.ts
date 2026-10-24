@@ -237,7 +237,8 @@ export const twoFactorRouter = router({
       // ⚠ Phát lại rơi xuống nhánh mã dự phòng bên dưới và **hỏng ở đó** (mã 6 số không khớp một
       //   backup code nào) ⇒ fail-closed, đúng chiều.
       let verified = false;
-      if (input.code.length === 6 && /^\d+$/.test(input.code)) {
+      const laMaTotp = input.code.length === 6 && /^\d+$/.test(input.code);
+      if (laMaTotp) {
         // R1a T16 — đang khoá / bộ đếm hỏng ⇒ NÉM ngay (mã 6 số không bao giờ là mã dự phòng 8 ký tự hex, nên rơi xuống nhánh dự
         //   phòng chỉ biến "tạm khoá" thành "mã sai"). Mã dự phòng (không phải 6 số) vẫn đi nhánh dưới — lối thoát của người bị khoá.
         verified = kiemKhoaTotp(await verifyTotpOnce({
@@ -250,7 +251,9 @@ export const twoFactorRouter = router({
       // If not TOTP, try backup code
       // ★ Pha 9 A5 — qua NGƯỜI TIÊU DUY NHẤT (`db.verifyBackupCode`): tìm mã khớp **và** đánh dấu
       //   đã dùng. Trước bản vá đây là một trong BA bản sao viết tại chỗ của cùng một thủ tục.
-      if (!verified) {
+      // ★ R1a T16 fix round 1 — chỉ chuỗi KHÔNG phải 6 số là một lượt mã dự phòng (bộ đếm 10 lần / 60 phút trong `verifyBackupCode`,
+      //   NÉM MA_DU_PHONG_TAM_KHOA khi khoá): mã TOTP sai không được tiêu ngân sách của lối thoát.
+      if (!verified && !laMaTotp) {
         verified = await verifyBackupCode(ctx.user.id, input.code);
       }
 
@@ -295,7 +298,8 @@ export const twoFactorRouter = router({
 
       // Try TOTP first — MỘT LẦN (Pha 6 Task 6).
       let verified = false;
-      if (input.code.length === 6 && /^\d+$/.test(input.code)) {
+      const laMaTotp = input.code.length === 6 && /^\d+$/.test(input.code);
+      if (laMaTotp) {
         // R1a T16 — như `disable`: khoá ⇒ ném ngay, không rơi xuống nhánh mã dự phòng.
         verified = kiemKhoaTotp(await verifyTotpOnce({
           userId: ctx.user.id,
@@ -305,7 +309,8 @@ export const twoFactorRouter = router({
       }
 
       // Try backup code — ★ Pha 9 A5: cùng NGƯỜI TIÊU DUY NHẤT với `disable` và tuyến REST.
-      if (!verified) {
+      // ★ R1a T16 fix round 1 — như `disable`: chỉ chuỗi không phải 6 số mới tới bộ đếm mã dự phòng.
+      if (!verified && !laMaTotp) {
         verified = await verifyBackupCode(ctx.user.id, input.code);
       }
 
@@ -375,6 +380,11 @@ export const twoFactorRouter = router({
       const db = await getDb();
       if (!db) {
         throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+      }
+      // ★ R1a T16 fix round 1 (CRITICAL 3) — admin KHÔNG tự mở khoá TOTP của chính mình: kẻ cầm phiên admin đang dò mã của chính tài
+      //   khoản ấy sẽ tự gỡ bộ đếm. Admin KHÁC phải mở cho bạn (nguyên tắc bốn mắt).
+      if (input.userId === ctx.user.id) {
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "adminAccess", reason: "totpSelfUnlock" }, "Không tự mở khoá xác thực hai lớp của chính mình — cần một admin khác.");
       }
       const dich = await getUserById(input.userId);
       if (!dich) {

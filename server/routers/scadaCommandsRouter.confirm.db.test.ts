@@ -563,8 +563,8 @@ describe("R1a T16 — bộ đếm TOTP sai (chung mọi bên gọi TOTP)", () =>
     const secret = speakeasy.generateSecret({ length: 20 }).base32;
     await setup2FA(nguoi.engA.id, secret);
     await enable2FA(nguoi.engA.id);
-    await dung(sql`INSERT INTO totp_khoa_sai (user_id, so_lan_sai, cua_so_bat_dau, khoa_den)
-      VALUES (${nguoi.engA.id}, 5, now(), now() + interval '4 minutes')`);
+    await dung(sql`INSERT INTO totp_khoa_sai (user_id, loai, so_lan_sai, cua_so_bat_dau, khoa_den)
+      VALUES (${nguoi.engA.id}, 'totp', 5, now(), now() + interval '4 minutes')`);
     try {
       const requestId = await yeuCau("engA", "m5khoa");
       const maDung = speakeasy.totp({ secret, encoding: "base32" });

@@ -18,30 +18,44 @@ vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";
 });
 
-/** Chỗ cấy LỖI DB vào đúng một bước của bộ đếm (đọc / ghi lần sai / xoá) — hàm thật chạy ở mọi lượt khác. */
-const H = vi.hoisted(() => ({ hong: null as null | "doc" | "ghi" | "xoa" }));
+/** Chỗ cấy LỖI DB vào đúng một bước của bộ đếm (tính lượt / xoá sau mã đúng) — hàm thật chạy ở mọi lượt khác. */
+const H = vi.hoisted(() => ({ hong: null as null | "nap" | "xoa", truocXoa: null as null | (() => Promise<void>) }));
 vi.mock("./totpKhoaSai", async (orig) => {
   const real = await orig<typeof import("./totpKhoaSai")>();
   const boc =
-    <A extends unknown[], R>(buoc: "doc" | "ghi" | "xoa", f: (...a: A) => Promise<R>) =>
+    <A extends unknown[], R>(buoc: "nap" | "xoa", f: (...a: A) => Promise<R>) =>
     async (...a: A): Promise<R> => {
       if (H.hong === buoc) throw new Error(`probe: DB của bộ đếm hỏng ở bước ${buoc} (connection terminated)`);
       return f(...a);
     };
   return {
     ...real,
-    docKhoaTotp: boc("doc", real.docKhoaTotp),
-    ghiLanSaiTotp: boc("ghi", real.ghiLanSaiTotp),
-    xoaBoDemTotp: boc("xoa", real.xoaBoDemTotp),
+    napLuotThu: boc("nap", real.napLuotThu),
+    xoaSauKhiDung: async (...a: Parameters<typeof real.xoaSauKhiDung>) => {
+      const f = H.truocXoa;
+      if (f) {
+        H.truocXoa = null;
+        await f();
+      }
+      return boc("xoa", real.xoaSauKhiDung)(...a);
+    },
   };
 });
 
 import { getDb } from "../db/connection";
 import { verifyTotpOnce, __resetSoTotpChoTest } from "./totpOnce";
-import { SO_LAN_SAI_TOI_DA, CUA_SO_SAI_MS, THOI_GIAN_KHOA_MS } from "./totpKhoaSai";
+import {
+  SO_LAN_SAI_TOI_DA,
+  CUA_SO_SAI_MS,
+  THOI_GIAN_KHOA_MS,
+  MA_DU_PHONG_SO_LAN_TOI_DA,
+  MA_DU_PHONG_CUA_SO_MS,
+  AUDIT_TU_CHOI_MOI_MS,
+  napLuotThu,
+} from "./totpKhoaSai";
 import { kiemXacThucTheoMuc } from "./xacThucTheoMuc";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
-import { setup2FA, enable2FA } from "../db/auth";
+import { setup2FA, enable2FA, quayVongMaDuPhong, verifyBackupCode } from "../db/auth";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 let db: Db;
@@ -78,8 +92,12 @@ async function nguoiMoi(tag: string, role: "admin" | "operator" | "engineer" = "
   return u;
 }
 async function hang(userId: number) {
-  const r = await dung(sql`SELECT so_lan_sai AS n, khoa_den IS NOT NULL AS khoa, (khoa_den > now()) AS dang_khoa FROM totp_khoa_sai WHERE user_id = ${userId}`);
-  return r[0] as { n: number; khoa: boolean; dang_khoa: boolean } | undefined;
+  return hangLoai(userId, "totp");
+}
+async function hangLoai(userId: number, loai: "totp" | "backup") {
+  const r = await dung(sql`SELECT so_lan_sai AS n, khoa_den IS NOT NULL AS khoa, (khoa_den > now()) AS dang_khoa, khoa_den::text AS den
+    FROM totp_khoa_sai WHERE user_id = ${userId} AND loai = ${loai}`);
+  return r[0] as { n: number; khoa: boolean; dang_khoa: boolean; den: string | null } | undefined;
 }
 async function soAudit(userId: number, action: string): Promise<number> {
   const [r] = await dung(sql`SELECT count(*)::int AS n FROM control_audit_log WHERE "entityType" = 'user' AND "entityId" = ${String(userId)} AND action = ${action}`);
@@ -106,6 +124,8 @@ beforeAll(async () => {
 afterAll(async () => {
   H.hong = null;
   if (ids.length) {
+    // mã dự phòng do lưới này cấp (quayVongMaDuPhong) — dọn TRƯỚC helper người dùng (FK backup_codes → users)
+    await dung(sql`DELETE FROM backup_codes WHERE "userId" IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`);
     await __resetSoTotpChoTest(ids); // totp_consumed + totp_khoa_sai của người test
     const [r] = await dung(sql`SELECT count(*)::int AS n FROM totp_khoa_sai WHERE user_id IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`);
     expect(Number(r.n), "_test sạch: không còn hàng totp_khoa_sai của người test").toBe(0);
@@ -138,7 +158,8 @@ describe("§1 khoá sau 5 lần sai", () => {
     expect(r6.conLaiMs).toBeGreaterThan(0);
     const [tieu] = await dung(sql`SELECT count(*)::int AS n FROM totp_consumed WHERE "userId" = ${u.id}`);
     expect(Number(tieu.n), "đang khoá ⇒ không kiểm, không tiêu mã").toBe(0);
-    expect((await hang(u.id))?.n, "lần bị từ chối vì khoá không cộng thêm").toBe(5);
+    // fix round 1 — TÍNH TRƯỚC, KIỂM SAU: lượt bị từ chối vẫn được tính (6), khoá KHÔNG đổi.
+    expect(await hang(u.id)).toMatchObject({ n: 6, dang_khoa: true });
   });
 
   it("hết 5 phút (đồng hồ giả) ⇒ mã đúng qua, hàng bị xoá", async () => {
@@ -240,10 +261,10 @@ describe("§2 đồng thời — upsert nguyên tử", () => {
 });
 
 describe("§3 fail-closed — lỗi DB của bộ đếm ⇒ TỪ CHỐI (TOTP_KHONG_KIEM_DUOC), không bao giờ 'không giới hạn'", () => {
-  it("lỗi đọc khoá ⇒ mã ĐÚNG bị từ chối, không tiêu mã", async () => {
+  it("lỗi tính lượt (upsert bước 1) ⇒ mã ĐÚNG bị từ chối, không kiểm, không tiêu mã", async () => {
     const u = await nguoiMoi("hongDoc");
     const m = maDung();
-    H.hong = "doc";
+    H.hong = "nap";
     try {
       expect(await verifyTotpOnce({ userId: u.id, secret: SECRET, token: m.token, nowMs: m.nowMs })).toEqual({
         hopLe: false,
@@ -257,15 +278,15 @@ describe("§3 fail-closed — lỗi DB của bộ đếm ⇒ TỪ CHỐI (TOTP_K
     expect(Number(tieu.n)).toBe(0);
   });
 
-  it("lỗi DB THẬT (không giả lập): userId ngoài dải integer ⇒ câu đọc khoá ném 22003 ⇒ TOTP_KHONG_KIEM_DUOC", async () => {
+  it("lỗi DB THẬT (không giả lập): userId ngoài dải integer ⇒ câu tính lượt ném 22003 ⇒ TOTP_KHONG_KIEM_DUOC", async () => {
     const m = maDung();
     const r = await verifyTotpOnce({ userId: 3_000_000_000, secret: SECRET, token: m.token, nowMs: m.nowMs });
     expect(r).toEqual({ hopLe: false, phatLai: false, ma: "TOTP_KHONG_KIEM_DUOC" });
   });
 
-  it("lỗi ghi lần sai ⇒ TOTP_KHONG_KIEM_DUOC (không rơi về 'mã sai' như chưa có bộ đếm)", async () => {
+  it("lỗi tính lượt với mã SAI ⇒ TOTP_KHONG_KIEM_DUOC (không rơi về 'mã sai' như chưa có bộ đếm)", async () => {
     const u = await nguoiMoi("hongGhi");
-    H.hong = "ghi";
+    H.hong = "nap";
     try {
       expect(await sai(u.id)).toEqual({ hopLe: false, phatLai: false, ma: "TOTP_KHONG_KIEM_DUOC" });
     } finally {
@@ -291,7 +312,7 @@ describe("§3 fail-closed — lỗi DB của bộ đếm ⇒ TỪ CHỐI (TOTP_K
 });
 
 describe("§4 audit — lần sai thứ 5 + mỗi lần bị từ chối vì khoá; không ghi mã", () => {
-  it("5 sai ⇒ 1 dòng 'totp.tam_khoa'; 3 lần thử khi đang khoá ⇒ 3 dòng 'totp.tu_choi_dang_khoa'; không dòng nào mang mã", async () => {
+  it("5 sai ⇒ 1 dòng 'totp.tam_khoa'; 3 lần thử khi đang khoá trong 1 phút ⇒ 1 dòng 'totp.tu_choi_dang_khoa' (gộp, mang số lần); qua 1 phút ⇒ thêm 1 dòng; không dòng nào mang mã", async () => {
     const u = await nguoiMoi("audit");
     const maDaGui: string[] = [];
     for (let i = 0; i < 4; i++) {
@@ -307,14 +328,190 @@ describe("§4 audit — lần sai thứ 5 + mỗi lần bị từ chối vì kho
       maDaGui.push(m.token);
       await verifyTotpOnce({ userId: u.id, secret: SECRET, token: m.token, nowMs: m.nowMs });
     }
-    expect(await soAudit(u.id, "totp.tu_choi_dang_khoa")).toBe(3);
+    // fix round 1 (minor 5) — nhiều nhất 1 dòng / người / phút cho lượt bị từ chối khi đang khoá.
+    expect(await soAudit(u.id, "totp.tu_choi_dang_khoa")).toBe(1);
     expect(await soAudit(u.id, "totp.tam_khoa"), "lần thử khi khoá không đẻ thêm dòng 'bắt đầu khoá'").toBe(1);
+    await dung(sql`UPDATE totp_khoa_sai SET tu_choi_audit_luc = tu_choi_audit_luc - make_interval(secs => ${AUDIT_TU_CHOI_MOI_MS / 1000 + 1})
+      WHERE user_id = ${u.id} AND loai = 'totp'`);
+    const m4 = maDung();
+    maDaGui.push(m4.token);
+    await verifyTotpOnce({ userId: u.id, secret: SECRET, token: m4.token, nowMs: m4.nowMs });
+    expect(await soAudit(u.id, "totp.tu_choi_dang_khoa"), "qua 1 phút ⇒ một dòng mới").toBe(2);
+    const tuChoi = (await auditCua(u.id)).filter((x) => x.action === "totp.tu_choi_dang_khoa");
+    expect(tuChoi.map((x) => x.afterJson?.soLanTuChoiTrongKhoa), "dòng audit mang số lần bị từ chối (cộng dồn trong lần khoá)").toEqual([1, 4]);
     const rows = await auditCua(u.id);
     const json = JSON.stringify(rows);
     for (const c of maDaGui) expect(json, `audit không được chứa mã ${c}`).not.toContain(c);
     expect(json).not.toContain(SECRET);
     for (const r of rows) expect(r.actorId).toBe(u.id);
   });
+});
+
+describe("§1b fix round 1 — TÍNH TRƯỚC, KIỂM SAU (CRITICAL 1) + reset không xoá khoá đang hiệu lực (CRITICAL 2)", () => {
+  it("probe 30 sai + 1 dung dong thoi: mã ĐÚNG bị TỪ CHỐI, NHIỀU NHẤT 5 lượt tới speakeasy, mã đúng không bị tiêu", async () => {
+    const u = await nguoiMoi("probe30");
+    const t = Math.floor(Date.now() / 1000);
+    const dung3 = new Set([-30, 0, 30].map((d) => speakeasy.totp({ secret: SECRET, encoding: "base32", time: t + d })));
+    const sai30: string[] = [];
+    for (let i = 0; sai30.length < 30; i++) {
+      const c = String(100000 + ((i * 7919 + 12345) % 900000));
+      if (!dung3.has(c)) sai30.push(c);
+    }
+    const maThat = speakeasy.totp({ secret: SECRET, encoding: "base32", time: t });
+    const spy = vi.spyOn(speakeasy.totp, "verify");
+    let soLuotKiem = -1;
+    let kq: Awaited<ReturnType<typeof verifyTotpOnce>>[];
+    try {
+      // MỘT đợt song song (như một lô tRPC N lượt chạy bằng Promise.all), mã đúng ở CUỐI lô — đúng hình dạng probe của review.
+      kq = await Promise.all([...sai30, maThat].map((token) => verifyTotpOnce({ userId: u.id, secret: SECRET, token })));
+    } finally {
+      soLuotKiem = spy.mock.calls.length;
+      spy.mockRestore();
+    }
+    expect(soLuotKiem, "số lượt THẬT SỰ được kiểm bởi speakeasy trong cả đợt").toBeLessThanOrEqual(SO_LAN_SAI_TOI_DA);
+    const dungKq = kq[30];
+    expect(dungKq.hopLe, `mã đúng giữa đợt dò phải bị TỪ CHỐI: ${JSON.stringify(dungKq)}`).toBe(false);
+    expect(dungKq.ma).toBe("TOTP_TAM_KHOA");
+    expect(kq.filter((r) => r.hopLe)).toHaveLength(0);
+    expect(await hang(u.id)).toMatchObject({ n: 31, dang_khoa: true });
+    const [tieu] = await dung(sql`SELECT count(*)::int AS n FROM totp_consumed WHERE "userId" = ${u.id}`);
+    expect(Number(tieu.n), "mã đúng không được kiểm ⇒ không bị tiêu").toBe(0);
+    expect(await soAudit(u.id, "totp.tam_khoa"), "ĐÚNG MỘT dòng bắt đầu khoá").toBe(1);
+    expect(await soAudit(u.id, "totp.tu_choi_dang_khoa"), "từ chối trong đợt: gộp ≤ 1 dòng / phút").toBe(1);
+  });
+
+  it("khoá ĐANG hiệu lực + cửa sổ đã cũ (> 5 phút) ⇒ một lần thử nữa KHÔNG xoá/đổi khoá", async () => {
+    const u = await nguoiMoi("khoaCuaSoCu");
+    await dung(sql`INSERT INTO totp_khoa_sai (user_id, loai, so_lan_sai, cua_so_bat_dau, khoa_den, khoa_boi)
+      VALUES (${u.id}, 'totp', 5, now() - interval '6 minutes', now() + interval '4 minutes', 'luot-khac')`);
+    const truoc = await hang(u.id);
+    const r = await sai(u.id);
+    expect(r.ma).toBe("TOTP_TAM_KHOA");
+    const sau = await hang(u.id);
+    expect(sau?.dang_khoa, "khoá vẫn hiệu lực").toBe(true);
+    expect(sau?.den, "khoa_den KHÔNG đổi").toBe(truoc?.den);
+    const nap = await napLuotThu(u.id, "totp", "luot-tiep");
+    expect(nap.conLaiMs).toBeGreaterThan(0);
+    expect((await hang(u.id))?.den).toBe(truoc?.den);
+    const m = maDung();
+    expect((await verifyTotpOnce({ userId: u.id, secret: SECRET, token: m.token, nowMs: m.nowMs })).ma, "mã đúng vẫn bị khoá").toBe("TOTP_TAM_KHOA");
+  });
+
+  it("lượt thứ 5 (lượt đặt khoá) mà ĐÚNG ⇒ gỡ được khoá của chính nó, không audit khoá", async () => {
+    const u = await nguoiMoi("lanNamDung");
+    for (let i = 0; i < 4; i++) await sai(u.id);
+    const m = maDung();
+    expect(await verifyTotpOnce({ userId: u.id, secret: SECRET, token: m.token, nowMs: m.nowMs })).toEqual({ hopLe: true, phatLai: false });
+    expect(await hang(u.id)).toBeUndefined();
+    expect(await soAudit(u.id, "totp.tam_khoa"), "lượt thứ 5 đúng ⇒ không có khoá nào để audit").toBe(0);
+  });
+
+  it("mã ĐÚNG đã qua bước tính nhưng một lượt KHÁC đặt khoá trong lúc kiểm ⇒ TOTP_TAM_KHOA (mã đã tiêu), khoá còn nguyên", async () => {
+    const u = await nguoiMoi("khoaGiuaChung");
+    for (let i = 0; i < 3; i++) await sai(u.id);
+    const m = maDung();
+    // Lượt đúng là lượt thứ 4 (không đặt khoá). Giữa bước tính và bước xoá của nó, một lượt KHÁC (thứ 5, sai) đặt khoá — cấy đúng
+    // vào chỗ ấy bằng móc `H.truocXoa` (chạy MỘT lần ngay trước `xoaSauKhiDung` thật).
+    H.truocXoa = async () => {
+      await dung(sql`UPDATE totp_khoa_sai SET so_lan_sai = 5, khoa_den = now() + interval '5 minutes', khoa_boi = 'luot-khac' WHERE user_id = ${u.id} AND loai = 'totp'`);
+    };
+    const r = await verifyTotpOnce({ userId: u.id, secret: SECRET, token: m.token, nowMs: m.nowMs });
+    expect(H.truocXoa, "móc đã chạy").toBeNull();
+    expect(r).toMatchObject({ hopLe: false, ma: "TOTP_TAM_KHOA" });
+    expect((await hang(u.id))?.dang_khoa, "khoá do lượt khác đặt KHÔNG bị lượt đúng xoá ngầm").toBe(true);
+  });
+});
+
+describe("§1c fix round 1 — bộ đếm MÃ DỰ PHÒNG riêng (IMPORTANT 4): 10 lần / 60 phút, độc lập với TOTP", () => {
+  const saiDp = (i: number) => `SAI${String(i).padStart(4, "0")}X`; // 8 ký tự, không phải 6 số, không khớp mã nào
+  const loiCua = async (p: Promise<unknown>) => {
+    try {
+      return { ok: await p, code: undefined as string | undefined, appCode: undefined as string | undefined, appParams: {} as Record<string, unknown> };
+    } catch (e) {
+      const x = e as { code?: string; cause?: { appCode?: string; appParams?: Record<string, unknown> } };
+      return { ok: undefined, code: x.code, appCode: x.cause?.appCode, appParams: x.cause?.appParams ?? {} };
+    }
+  };
+  const daDung = async (userId: number) =>
+    Number((await dung(sql`SELECT count(*)::int AS n FROM backup_codes WHERE "userId" = ${userId} AND "isUsed" = true`))[0].n);
+
+  it("10 mã dự phòng sai ⇒ lượt 10 báo MA_DU_PHONG_TAM_KHOA; lượt 11 với mã ĐÚNG bị từ chối, KHÔNG bị tiêu; hết cửa sổ 60 phút ⇒ qua", async () => {
+    const u = await nguoiMoi("dpKhoa");
+    const ma = await quayVongMaDuPhong(u.id);
+    for (let i = 1; i < MA_DU_PHONG_SO_LAN_TOI_DA; i++) expect(await verifyBackupCode(u.id, saiDp(i)), `lần sai ${i}`).toBe(false);
+    const l10 = await loiCua(verifyBackupCode(u.id, saiDp(10)));
+    expect(l10).toMatchObject({ code: "TOO_MANY_REQUESTS", appCode: "MA_DU_PHONG_TAM_KHOA" });
+    expect(Object.keys(l10.appParams)).toEqual(["remainingMinutes"]);
+    const l11 = await loiCua(verifyBackupCode(u.id, ma[0]));
+    expect(l11).toMatchObject({ code: "TOO_MANY_REQUESTS", appCode: "MA_DU_PHONG_TAM_KHOA" });
+    expect(await daDung(u.id), "mã đúng lúc đang khoá KHÔNG bị tiêu").toBe(0);
+    expect(await soAudit(u.id, "ma_du_phong.tam_khoa")).toBe(1);
+    expect(await hang(u.id), "sai mã dự phòng KHÔNG chạm bộ đếm TOTP").toBeUndefined();
+    await troi(u.id, MA_DU_PHONG_CUA_SO_MS + 1_000);
+    expect(await verifyBackupCode(u.id, ma[0])).toBe(true);
+    expect(await hangLoai(u.id, "backup")).toBeUndefined();
+  }, 120_000);
+
+  it("khoá TOTP KHÔNG chặn mã dự phòng (lối thoát); khoá mã dự phòng KHÔNG khoá TOTP", async () => {
+    const u = await nguoiMoi("dpDocLap");
+    const ma = await quayVongMaDuPhong(u.id);
+    for (let i = 0; i < 5; i++) await sai(u.id);
+    expect((await hang(u.id))?.dang_khoa).toBe(true);
+    expect(await verifyBackupCode(u.id, ma[0]), "TOTP đang khoá, mã dự phòng vẫn qua").toBe(true);
+    expect((await hang(u.id))?.dang_khoa, "mã dự phòng đúng không gỡ khoá TOTP").toBe(true);
+
+    const v = await nguoiMoi("dpDocLap2");
+    await quayVongMaDuPhong(v.id);
+    for (let i = 1; i <= MA_DU_PHONG_SO_LAN_TOI_DA; i++) await loiCua(verifyBackupCode(v.id, saiDp(i)));
+    expect((await hangLoai(v.id, "backup"))?.dang_khoa).toBe(true);
+    const m = maDung();
+    expect(await verifyTotpOnce({ userId: v.id, secret: SECRET, token: m.token, nowMs: m.nowMs }), "mã dự phòng khoá, TOTP vẫn qua").toEqual({ hopLe: true, phatLai: false });
+    expect((await hangLoai(v.id, "backup"))?.dang_khoa, "TOTP đúng không gỡ khoá mã dự phòng").toBe(true);
+  }, 120_000);
+
+  it("đồng thời: 20 mã dự phòng sai + 1 đúng ⇒ mã đúng bị từ chối, không tiêu; NHIỀU NHẤT 10 lượt được đối chiếu", async () => {
+    const u = await nguoiMoi("dpDongThoi");
+    const ma = await quayVongMaDuPhong(u.id);
+    const kq = await Promise.allSettled([...Array.from({ length: 20 }, (_, i) => saiDp(i)), ma[0]].map((c) => verifyBackupCode(u.id, c)));
+    // bị từ chối TRƯỚC đối chiếu ⇒ NÉM; lượt 10 sai (đặt khoá) cũng ném SAU đối chiếu ⇒ fulfilled = đã đối chiếu, ≤ 9
+    const daDoiChieu = kq.filter((r) => r.status === "fulfilled").length;
+    expect(daDoiChieu).toBeLessThanOrEqual(MA_DU_PHONG_SO_LAN_TOI_DA);
+    expect(kq[20].status, "mã đúng cuối đợt bị từ chối").toBe("rejected");
+    for (const r of kq) if (r.status === "rejected") expect((r.reason as { cause?: { appCode?: string } }).cause?.appCode).toBe("MA_DU_PHONG_TAM_KHOA");
+    expect(await daDung(u.id)).toBe(0);
+    expect(await hangLoai(u.id, "backup")).toMatchObject({ n: 21, dang_khoa: true });
+    expect(await soAudit(u.id, "ma_du_phong.tam_khoa")).toBe(1);
+  }, 120_000);
+
+  it("các lần sai cách nhau quá 60 phút ⇒ không khoá (cửa sổ reset)", async () => {
+    const u = await nguoiMoi("dpRaiRac");
+    await quayVongMaDuPhong(u.id);
+    for (let i = 1; i <= 9; i++) expect(await verifyBackupCode(u.id, saiDp(i))).toBe(false);
+    await troi(u.id, MA_DU_PHONG_CUA_SO_MS + 1_000);
+    for (let i = 10; i <= 15; i++) expect(await verifyBackupCode(u.id, saiDp(i))).toBe(false);
+    expect(await hangLoai(u.id, "backup")).toMatchObject({ n: 6, khoa: false });
+  }, 120_000);
+
+  it("bộ đếm mã dự phòng hỏng (lỗi DB THẬT: userId ngoài dải) ⇒ NÉM TOTP_KHONG_KIEM_DUOC (fail-closed)", async () => {
+    const l = await loiCua(verifyBackupCode(3_000_000_000, saiDp(1)));
+    expect(l).toMatchObject({ code: "SERVICE_UNAVAILABLE", appCode: "TOTP_KHONG_KIEM_DUOC" });
+  });
+
+  it("twoFactor.verify: mã dự phòng sai ×10 ⇒ MA_DU_PHONG_TAM_KHOA {remainingMinutes}; mã 6 số sai KHÔNG tốn ngân sách mã dự phòng", async () => {
+    const { twoFactorRouter } = await import("../routers/twoFactorRouter");
+    const u = await nguoiMoi("dpTrpc");
+    await setup2FA(u.id, SECRET);
+    await enable2FA(u.id);
+    await quayVongMaDuPhong(u.id);
+    const caller = twoFactorRouter.createCaller({ user: { id: u.id, role: u.role, name: u.name, twoFactorEnabled: true } } as never);
+    await loiCua(caller.verify({ code: maSai() }));
+    expect(await hangLoai(u.id, "backup"), "mã 6 số không tới bộ đếm mã dự phòng").toBeUndefined();
+    for (let i = 1; i < MA_DU_PHONG_SO_LAN_TOI_DA; i++) expect(await loiCua(caller.verify({ code: saiDp(i) }))).toMatchObject({ appCode: "INVALID_VALUE" });
+    const l = await loiCua(caller.verify({ code: saiDp(10) }));
+    expect(l).toMatchObject({ code: "TOO_MANY_REQUESTS", appCode: "MA_DU_PHONG_TAM_KHOA" });
+    expect(Object.keys(l.appParams)).toEqual(["remainingMinutes"]);
+    expect(Number(l.appParams.remainingMinutes)).toBeGreaterThan(50);
+  }, 120_000);
 });
 
 describe("§5 không lộ số lần sai còn lại", () => {
@@ -380,7 +577,7 @@ describe("§5 không lộ số lần sai còn lại", () => {
     const kq = await kiemXacThucTheoMuc({ user: { id: u.id, role: "admin", twoFactorEnabled: true }, sessionToken: null }, 5, maSai());
     expect(kq).toMatchObject({ ok: false, ma: "TOTP_TAM_KHOA" });
     expect((kq as { conLaiMs: number }).conLaiMs).toBeGreaterThan(0);
-    H.hong = "doc";
+    H.hong = "nap";
     try {
       expect(await kiemXacThucTheoMuc({ user: { id: u.id, role: "admin", twoFactorEnabled: true }, sessionToken: null }, 5, maSai())).toEqual({
         ok: false,
@@ -408,6 +605,33 @@ describe("§6 admin mở khoá — twoFactor.moKhoaTotp", () => {
     expect(rows[0]).toMatchObject({ actorId: admin.id, reason: "người dùng gọi hỗ trợ, đã xác minh" });
     const m = maDung();
     expect(await verifyTotpOnce({ userId: u.id, secret: SECRET, token: m.token, nowMs: m.nowMs })).toEqual({ hopLe: true, phatLai: false });
+  });
+
+  it("fix round 1 (CRITICAL 3) — admin tự mở khoá CHÍNH MÌNH ⇒ FORBIDDEN, hàng còn nguyên, không audit", async () => {
+    const { twoFactorRouter } = await import("../routers/twoFactorRouter");
+    const admin = await nguoiMoi("moKhoaTuMinh", "admin");
+    for (let i = 0; i < 5; i++) await sai(admin.id);
+    const caller = twoFactorRouter.createCaller({ user: { id: admin.id, role: "admin", name: admin.name, twoFactorEnabled: true } } as never);
+    await expect(caller.moKhoaTotp({ userId: admin.id, lyDo: "tự mở cho chính mình" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      cause: { appCode: "PERMISSION_DENIED", appParams: { reason: "totpSelfUnlock" } },
+    });
+    expect((await hang(admin.id))?.dang_khoa).toBe(true);
+    expect(await soAudit(admin.id, "totp.mo_khoa")).toBe(0);
+  });
+
+  it("admin mở khoá xoá CẢ HAI bộ đếm (totp + mã dự phòng)", async () => {
+    const { twoFactorRouter } = await import("../routers/twoFactorRouter");
+    const u = await nguoiMoi("moKhoaHai");
+    const admin = await nguoiMoi("moKhoaHaiAdmin", "admin");
+    await dung(sql`INSERT INTO totp_khoa_sai (user_id, loai, so_lan_sai, cua_so_bat_dau, khoa_den) VALUES
+      (${u.id}, 'totp', 5, now(), now() + interval '4 minutes'), (${u.id}, 'backup', 10, now(), now() + interval '50 minutes')`);
+    const caller = twoFactorRouter.createCaller({ user: { id: admin.id, role: "admin", name: admin.name, twoFactorEnabled: true } } as never);
+    expect(await caller.moKhoaTotp({ userId: u.id, lyDo: "mở cả hai bộ đếm" })).toEqual({ success: true, daMoKhoa: true });
+    expect(await hangLoai(u.id, "totp")).toBeUndefined();
+    expect(await hangLoai(u.id, "backup")).toBeUndefined();
+    const row = (await auditCua(u.id)).find((x) => x.action === "totp.mo_khoa");
+    expect(row?.beforeJson).toEqual({ boDem: { totp: { dangKhoa: true }, backup: { dangKhoa: true } } });
   });
 
   it("người không phải admin ⇒ FORBIDDEN, hàng còn nguyên, không audit", async () => {

@@ -366,3 +366,35 @@ describe("R1a T16 — đăng nhập 2FA khi bộ đếm TOTP sai từ chối", (
     expect(coPhien(b)).toBe(true);
   });
 });
+
+// SCADA R1a Task 16 fix round 1 (IMPORTANT 4) — bộ đếm MÃ DỰ PHÒNG riêng (trong `db.verifyBackupCode`, NÉM khi khoá / hỏng).
+describe("R1a T16 fix round 1 — đăng nhập 2FA: bộ đếm mã dự phòng", () => {
+  it("mã dự phòng đang tạm khoá ⇒ 429 TWOFA_BACKUP_LOCKED + remainingMinutes, không phiên, vé không bị tiêu", async () => {
+    const { loiMaDuPhongTamKhoa } = await import("../_core/totpKhoaSai");
+    dbm.verifyBackupCode.mockRejectedValue(loiMaDuPhongTamKhoa(1_500_000));
+    const a = await loginDung();
+    const b = await goi("POST /api/auth/verify-2fa", { userId: 49, token: "BACKUP-01" }, headerVe(veTu(a)!));
+    expect(b.status).toBe(429);
+    expect(b.body).toMatchObject({ code: "TWOFA_BACKUP_LOCKED", remainingMinutes: 25 });
+    expect(Object.keys(b.body).sort()).toEqual(["code", "error", "remainingMinutes"]);
+    expect(coPhien(b)).toBe(false);
+    expect(__soVeDangSong()).toBe(1);
+  });
+
+  it("bộ đếm mã dự phòng hỏng ⇒ 503 TWOFA_TOTP_UNAVAILABLE (fail-closed)", async () => {
+    const { appError } = await import("../_core/appError");
+    dbm.verifyBackupCode.mockRejectedValue(appError("SERVICE_UNAVAILABLE", "TOTP_KHONG_KIEM_DUOC"));
+    const a = await loginDung();
+    const b = await goi("POST /api/auth/verify-2fa", { userId: 49, token: "BACKUP-01" }, headerVe(veTu(a)!));
+    expect(b.status).toBe(503);
+    expect(coPhien(b)).toBe(false);
+  });
+
+  it("mã 6 số SAI KHÔNG tới bộ đếm mã dự phòng (dò TOTP không được khoá lối thoát)", async () => {
+    totp.verifyTotpOnce.mockResolvedValue({ hopLe: false, phatLai: false } as never);
+    const a = await loginDung();
+    const b = await goi("POST /api/auth/verify-2fa", { userId: 49, token: "000000" }, headerVe(veTu(a)!));
+    expect(b.status).toBe(401);
+    expect(dbm.verifyBackupCode).not.toHaveBeenCalled();
+  });
+});
