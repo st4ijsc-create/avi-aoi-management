@@ -1,0 +1,14 @@
+02:23:42 cookie: app_session_id=eyJhbGciOi…
+02:23:42 duyệt mã JJKP-WXMT → 200 {"result":{"data":{"json":{"ok":true,"note":null,"trangThai":"da-duyet"}}}}
+02:23:42 token: 200 avgw_J1MCf…
+02:23:42 đã activate dist sản xuất; lệnh: 13
+02:23:50 chụp e2e-0-san-sang: OK [Extension Development Host] AI Local - ws-shot - Visual Studio Code h=2623694
+02:23:56 XONG: {"loai":"__xong","ket":"ag_xong","lyDo":"hoan-thanh","text":"AI Local\nPhân tích ảnh\n\nMàn hình gì? Màn hình HMI (Human Machine Interface) hiển thị cảnh báo lỗi (AL = Alarm) của hệ thống điều khiển công nghiệp.\n\nMã cảnh báo: AL.32\n\nNghĩa là gì? Cảnh báo quá dòng động cơ M2 (Motor M2 Overcurrent):\n\nDòng điện thực tế đo được: 18.4 A\nNgưỡng cho phép: 15.0 A\nDòng đo vượt ngưỡng → Hệ thống tự động dừng khẩn cấp (DỪNG KHẨN)\nĐể reset: nhấn phím F5\n👍\n👎\nChép câu trả lời\nTạo lại"}
+02:23:57 chờ xong: ĐÃ XONG sau 6 s
+02:23:59 chụp e2e-A2-agent-tra-loi: OK [Extension Development Host] AI Local - ws-shot - Visual Studio Code h=2623694
+02:23:59 cookie còn trong secrets trước lượt B: CÓ
+02:24:04 chụp e2e-B1-chat-dang-doc-anh: OK [Extension Development Host] AI Local - ws-shot - Visual Studio Code h=2623694
+02:24:08 XONG: {"loai":"__xong","ket":"hoan_tat","lyDo":null,"text":"AI Local\nPhân tích ảnh\n\nMàn hình gì? Màn hình HMI (Human Machine Interface) hiển thị cảnh báo lỗi (AL = Alarm) của hệ thống điều khiển công nghiệp.\n\nMã cảnh báo là gì và nghĩa là gì?\n\nMã: AL.32\nÝ nghĩa: QUA DÒNG ĐỘNG CƠ M2 (Tiếng Anh: MOTOR M2 OVERCURRENT).\nChi tiết: Động cơ M2 đang tiêu thụ dòng điện 18.4 A, vượt quá ngưỡng giới hạn cho phép là 15.0 A. Hệ thống đã chuyển sang trạng thái DỪNG KHẨN để bảo vệ thiết bị.\n\nCách xử lý: Nhấn phím F5 để Reset lỗi sau khi đã khắc phục nguyên nhân (kiểm tra tải cơ khí, dây điện hoặc bộ điều khiển động cơ).\n\nLưu ý:\n\nKhông nhấn Reset nếu vẫn còn quá tải hoặc chập chờn dòng điện, vì có thể gây hư hỏng động cơ M2 hoặc mạch công suất.\nCần kiểm tra lịch sử vận hành gần nhất để xác định xem đây là lỗi ngẫu nhiên hay sự cố lặp lại.\n\nLiên quan:\n\nQuản lý lô sản xuất: Nếu lỗi này xảy ra trong lúc chạy lô, trạng thái máy sẽ ảnh hưởng đến tiến độ. Cần kiểm tra trạng thái lô hiện tại qua API GET /api/lots/:orderCode để xem có cần tạm dừng (paused) hoặc hủy (cancelled) lô không.\nBảo trì thiết bị: Lỗi quá dòng thường liên quan đến cơ khí hoặc điện. Cần kiểm tra panel golden (nếu có) và mapping điểm đo (mapping) để đảm bảo cảm biến dòng điện hoạt động chính xác, tránh báo động giả.\nChép câu trả lời\nTạo lại"}
+02:24:09 chờ xong: ĐÃ XONG sau 8 s
+02:24:11 chụp e2e-B3-chat-tra-loi: OK [Extension Development Host] AI Local - ws-shot - Visual Studio Code h=2623694
+02:24:11 tin webview→host (loại): san_sang,san_sang,dat_che_do,hoi,__xong,dat_che_do,hoi,__xong
