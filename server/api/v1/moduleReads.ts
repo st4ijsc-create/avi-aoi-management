@@ -31,7 +31,7 @@ import type { DeviceTypeNode } from "../../services/standards/deviceTypeRegistry
 import type { AlarmMapping } from "../../services/standards/alarmTaxonomy";
 import type { TenantCodeScope } from "../../_core/tenantCodeScope";
 import type { PhamViMaTenant } from "../../db/hierarchy";
-import type { ApiKeyTenantScope } from "./apiKeyScope";
+import { phamViCuaKhoa, dieuKienKhoa, canTrongPhamVi } from "./phamViKhoa"; // 2026-10-24 — bộ phân giải phạm vi khoá dùng chung các tuyến /api/v1
 
 /** Parse a positive-integer path/query param or throw a 400. */
 function posInt(raw: unknown, label: string): number {
@@ -72,38 +72,6 @@ function limitParam(raw: unknown, def: number, max: number): number {
  *   `phamViTuyenCensus`) chỉ thấy danh tính RỜI TAY khi gốc `req.apiPrincipal…` đứng TRONG đối số của lời
  *   gọi đọc — cùng hình `/ecosystem/kpi`. Bản đầu nhận `req` trần: vá đúng mà lưới đếm vẫn xếp nhóm A (mù).
  */
-async function phamViCuaKhoa(tenantScope: ApiKeyTenantScope | null | undefined): Promise<PhamViMaTenant | undefined> {
-  const { tenantCodeScopeOf } = await import("./apiKeyScope");
-  const codes = tenantCodeScopeOf(tenantScope);
-  return codes ? { tenantScope: codes } : undefined;
-}
-
-/**
- * ★★★ 2026-10-24 — cổng phạm vi KHOÁ API cho bảng tenant theo CỘT ĐỊNH VỊ (cùng `dieuKienViTriTrongPhamVi` mà tRPC dùng, trục ②). Khoá TOÀN CỤC ⇒ `undefined` (không thêm mệnh đề);
- * khoá MỘT NHÀ MÁY / CHƯA KHAI ⇒ điều kiện SQL (chưa khai ⇒ `IN (-1)` = 0 hàng — fail-closed).
- */
-async function dieuKienKhoa(
-  tenantScope: ApiKeyTenantScope | null | undefined,
-  cot: import("../../routers/_adapterPhamVi").CotViTri,
-): Promise<import("drizzle-orm").SQL | undefined> {
-  const pv = await phamViCuaKhoa(tenantScope);
-  if (!pv) return undefined;
-  const { dieuKienViTriTrongPhamVi } = await import("../../routers/_adapterPhamVi");
-  return dieuKienViTriTrongPhamVi(pv, cot);
-}
-
-/** id (nhà máy/máy) client gửi phải trong phạm vi khoá; ngoài phạm vi ≡ 404 cùng hình dạng "không tồn tại". */
-async function canTrongPhamVi(
-  tenantScope: ApiKeyTenantScope | null | undefined,
-  cap: "factory" | "machine",
-  idCan: number,
-  nhan: string,
-): Promise<void> {
-  const pv = await phamViCuaKhoa(tenantScope);
-  if (!pv) return;
-  const { trongPhamVi } = await import("../../db/hierarchy");
-  if (!(await trongPhamVi(cap, idCan, pv))) throw new ApiHttpError(404, "not_found", `${nhan} ${idCan} not found.`);
-}
 
 /**
  * Register the U4a module READ routes on the /api/v1 router. Additive — called from

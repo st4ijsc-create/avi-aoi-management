@@ -159,7 +159,8 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
 ];
 
 // ★ 2026-10-24 — A 80→71 · S 19→28 (chín tuyến `moduleReads.ts`: safety/events|zones, fleet/tasks|zones, programs, programs/:id/deployments, anomaly/events, twin/scene-graph, pdm/risk).
-const GHIM = { A: 71, C: 40, D: 96, S: 28, U: 16, tong: 251 } as const;
+// ★ 2026-10-24 nhóm 1 (equipment + assets + gateways + state): A 71→60 · S 28→39.
+const GHIM = { A: 60, C: 40, D: 96, S: 39, U: 16, tong: 251 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -359,6 +360,19 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
     //   `403 · application/json · image_factory_scope_denied` trên đường dẫn của nhà máy B, và
     //   `200 · image/png` trên đường dẫn của chính A. Xem `phamViTuyenBaseline.ts`.
     expect(cua("S").map(khoaTuyen).sort()).toEqual([
+      // ★ 2026-10-24 nhóm 1 (equipment/assets/state): khoá API một nhà máy chỉ chạm máy/tài sản/nút biên của nhà máy mình (phamViKhoa.ts). Lưới: equipmentAssetsStatePhamViKhoa.db.test.ts.
+      // ★ 2026-09-15 (PH-23) — bề mặt SONG SINH của `/ecosystem/kpi`, và nó nằm ngay TRÊN kpi
+      //   trong cùng file mà bị bỏ quên suốt từ 2026-08-18: cùng `req.apiPrincipal.tenantScope`
+      //   → `resolveTenantCodeFactoryIds` → tham số `tenant` của `buildHierarchy`.
+      // ★ Đợt 42 — hai tuyến cockpit: `machineDetail(id, phamViCuaKhoa(req.apiPrincipal?.tenantScope))`.
+      // ★ 2026-10-24 — chín tuyến còn lại cùng lớp (khoá của nhà máy A đọc nhà máy B): `dieuKienKhoa` (cột định vị → `dieuKienViTriTrongPhamVi`, trục ②) hoặc `canTrongPhamVi` (id từ client).
+      //   Lưới: `server/api/v1/moduleReadsPhamViKhoa.db.test.ts`.
+      // ★ 2026-10-10 (doc 81 Đợt 5 E2) — `runVisibleTo(view.run, orchestrationScopeOf(req.apiPrincipal?.tenantScope))`.
+      // ⚠ `reportArtifactRoutes.ts#GET /api/reports/artifacts/:id/download` **KHÔNG** ở đây, và nó
+      //   CÓ lọc theo người xem. Nó nằm trong SỔ NỢ vì `chamTenant` của nó bật do bao đóng của hàm
+      //   XÁC THỰC (`api_keys` mang `factoryCode`), còn `report_artifacts` thì không thuộc tenant
+      //   nên `getDownloadTarget` không nằm trên đường đọc mà vị từ đo được. Xem chú thích tại chỗ
+      //   trong `phamViTuyenBaseline.ts`.
       "server/_core/index.ts#GET /api/aoi/download/:packageId",
       "server/_core/index.ts#GET /api/aoi/image/:packageId/:fileName",
       "server/_core/index.ts#GET /api/external/machines",
@@ -373,12 +387,12 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/api/export/exportRouter.ts#GET /^\\/(yield|oee|defect-pareto)\\.(csv|json|xlsx)$/",
       "server/api/export/exportRouter.ts#GET /^\\/inspections\\.(csv|json|xlsx|pdf)$/",
       "server/api/export/exportRouter.ts#GET /^\\/measurements\\.(csv|json|xlsx|pdf)$/",
-      // ★ 2026-09-15 (PH-23) — bề mặt SONG SINH của `/ecosystem/kpi`, và nó nằm ngay TRÊN kpi
-      //   trong cùng file mà bị bỏ quên suốt từ 2026-08-18: cùng `req.apiPrincipal.tenantScope`
-      //   → `resolveTenantCodeFactoryIds` → tham số `tenant` của `buildHierarchy`.
-      // ★ Đợt 42 — hai tuyến cockpit: `machineDetail(id, phamViCuaKhoa(req.apiPrincipal?.tenantScope))`.
-      // ★ 2026-10-24 — chín tuyến còn lại cùng lớp (khoá của nhà máy A đọc nhà máy B): `dieuKienKhoa` (cột định vị → `dieuKienViTriTrongPhamVi`, trục ②) hoặc `canTrongPhamVi` (id từ client).
-      //   Lưới: `server/api/v1/moduleReadsPhamViKhoa.db.test.ts`.
+      "server/api/v1/assets.ts#GET /assets",
+      "server/api/v1/assets.ts#GET /assets/:id",
+      "server/api/v1/assets.ts#GET /assets/:id/config-drift",
+      "server/api/v1/assets.ts#GET /assets/:id/health",
+      "server/api/v1/assets.ts#GET /assets/:id/tags",
+      "server/api/v1/assets.ts#GET /gateways/:id/status",
       "server/api/v1/moduleReads.ts#GET /anomaly/events",
       "server/api/v1/moduleReads.ts#GET /ecosystem/hierarchy",
       "server/api/v1/moduleReads.ts#GET /ecosystem/kpi",
@@ -392,13 +406,12 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/api/v1/moduleReads.ts#GET /safety/events",
       "server/api/v1/moduleReads.ts#GET /safety/zones",
       "server/api/v1/moduleReads.ts#GET /twin/scene-graph",
-      // ★ 2026-10-10 (doc 81 Đợt 5 E2) — `runVisibleTo(view.run, orchestrationScopeOf(req.apiPrincipal?.tenantScope))`.
+      "server/api/v1/router.ts#GET /equipment",
+      "server/api/v1/router.ts#GET /equipment/:id/capabilities",
+      "server/api/v1/router.ts#GET /equipment/:id/state",
+      "server/api/v1/router.ts#GET /equipment/:id/telemetry",
       "server/api/v1/router.ts#GET /orchestration/runs/:id",
-      // ⚠ `reportArtifactRoutes.ts#GET /api/reports/artifacts/:id/download` **KHÔNG** ở đây, và nó
-      //   CÓ lọc theo người xem. Nó nằm trong SỔ NỢ vì `chamTenant` của nó bật do bao đóng của hàm
-      //   XÁC THỰC (`api_keys` mang `factoryCode`), còn `report_artifacts` thì không thuộc tenant
-      //   nên `getDownloadTarget` không nằm trên đường đọc mà vị từ đo được. Xem chú thích tại chỗ
-      //   trong `phamViTuyenBaseline.ts`.
+      "server/api/v1/state.ts#GET /state/*",
     ]);
   });
 });

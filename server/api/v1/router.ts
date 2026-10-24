@@ -23,6 +23,7 @@ import { nanoid } from "nanoid";
 import { API_SCOPES } from "./scopes";
 import { requireScope } from "./auth";
 import { requireDeclaredTenantScope, tenantCodeScopeOf } from "./apiKeyScope"; // doc 81 Đợt 5 task E2
+import { idsMayCuaKhoa, mayTrongPhamViKhoa, type NguoiGoiKhoa } from "./phamViKhoa"; // 2026-10-24 — phạm vi khoá API
 import type { FoeScope } from "../../services/orchestration/foe/foeScope";
 import { sendOk, sendError, wrap, ApiHttpError } from "./envelope";
 import { buildV1OpenApiSpec } from "./openapi";
@@ -97,10 +98,11 @@ export function orchestrationRunWebhookAudience(runId: number): (webhook: { id: 
 }
 
 /** Load a machine by id (fail-safe; throws ApiHttpError 404/500). */
-async function loadMachine(id: number): Promise<MachineRow> {
+async function loadMachine(id: number, nguoi: NguoiGoiKhoa | null | undefined): Promise<MachineRow> {
   if (!Number.isInteger(id) || id <= 0) {
     throw new ApiHttpError(400, "bad_request", "Invalid machine id.");
   }
+  await mayTrongPhamViKhoa(nguoi, id); // phạm vi KHOÁ API (rà bảo mật 2026-10-24): máy ngoài phạm vi khoá ≡ 404 như không tồn tại, TRƯỚC mọi đọc/ghi/lệnh
   const { getMachineById } = await import("../../db");
   const m = await getMachineById(id);
   if (!m) throw new ApiHttpError(404, "not_found", `Machine ${id} not found.`);
@@ -229,7 +231,9 @@ export function createV1Router(): Router {
     requireScope(API_SCOPES.EQUIPMENT_READ),
     wrap(async (req: Request, res: Response) => {
       const { getMachines } = await import("../../db");
-      const rows = (await getMachines()) as unknown as MachineRow[];
+      const idsMay = await idsMayCuaKhoa(req.apiPrincipal); // phạm vi KHOÁ API (rà bảo mật 2026-10-24): null = khoá toàn cục (không lọc)
+      const cho = idsMay === null ? null : new Set(idsMay);
+      const rows = ((await getMachines()) as unknown as MachineRow[]).filter((m) => cho === null || cho.has(m.id));
       const stationId = req.query.stationId ? Number(req.query.stationId) : undefined;
       const filtered = stationId ? rows.filter((m) => m.stationId === stationId) : rows;
       const data = filtered.map((m) => {
@@ -255,7 +259,7 @@ export function createV1Router(): Router {
     "/equipment/:id/capabilities",
     requireScope(API_SCOPES.EQUIPMENT_READ),
     wrap(async (req, res) => {
-      const m = await loadMachine(Number(req.params.id));
+      const m = await loadMachine(Number(req.params.id), req.apiPrincipal);
       sendOk(res, { machineId: m.id, machineType: m.machineType, capability: resolveCapability(m) });
     }),
   );
@@ -265,7 +269,7 @@ export function createV1Router(): Router {
     "/equipment/:id/telemetry",
     requireScope(API_SCOPES.EQUIPMENT_READ),
     wrap(async (req, res) => {
-      const m = await loadMachine(Number(req.params.id));
+      const m = await loadMachine(Number(req.params.id), req.apiPrincipal);
       const limitRaw = Number(req.query.limit);
       const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(1, Math.trunc(limitRaw)), 1000) : 50;
 
@@ -310,7 +314,7 @@ export function createV1Router(): Router {
     "/equipment/:id/state",
     requireScope(API_SCOPES.EQUIPMENT_READ),
     wrap(async (req, res) => {
-      const m = await loadMachine(Number(req.params.id));
+      const m = await loadMachine(Number(req.params.id), req.apiPrincipal);
       const capability = resolveCapability(m);
       const { allowedCommands } = await import("../../services/equipment/packml");
       const packmlState = operationStatusToPackml(m.operationStatus);
@@ -330,7 +334,7 @@ export function createV1Router(): Router {
     "/equipment/:id/commands",
     requireScope(API_SCOPES.EQUIPMENT_COMMAND),
     wrap(async (req, res) => {
-      const m = await loadMachine(Number(req.params.id));
+      const m = await loadMachine(Number(req.params.id), req.apiPrincipal);
       const capability = resolveCapability(m);
       const body = (req.body ?? {}) as { command?: string; args?: Record<string, unknown>; idempotencyKey?: string };
       const commandName = body.command;

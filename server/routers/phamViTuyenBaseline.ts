@@ -87,13 +87,7 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   "server/_core/index.ts#GET /api/external/workstations/:id",
   // ── server/api/v1/advice.ts (1) ────────────────────────────────────────────────────────────────
   "server/api/v1/advice.ts#GET /recommendations",
-  // ── server/api/v1/assets.ts (6) ────────────────────────────────────────────────────────────────
-  "server/api/v1/assets.ts#GET /assets",
-  "server/api/v1/assets.ts#GET /assets/:id",
-  "server/api/v1/assets.ts#GET /assets/:id/config-drift",
-  "server/api/v1/assets.ts#GET /assets/:id/health",
-  "server/api/v1/assets.ts#GET /assets/:id/tags",
-  "server/api/v1/assets.ts#GET /gateways/:id/status",
+  // ── server/api/v1/assets.ts (0) ────────────────────────────────────────────────────────────────
   // ── server/api/v1/events.ts (1) ────────────────────────────────────────────────────────────────
   "server/api/v1/events.ts#GET /events",
   // ── server/api/v1/genealogyApi.ts (1) ──────────────────────────────────────────────────────────
@@ -123,13 +117,8 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   // ── server/api/v1/pdmHealth.ts (2) ─────────────────────────────────────────────────────────────
   "server/api/v1/pdmHealth.ts#GET /health/assets/:id",
   "server/api/v1/pdmHealth.ts#GET /predictions",
-  // ── server/api/v1/router.ts (4) ────────────────────────────────────────────────────────────────
-  "server/api/v1/router.ts#GET /equipment",
-  "server/api/v1/router.ts#GET /equipment/:id/capabilities",
-  "server/api/v1/router.ts#GET /equipment/:id/state",
-  "server/api/v1/router.ts#GET /equipment/:id/telemetry",
-  // ── server/api/v1/state.ts (1) ─────────────────────────────────────────────────────────────────
-  "server/api/v1/state.ts#GET /state/*",
+  // ── server/api/v1/router.ts (0) ────────────────────────────────────────────────────────────────
+  // ── server/api/v1/state.ts (0) ─────────────────────────────────────────────────────────────────
   // ── server/routes/edgeDownload.ts (1) ──────────────────────────────────────────────────────────
   "server/routes/edgeDownload.ts#GET /api/edge/download/:deploymentId",
   // ── server/routes/externalInspectionApi.ts (23) ────────────────────────────────────────────────

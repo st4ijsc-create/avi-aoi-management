@@ -19,6 +19,7 @@ import { type Router, type Request, type Response } from "express";
 import { requireScope } from "./auth";
 import { API_SCOPES } from "./scopes";
 import { sendOk, wrap, ApiHttpError } from "./envelope";
+import { idsMayCuaKhoa } from "./phamViKhoa"; // 2026-10-24 — phạm vi khoá API
 
 // ─── state-read-p95 rolling window (real measurement, never fabricated) ──────
 
@@ -145,6 +146,22 @@ export function registerStateRoutes(r: Router): void {
           "not_found",
           `No asset maps to path "${path}" (no cached snapshot and no machine with that isa95_path).`,
         );
+      }
+      // phạm vi KHOÁ API (rà bảo mật 2026-10-24): ảnh trạng thái của máy ngoài phạm vi khoá (hoặc không quy được về máy nào) ≡ không tồn tại. Khoá toàn cục ⇒ không kiểm.
+      const idsMay = await idsMayCuaKhoa(req.apiPrincipal);
+      if (idsMay !== null) {
+        let mid: number | null = snap.machineId ?? null;
+        if (mid == null) {
+          const { getDb } = await import("../../db/connection");
+          const { machines } = await import("../../../drizzle/schema");
+          const { eq } = await import("drizzle-orm");
+          const d = await getDb();
+          const [m] = d ? await d.select({ id: machines.id }).from(machines).where(eq(machines.isa95Path, snap.path)).limit(1) : [];
+          mid = m?.id ?? null;
+        }
+        if (mid == null || !idsMay.includes(mid)) {
+          throw new ApiHttpError(404, "not_found", `No asset maps to path "${path}" (no cached snapshot and no machine with that isa95_path).`);
+        }
       }
       sendOk(res, snap);
     }),
