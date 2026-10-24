@@ -4587,7 +4587,8 @@
     "AI_CHAN_AN_TOAN": "The request was blocked by the AI safety layer because it looks like a prompt injection. Please rephrase it.",
     "AI_CHUA_CAP_PHEP": "The current edition / licence does not include AI (MOD_AI).",
     "SCADA_STOP_NOT_PINNED": "The machine has no pinned STOP values — an engineer pins them at /scada/config/channels; stop it with the hardwired E-STOP.",
-    "INTERLOCK_MAT_DICH": "Enabled interlock rule #{{ruleId}} uses tag {{tagKey}} (as its command target or its source) — renaming, moving, disabling or deleting the tag or its adapter would leave the protective action without a target or a source. Fix the rule (or disable it) first.",
+    "INTERLOCK_MAT_DICH": "Enabled interlock rule #{{ruleId}} uses tag {{tagKey}} (as its command target or its source) — renaming the tag, moving it to another adapter, disabling or deleting it, or disabling, deleting or moving its adapter to another machine would leave the protective action without a target or a source. Fix the rule (or disable it) first.",
+    "INTERLOCK_DICH_CHUA_SAN_SANG": "Interlock rule #{{ruleId}} cannot be enabled: tag {{tagKey}} (its command target or its source) does not exist, is disabled, or its adapter is disabled — the protective action would have no target or no source. Create / enable the tag and its adapter first, then enable the rule again.",
     "QUA_NHIEU_KENH_DA_KHAI": "This import touches {{soTag}} declared / protected channel tags — at most {{toiDa}} per import. Split the file and import again.",
     "STOP_PIN_GO_TRUOC": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) — changing its address, type, scale, offset, writable flag or adapter, disabling or deleting it would lose STOP. Unpin it first (Software stop tag, with a reason), then try again."
   },
@@ -16453,8 +16454,8 @@
     "defaultPortHint": "Default {{protocol}} port: {{port}}",
     "troLai": {
       "title": "Two-factor code required",
-      "body": "This change touches a protected tag (a declared channel, a machine's mode channel, or the target of an enabled interlock rule) — a fresh TOTP code is required.",
-      "submit": "Confirm and save"
+      "body": "This action touches a protected tag, or an adapter that carries one (re-pointing it, creating it on a key that is still referenced, disabling or deleting it). A protected tag is a declared channel, a machine's mode channel, or the target or source of an interlock rule that is enabled or approved. A fresh TOTP code is required.",
+      "submit": "Confirm"
     }
   },
   "engineering": {

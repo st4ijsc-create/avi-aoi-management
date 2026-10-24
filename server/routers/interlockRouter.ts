@@ -42,10 +42,10 @@ const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 // replacing the old inline `role !== "admin"` check that BYPASSED 2FA).
 const actuationProcedure = actuationBase.use(moduleGate("MOD_OT_CONTROL"));
 const adminProcedure = adminBase.use(moduleGate("MOD_OT_CONTROL"));
-import { interlockRules, interlockEvents, controlAuditLog, type InterlockRule } from "../../drizzle/schema";
+import { interlockRules, interlockEvents, controlAuditLog, deviceAdapters, deviceTags, type InterlockRule } from "../../drizzle/schema";
 import { evaluateCondition, deriveObserved, type ComparisonOperator, type InterlockSourceType } from "../services/interlock/ruleEvaluator";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
-import { kiemLenhInterlockTx, soHienThi, type DbHoacTx } from "../services/scada/nhatQuanKenh";
+import { kiemLenhInterlockTx, luatCoGhiLenh, soHienThi, type DbHoacTx } from "../services/scada/nhatQuanKenh";
 import { telemetryTagDungPhamVi } from "../services/interlock/d11";
 
 async function getDb() {
@@ -177,6 +177,70 @@ function assertTargetIfNotAlert(action: string, target: { targetMachineId?: numb
       { field: "target" },
       "Hành động khác 'alert' (dừng/giảm tốc/chặn) cần ít nhất một đích: targetMachineId, targetAdapterId hoặc commandTag.",
     );
+  }
+}
+
+/** Lý do `INTERLOCK_DICH_CHUA_SAN_SANG` (params.lyDo). */
+export type LyDoDichChuaSanSang = "dich_khong_ton_tai" | "dich_tat" | "adapter_dich_tat" | "nguon_khong_ton_tai" | "nguon_tat";
+
+function loiDichChuaSanSang(luat: { id: number; name: string }, tagKey: string, lyDo: LyDoDichChuaSanSang, chiTiet: string): never {
+  throw appError(
+    "BAD_REQUEST",
+    "INTERLOCK_DICH_CHUA_SAN_SANG",
+    { ma: "INTERLOCK_DICH_CHUA_SAN_SANG", lyDo, tagKey, ruleId: luat.id },
+    `Không bật được luật interlock #${luat.id} (${luat.name}): ${chiTiet} — hành động bảo vệ sẽ không có đích / nguồn. Tạo / bật tag và adapter trước, rồi bật lại luật.`,
+  );
+}
+
+/**
+ * SCADA R1b-1 T10b — CHIỀU NGƯỢC của I2 ở `enable`: tắt / xoá tag (hay adapter) đích / nguồn của luật ĐANG BẬT bị từ chối
+ * (`INTERLOCK_MAT_DICH`, troLaiKenh.ts), nên một luật không phải `alert` cũng KHÔNG được BẬT lên một đích / nguồn đã chết:
+ *   • đích (`targetAdapterId` + `commandTag`): tag phải TỒN TẠI, ĐANG BẬT, `writable` (không thì dispatch từ chối TAG_NOT_WRITABLE — cùng mã
+ *     `INTERLOCK_NGOAI_DAI`/`CHANNEL_READ_ONLY` với tags.update), và adapter của nó ĐANG BẬT;
+ *   • nguồn `telemetry_tag` (máy, sourceKey): có ÍT NHẤT một tag mang `sourceKey` trên một adapter của máy, và một tag như thế đang bật trên
+ *     adapter đang bật (cổng đọc theo (máy, tag) trên mọi adapter của máy — `khoaLuatNguonTx`).
+ * Luật đích chỉ `targetMachineId` (cổng chặn, không dispatch) ⇒ không có tag để kiểm.
+ *
+ * THỨ TỰ KHOÁ (troLaiKenh.ts: ADAPTER → LUẬT → TAG → KÊNH CHẾ ĐỘ): bên gọi đã khoá LUẬT FOR UPDATE; ở đây TAG FOR SHARE (`of` device_tags —
+ * hàng adapter của phép JOIN KHÔNG bị khoá). Adapter đọc KHÔNG khoá: khoá nó sau luật là đảo thứ tự với `congAdapterTx` (adapter FOR UPDATE →
+ * luật FOR SHARE). Không mất an toàn: mọi đường TẮT adapter / tag khoá LUẬT liên quan FOR SHARE trước khi ghi ⇒ nó chờ lượt bật này commit
+ * rồi thấy luật đang bật ⇒ `INTERLOCK_MAT_DICH`; ngược lại lượt bật chờ lượt tắt (khoá luật) commit rồi đọc adapter / tag đã tắt ⇒ từ chối.
+ */
+async function assertDichNguonSanSang(tx: DbHoacTx, luat: InterlockRule): Promise<void> {
+  if (!luatCoGhiLenh(luat.action)) return;
+  if (luat.targetAdapterId != null && luat.commandTag) {
+    const [tag] = await tx
+      .select({ isEnabled: deviceTags.isEnabled, writable: deviceTags.writable })
+      .from(deviceTags)
+      .where(and(eq(deviceTags.adapterId, luat.targetAdapterId), eq(deviceTags.tagKey, luat.commandTag)))
+      .limit(1)
+      .for("share");
+    if (!tag) loiDichChuaSanSang(luat, luat.commandTag, "dich_khong_ton_tai", `tag đích ${luat.commandTag} không tồn tại trên adapter #${luat.targetAdapterId}`);
+    if (tag.isEnabled !== true) loiDichChuaSanSang(luat, luat.commandTag, "dich_tat", `tag đích ${luat.commandTag} đang tắt`);
+    if (tag.writable !== true) {
+      throw appError(
+        "BAD_REQUEST",
+        "INTERLOCK_NGOAI_DAI",
+        { ma: "INTERLOCK_NGOAI_DAI", lyDo: "CHANNEL_READ_ONLY", tagKey: luat.commandTag, min: "—", max: "—", step: "—", ruleId: luat.id },
+        `Tag đích ${luat.commandTag} không cho phép ghi (writable=false) — dispatch sẽ từ chối mọi lệnh của luật #${luat.id}.`,
+      );
+    }
+    const [ad] = await tx.select({ isEnabled: deviceAdapters.isEnabled }).from(deviceAdapters).where(eq(deviceAdapters.id, luat.targetAdapterId)).limit(1);
+    if (!ad || ad.isEnabled !== true) loiDichChuaSanSang(luat, luat.commandTag, "adapter_dich_tat", `adapter #${luat.targetAdapterId} của tag đích ${luat.commandTag} đang tắt`);
+  }
+  if (luat.sourceType === "telemetry_tag" && luat.machineId != null && luat.sourceKey) {
+    const nguon = await tx
+      .select({ tagBat: deviceTags.isEnabled, adapterBat: deviceAdapters.isEnabled })
+      .from(deviceTags)
+      .innerJoin(deviceAdapters, eq(deviceAdapters.id, deviceTags.adapterId))
+      .where(and(eq(deviceAdapters.machineId, luat.machineId), eq(deviceTags.tagKey, luat.sourceKey)))
+      .for("share", { of: deviceTags });
+    if (nguon.length === 0) {
+      loiDichChuaSanSang(luat, luat.sourceKey, "nguon_khong_ton_tai", `không adapter nào của máy #${luat.machineId} có tag nguồn ${luat.sourceKey}`);
+    }
+    if (!nguon.some((r) => r.tagBat === true && r.adapterBat === true)) {
+      loiDichChuaSanSang(luat, luat.sourceKey, "nguon_tat", `tag nguồn ${luat.sourceKey} (hoặc adapter của nó) đang tắt`);
+    }
   }
 }
 
@@ -473,6 +537,9 @@ export const interlockRouter = router({
         assertTargetIfNotAlert(existing.action, existing);
         assertTelemetryCauHinh(existing); // luật đã duyệt sẵn (seed / trước vá) mà hỏng cấu trúc không được bật
         await assertLenhTrongDaiKenh(tx, existing, existing.id); // SCADA R1a Task 12 — khai báo kênh có thể đã đổi sau khi duyệt
+        // R1b-1 T10b — đích / nguồn phải còn TỒN TẠI + BẬT (tag đích còn ghi được, adapter đích bật). Sau kiểm giá trị (giữ mã cũ cho luật lệch
+        // kênh); khoá TAG sau LUẬT như mọi đường khác.
+        await assertDichNguonSanSang(tx, existing);
         const [row] = await tx
           .update(interlockRules)
           .set({ enabled: true, updatedAt: new Date(), updatedBy: ctx.user.id })

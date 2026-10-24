@@ -5,7 +5,7 @@
  *
  * CSDL THẬT (`_test`). Số tổng hợp, tự dọn (control_audit_log là WORM — dòng audit ở lại vô hại).
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, onTestFinished } from "vitest";
 import postgres from "postgres";
 import { interlockRouter } from "./interlockRouter";
 import { _internal as oversight } from "./oversightRouter";
@@ -174,6 +174,16 @@ describe.skipIf(!DB_URL)("interlockRouter — luật telemetry_tag hỏng cấu 
         input(`${DAU}-k4`, { machineId: 990_521_200, sourceKey: `${DAU}-khong-co-mau`, action: "stop_line", targetMachineId: MAY_DICH }),
       );
       ruleIds.push(r.id);
+      // R1b-1 T10b — bật luật không phải alert đòi tag NGUỒN tồn tại + bật trên một adapter bật của máy nguồn (INTERLOCK_DICH_CHUA_SAN_SANG).
+      // Tag có thật nhưng KHÔNG có mẫu nào (không telemetry, bộ đệm tắt) ⇒ ca "thiếu dữ liệu" của test vẫn đúng như cũ.
+      const [adNguon] = await sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId")
+        VALUES (${DAU + "-k4-nguon"}, ${DAU + "-k4-nguon"}, 'stub', 'stub://k4-nguon', true, 990521200) RETURNING id`;
+      onTestFinished(async () => {
+        await sql`DELETE FROM device_tags WHERE "adapterId" = ${adNguon.id}`;
+        await sql`DELETE FROM device_adapters WHERE id = ${adNguon.id}`;
+      });
+      await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled")
+        VALUES (${adNguon.id}, ${DAU + "-khong-co-mau"}, 'addr-k4', 'float', false, true)`;
       await caller(B).approve({ id: r.id, expectedVersion: (await caller(B).get({ id: r.id })).versionToken });
       const bat = await caller(A).enable({ id: r.id, expectedVersion: (await caller(A).get({ id: r.id })).versionToken });
       expect(bat.enabled).toBe(true);

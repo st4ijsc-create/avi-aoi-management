@@ -134,10 +134,16 @@ describe.skipIf(!DB_URL)("interlockRouter — commandValue ↔ dải/bước c�
     expect(await loiCua(caller(TAC_GIA).enable({ id: Number(b.id), expectedVersion: tokB }))).toMatchObject({ appCode: "INTERLOCK_NGOAI_DAI" });
     expect((await sql`SELECT enabled FROM interlock_rules WHERE id = ${b.id}`)[0].enabled).toBe(false);
 
-    // cùng hàng với giá trị trong dải ⇒ bật được
+    // cùng hàng với giá trị trong dải ⇒ bật được — R1b-1 T10b: bật luật đòi adapter đích ĐANG BẬT (INTERLOCK_DICH_CHUA_SAN_SANG), nên bật
+    // adapter (stub, không phiên OT nào trong test) trong lúc bật luật.
     await sql`UPDATE interlock_rules SET "commandValue" = '50'::jsonb WHERE id = ${b.id}`;
     const tokB2 = (await caller(TAC_GIA).list()).find((r) => r.id === Number(b.id))!.versionToken;
-    expect((await caller(TAC_GIA).enable({ id: Number(b.id), expectedVersion: tokB2 })).enabled).toBe(true);
+    await sql`UPDATE device_adapters SET "isEnabled" = true WHERE id = ${adapterId}`;
+    try {
+      expect((await caller(TAC_GIA).enable({ id: Number(b.id), expectedVersion: tokB2 })).enabled).toBe(true);
+    } finally {
+      await sql`UPDATE device_adapters SET "isEnabled" = false WHERE id = ${adapterId}`;
+    }
   });
 
   it("c1: kiểm GIÁ TRỊ ENGINE GỬI — commandValue null trên kênh bool đã khai ⇒ OK (engine gửi true); trên kênh float ⇒ từ chối", async () => {

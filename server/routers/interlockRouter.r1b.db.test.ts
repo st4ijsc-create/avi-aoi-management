@@ -250,6 +250,87 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — interloc
     });
   });
 
+  describe("1b — R1b-1 T10b: interlock.enable đòi đích / nguồn còn TỒN TẠI + BẬT (chiều ngược của I2)", () => {
+    const bat = async (id: number) => ilk(TAC_GIA).enable({ id, expectedVersion: (await ilk(TAC_GIA).get({ id })).versionToken });
+    const dangBat = async (id: number) => (await sql`SELECT enabled FROM interlock_rules WHERE id = ${id}`)[0].enabled as boolean;
+    const datAdapter = (b: boolean) => sql`UPDATE device_adapters SET "isEnabled" = ${b} WHERE id = ${adapterId}`;
+
+    it("★ tag đích KHÔNG tồn tại ⇒ INTERLOCK_DICH_CHUA_SAN_SANG (dich_khong_ton_tai), luật vẫn tắt", async () => {
+      await datAdapter(true);
+      try {
+        const r = await seedLuat("en-ghost", "khong-co-tag", 1, { enabled: false });
+        const e = await loiCua(bat(r));
+        expect(e).toMatchObject({ code: "BAD_REQUEST", appCode: "INTERLOCK_DICH_CHUA_SAN_SANG" });
+        expect(e.appParams).toEqual({ ma: "INTERLOCK_DICH_CHUA_SAN_SANG", lyDo: "dich_khong_ton_tai", tagKey: "khong-co-tag", ruleId: r });
+        expect(await dangBat(r)).toBe(false);
+      } finally {
+        await datAdapter(false);
+      }
+    });
+
+    it("★ tag đích đang TẮT ⇒ dich_tat; tag đích writable=false (chưa khai kênh) ⇒ INTERLOCK_NGOAI_DAI CHANNEL_READ_ONLY; luật vẫn tắt", async () => {
+      await datAdapter(true);
+      try {
+        await sql`UPDATE device_tags SET "isEnabled" = false WHERE id = ${tg.cu}`;
+        const r = await seedLuat("en-tat", "cu", 1, { enabled: false });
+        expect(await loiCua(bat(r))).toMatchObject({ appCode: "INTERLOCK_DICH_CHUA_SAN_SANG", appParams: { lyDo: "dich_tat", tagKey: "cu", ruleId: r } });
+        await sql`UPDATE device_tags SET "isEnabled" = true, writable = false WHERE id = ${tg.cu}`;
+        expect(await loiCua(bat(r))).toMatchObject({
+          appCode: "INTERLOCK_NGOAI_DAI",
+          appParams: expect.objectContaining({ lyDo: "CHANNEL_READ_ONLY", tagKey: "cu", ruleId: r }),
+        });
+        expect(await dangBat(r)).toBe(false);
+      } finally {
+        await datAdapter(false);
+      }
+    });
+
+    it("★ adapter đích đang TẮT ⇒ adapter_dich_tat; bật adapter ⇒ bật luật được", async () => {
+      const r = await seedLuat("en-ad", "cu", 1, { enabled: false });
+      expect(await loiCua(bat(r))).toMatchObject({ appCode: "INTERLOCK_DICH_CHUA_SAN_SANG", appParams: { lyDo: "adapter_dich_tat", tagKey: "cu" } });
+      expect(await dangBat(r)).toBe(false);
+      await datAdapter(true);
+      try {
+        expect((await bat(r)).enabled).toBe(true);
+      } finally {
+        await datAdapter(false);
+      }
+    });
+
+    it("★ nguồn telemetry_tag: không tag nào mang sourceKey trên adapter của máy ⇒ nguon_khong_ton_tai; tag tắt / adapter tắt ⇒ nguon_tat; đủ ⇒ bật", async () => {
+      const [a2] = await sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId")
+        VALUES (${DAU + "-src"}, ${DAU + "-src"}, 'stub', 'stub://ilkr1b-src', false, ${MAY}) RETURNING id`;
+      const ad2 = Number(a2.id);
+      try {
+        const [r0] = await sql`INSERT INTO interlock_rules (name, scope, "machineId", "sourceKey", "sourceType", "comparisonOperator", threshold, action,
+            "targetMachineId", enabled, "approvedBy", "createdBy")
+          VALUES (${DAU + "-en-src"}, 'machine', ${MAY}, 'nhiet', 'telemetry_tag', 'gt', 80, 'stop_line', ${MAY}, false, ${DUYET}, ${TAC_GIA}) RETURNING id`;
+        const r = Number(r0.id);
+        expect(await loiCua(bat(r))).toMatchObject({
+          appCode: "INTERLOCK_DICH_CHUA_SAN_SANG",
+          appParams: { ma: "INTERLOCK_DICH_CHUA_SAN_SANG", lyDo: "nguon_khong_ton_tai", tagKey: "nhiet", ruleId: r },
+        });
+        const [t] = await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled")
+          VALUES (${ad2}, 'nhiet', 'addr-nhiet', 'float', false, false) RETURNING id`;
+        expect(await loiCua(bat(r))).toMatchObject({ appParams: { lyDo: "nguon_tat" } }); // tag tắt, adapter tắt
+        await sql`UPDATE device_tags SET "isEnabled" = true WHERE id = ${t.id}`;
+        expect(await loiCua(bat(r))).toMatchObject({ appParams: { lyDo: "nguon_tat" } }); // adapter vẫn tắt
+        expect(await dangBat(r)).toBe(false);
+        await sql`UPDATE device_adapters SET "isEnabled" = true WHERE id = ${ad2}`;
+        expect((await bat(r)).enabled).toBe(true);
+      } finally {
+        await sql`DELETE FROM interlock_rules WHERE name = ${DAU + "-en-src"}`;
+        await sql`DELETE FROM device_tags WHERE "adapterId" = ${ad2}`;
+        await sql`DELETE FROM device_adapters WHERE id = ${ad2}`;
+      }
+    });
+
+    it("luật `alert` không kiểm đích / nguồn (alert không bao giờ dispatch): tag đích không có, adapter tắt ⇒ bật được như cũ", async () => {
+      const r = await seedLuat("en-alert", "khong-co-tag-2", 1, { enabled: false, action: "alert" });
+      expect((await bat(r)).enabled).toBe(true);
+    });
+  });
+
   describe("2 — cooldownSeconds: update một phần không đặt lại về 300", () => {
     it("★ create cooldown 60 → update chỉ mô tả ⇒ cooldown vẫn 60; create không khai ⇒ 300", async () => {
       const r = await ilk(TAC_GIA).create({

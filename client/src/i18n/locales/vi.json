@@ -4579,7 +4579,8 @@
     "AI_CHAN_AN_TOAN": "Yêu cầu bị lớp an toàn AI chặn vì có dấu hiệu tiêm lệnh. Hãy diễn đạt lại yêu cầu.",
     "AI_CHUA_CAP_PHEP": "Phiên bản / giấy phép hiện tại không gồm tính năng AI (MOD_AI).",
     "SCADA_STOP_NOT_PINNED": "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng.",
-    "INTERLOCK_MAT_DICH": "Luật interlock đang bật #{{ruleId}} dùng tag {{tagKey}} (đích ghi lệnh hoặc nguồn đọc) — đổi tên, chuyển adapter, tắt hoặc xoá tag / adapter sẽ làm hành động bảo vệ mất đích hoặc mất nguồn. Sửa luật (hoặc tắt luật) trước.",
+    "INTERLOCK_MAT_DICH": "Luật interlock đang bật #{{ruleId}} dùng tag {{tagKey}} (đích ghi lệnh hoặc nguồn đọc) — đổi tên, chuyển sang adapter khác, tắt hoặc xoá tag, hoặc tắt, xoá, chuyển adapter sang máy khác sẽ làm hành động bảo vệ mất đích hoặc mất nguồn. Sửa luật (hoặc tắt luật) trước.",
+    "INTERLOCK_DICH_CHUA_SAN_SANG": "Không bật được luật interlock #{{ruleId}}: tag {{tagKey}} (đích ghi lệnh hoặc nguồn đọc) không tồn tại, đang tắt, hoặc adapter của nó đang tắt — hành động bảo vệ sẽ không có đích hoặc nguồn. Tạo / bật tag và adapter trước, rồi bật lại luật.",
     "QUA_NHIEU_KENH_DA_KHAI": "Lô import đụng {{soTag}} tag đã khai kênh / được bảo vệ — tối đa {{toiDa}} tag mỗi lô. Chia nhỏ file rồi nhập lại.",
     "STOP_PIN_GO_TRUOC": "Kênh {{tagKey}} đang ghim giá trị DỪNG ({{stopValue}}) — đổi địa chỉ / kiểu / scale / offset / cho phép ghi / adapter, tắt hoặc xoá tag sẽ làm mất STOP. Gỡ ghim trước (mục Tag dừng phần mềm, có lý do), rồi làm lại."
   },
@@ -16433,8 +16434,8 @@
     "defaultPortHint": "Cổng mặc định {{protocol}}: {{port}}",
     "troLai": {
       "title": "Cần mã xác thực hai lớp",
-      "body": "Thao tác này đụng một tag được bảo vệ (đã khai kênh, là kênh chế độ của máy, hoặc là đích của luật interlock đang bật) — cần mã TOTP mới.",
-      "submit": "Xác nhận và lưu"
+      "body": "Thao tác này đụng một tag được bảo vệ hoặc một adapter mang tag như thế (trỏ lại, tạo lên khoá đang được tham chiếu, tắt hoặc xoá). Tag được bảo vệ: đã khai kênh, là kênh chế độ của máy, hoặc là đích / nguồn của một luật interlock đang bật hoặc đã duyệt. Cần mã TOTP mới.",
+      "submit": "Xác nhận"
     }
   },
   "engineering": {

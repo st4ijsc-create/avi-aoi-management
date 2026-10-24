@@ -9,7 +9,7 @@
  * CSDL `_test` THẬT; người dùng qua `taoNguoiDungTest` (admin + 2FA thật: speakeasy + setup2FA/enable2FA); TOTP qua `kiemXacThucTheoMuc`
  * THẬT (bộ đếm T16 + sổ mã đã dùng thật). Oracle: SELECT thô.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import postgres from "postgres";
 import speakeasy from "speakeasy";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
@@ -540,6 +540,104 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — trỏ l�
       const e = await loiCua(caller.update({ id: ids.ad, machineId: null, totpCode: await maMoi() }));
       expect(e).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "machineId", reason: "scadaKenhCheDoDoiMay" } });
       await caller.update({ id: ids.ad, name: "ten-moi" });
+    });
+  });
+
+  // ── R1b-1 T10b — m1 (đổi máy adapter) + m2 (lỗ test của re-review 3) ───────────────────────────────────────────────────────────────
+  describe("T10b — cổng adapter: đổi máy (m1) + nguồn luật ở cấp adapter + các ca thiếu test (m2)", () => {
+    /** Luật ghi thẳng bảng: nguồn telemetry_tag (máy, sourceKey) và/hoặc đích (adapter, commandTag). */
+    const chenLuat = async (ten: string, o: { nguon?: { may: number; key: string }; dich?: { ad: number; tag: string }; enabled: boolean; duyet: boolean }) => {
+      const [r] = await sql`INSERT INTO interlock_rules (name, scope, "machineId", "sourceKey", "sourceType", "comparisonOperator", threshold, action,
+          "targetAdapterId", "commandTag", "commandValue", enabled, "approvedBy", "createdBy")
+        VALUES (${RUN + "-t10b-" + ten}, 'machine', ${o.nguon?.may ?? null}, ${o.nguon?.key ?? null}, ${o.nguon ? "telemetry_tag" : "ng_rate"}, 'gt', 80,
+          'stop_line', ${o.dich?.ad ?? null}, ${o.dich?.tag ?? null}, ${o.dich ? sql.json(1 as never) : null}, ${o.enabled}, ${o.duyet ? uid : null}, ${uid})
+        RETURNING id`;
+      return Number(r.id);
+    };
+    const mayCua = async (id: number) => (await sql`SELECT "machineId" AS m FROM device_adapters WHERE id = ${id}`)[0].m as number | null;
+    const batCua = async (id: number) => (await sql`SELECT "isEnabled" AS b FROM device_adapters WHERE id = ${id}`)[0].b as boolean;
+
+    afterEach(async () => {
+      await sql`DELETE FROM interlock_rules WHERE name LIKE ${RUN + "-t10b-%"}`;
+      await sql`UPDATE device_adapters SET "machineId" = ${ids.may}, "isEnabled" = false WHERE id = ${ids.ad2}`;
+    });
+
+    it("★ m1: đổi máy adapter mà một tag của nó là NGUỒN của luật ĐANG BẬT ⇒ INTERLOCK_MAT_DICH kể cả có mã (trước TOTP — mã không bị tiêu); máy giữ nguyên", async () => {
+      await seedTag(ids.ad2, "src");
+      const r = await chenLuat("m1-nguon", { nguon: { may: ids.may, key: "src" }, enabled: true, duyet: true });
+      const m = await maMoi();
+      const e = await loiCua(caller.update({ id: ids.ad2, machineId: null, totpCode: m }));
+      expect(e).toMatchObject({ code: "BAD_REQUEST", appCode: "INTERLOCK_MAT_DICH", appParams: { ma: "INTERLOCK_MAT_DICH", tagKey: "src", ruleId: r } });
+      expect(await mayCua(ids.ad2)).toBe(ids.may);
+      await caller.tags.update({ id: tg.dk, scale: 2, totpCode: m }); // cùng mã vẫn dùng được
+    });
+
+    it("★ m1: đổi máy adapter mà luật ĐANG BẬT ghi lệnh lên một tag của nó ⇒ INTERLOCK_MAT_DICH kể cả có mã; máy giữ nguyên", async () => {
+      await seedTag(ids.ad2, "dich");
+      const r = await chenLuat("m1-dich", { dich: { ad: ids.ad2, tag: "dich" }, enabled: true, duyet: true });
+      const e = await loiCua(caller.update({ id: ids.ad2, machineId: null, totpCode: await maMoi() }));
+      expect(e).toMatchObject({ appCode: "INTERLOCK_MAT_DICH", appParams: { tagKey: "dich", ruleId: r } });
+      expect(await mayCua(ids.ad2)).toBe(ids.may);
+    });
+
+    it("★ m2(b) đổi máy CẦN TOTP: adapter có tag đã khai ⇒ không mã TOTP_CAN (máy giữ); có mã ⇒ chuyển + audit adapter_bao_ve_doi_dich", async () => {
+      await seedTag(ids.ad2, "khai", { write_min: 0, write_max: 10 });
+      expect(await loiCua(caller.update({ id: ids.ad2, machineId: null }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED", appParams: { ma: "TOTP_CAN" } });
+      expect(await mayCua(ids.ad2)).toBe(ids.may);
+      await caller.update({ id: ids.ad2, machineId: null, totpCode: await maMoi() });
+      expect(await mayCua(ids.ad2)).toBeNull();
+      const au = await sql`SELECT "beforeJson" AS b, "afterJson" AS a FROM control_audit_log
+        WHERE "entityType" = 'device_adapter' AND "entityId" = ${String(ids.ad2)} AND action = 'adapter_bao_ve_doi_dich' ORDER BY id DESC LIMIT 1`;
+      expect(au[0]).toMatchObject({ b: { machineId: ids.may }, a: { machineId: null } });
+    });
+
+    it("★ m2(b) đổi máy SANG máy có luật nguồn (dù TẮT, chưa duyệt) đọc một tagKey của adapter (khoá mồ côi ở máy MỚI) ⇒ TOTP_CAN; có mã ⇒ chuyển", async () => {
+      await sql`UPDATE device_adapters SET "machineId" = NULL WHERE id = ${ids.ad2}`;
+      await seedTag(ids.ad2, "x"); // chưa khai — chỉ khoá mồ côi ở máy mới làm nó cần mã
+      await chenLuat("m2b-moi", { nguon: { may: ids.may, key: "x" }, enabled: false, duyet: false });
+      expect(await loiCua(caller.update({ id: ids.ad2, machineId: ids.may }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect(await mayCua(ids.ad2)).toBeNull();
+      await caller.update({ id: ids.ad2, machineId: ids.may, totpCode: await maMoi() });
+      expect(await mayCua(ids.ad2)).toBe(ids.may);
+    });
+
+    it("★ m2(a) tag của adapter là NGUỒN luật ĐANG BẬT: tắt adapter / scadaDiag.tamTat / xoá adapter ⇒ INTERLOCK_MAT_DICH (trước mã); adapter còn nguyên", async () => {
+      const tSrc = await seedTag(ids.ad2, "src2");
+      const r = await chenLuat("m2a", { nguon: { may: ids.may, key: "src2" }, enabled: true, duyet: true });
+      await sql`UPDATE device_adapters SET "isEnabled" = true WHERE id = ${ids.ad2}`;
+      const m = await maMoi();
+      expect(await loiCua(caller.update({ id: ids.ad2, isEnabled: false, totpCode: m }))).toMatchObject({
+        appCode: "INTERLOCK_MAT_DICH",
+        appParams: { tagKey: "src2", ruleId: r },
+      });
+      expect(await batCua(ids.ad2)).toBe(true);
+      expect(await loiCua(diag.tamTat({ adapterId: ids.ad2, lyDo: "thu tam tat nguon", totpCode: m }))).toMatchObject({
+        appCode: "INTERLOCK_MAT_DICH",
+        appParams: { tagKey: "src2", ruleId: r },
+      });
+      expect(await batCua(ids.ad2)).toBe(true);
+      await sql`UPDATE device_adapters SET "isEnabled" = false WHERE id = ${ids.ad2}`; // xoá đòi adapter đã tắt
+      expect(await loiCua(caller.delete({ id: ids.ad2, totpCode: m }))).toMatchObject({ appCode: "INTERLOCK_MAT_DICH", appParams: { tagKey: "src2", ruleId: r } });
+      expect((await sql`SELECT id FROM device_adapters WHERE id = ${ids.ad2}`).length).toBe(1);
+      expect((await sql`SELECT id FROM device_tags WHERE id = ${tSrc}`).length).toBe(1);
+      await caller.tags.update({ id: tg.dk, scale: 2, totpCode: m }); // mã chưa bị tiêu
+    });
+
+    it("★ m2(c) R-FR3-3: TẮT tag (chưa khai) chỉ được bảo vệ qua luật ĐÃ DUYỆT nhưng TẮT ⇒ TOTP_CAN (tag vẫn bật); có mã ⇒ tắt", async () => {
+      await chenLuat("m2c", { dich: { ad: ids.ad, tag: "cu" }, enabled: false, duyet: true });
+      expect(await loiCua(caller.tags.update({ id: tg.cu, isEnabled: false }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED", appParams: { ma: "TOTP_CAN" } });
+      expect((await sql`SELECT "isEnabled" AS b FROM device_tags WHERE id = ${tg.cu}`)[0].b).toBe(true);
+      await caller.tags.update({ id: tg.cu, isEnabled: false, totpCode: await maMoi() });
+      expect((await sql`SELECT "isEnabled" AS b FROM device_tags WHERE id = ${tg.cu}`)[0].b).toBe(false);
+    });
+
+    it("★ m2(d) scadaDiag.tamTat adapter ĐÃ TẮT (dù có kênh chế độ + tag đã khai đang ghim) ⇒ không cần mã, không lỗi, không audit adapter_bao_ve_tat", async () => {
+      expect(await batCua(ids.ad)).toBe(false);
+      await diag.tamTat({ adapterId: ids.ad, lyDo: "thu tam tat da tat T10b" });
+      expect(await batCua(ids.ad)).toBe(false);
+      const au = await sql`SELECT id FROM control_audit_log WHERE "entityType" = 'device_adapter' AND "entityId" = ${String(ids.ad)}
+        AND action = 'adapter_bao_ve_tat' AND reason = 'thu tam tat da tat T10b'`;
+      expect(au).toHaveLength(0);
     });
   });
 });

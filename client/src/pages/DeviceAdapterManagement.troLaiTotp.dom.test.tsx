@@ -47,7 +47,7 @@ vi.mock("@/lib/trpc", () => {
         if (path === "deviceAdapter.tags.update") {
           H.calls.push(input);
           kq = H.traLoi.shift() ?? "ok";
-        } else if (path === "deviceAdapter.update" || path === "deviceAdapter.tags.delete") {
+        } else if (path === "deviceAdapter.update" || path === "deviceAdapter.tags.delete" || path === "deviceAdapter.delete") {
           (H.callsKhac[path] ??= []).push(input);
           kq = H.traLoiKhac[path]?.shift() ?? "ok";
         } else return;
@@ -192,6 +192,51 @@ describe("R1b-1 T9 — Device Adapter: trỏ lại tag đã khai hỏi mã TOTP 
     expect(H.toast.error).toHaveBeenCalled();
     await xoa(); // lượt mới — hộp mở lại với ô TRỐNG
     await waitFor(() => expect(oMa()).toBeInTheDocument());
+    expect((oMa() as HTMLInputElement).value).toBe("");
+  });
+
+  it("★ R1b-1 T10b (m2e): XOÁ ADAPTER còn tag được bảo vệ ⇒ máy chủ đòi mã ⇒ hộp mã (không toast lỗi); xác nhận ⇒ gửi lại {id, totpCode}; thành công ⇒ hộp đóng + báo đã xoá", async () => {
+    H.traLoiKhac["deviceAdapter.delete"] = ["SCADA_CONFIG_TOTP_REQUIRED", "ok"];
+    render(<DeviceAdapterManagement />);
+    const row = screen.getByText("PLC-7").closest("tr")!;
+    const buttons = [...row.querySelectorAll("button")].filter((b) => b.getAttribute("role") !== "switch");
+    fireEvent.click(buttons[buttons.length - 1]); // [kiểm tra, tag, sửa, xoá] — nút xoá adapter
+    const dlg = await screen.findByRole("alertdialog");
+    fireEvent.click([...dlg.querySelectorAll("button")].pop()!); // nút xác nhận xoá
+    await waitFor(() => expect(H.callsKhac["deviceAdapter.delete"]).toHaveLength(1));
+    expect(H.callsKhac["deviceAdapter.delete"][0]).toEqual({ id: 7 });
+    await waitFor(() => expect(oMa()).toBeInTheDocument());
+    expect(screen.getByText(i18n.t("deviceAdapter.troLai.body"))).toBeInTheDocument();
+    expect(H.toast.error).not.toHaveBeenCalled();
+    fireEvent.change(oMa()!, { target: { value: "777888" } });
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("deviceAdapter.troLai.submit") }));
+    await waitFor(() => expect(H.callsKhac["deviceAdapter.delete"]).toHaveLength(2));
+    expect(H.callsKhac["deviceAdapter.delete"][1]).toEqual({ id: 7, totpCode: "777888" });
+    await waitFor(() => expect(oMa()).not.toBeInTheDocument());
+    expect(H.toast.success).toHaveBeenCalled();
+  });
+
+  it("R1b-1 T10b (m2e): xoá adapter — lỗi KHÁC (INTERLOCK_MAT_DICH) ⇒ không có hộp mã, báo lỗi; mã SAI khi gửi lại ⇒ hộp giữ, ô mã xoá", async () => {
+    H.traLoiKhac["deviceAdapter.delete"] = ["INTERLOCK_MAT_DICH", "SCADA_CONFIG_TOTP_REQUIRED", "SCADA_CONFIG_TOTP_INVALID"];
+    render(<DeviceAdapterManagement />);
+    const xoa = async () => {
+      const row = screen.getByText("PLC-7").closest("tr")!;
+      const buttons = [...row.querySelectorAll("button")].filter((b) => b.getAttribute("role") !== "switch");
+      fireEvent.click(buttons[buttons.length - 1]);
+      const dlg = await screen.findByRole("alertdialog");
+      fireEvent.click([...dlg.querySelectorAll("button")].pop()!);
+    };
+    await xoa();
+    await waitFor(() => expect(H.toast.error).toHaveBeenCalled());
+    expect(oMa()).not.toBeInTheDocument();
+    H.toast.error.mockReset();
+    await xoa();
+    await waitFor(() => expect(oMa()).toBeInTheDocument());
+    fireEvent.change(oMa()!, { target: { value: "999000" } });
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("deviceAdapter.troLai.submit") }));
+    await waitFor(() => expect(H.callsKhac["deviceAdapter.delete"]).toHaveLength(3));
+    await waitFor(() => expect(H.toast.error).toHaveBeenCalled());
+    expect(oMa()).toBeInTheDocument();
     expect((oMa() as HTMLInputElement).value).toBe("");
   });
 });
