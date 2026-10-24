@@ -238,12 +238,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/fieldRouter.ts#fieldRouter.deviceState",
   "server/routers/fieldRouter.ts#fieldRouter.health",
   "server/routers/fieldRouter.ts#fieldRouter.healthSummary",
-  // ── server/routers/genealogyRouter.ts (5) ──────────────────────────────────────────────────
-  "server/routers/genealogyRouter.ts#genealogyRouter.getByLot",
-  "server/routers/genealogyRouter.ts#genealogyRouter.getBySerial",
-  "server/routers/genealogyRouter.ts#genealogyRouter.getFullHistory",
-  "server/routers/genealogyRouter.ts#genealogyRouter.getLineage",
-  "server/routers/genealogyRouter.ts#genealogyRouter.verify",
   // ── server/routers/goldenSampleRouter.ts (5) ───────────────────────────────────────────────
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.getActiveForKey",
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.getThumbnail",

@@ -897,7 +897,9 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // Còn nợ (cố ý, hỏi chủ dự án): `recipes.listCodes|listVersions|get|genealogy` = danh mục công thức dùng chung nhiều nhà máy. Chứng minh: `lenhCongThucPhamVi.db.test.ts` (12 ca; 8 đỏ trước khi vá; 8 đột biến bị bắt).
 // ★ 2026-10-24 (đợt 3 cùng lớp): `safety.feed` và `safety.nearMissTrend` A → S qua `dieuKienSuKienAnToanTrongPhamVi` (`_adapterPhamVi.ts`): sự kiện thấy được ⇔ toàn quyền HOẶC ≥1 thuộc tính định vị
 // (line/station/factory/robot) và MỌI thuộc tính đều trong phạm vi; sự kiện không định vị chỉ toàn quyền thấy. Hai dòng sổ nợ đã GỠ. Chứng minh: `safetyPhamVi.db.test.ts` (5 ca; 4 đỏ trước khi vá; 6 đột biến bị bắt).
-const GHIM = { A: 319, B: 8, C: 488, D: 1198, S: 389, tong: 2402 } as const;
+// ★ 2026-10-24 (đợt 4): `genealogy.getFullHistory|getBySerial|getByLot|getLineage|verify` A → S (luật: đơn vị thấy được ⇔ có bản ghi ở máy trong phạm vi, hoặc chính người gọi đã ghi sự kiện chuỗi; `appendEvent` vào đơn vị đã tồn tại ngoài phạm vi ⇒ NOT_FOUND).
+// Chứng minh: `genealogyPhamVi.db.test.ts` (9 ca; 8 đỏ trước khi vá; 10 đột biến bị bắt). Năm dòng sổ nợ đã GỠ. Kèm vá lỗi CÓ SẴN: CTE đệ quy của `getLineage` lỗi 42804 trên CSDL thật (varchar[] vs text[]) ⇒ luôn 500.
+const GHIM = { A: 314, B: 8, C: 488, D: 1198, S: 394, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

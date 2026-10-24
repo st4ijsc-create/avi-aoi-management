@@ -121,14 +121,15 @@ async function fetchLineageEdges(
   // `e` is the DISTINCT edge relation (child = unit, parent = its parent).
   // descendants: descend from the root by matching e.parent = current child.
   // ancestors:   ascend  from the root by matching e.child  = current parent.
+  // 2026-10-24: ép ::text[] — varchar(128)[] (non-recursive) vs text[] (recursive) làm CTE lỗi 42804 trên CSDL thật ⇒ getLineage luôn 500 (test mock che lỗi).
   const seed = direction === "descendants"
-    ? sql`SELECT child, parent, 1 AS depth, ARRAY[parent, child] AS path FROM e WHERE parent = ${rootSerial}`
-    : sql`SELECT child, parent, 1 AS depth, ARRAY[child, parent] AS path FROM e WHERE child = ${rootSerial}`;
+    ? sql`SELECT child, parent, 1 AS depth, ARRAY[parent, child]::text[] AS path FROM e WHERE parent = ${rootSerial}`
+    : sql`SELECT child, parent, 1 AS depth, ARRAY[child, parent]::text[] AS path FROM e WHERE child = ${rootSerial}`;
   const step = direction === "descendants"
-    ? sql`SELECT e.child, e.parent, w.depth + 1, w.path || e.child
+    ? sql`SELECT e.child, e.parent, w.depth + 1, w.path || e.child::text
           FROM e JOIN w ON e.parent = w.child
           WHERE w.depth < ${maxDepth} AND NOT (e.child = ANY(w.path))`
-    : sql`SELECT e.child, e.parent, w.depth + 1, w.path || e.parent
+    : sql`SELECT e.child, e.parent, w.depth + 1, w.path || e.parent::text
           FROM e JOIN w ON e.child = w.parent
           WHERE w.depth < ${maxDepth} AND NOT (e.parent = ANY(w.path))`;
 
