@@ -1,7 +1,7 @@
 /**
  * SCADA R1a Task 15 — bench nghiệm thu "điều khiển lõi" trên OpenPLC (Docker) + safety PLC MÔ PHỎNG. CHẠY TAY, không vào CI.
  *
- *   pnpm tsx scripts/scada-r1a-bench.ts [--endpoint tcp://127.0.0.1:15502] [--container avi-openplc-bench] [--web http://127.0.0.1:18080]
+ *   npx tsx scripts/scada-r1a-bench.ts [--endpoint tcp://127.0.0.1:15502] [--container avi-openplc-bench] [--web http://127.0.0.1:18080]
  *       [--poll 1000] [--timeout 800] [--lap 3]
  *
  * Trong tiến trình, KHÔNG đụng :3000 / :8091 / GPU. CSDL = `_test` (suy từ DATABASE_URL của .env như vitest.setup.ts: chỉ đọc MỘT khoá đó,

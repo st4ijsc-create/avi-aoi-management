@@ -409,10 +409,13 @@ describe.skipIf(!CHAY_NGHIEM_THU)("nghiệm thu R1a — ma trận 8 ô (SCADA_R1
   it("đối chứng A — đường vui: opA mức 3, 245 ⇒ acked_verified, thiết bị 1 lần, attempts +3, command_log +2 (ý định + kết quả)", async () => {
     const truoc = await demWorm();
     const ghi = H.writeCalls;
+    const d0 = H.dispatchCalls;
     const requestId = await yeuCau("opA", "vui", "245");
     const kq = await (await caller("opA")).confirm({ requestId });
     expect(kq).toMatchObject({ status: "acked_verified", ok: true, simulated: false, readBackValue: 245 });
     expect(H.writeCalls - ghi).toBe(1);
+    // đối chứng DƯƠNG cho bộ đếm dispatch (T15 review): các ô khẳng định "dispatch 0 lần" chỉ có nghĩa khi bộ đếm thật sự tăng ở đường vui
+    expect(H.dispatchCalls - d0, "bộ đếm dispatch tăng đúng 1 ở đường vui").toBe(1);
     expect(await tang(truoc)).toEqual({ attempts: 3, commandLog: 2 });
     expect((await lenhMoiNhat(2)).map((d) => [d.ledger, d.status])).toEqual([
       ["intent", "sent"],
