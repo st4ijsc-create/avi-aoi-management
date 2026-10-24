@@ -30,6 +30,7 @@
  */
 import rateLimit, {
   ipKeyGenerator,
+  MemoryStore,
   type ClientRateLimitInfo,
   type Options,
   type Store,
@@ -321,6 +322,15 @@ function storeOption(prefix: string): { store?: Store } {
   const client = getRateLimitRedis();
   if (!client) return {}; // init failed → memory fallback
   return { store: new RedisRateLimitStore({ prefix, client }) };
+}
+
+/**
+ * Store ĐẾM cho bộ giới hạn theo SỐ THỦ TỤC (`trpcGioiHanThuTuc.ts`): Redis khi bật chế độ redis (dùng chung nhiều instance), ngược lại bộ nhớ. `init` đặt cửa sổ đếm.
+ */
+export function taoStoreDem(prefix: string, windowMs: number): Store {
+  const s: Store = storeOption(prefix).store ?? new MemoryStore();
+  s.init?.({ windowMs } as Options);
+  return s;
 }
 
 // ── Key strategy (B6) ────────────────────────────────────────────────────────

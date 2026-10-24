@@ -1,0 +1,135 @@
+/**
+ * ★★★ CENSUS — nhóm "2fa" của bộ giới hạn theo số thủ tục PHẢI phủ MỌI thủ tục tRPC thật sự xác minh TOTP (rà bảo mật 2026-10-24).
+ * Chạy trên appRouter THẬT (nặng — một lượt import ~10–20 s) + AST nguồn. Thủ tục nào gọi `verifyTotpOnce` hoặc đứng trên bước nâng cấp 2FA mà KHÔNG thuộc nhóm `2fa` ⇒ ĐỎ.
+ * Thêm một bề mặt gọi `verifyTotpOnce` mới ⇒ ĐỎ cho tới khi được xếp vào bảng `BE_MAT_GOI_VERIFY_TOTP` dưới đây (kèm cách nó được che).
+ */
+import { describe, it, expect } from "vitest";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import path from "node:path";
+import ts from "typescript";
+import { appRouter } from "../routers";
+import { requireFreshTotp, requirePerCallFreshTotp } from "./trpc";
+import { trpcProcedureType } from "./trpcAdapter";
+import { quetThuTucDeploy } from "../routers/deployProcedureScan";
+import { NHOM_THU_TUC_NHAY_CAM, layTapThuTucStepUp, phanNhomThuTuc } from "./trpcGioiHanThuTuc";
+
+const GOC = path.resolve(__dirname, "..", "..");
+
+/**
+ * MỌI file sản xuất dưới `server/` có GỌI `verifyTotpOnce` (ngoài định nghĩa ở `_core/totpOnce.ts`) và CÁCH bề mặt ấy được che:
+ *   "trpc-thu-tuc" ⇒ có thủ tục tRPC ở file này, từng thủ tục PHẢI rơi vào nhóm 2fa (kiểm bằng AST bên dưới);
+ *   "trpc-step-up" ⇒ lõi step-up (`verifyFreshTotp`), che bằng tập thủ tục đứng trên requireFreshTotp/requirePerCallFreshTotp (suy từ appRouter);
+ *   "rest-authLimiter" ⇒ cửa REST `/api/auth/*`, che bằng `authLimiter` (per yêu cầu, không batch được);
+ *   "cli" ⇒ không phải bề mặt request (script vận hành).
+ */
+const BE_MAT_GOI_VERIFY_TOTP: Record<string, "trpc-thu-tuc" | "trpc-step-up" | "rest-authLimiter" | "cli"> = {
+  "server/routers/twoFactorRouter.ts": "trpc-thu-tuc",
+  "server/routers/userRouters.ts": "trpc-thu-tuc",
+  "server/_core/trpc.ts": "trpc-step-up",
+  "server/_core/oauth.ts": "rest-authLimiter",
+  "server/services/edge/edgeNodeCredentials.ts": "cli",
+};
+/** Tên biến router (trong file) → tiền tố path ở appRouter. */
+const TIEN_TO_ROUTER: Record<string, string> = { twoFactorRouter: "twoFactor", userRouter: "user" };
+
+function moiFileTs(thuMuc: string, ra: string[] = []): string[] {
+  for (const ten of readdirSync(thuMuc)) {
+    if (ten === "node_modules" || ten.startsWith(".")) continue;
+    const p = path.join(thuMuc, ten);
+    if (statSync(p).isDirectory()) moiFileTs(p, ra);
+    else if (ten.endsWith(".ts") && !ten.endsWith(".d.ts") && !ten.endsWith(".test.ts") && !ten.endsWith(".test.tsx")) ra.push(p);
+  }
+  return ra;
+}
+
+/** Các thủ tục (tên) trong một file có chứa lời gọi `verifyTotpOnce`, kèm tên biến router bao ngoài. */
+function thuTucGoiVerify(duong: string): Array<{ router: string; ten: string }> {
+  const src = ts.createSourceFile(duong, readFileSync(duong, "utf8"), ts.ScriptTarget.Latest, true);
+  const ra: Array<{ router: string; ten: string }> = [];
+  const visit = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "verifyTotpOnce") {
+      let ten: string | null = null;
+      let router: string | null = null;
+      for (let cur: ts.Node | undefined = n.parent; cur; cur = cur.parent) {
+        if (!ten && ts.isPropertyAssignment(cur) && ts.isIdentifier(cur.name)) ten = cur.name.text;
+        if (ts.isVariableDeclaration(cur) && ts.isIdentifier(cur.name)) router = cur.name.text;
+      }
+      ra.push({ router: router ?? "?", ten: ten ?? "?" });
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(src);
+  return ra;
+}
+
+describe("census nhóm 2fa của giới hạn theo thủ tục", () => {
+  it("★★★ MỌI file sản xuất gọi verifyTotpOnce đều có trong bảng bề mặt đã biết (file mới ⇒ ĐỎ cho tới khi được xếp loại)", () => {
+    const file = moiFileTs(path.join(GOC, "server"))
+      .map((p) => path.relative(GOC, p).split(path.sep).join("/"))
+      .filter((r) => r !== "server/_core/totpOnce.ts")
+      .filter((r) => /\bverifyTotpOnce\s*\(/.test(readFileSync(path.join(GOC, r), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")))
+      .sort();
+    expect(file).toEqual(Object.keys(BE_MAT_GOI_VERIFY_TOTP).sort());
+  }, 60_000);
+
+  it("★★★ MỖI thủ tục tRPC gọi verifyTotpOnce (AST) rơi vào nhóm 2fa với đường dẫn THẬT của appRouter", () => {
+    const tap = layTapThuTucStepUp(appRouter, [requireFreshTotp, requirePerCallFreshTotp]);
+    let dem = 0;
+    for (const [file, loai] of Object.entries(BE_MAT_GOI_VERIFY_TOTP)) {
+      if (loai !== "trpc-thu-tuc") continue;
+      const ds = thuTucGoiVerify(path.join(GOC, file));
+      expect(ds.length, `${file}: AST không thấy lời gọi verifyTotpOnce`).toBeGreaterThan(0);
+      for (const { router, ten } of ds) {
+        const tienTo = TIEN_TO_ROUTER[router];
+        expect(tienTo, `${file}: router "${router}" chưa có trong TIEN_TO_ROUTER`).toBeDefined();
+        const p = `${tienTo}.${ten}`;
+        const loaiTT = trpcProcedureType(appRouter, p);
+        expect(loaiTT, `${p} không tồn tại ở appRouter (sai tiền tố/tên)`).toBeDefined();
+        expect(phanNhomThuTuc(p, loaiTT, tap), `${p} gọi verifyTotpOnce nhưng KHÔNG thuộc nhóm 2fa`).toBe("2fa");
+        dem++;
+      }
+    }
+    expect(dem).toBeGreaterThanOrEqual(6); // twoFactor ×4 + user.verify2FA + user.disable2FA
+  }, 120_000);
+
+  it("★★★ tập step-up suy từ appRouter KHÔNG rỗng và khớp bộ quét AST deployProcedure (mọi thủ tục deploy đều được đếm)", () => {
+    const tap = layTapThuTucStepUp(appRouter, [requireFreshTotp, requirePerCallFreshTotp]);
+    expect(tap.size).toBeGreaterThan(0);
+    for (const p of tap) expect(phanNhomThuTuc(p, "mutation", tap)).toBe("2fa");
+    const quet = quetThuTucDeploy(GOC);
+    expect(quet.mu).toEqual([]);
+    const tenTrongTap = new Set([...tap].map((p) => p.split(".").pop()!));
+    const thieu = quet.thuTuc.filter((t) => !tenTrongTap.has(t.ten)).map((t) => `${t.file}#${t.ten}`);
+    expect(thieu, "thủ tục đứng trên deployProcedure (AST) mà appRouter không có trong tập step-up").toEqual([]);
+  }, 120_000);
+
+  it("★★ danh sách trong hằng KHÔNG gõ sai: mọi path chính xác đều là thủ tục THẬT; mọi tiền tố có ít nhất một thủ tục", () => {
+    for (const [ten, cfg] of Object.entries(NHOM_THU_TUC_NHAY_CAM)) {
+      for (const p of cfg.chinhXac) expect(trpcProcedureType(appRouter, p), `${ten}: ${p} không tồn tại`).toBeDefined();
+      const procs = Object.keys(appRouter._def.procedures as Record<string, unknown>);
+      for (const t of cfg.tienTo) expect(procs.some((p) => p.startsWith(t)), `${ten}: tiền tố ${t} không khớp thủ tục nào`).toBe(true);
+    }
+  }, 120_000);
+
+  it("★★ twoFactor.getStatus (query) không bị đếm; mọi MUTATION twoFactor.* đều bị đếm", () => {
+    const tap = layTapThuTucStepUp(appRouter, [requireFreshTotp, requirePerCallFreshTotp]);
+    const procs = Object.keys(appRouter._def.procedures as Record<string, unknown>).filter((p) => p.startsWith("twoFactor."));
+    expect(procs.length).toBeGreaterThan(0);
+    for (const p of procs) {
+      const loai = trpcProcedureType(appRouter, p);
+      expect(phanNhomThuTuc(p, loai, tap) === "2fa").toBe(loai !== "query");
+    }
+  }, 120_000);
+});
+
+describe("gắn middleware trong index.ts", () => {
+  it("★★★ thứ tự: trần batch → giới hạn theo thủ tục → giấy phép → tRPC; có truyền bước nâng cấp 2FA", () => {
+    const nguon = readFileSync(path.resolve(__dirname, "index.ts"), "utf8");
+    const iTran = nguon.indexOf('app.use("/api/trpc", trpcBatchLimitMiddleware())');
+    const iGioiHan = nguon.indexOf('app.use("/api/trpc", trpcGioiHanThuTucMiddleware({ router: appRouter, buocNangCap: [requireFreshTotp, requirePerCallFreshTotp] }))');
+    const iGiayPhep = nguon.indexOf('app.use("/api/trpc", licenseEnforcementMiddleware(');
+    expect(iTran).toBeGreaterThan(-1);
+    expect(iGioiHan).toBeGreaterThan(iTran);
+    expect(iGiayPhep).toBeGreaterThan(iGioiHan);
+  });
+});
