@@ -19,6 +19,8 @@ import { deviceAdapterRouter } from "./deviceAdapterRouter";
 import { mappingAsCodeRouter } from "./mappingAsCodeRouter";
 import { scadaDiagRouter } from "./scadaDiagRouter";
 import { _internal as oversight } from "./oversightRouter";
+import { and, like, sql as drzSql } from "drizzle-orm";
+import { interlockRules } from "../../drizzle/schema";
 import { getDb } from "../db/connection";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { getTool } from "../services/aiLocalTools/toolRegistry";
@@ -267,12 +269,22 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — interloc
       const d = await getDb();
       const truoc = await oversight.fetchInterlockCauHinhHong(d);
       expect(truoc.degraded).toBe(false);
+      // Đếm CHỈ hàng của tệp này, cùng điều kiện posture: đếm toàn bảng bị tệp DB khác chạy song song chèn/xoá luật làm lệch
+      // (đỏ khi chạy cả bộ sau merge main 2026-10-24, xanh khi chạy riêng).
+      const cuaToi = async () => {
+        const [{ c }] = await d!
+          .select({ c: drzSql<number>`count(*)::int` })
+          .from(interlockRules)
+          .where(and(oversight.dieuKienInterlockCauHinhHong(), like(interlockRules.name, `${DAU}-p%`)));
+        return c;
+      };
+      expect(await cuaToi()).toBe(0);
       await sql`INSERT INTO interlock_rules (name, scope, "machineId", "sourceKey", "sourceType", "comparisonOperator", threshold, action, enabled, "approvedBy", "createdBy")
         VALUES (${DAU + "-pl"}, 'line', ${MAY}, 'nhiet_do', 'telemetry_tag', 'gt', 80, 'alert', true, ${DUYET}, ${TAC_GIA})`;
-      expect((await oversight.fetchInterlockCauHinhHong(d)).count).toBe(truoc.count + 1);
+      expect(await cuaToi()).toBe(1);
       await sql`INSERT INTO interlock_rules (name, scope, "machineId", "sourceKey", "sourceType", "comparisonOperator", threshold, action, enabled, "approvedBy", "createdBy")
         VALUES (${DAU + "-pm"}, 'machine', ${MAY}, 'nhiet_do', 'telemetry_tag', 'gt', 80, 'alert', true, ${DUYET}, ${TAC_GIA})`;
-      expect((await oversight.fetchInterlockCauHinhHong(d)).count).toBe(truoc.count + 1);
+      expect(await cuaToi()).toBe(1);
     });
   });
 

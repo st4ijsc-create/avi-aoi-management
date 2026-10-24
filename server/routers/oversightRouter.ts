@@ -423,20 +423,24 @@ async function fetchInterlockCoverage(d: Db | null): Promise<{ count: number; de
 // nhắm tới nó (lyDo cau_hinh) và engine không bao giờ tự phát hành động ⇒ KHÔNG chức năng. Hiện ở posture để người vận hành thấy mà sửa.
 // R1b-1 Task 9 (nợ R0.1, D11) — đếm cả luật telemetry_tag có `scope <> 'machine'` (hàng cũ / ghi thẳng bảng trước D11): cùng luật với
 // `services/interlock/d11.ts#telemetryTagDungPhamVi` mà create / update / approve / enable / propose_interlock_rule chặn từ nguồn.
+function dieuKienInterlockCauHinhHong() {
+  return and(
+    eq(interlockRules.enabled, true),
+    isNotNull(interlockRules.approvedBy),
+    eq(interlockRules.sourceType, "telemetry_tag"),
+    or(
+      isNull(interlockRules.machineId),
+      isNull(interlockRules.sourceKey),
+      sql`${interlockRules.sourceKey} ~ '^\\s*$'`,
+      ne(interlockRules.scope, "machine"),
+    ),
+  );
+}
+
 async function fetchInterlockCauHinhHong(d: Db | null): Promise<{ count: number; degraded: boolean }> {
   if (!d) return { count: 0, degraded: true };
   try {
-    const cond = and(
-      eq(interlockRules.enabled, true),
-      isNotNull(interlockRules.approvedBy),
-      eq(interlockRules.sourceType, "telemetry_tag"),
-      or(
-        isNull(interlockRules.machineId),
-        isNull(interlockRules.sourceKey),
-        sql`${interlockRules.sourceKey} ~ '^\\s*$'`,
-        ne(interlockRules.scope, "machine"),
-      ),
-    );
+    const cond = dieuKienInterlockCauHinhHong();
     const [{ c }] = await d.select({ c: sql<number>`count(*)::int` }).from(interlockRules).where(cond);
     return { count: c ?? 0, degraded: false };
   } catch (err) {
@@ -603,5 +607,6 @@ export const _internal = {
   fetchChangeoverPending,
   fetchInterlockCoverage,
   fetchInterlockCauHinhHong,
+  dieuKienInterlockCauHinhHong,
   canSeeNamesSafe,
 };
