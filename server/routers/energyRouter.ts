@@ -11,6 +11,7 @@
  *
  * RBAC: module "energy" (canView/Create/Edit) via requirePermission.
  */
+import { nangLuongGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -107,7 +108,8 @@ export const energyRouter = router({
       recipeRef: z.string().max(128).optional(),
       timestamp: z.coerce.date().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await nangLuongGhi(ctx, input.machineId, input.layoutId); // phạm vi nhà máy (W14)
       const row = {
         machineId: input.machineId ?? null,
         layoutId: input.layoutId ?? null,
@@ -139,7 +141,8 @@ export const energyRouter = router({
       recipeCode: z.string().max(64).optional(),
       carbonKg: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await nangLuongGhi(ctx, input.machineId, input.layoutId); // phạm vi nhà máy (W14): người hẹp phải nêu máy (không gộp năng lượng nhà máy khác vào ảnh chụp)
       const range = { from: input.from, to: input.to, machineId: input.machineId };
       const [recipeRows, peak, pf] = await Promise.all([
         computeRecipeEnergy(range),

@@ -5,6 +5,8 @@
  * AOI_POST / AXI / ICT / FCT. Backed by `measurementSamples.stationCode`
  * and persisted to `station_traces` (one row per serial).
  */
+import { sanPhamGhiTrongPhamVi } from "./_sanPhamPhamVi";
+import { locMauTheoPhamVi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
@@ -38,8 +40,10 @@ export const stationTriangulationRouter = router({
       serialNumber: z.string().min(1).max(128),
       productModelId: z.number().int().positive().optional(),
     }))
-    .mutation(async ({ input }) => {
-      const samples = rowsToSampleRows(await db.listSamplesForSerial(input.serialNumber));
+    .mutation(async ({ input, ctx }) => {
+      if (input.productModelId != null) await sanPhamGhiTrongPhamVi(ctx, input.productModelId); // phạm vi nhà máy (W14)
+      // chỉ mẫu của điểm đo thuộc sản phẩm trong phạm vi; mẫu ngoài phạm vi ≡ không có mẫu
+      const samples = rowsToSampleRows(await locMauTheoPhamVi(ctx, await db.listSamplesForSerial(input.serialNumber)));
       if (samples.length === 0) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementSample" }, `No measurement samples for serial ${input.serialNumber}`);
       }
@@ -68,8 +72,9 @@ export const stationTriangulationRouter = router({
       productModelId: z.number().int().positive().optional(),
       limit: z.number().int().positive().max(20000).optional(),
     }))
-    .mutation(async ({ input }) => {
-      const rows = rowsToSampleRows(await db.listSamplesForLot(input.lotCode, input.limit ?? 5000));
+    .mutation(async ({ input, ctx }) => {
+      if (input.productModelId != null) await sanPhamGhiTrongPhamVi(ctx, input.productModelId); // phạm vi nhà máy (W14)
+      const rows = rowsToSampleRows(await locMauTheoPhamVi(ctx, await db.listSamplesForLot(input.lotCode, input.limit ?? 5000)));
       const traces = summariseLot(rows);
       let written = 0;
       for (const t of traces) {

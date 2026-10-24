@@ -29,6 +29,7 @@ import { materials } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
 import { recordComponentInstallation } from "../services/componentInstallationService";
+import { khoaKyThuatGhi, bomGhi, dongBomGhi } from "./_cauHinhPhamVi";
 
 const MODULE = "mes_bom";
 
@@ -95,6 +96,7 @@ export const bomRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await khoaKyThuatGhi(ctx, { productModelId: input.productModelId }, "bom"); // phạm vi nhà máy (W14): sản phẩm của BOM
       const id = await db.createBomDefinition({
         productModelId: input.productModelId,
         code: input.code,
@@ -116,15 +118,19 @@ export const bomRouter = router({
       notes: z.string().optional(),
       isActive: z.boolean().optional(),
     }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...patch } = input;
+      await bomGhi(ctx, id);
       return db.updateBomDefinition(id, patch);
     }),
 
   archiveDefinition: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(({ input }) => db.softDeleteBomDefinition(input.id)),
+    .mutation(async ({ input, ctx }) => {
+      await bomGhi(ctx, input.id);
+      return db.softDeleteBomDefinition(input.id);
+    }),
 
   // ─── BOM line items ───────────────────────────────────────────────────────
   addLineItem: protectedProcedure
@@ -141,7 +147,8 @@ export const bomRouter = router({
       isOptional: z.boolean().optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await bomGhi(ctx, input.bomId);
       const id = await db.createBomLineItem({
         bomId: input.bomId,
         componentCode: input.componentCode,
@@ -173,7 +180,8 @@ export const bomRouter = router({
         notes: z.string().optional(),
       })).min(1),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await bomGhi(ctx, input.bomId);
       const rows = await db.bulkCreateBomLineItems(input.items.map((it) => ({
         bomId: input.bomId,
         componentCode: it.componentCode,
@@ -202,15 +210,19 @@ export const bomRouter = router({
       isOptional: z.boolean().optional(),
       notes: z.string().optional(),
     }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, qtyPer, ...rest } = input;
+      await dongBomGhi(ctx, id);
       return db.updateBomLineItem(id, { ...rest, ...(qtyPer != null ? { qtyPer: String(qtyPer) } : {}) });
     }),
 
   deleteLineItem: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(({ input }) => db.deleteBomLineItem(input.id)),
+    .mutation(async ({ input, ctx }) => {
+      await dongBomGhi(ctx, input.id);
+      return db.deleteBomLineItem(input.id);
+    }),
 
   // ─── Feeder materials ─────────────────────────────────────────────────────
   listFeeders: protectedProcedure

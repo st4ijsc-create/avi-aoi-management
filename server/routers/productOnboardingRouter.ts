@@ -30,6 +30,7 @@
  * reads → canView; draft writes → canCreate; complete → canEdit.
  * ════════════════════════════════════════════════════════════════════════════
  */
+import { sanPhamGhiTrongPhamVi } from "./_sanPhamPhamVi";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -120,6 +121,7 @@ export const productOnboardingRouter = router({
       stepState: stepStateSchema.optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await sanPhamGhiTrongPhamVi(ctx, input.productModelId); // phạm vi nhà máy (W14)
       await requireProduct(input.productModelId);
       const d = await db();
       const existing = await getDraftRow(input.productModelId);
@@ -153,7 +155,8 @@ export const productOnboardingRouter = router({
   deleteDraft: protectedProcedure
     .use(requirePermission("settings_products", "canCreate"))
     .input(z.object({ productModelId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await sanPhamGhiTrongPhamVi(ctx, input.productModelId); // phạm vi nhà máy (W14)
       const d = await db();
       const removed = await d
         .delete(productOnboardingDrafts)
@@ -178,6 +181,7 @@ export const productOnboardingRouter = router({
       stepState: stepStateSchema.optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await sanPhamGhiTrongPhamVi(ctx, input.productModelId); // phạm vi nhà máy (W14)
       await requireProduct(input.productModelId);
       const d = await db();
       const existing = await getDraftRow(input.productModelId);

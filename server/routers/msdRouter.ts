@@ -11,6 +11,7 @@
  *
  * ADVISORY only — no hard enforcement. Any scheduler is gated by MSD_TRACKING_ENABLED.
  */
+import { mayTuyChonGhi, nhatKyMsdGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -40,18 +41,21 @@ export const msdRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await mayTuyChonGhi(ctx, input.machineId, "machine"); // phạm vi nhà máy (W14)
       return openExposure({ ...input, loggedBy: ctx.user?.id ?? null });
     }),
 
   startBake: protectedProcedure
     .input(z.object({ id: z.number().int().positive(), bakeStartedAt: z.coerce.date().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await nhatKyMsdGhi(ctx, input.id);
       return startBake(input.id, input.bakeStartedAt);
     }),
 
   closeExposure: protectedProcedure
     .input(z.object({ id: z.number().int().positive(), closedAt: z.coerce.date().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await nhatKyMsdGhi(ctx, input.id);
       return closeExposure(input.id, input.closedAt);
     }),
 

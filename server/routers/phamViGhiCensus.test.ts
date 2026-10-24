@@ -26,7 +26,7 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1198, no: 242 } as const; // 2026-10-25 L6a: ncr create|transition + ecn create|transition (suy nhà máy + cổng phạm vi) ⇒ 246 → 242 (−4); 2026-10-25 W13: cấu hình hạ tầng (shift · layout · lịch bảo trì · ngưỡng NG · panel · biến thể · duyệt ngưỡng · công trạm · gán quy trình · cảnh báo) ⇒ 291 → 246 (−45 thoát sổ, +9 miễn trừ có lý do)
+const GHIM = { tongMutation: 1198, no: 219 } as const; // 2026-10-25 W14a: bom · energy · msd · stencil · onboarding · qualityGateTemplate.applyToLine · dataRouters · stationTriangulation · mpVariantSubform · twinGov vá (−27); 39 miễn trừ có lý do (danh mục dùng chung / của chính người gọi / toàn cục); 246 → 219
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {

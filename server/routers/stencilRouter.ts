@@ -9,6 +9,7 @@
  * Recording works regardless of any flag. The worn side-effect is gated by
  * STENCIL_TRACKING_ENABLED (default OFF). The `tools` master is never written here.
  */
+import { mayTuyChonGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { tools } from "../../drizzle/schema";
@@ -31,6 +32,7 @@ export const stencilRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await mayTuyChonGhi(ctx, input.machineId, "machine"); // phạm vi nhà máy (W14)
       return recordPrints({ ...input, recordedBy: ctx.user?.id ?? null });
     }),
 
