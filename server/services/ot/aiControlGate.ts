@@ -493,3 +493,32 @@ export function ketQuaTuChoiChoTool(
     note: ketQua.lyDo,
   };
 }
+
+/**
+ * R1b-1 T13 — câu ĐÃ DỊCH cho một từ chối lệch lưới / lệch bước của dispatcher trên đường AI (tool máy + thị giác), từ
+ * `DispatchResult.appError` (`SCADA_VALUE_OFF_STEP` { tagKey, step, goiY } / `SCADA_VALUE_OFF_STEP_NO_HINT` { tagKey, step }). DÙNG LẠI
+ * đúng câu của hai mã đó ở `client/src/i18n/locales/{vi,en,zh}.json` (`errors.*`, câu HMI hiện cho người vận hành): máy chủ không có
+ * i18next (xem `aiLocalTools/vramPhrases.ts`), nên ba câu được chép vào đây và `aiControlGate.lechBuoc.t13.test.ts` đối chiếu từng ký tự
+ * với file locale (lệch ⇒ đỏ). Mã khác / không có appError ⇒ null (tool giữ câu cũ). Thuần.
+ */
+const CAU_LECH_BUOC: Record<"SCADA_VALUE_OFF_STEP" | "SCADA_VALUE_OFF_STEP_NO_HINT", Record<"vi" | "en" | "zh", string>> = {
+  SCADA_VALUE_OFF_STEP: {
+    vi: "Giá trị không nằm trên bước {{step}} của kênh {{tagKey}}. Giá trị hợp lệ gần nhất: {{goiY}} — hãy chọn lại.",
+    en: "The value is not on step {{step}} of channel {{tagKey}}. Nearest valid value: {{goiY}} — please choose again.",
+    zh: "该值不在通道 {{tagKey}} 的步长 {{step}} 上。最接近的有效值：{{goiY}}——请重新选择。",
+  },
+  SCADA_VALUE_OFF_STEP_NO_HINT: {
+    vi: "Giá trị không nằm trên bước {{step}} của kênh {{tagKey}} — hãy chọn lại.",
+    en: "The value is not on step {{step}} of channel {{tagKey}} — please choose again.",
+    zh: "该值不在通道 {{tagKey}} 的步长 {{step}} 上——请重新选择。",
+  },
+};
+export const CAU_LECH_BUOC_CHO_TEST = CAU_LECH_BUOC;
+
+export function cauLechBuocChoAi(lang: "vi" | "en" | "zh", ketQua: { appError?: unknown } | null | undefined): string | null {
+  const a = ketQua?.appError as { appCode?: unknown; appParams?: Record<string, unknown> } | undefined;
+  if (!a || (a.appCode !== "SCADA_VALUE_OFF_STEP" && a.appCode !== "SCADA_VALUE_OFF_STEP_NO_HINT")) return null;
+  const khuon = CAU_LECH_BUOC[a.appCode][lang] ?? CAU_LECH_BUOC[a.appCode].vi;
+  const p = a.appParams ?? {};
+  return khuon.replace(/\{\{(\w+)\}\}/g, (_, k: string) => (p[k] === undefined || p[k] === null ? "—" : String(p[k])));
+}

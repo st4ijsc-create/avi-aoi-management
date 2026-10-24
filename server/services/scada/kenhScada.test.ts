@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { canonicalOtValue } from "../ot/otActionBinding";
-import { kiemGiaTriGhi, laKenhGhi, loaiKenh, mucTacDongKenh, type KetQuaGiaTri } from "./kenhScada";
+import { canKiemLuoiThoChuaKhai, kiemGiaTriGhi, kiemLuoiThoChuaKhai, laKenhGhi, loaiKenh, mucTacDongKenh, type KetQuaGiaTri } from "./kenhScada";
 
 type KenhThu = {
   dataType: "bool" | "int" | "float" | "string" | "json";
@@ -400,5 +400,53 @@ describe("kiemGiaTriGhi — đối tượng kiểu Long (Sparkplug B 64 bit)", (
     const k = kenh({ dataType: "int", writeMin: 0, writeMax: 100, writeStep: 5 });
     expect(tot(kiemGiaTriGhi(k, giaLong(50n)))).toBe(50);
     expect(loi(kiemGiaTriGhi(k, giaLong(101n))).ma).toBe("OUT_OF_RANGE");
+  });
+});
+
+describe("R1b-1 T13 — tag int CHƯA khai có scale/offset: lưới thô kiểm trên Number(giá trị) như inverseScale, giá trị KHÔNG bị ép kiểu", () => {
+  const i10 = { dataType: "int" as const, scale: "10.000000", offset: "0.000000" };
+  it("canKiemLuoiThoChuaKhai: chỉ int có scale ≠ 1 hoặc offset ≠ 0 (NULL / 0 như driver)", () => {
+    expect(canKiemLuoiThoChuaKhai(i10)).toBe(true);
+    expect(canKiemLuoiThoChuaKhai({ dataType: "int", scale: 1, offset: 5 })).toBe(true);
+    expect(canKiemLuoiThoChuaKhai({ dataType: "int", scale: "1.000000", offset: "0.000000" })).toBe(false);
+    expect(canKiemLuoiThoChuaKhai({ dataType: "int", scale: null, offset: null })).toBe(false);
+    expect(canKiemLuoiThoChuaKhai({ dataType: "int", scale: "0", offset: null })).toBe(false); // driver: scale 0 ⇒ 1
+    expect(canKiemLuoiThoChuaKhai({ dataType: "float", scale: 10, offset: 0 })).toBe(false);
+    expect(canKiemLuoiThoChuaKhai({ dataType: "bool", scale: 10, offset: 0 })).toBe(false);
+  });
+  it("scale 10: 30 ⇒ ok, giá trị NGUYÊN VẸN; 25 ⇒ OFF_STEP goiY 30 buoc 10", () => {
+    expect(tot(kiemLuoiThoChuaKhai(i10, 30))).toBe(30);
+    const r = loi(kiemLuoiThoChuaKhai(i10, 25));
+    expect(r).toMatchObject({ ma: "OFF_STEP", goiY: 30, buoc: 10 });
+  });
+  it('chuỗi KHÔNG ép kiểu: "30" ⇒ ok trả lại CHUỖI "30"; "25" ⇒ OFF_STEP (Number("25") như driver)', () => {
+    expect(tot(kiemLuoiThoChuaKhai(i10, "30"))).toBe("30");
+    expect(loi(kiemLuoiThoChuaKhai(i10, "25")).goiY).toBe(30);
+  });
+  it("true ⇒ Number(true) = 1 ⇒ OFF_STEP goiY 0 (driver ghi raw 0 — ngược ý định); false ⇒ 0 ⇒ ok", () => {
+    expect(loi(kiemLuoiThoChuaKhai(i10, true)).goiY).toBe(0);
+    expect(tot(kiemLuoiThoChuaKhai(i10, false))).toBe(false);
+  });
+  it("không hữu hạn (\"abc\", đối tượng) ⇒ không phải chuyện làm tròn ⇒ ok nguyên vẹn (hành vi cũ)", () => {
+    expect(tot(kiemLuoiThoChuaKhai(i10, "abc"))).toBe("abc");
+    const o = { a: 1 };
+    expect(tot(kiemLuoiThoChuaKhai(i10, o as never))).toBe(o);
+  });
+  it("scale 0.5: 2.5 ⇒ ok (raw 5 — tag chưa khai không đòi số nguyên); 2.7 ⇒ OFF_STEP goiY 2.5 (gợi ý KHÔNG bị bỏ vì không nguyên)", () => {
+    const k = { dataType: "int" as const, scale: 0.5, offset: 0 };
+    expect(tot(kiemLuoiThoChuaKhai(k, 2.5))).toBe(2.5);
+    expect(loi(kiemLuoiThoChuaKhai(k, 2.7))).toMatchObject({ ma: "OFF_STEP", goiY: 2.5, buoc: 0.5 });
+  });
+  it("scale 0.1: 0.3 ⇒ ok (nhiễu dấu phẩy động 2.9999999999999996 KHÔNG bị coi là lệch lưới)", () => {
+    expect(tot(kiemLuoiThoChuaKhai({ dataType: "int", scale: 0.1, offset: 0 }, 0.3))).toBe(0.3);
+  });
+  it("scale 1 / offset 0, float, bool ⇒ không kiểm (2.5 vẫn đi nguyên — ngoài phạm vi T13)", () => {
+    expect(tot(kiemLuoiThoChuaKhai({ dataType: "int", scale: 1, offset: 0 }, 2.5))).toBe(2.5);
+    expect(tot(kiemLuoiThoChuaKhai({ dataType: "float", scale: 10, offset: 0 }, 25))).toBe(25);
+  });
+  it("offset 1 scale 2: 4 ⇒ OFF_STEP goiY 5 ((4−1)/2 = 1.5 ⇒ Math.round 2 ⇒ 5); 5 ⇒ ok", () => {
+    const k = { dataType: "int" as const, scale: "2", offset: "1" };
+    expect(loi(kiemLuoiThoChuaKhai(k, 4))).toMatchObject({ goiY: 5, buoc: 2 });
+    expect(tot(kiemLuoiThoChuaKhai(k, 5))).toBe(5);
   });
 });

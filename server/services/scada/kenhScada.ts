@@ -153,7 +153,7 @@ function laJsonThuan(v: unknown, sau = 0): boolean {
 const sachSo = (n: number): number => Number(n.toPrecision(15));
 
 /** scale / offset như driver dùng (`drivers/otScale.inverseScale`): vắng / NULL / 0 / không hữu hạn ⇒ scale 1; vắng / NULL ⇒ offset 0. */
-function heSoThangDo(tag: KenhGhiThuan): { s: number; o: number } {
+function heSoThangDo(tag: Pick<KenhGhiThuan, "scale" | "offset">): { s: number; o: number } {
   const s = tag.scale == null ? 1 : Number(tag.scale);
   const o = tag.offset == null ? 0 : Number(tag.offset);
   return { s: Number.isFinite(s) && s !== 0 ? s : 1, o: Number.isFinite(o) ? o : 0 };
@@ -164,13 +164,14 @@ function heSoThangDo(tag: KenhGhiThuan): { s: number; o: number } {
  * nên một giá trị kỹ thuật lệch lưới thô bị LÀM TRÒN IM LẶNG (scale 10: xác nhận 25 ⇒ thiết bị nhận 3 = 30). Cổng này từ chối thay vì
  * để driver làm tròn: (v − offset)/scale không nguyên (dung sai dấu phẩy động như bước) ⇒ `OFF_STEP`, `buoc` = |scale|,
  * `goiY` = offset + round((v − offset)/scale)·scale — ĐÚNG giá trị driver đã lặng lẽ ghi (hoà .5 theo `Math.round`: về phía +∞, 25 ⇒ 30)
- * — kẹp vào các điểm lưới thô nằm trong [writeMin, writeMax]; không có điểm nào trong dải, hoặc gợi ý không phải số nguyên (tag int) ⇒
- * không `goiY`. float / bool / string / json: driver không làm tròn ⇒ không kiểm. Gợi ý KHÔNG xét `writeStep` (hiếm khi cả hai cùng có).
+ * — kẹp vào các điểm lưới thô nằm trong [writeMin, writeMax]; không có điểm nào trong dải, hoặc (`goiYPhaiNguyen`, tag ĐÃ khai: epInt chỉ
+ * nhận số nguyên) gợi ý không phải số nguyên ⇒ không `goiY`. float / bool / string / json: driver không làm tròn ⇒ không kiểm. Gợi ý KHÔNG
+ * xét `writeStep` (hiếm khi cả hai cùng có).
  */
-function kiemLuoiTho(tag: KenhGhiThuan, v: number): KetQuaGiaTri {
+function kiemLuoiTho(tag: KenhGhiThuan, v: number, goiYPhaiNguyen = true): KetQuaGiaTri {
   if (tag.dataType !== "int") return { ok: true, giaTri: v };
   const { s, o } = heSoThangDo(tag);
-  if (s === 1 && o === 0) return { ok: true, giaTri: v }; // v đã là số nguyên (epInt)
+  if (s === 1 && o === 0) return { ok: true, giaTri: v }; // lưới thô = số nguyên: tag đã khai đã qua epInt; chưa khai — ngoài phạm vi (xem kiemLuoiThoChuaKhai)
   const n = (v - o) / s;
   if (!Number.isFinite(n) || Math.abs(n) >= 2 ** 53) return { ok: true, giaTri: v }; // vượt độ phân giải double — như nhánh bước
   const k = Math.round(n);
@@ -188,7 +189,7 @@ function kiemLuoiTho(tag: KenhGhiThuan, v: number): KetQuaGiaTri {
     let g = sachSo(o + Math.min(Math.max(k, kLo), kHi) * s);
     if (min != null) g = Math.max(g, min);
     if (max != null) g = Math.min(g, max);
-    if (Number.isSafeInteger(g)) goiY = g;
+    if (goiYPhaiNguyen ? Number.isSafeInteger(g) : Number.isFinite(g)) goiY = g;
   }
   return sai(
     "OFF_STEP",
@@ -196,6 +197,37 @@ function kiemLuoiTho(tag: KenhGhiThuan, v: number): KetQuaGiaTri {
     goiY,
     Math.abs(s),
   );
+}
+
+/**
+ * R1b-1 T13 (điều phối 2026-10-24) — tag int CHƯA khai mô hình ghi (cột 0431 đều NULL) mà có `scale ≠ 1` hoặc `offset ≠ 0`: cổng kênh
+ * sớm của `dispatch()` phải kiểm lưới thô như tag đã khai, không để driver làm tròn im lặng (scale 10: 25 ⇒ raw 3 = 30). true ⇔ phải kiểm.
+ * scale 1 / offset 0 ⇒ false: hành vi cũ (giá trị đi nguyên như gửi; ngoài phạm vi T13).
+ */
+export function canKiemLuoiThoChuaKhai(tag: Pick<KenhGhiThuan, "dataType" | "scale" | "offset">): boolean {
+  if (tag.dataType !== "int") return false;
+  const { s, o } = heSoThangDo(tag);
+  return s !== 1 || o !== 0;
+}
+
+/**
+ * R1b-1 T13 — kiểm lưới thô cho tag int CHƯA khai (`canKiemLuoiThoChuaKhai`). Tag chưa khai KHÔNG được ép kiểu (hành vi cũ: giá trị đi nguyên
+ * như người gọi gửi), nên số đem kiểm là ĐÚNG số driver sẽ dùng: `Number(giaTri)` như `inverseScale` (true ⇒ 1, "25" ⇒ 25). Không hữu hạn
+ * (`"abc"`, đối tượng) ⇒ không phải chuyện làm tròn ⇒ ok (hành vi cũ). Lệch lưới ⇒ `OFF_STEP` với `buoc` = |scale| và `goiY` = điểm lưới gần
+ * nhất (không đòi số nguyên — tag chưa khai không qua epInt; scale 0.5 ⇒ 2.5 là giá trị đúng lưới). `ok` trả LẠI giá trị NGUYÊN VẸN, không đổi.
+ */
+export function kiemLuoiThoChuaKhai(tag: Pick<KenhGhiThuan, "dataType" | "scale" | "offset">, giaTri: unknown): KetQuaGiaTri {
+  const nguyenVen = { ok: true, giaTri: giaTri as number | boolean | string } as const;
+  if (!canKiemLuoiThoChuaKhai(tag)) return nguyenVen;
+  let x: number;
+  try {
+    x = Number(giaTri);
+  } catch {
+    return nguyenVen; // Symbol — driver cũng không ghi được; không phải chuyện làm tròn
+  }
+  if (!Number.isFinite(x)) return nguyenVen;
+  const kq = kiemLuoiTho({ dataType: "int", writeMin: null, writeMax: null, writeStep: null, scale: tag.scale, offset: tag.offset }, x === 0 ? 0 : x, false);
+  return kq.ok ? nguyenVen : kq;
 }
 
 /**

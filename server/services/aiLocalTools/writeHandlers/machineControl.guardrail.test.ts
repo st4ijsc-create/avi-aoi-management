@@ -151,3 +151,40 @@ describe("set_machine_param — guardrail enforcement (G4.18)", () => {
     expect(res.data.ok).toBe(true);
   });
 });
+
+// SCADA R1b-1 T13 — dispatcher từ chối OFF_STEP (lưới thô / bước) ⇒ đường AI nói câu ĐÃ DỊCH của mã SCADA_VALUE_OFF_STEP (cùng câu HMI),
+// không chỉ mã trần; `note` giữ mã máy-đọc-được (bi_tu_choi_ghi).
+describe("set_machine_param — từ chối OFF_STEP của dispatcher hiện câu đã dịch (R1b-1 T13)", () => {
+  const tuChoi = {
+    ok: false,
+    simulated: false,
+    status: "rejected",
+    reason: "OFF_STEP",
+    results: [],
+    commandLogIds: [9],
+    appError: { appCode: "SCADA_VALUE_OFF_STEP", appParams: { ma: "OFF_STEP", tagKey: "speed", step: 10, goiY: 30 } },
+  };
+  for (const [lang, cau] of [
+    ["vi", "Giá trị không nằm trên bước 10 của kênh speed. Giá trị hợp lệ gần nhất: 30 — hãy chọn lại."],
+    ["en", "The value is not on step 10 of channel speed. Nearest valid value: 30 — please choose again."],
+    ["zh", "该值不在通道 speed 的步长 10 上。最接近的有效值：30——请重新选择。"],
+  ] as const) {
+    it(`${lang}: title + textSummary mang câu của locale; note = OFF_STEP`, async () => {
+      dispatchSpy.mockResolvedValueOnce(tuChoi as never);
+      const t = getTool("set_machine_param") as any;
+      const res = (await t.execute({ machineId: 5, tagKey: "speed", value: 25 }, { ...ctx, lang })) as any;
+      expect(res.title).toContain(cau);
+      expect(res.textSummary).toContain("(OFF_STEP)");
+      expect(res.textSummary).toContain(cau);
+      expect(res.note).toBe("OFF_STEP");
+    });
+  }
+
+  it("lệnh thành công / từ chối khác ⇒ title như cũ (không thêm câu)", async () => {
+    const ok = (await execTool({ machineId: 5, tagKey: "speed", value: 30 })) as any;
+    expect(ok.title).not.toContain("—");
+    dispatchSpy.mockResolvedValueOnce({ ok: false, simulated: false, status: "rejected", reason: "OUT_OF_RANGE", results: [], commandLogIds: [] } as never);
+    const khac = (await execTool({ machineId: 5, tagKey: "speed", value: 999 })) as any;
+    expect(khac.textSummary).toBe("set_param → rejected (OUT_OF_RANGE)");
+  });
+});

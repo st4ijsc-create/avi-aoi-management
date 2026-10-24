@@ -113,7 +113,7 @@ import {
   type CommandLog,
   type DeviceTag,
 } from "../../../drizzle/schema";
-import { kiemGiaTriGhi, laKenhGhi, loaiKenh } from "../scada/kenhScada"; // SCADA R1a Task 3 (K4) — the ONE coercion/range/step rule
+import { canKiemLuoiThoChuaKhai, kiemGiaTriGhi, kiemLuoiThoChuaKhai, laKenhGhi, loaiKenh } from "../scada/kenhScada"; // SCADA R1a Task 3 (K4) — the ONE coercion/range/step rule
 import { cheDoMay, congCheDoBat, laToolHmiCongCheDo } from "../scada/cheDoMay"; // SCADA R1a Task 4 (K2/D3) — machine LOCAL/REMOTE
 import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { foeApprovalDbRefusal, preReadProgramChecksForAction, type PreReadPrograms } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i); Đợt 8 final wave O M2
@@ -501,7 +501,8 @@ export interface DispatchResult {
    * doc 81 Đợt 1C final wave 4 (R-1C-g) — machine-readable, localisable refusal (existing appError code +
    * `errors.reason.*` key) when the refusal needs words beyond `reason`. Today: a stop/e_stop refused by the
    * safety preflight; doc 81 Đợt 1E (I-1): a waiting command cancelled by a pinned STOP
-   * (`OT_COMMAND_SUPERSEDED_BY_STOP`, params { stopKey }). Absent everywhere else (byte-identical).
+   * (`OT_COMMAND_SUPERSEDED_BY_STOP`, params { stopKey }); R1b-1 T13: an early-channel-gate OFF_STEP (`SCADA_VALUE_OFF_STEP` /
+   * `_NO_HINT`, params { ma, tagKey, step, goiY? } — the HMI's own codes, `appErrorLechBuoc`). Absent everywhere else (byte-identical).
    */
   appError?: { appCode: AppErrorCode; appParams: AppErrorParams };
   /** Plain-English sentence for API callers/logs, paired with `appError`. */
@@ -852,7 +853,8 @@ export type TagCongKenh = Pick<
   DeviceTag,
   "tagKey" | "address" | "dataType" | "writable" | "isEnabled" | "stopValue" | "channelKind" | "writeMin" | "writeMax" | "writeStep"
 > &
-  // kiem-dinh P1-3 — scale/offset (hàng bước 3 là hàng đầy đủ): int của tag ĐÃ KHAI phải nằm trên lưới thô, không thì OFF_STEP.
+  // kiem-dinh P1-3 + R1b-1 T13 — scale/offset (hàng bước 3 là hàng đầy đủ): int của MỌI tag (đã khai hay chưa) phải nằm trên lưới thô,
+  // không thì OFF_STEP.
   Partial<Pick<DeviceTag, "scale" | "offset">>;
 
 /** Refusal codes of the early channel gate (command_log.errorText `<CODE>: <detail>`). */
@@ -860,7 +862,8 @@ export type MaCongKenh = "CHANNEL_READ_ONLY" | "TYPE_MISMATCH" | "OUT_OF_RANGE" 
 
 export type KetQuaCongKenhSom =
   | { ok: true; writes: DispatchWrite[] }
-  | { ok: false; ma: MaCongKenh; chiTiet: string; tagKey: string; address: string };
+  // R1b-1 T13 — `buoc` / `goiY` (OFF_STEP only): the grid just missed and the hint, for the localisable refusal (`SCADA_VALUE_OFF_STEP`).
+  | { ok: false; ma: MaCongKenh; chiTiet: string; tagKey: string; address: string; buoc?: number; goiY?: number };
 
 /**
  * Does this tag DECLARE a write channel model (mig 0431 columns)? Only then are its written values coerced and checked
@@ -883,7 +886,8 @@ function epKieuKenh(tag: Pick<DeviceTag, "dataType">, value: unknown) {
  *   PASS 1 (every write):
  *   1. not a write channel (`laKenhGhi`: channel_kind input / calculated) ⇒ CHANNEL_READ_ONLY. NO stop exemption: a pin
  *      only exists on a writable channel. channel_kind NULL ⇒ derived from `writable` (true here) ⇒ always a write channel.
- *   2. channel model not declared (`kenhDaKhaiGhi` false) ⇒ the write passes UNCHANGED (old behaviour).
+ *   2. channel model not declared (`kenhDaKhaiGhi` false) ⇒ the write passes UNCHANGED (old behaviour: never coerced). R1b-1 T13:
+ *      an undeclared INT tag with scale ≠ 1 or offset ≠ 0 (`canKiemLuoiThoChuaKhai`) is still queued for the raw-grid check (5).
  *   3. coerce by dataType (`kiemGiaTriGhi`, never rounds) ⇒ TYPE_MISMATCH on failure.
  *   PINNED STOP exemption (coordinator 2026-10-24 item 4: no software blocks a pinned STOP; fix round 1 M-2: WHOLE command
  *   only) — matched on DATA here, since this gate runs before the mode/commissioning gates: a stop-typed command
@@ -892,46 +896,71 @@ function epKieuKenh(tag: Pick<DeviceTag, "dataType">, value: unknown) {
  *   range and step. A stop that mixes a pin with ANY other write (fix round 2: an undeclared, unpinned one too — it is not a
  *   pinned STOP at 5a-stop either) is not exempt for any of them. The full classification (`classifyOtStop`, connection fingerprint …)
  *   still runs later, unchanged. Range ↔ stop_value consistency is checked at CONFIGURATION time (R1a Task 12), not here.
- *   PASS 2 (declared writes, unless exempt):
- *   4. range, then step ⇒ OUT_OF_RANGE / OFF_STEP (the detail carries `goiY`, a hint only — the value is never altered).
- *   5. kiem-dinh P1-3 (2026-10-24) — int with scale/offset: (v − offset)/scale must be an integer, else OFF_STEP (goiY = the raw-grid
- *      value the driver's `inverseScale` would have rounded to). DECLARED tags only, like 3–4: an undeclared tag keeps the pre-R1a
- *      behaviour byte for byte (flags-off equivalence) — and so the driver still rounds silently there (known limit; R1b backlog).
- *      A pinned STOP is exempt (whole-command rule above), like range/step.
+ *   PASS 2 (declared writes + undeclared int writes with scale/offset, in write order, unless exempt):
+ *   4. range, then step ⇒ OUT_OF_RANGE / OFF_STEP (the detail carries `goiY`, a hint only — the value is never altered). Declared only.
+ *   5. kiem-dinh P1-3 (2026-10-24) + R1b-1 T13 — int with scale/offset: (v − offset)/scale must be an integer, else OFF_STEP (goiY =
+ *      the nearest raw-grid value, buoc = |scale|). EVERY int tag: declared (`kiemGiaTriGhi`, on the coerced integer) AND undeclared
+ *      (`kiemLuoiThoChuaKhai`, on `Number(value)` exactly as the driver's `inverseScale` reads it — the value itself still goes on as
+ *      sent). No flag: the driver used to round silently (scale 10: 25 ⇒ raw 3 = 30) — a right/wrong fix, census in the T13 report
+ *      (nobody relies on the rounding). A pinned STOP is exempt (whole-command rule above), like range/step: an off-grid pin is still
+ *      written (and rounded by the driver) — STOP is never blocked; such pins are a configuration finding, not a dispatch refusal.
  * ok ⇒ the writes to use downstream: declared tags carry the COERCED value, undeclared ones the caller's write object.
  *
  * R1a Task 4 (ledger R-1) appends its mode gate (3c) right after this block in dispatchCore, on the same tag rows.
  */
 export function congKenhSom(commandType: string, writes: ReadonlyArray<DispatchWrite>, tags: ReadonlyArray<TagCongKenh>): KetQuaCongKenhSom {
-  const tuChoi = (i: number, ma: MaCongKenh, chiTiet: string): KetQuaCongKenhSom => ({ ok: false, ma, chiTiet, tagKey: writes[i].tagKey, address: tags[i].address });
+  const tuChoi = (i: number, ma: MaCongKenh, chiTiet: string, luoi?: { buoc?: number; goiY?: number }): KetQuaCongKenhSom => ({
+    ok: false,
+    ma,
+    chiTiet,
+    tagKey: writes[i].tagKey,
+    address: tags[i].address,
+    ...(luoi?.buoc !== undefined ? { buoc: luoi.buoc } : {}),
+    ...(luoi?.goiY !== undefined ? { goiY: luoi.goiY } : {}),
+  });
   const out: DispatchWrite[] = [];
-  const daKhai: number[] = []; // indexes of the declared writes (coerced in `out`)
+  const canKiem: number[] = []; // indexes checked in pass 2: declared writes (coerced in `out`) + undeclared int writes with scale/offset (as sent)
   for (let i = 0; i < writes.length; i++) {
     const w = writes[i];
     const tag = tags[i];
     if (!laKenhGhi(tag)) return tuChoi(i, "CHANNEL_READ_ONLY", `Tag "${w.tagKey}" is a '${loaiKenh(tag)}' channel — not a write channel`);
     if (!kenhDaKhaiGhi(tag)) {
       out.push(w);
+      if (canKiemLuoiThoChuaKhai(tag)) canKiem.push(i); // R1b-1 T13 — raw grid only; the value is NOT coerced
       continue;
     }
     const kieu = epKieuKenh(tag, w.value);
     if (!kieu.ok) return tuChoi(i, kieu.ma, `Tag "${w.tagKey}": ${kieu.chiTiet}`);
     out.push({ ...w, value: kieu.giaTri });
-    daKhai.push(i);
+    canKiem.push(i);
   }
-  if (daKhai.length === 0) return { ok: true, writes: out };
+  if (canKiem.length === 0) return { ok: true, writes: out };
 
   if (isStopCommandType(commandType)) {
     const pins = stopPinsFromTagRows(tags.map((t) => ({ tagKey: t.tagKey, dataType: t.dataType, stopValue: t.stopValue, writable: t.writable, isEnabled: t.isEnabled })));
     if (matchPinnedStop(pins, out.map((w) => ({ tagKey: w.tagKey, value: w.value }))).ok) return { ok: true, writes: out };
   }
 
-  for (const i of daKhai) {
-    const kq = kiemGiaTriGhi(tags[i], writes[i].value);
-    if (!kq.ok) return tuChoi(i, kq.ma, `Tag "${writes[i].tagKey}": ${kq.chiTiet}${kq.goiY !== undefined ? ` (goiY=${kq.goiY})` : ""}`);
-    // kq.giaTri === the pass-1 coerced value (kiemGiaTriGhi never rounds or clamps)
+  for (const i of canKiem) {
+    const kq = kenhDaKhaiGhi(tags[i]) ? kiemGiaTriGhi(tags[i], writes[i].value) : kiemLuoiThoChuaKhai(tags[i], writes[i].value);
+    if (!kq.ok) {
+      return tuChoi(i, kq.ma, `Tag "${writes[i].tagKey}": ${kq.chiTiet}${kq.goiY !== undefined ? ` (goiY=${kq.goiY})` : ""}`, { buoc: kq.buoc, goiY: kq.goiY });
+    }
+    // declared: kq.giaTri === the pass-1 coerced value (kiemGiaTriGhi never rounds or clamps); undeclared: the value as sent
   }
   return { ok: true, writes: out };
+}
+
+/**
+ * PURE — R1b-1 T13: the localisable form of an early-gate OFF_STEP, REUSING the HMI's codes and keys (`SCADA_VALUE_OFF_STEP` with
+ * { ma, tagKey, step, goiY }, `SCADA_VALUE_OFF_STEP_NO_HINT` without goiY; vi/en/zh in `errors.*`), so every caller that already shows a
+ * `DispatchResult.appError` (FOE step detail, equipment facade) and the AI tools say the same sentence. Any other refusal ⇒ undefined.
+ */
+export function appErrorLechBuoc(kq: KetQuaCongKenhSom): DispatchResult["appError"] {
+  if (kq.ok || kq.ma !== "OFF_STEP" || kq.buoc === undefined) return undefined;
+  return kq.goiY !== undefined
+    ? { appCode: "SCADA_VALUE_OFF_STEP", appParams: { ma: kq.ma, tagKey: kq.tagKey, step: kq.buoc, goiY: kq.goiY } }
+    : { appCode: "SCADA_VALUE_OFF_STEP_NO_HINT", appParams: { ma: kq.ma, tagKey: kq.tagKey, step: kq.buoc } };
 }
 
 /**
@@ -1128,16 +1157,22 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
    * and only block a STOP. Route it exactly as step 4 would; not edge-owned (or the owner unreadable — routeEdgeOwnedAdapterCommand
    * alerts) ⇒ refused through writeRejected (command_log, WORM). `tagKey` given ⇒ one row for that write; absent ⇒ one per write.
    */
-  const tuChoiSom = async (ma: string, chiTiet: string, tagKey?: string, address?: string): Promise<DispatchResult> => {
+  const tuChoiSom = async (
+    ma: string,
+    chiTiet: string,
+    tagKey?: string,
+    address?: string,
+    appError?: DispatchResult["appError"],
+  ): Promise<DispatchResult> => {
     if (isStopCommandType(input.commandType) && !getActiveDriver(input.adapterId)) {
       const routed = await routeEdgeOwnedAdapterCommand(db, input);
       if (routed) return routed;
     }
     const ids = await writeRejected(db, input, ma, chiTiet, tagKey, address);
-    return { ok: false, simulated: false, status: "rejected", reason: ma, results: failedResults(input, ma), commandLogIds: ids };
+    return { ok: false, simulated: false, status: "rejected", reason: ma, results: failedResults(input, ma), commandLogIds: ids, ...(appError ? { appError } : {}) };
   };
   const kenh = congKenhSom(input.commandType, input.writes, tagRowsBuoc3);
-  if (!kenh.ok) return tuChoiSom(kenh.ma, kenh.chiTiet, kenh.tagKey, kenh.address);
+  if (!kenh.ok) return tuChoiSom(kenh.ma, kenh.chiTiet, kenh.tagKey, kenh.address, appErrorLechBuoc(kenh));
   if (kenh.writes.some((w, i) => w !== rawCallerWrites[i])) {
     input = { ...input, writes: kenh.writes };
     resolved.forEach((r, i) => {

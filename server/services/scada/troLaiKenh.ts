@@ -47,7 +47,7 @@ import { deviceAdapters, deviceTags, interlockRules, scadaKenhCheDo, type Device
 import { appError } from "../../_core/appError";
 import { validateStopValue } from "../ot/stopPin";
 import { laKenhGhi } from "./kenhScada";
-import { giaTriLenhInterlock, kiemNhatQuanKenh, luatCoGhiLenh, soHienThi, type DbHoacTx, type KenhNhatQuan, type LuatNhamTag, type MaViPham } from "./nhatQuanKenh";
+import { giaTriLenhInterlock, kiemLenhInterlockTrenKenh, kiemNhatQuanKenh, luatCoGhiLenh, soHienThi, type DbHoacTx, type KenhNhatQuan, type LuatNhamTag, type MaViPham } from "./nhatQuanKenh";
 
 /** Cột TRỎ LẠI của một tag (brief: address/scale/offset/dataType/writable/tagKey; + adapterId — tags.update chuyển được tag sang adapter khác). */
 export const COT_TRO_LAI = ["adapterId", "tagKey", "address", "dataType", "scale", "offset", "writable"] as const;
@@ -418,7 +418,7 @@ export function viPhamInterlockSauSua(
     if (kenhMoi.writable !== true) {
       return { ruleId: r.id, ruleName: r.name, ma: "CHANNEL_READ_ONLY", chiTiet: "Tag không cho phép ghi (writable=false) — dispatch từ chối mọi lệnh ghi." };
     }
-    const kq = kiemNhatQuanKenh(kenhMoi, giaTriLenhInterlock(r));
+    const kq = kiemLenhInterlockTrenKenh(kenhMoi, giaTriLenhInterlock(r)); // R1b-1 T13: kênh chưa khai ⇒ lưới thô (int có scale/offset)
     if (!kq.ok) return { ruleId: r.id, ruleName: r.name, ma: kq.ma, chiTiet: kq.chiTiet };
   }
   return null;

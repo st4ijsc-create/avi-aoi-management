@@ -2,7 +2,8 @@
  * SCADA R1a Task 12 (review T3 M-3) — `interlockRouter` create / update / approve / enable từ chối `commandValue` không ghi được lên
  * khai báo kênh HIỆN TẠI của tag đích (`targetAdapterId` + `commandTag`): ngoài dải / lệch bước / sai kiểu / kênh chỉ đọc ⇒
  * `INTERLOCK_NGOAI_DAI`. Nếu không, hành động bảo vệ của luật sẽ bị cổng kênh của `dispatch()` từ chối (`OUT_OF_RANGE` …) đúng lúc cần.
- * update / approve / enable kiểm trên hàng đã GỘP patch. Tag không khai mô hình ghi (mọi cột kênh NULL) ⇒ không kiểm (hành vi cũ).
+ * update / approve / enable kiểm trên hàng đã GỘP patch. Tag không khai mô hình ghi (mọi cột kênh NULL) ⇒ không kiểm (hành vi cũ) — TRỪ lưới thô
+ * của tag int có scale/offset (R1b-1 T13: dispatch kiểm nó cho mọi tag int, nên cấu hình cũng phải kiểm).
  * Chiều ngược lại (khai dải khi đã có luật bật) ở `scadaKenhRouter.db.test.ts`.
  *
  * CSDL `_test` THẬT (khuôn `interlockRouter.cauHinh.db.test.ts`: người gọi admin + 2FA, id giả cho SoD).
@@ -62,6 +63,9 @@ describe.skipIf(!DB_URL)("interlockRouter — commandValue ↔ dải/bước c�
       VALUES (${adapterId}, 'doc', 'addr-doc', 'float', true, true, 'input')`;
     await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", channel_kind)
       VALUES (${adapterId}, 'b', 'addr-b', 'bool', true, true, 'output')`;
+    // R1b-1 T13 — int KHÔNG khai kênh, scale 10: dispatch kiểm lưới thô ⇒ cấu hình interlock cũng phải kiểm
+    await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", scale)
+      VALUES (${adapterId}, 'sc10cu', 'addr-sc10cu', 'int', true, true, 10)`;
   }, 60_000);
 
   afterAll(async () => {
@@ -84,6 +88,16 @@ describe.skipIf(!DB_URL)("interlockRouter — commandValue ↔ dải/bước c�
       expect(e.appParams, ten).toMatchObject({ ma: "INTERLOCK_NGOAI_DAI", lyDo });
       expect((await sql`SELECT id FROM interlock_rules WHERE name = ${DAU + "-" + ten}`).length, ten).toBe(0);
     }
+  });
+
+  it("R1b-1 T13 create: tag int KHÔNG khai kênh, scale 10 — commandValue 25 ⇒ INTERLOCK_NGOAI_DAI (OFF_STEP), không ghi hàng; 30 ⇒ OK (dispatch gửi raw 3)", async () => {
+    const e = await loiCua(caller(TAC_GIA).create(input("t13-25", { commandTag: "sc10cu", commandValue: 25 })));
+    expect(e).toMatchObject({ code: "BAD_REQUEST", appCode: "INTERLOCK_NGOAI_DAI" });
+    expect(e.appParams).toMatchObject({ ma: "INTERLOCK_NGOAI_DAI", lyDo: "OFF_STEP" });
+    expect((await sql`SELECT id FROM interlock_rules WHERE name = ${DAU + "-t13-25"}`).length).toBe(0);
+    const ok = await caller(TAC_GIA).create(input("t13-30", { commandTag: "sc10cu", commandValue: 30 }));
+    ruleIds.push(ok.id);
+    expect(ok.id).toBeGreaterThan(0);
   });
 
   it("create: trong dải + đúng bước ⇒ OK; tag không khai kênh ⇒ không kiểm; luật alert / không có đích ⇒ không kiểm", async () => {
