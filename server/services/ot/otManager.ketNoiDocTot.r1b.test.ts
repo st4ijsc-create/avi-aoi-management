@@ -31,6 +31,7 @@ const TAGS: OtTagAddress[] = [
 
 interface Phien {
   onTick: ((e: SuKienDoc) => void) | undefined;
+  onSample: OnOtSample;
   closed: boolean;
 }
 
@@ -40,13 +41,21 @@ class TcpLenDriver implements OtDriver {
   failConnect = false;
   /** Lần đọc đầu tức thì: phát tick này ĐỒNG BỘ trong subscribe, trước khi trả handle. */
   tickTrongSubscribe: SuKienDoc | null = null;
+  /** Fix round 1 — đường PUSH (như OPC UA monitored items): subscribe KHÔNG giữ onTick, chỉ phát mẫu qua onSample. */
+  push = false;
+  /** Endpoint của lần connect gần nhất (HA dual-endpoint: phân biệt primary / secondary). */
+  ep: string | null = null;
+  /** Fix round 1 — móc chạy ĐỒNG BỘ đầu mỗi disconnect() (cửa sổ failover của supervisor). */
+  onDisconnect: (() => void) | null = null;
   readonly phien: Phien[] = [];
 
-  async connect(_cfg: OtConnectionConfig): Promise<void> {
+  async connect(cfg: OtConnectionConfig): Promise<void> {
+    this.ep = cfg.endpoint ?? null;
     if (this.failConnect) throw Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" });
     this.connected = true;
   }
   async disconnect(): Promise<void> {
+    this.onDisconnect?.();
     this.connected = false;
   }
   isConnected(): boolean {
@@ -55,9 +64,9 @@ class TcpLenDriver implements OtDriver {
   async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
     return tags.map((t) => ({ tagKey: t.tagKey, raw: 1, value: 1, quality: "good", timestamp: new Date() }));
   }
-  async subscribe(_tags: OtTagAddress[], _onSample: OnOtSample, _ms?: number, tuyChon?: TuyChonVongPoll): Promise<OtSubscriptionHandle> {
+  async subscribe(_tags: OtTagAddress[], onSample: OnOtSample, _ms?: number, tuyChon?: TuyChonVongPoll): Promise<OtSubscriptionHandle> {
     if (!this.connected) throw new Error("not connected");
-    const p: Phien = { onTick: tuyChon?.onTick, closed: false };
+    const p: Phien = { onTick: this.push ? undefined : tuyChon?.onTick, onSample, closed: false };
     this.phien.push(p);
     if (this.tickTrongSubscribe) p.onTick?.(this.tickTrongSubscribe);
     return {
@@ -91,7 +100,12 @@ const TICK_OK_TOAN_COMM_LOST: SuKienDoc = {
   tags: TAGS.map((t) => ({ tagKey: t.tagKey, quality: "bad" as const, reason: "comm_lost" as const })),
 };
 
+const MAU_GOOD: OtSample = { tagKey: "t1", raw: 1, value: 1, quality: "good", timestamp: new Date() };
+const MAU_BAD: OtSample = { tagKey: "t1", raw: null, value: null, quality: "bad", timestamp: new Date(), reason: "comm_lost" };
+
 const ID = 4343;
+/** Fix round 1 — adapter có endpoint dự phòng (failover HA). */
+let coDuPhong = false;
 function adapterFixture(driver: OtDriver) {
   return {
     adapterId: ID,
@@ -102,7 +116,7 @@ function adapterFixture(driver: OtDriver) {
     pollIntervalMs: 1000,
     tags: TAGS,
     driver,
-    backupConnection: undefined,
+    backupConnection: coDuPhong ? ({ endpoint: "stub://t3b", timeoutMs: 800 } as OtConnectionConfig) : undefined,
   };
 }
 
@@ -119,11 +133,17 @@ describe.each([
   let bao: string[];
   /** Mọi lần ghi DB `device_adapters.status`. */
   let ghiDb: string[];
+  /** Fix round 1 — số loạt mẫu xấu khi mất (trangThaiAdapter.phatMauXau ⇒ ingestSamples, mọi mẫu bad). */
+  let loatXau: number;
+  /** Chuyển trạng thái (bỏ lời gọi lặp lại cùng trạng thái — legacyTick báo lại mỗi vòng, no-op ở baoTrangThaiAdapter). */
+  const chuyen = (xs: string[]): string[] => xs.filter((x, i) => i === 0 || xs[i - 1] !== x);
+  const soLanMat = () => tt.layTrangThaiAdapter(ID)?.soLanMat;
 
   const khoiDong = async (v2: "true" | "false", tickDau: SuKienDoc | null = null): Promise<void> => {
     vi.stubEnv("OT_CHAT_LUONG_V2_ENABLED", v2);
     legacyDrv.tickTrongSubscribe = tickDau;
     expect(await ot.startOt()).toBe(true);
+    if (coDuPhong) return;
     await vi.waitFor(() => {
       drv = ha === "true" ? haDrv[0] : legacyDrv;
       expect(drv).toBeDefined();
@@ -156,17 +176,25 @@ describe.each([
     vi.stubEnv("OT_CONN_HA_BACKOFF_JITTER", "0");
     bao = [];
     ghiDb = [];
+    loatXau = 0;
+    coDuPhong = false;
     legacyDrv = new TcpLenDriver();
     haDrv = [];
     vi.doMock("./driverRegistry", () => ({
       createDriver: () => {
         const d = new TcpLenDriver();
         d.tickTrongSubscribe = legacyDrv.tickTrongSubscribe;
+        d.push = legacyDrv.push;
         haDrv.push(d);
         return d;
       },
     }));
-    vi.doMock("./ingest", () => ({ ingestSample: async () => undefined, ingestSamples: async () => undefined }));
+    vi.doMock("./ingest", () => ({
+      ingestSample: async () => undefined,
+      ingestSamples: async (a: { adapterId: number }, mau: OtSample[]) => {
+        if (a.adapterId === ID && mau.length > 0 && mau.every((m) => m.quality === "bad")) loatXau += 1;
+      },
+    }));
     vi.doMock("./deviceAdapter", () => ({ loadEnabledAdapters: async () => [adapterFixture(legacyDrv)] }));
     vi.doMock("./trangThaiAdapter", async (importOriginal) => {
       const that = await importOriginal<typeof import("./trangThaiAdapter")>();
@@ -259,20 +287,93 @@ describe.each([
       expect(trangThai()).toBe("connected");
     });
 
-    it("reset phiên (resetAdapterSession — dispatcher sau lệnh ghi quá hạn) ⇒ phiên mới chờ lại, không giữ 'connected' của phiên cũ", async () => {
+    /** Đợt mất #1, nối lại, liên kết ỔN ĐỊNH (> thoiGianOnDinhMs = 5 s), rồi reset phiên (dispatcher sau lệnh ghi quá hạn). */
+    const matRoiOnDinhRoiReset = async (): Promise<void> => {
       await khoiDong("true");
       phienCuoi().onTick!(TICK_TOT);
       expect(trangThai()).toBe("connected");
-      const r = await ot.resetAdapterSession(ID, "test reset", 5000);
-      expect(r.reset).toBe(true);
-      expect(drv.phien).toHaveLength(2);
-      await vi.advanceTimersByTimeAsync(2000);
-      // legacy: reset không đi qua 'lost' ⇒ 'connecting'; HA: supervisor 'reconnecting' ⇒ 'lost' (như trước).
-      expect(trangThai()).toBe(ha === "true" ? "lost" : "connecting");
-      drv.phien[0].onTick!(TICK_TOT); // muộn, phiên cũ
-      expect(trangThai()).not.toBe("connected");
+      await haPhien(drv.phien[0]);
+      await vi.waitFor(() => expect(loatXau).toBe(1));
+      expect(soLanMat()).toBe(1);
+      await vi.waitFor(() => expect(drv.phien).toHaveLength(2), { timeout: 10_000 });
       drv.phien[1].onTick!(TICK_TOT);
       expect(trangThai()).toBe("connected");
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(soLanMat()).toBe(1);
+      const r = await ot.resetAdapterSession(ID, "test reset", 5000);
+      expect(r.reset).toBe(true);
+      expect(drv.phien).toHaveLength(3);
+      // legacy: reset không đi qua 'lost' ⇒ 'connecting'; HA: supervisor 'reconnecting' ⇒ 'lost' (như trước).
+      expect(trangThai()).toBe(ha === "true" ? "lost" : "connecting");
+    };
+
+    it("reset phiên sau liên kết ỔN ĐỊNH ⇒ phiên mới chờ lại; phiên mới chỉ timeout ⇒ đợt mất MỚI (soLanMat+1, loạt mẫu xấu)", async () => {
+      await matRoiOnDinhRoiReset();
+      await vi.advanceTimersByTimeAsync(2000);
+      drv.phien[1].onTick!(TICK_TOT); // muộn, phiên cũ
+      expect(trangThai()).not.toBe("connected");
+      await haPhien(drv.phien[2]);
+      await vi.waitFor(() => expect(loatXau).toBe(2));
+      expect(soLanMat()).toBe(2);
+      expect(bao).not.toContain("disabled");
+    });
+
+    it("reset phiên sau liên kết ỔN ĐỊNH ⇒ đọc tốt ⇒ connected ⇒ rớt NGAY (< 5 s) ⇒ vẫn là đợt MỚI, không gộp vào đợt cũ", async () => {
+      await matRoiOnDinhRoiReset();
+      drv.phien[2].onTick!(TICK_TOT);
+      expect(trangThai()).toBe("connected");
+      await vi.advanceTimersByTimeAsync(1000);
+      await haPhien(drv.phien[2]);
+      await vi.waitFor(() => expect(loatXau).toBe(2));
+      expect(soLanMat()).toBe(2);
+    });
+
+    it("đường PUSH (không bao giờ onTick — OPC UA monitored items): mẫu good đầu tiên ⇒ connected; phiên mới chờ lại; mẫu good muộn của phiên cũ không báo", async () => {
+      legacyDrv.push = true;
+      await khoiDong("true");
+      const p1 = drv.phien[0];
+      expect(p1.onTick).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(trangThai()).toBe("connecting");
+      await p1.onSample(MAU_BAD);
+      expect(trangThai()).toBe("connecting");
+      await p1.onSample(MAU_GOOD);
+      expect(trangThai()).toBe("connected");
+      // Mất (driver báo ngắt) ⇒ lost ⇒ nối lại ⇒ phiên 2 (TCP lên lại) — chờ mẫu good của CHÍNH nó.
+      drv.connected = false;
+      await vi.waitFor(() => expect(trangThai()).toBe("lost"), { timeout: 5000 });
+      await vi.waitFor(() => expect(drv.phien).toHaveLength(2), { timeout: 10_000 });
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(trangThai()).toBe("lost");
+      await p1.onSample(MAU_GOOD); // muộn, phiên cũ
+      expect(trangThai()).toBe("lost");
+      await drv.phien[1].onSample(MAU_GOOD);
+      expect(trangThai()).toBe("connected");
+    });
+
+    it.skipIf(ha !== "true")("HA failover: tick tốt về trong CỬA SỔ giữa phienHoatDong=phien và setState('connected') (lúc safeDisconnect endpoint cũ) ⇒ connected", async () => {
+      coDuPhong = true;
+      await khoiDong("true");
+      let pri: TcpLenDriver | undefined;
+      await vi.waitFor(() => {
+        pri = haDrv.find((d) => d.ep === "stub://t3" && d.phien.length === 1);
+        expect(pri).toBeDefined();
+      });
+      drv = pri!;
+      drv.phien[0].onTick!(TICK_TOT);
+      expect(trangThai()).toBe("connected");
+      let trangThaiTrongCuaSo: string | undefined;
+      drv.onDisconnect = () => {
+        const sec = haDrv.find((d) => d.ep === "stub://t3b" && d.phien.length > 0);
+        if (!sec || trangThaiTrongCuaSo !== undefined) return; // lần disconnect của onActiveLost (secondary chưa có phiên) bỏ qua
+        trangThaiTrongCuaSo = trangThai();
+        sec.phien[sec.phien.length - 1].onTick!(TICK_TOT);
+      };
+      drv.phien[0].onTick!(TICK_TIMEOUT);
+      drv.phien[0].onTick!(TICK_TIMEOUT); // D1 ⇒ onActiveLost ⇒ failover sang secondary ⇒ safeDisconnect(primary) ⇒ móc phát tick tốt
+      await vi.waitFor(() => expect(trangThaiTrongCuaSo).toBeDefined(), { timeout: 5000 });
+      expect(trangThaiTrongCuaSo).toBe("lost");
+      await vi.waitFor(() => expect(trangThai()).toBe("connected"), { timeout: 5000 });
     });
 
     it("ok:true mà mọi tag bad vì CẤU HÌNH ⇒ là đọc tốt; ok:true mà mọi tag comm_lost (D1 coi là tick hỏng) ⇒ không", async () => {
@@ -286,15 +387,36 @@ describe.each([
   });
 
   describe("cờ V2 TẮT — hồi quy: y như trước", () => {
-    it("TCP lên ⇒ 'connected' không cần tick nào; nối lại ⇒ 'connected' lại không cần tick", async () => {
+    it("TCP lên ⇒ 'connected' không cần tick nào; mất ⇒ lost; nối lại ⇒ 'connected' không cần tick — đúng dãy chuyển, soLanMat 1", async () => {
       await khoiDong("false");
       await vi.waitFor(() => expect(trangThai()).toBe("connected"));
       await vi.advanceTimersByTimeAsync(6000);
       expect(ghiDb).toContain("connected");
-      // Mất (driver báo ngắt) ⇒ lost ⇒ nối lại ⇒ connected, không một tick nào.
       drv.connected = false;
       await vi.waitFor(() => expect(trangThai()).toBe("lost"), { timeout: 5000 });
       await vi.waitFor(() => expect(trangThai()).toBe("connected"), { timeout: 10_000 });
+      expect(chuyen(bao)).toEqual(["connecting", "connected", "lost", "connected"]);
+      expect(soLanMat()).toBe(1);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(loatXau).toBe(0); // mẫu xấu khi mất chỉ phát khi cờ V2 bật (trangThaiAdapter) — cờ tắt: không có, như trước
+    });
+
+    it("reset phiên: legacy GIỮ 'connected' (không chuyển nào); HA đi qua 'lost' như trước", async () => {
+      await khoiDong("false");
+      await vi.waitFor(() => expect(trangThai()).toBe("connected"));
+      await vi.advanceTimersByTimeAsync(1000);
+      const n = bao.length;
+      const r = await ot.resetAdapterSession(ID, "test reset", 5000);
+      expect(r.reset).toBe(true);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(trangThai()).toBe("connected");
+      if (ha === "true") {
+        expect(chuyen(bao.slice(n))).toEqual(["lost", "connected"]);
+        expect(soLanMat()).toBe(1);
+      } else {
+        expect(chuyen(bao.slice(n)).filter((x) => x !== "connected")).toEqual([]);
+        expect(soLanMat()).toBe(0);
+      }
     });
   });
 });

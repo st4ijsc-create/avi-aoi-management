@@ -261,14 +261,22 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
     // T12b fix round 1 — D1 sau cờ OT_CHAT_LUONG_V2_ENABLED, đọc lúc subscribe (như D3): cờ tắt ⇒ đúng hành vi trước R0.
     // R1b-1 T3 — cùng cờ, cùng lần đọc: phiên chờ tick đọc tốt đầu tiên trước khi báo `connected`.
     v2Phien = chatLuongV2Bat();
+    // R1b-1 T3 fix round 1 — đường PUSH (OPC UA monitored items) không bao giờ gọi onTick: mẫu chất lượng `good` ĐẦU TIÊN của phiên
+    // cũng là một lần đọc tốt. Bọc sink RIÊNG của phiên này (closure giữ `phien`) ⇒ cùng bảo đảm định danh phiên như đường tick.
+    const sinkPhien: OnOtSample = v2Phien
+      ? (s) => {
+          if (s.quality === "good") khiDocTotLegacy(entry, phien, myEpoch);
+          return sink(s);
+        }
+      : sink;
     return adapter.driver.subscribe(
       adapter.tags,
-      sink,
+      sinkPhien,
       adapter.pollIntervalMs,
       tuyChonPollCua(
         adapter,
         v2Phien ? (e) => khiTickHongLegacy(entry, phien, myEpoch, e) : undefined,
-        v2Phien ? (e) => khiTickDocTotLegacy(entry, phien, myEpoch, e) : undefined,
+        v2Phien ? (e) => (laDocTot(e) ? khiDocTotLegacy(entry, phien, myEpoch) : undefined) : undefined,
       ),
     );
   })();
@@ -358,13 +366,14 @@ function dangChoDocTotLegacy(entry: LegacyEntry): boolean {
 }
 
 /**
- * R1b-1 T3 (legacy, cờ V2) — tick của phiên `phien`. Đọc tốt (laDocTot) đầu tiên của phiên MỚI NHẤT ⇒ ghi lại; nếu phiên đó đã là
- * phiên hoạt động ⇒ báo `connected` (ổn định theo thoiGianOnDinhMs như cũ — baoLegacy). Tick của phiên đã bị thay (muộn) không ghi,
- * không báo; tick về trước khi phiên thành hoạt động (lần đọc đầu trong subscribe) chỉ được ghi — attemptLegacyStart báo sau.
+ * R1b-1 T3 (legacy, cờ V2) — phiên `phien` vừa có một lần đọc tốt: tick `laDocTot` (đường poll) hoặc mẫu `good` (đường push — fix
+ * round 1). Lần đầu của phiên MỚI NHẤT ⇒ ghi lại; nếu phiên đó đã là phiên hoạt động ⇒ báo `connected` (ổn định theo thoiGianOnDinhMs
+ * như cũ — baoLegacy). Phiên đã bị thay (muộn) không ghi, không báo; về trước khi phiên thành hoạt động (lần đọc đầu trong subscribe)
+ * chỉ được ghi — attemptLegacyStart báo sau.
  */
-function khiTickDocTotLegacy(entry: LegacyEntry, phien: number, myEpoch: number, e: SuKienDoc): void {
+function khiDocTotLegacy(entry: LegacyEntry, phien: number, myEpoch: number): void {
   if (myEpoch !== epoch || legacy.get(entry.adapter.adapterId) !== entry) return;
-  if (phien !== entry.demPhien || entry.phienDocTot === phien || !laDocTot(e)) return;
+  if (phien !== entry.demPhien || entry.phienDocTot === phien) return;
   entry.phienDocTot = phien;
   if (entry.phienHoatDong !== phien || entry.state !== "active" || entry.inflight) return;
   if (driverDangNoi(entry.adapter)) baoLegacy(entry, "connected");

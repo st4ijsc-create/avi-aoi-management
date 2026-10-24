@@ -46,7 +46,6 @@ import type {
   OnOtSample,
   OtProtocol,
   TuyChonVongPoll,
-  SuKienDoc,
 } from "./otDriver";
 import { chatLuongLoiChung } from "./chatLuong";
 import { khoangNoiLaiMs, laDocTot, taoDemTickHong, thoiGianOnDinhMs } from "./reconnectNhanh";
@@ -187,8 +186,8 @@ export interface SupervisorOptions {
    */
   choDocTotDauTien?: () => boolean;
   /**
-   * SCADA R1b-1 T3 — tick đọc tốt (`laDocTot`) ĐẦU TIÊN của phiên đang hoạt động, khi phiên đó đang chờ và supervisor đang
-   * 'connected'. Tick tốt về TRƯỚC khi phiên thành hoạt động (lần đọc đầu tức thì) không gọi hàm này: nó được ghi lại và
+   * SCADA R1b-1 T3 — lần đọc tốt ĐẦU TIÊN của phiên đang hoạt động (tick `laDocTot` ở đường poll, hoặc mẫu chất lượng `good` ở đường
+   * push — OPC UA monitored items không gọi onTick; fix round 1), khi phiên đó đang chờ và supervisor đang 'connected'. Tick tốt về TRƯỚC khi phiên thành hoạt động (lần đọc đầu tức thì) không gọi hàm này: nó được ghi lại và
    * `dangChoDocTot()` trả false ngay khi supervisor vào 'connected'. Ném ⇒ bị nuốt.
    */
   onDocTotDauTien?: () => void;
@@ -856,10 +855,19 @@ export class ConnectionSupervisor {
 
     const phien = ++this.demPhien;
     const tuyChon = this.tuyChonChoPhien(phien);
+    // R1b-1 T3 fix round 1 — đường PUSH (OPC UA monitored items) không gọi onTick: mẫu `good` đầu tiên của phiên cũng là đọc tốt. Bọc
+    // onSample RIÊNG cho phiên đang chờ (closure giữ `phien`, như onTick của tuyChonChoPhien); phiên không chờ ⇒ đúng callback cũ.
+    const onSample: OnOtSample =
+      this.phienChoDocTot === phien
+        ? (s) => {
+            if (s.quality === "good") this.danhDauDocTot(phien);
+            return this.wrappedOnSample(s);
+          }
+        : this.wrappedOnSample;
     const work = (async (): Promise<OtSubscriptionHandle> => {
       await ep.driver.connect(ep.connection);
       try {
-        return await ep.driver.subscribe(this.tags, this.wrappedOnSample, this.pollIntervalMs, tuyChon);
+        return await ep.driver.subscribe(this.tags, onSample, this.pollIntervalMs, tuyChon);
       } catch (err) {
         await this.safeDisconnect(ep);
         throw err;
@@ -922,18 +930,19 @@ export class ConnectionSupervisor {
         } catch {
           // người nghe của host không được làm hỏng bộ đếm
         }
-        if (cho) this.ghiNhanDocTot(phien, e);
+        if (cho && laDocTot(e)) this.danhDauDocTot(phien);
         dem?.(e);
       },
     };
   }
 
   /**
-   * R1b-1 T3 — tick của phiên `phien` (đang chờ đọc tốt). Đọc tốt đầu tiên của phiên MỚI NHẤT ⇒ ghi lại; nếu phiên đó đã là phiên hoạt
-   * động và supervisor đang 'connected' ⇒ báo host (onDocTotDauTien). Tick của phiên cũ (đã bị thay) không ghi, không báo.
+   * R1b-1 T3 — phiên `phien` (đang chờ đọc tốt) vừa có một lần đọc tốt: tick `laDocTot` (đường poll) hoặc mẫu `good` (đường push — fix
+   * round 1). Lần đầu của phiên MỚI NHẤT ⇒ ghi lại; nếu phiên đó đã là phiên hoạt động và supervisor đang 'connected' ⇒ báo host
+   * (onDocTotDauTien). Phiên cũ (đã bị thay) không ghi, không báo.
    */
-  private ghiNhanDocTot(phien: number, e: SuKienDoc): void {
-    if (phien !== this.demPhien || this.phienDaDocTot === phien || !laDocTot(e)) return;
+  private danhDauDocTot(phien: number): void {
+    if (phien !== this.demPhien || this.phienDaDocTot === phien) return;
     this.phienDaDocTot = phien;
     if (this.stopped || this.state !== "connected" || phien !== this.phienHoatDong) return; // vào 'connected' sau ⇒ dangChoDocTot() = false
     try {
