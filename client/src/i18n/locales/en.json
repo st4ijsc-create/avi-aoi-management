@@ -4263,6 +4263,8 @@
       "scadaCommands": "SCADA HMI commands"
     },
     "action": {
+      "testWebhook": "send a test webhook",
+      "toggleWebhook": "enable or disable a webhook",
       "writeCorporateEquipmentStandard": "write a corporate-level equipment standard",
       "changeMqttDeviceOfOtherScope": "change an MQTT device bound to a machine outside your scope",
       "selfApproveProgramDeploy": "approve your own program deploy request",

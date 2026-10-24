@@ -4,6 +4,7 @@
  * Previews of the twin-drift detector and the RL dispatch advisor (both pure). No mutations —
  * the twin sync + scheduler adopt these (flags TWIN_DRIFT / RL_ADVISOR).
  */
+import { viTriHopLe } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { detectDrift } from "../services/twin/driftDetector";
@@ -29,7 +30,10 @@ export const twinGovRouter = router({
   /** doc 44 W5-A1 — run ONE fidelity check now (DES-vs-reality) for a line; persists + upserts trust. */
   runFidelityCheck: protectedProcedure
     .input(z.object({ lineId: z.number().int().positive() }))
-    .mutation(({ input }) => runFidelityCheck(input.lineId)),
+    .mutation(async ({ input, ctx }) => {
+      await viTriHopLe(ctx, { lineId: input.lineId }, "line"); // phạm vi nhà máy (W14)
+      return runFidelityCheck(input.lineId);
+    }),
 
   /** RL dispatch advice for a given mode + heuristic/RL choices + candidate set. */
   rlAdvice: protectedProcedure
