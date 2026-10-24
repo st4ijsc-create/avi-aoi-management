@@ -65,46 +65,20 @@
  * Đừng sửa tay để làm cổng xanh — sửa mã, rồi xoá dòng.
  */
 export const NO_PHAM_VI_TUYEN: readonly string[] = [
-  // ── server/_core/index.ts (19) ─────────────────────────────────────────────────────────────────
-  "server/_core/index.ts#GET /api/external/alerts",
-  "server/_core/index.ts#GET /api/external/alerts/:alertId",
-  "server/_core/index.ts#GET /api/external/bulletins",
+  // ── server/_core/index.ts (6) ─────────────────────────────────────────────────────────────────
   "server/_core/index.ts#GET /api/external/dashboard/summary",
   "server/_core/index.ts#GET /api/external/hierarchy/factory/:factoryId",
   "server/_core/index.ts#GET /api/external/hierarchy/mqtt-topics",
   "server/_core/index.ts#GET /api/external/hierarchy/summary",
   "server/_core/index.ts#GET /api/external/hierarchy/tree",
-  "server/_core/index.ts#GET /api/external/stations/:id",
-  "server/_core/index.ts#GET /api/external/stations/:id/fail-history",
-  "server/_core/index.ts#GET /api/external/stations/:id/inspection-points",
-  "server/_core/index.ts#GET /api/external/stations/:id/measurement-stats",
-  "server/_core/index.ts#GET /api/external/stations/:id/point-detail",
-  "server/_core/index.ts#GET /api/external/stations/:id/products",
-  "server/_core/index.ts#GET /api/external/stations/:id/statistics",
-  "server/_core/index.ts#GET /api/external/stations/resolve-topic",
   "server/_core/index.ts#GET /api/external/statistics/measurement-points",
-  "server/_core/index.ts#GET /api/external/workstations",
-  "server/_core/index.ts#GET /api/external/workstations/:id",
-  // ── server/api/v1/advice.ts (1) ────────────────────────────────────────────────────────────────
-  "server/api/v1/advice.ts#GET /recommendations",
-  // ── server/api/v1/assets.ts (6) ────────────────────────────────────────────────────────────────
-  "server/api/v1/assets.ts#GET /assets",
-  "server/api/v1/assets.ts#GET /assets/:id",
-  "server/api/v1/assets.ts#GET /assets/:id/config-drift",
-  "server/api/v1/assets.ts#GET /assets/:id/health",
-  "server/api/v1/assets.ts#GET /assets/:id/tags",
-  "server/api/v1/assets.ts#GET /gateways/:id/status",
-  // ── server/api/v1/events.ts (1) ────────────────────────────────────────────────────────────────
-  "server/api/v1/events.ts#GET /events",
-  // ── server/api/v1/genealogyApi.ts (1) ──────────────────────────────────────────────────────────
-  "server/api/v1/genealogyApi.ts#GET /genealogy/:unitId",
-  // ── server/api/v1/lines.ts (3) ─────────────────────────────────────────────────────────────────
-  "server/api/v1/lines.ts#GET /lines",
-  "server/api/v1/lines.ts#GET /lines/:id/stages",
-  "server/api/v1/lines.ts#GET /lines/:id/state",
-  // ── server/api/v1/metricsApi.ts (1) ────────────────────────────────────────────────────────────
-  "server/api/v1/metricsApi.ts#GET /metrics/:metric",
-  // ── server/api/v1/moduleReads.ts (13) ──────────────────────────────────────────────────────────
+  // ── server/api/v1/advice.ts (0) ────────────────────────────────────────────────────────────────
+  // ── server/api/v1/assets.ts (0) ────────────────────────────────────────────────────────────────
+  // ── server/api/v1/events.ts (0) ────────────────────────────────────────────────────────────────
+  // ── server/api/v1/genealogyApi.ts (0) ──────────────────────────────────────────────────────────
+  // ── server/api/v1/lines.ts (0) ─────────────────────────────────────────────────────────────────
+  // ── server/api/v1/metricsApi.ts (0) ────────────────────────────────────────────────────────────
+  // ── server/api/v1/moduleReads.ts (0) ──────────────────────────────────────────────────────────
   // ★ Đợt 42 — `GET /machines/:id/detail` + `GET /robots/:id/detail` RỜI sổ: phạm vi của khoá
   //   (`req.apiPrincipal.tenantScope`, trục ②) nay đi vào `machineDetail`/`robotDetail` (đo trước vá:
   //   khoá SIM-FAC đọc identity máy 257 của NM18 — `.qa-dot41/api-vai/http-v1.json`).
@@ -112,36 +86,12 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   //   `commandCenter.hierarchy`, chỉ khác trục (khoá API thay vì người dùng). Nay chiếu
   //   `req.apiPrincipal.tenantScope` → `resolveTenantCodeFactoryIds` → `buildHierarchy(scope, tenant)`,
   //   đúng khuôn `GET /ecosystem/kpi` đã vá 2026-08-18 ngay bên dưới nó trong cùng file.
-  "server/api/v1/moduleReads.ts#GET /anomaly/events",
-  "server/api/v1/moduleReads.ts#GET /fleet/tasks",
-  "server/api/v1/moduleReads.ts#GET /fleet/zones",
-  "server/api/v1/moduleReads.ts#GET /pdm/risk",
-  "server/api/v1/moduleReads.ts#GET /programs",
-  "server/api/v1/moduleReads.ts#GET /programs/:id/deployments",
-  "server/api/v1/moduleReads.ts#GET /safety/events",
-  "server/api/v1/moduleReads.ts#GET /safety/zones",
-  "server/api/v1/moduleReads.ts#GET /standards/alarm-taxonomy",
-  "server/api/v1/moduleReads.ts#GET /standards/compliance",
-  "server/api/v1/moduleReads.ts#GET /standards/device-types",
-  "server/api/v1/moduleReads.ts#GET /twin/models",
-  "server/api/v1/moduleReads.ts#GET /twin/scene-graph",
-  // ── server/api/v1/ordersLifecycle.ts (3) ───────────────────────────────────────────────────────
-  "server/api/v1/ordersLifecycle.ts#GET /orders",
-  "server/api/v1/ordersLifecycle.ts#GET /orders/:id",
-  "server/api/v1/ordersLifecycle.ts#GET /orders/:id/trace",
-  // ── server/api/v1/pdmHealth.ts (2) ─────────────────────────────────────────────────────────────
-  "server/api/v1/pdmHealth.ts#GET /health/assets/:id",
-  "server/api/v1/pdmHealth.ts#GET /predictions",
-  // ── server/api/v1/router.ts (4) ────────────────────────────────────────────────────────────────
-  "server/api/v1/router.ts#GET /equipment",
-  "server/api/v1/router.ts#GET /equipment/:id/capabilities",
-  "server/api/v1/router.ts#GET /equipment/:id/state",
-  "server/api/v1/router.ts#GET /equipment/:id/telemetry",
-  // ── server/api/v1/state.ts (1) ─────────────────────────────────────────────────────────────────
-  "server/api/v1/state.ts#GET /state/*",
-  // ── server/routes/edgeDownload.ts (1) ──────────────────────────────────────────────────────────
-  "server/routes/edgeDownload.ts#GET /api/edge/download/:deploymentId",
-  // ── server/routes/externalInspectionApi.ts (23) ────────────────────────────────────────────────
+  // ── server/api/v1/ordersLifecycle.ts (0) ───────────────────────────────────────────────────────
+  // ── server/api/v1/pdmHealth.ts (0) ─────────────────────────────────────────────────────────────
+  // ── server/api/v1/router.ts (0) ────────────────────────────────────────────────────────────────
+  // ── server/api/v1/state.ts (0) ─────────────────────────────────────────────────────────────────
+  // ── server/routes/edgeDownload.ts (0) ──────────────────────────────────────────────────────────
+  // ── server/routes/externalInspectionApi.ts (18) ────────────────────────────────────────────────
   "server/routes/externalInspectionApi.ts#GET /api/external/alerts/summary",
   "server/routes/externalInspectionApi.ts#GET /api/external/fleet/summary",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/ai-analysis",
@@ -150,11 +100,8 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/control-chart",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/defect-pareto",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/diagnostics",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/events",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/fail-history",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/histogram",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/images",
-  "server/routes/externalInspectionApi.ts#GET /api/external/inspections/measurements",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/scatter",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/stratification",
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/summary",
@@ -162,15 +109,25 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   "server/routes/externalInspectionApi.ts#GET /api/external/inspections/yield-comparison",
   "server/routes/externalInspectionApi.ts#GET /api/external/oee/summary",
   "server/routes/externalInspectionApi.ts#GET /api/external/pdm/summary",
-  "server/routes/externalInspectionApi.ts#GET /api/external/products",
-  "server/routes/externalInspectionApi.ts#GET /api/external/products/:id",
   "server/routes/externalInspectionApi.ts#GET /api/external/safety/summary",
-  // ── server/routes/reportArtifactRoutes.ts (1) ──────────────────────────────────────────────────
+  // ── server/routes/reportArtifactRoutes.ts (0) ──────────────────────────────────────────────────
   // ⚠ MỘT MỤC "TRONG SỔ VÌ BAO ĐÓNG, KHÔNG VÌ CÓ LỖ" — đọc trước khi ai đó đi vá nó. Tuyến này CÓ
   //   lọc theo người xem (`getDownloadTarget(id, viewer)`, `viewer` suy từ `authenticateExportRequest`).
   //   Nó ở nhóm (A) vì `chamTenant` bật do BAO ĐÓNG NGƯỢC: chính hàm XÁC THỰC đọc `api_keys` — một
   //   bảng CÓ `factoryCode` — nên mọi tuyến gọi nó đều "chạm dữ liệu tenant". Còn `report_artifacts`
   //   thì không thuộc tenant, nên `getDownloadTarget` không nằm trên đường đọc mà vị từ đo được.
   //   Cùng lớp với `systemRouters.ts#corporateFactoryStatsRouter.warmingStats` ở sổ tRPC.
-  "server/routes/reportArtifactRoutes.ts#GET /api/reports/artifacts/:id/download",
 ];
+
+/**
+ * ★★★ 2026-10-24 — MIỄN TRỪ CÓ CHỦ Ý cho TUYẾN (khác SỔ NỢ: đây KHÔNG phải nợ chờ trả mà là quyết định ĐÃ DUYỆT, mỗi mục MỘT lý do thật có ngày).
+ * Tuyến vẫn ở nhóm (A) theo bộ quét nhưng việc không lọc theo phạm vi là CỐ Ý: dữ liệu là DANH MỤC/REGISTRY dùng chung toàn tập đoàn.
+ * §4 coi mục ở đây là đã khai; §5 giữ nó không hoá thạch (còn tồn tại · còn nhóm A · lý do ≥ 20 ký tự có ngày · không đồng thời nằm trong sổ nợ). Thêm mục = thêm quyết định.
+ */
+export const MIEN_TRU_TUYEN_CO_CHU_Y: Readonly<Record<string, string>> = {
+  "server/api/v1/moduleReads.ts#GET /standards/alarm-taxonomy": "danh mục phân loại cảnh báo dùng chung toàn tập đoàn — duyệt mức kỹ thuật 2026-10-24 (cùng nguyên tắc danh mục công thức, chủ dự án duyệt)",
+  "server/api/v1/moduleReads.ts#GET /standards/device-types": "danh mục kiểu thiết bị chuẩn dùng chung toàn tập đoàn — duyệt mức kỹ thuật 2026-10-24 (cùng nguyên tắc danh mục công thức, chủ dự án duyệt)",
+  "server/routes/edgeDownload.ts#GET /api/edge/download/:deploymentId": "tải gói mô hình theo apiKey MÁY: deployment phải thuộc đúng máy gọi (403 chéo máy, 401 thiếu khoá) — đã kiểm bằng server/edgeDownloadProxy.test.ts, duyệt mức kỹ thuật 2026-10-24",
+  "server/routes/reportArtifactRoutes.ts#GET /api/reports/artifacts/:id/download": "tệp báo cáo thuộc NGƯỜI TẠO (không thuộc nhà máy): getDownloadTarget từ chối người không đặc quyền khác (forbidden), admin tải được — đã kiểm bằng server/services/reportArtifactService.db.test.ts, duyệt mức kỹ thuật 2026-10-24",
+  "server/api/v1/moduleReads.ts#GET /twin/models": "registry mô hình 3D dùng chung toàn tập đoàn — duyệt mức kỹ thuật 2026-10-24 (cùng nguyên tắc danh mục công thức, chủ dự án duyệt)",
+};

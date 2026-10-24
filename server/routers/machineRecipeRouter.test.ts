@@ -87,6 +87,14 @@ vi.mock("../services/equipment/recipeVersioningService", () => ({
 }));
 
 const perm = { allow: true };
+// ★ 2026-10-24 — phạm vi nhà máy qua `./_adapterPhamVi` (đọc CSDL thật + phạm vi người dùng). Test NÀY kiểm logic trên DB GIẢ nên mở cổng phạm vi (vai TOÀN QUYỀN: không lọc, không từ chối);
+// hành vi phạm vi được chứng minh trên CSDL thật ở `lenhCongThucPhamVi.db.test.ts`.
+vi.mock("./_adapterPhamVi", () => ({
+  idsMayTrongPhamVi: vi.fn(async () => null),
+  mayTrongPhamVi: vi.fn(async () => null),
+  adapterTrongPhamVi: vi.fn(async (_c: unknown, id: number) => ({ id, code: "x", machineId: null })),
+  dieuKienLenhTrongPhamVi: () => undefined,
+}));
 vi.mock("../_core/accessControl", () => ({
   requirePermission: () => async ({ ctx, next }: any) => {
     if (!perm.allow) {

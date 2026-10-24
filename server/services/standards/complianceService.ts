@@ -25,7 +25,7 @@
  *       ever presenting a fabricated 100 %.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { getDb } from "../../db/connection";
 import { machines } from "../../../drizzle/schema";
 import { deviceTypes, alarmTaxonomy, deviceTypeChangeRequests } from "../../../drizzle/schema/equipmentStandards";
@@ -175,7 +175,7 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
  * mappings ARE live at runtime (loadAlarmMappings / mapAlarm merge them), so counting
  * their vendors is a measurement of what the normalizer really does.
  */
-export async function loadComplianceMetrics(d: Db | null): Promise<ComplianceMetrics> {
+export async function loadComplianceMetrics(d: Db | null, idsMay?: number[] | null): Promise<ComplianceMetrics> {
   const mappedVendors = new Set<string>();
   for (const m of SEED_ALARM_MAPPINGS) mappedVendors.add(m.vendor.toLowerCase());
   if (!d) {
@@ -190,7 +190,9 @@ export async function loadComplianceMetrics(d: Db | null): Promise<ComplianceMet
   }
   const ms = await d
     .select({ machineType: machines.machineType, deviceTypeKey: machines.deviceTypeKey })
-    .from(machines);
+    .from(machines)
+    // phạm vi khoá API (rà bảo mật 2026-10-24): chỉ đếm máy trong phạm vi; undefined/null = toàn quyền
+    .where(idsMay == null ? undefined : inArray(machines.id, idsMay.length > 0 ? idsMay : [-1]));
   const publishedRows = await d.select().from(deviceTypes).where(eq(deviceTypes.status, "published"));
   const publishedNodes = publishedRows.map(nodeFromDeviceTypeRow);
   const at = await d.select({ vendor: alarmTaxonomy.vendor }).from(alarmTaxonomy);

@@ -19,7 +19,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError, readAppErrorMeta } from "../_core/appError";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb as getDbRaw } from "../db";
@@ -52,6 +52,7 @@ import {
   guardrailParamsFor,
 } from "../services/recipes/recipeSchemas";
 import { checkAgainstGuardrail } from "../services/ai/parameterGuardrailService";
+import { adapterTrongPhamVi, idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
 import { configSyncGenericEnabled, upsertDesiredConfig } from "../services/configDriftService";
 import { publishConfigChanged } from "../services/mqttService";
 
@@ -69,6 +70,15 @@ async function recordGenealogySafe(
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("[machineRecipe] genealogy record failed:", err instanceof Error ? err.message : err);
+  }
+}
+
+/** Yêu cầu đổi model thuộc máy ngoài phạm vi ≡ "Yêu cầu không tồn tại" (cùng NOT_FOUND với id không có thật). */
+async function yeuCauTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], machineId: number): Promise<void> {
+  try {
+    await mayTrongPhamVi(ctx, machineId);
+  } catch {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "changeoverRequest" }, "Yêu cầu không tồn tại.");
   }
 }
 
@@ -293,7 +303,8 @@ export const machineRecipeRouter = router({
         code: z.string().min(1).max(64).optional(),
         machineId: z.number().int().positive().optional(),
       }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId); // phạm vi nhà máy (rà bảo mật 2026-10-24)
         if (input.code == null && input.machineId == null) {
           throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "codeOrMachineId" }, "Cần code hoặc machineId.");
         }
@@ -412,6 +423,9 @@ export const machineRecipeRouter = router({
         notes: z.string().max(2000).nullable().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        // phạm vi nhà máy (rà bảo mật 2026-10-24): triển khai công thức xuống máy/adapter NGOÀI phạm vi ≡ NOT_FOUND, TRƯỚC mọi ghi (ledger/bóng cấu hình/MQTT)
+        await mayTrongPhamVi(ctx, input.machineId);
+        if (input.adapterId != null) await adapterTrongPhamVi(ctx, input.adapterId);
         try {
           // doc 63 DEP-08 — body extracted to performDeploy() (pure move; shared with
           // changeover.approve). Behaviour identical.
@@ -428,6 +442,7 @@ export const machineRecipeRouter = router({
       .use(requirePermission("machine_control", "canEdit"))
       .input(z.object({ machineId: z.number().int().positive() }))
       .mutation(async ({ input, ctx }) => {
+        await mayTrongPhamVi(ctx, input.machineId); // phạm vi nhà máy (rà bảo mật 2026-10-24)
         try {
           const deployment = await rollbackRecipe({ machineId: input.machineId, deployedBy: ctx.user.id });
           // W5-22 — ghi vết genealogy: rollback về phiên bản trước trên máy.
@@ -464,9 +479,13 @@ export const machineRecipeRouter = router({
         recipeId: z.number().int().positive().optional(),
         limit: z.number().int().min(1).max(500).default(100),
       }).optional())
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
         const db = await getDb();
         const conds = [];
+        // phạm vi nhà máy (rà bảo mật 2026-10-24)
+        if (input?.machineId != null) await mayTrongPhamVi(ctx, input.machineId);
+        const idsMay = await idsMayTrongPhamVi(ctx);
+        if (idsMay !== null) conds.push(inArray(recipeDeployments.machineId, idsMay.length > 0 ? idsMay : [-1]));
         if (input?.machineId != null) conds.push(eq(recipeDeployments.machineId, input.machineId));
         if (input?.recipeId != null) conds.push(eq(recipeDeployments.recipeId, input.recipeId));
         return db
@@ -501,11 +520,13 @@ export const machineRecipeRouter = router({
   machines: router({
     list: protectedProcedure
       .use(requirePermission("machine_control", "canView"))
-      .query(async () => {
+      .query(async ({ ctx }) => {
         const db = await getDb();
+        const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi nhà máy (rà bảo mật 2026-10-24)
         return db
           .select({ id: machines.id, code: machines.code, name: machines.name, machineType: machines.machineType })
           .from(machines)
+          .where(idsMay === null ? undefined : inArray(machines.id, idsMay.length > 0 ? idsMay : [-1]))
           .orderBy(machines.name);
       }),
   }),
@@ -533,6 +554,7 @@ export const machineRecipeRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
+        await mayTrongPhamVi(ctx, input.machineId); // phạm vi nhà máy (rà bảo mật 2026-10-24)
         const [machine] = await db.select({ id: machines.id }).from(machines)
           .where(eq(machines.id, input.machineId)).limit(1);
         if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Máy không tồn tại.");
@@ -559,7 +581,8 @@ export const machineRecipeRouter = router({
     recipeOptions: protectedProcedure
       .use(requirePermission("machine_monitoring", "canView"))
       .input(z.object({ machineId: z.number().int().positive() }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        await mayTrongPhamVi(ctx, input.machineId); // phạm vi nhà máy (rà bảo mật 2026-10-24)
         const db = await getDb();
         const [machine] = await db
           .select({ id: machines.id, machineType: machines.machineType })
@@ -623,9 +646,11 @@ export const machineRecipeRouter = router({
         status: z.enum(["pending", "approved", "rejected", "cancelled"]).optional(),
         limit: z.number().int().min(1).max(200).default(100),
       }).optional())
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
         const db = await getDb();
         const conds = [] as ReturnType<typeof eq>[];
+        const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi nhà máy (rà bảo mật 2026-10-24)
+        if (idsMay !== null) conds.push(inArray(changeoverRequests.machineId, idsMay.length > 0 ? idsMay : [-1]) as ReturnType<typeof eq>);
         if (input?.status) conds.push(eq(changeoverRequests.status, input.status));
         return db
           .select({
@@ -672,6 +697,7 @@ export const machineRecipeRouter = router({
         const [row] = await db.select().from(changeoverRequests)
           .where(eq(changeoverRequests.id, input.id)).limit(1);
         if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "changeoverRequest" }, "Yêu cầu không tồn tại.");
+        await yeuCauTrongPhamVi(ctx, row.machineId); // phạm vi nhà máy (rà bảo mật 2026-10-24): yêu cầu của máy ngoài phạm vi ≡ không tồn tại (TRƯỚC SoD/performDeploy)
         if (row.status !== "pending") {
           throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "approveChangeoverRequest" }, `Không thể duyệt từ trạng thái ${row.status}.`);
         }
@@ -722,6 +748,7 @@ export const machineRecipeRouter = router({
         const [row] = await db.select().from(changeoverRequests)
           .where(eq(changeoverRequests.id, input.id)).limit(1);
         if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "changeoverRequest" }, "Yêu cầu không tồn tại.");
+        await yeuCauTrongPhamVi(ctx, row.machineId); // phạm vi nhà máy (rà bảo mật 2026-10-24)
         if (row.status !== "pending") {
           throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "rejectChangeoverRequest" }, `Không thể từ chối từ trạng thái ${row.status}.`);
         }

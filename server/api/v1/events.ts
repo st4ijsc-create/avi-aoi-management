@@ -30,6 +30,7 @@ import { and, desc, gte, lte, inArray, sql } from "drizzle-orm";
 import { requireScope } from "./auth";
 import { API_SCOPES } from "./scopes";
 import { sendOk, wrap, ApiHttpError } from "./envelope";
+import { dieuKienKhoa, dieuKienMayCuaKhoa } from "./phamViKhoa"; // 2026-10-24 — phạm vi khoá API
 
 type Severity = "info" | "warning" | "error" | "critical";
 const SEVERITY_RANK: Record<Severity, number> = { info: 0, warning: 1, error: 2, critical: 3 };
@@ -74,7 +75,12 @@ export function registerEventRoutes(r: Router): void {
     requireScope(API_SCOPES.DATA_READ),
     wrap(async (req: Request, res: Response) => {
       const { getDb } = await import("../../db/connection");
-      const { andonEvents, safetyEvents, interlockEvents, machines } = await import("../../../drizzle/schema");
+      const { andonEvents, safetyEvents, interlockEvents, interlockRules, machines } = await import("../../../drizzle/schema");
+      // phạm vi KHOÁ API (rà bảo mật 2026-10-24): mỗi nguồn sự kiện chỉ trả hàng ĐỊNH VỊ được vào máy/chuyền/trạm/nhà máy trong phạm vi khoá (khoá toàn cục ⇒ undefined = không lọc).
+      const congAndon = await dieuKienKhoa(req.apiPrincipal?.tenantScope, { lineId: andonEvents.lineId, stationId: andonEvents.stationId, machineId: andonEvents.machineId });
+      const congSafety = await dieuKienKhoa(req.apiPrincipal?.tenantScope, { lineId: safetyEvents.lineId, stationId: safetyEvents.stationId, factoryId: safetyEvents.factoryId, robotId: safetyEvents.robotId });
+      const congLuat = await dieuKienKhoa(req.apiPrincipal?.tenantScope, { lineId: interlockRules.lineId, stationId: interlockRules.stationId, machineId: interlockRules.machineId });
+      const congMay = await dieuKienMayCuaKhoa(req.apiPrincipal, machines.id);
       const db = await getDb();
       if (!db) return sendOk(res, { events: [], count: 0, sources: [], notes: ["database unavailable — honest-empty"] });
 
@@ -99,7 +105,7 @@ export function registerEventRoutes(r: Router): void {
         const rows = await db
           .select({ id: machines.id, isa95Path: machines.isa95Path, urn: machines.urn })
           .from(machines)
-          .where(sql`${machines.isa95Path} LIKE ${`${escaped}%`}`)
+          .where(congMay ? and(sql`${machines.isa95Path} LIKE ${`${escaped}%`}`, congMay) : sql`${machines.isa95Path} LIKE ${`${escaped}%`}`)
           .limit(2000);
         pathMachineIds = rows.map((m) => Number(m.id));
         for (const m of rows) identityById.set(Number(m.id), { path: m.isa95Path ?? null, urn: m.urn ?? null });
@@ -128,6 +134,7 @@ export function registerEventRoutes(r: Router): void {
         const conds = [];
         if (from) conds.push(gte(andonEvents.raisedAt, from));
         if (to) conds.push(lte(andonEvents.raisedAt, to));
+        if (congAndon) conds.push(congAndon);
         if (pathMachineIds) conds.push(inArray(andonEvents.machineId, pathMachineIds));
         const rows = await db
           .select()
@@ -163,6 +170,7 @@ export function registerEventRoutes(r: Router): void {
         const conds = [];
         if (from) conds.push(gte(safetyEvents.createdAt, from));
         if (to) conds.push(lte(safetyEvents.createdAt, to));
+        if (congSafety) conds.push(congSafety);
         const rows = await db
           .select()
           .from(safetyEvents)
@@ -196,6 +204,7 @@ export function registerEventRoutes(r: Router): void {
         const conds = [];
         if (from) conds.push(gte(interlockEvents.firedAt, from));
         if (to) conds.push(lte(interlockEvents.firedAt, to));
+        if (congLuat) conds.push(sql`${interlockEvents.ruleId} IN (SELECT ${interlockRules.id} FROM ${interlockRules} WHERE ${congLuat})`);
         const rows = await db
           .select()
           .from(interlockEvents)

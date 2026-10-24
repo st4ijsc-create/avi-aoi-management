@@ -68,7 +68,7 @@ const MIEN_TRU_DONG: MienTruDong[] = [
   { file: "server/routers/stationAnalysisRouter.ts", noiDung: "const fpy = total > 0 ? (ok / total) * 100 : 0;", lyDo: "FPY proxy — lỗi KHÁC" },
   { file: "server/routers/stationAnalysisRouter.ts", noiDung: "const fpy = t > 0 ? Math.round((ok / t) * 10000) / 100 : 0;", lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng họ với :832" },
   { file: "server/services/aiExecutiveReport.ts", noiDung: "const fpy = totals.total > 0 ? (totals.ok / totals.total) * 100 : 0;", lyDo: "FPY proxy (biến fpy trong gatherKpis) — cùng họ, KHÁC lỗi" },
-  { file: "server/_core/index.ts", noiDung: "const fpy = t > 0 ? Math.round((ok / t) * 10000) / 100 : 0;", lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
+  { file: "server/routes/externalStationApi.ts", noiDung: "const fpy = t > 0 ? Math.round((ok / t) * 10000) / 100 : 0;", lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
 
   // aiInspectionAnalytics.ts: `pass` ở BỐN dòng này KHÔNG phải OK-only — nó là COUNT(*) FILTER (WHERE finalYieldPassCondSql(...)) tính Ở SQL, tức đã CHÍNH LÀ OK+NTF
   // (xem comment "canonical FINAL-yield definition (OK + NTF)" cạnh mỗi dòng SELECT nguồn). (pass/total)*100 ở đây toán học BẰNG finalYield() — không phải FPY, không phải lỗi.

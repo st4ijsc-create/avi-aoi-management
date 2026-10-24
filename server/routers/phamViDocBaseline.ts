@@ -158,18 +158,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   //    `resolveHierarchyScope` (nhóm A → S). Đo được TRƯỚC khi vá: 5 vai nhận CÙNG 450.811
   //    byte, CÙNG md5, kể cả tài khoản 0 gán nhà máy. Lưới hai chiều:
   //    `server/routers/commandCenterHierarchyScope.db.test.ts`.
-  // ── server/routers/commandLogRouter.ts (4) ─────────────────────────────────────────────────
-  "server/routers/commandLogRouter.ts#commandLogRouter.avgDurations",
-  "server/routers/commandLogRouter.ts#commandLogRouter.get",
-  "server/routers/commandLogRouter.ts#commandLogRouter.list",
-  "server/routers/commandLogRouter.ts#commandLogRouter.stats",
-  // ── server/routers/commissioningRouter.ts (2) ──────────────────────────────────────────────
-  // ★ 2026-10-24 · R1b-1 T6 (mig 0433) — NỢ CÓ SẴN, được thước ĐO THẤY (không phải lỗ mới): `.references()` thêm vào `scadaKenhCheDo` /
-  //   `scadaKhoaChon` (→ machines, → device_adapters) làm cột `adapterId` thành quy ước FK ĐÃ KHAI (luật 3 của `phamViDocScan.ts`), nên MỌI bảng khoá
-  //   theo adapter (commissioning_records, device_tags, uns_tag_mappings) nay thuộc tenant (adapter → machine). Cả 5 mục dưới đây nhận `adapterId`/`id` từ
-  //   client, đọc hàng khoá theo adapter, chỉ có requirePermission (vai trò), KHÔNG lọc phạm vi nhà xưởng ⇒ rò đã tồn tại TRƯỚC 0433. Vá: backlog R1b-2.
-  "server/routers/commissioningRouter.ts#commissioningRouter.list",
-  "server/routers/commissioningRouter.ts#commissioningRouter.status",
   // ── server/routers/componentLibraryRouter.ts (1) ───────────────────────────────────────────
   "server/routers/componentLibraryRouter.ts#componentLibraryRouter.linkStats",
   // ── server/routers/dashboardStatsRouters.ts (1) ────────────────────────────────────────────
@@ -182,12 +170,7 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/defectDispositionRouter.ts#defectDispositionRouter.reInspectStatus",
   "server/routers/defectDispositionRouter.ts#defectDispositionRouter.repairQueue",
   "server/routers/defectDispositionRouter.ts#defectDispositionRouter.repairStats",
-  // ── server/routers/deviceAdapterRouter.ts (3) ──────────────────────────────────────────────
-  "server/routers/deviceAdapterRouter.ts#deviceAdapterRouter.get",
-  "server/routers/deviceAdapterRouter.ts#deviceAdapterRouter.list",
-  // ↓ 2026-10-24 · R1b-1 T6 (mig 0433): nợ có sẵn thước mới ĐO THẤY — đọc `device_tags` theo `adapterId` của client, không lọc phạm vi (xem khối
-  //   `commissioningRouter.ts` ở trên). Vá: backlog R1b-2.
-  "server/routers/deviceAdapterRouter.ts#deviceAdapterRouter.tags.listByAdapter",
+  // ── server/routers/deviceAdapterRouter.ts — ★ 2026-10-24: 2 mục ĐÃ TRẢ (get · list ⇒ S qua server/routers/_adapterPhamVi.ts), xoá khỏi sổ ──
   // ── server/routers/digitalTwinRouter.ts — ★ ĐỢT 14 LÔ Q1: 5 mục ĐÃ TRẢ, xoá khỏi sổ ────────
   //    twinState · defectHeatmap · wipFlowState · stationLoadHeatmap · predictionOverlay đều đã
   //    mang `phamViCua(ctx)` xuống tầng dữ liệu. Nghiệm thu hai chiều trên CSDL thật ở
@@ -255,12 +238,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/fieldRouter.ts#fieldRouter.deviceState",
   "server/routers/fieldRouter.ts#fieldRouter.health",
   "server/routers/fieldRouter.ts#fieldRouter.healthSummary",
-  // ── server/routers/genealogyRouter.ts (5) ──────────────────────────────────────────────────
-  "server/routers/genealogyRouter.ts#genealogyRouter.getByLot",
-  "server/routers/genealogyRouter.ts#genealogyRouter.getBySerial",
-  "server/routers/genealogyRouter.ts#genealogyRouter.getFullHistory",
-  "server/routers/genealogyRouter.ts#genealogyRouter.getLineage",
-  "server/routers/genealogyRouter.ts#genealogyRouter.verify",
   // ── server/routers/goldenSampleRouter.ts (5) ───────────────────────────────────────────────
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.getActiveForKey",
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.getThumbnail",
@@ -312,16 +289,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/lineControllerRouter.ts#lineControllerRouter.transitions",
   // ── server/routers/machineApiRouters.ts (1) ────────────────────────────────────────────────
   "server/routers/machineApiRouters.ts#machineApiRouter.listKeys",
-  // ── server/routers/machineRecipeRouter.ts (9) ──────────────────────────────────────────────
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.changeover.list",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.changeover.recipeOptions",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.deployments.list",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.machines.list",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.genealogy",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.get",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.getActive",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listCodes",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listVersions",
   // ── server/routers/maintenanceRouter.ts (1) ────────────────────────────────────────────────
   // ★ Đợt 49 (mục E) — XOÁ 3 dòng `getWorkOrder` · `listWorkOrders` · `summary`: bộ quét xếp cả ba
   //   vào nhóm **S** (đã lọc phạm vi) từ trước baseline `d7a6a6c7`, nên §5 ("sổ nợ không được hoá
@@ -332,8 +299,7 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/maintenanceScheduleRouter.ts (2) ────────────────────────────────────────
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.get",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.list",
-  // ── server/routers/mappingAsCodeRouter.ts (1) ──────────────────────────────────────────────
-  "server/routers/mappingAsCodeRouter.ts#mappingAsCodeRouter.exportOne",
+  // ── server/routers/mappingAsCodeRouter.ts — ★ 2026-10-24: 1 mục ĐÃ TRẢ (exportOne ⇒ S qua _adapterPhamVi.ts), xoá khỏi sổ ──
   // ── server/routers/measurementCorrectionsRouter.ts (2) ─────────────────────────────────────
   "server/routers/measurementCorrectionsRouter.ts#measurementCorrectionsRouter.agreementTrend",
   "server/routers/measurementCorrectionsRouter.ts#measurementCorrectionsRouter.machineFalseCallSummary",
@@ -454,17 +420,15 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/robotRouter.ts#robotRouter.jobs",
   "server/routers/robotRouter.ts#robotRouter.list",
   "server/routers/robotRouter.ts#robotRouter.telemetry",
-  // ── server/routers/safetyRouter.ts (7) ─────────────────────────────────────────────────────
+  // ── server/routers/safetyRouter.ts (5) ─────────────────────────────────────────────────────
   // ★ 2026-10-09 (doc 81 Đợt 3b final wave, rà soát bảo mật) — `safetyRouter.listAssignments` RỜI sổ: nay lọc theo phạm vi
   //   nhà máy của HÀNG (factoryId › chuyền › trạm; mồ côi bị loại) bằng `resolveTenantFactoryScope(phamViCua(ctx))` — bộ lọc
   //   ca Đợt 3b Task 1 từng cho phép dò hàng nhà máy khác theo id ca. Bộ quét xếp nó sang S.
   "server/routers/safetyRouter.ts#safetyRouter.currentBoard",
   "server/routers/safetyRouter.ts#safetyRouter.evaluateZones",
-  "server/routers/safetyRouter.ts#safetyRouter.feed",
   "server/routers/safetyRouter.ts#safetyRouter.listCameraCalibrations",
   "server/routers/safetyRouter.ts#safetyRouter.listCollaborations",
   "server/routers/safetyRouter.ts#safetyRouter.listZones",
-  "server/routers/safetyRouter.ts#safetyRouter.nearMissTrend",
   // ── server/routers/semanticsRouter.ts (3) ──────────────────────────────────────────────────
   "server/routers/semanticsRouter.ts#semanticsRouter.compute",
   "server/routers/semanticsRouter.ts#semanticsRouter.get",
@@ -519,11 +483,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // doc 81 Đợt 4 Task A3: occupancyGrid · replay · sceneGraph · twinModels đã vá (assertTwinFactoryInScope) — đã GỠ.
   "server/routers/twinRouter.ts#twinRouter.models.list",
   "server/routers/twinRouter.ts#twinRouter.models.resolve",
-  // ── server/routers/unsMappingRouter.ts (2) ─────────────────────────────────────────────────
-  // ↓ 2026-10-24 · R1b-1 T6 (mig 0433): nợ có sẵn thước mới ĐO THẤY — đọc `uns_tag_mappings` theo `adapterId`/`id` của client (hoặc TOÀN BẢNG khi không
-  //   truyền adapterId), không lọc phạm vi (xem khối `commissioningRouter.ts`). Vá: backlog R1b-2.
-  "server/routers/unsMappingRouter.ts#unsMappingRouter.get",
-  "server/routers/unsMappingRouter.ts#unsMappingRouter.list",
   // ── server/routers/userRouters.ts (1) ──────────────────────────────────────────────────────
   "server/routers/userRouters.ts#userAssignmentRouter.getAllUserAssignments",
   // ── server/routers/vda5050Router.ts (2) ────────────────────────────────────────────────────
@@ -536,3 +495,19 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/wipRouter.ts#wipRouter.list",
   "server/routers/wipRouter.ts#wipRouter.summary",
 ];
+
+/**
+ * ★★★ 2026-10-24 — MIỄN TRỪ CÓ CHỦ Ý (khác SỔ NỢ: đây KHÔNG phải nợ chờ trả, mà là quyết định ĐÃ DUYỆT, mỗi mục MỘT lý do thật).
+ * Thủ tục vẫn ở nhóm (A) theo bộ quét (đọc bảng tenant không lọc phạm vi) nhưng việc không lọc là CỐ Ý. §4 coi mục ở đây là đã khai; §5 giữ nó không hoá thạch
+ * (còn tồn tại, còn nhóm A, lý do ≥ 20 ký tự có ngày duyệt, không đồng thời nằm trong sổ nợ). Thêm mục = thêm quyết định của chủ dự án, KHÔNG phải cách làm cổng xanh.
+ */
+export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.genealogy":
+    "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.get":
+    "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listCodes":
+    "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listVersions":
+    "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
+};

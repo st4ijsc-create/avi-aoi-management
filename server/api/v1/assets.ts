@@ -35,6 +35,7 @@ import { sendOk, sendError, wrap, ApiHttpError } from "./envelope";
 // NOTE: from the BARREL (not schema/hierarchy directly) so test suites that mock
 // "../../../drizzle/schema" never pull the real schema under a partial drizzle-orm mock.
 import { MACHINE_LIFECYCLE_STATUSES } from "../../../drizzle/schema";
+import { idsMayCuaKhoa, dieuKienMayCuaKhoa, canTrongPhamVi, maNhaMayCuaKhoa, type NguoiGoiKhoa } from "./phamViKhoa"; // 2026-10-24 — phạm vi khoá API
 
 /** True when /api/v1 adapter restart is enabled (default OFF). */
 export function v1AdapterRestartEnabled(): boolean {
@@ -76,7 +77,7 @@ type MachineRow = {
  * Resolve `:id` as a URN (urn:…) or a numeric machine id. 404 when absent.
  * Tombstones resolve too (registry keeps retired assets for traceability).
  */
-async function resolveAsset(idParam: string): Promise<MachineRow> {
+async function resolveAsset(idParam: string, nguoi: NguoiGoiKhoa | null | undefined): Promise<MachineRow> {
   const { getDb } = await import("../../db/connection");
   const { machines } = await import("../../../drizzle/schema");
   const d = await getDb();
@@ -92,7 +93,9 @@ async function resolveAsset(idParam: string): Promise<MachineRow> {
     throw new ApiHttpError(400, "bad_request", "Asset id must be a numeric machine id or a urn:… identifier.");
   }
   const [m] = await d.select().from(machines).where(where).limit(1);
-  if (!m) throw new ApiHttpError(404, "not_found", `Asset "${raw}" not found.`);
+  // phạm vi KHOÁ API (rà bảo mật 2026-10-24): tài sản ngoài phạm vi khoá ≡ không tồn tại (CÙNG câu 404), TRƯỚC mọi đọc/ghi
+  const idsMay = await idsMayCuaKhoa(nguoi);
+  if (!m || (idsMay !== null && !idsMay.includes(m.id))) throw new ApiHttpError(404, "not_found", `Asset "${raw}" not found.`);
   return m as unknown as MachineRow;
 }
 
@@ -127,6 +130,8 @@ export function registerAssetRoutes(r: Router): void {
       }
 
       const conds = [];
+      const congKhoa = await dieuKienMayCuaKhoa(req.apiPrincipal, machines.id); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
+      if (congKhoa) conds.push(congKhoa);
       if (!includeInactive) conds.push(eq(machines.isActive, true));
       // ::text comparison — garbage `class` must be a clean empty result, not an enum-cast 500.
       if (cls) conds.push(sql`${machines.machineType}::text = ${cls}`);
@@ -184,7 +189,7 @@ export function registerAssetRoutes(r: Router): void {
     "/assets/:id",
     requireScope(API_SCOPES.ASSETS_READ),
     wrap(async (req, res) => {
-      const m = await resolveAsset(req.params.id);
+      const m = await resolveAsset(req.params.id, req.apiPrincipal);
       const identity = await assetIdentity(m);
 
       const { getDb } = await import("../../db/connection");
@@ -249,7 +254,7 @@ export function registerAssetRoutes(r: Router): void {
     "/assets/:id/lifecycle",
     requireScope(API_SCOPES.ASSETS_WRITE),
     wrap(async (req, res) => {
-      const m = await resolveAsset(req.params.id);
+      const m = await resolveAsset(req.params.id, req.apiPrincipal);
       const bodySchema = z.object({
         state: z.enum(MACHINE_LIFECYCLE_STATUSES),
         reason: z.string().trim().max(500).optional(),
@@ -309,7 +314,7 @@ export function registerAssetRoutes(r: Router): void {
     "/assets/:id/health",
     requireScope(API_SCOPES.ASSETS_READ),
     wrap(async (req, res) => {
-      const m = await resolveAsset(req.params.id);
+      const m = await resolveAsset(req.params.id, req.apiPrincipal);
       const { getDb } = await import("../../db/connection");
       const { machineStatusLogs, deviceAdapters } = await import("../../../drizzle/schema");
       const { desc } = await import("drizzle-orm");
@@ -357,7 +362,7 @@ export function registerAssetRoutes(r: Router): void {
     "/assets/:id/tags",
     requireScope(API_SCOPES.ASSETS_READ),
     wrap(async (req, res) => {
-      const m = await resolveAsset(req.params.id);
+      const m = await resolveAsset(req.params.id, req.apiPrincipal);
       const { getDb } = await import("../../db/connection");
       const { deviceAdapters, deviceTags } = await import("../../../drizzle/schema");
       const d = await getDb();
@@ -425,6 +430,7 @@ export function registerAssetRoutes(r: Router): void {
       }
 
       const db = await import("../../db");
+      await canTrongPhamVi(req.apiPrincipal?.tenantScope, "station", input.stationId, "Station"); // phạm vi KHOÁ API (rà bảo mật 2026-10-24): không đăng ký tài sản vào trạm của nhà máy khác
       const station = await db.getStationById(input.stationId);
       if (!station) throw new ApiHttpError(404, "not_found", `Station ${input.stationId} not found.`);
 
@@ -482,7 +488,7 @@ export function registerAssetRoutes(r: Router): void {
     "/assets/:id/config-drift",
     requireScope(API_SCOPES.ASSETS_READ),
     wrap(async (req, res) => {
-      const m = await resolveAsset(req.params.id);
+      const m = await resolveAsset(req.params.id, req.apiPrincipal);
       const { getDb } = await import("../../db/connection");
       const { deviceAdapters } = await import("../../../drizzle/schema");
       const d = await getDb();
@@ -514,7 +520,7 @@ export function registerAssetRoutes(r: Router): void {
     "/assets/:id/config-drift/approve",
     requireScope(API_SCOPES.ASSETS_WRITE),
     wrap(async (req, res) => {
-      const m = await resolveAsset(req.params.id);
+      const m = await resolveAsset(req.params.id, req.apiPrincipal);
       const body = (req.body ?? {}) as { adapterId?: number };
 
       const { getDb } = await import("../../db/connection");
@@ -578,7 +584,10 @@ export function registerAssetRoutes(r: Router): void {
       const d = await getDb();
       if (!d) throw new ApiHttpError(500, "db_unavailable", "Database not connected.");
       const [adapter] = await d.select().from(deviceAdapters).where(eq(deviceAdapters.id, adapterId)).limit(1);
-      if (!adapter) throw new ApiHttpError(404, "not_found", `Adapter ${adapterId} not found.`);
+      const idsMayRestart = await idsMayCuaKhoa(req.apiPrincipal); // phạm vi KHOÁ API (rà bảo mật 2026-10-24): adapter của máy ngoài phạm vi (hoặc không gắn máy) ≡ không tồn tại
+      if (!adapter || (idsMayRestart !== null && (adapter.machineId == null || !idsMayRestart.includes(adapter.machineId)))) {
+        throw new ApiHttpError(404, "not_found", `Adapter ${adapterId} not found.`);
+      }
 
       const { isOtRunning, stopOt, startOt } = await import("../../services/ot/otManager");
       if (!isOtRunning()) {
@@ -611,7 +620,10 @@ export function registerAssetRoutes(r: Router): void {
       const raw = String(req.params.id ?? "").trim();
       const where = /^\d+$/.test(raw) ? eq(edgeNodes.id, Number(raw)) : eq(edgeNodes.code, raw);
       const [node] = await d.select().from(edgeNodes).where(where).limit(1);
-      if (!node) throw new ApiHttpError(404, "not_found", `Gateway "${raw}" not found.`);
+      const maNm = await maNhaMayCuaKhoa(req.apiPrincipal?.tenantScope); // phạm vi KHOÁ API (rà bảo mật 2026-10-24): nút biên của nhà máy khác (hoặc không gắn nhà máy) ≡ không tồn tại
+      if (!node || (maNm !== null && (node.factoryCode == null || !maNm.has(node.factoryCode)))) {
+        throw new ApiHttpError(404, "not_found", `Gateway "${raw}" not found.`);
+      }
 
       sendOk(res, {
         gateway_id: node.id,

@@ -15,6 +15,7 @@ import { type Router, type Request, type Response } from "express";
 import { requireScope } from "./auth";
 import { API_SCOPES } from "./scopes";
 import { sendOk, wrap, ApiHttpError } from "./envelope";
+import { phamViCuaKhoa, canTrongPhamVi } from "./phamViKhoa"; // 2026-10-24 — phạm vi khoá API
 
 function dateParam(raw: unknown, label: string, fallback: Date): Date {
   if (raw == null || raw === "") return fallback;
@@ -49,6 +50,15 @@ export function registerMetricRoutes(r: Router): void {
         throw new ApiHttpError(400, "bad_request", "`from` must be earlier than `to`.");
       }
 
+      // phạm vi KHOÁ API (rà bảo mật 2026-10-24): khoá hẹp phải chỉ rõ MỘT thực thể (scopeId) trong phạm vi của nó; ngoài phạm vi ≡ 404; scope không quy được về cấp phân cấp ⇒ từ chối.
+      if (await phamViCuaKhoa(req.apiPrincipal?.tenantScope)) {
+        const CAP: Record<string, "factory" | "line" | "station" | "machine"> = { equipment: "machine", machine: "machine", line: "line", station: "station", factory: "factory" };
+        const cap = CAP[scope];
+        if (!cap || scopeId == null) {
+          throw new ApiHttpError(400, "scope_id_required", "A scoped API key must query a single entity: scope (equipment|line|station|factory) + scopeId.");
+        }
+        await canTrongPhamVi(req.apiPrincipal?.tenantScope, cap, scopeId, "Scope");
+      }
       const { computeMetric, MetricComputeError } = await import("../../services/semantics/metricRegistry");
       try {
         const result = await computeMetric(metric, { scope, scopeId, from, to });

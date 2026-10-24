@@ -45,7 +45,7 @@ import {
   type NhomTuyen,
   type TuyenExpress,
 } from "./phamViDocScan";
-import { NO_PHAM_VI_TUYEN } from "./phamViTuyenBaseline";
+import { MIEN_TRU_TUYEN_CO_CHU_Y, NO_PHAM_VI_TUYEN } from "./phamViTuyenBaseline";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const GOC_REPO = join(TEST_DIR, "..", "..");
@@ -158,7 +158,14 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
   'server/_core/vite.ts — app.use(express.static(distPath))',
 ];
 
-const GHIM = { A: 80, C: 40, D: 96, S: 19, U: 16, tong: 251 } as const;
+// ★ 2026-10-24 — A 80→71 · S 19→28 (chín tuyến `moduleReads.ts`: safety/events|zones, fleet/tasks|zones, programs, programs/:id/deployments, anomaly/events, twin/scene-graph, pdm/risk).
+// ★ 2026-10-24 nhóm 1 (equipment + assets + gateways + state): A 71→60 · S 28→39.
+// ★ 2026-10-24 nhóm 2 (orders + genealogy + lines): A 60→53 · S 39→46.
+// ★ 2026-10-24 nhóm 3 (events + metrics + advice + pdmHealth + compliance): A 53→47 · S 46→52.
+// ★ 2026-10-24 /api/external nhóm ①: A 47→44 · S 52→55.
+// ★ 2026-10-24 /api/external nhóm ②: A 44→41 · S 55→58 (3 tuyến alerts/bulletins đã trích sang routes/externalAlertApi.ts và lọc theo phạm vi).
+// ★ 2026-10-24 /api/external nhóm ③: A 41→29 · S 58→70 (12 tuyến: stations/:id + 6 nhánh, resolve-topic, workstations, workstations/:id, products, products/:id).
+const GHIM = { A: 29, C: 40, D: 96, S: 70, U: 16, tong: 251 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -262,7 +269,7 @@ describe("§3 — CON SỐ GHIM", () => {
 
 describe("§4 — RÒ RỈ MỚI ⇒ ĐỎ (lý do tồn tại của cổng này)", () => {
   it("★★★ mọi tuyến nhóm (A) phải đã có tên trong SỔ NỢ", () => {
-    const so = new Set(NO_PHAM_VI_TUYEN);
+    const so = new Set([...NO_PHAM_VI_TUYEN, ...Object.keys(MIEN_TRU_TUYEN_CO_CHU_Y)]);
     const moi = cua("A")
       .filter((t) => !so.has(khoaTuyen(t)))
       .map(
@@ -284,6 +291,19 @@ describe("§4 — RÒ RỈ MỚI ⇒ ĐỎ (lý do tồn tại của cổng này
 });
 
 describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
+  it("★★ MIỄN TRỪ CÓ CHỦ Ý (tuyến): còn tồn tại · còn nhóm (A) · lý do thật có ngày duyệt · không trùng sổ nợ · ghim số = 5", () => {
+    const nhomTheoKhoa = new Map(QUET.tuyen.map((t) => [khoaTuyen(t), nhomTuyenCua(t)]));
+    const loi: string[] = [];
+    for (const [k, lyDo] of Object.entries(MIEN_TRU_TUYEN_CO_CHU_Y)) {
+      if (!nhomTheoKhoa.has(k)) loi.push(`${k} — không còn là tuyến`);
+      else if (nhomTheoKhoa.get(k) !== "A") loi.push(`${k} — nay là nhóm ${nhomTheoKhoa.get(k)}: gỡ khỏi miễn trừ`);
+      if (NO_PHAM_VI_TUYEN.includes(k)) loi.push(`${k} — vừa nợ vừa miễn trừ`);
+      if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
+    }
+    expect(loi).toEqual([]);
+    expect(Object.keys(MIEN_TRU_TUYEN_CO_CHU_Y).length, "thêm miễn trừ = quyết định, ghi lý do ở đây").toBe(5);
+  });
+
   it("★ mọi mục trong sổ vẫn còn là một tuyến CÓ THẬT", () => {
     const co = new Set(QUET.tuyen.map(khoaTuyen));
     const chet = NO_PHAM_VI_TUYEN.filter((k) => !co.has(k));
@@ -331,7 +351,7 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
     "server/_core/index.ts#GET /api/public/products/:productCode/reference-image-file",
     "server/_core/index.ts#GET /api/external/machines",
     "server/_core/index.ts#GET /api/external/machines/by-code/:code",
-    "server/_core/index.ts#GET /api/external/stations",
+    "server/routes/externalStationApi.ts#GET /api/external/stations",
   ] as const;
 
   for (const k of CA_CHUAN) {
@@ -358,11 +378,28 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
     //   `403 · application/json · image_factory_scope_denied` trên đường dẫn của nhà máy B, và
     //   `200 · image/png` trên đường dẫn của chính A. Xem `phamViTuyenBaseline.ts`.
     expect(cua("S").map(khoaTuyen).sort()).toEqual([
+      // ★ 2026-10-24 /api/external nhóm ③: stations/:id + 6 nhánh + resolve-topic + workstations(+/:id) (trích sang routes/externalStationApi.ts) và products(+/:id) lọc theo phạm vi người gọi. Lưới: externalStationPhamVi.db.test.ts, externalInspectionPhamVi.db.test.ts.
+      // ★ 2026-10-24 /api/external nhóm ②: alerts · alerts/:alertId · bulletins (trích sang routes/externalAlertApi.ts) lọc theo phạm vi người gọi. Lưới: routes/externalAlertPhamVi.db.test.ts.
+      // ★ 2026-10-24 /api/external nhóm ①: inspections/images|measurements|events lọc theo máy trong nhà máy được gán (master key không đổi), kèm scopeApplied. Lưới: routes/externalInspectionPhamVi.db.test.ts.
+      // ★ 2026-10-24 nhóm 3 (events/metrics/advice/pdmHealth/compliance): sự kiện, chỉ số, đề xuất, sức khoẻ và đếm tuân thủ chỉ trong phạm vi khoá (phamViKhoa.ts). Lưới: eventsMetricsAdvicePdmPhamViKhoa.db.test.ts.
+      // ★ 2026-10-24 nhóm 2 (orders/genealogy/lines): lệnh sản xuất, truy xuất đơn vị và chuyền của nhà máy khác ⇒ 404; danh sách lọc theo phạm vi khoá (phamViKhoa.ts). Lưới: ordersGenealogyLinesPhamViKhoa.db.test.ts.
+      // ★ 2026-10-24 nhóm 1 (equipment/assets/state): khoá API một nhà máy chỉ chạm máy/tài sản/nút biên của nhà máy mình (phamViKhoa.ts). Lưới: equipmentAssetsStatePhamViKhoa.db.test.ts.
+      // ★ 2026-09-15 (PH-23) — bề mặt SONG SINH của `/ecosystem/kpi`, và nó nằm ngay TRÊN kpi
+      //   trong cùng file mà bị bỏ quên suốt từ 2026-08-18: cùng `req.apiPrincipal.tenantScope`
+      //   → `resolveTenantCodeFactoryIds` → tham số `tenant` của `buildHierarchy`.
+      // ★ Đợt 42 — hai tuyến cockpit: `machineDetail(id, phamViCuaKhoa(req.apiPrincipal?.tenantScope))`.
+      // ★ 2026-10-24 — chín tuyến còn lại cùng lớp (khoá của nhà máy A đọc nhà máy B): `dieuKienKhoa` (cột định vị → `dieuKienViTriTrongPhamVi`, trục ②) hoặc `canTrongPhamVi` (id từ client).
+      //   Lưới: `server/api/v1/moduleReadsPhamViKhoa.db.test.ts`.
+      // ★ 2026-10-10 (doc 81 Đợt 5 E2) — `runVisibleTo(view.run, orchestrationScopeOf(req.apiPrincipal?.tenantScope))`.
+      // ⚠ `reportArtifactRoutes.ts#GET /api/reports/artifacts/:id/download` **KHÔNG** ở đây, và nó
+      //   CÓ lọc theo người xem. Nó nằm trong SỔ NỢ vì `chamTenant` của nó bật do bao đóng của hàm
+      //   XÁC THỰC (`api_keys` mang `factoryCode`), còn `report_artifacts` thì không thuộc tenant
+      //   nên `getDownloadTarget` không nằm trên đường đọc mà vị từ đo được. Xem chú thích tại chỗ
+      //   trong `phamViTuyenBaseline.ts`.
       "server/_core/index.ts#GET /api/aoi/download/:packageId",
       "server/_core/index.ts#GET /api/aoi/image/:packageId/:fileName",
       "server/_core/index.ts#GET /api/external/machines",
       "server/_core/index.ts#GET /api/external/machines/by-code/:code",
-      "server/_core/index.ts#GET /api/external/stations",
       "server/_core/index.ts#GET /api/inspection/:id/images",
       "server/_core/index.ts#GET /api/measurement-point/:id/reference-image",
       "server/_core/index.ts#GET /api/product-model/:id/reference-images",
@@ -372,21 +409,63 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/api/export/exportRouter.ts#GET /^\\/(yield|oee|defect-pareto)\\.(csv|json|xlsx)$/",
       "server/api/export/exportRouter.ts#GET /^\\/inspections\\.(csv|json|xlsx|pdf)$/",
       "server/api/export/exportRouter.ts#GET /^\\/measurements\\.(csv|json|xlsx|pdf)$/",
-      // ★ 2026-09-15 (PH-23) — bề mặt SONG SINH của `/ecosystem/kpi`, và nó nằm ngay TRÊN kpi
-      //   trong cùng file mà bị bỏ quên suốt từ 2026-08-18: cùng `req.apiPrincipal.tenantScope`
-      //   → `resolveTenantCodeFactoryIds` → tham số `tenant` của `buildHierarchy`.
+      "server/api/v1/advice.ts#GET /recommendations",
+      "server/api/v1/assets.ts#GET /assets",
+      "server/api/v1/assets.ts#GET /assets/:id",
+      "server/api/v1/assets.ts#GET /assets/:id/config-drift",
+      "server/api/v1/assets.ts#GET /assets/:id/health",
+      "server/api/v1/assets.ts#GET /assets/:id/tags",
+      "server/api/v1/assets.ts#GET /gateways/:id/status",
+      "server/api/v1/events.ts#GET /events",
+      "server/api/v1/genealogyApi.ts#GET /genealogy/:unitId",
+      "server/api/v1/lines.ts#GET /lines",
+      "server/api/v1/lines.ts#GET /lines/:id/stages",
+      "server/api/v1/lines.ts#GET /lines/:id/state",
+      "server/api/v1/metricsApi.ts#GET /metrics/:metric",
+      "server/api/v1/moduleReads.ts#GET /anomaly/events",
       "server/api/v1/moduleReads.ts#GET /ecosystem/hierarchy",
       "server/api/v1/moduleReads.ts#GET /ecosystem/kpi",
-      // ★ Đợt 42 — hai tuyến cockpit: `machineDetail(id, phamViCuaKhoa(req.apiPrincipal?.tenantScope))`.
+      "server/api/v1/moduleReads.ts#GET /fleet/tasks",
+      "server/api/v1/moduleReads.ts#GET /fleet/zones",
       "server/api/v1/moduleReads.ts#GET /machines/:id/detail",
+      "server/api/v1/moduleReads.ts#GET /pdm/risk",
+      "server/api/v1/moduleReads.ts#GET /programs",
+      "server/api/v1/moduleReads.ts#GET /programs/:id/deployments",
       "server/api/v1/moduleReads.ts#GET /robots/:id/detail",
-      // ★ 2026-10-10 (doc 81 Đợt 5 E2) — `runVisibleTo(view.run, orchestrationScopeOf(req.apiPrincipal?.tenantScope))`.
+      "server/api/v1/moduleReads.ts#GET /safety/events",
+      "server/api/v1/moduleReads.ts#GET /safety/zones",
+      "server/api/v1/moduleReads.ts#GET /standards/compliance",
+      "server/api/v1/moduleReads.ts#GET /twin/scene-graph",
+      "server/api/v1/ordersLifecycle.ts#GET /orders",
+      "server/api/v1/ordersLifecycle.ts#GET /orders/:id",
+      "server/api/v1/ordersLifecycle.ts#GET /orders/:id/trace",
+      "server/api/v1/pdmHealth.ts#GET /health/assets/:id",
+      "server/api/v1/pdmHealth.ts#GET /predictions",
+      "server/api/v1/router.ts#GET /equipment",
+      "server/api/v1/router.ts#GET /equipment/:id/capabilities",
+      "server/api/v1/router.ts#GET /equipment/:id/state",
+      "server/api/v1/router.ts#GET /equipment/:id/telemetry",
       "server/api/v1/router.ts#GET /orchestration/runs/:id",
-      // ⚠ `reportArtifactRoutes.ts#GET /api/reports/artifacts/:id/download` **KHÔNG** ở đây, và nó
-      //   CÓ lọc theo người xem. Nó nằm trong SỔ NỢ vì `chamTenant` của nó bật do bao đóng của hàm
-      //   XÁC THỰC (`api_keys` mang `factoryCode`), còn `report_artifacts` thì không thuộc tenant
-      //   nên `getDownloadTarget` không nằm trên đường đọc mà vị từ đo được. Xem chú thích tại chỗ
-      //   trong `phamViTuyenBaseline.ts`.
+      "server/api/v1/state.ts#GET /state/*",
+      "server/routes/externalAlertApi.ts#GET /api/external/alerts",
+      "server/routes/externalAlertApi.ts#GET /api/external/alerts/:alertId",
+      "server/routes/externalAlertApi.ts#GET /api/external/bulletins",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/events",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/images",
+      "server/routes/externalInspectionApi.ts#GET /api/external/inspections/measurements",
+      "server/routes/externalInspectionApi.ts#GET /api/external/products",
+      "server/routes/externalInspectionApi.ts#GET /api/external/products/:id",
+      "server/routes/externalStationApi.ts#GET /api/external/stations",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id/fail-history",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id/inspection-points",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id/measurement-stats",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id/point-detail",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id/products",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/:id/statistics",
+      "server/routes/externalStationApi.ts#GET /api/external/stations/resolve-topic",
+      "server/routes/externalStationApi.ts#GET /api/external/workstations",
+      "server/routes/externalStationApi.ts#GET /api/external/workstations/:id",
     ]);
   });
 });

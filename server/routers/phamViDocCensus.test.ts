@@ -37,7 +37,7 @@ import { join, dirname } from "node:path";
 import { writeFileSync, rmSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { quetPhamViDoc, nhomCua, khoaCua, type NhomPhamVi, type ThuTuc } from "./phamViDocScan";
-import { NO_PHAM_VI_DOC } from "./phamViDocBaseline";
+import { MIEN_TRU_CO_CHU_Y, NO_PHAM_VI_DOC } from "./phamViDocBaseline";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const GOC_REPO = join(TEST_DIR, "..", "..");
@@ -898,7 +898,24 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   commissioningRouter.list · commissioningRouter.status · deviceAdapterRouter.tags.listByAdapter · unsMappingRouter.get · unsMappingRouter.list.
 // Đã ghi vào SỔ NỢ (`phamViDocBaseline.ts`, kèm ghi chú ngày); sửa rò = backlog R1b-2, NGOÀI phạm vi T6. Đo: ở 403ca87ac xanh 17/17; đặt lại CHỈ `drizzle/schema/ot.ts`
 // của 403ca87ac thì xanh lại ⇒ nguyên nhân duy nhất là `.references()`. Không gỡ `.references()` cho xanh. `tong` 2403 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 338, B: 8, C: 489, D: 1199, S: 369, tong: 2403 } as const;
+// ★★ 2026-10-24 · PHẠM VI NHÀ MÁY cho thủ tục khoá theo `adapterId` (rà bảo mật, scada-master phát hiện) — **A 333 → 330 · C 494 → 488 · S 369 → 378 · B/D/tong unchanged (2402).**
+// CHÍNH XÁC 9 thủ tục đổi nhóm, đo bằng so `nhomCua` trên cây trước/sau (worktree HEAD cũ): ba mục sổ nợ A → S (`deviceAdapter.get`, `deviceAdapter.list`,
+// `mappingAsCode.exportOne`) và SÁU thủ tục C → S — nhóm "không có cổng" vì đọc bảng theo adapter mà bộ suy không thấy cổng: `commissioning.list`, `commissioning.status`,
+// `deviceAdapter.tags.listByAdapter`, `unsMapping.get`, `unsMapping.list`, `mappingAsCode.list`. Cả chín nay đi qua bộ phân giải chung `server/routers/_adapterPhamVi.ts`
+// (`idsTrongPhamVi("machine", phamViCua(ctx), { strict: true })`; ngoài phạm vi ≡ NOT_FOUND; danh sách chỉ trả mục trong phạm vi; adapter không gắn máy chỉ phạm vi toàn quyền).
+// Ba dòng sổ nợ `phamViDocBaseline.ts` đã GỠ (trả nợ nhìn thấy được trong diff). Các thủ tục GHI cùng lớp (commissioning.create|revoke, deviceAdapter.create|update|delete|testConnection,
+// tags.create|update|delete, unsMapping.create|update|delete, mappingAsCode.preview|applyImport) cũng được khoá phạm vi nhưng KHÔNG đổi nhóm (mọi mutation vào D).
+// Chứng minh hành vi trên CSDL thật: `server/routers/adapterPhamVi.db.test.ts` (18 ca; 15 đỏ trước khi vá). Số đo: trên ghim cũ đỏ ĐÚNG −3 A / −6 C / +9 S sau khi vá, rồi ghim lại.
+// ★ 2026-10-24 (đợt 2 cùng lớp "id client gửi ⇒ dữ liệu nhà máy khác"): `commandLog.list|get|stats|avgDurations` (sổ lệnh ghi xuống máy) và `machineRecipe`: `recipes.getActive`, `deployments.list`, `machines.list`,
+// `changeover.list|recipeOptions` — CHÍN thủ tục A → S qua `_adapterPhamVi.ts` (`mayTrongPhamVi`, `dieuKienLenhTrongPhamVi`); chín dòng sổ nợ đã GỠ. Các thủ tục GHI `recipes.deploy|rollback`, `changeover.request|approve|reject` cũng khoá phạm vi (mọi mutation vào D, không đổi nhóm).
+// Còn nợ (cố ý, hỏi chủ dự án): `recipes.listCodes|listVersions|get|genealogy` = danh mục công thức dùng chung nhiều nhà máy. Chứng minh: `lenhCongThucPhamVi.db.test.ts` (12 ca; 8 đỏ trước khi vá; 8 đột biến bị bắt).
+// ★ 2026-10-24 (đợt 3 cùng lớp): `safety.feed` và `safety.nearMissTrend` A → S qua `dieuKienSuKienAnToanTrongPhamVi` (`_adapterPhamVi.ts`): sự kiện thấy được ⇔ toàn quyền HOẶC ≥1 thuộc tính định vị
+// (line/station/factory/robot) và MỌI thuộc tính đều trong phạm vi; sự kiện không định vị chỉ toàn quyền thấy. Hai dòng sổ nợ đã GỠ. Chứng minh: `safetyPhamVi.db.test.ts` (5 ca; 4 đỏ trước khi vá; 6 đột biến bị bắt).
+// ★ 2026-10-24 (đợt 4): `genealogy.getFullHistory|getBySerial|getByLot|getLineage|verify` A → S (luật: đơn vị thấy được ⇔ có bản ghi ở máy trong phạm vi, hoặc chính người gọi đã ghi sự kiện chuỗi; `appendEvent` vào đơn vị đã tồn tại ngoài phạm vi ⇒ NOT_FOUND).
+// Chứng minh: `genealogyPhamVi.db.test.ts` (9 ca; 8 đỏ trước khi vá; 10 đột biến bị bắt). Năm dòng sổ nợ đã GỠ. Kèm vá lỗi CÓ SẴN: CTE đệ quy của `getLineage` lỗi 42804 trên CSDL thật (varchar[] vs text[]) ⇒ luôn 500.
+// ★★ 2026-10-24 · MERGE main (đợt vá phạm vi adapter của luong-ui, 7388c6bcd…) vào feat/scada-r1b — năm mục T6 (commissioning.list|status · tags.listByAdapter ·
+// unsMapping.get|list) nay ĐÃ CÓ cổng `_adapterPhamVi.ts` ⇒ S trên main; khối sổ nợ T6 bị GỠ theo main. Số dưới = SỐ ĐO trên cây gộp (main + R1b-1: +1 D scadaCommands.dungMay).
+const GHIM = { A: 314, B: 8, C: 488, D: 1199, S: 394, tong: 2403 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
@@ -965,7 +982,7 @@ describe("§3 — CON SỐ GHIM", () => {
 
 describe("§4 — RÒ RỈ MỚI ⇒ ĐỎ (lý do tồn tại của cổng này)", () => {
   it("★★★ mọi mục nhóm (A) phải đã có tên trong SỔ NỢ", () => {
-    const so = new Set(NO_PHAM_VI_DOC);
+    const so = new Set([...NO_PHAM_VI_DOC, ...Object.keys(MIEN_TRU_CO_CHU_Y)]);
     const moi = cua("A")
       .filter((t) => !so.has(khoaCua(t)))
       .map((t) => `${khoaCua(t)} (dòng ${t.dong}; chạm: ${t.bangChung.join(", ") || "bảng tenant trực tiếp"})`);
@@ -998,6 +1015,19 @@ describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
       "Mục này đã được vá nhưng còn tên trong sổ nợ. Xoá dòng của nó khỏi `phamViDocBaseline.ts`\n" +
         "và giảm `GHIM.A` cho khớp — trả nợ phải NHÌN THẤY ĐƯỢC trong diff.",
     ).toEqual([]);
+  });
+
+  it("★★ MIỄN TRỪ CÓ CHỦ Ý: còn tồn tại · còn nhóm (A) · lý do thật có ngày duyệt · không trùng sổ nợ", () => {
+    const nhomTheoKhoa = new Map(QUET.thuTuc.map((t) => [khoaCua(t), nhomCua(t)]));
+    const loi: string[] = [];
+    for (const [k, lyDo] of Object.entries(MIEN_TRU_CO_CHU_Y)) {
+      if (!nhomTheoKhoa.has(k)) loi.push(`${k} — không còn là thủ tục`);
+      else if (nhomTheoKhoa.get(k) !== "A") loi.push(`${k} — nay là nhóm ${nhomTheoKhoa.get(k)}: gỡ khỏi miễn trừ`);
+      if (NO_PHAM_VI_DOC.includes(k)) loi.push(`${k} — vừa nợ vừa miễn trừ`);
+      if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
+    }
+    expect(loi).toEqual([]);
+    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(4);
   });
 
   it("sổ nợ GOM THEO FILE, mỗi file một khối liền mạch, trong khối đã sắp xếp, không lặp", () => {

@@ -435,6 +435,16 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
         "Tuyến `/api/external/*` — xác thực bằng KHOÁ MÁY (Bearer/API key) qua `validateExternalAuth`, không phải phiên trình duyệt. Chủ thể không phải một hàng `users`.",
       soTuyen: 26,
     },
+    "server/routes/externalStationApi.ts": {
+      viSao:
+        "Tuyến `/api/external/*` (trạm · công trạm) — TRÍCH NGUYÊN VĂN từ `_core/index.ts` 2026-10-24; xác thực bằng `validateExternalAuth` (master key HOẶC token người dùng), không phải phiên trình duyệt. Phạm vi nhà máy đo bởi `externalStationPhamVi.db.test.ts`.",
+      soTuyen: 12,
+    },
+    "server/routes/externalAlertApi.ts": {
+      viSao:
+        "Tuyến `/api/external/*` (cảnh báo · bản tin) — TRÍCH NGUYÊN VĂN từ `_core/index.ts` 2026-10-24; xác thực bằng `validateExternalAuth` (master key HOẶC token người dùng), không phải phiên trình duyệt. Phạm vi nhà máy đo bởi `externalAlertPhamVi.db.test.ts`.",
+      soTuyen: 5,
+    },
     "server/routes/openaiGateway.ts": {
       viSao:
         "Cổng tương thích OpenAI — xác thực bằng Bearer (token cá nhân `avgw_…` mig 0392, hoặc key chung deprecate), không phải cookie phiên. Trục ấy do `openaiGateway.userToken.test.ts` §2 canh (sai/hết hạn/thu hồi ⇒ 401 có mã).",
@@ -613,7 +623,9 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
       // Đợt 8.1 Task 4b (2026-10-20): +1 — registerFlowWebhookRoutes (webhook Luồng AI, token theo luồng), khai NGOAI_PHAM_VI ⇒ 61.
       // SCADA (2026-10-23): +1 — services/scada/scadaSocket.ts (`export function register…` cho SOCKET, KHÔNG nhận tham số Express ⇒ không vào REGISTRAR tuyến, vẫn 31) ⇒ 62.
       // Đo: 62 đã có từ trước các lượt rà bảo mật tRPC (đếm cùng vị từ ở 4267fb7d4); lưới đỏ vì không ai chạy nó khi gộp SCADA.
-    ).toBe(62);
+      // 2026-10-24: +1 — registerExternalAlertRoutes (TRÍCH NGUYÊN VĂN 5 tuyến /api/external/alerts|bulletins ra khỏi _core/index.ts để đo phạm vi trên Express thật), khai NGOAI_PHAM_VI ⇒ 63.
+      // 2026-10-24 (nhóm ③): +1 — registerExternalStationRoutes (TRÍCH NGUYÊN VĂN stations*/workstations* khỏi _core/index.ts), khai NGOAI_PHAM_VI ⇒ 64.
+    ).toBe(64);
     expect(
       REGISTRAR.length,
       "số registrar TUYẾN EXPRESS đã đổi — một registrar tuyến mới vừa xuất hiện, hoặc vị từ đã bị nới",
@@ -621,7 +633,9 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
       // Đợt 3c: +1 (aiXemTruocApi) ⇒ 29.
       // Đợt 4B-server: +1 (aiGatewayTokenBearerApi — nhận `app: express.Express`) ⇒ 30.
       // Đợt 8.1 Task 4b: +1 (flowWebhookApi — nhận `app: express.Express`) ⇒ 31.
-    ).toBe(31);
+      // 2026-10-24: +1 (externalAlertApi — nhận `app: express.Express`) ⇒ 32.
+      // 2026-10-24 (nhóm ③): +1 (externalStationApi) ⇒ 33.
+    ).toBe(33);
     expect(
       REGISTRAR.filter((d) => d.startsWith("server/_core/")).sort(),
       "ba registrar `_core/` mà bản trước KHÔNG BAO GIỜ thấy — chúng là lý do §6 được viết lại",
@@ -656,12 +670,14 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
           "`app.use(\"/uploads\", express.static(...))` và `app.use(\"/uploads\", …)` để ghi lại VÌ SAO thứ tự gắn có ý " +
           "nghĩa (đặt sau dòng resize thì mọi yêu cầu kèm `?w=` đi vòng qua cổng — một bản vá xanh mà cửa vẫn mở). " +
           "⚠ Vẫn ghi lại thay vì sửa chú thích cho vừa bộ đếm, đúng lý do đã nêu ở lượt +2 phía trên." +
+          "★ 2026-10-24 103 → 91 (nhóm ③): MƯỜI HAI tuyến THẬT (stations · stations/resolve-topic · stations/:id + 7 nhánh · workstations · workstations/:id) chuyển nguyên văn sang routes/externalStationApi.ts — registrar mới khai ở NGOAI_PHAM_VI (soTuyen 12), đo bởi routes/externalStationPhamVi.db.test.ts. " +
+          "★ 2026-10-24 108 → 103 (rà bảo mật /api/external): NĂM tuyến THẬT chuyển nguyên văn sang routes/externalAlertApi.ts (alerts · alerts/:alertId · acknowledge · resolve · bulletins) — registrar mới khai ở NGOAI_PHAM_VI (soTuyen 5), đo hành vi bởi routes/externalAlertPhamVi.db.test.ts. " +
           "★ 2026-10-24 106 → 108 (rà bảo mật tRPC): HAI điểm gắn THẬT, đếm bằng diff — app.use('/api/trpc', trpcBatchLimitMiddleware()) và app.use('/api/trpc', trpcGioiHanThuTucMiddleware(…)). " +
           "Cả hai là MIDDLEWARE (trần batch · giới hạn tốc độ theo thủ tục), không phải handler; chủ: server/_core/trpcAdapter.ts + trpcGioiHanThuTuc.ts, canh bởi trpcAdapter.test.ts / trpcGioiHanThuTuc*.test.ts. " +
           "★ 2026-10-17 104 → 106: MÀU ĐỎ BỊ CHE — §6b dừng ở khẳng định 'file chưa khai' đầu tiên (giàn thử edge) nên chưa bao giờ tới vòng so số. " +
           "Đo bộ đếm trên các commit 8c12bbbc7…7e849be39: đều 106 (không đổi trong Đợt 8-12) ⇒ độ lệch +2 có từ trước, không do Đợt 10-12 thêm; " +
           "con số ghim chỉ được đưa về sự thật đo được, chưa truy ra 2 điểm gắn nào. Cần một lượt đối chiếu riêng nếu muốn biết chúng là gì.",
-        soTuyen: 108,
+        soTuyen: 91,
       },
       "server/services/edge/__edgeE2eHarness.dot10.ts": {
         viSao:

@@ -19,11 +19,9 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { eq } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db";
-import { deviceAdapters } from "../../drizzle/schema";
 import {
   createRecord,
   revokeRecord,
@@ -33,6 +31,7 @@ import {
   latestCommissioningRecheck,
 } from "../services/ot/commissioningService";
 import { loadStopPins } from "../services/ot/stopPin";
+import { adapterTrongPhamVi, adapterCuaBanKy } from "./_adapterPhamVi";
 
 async function db() {
   const d = await getDb();
@@ -40,19 +39,13 @@ async function db() {
   return d;
 }
 
-/** Assert the adapter exists so we never commission a phantom id. */
-async function assertAdapterExists(adapterId: number): Promise<void> {
-  const d = await db();
-  const [adapter] = await d.select().from(deviceAdapters).where(eq(deviceAdapters.id, adapterId)).limit(1);
-  if (!adapter) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, `Adapter #${adapterId} không tồn tại.`);
-}
-
 export const commissioningRouter = router({
   /** List the commissioning ledger for an adapter (newest first). */
   list: protectedProcedure
     .use(requirePermission("admin_system", "canView"))
     .input(z.object({ adapterId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await adapterTrongPhamVi(ctx, input.adapterId); // phạm vi nhà máy: ngoài phạm vi ≡ NOT_FOUND (rà bảo mật 2026-10-24)
       return listRecords(input.adapterId);
     }),
 
@@ -64,7 +57,8 @@ export const commissioningRouter = router({
   status: protectedProcedure
     .use(requirePermission("admin_system", "canView"))
     .input(z.object({ adapterId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await adapterTrongPhamVi(ctx, input.adapterId); // phạm vi nhà máy (rà bảo mật 2026-10-24)
       const commissioned = await isCommissioned(input.adapterId);
       // doc 81 Đợt 1D Task 1 (Ruling commissioning) — người ký commissioning phải THẤY các tag DỪNG đã
       // ghim của adapter (lệnh DỪNG ghi đúng các cặp này được miễn preflight an toàn). Đổi ghim sau khi
@@ -113,7 +107,8 @@ export const commissioningRouter = router({
       notes: z.string().max(2000).nullable().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      await assertAdapterExists(input.adapterId);
+      // ký = cấp quyền ghi thật xuống máy ⇒ adapter PHẢI trong phạm vi người ký (không tồn tại / ngoài phạm vi ⇒ cùng NOT_FOUND)
+      await adapterTrongPhamVi(ctx, input.adapterId);
       // Guard against an already-expired expiry (would create a dead record).
       if (input.expiresAt != null && input.expiresAt.getTime() <= Date.now()) {
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "expiresAt" }, "expiresAt đã ở quá khứ — bản ghi sẽ vô hiệu ngay.");
@@ -135,6 +130,7 @@ export const commissioningRouter = router({
       reason: z.string().max(2000).nullable().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await adapterCuaBanKy(ctx, input.recordId); // bản ký thuộc adapter ngoài phạm vi ≡ không tồn tại
       const row = await revokeRecord(input.recordId, ctx.user.id, input.reason ?? null);
       if (!row) {
         // Review cuối, ca I-A #7: revokeRecord() UPDATE ... WHERE id=? AND status='active'

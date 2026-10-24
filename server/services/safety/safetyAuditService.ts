@@ -20,7 +20,7 @@
  * always allowed (a read of the advisory log is safe even when ingest is off).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, eq, gte, desc, sql } from "drizzle-orm";
+import { and, eq, gte, desc, sql, type SQL } from "drizzle-orm";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import { safetyEvents, type SafetyEvent } from "../../../drizzle/schema";
@@ -182,12 +182,15 @@ export interface FeedFilter {
   isNearMiss?: boolean;
   sinceHours?: number;
   limit?: number;
+  /** Cổng phạm vi nhà máy do router dựng (`dieuKienSuKienAnToanTrongPhamVi`); undefined = toàn quyền / lối nội bộ không có danh tính. */
+  dieuKienPhamVi?: SQL;
 }
 
 /** Query the safety-event feed (newest first). Read — always allowed. */
 export async function queryFeed(filter: FeedFilter = {}): Promise<SafetyEvent[]> {
   const d = await db();
   const conds = [];
+  if (filter.dieuKienPhamVi) conds.push(filter.dieuKienPhamVi);
   if (filter.eventType) conds.push(eq(safetyEvents.eventType, filter.eventType));
   if (filter.robotId != null) conds.push(eq(safetyEvents.robotId, filter.robotId));
   if (filter.isNearMiss != null) conds.push(eq(safetyEvents.isNearMiss, filter.isNearMiss));
@@ -206,7 +209,7 @@ export interface NearMissTrendBucket {
 }
 
 /** Near-miss trend by day for PDCA (read — always allowed). */
-export async function nearMissTrend(sinceDays = 30): Promise<NearMissTrendBucket[]> {
+export async function nearMissTrend(sinceDays = 30, dieuKienPhamVi?: SQL): Promise<NearMissTrendBucket[]> {
   const d = await db();
   const since = new Date(Date.now() - sinceDays * 24 * 3600 * 1000);
   const rows = await d
@@ -215,7 +218,7 @@ export async function nearMissTrend(sinceDays = 30): Promise<NearMissTrendBucket
       count: sql<number>`count(*)::int`,
     })
     .from(safetyEvents)
-    .where(and(eq(safetyEvents.isNearMiss, true), gte(safetyEvents.createdAt, since)))
+    .where(and(eq(safetyEvents.isNearMiss, true), gte(safetyEvents.createdAt, since), dieuKienPhamVi))
     .groupBy(sql`date_trunc('day', ${safetyEvents.createdAt})`)
     .orderBy(sql`date_trunc('day', ${safetyEvents.createdAt})`);
   return rows.map((r) => ({ day: r.day, count: r.count }));

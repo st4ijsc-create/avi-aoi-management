@@ -68,15 +68,17 @@ import { thanTuChoiRest, thuXacThucRest } from "./_xacThucRest";
 export const MA_TU_CHOI_PHAM_VI_ANH = "image_factory_scope_denied";
 
 /**
- * Cưỡng chế đang BẬT hay chưa.
+ * Cổng ảnh đang MỞ (KHÔNG cưỡng chế) hay chưa.
  *
- * ⚠ Mặc định `"true"` = **MỞ** (hành vi cũ, không vỡ client nào) — cùng quy ước và cùng lý do với
- *   `FACTORY_ALERT_DOWNLOAD_OPEN` (`_core/factoryAlertDownloadToken.ts:52`), tiền lệ đã có trong
- *   repo cho đúng tình huống "đội thiết bị ngoài hiện trường chưa kịp cập nhật".
+ * ★★★ 2026-10-24 — ĐỔI MẶC ĐỊNH: **vắng cờ ⇒ CƯỠNG CHẾ** (chủ dự án quyết). Trước đây vắng cờ ⇒ MỞ, nên một bản triển khai quên đặt `ANH_CONG_MO=false`
+ * để mọi ảnh kiểm tra của mọi nhà máy tải được cho BẤT KỲ ai đoán được đường dẫn `/uploads/inspections/…` (không cần xác thực).
+ * MỞ nay là lựa chọn CÓ CHỦ Ý: đặt `ANH_CONG_MO=true` (hoặc `1`) cho môi trường còn APK hiện trường cũ chưa biết dùng vé ký / header `x-master-key`.
+ * Giá trị lạ (`yes`, rỗng, sai chính tả…) ⇒ CƯỠNG CHẾ (fail-closed) — "mở" phải được viết ra đúng chữ.
+ * Bản app nguồn `FactoryAlertSystem/src/services/imageService.ts#nguonAnh` đã gửi `x-master-key` ở mọi điểm render ảnh và giữ nguyên vé ký trong URL; chỉ APK đời cũ (trước nguonAnh) mới vỡ.
  */
 export function congAnhMo(): boolean {
-  const v = (process.env.ANH_CONG_MO ?? "true").trim().toLowerCase();
-  return v !== "false" && v !== "0";
+  const v = (process.env.ANH_CONG_MO ?? "false").trim().toLowerCase();
+  return v === "true" || v === "1";
 }
 
 /** Lối vào đã được xác lập cho một lượt gọi. **Cả ba nhánh có tên.** */

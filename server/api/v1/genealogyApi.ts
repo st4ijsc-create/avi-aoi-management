@@ -24,10 +24,11 @@
  */
 import { type Router, type Request, type Response } from "express";
 import { z } from "zod";
-import { and, asc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import { requireScope } from "./auth";
 import { API_SCOPES } from "./scopes";
 import { sendOk, wrap, ApiHttpError } from "./envelope";
+import { idsMayCuaKhoa } from "./phamViKhoa"; // 2026-10-24 — phạm vi khoá API
 
 // ─── Serving shapes (spec §10.3) ──────────────────────────────────────────────
 
@@ -74,7 +75,15 @@ function pickString(obj: Record<string, unknown> | null | undefined, keys: strin
 // doc 63 DEP-05 — exported so the tRPC layer (genealogyRouter.getFullHistory) can serve
 // the SAME aggregated record (chain ∪ inspections ∪ process_results ∪ installations)
 // that this REST endpoint returns, instead of the FE re-assembling a partial view.
-export async function assembleRecord(unitId: string): Promise<GenealogyRecord | null> {
+export async function assembleRecord(
+  unitId: string,
+  /** phạm vi KHOÁ API (rà bảo mật 2026-10-24): tập id máy khoá thấy được; null/undefined = toàn quyền (tRPC và khoá toàn cục). */
+  idsMay?: number[] | null,
+  /** Người đã GHI sự kiện chuỗi (tRPC): đơn vị chỉ-có-chuỗi do họ ghi vẫn thấy được. REST/khoá API không có. */
+  tacGiaChuoi?: number | null,
+): Promise<GenealogyRecord | null> {
+  const hep = idsMay != null;
+  const mayIds = hep ? (idsMay.length > 0 ? idsMay : [-1]) : [];
   const { getDb } = await import("../../db/connection");
   const {
     genealogyChain,
@@ -112,7 +121,7 @@ export async function assembleRecord(unitId: string): Promise<GenealogyRecord | 
     })
     .from(productInspections)
     .leftJoin(machines, eq(productInspections.machineId, machines.id))
-    .where(eq(productInspections.serialNumber, unitId))
+    .where(hep ? and(eq(productInspections.serialNumber, unitId), inArray(productInspections.machineId, mayIds)) : eq(productInspections.serialNumber, unitId))
     .orderBy(asc(productInspections.inspectionTime))
     .limit(1000);
 
@@ -131,7 +140,7 @@ export async function assembleRecord(unitId: string): Promise<GenealogyRecord | 
     })
     .from(processResults)
     .leftJoin(machines, eq(processResults.machineId, machines.id))
-    .where(eq(processResults.serialNumber, unitId))
+    .where(hep ? and(eq(processResults.serialNumber, unitId), inArray(processResults.machineId, mayIds)) : eq(processResults.serialNumber, unitId))
     .orderBy(asc(processResults.measuredAt))
     .limit(1000);
 
@@ -147,7 +156,7 @@ export async function assembleRecord(unitId: string): Promise<GenealogyRecord | 
     })
     .from(componentInstallations)
     .leftJoin(supplierLots, eq(componentInstallations.supplierLotId, supplierLots.id))
-    .where(eq(componentInstallations.serialNumber, unitId))
+    .where(hep ? and(eq(componentInstallations.serialNumber, unitId), inArray(componentInstallations.machineId, mayIds)) : eq(componentInstallations.serialNumber, unitId))
     .orderBy(asc(componentInstallations.installedAt))
     .limit(2000);
 
@@ -158,6 +167,10 @@ export async function assembleRecord(unitId: string): Promise<GenealogyRecord | 
     installRows.length === 0
   ) {
     return null;
+  }
+  // phạm vi KHOÁ API (rà bảo mật 2026-10-24): đơn vị chỉ thấy khi có ÍT NHẤT MỘT bản ghi bước/linh kiện ở máy trong phạm vi (sự kiện chuỗi không mang máy ⇒ không tự cấp quyền thấy).
+  if (hep && inspectionRows.length === 0 && processRows.length === 0 && installRows.length === 0) {
+    if (tacGiaChuoi == null || !chainRows.some((c) => c.recordedBy === tacGiaChuoi)) return null;
   }
 
   // ── steps: union of the three step sources, time-ordered ───────────────────
@@ -286,7 +299,50 @@ function intersect(a: Set<string> | null, b: Set<string>): Set<string> {
   return out;
 }
 
-async function searchUnits(input: z.infer<typeof searchSchema>): Promise<{ units: string[]; criteria: string[] } | null> {
+/**
+ * phạm vi (rà bảo mật 2026-10-24): tập đơn vị (serial) trong `serials` mà người gọi THẤY ĐƯỢC: toàn quyền (`idsMay === null`) ⇒ tất cả; ngược lại ⇒ có ≥1 bản ghi bước/kiểm tra/linh kiện ở máy trong phạm vi,
+ * HOẶC (tRPC) chính `tacGia` đã ghi một sự kiện chuỗi của đơn vị đó.
+ */
+export async function donViThayDuoc(serials: string[], idsMay: number[] | null, tacGia?: number | null): Promise<Set<string>> {
+  if (idsMay === null) return new Set(serials);
+  const out = new Set<string>();
+  if (serials.length === 0) return out;
+  const { getDb } = await import("../../db/connection");
+  const { processResults, productInspections, componentInstallations, genealogyChain } = await import("../../../drizzle/schema");
+  const db = await getDb();
+  if (!db) return out;
+  const mayIds = idsMay.length > 0 ? idsMay : [-1];
+  for (let i = 0; i < serials.length; i += 500) {
+    const lo = serials.slice(i, i + 500);
+    const [a, b, c, d] = await Promise.all([
+      db.select({ s: processResults.serialNumber }).from(processResults).where(and(inArray(processResults.serialNumber, lo), inArray(processResults.machineId, mayIds))),
+      db.select({ s: componentInstallations.serialNumber }).from(componentInstallations).where(and(inArray(componentInstallations.serialNumber, lo), inArray(componentInstallations.machineId, mayIds))),
+      db.select({ s: productInspections.serialNumber }).from(productInspections).where(and(inArray(productInspections.serialNumber, lo), inArray(productInspections.machineId, mayIds))),
+      tacGia != null
+        ? db.select({ s: genealogyChain.serialNumber }).from(genealogyChain).where(and(inArray(genealogyChain.serialNumber, lo), eq(genealogyChain.recordedBy, tacGia)))
+        : Promise.resolve([] as Array<{ s: string }>),
+    ]);
+    for (const r of [...a, ...b, ...c, ...d]) out.add(r.s);
+  }
+  return out;
+}
+
+/** Đơn vị đã có BẤT KỲ bản ghi nào (chuỗi/bước/kiểm tra/linh kiện) — dùng cho ghi: đơn vị đã tồn tại mà ngoài phạm vi ≡ NOT_FOUND. */
+export async function donViTonTai(serial: string): Promise<boolean> {
+  const { getDb } = await import("../../db/connection");
+  const { processResults, productInspections, componentInstallations, genealogyChain } = await import("../../../drizzle/schema");
+  const db = await getDb();
+  if (!db) return false;
+  const [a, b, c, d] = await Promise.all([
+    db.select({ s: processResults.serialNumber }).from(processResults).where(eq(processResults.serialNumber, serial)).limit(1),
+    db.select({ s: componentInstallations.serialNumber }).from(componentInstallations).where(eq(componentInstallations.serialNumber, serial)).limit(1),
+    db.select({ s: productInspections.serialNumber }).from(productInspections).where(eq(productInspections.serialNumber, serial)).limit(1),
+    db.select({ s: genealogyChain.serialNumber }).from(genealogyChain).where(eq(genealogyChain.serialNumber, serial)).limit(1),
+  ]);
+  return a.length + b.length + c.length + d.length > 0;
+}
+
+async function searchUnits(input: z.infer<typeof searchSchema>, idsMay?: number[] | null): Promise<{ units: string[]; criteria: string[] } | null> {
   const { getDb } = await import("../../db/connection");
   const { genealogyChain, componentInstallations, supplierLots } = await import("../../../drizzle/schema");
   const db = await getDb();
@@ -357,7 +413,24 @@ async function searchUnits(input: z.infer<typeof searchSchema>): Promise<{ units
   if (input.pallet) await payloadCriterion(["pallet", "palletCode", "pallet_id", "palletId"], input.pallet, "pallet");
 
   const limit = input.limit ?? 200;
-  const units = [...(result ?? new Set<string>())].sort().slice(0, limit);
+  let ung: string[] = [...(result ?? new Set<string>())];
+  if (idsMay != null && ung.length > 0) {
+    // phạm vi KHOÁ API (rà bảo mật 2026-10-24): chỉ đơn vị có bản ghi bước/linh kiện ở máy trong phạm vi khoá
+    const mayIds = idsMay.length > 0 ? idsMay : [-1];
+    const { processResults, productInspections } = await import("../../../drizzle/schema");
+    const thay = new Set<string>();
+    for (let i = 0; i < ung.length; i += 500) {
+      const lo = ung.slice(i, i + 500);
+      const [a, b, c] = await Promise.all([
+        db.select({ s: processResults.serialNumber }).from(processResults).where(and(inArray(processResults.serialNumber, lo), inArray(processResults.machineId, mayIds))),
+        db.select({ s: componentInstallations.serialNumber }).from(componentInstallations).where(and(inArray(componentInstallations.serialNumber, lo), inArray(componentInstallations.machineId, mayIds))),
+        db.select({ s: productInspections.serialNumber }).from(productInspections).where(and(inArray(productInspections.serialNumber, lo), inArray(productInspections.machineId, mayIds))),
+      ]);
+      for (const r of [...a, ...b, ...c]) thay.add(r.s);
+    }
+    ung = ung.filter((u) => thay.has(u));
+  }
+  const units = ung.sort().slice(0, limit);
   return { units, criteria };
 }
 
@@ -371,7 +444,7 @@ export function registerGenealogyRoutes(r: Router): void {
     wrap(async (req: Request, res: Response) => {
       const unitId = String(req.params.unitId ?? "").trim();
       if (!unitId || unitId.length > 128) throw new ApiHttpError(400, "bad_request", "Invalid unit id (serial number).");
-      const record = await assembleRecord(unitId);
+      const record = await assembleRecord(unitId, await idsMayCuaKhoa(req.apiPrincipal));
       if (!record) {
         throw new ApiHttpError(
           404,
@@ -395,7 +468,7 @@ export function registerGenealogyRoutes(r: Router): void {
       if (!input.lot && !input.part && !input.carton && !input.pallet) {
         throw new ApiHttpError(400, "bad_request", "Provide at least one of: lot, part, carton, pallet.");
       }
-      const found = await searchUnits(input);
+      const found = await searchUnits(input, await idsMayCuaKhoa(req.apiPrincipal));
       if (!found) throw new ApiHttpError(500, "db_unavailable", "Database not connected.");
       sendOk(res, {
         units: found.units,

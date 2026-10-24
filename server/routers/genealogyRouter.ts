@@ -13,6 +13,7 @@ import { appError } from "../_core/appError";
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import * as db from "../db";
+import { idsMayTrongPhamVi, khongThayMay } from "./_adapterPhamVi";
 import { TRPCError } from "@trpc/server";
 import {
   hashEntry,
@@ -66,6 +67,15 @@ export const genealogyRouter = router({
       payload: z.record(z.string(), z.any()).default({}),
     }))
     .mutation(async ({ input, ctx }) => {
+      // phạm vi (rà bảo mật 2026-10-24): ghi vào đơn vị (hoặc cha) ĐÃ TỒN TẠI nhưng ngoài phạm vi ≡ không tồn tại (NOT_FOUND), TRƯỚC khi ghi. Đơn vị MỚI (chưa có bản ghi nào) thì cho ghi.
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      if (idsMay !== null) {
+        const { donViThayDuoc, donViTonTai } = await import("../api/v1/genealogyApi");
+        const uid = (ctx as any)?.user?.id ?? null;
+        for (const s of [input.serialNumber, input.parentSerial].filter((x): x is string => !!x)) {
+          if ((await donViTonTai(s)) && !(await donViThayDuoc([s], idsMay, uid)).has(s)) throw khongThayMay();
+        }
+      }
       const recordedAt = new Date();
       const recordedBy = (ctx as any)?.user?.id ?? null;
       // G5.17 (0255) — trace id from the ALS backbone; null outside a context.
@@ -112,7 +122,12 @@ export const genealogyRouter = router({
       serialNumber: z.string().min(1).max(128),
       limit: z.number().int().positive().max(5000).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi (rà bảo mật 2026-10-24): đơn vị ngoài phạm vi ⇒ rỗng (như chưa có sự kiện)
+      if (idsMay !== null) {
+        const { donViThayDuoc } = await import("../api/v1/genealogyApi");
+        if (!(await donViThayDuoc([input.serialNumber], idsMay, (ctx as any)?.user?.id ?? null)).has(input.serialNumber)) return [];
+      }
       const rows = await db.listGenealogyChainBySerial(input.serialNumber, input.limit ?? 1000);
       return rowsToChainRows(rows);
     }),
@@ -130,13 +145,35 @@ export const genealogyRouter = router({
       direction: z.enum(["ancestors", "descendants", "both"]).default("both"),
       maxDepth: z.number().int().positive().max(100).default(20),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { getGenealogyLineage } = await import("../services/genealogyLineageService");
-      return getGenealogyLineage({
+      const res = await getGenealogyLineage({
         rootSerial: input.serialNumber,
         direction: input.direction,
         maxDepth: input.maxDepth,
       });
+      // phạm vi (rà bảo mật 2026-10-24): gốc ngoài phạm vi ⇒ như chưa thấy; nhánh có đơn vị ngoài phạm vi bị CẮT (không lộ tên đơn vị nhà máy khác)
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      if (idsMay === null) return res;
+      const { donViThayDuoc } = await import("../api/v1/genealogyApi");
+      const uid = (ctx as any)?.user?.id ?? null;
+      const tatCa = new Set<string>();
+      const gom = (n: { serialNumber: string; children: any[] }) => { tatCa.add(n.serialNumber); n.children.forEach(gom); };
+      for (const t of [res.descendants, res.ancestors]) if (t) gom(t.root);
+      const thay = await donViThayDuoc([...tatCa], idsMay, uid);
+      if (!thay.has(input.serialNumber)) return { ...res, found: false, descendants: null, ancestors: null };
+      const cat = (t: typeof res.descendants) => {
+        if (!t) return t;
+        let dem = 0;
+        const duyet = (n: any): any => {
+          const children = n.children.filter((c: any) => thay.has(c.serialNumber)).map(duyet);
+          dem += children.length;
+          return { ...n, children };
+        };
+        const root = duyet(t.root);
+        return { ...t, root, nodeCount: dem };
+      };
+      return { ...res, descendants: cat(res.descendants), ancestors: cat(res.ancestors) };
     }),
 
   /**
@@ -148,9 +185,10 @@ export const genealogyRouter = router({
    */
   getFullHistory: protectedProcedure
     .input(z.object({ serialNumber: z.string().min(1).max(128) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { assembleRecord } = await import("../api/v1/genealogyApi");
-      const record = await assembleRecord(input.serialNumber);
+      // phạm vi (rà bảo mật 2026-10-24): chỉ bản ghi ở máy trong phạm vi; đơn vị chỉ-có-chuỗi thấy được với chính người đã ghi
+      const record = await assembleRecord(input.serialNumber, await idsMayTrongPhamVi(ctx), (ctx as any)?.user?.id ?? null);
       return { found: record !== null, record };
     }),
 
@@ -160,8 +198,15 @@ export const genealogyRouter = router({
       lotCode: z.string().min(1).max(80),
       limit: z.number().int().positive().max(20000).optional(),
     }))
-    .query(async ({ input }) => {
-      const rows = await db.listGenealogyChainByLot(input.lotCode, input.limit ?? 5000);
+    .query(async ({ input, ctx }) => {
+      let rows = await db.listGenealogyChainByLot(input.lotCode, input.limit ?? 5000);
+      // phạm vi (rà bảo mật 2026-10-24): chỉ sự kiện của đơn vị người gọi thấy được
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      if (idsMay !== null) {
+        const { donViThayDuoc } = await import("../api/v1/genealogyApi");
+        const thay = await donViThayDuoc([...new Set(rows.map((r: any) => r.serialNumber as string))], idsMay, (ctx as any)?.user?.id ?? null);
+        rows = rows.filter((r: any) => thay.has(r.serialNumber));
+      }
       return rowsToChainRows(rows);
     }),
 
@@ -180,13 +225,23 @@ export const genealogyRouter = router({
       lotCode: z.string().min(1).max(80).optional(),
       limit: z.number().int().positive().max(200000).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       let rows: any[] = [];
+      // phạm vi (rà bảo mật 2026-10-24): kiểm toàn chuỗi/theo lô trả id đơn vị + lý do của MỌI nhà máy ⇒ chỉ phạm vi toàn quyền (admin)
+      if (input.scope !== "serial" && (await idsMayTrongPhamVi(ctx)) !== null) {
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "verifyChainAcrossFactories" }, "Chỉ vai toàn quyền mới kiểm toàn chuỗi/theo lô; dùng scope=serial cho đơn vị của bạn.");
+      }
       if (input.scope === "serial") {
         if (!input.serialNumber) {
           throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "serialNumber" }, "serialNumber required for scope=serial");
         }
         rows = await db.listGenealogyChainBySerial(input.serialNumber, input.limit ?? 5000);
+        // phạm vi (rà bảo mật 2026-10-24): đơn vị ngoài phạm vi ⇒ như chưa có hàng nào (total 0)
+        const idsMay = await idsMayTrongPhamVi(ctx);
+        if (idsMay !== null) {
+          const { donViThayDuoc } = await import("../api/v1/genealogyApi");
+          if (!(await donViThayDuoc([input.serialNumber], idsMay, (ctx as any)?.user?.id ?? null)).has(input.serialNumber)) rows = [];
+        }
       } else if (input.scope === "lot") {
         if (!input.lotCode) {
           throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "lotCode" }, "lotCode required for scope=lot");

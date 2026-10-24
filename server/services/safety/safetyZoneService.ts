@@ -27,7 +27,7 @@
  * we just don't write.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, type SQL } from "drizzle-orm";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import { safetyZones, type SafetyZone } from "../../../drizzle/schema";
@@ -74,6 +74,8 @@ export interface ZoneQueryFilter {
   stationId?: number;
   lineId?: number;
   onlyEnabled?: boolean;
+  /** Cổng phạm vi do tầng gọi dựng (tRPC/REST); undefined = toàn quyền / lối nội bộ. */
+  dieuKienPhamVi?: SQL;
 }
 
 /** List safety zones (read — always allowed, even flag-off). Newest-agnostic order by id. */
@@ -84,6 +86,7 @@ export async function listZones(filter: ZoneQueryFilter = {}): Promise<SafetyZon
   if (filter.stationId != null) conds.push(eq(safetyZones.stationId, filter.stationId));
   if (filter.lineId != null) conds.push(eq(safetyZones.lineId, filter.lineId));
   if (filter.onlyEnabled) conds.push(eq(safetyZones.enabled, true));
+  if (filter.dieuKienPhamVi) conds.push(filter.dieuKienPhamVi);
   return d
     .select()
     .from(safetyZones)

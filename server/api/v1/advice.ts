@@ -28,6 +28,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { requireScope } from "./auth";
 import { API_SCOPES } from "./scopes";
 import { sendOk, wrap, ApiHttpError } from "./envelope";
+import { mayTrongPhamViKhoa, canTrongPhamVi, phamViCuaKhoa, maNhaMayCuaKhoa } from "./phamViKhoa"; // 2026-10-24 — phạm vi khoá API
 
 // Least-privilege scope (spec §13.1) — registered in API_SCOPES (W5-A3 wiring).
 export const ADVICE_READ = API_SCOPES.ADVICE_READ;
@@ -79,6 +80,7 @@ export function registerAdviceRoutes(r: Router): void {
       const { machines } = await import("../../../drizzle/schema");
       const d = await getDb();
       if (!d) throw new ApiHttpError(500, "db_unavailable", "Database not connected.");
+      await mayTrongPhamViKhoa(req.apiPrincipal, assetId, "Asset"); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
       const [machine] = await d
         .select({ id: machines.id, code: machines.code })
         .from(machines)
@@ -186,9 +188,23 @@ export function registerAdviceRoutes(r: Router): void {
         productModelId?: unknown;
       };
       const windowDays = optBodyPosInt(body.windowDays, "windowDays");
+      // phạm vi KHOÁ API (rà bảo mật 2026-10-24): khuyến nghị tính trên mẫu đo thật ⇒ khoá hẹp phải chỉ rõ máy/ngưỡng trong phạm vi (không để suy ra từ dữ liệu mọi nhà máy).
+      const hep = (await phamViCuaKhoa(req.apiPrincipal?.tenantScope)) !== undefined;
+      const machineIdYeuCau = optBodyPosInt(target.machineId, "target.machineId");
+      if (machineIdYeuCau != null) await mayTrongPhamViKhoa(req.apiPrincipal, machineIdYeuCau, "Machine");
+      else if (hep && actionType === "adjust_param") throw new ApiHttpError(400, "bad_request", "A scoped API key must pass target.machineId.");
 
       if (actionType === "adjust_ng_threshold") {
         const ngThresholdId = bodyPosInt(target.ngThresholdId, "target.ngThresholdId");
+        if (hep) {
+          // ngưỡng NG gắn một TRẠM (mqtt_ng_rate_thresholds.stationId) — trạm ngoài phạm vi ≡ ngưỡng không tồn tại
+          const { getDb } = await import("../../db/connection");
+          const { mqttNgRateThresholds } = await import("../../../drizzle/schema");
+          const dd = await getDb();
+          const [ng] = dd ? await dd.select({ stationId: mqttNgRateThresholds.stationId }).from(mqttNgRateThresholds).where(eq(mqttNgRateThresholds.id, ngThresholdId)).limit(1) : [];
+          if (!ng) throw new ApiHttpError(404, "not_found", `NG threshold ${ngThresholdId} not found.`);
+          await canTrongPhamVi(req.apiPrincipal?.tenantScope, "station", ng.stationId, "NG threshold");
+        }
         const { recommendNgThreshold } = await import("../../services/aiThresholdAdvisor");
         const rec = await recommendNgThreshold({ ngThresholdId, windowDays });
         return sendOk(res, {
@@ -283,6 +299,18 @@ export function registerAdviceRoutes(r: Router): void {
       const limit = Number.isFinite(limRaw) ? Math.min(Math.max(1, Math.trunc(limRaw)), 200) : 50;
 
       const conds = [];
+      // phạm vi KHOÁ API (rà bảo mật 2026-10-24): khoá hẹp chỉ thấy đề xuất của người dùng được gán nhà máy trong phạm vi khoá (đề xuất không gắn nhà máy ⇒ ẩn — fail-closed).
+      const maNm = await maNhaMayCuaKhoa(req.apiPrincipal?.tenantScope);
+      if (maNm !== null) {
+        const { userFactoryAssignments } = await import("../../../drizzle/schema");
+        const { inArray, sql } = await import("drizzle-orm");
+        const codes = [...maNm];
+        conds.push(
+          codes.length > 0
+            ? sql`${aiPendingActions.userId} IN (SELECT ${userFactoryAssignments.userId} FROM ${userFactoryAssignments} WHERE ${inArray(userFactoryAssignments.factoryCode, codes)})`
+            : sql`1 = 0`,
+        );
+      }
       if (statusRaw) conds.push(eq(aiPendingActions.status, statusRaw as never));
       if (tool) conds.push(eq(aiPendingActions.tool, tool));
 

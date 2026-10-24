@@ -54,7 +54,7 @@
  * (order_lifecycle_disabled, 503) — also protects an un-migrated DB (0258).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
   productionOrders,
@@ -774,6 +774,8 @@ export interface ListOrdersFilter {
   lineId?: number;
   limit?: number;
   offset?: number;
+  /** Cổng phạm vi do tầng gọi dựng (REST: khoá API). undefined = toàn quyền / lối nội bộ. */
+  dieuKienPhamVi?: SQL;
 }
 
 /**
@@ -784,6 +786,7 @@ export interface ListOrdersFilter {
 export async function listOrders(filter: ListOrdersFilter = {}): Promise<{ orders: OrderLifecycleView[]; count: number }> {
   const db = await requireDb();
   const conds: unknown[] = [];
+  if (filter.dieuKienPhamVi) conds.push(filter.dieuKienPhamVi);
   if (filter.lineId != null) conds.push(eq(productionOrders.lineId, filter.lineId));
   if (filter.lifecycle) {
     const legacyMatches = (Object.entries(LEGACY_STATUS_TO_LIFECYCLE) as Array<[LegacyOrderStatus, OrderLifecycleState]>)

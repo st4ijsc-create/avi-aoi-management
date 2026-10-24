@@ -31,7 +31,7 @@ import type { DeviceTypeNode } from "../../services/standards/deviceTypeRegistry
 import type { AlarmMapping } from "../../services/standards/alarmTaxonomy";
 import type { TenantCodeScope } from "../../_core/tenantCodeScope";
 import type { PhamViMaTenant } from "../../db/hierarchy";
-import type { ApiKeyTenantScope } from "./apiKeyScope";
+import { phamViCuaKhoa, dieuKienKhoa, canTrongPhamVi, idsMayCuaKhoa } from "./phamViKhoa"; // 2026-10-24 — bộ phân giải phạm vi khoá dùng chung các tuyến /api/v1
 
 /** Parse a positive-integer path/query param or throw a 400. */
 function posInt(raw: unknown, label: string): number {
@@ -72,11 +72,6 @@ function limitParam(raw: unknown, def: number, max: number): number {
  *   `phamViTuyenCensus`) chỉ thấy danh tính RỜI TAY khi gốc `req.apiPrincipal…` đứng TRONG đối số của lời
  *   gọi đọc — cùng hình `/ecosystem/kpi`. Bản đầu nhận `req` trần: vá đúng mà lưới đếm vẫn xếp nhóm A (mù).
  */
-async function phamViCuaKhoa(tenantScope: ApiKeyTenantScope | null | undefined): Promise<PhamViMaTenant | undefined> {
-  const { tenantCodeScopeOf } = await import("./apiKeyScope");
-  const codes = tenantCodeScopeOf(tenantScope);
-  return codes ? { tenantScope: codes } : undefined;
-}
 
 /**
  * Register the U4a module READ routes on the /api/v1 router. Additive — called from
@@ -93,10 +88,12 @@ export function registerModuleReadRoutes(r: Router): void {
       const { tasks } = await import("../../../drizzle/schema");
       const d = await getDb();
       if (!d) return sendOk(res, { tasks: [], count: 0 });
+      const cong = await dieuKienKhoa(req.apiPrincipal?.tenantScope, { factoryId: tasks.factoryId }); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
       const status = typeof req.query.status === "string" ? req.query.status : undefined;
       const deviceId = optPosInt(req.query.deviceId, "deviceId");
       const limit = limitParam(req.query.limit, 100, 500);
       const conds = [];
+      if (cong) conds.push(cong);
       if (status) conds.push(eq(tasks.status, status));
       if (deviceId != null) conds.push(eq(tasks.assignedDeviceId, deviceId));
       const rows = await d
@@ -112,13 +109,14 @@ export function registerModuleReadRoutes(r: Router): void {
   r.get(
     "/fleet/zones",
     requireScope(API_SCOPES.FLEET_READ),
-    wrap(async (_req, res) => {
+    wrap(async (req, res) => {
       const { getDb } = await import("../../db/connection");
       const { zones } = await import("../../../drizzle/schema");
       const { getZoneOccupancy } = await import("../../services/fleet/trafficManager");
       const d = await getDb();
       if (!d) return sendOk(res, { zones: [], count: 0 });
-      const rows = await d.select().from(zones).orderBy(zones.code);
+      const cong = await dieuKienKhoa(req.apiPrincipal?.tenantScope, { factoryId: zones.factoryId }); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
+      const rows = await d.select().from(zones).where(cong).orderBy(zones.code);
       // Derive occupancy per zone via the SAME service fleetRouter.listZones uses.
       const out = [];
       for (const z of rows) out.push({ ...z, occupancy: await getZoneOccupancy(z.id) });
@@ -136,7 +134,9 @@ export function registerModuleReadRoutes(r: Router): void {
       const robotId = optPosInt(req.query.robotId, "robotId");
       const sinceHours = optPosInt(req.query.sinceHours, "sinceHours");
       const limit = limitParam(req.query.limit, 200, 500);
-      const events = await queryFeed({ eventType: eventType as never, robotId, sinceHours, limit });
+      const { safetyEvents } = await import("../../../drizzle/schema");
+      const dieuKienPhamVi = await dieuKienKhoa(req.apiPrincipal?.tenantScope, { lineId: safetyEvents.lineId, stationId: safetyEvents.stationId, factoryId: safetyEvents.factoryId, robotId: safetyEvents.robotId }); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
+      const events = await queryFeed({ eventType: eventType as never, robotId, sinceHours, limit, dieuKienPhamVi });
       // HONEST: this feed is ADVISORY monitoring — never a safety-rated signal.
       sendOk(res, { advisory: true, events, count: events.length });
     }),
@@ -150,7 +150,9 @@ export function registerModuleReadRoutes(r: Router): void {
       const robotId = optPosInt(req.query.robotId, "robotId");
       const stationId = optPosInt(req.query.stationId, "stationId");
       const lineId = optPosInt(req.query.lineId, "lineId");
-      const zones = await listZones({ robotId, stationId, lineId });
+      const { safetyZones } = await import("../../../drizzle/schema");
+      const dieuKienPhamVi = await dieuKienKhoa(req.apiPrincipal?.tenantScope, { lineId: safetyZones.lineId, stationId: safetyZones.stationId, factoryId: safetyZones.factoryId, robotId: safetyZones.robotId }); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
+      const zones = await listZones({ robotId, stationId, lineId, dieuKienPhamVi });
       sendOk(res, { advisory: true, ratedStopIsHardware: true, zones, count: zones.length });
     }),
   );
@@ -162,6 +164,7 @@ export function registerModuleReadRoutes(r: Router): void {
     requireScope(API_SCOPES.TWIN_READ),
     wrap(async (req, res) => {
       const factoryId = posInt(req.query.factoryId, "factoryId (query)");
+      await canTrongPhamVi(req.apiPrincipal?.tenantScope, "factory", factoryId, "Factory"); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
       const { buildSceneGraph } = await import("../../services/twin/sceneGraph");
       sendOk(res, await buildSceneGraph(factoryId));
     }),
@@ -192,7 +195,8 @@ export function registerModuleReadRoutes(r: Router): void {
       const d = await getDb();
       if (!d) return sendOk(res, { programs: [], count: 0 });
       const limit = limitParam(req.query.limit, 200, 500);
-      const rows = await d.select().from(programProjects).orderBy(desc(programProjects.updatedAt)).limit(limit);
+      const cong = await dieuKienKhoa(req.apiPrincipal?.tenantScope, { factoryId: programProjects.factoryId }); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
+      const rows = await d.select().from(programProjects).where(cong).orderBy(desc(programProjects.updatedAt)).limit(limit);
       sendOk(res, { programs: rows, count: rows.length });
     }),
   );
@@ -206,7 +210,8 @@ export function registerModuleReadRoutes(r: Router): void {
       const { programProjects, programDeployments } = await import("../../../drizzle/schema");
       const d = await getDb();
       if (!d) throw new ApiHttpError(500, "db_unavailable", "Database not connected.");
-      const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, projectId)).limit(1);
+      const cong = await dieuKienKhoa(req.apiPrincipal?.tenantScope, { factoryId: programProjects.factoryId }); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
+      const [proj] = await d.select().from(programProjects).where(and(eq(programProjects.id, projectId), cong)).limit(1);
       if (!proj) throw new ApiHttpError(404, "not_found", `Program ${projectId} not found.`);
       const rows = await d
         .select()
@@ -225,6 +230,7 @@ export function registerModuleReadRoutes(r: Router): void {
     wrap(async (req, res) => {
       const machineId = posInt(req.query.machineId, "machineId (query)");
       const windowHours = optPosInt(req.query.windowHours, "windowHours");
+      await canTrongPhamVi(req.apiPrincipal?.tenantScope, "machine", machineId, "Machine"); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
       const { computeFailureRisk } = await import("../../services/predictiveMaintenanceService");
       // computeFailureRisk already echoes `machineId` in its result.
       sendOk(res, await computeFailureRisk(machineId, windowHours));
@@ -246,6 +252,8 @@ export function registerModuleReadRoutes(r: Router): void {
       const status = typeof req.query.status === "string" ? req.query.status : undefined;
       const limit = limitParam(req.query.limit, 50, 200);
       const conds = [];
+      const cong = await dieuKienKhoa(req.apiPrincipal?.tenantScope, { robotId: robotBehaviorAnomalies.robotId, factoryId: robotBehaviorAnomalies.factoryId }); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
+      if (cong) conds.push(cong);
       if (robotId != null) conds.push(eq(robotBehaviorAnomalies.robotId, robotId));
       if (status) conds.push(eq(robotBehaviorAnomalies.status, status));
       const rows = await d
@@ -322,13 +330,14 @@ export function registerModuleReadRoutes(r: Router): void {
   r.get(
     "/standards/compliance",
     requireScope(API_SCOPES.STANDARDS_READ),
-    wrap(async (_req, res) => {
+    wrap(async (req, res) => {
       const { getDb } = await import("../../db/connection");
       const { loadComplianceMetrics } = await import("../../services/standards/complianceService");
       // doc 80 Đợt 1 Task 3 (STD-01) — the SAME loader as equipmentStandardsRouter.complianceMetrics
       // (machines.device_type_key ↔ published device_types; conformance over device_types), so the
       // public read can never drift back to the seed-constant tautology the router used to share.
-      sendOk(res, await loadComplianceMetrics(await getDb()));
+      // phạm vi KHOÁ API (rà bảo mật 2026-10-24): đếm TỔNG trên mọi máy là lộ số lượng nhà máy khác ⇒ khoá hẹp chỉ đếm máy trong phạm vi.
+      sendOk(res, await loadComplianceMetrics(await getDb(), await idsMayCuaKhoa(req.apiPrincipal)));
     }),
   );
 

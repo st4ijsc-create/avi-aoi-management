@@ -96,6 +96,9 @@ vi.mock("../../../drizzle/schema", () => ({
   programDeployments: { __mockName: "programDeployments", projectId: "projectId", id: "id" },
   robotBehaviorAnomalies: { __mockName: "robotBehaviorAnomalies", detectedAt: "detectedAt", robotId: "robotId", status: "status" },
   machines: { __mockName: "machines", machineType: "machineType" },
+  // 2026-10-24 — handler đọc cột định vị của hai bảng này để dựng cổng phạm vi khoá API (khoá master = toàn cục ⇒ cổng không dựng; test phạm vi thật ở moduleReadsPhamViKhoa.db.test.ts).
+  safetyEvents: { __mockName: "safetyEvents" },
+  safetyZones: { __mockName: "safetyZones" },
 }));
 vi.mock("../../../drizzle/schema/equipmentStandards", () => ({
   deviceTypes: { __mockName: "deviceTypes", status: "status" },

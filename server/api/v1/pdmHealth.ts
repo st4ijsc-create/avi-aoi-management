@@ -22,6 +22,7 @@ import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { requireScope } from "./auth";
 import { API_SCOPES } from "./scopes";
 import { sendOk, wrap, ApiHttpError } from "./envelope";
+import { mayTrongPhamViKhoa, dieuKienKhoa } from "./phamViKhoa"; // 2026-10-24 — phạm vi khoá API
 
 /** Parse a positive-integer param or throw a 400 (mirrors moduleReads.ts). */
 function posInt(raw: unknown, label: string): number {
@@ -64,6 +65,7 @@ export function registerPdmHealthRoutes(r: Router): void {
       const d = await getDb();
       if (!d) throw new ApiHttpError(500, "db_unavailable", "Database not connected.");
 
+      await mayTrongPhamViKhoa(req.apiPrincipal, machineId, "Asset"); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
       const [machine] = await d
         .select({ id: machines.id, code: machines.code, name: machines.name })
         .from(machines)
@@ -139,6 +141,9 @@ export function registerPdmHealthRoutes(r: Router): void {
       const limit = limitParam(req.query.limit, 100, 500);
 
       const conds = [];
+      if (assetId != null) await mayTrongPhamViKhoa(req.apiPrincipal, assetId, "Asset"); // phạm vi KHOÁ API (rà bảo mật 2026-10-24)
+      const cong = await dieuKienKhoa(req.apiPrincipal?.tenantScope, { machineId: predictiveAlerts.machineId, factoryId: predictiveAlerts.factoryId });
+      if (cong) conds.push(cong);
       if (assetId != null) conds.push(eq(predictiveAlerts.machineId, assetId));
       if (type) conds.push(eq(predictiveAlerts.alertType, type as never));
       if (from) conds.push(gte(predictiveAlerts.createdAt, from));
