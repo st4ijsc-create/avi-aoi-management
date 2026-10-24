@@ -31,6 +31,7 @@
  * productDocument.upload/delete · cadImport.parsePreview/applyCoordinates · msaWizard presets · spcAlerts.ack · measurementSamples.analyze) ⇒ 490 → 475; thêm 4 MIỄN TRỪ có lý do
  * (productModel.create · defectCatalog.update/delete · annotationTemplate.delete) ⇒ sổ 470 + 5 miễn trừ.
  * 2026-10-24 sửa điểm mù bộ quét: `.input(idInput)` (đối số là một ĐỊNH DANH hằng schema cấp file) trước bị coi "không khoá" ⇒ delete, bulk, import của masterData… không vào sổ; nay +36 nợ lộ ra (masterData 22, componentLibrary 3, interlock 2, aiSpecialistAgent 2…) ⇒ 457 → 493.
+ * 2026-10-24 lô W7 (−36, masterDataRouter: suppliers/materials/customers/tools/plantCalendars(+ngày,+ca)/warehouses(+vị trí,+tồn kho) create-update-delete-bulk-import theo vị từ ĐỌC congMaTenant, hàng mới đóng dấu tenant trong phạm vi) ⇒ 493 → 457. CÒN LẠI ở masterData (12): skills · uom · unit_conversions · material_classes · user_certifications — danh mục KHÔNG có mã tenant, chờ quyết định chủ dự án.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ──
@@ -313,49 +314,13 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.remove",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.setEnabled",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.update",
-  // ── server/routers/masterDataRouter.ts (48) ──
-  "server/routers/masterDataRouter.ts#calendarRouter.assignShift",
-  "server/routers/masterDataRouter.ts#calendarRouter.create",
-  "server/routers/masterDataRouter.ts#calendarRouter.createDay",
-  "server/routers/masterDataRouter.ts#calendarRouter.delete",
-  "server/routers/masterDataRouter.ts#calendarRouter.deleteDay",
-  "server/routers/masterDataRouter.ts#calendarRouter.unassignShift",
-  "server/routers/masterDataRouter.ts#calendarRouter.update",
-  "server/routers/masterDataRouter.ts#calendarRouter.updateDay",
-  "server/routers/masterDataRouter.ts#customersRouter.bulkDelete",
-  "server/routers/masterDataRouter.ts#customersRouter.bulkSetActive",
-  "server/routers/masterDataRouter.ts#customersRouter.create",
-  "server/routers/masterDataRouter.ts#customersRouter.delete",
-  "server/routers/masterDataRouter.ts#customersRouter.update",
-  "server/routers/masterDataRouter.ts#inventoryRouter.createLocation",
-  "server/routers/masterDataRouter.ts#inventoryRouter.createWarehouse",
-  "server/routers/masterDataRouter.ts#inventoryRouter.deleteBalance",
-  "server/routers/masterDataRouter.ts#inventoryRouter.deleteLocation",
-  "server/routers/masterDataRouter.ts#inventoryRouter.deleteWarehouse",
-  "server/routers/masterDataRouter.ts#inventoryRouter.updateBalance",
-  "server/routers/masterDataRouter.ts#inventoryRouter.updateLocation",
-  "server/routers/masterDataRouter.ts#inventoryRouter.updateWarehouse",
-  "server/routers/masterDataRouter.ts#inventoryRouter.upsertBalance",
-  "server/routers/masterDataRouter.ts#materialsRouter.bulkDelete",
-  "server/routers/masterDataRouter.ts#materialsRouter.bulkSetActive",
-  "server/routers/masterDataRouter.ts#materialsRouter.create",
-  "server/routers/masterDataRouter.ts#materialsRouter.delete",
+  // ── server/routers/masterDataRouter.ts (12) ──
   "server/routers/masterDataRouter.ts#materialsRouter.deleteClass",
-  "server/routers/masterDataRouter.ts#materialsRouter.update",
   "server/routers/masterDataRouter.ts#materialsRouter.updateClass",
   "server/routers/masterDataRouter.ts#skillsRouter.delete",
-  "server/routers/masterDataRouter.ts#skillsRouter.grantCertification",
   "server/routers/masterDataRouter.ts#skillsRouter.revokeCertification",
   "server/routers/masterDataRouter.ts#skillsRouter.update",
   "server/routers/masterDataRouter.ts#skillsRouter.updateCertification",
-  "server/routers/masterDataRouter.ts#suppliersRouter.bulkDelete",
-  "server/routers/masterDataRouter.ts#suppliersRouter.bulkSetActive",
-  "server/routers/masterDataRouter.ts#suppliersRouter.create",
-  "server/routers/masterDataRouter.ts#suppliersRouter.delete",
-  "server/routers/masterDataRouter.ts#suppliersRouter.update",
-  "server/routers/masterDataRouter.ts#toolsRouter.create",
-  "server/routers/masterDataRouter.ts#toolsRouter.delete",
-  "server/routers/masterDataRouter.ts#toolsRouter.update",
   "server/routers/masterDataRouter.ts#uomRouter.delete",
   "server/routers/masterDataRouter.ts#uomRouter.deleteConversion",
   "server/routers/masterDataRouter.ts#uomRouter.update",
