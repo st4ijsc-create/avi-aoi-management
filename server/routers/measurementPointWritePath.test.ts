@@ -131,3 +131,6 @@ describe("update — WA-1 regression: limit edits STILL gate", () => {
     expect(gateSpy).toHaveBeenCalledWith(42);
   });
 });
+
+// Cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW*.db.test.ts); ở đây CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./_sanPhamPhamVi", () => ({ sanPhamGhiTrongPhamVi: async () => undefined, diemDoGhiTrongPhamVi: async () => undefined }));

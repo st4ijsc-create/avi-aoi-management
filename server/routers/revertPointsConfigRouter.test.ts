@@ -118,3 +118,6 @@ describe("measurementPoint.revertPointsConfigToVersion", () => {
     ).resolves.toMatchObject({ newVersion: 4 });
   });
 });
+
+// Cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW*.db.test.ts); ở đây CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./_sanPhamPhamVi", () => ({ sanPhamGhiTrongPhamVi: async () => undefined, diemDoGhiTrongPhamVi: async () => undefined }));

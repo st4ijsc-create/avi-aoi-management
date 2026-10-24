@@ -168,7 +168,7 @@ export async function dieuKienViTriTrongPhamVi(phamVi: PhamViDoc, cot: CotViTri)
   if (dong === null && tram === null && nhaMay === null && may === null) return undefined;
   const d = (a: number[] | null) => sql.join((a && a.length > 0 ? a : [-1]).map((x) => sql`${x}`), sql`, `);
   const co = Object.values(cot).filter(Boolean) as AnyPgColumn[];
-  if (co.length === 0) throw new Error("dieuKienViTriTrongPhamVi: bảng không có cột định vị nào");
+  if (co.length === 0) throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "dieuKienViTriTrongPhamVi" }, "dieuKienViTriTrongPhamVi: bảng không có cột định vị nào");
   const mot = sql.join(co.map((c) => sql`${c} IS NOT NULL`), sql` OR `);
   const mach: SQL[] = [];
   if (cot.lineId) mach.push(sql`(${cot.lineId} IS NULL OR ${cot.lineId} IN (${d(dong)}))`);

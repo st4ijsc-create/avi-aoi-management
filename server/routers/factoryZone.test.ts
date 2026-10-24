@@ -117,3 +117,6 @@ describe("factoryZone — validate ràng buộc zod", () => {
     await expect(caller.create({ factoryId: 9, name: "" })).rejects.toThrow();
   });
 });
+
+// Cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW*.db.test.ts); ở đây CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("../db/hierarchy", async (orig) => ({ ...(await orig<typeof import("../db/hierarchy")>()), idsTrongPhamVi: async () => null }));

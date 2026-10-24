@@ -36,6 +36,7 @@ import { appError } from "../_core/appError";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
 import { getDb } from "../db/connection";
+import { diemDoGhiTrongPhamVi } from "./_sanPhamPhamVi";
 import { updateMeasurementPointDef, createAuditLog } from "../db";
 import {
   thresholdApprovals,
@@ -64,7 +65,16 @@ const STATUS_WITHDRAWN = "withdrawn";
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type ThresholdApprovalRow = typeof thresholdApprovals.$inferSelect;
 
-async function getById(id: number) {
+/** Yêu cầu duyệt ngưỡng phải thuộc điểm đo của sản phẩm trong phạm vi người gọi (W13); ngoài phạm vi ≡ không tồn tại. */
+async function yeuCauDuyetGhi(ctx: Parameters<typeof diemDoGhiTrongPhamVi>[0], pointDefId: number): Promise<void> {
+  try {
+    await diemDoGhiTrongPhamVi(ctx, pointDefId);
+  } catch {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "thresholdApproval" }, "threshold_approval not found");
+  }
+}
+
+async function layYeuCauDuyet(id: number, ctx?: Parameters<typeof diemDoGhiTrongPhamVi>[0]) {
   const db = await getDb();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
   const [row] = await db
@@ -73,6 +83,7 @@ async function getById(id: number) {
     .where(eq(thresholdApprovals.id, id))
     .limit(1);
   if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "thresholdApproval" }, `threshold_approval ${id} not found`);
+  if (ctx !== undefined) await yeuCauDuyetGhi(ctx, row.pointDefId);
   return row;
 }
 
@@ -234,6 +245,7 @@ export const thresholdApprovalRouter = router({
 
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
+      await diemDoGhiTrongPhamVi(ctx, input.pointDefId); // phạm vi nhà máy (W13): chỉ đề xuất cho điểm đo của sản phẩm trong phạm vi
 
       const [mp] = await db
         .select({
@@ -281,7 +293,7 @@ export const thresholdApprovalRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
-      const row = await getById(input.id);
+      const row = await layYeuCauDuyet(input.id, ctx);
       if (row.status !== STATUS_PENDING) {
         throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "approveThreshold" }, `Cannot approve from status ${row.status}`);
       }
@@ -311,7 +323,7 @@ export const thresholdApprovalRouter = router({
       const ids = [...new Set(input.ids)];
       for (const id of ids) {
         try {
-          const row = await getById(id);
+          const row = await layYeuCauDuyet(id, ctx);
           if (row.status !== STATUS_PENDING) {
             results.push({ id, status: "skipped", reason: `not pending (status=${row.status})` });
             continue;
@@ -351,7 +363,7 @@ export const thresholdApprovalRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
-      const row = await getById(input.id);
+      const row = await layYeuCauDuyet(input.id, ctx);
       if (row.status !== STATUS_PENDING) {
         throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "rejectThreshold" }, `Cannot reject from status ${row.status}`);
       }
@@ -378,7 +390,7 @@ export const thresholdApprovalRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
-      const row = await getById(input.id);
+      const row = await layYeuCauDuyet(input.id, ctx);
       if (row.status !== STATUS_PENDING) {
         throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "withdrawThreshold" }, `Cannot withdraw from status ${row.status}`);
       }
@@ -497,9 +509,10 @@ export const thresholdApprovalRouter = router({
       let pointDefId = input.pointDefId ?? null;
       const approvalId = input.approvalId ?? null;
       if (approvalId != null) {
-        const appr = await getById(approvalId);
+        const appr = await layYeuCauDuyet(approvalId, ctx);
         pointDefId = appr.pointDefId;
       }
+      if (input.pointDefId != null) await diemDoGhiTrongPhamVi(ctx, input.pointDefId); // phạm vi nhà máy (W13): điểm đo khai thẳng
       if (pointDefId == null) {
         throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "revertThresholdToSnapshot" }, "Could not resolve a point to revert");
       }
@@ -568,5 +581,5 @@ export const thresholdApprovalRouter = router({
 
   getById: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => getById(input.id)),
+    .query(async ({ input }) => layYeuCauDuyet(input.id)),
 });

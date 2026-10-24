@@ -544,7 +544,7 @@ async function trienKhaiEdgeGhi(ctx: CoDanhTinh, id: number): Promise<void> {
   if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   const rows = (await d.execute(sql`SELECT "machineId" AS m FROM edge_deployments WHERE id = ${id}`)) as unknown as Array<{ m: number | null }>;
   try {
-    if (rows.length === 0) throw new Error("none");
+    if (rows.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "none");
     await ghiViTri(ctx, { machineId: rows[0]!.m }, { batBuoc: true });
   } catch {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, "Deployment not found");

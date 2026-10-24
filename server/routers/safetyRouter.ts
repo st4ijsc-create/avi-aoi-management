@@ -164,7 +164,7 @@ async function suKienAnToanGhiTrongPhamVi(ctx: CoDanhTinh, id: number): Promise<
   if ((await callerFactoryScope(ctx)) === null) return;
   const [e] = await (await db()).select().from(safetyEventsTable).where(eq(safetyEventsTable.id, id)).limit(1);
   try {
-    if (!e) throw new Error("none");
+    if (!e) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "none");
     await assertViTriAnToanTrongPhamVi(ctx, { robotIds: [e.robotId], stationId: e.stationId, lineId: e.lineId, factoryId: e.factoryId }, { yeuCauViTri: true });
   } catch {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "safetyEvent" }, `Safety event ${id} not found`);
@@ -176,7 +176,7 @@ async function phienCongTacGhiTrongPhamVi(ctx: CoDanhTinh, id: number): Promise<
   if ((await callerFactoryScope(ctx)) === null) return;
   const [c] = await (await db()).select().from(collaborationSessions).where(eq(collaborationSessions.id, id)).limit(1);
   try {
-    if (!c) throw new Error("none");
+    if (!c) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "none");
     await assertViTriAnToanTrongPhamVi(ctx, { robotIds: [c.robotDeviceId], factoryId: c.factoryId }, { yeuCauViTri: true });
   } catch {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "collaboration" }, `Collaboration ${id} not found`);
