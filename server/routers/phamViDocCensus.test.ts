@@ -906,7 +906,8 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★★ 2026-10-24 (lô L1b): **C 488 → 483 · S 418 → 423 · A/B/D/tong unchanged.** CHÍNH XÁC 5 thủ tục ĐỌC C → S (nhóm "không có cổng" vì bộ suy không thấy cổng; nay đi qua `_adapterPhamVi`): `annotationHistory.list|get|compare`
 // (lịch sử chú thích theo lần kiểm tra của máy trong phạm vi) và `aoiPackage.listDeadLetters|getDeadLetterDetail` (mục dead-letter theo mã máy trong phạm vi). 18 MUTATION cùng router đã vá (sổ nợ ghi −18 ở `phamViGhiBaseline.ts`).
 // Chứng minh: `loAoiGhiPhamVi.db.test.ts` (17 ca CSDL thật; 17/17 đỏ trên mã L1; đột biến 40/40 bị bắt sau khi bổ sung 2 ca).
-const GHIM = { A: 290, B: 8, C: 483, D: 1198, S: 423, tong: 2402 } as const;
+// 2026-10-25 (kiểm định, lô W7c, migration 0421): thiết bị đo + hiệu chuẩn + MSA ĐỌC theo nhà máy ⇒ 7 thủ tục đọc C → S (instrument.list|getById · calibration.list|health · msaRecord.list · msaWizard.getStudy|listByProduct): C 483 → 476 · S 423 → 430.
+const GHIM = { A: 290, B: 8, C: 476, D: 1198, S: 430, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

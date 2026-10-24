@@ -35,6 +35,7 @@
  * 2026-10-24 lô W8 (điều khiển: interlock create/update/delete/enable/disable/resolveEvent · lineController transition/command/recipeSet.* · safety recordEvent/auditEvent/upsertCameraCalibration/signalHandshake/advancePhase/abortCollaboration) + 2 miễn trừ (robot.consoleStop · scadaCommands.huy).
  * 2026-10-24 lô W9 (−27, sản xuất: productionOrder create/update/delete/reschedule, template, createFromTemplate/optimizeSchedule/whatIf · lineStage · lineProductAssignment · orderLifecycle allocate/hold/resume/cancel · productionSession open/pause/resume/close/handover/supervisorSignOff) ⇒ 438 → 411.
  * 2026-10-24 W7b: chứng chỉ kỹ năng theo NGƯỜI được cấp (skills.grant/update/revokeCertification · userCertifications.assign/revoke); 8 danh mục chuẩn dùng chung (skills · uom · unit_conversions · material_classes) + safety.abortCollaboration (L-7) chuyển sang MIỄN TRỪ có lý do.
+ * 2026-10-25 lô W7c (−1: msaAdvanced.anovaOfStudy) — migration 0421 `measurement_instruments."factoryId"`: thiết bị đo / hiệu chuẩn / MSA theo NHÀ MÁY (đọc + tên thiết bị suy qua instrumentId; NULL ⇒ chỉ toàn quyền) ⇒ 408 → 407.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ──
@@ -387,8 +388,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productPanelRouter.ts#productPanelRouter.remove",
   "server/routers/productPanelRouter.ts#productPanelRouter.saveBoards",
   "server/routers/productPanelRouter.ts#productPanelRouter.update",
-  // ── server/routers/productRouters.ts (1) ──
-  "server/routers/productRouters.ts#msaAdvancedRouter.anovaOfStudy",
   // ── server/routers/productVariantRouter.ts (3) ──
   "server/routers/productVariantRouter.ts#productVariantRouter.createVariant",
   "server/routers/productVariantRouter.ts#productVariantRouter.deleteVariant",
