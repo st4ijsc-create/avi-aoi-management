@@ -15,10 +15,37 @@
  *     phát thêm mẫu nào: token lượt bị thu hồi ở hạn ⇒ mẫu của tick mới không bao giờ xen với mẫu cũ (bộ đệm giá trị hiện tại xếp theo
  *     giờ nhận — R0 I4). Lời gọi onSample ĐANG treo thì không huỷ được (mẫu đó đã giao cho sink trước mọi mẫu mới).
  *   - R1b-1 T4 — `soLanChong` tới bộ đếm: mỗi tick báo mang `chong` = số tick bị bỏ vì chồng kể từ lần báo trước.
+ *   - R1b-1 T4 fix round 1 (ruling T4 c2) — LẦN ĐỌC treo quá hạn mà vẫn chưa xong (`docTreo`, cờ RIÊNG — không suy từ `chot`, vì V2 tắt
+ *     `chot.giaoMuon` được đặt ngay ở hạn, TRƯỚC khi docP xong: "đọc còn treo" và "đang phát muộn / DB treo" trông như nhau trên `chot`):
+ *     MỌI tick bị chặn trong trạng thái đó báo `{ok:false, timeout:true}` (không phải ingest_treo) ⇒ D1 K=2 hạ được phiên của thiết bị /
+ *     driver treo. Chốt bị giữ bởi việc phát (DB treo) thì tick bị chặn chỉ đếm chồng (trung tính).
+ *   - R1b-1 T4 fix round 1 (back-pressure) — giữ lời gọi onSample TREO cuối cùng bị bỏ ở hạn; khi nó chưa xong, lượt phát của tick sau bị
+ *     BỎ NGAY và báo ingest_treo (≤ 1 lời gọi sink đang bay mỗi vòng poll — không dồn kết nối trong pool DB). Poll vẫn chạy (D1/T3 thấy).
+ *   - Hẹn giờ hạn (đọc + phát) `unref` — như setInterval của vòng: không giữ tiến trình sống.
  */
-import { withDeadline } from "./drivers/boundedClose";
 import { laLoiTimeout, mauXauChoMoiTag } from "./chatLuong";
 import type { LyDoChatLuong, OnOtSample, OtSample, OtSubscriptionHandle, OtTagAddress, SuKienDoc } from "./otDriver";
+
+/**
+ * R1b-1 T4 fix round 1 (minor 4) — như `withDeadline` (drivers/boundedClose) nhưng hẹn giờ `unref` (helper dùng chung không có tuỳ chọn
+ * unref — không sửa helper của dispatcher; cùng cách `lenhHmi.voiHanUnref`).
+ */
+function voiHanUnref<T>(p: Promise<T>, ms: number, nhan: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${nhan} timeout after ${ms}ms`)), ms);
+    (t as { unref?: () => void }).unref?.();
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
 
 const CHU_KY_MAC_DINH_MS = 5000;
 /** Hạn đọc mặc định = max(2 × chu kỳ, 6 s): lưới an toàn, không được cắt lần đọc chậm-nhưng-khoẻ. */
@@ -58,6 +85,13 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
   let soChong = 0;
   /** R1b-1 T4 — soChong đã gửi tới người nghe (trường `chong` mang phần tăng). */
   let chongDaBao = 0;
+  /**
+   * R1b-1 T4 fix round 1 (ruling T4 c2) — lần đọc đã QUÁ HẠN mà docP CHƯA xong (thiết bị / driver treo). Đặt ở nhánh hạn của tick, xoá khi
+   * CHÍNH docP xong (resolve/reject). Chỉ cờ này làm tick bị chặn báo tick hỏng; `chot` thì không (V2 tắt: giaoMuon đặt trước khi docP xong).
+   */
+  let docTreo: { ma: number; tu: number; statusCode: string; reason: LyDoChatLuong } | null = null;
+  /** R1b-1 T4 fix round 1 (back-pressure) — lời gọi onSample treo cuối cùng bị bỏ ở hạn; còn chưa xong ⇒ lượt phát sau bị bỏ ngay. */
+  let mauTreo: Promise<unknown> | null = null;
 
   const baoTick = (e: SuKienDoc): void => {
     const chong = soChong - chongDaBao;
@@ -75,22 +109,35 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
    */
   const phatCoHan = async (ds: OtSample[]): Promise<boolean> => {
     if (ds.length === 0) return false;
+    // Back-pressure: lời gọi sink treo trước còn bay ⇒ không mở lời gọi thứ hai; bỏ cả lượt, báo treo ngay.
+    if (mauTreo !== null) return true;
     const luot = { conQuyen: true };
+    const dangCho: { p: Promise<unknown> | null } = { p: null };
     const phat = (async () => {
       for (const s of ds) {
         if (dong || !luot.conQuyen) return;
         try {
-          await o.onSample(s);
+          const p = Promise.resolve(o.onSample(s));
+          dangCho.p = p;
+          await p;
         } catch {
           // bỏ qua lỗi callback từng mẫu
         }
       }
     })();
     try {
-      await withDeadline(phat, hanPhatMs, `${o.nhan} ingest`);
+      await voiHanUnref(phat, hanPhatMs, `${o.nhan} ingest`);
       return false;
     } catch {
       luot.conQuyen = false;
+      const p = dangCho.p;
+      if (p !== null) {
+        mauTreo = p;
+        const xong = (): void => {
+          if (mauTreo === p) mauTreo = null;
+        };
+        p.then(xong, xong);
+      }
       return true;
     }
   };
@@ -103,6 +150,10 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
     if (dong) return;
     if (dangChay || chot !== null) {
       soChong++;
+      // Ruling T4 c2 — chốt bị giữ vì LẦN ĐỌC treo quá hạn ⇒ tick bị chặn là tick hỏng (D1 K=2 hạ phiên). Giữ vì phát (DB) ⇒ trung tính.
+      if (docTreo !== null) {
+        baoTick({ ok: false, timeout: true, ms: Date.now() - docTreo.tu, tags: [], statusCode: docTreo.statusCode, reason: docTreo.reason });
+      }
       return;
     }
     dangChay = true;
@@ -117,7 +168,10 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
       chot = { ma, giaoMuon: false };
       // Chốt chỉ nhả khi CHÍNH docP xong (không phải ở hạn) — TRỪ khi việc phát muộn đã nhận quyền sở hữu chốt (nó tự nhả sau khi phát xong).
       // V2 bật: kết quả/lỗi muộn của lần đọc đã bỏ bị nuốt ở đây.
+      let docXong = false;
       const nha = (): void => {
+        docXong = true;
+        if (docTreo !== null && docTreo.ma === ma) docTreo = null;
         if (chot !== null && chot.ma === ma && !chot.giaoMuon) chot = null;
       };
       docP.then(nha, (e: unknown) => {
@@ -125,9 +179,13 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
         nha();
       });
       try {
-        mau = await withDeadline(docP, hanMs, `${o.nhan} read`);
+        mau = await voiHanUnref(docP, hanMs, `${o.nhan} read`);
       } catch (err) {
         if (dong) return;
+        // SCADA R0 T12 (D1) — tick lỗi mang phân loại (statusCode, reason) để otManager đếm tick hỏng (timeout / comm_lost).
+        const { statusCode, reason } = o.phanLoiLoi(err);
+        // Ruling T4 c2 — hạn cắt mà docP CHƯA xong ⇒ lần đọc treo; tick bị chặn sau đây báo tick hỏng tới khi docP xong.
+        if (err !== loiCuaDoc && !docXong) docTreo = { ma, tu: t0, statusCode, reason };
         // SCADA R0 final I1 — cờ V2 TẮT (hành vi trước R0): hạn vòng poll cắt lần đọc ⇒ kết quả muộn VẪN phát khi về (driver tuần tự: hai
         // thanh ghi không trả lời không được chặn mãi các tag khoẻ). Tick vẫn báo timeout (bộ đếm, D1) như cũ. close() ⇒ không phát gì.
         // Residual fix: việc phát muộn NHẬN quyền sở hữu chốt NGAY tại đây (đồng bộ, trước mọi await — giữa lúc docP xong và lúc này không
@@ -148,8 +206,6 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
             }
           })();
         }
-        // SCADA R0 T12 (D1) — tick lỗi mang phân loại (statusCode, reason) để otManager đếm tick hỏng (timeout / comm_lost).
-        const { statusCode, reason } = o.phanLoiLoi(err);
         baoTick({ ok: false, timeout: laLoiTimeout(err), ms: Date.now() - t0, tags: [], statusCode, reason });
         const dauDot = !dangLoi;
         dangLoi = true;

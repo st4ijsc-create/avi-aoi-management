@@ -95,6 +95,7 @@ describe("R1b-1 T4 — vongPoll: lượt phát mẫu có hạn", () => {
 
   it("KHÔNG mẫu cũ nào được phát sau khi nhả chốt: lượt phát quá hạn còn chạy nền dừng ở token lượt (thứ tự theo giờ nhận — R0 I4)", async () => {
     const phat: string[] = [];
+    const ticks: SuKienDoc[] = [];
     let thaTreo: () => void = () => undefined;
     let lan = 0;
     const doc = vi.fn(async (tags: OtTagAddress[]) => {
@@ -110,17 +111,22 @@ describe("R1b-1 T4 — vongPoll: lượt phát mẫu có hạn", () => {
         // mẫu ĐẦU của tick 1 treo (ghi DB treo) tới khi test thả; mọi mẫu khác xong ngay
         if (s.value === 1 && s.tagKey === "t1") return new Promise<void>((r) => (thaTreo = r));
       },
+      onTick: (e) => ticks.push(e),
       phanLoiLoi: phanLoi,
       chatLuongV2: true,
       nhan: "t",
     });
-    await vi.advanceTimersByTimeAsync(6100); // hạn 5000 ⇒ nhả; tick 6000 phát lượt của lần đọc 2
-    expect(phat).toEqual(["t1=1", "t1=2", "t2=2"]);
+    await vi.advanceTimersByTimeAsync(6100); // hạn 5000 ⇒ nhả; tick 6000 đọc lần 2 — lượt phát bị BỎ (back-pressure: t1=1 còn treo)
+    expect(doc).toHaveBeenCalledTimes(2);
+    expect(phat).toEqual(["t1=1"]);
+    expect(ticks).toHaveLength(2);
+    expect(ticks[1]).toMatchObject({ ok: true, timeout: true, lyDo: "ingest_treo", tags: TAG_GOOD });
     thaTreo(); // ghi DB treo của tick 1 cuối cùng cũng xong — lượt phát cũ KHÔNG được đi tiếp tới t2=1
     await vi.advanceTimersByTimeAsync(50);
     expect(phat).not.toContain("t2=1");
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(phat).toEqual(["t1=1", "t1=2", "t2=2", "t1=3", "t2=3"]);
+    await vi.advanceTimersByTimeAsync(1000); // tick 7000: sink rảnh ⇒ phát bình thường
+    expect(phat).toEqual(["t1=1", "t1=3", "t2=3"]);
+    expect(ticks[2]).toMatchObject({ ok: true, timeout: false });
     await h.close();
   });
 
@@ -150,25 +156,31 @@ describe("R1b-1 T4 — vongPoll: lượt phát mẫu có hạn", () => {
       nhan: "t",
     });
     await vi.advanceTimersByTimeAsync(2600); // đọc 1 timeout ở 300, xong muộn ở 2500 ⇒ phát muộn t1=1 treo
-    expect(ticks).toHaveLength(1);
-    expect(ticks[0]).toMatchObject({ ok: false, timeout: true });
+    // fix round 1: tick 1000/2000 bị chặn khi docP CÒN treo ⇒ tick hỏng; từ 2500 (docP xong, chốt do việc phát muộn giữ) ⇒ trung tính
+    expect(ticks).toHaveLength(3);
+    expect(ticks.every((e) => e.ok === false && e.timeout === true && e.lyDo === undefined)).toBe(true);
     expect(phat).toEqual(["t1=1"]);
-    await vi.advanceTimersByTimeAsync(4800); // 7400: chưa tới hạn phát muộn (2500 + 5000)
+    await vi.advanceTimersByTimeAsync(4800); // 7400: chưa tới hạn phát muộn (2500 + 5000); tick 3000..7000 bị chặn, KHÔNG báo
     expect(doc).toHaveBeenCalledTimes(1);
+    expect(ticks).toHaveLength(3);
     await vi.advanceTimersByTimeAsync(200); // 7600: quá hạn ⇒ nhả chốt
-    expect(ticks).toHaveLength(2);
-    expect(ticks[1]).toMatchObject({ ok: false, timeout: true, lyDo: "ingest_treo", tags: [] });
-    await vi.advanceTimersByTimeAsync(500); // 8100: tick 8000 đọc lại
+    expect(ticks).toHaveLength(4);
+    expect(ticks[3]).toMatchObject({ ok: false, timeout: true, lyDo: "ingest_treo", tags: [] });
+    await vi.advanceTimersByTimeAsync(500); // 8100: tick 8000 đọc lại; lượt phát bị bỏ (t1=1 còn treo — back-pressure)
     expect(doc).toHaveBeenCalledTimes(2);
+    expect(ticks[4]).toMatchObject({ ok: true, timeout: true, lyDo: "ingest_treo" });
     thaTreo();
     await vi.advanceTimersByTimeAsync(50);
     expect(phat).not.toContain("t2=1");
-    expect(phat).toEqual(["t1=1", "t1=2", "t2=2"]);
+    await vi.advanceTimersByTimeAsync(1000); // tick 9000 phát bình thường
+    expect(phat).toEqual(["t1=1", "t1=3", "t2=3"]);
     await h.close();
   });
 
   it("V2 bật: loạt mẫu XẤU khi mất liên lạc treo ⇒ nhả ở hạn, báo ingest_treo ok:false, tick sau vẫn chạy", async () => {
     const ticks: SuKienDoc[] = [];
+    const phat: string[] = [];
+    let thaTreo: () => void = () => undefined;
     let lan = 0;
     const doc = vi.fn(async (tags: OtTagAddress[]) => {
       lan++;
@@ -179,7 +191,11 @@ describe("R1b-1 T4 — vongPoll: lượt phát mẫu có hạn", () => {
       tags: TAGS,
       intervalMs: 1000,
       doc,
-      onSample: (s) => (s.quality === "bad" ? treoMai() : undefined),
+      onSample: (s) => {
+        phat.push(`${s.tagKey}:${s.quality}`);
+        // mẫu xấu ĐẦU (t1) treo tới khi test thả
+        if (s.quality === "bad" && s.tagKey === "t1") return new Promise<void>((r) => (thaTreo = r));
+      },
       onTick: (e) => ticks.push(e),
       phanLoiLoi: () => ({ statusCode: "comm_lost", reason: "comm_lost" as const }),
       chatLuongV2: true,
@@ -191,7 +207,12 @@ describe("R1b-1 T4 — vongPoll: lượt phát mẫu có hạn", () => {
     await vi.advanceTimersByTimeAsync(5000); // 5100: hạn loạt xấu
     expect(ticks).toHaveLength(2);
     expect(ticks[1]).toMatchObject({ ok: false, timeout: true, lyDo: "ingest_treo", tags: [] });
+    expect(phat).toEqual(["t1:bad"]);
+    thaTreo(); // ghi DB của t1:bad cuối cùng xong SAU khi chốt đã nhả — mẫu xấu thứ hai (t2) KHÔNG được phát (token lượt)
+    await vi.advanceTimersByTimeAsync(50);
+    expect(phat).not.toContain("t2:bad");
     await vi.advanceTimersByTimeAsync(1000);
+    expect(phat).toEqual(["t1:bad", "t1:good", "t2:good"]);
     expect(doc).toHaveBeenCalledTimes(2);
     expect(ticks[2]).toMatchObject({ ok: true, timeout: false });
     await h.close();
@@ -216,6 +237,119 @@ describe("R1b-1 T4 — vongPoll: lượt phát mẫu có hạn", () => {
     expect(ticks.every((e) => e.lyDo === undefined && e.ok && !e.timeout)).toBe(true);
     await h.close();
   });
+});
+
+describe("R1b-1 T4 fix round 1 — back-pressure: ≤ 1 lời gọi sink đang bay", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("ghi DB treo VĨNH VIỄN: suốt 30 s chỉ đúng 1 lời gọi onSample đang treo; poll vẫn chạy, mỗi tick báo ingest_treo ok:true kèm tag", async () => {
+    let dangBay = 0;
+    let dinh = 0;
+    const ticks: SuKienDoc[] = [];
+    const doc = vi.fn(async (tags: OtTagAddress[]) => tags.map((t) => mauTot(t.tagKey)));
+    const h = taoVongPoll({
+      tags: TAGS,
+      intervalMs: 1000,
+      doc,
+      onSample: () => {
+        dangBay++;
+        dinh = Math.max(dinh, dangBay);
+        return treoMai();
+      },
+      onTick: (e) => ticks.push(e),
+      phanLoiLoi: phanLoi,
+      chatLuongV2: true,
+      nhan: "t",
+    });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(dinh).toBe(1);
+    expect(dangBay).toBe(1);
+    expect(doc.mock.calls.length).toBeGreaterThanOrEqual(20);
+    expect(ticks.length).toBeGreaterThanOrEqual(20);
+    expect(ticks.every((e) => e.ok === true && e.lyDo === "ingest_treo" && e.tags.length === 2)).toBe(true);
+    await h.close();
+  });
+});
+
+/**
+ * Ruling T4 c2 — LẦN ĐỌC treo (docP không bao giờ xong) ⇒ mọi tick bị chặn báo tick hỏng ⇒ D1 K=2 hạ phiên; DB treo (ingest) ⇒ không.
+ * D1 thật (taoDemTickHong K=2) nối vào onTick; cả hai giá trị chatLuongV2 (V2 tắt: chot.giaoMuon đặt ở hạn, TRƯỚC khi docP xong — bẫy).
+ */
+describe.each([true, false])("R1b-1 T4 fix round 1 — đọc treo vs DB treo, D1 K=2 (chatLuongV2=%s)", (v2) => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const dung = (doc: (tags: OtTagAddress[]) => Promise<OtSample[]>, onSample: OnOtSample) => {
+    const ticks: SuKienDoc[] = [];
+    const ha = vi.fn();
+    const dem = taoDemTickHong(2, ha);
+    const h = taoVongPoll({
+      tags: TAGS,
+      intervalMs: 1000,
+      deadlineMs: 2000,
+      doc,
+      onSample,
+      onTick: (e) => {
+        ticks.push(e);
+        dem(e);
+      },
+      phanLoiLoi: phanLoi,
+      chatLuongV2: v2,
+      nhan: "t",
+    });
+    return { h, ticks, ha };
+  };
+
+  it("(a) lần đọc KHÔNG BAO GIỜ xong ⇒ tick bị chặn đầu tiên sau hạn là tick hỏng thứ 2 ⇒ D1 hạ; chong tới onTick", async () => {
+    const { h, ticks, ha } = dung(() => new Promise<OtSample[]>(() => undefined), () => undefined);
+    await vi.advanceTimersByTimeAsync(2100); // hạn đọc 2000 ⇒ tick hỏng 1
+    expect(ticks).toHaveLength(1);
+    expect(ha).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000); // tick 3000 bị chặn bởi lần đọc treo ⇒ tick hỏng 2 ⇒ D1
+    expect(ticks).toHaveLength(2);
+    expect(ticks[1]).toMatchObject({ ok: false, timeout: true, tags: [] });
+    expect(ticks[1].lyDo).toBeUndefined();
+    expect(ticks[1].chong).toBeGreaterThanOrEqual(1);
+    expect(ha).toHaveBeenCalledTimes(1);
+    await h.close();
+  });
+
+  it("(c) đường chính: ingest treo mãi ⇒ D1 KHÔNG hạ (30 s)", async () => {
+    const { h, ticks, ha } = dung(async (tags) => tags.map((t) => mauTot(t.tagKey)), () => treoMai());
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(ticks.length).toBeGreaterThanOrEqual(10);
+    expect(ha).not.toHaveBeenCalled();
+    await h.close();
+  });
+
+  if (!v2) {
+    it("(b) V2 tắt: lần đọc xong muộn rồi việc phát muộn TREO (DB) ⇒ tick bị chặn trung tính, D1 KHÔNG hạ (30 s)", async () => {
+      let lan = 0;
+      const { h, ticks, ha } = dung(
+        (tags) => {
+          lan++;
+          if (lan === 1) return new Promise<OtSample[]>((res) => setTimeout(() => res(tags.map((t) => mauTot(t.tagKey))), 2500));
+          return Promise.resolve(tags.map((t) => mauTot(t.tagKey)));
+        },
+        () => treoMai(),
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(ticks[0]).toMatchObject({ ok: false, timeout: true }); // hạn 2000 cắt lần đọc (tick hỏng 1)
+      expect(ticks.filter((e) => e.ok === false && e.lyDo === undefined)).toHaveLength(1); // docP xong 2500: không tick hỏng nào nữa
+      expect(ticks.some((e) => e.lyDo === "ingest_treo")).toBe(true);
+      expect(ha).not.toHaveBeenCalled();
+      await h.close();
+    });
+  }
 });
 
 describe("R1b-1 T4 — D1 / đọc tốt với tick ingest_treo (thuần)", () => {
@@ -291,7 +425,15 @@ interface Phien {
   closed: boolean;
 }
 
-/** Driver giả: subscribe dựng vongPoll THẬT (doc luôn tốt) nối vào sink ingest của otManager; giữ onTick để test phát tick tay. */
+/**
+ * Fix round 1 — điều khiển chung cho mọi driver giả (HA tạo driver trong supervisor): chế độ lần đọc (đọc LÚC GỌI), ingest treo hay không
+ * (đọc lúc gọi), và tham số chatLuongV2 của vòng poll (đọc lúc subscribe; tách khỏi cờ env để phủ nhánh giaoMuon trong khi D1 vẫn bật).
+ */
+let cheDoDoc: "tot" | "treo" | "muon" = "tot";
+let ingestTreoChung = false;
+let v2VongPoll = true;
+
+/** Driver giả: subscribe dựng vongPoll THẬT nối vào sink ingest của otManager; giữ onTick để test phát tick tay. */
 class PollThatDriver implements OtDriver {
   readonly protocol: OtProtocol = "stub";
   connected = false;
@@ -317,14 +459,19 @@ class PollThatDriver implements OtDriver {
       tags,
       intervalMs: ms ?? 1000,
       deadlineMs: tuyChon?.deadlineMs,
-      doc: async (ds) => {
+      doc: (ds) => {
         this.soLanDoc++;
-        return ds.map((t) => mauTot(t.tagKey));
+        if (cheDoDoc === "treo") return new Promise<OtSample[]>(() => undefined); // thiết bị / driver treo: docP không bao giờ xong
+        if (cheDoDoc === "muon") {
+          cheDoDoc = "tot"; // MỘT lần đọc xong muộn (2500 > hạn 2000), các lần sau nhanh
+          return new Promise<OtSample[]>((res) => setTimeout(() => res(ds.map((t) => mauTot(t.tagKey))), 2500));
+        }
+        return Promise.resolve(ds.map((t) => mauTot(t.tagKey)));
       },
       onSample,
       onTick: tuyChon?.onTick,
       phanLoiLoi: phanLoi,
-      chatLuongV2: true,
+      chatLuongV2: v2VongPoll,
       nhan: "t4",
     });
     return {
@@ -345,9 +492,11 @@ class PollThatDriver implements OtDriver {
 const ID = 4444;
 
 describe.each([
-  ["legacy", "false"],
-  ["HA (ConnectionSupervisor thật)", "true"],
-] as const)("R1b-1 T4 — ingest treo không hạ phiên, poll không dừng (%s)", (_nhan, ha) => {
+  ["legacy", "false", true],
+  ["legacy", "false", false],
+  ["HA (ConnectionSupervisor thật)", "true", true],
+  ["HA (ConnectionSupervisor thật)", "true", false],
+] as const)("R1b-1 T4 — ingest treo không hạ phiên, poll không dừng; đọc treo thì hạ (%s, OT_CONN_HA_ENABLED=%s, chatLuongV2 vòng poll=%s)", (_nhan, ha, v2) => {
   let ot: typeof import("./otManager");
   let tt: typeof import("./trangThaiAdapter");
   let bd: typeof import("./boDemTruyenThong");
@@ -369,6 +518,9 @@ describe.each([
     vi.stubEnv("OT_LEGACY_RECONNECT_MS", "5000");
     vi.stubEnv("OT_POLL_BATCH_ENABLED", "false"); // đường mặc định: sink trả promise của ingestSample (ghi DB) ⇒ DB treo giữ vòng poll
     vi.stubEnv("OT_CHAT_LUONG_V2_ENABLED", "true");
+    cheDoDoc = "tot";
+    ingestTreoChung = false;
+    v2VongPoll = v2;
     legacyDrv = new PollThatDriver();
     haDrv = [];
     vi.doMock("./driverRegistry", () => ({
@@ -379,8 +531,8 @@ describe.each([
       },
     }));
     vi.doMock("./ingest", () => ({
-      ingestSample: () => treoMai(), // ghi DB treo mãi
-      ingestSamples: () => treoMai(),
+      ingestSample: () => (ingestTreoChung ? treoMai() : Promise.resolve()), // ghi DB treo mãi khi test bật
+      ingestSamples: () => (ingestTreoChung ? treoMai() : Promise.resolve()),
     }));
     vi.doMock("./deviceAdapter", () => ({
       loadEnabledAdapters: async () => [
@@ -418,9 +570,10 @@ describe.each([
     vi.unstubAllEnvs();
   });
 
-  it("DB treo mãi: vẫn connected (đọc tốt — thiết bị đã trả lời), phiên KHÔNG bị hạ, poll tiếp tục, bộ đếm thấy ingestTreo + chong", async () => {
+  it("(c) DB treo mãi: vẫn connected (đọc tốt — thiết bị đã trả lời), phiên KHÔNG bị hạ, poll tiếp tục, bộ đếm thấy ingestTreo + chong", async () => {
+    ingestTreoChung = true;
     await vi.advanceTimersByTimeAsync(500);
-    expect(trangThai()).toBe("connected"); // mẫu good đầu của phiên (T3) — trước khi DB treo kịp giữ gì
+    expect(trangThai()).toBe("connected"); // mẫu good đầu của phiên (T3)
     await vi.advanceTimersByTimeAsync(20_000);
     expect(trangThai()).toBe("connected");
     expect(drv.phien).toHaveLength(1);
@@ -449,4 +602,32 @@ describe.each([
     p.onTick!(TICK_TIMEOUT);
     await vi.waitFor(() => expect(p.closed).toBe(true));
   });
+
+  it("(a) ruling T4 c2: lần đọc KHÔNG BAO GIỜ xong ⇒ tick bị chặn báo tick hỏng ⇒ D1 K=2 hạ phiên", async () => {
+    await vi.advanceTimersByTimeAsync(500);
+    expect(trangThai()).toBe("connected");
+    const p = drv.phien[0];
+    cheDoDoc = "treo";
+    await vi.advanceTimersByTimeAsync(4000); // lần đọc 1000 treo, hạn 2000 ⇒ 3000 tick hỏng 1; tick 4000 bị chặn ⇒ tick hỏng 2 ⇒ D1
+    await vi.waitFor(() => expect(p.closed).toBe(true));
+    expect(bd.layBoDem(ID).timeout).toBeGreaterThanOrEqual(2);
+    expect(bd.layBoDem(ID).chong).toBeGreaterThanOrEqual(1);
+  });
+
+  if (!v2) {
+    it("(b) V2 tắt (vòng poll): lần đọc xong muộn rồi việc phát muộn TREO (DB) ⇒ KHÔNG hạ phiên (chot.giaoMuon không phải đọc treo)", async () => {
+      await vi.advanceTimersByTimeAsync(500);
+      expect(trangThai()).toBe("connected");
+      const p = drv.phien[0];
+      cheDoDoc = "muon";
+      ingestTreoChung = true;
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(p.closed).toBe(false);
+      expect(drv.phien).toHaveLength(1);
+      expect(trangThai()).toBe("connected");
+      const b = bd.layBoDem(ID);
+      expect(b.timeout).toBe(1); // chỉ tick của lần đọc bị hạn cắt
+      expect(b.ingestTreo).toBeGreaterThanOrEqual(2);
+    });
+  }
 });
