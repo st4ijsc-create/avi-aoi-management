@@ -23827,18 +23827,27 @@
       "mayTieuDe": "Machine {{code}}",
       "khaNang": {
         "duoc": "Will send the pinned STOP",
-        "duocEdge": "Will send the STOP to the edge node",
         "moPhongChuaNghiemThu": "Simulation only — adapter not commissioned, the STOP will not reach the machine",
         "moPhongOtTat": "Simulation only — OT control is off on the server, the STOP will not reach the machine",
         "ghimCuKetNoiCu": "Pins not in effect — the adapter must be reconnected (the STOP will be checked like an ordinary command)",
-        "ghimCuKhongKetNoi": "Adapter not connected — the STOP will not reach the machine",
-        "chuaGhim": "No pinned STOP — nothing is sent"
+        "chuaGhim": "No pinned STOP — nothing is sent",
+        "quaEdge": "STOP sent via edge node {{code}} — confirmed only when the edge reports back",
+        "matKetNoi": "Disconnected — the STOP will not reach the machine (ADAPTER_OFFLINE)",
+        "khongKiemDuoc": "Could not be checked — use the hardwired E-STOP if needed"
       },
       "canhBao": {
         "ghimCu": "Pinned STOP not in effect — reconnect adapter {{code}}",
         "moPhong": "STOP is simulation only — adapter {{code}} is not commissioned",
-        "moPhongOtTat": "STOP is simulation only — OT control is off on the server"
-      }
+        "moPhongOtTat": "STOP is simulation only — OT control is off on the server",
+        "matKetNoi": "Adapter {{code}} is disconnected — the STOP will not reach the machine (ADAPTER_OFFLINE)",
+        "quaEdge": "STOP sent via edge node {{code}} — confirmed only when the edge reports back",
+        "edgeKhongToi": "Edge node {{code}} cannot be reached from central — the STOP may not reach the machine; use the hardwired E-STOP if needed",
+        "khongKiemDuoc": "Could not check whether the machine can be stopped — use the hardwired E-STOP if needed",
+        "chuaGhimMotPhan": "Adapter(s) {{list}} have no pinned STOP"
+      },
+      "daGuiDuPhong": "The edge did not take the command — central sent its fallback STOP; not yet confirmed that the machine stopped",
+      "loiTaiDiag": "Could not load the adapter list — the per-machine STOP MACHINE buttons are still below; use the hardwired E-STOP at the machine if needed",
+      "loiTaiMay": "Could not load the machine list — the STOP MACHINE buttons cannot be shown; use the hardwired E-STOP at the machine"
     }
   }
 }

@@ -131,20 +131,38 @@ export default function ScadaDiag() {
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
-          ) : q.isError ? (
-            <EmptyState variant="error" title={t("scada.diag.loiTai")} compact />
-          ) : hienThi.length === 0 ? (
-            <EmptyState variant="no-data" title={chiLoi ? t("scada.diag.khongCoLoi") : t("scada.diag.trong")} compact />
           ) : (
-            <BangTruyenThong
-              rows={hienThi}
-              may={may}
-              now={now}
-              canAct={canAct}
-              onChon={(h) => setChonId(h.adapterId)}
-              onKetNoiLai={(h) => setHanhDong({ kieu: "ketNoiLai", hang: h })}
-              onTamTat={(h) => setHanhDong({ kieu: "tamTat", hang: h })}
-            />
+            // fix round 2 — nút DỪNG MÁY (hàng đầu theo máy, từ `scadaKenh.cheDo.danhSach`) KHÔNG phụ thuộc bộ lọc "chỉ lỗi" hay việc
+            // danh sách adapter tải được: lỗi tải adapter ⇒ biểu ngữ "dùng E-STOP cứng" + vẫn vẽ nút theo máy; lỗi tải máy ⇒ biểu ngữ.
+            <div className="space-y-2">
+              {q.isError && (
+                <>
+                  <EmptyState variant="error" title={t("scada.diag.loiTai")} compact />
+                  <p data-testid="dung-may-loi-tai-diag" role="alert" className="text-sm font-semibold" style={{ color: "var(--packml-abort)" }}>
+                    {t("scada.dungMay.loiTaiDiag")}
+                  </p>
+                </>
+              )}
+              {mayQ.isError && (
+                <p data-testid="dung-may-loi-tai-may" role="alert" className="text-sm font-semibold" style={{ color: "var(--packml-abort)" }}>
+                  {t("scada.dungMay.loiTaiMay")}
+                </p>
+              )}
+              {!q.isError && hienThi.length === 0 && (
+                <EmptyState variant="no-data" title={chiLoi ? t("scada.diag.khongCoLoi") : t("scada.diag.trong")} compact />
+              )}
+              {((!q.isError && hienThi.length > 0) || may.length > 0) && (
+                <BangTruyenThong
+                  rows={q.isError ? [] : hienThi}
+                  may={may}
+                  now={now}
+                  canAct={canAct}
+                  onChon={(h) => setChonId(h.adapterId)}
+                  onKetNoiLai={(h) => setHanhDong({ kieu: "ketNoiLai", hang: h })}
+                  onTamTat={(h) => setHanhDong({ kieu: "tamTat", hang: h })}
+                />
+              )}
+            </div>
           )}
         </SectionCard>
 

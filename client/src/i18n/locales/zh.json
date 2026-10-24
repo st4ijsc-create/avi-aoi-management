@@ -23829,18 +23829,27 @@
       "mayTieuDe": "设备 {{code}}",
       "khaNang": {
         "duoc": "将发送已固定的 STOP",
-        "duocEdge": "将把 STOP 发送至边缘节点",
         "moPhongChuaNghiemThu": "仅模拟 — 适配器未调试验收，STOP 不会到达设备",
         "moPhongOtTat": "仅模拟 — 服务器上的 OT 控制已关闭，STOP 不会到达设备",
         "ghimCuKetNoiCu": "固定值尚未生效 — 需要重新连接适配器（STOP 将按普通命令检查）",
-        "ghimCuKhongKetNoi": "适配器未连接 — STOP 不会到达设备",
-        "chuaGhim": "未固定 STOP — 不发送任何内容"
+        "chuaGhim": "未固定 STOP — 不发送任何内容",
+        "quaEdge": "STOP 经边缘节点 {{code}} 发送 — 仅在边缘节点回报后确认",
+        "matKetNoi": "已断开连接 — STOP 不会到达设备（ADAPTER_OFFLINE）",
+        "khongKiemDuoc": "无法检查 — 如有需要请使用硬接线急停（E-STOP）"
       },
       "canhBao": {
         "ghimCu": "固定的 STOP 尚未生效 — 需要重新连接适配器 {{code}}",
         "moPhong": "STOP 仅为模拟 — 适配器 {{code}} 未调试验收",
-        "moPhongOtTat": "STOP 仅为模拟 — 服务器上的 OT 控制已关闭"
-      }
+        "moPhongOtTat": "STOP 仅为模拟 — 服务器上的 OT 控制已关闭",
+        "matKetNoi": "适配器 {{code}} 已断开连接 — STOP 不会到达设备（ADAPTER_OFFLINE）",
+        "quaEdge": "STOP 经边缘节点 {{code}} 发送 — 仅在边缘节点回报后确认",
+        "edgeKhongToi": "中心无法联系边缘节点 {{code}} — STOP 可能不会到达设备；如有需要请使用硬接线急停（E-STOP）",
+        "khongKiemDuoc": "无法检查停机能力 — 如有需要请使用硬接线急停（E-STOP）",
+        "chuaGhimMotPhan": "适配器 {{list}} 尚未固定 STOP"
+      },
+      "daGuiDuPhong": "边缘节点未接收命令 — 中心已发送备用 STOP；尚未确认设备已停止",
+      "loiTaiDiag": "无法加载适配器列表 — 下方仍有按设备的“停机”按钮；如有需要请在设备处使用硬接线急停（E-STOP）",
+      "loiTaiMay": "无法加载设备列表 — 无法显示“停机”按钮；请在设备处使用硬接线急停（E-STOP）"
     }
   }
 }

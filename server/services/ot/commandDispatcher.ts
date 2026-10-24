@@ -514,6 +514,11 @@ export interface DispatchResult {
   pinnedStop?: boolean;
   /** doc 81 Đợt 10 final fix wave (I-4) — the adapter is EDGE-owned: the STOP was queued for its node as this request */
   edgeStopRequest?: { requestId: number; edgeNodeId: number };
+  /**
+   * SCADA R1b-1 T2 fix round 2 — set ONLY on the edge-route branch where the STOP could NOT be queued for the owning node and central ran
+   * its fallback STOP of the adapter's pinned values (R-10-ay): `sent` ⇔ that fallback reported sent. Absent everywhere else.
+   */
+  centralFallbackStop?: { sent: boolean; detail: string };
 }
 
 /**
@@ -2512,7 +2517,16 @@ async function routeEdgeOwnedAdapterCommand(db: NonNullable<Awaited<ReturnType<t
     const detail = `adapter ${input.adapterId} is owned by edge node ${owner.edgeNodeId} but the STOP could not be queued for it (${why}); central fallback STOP: ${fb.ok && fb.sent === "sent" ? "sent" : `${fb.sent} (${fb.detail})`}`;
     const ids = await writeRejected(db, input, owner.code, detail);
     void raiseOtStopAlert("ot_stop_not_queued", input, `OT ${input.commandType} for adapter ${input.adapterId} (${via}): ${detail}.${fb.ok && fb.sent === "sent" ? "" : " Use the machine's E-STOP if it is still running."}`, [who.requestedBy]);
-    return { ok: false, simulated: false, status: "rejected", reason: owner.code, results: failedResults(input, owner.code), commandLogIds: ids, message: detail };
+    return {
+      ok: false,
+      simulated: false,
+      status: "rejected",
+      reason: owner.code,
+      results: failedResults(input, owner.code),
+      commandLogIds: ids,
+      message: detail,
+      centralFallbackStop: { sent: fb.ok && fb.sent === "sent", detail: `${fb.sent}${fb.detail ? ` (${fb.detail})` : ""}`.slice(0, 200) },
+    };
   }
 }
 

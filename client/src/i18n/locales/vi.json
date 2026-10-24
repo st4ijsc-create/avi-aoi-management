@@ -23801,18 +23801,27 @@
       "mayTieuDe": "Máy {{code}}",
       "khaNang": {
         "duoc": "Sẽ gửi STOP đã ghim",
-        "duocEdge": "Sẽ gửi STOP tới node edge",
         "moPhongChuaNghiemThu": "Chỉ mô phỏng — adapter chưa nghiệm thu, STOP không tới máy",
         "moPhongOtTat": "Chỉ mô phỏng — điều khiển OT trên máy chủ đang tắt, STOP không tới máy",
         "ghimCuKetNoiCu": "Ghim chưa có hiệu lực — cần kết nối lại adapter (STOP sẽ bị kiểm như lệnh thường)",
-        "ghimCuKhongKetNoi": "Adapter chưa kết nối — STOP không tới máy",
-        "chuaGhim": "Chưa ghim STOP — không gửi gì"
+        "chuaGhim": "Chưa ghim STOP — không gửi gì",
+        "quaEdge": "STOP gửi qua node edge {{code}} — chỉ xác nhận khi edge báo lại",
+        "matKetNoi": "Mất kết nối — STOP sẽ không tới máy (ADAPTER_OFFLINE)",
+        "khongKiemDuoc": "Không kiểm được — dùng E-STOP cứng nếu cần"
       },
       "canhBao": {
         "ghimCu": "Ghim STOP chưa có hiệu lực — cần kết nối lại adapter {{code}}",
         "moPhong": "STOP chỉ mô phỏng — adapter {{code}} chưa nghiệm thu",
-        "moPhongOtTat": "STOP chỉ mô phỏng — điều khiển OT trên máy chủ đang tắt"
-      }
+        "moPhongOtTat": "STOP chỉ mô phỏng — điều khiển OT trên máy chủ đang tắt",
+        "matKetNoi": "Adapter {{code}} mất kết nối — STOP sẽ không tới máy (ADAPTER_OFFLINE)",
+        "quaEdge": "STOP gửi qua node edge {{code}} — chỉ xác nhận khi edge báo lại",
+        "edgeKhongToi": "Node edge {{code}} không liên lạc được với trung tâm — STOP có thể không tới máy; dùng E-STOP cứng nếu cần",
+        "khongKiemDuoc": "Không kiểm được khả năng dừng — dùng E-STOP cứng nếu cần",
+        "chuaGhimMotPhan": "Adapter {{list}} chưa ghim STOP"
+      },
+      "daGuiDuPhong": "Edge không nhận được lệnh — trung tâm đã gửi STOP dự phòng; chưa xác nhận máy đã dừng",
+      "loiTaiDiag": "Không tải được danh sách adapter — nút DỪNG MÁY theo máy vẫn ở bên dưới; dùng E-STOP cứng tại máy nếu cần",
+      "loiTaiMay": "Không tải được danh sách máy — nút DỪNG MÁY không hiện được; dùng E-STOP cứng tại máy"
     }
   }
 }

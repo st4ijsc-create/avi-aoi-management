@@ -85,10 +85,13 @@ export interface BangTruyenThongProps {
 export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamTat, may }: BangTruyenThongProps) {
   const { t } = useTranslation();
   const soCot = canAct ? 9 : 8;
-  // nhóm theo máy giữ thứ tự xuất hiện; adapter không gắn máy: không có hàng đầu (không có máy để dừng)
+  // fix round 2 — hàng đầu DỪNG MÁY lấy từ DANH SÁCH MÁY ĐẦY ĐỦ (`may`), bất kể bộ lọc "chỉ lỗi" đã ẩn adapter nào: một máy khoẻ vẫn
+  // có nút dừng. Sau đó adapter của máy không có trong `may` (nhóm theo máy, giữ thứ tự xuất hiện); adapter không gắn máy: không có hàng đầu.
   const nhom: Array<{ machineId: number | null; hangs: HangDiag[] }> = [];
   if (may) {
+    for (const m of may) nhom.push({ machineId: m.machineId, hangs: rows.filter((h) => (h.machineId ?? null) === m.machineId) });
     for (const h of rows) {
+      if ((h.machineId ?? null) !== null && may.some((m) => m.machineId === h.machineId)) continue;
       const g = nhom.find((x) => x.machineId === (h.machineId ?? null));
       if (g) g.hangs.push(h);
       else nhom.push({ machineId: h.machineId ?? null, hangs: [h] });

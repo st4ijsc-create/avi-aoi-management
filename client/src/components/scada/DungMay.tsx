@@ -31,41 +31,74 @@ const BIEN_CHU_TREN_DUNG = "--isa-field";
 /** Hình dạng `khaNangDung` (server/services/scada/khaNangDung.ts `KhaNangDungMay`). */
 export interface KhaNangDung {
   machineId: number;
-  adapters: Array<{ adapterId: number; code: string; trangThai: "duoc" | "mo_phong" | "ghim_cu" | "chua_ghim"; lyDo?: string }>;
+  adapters: Array<{
+    adapterId: number;
+    code: string;
+    trangThai: "duoc" | "qua_edge" | "mat_ket_noi" | "mo_phong" | "ghim_cu" | "chua_ghim" | "khong_kiem_duoc";
+    lyDo?: string;
+    edgeCode?: string;
+    edgeToiDuoc?: boolean;
+  }>;
   tongHop: "duoc" | "mot_phan" | "khong";
+  loiKhaoSat?: boolean;
 }
 
 /** Đang gửi lâu hơn ngần này ⇒ "kết quả chưa rõ" + cho đóng hộp. */
 export const QUA_HAN_GUI_MS = 10_000;
 
-/** Khoá chữ của MỘT kết luận khả năng dừng (dòng trong hộp xác nhận). */
-export function khoaKhaNang(a: KhaNangDung["adapters"][number]): string {
+/** Khoá chữ (+ tham số) của MỘT kết luận khả năng dừng (dòng trong hộp xác nhận). */
+export function khoaKhaNang(a: KhaNangDung["adapters"][number]): { khoa: string; thamSo?: Record<string, string> } {
   switch (a.trangThai) {
     case "duoc":
-      return a.lyDo === "edge" ? "scada.dungMay.khaNang.duocEdge" : "scada.dungMay.khaNang.duoc";
+      return { khoa: "scada.dungMay.khaNang.duoc" };
+    case "qua_edge":
+      return { khoa: "scada.dungMay.khaNang.quaEdge", thamSo: { code: a.edgeCode ?? "—" } };
+    case "mat_ket_noi":
+      return { khoa: "scada.dungMay.khaNang.matKetNoi" };
     case "mo_phong":
-      return a.lyDo === "ot_control_tat" ? "scada.dungMay.khaNang.moPhongOtTat" : "scada.dungMay.khaNang.moPhongChuaNghiemThu";
+      return { khoa: a.lyDo === "ot_control_tat" ? "scada.dungMay.khaNang.moPhongOtTat" : "scada.dungMay.khaNang.moPhongChuaNghiemThu" };
     case "ghim_cu":
-      return a.lyDo === "khong_ket_noi" ? "scada.dungMay.khaNang.ghimCuKhongKetNoi" : "scada.dungMay.khaNang.ghimCuKetNoiCu";
+      return { khoa: "scada.dungMay.khaNang.ghimCuKetNoiCu" };
+    case "chua_ghim":
+      return { khoa: "scada.dungMay.khaNang.chuaGhim" };
     default:
-      return "scada.dungMay.khaNang.chuaGhim";
+      // khong_kiem_duoc + kết luận lạ (máy chủ mới hơn client) ⇒ chiều an toàn
+      return { khoa: "scada.dungMay.khaNang.khongKiemDuoc" };
   }
 }
 
+/** Dòng cảnh báo cấp máy (thuần — test được). Rỗng ⇒ không cảnh báo; `chuaGhimHet` ⇒ dùng câu "Máy chưa ghim STOP" có sẵn. */
+export function dongCanhBaoKhaNang(k: KhaNangDung): { chuaGhimHet: boolean; dong: Array<{ key: string; khoa: string; thamSo?: Record<string, string> }> } {
+  if (k.loiKhaoSat) return { chuaGhimHet: false, dong: [{ key: "kkd", khoa: "scada.dungMay.canhBao.khongKiemDuoc" }] };
+  if (k.adapters.every((a) => a.trangThai === "chua_ghim")) return { chuaGhimHet: true, dong: [] };
+  const dong: Array<{ key: string; khoa: string; thamSo?: Record<string, string> }> = [];
+  for (const a of k.adapters) {
+    if (a.trangThai === "mat_ket_noi") dong.push({ key: `mkn-${a.adapterId}`, khoa: "scada.dungMay.canhBao.matKetNoi", thamSo: { code: a.code } });
+    if (a.trangThai === "ghim_cu") dong.push({ key: `gc-${a.adapterId}`, khoa: "scada.dungMay.canhBao.ghimCu", thamSo: { code: a.code } });
+    if (a.trangThai === "mo_phong" && a.lyDo !== "ot_control_tat") dong.push({ key: `mp-${a.adapterId}`, khoa: "scada.dungMay.canhBao.moPhong", thamSo: { code: a.code } });
+    if (a.trangThai === "qua_edge") {
+      const code = a.edgeCode ?? "—";
+      dong.push({ key: `qe-${a.adapterId}`, khoa: "scada.dungMay.canhBao.quaEdge", thamSo: { code } });
+      if (a.edgeToiDuoc === false) dong.push({ key: `ekt-${a.adapterId}`, khoa: "scada.dungMay.canhBao.edgeKhongToi", thamSo: { code } });
+    }
+  }
+  // điều kiện của MÁY CHỦ / lỗi kiểm: MỘT dòng dù nhiều adapter
+  if (k.adapters.some((a) => a.trangThai === "mo_phong" && a.lyDo === "ot_control_tat")) dong.push({ key: "ot", khoa: "scada.dungMay.canhBao.moPhongOtTat" });
+  if (k.adapters.some((a) => a.trangThai === "khong_kiem_duoc")) dong.push({ key: "kkd", khoa: "scada.dungMay.canhBao.khongKiemDuoc" });
+  const chuaGhim = k.adapters.filter((a) => a.trangThai === "chua_ghim").map((a) => a.code);
+  if (chuaGhim.length > 0) dong.push({ key: "cgmp", khoa: "scada.dungMay.canhBao.chuaGhimMotPhan", thamSo: { list: chuaGhim.join(", ") } });
+  return { chuaGhimHet: false, dong };
+}
+
 /**
- * Cảnh báo cấp máy theo khả năng dừng (điều phối 2026-10-24): `ghim_cu` ⇒ "cần kết nối lại adapter {code}" (từng adapter); `mo_phong`
- * chưa nghiệm thu ⇒ "chỉ mô phỏng — adapter {code} chưa nghiệm thu" (từng adapter); OT control tắt ⇒ MỘT dòng (điều kiện của máy chủ);
- * MỌI adapter `chua_ghim` (hoặc không có adapter) ⇒ "Máy chưa ghim STOP — nút dừng HMI không dùng được".
+ * Cảnh báo cấp máy theo khả năng dừng (điều phối 2026-10-24 + fix round 2): mất kết nối / ghim chưa hiệu lực / chỉ mô phỏng (chưa nghiệm
+ * thu; OT tắt — một dòng) / qua edge (+ edge không liên lạc được) / không kiểm được / một phần adapter chưa ghim; MỌI adapter chưa ghim ⇒
+ * "Máy chưa ghim STOP — nút dừng HMI không dùng được".
  */
 export function CanhBaoKhaNangDung({ khaNang }: { khaNang: KhaNangDung }) {
   const { t } = useTranslation();
-  if (khaNang.adapters.every((a) => a.trangThai === "chua_ghim")) return <CanhBaoChuaGhimStop />;
-  const dong: Array<{ key: string; text: string }> = [];
-  for (const a of khaNang.adapters) {
-    if (a.trangThai === "ghim_cu") dong.push({ key: `gc-${a.adapterId}`, text: t("scada.dungMay.canhBao.ghimCu", { code: a.code }) });
-    if (a.trangThai === "mo_phong" && a.lyDo !== "ot_control_tat") dong.push({ key: `mp-${a.adapterId}`, text: t("scada.dungMay.canhBao.moPhong", { code: a.code }) });
-  }
-  if (khaNang.adapters.some((a) => a.trangThai === "mo_phong" && a.lyDo === "ot_control_tat")) dong.push({ key: "ot", text: t("scada.dungMay.canhBao.moPhongOtTat") });
+  const { chuaGhimHet, dong } = dongCanhBaoKhaNang(khaNang);
+  if (chuaGhimHet) return <CanhBaoChuaGhimStop />;
   if (dong.length === 0) return null;
   return (
     <div
@@ -75,7 +108,7 @@ export function CanhBaoKhaNangDung({ khaNang }: { khaNang: KhaNangDung }) {
       style={{ borderLeftColor: `var(${BIEN_MAU_DUNG})` }}
     >
       {dong.map((d) => (
-        <p key={d.key}>{d.text}</p>
+        <p key={d.key}>{t(d.khoa, d.thamSo)}</p>
       ))}
     </div>
   );
@@ -89,6 +122,7 @@ type HangKetQua = {
   simulated: boolean;
   reason?: string;
   edgeStopRequest?: boolean;
+  centralFallbackSent?: boolean;
   writes: Array<{ tagKey: string; value: unknown }>;
 };
 
@@ -204,6 +238,11 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
           </DialogDescription>
         </DialogHeader>
 
+        {pha === "xacNhan" && khaNang?.loiKhaoSat && (
+          <p data-testid="kha-nang-dung-loi" className="text-sm font-medium" style={{ color: `var(${BIEN_MAU_DUNG})` }}>
+            {t("scada.dungMay.canhBao.khongKiemDuoc")}
+          </p>
+        )}
         {pha === "xacNhan" && khaNang && khaNang.adapters.length > 0 && (
           <div className="space-y-1" data-testid="kha-nang-dung">
             <p className="text-sm font-medium">{t("scada.dungMay.khaNangTieuDe")}</p>
@@ -218,7 +257,7 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
                 >
                   <span className="font-semibold">{a.code}</span>
                   {" · "}
-                  {t(khoaKhaNang(a))}
+                  {t(khoaKhaNang(a).khoa, khoaKhaNang(a).thamSo)}
                 </li>
               ))}
             </ul>
@@ -288,8 +327,14 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
                       {" · "}
                       <span className="font-semibold">{nhanLoai[loai]}</span>
                     </p>
-                    <p>{r.edgeStopRequest ? t("scada.dungMay.daGuiEdge") : t(nhan.khoa, nhan.thamSo)}</p>
-                    {(r.status === "rejected" || r.status === "failed") && !r.edgeStopRequest && (
+                    <p>
+                      {r.edgeStopRequest
+                        ? t("scada.dungMay.daGuiEdge")
+                        : r.centralFallbackSent
+                          ? t("scada.dungMay.daGuiDuPhong")
+                          : t(nhan.khoa, nhan.thamSo)}
+                    </p>
+                    {(r.status === "rejected" || r.status === "failed") && !r.edgeStopRequest && !r.centralFallbackSent && (
                       <p className="text-xs text-muted-foreground">{t("scada.lenh.ketQua.ma", { ma: nhan.thamSo.ma ?? r.reason ?? "—" })}</p>
                     )}
                     {xau && <DongEstop />}

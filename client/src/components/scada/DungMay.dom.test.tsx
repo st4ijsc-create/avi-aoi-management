@@ -347,11 +347,11 @@ describe("fix round 1 — khảo sát khả năng dừng (hộp xác nhận + c�
     veHop({
       khaNang: kn([
         { adapterId: 1, code: "PLC-A", trangThai: "duoc" },
-        { adapterId: 2, code: "PLC-E", trangThai: "duoc", lyDo: "edge" },
+        { adapterId: 2, code: "PLC-E", trangThai: "qua_edge", edgeCode: "EN-02", edgeToiDuoc: true },
         { adapterId: 3, code: "PLC-C", trangThai: "mo_phong", lyDo: "chua_nghiem_thu" },
         { adapterId: 4, code: "PLC-O", trangThai: "mo_phong", lyDo: "ot_control_tat" },
-        { adapterId: 5, code: "PLC-G", trangThai: "ghim_cu", lyDo: "ket_noi_cu" },
-        { adapterId: 6, code: "PLC-K", trangThai: "ghim_cu", lyDo: "khong_ket_noi" },
+        { adapterId: 5, code: "PLC-G", trangThai: "ghim_cu" },
+        { adapterId: 6, code: "PLC-K", trangThai: "mat_ket_noi" },
         { adapterId: 7, code: "PLC-N", trangThai: "chua_ghim" },
       ]),
     });
@@ -359,18 +359,19 @@ describe("fix round 1 — khảo sát khả năng dừng (hộp xác nhận + c�
     expect(within(h).getByText(S("scada.dungMay.khaNangTieuDe"))).toBeInTheDocument();
     const mong: Array<[number, string, string]> = [
       [1, "duoc", "scada.dungMay.khaNang.duoc"],
-      [2, "duoc", "scada.dungMay.khaNang.duocEdge"],
+      [2, "qua_edge", "scada.dungMay.khaNang.quaEdge"],
       [3, "mo_phong", "scada.dungMay.khaNang.moPhongChuaNghiemThu"],
       [4, "mo_phong", "scada.dungMay.khaNang.moPhongOtTat"],
       [5, "ghim_cu", "scada.dungMay.khaNang.ghimCuKetNoiCu"],
-      [6, "ghim_cu", "scada.dungMay.khaNang.ghimCuKhongKetNoi"],
+      [6, "mat_ket_noi", "scada.dungMay.khaNang.matKetNoi"],
       [7, "chua_ghim", "scada.dungMay.khaNang.chuaGhim"],
     ];
     for (const [id, tt, k] of mong) {
       const li = within(h).getByTestId(`kha-nang-${id}`);
       expect(li).toHaveAttribute("data-trang-thai", tt);
-      expect(li).toHaveTextContent(S(k));
+      expect(li).toHaveTextContent(S(k, { code: "EN-02" }));
     }
+    expect(within(h).getByTestId("kha-nang-2")).toHaveTextContent("STOP gửi qua node edge EN-02 — chỉ xác nhận khi edge báo lại");
     // vẫn MỘT bước: nút mặc định có focus, gửi được
     expect(nutMacDinh()).toHaveFocus();
   });
@@ -379,7 +380,7 @@ describe("fix round 1 — khảo sát khả năng dừng (hộp xác nhận + c�
     render(
       <CanhBaoKhaNangDung
         khaNang={kn([
-          { adapterId: 1, code: "PLC-G", trangThai: "ghim_cu", lyDo: "ket_noi_cu" },
+          { adapterId: 1, code: "PLC-G", trangThai: "ghim_cu" },
           { adapterId: 2, code: "PLC-C", trangThai: "mo_phong", lyDo: "chua_nghiem_thu" },
           { adapterId: 3, code: "PLC-O", trangThai: "mo_phong", lyDo: "ot_control_tat" },
           { adapterId: 4, code: "PLC-P", trangThai: "mo_phong", lyDo: "ot_control_tat" },
@@ -402,7 +403,7 @@ describe("fix round 1 — khảo sát khả năng dừng (hộp xác nhận + c�
   });
 
   it("★ faceplate (M4): cảnh báo theo khaNangDung của hàng máy (ghim chưa hiệu lực) và chuyển danh sách vào hộp xác nhận", () => {
-    srv.cheDo = [may({ khaNangDung: { machineId: 10, adapters: [{ adapterId: 1, code: "PLC-G", trangThai: "ghim_cu", lyDo: "ket_noi_cu" }], tongHop: "khong" } })];
+    srv.cheDo = [may({ khaNangDung: { machineId: 10, adapters: [{ adapterId: 1, code: "PLC-G", trangThai: "ghim_cu" }], tongHop: "khong" } })];
     veFaceplate();
     expect(screen.getByTestId("canh-bao-kha-nang-dung")).toHaveTextContent("Ghim STOP chưa có hiệu lực — cần kết nối lại adapter PLC-G");
     fireEvent.click(screen.getByTestId("nut-dung-may"));
@@ -435,8 +436,71 @@ describe("fix round 1 — khảo sát khả năng dừng (hộp xác nhận + c�
   });
 
   it("chữ khả năng dừng / cảnh báo / quá hạn ở en + zh không có chữ Việt", () => {
-    for (const k of ["chuaRo", "khaNangTieuDe", "mayTieuDe", "khaNang.duoc", "khaNang.duocEdge", "khaNang.moPhongChuaNghiemThu", "khaNang.moPhongOtTat", "khaNang.ghimCuKetNoiCu", "khaNang.ghimCuKhongKetNoi", "khaNang.chuaGhim", "canhBao.ghimCu", "canhBao.moPhong", "canhBao.moPhongOtTat"]) {
+    for (const k of ["chuaRo", "khaNangTieuDe", "mayTieuDe", "khaNang.duoc", "khaNang.quaEdge", "khaNang.matKetNoi", "khaNang.khongKiemDuoc", "khaNang.moPhongChuaNghiemThu", "khaNang.moPhongOtTat", "khaNang.ghimCuKetNoiCu", "khaNang.chuaGhim", "canhBao.ghimCu", "canhBao.moPhong", "canhBao.moPhongOtTat", "canhBao.matKetNoi", "canhBao.quaEdge", "canhBao.edgeKhongToi", "canhBao.khongKiemDuoc", "canhBao.chuaGhimMotPhan", "daGuiDuPhong", "loiTaiDiag", "loiTaiMay"]) {
       expect(CHU_VIET.test(E(`scada.dungMay.${k}`)), k).toBe(false);
     }
+  });
+});
+
+describe("fix round 2 — kết luận mới + cảnh báo một phần + nhánh dự phòng", () => {
+  const kn = (adapters: Array<Record<string, unknown>>, extra: Record<string, unknown> = {}) => ({ machineId: 10, adapters, tongHop: "khong", ...extra }) as never;
+
+  it("★ mat_ket_noi ⇒ 'Adapter {code} mất kết nối — STOP sẽ không tới máy (ADAPTER_OFFLINE)'; KHÔNG dùng câu 'cần kết nối lại' của ghim_cu", () => {
+    render(<CanhBaoKhaNangDung khaNang={kn([{ adapterId: 1, code: "PLC-K", trangThai: "mat_ket_noi" }])} />);
+    const cb = screen.getByTestId("canh-bao-kha-nang-dung");
+    expect(cb).toHaveTextContent("Adapter PLC-K mất kết nối — STOP sẽ không tới máy (ADAPTER_OFFLINE)");
+    expect(cb).not.toHaveTextContent("Ghim STOP chưa có hiệu lực");
+  });
+
+  it("★ qua_edge ⇒ 'STOP gửi qua node edge {code} — chỉ xác nhận khi edge báo lại'; node không liên lạc được ⇒ thêm cảnh báo", () => {
+    render(<CanhBaoKhaNangDung khaNang={kn([{ adapterId: 1, code: "PLC-E", trangThai: "qua_edge", edgeCode: "EN-02", edgeToiDuoc: true }])} />);
+    let cb = screen.getByTestId("canh-bao-kha-nang-dung");
+    expect(cb).toHaveTextContent("STOP gửi qua node edge EN-02 — chỉ xác nhận khi edge báo lại");
+    expect(cb).not.toHaveTextContent(S("scada.dungMay.canhBao.edgeKhongToi", { code: "EN-02" }));
+    cleanup();
+    render(<CanhBaoKhaNangDung khaNang={kn([{ adapterId: 1, code: "PLC-E", trangThai: "qua_edge", edgeCode: "EN-02", edgeToiDuoc: false }])} />);
+    cb = screen.getByTestId("canh-bao-kha-nang-dung");
+    expect(cb).toHaveTextContent(S("scada.dungMay.canhBao.edgeKhongToi", { code: "EN-02" }));
+  });
+
+  it("★ khong_kiem_duoc (adapter) và loiKhaoSat (cả máy) ⇒ 'Không kiểm được khả năng dừng — dùng E-STOP cứng nếu cần'; loiKhaoSat KHÔNG báo 'chưa ghim'", () => {
+    render(<CanhBaoKhaNangDung khaNang={kn([{ adapterId: 1, code: "A", trangThai: "khong_kiem_duoc" }, { adapterId: 2, code: "B", trangThai: "khong_kiem_duoc" }])} />);
+    let cb = screen.getByTestId("canh-bao-kha-nang-dung");
+    expect(cb).toHaveTextContent("Không kiểm được khả năng dừng — dùng E-STOP cứng nếu cần");
+    expect(cb.querySelectorAll("p")).toHaveLength(1);
+    cleanup();
+    render(<CanhBaoKhaNangDung khaNang={kn([], { loiKhaoSat: true })} />);
+    cb = screen.getByTestId("canh-bao-kha-nang-dung");
+    expect(cb).toHaveTextContent("Không kiểm được khả năng dừng — dùng E-STOP cứng nếu cần");
+    expect(screen.queryByTestId("canh-bao-chua-ghim-stop")).toBeNull();
+    cleanup();
+    veHop({ khaNang: kn([], { loiKhaoSat: true }) });
+    expect(within(hop()).getByTestId("kha-nang-dung-loi")).toHaveTextContent(S("scada.dungMay.canhBao.khongKiemDuoc"));
+  });
+
+  it("★ chua_ghim MỘT PHẦN ⇒ 'Adapter {list} chưa ghim STOP' (cùng các cảnh báo khác)", () => {
+    render(
+      <CanhBaoKhaNangDung
+        khaNang={kn([
+          { adapterId: 1, code: "PLC-A", trangThai: "duoc" },
+          { adapterId: 2, code: "SENS-1", trangThai: "chua_ghim" },
+          { adapterId: 3, code: "SENS-2", trangThai: "chua_ghim" },
+        ])}
+      />,
+    );
+    expect(screen.getByTestId("canh-bao-kha-nang-dung")).toHaveTextContent("Adapter SENS-1, SENS-2 chưa ghim STOP");
+    expect(screen.queryByTestId("canh-bao-chua-ghim-stop")).toBeNull();
+  });
+
+  it("★ kết quả: edge không nhận, trung tâm gửi STOP dự phòng ⇒ chưa xác minh + chữ dự phòng + dòng đỏ E-STOP", async () => {
+    veHop();
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", {
+      ketQua: [{ adapterId: 3, code: "PLC-E", status: "rejected", ok: false, simulated: false, reason: "ADAPTER_OWNED_BY_EDGE", centralFallbackSent: true, writes: [], commandLogIds: [9] }],
+    });
+    const e = screen.getByTestId("ket-qua-dung-3");
+    expect(e).toHaveAttribute("data-loai", "chuaXacMinh");
+    expect(e).toHaveTextContent(S("scada.dungMay.daGuiDuPhong"));
+    expect(within(e).getByTestId("dung-estop")).toBeInTheDocument();
   });
 });

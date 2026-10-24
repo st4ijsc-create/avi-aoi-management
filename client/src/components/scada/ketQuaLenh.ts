@@ -348,6 +348,8 @@ export interface HangKetQuaDung {
   simulated: boolean;
   reason?: string;
   edgeStopRequest?: boolean;
+  /** fix round 2 — edge không nhận hàng đợi, trung tâm đã gửi STOP dự phòng */
+  centralFallbackSent?: boolean;
 }
 
 export type LoaiKetQuaDung = "dat" | "khongDat" | "chuaXacMinh";
@@ -358,7 +360,7 @@ export type LoaiKetQuaDung = "dat" | "khongDat" | "chuaXacMinh";
  * minh. `rejected` / `failed` ⇒ không đạt. Mọi loại ≠ đạt ⇒ UI hiện dòng đỏ + "Dùng E-STOP cứng tại máy".
  */
 export function phanLoaiKetQuaDung(r: HangKetQuaDung): LoaiKetQuaDung {
-  if (r.edgeStopRequest) return "chuaXacMinh";
+  if (r.edgeStopRequest || r.centralFallbackSent) return "chuaXacMinh";
   if (r.status === "acked_verified" && r.ok && !r.simulated) return "dat";
   if (r.status === "rejected" || r.status === "failed") return "khongDat";
   return "chuaXacMinh";

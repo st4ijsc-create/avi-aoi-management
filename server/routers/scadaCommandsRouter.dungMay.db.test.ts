@@ -32,7 +32,33 @@ const H = vi.hoisted(() => ({
   fallback: [] as number[],
   /** fix round 1 — audit TREO (mô phỏng khoá advisory chuỗi băm không hạn khi SEC_PLATFORM bật) */
   auditTreo: false,
+  /** fix round 2 — isCommissioned NÉM (lỗi đọc khi khảo sát) */
+  commNem: false,
+  /** fix round 2 — hàng đợi edge từ chối ⇒ nhánh STOP dự phòng của trung tâm */
+  enqueueNem: false,
 }));
+
+vi.mock("../services/ot/commissioningService", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../services/ot/commissioningService")>();
+  return {
+    ...real,
+    isCommissioned: (async (...a: Parameters<typeof real.isCommissioned>) => {
+      if (H.commNem) throw new Error("r1b2: isCommissioned ném (mô phỏng lỗi đọc)");
+      return real.isCommissioned(...a);
+    }) as typeof real.isCommissioned,
+  };
+});
+
+vi.mock("../services/edge/edgeNodeCommands", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../services/edge/edgeNodeCommands")>();
+  return {
+    ...real,
+    enqueueEdgeDeviceRequest: (async (...a: Parameters<typeof real.enqueueEdgeDeviceRequest>) => {
+      if (H.enqueueNem) throw new Error("r1b2: edge queue refused (simulated)");
+      return real.enqueueEdgeDeviceRequest(...a);
+    }) as typeof real.enqueueEdgeDeviceRequest,
+  };
+});
 
 vi.mock("../services/audit/controlAuditService", async (importOriginal) => {
   const real = await importOriginal<typeof import("../services/audit/controlAuditService")>();
@@ -656,16 +682,21 @@ describe("fix round 1 — khảo sát khả năng dừng (khaoSatKhaNangDung, M�
     expect(k.tongHop).toBe("khong");
   });
 
-  it("★ duoc (edge): adapter do edge sở hữu ⇒ duoc, lyDo 'edge' (không driver trung tâm vẫn được)", async () => {
+  it("★ qua_edge (fix round 2): adapter do edge sở hữu ⇒ qua_edge + mã node + tới được; KHÔNG tính là duoc (tongHop 'khong'); node không liên lạc được ⇒ edgeToiDuoc false", async () => {
+    const ec = await import("../services/edge/edgeNodeCommands");
+    ec.noteEdgeNodePull(edgeNodeId);
     const k = await ks(may.E.mid);
-    expect(k.adapters).toEqual([{ adapterId: ad.E, code: `${RUN}-e`, trangThai: "duoc", lyDo: "edge" }]);
+    expect(k.adapters).toEqual([{ adapterId: ad.E, code: `${RUN}-e`, trangThai: "qua_edge", edgeCode: `${RUN}-en`, edgeToiDuoc: true }]);
+    expect(k.tongHop).toBe("khong");
+    ec.__resetEdgeNodePullsForTests(); // không lượt kéo, heartbeat NULL ⇒ không tới được
+    expect((await ks(may.E.mid)).adapters[0]).toMatchObject({ trangThai: "qua_edge", edgeToiDuoc: false });
   });
 
-  it("★ ghim_cu: vân tay kết nối ĐANG CHẠY khác hàng adapter (sửa adapter chưa nối lại) ⇒ ghim_cu 'ket_noi_cu'; không driver ⇒ ghim_cu 'khong_ket_noi'", async () => {
+  it("★ ghim_cu: vân tay kết nối ĐANG CHẠY khác hàng adapter (sửa adapter chưa nối lại) ⇒ ghim_cu (CHỈ vân tay cũ); không driver ⇒ mat_ket_noi (fix round 2)", async () => {
     const that = H.fingerprints.get(ad.L)!;
     H.fingerprints.set(ad.L, "van-tay-cua-thiet-bi-cu");
     try {
-      expect((await ks(may.L.mid)).adapters[0]).toMatchObject({ trangThai: "ghim_cu", lyDo: "ket_noi_cu" });
+      expect((await ks(may.L.mid)).adapters[0]).toEqual({ adapterId: ad.L, code: `${RUN}-l`, trangThai: "ghim_cu" });
     } finally {
       H.fingerprints.set(ad.L, that);
     }
@@ -673,7 +704,7 @@ describe("fix round 1 — khảo sát khả năng dừng (khaoSatKhaNangDung, M�
     H.drivers.delete(ad.L);
     try {
       const k = await ks(may.L.mid);
-      expect(k.adapters[0]).toMatchObject({ trangThai: "ghim_cu", lyDo: "khong_ket_noi" });
+      expect(k.adapters[0]).toEqual({ adapterId: ad.L, code: `${RUN}-l`, trangThai: "mat_ket_noi" });
       expect(k.tongHop).toBe("khong");
     } finally {
       H.drivers.set(ad.L, drv);
@@ -705,5 +736,52 @@ describe("fix round 1 — khảo sát khả năng dừng (khaoSatKhaNangDung, M�
     const r = rows.find((x) => x.machineId === may.R.mid)!;
     expect(r.khaNangDung).toEqual(await ks(may.R.mid));
     expect(rows.find((x) => x.machineId === may.N.mid)!.khaNangDung.tongHop).toBe("khong");
+  });
+});
+
+describe("fix round 2 — khảo sát không bao giờ làm hỏng danh sách; nhánh STOP dự phòng khi edge không nhận", () => {
+  const kn = () => import("../services/scada/khaNangDung");
+
+  it("★ khong_kiem_duoc: isCommissioned NÉM ⇒ adapter đó khong_kiem_duoc (KHÔNG duoc), cheDo.danhSach vẫn trả đủ máy", async () => {
+    vi.stubEnv("OT_COMMISSIONING_REQUIRED", "true");
+    H.commNem = true;
+    try {
+      const k = await (await kn()).khaoSatKhaNangDung(db, may.L.mid);
+      expect(k.adapters).toEqual([{ adapterId: ad.L, code: `${RUN}-l`, trangThai: "khong_kiem_duoc" }]);
+      expect(k.tongHop).toBe("khong");
+      const { scadaKenhRouter } = await import("./scadaKenhRouter");
+      const c = scadaKenhRouter.createCaller({ user: { id: nguoi.opA2.id, role: "operator", name: "x", twoFactorEnabled: true } } as never);
+      const rows = (await c.cheDo.danhSach()) as Array<{ machineId: number; khaNangDung: { adapters: Array<{ trangThai: string }> } }>;
+      expect(rows.find((r) => r.machineId === may.L.mid)!.khaNangDung.adapters[0].trangThai).toBe("khong_kiem_duoc");
+      expect(rows.find((r) => r.machineId === may.N.mid)!.khaNangDung.adapters[0].trangThai).toBe("chua_ghim"); // không ghim ⇒ không đọc nghiệm thu
+    } finally {
+      H.commNem = false;
+      vi.stubEnv("OT_COMMISSIONING_REQUIRED", "false");
+    }
+  });
+
+  it("★ lỗi đọc CHUNG (adapter/ghim) ⇒ mọi máy loiKhaoSat, adapters rỗng, tongHop 'khong' — không ném", async () => {
+    const hong = { execute: async () => Promise.reject(new Error("db down")), select: () => { throw new Error("db down"); } } as never;
+    const m = await (await kn()).khaoSatKhaNangDungNhieu(hong, [may.R.mid, may.L.mid]);
+    expect([...m.values()]).toEqual([
+      { machineId: may.R.mid, adapters: [], tongHop: "khong", loiKhaoSat: true },
+      { machineId: may.L.mid, adapters: [], tongHop: "khong", loiKhaoSat: true },
+    ]);
+  });
+
+  it("★ edge không nhận hàng đợi ⇒ STOP dự phòng của trung tâm ĐÃ gửi ⇒ dòng chờ 'executed' + centralFallbackStop trong resultJson; kết quả centralFallbackSent", async () => {
+    H.enqueueNem = true;
+    try {
+      const kq = await nguoi.opA2.caller.dungMay({ machineId: may.E.mid, clientRequestId: uuid() });
+      expect(kq.ketQua[0]).toMatchObject({ adapterId: ad.E, reason: "ADAPTER_OWNED_BY_EDGE", centralFallbackSent: true, ok: false });
+      expect(kq.ketQua[0].edgeStopRequest).toBeUndefined();
+      expect(H.fallback).toContain(ad.E);
+      const actionId = (H.dispatchInputs.at(-1)!.triggeredBy as { actionId: string }).actionId;
+      const [cho] = await dung(sql`SELECT status::text AS status, "resultJson" FROM ai_pending_actions WHERE id = ${actionId}`);
+      expect(cho.status).toBe("executed");
+      expect(cho.resultJson).toMatchObject({ reason: "ADAPTER_OWNED_BY_EDGE", centralFallbackStop: { sent: true } });
+    } finally {
+      H.enqueueNem = false;
+    }
   });
 });

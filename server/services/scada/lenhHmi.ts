@@ -62,7 +62,6 @@ import { boDemDangBat, layGiaTri } from "./boDemHienTai";
 import { cheDoMay, TOOL_HMI_GHI_TAG, TOOL_HMI_STOP, type LyDoCheDo } from "./cheDoMay";
 import { loadStopPins } from "../ot/stopPin";
 import { recordAuditEvent } from "../audit/controlAuditService";
-import { withDeadline } from "../ot/drivers/boundedClose";
 import { OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS } from "../ot/otDeviceWrite";
 import { kiemGiaTriGhi, laKenhGhi, mucTacDongKenh } from "./kenhScada";
 import { giaHanKhoaChon, giuKhoaChon, LoiKhoaChonTranhChap, nhaKhoaChon } from "./khoaChon";
@@ -1229,6 +1228,27 @@ export const COMMAND_TYPE_HMI_STOP = "stop";
 export const HMI_STOP_TTL_MS = 30_000;
 /** fix round 1 — hạn của audit fire-and-forget (cùng hạn audit override STOP ghim của dispatcher). */
 export const HMI_STOP_AUDIT_DEADLINE_MS = OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS;
+
+/**
+ * fix round 2 (trivial 7) — như `withDeadline` (drivers/boundedClose) nhưng hẹn giờ `unref`: một audit treo không giữ tiến trình sống tới
+ * hết hạn (helper dùng chung không có tuỳ chọn unref — không sửa helper của dispatcher).
+ */
+function voiHanUnref<T>(p: Promise<T>, ms: number, nhan: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${nhan} timeout after ${ms}ms`)), ms);
+    (t as { unref?: () => void }).unref?.();
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
 export { TOOL_HMI_STOP };
 
 export interface DauVaoDungMay {
@@ -1246,6 +1266,8 @@ export interface KetQuaDungMayAdapter {
   reason?: string;
   /** adapter do edge sở hữu: STOP đã xếp hàng cho node edge (`DispatchResult.edgeStopRequest`) */
   edgeStopRequest?: boolean;
+  /** fix round 2 — edge KHÔNG nhận được hàng đợi ⇒ STOP dự phòng của trung tâm (`DispatchResult.centralFallbackStop`) đã gửi */
+  centralFallbackSent?: boolean;
   /** các giá trị ghim của lệnh STOP tới adapter này (đúng thứ truyền cho dispatch; rỗng khi đọc ghim lỗi) — kết quả thật ở `status` */
   writes: Array<{ tagKey: string; value: unknown }>;
   commandLogIds: number[];
@@ -1342,11 +1364,14 @@ async function guiStopMotAdapter(
       reason: kq.reason ?? null,
       commandLogIds: kq.commandLogIds,
       ...(kq.edgeStopRequest ? { edgeStopRequest: kq.edgeStopRequest } : {}),
+      ...(kq.centralFallbackStop ? { centralFallbackStop: kq.centralFallbackStop } : {}),
     },
   };
   // fix round 1 (minor 4) — STOP đã RA KHỎI trung tâm (mô phỏng, đã xếp hàng cho edge, hoặc gửi được mà dòng chưa bị đặt chỗ tiêu thụ —
   // vd. kết quả cache) ⇒ 'executed' (+ chi tiết edge trong resultJson); chỉ từ chối KHÔNG gửi gì mới là 'bi_tu_choi_ghi'.
-  const daRa = kq.simulated || edge || kq.ok;
+  // fix round 2 — + nhánh dự phòng: edge không nhận hàng đợi, STOP dự phòng của trung tâm ĐÃ gửi ⇒ cũng đã ra khỏi trung tâm
+  const duPhong = kq.centralFallbackStop?.sent === true;
+  const daRa = kq.simulated || edge || kq.ok || duPhong;
   try {
     const doi = await doiTrangThaiCho(db, actionId, userId, "confirmed", daRa ? "executed" : "bi_tu_choi_ghi", {
       ...(daRa ? { executedAt: new Date() } : {}),
@@ -1367,6 +1392,7 @@ async function guiStopMotAdapter(
     simulated: kq.simulated,
     ...(kq.reason ? { reason: kq.reason } : {}),
     ...(edge ? { edgeStopRequest: true } : {}),
+    ...(duPhong ? { centralFallbackSent: true } : {}),
     commandLogIds: kq.commandLogIds,
   };
 }
@@ -1460,13 +1486,14 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
           simulated: k.simulated,
           reason: k.reason ?? null,
           edgeStopRequest: k.edgeStopRequest === true,
+          centralFallbackSent: k.centralFallbackSent === true,
           commandLogIds: k.commandLogIds,
         })),
       },
       reason: lyDo ?? "HMI DỪNG MÁY",
     });
     // QĐ D-5 — STOP đã gửi; sổ hỏng / treo không được che kết quả khỏi người vận hành
-    void withDeadline(viec, HMI_STOP_AUDIT_DEADLINE_MS, "HMI STOP audit").catch((err) =>
+    void voiHanUnref(viec, HMI_STOP_AUDIT_DEADLINE_MS, "HMI STOP audit").catch((err) =>
       logger.error({ err: (err as Error)?.message ?? String(err), machineId: may.id }, "[SCADA] STOP HMI: ghi audit lỗi hoặc quá hạn (STOP đã gửi)"),
     );
   };
