@@ -239,6 +239,11 @@ export const reportBuilderRouter = router({
         if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "reportTemplate" }, `Report template ${input.id} not found`);
 
         const source = rows[0];
+        // Cùng luật xem với getReport (IDOR, W14): chỉ chủ · admin · báo cáo công khai/mặc định mới nhân bản được — không sao chép định nghĩa riêng của người khác.
+        const laChu = source.createdBy != null && source.createdBy === ctx.user.id;
+        if (!laChu && source.isDefault !== true && ctx.user.role !== "admin") {
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "reportTemplate" }, `Report template ${input.id} not found`);
+        }
         const newTemplate = await db.createReportTemplate({
           name: input.newName,
           type: "CUSTOM",

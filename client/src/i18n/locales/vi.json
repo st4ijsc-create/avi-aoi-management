@@ -4262,6 +4262,8 @@
       "scadaCommands": "lệnh HMI SCADA"
     },
     "action": {
+      "testWebhook": "gửi thử webhook",
+      "toggleWebhook": "bật/tắt webhook",
       "writeCorporateEquipmentStandard": "ghi tiêu chuẩn thiết bị cấp tập đoàn",
       "changeMqttDeviceOfOtherScope": "đổi thiết bị MQTT đang gắn với máy ngoài phạm vi của bạn",
       "selfApproveProgramDeploy": "tự duyệt yêu cầu deploy chương trình của chính mình",

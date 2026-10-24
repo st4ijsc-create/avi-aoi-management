@@ -10,6 +10,7 @@
  *  - setExtra:   replace extraFields (and optionally measurementTypeCode)
  *                for one MP, with strict validation when the typeCode is known.
  */
+import { diemDoGhiTrongPhamVi } from "./_sanPhamPhamVi";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -54,7 +55,8 @@ export const mpVariantSubformRouter = router({
       measurementTypeCode: z.string().max(100).nullable().optional(),
       payload: z.unknown(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await diemDoGhiTrongPhamVi(ctx, input.pointDefId); // phạm vi nhà máy (W14): ngoài phạm vi ≡ điểm đo không tồn tại
       const mp = await (db as any).getMeasurementPointDefById?.(input.pointDefId);
       if (!mp) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Measurement point not found");

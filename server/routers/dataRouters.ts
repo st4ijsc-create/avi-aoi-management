@@ -1,3 +1,5 @@
+import { phamViCua } from "./_phamViNguoiXem";
+import { viTriHopLe, congTramGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -68,7 +70,7 @@ export const importRouter = router({
       })),
       replaceIfExists: z.boolean().default(false),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const results = { success: 0, failed: 0, errors: [] as string[] };
       
       for (const item of input.data) {
@@ -78,9 +80,11 @@ export const importRouter = router({
             throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, `Factory ${item.factoryCode} not found`);
           }
           
+          await viTriHopLe(ctx, { factoryId: factory.id }, "factory"); // phạm vi nhà máy (W14)
           const existing = await db.getWorkshopByCode(item.code);
           if (existing) {
             if (input.replaceIfExists) {
+              await viTriHopLe(ctx, { workshopId: existing.id }, "workshop"); // không chiếm xưởng (mã toàn cục) của nhà máy khác
               await db.updateWorkshop(existing.id, {
                 factoryId: factory.id,
                 name: item.name,
@@ -123,7 +127,7 @@ export const importRouter = router({
       })),
       replaceIfExists: z.boolean().default(false),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const results = { success: 0, failed: 0, errors: [] as string[] };
       
       for (const item of input.data) {
@@ -133,9 +137,11 @@ export const importRouter = router({
             throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, `Station ${item.stationCode} not found`);
           }
           
+          await viTriHopLe(ctx, { stationId: station.id }, "station"); // phạm vi nhà máy (W14)
           const existing = await db.getMachineByCode(item.code);
           if (existing) {
             if (input.replaceIfExists) {
+              await viTriHopLe(ctx, { machineId: existing.id }, "machine");
               await db.updateMachine(existing.id, {
                 stationId: station.id,
                 name: item.name,
@@ -394,7 +400,7 @@ export const importRouter = router({
       })),
       replaceIfExists: z.boolean().default(false),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const results = { success: 0, failed: 0, errors: [] as string[] };
       
       for (const item of input.data) {
@@ -404,9 +410,11 @@ export const importRouter = router({
             throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workshop" }, `Workshop ${item.workshopCode} not found`);
           }
           
+          await viTriHopLe(ctx, { workshopId: workshop.id }, "workshop"); // phạm vi nhà máy (W14)
           const existing = await db.getProductionLineByCode(item.code);
           if (existing) {
             if (input.replaceIfExists) {
+              await viTriHopLe(ctx, { lineId: existing.id }, "line");
               await db.updateProductionLine(existing.id, {
                 workshopId: workshop.id,
                 name: item.name,
@@ -452,7 +460,7 @@ export const importRouter = router({
       })),
       replaceIfExists: z.boolean().default(false),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const results = { success: 0, failed: 0, errors: [] as string[] };
       
       for (const item of input.data) {
@@ -462,9 +470,11 @@ export const importRouter = router({
             throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, `Line ${item.lineCode} not found`);
           }
           
+          await viTriHopLe(ctx, { lineId: line.id }, "line"); // phạm vi nhà máy (W14)
           const existing = await db.getStationByCode(item.code);
           if (existing) {
             if (input.replaceIfExists) {
+              await viTriHopLe(ctx, { stationId: existing.id }, "station");
               await db.updateStation(existing.id, {
                 lineId: line.id,
                 name: item.name,
@@ -511,7 +521,7 @@ export const importRouter = router({
       })),
       replaceIfExists: z.boolean().default(false),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const results = { success: 0, failed: 0, errors: [] as string[] };
       
       for (const item of input.data) {
@@ -536,9 +546,11 @@ export const importRouter = router({
             lineId = line.id;
           }
           
+          await viTriHopLe(ctx, { factoryId, workshopId, lineId }, "workstation"); // phạm vi nhà máy (W14): người hẹp phải nêu vị trí trong phạm vi
           const existing = await db.getWorkstationByCode(item.code);
           if (existing) {
             if (input.replaceIfExists) {
+              await congTramGhi(ctx, existing.id);
               await db.updateWorkstation(existing.id, {
                 name: item.name,
                 description: item.description,
@@ -1044,7 +1056,7 @@ export const exportRouter = router({
     .input(z.object({
       productModelId: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const XLSX = await import('xlsx');
       
       // Fetch all measurement points or filter by product
@@ -1055,7 +1067,11 @@ export const exportRouter = router({
       const products = await db.getProductModels();
       
       // Filter only active items
-      const measurementPoints = allMeasurementPoints.filter((mp: any) => mp.isActive);
+      // phạm vi nhà máy (W14): chỉ điểm đo của sản phẩm TRONG phạm vi người gọi (cùng vị từ đường danh sách sản phẩm); toàn quyền ⇒ không lọc
+      const pvXuat = phamViCua(ctx);
+      const sanPhamThay = new Map<number, boolean>();
+      for (const id of new Set<number>(allMeasurementPoints.map((mp: any) => Number(mp.productModelId)))) sanPhamThay.set(id, await db.sanPhamTrongPhamVi(id, pvXuat));
+      const measurementPoints = allMeasurementPoints.filter((mp: any) => mp.isActive && sanPhamThay.get(Number(mp.productModelId)) === true);
       
       // Limit to 10,000 rows
       const limitedMeasurementPoints = measurementPoints.slice(0, 10000);
