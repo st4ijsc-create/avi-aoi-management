@@ -200,6 +200,13 @@ export interface KbRetrieveResult {
 // directly to read-tools (machineCode/orderCode). `uiLanguage` lets the UI hint
 // the reply language when the question text is ambiguous.
 export interface KbQueryContext {
+  /**
+   * ★ Đợt 9 (2026-10-24) — CHỈ máy chủ đặt (route sau `applyChatVision`; `parseContext` KHÔNG đọc hai ô này từ body): câu hỏi GỐC
+   * của người dùng khi có ảnh đính kèm (câu hỏi truyền vào service đã mang khối bản đọc ảnh cho model) + mã/nhãn trích từ bản đọc ảnh.
+   * Đo 2026-10-24: gộp bản đọc ảnh vào câu hỏi làm bộ chọn công cụ trượt (chữ `tinhOee` trong ảnh ⇒ tool OEE; "L1" ⇒ tra mã lỗi).
+   */
+  cauHoiGoc?: string;
+  maTuAnh?: string[];
   route?: string;
   uiLanguage?: KbLanguage;
   selectedMachineCode?: string;
@@ -3163,6 +3170,18 @@ export async function retrieveKnowledge(
 // entry, regardless of tone-role collisions.
 // Exported for direct unit testing of the collision fix above (kept internal-use elsewhere —
 // answerQuestion/streamAnswer are this module's only real callers).
+/**
+ * ★ Đợt 9 (2026-10-24) — câu hỏi cho TỪNG việc khi có ảnh đính kèm (`context.cauHoiGoc` do máy chủ đặt):
+ *   • `cauHoiCongCu` — bộ chọn công cụ / intent / phân loại dữ liệu sống: câu GỐC (bản đọc ảnh không được lái công cụ);
+ *   • `cauHoiTruyVanAnh` — truy hồi tài liệu + các cổng chấm điểm: câu gốc + mã/nhãn từ ảnh (giữ ý "AL.32 trong ảnh ⇒ tra sổ tay").
+ * Không ảnh ⇒ cả hai là `question` nguyên vẹn (hành vi cũ bit-đối-bit). Câu cho MODEL vẫn là `question` (có khối ảnh).
+ */
+export function cauHoiTheoAnh(question: string, context?: KbQueryContext): { cauHoiCongCu: string; cauHoiTruyVanAnh: string } {
+  const goc = context?.cauHoiGoc;
+  if (typeof goc !== "string" || !goc.trim()) return { cauHoiCongCu: question, cauHoiTruyVanAnh: question };
+  return { cauHoiCongCu: goc, cauHoiTruyVanAnh: [goc, ...(context?.maTuAnh ?? [])].join(" ") };
+}
+
 export function getCacheKey(question: string, topK: number, userRole: UserRole = "engineer", studioEligible = false): string {
   return `${userRole}|${normalizeText(question)}|k=${topK}|studio=${studioEligible ? 1 : 0}`;
 }
@@ -3188,12 +3207,14 @@ export async function answerQuestion(
   const studioEligible = canAccessStudioCorpus(execCtx?.user?.role);
   const key = getCacheKey(question, topK, userRole, studioEligible);
   const now = Date.now();
+  // ★ Đợt 9 (2026-10-24) — ảnh đính kèm: công cụ/intent theo câu GỐC, truy hồi theo câu gốc + mã từ ảnh (xem `cauHoiTheoAnh`).
+  const { cauHoiCongCu, cauHoiTruyVanAnh } = cauHoiTheoAnh(question, context);
 
   // Step 1 — Try a real-time tool first. Tool answers must NOT be cached
   // because they reflect live database state.
   // G2-C — `tryExecuteToolLoop` uỷ quyền NGUYÊN VẸN cho `tryExecuteTool` khi cờ
   // `AI_TOOL_LOOP_ENABLED` TẮT (mặc định) ⇒ đường mặc định không đổi một byte nào.
-  const toolExec = await tryExecuteToolLoop(question, context, execCtx);
+  const toolExec = await tryExecuteToolLoop(cauHoiCongCu, context, execCtx);
   const toolResult = toolExec.result;
   const loop = toolExec.loop;
   const clarifyMessage = toolExec.decision.clarifyMessage ?? null;
@@ -3201,7 +3222,7 @@ export async function answerQuestion(
   // GĐ2 — write-tool matched: short-circuit with the confirm card (propose) or
   // a localized RBAC refusal. No LLM, no cache.
   if (toolExec.pendingAction || toolExec.denied) {
-    const retrieve = await retrieveKnowledge(question, topK, kbContext);
+    const retrieve = await retrieveKnowledge(cauHoiTruyVanAnh, topK, kbContext);
     const message = toolExec.denied
       ? toolExec.denied.message
       : toolExec.pendingAction!.summary;
@@ -3226,7 +3247,7 @@ export async function answerQuestion(
   let retrieveSanNS: KbRetrieveResult | null = null;
   let retrieveHoiLaiNS: KbRetrieveResult | null = null;
   if (!toolResult && clarifyMessage) {
-    const r0 = await retrieveKnowledge(question, topK, kbContext);
+    const r0 = await retrieveKnowledge(cauHoiTruyVanAnh, topK, kbContext);
     if (nhuongChoTaiLieu(r0.confidence)) retrieveSanNS = r0;
     else retrieveHoiLaiNS = r0;
   }
@@ -3253,14 +3274,14 @@ export async function answerQuestion(
     }
   }
 
-  const retrieve = retrieveSanNS ?? (await retrieveKnowledge(question, topK, kbContext));
+  const retrieve = retrieveSanNS ?? (await retrieveKnowledge(cauHoiTruyVanAnh, topK, kbContext));
 
   let provider: "ollama" | "extractive" | "tool" = "extractive";
   let answer = buildExtractiveAnswer(question, retrieve);
   // ★ PDCA vòng 5 — câu lạc đề cùng miền (không tool, không vscode) ⇒ từ chối chuẩn thay vì để model suy diễn.
   //   Chỉ xét khi đường cũ SẼ gọi model (confidence ≥ 0.30) — dưới ngưỡng đó đường cũ đã từ chối, tự kiểm là phí.
   const lacDeNS =
-    !toolResult && kbContext?.route !== "vscode" && retrieve.confidence >= 0.30 && (await laCauLacDe(question, retrieve, execCtx?.user?.id));
+    !toolResult && kbContext?.route !== "vscode" && retrieve.confidence >= 0.30 && (await laCauLacDe(cauHoiTruyVanAnh, retrieve, execCtx?.user?.id));
 
   // Step 2 — If we have live data, short-circuit when the tool's textSummary
   // is already substantial (Lever 8.B). LLM augmentation adds 10-15s latency
@@ -3310,7 +3331,7 @@ export async function answerQuestion(
       khongCoGiDeNoi &&
       nhuongChoTaiLieu(retrieve.confidence) &&
       !toolExec.pendingAction &&
-      (laCauHoiQuyTac(question) || (await laCauHoiTaiLieuMoHo(question, execCtx?.user?.id)));
+      (laCauHoiQuyTac(cauHoiTruyVanAnh) || (await laCauHoiTaiLieuMoHo(cauHoiTruyVanAnh, execCtx?.user?.id)));
     let daTraLoiTheoTaiLieu = false;
     if (quyTacTaiLieuNS) {
       try {
@@ -3362,7 +3383,7 @@ export async function answerQuestion(
     answer = cauTuChoiChuan(retrieve.language); // câu hỏi lại (nếu có) được nối ở bước chung bên dưới
   } else if (
     retrieve.confidence >= 0.30 ||
-    (kbContext?.route === "vscode" && !looksLikeLiveFactoryDataQuestion(question))
+    (kbContext?.route === "vscode" && !looksLikeLiveFactoryDataQuestion(cauHoiCongCu))
   ) {
     // ★★★ TASK V11 — NHÁNH KIA của `streamAnswer`'s `shouldUseLlm` (xem docblock lớn cạnh
     // `vscodeNoDocsGuidance`). `/api/ai/local-kb/ask` (route KHÔNG dùng bởi extension hiện tại —
@@ -3552,6 +3573,9 @@ export async function* streamAnswer(
   const studioEligible = canAccessStudioCorpus(execCtx?.user?.role);
   const key = getCacheKey(question, topK, userRole, studioEligible);
   const now = Date.now();
+  // ★ Đợt 9 (2026-10-24) — ẢNH ĐÍNH KÈM: `question` mang khối bản đọc ảnh (cho model); bộ chọn công cụ/intent dùng câu GỐC, truy hồi
+  // dùng câu gốc + mã/nhãn trích từ ảnh. Xem `cauHoiTheoAnh`.
+  const { cauHoiCongCu, cauHoiTruyVanAnh } = cauHoiTheoAnh(question, context);
 
   // Real-time tool first (live DB state — must NOT be cached).
   // ★★★ PDCA vòng 8 — gate `route === "vscode"` nay BÓC giáo cụ TRƯỚC khi phân loại thay vì chặn mù
@@ -3611,17 +3635,17 @@ export async function* streamAnswer(
   // MỤC ĐÍCH KHÁC (H6: cho `retrieveKnowledge`/`shouldUseLlm` thấy câu hỏi thật, không phải giáo cụ),
   // không phải bộ chọn tool. Đường WEB (route khác "vscode") không đổi MỘT DÒNG nào ở đây.
   let toolExec: TryExecuteToolLoopResult;
-  let cauHoiTruyVan = question;
+  let cauHoiTruyVan = cauHoiTruyVanAnh;
   let laVscodeDaBocGiaoThuc = false;
   if (context?.route === "vscode") {
-    const thanThat = tachThanKhoiGiaoCuVscode(question);
+    const thanThat = tachThanKhoiGiaoCuVscode(cauHoiCongCu);
     if (thanThat !== null) {
-      cauHoiTruyVan = thanThat;
+      cauHoiTruyVan = context?.cauHoiGoc ? [thanThat, ...(context.maTuAnh ?? [])].join(" ") : thanThat;
       laVscodeDaBocGiaoThuc = true;
     }
     toolExec = KHONG_TOOL_VSCODE;
   } else {
-    toolExec = yield* chayVongLapToolPhatTienDo(question, context, execCtx);
+    toolExec = yield* chayVongLapToolPhatTienDo(cauHoiCongCu, context, execCtx);
   }
   const toolResult = toolExec.result;
   const loop = toolExec.loop;

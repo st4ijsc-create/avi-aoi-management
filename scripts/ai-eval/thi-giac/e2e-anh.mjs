@@ -15,13 +15,16 @@ const BASE = env.AI_EVAL_BASE, TOKEN = env.AI_EVAL_TOKEN;
 const cookie = ck(path.resolve(ROOT, arg("--cookie", "tmp/audit-ai/ck.txt")));
 const bo = JSON.parse(fs.readFileSync(path.join(GOC, "bo-anh.json"), "utf8"));
 const CHI = arg("--chi", "04,08,12").split(",");
+// Ngữ cảnh KB (mặc định = đường WEB như lần đo cổng); thêm `--ngu-canh '{"route":"vscode","codingMode":true}'` để đo đúng hình dạng extension.
+const NGU_CANH = { uiLanguage: "vi", ...JSON.parse(arg("--ngu-canh", "{}")) };
+const CHI_KB = process.argv.includes("--chi-kb");
 const boDau = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
 const cham = (cau, tl) => cau.nhom.map((alt) => alt.some((re) => new RegExp(re, "i").test(boDau(tl))));
 const ketQua = { v1: 0, kb: 0, kbModelChinh: 0 };
 
 for (const cau of bo.anh.filter((c) => CHI.includes(c.id))) {
   const anh = `data:image/png;base64,${fs.readFileSync(path.join(GOC, cau.tep)).toString("base64")}`;
-  { // /v1
+  if (!CHI_KB) { // /v1
     const t0 = Date.now();
     const r = await fetch(`${BASE}/v1/chat/completions`, {
       method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
@@ -37,7 +40,7 @@ for (const cau of bo.anh.filter((c) => CHI.includes(c.id))) {
     const t0 = Date.now();
     const r = await fetch(`${BASE}/api/ai/local-kb/stream`, {
       method: "POST", headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ question: cau.hoi, image: anh, history: [], context: { uiLanguage: "vi" } }),
+      body: JSON.stringify({ question: cau.hoi, image: anh, history: [], context: NGU_CANH }),
     });
     const than = await r.text();
     const ev = than.split("\n\n").map((k) => k.replace(/^data:\s*/m, "").trim()).filter((d) => d.startsWith("{")).map((d) => { try { return JSON.parse(d); } catch { return null; } }).filter(Boolean);
@@ -55,6 +58,6 @@ if (id) {
   const r = await fetch(`${BASE}/api/trpc/aiGatewayToken.thuHoi`, { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify({ json: { id: Number(id) } }) });
   console.log(`thu hồi token id=${id}: HTTP ${r.status}`);
 }
-const dat = ketQua.v1 >= 2 && ketQua.kb >= 2 && ketQua.kbModelChinh === CHI.length;
+const dat = (CHI_KB || ketQua.v1 >= 2) && ketQua.kb >= 2 && ketQua.kbModelChinh === CHI.length;
 console.log(`E2E: /v1 ${ketQua.v1}/${CHI.length} · KB ${ketQua.kb}/${CHI.length} · KB nguon=model-chinh ${ketQua.kbModelChinh}/${CHI.length} ⇒ ${dat ? "ĐẠT" : "KHÔNG ĐẠT"}`);
 process.exit(dat ? 0 : 1);
