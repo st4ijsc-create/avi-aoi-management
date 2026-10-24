@@ -521,7 +521,8 @@ describe("scadaKenh.cheDo — kênh chế độ máy", () => {
     await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 20000 WHERE id = ${ad.a}`);
     try {
       await dung(sql`UPDATE device_tags SET "samplingMs" = 30000 WHERE id = ${tg.mode}`);
-      expect((await cua(viewerA, A.mid)).canhBaoNguon).toBeNull();
+      // T10b fix round 1 (M-1) — samplingMs chưa vượt ngưỡng ⇒ không "deadband", nhưng poll 20 s > 10 s ⇒ "poll_cham" (xếp SAU deadband)
+      expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("poll_cham");
       await dung(sql`UPDATE device_tags SET "samplingMs" = 30001 WHERE id = ${tg.mode}`);
       expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("deadband");
     } finally {
@@ -530,6 +531,15 @@ describe("scadaKenh.cheDo — kênh chế độ máy", () => {
     }
     vi.stubEnv("OT_TAG_DEADBAND_ENABLED", "false");
     expect((await cua(viewerA, A.mid)).canhBaoNguon).toBeNull();
+    // R1b-1 T10b fix round 1 (M-1) — poll_cham KHÔNG phụ thuộc cờ deadband: ngưỡng = TUOI_MAU_CHE_DO_TOI_DA_MS / 3 = 10 000 ms (cùng kẹp 30 s)
+    await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 10000 WHERE id = ${ad.a}`);
+    try {
+      expect((await cua(viewerA, A.mid)).canhBaoNguon, "poll đúng 10 s ⇒ 3·poll = 30 s, chưa kẹp").toBeNull();
+      await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 10001 WHERE id = ${ad.a}`);
+      expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("poll_cham");
+    } finally {
+      await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 500 WHERE id = ${ad.a}`);
+    }
     // OPC UA: đổi protocol của adapter (bật, đúng máy) trong chốc lát — không ai mở phiên (test không gọi startOt)
     await dung(sql`UPDATE device_adapters SET protocol = 'opcua' WHERE id = ${ad.a}`);
     expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("bao_khi_doi");

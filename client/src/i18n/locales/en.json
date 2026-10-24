@@ -4588,7 +4588,8 @@
     "AI_CHUA_CAP_PHEP": "The current edition / licence does not include AI (MOD_AI).",
     "SCADA_STOP_NOT_PINNED": "The machine has no pinned STOP values — an engineer pins them at /scada/config/channels; stop it with the hardwired E-STOP.",
     "INTERLOCK_MAT_DICH": "Enabled interlock rule #{{ruleId}} uses tag {{tagKey}} (as its command target or its source) — renaming the tag, moving it to another adapter, disabling or deleting it, or disabling, deleting or moving its adapter to another machine would leave the protective action without a target or a source. Fix the rule (or disable it) first.",
-    "INTERLOCK_DICH_CHUA_SAN_SANG": "Interlock rule #{{ruleId}} cannot be enabled: tag {{tagKey}} (its command target or its source) does not exist, is disabled, or its adapter is disabled — the protective action would have no target or no source. Create / enable the tag and its adapter first, then enable the rule again.",
+    "INTERLOCK_DICH_CHUA_SAN_SANG": "Interlock rule #{{ruleId}} cannot be enabled: tag {{tagKey}} is not ready — the target tag does not exist, is disabled or its adapter is disabled; or the source tag declared on the machine is disabled (or its adapter is). The protective action would have no target or no source. Create / enable the tag and its adapter first, then enable the rule again.",
+    "INTERLOCK_NGUON_MO_HO": "Interlock rule #{{ruleId}} cannot be enabled: {{soAdapter}} enabled adapters of the machine carry the source tag {{tagKey}} — the gate cannot tell which one to read (ambiguous), so the rule would always lack data. Rename or disable the duplicate tag first, then enable the rule again.",
     "QUA_NHIEU_KENH_DA_KHAI": "This import touches {{soTag}} declared / protected channel tags — at most {{toiDa}} per import. Split the file and import again.",
     "STOP_PIN_GO_TRUOC": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) — changing its address, type, scale, offset, writable flag or adapter, disabling or deleting it would lose STOP. Unpin it first (Software stop tag, with a reason), then try again."
   },
@@ -23596,7 +23597,8 @@
       "canhBaoNguonLoai": {
         "deadband": "Tag uses deadband filtering / sparse sampling",
         "edge": "Adapter is owned by an edge node",
-        "bao_khi_doi": "Report-by-exception protocol (OPC UA monitored items)"
+        "bao_khi_doi": "Report-by-exception protocol (OPC UA monitored items)",
+        "poll_cham": "Adapter polls slower than every 10 s — mode samples older than 30 s count as stale, so the machine can drop to LOCAL between polls"
       },
       "nut": {
         "sua": "Edit",

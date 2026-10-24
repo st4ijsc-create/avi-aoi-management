@@ -181,7 +181,7 @@ function assertTargetIfNotAlert(action: string, target: { targetMachineId?: numb
 }
 
 /** Lý do `INTERLOCK_DICH_CHUA_SAN_SANG` (params.lyDo). */
-export type LyDoDichChuaSanSang = "dich_khong_ton_tai" | "dich_tat" | "adapter_dich_tat" | "nguon_khong_ton_tai" | "nguon_tat";
+export type LyDoDichChuaSanSang = "dich_khong_ton_tai" | "dich_tat" | "adapter_dich_tat" | "nguon_tat";
 
 function loiDichChuaSanSang(luat: { id: number; name: string }, tagKey: string, lyDo: LyDoDichChuaSanSang, chiTiet: string): never {
   throw appError(
@@ -197,8 +197,11 @@ function loiDichChuaSanSang(luat: { id: number; name: string }, tagKey: string, 
  * (`INTERLOCK_MAT_DICH`, troLaiKenh.ts), nên một luật không phải `alert` cũng KHÔNG được BẬT lên một đích / nguồn đã chết:
  *   • đích (`targetAdapterId` + `commandTag`): tag phải TỒN TẠI, ĐANG BẬT, `writable` (không thì dispatch từ chối TAG_NOT_WRITABLE — cùng mã
  *     `INTERLOCK_NGOAI_DAI`/`CHANNEL_READ_ONLY` với tags.update), và adapter của nó ĐANG BẬT;
- *   • nguồn `telemetry_tag` (máy, sourceKey): có ÍT NHẤT một tag mang `sourceKey` trên một adapter của máy, và một tag như thế đang bật trên
- *     adapter đang bật (cổng đọc theo (máy, tag) trên mọi adapter của máy — `khoaLuatNguonTx`).
+ *   • nguồn `telemetry_tag` (máy, sourceKey) — fix round 1 (I-1, phán quyết điều phối): KHÔNG tag thiết bị nào của máy khai `sourceKey` ⇒
+ *     CHO BẬT: cổng đánh giá nguồn đó qua đường DB (`ot_telemetry` theo (máy, metric) — edge, MQTT, MTConnect, SECS/GEM, CFX, /api/v1,
+ *     simulator; interlockGate.ts) và fail-closed lúc chạy (khong_co_mau / cu / mo_ho theo khiThieuDuLieu). CÓ tag thiết bị khai khoá đó trên
+ *     máy (nguồn OT đã khai) ⇒ phải có tag BẬT trên adapter BẬT (`nguon_tat`), và ĐÚNG MỘT (>1 ⇒ `INTERLOCK_NGUON_MO_HO`, M-2 — cùng luật
+ *     mơ hồ của cổng: >1 adapter của máy khai tag ⇒ mo_ho mãi). Chỉ đếm adapter của ĐÚNG máy của luật (M-3).
  * Luật đích chỉ `targetMachineId` (cổng chặn, không dispatch) ⇒ không có tag để kiểm.
  *
  * THỨ TỰ KHOÁ (troLaiKenh.ts: ADAPTER → LUẬT → TAG → KÊNH CHẾ ĐỘ): bên gọi đã khoá LUẬT FOR UPDATE; ở đây TAG FOR SHARE (`of` device_tags —
@@ -235,11 +238,20 @@ async function assertDichNguonSanSang(tx: DbHoacTx, luat: InterlockRule): Promis
       .innerJoin(deviceAdapters, eq(deviceAdapters.id, deviceTags.adapterId))
       .where(and(eq(deviceAdapters.machineId, luat.machineId), eq(deviceTags.tagKey, luat.sourceKey)))
       .for("share", { of: deviceTags });
-    if (nguon.length === 0) {
-      loiDichChuaSanSang(luat, luat.sourceKey, "nguon_khong_ton_tai", `không adapter nào của máy #${luat.machineId} có tag nguồn ${luat.sourceKey}`);
-    }
-    if (!nguon.some((r) => r.tagBat === true && r.adapterBat === true)) {
+    // I-1 — không tag thiết bị nào của máy khai khoá này ⇒ nguồn ngoài OT trung tâm, cổng đọc ot_telemetry (fail-closed lúc chạy) ⇒ cho bật.
+    if (nguon.length === 0) return;
+    const song = nguon.filter((r) => r.tagBat === true && r.adapterBat === true);
+    if (song.length === 0) {
       loiDichChuaSanSang(luat, luat.sourceKey, "nguon_tat", `tag nguồn ${luat.sourceKey} (hoặc adapter của nó) đang tắt`);
+    }
+    if (song.length > 1) {
+      // M-2 — tagKey duy nhất theo adapter ⇒ mỗi hàng sống là một adapter sống của máy khai khoá này: cổng trả mo_ho ở MỌI lượt đánh giá.
+      throw appError(
+        "BAD_REQUEST",
+        "INTERLOCK_NGUON_MO_HO",
+        { ma: "INTERLOCK_NGUON_MO_HO", lyDo: "nguon_mo_ho", tagKey: luat.sourceKey, ruleId: luat.id, soAdapter: song.length },
+        `Không bật được luật interlock #${luat.id} (${luat.name}): ${song.length} adapter đang bật của máy #${luat.machineId} cùng mang tag nguồn ${luat.sourceKey} — cổng không biết đọc adapter nào (mơ hồ) nên luật sẽ luôn thiếu dữ liệu. Đổi tên / tắt tag trùng trước.`,
+      );
     }
   }
 }

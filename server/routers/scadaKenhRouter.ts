@@ -49,7 +49,7 @@ import { phamViCua } from "./_phamViNguoiXem";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { isEdgeControlSchemaMissing } from "../services/edge/edgeControlSchema";
 import { kiemGiaTriGhi, laKenhGhi, loaiKenh, mucTacDongKenh, type LoaiKenh } from "../services/scada/kenhScada";
-import { cheDoMay, nguongTuoiCheDoMs, type CheDo } from "../services/scada/cheDoMay";
+import { cheDoMay, nguongTuoiCheDoMs, TUOI_MAU_CHE_DO_TOI_DA_MS, type CheDo } from "../services/scada/cheDoMay";
 import { khoaLuatNhamTagTx, kiemNhatQuanKenh, soHienThi, viPhamInterlock, type KenhNhatQuan } from "../services/scada/nhatQuanKenh";
 import { khoaAdapterTx } from "../services/scada/troLaiKenh";
 import { tagDeadbandEnabled } from "../services/ot/otManager";
@@ -135,7 +135,7 @@ const patchInput = z
   })
   .strict();
 
-export type CanhBaoNguon = "deadband" | "edge" | "bao_khi_doi" | null;
+export type CanhBaoNguon = "deadband" | "edge" | "bao_khi_doi" | "poll_cham" | null;
 
 /**
  * Điều phối 2026-10-24 (fix round 1) — "kênh dừng" CHƯA KHAI: tag mà lệnh stop của tool AI máy nhắm tới (`TAG_DUNG_MAC_DINH` = tag mặc
@@ -208,7 +208,16 @@ function locThuaMau(k: { deadband: number | null; samplingMs: number | null; pol
   return k.samplingMs != null && k.samplingMs > nguongTuoiCheDoMs(k.pollMs);
 }
 
-/** Một cảnh báo (nặng nhất trước): edge (trung tâm không có số liệu) > báo khi đổi > deadband (bộ lọc report-by-exception đang chạy). */
+/**
+ * R1b-1 T10b fix round 1 (M-1) — adapter mang tag chế độ poll CHẬM hơn `TUOI_MAU_CHE_DO_TOI_DA_MS / 3` (10 s): cổng chế độ kẹp tuổi mẫu ở
+ * 30 s (`nguongTuoiCheDoMs`) nên dung sai < 3 lần poll lỡ; poll ≥ 30 s ⇒ máy rơi về LOCAL `cu` giữa hai lần poll. KHÔNG phụ thuộc cờ
+ * deadband (khác `locThuaMau`). Cảnh báo SỐNG theo pollIntervalMs hiện tại (không chặn ở cheDo.dat — poll đổi được sau đó).
+ */
+function pollChamChoCheDo(pollMs: number | null): boolean {
+  return pollMs != null && pollMs > TUOI_MAU_CHE_DO_TOI_DA_MS / 3;
+}
+
+/** Một cảnh báo (nặng nhất trước): edge (trung tâm không có số liệu) > báo khi đổi > deadband (bộ lọc report-by-exception đang chạy) > poll chậm. */
 function canhBaoCua(
   k: { adapterId: number; protocol: string | null; deadband: number | null; samplingMs: number | null; pollMs: number | null },
   edge: Set<number>,
@@ -216,6 +225,7 @@ function canhBaoCua(
   if (edge.has(k.adapterId)) return "edge";
   if (baoKhiDoi(k.protocol)) return "bao_khi_doi";
   if (locThuaMau(k)) return "deadband";
+  if (pollChamChoCheDo(k.pollMs)) return "poll_cham";
   return null;
 }
 

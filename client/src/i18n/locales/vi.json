@@ -4580,7 +4580,8 @@
     "AI_CHUA_CAP_PHEP": "Phiên bản / giấy phép hiện tại không gồm tính năng AI (MOD_AI).",
     "SCADA_STOP_NOT_PINNED": "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng.",
     "INTERLOCK_MAT_DICH": "Luật interlock đang bật #{{ruleId}} dùng tag {{tagKey}} (đích ghi lệnh hoặc nguồn đọc) — đổi tên, chuyển sang adapter khác, tắt hoặc xoá tag, hoặc tắt, xoá, chuyển adapter sang máy khác sẽ làm hành động bảo vệ mất đích hoặc mất nguồn. Sửa luật (hoặc tắt luật) trước.",
-    "INTERLOCK_DICH_CHUA_SAN_SANG": "Không bật được luật interlock #{{ruleId}}: tag {{tagKey}} (đích ghi lệnh hoặc nguồn đọc) không tồn tại, đang tắt, hoặc adapter của nó đang tắt — hành động bảo vệ sẽ không có đích hoặc nguồn. Tạo / bật tag và adapter trước, rồi bật lại luật.",
+    "INTERLOCK_DICH_CHUA_SAN_SANG": "Không bật được luật interlock #{{ruleId}}: tag {{tagKey}} chưa sẵn sàng — tag đích không tồn tại, đang tắt hoặc adapter đích đang tắt; hoặc tag nguồn đã khai trên máy đang tắt (hay adapter của nó tắt). Hành động bảo vệ sẽ không có đích hoặc nguồn. Tạo / bật tag và adapter trước, rồi bật lại luật.",
+    "INTERLOCK_NGUON_MO_HO": "Không bật được luật interlock #{{ruleId}}: {{soAdapter}} adapter đang bật của máy cùng mang tag nguồn {{tagKey}} — cổng không biết đọc adapter nào (mơ hồ) nên luật sẽ luôn thiếu dữ liệu. Đổi tên hoặc tắt tag trùng trước, rồi bật lại luật.",
     "QUA_NHIEU_KENH_DA_KHAI": "Lô import đụng {{soTag}} tag đã khai kênh / được bảo vệ — tối đa {{toiDa}} tag mỗi lô. Chia nhỏ file rồi nhập lại.",
     "STOP_PIN_GO_TRUOC": "Kênh {{tagKey}} đang ghim giá trị DỪNG ({{stopValue}}) — đổi địa chỉ / kiểu / scale / offset / cho phép ghi / adapter, tắt hoặc xoá tag sẽ làm mất STOP. Gỡ ghim trước (mục Tag dừng phần mềm, có lý do), rồi làm lại."
   },
@@ -23570,7 +23571,8 @@
       "canhBaoNguonLoai": {
         "deadband": "Tag đang lọc deadband / lấy mẫu thưa",
         "edge": "Adapter do edge sở hữu",
-        "bao_khi_doi": "Giao thức báo-khi-đổi (OPC UA monitored items)"
+        "bao_khi_doi": "Giao thức báo-khi-đổi (OPC UA monitored items)",
+        "poll_cham": "Adapter poll chậm hơn 10 s — mẫu chế độ cũ hơn 30 s bị coi là cũ, máy có thể rơi về LOCAL giữa hai lần poll"
       },
       "nut": {
         "sua": "Sửa",

@@ -209,8 +209,10 @@ export const APP_ERROR_CODES = [
                                    // lệnh lên ⇒ hành động bảo vệ mất đích. Sửa đích của luật (hoặc tắt luật) trước.
                                    // R1b-1 T10b (m1): cả khi chuyển adapter sang máy khác mà tag của nó là đích / nguồn của luật đang bật.
   "INTERLOCK_DICH_CHUA_SAN_SANG",  // params: { ma, lyDo, tagKey, ruleId } — R1b-1 T10b: interlock.enable luật không phải alert mà tag đích không tồn
-                                   // tại / đang tắt / adapter đích tắt, hoặc tag nguồn telemetry_tag không tồn tại / đang tắt (lyDo: dich_khong_ton_tai |
-                                   // dich_tat | adapter_dich_tat | nguon_khong_ton_tai | nguon_tat). Tạo / bật tag + adapter trước.
+                                   // tại / đang tắt / adapter đích tắt, hoặc tag nguồn telemetry_tag ĐÃ KHAI trên máy nhưng tắt (lyDo: dich_khong_ton_tai |
+                                   // dich_tat | adapter_dich_tat | nguon_tat). Nguồn không tag thiết bị nào khai ⇒ cho bật (đường DB, fix round 1 I-1).
+  "INTERLOCK_NGUON_MO_HO",         // params: { ma, lyDo: "nguon_mo_ho", tagKey, ruleId, soAdapter } — R1b-1 T10b fix round 1 (M-2): interlock.enable luật
+                                   // telemetry_tag mà >1 adapter bật của máy cùng mang tag nguồn ⇒ cổng mo_ho mãi. Bỏ trùng trước.
   "STOP_PIN_GO_TRUOC",             // params: { ma, tagKey, stopValue } — fix round 1 (phán quyết T9 b): tag ĐÃ KHAI đang ghim DỪNG mà lượt này đổi định
                                    // nghĩa dây (address/scale/offset/dataType/writable/adapterId), tắt hoặc xoá tag ⇒ gỡ ghim trước (thao tác riêng có lý do).
   "QUA_NHIEU_KENH_DA_KHAI",        // params: { soTag, toiDa } — một lô import trỏ lại quá `toiDa` (200) tag đã khai kênh; chia nhỏ file.

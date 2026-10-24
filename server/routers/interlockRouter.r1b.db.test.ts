@@ -297,31 +297,78 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — interloc
       }
     });
 
-    it("★ nguồn telemetry_tag: không tag nào mang sourceKey trên adapter của máy ⇒ nguon_khong_ton_tai; tag tắt / adapter tắt ⇒ nguon_tat; đủ ⇒ bật", async () => {
-      const [a2] = await sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId")
-        VALUES (${DAU + "-src"}, ${DAU + "-src"}, 'stub', 'stub://ilkr1b-src', false, ${MAY}) RETURNING id`;
-      const ad2 = Number(a2.id);
+    // ── fix round 1 (I-1 / M-2 / M-3) — nguồn telemetry_tag ─────────────────────────────────────────────────────────────────────────
+    const MAY_KHAC = MAY + 1; // máy KHÁC (id giả, không FK — như MAY)
+    /** Adapter stub gắn máy `may`, kèm (tuỳ chọn) tag `nhiet`; trả id adapter. Dọn bằng `donNguon`. */
+    const adapterNguon = async (hau: string, may: number, adapterBat: boolean, tag?: { bat: boolean }) => {
+      const [a] = await sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId")
+        VALUES (${DAU + "-src-" + hau}, ${DAU + "-src-" + hau}, 'stub', ${"stub://ilkr1b-src-" + hau}, ${adapterBat}, ${may}) RETURNING id`;
+      if (tag) {
+        await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled")
+          VALUES (${a.id}, 'nhiet', ${"addr-nhiet-" + hau}, 'float', false, ${tag.bat})`;
+      }
+      return Number(a.id);
+    };
+    const luatNguon = async () => {
+      const [r0] = await sql`INSERT INTO interlock_rules (name, scope, "machineId", "sourceKey", "sourceType", "comparisonOperator", threshold, action,
+          "targetMachineId", enabled, "approvedBy", "createdBy")
+        VALUES (${DAU + "-en-src"}, 'machine', ${MAY}, 'nhiet', 'telemetry_tag', 'gt', 80, 'stop_line', ${MAY}, false, ${DUYET}, ${TAC_GIA}) RETURNING id`;
+      return Number(r0.id);
+    };
+    const donNguon = async () => {
+      await sql`DELETE FROM interlock_rules WHERE name = ${DAU + "-en-src"}`;
+      await sql`DELETE FROM device_tags WHERE "adapterId" IN (SELECT id FROM device_adapters WHERE code LIKE ${DAU + "-src-%"})`;
+      await sql`DELETE FROM device_adapters WHERE code LIKE ${DAU + "-src-%"}`;
+    };
+    const tatLuat = (id: number) => sql`UPDATE interlock_rules SET enabled = false WHERE id = ${id}`;
+
+    it("★ I-1: KHÔNG tag thiết bị nào của máy khai sourceKey (nguồn ngoài OT — cổng đọc ot_telemetry) ⇒ BẬT được; ★ M-3: tag cùng khoá ĐANG TẮT trên máy KHÁC không bị coi là nguồn đã khai (không nguon_tat)", async () => {
       try {
-        const [r0] = await sql`INSERT INTO interlock_rules (name, scope, "machineId", "sourceKey", "sourceType", "comparisonOperator", threshold, action,
-            "targetMachineId", enabled, "approvedBy", "createdBy")
-          VALUES (${DAU + "-en-src"}, 'machine', ${MAY}, 'nhiet', 'telemetry_tag', 'gt', 80, 'stop_line', ${MAY}, false, ${DUYET}, ${TAC_GIA}) RETURNING id`;
-        const r = Number(r0.id);
+        // Máy KHÁC có adapter bật mang tag 'nhiet' ĐANG TẮT: nếu bộ lọc máy bị bỏ, nó thành "nguồn đã khai mà tắt" ⇒ nguon_tat. Đúng: bỏ qua ⇒
+        // nhánh "không tag thiết bị nào của máy khai" ⇒ bật.
+        await adapterNguon("khac", MAY_KHAC, true, { bat: false });
+        const r = await luatNguon();
+        expect((await bat(r)).enabled).toBe(true);
+        expect((await sql`SELECT count(*)::int AS n FROM device_tags t JOIN device_adapters a ON a.id = t."adapterId"
+          WHERE a."machineId" = ${MAY} AND t."tagKey" = 'nhiet'`)[0].n, "nhánh đã chạy = không tag thiết bị nào của MÁY khai khoá").toBe(0);
+      } finally {
+        await donNguon();
+      }
+    });
+
+    it("★ nguồn ĐÃ KHAI trên máy: tag tắt / adapter tắt ⇒ nguon_tat; đủ ⇒ bật; ★ M-3: tag SỐNG cùng khoá trên máy KHÁC không tính vào mơ hồ", async () => {
+      try {
+        const adMay = await adapterNguon("may", MAY, false, { bat: false });
+        await adapterNguon("khac", MAY_KHAC, true, { bat: true }); // nguồn sống của máy KHÁC
+        const r = await luatNguon();
         expect(await loiCua(bat(r))).toMatchObject({
           appCode: "INTERLOCK_DICH_CHUA_SAN_SANG",
-          appParams: { ma: "INTERLOCK_DICH_CHUA_SAN_SANG", lyDo: "nguon_khong_ton_tai", tagKey: "nhiet", ruleId: r },
-        });
-        const [t] = await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled")
-          VALUES (${ad2}, 'nhiet', 'addr-nhiet', 'float', false, false) RETURNING id`;
-        expect(await loiCua(bat(r))).toMatchObject({ appParams: { lyDo: "nguon_tat" } }); // tag tắt, adapter tắt
-        await sql`UPDATE device_tags SET "isEnabled" = true WHERE id = ${t.id}`;
+          appParams: { ma: "INTERLOCK_DICH_CHUA_SAN_SANG", lyDo: "nguon_tat", tagKey: "nhiet", ruleId: r },
+        }); // tag tắt, adapter tắt
+        await sql`UPDATE device_tags SET "isEnabled" = true WHERE "adapterId" = ${adMay}`;
         expect(await loiCua(bat(r))).toMatchObject({ appParams: { lyDo: "nguon_tat" } }); // adapter vẫn tắt
         expect(await dangBat(r)).toBe(false);
-        await sql`UPDATE device_adapters SET "isEnabled" = true WHERE id = ${ad2}`;
-        expect((await bat(r)).enabled).toBe(true);
+        await sql`UPDATE device_adapters SET "isEnabled" = true WHERE id = ${adMay}`;
+        expect((await bat(r)).enabled, "một nguồn sống trên MÁY + một trên máy khác ⇒ không mơ hồ").toBe(true);
       } finally {
-        await sql`DELETE FROM interlock_rules WHERE name = ${DAU + "-en-src"}`;
-        await sql`DELETE FROM device_tags WHERE "adapterId" = ${ad2}`;
-        await sql`DELETE FROM device_adapters WHERE id = ${ad2}`;
+        await donNguon();
+      }
+    });
+
+    it("★ M-2: >1 adapter BẬT của máy cùng mang tag nguồn BẬT ⇒ INTERLOCK_NGUON_MO_HO (nguon_mo_ho, soAdapter); tắt tag trùng ⇒ bật được", async () => {
+      try {
+        await adapterNguon("may", MAY, true, { bat: true });
+        const adTrung = await adapterNguon("may2", MAY, true, { bat: true });
+        const r = await luatNguon();
+        const e = await loiCua(bat(r));
+        expect(e).toMatchObject({ code: "BAD_REQUEST", appCode: "INTERLOCK_NGUON_MO_HO" });
+        expect(e.appParams).toEqual({ ma: "INTERLOCK_NGUON_MO_HO", lyDo: "nguon_mo_ho", tagKey: "nhiet", ruleId: r, soAdapter: 2 });
+        expect(await dangBat(r)).toBe(false);
+        await sql`UPDATE device_tags SET "isEnabled" = false WHERE "adapterId" = ${adTrung}`;
+        expect((await bat(r)).enabled).toBe(true);
+        await tatLuat(r);
+      } finally {
+        await donNguon();
       }
     });
 
