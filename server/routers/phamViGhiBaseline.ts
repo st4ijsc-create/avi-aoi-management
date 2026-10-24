@@ -26,46 +26,23 @@
  * machineRouter.create/update/delete, productModelRouter.update …) ⇒ 694 → 736 (735 trong sổ + 1 miễn trừ); không mục nào biến mất.
  * 2026-10-24 lô W5 (−28, cây phân cấp: factory.update/delete/restore/updateMapPosition/updateFloorDims/uploadFloorPlan · factoryZone.* · workshop/line/station create/update/delete/restore ·
  * machine.create/update/delete/restore/setLifecycleStatus/updateLayout/updateLayoutPosition) ⇒ 736 → 708. Còn lại ở hierarchyRouters: thủ tục adminProcedure (admin phạm vi toàn quyền) và đường MÁY tự khai (register/claimKey/enroll — publicProcedure).
+ * 2026-10-24 QUY TẮC MỚI: sàn adminProcedure/superAdminProcedure KHÔNG còn là nợ (admin phạm vi TOÀN QUYỀN theo thiết kế, canh bằng phamViGhiCensus §5c) ⇒ −218 (708 → 490).
+ * 2026-10-24 lô W6 (−15, luật ghi theo SẢN PHẨM — chủ dự án duyệt: productModel.update/delete/clone · measurementPoint.create/delete/revert · productMachineMapping.create ·
+ * productDocument.upload/delete · cadImport.parsePreview/applyCoordinates · msaWizard presets · spcAlerts.ack · measurementSamples.analyze) ⇒ 490 → 475; thêm 4 MIỄN TRỪ có lý do
+ * (productModel.create · defectCatalog.update/delete · annotationTemplate.delete) ⇒ sổ 470 + 5 miễn trừ.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
-  // ── server/_core/systemRouter.ts (8) ──
-  "server/_core/systemRouter.ts#systemRouter.marketplace.delete",
+  // ── server/_core/systemRouter.ts (1) ──
   "server/_core/systemRouter.ts#systemRouter.marketplace.download",
-  "server/_core/systemRouter.ts#systemRouter.marketplace.publish",
-  "server/_core/systemRouter.ts#systemRouter.marketplace.reviews.create",
-  "server/_core/systemRouter.ts#systemRouter.marketplace.update",
-  "server/_core/systemRouter.ts#systemRouter.scheduledBackups.delete",
-  "server/_core/systemRouter.ts#systemRouter.scheduledBackups.toggle",
-  "server/_core/systemRouter.ts#systemRouter.scheduledBackups.update",
-  // ── server/routers/aiActiveLearningRouter.ts (4) ──
-  "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.assignReviewer",
-  "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.autoLabel",
+  // ── server/routers/aiActiveLearningRouter.ts (2) ──
   "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.skipItem",
   "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.submitLabel",
-  // ── server/routers/aiAdvancedRouter.ts (23) ──
-  "server/routers/aiAdvancedRouter.ts#abTestRouter.conclude",
-  "server/routers/aiAdvancedRouter.ts#abTestRouter.create",
-  "server/routers/aiAdvancedRouter.ts#abTestRouter.delete",
+  // ── server/routers/aiAdvancedRouter.ts (5) ──
   "server/routers/aiAdvancedRouter.ts#abTestRouter.runInference",
-  "server/routers/aiAdvancedRouter.ts#abTestRouter.start",
   "server/routers/aiAdvancedRouter.ts#abTestRouter.submitFeedback",
-  "server/routers/aiAdvancedRouter.ts#abTestRouter.update",
-  "server/routers/aiAdvancedRouter.ts#batchRouter.cancel",
-  "server/routers/aiAdvancedRouter.ts#batchRouter.create",
-  "server/routers/aiAdvancedRouter.ts#edgeRouter.create",
-  "server/routers/aiAdvancedRouter.ts#edgeRouter.delete",
   "server/routers/aiAdvancedRouter.ts#edgeRouter.heartbeat",
-  "server/routers/aiAdvancedRouter.ts#edgeRouter.packageModel",
   "server/routers/aiAdvancedRouter.ts#edgeRouter.syncResults",
   "server/routers/aiAdvancedRouter.ts#edgeRouter.updateStatus",
-  "server/routers/aiAdvancedRouter.ts#monitoringRouter.acknowledgeAlert",
-  "server/routers/aiAdvancedRouter.ts#monitoringRouter.collectSnapshot",
-  "server/routers/aiAdvancedRouter.ts#monitoringRouter.resolveAlert",
-  "server/routers/aiAdvancedRouter.ts#trainingRouter.cancelJob",
-  "server/routers/aiAdvancedRouter.ts#trainingRouter.createDataset",
-  "server/routers/aiAdvancedRouter.ts#trainingRouter.createJob",
-  "server/routers/aiAdvancedRouter.ts#trainingRouter.deleteDataset",
-  "server/routers/aiAdvancedRouter.ts#trainingRouter.deleteJob",
   // ── server/routers/aiAdvancedVisionRouter.ts (1) ──
   "server/routers/aiAdvancedVisionRouter.ts#aiAdvancedVisionRouter.explainHeatmap",
   // ── server/routers/aiAgentRouter.ts (10) ──
@@ -83,16 +60,8 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.imageDefectDescription",
   "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.quickQualityCheck",
   "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.similarDefectSearch",
-  // ── server/routers/aiAnomalyRouter.ts (7) ──
-  "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.backfillScores",
-  "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.buildBank",
-  "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.buildBankFromDb",
-  "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.buildPatchBank",
-  "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.deleteBank",
-  "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.rebuild",
+  // ── server/routers/aiAnomalyRouter.ts (1) ──
   "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.score",
-  // ── server/routers/aiCalibrationRouter.ts (1) ──
-  "server/routers/aiCalibrationRouter.ts#aiCalibrationRouter.computeCalibration",
   // ── server/routers/aiChatRouter.ts (5) ──
   "server/routers/aiChatRouter.ts#aiChatRouter.chat",
   "server/routers/aiChatRouter.ts#aiChatRouter.deleteConversation",
@@ -106,16 +75,9 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/aiCopilotRouter.ts (2) ──
   "server/routers/aiCopilotRouter.ts#aiCopilotRouter.cancelAction",
   "server/routers/aiCopilotRouter.ts#aiCopilotRouter.confirmAction",
-  // ── server/routers/aiEvalRouter.ts (9) ──
-  "server/routers/aiEvalRouter.ts#aiEvalRouter.bootstrapFirstClassifier",
-  "server/routers/aiEvalRouter.ts#aiEvalRouter.buildDataset",
-  "server/routers/aiEvalRouter.ts#aiEvalRouter.compareBeforeAfter",
+  // ── server/routers/aiEvalRouter.ts (2) ──
   "server/routers/aiEvalRouter.ts#aiEvalRouter.driftCheck",
   "server/routers/aiEvalRouter.ts#aiEvalRouter.evaluate",
-  "server/routers/aiEvalRouter.ts#aiEvalRouter.generateModelCard",
-  "server/routers/aiEvalRouter.ts#aiEvalRouter.scanCommittee",
-  "server/routers/aiEvalRouter.ts#aiEvalRouter.scanUncertainty",
-  "server/routers/aiEvalRouter.ts#aiEvalRouter.startPipeline",
   // ── server/routers/aiFeedbackRouter.ts (4) ──
   "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.createSuggestion",
   "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.createTrainingBatch",
@@ -123,7 +85,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.submitFeedback",
   // ── server/routers/aiGatewayTokenRouter.ts (1) ──
   "server/routers/aiGatewayTokenRouter.ts#aiGatewayTokenRouter.thuHoi",
-  // ── server/routers/aiGgufRouter.ts (9) ──
+  // ── server/routers/aiGgufRouter.ts (8) ──
   "server/routers/aiGgufRouter.ts#aiGgufRouter.analyzeDefect",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.chat",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.embedding",
@@ -132,43 +94,21 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/aiGgufRouter.ts#aiGgufRouter.soModelDatGan",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.soModelSuaArtifact",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.soModelTaoHoSo",
-  "server/routers/aiGgufRouter.ts#aiGgufRouter.unloadModel",
-  // ── server/routers/aiImageSearchRouter.ts (3) ──
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.embed",
+  // ── server/routers/aiImageSearchRouter.ts (2) ──
   "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByUpload",
   "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByVector",
   // ── server/routers/aiInsightRouter.ts (1) ──
   "server/routers/aiInsightRouter.ts#aiInsightRouter.setStatus",
-  // ── server/routers/aiLocalTrainingRouter.ts (3) ──
-  "server/routers/aiLocalTrainingRouter.ts#aiLocalTrainingRouter.deleteJob",
+  // ── server/routers/aiLocalTrainingRouter.ts (1) ──
   "server/routers/aiLocalTrainingRouter.ts#aiLocalTrainingRouter.predict",
-  "server/routers/aiLocalTrainingRouter.ts#aiLocalTrainingRouter.startTraining",
-  // ── server/routers/aiModelRouter.ts (11) ──
-  "server/routers/aiModelRouter.ts#aiModelRouter.activateVersion",
+  // ── server/routers/aiModelRouter.ts (4) ──
   "server/routers/aiModelRouter.ts#aiModelRouter.approveCard",
-  "server/routers/aiModelRouter.ts#aiModelRouter.create",
   "server/routers/aiModelRouter.ts#aiModelRouter.createCard",
-  "server/routers/aiModelRouter.ts#aiModelRouter.createVersion",
-  "server/routers/aiModelRouter.ts#aiModelRouter.delete",
-  "server/routers/aiModelRouter.ts#aiModelRouter.promoteStage",
   "server/routers/aiModelRouter.ts#aiModelRouter.runInference",
-  "server/routers/aiModelRouter.ts#aiModelRouter.update",
   "server/routers/aiModelRouter.ts#aiModelRouter.updateCard",
-  "server/routers/aiModelRouter.ts#aiModelRouter.uploadFile",
-  // ── server/routers/aiQualityGateRouter.ts (13) ──
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.canaryGuardrail",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.canaryPause",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.canaryPromote",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.canaryRollback",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.canaryStart",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.createConfig",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.createEnsemble",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.deleteConfig",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.deleteEnsemble",
+  // ── server/routers/aiQualityGateRouter.ts (2) ──
   "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.processInspection",
   "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.reviewDecision",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.updateConfig",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.updateEnsemble",
   // ── server/routers/aiRcaCopilotRouter.ts (1) ──
   "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix",
   // ── server/routers/aiRobotAnomalyRouter.ts (2) ──
@@ -179,20 +119,14 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/aiRouters.ts#predictiveAlertRouter.dismiss",
   "server/routers/aiRouters.ts#predictiveAlertRouter.generatePredictions",
   "server/routers/aiRouters.ts#predictiveAlertRouter.resolve",
-  // ── server/routers/aiSegmentationRouter.ts (4) ──
-  "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.buildDataset",
+  // ── server/routers/aiSegmentationRouter.ts (3) ──
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.deleteMask",
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.runSegmentation",
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.saveMask",
-  // ── server/routers/aiSettingsRouter.ts (5) ──
+  // ── server/routers/aiSettingsRouter.ts (1) ──
   "server/routers/aiSettingsRouter.ts#aiSettingsRouter.cancelAiJob",
-  "server/routers/aiSettingsRouter.ts#aiSettingsRouter.deleteApiKey",
-  "server/routers/aiSettingsRouter.ts#aiSettingsRouter.testApiKey",
-  "server/routers/aiSettingsRouter.ts#aiSettingsRouter.toggleApiKey",
-  "server/routers/aiSettingsRouter.ts#aiSettingsRouter.updateConfig",
-  // ── server/routers/aiSmartAlertRoutingRouter.ts (2) ──
+  // ── server/routers/aiSmartAlertRoutingRouter.ts (1) ──
   "server/routers/aiSmartAlertRoutingRouter.ts#aiSmartAlertRoutingRouter.acknowledge",
-  "server/routers/aiSmartAlertRoutingRouter.ts#aiSmartAlertRoutingRouter.route",
   // ── server/routers/aiSpecialistAgentRouter.ts (2) ──
   "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.runModuleAudit",
   "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.submitFeedback",
@@ -218,26 +152,18 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/annotationComparisonRouter.ts (2) ──
   "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.createSession",
   "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.detectPatterns",
-  // ── server/routers/annotationRouters.ts (7) ──
+  // ── server/routers/annotationRouters.ts (6) ──
   "server/routers/annotationRouters.ts#annotationHistoryRouter.rollback",
   "server/routers/annotationRouters.ts#annotationRouter.bulkApplyTemplate",
   "server/routers/annotationRouters.ts#annotationRouter.copyAnnotations",
   "server/routers/annotationRouters.ts#annotationRouter.delete",
   "server/routers/annotationRouters.ts#annotationRouter.export",
   "server/routers/annotationRouters.ts#annotationRouter.save",
-  "server/routers/annotationRouters.ts#annotationTemplateRouter.delete",
-  // ── server/routers/apiKeyRouter.ts (5) ──
+  // ── server/routers/apiKeyRouter.ts (4) ──
   "server/routers/apiKeyRouter.ts#apiKeyRouter.create",
   "server/routers/apiKeyRouter.ts#apiKeyRouter.delete",
   "server/routers/apiKeyRouter.ts#apiKeyRouter.revoke",
-  "server/routers/apiKeyRouter.ts#apiKeyRouter.setHolder",
   "server/routers/apiKeyRouter.ts#apiKeyRouter.update",
-  // ── server/routers/backupRouter.ts (5) ──
-  "server/routers/backupRouter.ts#backupRouter.deleteBackup",
-  "server/routers/backupRouter.ts#backupRouter.deleteScheduled",
-  "server/routers/backupRouter.ts#backupRouter.restoreBackup",
-  "server/routers/backupRouter.ts#backupRouter.toggleScheduled",
-  "server/routers/backupRouter.ts#backupRouter.updateScheduled",
   // ── server/routers/bomRouter.ts (10) ──
   "server/routers/bomRouter.ts#bomRouter.addLineItem",
   "server/routers/bomRouter.ts#bomRouter.archiveDefinition",
@@ -249,8 +175,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/bomRouter.ts#bomRouter.updateDefinition",
   "server/routers/bomRouter.ts#bomRouter.updateFeeder",
   "server/routers/bomRouter.ts#bomRouter.updateLineItem",
-  // ── server/routers/bootstrapRouter.ts (1) ──
-  "server/routers/bootstrapRouter.ts#bootstrapRouter.newFactory",
   // ── server/routers/causalGraphRouter.ts (3) ──
   "server/routers/causalGraphRouter.ts#causalGraphRouter.deleteNode",
   "server/routers/causalGraphRouter.ts#causalGraphRouter.replaceGraph",
@@ -260,31 +184,21 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/componentLibraryRouter.ts#componentLibraryRouter.footprints.update",
   "server/routers/componentLibraryRouter.ts#componentLibraryRouter.linkMaterial",
   "server/routers/componentLibraryRouter.ts#componentLibraryRouter.packages.update",
-  // ── server/routers/contractsRouter.ts (2) ──
-  "server/routers/contractsRouter.ts#contractsRouter.replayQuarantine",
-  "server/routers/contractsRouter.ts#contractsRouter.reviewQuarantine",
-  // ── server/routers/dashboardStatsRouters.ts (3) ──
+  // ── server/routers/dashboardStatsRouters.ts (1) ──
   "server/routers/dashboardStatsRouters.ts#dashboardRouter.applyTemplate",
-  "server/routers/dashboardStatsRouters.ts#dashboardRouter.deleteTemplate",
-  "server/routers/dashboardStatsRouters.ts#dashboardRouter.updateTemplate",
-  // ── server/routers/dashboardWidgetRouters.ts (18) ──
+  // ── server/routers/dashboardWidgetRouters.ts (13) ──
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.applySharedTemplate",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.applyStylePreset",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.cloneSharedPreset",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.createCustomDashboard",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.deleteCustomDashboard",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.deleteSharedTemplate",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.deleteStylePreset",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.duplicateCustomDashboard",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.saveCustomDashboardAsTemplate",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.saveLayout",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.setRoleDefault",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.sharePreset",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.toggleCustomDashboardFavorite",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.toggleCustomDashboardPublic",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.unsharePreset",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.updateCustomDashboard",
-  "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.updateSharedTemplate",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.updateStylePreset",
   // ── server/routers/dataRouters.ts (6) ──
   "server/routers/dataRouters.ts#exportRouter.exportMeasurementPoints",
@@ -302,20 +216,11 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/ecnRouter.ts (2) ──
   "server/routers/ecnRouter.ts#ecnRouter.create",
   "server/routers/ecnRouter.ts#ecnRouter.transition",
-  // ── server/routers/edgeDeploymentRouter.ts (3) ──
-  "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.deployModel",
-  "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.redeploy",
-  "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.rollback",
-  // ── server/routers/edgeRuntimeRouter.ts (2) ──
+  // ── server/routers/edgeRuntimeRouter.ts (1) ──
   "server/routers/edgeRuntimeRouter.ts#edgeRuntimeRouter.deleteNode",
-  "server/routers/edgeRuntimeRouter.ts#edgeRuntimeRouter.registerNode",
   // ── server/routers/energyRouter.ts (2) ──
   "server/routers/energyRouter.ts#energyRouter.recordReading",
   "server/routers/energyRouter.ts#energyRouter.snapshotEnpi",
-  // ── server/routers/enterpriseIntegrationRouter.ts (1) ──
-  "server/routers/enterpriseIntegrationRouter.ts#enterpriseIntegrationRouter.wmsPullInventory",
-  // ── server/routers/equipmentIntegrationRouter.ts (1) ──
-  "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.testEuromapOpcuaConnection",
   // ── server/routers/equipmentStandardsRouter.ts (8) ──
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.deleteMasterAlarm",
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.publishChangeRequest",
@@ -347,15 +252,10 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.reject",
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.retire",
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.setAlignBeforeDiff",
-  // ── server/routers/hierarchyRouters.ts (8) ──
+  // ── server/routers/hierarchyRouters.ts (3) ──
   "server/routers/hierarchyRouters.ts#machineRouter.claimKey",
   "server/routers/hierarchyRouters.ts#machineRouter.enroll",
-  "server/routers/hierarchyRouters.ts#machineRouter.issueClaimToken",
-  "server/routers/hierarchyRouters.ts#machineRouter.regenerateApiKey",
   "server/routers/hierarchyRouters.ts#machineRouter.register",
-  "server/routers/hierarchyRouters.ts#machineRouter.reject",
-  "server/routers/hierarchyRouters.ts#machineRouter.revokeEnrollmentToken",
-  "server/routers/hierarchyRouters.ts#machineRouter.uploadImage",
   // ── server/routers/hotFolderRouter.ts (4) ──
   "server/routers/hotFolderRouter.ts#hotFolderRouter.deleteConfig",
   "server/routers/hotFolderRouter.ts#hotFolderRouter.dryRun",
@@ -380,8 +280,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/inspectionRouters.ts#measurementResultRouter.updateRemark",
   // ── server/routers/inspectionVariantRouter.ts (1) ──
   "server/routers/inspectionVariantRouter.ts#inspectionVariantRouter.setVariant",
-  // ── server/routers/interlockRouter.ts (5) ──
-  "server/routers/interlockRouter.ts#interlockRouter.approve",
+  // ── server/routers/interlockRouter.ts (4) ──
   "server/routers/interlockRouter.ts#interlockRouter.delete",
   "server/routers/interlockRouter.ts#interlockRouter.disable",
   "server/routers/interlockRouter.ts#interlockRouter.enable",
@@ -463,58 +362,34 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.toggleEnabled",
   "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.triggerNow",
   "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.upsertSetting",
-  // ── server/routers/mqttClientManagementRouter.ts (15) ──
+  // ── server/routers/mqttClientManagementRouter.ts (7) ──
   "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.acknowledgeAlert",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.bulkAssign",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.bulkAssignProfile",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.bulkRemoveAssignments",
   "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.createAlert",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.deleteProfile",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.deleteTemplate",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.duplicateProfile",
   "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.logConnectionEvent",
   "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.logReconnectEvent",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.removeAssignment",
   "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.resolveAlert",
   "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.updateAlertConfig",
   "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.updateConnectionStatus",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.updateTemplate",
   // ── server/routers/mqttNgAlertSettingsRouter.ts (4) ──
   "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.bulkToggle",
   "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.deleteSetting",
   "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.toggleEnabled",
   "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.upsertSetting",
-  // ── server/routers/mqttOeeRouters.ts (24) ──
+  // ── server/routers/mqttOeeRouters.ts (14) ──
   "server/routers/mqttOeeRouters.ts#mqttAlertRouter.delete",
   "server/routers/mqttOeeRouters.ts#mqttAlertRouter.resolve",
   "server/routers/mqttOeeRouters.ts#mqttAlertRouter.toggle",
   "server/routers/mqttOeeRouters.ts#mqttAlertRouter.update",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.approve",
   "server/routers/mqttOeeRouters.ts#mqttClientRouter.calculateBenchmarks",
   "server/routers/mqttOeeRouters.ts#mqttClientRouter.calculateMachineHealth",
   "server/routers/mqttOeeRouters.ts#mqttClientRouter.calculateOEE",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.create",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.delete",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.disconnectAndReset",
   "server/routers/mqttOeeRouters.ts#mqttClientRouter.endDowntime",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.reject",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.sendBulkConfigure",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.sendCommand",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.sendConfigure",
   "server/routers/mqttOeeRouters.ts#mqttClientRouter.startDowntime",
   "server/routers/mqttOeeRouters.ts#mqttClientRouter.testNGAlert",
   "server/routers/mqttOeeRouters.ts#mqttClientRouter.updateFcmToken",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.updateMapping",
-  "server/routers/mqttOeeRouters.ts#mqttClientRouter.updateSettings",
   "server/routers/mqttOeeRouters.ts#oeeRouter.createTarget",
   "server/routers/mqttOeeRouters.ts#oeeRouter.deleteTarget",
   "server/routers/mqttOeeRouters.ts#oeeRouter.updateTarget",
-  // ── server/routers/mqttSoftwareVersionRouter.ts (5) ──
-  "server/routers/mqttSoftwareVersionRouter.ts#mqttSoftwareVersionRouter.delete",
-  "server/routers/mqttSoftwareVersionRouter.ts#mqttSoftwareVersionRouter.pushUpdate",
-  "server/routers/mqttSoftwareVersionRouter.ts#mqttSoftwareVersionRouter.setLatest",
-  "server/routers/mqttSoftwareVersionRouter.ts#mqttSoftwareVersionRouter.update",
-  "server/routers/mqttSoftwareVersionRouter.ts#mqttSoftwareVersionRouter.uploadApk",
   // ── server/routers/msdRouter.ts (3) ──
   "server/routers/msdRouter.ts#msdRouter.closeExposure",
   "server/routers/msdRouter.ts#msdRouter.openExposure",
@@ -522,19 +397,15 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/ncrRouter.ts (2) ──
   "server/routers/ncrRouter.ts#ncrRouter.create",
   "server/routers/ncrRouter.ts#ncrRouter.transition",
-  // ── server/routers/ngRateThresholdRouter.ts (7) ──
+  // ── server/routers/ngRateThresholdRouter.ts (5) ──
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.create",
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.delete",
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.resolveAlert",
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.sendTestAlert",
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.testCheck",
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.toggle",
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.update",
   // ── server/routers/notificationRouters.ts (2) ──
   "server/routers/notificationRouters.ts#notificationRouter.delete",
   "server/routers/notificationRouters.ts#notificationRouter.markAsRead",
-  // ── server/routers/ntfClassifierRouter.ts (1) ──
-  "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.train",
   // ── server/routers/operatorBadgeRouter.ts (2) ──
   "server/routers/operatorBadgeRouter.ts#operatorBadgeRouter.revoke",
   "server/routers/operatorBadgeRouter.ts#operatorBadgeRouter.update",
@@ -548,12 +419,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.set",
   // ── server/routers/pdfReportRouter.ts (1) ──
   "server/routers/pdfReportRouter.ts#pdfReportRouter.generateInspectionPDF",
-  // ── server/routers/permissionsRouter.ts (5) ──
-  "server/routers/permissionsRouter.ts#permissionsRouter.applyRoleToUser",
-  "server/routers/permissionsRouter.ts#permissionsRouter.deletePermission",
-  "server/routers/permissionsRouter.ts#permissionsRouter.deleteRole",
-  "server/routers/permissionsRouter.ts#permissionsRouter.duplicateRole",
-  "server/routers/permissionsRouter.ts#permissionsRouter.updateRole",
   // ── server/routers/processRouter.ts (7) ──
   "server/routers/processRouter.ts#processRouter.createLineAssignment",
   "server/routers/processRouter.ts#processRouter.delete",
@@ -562,7 +427,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/processRouter.ts#processRouter.reorderLineAssignments",
   "server/routers/processRouter.ts#processRouter.update",
   "server/routers/processRouter.ts#processRouter.updateLineAssignment",
-  // ── server/routers/productionRouters.ts (22) ──
+  // ── server/routers/productionRouters.ts (17) ──
   "server/routers/productionRouters.ts#lineProductAssignmentRouter.create",
   "server/routers/productionRouters.ts#lineProductAssignmentRouter.delete",
   "server/routers/productionRouters.ts#lineProductAssignmentRouter.update",
@@ -570,16 +435,11 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productionRouters.ts#lineStageRouter.delete",
   "server/routers/productionRouters.ts#lineStageRouter.reorder",
   "server/routers/productionRouters.ts#lineStageRouter.update",
-  "server/routers/productionRouters.ts#productionOrderRouter.applyScheduleRun",
-  "server/routers/productionRouters.ts#productionOrderRouter.applyScheduleSuggestion",
   "server/routers/productionRouters.ts#productionOrderRouter.create",
   "server/routers/productionRouters.ts#productionOrderRouter.createFromTemplate",
   "server/routers/productionRouters.ts#productionOrderRouter.createTemplate",
   "server/routers/productionRouters.ts#productionOrderRouter.delete",
   "server/routers/productionRouters.ts#productionOrderRouter.deleteTemplate",
-  "server/routers/productionRouters.ts#productionOrderRouter.dismissScheduleRun",
-  "server/routers/productionRouters.ts#productionOrderRouter.generateApsScheduleRun",
-  "server/routers/productionRouters.ts#productionOrderRouter.generateScheduleRun",
   "server/routers/productionRouters.ts#productionOrderRouter.optimizeSchedule",
   "server/routers/productionRouters.ts#productionOrderRouter.reschedule",
   "server/routers/productionRouters.ts#productionOrderRouter.update",
@@ -596,76 +456,13 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/productOnboardingRouter.ts#productOnboardingRouter.complete",
   "server/routers/productOnboardingRouter.ts#productOnboardingRouter.deleteDraft",
   "server/routers/productOnboardingRouter.ts#productOnboardingRouter.saveDraft",
-  // ── server/routers/productPackageRouter.ts (1) ──
-  "server/routers/productPackageRouter.ts#productPackageRouter.exportPackage",
   // ── server/routers/productPanelRouter.ts (4) ──
   "server/routers/productPanelRouter.ts#productPanelRouter.create",
   "server/routers/productPanelRouter.ts#productPanelRouter.remove",
   "server/routers/productPanelRouter.ts#productPanelRouter.saveBoards",
   "server/routers/productPanelRouter.ts#productPanelRouter.update",
-  // ── server/routers/productRouters.ts (62) ──
-  "server/routers/productRouters.ts#cadImportRouter.applyCoordinates",
-  "server/routers/productRouters.ts#cadImportRouter.applyJob",
-  "server/routers/productRouters.ts#cadImportRouter.centroidApply",
-  "server/routers/productRouters.ts#cadImportRouter.centroidCommit",
-  "server/routers/productRouters.ts#cadImportRouter.centroidPreview",
-  "server/routers/productRouters.ts#cadImportRouter.parsePreview",
-  "server/routers/productRouters.ts#cadImportRouter.parseUpload",
-  "server/routers/productRouters.ts#cadImportRouter.setSelection",
-  "server/routers/productRouters.ts#defectCatalogRouter.delete",
-  "server/routers/productRouters.ts#defectCatalogRouter.update",
-  "server/routers/productRouters.ts#fiducialMarkRouter.create",
-  "server/routers/productRouters.ts#fiducialMarkRouter.delete",
-  "server/routers/productRouters.ts#fiducialMarkRouter.update",
-  "server/routers/productRouters.ts#fiducialMarkRouter.uploadTemplateImage",
-  "server/routers/productRouters.ts#instrumentCalibrationRouter.create",
-  "server/routers/productRouters.ts#instrumentCalibrationRouter.delete",
-  "server/routers/productRouters.ts#instrumentMsaRecordRouter.create",
-  "server/routers/productRouters.ts#instrumentMsaRecordRouter.delete",
-  "server/routers/productRouters.ts#measurementInstrumentRouter.create",
-  "server/routers/productRouters.ts#measurementInstrumentRouter.delete",
-  "server/routers/productRouters.ts#measurementInstrumentRouter.update",
-  "server/routers/productRouters.ts#measurementPointRouter.backfillComponentCodesFromBom",
-  "server/routers/productRouters.ts#measurementPointRouter.create",
-  "server/routers/productRouters.ts#measurementPointRouter.delete",
-  "server/routers/productRouters.ts#measurementPointRouter.remapUnmapped",
-  "server/routers/productRouters.ts#measurementPointRouter.revertPointsConfigToVersion",
-  "server/routers/productRouters.ts#measurementPointRouter.uploadCroppedImage",
-  "server/routers/productRouters.ts#measurementSamplesRouter.analyze",
-  "server/routers/productRouters.ts#measurementTypeCatalogRouter.delete",
-  "server/routers/productRouters.ts#measurementTypeCatalogRouter.update",
-  "server/routers/productRouters.ts#mpLightingProfileRouter.create",
-  "server/routers/productRouters.ts#mpLightingProfileRouter.delete",
-  "server/routers/productRouters.ts#mpLightingProfileRouter.update",
+  // ── server/routers/productRouters.ts (1) ──
   "server/routers/productRouters.ts#msaAdvancedRouter.anovaOfStudy",
-  "server/routers/productRouters.ts#msaWizardRouter.addObservation",
-  "server/routers/productRouters.ts#msaWizardRouter.addObservationsBatch",
-  "server/routers/productRouters.ts#msaWizardRouter.cancelStudy",
-  "server/routers/productRouters.ts#msaWizardRouter.completeStudy",
-  "server/routers/productRouters.ts#msaWizardRouter.deleteCsvMappingPreset",
-  "server/routers/productRouters.ts#msaWizardRouter.generateMatrix",
-  "server/routers/productRouters.ts#msaWizardRouter.saveCsvMappingPreset",
-  "server/routers/productRouters.ts#msaWizardRouter.startStudy",
-  "server/routers/productRouters.ts#productCategoryRouter.create",
-  "server/routers/productRouters.ts#productCategoryRouter.delete",
-  "server/routers/productRouters.ts#productCategoryRouter.reorder",
-  "server/routers/productRouters.ts#productCategoryRouter.update",
-  "server/routers/productRouters.ts#productCategoryRouter.updateCount",
-  "server/routers/productRouters.ts#productDocumentRouter.delete",
-  "server/routers/productRouters.ts#productDocumentRouter.upload",
-  "server/routers/productRouters.ts#productMachineMappingRouter.create",
-  "server/routers/productRouters.ts#productModelRouter.backfillImageDimensions",
-  "server/routers/productRouters.ts#productModelRouter.clone",
-  "server/routers/productRouters.ts#productModelRouter.create",
-  "server/routers/productRouters.ts#productModelRouter.delete",
-  "server/routers/productRouters.ts#productModelRouter.update",
-  "server/routers/productRouters.ts#productViewRouter.create",
-  "server/routers/productRouters.ts#productViewRouter.delete",
-  "server/routers/productRouters.ts#productViewRouter.update",
-  "server/routers/productRouters.ts#samplingPlanRouter.create",
-  "server/routers/productRouters.ts#samplingPlanRouter.delete",
-  "server/routers/productRouters.ts#samplingPlanRouter.update",
-  "server/routers/productRouters.ts#spcAlertsRouter.ack",
   // ── server/routers/productVariantRouter.ts (3) ──
   "server/routers/productVariantRouter.ts#productVariantRouter.createVariant",
   "server/routers/productVariantRouter.ts#productVariantRouter.deleteVariant",
@@ -696,7 +493,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/reportBuilderRouter.ts (2) ──
   "server/routers/reportBuilderRouter.ts#reportBuilderRouter.duplicate",
   "server/routers/reportBuilderRouter.ts#reportBuilderRouter.update",
-  // ── server/routers/repoWorkspaceRouter.ts (19) ──
+  // ── server/routers/repoWorkspaceRouter.ts (17) ──
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.baiHocSua",
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.baiHocThem",
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.baiHocXoa",
@@ -712,16 +509,10 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.gitGoiYThongDiep",
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.gitTaoNhanh",
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.luuPhien",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.themDuAn",
-  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.xoaDuAn",
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.xoaDuAnCaNhan",
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.xoaPhien",
-  // ── server/routers/robotRouter.ts (5) ──
+  // ── server/routers/robotRouter.ts (1) ──
   "server/routers/robotRouter.ts#robotRouter.consoleStop",
-  "server/routers/robotRouter.ts#robotRouter.create",
-  "server/routers/robotRouter.ts#robotRouter.setEnabled",
-  "server/routers/robotRouter.ts#robotRouter.testConnection",
-  "server/routers/robotRouter.ts#robotRouter.update",
   // ── server/routers/routingRouter.ts (10) ──
   "server/routers/routingRouter.ts#routingRouter.activate",
   "server/routers/routingRouter.ts#routingRouter.addStep",
@@ -750,12 +541,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.update",
   // ── server/routers/simTargetsRouter.ts (1) ──
   "server/routers/simTargetsRouter.ts#simTargetsRouter.validateUrscript",
-  // ── server/routers/sitesRouter.ts (5) ──
-  "server/routers/sitesRouter.ts#sitesRouter.create",
-  "server/routers/sitesRouter.ts#sitesRouter.delete",
-  "server/routers/sitesRouter.ts#sitesRouter.probe",
-  "server/routers/sitesRouter.ts#sitesRouter.selfEnrollLocal",
-  "server/routers/sitesRouter.ts#sitesRouter.update",
   // ── server/routers/sopRouter.ts (10) ──
   "server/routers/sopRouter.ts#sopRouter.abandonExecution",
   "server/routers/sopRouter.ts#sopRouter.cloneNewVersion",
@@ -785,30 +570,9 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/stationTriangulationRouter.ts (2) ──
   "server/routers/stationTriangulationRouter.ts#stationTriangulationRouter.recomputeForLot",
   "server/routers/stationTriangulationRouter.ts#stationTriangulationRouter.recomputeForSerial",
-  // ── server/routers/statusTemplateRouters.ts (10) ──
-  "server/routers/statusTemplateRouters.ts#bulkImportRouter.measurementPoints",
-  "server/routers/statusTemplateRouters.ts#machineStatusRouter.markNotificationSent",
-  "server/routers/statusTemplateRouters.ts#manualMappingRouter.create",
-  "server/routers/statusTemplateRouters.ts#manualMappingRouter.delete",
-  "server/routers/statusTemplateRouters.ts#manualMappingRouter.testConnection",
-  "server/routers/statusTemplateRouters.ts#manualMappingRouter.update",
-  "server/routers/statusTemplateRouters.ts#manualMappingRouter.updateStatus",
-  "server/routers/statusTemplateRouters.ts#templateRouter.clone",
-  "server/routers/statusTemplateRouters.ts#templateRouter.delete",
-  "server/routers/statusTemplateRouters.ts#templateRouter.update",
   // ── server/routers/stencilRouter.ts (1) ──
   "server/routers/stencilRouter.ts#stencilRouter.recordPrints",
-  // ── server/routers/systemRouters.ts (15) ──
-  "server/routers/systemRouters.ts#scheduledReportRouter.create",
-  "server/routers/systemRouters.ts#scheduledReportRouter.createFromTemplate",
-  "server/routers/systemRouters.ts#scheduledReportRouter.delete",
-  "server/routers/systemRouters.ts#scheduledReportRouter.retryDelivery",
-  "server/routers/systemRouters.ts#scheduledReportRouter.sendStatisticsReport",
-  "server/routers/systemRouters.ts#scheduledReportRouter.sendTest",
-  "server/routers/systemRouters.ts#scheduledReportRouter.update",
-  "server/routers/systemRouters.ts#smtpRouter.deleteEmailTemplate",
-  "server/routers/systemRouters.ts#smtpRouter.setDefaultEmailTemplate",
-  "server/routers/systemRouters.ts#smtpRouter.updateEmailTemplate",
+  // ── server/routers/systemRouters.ts (5) ──
   "server/routers/systemRouters.ts#workstationRouter.assignMachine",
   "server/routers/systemRouters.ts#workstationRouter.create",
   "server/routers/systemRouters.ts#workstationRouter.restore",
@@ -835,14 +599,8 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/twinRouter.ts#twinRouter.models.archive",
   "server/routers/twinRouter.ts#twinRouter.models.register",
   "server/routers/twinRouter.ts#twinRouter.models.uploadAndRegister",
-  // ── server/routers/userRouters.ts (8) ──
-  "server/routers/userRouters.ts#userAssignmentRouter.assignCorporate",
-  "server/routers/userRouters.ts#userAssignmentRouter.assignFactory",
-  "server/routers/userRouters.ts#userAssignmentRouter.removeCorporateAssignment",
-  "server/routers/userRouters.ts#userAssignmentRouter.removeFactoryAssignment",
+  // ── server/routers/userRouters.ts (2) ──
   "server/routers/userRouters.ts#userRouter.revokeSession",
-  "server/routers/userRouters.ts#userRouter.update",
-  "server/routers/userRouters.ts#userRouter.updatePassword",
   "server/routers/userRouters.ts#userSettingsRouter.setUiPrefs",
   // ── server/routers/vda5050Router.ts (2) ──
   "server/routers/vda5050Router.ts#vda5050Router.sendOrder",
@@ -856,11 +614,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/webhookRouter.ts#webhookRouter.test",
   "server/routers/webhookRouter.ts#webhookRouter.toggle",
   "server/routers/webhookRouter.ts#webhookRouter.update",
-  // ── server/services/security/securityIdentityRouter.ts (4) ──
-  "server/services/security/securityIdentityRouter.ts#securityIdentityRouter.issueDeviceCert",
-  "server/services/security/securityIdentityRouter.ts#securityIdentityRouter.revokeDeviceCert",
-  "server/services/security/securityIdentityRouter.ts#securityIdentityRouter.revokeServiceIdentity",
-  "server/services/security/securityIdentityRouter.ts#securityIdentityRouter.rotateDeviceCert",
 ];
 
 /**
@@ -869,6 +622,14 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
  * (c) không đồng thời nằm trong sổ nợ. Thêm mục = lời khai công khai, người review phải thấy.
  */
 export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
+  "server/routers/productRouters.ts#productModelRouter.create":
+    "Luật ghi theo SẢN PHẨM (chủ dự án duyệt 2026-10-24): sản phẩm MỚI chưa gắn nhà máy nào là bản nháp, ai có settings_products/canCreate đều được tạo; khoá `categoryId` chỉ là nhóm sản phẩm dùng chung. Sửa/xoá/nhân bản đã bị chặn theo phạm vi (phamViGhiDoW6).",
+  "server/routers/productRouters.ts#defectCatalogRouter.update":
+    "Danh mục lỗi DÙNG CHUNG toàn tập đoàn — chủ dự án duyệt 2026-10-24 (không có cột nhà máy); sàn qualityProcedure (vai chất lượng/quản trị) giới hạn người ghi.",
+  "server/routers/productRouters.ts#defectCatalogRouter.delete":
+    "Danh mục lỗi DÙNG CHUNG toàn tập đoàn — chủ dự án duyệt 2026-10-24 (không có cột nhà máy); sàn qualityProcedure (vai chất lượng/quản trị) giới hạn người ghi.",
+  "server/routers/annotationRouters.ts#annotationTemplateRouter.delete":
+    "Mẫu chú thích DÙNG CHUNG, không dữ liệu theo nhà máy; chỉ người tạo hoặc admin được xoá (luong-ui xác nhận, dieu-phoi chuyển 2026-10-24).",
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.dryRun":
     "Hàm THUẦN: chuẩn hoá một mẫu xuất của máy qua adapter rồi trả bản tóm tắt, KHÔNG đọc/ghi CSDL và không giữ trạng thái; `machineCode` chỉ là nhãn truyền vào bộ chuẩn hoá (không tra máy nào). Bộ quét khớp vì tên trường kết thúc bằng Code.",
 };

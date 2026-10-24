@@ -3808,6 +3808,8 @@
       "qualityGateResult": "质量门结果",
       "qualityGateTemplate": "质量门模板",
       "quarantineItem": "隔离项",
+      "factoryZone": "厂区平面区域",
+      "mapping": "产品-机台映射",
       "rcaAnalysis": "根本原因分析",
       "recipe": "配方",
       "record": "记录",

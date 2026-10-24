@@ -562,7 +562,16 @@ export function quetPhamViGhi(goc: string, ghiDe: Readonly<Record<string, string
 
 /** Mutation vào SỔ NỢ: nhận ≥ 1 khoá định danh mà không với tới được bộ phân giải phạm vi. */
 export function laNoGhi(m: MutationGhi): boolean {
-  return m.khoaDinhDanh.length > 0 && !m.coCong;
+  return m.khoaDinhDanh.length > 0 && !m.coCong && !laSanToanQuyen(m);
+}
+
+/**
+ * Sàn `adminProcedure` (chỉ `role === "admin"`): admin có phạm vi TOÀN QUYỀN theo thiết kế (`resolveTenantFactoryScope`: `userRole === "admin"` ⇒
+ * `factoryIds: null`) ⇒ không có "nhà máy khác" nào để vượt ⇒ KHÔNG phải nợ phạm vi. Tiền đề này được canh bằng test (`phamViGhiCensus` §5c): nếu ai đó
+ * thu hẹp phạm vi admin thì test ĐỎ và quy tắc này mất hiệu lực. `superAdminProcedure` cùng nhóm.
+ */
+export function laSanToanQuyen(m: Pick<MutationGhi, "san">): boolean {
+  return /^(adminProcedure|superAdminProcedure)$/.test(m.san);
 }
 
 const SAN_QUAN_TRI = /^(adminProcedure|superAdminProcedure)$/;

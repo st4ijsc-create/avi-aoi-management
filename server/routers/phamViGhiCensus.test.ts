@@ -15,7 +15,7 @@
 import { describe, it, expect } from "vitest";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { quetPhamViGhi, laNoGhi, laKhoaDinhDanh, type MutationGhi } from "./phamViGhiScan";
+import { quetPhamViGhi, laNoGhi, laSanToanQuyen, laKhoaDinhDanh, type MutationGhi } from "./phamViGhiScan";
 import { quetPhamViDoc, nhomCua } from "./phamViDocScan";
 import { MIEN_TRU_GHI, NO_PHAM_VI_GHI } from "./phamViGhiBaseline";
 
@@ -26,7 +26,7 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1198, no: 708 } as const;
+const GHIM = { tongMutation: 1198, no: 475 } as const;
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {
@@ -83,6 +83,17 @@ describe("§5b miễn trừ có lý do — không hoá thạch, không trùng s�
       ...(SO.has(k) ? [`${k}: nằm cả trong sổ nợ`] : []),
     ]);
     expect(loi).toEqual([]);
+  });
+});
+
+describe("§5c tiền đề của quy tắc 'sàn admin không phải nợ'", () => {
+  it("phạm vi của admin là TOÀN QUYỀN (factoryIds null) — nếu đổi, quy tắc laSanToanQuyen mất hiệu lực", async () => {
+    const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+    expect((await resolveTenantFactoryScope({ userId: 1, userRole: "admin" })).factoryIds).toBeNull();
+  });
+  it("không mutation sàn admin nào nằm trong sổ nợ (chúng không còn là nợ)", () => {
+    const admin = QUET.mutation.filter((m) => laSanToanQuyen(m) && SO.has(m.khoa)).map((m) => m.khoa);
+    expect(admin).toEqual([]);
   });
 });
 
