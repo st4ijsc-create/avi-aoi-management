@@ -295,11 +295,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/lineControllerRouter.ts#lineControllerRouter.transitions",
   // ── server/routers/machineApiRouters.ts (1) ────────────────────────────────────────────────
   "server/routers/machineApiRouters.ts#machineApiRouter.listKeys",
-  // ── server/routers/machineRecipeRouter.ts (4) ──────────────────────────────────────────────
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.genealogy",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.get",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listCodes",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listVersions",
   // ── server/routers/maintenanceRouter.ts (1) ────────────────────────────────────────────────
   // ★ Đợt 49 (mục E) — XOÁ 3 dòng `getWorkOrder` · `listWorkOrders` · `summary`: bộ quét xếp cả ba
   //   vào nhóm **S** (đã lọc phạm vi) từ trước baseline `d7a6a6c7`, nên §5 ("sổ nợ không được hoá
@@ -508,3 +503,19 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/wipRouter.ts#wipRouter.list",
   "server/routers/wipRouter.ts#wipRouter.summary",
 ];
+
+/**
+ * ★★★ 2026-10-24 — MIỄN TRỪ CÓ CHỦ Ý (khác SỔ NỢ: đây KHÔNG phải nợ chờ trả, mà là quyết định ĐÃ DUYỆT, mỗi mục MỘT lý do thật).
+ * Thủ tục vẫn ở nhóm (A) theo bộ quét (đọc bảng tenant không lọc phạm vi) nhưng việc không lọc là CỐ Ý. §4 coi mục ở đây là đã khai; §5 giữ nó không hoá thạch
+ * (còn tồn tại, còn nhóm A, lý do ≥ 20 ký tự có ngày duyệt, không đồng thời nằm trong sổ nợ). Thêm mục = thêm quyết định của chủ dự án, KHÔNG phải cách làm cổng xanh.
+ */
+export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.genealogy":
+    "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.get":
+    "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listCodes":
+    "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listVersions":
+    "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
+};
