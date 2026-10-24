@@ -63,6 +63,7 @@ import { cheDoMay, TOOL_HMI_GHI_TAG, TOOL_HMI_STOP, type LyDoCheDo } from "./che
 import { loadStopPins } from "../ot/stopPin";
 import { recordAuditEvent } from "../audit/controlAuditService";
 import { OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS } from "../ot/otDeviceWrite";
+import { withDeadline } from "../ot/drivers/boundedClose";
 import { kiemGiaTriGhi, laKenhGhi, mucTacDongKenh } from "./kenhScada";
 import { giaHanKhoaChon, giuKhoaChon, LoiKhoaChonTranhChap, nhaKhoaChon } from "./khoaChon";
 import { laMaOn, nenGhiThuLenh } from "./dieuTietThuLenh";
@@ -1296,25 +1297,10 @@ export const HMI_STOP_TTL_MS = 30_000;
 export const HMI_STOP_AUDIT_DEADLINE_MS = OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS;
 
 /**
- * fix round 2 (trivial 7) — như `withDeadline` (drivers/boundedClose) nhưng hẹn giờ `unref`: một audit treo không giữ tiến trình sống tới
- * hết hạn (helper dùng chung không có tuỳ chọn unref — không sửa helper của dispatcher).
+ * fix round 2 (trivial 7) — hạn có hẹn giờ `unref`: một audit treo không giữ tiến trình sống tới hết hạn. Rà soát cuối M-5: bản sao riêng đã
+ * gộp vào `withDeadline(…, { unref: true })` (drivers/boundedClose — một helper cho cả vongPoll).
  */
-function voiHanUnref<T>(p: Promise<T>, ms: number, nhan: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${nhan} timeout after ${ms}ms`)), ms);
-    (t as { unref?: () => void }).unref?.();
-    p.then(
-      (v) => {
-        clearTimeout(t);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(t);
-        reject(e);
-      },
-    );
-  });
-}
+const voiHanUnref = <T>(p: Promise<T>, ms: number, nhan: string): Promise<T> => withDeadline(p, ms, nhan, { unref: true });
 export { TOOL_HMI_STOP };
 
 export interface DauVaoDungMay {

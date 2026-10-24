@@ -34,7 +34,7 @@
 import type { Request, Response } from "express";
 import { sql } from "drizzle-orm";
 import { edgeDbRefused } from "../db/edgeDbTrap";
-import { lyDoChuaKiemDuocR1a, lyDoSchemaR1a } from "./kiemSchemaR1a";
+import { lyDoChuaKiemDuocR1a, lyDoSchemaR1a, type SchemaR1aHealth } from "./kiemSchemaR1a";
 
 /** Hạn một lượt `SELECT 1` (brief T11: "vd 1500 ms"; nghiệm thu: 503 trong ≤ 2 s). */
 export const DB_PING_TIMEOUT_MS = 1500;
@@ -315,9 +315,9 @@ export interface ProbeHandlerDeps {
   pinger?: DbPinger;
   checkBroker?: ReadinessDeps["checkBroker"];
   /** kiem-dinh P1-6 — lý do schema R1a (thiếu mig 0431/0432/0433) của lần kiểm khởi động; mặc định `kiemSchemaR1a.lyDoSchemaR1a`. */
-  schemaR1a?: () => { ok: false; thieuMigration: string[]; lyDo: string } | null;
+  schemaR1a?: () => Extract<SchemaR1aHealth, { trangThai: "thieu" }> | null;
   /** R1b-1 T10 — lần kiểm schema khởi động KHÔNG đọc được information_schema; mặc định `kiemSchemaR1a.lyDoChuaKiemDuocR1a`. */
-  schemaR1aChuaKiem?: () => { schemaR1a: "chua_kiem_duoc"; lyDo: string } | null; // lyDo = LỚP NGẮN (không văn bản lỗi: /health không xác thực)
+  schemaR1aChuaKiem?: () => Extract<SchemaR1aHealth, { trangThai: "chua_kiem_duoc" }> | null; // lyDo = LỚP NGẮN (không văn bản lỗi: /health không xác thực)
 }
 
 /**
@@ -353,14 +353,14 @@ export function createHealthHandler(deps: ProbeHandlerDeps = {}) {
     const db = trangThaiDb(r);
     const mem = process.memoryUsage();
     // kiem-dinh P1-6 — thiếu migration R1a ⇒ degraded + lý do (vẫn 200: liveness — khởi động lại không chữa được một migration thiếu).
-    const schemaR1a = (deps.schemaR1a ?? lyDoSchemaR1a)();
-    // R1b-1 T10 — không kiểm được schema lúc khởi động (fail-open): nói thẳng "chưa kiểm được" + lý do; KHÔNG degraded (không biết ≠ thiếu).
-    const chuaKiem = schemaR1a ? null : (deps.schemaR1aChuaKiem ?? lyDoChuaKiemDuocR1a)();
+    const thieu = (deps.schemaR1a ?? lyDoSchemaR1a)();
+    // R1b-1 T10 — không kiểm được schema lúc khởi động (fail-open): nói thẳng "chưa kiểm được" + lớp lỗi; KHÔNG degraded (không biết ≠ thiếu).
+    // Rà soát cuối M-7 — MỘT khoá, MỘT hình dạng (`SchemaR1aHealth`): có mặt ⇒ luôn `ok:false` + `trangThai` "thieu" | "chua_kiem_duoc".
+    const schemaR1a: SchemaR1aHealth | null = thieu ?? (deps.schemaR1aChuaKiem ?? lyDoChuaKiemDuocR1a)();
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({
-      status: db === "connected" && !schemaR1a ? "ok" : "degraded",
+      status: db === "connected" && !thieu ? "ok" : "degraded",
       ...(schemaR1a ? { schemaR1a } : {}),
-      ...(chuaKiem ? { schemaR1a: chuaKiem.schemaR1a, schemaR1aLyDo: chuaKiem.lyDo } : {}),
       db,
       ...(r.ok ? {} : { dbReason: r.reason }),
       dbPingMs: r.ms,

@@ -122,14 +122,32 @@ function layCacPath(req: Request): string[] {
   return req.query?.batch === "1" ? p.split(",") : [p];
 }
 
-/** Khoá người dùng từ cookie phiên: `u:<openId>` khi cookie hợp lệ (chỉ kiểm chữ ký JWT, không chạm DB), ngược lại null. */
-async function khoaNguoiMacDinh(req: Request): Promise<string | null> {
-  const raw = req.headers.cookie;
+/**
+ * Phiên trong cookie có CHỮ KÝ JWT + hạn hợp lệ (`sdk.verifySession` — stateless, KHÔNG chạm DB, không tra sổ phiên): `{ openId }`, ngược lại
+ * null (không cookie, cookie rác, chữ ký sai, hết hạn). CHỈ phục vụ GIỚI HẠN TỐC ĐỘ, không cấp quyền gì — xác thực thật vẫn ở createContext.
+ * Hai người dùng: khoá đếm theo người của middleware này, và (SCADA R1b-1 rà soát cuối I-2) `rateLimitConfig.laStopHmiCoPhienKy` — `apiLimiter`
+ * chỉ miễn đếm STOP HMI khi phiên qua phép kiểm này (cùng phép kiểm bước 1 của `robotStopAuth`). Một chủ cho phép kiểm ⇒ census điểm xác thực
+ * (`thuHoiPhienMoiBeMat` …) vẫn thấy đúng MỘT lượt `verifySession` ở tệp này.
+ */
+export async function phienKyHopLe(req: Pick<Request, "headers">): Promise<{ openId: string } | null> {
+  const raw = req.headers?.cookie;
   if (!raw) return null;
   const m = new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`).exec(raw);
   if (!m) return null;
+  let token: string;
+  try {
+    token = decodeURIComponent(m[1]!);
+  } catch {
+    return null; // %-mã hỏng: không phải một vé
+  }
   const { sdk } = await import("./sdk");
-  const phien = await sdk.verifySession(decodeURIComponent(m[1]!));
+  const phien = await sdk.verifySession(token);
+  return phien ? { openId: phien.openId } : null;
+}
+
+/** Khoá người dùng từ cookie phiên: `u:<openId>` khi cookie hợp lệ (chỉ kiểm chữ ký JWT, không chạm DB), ngược lại null. */
+async function khoaNguoiMacDinh(req: Request): Promise<string | null> {
+  const phien = await phienKyHopLe(req);
   return phien ? `u:${phien.openId}` : null;
 }
 

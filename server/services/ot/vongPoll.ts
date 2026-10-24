@@ -24,28 +24,14 @@
  *   - Hẹn giờ hạn (đọc + phát) `unref` — như setInterval của vòng: không giữ tiến trình sống.
  */
 import { laLoiTimeout, mauXauChoMoiTag } from "./chatLuong";
+import { withDeadline } from "./drivers/boundedClose";
 import type { LyDoChatLuong, OnOtSample, OtSample, OtSubscriptionHandle, OtTagAddress, SuKienDoc } from "./otDriver";
 
 /**
- * R1b-1 T4 fix round 1 (minor 4) — như `withDeadline` (drivers/boundedClose) nhưng hẹn giờ `unref` (helper dùng chung không có tuỳ chọn
- * unref — không sửa helper của dispatcher; cùng cách `lenhHmi.voiHanUnref`).
+ * R1b-1 T4 fix round 1 (minor 4) — hạn có hẹn giờ `unref`. Rà soát cuối M-5: bản sao riêng đã gộp vào `withDeadline(…, { unref: true })`
+ * (drivers/boundedClose — một helper cho cả lenhHmi).
  */
-function voiHanUnref<T>(p: Promise<T>, ms: number, nhan: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${nhan} timeout after ${ms}ms`)), ms);
-    (t as { unref?: () => void }).unref?.();
-    p.then(
-      (v) => {
-        clearTimeout(t);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(t);
-        reject(e);
-      },
-    );
-  });
-}
+const voiHanUnref = <T>(p: Promise<T>, ms: number, nhan: string): Promise<T> => withDeadline(p, ms, nhan, { unref: true });
 
 const CHU_KY_MAC_DINH_MS = 5000;
 /** Hạn đọc mặc định = max(2 × chu kỳ, 6 s): lưới an toàn, không được cắt lần đọc chậm-nhưng-khoẻ. */

@@ -228,6 +228,8 @@ export function isMachineIngestRequest(req: Request): boolean {
  * chặn"). The exemption is EXACT and NARROW (`isHmiStopRequest`): a NON-batched `POST /api/trpc/scadaCommands.dungMay` only. A batch —
  * even a batch of one, or one that bundles the STOP with any other call — is counted as before (nothing can ride the exemption). The
  * client sends `scadaCommands.dungMay` through a non-batching `httpLink` (client/src/lib/trpcLinks.ts `isStopOnlyOp`).
+ * R1b-1 rà soát cuối I-2: and the request must carry a session token whose JWT signature verifies (`laStopHmiCoPhienKy`) — the limiter
+ * `skip` uses that, not `isHmiStopRequest` alone.
  */
 export const API_LIMITER_EXEMPT_TRPC: ReadonlySet<string> = new Set(["scadaCommands.dungMay"]);
 
@@ -241,6 +243,34 @@ export function isHmiStopRequest(req: Request): boolean {
   if (hoi >= 0 && new URLSearchParams(raw.slice(hoi + 1)).has("batch")) return false;
   const procs = trpcProcedures(duongDinhTuyenGoc(req));
   return !!procs && procs.length === 1 && API_LIMITER_EXEMPT_TRPC.has(procs[0]);
+}
+
+/**
+ * SCADA R1b-1 rà soát cuối I-2 — "yêu cầu mang một phiên có CHỮ KÝ JWT hợp lệ" (stateless: chữ ký + hạn, KHÔNG chạm DB). Mặc định:
+ * `trpcGioiHanThuTuc.phienKyHopLe` — CÙNG phép kiểm bước 1 của `robotStopAuth` (`sdk.verifySession`), một chủ (import động: tệp ấy nhập tệp
+ * này ⇒ import tĩnh là vòng import).
+ */
+export type KiemPhienKy = (req: Request) => Promise<boolean>;
+const kiemPhienKyMacDinh: KiemPhienKy = async (req) => {
+  const { phienKyHopLe } = await import("./trpcGioiHanThuTuc");
+  return (await phienKyHopLe(req)) !== null;
+};
+
+/**
+ * True ⇔ `isHmiStopRequest(req)` VÀ phiên của nó qua phép kiểm chữ ký (`kiem`). Trước bản vá, miễn trừ chỉ xét method / path / batch ⇒ người
+ * vô danh (không cookie, cookie rác) gửi được `POST /api/trpc/scadaCommands.dungMay` KHÔNG GIỚI HẠN, mỗi yêu cầu vẫn đi qua parse thân +
+ * createContext (đọc auth) + middleware giấy phép rồi mới UNAUTHORIZED — tranh pool DB mà chính STOP cần. Nay: không cookie / cookie rác /
+ * chữ ký sai / hết hạn ⇒ ĐẾM như mọi yêu cầu /api; STOP của người ĐÃ đăng nhập (vé ký hợp lệ) vẫn KHÔNG BAO GIỜ bị `apiLimiter` trả 429.
+ * Phiên đã thu hồi nhưng vé còn hạn vẫn được miễn (stateless, như robotStopAuth bước 1) — nó vẫn bị createContext từ chối. Phép kiểm lỗi ⇒
+ * false (bị đếm, không bao giờ ném ra limiter).
+ */
+export async function laStopHmiCoPhienKy(req: Request, kiem: KiemPhienKy = kiemPhienKyMacDinh): Promise<boolean> {
+  if (!isHmiStopRequest(req)) return false;
+  try {
+    return (await kiem(req)) === true;
+  } catch {
+    return false;
+  }
 }
 
 // ── Store selection (B6) ─────────────────────────────────────────────────────
@@ -579,7 +609,9 @@ export function createApiLimiter() {
     // is counted by EXACTLY ONE limiter, so the tiers can never double-count.
     // Browser/tRPC traffic is unaffected (skip returns false for every other path).
     // SCADA R1b-1 T2 fix round 1: likewise EXEMPT a non-batched HMI STOP (`isHmiStopRequest`) — no software ever blocks a STOP.
-    skip: (req: Request) => isOtIngestRequest(req) || isMachineIngestRequest(req) || isHmiStopRequest(req),
+    // R1b-1 rà soát cuối I-2: ONLY when it carries a session token with a valid JWT signature (`laStopHmiCoPhienKy`) — anonymous / junk-cookie
+    // floods of dungMay are counted like any other /api request.
+    skip: async (req: Request) => isOtIngestRequest(req) || isMachineIngestRequest(req) || (await laStopHmiCoPhienKy(req)),
     passOnStoreError: true, // Redis down → allow (fail-open), never 500 all traffic
     ...storeOption("rl:api:"),
   });

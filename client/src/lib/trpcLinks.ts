@@ -46,12 +46,16 @@ export function isLicenseOp(op: { path: string }): boolean {
 }
 
 /**
- * doc 81 Đợt 10 D fix review 6 (NF5-8, R-10-bb) — the STOP-only route is sent ALONE (never batched): a batch mixing it with any
- * other call is authenticated the normal, unbounded way, so a STOP would wait behind a slow DB.
+ * STOP routes sent ALONE (never batched), for two DIFFERENT server-side reasons:
+ *  - `robot.consoleStop` — doc 81 Đợt 10 D fix review 6 (NF5-8, R-10-bb): the server's bounded STOP-only auth (context.ts
+ *    `isStopOnlyCall` + robotStopAuth, 300 ms) applies only to a request made of that route alone; in a mixed batch it would be
+ *    authenticated the normal, unbounded way and wait behind a slow DB.
+ *  - `scadaCommands.dungMay` — SCADA R1b-1 T2 fix round 1: ONLY so the server's general /api limiter exemption applies (it exempts a
+ *    non-batched `POST /api/trpc/scadaCommands.dungMay` carrying a validly signed session — rateLimitConfig `laStopHmiCoPhienKy`).
+ *    ⚠ The HMI STOP has NO bounded auth and NO deadline on its pre-dispatch reads: with a slow-but-alive DB it waits as long as the DB
+ *    stalls; the only bound is the client's 10 s "dùng E-STOP cứng" fallback (R1b-2 backlog: a real pre-dispatch deadline).
  */
 export function isStopOnlyOp(op: { path: string }): boolean {
-  // SCADA R1b-1 T2 fix round 1 — the HMI STOP likewise goes ALONE: the server exempts ONLY a non-batched
-  // `POST /api/trpc/scadaCommands.dungMay` from the general /api limiter (rateLimitConfig `isHmiStopRequest`).
   return op.path === "robot.consoleStop" || op.path === "scadaCommands.dungMay";
 }
 

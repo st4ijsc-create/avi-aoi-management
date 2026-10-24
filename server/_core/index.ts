@@ -4720,6 +4720,11 @@ async function startServer() {
       } catch (err) {
         console.error("[SCADA] kiểm cấu hình lệnh HMI lỗi:", (err as Error)?.message || err);
       }
+      // SCADA R1b-1 rà soát cuối I-1 — luật interlock ĐANG BẬT mà lệnh bảo vệ sẽ bị dispatch từ chối (T13: lệch lưới thô của tag int có
+      // scale/offset) ⇒ khối lỗi MỘT lần (cũng đếm ở posture). KHÔNG chờ, không chặn khởi động; tự bắt mọi lỗi.
+      void import("../services/scada/lenhInterlockLechLuoi")
+        .then((m) => m.canhBaoLuatLenhLechLuoiKhiKhoiDong())
+        .catch((err) => console.error("[SCADA] kiểm luật interlock lệch lưới lỗi:", (err as Error)?.message || err));
       // kiem-dinh P1-6 (2026-10-24) — kiểm schema R1a (information_schema, CHỈ ĐỌC) TRƯỚC startOt: thiếu mig 0431 ⇒ khối lỗi nổi bật +
       // /health degraded + KHÔNG startOt (không chạy với danh sách adapter rỗng); thiếu 0432 ⇒ lỗi nhắc mỗi 5 phút (kiemSchemaR1a.ts).
       const { khoiDongOtCoKiemSchema } = await import("./kiemSchemaR1a");

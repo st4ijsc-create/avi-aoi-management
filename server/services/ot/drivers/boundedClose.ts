@@ -118,10 +118,13 @@ export function closeModbusClient(
 /**
  * Race `p` với hạn `ms`; hết hạn ⇒ reject Error(`${label} timeout after ${ms}ms`).
  * Timer luôn được dọn (không giữ tiến trình sống sau khi p xong).
+ * `opts.unref` (SCADA R1b-1 rà soát cuối M-5 — thay hai bản sao `voiHanUnref` của lenhHmi / vongPoll): hẹn giờ `unref` — một việc treo
+ * không giữ tiến trình sống tới hết hạn. Mặc định giữ nguyên hành vi cũ (ref) cho mọi bên gọi sẵn có.
  */
-export function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+export function withDeadline<T>(p: Promise<T>, ms: number, label: string, opts?: { unref?: boolean }): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms);
+    if (opts?.unref) (t as { unref?: () => void }).unref?.();
     p.then(
       (v) => {
         clearTimeout(t);

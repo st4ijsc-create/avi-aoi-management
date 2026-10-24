@@ -18,9 +18,10 @@
  *   list/get/testConnection/tags.listByAdapter → canView
  *   create/tags.create → canCreate ; update/tags.update → canEdit
  *   delete/tags.delete → canDelete
- * SCADA R1b-1 Task 9 (+ fix round 1): tags.create/update/delete đụng một tag ĐƯỢC BẢO VỆ (đã khai / kênh chế độ / đích luật interlock
- *   đang bật) hoặc một khoá mồ côi ⇒ TOTP tươi mức 5 + kiểm lại nhất quán (services/scada/troLaiKenh.ts); update đổi đích adapter có tag
- *   được bảo vệ ⇒ TOTP. Không đường nào được làm luật interlock đang bật mất hợp lệ / mất đích.
+ * SCADA R1b-1 Task 9 (+ fix round 1–3): tags.create/update/delete đụng một tag ĐƯỢC BẢO VỆ (định nghĩa T9 r3, services/scada/troLaiKenh.ts:
+ *   đã khai / kênh chế độ / ĐÍCH hoặc NGUỒN telemetry của luật interlock không-alert ĐANG BẬT HOẶC ĐÃ DUYỆT) hoặc một khoá mồ côi ⇒ TOTP tươi
+ *   mức 5 + kiểm lại nhất quán; update (đổi đích / tắt / đổi máy) và delete của adapter có tag được bảo vệ / kênh chế độ ⇒ TOTP (cổng chung
+ *   `congAdapterTx`). Không đường nào được làm luật interlock ĐANG BẬT mất hợp lệ / mất đích / mất nguồn.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";

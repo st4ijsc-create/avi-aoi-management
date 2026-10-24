@@ -21,7 +21,8 @@
  *     lần bộ đếm TOTP hỏng, log mang nguyên nhân "thiếu migration 0432" (`nguyenNhanBoDemHong`, totpKhoaSai.ts / totpOnce.ts).
  *   · Không kiểm được (DB chưa sẵn / truy vấn lỗi) ⇒ ghi cảnh báo và để `startOt` chạy như trước (nó tự thất bại nếu DB hỏng) — trạng
  *     thái `khong_kiem_duoc` (FAIL-OPEN lúc khởi động, giữ nguyên). R1b-1 T10: `/health` KHÔNG im lặng về chuyện đó —
- *     `schemaR1a: "chua_kiem_duoc"` + `schemaR1aLyDo` (status vẫn "ok": không biết ≠ thiếu), và tiến trình KIỂM LẠI mỗi
+ *     `schemaR1a: { ok:false, trangThai:"chua_kiem_duoc", thieuMigration:null, lyDo:<lớp lỗi> }` (status vẫn "ok": không biết ≠ thiếu; MỘT
+ *     hình dạng với ca thiếu — `SchemaR1aHealth`, rà soát cuối M-7), và tiến trình KIỂM LẠI mỗi
  *     `CHU_KY_NHAC_MS` (hẹn giờ unref, tự dừng khi kiểm được) — kiểm được ⇒ trạng thái thật (thiếu 0431/0432/0433 ⇒ degraded + khối lỗi,
  *     0432/0433 ⇒ nhắc định kỳ như lúc khởi động).
  * Không kéo DB lúc import: `chay` do người gọi truyền (test giả `information_schema`).
@@ -99,11 +100,6 @@ export function __datTrangThaiSchemaR1a(t: TrangThaiSchemaR1a): void {
   trangThai = t;
 }
 
-/** Tiến trình này đã thấy thiếu 0433 (cột `ly_do`)? */
-export function biet0433Thieu(): boolean {
-  return trangThai.kieu === "da_kiem" && trangThai.thieu0433.length > 0;
-}
-
 /** Tiến trình này đã thấy thiếu 0432? (log nguyên nhân của bộ đếm TOTP.) */
 export function biet0432Thieu(): boolean {
   return trangThai.kieu === "da_kiem" && trangThai.thieu0432.length > 0;
@@ -135,8 +131,21 @@ export async function kiemSchemaR1a(chay: ChayTruyVan): Promise<KetQuaSchemaR1a>
   return { thieu0431, thieu0432, thieu0433 };
 }
 
-/** Lý do một dòng cho `/health` (null = không có gì để báo). */
-export function lyDoSchemaR1a(t: TrangThaiSchemaR1a = trangThai): { ok: false; thieuMigration: string[]; lyDo: string } | null {
+/**
+ * R1b-1 rà soát cuối M-7 — MỘT hình dạng cho khoá `/health` `schemaR1a` (trước: đối tượng khi thiếu, CHUỖI `"chua_kiem_duoc"` khi không kiểm
+ * được ⇒ bộ giám sát đọc `schemaR1a.thieuMigration` nhận `undefined` và coi ca không biết là khoẻ):
+ *   • VẮNG khoá — đã kiểm và đủ (hoặc lần kiểm khởi động chưa chạy xong);
+ *   • CÓ khoá ⇒ LUÔN `ok: false`, `trangThai` phân biệt:
+ *       – `"thieu"` — `thieuMigration` = mã migration còn thiếu (≥ 1), `lyDo` = câu dài; `status` "degraded";
+ *       – `"chua_kiem_duoc"` — không đọc được information_schema: `thieuMigration: null` (KHÔNG biết — không phải rỗng), `lyDo` = LỚP lỗi
+ *         ngắn (`LoaiLoiKiem`; /health không xác thực ⇒ không văn bản lỗi); `status` giữ "ok" (không biết ≠ thiếu, T10).
+ */
+export type SchemaR1aHealth =
+  | { ok: false; trangThai: "thieu"; thieuMigration: string[]; lyDo: string }
+  | { ok: false; trangThai: "chua_kiem_duoc"; thieuMigration: null; lyDo: LoaiLoiKiem };
+
+/** Lý do một dòng cho `/health` khi THIẾU migration (null = không thiếu gì đã biết). */
+export function lyDoSchemaR1a(t: TrangThaiSchemaR1a = trangThai): Extract<SchemaR1aHealth, { trangThai: "thieu" }> | null {
   if (t.kieu !== "da_kiem") return null;
   const thieu: string[] = [];
   const phan: string[] = [];
@@ -152,16 +161,17 @@ export function lyDoSchemaR1a(t: TrangThaiSchemaR1a = trangThai): { ok: false; t
     thieu.push("0433");
     phan.push(`thiếu migration 0433 (${t.thieu0433.join(", ")}) — mọi lệnh HMI ghi nhật ký thử lệnh sẽ lỗi (OT vẫn chạy)`);
   }
-  return thieu.length ? { ok: false, thieuMigration: thieu, lyDo: phan.join("; ") } : null;
+  return thieu.length ? { ok: false, trangThai: "thieu", thieuMigration: thieu, lyDo: phan.join("; ") } : null;
 }
 
 /**
- * R1b-1 T10 — lần kiểm khởi động KHÔNG đọc được information_schema ⇒ `/health` nói thẳng "chưa kiểm được" (kèm lý do). Không phải
- * "thiếu migration" (không biết) nên KHÔNG làm `status` thành degraded. null = không có gì để báo (chưa kiểm / đã kiểm).
+ * R1b-1 T10 — lần kiểm khởi động KHÔNG đọc được information_schema ⇒ `/health` nói thẳng "chưa kiểm được" (kèm lớp lỗi). Không phải
+ * "thiếu migration" (không biết) nên KHÔNG làm `status` thành degraded. null = không có gì để báo (chưa kiểm / đã kiểm). Cùng hình dạng
+ * `SchemaR1aHealth` với ca thiếu (M-7).
  */
-export function lyDoChuaKiemDuocR1a(t: TrangThaiSchemaR1a = trangThai): { schemaR1a: "chua_kiem_duoc"; lyDo: LoaiLoiKiem } | null {
+export function lyDoChuaKiemDuocR1a(t: TrangThaiSchemaR1a = trangThai): Extract<SchemaR1aHealth, { trangThai: "chua_kiem_duoc" }> | null {
   // CHỈ lớp ngắn — `t.loi` (văn bản lỗi thô) không bao giờ ra `/health`.
-  return t.kieu === "khong_kiem_duoc" ? { schemaR1a: "chua_kiem_duoc", lyDo: t.loai } : null;
+  return t.kieu === "khong_kiem_duoc" ? { ok: false, trangThai: "chua_kiem_duoc", thieuMigration: null, lyDo: t.loai } : null;
 }
 
 function khoiLoi(dong: string[]): string {
@@ -235,29 +245,29 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
     (h as { unref?: () => void } | null)?.unref?.();
   };
   const nhacCaHai = (kq: KetQuaSchemaR1a) => {
-  nhacTheoMa(
-    kq,
-    "thieu0432",
-    (thieu) => [
-      "[SCADA R1a] THIẾU MIGRATION 0432 (bộ đếm TOTP sai).",
-      `Còn thiếu: ${thieu.join(", ")}.`,
-      "Hậu quả: MỌI lượt xác minh TOTP bị từ chối (TOTP_KHONG_KIEM_DUOC) — đăng nhập 2FA, lệnh SCADA mức 4–5, cấu hình kênh M12, deploy.",
-      "Sửa: chạy scripts/apply-migration-0432.mjs trên DB này (log này nhắc lại mỗi 5 phút tới khi bảng có mặt).",
-    ],
-    ["totp_khoa_sai"],
-  );
-  nhacTheoMa(
-    kq,
-    "thieu0433",
-    (thieu) => [
-      "[SCADA R1b] THIẾU MIGRATION 0433 (cột lý do của nhật ký thử lệnh HMI).",
-      `Còn thiếu: ${thieu.join(", ")}.`,
-      "Hậu quả: MỌI lệnh HMI (request / confirm / huỷ / dừng máy) ghi scada_command_attempts sẽ lỗi \"column ly_do does not exist\" khi SCADA_COMMANDS_ENABLED bật. OT vẫn chạy.",
-      "/health báo status \"degraded\" + schemaR1a.",
-      "Sửa: chạy scripts/apply-migration-0433.mjs trên DB này (log này nhắc lại mỗi 5 phút tới khi cột có mặt).",
-    ],
-    ["scada_command_attempts.ly_do"],
-  );
+    nhacTheoMa(
+      kq,
+      "thieu0432",
+      (thieu) => [
+        "[SCADA R1a] THIẾU MIGRATION 0432 (bộ đếm TOTP sai).",
+        `Còn thiếu: ${thieu.join(", ")}.`,
+        "Hậu quả: MỌI lượt xác minh TOTP bị từ chối (TOTP_KHONG_KIEM_DUOC) — đăng nhập 2FA, lệnh SCADA mức 4–5, cấu hình kênh M12, deploy.",
+        "Sửa: chạy scripts/apply-migration-0432.mjs trên DB này (log này nhắc lại mỗi 5 phút tới khi bảng có mặt).",
+      ],
+      ["totp_khoa_sai"],
+    );
+    nhacTheoMa(
+      kq,
+      "thieu0433",
+      (thieu) => [
+        "[SCADA R1b] THIẾU MIGRATION 0433 (cột lý do của nhật ký thử lệnh HMI).",
+        `Còn thiếu: ${thieu.join(", ")}.`,
+        "Hậu quả: MỌI lệnh HMI (request / confirm / huỷ / dừng máy) ghi scada_command_attempts sẽ lỗi \"column ly_do does not exist\" khi SCADA_COMMANDS_ENABLED bật. OT vẫn chạy.",
+        "/health báo status \"degraded\" + schemaR1a.",
+        "Sửa: chạy scripts/apply-migration-0433.mjs trên DB này (log này nhắc lại mỗi 5 phút tới khi cột có mặt).",
+      ],
+      ["scada_command_attempts.ly_do"],
+    );
   };
 
   if (kq) nhacCaHai(kq);

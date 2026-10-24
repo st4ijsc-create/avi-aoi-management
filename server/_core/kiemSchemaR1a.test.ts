@@ -12,7 +12,6 @@ import {
   CHU_KY_NHAC_MS,
   COT_DEVICE_TAGS_0431,
   __datTrangThaiSchemaR1a,
-  biet0433Thieu,
   khoiDongOtCoKiemSchema,
   kiemSchemaR1a,
   lyDoSchemaR1a,
@@ -176,8 +175,8 @@ describe("khoiDongOtCoKiemSchema — kiểm TRƯỚC startOt", () => {
     expect(log).toContain("THIẾU MIGRATION 0433");
     expect(log).toContain("scada_command_attempts.ly_do");
     expect(log).toContain("apply-migration-0433");
-    expect(lyDoSchemaR1a()).toMatchObject({ ok: false, thieuMigration: ["0433"] });
-    expect(biet0433Thieu()).toBe(true);
+    expect(lyDoSchemaR1a()).toMatchObject({ ok: false, trangThai: "thieu", thieuMigration: ["0433"] });
+    expect(trangThaiSchemaR1a()).toMatchObject({ kieu: "da_kiem", thieu0433: ["scada_command_attempts.ly_do"] });
 
     nhac!();
     await vi.waitFor(() => expect(logLoi).toHaveBeenCalledTimes(2));
@@ -187,7 +186,7 @@ describe("khoiDongOtCoKiemSchema — kiểm TRƯỚC startOt", () => {
     nhac!();
     await vi.waitFor(() => expect(boNhac).toHaveBeenCalledTimes(1));
     expect(lyDoSchemaR1a()).toBeNull();
-    expect(biet0433Thieu()).toBe(false);
+    expect(trangThaiSchemaR1a()).toMatchObject({ kieu: "da_kiem", thieu0433: [] });
   });
 
   it("không kiểm được (truy vấn ném) ⇒ cảnh báo, startOt vẫn chạy như trước, /health không degraded vì schema", async () => {
@@ -244,7 +243,7 @@ describe("★ R1b-1 T10 — không kiểm được lúc khởi động: /health 
     }
   }
 
-  it("★ I-1 — /health (KHÔNG xác thực): schemaR1a \"chua_kiem_duoc\" + schemaR1aLyDo là LỚP NGẮN; TUYỆT ĐỐI không host / port / user / tên DB / văn bản lỗi; log máy chủ vẫn giữ nguyên văn; status ok; khởi động fail-open", async () => {
+  it("★ I-1 — /health (KHÔNG xác thực): schemaR1a {trangThai \"chua_kiem_duoc\", lyDo = LỚP NGẮN}; TUYỆT ĐỐI không host / port / user / tên DB / văn bản lỗi; log máy chủ vẫn giữ nguyên văn; status ok; khởi động fail-open", async () => {
     const { chay } = chayHong();
     const startOt = vi.fn(async () => undefined);
     const w = hen();
@@ -252,8 +251,9 @@ describe("★ R1b-1 T10 — không kiểm được lúc khởi động: /health 
     expect(await khoiDongOtCoKiemSchema({ chay, startOt, logLoi, datNhac: w.datNhac, boNhac: w.boNhac })).toBe("da_start");
     expect(startOt).toHaveBeenCalledTimes(1);
     const body = await goiHealth();
-    expect(body.schemaR1a).toBe("chua_kiem_duoc");
-    expect(body.schemaR1aLyDo).toBe("ket_noi_tu_choi");
+    // Rà soát cuối M-7 — MỘT hình dạng: đối tượng, ok:false, không biết ⇒ thieuMigration null (KHÔNG phải rỗng / vắng); không còn khoá phụ.
+    expect(body.schemaR1a).toEqual({ ok: false, trangThai: "chua_kiem_duoc", thieuMigration: null, lyDo: "ket_noi_tu_choi" });
+    expect(body).not.toHaveProperty("schemaR1aLyDo");
     expect(body.status).toBe("ok");
     const thoBody = JSON.stringify(body);
     for (const cam of ["10.20.30.40", "5434", "aoi_secret_user", "aoi_management", "ECONNREFUSED", "connect "]) {
@@ -294,7 +294,7 @@ describe("★ R1b-1 T10 — không kiểm được lúc khởi động: /health 
     expect(st.soLan).toBeGreaterThan(truoc);
     expect(w.h.huy).not.toHaveBeenCalled();
     expect(trangThaiSchemaR1a().kieu).toBe("khong_kiem_duoc");
-    expect((await goiHealth()).schemaR1a).toBe("chua_kiem_duoc");
+    expect((await goiHealth()).schemaR1a).toMatchObject({ ok: false, trangThai: "chua_kiem_duoc" });
 
     st.ok = true;
     w.h.fn!();
@@ -303,7 +303,7 @@ describe("★ R1b-1 T10 — không kiểm được lúc khởi động: /health 
     expect(trangThaiSchemaR1a()).toMatchObject({ kieu: "da_kiem", thieu0431: [], thieu0432: [], thieu0433: [] });
     const body = await goiHealth();
     expect(body.schemaR1a).toBeUndefined();
-    expect(body.schemaR1aLyDo).toBeUndefined();
+    expect(body).not.toHaveProperty("schemaR1aLyDo");
     expect(body.status).toBe("ok");
     // đã dừng: không còn hẹn giờ nào được đặt thêm (đủ schema ⇒ không nhắc 0432/0433)
     expect(w.h.soLanDat).toBe(1);
@@ -326,7 +326,7 @@ describe("★ R1b-1 T10 — không kiểm được lúc khởi động: /health 
     expect(w.h.soLanDat).toBe(2); // + bộ nhắc 0432
     const body = await goiHealth();
     expect(body.status).toBe("degraded");
-    expect(body.schemaR1a).toMatchObject({ ok: false, thieuMigration: ["0431", "0432"] });
+    expect(body.schemaR1a).toMatchObject({ ok: false, trangThai: "thieu", thieuMigration: ["0431", "0432"] });
   });
 
   it("mặc định (không truyền datNhac): setInterval THẬT mỗi CHU_KY_NHAC_MS, unref, tự dừng khi kiểm được — dùng layChay (kết nối mới)", async () => {
@@ -375,15 +375,29 @@ describe("/health (route THẬT — `/api/health` là SPA catch-all) mang lý do
     const r = await goiHealth();
     expect(r.status).toBe(200);
     expect(r.body.status).toBe("degraded");
-    expect(r.body.schemaR1a).toMatchObject({ ok: false, thieuMigration: ["0431", "0432"] });
+    expect(r.body.schemaR1a).toMatchObject({ ok: false, trangThai: "thieu", thieuMigration: ["0431", "0432"] });
     expect(String((r.body.schemaR1a as { lyDo: string }).lyDo)).toContain("thiếu migration 0431");
+  });
+  it("★ rà soát cuối M-7 — một hình dạng: thiếu và không biết đều là ĐỐI TƯỢNG có ok:false + trangThai; không biết KHÔNG nhầm thành khoẻ", async () => {
+    const hinh = (v: unknown) => (v && typeof v === "object" ? Object.keys(v as object).sort() : typeof v);
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"] });
+    const thieu = (await goiHealth()).body;
+    __datTrangThaiSchemaR1a({ kieu: "khong_kiem_duoc", loi: "connect ECONNREFUSED 10.0.0.1:5434", loai: "ket_noi_tu_choi" });
+    const khongBiet = (await goiHealth()).body;
+    expect(hinh(thieu.schemaR1a)).toEqual(["lyDo", "ok", "thieuMigration", "trangThai"]);
+    expect(hinh(khongBiet.schemaR1a)).toEqual(hinh(thieu.schemaR1a));
+    expect((khongBiet.schemaR1a as { ok: boolean }).ok).toBe(false);
+    expect((khongBiet.schemaR1a as { trangThai: string }).trangThai).toBe("chua_kiem_duoc");
+    expect((khongBiet.schemaR1a as { thieuMigration: unknown }).thieuMigration).toBeNull();
+    expect(khongBiet.status).toBe("ok"); // T10: không biết ≠ thiếu
+    expect(Object.keys(khongBiet).filter((k) => k.startsWith("schemaR1a"))).toEqual(["schemaR1a"]);
   });
   it("★ R1b-1 T7 — thiếu 0433 ⇒ 200 nhưng status degraded + schemaR1a.thieuMigration có 0433 (cùng cách báo như 0431)", async () => {
     __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"] });
     const r = await goiHealth();
     expect(r.status).toBe(200);
     expect(r.body.status).toBe("degraded");
-    expect(r.body.schemaR1a).toMatchObject({ ok: false, thieuMigration: ["0433"] });
+    expect(r.body.schemaR1a).toMatchObject({ ok: false, trangThai: "thieu", thieuMigration: ["0433"] });
     expect(String((r.body.schemaR1a as { lyDo: string }).lyDo)).toContain("thiếu migration 0433");
     expect(String((r.body.schemaR1a as { lyDo: string }).lyDo)).toContain("scada_command_attempts.ly_do");
   });

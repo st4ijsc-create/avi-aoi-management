@@ -8,6 +8,7 @@
  *   2. `cooldownSeconds`: update một phần KHÔNG đặt lại về 300 (default chỉ ở create).
  *   3. Posture: `fetchInterlockCauHinhHong` đếm luật `telemetry_tag` có `scope <> 'machine'` (D11).
  *   4. `propose_interlock_rule`: D11 kiểm TRƯỚC khi chèn (helper dùng chung `telemetryTagDungPhamVi`).
+ *   5. R1b-1 rà soát cuối I-1: posture đếm luật ĐANG BẬT mà lệnh bảo vệ lệch lưới thô trên đích int có scale (T13 dispatch từ chối).
  *
  * CSDL `_test` THẬT. Người gọi interlock: admin + 2FA, id giả cho SoD (khuôn `interlockRouter.kenhDai.r1a.db.test.ts`); người gọi
  * deviceAdapter / mappingAsCode: `taoNguoiDungTest` admin. Không ca nào cần mã TOTP (tag chưa khai, hoặc từ chối nhất quán đứng TRƯỚC mã).
@@ -24,6 +25,7 @@ import { interlockRules } from "../../drizzle/schema";
 import { getDb } from "../db/connection";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { getTool } from "../services/aiLocalTools/toolRegistry";
+import { canhBaoLuatLenhLechLuoiKhiKhoiDong, luatLenhLechLuoi, TRUY_VAN_TRUOC_TRIEN_KHAI } from "../services/scada/lenhInterlockLechLuoi";
 import "../services/aiLocalTools/writeHandlers/interlock";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -443,6 +445,60 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — interloc
       const res = await tool.execute!(ok as never, ctx as never);
       const id = (res.data as { id: number }).id;
       expect((await sql`SELECT enabled, "approvedBy" AS a FROM interlock_rules WHERE id = ${id}`)[0]).toEqual({ enabled: false, a: null });
+    });
+  });
+
+  describe("5 — R1b-1 rà soát cuối I-1: posture đếm luật ĐANG BẬT mà lệnh bảo vệ lệch lưới thô (T13 dispatch sẽ từ chối)", () => {
+    // Đếm CHỈ hàng của tệp này (tiền tố `${DAU}-g`): tệp DB khác chạy song song chèn / xoá luật.
+    const cuaToi = () => like(interlockRules.name, `${DAU}-g%`);
+
+    it("★ đích int CHƯA khai scale 10: bật + 25 ⇒ đếm (OFF_STEP); 30 ⇒ không; tắt / alert ⇒ không; commandValue NULL (⇒ true ⇒ 1) ⇒ đếm", async () => {
+      const d = await getDb();
+      await sql`UPDATE device_tags SET scale = 10 WHERE id = ${tg.cu}`;
+      const truoc = await oversight.fetchInterlockCauHinhHong(d, cuaToi());
+      expect(truoc).toEqual({ count: 0, degraded: false });
+
+      const r25 = await seedLuat("g25", "cu", 25);
+      expect(await oversight.fetchInterlockCauHinhHong(d, cuaToi())).toEqual({ count: 1, degraded: false });
+      const ds = await luatLenhLechLuoi(d!, cuaToi());
+      expect(ds.map((r) => [r.id, r.ma])).toEqual([[r25, "OFF_STEP"]]);
+
+      await seedLuat("g30", "cu", 30); // đúng lưới (thô 3)
+      await seedLuat("gtat", "cu", 25, { enabled: false });
+      await seedLuat("galert", "cu", 25, { action: "alert" });
+      expect((await oversight.fetchInterlockCauHinhHong(d, cuaToi())).count).toBe(1);
+
+      const [nul] = await sql`INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action, "targetAdapterId",
+          "commandTag", "commandValue", enabled, "approvedBy", "createdBy")
+        VALUES (${DAU + "-gnull"}, 'machine', 'ng_rate', 'gt', 5, 'reduce_speed', ${adapterId}, 'cu', NULL, true, ${DUYET}, ${TAC_GIA}) RETURNING id`;
+      const rStr = await seedLuat("gstr", "cu", "25"); // chuỗi số ⇒ Number("25") như driver
+      await seedLuat("gobj", "cu", { pct: 25 }); // không phải số ⇒ driver không làm tròn ⇒ không kiểm
+      const mong = [r25, Number(nul.id), rStr].sort((a, b) => a - b);
+      expect((await luatLenhLechLuoi(d!, cuaToi())).map((r) => r.id)).toEqual(mong);
+      expect((await oversight.fetchInterlockCauHinhHong(d, cuaToi())).count).toBe(3);
+      // Truy vấn TRƯỚC TRIỂN KHAI của báo cáo §4 (SQL thuần, chép nguyên văn) cho ĐÚNG tập ấy trên hàng của tệp này.
+      const qSql = await sql.unsafe(`SELECT id::int AS id FROM (${TRUY_VAN_TRUOC_TRIEN_KHAI}) q WHERE q.name LIKE $1 ORDER BY id`, [`${DAU}-g%`]);
+      expect(qSql.map((r) => Number(r.id))).toEqual(mong);
+
+      // Đối chứng: cùng luật trên tag scale 1 ⇒ không lệch (thiết bị đo nhìn thấy được scale).
+      await sql`UPDATE device_tags SET scale = 1 WHERE id = ${tg.cu}`;
+      expect(await oversight.fetchInterlockCauHinhHong(d, cuaToi())).toEqual({ count: 0, degraded: false });
+    });
+
+    it("luật vừa hỏng cấu trúc (telemetry_tag thiếu machineId) vừa lệch lưới ⇒ đếm MỘT lần; khối log lúc khởi động nêu luật", async () => {
+      const d = await getDb();
+      await sql`UPDATE device_tags SET scale = 10 WHERE id = ${tg.cu}`;
+      const [h] = await sql`INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action, "targetAdapterId",
+          "commandTag", "commandValue", enabled, "approvedBy", "createdBy")
+        VALUES (${DAU + "-ghong"}, 'machine', 'telemetry_tag', 'gt', 5, 'reduce_speed', ${adapterId}, 'cu', ${sql.json(25 as never)}, true, ${DUYET}, ${TAC_GIA})
+        RETURNING id`;
+      expect((await luatLenhLechLuoi(d!, cuaToi())).map((r) => r.id)).toEqual([Number(h.id)]);
+      expect(await oversight.fetchInterlockCauHinhHong(d, cuaToi())).toEqual({ count: 1, degraded: false });
+
+      const log: string[] = [];
+      const n = await canhBaoLuatLenhLechLuoiKhiKhoiDong({ layDb: async () => d!, logLoi: (m) => log.push(m) });
+      expect(n).toBeGreaterThanOrEqual(1); // toàn bảng: có thể có hàng của tệp khác
+      expect(log.join("\n")).toContain(`#${Number(h.id)} "${DAU}-ghong" — OFF_STEP`);
     });
   });
 });

@@ -16,8 +16,10 @@
  *     config-drift baseline. Import KHÔNG restart adapter — trả cờ
  *     `requiresAdapterRestart` cho người vận hành.
  *   - KHÔNG có đường ghi xuống thiết bị ở đây (config-only, như deviceAdapterRouter).
- *   - SCADA R1b-1 Task 9: lô trỏ lại tag ĐÃ KHAI kênh (address/scale/offset/dataType/writable) ⇒ `totpCode` tươi (mức 5,
- *     `kiemTotpCauHinh`), MỘT mã cho cả lô, trần 200 tag đã khai, kiểm lại nhất quán từng tag (cả lô hoặc không gì) — nhóm giới hạn "2fa".
+ *   - SCADA R1b-1 Task 9 (+ fix round 1–3): lô đụng tag ĐƯỢC BẢO VỆ (định nghĩa T9 r3, services/scada/troLaiKenh.ts: đã khai / kênh chế độ /
+ *     ĐÍCH hoặc NGUỒN telemetry của luật interlock không-alert ĐANG BẬT HOẶC ĐÃ DUYỆT) — trỏ lại (address/scale/offset/dataType/writable/
+ *     tagKey/adapterId), tạo lên khoá mồ côi, hoặc prune — ⇒ `totpCode` tươi (mức 5, `kiemTotpCauHinh`), MỘT mã cho cả lô, trần 200 tag được
+ *     bảo vệ, kiểm lại nhất quán từng tag (cả lô hoặc không gì; diff tính lại TRONG giao dịch) — nhóm giới hạn "2fa".
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";

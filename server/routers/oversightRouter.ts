@@ -39,7 +39,7 @@
  * đúng mức mà `machineRecipeRouter`/`ecnRouter`/`interlockRouter` đòi hỏi.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, desc, eq, inArray, isNull, isNotNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, isNotNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission, checkPermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
@@ -58,6 +58,7 @@ import { detectDeadlocks } from "../services/fleet/trafficManager";
 // inline thật sự chặn lệnh (`evaluateInterlockGate`), để "độ phủ interlock" không đếm
 // rule chỉ `alert` (không chặn gì) là "có phủ" — chính hình dạng báo-xanh-giả cần tránh.
 import { INTERLOCK_GATE_ACTIONS } from "../services/interlock/interlockGate";
+import { luatLenhLechLuoi } from "../services/scada/lenhInterlockLechLuoi";
 // Doc 80 Đợt 1 final wave (item 5) — `posture` đọc CÙNG vị từ mà các cổng thật dùng (không tự parse env):
 // OT/auto-block = commandDispatcher · robot = robotCommandDispatcher · deploy = programmingService ·
 // engine interlock = interlockEngine. Xem `oversightRouter.test.ts` (lật từng biến ⇒ bảng == cổng).
@@ -437,12 +438,25 @@ function dieuKienInterlockCauHinhHong() {
   );
 }
 
-async function fetchInterlockCauHinhHong(d: Db | null): Promise<{ count: number; degraded: boolean }> {
+// R1b-1 rà soát cuối I-1 — cộng thêm luật ĐANG BẬT mà lệnh bảo vệ sẽ bị `dispatch()` từ chối (T13: lệch lưới thô của tag int có scale/offset;
+// `services/scada/lenhInterlockLechLuoi.ts`, CÙNG hàm cổng dispatch dùng). Một luật vừa hỏng cấu trúc vừa lệch lưới chỉ đếm MỘT lần.
+// `them` (chỉ test) = điều kiện SQL thêm trên `interlock_rules` — tệp DB chạy song song chỉ đếm hàng của chính mình.
+async function fetchInterlockCauHinhHong(d: Db | null, them?: SQL): Promise<{ count: number; degraded: boolean }> {
   if (!d) return { count: 0, degraded: true };
   try {
-    const cond = dieuKienInterlockCauHinhHong();
+    const cond = them ? and(dieuKienInterlockCauHinhHong(), them) : dieuKienInterlockCauHinhHong();
     const [{ c }] = await d.select({ c: sql<number>`count(*)::int` }).from(interlockRules).where(cond);
-    return { count: c ?? 0, degraded: false };
+    const lech = await luatLenhLechLuoi(d, them);
+    let lechMoi = lech.length;
+    if (lechMoi > 0) {
+      const ids = lech.map((r) => r.id);
+      const [{ trung }] = await d
+        .select({ trung: sql<number>`count(*)::int` })
+        .from(interlockRules)
+        .where(and(cond, inArray(interlockRules.id, ids)));
+      lechMoi -= trung ?? 0;
+    }
+    return { count: (c ?? 0) + lechMoi, degraded: false };
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("[oversight] posture interlock cau_hinh failed:", err instanceof Error ? err.message : err);
@@ -586,6 +600,7 @@ export const oversightRouter = router({
         interlockRulesEnabledWithTarget: coverage.count,
         interlockCoverageDegraded: coverage.degraded || cauHinhHong.degraded,
         // SCADA R0 Task 9 — luật bật+duyệt nhưng KHÔNG CHỨC NĂNG (telemetry_tag thiếu machineId/sourceKey): cổng chặn, engine im.
+        // R1b-1 rà soát cuối I-1 — + luật bật mà lệnh bảo vệ bị dispatch từ chối (lệch lưới thô, T13).
         interlockRulesCauHinhHong: cauHinhHong.count,
         // ILK-06 — ghi lệnh thật BẬT (OT hoặc robot) mà engine interlock TẮT.
         writesOnEngineOff: (otControlEnabled || robotControlEnabled) && !interlockEngineEnabled,
