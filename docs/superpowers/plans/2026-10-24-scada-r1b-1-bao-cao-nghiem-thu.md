@@ -178,19 +178,80 @@ hạ về STOP không ghim) — nó KHÔNG thay cho bench trên PLC thật.
      - Thiếu 0433 với bản build R1b-1: mọi lần ghi attempts (có `ly_do`) lỗi ⇒ `request`/`confirm` HMI fail-closed; `dungMay` (STOP) VẪN gửi vì
        mọi lần ghi attempts của nó bắt lỗi.
      - ⚠ Không chạy lại verify của 0431 trên DB đã có 0433 bằng bản cũ (đếm đúng 12 cột) — bản trên nhánh đã sửa (T6 I2: tập cột bao trùm).
-2. **Kiểm lại hôm nay (2026-10-25, CHỈ ĐỌC, `default_transaction_read_only = on`):** cả `aoi_management` (DEV) lẫn `aoi_management_test`: 4 bảng
+2. **BẮT BUỘC, TRƯỚC bản build, trên MỌI DB (rà soát cuối I-1): truy vấn CHỈ ĐỌC luật interlock lệch lưới thô.** T13 làm `dispatch()` từ chối
+   `OFF_STEP` một giá trị lệch lưới thô trên tag int chưa khai có `scale ≠ 1` / `offset ≠ 0` (trước đó driver làm tròn im lặng: scale 10, lệnh 25 ⇒
+   thô 3 = 30). Kiểm lúc cấu hình của T13 chỉ chạy khi create / update / approve / enable ⇒ một luật **đã bật** từ trước với `commandValue` lệch
+   lưới sẽ bị từ chối **đúng lúc hành động bảo vệ cần chạy**. Chỉ DEV / TEST đã đo (0 luật). Chạy trên từng DB đích, trong phiên
+   `SET default_transaction_read_only = on`:
+
+   ```sql
+   -- R1b-1 §4 mục 2 — luật interlock ĐANG BẬT có lệnh bảo vệ lệch lưới thô (CHỈ ĐỌC). ≥ 1 hàng ⇒ DỪNG triển khai.
+   WITH ung_vien AS (
+     SELECT r.id, r.name, r."commandValue" AS cv, r."targetAdapterId", t."tagKey",
+            COALESCE(NULLIF(t.scale, 0), 1)::numeric AS s, COALESCE(t."offset", 0)::numeric AS o
+     FROM interlock_rules r
+     JOIN device_tags t ON t."adapterId" = r."targetAdapterId" AND t."tagKey" = r."commandTag"
+     WHERE r.enabled AND r.action::text <> 'alert' AND t."dataType"::text = 'int'
+       AND (COALESCE(NULLIF(t.scale, 0), 1) <> 1 OR COALESCE(t."offset", 0) <> 0)
+   ), gia_tri AS (
+     SELECT u.*,
+       CASE
+         WHEN u.cv IS NULL OR jsonb_typeof(u.cv) = 'null' THEN 1::numeric
+         WHEN jsonb_typeof(u.cv) = 'number' THEN (u.cv #>> '{}')::numeric
+         WHEN jsonb_typeof(u.cv) = 'boolean' THEN CASE WHEN (u.cv #>> '{}')::boolean THEN 1::numeric ELSE 0::numeric END
+         WHEN jsonb_typeof(u.cv) = 'string' AND btrim(u.cv #>> '{}') = '' THEN 0::numeric
+         WHEN jsonb_typeof(u.cv) = 'string' AND btrim(u.cv #>> '{}') ~ '^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?$'
+           THEN btrim(u.cv #>> '{}')::numeric
+         ELSE NULL
+       END AS v
+     FROM ung_vien u
+   )
+   SELECT id, name, "targetAdapterId", "tagKey", cv AS "commandValue", s AS scale, o AS "offset", v AS gia_tri_gui,
+          o + round((v - o) / s) * s AS diem_luoi_gan_nhat
+   FROM gia_tri
+   WHERE v IS NOT NULL AND abs(v - (o + round((v - o) / s) * s)) > 1e-9 * greatest(1, abs(s))
+   ORDER BY id
+   ```
+
+   - **Kết quả ≠ 0 hàng ⇒ CHẶN triển khai** tới khi từng luật được sửa `commandValue` về một điểm lưới (`diem_luoi_gan_nhat` là ĐÚNG giá trị
+     driver cũ đã ghi) qua `interlockRouter.update` rồi duyệt + bật lại (luồng MOC), hoặc tắt luật có chủ đích. Chạy lại tới khi 0 hàng.
+   - Giá trị gửi tính như engine + driver: `commandValue` NULL ⇒ `true` ⇒ 1; boolean ⇒ 1 / 0; chuỗi số ⇒ số; đối tượng / chuỗi chữ ⇒ không kiểm.
+     Chuỗi SQL này là bản NGUYÊN VĂN của hằng `TRUY_VAN_TRUOC_TRIEN_KHAI` (`server/services/scada/lenhInterlockLechLuoi.ts`); lưới
+     `interlockRouter.r1b.db.test.ts` §5 chạy chính chuỗi ấy trên `_test` và so với hàm JS dùng chung của cổng dispatch (25 / NULL / "25" ⇒ có;
+     30 / tắt / alert / đối tượng / scale 1 ⇒ không). Khác bản JS chỉ ở biên hiếm (chuỗi hex, `|v/s| ≥ 2^53`) theo chiều báo DƯ.
+   - Đo 2026-10-25 trên `aoi_management_test` (chỉ đọc, `default_transaction_read_only = on`): ứng viên 0, lệch lưới **0 hàng**. DEV KHÔNG chạy
+     ở rà soát này (luật cứng); T13 đã đo DEV chỉ đọc: 0 luật nhắm tag int có scale (§6 mục 30) — vẫn phải chạy lại câu trên ngay trước khi triển khai.
+   - Sau khi chạy bản build, cùng điều kiện được **đếm vào posture** `interlockRulesCauHinhHong` (`oversightRouter.fetchInterlockCauHinhHong`,
+     phán bằng CHÍNH hàm cổng dispatch dùng — tập posture ⊇ tập câu trên: tag đã khai còn được kiểm dải / bước / kiểu) và một **khối
+     `console.error` lúc khởi động** liệt kê id / tên / mã (`canhBaoLuatLenhLechLuoiKhiKhoiDong`, chỉ log, không chặn khởi động).
+3. **Kiểm lại hôm nay (2026-10-25, CHỈ ĐỌC, `default_transaction_read_only = on`):** cả `aoi_management` (DEV) lẫn `aoi_management_test`: 4 bảng
    (`scada_command_attempts`, `scada_kenh_che_do`, `scada_khoa_chon`, `totp_khoa_sai`), 7/7 cột 0431 trên `device_tags`, `ly_do` có mặt
    (attempts 13 cột), 3 FK `ON DELETE CASCADE` đúng như trên.
-3. **Máy chủ tự kiểm lúc khởi động (`server/_core/kiemSchemaR1a.ts`), TRƯỚC `startOt()`:**
-   - thiếu 0431 ⇒ bỏ `startOt`, `/health` `status:"degraded"` + `schemaR1a.thieuMigration`;
+4. **Máy chủ tự kiểm lúc khởi động (`server/_core/kiemSchemaR1a.ts`), TRƯỚC `startOt()`:**
+   - `/health` khoá `schemaR1a` có MỘT hình dạng (rà soát cuối M-7): VẮNG = đủ; CÓ MẶT ⇒ luôn `{ ok: false, trangThai, thieuMigration, lyDo }`;
+   - thiếu 0431 ⇒ bỏ `startOt`, `/health` `status:"degraded"` + `schemaR1a {trangThai:"thieu", thieuMigration:["0431", …]}`;
    - thiếu 0432 ⇒ OT vẫn chạy, nhắc mỗi 5 phút, `/health` `degraded`;
    - **thiếu 0433 ⇒ `/health` `degraded`** (`schemaR1a.thieuMigration` có "0433", khối `console.error` gọi tên `scripts/apply-migration-0433.mjs`,
      nhắc mỗi 5 phút); `startOt` VẪN chạy (OT không đọc `ly_do`) — T7;
-   - **không đọc được `information_schema`** ⇒ `/health` hiện `schemaR1a: "chua_kiem_duoc"` + lớp lỗi ngắn (`ket_noi_tu_choi` / `het_thoi_gian` /
-     `quyen` / `khong_co_ket_noi_db` / `khac`, không lộ host/port/user), `status` vẫn `"ok"`, kiểm lại mỗi 5 phút tới khi kiểm được; khởi động
-     fail-open như cũ — T10a.
+   - **không đọc được `information_schema`** ⇒ `/health` hiện `schemaR1a {trangThai:"chua_kiem_duoc", thieuMigration:null, lyDo:<lớp lỗi ngắn>}`
+     (`ket_noi_tu_choi` / `het_thoi_gian` / `quyen` / `khong_co_ket_noi_db` / `khac`, không lộ host/port/user), `status` vẫn `"ok"`, kiểm lại mỗi
+     5 phút tới khi kiểm được; khởi động fail-open như cũ — T10a. Bộ giám sát: coi CÓ MẶT `schemaR1a` (hay `schemaR1a.ok === false`) là chưa khoẻ.
    - `/health` vẫn trả 200 (liveness). ⚠ `/api/health` không phải route — kiểm `/health`.
-4. Sau khi khởi động: `GET /health` không được có `schemaR1a`.
+5. Sau khi khởi động: `GET /health` không được có `schemaR1a`; log khởi động không có khối "LUẬT INTERLOCK ĐANG BẬT có lệnh bảo vệ mà dispatch()
+   sẽ TỪ CHỐI" (mục 2).
+6. **2FA cho kỹ sư bảo trì thiết bị (T9, rà soát cuối M-3) — làm TRƯỚC khi triển khai, không phụ thuộc cờ nào.** Mọi thay đổi chạm một tag
+   ĐƯỢC BẢO VỆ (đã khai mức / loại kênh / dải, là kênh chế độ, hoặc là đích / nguồn telemetry của luật interlock không-alert đang bật HOẶC đã
+   duyệt) hay một khoá mồ côi đòi TOTP tươi mức 5 (`kiemTotpCauHinh`: vai ACTUATION + **đã đăng ký 2FA** + mã mỗi lượt): `deviceAdapter.tags.create /
+   update / delete`, `deviceAdapter.update` (đổi đích / tắt / đổi máy), `deviceAdapter.delete`, `scadaDiag.tamTat`, `mappingAsCode.applyImport`,
+   M12 `scadaKenh.capNhat / cheDo.*`. Kỹ sư chưa đăng ký 2FA nhận `SCADA_CONFIG_TOTP_NOT_ENROLLED` dù MỌI cờ SCADA tắt (2FA không phải tiên quyết
+   của dự án ⇒ đây là thay đổi hành vi thấy được). Việc phải làm: mọi người sửa tag đã khai / kênh chế độ / đích luật interlock **đăng ký 2FA**;
+   đếm trước trên từng DB số tag được bảo vệ, ví dụ (chỉ đọc):
+   `SELECT count(*) FROM device_tags t WHERE t.actuation_level IS NOT NULL OR t.channel_kind IS NOT NULL OR t.write_min IS NOT NULL OR
+   t.write_max IS NOT NULL OR t.write_step IS NOT NULL OR EXISTS (SELECT 1 FROM scada_kenh_che_do k WHERE k.adapter_id = t."adapterId" AND
+   k.tag_key = t."tagKey") OR EXISTS (SELECT 1 FROM interlock_rules r WHERE r.action::text <> 'alert' AND (r.enabled OR r."approvedBy" IS NOT NULL)
+   AND r."targetAdapterId" = t."adapterId" AND r."commandTag" = t."tagKey")` (đếm thô; nguồn telemetry của luật xem `troLaiKenh.duocBaoVe`).
+   ⚠ `DeviceOnboardingWizard` không có ô nhập TOTP ⇒ tạo tag lên khoá mồ côi qua wizard nhận `SCADA_CONFIG_TOTP_REQUIRED` không sửa được tại chỗ —
+   dùng trang Device Adapter (R1b-2, §10).
 
 ## 5. Chạy toàn bộ (Step 5)
 
@@ -321,9 +382,19 @@ kèm khai muộn bench R1a (đỏ có sẵn trên main). Mọi đỏ còn lại 
 
 ## 7. Checklist bật cờ (trước khi bật điều khiển trên một hệ)
 
-- [ ] **HMI ĐÃ LÀ đường STOP** qua `scadaCommands.dungMay` (nút DỪNG MÁY ở faceplate M4 và đầu máy M10): một bước, giá trị ĐÃ GHIM, miễn chế độ
-      LOCAL / khoá chọn / 2FA / `apiLimiter` (POST không batch). Điều kiện: `SCADA_COMMANDS_ENABLED=true` + `SCADA_LIVE_CACHE_ENABLED=true` +
-      máy đã ghim `stop_value`. E-STOP cứng vẫn là lớp cuối.
+- [ ] **HMI là đường STOP PHẦN MỀM** qua `scadaCommands.dungMay` (nút DỪNG MÁY ở faceplate M4 và đầu máy M10): một bước, giá trị ĐÃ GHIM, miễn
+      chế độ LOCAL / khoá chọn / 2FA / `apiLimiter` (POST không batch, phiên có chữ ký JWT hợp lệ — rà soát cuối I-2). STOP HMI **tới thiết bị**
+      chỉ khi ĐỦ cả năm điều kiện (rà soát cuối M-2):
+      1. `SCADA_COMMANDS_ENABLED=true`;
+      2. `SCADA_LIVE_CACHE_ENABLED=true`;
+      3. máy đã ghim `stop_value`;
+      4. **`OT_CONTROL_ENABLED=true`** — tắt ⇒ dispatcher bước 5 trả `simulated`, KHÔNG ghi gì (UI báo `mo_phong`);
+      5. **adapter đã nghiệm thu** (`commissioning_records`) khi `OT_COMMISSIONING_REQUIRED` bật (mặc định) — chưa ⇒ bước 5a trả `simulated`.
+
+      ⚠ Mục D9 dưới giữ `OT_CONTROL_ENABLED` OFF tới khi có safety PLC thật ⇒ **cho tới khi D9 được gỡ, STOP HMI chỉ là MÔ PHỎNG; E-STOP cứng là
+      đường dừng THẬT DUY NHẤT.** Hai mục không mâu thuẫn: mục này nói điều kiện để STOP HMI tới máy, D9 nói khi nào được phép thoả điều kiện 4.
+      Bench §3 thoả điều kiện 4 + 5 chỉ trong tiến trình bench (`OT_CONTROL_ENABLED=true` ở đó theo D9; adapter có `commissioning_records` thật). STOP HMI KHÔNG có hạn tổng cho xác thực + đọc trước khi gửi (DB chậm-mà-sống ⇒ chờ
+      theo DB; chỉ có hộp 10 s "dùng E-STOP cứng" của client) — R1b-2 (§10).
 - [ ] **MỌI máy cần dừng từ xa phải ghim `stop_value`** cho tag dừng (M12). Máy chưa ghim ⇒ `CHUA_GHIM_STOP` (M4/M10 hiện cảnh báo
       `CanhBaoChuaGhimStop` / khảo sát khả năng dừng `chua_ghim`, `mat_ket_noi`, `qua_edge`, `khong_kiem_duoc`).
 - [ ] `SCADA_COMMANDS_ENABLED=true` BẮT BUỘC đi kèm `SCADA_LIVE_CACHE_ENABLED=true` (không có bộ đệm ⇒ mọi máy LOCAL `bo_dem_tat`, mọi lệnh ghi thường bị
@@ -332,15 +403,22 @@ kèm khai muộn bench R1a (đỏ có sẵn trên main). Mọi đỏ còn lại 
       fail-closed). M12 cảnh báo `poll_cham` / `deadband` / `edge` / `bao_khi_doi`. Trên edge thì luôn `chua_co_mau`.
 - [ ] **`OT_CHAT_LUONG_V2_ENABLED=true`** để "connected" nghĩa là "đã đọc được" (C1). Cờ tắt: TCP lên mà thiết bị không trả lời vẫn hiện
       `connected` mãi (đo ở đối chứng C1).
-- [ ] **`OT_CONTROL_ENABLED` / `AI_OT_CONTROL_ENABLED` giữ OFF tới khi có safety PLC thật** (D9). ⚠ `.env` hiện có `OT_CONTROL_ENABLED=true` (§6 mục 33).
+- [ ] **`OT_CONTROL_ENABLED` / `AI_OT_CONTROL_ENABLED` giữ OFF tới khi có safety PLC thật** (D9). Hệ quả: STOP HMI là mô phỏng (mục đầu,
+      điều kiện 4) — người vận hành dùng E-STOP cứng. ⚠ `.env` hiện có `OT_CONTROL_ENABLED=true` (§6 mục 33).
 - [ ] MỌI kênh dừng phải có mức 1 hoặc `stop_value` ghim (R1a). Kênh dừng chưa khai mức là mức 5 ⇒ AI không dừng được, người cần TOTP (đường
       `write_tag`); STOP HMI không phụ thuộc mức vì đi giá trị ghim.
 - [ ] **Tích hợp dùng REST v1 `POST /equipment/:id/commands` cho máy OT phải chuyển sang HMI SCADA** (nay 501). Robot `abort` / `e_stop` giữ nguyên.
 - [ ] Đặt `OT_CONTROL_TIMEOUT_MAX_MS` (R1a ruling T9) cho bên gọi có `deadlineMs`.
 - [ ] `OT_COMMISSIONING_REQUIRED` giữ mặc định BẬT (adapter cần `commissioning_records`, nếu không lệnh chỉ `simulated`).
 - [ ] Thứ tự migration theo §4: **0431, 0432, 0433** trên mọi DB trước bản build; sau khởi động `GET /health` không có `schemaR1a` (không
-      `degraded`, không `chua_kiem_duoc`).
+      `trangThai:"thieu"`, không `trangThai:"chua_kiem_duoc"`).
 - [ ] Đổi IP / endpoint / protocol / máy của adapter có tag được bảo vệ cần TOTP tươi; còn tag đã khai đang ghim ⇒ gỡ ghim trước rồi ghim lại.
+- [ ] **Kỹ sư bảo trì thiết bị đã đăng ký 2FA TRƯỚC triển khai** (T9, rà soát cuối M-3; chi tiết + câu đếm ở §4 mục 6): sửa / tạo / xoá / tắt tag
+      được bảo vệ (đã khai, kênh chế độ, đích / nguồn telemetry luật interlock bật hoặc đã duyệt), sửa / xoá / tạm tắt adapter có tag ấy, và
+      import mapping đụng tag ấy đều đòi TOTP mức 5 — kể cả khi mọi cờ SCADA tắt; chưa đăng ký ⇒ `SCADA_CONFIG_TOTP_NOT_ENROLLED`. Wizard
+      onboarding không nhập được TOTP (dùng trang Device Adapter; R1b-2).
+- [ ] **Truy vấn luật interlock lệch lưới thô (§4 mục 2) = 0 hàng trên DB đích** trước bản build; sau khởi động `interlockRulesCauHinhHong`
+      của posture không tăng vì luật mới lệch lưới và log không có khối "LUẬT INTERLOCK ĐANG BẬT … dispatch() sẽ TỪ CHỐI" (rà soát cuối I-1).
 - [ ] **P1-1 — Trước khi bật `AI_OT_CONTROL_ENABLED` trên một DB đã có tag ghi được: khai mức tác động hàng loạt (M12) cho mọi kênh AI cần ghi**
       (khai hàng loạt một TOTP cho N ≤ 200 tag là việc R1b-2). Tag chưa khai mức = mức 5 ⇒ AI bị từ chối (fail-closed).
 - [ ] P1-7: "Trước khi bật OT_CMD_SERIALIZE_ENABLED: rà các bên gọi qua adapterFacade (UNS/edge) có deadline_ms ngắn; lệnh thường chờ hàng đợi quá hạn sẽ QUEUE_EXPIRED; STOP ghim không hết hạn."
@@ -382,6 +460,16 @@ kèm khai muộn bench R1a (đỏ có sẵn trên main). Mọi đỏ còn lại 
   trước dùng bản không khoá; `epLong` đối chiếu low/high.
 - T10b: I-1 cho phép nguồn không tag thiết bị nào khai (đường `ot_telemetry`); `poll_cham`; `INTERLOCK_NGUON_MO_HO`.
 - T13: vòng đánh bóng m1 + m3; m2 / m4 / m5 ⇒ backlog / điều phối.
+- **Rà soát cuối cả nhánh (final review `58ee02c5e..d5ea4cfdf`, ruling final):** một lượt sửa —
+  - I-1 (a) truy vấn chỉ đọc BẮT BUỘC trước triển khai (§4 mục 2) + (b) posture `interlockRulesCauHinhHong` đếm luật bật lệch lưới (CHÍNH hàm
+    cổng dispatch, `services/scada/lenhInterlockLechLuoi.ts`; luật vừa hỏng cấu trúc vừa lệch chỉ đếm một lần) + khối log lúc khởi động;
+  - I-2 `apiLimiter` chỉ miễn STOP HMI khi phiên có chữ ký JWT hợp lệ (`rateLimitConfig.laStopHmiCoPhienKy` → `trpcGioiHanThuTuc.phienKyHopLe`,
+    cùng `sdk.verifySession` bước 1 của robotStopAuth, một chủ); vô danh / cookie rác / sai chữ ký / hết hạn ⇒ đếm. Giới hạn còn lại: vé đã
+    thu hồi nhưng còn hạn vẫn được miễn (stateless — createContext vẫn từ chối); mỗi cookie rác in một dòng `[Auth] Session verification failed`
+    (như đường createContext sẵn có);
+  - M-2 / M-3 chữ báo cáo (§4 mục 6, §7); wizard ⇒ backlog; M-4 xoá `biet0433Thieu`; M-5 `withDeadline(…, { unref })` thay hai bản sao
+    `voiHanUnref`; M-6 sửa chú thích (totpCauHinh, đầu deviceAdapter / mappingAsCode, tên test consoleStop) + thụt lề `nhacCaHai`; M-7 `/health`
+    `schemaR1a` một hình dạng; M-1 sửa chú thích client, hạn thật ⇒ R1b-2 (§10 mục 11).
 
 ## 9. Năm thủ tục IDOR — đã sửa ở main và đã gộp
 
@@ -423,6 +511,15 @@ tag, kiểm nhất quán từng tag — cần trước `AI_OT_CONTROL_ENABLED`).
    dispatch nhận; Q-T13 (b) `OFF_STEP` mọi tag int + bộ đề xuất SPI theo lưới tag (cùng task, có test).
 9. Dọn rác `_test` của T2 (4 adapter `r1b2…`, 2 node edge) bằng vai owner / `edge_stop_resolve` (§6 mục 28).
 10. Hai hộp chồng nhau ở ScadaDiag (lý do + mã TOTP) — gộp ở một vòng UX.
+11. **Rà soát cuối M-1 — hạn THẬT cho STOP HMI trước khi gửi.** `dungMayHmi` (`server/services/scada/lenhHmi.ts`): `idsTrongPhamVi`, đọc máy,
+    `kiemCongVaiTro`, đọc adapter, `loadStopPins`, chèn dòng chờ đều KHÔNG có hạn; `context.ts` `isStopOnlyCall` chỉ phủ `robot.consoleStop` ⇒
+    `dungMay` đi `authenticateRequest` đầy đủ, không hạn. DB chậm-mà-sống ⇒ STOP chờ theo DB; cận duy nhất là hộp 10 s "dùng E-STOP cứng" của
+    client. Việc: bọc pha trước-dispatch trong MỘT hạn (~2 s) trả mã từ chối có câu "dùng E-STOP cứng", và/hoặc mở rộng xác thực có hạn R-10-bb
+    cho `dungMay`. (Chú thích sai ở `client/src/lib/trpcLinks.ts` đã sửa ở rà soát cuối.)
+12. **Rà soát cuối M-3 — `DeviceOnboardingWizard` không nhập được TOTP.** Tạo tag lên khoá mồ côi qua wizard (`tags.create`) nhận
+    `SCADA_CONFIG_TOTP_REQUIRED` mà không có ô mã: định tuyến lỗi qua `useHopMaTotpTroLai` hoặc hiện câu "dùng trang Device Adapter".
+13. Rà soát cuối I-1 — posture `interlockRulesCauHinhHong` (nay gồm luật lệch lưới thô) CHƯA được client nào hiển thị (đo: không tệp
+    `client/src` nào đọc trường này); đưa lên EngineeringHub / trang interlock cạnh "độ phủ interlock".
 
 **Từ backlog R1b của R1a (§8) chưa thuộc R1b-1:** mục 2 (phần còn lại, đã vào danh sách R1b-2 trên), 6 (UI M9), 7 (M4 chạy khô), 10
 (`congOtLuong`), 14 (audit điều tiết đúng cỡ), 16 (M12), 21 (khoá TOTP leo thang / cảnh báo `tam_khoa` lặp), 22 (màn admin mở khoá TOTP), 23
@@ -448,6 +545,10 @@ Nhánh `feat/scada-r1b`, gốc `feat/scada-r1a` `9c7b8054d`. Gộp main hai lầ
 - **T10b:** `b0de45175`, `ae67c389f`, `abaa9220a`, `40bd580b2`.
 - **T13:** `60f7304e7`, `9bd9a5354`.
 - **T12:** `39ce0b0cf` (lưới + bench) và commit chứa báo cáo này (kèm khai hai bench SCADA trong `server/services/vram/vramAllocationSites.ts`).
+- **Rà soát cuối cả nhánh:** `09ed8c41e` (mã: I-1 posture + log, I-2, M-1, M-4..M-7) và commit chữ báo cáo kế tiếp (I-1 §4 mục 2, M-2 / M-3 §4 mục 6
+  + §7, backlog §10 mục 11–13). Đo sau sửa: census 57 tệp 960 qua / 3 bỏ qua / 0 đỏ; lô không-DB `server/_core` + `services/scada` + `services/ot` +
+  router scadaCommands / oversight / interlock + `trpcLinks` 187 tệp 2575 qua / 13 bỏ qua; lô DB tuần tự cùng phạm vi 43 tệp (3 bỏ qua) 633 qua /
+  42 bỏ qua; `npm run check` rc 0; `npm run i18n:check` sạch.
 
 **Migration:** 0433 (`scripts/apply-migration-0433.mjs`): TEST ở T6; DEV 2026-10-24 sau "ÁP". 0431 / 0432 như R1a. Cả ba kiểm lại có mặt trên DEV
 và TEST hôm nay (§4).
