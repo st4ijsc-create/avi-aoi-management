@@ -4058,6 +4058,10 @@
       "shiftConfigId": "班次 (shiftConfigId)",
       "robotId": "机器人 (robotId)",
       "stopValue": "固定停止值（stopValue）",
+      "writeMin": "写入范围下限（writeMin）",
+      "patch": "要修改的字段（patch）",
+      "adapterId": "适配器（adapterId）",
+      "giaTriRemote": "表示 REMOTE 的值（giaTriRemote）",
       "command": "命令（command）",
       "inspectionTime": "检测时间（inspectionTime）",
       "completedAt": "完成时间（completedAt）",
@@ -4474,7 +4478,12 @@
       "adapterOwnedByEdge": "该适配器由边缘节点拥有——中心服务器不控制其会话。",
       "adapterNotStub": "仅适用于 stub 协议的适配器。",
       "stubEndpointShared": "多个 stub 适配器共用此端点——请先为每个适配器设置独立端点。",
-      "scadaSelectionLockBusy": "该通道正被争用——请稍后重试。"
+      "scadaSelectionLockBusy": "该通道正被争用——请稍后重试。",
+      "scadaDaiMinLonHonMax": "下限必须小于或等于上限。",
+      "scadaDaiChiChoKenhSo": "范围和步长只能为数值通道（int / float）声明。",
+      "scadaKenhCheDoSaiMay": "模式通道必须是绑定到本机的适配器的标签——请选择本机的适配器。",
+      "scadaKenhCheDoAdapterTat": "模式通道的适配器已停用——请先启用适配器，再重新声明。",
+      "scadaGiaTriRemoteSaiKieu": "REMOTE 值与模式标签的数据类型不符。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -4523,6 +4532,8 @@
     "SCADA_TOTP_REQUIRED": "影响等级 {{level}} 的通道需要双因素（TOTP）验证码——请输入验证码后再次确认。",
     "SCADA_TOTP_INVALID": "双因素验证码错误或已被使用——请输入新验证码后再次确认（等级 {{level}} 通道）。",
     "SCADA_MACHINE_REBOUND": "创建请求后该设备已被分配到另一台机器——请创建新请求。",
+    "STOP_PIN_NGOAI_DAI": "通道 {{tagKey}} 的固定停止值（{{stopValue}}）在当前通道声明下无法写入（范围 {{min}} … {{max}}，步长 {{step}}，或只读通道类型）——停止命令将被拒绝。请先清除或修改固定值，或重新声明匹配的范围/步长/通道类型。",
+    "INTERLOCK_NGOAI_DAI": "联锁规则的命令值在当前通道声明下无法写入通道 {{tagKey}}（范围 {{min}} … {{max}}，步长 {{step}}，或只读通道类型）——保护动作将在运行时被拒绝。请修改规则的命令值，或重新声明匹配的通道。",
     "TU_DONG_TAT": "服务器上的自动 Agent 模式已关闭（AI_CODING_TU_TRI_GHI 开关）。请使用逐步审批模式，或请管理员开启。",
     "THIEU_QUYEN_THUC_THI": "缺少自动 Agent 模式所需的执行/自动写入权限（ai_repo_exec）。",
     "THIEU_QUYEN": "缺少运行 Agent 所需的仓库读取权限（ai_repo_read）。",

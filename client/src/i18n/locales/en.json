@@ -4066,6 +4066,10 @@
       "shiftConfigId": "shift (shiftConfigId)",
       "robotId": "robot (robotId)",
       "stopValue": "pinned stop value (stopValue)",
+      "writeMin": "lower write limit (writeMin)",
+      "patch": "fields to change (patch)",
+      "adapterId": "adapter (adapterId)",
+      "giaTriRemote": "value meaning REMOTE (giaTriRemote)",
       "command": "command (command)",
       "inspectionTime": "inspection time (inspectionTime)",
       "completedAt": "completion time (completedAt)",
@@ -4482,7 +4486,12 @@
       "adapterOwnedByEdge": "This adapter is owned by an edge node — the central server does not control its session.",
       "adapterNotStub": "Only applies to stub-protocol adapters.",
       "stubEndpointShared": "Several stub adapters share this endpoint — give each adapter its own endpoint first.",
-      "scadaSelectionLockBusy": "The channel is contended — try again in a moment."
+      "scadaSelectionLockBusy": "The channel is contended — try again in a moment.",
+      "scadaDaiMinLonHonMax": "The lower limit must be less than or equal to the upper limit.",
+      "scadaDaiChiChoKenhSo": "A range and step can only be declared on a numeric channel (int / float).",
+      "scadaKenhCheDoSaiMay": "The mode channel must be a tag of an adapter bound to this machine — choose one of this machine's adapters.",
+      "scadaKenhCheDoAdapterTat": "The mode channel's adapter is disabled — enable it first, then declare the channel again.",
+      "scadaGiaTriRemoteSaiKieu": "The REMOTE value does not match the data type of the mode tag."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -4531,6 +4540,8 @@
     "SCADA_TOTP_REQUIRED": "Impact level {{level}} channels need a two-factor (TOTP) code — enter the code and confirm again.",
     "SCADA_TOTP_INVALID": "The two-factor code is wrong or has already been used — enter a new code and confirm again (level {{level}} channel).",
     "SCADA_MACHINE_REBOUND": "The device was assigned to a different machine after this request was created — create a new request.",
+    "STOP_PIN_NGOAI_DAI": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) that cannot be written under the channel declaration (range {{min}} … {{max}}, step {{step}}, or a read-only channel kind) — the STOP command would be refused. Clear or change the pinned value first, or declare a matching range/step/channel kind.",
+    "INTERLOCK_NGOAI_DAI": "The interlock rule's command value cannot be written on channel {{tagKey}} under the channel declaration (range {{min}} … {{max}}, step {{step}}, or a read-only channel kind) — the protective action would be refused at run time. Fix the rule's command value, or declare a matching channel.",
     "TU_DONG_TAT": "Autonomous agent mode is OFF on the server (AI_CODING_TU_TRI_GHI switch). Use step-by-step approval mode, or ask an admin to enable it.",
     "THIEU_QUYEN_THUC_THI": "Missing run/auto-write permission (ai_repo_exec) for autonomous agent mode.",
     "THIEU_QUYEN": "Missing repository read permission (ai_repo_read) to run the agent.",

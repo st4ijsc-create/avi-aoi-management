@@ -521,7 +521,11 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   đổi.** Ba thủ tục MỚI `confirm` / `huy` / `trangThai` của `server/routers/scadaCommandsRouter.ts` (không phải bề mặt AI;
 //   `hmi.write_tag` KHÔNG vào registry tool AI), sau `MOD_OT_CONTROL` (xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 118 → 121). Đo: ghim cũ (gốc
 //   dc4422e7e) đỏ ĐÚNG +3. `tong` 2396 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2396, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+// ★★ 2026-10-24 · R1a scadaKenh +5 (SCADA R1a Task 12) — **tong 2396 → 2401 · beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong KHÔNG
+//   đổi.** Router MỚI `server/routers/scadaKenhRouter.ts` (M12 kênh & giới hạn; không phải bề mặt AI) có NĂM thủ tục (`danhSach`,
+//   `capNhat`, `cheDo.danhSach`, `cheDo.dat`, `cheDo.go`), đều sau `MOD_OT_CONTROL` (xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 121 → 126). Đo:
+//   ghim cũ (gốc a65445567) đỏ ĐÚNG +5. `tong` 2401 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2401, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
@@ -566,7 +570,11 @@ const GHIM_MODULE_KHAC = {
   // ★ 2026-10-24 · R1a scadaCommands +3 (SCADA R1a Task 9) — 118 → 121: mutation `confirm` / `huy` + query `trangThai` trên
   //   `moduleProcedure("MOD_OT_CONTROL")` như `request` (sàn vai + 2FA theo mức kiểm TRONG handler bằng `kiemXacThucTheoMuc` trên tag
   //   HIỆN TẠI). Không thủ tục cũ nào đổi cổng.
-  MOD_OT_CONTROL: 121,
+  // ★ 2026-10-24 · R1a scadaKenh +5 (SCADA R1a Task 12) — 121 → 126: query `scadaKenh.danhSach` / `scadaKenh.cheDo.danhSach` trên
+  //   `moduleProcedure("MOD_OT_CONTROL")` (+ `machine_control.canView`) và mutation `scadaKenh.capNhat` / `scadaKenh.cheDo.dat` /
+  //   `scadaKenh.cheDo.go` trên `roleProcedure("admin","engineer").use(require2FA).use(moduleGate("MOD_OT_CONTROL"))` (+ `canEdit`), khuôn
+  //   `scadaDiag`. Không thủ tục cũ nào đổi cổng.
+  MOD_OT_CONTROL: 126,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

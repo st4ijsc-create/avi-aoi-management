@@ -16,7 +16,11 @@
  *   • `loadStopPins` — ghim của MỘT adapter: chỉ tag enabled + writable + stop_value khác NULL, và giá
  *     trị đã lưu phải còn hợp lệ với `dataType` HIỆN TẠI của tag (lệch ⇒ bỏ qua, fail-closed).
  *   • `datStopPin` — đặt/gỡ ghim trong MỘT transaction: tag khoá `FOR UPDATE`, audit `control_audit_log`
- *     + `audit_logs` bằng CHÍNH `tx` (audit hỏng ⇒ ghim không đổi).
+ *     + `audit_logs` bằng CHÍNH `tx` (audit hỏng ⇒ ghim không đổi). SCADA R1a Task 12: ĐẶT một giá trị không
+ *     ghi được trên kênh theo khai báo kênh đang có (ngoài dải / lệch bước / loại kênh chỉ đọc — `kiemNhatQuanKenh`)
+ *     ⇒ `StopPinLoi("ngoai_dai")` (router: STOP_PIN_NGOAI_DAI). Khai báo NULL ⇒ không kiểm (hành vi cũ). CỐ Ý không
+ *     đặt luật này vào `validateStopValue`: hàm đó cũng chạy ở `dispatch()` (ghim DỪNG được miễn dải lúc chạy —
+ *     điều phối mục 4); nhất quán dải ↔ ghim là việc của LÚC CẤU HÌNH (đây + `scadaKenh.capNhat`).
  *   • `lyDoGoStopPinKhiSuaTag` / `ghiAuditGoStopPinTx` — sửa tag thành không-ghi-được / tắt / đổi định
  *     nghĩa dây (address, dataType, scale, offset, adapter), hoặc xoá tag ⇒ ghim bị GỠ trong cùng
  *     transaction, cùng audit (router deviceAdapter gọi).
@@ -35,6 +39,8 @@ import { secPlatformEnabled } from "../security/policyGate";
 import { currentSignatureId, lockAdapterCommissioningTx } from "./commissioningService";
 import { adapterTargetCanonical, type AdapterTarget } from "./adapterTarget";
 import { lyDoGoStopPinKhiSuaTag } from "@shared/stopPinTagRule";
+// SCADA R1a Task 12 — ghim phải ghi được trên kênh theo khai báo kênh HIỆN TẠI (loại / dải / bước), cùng luật cổng kênh của dispatch()
+import { kiemNhatQuanKenh } from "../scada/nhatQuanKenh";
 // doc 81 Đợt 12 final fix wave residual (R-12-f item 1) — the cached "adapter has any pin" answer: seeded here, invalidated on a change
 import { invalidateStopPinPresence, rememberStopPinPresence, stopPinChanged, stopPinReadToken } from "./stopPinPresence";
 
@@ -188,7 +194,7 @@ export interface NguoiSuaStopPin {
 /** Lỗi nghiệp vụ của `datStopPin` — router đổi sang appError có mã. */
 export class StopPinLoi extends Error {
   constructor(
-    readonly loai: "adapter_not_found" | "tag_not_found" | "tag_not_writable" | "type_mismatch",
+    readonly loai: "adapter_not_found" | "tag_not_found" | "tag_not_writable" | "type_mismatch" | "ngoai_dai",
     readonly chiTiet: Record<string, unknown> = {},
   ) {
     super(loai);
@@ -361,6 +367,14 @@ async function datStopPinTx(
       }
       const v = validateStopValue(String(tag.dataType), input.stopValue);
       if (!v.ok) throw new StopPinLoi("type_mismatch", { tagKey: tag.tagKey, dataType: tag.dataType, detail: v.reason });
+      // SCADA R1a Task 12 — trên khai báo kênh đọc dưới CÙNG khoá FOR UPDATE (scadaKenh.capNhat khoá cùng hàng ⇒ không lọt giữa hai bên).
+      const nq = kiemNhatQuanKenh(tag, v.value);
+      if (!nq.ok) {
+        throw new StopPinLoi("ngoai_dai", {
+          tagKey: tag.tagKey, lyDo: nq.ma, detail: nq.chiTiet, stopValue: v.value,
+          writeMin: tag.writeMin, writeMax: tag.writeMax, writeStep: tag.writeStep,
+        });
+      }
       sau = v.value;
     }
 

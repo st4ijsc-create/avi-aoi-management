@@ -81,6 +81,24 @@ function loiStopPin(e: StopPinLoi): never {
         { field: "stopValue", reason: "stopPinTypeMismatch" },
         `Stop pin refused: value does not match the tag dataType (${String(e.chiTiet.detail ?? "")}).`,
       );
+    case "ngoai_dai": {
+      // SCADA R1a Task 12 — ghim không ghi được trên kênh theo khai báo kênh hiện tại (cùng mã với scadaKenh.capNhat).
+      const so = (n: unknown) => (typeof n === "number" ? n : "—");
+      throw appError(
+        "BAD_REQUEST",
+        "STOP_PIN_NGOAI_DAI",
+        {
+          ma: "STOP_PIN_NGOAI_DAI",
+          lyDo: String(e.chiTiet.lyDo ?? ""),
+          tagKey: String(e.chiTiet.tagKey ?? ""),
+          stopValue: String(e.chiTiet.stopValue),
+          min: so(e.chiTiet.writeMin),
+          max: so(e.chiTiet.writeMax),
+          step: so(e.chiTiet.writeStep),
+        },
+        `Stop pin refused: the value cannot be written on the declared channel (${String(e.chiTiet.detail ?? "")}).`,
+      );
+    }
   }
 }
 

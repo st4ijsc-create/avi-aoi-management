@@ -85,6 +85,7 @@ export const MODULE_ACCESS_MAP: Record<string, ModuleCode> = {
   interlock: MOD.OT_CONTROL,
   scadaDiag: MOD.OT_CONTROL, // SCADA R0 Task 10 (M10)
   scadaCommands: MOD.OT_CONTROL, // SCADA R1a Task 8 (lenh ghi tag HMI)
+  scadaKenh: MOD.OT_CONTROL, // SCADA R1a Task 12 (M12 kenh & gioi han, kenh che do may)
 
   // ── Engineering & Programming (MOD_ENGINEERING) ────────────────────────────
   ir: MOD.ENGINEERING,

@@ -870,7 +870,15 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // (`idsTrongPhamVi("machine", …, {strict:true})`); `huy`/`trangThai` chỉ cho CHỦ yêu cầu (người khác = NOT_FOUND), không nhận
 // adapterId/machineId từ client. Đo: trên ghim cũ (gốc dc4422e7e) đỏ ĐÚNG +2 D / +1 S / +3 tong sau khi thêm, rồi ghim lại. No baseline
 // row added. `tong` 2396 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 333, B: 8, C: 494, D: 1194, S: 367, tong: 2396 } as const;
+// ★★ 2026-10-24 · R1a scadaKenh +5 (SCADA R1a Task 12 — M12 kênh & giới hạn, kênh chế độ máy) — **D 1194 → 1197 · S 367 → 369 · tong 2396 →
+// 2401 · A/B/C unchanged.** NĂM thủ tục MỚI trong `server/routers/scadaKenhRouter.ts` (router top-level `scadaKenh`, ruling R-2; `cheDo`
+// lồng nhau), CẢ NĂM truyền `phamViCua(ctx)` vào `idsTrongPhamVi("machine", …, {strict:true})` (adapterId / tagId / machineId từ client ⇒
+// kiểm lại phạm vi mỗi lượt; ngoài phạm vi = không tồn tại = NOT_FOUND; adapter không gắn máy chỉ với phạm vi toàn quyền):
+//   • query `scadaKenh.danhSach` / `scadaKenh.cheDo.danhSach` (đọc `device_tags` / `machines` / `scada_kenh_che_do`) ⇒ S (+2);
+//   • mutation `scadaKenh.capNhat` / `scadaKenh.cheDo.dat` / `scadaKenh.cheDo.go` ⇒ D (+3) (bộ suy xếp MỌI mutation vào D).
+//   Đo: trên ghim cũ (gốc a65445567) đỏ ĐÚNG +3 D / +2 S / +5 tong sau khi thêm router, rồi ghim lại. No baseline row added. `tong` 2401
+//   matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 333, B: 8, C: 494, D: 1197, S: 369, tong: 2401 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

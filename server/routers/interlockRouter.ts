@@ -45,6 +45,7 @@ const adminProcedure = adminBase.use(moduleGate("MOD_OT_CONTROL"));
 import { interlockRules, interlockEvents, controlAuditLog, type InterlockRule } from "../../drizzle/schema";
 import { evaluateCondition, deriveObserved, type ComparisonOperator, type InterlockSourceType } from "../services/interlock/ruleEvaluator";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
+import { kiemLenhInterlockTx, soHienThi, type DbHoacTx } from "../services/scada/nhatQuanKenh";
 
 async function getDb() {
   const db = await getDbRaw();
@@ -124,6 +125,40 @@ function assertTelemetryCauHinh(v: { sourceType: string; scope: string; machineI
       "Luật nguồn telemetry_tag cần machineId và sourceKey (tên tag) — thiếu một trong hai thì luật không đánh giá được và cổng sẽ chặn mọi lệnh nhắm tới nó.",
     );
   }
+}
+
+/**
+ * SCADA R1a Task 12 (review T3 M-3) — `commandValue` (đã gộp patch) phải GHI ĐƯỢC trên khai báo kênh HIỆN TẠI của tag đích
+ * (`targetAdapterId` + `commandTag`): cùng luật cổng kênh của `dispatch()` (loại kênh, ép kiểu, dải, bước; `nhatQuanKenh.ts`). Nếu không,
+ * hành động bảo vệ của luật bị từ chối lúc chạy (OUT_OF_RANGE …) đúng lúc cần. Tag đích đọc FOR SHARE trong transaction của thủ tục.
+ * Luật `alert` / thiếu đích / tag không tồn tại / tag không khai kênh ⇒ không kiểm. Chiều ngược lại: `scadaKenh.capNhat`.
+ */
+async function assertLenhTrongDaiKenh(
+  tx: DbHoacTx,
+  luat: { action: string; targetAdapterId?: number | null; commandTag?: string | null; commandValue?: unknown },
+  ruleId?: number,
+): Promise<void> {
+  const vp = await kiemLenhInterlockTx(tx, {
+    action: luat.action,
+    targetAdapterId: luat.targetAdapterId ?? null,
+    commandTag: luat.commandTag ?? null,
+    commandValue: luat.commandValue ?? null,
+  });
+  if (!vp) return;
+  throw appError(
+    "BAD_REQUEST",
+    "INTERLOCK_NGOAI_DAI",
+    {
+      ma: "INTERLOCK_NGOAI_DAI",
+      lyDo: vp.ma,
+      tagKey: vp.tag.tagKey,
+      min: soHienThi(vp.tag.writeMin),
+      max: soHienThi(vp.tag.writeMax),
+      step: soHienThi(vp.tag.writeStep),
+      ...(ruleId != null ? { ruleId } : {}),
+    },
+    `Giá trị lệnh của luật không ghi được trên kênh ${vp.tag.tagKey} theo khai báo hiện tại (${vp.chiTiet}) — hành động bảo vệ sẽ bị từ chối lúc chạy.`,
+  );
 }
 
 /** ILK-05 — hành động khác 'alert' (stop_line/reduce_speed/block_downstream…) bắt buộc có đích. */
@@ -251,6 +286,8 @@ export const interlockRouter = router({
       assertTelemetryCauHinh(input);
       // ILK-10 — rule insert + audit row: cùng một transaction.
       return db.transaction(async (tx) => {
+        // SCADA R1a Task 12 — commandValue phải ghi được trên kênh đích (trước khi ghi gì).
+        await assertLenhTrongDaiKenh(tx, input);
         // SAFETY: a freshly-created rule is ALWAYS disabled, unapproved, HITL-gated.
         const [row] = await tx
           .insert(interlockRules)
@@ -300,6 +337,17 @@ export const interlockRouter = router({
           machineId: "machineId" in rest ? rest.machineId ?? null : existing.machineId,
           sourceKey: "sourceKey" in rest ? rest.sourceKey ?? null : existing.sourceKey,
         });
+        // SCADA R1a Task 12 — gộp patch lên existing: commandValue / đích sau khi sửa phải ghi được trên kênh đích.
+        await assertLenhTrongDaiKenh(
+          tx,
+          {
+            action: mergedAction,
+            targetAdapterId: mergedTargetAdapterId,
+            commandTag: mergedCommandTag,
+            commandValue: "commandValue" in rest ? rest.commandValue ?? null : existing.commandValue,
+          },
+          id,
+        );
 
         const patch: Record<string, unknown> = { ...rest, updatedAt: new Date(), updatedBy: ctx.user.id };
         if (threshold !== undefined) patch.threshold = threshold != null ? String(threshold) : null;
@@ -382,6 +430,7 @@ export const interlockRouter = router({
         // ghi thẳng bảng không đi qua create/update.
         assertTargetIfNotAlert(existing.action, existing);
         assertTelemetryCauHinh(existing); // hàng seed / AI tool ghi thẳng bảng không đi qua create/update
+        await assertLenhTrongDaiKenh(tx, existing, existing.id); // SCADA R1a Task 12 — cả hàng ghi thẳng bảng
         const [row] = await tx
           .update(interlockRules)
           .set({ approvedBy: ctx.user.id, approvedAt: new Date(), updatedAt: new Date(), updatedBy: ctx.user.id })
@@ -412,6 +461,7 @@ export const interlockRouter = router({
         // Final review fix #7 — ILK-05 cả ở enable (hàng seed có thể đã mang approvedBy sẵn).
         assertTargetIfNotAlert(existing.action, existing);
         assertTelemetryCauHinh(existing); // luật đã duyệt sẵn (seed / trước vá) mà hỏng cấu trúc không được bật
+        await assertLenhTrongDaiKenh(tx, existing, existing.id); // SCADA R1a Task 12 — khai báo kênh có thể đã đổi sau khi duyệt
         const [row] = await tx
           .update(interlockRules)
           .set({ enabled: true, updatedAt: new Date(), updatedBy: ctx.user.id })
