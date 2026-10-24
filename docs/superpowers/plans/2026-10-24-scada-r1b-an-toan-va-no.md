@@ -35,11 +35,11 @@
    - REST v1 trả 501 cho mọi lệnh OT không phải robot;
    - sửa `ADAPTER_SDK.md` / doc 56 cho khớp.
 
-**Phụ thuộc:** R1b-1 xây trên R1a (`feat/scada-r1a`, đang chờ kiem-dinh). Nhánh `feat/scada-r1b` tạo từ `feat/scada-r1a`. Khi R1a gộp vào main thì merge main vào nhánh này ở điểm dừng. **Không thực thi trước khi điều phối duyệt kế hoạch.**
+**Phụ thuộc:** R1b-1 xây trên R1a (`feat/scada-r1a`, đang chờ kiem-dinh). Nhánh `feat/scada-r1b` tạo từ `feat/scada-r1a`. Khi R1a gộp vào main thì merge main vào nhánh này ở điểm dừng. **Đã duyệt 2026-10-24: thực thi trên feat/scada-r1b; chỉ gộp SAU khi R1a qua kiem-dinh và đã gộp; lỗi kiem-dinh bắt ở R1a sửa trên R1a rồi merge sang R1b.**
 
 ---
 
-## Đề xuất tách R1b (cần điều phối duyệt)
+## Tách R1b — ĐÃ DUYỆT (điều phối 2026-10-24)
 
 | Phần | Nội dung | Cổng nghiệm thu |
 |---|---|---|
@@ -66,7 +66,7 @@ Nội dung R1b-2:
 - `congOtLuong` dùng mức kênh.
 - Audit điều tiết báo đúng cỡ đợt burst.
 
-## Quyết định cần điều phối xem (đề xuất của tôi)
+## Quyết định — ĐÃ DUYỆT (điều phối 2026-10-24; bổ sung: hộp xác nhận STOP mặc định "Dừng máy", audit từng adapter, cảnh báo máy chưa ghim; mồ côi gửi số đếm trước; không điều tiết mã từ chối thật)
 
 1. **STOP HMI một bước, không qua request → confirm.**
    - Một lần bấm "DỪNG" (có hộp xác nhận ở client) gọi `scadaCommands.dungMay`.
@@ -174,11 +174,16 @@ Chốt:
 - **Ghi nhật ký:** mỗi adapter một dòng attempts `stage:"dispatch"` (outcome theo kết quả) có `ly_do` (Task 7).
 - **Lỗi 1 adapter không chặn các adapter khác.** Kết quả trả từng adapter.
 - **Census giới hạn:** `scadaCommands.dungMay` miễn khỏi nhóm 2fa, kèm lý do "STOP không bao giờ bị phần mềm chặn; không xác minh TOTP".
-- **UI:**
+- **UI (điều phối 2026-10-24):**
   - nút đỏ "DỪNG MÁY" dùng token chế độ dừng của ISA, không phải màu cảnh báo;
-  - một hộp xác nhận một bước "Dừng máy X? (gửi STOP đã ghim tới N adapter)";
-  - kết quả từng adapter dùng `nhanKetQua` hiện có;
-  - nút hiện cả khi LOCAL, vì đó là lúc cần nhất.
+  - một hộp xác nhận một bước "Dừng máy X? (gửi STOP đã ghim tới N adapter)":
+    - nút MẶC ĐỊNH là "Dừng máy" màu đỏ, có focus sẵn;
+    - một lần Enter là gửi;
+    - KHÔNG bắt gõ lý do (`lyDo` tuỳ chọn);
+  - kết quả hiện rõ theo TỪNG adapter: đạt / không đạt / chưa xác minh, dùng `nhanKetQua` hiện có. Adapter nào thất bại hoặc chưa xác minh ⇒ dòng đỏ kèm "Dùng E-STOP cứng tại máy";
+  - nút hiện cả khi LOCAL, vì đó là lúc cần nhất;
+  - **cảnh báo cấp máy** trên faceplate (M4), trên khối chế độ máy ở M12, và trên M3 khi M3 tồn tại (R3): "Máy chưa ghim STOP — nút dừng HMI không dùng được". Hiện khi máy không có tag ghim nào. Server trả cờ `coGhimStop` cho máy qua `scadaKenh.cheDo.danhSach` hoặc thủ tục đọc sẵn có; không thêm thủ tục mới nếu tránh được.
+- **Audit bắt buộc (điều phối):** mỗi lần bấm ghi `recordAuditEvent` gồm: ai bấm, máy, danh sách adapter cùng giá trị ghim đã gửi, và kết quả từng adapter (status, `edgeStopRequest`). Ghi thêm dòng attempts theo từng adapter (Task 7 `ly_do`).
 
 - [ ] **Step 1: Test đỏ (DB, stub, `OT_CONTROL_ENABLED` trong tiến trình, safety giả OK):**
   - máy REMOTE ⇒ `acked*`, driver nhận đúng giá trị ghim;
@@ -291,7 +296,11 @@ Lưu ý: `scada_command_attempts` là WORM (REVOKE + trigger). `ALTER ADD COLUMN
   - (a) cột `ly_do`, 3 FK, ON DELETE CASCADE;
   - (b) quyền `avi_app` trên attempts không đổi (INSERT true, UPDATE/DELETE false); xoá `device_adapters` trong giao dịch hoàn tác ⇒ dòng `scada_khoa_chon` theo bị xoá;
   - (c) sổ migration.
-- [ ] **Step 2: Chạy** `--test-only`. Đột biến verify. **Không áp DEV.** Gửi điều phối số đếm DEV dự kiến (số dòng mồ côi hiện có) qua phiên điều phối.
+- [ ] **Step 2: Đếm mồ côi TRƯỚC (điều phối 2026-10-24):**
+  - Đếm bằng truy vấn chỉ đọc, chưa xoá gì: số dòng mồ côi của `scada_kenh_che_do` / `scada_khoa_chon` trên **DEV và TEST**, kèm tối đa 5 dòng mẫu mỗi bảng.
+  - Bộ điều khiển gửi kết quả cho điều phối.
+  - **Nếu DEV > 0 ⇒ chờ điều phối trả lời rồi mới chạy migration ở bất kỳ đâu có mồ côi.**
+  - Sau đó chạy `--test-only` và đột biến verify. **Không áp DEV** khi chưa có "áp".
 - [ ] **Step 3: Commit** `feat(scada): mig 0433 ly_do cho nhat ky thu lenh + FK cascade kenh che do/khoa chon (R1b-1 T6)`.
 
 ### Task 7: Ghi `ly_do` + bộ điều tiết attempts
@@ -306,7 +315,7 @@ Lưu ý: `scada_command_attempts` là WORM (REVOKE + trigger). `ALTER ADD COLUMN
   - hằng `MA_ON = ["DA_XU_LY","HET_HAN","NOT_FOUND","TOTP_CAN"]`, `TRAN_MOI_PHUT = 30`
 
 Chốt:
-- **Mã ngoài `MA_ON` ⇒ luôn ghi.**
+- **Mã ngoài `MA_ON` ⇒ luôn ghi.** KHÔNG BAO GIỜ điều tiết dòng `rejected` ở cổng an toàn hay dòng `dispatched`, `proposed`, `confirmed`, `cancelled`, `expired` (điều phối 2026-10-24). Test: 100 lần `MODE_LOCAL` ⇒ 100 dòng.
 - **Mã trong `MA_ON`:**
   - 30 dòng đầu trong cửa sổ 60 s của người dùng ⇒ ghi;
   - sau đó ⇒ không ghi từng dòng;
