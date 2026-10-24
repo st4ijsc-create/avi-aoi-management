@@ -4034,8 +4034,23 @@ export async function* streamAnswer(
 // Fire a tiny embed + generate request shortly after server boot so the
 // Ollama models are already loaded into memory before the first user ask.
 let warmupStarted = false;
+
+/**
+ * ★ CỜ `AI_KB_WARM_ON_BOOT` (2026-10-24; thay cờ chẩn đoán DIAG_NO_KB_WARM). Mặc định BẬT (vắng ⇒ làm ấm như cũ để câu KB đầu tiên sau khi khởi động
+ * không chậm); đúng chuỗi "false" (không phân biệt hoa thường) ⇒ KHÔNG làm ấm lúc khởi động: không `warmModel`, không `embedQuestion`, không
+ * `retrieveKnowledge` ⇒ không `getLlama()` ⇒ KHÔNG nạp CUDA backend + embedder 0.6B (~1,7 GB) lên GPU lúc boot. Dùng khi GPU đang bận (đo model)
+ * hoặc khi boot dev lặp lại: `AI_KB_WARM_ON_BOOT=false AI_ORCHESTRATION_ENABLED=false` (xem scripts/chan-doan/README.md). Lượt KB đầu sẽ nạp lười, chậm hơn.
+ */
+export function kbWarmOnBoot(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.AI_KB_WARM_ON_BOOT ?? "").trim().toLowerCase() !== "false";
+}
+
 export function warmUpOllamaModels(): void {
   if (warmupStarted) return;
+  if (!kbWarmOnBoot()) {
+    console.log("[aiLocalKnowledge] AI_KB_WARM_ON_BOOT=false — bỏ làm ấm model/embedder/đường truy hồi lúc khởi động (nạp lười ở lượt KB đầu).");
+    return;
+  }
   warmupStarted = true;
   setTimeout(() => {
     // doc 48 R1 — WARM ORDER FIX: make a GENERATIVE model resident BEFORE the RAG embedder.

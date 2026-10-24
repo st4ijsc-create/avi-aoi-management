@@ -31,18 +31,6 @@ index 0eac464c4..3268a4bfe 100644
    if (llamaInstance) return llamaInstance;
  
    // Pha 1.5 Task 2 review vòng 1 (Important) — KHOÁ IN-FLIGHT. `if (llamaInstance) return
-diff --git a/server/services/aiLocalKnowledgeService.ts b/server/services/aiLocalKnowledgeService.ts
-index 863e50cfe..480c818de 100644
---- a/server/services/aiLocalKnowledgeService.ts
-+++ b/server/services/aiLocalKnowledgeService.ts
-@@ -4036,6 +4036,7 @@ export async function* streamAnswer(
- let warmupStarted = false;
- export function warmUpOllamaModels(): void {
-   if (warmupStarted) return;
-+  if (process.env.DIAG_NO_KB_WARM === "1") return; // DIAG cục bộ (không commit)
-   warmupStarted = true;
-   setTimeout(() => {
-     // doc 48 R1 — WARM ORDER FIX: make a GENERATIVE model resident BEFORE the RAG embedder.
 diff --git a/vite.config.ts b/vite.config.ts
 index 1f45ae0c6..13a5a6505 100644
 --- a/vite.config.ts

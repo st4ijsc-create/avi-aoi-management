@@ -65,6 +65,8 @@ Nghiệm thu (cờ không-GPU `DIAG_NO_KB_WARM=1`, `AI_ORCHESTRATION_ENABLED=fal
 | Bộ khuếch đại (`process.report` 4 s), dev, mã đã vá, mặc định | **0/30** (trước vá: 12/30) |
 | Dev thường, mã đã vá, mặc định | **0/60** (trước vá: ~6–13 %) |
 
+> 2026-10-24: cờ chẩn đoán `DIAG_NO_KB_WARM` đã thành cờ THẬT `AI_KB_WARM_ON_BOOT=false` (mặc định bật) — các lệnh dưới đây dùng cờ cũ cho lịch sử; hiện chỉ cần `AI_KB_WARM_ON_BOOT=false AI_ORCHESTRATION_ENABLED=false`.
+
 ## 5. Tái hiện
 
 ```
