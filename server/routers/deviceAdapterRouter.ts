@@ -59,12 +59,15 @@ import {
 // SCADA R1b-1 Task 9 — tạo / trỏ lại / xoá tag được bảo vệ + đổi đích adapter: TOTP tươi + kiểm lại nhất quán + luật interlock
 import {
   AUDIT_ADAPTER_DOI_DICH,
+  AUDIT_ADAPTER_TAT,
   AUDIT_KENH_CHE_DO_DOI_TAG,
   AUDIT_TAO_KHOA_MO_COI,
   AUDIT_TRO_LAI,
   AUDIT_XOA_DA_KHAI,
   adapterCoTagBaoVeTx,
   anhTroLai,
+  kiemGhimAdapter,
+  kiemTatAdapter,
   kenhCheDoCuaTagTx,
   khoaLuatNhamCapTx,
   kiemSuaTag,
@@ -315,14 +318,18 @@ export const deviceAdapterRouter = router({
           let goGhim = false;
           // R1b-1 T9 fix round 1 (I5) — đổi đích một adapter có tag ĐƯỢC BẢO VỆ (đã khai / kênh chế độ / đích luật đang bật) ⇒ TOTP tươi, kiểm
           // CUỐI (sau kiểm bí mật / bảo mật OPC UA bên dưới). Đổi máy khi còn kênh chế độ trỏ vào adapter ⇒ từ chối.
-          let canTotpDoiDich: { truoc: Record<string, unknown> } | null = null;
-          if (rest.endpoint !== undefined || rest.protocol !== undefined || rest.connectionOptions !== undefined || rest.machineId !== undefined) {
+          // Fix round 2 (I2 ở cấp adapter, rà bảo mật) — TẮT adapter (isEnabled true → false) đi qua CÙNG cổng với tắt tag: luật interlock đang bật
+          // nhắm adapter ⇒ INTERLOCK_MAT_DICH; tag đã khai đang ghim ⇒ "gỡ ghim trước"; có kênh chế độ / tag đã khai ⇒ TOTP + audit.
+          let canTotpDoiDich: { action: string; truoc: Record<string, unknown> } | null = null;
+          const coTruongDich = rest.endpoint !== undefined || rest.protocol !== undefined || rest.connectionOptions !== undefined || rest.machineId !== undefined;
+          if (coTruongDich || rest.isEnabled === false) {
             const [cu] = await tx.select().from(deviceAdapters).where(eq(deviceAdapters.id, id)).for("update");
             if (!cu) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
-            goGhim = adapterDoiDich(cu, rest);
-            if (goGhim) {
+            goGhim = coTruongDich && adapterDoiDich(cu, rest);
+            const tatAdapter = rest.isEnabled === false && cu.isEnabled === true;
+            if (goGhim || tatAdapter) {
               const bv = await adapterCoTagBaoVeTx(tx, id);
-              const doiMay = rest.machineId !== undefined && (rest.machineId ?? null) !== (cu.machineId ?? null);
+              const doiMay = goGhim && rest.machineId !== undefined && (rest.machineId ?? null) !== (cu.machineId ?? null);
               if (doiMay && bv.soKenhCheDo > 0) {
                 throw appError(
                   "BAD_REQUEST",
@@ -331,7 +338,14 @@ export const deviceAdapterRouter = router({
                   `Adapter ${cu.code} đang mang ${bv.soKenhCheDo} kênh chế độ của máy — gỡ kênh chế độ trước khi gán adapter sang máy khác.`,
                 );
               }
-              if (bv.baoVe) canTotpDoiDich = { truoc: { protocol: cu.protocol, endpoint: cu.endpoint, machineId: cu.machineId ?? null } };
+              if (tatAdapter) kiemTatAdapter(bv.luatBat);
+              // Fix round 2 (phán quyết T9 b ở cấp adapter) — tag ĐÃ KHAI đang ghim ⇒ "gỡ ghim trước", TRƯỚC kiểm mã. Sau dòng này mọi ghim
+              // còn lại của adapter thuộc tag chưa khai ⇒ goMoiStopPinCuaAdapterTx bên dưới chỉ gỡ chúng (luật doc 81 cũ) — không còn gỡ lặng lẽ
+              // ghim của tag đã khai.
+              kiemGhimAdapter(bv.ghimDaKhai, goGhim ? "đổi thiết bị đích của adapter" : "tắt adapter");
+              const truoc = { protocol: cu.protocol, endpoint: cu.endpoint, machineId: cu.machineId ?? null, isEnabled: cu.isEnabled };
+              if (goGhim && bv.baoVe) canTotpDoiDich = { action: AUDIT_ADAPTER_DOI_DICH, truoc };
+              else if (tatAdapter && bv.daKhai) canTotpDoiDich = { action: AUDIT_ADAPTER_TAT, truoc };
             }
           }
           if (rest.connectionOptions !== undefined || rest.protocol === "opcua" || rest.endpoint !== undefined) {
@@ -376,10 +390,10 @@ export const deviceAdapterRouter = router({
             await recordAuditEvent(tx, {
               entityType: "device_adapter",
               entityId: id,
-              action: AUDIT_ADAPTER_DOI_DICH,
+              action: canTotpDoiDich.action,
               actorId: ctx.user.id,
               before: canTotpDoiDich.truoc,
-              after: { protocol: updated.protocol, endpoint: updated.endpoint, machineId: updated.machineId ?? null },
+              after: { protocol: updated.protocol, endpoint: updated.endpoint, machineId: updated.machineId ?? null, isEnabled: updated.isEnabled },
               reason: "deviceAdapter.update",
             });
           }

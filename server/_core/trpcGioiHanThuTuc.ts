@@ -47,10 +47,10 @@ export const NHOM_THU_TUC_NHAY_CAM: Readonly<Record<NhomNhayCam, CauHinhNhom>> =
     // ⚠ scadaCommands.dungMay (STOP HMI, R1b-1 Task 2) CỐ Ý KHÔNG thuộc nhóm nào: STOP không bao giờ bị phần mềm chặn; không xác minh TOTP
     // (census MIEN_TRU_KHONG_GIOI_HAN).
     // kiem-dinh P1-2 (2026-10-24): ba mutation cấu hình kênh / chế độ M12 xác minh TOTP tươi qua kiemXacThucTheoMuc (mức 5) ⇒ thuộc nhóm (việc hiếm).
-    // R1b-1 Task 9 (2026-10-24): mappingAsCode.applyImport (lô đụng tag được bảo vệ) và deviceAdapter.update (đổi đích adapter có tag được bảo vệ)
-    // xác minh qua `kiemTotpCauHinh` ⇒ thuộc nhóm (việc hiếm). ⚠ deviceAdapter.tags.create / update / delete CỐ Ý KHÔNG có ở đây (phán quyết T9 a,
-    // fix round 1): nhóm đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày sẽ ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy
-    // khoá mọi người khỏi mọi thủ tục 2fa; dò mã đã chặn theo TÀI KHOẢN bởi T16. Miễn trừ ghi ở census kiemXacThucTheoMuc.
+    // R1b-1 Task 9 (2026-10-24): mappingAsCode.applyImport (lô đụng tag được bảo vệ) xác minh qua `kiemTotpCauHinh` ⇒ thuộc nhóm (việc hiếm).
+    // ⚠ deviceAdapter.tags.create / update / delete (fix round 1) và deviceAdapter.update (fix round 2) CỐ Ý KHÔNG có ở đây (phán quyết T9 a):
+    // nhóm đếm theo PATH ở rìa ⇒ mọi lượt sửa tag / adapter thường ngày (kể cả công tắc Bật) sẽ ăn chung xô 20 / 15 phút theo IP với 2FA /
+    // deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa; dò mã đã chặn theo TÀI KHOẢN bởi T16. Miễn trừ ghi ở census kiemXacThucTheoMuc.
     chinhXac: [
       "user.setup2FA",
       "user.verify2FA",
@@ -59,7 +59,6 @@ export const NHOM_THU_TUC_NHAY_CAM: Readonly<Record<NhomNhayCam, CauHinhNhom>> =
       "scadaKenh.cheDo.dat",
       "scadaKenh.cheDo.go",
       "mappingAsCode.applyImport",
-      "deviceAdapter.update",
     ],
   },
   auth: {

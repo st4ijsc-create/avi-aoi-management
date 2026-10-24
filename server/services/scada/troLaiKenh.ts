@@ -197,14 +197,34 @@ export async function trungKhoaTagTx(tx: DbHoacTx, e: { adapterId: number; tagKe
 export const loiTrungKhoaTag = () => appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "deviceTag" }, "Tag key đã tồn tại trong adapter này.");
 
 /**
- * I5 — adapter có tag ĐƯỢC BẢO VỆ nào không (tag đã khai cột kênh, kênh chế độ trỏ vào adapter, hoặc luật interlock đang bật nhắm adapter).
- * Luật khoá FOR SHARE trước, rồi đọc tag. Trả thêm số kênh chế độ (đổi máy bị từ chối khi > 0).
+ * I5 — ngữ cảnh bảo vệ của MỘT adapter (đổi đích / tắt adapter). Luật khoá FOR SHARE trước, rồi kênh chế độ FOR SHARE, rồi tag FOR UPDATE
+ * (bên gọi sẽ gỡ ghim / ghi trên chính các hàng này; khoá thẳng FOR UPDATE tránh nâng khoá SHARE → UPDATE giữa giao dịch). Trả:
+ *   • `baoVe` — có tag được bảo vệ (đã khai cột kênh, kênh chế độ trỏ vào adapter, hoặc luật interlock đang bật nhắm adapter);
+ *   • `daKhai` — có kênh chế độ hoặc tag đã khai (fix round 2: tắt adapter cần mã khi true);
+ *   • `soKenhCheDo` — đổi máy bị từ chối khi > 0;
+ *   • `luatBat` — luật interlock ĐANG BẬT có ghi lệnh nhắm adapter (đầu tiên theo id) — tắt adapter bị từ chối (I2 ở cấp adapter);
+ *   • `ghimDaKhai` — tag ĐÃ KHAI (kể cả kênh chế độ) đang ghim DỪNG (phán quyết T9 b ở cấp adapter, fix round 2).
  */
-export async function adapterCoTagBaoVeTx(tx: DbHoacTx, adapterId: number): Promise<{ baoVe: boolean; soKenhCheDo: number }> {
+export async function adapterCoTagBaoVeTx(
+  tx: DbHoacTx,
+  adapterId: number,
+): Promise<{
+  baoVe: boolean;
+  daKhai: boolean;
+  soKenhCheDo: number;
+  luatBat: LuatCoDich | null;
+  ghimDaKhai: Array<{ tagKey: string; stopValue: unknown }>;
+}> {
   const luat = await khoaLuatNhamAdapterTx(tx, adapterId);
-  const kenh = await tx.select({ machineId: scadaKenhCheDo.machineId }).from(scadaKenhCheDo).where(eq(scadaKenhCheDo.adapterId, adapterId)).for("share");
+  const kenh = await tx
+    .select({ machineId: scadaKenhCheDo.machineId, tagKey: scadaKenhCheDo.tagKey })
+    .from(scadaKenhCheDo)
+    .where(eq(scadaKenhCheDo.adapterId, adapterId))
+    .for("share");
   const tags = await tx
     .select({
+      tagKey: deviceTags.tagKey,
+      stopValue: deviceTags.stopValue,
       actuationLevel: deviceTags.actuationLevel,
       channelKind: deviceTags.channelKind,
       writeMin: deviceTags.writeMin,
@@ -213,9 +233,38 @@ export async function adapterCoTagBaoVeTx(tx: DbHoacTx, adapterId: number): Prom
     })
     .from(deviceTags)
     .where(eq(deviceTags.adapterId, adapterId))
-    .for("share");
-  const baoVe = kenh.length > 0 || luat.some(luatBatCoGhi) || tags.some((t) => tagDaKhaiKenh(t, false));
-  return { baoVe, soKenhCheDo: kenh.length };
+    .orderBy(deviceTags.tagKey)
+    .for("update");
+  const kenhCheDoTag = new Set(kenh.map((k) => k.tagKey));
+  const luatBat = luat.find(luatBatCoGhi) ?? null;
+  const daKhai = kenh.length > 0 || tags.some((t) => tagDaKhaiKenh(t, false));
+  const ghimDaKhai = tags
+    .filter((t) => t.stopValue !== null && t.stopValue !== undefined && tagDaKhaiKenh(t, kenhCheDoTag.has(t.tagKey)))
+    .map((t) => ({ tagKey: t.tagKey, stopValue: t.stopValue }));
+  return { baoVe: daKhai || luatBat !== null, daKhai, soKenhCheDo: kenh.length, luatBat, ghimDaKhai };
+}
+
+/**
+ * Fix round 2 (phán quyết T9 b ở cấp adapter) — đổi đích / tắt adapter mà adapter còn tag ĐÃ KHAI đang ghim DỪNG ⇒ `STOP_PIN_GO_TRUOC` nêu
+ * tên (các) tag; gỡ ghim từng tag trước (thao tác riêng có lý do). Bên gọi kiểm TRƯỚC TOTP (lỗi không tiêu mã). Tag CHƯA khai đang ghim giữ
+ * luật gỡ tự động của doc 81 (`goMoiStopPinCuaAdapterTx`) khi đổi đích.
+ */
+export function kiemGhimAdapter(ghimDaKhai: ReadonlyArray<{ tagKey: string; stopValue: unknown }>, viec: string): void {
+  if (ghimDaKhai.length === 0) return;
+  const dau = ghimDaKhai.slice(0, 5);
+  const them = ghimDaKhai.length > 5 ? ", …" : "";
+  const ten = dau.map((g) => g.tagKey).join(", ") + them;
+  throw appError(
+    "BAD_REQUEST",
+    "STOP_PIN_GO_TRUOC",
+    { ma: "STOP_PIN_GO_TRUOC", tagKey: ten, stopValue: dau.map((g) => String(g.stopValue)).join(", ") + them, soTag: ghimDaKhai.length },
+    `Adapter còn ${ghimDaKhai.length} tag đã khai đang ghim giá trị DỪNG (${ten}) — ${viec} sẽ làm mất STOP. Gỡ ghim từng tag trước (có lý do), rồi làm lại.`,
+  );
+}
+
+/** Fix round 2 (I2 ở cấp adapter) — tắt adapter mà một luật interlock đang bật ghi lệnh lên nó ⇒ `INTERLOCK_MAT_DICH`. */
+export function kiemTatAdapter(luatBat: LuatCoDich | null): void {
+  if (luatBat) loiMatDich(luatBat.commandTag ?? "—", luatBat, "tắt adapter");
 }
 
 /** Luật trong một tập (khoá theo adapter) nhắm `tagKey`. */
@@ -440,3 +489,4 @@ export const AUDIT_TAO_KHOA_MO_COI = "kenh_tao_tren_khoa_mo_coi";
 export const AUDIT_XOA_DA_KHAI = "kenh_da_khai_xoa";
 export const AUDIT_KENH_CHE_DO_DOI_TAG = "scada_kenh_che_do_doi_tag";
 export const AUDIT_ADAPTER_DOI_DICH = "adapter_bao_ve_doi_dich";
+export const AUDIT_ADAPTER_TAT = "adapter_bao_ve_tat";

@@ -100,7 +100,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — trỏ l�
     await sql`DELETE FROM scada_kenh_che_do WHERE machine_id = ${ids.may}`;
     await sql`DELETE FROM device_tags WHERE "adapterId" IN (${ids.ad}, ${ids.ad2}, ${ids.adCap})`;
     await sql`DELETE FROM totp_khoa_sai WHERE user_id = ${uid}`;
-    await sql`UPDATE device_adapters SET "machineId" = ${ids.may}, endpoint = ${"stub://" + RUN + "-a"} WHERE id = ${ids.ad}`;
+    await sql`UPDATE device_adapters SET "machineId" = ${ids.may}, endpoint = ${"stub://" + RUN + "-a"}, "isEnabled" = false WHERE id = ${ids.ad}`;
     tg.dk = await seedTag(ids.ad, "dk", { write_min: 0, write_max: 100 }); // khai dải
     tg.dkpin = await seedTag(ids.ad, "dkpin", { write_min: 0, write_max: 100, stop: 3 }); // khai dải + ghim DỪNG 3
     tg.cu = await seedTag(ids.ad, "cu"); // CHƯA khai
@@ -390,6 +390,8 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — trỏ l�
     });
 
     it("★ I5 deviceAdapter.update: đổi endpoint adapter có tag được bảo vệ ⇒ TOTP_CAN; có mã ⇒ đổi + audit; adapter không có tag bảo vệ ⇒ như cũ", async () => {
+      await sql`UPDATE device_adapters SET "isEnabled" = false WHERE id = ${ids.adCap}`;
+      await sql`UPDATE device_tags SET stop_value = NULL WHERE id = ${tg.dkpin}`; // fix round 2: tag đã khai đang ghim ⇒ "gỡ ghim trước" (ca riêng)
       expect(await loiCua(caller.update({ id: ids.ad, endpoint: "stub://khac" }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
       expect((await sql`SELECT endpoint FROM device_adapters WHERE id = ${ids.ad}`)[0].endpoint).toBe(`stub://${RUN}-a`);
       await caller.update({ id: ids.ad, endpoint: "stub://khac", totpCode: await maMoi() });
@@ -398,6 +400,44 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — trỏ l�
       expect(au.length).toBeGreaterThanOrEqual(1);
       await caller.update({ id: ids.adCap, endpoint: "stub://cap-khac" }); // không tag ⇒ không mã
       await sql`UPDATE device_adapters SET endpoint = ${"stub://" + RUN + "-a"} WHERE id = ${ids.ad}`;
+    });
+
+    // ── Fix round 2 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    it("★ fix round 2 (phán quyết b cấp adapter): đổi endpoint khi còn tag ĐÃ KHAI đang ghim ⇒ STOP_PIN_GO_TRUOC nêu tên tag, TRƯỚC kiểm mã (mã không bị tiêu); ghim + endpoint giữ nguyên", async () => {
+      const m = await maMoi();
+      const e = await loiCua(caller.update({ id: ids.ad, endpoint: "stub://khac", totpCode: m }));
+      expect(e).toMatchObject({ code: "BAD_REQUEST", appCode: "STOP_PIN_GO_TRUOC", appParams: { ma: "STOP_PIN_GO_TRUOC", tagKey: "dkpin", stopValue: "3", soTag: 1 } });
+      expect((await sql`SELECT endpoint FROM device_adapters WHERE id = ${ids.ad}`)[0].endpoint).toBe(`stub://${RUN}-a`);
+      expect((await hang(tg.dkpin)).stopValue).toBe(3);
+      await caller.tags.update({ id: tg.dk, scale: 2, totpCode: m }); // cùng mã vẫn dùng được
+    });
+
+    it("fix round 2: tag CHƯA khai đang ghim vẫn theo luật doc 81 — đổi đích (có mã) gỡ ghim của nó tự động", async () => {
+      await sql`UPDATE device_tags SET stop_value = NULL WHERE id = ${tg.dkpin}`;
+      await sql`UPDATE device_tags SET stop_value = '1'::jsonb WHERE id = ${tg.cu}`;
+      const kq = await caller.update({ id: ids.ad, endpoint: "stub://khac2", totpCode: await maMoi() });
+      expect(kq.stopPinsCleared).toBe(1);
+      expect((await hang(tg.cu)).stopValue).toBeNull();
+    });
+
+    it("★ fix round 2 (tắt adapter): còn tag đã khai đang ghim ⇒ STOP_PIN_GO_TRUOC; gỡ ghim rồi tắt — có kênh chế độ / tag đã khai ⇒ TOTP_CAN; có mã ⇒ tắt + audit adapter_bao_ve_tat", async () => {
+      await sql`UPDATE device_adapters SET "isEnabled" = true WHERE id = ${ids.ad}`;
+      expect(await loiCua(caller.update({ id: ids.ad, isEnabled: false, totpCode: await maMoi() }))).toMatchObject({
+        appCode: "STOP_PIN_GO_TRUOC",
+        appParams: { tagKey: "dkpin" },
+      });
+      await sql`UPDATE device_tags SET stop_value = NULL WHERE id = ${tg.dkpin}`;
+      expect(await loiCua(caller.update({ id: ids.ad, isEnabled: false }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect((await sql`SELECT "isEnabled" AS b FROM device_adapters WHERE id = ${ids.ad}`)[0].b).toBe(true);
+      await caller.update({ id: ids.ad, isEnabled: false, totpCode: await maMoi() });
+      expect((await sql`SELECT "isEnabled" AS b FROM device_adapters WHERE id = ${ids.ad}`)[0].b).toBe(false);
+      const au = await sql`SELECT "beforeJson" AS b, "afterJson" AS a FROM control_audit_log
+        WHERE "entityType" = 'device_adapter' AND "entityId" = ${String(ids.ad)} AND action = 'adapter_bao_ve_tat'`;
+      expect(au).toHaveLength(1);
+      expect(au[0]).toMatchObject({ b: { isEnabled: true }, a: { isEnabled: false } });
+      // adapter không có tag được bảo vệ ⇒ tắt như cũ, không mã
+      await sql`UPDATE device_adapters SET "isEnabled" = true WHERE id = ${ids.adCap}`;
+      await caller.update({ id: ids.adCap, isEnabled: false });
     });
 
     it("I5 deviceAdapter.update: đổi máy khi adapter còn kênh chế độ ⇒ scadaKenhCheDoDoiMay (kể cả có mã); sửa tên ⇒ không mã", async () => {

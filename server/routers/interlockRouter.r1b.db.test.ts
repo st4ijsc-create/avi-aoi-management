@@ -151,6 +151,18 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — interloc
       expect((await sql`SELECT id FROM device_tags WHERE id = ${tg.cu}`).length).toBe(1);
     });
 
+    it("★ fix round 2 (I2 cấp adapter): TẮT adapter mà luật bật ghi lệnh lên tag của nó ⇒ INTERLOCK_MAT_DICH (trước kiểm mã), adapter vẫn bật", async () => {
+      const r = await seedLuat("tatad", "cu", 1);
+      await sql`UPDATE device_adapters SET "isEnabled" = true WHERE id = ${adapterId}`;
+      try {
+        const e = await loiCua(dev.update({ id: adapterId, isEnabled: false }));
+        expect(e).toMatchObject({ code: "BAD_REQUEST", appCode: "INTERLOCK_MAT_DICH", appParams: { tagKey: "cu", ruleId: r } });
+        expect((await sql`SELECT "isEnabled" AS b FROM device_adapters WHERE id = ${adapterId}`)[0].b).toBe(true);
+      } finally {
+        await sql`UPDATE device_adapters SET "isEnabled" = false WHERE id = ${adapterId}`;
+      }
+    });
+
     it("chuyển tag đích của luật bật sang adapter khác ⇒ INTERLOCK_MAT_DICH", async () => {
       await seedLuat("mv", "cu", 1);
       const [a2] = await sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled")

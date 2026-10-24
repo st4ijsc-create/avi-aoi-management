@@ -146,8 +146,8 @@ const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<
   },
   // kiem-dinh P1-2 (2026-10-24) — đổi cấu hình kênh / chế độ M12 đòi TOTP TƯƠI (mức 5) ⇒ THUỘC nhóm 2fa (việc cấu hình hiếm; bóp tần suất chấp nhận được).
   // 2026-10-24 · R1b-1 T9 — `kiemTotpCauHinh` chuyển từ scadaKenhRouter.ts sang services/scada/totpCauHinh.ts; thêm các bên gọi đụng tag được
-  // bảo vệ: mappingAsCode.applyImport (qua `xacThucKenhDaKhai`) + deviceAdapter.update (đổi đích, fix round 1 I5) THUỘC nhóm 2fa;
-  // deviceAdapter.tags.create / update / delete MIỄN TRỪ theo thủ tục (phán quyết T9 a, fix round 1).
+  // bảo vệ: mappingAsCode.applyImport (qua `xacThucKenhDaKhai`) THUỘC nhóm 2fa; deviceAdapter.tags.create / update / delete (fix round 1) và
+  // deviceAdapter.update (đổi đích / tắt adapter, I5; fix round 2) MIỄN TRỪ theo thủ tục (phán quyết T9 a).
   "server/services/scada/totpCauHinh.ts": {
     kiemTotpCauHinh: {
       routerFile: ["server/routers/scadaKenhRouter.ts", "server/routers/deviceAdapterRouter.ts", "server/routers/mappingAsCodeRouter.ts"],
@@ -165,6 +165,8 @@ const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<
         "deviceAdapter.tags.create": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
         "deviceAdapter.tags.update": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
         "deviceAdapter.tags.delete": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
+        // 2026-10-24 · R1b-1 T9 fix round 2 — deviceAdapter.update RA khỏi nhóm (phán quyết a mở rộng).
+        "deviceAdapter.update": "Phán quyết T9 a (2026-10-24, fix round 2): chỉ xác minh TOTP khi đổi đích / tắt adapter có tag được bảo vệ; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt lưu adapter / công tắc Bật thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa.",
       },
     },
   },
@@ -249,9 +251,10 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
     // 2026-10-24 · R1b-1 T9: 5 → 7 (+ deviceAdapter.tags.update / mappingAsCode.applyImport, THUỘC nhóm 2fa).
     // 2026-10-24 · R1b-1 T9 fix round 1: 7 → 10 — tags.update RA khỏi nhóm (miễn trừ, phán quyết T9 a); + deviceAdapter.update (nhóm, I5);
     //   + deviceAdapter.tags.create / tags.delete (miễn trừ, cùng lý do với tags.update).
+    // 2026-10-24 · R1b-1 T9 fix round 2: deviceAdapter.update RA khỏi nhóm (miễn trừ, phán quyết a) — dem 5 → 4, mien 5 → 6, tổng giữ 10.
     expect(dem + mien).toBe(10);
-    expect(dem).toBe(5); // scadaKenh ×3 + mappingAsCode.applyImport + deviceAdapter.update
-    expect(mien).toBe(5); // aiCopilot.confirmAction + scadaCommands.confirm (R1a final I-1) + deviceAdapter.tags.create/update/delete (T9 a)
+    expect(dem).toBe(4); // scadaKenh ×3 + mappingAsCode.applyImport
+    expect(mien).toBe(6); // aiCopilot.confirmAction + scadaCommands.confirm (R1a final I-1) + deviceAdapter.tags.create/update/delete + deviceAdapter.update (T9 a)
   }, 120_000);
 });
 
