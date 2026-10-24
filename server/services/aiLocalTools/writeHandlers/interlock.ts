@@ -20,8 +20,6 @@ import { getDb } from "../../../db/connection";
 import { interlockRules } from "../../../../drizzle/schema";
 import { telemetryTagDungPhamVi } from "../../interlock/d11";
 import { appError } from "../../../_core/appError";
-
-const D11_LOI = "Luật nguồn tag thiết bị (telemetry_tag) chỉ được đặt ở phạm vi Máy (scope = machine), không phải dây chuyền / trạm.";
 import {
   registerTool,
   type ActionPreview,
@@ -29,6 +27,9 @@ import {
   type ToolExecContext,
   type ToolLang,
 } from "../toolRegistry";
+
+/** R1b-1 T9 (D11) — câu từ chối khi luật telemetry_tag không ở phạm vi Máy. */
+const D11_LOI = "Luật nguồn tag thiết bị (telemetry_tag) chỉ được đặt ở phạm vi Máy (scope = machine), không phải dây chuyền / trạm.";
 
 const params = z
   .object({

@@ -1,33 +1,35 @@
 /**
- * SCADA R1b-1 Task 9 (kiem-dinh, điều phối duyệt 2026-10-24) — TRỎ LẠI một tag: đổi định nghĩa dây / danh tính của nó.
+ * SCADA R1b-1 Task 9 (kiem-dinh, điều phối duyệt 2026-10-24) — TRỎ LẠI / TẠO / XOÁ một tag mà mức tác động, kênh chế độ hoặc luật
+ * interlock đã duyệt đang trỏ tới. Một tệp luật cho MỌI đường ghi `device_tags` ngoài M12: `deviceAdapter.tags.update|create|delete`,
+ * `mappingAsCode.applyImport` (cập nhật / tạo / prune) — `deviceAdapter.update` (đổi đích cả adapter) dùng `adapterCoTagBaoVeTx`.
  *
- * Hai đường ghi `device_tags` ngoài M12 — `deviceAdapter.tags.update` và `mappingAsCode.applyImport` — đổi được các cột trỏ lại
- * (`COT_TRO_LAI`) mà không đi qua TOTP / kiểm nhất quán của `scadaKenh.capNhat`. Một tag ĐÃ KHAI kênh (mức tác động / loại kênh / dải
- * khác NULL) hoặc là KÊNH CHẾ ĐỘ của một máy mà bị trỏ lại thì mức / dải / kênh chế độ đã duyệt áp lên một điểm KHÁC trên thiết bị. Luật
- * (một tệp cho cả hai đường):
+ * ĐỊNH NGHĨA (fix round 1, phán quyết T9 C1/I3/I6/I7):
+ *   • tag ĐÃ KHAI — mức tác động / loại kênh / một cận dải khác NULL, hoặc là kênh chế độ của một máy (`tagDaKhaiKenh`);
+ *   • tag ĐƯỢC BẢO VỆ — đã khai, HOẶC là đích của một luật interlock ĐANG BẬT có ghi lệnh (không phải `alert`) — I7;
+ *   • khoá MỒ CÔI — (adapterId, tagKey) mà `scada_kenh_che_do` hoặc BẤT KỲ luật interlock nào trỏ tới (hai bảng trỏ theo cặp, không FK tới
+ *     `device_tags`). Tạo / đổi tên / chuyển adapter / import-tạo LÊN một khoá mồ côi = trỏ lại một tag được bảo vệ (I3: kiểm danh tính MỚI).
  *
- *   • Đã khai (`tagDaKhaiKenh`) + có cột trỏ lại THẬT SỰ đổi so với hàng DB (`cotTroLaiDoi`; scale/offset so theo HIỆU LỰC — form gửi lại
- *     giá trị cũ, ô trống cho 1/0, không tính) ⇒ TOTP TƯƠI (`kiemTotpCauHinh`, bên gọi đặt CUỐI) VÀ kiểm lại nhất quán trên hàng SAU khi đổi
- *     (`kiemNhatQuanSauTroLai`): dải ↔ dataType, loại kênh ↔ writable, dải/lưới ↔ giá trị DỪNG ghim.
- *   • MỌI tag (đã khai hay chưa), đổi dataType / writable / scale / offset ⇒ luật interlock ĐANG BẬT (không phải `alert`) nhắm tag phải còn
- *     ghi được giá trị GỬI (`giaTriLenhInterlock`) ⇒ không thì `INTERLOCK_NGOAI_DAI` (`kiemInterlockSauSua`). Đổi tagKey / adapterId ⇒ luật
- *     bật nhắm danh tính CŨ mất đích ⇒ `INTERLOCK_MAT_DICH`.
- *   • Kênh chế độ: đổi tagKey ⇒ bên gọi cập nhật `scada_kenh_che_do` trong CÙNG giao dịch (kênh chế độ vẫn chỉ cùng một tag vật lý);
- *     đổi adapterId ⇒ từ chối (kênh chế độ phải là tag của adapter gắn đúng máy — khai lại qua M12).
- *   • Tag chưa khai và không chạm luật interlock nào ⇒ hành vi cũ, không đòi mã.
+ * LUẬT:
+ *   • Sửa (`kiemSuaTag`): cột trỏ lại THẬT SỰ đổi (`cotTroLaiDoi` — chuẩn hoá như đường ĐỌC: scale null ⇒ 1, 0 GIỮ 0; offset null ⇒ 0) trên
+ *     tag được bảo vệ, hoặc danh tính mới là khoá mồ côi ⇒ TOTP TƯƠI (bên gọi `kiemTotpCauHinh`, đặt CUỐI) + kiểm lại nhất quán:
+ *       – kênh chế độ không chuyển adapter; dải ↔ dataType; loại kênh ghi ↔ writable;
+ *       – ghim DỪNG (tag đã khai): còn ghi được trên định nghĩa mới (`STOP_PIN_NGOAI_DAI`) RỒI "gỡ ghim trước" (`STOP_PIN_GO_TRUOC`) cho MỌI
+ *         đổi định nghĩa dây (address/scale/offset/dataType/writable/adapterId) và cho tắt tag — mất STOP phải là một thao tác riêng có chủ
+ *         đích (`setStopPin(null)` có lý do + audit), không phải hệ quả phụ (phán quyết T9 b). Chỉ đổi tên ⇒ ghim giữ, được phép;
+ *       – luật interlock đang bật trên danh tính CŨ: đổi dataType/writable/scale/offset ⇒ giá trị GỬI phải còn ghi được (`INTERLOCK_NGOAI_DAI`);
+ *         đổi tên / chuyển adapter / tắt tag ⇒ `INTERLOCK_MAT_DICH` (I2);
+ *       – luật đang bật trên danh tính MỚI (đổi tên / chuyển vào khoá mồ côi) ⇒ giá trị GỬI phải ghi được lên tag này (I3).
+ *   • Tạo (`kiemTaoTag`): lên khoá mồ côi ⇒ TOTP + luật đang bật ở khoá đó phải ghi được lên tag mới.
+ *   • Xoá / prune (`kiemXoaTag`): kênh chế độ ⇒ từ chối (gỡ kênh chế độ trước — `scadaKenhCheDoGoTruoc`); đích luật đang bật ⇒
+ *     `INTERLOCK_MAT_DICH`; đã khai mà đang ghim DỪNG ⇒ `STOP_PIN_GO_TRUOC`; còn lại đã khai ⇒ TOTP.
+ *   • Tag không được bảo vệ, khoá không mồ côi ⇒ hành vi cũ (không đòi mã; luật gỡ ghim doc 81 cũ vẫn chạy cho tag chưa khai).
  *
- * ⚠ GHIM DỪNG (phán quyết R1b-1 T9, xem báo cáo): luật gỡ ghim cũ (`lyDoGoStopPinKhiSuaTag`, doc 81 Đợt 1D) gỡ ghim khi đổi định nghĩa
- *   dây. Với tag ĐÃ KHAI, ghim được kiểm trên khai báo MỚI TRƯỚC luật gỡ: ghim không còn ghi được ⇒ `STOP_PIN_NGOAI_DAI` (người sửa gỡ /
- *   đổi ghim có chủ đích qua `setStopPin`, có lý do + audit), không để nó biến mất lặng lẽ như hệ quả phụ của việc trỏ lại. Ghim còn ghi
- *   được ⇒ luật gỡ cũ giữ nguyên.
- *
- * Thứ tự khoá LUẬT → TAG (như `scadaKenh.capNhat` / `interlockRouter`): bên gọi khoá luật FOR SHARE (`khoaLuatNhamTagTx` / theo adapter)
- * TRƯỚC khi khoá tag FOR UPDATE.
+ * Thứ tự khoá LUẬT → TAG → KÊNH CHẾ ĐỘ (như `scadaKenh.capNhat` / `interlockRouter`; `scadaKenh.cheDo.dat` khoá tag FOR SHARE trước kênh
+ * chế độ — M1): bên gọi khoá luật FOR SHARE TRƯỚC khi khoá tag FOR UPDATE.
  */
 import { and, eq } from "drizzle-orm";
-import { interlockRules, scadaKenhCheDo, type DeviceTag } from "../../../drizzle/schema";
+import { deviceTags, interlockRules, scadaKenhCheDo, type DeviceTag } from "../../../drizzle/schema";
 import { appError } from "../../_core/appError";
-import { offsetHieuLuc, scaleHieuLuc } from "@shared/stopPinTagRule";
 import { validateStopValue } from "../ot/stopPin";
 import { laKenhGhi } from "./kenhScada";
 import { giaTriLenhInterlock, kiemNhatQuanKenh, luatCoGhiLenh, soHienThi, type DbHoacTx, type KenhNhatQuan, type LuatNhamTag, type MaViPham } from "./nhatQuanKenh";
@@ -40,8 +42,10 @@ export type CotTroLai = (typeof COT_TRO_LAI)[number];
 const COT_ANH_HUONG_GHI: ReadonlySet<CotTroLai> = new Set(["dataType", "writable", "scale", "offset"]);
 /** Cột đổi DANH TÍNH (adapterId, tagKey) — luật nhắm danh tính cũ mất đích. */
 const COT_DANH_TINH: ReadonlySet<CotTroLai> = new Set(["adapterId", "tagKey"]);
+/** Cột ĐỊNH NGHĨA DÂY (phán quyết T9 b) — tag đã khai đang ghim DỪNG: đổi một trong số này ⇒ "gỡ ghim trước". tagKey KHÔNG thuộc. */
+const COT_DINH_NGHIA_DAY: ReadonlySet<CotTroLai> = new Set(["address", "scale", "offset", "dataType", "writable", "adapterId"]);
 
-/** Trần số tag ĐÃ KHAI bị trỏ lại trong MỘT lô import (= trần khai kênh hàng loạt đã lên kế hoạch). */
+/** Trần số tag ĐƯỢC BẢO VỆ bị đụng (trỏ lại / tạo lên khoá mồ côi / xoá) trong MỘT lô import (= trần khai kênh hàng loạt đã lên kế hoạch). */
 export const TRAN_KENH_DA_KHAI_MOT_LO = 200;
 
 export type HangTagTroLai = Pick<
@@ -54,6 +58,7 @@ export type HangTagTroLai = Pick<
   | "scale"
   | "offset"
   | "writable"
+  | "isEnabled"
   | "stopValue"
   | "channelKind"
   | "writeMin"
@@ -65,13 +70,31 @@ export type HangTagTroLai = Pick<
 /** Giá trị các cột trỏ lại SAU khi gộp patch (scale/offset giữ dạng cột: chuỗi decimal | null). */
 export type GiaTriTroLai = Pick<DeviceTag, CotTroLai>;
 
-/** THUẦN — tag ĐÃ KHAI kênh (phán quyết 1): mức / loại kênh / một cận dải khác NULL, hoặc là kênh chế độ của một máy. */
+/** Luật nhắm một tag, kèm đích (để lọc theo cặp khi khoá theo adapter). */
+export type LuatCoDich = LuatNhamTag & { commandTag: string | null };
+
+/**
+ * I1 (phán quyết T9) — chuẩn hoá NHƯ ĐƯỜNG ĐỌC: mọi driver đọc `raw * (scale ?? 1) + offset` ⇒ scale null/"" ⇒ 1, `0` GIỮ `0` (nhân 0 —
+ * tag luôn đọc ra offset) ⇒ 0 ↔ 1 là MỘT thay đổi. offset null/"" ⇒ 0.
+ */
+export function scaleDoc(v: unknown): number {
+  if (v === null || v === undefined || v === "") return 1;
+  return Number(v);
+}
+export function offsetDoc(v: unknown): number {
+  if (v === null || v === undefined || v === "") return 0;
+  return Number(v);
+}
+
+/** THUẦN — tag ĐÃ KHAI kênh: mức / loại kênh / một cận dải khác NULL, hoặc là kênh chế độ của một máy. */
 export function tagDaKhaiKenh(
   tag: Pick<DeviceTag, "actuationLevel" | "channelKind" | "writeMin" | "writeMax" | "writeStep">,
   laKenhCheDo: boolean,
 ): boolean {
   return laKenhCheDo || tag.actuationLevel != null || tag.channelKind != null || tag.writeMin != null || tag.writeMax != null || tag.writeStep != null;
 }
+
+const luatBatCoGhi = (r: LuatNhamTag): boolean => r.enabled === true && luatCoGhiLenh(r.action);
 
 /** THUẦN — gộp patch (trường `undefined` = giữ nguyên) lên các cột trỏ lại của hàng DB. */
 export function giaTriSauTroLai(cu: HangTagTroLai, patch: Record<string, unknown>): GiaTriTroLai {
@@ -87,47 +110,54 @@ export function giaTriSauTroLai(cu: HangTagTroLai, patch: Record<string, unknown
   };
 }
 
-/** THUẦN — cột trỏ lại THẬT SỰ đổi so với hàng DB. scale/offset so theo hiệu lực (null/0 ⇒ 1; null ⇒ 0 — quy ước `inverseScale`). */
+/** THUẦN — cột trỏ lại THẬT SỰ đổi so với hàng DB (scale/offset chuẩn hoá như đường đọc — I1). */
 export function cotTroLaiDoi(cu: HangTagTroLai, sau: GiaTriTroLai): CotTroLai[] {
   const doi: CotTroLai[] = [];
   if (sau.adapterId !== cu.adapterId) doi.push("adapterId");
   if (sau.tagKey !== cu.tagKey) doi.push("tagKey");
   if (sau.address !== cu.address) doi.push("address");
   if (sau.dataType !== cu.dataType) doi.push("dataType");
-  if (scaleHieuLuc(sau.scale) !== scaleHieuLuc(cu.scale)) doi.push("scale");
-  if (offsetHieuLuc(sau.offset) !== offsetHieuLuc(cu.offset)) doi.push("offset");
+  if (scaleDoc(sau.scale) !== scaleDoc(cu.scale)) doi.push("scale");
+  if (offsetDoc(sau.offset) !== offsetDoc(cu.offset)) doi.push("offset");
   if ((sau.writable === true) !== (cu.writable === true)) doi.push("writable");
   return doi;
 }
 
 /** Khai báo kênh (cột mig 0431 của hàng) với các cột trỏ lại MỚI — đầu vào của `kiemNhatQuanKenh`. */
-function kenhMoiCua(cu: HangTagTroLai, sau: GiaTriTroLai): KenhNhatQuan {
+function kenhMoiCua(cu: Pick<DeviceTag, "channelKind" | "writeMin" | "writeMax" | "writeStep"> | null, sau: GiaTriTroLai): KenhNhatQuan {
   return {
     dataType: sau.dataType,
     writable: sau.writable,
-    channelKind: cu.channelKind,
-    writeMin: cu.writeMin,
-    writeMax: cu.writeMax,
-    writeStep: cu.writeStep,
+    channelKind: cu?.channelKind ?? null,
+    writeMin: cu?.writeMin ?? null,
+    writeMax: cu?.writeMax ?? null,
+    writeStep: cu?.writeStep ?? null,
     scale: sau.scale,
     offset: sau.offset,
   };
 }
 
-/**
- * Kênh chế độ trỏ tới (adapterId, tagKey) — khoá FOR UPDATE (bên gọi có thể đổi tag_key của chúng trong cùng giao dịch). Chỉ dùng `eq`/`and`
- * (FakeDb của test router cũ hiểu được).
- */
-export async function kenhCheDoCuaTagTx(tx: DbHoacTx, e: { adapterId: number; tagKey: string }): Promise<Array<{ machineId: number }>> {
+// ─── Khoá / đọc ngữ cảnh ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Mọi luật interlock nhắm (adapterId, tagKey), bật hay tắt, khoá FOR SHARE theo id. Chỉ `eq`/`and` (FakeDb của test router cũ hiểu được). */
+export async function khoaLuatNhamCapTx(tx: DbHoacTx, e: { adapterId: number; tagKey: string }): Promise<LuatCoDich[]> {
   return tx
-    .select({ machineId: scadaKenhCheDo.machineId })
-    .from(scadaKenhCheDo)
-    .where(and(eq(scadaKenhCheDo.adapterId, e.adapterId), eq(scadaKenhCheDo.tagKey, e.tagKey)))
-    .for("update");
+    .select({
+      id: interlockRules.id,
+      name: interlockRules.name,
+      action: interlockRules.action,
+      enabled: interlockRules.enabled,
+      commandValue: interlockRules.commandValue,
+      commandTag: interlockRules.commandTag,
+    })
+    .from(interlockRules)
+    .where(and(eq(interlockRules.targetAdapterId, e.adapterId), eq(interlockRules.commandTag, e.tagKey)))
+    .orderBy(interlockRules.id)
+    .for("share");
 }
 
-/** Mọi luật interlock nhắm một adapter (bật hay tắt), khoá FOR SHARE theo id — import khoá MỘT lần cho cả lô, TRƯỚC khi khoá tag. */
-export async function khoaLuatNhamAdapterTx(tx: DbHoacTx, adapterId: number): Promise<Array<LuatNhamTag & { commandTag: string | null }>> {
+/** Mọi luật interlock nhắm một adapter (bật hay tắt), khoá FOR SHARE theo id — import / deviceAdapter.update khoá MỘT lần, TRƯỚC khi khoá tag. */
+export async function khoaLuatNhamAdapterTx(tx: DbHoacTx, adapterId: number): Promise<LuatCoDich[]> {
   return tx
     .select({
       id: interlockRules.id,
@@ -143,11 +173,106 @@ export async function khoaLuatNhamAdapterTx(tx: DbHoacTx, adapterId: number): Pr
     .for("share");
 }
 
-const luatBatCoGhi = (r: LuatNhamTag): boolean => r.enabled === true && luatCoGhiLenh(r.action);
+/**
+ * Kênh chế độ trỏ tới (adapterId, tagKey) — khoá FOR UPDATE (bên gọi có thể đổi tag_key của chúng trong cùng giao dịch). Hàng chưa có
+ * không bị khoá, nhưng `scadaKenh.cheDo.dat` khoá TAG FOR SHARE trước khi chèn (M1) ⇒ chờ giao dịch đang giữ tag FOR UPDATE.
+ */
+export async function kenhCheDoCuaTagTx(tx: DbHoacTx, e: { adapterId: number; tagKey: string }): Promise<Array<{ machineId: number }>> {
+  return tx
+    .select({ machineId: scadaKenhCheDo.machineId })
+    .from(scadaKenhCheDo)
+    .where(and(eq(scadaKenhCheDo.adapterId, e.adapterId), eq(scadaKenhCheDo.tagKey, e.tagKey)))
+    .for("update");
+}
+
+/** Có tag nào (khác `boQuaId`) đang mang (adapterId, tagKey) không — kiểm trùng TRƯỚC kiểm mã (M3: trùng không tiêu mã). */
+export async function trungKhoaTagTx(tx: DbHoacTx, e: { adapterId: number; tagKey: string; boQuaId?: number }): Promise<boolean> {
+  const rows = await tx
+    .select({ id: deviceTags.id })
+    .from(deviceTags)
+    .where(and(eq(deviceTags.adapterId, e.adapterId), eq(deviceTags.tagKey, e.tagKey)));
+  return rows.some((r) => r.id !== e.boQuaId);
+}
+
+export const loiTrungKhoaTag = () => appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "deviceTag" }, "Tag key đã tồn tại trong adapter này.");
 
 /**
- * THUẦN — vi phạm đầu tiên của luật ĐANG BẬT (không phải `alert`) với tag sau khi sửa: tag thôi ghi được (writable !== true ⇒ dispatch
- * từ chối TAG_NOT_WRITABLE, bất kể khai báo kênh) hoặc giá trị GỬI không ghi được lên khai báo mới (`kiemNhatQuanKenh`).
+ * I5 — adapter có tag ĐƯỢC BẢO VỆ nào không (tag đã khai cột kênh, kênh chế độ trỏ vào adapter, hoặc luật interlock đang bật nhắm adapter).
+ * Luật khoá FOR SHARE trước, rồi đọc tag. Trả thêm số kênh chế độ (đổi máy bị từ chối khi > 0).
+ */
+export async function adapterCoTagBaoVeTx(tx: DbHoacTx, adapterId: number): Promise<{ baoVe: boolean; soKenhCheDo: number }> {
+  const luat = await khoaLuatNhamAdapterTx(tx, adapterId);
+  const kenh = await tx.select({ machineId: scadaKenhCheDo.machineId }).from(scadaKenhCheDo).where(eq(scadaKenhCheDo.adapterId, adapterId)).for("share");
+  const tags = await tx
+    .select({
+      actuationLevel: deviceTags.actuationLevel,
+      channelKind: deviceTags.channelKind,
+      writeMin: deviceTags.writeMin,
+      writeMax: deviceTags.writeMax,
+      writeStep: deviceTags.writeStep,
+    })
+    .from(deviceTags)
+    .where(eq(deviceTags.adapterId, adapterId))
+    .for("share");
+  const baoVe = kenh.length > 0 || luat.some(luatBatCoGhi) || tags.some((t) => tagDaKhaiKenh(t, false));
+  return { baoVe, soKenhCheDo: kenh.length };
+}
+
+/** Luật trong một tập (khoá theo adapter) nhắm `tagKey`. */
+export const luatCuaTag = (luat: ReadonlyArray<LuatCoDich>, tagKey: string): LuatCoDich[] => luat.filter((r) => r.commandTag === tagKey);
+
+// ─── Lỗi ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+function loiMatDich(tagKey: string, r: LuatNhamTag, viec: string): never {
+  throw appError(
+    "BAD_REQUEST",
+    "INTERLOCK_MAT_DICH",
+    { ma: "INTERLOCK_MAT_DICH", tagKey, ruleId: r.id },
+    `Luật interlock đang bật #${r.id} (${r.name}) ghi lệnh lên tag ${tagKey} — ${viec} sẽ làm hành động bảo vệ mất đích. Sửa đích của luật (hoặc tắt luật) trước.`,
+  );
+}
+
+function loiGoGhimTruoc(cu: Pick<DeviceTag, "tagKey" | "stopValue">, viec: string): never {
+  throw appError(
+    "BAD_REQUEST",
+    "STOP_PIN_GO_TRUOC",
+    { ma: "STOP_PIN_GO_TRUOC", tagKey: cu.tagKey, stopValue: String(cu.stopValue) },
+    `Kênh ${cu.tagKey} đang ghim giá trị DỪNG (${String(cu.stopValue)}) — ${viec} sẽ làm mất STOP. Gỡ ghim trước (Tag dừng phần mềm, có lý do), rồi làm lại.`,
+  );
+}
+
+function loiNgoaiDai(tagKey: string, cu: Pick<DeviceTag, "writeMin" | "writeMax" | "writeStep"> | null, vp: { ruleId: number; ruleName: string; ma: MaViPham; chiTiet: string }): never {
+  throw appError(
+    "BAD_REQUEST",
+    "INTERLOCK_NGOAI_DAI",
+    {
+      ma: "INTERLOCK_NGOAI_DAI",
+      lyDo: vp.ma,
+      tagKey,
+      min: soHienThi(cu?.writeMin),
+      max: soHienThi(cu?.writeMax),
+      step: soHienThi(cu?.writeStep),
+      ruleId: vp.ruleId,
+    },
+    `Luật interlock đang bật #${vp.ruleId} (${vp.ruleName}) ghi một giá trị không ghi được lên tag ${tagKey} (${vp.chiTiet}).`,
+  );
+}
+
+/** QUA_NHIEU_KENH_DA_KHAI — lô import đụng quá trần tag được bảo vệ. */
+export function loiQuaNhieuKenhDaKhai(soTag: number): never {
+  throw appError(
+    "BAD_REQUEST",
+    "QUA_NHIEU_KENH_DA_KHAI",
+    { soTag, toiDa: TRAN_KENH_DA_KHAI_MOT_LO },
+    `Lô import đụng ${soTag} tag đã khai kênh / được bảo vệ — tối đa ${TRAN_KENH_DA_KHAI_MOT_LO} mỗi lô. Chia nhỏ file rồi nhập lại.`,
+  );
+}
+
+// ─── Kiểm thuần ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * THUẦN — vi phạm đầu tiên của luật ĐANG BẬT (không phải `alert`) với định nghĩa tag `kenhMoi`: tag không ghi được (writable !== true ⇒
+ * dispatch từ chối TAG_NOT_WRITABLE, bất kể khai báo kênh) hoặc giá trị GỬI không ghi được lên khai báo (`kiemNhatQuanKenh`).
  */
 export function viPhamInterlockSauSua(
   luat: ReadonlyArray<LuatNhamTag>,
@@ -156,7 +281,7 @@ export function viPhamInterlockSauSua(
   for (const r of luat) {
     if (!luatBatCoGhi(r)) continue;
     if (kenhMoi.writable !== true) {
-      return { ruleId: r.id, ruleName: r.name, ma: "CHANNEL_READ_ONLY", chiTiet: "Tag không còn cho phép ghi (writable=false) — dispatch từ chối mọi lệnh ghi." };
+      return { ruleId: r.id, ruleName: r.name, ma: "CHANNEL_READ_ONLY", chiTiet: "Tag không cho phép ghi (writable=false) — dispatch từ chối mọi lệnh ghi." };
     }
     const kq = kiemNhatQuanKenh(kenhMoi, giaTriLenhInterlock(r));
     if (!kq.ok) return { ruleId: r.id, ruleName: r.name, ma: kq.ma, chiTiet: kq.chiTiet };
@@ -165,48 +290,12 @@ export function viPhamInterlockSauSua(
 }
 
 /**
- * NÉM appError — kiểm interlock cho MỌI tag (đã khai hay chưa) khi các cột trỏ lại `doi` chạm giá trị lệnh hoặc danh tính.
- * `luat` = luật nhắm (adapterId, tagKey) CŨ của tag.
+ * NÉM appError — kiểm nhất quán của tag được bảo vệ sau khi trỏ lại (`doi` khác rỗng):
+ *   1. kênh chế độ không đổi adapter; 2. dải/bước ↔ dataType; 3. loại kênh GHI ↔ writable;
+ *   4. tag ĐÃ KHAI đang ghim DỪNG: ghim còn ghi được (`STOP_PIN_NGOAI_DAI`, kiểm TRƯỚC — test của brief) rồi "gỡ ghim trước" cho mọi đổi
+ *      định nghĩa dây (`STOP_PIN_GO_TRUOC`).
  */
-export function kiemInterlockSauSua(cu: HangTagTroLai, sau: GiaTriTroLai, doi: ReadonlyArray<CotTroLai>, luat: ReadonlyArray<LuatNhamTag>): void {
-  if (doi.some((c) => COT_DANH_TINH.has(c))) {
-    const mat = luat.find(luatBatCoGhi);
-    if (mat) {
-      throw appError(
-        "BAD_REQUEST",
-        "INTERLOCK_MAT_DICH",
-        { ma: "INTERLOCK_MAT_DICH", tagKey: cu.tagKey, ruleId: mat.id },
-        `Luật interlock đang bật #${mat.id} (${mat.name}) ghi lệnh lên tag ${cu.tagKey} — đổi tên / chuyển adapter sẽ làm hành động bảo vệ mất đích. Sửa đích của luật trước.`,
-      );
-    }
-  }
-  if (!doi.some((c) => COT_ANH_HUONG_GHI.has(c))) return;
-  const vp = viPhamInterlockSauSua(luat, kenhMoiCua(cu, sau));
-  if (!vp) return;
-  throw appError(
-    "BAD_REQUEST",
-    "INTERLOCK_NGOAI_DAI",
-    {
-      ma: "INTERLOCK_NGOAI_DAI",
-      lyDo: vp.ma,
-      tagKey: cu.tagKey,
-      min: soHienThi(cu.writeMin),
-      max: soHienThi(cu.writeMax),
-      step: soHienThi(cu.writeStep),
-      ruleId: vp.ruleId,
-    },
-    `Luật interlock đang bật #${vp.ruleId} (${vp.ruleName}) ghi một giá trị không ghi được lên tag ${cu.tagKey} sau khi sửa (${vp.chiTiet}).`,
-  );
-}
-
-/**
- * NÉM appError — kiểm lại nhất quán của tag ĐÃ KHAI sau khi trỏ lại (bên gọi chỉ gọi khi `tagDaKhaiKenh` và `doi` khác rỗng):
- *   1. kênh chế độ không đổi adapter;
- *   2. dải/bước ↔ dataType (dải chỉ cho kênh số — cùng lý do `scadaKenh.capNhat`);
- *   3. loại kênh GHI ↔ writable (cùng lý do `scadaKenh.capNhat` fix round 1 minor 4);
- *   4. giá trị DỪNG ghim còn ghi được trên khai báo mới (xem ⚠ đầu tệp).
- */
-export function kiemNhatQuanSauTroLai(cu: HangTagTroLai, sau: GiaTriTroLai, doi: ReadonlyArray<CotTroLai>, laKenhCheDo: boolean): void {
+export function kiemNhatQuanSauTroLai(cu: HangTagTroLai, sau: GiaTriTroLai, doi: ReadonlyArray<CotTroLai>, laKenhCheDo: boolean, daKhai: boolean): void {
   if (laKenhCheDo && doi.includes("adapterId")) {
     throw appError(
       "BAD_REQUEST",
@@ -232,7 +321,7 @@ export function kiemNhatQuanSauTroLai(cu: HangTagTroLai, sau: GiaTriTroLai, doi:
       `Loại kênh ${cu.channelKind} nhận lệnh ghi nhưng tag ${cu.tagKey} sẽ không cho phép ghi (writable=false). Đổi loại kênh trước.`,
     );
   }
-  if (cu.stopValue !== null && cu.stopValue !== undefined) {
+  if (daKhai && cu.stopValue !== null && cu.stopValue !== undefined) {
     const v = validateStopValue(String(sau.dataType), cu.stopValue);
     const nq = v.ok ? kiemNhatQuanKenh(kenhMoiCua(cu, sau), v.value) : ({ ok: false, ma: "TYPE_MISMATCH", chiTiet: v.reason } as const);
     if (!nq.ok) {
@@ -251,8 +340,87 @@ export function kiemNhatQuanSauTroLai(cu: HangTagTroLai, sau: GiaTriTroLai, doi:
         `Giá trị DỪNG đang ghim của kênh ${cu.tagKey} không ghi được với định nghĩa mới (${nq.chiTiet}). Gỡ / đổi ghim trước.`,
       );
     }
+    if (doi.some((c) => COT_DINH_NGHIA_DAY.has(c))) loiGoGhimTruoc(cu, "đổi định nghĩa dây (địa chỉ / kiểu / scale / offset / ghi được / adapter)");
   }
 }
+
+export type KetQuaKiemSua = { sau: GiaTriTroLai; doi: CotTroLai[]; daKhai: boolean; baoVe: boolean; moCoi: boolean; canTotp: boolean };
+
+/**
+ * NÉM appError — mọi kiểm của MỘT lượt sửa tag (tags.update / import-cập nhật), TRỪ TOTP (bên gọi gọi `kiemTotpCauHinh` khi `canTotp`).
+ * `luatCu` = luật nhắm danh tính CŨ; `luatMoi` / `kenhCheDoMoi` = của danh tính MỚI (chỉ khi đổi tên / chuyển adapter, ngược lại rỗng/false).
+ */
+export function kiemSuaTag(x: {
+  cu: HangTagTroLai;
+  patch: Record<string, unknown>;
+  luatCu: ReadonlyArray<LuatNhamTag>;
+  kenhCheDoCu: boolean;
+  luatMoi?: ReadonlyArray<LuatNhamTag>;
+  kenhCheDoMoi?: boolean;
+}): KetQuaKiemSua {
+  const { cu, patch, luatCu, kenhCheDoCu } = x;
+  const sau = giaTriSauTroLai(cu, patch);
+  const doi = cotTroLaiDoi(cu, sau);
+  const daKhai = tagDaKhaiKenh(cu, kenhCheDoCu);
+  const baoVe = daKhai || luatCu.some(luatBatCoGhi);
+  const doiDanhTinh = doi.some((c) => COT_DANH_TINH.has(c));
+  const luatMoi = doiDanhTinh ? (x.luatMoi ?? []) : [];
+  const moCoi = doiDanhTinh && (x.kenhCheDoMoi === true || luatMoi.length > 0);
+  const tat = patch.isEnabled === false && cu.isEnabled === true;
+
+  if (baoVe && doi.length > 0) kiemNhatQuanSauTroLai(cu, sau, doi, kenhCheDoCu, daKhai);
+  if (tat && daKhai && cu.stopValue !== null && cu.stopValue !== undefined) loiGoGhimTruoc(cu, "tắt tag");
+
+  const batCu = luatCu.find(luatBatCoGhi);
+  if (batCu && doiDanhTinh) loiMatDich(cu.tagKey, batCu, "đổi tên / chuyển adapter");
+  if (batCu && tat) loiMatDich(cu.tagKey, batCu, "tắt tag"); // I2 — dispatch từ chối tag tắt (TAG_NOT_FOUND)
+  if (doi.some((c) => COT_ANH_HUONG_GHI.has(c))) {
+    const vp = viPhamInterlockSauSua(luatCu, kenhMoiCua(cu, sau));
+    if (vp) loiNgoaiDai(cu.tagKey, cu, vp);
+  }
+  if (doiDanhTinh) {
+    // I3 — danh tính MỚI: luật đang bật nhắm khoá đó sẽ ghi lên tag này.
+    const vp = viPhamInterlockSauSua(luatMoi, kenhMoiCua(cu, sau));
+    if (vp) loiNgoaiDai(sau.tagKey, cu, vp);
+  }
+  return { sau, doi, daKhai, baoVe, moCoi, canTotp: (baoVe && doi.length > 0) || moCoi };
+}
+
+/**
+ * NÉM appError — tạo tag (tags.create / import-tạo) lên (adapterId, tagKey). Khoá mồ côi (kênh chế độ hoặc BẤT KỲ luật nào trỏ tới) ⇒
+ * `canTotp`; luật đang bật ở khoá đó phải ghi được lên tag mới (tag mới chưa khai cột kênh nào).
+ */
+export function kiemTaoTag(x: { moi: GiaTriTroLai & { isEnabled: boolean }; luat: ReadonlyArray<LuatNhamTag>; coKenhCheDo: boolean }): { moCoi: boolean; canTotp: boolean } {
+  const moCoi = x.coKenhCheDo || x.luat.length > 0;
+  const bat = x.luat.find(luatBatCoGhi);
+  if (bat && x.moi.isEnabled !== true) loiMatDich(x.moi.tagKey, bat, "tạo tag ở trạng thái tắt");
+  const vp = viPhamInterlockSauSua(x.luat, kenhMoiCua(null, x.moi));
+  if (vp) loiNgoaiDai(x.moi.tagKey, null, vp);
+  return { moCoi, canTotp: moCoi };
+}
+
+/**
+ * NÉM appError — xoá tag (tags.delete / import prune). Kênh chế độ ⇒ từ chối (gỡ kênh chế độ trước, qua `scadaKenh.cheDo.go` có TOTP);
+ * đích luật đang bật ⇒ `INTERLOCK_MAT_DICH`; đã khai mà đang ghim DỪNG ⇒ `STOP_PIN_GO_TRUOC`; đã khai ⇒ `canTotp`.
+ */
+export function kiemXoaTag(x: { cu: HangTagTroLai; luat: ReadonlyArray<LuatNhamTag>; coKenhCheDo: boolean }): { daKhai: boolean; canTotp: boolean } {
+  const { cu } = x;
+  if (x.coKenhCheDo) {
+    throw appError(
+      "BAD_REQUEST",
+      "INVALID_VALUE",
+      { field: "tagKey", reason: "scadaKenhCheDoGoTruoc" },
+      `Tag ${cu.tagKey} là kênh chế độ của một máy — gỡ kênh chế độ (trang Kênh & giới hạn, cần mã xác thực) trước khi xoá tag.`,
+    );
+  }
+  const bat = x.luat.find(luatBatCoGhi);
+  if (bat) loiMatDich(cu.tagKey, bat, "xoá tag");
+  const daKhai = tagDaKhaiKenh(cu, false);
+  if (daKhai && cu.stopValue !== null && cu.stopValue !== undefined) loiGoGhimTruoc(cu, "xoá tag");
+  return { daKhai, canTotp: daKhai };
+}
+
+// ─── Audit ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Before/after của dòng audit `kenh_da_khai_tro_lai` (control_audit_log, WORM). */
 export function anhTroLai(g: GiaTriTroLai): Record<string, unknown> {
@@ -261,21 +429,14 @@ export function anhTroLai(g: GiaTriTroLai): Record<string, unknown> {
     tagKey: g.tagKey,
     address: g.address,
     dataType: g.dataType,
-    scale: scaleHieuLuc(g.scale),
-    offset: offsetHieuLuc(g.offset),
+    scale: scaleDoc(g.scale),
+    offset: offsetDoc(g.offset),
     writable: g.writable,
   };
 }
 
 export const AUDIT_TRO_LAI = "kenh_da_khai_tro_lai";
+export const AUDIT_TAO_KHOA_MO_COI = "kenh_tao_tren_khoa_mo_coi";
+export const AUDIT_XOA_DA_KHAI = "kenh_da_khai_xoa";
 export const AUDIT_KENH_CHE_DO_DOI_TAG = "scada_kenh_che_do_doi_tag";
-
-/** QUA_NHIEU_KENH_DA_KHAI — lô import đụng quá trần tag đã khai. */
-export function loiQuaNhieuKenhDaKhai(soTag: number): never {
-  throw appError(
-    "BAD_REQUEST",
-    "QUA_NHIEU_KENH_DA_KHAI",
-    { soTag, toiDa: TRAN_KENH_DA_KHAI_MOT_LO },
-    `Lô import trỏ lại ${soTag} tag đã khai kênh — tối đa ${TRAN_KENH_DA_KHAI_MOT_LO} mỗi lô. Chia nhỏ file rồi nhập lại.`,
-  );
-}
+export const AUDIT_ADAPTER_DOI_DICH = "adapter_bao_ve_doi_dich";

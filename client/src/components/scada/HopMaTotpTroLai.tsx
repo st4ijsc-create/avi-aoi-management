@@ -6,7 +6,7 @@
  *
  * `xuLyLoi(e, bien)` trả true khi đã xử lý (bên gọi KHÔNG toast thêm); `daXong()` đóng hộp sau một lượt thành công.
  */
-import { useRef, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -20,6 +20,7 @@ export function laLoiCanMaTotp(e: unknown): boolean {
 
 export function useHopMaTotpTroLai<V extends object>(guiLai: (bien: V & { totpCode: string }) => void, dangGui: boolean) {
   const { t } = useTranslation();
+  const idO = `tro-lai-totp-${useId()}`; // nhiều hộp trên một trang (sửa / tạo / xoá tag, sửa adapter)
   const [cho, setChoState] = useState<V | null>(null);
   // Bản sao đồng bộ của `cho`: onError của useMutation có thể chạy với closure của lượt render trước.
   const choRef = useRef<V | null>(null);
@@ -43,7 +44,9 @@ export function useHopMaTotpTroLai<V extends object>(guiLai: (bien: V & { totpCo
       toastTrpcError(e as never);
       return true;
     }
-    if (dangHoi) setCho(null); // lỗi khác khi đang gửi lại ⇒ đóng hộp, bên gọi báo lỗi
+    // lỗi khác khi đang gửi lại ⇒ đóng hộp, bên gọi báo lỗi. M2 — mã không ở lại trong state sau BẤT KỲ kết cục nào.
+    if (dangHoi) setCho(null);
+    setMa("");
     return false;
   };
   const daXong = () => {
@@ -63,7 +66,7 @@ export function useHopMaTotpTroLai<V extends object>(guiLai: (bien: V & { totpCo
           <DialogTitle>{t("deviceAdapter.troLai.title")}</DialogTitle>
           <DialogDescription>{t("deviceAdapter.troLai.body")}</DialogDescription>
         </DialogHeader>
-        <TruongTotp id="tro-lai-totp" value={ma} onChange={setMa} disabled={dangGui} />
+        <TruongTotp id={idO} value={ma} onChange={setMa} disabled={dangGui} />
         <DialogFooter>
           <Button variant="outline" disabled={dangGui} onClick={daXong}>
             {t("common.cancel")}

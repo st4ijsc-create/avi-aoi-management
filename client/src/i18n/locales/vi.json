@@ -4504,7 +4504,9 @@
       "scadaKenhCheDoTagTat": "Tag của kênh chế độ đang tắt — bật tag trước rồi khai lại.",
       "scadaKenhGhiTrenTagKhongGhi": "Loại kênh này nhận lệnh ghi, nhưng tag không cho phép ghi — bật \"cho phép ghi\" cho tag hoặc chọn loại kênh chỉ đọc.",
       "scadaKenhThuLai": "Kênh vừa bị thay đổi đồng thời — tải lại rồi thử lại.",
-      "scadaKenhCheDoKhongDoiAdapter": "Tag này là kênh chế độ của một máy — không chuyển sang adapter khác được. Gỡ hoặc khai lại kênh chế độ ở trang Kênh & giới hạn trước."
+      "scadaKenhCheDoKhongDoiAdapter": "Tag này là kênh chế độ của một máy — không chuyển sang adapter khác được. Gỡ hoặc khai lại kênh chế độ ở trang Kênh & giới hạn trước.",
+      "scadaKenhCheDoGoTruoc": "Tag này là kênh chế độ của một máy — gỡ kênh chế độ ở trang Kênh & giới hạn (cần mã xác thực) trước khi xoá tag.",
+      "scadaKenhCheDoDoiMay": "Adapter đang mang kênh chế độ của máy — gỡ kênh chế độ ở trang Kênh & giới hạn trước khi gán adapter sang máy khác."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -4575,8 +4577,9 @@
     "AI_CHAN_AN_TOAN": "Yêu cầu bị lớp an toàn AI chặn vì có dấu hiệu tiêm lệnh. Hãy diễn đạt lại yêu cầu.",
     "AI_CHUA_CAP_PHEP": "Phiên bản / giấy phép hiện tại không gồm tính năng AI (MOD_AI).",
     "SCADA_STOP_NOT_PINNED": "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng.",
-    "INTERLOCK_MAT_DICH": "Luật interlock đang bật #{{ruleId}} ghi lệnh lên tag {{tagKey}} — đổi tên hoặc chuyển tag sang adapter khác sẽ làm hành động bảo vệ mất đích. Sửa đích của luật (hoặc tắt luật) trước.",
-    "QUA_NHIEU_KENH_DA_KHAI": "Lô import trỏ lại {{soTag}} tag đã khai kênh — tối đa {{toiDa}} tag mỗi lô. Chia nhỏ file rồi nhập lại."
+    "INTERLOCK_MAT_DICH": "Luật interlock đang bật #{{ruleId}} ghi lệnh lên tag {{tagKey}} — đổi tên, chuyển adapter, tắt hoặc xoá tag sẽ làm hành động bảo vệ mất đích. Sửa đích của luật (hoặc tắt luật) trước.",
+    "QUA_NHIEU_KENH_DA_KHAI": "Lô import đụng {{soTag}} tag đã khai kênh / được bảo vệ — tối đa {{toiDa}} tag mỗi lô. Chia nhỏ file rồi nhập lại.",
+    "STOP_PIN_GO_TRUOC": "Kênh {{tagKey}} đang ghim giá trị DỪNG ({{stopValue}}) — đổi địa chỉ / kiểu / scale / offset / cho phép ghi / adapter, tắt hoặc xoá tag sẽ làm mất STOP. Gỡ ghim trước (mục Tag dừng phần mềm, có lý do), rồi làm lại."
   },
   "export": {
     "reportMenu": {
@@ -16428,7 +16431,7 @@
     "defaultPortHint": "Cổng mặc định {{protocol}}: {{port}}",
     "troLai": {
       "title": "Cần mã xác thực hai lớp",
-      "body": "Tag này đã khai kênh (mức tác động, loại kênh, dải — hoặc là kênh chế độ của máy). Đổi địa chỉ, kiểu, scale, offset, cho phép ghi hoặc tên tag cần mã TOTP mới.",
+      "body": "Thao tác này đụng một tag được bảo vệ (đã khai kênh, là kênh chế độ của máy, hoặc là đích của luật interlock đang bật) — cần mã TOTP mới.",
       "submit": "Xác nhận và lưu"
     }
   },

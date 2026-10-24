@@ -127,7 +127,14 @@ describe("census nhóm 2fa của giới hạn theo thủ tục", () => {
  * Mỗi file sản xuất GỌI nó phải có mặt ở bảng dưới: hàm bao ngoài (AST) → thủ tục tRPC của router gọi hàm ấy. File mới / hàm mới gọi nó mà bảng chưa cập nhật ⇒ ĐỎ.
  * Thủ tục phải thuộc nhóm "2fa", TRỪ khi có `mienTru` (lý do bằng văn bản).
  */
-const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<string, Record<string, { routerFile: string | string[]; thuTuc: string | string[]; mienTru?: string }>> = {
+/**
+ * `mienTru`: chuỗi = miễn trừ cho MỌI thủ tục của mục; đối tượng = miễn trừ THEO THỦ TỤC (R1b-1 T9 fix round 1 — một hàm dùng chung, có thủ tục
+ * trong nhóm, có thủ tục miễn trừ).
+ */
+const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<
+  string,
+  Record<string, { routerFile: string | string[]; thuTuc: string | string[]; mienTru?: string | Record<string, string> }>
+> = {
   "server/services/scada/lenhHmi.ts": {
     xacNhanGhiTag: {
       routerFile: "server/routers/scadaCommandsRouter.ts",
@@ -138,12 +145,27 @@ const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<string, Record<string, { routerF
     },
   },
   // kiem-dinh P1-2 (2026-10-24) — đổi cấu hình kênh / chế độ M12 đòi TOTP TƯƠI (mức 5) ⇒ THUỘC nhóm 2fa (việc cấu hình hiếm; bóp tần suất chấp nhận được).
-  // 2026-10-24 · R1b-1 T9 — `kiemTotpCauHinh` chuyển từ scadaKenhRouter.ts sang services/scada/totpCauHinh.ts; thêm hai bên gọi trỏ lại tag đã khai
-  // (deviceAdapter.tags.update, mappingAsCode.applyImport qua `xacThucKenhDaKhai`) — cũng THUỘC nhóm 2fa.
+  // 2026-10-24 · R1b-1 T9 — `kiemTotpCauHinh` chuyển từ scadaKenhRouter.ts sang services/scada/totpCauHinh.ts; thêm các bên gọi đụng tag được
+  // bảo vệ: mappingAsCode.applyImport (qua `xacThucKenhDaKhai`) + deviceAdapter.update (đổi đích, fix round 1 I5) THUỘC nhóm 2fa;
+  // deviceAdapter.tags.create / update / delete MIỄN TRỪ theo thủ tục (phán quyết T9 a, fix round 1).
   "server/services/scada/totpCauHinh.ts": {
     kiemTotpCauHinh: {
       routerFile: ["server/routers/scadaKenhRouter.ts", "server/routers/deviceAdapterRouter.ts", "server/routers/mappingAsCodeRouter.ts"],
-      thuTuc: ["scadaKenh.capNhat", "scadaKenh.cheDo.dat", "scadaKenh.cheDo.go", "deviceAdapter.tags.update", "mappingAsCode.applyImport"],
+      thuTuc: [
+        "scadaKenh.capNhat",
+        "scadaKenh.cheDo.dat",
+        "scadaKenh.cheDo.go",
+        "mappingAsCode.applyImport",
+        "deviceAdapter.update",
+        "deviceAdapter.tags.create",
+        "deviceAdapter.tags.update",
+        "deviceAdapter.tags.delete",
+      ],
+      mienTru: {
+        "deviceAdapter.tags.create": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
+        "deviceAdapter.tags.update": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
+        "deviceAdapter.tags.delete": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
+      },
     },
   },
   "server/services/aiCopilotActions.ts": {
@@ -210,8 +232,9 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
           const loaiTT = trpcProcedureType(appRouter, thuTuc);
           expect(loaiTT, `${thuTuc} không tồn tại ở appRouter`).toBeDefined();
           const nhom = phanNhomThuTuc(thuTuc, loaiTT, tap);
-          if (m.mienTru) {
-            expect(m.mienTru.length, `${thuTuc}: lý do miễn trừ quá ngắn`).toBeGreaterThan(40);
+          const lyDoMien = typeof m.mienTru === "string" ? m.mienTru : m.mienTru?.[thuTuc];
+          if (lyDoMien) {
+            expect(lyDoMien.length, `${thuTuc}: lý do miễn trừ quá ngắn`).toBeGreaterThan(40);
             // Miễn trừ là RÀNG BUỘC: thủ tục miễn trừ KHÔNG được nằm trong nhóm 2fa (thêm lại vào nhóm ⇒ phải xoá miễn trừ, kèm phán quyết mới).
             expect(nhom, `${thuTuc} có miễn trừ nhưng vẫn thuộc nhóm 2fa`).not.toBe("2fa");
             mien++;
@@ -224,9 +247,11 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
     }
     // 2026-10-24 · kiem-dinh P1-2: 2 → 5 (+ scadaKenh.capNhat / cheDo.dat / cheDo.go, THUỘC nhóm 2fa).
     // 2026-10-24 · R1b-1 T9: 5 → 7 (+ deviceAdapter.tags.update / mappingAsCode.applyImport, THUỘC nhóm 2fa).
-    expect(dem + mien).toBe(7);
-    expect(dem).toBe(5);
-    expect(mien).toBe(2); // aiCopilot.confirmAction + scadaCommands.confirm — miễn trừ có lý do (R1a final I-1)
+    // 2026-10-24 · R1b-1 T9 fix round 1: 7 → 10 — tags.update RA khỏi nhóm (miễn trừ, phán quyết T9 a); + deviceAdapter.update (nhóm, I5);
+    //   + deviceAdapter.tags.create / tags.delete (miễn trừ, cùng lý do với tags.update).
+    expect(dem + mien).toBe(10);
+    expect(dem).toBe(5); // scadaKenh ×3 + mappingAsCode.applyImport + deviceAdapter.update
+    expect(mien).toBe(5); // aiCopilot.confirmAction + scadaCommands.confirm (R1a final I-1) + deviceAdapter.tags.create/update/delete (T9 a)
   }, 120_000);
 });
 

@@ -130,9 +130,50 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — interloc
       expect((await hang(tg.cu)).writable).toBe(false);
     });
 
-    it("đổi trường không ảnh hưởng giá trị lệnh (unit / address) của tag chưa khai ⇒ không kiểm luật", async () => {
+    it("đổi unit của tag chưa khai là đích luật bật ⇒ qua, không mã; ★ I7: đổi ADDRESS của nó ⇒ tag được bảo vệ ⇒ TOTP_CAN", async () => {
       await seedLuat("u", "cu", 1);
-      await dev.tags.update({ id: tg.cu, unit: "rpm", address: "addr-cu-2" });
+      await dev.tags.update({ id: tg.cu, unit: "rpm" });
+      const e = await loiCua(dev.tags.update({ id: tg.cu, address: "addr-cu-2" }));
+      expect(e).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_CONFIG_TOTP_REQUIRED", appParams: { ma: "TOTP_CAN" } });
+      expect((await sql`SELECT address FROM device_tags WHERE id = ${tg.cu}`)[0].address).toBe("addr-cu");
+    });
+
+    it("★ I2: TẮT tag là đích luật bật ⇒ INTERLOCK_MAT_DICH (dispatch từ chối tag tắt), tag vẫn bật", async () => {
+      const r = await seedLuat("tat2", "cu", 1);
+      const e = await loiCua(dev.tags.update({ id: tg.cu, isEnabled: false }));
+      expect(e).toMatchObject({ appCode: "INTERLOCK_MAT_DICH", appParams: { tagKey: "cu", ruleId: r } });
+      expect((await sql`SELECT "isEnabled" AS b FROM device_tags WHERE id = ${tg.cu}`)[0].b).toBe(true);
+    });
+
+    it("★ C1: XOÁ tag là đích luật bật ⇒ INTERLOCK_MAT_DICH, tag còn nguyên", async () => {
+      const r = await seedLuat("xoa", "cu", 1);
+      expect(await loiCua(dev.tags.delete({ id: tg.cu }))).toMatchObject({ appCode: "INTERLOCK_MAT_DICH", appParams: { ruleId: r } });
+      expect((await sql`SELECT id FROM device_tags WHERE id = ${tg.cu}`).length).toBe(1);
+    });
+
+    it("chuyển tag đích của luật bật sang adapter khác ⇒ INTERLOCK_MAT_DICH", async () => {
+      await seedLuat("mv", "cu", 1);
+      const [a2] = await sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled")
+        VALUES (${DAU + "-2"}, ${DAU + "-2"}, 'stub', 'stub://ilkr1b2', false) RETURNING id`;
+      try {
+        expect(await loiCua(dev.tags.update({ id: tg.cu, adapterId: Number(a2.id) }))).toMatchObject({ appCode: "INTERLOCK_MAT_DICH" });
+      } finally {
+        await sql`DELETE FROM device_adapters WHERE id = ${a2.id}`;
+      }
+    });
+
+    it("★ I3: đổi tên VÀO khoá mà luật bật đang nhắm (khoá mồ côi), giá trị lệnh không ghi được lên tag này ⇒ INTERLOCK_NGOAI_DAI (danh tính MỚI)", async () => {
+      await seedLuat("moi", "ghost", 50.5); // luật nhắm khoá 'ghost' — chưa có tag nào mang khoá đó
+      const e = await loiCua(dev.tags.update({ id: tg.i, tagKey: "ghost" }));
+      expect(e).toMatchObject({ appCode: "INTERLOCK_NGOAI_DAI", appParams: expect.objectContaining({ tagKey: "ghost", lyDo: "TYPE_MISMATCH" }) });
+      expect((await hang(tg.i)).tagKey).toBe("i");
+    });
+
+    it("C1/I3: TẠO tag lên khoá mà luật bật đang nhắm, tag mới không ghi được (writable=false) ⇒ INTERLOCK_NGOAI_DAI, không chèn", async () => {
+      await seedLuat("tao", "ghost2", 1);
+      const e = await loiCua(dev.tags.create({ adapterId, tagKey: "ghost2", address: "a-g2", dataType: "int", writable: false }));
+      expect(e).toMatchObject({ appCode: "INTERLOCK_NGOAI_DAI", appParams: expect.objectContaining({ tagKey: "ghost2", lyDo: "CHANNEL_READ_ONLY" }) });
+      expect((await sql`SELECT id FROM device_tags WHERE "adapterId" = ${adapterId} AND "tagKey" = 'ghost2'`).length).toBe(0);
     });
 
     it("★ đổi tên tag đích của luật bật ⇒ INTERLOCK_MAT_DICH {tagKey cũ, ruleId}, tên giữ nguyên", async () => {

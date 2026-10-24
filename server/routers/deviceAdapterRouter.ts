@@ -18,8 +18,9 @@
  *   list/get/testConnection/tags.listByAdapter → canView
  *   create/tags.create → canCreate ; update/tags.update → canEdit
  *   delete/tags.delete → canDelete
- * SCADA R1b-1 Task 9: tags.update TRỎ LẠI một tag ĐÃ KHAI kênh (address/scale/offset/dataType/writable/tagKey/adapterId) ⇒ thêm TOTP
- *   tươi mức 5 + kiểm lại nhất quán (services/scada/troLaiKenh.ts); mọi tag ⇒ không được làm luật interlock đang bật mất hợp lệ.
+ * SCADA R1b-1 Task 9 (+ fix round 1): tags.create/update/delete đụng một tag ĐƯỢC BẢO VỆ (đã khai / kênh chế độ / đích luật interlock
+ *   đang bật) hoặc một khoá mồ côi ⇒ TOTP tươi mức 5 + kiểm lại nhất quán (services/scada/troLaiKenh.ts); update đổi đích adapter có tag
+ *   được bảo vệ ⇒ TOTP. Không đường nào được làm luật interlock đang bật mất hợp lệ / mất đích.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
@@ -55,18 +56,22 @@ import {
   GO_STOP_PIN_PATCH,
   type NguoiSuaStopPin,
 } from "../services/ot/stopPin";
-// SCADA R1b-1 Task 9 — trỏ lại tag đã khai: TOTP tươi + kiểm lại nhất quán + luật interlock đang bật
-import { khoaLuatNhamTagTx } from "../services/scada/nhatQuanKenh";
+// SCADA R1b-1 Task 9 — tạo / trỏ lại / xoá tag được bảo vệ + đổi đích adapter: TOTP tươi + kiểm lại nhất quán + luật interlock
 import {
+  AUDIT_ADAPTER_DOI_DICH,
   AUDIT_KENH_CHE_DO_DOI_TAG,
+  AUDIT_TAO_KHOA_MO_COI,
   AUDIT_TRO_LAI,
+  AUDIT_XOA_DA_KHAI,
+  adapterCoTagBaoVeTx,
   anhTroLai,
-  cotTroLaiDoi,
-  giaTriSauTroLai,
   kenhCheDoCuaTagTx,
-  kiemInterlockSauSua,
-  kiemNhatQuanSauTroLai,
-  tagDaKhaiKenh,
+  khoaLuatNhamCapTx,
+  kiemSuaTag,
+  kiemTaoTag,
+  kiemXoaTag,
+  loiTrungKhoaTag,
+  trungKhoaTagTx,
 } from "../services/scada/troLaiKenh";
 import { kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
@@ -172,7 +177,8 @@ const adapterCreateInput = adapterFields.extend({
   pollIntervalMs: adapterFields.shape.pollIntervalMs.default(5000),
   isEnabled: adapterFields.shape.isEnabled.default(false),
 });
-const adapterUpdateInput = adapterFields.partial().extend({ id: z.number().int().positive() });
+// SCADA R1b-1 Task 9 fix round 1 (I5) — đổi đích (endpoint / protocol / đích trong connectionOptions / machineId) của adapter có tag ĐƯỢC BẢO VỆ ⇒ TOTP.
+const adapterUpdateInput = adapterFields.partial().extend({ id: z.number().int().positive(), totpCode: totpCauHinhInput });
 
 const tagFields = z.object({
   adapterId: z.number().int().positive(),
@@ -189,11 +195,13 @@ const tagFields = z.object({
   deadband: z.number().positive().nullable().optional(),
   samplingMs: z.number().int().min(1).max(86_400_000).nullable().optional(),
 });
+// SCADA R1b-1 Task 9 — `totpCode`: mã TOTP 6 số, CHỈ cần khi lượt tạo / sửa / xoá đụng một tag ĐƯỢC BẢO VỆ hoặc khoá mồ côi
+// (khuôn R1a: vắng ⇒ TOTP_CAN ở handler, không phải lỗi zod).
 const tagCreateInput = tagFields.extend({
   writable: tagFields.shape.writable.default(false),
   isEnabled: tagFields.shape.isEnabled.default(true),
+  totpCode: totpCauHinhInput,
 });
-// SCADA R1b-1 Task 9 — `totpCode`: mã TOTP 6 số, CHỈ cần khi lượt sửa trỏ lại một tag ĐÃ KHAI (khuôn R1a: vắng ⇒ TOTP_CAN ở handler).
 const tagUpdateInput = tagFields.partial().extend({ id: z.number().int().positive(), totpCode: totpCauHinhInput });
 
 /**
@@ -291,7 +299,7 @@ export const deviceAdapterRouter = router({
     .input(adapterUpdateInput)
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      const { id, ...rest } = input;
+      const { id, totpCode, ...rest } = input;
       try {
         // ★ doc 81 Đợt 1B final wave 5b (security) — ĐỌC-KIỂM-KHÔI PHỤC-GHI trong MỘT giao dịch, hàng
         // adapter khoá bằng SELECT … FOR UPDATE (ràng buộc chung 6: không migration, dùng khoá hàng).
@@ -305,10 +313,26 @@ export const deviceAdapterRouter = router({
           // doc 81 Đợt 1D Task 1 fix round 1 (Ruling R-1D-a) — adapter đổi "thiết bị nào" (endpoint /
           // protocol / đích trong connectionOptions / machineId) ⇒ gỡ MỌI ghim DỪNG của nó trong CÙNG tx.
           let goGhim = false;
+          // R1b-1 T9 fix round 1 (I5) — đổi đích một adapter có tag ĐƯỢC BẢO VỆ (đã khai / kênh chế độ / đích luật đang bật) ⇒ TOTP tươi, kiểm
+          // CUỐI (sau kiểm bí mật / bảo mật OPC UA bên dưới). Đổi máy khi còn kênh chế độ trỏ vào adapter ⇒ từ chối.
+          let canTotpDoiDich: { truoc: Record<string, unknown> } | null = null;
           if (rest.endpoint !== undefined || rest.protocol !== undefined || rest.connectionOptions !== undefined || rest.machineId !== undefined) {
             const [cu] = await tx.select().from(deviceAdapters).where(eq(deviceAdapters.id, id)).for("update");
             if (!cu) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
             goGhim = adapterDoiDich(cu, rest);
+            if (goGhim) {
+              const bv = await adapterCoTagBaoVeTx(tx, id);
+              const doiMay = rest.machineId !== undefined && (rest.machineId ?? null) !== (cu.machineId ?? null);
+              if (doiMay && bv.soKenhCheDo > 0) {
+                throw appError(
+                  "BAD_REQUEST",
+                  "INVALID_VALUE",
+                  { field: "machineId", reason: "scadaKenhCheDoDoiMay" },
+                  `Adapter ${cu.code} đang mang ${bv.soKenhCheDo} kênh chế độ của máy — gỡ kênh chế độ trước khi gán adapter sang máy khác.`,
+                );
+              }
+              if (bv.baoVe) canTotpDoiDich = { truoc: { protocol: cu.protocol, endpoint: cu.endpoint, machineId: cu.machineId ?? null } };
+            }
           }
           if (rest.connectionOptions !== undefined || rest.protocol === "opcua" || rest.endpoint !== undefined) {
             // Fix round 1 — cần dòng đã lưu để (a) giữ bí mật khi form gửi lại "[redacted]",
@@ -345,8 +369,20 @@ export const deviceAdapterRouter = router({
               patch.connectionOptions = sealConnectionOptionSecrets(nextOptions);
             }
           }
+          if (canTotpDoiDich) await kiemTotpCauHinh(ctx, totpCode); // CUỐI — ngay trước lượt ghi
           const [updated] = await tx.update(deviceAdapters).set(patch).where(eq(deviceAdapters.id, id)).returning();
           if (!updated) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
+          if (canTotpDoiDich) {
+            await recordAuditEvent(tx, {
+              entityType: "device_adapter",
+              entityId: id,
+              action: AUDIT_ADAPTER_DOI_DICH,
+              actorId: ctx.user.id,
+              before: canTotpDoiDich.truoc,
+              after: { protocol: updated.protocol, endpoint: updated.endpoint, machineId: updated.machineId ?? null },
+              reason: "deviceAdapter.update",
+            });
+          }
           // doc 81 Đợt 4 Task C1 — số ghim DỪNG vừa gỡ (0 khi không đổi đích) trả về để UI BÁO (trước: gỡ im lặng).
           let stopPinsCleared = 0;
           if (goGhim) {
@@ -489,31 +525,56 @@ export const deviceAdapterRouter = router({
           .orderBy(deviceTags.tagKey);
       }),
 
+    /**
+     * SCADA R1b-1 Task 9 fix round 1 (C1) — tạo tag lên KHOÁ MỒ CÔI (kênh chế độ hoặc luật interlock đang trỏ tới (adapterId, tagKey)) =
+     * trỏ lại một tag được bảo vệ ⇒ TOTP tươi + luật đang bật ở khoá đó phải ghi được lên tag mới. Khoá không mồ côi ⇒ như cũ.
+     * Thứ tự: luật FOR SHARE ⇒ kênh chế độ FOR UPDATE ⇒ kiểm trùng (M3) ⇒ kiểm ⇒ TOTP (cuối) ⇒ chèn + audit.
+     */
     create: protectedProcedure
       .use(requirePermission("machine_control", "canCreate"))
       .input(tagCreateInput)
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const db = await getDb();
+        const { totpCode, ...v } = input;
         try {
-          const [row] = await db
-            .insert(deviceTags)
-            .values({
-              adapterId: input.adapterId,
-              tagKey: input.tagKey,
-              address: input.address,
-              dataType: input.dataType,
-              unit: input.unit ?? null,
-              scale: input.scale != null ? String(input.scale) : undefined,
-              offset: input.offset != null ? String(input.offset) : undefined,
-              writable: input.writable,
-              isEnabled: input.isEnabled,
+          return await db.transaction(async (tx) => {
+            const cap = { adapterId: v.adapterId, tagKey: v.tagKey };
+            const luat = await khoaLuatNhamCapTx(tx, cap);
+            const kenhCheDo = await kenhCheDoCuaTagTx(tx, cap);
+            if (await trungKhoaTagTx(tx, cap)) throw loiTrungKhoaTag();
+            const record = {
+              adapterId: v.adapterId,
+              tagKey: v.tagKey,
+              address: v.address,
+              dataType: v.dataType,
+              unit: v.unit ?? null,
+              scale: v.scale != null ? String(v.scale) : undefined,
+              offset: v.offset != null ? String(v.offset) : undefined,
+              writable: v.writable,
+              isEnabled: v.isEnabled,
               // G1.4 — deadband/samplingMs (double precision / integer, nullable)
-              deadband: input.deadband ?? null,
-              samplingMs: input.samplingMs ?? null,
-            })
-            .returning();
-          return row;
+              deadband: v.deadband ?? null,
+              samplingMs: v.samplingMs ?? null,
+            };
+            const moi = { ...record, scale: record.scale ?? null, offset: record.offset ?? null };
+            const kt = kiemTaoTag({ moi, luat, coKenhCheDo: kenhCheDo.length > 0 });
+            if (kt.canTotp) await kiemTotpCauHinh(ctx, totpCode); // CUỐI — ngay trước lượt ghi
+            const [row] = await tx.insert(deviceTags).values(record).returning();
+            if (kt.moCoi) {
+              await recordAuditEvent(tx, {
+                entityType: "device_tag",
+                entityId: row.id,
+                action: AUDIT_TAO_KHOA_MO_COI,
+                actorId: ctx.user.id,
+                before: { kenhCheDo: kenhCheDo.map((k) => k.machineId), luat: luat.map((r) => r.id) },
+                after: anhTroLai(moi),
+                reason: "deviceAdapter.tags.create",
+              });
+            }
+            return row;
+          });
         } catch (err) {
+          if (err instanceof TRPCError) throw err;
           if (isUniqueViolation(err)) {
             throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "deviceTag" }, `Tag "${input.tagKey}" đã tồn tại trong adapter này.`);
           }
@@ -522,13 +583,15 @@ export const deviceAdapterRouter = router({
       }),
 
     /**
-     * SCADA R1b-1 Task 9 — TRỎ LẠI một tag (`services/scada/troLaiKenh.ts`). Thứ tự trong MỘT giao dịch:
-     *   1. đọc tag (không khoá) ⇒ khoá FOR SHARE mọi luật interlock nhắm (adapterId, tagKey) ⇒ khoá tag FOR UPDATE (thứ tự LUẬT → TAG như
-     *      `scadaKenh.capNhat` / `interlockRouter`; tag đổi danh tính giữa chừng ⇒ CONFLICT thử lại) ⇒ kênh chế độ trỏ tới tag (FOR UPDATE);
-     *   2. cột trỏ lại THẬT SỰ đổi (so với hàng DB) ⇒ tag đã khai: kiểm lại nhất quán; mọi tag: kiểm luật interlock đang bật;
-     *   3. tag đã khai + có đổi ⇒ TOTP TƯƠI (`kiemTotpCauHinh`, mức 5) — CUỐI, ngay trước lượt ghi (lỗi kiểm hợp lệ không tiêu mã);
-     *   4. ghi (luật gỡ ghim DỪNG cũ giữ nguyên) + kênh chế độ đổi tag_key theo + audit `kenh_da_khai_tro_lai`.
-     * Tag chưa khai, không chạm luật interlock nào ⇒ đúng hành vi cũ (không đòi mã).
+     * SCADA R1b-1 Task 9 (+ fix round 1) — TRỎ LẠI một tag (`services/scada/troLaiKenh.ts#kiemSuaTag`). Thứ tự trong MỘT giao dịch:
+     *   1. đọc tag (không khoá) ⇒ khoá FOR SHARE luật nhắm danh tính CŨ và (nếu đổi tên / chuyển adapter) danh tính MỚI ⇒ khoá tag FOR UPDATE
+     *      (thứ tự LUẬT → TAG; tag đổi danh tính giữa chừng ⇒ CONFLICT thử lại) ⇒ kênh chế độ của hai danh tính (FOR UPDATE);
+     *   2. đổi danh tính ⇒ kiểm trùng TRƯỚC kiểm mã (M3);
+     *   3. kiemSuaTag: tag được bảo vệ (đã khai / kênh chế độ / đích luật đang bật) có cột trỏ lại THẬT SỰ đổi, hoặc danh tính mới là khoá
+     *      mồ côi ⇒ kiểm lại nhất quán + "gỡ ghim trước" + luật interlock (cũ VÀ mới); tắt tag là đích luật đang bật / đang ghim ⇒ từ chối;
+     *   4. cần mã ⇒ TOTP TƯƠI (`kiemTotpCauHinh`, mức 5) — CUỐI, ngay trước lượt ghi (lỗi kiểm hợp lệ không tiêu mã);
+     *   5. ghi (luật gỡ ghim DỪNG cũ cho tag chưa khai) + kênh chế độ đổi tag_key theo + audit `kenh_da_khai_tro_lai`.
+     * Tag không được bảo vệ, khoá không mồ côi ⇒ đúng hành vi cũ (không đòi mã).
      */
     update: protectedProcedure
       .use(requirePermission("machine_control", "canEdit"))
@@ -546,8 +609,11 @@ export const deviceAdapterRouter = router({
             const khongThay = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
             const [tag0] = await tx.select({ adapterId: deviceTags.adapterId, tagKey: deviceTags.tagKey }).from(deviceTags).where(eq(deviceTags.id, id));
             if (!tag0) throw khongThay();
-            // R1b-1 T9 — LUẬT trước (FOR SHARE, mọi luật nhắm tag, bật hay tắt), TAG sau (FOR UPDATE).
-            const luat = await khoaLuatNhamTagTx(tx, { adapterId: tag0.adapterId, tagKey: tag0.tagKey });
+            const capMoi = { adapterId: rest.adapterId ?? tag0.adapterId, tagKey: rest.tagKey ?? tag0.tagKey };
+            const doiDanhTinh = capMoi.adapterId !== tag0.adapterId || capMoi.tagKey !== tag0.tagKey;
+            // LUẬT trước (FOR SHARE, mọi luật nhắm danh tính cũ — và mới — bật hay tắt), TAG sau (FOR UPDATE).
+            const luatCu = await khoaLuatNhamCapTx(tx, tag0);
+            const luatMoi = doiDanhTinh ? await khoaLuatNhamCapTx(tx, capMoi) : [];
             const [existing] = await tx.select().from(deviceTags).where(eq(deviceTags.id, id)).for("update");
             if (!existing) throw khongThay();
             if (existing.adapterId !== tag0.adapterId || existing.tagKey !== tag0.tagKey) {
@@ -558,23 +624,26 @@ export const deviceAdapterRouter = router({
                 "Tag vừa bị thay đổi đồng thời — tải lại rồi thử lại.",
               );
             }
-            const kenhCheDo = await kenhCheDoCuaTagTx(tx, { adapterId: existing.adapterId, tagKey: existing.tagKey });
-            const sau = giaTriSauTroLai(existing, patch);
-            const doi = cotTroLaiDoi(existing, sau);
-            const daKhai = tagDaKhaiKenh(existing, kenhCheDo.length > 0);
-            if (doi.length > 0) {
-              if (daKhai) kiemNhatQuanSauTroLai(existing, sau, doi, kenhCheDo.length > 0);
-              kiemInterlockSauSua(existing, sau, doi, luat);
-              if (daKhai) await kiemTotpCauHinh(ctx, totpCode); // CUỐI — ngay trước lượt ghi
-            }
+            const kenhCheDo = await kenhCheDoCuaTagTx(tx, tag0);
+            const kenhCheDoMoi = doiDanhTinh ? await kenhCheDoCuaTagTx(tx, capMoi) : [];
+            if (doiDanhTinh && (await trungKhoaTagTx(tx, { ...capMoi, boQuaId: id }))) throw loiTrungKhoaTag(); // M3 — trước mã
+            const kq = kiemSuaTag({
+              cu: existing,
+              patch,
+              luatCu,
+              kenhCheDoCu: kenhCheDo.length > 0,
+              luatMoi,
+              kenhCheDoMoi: kenhCheDoMoi.length > 0,
+            });
+            if (kq.canTotp) await kiemTotpCauHinh(ctx, totpCode); // CUỐI — ngay trước lượt ghi
 
             const nguonGo = lyDoGoStopPinKhiSuaTag(existing, patch);
             if (nguonGo) Object.assign(patch, GO_STOP_PIN_PATCH);
             const [row] = await tx.update(deviceTags).set(patch).where(eq(deviceTags.id, id)).returning();
             if (!row) throw khongThay();
-            if (daKhai && doi.length > 0) {
-              // Kênh chế độ đi THEO tag khi đổi tên (cùng một tag vật lý). Chuyển adapter đã bị từ chối ở kiemNhatQuanSauTroLai.
-              if (doi.includes("tagKey")) {
+            if (kq.canTotp) {
+              // Kênh chế độ đi THEO tag khi đổi tên (cùng một tag vật lý). Chuyển adapter của kênh chế độ đã bị từ chối ở kiemSuaTag.
+              if (kq.doi.includes("tagKey")) {
                 for (const k of kenhCheDo) {
                   await tx
                     .update(scadaKenhCheDo)
@@ -597,7 +666,7 @@ export const deviceAdapterRouter = router({
                 action: AUDIT_TRO_LAI,
                 actorId: ctx.user.id,
                 before: anhTroLai(existing),
-                after: { ...anhTroLai(sau), doi },
+                after: { ...anhTroLai(kq.sau), doi: kq.doi, khoaMoCoi: kq.moCoi },
                 reason: "deviceAdapter.tags.update",
               });
             }
@@ -618,16 +687,48 @@ export const deviceAdapterRouter = router({
         }
       }),
 
+    /**
+     * SCADA R1b-1 Task 9 fix round 1 (C1) — xoá tag được bảo vệ: kênh chế độ ⇒ từ chối (gỡ kênh chế độ trước); đích luật interlock đang bật ⇒
+     * INTERLOCK_MAT_DICH; đã khai + đang ghim DỪNG ⇒ STOP_PIN_GO_TRUOC; đã khai ⇒ TOTP tươi + audit `kenh_da_khai_xoa`. Còn lại như cũ.
+     */
     delete: protectedProcedure
       .use(requirePermission("machine_control", "canDelete"))
-      .input(z.object({ id: z.number().int().positive() }))
+      .input(z.object({ id: z.number().int().positive(), totpCode: totpCauHinhInput }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
         // doc 81 Đợt 1D Task 1 — xoá tag đang GHIM DỪNG ⇒ audit gỡ ghim trong CÙNG transaction.
         await db.transaction(async (tx) => {
+          const khongThay = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
+          const [tag0] = await tx.select({ adapterId: deviceTags.adapterId, tagKey: deviceTags.tagKey }).from(deviceTags).where(eq(deviceTags.id, input.id));
+          if (!tag0) throw khongThay();
+          const luat = await khoaLuatNhamCapTx(tx, tag0); // LUẬT → TAG
           const [existing] = await tx.select().from(deviceTags).where(eq(deviceTags.id, input.id)).for("update");
-          if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
+          if (!existing) throw khongThay();
+          if (existing.adapterId !== tag0.adapterId || existing.tagKey !== tag0.tagKey) {
+            throw appError("CONFLICT", "OPERATION_FAILED", { operation: "scadaKenhCapNhat", reason: "scadaKenhThuLai" }, "Tag vừa bị thay đổi đồng thời — tải lại rồi thử lại.");
+          }
+          const kenhCheDo = await kenhCheDoCuaTagTx(tx, tag0);
+          const kx = kiemXoaTag({ cu: existing, luat, coKenhCheDo: kenhCheDo.length > 0 });
+          if (kx.canTotp) await kiemTotpCauHinh(ctx, input.totpCode); // CUỐI — ngay trước lượt ghi
           await tx.delete(deviceTags).where(eq(deviceTags.id, input.id));
+          if (kx.daKhai) {
+            await recordAuditEvent(tx, {
+              entityType: "device_tag",
+              entityId: input.id,
+              action: AUDIT_XOA_DA_KHAI,
+              actorId: ctx.user.id,
+              before: {
+                ...anhTroLai(existing),
+                channelKind: existing.channelKind ?? null,
+                actuationLevel: existing.actuationLevel ?? null,
+                writeMin: existing.writeMin ?? null,
+                writeMax: existing.writeMax ?? null,
+                writeStep: existing.writeStep ?? null,
+              },
+              after: null,
+              reason: "deviceAdapter.tags.delete",
+            });
+          }
           if (existing.stopValue != null) {
             await ghiAuditGoStopPinTx(tx, { tag: existing, nguon: "tag_deleted", nguoiSua: nguoiSuaTu(ctx), thaoTac: "deviceAdapter.tags.delete" });
           }

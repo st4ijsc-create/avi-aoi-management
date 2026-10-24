@@ -510,13 +510,19 @@ export default function DeviceAdapterManagement() {
     onSuccess: (res) => {
       toast.success(t("deviceAdapter.toast.updated", "Đã cập nhật adapter"));
       notifyAdapterStopPinsCleared(res, t); // doc 81 Đợt 4 Task C1
+      adapterTotp.daXong();
       setAdapterOpen(false);
       invalidateAdapters();
       // Pins may have been cleared server-side — refresh the open tag list.
       invalidateTags();
     },
-    onError: (e) => toastTrpcError(e),
+    // SCADA R1b-1 Task 9 fix round 1 (I5) — đổi đích adapter có tag được bảo vệ ⇒ máy chủ đòi mã TOTP ⇒ hộp mã, gửi lại chính lượt đó.
+    onError: (e, bien) => {
+      if (adapterTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
   });
+  const adapterTotp = useHopMaTotpTroLai<Parameters<typeof updateAdapter.mutate>[0]>((bien) => updateAdapter.mutate(bien), updateAdapter.isPending);
   const deleteAdapter = trpc.deviceAdapter.delete.useMutation({
     onSuccess: () => { toast.success(t("deviceAdapter.toast.deleted", "Đã xoá adapter")); invalidateAdapters(); },
     onError: (e) => toastTrpcError(e),
@@ -530,9 +536,14 @@ export default function DeviceAdapterManagement() {
   });
 
   const createTag = trpc.deviceAdapter.tags.create.useMutation({
-    onSuccess: () => { toast.success(t("deviceAdapter.toast.tagCreated", "Đã tạo tag")); setTagForm(emptyTag); invalidateTags(); },
-    onError: (e) => toastTrpcError(e),
+    onSuccess: () => { toast.success(t("deviceAdapter.toast.tagCreated", "Đã tạo tag")); taoTagTotp.daXong(); setTagForm(emptyTag); invalidateTags(); },
+    // R1b-1 T9 fix round 1 (C1) — tạo lên khoá mà kênh chế độ / luật interlock còn trỏ tới ⇒ cần mã.
+    onError: (e, bien) => {
+      if (taoTagTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
   });
+  const taoTagTotp = useHopMaTotpTroLai<Parameters<typeof createTag.mutate>[0]>((bien) => createTag.mutate(bien), createTag.isPending);
   const updateTag = trpc.deviceAdapter.tags.update.useMutation({
     onSuccess: (res) => {
       toast.success(t("deviceAdapter.toast.tagUpdated", "Đã cập nhật tag"));
@@ -549,9 +560,14 @@ export default function DeviceAdapterManagement() {
   });
   const troLaiTotp = useHopMaTotpTroLai<Parameters<typeof updateTag.mutate>[0]>((bien) => updateTag.mutate(bien), updateTag.isPending);
   const deleteTag = trpc.deviceAdapter.tags.delete.useMutation({
-    onSuccess: () => { toast.success(t("deviceAdapter.toast.tagDeleted", "Đã xoá tag")); invalidateTags(); },
-    onError: (e) => toastTrpcError(e),
+    onSuccess: () => { toast.success(t("deviceAdapter.toast.tagDeleted", "Đã xoá tag")); xoaTagTotp.daXong(); invalidateTags(); },
+    // R1b-1 T9 fix round 1 (C1) — xoá tag đã khai ⇒ cần mã.
+    onError: (e, bien) => {
+      if (xoaTagTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
   });
+  const xoaTagTotp = useHopMaTotpTroLai<Parameters<typeof deleteTag.mutate>[0]>((bien) => deleteTag.mutate(bien), deleteTag.isPending);
 
   /** Seed the manifest auto-form (defaults + declared/fallback default port) for a protocol. */
   const configForProtocol = (p: string): Record<string, unknown> => {
@@ -939,6 +955,9 @@ export default function DeviceAdapterManagement() {
 
       {tagEditGuard.dialog}
       {troLaiTotp.hop}
+      {taoTagTotp.hop}
+      {xoaTagTotp.hop}
+      {adapterTotp.hop}
 
       {/* ── Delete adapter confirmation ── */}
       <AlertDialog open={adapterToDelete != null} onOpenChange={(o) => { if (!o) setAdapterToDelete(null); }}>

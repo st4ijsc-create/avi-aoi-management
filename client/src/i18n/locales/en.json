@@ -4512,7 +4512,9 @@
       "scadaKenhCheDoTagTat": "The mode channel's tag is disabled — enable the tag first, then declare the channel again.",
       "scadaKenhGhiTrenTagKhongGhi": "This channel kind accepts writes, but the tag is not writable — make the tag writable or choose a read-only channel kind.",
       "scadaKenhThuLai": "The channel was changed concurrently — reload and try again.",
-      "scadaKenhCheDoKhongDoiAdapter": "This tag is a machine's mode channel — it cannot be moved to another adapter. Remove or re-declare the mode channel on the Channels & limits page first."
+      "scadaKenhCheDoKhongDoiAdapter": "This tag is a machine's mode channel — it cannot be moved to another adapter. Remove or re-declare the mode channel on the Channels & limits page first.",
+      "scadaKenhCheDoGoTruoc": "This tag is a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the tag.",
+      "scadaKenhCheDoDoiMay": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page before assigning the adapter to another machine."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -4583,8 +4585,9 @@
     "AI_CHAN_AN_TOAN": "The request was blocked by the AI safety layer because it looks like a prompt injection. Please rephrase it.",
     "AI_CHUA_CAP_PHEP": "The current edition / licence does not include AI (MOD_AI).",
     "SCADA_STOP_NOT_PINNED": "The machine has no pinned STOP values — an engineer pins them at /scada/config/channels; stop it with the hardwired E-STOP.",
-    "INTERLOCK_MAT_DICH": "Enabled interlock rule #{{ruleId}} writes to tag {{tagKey}} — renaming the tag or moving it to another adapter would leave the protective action without a target. Fix the rule's target (or disable the rule) first.",
-    "QUA_NHIEU_KENH_DA_KHAI": "This import re-points {{soTag}} declared channel tags — at most {{toiDa}} per import. Split the file and import again."
+    "INTERLOCK_MAT_DICH": "Enabled interlock rule #{{ruleId}} writes to tag {{tagKey}} — renaming, moving, disabling or deleting the tag would leave the protective action without a target. Fix the rule's target (or disable the rule) first.",
+    "QUA_NHIEU_KENH_DA_KHAI": "This import touches {{soTag}} declared / protected channel tags — at most {{toiDa}} per import. Split the file and import again.",
+    "STOP_PIN_GO_TRUOC": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) — changing its address, type, scale, offset, writable flag or adapter, disabling or deleting it would lose STOP. Unpin it first (Software stop tag, with a reason), then try again."
   },
   "export": {
     "reportMenu": {
@@ -16448,7 +16451,7 @@
     "defaultPortHint": "Default {{protocol}} port: {{port}}",
     "troLai": {
       "title": "Two-factor code required",
-      "body": "This tag is a declared channel (actuation level, channel kind, range — or a machine's mode channel). Changing its address, type, scale, offset, writable flag or tag key needs a fresh TOTP code.",
+      "body": "This change touches a protected tag (a declared channel, a machine's mode channel, or the target of an enabled interlock rule) — a fresh TOTP code is required.",
       "submit": "Confirm and save"
     }
   },

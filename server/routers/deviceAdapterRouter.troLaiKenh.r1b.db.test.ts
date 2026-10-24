@@ -100,6 +100,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — trỏ l�
     await sql`DELETE FROM scada_kenh_che_do WHERE machine_id = ${ids.may}`;
     await sql`DELETE FROM device_tags WHERE "adapterId" IN (${ids.ad}, ${ids.ad2}, ${ids.adCap})`;
     await sql`DELETE FROM totp_khoa_sai WHERE user_id = ${uid}`;
+    await sql`UPDATE device_adapters SET "machineId" = ${ids.may}, endpoint = ${"stub://" + RUN + "-a"} WHERE id = ${ids.ad}`;
     tg.dk = await seedTag(ids.ad, "dk", { write_min: 0, write_max: 100 }); // khai dải
     tg.dkpin = await seedTag(ids.ad, "dkpin", { write_min: 0, write_max: 100, stop: 3 }); // khai dải + ghim DỪNG 3
     tg.cu = await seedTag(ids.ad, "cu"); // CHƯA khai
@@ -242,6 +243,167 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — trỏ l�
       expect(e).toMatchObject({ code: "BAD_REQUEST", appCode: "QUA_NHIEU_KENH_DA_KHAI", appParams: { soTag: 201, toiDa: 200 } });
       const [{ n }] = await sql`SELECT count(*)::int AS n FROM device_tags WHERE "adapterId" = ${ids.adCap} AND scale <> 1`;
       expect(n).toBe(0);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+  // Fix round 1 (review T9: C1 / I1 / I3 / I5 / I6 / M5 + phán quyết a / b) — mọi đường ghi device_tags, đổi đích adapter, ô mã.
+  // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+  describe("fix round 1", () => {
+    const maHienTai = () => speakeasy.totp({ secret, encoding: "base32" });
+    const maSai = () => String((Number(maHienTai()) + 500_000) % 1_000_000).padStart(6, "0");
+    /** YAML liệt kê MỌI tag hiện có (giá trị như seed) trừ `bo`, kèm `them` — để prune chỉ xoá đúng `bo`. */
+    const yamlDayDu = (bo: string[], them: Array<{ name: string; datatype?: string; scale?: number; writable?: boolean; address?: string }> = []) =>
+      yamlCua(`${RUN}-a`, [
+        ...[
+          { name: "dk" },
+          { name: "dkpin" },
+          { name: "cu" },
+          { name: "lv", datatype: "float" },
+          { name: "out" },
+          { name: "mode", writable: false },
+        ].filter((t) => !bo.includes(t.name)),
+        ...them,
+      ]);
+
+    it("M5: mã SAI ⇒ SCADA_CONFIG_TOTP_INVALID; mã ĐÃ DÙNG lần hai ⇒ SCADA_CONFIG_TOTP_INVALID; hàng chỉ đổi đúng một lần", async () => {
+      expect(await loiCua(caller.tags.update({ id: tg.dk, scale: 2, totpCode: maSai() }))).toMatchObject({
+        code: "PRECONDITION_FAILED",
+        appCode: "SCADA_CONFIG_TOTP_INVALID",
+      });
+      expect((await hang(tg.dk)).scale).toBe(1);
+      const m = maHienTai();
+      await caller.tags.update({ id: tg.dk, scale: 2, totpCode: m });
+      expect(await loiCua(caller.tags.update({ id: tg.dk, scale: 3, totpCode: m }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_INVALID" });
+      expect((await hang(tg.dk)).scale).toBe(2);
+    });
+
+    it("★ I1: scale 1 → 0 trên tag đã khai là MỘT thay đổi (đường đọc nhân 0) ⇒ TOTP_CAN; tag chưa khai ⇒ qua như cũ", async () => {
+      expect(await loiCua(caller.tags.update({ id: tg.dk, scale: 0 }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect((await hang(tg.dk)).scale).toBe(1);
+      await caller.tags.update({ id: tg.cu, scale: 0 });
+      expect((await hang(tg.cu)).scale).toBe(0);
+    });
+
+    it("M5: chuyển tag ĐÃ KHAI (không phải kênh chế độ) sang adapter khác ⇒ TOTP_CAN; có mã ⇒ chuyển + audit", async () => {
+      expect(await loiCua(caller.tags.update({ id: tg.dk, adapterId: ids.ad2 }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      await caller.tags.update({ id: tg.dk, adapterId: ids.ad2, totpCode: await maMoi() });
+      expect((await sql`SELECT "adapterId" AS a FROM device_tags WHERE id = ${tg.dk}`)[0].a).toBe(ids.ad2);
+    });
+
+    it("★ phán quyết b: tag đã khai ĐANG GHIM, đổi address (ghim vẫn hợp lệ) ⇒ STOP_PIN_GO_TRUOC kể cả có mã; ghim + address giữ nguyên", async () => {
+      const e = await loiCua(caller.tags.update({ id: tg.dkpin, address: "addr-khac", totpCode: await maMoi() }));
+      expect(e).toMatchObject({ code: "BAD_REQUEST", appCode: "STOP_PIN_GO_TRUOC", appParams: { ma: "STOP_PIN_GO_TRUOC", tagKey: "dkpin", stopValue: "3" } });
+      expect(await hang(tg.dkpin)).toMatchObject({ address: "addr-dkpin", stopValue: 3 });
+    });
+
+    it("phán quyết b: tắt tag đã khai đang ghim ⇒ STOP_PIN_GO_TRUOC; tắt tag đã khai KHÔNG ghim ⇒ qua, không cần mã", async () => {
+      expect(await loiCua(caller.tags.update({ id: tg.dkpin, isEnabled: false }))).toMatchObject({ appCode: "STOP_PIN_GO_TRUOC" });
+      await caller.tags.update({ id: tg.dk, isEnabled: false });
+      expect((await sql`SELECT "isEnabled" AS b FROM device_tags WHERE id = ${tg.dk}`)[0].b).toBe(false);
+    });
+
+    it("phán quyết b: CHỈ đổi tên tag đã khai đang ghim ⇒ được (có mã), ghim giữ nguyên", async () => {
+      await caller.tags.update({ id: tg.dkpin, tagKey: "dkpin2", totpCode: await maMoi() });
+      expect(await hang(tg.dkpin)).toMatchObject({ tagKey: "dkpin2", stopValue: 3 });
+    });
+
+    it("phán quyết b (import): file đổi address của tag đã khai đang ghim ⇒ STOP_PIN_GO_TRUOC, cả lô không ghi", async () => {
+      const e = await loiCua(mac.applyImport({ yaml: yamlCua(`${RUN}-a`, [{ name: "dk", scale: 2 }, { name: "dkpin", address: "x-1" }]), totpCode: await maMoi() }));
+      expect(e).toMatchObject({ appCode: "STOP_PIN_GO_TRUOC", appParams: { tagKey: "dkpin" } });
+      expect((await hang(tg.dk)).scale).toBe(1);
+    });
+
+    it("★ C1 xoá: kênh chế độ ⇒ scadaKenhCheDoGoTruoc; đã khai đang ghim ⇒ STOP_PIN_GO_TRUOC; đã khai: không mã ⇒ TOTP_CAN, có mã ⇒ xoá + audit; chưa khai ⇒ như cũ", async () => {
+      expect(await loiCua(caller.tags.delete({ id: tg.mode, totpCode: await maMoi() }))).toMatchObject({
+        appCode: "INVALID_VALUE",
+        appParams: { field: "tagKey", reason: "scadaKenhCheDoGoTruoc" },
+      });
+      expect(await loiCua(caller.tags.delete({ id: tg.dkpin }))).toMatchObject({ appCode: "STOP_PIN_GO_TRUOC" });
+      expect(await loiCua(caller.tags.delete({ id: tg.dk }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect((await sql`SELECT id FROM device_tags WHERE id IN (${tg.mode}, ${tg.dkpin}, ${tg.dk})`).length).toBe(3);
+      await caller.tags.delete({ id: tg.dk, totpCode: await maMoi() });
+      expect((await sql`SELECT id FROM device_tags WHERE id = ${tg.dk}`).length).toBe(0);
+      const au = await sql`SELECT "beforeJson" AS b FROM control_audit_log WHERE "entityType" = 'device_tag' AND "entityId" = ${String(tg.dk)} AND action = 'kenh_da_khai_xoa'`;
+      expect(au).toHaveLength(1);
+      expect(au[0].b).toMatchObject({ tagKey: "dk", writeMin: 0, writeMax: 100 });
+      await caller.tags.delete({ id: tg.cu });
+      expect((await sql`SELECT id FROM device_tags WHERE id = ${tg.cu}`).length).toBe(0);
+    });
+
+    it("★ C1 prune: lô prune xoá kênh chế độ ⇒ scadaKenhCheDoGoTruoc; prune xoá tag đã khai: không mã ⇒ TOTP_CAN, có mã ⇒ xoá", async () => {
+      expect(await loiCua(mac.applyImport({ yaml: yamlDayDu(["mode"]), prune: true, totpCode: await maMoi() }))).toMatchObject({
+        appParams: { reason: "scadaKenhCheDoGoTruoc" },
+      });
+      expect((await sql`SELECT id FROM device_tags WHERE id = ${tg.mode}`).length).toBe(1);
+      expect(await loiCua(mac.applyImport({ yaml: yamlDayDu(["dk"]), prune: true }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect((await sql`SELECT id FROM device_tags WHERE id = ${tg.dk}`).length).toBe(1);
+      const kq = await mac.applyImport({ yaml: yamlDayDu(["dk"]), prune: true, totpCode: await maMoi() });
+      expect(kq.applied?.tagDeletes).toBe(1);
+      expect((await sql`SELECT id FROM device_tags WHERE id = ${tg.dk}`).length).toBe(0);
+    });
+
+    it("★ C1 tạo lên khoá MỒ CÔI (kênh chế độ còn trỏ tới khoá đã mất tag): không mã ⇒ TOTP_CAN, không chèn; có mã ⇒ chèn + audit", async () => {
+      await sql`DELETE FROM device_tags WHERE id = ${tg.mode}`; // kênh chế độ của máy giờ trỏ vào (ad, 'mode') không có tag
+      const tao = (totpCode?: string) =>
+        caller.tags.create({ adapterId: ids.ad, tagKey: "mode", address: "dia-chi-khac", dataType: "int", ...(totpCode ? { totpCode } : {}) });
+      expect(await loiCua(tao())).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect((await sql`SELECT id FROM device_tags WHERE "adapterId" = ${ids.ad} AND "tagKey" = 'mode'`).length).toBe(0);
+      const row = await tao(await maMoi());
+      const au = await sql`SELECT action FROM control_audit_log WHERE "entityType" = 'device_tag' AND "entityId" = ${String(row.id)} AND action = 'kenh_tao_tren_khoa_mo_coi'`;
+      expect(au).toHaveLength(1);
+    });
+
+    it("C1 tạo lên khoá mà một luật interlock (dù TẮT) trỏ tới ⇒ TOTP_CAN; khoá thường ⇒ như cũ", async () => {
+      await sql`INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action, "targetAdapterId", "commandTag", "commandValue", enabled, "createdBy")
+        VALUES (${RUN + "-ghost"}, 'machine', 'ng_rate', 'gt', 5, 'stop_line', ${ids.ad}, 'ghost', '1'::jsonb, false, ${uid})`;
+      try {
+        expect(await loiCua(caller.tags.create({ adapterId: ids.ad, tagKey: "ghost", address: "g", dataType: "int" }))).toMatchObject({
+          appCode: "SCADA_CONFIG_TOTP_REQUIRED",
+        });
+        await caller.tags.create({ adapterId: ids.ad, tagKey: "thuong", address: "t", dataType: "int" });
+      } finally {
+        await sql`DELETE FROM interlock_rules WHERE name = ${RUN + "-ghost"}`;
+      }
+    });
+
+    it("★ I3 đổi tên VÀO khoá mồ côi của kênh chế độ ⇒ TOTP_CAN (tag chưa khai thành kênh chế độ); có mã ⇒ được", async () => {
+      await sql`DELETE FROM device_tags WHERE id = ${tg.mode}`;
+      expect(await loiCua(caller.tags.update({ id: tg.cu, tagKey: "mode" }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect((await hang(tg.cu)).tagKey).toBe("cu");
+      await caller.tags.update({ id: tg.cu, tagKey: "mode", totpCode: await maMoi() });
+      expect((await hang(tg.cu)).tagKey).toBe("mode");
+    });
+
+    it("M3: đổi tên trùng một tag khác ⇒ ENTITY_DUPLICATE TRƯỚC kiểm mã (mã không bị tiêu)", async () => {
+      const m = await maMoi();
+      expect(await loiCua(caller.tags.update({ id: tg.dk, tagKey: "cu", totpCode: m }))).toMatchObject({ code: "CONFLICT", appCode: "ENTITY_DUPLICATE" });
+      await caller.tags.update({ id: tg.dk, scale: 2, totpCode: m }); // cùng mã vẫn dùng được
+    });
+
+    it("★ I6 import TẠO lên khoá mồ côi của kênh chế độ ⇒ TOTP_CAN, không chèn", async () => {
+      await sql`DELETE FROM device_tags WHERE id = ${tg.mode}`;
+      expect(await loiCua(mac.applyImport({ yaml: yamlCua(`${RUN}-a`, [{ name: "mode", writable: false }]) }))).toMatchObject({
+        appCode: "SCADA_CONFIG_TOTP_REQUIRED",
+      });
+      expect((await sql`SELECT id FROM device_tags WHERE "adapterId" = ${ids.ad} AND "tagKey" = 'mode'`).length).toBe(0);
+    });
+
+    it("★ I5 deviceAdapter.update: đổi endpoint adapter có tag được bảo vệ ⇒ TOTP_CAN; có mã ⇒ đổi + audit; adapter không có tag bảo vệ ⇒ như cũ", async () => {
+      expect(await loiCua(caller.update({ id: ids.ad, endpoint: "stub://khac" }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect((await sql`SELECT endpoint FROM device_adapters WHERE id = ${ids.ad}`)[0].endpoint).toBe(`stub://${RUN}-a`);
+      await caller.update({ id: ids.ad, endpoint: "stub://khac", totpCode: await maMoi() });
+      expect((await sql`SELECT endpoint FROM device_adapters WHERE id = ${ids.ad}`)[0].endpoint).toBe("stub://khac");
+      const au = await sql`SELECT "beforeJson" AS b FROM control_audit_log WHERE "entityType" = 'device_adapter' AND "entityId" = ${String(ids.ad)} AND action = 'adapter_bao_ve_doi_dich'`;
+      expect(au.length).toBeGreaterThanOrEqual(1);
+      await caller.update({ id: ids.adCap, endpoint: "stub://cap-khac" }); // không tag ⇒ không mã
+      await sql`UPDATE device_adapters SET endpoint = ${"stub://" + RUN + "-a"} WHERE id = ${ids.ad}`;
+    });
+
+    it("I5 deviceAdapter.update: đổi máy khi adapter còn kênh chế độ ⇒ scadaKenhCheDoDoiMay (kể cả có mã); sửa tên ⇒ không mã", async () => {
+      const e = await loiCua(caller.update({ id: ids.ad, machineId: null, totpCode: await maMoi() }));
+      expect(e).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "machineId", reason: "scadaKenhCheDoDoiMay" } });
+      await caller.update({ id: ids.ad, name: "ten-moi" });
     });
   });
 });

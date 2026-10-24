@@ -19,6 +19,9 @@ const H = vi.hoisted(() => ({
   /** lần lượt các câu trả lời của tags.update: "ok" | appCode của lỗi */
   traLoi: [] as string[],
   calls: [] as unknown[],
+  /** fix round 1 — câu trả lời / lượt gọi của các mutation khác (deviceAdapter.update, tags.delete) theo path */
+  traLoiKhac: {} as Record<string, string[]>,
+  callsKhac: {} as Record<string, unknown[]>,
   adapters: [] as unknown[],
   tags: [] as unknown[],
 }));
@@ -40,9 +43,14 @@ vi.mock("@/lib/trpc", () => {
     useMutation: (opts: { onSuccess?: (r: unknown) => void; onError?: (e: unknown, v: unknown) => void } = {}) => ({
       isPending: false,
       mutate: (input: unknown) => {
-        if (path !== "deviceAdapter.tags.update") return;
-        H.calls.push(input);
-        const kq = H.traLoi.shift() ?? "ok";
+        let kq: string;
+        if (path === "deviceAdapter.tags.update") {
+          H.calls.push(input);
+          kq = H.traLoi.shift() ?? "ok";
+        } else if (path === "deviceAdapter.update" || path === "deviceAdapter.tags.delete") {
+          (H.callsKhac[path] ??= []).push(input);
+          kq = H.traLoiKhac[path]?.shift() ?? "ok";
+        } else return;
         queueMicrotask(() => {
           if (kq === "ok") opts.onSuccess?.({ ...(input as object) });
           else opts.onError?.({ message: kq, data: { appCode: kq, appParams: { ma: kq } } }, input);
@@ -86,6 +94,8 @@ beforeEach(async () => {
   for (const f of Object.values(H.toast)) f.mockReset();
   H.calls.length = 0;
   H.traLoi = [];
+  H.traLoiKhac = {};
+  H.callsKhac = {};
   H.adapters = [{ id: 7, code: "PLC-7", name: "PLC 7", protocol: "modbus", endpoint: "tcp://10.0.0.7:502", status: "connected", isEnabled: false, machineId: 3, pollIntervalMs: 5000 }];
   // tag KHÔNG ghim DỪNG ⇒ công tắc "Ghi được" gửi ngay (không hộp xác nhận gỡ ghim)
   H.tags = [{ id: 41, adapterId: 7, tagKey: "sp", address: "40001", dataType: "int", writable: false, isEnabled: true, stopValue: null, scale: "1", offset: "0" }];
@@ -142,5 +152,46 @@ describe("R1b-1 T9 — Device Adapter: trỏ lại tag đã khai hỏi mã TOTP 
     await batGhiDuoc();
     await waitFor(() => expect(H.toast.error).toHaveBeenCalled());
     expect(oMa()).not.toBeInTheDocument();
+  });
+
+  it("fix round 1 (I5): đổi endpoint adapter ⇒ máy chủ đòi mã ⇒ hộp mã mở; xác nhận ⇒ gửi lại CHÍNH biến cũ kèm totpCode", async () => {
+    H.traLoiKhac["deviceAdapter.update"] = ["SCADA_CONFIG_TOTP_REQUIRED", "ok"];
+    render(<DeviceAdapterManagement />);
+    const row = screen.getByText("PLC-7").closest("tr")!;
+    const sw = [...row.querySelectorAll("[role=switch]")][0] as HTMLElement; // công tắc "Bật" của adapter ⇒ deviceAdapter.update
+    fireEvent.click(sw);
+    await waitFor(() => expect(H.callsKhac["deviceAdapter.update"]).toHaveLength(1));
+    await waitFor(() => expect(oMa()).toBeInTheDocument());
+    fireEvent.change(oMa()!, { target: { value: "111222" } });
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("deviceAdapter.troLai.submit") }));
+    await waitFor(() => expect(H.callsKhac["deviceAdapter.update"]).toHaveLength(2));
+    expect(H.callsKhac["deviceAdapter.update"][1]).toEqual({ ...(H.callsKhac["deviceAdapter.update"][0] as object), totpCode: "111222" });
+    await waitFor(() => expect(oMa()).not.toBeInTheDocument());
+  });
+
+  it("fix round 1 (C1): xoá tag đã khai ⇒ hộp mã gửi lại {id, totpCode}; lỗi KHÁC khi gửi lại ⇒ hộp đóng + báo lỗi; lượt sau hỏi lại với ô trống", async () => {
+    H.traLoiKhac["deviceAdapter.tags.delete"] = ["SCADA_CONFIG_TOTP_REQUIRED", "INTERLOCK_MAT_DICH", "SCADA_CONFIG_TOTP_REQUIRED"];
+    render(<DeviceAdapterManagement />);
+    const row = screen.getByText("PLC-7").closest("tr")!;
+    const buttons = [...row.querySelectorAll("button")].filter((b) => b.getAttribute("role") !== "switch");
+    fireEvent.click(buttons[1]);
+    const tagRow = (await screen.findByRole("switch", { name: /Ghi được: sp/ })).closest("tr")!;
+    const nutXoa = [...tagRow.querySelectorAll("button")].filter((b) => b.getAttribute("role") !== "switch").pop()!;
+    const xoa = async () => {
+      fireEvent.click(nutXoa);
+      const dlg = await screen.findByRole("alertdialog");
+      fireEvent.click([...dlg.querySelectorAll("button")].pop()!); // nút xác nhận xoá
+    };
+    await xoa();
+    await waitFor(() => expect(oMa()).toBeInTheDocument());
+    fireEvent.change(oMa()!, { target: { value: "333444" } });
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("deviceAdapter.troLai.submit") }));
+    await waitFor(() => expect(H.callsKhac["deviceAdapter.tags.delete"]).toHaveLength(2));
+    expect(H.callsKhac["deviceAdapter.tags.delete"][1]).toEqual({ id: 41, totpCode: "333444" });
+    await waitFor(() => expect(oMa()).not.toBeInTheDocument());
+    expect(H.toast.error).toHaveBeenCalled();
+    await xoa(); // lượt mới — hộp mở lại với ô TRỐNG
+    await waitFor(() => expect(oMa()).toBeInTheDocument());
+    expect((oMa() as HTMLInputElement).value).toBe("");
   });
 });

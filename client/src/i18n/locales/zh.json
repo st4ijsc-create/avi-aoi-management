@@ -4504,7 +4504,9 @@
       "scadaKenhCheDoTagTat": "模式通道的标签已停用——请先启用标签，再重新声明。",
       "scadaKenhGhiTrenTagKhongGhi": "该通道类型接受写入，但标签不可写——请将标签设为可写，或选择只读通道类型。",
       "scadaKenhThuLai": "通道刚被并发修改——请刷新后重试。",
-      "scadaKenhCheDoKhongDoiAdapter": "该标签是某台机器的模式通道——不能移到其他适配器。请先在“通道与限值”页面移除或重新声明模式通道。"
+      "scadaKenhCheDoKhongDoiAdapter": "该标签是某台机器的模式通道——不能移到其他适配器。请先在“通道与限值”页面移除或重新声明模式通道。",
+      "scadaKenhCheDoGoTruoc": "该标签是某台机器的模式通道——删除标签前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。",
+      "scadaKenhCheDoDoiMay": "该适配器承载某台机器的模式通道——将适配器分配给其他机器前，请先在“通道与限值”页面移除模式通道。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -4575,8 +4577,9 @@
     "AI_CHAN_AN_TOAN": "该请求因疑似提示注入被 AI 安全层拦截。请换种方式表述。",
     "AI_CHUA_CAP_PHEP": "当前版本/许可不包含 AI（MOD_AI）。",
     "SCADA_STOP_NOT_PINNED": "设备尚未固定 STOP 值 — 请工程师在 /scada/config/channels 固定；请使用硬接线急停（E-STOP）停机。",
-    "INTERLOCK_MAT_DICH": "已启用的联锁规则 #{{ruleId}} 向标签 {{tagKey}} 写入命令——重命名该标签或将其移到其他适配器会使保护动作失去目标。请先修改规则的目标（或停用规则）。",
-    "QUA_NHIEU_KENH_DA_KHAI": "本次导入重新指向 {{soTag}} 个已声明通道的标签——每次最多 {{toiDa}} 个。请拆分文件后重新导入。"
+    "INTERLOCK_MAT_DICH": "已启用的联锁规则 #{{ruleId}} 向标签 {{tagKey}} 写入命令——重命名、移动、停用或删除该标签会使保护动作失去目标。请先修改规则的目标（或停用规则）。",
+    "QUA_NHIEU_KENH_DA_KHAI": "本次导入涉及 {{soTag}} 个已声明/受保护通道的标签——每次最多 {{toiDa}} 个。请拆分文件后重新导入。",
+    "STOP_PIN_GO_TRUOC": "通道 {{tagKey}} 已固定停止值（{{stopValue}}）——修改其地址、类型、比例、偏移、可写标志或适配器，或停用、删除该标签，都会失去 STOP。请先解除固定（软件停止标签，需填写原因），然后重试。"
   },
   "export": {
     "reportMenu": {
@@ -17103,7 +17106,7 @@
     "defaultPortHint": "{{protocol}} 默认端口：{{port}}",
     "troLai": {
       "title": "需要双因素验证码",
-      "body": "该标签已声明通道（动作等级、通道类型、范围——或是机器的模式通道）。修改其地址、类型、比例、偏移、可写标志或标签键需要新的 TOTP 验证码。",
+      "body": "此操作涉及受保护的标签（已声明通道、机器的模式通道或已启用联锁规则的目标）——需要新的 TOTP 验证码。",
       "submit": "确认并保存"
     }
   },

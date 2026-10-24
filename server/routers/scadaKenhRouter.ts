@@ -353,11 +353,14 @@ const cheDoRouter = router({
             "Adapter của kênh chế độ đang tắt.",
           );
         }
+        // R1b-1 T9 fix round 1 (M1) — tag FOR SHARE: một `deviceAdapter.tags.update` / import đang trỏ lại / đổi tên tag này (giữ FOR UPDATE)
+        // xong rồi mới khai kênh chế độ lên nó (thứ tự TAG → KÊNH CHẾ ĐỘ ở cả hai phía) — không chèn kênh chế độ lọt giữa kiểm và commit.
         const [tag] = await tx
           .select({ dataType: deviceTags.dataType, isEnabled: deviceTags.isEnabled })
           .from(deviceTags)
           .where(and(eq(deviceTags.adapterId, a.id), eq(deviceTags.tagKey, input.tagKey)))
-          .limit(1);
+          .limit(1)
+          .for("share");
         if (!tag) throw khongThayTag();
         // fix round 1 (phán quyết c5) — tag tắt không được poll ⇒ kênh chế độ luôn LOCAL `chua_co_mau`: từ chối như adapter tắt.
         // Adapter do edge sở hữu KHÔNG bị chặn ở đây — chỉ cảnh báo (`canhBaoNguon: "edge"`).
