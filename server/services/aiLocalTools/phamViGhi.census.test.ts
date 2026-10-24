@@ -3,16 +3,23 @@
  * Thêm tool GHI mới mà quên bảng ⇒ đỏ ở đây (và cổng từ chối fail-closed lúc chạy).
  */
 import { describe, expect, it } from "vitest";
+import { execSync } from "node:child_process";
 import { listTools, isWriteTool } from "./toolRegistry";
 import { KHOA_PHAM_VI_TOOL, kiemPhamViGhiTool } from "./phamViGhi";
 
 const REPO = ["apply_diff", "apply_diff_batch", "delete_file", "rename_file", "run_command", "write_project_file"];
 
 describe("phamViGhi tool census", () => {
-  it("31/31 tool ghi có dòng; không dòng thừa", async () => {
+  it("mọi tệp ngoài aiLocalTools gọi registerTool( phải nằm trong danh sách đã nạp ở census này (tool ghi đăng ký lẻ không được lọt)", () => {
+    const ra = execSync('git grep -l "registerTool(" -- "server/**/*.ts"', { encoding: "utf8" }).split("\n").filter(Boolean)
+      .filter((p) => !/\.test\.ts$/.test(p) && !p.startsWith("server/services/aiLocalTools/"));
+    expect(ra.sort()).toEqual(["server/services/visionDefectProposal.ts"]);
+  });
+  it("32/32 tool ghi có dòng; không dòng thừa", async () => {
     await import("./index");
+    await import("../visionDefectProposal"); // tool ghi đăng ký lẻ (aiVisionRouter nạp nó lúc chạy)
     const ghi = listTools().filter(isWriteTool).map((t) => t.name).sort();
-    expect(ghi.length).toBe(31);
+    expect(ghi.length).toBe(32);
     expect(Object.keys(KHOA_PHAM_VI_TOOL).sort()).toEqual(ghi);
   });
   it("miễn trừ chỉ gồm 6 tool repo + set_yield_threshold, mỗi cái có lý do ≥ 20 ký tự", () => {

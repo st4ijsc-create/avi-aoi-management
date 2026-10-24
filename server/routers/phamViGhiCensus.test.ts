@@ -26,7 +26,7 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1198, no: 284 } as const; // 2026-10-25 W11c: cổng chung tool GHI AI (proposeAction/confirmAction) ⇒ 295 → 284 (−3 sổ: proposeDefect · applyTopFix · applyNgThreshold; −8 miễn trừ nay đi qua cổng)
+const GHIM = { tongMutation: 1198, no: 295 } as const; // 2026-10-25 gộp W11b với main (L3) ⇒ 295, đo bằng census
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {

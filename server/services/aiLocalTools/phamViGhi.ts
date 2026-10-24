@@ -75,6 +75,22 @@ const theoCanhBaoMqtt: Kiem = async (a, ctx) => {
   await ghiViTri(ctx, { machineId: m, factoryId: f }, { batBuoc: true });
 };
 
+/** Lần kiểm tra (product_inspections) → máy của nó (phải TỒN TẠI và trong phạm vi — fail-closed). */
+async function luotKiemTrongPhamVi(ctx: CoDanhTinh, inspectionId: number): Promise<void> {
+  const r = await hang(sql`SELECT "machineId" AS m FROM product_inspections WHERE id = ${inspectionId}`);
+  await ghiViTri(ctx, { machineId: n(r.m) }, { batBuoc: true });
+}
+
+/** propose_defect_from_vision: ATTACH (measurementResultId → lần kiểm tra của nó) hoặc CREATE (inspectionId). */
+const theoDeXuatLoiThiGiac: Kiem = async (a, ctx) => {
+  const mr = so(a, "measurementResultId");
+  if (mr !== null) {
+    const r = await hang(sql`SELECT "inspectionId" AS i FROM measurement_results WHERE id = ${mr} LIMIT 1`);
+    return luotKiemTrongPhamVi(ctx, batBuocSo({ i: n(r.i) }, "i"));
+  }
+  return luotKiemTrongPhamVi(ctx, batBuocSo(a, "inspectionId"));
+};
+
 const MIEN_REPO = "Tool ghi vào GỐC DỰ ÁN (mã nguồn / lệnh sandbox), không thuộc dữ liệu nhà máy; đã có danh sách trắng gốc theo người gọi (doc 79 trục 2) và cổng riêng của từng tool.";
 
 /**
@@ -116,6 +132,8 @@ export const KHOA_PHAM_VI_TOOL: Record<string, LuatPhamViTool> = {
     kieu: "mien",
     lyDo: "Ngưỡng yield là cấu hình TOÀN CỤC (bảng yield_alert_thresholds không có cột nhà máy / máy); chỉ giữ bằng quyền settings_yield_thresholds + cổng aiControlGate (L-7).",
   },
+  // ── Thị giác → khiếm khuyết (đăng ký ở services/visionDefectProposal.ts) ──
+  propose_defect_from_vision: { kieu: "kiem", kiem: theoDeXuatLoiThiGiac },
   // ── Sản phẩm · điểm đo ──
   update_product_quality_target: { kieu: "kiem", kiem: async (a, ctx) => sanPhamGhiTrongPhamVi(ctx, batBuocSo(a, "productModelId")) },
   create_measurement_point: { kieu: "kiem", kiem: async (a, ctx) => sanPhamGhiTrongPhamVi(ctx, batBuocSo(a, "productModelId")) },

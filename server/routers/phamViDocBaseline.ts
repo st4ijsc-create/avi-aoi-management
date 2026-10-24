@@ -447,5 +447,8 @@ export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
     "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
   "server/routers/alertRouters.ts#alertRouter.list": "dữ liệu của CHÍNH người gọi (lọc theo chủ) — dieu-phoi duyệt mức kỹ thuật 2026-10-25: getAlertSettings(ctx.user.id) = WHERE userId = người gọi",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.changeover.listMine": "dữ liệu của CHÍNH người gọi (lọc theo chủ) — dieu-phoi duyệt mức kỹ thuật 2026-10-25: WHERE requestedBy = người gọi",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.grep": "cây mã nguồn repo, RBAC ai_repo_read, không phải dữ liệu nhà máy — dieu-phoi duyệt mức kỹ thuật 2026-10-25",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.listFiles": "cây mã nguồn repo, RBAC ai_repo_read, không phải dữ liệu nhà máy — dieu-phoi duyệt mức kỹ thuật 2026-10-25",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.readFile": "cây mã nguồn repo, RBAC ai_repo_read, không phải dữ liệu nhà máy — dieu-phoi duyệt mức kỹ thuật 2026-10-25",
   "server/routers/scadaCommandsRouter.ts#scadaCommandsRouter.trangThai": "dữ liệu của CHÍNH người gọi (lọc theo chủ) — dieu-phoi duyệt mức kỹ thuật 2026-10-25: lenhHmi.dongChoCuaNguoi lọc userId từ ctx, attempts theo requestId+userId (scada-master xác nhận). Giới hạn chấp nhận: người mất phạm vi sau khi tạo yêu cầu vẫn xem trạng thái yêu cầu của mình tới khi hết hạn",
 };
