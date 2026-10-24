@@ -4200,7 +4200,8 @@
       "gatewayId": "gateway",
       "deviceIds": "allowed device list",
       "expectedProjectId": "open project (expectedProjectId)",
-      "assigneeUserId": "assignee"
+      "assigneeUserId": "assignee",
+      "inspectionId": "inspection"
     },
     "feature": {
       "apiKeyHolder": "API key holder record (database migration 0369)",
@@ -4337,7 +4338,10 @@
       "secondApproveOwnSafetyPlcConfig": "give the second approval of a safety-PLC configuration you approved first (two different admins are required)",
       "flowKichHoatHangCao": "enable a flow that writes externally or touches OT (admins only)",
       "flowPhamVi": "use flows/secrets by factory",
-      "flowDuyet": "approve a waiting step of an AI flow"
+      "flowDuyet": "approve a waiting step of an AI flow",
+      "verifyChainAcrossFactories": "verify a traceability chain across factories",
+      "manageProductWideProgramRelease": "manage product-wide inspection program releases",
+      "authorSharedSop": "author a shared SOP"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
