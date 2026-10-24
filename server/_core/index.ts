@@ -7,7 +7,9 @@ import net from "net";
 import path from "path";
 import { eq } from "drizzle-orm";
 import helmet from "helmet";
-import { createTrpcMiddleware, trpcProcedureType } from "./trpcAdapter"; // doc 80 Đợt 1 Task 6 (XC-01): allowMethodOverride — query input lớn đi POST
+import { createTrpcMiddleware, trpcBatchLimitMiddleware, trpcProcedureType } from "./trpcAdapter"; // doc 80 Đợt 1 Task 6 (XC-01): allowMethodOverride — query input lớn đi POST
+import { trpcGioiHanThuTucMiddleware } from "./trpcGioiHanThuTuc"; // giới hạn theo SỐ THỦ TỤC nhạy cảm (2FA/auth) trong batch
+import { requireFreshTotp, requirePerCallFreshTotp } from "./trpc"; // bước nâng cấp 2FA — để trpcGioiHanThuTuc suy tập thủ tục step-up từ appRouter
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { getDb } from "../db";
@@ -5843,6 +5845,10 @@ async function startServer() {
   // I2-b model auto-rollback sweep + doc 22 P2 model perf snapshot producer:
   // MOVED to the W4-D background scheduler set (backgroundJobs.ts).
 
+  // ★★★ Trần số thủ tục trong một batch tRPC (shared/trpcBatch.ts) — TRƯỚC giấy phép/xác thực: một yêu cầu HTTP không được chở hàng trăm thủ tục lách bộ giới hạn theo yêu cầu.
+  app.use("/api/trpc", trpcBatchLimitMiddleware());
+  // ★★★ Giới hạn theo SỐ THỦ TỤC nhạy cảm (2FA: 20/15 phút theo IP VÀ theo người dùng; auth: AUTH_RATE_LIMIT) — đếm từng thủ tục trong batch; 429 cho cả yêu cầu. Xem trpcGioiHanThuTuc.ts.
+  app.use("/api/trpc", trpcGioiHanThuTucMiddleware({ router: appRouter, buocNangCap: [requireFreshTotp, requirePerCallFreshTotp] }));
   app.use("/api/trpc", licenseEnforcementMiddleware({ procedureType: (p) => trpcProcedureType(appRouter, p) }));
   // tRPC API
   app.use(

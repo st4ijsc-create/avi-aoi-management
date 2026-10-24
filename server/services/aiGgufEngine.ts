@@ -157,6 +157,32 @@ export interface GgufChatMessage {
   tool_call_id?: string;
   /** G2-B — chỉ trên `role:"assistant"`: các lượt gọi model đã phát ra ở lượt trước. */
   tool_calls?: NativeToolCall[];
+  /**
+   * ★ Đợt 9 (2026-10-24) — ẢNH đính kèm (data URL `data:image/<png|jpeg|webp>;base64,…`), CHỈ trên vai `user`. `content` VẪN là
+   * chuỗi (mọi đường cũ không đổi); `aiLlamaServerClient.chuyenMessageLenDay` dựng mảng phần OpenAI khi có ảnh. Chỉ llama-server
+   * nạp `--mmproj` đọc được ⇒ rơi xuống in-process khi có ảnh = `LoiAnhKhongHoTro` (không lùi im lặng).
+   */
+  anh?: string[];
+}
+
+/** Token ước lượng cho MỘT ảnh trong ngân sách ngữ cảnh — đo 2026-10-24: ảnh 1592×2869 = 4.104 token (Qwen3.6 mmproj). */
+export const TOKEN_UOC_LUONG_MOI_ANH = 4200;
+/** Phần GIỮ CHỖ cho ảnh của một message — CHỈ để ƯỚC LƯỢNG ngân sách (2,8 ký tự/token), không bao giờ gửi đi. */
+export function giuChoAnh(m: GgufChatMessage): string {
+  const n = m.anh?.length ?? 0;
+  return n ? "\n" + "░".repeat(Math.ceil(n * TOKEN_UOC_LUONG_MOI_ANH * 2.8)) : "";
+}
+
+/**
+ * ★ Đợt 9 (2026-10-24) — cùng hình dạng `LoiToolCallKhongHoTro`: lượt có ẢNH rơi khỏi đường llama-server (server tắt / không giữ
+ * model / preflight trượt) ⇒ NÉM, không lùi in-process (node-llama-cpp không đọc ảnh ⇒ sẽ trả lời như không có ảnh).
+ */
+export class LoiAnhKhongHoTro extends Error {
+  readonly code = "IMAGE_KHONG_HO_TRO";
+  constructor(chiTiet: string) {
+    super(`[gguf] ảnh đính kèm chỉ đọc được trên llama-server nạp --mmproj: ${chiTiet}.`);
+    this.name = "LoiAnhKhongHoTro";
+  }
 }
 
 export interface GgufChatOptions {
@@ -2096,7 +2122,7 @@ export function nganSachTuHoiThoai(options: GgufChatOptions): {
     .join("\n\n");
   const conLai = options.messages
     .filter((m) => m.role !== "system")
-    .map((m) => `${m.role}: ${m.content}`)
+    .map((m) => `${m.role}: ${m.content}${giuChoAnh(m)}`)
     .join("\n");
   return { systemPrompt: heThong || undefined, prompt: conLai, maxTokens: options.maxTokens };
 }
@@ -2469,6 +2495,7 @@ export async function chatCompletion(options: GgufChatOptions, modelId?: string)
   // tắt / không giữ model này / preflight trượt / lỗi rồi lùi). Đường còn lại là in-process, và nó
   // KHÔNG dựng được khối `<tools>` của chat template. Đi tiếp = trả một câu chữ thường cho một
   // caller đang chờ `tool_calls` ⇒ đúng lớp "hỏng trong im lặng" mà G2-B xoá. Xem LoiToolCallKhongHoTro.
+  if (options.messages.some((m) => m.anh?.length)) throw new LoiAnhKhongHoTro("chatCompletion đã rơi khỏi đường llama-server");
   if (options.tools?.length) {
     throw new LoiToolCallKhongHoTro(
       `chatCompletion đã rơi khỏi đường llama-server với ${options.tools.length} tool được yêu cầu`,
@@ -3163,7 +3190,7 @@ export async function* chatCompletionStream(
    */
   {
     const nganSach = {
-      prompt: options.messages.map((m) => m.content).join("\n"),
+      prompt: options.messages.map((m) => m.content + giuChoAnh(m)).join("\n"),
       maxTokens: options.maxTokens,
     };
     const daPhucVu = yield* thuDuongServerStream(
@@ -3179,6 +3206,7 @@ export async function* chatCompletionStream(
   // ★★★ G2-B — CỬA MỘT CHIỀU, xem khối cùng tên ở `chatCompletion()`. Ném (chứ không `yield` một
   // chunk `error`) là CÓ CHỦ ĐÍCH: chunk `error` đi ra client như một sự cố sinh chữ giữa chừng,
   // còn đây là một lỗi CẤU HÌNH xảy ra TRƯỚC khi phát byte nào — nó phải thành HTTP 4xx/5xx có mã.
+  if (options.messages.some((m) => m.anh?.length)) throw new LoiAnhKhongHoTro("chatCompletionStream đã rơi khỏi đường llama-server");
   if (options.tools?.length) {
     throw new LoiToolCallKhongHoTro(
       `chatCompletionStream đã rơi khỏi đường llama-server với ${options.tools.length} tool được yêu cầu`,

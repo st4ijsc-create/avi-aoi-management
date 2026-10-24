@@ -45,7 +45,7 @@ import { duocPhepGhi, duongTuongDoiTrongWorkspace, giaiDuongDeXuat } from "../lo
 import { giaiDuongThatChoTaoMoi } from "../loi/duongThat";
 import { duocPhepDoc, lamSachLyDo } from "../loi/docCucBo";
 import { cheBiMat, duocPhepRoiMay } from "../loi/nguCanh";
-import { chuanHoaMucQuyen, type MucQuyen } from "../loi/mucQuyen";
+import { canDuyetGhiAgent, chuanHoaMucQuyen, type MucQuyen } from "../loi/mucQuyen";
 import { xetDuyetLenh, TRAN_MS_THEO_LENH, MAU_LENH_HIEN_THI } from "../loi/lenhChoPhep";
 import { dinhDangKetQuaLenh } from "../loi/dinhDangKetQuaLenh";
 import { locDiffTepCam } from "../loi/locDiffTepCam";
@@ -156,11 +156,6 @@ export class BoThucThiVscode implements BoThucThi {
   /** Nguồn đáng ngờ cho thẻ duyệt: ctx (lõi) ∪ nội bộ. */
   private nguonDangNgoCua(ctx: NguCanhThucThi): string[] {
     return [...new Set([...(ctx.nguonDangNgo ?? []), ...this.nguonDangNgo])];
-  }
-
-  /** `tu-dong` CÒN tự trị? Hạ khi lõi báo (`ctx.haTuTri`) HOẶC bộ thực thi đã tự thấy nội dung đáng ngờ. */
-  private conTuTri(ctx: NguCanhThucThi): boolean {
-    return ctx.cheDo === "tu-dong" && ctx.haTuTri !== true && this.nguonDangNgo.length === 0;
   }
 
   congCu(cheDo: CheDoAgent): WireTool[] {
@@ -526,7 +521,14 @@ export class BoThucThiVscode implements BoThucThi {
         );
       }
       // Bỏ thẻ CHỈ khi tu-dong + tu_ghi VÀ chưa bị hạ tự trị (nội dung đáng ngờ) — nơi THI HÀNH hạ tự trị.
-      const canDuyet = !(this.conTuTri(ctx) && mucQuyen === "tu_ghi");
+      // ★ 2026-10-24: MỘT vị từ thuần (loi/mucQuyen.ts#canDuyetGhiAgent) — "Tự ghi" đủ để bỏ hỏi sửa/tạo/đổi tên ở cả `sua` lẫn `tu-dong`; XOÁ luôn hỏi.
+      const canDuyet = canDuyetGhiAgent({
+        mucQuyen,
+        cheDo: ctx.cheDo,
+        haTuTri: ctx.haTuTri === true,
+        coNguonDangNgo: this.nguonDangNgo.length > 0,
+        thaoTac: v.thaoTac.loai,
+      });
       if (canDuyet) {
         const dangNgo = this.nguonDangNgoCua(ctx);
         const tomTat =

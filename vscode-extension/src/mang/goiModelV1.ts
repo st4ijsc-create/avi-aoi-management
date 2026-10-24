@@ -39,13 +39,29 @@ export interface CauHinhGoiModelV1 {
   model?: string;
   maxTokens?: number;
   temperature?: number;
+  /** ★ 0.3.2 — ảnh của LƯỢT HIỆN TẠI (đã qua kiemTraDinhKemNgoai: PNG/JPEG/WEBP, ≤ 4, ≤ 12 MB, ≤ 2048 px). Gắn vào tin user là CÂU HỎI của lượt (vị trí `soTinNhanLichSu` trong các tin không-system); lượt cũ KHÔNG có ảnh. */
+  anhLuotNay?: ReadonlyArray<{ kieu: string; noiDung: string }>;
+  /** Số tin KHÔNG-system của lịch sử trước lượt này — để tìm đúng tin câu hỏi (các lời nhắc user chèn sau không nhận ảnh). */
+  soTinNhanLichSu?: number;
   /** Gọi khi máy chủ nói 401 (token chết) — phía gọi có thể xoá token cục bộ. */
   khi401?: () => void;
 }
 
-function sangTinNhanWire(ds: TinNhan[]): Array<Record<string, unknown>> {
+export function sangTinNhanWire(
+  ds: TinNhan[],
+  anh: ReadonlyArray<{ kieu: string; noiDung: string }> = [],
+  soTinNhanLichSu = 0,
+): Array<Record<string, unknown>> {
+  let chiSoKhongSystem = -1;
   return ds.map((m) => {
+    if (m.role !== "system") chiSoKhongSystem++;
     const ra: Record<string, unknown> = { role: m.role, content: m.content ?? "" };
+    if (anh.length > 0 && m.role === "user" && chiSoKhongSystem === soTinNhanLichSu) {
+      ra.content = [
+        { type: "text", text: m.content ?? "" },
+        ...anh.map((a) => ({ type: "image_url", image_url: { url: `data:${a.kieu};base64,${a.noiDung}` } })),
+      ];
+    }
     if (m.role === "assistant" && m.tool_calls?.length) ra.tool_calls = m.tool_calls;
     if (m.role === "tool" && m.tool_call_id) ra.tool_call_id = m.tool_call_id;
     if (m.role === "tool" && m.name) ra.name = m.name;
@@ -70,7 +86,7 @@ async function* motLuot(
   }
   const than: Record<string, unknown> = {
     model: ch.model ?? "chat",
-    messages: sangTinNhanWire(vao.tinNhan),
+    messages: sangTinNhanWire(vao.tinNhan, ch.anhLuotNay ?? [], ch.soTinNhanLichSu ?? 0),
     stream: true,
     stream_options: { include_usage: true },
     max_tokens: ch.maxTokens ?? TRAN_TOKEN_MOT_LUOT_MAC_DINH,

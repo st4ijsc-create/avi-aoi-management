@@ -91,6 +91,8 @@ chờ `/health` xanh mới báo thành công.
 Prompt cache trên RAM: `--cache-ram` lấy từ `LLAMA_SERVER_CACHE_RAM`, **mặc định 0 = tắt** (2026-10-24). Qwen3.6-27B/35B-A3B là
 model hybrid/recurrent nên cache không được tái dùng; bật thì chỉ tốn commit (+3,3…+4,3 GB ở 4096; mặc định llama.cpp là 8192).
 Số đo nằm trong `.env.example` và `scripts/ai-eval/bo-nho/`.
+Context checkpoint: `--ctx-checkpoints` lấy từ `LLAMA_SERVER_CTX_CHECKPOINTS`, **mặc định 8** (llama.cpp: 32) — hội thoại tuyến tính chỉ khôi phục
+checkpoint mới nhất; 8 giảm commit đỉnh 27B 3,5 GB mà không chậm. Đọc ảnh: `--mmproj` theo model, `LLAMA_SERVER_MMPROJ` mặc định `auto`.
 
 Mã thoát: `0` sẵn sàng · `2` cấu hình sai · `3` cổng bị chiếm · `4` tiến trình chết ngay ·
 `5` hết giờ chờ `/health`.

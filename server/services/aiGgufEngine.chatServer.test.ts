@@ -306,3 +306,39 @@ describe("G2-B §3 — đường in-process TỪ CHỐI TRUNG THỰC khi caller 
     expect(napModel).not.toHaveBeenCalled();
   });
 });
+
+// ★ Đợt 9 (2026-10-24) — cùng hàng rào cho ẢNH: lượt có `anh` rơi khỏi đường llama-server ⇒ NÉM `LoiAnhKhongHoTro` TRƯỚC khi nạp
+// trọng số (in-process không đọc được ảnh ⇒ lùi = trả lời như không có ảnh). Đột biến bỏ hai `throw` ⇒ hai ca đầu đỏ.
+const HOI_ANH = { messages: [{ role: "user" as const, content: "ảnh lỗi gì?", anh: ["data:image/png;base64,AAAA"] }] };
+describe("Đợt 9 — ảnh không lùi in-process", () => {
+  it("chatCompletion: server không phục vụ + có ảnh ⇒ NÉM IMAGE_KHONG_HO_TRO, không nạp model", async () => {
+    shouldUseServerForTextMock.mockReturnValue(false);
+    laModelServerDangGiuMock.mockReturnValue(false);
+    const eng = await freshEngine();
+    const err = await eng.chatCompletion(HOI_ANH).catch((e) => e);
+    expect(err).toBeInstanceOf(eng.LoiAnhKhongHoTro);
+    expect(err.code).toBe("IMAGE_KHONG_HO_TRO");
+    expect(napModel).not.toHaveBeenCalled();
+  });
+  it("chatCompletionStream: cùng điều kiện ⇒ NÉM, không nạp model", async () => {
+    shouldUseServerForTextMock.mockReturnValue(false);
+    laModelServerDangGiuMock.mockReturnValue(false);
+    const eng = await freshEngine();
+    await expect(
+      (async () => {
+        for await (const _c of eng.chatCompletionStream(HOI_ANH)) {
+          /* không được tới đây */
+        }
+      })(),
+    ).rejects.toThrow(/mmproj/);
+    expect(napModel).not.toHaveBeenCalled();
+  });
+  it("server phục vụ ⇒ ảnh đi XUỐNG client nguyên vẹn", async () => {
+    shouldUseServerForTextMock.mockReturnValue(true);
+    serverChatCompletionMock.mockResolvedValue({ text: "E082", tokensPrompt: 1, tokensGenerated: 1, modelId: "m", totalTimeMs: 1, tokensPerSecond: 1 });
+    const eng = await freshEngine();
+    const r = await eng.chatCompletion(HOI_ANH);
+    expect(r.text).toBe("E082");
+    expect(serverChatCompletionMock.mock.calls[0][0].messages[0].anh).toEqual(["data:image/png;base64,AAAA"]);
+  });
+});

@@ -31,6 +31,7 @@ import {
   type SuKienAgent,
   type TinNhan,
 } from "../../../shared/agentCore/index";
+import { ghiChuAnhLuotTruoc, type DinhKemNgoai } from "../loi/dinhKemNgoai";
 import { taoGoiModelV1, TRAN_TOKEN_MOT_LUOT_MAC_DINH, type CauHinhGoiModelV1 } from "../mang/goiModelV1";
 import { guiPhanHoiAgent, type KetQuaGuiPhanHoi, type PhieuPhanHoi } from "../mang/phanHoiAgent";
 import { traLoiCuoiTuSuKien } from "../../../shared/phanHoiAgent";
@@ -39,8 +40,9 @@ import { apBanVa as apBanVaThat, type DauVaoApBanVa, type KetQuaApBanVa } from "
 import { hoanTacLuotChay } from "./hoanTac";
 import { SoCheckpoint } from "../loi/checkpoint";
 import { KHOA_TOKEN_GATEWAY } from "../loi/thietBi";
-import { chuanHoaMucQuyen, NHAN_MUC_QUYEN, type MucQuyen } from "../loi/mucQuyen";
+import { chuanHoaMucQuyen, coTheDuyetHetLuot, NHAN_MUC_QUYEN, type MucQuyen } from "../loi/mucQuyen";
 import { phanTichMarkdown, khoiMa as layKhoiMa } from "../loi/markdownAnToan";
+import { BoDemMdTangDan } from "../loi/mdTangDan";
 import { docLenhGach, dungCauHoiLenhGach } from "../loi/lenhGach";
 import { docTheDacBiet, dungCauHoiAgent, dungNguCanhDuAnExtension, LENH_DUOC_PHEP_HIEN_THI, TEP_QUY_UOC, type DinhKemAgent } from "../loi/nguCanhAgent";
 import { dinhDangChanDoan, type MucChanDoan } from "../loi/congCuDoc";
@@ -135,8 +137,12 @@ export class PhienAgent {
   private soCuoi: SoCheckpoint | undefined;
   private readonly choDuyet = new Map<string, (qd: QuyetDinhDuyet) => void>();
   private readonly yeuCauDuyet = new Map<string, YeuCauDuyet>();
+  /** ★ 2026-10-24 — người dùng đã bấm "Duyệt & tự duyệt các lần sửa tiếp trong lượt này": hết hiệu lực khi lượt kết thúc/bị dừng. */
+  private duyetHetLuot = false;
   private readonly deXuatNho = new Map<string, string>();
   private readonly dsKhoiMa: Array<{ ngonNgu: string; ma: string }> = [];
+  /** ★ 2026-10-24 — dựng markdown TĂNG DẦN khi stream (thay `ag_chu` thô): host phân tích lại văn bản đã nhận (tiết lưu) và gửi cây `ag_md_dang`; bản cuối vẫn là `ag_md`. */
+  private readonly dungMd = new BoDemMdTangDan((cay) => this.pt.gui({ loai: "ag_md_dang", cay }));
   private doan = "";
   private dangChay = false;
   /** Sự kiện lõi của lượt đang chạy (để tìm khối trả lời CUỐI theo luật gộp dùng chung). */
@@ -176,12 +182,13 @@ export class PhienAgent {
 
   // ─── LƯỢT CHẠY ───────────────────────────────────────────────────────────────────────────────
 
-  async chay(cauHoiTho: string, cheDoChon: CheDoAgent, tepMention: string[] = []): Promise<void> {
+  async chay(cauHoiTho: string, cheDoChon: CheDoAgent, tepMention: string[] = [], khoiTepNgoai = "", anh: DinhKemNgoai[] = []): Promise<void> {
     if (this.dangChay) {
       this.pt.gui({ loai: "ag_loi", thongDiep: "Một lượt agent đang chạy — bấm Dừng trước khi hỏi tiếp.", ma: "DANG_CHAY" });
       return;
     }
     this.dangChay = true;
+    this.duyetHetLuot = false;
     const ac = new AbortController();
     this.huy = ac;
     this.doan = "";
@@ -241,6 +248,10 @@ export class PhienAgent {
         cauHoi = dungCauHoiAgent(the.conLai || cauHoiTho, dk);
       }
 
+      // ★ 2026-10-24 — tệp VĂN BẢN người dùng dán/kéo/chọn từ ngoài workspace: nối vào câu hỏi (nhãn nguồn "không thuộc workspace"). Ảnh KHÔNG đi đường này
+      //   (/v1 chưa nhận ảnh — host chuyển lượt có ảnh sang đường Chat, xem bangChat.ts).
+      if (khoiTepNgoai) cauHoi = `${cauHoi}\n\n${khoiTepNgoai}`;
+
       const mucQuyen = chuanHoaMucQuyen(this.pt.mucQuyen());
       if (cheDo === "tu-dong" && mucQuyen !== "tu_ghi") {
         this.pt.gui({
@@ -272,7 +283,7 @@ export class PhienAgent {
         cheDo,
         runId,
         nguCanhDuAn,
-        goiModel: this.goiModelCoDongHo(),
+        goiModel: this.goiModelCoDongHo(anh, this.lichSu.length),
         boThucThi,
         phat: (e) => this.xuLySuKien(e),
         signal: ac.signal,
@@ -281,7 +292,11 @@ export class PhienAgent {
         kiemDacTa: kiemDacTaBat(process.env.AI_AGENT_KIEM_DAC_TA),
       });
       this.xaDoan();
+      const truocLuot = this.lichSu.length;
       this.lichSu = kq.tinNhan.filter((m) => m.role !== "system");
+      // ★ 0.3.2 — ảnh CHỈ gửi ở lượt hiện tại: trong lịch sử, tin câu hỏi của lượt này mang ghi chú chữ thay cho ảnh (server đếm ảnh trên cả lịch sử).
+      const tinCauHoi = this.lichSu[truocLuot];
+      if (anh.length > 0 && tinCauHoi?.role === "user") tinCauHoi.content += ghiChuAnhLuotTruoc(anh);
       cuoi = [...kq.tinNhan].reverse().find((m) => m.role === "assistant" && m.content.trim())?.content ?? "";
       const phanHoi = this.ghiNhoLuotChoPhanHoi(runId, cauHoiTho, goc[0]);
       this.pt.gui({ loai: "ag_xong", lyDo: kq.lyDo, coHoanTac: !so.rong, soTep: so.danhSach().length, ...(phanHoi ? { phanHoi } : {}) });
@@ -297,12 +312,15 @@ export class PhienAgent {
       if (!daBaoXong) this.pt.gui({ loai: "ag_xong", lyDo: "khong-chay", coHoanTac: !!this.soCuoi && !this.soCuoi.rong });
       for (const id of [...this.choDuyet.keys()]) this.quyet(id, { duyet: false, lyDo: "the run ended" });
       this.dangChay = false;
+      this.duyetHetLuot = false;
       if (this.huy === ac) this.huy = undefined;
     }
   }
 
-  private goiModelCoDongHo(): GoiModel {
+  private goiModelCoDongHo(anh: DinhKemNgoai[] = [], soTinNhanLichSu = 0): GoiModel {
     const ch: CauHinhGoiModelV1 = {
+      anhLuotNay: anh.map((a) => ({ kieu: a.kieu, noiDung: a.noiDung })),
+      soTinNhanLichSu,
       serverUrl: this.serverUrl(),
       layToken: async () => this.pt.context.secrets.get(KHOA_TOKEN_GATEWAY),
       model: this.cfg().get<string>("agentModel", "chat"),
@@ -332,7 +350,7 @@ export class PhienAgent {
         break;
       case "chu":
         this.doan += e.noiDung;
-        this.pt.gui({ loai: "ag_chu", chu: e.noiDung });
+        this.dungMd.capNhat(this.doan);
         break;
       case "nghi":
         this.pt.gui({ loai: "ag_nghi", chu: e.noiDung });
@@ -383,8 +401,16 @@ export class PhienAgent {
     }
   }
 
+  /** ★ 2026-10-24 — đường CHAT (không phải agent) dựng khối mã đánh số TOÀN CỤC chung với agent để nút Chép/Chèn/Áp dụng của câu trả lời Chat cũng hoạt động; trả chỉ số đầu. */
+  themKhoiMa(ds: Array<{ ngonNgu: string; ma: string }>): number {
+    const dau = this.dsKhoiMa.length;
+    this.dsKhoiMa.push(...ds);
+    return dau;
+  }
+
   /** Đoạn chữ đang stream ⇒ cây markdown an toàn (khối mã đánh số TOÀN CỤC cho nút Chép/Chèn/Áp dụng). */
   private xaDoan(): void {
+    this.dungMd.dung(); // huỷ bản tăng dần còn treo: bản CUỐI (`ag_md`) ngay dưới là bản đúng
     if (!this.doan.trim()) {
       this.doan = "";
       return;
@@ -443,6 +469,12 @@ export class PhienAgent {
   // ─── DUYỆT ───────────────────────────────────────────────────────────────────────────────────
 
   private xinDuyet(yc: YeuCauDuyet, signal: AbortSignal): Promise<QuyetDinhDuyet> {
+    const coThe = coTheDuyetHetLuot({ loai: yc.loai, thaoTac: yc.thaoTac, coNguonDangNgo: (yc.nguonDangNgo?.length ?? 0) > 0 });
+    // Đã bấm "duyệt hết lượt" trước đó: yêu cầu GHI hợp lệ kế tiếp được duyệt luôn (vẫn hiện một dòng để người dùng thấy tệp nào đã đi qua); XOÁ/LỆNH/nội dung đáng ngờ vẫn hỏi.
+    if (this.duyetHetLuot && coThe && !signal.aborted) {
+      this.pt.gui({ loai: "ag_tu_duyet", id: yc.id, tomTat: yc.tomTat, duong: yc.duongTuongDoi });
+      return Promise.resolve({ duyet: true });
+    }
     return new Promise<QuyetDinhDuyet>((res) => {
       this.choDuyet.set(yc.id, res);
       this.yeuCauDuyet.set(yc.id, yc);
@@ -454,10 +486,22 @@ export class PhienAgent {
         duong: yc.duongTuongDoi,
         lenh: yc.lenh,
         coDiff: yc.loai === "ghi",
+        thaoTac: yc.thaoTac,
+        coTheDuyetHet: coThe,
+        coNguonDangNgo: (yc.nguonDangNgo?.length ?? 0) > 0,
       });
       if (signal.aborted) this.quyet(yc.id, { duyet: false, lyDo: "the run was stopped" });
       else signal.addEventListener("abort", () => this.quyet(yc.id, { duyet: false, lyDo: "the run was stopped" }), { once: true });
     });
+  }
+
+  /** Duyệt yêu cầu này VÀ các yêu cầu ghi hợp lệ kế tiếp của lượt. Yêu cầu không đủ điều kiện (xoá, lệnh, nội dung đáng ngờ) ⇒ BỎ QUA, không duyệt gì cả. */
+  duyetVaTuDuyetLuot(id: string): void {
+    const yc = this.yeuCauDuyet.get(id);
+    if (!yc) return;
+    if (!coTheDuyetHetLuot({ loai: yc.loai, thaoTac: yc.thaoTac, coNguonDangNgo: (yc.nguonDangNgo?.length ?? 0) > 0 })) return;
+    this.duyetHetLuot = true;
+    this.quyet(id, { duyet: true });
   }
 
   quyet(id: string, qd: QuyetDinhDuyet): void {

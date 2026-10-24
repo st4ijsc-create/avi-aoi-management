@@ -5,6 +5,8 @@ API hỗ trợ upload ảnh AOI/AVI theo 2 phương thức:
 1. **ZIP Package Upload** (khuyến nghị): Upload file ZIP chứa nhiều ảnh + metadata
 2. **Single Image Upload**: Upload từng ảnh riêng lẻ
 
+> **Giới hạn batch tRPC (từ 2026-10-24):** một yêu cầu tRPC gộp (`/api/trpc/a,b,c?batch=1`) chứa **tối đa 25 thủ tục**; vượt ⇒ HTTP 400 `TRPC_BATCH_QUA_LON` và KHÔNG thủ tục nào chạy. Các lời gọi ở tài liệu này mỗi lần gọi MỘT thủ tục nên không bị ảnh hưởng; nếu phần mềm máy tự gộp batch, hãy chia ≤ 25 thủ tục mỗi yêu cầu.
+
 ## Phương thức 1: ZIP Package Upload (Khuyến nghị)
 
 ### Bước 1: Gọi Presign Endpoint

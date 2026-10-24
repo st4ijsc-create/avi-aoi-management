@@ -91,8 +91,58 @@ export const KHOA_MUC_QUYEN = "aviAiLocal.mucQuyen";
 
 /** Nhãn tiếng Việt hiển thị trong ô chọn — MỘT nơi dựng nhãn, để mọi nơi khác (thông báo, tooltip)
  *  không tự bịa chữ khác nhau cho CÙNG một mức. */
+/**
+ * ★ 2026-10-24 — CHẾ ĐỘ AGENT (hỏi · duyệt từng bước · tự động · chat cũ) CŨNG PHẢI ĐƯỢC LƯU theo workspace. Trước đây chỉ mức quyền được lưu (`KHOA_MUC_QUYEN`) còn chế độ về
+ * "duyệt từng bước" mỗi lần mở lại cửa sổ — kiểm định độc lập thấy đúng kịch bản "mức vẫn Tự ghi, chế độ về mặc định ⇒ hỏi lại". Kho rỗng/hỏng ⇒ mặc định AN TOÀN "sua".
+ */
+export type CheDoAgentLuu = "hoi" | "sua" | "tu-dong" | "chat-cu";
+export const CHE_DO_AGENT_MAC_DINH: CheDoAgentLuu = "sua";
+export const KHOA_CHE_DO_AGENT = "aviAiLocal.cheDoAgent";
+const CAC_CHE_DO_AGENT: readonly CheDoAgentLuu[] = ["hoi", "sua", "tu-dong", "chat-cu"];
+export function laCheDoAgentHopLe(gt: unknown): gt is CheDoAgentLuu {
+  return typeof gt === "string" && (CAC_CHE_DO_AGENT as readonly string[]).includes(gt);
+}
+export function chuanHoaCheDoAgent(gt: unknown): CheDoAgentLuu {
+  return laCheDoAgentHopLe(gt) ? gt : CHE_DO_AGENT_MAC_DINH;
+}
+
 export const NHAN_MUC_QUYEN: Record<MucQuyen, string> = {
   chi_doc: "Chỉ đọc",
   hoi_truoc_khi_ghi: "Hỏi trước khi ghi",
   tu_ghi: "Tự ghi trong workspace",
 };
+
+/**
+ * ★★★ 2026-10-24 — LỖI "chọn Tự ghi mà vẫn hỏi duyệt" (đường AGENT). Trước đây bỏ hỏi cần HAI khoá: mức quyền `tu_ghi` VÀ chế độ agent `tu-dong`; chế độ mặc định là `sua`
+ * ("duyệt từng bước") nên chọn "Tự ghi" một mình KHÔNG có tác dụng (nhãn không nói gì về khoá thứ hai). Nay MỘT vị từ thuần quyết định, một nguồn sự thật:
+ *   · `mucQuyen === "tu_ghi"` là điều kiện CẦN (mọi mức khác ⇒ hỏi);
+ *   · chế độ `hoi` (chỉ đọc) không có công cụ ghi — vẫn hỏi nếu lỡ có;
+ *   · lõi đã hạ tự trị (`haTuTri`) hoặc bộ thực thi đã thấy nội dung đáng ngờ trong dữ liệu (`coNguonDangNgo`) ⇒ hỏi (chống tiêm lệnh — KHÔNG đổi);
+ *   · chỉ bỏ hỏi cho SỬA / TẠO / ĐỔI TÊN trong workspace (`thay` | `tao` | `doi-ten`); **XOÁ luôn hỏi** — trước đây `tu-dong + tu_ghi` bỏ hỏi cả xoá, và chỉ có
+ *     "Hoàn tác lượt chạy" làm lưới đỡ (không phải cửa duyệt).
+ * KHÔNG liên quan: `run_command` (luôn hỏi), ghi ngoài workspace (apBanVa chặn), dự án SERVER (server luôn cần `confirmAction`).
+ */
+export type LoaiThaoTacGhi = "thay" | "tao" | "xoa" | "doi-ten";
+
+export function canDuyetGhiAgent(v: {
+  mucQuyen: MucQuyen;
+  cheDo: "hoi" | "sua" | "tu-dong";
+  haTuTri: boolean;
+  coNguonDangNgo: boolean;
+  thaoTac: LoaiThaoTacGhi;
+}): boolean {
+  if (v.mucQuyen !== "tu_ghi") return true;
+  if (v.cheDo === "hoi") return true;
+  if (v.haTuTri || v.coNguonDangNgo) return true;
+  if (v.thaoTac === "xoa") return true;
+  return false;
+}
+
+/**
+ * ★ 2026-10-24 — "Duyệt & tự duyệt các lần sửa tiếp trong lượt này" (thẻ duyệt Agent). Lõi agent chạy công cụ TUẦN TỰ nên chỉ có MỘT yêu cầu duyệt chờ tại một thời điểm; nút này
+ * là cách gộp "duyệt N tệp" mà không đổi lõi: người dùng bấm MỘT lần, các yêu cầu GHI kế tiếp của CÙNG lượt được duyệt tự động. Hẹp hơn "Tự ghi" ở chỗ nó hết hiệu lực khi lượt kết thúc.
+ * Điều kiện CHO PHÉP (từng yêu cầu, kiểm lại mỗi lần): là GHI (không phải lệnh), thao tác đã biết và KHÔNG phải xoá, và lượt chưa đọc nội dung đáng ngờ (`nguonDangNgo` rỗng — chống tiêm lệnh).
+ */
+export function coTheDuyetHetLuot(v: { loai: "ghi" | "lenh"; thaoTac: LoaiThaoTacGhi | undefined; coNguonDangNgo: boolean }): boolean {
+  return v.loai === "ghi" && v.thaoTac !== undefined && v.thaoTac !== "xoa" && !v.coNguonDangNgo;
+}

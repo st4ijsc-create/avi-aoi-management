@@ -17,6 +17,7 @@ import {
   shouldSendAsPost,
   createAppTrpcLinks,
 } from "./trpcLinks";
+import { TRPC_MAX_BATCH_SIZE } from "../../../shared/trpcBatch";
 
 type Ghi = { method: string; url: string; body: string | undefined };
 
@@ -211,5 +212,38 @@ describe("license.* KHÔNG chung batch với truy vấn chậm", () => {
     await client.license.getAllowedModules.query({ licenseKey: "K" });
     expect(ghi[0].url).toContain("input=");
     expect(new URL(ghi[0].url, "http://x").searchParams.get("batch")).toBeNull();
+  });
+});
+
+describe("maxItems — client tự chia batch theo trần server", () => {
+  it("★★★ 60 query cùng tick ⇒ nhiều yêu cầu, MỖI yêu cầu ≤ TRPC_MAX_BATCH_SIZE thủ tục, đủ 60 thủ tục, không bị từ chối", async () => {
+    const { client, ghi } = taoClient();
+    const kq = await Promise.all(Array.from({ length: 60 }, (_, i) => client.dem.query({ s: String(i) })));
+    expect(kq).toHaveLength(60);
+    const dem = ghi.map((g) => decodeURIComponent(new URL(g.url, "http://x").pathname.replace(/^\/api\/trpc\//, "")).split(",").length);
+    expect(Math.max(...dem)).toBeLessThanOrEqual(TRPC_MAX_BATCH_SIZE);
+    expect(dem.reduce((a, b) => a + b, 0)).toBe(60);
+    expect(ghi.length).toBeGreaterThanOrEqual(Math.ceil(60 / TRPC_MAX_BATCH_SIZE));
+  });
+
+  it("★★ batch ≤ trần vẫn là MỘT yêu cầu (không chia thừa)", async () => {
+    const { client, ghi } = taoClient();
+    await Promise.all(Array.from({ length: TRPC_MAX_BATCH_SIZE }, (_, i) => client.dem.query({ s: String(i) })));
+    expect(ghi).toHaveLength(1);
+  });
+
+  it("★★ nhánh POST (input lớn) cũng chia theo trần", async () => {
+    const { client, ghi } = taoClient();
+    const lon = "x".repeat(TRPC_POST_INPUT_THRESHOLD_BYTES + 100);
+    await Promise.all(Array.from({ length: 30 }, (_, i) => client.dem.query({ s: lon + i })));
+    expect(ghi.every((g) => g.method === "POST")).toBe(true);
+    const dem = ghi.map((g) => decodeURIComponent(new URL(g.url, "http://x").pathname.replace(/^\/api\/trpc\//, "")).split(",").length);
+    expect(Math.max(...dem)).toBeLessThanOrEqual(TRPC_MAX_BATCH_SIZE);
+    expect(dem.reduce((a, b) => a + b, 0)).toBe(30);
+  });
+
+  it("★★ nguồn: client RUM cũng đặt maxItems", () => {
+    const nguon = readFileSync(path.resolve(__dirname, "rum.ts"), "utf8");
+    expect(nguon).toMatch(/maxItems:\s*TRPC_MAX_BATCH_SIZE/);
   });
 });

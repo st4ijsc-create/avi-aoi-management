@@ -297,6 +297,41 @@ describe("BoThucThiVscode — ghi NHIỀU tệp qua apBanVa", () => {
     expect(d2.duyet).toHaveLength(1);
   });
 
+  it("★★★ 2026-10-24 — CHỌN \"Tự ghi\" MỘT MÌNH (chế độ mặc định sua) ⇒ sửa/tạo/đổi tên KHÔNG hỏi; XOÁ luôn hỏi", async () => {
+    may.tep.set(P("a.ts"), "A");
+    may.tep.set(P("b.ts"), "B");
+    may.tep.set(P("c.ts"), "C");
+    const d = dung({ mucQuyen: "tu_ghi" });
+    const c = d.ctx("sua");
+    await d.bo.chay(goi("write_file", { path: "a.ts", content: "A2" }, "1"), c);
+    await d.bo.chay(goi("write_file", { path: "moi/n.ts", content: "N" }, "2"), c);
+    await d.bo.chay(goi("rename_file", { from: "c.ts", to: "d.ts" }, "3"), c);
+    expect(d.duyet).toHaveLength(0); // sửa + tạo + đổi tên: không thẻ
+    expect(d.ap.map((x) => x.thaoTac!.loai)).toEqual(["thay", "tao", "doi-ten"]); // nhưng VẪN đi qua apBanVa (mọi hàng rào còn nguyên)
+    await d.bo.chay(goi("delete_file", { path: "b.ts" }, "4"), c);
+    expect(d.duyet.map((y) => y.thaoTac)).toEqual(["xoa"]); // xoá ⇒ HỎI
+  });
+
+  it("★★★ tu-dong + tu_ghi: XOÁ cũng phải hỏi (trước đây KHÔNG hỏi); hoi_truoc_khi_ghi + sua vẫn hỏi mọi thao tác", async () => {
+    may.tep.set(P("a.ts"), "A");
+    may.tep.set(P("b.ts"), "B");
+    const d1 = dung({ mucQuyen: "tu_ghi" });
+    await d1.bo.chay(goi("delete_file", { path: "b.ts" }, "1"), d1.ctx("tu-dong"));
+    expect(d1.duyet.map((y) => y.thaoTac)).toEqual(["xoa"]);
+    const d2 = dung({ mucQuyen: "hoi_truoc_khi_ghi" });
+    await d2.bo.chay(goi("write_file", { path: "a.ts", content: "A2" }, "2"), d2.ctx("sua"));
+    expect(d2.duyet).toHaveLength(1);
+  });
+
+  it("★★★ \"Tự ghi\" ở chế độ sua nhưng lõi đã HẠ TỰ TRỊ ⇒ vẫn hỏi (chống tiêm lệnh không đổi)", async () => {
+    may.tep.set(P("a.ts"), "A");
+    const d = dung({ mucQuyen: "tu_ghi", quyetDinh: { duyet: false, lyDo: "không" } });
+    const kq = await d.bo.chay(goi("write_file", { path: "a.ts", content: "B" }), { ...d.ctx("sua"), haTuTri: true, nguonDangNgo: ["src/x.ts"] });
+    expect(kq.ok).toBe(false);
+    expect(d.duyet).toHaveLength(1);
+    expect(d.ap).toHaveLength(0);
+  });
+
   it("★★★ mức quyền chi_doc ⇒ KHÔNG thẻ duyệt, đi thẳng tới apBanVa THẬT và bị chặn ở bước 0 (tệp không đổi)", async () => {
     may.tep.set(P("a.ts"), "A");
     const d = dung({ mucQuyen: "chi_doc", apThat: true });

@@ -350,6 +350,11 @@ function moMocCaiChet(): MocCaiChet {
 }
 
 let sidecar: SidecarState | null = null;
+
+/** ★ Đợt 9 (2026-10-24) — sidecar ĐANG sống (đã nạp) ⇒ dùng nó không tốn thêm VRAM; chưa ⇒ người gọi phải kiểm tài nguyên trước khi nạp. */
+export function sidecarDangChay(): boolean {
+  return sidecar !== null;
+}
 let startPromise: Promise<void> | null = null;
 let lastUsedAt = 0;
 let idleTimer: NodeJS.Timeout | null = null;

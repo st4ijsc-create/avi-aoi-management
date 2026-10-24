@@ -23,6 +23,7 @@
 import { httpBatchLink, httpLink, splitLink, type TRPCLink } from "@trpc/client";
 import superjson from "superjson";
 import type { AppRouter } from "../../../server/routers";
+import { TRPC_MAX_BATCH_SIZE } from "../../../shared/trpcBatch";
 
 /** Input query serialize lớn hơn ngưỡng này (byte) ⇒ gửi POST. */
 export const TRPC_POST_INPUT_THRESHOLD_BYTES = 2048;
@@ -63,7 +64,8 @@ export function createAppTrpcLinks(opts: {
   headers?: () => Record<string, string>;
   fetch?: typeof fetch;
 }): TRPCLink<AppRouter>[] {
-  const common = { url: opts.url, transformer: superjson, headers: opts.headers, fetch: opts.fetch };
+  // `maxItems` = trần server (shared/trpcBatch.ts): client TỰ CHIA batch lớn thành nhiều yêu cầu ≤ trần, không bao giờ bị server từ chối.
+  const common = { url: opts.url, transformer: superjson, headers: opts.headers, fetch: opts.fetch, maxItems: TRPC_MAX_BATCH_SIZE };
   return [
     splitLink<AppRouter>({
       condition: (op) => isLicenseOp(op) || isStopOnlyOp(op),

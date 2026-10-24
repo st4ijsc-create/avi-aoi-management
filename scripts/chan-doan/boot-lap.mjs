@@ -27,6 +27,9 @@ const env = {
   GGUF_WARM_DEEP_MODEL_ON_BOOT: "false",
   LLAMA_SERVER_ENABLED: "false",
   LLAMA_WATCHDOG_ENABLED: "false",
+  // Không-GPU mặc định (census VRAM): aiWatcher tắt + KHÔNG làm ấm KB lúc boot (cờ THẬT AI_KB_WARM_ON_BOOT, không cần bản vá chẩn đoán).
+  AI_ORCHESTRATION_ENABLED: "false",
+  AI_KB_WARM_ON_BOOT: "false",
   VITEST: "", // không phải môi trường test
   ...GHI_DE,
 };
