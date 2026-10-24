@@ -54,7 +54,7 @@ import { khoaPhienStepUp, stepUpPhienConHan, type UserRole } from "../../_core/t
 import { kiemXacThucTheoMuc, vaiTroDuocGhi } from "../../_core/xacThucTheoMuc";
 import { logger } from "../../logger";
 import type { MucRuiRo } from "../ot/aiControlGate";
-import { dispatch, isOtControlEnabled, type DispatchResult, type DispatchStatus } from "../ot/commandDispatcher";
+import { ackTimeoutMacDinhMs, dispatch, isOtControlEnabled, type DispatchResult, type DispatchStatus } from "../ot/commandDispatcher";
 import { isCommissioned, isCommissioningRequired } from "../ot/commissioningService";
 import { canonicalOtValue, otPayloadHash, withOtPayloadHash } from "../ot/otActionBinding";
 import { isEdgeControlSchemaMissing } from "../edge/edgeControlSchema";
@@ -621,14 +621,17 @@ export async function yeuCauGhiTag(
 //   4. cổng 3–7 của Task 8 trên dữ liệu HIỆN TẠI (kênh + giá trị + vai/quyền + edge + chế độ máy của ADAPTER hiện tại)
 //   5. `giaHanKhoaChon` — kiểm và gia hạn NGUYÊN TỬ (QĐ T9-1)   ⇒ KHOA_MAT
 //   6. CAS proposed→confirmed                     ⇒ 0 hàng: DA_XU_LY
-//   7. `dispatch()` hitl hmi.write_tag requireBoundAction, docLai bat_buoc, deadlineMs = còn lại tới expiresAt
+//   7. `dispatch()` hitl hmi.write_tag requireBoundAction, docLai bat_buoc, queueTtlMs = còn lại tới expiresAt (CHỈ hạn chờ — R1a final
+//      I-2), KHÔNG deadlineMs ⇒ hạn ack + đọc lại = OT_CONTROL_TIMEOUT_MS
 //   8. nhả khoá (dispatch xong HAY ném)   9. attempts dispatch/dispatched + command_log_ids   10. socket scada:cmd
 //
 // QUYẾT ĐỊNH (ghi trong báo cáo task 9):
-//   QĐ T9-1 CỬA SỔ KHOÁ khi gửi: `denLuc = now + 2·conLai + 30 s` (`hanKhoaKhiGui`), conLai = expiresAt − now (cũng là deadlineMs). Một
-//        dispatch chờ hàng đợi tối đa deadlineMs (K9), rồi chờ ack tối đa deadlineMs (effectiveTimeoutMs, có thể bị OT_CONTROL_TIMEOUT_MAX_MS
-//        cắt ngắn hơn), rồi đọc lại + ghi sổ (dư 30 s). Khoá không bao giờ bị rút ngắn (GREATEST). Đường thường nhả ngay sau dispatch; cửa
-//        sổ chỉ có nghĩa khi tiến trình chết giữa chừng (khoá tự hết sau ≤ 150 s).
+//   QĐ T9-1 CỬA SỔ KHOÁ khi gửi (R1a final I-2): `denLuc = now + conLai + 2·ack + 30 s` (`hanKhoaKhiGui`), conLai = expiresAt − now (hạn
+//        chờ hàng đợi — queueTtlMs), ack = OT_CONTROL_TIMEOUT_MS (`ackTimeoutMacDinhMs`). Một dispatch chờ hàng đợi tối đa queueTtlMs (K9),
+//        rồi chờ ack tối đa `ack`, rồi đọc lại tối đa `ack` + ghi sổ (dư 30 s). Khoá không bao giờ bị rút ngắn (GREATEST). Đường thường nhả
+//        ngay sau dispatch; cửa sổ chỉ có nghĩa khi tiến trình chết giữa chừng.
+//   QĐ final I-2 SÀN CÒN LẠI: conLai < CON_LAI_TOI_THIEU_MS (3 s) ⇒ coi như HẾT HẠN (bước 2: CAS proposed→expired, nhả khoá, attempts
+//        expired/HET_HAN); CAS bước 6 cũng đòi expiresAt > lúc CAS + 3 s (đồng hồ đọc lại), nên queueTtlMs truyền đi luôn ≥ ~3 s.
 //   QĐ T9-2 Từ chối 2FA (TOTP_CAN/TOTP_SAI/TOTP_CHUA_DANG_KY của bước 3) GIỮ dòng chờ 'proposed' VÀ GIỮ khoá: người dùng nhập
 //        mã rồi bấm lại trong TTL; nhả khoá ở đây sẽ làm lần thử lại gặp KHOA_MAT. Khoá vẫn hết hạn cùng yêu cầu (60 s).
 //        fix round 1 minor 6: ROLE_FLOOR không sửa được bằng thử lại ⇒ đi đường KẾT THÚC (QĐ T9-3).
@@ -659,8 +662,12 @@ function ghiLoiChot(err: unknown, requestId: string, cho: string): void {
 export const DU_PHONG_CUA_SO_GUI_MS = 30_000;
 
 /** Hạn khoá chọn trong lúc gửi (QĐ T9-1). */
-export function hanKhoaKhiGui(now: number, conLaiMs: number): Date {
-  return new Date(now + 2 * Math.max(0, conLaiMs) + DU_PHONG_CUA_SO_GUI_MS);
+/** R1a final I-2 — confirm còn ít hơn ngần này tới expiresAt ⇒ HET_HAN (không gửi một lệnh chỉ còn vài trăm ms để chờ hàng đợi). */
+export const CON_LAI_TOI_THIEU_MS = 3_000;
+
+/** QĐ T9-1 (R1a final I-2) — hạn khoá khi gửi: chờ hàng đợi (conLai) + ack + đọc lại (mỗi bước ≤ `ackMs`) + dư 30 s. */
+export function hanKhoaKhiGui(now: number, conLaiMs: number, ackMs: number = ackTimeoutMacDinhMs()): Date {
+  return new Date(now + Math.max(0, conLaiMs) + 2 * Math.max(0, ackMs) + DU_PHONG_CUA_SO_GUI_MS);
 }
 
 type TrangThaiCho = (typeof aiPendingActions.$inferSelect)["status"];
@@ -831,7 +838,8 @@ export async function xacNhanGhiTag(
   const hetHan: TuChoiYeuCau = { ma: "HET_HAN", chiTiet: "Yêu cầu đã hết hạn (60 s) — hãy tạo yêu cầu mới." };
   if (r.status === "expired") return tuChoiGiu(hetHan);
   if (r.status !== "proposed") return tuChoiGiu(DA_XU_LY_CONFIRM);
-  if (r.expiresAt.getTime() <= now) {
+  // R1a final I-2 — còn < 3 s ⇒ coi như hết hạn (cùng đường: CAS proposed→expired, nhả khoá, attempts expired/HET_HAN)
+  if (r.expiresAt.getTime() - now < CON_LAI_TOI_THIEU_MS) {
     if (!(await doiTrangThaiCho(db, requestId, userId, "proposed", "expired"))) return tuChoiGiu(DA_XU_LY_CONFIRM);
     await nhaKhoaChon(db, khoaKey);
     await thu("confirm", "expired", "HET_HAN");
@@ -896,7 +904,9 @@ export async function xacNhanGhiTag(
   // 6. CAS proposed→confirmed — đúng MỘT tab thắng (Review Focus 1)
   // fix round 2 (M2) — hạn so với đồng hồ ĐỌC LẠI ngay lúc CAS (`luc()` = gốc tiêm vào + thời gian đơn điệu đã trôi), KHÔNG phải
   // `nowDate` (thời điểm bước 2 đã kiểm): TTL hết giữa bước 2 và CAS ⇒ CAS trượt ⇒ HET_HAN sạch.
-  if (!(await doiTrangThaiCho(db, requestId, userId, "proposed", "confirmed", {}, luc()))) {
+  // R1a final I-2 — CAS đòi còn ≥ CON_LAI_TOI_THIEU_MS tại lúc CAS; `lucCas` cũng là gốc của queueTtlMs (đồng hồ đọc lại, không phải lúc bắt đầu lượt)
+  const lucCas = luc();
+  if (!(await doiTrangThaiCho(db, requestId, userId, "proposed", "confirmed", {}, new Date(lucCas.getTime() + CON_LAI_TOI_THIEU_MS)))) {
     // fix round 1 minor 1/2 — CAS trượt: đọc lại. 'confirmed'/'executed' ⇒ tab khác ĐANG/ĐÃ gửi ⇒ DA_XU_LY, KHÔNG nhả khoá. Còn
     // 'proposed' ⇒ hết hạn đúng lúc CAS ⇒ CAS proposed→expired. Bị dời đi chỗ khác (expireStaleActions ⇒ 'expired', AI cancelAction
     // …) ⇒ không ai gửi ⇒ NHẢ khoá vừa gia hạn; 'expired' ⇒ HET_HAN.
@@ -938,7 +948,9 @@ export async function xacNhanGhiTag(
       },
       idempotencyKey: `hmi:${requestId}`,
       docLai: "bat_buoc",
-      deadlineMs: Math.max(1, Math.trunc(conLai)),
+      // R1a final I-2 — CHỈ hạn chờ hàng đợi = còn lại tới expiresAt (từ lúc CAS). KHÔNG deadlineMs: deadlineMs còn đặt hạn ack + đọc lại,
+      // nên confirm ở giây 59 sẽ cho thiết bị ~1 s để ack ⇒ timeout / unverified giả + rủi ro ghi treo B3. Hạn ack = OT_CONTROL_TIMEOUT_MS.
+      queueTtlMs: Math.max(1, Math.trunc(r.expiresAt.getTime() - lucCas.getTime())),
     });
   } catch (err) {
     // QĐ T9-6 — 8. nhả khoá, chốt dòng chờ, attempts có mã, rồi NÉM TIẾP

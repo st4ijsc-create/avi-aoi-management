@@ -172,6 +172,17 @@ describe("R1a T5 (K9) — hạn hàng đợi lệnh trung tâm", () => {
     expect(queueTtlMsFor({ deadlineMs: 1.7 })).toBe(1);
   });
 
+  it("R1a final I-2 — queueTtlMs (CHỈ hạn chờ) thắng deadlineMs; queueTtlMs không hợp lệ ⇒ quay về deadlineMs / mặc định (không bao giờ tắt TTL)", () => {
+    expect(queueTtlMsFor({ queueTtlMs: 30_000 })).toBe(30_000);
+    expect(queueTtlMsFor({ queueTtlMs: 30_000, deadlineMs: 2_000 })).toBe(30_000);
+    expect(queueTtlMsFor({ queueTtlMs: 4_500.9 })).toBe(4_500);
+    expect(queueTtlMsFor({ queueTtlMs: 0.5, deadlineMs: 2_000 })).toBe(2_000);
+    expect(queueTtlMsFor({ queueTtlMs: 0 })).toBe(60_000);
+    expect(queueTtlMsFor({ queueTtlMs: -1 })).toBe(60_000);
+    expect(queueTtlMsFor({ queueTtlMs: Number.NaN })).toBe(60_000);
+    expect(queueTtlMsFor({ queueTtlMs: Number.POSITIVE_INFINITY })).toBe(60_000);
+  });
+
   it("fix round 1 (3a) — job ĐÃ quá hạn mà còn CHỜ khi DỪNG tới ⇒ kết thúc ĐÚNG MỘT lần, là Superseded (không bao giờ chạy, không QueueExpired); depth không âm", async () => {
     const { log, ctl, job } = makeJobs();
     const rA = accepted(tryEnqueueAdapterCommand(ADAPTER, job("A"), { queueTtlMs: 60_000 }));

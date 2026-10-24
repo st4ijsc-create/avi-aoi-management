@@ -363,6 +363,13 @@ export interface DispatchInput {
    */
   deadlineMs?: number;
   /**
+   * SCADA R1a final I-2 — the queue wait ONLY: with OT_CMD_SERIALIZE_ENABLED, the longest an ordinary command may wait in the adapter's
+   * queue for its turn (finite, ≥ 1 after truncation; otherwise ignored ⇒ deadlineMs / 60 s as before). It NEVER sets the device ack /
+   * read-back timeout and is not persisted as deadline_ms: those stay `effectiveTimeoutMs(deadlineMs)` (absent ⇒ OT_CONTROL_TIMEOUT_MS).
+   * The HMI confirm passes its remaining request TTL here (and no deadlineMs), so a confirm late in the TTL never shrinks the ack window.
+   */
+  queueTtlMs?: number;
+  /**
    * SCADA R1a Task 5 (K7) — "bat_buoc": the device stage reads the written tags back after an acked write EVEN WHEN OT_READBACK_ENABLED
    * is off (the HMI path always verifies): match + quality "good" ⇒ acked_verified, else acked_unverified with readBackValue. The
    * comparison is the flag's own (readbackMatches); `ok` is never flipped. Absent ⇒ the flag alone decides, as before.
@@ -386,7 +393,11 @@ function commandContext(input: DispatchInput): { correlationId: string | null; d
  * HAN_HANG_DOI_MAC_DINH_MS. Fix round 1 (fail-closed) — never 0: a fractional deadline (0.5 ⇒ trunc 0), ≤0, NaN or ∞ falls back to the
  * default (the queue treats a TTL ≤ 0 as "no TTL", so `0 ?? 60000` used to turn the TTL OFF). Always a finite integer ≥ 1.
  */
-export function queueTtlMsFor(input: Pick<DispatchInput, "deadlineMs">): number {
+export function queueTtlMsFor(input: Pick<DispatchInput, "deadlineMs" | "queueTtlMs">): number {
+  // R1a final I-2 — an explicit queue wait wins (same fail-closed sanitising: never 0 / NaN / ∞)
+  const q = input.queueTtlMs;
+  const tq = typeof q === "number" && Number.isFinite(q) ? Math.trunc(q) : 0;
+  if (tq >= 1) return tq;
   const d = input.deadlineMs;
   const t = typeof d === "number" && Number.isFinite(d) ? Math.trunc(d) : 0; // same truncation as commandContext
   return t >= 1 ? t : HAN_HANG_DOI_MAC_DINH_MS;
@@ -399,6 +410,11 @@ export function queueTtlMsFor(input: Pick<DispatchInput, "deadlineMs">): number 
  *   • deadlineMs provided → min(deadlineMs, OT_CONTROL_TIMEOUT_MAX_MS) when the
  *     max is configured, else deadlineMs as-is.
  */
+/** SCADA R1a final I-2 — the ack/read-back timeout a command WITHOUT deadlineMs gets (OT_CONTROL_TIMEOUT_MS); the HMI sizes its lock window with it. */
+export function ackTimeoutMacDinhMs(): number {
+  return effectiveTimeoutMs(undefined);
+}
+
 function effectiveTimeoutMs(deadlineMs?: number): number {
   const envDefault = Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000;
   if (typeof deadlineMs !== "number" || !Number.isFinite(deadlineMs) || deadlineMs <= 0) return envDefault;
@@ -1580,7 +1596,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
           protective: interlock,
           overridesStopPin,
           holdSlot: slotHoldOf,
-          // SCADA R1a Task 5 (K9) — an ORDINARY command waits at most its deadlineMs (else 60 s) for its turn; past it, never sent
+          // SCADA R1a Task 5 (K9) — an ORDINARY command waits at most its queueTtlMs (R1a final I-2), else deadlineMs, else 60 s for its turn; past it, never sent
           // (QUEUE_EXPIRED below). No TTL — never expires — for a protective interlock action (safety direction: stop_line / block /
           // reduce) and for a stop-TYPED command that is not a verified STOP (dropping a stop is the unsafe direction; a verified STOP
           // already cancels it when its values are not the pin's). A verified STOP is the branch above (priorityStop: no TTL).

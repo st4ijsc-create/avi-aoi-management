@@ -374,7 +374,7 @@ export function stopIssuedSince(adapterId: number, epochAtGates: number, opts?: 
 
 /**
  * SCADA R1a Task 5 (K9) — hạn mặc định một lệnh THƯỜNG được chờ trong hàng đợi per-adapter (trung tâm) trước khi tới lượt chạy
- * (Rapid dùng 60 s). Dispatcher đưa `queueTtlMs = input.deadlineMs ?? HAN_HANG_DOI_MAC_DINH_MS` cho lệnh không phải DỪNG / không phải
+ * (Rapid dùng 60 s). Dispatcher đưa `queueTtlMs = input.queueTtlMs ?? input.deadlineMs ?? HAN_HANG_DOI_MAC_DINH_MS` (queueTtlMsFor — R1a final I-2) cho lệnh không phải DỪNG / không phải
  * hành động interlock bảo vệ / không phải lệnh kiểu stop; quá hạn lúc tới lượt ⇒ không bao giờ chạy (`QueueExpired`).
  */
 export const HAN_HANG_DOI_MAC_DINH_MS = 60_000;

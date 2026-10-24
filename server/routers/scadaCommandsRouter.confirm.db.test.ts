@@ -21,6 +21,8 @@ const H = vi.hoisted(() => ({
   drivers: new Map<number, unknown>(),
   writeCalls: 0,
   dispatchCalls: 0,
+  /** R1a final I-2 — đầu vào của mỗi lần dispatch() (kiểm queueTtlMs / deadlineMs) */
+  dispatchInputs: [] as Array<Record<string, unknown>>,
   dispatchNem: false,
   /** chạy MỘT lần bên trong lệnh ghi thiết bị kế tiếp (giữa "kiểm khoá" và "hết dispatch") */
   trongKhiGhi: null as null | (() => Promise<void>),
@@ -134,6 +136,7 @@ vi.mock("../services/ot/commandDispatcher", async (importOriginal) => {
     ...real,
     dispatch: async (...a: Parameters<typeof real.dispatch>) => {
       H.dispatchCalls += 1;
+      H.dispatchInputs.push(a[0] as unknown as Record<string, unknown>);
       if (H.dispatchNem) throw new Error("r1a9: dispatch nem (mo phong loi ha tang)");
       if (H.tuChoiSauDatCho) {
         const { getDb: g } = await import("../db/connection");
@@ -318,11 +321,12 @@ beforeAll(async () => {
 
   await seedTag(ad.a, "che_do", { kind: "input", writable: false, level: null, dataType: "int" });
   for (const key of ["vui", "lech", "het", "song", "local", "tat", "edge", "len", "il", "otoff", "huy", "chiem", "nem", "treo", "tt",
-    "maydoi", "khoamat", "hep", "san", "casmiss", "cashet", "qexp", "chot1", "chot2"]) {
+    "maydoi", "khoamat", "hep", "san", "casmiss", "cashet", "qexp", "chot1", "chot2", "conlai1", "conlai30"]) {
     await seedTag(ad.a, key, { level: 3 });
   }
   await seedTag(ad.a, "m5", { level: 5 });
   await seedTag(ad.a, "m5khoa", { level: 5 }); // R1a T16
+  await seedTag(ad.a, "m5local", { level: 5 }); // R1a final M-3
 
   await dung(sql`INSERT INTO scada_kenh_che_do (machine_id, adapter_id, tag_key, gia_tri_remote, updated_by)
     VALUES (${A.mid}, ${ad.a}, 'che_do', '2'::jsonb, 1)`);
@@ -442,6 +446,30 @@ describe("confirm — hết TTL, đã xử lý, song song", () => {
     expect(await trangThaiCho(requestId)).toBe("expired");
     expect(await khoa("het")).toBeUndefined();
     expect(H.emits.map((e) => e.payload)).toEqual([{ requestId, status: "expired", at: expect.any(String), reason: "HET_HAN" }]);
+  });
+
+  it("★ R1a final I-2 — còn 1 s (< 3000 ms) ⇒ HET_HAN, dispatch 0 lần, dòng chờ expired, khoá nhả, attempts expired/HET_HAN", async () => {
+    const requestId = await yeuCau("opA", "conlai1");
+    await db.update(aiPendingActions).set({ expiresAt: new Date(Date.now() + 1_000) }).where(eq(aiPendingActions.id, requestId));
+    await tuChoiXacNhan("opA", requestId, { code: "PRECONDITION_FAILED", appCode: "SCADA_REQUEST_EXPIRED", reason: "HET_HAN", outcome: "expired" });
+    expect(await trangThaiCho(requestId)).toBe("expired");
+    expect(await khoa("conlai1")).toBeUndefined();
+  });
+
+  it("★ R1a final I-2 — còn 30 s ⇒ dispatch nhận queueTtlMs ≈ 30 000 (CHỈ hạn chờ) và KHÔNG deadlineMs (hạn ack/đọc lại = OT_CONTROL_TIMEOUT_MS)", async () => {
+    const requestId = await yeuCau("opA", "conlai30");
+    await db.update(aiPendingActions).set({ expiresAt: new Date(Date.now() + 30_000) }).where(eq(aiPendingActions.id, requestId));
+    const truoc = H.dispatchInputs.length;
+    const kq = await nguoi.opA.caller.confirm({ requestId });
+    expect(kq).toMatchObject({ ok: true, status: "acked_verified" });
+    expect(H.dispatchInputs.length - truoc).toBe(1);
+    const vao = H.dispatchInputs.at(-1)!;
+    expect(vao.queueTtlMs).toBeGreaterThan(27_000);
+    expect(vao.queueTtlMs).toBeLessThanOrEqual(30_000);
+    expect(Number.isInteger(vao.queueTtlMs)).toBe(true);
+    expect("deadlineMs" in vao, "HMI KHÔNG truyền deadlineMs (nếu truyền, hạn ack = thời gian còn lại)").toBe(false);
+    const [dong] = await dung(sql`SELECT deadline_ms FROM command_log WHERE "actionId" = ${requestId} ORDER BY id LIMIT 1`);
+    expect(dong.deadline_ms).toBeNull();
   });
 
   it("Review Focus 1 — hai confirm song song cùng requestId ⇒ một ok, một DA_XU_LY, đúng MỘT ý định, thiết bị bị ghi đúng 1 lần", async () => {
@@ -761,9 +789,15 @@ describe("fix round 1 — máy đổi, mất khoá, dải hẹp, sàn vai, CAS t
   it("minor 2 (fix round 2) — TTL hết GIỮA bước 2 và CAS (đồng hồ trôi, KHÔNG sửa expiresAt) ⇒ CAS dùng đồng hồ đọc lại ⇒ HET_HAN sạch, dispatch 0", async () => {
     const requestId = await yeuCau("opA", "cashet");
     const [row] = await db.select({ e: aiPendingActions.expiresAt }).from(aiPendingActions).where(eq(aiPendingActions.id, requestId));
-    // Gốc đồng hồ của lượt confirm = 40 ms TRƯỚC hạn ⇒ bước 2 qua; móc ngay trước CAS cho 150 ms trôi ⇒ lúc CAS đã quá hạn.
-    const nowDate = new Date(row.e.getTime() - 40);
-    H.sauGiaHan = () => new Promise((r) => setTimeout(r, 150));
+    // Gốc đồng hồ của lượt confirm = 3 040 ms TRƯỚC hạn ⇒ bước 2 qua (sàn còn lại 3 s — R1a final I-2); móc ngay trước CAS cho 150 ms
+    // trôi ⇒ lúc CAS còn < 3 s (CAS đòi expiresAt > lúc CAS + 3 s) ⇒ trượt ⇒ HET_HAN qua đường CAS (móc chạy = đã tới bước 5).
+    const nowDate = new Date(row.e.getTime() - 3_040);
+    let mocDaChay = false;
+    H.sauGiaHan = () =>
+      new Promise((r) => {
+        mocDaChay = true;
+        setTimeout(r, 150);
+      });
     const truoc = H.dispatchCalls;
     const m = await moc();
     let kq: Awaited<ReturnType<typeof lenhHmi.xacNhanGhiTag>>;
@@ -778,6 +812,7 @@ describe("fix round 1 — máy đổi, mất khoá, dải hẹp, sàn vai, CAS t
       H.sauGiaHan = null;
     }
     expect(kq, JSON.stringify(kq)).toMatchObject({ ok: false, tuChoi: { ma: "HET_HAN" } });
+    expect(mocDaChay, "đã qua bước 2 và gia hạn khoá — HET_HAN đến từ CAS").toBe(true);
     expect(H.dispatchCalls - truoc).toBe(0);
     expect(await dongLenh(requestId)).toHaveLength(0);
     expect(await trangThaiCho(requestId)).toBe("expired");
@@ -834,7 +869,8 @@ describe("fix round 1 — máy đổi, mất khoá, dải hẹp, sàn vai, CAS t
 // Cuối tệp: một lệnh ghi quá hạn để lại "rủi ro ghi treo" theo adapter (otDeviceWrite B3) — không để nó chạm ca nào sau.
 describe("dispatch quyết — quá hạn ack (cuối tệp)", () => {
   it("thiết bị không ack trong hạn ⇒ status timeout, ghi là dispatched (lý do TIMEOUT), khoá nhả", async () => {
-    vi.stubEnv("OT_CONTROL_TIMEOUT_MAX_MS", "300");
+    // R1a final I-2 — HMI không truyền deadlineMs nữa ⇒ hạn ack = OT_CONTROL_TIMEOUT_MS toàn cục (trước: deadlineMs bị MAX_MS cắt còn 300)
+    vi.stubEnv("OT_CONTROL_TIMEOUT_MS", "300");
     const requestId = await yeuCau("opA", "treo");
     H.trongKhiGhi = () => new Promise((r) => setTimeout(r, 900));
     try {
@@ -842,7 +878,7 @@ describe("dispatch quyết — quá hạn ack (cuối tệp)", () => {
       expect(kq).toMatchObject({ status: "timeout", ok: false, simulated: false });
     } finally {
       H.trongKhiGhi = null;
-      vi.stubEnv("OT_CONTROL_TIMEOUT_MAX_MS", "");
+      vi.stubEnv("OT_CONTROL_TIMEOUT_MS", "");
     }
     const thu = await thuCua(requestId);
     expect(thu.at(-1)).toMatchObject({ stage: "dispatch", outcome: "dispatched", reason_code: "TIMEOUT" });

@@ -172,6 +172,7 @@ const ENV_KEYS = [
   "PARAM_GUARDRAIL_ENABLED",
   "INTERLOCK_AUTO_BLOCK_ENABLED",
   "SCADA_CONG_CHE_DO_ENABLED",
+  "OT_CONTROL_TIMEOUT_MS",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -306,6 +307,40 @@ describe.skipIf(!DB_URL)("R1a T5 — hạn hàng đợi (K9) + đọc lại bắ
     expect(results).toHaveLength(1);
     expect(results[0]!.errorText).toMatch(/\(limit 50 ms\)/);
     expect(results[0]!.deadlineMs).toBe(50);
+  });
+
+  it("★ R1a final I-2 — queueTtlMs = hạn CHỜ: B queueTtlMs 50 ms (KHÔNG deadlineMs) chờ ~200 ms ⇒ QUEUE_EXPIRED (limit 50 ms); deadline_ms trên sổ NULL", async () => {
+    const release = holdA();
+    const inA = await input({ writes: [{ tagKey: "nhiet_sp", value: 241 }] });
+    const inB = await input({ writes: [{ tagKey: "nhiet_sp", value: 242 }], queueTtlMs: 50 });
+    const pA = dispatch(inA);
+    await waitDepth(1);
+    const pB = dispatch(inB);
+    await waitDepth(2);
+    await sleep(200);
+    release();
+    const [, rB] = await Promise.all([pA, pB]);
+    expect(rB.reason).toBe("QUEUE_EXPIRED");
+    expect(writeCalls).toBe(1);
+    const results = (await ledger(inB.idempotencyKey)).filter((r) => (r.ackValue as { ledger?: string } | null)?.ledger === "result");
+    expect(results).toHaveLength(1);
+    expect(results[0]!.errorText).toMatch(/\(limit 50 ms\)/);
+    expect(results[0]!.deadlineMs, "queueTtlMs không phải hạn ack ⇒ không ghi deadline_ms").toBeNull();
+  });
+
+  it("★ R1a final I-2 — queueTtlMs KHÔNG đặt hạn ack: queueTtlMs 150 ms, thiết bị ack sau ~400 ms ⇒ VẪN acked (hạn ack = OT_CONTROL_TIMEOUT_MS toàn cục)", async () => {
+    process.env.OT_CONTROL_TIMEOUT_MS = "5000";
+    // lệnh ghi treo 400 ms > queueTtlMs 150 ms nhưng < hạn ack toàn cục 5000 ms
+    holdFirstWrite = sleep(400);
+    const inp = await input({ writes: [{ tagKey: "nhiet_sp", value: 243 }], queueTtlMs: 150 });
+    try {
+      const r = await dispatch(inp);
+      expect(r.status, JSON.stringify(r)).toBe("acked");
+      expect(r.ok).toBe(true);
+    } finally {
+      delete process.env.OT_CONTROL_TIMEOUT_MS;
+    }
+    expect(writeCalls).toBe(1);
   });
 
   it("fix round 1 — deadlineMs 0.5 (lẻ, trunc ⇒ 0) KHÔNG tắt hạn: B chờ, đồng hồ +61 s ⇒ QUEUE_EXPIRED với hạn mặc định 60 000 ms", async () => {
