@@ -130,6 +130,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
                    color: var(--vscode-menu-foreground, var(--vscode-dropdown-foreground));
                    border: 1px solid var(--vscode-dropdown-border); border-radius: 4px; padding: 4px; z-index: 20;
                    font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+  #menu-dinh-kem[hidden] { display: none; }
   #menu-dinh-kem button { background: transparent; color: inherit; border: 0; text-align: left; padding: 6px 8px; cursor: pointer; font: inherit; border-radius: 3px; }
   #menu-dinh-kem button:hover, #menu-dinh-kem button:focus-visible { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.2)); }
   #menu-dinh-kem .mn-goi-y { opacity: .7; padding: 4px 8px 2px; font-size: 11px; }
@@ -145,6 +146,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
      tĩnh (script tự bật lại khi có ít nhất một tệp — xem B2 "nhánh kia": gỡ hết ⇒ tự ẩn lại, không
      để lại khung rỗng lơ lửng). */
   #ds-dinh-kem { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  #ds-dinh-kem[hidden] { display: none; }
   .dinh-kem-muc { display: inline-flex; align-items: center; gap: 4px;
                   background: var(--vscode-badge-background, rgba(128,128,128,.15));
                   color: var(--vscode-badge-foreground, var(--vscode-foreground));
@@ -214,6 +216,17 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
             background: var(--vscode-editorWidget-background); padding: 6px; margin: 6px 0; font-size: 12px; }
   .ag-the input { width: 100%; box-sizing: border-box; margin-top: 4px; background: var(--vscode-input-background);
                   color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); }
+  .ag-the .nut-chinh { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; padding: 4px 12px; font-weight: 600; cursor: pointer; }
+  .ag-the .nut-phu { background: var(--vscode-button-secondaryBackground, transparent); color: var(--vscode-button-secondaryForeground, inherit); border: 0; padding: 4px 10px; cursor: pointer; }
+  .ag-the .nut-nhe { background: transparent; color: var(--vscode-descriptionForeground, inherit); border: 0; padding: 4px 6px; cursor: pointer; text-decoration: underline; }
+  .ag-the .nut-nguy { background: var(--vscode-errorForeground, #c33); color: #fff; border: 0; padding: 4px 12px; font-weight: 600; cursor: pointer; }
+  .ag-the .canh-bao-xoa { margin-top: 4px; padding: 4px 6px; border-left: 3px solid var(--vscode-errorForeground, #c33); font-size: 12px; }
+  .ag-the .the-duyet-nut { flex-wrap: wrap; align-items: center; }
+  .ag-the .nut-nhe, .ag-the .nut-phu, .ag-the .nut-chinh, .ag-the .nut-nguy { white-space: nowrap; }
+  .ag-the .nut-het { flex-basis: 100%; order: 9; white-space: normal; text-align: left; border: 1px solid var(--vscode-focusBorder, currentColor); background: transparent; }
+  .ag-the .tieu-de { font-weight: 600; margin-bottom: 2px; }
+  .ag-the button:disabled { opacity: .5; cursor: default; }
+  .ag-tu-duyet { font-size: 11px; opacity: .75; margin: 2px 0; }
   .ag-phan-hoi { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0; font-size: 11px; }
   .ag-phan-hoi button { font-size: 12px; padding: 0 6px; opacity: .7; }
   .ag-phan-hoi button.chon { opacity: 1; outline: 1px solid var(--vscode-focusBorder); }
@@ -1007,35 +1020,53 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     agKhung().appendChild(vung);
   }
   function agTheDuyet(m) {
+    const laLenh = m.loaiDuyet === "lenh";
+    const laXoa = !laLenh && m.thaoTac === "xoa";
     const the = taoPhan("div", "ag-the");
-    the.appendChild(taoPhan("div", "nhan", m.loaiDuyet === "lenh" ? "AI muốn CHẠY LỆNH" : "Đề xuất thay đổi tệp"));
-    the.appendChild(taoPhan("div", "", String(m.tomTat || "")));
+    the.appendChild(taoPhan("div", "nhan tieu-de", laLenh ? "AI muốn CHẠY LỆNH" : laXoa ? "AI muốn XOÁ tệp" : "Đề xuất thay đổi tệp"));
+    if (!(m.lenh && String(m.tomTat || "") === String(m.lenh))) the.appendChild(taoPhan("div", "", String(m.tomTat || "")));
     if (m.lenh) the.appendChild(taoPhan("code", "", String(m.lenh)));
+    if (laXoa) the.appendChild(taoPhan("div", "canh-bao-xoa", "Tệp sẽ bị xoá khỏi workspace. Việc này không nằm trong nút Duyệt thông thường — cần xác nhận riêng."));
     const lyDo = document.createElement("input");
     lyDo.setAttribute("placeholder", "Lý do bác (tuỳ chọn)");
+    lyDo.hidden = true;
     const hang = taoPhan("div", "the-duyet-nut");
-    const nutDiff = taoPhan("button", "", "Xem diff");
-    const nutOk = taoPhan("button", "", m.loaiDuyet === "lenh" ? "Chạy" : "Duyệt");
-    const nutBac = taoPhan("button", "", "Bác");
+    const nutDiff = taoPhan("button", "nut-phu", "Xem diff");
+    const nutOk = taoPhan("button", laXoa ? "nut-nguy" : "nut-chinh", laLenh ? "Chạy" : laXoa ? "Xác nhận xoá…" : "Duyệt");
+    const nutHet = taoPhan("button", "nut-phu nut-het", "Duyệt, tự duyệt các lần sửa tiếp trong lượt này");
+    const nutBac = taoPhan("button", "nut-nhe", "Bác");
+    const nutLyDo = taoPhan("button", "nut-nhe", "Thêm lý do");
     nutDiff.hidden = !m.coDiff;
+    nutHet.hidden = m.coTheDuyetHet !== true;
+    nutHet.setAttribute("title", "Chỉ cho SỬA/TẠO/ĐỔI TÊN tệp trong lượt này. Xoá tệp, chạy lệnh và nội dung đáng ngờ vẫn hỏi. Hết hiệu lực khi lượt kết thúc.");
     nutDiff.addEventListener("click", () => vscode.postMessage({ loai: "ag_xem_diff", id: m.id }));
     let daGui = false;
+    let daHoiXoa = false;
+    const khoaTatCa = () => { daGui = true; nutOk.disabled = true; nutBac.disabled = true; nutHet.disabled = true; };
     nutOk.addEventListener("click", () => {
       if (daGui) return;
-      daGui = true; nutOk.disabled = true; nutBac.disabled = true;
+      // XOÁ: hai bước — lần bấm đầu chỉ ĐỔI NHÃN nút (không gửi gì); lần hai mới gửi duyệt.
+      if (laXoa && !daHoiXoa) { daHoiXoa = true; nutOk.textContent = "Xoá tệp này"; return; }
+      khoaTatCa();
       vscode.postMessage({ loai: "ag_duyet", id: m.id });
+    });
+    nutHet.addEventListener("click", () => {
+      if (daGui) return;
+      khoaTatCa();
+      vscode.postMessage({ loai: "ag_duyet_het", id: m.id });
     });
     nutBac.addEventListener("click", () => {
       if (daGui) return;
-      daGui = true; nutOk.disabled = true; nutBac.disabled = true;
+      khoaTatCa();
       vscode.postMessage({ loai: "ag_bac", id: m.id, lyDo: lyDo.value || "" });
     });
-    hang.appendChild(nutDiff); hang.appendChild(nutOk); hang.appendChild(nutBac);
+    nutLyDo.addEventListener("click", () => { lyDo.hidden = false; nutLyDo.hidden = true; });
+    hang.appendChild(nutDiff); hang.appendChild(nutOk); hang.appendChild(nutHet); hang.appendChild(nutBac); hang.appendChild(nutLyDo);
     the.appendChild(hang);
     the.appendChild(lyDo);
     const trangThai = taoPhan("div", "nhan", "");
     the.appendChild(trangThai);
-    agThe[m.id] = { the, nutOk, nutBac, nutDiff, lyDo, trangThai };
+    agThe[m.id] = { the, nutOk, nutBac, nutDiff, nutHet, lyDo, trangThai };
     agKhung().appendChild(the);
     agDoan = null;
   }
@@ -1107,9 +1138,10 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       return;
     }
     if (m.loai === "ag_the_duyet") { xoaChiBaoChoAi(); agTheDuyet(m); return; }
+    if (m.loai === "ag_tu_duyet") { xoaChiBaoChoAi(); agKhung().appendChild(taoPhan("div", "ag-tu-duyet", "✓ Đã tự duyệt (theo lựa chọn của bạn trong lượt này): " + String(m.tomTat || m.duong || ""))); agDoan = null; return; }
     if (m.loai === "ag_an_the_duyet") {
       const t = agThe[m.id];
-      if (t) { t.nutOk.disabled = true; t.nutBac.disabled = true; t.trangThai.textContent = m.ketQua === "duyet" ? "Đã duyệt" : "Đã bác / huỷ"; }
+      if (t) { t.nutOk.disabled = true; t.nutBac.disabled = true; if (t.nutHet) t.nutHet.disabled = true; t.trangThai.textContent = m.ketQua === "duyet" ? "Đã duyệt" : "Đã bác / huỷ"; }
       return;
     }
     if (m.loai === "ag_de_xuat_nho") {

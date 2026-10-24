@@ -479,6 +479,7 @@ export class BangChat {
       if (m.loai.startsWith("ag_")) {
         const id = typeof m.id === "string" ? m.id : "";
         if (m.loai === "ag_duyet" && id) this.phienAgent.quyet(id, { duyet: true });
+        else if (m.loai === "ag_duyet_het" && id) this.phienAgent.duyetVaTuDuyetLuot(id);
         else if (m.loai === "ag_bac" && id)
           this.phienAgent.quyet(id, { duyet: false, ...(typeof m.lyDo === "string" && m.lyDo.trim() ? { lyDo: m.lyDo.trim().slice(0, 500) } : {}) });
         else if (m.loai === "ag_xem_diff" && id) void this.phienAgent.xemDiff(id);

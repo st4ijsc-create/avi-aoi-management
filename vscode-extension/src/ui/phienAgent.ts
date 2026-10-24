@@ -39,7 +39,7 @@ import { apBanVa as apBanVaThat, type DauVaoApBanVa, type KetQuaApBanVa } from "
 import { hoanTacLuotChay } from "./hoanTac";
 import { SoCheckpoint } from "../loi/checkpoint";
 import { KHOA_TOKEN_GATEWAY } from "../loi/thietBi";
-import { chuanHoaMucQuyen, NHAN_MUC_QUYEN, type MucQuyen } from "../loi/mucQuyen";
+import { chuanHoaMucQuyen, coTheDuyetHetLuot, NHAN_MUC_QUYEN, type MucQuyen } from "../loi/mucQuyen";
 import { phanTichMarkdown, khoiMa as layKhoiMa } from "../loi/markdownAnToan";
 import { BoDemMdTangDan } from "../loi/mdTangDan";
 import { docLenhGach, dungCauHoiLenhGach } from "../loi/lenhGach";
@@ -136,6 +136,8 @@ export class PhienAgent {
   private soCuoi: SoCheckpoint | undefined;
   private readonly choDuyet = new Map<string, (qd: QuyetDinhDuyet) => void>();
   private readonly yeuCauDuyet = new Map<string, YeuCauDuyet>();
+  /** ★ 2026-10-24 — người dùng đã bấm "Duyệt & tự duyệt các lần sửa tiếp trong lượt này": hết hiệu lực khi lượt kết thúc/bị dừng. */
+  private duyetHetLuot = false;
   private readonly deXuatNho = new Map<string, string>();
   private readonly dsKhoiMa: Array<{ ngonNgu: string; ma: string }> = [];
   /** ★ 2026-10-24 — dựng markdown TĂNG DẦN khi stream (thay `ag_chu` thô): host phân tích lại văn bản đã nhận (tiết lưu) và gửi cây `ag_md_dang`; bản cuối vẫn là `ag_md`. */
@@ -185,6 +187,7 @@ export class PhienAgent {
       return;
     }
     this.dangChay = true;
+    this.duyetHetLuot = false;
     const ac = new AbortController();
     this.huy = ac;
     this.doan = "";
@@ -304,6 +307,7 @@ export class PhienAgent {
       if (!daBaoXong) this.pt.gui({ loai: "ag_xong", lyDo: "khong-chay", coHoanTac: !!this.soCuoi && !this.soCuoi.rong });
       for (const id of [...this.choDuyet.keys()]) this.quyet(id, { duyet: false, lyDo: "the run ended" });
       this.dangChay = false;
+      this.duyetHetLuot = false;
       if (this.huy === ac) this.huy = undefined;
     }
   }
@@ -458,6 +462,12 @@ export class PhienAgent {
   // ─── DUYỆT ───────────────────────────────────────────────────────────────────────────────────
 
   private xinDuyet(yc: YeuCauDuyet, signal: AbortSignal): Promise<QuyetDinhDuyet> {
+    const coThe = coTheDuyetHetLuot({ loai: yc.loai, thaoTac: yc.thaoTac, coNguonDangNgo: (yc.nguonDangNgo?.length ?? 0) > 0 });
+    // Đã bấm "duyệt hết lượt" trước đó: yêu cầu GHI hợp lệ kế tiếp được duyệt luôn (vẫn hiện một dòng để người dùng thấy tệp nào đã đi qua); XOÁ/LỆNH/nội dung đáng ngờ vẫn hỏi.
+    if (this.duyetHetLuot && coThe && !signal.aborted) {
+      this.pt.gui({ loai: "ag_tu_duyet", id: yc.id, tomTat: yc.tomTat, duong: yc.duongTuongDoi });
+      return Promise.resolve({ duyet: true });
+    }
     return new Promise<QuyetDinhDuyet>((res) => {
       this.choDuyet.set(yc.id, res);
       this.yeuCauDuyet.set(yc.id, yc);
@@ -469,10 +479,22 @@ export class PhienAgent {
         duong: yc.duongTuongDoi,
         lenh: yc.lenh,
         coDiff: yc.loai === "ghi",
+        thaoTac: yc.thaoTac,
+        coTheDuyetHet: coThe,
+        coNguonDangNgo: (yc.nguonDangNgo?.length ?? 0) > 0,
       });
       if (signal.aborted) this.quyet(yc.id, { duyet: false, lyDo: "the run was stopped" });
       else signal.addEventListener("abort", () => this.quyet(yc.id, { duyet: false, lyDo: "the run was stopped" }), { once: true });
     });
+  }
+
+  /** Duyệt yêu cầu này VÀ các yêu cầu ghi hợp lệ kế tiếp của lượt. Yêu cầu không đủ điều kiện (xoá, lệnh, nội dung đáng ngờ) ⇒ BỎ QUA, không duyệt gì cả. */
+  duyetVaTuDuyetLuot(id: string): void {
+    const yc = this.yeuCauDuyet.get(id);
+    if (!yc) return;
+    if (!coTheDuyetHetLuot({ loai: yc.loai, thaoTac: yc.thaoTac, coNguonDangNgo: (yc.nguonDangNgo?.length ?? 0) > 0 })) return;
+    this.duyetHetLuot = true;
+    this.quyet(id, { duyet: true });
   }
 
   quyet(id: string, qd: QuyetDinhDuyet): void {

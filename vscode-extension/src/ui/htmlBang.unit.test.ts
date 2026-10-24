@@ -1934,3 +1934,18 @@ describe("webview — ô soạn (2026-10-24): Enter gửi · Shift+Enter xuống
     expect(dungHtmlBang({ nonce: "N" })).toMatch(/<div id="vung-muc-quyen" hidden/);
   });
 });
+
+describe("CSS không được đè thuộc tính hidden (2026-10-24)", () => {
+  it("★★★ phần tử có `hidden` trong markup tĩnh mà CSS đặt `display` cho chính id đó ⇒ phải có luật #id[hidden] { display: none } (nếu không, hidden bị đè và phần tử luôn hiện)", () => {
+    const html = dungHtmlBang({ nonce: "N" });
+    const css = html.match(/<style[^>]*>([\s\S]*?)<\/style>/)![1];
+    const ids = [...html.matchAll(/<[a-z0-9]+\b[^>]*\bid="([\w-]+)"[^>]*\bhidden\b/g)].map((m) => m[1]!);
+    expect(ids.length).toBeGreaterThan(3); // bộ lọc không rỗng
+    const loi = ids.filter((id) => {
+      const coDisplay = new RegExp("#" + id + "\\s*\\{[^}]*display\\s*:").test(css);
+      const coLuatAn = new RegExp("#" + id + "\\[hidden\\]\\s*\\{[^}]*display\\s*:\\s*none").test(css);
+      return coDisplay && !coLuatAn;
+    });
+    expect(loi).toEqual([]);
+  });
+});

@@ -180,7 +180,7 @@ describe("webview agent — hành vi", () => {
     diff1.bam();
     ok1.bam();
     ok1.bam();
-    const [, , bac2] = nutCua(the[1]);
+    const bac2 = nutCua(the[1]).find((p) => p.textContent === "Bác")!;
     tatCa(the[1]).find((p) => p.tag === "input")!.value = "giữ API cũ";
     bac2.bam();
     expect(w.daGui.filter((m) => String(m.loai).startsWith("ag_"))).toEqual([
@@ -430,5 +430,75 @@ describe("webview — cuộn thông minh (chỉ tự cuộn khi đang ở đáy)
     w.nut("pill-moi").bam();
     expect(ht.scrollTop).toBe(ht.scrollHeight);
     expect(w.nut("pill-moi").hidden).toBe(true);
+  });
+});
+
+describe("thẻ duyệt Agent — thiết kế lại (2026-10-24)", () => {
+  const nut = (t: PT, chu: string) => tatCa(t).find((p) => p.tag === "button" && p.textContent === chu);
+  function mo() {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    return w;
+  }
+  const theCuoi = (w: ReturnType<typeof chay>) => tatCa(w.nut("hoi-thoai")).filter((p) => p.className === "ag-the").at(-1)!;
+  const HET = "Duyệt, tự duyệt các lần sửa tiếp trong lượt này";
+
+  it("★★★ XOÁ: nút riêng 'Xác nhận xoá…' + cảnh báo; lần bấm đầu KHÔNG gửi gì, lần hai mới gửi ag_duyet; không có nút duyệt-hết-lượt", () => {
+    const w = mo();
+    w.banTin({ loai: "ag_the_duyet", id: "x1", loaiDuyet: "ghi", thaoTac: "xoa", tomTat: "Xoá src/cu.ts", duong: "src/cu.ts", coDiff: true, coTheDuyetHet: false });
+    const the = theCuoi(w);
+    expect(tatCa(the).some((p) => String(p.textContent).includes("sẽ bị xoá khỏi workspace"))).toBe(true);
+    expect(nut(the, "Duyệt")).toBeUndefined();
+    const nutXoa = nut(the, "Xác nhận xoá…")!;
+    expect(nutXoa.className).toBe("nut-nguy");
+    nutXoa.bam();
+    expect(w.daGui.filter((m) => m.loai === "ag_duyet")).toHaveLength(0);
+    expect(nutXoa.textContent).toBe("Xoá tệp này");
+    nutXoa.bam();
+    nutXoa.bam();
+    expect(w.daGui.filter((m) => m.loai === "ag_duyet")).toEqual([{ loai: "ag_duyet", id: "x1" }]);
+    expect(nut(the, HET)!.hidden).toBe(true);
+  });
+
+  it("★★★ ghi thường: nút duyệt-hết-lượt CHỈ hiện khi host cho phép; bấm ⇒ ag_duyet_het (một lần) và khoá cả thẻ", () => {
+    const w = mo();
+    w.banTin({ loai: "ag_the_duyet", id: "g1", loaiDuyet: "ghi", thaoTac: "thay", tomTat: "Sửa a.ts", duong: "a.ts", coDiff: true, coTheDuyetHet: true });
+    w.banTin({ loai: "ag_the_duyet", id: "g2", loaiDuyet: "ghi", thaoTac: "thay", tomTat: "Sửa b.ts", duong: "b.ts", coDiff: true, coTheDuyetHet: false });
+    const [t1, t2] = tatCa(w.nut("hoi-thoai")).filter((p) => p.className === "ag-the");
+    expect(nut(t1, HET)!.hidden).toBe(false);
+    expect(nut(t2, HET)!.hidden).toBe(true);
+    nut(t1, HET)!.bam();
+    nut(t1, HET)!.bam();
+    nut(t1, "Duyệt")!.bam();
+    expect(w.daGui.filter((m) => String(m.loai).startsWith("ag_duyet"))).toEqual([{ loai: "ag_duyet_het", id: "g1" }]);
+  });
+
+  it("★★ Bác nhẹ hơn Duyệt (lớp nut-nhe vs nut-chinh); ô lý do ẨN tới khi bấm 'Thêm lý do'", () => {
+    const w = mo();
+    w.banTin({ loai: "ag_the_duyet", id: "b1", loaiDuyet: "ghi", thaoTac: "tao", tomTat: "Tạo c.ts", duong: "c.ts", coDiff: true });
+    const the = theCuoi(w);
+    expect(nut(the, "Duyệt")!.className).toBe("nut-chinh");
+    expect(nut(the, "Bác")!.className).toBe("nut-nhe");
+    const o = tatCa(the).find((p) => p.tag === "input")!;
+    expect(o.hidden).toBe(true);
+    nut(the, "Thêm lý do")!.bam();
+    expect(o.hidden).toBe(false);
+  });
+
+  it("★★ thẻ CHẠY LỆNH giữ nghĩa cũ: 'Chạy' + 'Bác', không có nút duyệt-hết-lượt", () => {
+    const w = mo();
+    w.banTin({ loai: "ag_the_duyet", id: "l1", loaiDuyet: "lenh", tomTat: "npm test", lenh: "npm test", coDiff: false, coTheDuyetHet: false });
+    const the = theCuoi(w);
+    expect(nut(the, "Chạy")).toBeDefined();
+    expect(nut(the, HET)!.hidden).toBe(true);
+    nut(the, "Chạy")!.bam();
+    expect(w.daGui.filter((m) => m.loai === "ag_duyet")).toEqual([{ loai: "ag_duyet", id: "l1" }]);
+  });
+
+  it("★★ ag_tu_duyet ⇒ một dòng 'Đã tự duyệt' nêu tệp (người dùng thấy cái gì đã đi qua)", () => {
+    const w = mo();
+    w.banTin({ loai: "ag_tu_duyet", id: "q", tomTat: "Sửa src/z.ts", duong: "src/z.ts" });
+    expect(tatCa(w.nut("hoi-thoai")).some((p) => String(p.textContent).includes("Đã tự duyệt") && String(p.textContent).includes("src/z.ts"))).toBe(true);
   });
 });

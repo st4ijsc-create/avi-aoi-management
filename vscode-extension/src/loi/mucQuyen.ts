@@ -137,3 +137,12 @@ export function canDuyetGhiAgent(v: {
   if (v.thaoTac === "xoa") return true;
   return false;
 }
+
+/**
+ * ★ 2026-10-24 — "Duyệt & tự duyệt các lần sửa tiếp trong lượt này" (thẻ duyệt Agent). Lõi agent chạy công cụ TUẦN TỰ nên chỉ có MỘT yêu cầu duyệt chờ tại một thời điểm; nút này
+ * là cách gộp "duyệt N tệp" mà không đổi lõi: người dùng bấm MỘT lần, các yêu cầu GHI kế tiếp của CÙNG lượt được duyệt tự động. Hẹp hơn "Tự ghi" ở chỗ nó hết hiệu lực khi lượt kết thúc.
+ * Điều kiện CHO PHÉP (từng yêu cầu, kiểm lại mỗi lần): là GHI (không phải lệnh), thao tác đã biết và KHÔNG phải xoá, và lượt chưa đọc nội dung đáng ngờ (`nguonDangNgo` rỗng — chống tiêm lệnh).
+ */
+export function coTheDuyetHetLuot(v: { loai: "ghi" | "lenh"; thaoTac: LoaiThaoTacGhi | undefined; coNguonDangNgo: boolean }): boolean {
+  return v.loai === "ghi" && v.thaoTac !== undefined && v.thaoTac !== "xoa" && !v.coNguonDangNgo;
+}
