@@ -28,9 +28,10 @@ const RUN = `ilkkd${process.pid}${Date.now().toString(36)}`;
 
 let sql: ReturnType<typeof postgres>;
 const ids = { fac: "", may: 0, ad: 0, ad2: 0, edge: 0, tVan: 0, tNhiet: 0 };
-const nguoi = { A: 0, B: 0 };
+const nguoi = { A: 0, B: 0, C: 0 };
 let A!: ReturnType<typeof interlockRouter.createCaller>;
 let B!: ReturnType<typeof interlockRouter.createCaller>;
+let C!: ReturnType<typeof interlockRouter.createCaller>;
 let devA!: ReturnType<typeof deviceAdapterRouter.createCaller>;
 
 async function maMoi(uid: number): Promise<string> {
@@ -104,6 +105,9 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("kiem-dinh R1b-1 I1 / 
     const ub = await taoNguoiDungTest("b", "admin", { tienTo: "ilkkd", ts: RUN, ten: "ILK KD B" });
     nguoi.A = ua.id;
     nguoi.B = ub.id;
+    const uc = await taoNguoiDungTest("c", "admin", { tienTo: "ilkkd", ts: RUN, ten: "ILK KD C" });
+    nguoi.C = uc.id;
+    C = interlockRouter.createCaller({ user: { id: uc.id, role: "admin", name: uc.name, twoFactorEnabled: true } } as never);
     A = interlockRouter.createCaller({ user: { id: ua.id, role: "admin", name: ua.name, twoFactorEnabled: true } } as never);
     B = interlockRouter.createCaller({ user: { id: ub.id, role: "admin", name: ub.name, twoFactorEnabled: true } } as never);
     devA = deviceAdapterRouter.createCaller({ user: { id: ua.id, role: "admin", name: ua.name, twoFactorEnabled: true } } as never);
@@ -113,7 +117,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("kiem-dinh R1b-1 I1 / 
     await sql`DELETE FROM interlock_rules WHERE name LIKE ${RUN + "-%"}`;
     await sql`UPDATE device_adapters SET "edgeNodeId" = NULL WHERE id IN (${ids.ad}, ${ids.ad2})`;
     await sql`DELETE FROM device_tags WHERE "adapterId" IN (${ids.ad}, ${ids.ad2})`;
-    await sql`DELETE FROM totp_khoa_sai WHERE user_id IN (${nguoi.A}, ${nguoi.B})`;
+    await sql`DELETE FROM totp_khoa_sai WHERE user_id IN (${nguoi.A}, ${nguoi.B}, ${nguoi.C})`;
     ids.tVan = Number((await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled")
       VALUES (${ids.ad}, 'van', '40001', 'int', true, true) RETURNING id`)[0].id);
     ids.tNhiet = Number((await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled")
@@ -132,7 +136,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("kiem-dinh R1b-1 I1 / 
     await sql`DELETE FROM production_lines WHERE code = ${RUN}`;
     await sql`DELETE FROM workshops WHERE code = ${RUN}`;
     await sql`DELETE FROM factories WHERE code = ${RUN}`;
-    await sql`DELETE FROM totp_khoa_sai WHERE user_id IN (${nguoi.A}, ${nguoi.B})`;
+    await sql`DELETE FROM totp_khoa_sai WHERE user_id IN (${nguoi.A}, ${nguoi.B}, ${nguoi.C})`;
     await sql.end({ timeout: 5 });
   }, 60_000);
 
@@ -286,6 +290,50 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("kiem-dinh R1b-1 I1 / 
       const ve = await changeDeviceOwner({ kind: "adapter", deviceId: ids.ad, toEdgeNodeId: null, actorUserId: nguoi.A, actorName: "ILK KD A" });
       expect(ve, JSON.stringify(ve)).toMatchObject({ ok: true });
       expect(await hieuLuc(id)).toBe(true);
+    });
+  });
+
+  describe("I-B (fix round 2) — duyệt lại sau khi bám lệch KHÔNG bị kẹt; SoD so với người sửa NỘI DUNG cuối", () => {
+    it("★ B duyệt + A bật; định nghĩa tag đổi (bám lệch); CHÍNH B duyệt lại ⇒ ĐƯỢC (approve / enable không còn ghi đè updatedBy); A bật lại được", async () => {
+      const id = await taoLuatDaDuyet("duyetlai");
+      await sql`UPDATE device_adapters SET "isEnabled" = true WHERE id = ${ids.ad}`;
+      try {
+        await A.enable({ id, expectedVersion: (await A.get({ id })).versionToken });
+        // chưa ai sửa nội dung (create không ghi updatedBy); approve của B / enable của A KHÔNG ghi đè
+        expect((await sql`SELECT "updatedBy" FROM interlock_rules WHERE id = ${id}`)[0].updatedBy).toBeNull();
+        await sql`UPDATE device_tags SET address = '40088' WHERE id = ${ids.tVan}`;
+        expect(await A.get({ id })).toMatchObject({ canDuyetLai: true });
+        await sql`UPDATE interlock_rules SET enabled = false WHERE id = ${id}`;
+        const r = await B.approve({ id, expectedVersion: (await B.get({ id })).versionToken });
+        expect(r).toMatchObject({ approvedBy: nguoi.B, duyetHieuLuc: true, canDuyetLai: false });
+        expect((await A.enable({ id, expectedVersion: (await A.get({ id })).versionToken })).enabled).toBe(true);
+      } finally {
+        await sql`UPDATE device_adapters SET "isEnabled" = false WHERE id = ${ids.ad}`;
+      }
+    });
+
+    it("★ hàng CŨ còn updatedBy = người duyệt (trước bản này) ⇒ người sửa nội dung cuối lấy từ audit ⇒ người duyệt cũ duyệt lại ĐƯỢC", async () => {
+      const id = await taoLuatDaDuyet("hangcu");
+      await sql`UPDATE interlock_rules SET "updatedBy" = ${nguoi.B} WHERE id = ${id}`; // như approve cũ đã ghi đè
+      await sql`UPDATE device_tags SET address = '40087' WHERE id = ${ids.tVan}`;
+      expect((await B.approve({ id, expectedVersion: (await B.get({ id })).versionToken })).duyetHieuLuc).toBe(true);
+    });
+
+    it("★ người SỬA NỘI DUNG luật không duyệt được nó (C sửa có mã ⇒ C duyệt ⇒ PERMISSION_DENIED; B độc lập ⇒ được)", async () => {
+      const id = await taoLuatDaDuyet("csua");
+      const ma = await maMoi(nguoi.C);
+      await C.update({ id, threshold: 95, totpCode: ma });
+      const e = await loiCua(C.approve({ id, expectedVersion: (await C.get({ id })).versionToken }));
+      expect(e).toMatchObject({ code: "FORBIDDEN", appCode: "PERMISSION_DENIED", appParams: { action: "selfApproveInterlockRule" } });
+      expect((await hangLuat(id)).approvedBy).toBeNull();
+      expect((await B.approve({ id, expectedVersion: (await B.get({ id })).versionToken })).approvedBy).toBe(nguoi.B);
+    });
+
+    it("người TẠO luật vẫn không duyệt được (duyệt lại sau bám lệch cũng vậy)", async () => {
+      const id = await taoLuatDaDuyet("atao");
+      await sql`UPDATE device_tags SET address = '40086' WHERE id = ${ids.tVan}`;
+      const e = await loiCua(A.approve({ id, expectedVersion: (await A.get({ id })).versionToken }));
+      expect(e).toMatchObject({ code: "FORBIDDEN", appCode: "PERMISSION_DENIED" });
     });
   });
 

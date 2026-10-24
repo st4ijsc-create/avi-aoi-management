@@ -395,6 +395,30 @@ const expectedVersionInput = z.string().min(1).max(128);
  * transaction của approve, SAU `SELECT … FOR UPDATE` trên rule — mọi update đồng thời đã commit
  * (kèm dòng audit của nó) hoặc đang chờ khoá, nên không có lần sửa nào lọt khỏi cửa sổ này.
  */
+/**
+ * kiem-dinh R1b-1 I-B (fix round 2) — người sửa NỘI DUNG cuối của luật: actor của dòng audit `create` / `update` MỚI NHẤT (approve / enable /
+ * disable không phải sửa nội dung). Không có dòng audit nào (hàng gieo thẳng bảng) ⇒ `updatedBy` của hàng (chiều an toàn: như trước).
+ */
+async function nguoiSuaNoiDungCuoi(
+  tx: Parameters<Parameters<Awaited<ReturnType<typeof getDb>>["transaction"]>[0]>[0],
+  ruleId: number,
+  updatedBy: number | null,
+): Promise<number | null> {
+  const [dong] = await tx
+    .select({ actorId: controlAuditLog.actorId })
+    .from(controlAuditLog)
+    .where(
+      and(
+        eq(controlAuditLog.entityType, "interlock_rule"),
+        eq(controlAuditLog.entityId, String(ruleId)),
+        inArray(controlAuditLog.action, ["create", "update"]),
+      ),
+    )
+    .orderBy(desc(controlAuditLog.id))
+    .limit(1);
+  return dong ? (dong.actorId ?? null) : updatedBy;
+}
+
 async function isRecentAuthor(
   tx: Parameters<Parameters<Awaited<ReturnType<typeof getDb>>["transaction"]>[0]>[0],
   ruleId: number,
@@ -584,7 +608,12 @@ export const interlockRouter = router({
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
         // ILK-02 (SoD) — người duyệt KHÔNG được là người tạo (createdBy) hay
         // người sửa cuối (updatedBy) của rule — MOC đòi một cặp mắt độc lập.
-        if (existing.createdBy === ctx.user.id || existing.updatedBy === ctx.user.id) {
+        // kiem-dinh R1b-1 I-B (fix round 2, 2026-10-25): `updatedBy` nay CHỈ do `update` (sửa NỘI DUNG) ghi — approve / enable / disable thôi ghi
+        // đè nó (người làm các việc đó nằm ở audit). Trước: B duyệt + bật ⇒ updatedBy = B ⇒ khi bám định nghĩa lệch (tag đổi / sau mig 0434) chính
+        // B KHÔNG duyệt lại được (tự duyệt giả), nhà máy hai admin bị kẹt. Hàng CŨ (trước bản này) còn mang updatedBy = người duyệt / bật ⇒ người
+        // sửa nội dung cuối lấy từ SỔ AUDIT (`nguoiSuaNoiDungCuoi`: actor của dòng create/update mới nhất; không có dòng nào ⇒ `updatedBy`).
+        const nguoiSuaCuoi = await nguoiSuaNoiDungCuoi(tx, input.id, existing.updatedBy ?? null);
+        if (existing.createdBy === ctx.user.id || nguoiSuaCuoi === ctx.user.id) {
           throw appError(
             "FORBIDDEN",
             "PERMISSION_DENIED",
@@ -617,7 +646,7 @@ export const interlockRouter = router({
         await assertLenhTrongDaiKenh(tx, existing, existing.id); // SCADA R1a Task 12 — cả hàng ghi thẳng bảng
         const [row] = await tx
           .update(interlockRules)
-          .set({ approvedBy: ctx.user.id, approvedAt: new Date(), approvedDefHash: bam, updatedAt: new Date(), updatedBy: ctx.user.id })
+          .set({ approvedBy: ctx.user.id, approvedAt: new Date(), approvedDefHash: bam, updatedAt: new Date() }) // I-B: KHÔNG ghi updatedBy (giữ người sửa NỘI DUNG cuối cho SoD)
           .where(eq(interlockRules.id, input.id))
           .returning();
         // Audit bất biến: duyệt rule (quyết định an toàn có đặc quyền). `after.approvedDefHash` = định nghĩa đã duyệt.
@@ -663,7 +692,7 @@ export const interlockRouter = router({
         await assertDichNguonSanSang(tx, existing);
         const [row] = await tx
           .update(interlockRules)
-          .set({ enabled: true, updatedAt: new Date(), updatedBy: ctx.user.id })
+          .set({ enabled: true, updatedAt: new Date() }) // I-B: không ghi updatedBy (người bật nằm ở audit)
           .where(eq(interlockRules.id, input.id))
           .returning();
         // Audit bất biến: bật rule an toàn.
@@ -685,7 +714,7 @@ export const interlockRouter = router({
         await luatTrongPhamVi(ctx, existing); // phạm vi nhà máy
         const [row] = await tx
           .update(interlockRules)
-          .set({ enabled: false, updatedAt: new Date(), updatedBy: ctx.user.id })
+          .set({ enabled: false, updatedAt: new Date() }) // I-B: không ghi updatedBy (người tắt nằm ở audit)
           .where(eq(interlockRules.id, input.id))
           .returning();
         // Audit bất biến: tắt rule an toàn (reason bắt buộc — ILK-03).
