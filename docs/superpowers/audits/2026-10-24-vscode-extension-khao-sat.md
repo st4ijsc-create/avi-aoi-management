@@ -95,3 +95,13 @@ Một icon kẹp giấy 14 px, `padding:4px`, trong suốt, đặt bên TRÁI ô
 ## 5. Kế hoạch (đã gửi dieu-phoi để DUYỆT phần thiết kế lại lớn)
 - **Ngay (C), không chờ thiết kế:** lỗi 2 (dán/kéo/chọn ngoài workspace, ảnh + tệp, trần, chip rõ ràng, host kiểm tra) và lỗi 4 (vị từ `canDuyetGhiAgent` + chú thích SERVER + xoá luôn hỏi). Có test + đột biến; nghiệm thu bằng webview thật (Playwright) và `test-real-host`.
 - **Chờ duyệt (B):** thiết kế lại giao diện — (1) markdown dựng trên MỌI đường, stream tăng dần; (2) hàng nhãn vai đậm hơn, tên "Bạn"/"AI Local", cỡ 12–13 px, không in hoa; (3) khung nhập kiểu chat: tự giãn, Enter gửi (Shift+Enter xuống dòng, kiểm IME), nút đính kèm có chữ "Đính kèm" + menu {tệp trong workspace · tệp từ máy · dán ảnh}, vùng thả tệp có viền khi kéo; (4) gộp "mức quyền" và "chế độ" thành MỘT điều khiển trạng thái rõ (Hỏi · Agent duyệt · Agent tự ghi) cạnh ô nhập; (5) thẻ duyệt thống nhất, hành động phá hoại tách khỏi hành động an toàn; (6) trạng thái rỗng có 4 gợi ý theo nghề; (7) bỏ thanh thống kê dev (đưa vào tooltip). Mockup HTML tĩnh: `tmp/` → xuất ra tệp trong `docs/superpowers/audits/2026-10-24-vscode-extension-anh/` khi duyệt.
+
+---
+
+## 6. Cập nhật sau kiểm định độc lập + việc đã làm (2026-10-24)
+
+Kiểm định độc lập (`2026-10-24-vscode-extension-kiem-dinh.md`) xác nhận cả 4 lỗi và BỔ SUNG: (a) chế độ agent KHÔNG được lưu (gốc thứ hai của lỗi 4); (b) cỡ tiêu đề markdown bị đảo (`###` nhỏ hơn chữ thường, htmlBang.ts:657-658) và `>` không viền; (c) cuộn bị ép về đáy mỗi tin `ag_*`; (d) sửa nhiều tệp: mỗi tệp một thẻ, không "Duyệt tất cả"; (e) P2: chọn model/vai trò, Thử lại, Esc = Dừng, chép cả câu trả lời, thông báo nén lịch sử, mã build; (f) bản cài đang cũ (0.2.0, dist 19/10 ≈ 627ab942f).
+
+Đã sửa (commit trên feat/ai-flow-studio): lỗi 4 `5d3cfad65` (+ lưu chế độ `4b89579e5`), lỗi 2 phần đường Chat `67eec4f12`. Chưa làm (chờ duyệt thiết kế): mọi điểm giao diện còn lại — mockup: `2026-10-24-vscode-extension-anh/mockup-giao-dien-moi.html` (7 trạng thái × 2 theme; ảnh xem trước `mockup-xem-truoc-sang.png`, `mockup-xem-truoc-toi.png`).
+
+Bước nghiệm thu cuối (bắt buộc theo luật "đã cài ≠ nhìn thấy"): tăng version 0.3.0, nhúng mã build/commit vào UI, `npm run package` (.vsix), cài lại, xác minh `dist` đang chạy = bản repo, chạy `test-real-host`.

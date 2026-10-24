@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Local — giao diện mới (mockup)</title>
+<style>
+/* ═══ MOCKUP TĨNH — extension VSCode "AI Local". Chủ dự án xem trước khi dựng thật. ═══
+   Layout: một "bàn thiết kế" xếp các khung thanh bên 380 px cạnh nhau, mỗi khung = một TRẠNG THÁI thật của extension.
+   Màu: dùng ĐÚNG tên biến --vscode-* (giá trị bên dưới là Dark+ / Light+ của VSCode) nên khi dựng thật chỉ cần bỏ khối :root này — giao diện tự theo theme của người dùng.
+   Chữ: đúng phông của VSCode (--vscode-font-family) — extension không được nạp phông ngoài (CSP webview). */
+:root {
+  /* — Light+ — */
+  --vscode-font-family: "Segoe UI", system-ui, sans-serif;
+  --vscode-editor-font-family: Consolas, "Courier New", monospace;
+  --vscode-foreground: #3b3b3b;
+  --vscode-descriptionForeground: #717171;
+  --vscode-sideBar-background: #f8f8f8;
+  --vscode-editor-background: #ffffff;
+  --vscode-input-background: #ffffff;
+  --vscode-input-foreground: #3b3b3b;
+  --vscode-input-border: #cecece;
+  --vscode-focusBorder: #005fb8;
+  --vscode-button-background: #005fb8;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: #0258a8;
+  --vscode-button-secondaryBackground: #e5e5e5;
+  --vscode-button-secondaryForeground: #3b3b3b;
+  --vscode-panel-border: #e5e5e5;
+  --vscode-textBlockQuote-background: #f2f2f2;
+  --vscode-textBlockQuote-border: #bdbdbd;
+  --vscode-textCodeBlock-background: #ececec;
+  --vscode-editorWidget-background: #f3f3f3;
+  --vscode-list-hoverBackground: #e8e8e8;
+  --vscode-badge-background: #cccccc;
+  --vscode-badge-foreground: #3b3b3b;
+  --vscode-charts-green: #388a34;
+  --vscode-charts-red: #c72e0f;
+  --vscode-charts-yellow: #bf8803;
+  --vscode-charts-blue: #1a85ff;
+  --vscode-diffEditor-insertedTextBackground: rgba(156, 204, 44, .25);
+  --vscode-diffEditor-removedTextBackground: rgba(255, 0, 0, .15);
+  /* — nền bàn thiết kế (chỉ của mockup, KHÔNG đi vào extension) — */
+  --ban: #e9e9ec;
+  --ban-chu: #3b3b3b;
+  --ban-nhan: #5a5a60;
+  --tai-chinh: color-mix(in srgb, var(--vscode-focusBorder) 14%, transparent);
+  --nguy-hiem-nen: color-mix(in srgb, var(--vscode-charts-red) 12%, transparent);
+  --canh-bao-nen: color-mix(in srgb, var(--vscode-charts-yellow) 16%, transparent);
+  --tot-nen: color-mix(in srgb, var(--vscode-charts-green) 14%, transparent);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --vscode-foreground: #cccccc;
+    --vscode-descriptionForeground: #9d9d9d;
+    --vscode-sideBar-background: #181818;
+    --vscode-editor-background: #1f1f1f;
+    --vscode-input-background: #313131;
+    --vscode-input-foreground: #cccccc;
+    --vscode-input-border: #3c3c3c;
+    --vscode-focusBorder: #0078d4;
+    --vscode-button-background: #0078d4;
+    --vscode-button-hoverBackground: #026ec1;
+    --vscode-button-secondaryBackground: #313131;
+    --vscode-button-secondaryForeground: #cccccc;
+    --vscode-panel-border: #2b2b2b;
+    --vscode-textBlockQuote-background: #2b2b2b;
+    --vscode-textBlockQuote-border: #5a5a5a;
+    --vscode-textCodeBlock-background: #2b2b2b;
+    --vscode-editorWidget-background: #202020;
+    --vscode-list-hoverBackground: #2a2d2e;
+    --vscode-badge-background: #4d4d4d;
+    --vscode-badge-foreground: #ffffff;
+    --vscode-charts-green: #89d185;
+    --vscode-charts-red: #f14c4c;
+    --vscode-charts-yellow: #cca700;
+    --vscode-charts-blue: #3794ff;
+    --vscode-diffEditor-insertedTextBackground: rgba(156, 204, 44, .2);
+    --vscode-diffEditor-removedTextBackground: rgba(255, 0, 0, .25);
+    --ban: #0f0f10;
+    --ban-chu: #d4d4d8;
+    --ban-nhan: #a1a1a8;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --vscode-foreground: #cccccc;
+  --vscode-descriptionForeground: #9d9d9d;
+  --vscode-sideBar-background: #181818;
+  --vscode-editor-background: #1f1f1f;
+  --vscode-input-background: #313131;
+  --vscode-input-foreground: #cccccc;
+  --vscode-input-border: #3c3c3c;
+  --vscode-focusBorder: #0078d4;
+  --vscode-button-background: #0078d4;
+  --vscode-button-hoverBackground: #026ec1;
+  --vscode-button-secondaryBackground: #313131;
+  --vscode-button-secondaryForeground: #cccccc;
+  --vscode-panel-border: #2b2b2b;
+  --vscode-textBlockQuote-background: #2b2b2b;
+  --vscode-textBlockQuote-border: #5a5a5a;
+  --vscode-textCodeBlock-background: #2b2b2b;
+  --vscode-editorWidget-background: #202020;
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-badge-background: #4d4d4d;
+  --vscode-badge-foreground: #ffffff;
+  --vscode-charts-green: #89d185;
+  --vscode-charts-red: #f14c4c;
+  --vscode-charts-yellow: #cca700;
+  --vscode-charts-blue: #3794ff;
+  --vscode-diffEditor-insertedTextBackground: rgba(156, 204, 44, .2);
+  --vscode-diffEditor-removedTextBackground: rgba(255, 0, 0, .25);
+  --ban: #0f0f10;
+  --ban-chu: #d4d4d8;
+  --ban-nhan: #a1a1a8;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ban); color: var(--ban-chu); font: 14px/1.5 var(--vscode-font-family); }
+.trang { max-width: 1760px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.dau { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; }
+.dau h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -.01em; text-wrap: balance; }
+.dau p { margin: 0; max-width: 70ch; color: var(--ban-nhan); }
+.dieu-khien { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.dieu-khien button, .dieu-khien select { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--ban-chu) 25%, transparent); background: transparent; color: var(--ban-chu); cursor: pointer; }
+.dieu-khien button[aria-pressed="true"] { background: var(--ban-chu); color: var(--ban); }
+.thay-doi { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px 24px; margin: 0 0 28px; padding: 16px 0; border-block: 1px solid color-mix(in srgb, var(--ban-chu) 18%, transparent); }
+.thay-doi h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--ban-nhan); margin: 0 0 6px; font-weight: 600; }
+.thay-doi ul { margin: 0; padding-left: 18px; }
+.thay-doi li { margin: 2px 0; }
+.thay-doi .goc { color: var(--ban-nhan); font-size: 12px; }
+
+.luoi { display: flex; flex-wrap: wrap; gap: 28px 24px; align-items: flex-start; }
+.vs.cao { height: 840px; }
+.khung-ngoai { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; }
+.nhan-khung { font-size: 12px; color: var(--ban-nhan); max-width: var(--rong, 380px); }
+.nhan-khung b { color: var(--ban-chu); font-size: 13px; display: block; margin-bottom: 2px; }
+
+/* ═════ MỘT KHUNG THANH BÊN VSCODE ═════ */
+.vs { width: var(--rong, 380px); height: 700px; background: var(--vscode-sideBar-background); color: var(--vscode-foreground);
+      border: 1px solid var(--vscode-panel-border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; position: relative;
+      font: 13px/1.55 var(--vscode-font-family); box-shadow: 0 1px 2px rgba(0,0,0,.12), 0 8px 24px -12px rgba(0,0,0,.35); }
+.vs button { font: inherit; color: inherit; }
+.vs svg { flex: none; }
+.vs :focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+
+/* — thanh trên: tên + build + hành động — */
+.thanh-tren { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--vscode-panel-border); min-height: 40px; }
+.thanh-tren .ten { font-weight: 600; font-size: 12px; letter-spacing: .02em; }
+.thanh-tren .build { font-size: 11px; color: var(--vscode-descriptionForeground); font-variant-numeric: tabular-nums; }
+.thanh-tren .gian { flex: 1; }
+.nut-ic { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 0; border-radius: 4px; background: transparent; cursor: pointer; color: var(--vscode-foreground); }
+.nut-ic:hover { background: var(--vscode-list-hoverBackground); }
+.nut-ic[title]:hover::after { content: none; }
+
+/* — vùng hội thoại — */
+.hoi-thoai { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 18px; scroll-behavior: smooth; }
+.luot { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.luot-dau { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+.luot-dau .gio { margin-left: auto; font-weight: 400; color: var(--vscode-descriptionForeground); font-variant-numeric: tabular-nums; }
+.chu-cai { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+.chu-cai.ai { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+.chip-model { font-weight: 400; font-size: 11px; color: var(--vscode-descriptionForeground); padding: 0 6px; border: 1px solid var(--vscode-panel-border); border-radius: 999px; }
+.luot-nguoi .noi-dung { background: var(--vscode-textBlockQuote-background); border: 1px solid var(--vscode-panel-border); border-radius: 8px; padding: 8px 10px; }
+.luot-ai .noi-dung { padding: 0 2px; }
+
+/* — markdown: thứ bậc rõ, bề rộng dòng ≤ khung, không khối đặc — */
+.md { overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 .7em; }
+.md h1, .md h2, .md h3 { line-height: 1.3; margin: 1.1em 0 .45em; font-weight: 600; text-wrap: balance; }
+.md h1 { font-size: 16px; } .md h2 { font-size: 14.5px; } .md h3 { font-size: 13.5px; color: color-mix(in srgb, var(--vscode-foreground) 85%, var(--vscode-focusBorder)); }
+.md ul, .md ol { margin: 0 0 .7em; padding-left: 20px; } .md li { margin: .2em 0; } .md li::marker { color: var(--vscode-descriptionForeground); }
+.md code { font: 12px/1.4 var(--vscode-editor-font-family); background: var(--vscode-textCodeBlock-background); padding: 1px 5px; border-radius: 4px; }
+.md blockquote { margin: 0 0 .7em; padding: 6px 10px; border-left: 3px solid var(--vscode-focusBorder); background: var(--vscode-textBlockQuote-background); border-radius: 0 6px 6px 0; color: color-mix(in srgb, var(--vscode-foreground) 90%, transparent); }
+.md blockquote p { margin: 0; }
+.bang-cuon { overflow-x: auto; margin: 0 0 .8em; border: 1px solid var(--vscode-panel-border); border-radius: 6px; }
+.md table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+.md th, .md td { padding: 5px 9px; text-align: left; white-space: nowrap; }
+.md th { background: var(--vscode-textBlockQuote-background); font-weight: 600; border-bottom: 1px solid var(--vscode-panel-border); }
+.md tr:nth-child(even) td { background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); }
+.md .so { text-align: right; }
+
+/* — khối mã: tên ngôn ngữ + hành động có CHỮ, giữ Chép/Chèn/Áp dụng của bản hiện tại — */
+.khoi-ma { margin: 0 0 .8em; border: 1px solid var(--vscode-panel-border); border-radius: 6px; overflow: hidden; background: var(--vscode-textCodeBlock-background); }
+.khoi-ma-dau { display: flex; align-items: center; gap: 2px; padding: 3px 4px 3px 10px; font-size: 11px; background: var(--vscode-editorWidget-background); border-bottom: 1px solid var(--vscode-panel-border); }
+.khoi-ma-dau .ngon-ngu { flex: 1; font-family: var(--vscode-editor-font-family); color: var(--vscode-descriptionForeground); }
+.nut-chu { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border: 0; border-radius: 4px; background: transparent; cursor: pointer; font-size: 11px; }
+.nut-chu:hover { background: var(--vscode-list-hoverBackground); }
+.nut-chu.da-chep { color: var(--vscode-charts-green); }
+.khoi-ma pre { margin: 0; padding: 8px 10px; overflow-x: auto; font: 12px/1.5 var(--vscode-editor-font-family); }
+.tk { color: var(--vscode-charts-blue); } .ts { color: var(--vscode-charts-green); } .tc { color: var(--vscode-descriptionForeground); font-style: italic; }
+
+/* — hành động dưới câu trả lời — */
+.hanh-dong { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 2px; color: var(--vscode-descriptionForeground); }
+.hanh-dong .nut-chu { color: inherit; }
+.hanh-dong .gian { flex: 1; }
+
+/* — dòng thời gian công cụ + suy luận — */
+.cong-cu { display: flex; flex-direction: column; gap: 2px; margin: 0 0 .6em; padding: 6px 8px; border-radius: 6px; background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-panel-border); font-size: 12px; }
+.cc-dong { display: flex; align-items: center; gap: 7px; min-height: 22px; }
+.cc-dong .ten { font-family: var(--vscode-editor-font-family); font-size: 11.5px; }
+.cc-dong .phu { margin-left: auto; color: var(--vscode-descriptionForeground); font-size: 11px; font-variant-numeric: tabular-nums; }
+.dau-ok { color: var(--vscode-charts-green); } .dau-loi { color: var(--vscode-charts-red); }
+.quay { width: 12px; height: 12px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--vscode-foreground) 25%, transparent); border-top-color: var(--vscode-focusBorder); animation: quay .8s linear infinite; }
+@keyframes quay { to { transform: rotate(360deg); } }
+.suy-luan { font-size: 12px; margin: 0 0 .6em; color: var(--vscode-descriptionForeground); }
+.suy-luan summary { cursor: pointer; padding: 2px 0; }
+.con-tro { display: inline-block; width: 7px; height: 14px; vertical-align: -2px; background: var(--vscode-focusBorder); animation: nhap 1s steps(2) infinite; margin-left: 1px; }
+@keyframes nhap { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .quay, .con-tro { animation: none; } .hoi-thoai { scroll-behavior: auto; } }
+
+/* — thẻ duyệt thay đổi: MỘT thẻ cho cả lượt, xoá tách riêng, Bác không nổi bằng Duyệt — */
+.the { border: 1px solid var(--vscode-panel-border); border-radius: 8px; background: var(--vscode-editorWidget-background); overflow: hidden; }
+.the-dau { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-weight: 600; font-size: 12px; border-bottom: 1px solid var(--vscode-panel-border); }
+.the-dau .dem { margin-left: auto; font-weight: 400; color: var(--vscode-descriptionForeground); }
+.tep-dong { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--vscode-panel-border); font-size: 12px; }
+.tep-dong:last-of-type { border-bottom: 0; }
+.tep-dong .duong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); font-size: 11.5px; direction: rtl; text-align: left; }
+.tep-dong .duong bdi { direction: ltr; unicode-bidi: plaintext; }
+.so-them { color: var(--vscode-charts-green); font-variant-numeric: tabular-nums; } .so-bot { color: var(--vscode-charts-red); font-variant-numeric: tabular-nums; }
+.loai { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 5px; border-radius: 3px; background: var(--tot-nen); color: var(--vscode-charts-green); }
+.loai.xoa { background: var(--nguy-hiem-nen); color: var(--vscode-charts-red); }
+.loai.sua { background: var(--tai-chinh); color: var(--vscode-charts-blue); }
+.tep-dong.nguy-hiem { background: var(--nguy-hiem-nen); }
+.the-chan { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--vscode-panel-border); flex-wrap: wrap; }
+.nut-chinh { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 0; border-radius: 4px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); font-size: 12px; cursor: pointer; }
+.nut-chinh:hover { background: var(--vscode-button-hoverBackground); }
+.nut-phu { padding: 5px 10px; border: 1px solid var(--vscode-input-border); border-radius: 4px; background: transparent; font-size: 12px; cursor: pointer; }
+.nut-phu:hover { background: var(--vscode-list-hoverBackground); }
+.nut-nhe { padding: 5px 8px; border: 0; border-radius: 4px; background: transparent; font-size: 12px; cursor: pointer; color: var(--vscode-descriptionForeground); }
+.nut-nhe:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); }
+.nut-nhe.nguy { color: var(--vscode-charts-red); }
+.canh-bao-xoa { display: flex; gap: 6px; align-items: flex-start; padding: 6px 10px; font-size: 11.5px; background: var(--canh-bao-nen); border-top: 1px solid var(--vscode-panel-border); }
+.lenh { font: 12px/1.5 var(--vscode-editor-font-family); background: var(--vscode-textCodeBlock-background); border-radius: 4px; padding: 6px 8px; margin: 8px 10px 0; overflow-x: auto; white-space: pre; }
+.nhan-nho { font-size: 11px; color: var(--vscode-descriptionForeground); padding: 4px 10px 0; }
+
+/* — khung soạn: đính kèm, chế độ gộp, model, gửi/dừng — */
+.soan { padding: 8px 10px 10px; border-top: 1px solid var(--vscode-panel-border); display: flex; flex-direction: column; gap: 6px; position: relative; }
+.soan-hop { border: 1px solid var(--vscode-input-border); border-radius: 8px; background: var(--vscode-input-background); display: flex; flex-direction: column; }
+.soan-hop:focus-within { border-color: var(--vscode-focusBorder); }
+.soan-hop.keo { border: 1.5px dashed var(--vscode-focusBorder); background: var(--tai-chinh); }
+.soan textarea { resize: none; border: 0; background: transparent; color: var(--vscode-input-foreground); font: inherit; padding: 8px 10px 4px; min-height: 40px; max-height: 160px; outline: none; }
+.chip-dk { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 8px 0; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 4px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-editorWidget-background); font-size: 11.5px; max-width: 100%; }
+.chip .tn { width: 28px; height: 28px; border-radius: 4px; background: linear-gradient(135deg, #2f9e6e, #206d99); display: grid; place-items: center; color: #fff; font-size: 9px; font-weight: 700; flex: none; overflow: hidden; }
+.chip .tn.tep { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+.chip .tt { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.chip .tt b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.chip .tt span { color: var(--vscode-descriptionForeground); font-size: 10.5px; }
+.chip .go { border: 0; background: transparent; width: 18px; height: 18px; border-radius: 3px; cursor: pointer; color: var(--vscode-descriptionForeground); }
+.chip .go:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); }
+.soan-thanh { display: flex; align-items: center; gap: 4px; padding: 4px 6px 6px; }
+.nut-chon { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; cursor: pointer; font-size: 12px; color: var(--vscode-foreground); max-width: 100%; }
+.nut-chon:hover { background: var(--vscode-list-hoverBackground); }
+.nut-chon .mui { opacity: .6; }
+.nut-chon.quyen-tu-ghi { color: var(--vscode-charts-yellow); }
+.nut-chon.quyen-hoi { color: var(--vscode-foreground); }
+.nut-chon.quyen-doc { color: var(--vscode-descriptionForeground); }
+.gui { margin-left: auto; width: 28px; height: 28px; border-radius: 6px; border: 0; display: grid; place-items: center; cursor: pointer; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+.gui:hover { background: var(--vscode-button-hoverBackground); }
+.gui.dung { background: transparent; border: 1px solid var(--vscode-input-border); color: var(--vscode-foreground); width: auto; padding: 0 10px; gap: 6px; display: inline-flex; align-items: center; font-size: 12px; }
+.mo-ta-nho { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--vscode-descriptionForeground); padding: 0 2px; }
+.dong-ho { display: inline-flex; align-items: center; gap: 6px; }
+.dong-ho .thanh { width: 56px; height: 4px; border-radius: 2px; background: var(--vscode-panel-border); overflow: hidden; }
+.dong-ho .thanh i { display: block; height: 100%; background: var(--vscode-charts-blue); }
+.dong-ho.cao .thanh i { background: var(--vscode-charts-yellow); }
+kbd { font: 10.5px var(--vscode-editor-font-family); padding: 0 4px; border: 1px solid var(--vscode-input-border); border-radius: 3px; background: var(--vscode-editorWidget-background); }
+
+/* — menu nổi (đính kèm / chế độ) — */
+.menu { position: absolute; left: 10px; right: 10px; bottom: 100%; margin-bottom: 4px; z-index: 5; background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-input-border); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.35); padding: 4px; }
+.menu .muc { display: grid; grid-template-columns: 20px 1fr auto; gap: 2px 8px; align-items: start; padding: 7px 8px; border-radius: 6px; cursor: pointer; width: 100%; border: 0; background: transparent; text-align: left; }
+.menu .muc:hover, .menu .muc[aria-checked="true"] { background: var(--vscode-list-hoverBackground); }
+.menu .muc b { font-weight: 600; font-size: 12.5px; }
+.menu .muc .mt { grid-column: 2 / 3; color: var(--vscode-descriptionForeground); font-size: 11.5px; line-height: 1.4; }
+.menu .muc kbd { align-self: center; }
+.menu hr { border: 0; border-top: 1px solid var(--vscode-panel-border); margin: 4px 2px; }
+.menu .ti-de { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--vscode-descriptionForeground); padding: 6px 8px 2px; }
+.ghi-chu-server { margin: 4px 4px 2px; padding: 6px 8px; border-left: 2px solid var(--vscode-charts-yellow); background: var(--canh-bao-nen); font-size: 11.5px; border-radius: 0 6px 6px 0; }
+.toc-dong { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; }
+
+/* — trạng thái rỗng, lỗi, pill cuộn — */
+.rong { margin: auto 0; padding: 12px 6px; display: flex; flex-direction: column; gap: 14px; }
+.rong h3 { margin: 0; font-size: 15px; font-weight: 600; text-wrap: balance; }
+.rong p { margin: 0; color: var(--vscode-descriptionForeground); }
+.goi-y { display: grid; gap: 6px; }
+.goi-y button { text-align: left; display: grid; grid-template-columns: 22px 1fr; gap: 8px; padding: 8px 10px; border: 1px solid var(--vscode-panel-border); border-radius: 8px; background: var(--vscode-editorWidget-background); cursor: pointer; font-size: 12.5px; }
+.goi-y button:hover { border-color: var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); }
+.goi-y button small { display: block; color: var(--vscode-descriptionForeground); font-size: 11px; }
+.loi { border: 1px solid color-mix(in srgb, var(--vscode-charts-red) 45%, var(--vscode-panel-border)); background: var(--nguy-hiem-nen); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.loi-dau { display: flex; gap: 8px; font-weight: 600; }
+.loi p { margin: 0; font-size: 12px; }
+.loi ul { margin: 0; padding-left: 18px; font-size: 12px; color: var(--vscode-descriptionForeground); }
+.loi .hang { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill-moi { position: absolute; left: 50%; transform: translateX(-50%); bottom: 118px; display: inline-flex; gap: 6px; align-items: center; padding: 4px 10px; border-radius: 999px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); font-size: 11.5px; border: 0; box-shadow: 0 2px 10px rgba(0,0,0,.35); cursor: pointer; }
+.nhap-nhay-nhe { animation: nhap 1.4s ease-in-out infinite; }
+
+.ghi-chu-cuoi { margin-top: 28px; font-size: 12px; color: var(--ban-nhan); max-width: 90ch; }
+</style>
+</head>
+<body>
+<div class="trang">
+
+<header class="dau">
+  <div>
+    <h1>AI Local — giao diện mới</h1>
+    <p>Mockup tĩnh của khung chat trong VSCode. Mỗi khung dưới đây là một trạng thái thật của extension; dùng đúng biến màu <code>--vscode-*</code> nên tự theo theme sáng/tối của người dùng. Bấm các nút bên phải để đổi theme và bề rộng thanh bên.</p>
+  </div>
+  <div class="dieu-khien" role="group" aria-label="Điều khiển mockup">
+    <button type="button" id="b-sang" aria-pressed="false">Sáng</button>
+    <button type="button" id="b-toi" aria-pressed="false">Tối</button>
+    <button type="button" id="b-he-thong" aria-pressed="true">Theo hệ thống</button>
+    <label for="o-rong" style="font-size:13px;color:var(--ban-nhan)">Bề rộng</label>
+    <select id="o-rong"><option value="320">320 px (hẹp)</option><option value="380" selected>380 px (thanh bên thường)</option><option value="480">480 px</option></select>
+  </div>
+</header>
+
+<section class="thay-doi" aria-label="Điều gì thay đổi">
+  <div>
+    <h2>Đọc được</h2>
+    <ul>
+      <li>Markdown dựng ngay khi stream, trên MỌI đường (kể cả Chat cũ/SERVER)</li>
+      <li>Tiêu đề to hơn chữ thường; trích dẫn có viền; bảng có hàng xen kẽ</li>
+      <li>Tên "Bạn / AI Local" đậm, có giờ; chip model</li>
+      <li>Câu trả lời: Chép cả câu · Tạo lại · 👍/👎 gọn</li>
+    </ul>
+    <p class="goc">Gốc: bản chụp 2 lỗi 1 · khảo sát §1</p>
+  </div>
+  <div>
+    <h2>Đính kèm &amp; ảnh</h2>
+    <ul>
+      <li>Nút <b>Đính kèm</b> có chữ, mở menu: tệp trong workspace · tệp/ảnh từ máy · dán ảnh</li>
+      <li>Dán Ctrl+V, kéo-thả: viền nét đứt; chip có ảnh thu nhỏ + kích thước</li>
+      <li>Hiện rõ đã gửi gì; trần 6 MB/ảnh, 200 KB/tệp</li>
+    </ul>
+    <p class="goc">Gốc: lỗi 2 (đã sửa phần Chat, 67eec4f12)</p>
+  </div>
+  <div>
+    <h2>Quyền &amp; duyệt</h2>
+    <ul>
+      <li><b>MỘT</b> điều khiển chế độ (Hỏi · Agent duyệt · Agent tự ghi), có LƯU theo workspace</li>
+      <li>Một thẻ duyệt cho cả lượt: "Duyệt tất cả" · "Xem tất cả diff"; Bác nhẹ hơn Duyệt</li>
+      <li>XOÁ tệp tách riêng, luôn cần xác nhận; lệnh luôn hỏi</li>
+      <li>Dự án SERVER nói thật: luôn duyệt trên máy chủ</li>
+    </ul>
+    <p class="goc">Gốc: lỗi 4 (đã sửa 5d3cfad65, 4b89579e5)</p>
+  </div>
+  <div>
+    <h2>Vận hành</h2>
+    <ul>
+      <li>Tự cuộn chỉ khi đang ở đáy; "↓ Tin mới" khi cuộn lên đọc</li>
+      <li>Mất kết nối: Thử lại · Mở cài đặt · gợi ý</li>
+      <li>Esc = Dừng · ô chọn model · đồng hồ ngữ cảnh dạng thanh</li>
+      <li>Mã build hiện ở đầu khung (đã cài = đang chạy bản nào)</li>
+    </ul>
+    <p class="goc">Gốc: kiểm định độc lập (P1/P2)</p>
+  </div>
+</section>
+
+<main class="luoi" id="luoi">
+
+<!-- ═══ 1. TRỐNG ═══ -->
+<div class="khung-ngoai">
+  <div class="nhan-khung"><b>1 · Mới mở (trống)</b>Gợi ý theo đúng nghề: PLC, AOI, tự động hoá — không phải ba dòng chữ mờ.</div>
+  <div class="vs">
+    <div class="thanh-tren"><span class="ten">AI LOCAL</span><span class="build">v0.3.0 · 4b89579</span><span class="gian"></span>
+      <button class="nut-ic" title="Chat mới" aria-label="Chat mới"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg></button>
+      <button class="nut-ic" title="Lịch sử" aria-label="Lịch sử"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3" stroke-linecap="round"/></svg></button>
+      <button class="nut-ic" title="Tài khoản: st4i (đã đăng nhập)" aria-label="Tài khoản"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="color:var(--vscode-charts-green)"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 1.2c-2.7 0-6.2 1.4-6.2 4.1v.7h12.4v-.7c0-2.7-3.5-4.1-6.2-4.1Z"/></svg></button>
+    </div>
+    <div class="hoi-thoai">
+      <div class="rong">
+        <h3>Hỏi về mã, tài liệu máy, hoặc nhờ AI sửa trong workspace</h3>
+        <p>Đang làm việc trên <b>aoi-management</b> · máy chủ <b>localhost:3000</b> · model <b>chat</b></p>
+        <div class="goi-y">
+          <button type="button"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5 6h6M5 8.5h4M5 11h2"/></svg><span>Giải thích tệp ST đang mở<small>Đọc tệp hiện tại + chẩn đoán</small></span></button>
+          <button type="button"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="8" r="5.5"/><path d="M5.5 8.2 7.2 10l3.3-3.7" stroke-linecap="round"/></svg><span>Viết FB điều khiển van 2 vị trí<small>Sinh mã IEC 61131-3 và biên dịch thử</small></span></button>
+          <button type="button"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="3" width="12" height="9" rx="1.2"/><path d="M5 14h6M8 12v2"/></svg><span>Đọc ảnh màn hình HMI báo AL.32<small>Dán ảnh (Ctrl+V) hoặc kéo vào khung</small></span></button>
+          <button type="button"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3 12.5 7 3l2 4.5 1.5-2L13 12.5z" stroke-linejoin="round"/></svg><span>Tìm nguyên nhân test đỏ<small>Chạy test, đọc log, đề xuất bản sửa</small></span></button>
+        </div>
+      </div>
+    </div>
+    <div class="soan">
+      <div class="soan-hop">
+        <textarea rows="1" aria-label="Câu hỏi" placeholder="Hỏi AI Local… (Enter gửi, @ chèn tệp)"></textarea>
+        <div class="soan-thanh">
+          <button class="nut-chon" type="button"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M11.3 4.6 6.4 9.5a1.9 1.9 0 1 0 2.7 2.7l4.6-4.6a3.4 3.4 0 1 0-4.8-4.8L3.8 7.9" stroke-linecap="round"/></svg>Đính kèm</button>
+          <button class="nut-chon quyen-hoi" type="button" title="Chế độ làm việc"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M8 1.5 2.5 3.6v3.7c0 3.6 2.3 6.4 5.5 7.2 3.2-.8 5.5-3.6 5.5-7.2V3.6L8 1.5Z"/></svg>Agent · duyệt <span class="mui">▾</span></button>
+          <button class="gui" type="button" aria-label="Gửi (Enter)"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.2 1.4 14.8 8 1.2 14.6l2.6-6.1H9.5V7.5H3.8Z"/></svg></button>
+        </div>
+      </div>
+      <div class="mo-ta-nho"><span>Model: <b>chat</b> <span class="mui">▾</span></span><span class="dong-ho" title="Ngữ cảnh đã dùng ở lượt gần nhất"><span>0 / 65k</span><span class="thanh"><i style="width:0"></i></span></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 2. HỘI THOẠI ═══ -->
+<div class="khung-ngoai">
+  <div class="nhan-khung"><b>2 · Hội thoại có markdown, mã, bảng</b>Đây là đúng câu trả lời bị hiện thô (### ** ```bash) ở bản cũ. Có Chép cả câu · Tạo lại · 👍 👎.</div>
+  <div class="vs">
+    <div class="thanh-tren"><span class="ten">AI LOCAL</span><span class="build">v0.3.0 · 4b89579</span><span class="gian"></span>
+      <button class="nut-ic" title="Chat mới" aria-label="Chat mới"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg></button>
+      <button class="nut-ic" title="Lịch sử" aria-label="Lịch sử"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3" stroke-linecap="round"/></svg></button>
+    </div>
+    <div class="hoi-thoai">
+      <div class="luot luot-nguoi">
+        <div class="luot-dau"><span class="chu-cai">B</span>Bạn<span class="gio">09:41</span></div>
+        <div class="noi-dung">Làm sao chạy project này? Mình cũng gửi ảnh màn hình lỗi.
+          <div class="chip-dk" style="padding:8px 0 0"><span class="chip"><span class="tn">PNG</span><span class="tt"><b>loi-man-hinh.png</b><span>412 KB · ảnh</span></span></span></div>
+        </div>
+      </div>
+      <div class="luot luot-ai">
+        <div class="luot-dau"><span class="chu-cai ai">AI</span>AI Local<span class="chip-model">chat</span><span class="gio">09:41 · 12 s</span></div>
+        <div class="noi-dung md">
+          <h2>Cách chạy dự án</h2>
+          <p>Dự án dùng <b>Node 20</b> và PostgreSQL ở cổng <code>5434</code>. Chạy lần lượt:</p>
+          <div class="khoi-ma">
+            <div class="khoi-ma-dau"><span class="ngon-ngu">bash</span>
+              <button class="nut-chu da-chep" type="button"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m3.5 8.5 3 3 6-7" stroke-linecap="round" stroke-linejoin="round"/></svg>Đã chép</button>
+              <button class="nut-chu" type="button">Chèn</button><button class="nut-chu" type="button">Áp dụng</button></div>
+            <pre><span class="tc"># cài thư viện rồi chạy bản dev</span>
+npm install
+npm run dev</pre>
+          </div>
+          <h3>Sau khi chạy</h3>
+          <ul><li>Mở <code>http://localhost:3000</code></li><li>Đăng nhập bằng tài khoản <b>admin</b></li></ul>
+          <div class="bang-cuon"><table><thead><tr><th>Cổng</th><th>Dịch vụ</th><th class="so">Ghi chú</th></tr></thead>
+            <tbody><tr><td>3000</td><td>web + API</td><td class="so">dist</td></tr><tr><td>5434</td><td>postgres</td><td class="so">dùng chung</td></tr><tr><td>8091</td><td>llama</td><td class="so">1 slot</td></tr></tbody></table></div>
+          <blockquote><p>Lưu ý: cần Docker để chạy bộ mô phỏng PLC.</p></blockquote>
+        </div>
+        <div class="hanh-dong">
+          <button class="nut-chu" type="button"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>Chép câu trả lời</button>
+          <button class="nut-chu" type="button"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5V5h-2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Tạo lại</button>
+          <span class="gian"></span>
+          <button class="nut-ic" title="Hữu ích" aria-label="Hữu ích" style="width:22px;height:22px">👍</button><button class="nut-ic" title="Chưa tốt" aria-label="Chưa tốt" style="width:22px;height:22px">👎</button>
+        </div>
+      </div>
+    </div>
+    <div class="soan">
+      <div class="soan-hop"><textarea rows="1" aria-label="Câu hỏi" placeholder="Hỏi tiếp…"></textarea>
+        <div class="soan-thanh">
+          <button class="nut-chon" type="button"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M11.3 4.6 6.4 9.5a1.9 1.9 0 1 0 2.7 2.7l4.6-4.6a3.4 3.4 0 1 0-4.8-4.8L3.8 7.9" stroke-linecap="round"/></svg>Đính kèm</button>
+          <button class="nut-chon quyen-hoi" type="button"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M8 1.5 2.5 3.6v3.7c0 3.6 2.3 6.4 5.5 7.2 3.2-.8 5.5-3.6 5.5-7.2V3.6L8 1.5Z"/></svg>Agent · duyệt <span class="mui">▾</span></button>
+          <button class="gui" type="button" aria-label="Gửi (Enter)"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.2 1.4 14.8 8 1.2 14.6l2.6-6.1H9.5V7.5H3.8Z"/></svg></button></div></div>
+      <div class="mo-ta-nho"><span>Model: <b>chat</b> <span class="mui">▾</span></span><span class="dong-ho"><span>8,4k / 65k</span><span class="thanh"><i style="width:13%"></i></span></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 3. ĐANG CHẠY ═══ -->
+<div class="khung-ngoai">
+  <div class="nhan-khung"><b>3 · Đang chạy (stream)</b>Markdown dựng từng mảnh, không còn khối chữ đặc. Công cụ thành dòng thời gian gọn. "↓ Tin mới" khi bạn đã cuộn lên đọc — không giật về đáy. Esc = Dừng.</div>
+  <div class="vs">
+    <div class="thanh-tren"><span class="ten">AI LOCAL</span><span class="build">v0.3.0 · 4b89579</span><span class="gian"></span><span class="build nhap-nhay-nhe">đang chạy · 00:18</span></div>
+    <div class="hoi-thoai">
+      <div class="luot luot-nguoi"><div class="luot-dau"><span class="chu-cai">B</span>Bạn<span class="gio">09:44</span></div><div class="noi-dung">Giải thích mô-đun robot và liệt kê các hàng rào an toàn.</div></div>
+      <div class="luot luot-ai">
+        <div class="luot-dau"><span class="chu-cai ai">AI</span>AI Local<span class="chip-model">chat</span></div>
+        <div class="cong-cu">
+          <div class="cc-dong"><span class="dau-ok">✓</span><span class="ten">find_symbol</span><span class="phu">robot · 0,3 s</span></div>
+          <div class="cc-dong"><span class="dau-ok">✓</span><span class="ten">read_file</span><span class="phu">server/services/robot/… · 0,1 s</span></div>
+          <div class="cc-dong"><span class="quay"></span><span class="ten">grep</span><span class="phu">"edgeDbRefused" · đang chạy</span></div>
+        </div>
+        <details class="suy-luan"><summary>Suy luận của model (2,1 s)</summary>Cần đọc hàng rào theo hướng năng lượng trước, rồi xem cổng fail-closed…</details>
+        <div class="noi-dung md">
+          <h2>Mô-đun robot</h2>
+          <p>Gồm <b>ba lớp</b> hàng rào:</p>
+          <ul><li><b>Cổng theo hướng năng lượng</b> — fail-closed<span class="con-tro" aria-hidden="true"></span></li></ul>
+        </div>
+      </div>
+      <button class="pill-moi" type="button">↓ Tin mới</button>
+    </div>
+    <div class="soan">
+      <div class="soan-hop"><textarea rows="1" aria-label="Câu hỏi" placeholder="Nhập câu tiếp theo — gửi sau khi AI xong"></textarea>
+        <div class="soan-thanh">
+          <button class="nut-chon" type="button"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M11.3 4.6 6.4 9.5a1.9 1.9 0 1 0 2.7 2.7l4.6-4.6a3.4 3.4 0 1 0-4.8-4.8L3.8 7.9" stroke-linecap="round"/></svg>Đính kèm</button>
+          <button class="nut-chon quyen-hoi" type="button"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M8 1.5 2.5 3.6v3.7c0 3.6 2.3 6.4 5.5 7.2 3.2-.8 5.5-3.6 5.5-7.2V3.6L8 1.5Z"/></svg>Agent · duyệt <span class="mui">▾</span></button>
+          <button class="gui dung" type="button" aria-label="Dừng (Esc)"><svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg>Dừng <kbd>Esc</kbd></button></div></div>
+      <div class="mo-ta-nho"><span>Model: <b>chat</b></span><span class="dong-ho cao"><span>52k / 65k</span><span class="thanh"><i style="width:80%"></i></span></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 4. THẺ DUYỆT ═══ -->
+<div class="khung-ngoai">
+  <div class="nhan-khung"><b>4 · Duyệt thay đổi nhiều tệp</b>MỘT thẻ cho cả lượt, "Duyệt tất cả" / "Xem tất cả diff". XOÁ tách riêng và cần xác nhận riêng. "Bác" nhẹ hơn "Duyệt"; lý do bác chỉ hiện khi cần. Lệnh luôn hỏi, nêu tệp lượt này đã ghi.</div>
+  <div class="vs cao">
+    <div class="thanh-tren"><span class="ten">AI LOCAL</span><span class="build">v0.3.0 · 4b89579</span><span class="gian"></span><button class="nut-chu" type="button" title="Hoàn tác mọi tệp của lượt này">Hoàn tác lượt (4 tệp)</button></div>
+    <div class="hoi-thoai">
+      <div class="luot luot-nguoi"><div class="luot-dau"><span class="chu-cai">B</span>Bạn<span class="gio">10:02</span></div><div class="noi-dung">Đổi tên hàm tinhOEE thành tinhOee ở mọi nơi, bỏ tệp cũ.</div></div>
+      <div class="luot luot-ai">
+        <div class="luot-dau"><span class="chu-cai ai">AI</span>AI Local<span class="chip-model">chat</span></div>
+        <div class="noi-dung md"><p>Mình đã chuẩn bị 4 thay đổi. Hãy xem trước khi áp dụng:</p></div>
+        <div class="the">
+          <div class="the-dau"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M4 2.5h5l3 3v8H4z"/><path d="M9 2.5v3h3"/></svg>Thay đổi chờ duyệt<span class="dem">4 tệp · +18 −11</span></div>
+          <div class="tep-dong"><span class="loai sua">Sửa</span><span class="duong"><bdi>server/services/oeeService.ts</bdi></span><span class="so-them">+6</span><span class="so-bot">−6</span></div>
+          <div class="tep-dong"><span class="loai sua">Sửa</span><span class="duong"><bdi>server/routers/oeeRouter.ts</bdi></span><span class="so-them">+4</span><span class="so-bot">−4</span></div>
+          <div class="tep-dong"><span class="loai">Tạo</span><span class="duong"><bdi>server/services/oee/tinhOee.ts</bdi></span><span class="so-them">+8</span><span class="so-bot">−0</span></div>
+          <div class="tep-dong nguy-hiem"><span class="loai xoa">Xoá</span><span class="duong"><bdi>server/services/oee/tinhOEE.ts</bdi></span><span class="so-them">+0</span><span class="so-bot">−1</span></div>
+          <div class="canh-bao-xoa"><span>⚠</span><span><b>Có 1 thao tác XOÁ tệp.</b> Luôn cần xác nhận riêng, kể cả khi mức quyền là "Tự ghi". Có thể hoàn tác cả lượt.</span></div>
+          <div class="the-chan">
+            <button class="nut-chinh" type="button"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m3.5 8.5 3 3 6-7" stroke-linecap="round" stroke-linejoin="round"/></svg>Duyệt 3 tệp</button>
+            <button class="nut-phu" type="button">Xem tất cả diff</button>
+            <span style="flex:1"></span>
+            <button class="nut-nhe nguy" type="button">Xác nhận xoá…</button>
+            <button class="nut-nhe" type="button">Bác tất cả</button>
+          </div>
+        </div>
+        <div class="the" style="margin-top:8px">
+          <div class="the-dau"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="m5 7 2 1.5L5 10M8.5 10H11" stroke-linecap="round"/></svg>AI muốn chạy lệnh<span class="dem">cần duyệt</span></div>
+          <div class="lenh">npm run check</div>
+          <div class="nhan-nho">Thư mục: C:\SOURCES\aoi-management · Lượt này đã ghi: <b>oeeService.ts, oeeRouter.ts, tinhOee.ts</b> (lệnh có thể chạy mã vừa ghi)</div>
+          <div class="the-chan"><button class="nut-chinh" type="button">Chạy lệnh</button><button class="nut-nhe" type="button">Không chạy</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="soan">
+      <div class="soan-hop"><textarea rows="1" aria-label="Câu hỏi" placeholder="Hỏi tiếp…"></textarea>
+        <div class="soan-thanh"><button class="nut-chon" type="button"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M11.3 4.6 6.4 9.5a1.9 1.9 0 1 0 2.7 2.7l4.6-4.6a3.4 3.4 0 1 0-4.8-4.8L3.8 7.9" stroke-linecap="round"/></svg>Đính kèm</button>
+          <button class="nut-chon quyen-hoi" type="button"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M8 1.5 2.5 3.6v3.7c0 3.6 2.3 6.4 5.5 7.2 3.2-.8 5.5-3.6 5.5-7.2V3.6L8 1.5Z"/></svg>Agent · duyệt <span class="mui">▾</span></button>
+          <button class="gui" type="button" aria-label="Gửi"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.2 1.4 14.8 8 1.2 14.6l2.6-6.1H9.5V7.5H3.8Z"/></svg></button></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 5. ĐÍNH KÈM ═══ -->
+<div class="khung-ngoai">
+  <div class="nhan-khung"><b>5 · Đính kèm ảnh/tệp (menu mở)</b>Nút có chữ + menu ba nguồn. Ảnh dán và tệp kéo thả thành chip có ảnh thu nhỏ, kích thước, gỡ được. Vùng soạn có viền nét đứt khi đang kéo tệp vào.</div>
+  <div class="vs">
+    <div class="thanh-tren"><span class="ten">AI LOCAL</span><span class="build">v0.3.0 · 4b89579</span></div>
+    <div class="hoi-thoai"><div class="rong"><h3>Kéo tệp vào đây để đính kèm</h3><p>Hoặc dán ảnh bằng <kbd>Ctrl</kbd>+<kbd>V</kbd>. Chỉ tệp bạn chủ động đưa vào mới được gửi; <b>.env</b> và khoá riêng bị từ chối.</p></div></div>
+    <div class="soan">
+      <div class="menu" role="menu" aria-label="Đính kèm từ đâu">
+        <div class="ti-de">Đính kèm từ</div>
+        <button class="muc" role="menuitem" type="button"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 4.5h4l1.2 1.5H14v6.5H2z"/></svg><span><b>Tệp trong workspace…</b></span><span></span><span class="mt">Chọn trong dự án đang mở (đã lọc tệp nhạy cảm)</span></button>
+        <button class="muc" role="menuitem" type="button"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M8 10.5V2.5M5 5.2 8 2.3l3 2.9M2.5 10v3.5h11V10" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>Tệp hoặc ảnh từ máy…</b></span><span></span><span class="mt">Ngoài workspace · ảnh PNG/JPEG/WEBP ≤ 6 MB · tệp ≤ 200 KB</span></button>
+        <hr>
+        <button class="muc" role="menuitem" type="button"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="3" width="12" height="9" rx="1.2"/><circle cx="6" cy="6.5" r="1"/><path d="m3 11 3.5-3 2.5 2 2-1.5L13 11" stroke-linejoin="round"/></svg><span><b>Dán ảnh từ clipboard</b></span><kbd>Ctrl+V</kbd><span class="mt">Ảnh chụp màn hình (Win+Shift+S) dán thẳng vào ô nhập</span></button>
+      </div>
+      <div class="soan-hop keo">
+        <div class="chip-dk">
+          <span class="chip"><span class="tn">PNG</span><span class="tt"><b>hmi-AL32.png</b><span>1,2 MB · ảnh</span></span><button class="go" type="button" aria-label="Gỡ hmi-AL32.png">×</button></span>
+          <span class="chip"><span class="tn tep">LOG</span><span class="tt"><b>loi-may-07.log</b><span>38 KB · tệp văn bản</span></span><button class="go" type="button" aria-label="Gỡ loi-may-07.log">×</button></span>
+          <span class="chip"><span class="tn tep">ST</span><span class="tt"><b>van-2-vi-tri.st</b><span>4 KB · trong workspace</span></span><button class="go" type="button" aria-label="Gỡ van-2-vi-tri.st">×</button></span>
+        </div>
+        <textarea rows="2" aria-label="Câu hỏi" placeholder="Hỏi về nội dung đính kèm…">Mã lỗi trên màn HMI này là gì, log có liên quan không?</textarea>
+        <div class="soan-thanh">
+          <button class="nut-chon" type="button" aria-expanded="true"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M11.3 4.6 6.4 9.5a1.9 1.9 0 1 0 2.7 2.7l4.6-4.6a3.4 3.4 0 1 0-4.8-4.8L3.8 7.9" stroke-linecap="round"/></svg>Đính kèm (3)</button>
+          <button class="nut-chon quyen-hoi" type="button"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M8 1.5 2.5 3.6v3.7c0 3.6 2.3 6.4 5.5 7.2 3.2-.8 5.5-3.6 5.5-7.2V3.6L8 1.5Z"/></svg>Agent · duyệt <span class="mui">▾</span></button>
+          <button class="gui" type="button" aria-label="Gửi"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.2 1.4 14.8 8 1.2 14.6l2.6-6.1H9.5V7.5H3.8Z"/></svg></button></div>
+      </div>
+      <div class="mo-ta-nho"><span>Ảnh sẽ được máy chủ đọc bằng thị giác máy (Qwen3-VL)</span><span>2 ảnh/tệp từ máy</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 6. ĐIỀU KHIỂN CHẾ ĐỘ ═══ -->
+<div class="khung-ngoai">
+  <div class="nhan-khung"><b>6 · Một điều khiển "chế độ" (có lưu)</b>Gộp "mức quyền" + "chế độ agent" thành MỘT lựa chọn, nói rõ điều gì xảy ra. Lưu theo workspace — mở lại cửa sổ vẫn đúng. Dự án SERVER có ghi chú thật.</div>
+  <div class="vs">
+    <div class="thanh-tren"><span class="ten">AI LOCAL</span><span class="build">v0.3.0 · 4b89579</span></div>
+    <div class="hoi-thoai"><div class="rong"><h3>Chế độ làm việc</h3><p>Chọn mức AI được tự làm. Lựa chọn được nhớ riêng cho từng dự án.</p></div></div>
+    <div class="soan">
+      <div class="menu" role="radiogroup" aria-label="Chế độ làm việc">
+        <div class="ti-de">Chế độ — dự án LOCAL · aoi-management</div>
+        <button class="muc" role="radio" aria-checked="false" type="button"><span class="toc-dong" style="background:var(--vscode-descriptionForeground)"></span><span><b>Hỏi (chỉ đọc)</b></span><span></span><span class="mt">AI chỉ đọc và trả lời. Không ghi tệp, không chạy lệnh.</span></button>
+        <button class="muc" role="radio" aria-checked="true" type="button"><span class="toc-dong" style="background:var(--vscode-charts-blue)"></span><span><b>Agent · duyệt từng bước</b></span><span>✓</span><span class="mt">AI đề xuất sửa/xoá/chạy lệnh; bạn duyệt trước khi áp dụng. Mặc định an toàn.</span></button>
+        <button class="muc" role="radio" aria-checked="false" type="button"><span class="toc-dong" style="background:var(--vscode-charts-yellow)"></span><span><b>Agent · tự ghi trong workspace</b></span><span></span><span class="mt">Tự sửa/tạo/đổi tên tệp trong workspace, không hỏi. <b>Xoá tệp và chạy lệnh vẫn hỏi.</b> Hoàn tác được cả lượt.</span></button>
+        <hr>
+        <div class="ghi-chu-server"><b>Dự án SERVER:</b> mọi lần ghi luôn cần duyệt trên máy chủ — chế độ "tự ghi" chỉ áp dụng cho dự án LOCAL.</div>
+        <button class="muc" type="button" style="margin-top:2px"><span></span><span><b>Chat cũ (máy chủ)</b></span><span></span><span class="mt">Hỏi đáp qua máy chủ, không có công cụ Agent.</span></button>
+      </div>
+      <div class="soan-hop"><textarea rows="1" aria-label="Câu hỏi" placeholder="Hỏi AI Local…"></textarea>
+        <div class="soan-thanh"><button class="nut-chon" type="button"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M11.3 4.6 6.4 9.5a1.9 1.9 0 1 0 2.7 2.7l4.6-4.6a3.4 3.4 0 1 0-4.8-4.8L3.8 7.9" stroke-linecap="round"/></svg>Đính kèm</button>
+          <button class="nut-chon quyen-hoi" type="button" aria-expanded="true"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M8 1.5 2.5 3.6v3.7c0 3.6 2.3 6.4 5.5 7.2 3.2-.8 5.5-3.6 5.5-7.2V3.6L8 1.5Z"/></svg>Agent · duyệt <span class="mui">▴</span></button>
+          <button class="gui" type="button" aria-label="Gửi"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.2 1.4 14.8 8 1.2 14.6l2.6-6.1H9.5V7.5H3.8Z"/></svg></button></div></div>
+      <div class="mo-ta-nho"><span>Model: <b>chat</b> <span class="mui">▾</span></span><span class="dong-ho"><span>8,4k / 65k</span><span class="thanh"><i style="width:13%"></i></span></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 7. MẤT KẾT NỐI ═══ -->
+<div class="khung-ngoai">
+  <div class="nhan-khung"><b>7 · Mất kết nối máy chủ</b>Một thẻ lỗi có việc để làm: Thử lại (giữ nguyên câu hỏi), Mở cài đặt, và gợi ý theo thứ tự hay gặp. Không còn một dòng lỗi trần.</div>
+  <div class="vs">
+    <div class="thanh-tren"><span class="ten">AI LOCAL</span><span class="build">v0.3.0 · 4b89579</span><span class="gian"></span><span class="build" style="color:var(--vscode-charts-red)">● không kết nối</span></div>
+    <div class="hoi-thoai">
+      <div class="luot luot-nguoi"><div class="luot-dau"><span class="chu-cai">B</span>Bạn<span class="gio">10:15</span></div><div class="noi-dung">Tóm tắt thay đổi hôm nay trong module socket.</div></div>
+      <div class="luot luot-ai">
+        <div class="luot-dau"><span class="chu-cai ai">AI</span>AI Local</div>
+        <div class="loi" role="alert">
+          <div class="loi-dau"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--vscode-charts-red)" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M8 4.8v4M8 11v.2" stroke-linecap="round"/></svg>Không kết nối được máy chủ</div>
+          <p>Không gọi được <b>http://localhost:3000</b> (ECONNREFUSED). Câu hỏi của bạn vẫn được giữ.</p>
+          <ul><li>Máy chủ đã chạy chưa? (<code>npm start</code>, cổng 3000)</li><li>Địa chỉ trong cài đặt đúng chưa?</li><li>Dự án LOCAL vẫn đọc được tệp khi máy chủ tắt.</li></ul>
+          <div class="hang"><button class="nut-chinh" type="button">Thử lại</button><button class="nut-phu" type="button">Mở cài đặt máy chủ</button><button class="nut-nhe" type="button">Sao chép chi tiết lỗi</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="soan">
+      <div class="soan-hop"><textarea rows="1" aria-label="Câu hỏi" placeholder="Hỏi AI Local…"></textarea>
+        <div class="soan-thanh"><button class="nut-chon" type="button"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M11.3 4.6 6.4 9.5a1.9 1.9 0 1 0 2.7 2.7l4.6-4.6a3.4 3.4 0 1 0-4.8-4.8L3.8 7.9" stroke-linecap="round"/></svg>Đính kèm</button>
+          <button class="nut-chon quyen-hoi" type="button"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M8 1.5 2.5 3.6v3.7c0 3.6 2.3 6.4 5.5 7.2 3.2-.8 5.5-3.6 5.5-7.2V3.6L8 1.5Z"/></svg>Agent · duyệt <span class="mui">▾</span></button>
+          <button class="gui" type="button" aria-label="Gửi"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.2 1.4 14.8 8 1.2 14.6l2.6-6.1H9.5V7.5H3.8Z"/></svg></button></div></div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<p class="ghi-chu-cuoi">Ghi chú dựng thật: (1) giữ nguyên các điểm mạnh đã kiểm định — khối mã Chép/Chèn/Áp dụng, nút Dừng, sổ kiểm toán, hoàn tác cả lượt; (2) markdown vẫn dựng bằng <code>createElement/textContent</code> (không <code>innerHTML</code>), CSP không đổi ngoài <code>img-src data:</code>; (3) mọi quyết định ghi/chạy lệnh vẫn do host kiểm lại — webview chỉ hiển thị và chuyển tiếp; (4) tăng version 0.3.0, nhúng mã build, đóng gói .vsix và cài lại, xác minh bản đang chạy = bản repo.</p>
+</div>
+
+<script>
+(function () {
+  var r = document.documentElement;
+  var b = { sang: document.getElementById("b-sang"), toi: document.getElementById("b-toi"), ht: document.getElementById("b-he-thong") };
+  function dat(t) {
+    if (t === "he-thong") r.removeAttribute("data-theme"); else r.setAttribute("data-theme", t);
+    b.sang.setAttribute("aria-pressed", String(t === "light")); b.toi.setAttribute("aria-pressed", String(t === "dark")); b.ht.setAttribute("aria-pressed", String(t === "he-thong"));
+  }
+  b.sang.addEventListener("click", function () { dat("light"); });
+  b.toi.addEventListener("click", function () { dat("dark"); });
+  b.ht.addEventListener("click", function () { dat("he-thong"); });
+  document.getElementById("o-rong").addEventListener("change", function (e) { document.getElementById("luoi").style.setProperty("--rong", e.target.value + "px"); document.querySelectorAll(".nhan-khung").forEach(function (n) { n.style.maxWidth = e.target.value + "px"; }); });
+  document.querySelectorAll(".khoi-ma-dau .nut-chu:first-of-type").forEach(function (n) {
+    n.addEventListener("click", function () { n.classList.add("da-chep"); n.lastChild.textContent = "Đã chép"; });
+  });
+})();
+</script>
+</body>
+</html>
