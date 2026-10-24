@@ -27,6 +27,10 @@ vi.mock("@/_core/hooks/useAuth", () => ({
   useAuth: () => ({ user: { id: 9, role: "operator", name: "T" }, loading: false, isAuthenticated: true }),
 }));
 
+// kiem-dinh P1-4 — toast cấp trang (sonner) khi hộp bị gỡ giữa lúc gửi
+const toastFn = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() }));
+vi.mock("sonner", () => ({ toast: toastFn }));
+
 type Handler = (p: unknown) => void;
 const sock = vi.hoisted(() => ({
   handlers: {} as Record<string, Set<(p: unknown) => void>>,
@@ -110,6 +114,7 @@ beforeAll(async () => {
   i18next.addResourceBundle("zh", "translation", zh_ as Record<string, unknown>, true, true);
 });
 beforeEach(() => {
+  for (const f of Object.values(toastFn)) f.mockClear();
   srv.calls = [];
   srv.opts = {};
   srv.pending = {};
@@ -651,5 +656,65 @@ describe("M5 — fix round 1", () => {
     const tb = within(hop()).getByTestId("loi-lenh");
     expect(tb).toHaveTextContent("Lệnh không được gửi:");
     expect(tb).not.toHaveTextContent("Không tạo được yêu cầu");
+  });
+});
+
+describe("kiem-dinh P1-4 — đang gửi (dangGui): không đóng được; bị gỡ vẫn báo kết quả bằng toast cấp trang", () => {
+  const nutDong = () => within(hop()).getByRole("button", { name: S("scada.lenh.nut.dong") });
+
+  it("dangGui ⇒ nút Đóng KHOÁ, nút X ẩn, Esc và bấm ra ngoài không đóng (không onDong, không huy)", async () => {
+    const { onDong } = ve();
+    bamGui();
+    expect(goi("confirm")).toHaveLength(1);
+    expect(nutDong()).toBeDisabled();
+    expect(within(hop()).queryByRole("button", { name: /^close$/i })).toBeNull();
+    fireEvent.keyDown(hop(), { key: "Escape", code: "Escape" });
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape", code: "Escape" });
+    fireEvent.pointerDown(document.body);
+    fireEvent.click(nutDong());
+    expect(onDong).not.toHaveBeenCalled();
+    expect(goi("huy")).toHaveLength(0);
+    expect(hop()).toBeInTheDocument();
+    // kết quả tới ⇒ hết dangGui ⇒ Đóng mở lại
+    await traLoi("confirm", "onSuccess", { status: "acked_unverified", readBackValue: 240 });
+    expect(nutDong()).toBeEnabled();
+    expect(toastFn.success).not.toHaveBeenCalled(); // hộp còn ⇒ kết quả hiện TRONG hộp, không toast
+    expect(toastFn.warning).not.toHaveBeenCalled();
+  });
+
+  it("hộp bị GỠ giữa dangGui (đổi trang / mất kết nối), confirm trả về SAU ⇒ toast cấp trang mang chữ kết quả + kênh/máy", async () => {
+    const { unmount } = render(<HopThoaiLenh yeuCau={yeuCau()} lyDo={LY_DO} dinhDang="0.0" edgeCode={null} onDong={vi.fn()} />);
+    bamGui();
+    unmount();
+    expect(goi("huy"), "đang gửi ⇒ gỡ hộp KHÔNG huy").toHaveLength(0);
+    await traLoi("confirm", "onSuccess", { status: "acked_verified", readBackValue: 240.5 });
+    expect(toastFn.success).toHaveBeenCalledTimes(1);
+    const cau = String(toastFn.success.mock.calls[0][0]);
+    expect(cau).toContain(S("scada.lenh.ketQua.ackedVerified", { v: "240,5" }));
+    expect(cau).toContain("zone7_top.sp");
+    expect(cau).toContain("RF-2");
+  });
+
+  it("gỡ giữa dangGui, kết quả KHÔNG xác minh ⇒ toast cảnh báo (không success); lỗi confirm ⇒ toast lỗi có lý do", async () => {
+    const a = render(<HopThoaiLenh yeuCau={yeuCau()} lyDo={LY_DO} dinhDang="0.0" edgeCode={null} onDong={vi.fn()} />);
+    bamGui();
+    a.unmount();
+    await traLoi("confirm", "onSuccess", { status: "timeout" });
+    expect(toastFn.success).not.toHaveBeenCalled();
+    expect(String(toastFn.warning.mock.calls[0]?.[0])).toContain(S("scada.lenh.ketQua.timeout"));
+
+    const b = render(<HopThoaiLenh yeuCau={yeuCau()} lyDo={LY_DO} dinhDang="0.0" edgeCode={null} onDong={vi.fn()} />);
+    bamGui();
+    b.unmount();
+    await traLoi("confirm", "onError", loi("SCADA_MACHINE_NOT_REMOTE", { ma: "MODE_LOCAL", lyDo: "khac_remote" }));
+    expect(toastFn.error).toHaveBeenCalledTimes(1);
+    expect(String(toastFn.error.mock.calls[0][0])).toContain("zone7_top.sp");
+  });
+
+  it("gỡ khi CHƯA gửi (proposed) ⇒ huy như cũ, KHÔNG toast", async () => {
+    const { unmount } = render(<HopThoaiLenh yeuCau={yeuCau()} lyDo={LY_DO} dinhDang="0.0" edgeCode={null} onDong={vi.fn()} />);
+    unmount();
+    expect(goi("huy")).toHaveLength(1);
+    expect(Object.values(toastFn).every((f) => f.mock.calls.length === 0)).toBe(true);
   });
 });

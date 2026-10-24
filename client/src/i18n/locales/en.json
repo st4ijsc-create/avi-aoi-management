@@ -23673,6 +23673,7 @@
     "lenh": {
       "tieuDe": "Confirm command",
       "moTa": "Check the preview, then send. The request expires on its own after 60 seconds.",
+      "toastNen": "Write command {{kenh}} · {{may}}: {{ketQua}}",
       "conLai": "{{giay}} s left",
       "hetGio": "Confirmation time is up — close this dialog and create a new request.",
       "truong": {

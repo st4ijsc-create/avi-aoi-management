@@ -23675,6 +23675,7 @@
     "lenh": {
       "tieuDe": "确认命令",
       "moTa": "检查预览后发送。请求在 60 秒后自动过期。",
+      "toastNen": "写入命令 {{kenh}} · {{may}}：{{ketQua}}",
       "conLai": "剩余 {{giay}} 秒",
       "hetGio": "确认时间已到 — 请关闭对话框并创建新请求。",
       "truong": {

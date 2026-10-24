@@ -11,11 +11,16 @@
  *     được trong TTL — QĐ T9-2); mọi từ chối khác kết thúc yêu cầu ở máy chủ.
  *   • Đóng khi yêu cầu còn `proposed` ⇒ `scadaCommands.huy` (nhả khoá chọn ngay, không chờ 60 s).
  *   • `scada:cmd` (useScadaCmd) là đường BỔ SUNG khi đang gửi; giá trị trả về của `confirm` / lỗi của nó luôn thắng.
+ *   • kiem-dinh P1-4 — pha `dangGui`: nút Đóng khoá, nút X ẩn, Esc / bấm ra ngoài bị chặn (lệnh đã rời tay, không còn gì để huỷ). Nếu hộp
+ *     vẫn bị GỠ giữa lúc gửi (đổi trang, mất kết nối, cha gỡ) thì kết cục của `confirm` — callback CẤP `useMutation` vẫn chạy sau khi gỡ
+ *     (TanStack v5: Mutation tự gọi `options.onSuccess/onError`) — hiện thành TOAST CẤP TRANG (sonner) kèm kênh + máy.
  *
  * Màu (§4.10): trạng thái lệnh là CHỮ trong hộp thoại, KHÔNG dùng màu cảnh báo — khối kết quả / từ chối chỉ dùng token ISA trung tính.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
+import { toast } from "sonner";
 import { Link } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
@@ -68,6 +73,12 @@ export function useDinhDangGiaTri(displayFormat: string | null | undefined, data
   return (v: unknown) => (chinhXac ? dinhDangGiaTriChinhXac : dinhDangGiaTri)(v, dd, i18n.language, nhanBool);
 }
 
+/** Câu chính của một từ chối (dùng trong hộp và trong toast cấp trang — kiem-dinh P1-4). */
+function cauLoiLenh(t: TFunction, moTa: MoTaLoi, chiTiet: string): string {
+  const lyDo = moTa.khoaLyDo ? t(moTa.khoaLyDo, { lyDo: moTa.thamSo.lyDo }) : undefined;
+  return t(moTa.khoa, { ...moTa.thamSo, ...(lyDo !== undefined ? { lyDo } : {}), ...(moTa.canChiTiet ? { chiTiet } : {}) });
+}
+
 /** Một từ chối của request/confirm thành chữ + cách xử lý (+ liên kết 2FA / gợi ý STOP / nút điền gợi ý OFF_STEP). */
 export function ThongBaoLoiLenh({
   moTa,
@@ -79,8 +90,7 @@ export function ThongBaoLoiLenh({
   onDungGoiY?: (goiY: number) => void;
 }) {
   const { t } = useTranslation();
-  const lyDo = moTa.khoaLyDo ? t(moTa.khoaLyDo, { lyDo: moTa.thamSo.lyDo }) : undefined;
-  const cau = t(moTa.khoa, { ...moTa.thamSo, ...(lyDo !== undefined ? { lyDo } : {}), ...(moTa.canChiTiet ? { chiTiet } : {}) });
+  const cau = cauLoiLenh(t, moTa, chiTiet);
   return (
     <div
       data-testid="loi-lenh"
@@ -176,8 +186,28 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanL
     onDongRef.current = onDong;
   }, [onDong]);
 
+  // kiem-dinh P1-4 — hộp đã bị gỡ? (đặt lại false khi gắn: StrictMode gắn → gỡ → gắn lại)
+  const daGoRef = useRef(false);
+  useEffect(() => {
+    daGoRef.current = false;
+    return () => {
+      daGoRef.current = true;
+    };
+  }, []);
+  /** Hộp đã gỡ GIỮA lúc gửi ⇒ kết cục thành toast cấp trang (một lần). true ⇒ người gọi không đụng state nữa. */
+  const baoNenNeuDaGo = (cau: string, loai: "success" | "warning" | "error"): boolean => {
+    if (!daGoRef.current) return false;
+    if (phaRef.current !== "dangGui") return true; // gỡ khi không gửi: không có gì để báo (huy đã chạy nếu cần)
+    phaRef.current = "ketQua";
+    toast[loai](t("scada.lenh.toastNen", { kenh: p.channel, may: p.machine, ketQua: cau }));
+    return true;
+  };
+
   const confirm = trpc.scadaCommands.confirm.useMutation({
     onSuccess: (kq: { status: string; reason?: string; readBackValue?: unknown }) => {
+      const status = laTrangThaiKetQua(kq.status) ? kq.status : "failed";
+      const nhanNen = nhanKetQua(status, { readBack: kq.readBackValue, reason: kq.reason, requested: p.requested, dinhDang: fmt });
+      if (baoNenNeuDaGo(t(nhanNen.khoa, nhanNen.thamSo), status === "acked_verified" ? "success" : "warning")) return;
       canHuyRef.current = false;
       setLoi(null);
       setKetQua({
@@ -189,6 +219,7 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanL
     },
     onError: (e: unknown) => {
       const moTa = moTaLoiLenh(e, "confirm", { laEdge: !!edgeCode, locale: i18n.language });
+      if (baoNenNeuDaGo(cauLoiLenh(t, moTa, mapTrpcError(e)), "error")) return;
       setLoi({ moTa, chiTiet: mapTrpcError(e) });
       setKetQua(null);
       canHuyRef.current = moTa.huyKhiDong;
@@ -260,8 +291,14 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanL
   const conLaiGiay = Math.ceil(conLaiMs / 1000);
 
   return (
-    <Dialog open onOpenChange={(o) => !o && dong()}>
-      <DialogContent className="sm:max-w-lg" data-testid="hop-thoai-lenh">
+    <Dialog open onOpenChange={(o) => !o && phaRef.current !== "dangGui" && dong()}>
+      <DialogContent
+        className="sm:max-w-lg"
+        data-testid="hop-thoai-lenh"
+        showCloseButton={pha !== "dangGui"}
+        onEscapeKeyDown={(e) => phaRef.current === "dangGui" && e.preventDefault()}
+        onInteractOutside={(e) => phaRef.current === "dangGui" && e.preventDefault()}
+      >
         <DialogHeader>
           <div className="flex items-baseline justify-between gap-3 pr-6">
             <DialogTitle>{t("scada.lenh.tieuDe")}</DialogTitle>
@@ -374,7 +411,7 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanL
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={dong}>
+          <Button variant="outline" onClick={() => phaRef.current !== "dangGui" && dong()} disabled={pha === "dangGui"}>
             {pha === "proposed" ? t("scada.lenh.nut.huy") : t("scada.lenh.nut.dong")}
           </Button>
           <Button onClick={gui} disabled={!guiDuoc}>

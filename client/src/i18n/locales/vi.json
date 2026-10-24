@@ -23647,6 +23647,7 @@
     "lenh": {
       "tieuDe": "Xác nhận lệnh",
       "moTa": "Kiểm lại bản xem trước rồi gửi. Yêu cầu tự hết hạn sau 60 giây.",
+      "toastNen": "Lệnh ghi {{kenh}} · {{may}}: {{ketQua}}",
       "conLai": "còn {{giay}} s",
       "hetGio": "Hết thời gian xác nhận — đóng hộp thoại và tạo yêu cầu mới.",
       "truong": {
