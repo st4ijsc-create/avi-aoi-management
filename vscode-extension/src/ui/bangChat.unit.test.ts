@@ -2469,6 +2469,11 @@ describe("chỉ báo tiến độ khi KB kèm ảnh chậm (0.3.3)", () => {
     await nhuong();
     expect(tienDo()).toEqual(["Đang đọc ảnh…", "Đang trả lời…"]);
     expect(may.daGui.some((m) => m.loai === "thong_bao" && /Đang đọc ảnh|Đang trả lời/.test(String(m.thongDiep)))).toBe(false);
+    // ★ e2e thật: chỉ báo CUỐI phải là "Đang trả lời…" — tin tien_do này đứng SAU thong_bao kết quả đọc ảnh (thong_bao cũng ghi đè chữ chỉ báo)
+    const viTriKetQua = may.daGui.findIndex((m) => m.loai === "thong_bao" && /Đã đọc ảnh/.test(String(m.thongDiep)));
+    const viTriTraLoi = may.daGui.findIndex((m) => m.loai === "tien_do" && m.chu === "Đang trả lời…");
+    expect(viTriKetQua).toBeGreaterThan(-1);
+    expect(viTriTraLoi).toBeGreaterThan(viTriKetQua);
   });
 
   it("★★ vision KHÔNG đọc được ⇒ vẫn chuyển 'Đang trả lời…' (model trả lời chỉ dựa trên chữ) và nói rõ lý do ở bong bóng", async () => {

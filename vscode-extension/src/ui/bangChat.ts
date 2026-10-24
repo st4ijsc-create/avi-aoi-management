@@ -1490,11 +1490,12 @@ export class BangChat {
               if (sk.ok === true && vt) khoiVision = vt;
               const chiTietVision = typeof sk.chiTiet === "string" && sk.chiTiet.trim() ? ` Chi tiết: ${sk.chiTiet.trim().slice(0, 300)}` : "";
               const nguonVision = sk.nguon === "model-chinh" ? "model chính" : sk.nguon === "sidecar" ? "model thị giác phụ" : "thị giác máy";
-              void this.panel.webview.postMessage({ loai: "tien_do", chu: "Đang trả lời…" });
               void this.panel.webview.postMessage({
                 loai: "thong_bao",
                 thongDiep: sk.ok === true ? `Đã đọc ảnh bằng ${nguonVision}.` : `Không đọc được ảnh (${lyDoVision(sk.reason)}) — AI trả lời chỉ dựa trên chữ.${chiTietVision}`,
               });
+              // PHẢI gửi SAU `thong_bao` ở trên: `thong_bao` cũng đổi chữ chỉ báo chờ (e2e thật 2026-10-24: gửi trước thì chỉ báo kẹt ở "Đã đọc ảnh…" suốt lúc model nghĩ).
+              void this.panel.webview.postMessage({ loai: "tien_do", chu: "Đang trả lời…" });
             } else if (sk.type === "error") {
               // Máy chủ gửi chi tiết ở `error` (aiLocalKnowledgeApi.ts:628), KHÔNG phải `message`.
               // Nhận cả hai để phòng đường khác, nhưng `error` phải đứng TRƯỚC.
