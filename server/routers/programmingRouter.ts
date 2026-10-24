@@ -81,7 +81,20 @@ import {
   type DpcUser,
 } from "../services/programming/programmingService";
 // ── doc 80 Đợt 1 Task 5 (WS-02 / F2) — chạy KHÔ mọi cổng deploy trước khi hỏi OTP ──
-import { previewDeploy, assertDeployTargetInScopeAndProject } from "../services/programming/deployPreview";
+import { previewDeploy, assertDeployTargetInScopeAndProject, assertDeployTargetsInScope } from "../services/programming/deployPreview";
+import {
+  chanArtifact,
+  chanBuild,
+  chanDeployment,
+  chanDuAn,
+  dieuKienDeployment,
+  dieuKienDuAn,
+  duAnCuaArtifact,
+  duAnCuaSymbol,
+  duAnThayDuoc,
+  phamViChuongTrinh,
+  thietBiTrongPhamVi,
+} from "./_chuongTrinhPhamVi";
 import { phamViCua } from "./_phamViNguoiXem";
 import {
   suggestProgram,
@@ -180,14 +193,20 @@ function chanBuildKhacDuAn(shape: z.ZodRawShape): NonNullable<TrpcMeta["chanTruo
   return async ({ ctx, rawInput }) => {
     const p = sub.safeParse(rawInput);
     if (!p.success) return;
-    const v = p.data as { buildId: number; expectedProjectId?: number; deviceId?: number };
-    if (v.expectedProjectId === undefined) return;
+    const v = p.data as { buildId: number; expectedProjectId?: number; deviceId?: number; deviceIds?: number[] };
+    // phạm vi người dùng (L3 2026-10-25): phạm vi nhà máy KHÔNG còn phụ thuộc người gọi có gửi expectedProjectId hay không (trước đây vắng ⇒ bỏ qua cổng ⇒ lách được).
     await chayCongAuthZ(moduleGate("MOD_ENGINEERING") as never, ctx);
     await chayCongAuthZ(requirePermission("machine_control", "canCreate") as never, ctx);
+    const dich = v.deviceIds ?? [v.deviceId];
+    if (v.expectedProjectId === undefined) {
+      await assertDeployTargetsInScope({ buildId: v.buildId, deviceIds: dich }, phamViCua(ctx as never));
+      return;
+    }
     await assertDeployTargetInScopeAndProject(
       { buildId: v.buildId, deviceId: v.deviceId ?? null, expectedProjectId: v.expectedProjectId },
       phamViCua(ctx as never),
     );
+    await assertDeployTargetsInScope({ buildId: v.buildId, deviceIds: dich }, phamViCua(ctx as never));
   };
 }
 
@@ -296,17 +315,19 @@ export const programmingRouter = router({
   listProjects: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ limit: z.number().int().min(1).max(500).default(200) }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
-      return d.select().from(programProjects).orderBy(desc(programProjects.updatedAt)).limit(input?.limit ?? 200);
+      const cong = await dieuKienDuAn(ctx); // phạm vi người dùng (L3 2026-10-25)
+      return d.select().from(programProjects).where(cong).orderBy(desc(programProjects.updatedAt)).limit(input?.limit ?? 200);
     }),
 
   getProject: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
-      const [row] = await d.select().from(programProjects).where(eq(programProjects.id, input.id)).limit(1);
+      const cong = await dieuKienDuAn(ctx); // phạm vi người dùng (L3 2026-10-25): dự án ngoài phạm vi ≡ không tồn tại
+      const [row] = await d.select().from(programProjects).where(cong ? and(eq(programProjects.id, input.id), cong) : eq(programProjects.id, input.id)).limit(1);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.id} not found`);
       return row;
     }),
@@ -328,12 +349,23 @@ export const programmingRouter = router({
       const code = input.code.trim();
       const [clash] = await d.select().from(programProjects).where(eq(programProjects.code, code)).limit(1);
       if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "programmingProject" }, `A project with code "${code}" already exists.`);
+      // phạm vi người dùng (L3 2026-10-25): người dùng phạm vi hẹp — thiết bị gắn vào phải thuộc phạm vi; dự án được ĐÓNG DẤU nhà máy (một nhà máy duy nhất ⇒ factoryId; nhiều nhà máy ⇒ phải gắn thiết bị để chiếu được).
+      const pvCt = await phamViChuongTrinh(ctx);
+      let factoryIdGhi: number | null = null;
+      if (pvCt !== null) {
+        if (input.deviceId != null && !(await thietBiTrongPhamVi(ctx, input.deviceId, input.kind))) {
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Device ${input.deviceId} not found`);
+        }
+        if (pvCt.nhaMay.length === 1) factoryIdGhi = pvCt.nhaMay[0];
+        else if (input.deviceId == null) throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "deviceId" }, "Cần gắn thiết bị thuộc phạm vi của bạn (tài khoản thuộc nhiều nhà máy).");
+      }
       const [row] = await d
         .insert(programProjects)
         .values({
           code,
           name: input.name.trim(),
           kind: input.kind,
+          factoryId: factoryIdGhi,
           deviceId: input.deviceId ?? null,
           description: input.description ?? null,
           defaultBranch: input.defaultBranch,
@@ -354,8 +386,15 @@ export const programmingRouter = router({
         defaultBranch: z.string().min(1).max(64).optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const d = await db();
+      await chanDuAn(ctx, input.id); // phạm vi người dùng (L3 2026-10-25)
+      if (input.deviceId != null && (await phamViChuongTrinh(ctx)) !== null) {
+        const [pj] = await d.select({ kind: programProjects.kind }).from(programProjects).where(eq(programProjects.id, input.id)).limit(1);
+        if (pj && !(await thietBiTrongPhamVi(ctx, input.deviceId, String(pj.kind)))) {
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Device ${input.deviceId} not found`);
+        }
+      }
       const patch: Record<string, unknown> = { updatedAt: new Date() };
       if (input.name !== undefined) patch.name = input.name.trim();
       if (input.deviceId !== undefined) patch.deviceId = input.deviceId;
@@ -369,8 +408,9 @@ export const programmingRouter = router({
   deleteProject: protectedProcedure
     .use(requirePermission("machine_control", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const d = await db();
+      await chanDuAn(ctx, input.id); // phạm vi người dùng (L3 2026-10-25)
       // Clean child rows (artifacts/builds/sim/symbols) — deployments are append-only
       // audit and are RETAINED (orphan-safe; they reference projectId for history only).
       const arts = await d.select().from(programArtifacts).where(eq(programArtifacts.projectId, input.id));
@@ -391,8 +431,9 @@ export const programmingRouter = router({
   listArtifacts: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ projectId: z.number().int().positive(), branch: z.string().max(64).optional() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
+      if (!(await duAnThayDuoc(ctx, input.projectId))) return []; // phạm vi người dùng (L3 2026-10-25): dự án ngoài phạm vi ⇒ như chưa có phiên bản
       const rows = await d
         .select()
         .from(programArtifacts)
@@ -404,8 +445,9 @@ export const programmingRouter = router({
   getArtifact: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
+      await chanArtifact(ctx, input.id); // phạm vi người dùng (L3 2026-10-25)
       const [row] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, input.id)).limit(1);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${input.id} not found`);
       return row;
@@ -424,6 +466,7 @@ export const programmingRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const d = await db();
+      await chanDuAn(ctx, input.projectId); // phạm vi người dùng (L3 2026-10-25)
       const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, input.projectId)).limit(1);
       if (!proj) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.projectId} not found`);
 
@@ -482,7 +525,10 @@ export const programmingRouter = router({
   validateArtifact: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ artifactId: z.number().int().positive() }))
-    .mutation(async ({ input }) => validateArtifact(input.artifactId)),
+    .mutation(async ({ input, ctx }) => {
+      await chanArtifact(ctx, input.artifactId); // phạm vi người dùng (L3 2026-10-25)
+      return validateArtifact(input.artifactId);
+    }),
 
   /**
    * doc 38 T-2 — FOUR-EYES AT THE VERSION. Record a review decision (approve/reject) on an
@@ -506,9 +552,10 @@ export const programmingRouter = router({
           path: ["reason"],
         }),
     )
-    .mutation(async ({ input, ctx }) =>
-      reviewArtifact(input.artifactId, input.decision, toDpcUser(ctx.user), input.reason),
-    ),
+    .mutation(async ({ input, ctx }) => {
+      await chanArtifact(ctx, input.artifactId); // phạm vi người dùng (L3 2026-10-25)
+      return reviewArtifact(input.artifactId, input.decision, toDpcUser(ctx.user), input.reason);
+    }),
 
   /**
    * doc 80 Đợt 1 Task 5 (WS-01) — "Yêu cầu duyệt" một phiên bản đang pending_review: ghi người +
@@ -518,21 +565,29 @@ export const programmingRouter = router({
   requestVersionReview: writeProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ artifactId: z.number().int().positive() }))
-    .mutation(async ({ input, ctx }) => requestVersionReview(input.artifactId, toDpcUser(ctx.user))),
+    .mutation(async ({ input, ctx }) => {
+      await chanArtifact(ctx, input.artifactId); // phạm vi người dùng (L3 2026-10-25)
+      return requestVersionReview(input.artifactId, toDpcUser(ctx.user));
+    }),
 
   // ── Builds ──
   listBuilds: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ artifactId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
+      const pj = await duAnCuaArtifact(input.artifactId); // phạm vi người dùng (L3 2026-10-25): phiên bản ngoài phạm vi ⇒ như chưa có build
+      if (pj !== null && !(await duAnThayDuoc(ctx, pj))) return [];
       return d.select().from(programBuilds).where(eq(programBuilds.artifactId, input.artifactId)).orderBy(desc(programBuilds.id));
     }),
 
   buildArtifact: writeProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ artifactId: z.number().int().positive() }))
-    .mutation(async ({ input, ctx }) => buildArtifact(input.artifactId, toDpcUser(ctx.user))),
+    .mutation(async ({ input, ctx }) => {
+      await chanArtifact(ctx, input.artifactId); // phạm vi người dùng (L3 2026-10-25)
+      return buildArtifact(input.artifactId, toDpcUser(ctx.user));
+    }),
 
   // ── Simulation (always safe) ──
   simulateBuild: protectedProcedure
@@ -543,14 +598,18 @@ export const programmingRouter = router({
         scenario: z.record(z.string(), z.unknown()).default({}),
       }),
     )
-    .mutation(async ({ input, ctx }) => simulateBuild(input.buildId, input.scenario, toDpcUser(ctx.user))),
+    .mutation(async ({ input, ctx }) => {
+      await chanBuild(ctx, input.buildId); // phạm vi người dùng (L3 2026-10-25)
+      return simulateBuild(input.buildId, input.scenario, toDpcUser(ctx.user));
+    }),
 
   // ── Deployments (GATED: DPC_DEPLOY_ENABLED + HITL sign-off in the service) ──
   listDeployments: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ projectId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
+      if (!(await duAnThayDuoc(ctx, input.projectId))) return []; // phạm vi người dùng (L3 2026-10-25)
       return d
         .select()
         .from(programDeployments)
@@ -602,6 +661,7 @@ export const programmingRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       // doc 81 Đợt 2 Task 12b — lớp thứ hai (cổng chính chạy trước OTP qua meta ở trên).
+      await assertDeployTargetsInScope({ buildId: input.buildId, deviceIds: [input.deviceId] }, phamViCua(ctx)); // phạm vi người dùng (L3 2026-10-25): luôn kiểm phạm vi
       await assertBuildInExpectedProject(input.buildId, input.expectedProjectId);
       // Doc 54 P3.4 — chặn tái dùng idempotencyKey cho một yêu cầu KHÁC (surface CONFLICT).
       await assertIdempotencyKeyConsistent(input.idempotencyKey, {
@@ -648,6 +708,8 @@ export const programmingRouter = router({
       // doc 81 Đợt 2 Task 12b — lệch dự án ⇒ từ chối TRƯỚC mọi lượt ghi (không OTP ở thủ tục này).
       // fix round 1 (#1) — chạy SAU giấy phép + quyền của chuỗi; áp CÙNG cổng phạm vi của bản xem trước
       // (ngoài phạm vi ⇒ NOT_FOUND giống hệt không tồn tại) để không thành phép dò.
+      // phạm vi người dùng (L3 2026-10-25): phạm vi nhà máy LUÔN được kiểm (không phụ thuộc expectedProjectId)
+      await assertDeployTargetsInScope({ buildId: input.buildId, deviceIds: [input.deviceId] }, phamViCua(ctx));
       if (input.expectedProjectId !== undefined) {
         await assertDeployTargetInScopeAndProject(
           { buildId: input.buildId, deviceId: input.deviceId ?? null, expectedProjectId: input.expectedProjectId },
@@ -675,15 +737,19 @@ export const programmingRouter = router({
   listDeployApprovals: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ projectId: z.number().int().positive().optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
+      const congDep = await dieuKienDeployment(ctx); // phạm vi người dùng (L3 2026-10-25): chỉ yêu cầu duyệt thuộc dự án trong phạm vi
       const pending = await d
         .select()
         .from(programDeployments)
         .where(
-          input?.projectId
-            ? and(eq(programDeployments.status, "awaiting_approval"), eq(programDeployments.projectId, input.projectId))
-            : eq(programDeployments.status, "awaiting_approval"),
+          and(
+            input?.projectId
+              ? and(eq(programDeployments.status, "awaiting_approval"), eq(programDeployments.projectId, input.projectId))
+              : eq(programDeployments.status, "awaiting_approval"),
+            congDep,
+          ),
         )
         .orderBy(desc(programDeployments.id));
 
@@ -760,9 +826,10 @@ export const programmingRouter = router({
         totpCode: z.string().max(16),
       }),
     )
-    .mutation(async ({ input, ctx }) =>
-      approveDeployment(input.deploymentId, toDpcUser(ctx.user), { reason: input.reason }),
-    ),
+    .mutation(async ({ input, ctx }) => {
+      await chanDeployment(ctx, input.deploymentId); // phạm vi người dùng (L3 2026-10-25)
+      return approveDeployment(input.deploymentId, toDpcUser(ctx.user), { reason: input.reason });
+    }),
 
   /**
    * doc 40 ENG-F2 — TỪ CHỐI / rút một yêu cầu deploy chờ duyệt. An toàn (không chạm HW) →
@@ -776,9 +843,10 @@ export const programmingRouter = router({
         reason: z.string().min(1).max(2000),
       }),
     )
-    .mutation(async ({ input, ctx }) =>
-      rejectDeployment(input.deploymentId, toDpcUser(ctx.user), input.reason),
-    ),
+    .mutation(async ({ input, ctx }) => {
+      await chanDeployment(ctx, input.deploymentId); // phạm vi người dùng (L3 2026-10-25)
+      return rejectDeployment(input.deploymentId, toDpcUser(ctx.user), input.reason);
+    }),
 
   /**
    * W2-9 (doc 25 T6) — danh sách người đủ quyền KÝ DUYỆT deploy (second-approver).
@@ -813,6 +881,7 @@ export const programmingRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await chanDeployment(ctx, input.deploymentId); // phạm vi người dùng (L3 2026-10-25)
       return rollbackDeployment(
         input.deploymentId,
         toDpcUser(ctx.user),
@@ -842,6 +911,7 @@ export const programmingRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       // doc 81 Đợt 2 Task 12b — lớp thứ hai (cổng chính chạy trước OTP qua meta ở trên).
+      await assertDeployTargetsInScope({ buildId: input.buildId, deviceIds: input.deviceIds }, phamViCua(ctx)); // phạm vi người dùng (L3 2026-10-25): luôn kiểm phạm vi, MỌI thiết bị đích
       await assertBuildInExpectedProject(input.buildId, input.expectedProjectId);
       return deployToFleet(
         {
@@ -872,14 +942,19 @@ export const programmingRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) => fleetVersionMatrix(input)),
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L3 2026-10-25): chỉ deploy thuộc dự án trong phạm vi
+      if (input?.projectId != null && !(await duAnThayDuoc(ctx, input.projectId))) return [];
+      return fleetVersionMatrix(input, await dieuKienDeployment(ctx));
+    }),
 
   // ── Symbols (variable/tag table; feeds Online Monitor in D6) ──
   listSymbols: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ projectId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
+      if (!(await duAnThayDuoc(ctx, input.projectId))) return []; // phạm vi người dùng (L3 2026-10-25)
       return d.select().from(programSymbols).where(eq(programSymbols.projectId, input.projectId)).orderBy(programSymbols.name);
     }),
 
@@ -896,8 +971,9 @@ export const programmingRouter = router({
         forceable: z.boolean().default(false),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const d = await db();
+      await chanDuAn(ctx, input.projectId); // phạm vi người dùng (L3 2026-10-25)
       const [row] = await d
         .insert(programSymbols)
         .values({
@@ -927,8 +1003,10 @@ export const programmingRouter = router({
   deleteSymbol: protectedProcedure
     .use(requirePermission("machine_control", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const d = await db();
+      const pj = await duAnCuaSymbol(input.id); // phạm vi người dùng (L3 2026-10-25): symbol của dự án ngoài phạm vi ≡ không tồn tại (xoá không tác dụng)
+      if (pj !== null && !(await duAnThayDuoc(ctx, pj))) return { ok: true, id: input.id };
       await d.delete(programSymbols).where(eq(programSymbols.id, input.id));
       return { ok: true, id: input.id };
     }),
@@ -949,11 +1027,12 @@ export const programmingRouter = router({
         intervalMs: z.number().int().min(100).max(5000).optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       if (!dpcStreamingEnabled()) {
         return { started: false as const, reason: "streaming_disabled" as const, machineId: null };
       }
       const d = await db();
+      await chanDuAn(ctx, input.projectId); // phạm vi người dùng (L3 2026-10-25)
       const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, input.projectId)).limit(1);
       if (!proj) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.projectId} not found`);
       const machineId = proj.deviceId;
@@ -973,7 +1052,8 @@ export const programmingRouter = router({
   stopWatch: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ projectId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      if (!(await duAnThayDuoc(ctx, input.projectId))) return { ok: true as const }; // phạm vi người dùng (L3 2026-10-25): không dừng phiên theo dõi của dự án ngoài phạm vi
       getEngineeringStreamManager().stopWatch(`proj-${input.projectId}`);
       return { ok: true as const };
     }),

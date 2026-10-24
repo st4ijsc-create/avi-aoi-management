@@ -348,6 +348,7 @@ export const rootCauseRouter = router({
       }
 
       const row = resultRows[0];
+      await phanTichTrongPhamVi(ctx, row); // phạm vi nhà máy (L3 2026-10-25): bản của nhà máy khác ≡ không tồn tại
       const aiInsightsParsed = typeof row.aiInsights === 'string' ? JSON.parse(row.aiInsights) : row.aiInsights;
 
       // doc69 Wave2 A3 — recomputed LIVE for the CURRENT viewer (never persisted,

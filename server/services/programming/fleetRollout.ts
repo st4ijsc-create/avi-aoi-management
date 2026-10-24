@@ -397,13 +397,18 @@ export interface FleetMatrixEntry {
  * (lọc theo projectId/deviceIds nếu có), lấy hàng hiệu lực mới nhất mỗi máy, rồi nối
  * build → artifact để lộ version + contentHash. READ-ONLY, không chạm thiết bị.
  */
-export async function fleetVersionMatrix(filter?: {
-  projectId?: number;
-  deviceIds?: number[];
-}): Promise<FleetMatrixEntry[]> {
+export async function fleetVersionMatrix(
+  filter?: {
+    projectId?: number;
+    deviceIds?: number[];
+  },
+  /** phạm vi người dùng (L3 2026-10-25): điều kiện SQL "deploy thuộc dự án trong phạm vi người gọi" (undefined = toàn quyền). */
+  congPhamVi?: import("drizzle-orm").SQL,
+): Promise<FleetMatrixEntry[]> {
   const d = await db();
 
   const conds = [];
+  if (congPhamVi) conds.push(congPhamVi);
   if (filter?.projectId != null) conds.push(eq(programDeployments.projectId, filter.projectId));
   if (filter?.deviceIds && filter.deviceIds.length > 0)
     conds.push(inArray(programDeployments.deviceId, filter.deviceIds));

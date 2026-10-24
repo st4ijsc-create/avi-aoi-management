@@ -912,7 +912,7 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // Chứng minh: `loTruyXuatPhamVi.db.test.ts` (13 ca CSDL thật; 13/13 đỏ trên mã cũ; đột biến 58/58 bị bắt sau khi bổ sung 3 ca). Kèm vá lỗi CÓ SẴN: getReInspectStatus so sánh thời gian qua Date của JS (lệch múi giờ ⇒ chính hàng gốc bị tính là "muộn hơn").
 // 2026-10-25 (kiểm định, lô W7c, migration 0421): thiết bị đo + hiệu chuẩn + MSA ĐỌC theo nhà máy ⇒ 7 thủ tục đọc C → S (instrument.list|getById · calibration.list|health · msaRecord.list · msaWizard.getStudy|listByProduct): C 483 → 476 · S 423 → 430.
 // 2026-10-25 gộp L2 (A270/C483/S443) với W7c (7 C→S) ⇒ A270 · C476 · S450 (đo bằng census).
-const GHIM = { A: 270, B: 8, C: 476, D: 1198, S: 450, tong: 2402 } as const;
+const GHIM = { A: 254, B: 8, C: 476, D: 1198, S: 466, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
@@ -1024,7 +1024,7 @@ describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
       if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
     }
     expect(loi).toEqual([]);
-    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(4);
+    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(10);
   });
 
   it("sổ nợ GOM THEO FILE, mỗi file một khối liền mạch, trong khối đã sắp xếp, không lặp", () => {
@@ -1119,6 +1119,48 @@ export const dotBienRoRiRouter = router({
       /* không có gì để dọn — tệp ảo */
     }
     expect(existsSync(FILE_DOT_BIEN), "phép đột biến phải tự dọn — file rò không được ở lại cây").toBe(false);
+  }, 120_000);
+});
+
+describe("§7b — ĐIỂM MÙ 2026-10-25: danh tính rời tay mà KHÔNG vào cổng ⇒ A, không phải S", () => {
+  /**
+   * Đối chiếu phamViGhiScan 44b4bc20b: `ctx` đi vào MỘT lời gọi bất kỳ (ghi nhật ký, lọc theo chủ…) không làm lượt đọc tenant "đã lọc phạm vi". Tệp ảo, không ghi đĩa.
+   */
+  const MA = `import { z } from "zod";
+import { protectedProcedure, router } from "../_core/trpc";
+import * as db from "../db";
+import { phamViCua } from "./_phamViNguoiXem";
+
+function ghiNhatKy(_x: unknown): void {}
+
+export const diemMuRouter = router({
+  // ctx đi vào ghiNhatKy (KHÔNG phải cổng) rồi đọc TOÀN đội máy ⇒ phải là A
+  nhatKyRoiDoc: protectedProcedure.query(async ({ ctx }) => {
+    ghiNhatKy(ctx.user?.id);
+    return db.getMachines();
+  }),
+  // danh tính vào một biến rồi vào hàm cổng ⇒ S
+  quaBien: protectedProcedure.query(async ({ ctx }) => {
+    const pv = phamViCua(ctx);
+    return db.getMachines(pv as never);
+  }),
+  // nhập động .then((m) => m.xxxTrongPhamVi(…)) mà thamChieu không phân giải được ⇒ S nhờ quy ước tên cổng
+  nhapDong: protectedProcedure.query(async ({ ctx }) => {
+    const ids = await import("../db").then((m) => (m as any).machineIdsTrongPhamVi(phamViCua(ctx)));
+    return { ids, ma: await db.getMachines() };
+  }),
+});
+`;
+  it("★★★ ctx vào hàm không phải cổng ⇒ A; ctx qua biến vào cổng ⇒ S; nhập động *TrongPhamVi ⇒ S", () => {
+    const lai = quetPhamViDoc(GOC_REPO, { "server/routers/__diemMuPhamViDoc.ts": MA });
+    const tim = (ten: string): ThuTuc | undefined => lai.thuTuc.find((t) => t.file.endsWith("__diemMuPhamViDoc.ts") && t.ten === ten);
+    const a = tim("nhatKyRoiDoc");
+    expect(a, "bộ suy KHÔNG THẤY thủ tục ảo").toBeDefined();
+    expect(a?.danhTinhRoiTay, "danh tính có rời tay").toBe(true);
+    expect(a?.danhTinhVaoCong, "nhưng KHÔNG vào cổng").toBe(false);
+    expect(nhomCua(a as ThuTuc)).toBe("A");
+    expect(nhomCua(tim("quaBien") as ThuTuc), "qua biến vào cổng").toBe("S");
+    expect(nhomCua(tim("nhapDong") as ThuTuc), "nhập động *TrongPhamVi").toBe("S");
   }, 120_000);
 });
 
