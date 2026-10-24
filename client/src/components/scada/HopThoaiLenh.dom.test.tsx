@@ -297,6 +297,19 @@ describe("M5 — từ chối nói lý do + cách xử lý", () => {
     expect(onDong).toHaveBeenCalled();
   });
 
+  it("★ R1a final re-review: TOTP_TAM_KHOA hình THẬT (code TOO_MANY_REQUESTS + httpStatus 429 + appCode) ⇒ chữ 'tạm khoá … 4 phút', KHÔNG 'vượt giới hạn tần suất'", async () => {
+    ve({ yeuCau: yeuCau({ level: 5, needsTotp: true }) });
+    fireEvent.change(within(hop()).getByLabelText(S("scada.lenh.totp.nhan")), { target: { value: "123456" } });
+    bamGui();
+    await traLoi("confirm", "onError", {
+      message: "x",
+      data: { code: "TOO_MANY_REQUESTS", httpStatus: 429, path: "scadaCommands.confirm", appCode: "TOTP_TAM_KHOA", appParams: { ma: "TOTP_TAM_KHOA", level: 5, remainingMinutes: 4 } },
+    });
+    const tb = within(hop()).getByTestId("loi-lenh");
+    expect(tb).toHaveTextContent("Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau 4 phút");
+    expect(tb).not.toHaveTextContent(S("scada.lenh.loi.vuotTanSuat"));
+  });
+
   it("★ R1a final I-1: HTTP 429 thô (apiLimiter — chỉ meta.response.status) ⇒ cùng chữ vượt giới hạn (en)", async () => {
     await act(async () => {
       await i18next.changeLanguage("en");

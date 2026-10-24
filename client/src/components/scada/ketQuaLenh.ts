@@ -195,6 +195,9 @@ export function laLoiGioiHanTanSuat(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as { data?: { appCode?: unknown; httpStatus?: unknown; code?: unknown }; meta?: { response?: { status?: unknown } } };
   if (e.data?.appCode === "TRPC_GIOI_HAN_THU_TUC") return true;
+  // re-review — lỗi mang appCode KHÁC (vd. TOTP_TAM_KHOA: appError("TOO_MANY_REQUESTS", …) ⇒ errorFormatter rải code + httpStatus 429)
+  // giữ ánh xạ riêng của nó; chỉ 429 KHÔNG có appCode mới coi là bộ giới hạn.
+  if (typeof e.data?.appCode === "string" && e.data.appCode !== "") return false;
   if (e.data?.httpStatus === 429 || e.data?.code === "TOO_MANY_REQUESTS") return true;
   return e.meta?.response?.status === 429;
 }

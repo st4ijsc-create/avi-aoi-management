@@ -20,6 +20,7 @@ import {
   TU_DONG_DONG_MS,
   docLoiApp,
   khoaLyDoLocal,
+  laLoiGioiHanTanSuat,
   moTaLoiLenh,
   nhanKetQua,
   TTL_YEU_CAU_MS,
@@ -265,6 +266,28 @@ describe("moTaLoiLenh — mã từ chối ⇒ chữ + cách xử lý", () => {
     expect(S("scada.lenh.loi.vuotTanSuat")).not.toMatch(/không rõ/i);
     // lỗi khác mang httpStatus khác 429 vẫn theo đường cũ
     expect(moTaLoiLenh({ message: "x", data: { httpStatus: 500 } }, "confirm", ctx).khoa).toBe("scada.lenh.loi.DISPATCH_LOI");
+  });
+
+  it("★ R1a final re-review: hình lỗi THẬT trên dây (code + httpStatus + appCode) — TOTP_TAM_KHOA giữ chữ 'tạm khoá N phút'; TRPC_GIOI_HAN_THU_TUC ⇒ vượt giới hạn", () => {
+    const ctx = { laEdge: false, locale: "vi" };
+    // loiTotpKhoa ném appError("TOO_MANY_REQUESTS", "TOTP_TAM_KHOA", …); errorFormatter rải code + httpStatus vào data
+    const tamKhoa = {
+      message: "x",
+      data: { code: "TOO_MANY_REQUESTS", httpStatus: 429, path: "scadaCommands.confirm", appCode: "TOTP_TAM_KHOA", appParams: { ma: "TOTP_TAM_KHOA", level: 5, remainingMinutes: 4 } },
+    };
+    for (const gd of ["confirm", "request"] as const) {
+      const m = moTaLoiLenh(tamKhoa, gd, ctx);
+      expect(m.khoa, gd).toBe("scada.lenh.loi.TOTP_TAM_KHOA");
+      expect(m.ma, gd).toBe("TOTP_TAM_KHOA");
+      expect(m.thamSo).toEqual({ phut: "4" });
+    }
+    expect(laLoiGioiHanTanSuat(tamKhoa)).toBe(false);
+    const gioiHan = { message: "x", data: { code: "TOO_MANY_REQUESTS", httpStatus: 429, path: "scadaCommands.confirm", appCode: "TRPC_GIOI_HAN_THU_TUC", nhom: "2fa", retryAfterGiay: 30 } };
+    expect(moTaLoiLenh(gioiHan, "confirm", ctx).khoa).toBe("scada.lenh.loi.vuotTanSuat");
+    expect(laLoiGioiHanTanSuat(gioiHan)).toBe(true);
+    // 429 KHÔNG có appCode (apiLimiter / tầng khác) ⇒ vẫn vượt giới hạn; 429 kèm appCode lạ ⇒ đi đường ánh xạ của appCode
+    expect(laLoiGioiHanTanSuat({ message: "x", data: { code: "TOO_MANY_REQUESTS", httpStatus: 429 } })).toBe(true);
+    expect(laLoiGioiHanTanSuat({ message: "x", data: { code: "TOO_MANY_REQUESTS", httpStatus: 429, appCode: "MOT_MA_KHAC" } })).toBe(false);
   });
 
   it("mã lạ có `ma` ⇒ dự phòng chung, vẫn giữ mã để hiện", () => {

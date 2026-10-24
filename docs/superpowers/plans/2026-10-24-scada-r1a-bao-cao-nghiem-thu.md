@@ -246,7 +246,7 @@ Runtime OpenPLC (chương trình `benchL2` không khai `%QW`/`%MW`) **không ghi
 **Sổ và kiểu giá trị**
 
 24. Lý do (`lyDo`) của yêu cầu bị TỪ CHỐI không được lưu (attempts chưa có cột `ly_do`): backlog R1b M9.
-25. Dòng attempts `NOT_FOUND` do dò không có trần: backlog R1b.
+25. Dòng attempts WORM lặp lại (`NOT_FOUND` do dò, `TOTP_CAN` trên yêu cầu đang giữ, `DA_XU_LY` / `HET_HAN` trên yêu cầu đã kết thúc) không có trần: backlog R1b mục 11.
 26. `laTrungKhoa` coi mọi lỗi 23505 là gửi lại (fail-closed). Gửi lại có thể trả về yêu cầu mà khoá đã dời (UX).
 27. Sparkplug Int64 (Long) trên kênh int đã khai bị `TYPE_MISMATCH` (fail-closed) tới R1b.
 28. Stop của edge nêu tag thiếu hoặc không ghi được vẫn bị từ chối ở bước 3 (có từ trước R1a). Lỗi đọc chủ sở hữu trên stop bị từ chối nay ra `rejected` ở 3b thay vì `failed ADAPTER_OFFLINE` (cảnh báo vẫn phát).
@@ -320,7 +320,8 @@ Runtime OpenPLC (chương trình `benchL2` không khai `%QW`/`%MW`) **không ghi
 8. **`tags.update` / `mappingAsCode.import`** kiểm lại giá trị lệnh của luật interlock đang bật.
 9. **i18n `MUC_QUA_CAO`** (vi/en/zh) ở confirm.
 10. **`congOtLuong`** dùng mức kênh (cần `adapterId` trong luồng AI).
-11. **Giới hạn tần suất các dòng attempts `NOT_FOUND`** do dò.
+11. **Tăng trưởng dòng WORM attempts do `request` / `confirm` lặp lại** (`TOTP_CAN` trên yêu cầu đang giữ, `DA_XU_LY` / `HET_HAN` trên yêu cầu đã
+    kết thúc, `NOT_FOUND` do dò) — cần bộ điều tiết attempts theo người dùng.
 12. **Đồng hồ đơn điệu** cho TTL hàng đợi lệnh.
 13. Chặn **dùng song song cùng một mã dự phòng** (double-spend).
 14. Audit khi bị điều tiết phải báo đúng cỡ đợt burst.
