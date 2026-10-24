@@ -48,9 +48,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/aiAdvancedRouter.ts#abTestRouter.submitFeedback",
   // ── server/routers/aiAdvancedVisionRouter.ts (1) ──
   "server/routers/aiAdvancedVisionRouter.ts#aiAdvancedVisionRouter.explainHeatmap",
-  // ── server/routers/aiImageSearchRouter.ts (2) ──
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByUpload",
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByVector",
   // ── server/routers/aiModelRouter.ts (3) ──
   "server/routers/aiModelRouter.ts#aiModelRouter.approveCard",
   "server/routers/aiModelRouter.ts#aiModelRouter.createCard",

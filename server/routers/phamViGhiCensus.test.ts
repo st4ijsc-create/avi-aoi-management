@@ -26,7 +26,7 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1198, no: 293 } as const; // 2026-10-25 gộp W11b với main (L3) ⇒ 295, đo bằng census
+const GHIM = { tongMutation: 1198, no: 291 } as const; // 2026-10-25 W12: aiImageSearch.searchByUpload/searchByVector theo phạm vi máy ⇒ 293 → 291 (đo bằng census)
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {
