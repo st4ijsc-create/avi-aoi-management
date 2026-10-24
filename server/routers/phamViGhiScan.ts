@@ -69,7 +69,15 @@ const TEN_CONG_BIET = new Set([
  * Mẫu TÊN của một bộ kiểm phạm vi GHI. KHÔNG khớp tên chung chung: `applyReportScope`/`resolveExportScope` là phạm vi ĐỌC của báo cáo — loại.
  * (Tên đủ chắc để ít xanh giả; thiếu thì thêm vào `TEN_CONG_BIET` kèm test.)
  */
+/**
+ * Cổng của TOOL GHI do AI (`kiemPhamViGhiTool`) và đường đề xuất / duyệt HITL (`proposeAction` · `confirmAction` · `cancelAction`) KHÔNG phải cổng phạm vi của THỦ TỤC router:
+ * cổng tool miễn trừ có lý do 6 tool repo + set_yield_threshold và có census RIÊNG (aiLocalTools/phamViGhi.census.test.ts, 31/31); việc một thủ tục tới được chúng không chứng minh
+ * khoá định danh CỦA THỦ TỤC được kiểm phạm vi (dieu-phoi, 2026-10-25: "giấy vô can giả"). Hai sổ độc lập. Thủ tục nào muốn ra khỏi sổ nhờ cổng tool phải được GHI vào MIEN_TRU_GHI kèm tên test.
+ */
+export const TEN_CONG_TOOL_AI = new Set(["kiemPhamViGhiTool", "proposeAction", "confirmAction", "cancelAction"]);
+
 function laTenCong(ten: string): boolean {
+  if (TEN_CONG_TOOL_AI.has(ten)) return false;
   if (TEN_CONG_BIET.has(ten)) return true;
   if (/^(assert|kiem|require|ensure|check)\w*(InScope|TrongPhamVi|PhamVi|Allowed)\w*$/i.test(ten)) return true;
   if (/\w*TrongPhamVi\w*$/.test(ten)) return true;
@@ -184,6 +192,7 @@ export function bacCua(file: string, duongRouter: string, ten: string, bang: rea
 
 const TRAN_VONG = 12;
 const TEN_QUA_CHUNG = new Set([
+  ...TEN_CONG_TOOL_AI,
   "list", "get", "getById", "create", "update", "delete", "remove", "find", "findOne", "findMany", "set", "add", "map", "filter", "reduce", "push",
   "then", "catch", "finally", "toString", "parse", "safeParse", "string", "number", "boolean", "object", "array", "optional", "nullable",
   "log", "warn", "error", "info", "debug", "now", "from", "of", "all", "run", "handler", "execute", "values", "keys", "entries", "select",

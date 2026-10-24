@@ -271,3 +271,6 @@ describe("G4.29 — ADVICE_CONTRACT_ENABLED OFF is byte-for-byte legacy", () => 
     expect(updateMeasurementPointDef).toHaveBeenCalledTimes(1);
   });
 });
+
+// W11c: cổng phạm vi tool GHI có test riêng (aiLocalTools/phamViGhi*.test.ts); ở đây user giả / CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./aiLocalTools/phamViGhi", () => ({ kiemPhamViGhiTool: async () => ({ ok: true }) }));

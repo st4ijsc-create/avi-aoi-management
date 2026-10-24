@@ -55,12 +55,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/aiModelRouter.ts#aiModelRouter.approveCard",
   "server/routers/aiModelRouter.ts#aiModelRouter.createCard",
   "server/routers/aiModelRouter.ts#aiModelRouter.updateCard",
-  // ── server/routers/aiRcaCopilotRouter.ts (1) ──
-  "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix",
-  // ── server/routers/aiThresholdAdvisorRouter.ts (1) ──
-  "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.applyNgThreshold",
-  // ── server/routers/aiVisionRouter.ts (1) ──
-  "server/routers/aiVisionRouter.ts#aiVisionRouter.proposeDefect",
   // ── server/routers/alertEscalationRouter.ts (4) ──
   "server/routers/alertEscalationRouter.ts#alertEscalationRouter.create",
   "server/routers/alertEscalationRouter.ts#alertEscalationRouter.delete",
@@ -315,6 +309,10 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
  * (c) không đồng thời nằm trong sổ nợ. Thêm mục = lời khai công khai, người review phải thấy.
  */
 export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
+  // ── Phạm vi QUA CỔNG TOOL kiemPhamViGhiTool (aiLocalTools/phamViGhi.ts) — mỗi mục có test DB cấp THỦ TỤC, gỡ cổng ⇒ đỏ (dieu-phoi 2026-10-25) ──
+  "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix": "phạm vi qua cổng tool kiemPhamViGhiTool (create_maintenance_workorder … khoá machineId thật) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiRcaCopilot.applyTopFix' (A→được, B→OUT_OF_SCOPE, đột biến 3/3 đỏ) — 2026-10-25. Giới hạn: id phân tích của nhà máy khác trả OUT_OF_SCOPE còn id không có thật trả NOT_FOUND",
+  "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.applyNgThreshold": "phạm vi qua cổng tool kiemPhamViGhiTool (adjust_ng_threshold, khoá thresholdId → trạm / máy / điểm đo / sản phẩm) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiThresholdAdvisor.applyNgThreshold' (A→được, B→OUT_OF_SCOPE, đột biến đỏ) — 2026-10-25",
+  "server/routers/aiVisionRouter.ts#aiVisionRouter.proposeDefect": "phạm vi qua cổng tool kiemPhamViGhiTool (propose_defect_from_vision, khoá inspectionId / measurementResultId → máy của lần kiểm tra) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiVision.proposeDefect' (A→được, B và measurementResult B→OUT_OF_SCOPE, đột biến đỏ) — 2026-10-25",
   "server/routers/aiAgentRouter.ts#aiAgentRouter.approvePlan":
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
   "server/routers/aiAgentRouter.ts#aiAgentRouter.confirmStep":
