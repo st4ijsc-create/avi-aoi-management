@@ -36,7 +36,8 @@ param(
   [int]$CacheRam = 0,
   # Dot 9 (2026-10-24, dieu-phoi duyet): bo chieu thi giac --mmproj THEO MODEL: off | auto | <duong dan>. auto = cung quy tac
   # scripts/ai/tim-mmproj.ps1 voi start-llama-server.ps1 (<ten model bo duoi luong tu>-mmproj-F16.gguf canh model).
-  [string]$Mmproj = "off",
+  # Mac dinh "auto" (2026-10-24, cung mac dinh san pham sau cong (A)) - "off" de do duong chu khong mmproj.
+  [string]$Mmproj = "auto",
   # Dot 9 (2026-10-22): chu khoa nhan BAN GIAO khi /health xanh (vd chu cua khoaKhe.mjs giu cua phep do) - xem khoi KHOA ben duoi.
   [string]$GiuKhoa = ""
 )

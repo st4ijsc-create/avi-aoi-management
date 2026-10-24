@@ -158,5 +158,10 @@ Lần chạy 06:45 trước đó HỎNG ở thiết bị đo (biến `URL` che m
   bản đọc ảnh kéo bộ chọn công cụ) · #08 khớp từ khoá nhưng câu mở đầu "Tôi không có thông tin chính xác … trong tài liệu". Gốc (THIẾT KẾ có từ
   trước, không do mmproj): bản đọc ảnh được GỘP VÀO câu hỏi ⇒ nó lái bộ chọn công cụ + truy hồi, còn lời dặn "chỉ trả lời theo tài liệu" của KB
   khiến model không coi ảnh là nguồn. ⇒ **Cổng (A) CHƯA ĐẠT ở phần e2e KB — mặc định GIỮ `off`, chờ dieu-phoi.**
+- **QUYẾT ĐỊNH (dieu-phoi 2026-10-24, sau cổng (A)): BẬT `auto` làm MẶC ĐỊNH TRONG MÃ** (`start-llama-server.ps1`, `doi-model.ps1 -Mmproj`) —
+  model/bộ nhớ/e2e `/v1` đạt; KB không lộ vì extension 0.3.0 để `aviAiLocal.anhChoTroLy=false` mặc định. Tắt: `LLAMA_SERVER_MMPROJ=off`.
+  Kiểm khi :8091 khởi động lại TỰ NHIÊN / lần đổi khe kế tiếp: CommandLine có `--mmproj` + `/props` vision=true (không restart chỉ để kiểm).
+  Song song: SỬA KB (câu hỏi gốc cho bộ chọn công cụ/intent; truy hồi = câu hỏi gốc + mã/nhãn từ ảnh; ảnh là NGUỒN có nhãn không tin
+  cậy) rồi đo lại e2e KB 3 ảnh, cổng giữ nguyên; đạt ⇒ luong-ui đổi `anhChoTroLy` mặc định sang true.
 - ⚠ Rủi ro HIỆN TẠI (không phụ thuộc đề xuất): đường KB gửi ảnh ⇒ sidecar VL-8B nạp CÙNG LÚC 35B ⇒ đo được 31,9 GB VRAM, chữ chậm ×4,
   commit trống 3–5 GB. Extension chưa gửi ảnh nên chưa lộ; khi luong-ui bật đính ảnh cho Trợ lý, lỗ này mở.

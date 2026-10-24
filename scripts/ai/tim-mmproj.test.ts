@@ -65,7 +65,8 @@ describe.runIf(WIN)("start-llama-server.ps1 — --mmproj theo model", () => {
     expect("exit" in r && r.exit).toBe(2);
   }, 120_000);
   it("vắng khoá ⇒ mặc định hiện hành của mã", () => {
-    // Mặc định hiện hành: 'off' cho tới khi dieu-phoi duyệt đổi sang 'auto' (đổi mặc định ⇒ sửa ca này cùng commit).
-    expect(mmprojCua(chay("Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", null))).toBeNull();
+    // Mặc định = 'auto' (dieu-phoi duyệt 2026-10-24 sau cổng (A)): vắng khoá ⇒ mmproj theo model.
+    expect(mmprojCua(chay("Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", null))).toBe("Qwen3.6-35B-A3B-mmproj-F16.gguf");
+    expect(mmprojCua(chay("Qwen3.6-27B-UD-Q4_K_XL.gguf", null))).toBe("Qwen3.6-27B-mmproj-F16.gguf");
   }, 60_000);
 });

@@ -241,7 +241,8 @@ $srvArgs += @('--cache-ram', $cacheRam)
 # Đo (spec 2026-10-24-ai-local-doc-anh-tro-ly-lap-trinh.md): 35B+mmproj 12,7/13 ảnh UI đúng, 3,3 s/câu, +1,1 GB VRAM, đường chữ 1,019×.
 # Server biết khe đọc được ảnh qua `/props` modalities.vision (aiLlamaServerClient.kheDangCoThiGiac).
 . (Join-Path $PSScriptRoot 'tim-mmproj.ps1')
-$cheDoMmproj = if ($cfg['LLAMA_SERVER_MMPROJ']) { "$($cfg['LLAMA_SERVER_MMPROJ'])".Trim() } else { 'off' }
+# MẶC ĐỊNH 'auto' (dieu-phoi duyệt 2026-10-24 sau cổng (A) — spec §6). Tắt: LLAMA_SERVER_MMPROJ=off trong .env.
+$cheDoMmproj = if ($cfg['LLAMA_SERVER_MMPROJ']) { "$($cfg['LLAMA_SERVER_MMPROJ'])".Trim() } else { 'auto' }
 try { $mmproj = Resolve-Mmproj -ModelPath $modelPath -CheDo $cheDoMmproj } catch { Write-Bad "$_"; exit 2 }
 if ($mmproj) { $srvArgs += @('--mmproj', $mmproj); Write-Step "mmproj: $mmproj (LLAMA_SERVER_MMPROJ=$cheDoMmproj)" }
 elseif ($cheDoMmproj -ine 'off') { Write-Step "mmproj: không có cho $(Split-Path -Leaf $modelPath) (LLAMA_SERVER_MMPROJ=$cheDoMmproj) — chạy chữ" }
