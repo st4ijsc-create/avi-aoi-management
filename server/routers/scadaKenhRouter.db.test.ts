@@ -639,6 +639,33 @@ describe("fix round 1 — canhBaoKenhDung, loại kênh ghi trên tag không ghi
   });
 });
 
+describe("R1b-1 T10 — capNhat đọc adapter.machineId KHI đã khoá hàng adapter (FOR SHARE)", () => {
+  it("★ adapter đang bị đổi sang máy NGOÀI phạm vi (giao dịch khác giữ FOR UPDATE, chưa commit): capNhat CHỜ rồi đọc máy MỚI ⇒ NOT_FOUND, tag không đổi (không TOCTOU)", async () => {
+    const postgres = (await import("postgres")).default;
+    const raw = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+    const ten = lyDo("khoa-adapter");
+    try {
+      let xong: unknown;
+      let daXong = false;
+      await raw.begin(async (t) => {
+        await t`UPDATE device_adapters SET "machineId" = ${B.mid} WHERE id = ${ad.a}`; // giữ khoá hàng adapter, CHƯA commit
+        void engA.capNhat({ tagId: tg.sp, patch: { displayName: ten }, lyDo: lyDo("khoa-ad") }).then(
+          (v) => ((xong = v), (daXong = true)),
+          (e) => ((xong = e), (daXong = true)),
+        );
+        await new Promise((res) => setTimeout(res, 800));
+        expect(daXong, "capNhat phải ĐANG CHỜ khoá FOR SHARE của hàng adapter, không đọc máy cũ rồi chạy tiếp").toBe(false);
+      });
+      await vi.waitFor(() => expect(daXong).toBe(true), { timeout: 10_000 });
+      expect(xong).toMatchObject({ code: "NOT_FOUND" });
+      expect((await cotTag(tg.sp)).displayName).toBeNull();
+    } finally {
+      await dung(sql`UPDATE device_adapters SET "machineId" = ${A.mid} WHERE id = ${ad.a}`);
+      await raw.end({ timeout: 5 });
+    }
+  });
+});
+
 describe("kiem-dinh P1-2 — capNhat / cheDo.dat / cheDo.go đòi TOTP TƯƠI ở MỌI lượt (kiemXacThucTheoMuc mức 5, không phụ thuộc cờ env)", () => {
   let u2fa!: { id: number; caller: Caller };
   let uKhong2fa!: Caller;

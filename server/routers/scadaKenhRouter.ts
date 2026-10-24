@@ -31,7 +31,7 @@
  *     DỪNG ghim được miễn dải trong `dispatch()`); chiều ghim ⇒ `stopPin.datStopPin`.
  *   • `commandValue` của mọi luật interlock ĐANG BẬT nhắm tag này phải còn ghi được ⇒ không thì `INTERLOCK_NGOAI_DAI` (review T3 M-3);
  *     chiều luật ⇒ `interlockRouter` create/update/approve/enable.
- *   Khoá (fix round 1): THỨ TỰ LUẬT → TAG ở mọi bên — capNhat khoá FOR SHARE mọi luật nhắm tag rồi tag FOR UPDATE (datStopPin khoá cùng
+ *   Khoá (fix round 1): THỨ TỰ LUẬT → TAG ở mọi bên — capNhat khoá FOR SHARE adapter (R1b-1 T10) → mọi luật nhắm tag → tag FOR UPDATE (datStopPin khoá cùng
  *   hàng tag); interlockRouter khoá luật FOR UPDATE rồi tag FOR SHARE ⇒ không lọt, không vòng chờ (40P01 còn sót ⇒ CONFLICT thử lại).
  *
  * ĐỂ R2 (không làm ở đây): hạ mức tác động (5→3) hay nới dải KHÔNG cần người thứ hai duyệt trong R1a.
@@ -51,6 +51,7 @@ import { isEdgeControlSchemaMissing } from "../services/edge/edgeControlSchema";
 import { kiemGiaTriGhi, laKenhGhi, loaiKenh, mucTacDongKenh, type LoaiKenh } from "../services/scada/kenhScada";
 import { cheDoMay, type CheDo } from "../services/scada/cheDoMay";
 import { khoaLuatNhamTagTx, kiemNhatQuanKenh, soHienThi, viPhamInterlock, type KenhNhatQuan } from "../services/scada/nhatQuanKenh";
+import { khoaAdapterTx } from "../services/scada/troLaiKenh";
 import { tagDeadbandEnabled } from "../services/ot/otManager";
 import { TAG_DUNG_MAC_DINH } from "../services/ot/tagLenhMacDinh";
 import { validateStopValue } from "../services/ot/stopPin";
@@ -511,11 +512,10 @@ export const scadaKenhRouter = router({
             .where(eq(deviceTags.id, input.tagId))
             .limit(1);
           if (!tag0) throw khongThayTag();
-          const [a] = await tx
-            .select({ machineId: deviceAdapters.machineId })
-            .from(deviceAdapters)
-            .where(eq(deviceAdapters.id, tag0.adapterId))
-            .limit(1);
+          // R1b-1 T10 — thứ tự khoá chung (troLaiKenh.ts): ADAPTER (FOR SHARE) → LUẬT → TAG → KÊNH CHẾ ĐỘ. `machineId` đọc KHI đã khoá hàng adapter
+          // ⇒ một `deviceAdapter.update` đổi máy (giữ FOR UPDATE) xong rồi mới tới ta, và không đổi máy được nữa cho tới khi ta commit:
+          // phép kiểm phạm vi không còn đọc máy CŨ (TOCTOU) rồi ghi lên kênh của adapter đã sang máy ngoài phạm vi.
+          const a = (await khoaAdapterTx(tx, [tag0.adapterId])).get(tag0.adapterId);
           if (!a || !nhinThay(a.machineId, idsMay)) throw khongThayTag(); // ngoài phạm vi = không tồn tại
           // LUẬT trước (FOR SHARE, mọi luật nhắm tag này, bật hay tắt), TAG sau (FOR UPDATE) — xem docstring.
           const luat = await khoaLuatNhamTagTx(tx, { adapterId: tag0.adapterId, tagKey: tag0.tagKey });
