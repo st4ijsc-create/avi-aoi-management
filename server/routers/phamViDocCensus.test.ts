@@ -903,7 +903,10 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // `aoiPackage` ×8 (getPackage|getImage|getPackageImages|getPackageLogs|downloadZip|listPackages|getUploadStats|getQueueStatus), `inspection.getById|aiAnalysis|defectPatternClusters` + `measurementResult.getById|getByInspection`,
 // `annotation.getByImage|getByInspection|search|statistics|comparison|heatmapData|trendPrediction`, `annotationComparison.list|getById|compareTwo|getTrendData`. Ngoài phạm vi ≡ NOT_FOUND (cùng thực thể với "không tồn tại") hoặc rỗng.
 // 24 dòng sổ nợ đã GỠ. Chứng minh: `loAoiKiemTraChuThichPhamVi.db.test.ts` (13 ca trên CSDL thật; kèm path traversal ở `getImage`); đột biến 33/33 bị bắt (4 sống sót lần đầu ⇒ thêm ca phiên khai báo máy B + bỏ nhánh thừa của getQueueStatus).
-const GHIM = { A: 290, B: 8, C: 488, D: 1198, S: 418, tong: 2402 } as const;
+// ★★ 2026-10-24 (lô L1b): **C 488 → 483 · S 418 → 423 · A/B/D/tong unchanged.** CHÍNH XÁC 5 thủ tục ĐỌC C → S (nhóm "không có cổng" vì bộ suy không thấy cổng; nay đi qua `_adapterPhamVi`): `annotationHistory.list|get|compare`
+// (lịch sử chú thích theo lần kiểm tra của máy trong phạm vi) và `aoiPackage.listDeadLetters|getDeadLetterDetail` (mục dead-letter theo mã máy trong phạm vi). 18 MUTATION cùng router đã vá (sổ nợ ghi −18 ở `phamViGhiBaseline.ts`).
+// Chứng minh: `loAoiGhiPhamVi.db.test.ts` (17 ca CSDL thật; 17/17 đỏ trên mã L1; đột biến 40/40 bị bắt sau khi bổ sung 2 ca).
+const GHIM = { A: 290, B: 8, C: 483, D: 1198, S: 423, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

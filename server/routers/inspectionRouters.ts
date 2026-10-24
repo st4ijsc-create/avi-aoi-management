@@ -5,7 +5,7 @@ import { appError } from "../_core/appError";
 import * as db from "../db";
 import { invokeLLM } from "../_core/llm";
 import { finalYield } from "../utils/kpi";
-import { idsMayTrongPhamVi, kiemTraTrongPhamVi, dieuKienMaySql } from "./_adapterPhamVi";
+import { idsMayTrongPhamVi, kiemTraTrongPhamVi, locKiemTraTrongPhamVi, dieuKienMaySql } from "./_adapterPhamVi";
 
 // ============ INSPECTION ROUTER ============
 export const inspectionRouter = router({
@@ -103,7 +103,8 @@ export const inspectionRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const inspection = await db.getProductInspectionById(input.id);
-      if (!inspection) {
+      // phạm vi người dùng (L1b 2026-10-24): lần kiểm tra của máy ngoài phạm vi ≡ không tồn tại
+      if (!inspection || !(await kiemTraTrongPhamVi(ctx, [input.id]))) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'inspection' }, 'Inspection not found');
       }
       if (inspection.originalResult !== 'NG') {
@@ -139,10 +140,11 @@ export const inspectionRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const ids = Array.from(new Set(input.ids));
-      const { updatedIds, alreadyAcknowledgedIds } = await db.bulkAcknowledgeInspections({
-        ids,
-        userId: ctx.user.id,
-      });
+      // phạm vi người dùng (L1b 2026-10-24): id thuộc máy ngoài phạm vi bị bỏ ra khỏi thao tác và tính vào notFoundCount (≡ không tồn tại)
+      const idsTrongPhamVi = await locKiemTraTrongPhamVi(ctx, ids);
+      const { updatedIds, alreadyAcknowledgedIds } = idsTrongPhamVi.length > 0
+        ? await db.bulkAcknowledgeInspections({ ids: idsTrongPhamVi, userId: ctx.user.id })
+        : { updatedIds: [] as number[], alreadyAcknowledgedIds: [] as number[] };
 
       await db.createAuditLog({
         userId: ctx.user.id,
@@ -466,19 +468,25 @@ export const measurementResultRouter = router({
       id: z.number(),
       remark: z.string(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi người dùng (L1b 2026-10-24): kết quả đo của máy ngoài phạm vi ≡ không tồn tại
+      const kq = await db.getMeasurementResultById(input.id);
+      if (!kq || !(await kiemTraTrongPhamVi(ctx, [kq.inspectionId]))) {
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
+      }
       await db.updateMeasurementResultRemark(input.id, input.remark);
       return { success: true };
     }),
 
   analyzeWithAI: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const result = await db.getMeasurementResultById(input.id);
       // Review cuối — ghi sổ trước: `!result || !result.imageUrl` gộp hai tình huống
       // khác nhau (kết quả đo không tồn tại vs. kết quả CÓ nhưng không có ảnh) vào MỘT
       // câu chỉ nói về ảnh. Tách để entity đúng với điều kiện thật đã xảy ra.
-      if (!result) {
+      // phạm vi người dùng (L1b 2026-10-24): ngoài phạm vi ≡ không tồn tại (TRƯỚC khi gửi ảnh cho mô hình)
+      if (!result || !(await kiemTraTrongPhamVi(ctx, [result.inspectionId]))) {
         throw appError('BAD_REQUEST', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
       }
       if (!result.imageUrl) {
@@ -628,10 +636,11 @@ Respond in JSON format:
     }))
     .mutation(async ({ input, ctx }) => {
       const ids = Array.from(new Set(input.ids.map((id) => parseInt(id, 10))));
-      const { updatedIds, alreadyAcknowledgedIds } = await db.bulkAcknowledgeInspections({
-        ids,
-        userId: ctx.user.id,
-      });
+      // phạm vi người dùng (L1b 2026-10-24): id thuộc máy ngoài phạm vi bị bỏ ra khỏi thao tác (≡ không tồn tại)
+      const idsTrongPhamVi = await locKiemTraTrongPhamVi(ctx, ids);
+      const { updatedIds, alreadyAcknowledgedIds } = idsTrongPhamVi.length > 0
+        ? await db.bulkAcknowledgeInspections({ ids: idsTrongPhamVi, userId: ctx.user.id })
+        : { updatedIds: [] as number[], alreadyAcknowledgedIds: [] as number[] };
 
       await db.createAuditLog({
         userId: ctx.user.id,
@@ -668,7 +677,10 @@ Respond in JSON format:
       const noteEntry = `[${timestamp}] ${ctx.user.name}: ${input.note}`;
 
       // For each inspection, append the note
+      // phạm vi người dùng (L1b 2026-10-24): chỉ id trong phạm vi (id ngoài phạm vi bị bỏ qua như id không tồn tại)
+      const idsGhiChu = new Set(await locKiemTraTrongPhamVi(ctx, input.ids.map((x) => parseInt(x)).filter((x) => Number.isFinite(x))));
       for (const id of input.ids) {
+        if (!idsGhiChu.has(parseInt(id))) continue;
         const inspection = await db.getProductInspectionById(parseInt(id));
         if (inspection) {
           const existingNotes = inspection.notes || '';
@@ -697,7 +709,10 @@ Respond in JSON format:
       }
 
       // For each inspection, add the tag
+      // phạm vi người dùng (L1b 2026-10-24): chỉ id trong phạm vi (id ngoài phạm vi bị bỏ qua như id không tồn tại)
+      const idsGanThe = new Set(await locKiemTraTrongPhamVi(ctx, input.ids.map((x) => parseInt(x)).filter((x) => Number.isFinite(x))));
       for (const id of input.ids) {
+        if (!idsGanThe.has(parseInt(id))) continue;
         const inspection = await db.getProductInspectionById(parseInt(id));
         if (inspection) {
           const existingTags = inspection.tags ? JSON.parse(inspection.tags) : [];
@@ -726,11 +741,15 @@ Respond in JSON format:
         throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
-      await dbInstance.update(productInspections).set({
-        isArchived: true,
-        archivedAt: new Date(),
-        archivedBy: ctx.user.id,
-      }).where(inArray(productInspections.id, input.ids.map(id => parseInt(id))));
+      // phạm vi người dùng (L1b 2026-10-24): chỉ lưu trữ lần kiểm tra thuộc máy trong phạm vi
+      const idsLuuTru = await locKiemTraTrongPhamVi(ctx, input.ids.map(id => parseInt(id)).filter((x) => Number.isFinite(x)));
+      if (idsLuuTru.length > 0) {
+        await dbInstance.update(productInspections).set({
+          isArchived: true,
+          archivedAt: new Date(),
+          archivedBy: ctx.user.id,
+        }).where(inArray(productInspections.id, idsLuuTru));
+      }
 
       return { success: true, count: input.ids.length };
     }),
@@ -752,7 +771,8 @@ Respond in JSON format:
 
       // Get the measurement result
       const result = await db.getMeasurementResultById(input.id);
-      if (!result) {
+      // phạm vi người dùng (L1b 2026-10-24): kết quả đo của máy ngoài phạm vi ≡ không tồn tại
+      if (!result || !(await kiemTraTrongPhamVi(ctx, [result.inspectionId]))) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
       }
       // W7-B (doc 27 V2): capture the pre-update verdict for the harvest below.
@@ -879,7 +899,8 @@ Respond in JSON format:
       }
 
       const result = await db.getMeasurementResultById(input.id);
-      if (!result) {
+      // phạm vi người dùng (L1b 2026-10-24): kết quả đo của máy ngoài phạm vi ≡ không tồn tại
+      if (!result || !(await kiemTraTrongPhamVi(ctx, [result.inspectionId]))) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
       }
 

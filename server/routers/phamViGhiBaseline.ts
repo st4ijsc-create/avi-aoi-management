@@ -21,6 +21,8 @@
  * 2026-10-24 lô W2 (−13: safety.createZone/updateZone/ingestProximity/ingestSimulatedHuman/ingestDetectionFrame/startCollaboration ·
  * aiRobotAnomaly.scanRobot/acknowledgeAnomaly · twin.pipeline.convertUrdf/convertStep · rootCause.analyze/update/delete) ⇒ 710 → 697.
  * 2026-10-24 lô W4a (−3, khoá theo MÁY: productMachineMapping.update/delete · measurementSamples.ingest) ⇒ 697 → 694 (693 trong sổ + 1 miễn trừ).
+ * 2026-10-24 lô L1b (−18: inspection.confirmNTF|bulkAcknowledge · measurementResult.updateRemark|analyzeWithAI|batch*|correctResult|classifyDefect · annotation.save|delete|export|copyAnnotations|bulkApplyTemplate · annotationHistory.rollback · annotationComparison.createSession|detectPatterns) ⇒ 710 → 692.
+ * Còn lại trong cùng router: annotationTemplate.delete — mẫu chú thích DÙNG CHUNG (không dữ liệu theo nhà máy; chỉ người tạo/admin xoá) ⇒ cần MIỄN TRỪ có chủ ý do kiem-dinh khai.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (8) ──
@@ -98,7 +100,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/aiChayUngDungRouter.ts#aiChayUngDungRouter.chay",
   "server/routers/aiChayUngDungRouter.ts#aiChayUngDungRouter.deXuatLenh",
   "server/routers/aiChayUngDungRouter.ts#aiChayUngDungRouter.dung",
-  // ── server/routers/aiCopilotRouter.ts (2) ──
+  // ── server/routers/aiCopilotRouter.ts (0) ──
   "server/routers/aiCopilotRouter.ts#aiCopilotRouter.cancelAction",
   "server/routers/aiCopilotRouter.ts#aiCopilotRouter.confirmAction",
   // ── server/routers/aiEvalRouter.ts (9) ──
@@ -210,16 +212,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/alertRouters.ts#alertRouter.update",
   "server/routers/alertRouters.ts#yieldThresholdRouter.update",
   "server/routers/alertRouters.ts#yieldThresholdRouter.updateWithHistory",
-  // ── server/routers/annotationComparisonRouter.ts (2) ──
-  "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.createSession",
-  "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.detectPatterns",
-  // ── server/routers/annotationRouters.ts (7) ──
-  "server/routers/annotationRouters.ts#annotationHistoryRouter.rollback",
-  "server/routers/annotationRouters.ts#annotationRouter.bulkApplyTemplate",
-  "server/routers/annotationRouters.ts#annotationRouter.copyAnnotations",
-  "server/routers/annotationRouters.ts#annotationRouter.delete",
-  "server/routers/annotationRouters.ts#annotationRouter.export",
-  "server/routers/annotationRouters.ts#annotationRouter.save",
+  // ── server/routers/annotationRouters.ts (1) ──
   "server/routers/annotationRouters.ts#annotationTemplateRouter.delete",
   // ── server/routers/apiKeyRouter.ts (5) ──
   "server/routers/apiKeyRouter.ts#apiKeyRouter.create",
@@ -373,17 +366,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.reject",
   "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.release",
   "server/routers/inspectionProgramRouter.ts#inspectionProgramRouter.submit",
-  // ── server/routers/inspectionRouters.ts (10) ──
-  "server/routers/inspectionRouters.ts#inspectionRouter.bulkAcknowledge",
-  "server/routers/inspectionRouters.ts#inspectionRouter.confirmNTF",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.analyzeWithAI",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.batchAcknowledge",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.batchAddNote",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.batchAddTag",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.batchArchive",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.classifyDefect",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.correctResult",
-  "server/routers/inspectionRouters.ts#measurementResultRouter.updateRemark",
   // ── server/routers/inspectionVariantRouter.ts (1) ──
   "server/routers/inspectionVariantRouter.ts#inspectionVariantRouter.setVariant",
   // ── server/routers/interlockRouter.ts (5) ──
