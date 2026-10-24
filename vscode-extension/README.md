@@ -152,6 +152,7 @@ của agent.
 |---|---|---|
 | `aviAiLocal.serverUrl` | `http://localhost:3000` | Địa chỉ máy chủ AI Local. Phạm vi **Máy**. |
 | `aviAiLocal.uiLanguage` | `vi` | Ngôn ngữ trả lời (`vi` / `en` / `zh`). |
+| `aviAiLocal.anhChoTroLy` | `false` | Cho phép đính ảnh (dán/kéo/chọn) khi hỏi Trợ lý. Mặc định TẮT vì máy chủ phải nạp model thị giác (tốn VRAM, thêm độ trễ); chỉ bật khi quản trị đã bật đọc ảnh. |
 | `aviAiLocal.nganSachNguCanh` | `24000` | Trần số ký tự mã gửi kèm mỗi lượt hỏi ở Chat cũ. |
 | `aviAiLocal.mcpServers` | `{}` | MCP server ngoài (xem trên). Phạm vi **Máy**. |
 | `aviAiLocal.agentModel` | `chat` | Model logic của cổng `/v1` cho agent (`chat` / `code`). Phạm vi **Máy**. |

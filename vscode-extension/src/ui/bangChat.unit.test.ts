@@ -33,6 +33,8 @@ const may = vi.hoisted(() => ({
   tepMay: new Map<string, Buffer>(),
   /** ★ 2026-10-24 — kết quả `showOpenDialog` giả (`undefined` = Esc). */
   hopThoaiChon: undefined as string[] | undefined,
+  /** ★ 2026-10-24 — cài đặt `aviAiLocal.*` giả (khoá → giá trị); thiếu khoá ⇒ mặc định do mã truyền vào. */
+  cauHinh: {} as Record<string, unknown>,
   /** ★ 2026-10-24 — số lần `readFile` được gọi (bằng chứng "chặn theo STAT, không nạp tệp quá lớn"). */
   soLanDocTepMay: 0,
   /** ★★★ H3 — thân POST (`dungYeuCauStream(...)`) của TỪNG lượt gọi SSE, theo đúng thứ tự vòng. */
@@ -279,7 +281,7 @@ vi.mock("vscode", () => ({
     get workspaceFolders() {
       return may.thuMucWorkspace.map((p) => ({ uri: { fsPath: p } }));
     },
-    getConfiguration: () => ({ get: <T>(_k: string, mm: T) => mm }),
+    getConfiguration: () => ({ get: <T>(k: string, mm: T) => (k in may.cauHinh ? (may.cauHinh[k] as T) : mm) }),
     fs: {
       stat: async (u: { fsPath: string }) => {
         if (u.fsPath.endsWith("THUMUC")) return { type: 2, size: 0 };
@@ -401,6 +403,7 @@ beforeEach(() => {
   may.thanGoi = [];
   may.tepMay = new Map();
   may.hopThoaiChon = undefined;
+  may.cauHinh = {};
   may.soLanDocTepMay = 0;
   may.globalState = {};
   may.workspaceState = {};
@@ -2082,6 +2085,9 @@ describe("ĐỢT G / TASK G3 / B4 — người dùng đổi mức quyền ('dat_
  * `/api/ai/local-kb/stream` (hợp đồng máy chủ đã đo); Agent chưa gửi được ảnh qua /v1 ⇒ lượt có ảnh đi đường Chat và NÓI RÕ.
  */
 describe("đính kèm NGOÀI workspace — host", () => {
+  beforeEach(() => {
+    may.cauHinh.anhChoTroLy = true; // các ca ảnh dưới đây giả định quản trị ĐÃ bật; ca mặc-định-tắt tự xoá khoá
+  });
   const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
   const anh = { loai: "anh", ten: "man-hinh.png", kieu: "image/png", kichThuoc: 70, noiDung: PNG_B64 };
   const tep = (ten: string, noiDung: string) => ({ loai: "tep", ten, kieu: "text/plain", kichThuoc: noiDung.length, noiDung });
@@ -2096,6 +2102,53 @@ describe("đính kèm NGOÀI workspace — host", () => {
     return bang;
   }
   const thongBao = () => may.daGui.filter((m) => m.loai === "thong_bao").map((m) => String(m.thongDiep));
+
+  it("★★★ MẶC ĐỊNH đọc ảnh cho Trợ lý TẮT: ảnh bị bỏ + được NÓI RÕ, tệp văn bản vẫn đi, thân POST KHÔNG có image", async () => {
+    chuanBiLocal();
+    delete may.cauHinh.anhChoTroLy;
+    may.hangDoiSse = hangDoiMotVongDonGian("ok");
+    may.nhanTin?.({ loai: "hoi", cauHoi: "xem giúp", dinhKemNgoai: [anh, tep("loi.log", "ERR 9")] });
+    await nhuong();
+    expect(may.thanGoi).toHaveLength(1);
+    expect(may.thanGoi[0]!.image).toBeUndefined();
+    expect(String(may.thanGoi[0]!.question)).toContain("ERR 9");
+    expect(thongBao().some((t) => /đọc ảnh cho Trợ lý đang TẮT \(1 ảnh\).*aviAiLocal\.anhChoTroLy/.test(t))).toBe(true);
+  });
+
+  it("★★ cài đặt TẮT + chế độ Agent + ảnh ⇒ ảnh bỏ và lượt Agent chạy BÌNH THƯỜNG (không rơi về đường Chat)", async () => {
+    chuanBiLocal();
+    delete may.cauHinh.anhChoTroLy;
+    may.nhanTin?.({ loai: "hoi", cauHoi: "đọc giúp ảnh", cheDoAgent: "sua", dinhKemNgoai: [anh] });
+    await nhuong();
+    expect(thongBao().some((t) => /đang TẮT/.test(t))).toBe(true);
+    expect(thongBao().some((t) => /dùng đường Chat/.test(t))).toBe(false);
+  });
+
+  it("★ vision ok:false kèm chiTiet/nguon ⇒ người dùng thấy lý do thật; ok:true ⇒ nêu nguồn", async () => {
+    may.cauHinh.anhChoTroLy = true;
+    chuanBiLocal();
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "vision", ok: false, reason: "thieu-tai-nguyen", chiTiet: "GPU còn 8649 MiB trống, cần 11000 MiB" });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "x", dinhKemNgoai: [anh] });
+    await nhuong();
+    expect(thongBao().some((t) => /thiếu tài nguyên GPU.*Chi tiết: GPU còn 8649 MiB/.test(t))).toBe(true);
+    may.daGui = [];
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "vision", ok: true, visionText: "AL.32", nguon: "model-chinh" });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "x", dinhKemNgoai: [anh] });
+    await nhuong();
+    expect(thongBao().some((t) => /Đã đọc ảnh bằng model chính/.test(t))).toBe(true);
+  });
 
   it("★★★ Chat cũ + ảnh dán ⇒ thân POST mang `image` (data URL) + `imageMimeType`, đúng hợp đồng máy chủ; sự kiện `vision` ok ⇒ báo 'Đã đọc ảnh'", async () => {
     chuanBiLocal();

@@ -39,6 +39,7 @@ import { phanTichMarkdown, khoiMa as layKhoiMaMd } from "../loi/markdownAnToan";
 import { BoDemMdTangDan } from "../loi/mdTangDan";
 import {
   anhChoKb,
+  boAnh,
   coAnh,
   dungKhoiTepNgoai,
   kiemTraDinhKemNgoai,
@@ -137,6 +138,7 @@ function lyDoVision(reason: unknown): string {
     case "size": return "ảnh quá lớn";
     case "decode": return "ảnh hỏng";
     case "unavailable": return "máy chủ chưa bật thị giác máy";
+    case "thieu-tai-nguyen": return "máy chủ thiếu tài nguyên GPU để đọc ảnh lúc này";
     case "empty": return "model không đọc ra nội dung";
     default: return "lỗi khi đọc ảnh";
   }
@@ -448,6 +450,15 @@ export class BangChat {
         // ★★★ 2026-10-24 — đính kèm NGOÀI workspace: host KIỂM LẠI toàn bộ (trần, chữ ký ảnh, tên nhạy cảm) và BÁO từng mục bị bỏ — không im lặng.
         const ngoai = kiemTraDinhKemNgoai(m.dinhKemNgoai);
         for (const lyDo of ngoai.tuChoi) void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Đính kèm bị bỏ — ${lyDo}` });
+        // ★ 2026-10-24 — ĐỌC ẢNH cho Trợ lý mặc định TẮT (nạp model thị giác tốn VRAM/độ trễ của máy chủ; do-model + chủ dự án duyệt mới bật). Tắt ⇒ ảnh bị bỏ và NÓI RÕ, tệp văn bản vẫn đi.
+        if (coAnh(ngoai.ds) && vscode.workspace.getConfiguration("aviAiLocal").get<boolean>("anhChoTroLy", false) !== true) {
+          const kq = boAnh(ngoai.ds);
+          ngoai.ds = kq.ds;
+          void this.panel.webview.postMessage({
+            loai: "thong_bao",
+            thongDiep: `Đính kèm bị bỏ — đọc ảnh cho Trợ lý đang TẮT (${kq.soAnhBo} ảnh). Bật cài đặt "aviAiLocal.anhChoTroLy" khi quản trị đã bật thị giác máy.`,
+          });
+        }
         if (cheDoAgent && m.tuLenh !== true && this.cheDoHienTai()?.loai !== "server") {
           if (!ANH_QUA_V1 && coAnh(ngoai.ds)) {
             // /v1/chat/completions chưa nhận ảnh (máy chủ vứt phần image_url): lượt có ảnh đi đường CHAT để ảnh THẬT SỰ được đọc (Qwen3-VL), và nói rõ cho người dùng.
@@ -1455,9 +1466,11 @@ export class BangChat {
               // ★ 2026-10-24 — máy chủ báo bước ĐỌC ẢNH (Qwen3-VL): nói thật kết cục, và giữ bản đọc cho các vòng sau của lượt này.
               const vt = typeof sk.visionText === "string" ? sk.visionText : "";
               if (sk.ok === true && vt) khoiVision = vt;
+              const chiTietVision = typeof sk.chiTiet === "string" && sk.chiTiet.trim() ? ` Chi tiết: ${sk.chiTiet.trim().slice(0, 300)}` : "";
+              const nguonVision = sk.nguon === "model-chinh" ? "model chính" : sk.nguon === "sidecar" ? "model thị giác phụ" : "thị giác máy";
               void this.panel.webview.postMessage({
                 loai: "thong_bao",
-                thongDiep: sk.ok === true ? "Đã đọc ảnh bằng thị giác máy (Qwen3-VL)." : `Không đọc được ảnh (${lyDoVision(sk.reason)}) — AI trả lời chỉ dựa trên chữ.`,
+                thongDiep: sk.ok === true ? `Đã đọc ảnh bằng ${nguonVision}.` : `Không đọc được ảnh (${lyDoVision(sk.reason)}) — AI trả lời chỉ dựa trên chữ.${chiTietVision}`,
               });
             } else if (sk.type === "error") {
               // Máy chủ gửi chi tiết ở `error` (aiLocalKnowledgeApi.ts:628), KHÔNG phải `message`.

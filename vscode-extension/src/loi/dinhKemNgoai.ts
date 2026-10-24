@@ -13,6 +13,8 @@
 export const TRAN_ANH_BYTE = 6 * 1024 * 1024;
 export const TRAN_TEP_BYTE = 200 * 1024;
 export const TOI_DA_ANH = 4;
+/** Trần TỔNG byte ảnh một lượt — khớp hợp đồng /v1 (413 ANH_QUA_LON khi tổng > 12 MB). */
+export const TRAN_TONG_ANH_BYTE = 12 * 1024 * 1024;
 export const TOI_DA_TEP = 5;
 export const KIEU_ANH_HOP_LE: readonly string[] = ["image/png", "image/jpeg", "image/webp"];
 
@@ -65,6 +67,12 @@ function dinhDangByte(n: number): string {
   return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`;
 }
 
+/** Bỏ MỌI ảnh khỏi danh sách (khi đọc ảnh đang tắt) — trả phần còn lại + số ảnh bị bỏ. */
+export function boAnh(ds: DinhKemNgoai[]): { ds: DinhKemNgoai[]; soAnhBo: number } {
+  const con = ds.filter((m) => m.loai !== "anh");
+  return { ds: con, soAnhBo: ds.length - con.length };
+}
+
 /**
  * Kiểm một danh sách đính kèm NGOÀI do webview/host gom. Không bao giờ ném. `ds` = phần ĐƯỢC NHẬN (đã chuẩn hoá, kích thước do host tính lại);
  * `tuChoi` = lý do tiếng Việt cho từng mục bị bỏ (hiển thị cho người dùng — không được im lặng bỏ).
@@ -76,6 +84,7 @@ export function kiemTraDinhKemNgoai(raw: unknown): { ds: DinhKemNgoai[]; tuChoi:
   if (!Array.isArray(raw)) return { ds, tuChoi: ["Dữ liệu đính kèm không đúng dạng — đã bỏ qua."] };
   let soAnh = 0;
   let soTep = 0;
+  let tongAnh = 0;
   for (const m of raw) {
     const o = (m && typeof m === "object" ? m : {}) as Record<string, unknown>;
     const ten = lamSachTen(o.ten);
@@ -116,8 +125,13 @@ export function kiemTraDinhKemNgoai(raw: unknown): { ds: DinhKemNgoai[]; tuChoi:
         tuChoi.push(`"${ten}": không phải ảnh PNG/JPEG/WEBP hợp lệ.`);
         continue;
       }
+      if (tongAnh + buf.length > TRAN_TONG_ANH_BYTE) {
+        tuChoi.push(`"${ten}": tổng dung lượng ảnh vượt ${dinhDangByte(TRAN_TONG_ANH_BYTE)} trong một lượt.`);
+        continue;
+      }
       ds.push({ loai: "anh", ten, kieu: that, kichThuoc: buf.length, noiDung: b64 });
       soAnh++;
+      tongAnh += buf.length;
     } else {
       if (soTep >= TOI_DA_TEP) {
         tuChoi.push(`"${ten}": quá ${TOI_DA_TEP} tệp trong một lượt.`);
