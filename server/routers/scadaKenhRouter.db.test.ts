@@ -10,7 +10,17 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sql } from "drizzle-orm";
 
-const H = vi.hoisted(() => ({ hongSauAudit: "" }));
+const H = vi.hoisted(() => ({ hongSauAudit: "", totpThat: false }));
+// kiem-dinh P1-2 (2026-10-24) — capNhat / cheDo.dat / cheDo.go đòi TOTP TƯƠI (kiemXacThucTheoMuc mức 5). Mã TOTP dùng một lần nên các ca
+// CŨ (nhiều lượt gọi mỗi ca) đi qua một bộ giả "đã xác thực"; khối "P1-2" bật `H.totpThat` ⇒ hàm THẬT (bộ đếm T16 + sổ totp_consumed thật).
+vi.mock("../_core/xacThucTheoMuc", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../_core/xacThucTheoMuc")>();
+  return {
+    ...real,
+    kiemXacThucTheoMuc: async (...args: Parameters<typeof real.kiemXacThucTheoMuc>) =>
+      H.totpThat ? real.kiemXacThucTheoMuc(...args) : ({ ok: true, cach: "moi_lan" } as const),
+  };
+});
 vi.mock("../services/audit/controlAuditService", async (importOriginal) => {
   const real = await importOriginal<typeof import("../services/audit/controlAuditService")>();
   return {
@@ -27,6 +37,8 @@ vi.mock("../services/audit/controlAuditService", async (importOriginal) => {
 import { getDb } from "../db/connection";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { cheDoMay } from "../services/scada/cheDoMay";
+import speakeasy from "speakeasy";
+import { setup2FA, enable2FA } from "../db/auth";
 
 const RUN = `r1at12${process.pid}${Date.now().toString(36)}`;
 
@@ -181,6 +193,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   H.hongSauAudit = "";
+  H.totpThat = false;
   const ids = Object.values(tg);
   await dung(sql`UPDATE device_tags SET ${DAT_LAI_TAG}, stop_value = NULL, stop_pinned_by = NULL, stop_pinned_at = NULL
     WHERE id IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`);
@@ -623,5 +636,125 @@ describe("fix round 1 — canhBaoKenhDung, loại kênh ghi trên tag không ghi
     } finally {
       await raw.end({ timeout: 5 });
     }
+  });
+});
+
+describe("kiem-dinh P1-2 — capNhat / cheDo.dat / cheDo.go đòi TOTP TƯƠI ở MỌI lượt (kiemXacThucTheoMuc mức 5, không phụ thuộc cờ env)", () => {
+  let u2fa!: { id: number; caller: Caller };
+  let uKhong2fa!: Caller;
+  let secret = "";
+  const ma = () => speakeasy.totp({ secret, encoding: "base32" });
+  /** Mã 6 số SAI (lệch nửa vòng so với mã đúng hiện tại). */
+  const maSai = () => String((Number(ma()) + 500_000) % 1_000_000).padStart(6, "0");
+  const chenKenhCheDo = async () =>
+    dung(sql`INSERT INTO scada_kenh_che_do (machine_id, adapter_id, tag_key, gia_tri_remote, updated_by)
+      VALUES (${A.mid}, ${ad.a}, 'mode', '1'::jsonb, ${u2fa.id})`);
+
+  beforeAll(async () => {
+    const taoKySu = async (ten: string) => {
+      const u = await taoNguoiDungTest(ten, "engineer", { tienTo: "r1at12", ts: RUN, ten: `R1aT12 ${ten}` });
+      await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${u.id}, ${A.code})`);
+      await dung(
+        sql`INSERT INTO permissions ("userId", category, "moduleName", "canView", "canEdit") VALUES (${u.id}, 'machine_control', 'machine_control', true, true)`,
+      );
+      return u;
+    };
+    const u = await taoKySu("p12");
+    u2fa = { id: u.id, caller: scadaKenhRouter.createCaller({ user: { id: u.id, role: "engineer", name: u.name, twoFactorEnabled: true } } as never) };
+    const k = await taoKySu("p12k");
+    uKhong2fa = scadaKenhRouter.createCaller({ user: { id: k.id, role: "engineer", name: k.name, twoFactorEnabled: false } } as never);
+  });
+
+  beforeEach(async () => {
+    H.totpThat = true;
+    // mỗi ca một secret mới ⇒ mã hiện tại khác mã đã tiêu ở ca trước; bộ đếm T16 về 0
+    secret = speakeasy.generateSecret({ length: 20 }).base32;
+    await setup2FA(u2fa.id, secret);
+    await enable2FA(u2fa.id);
+    await dung(sql`DELETE FROM totp_khoa_sai WHERE user_id = ${u2fa.id}`);
+  });
+
+  afterAll(async () => {
+    if (u2fa) await dung(sql`DELETE FROM totp_khoa_sai WHERE user_id = ${u2fa.id}`);
+  });
+
+  it("capNhat: thiếu mã ⇒ TOTP_CAN; mã sai ⇒ TOTP_SAI (cột không đổi, không audit); mã đúng ⇒ ghi", async () => {
+    const ld1 = lyDo("p12-can");
+    const can = await loiCua(u2fa.caller.capNhat({ tagId: tg.out1, patch: { actuationLevel: 3 }, lyDo: ld1 }));
+    expect(can).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_CONFIG_TOTP_REQUIRED", appParams: { ma: "TOTP_CAN" } });
+    const ld2 = lyDo("p12-sai");
+    const sai = await loiCua(u2fa.caller.capNhat({ tagId: tg.out1, patch: { actuationLevel: 3 }, lyDo: ld2, totpCode: maSai() }));
+    expect(sai).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_CONFIG_TOTP_INVALID", appParams: { ma: "TOTP_SAI" } });
+    expect((await cotTag(tg.out1)).actuationLevel).toBeNull();
+    expect(await auditTheoLyDo(ld1)).toHaveLength(0);
+    expect(await auditTheoLyDo(ld2)).toHaveLength(0);
+    const kq = await u2fa.caller.capNhat({ tagId: tg.out1, patch: { actuationLevel: 3 }, lyDo: lyDo("p12-dung"), totpCode: ma() });
+    expect(kq.changed).toBe(true);
+    expect((await cotTag(tg.out1)).actuationLevel).toBe(3);
+  });
+
+  it("capNhat: CÙNG một mã dùng lần hai ⇒ TOTP_SAI (mã dùng một lần, không có cache phiên 10 phút)", async () => {
+    const m = ma();
+    await u2fa.caller.capNhat({ tagId: tg.out1, patch: { actuationLevel: 4 }, lyDo: lyDo("p12-1"), totpCode: m });
+    const lai = await loiCua(u2fa.caller.capNhat({ tagId: tg.out1, patch: { actuationLevel: 5 }, lyDo: lyDo("p12-2"), totpCode: m }));
+    expect(lai).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_INVALID", appParams: { ma: "TOTP_SAI" } });
+    expect((await cotTag(tg.out1)).actuationLevel).toBe(4);
+  });
+
+  it("capNhat lỗi kiểm hợp lệ (min > max) ⇒ lỗi kiểm hợp lệ, mã KHÔNG bị tiêu (TOTP kiểm cuối, ngay trước lượt ghi)", async () => {
+    const m = ma();
+    const e = await loiCua(u2fa.caller.capNhat({ tagId: tg.sp, patch: { writeMin: 10, writeMax: 1 }, lyDo: lyDo("p12-hl"), totpCode: m }));
+    expect(e).toMatchObject({ code: "BAD_REQUEST", appParams: { reason: "scadaDaiMinLonHonMax" } });
+    expect(await u2fa.caller.capNhat({ tagId: tg.sp, patch: { writeMin: 1, writeMax: 10 }, lyDo: lyDo("p12-hl2"), totpCode: m })).toMatchObject({
+      changed: true,
+    });
+  });
+
+  it("cheDo.dat: thiếu mã ⇒ TOTP_CAN; mã sai ⇒ TOTP_SAI (không có kênh); mã đúng ⇒ khai", async () => {
+    const goi = (totpCode?: string) =>
+      u2fa.caller.cheDo.dat({ machineId: A.mid, adapterId: ad.a, tagKey: "mode", giaTriRemote: 1, lyDo: lyDo("p12-dat"), ...(totpCode ? { totpCode } : {}) });
+    expect(await loiCua(goi())).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_CONFIG_TOTP_REQUIRED", appParams: { ma: "TOTP_CAN" } });
+    expect(await loiCua(goi(maSai()))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_INVALID", appParams: { ma: "TOTP_SAI" } });
+    expect(await kenhCheDo(A.mid)).toBeNull();
+    expect(await goi(ma())).toMatchObject({ changed: true });
+    expect(await kenhCheDo(A.mid)).toMatchObject({ adapterId: ad.a, tagKey: "mode" });
+  });
+
+  it("cheDo.go: thiếu mã ⇒ TOTP_CAN; mã sai ⇒ TOTP_SAI (kênh còn nguyên); mã đúng ⇒ gỡ", async () => {
+    await chenKenhCheDo();
+    const goi = (totpCode?: string) => u2fa.caller.cheDo.go({ machineId: A.mid, lyDo: lyDo("p12-go"), ...(totpCode ? { totpCode } : {}) });
+    expect(await loiCua(goi())).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_CONFIG_TOTP_REQUIRED", appParams: { ma: "TOTP_CAN" } });
+    expect(await loiCua(goi(maSai()))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_INVALID", appParams: { ma: "TOTP_SAI" } });
+    expect(await kenhCheDo(A.mid)).not.toBeNull();
+    expect(await goi(ma())).toEqual({ daGo: true });
+    expect(await kenhCheDo(A.mid)).toBeNull();
+  });
+
+  it("người CHƯA đăng ký 2FA (AUTH_2FA_BAT_BUOC=0 cho qua require2FA, ACTUATION_STEPUP_2FA tắt) ⇒ TOTP_CHUA_DANG_KY ở cả ba thủ tục — không phụ thuộc cờ env", async () => {
+    const goc = { b: process.env.AUTH_2FA_BAT_BUOC, s: process.env.ACTUATION_STEPUP_2FA };
+    vi.stubEnv("AUTH_2FA_BAT_BUOC", "0");
+    vi.stubEnv("ACTUATION_STEPUP_2FA", "false");
+    try {
+      await chenKenhCheDo();
+      const k = { code: "PRECONDITION_FAILED", appCode: "SCADA_CONFIG_TOTP_NOT_ENROLLED", appParams: { ma: "TOTP_CHUA_DANG_KY" } };
+      expect(await loiCua(uKhong2fa.capNhat({ tagId: tg.out1, patch: { actuationLevel: 3 }, lyDo: lyDo("p12-k1"), totpCode: "123456" }))).toMatchObject(k);
+      expect(
+        await loiCua(uKhong2fa.cheDo.dat({ machineId: A.mid, adapterId: ad.a, tagKey: "mode", giaTriRemote: 2, lyDo: lyDo("p12-k2"), totpCode: "123456" })),
+      ).toMatchObject(k);
+      expect(await loiCua(uKhong2fa.cheDo.go({ machineId: A.mid, lyDo: lyDo("p12-k3"), totpCode: "123456" }))).toMatchObject(k);
+      expect((await cotTag(tg.out1)).actuationLevel).toBeNull();
+      expect(await kenhCheDo(A.mid)).toMatchObject({ giaTriRemote: 1 });
+    } finally {
+      vi.stubEnv("AUTH_2FA_BAT_BUOC", goc.b ?? "");
+      vi.stubEnv("ACTUATION_STEPUP_2FA", goc.s ?? "");
+    }
+  });
+
+  it("TOTP đang TẠM KHOÁ (T16) ⇒ mã ĐÚNG vẫn bị TOTP_TAM_KHOA {remainingMinutes} — chung khoá với mọi bên gọi TOTP", async () => {
+    await dung(sql`INSERT INTO totp_khoa_sai (user_id, loai, so_lan_sai, cua_so_bat_dau, khoa_den)
+      VALUES (${u2fa.id}, 'totp', 5, now(), now() + interval '4 minutes')`);
+    const e = await loiCua(u2fa.caller.capNhat({ tagId: tg.out1, patch: { actuationLevel: 3 }, lyDo: lyDo("p12-khoa"), totpCode: ma() }));
+    expect(e).toMatchObject({ code: "TOO_MANY_REQUESTS", appCode: "TOTP_TAM_KHOA", appParams: { remainingMinutes: 4 } });
+    expect((await cotTag(tg.out1)).actuationLevel).toBeNull();
   });
 });

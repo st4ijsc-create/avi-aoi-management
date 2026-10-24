@@ -63,6 +63,36 @@ let sql: ReturnType<typeof postgres>;
 describe.skipIf(!DB_URL)("0326 — thống kê planner cho measurement_results × product_inspections", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    // ★ 2026-10-24 — TỰ ANALYZE chunk MỚI SINH có dữ liệu. Lý do: bộ test CHÈN dữ liệu kiểm (nhiều tệp *.test.ts), Timescale sinh chunk MỚI và nó mang `reltuples = -1` cho tới lượt
+    // autoanalyze kế tiếp — đo trên _test: một chunk 16 kB vừa sinh làm ca "thống kê đã nạp" đỏ ổn định dù hệ thống đúng (xem "ĐÍNH CHÍNH 2026-08-18" ở docblock: cùng lớp, chunk sinh mỗi lượt).
+    // Việc ANALYZE ở đây là điều autovacuum SẼ làm trong vài chục giây; nó KHÔNG che bất biến thật — bất biến chống tái phát (mọi chunk kế thừa ngưỡng autoanalyze 0.02) vẫn được canh
+    // riêng ở ca bên dưới và không bị đụng tới. Chỉ ANALYZE bảng/chunk ĐÃ CÓ DỮ LIỆU (> 1 trang) và đang -1; thiếu quyền (không phải chủ bảng) ⇒ bỏ qua êm, ca bên dưới sẽ tố đúng.
+    const can = await sql<{ nsp: string; rel: string }[]>`
+      SELECT n.nspname AS nsp, c.relname AS rel
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relkind = 'r' AND c.reltuples < 0 AND pg_relation_size(c.oid) > 8192
+        AND ((n.nspname = 'public' AND c.relname = ANY(${[...HYPERTABLES]}))
+          OR EXISTS (SELECT 1 FROM timescaledb_information.chunks ch
+                     WHERE ch.chunk_schema = n.nspname AND ch.chunk_name = c.relname
+                       AND ch.hypertable_name = ANY(${[...HYPERTABLES]})))`;
+    if (can.length === 0) return;
+    // ⚠ ANALYZE chỉ chạy được bằng CHỦ BẢNG (`aoi`): với `avi_app` Postgres chỉ phát WARNING "skipping … only table or database owner can analyze it" và KHÔNG làm gì (đã đo: lệnh "thành công" mà
+    // reltuples vẫn -1). Cùng quy ước bộ chạy migration chung: user `aoi`, mật khẩu MIGRATION_DB_PASSWORD (mặc định `aoi`) hoặc MIGRATION_DB_URL / MIGRATION_DB_USER.
+    const url = (() => {
+      if (process.env.MIGRATION_DB_URL) return process.env.MIGRATION_DB_URL;
+      const u = new URL(DB_URL!);
+      u.username = process.env.MIGRATION_DB_USER ?? "aoi";
+      u.password = process.env.MIGRATION_DB_PASSWORD ?? "aoi"; // cùng mặc định bộ chạy migration chung (scripts/apply-migration-dot10-common.mjs)
+      return u.toString();
+    })();
+    const chu = postgres(url, { max: 1, connect_timeout: 15, onnotice: () => {} });
+    try {
+      for (const r of can) await chu`ANALYZE ${chu(r.nsp)}.${chu(r.rel)}`;
+    } catch (e) {
+      console.warn(`[plannerStats] không ANALYZE được bằng chủ bảng (${String((e as Error).message).slice(0, 120)}) — ca "thống kê đã nạp" sẽ tố đúng`);
+    } finally {
+      await chu.end({ timeout: 2 }).catch(() => undefined);
+    }
   });
 
   afterAll(async () => {

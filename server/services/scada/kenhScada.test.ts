@@ -286,3 +286,54 @@ describe("băm: hai cách viết cùng giá trị ⇒ cùng canonicalOtValue", (
     expect(canonicalOtValue(tot(kiemGiaTriGhi(i, "12")))).toBe(canonicalOtValue(tot(kiemGiaTriGhi(i, 12))));
   });
 });
+
+describe("kiem-dinh P1-3 — int có scale/offset: (v − offset)/scale phải NGUYÊN (driver `inverseScale` làm tròn im lặng ⇒ ghi = xác nhận)", () => {
+  const i10 = { ...kenh({ dataType: "int" }), scale: "10.000000", offset: "0.000000" }; // decimal ⇒ chuỗi, như drizzle trả
+  it("scale 10: 30 ⇒ ok (raw 3); 25 ⇒ OFF_STEP, goiY 30 (hoà 2.5 ⇒ Math.round lên — đúng giá trị driver đã lặng lẽ ghi), buoc 10", () => {
+    expect(tot(kiemGiaTriGhi(i10, 30))).toBe(30);
+    const r = loi(kiemGiaTriGhi(i10, 25));
+    expect(r.ma).toBe("OFF_STEP");
+    expect(r.goiY).toBe(30);
+    expect(r.buoc).toBe(10);
+    expect(r.chiTiet).toContain("10");
+  });
+  it("scale 10: 24 ⇒ goiY 20; 26 ⇒ goiY 30; −25 ⇒ goiY −20 (Math.round: hoà về phía +∞)", () => {
+    expect(loi(kiemGiaTriGhi(i10, 24)).goiY).toBe(20);
+    expect(loi(kiemGiaTriGhi(i10, 26)).goiY).toBe(30);
+    expect(loi(kiemGiaTriGhi(i10, -25)).goiY).toBe(-20);
+  });
+  it("offset 5, scale 10: 25 ⇒ ok (raw 2); 30 ⇒ OFF_STEP goiY 35", () => {
+    const k = { ...kenh({ dataType: "int" }), scale: 10, offset: 5 };
+    expect(tot(kiemGiaTriGhi(k, 25))).toBe(25);
+    expect(loi(kiemGiaTriGhi(k, 30)).goiY).toBe(35);
+  });
+  it("goiY KẸP vào dải: max 25 ⇒ 25 ngoài lưới thô ⇒ goiY 20 (30 vượt max); min 15 ⇒ 16 ⇒ goiY 20", () => {
+    expect(loi(kiemGiaTriGhi({ ...i10, writeMax: 25 }, 25)).goiY).toBe(20);
+    expect(loi(kiemGiaTriGhi({ ...i10, writeMin: 15 }, 16)).goiY).toBe(20);
+  });
+  it("dải không chứa điểm lưới thô nào ⇒ OFF_STEP KHÔNG có goiY", () => {
+    const r = loi(kiemGiaTriGhi({ ...i10, writeMin: 21, writeMax: 29 }, 25));
+    expect(r.ma).toBe("OFF_STEP");
+    expect(r.goiY).toBeUndefined();
+  });
+  it("float KHÔNG bị ảnh hưởng (inverseScale không làm tròn float): 25 với scale 10 ⇒ ok", () => {
+    expect(tot(kiemGiaTriGhi({ ...kenh({ dataType: "float" }), scale: 10, offset: 0 }, 25))).toBe(25);
+  });
+  it("scale 1 / offset 0 / vắng / NULL / 0 (driver coi 0 là 1) ⇒ hành vi cũ", () => {
+    for (const s of [{ scale: 1, offset: 0 }, {}, { scale: null, offset: null }, { scale: "0", offset: "0" }]) {
+      expect(tot(kiemGiaTriGhi({ ...kenh({ dataType: "int" }), ...s }, 25))).toBe(25);
+    }
+  });
+  it("scale 0.5: mọi số nguyên đều nằm trên lưới thô (raw = 2v)", () => {
+    expect(tot(kiemGiaTriGhi({ ...kenh({ dataType: "int" }), scale: 0.5 }, 7))).toBe(7);
+  });
+  it("bước + scale: 25 trên bước 5 nhưng lệch lưới thô 10 ⇒ OFF_STEP (buoc 10)", () => {
+    const r = loi(kiemGiaTriGhi({ ...i10, writeMin: 0, writeMax: 100, writeStep: 5 }, 25));
+    expect(r.ma).toBe("OFF_STEP");
+    expect(r.buoc).toBe(10);
+  });
+  it("bool / string bỏ qua scale", () => {
+    expect(tot(kiemGiaTriGhi({ ...kenh({ dataType: "bool" }), scale: 10 }, true))).toBe(true);
+    expect(tot(kiemGiaTriGhi({ ...kenh({ dataType: "string" }), scale: 10 }, "x"))).toBe("x");
+  });
+});

@@ -45,15 +45,27 @@ export function mucTacDongKenh(tag: Pick<DeviceTag, "actuationLevel">): MucRuiRo
 
 export type KetQuaGiaTri =
   | { ok: true; giaTri: number | boolean | string }
-  | { ok: false; ma: "TYPE_MISMATCH" | "OUT_OF_RANGE" | "OFF_STEP"; chiTiet: string; goiY?: number };
+  // `buoc` (chỉ OFF_STEP) = lưới vừa trượt: `writeStep`, hoặc |scale| khi lệch lưới THÔ của tag int có scale (kiem-dinh P1-3).
+  | { ok: false; ma: "TYPE_MISMATCH" | "OUT_OF_RANGE" | "OFF_STEP"; chiTiet: string; goiY?: number; buoc?: number };
 
-type KenhGhiThuan = Pick<DeviceTag, "dataType" | "writeMin" | "writeMax" | "writeStep">;
+/**
+ * `scale` / `offset` TUỲ CHỌN (kiem-dinh P1-3): vắng ⇒ 1 / 0 (hành vi cũ). Cột decimal ⇒ drizzle trả CHUỖI ("10.000000") — nhận cả số.
+ */
+type KenhGhiThuan = Pick<DeviceTag, "dataType" | "writeMin" | "writeMax" | "writeStep"> & {
+  scale?: string | number | null;
+  offset?: string | number | null;
+};
 
 const RE_INT = /^[+-]?\d+$/;
 const RE_FLOAT = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
-const sai = (ma: "TYPE_MISMATCH" | "OUT_OF_RANGE" | "OFF_STEP", chiTiet: string, goiY?: number): KetQuaGiaTri =>
-  goiY === undefined ? { ok: false, ma, chiTiet } : { ok: false, ma, chiTiet, goiY };
+const sai = (ma: "TYPE_MISMATCH" | "OUT_OF_RANGE" | "OFF_STEP", chiTiet: string, goiY?: number, buoc?: number): KetQuaGiaTri => ({
+  ok: false,
+  ma,
+  chiTiet,
+  ...(goiY === undefined ? {} : { goiY }),
+  ...(buoc === undefined ? {} : { buoc }),
+});
 
 function epBool(v: unknown): boolean | undefined {
   if (typeof v === "boolean") return v;
@@ -116,6 +128,52 @@ function laJsonThuan(v: unknown, sau = 0): boolean {
 /** Làm sạch nhiễu dấu phẩy động của phép nhân/cộng (chỉ cho GỢI Ý — không bao giờ cho giá trị được chấp nhận). */
 const sachSo = (n: number): number => Number(n.toPrecision(15));
 
+/** scale / offset như driver dùng (`drivers/otScale.inverseScale`): vắng / NULL / 0 / không hữu hạn ⇒ scale 1; vắng / NULL ⇒ offset 0. */
+function heSoThangDo(tag: KenhGhiThuan): { s: number; o: number } {
+  const s = tag.scale == null ? 1 : Number(tag.scale);
+  const o = tag.offset == null ? 0 : Number(tag.offset);
+  return { s: Number.isFinite(s) && s !== 0 ? s : 1, o: Number.isFinite(o) ? o : 0 };
+}
+
+/**
+ * kiem-dinh P1-3 ("xác nhận = ghi") — tag INT có scale/offset: driver ghi `raw = Math.round((v − offset) / scale)` (`inverseScale`),
+ * nên một giá trị kỹ thuật lệch lưới thô bị LÀM TRÒN IM LẶNG (scale 10: xác nhận 25 ⇒ thiết bị nhận 3 = 30). Cổng này từ chối thay vì
+ * để driver làm tròn: (v − offset)/scale không nguyên (dung sai dấu phẩy động như bước) ⇒ `OFF_STEP`, `buoc` = |scale|,
+ * `goiY` = offset + round((v − offset)/scale)·scale — ĐÚNG giá trị driver đã lặng lẽ ghi (hoà .5 theo `Math.round`: về phía +∞, 25 ⇒ 30)
+ * — kẹp vào các điểm lưới thô nằm trong [writeMin, writeMax]; không có điểm nào trong dải, hoặc gợi ý không phải số nguyên (tag int) ⇒
+ * không `goiY`. float / bool / string / json: driver không làm tròn ⇒ không kiểm. Gợi ý KHÔNG xét `writeStep` (hiếm khi cả hai cùng có).
+ */
+function kiemLuoiTho(tag: KenhGhiThuan, v: number): KetQuaGiaTri {
+  if (tag.dataType !== "int") return { ok: true, giaTri: v };
+  const { s, o } = heSoThangDo(tag);
+  if (s === 1 && o === 0) return { ok: true, giaTri: v }; // v đã là số nguyên (epInt)
+  const n = (v - o) / s;
+  if (!Number.isFinite(n) || Math.abs(n) >= 2 ** 53) return { ok: true, giaTri: v }; // vượt độ phân giải double — như nhánh bước
+  const k = Math.round(n);
+  const dungSai = 1e-9 * Math.max(1, Math.abs(s)) + 4 * Number.EPSILON * Math.max(Math.abs(v), Math.abs(o));
+  if (Math.abs(v - (o + k * s)) <= dungSai) return { ok: true, giaTri: v };
+
+  const { writeMin: min, writeMax: max } = tag;
+  // k của các điểm lưới thô o + k·s nằm trong dải (s âm ⇒ đảo vai min/max).
+  const canDuoi = s > 0 ? min : max;
+  const canTren = s > 0 ? max : min;
+  const kLo = canDuoi != null ? Math.ceil((canDuoi - o) / s - 1e-9) : Number.NEGATIVE_INFINITY;
+  const kHi = canTren != null ? Math.floor((canTren - o) / s + 1e-9) : Number.POSITIVE_INFINITY;
+  let goiY: number | undefined;
+  if (kLo <= kHi) {
+    let g = sachSo(o + Math.min(Math.max(k, kLo), kHi) * s);
+    if (min != null) g = Math.max(g, min);
+    if (max != null) g = Math.min(g, max);
+    if (Number.isSafeInteger(g)) goiY = g;
+  }
+  return sai(
+    "OFF_STEP",
+    `Giá trị ${v} không ghi đúng được: thiết bị lưu số thô (giá trị − ${o}) / ${s} phải nguyên — lưới ${Math.abs(s)}.`,
+    goiY,
+    Math.abs(s),
+  );
+}
+
 /**
  * Ép kiểu chuẩn theo `dataType` TRƯỚC, rồi kiểm dải và bước (chỉ số: int/float).
  *
@@ -125,6 +183,7 @@ const sachSo = (n: number): number => Number(n.toPrecision(15));
  *  • `goiY` (chỉ với `OFF_STEP`) = điểm lưới gần nhất NẰM TRONG dải; không có điểm lưới nào trong dải ⇒ không có `goiY`.
  *    Gợi ý, KHÔNG BAO GIỜ thay giá trị: kết quả `ok` luôn mang đúng giá trị đã ép kiểu, chưa làm tròn.
  *  • bool/string: không kiểm dải/bước. json: chỉ nhận giá trị tương thích JSON, nguyên dạng, không kiểm dải/bước.
+ *  • kiem-dinh P1-3: int có `scale`/`offset` (khi người gọi truyền) ⇒ thêm lưới THÔ sau dải + bước (`kiemLuoiTho`).
  */
 export function kiemGiaTriGhi(tag: KenhGhiThuan, giaTri: unknown): KetQuaGiaTri {
   switch (tag.dataType) {
@@ -164,9 +223,9 @@ export function kiemGiaTriGhi(tag: KenhGhiThuan, giaTri: unknown): KetQuaGiaTri 
     const dungSai = 1e-9 * Math.max(1, Math.abs(step)) + 4 * Number.EPSILON * Math.abs(v);
     const n = (v - base) / step;
     // |n| ≥ 2^53 (hoặc tràn ra Infinity): bước nhỏ hơn độ phân giải double của v ⇒ không phân biệt được điểm lưới — coi là hợp lệ.
-    if (!Number.isFinite(n) || Math.abs(n) >= 2 ** 53) return { ok: true, giaTri: v };
+    if (!Number.isFinite(n) || Math.abs(n) >= 2 ** 53) return kiemLuoiTho(tag, v);
     const k = Math.round(n);
-    if (Math.abs(v - (base + k * step)) <= dungSai) return { ok: true, giaTri: v };
+    if (Math.abs(v - (base + k * step)) <= dungSai) return kiemLuoiTho(tag, v);
 
     // Gợi ý: bước gần nhất, kẹp vào các bước còn NẰM TRONG dải.
     const kMin = min != null ? 0 : Number.NEGATIVE_INFINITY; // base === min ⇒ bước đầu tiên là k = 0
@@ -179,7 +238,7 @@ export function kiemGiaTriGhi(tag: KenhGhiThuan, giaTri: unknown): KetQuaGiaTri 
       if (max != null) g = Math.min(g, max);
       goiY = g;
     }
-    return sai("OFF_STEP", `Giá trị ${v} không nằm trên bước ${step} (tính từ ${base}).`, goiY);
+    return sai("OFF_STEP", `Giá trị ${v} không nằm trên bước ${step} (tính từ ${base}).`, goiY, step);
   }
-  return { ok: true, giaTri: v };
+  return kiemLuoiTho(tag, v);
 }

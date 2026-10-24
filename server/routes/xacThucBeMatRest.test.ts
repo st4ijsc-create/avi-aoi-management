@@ -611,7 +611,9 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
       // Đợt 4B-server (2026-10-17): +1 — registerAiGatewayTokenBearerRoutes (sổ áp tệp ở client + tự thu hồi bằng Bearer
       // `avgw_`), vào DA_GOI (gọi thật ở beforeAll ⇒ §2 đo nó) ⇒ 60. Đo: chạy lưới trước/sau khi thêm registrar.
       // Đợt 8.1 Task 4b (2026-10-20): +1 — registerFlowWebhookRoutes (webhook Luồng AI, token theo luồng), khai NGOAI_PHAM_VI ⇒ 61.
-    ).toBe(61);
+      // SCADA (2026-10-23): +1 — services/scada/scadaSocket.ts (`export function register…` cho SOCKET, KHÔNG nhận tham số Express ⇒ không vào REGISTRAR tuyến, vẫn 31) ⇒ 62.
+      // Đo: 62 đã có từ trước các lượt rà bảo mật tRPC (đếm cùng vị từ ở 4267fb7d4); lưới đỏ vì không ai chạy nó khi gộp SCADA.
+    ).toBe(62);
     expect(
       REGISTRAR.length,
       "số registrar TUYẾN EXPRESS đã đổi — một registrar tuyến mới vừa xuất hiện, hoặc vị từ đã bị nới",
@@ -654,10 +656,12 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
           "`app.use(\"/uploads\", express.static(...))` và `app.use(\"/uploads\", …)` để ghi lại VÌ SAO thứ tự gắn có ý " +
           "nghĩa (đặt sau dòng resize thì mọi yêu cầu kèm `?w=` đi vòng qua cổng — một bản vá xanh mà cửa vẫn mở). " +
           "⚠ Vẫn ghi lại thay vì sửa chú thích cho vừa bộ đếm, đúng lý do đã nêu ở lượt +2 phía trên." +
+          "★ 2026-10-24 106 → 108 (rà bảo mật tRPC): HAI điểm gắn THẬT, đếm bằng diff — app.use('/api/trpc', trpcBatchLimitMiddleware()) và app.use('/api/trpc', trpcGioiHanThuTucMiddleware(…)). " +
+          "Cả hai là MIDDLEWARE (trần batch · giới hạn tốc độ theo thủ tục), không phải handler; chủ: server/_core/trpcAdapter.ts + trpcGioiHanThuTuc.ts, canh bởi trpcAdapter.test.ts / trpcGioiHanThuTuc*.test.ts. " +
           "★ 2026-10-17 104 → 106: MÀU ĐỎ BỊ CHE — §6b dừng ở khẳng định 'file chưa khai' đầu tiên (giàn thử edge) nên chưa bao giờ tới vòng so số. " +
           "Đo bộ đếm trên các commit 8c12bbbc7…7e849be39: đều 106 (không đổi trong Đợt 8-12) ⇒ độ lệch +2 có từ trước, không do Đợt 10-12 thêm; " +
           "con số ghim chỉ được đưa về sự thật đo được, chưa truy ra 2 điểm gắn nào. Cần một lượt đối chiếu riêng nếu muốn biết chúng là gì.",
-        soTuyen: 106,
+        soTuyen: 108,
       },
       "server/services/edge/__edgeE2eHarness.dot10.ts": {
         viSao:

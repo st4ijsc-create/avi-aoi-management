@@ -7,6 +7,7 @@
  *   • Nút "Sửa" chỉ HIỆN khi `canAct` (engineer|admin + machine_control.canEdit) — chỉ là tiện lợi; ranh giới bảo mật là máy chủ
  *     (vai + 2FA + giấy phép + quyền + phạm vi mỗi lần gọi). Lỗi máy chủ (STOP_PIN_NGOAI_DAI, INTERLOCK_NGOAI_DAI, …) đi qua `toastTrpcError`.
  *   • Sửa qua hộp thoại bắt buộc lý do ≥ 5 ký tự; CHỈ trường đổi được gửi (trường vắng = giữ, `null` = bỏ khai).
+ *   • kiem-dinh P1-2 — kèm mã TOTP 6 số MỖI lần lưu (máy chủ kiểm mã tươi, mức 5); lỗi mã ⇒ xoá ô mã để nhập mã mới.
  *   • R1a Task 14 — cột "Faceplate" (khi trang truyền `onFaceplate`): nút trên kênh GHI ĐƯỢC (writable + kênh ra + bật) mở M4. Không
  *     khoá theo `canAct`: operator được ghi kênh mức 1–3 (Q4); máy chủ quyết ở `scadaCommands.request`.
  * Màu chỉ lấy token ISA có sẵn (`--isa-*`, `--alarm-*`); màu không bao giờ là kênh duy nhất (biểu tượng + chữ).
@@ -26,7 +27,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BIEN_MAU_TONE } from "./chatLuongHienThi";
 import { dinhDangSo, docSoNhap, laLoaiKenhGhi, mucHienThi } from "./kenhHienThi";
-import { LOP_O_CHON, TruongLyDo, lyDoDuDai } from "./TruongLyDo";
+import { LOP_O_CHON, TruongLyDo, TruongTotp, laLoiMaTotp, lyDoDuDai, maTotpDu } from "./TruongLyDo";
 
 export type HangKenh = inferRouterOutputs<AppRouter>["scadaKenh"]["danhSach"][number];
 type LoaiKenh = HangKenh["loaiKenh"];
@@ -69,6 +70,7 @@ function HopSuaKenh({ hang, onDong }: { hang: HangKenh; onDong: () => void }) {
   const [buoc, setBuoc] = useState(hang.writeStep === null ? "" : String(hang.writeStep));
   const [muc, setMuc] = useState<string>(hang.actuationLevel === null ? "" : String(hang.actuationLevel));
   const [lyDo, setLyDo] = useState("");
+  const [maTotp, setMaTotp] = useState("");
 
   const so = laKenhSo(hang.dataType);
   const mutation = trpc.scadaKenh.capNhat.useMutation({
@@ -79,7 +81,10 @@ function HopSuaKenh({ hang, onDong }: { hang: HangKenh; onDong: () => void }) {
       void utils.scadaKenh.cheDo.danhSach.invalidate();
       onDong();
     },
-    onError: (e: unknown) => toastTrpcError(e as never),
+    onError: (e: unknown) => {
+      if (laLoiMaTotp(e)) setMaTotp("");
+      toastTrpcError(e as never);
+    },
   });
 
   // ── Patch: CHỈ trường đổi so với khai báo hiện tại ──
@@ -106,9 +111,10 @@ function HopSuaKenh({ hang, onDong }: { hang: HangKenh; onDong: () => void }) {
   const coDoi = Object.keys(patch).length > 0;
   const lyDoDu = lyDoDuDai(lyDo);
   const dangGui = mutation.isPending;
+  const maDu = maTotpDu(maTotp);
   const gui = () => {
-    if (!coDoi || !daiHopLe || !lyDoDu || dangGui) return;
-    mutation.mutate({ tagId: hang.tagId, patch, lyDo: lyDo.trim() });
+    if (!coDoi || !daiHopLe || !lyDoDu || !maDu || dangGui) return;
+    mutation.mutate({ tagId: hang.tagId, patch, lyDo: lyDo.trim(), totpCode: maTotp });
   };
   const id = (s: string) => `scada-kenh-sua-${s}`;
 
@@ -191,11 +197,12 @@ function HopSuaKenh({ hang, onDong }: { hang: HangKenh; onDong: () => void }) {
           {soHopLe && !daiHopLe && <p className="text-xs text-destructive sm:col-span-2">{t("scada.kenh.dialog.daiLoi")}</p>}
         </div>
         <TruongLyDo id={id("ly-do")} value={lyDo} onChange={setLyDo} />
+        <TruongTotp id={id("totp")} value={maTotp} onChange={setMaTotp} disabled={dangGui} />
         <DialogFooter>
           <Button variant="outline" onClick={onDong} disabled={dangGui}>
             {t("scada.kenh.dialog.huy")}
           </Button>
-          <Button onClick={gui} disabled={!coDoi || !daiHopLe || !lyDoDu || dangGui}>
+          <Button onClick={gui} disabled={!coDoi || !daiHopLe || !lyDoDu || !maDu || dangGui}>
             {t("scada.kenh.dialog.gui")}
           </Button>
         </DialogFooter>

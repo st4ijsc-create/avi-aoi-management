@@ -25,7 +25,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { BIEN_MAU_TONE } from "./chatLuongHienThi";
 import { KhoiCanhBao } from "./BangKenh";
 import { KHOA_LY_DO, epGiaTriRemote, toneCheDo, type LyDoCheDo } from "./kenhHienThi";
-import { LOP_O_CHON, TruongLyDo, lyDoDuDai } from "./TruongLyDo";
+import { LOP_O_CHON, TruongLyDo, TruongTotp, laLoiMaTotp, lyDoDuDai, maTotpDu } from "./TruongLyDo";
 import { CanhBaoChuaGhimStop, CanhBaoKhaNangDung } from "./DungMay";
 
 export type HangCheDo = inferRouterOutputs<AppRouter>["scadaKenh"]["cheDo"]["danhSach"][number];
@@ -61,20 +61,24 @@ function HopDatKenhCheDo({ may, adapters, onDong }: { may: HangCheDo; adapters: 
   const [tagKey, setTagKey] = useState(may.kenh?.tagKey ?? "");
   const [gia, setGia] = useState(may.kenh ? String(may.kenh.giaTriRemote) : "");
   const [lyDo, setLyDo] = useState("");
+  const [maTotp, setMaTotp] = useState(""); // kiem-dinh P1-2 — mã TOTP 6 số mỗi lần lưu
 
   const tagQ = trpc.scadaKenh.danhSach.useQuery({ adapterId: adapterId ?? 0 }, { enabled: adapterId !== null });
   const tags = ((tagQ.data ?? []) as Array<{ tagKey: string; dataType: string; isEnabled: boolean }>).filter((x) => x.isEnabled);
   const tag = tags.find((x) => x.tagKey === tagKey) ?? null;
   const ep = tag ? epGiaTriRemote(tag.dataType, gia) : ({ ok: false } as const);
 
-  const mutation = trpc.scadaKenh.cheDo.dat.useMutation({
+  const datKenh = trpc.scadaKenh.cheDo.dat.useMutation({
     onSuccess: () => {
       toast.success(t("scada.kenh.toast.datCheDo"));
       void utils.scadaKenh.cheDo.danhSach.invalidate();
       void utils.scadaKenh.danhSach.invalidate();
       onDong();
     },
-    onError: (e: unknown) => toastTrpcError(e as never),
+    onError: (e: unknown) => {
+      if (laLoiMaTotp(e)) setMaTotp("");
+      toastTrpcError(e as never);
+    },
   });
 
   // Cảnh báo nguồn: kênh đang chọn trùng kênh hiện có (máy chủ đã tính cờ) HOẶC adapter đang chọn do edge sở hữu.
@@ -83,11 +87,11 @@ function HopDatKenhCheDo({ may, adapters, onDong }: { may: HangCheDo; adapters: 
   const canhBao: CanhBaoNguon = trungKenhHienCo && may.canhBaoNguon ? may.canhBaoNguon : dangChon?.edge ? "edge" : null;
 
   const lyDoDu = lyDoDuDai(lyDo);
-  const dangGui = mutation.isPending;
-  const hopLe = adapterId !== null && !!tag && ep.ok && lyDoDu && !dangGui;
+  const dangGui = datKenh.isPending;
+  const hopLe = adapterId !== null && !!tag && ep.ok && lyDoDu && maTotpDu(maTotp) && !dangGui;
   const gui = () => {
     if (!hopLe || adapterId === null || !ep.ok) return;
-    mutation.mutate({ machineId: may.machineId, adapterId, tagKey, giaTriRemote: ep.giaTri, lyDo: lyDo.trim() });
+    datKenh.mutate({ machineId: may.machineId, adapterId, tagKey, giaTriRemote: ep.giaTri, lyDo: lyDo.trim(), totpCode: maTotp });
   };
 
   return (
@@ -144,6 +148,7 @@ function HopDatKenhCheDo({ may, adapters, onDong }: { may: HangCheDo; adapters: 
           </div>
         )}
         <TruongLyDo id="scada-kenh-dat-ly-do" value={lyDo} onChange={setLyDo} />
+        <TruongTotp id="scada-kenh-dat-totp" value={maTotp} onChange={setMaTotp} disabled={dangGui} />
         <DialogFooter>
           <Button variant="outline" onClick={onDong} disabled={dangGui}>
             {t("scada.kenh.dialog.huy")}
@@ -161,17 +166,22 @@ function HopGoKenhCheDo({ may, onDong }: { may: HangCheDo; onDong: () => void })
   const { t } = useTranslation();
   const utils = trpc.useUtils();
   const [lyDo, setLyDo] = useState("");
-  const mutation = trpc.scadaKenh.cheDo.go.useMutation({
+  const [maTotp, setMaTotp] = useState(""); // kiem-dinh P1-2 — mã TOTP 6 số mỗi lần gỡ
+  const goKenh = trpc.scadaKenh.cheDo.go.useMutation({
     onSuccess: () => {
       toast.success(t("scada.kenh.toast.goCheDo"));
       void utils.scadaKenh.cheDo.danhSach.invalidate();
       void utils.scadaKenh.danhSach.invalidate();
       onDong();
     },
-    onError: (e: unknown) => toastTrpcError(e as never),
+    onError: (e: unknown) => {
+      if (laLoiMaTotp(e)) setMaTotp("");
+      toastTrpcError(e as never);
+    },
   });
   const lyDoDu = lyDoDuDai(lyDo);
-  const dangGui = mutation.isPending;
+  const dangGui = goKenh.isPending;
+  const guiDuoc = lyDoDu && maTotpDu(maTotp) && !dangGui;
   return (
     <Dialog open onOpenChange={(o) => !o && !dangGui && onDong()}>
       <DialogContent className="sm:max-w-md">
@@ -180,13 +190,14 @@ function HopGoKenhCheDo({ may, onDong }: { may: HangCheDo; onDong: () => void })
           <DialogDescription>{t("scada.kenh.dialog.goMoTa")}</DialogDescription>
         </DialogHeader>
         <TruongLyDo id="scada-kenh-go-ly-do" value={lyDo} onChange={setLyDo} />
+        <TruongTotp id="scada-kenh-go-totp" value={maTotp} onChange={setMaTotp} disabled={dangGui} />
         <DialogFooter>
           <Button variant="outline" onClick={onDong} disabled={dangGui}>
             {t("scada.kenh.dialog.huy")}
           </Button>
           <Button
-            onClick={() => lyDoDu && !dangGui && mutation.mutate({ machineId: may.machineId, lyDo: lyDo.trim() })}
-            disabled={!lyDoDu || dangGui}
+            onClick={() => guiDuoc && goKenh.mutate({ machineId: may.machineId, lyDo: lyDo.trim(), totpCode: maTotp })}
+            disabled={!guiDuoc}
           >
             {t("scada.kenh.dialog.gui")}
           </Button>

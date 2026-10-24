@@ -45,72 +45,46 @@ const CAC_GOC_QUET: Array<{ goc: string; duoi: string[] }> = [
 ];
 
 /**
- * Miễn trừ theo DÒNG, mỗi mục kèm LÝ DO. Đây là bản kiểm kê nợ đã biết —
- * không phải chỗ để giấu lỗi mới. Thêm mục vào đây phải kèm lý do thật.
+ * Miễn trừ theo NỘI DUNG dòng (2026-10-24, dieu-phoi duyệt — thay cho số dòng GIÒN: mọi lần ai chèn/xoá một dòng ở đầu `_core/index.ts` là một lần đỏ oan).
+ * Mỗi mục = (tệp, nội dung dòng đã `trim()`) + `soLan` (mặc định 1) + LÝ DO. Luật KHÔNG nới:
+ *   · dòng được miễn khi nội dung (trim) BẰNG đúng chuỗi ghim; dòng công thức MỚI hoặc dòng bị SỬA nội dung ⇒ không khớp ghim ⇒ ĐỎ;
+ *   · mỗi ghim phải xuất hiện ĐÚNG `soLan` lần trong tệp: 0 lần (nội dung đổi/dòng bị xoá — mục ma) hoặc nhiều hơn ⇒ ĐỎ kèm thông báo (xem ca "ghim" bên dưới).
+ * Chỉ hết đỏ oan do DỊCH dòng. Đây là bản kiểm kê nợ đã biết — không phải chỗ để giấu lỗi mới; thêm mục phải kèm lý do thật.
  */
-const MIEN_TRU_DONG: Array<{ file: string; dong: number; lyDo: string }> = [
-  { file: "server/routers/productionDashboardRouter.ts", dong: 236, lyDo: "FPY proxy — lỗi KHÁC, sửa cần firstInspectionsSql" },
-  { file: "server/routers/productionDashboardRouter.ts", dong: 426, lyDo: "FPY proxy — lỗi KHÁC" },
-  { file: "server/routers/productionDashboardRouter.ts", dong: 474, lyDo: "FPY proxy — lỗi KHÁC" },
-  // ⚠ 814 → 816 → 832 (2026-09-03, BG-96 Task 2 follow-up, HAI đợt vá liên tiếp trong cùng
-  // ngày): đợt 1 xoá hàm toFakeUtc + đổi doc-comment (+2 dòng); đợt 2 (Important-2, review)
-  // thêm import 4 helper factory-TZ + khối comment + 2 dòng `piLocalDay`/`piLocalHourOfDay`
-  // (+16 dòng). Dòng fpy ở đây KHÔNG đổi nội dung qua cả hai đợt, chỉ dịch chuyển — cập nhật
-  // số dòng đi CÙNG commit theo đúng khuôn đã có ở dưới.
-  { file: "server/routers/stationAnalysisRouter.ts",     dong: 832, lyDo: "FPY proxy — lỗi KHÁC" },
+interface MienTruDong {
+  file: string;
+  /** Nội dung dòng đã `trim()`, so sánh BẰNG (không regex) — chuỗi dài, khó trùng ngẫu nhiên. */
+  noiDung: string;
+  /** Số lần dòng ấy xuất hiện trong tệp (mặc định 1). Hai dòng GIỐNG HỆT cùng được miễn ⇒ ghi 2; lần thứ 3 ⇒ đỏ. */
+  soLan?: number;
+  lyDo: string;
+}
+const MIEN_TRU_DONG: MienTruDong[] = [
+  { file: "server/routers/productionDashboardRouter.ts", noiDung: "const firstPassYield = total > 0 ? Math.round((ok / total) * 10000) / 100 : 0;", lyDo: "FPY proxy — lỗi KHÁC, sửa cần firstInspectionsSql" },
+  { file: "server/routers/productionDashboardRouter.ts", noiDung: "fpy: total > 0 ? Math.round((ok / total) * 10000) / 100 : 0,", lyDo: "FPY proxy — lỗi KHÁC" },
+  { file: "server/routers/productionDashboardRouter.ts", noiDung: "const fpy = total > 0 ? (ok / total) * 100 : 0;", lyDo: "FPY proxy — lỗi KHÁC" },
+  // FPY proxy khác: tên ngắn / kỳ trước (thước mở rộng 2026-08-25) — đã xác minh là nợ KHÁC, không phải final-yield sai.
+  { file: "server/routers/productionDashboardRouter.ts", noiDung: "const prevFPY = prevTotal > 0 ? (prevOk / prevTotal) * 100 : 0;", lyDo: "FPY proxy (prevFPY, kỳ trước) — cùng họ với :236, KHÁC lỗi" },
+  { file: "server/routers/stationAnalysisRouter.ts", noiDung: "const fpy = total > 0 ? (ok / total) * 100 : 0;", lyDo: "FPY proxy — lỗi KHÁC" },
+  { file: "server/routers/stationAnalysisRouter.ts", noiDung: "const fpy = t > 0 ? Math.round((ok / t) * 10000) / 100 : 0;", lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng họ với :832" },
+  { file: "server/services/aiExecutiveReport.ts", noiDung: "const fpy = totals.total > 0 ? (totals.ok / totals.total) * 100 : 0;", lyDo: "FPY proxy (biến fpy trong gatherKpis) — cùng họ, KHÁC lỗi" },
+  { file: "server/_core/index.ts", noiDung: "const fpy = t > 0 ? Math.round((ok / t) * 10000) / 100 : 0;", lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
 
-  // ── Đợt vá sau-review (2026-08-25) — thước mở rộng (tiền tố + tên ngắn) khai quật
-  // thêm các chỗ TRƯỚC ĐÂY vô hình với thước cũ. Đọc từng dòng trước khi tin dòng này:
-  // đây không phải chỗ giấu lỗi mới, là nợ ĐÃ XÁC MINH không phải final-yield-sai.
-  { file: "server/routers/productionDashboardRouter.ts", dong: 245, lyDo: "FPY proxy (prevFPY, kỳ trước) — cùng họ với :236, KHÁC lỗi" },
-  // ⚠ 179 → 181 → 197 (2026-09-03, BG-96 Task 2 follow-up, cùng hai đợt dịch nêu ở :832 trên).
-  { file: "server/routers/stationAnalysisRouter.ts",      dong: 197, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng họ với :832" },
-  { file: "server/services/aiExecutiveReport.ts",          dong: 202, lyDo: "FPY proxy (biến fpy trong gatherKpis) — cùng họ, KHÁC lỗi" },
-  // ⚠ 3698 → 3699 (2026-08-24): dòng fy ngay dưới được di trú sang finalYield() và file
-  // nhận thêm MỘT dòng import ở đầu ⇒ mọi số dòng phía dưới lệch +1. Miễn trừ theo số
-  // dòng GIÒN trước chính loại sửa mà cổng này khuyến khích — cập nhật phải đi CÙNG commit.
-  // ⚠ 3699 → 3695 (2026-09-03, BG-96 Task 2): parseLocalDate (server/_core/index.ts) đổi
-  // ruột sang gọi docGioTuongNhaMay() — thân hàm cũ 6 dòng co còn 1 dòng, cộng thêm 1 dòng
-  // import mới ở đầu file ⇒ lệch RÒNG -4 dòng. Bỏ sót lượt cập nhật này ở commit gốc của
-  // Task 2 (chỉ phát hiện khi chạy lại cổng này ở đợt vá toFakeUtc) — bài học: MỌI sửa vào
-  // `_core/index.ts` phải chạy cổng này trước khi commit, không chỉ cổng liên quan trực tiếp.
-  // ⚠ 3695 → 3709 (2026-10-17, AI Local nhánh `feat/ai-local-7-tang`): +5 dòng import (tuyến agent / xem trước / device
-  // flow / origin xem trước / danhDauGianDoanKhiBoot) + 9 dòng ở middleware CORS (`xuLyCorsCongOpenAi`, chặn phản chiếu
-  // origin xem trước) phía trên ⇒ lệch RÒNG +14. Cùng dòng `const fpy = t > 0 ? …` — không có công thức mới.
-  // ⚠ 3709 → 3719 (2026-10-17, cùng nhánh, đo lại trước khi gộp main): `126de672b` +1 dòng import
-  // (`registerAiGatewayTokenBearerRoutes`) và `1b04f2abd` +1 import (`khoiChayDongBoLuaChonModel`) + 8 dòng thân module
-  // (khối gọi `khoiChayDongBoLuaChonModel()` kèm docblock) phía trên ⇒ lệch RÒNG +10. Xác minh bằng `git show <c>:server/_core/index.ts`:
-  // 3709 @f4b504dc5 → 3710 @126de672b → 3719 @1b04f2abd. Cùng dòng `const fpy = t > 0 ? …` — không có công thức mới.
-  // ⚠ 3719 → 3729 (2026-10-20, AI Local Đợt 8.1 Task 4): ô này ĐÃ ĐỎ trước lượt này (đo trên cây trước khi sửa: dòng 3727 — lệch
-  // +8 từ các lượt Đợt 7.0/7.1 thêm import/lời gọi phía trên), Đợt 8.1 thêm +2 (import `registerFlowWebhookRoutes` + chú thích
-  // cạnh `rawUploadPaths`). Cùng dòng `const fpy = t > 0 ? …` — không có công thức mới.
-  { file: "server/_core/index.ts",                          dong: 3729, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
+  // aiInspectionAnalytics.ts: `pass` ở BỐN dòng này KHÔNG phải OK-only — nó là COUNT(*) FILTER (WHERE finalYieldPassCondSql(...)) tính Ở SQL, tức đã CHÍNH LÀ OK+NTF
+  // (xem comment "canonical FINAL-yield definition (OK + NTF)" cạnh mỗi dòng SELECT nguồn). (pass/total)*100 ở đây toán học BẰNG finalYield() — không phải FPY, không phải lỗi.
+  // Hai trong bốn dòng GIỐNG HỆT nhau (`yieldRate: total > 0 ? (pass / total) * 100 : 0,`) ⇒ soLan: 2.
+  { file: "server/services/aiInspectionAnalytics.ts", noiDung: "yieldRate: r.total > 0 ? (Number(r.pass) / Number(r.total)) * 100 : 0,", lyDo: "pass = SQL FILTER finalYieldPassCondSql (đã OK+NTF) — toán ĐÚNG, không phải FPY" },
+  { file: "server/services/aiInspectionAnalytics.ts", noiDung: "yieldRate: total > 0 ? (pass / total) * 100 : 0,", soLan: 2, lyDo: "pass = SQL FILTER finalYieldPassCondSql (đã OK+NTF) — toán ĐÚNG, không phải FPY" },
+  { file: "server/services/aiInspectionAnalytics.ts", noiDung: "yieldRate: Number(r.total) > 0 ? (Number(r.pass) / Number(r.total)) * 100 : 0,", lyDo: "pass = SQL FILTER finalYieldPassCondSql (đã OK+NTF) — toán ĐÚNG, không phải FPY" },
+  { file: "server/services/aiInspectionAnalytics.ts", noiDung: "yieldRate: total > 0 ? (pass / total) * 100 : 0,", soLan: 2, lyDo: "pass = SQL FILTER finalYieldPassCondSql (đã OK+NTF) — toán ĐÚNG, không phải FPY" },
 
-  // aiInspectionAnalytics.ts: `pass` ở BỐN dòng này KHÔNG phải OK-only — nó là
-  // COUNT(*) FILTER (WHERE finalYieldPassCondSql(...)) tính Ở SQL, tức đã CHÍNH LÀ
-  // OK+NTF (xem comment "canonical FINAL-yield definition (OK + NTF)" ngay cạnh mỗi
-  // dòng SELECT nguồn). (pass/total)*100 ở đây toán học BẰNG finalYield() — không phải
-  // FPY, không phải lỗi; giữ "pass" trong HINH_DANG_CAM vì đề bài yêu cầu bắt hình dạng
-  // `pass / total`, nên xử lý bốn ca ĐÃ-ĐÚNG này bằng miễn trừ có lý do thay vì bỏ tên
-  // "pass" (bỏ sẽ làm thước mù lại với các `pass/total` SAI thật ở nơi khác).
-  { file: "server/services/aiInspectionAnalytics.ts", dong: 569,  lyDo: "pass = SQL FILTER finalYieldPassCondSql (đã OK+NTF) — toán ĐÚNG, không phải FPY" },
-  { file: "server/services/aiInspectionAnalytics.ts", dong: 882,  lyDo: "pass = SQL FILTER finalYieldPassCondSql (đã OK+NTF) — toán ĐÚNG, không phải FPY" },
-  { file: "server/services/aiInspectionAnalytics.ts", dong: 1501, lyDo: "pass = SQL FILTER finalYieldPassCondSql (đã OK+NTF) — toán ĐÚNG, không phải FPY" },
-  { file: "server/services/aiInspectionAnalytics.ts", dong: 1596, lyDo: "pass = SQL FILTER finalYieldPassCondSql (đã OK+NTF) — toán ĐÚNG, không phải FPY" },
-
-  // client/src — biến/field `fpy` là FPY thật (first-pass yield, cố ý loại NTF khỏi
-  // tử số), không phải final yield viết sai. ComparisonStudio đặt `fpy` NGAY CẠNH
-  // `finalYield` tính đúng bằng finalYield() ở dòng kế — hai field khác nhau CÓ CHỦ Ý.
-  // Dashboard.tsx có docblock "doc65 W1" ngay trên xác nhận đây là FPY canonical.
-  { file: "client/src/pages/ComparisonStudio.tsx", dong: 230, lyDo: "FPY field, cạnh finalYield tính đúng ở dòng kế — hai metric khác nhau có chủ ý" },
-  { file: "client/src/pages/ComparisonStudio.tsx", dong: 270, lyDo: "FPY field, cạnh finalYield tính đúng ở dòng kế — hai metric khác nhau có chủ ý" },
-  { file: "client/src/pages/Dashboard.tsx",         dong: 1184, lyDo: "FPY (calculateYields) — docblock doc65 W1 ngay trên xác nhận first-pass yield có chủ ý" },
-  { file: "client/src/pages/Dashboard.tsx",         dong: 1206, lyDo: "FPY (yieldAlerts) — cùng quy ước fpy=ok/total với calculateYields ở trên" },
-
-  // RfTestCellSim.tsx: bộ mô phỏng RF test cell — `view` chỉ mô phỏng hai biến ok/ng
-  // (total := ok+ng, xem :411), KHÔNG có khái niệm NTF trong dữ liệu giả lập này.
-  // Không phải final-yield-sai — không có NTF nào để thiếu.
-  { file: "client/src/pages/RfTestCellSim.tsx", dong: 412, lyDo: "bộ mô phỏng: view.ok/view.ng thuần, không có khái niệm NTF trong dữ liệu giả lập" },
+  // client/src — biến/field `fpy` là FPY thật (first-pass yield, cố ý loại NTF khỏi tử số), không phải final yield viết sai. ComparisonStudio đặt `fpy` NGAY CẠNH `finalYield`
+  // tính đúng bằng finalYield() ở dòng kế — hai field khác nhau CÓ CHỦ Ý. Dashboard.tsx có docblock "doc65 W1" ngay trên xác nhận đây là FPY canonical.
+  { file: "client/src/pages/ComparisonStudio.tsx", noiDung: "fpy: a.total > 0 ? (a.ok / a.total) * 100 : null,", lyDo: "FPY field, cạnh finalYield tính đúng ở dòng kế — hai metric khác nhau có chủ ý" },
+  { file: "client/src/pages/ComparisonStudio.tsx", noiDung: "fpy: r.total > 0 ? (r.ok / r.total) * 100 : null,", lyDo: "FPY field, cạnh finalYield tính đúng ở dòng kế — hai metric khác nhau có chủ ý" },
+  { file: "client/src/pages/Dashboard.tsx", noiDung: "const fpy = typeof machine.fpy === \"number\" ? machine.fpy : (machine.ok / total) * 100;", lyDo: "FPY (calculateYields) — docblock doc65 W1 ngay trên xác nhận first-pass yield có chủ ý" },
+  { file: "client/src/pages/Dashboard.tsx", noiDung: "const fpy = (currentStats.ok / total) * 100;", lyDo: "FPY (yieldAlerts) — cùng quy ước fpy=ok/total với calculateYields ở trên" },
+  // (RfTestCellSim.tsx: mục cũ BỎ 2026-10-24 — file đã di trú sang finalYield() ở 9e6b5d045; mục theo SỐ DÒNG 412 trỏ vào một dòng không còn là công thức = mục ma.)
 ];
 
 /**
@@ -184,7 +158,7 @@ describe("điều tra dân số công thức final yield", () => {
       // JSDoc ở stationAnalysisRouter.ts:43 giải thích công thức cũ bị tố sai).
       readFileSync(f, "utf8").split(/\r?\n/).forEach((dong, i) => {
         const soDong = i + 1;
-        if (MIEN_TRU_DONG.some((m) => m.file === f && m.dong === soDong)) return;
+        if (MIEN_TRU_DONG.some((m) => m.file === f && m.noiDung === dong.trim())) return;
         if (HINH_DANG_CAM.test(boChuThich(dong))) viPham.push(`${f}:${soDong}  ${dong.trim()}`);
       });
     }
@@ -204,6 +178,25 @@ describe("điều tra dân số công thức final yield", () => {
 
   it("danh sách miễn trừ không rỗng và mọi mục đều có lý do", () => {
     expect(MIEN_TRU_DONG.length).toBeGreaterThan(0);
+    expect(MIEN_TRU_DONG.every((m) => m.noiDung.length >= 15), "ghim nội dung quá ngắn dễ trùng ngẫu nhiên").toBe(true);
     expect(MIEN_TRU_DONG.every((m) => m.lyDo.trim().length > 10)).toBe(true);
+  });
+});
+
+describe("miễn trừ theo NỘI DUNG — mỗi ghim xuất hiện ĐÚNG soLan lần (chống mục ma / dòng bị sửa)", () => {
+  it("mỗi mục miễn trừ khớp đúng `soLan` dòng trong tệp của nó", () => {
+    const sai: string[] = [];
+    for (const m of MIEN_TRU_DONG) {
+      const dong = readFileSync(m.file, "utf8").split(/\r?\n/);
+      const so = dong.filter((d) => d.trim() === m.noiDung).length;
+      const can = m.soLan ?? 1;
+      if (so !== can) {
+        sai.push(
+          `${m.file}: ghim "${m.noiDung.slice(0, 80)}" khớp ${so} dòng, cần đúng ${can}. ` +
+            (so === 0 ? "0 lần ⇒ nội dung dòng đã ĐỔI hoặc bị xoá: cập nhật/bỏ ghim (đọc lại dòng trước khi tin)." : "Nhiều hơn ghim ⇒ có bản sao MỚI của dòng công thức: xử lý bản sao, đừng nới soLan."),
+        );
+      }
+    }
+    expect(sai, "ghim miễn trừ không còn khớp tệp:\n" + sai.join("\n")).toEqual([]);
   });
 });

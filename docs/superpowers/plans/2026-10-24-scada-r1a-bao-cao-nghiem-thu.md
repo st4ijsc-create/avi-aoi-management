@@ -26,6 +26,16 @@ ngưỡng nào. `OT_CONTROL_ENABLED` / `AI_OT_CONTROL_ENABLED` chỉ được đ
 (hạn ack/đọc lại = `OT_CONTROL_TIMEOUT_MS`), còn < 3 s ⇒ `HET_HAN`; I-3 đường HMI `write_tag` KHÔNG phải đường STOP (§6, §7, §8); M-3 confirm kiểm
 TOTP SAU cổng 3–7. Chi tiết, bằng chứng đỏ/xanh và đột biến: `.superpowers/sdd/2026-10-24-scada-r1a-dieu-khien/final-fix-report.md`.
 
+**Sửa sau kiểm định độc lập (kiem-dinh, 2026-10-24, một vòng):**
+- **P1-2:** `scadaKenh.capNhat` / `cheDo.dat` / `cheDo.go` đòi TOTP TƯƠI mỗi lượt có thay đổi (`kiemXacThucTheoMuc` mức 5 trong handler, không phụ
+  thuộc cờ env), thuộc nhóm giới hạn "2fa"; M12 có ô mã 6 số.
+- **P1-3:** cổng giá trị biết `scale`/`offset` (tag int: (v − offset)/scale phải nguyên, không thì `OFF_STEP` + `goiY`).
+- **P1-4:** M5 khoá Đóng / Esc / bấm ngoài khi đang gửi; hộp bị gỡ giữa lúc gửi thì kết cục hiện thành toast cấp trang.
+- **P1-6:** kiểm schema 0431 / 0432 lúc khởi động, TRƯỚC `startOt` (§4 mục 5).
+- **Login:** nhận mã dự phòng 8 ký tự (lối thoát khi TOTP bị khoá), khoá nút + đếm ngược phút khi bị khoá.
+
+Chi tiết + đỏ/xanh + đột biến: `.superpowers/sdd/2026-10-24-scada-r1a-dieu-khien/kiemdinh-fix-report.md`.
+
 ---
 
 ## 1. Ma trận ô — `server/services/scada/r1aNghiemThu.db.test.ts`
@@ -173,6 +183,14 @@ Runtime OpenPLC (chương trình `benchL2` không khai `%QW`/`%MW`) **không ghi
    - Áp TEST ở Task 16 và DEV ngày **2026-10-24** (ranh giới T14, sau "ÁP"; kiểm (a)(b)(c) đều xanh).
 3. **Thứ tự bắt buộc: 0431 và 0432 trên MỌI DB, SAU ĐÓ mới chạy bản build.**
 4. **Kiểm lại hôm nay (2026-10-24, chỉ đọc):** cả `aoi_management` (DEV) lẫn `aoi_management_test` đều có bốn bảng `scada_command_attempts`, `scada_kenh_che_do`, `scada_khoa_chon`, `totp_khoa_sai`; 7/7 cột R1a trên `device_tags`; PK `totp_khoa_sai` = `user_id,loai`.
+5. **Máy chủ tự kiểm lúc khởi động (kiem-dinh P1-6, `server/_core/kiemSchemaR1a.ts`):** truy vấn CHỈ ĐỌC `information_schema` trong đuôi boot,
+   TRƯỚC `startOt()`.
+   - Thiếu 0431 ⇒ khối `console.error` nổi bật gọi tên migration và đối tượng thiếu; `startOt` bị BỎ QUA (ghi rõ vì sao); `GET /health` trả
+     `status:"degraded"` + `schemaR1a {thieuMigration, lyDo}`. Áp 0431 xong phải khởi động lại tiến trình.
+   - Thiếu 0432 ⇒ OT vẫn khởi động; lỗi nhắc lại mỗi 5 phút tới khi bảng có mặt; mỗi `TOTP_KHONG_KIEM_DUOC` có nguyên nhân "thiếu migration
+     0432" trong log máy chủ (UI giữ câu chung).
+   - `/health` vẫn trả **200** (liveness: khởi động lại không chữa được migration thiếu); `/readyz` không đổi. ⚠ `/api/health` KHÔNG phải route
+     (rơi vào SPA catch-all) — kiểm `/health`.
 
 ## 5. Chạy toàn bộ (Step 6)
 
@@ -277,6 +295,27 @@ Runtime OpenPLC (chương trình `benchL2` không khai `%QW`/`%MW`) **không ghi
     deploy / `twoFactor` sẽ bóp các lệnh đổi giá trị đặt HMI mức 1/3 thường ngày. M5 hiện 429 là "vượt giới hạn tần suất", không phải "không rõ".
 38. Interlock trên nguồn báo-theo-sự-kiện (MQTT, deadband không heartbeat, edge…) đi đường DB với sàn tươi 15 s (R0 mục 8): giữa hai lần gửi, luật `cu` nên lệnh bị chặn `INTERLOCK_BLOCKED` (fail-closed).
 
+**Sau kiểm định độc lập (kiem-dinh 2026-10-24)**
+
+39. **P1-1 — AI mất quyền trên tag chưa khai mức (fail-closed, cố ý).** `actuation_level` NULL ⇒ mức 5 ⇒ AI bị từ chối `MUC_QUA_CAO` (AI không
+    bao giờ hành động ở mức ≥ 4). Trên một DB có sẵn tag ghi được, bật `AI_OT_CONTROL_ENABLED` khi chưa khai mức hàng loạt thì MỌI lệnh ghi của AI
+    bị từ chối (§7). Sàn vai mức 1|3 (`vaiTroDuocGhi`) = operator / engineer / supervisor / admin: vai **maintenance** và **quality_inspector**
+    KHÔNG ra lệnh được kể cả trên kênh mức 1/3 (AI hành động thay họ cũng vậy).
+40. **P1-3 — `dispatch()` trên tag CHƯA khai (cột 0431 NULL) vẫn để driver làm tròn im lặng.** Cổng lưới thô (int có scale/offset) chỉ chạy
+    cho tag ĐÃ khai, để giữ tương đương "cờ tắt" của R1a. Đo: tag int chưa khai, scale 10, ghi 25 ⇒ driver nhận 25 + scale 10 ⇒ số thô
+    `Math.round(2.5)` = 3 (= 30), lệnh `ok` (ghim bằng test `commandDispatcher.kenh.r1a.db.test.ts` "P1-3 GIỚI HẠN ĐÃ BIẾT"). Đường HMI
+    (`scadaCommands.request` / `confirm`) kiểm LUÔN, kể cả tag chưa khai. DỪNG ghim được miễn như dải/bước. Backlog R1b mục 20.
+41. P1-3 — `goiY` của lưới thô không xét `writeStep` (hiếm khi cả hai cùng có); hoà .5 theo `Math.round` (về phía +∞: 25 ⇒ 30, −25 ⇒ −20) —
+    đúng giá trị driver lẽ ra đã ghi. Tag int có scale lẻ (vd 0,1): giá trị kỹ thuật phải là số nguyên (luật int có từ T2), nên 2,5 bị
+    `TYPE_MISMATCH` dù số thô 25 hợp lệ — có từ trước, không đổi ở vòng này.
+42. P1-2 — lượt cấu hình KHÔNG đổi gì (`changed:false` / `daGo:false`) không đòi mã; mã được kiểm CUỐI, ngay trước lượt ghi (lỗi kiểm hợp lệ
+    không tiêu mã). Mỗi lần lưu M12 cần một mã MỚI (mã đã dùng = `TOTP_SAI`): lưu hai thay đổi trong cùng 30 s phải chờ mã kế. Nhóm giới
+    hạn "2fa" (20 / 15 phút, theo IP và người) nay đếm cả ba thủ tục.
+43. P1-4 — toast khi hộp bị gỡ dựa vào callback CẤP `useMutation` vẫn chạy sau khi gỡ (TanStack Query 5.101.2: `Mutation` tự gọi
+    `options.onSuccess/onError`; đã đọc mã nguồn). Đường `scada:cmd` dừng khi gỡ (hook huỷ đăng ký). Tải lại trang giữa lúc gửi thì không còn
+    gì để báo — kết quả xem ở nhật ký lệnh.
+44. Login — đếm ngược khoá dùng đồng hồ máy khách tính từ `remainingMinutes` của máy chủ; máy chủ vẫn là biên thật (gửi sớm ⇒ 429 lại).
+
 ## 7. Checklist bật cờ (trước khi bật điều khiển trên một hệ)
 
 - [ ] **`SCADA_COMMANDS_ENABLED=true` BẮT BUỘC đi kèm `SCADA_LIVE_CACHE_ENABLED=true`.** Không có bộ đệm thì mọi máy LOCAL `bo_dem_tat` (máy chủ in WARN lúc khởi động — T8).
@@ -287,7 +326,11 @@ Runtime OpenPLC (chương trình `benchL2` không khai `%QW`/`%MW`) **không ghi
 - [ ] **HMI chưa phải đường STOP tới R1b; dừng máy bằng E-STOP cứng / tủ máy / đường STOP ghim của AI-edge.**
 - [ ] **Trước khi bật `SCADA_CONG_CHE_DO_ENABLED`:** rà mọi bên gọi `dispatch()` đang bật cờ (Sparkplug, interlock, tool AI…). Adapter không gắn máy hoặc máy chưa khai kênh chế độ sẽ bị từ chối `MODE_LOCAL` (`chua_khai`).
 - [ ] `OT_COMMISSIONING_REQUIRED` giữ mặc định BẬT. Adapter cần hàng `commissioning_records` hiệu lực, nếu không lệnh chỉ `simulated`.
-- [ ] Thứ tự migration theo §4: 0431, 0432 trên mọi DB trước bản build.
+- [ ] Thứ tự migration theo §4: 0431, 0432 trên mọi DB trước bản build. Sau khi khởi động, `GET /health` không được có `schemaR1a` (kiem-dinh P1-6).
+- [ ] **P1-1 — Trước khi bật `AI_OT_CONTROL_ENABLED` trên một DB đã có tag ghi được: khai mức tác động hàng loạt (M12) cho mọi kênh AI cần
+      ghi.** Tag chưa khai mức = mức 5 ⇒ AI bị từ chối (fail-closed). Vai maintenance / quality_inspector không ra lệnh được kể cả mức 1/3 (§6 mục 39).
+- [ ] P1-7: "Trước khi bật OT_CMD_SERIALIZE_ENABLED: rà các bên gọi qua adapterFacade (UNS/edge) có deadline_ms ngắn; lệnh thường chờ hàng đợi quá hạn sẽ QUEUE_EXPIRED; STOP ghim không hết hạn."
+- [ ] P1-8: "Trước khi bật SCADA_CONG_CHE_DO_ENABLED: mọi máy nhận lệnh từ xa phải khai kênh chế độ; máy LOCAL/chưa khai sẽ từ chối cả STOP không ghim và hành động bảo vệ của interlock (chỉ STOP ghim đi qua) — ghim stop_value cho máy cần dừng từ xa."
 
 ## 8. Backlog R1b
 
@@ -330,6 +373,13 @@ Runtime OpenPLC (chương trình `benchL2` không khai `%QW`/`%MW`) **không ghi
 17. Kiểm phạm vi `capNhat` có khoá (`adapter.machineId`).
 18. **Lệnh STOP HMI riêng** (kiểu stop, giá trị ghim, mức công cụ, ngoài khoá chọn và bộ giới hạn) — final I-3.
 19. Gộp hai kiểm chủ sở hữu edge (T8 lenhHmi và `adapterOwnedByEdgeInTx`) về một nơi.
+20. **P1-3 — `dispatch()` trên tag CHƯA khai vẫn để driver làm tròn im lặng** (§6 mục 40): đưa cổng lưới thô (int + scale/offset) vào mọi tag,
+    hoặc từ chối ghi int có scale ≠ 1 khi chưa khai — cần quyết định của điều phối vì đổi hành vi "cờ tắt".
+21. **Khoá TOTP leo thang** (lần khoá sau dài hơn) hoặc **cảnh báo khi `tam_khoa` lặp lại** cho cùng một người.
+22. **Giao diện admin mở khoá TOTP** (`twoFactor.moKhoaTotp` đã có ở máy chủ, khoá i18n `adminUnlockTotp*` đã có, chưa có màn).
+23. **`NganTagAdapter` đòi `machine_control.canView`** ⇒ M10 trả FORBIDDEN cho người chỉ có quyền giám sát.
+24. **i18n `TRPC_GIOI_HAN_THU_TUC`** (429 của bộ giới hạn theo thủ tục) ở vi/en/zh.
+25. **Các mục P2 còn lại của kiem-dinh** — TODO (điều phối): danh sách P2 không có trong sổ điều phối mà vòng sửa này đọc được, nên không chép lại ở đây.
 
 ## 9. Backlog R4
 
@@ -358,6 +408,8 @@ Nhánh `feat/scada-r1a`, gốc là main `da520b932`. Gộp main một lần ở 
 - **Sau gộp:** `2b7ff1e2d` (`scadaCommands.confirm` vào nhóm giới hạn 2FA + census).
 - **T15:** commit chứa báo cáo này (`test(scada): nghiem thu R1a - ma tran 8 o, bench OpenPLC + safety PLC mo phong, bao cao`).
 - **Final fix (sau rà soát cuối):** `e3bde8aee` (I-1), `913269e54` (I-2), `eb98815a2` (M-3), và commit I-3 / M-1 / M-2 / T15-minor chứa bản sửa báo cáo này.
+- **Sửa sau kiem-dinh (2026-10-24):** `2288756c3` (P1-2), `556adfd69` (P1-3), `8b62c9978` (P1-4), `3d51e1c33` (P1-6), `3c3703b3b` (Login mã dự phòng),
+  và commit `docs(scada)` chứa bản cập nhật báo cáo này (§4 mục 5, §6 mục 39–44, §7, §8 mục 20–25).
 
 **Migration:**
 - **0431** (`scripts/apply-migration-0431.mjs`): TEST ở T1; **DEV 2026-10-24**, sau điều phối "ÁP".

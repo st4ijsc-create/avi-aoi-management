@@ -541,6 +541,13 @@ function diemGoiMutate(goc: string): { diem: DiemGoiClient[]; soFileDoc: number 
 const CLIENT = diemGoiMutate(GOC_REPO);
 /** Khoá client của **cả 7** thủ tục deploy — suy từ máy chủ, không chép tay. */
 const KHOA_DEPLOY: readonly string[] = QUET.thuTuc.map((t) => khoaClient(t)).filter((k): k is string => k !== null);
+/**
+ * 2026-10-24 · kiem-dinh P1-2 — khoá client (`<ns>.<ô trước useMutation>`) của các thủ tục KHÔNG đứng trên `deployProcedure` nhưng TỰ khai
+ * `totpCode` trong input và TỰ kiểm mã tươi ở handler (`scadaKenhRouter.kiemTotpCauHinh` = `kiemXacThucTheoMuc` mức 5 — không đọc cờ env,
+ * không cache phiên): `scadaKenh.capNhat`, `scadaKenh.cheDo.dat` (khoá client `scadaKenh.dat`), `scadaKenh.cheDo.go` (`scadaKenh.go`).
+ * Gửi `totpCode` tới chúng là đúng hợp đồng, không phải "khoá lạ" mà vế CHIỀU NGƯỢC canh.
+ */
+const KHOA_TOTP_TRONG_HANDLER: readonly string[] = ["scadaKenh.capNhat", "scadaKenh.dat", "scadaKenh.go"];
 
 describe("★★★ I-3 — nửa CLIENT của bất biến step-up, ∀ THỦ TỤC `deployProcedure` (không chỉ VRAM)", () => {
   it("★★★ cầu chì — bộ suy đọc được cả hai nửa: 0 ô mù, 9 thủ tục, 9 khoá client, nhiều file client", () => {
@@ -621,9 +628,22 @@ describe("★★★ I-3 — nửa CLIENT của bất biến step-up, ∀ THỦ T
      * không cần. Đúng đột biến W3 đã đo ở khối §I-3 nửa máy chủ bên trên.
      */
     const thua = CLIENT.diem
-      .filter((d) => !KHOA_DEPLOY.includes(d.khoa) && (d.trongStepUpGuard || d.coTotpCode))
+      .filter((d) => !KHOA_DEPLOY.includes(d.khoa) && !KHOA_TOTP_TRONG_HANDLER.includes(d.khoa) && (d.trongStepUpGuard || d.coTotpCode))
       .map((d) => `${d.file} \`${d.khoa}\``);
     expect(thua.join("\n"), "điểm gọi KHÔNG thuộc tập `deployProcedure` mà lại đi qua step-up 2FA").toBe("");
+  });
+
+  it("★★ 2026-10-24 · kiem-dinh P1-2 — thủ tục tự kiểm TOTP ở HANDLER (ngoài deployProcedure): gửi `totpCode` TRỰC TIẾP, không qua `stepUp.guard`", () => {
+    // Miễn trừ của vế CHIỀU NGƯỢC là RÀNG BUỘC: mỗi khoá trong danh sách phải có điểm gọi client gửi `totpCode` (không thì xoá khỏi danh
+    // sách), và không điểm nào đi qua `stepUp.guard` (cache phiên 10 phút của guard KHÔNG thay được mã tươi mỗi lượt của máy chủ).
+    for (const khoa of KHOA_TOTP_TRONG_HANDLER) {
+      const ds = CLIENT.diem.filter((d) => d.khoa === khoa);
+      expect(ds.length, `${khoa}: không thấy điểm gọi client nào`).toBeGreaterThan(0);
+      for (const d of ds) {
+        expect(d.coTotpCode, `${d.file} ${khoa}: không gửi totpCode`).toBe(true);
+        expect(d.trongStepUpGuard, `${d.file} ${khoa}: không được bọc stepUp.guard`).toBe(false);
+      }
+    }
   });
 
   it("★★ GHIM SỐ — 9 thủ tục / 9 điểm gọi client, cả hai tập nói ra đích danh", () => {

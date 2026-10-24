@@ -22,6 +22,7 @@ vi.hoisted(() => {
 import { COOKIE_NAME } from "@shared/const";
 import { sdk } from "./sdk";
 import { createContext } from "./context";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { router, protectedProcedure } from "./trpc";
 import { createTrpcMiddleware } from "./trpcAdapter";
 import { trpcGioiHanThuTucMiddleware } from "./trpcGioiHanThuTuc";
@@ -45,11 +46,10 @@ describe.skipIf(!onTest)("middleware giới hạn theo thủ tục CHỈ lấy d
 
   beforeAll(async () => {
     sql = postgres(DB_URL, { max: 2, onnotice: () => {} });
-    nguoi.id = Number(
-      (
-        await sql`INSERT INTO users ("openId", name, role, "isActive", two_factor_enabled, "loginMethod") VALUES (${nguoi.openId}, 'ghtt xac thuc', 'engineer', true, false, 'local') RETURNING id`
-      )[0]!.id,
-    );
+    // người dùng qua helper dùng chung (tự dọn ở afterAll của helper) — census nguoiDungTest cấm insert(users) tự viết
+    const u = await taoNguoiDungTest("xt", "engineer", { tienTo: "ghtt", ten: "ghtt xac thuc", ts: TAG });
+    nguoi.id = u.id;
+    nguoi.openId = u.openId;
     const app = express();
     app.use(express.json());
     app.use(
@@ -83,7 +83,6 @@ describe.skipIf(!onTest)("middleware giới hạn theo thủ tục CHỈ lấy d
   afterAll(async () => {
     await new Promise<void>((r) => server.close(() => r()));
     await sql`DELETE FROM user_sessions WHERE "userId" = ${nguoi.id}`;
-    await sql`DELETE FROM users WHERE id = ${nguoi.id}`;
     await sql.end({ timeout: 2 });
   });
 

@@ -74,6 +74,7 @@ import {
   interlockRules,
 } from "../../../drizzle/schema";
 import { dispatch, type DispatchInput } from "./commandDispatcher";
+import { inverseScale } from "./drivers/otScale";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
 
@@ -87,13 +88,16 @@ const TOOL = "set_machine_param";
 // ── driver giả: đếm số lần thiết bị bị ghi + giá trị nhận được ─────────────────
 let writeCalls = 0;
 let writtenBatches: Array<Array<{ tagKey: string; value: unknown }>> = [];
+/** kiem-dinh P1-3 — số THÔ một driver thật sẽ ghi (`inverseScale` trên đúng write driver nhận). */
+let rawBatches: Array<Array<{ tagKey: string; raw: unknown }>> = [];
 const fakeDriver = {
   isConnected: () => true,
-  async writeTags(writes: Array<{ tagKey: string; value: unknown }>) {
+  async writeTags(writes: Array<{ tagKey: string; value: unknown; dataType?: "int" | "float"; scale?: number; offset?: number }>) {
     writeCalls++;
     writtenBatches.push(
       writes.map(w => ({ tagKey: w.tagKey, value: w.value }))
     );
+    rawBatches.push(writes.map(w => ({ tagKey: w.tagKey, raw: w.dataType ? inverseScale(w.value, w.dataType, w.scale ?? 1, w.offset ?? 0) : w.value })));
     return writes.map(w => ({ tagKey: w.tagKey, ok: true }));
   },
   async readTags() {
@@ -292,6 +296,9 @@ describe.skipIf(!DB_URL)(
         },
         // fix round 1 (M-1) — a NON-writable tag, for TAG_NOT_WRITABLE at write index ≥ 1
         { adapterId, tagKey: "ro_kv", address: "D204", dataType: "int", writable: false },
+        // kiem-dinh P1-3 — int, scale 10: ĐÃ khai (dải 0..300) / CHƯA khai (cột 0431 NULL)
+        { adapterId, tagKey: "sc10", address: "D205", dataType: "int", writable: true, writeMin: 0, writeMax: 300, scale: "10" },
+        { adapterId, tagKey: "sc10cu", address: "D206", dataType: "int", writable: true, scale: "10" },
       ]);
       fake.drivers.set(adapterId, fakeDriver);
       fake.fingerprints.set(
@@ -332,6 +339,7 @@ describe.skipIf(!DB_URL)(
     beforeEach(() => {
       writeCalls = 0;
       writtenBatches = [];
+      rawBatches = [];
       process.env.OT_CONTROL_ENABLED = "false"; // mặc định: đường mô phỏng — cổng mới phải chạy TRƯỚC cổng chế độ OT
       process.env.OT_COMMISSIONING_REQUIRED = "false";
       delete process.env.OT_SAFETY_PREFLIGHT_ENABLED;
@@ -715,6 +723,37 @@ describe.skipIf(!DB_URL)(
       );
       expect(res.reason).toBe("ACTION_BINDING_MISMATCH");
       expect(writeCalls).toBe(0);
+    });
+
+    // ═════════════════ kiem-dinh P1-3 — scale/offset ═════════════════
+    it("P1-3 kênh ĐÃ khai, int scale 10, 25 ⇒ OFF_STEP (goiY=30), driver 0 lần — không làm tròn im lặng thành raw 3", async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      const writes = [{ tagKey: "sc10", value: 25 }];
+      const actionId = await makeAction({ writes });
+      const inp = input({ actionId, writes });
+      const res = await dispatch(inp);
+      expect(res.reason).toBe("OFF_STEP");
+      expect(writeCalls).toBe(0);
+      const rows = await ledger(inp.idempotencyKey);
+      expect(rows[0]!.errorText).toMatch(/^OFF_STEP: Tag "sc10": .*\(goiY=30\)$/);
+    });
+
+    it("P1-3 kênh ĐÃ khai, int scale 10, 30 ⇒ gửi, driver nhận 30 + scale 10 ⇒ số thô 3", async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      const writes = [{ tagKey: "sc10", value: 30 }];
+      const actionId = await makeAction({ writes });
+      const res = await dispatch(input({ actionId, writes }));
+      expect(res.ok).toBe(true);
+      expect(rawBatches).toEqual([[{ tagKey: "sc10", raw: 3 }]]);
+    });
+
+    it("P1-3 GIỚI HẠN ĐÃ BIẾT (ghim): kênh CHƯA khai, int scale 10, 25 ⇒ dispatch KHÔNG kiểm (tương đương cờ tắt R1a) ⇒ driver làm tròn im lặng raw 3 (= 30) — R1b", async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      const writes = [{ tagKey: "sc10cu", value: 25 }];
+      const actionId = await makeAction({ writes });
+      const res = await dispatch(input({ actionId, writes }));
+      expect(res.ok).toBe(true);
+      expect(rawBatches).toEqual([[{ tagKey: "sc10cu", raw: 3 }]]);
     });
   }
 );

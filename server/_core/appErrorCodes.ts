@@ -191,6 +191,10 @@ export const APP_ERROR_CODES = [
   // ── SCADA R1b-1 Task 2 — STOP HMI một bước (`scadaCommands.dungMay`) ──
   "SCADA_STOP_NOT_PINNED",         // params: { ma } — máy không có adapter bật nào mang tag ghim giá trị DỪNG (CHUA_GHIM_STOP): không gửi gì;
                                    // kỹ sư ghim ở /scada/config/channels, dừng bằng E-STOP cứng.
+  // ── kiem-dinh P1-2 (2026-10-24) — đổi cấu hình kênh / chế độ M12 (scadaKenh.capNhat, cheDo.dat, cheDo.go) đòi TOTP TƯƠI mỗi lượt.
+  "SCADA_CONFIG_TOTP_REQUIRED",    // params: { ma } — thiếu mã TOTP (TOTP_CAN); nhập mã 6 số rồi lưu lại.
+  "SCADA_CONFIG_TOTP_INVALID",     // params: { ma } — mã TOTP sai / sai định dạng / đã dùng (TOTP_SAI); chờ mã mới rồi lưu lại.
+  "SCADA_CONFIG_TOTP_NOT_ENROLLED",// params: { ma } — tài khoản chưa đăng ký 2FA (TOTP_CHUA_DANG_KY) ⇒ không đổi được cấu hình kênh.
   // ── SCADA R1a Task 12 (M12, điều phối mục 4 + review T3 M-3) — NHẤT QUÁN lúc cấu hình giữa khai báo kênh (loại / dải / bước) và giá trị
   // đã cam kết sẽ ghi xuống kênh đó (server/services/scada/nhatQuanKenh.ts). `ma` = chính mã; `lyDo` = kết cục của cổng kênh
   // (CHANNEL_READ_ONLY | TYPE_MISMATCH | OUT_OF_RANGE | OFF_STEP); min/max/step "—" khi không khai cận đó.
