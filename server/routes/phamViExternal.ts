@@ -43,3 +43,13 @@ export async function andSanPhamTrongPhamVi(nguoiXem: PhamViNguoiXem | undefined
   const { congSanPhamTrongNhaMay } = await import("../routers/publicProductScope");
   return sql`AND (${sql.join(fids.map((f) => congSanPhamTrongNhaMay(cot, f)), sql` OR `)})`;
 }
+
+/** Điều kiện drizzle theo CỘT ĐỊNH VỊ (cùng `dieuKienViTriTrongPhamVi` của tRPC): `undefined` khi master key / toàn quyền. */
+export async function dieuKienViTri(
+  nguoiXem: PhamViNguoiXem | undefined,
+  cot: import("../routers/_adapterPhamVi").CotViTri,
+): Promise<SQL | undefined> {
+  if (nguoiXem === undefined) return undefined;
+  const { dieuKienViTriTrongPhamVi } = await import("../routers/_adapterPhamVi");
+  return dieuKienViTriTrongPhamVi(nguoiXem, cot);
+}
