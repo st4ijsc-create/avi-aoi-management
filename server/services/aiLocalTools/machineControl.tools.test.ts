@@ -112,7 +112,12 @@ vi.mock("../ot/commandDispatcher", () => ({
 const safetyChoAi = vi.fn(async () => "OK" as const);
 vi.mock("../ot/aiControlGate.safety", () => ({
   preflightSafetyChoAi: (...a: unknown[]) => safetyChoAi(...a),
+  // SCADA R1a T10 — mức KÊNH đích (actuation_level). 1 = kênh không nâng mức: các ca dưới đo mức của TOOL như trước.
+  mucKenhChoAi: async () => 1,
 }));
+// SCADA R1a T10 — sàn vai + 2FA theo mức lúc CONFIRM cho tool ghi OT có lưới riêng (aiCopilotActions.hmi.r1a.test.ts,
+// aiCopilotRouter.confirm.r1a.db.test.ts). Tệp này đo cổng AI L-7 ở EXECUTE, nên lớp confirm được cho qua ở đây.
+vi.mock("../../_core/xacThucTheoMuc", () => ({ kiemXacThucTheoMuc: async () => ({ ok: true, cach: "khong_can" }), vaiTroDuocGhi: () => [] }));
 
 // audit — silence.
 const logCrudOperation = vi.fn(async () => ({ id: 1 }));

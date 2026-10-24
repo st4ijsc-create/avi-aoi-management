@@ -18,8 +18,10 @@ import {
   proposeAction,
   batDauApDungOClient,
   chotApDungOClient,
+  type ConfirmResult,
   type CopilotUser,
 } from "../services/aiCopilotActions";
+import { appError } from "../_core/appError";
 import type { ToolLang } from "../services/aiLocalTools";
 import { getTool, isWriteTool } from "../services/aiLocalTools/toolRegistry";
 import { RCA_SUGGESTED_ACTION_TOOLS, ensureRcaToolsRegistered } from "../services/ai/rcaActionSuggester";
@@ -32,6 +34,30 @@ import { batDauApDungOClientSchema, chotApDungOClientSchema } from "./aiCopilotA
 
 function toCopilotUser(user: { id: number; role: string; name?: string | null }): CopilotUser {
   return { id: user.id, role: String(user.role), name: user.name ?? null };
+}
+
+/**
+ * SCADA R1a T10 — từ chối sàn vai / xác thực theo mức của tool ghi OT ⇒ appError, CÙNG mã + khoá i18n + params `{ma, level}` với
+ * `scadaCommands` (T8/T9 `loiTuChoiLenh`), để client hiện một câu và một ô nhập TOTP cho cả hai đường. Kết quả khác ⇒ `null`
+ * (trả nguyên như cũ).
+ */
+function loiXacThucTheoMuc(kq: ConfirmResult) {
+  if (kq.ok || kq.level === undefined) return null;
+  const ma = kq.reason;
+  const level = kq.level;
+  const chiTiet = kq.message ?? "";
+  switch (ma) {
+    case "ROLE_FLOOR":
+      return appError("FORBIDDEN", "SCADA_ROLE_FLOOR", { ma, level }, chiTiet);
+    case "TOTP_CHUA_DANG_KY":
+      return appError("PRECONDITION_FAILED", "SCADA_TOTP_NOT_ENROLLED", { ma, level }, chiTiet);
+    case "TOTP_CAN":
+      return appError("PRECONDITION_FAILED", "SCADA_TOTP_REQUIRED", { ma, level }, chiTiet);
+    case "TOTP_SAI":
+      return appError("PRECONDITION_FAILED", "SCADA_TOTP_INVALID", { ma, level }, chiTiet);
+    default:
+      return null;
+  }
 }
 
 export const aiCopilotRouter = router({
@@ -51,15 +77,28 @@ export const aiCopilotRouter = router({
       token: z.string().min(1),
       lang: langSchema.optional(),
       selectedHunkIds: z.array(z.number().int().min(0)).max(1000).optional(),
+      /**
+       * SCADA R1a T10 — mã TOTP cho tool GHI OT ở kênh mức 4|5 (`kiemXacThucTheoMuc`). Tool không ghi OT bỏ qua (không đòi, không
+       * tiêu). Danh tính, phiên, trạng thái 2FA lấy từ `ctx`, KHÔNG BAO GIỜ từ input.
+       */
+      totpCode: z.string().length(6).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const user = toCopilotUser(ctx.user as any);
       const lang: ToolLang = input.lang ?? "vi";
-      return confirmAction(input.actionId, input.token, user, lang, {
+      const kq = await confirmAction(input.actionId, input.token, user, lang, {
         ip: (ctx.req as any)?.ip,
         headers: (ctx.req as any)?.headers,
         socket: (ctx.req as any)?.socket,
-      }, {}, undefined, input.selectedHunkIds);
+      }, {}, undefined, input.selectedHunkIds, {
+        totpCode: input.totpCode,
+        sessionToken: ctx.sessionToken ?? null,
+        twoFactorEnabled: (ctx.user as { twoFactorEnabled?: boolean | null }).twoFactorEnabled ?? false,
+        ...(ctx.__luotXacMinhTotp ? { __luotXacMinhTotp: ctx.__luotXacMinhTotp } : {}),
+      });
+      const loi = loiXacThucTheoMuc(kq);
+      if (loi) throw loi;
+      return kq;
     }),
 
   cancelAction: protectedProcedure

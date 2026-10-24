@@ -58,6 +58,14 @@ export interface DauVaoCongAi {
   toolName: string;
   /** Tag đích, nếu tool có chọn tag (chỉ `set_machine_param` cho model tự chọn). */
   tagKey?: string | null;
+  /**
+   * SCADA R1a T10 (K5) — mức tác động của KÊNH đích (`mucTacDongKenh(tag)`, cột `actuation_level`; NULL ⇒ 5), người gọi đọc sẵn
+   * (cổng vẫn thuần — `mucKenhChoAi` ở `aiControlGate.safety.ts` đọc DB). Ghi nhiều tag ⇒ mức CAO NHẤT của các kênh.
+   * Mức hiệu lực = max(phanLoaiMuc(tool, tagKey), mucKenh) — kênh chỉ NÂNG, không bao giờ hạ mức của tool.
+   * VẮNG (`undefined`) ⇒ hành vi cũ, từng chữ: chỉ người gọi KHÔNG có (adapter, tag) được vắng (`set_yield_threshold`,
+   * Luồng mô phỏng). Giá trị lạ lúc chạy (null, 2, "4", NaN…) ⇒ 5 (fail-closed).
+   */
+  mucKenh?: MucRuiRo;
   /** Người dùng phiên THẬT (ToolExecContext.user.id) — khoá trần tần suất. */
   userId: number;
   /** Adapter đích — khoá trần tần suất (mỗi adapter một quota riêng). */
@@ -200,6 +208,21 @@ export function phanLoaiMuc(toolName: string, tagKey?: string | null): MucRuiRo 
   return muc;
 }
 
+/** Chuẩn hoá mức kênh lúc chạy: chỉ 1|3|4|5 (so `===`) là hợp lệ, mọi giá trị khác ⇒ 5. */
+function chuanMucKenh(m: unknown): MucRuiRo {
+  return m === 1 || m === 3 || m === 4 || m === 5 ? m : 5;
+}
+
+/**
+ * SCADA R1a T10 (K5) — mức HIỆU LỰC = max(phanLoaiMuc(tool, tagKey), mức kênh). `mucKenh` vắng (`undefined`) ⇒ đúng `phanLoaiMuc`.
+ * Một hàm cho cả `kiemCongAi` (execute) và `confirmAction` (sàn vai + 2FA lúc xác nhận) — hai nơi không trôi khỏi nhau.
+ */
+export function mucHieuLuc(toolName: string, tagKey?: string | null, mucKenh?: MucRuiRo): MucRuiRo {
+  const mucTool = phanLoaiMuc(toolName, tagKey);
+  if (mucKenh === undefined) return mucTool;
+  return Math.max(mucTool, chuanMucKenh(mucKenh)) as MucRuiRo;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // T1b — Trần tần suất (bộ đếm cửa sổ trượt, trong bộ nhớ)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -293,7 +316,7 @@ export function coAiOtBat(env: Record<string, string | undefined> = process.env)
  * Cổng cho tác nhân AI. Gọi TRƯỚC mọi lối tới `dispatch()`.
  *
  * Thứ tự kiểm CÓ CHỦ ĐÍCH — rẻ và tuyệt đối trước, đắt và có điều kiện sau:
- *   1. Mức ≥ 4 ⇒ từ chối. Không cờ nào, không quyền nào mở được. Kiểm TRƯỚC cả
+ *   1. Mức ≥ 4 ⇒ từ chối (mức = `mucHieuLuc` = max(tool, kênh đích) — R1a T10). Không cờ nào, không quyền nào mở được. Kiểm TRƯỚC cả
  *      cờ, để một `machine_start` bị từ chối vì ĐÚNG lý do ("AI không được
  *      tăng năng lượng"), chứ không phải vì lý do phụ ("cờ đang tắt") —
  *      thông điệp sai sẽ dạy model đi xin bật cờ.
@@ -306,7 +329,10 @@ export function coAiOtBat(env: Record<string, string | undefined> = process.env)
  * mất suất của một lệnh hợp lệ sau đó.
  */
 export function kiemCongAi(input: DauVaoCongAi): KetQuaCongAi {
-  const muc = phanLoaiMuc(input.toolName, input.tagKey);
+  // SCADA R1a T10 — mức = max(tool, kênh đích) khi người gọi biết kênh (`mucKenh`); vắng ⇒ như cũ.
+  const mucTool = phanLoaiMuc(input.toolName, input.tagKey);
+  const muc = mucHieuLuc(input.toolName, input.tagKey, input.mucKenh);
+  const doKenh = muc > mucTool;
   const env = input.env ?? process.env;
   const now = input.now ?? Date.now;
   const boDem = input.boDem ?? boDemChung;
@@ -318,12 +344,15 @@ export function kiemCongAi(input: DauVaoCongAi): KetQuaCongAi {
       muc === 4
         ? `lệnh này LÀM TĂNG năng lượng của máy (trục có thể bắt đầu chuyển động)`
         : `lệnh này gây CHUYỂN ĐỘNG VẬT LÝ hoặc chạm tham số an toàn/interlock`;
+    const nguon = doKenh
+      ? `kênh đích được kỹ sư khai mức tác động ${muc} (actuation_level; để trống = 5), cao hơn mức ${mucTool} của tool — ${viSao}`
+      : viSao;
     return {
       choPhep: false,
       muc,
       ma: "MUC_QUA_CAO",
       lyDo:
-        `TỪ CHỐI VĨNH VIỄN — tool "${input.toolName}" ở Mức ${muc}: ${viSao}. ` +
+        `TỪ CHỐI VĨNH VIỄN — tool "${input.toolName}" ở Mức ${muc}: ${nguon}. ` +
         `Tác nhân AI KHÔNG BAO GIỜ được gửi lệnh Mức 4 trở lên, ` +
         `bất kể cấu hình, quyền hạn hay cờ môi trường. ` +
         `ĐỪNG THỬ LẠI — không có tham số nào, không có lần thử nào làm lệnh này được chấp nhận. ` +

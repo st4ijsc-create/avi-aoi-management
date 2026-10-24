@@ -53,6 +53,8 @@ vi.mock("../../ot/commandDispatcher", () => ({
 const safetyChoAi = vi.fn(async (..._a: unknown[]) => "OK" as const);
 vi.mock("../../ot/aiControlGate.safety", () => ({
   preflightSafetyChoAi: (...a: unknown[]) => safetyChoAi(...a),
+  // SCADA R1a T10 — mức KÊNH đích (actuation_level). 1 = kênh không nâng mức: các ca dưới đo mức của TOOL như trước.
+  mucKenhChoAi: async () => 1,
 }));
 
 import "./machineControl";

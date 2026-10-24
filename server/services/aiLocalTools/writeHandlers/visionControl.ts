@@ -50,7 +50,7 @@ import {
   ketQuaTuChoiChoTool,
   type KetQuaDispatchToiThieu,
 } from "../../ot/aiControlGate";
-import { preflightSafetyChoAi } from "../../ot/aiControlGate.safety";
+import { mucKenhChoAi, preflightSafetyChoAi } from "../../ot/aiControlGate.safety";
 import {
   registerTool,
   type ActionPreview,
@@ -161,11 +161,15 @@ async function runDispatch(
   //   brief, nhưng nó CÓ tới `dispatch()` — bỏ qua nó là để hở đúng thứ mục 5.1
   //   bản thiết kế L-7 cấm tuyệt đối.
   const safety = await preflightSafetyChoAi(args.adapterId, args.machineId);
+  // SCADA R1a T10 (K5) — mức KÊNH của mọi tag sắp ghi (cùng chokepoint với machineControl). Hai tool ở đây đã là mức 5 nên kênh
+  // không đổi kết cục hôm nay; truyền để một tool mức thấp thêm vào tệp này sau này không lọt kênh mức cao.
+  const mucKenh = await mucKenhChoAi(args.adapterId, args.writes.map((x) => x.tagKey));
   const cong = kiemCongAi({
     toolName: args.toolName,
     userId: ctx.user.id,
     adapterId: args.adapterId,
     safety,
+    mucKenh,
   });
   if (!cong.choPhep) {
     return ketQuaTuChoiChoTool(cong, args.toolName) as ToolExecuteResult;

@@ -19,7 +19,43 @@
  *   đó ở đó `"UNKNOWN"` nghĩa là CHO QUA.)
  */
 
-import type { TrangThaiSafety } from "./aiControlGate";
+import { and, eq, inArray } from "drizzle-orm";
+import type { MucRuiRo, TrangThaiSafety } from "./aiControlGate";
+import { getDb } from "../../db/connection";
+import { deviceTags } from "../../../drizzle/schema";
+import { mucTacDongKenh } from "../scada/kenhScada";
+
+/**
+ * SCADA R1a T10 (K5) — mức tác động CAO NHẤT của các kênh đích `(adapterId, tagKeys)` cho cổng AI (`DauVaoCongAi.mucKenh`) và cho
+ * sàn vai + 2FA lúc `confirmAction`. CHỈ ĐỌC `device_tags`.
+ *
+ * ★ FAIL-CLOSED: không có tag nào / tagKey không phải chuỗi khác rỗng / adapter không hợp lệ / CSDL vắng / truy vấn ném / MỘT tag
+ *   không tìm thấy ⇒ 5. Cột `actuation_level` NULL ⇒ 5 (`mucTacDongKenh`). Không bao giờ trả mức thấp hơn khi không chắc.
+ */
+export async function mucKenhChoAi(adapterId: number, tagKeys: readonly string[]): Promise<MucRuiRo> {
+  try {
+    if (!Number.isInteger(adapterId) || adapterId <= 0) return 5;
+    if (!Array.isArray(tagKeys) || tagKeys.length === 0) return 5;
+    if (tagKeys.some((k) => typeof k !== "string" || k === "")) return 5;
+    const keys = [...new Set(tagKeys)];
+    const db = await getDb();
+    if (!db) return 5;
+    const rows = await db
+      .select({ tagKey: deviceTags.tagKey, actuationLevel: deviceTags.actuationLevel })
+      .from(deviceTags)
+      .where(and(eq(deviceTags.adapterId, adapterId), inArray(deviceTags.tagKey, keys)));
+    let muc: MucRuiRo = 1;
+    for (const k of keys) {
+      const r = rows.find((x) => x.tagKey === k);
+      if (!r) return 5;
+      const m = mucTacDongKenh(r);
+      if (m > muc) muc = m;
+    }
+    return muc;
+  } catch {
+    return 5;
+  }
+}
 
 /**
  * Đọc trạng thái safety-PLC cho một adapter, dùng CHÍNH đường đọc mà dispatcher
