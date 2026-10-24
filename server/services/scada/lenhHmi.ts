@@ -57,7 +57,7 @@ import type { MucRuiRo } from "../ot/aiControlGate";
 import { ackTimeoutMacDinhMs, dispatch, isOtControlEnabled, type DispatchResult, type DispatchStatus } from "../ot/commandDispatcher";
 import { isCommissioned, isCommissioningRequired } from "../ot/commissioningService";
 import { canonicalOtValue, otPayloadHash, withOtPayloadHash } from "../ot/otActionBinding";
-import { adapterOwnedByEdgeInTx } from "../ot/otAdapterOwnerGate";
+import { adapterOwnedByEdge } from "../ot/otAdapterOwnerGate";
 import { boDemDangBat, layGiaTri } from "./boDemHienTai";
 import { cheDoMay, TOOL_HMI_GHI_TAG, TOOL_HMI_STOP, type LyDoCheDo } from "./cheDoMay";
 import { loadStopPins } from "../ot/stopPin";
@@ -381,8 +381,9 @@ export async function kiemCongVaiTro(nguoi: NguoiGoiLenh, muc: MucRuiRo): Promis
  * adapter nào thuộc edge; lỗi khác ⇒ ném (không đoán "trung tâm").
  */
 export async function kiemCongEdge(db: Db, adapterId: number): Promise<Cong<object>> {
-  // R1b-1 T10 — MỘT truy vấn chủ edge cho cả dispatcher lẫn HMI (`adapterOwnedByEdgeInTx`, đọc FOR SHARE + mã edge); lỗi ngoài "thiếu 0374" ném.
-  const chu = await adapterOwnedByEdgeInTx(db, adapterId);
+  // R1b-1 T10 (fix round 1, I-3) — đây là KIỂM TRƯỚC, không giữ giao dịch: dùng bản KHÔNG KHOÁ (`adapterOwnedByEdge`), đúng như truy vấn trần trước T10
+  // (không BEGIN, không FOR SHARE). Dispatcher đọc lại dưới FOR SHARE ở bước đặt chỗ. Lỗi ngoài "thiếu 0374" ném.
+  const chu = await adapterOwnedByEdge(db, adapterId);
   if (!chu) return { ok: true };
   const { edgeNodeId, edgeCode } = chu;
   return {

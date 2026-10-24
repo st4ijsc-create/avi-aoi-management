@@ -44,3 +44,45 @@ describe("kiemCauHinhLenhHmi — kiểm khởi động", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 });
+
+describe("kiemCongEdge — KIỂM TRƯỚC không khoá (R1b-1 T10 fix round 1, I-3)", () => {
+  async function chayVoiDb(rows: Array<Record<string, unknown>>) {
+    vi.resetModules();
+    const { kiemCongEdge } = await import("./lenhHmi");
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    const dialect = new PgDialect();
+    const cau: string[] = [];
+    const transaction = vi.fn();
+    const db = {
+      execute: vi.fn(async (q: never) => {
+        cau.push(dialect.sqlToQuery(q).sql);
+        return rows;
+      }),
+      transaction,
+    };
+    return { kq: await kiemCongEdge(db as never, 7), cau, transaction, db };
+  }
+
+  it("★ chỉ MỘT truy vấn đọc trần: KHÔNG FOR SHARE, KHÔNG mở giao dịch (như trước T10)", async () => {
+    const { cau, transaction, db } = await chayVoiDb([]);
+    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(transaction).not.toHaveBeenCalled();
+    expect(cau[0]).not.toMatch(/for\s+(share|update)/i);
+    expect(cau[0]).toMatch(/edgeNodeId/);
+  });
+
+  it("trung tâm sở hữu ⇒ ok; do edge sở hữu ⇒ EDGE_CHUA_HO_TRO kèm mã edge (cùng câu như trước)", async () => {
+    expect((await chayVoiDb([{ edgeNodeId: null, edgeCode: null }])).kq).toEqual({ ok: true });
+    expect((await chayVoiDb([])).kq).toEqual({ ok: true });
+    const r = (await chayVoiDb([{ edgeNodeId: 5, edgeCode: "EDGE-A" }])).kq;
+    expect(r).toEqual({
+      ok: false,
+      tuChoi: {
+        ma: "EDGE_CHUA_HO_TRO",
+        edgeCode: "EDGE-A",
+        edgeNodeId: 5,
+        chiTiet: "Adapter do edge EDGE-A sở hữu — HMI trung tâm chưa ra lệnh qua edge (R1c).",
+      },
+    });
+  });
+});
