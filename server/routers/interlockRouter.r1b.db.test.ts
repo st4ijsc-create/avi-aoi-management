@@ -472,17 +472,41 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — interloc
           "commandTag", "commandValue", enabled, "approvedBy", "createdBy")
         VALUES (${DAU + "-gnull"}, 'machine', 'ng_rate', 'gt', 5, 'reduce_speed', ${adapterId}, 'cu', NULL, true, ${DUYET}, ${TAC_GIA}) RETURNING id`;
       const rStr = await seedLuat("gstr", "cu", "25"); // chuỗi số ⇒ Number("25") như driver
-      await seedLuat("gobj", "cu", { pct: 25 }); // không phải số ⇒ driver không làm tròn ⇒ không kiểm
+      const rObj = await seedLuat("gobj", "cu", { pct: 25 }); // không phải số ⇒ driver không làm tròn ⇒ JS không kiểm
       const mong = [r25, Number(nul.id), rStr].sort((a, b) => a - b);
       expect((await luatLenhLechLuoi(d!, cuaToi())).map((r) => r.id)).toEqual(mong);
       expect((await oversight.fetchInterlockCauHinhHong(d, cuaToi())).count).toBe(3);
-      // Truy vấn TRƯỚC TRIỂN KHAI của báo cáo §4 (SQL thuần, chép nguyên văn) cho ĐÚNG tập ấy trên hàng của tệp này.
-      const qSql = await sql.unsafe(`SELECT id::int AS id FROM (${TRUY_VAN_TRUOC_TRIEN_KHAI}) q WHERE q.name LIKE $1 ORDER BY id`, [`${DAU}-g%`]);
-      expect(qSql.map((r) => Number(r.id))).toEqual(mong);
+      // Truy vấn TRƯỚC TRIỂN KHAI của báo cáo §4 (SQL thuần, chép nguyên văn): đúng tập JS là LECH_LUOI; kiem-dinh N-1 — đối tượng ⇒ thêm MỘT hàng
+      // KHONG_PARSE_DUOC (SQL không chép bộ đọc số của JS ⇒ báo dư, không bỏ sót).
+      const qSql = await sql.unsafe(`SELECT id::int AS id, ket_luan FROM (${TRUY_VAN_TRUOC_TRIEN_KHAI}) q WHERE q.name LIKE $1 ORDER BY id`, [`${DAU}-g%`]);
+      expect(qSql.filter((r) => r.ket_luan === "LECH_LUOI").map((r) => Number(r.id))).toEqual(mong);
+      expect(qSql.filter((r) => r.ket_luan === "KHONG_PARSE_DUOC").map((r) => Number(r.id))).toEqual([rObj]);
 
       // Đối chứng: cùng luật trên tag scale 1 ⇒ không lệch (thiết bị đo nhìn thấy được scale).
       await sql`UPDATE device_tags SET scale = 1 WHERE id = ${tg.cu}`;
       expect(await oversight.fetchInterlockCauHinhHong(d, cuaToi())).toEqual({ count: 0, degraded: false });
+    });
+
+    it("★ kiem-dinh N-1 — chuỗi \"0x19\", chuỗi có TAB, NBSP, mảng [25] ⇒ SQL trước triển khai trả hàng KHONG_PARSE_DUOC (đếm là chặn); tập JS ⊆ tập SQL", async () => {
+      const d = await getDb();
+      await sql`UPDATE device_tags SET scale = 10 WHERE id = ${tg.cu}`;
+      const rHex = await seedLuat("ghex", "cu", "0x19"); // JS: Number("0x19") = 25 ⇒ OFF_STEP
+      const rTab = await seedLuat("gtab", "cu", "\t25"); // JS: 25 ⇒ OFF_STEP
+      const rNbsp = await seedLuat("gnbsp", "cu", " 30"); // JS: 30 (đúng lưới) ⇒ không đếm; SQL báo dư
+      const rMang = await seedLuat("gmang", "cu", [25]); // JS: Number([25]) = 25 ⇒ OFF_STEP
+      const rSpace = await seedLuat("gspace", "cu", " 25 "); // dấu cách đầu/cuối: SQL vẫn đọc được ⇒ LECH_LUOI
+      const js = (await luatLenhLechLuoi(d!, cuaToi())).map((r) => r.id);
+      expect(js).toEqual([rHex, rTab, rMang, rSpace].sort((a, b) => a - b));
+      const q = await sql.unsafe(
+        `SELECT id::int AS id, ket_luan, gia_tri_gui, diem_luoi_gan_nhat FROM (${TRUY_VAN_TRUOC_TRIEN_KHAI}) q WHERE q.name LIKE $1 ORDER BY id`,
+        [`${DAU}-g%`],
+      );
+      const theoId = new Map(q.map((r) => [Number(r.id), r]));
+      for (const id of [rHex, rTab, rNbsp, rMang]) {
+        expect(theoId.get(id), `luật #${id} phải có hàng KHONG_PARSE_DUOC`).toMatchObject({ ket_luan: "KHONG_PARSE_DUOC", gia_tri_gui: null, diem_luoi_gan_nhat: null });
+      }
+      expect(theoId.get(rSpace)).toMatchObject({ ket_luan: "LECH_LUOI" });
+      for (const id of js) expect(theoId.has(id), `JS đếm #${id} nhưng SQL bỏ sót`).toBe(true);
     });
 
     it("luật vừa hỏng cấu trúc (telemetry_tag thiếu machineId) vừa lệch lưới ⇒ đếm MỘT lần; khối log lúc khởi động nêu luật", async () => {
