@@ -29,3 +29,12 @@ export async function sanPhamGhiTrongPhamVi(ctx: CoDanhTinh, productModelId: num
   throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, "Sản phẩm không tồn tại");
 }
 
+
+/** Điểm đo → sản phẩm của nó (luật ở trên). Điểm không tồn tại ⇒ NOT_FOUND "measurementPoint". */
+export async function diemDoGhiTrongPhamVi(ctx: CoDanhTinh, pointDefId: number): Promise<void> {
+  const d = await db.getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const rows = (await d.execute(sql`SELECT "productModelId" AS p FROM measurement_point_defs WHERE id = ${pointDefId}`)) as unknown as Array<{ p: number | null }>;
+  if (rows.length === 0 || rows[0]?.p == null) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Điểm đo không tồn tại");
+  await sanPhamGhiTrongPhamVi(ctx, Number(rows[0].p));
+}

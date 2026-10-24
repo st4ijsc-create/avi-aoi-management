@@ -579,7 +579,8 @@ export function laNoGhi(m: MutationGhi): boolean {
  * thu hẹp phạm vi admin (vd. thêm vai "admin nhà máy" phạm vi hẹp) thì test ĐỎ và quy tắc này PHẢI BỎ. `superAdminProcedure` cùng nhóm.
  */
 export function laSanToanQuyen(m: Pick<MutationGhi, "san">): boolean {
-  return /^(adminProcedure|superAdminProcedure)$/.test(m.san);
+  // `adminDoiModel` = `adminProcedureCore.use(moduleGate("MOD_AI"))` (aiGgufRouter.ts:25) — bí danh của adminProcedure. Mỗi bí danh thêm vào đây PHẢI được kiểm là adminProcedure.
+  return /^(adminProcedure|superAdminProcedure|adminDoiModel)$/.test(m.san);
 }
 
 const SAN_QUAN_TRI = /^(adminProcedure|superAdminProcedure)$/;
