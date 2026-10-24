@@ -4057,7 +4057,8 @@
       "scadaReconnectAdapter": "reconnect the adapter",
       "scadaDisableAdapter": "disable the adapter",
       "scadaSetStubFault": "set a simulated stub fault",
-      "scadaSelectTag": "select a channel to command"
+      "scadaSelectTag": "select a channel to command",
+      "scadaKenhCapNhat": "update the channel declaration"
     },
     "field": {
       "holderUserId": "the user the key is issued to (an existing, active user)",
@@ -4070,6 +4071,8 @@
       "patch": "fields to change (patch)",
       "adapterId": "adapter (adapterId)",
       "giaTriRemote": "value meaning REMOTE (giaTriRemote)",
+      "tagKey": "tag (tagKey)",
+      "channelKind": "channel kind (channelKind)",
       "command": "command (command)",
       "inspectionTime": "inspection time (inspectionTime)",
       "completedAt": "completion time (completedAt)",
@@ -4491,7 +4494,10 @@
       "scadaDaiChiChoKenhSo": "A range and step can only be declared on a numeric channel (int / float).",
       "scadaKenhCheDoSaiMay": "The mode channel must be a tag of an adapter bound to this machine — choose one of this machine's adapters.",
       "scadaKenhCheDoAdapterTat": "The mode channel's adapter is disabled — enable it first, then declare the channel again.",
-      "scadaGiaTriRemoteSaiKieu": "The REMOTE value does not match the data type of the mode tag."
+      "scadaGiaTriRemoteSaiKieu": "The REMOTE value does not match the data type of the mode tag.",
+      "scadaKenhCheDoTagTat": "The mode channel's tag is disabled — enable the tag first, then declare the channel again.",
+      "scadaKenhGhiTrenTagKhongGhi": "This channel kind accepts writes, but the tag is not writable — make the tag writable or choose a read-only channel kind.",
+      "scadaKenhThuLai": "The channel was changed concurrently — reload and try again."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",

@@ -46,7 +46,7 @@ interface NhaMay {
 let A!: NhaMay;
 let B!: NhaMay;
 const ad = { a: 0, a2: 0, aOff: 0, b: 0, n: 0, o: 0 };
-const tg = { mode: 0, sp: 0, stop: 0, out1: 0, mode2: 0, modeB: 0, modeO: 0, txt: 0 };
+const tg = { mode: 0, sp: 0, stop: 0, out1: 0, mode2: 0, modeB: 0, modeO: 0, txt: 0, cmdStop: 0, modeOff: 0 };
 const factories: string[] = [];
 const ruleIds: number[] = [];
 let edgeNodeId = 0;
@@ -135,7 +135,7 @@ async function kenhCheDo(machineId: number) {
 }
 
 const DAT_LAI_TAG = sql`channel_kind = NULL, display_name = NULL, display_format = NULL, write_min = NULL, write_max = NULL,
-  write_step = NULL, actuation_level = NULL, deadband = NULL`;
+  write_step = NULL, actuation_level = NULL, deadband = NULL, "samplingMs" = NULL`;
 
 let dem = 0;
 const lyDo = (nhan: string) => `${RUN} ${nhan} ${++dem}`;
@@ -161,6 +161,9 @@ beforeAll(async () => {
   tg.stop = await seedTag(ad.a, "stop", "int", true);
   tg.out1 = await seedTag(ad.a, "out1", "int", true);
   tg.txt = await seedTag(ad.a, "txt", "string", true);
+  tg.cmdStop = await seedTag(ad.a, "cmd_stop", "bool", true); // tag dừng mặc định của tool AI machine_stop
+  tg.modeOff = await seedTag(ad.a, "mode_off", "int", false);
+  await dung(sql`UPDATE device_tags SET "isEnabled" = false WHERE id = ${tg.modeOff}`);
   tg.mode2 = await seedTag(ad.a2, "mode", "int", false);
   await seedTag(ad.aOff, "mode", "int", false);
   tg.modeB = await seedTag(ad.b, "mode", "int", false);
@@ -181,7 +184,11 @@ beforeEach(async () => {
   const ids = Object.values(tg);
   await dung(sql`UPDATE device_tags SET ${DAT_LAI_TAG}, stop_value = NULL, stop_pinned_by = NULL, stop_pinned_at = NULL
     WHERE id IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`);
-  await dung(sql`UPDATE device_adapters SET "edgeNodeId" = NULL WHERE id = ${ad.a}`);
+  await dung(sql`UPDATE device_adapters SET "edgeNodeId" = NULL, protocol = 'stub' WHERE id = ${ad.a}`);
+  // mỗi ca bắt đầu không có kênh chế độ nào trên máy của tệp (ca hỏng giữa chừng không kéo đổ ca sau)
+  await dung(sql`DELETE FROM scada_kenh_che_do WHERE machine_id IN (${A.mid}, ${A.mid2}, ${B.mid}, ${B.mid2})`);
+  vi.stubEnv("OT_TAG_DEADBAND_ENABLED", "false");
+  vi.stubEnv("OT_OPCUA_MONITORED_ITEMS", "true");
   if (ruleIds.length) await dung(sql`UPDATE interlock_rules SET enabled = false WHERE id IN (${sql.join(ruleIds.map((i) => sql`${i}`), sql`, `)})`);
 });
 
@@ -214,7 +221,7 @@ afterAll(async () => {
 describe("scadaKenh.danhSach — phạm vi, hình dạng, mức hiệu lực", () => {
   it("viewer A đọc kênh của adapter máy A: mucHieuLuc=5 cho kênh ra không khai mức, loại kênh suy từ writable, KHÔNG lộ endpoint/lastError", async () => {
     const ds = await viewerA.danhSach({ adapterId: ad.a });
-    expect(ds.map((r) => r.tagKey).sort()).toEqual(["mode", "out1", "sp", "stop", "txt"]);
+    expect(ds.map((r) => r.tagKey).sort()).toEqual(["cmd_stop", "mode", "mode_off", "out1", "sp", "stop", "txt"]);
     const out1 = ds.find((r) => r.tagKey === "out1")!;
     expect(out1).toMatchObject({
       tagId: tg.out1,
@@ -484,25 +491,132 @@ describe("scadaKenh.cheDo — kênh chế độ máy", () => {
     expect(await auditTheoLyDo(ld)).toHaveLength(0);
   });
 
-  it("canhBaoNguon: deadband trên tag chế độ ⇒ deadband; adapter do edge sở hữu ⇒ edge; OPC UA monitored items ⇒ bao_khi_doi", async () => {
+  it("canhBaoNguon: deadband CHỈ khi OT_TAG_DEADBAND_ENABLED bật (deadband > 0 hoặc samplingMs > 3·poll); edge; OPC UA monitored items", async () => {
     await engA.cheDo.dat({ machineId: A.mid, adapterId: ad.a, tagKey: "mode", giaTriRemote: 1, lyDo: lyDo("cb") });
     const cua = async (c: Caller, m: number) => (await c.cheDo.danhSach()).find((x) => x.machineId === m)!;
     expect((await cua(viewerA, A.mid)).canhBaoNguon).toBeNull();
     await dung(sql`UPDATE device_tags SET deadband = 0.5 WHERE id = ${tg.mode}`);
+    expect((await cua(viewerA, A.mid)).canhBaoNguon, "cờ tắt ⇒ bộ lọc không chạy ⇒ không cảnh báo").toBeNull();
+    vi.stubEnv("OT_TAG_DEADBAND_ENABLED", "true");
     expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("deadband");
+    // samplingMs: poll của adapter = 500 ⇒ ngưỡng 1500
+    await dung(sql`UPDATE device_tags SET deadband = NULL, "samplingMs" = 1500 WHERE id = ${tg.mode}`);
+    expect((await cua(viewerA, A.mid)).canhBaoNguon).toBeNull();
+    await dung(sql`UPDATE device_tags SET "samplingMs" = 1501 WHERE id = ${tg.mode}`);
+    expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("deadband");
+    vi.stubEnv("OT_TAG_DEADBAND_ENABLED", "false");
+    expect((await cua(viewerA, A.mid)).canhBaoNguon).toBeNull();
+    // OPC UA: đổi protocol của adapter (bật, đúng máy) trong chốc lát — không ai mở phiên (test không gọi startOt)
+    await dung(sql`UPDATE device_adapters SET protocol = 'opcua' WHERE id = ${ad.a}`);
+    expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("bao_khi_doi");
+    vi.stubEnv("OT_OPCUA_MONITORED_ITEMS", "false");
+    expect((await cua(viewerA, A.mid)).canhBaoNguon).toBeNull();
+    await dung(sql`UPDATE device_adapters SET protocol = 'stub' WHERE id = ${ad.a}`);
+    // edge nặng nhất
     await dung(sql`UPDATE device_adapters SET "edgeNodeId" = ${edgeNodeId} WHERE id = ${ad.a}`);
     expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("edge");
     await engA.cheDo.go({ machineId: A.mid, lyDo: lyDo("cb-go") });
+  });
 
-    // OPC UA: kênh khai thẳng bằng SQL (adapter tắt — test không mở phiên OPC UA nào)
+  it("danhSach CHE chi tiết kênh khi adapter của kênh người xem không thấy, hoặc kênh sai máy — chỉ giữ chế độ + lyDo", async () => {
+    // A.mid2 ← adapter của máy B (ngoài phạm vi viewer A); A.mid ← adapter của A.mid2 (thấy, nhưng sai máy)
     await dung(sql`INSERT INTO scada_kenh_che_do (machine_id, adapter_id, tag_key, gia_tri_remote, updated_by)
-      VALUES (${B.mid2}, ${ad.o}, 'mode', 'true'::jsonb, 1)`);
-    const o = await cua(viewerB, B.mid2);
-    expect(o).toMatchObject({ canhBaoNguon: "bao_khi_doi", cheDo: "LOCAL", lyDo: "kenh_sai_may" });
-    vi.stubEnv("OT_OPCUA_MONITORED_ITEMS", "false");
-    expect((await cua(viewerB, B.mid2)).canhBaoNguon).toBeNull();
-    vi.stubEnv("OT_OPCUA_MONITORED_ITEMS", "true");
-    // phạm vi: viewer A không thấy máy của B
-    expect((await viewerA.cheDo.danhSach()).some((x) => x.machineId === B.mid2)).toBe(false);
+      VALUES (${A.mid2}, ${ad.b}, 'mode', '1'::jsonb, 1), (${A.mid}, ${ad.a2}, 'mode', '1'::jsonb, 1)`);
+    try {
+      const ds = await viewerA.cheDo.danhSach();
+      const m2 = ds.find((x) => x.machineId === A.mid2)!;
+      expect(m2).toMatchObject({ kenh: null, kenhAn: true, canhBaoNguon: null, cheDo: "LOCAL", lyDo: "kenh_sai_may" });
+      const m1 = ds.find((x) => x.machineId === A.mid)!;
+      expect(m1).toMatchObject({ kenh: null, kenhAn: true, canhBaoNguon: null, cheDo: "LOCAL", lyDo: "kenh_sai_may" });
+      const tho = JSON.stringify([m1, m2]);
+      expect(tho).not.toContain(`"adapterId"`);
+      expect(tho).not.toContain(`"tagKey"`);
+      // admin (toàn quyền) cũng không thấy chi tiết của kênh SAI MÁY
+      expect((await admin.cheDo.danhSach()).find((x) => x.machineId === A.mid)).toMatchObject({ kenh: null, kenhAn: true });
+    } finally {
+      await dung(sql`DELETE FROM scada_kenh_che_do WHERE machine_id IN (${A.mid}, ${A.mid2})`);
+    }
+  });
+
+  it("dat: tag TẮT ⇒ từ chối (c5); adapter do edge sở hữu ⇒ KHÔNG chặn, chỉ cảnh báo", async () => {
+    const e = await loiCua(engA.cheDo.dat({ machineId: A.mid, adapterId: ad.a, tagKey: "mode_off", giaTriRemote: 1, lyDo: lyDo("tagtat") }));
+    expect(e).toMatchObject({ code: "BAD_REQUEST", appCode: "INVALID_VALUE", appParams: { field: "tagKey", reason: "scadaKenhCheDoTagTat" } });
+    expect(await kenhCheDo(A.mid)).toBeNull();
+    await dung(sql`UPDATE device_adapters SET "edgeNodeId" = ${edgeNodeId} WHERE id = ${ad.a}`);
+    await engA.cheDo.dat({ machineId: A.mid, adapterId: ad.a, tagKey: "mode", giaTriRemote: 1, lyDo: lyDo("edge") });
+    expect(await kenhCheDo(A.mid)).toMatchObject({ adapterId: ad.a });
+    expect((await viewerA.cheDo.danhSach()).find((x) => x.machineId === A.mid)!.canhBaoNguon).toBe("edge");
+    await engA.cheDo.go({ machineId: A.mid, lyDo: lyDo("edge-go") });
+  });
+
+  it("go: audit lỗi sau khi chèn ⇒ hàng kênh còn nguyên, không có audit lẻ", async () => {
+    await engA.cheDo.dat({ machineId: A.mid, adapterId: ad.a, tagKey: "mode", giaTriRemote: 1, lyDo: lyDo("go-hong-dat") });
+    const ld = lyDo("go-hong");
+    H.hongSauAudit = ld;
+    await loiCua(engA.cheDo.go({ machineId: A.mid, lyDo: ld }));
+    expect(await kenhCheDo(A.mid)).toMatchObject({ adapterId: ad.a, tagKey: "mode" });
+    expect(await auditTheoLyDo(ld)).toHaveLength(0);
+    H.hongSauAudit = "";
+    await engA.cheDo.go({ machineId: A.mid, lyDo: lyDo("go-hong-don") });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("fix round 1 — canhBaoKenhDung, loại kênh ghi trên tag không ghi, thứ tự khoá", () => {
+  it("canhBaoKenhDung: tag dừng mặc định (cmd_stop) chưa khai mức VÀ chưa ghim ⇒ true; khai mức hoặc ghim ⇒ false; tag khác ⇒ false", async () => {
+    const dong = async (k: string) => (await viewerA.danhSach({ adapterId: ad.a })).find((r) => r.tagKey === k)!;
+    expect((await dong("cmd_stop")).canhBaoKenhDung).toBe(true);
+    expect((await dong("out1")).canhBaoKenhDung).toBe(false);
+    expect((await dong("stop")).canhBaoKenhDung).toBe(false); // tên khác — không đoán theo mẫu tên
+    await engA.capNhat({ tagId: tg.cmdStop, patch: { actuationLevel: 3 }, lyDo: lyDo("muc") });
+    expect((await dong("cmd_stop")).canhBaoKenhDung).toBe(false);
+    await dung(
+      sql`UPDATE device_tags SET actuation_level = NULL, stop_value = 'true'::jsonb, stop_pinned_by = 't', stop_pinned_at = now() WHERE id = ${tg.cmdStop}`,
+    );
+    expect((await dong("cmd_stop")).canhBaoKenhDung).toBe(false);
+  });
+
+  it("capNhat: loại kênh GHI (input_output / output / calculated_output) trên tag writable=false ⇒ từ chối; loại chỉ đọc ⇒ OK", async () => {
+    for (const channelKind of ["input_output", "output", "calculated_output"] as const) {
+      const e = await loiCua(engA.capNhat({ tagId: tg.mode, patch: { channelKind }, lyDo: lyDo("ro") }));
+      expect(e, channelKind).toMatchObject({ code: "BAD_REQUEST", appParams: { field: "channelKind", reason: "scadaKenhGhiTrenTagKhongGhi" } });
+    }
+    await engA.capNhat({ tagId: tg.mode, patch: { channelKind: "calculated" }, lyDo: lyDo("ro-ok") });
+    expect((await cotTag(tg.mode)).channelKind).toBe("calculated");
+  });
+
+  it("thứ tự khoá LUẬT → TAG: giao dịch giữ luật FOR UPDATE rồi xin tag FOR SHARE (khuôn interlockRouter.update) KHÔNG tạo vòng chờ với capNhat", async () => {
+    const [r] = await dung(sql`INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action,
+        "targetAdapterId", "commandTag", "commandValue", enabled, "approvedBy", "requiresHumanConfirm")
+      VALUES (${RUN + "-khoa"}, 'machine', 'ng_rate', 'gt', 5, 'reduce_speed', ${ad.a}, 'sp', '50'::jsonb, true, 1, false) RETURNING id`);
+    const ruleId = Number(r.id);
+    ruleIds.push(ruleId);
+    const postgres = (await import("postgres")).default;
+    const raw = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+    try {
+      let tagLock = "";
+      let capNhatXong: unknown;
+      await raw.begin(async (t) => {
+        await t`SET LOCAL lock_timeout = '5s'`;
+        await t`SELECT id FROM interlock_rules WHERE id = ${ruleId} FOR UPDATE`;
+        void engA.capNhat({ tagId: tg.sp, patch: { writeMin: 0, writeMax: 100 }, lyDo: lyDo("khoa") }).then(
+          (v) => (capNhatXong = v),
+          (e) => (capNhatXong = e),
+        );
+        await new Promise((res) => setTimeout(res, 600)); // capNhat đã chạy tới chỗ chờ khoá
+        try {
+          await t`SELECT id FROM device_tags WHERE id = ${tg.sp} FOR SHARE`;
+          tagLock = "ok";
+        } catch (e) {
+          tagLock = String((e as { code?: string }).code ?? e);
+        }
+      }).catch(() => undefined); // giao dịch bị huỷ (vòng chờ) ⇒ tagLock đã ghi mã lỗi
+      await vi.waitFor(() => expect(capNhatXong).toBeDefined(), { timeout: 10_000 });
+      expect(tagLock).toBe("ok");
+      expect(capNhatXong).toMatchObject({ changed: true });
+      expect(await cotTag(tg.sp)).toMatchObject({ writeMin: 0, writeMax: 100 });
+    } finally {
+      await raw.end({ timeout: 5 });
+    }
   });
 });

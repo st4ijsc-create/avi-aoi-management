@@ -186,6 +186,7 @@ import { getCorrelationId } from "../observability/correlation";
 import { adapterOwnedByEdgeInTx } from "./otAdapterOwnerGate"; // doc 81 Đợt 10 D fix review 3 (scan #73)
 // doc 81 Đợt 1D Task 2 — per-tag pinned STOP values (mig 0362, Task 1).
 import { loadStopPins, matchPinnedStop, stopPinsFromTagRows, validateStopValue, type MatchPinnedStopResult, type StopPin, type StopPinTagRow } from "./stopPin";
+import { giaTriLenhInterlock } from "../interlock/giaTriLenh"; // R1a T12 fix 1 (c1): giá trị luật GỬI = giá trị so ở đây = giá trị kiểm lúc cấu hình
 import { cachedStopPinPresence } from "./stopPinPresence"; // doc 81 Đợt 12 final fix wave residual (R-12-f item 1)
 import { otStopEpochSyncSeesPeers } from "./otStopEpochSync"; // R-12-f item 1
 
@@ -2205,7 +2206,7 @@ async function verifyInterlockAuthorization(
   if (!rule.commandTag || input.writes[0].tagKey !== rule.commandTag) {
     return { ok: false, reason: "INTERLOCK_TAG_MISMATCH", detail: "Rule commandTag does not match the written tag" };
   }
-  if (canonicalOtValue(input.writes[0].value) !== canonicalOtValue(rule.commandValue ?? true)) {
+  if (canonicalOtValue(input.writes[0].value) !== canonicalOtValue(giaTriLenhInterlock(rule))) {
     return { ok: false, reason: "INTERLOCK_VALUE_MISMATCH", detail: "Written value differs from the rule's commandValue" };
   }
   if (input.commandType !== rule.action) {

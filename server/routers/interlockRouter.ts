@@ -338,16 +338,20 @@ export const interlockRouter = router({
           sourceKey: "sourceKey" in rest ? rest.sourceKey ?? null : existing.sourceKey,
         });
         // SCADA R1a Task 12 — gộp patch lên existing: commandValue / đích sau khi sửa phải ghi được trên kênh đích.
-        await assertLenhTrongDaiKenh(
-          tx,
-          {
-            action: mergedAction,
-            targetAdapterId: mergedTargetAdapterId,
-            commandTag: mergedCommandTag,
-            commandValue: "commandValue" in rest ? rest.commandValue ?? null : existing.commandValue,
-          },
-          id,
-        );
+        // fix round 1 (phán quyết c2): CHỈ khi patch chạm commandValue / targetAdapterId / commandTag — sửa mô tả (hay trường khác) của một
+        // luật đang lệch kênh vẫn được (MOC vẫn tắt + bỏ duyệt nó); approve / enable LUÔN kiểm nên luật lệch không bao giờ bật được.
+        if ("commandValue" in rest || "targetAdapterId" in rest || "commandTag" in rest) {
+          await assertLenhTrongDaiKenh(
+            tx,
+            {
+              action: mergedAction,
+              targetAdapterId: mergedTargetAdapterId,
+              commandTag: mergedCommandTag,
+              commandValue: "commandValue" in rest ? rest.commandValue ?? null : existing.commandValue,
+            },
+            id,
+          );
+        }
 
         const patch: Record<string, unknown> = { ...rest, updatedAt: new Date(), updatedBy: ctx.user.id };
         if (threshold !== undefined) patch.threshold = threshold != null ? String(threshold) : null;

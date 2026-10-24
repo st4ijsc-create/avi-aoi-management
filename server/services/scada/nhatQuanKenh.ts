@@ -16,10 +16,11 @@
  * ⚠ `kenhDaKhai` là BẢN SAO của `commandDispatcher.kenhDaKhaiGhi` (không import: `stopPin.ts` nhập tệp này và `commandDispatcher.ts` nhập
  *   `stopPin.ts` ⇒ vòng import). Test `stopPin.dai.r1a.db.test.ts` so hai bản trên mọi tổ hợp NULL/khác NULL.
  */
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { deviceTags, interlockRules, type DeviceTag } from "../../../drizzle/schema";
 import type { getDb } from "../../db/connection";
 import { kiemGiaTriGhi, laKenhGhi } from "./kenhScada";
+import { giaTriLenhInterlock } from "../interlock/giaTriLenh";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -50,10 +51,11 @@ export function luatCoGhiLenh(action: string): boolean {
   return action !== "alert";
 }
 
-/** Giá trị luật interlock thật sự ghi: `interlockEngine` gửi `rule.commandValue ?? true` (dispatcher so đúng giá trị đó). */
-export function giaTriLenhInterlock(commandValue: unknown): unknown {
-  return commandValue ?? true;
-}
+/**
+ * Giá trị luật interlock THẬT SỰ GỬI — fix round 1 (c1): CHÍNH hàm `interlockEngine` dùng khi dispatch và `dispatch()` dùng khi so
+ * (`server/services/interlock/giaTriLenh.ts`; luật không khai giá trị ⇒ `true`). Re-export để nơi gọi cũ giữ nguyên.
+ */
+export { giaTriLenhInterlock };
 
 /** Tham số hiển thị của một cận (NULL ⇒ "—", khuôn `scadaCommandsRouter`). */
 export const soHienThi = (n: number | null | undefined): string | number => (n == null ? "—" : n);
@@ -61,30 +63,39 @@ export const soHienThi = (n: number | null | undefined): string | number => (n =
 export type MaViPham = Exclude<KetQuaNhatQuan, { ok: true }>["ma"];
 export type ViPhamInterlock = { ruleId: number; ruleName: string; ma: MaViPham; chiTiet: string };
 
+export type LuatNhamTag = { id: number; name: string; action: string; enabled: boolean; commandValue: unknown };
+
 /**
- * Luật interlock ĐANG BẬT, có ghi lệnh, nhắm tới (adapterId, tagKey) mà `commandValue` không ghi được lên khai báo `tag` mới. Đọc
- * `FOR SHARE` (luật đang bật không đổi giữa lúc kiểm và lúc thay đổi kênh commit). Trả vi phạm ĐẦU TIÊN (theo id), không có ⇒ null.
+ * fix round 1 (minor 1, thứ tự khoá) — khoá `FOR SHARE` MỌI luật interlock nhắm (adapterId, tagKey), BẤT KỂ đang bật hay không, theo id.
+ * `scadaKenh.capNhat` gọi hàm này TRƯỚC khi khoá tag `FOR UPDATE` ⇒ cùng thứ tự LUẬT → TAG với `interlockRouter` (khoá luật FOR UPDATE rồi
+ * tag FOR SHARE) ⇒ không có vòng chờ (40P01). Khoá cả luật đang tắt: `enable` (đổi tắt → bật, KHÔNG đổi đích) giữ luật FOR UPDATE ⇒ ta
+ * chờ nó commit rồi đọc bản mới nhất (READ COMMITTED đánh giá lại hàng bị khoá). `create`/`update` không bao giờ để luật ở trạng thái bật
+ * (tạo luôn tắt; sửa luật đã duyệt/bật ⇒ MOC tắt) nên một luật đổi đích sang tag này không thể "bật" mà lọt khỏi tập khoá.
  */
-export async function viPhamInterlockTx(
-  tx: DbHoacTx,
-  e: { adapterId: number; tagKey: string; tag: KenhNhatQuan },
-): Promise<ViPhamInterlock | null> {
-  if (!kenhDaKhai(e.tag)) return null;
-  const rows = await tx
-    .select({ id: interlockRules.id, name: interlockRules.name, commandValue: interlockRules.commandValue })
+export async function khoaLuatNhamTagTx(tx: DbHoacTx, e: { adapterId: number; tagKey: string }): Promise<LuatNhamTag[]> {
+  return tx
+    .select({
+      id: interlockRules.id,
+      name: interlockRules.name,
+      action: interlockRules.action,
+      enabled: interlockRules.enabled,
+      commandValue: interlockRules.commandValue,
+    })
     .from(interlockRules)
-    .where(
-      and(
-        eq(interlockRules.enabled, true),
-        eq(interlockRules.targetAdapterId, e.adapterId),
-        eq(interlockRules.commandTag, e.tagKey),
-        ne(interlockRules.action, "alert"),
-      ),
-    )
+    .where(and(eq(interlockRules.targetAdapterId, e.adapterId), eq(interlockRules.commandTag, e.tagKey)))
     .orderBy(interlockRules.id)
     .for("share");
-  for (const r of rows) {
-    const kq = kiemNhatQuanKenh(e.tag, giaTriLenhInterlock(r.commandValue));
+}
+
+/**
+ * THUẦN — luật ĐANG BẬT, có ghi lệnh (không phải `alert`) trong `luat` mà giá trị GỬI (`giaTriLenhInterlock`) không ghi được trên khai báo
+ * `tag` mới. Trả vi phạm ĐẦU TIÊN (theo thứ tự đầu vào), không có ⇒ null.
+ */
+export function viPhamInterlock(luat: ReadonlyArray<LuatNhamTag>, tag: KenhNhatQuan): ViPhamInterlock | null {
+  if (!kenhDaKhai(tag)) return null;
+  for (const r of luat) {
+    if (r.enabled !== true || !luatCoGhiLenh(r.action)) continue;
+    const kq = kiemNhatQuanKenh(tag, giaTriLenhInterlock(r));
     if (!kq.ok) return { ruleId: r.id, ruleName: r.name, ma: kq.ma, chiTiet: kq.chiTiet };
   }
   return null;
@@ -115,6 +126,6 @@ export async function kiemLenhInterlockTx(
     .limit(1)
     .for("share");
   if (!tag) return null;
-  const kq = kiemNhatQuanKenh(tag, giaTriLenhInterlock(luat.commandValue));
+  const kq = kiemNhatQuanKenh(tag, giaTriLenhInterlock(luat));
   return kq.ok ? null : { tag, ma: kq.ma, chiTiet: kq.chiTiet };
 }

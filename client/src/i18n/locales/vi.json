@@ -4057,7 +4057,8 @@
       "scadaReconnectAdapter": "kết nối lại adapter",
       "scadaDisableAdapter": "tạm tắt adapter",
       "scadaSetStubFault": "đặt lỗi mô phỏng cho stub",
-      "scadaSelectTag": "chọn kênh để ra lệnh"
+      "scadaSelectTag": "chọn kênh để ra lệnh",
+      "scadaKenhCapNhat": "cập nhật khai báo kênh"
     },
     "field": {
       "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",
@@ -4070,6 +4071,8 @@
       "patch": "nội dung cần đổi (patch)",
       "adapterId": "adapter (adapterId)",
       "giaTriRemote": "giá trị nghĩa là REMOTE (giaTriRemote)",
+      "tagKey": "tag (tagKey)",
+      "channelKind": "loại kênh (channelKind)",
       "command": "lệnh (command)",
       "inspectionTime": "thời điểm kiểm tra (inspectionTime)",
       "completedAt": "thời điểm hoàn tất (completedAt)",
@@ -4483,7 +4486,10 @@
       "scadaDaiChiChoKenhSo": "Dải và bước chỉ khai được cho kênh số (int / float).",
       "scadaKenhCheDoSaiMay": "Kênh chế độ phải là tag của một adapter gắn đúng máy này — chọn adapter của máy.",
       "scadaKenhCheDoAdapterTat": "Adapter của kênh chế độ đang tắt — bật adapter trước rồi khai lại.",
-      "scadaGiaTriRemoteSaiKieu": "Giá trị REMOTE không đúng kiểu dữ liệu của tag chế độ."
+      "scadaGiaTriRemoteSaiKieu": "Giá trị REMOTE không đúng kiểu dữ liệu của tag chế độ.",
+      "scadaKenhCheDoTagTat": "Tag của kênh chế độ đang tắt — bật tag trước rồi khai lại.",
+      "scadaKenhGhiTrenTagKhongGhi": "Loại kênh này nhận lệnh ghi, nhưng tag không cho phép ghi — bật \"cho phép ghi\" cho tag hoặc chọn loại kênh chỉ đọc.",
+      "scadaKenhThuLai": "Kênh vừa bị thay đổi đồng thời — tải lại rồi thử lại."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",

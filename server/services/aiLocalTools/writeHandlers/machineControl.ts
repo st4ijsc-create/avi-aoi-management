@@ -18,6 +18,7 @@
  */
 
 import { z } from "zod";
+import { TAG_LENH_MAC_DINH } from "../../ot/tagLenhMacDinh";
 import { DbUnavailableError } from "../../../_core/dbErrors";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
@@ -232,11 +233,12 @@ interface LifecycleCfg {
   descVi: string;
 }
 
+// Tên tag mặc định sống ở `ot/tagLenhMacDinh.ts` (M12 nhận ra kênh dừng bằng CHÍNH hằng này — R1a T12 fix round 1).
 const lifecycle: LifecycleCfg[] = [
-  { name: "machine_start", verb: "start", defaultTag: "cmd_start", triggers: ["khởi động máy", "chạy máy", "start machine", "启动机器"], descVi: "khởi động" },
-  { name: "machine_stop", verb: "stop", defaultTag: "cmd_stop", triggers: ["dừng máy", "stop machine", "停止机器"], descVi: "dừng" },
-  { name: "machine_pause", verb: "pause", defaultTag: "cmd_pause", triggers: ["tạm dừng máy", "pause machine", "暂停机器"], descVi: "tạm dừng" },
-  { name: "machine_reset", verb: "reset", defaultTag: "cmd_reset", triggers: ["reset máy", "đặt lại máy", "reset machine", "重置机器"], descVi: "đặt lại (reset)" },
+  { name: "machine_start", verb: "start", defaultTag: TAG_LENH_MAC_DINH.start, triggers: ["khởi động máy", "chạy máy", "start machine", "启动机器"], descVi: "khởi động" },
+  { name: "machine_stop", verb: "stop", defaultTag: TAG_LENH_MAC_DINH.stop, triggers: ["dừng máy", "stop machine", "停止机器"], descVi: "dừng" },
+  { name: "machine_pause", verb: "pause", defaultTag: TAG_LENH_MAC_DINH.pause, triggers: ["tạm dừng máy", "pause machine", "暂停机器"], descVi: "tạm dừng" },
+  { name: "machine_reset", verb: "reset", defaultTag: TAG_LENH_MAC_DINH.reset, triggers: ["reset máy", "đặt lại máy", "reset machine", "重置机器"], descVi: "đặt lại (reset)" },
 ];
 
 for (const cfg of lifecycle) {

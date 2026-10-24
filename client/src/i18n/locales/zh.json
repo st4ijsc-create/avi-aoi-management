@@ -4049,7 +4049,8 @@
       "scadaReconnectAdapter": "重新连接适配器",
       "scadaDisableAdapter": "暂停适配器",
       "scadaSetStubFault": "为模拟器设置故障",
-      "scadaSelectTag": "选择要下达命令的通道"
+      "scadaSelectTag": "选择要下达命令的通道",
+      "scadaKenhCapNhat": "更新通道声明"
     },
     "field": {
       "holderUserId": "密钥的发放对象（必须是现有的在职用户）",
@@ -4062,6 +4063,8 @@
       "patch": "要修改的字段（patch）",
       "adapterId": "适配器（adapterId）",
       "giaTriRemote": "表示 REMOTE 的值（giaTriRemote）",
+      "tagKey": "标签（tagKey）",
+      "channelKind": "通道类型（channelKind）",
       "command": "命令（command）",
       "inspectionTime": "检测时间（inspectionTime）",
       "completedAt": "完成时间（completedAt）",
@@ -4483,7 +4486,10 @@
       "scadaDaiChiChoKenhSo": "范围和步长只能为数值通道（int / float）声明。",
       "scadaKenhCheDoSaiMay": "模式通道必须是绑定到本机的适配器的标签——请选择本机的适配器。",
       "scadaKenhCheDoAdapterTat": "模式通道的适配器已停用——请先启用适配器，再重新声明。",
-      "scadaGiaTriRemoteSaiKieu": "REMOTE 值与模式标签的数据类型不符。"
+      "scadaGiaTriRemoteSaiKieu": "REMOTE 值与模式标签的数据类型不符。",
+      "scadaKenhCheDoTagTat": "模式通道的标签已停用——请先启用标签，再重新声明。",
+      "scadaKenhGhiTrenTagKhongGhi": "该通道类型接受写入，但标签不可写——请将标签设为可写，或选择只读通道类型。",
+      "scadaKenhThuLai": "通道刚被并发修改——请刷新后重试。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",

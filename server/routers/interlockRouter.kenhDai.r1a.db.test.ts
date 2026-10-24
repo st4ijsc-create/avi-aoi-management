@@ -60,6 +60,8 @@ describe.skipIf(!DB_URL)("interlockRouter — commandValue ↔ dải/bước c�
       VALUES (${adapterId}, 'cu', 'addr-cu', 'float', true, true)`; // không khai kênh
     await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", channel_kind)
       VALUES (${adapterId}, 'doc', 'addr-doc', 'float', true, true, 'input')`;
+    await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", channel_kind)
+      VALUES (${adapterId}, 'b', 'addr-b', 'bool', true, true, 'output')`;
   }, 60_000);
 
   afterAll(async () => {
@@ -136,5 +138,36 @@ describe.skipIf(!DB_URL)("interlockRouter — commandValue ↔ dải/bước c�
     await sql`UPDATE interlock_rules SET "commandValue" = '50'::jsonb WHERE id = ${b.id}`;
     const tokB2 = (await caller(TAC_GIA).list()).find((r) => r.id === Number(b.id))!.versionToken;
     expect((await caller(TAC_GIA).enable({ id: Number(b.id), expectedVersion: tokB2 })).enabled).toBe(true);
+  });
+
+  it("c1: kiểm GIÁ TRỊ ENGINE GỬI — commandValue null trên kênh bool đã khai ⇒ OK (engine gửi true); trên kênh float ⇒ từ chối", async () => {
+    const ok = await caller(TAC_GIA).create(input("c1-bool", { commandTag: "b", commandValue: null }));
+    ruleIds.push(ok.id);
+    expect(ok.id).toBeGreaterThan(0);
+    expect(await loiCua(caller(TAC_GIA).create(input("c1-float", { commandValue: null })))).toMatchObject({
+      appCode: "INTERLOCK_NGOAI_DAI",
+      appParams: expect.objectContaining({ lyDo: "TYPE_MISMATCH" }),
+    });
+  });
+
+  it("c2: update CHỈ kiểm khi patch chạm commandValue / targetAdapterId / commandTag — sửa mô tả luật lệch kênh được; approve / enable vẫn chặn", async () => {
+    const [a] = await sql`INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action, "targetAdapterId",
+        "commandTag", "commandValue", "createdBy")
+      VALUES (${DAU + "-c2"}, 'machine', 'ng_rate', 'gt', 5, 'reduce_speed', ${adapterId}, 'sp', '500'::jsonb, ${TAC_GIA}) RETURNING id`;
+    const id = Number(a.id);
+    ruleIds.push(id);
+    expect((await caller(TAC_GIA).update({ id, description: "chỉ sửa mô tả" })).description).toBe("chỉ sửa mô tả");
+    expect((await caller(TAC_GIA).update({ id, threshold: 7 })).threshold).toBeTruthy();
+    for (const patch of [{ commandValue: 501 }, { commandTag: "sp" }, { targetAdapterId: adapterId }]) {
+      expect(await loiCua(caller(TAC_GIA).update({ id, ...patch })), JSON.stringify(patch)).toMatchObject({ appCode: "INTERLOCK_NGOAI_DAI" });
+    }
+    const tok = (await caller(DUYET).list()).find((r) => r.id === id)!.versionToken;
+    expect(await loiCua(caller(DUYET).approve({ id, expectedVersion: tok }))).toMatchObject({ appCode: "INTERLOCK_NGOAI_DAI" });
+    await sql`UPDATE interlock_rules SET "approvedBy" = ${DUYET} WHERE id = ${id}`;
+    const tok2 = (await caller(TAC_GIA).list()).find((r) => r.id === id)!.versionToken;
+    expect(await loiCua(caller(TAC_GIA).enable({ id, expectedVersion: tok2 }))).toMatchObject({ appCode: "INTERLOCK_NGOAI_DAI" });
+    expect((await sql`SELECT enabled FROM interlock_rules WHERE id = ${id}`)[0].enabled).toBe(false);
+    // sửa giá trị về trong dải ⇒ được
+    expect((await caller(TAC_GIA).update({ id, commandValue: 50 })).commandValue).toBe(50);
   });
 });
