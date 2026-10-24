@@ -862,6 +862,41 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
   s/lượt; commit trống OS thấp nhất 28,0 GB. Đối chứng không chủ ý: 35B đang chạy TRƯỚC đợt (dựng bằng đường sản phẩm cũ, không truyền
   `--cache-ram` ⇒ 8192) có Private 27,75 GB = nền 23,46 + 4,3 GB cache. :8091 về 35B qua doi-model; log có dấu giờ
   `ls-<model>-20261024-*.err.log` ✓. Áp vào sản phẩm khi dieu-phoi gộp main và :8091 của :3000 khởi động lại (watchdog/đổi model).
+- **(B) `--ctx-checkpoints` — CỔNG (viết TRƯỚC khi chạy, 2026-10-24; chờ dieu-phoi duyệt).** Bối cảnh (spec đọc ảnh §6, đo 2026-10-24): model hybrid
+  lưu "context checkpoint" khi các lượt CHUNG tiền tố (câu hệ thống / lịch sử hội thoại) — mỗi cái 149,6 MiB (27B) / 62,8 MiB (35B), trần
+  mặc định **32/slot** ⇒ tới **4,8 GB** commit ở 27B (2,0 GB ở 35B); có thể góp vào sự cố 40 GB 22:20 (27B, hội thoại dài). Checkpoint là thứ cho
+  model hybrid TÁI DÙNG tiền tố ("restored context checkpoint") ⇒ hạ N có thể làm lượt sau phải xử lý lại prompt dài.
+  - **Đo:** 27B (+ mmproj, `--cache-ram 0` — cấu hình nền mới) qua `doi-model.ps1 -ThemArgs @('--ctx-checkpoints','N')`, thứ tự **N = 32 → 16 → 8 → 32**
+    (lượt 32 cuối đối chứng trôi). Mỗi N: tải hội thoại nhiều lượt có tái dùng tiền tố `scripts/ai-eval/bo-nho/tai-hoi-thoai.mjs` — mỗi vòng
+    pha DÀI một cuộc **40 lượt liên tiếp** (checkpoint tích luỹ vượt trần N; prompt tới ~30k token) + pha XEN KẼ 3 cuộc × 6 lượt; mỗi cuộc một
+    câu hệ thống ~1,5k token riêng, mỗi lượt thêm một đoạn mã ~2k ký tự + câu hỏi, lịch sử tích luỹ (nghĩ tắt, ra ≤ 400); **2 vòng** (nội dung
+    khác nhau) mỗi N; lượt 32 cuối 1 vòng. Thử trên 35B (2026-10-24): lượt liên tiếp ⇒ prompt_n ~1,3k (tái dùng); đổi cuộc ⇒ cả prompt. Mẫu Private 10 s + VRAM 2 s +
+    `canh-bo-nho` suốt đợt (~1,5 h). Ghi `timings.prompt_n` (token prompt PHẢI xử lý lại) và thời gian mỗi lượt từ phản hồi llama-server.
+  - **ĐẠT cho một N < 32 khi:** (1) Private max − mẫu đầu sau nạp ≤ N × 149,6 MiB + 1,0 GB; (2) trung vị thời gian/lượt PHA DÀI ≤ 1,10 × trung vị của
+    N=32 (gộp hai lượt 32), pha xen kẽ báo kèm; (3) tổng `prompt_n` ≤ 1,25 × của N=32 (cùng số vòng); (4) 100 % HTTP 200, llama-server không chết. **Chọn N nhỏ nhất ĐẠT**; không N nào
+    đạt ⇒ giữ 32 (báo số). Đổi mặc định (`LLAMA_SERVER_CTX_CHECKPOINTS` trong `start-llama-server.ps1`) chỉ sau khi dieu-phoi duyệt số.
+  - **Bổ sung (dieu-phoi duyệt 2026-10-24, viết TRƯỚC khi chạy):** khoá áp cho CẢ 35B ⇒ sau khi chọn N trên 27B, vòng XÁC NHẬN trên 35B + mmproj:
+    pha DÀI (40 lượt liên tiếp), N đã chọn so với 32, mỗi bên 1 vòng (thứ tự 32 → N). Kiểm (2)(3)(4) như trên; (1) dùng 62,8 MiB/checkpoint.
+    35B không đạt ⇒ đề xuất N theo model (27B = N, 35B = 32) qua `tim-mmproj.ps1`/`start-llama-server.ps1`. Báo số; chưa đổi mặc định.
+  - **KẾT QUẢ (2026-10-24 09:26–09:50, sau khi luong-ui báo xong e2e; `bash scripts/ai-eval/bo-nho/do-ctx-checkpoints.sh` rồi `CHI_35B=1 N_35B=8 …`,
+    `tmp/bo-nho/ctxcp/`, canh-bo-nho suốt đợt; mọi dòng lệnh kiểm có `--cache-ram 0 --mmproj … --ctx-checkpoints N`):**
+
+    | cấu hình | lượt (lỗi) | Private tăng · trần (1) | pha DÀI trung vị | tổng prompt_n | checkpoint max · restored |
+    |---|---|---|---|---|---|
+    | 27B N=32 (a) | 116 (0) | **5,02 GB** | 1.911 ms | 270.613 | 32/32 · 78 |
+    | 27B N=16 | 116 (0) | 2,67 ≤ 3,39 ✓ | 1.849 (0,981×) ✓ | 270.418 (0,999×) ✓ | 16/16 · 78 |
+    | 27B **N=8** | 116 (0) | **1,50 ≤ 2,17 ✓** | 1.821,5 (**0,967×**) ✓ | 270.259 (**0,999×**) ✓ | 8/8 · 78 |
+    | 27B N=32 (b, trôi) | 58 (0) | 5,02 GB | 1.842 ms | 131.149 (1 vòng) | 32/32 · 39 |
+    | 35B N=32 | 40 (0) | 2,32 GB | 752 ms | 55.335 | 32/32 · 39 |
+    | 35B **N=8** | 40 (0) | **0,85 ≤ 1,49 ✓** | 757 (**1,007×**) ✓ | 55.444 (**1,002×**) ✓ | 8/8 · 39 |
+
+    Trung vị pha DÀI N=32 gộp (a)+(b) = 1.884 ms. ⇒ **N=8 ĐẠT cả 4 tiêu chí ở 27B VÀ ở vòng xác nhận 35B** (N nhỏ nhất trong bộ đo). Lý do không mất
+    tốc độ: hội thoại tuyến tính chỉ khôi phục checkpoint MỚI NHẤT (`restored` bằng nhau ở mọi N) — 24 checkpoint cũ hơn của N=32 là commit
+    chết; đổi cuộc thì checkpoint của cuộc trước vô dụng ở mọi N. Tiết kiệm: 27B −3,5 GB commit đỉnh (5,02 → 1,50), 35B −1,5 GB. Không
+    có trôi (32 a/b cùng 5,02 GB). Commit trống thấp nhất 18,6 GB. **Đề xuất (chờ duyệt, CHƯA đổi):** `LLAMA_SERVER_CTX_CHECKPOINTS` mặc
+    định 8 cho cả hai model trong `start-llama-server.ps1` (+ `doi-model.ps1 -CtxCheckpoints 8`), `.env.example` ghi cách đặt lại 32.
+  - Phối hợp: luong-ui chạy xong e2e extension TRƯỚC khi giữ khe; nhắc kiem-dinh/luong-ui boot dev với `AI_KB_WARM_ON_BOOT=false
+    AI_ORCHESTRATION_ENABLED=false` trong đợt; cuối đợt :8091 về 35B + mmproj (mặc định).
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
