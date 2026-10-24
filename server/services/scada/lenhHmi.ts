@@ -60,7 +60,7 @@ import { canonicalOtValue, otPayloadHash, withOtPayloadHash } from "../ot/otActi
 import { adapterOwnedByEdge } from "../ot/otAdapterOwnerGate";
 import { boDemDangBat, layGiaTri } from "./boDemHienTai";
 import { cheDoMay, TOOL_HMI_GHI_TAG, TOOL_HMI_STOP, type LyDoCheDo } from "./cheDoMay";
-import { loadStopPins } from "../ot/stopPin";
+import { loadStopPinsHmi, MUC_TOI_DA_STOP_HMI, type GhimBoQuaHmi } from "../ot/stopPin";
 import { recordAuditEvent } from "../audit/controlAuditService";
 import { OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS } from "../ot/otDeviceWrite";
 import { withDeadline } from "../ot/drivers/boundedClose";
@@ -122,7 +122,9 @@ export type MaTuChoiYeuCau =
   | "TOTP_TAM_KHOA"
   | "TOTP_KHONG_KIEM_DUOC"
   // R1b-1 Task 2 (STOP HMI một bước)
-  | "CHUA_GHIM_STOP";
+  | "CHUA_GHIM_STOP"
+  // kiem-dinh R1b-1 H1 (b) — máy CÓ ghim nhưng mọi ghim nằm trên tag mức tác động > 1 (STOP HMI bỏ qua tất cả)
+  | "GHIM_MUC_CAO";
 
 /** Một lần từ chối. `thongTin` là tham số cho appError (chỉ nguyên thuỷ) — router chọn câu i18n theo `ma`. */
 export type TuChoiYeuCau =
@@ -136,7 +138,8 @@ export type TuChoiYeuCau =
   | { ma: "TOTP_TAM_KHOA"; chiTiet: string; level: MucRuiRo; conLaiMs: number }
   | { ma: "EDGE_CHUA_HO_TRO"; chiTiet: string; edgeCode: string; edgeNodeId: number }
   | { ma: "MODE_LOCAL"; chiTiet: string; lyDo: LyDoCheDo }
-  | { ma: "DANG_DUOC_CHON"; chiTiet: string; boiUserId: number; boiTen: string; hetHanLuc: string };
+  | { ma: "DANG_DUOC_CHON"; chiTiet: string; boiUserId: number; boiTen: string; hetHanLuc: string }
+  | { ma: "GHIM_MUC_CAO"; chiTiet: string; soTag: number; tagKeys: string };
 
 export type GiaTriLenh = number | boolean | string;
 
@@ -1265,7 +1268,10 @@ export async function trangThaiYeuCauGhi(
 //   2. phạm vi máy (idsTrongPhamVi strict)             ⇒ NOT_FOUND (entity machine; không tồn tại = ngoài phạm vi) + 1 dòng attempts
 //   3. sàn vai mức 1 (`vaiTroDuocGhi(1)`: operator trở lên) → `machine_control.canEdit` ⇒ ROLE_FLOOR | PERMISSION_DENIED + 1 dòng attempts
 //      (mức 1 ⇒ KHÔNG 2FA — kiemCongVaiTro chỉ đòi 2FA ở mức ≠ 1|3)
-//   4. adapter bật của máy; mỗi adapter `loadStopPins` ⇒ không adapter nào có ghim ⇒ CHUA_GHIM_STOP + 1 dòng attempts + audit
+//   4. adapter bật của máy; mỗi adapter `loadStopPinsHmi` ⇒ không adapter nào có ghim ⇒ CHUA_GHIM_STOP + 1 dòng attempts + audit.
+//      kiem-dinh R1b-1 H1 (b): CHỈ ghim của tag mức tác động ≤ 1 được gửi (NULL ⇒ 5 ⇒ bỏ qua); ghim mức cao bị BỎ QUA TỪNG TAG và báo
+//      trong kết quả (`boQua: [{adapterId, code, tagKey, ly_do: "muc_cao", muc}]`) + audit — KHÔNG chặn các ghim hợp lệ khác; có ghim mà
+//      MỌI ghim mức cao ⇒ GHIM_MUC_CAO (cùng khuôn CHUA_GHIM_STOP: 1 dòng attempts + audit + "dùng E-STOP cứng")
 //   5. SONG SONG mỗi adapter có ghim: một dòng `ai_pending_actions` (tool hmi.stop, status 'confirmed', TTL 30 s, băm otPayloadHash của
 //      CHÍNH các ghim) → `dispatch()` hitl requireBoundAction, commandType "stop", đọc lại bắt buộc → chốt dòng chờ → 1 dòng attempts
 //   6. MỘT `recordAuditEvent` cho lần bấm: ai bấm, máy, từng adapter + giá trị ghim đã gửi + kết quả (status, edgeStopRequest).
@@ -1325,7 +1331,12 @@ export interface KetQuaDungMayAdapter {
   commandLogIds: number[];
 }
 
-export type KetQuaDungMay = { ok: true; ketQua: { ketQua: KetQuaDungMayAdapter[] } } | { ok: false; tuChoi: TuChoiYeuCau };
+/** kiem-dinh R1b-1 H1 (b) — một ghim hợp lệ mà lần bấm này KHÔNG gửi (tag mức tác động > 1; mức NULL đã suy thành 5). */
+export type GhimBoQuaDungMay = { adapterId: number; code: string } & GhimBoQuaHmi;
+
+export type KetQuaDungMay =
+  | { ok: true; ketQua: { ketQua: KetQuaDungMayAdapter[]; boQua: GhimBoQuaDungMay[] } }
+  | { ok: false; tuChoi: TuChoiYeuCau };
 
 type DichDung = { id: number; code: string; writes: Array<{ tagKey: string; value: unknown }> };
 
@@ -1493,11 +1504,13 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
     .orderBy(asc(deviceAdapters.id));
   const dich: DichDung[] = [];
   const loiDoc: KetQuaDungMayAdapter[] = [];
+  // kiem-dinh R1b-1 H1 (b) — ghim của tag mức > 1 (NULL ⇒ 5): BỎ QUA từng tag, báo trong kết quả; KHÔNG chặn các ghim hợp lệ khác.
+  const boQua: GhimBoQuaDungMay[] = [];
   // fix round 1 (minor 7) — đọc ghim SONG SONG (một STOP không chờ N lượt đọc nối tiếp); thứ tự kết quả giữ theo adapterId
   const docGhim = await Promise.all(
     adapters.map(async (a) => {
       try {
-        return { a, pins: await loadStopPins(db, a.id), err: undefined };
+        return { a, pins: await loadStopPinsHmi(db, a.id), err: undefined };
       } catch (err) {
         return { a, pins: null, err };
       }
@@ -1506,7 +1519,8 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
   for (const g of docGhim) {
     const a = g.a;
     if (g.pins) {
-      if (g.pins.length > 0) dich.push({ id: a.id, code: a.code, writes: g.pins.map((p) => ({ tagKey: p.tagKey, value: p.value })) });
+      for (const b of g.pins.boQua) boQua.push({ adapterId: a.id, code: a.code, ...b });
+      if (g.pins.gui.length > 0) dich.push({ id: a.id, code: a.code, writes: g.pins.gui.map((p) => ({ tagKey: p.tagKey, value: p.value })) });
     } else {
       const err = g.err;
       // QĐ D-2 — ghim không đọc được ⇒ không gửi gì tới adapter này (ghim là dữ liệu an toàn), các adapter khác vẫn gửi
@@ -1530,7 +1544,7 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
    * `recordAuditEvent` chờ khoá advisory của chuỗi băm KHÔNG có hạn — kết quả STOP của người vận hành không được treo theo sổ. Lỗi / quá hạn
    * ⇒ log (không bí mật); kết quả trả ngay.
    */
-  const ghiAudit = (ketQua: KetQuaDungMayAdapter[], ketCuc: "DA_GUI" | "CHUA_GHIM_STOP"): void => {
+  const ghiAudit = (ketQua: KetQuaDungMayAdapter[], ketCuc: "DA_GUI" | "CHUA_GHIM_STOP" | "GHIM_MUC_CAO"): void => {
     const viec = recordAuditEvent(db, {
       entityType: "machine",
       entityId: may.id,
@@ -1555,6 +1569,8 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
           centralFallbackSent: k.centralFallbackSent === true,
           commandLogIds: k.commandLogIds,
         })),
+        // kiem-dinh R1b-1 H1 (b) — ghim KHÔNG gửi (tag mức > 1): tag nào bị bỏ qua, vì sao
+        ghimBoQua: boQua.map((b) => ({ adapterId: b.adapterId, code: b.code, tagKey: b.tagKey, ly_do: b.ly_do, muc: b.muc })),
       },
       reason: lyDo ?? "HMI DỪNG MÁY",
     });
@@ -1563,6 +1579,29 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
       logger.error({ err: (err as Error)?.message ?? String(err), machineId: may.id }, "[SCADA] STOP HMI: ghi audit lỗi hoặc quá hạn (STOP đã gửi)"),
     );
   };
+
+  if (dich.length === 0 && loiDoc.length === 0 && boQua.length > 0) {
+    // kiem-dinh R1b-1 H1 (b) — máy CÓ ghim nhưng MỌI ghim nằm trên tag mức > 1 ⇒ không gửi gì; cùng khuôn "chưa ghim" (attempts + audit + E-STOP).
+    const ds = [...new Set(boQua.map((b) => b.tagKey))];
+    const tagKeys = ds.slice(0, 5).join(", ") + (ds.length > 5 ? ", …" : "");
+    await ghiThuLenh(db, {
+      userId,
+      stage: "dispatch",
+      outcome: "rejected",
+      reasonCode: "GHIM_MUC_CAO",
+      lyDo: lyDo ?? `STOP: mọi ghim nằm trên tag mức tác động > ${MUC_TOI_DA_STOP_HMI} (${tagKeys}) — không gửi; dùng E-STOP cứng.`,
+    }).catch((e) => ghiLoiChot(e, "-", "attempts_hmi_stop_muc_cao"));
+    ghiAudit([], "GHIM_MUC_CAO");
+    return {
+      ok: false,
+      tuChoi: {
+        ma: "GHIM_MUC_CAO",
+        soTag: boQua.length,
+        tagKeys,
+        chiTiet: `Mọi ghim STOP của máy nằm trên tag mức tác động > ${MUC_TOI_DA_STOP_HMI} (${tagKeys}) — nút DỪNG MÁY không gửi tới tag mức cao; kỹ sư khai mức tác động 1 cho tag dừng ở /scada/config/channels; dừng bằng E-STOP cứng.`,
+      },
+    };
+  }
 
   if (dich.length === 0 && loiDoc.length === 0) {
     await ghiThuLenh(db, {
@@ -1587,5 +1626,5 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
 
   // 6. audit
   ghiAudit(ketQua, "DA_GUI");
-  return { ok: true, ketQua: { ketQua } };
+  return { ok: true, ketQua: { ketQua, boQua } };
 }

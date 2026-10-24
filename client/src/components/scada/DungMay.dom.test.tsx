@@ -544,3 +544,83 @@ describe("fix round 3 — khảo sát LỖI ⇒ 'không kiểm được', không
     expect(screen.queryByTestId("canh-bao-chua-ghim-stop")).toBeNull();
   });
 });
+
+describe("kiem-dinh R1b-1 H1 (b) — ghim của tag mức tác động > 1 'không tới bằng STOP HMI' (cùng luật máy chủ)", () => {
+  const kn = (adapters: Array<Record<string, unknown>>, tongHop = "mot_phan") => ({ machineId: 10, adapters, tongHop }) as never;
+
+  it("★ hộp xác nhận: ghim_muc_cao ⇒ 'không tới bằng STOP HMI' nêu tag; adapter được nhưng có ghim mức cao ⇒ thêm 'bỏ qua ghim của tag mức > 1'", () => {
+    veHop({
+      khaNang: kn([
+        { adapterId: 1, code: "PLC-A", trangThai: "duoc", ghimBoQua: ["van_m4"] },
+        { adapterId: 2, code: "PLC-H", trangThai: "ghim_muc_cao", ghimBoQua: ["servo_m5", "bom_m3"] },
+      ]),
+    });
+    const h = hop();
+    expect(within(h).getByTestId("kha-nang-2")).toHaveAttribute("data-trang-thai", "ghim_muc_cao");
+    expect(within(h).getByTestId("kha-nang-2")).toHaveTextContent("Chỉ có ghim trên tag mức tác động > 1 (servo_m5, bom_m3) — không tới bằng STOP HMI, không gửi gì");
+    expect(within(h).getByTestId("kha-nang-bo-qua-1")).toHaveTextContent("bỏ qua ghim của tag mức tác động > 1: van_m4");
+    expect(within(h).queryByTestId("kha-nang-bo-qua-2")).toBeNull();
+  });
+
+  it("★ cảnh báo cấp máy (M4 / M10 / M12): ghim_muc_cao và ghim bị bỏ qua đều có dòng riêng; KHÔNG nói 'Máy chưa ghim STOP'", () => {
+    render(
+      <CanhBaoKhaNangDung
+        khaNang={kn([
+          { adapterId: 1, code: "PLC-A", trangThai: "duoc", ghimBoQua: ["van_m4"] },
+          { adapterId: 2, code: "PLC-H", trangThai: "ghim_muc_cao", ghimBoQua: ["servo_m5"] },
+        ])}
+      />,
+    );
+    const cb = screen.getByTestId("canh-bao-kha-nang-dung");
+    expect(cb).toHaveTextContent("Adapter PLC-H: mọi ghim STOP nằm trên tag mức tác động > 1 (servo_m5) — không tới bằng STOP HMI; khai mức tác động 1 cho tag dừng");
+    expect(cb).toHaveTextContent("Adapter PLC-A: STOP HMI bỏ qua ghim của tag mức tác động > 1 (van_m4)");
+    cleanup();
+    // M12: coGhimStop false vì chỉ có ghim mức cao ⇒ câu theo khảo sát, không phải "chưa ghim"
+    render(
+      <KenhCheDoMay
+        rows={[may({ machineId: 10, coGhimStop: false, soAdapterGhimStop: 0, khaNangDung: kn([{ adapterId: 2, code: "PLC-H", trangThai: "ghim_muc_cao", ghimBoQua: ["servo_m5"] }], "khong") })] as never}
+        adapters={[]}
+        canAct={false}
+      />,
+    );
+    expect(screen.getByTestId("canh-bao-kha-nang-dung")).toHaveTextContent("mọi ghim STOP nằm trên tag mức tác động > 1 (servo_m5)");
+    expect(screen.queryByTestId("canh-bao-chua-ghim-stop")).toBeNull();
+  });
+
+  it("★ kết quả: máy chủ báo boQua ⇒ khối 'Không gửi (tag mức tác động > 1 …)' liệt kê từng tag + dòng đỏ E-STOP; ghim hợp lệ vẫn hiện đạt", async () => {
+    veHop();
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", {
+      ketQua: [{ adapterId: 1, code: "PLC-A", status: "acked_verified", ok: true, simulated: false, writes: [{ tagKey: "stop_cmd", value: true }], commandLogIds: [5] }],
+      boQua: [{ adapterId: 1, code: "PLC-A", tagKey: "van_m4", ly_do: "muc_cao", muc: 4 }],
+    });
+    expect(screen.getByTestId("ket-qua-dung-1")).toHaveAttribute("data-loai", "dat");
+    const bq = screen.getByTestId("ket-qua-bo-qua");
+    expect(bq).toHaveTextContent("Không gửi (tag mức tác động > 1 — không tới bằng STOP HMI):");
+    expect(bq).toHaveTextContent("PLC-A · van_m4 (mức 4)");
+    expect(within(bq).getByTestId("dung-estop")).toBeInTheDocument();
+  });
+
+  it("★ máy chủ từ chối GHIM_MUC_CAO ⇒ chữ nêu tag + dòng đỏ E-STOP", async () => {
+    veHop();
+    fireEvent.click(nutMacDinh());
+    await traLoi("onError", { message: "x", data: { appCode: "SCADA_STOP_PINS_HIGH_LEVEL", appParams: { ma: "GHIM_MUC_CAO", soTag: 1, tagKeys: "van_m3" } } });
+    expect(within(hop()).getByTestId("loi-lenh")).toHaveTextContent("Mọi ghim STOP của máy nằm trên tag mức tác động > 1 (van_m3) — nút DỪNG MÁY không gửi gì; dừng bằng E-STOP cứng");
+    expect(within(hop()).getByTestId("dung-estop")).toBeInTheDocument();
+  });
+
+  it("chữ mới ở en không có chữ Việt", () => {
+    for (const k of [
+      "scada.dungMay.khaNang.ghimMucCao",
+      "scada.dungMay.khaNang.boQuaMucCao",
+      "scada.dungMay.canhBao.ghimMucCao",
+      "scada.dungMay.canhBao.boQuaMucCao",
+      "scada.dungMay.boQua.tieuDe",
+      "scada.dungMay.boQua.dong",
+      "scada.lenh.loi.GHIM_MUC_CAO",
+      "errors.SCADA_STOP_PINS_HIGH_LEVEL",
+    ]) {
+      expect(CHU_VIET.test(E(k)), k).toBe(false);
+    }
+  });
+});

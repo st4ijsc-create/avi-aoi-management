@@ -4599,7 +4599,8 @@
     "INTERLOCK_DICH_CHUA_SAN_SANG": "Interlock rule #{{ruleId}} cannot be enabled: tag {{tagKey}} is not ready — the target tag does not exist, is disabled or its adapter is disabled; or the source tag declared on the machine is disabled (or its adapter is). The protective action would have no target or no source. Create / enable the tag and its adapter first, then enable the rule again.",
     "INTERLOCK_NGUON_MO_HO": "Interlock rule #{{ruleId}} cannot be enabled: {{soAdapter}} enabled adapters of the machine carry the source tag {{tagKey}} — the gate cannot tell which one to read (ambiguous), so the rule would always lack data. Rename or disable the duplicate tag first, then enable the rule again.",
     "QUA_NHIEU_KENH_DA_KHAI": "This import touches {{soTag}} declared / protected channel tags — at most {{toiDa}} per import. Split the file and import again.",
-    "STOP_PIN_GO_TRUOC": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) — changing its address, type, scale, offset, writable flag or adapter, disabling or deleting it would lose STOP. Unpin it first (Software stop tag, with a reason), then try again."
+    "STOP_PIN_GO_TRUOC": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) — changing its address, type, scale, offset, writable flag or adapter, disabling or deleting it would lose STOP. Unpin it first (Software stop tag, with a reason), then try again.",
+    "SCADA_STOP_PINS_HIGH_LEVEL": "Every STOP pin of this machine is on a tag with actuation level > 1 ({{tagKeys}}) — the STOP MACHINE button does not send to high-level tags; an engineer declares actuation level 1 for the stop tags at /scada/config/channels; stop it with the hardwired E-STOP."
   },
   "export": {
     "reportMenu": {
@@ -23836,7 +23837,8 @@
         "nutDungGoiY": "Use {{goiY}}",
         "ma": "Code: {{ma}}",
         "CHUA_GHIM_STOP": "The machine has no pinned STOP values — an engineer pins them at /scada/config/channels; stop it with the hardwired E-STOP",
-        "goiYStopKhongGhim": "Need to stop the machine? Use the hardwired E-STOP or the stop button at the machine cabinet"
+        "goiYStopKhongGhim": "Need to stop the machine? Use the hardwired E-STOP or the stop button at the machine cabinet",
+        "GHIM_MUC_CAO": "Every STOP pin of this machine is on a tag with actuation level > 1 ({{list}}) — the STOP MACHINE button sends nothing; stop it with the hardwired E-STOP"
       },
       "local": {
         "remote": "the machine is in REMOTE",
@@ -23879,7 +23881,9 @@
         "chuaGhim": "No pinned STOP — nothing is sent",
         "quaEdge": "STOP sent via edge node {{code}} — confirmed only when the edge reports back",
         "matKetNoi": "Disconnected — the STOP will not reach the machine (ADAPTER_OFFLINE)",
-        "khongKiemDuoc": "Could not be checked — use the hardwired E-STOP if needed"
+        "khongKiemDuoc": "Could not be checked — use the hardwired E-STOP if needed",
+        "ghimMucCao": "Only pins on tags with actuation level > 1 ({{list}}) — not reached by HMI STOP, nothing is sent",
+        "boQuaMucCao": "skips pins on tags with actuation level > 1: {{list}}"
       },
       "canhBao": {
         "ghimCu": "Pinned STOP not in effect — reconnect adapter {{code}}",
@@ -23889,11 +23893,17 @@
         "quaEdge": "STOP sent via edge node {{code}} — confirmed only when the edge reports back",
         "edgeKhongToi": "Edge node {{code}} cannot be reached from central — the STOP may not reach the machine; use the hardwired E-STOP if needed",
         "khongKiemDuoc": "Could not check whether the machine can be stopped — use the hardwired E-STOP if needed",
-        "chuaGhimMotPhan": "Adapter(s) {{list}} have no pinned STOP"
+        "chuaGhimMotPhan": "Adapter(s) {{list}} have no pinned STOP",
+        "ghimMucCao": "Adapter {{code}}: every STOP pin is on a tag with actuation level > 1 ({{list}}) — not reached by HMI STOP; declare actuation level 1 for the stop tags",
+        "boQuaMucCao": "Adapter {{code}}: HMI STOP skips pins on tags with actuation level > 1 ({{list}})"
       },
       "daGuiDuPhong": "The edge did not take the command — central sent its fallback STOP; not yet confirmed that the machine stopped",
       "loiTaiDiag": "Could not load the adapter list — the per-machine STOP MACHINE buttons are still below; use the hardwired E-STOP at the machine if needed",
-      "loiTaiMay": "Could not load the machine list — the STOP MACHINE buttons cannot be shown; use the hardwired E-STOP at the machine"
+      "loiTaiMay": "Could not load the machine list — the STOP MACHINE buttons cannot be shown; use the hardwired E-STOP at the machine",
+      "boQua": {
+        "tieuDe": "Not sent (tags with actuation level > 1 — not reached by HMI STOP):",
+        "dong": "{{code}} · {{tagKey}} (level {{muc}})"
+      }
     }
   }
 }

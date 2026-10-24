@@ -148,6 +148,8 @@ export const MA_LOI_LENH = [
   "TIMEOUT",
   // R1b-1 Task 2 — STOP HMI (`dungMay`): máy không có adapter bật nào mang ghim DỪNG
   "CHUA_GHIM_STOP",
+  // kiem-dinh R1b-1 H1 (b) — STOP HMI: máy có ghim nhưng MỌI ghim nằm trên tag mức tác động > 1
+  "GHIM_MUC_CAO",
 ] as const;
 const MA_LOI_SET: ReadonlySet<string> = new Set(MA_LOI_LENH);
 
@@ -310,6 +312,8 @@ function moTaLoiThan(err: unknown, giaiDoan: "request" | "confirm", ctx: { laEdg
       return { ma, khoa: khoa(ma), thamSo: { phut: so(p.remainingMinutes) }, giuYeuCau: false };
     case "DISPATCH_LOI":
       return { ma, khoa: khoa(ma), thamSo: {}, canChiTiet: true, giuYeuCau: false };
+    case "GHIM_MUC_CAO":
+      return { ma, khoa: khoa(ma), thamSo: { list: String(p.tagKeys ?? "—") }, giuYeuCau: false };
     default:
       return { ma, khoa: khoa(ma), thamSo: {}, giuYeuCau: giu };
   }

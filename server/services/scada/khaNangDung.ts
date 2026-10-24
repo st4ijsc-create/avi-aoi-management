@@ -18,6 +18,10 @@
  *   6. `!runningConnectionMatchesAdapterRow` (dấu vân tay kết nối ĐANG CHẠY ≠ hàng adapter — sửa adapter mà chưa nối lại)
  *                                                                                ⇒ `ghim_cu` (5a-stop: KHÔNG phải STOP ghim)
  *   7. còn lại                                                                    ⇒ `duoc`
+ * kiem-dinh R1b-1 H1 (b) (2026-10-25) — CÙNG LUẬT với `dungMay` (`phanLoaiGhimStopHmi`): chỉ ghim của tag mức tác động ≤ 1 được STOP HMI gửi
+ *   (NULL ⇒ 5 ⇒ bỏ qua). Adapter có ghim hợp lệ nhưng MỌI ghim ở tag mức cao ⇒ `ghim_muc_cao` ("không tới bằng STOP HMI" — không tính là
+ *   `duoc`, không đếm vào `soAdapterGhimStop`); adapter có cả hai ⇒ kết luận theo các bước 2–7 cho ghim GỬI được + `ghimBoQua` (tagKey các ghim
+ *   mức cao sẽ bị bỏ qua) để cảnh báo cấp máy nói rõ.
  * fix round 2: lỗi khi kiểm MỘT adapter (đọc nghiệm thu / vân tay / edge …) ⇒ `khong_kiem_duoc` cho adapter đó — KHÔNG BAO GIỜ `duoc`,
  * không làm hỏng cả danh sách. Lỗi đọc CHUNG (adapter / ghim) ⇒ mọi máy `loiKhaoSat: true`, adapters rỗng (UI nói "không kiểm được").
  * tongHop: mọi adapter `duoc` ⇒ "duoc"; không adapter nào `duoc` (kể cả máy không có adapter bật / lỗi khảo sát) ⇒ "khong"; còn lại ⇒
@@ -30,7 +34,7 @@ import { logger } from "../../logger";
 import { getActiveDriver } from "../ot/otManager";
 import { isOtControlEnabled, runningConnectionMatchesAdapterRow } from "../ot/commandDispatcher";
 import { isCommissioned, isCommissioningRequired } from "../ot/commissioningService";
-import { stopPinsFromTagRows, type StopPinTagRow } from "../ot/stopPin";
+import { phanLoaiGhimStopHmi, stopPinsFromTagRows, type StopPinTagRowMuc } from "../ot/stopPin";
 import { adapterOwnedByEdge } from "../ot/otAdapterOwnerGate";
 import { edgeNodeReachability } from "../edge/edgeNodeCommands";
 import { withDeadline } from "../ot/drivers/boundedClose";
@@ -38,7 +42,7 @@ import { STOP_DB_STEP_DEADLINE_MS } from "../robot/stopJob";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
-export type TrangThaiKhaNangDung = "duoc" | "qua_edge" | "mat_ket_noi" | "mo_phong" | "ghim_cu" | "chua_ghim" | "khong_kiem_duoc";
+export type TrangThaiKhaNangDung = "duoc" | "qua_edge" | "mat_ket_noi" | "mo_phong" | "ghim_cu" | "chua_ghim" | "ghim_muc_cao" | "khong_kiem_duoc";
 export type LyDoKhaNangDung = "ot_control_tat" | "chua_nghiem_thu";
 
 export interface KhaNangDungAdapter {
@@ -50,6 +54,8 @@ export interface KhaNangDungAdapter {
   edgeCode?: string;
   /** qua_edge: node có liên lạc được với trung tâm không (false ⇒ cảnh báo) */
   edgeToiDuoc?: boolean;
+  /** kiem-dinh R1b-1 H1 (b) — tagKey các ghim hợp lệ mà STOP HMI sẽ BỎ QUA (tag mức tác động > 1); vắng = không có */
+  ghimBoQua?: string[];
 }
 
 export interface KhaNangDungMay {
@@ -120,7 +126,7 @@ export async function khaoSatKhaNangDungNhieu(db: Db, machineIds: number[]): Pro
   for (const m of machineIds) out.set(m, { machineId: m, adapters: [], tongHop: "khong" });
   if (machineIds.length === 0) return out;
   let adapters: HangAdapter[];
-  const ghim = new Map<number, StopPinTagRow[]>();
+  const ghim = new Map<number, StopPinTagRowMuc[]>();
   try {
     adapters = await docAdapterBat(db, machineIds);
     if (adapters.length > 0) {
@@ -132,6 +138,7 @@ export async function khaoSatKhaNangDungNhieu(db: Db, machineIds: number[]): Pro
           stopValue: deviceTags.stopValue,
           writable: deviceTags.writable,
           isEnabled: deviceTags.isEnabled,
+          actuationLevel: deviceTags.actuationLevel,
         })
         .from(deviceTags)
         .where(
@@ -158,8 +165,13 @@ export async function khaoSatKhaNangDungNhieu(db: Db, machineIds: number[]): Pro
     adapters.map(async (a): Promise<KhaNangDungAdapter & { machineId: number }> => {
       const co = { machineId: a.machineId, adapterId: a.id, code: a.code };
       try {
-        if (stopPinsFromTagRows(ghim.get(a.id) ?? []).length === 0) return { ...co, trangThai: "chua_ghim" };
-        return { ...co, ...(await ketLuanCoGhim(db, a, dem)) };
+        const hang = ghim.get(a.id) ?? [];
+        if (stopPinsFromTagRows(hang).length === 0) return { ...co, trangThai: "chua_ghim" };
+        // kiem-dinh R1b-1 H1 (b) — cùng luật với dungMay: ghim mức cao bị bỏ qua; không còn ghim gửi được ⇒ "không tới bằng STOP HMI"
+        const { gui, boQua } = phanLoaiGhimStopHmi(hang);
+        const ghimBoQua = boQua.map((b) => b.tagKey);
+        if (gui.length === 0) return { ...co, trangThai: "ghim_muc_cao", ghimBoQua };
+        return { ...co, ...(await ketLuanCoGhim(db, a, dem)), ...(ghimBoQua.length > 0 ? { ghimBoQua } : {}) };
       } catch (err) {
         // fix round 2 — lỗi khi kiểm MỘT adapter ⇒ chỉ adapter đó "không kiểm được"
         logger.error({ err: (err as Error)?.message ?? String(err), adapterId: a.id }, "[SCADA] khảo sát khả năng dừng: kiểm adapter lỗi");

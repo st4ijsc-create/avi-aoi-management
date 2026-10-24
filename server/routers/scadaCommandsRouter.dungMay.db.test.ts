@@ -214,17 +214,24 @@ async function seedAdapter(mid: number, ma: string, o: { isEnabled?: boolean } =
   return Number(r.id);
 }
 
-/** Tag ghi được; `stop` ⇒ ghim DỪNG (jsonb); `dai` ⇒ khai dải kênh (để chứng minh STOP ghim được miễn dải). */
+/**
+ * Tag ghi được; `stop` ⇒ ghim DỪNG (jsonb); `dai` ⇒ khai dải kênh (để chứng minh STOP ghim được miễn dải).
+ * kiem-dinh R1b-1 H1 (b) (2026-10-25) — FIXTURE: STOP HMI chỉ gửi ghim của tag mức tác động ≤ 1 ⇒ tag CÓ ghim mặc định khai `actuation_level = 1`
+ * (đúng điều báo cáo §7 yêu cầu: muốn STOP HMI tới tag nào thì khai mức 1); `muc` ghi đè (null = chưa khai).
+ */
 async function seedTag(
   adapterId: number,
   key: string,
-  o: { dataType: "bool" | "float" | "int"; stop?: unknown; dai?: [number, number]; kind?: string; writable?: boolean },
-) {
+  o: { dataType: "bool" | "float" | "int"; stop?: unknown; dai?: [number, number]; kind?: string; writable?: boolean; muc?: number | null },
+): Promise<number> {
   const stop = o.stop === undefined ? null : JSON.stringify(o.stop);
-  await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", channel_kind, write_min, write_max,
-      stop_value, stop_pinned_by, stop_pinned_at)
+  const muc = o.muc !== undefined ? o.muc : stop === null ? null : 1;
+  const [r] = await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", channel_kind, write_min, write_max,
+      stop_value, stop_pinned_by, stop_pinned_at, actuation_level)
     VALUES (${adapterId}, ${key}, ${"M." + key}, ${o.dataType}, ${o.writable ?? true}, true, ${o.kind ?? "input_output"}::scada_channel_kind,
-      ${o.dai ? o.dai[0] : null}, ${o.dai ? o.dai[1] : null}, ${stop}::jsonb, ${stop === null ? null : "1"}, ${stop === null ? null : sql`now()`})`);
+      ${o.dai ? o.dai[0] : null}, ${o.dai ? o.dai[1] : null}, ${stop}::jsonb, ${stop === null ? null : "1"}, ${stop === null ? null : sql`now()`}, ${muc})
+    RETURNING id`);
+  return Number(r.id);
 }
 
 async function seedNguoi(ten: string, role: "operator" | "viewer" | "engineer", factoryCode: string, twoFactorEnabled: boolean) {
@@ -573,6 +580,79 @@ describe("Review Focus 3 — bấm hai lần / hai người cùng lúc: cả hai
     const lai = await nguoi.opA2.caller.dungMay({ machineId: may.R.mid, clientRequestId: id });
     expect(lai.ketQua[0]).toMatchObject({ ok: true, status: "acked_verified" });
     expect(stub.R.ghi.length - ghiTruoc).toBe(2);
+  });
+});
+
+describe("kiem-dinh R1b-1 H1 (b) — STOP HMI chỉ gửi ghim của tag mức tác động ≤ 1; ghim mức cao bị BỎ QUA từng tag, báo trong kết quả", () => {
+  const xoaTag = async (...ids: number[]) => {
+    for (const id of ids) await dung(sql`DELETE FROM device_tags WHERE id = ${id}`);
+  };
+
+  it("★ ghim mức 4 + ghim chưa khai mức có sẵn trong DB (gieo thẳng) ⇒ dungMay KHÔNG ghi hai tag đó, VẪN ghi ghim mức 1; kết quả + audit liệt kê tag bị bỏ qua", async () => {
+    const t4 = await seedTag(ad.R, "van_m4", { dataType: "int", stop: 5, muc: 4 });
+    const tNull = await seedTag(ad.R, "chua_khai_muc", { dataType: "int", stop: 7, muc: null });
+    try {
+      const ghiTruoc = stub.R.ghi.length;
+      const mA = await mocAudit();
+      const crid = uuid();
+      const kq = await nguoi.opA2.caller.dungMay({ machineId: may.R.mid, clientRequestId: crid });
+      expect(kq.ketQua).toHaveLength(1);
+      expect(kq.ketQua[0]).toMatchObject({ adapterId: ad.R, status: "acked_verified", ok: true, simulated: false });
+      expect(kq.ketQua[0].writes).toEqual(GHIM_R); // chỉ ghim mức 1
+      expect(stub.R.ghi.length - ghiTruoc).toBe(1);
+      expect(loCuoi("R")).toEqual(GHIM_R); // thiết bị KHÔNG nhận van_m4 = 5, chua_khai_muc = 7
+      const boQuaMong = [
+        { adapterId: ad.R, code: `${RUN}-r`, tagKey: "chua_khai_muc", ly_do: "muc_cao", muc: 5 }, // NULL ⇒ 5 (fail-closed)
+        { adapterId: ad.R, code: `${RUN}-r`, tagKey: "van_m4", ly_do: "muc_cao", muc: 4 },
+      ];
+      expect(kq.boQua).toEqual(boQuaMong);
+      const [a] = await choAudit(mA, may.R.mid, crid);
+      expect(a.afterJson.ghimBoQua).toEqual(boQuaMong);
+      expect(a.afterJson.adapters[0].ghimDaGui).toEqual(GHIM_R);
+    } finally {
+      await xoaTag(t4, tNull);
+    }
+  });
+
+  it("★ máy mà MỌI ghim nằm trên tag mức cao ⇒ GHIM_MUC_CAO (SCADA_STOP_PINS_HIGH_LEVEL, nêu tag) + ĐÚNG 1 dòng attempts + 'E-STOP'; không dispatch", async () => {
+    const t3 = await seedTag(ad.N, "van_m3", { dataType: "int", stop: 0, muc: 3 });
+    try {
+      const m = await moc();
+      const dTruoc = H.dispatchInputs.length;
+      const loi = await loiCua(nguoi.opA2.caller.dungMay({ machineId: may.N.mid, clientRequestId: uuid() }));
+      expect(loi).toMatchObject({
+        code: "PRECONDITION_FAILED",
+        appCode: "SCADA_STOP_PINS_HIGH_LEVEL",
+        appParams: { ma: "GHIM_MUC_CAO", soTag: 1, tagKeys: "van_m3" },
+      });
+      const thu = await thuSau(m, nguoi.opA2.id);
+      expect(thu).toHaveLength(1);
+      expect(thu[0]).toMatchObject({ stage: "dispatch", outcome: "rejected", reason_code: "GHIM_MUC_CAO", adapter_id: null });
+      expect((await lyDoSau(m, nguoi.opA2.id))[0]).toContain("E-STOP");
+      expect(H.dispatchInputs.length - dTruoc).toBe(0);
+    } finally {
+      await xoaTag(t3);
+    }
+  });
+
+  it("★ khảo sát khả năng dừng + coGhimStop CÙNG LUẬT: R có ghim mức cao ⇒ duoc + ghimBoQua; N chỉ ghim mức cao ⇒ ghim_muc_cao, coGhimStop false, soAdapterGhimStop 0", async () => {
+    const t4 = await seedTag(ad.R, "van_m4", { dataType: "int", stop: 5, muc: 4 });
+    const t3 = await seedTag(ad.N, "van_m3", { dataType: "int", stop: 0, muc: 3 });
+    try {
+      const { khaoSatKhaNangDung } = await import("../services/scada/khaNangDung");
+      const kR = await khaoSatKhaNangDung(db, may.R.mid);
+      expect(kR.adapters.find((a) => a.adapterId === ad.R)).toMatchObject({ trangThai: "duoc", ghimBoQua: ["van_m4"] });
+      const kN = await khaoSatKhaNangDung(db, may.N.mid);
+      expect(kN.adapters).toEqual([{ adapterId: ad.N, code: `${RUN}-n`, trangThai: "ghim_muc_cao", ghimBoQua: ["van_m3"] }]);
+      expect(kN.tongHop).toBe("khong");
+      const { scadaKenhRouter } = await import("./scadaKenhRouter");
+      const c = scadaKenhRouter.createCaller({ user: { id: nguoi.opA2.id, role: "operator", name: "x", twoFactorEnabled: true } } as never);
+      const rows = (await c.cheDo.danhSach()) as Array<{ machineId: number; coGhimStop: boolean; soAdapterGhimStop: number }>;
+      expect(rows.find((r) => r.machineId === may.N.mid)).toMatchObject({ coGhimStop: false, soAdapterGhimStop: 0 });
+      expect(rows.find((r) => r.machineId === may.R.mid)).toMatchObject({ coGhimStop: true, soAdapterGhimStop: 1 });
+    } finally {
+      await xoaTag(t4, t3);
+    }
   });
 });
 

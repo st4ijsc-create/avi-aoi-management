@@ -34,10 +34,12 @@ export interface KhaNangDung {
   adapters: Array<{
     adapterId: number;
     code: string;
-    trangThai: "duoc" | "qua_edge" | "mat_ket_noi" | "mo_phong" | "ghim_cu" | "chua_ghim" | "khong_kiem_duoc";
+    trangThai: "duoc" | "qua_edge" | "mat_ket_noi" | "mo_phong" | "ghim_cu" | "chua_ghim" | "ghim_muc_cao" | "khong_kiem_duoc";
     lyDo?: string;
     edgeCode?: string;
     edgeToiDuoc?: boolean;
+    /** kiem-dinh R1b-1 H1 (b) — tag các ghim STOP HMI sẽ BỎ QUA (mức tác động > 1) */
+    ghimBoQua?: string[];
   }>;
   tongHop: "duoc" | "mot_phan" | "khong";
   loiKhaoSat?: boolean;
@@ -61,6 +63,9 @@ export function khoaKhaNang(a: KhaNangDung["adapters"][number]): { khoa: string;
       return { khoa: "scada.dungMay.khaNang.ghimCuKetNoiCu" };
     case "chua_ghim":
       return { khoa: "scada.dungMay.khaNang.chuaGhim" };
+    case "ghim_muc_cao":
+      // kiem-dinh R1b-1 H1 (b) — mọi ghim ở tag mức tác động > 1 ⇒ không tới bằng STOP HMI
+      return { khoa: "scada.dungMay.khaNang.ghimMucCao", thamSo: { list: (a.ghimBoQua ?? []).join(", ") || "—" } };
     default:
       // khong_kiem_duoc + kết luận lạ (máy chủ mới hơn client) ⇒ chiều an toàn
       return { khoa: "scada.dungMay.khaNang.khongKiemDuoc" };
@@ -73,6 +78,12 @@ export function dongCanhBaoKhaNang(k: KhaNangDung): { chuaGhimHet: boolean; dong
   if (k.adapters.every((a) => a.trangThai === "chua_ghim")) return { chuaGhimHet: true, dong: [] };
   const dong: Array<{ key: string; khoa: string; thamSo?: Record<string, string> }> = [];
   for (const a of k.adapters) {
+    // kiem-dinh R1b-1 H1 (b) — cùng luật với dungMay: ghim của tag mức tác động > 1 KHÔNG tới bằng STOP HMI
+    if (a.trangThai === "ghim_muc_cao") {
+      dong.push({ key: `gmc-${a.adapterId}`, khoa: "scada.dungMay.canhBao.ghimMucCao", thamSo: { code: a.code, list: (a.ghimBoQua ?? []).join(", ") || "—" } });
+    } else if (a.ghimBoQua && a.ghimBoQua.length > 0) {
+      dong.push({ key: `bq-${a.adapterId}`, khoa: "scada.dungMay.canhBao.boQuaMucCao", thamSo: { code: a.code, list: a.ghimBoQua.join(", ") } });
+    }
     if (a.trangThai === "mat_ket_noi") dong.push({ key: `mkn-${a.adapterId}`, khoa: "scada.dungMay.canhBao.matKetNoi", thamSo: { code: a.code } });
     if (a.trangThai === "ghim_cu") dong.push({ key: `gc-${a.adapterId}`, khoa: "scada.dungMay.canhBao.ghimCu", thamSo: { code: a.code } });
     if (a.trangThai === "mo_phong" && a.lyDo !== "ot_control_tat") dong.push({ key: `mp-${a.adapterId}`, khoa: "scada.dungMay.canhBao.moPhong", thamSo: { code: a.code } });
@@ -113,6 +124,9 @@ export function CanhBaoKhaNangDung({ khaNang }: { khaNang: KhaNangDung }) {
     </div>
   );
 }
+
+/** kiem-dinh R1b-1 H1 (b) — một ghim máy chủ BỎ QUA (`lenhHmi.GhimBoQuaDungMay`). */
+type GhimBoQua = { adapterId: number; code: string; tagKey: string; ly_do: string; muc: number };
 
 type HangKetQua = {
   adapterId: number;
@@ -183,6 +197,8 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
   const { t, i18n } = useTranslation();
   const [pha, setPha] = useState<Pha>("xacNhan");
   const [ketQua, setKetQua] = useState<HangKetQua[]>([]);
+  /** kiem-dinh R1b-1 H1 (b) — ghim máy chủ KHÔNG gửi (tag mức tác động > 1) */
+  const [boQua, setBoQua] = useState<GhimBoQua[]>([]);
   const [loi, setLoi] = useState<{ moTa: MoTaLoi; chiTiet: string } | null>(null);
   /** chặn gửi bằng REF: Enter + bấm chuột trong cùng lượt render ⇒ MỘT lần gửi */
   const daGuiRef = useRef(false);
@@ -197,8 +213,9 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
   const khoaDong = pha === "dangGui" && !quaHan;
 
   const dungMay = trpc.scadaCommands.dungMay.useMutation({
-    onSuccess: (kq: { ketQua: HangKetQua[] }) => {
+    onSuccess: (kq: { ketQua: HangKetQua[]; boQua?: GhimBoQua[] }) => {
       setKetQua(kq.ketQua);
+      setBoQua(Array.isArray(kq.boQua) ? kq.boQua : []);
       setPha("ketQua");
     },
     onError: (e: unknown) => {
@@ -258,6 +275,12 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
                   <span className="font-semibold">{a.code}</span>
                   {" · "}
                   {t(khoaKhaNang(a).khoa, khoaKhaNang(a).thamSo)}
+                  {a.trangThai !== "ghim_muc_cao" && a.ghimBoQua && a.ghimBoQua.length > 0 && (
+                    <span data-testid={`kha-nang-bo-qua-${a.adapterId}`}>
+                      {" · "}
+                      {t("scada.dungMay.khaNang.boQuaMucCao", { list: a.ghimBoQua.join(", ") })}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -342,6 +365,22 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
                 );
               })}
             </ul>
+            {/* kiem-dinh R1b-1 H1 (b) — ghim máy chủ KHÔNG gửi (tag mức tác động > 1): nói rõ tag nào chưa được dừng bằng HMI */}
+            {boQua.length > 0 && (
+              <div
+                data-testid="ket-qua-bo-qua"
+                className="space-y-0.5 rounded-sm border-l-4 bg-muted/40 px-3 py-2 text-sm"
+                style={{ borderLeftColor: `var(${BIEN_MAU_DUNG})` }}
+              >
+                <p className="font-semibold">{t("scada.dungMay.boQua.tieuDe")}</p>
+                <ul>
+                  {boQua.map((b) => (
+                    <li key={`${b.adapterId}-${b.tagKey}`}>{t("scada.dungMay.boQua.dong", { code: b.code, tagKey: b.tagKey, muc: b.muc })}</li>
+                  ))}
+                </ul>
+                <DongEstop />
+              </div>
+            )}
           </div>
         )}
 

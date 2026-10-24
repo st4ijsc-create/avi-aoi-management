@@ -4591,7 +4591,8 @@
     "INTERLOCK_DICH_CHUA_SAN_SANG": "无法启用联锁规则 #{{ruleId}}：标签 {{tagKey}} 尚未就绪——目标标签不存在、已停用或其适配器已停用；或机器上已声明的数据源标签（或其适配器）已停用。保护动作将没有目标或数据源。请先创建 / 启用该标签及其适配器，然后再启用规则。",
     "INTERLOCK_NGUON_MO_HO": "无法启用联锁规则 #{{ruleId}}：该机器有 {{soAdapter}} 个已启用的适配器带有数据源标签 {{tagKey}}——网关无法确定读取哪一个（不明确），规则将始终缺少数据。请先重命名或停用重复的标签，然后再启用规则。",
     "QUA_NHIEU_KENH_DA_KHAI": "本次导入涉及 {{soTag}} 个已声明/受保护通道的标签——每次最多 {{toiDa}} 个。请拆分文件后重新导入。",
-    "STOP_PIN_GO_TRUOC": "通道 {{tagKey}} 已固定停止值（{{stopValue}}）——修改其地址、类型、比例、偏移、可写标志或适配器，或停用、删除该标签，都会失去 STOP。请先解除固定（软件停止标签，需填写原因），然后重试。"
+    "STOP_PIN_GO_TRUOC": "通道 {{tagKey}} 已固定停止值（{{stopValue}}）——修改其地址、类型、比例、偏移、可写标志或适配器，或停用、删除该标签，都会失去 STOP。请先解除固定（软件停止标签，需填写原因），然后重试。",
+    "SCADA_STOP_PINS_HIGH_LEVEL": "此设备的所有 STOP 固定值都位于执行等级 > 1 的标签上（{{tagKeys}}）—“停机”按钮不会发送到高等级标签；请工程师在 /scada/config/channels 将停机标签的执行等级声明为 1；请使用硬接线急停（E-STOP）停机。"
   },
   "export": {
     "reportMenu": {
@@ -23838,7 +23839,8 @@
         "nutDungGoiY": "使用 {{goiY}}",
         "ma": "代码：{{ma}}",
         "CHUA_GHIM_STOP": "设备尚未固定 STOP 值 — 请工程师在 /scada/config/channels 固定；请使用硬接线急停（E-STOP）停机",
-        "goiYStopKhongGhim": "需要停机？请使用硬接线急停（E-STOP）或设备柜上的停止按钮"
+        "goiYStopKhongGhim": "需要停机？请使用硬接线急停（E-STOP）或设备柜上的停止按钮",
+        "GHIM_MUC_CAO": "此设备的所有 STOP 固定值都位于执行等级 > 1 的标签上（{{list}}）—“停机”按钮不会发送任何内容；请使用硬接线急停（E-STOP）停机"
       },
       "local": {
         "remote": "设备处于 REMOTE",
@@ -23881,7 +23883,9 @@
         "chuaGhim": "未固定 STOP — 不发送任何内容",
         "quaEdge": "STOP 经边缘节点 {{code}} 发送 — 仅在边缘节点回报后确认",
         "matKetNoi": "已断开连接 — STOP 不会到达设备（ADAPTER_OFFLINE）",
-        "khongKiemDuoc": "无法检查 — 如有需要请使用硬接线急停（E-STOP）"
+        "khongKiemDuoc": "无法检查 — 如有需要请使用硬接线急停（E-STOP）",
+        "ghimMucCao": "仅有执行等级 > 1 的标签上的固定值（{{list}}）— HMI STOP 无法到达，不会发送任何内容",
+        "boQuaMucCao": "跳过执行等级 > 1 的标签上的固定值：{{list}}"
       },
       "canhBao": {
         "ghimCu": "固定的 STOP 尚未生效 — 需要重新连接适配器 {{code}}",
@@ -23891,11 +23895,17 @@
         "quaEdge": "STOP 经边缘节点 {{code}} 发送 — 仅在边缘节点回报后确认",
         "edgeKhongToi": "中心无法联系边缘节点 {{code}} — STOP 可能不会到达设备；如有需要请使用硬接线急停（E-STOP）",
         "khongKiemDuoc": "无法检查停机能力 — 如有需要请使用硬接线急停（E-STOP）",
-        "chuaGhimMotPhan": "适配器 {{list}} 尚未固定 STOP"
+        "chuaGhimMotPhan": "适配器 {{list}} 尚未固定 STOP",
+        "ghimMucCao": "适配器 {{code}}：所有 STOP 固定值都位于执行等级 > 1 的标签上（{{list}}）— HMI STOP 无法到达；请将停机标签的执行等级声明为 1",
+        "boQuaMucCao": "适配器 {{code}}：HMI STOP 会跳过执行等级 > 1 的标签上的固定值（{{list}}）"
       },
       "daGuiDuPhong": "边缘节点未接收命令 — 中心已发送备用 STOP；尚未确认设备已停止",
       "loiTaiDiag": "无法加载适配器列表 — 下方仍有按设备的“停机”按钮；如有需要请在设备处使用硬接线急停（E-STOP）",
-      "loiTaiMay": "无法加载设备列表 — 无法显示“停机”按钮；请在设备处使用硬接线急停（E-STOP）"
+      "loiTaiMay": "无法加载设备列表 — 无法显示“停机”按钮；请在设备处使用硬接线急停（E-STOP）",
+      "boQua": {
+        "tieuDe": "未发送（执行等级 > 1 的标签 — HMI STOP 无法到达）：",
+        "dong": "{{code}} · {{tagKey}}（等级 {{muc}}）"
+      }
     }
   }
 }

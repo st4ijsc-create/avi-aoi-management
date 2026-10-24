@@ -261,7 +261,8 @@ export function KenhCheDoMay({ rows, adapters, canAct }: KenhCheDoMayProps) {
                   )}
                   {m.coGhimStop === false && (
                     <div className="mt-1">
-                      <CanhBaoChuaGhimStop />
+                      {/* kiem-dinh R1b-1 H1 (b) — 0 adapter nhận STOP HMI có thể là "chỉ có ghim mức cao" ⇒ câu theo khảo sát, không phải "chưa ghim" */}
+                      {m.khaNangDung ? <CanhBaoKhaNangDung khaNang={m.khaNangDung} /> : <CanhBaoChuaGhimStop />}
                     </div>
                   )}
                   {/* fix round 3 — khảo sát lỗi (coGhimStop null) ⇒ "không kiểm được", KHÔNG BAO GIỜ "chưa ghim" */}
