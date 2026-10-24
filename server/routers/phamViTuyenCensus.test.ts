@@ -152,6 +152,12 @@ const cua = (n: NhomTuyen): TuyenExpress[] => NHOM.get(n) ?? [];
 // giữ sha256 ở `ai_flow_webhooks` (mig 0402), so thời gian hằng; chỉ đọc `ai_flows`/`ai_flow_versions`/`ai_flow_webhooks` — sổ
 // máy, không bảng tenant — và ghi một lượt `ai_flow_runs`). Không mục nào vào A, sổ nợ không thêm dòng. Cổng giấy phép MOD_AI
 // gắn TRONG tuyến (`chanTuyenAiTheoGiayPhep()`, tuyến không nằm dưới `/api/ai`).
+/** Bề mặt tĩnh được ghim theo NỘI DUNG (tệp — dòng gắn), đã sắp xếp; số dòng KHÔNG nằm trong ghim. Sinh từ bộ quét 2026-10-24 (HAI mục như cũ). */
+const NOI_DUNG_TUYEN_TINH: readonly string[] = [
+  'server/_core/index.ts — app.use("/uploads", express.static(uploadsRoot))',
+  'server/_core/vite.ts — app.use(express.static(distPath))',
+];
+
 const GHIM = { A: 80, C: 40, D: 96, S: 19, U: 16, tong: 251 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
@@ -182,6 +188,7 @@ describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến khô
   it("★★ BỀ MẶT TĨNH được GHIM — bộ suy KHÔNG phát biểu được gì về nó", () => {
     // `express.static` phục vụ byte tệp thẳng từ đĩa: không lượt đọc bảng nào, nên MỌI vị từ ở đây
     // đều mù với nó. Ghim danh sách để một lượt gắn thư mục MỚI ra web phải được ký tên.
+    // ★ 2026-10-24: ghim nay theo NỘI DUNG dòng (xem NOI_DUNG_TUYEN_TINH) — các ghi chú "609 → … → 686" dưới đây là LỊCH SỬ của thời ghim theo số dòng.
     // ⚠⚠ SỬA 2026-08-18 — câu cũ ở đây ghi: *"`/uploads` đang phục vụ ảnh kiểm của MỌI nhà máy mà
     //    không một phép xác thực nào — món nợ CÓ THẬT, chỉ là món nợ cổng này không đo được"*.
     //    Món nợ ấy nay **đã được vá**: một middleware cổng ảnh (`server/routes/_congAnh.ts`) đứng
@@ -214,10 +221,13 @@ describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến khô
     //   `requireFreshTotp/requirePerCallFreshTotp`); hai dòng `app.use("/api/trpc", …)` mới nằm SAU dòng ghim. Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`.
     // ⚠ Đợt 7.0 (sổ model): **674 → 680** — +2 import (`khoiChayDongBoSoModel`, `dongBoKhoModel`) + 4 dòng (chú thích + hai
     //   lời gọi) ở thân module điểm vào. Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`.
-    expect(QUET.tuyenTinh.map((s) => s.split(" — ")[0])).toEqual([
-      "server/_core/index.ts:686",
-      "server/_core/vite.ts:58",
-    ]);
+    // ★ 2026-10-24 (dieu-phoi duyệt): ghim theo NỘI DUNG dòng, KHÔNG theo số dòng. `tuyenTinh` có dạng "<tệp>:<dòng> — <nội dung>"; bỏ phần ":<dòng>" rồi so cả danh sách:
+    //   mỗi mục ghim phải xuất hiện ĐÚNG MỘT lần (0 hoặc >1 ⇒ đỏ với diff nêu rõ), thêm/bớt/sửa nội dung một dòng `express.static` ⇒ đỏ; chỉ DỊCH dòng thì xanh.
+    expect(
+      QUET.tuyenTinh.map((s) => s.replace(/^([^:]+):\d+ — /, "$1 — ")).sort(),
+      "bề mặt tĩnh đổi: mỗi mục ghim phải xuất hiện ĐÚNG MỘT lần; một thư mục MỚI ra web phải được ký tên",
+    ).toEqual(NOI_DUNG_TUYEN_TINH);
+
   });
 });
 
