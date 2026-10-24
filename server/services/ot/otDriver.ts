@@ -101,6 +101,18 @@ export interface SuKienDoc {
   /** SCADA R0 T12 (D1) — chỉ tick lỗi (`ok:false`): phân loại lỗi của lần đọc (phanLoiLoi của driver). */
   statusCode?: string;
   reason?: LyDoChatLuong;
+  /**
+   * SCADA R1b-1 T4 — lượt phát mẫu của tick (onSample: ghi DB) quá hạn `max(2 × chu kỳ, 5000)` ⇒ bỏ mẫu còn lại, nhả chốt vòng poll.
+   * Hai hình:
+   *   - lần đọc chính: `{ok:true, timeout:true, lyDo:"ingest_treo", tags:<của lần đọc>}` — thiết bị ĐÃ trả lời; D1/đọc tốt phán theo
+   *     tag của lần đọc như mọi tick ok, KHÔNG theo cờ timeout;
+   *   - lượt phát không kèm lần đọc (mẫu muộn V2 tắt / loạt mẫu xấu V2): `{ok:false, timeout:true, lyDo:"ingest_treo", tags:[]}` —
+   *     lần đọc đã được báo ở tick riêng; D1 bỏ qua (trung tính), bộ đếm chỉ tăng `ingestTreo`.
+   * DB chậm không phải thiết bị mất: không bao giờ là tick hỏng tự thân (ruling R1a residual).
+   */
+  lyDo?: "ingest_treo";
+  /** SCADA R1b-1 T4 — số tick bị bỏ vì chồng (`soLanChong`) kể từ lần báo trước; vắng = 0. Bộ đếm truyền thông cộng vào `chong`. */
+  chong?: number;
 }
 
 /** SCADA R0 — tuỳ chọn thêm cho vòng poll của driver (tham số 4 của subscribe). */

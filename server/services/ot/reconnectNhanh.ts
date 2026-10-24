@@ -55,16 +55,27 @@ export function tinhDeadlineMs(pollIntervalMs: number, timeoutMs?: number): numb
  */
 export const SO_TICK_HONG_DE_MAT = 2;
 
-/** Tick hỏng = quá hạn (giao dịch hoặc hạn vòng poll), lỗi comm_lost cho CẢ tick, hoặc tick "ok" mà MỌI tag bad/comm_lost. */
+const moiTagMatLienLac = (e: SuKienDoc): boolean =>
+  e.tags.length > 0 && e.tags.every((t) => t.quality === "bad" && t.reason === "comm_lost");
+
+/**
+ * Tick hỏng = quá hạn (giao dịch hoặc hạn vòng poll), lỗi comm_lost cho CẢ tick, hoặc tick "ok" mà MỌI tag bad/comm_lost.
+ * R1b-1 T4 — `lyDo:"ingest_treo"` (lượt phát mẫu/ghi DB quá hạn) KHÔNG BAO GIỜ hỏng vì cờ timeout của nó: DB chậm không phải thiết bị mất.
+ * Tick đó mang lần đọc chính (`ok:true`) ⇒ phán theo tag của lần đọc như mọi tick ok; không mang lần đọc ⇒ không hỏng.
+ */
 export function laTickHong(e: SuKienDoc): boolean {
+  if (e.lyDo === "ingest_treo") return e.ok === true && moiTagMatLienLac(e);
   if (!e.ok) return e.timeout || e.reason === "comm_lost";
-  return e.tags.length > 0 && e.tags.every((t) => t.quality === "bad" && t.reason === "comm_lost");
+  return moiTagMatLienLac(e);
 }
 
 /**
  * SCADA R1b-1 T3 — "đọc tốt" = giao dịch đọc THÀNH CÔNG (`ok:true`: thiết bị đã trả lời) và không phải tick mà D1 coi là hỏng.
  * ok:true mà mọi tag bad vì lý do khác mất liên lạc (config_error / device_error / out_of_range…) VẪN là đọc tốt: liên lạc đã thông.
  * ok:true mà MỌI tag bad/comm_lost (laTickHong) KHÔNG phải: D1 đếm nó là tick hỏng, coi nó là đọc tốt sẽ báo connected rồi lost ngay.
+ * R1b-1 T4 (chốt) — lần đọc thành công mà lượt phát mẫu treo (`ok:true, lyDo:"ingest_treo"`) VẪN là đọc tốt: thiết bị đã trả lời,
+ * "connected" nói về liên kết thiết bị chứ không về DB (đường push của T3 cũng đánh dấu ở mẫu good đầu, TRƯỚC khi sink ghi DB). Báo treo
+ * không kèm lần đọc (`ok:false`) thì không.
  */
 export function laDocTot(e: SuKienDoc): boolean {
   return e.ok === true && !laTickHong(e);
@@ -73,10 +84,13 @@ export function laDocTot(e: SuKienDoc): boolean {
 /**
  * Bộ đếm tick hỏng liên tiếp cho MỘT phiên (mỗi lần subscribe một bộ mới). Từ tick hỏng thứ `k` trở đi gọi `khiDat(e)` mỗi tick hỏng
  * (người gọi tự chặn khi phiên không còn là phiên đang hoạt động); tick không hỏng ⇒ về 0.
+ * R1b-1 T4 — báo ingest treo KHÔNG kèm lần đọc (`ok:false, lyDo:"ingest_treo"`) là TRUNG TÍNH: không đếm, không về 0 (nó không nói gì
+ * về thiết bị; lần đọc của nó đã được báo ở tick riêng). Ingest treo kèm lần đọc chính được phán theo lần đọc (laTickHong).
  */
 export function taoDemTickHong(k: number, khiDat: (e: SuKienDoc) => void): (e: SuKienDoc) => void {
   let n = 0;
   return (e) => {
+    if (e.lyDo === "ingest_treo" && e.ok !== true) return;
     if (!laTickHong(e)) {
       n = 0;
       return;

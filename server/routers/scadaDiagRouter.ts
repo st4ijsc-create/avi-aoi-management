@@ -233,7 +233,8 @@ export const scadaDiagRouter = router({
         soLanMat: st.soLanMat,
         pollMs: thongTinAdapter(r.id)?.pollMs ?? r.pollIntervalMs,
         p95Ms: bd.p95Ms,
-        boDem1h: { request: bd.request, loi: bd.loi, timeout: bd.timeout, lenh: bd.lenh, lenhLoi: bd.lenhLoi },
+        // R1b-1 T4 — chong (tick bỏ vì chồng) + ingestTreo (lượt phát mẫu/ghi DB quá hạn): M10 hiện ở R1b-2.
+        boDem1h: { request: bd.request, loi: bd.loi, timeout: bd.timeout, lenh: bd.lenh, lenhLoi: bd.lenhLoi, chong: bd.chong, ingestTreo: bd.ingestTreo },
         tag: demTag(r.id, tagBatTheoAdapter.get(r.id) ?? [], now),
       };
     });
