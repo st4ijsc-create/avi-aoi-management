@@ -31,6 +31,7 @@ import { validateUpload } from "../_core/uploadValidation";
 // ★ Đợt 42 — hàng rào tenant cho `usdExport` (QA Đợt 41 D-4 lỗ #1): cùng khuôn Đợt 40, không dựng bộ luật thứ hai (G12).
 import { phamViCua } from "./_phamViNguoiXem";
 import { trongPhamVi } from "../db/hierarchy";
+import { mayTrongPhamVi } from "./_adapterPhamVi";
 import {
   twinLiveEnabled,
   registerModel,
@@ -247,6 +248,9 @@ export const twinRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         requireModelPipelineFlag();
+        // phạm vi nhà máy (rà bảo mật 2026-10-24): máy / nhà máy khai kèm phải trong phạm vi người gọi; ngoài phạm vi ≡ không tồn tại
+        if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId);
+        if (input.factoryId != null) await assertTwinFactoryInScope(ctx, input.factoryId);
         const urdfSource =
           input.urdfSource ??
           (input.sample === "sample-3dof-arm"
@@ -293,6 +297,8 @@ export const twinRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         requireModelPipelineFlag();
+        if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId); // phạm vi nhà máy (rà bảo mật 2026-10-24)
+        if (input.factoryId != null) await assertTwinFactoryInScope(ctx, input.factoryId);
         return convertStepModel({ ...input, createdBy: (ctx as any).user?.id ?? null });
       }),
   }),
