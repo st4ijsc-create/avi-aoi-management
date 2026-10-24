@@ -47,7 +47,7 @@
  *   real camera/calibration/model ⇒ produces NOTHING. Never a safety-rated stop.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, type SQL } from "drizzle-orm";
 import { DbUnavailableError } from "../../../_core/dbErrors";
 import { getDb } from "../../../db/connection";
 import { cameraCalibrations, type CameraCalibration } from "../../../../drizzle/schema";
@@ -206,6 +206,8 @@ export interface CalibrationFilter {
   safetyZoneId?: number;
   robotId?: number;
   onlyEnabled?: boolean;
+  /** phạm vi người dùng (L4 2026-10-25): cổng phạm vi do tầng gọi dựng (undefined = toàn quyền / lối nội bộ). */
+  dieuKienPhamVi?: SQL;
 }
 
 /** List camera calibrations (read — always allowed). */
@@ -216,6 +218,7 @@ export async function listCalibrations(filter: CalibrationFilter = {}): Promise<
   if (filter.safetyZoneId != null) conds.push(eq(cameraCalibrations.safetyZoneId, filter.safetyZoneId));
   if (filter.robotId != null) conds.push(eq(cameraCalibrations.robotId, filter.robotId));
   if (filter.onlyEnabled) conds.push(eq(cameraCalibrations.enabled, true));
+  if (filter.dieuKienPhamVi) conds.push(filter.dieuKienPhamVi);
   return d
     .select()
     .from(cameraCalibrations)

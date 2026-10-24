@@ -19,7 +19,7 @@
  * (overlaps / assembleBoard) so they are unit-testable without a DB.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, eq, inArray, desc } from "drizzle-orm";
+import { and, eq, inArray, desc, type SQL } from "drizzle-orm";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import {
@@ -259,12 +259,12 @@ export async function closeAssignment(assignmentId: number, closedBy?: number | 
  * operator_assignments; robots from the enabled robots registry + their open
  * (assigned/running) tasks. Read-only; NOT flag-gated (a read view is always safe).
  */
-export async function getCurrentBoard(): Promise<BoardStation[]> {
+export async function getCurrentBoard(phamVi?: { phanCong?: SQL; robot?: SQL }): Promise<BoardStation[]> {
   const d = await db();
   const activeAssignments = await d
     .select()
     .from(operatorAssignments)
-    .where(eq(operatorAssignments.status, "active"))
+    .where(phamVi?.phanCong ? and(eq(operatorAssignments.status, "active"), phamVi.phanCong) : eq(operatorAssignments.status, "active"))
     .orderBy(desc(operatorAssignments.assignedStart));
   const humans: BoardHuman[] = activeAssignments.map((a) => ({
     kind: "human",
@@ -276,7 +276,7 @@ export async function getCurrentBoard(): Promise<BoardStation[]> {
     status: a.status,
   }));
 
-  const robotRows = await d.select().from(robots).where(eq(robots.isEnabled, true));
+  const robotRows = await d.select().from(robots).where(phamVi?.robot ? and(eq(robots.isEnabled, true), phamVi.robot) : eq(robots.isEnabled, true));
   // Open-task counts per device (assigned/running).
   const openTasks = await d.select().from(tasks).where(inArray(tasks.status, ["assigned", "running"]));
   const openByDevice = new Map<number, number>();

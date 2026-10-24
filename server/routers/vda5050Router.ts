@@ -30,6 +30,8 @@ import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { robots } from "../../drizzle/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { dieuKienRobotTrongPhamVi } from "./_adapterPhamVi";
+import { robotThayDuocNghiem, robotTrongPhamVi } from "./_robotPhamVi";
 
 const nodeInput = z.object({
   nodeId: z.string().min(1).max(128).optional(),
@@ -43,13 +45,13 @@ export const vda5050Router = router({
   /** List AGV robots (kind='agv') the platform knows about. machine_monitoring read. */
   listAgvs: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return [];
       return db
         .select()
         .from(robots)
-        .where(eq(robots.kind, "agv"))
+        .where(and(eq(robots.kind, "agv"), await dieuKienRobotTrongPhamVi(ctx))) // phạm vi người dùng (L4 2026-10-25)
         .orderBy(desc(robots.updatedAt));
     }),
 
@@ -57,9 +59,10 @@ export const vda5050Router = router({
   status: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ robotId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { isVda5050Enabled, isVda5050Running, getAgvAdapter } = await import("../services/vda5050");
-      const adapter = getAgvAdapter(input.robotId);
+      // phạm vi người dùng (L4 2026-10-25): AGV ngoài phạm vi ≡ không tồn tại ⇒ không lộ adapter / trạng thái / lỗi cuối của nhà máy khác
+      const adapter = (await robotThayDuocNghiem(ctx, input.robotId)) ? getAgvAdapter(input.robotId) : undefined;
       return {
         enabled: isVda5050Enabled(),
         running: isVda5050Running(),
@@ -89,6 +92,7 @@ export const vda5050Router = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await robotTrongPhamVi(ctx, input.robotId); // phạm vi người dùng (L4 2026-10-25): ĐƯỜNG ĐIỀU KHIỂN — AGV của nhà máy khác ≡ không tồn tại, TRƯỚC mọi xây/gửi lệnh
       const { getAgvAdapter } = await import("../services/vda5050");
       const adapter = getAgvAdapter(input.robotId);
       if (!adapter) {
@@ -138,9 +142,10 @@ export const vda5050Router = router({
   testConnection: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ robotId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { ok: false, error: "DB unavailable" };
+      if (!(await robotThayDuocNghiem(ctx, input.robotId))) return { ok: false, error: "AGV robot not found (kind must be 'agv')" }; // phạm vi người dùng (L4 2026-10-25)
       const [r] = await db
         .select()
         .from(robots)

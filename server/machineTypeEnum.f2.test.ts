@@ -6,8 +6,14 @@ import { machineTypeEnum, processResultEnum } from "../drizzle/schema/enums";
 import { MACHINE_TYPES } from "./constants/machineTypes";
 
 describe("F2 — machineTypeEnum", () => {
-  it("has exactly 21 values (17 F2 + 4 SMT-core doc40 W5)", () => {
-    expect(machineTypeEnum.enumValues).toHaveLength(21);
+  it("has exactly 24 values (17 F2 + 4 SMT-core doc40 W5 + 3 doc56 Đ0.5: WELDER, IOT_SENSOR, IOT_GATEWAY)", () => {
+    expect(machineTypeEnum.enumValues).toHaveLength(24);
+  });
+
+  it("contains the 3 doc56 device-class values (migration 0287)", () => {
+    for (const v of ["WELDER", "IOT_SENSOR", "IOT_GATEWAY"]) {
+      expect(machineTypeEnum.enumValues).toContain(v);
+    }
   });
 
   it("contains the 4 SMT-core values (doc 40 W5 MTX-03)", () => {

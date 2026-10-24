@@ -912,7 +912,12 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // Chứng minh: `loTruyXuatPhamVi.db.test.ts` (13 ca CSDL thật; 13/13 đỏ trên mã cũ; đột biến 58/58 bị bắt sau khi bổ sung 3 ca). Kèm vá lỗi CÓ SẴN: getReInspectStatus so sánh thời gian qua Date của JS (lệch múi giờ ⇒ chính hàng gốc bị tính là "muộn hơn").
 // 2026-10-25 (kiểm định, lô W7c, migration 0421): thiết bị đo + hiệu chuẩn + MSA ĐỌC theo nhà máy ⇒ 7 thủ tục đọc C → S (instrument.list|getById · calibration.list|health · msaRecord.list · msaWizard.getStudy|listByProduct): C 483 → 476 · S 423 → 430.
 // 2026-10-25 gộp L2 (A270/C483/S443) với W7c (7 C→S) ⇒ A270 · C476 · S450 (đo bằng census).
-const GHIM = { A: 254, B: 8, C: 476, D: 1198, S: 466, tong: 2402 } as const;
+// ★★ 2026-10-25 (lô L4): **A 254 → 229 · C 476 → 475 · S 466 → 492 · B/D/tong unchanged.** 25 thủ tục ĐỌC → S (24 A→S + 1 C→S): interlock.list|get|testEvaluate · safety.listZones|evaluateZones|listCameraCalibrations|listCollaborations|currentBoard ·
+// robot.list|get|telemetry|jobs|interlockPreview · vda5050.listAgvs|status · equipment.listEquipment|getCapabilities|getState · equipmentIntegration.listLoadHistory|listCodeHistory|euromapOpcuaSnapshot ·
+// predictiveMaintenance.getMachineRisk|getReliabilityStats|getRulEstimate|listRulForecast (interlock.events: C→S). 25 dòng sổ nợ đọc GỠ; 6 thủ tục khai MIỄN TRỪ (edgeDeployment ×4 adminProcedure; listRecipeVersions = danh mục dùng chung;
+// frameworkSnapshot = cache theo thể hiện ⇒ luôn rỗng) — miễn trừ 10 → 16 (vẫn nhóm A theo bộ quét). Sổ ghi −2 (vda5050.sendOrder|testConnection).
+// Chứng minh: `loThietBiPhamVi.db.test.ts` (12 ca; 12/12 đỏ trên mã cũ; đột biến 38/39 — còn 1: vda5050.status cần adapter AGV sống; frameworkSnapshot đã gỡ vì không rò).
+const GHIM = { A: 229, B: 8, C: 475, D: 1198, S: 492, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
@@ -1024,7 +1029,7 @@ describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
       if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
     }
     expect(loi).toEqual([]);
-    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(10);
+    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(16);
   });
 
   it("sổ nợ GOM THEO FILE, mỗi file một khối liền mạch, trong khối đã sắp xếp, không lặp", () => {
