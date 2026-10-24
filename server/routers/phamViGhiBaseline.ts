@@ -24,6 +24,8 @@
  * 2026-10-24 bộ quét CHÍNH XÁC HƠN: hàm dẫn xuất tới được cổng chỉ tính là cổng khi lời gọi TRUYỀN danh tính (ctx, user, scope, phamVi..., cổng gốc) —
  * `db.getFactoryById(id)` (phạm vi là tham số tuỳ chọn, bỏ trống = không lọc) trước đó bị tính là cổng ⇒ +42 nợ THẬT bị che (factoryRouter.update/delete,
  * machineRouter.create/update/delete, productModelRouter.update …) ⇒ 694 → 736 (735 trong sổ + 1 miễn trừ); không mục nào biến mất.
+ * 2026-10-24 lô W5 (−28, cây phân cấp: factory.update/delete/restore/updateMapPosition/updateFloorDims/uploadFloorPlan · factoryZone.* · workshop/line/station create/update/delete/restore ·
+ * machine.create/update/delete/restore/setLifecycleStatus/updateLayout/updateLayoutPosition) ⇒ 736 → 708. Còn lại ở hierarchyRouters: thủ tục adminProcedure (admin phạm vi toàn quyền) và đường MÁY tự khai (register/claimKey/enroll — publicProcedure).
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (8) ──
@@ -345,43 +347,15 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.reject",
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.retire",
   "server/routers/goldenSampleRouter.ts#goldenSampleRouter.setAlignBeforeDiff",
-  // ── server/routers/hierarchyRouters.ts (36) ──
-  "server/routers/hierarchyRouters.ts#factoryRouter.delete",
-  "server/routers/hierarchyRouters.ts#factoryRouter.restore",
-  "server/routers/hierarchyRouters.ts#factoryRouter.update",
-  "server/routers/hierarchyRouters.ts#factoryRouter.updateFloorDims",
-  "server/routers/hierarchyRouters.ts#factoryRouter.updateMapPosition",
-  "server/routers/hierarchyRouters.ts#factoryRouter.uploadFloorPlan",
-  "server/routers/hierarchyRouters.ts#factoryZoneRouter.create",
-  "server/routers/hierarchyRouters.ts#factoryZoneRouter.delete",
-  "server/routers/hierarchyRouters.ts#factoryZoneRouter.update",
-  "server/routers/hierarchyRouters.ts#lineRouter.create",
-  "server/routers/hierarchyRouters.ts#lineRouter.delete",
-  "server/routers/hierarchyRouters.ts#lineRouter.restore",
-  "server/routers/hierarchyRouters.ts#lineRouter.update",
+  // ── server/routers/hierarchyRouters.ts (8) ──
   "server/routers/hierarchyRouters.ts#machineRouter.claimKey",
-  "server/routers/hierarchyRouters.ts#machineRouter.create",
-  "server/routers/hierarchyRouters.ts#machineRouter.delete",
   "server/routers/hierarchyRouters.ts#machineRouter.enroll",
   "server/routers/hierarchyRouters.ts#machineRouter.issueClaimToken",
   "server/routers/hierarchyRouters.ts#machineRouter.regenerateApiKey",
   "server/routers/hierarchyRouters.ts#machineRouter.register",
   "server/routers/hierarchyRouters.ts#machineRouter.reject",
-  "server/routers/hierarchyRouters.ts#machineRouter.restore",
   "server/routers/hierarchyRouters.ts#machineRouter.revokeEnrollmentToken",
-  "server/routers/hierarchyRouters.ts#machineRouter.setLifecycleStatus",
-  "server/routers/hierarchyRouters.ts#machineRouter.update",
-  "server/routers/hierarchyRouters.ts#machineRouter.updateLayout",
-  "server/routers/hierarchyRouters.ts#machineRouter.updateLayoutPosition",
   "server/routers/hierarchyRouters.ts#machineRouter.uploadImage",
-  "server/routers/hierarchyRouters.ts#stationRouter.create",
-  "server/routers/hierarchyRouters.ts#stationRouter.delete",
-  "server/routers/hierarchyRouters.ts#stationRouter.restore",
-  "server/routers/hierarchyRouters.ts#stationRouter.update",
-  "server/routers/hierarchyRouters.ts#workshopRouter.create",
-  "server/routers/hierarchyRouters.ts#workshopRouter.delete",
-  "server/routers/hierarchyRouters.ts#workshopRouter.restore",
-  "server/routers/hierarchyRouters.ts#workshopRouter.update",
   // ── server/routers/hotFolderRouter.ts (4) ──
   "server/routers/hotFolderRouter.ts#hotFolderRouter.deleteConfig",
   "server/routers/hotFolderRouter.ts#hotFolderRouter.dryRun",
