@@ -2225,3 +2225,56 @@ describe("đính kèm NGOÀI workspace — host", () => {
     expect(thongBao().some((t) => /chỉ nhận tệp trên máy/.test(t))).toBe(true);
   });
 });
+
+/**
+ * ★★★ 2026-10-24 — CHẾ ĐỘ AGENT được LƯU theo workspace (kiểm định độc lập: "mức vẫn Tự ghi nhưng chế độ về 'duyệt từng bước' khi mở lại cửa sổ ⇒ hỏi lại").
+ */
+describe("chế độ agent — lưu theo workspace ('dat_che_do' / 'che_do')", () => {
+  const tinCheDo = () => may.daGui.filter((m) => m.loai === "che_do").map((m) => m.cheDo);
+  const nhuong = () => new Promise((r) => setTimeout(r, 0));
+
+  it("★★★ kho rỗng ⇒ 'san_sang' gửi mặc định AN TOÀN 'sua'", async () => {
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await nhuong();
+    expect(tinCheDo()).toEqual(["sua"]);
+  });
+
+  it("★★★ ĐỔI chế độ ⇒ lưu VÀ xác nhận; MỞ LẠI cửa sổ (reload) ⇒ chế độ KHÔNG về mặc định", async () => {
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "dat_che_do", cheDo: "tu-dong" });
+    await nhuong();
+    expect(may.workspaceState["aviAiLocal.cheDoAgent"]).toBe("tu-dong");
+    expect(tinCheDo()).toEqual(["tu-dong"]);
+    // reload: đóng khung (dispose) rồi dựng khung MỚI — workspaceState (kho giả) vẫn còn
+    may.don?.();
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await nhuong();
+    expect(tinCheDo()).toEqual(["tu-dong"]);
+  });
+
+  it("★★ kho HỎNG (sai kiểu/chuỗi lạ) ⇒ rơi về 'sua', KHÔNG bao giờ 'tu-dong'", async () => {
+    for (const hong of [5, null, "vo_han", {}, ["tu-dong"]]) {
+      may.workspaceState["aviAiLocal.cheDoAgent"] = hong;
+      moBang();
+      may.daGui = [];
+      may.nhanTin?.({ loai: "san_sang" });
+      await nhuong();
+      expect(tinCheDo(), JSON.stringify(hong)).toEqual(["sua"]);
+      may.don?.();
+    }
+  });
+
+  it("★★ giá trị lạ từ webview ⇒ BỎ QUA HOÀN TOÀN (không ghi, không gửi lại)", async () => {
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "dat_che_do", cheDo: "toan_quyen" });
+    await nhuong();
+    expect(may.workspaceState["aviAiLocal.cheDoAgent"]).toBeUndefined();
+    expect(tinCheDo()).toEqual([]);
+  });
+});

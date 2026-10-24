@@ -773,6 +773,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   //      setAttribute; innerHTML chỉ được gán chuỗi RỖNG để dọn. Cây markdown đến từ host đã qua danh sách trắng
   //      (loi/markdownAnToan.ts) và được lọc LẦN HAI ở veNutMd (loại lạ ⇒ bỏ). ════
   const oCheDo = document.getElementById("o-che-do");
+  // ★ 2026-10-24 — chế độ được LƯU theo workspace: đổi ở đây ⇒ báo host lưu; host gửi lại tin che_do lúc san_sang (và sau mỗi lần đổi) để ô vẽ ĐÚNG chế độ đã lưu.
+  oCheDo.addEventListener("change", () => vscode.postMessage({ loai: "dat_che_do", cheDo: oCheDo.value }));
   const nutToken = document.getElementById("nut-token");
   const dongHoToken = document.getElementById("dong-ho-token");
   const nutHoanTac = document.getElementById("nut-hoan-tac");
@@ -1368,6 +1370,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       const nhanTaiKhoan = (daDangNhap ? (m.tenTaiKhoan || "Đã đăng nhập") + " — bấm để đăng xuất" : "Đăng nhập") + dongMayChu;
       nutTaiKhoan.title = nhanTaiKhoan;
       nutTaiKhoan.setAttribute("aria-label", nhanTaiKhoan);
+    } else if (m.loai === "che_do") {
+      if (m.cheDo === "hoi" || m.cheDo === "sua" || m.cheDo === "tu-dong" || m.cheDo === "chat-cu") oCheDo.value = m.cheDo;
     } else if (m.loai === "muc_quyen") {
       // ★★★ ĐỢT G / TASK G3 / B4 — extension gửi tin này NGAY sau "san_sang" (mức đã lưu, hoặc
       // mặc định AN TOÀN nếu kho rỗng/hỏng) và SAU MỖI lần "dat_muc_quyen" (xác nhận giá trị THẬT

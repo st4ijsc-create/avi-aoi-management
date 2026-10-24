@@ -1787,3 +1787,16 @@ describe("webview — đính kèm NGOÀI workspace (dán ảnh Ctrl+V, kéo-th�
     expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 1");
   });
 });
+
+describe("webview — chế độ agent: đổi ⇒ báo host lưu; tin che_do ⇒ vẽ lại ô (2026-10-24)", () => {
+  it("★★★ đổi ô chế độ ⇒ dat_che_do; che_do hợp lệ ⇒ ô đổi giá trị; chuỗi lạ ⇒ bị bỏ", () => {
+    const w = chayWebview();
+    w.nut("o-che-do").value = "tu-dong";
+    w.nut("o-che-do").kichHoat("change", {});
+    expect(w.daGui.find((m) => m.loai === "dat_che_do")).toEqual({ loai: "dat_che_do", cheDo: "tu-dong" });
+    w.banTin({ loai: "che_do", cheDo: "hoi" });
+    expect(w.nut("o-che-do").value).toBe("hoi");
+    w.banTin({ loai: "che_do", cheDo: "toan_quyen" });
+    expect(w.nut("o-che-do").value).toBe("hoi");
+  });
+});

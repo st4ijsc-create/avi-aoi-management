@@ -125,3 +125,14 @@ describe("canDuyetGhiAgent — ★★★ 'Tự ghi' ĐỦ để bỏ hỏi sửa
     expect(canDuyetGhiAgent({ ...goc, ...chinh })).toBe(hoi);
   });
 });
+
+import { chuanHoaCheDoAgent, laCheDoAgentHopLe } from "./mucQuyen";
+describe("chế độ agent lưu theo workspace — chuẩn hoá", () => {
+  it.each(["hoi", "sua", "tu-dong", "chat-cu"])("%s hợp lệ, giữ nguyên", (c) => {
+    expect(laCheDoAgentHopLe(c)).toBe(true);
+    expect(chuanHoaCheDoAgent(c)).toBe(c);
+  });
+  it.each([undefined, null, 5, "", "TU-DONG", "tu_ghi", {}, ["sua"]])("%j ⇒ mặc định an toàn 'sua'", (c) => {
+    expect(chuanHoaCheDoAgent(c)).toBe("sua");
+  });
+});

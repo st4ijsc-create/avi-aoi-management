@@ -113,6 +113,9 @@ import {
   MUC_QUYEN_MAC_DINH,
   KHOA_MUC_QUYEN,
   chuanHoaMucQuyen,
+  chuanHoaCheDoAgent,
+  laCheDoAgentHopLe,
+  KHOA_CHE_DO_AGENT,
   laMucQuyenHopLe,
   duocPhepGhiTheoMucQuyen,
   boQuaBuocHoi,
@@ -381,6 +384,8 @@ export class BangChat {
         // có 3 lựa chọn tĩnh trong `<select>`, nhưng KHÔNG được tin nguyên văn — `datMucQuyen` tự
         // kiểm bằng `laMucQuyenHopLe` trước khi dùng.
         mucQuyen?: unknown;
+        /** ★ 2026-10-24 — chế độ agent người dùng vừa chọn ở ô chế độ (THÔ, kiểm bằng laCheDoAgentHopLe). */
+        cheDo?: unknown;
         // ★★★ ĐỢT 4B — chế độ agent của lượt hỏi + tham số các tin `ag_*` (đều THÔ, kiểm trước khi dùng).
         cheDoAgent?: unknown;
         id?: unknown;
@@ -411,6 +416,8 @@ export class BangChat {
         // chọn vẽ đúng mức thật thay vì mãi hiện mặc định tĩnh của markup.
         this.napMucQuyen();
         void this.panel.webview.postMessage({ loai: "muc_quyen", mucQuyen: this.mucQuyenHienTai });
+        // ★ 2026-10-24 — CHẾ ĐỘ agent đã lưu (cùng kho/khuôn với mức quyền): mở lại cửa sổ ⇒ chế độ KHÔNG về mặc định.
+        void this.panel.webview.postMessage({ loai: "che_do", cheDo: chuanHoaCheDoAgent(this.khoHoiThoaiTho().doc<unknown>(KHOA_CHE_DO_AGENT)) });
         void this.phienAgent.guiTrangThaiToken();
         return;
       }
@@ -518,6 +525,7 @@ export class BangChat {
       if (m.loai === "dangXuat") { void this.thucHienDangXuat(); return; }
       // ★★★ ĐỢT G / TASK G3 / B4 — người dùng đổi mức quyền ở ô chọn.
       if (m.loai === "dat_muc_quyen") { void this.datMucQuyen(m.mucQuyen); return; }
+      if (m.loai === "dat_che_do") { void this.datCheDoAgent(m.cheDo); return; }
       // ★★★ ĐỢT G / TASK G4 / B3 — nút "Mở Settings" trên bong bóng lỗi KHÔNG-NỐI-ĐƯỢC-MÁY-CHỦ
       // (xem `hoi()`/`duyetDeXuat()`/`huyDeXuat()` bên dưới, và `moTaLoiKhongNoiDuocMayChu`). Webview
       // chỉ báo Ý ĐỊNH — mở đúng lệnh có sẵn của VSCode, lọc thẳng tới ô `aviAiLocal.serverUrl`,
@@ -1016,6 +1024,13 @@ export class BangChat {
     // Xác nhận lại cho webview ĐÚNG giá trị vừa ÁP DỤNG (không phải giá trị vừa gửi lên) — nếu về
     // sau `napMucQuyen`/`chuanHoaMucQuyen` đổi luật, hai phía không lệch nhau.
     void this.panel.webview.postMessage({ loai: "muc_quyen", mucQuyen: this.mucQuyenHienTai });
+  }
+
+  /** ★ 2026-10-24 — người dùng đổi CHẾ ĐỘ agent: lưu theo workspace; hình dạng lạ bị bỏ (giữ chế độ cũ); xác nhận lại cho webview giá trị THẬT. */
+  private async datCheDoAgent(gt: unknown): Promise<void> {
+    if (!laCheDoAgentHopLe(gt)) return;
+    await this.khoHoiThoaiTho().ghi(KHOA_CHE_DO_AGENT, gt);
+    void this.panel.webview.postMessage({ loai: "che_do", cheDo: gt });
   }
 
   /**
