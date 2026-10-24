@@ -49,7 +49,7 @@ import { phamViCua } from "./_phamViNguoiXem";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { isEdgeControlSchemaMissing } from "../services/edge/edgeControlSchema";
 import { kiemGiaTriGhi, laKenhGhi, loaiKenh, mucTacDongKenh, type LoaiKenh } from "../services/scada/kenhScada";
-import { cheDoMay, type CheDo } from "../services/scada/cheDoMay";
+import { cheDoMay, nguongTuoiCheDoMs, type CheDo } from "../services/scada/cheDoMay";
 import { khoaLuatNhamTagTx, kiemNhatQuanKenh, soHienThi, viPhamInterlock, type KenhNhatQuan } from "../services/scada/nhatQuanKenh";
 import { khoaAdapterTx } from "../services/scada/troLaiKenh";
 import { tagDeadbandEnabled } from "../services/ot/otManager";
@@ -199,13 +199,13 @@ function baoKhiDoi(protocol: string | null): boolean {
  * Bộ lọc CHỈ chạy khi `OT_TAG_DEADBAND_ENABLED` bật (`tagDeadbandEnabled`; tắt ⇒ chuyển thẳng mọi mẫu ⇒ không cảnh báo). Hai đường của
  * CÙNG bộ lọc, cùng một cảnh báo "deadband" (không thêm giá trị mới: cùng cờ, cùng sink, cùng cách gỡ = sửa cấu hình lọc của tag):
  *   • deadband > 0 (0 không lọc gì);
- *   • samplingMs > 3·pollMs — mẫu thưa hơn ngưỡng `cu` cơ bản của bộ đệm (`max(3·poll, …)`) ⇒ kênh dễ thành `cu` giữa hai lần chuyển.
+ *   • samplingMs > ngưỡng tuổi của CỔNG CHẾ ĐỘ (`nguongTuoiCheDoMs` = min(3·poll, 30 s), R1b-1 T10b N5 — trước: 3·poll, ngưỡng `cu` cơ bản
+ *     của bộ đệm) ⇒ kênh dễ thành `cu` giữa hai lần chuyển. Một hàm với `cheDoMay` để cảnh báo và cổng không lệch nhau.
  */
 function locThuaMau(k: { deadband: number | null; samplingMs: number | null; pollMs: number | null }): boolean {
   if (!tagDeadbandEnabled()) return false;
   if (k.deadband != null && k.deadband > 0) return true;
-  const poll = k.pollMs != null && k.pollMs > 0 ? k.pollMs : 5000;
-  return k.samplingMs != null && k.samplingMs > 3 * poll;
+  return k.samplingMs != null && k.samplingMs > nguongTuoiCheDoMs(k.pollMs);
 }
 
 /** Một cảnh báo (nặng nhất trước): edge (trung tâm không có số liệu) > báo khi đổi > deadband (bộ lọc report-by-exception đang chạy). */

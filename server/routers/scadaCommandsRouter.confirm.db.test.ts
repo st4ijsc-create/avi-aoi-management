@@ -11,7 +11,7 @@
  *
  * `command_log` + `scada_command_attempts` là WORM: hàng của tệp này ở lại (đúng thiết kế).
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 
 const RUN = `r1a9${process.pid}${Date.now().toString(36)}`;
@@ -248,6 +248,15 @@ function mauOt(tagKey: string, value: number) {
   return { tagKey, raw: value, value, quality: "good" as const, timestamp: new Date() };
 }
 
+/**
+ * R1b-1 T10b (N5) — cổng chế độ tin mẫu kênh chế độ tối đa min(3·poll, 30 s) (`nguongTuoiCheDoMs`), KHÔNG còn 3·poll = 180 s của poll 60 s
+ * ⇒ mẫu REMOTE nạp MỘT lần ở beforeAll cũ đi giữa tệp. Bộ chọn REMOTE thật gửi mẫu mỗi nhịp poll: nạp lại mẫu (giờ nhận = `now`) trước mỗi
+ * ca, và ở đúng đồng hồ của ca nào chạy cổng chế độ với đồng hồ dời (+61 s, gần hạn TTL).
+ */
+function lamTuoiCheDo(now: number = Date.now()): void {
+  boDem.napTuOt({ adapterId: ad.a, machineId: A.mid }, [{ ...mauOt("che_do", 2), timestamp: new Date(now) }], now);
+}
+
 async function yeuCau(ten: string, tagKey: string, value: number | string = 200): Promise<string> {
   const kq = await nguoi[ten].caller.request({ adapterId: ad.a, tagKey, value, lyDo: LY_DO, clientRequestId: uuid() });
   return kq.requestId;
@@ -359,6 +368,8 @@ beforeAll(async () => {
   B = await seedNhaMay("b");
   await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${nguoi.opA.id}, ${B.code})`);
 }, 60_000);
+
+beforeEach(() => lamTuoiCheDo());
 
 afterAll(async () => {
   vi.unstubAllEnvs();
@@ -564,11 +575,13 @@ describe("Review Focus 2 — dữ liệu đổi giữa request và confirm ⇒ t
     let kqB: Awaited<ReturnType<typeof lenhHmi.yeuCauGhiTag>> | null = null;
     H.trongKhiGhi = async () => {
       // B ra yêu cầu trên CÙNG kênh khi A đang ghi; đồng hồ của B đã qua hạn khoá gốc (TTL 60 s của yêu cầu A).
+      const gioB = new Date(goc!.expires_at).getTime() + 1_000;
+      lamTuoiCheDo(gioB); // T10b N5 — bộ chọn vẫn REMOTE ở đồng hồ của B (mẫu mới), để B tới đúng cổng KHOÁ CHỌN
       kqB = await lenhHmi.yeuCauGhiTag(
         { user: { id: nguoi.opA2.id, role: "operator", twoFactorEnabled: true } },
         { userId: nguoi.opA2.id, userRole: "operator" },
         { adapterId: ad.a, tagKey: "chiem", value: 100, lyDo: LY_DO, clientRequestId: uuid() },
-        new Date(new Date(goc!.expires_at).getTime() + 1_000),
+        new Date(gioB),
       );
     };
     try {
@@ -626,6 +639,7 @@ describe("R1b-1 T7 fix round 1 (M-5) — TOTP_CAN ở confirm bị điều tiế
       for (let i = 0; i < 35; i++) await goi();
       expect(await thuSau(m, u.id)).toHaveLength(30);
       vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 61_000 });
+      lamTuoiCheDo(); // T10b N5 — mẫu chế độ mới ở đồng hồ giả
       await goi();
     } finally {
       vi.useRealTimers();
@@ -907,6 +921,7 @@ describe("fix round 1 — máy đổi, mất khoá, dải hẹp, sàn vai, CAS t
     // Gốc đồng hồ của lượt confirm = 3 040 ms TRƯỚC hạn ⇒ bước 2 qua (sàn còn lại 3 s — R1a final I-2); móc ngay trước CAS cho 150 ms
     // trôi ⇒ lúc CAS còn < 3 s (CAS đòi expiresAt > lúc CAS + 3 s) ⇒ trượt ⇒ HET_HAN qua đường CAS (móc chạy = đã tới bước 5).
     const nowDate = new Date(row.e.getTime() - 3_040);
+    lamTuoiCheDo(nowDate.getTime()); // T10b N5 — cổng chế độ của lượt confirm chạy theo nowDate (~57 s sau yêu cầu)
     let mocDaChay = false;
     H.sauGiaHan = () =>
       new Promise((r) => {

@@ -517,6 +517,17 @@ describe("scadaKenh.cheDo — kênh chế độ máy", () => {
     expect((await cua(viewerA, A.mid)).canhBaoNguon).toBeNull();
     await dung(sql`UPDATE device_tags SET "samplingMs" = 1501 WHERE id = ${tg.mode}`);
     expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("deadband");
+    // R1b-1 T10b (N5) — ngưỡng = ngưỡng tuổi của CỔNG CHẾ ĐỘ min(3·poll, 30 s): poll 20 s ⇒ 30 s (không phải 60 s)
+    await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 20000 WHERE id = ${ad.a}`);
+    try {
+      await dung(sql`UPDATE device_tags SET "samplingMs" = 30000 WHERE id = ${tg.mode}`);
+      expect((await cua(viewerA, A.mid)).canhBaoNguon).toBeNull();
+      await dung(sql`UPDATE device_tags SET "samplingMs" = 30001 WHERE id = ${tg.mode}`);
+      expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("deadband");
+    } finally {
+      await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 500 WHERE id = ${ad.a}`);
+      await dung(sql`UPDATE device_tags SET "samplingMs" = 1501 WHERE id = ${tg.mode}`);
+    }
     vi.stubEnv("OT_TAG_DEADBAND_ENABLED", "false");
     expect((await cua(viewerA, A.mid)).canhBaoNguon).toBeNull();
     // OPC UA: đổi protocol của adapter (bật, đúng máy) trong chốc lát — không ai mở phiên (test không gọi startOt)
