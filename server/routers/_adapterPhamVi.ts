@@ -85,12 +85,26 @@ export async function maySuDungTrongPhamVi(ctx: CoDanhTinh, machineId: number | 
   if (!idsMay.includes(machineId)) throw khongThayMay();
 }
 
-/** Adapter của một TAG (id client gửi): tag không tồn tại / adapter ngoài phạm vi ⇒ NOT_FOUND. Trả `adapterId`. */
+/** NOT_FOUND của một tag — MỘT hình dạng cho "không tồn tại" và "ngoài phạm vi" (kiem-dinh R1b-1 M6). */
+export const khongThayTag = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
+
+/**
+ * Adapter của một TAG (id client gửi): tag không tồn tại / adapter ngoài phạm vi ⇒ CÙNG MỘT NOT_FOUND `{ entity: "deviceTag" }`. Trả `adapterId`.
+ * kiem-dinh R1b-1 M6 (2026-10-25): trước đây ngoài phạm vi trả `NOT_FOUND {entity:"adapter"}` (lỗi của `adapterTrongPhamVi`) còn không tồn tại
+ * trả `{entity:"deviceTag"}` ⇒ người nhà máy A dò id tag phân biệt được tag CÓ THẬT của nhà máy B. Lỗi phạm vi đổi về đúng lỗi "không tồn tại";
+ * lỗi khác (DB, phạm vi không phân giải được — strict) vẫn ném nguyên.
+ */
 export async function adapterCuaTag(ctx: CoDanhTinh, tagId: number): Promise<number> {
   const db = await layDb();
   const [t] = await db.select({ adapterId: deviceTags.adapterId }).from(deviceTags).where(eq(deviceTags.id, tagId)).limit(1);
-  if (!t) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
-  await adapterTrongPhamVi(ctx, t.adapterId);
+  if (!t) throw khongThayTag();
+  try {
+    await adapterTrongPhamVi(ctx, t.adapterId);
+  } catch (e) {
+    const c = (e as { code?: string; cause?: { appCode?: string } } | null) ?? null;
+    if (c?.code === "NOT_FOUND" && c.cause?.appCode === "ENTITY_NOT_FOUND") throw khongThayTag();
+    throw e;
+  }
   return t.adapterId;
 }
 
