@@ -1,3 +1,6 @@
+import { sql } from "drizzle-orm";
+import type { CoDanhTinh } from "./_phamViNguoiXem";
+import { ghiViTri } from "./_viTriPhamVi";
 import { moduleProcedure, moduleGate, router } from "../_core/trpc";
 import { adminProcedure as adminProcedureBase } from "./_shared";
 // ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
@@ -461,7 +464,8 @@ const edgeRouter = router({
       status: z.string(),
       errorMessage: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await trienKhaiEdgeGhi(ctx, input.deploymentId); // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b)
       return updateDeploymentStatus(input.deploymentId, input.status as any, input.errorMessage);
     }),
 
@@ -470,7 +474,8 @@ const edgeRouter = router({
       deploymentId: z.number(),
       pendingResults: z.number().default(0),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await trienKhaiEdgeGhi(ctx, input.deploymentId); // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b)
       return recordHeartbeat(input.deploymentId, input.pendingResults);
     }),
 
@@ -486,7 +491,8 @@ const edgeRouter = router({
         inferredAt: z.string().datetime(),
       })),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await trienKhaiEdgeGhi(ctx, input.deploymentId); // phạm vi nhà máy (rà bảo mật 2026-10-25, lô W11b)
       return syncEdgeResults(input.deploymentId, input.results.map(r => ({
         ...r,
         inferredAt: new Date(r.inferredAt),
@@ -531,6 +537,20 @@ const edgeRouter = router({
 // ─── Combined Advanced AI Router ──────────────────────────────
 // DISABLED (local-AI migration): training, abTest, edge sub-routers no longer registered.
 // Kept in source for rollback; only `batch` and `monitoring` are exposed.
+/** Triển khai edge gắn một máy (machineId): máy phải trong phạm vi người gọi; không gắn máy ⇒ chỉ toàn quyền. Ngoài phạm vi ≡ "Deployment not found". */
+async function trienKhaiEdgeGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  const { getDb } = await import("../db");
+  const d = await getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const rows = (await d.execute(sql`SELECT "machineId" AS m FROM edge_deployments WHERE id = ${id}`)) as unknown as Array<{ m: number | null }>;
+  try {
+    if (rows.length === 0) throw new Error("none");
+    await ghiViTri(ctx, { machineId: rows[0]!.m }, { batBuoc: true });
+  } catch {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, "Deployment not found");
+  }
+}
+
 export const aiAdvancedRouter = router({
   batch: batchRouter,
   // training: trainingRouter,

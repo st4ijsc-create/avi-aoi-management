@@ -12,7 +12,7 @@ import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { idsTrongPhamVi } from "../db/hierarchy";
 import { resolveTenantFactoryScope } from "../db/reportAggregators";
 import { mayTrongPhamVi } from "./_adapterPhamVi";
-import { ghiViTri } from "./_viTriPhamVi";
+import { ghiViTri, canhBaoDuDoanGhi } from "./_viTriPhamVi";
 
 /**
  * Phạm vi nhà máy của một bản phân tích nguyên nhân gốc đã lưu (rà bảo mật 2026-10-24, kiểm định phamViGhi): bản có máy ⇒ máy phải trong
@@ -27,22 +27,6 @@ async function phanTichTrongPhamVi(ctx: CoDanhTinh & { user: { id: number } }, r
   if (ok && row.factoryId != null) ok = sc.includes(row.factoryId);
   if (ok && row.machineId == null && row.factoryId == null) ok = row.requestedBy === ctx.user.id;
   if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "rcaAnalysis" }, "Analysis not found");
-}
-
-/**
- * Phạm vi nhà máy cho GHI cảnh báo dự đoán (rà bảo mật 2026-10-25, lô W11): cảnh báo mang machineId / factoryId — phải trong phạm vi người gọi; cảnh báo không vị trí nào
- * chỉ người toàn quyền thao tác. Ngoài phạm vi / không tồn tại ≡ "Alert not found". Toàn quyền (admin) ⇒ không kiểm.
- */
-async function canhBaoDuDoanGhi(ctx: CoDanhTinh, id: number): Promise<void> {
-  const d = await getDb();
-  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-  const [a] = await d.select({ m: predictiveAlerts.machineId, f: predictiveAlerts.factoryId }).from(predictiveAlerts).where(eq(predictiveAlerts.id, id)).limit(1);
-  try {
-    if (!a) throw new Error("none");
-    await ghiViTri(ctx, { machineId: a.m, factoryId: a.f }, { batBuoc: true });
-  } catch {
-    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "predictiveAlert" }, "Alert not found");
-  }
 }
 
 // ============ ROOT CAUSE ANALYSIS ROUTER ============

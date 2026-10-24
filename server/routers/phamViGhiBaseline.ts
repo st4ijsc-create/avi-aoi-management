@@ -38,101 +38,27 @@
  * 2026-10-25 lô W7c (−1: msaAdvanced.anovaOfStudy) — migration 0421 `measurement_instruments."factoryId"`: thiết bị đo / hiệu chuẩn / MSA theo NHÀ MÁY (đọc + tên thiết bị suy qua instrumentId; NULL ⇒ chỉ toàn quyền) ⇒ 408 → 407.
  * 2026-10-25 lô W10 (−17 vá: routing · spcAdvanced · goldenSample · mqttOee machine/OEE/ngừng máy/mục tiêu · equipmentStandards thẻ tenant; −35 MIỄN TRỪ có lý do sau khi đọc mã: repoWorkspace 17 (danh sách trắng theo người gọi), dashboardWidget 13 (cấu hình cá nhân theo userId), aiGguf 5 (tính toán LLM thuần); aiGguf.soModel* = bí danh adminProcedure) ⇒ 407 → 355. CHƯA đụng (cần quyết định): mqttClient.updateFcmToken · mqttAlert.update/delete/toggle/resolve (luật cảnh báo toàn cục, KHÔNG có requirePermission) .
  * 2026-10-25 lô W11a (−5 vá: predictiveAlert acknowledge/resolve/dismiss/generatePredictions theo máy/nhà máy của cảnh báo + lọc dữ liệu quét; mqttClient.updateFcmToken theo trạm của client + requirePermission(machine_alerts)); mqttAlert.update/delete/toggle/resolve ⇒ MIỄN TRỪ (luật toàn cục) NHƯNG nay đòi requirePermission(machine_alerts); equipmentStandards: chuẩn KHÔNG thẻ chỉ admin + engineer ghi ⇒ 355 → 350.
+ * 2026-10-25 lô W11b (−15 vá: aiQualityGate · aiFeedback (kể cả lô huấn luyện / xuất chỉ phần trong phạm vi) · aiSegmentation.saveMask · aiModel.runInference theo lần kiểm tra; aiSmartAlertRouting.acknowledge · aiInsight.setStatus · aiActiveLearning theo máy; edge deployments theo máy — router edge hiện BỊ COMMENT khỏi aiAdvancedRouter nên chưa tới được; −42 MIỄN TRỪ có dẫn mã: sở hữu theo người dùng (aiAgent · aiChat · aiCopilot · aiSpecialistAgent · …), tính toán / model toàn cục) ⇒ 350 → 335. CÒN LẠI nhóm AI (W11c): aiVision.proposeDefect · aiRcaCopilot.applyTopFix · aiThresholdAdvisor.applyNgThreshold (đề xuất HITL), aiAdvanced training/abTest (router bị comment), aiAdvancedVision.explainHeatmap, aiModel cards, aiImageSearch (mutation đọc-hình-tìm-kiếm trả ảnh nhiều nhà máy — cần đổi dịch vụ).
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ──
   "server/_core/systemRouter.ts#systemRouter.marketplace.download",
-  // ── server/routers/aiActiveLearningRouter.ts (2) ──
-  "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.skipItem",
-  "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.submitLabel",
-  // ── server/routers/aiAdvancedRouter.ts (5) ──
+  // ── server/routers/aiAdvancedRouter.ts (2) ──
   "server/routers/aiAdvancedRouter.ts#abTestRouter.runInference",
   "server/routers/aiAdvancedRouter.ts#abTestRouter.submitFeedback",
-  "server/routers/aiAdvancedRouter.ts#edgeRouter.heartbeat",
-  "server/routers/aiAdvancedRouter.ts#edgeRouter.syncResults",
-  "server/routers/aiAdvancedRouter.ts#edgeRouter.updateStatus",
   // ── server/routers/aiAdvancedVisionRouter.ts (1) ──
   "server/routers/aiAdvancedVisionRouter.ts#aiAdvancedVisionRouter.explainHeatmap",
-  // ── server/routers/aiAgentRouter.ts (10) ──
-  "server/routers/aiAgentRouter.ts#aiAgentRouter.approvePlan",
-  "server/routers/aiAgentRouter.ts#aiAgentRouter.bac",
-  "server/routers/aiAgentRouter.ts#aiAgentRouter.boDeXuat",
-  "server/routers/aiAgentRouter.ts#aiAgentRouter.cancelSession",
-  "server/routers/aiAgentRouter.ts#aiAgentRouter.confirmStep",
-  "server/routers/aiAgentRouter.ts#aiAgentRouter.duyet",
-  "server/routers/aiAgentRouter.ts#aiAgentRouter.hoanTac",
-  "server/routers/aiAgentRouter.ts#aiAgentRouter.nhoDeXuat",
-  "server/routers/aiAgentRouter.ts#aiAgentRouter.phanHoi",
-  "server/routers/aiAgentRouter.ts#aiAgentRouter.startPlaybook",
-  // ── server/routers/aiAnalysisHubRouter.ts (3) ──
-  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.imageDefectDescription",
-  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.quickQualityCheck",
-  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.similarDefectSearch",
-  // ── server/routers/aiAnomalyRouter.ts (1) ──
-  "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.score",
-  // ── server/routers/aiChatRouter.ts (5) ──
-  "server/routers/aiChatRouter.ts#aiChatRouter.chat",
-  "server/routers/aiChatRouter.ts#aiChatRouter.deleteConversation",
-  "server/routers/aiChatRouter.ts#aiChatRouter.deleteMessage",
-  "server/routers/aiChatRouter.ts#aiChatRouter.saveStreamedMessage",
-  "server/routers/aiChatRouter.ts#aiChatRouter.updateConversation",
-  // ── server/routers/aiChayUngDungRouter.ts (3) ──
-  "server/routers/aiChayUngDungRouter.ts#aiChayUngDungRouter.chay",
-  "server/routers/aiChayUngDungRouter.ts#aiChayUngDungRouter.deXuatLenh",
-  "server/routers/aiChayUngDungRouter.ts#aiChayUngDungRouter.dung",
-  // ── server/routers/aiCopilotRouter.ts (2) ──
-  "server/routers/aiCopilotRouter.ts#aiCopilotRouter.cancelAction",
-  "server/routers/aiCopilotRouter.ts#aiCopilotRouter.confirmAction",
-  // ── server/routers/aiEvalRouter.ts (2) ──
-  "server/routers/aiEvalRouter.ts#aiEvalRouter.driftCheck",
-  "server/routers/aiEvalRouter.ts#aiEvalRouter.evaluate",
-  // ── server/routers/aiFeedbackRouter.ts (4) ──
-  "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.createSuggestion",
-  "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.createTrainingBatch",
-  "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.exportTrainingBatch",
-  "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.submitFeedback",
-  // ── server/routers/aiGatewayTokenRouter.ts (1) ──
-  "server/routers/aiGatewayTokenRouter.ts#aiGatewayTokenRouter.thuHoi",
   // ── server/routers/aiImageSearchRouter.ts (2) ──
   "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByUpload",
   "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByVector",
-  // ── server/routers/aiInsightRouter.ts (1) ──
-  "server/routers/aiInsightRouter.ts#aiInsightRouter.setStatus",
-  // ── server/routers/aiLocalKbRouter.ts (1) ──
-  "server/routers/aiLocalKbRouter.ts#aiLocalKbRouter.feedback",
-  // ── server/routers/aiLocalTrainingRouter.ts (1) ──
-  "server/routers/aiLocalTrainingRouter.ts#aiLocalTrainingRouter.predict",
-  // ── server/routers/aiModelRouter.ts (4) ──
+  // ── server/routers/aiModelRouter.ts (3) ──
   "server/routers/aiModelRouter.ts#aiModelRouter.approveCard",
   "server/routers/aiModelRouter.ts#aiModelRouter.createCard",
-  "server/routers/aiModelRouter.ts#aiModelRouter.runInference",
   "server/routers/aiModelRouter.ts#aiModelRouter.updateCard",
-  // ── server/routers/aiQualityGateRouter.ts (2) ──
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.processInspection",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.reviewDecision",
   // ── server/routers/aiRcaCopilotRouter.ts (1) ──
   "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix",
-  // ── server/routers/aiRobotAnomalyRouter.ts (2) ──
-  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.evaluateRollback",
-  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.manualRollback",
-  // ── server/routers/aiSegmentationRouter.ts (3) ──
-  "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.deleteMask",
-  "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.runSegmentation",
-  "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.saveMask",
-  // ── server/routers/aiSettingsRouter.ts (1) ──
-  "server/routers/aiSettingsRouter.ts#aiSettingsRouter.cancelAiJob",
-  // ── server/routers/aiSmartAlertRoutingRouter.ts (1) ──
-  "server/routers/aiSmartAlertRoutingRouter.ts#aiSmartAlertRoutingRouter.acknowledge",
-  // ── server/routers/aiSpecialistAgentRouter.ts (4) ──
-  "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.run",
-  "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.runModuleAudit",
-  "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.runWorkflowChain",
-  "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.submitFeedback",
   // ── server/routers/aiThresholdAdvisorRouter.ts (1) ──
   "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.applyNgThreshold",
-  // ── server/routers/aiVisionLanguageRouter.ts (2) ──
-  "server/routers/aiVisionLanguageRouter.ts#aiVisionLanguageRouter.describeDefect",
-  "server/routers/aiVisionLanguageRouter.ts#aiVisionLanguageRouter.generateReport",
   // ── server/routers/aiVisionRouter.ts (1) ──
   "server/routers/aiVisionRouter.ts#aiVisionRouter.proposeDefect",
   // ── server/routers/alertEscalationRouter.ts (4) ──
@@ -233,9 +159,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/irRouter.ts (2) ──
   "server/routers/irRouter.ts#irRouter.requestBuild",
   "server/routers/irRouter.ts#irRouter.saveFlow",
-  // ── server/routers/kbStudioRouter.ts (2) ──
-  "server/routers/kbStudioRouter.ts#kbStudioRouter.huyEvalMa",
-  "server/routers/kbStudioRouter.ts#kbStudioRouter.startFinetune",
   // ── server/routers/layoutRouters.ts (6) ──
   "server/routers/layoutRouters.ts#layoutRouter.addMachinePosition",
   "server/routers/layoutRouters.ts#layoutRouter.create",
@@ -436,6 +359,90 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
  * (c) không đồng thời nằm trong sổ nợ. Thêm mục = lời khai công khai, người review phải thấy.
  */
 export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
+  "server/routers/aiAgentRouter.ts#aiAgentRouter.approvePlan":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiAgentRouter.ts#aiAgentRouter.confirmStep":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiAgentRouter.ts#aiAgentRouter.cancelSession":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiAgentRouter.ts#aiAgentRouter.startPlaybook":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiAgentRouter.ts#aiAgentRouter.duyet":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiAgentRouter.ts#aiAgentRouter.bac":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiAgentRouter.ts#aiAgentRouter.hoanTac":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiAgentRouter.ts#aiAgentRouter.nhoDeXuat":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiAgentRouter.ts#aiAgentRouter.boDeXuat":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiAgentRouter.ts#aiAgentRouter.phanHoi":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.imageDefectDescription":
+    "Tính toán / suy luận LLM-VLM thuần trên dữ liệu người dùng đưa vào (machineCode chỉ là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
+  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.similarDefectSearch":
+    "Tính toán / suy luận LLM-VLM thuần trên dữ liệu người dùng đưa vào (machineCode chỉ là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
+  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.quickQualityCheck":
+    "Tính toán / suy luận LLM-VLM thuần trên dữ liệu người dùng đưa vào (machineCode chỉ là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
+  "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.score":
+    "Chấm điểm bất thường một ảnh do người dùng đưa vào; machineId / productModelId chỉ chọn hồ sơ model, không đọc dữ liệu nhà máy trả về.",
+  "server/routers/aiChatRouter.ts#aiChatRouter.updateConversation":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiChatRouter.ts#aiChatRouter.deleteConversation":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiChatRouter.ts#aiChatRouter.deleteMessage":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiChatRouter.ts#aiChatRouter.chat":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiChatRouter.ts#aiChatRouter.saveStreamedMessage":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiChayUngDungRouter.ts#aiChayUngDungRouter.chay":
+    "projectId của AI chạy ứng dụng phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc, doc 79 trục 2) — tài nguyên thư mục dự án, không phải dữ liệu nhà máy.",
+  "server/routers/aiChayUngDungRouter.ts#aiChayUngDungRouter.dung":
+    "projectId của AI chạy ứng dụng phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc, doc 79 trục 2) — tài nguyên thư mục dự án, không phải dữ liệu nhà máy.",
+  "server/routers/aiChayUngDungRouter.ts#aiChayUngDungRouter.deXuatLenh":
+    "projectId của AI chạy ứng dụng phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc, doc 79 trục 2) — tài nguyên thư mục dự án, không phải dữ liệu nhà máy.",
+  "server/routers/aiCopilotRouter.ts#aiCopilotRouter.confirmAction":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiCopilotRouter.ts#aiCopilotRouter.cancelAction":
+    "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
+  "server/routers/aiEvalRouter.ts#aiEvalRouter.evaluate":
+    "Đánh giá / kiểm trôi MODEL (tài nguyên toàn cục `ai_models`, không cột nhà máy); không đụng dữ liệu nhà máy.",
+  "server/routers/aiEvalRouter.ts#aiEvalRouter.driftCheck":
+    "Đánh giá / kiểm trôi MODEL (tài nguyên toàn cục `ai_models`, không cột nhà máy); không đụng dữ liệu nhà máy.",
+  "server/routers/aiGatewayTokenRouter.ts#aiGatewayTokenRouter.thuHoi":
+    "Thu hồi token cổng AI của CHÍNH người gọi: thuHoiToken(u.id, id) lọc theo chủ token.",
+  "server/routers/aiLocalKbRouter.ts#aiLocalKbRouter.feedback":
+    "Ghi phản hồi câu trả lời KB của CHÍNH người gọi (recordAnswerFeedback userId = ctx.user.id); không có dữ liệu nhà máy.",
+  "server/routers/aiLocalTrainingRouter.ts#aiLocalTrainingRouter.predict":
+    "Suy luận model cục bộ trên dữ liệu người dùng đưa vào; không đọc / ghi bảng nhà máy.",
+  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.evaluateRollback":
+    "Quay lui phiên bản MODEL (tài nguyên toàn cục, không cột nhà máy); đòi requirePermission(machine_control, canEdit) + quality gate eval (doc69 W0-2).",
+  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.manualRollback":
+    "Quay lui phiên bản MODEL (tài nguyên toàn cục, không cột nhà máy); đòi requirePermission(machine_control, canEdit) + quality gate eval (doc69 W0-2).",
+  "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.deleteMask":
+    "deleteMask: chỉ người tạo mask hoặc admin (row.createdBy !== ctx.user.id && role !== admin ⇒ FORBIDDEN); runSegmentation: suy luận model trên ảnh người dùng đưa vào, không ghi bảng nhà máy.",
+  "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.runSegmentation":
+    "deleteMask: chỉ người tạo mask hoặc admin (row.createdBy !== ctx.user.id && role !== admin ⇒ FORBIDDEN); runSegmentation: suy luận model trên ảnh người dùng đưa vào, không ghi bảng nhà máy.",
+  "server/routers/aiSettingsRouter.ts#aiSettingsRouter.cancelAiJob":
+    "Huỷ job hàng đợi AI của CHÍNH người gọi: cancelJob(id, ctx.user.id) từ chối khi job.userId khác.",
+  "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.run":
+    "Phiên chuyên gia AI khoá theo userId của người gọi (completeAiSpecialistSession(sessionId, userId…)); thủ tục chạy model / ghi phản hồi trên phiên CỦA MÌNH. Đã đọc mã (2026-10-25).",
+  "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.runWorkflowChain":
+    "Phiên chuyên gia AI khoá theo userId của người gọi (completeAiSpecialistSession(sessionId, userId…)); thủ tục chạy model / ghi phản hồi trên phiên CỦA MÌNH. Đã đọc mã (2026-10-25).",
+  "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.runModuleAudit":
+    "Phiên chuyên gia AI khoá theo userId của người gọi (completeAiSpecialistSession(sessionId, userId…)); thủ tục chạy model / ghi phản hồi trên phiên CỦA MÌNH. Đã đọc mã (2026-10-25).",
+  "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.submitFeedback":
+    "Phiên chuyên gia AI khoá theo userId của người gọi (completeAiSpecialistSession(sessionId, userId…)); thủ tục chạy model / ghi phản hồi trên phiên CỦA MÌNH. Đã đọc mã (2026-10-25).",
+  "server/routers/aiVisionLanguageRouter.ts#aiVisionLanguageRouter.describeDefect":
+    "Suy luận VLM thuần trên dữ liệu người dùng đưa vào (machineCode là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
+  "server/routers/aiVisionLanguageRouter.ts#aiVisionLanguageRouter.generateReport":
+    "Suy luận VLM thuần trên dữ liệu người dùng đưa vào (machineCode là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
+  "server/routers/kbStudioRouter.ts#kbStudioRouter.huyEvalMa":
+    "KB Studio: tài nguyên toàn cục của vai kbStudioProcedure / kbStudioDeleteProcedure (sàn vai + 2FA); không có dữ liệu nhà máy.",
+  "server/routers/kbStudioRouter.ts#kbStudioRouter.startFinetune":
+    "KB Studio: tài nguyên toàn cục của vai kbStudioProcedure / kbStudioDeleteProcedure (sàn vai + 2FA); không có dữ liệu nhà máy.",
   "server/routers/mqttOeeRouters.ts#mqttAlertRouter.update":
     "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
   "server/routers/mqttOeeRouters.ts#mqttAlertRouter.delete":
