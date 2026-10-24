@@ -71,6 +71,27 @@ Lý do:
 
 **Đã bỏ khỏi R1b-2a theo điều phối (R1b-1 sửa trong vòng kiem-dinh):** N-1 (truy vấn trước triển khai), I2 (CLI import), M6 (NOT_FOUND đồng nhất).
 
+## ĐÃ DUYỆT — điều phối 2026-10-25 (ràng buộc thêm, có hiệu lực như Global Constraints)
+
+- **Thời điểm thực thi:** chỉ sau khi vòng sửa kiểm định R1b-1 được kiem-dinh kết luận ĐẠT và điều phối đã gộp. Bước 0 giữ nguyên.
+- **Câu hỏi:** Q1 có · Q2 duyệt · Q3 duyệt (hằng số trong mã) · Q5 duyệt · Q6 duyệt · Q7 có · Q9 duyệt.
+- **T6 `STOP_PIN_GO_TRUOC` khi nâng mức tag đang ghim: DUYỆT.** Một tag đang ghim bị nâng mức mà âm thầm rớt khỏi STOP là lỗi an toàn.
+- **Q4 duyệt, kèm điều kiện (Task 4):**
+  - Từ chối do hạn chót phải ghi `command_log` và audit với MÃ RIÊNG, và được đếm vào posture.
+  - UI hiện thông điệp "dùng E-STOP cứng" NỔI BẬT: hộp hoặc băng đỏ cố định, KHÔNG phải toast thường.
+  - Một khi `dispatch()` đã bắt đầu thì không bao giờ trả "từ chối" vì hạn chót. Hạn chót chỉ bọc pha TRƯỚC dispatch.
+  - Test cho cả ba điều trên, mỗi điều có đột biến.
+- **Q8 duyệt, kèm điều kiện (Task 10):**
+  - Chỉ hoàn lượt khi CÙNG `userId` VÀ CÙNG mã đã tiêu trong 10 s. Mọi mã khác vẫn đếm.
+  - Test "phát lại mã đã tiêu 20 lần ⇒ không khoá, không ghi".
+  - Test "mã sai xen kẽ vẫn khoá".
+- **Q10 có:** bench T15 chỉ chạy khi điều phối OK ngay tại thời điểm đó, sau khi đo commit còn trống. Không chạm :8091.
+- **T14 dọn `_test` — chốt cứng:**
+  - Từ chối nếu `current_database()` không kết thúc bằng `_test`. Test có ca đổi tên DB ⇒ từ chối.
+  - Mặc định dry-run.
+  - KHÔNG BAO GIỜ chạy trên DEV (bảng WORM).
+- **Migration:** R1b-2a không có migration. Giữ 0434 cho vòng sửa R1b-1 nếu cần; SQL gửi điều phối trước khi áp DEV.
+
 ## Global Constraints
 
 - **Nơi làm và nhánh.**
