@@ -12,7 +12,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { appError } from "../_core/appError";
 import { getDb as getDbRaw } from "../db";
 import { idsTrongPhamVi, type PhamViDoc } from "../db/hierarchy";
-import { commandLog, commissioningRecords, deviceAdapters, deviceTags, safetyEvents, wipTracking } from "../../drizzle/schema";
+import { cameraCalibrations, collaborationSessions, commandLog, commissioningRecords, deviceAdapters, deviceTags, robots, safetyEvents, safetyZones, wipTracking } from "../../drizzle/schema";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 
 export const khongThayAdapter = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
@@ -254,4 +254,18 @@ export async function donViTrongPhamVi(ctx: CoDanhTinh, serials: string[]): Prom
     for (const r of rows) if (r.s != null) out.add(r.s);
   }
   return out;
+}
+
+/** phạm vi người dùng (L4 2026-10-25): điều kiện phạm vi cho vùng an toàn / hiệu chuẩn camera / phiên cộng tác / robot (cùng luật `dieuKienViTriTrongPhamVi`: hàng không định vị được chỉ toàn quyền thấy). */
+export async function dieuKienVungAnToanTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
+  return dieuKienViTriTrongPhamVi(phamViCua(ctx), { lineId: safetyZones.lineId, stationId: safetyZones.stationId, factoryId: safetyZones.factoryId, robotId: safetyZones.robotId });
+}
+export async function dieuKienHieuChuanCameraTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
+  return dieuKienViTriTrongPhamVi(phamViCua(ctx), { lineId: cameraCalibrations.lineId, stationId: cameraCalibrations.stationId, factoryId: cameraCalibrations.factoryId, robotId: cameraCalibrations.robotId });
+}
+export async function dieuKienPhienCongTacTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
+  return dieuKienViTriTrongPhamVi(phamViCua(ctx), { factoryId: collaborationSessions.factoryId, robotId: collaborationSessions.robotDeviceId });
+}
+export async function dieuKienRobotTrongPhamVi(ctx: CoDanhTinh): Promise<SQL | undefined> {
+  return dieuKienViTriTrongPhamVi(phamViCua(ctx), { lineId: robots.lineId, stationId: robots.stationId });
 }
