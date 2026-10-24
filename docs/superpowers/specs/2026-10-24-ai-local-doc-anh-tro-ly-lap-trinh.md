@@ -106,5 +106,29 @@ Lần chạy 06:45 trước đó HỎNG ở thiết bị đo (biến `URL` che m
   ảnh #13 với câu này). Kết quả mô tả của sidecar ở đường KB phải đi qua `wrapUntrustedBlock` (hiện CHƯA bọc — lỗ, `augmentQuestionWithVision`).
 - :8091: `start-llama-server.ps1` đọc `LLAMA_SERVER_MMPROJ` = `off` (mặc định hiện tại) | `auto` (tìm `<tên model bỏ đuôi lượng tử>-mmproj-F16.gguf`
   cạnh model — 35B và 27B có mmproj RIÊNG, KheNang đổi khe thì mmproj đổi theo) | đường dẫn. Bật = quyết định của dieu-phoi.
+- **Đã làm (dieu-phoi duyệt 2026-10-24):** `65b96c6f2` KB đọc ảnh bằng model chính khi khe có thị giác, sidecar chỉ nạp khi VRAM trống
+  ≥ 8.500 MiB và commit trống ≥ 15 GB (không đủ ⇒ ghi chú "chưa đọc được ảnh (lý do)", không nạp chồng), bọc `wrapUntrustedBlock`, MIME
+  theo byte đầu · `7c63c9c3f` `/v1` chuyển ảnh theo hợp đồng · `60f3c8436` `LLAMA_SERVER_MMPROJ` (mặc định CÒN `off`).
+- **Cổng bật mặc định `auto` (viết TRƯỚC khi chạy, 2026-10-24):** đường SẢN PHẨM `start-llama-server.ps1 -Force -Model …` với `.env`
+  cây chính (bản sao tạm chỉ thêm `LLAMA_SERVER_MMPROJ=auto`, xoá sau đo), cấu hình mặc định mới (`--cache-ram 0`), lần lượt 35B và 27B;
+  mỗi model: Tải A 20 lượt chữ + 13 ảnh (1 lượt). ĐẠT khi CẢ HAI model: (i) `/props` vision=true và dòng lệnh có đúng mmproj của model;
+  (ii) VRAM đỉnh ≤ 27.000 MiB; (iii) Private llama-server max − mẫu đầu sau nạp ≤ 1,0 GB (phẳng); (iv) ≥ 11/13 ảnh đúng; (v) 20/20 lượt
+  chữ HTTP 200. Thêm e2e qua :3013 (mã nhánh này) trên 35B: `/v1` một ảnh (#08) ⇒ 200 + có "E082"; KB stream cùng ảnh ⇒ sự kiện `vision`
+  ok:true nguon=model-chinh. Token `/v1` riêng cho phép đo, thu hồi sau.
+  **KẾT QUẢ (07:43–07:53, `bash scripts/ai-eval/thi-giac/do-bat-auto.sh`, `tmp/thi-giac/bat-auto/`): CỔNG CHƯA ĐẠT — giữ mặc định `off`.**
+
+  | | (i) vision + đúng mmproj | (ii) VRAM đỉnh ≤ 27.000 | (iii) Private max−đầu ≤ 1,0 GB | (iv) ảnh | (v) chữ |
+  |---|---|---|---|---|---|
+  | 35B | ✓ (`--cache-ram 0` ✓) | **27.183 ✗** (một mẫu, lúc e2e; llama-server riêng ≤ 25.616) | **1,71 ✗** | 13/13 ✓ | 20/20 ✓ 2,7 s |
+  | 27B | ✓ | 23.917 ✓ | **2,77 ✗** | 13/13 ✓ (max 27,7 s) | 20/20 ✓ 6,7 s |
+
+  e2e :3013: `/v1` ảnh #08 ⇒ 200, "E082", 2,2 s ✓ · KB stream ⇒ `vision` ok:true nguon=model-chinh ✓ (nhưng bộ đo chỉ ghép `token`, câu trả
+  lời đầy đủ ở `done.answer` — chưa kiểm nội dung; bộ đo đã sửa) · token id=26 đã thu hồi (HTTP 200). Commit trống thấp nhất 20,4 GB.
+  Phân tích (không đổi cổng): (ii) đỉnh 27.183 là MỘT mẫu 2 s đúng lúc KB đọc ảnh khi :3013 đang sống — :3013 tự giữ ~430 MiB CUDA
+  (25.614 → 26.050 khi lên) + bộ đệm mã hoá ảnh mtmd (log: "worst-case 1130,63 MiB"). (iii) Private tăng ở PHA ẢNH, không ở pha chữ
+  (chữ: +0,4 GB như cũ): log llama-server "created context checkpoint 1…13 of 32" — 13 câu ảnh dùng CHUNG câu hệ thống ⇒ checkpoint của
+  model hybrid TÍCH LUỸ (35B 62,8 MiB/cái, 27B 149,6 MiB/cái), TRẦN 32 cái = 2,0 GB (35B) / 4,8 GB (27B). Tải A chữ không có câu hệ
+  thống chung ⇒ mỗi lượt về checkpoint 1. ⇒ Suy luận (chưa đo riêng): cùng tăng có trần này có ở hội thoại CHỮ chung tiền tố (agent/KB) hôm
+  nay, không do mmproj. Phát hiện kèm: ngưỡng VRAM sidecar 8.500 bản đầu LỌT với 35B sẵn sàng 23.958 MiB (8.649 trống) ⇒ sửa 11.000 (`ff8a5a060`).
 - ⚠ Rủi ro HIỆN TẠI (không phụ thuộc đề xuất): đường KB gửi ảnh ⇒ sidecar VL-8B nạp CÙNG LÚC 35B ⇒ đo được 31,9 GB VRAM, chữ chậm ×4,
   commit trống 3–5 GB. Extension chưa gửi ảnh nên chưa lộ; khi luong-ui bật đính ảnh cho Trợ lý, lỗ này mở.
