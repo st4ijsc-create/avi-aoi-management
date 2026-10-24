@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import { OChonNhaMayThietBi, type NhaMayLuaChon } from "@/components/quality/InstrumentFactory";
 import { Eye, Layers, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -45,6 +46,9 @@ interface ProductFoundationTabProps {
   selectedProduct: ProductModel | null;
   setIsMsaDialogOpen: Dispatch<SetStateAction<boolean>>;
   setMsaWizardStep: Dispatch<SetStateAction<1 | 2 | 3>>;
+  /** 0421: nhà máy sở hữu của thiết bị đo sắp tạo (null = chưa gán ⇒ chỉ quản trị thấy). Ô chọn chỉ hiện với admin. */
+  newInstrumentFactoryId?: number | null;
+  setNewInstrumentFactoryId?: Dispatch<SetStateAction<number | null>>;
   setNewInstrumentCode: Dispatch<SetStateAction<string>>;
   setNewInstrumentName: Dispatch<SetStateAction<string>>;
   setNewInstrumentType: Dispatch<SetStateAction<string>>;
@@ -60,6 +64,8 @@ interface ProductFoundationTabProps {
 export function ProductFoundationTab(props: ProductFoundationTabProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const laAdmin = user?.role === "admin";
+  const dsNhaMay = trpc.factory.list.useQuery(undefined, { enabled: laAdmin });
   const {
     createInstrumentMutation, createProductViewMutation, createSamplingPlanMutation, deleteInstrumentMutation,
     deleteProductViewMutation, deleteSamplingPlanMutation, handleCreateInstrument, handleCreateProductView,
@@ -70,6 +76,7 @@ export function ProductFoundationTab(props: ProductFoundationTabProps) {
     setIsMsaDialogOpen, setMsaWizardStep, setNewInstrumentCode, setNewInstrumentName,
     setNewInstrumentType, setNewSamplingCode, setNewSamplingName, setNewSamplingStrategy,
     setNewViewCode, setNewViewName, setNewViewType, setSelectedMsaStudyId,
+    newInstrumentFactoryId, setNewInstrumentFactoryId,
   } = props;
   return (
     <>
@@ -104,6 +111,13 @@ export function ProductFoundationTab(props: ProductFoundationTabProps) {
                         value={newInstrumentType}
                         onChange={(e) => setNewInstrumentType(e.target.value)}
                       />
+                      {laAdmin && setNewInstrumentFactoryId && (
+                        <OChonNhaMayThietBi
+                          value={newInstrumentFactoryId ?? null}
+                          factories={(dsNhaMay.data as NhaMayLuaChon[] | undefined) ?? []}
+                          onChange={setNewInstrumentFactoryId}
+                        />
+                      )}
                       <Button size="sm" className="w-full" onClick={handleCreateInstrument} disabled={createInstrumentMutation.isPending}>
                         <Plus className="h-4 w-4 mr-1" />{t("products.addInstrument")}
                       </Button>

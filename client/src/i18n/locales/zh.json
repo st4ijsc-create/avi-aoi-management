@@ -14754,6 +14754,13 @@
     "offline": "离线"
   },
   "instrumentCal": {
+    "factoryColumn": "工厂",
+    "factory": {
+      "label": "所属工厂",
+      "unassigned": "未分配工厂",
+      "unassignedHint": "分配工厂之前仅管理员可见",
+      "unassignedBanner": "有 {{count}} 台测量仪器尚未分配工厂 — 分配工厂之前仅管理员可见（工厂用户看不到）。"
+    },
     "title": "仪器校准与健康",
     "subtitle": "每台测量仪器的校准证书、MSA 记录及 RAG 适用性状态。选择某行查看详情。",
     "type": "类型",
