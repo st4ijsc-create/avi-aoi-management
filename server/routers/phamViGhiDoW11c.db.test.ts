@@ -125,7 +125,9 @@ describe("aiRcaCopilot.applyTopFix → tool của gợi ý hàng đầu (create_
     expect(a.ok, JSON.stringify(a)).toBe(true);
     expect(await demHang("create_maintenance_workorder")).toBe(truoc + 1);
     const b = (await c.rca.applyTopFix({ rcaId: B.rca })) as KetQua;
-    expect({ ok: b.ok, reason: b.reason }).toEqual({ ok: false, reason: "OUT_OF_SCOPE" });
+    const khongCo = (await c.rca.applyTopFix({ rcaId: 2_000_000_000 })) as KetQua;
+    expect({ ok: b.ok, reason: b.reason }).toEqual({ ok: false, reason: "NOT_FOUND" });
+    expect(b).toEqual(khongCo); // ngoài phạm vi ≡ không tồn tại: cùng kết quả, không lộ id RCA nhà máy khác
     expect(await demHang("create_maintenance_workorder")).toBe(truoc + 1);
   });
 });
