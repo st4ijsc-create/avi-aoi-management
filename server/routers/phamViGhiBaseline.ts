@@ -63,9 +63,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/dataRouters.ts (6) ──
   // ── server/routers/defectDispositionRouter.ts (3) ──
   // ── server/routers/defectHeatmapRouter.ts (1) ──
-  // ── server/routers/ecnRouter.ts (2) ──
-  "server/routers/ecnRouter.ts#ecnRouter.create",
-  "server/routers/ecnRouter.ts#ecnRouter.transition",
   // ── server/routers/edgeRuntimeRouter.ts (1) ──
   "server/routers/edgeRuntimeRouter.ts#edgeRuntimeRouter.deleteNode",
   // ── server/routers/energyRouter.ts (2) ──
@@ -127,9 +124,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.toggleEnabled",
   "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.upsertSetting",
   // ── server/routers/msdRouter.ts (3) ──
-  // ── server/routers/ncrRouter.ts (2) ──
-  "server/routers/ncrRouter.ts#ncrRouter.create",
-  "server/routers/ncrRouter.ts#ncrRouter.transition",
   // ── server/routers/ngRateThresholdRouter.ts (5) ──
   // ── server/routers/notificationRouters.ts (2) ──
   // ── server/routers/operatorBadgeRouter.ts (2) ──
