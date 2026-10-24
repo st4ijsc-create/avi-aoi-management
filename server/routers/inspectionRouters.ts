@@ -5,6 +5,7 @@ import { appError } from "../_core/appError";
 import * as db from "../db";
 import { invokeLLM } from "../_core/llm";
 import { finalYield } from "../utils/kpi";
+import { idsMayTrongPhamVi, kiemTraTrongPhamVi, dieuKienMaySql } from "./_adapterPhamVi";
 
 // ============ INSPECTION ROUTER ============
 export const inspectionRouter = router({
@@ -79,12 +80,16 @@ export const inspectionRouter = router({
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const inspection = await db.getProductInspectionById(input.id);
       if (!inspection) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'inspection' }, 'Inspection not found');
       }
       
+      // phạm vi người dùng (L1 rà bảo mật 2026-10-24): lần kiểm tra của máy ngoài phạm vi ≡ không tồn tại
+      if (!(await kiemTraTrongPhamVi(ctx, [input.id]))) {
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'inspection' }, 'Inspection not found');
+      }
       const measurements = await db.getMeasurementResultsByInspection(input.id);
       const machine = await db.getMachineById(inspection.machineId);
       
@@ -196,11 +201,13 @@ export const inspectionRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       // Get daily statistics for analysis
+      // phạm vi người dùng (L1 rà bảo mật 2026-10-24): chỉ thống kê ngày của máy trong phạm vi
       const stats = await db.getDailyStatistics({
         startDate: input.startDate,
         endDate: input.endDate,
+        machineIds: await idsMayTrongPhamVi(ctx),
       });
 
       if (!stats || stats.length < 3) {
@@ -321,7 +328,7 @@ export const inspectionRouter = router({
       endDate: z.date().optional(),
       limit: z.number().min(1).max(20).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const dbInstance = await db.getDb();
       if (!dbInstance) return [];
 
@@ -331,6 +338,9 @@ export const inspectionRouter = router({
       const { sql, eq, and, gte, lte, desc } = await import("drizzle-orm");
 
       const conditions: any[] = [eq(measurementResults.result, "NG")];
+      // phạm vi người dùng (L1 rà bảo mật 2026-10-24): chỉ điểm đo NG của máy trong phạm vi
+      const congMay = await dieuKienMaySql(ctx, sql`${productInspections.machineId}`);
+      if (congMay) conditions.push(congMay);
       if (input.startDate) {
         conditions.push(gte(productInspections.inspectionTime, input.startDate));
       }
@@ -424,15 +434,17 @@ export const inspectionRouter = router({
 export const measurementResultRouter = router({
   getByInspection: protectedProcedure
     .input(z.object({ inspectionId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L1 rà bảo mật 2026-10-24): lần kiểm tra ngoài phạm vi ⇒ rỗng (như chưa có kết quả đo)
+      if (!(await kiemTraTrongPhamVi(ctx, [input.inspectionId]))) return [];
       return db.getMeasurementResultsByInspection(input.inspectionId);
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const result = await db.getMeasurementResultById(input.id);
-      if (!result) {
+      if (!result || !(await kiemTraTrongPhamVi(ctx, [result.inspectionId]))) { // phạm vi người dùng (L1 rà bảo mật 2026-10-24): kết quả đo của máy ngoài phạm vi ≡ không tồn tại
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
       }
       
