@@ -921,7 +921,9 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // lineController.listStates|getState|stages|readiness|transitions|recipeSet.list|get|lockStatus (status: C→S) · wip.list|summary|dwellByStation|dispatch. 18 dòng sổ nợ đọc GỠ (4 khối).
 // Chứng minh: `loSanXuatPhamVi.db.test.ts` (17 ca CSDL thật; 14/14 đỏ trên mã cũ; đột biến 38/38 bị bắt sau khi bổ sung 3 ca, trừ 1 đột biến TƯƠNG ĐƯƠNG: setThayDuocTrongPhamVi "không tồn tại" true↔false — cả hai ra null).
 // Còn lại có chủ ý: lineController.status vẫn trả lastSweepStats = số đếm tổng của MỌI tuyến (chỉ recentEvents được lọc).
-const GHIM = { A: 211, B: 8, C: 474, D: 1198, S: 511, tong: 2402 } as const;
+// ★★ 2026-10-25 (lô L5b): **A 211 → 208 · S 511 → 514 · B/C/D/tong unchanged.** 3 thủ tục ĐỌC A → S: aiImageSearch.findSimilar|clusterDefects|stats (dùng lại `VectorSearchFilters.machineIds` của W12a; embedding NGUỒN ngoài phạm vi ≡ không tồn tại). 3 dòng sổ nợ đọc GỠ.
+// Chứng minh: `loAnhTimKiemDocPhamVi.db.test.ts` (6 ca CSDL thật; 6/6 đỏ trên mã cũ; đột biến 9/9 bị bắt). Kèm vá lỗi CÓ SẴN: `getEmbeddingStats.indexedCount` luôn 0 vì đọc `.rows` của kết quả postgres-js (là mảng).
+const GHIM = { A: 208, B: 8, C: 474, D: 1198, S: 514, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
