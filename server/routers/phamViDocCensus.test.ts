@@ -884,7 +884,15 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // trong CÙNG giao dịch. Bảng không có cột tenant; admin toàn hệ ⇒ không lọc phạm vi. Mutation ⇒ D (bộ suy xếp MỌI mutation vào D). Đo:
 // trên ghim cũ (gốc c6e2422e7) đỏ ĐÚNG +1 D / +1 tong sau khi thêm, rồi ghim lại. No baseline row added. `tong` 2402 matches
 // `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 333, B: 8, C: 494, D: 1198, S: 369, tong: 2402 } as const;
+// ★★ 2026-10-24 · PHẠM VI NHÀ MÁY cho thủ tục khoá theo `adapterId` (rà bảo mật, scada-master phát hiện) — **A 333 → 330 · C 494 → 488 · S 369 → 378 · B/D/tong unchanged (2402).**
+// CHÍNH XÁC 9 thủ tục đổi nhóm, đo bằng so `nhomCua` trên cây trước/sau (worktree HEAD cũ): ba mục sổ nợ A → S (`deviceAdapter.get`, `deviceAdapter.list`,
+// `mappingAsCode.exportOne`) và SÁU thủ tục C → S — nhóm "không có cổng" vì đọc bảng theo adapter mà bộ suy không thấy cổng: `commissioning.list`, `commissioning.status`,
+// `deviceAdapter.tags.listByAdapter`, `unsMapping.get`, `unsMapping.list`, `mappingAsCode.list`. Cả chín nay đi qua bộ phân giải chung `server/routers/_adapterPhamVi.ts`
+// (`idsTrongPhamVi("machine", phamViCua(ctx), { strict: true })`; ngoài phạm vi ≡ NOT_FOUND; danh sách chỉ trả mục trong phạm vi; adapter không gắn máy chỉ phạm vi toàn quyền).
+// Ba dòng sổ nợ `phamViDocBaseline.ts` đã GỠ (trả nợ nhìn thấy được trong diff). Các thủ tục GHI cùng lớp (commissioning.create|revoke, deviceAdapter.create|update|delete|testConnection,
+// tags.create|update|delete, unsMapping.create|update|delete, mappingAsCode.preview|applyImport) cũng được khoá phạm vi nhưng KHÔNG đổi nhóm (mọi mutation vào D).
+// Chứng minh hành vi trên CSDL thật: `server/routers/adapterPhamVi.db.test.ts` (18 ca; 15 đỏ trước khi vá). Số đo: trên ghim cũ đỏ ĐÚNG −3 A / −6 C / +9 S sau khi vá, rồi ghim lại.
+const GHIM = { A: 330, B: 8, C: 488, D: 1198, S: 378, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

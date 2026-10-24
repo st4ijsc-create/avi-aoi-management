@@ -23,7 +23,9 @@ import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
+import { adapterTheoMaTrongPhamVi, maAdapterTrongPhamVi } from "./_adapterPhamVi";
 import {
+  parseMappingYaml,
   exportAdapterMapping,
   exportAllMappings,
   importMapping,
@@ -53,17 +55,41 @@ function actorName(user: { username?: string | null; name?: string | null } | nu
   return user?.username ?? user?.name ?? null;
 }
 
+/**
+ * Phạm vi nhà máy cho nhập/xem trước (rà bảo mật 2026-10-24): adapter mà YAML nhắm tới phải trong phạm vi người gọi — nếu không, dry-run lộ diff với DB của nhà máy khác và import ghi đè cấu hình của họ.
+ * YAML hỏng ⇒ để `importMapping` báo lỗi hợp lệ như cũ (không đoán); adapter không có / ngoài phạm vi ⇒ cùng NOT_FOUND.
+ */
+async function kiemPhamViYaml(ctx: Parameters<typeof adapterTheoMaTrongPhamVi>[0], yaml: string): Promise<void> {
+  let ma: string;
+  try {
+    ma = parseMappingYaml(yaml).adapter;
+  } catch {
+    return;
+  }
+  if (!(await adapterTheoMaTrongPhamVi(ctx, ma))) {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
+  }
+}
+
 export const mappingAsCodeRouter = router({
   /** Danh sách file YAML hiện có trong contracts/mappings (đã export/commit). */
   list: protectedProcedure
     .use(requirePermission("machine_control", "canView"))
-    .query(async () => listMappingFiles()),
+    .query(async ({ ctx }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24): người phạm vi hẹp chỉ thấy file của adapter trong phạm vi (toàn quyền: như cũ)
+      const files = await listMappingFiles();
+      const trong = await maAdapterTrongPhamVi(ctx);
+      return trong === null ? files : files.filter((f) => trong.has(f.adapterCode));
+    }),
 
   /** Export một adapter (theo code) → YAML string cho client tải về/commit. */
   exportOne: protectedProcedure
     .use(requirePermission("machine_control", "canView"))
     .input(z.object({ adapterCode: z.string().min(1).max(64) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (!(await adapterTheoMaTrongPhamVi(ctx, input.adapterCode))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
+      }
       try {
         const res = await exportAdapterMapping(input.adapterCode);
         return { adapterId: res.adapterId, adapterCode: res.adapterCode, fileName: res.fileName, yaml: res.yaml };
@@ -86,6 +112,7 @@ export const mappingAsCodeRouter = router({
     .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({ yaml: yamlInput, prune: z.boolean().default(false) }))
     .mutation(async ({ input, ctx }) => {
+      await kiemPhamViYaml(ctx, input.yaml);
       try {
         return await importMapping(input.yaml, {
           dryRun: true,
@@ -109,6 +136,7 @@ export const mappingAsCodeRouter = router({
   applyImport: adminProcedure
     .input(z.object({ yaml: yamlInput, prune: z.boolean().default(false) }))
     .mutation(async ({ input, ctx }) => {
+      await kiemPhamViYaml(ctx, input.yaml);
       try {
         return await importMapping(input.yaml, {
           dryRun: false,

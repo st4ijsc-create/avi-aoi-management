@@ -9,6 +9,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const fake = vi.hoisted(() => ({ throwPins: false, pins: [] as Array<{ tagKey: string; value: unknown }>, throwRecheck: false }));
 
 vi.mock("../db", () => ({ getDb: async () => ({}) }));
+// ★ 2026-10-24 — phạm vi nhà máy của thủ tục khoá theo adapter nay qua `./_adapterPhamVi` (đọc CSDL thật + phạm vi người dùng). Test NÀY kiểm logic M8 (đọc ghim hỏng) trên DB GIẢ nên mở cổng phạm vi
+// (vai TOÀN QUYỀN: không lọc, không từ chối); hành vi phạm vi được chứng minh trên CSDL thật ở `adapterPhamVi.db.test.ts`.
+vi.mock("./_adapterPhamVi", () => ({
+  adapterTrongPhamVi: vi.fn(async (_c: unknown, id: number) => ({ id, code: "x", machineId: null })),
+  adapterCuaTag: vi.fn(async () => 1),
+  adapterCuaBanKy: vi.fn(async () => 1),
+  dieuKienAdapterTrongPhamVi: () => undefined,
+  idsMayTrongPhamVi: vi.fn(async () => null),
+  maySuDungTrongPhamVi: vi.fn(async () => undefined),
+  idsAdapterTrongPhamVi: vi.fn(async () => null),
+  maAdapterTrongPhamVi: vi.fn(async () => null),
+  adapterTheoMaTrongPhamVi: vi.fn(async (_c: unknown, ma: string) => ({ id: 1, code: ma, machineId: null })),
+}));
+
 vi.mock("../services/ot/commissioningService", () => ({
   createRecord: vi.fn(),
   revokeRecord: vi.fn(),

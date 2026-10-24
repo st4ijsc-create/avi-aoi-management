@@ -38,7 +38,8 @@ const STORED_PW = "Stored-Pw-5b";
 const A_PW = "Attacker-Own-Pw";
 const SEC = { securityMode: "SignAndEncrypt", securityPolicy: "Basic256Sha256" } as const;
 
-const ctx = { user: { id: 990_500_950, role: "supervisor", name: "race" } } as any;
+// ★ 2026-10-24 — vai "admin" (phạm vi TOÀN QUYỀN): test này canh race bí mật/endpoint, không canh phạm vi nhà máy (xem adapterPhamVi.db.test.ts); một supervisor KHÔNG gán nhà máy nay có phạm vi RỖNG.
+const ctx = { user: { id: 990_500_950, role: "admin", name: "race" } } as any;
 const caller = deviceAdapterRouter.createCaller(ctx);
 let seq = 0;
 

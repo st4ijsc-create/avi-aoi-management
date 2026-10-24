@@ -20,6 +20,7 @@ import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { adapterTrongPhamVi, idsAdapterTrongPhamVi } from "./_adapterPhamVi";
 import {
   createMapping,
   listMappings,
@@ -62,14 +63,24 @@ export const unsMappingRouter = router({
   list: protectedProcedure
     .use(requirePermission("machine_control", "canView"))
     .input(z.object({ adapterId: z.number().int().positive().optional() }).optional())
-    .query(async ({ input }) => listMappings({ adapterId: input?.adapterId })),
+    .query(async ({ input, ctx }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24): adapter chỉ định ngoài phạm vi ≡ NOT_FOUND; không chỉ định ⇒ CHỈ mapping của adapter trong phạm vi
+      if (input?.adapterId != null) {
+        await adapterTrongPhamVi(ctx, input.adapterId);
+        return listMappings({ adapterId: input.adapterId });
+      }
+      const trong = await idsAdapterTrongPhamVi(ctx);
+      const rows = await listMappings();
+      return trong === null ? rows : rows.filter((r) => trong.has(r.adapterId));
+    }),
 
   get: protectedProcedure
     .use(requirePermission("machine_control", "canView"))
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const row = await getMapping(input.id);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "unsMapping" }, "Mapping không tồn tại.");
+      await adapterTrongPhamVi(ctx, row.adapterId); // adapter của mapping ngoài phạm vi ≡ mapping không tồn tại
       return row;
     }),
 
@@ -77,6 +88,7 @@ export const unsMappingRouter = router({
     .use(requirePermission("machine_control", "canCreate"))
     .input(createInput)
     .mutation(async ({ input, ctx }) => {
+      await adapterTrongPhamVi(ctx, input.adapterId);
       try {
         return await createMapping({ ...input, createdBy: ctx.user.id });
       } catch (err) {
@@ -90,8 +102,11 @@ export const unsMappingRouter = router({
   update: protectedProcedure
     .use(requirePermission("machine_control", "canEdit"))
     .input(createInput.partial().omit({ adapterId: true }).extend({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...patch } = input;
+      const cu = await getMapping(id);
+      if (!cu) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "unsMapping" }, "Mapping không tồn tại.");
+      await adapterTrongPhamVi(ctx, cu.adapterId);
       try {
         const row = await updateMapping(id, patch);
         if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "unsMapping" }, "Mapping không tồn tại.");
@@ -108,7 +123,10 @@ export const unsMappingRouter = router({
   delete: protectedProcedure
     .use(requirePermission("machine_control", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const cu = await getMapping(input.id);
+      if (!cu) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "unsMapping" }, "Mapping không tồn tại.");
+      await adapterTrongPhamVi(ctx, cu.adapterId);
       const ok = await deleteMapping(input.id);
       if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "unsMapping" }, "Mapping không tồn tại.");
       return { success: true };

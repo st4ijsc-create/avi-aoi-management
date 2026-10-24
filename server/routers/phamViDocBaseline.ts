@@ -175,9 +175,7 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/defectDispositionRouter.ts#defectDispositionRouter.reInspectStatus",
   "server/routers/defectDispositionRouter.ts#defectDispositionRouter.repairQueue",
   "server/routers/defectDispositionRouter.ts#defectDispositionRouter.repairStats",
-  // ── server/routers/deviceAdapterRouter.ts (2) ──────────────────────────────────────────────
-  "server/routers/deviceAdapterRouter.ts#deviceAdapterRouter.get",
-  "server/routers/deviceAdapterRouter.ts#deviceAdapterRouter.list",
+  // ── server/routers/deviceAdapterRouter.ts — ★ 2026-10-24: 2 mục ĐÃ TRẢ (get · list ⇒ S qua server/routers/_adapterPhamVi.ts), xoá khỏi sổ ──
   // ── server/routers/digitalTwinRouter.ts — ★ ĐỢT 14 LÔ Q1: 5 mục ĐÃ TRẢ, xoá khỏi sổ ────────
   //    twinState · defectHeatmap · wipFlowState · stationLoadHeatmap · predictionOverlay đều đã
   //    mang `phamViCua(ctx)` xuống tầng dữ liệu. Nghiệm thu hai chiều trên CSDL thật ở
@@ -322,8 +320,7 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/maintenanceScheduleRouter.ts (2) ────────────────────────────────────────
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.get",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.list",
-  // ── server/routers/mappingAsCodeRouter.ts (1) ──────────────────────────────────────────────
-  "server/routers/mappingAsCodeRouter.ts#mappingAsCodeRouter.exportOne",
+  // ── server/routers/mappingAsCodeRouter.ts — ★ 2026-10-24: 1 mục ĐÃ TRẢ (exportOne ⇒ S qua _adapterPhamVi.ts), xoá khỏi sổ ──
   // ── server/routers/measurementCorrectionsRouter.ts (2) ─────────────────────────────────────
   "server/routers/measurementCorrectionsRouter.ts#measurementCorrectionsRouter.agreementTrend",
   "server/routers/measurementCorrectionsRouter.ts#measurementCorrectionsRouter.machineFalseCallSummary",

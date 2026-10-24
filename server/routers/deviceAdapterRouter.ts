@@ -42,6 +42,13 @@ import {
 import { parseOpcuaSecurityOptions } from "../services/ot/drivers/opcuaSecurity";
 import { idsTrongPhamVi } from "../db/hierarchy";
 import { phamViCua } from "./_phamViNguoiXem";
+import {
+  adapterTrongPhamVi,
+  adapterCuaTag,
+  dieuKienAdapterTrongPhamVi,
+  idsMayTrongPhamVi,
+  maySuDungTrongPhamVi,
+} from "./_adapterPhamVi";
 import { createAuditContext } from "../services/auditTrailService";
 import {
   datStopPin,
@@ -201,9 +208,12 @@ export const deviceAdapterRouter = router({
       protocol: protocolEnum.optional(),
       isEnabled: z.boolean().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       const conds = [];
+      // phạm vi nhà máy (rà bảo mật 2026-10-24): chỉ adapter của máy trong phạm vi; adapter KHÔNG gắn máy chỉ phạm vi toàn quyền thấy
+      const cong = dieuKienAdapterTrongPhamVi(await idsMayTrongPhamVi(ctx));
+      if (cong) conds.push(cong);
       if (input?.machineId != null) conds.push(eq(deviceAdapters.machineId, input.machineId));
       if (input?.protocol != null) conds.push(eq(deviceAdapters.protocol, input.protocol));
       if (input?.isEnabled != null) conds.push(eq(deviceAdapters.isEnabled, input.isEnabled));
@@ -219,8 +229,9 @@ export const deviceAdapterRouter = router({
   get: protectedProcedure
     .use(requirePermission("machine_control", "canView"))
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
+      await adapterTrongPhamVi(ctx, input.id); // ngoài phạm vi ≡ không tồn tại (cùng NOT_FOUND)
       const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).limit(1);
       if (!adapter) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
       const tags = await db
@@ -236,6 +247,7 @@ export const deviceAdapterRouter = router({
     .input(adapterCreateInput)
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
+      await maySuDungTrongPhamVi(ctx, input.machineId ?? null); // máy gắn vào PHẢI trong phạm vi người tạo (rà bảo mật 2026-10-24)
       // Fix round 1 — placeholder "[redacted]" khi TẠO không có gì để giữ ⇒ bỏ khoá; bảo mật
       // OPC UA kiểm ngay lúc lưu (tổ hợp mâu thuẫn ⇒ BAD_REQUEST có lý do).
       const createOptions =
@@ -274,6 +286,9 @@ export const deviceAdapterRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       const { id, ...rest } = input;
+      // phạm vi nhà máy (rà bảo mật 2026-10-24): sửa adapter ngoài phạm vi ≡ NOT_FOUND; đổi máy gắn thì máy MỚI cũng phải trong phạm vi
+      await adapterTrongPhamVi(ctx, id);
+      if (rest.machineId !== undefined) await maySuDungTrongPhamVi(ctx, rest.machineId);
       try {
         // ★ doc 81 Đợt 1B final wave 5b (security) — ĐỌC-KIỂM-KHÔI PHỤC-GHI trong MỘT giao dịch, hàng
         // adapter khoá bằng SELECT … FOR UPDATE (ràng buộc chung 6: không migration, dùng khoá hàng).
@@ -351,6 +366,7 @@ export const deviceAdapterRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
+      await adapterTrongPhamVi(ctx, input.id); // ngoài phạm vi ≡ NOT_FOUND (rà bảo mật 2026-10-24)
       const [existing] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).limit(1);
       if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
       // SAFETY: refuse to delete an adapter that is still enabled (it may be polling).
@@ -394,12 +410,13 @@ export const deviceAdapterRouter = router({
         connectionOptions: z.record(z.string(), z.unknown()).nullable().optional(),
       }),
     ]))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       let protocol: OtProtocol;
       let endpoint: string;
       let options: Record<string, unknown> | undefined;
 
       if ("id" in input) {
+        await adapterTrongPhamVi(ctx, input.id); // dò adapter ngoài phạm vi ≡ NOT_FOUND (rà bảo mật 2026-10-24)
         const db = await getDb();
         const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).limit(1);
         if (!adapter) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
@@ -462,8 +479,9 @@ export const deviceAdapterRouter = router({
     listByAdapter: protectedProcedure
       .use(requirePermission("machine_control", "canView"))
       .input(z.object({ adapterId: z.number().int().positive() }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
         const db = await getDb();
+        await adapterTrongPhamVi(ctx, input.adapterId); // ngoài phạm vi ≡ NOT_FOUND (rà bảo mật 2026-10-24)
         return db
           .select()
           .from(deviceTags)
@@ -474,8 +492,9 @@ export const deviceAdapterRouter = router({
     create: protectedProcedure
       .use(requirePermission("machine_control", "canCreate"))
       .input(tagCreateInput)
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const db = await getDb();
+        await adapterTrongPhamVi(ctx, input.adapterId); // thêm tag vào adapter ngoài phạm vi ≡ NOT_FOUND (rà bảo mật 2026-10-24)
         try {
           const [row] = await db
             .insert(deviceTags)
@@ -509,6 +528,8 @@ export const deviceAdapterRouter = router({
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
         const { id, scale, offset, ...rest } = input;
+        await adapterCuaTag(ctx, id); // tag thuộc adapter ngoài phạm vi ≡ không tồn tại
+        if (rest.adapterId !== undefined) await adapterTrongPhamVi(ctx, rest.adapterId); // không chuyển tag sang adapter ngoài phạm vi
         const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
         if (scale !== undefined) patch.scale = scale != null ? String(scale) : null;
         if (offset !== undefined) patch.offset = offset != null ? String(offset) : null;
@@ -544,6 +565,7 @@ export const deviceAdapterRouter = router({
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
+        await adapterCuaTag(ctx, input.id); // tag thuộc adapter ngoài phạm vi ≡ không tồn tại
         // doc 81 Đợt 1D Task 1 — xoá tag đang GHIM DỪNG ⇒ audit gỡ ghim trong CÙNG transaction.
         await db.transaction(async (tx) => {
           const [existing] = await tx.select().from(deviceTags).where(eq(deviceTags.id, input.id)).for("update");
