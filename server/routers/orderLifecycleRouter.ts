@@ -21,6 +21,7 @@ import { requirePermission } from "../_core/accessControl";
 import { getProductionOrderById } from "../db";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { ghiViTri } from "./_viTriPhamVi";
+import { dieuKienLenhSanXuatTrongPhamVi } from "./_adapterPhamVi";
 
 /** Phạm vi nhà máy cho GHI vòng đời lệnh sản xuất (lô W9): lệnh ngoài phạm vi ≡ không tồn tại (cùng getter ĐỌC có phamViCua). */
 async function donHangGhi(ctx: CoDanhTinh, id: number): Promise<void> {
@@ -81,10 +82,10 @@ export const orderLifecycleRouter = router({
         offset: z.number().int().min(0).optional(),
       }).optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       ensureEnabled();
       try {
-        return await listOrders(input ?? {});
+        return await listOrders({ ...(input ?? {}), dieuKienPhamVi: await dieuKienLenhSanXuatTrongPhamVi(ctx) }); // phạm vi người dùng (L5 2026-10-25)
       } catch (err) {
         toTrpc(err);
       }
@@ -94,9 +95,10 @@ export const orderLifecycleRouter = router({
   detail: protectedProcedure
     .use(canView)
     .input(z.object({ orderId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       ensureEnabled();
       try {
+        if (!(await getProductionOrderById(input.orderId, phamViCua(ctx)))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionOrder" }, `Order ${input.orderId} not found`); // phạm vi người dùng (L5 2026-10-25)
         const detail = await getOrderDetail(input.orderId);
         if (!detail) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionOrder" }, `Order ${input.orderId} not found`);
         return detail;
@@ -109,9 +111,10 @@ export const orderLifecycleRouter = router({
   trace: protectedProcedure
     .use(canView)
     .input(z.object({ orderId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       ensureEnabled();
       try {
+        if (!(await getProductionOrderById(input.orderId, phamViCua(ctx)))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionOrder" }, `Order ${input.orderId} not found`); // phạm vi người dùng (L5 2026-10-25)
         const trace = await traceOrder(input.orderId);
         if (!trace) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionOrder" }, `Order ${input.orderId} not found`);
         return trace;
