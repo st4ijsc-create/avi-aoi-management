@@ -5,6 +5,8 @@ import { createHmac, createHash } from "crypto";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import type { CoDanhTinh } from "./_phamViNguoiXem";
+import { ghiViTri } from "./_viTriPhamVi";
 import { getDb } from "../db";
 import { productionSessions, dailyStatistics } from "../../drizzle/schema/production";
 import { finalYield } from "../utils/kpi";
@@ -87,6 +89,22 @@ async function computeKpiSnapshot(
   };
 }
 
+/**
+ * Phạm vi nhà máy cho GHI phiên sản xuất (lô W9): phiên có vị trí (nhà máy · xưởng · chuyền) phải trong phạm vi người gọi; phiên không vị trí / không tồn tại ≡ không
+ * tồn tại cho người phạm vi hẹp. Toàn quyền (admin) ⇒ không kiểm.
+ */
+async function phienGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  const d = await getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const [r] = await d.select({ f: productionSessions.factoryId, w: productionSessions.workshopId, l: productionSessions.lineId }).from(productionSessions).where(eq(productionSessions.id, id));
+  try {
+    if (!r) throw new Error("none");
+    await ghiViTri(ctx, { factoryId: r.f, workshopId: r.w, lineId: r.l }, { batBuoc: true });
+  } catch {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Production session not found");
+  }
+}
+
 export const productionSessionRouter = router({
   list: protectedProcedure
     .input(
@@ -146,6 +164,7 @@ export const productionSessionRouter = router({
       operatorNotes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      await ghiViTri(ctx, { factoryId: input.factoryId, workshopId: input.workshopId, lineId: input.lineId }, { batBuoc: true });
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -174,6 +193,7 @@ export const productionSessionRouter = router({
     .use(requirePermission("production_session", "canEdit"))
     .input(z.object({ id: z.number(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
+      await phienGhi(ctx, input.id);
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [existing] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
@@ -191,6 +211,7 @@ export const productionSessionRouter = router({
     .use(requirePermission("production_session", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      await phienGhi(ctx, input.id);
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [existing] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
@@ -208,6 +229,7 @@ export const productionSessionRouter = router({
     .use(requirePermission("production_session", "canEdit"))
     .input(z.object({ id: z.number(), operatorNotes: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
+      await phienGhi(ctx, input.id);
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [session] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
@@ -246,7 +268,9 @@ export const productionSessionRouter = router({
       toSessionId: z.number(),
       handoverNotes: z.string().min(1),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await phienGhi(ctx, input.fromSessionId);
+      await phienGhi(ctx, input.toSessionId);
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [updated] = await db
@@ -265,6 +289,7 @@ export const productionSessionRouter = router({
   supervisorSignOff: protectedProcedure
     .input(z.object({ id: z.number(), supervisorPasswordConfirmed: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
+      await phienGhi(ctx, input.id);
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 

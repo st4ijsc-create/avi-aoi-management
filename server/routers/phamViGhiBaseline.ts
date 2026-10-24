@@ -33,6 +33,7 @@
  * 2026-10-24 sửa điểm mù bộ quét: `.input(idInput)` (đối số là một ĐỊNH DANH hằng schema cấp file) trước bị coi "không khoá" ⇒ delete, bulk, import của masterData… không vào sổ; nay +36 nợ lộ ra (masterData 22, componentLibrary 3, interlock 2, aiSpecialistAgent 2…) ⇒ 457 → 493.
  * 2026-10-24 lô W7 (−36, masterDataRouter: suppliers/materials/customers/tools/plantCalendars(+ngày,+ca)/warehouses(+vị trí,+tồn kho) create-update-delete-bulk-import theo vị từ ĐỌC congMaTenant, hàng mới đóng dấu tenant trong phạm vi) ⇒ 493 → 457. CÒN LẠI ở masterData (12): skills · uom · unit_conversions · material_classes · user_certifications — danh mục KHÔNG có mã tenant, chờ quyết định chủ dự án.
  * 2026-10-24 lô W8 (điều khiển: interlock create/update/delete/enable/disable/resolveEvent · lineController transition/command/recipeSet.* · safety recordEvent/auditEvent/upsertCameraCalibration/signalHandshake/advancePhase/abortCollaboration) + 2 miễn trừ (robot.consoleStop · scadaCommands.huy).
+ * 2026-10-24 lô W9 (−27, sản xuất: productionOrder create/update/delete/reschedule, template, createFromTemplate/optimizeSchedule/whatIf · lineStage · lineProductAssignment · orderLifecycle allocate/hold/resume/cancel · productionSession open/pause/resume/close/handover/supervisorSignOff) ⇒ 438 → 411.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ──
@@ -374,11 +375,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/operatorBadgeRouter.ts (2) ──
   "server/routers/operatorBadgeRouter.ts#operatorBadgeRouter.revoke",
   "server/routers/operatorBadgeRouter.ts#operatorBadgeRouter.update",
-  // ── server/routers/orderLifecycleRouter.ts (4) ──
-  "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.allocate",
-  "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.cancel",
-  "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.hold",
-  "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.resume",
   // ── server/routers/parameterGuardrailRouter.ts (2) ──
   "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.delete",
   "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.set",
@@ -394,31 +390,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/processRouter.ts#processRouter.reorderLineAssignments",
   "server/routers/processRouter.ts#processRouter.update",
   "server/routers/processRouter.ts#processRouter.updateLineAssignment",
-  // ── server/routers/productionRouters.ts (17) ──
-  "server/routers/productionRouters.ts#lineProductAssignmentRouter.create",
-  "server/routers/productionRouters.ts#lineProductAssignmentRouter.delete",
-  "server/routers/productionRouters.ts#lineProductAssignmentRouter.update",
-  "server/routers/productionRouters.ts#lineStageRouter.create",
-  "server/routers/productionRouters.ts#lineStageRouter.delete",
-  "server/routers/productionRouters.ts#lineStageRouter.reorder",
-  "server/routers/productionRouters.ts#lineStageRouter.update",
-  "server/routers/productionRouters.ts#productionOrderRouter.create",
-  "server/routers/productionRouters.ts#productionOrderRouter.createFromTemplate",
-  "server/routers/productionRouters.ts#productionOrderRouter.createTemplate",
-  "server/routers/productionRouters.ts#productionOrderRouter.delete",
-  "server/routers/productionRouters.ts#productionOrderRouter.deleteTemplate",
-  "server/routers/productionRouters.ts#productionOrderRouter.optimizeSchedule",
-  "server/routers/productionRouters.ts#productionOrderRouter.reschedule",
-  "server/routers/productionRouters.ts#productionOrderRouter.update",
-  "server/routers/productionRouters.ts#productionOrderRouter.updateTemplate",
-  "server/routers/productionRouters.ts#productionOrderRouter.whatIf",
-  // ── server/routers/productionSessionRouter.ts (6) ──
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.close",
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.handover",
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.open",
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.pause",
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.resume",
-  "server/routers/productionSessionRouter.ts#productionSessionRouter.supervisorSignOff",
   // ── server/routers/productOnboardingRouter.ts (3) ──
   "server/routers/productOnboardingRouter.ts#productOnboardingRouter.complete",
   "server/routers/productOnboardingRouter.ts#productOnboardingRouter.deleteDraft",
