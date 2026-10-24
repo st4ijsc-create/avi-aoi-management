@@ -23759,6 +23759,7 @@
         "TIMEOUT": "Không rõ máy đã nhận hay chưa — đọc lại giá trị trước khi gửi lần nữa.",
         "khac": "Không tạo được yêu cầu: {{chiTiet}}",
         "khacXacNhan": "Lệnh không được gửi: {{chiTiet}}",
+        "vuotTanSuat": "Không gửi — vượt giới hạn tần suất, thử lại sau",
         "nutDungGoiY": "Dùng {{goiY}}",
         "ma": "Mã: {{ma}}"
       },

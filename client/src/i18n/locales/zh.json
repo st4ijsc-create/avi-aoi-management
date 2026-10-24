@@ -23787,6 +23787,7 @@
         "TIMEOUT": "不确定设备是否已收到 — 再次发送前请先回读该值。",
         "khac": "无法创建请求：{{chiTiet}}",
         "khacXacNhan": "命令未发送：{{chiTiet}}",
+        "vuotTanSuat": "未发送 — 超过频率限制，请稍后重试",
         "nutDungGoiY": "使用 {{goiY}}",
         "ma": "代码：{{ma}}"
       },

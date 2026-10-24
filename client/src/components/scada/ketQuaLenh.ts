@@ -186,6 +186,19 @@ export function docLoiApp(err: unknown): LoiApp | null {
   };
 }
 
+/**
+ * R1a final I-1 — 429 của bộ giới hạn tần suất: middleware `trpcGioiHanThuTuc` (data.appCode `TRPC_GIOI_HAN_THU_TUC`, httpStatus 429) hoặc
+ * `apiLimiter` (express-rate-limit — thân không phải lỗi tRPC, chỉ còn `meta.response.status`). Middleware chặn TRƯỚC tRPC ⇒ máy chủ
+ * KHÔNG chạy thủ tục nào: chắc chắn chưa gửi gì tới máy (không phải "không rõ máy đã nhận").
+ */
+export function laLoiGioiHanTanSuat(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { data?: { appCode?: unknown; httpStatus?: unknown; code?: unknown }; meta?: { response?: { status?: unknown } } };
+  if (e.data?.appCode === "TRPC_GIOI_HAN_THU_TUC") return true;
+  if (e.data?.httpStatus === 429 || e.data?.code === "TOO_MANY_REQUESTS") return true;
+  return e.meta?.response?.status === 429;
+}
+
 export interface MoTaLoi {
   /** mã lenhHmi (appParams.ma) nếu có — hiện nhỏ cạnh chữ */
   ma: string | null;
@@ -240,6 +253,8 @@ export function moTaLoiLenh(err: unknown, giaiDoan: "request" | "confirm", ctx: 
 }
 
 function moTaLoiThan(err: unknown, giaiDoan: "request" | "confirm", ctx: { laEdge: boolean; locale: string }): Omit<MoTaLoi, "huyKhiDong"> {
+  // R1a final I-1 — 429 (bộ giới hạn) ⇒ chưa gửi gì; ở confirm máy chủ còn giữ yêu cầu proposed + khoá (ma null ⇒ huyKhiDong khi đóng hộp).
+  if (laLoiGioiHanTanSuat(err)) return { ma: null, khoa: "scada.lenh.loi.vuotTanSuat", thamSo: {}, giuYeuCau: false };
   const app = docLoiApp(err);
   const p = app?.appParams ?? {};
   const ma = typeof p.ma === "string" ? p.ma : null;

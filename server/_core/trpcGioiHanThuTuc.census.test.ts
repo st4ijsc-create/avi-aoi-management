@@ -129,7 +129,13 @@ describe("census nhóm 2fa của giới hạn theo thủ tục", () => {
  */
 const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<string, Record<string, { routerFile: string; thuTuc: string; mienTru?: string }>> = {
   "server/services/scada/lenhHmi.ts": {
-    xacNhanGhiTag: { routerFile: "server/routers/scadaCommandsRouter.ts", thuTuc: "scadaCommands.confirm" },
+    xacNhanGhiTag: {
+      routerFile: "server/routers/scadaCommandsRouter.ts",
+      thuTuc: "scadaCommands.confirm",
+      // R1a final I-1 (2026-10-24) — ĐẢO "Ruling (merge follow-up)".
+      mienTru:
+        "Dò TOTP đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 lần / 5 phút, tính lượt TRƯỚC khi xác minh nên batch không lách được). Nhóm 20 / 15 phút dùng chung theo IP và theo người với deploy và twoFactor sẽ bóp các lệnh đổi giá trị đặt HMI mức 1/3 thường ngày.",
+    },
   },
   "server/services/aiCopilotActions.ts": {
     confirmAction: {
@@ -194,6 +200,8 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
         const nhom = phanNhomThuTuc(m.thuTuc, loaiTT, tap);
         if (m.mienTru) {
           expect(m.mienTru.length, `${m.thuTuc}: lý do miễn trừ quá ngắn`).toBeGreaterThan(40);
+          // Miễn trừ là RÀNG BUỘC: thủ tục miễn trừ KHÔNG được nằm trong nhóm 2fa (thêm lại vào nhóm ⇒ phải xoá miễn trừ, kèm phán quyết mới).
+          expect(nhom, `${m.thuTuc} có miễn trừ nhưng vẫn thuộc nhóm 2fa`).not.toBe("2fa");
           mien++;
         } else {
           expect(nhom, `${m.thuTuc} xác minh TOTP qua kiemXacThucTheoMuc (${ham}) nhưng KHÔNG thuộc nhóm 2fa`).toBe("2fa");
@@ -201,8 +209,8 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
         }
       }
     }
-    expect(dem).toBeGreaterThanOrEqual(1);
-    expect(mien).toBe(1); // aiCopilot.confirmAction — miễn trừ có lý do
+    expect(dem + mien).toBe(2);
+    expect(mien).toBe(2); // aiCopilot.confirmAction + scadaCommands.confirm — miễn trừ có lý do (R1a final I-1)
   }, 120_000);
 });
 

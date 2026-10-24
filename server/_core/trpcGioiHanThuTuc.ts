@@ -42,8 +42,9 @@ export const NHOM_THU_TUC_NHAY_CAM: Readonly<Record<NhomNhayCam, CauHinhNhom>> =
     cuaSoMs: 15 * 60 * 1000,
     toiDa: 20,
     tienTo: ["twoFactor."],
-    // scadaCommands.confirm xác minh TOTP qua kiemXacThucTheoMuc → verifyFreshTotp (KHÔNG qua middleware step-up) nên tập step-up suy từ router không thấy nó — liệt kê tay (census kiemXacThucTheoMuc canh).
-    chinhXac: ["user.setup2FA", "user.verify2FA", "user.disable2FA", "scadaCommands.confirm"],
+    // ⚠ scadaCommands.confirm CỐ Ý KHÔNG có ở đây (R1a final I-1, 2026-10-24): TOTP của nó đã chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce;
+    // nhóm 20/15 phút chung IP + người sẽ bóp lệnh HMI mức 1/3 thường ngày. Miễn trừ ghi ở census kiemXacThucTheoMuc (trpcGioiHanThuTuc.census.test.ts).
+    chinhXac: ["user.setup2FA", "user.verify2FA", "user.disable2FA"],
   },
   auth: {
     cuaSoMs: AUTH_RATE_LIMIT.windowMs,

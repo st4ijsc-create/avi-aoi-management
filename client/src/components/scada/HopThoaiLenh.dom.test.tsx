@@ -280,6 +280,35 @@ describe("M5 — TOTP", () => {
 });
 
 describe("M5 — từ chối nói lý do + cách xử lý", () => {
+  it("★ R1a final I-1: 429 của bộ giới hạn ở confirm ⇒ 'Không gửi — vượt giới hạn tần suất, thử lại sau' (KHÔNG 'không rõ máy đã nhận'); đóng hộp ⇒ huy", async () => {
+    const { onDong } = ve();
+    bamGui();
+    await traLoi("confirm", "onError", {
+      message: "Quá nhiều lần thử thao tác nhạy cảm (2fa). Thử lại sau 30 giây.",
+      data: { code: "TOO_MANY_REQUESTS", httpStatus: 429, appCode: "TRPC_GIOI_HAN_THU_TUC", nhom: "2fa", retryAfterGiay: 30 },
+    });
+    const tb = within(hop()).getByTestId("loi-lenh");
+    expect(tb).toHaveTextContent("Không gửi — vượt giới hạn tần suất, thử lại sau");
+    expect(tb.textContent ?? "").not.toMatch(/không rõ máy đã nhận/i);
+    expect(tb).not.toHaveTextContent(S("scada.lenh.loi.TIMEOUT"));
+    // máy chủ chưa chạy confirm ⇒ yêu cầu còn proposed + khoá chọn ⇒ đóng hộp gọi huy (tốt-nhất-có-thể)
+    fireEvent.click(within(hop()).getByRole("button", { name: S("scada.lenh.nut.dong") }));
+    expect(goi("huy")).toEqual([{ proc: "huy", vars: { requestId: RID } }]);
+    expect(onDong).toHaveBeenCalled();
+  });
+
+  it("★ R1a final I-1: HTTP 429 thô (apiLimiter — chỉ meta.response.status) ⇒ cùng chữ vượt giới hạn (en)", async () => {
+    await act(async () => {
+      await i18next.changeLanguage("en");
+    });
+    ve();
+    bamGui();
+    await traLoi("confirm", "onError", Object.assign(new Error("Too many requests"), { meta: { response: { status: 429 } } }));
+    const tb = within(hop()).getByTestId("loi-lenh");
+    expect(tb).toHaveTextContent((en_ as any).scada.lenh.loi.vuotTanSuat);
+    expect(tb).not.toHaveTextContent(/unknown whether the machine received/i);
+  });
+
   it("MODE_LOCAL bo_dem_tat ⇒ 'Bộ đệm giá trị sống đang tắt — mọi máy coi như LOCAL' + gợi ý STOP ghim / E-STOP", async () => {
     ve();
     bamGui();

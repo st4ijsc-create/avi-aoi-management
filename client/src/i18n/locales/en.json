@@ -23785,6 +23785,7 @@
         "TIMEOUT": "Unknown whether the machine received it — read the value back before sending again.",
         "khac": "Could not create the request: {{chiTiet}}",
         "khacXacNhan": "The command was not sent: {{chiTiet}}",
+        "vuotTanSuat": "Not sent — rate limit exceeded, try again later",
         "nutDungGoiY": "Use {{goiY}}",
         "ma": "Code: {{ma}}"
       },

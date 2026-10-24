@@ -339,6 +339,19 @@ describe("Faceplate — request ⇒ M5 / lỗi request", () => {
   });
 });
 
+describe("Faceplate — R1a final I-1 (429 ở request)", () => {
+  it("429 của bộ giới hạn ở request ⇒ 'Không gửi — vượt giới hạn tần suất, thử lại sau'", async () => {
+    ve();
+    fireEvent.change(oSo(), { target: { value: "245" } });
+    fireEvent.change(oLyDo(), { target: { value: "Giam SP Z7" } });
+    fireEvent.click(nutDoi());
+    await act(async () => {
+      srv.opts.request.onError?.({ message: "x", data: { code: "TOO_MANY_REQUESTS", httpStatus: 429, appCode: "TRPC_GIOI_HAN_THU_TUC", nhom: "2fa", retryAfterGiay: 9 } });
+    });
+    expect(within(fp()).getByTestId("loi-lenh")).toHaveTextContent("Không gửi — vượt giới hạn tần suất, thử lại sau");
+  });
+});
+
 describe("Faceplate — fix round 1 (khuôn × kiểu, chặn gửi bằng ref)", () => {
   it("MINOR 3 — khuôn bool: trên kênh int ⇒ hai nút gửi 0 / 1", () => {
     srv.kenh = [kenh({ dataType: "int", displayFormat: "bool:Dung,Chay", writeMin: null, writeMax: null, writeStep: null })];

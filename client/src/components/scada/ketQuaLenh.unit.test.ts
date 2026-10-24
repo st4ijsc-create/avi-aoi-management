@@ -243,6 +243,30 @@ describe("moTaLoiLenh — mã từ chối ⇒ chữ + cách xử lý", () => {
     expect(r.khoa).toBe("scada.lenh.loi.khac");
   });
 
+  it("★ R1a final I-1: 429 của bộ giới hạn (appCode TRPC_GIOI_HAN_THU_TUC / httpStatus 429 / HTTP 429 thô) ⇒ 'vượt giới hạn tần suất', KHÔNG 'không rõ máy đã nhận'", () => {
+    const ctx = { laEdge: false, locale: "vi" };
+    // đúng hình lỗi middleware trpcGioiHanThuTuc trả (error.json.data) — không có appParams.ma
+    const gioiHan = { message: "Quá nhiều lần thử", data: { code: "TOO_MANY_REQUESTS", httpStatus: 429, appCode: "TRPC_GIOI_HAN_THU_TUC", nhom: "2fa", retryAfterGiay: 30 } };
+    // apiLimiter (express-rate-limit) trả {error:"Too many requests…"} — TRPCClientError chỉ còn meta.response.status
+    const http429 = Object.assign(new Error("Too many requests"), { meta: { response: { status: 429 } } });
+    const chiHttpStatus = { message: "x", data: { httpStatus: 429 } };
+    for (const [ten, e] of [["gioiHan", gioiHan], ["http429", http429], ["chiHttpStatus", chiHttpStatus]] as const) {
+      for (const gd of ["confirm", "request"] as const) {
+        const m = moTaLoiLenh(e, gd, ctx);
+        expect(m.khoa, `${ten}/${gd}`).toBe("scada.lenh.loi.vuotTanSuat");
+        expect(m.khoa, `${ten}/${gd}`).not.toBe("scada.lenh.loi.DISPATCH_LOI");
+        expect(m.giuYeuCau, `${ten}/${gd}`).toBe(false);
+      }
+      // confirm: máy chủ CHƯA chạy gì ⇒ yêu cầu còn proposed + khoá chọn ⇒ đóng hộp phải huy
+      expect(moTaLoiLenh(e, "confirm", ctx).huyKhiDong, ten).toBe(true);
+    }
+    coO3("scada.lenh.loi.vuotTanSuat");
+    expect(S("scada.lenh.loi.vuotTanSuat")).toBe("Không gửi — vượt giới hạn tần suất, thử lại sau");
+    expect(S("scada.lenh.loi.vuotTanSuat")).not.toMatch(/không rõ/i);
+    // lỗi khác mang httpStatus khác 429 vẫn theo đường cũ
+    expect(moTaLoiLenh({ message: "x", data: { httpStatus: 500 } }, "confirm", ctx).khoa).toBe("scada.lenh.loi.DISPATCH_LOI");
+  });
+
   it("mã lạ có `ma` ⇒ dự phòng chung, vẫn giữ mã để hiện", () => {
     const m = moTaLoiLenh(loi("SOMETHING_NEW", { ma: "MA_MOI" }), "request", { laEdge: false, locale: "vi" });
     expect(m.khoa).toBe("scada.lenh.loi.khac");
