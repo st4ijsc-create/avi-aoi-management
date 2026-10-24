@@ -130,7 +130,7 @@ Three credential kinds are accepted:
 | Scope | Grants |
 |---|---|
 | `equipment:read` | List equipment, capabilities, telemetry, state. |
-| `equipment:command` | Robot STOP commands (`abort` / `e_stop`) over REST v1. Every non-robot (OT) command returns **501** — use the SCADA HMI (R1b-1 D8). |
+| `equipment:command` | Send commands to **robot** machines through the HITL/dry-run robot dispatcher (`abort` / `e_stop` run; `start` / `pause` / `run_job` are still refused with a `200` `rejected` result). Every non-robot (OT) command returns **501** — use the SCADA HMI (R1b-1 D8). |
 | `ingest:write` | Ingest inspection results. |
 | `orchestration:read` | Read workflows / run status (E2). |
 | `orchestration:write` | Create workflows / start runs (E2). |
@@ -200,7 +200,9 @@ Status codes: `200` ok · `201` ingest committed · `400` bad request · `401` u
 ### 4.5 Command POST — OT returns 501
 
 ```bash
-curl -X POST "$HOST/api/v1/equipment/1/commands"   -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json"   -d '{ "command": "start", "idempotencyKey": "run-2026-06-28-001" }'
+curl -X POST "$HOST/api/v1/equipment/1/commands" \
+  -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+  -d '{ "command": "start", "idempotencyKey": "run-2026-06-28-001" }'
 ```
 
 ```jsonc
@@ -219,7 +221,7 @@ External systems subscribe to events via the existing webhook subscriptions (`we
 
 Published event types: `inspection.committed`, `andon.raised`, `spc.violation`, `ng.alert`.
 
-> `equipment.command.executed` is **no longer published** (R1a D8) and is now emitted **only for robot commands** on the REST v1 command route; OT commands over REST v1 return 501 and emit nothing (R1b-1 D8).
+> `equipment.command.executed` is **not an advertised event type** (R1a D8; absent from the OpenAPI/webhook list). The REST v1 command route still emits it internally, but only for robot machines; OT commands over REST v1 return 501 and emit nothing (R1b-1 D8).
 
 > **Flag-gated:** outbound delivery is enabled only when **`WEBHOOKS_ENABLED=true`** (default OFF). Subscriptions can be registered at any time; only the actual POST is gated.
 

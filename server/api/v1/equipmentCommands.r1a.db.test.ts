@@ -18,7 +18,7 @@ import { eq, inArray, like } from "drizzle-orm";
 
 const IDS = vi.hoisted(() => {
   const base = 991_110_000 + (Date.now() % 9_000);
-  return { robot: base, mRobot: base + 10_000, mOt: base + 20_000, mAoi: base + 30_000, mCmm: base + 40_000, mSensor: base + 50_000 };
+  return { robot: base, mRobot: base + 10_000, mOt: base + 20_000, mAoi: base + 30_000, mCmm: base + 40_000, mSensor: base + 50_000, mSpoof: base + 60_000, mRobotOt: base + 70_000 };
 });
 const env = vi.hoisted(() => ({
   hostile: false,
@@ -83,6 +83,9 @@ vi.mock("../../db", async (importOriginal) => {
     [IDS.mAoi]: mk(IDS.mAoi, "T11-AOI", "AOI", { apiKey: "T11_MACHINE_KEY" }),
     [IDS.mCmm]: mk(IDS.mCmm, "T11-CMM", "CMM"),
     [IDS.mSensor]: mk(IDS.mSensor, "T11-SENSOR", "IOT_SENSOR"),
+    // R1b-1 T5 fix round 1: override `capabilities.adapterKind` KHÔNG được quyết định robot-ness.
+    [IDS.mSpoof]: mk(IDS.mSpoof, "T11-SPOOF", "AUTOMATION", { capabilities: { adapterKind: "robot" } }),
+    [IDS.mRobotOt]: mk(IDS.mRobotOt, "T11-ROBOT-OT", "ROBOT", { capabilities: { adapterKind: "ot-opcua" } }),
   };
   return {
     ...orig,
@@ -306,13 +309,17 @@ describe.skipIf(!DB_URL)("R1a T11 — REST v1 lệnh thiết bị: hành vi th�
         previewJson: withOtPayloadHash({ entityType: "machine" }, otPayloadHash({ tool, adapterId, machineId: IDS.mOt, commandType: "set_param", writes })),
         status: "confirmed", idempotencyKey: `${actionId}-idem`, expiresAt: new Date(Date.now() + 600_000),
       });
+      const posKey = idem("posctl");
       const res = await dispatch({
         adapterId, machineId: IDS.mOt, commandType: "set_param", writes,
         triggeredBy: { kind: "hitl", actionId, tool, confirmedBy: OWNER, requestedBy: OWNER },
-        idempotencyKey: idem("posctl"),
+        idempotencyKey: posKey,
       });
       expect(res.ok).toBe(true);
       expect(env.writes).toEqual([[{ tagKey: "speed_sp", value: 42 }]]);
+      // đối chứng dương cho sổ: ledger() THẤY hàng khi lệnh thật sự tới dispatcher (nếu không, "0 hàng" ở các ca 501 chẳng chứng minh gì)
+      const rows = await ledger(posKey);
+      expect(rows.length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -351,6 +358,26 @@ describe.skipIf(!DB_URL)("R1a T11 — REST v1 lệnh thiết bị: hành vi th�
       const { body } = await postRobot("run_job", "runjob", { jobType: "home", params: {} });
       expect(body.data.status).toBe("rejected");
       expect(env.jobs).toHaveLength(0);
+    });
+  });
+
+  // ═════════ robot-ness theo machineType, KHÔNG theo override capabilities (R1b-1 T5 fix round 1) ═════════
+  describe("override capabilities.adapterKind không quyết định robot", () => {
+    it("★ AUTOMATION với capabilities {adapterKind:'robot'} ⇒ 501, KHÔNG tới robot driver, 0 hàng sổ", async () => {
+      const k = idem("spoof");
+      const { status, body } = await post(IDS.mSpoof, { command: "start", args: { robotId: IDS.robot }, idempotencyKey: k });
+      expect(status).toBe(501);
+      expect(body.error.code).toBe("not_implemented");
+      expect(env.jobs).toHaveLength(0);
+      expect(env.writes).toHaveLength(0);
+      expect(await ledger(k)).toHaveLength(0);
+    });
+
+    it("★ ROBOT với capabilities {adapterKind:'ot-opcua'} ⇒ abort VẪN tới driver đúng một lần (không bị 501)", async () => {
+      const { status, body } = await post(IDS.mRobotOt, { command: "abort", args: { robotId: IDS.robot }, idempotencyKey: idem("robot-ot") });
+      expect(status).toBe(200);
+      expect(body.data).toMatchObject({ accepted: true, status: "done", routedTo: "robot-dispatcher" });
+      expect(env.jobs.map((j) => j.jobType)).toEqual(["abort"]);
     });
   });
 
