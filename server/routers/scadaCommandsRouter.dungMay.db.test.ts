@@ -256,6 +256,10 @@ async function moc(): Promise<number> {
   return Number(r.m);
 }
 type DongThu = { request_id: string | null; adapter_id: number | null; stage: string; outcome: string; reason_code: string | null; command_log_ids: number[] | null; requested_value: unknown };
+/** R1b-1 T7 — cột ly_do (mig 0433) sau mốc. */
+async function lyDoSau(m: number, userId: number): Promise<Array<string | null>> {
+  return ((await dung(sql`SELECT ly_do FROM scada_command_attempts WHERE id > ${m} AND user_id = ${userId} ORDER BY id`)) as Array<{ ly_do: string | null }>).map((r) => r.ly_do);
+}
 async function thuSau(m: number, userId: number): Promise<DongThu[]> {
   return (await dung(sql`SELECT request_id, adapter_id, stage, outcome, reason_code, command_log_ids, requested_value
     FROM scada_command_attempts WHERE id > ${m} AND user_id = ${userId} ORDER BY id`)) as DongThu[];
@@ -473,6 +477,8 @@ describe("dungMay — máy REMOTE: gửi ĐÚNG giá trị ghim tới mọi adap
     expect(thu).toHaveLength(1);
     expect(thu[0]).toMatchObject({ request_id: actionId, adapter_id: ad.R, stage: "dispatch", outcome: "dispatched", reason_code: null, requested_value: GHIM_R });
     expect(thu[0].command_log_ids?.length).toBe(2);
+    // R1b-1 T7 — không gõ lý do ⇒ câu hệ thống mô tả kết cục
+    expect(await lyDoSau(m, nguoi.opA2.id)).toEqual(["STOP: acked_verified"]);
   });
 
   it("★ safety PLC báo E-STOP (BLOCKED) ⇒ STOP ghim VẪN gửi (bỏ preflight) — đối chứng cho bố trí safety nằm TRONG vòng", async () => {
@@ -514,8 +520,11 @@ describe("Review Focus 1 — LOCAL / khoá chọn của người khác / chưa 2
   it("lyDo TUỲ CHỌN: có lyDo ⇒ vẫn gửi, lyDo vào audit", async () => {
     const a = await mocAudit();
     const crid = uuid();
+    const m = await moc();
     const kq = await nguoi.opA.caller.dungMay({ machineId: may.L.mid, lyDo: "ket phoi o bang tai", clientRequestId: crid });
     expect(kq.ketQua[0].ok).toBe(true);
+    // R1b-1 T7 — có gõ lý do ⇒ ly_do của dòng attempts chính là lý do đó
+    expect(await lyDoSau(m, nguoi.opA.id)).toEqual(["ket phoi o bang tai"]);
     const [au] = await choAudit(a, may.L.mid, crid);
     expect(au.reason).toBe("ket phoi o bang tai");
   });
@@ -576,6 +585,7 @@ describe("từ chối", () => {
     const thu = await thuSau(m, nguoi.opA2.id);
     expect(thu).toHaveLength(1);
     expect(thu[0]).toMatchObject({ stage: "dispatch", outcome: "rejected", reason_code: "CHUA_GHIM_STOP", adapter_id: null });
+    expect((await lyDoSau(m, nguoi.opA2.id))[0]).toContain("E-STOP");
     expect(H.dispatchInputs.length - dTruoc).toBe(0);
   });
 

@@ -271,6 +271,10 @@ async function thuCua(requestId: string): Promise<DongThu[]> {
   return (await dung(sql`SELECT stage, outcome, reason_code, command_log_ids, user_id, request_id
     FROM scada_command_attempts WHERE request_id = ${requestId} ORDER BY id`)) as DongThu[];
 }
+/** R1b-1 T7 — cột ly_do (mig 0433) theo requestId, đúng thứ tự ghi. */
+async function lyDoCua(requestId: string): Promise<Array<string | null>> {
+  return ((await dung(sql`SELECT ly_do FROM scada_command_attempts WHERE request_id = ${requestId} ORDER BY id`)) as Array<{ ly_do: string | null }>).map((r) => r.ly_do);
+}
 async function moc(): Promise<number> {
   const [r] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM scada_command_attempts`);
   return Number(r.m);
@@ -423,6 +427,8 @@ describe("confirm — đường vui (dispatch hitl hmi.write_tag, đọc lại b
     ]);
     expect(thu[2].command_log_ids?.map(Number)).toEqual([dong[1].id]);
     expect(thu[2].reason_code).toBeNull();
+    // R1b-1 T7 — ly_do: request = lý do người dùng; confirm / dispatch = câu hệ thống mô tả kết cục (không bao giờ mã TOTP)
+    expect(await lyDoCua(requestId)).toEqual([LY_DO, expect.stringContaining("Người dùng xác nhận"), "Kết quả gửi: acked_verified"]);
 
     expect(H.emits.every((e) => e.room === `user:${u.id}` && e.ev === "scada:cmd")).toBe(true);
     expect(H.emits.map((e) => e.payload.status)).toEqual(["confirmed", "acked_verified"]);
@@ -457,6 +463,7 @@ describe("confirm — hết TTL, đã xử lý, song song", () => {
     });
     expect(await trangThaiCho(requestId)).toBe("expired");
     expect(await khoa("het")).toBeUndefined();
+    expect((await lyDoCua(requestId)).at(-1)).toBe("Yêu cầu đã hết hạn (60 s) — hãy tạo yêu cầu mới.");
     expect(H.emits.map((e) => e.payload)).toEqual([{ requestId, status: "expired", at: expect.any(String), reason: "HET_HAN" }]);
   });
 
@@ -582,6 +589,8 @@ describe("2FA theo mức — mức lấy từ tag HIỆN TẠI", () => {
     const requestId = await yeuCau("engA", "m5");
     const loi = await tuChoiXacNhan("engA", requestId, { code: "PRECONDITION_FAILED", appCode: "SCADA_TOTP_REQUIRED", reason: "TOTP_CAN" });
     expect(loi.appParams).toMatchObject({ level: 5 });
+    // R1b-1 T7 — TOTP_CAN (mã ồn, dưới trần) vẫn ghi; ly_do là câu hệ thống, KHÔNG chứa mã TOTP
+    expect((await lyDoCua(requestId)).at(-1)).toBe("Kênh mức 5 cần mã TOTP.");
     expect(await trangThaiCho(requestId)).toBe("proposed");
     expect((await khoa("m5"))?.request_id).toBe(requestId);
     // mã sai định dạng ⇒ TOTP_SAI (không gọi verify), vẫn proposed
@@ -750,9 +759,11 @@ describe("huy + trangThai", () => {
     expect(await khoa("huy")).toBeUndefined();
     const thu = await thuCua(requestId);
     expect(thu.at(-1)).toMatchObject({ stage: "huy", outcome: "cancelled", user_id: nguoi.opA.id });
+    expect((await lyDoCua(requestId)).at(-1)).toBe("Người dùng huỷ yêu cầu.");
     expect(H.emits).toEqual([{ room: `user:${nguoi.opA.id}`, ev: "scada:cmd", payload: { requestId, status: "cancelled", at: expect.any(String) } }]);
 
     await tuChoiXacNhan("opA", requestId, { code: "CONFLICT", appCode: "SCADA_REQUEST_ALREADY_HANDLED", reason: "DA_XU_LY" });
+    expect((await lyDoCua(requestId)).at(-1)).toContain("đã được xử lý");
   });
 
   it("trangThai: chủ thấy dòng chờ + attempts + command_log theo actionId (không address/errorText); người khác ⇒ NOT_FOUND", async () => {

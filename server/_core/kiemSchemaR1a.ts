@@ -1,9 +1,11 @@
 /**
  * kiem-dinh P1-6 (2026-10-24) — KIỂM SCHEMA LÚC KHỞI ĐỘNG cho SCADA R1a, CHẠY TRƯỚC `startOt()`.
  *
- * Vì sao: R1a đọc cột / bảng của mig 0431 và 0432 ở đường nóng.
+ * Vì sao: R1a đọc cột / bảng của mig 0431, 0432 (và R1b-1 T7: 0433) ở đường nóng.
  *   · Thiếu 0431 ⇒ MỌI đường OT gãy (drizzle `select()` liệt kê mọi cột của `device_tags` — đo ở báo cáo nghiệm thu §4, M-1); `startOt`
  *     chạy trên một DB như vậy thì không nạp được adapter nào ⇒ trông như "không có thiết bị", KHÔNG ai biết vì sao.
+ *   · Thiếu 0433 ⇒ cột `scada_command_attempts.ly_do` (R1b-1 T7) vắng ⇒ MỌI INSERT nhật ký thử lệnh HMI (request/confirm/huy/dungMay) ném
+ *     "column ly_do does not exist" ⇒ lệnh HMI hỏng (khi SCADA_COMMANDS_ENABLED bật). OT KHÔNG bị ảnh hưởng.
  *   · Thiếu 0432 ⇒ bộ đếm TOTP sai không hỏi được ⇒ mọi lượt xác minh TOTP trả `TOTP_KHONG_KIEM_DUOC` (fail-closed) — đúng về an toàn,
  *     nhưng người dùng chỉ thấy "lỗi hệ thống".
  *
@@ -12,6 +14,9 @@
  *     `scada_khoa_chon` / `scada_command_attempts` (0431), bảng `totp_khoa_sai` + cột `loai` (0432).
  *   · Thiếu 0431 ⇒ một KHỐI `console.error` nổi bật gọi đúng tên migration, `/health` báo `status:"degraded"` + `schemaR1a` (lý do rõ),
  *     và KHÔNG gọi `startOt` (ghi rõ vì sao). Áp 0431 xong phải KHỞI ĐỘNG LẠI tiến trình (OT không tự nạp lại).
+ *   · Thiếu 0433 ⇒ như 0432: `startOt` vẫn chạy (OT không đọc `ly_do`); lỗi nổi bật + nhắc lại mỗi `CHU_KY_NHAC_MS` tới khi cột có mặt;
+ *     `/health` degraded + `schemaR1a.thieuMigration` có "0433". Chỉ báo khi bảng `scada_command_attempts` CÓ MẶT mà thiếu cột (bảng vắng = thiếu 0431,
+ *     đã báo ở 0431 — không đếm hai lần).
  *   · Thiếu 0432 ⇒ `startOt` vẫn chạy; lỗi được log lặp lại mỗi `CHU_KY_NHAC_MS` (5 phút) tới khi bảng có mặt; `/health` degraded; mỗi
  *     lần bộ đếm TOTP hỏng, log mang nguyên nhân "thiếu migration 0432" (`nguyenNhanBoDemHong`, totpKhoaSai.ts / totpOnce.ts).
  *   · Không kiểm được (DB chưa sẵn / truy vấn lỗi) ⇒ ghi cảnh báo và để `startOt` chạy như trước (nó tự thất bại nếu DB hỏng) — trạng
@@ -33,7 +38,7 @@ export const COT_DEVICE_TAGS_0431 = Object.freeze([
 /** 3 bảng của mig 0431. */
 export const BANG_0431 = Object.freeze(["scada_kenh_che_do", "scada_khoa_chon", "scada_command_attempts"] as const);
 
-/** Nhắc lại lỗi thiếu 0432 mỗi 5 phút. */
+/** Nhắc lại lỗi thiếu 0432 / 0433 mỗi 5 phút. */
 export const CHU_KY_NHAC_MS = 5 * 60 * 1000;
 
 export type ChayTruyVan = (q: SQL) => Promise<ReadonlyArray<Record<string, unknown>>>;
@@ -43,6 +48,8 @@ export interface KetQuaSchemaR1a {
   thieu0431: string[];
   /** đối tượng còn thiếu của 0432 (`totp_khoa_sai` | `totp_khoa_sai.loai`) — rỗng = đủ */
   thieu0432: string[];
+  /** đối tượng còn thiếu của 0433 (`scada_command_attempts.ly_do`) — rỗng = đủ (hoặc bảng vắng: đã tính ở 0431) */
+  thieu0433: string[];
 }
 
 export type TrangThaiSchemaR1a =
@@ -62,6 +69,11 @@ export function __datTrangThaiSchemaR1a(t: TrangThaiSchemaR1a): void {
   trangThai = t;
 }
 
+/** Tiến trình này đã thấy thiếu 0433 (cột `ly_do`)? */
+export function biet0433Thieu(): boolean {
+  return trangThai.kieu === "da_kiem" && trangThai.thieu0433.length > 0;
+}
+
 /** Tiến trình này đã thấy thiếu 0432? (log nguyên nhân của bộ đếm TOTP.) */
 export function biet0432Thieu(): boolean {
   return trangThai.kieu === "da_kiem" && trangThai.thieu0432.length > 0;
@@ -75,7 +87,8 @@ export async function kiemSchemaR1a(chay: ChayTruyVan): Promise<KetQuaSchemaR1a>
         COT_DEVICE_TAGS_0431.map((c) => sql`${c}`),
         sql`, `,
       )}))
-      OR (table_name = 'totp_khoa_sai' AND column_name = 'loai'))`);
+      OR (table_name = 'totp_khoa_sai' AND column_name = 'loai')
+      OR (table_name = 'scada_command_attempts' AND column_name = 'ly_do'))`);
   const bang = await chay(sql`SELECT table_name FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name IN (${sql.join(
       [...BANG_0431, "totp_khoa_sai"].map((b) => sql`${b}`),
@@ -88,7 +101,8 @@ export async function kiemSchemaR1a(chay: ChayTruyVan): Promise<KetQuaSchemaR1a>
     ...BANG_0431.filter((b) => !coBang.has(b)),
   ];
   const thieu0432 = !coBang.has("totp_khoa_sai") ? ["totp_khoa_sai"] : !coCot.has("totp_khoa_sai.loai") ? ["totp_khoa_sai.loai"] : [];
-  return { thieu0431, thieu0432 };
+  const thieu0433 = coBang.has("scada_command_attempts") && !coCot.has("scada_command_attempts.ly_do") ? ["scada_command_attempts.ly_do"] : [];
+  return { thieu0431, thieu0432, thieu0433 };
 }
 
 /** Lý do một dòng cho `/health` (null = không có gì để báo). */
@@ -103,6 +117,10 @@ export function lyDoSchemaR1a(t: TrangThaiSchemaR1a = trangThai): { ok: false; t
   if (t.thieu0432.length) {
     thieu.push("0432");
     phan.push(`thiếu migration 0432 (${t.thieu0432.join(", ")}) — mọi xác minh TOTP bị từ chối (TOTP_KHONG_KIEM_DUOC)`);
+  }
+  if (t.thieu0433.length) {
+    thieu.push("0433");
+    phan.push(`thiếu migration 0433 (${t.thieu0433.join(", ")}) — mọi lệnh HMI ghi nhật ký thử lệnh sẽ lỗi (OT vẫn chạy)`);
   }
   return thieu.length ? { ok: false, thieuMigration: thieu, lyDo: phan.join("; ") } : null;
 }
@@ -143,34 +161,53 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
     logLoi("[SCADA R1a] KHÔNG kiểm được schema: không có kết nối DB — vẫn khởi động OT như trước.");
   }
 
-  if (kq && kq.thieu0432.length) {
-    const bao = (thieu: string[]) =>
-      logLoi(
-        khoiLoi([
-          "[SCADA R1a] THIẾU MIGRATION 0432 (bộ đếm TOTP sai).",
-          `Còn thiếu: ${thieu.join(", ")}.`,
-          "Hậu quả: MỌI lượt xác minh TOTP bị từ chối (TOTP_KHONG_KIEM_DUOC) — đăng nhập 2FA, lệnh SCADA mức 4–5, cấu hình kênh M12, deploy.",
-          "Sửa: chạy scripts/apply-migration-0432.mjs trên DB này (log này nhắc lại mỗi 5 phút tới khi bảng có mặt).",
-        ]),
-      );
-    bao(kq.thieu0432);
+  // 0432 / 0433: OT vẫn chạy; khối lỗi nổi bật + nhắc lại mỗi 5 phút tới khi đối tượng có mặt (mỗi mã một bộ hẹn giờ).
+  const nhacTheoMa = (ma: "thieu0432" | "thieu0433", dongLoi: (thieu: string[]) => string[], macDinhThieu: string[]) => {
+    if (!kq || !kq[ma].length) return;
+    const bao = (thieu: string[]) => logLoi(khoiLoi(dongLoi(thieu)));
+    bao(kq[ma]);
     const chay = deps.chay!;
     const datNhac = deps.datNhac ?? ((fn: () => void, ms: number) => setInterval(fn, ms));
     const boNhac = deps.boNhac ?? ((h: unknown) => clearInterval(h as NodeJS.Timeout));
     const h = datNhac(() => {
       void kiemSchemaR1a(chay)
         .then((lai) => {
-          if (trangThai.kieu === "da_kiem") trangThai = { ...trangThai, thieu0432: lai.thieu0432, luc: new Date().toISOString() };
-          if (lai.thieu0432.length) bao(lai.thieu0432);
+          if (trangThai.kieu === "da_kiem") trangThai = { ...trangThai, [ma]: lai[ma], luc: new Date().toISOString() };
+          if (lai[ma].length) bao(lai[ma]);
           else {
             boNhac(h);
-            logLoi("[SCADA R1a] migration 0432 đã có mặt — bộ đếm TOTP sai hoạt động lại.");
+            logLoi(
+              ma === "thieu0432"
+                ? "[SCADA R1a] migration 0432 đã có mặt — bộ đếm TOTP sai hoạt động lại."
+                : "[SCADA R1b] migration 0433 đã có mặt — nhật ký thử lệnh HMI ghi được lý do.",
+            );
           }
         })
-        .catch(() => bao(trangThai.kieu === "da_kiem" ? trangThai.thieu0432 : ["totp_khoa_sai"]));
+        .catch(() => bao(trangThai.kieu === "da_kiem" ? trangThai[ma] : macDinhThieu));
     }, CHU_KY_NHAC_MS);
     (h as { unref?: () => void } | null)?.unref?.();
-  }
+  };
+  nhacTheoMa(
+    "thieu0432",
+    (thieu) => [
+      "[SCADA R1a] THIẾU MIGRATION 0432 (bộ đếm TOTP sai).",
+      `Còn thiếu: ${thieu.join(", ")}.`,
+      "Hậu quả: MỌI lượt xác minh TOTP bị từ chối (TOTP_KHONG_KIEM_DUOC) — đăng nhập 2FA, lệnh SCADA mức 4–5, cấu hình kênh M12, deploy.",
+      "Sửa: chạy scripts/apply-migration-0432.mjs trên DB này (log này nhắc lại mỗi 5 phút tới khi bảng có mặt).",
+    ],
+    ["totp_khoa_sai"],
+  );
+  nhacTheoMa(
+    "thieu0433",
+    (thieu) => [
+      "[SCADA R1b] THIẾU MIGRATION 0433 (cột lý do của nhật ký thử lệnh HMI).",
+      `Còn thiếu: ${thieu.join(", ")}.`,
+      "Hậu quả: MỌI lệnh HMI (request / confirm / huỷ / dừng máy) ghi scada_command_attempts sẽ lỗi \"column ly_do does not exist\" khi SCADA_COMMANDS_ENABLED bật. OT vẫn chạy.",
+      "/health báo status \"degraded\" + schemaR1a.",
+      "Sửa: chạy scripts/apply-migration-0433.mjs trên DB này (log này nhắc lại mỗi 5 phút tới khi cột có mặt).",
+    ],
+    ["scada_command_attempts.ly_do"],
+  );
 
   if (kq && kq.thieu0431.length) {
     logLoi(

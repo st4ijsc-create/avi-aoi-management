@@ -314,7 +314,7 @@ export async function readinessProbe(deps: ReadinessDeps = {}): Promise<Readines
 export interface ProbeHandlerDeps {
   pinger?: DbPinger;
   checkBroker?: ReadinessDeps["checkBroker"];
-  /** kiem-dinh P1-6 — lý do schema R1a (thiếu mig 0431/0432) của lần kiểm khởi động; mặc định `kiemSchemaR1a.lyDoSchemaR1a`. */
+  /** kiem-dinh P1-6 — lý do schema R1a (thiếu mig 0431/0432/0433) của lần kiểm khởi động; mặc định `kiemSchemaR1a.lyDoSchemaR1a`. */
   schemaR1a?: () => { ok: false; thieuMigration: string[]; lyDo: string } | null;
 }
 

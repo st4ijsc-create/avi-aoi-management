@@ -65,6 +65,7 @@ import { recordAuditEvent } from "../audit/controlAuditService";
 import { OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS } from "../ot/otDeviceWrite";
 import { kiemGiaTriGhi, laKenhGhi, mucTacDongKenh } from "./kenhScada";
 import { giaHanKhoaChon, giuKhoaChon, LoiKhoaChonTranhChap, nhaKhoaChon } from "./khoaChon";
+import { laMaOn, nenGhiThuLenh } from "./dieuTietThuLenh";
 import { appError } from "../../_core/appError";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -205,6 +206,28 @@ type TagLenh = Pick<
 // ─── Nhật ký thử lệnh (WORM) ───────────────────────────────────────────────────────────────────────────────────────────────────
 type DbHoacTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
+/** Độ dài tối đa của `ly_do` (cột varchar(300), mig 0433). */
+export const LY_DO_TOI_DA = 300;
+
+/**
+ * R1b-1 T7 — chuẩn hoá chữ vào cột `ly_do`: trim, rỗng ⇒ NULL, cắt 300 ký tự theo điểm mã (không xé cặp thay thế UTF-16 — Postgres
+ * từ chối chuỗi UTF-8 hỏng). CHỈ nhận văn bản người dùng gõ (lý do) hoặc câu hệ thống mô tả kết cục — KHÔNG BAO GIỜ mã TOTP / bí mật
+ * (người gọi không truyền `input.totpCode`).
+ */
+export function catLyDo(s: string | null | undefined): string | null {
+  const t = (s ?? "").trim();
+  if (!t) return null;
+  const cp = Array.from(t);
+  return cp.length > LY_DO_TOI_DA ? cp.slice(0, LY_DO_TOI_DA).join("") : t;
+}
+
+/**
+ * Ghi MỘT dòng nhật ký thử lệnh (WORM — chỉ INSERT). R1b-1 T7:
+ *   · `lyDo` ⇒ cột `ly_do` (lý do người dùng nếu có, ngược lại câu hệ thống mô tả kết cục), cắt 300.
+ *   · Dòng `rejected` mang mã ồn (`MA_ON`) đi qua `nenGhiThuLenh`: quá 30 dòng/60 s/người ⇒ KHÔNG ghi (client vẫn nhận đúng mã — hàm này
+ *     chỉ quyết việc ghi sổ); sau cửa sổ ⇒ thêm MỘT dòng tổng kết `DIEU_TIET`. Mọi dòng khác (dispatched / proposed / confirmed /
+ *     cancelled / expired, từ chối ở cổng an toàn) LUÔN ghi.
+ */
 export async function ghiThuLenh(
   d: DbHoacTx,
   dong: {
@@ -217,10 +240,27 @@ export async function ghiThuLenh(
     stage: "request" | "confirm" | "dispatch" | "huy";
     outcome: "rejected" | "proposed" | "confirmed" | "dispatched" | "expired" | "cancelled";
     reasonCode?: string | null;
+    lyDo?: string | null;
     commandLogIds?: number[] | null;
   },
 ): Promise<void> {
+  let tongKet = 0;
+  if (dong.outcome === "rejected" && laMaOn(dong.reasonCode)) {
+    const q = nenGhiThuLenh(dong.userId, dong.reasonCode as string);
+    if (q.ghi === false) return;
+    if (q.ghi === "tong_ket") tongKet = q.soLan;
+  }
+  if (tongKet > 0) {
+    await d.insert(scadaCommandAttempts).values({
+      userId: dong.userId,
+      stage: dong.stage,
+      outcome: "rejected",
+      reasonCode: "DIEU_TIET",
+      lyDo: catLyDo(`${tongKet} lần ${dong.reasonCode} bị gộp`),
+    });
+  }
   await d.insert(scadaCommandAttempts).values({
+    lyDo: catLyDo(dong.lyDo),
     requestId: dong.requestId ?? null,
     userId: dong.userId,
     adapterId: dong.adapterId ?? null,
@@ -492,7 +532,7 @@ export async function yeuCauGhiTag(
   // 2. phạm vi
   const a = await adapterTrongPhamViLenh(db, pv, input.adapterId);
   if (!a) {
-    await ghiThuLenh(db, { userId, stage: "request", outcome: "rejected", reasonCode: "NOT_FOUND" });
+    await ghiThuLenh(db, { userId, stage: "request", outcome: "rejected", reasonCode: "NOT_FOUND", lyDo: input.lyDo });
     return { ok: false, tuChoi: { ma: "NOT_FOUND", entity: "adapter", chiTiet: "Adapter không tồn tại." } };
   }
 
@@ -507,6 +547,7 @@ export async function yeuCauGhiTag(
       stage: "request",
       outcome: "rejected",
       reasonCode: t.ma,
+      lyDo: input.lyDo, // lý do người dùng gõ ở `request` (R1b-1 T7)
     });
     return { ok: false as const, tuChoi: t };
   };
@@ -585,6 +626,7 @@ export async function yeuCauGhiTag(
         afterFormula: giaTri,
         stage: "request",
         outcome: "proposed",
+        lyDo: input.lyDo,
       });
       return { ok: true } as const;
     });
@@ -792,7 +834,7 @@ export async function xacNhanGhiTag(
   // 1. dòng chờ của chính người gọi
   const cho = await dongChoCuaNguoi(db, requestId, userId);
   if (!cho) {
-    await ghiThuLenh(db, { userId, stage: "confirm", outcome: "rejected", reasonCode: "NOT_FOUND" });
+    await ghiThuLenh(db, { userId, stage: "confirm", outcome: "rejected", reasonCode: "NOT_FOUND", lyDo: KHONG_THAY_YEU_CAU.chiTiet });
     return { ok: false, tuChoi: KHONG_THAY_YEU_CAU };
   }
   const { r, args } = cho;
@@ -803,6 +845,7 @@ export async function xacNhanGhiTag(
     outcome: "rejected" | "confirmed" | "dispatched" | "expired",
     reasonCode: string | null,
     commandLogIds?: number[],
+    lyDo?: string | null,
   ) =>
     ghiThuLenh(db, {
       requestId,
@@ -814,6 +857,7 @@ export async function xacNhanGhiTag(
       stage,
       outcome,
       reasonCode,
+      lyDo,
       commandLogIds: commandLogIds ?? null,
     });
   const phat = (p: { status: string; reason?: string; readBackValue?: unknown }) =>
@@ -835,14 +879,14 @@ export async function xacNhanGhiTag(
 
   /** Từ chối GIỮ NGUYÊN dòng chờ + khoá (DA_XU_LY, 2FA — QĐ T9-2/T9-3). */
   const tuChoiGiu = async (t: TuChoiYeuCau): Promise<KetQuaXacNhanGhi> => {
-    await thu("confirm", "rejected", t.ma);
+    await thu("confirm", "rejected", t.ma, undefined, t.chiTiet);
     return { ok: false, tuChoi: t };
   };
   /** Từ chối KẾT THÚC yêu cầu (QĐ T9-3): CAS proposed→denied rồi mới nhả khoá; CAS trượt ⇒ DA_XU_LY, không nhả. */
   const tuChoiKetThuc = async (t: TuChoiYeuCau): Promise<KetQuaXacNhanGhi> => {
     if (!(await doiTrangThaiCho(db, requestId, userId, "proposed", "denied", { resultJson: { ma: t.ma } }))) return tuChoiGiu(DA_XU_LY_CONFIRM);
     await nhaKhoaChon(db, khoaKey);
-    await thu("confirm", "rejected", t.ma);
+    await thu("confirm", "rejected", t.ma, undefined, t.chiTiet);
     await phat({ status: "rejected", reason: t.ma });
     return { ok: false, tuChoi: t };
   };
@@ -855,7 +899,7 @@ export async function xacNhanGhiTag(
   if (r.expiresAt.getTime() - now < CON_LAI_TOI_THIEU_MS) {
     if (!(await doiTrangThaiCho(db, requestId, userId, "proposed", "expired"))) return tuChoiGiu(DA_XU_LY_CONFIRM);
     await nhaKhoaChon(db, khoaKey);
-    await thu("confirm", "expired", "HET_HAN");
+    await thu("confirm", "expired", "HET_HAN", undefined, hetHan.chiTiet);
     await phat({ status: "expired", reason: "HET_HAN" });
     return { ok: false, tuChoi: hetHan };
   }
@@ -932,7 +976,7 @@ export async function xacNhanGhiTag(
     if (st === "proposed") {
       if (await doiTrangThaiCho(db, requestId, userId, "proposed", "expired")) {
         await nhaKhoaChon(db, khoaKey);
-        await thu("confirm", "expired", "HET_HAN");
+        await thu("confirm", "expired", "HET_HAN", undefined, hetHan.chiTiet);
         await phat({ status: "expired", reason: "HET_HAN" });
         return { ok: false, tuChoi: hetHan };
       }
@@ -945,7 +989,7 @@ export async function xacNhanGhiTag(
     if (st !== "bi_tu_choi_ghi") await phat({ status: st === "expired" ? "expired" : "rejected", reason: t.ma });
     return tuChoiGiu(t);
   }
-  await thu("confirm", "confirmed", null);
+  await thu("confirm", "confirmed", null, undefined, "Người dùng xác nhận — các cổng kiểm đã đạt, chuyển sang gửi lệnh.");
   await phat({ status: "confirmed" });
 
   // 7. dispatch — đường ghi DUY NHẤT; băm khớp request: machineId/commandType/giá trị ĐÚNG như argsJson (ledger ruling T8)
@@ -982,7 +1026,7 @@ export async function xacNhanGhiTag(
       await nhaAnToan();
     }
     try {
-      await thu("dispatch", "rejected", "DISPATCH_LOI");
+      await thu("dispatch", "rejected", "DISPATCH_LOI", undefined, "dispatch ném lỗi — lệnh không được gửi.");
       await phat({ status: "rejected", reason: "DISPATCH_LOI" });
     } catch (e) {
       ghiLoiChot(e, requestId, "attempts_dispatch_nem");
@@ -1018,7 +1062,13 @@ export async function xacNhanGhiTag(
   }
 
   // 9. attempts (QĐ T9-5)
-  await thu("dispatch", "dispatched", kq.reason ?? (kq.ok ? null : String(kq.status).toUpperCase()), kq.commandLogIds);
+  await thu(
+    "dispatch",
+    "dispatched",
+    kq.reason ?? (kq.ok ? null : String(kq.status).toUpperCase()),
+    kq.commandLogIds,
+    `Kết quả gửi: ${kq.status}${kq.reason ? ` (${kq.reason})` : ""}`,
+  );
   // 10. socket
   await phat({ status: kq.status, ...(kq.reason ? { reason: kq.reason } : {}), ...(readBackValue !== undefined ? { readBackValue } : {}) });
 
@@ -1048,17 +1098,17 @@ export async function huyYeuCauGhi(nguoi: NguoiGoiLenh, input: { requestId: stri
 
   const cho = await dongChoCuaNguoi(db, requestId, userId);
   if (!cho) {
-    await ghiThuLenh(db, { userId, stage: "huy", outcome: "rejected", reasonCode: "NOT_FOUND" });
+    await ghiThuLenh(db, { userId, stage: "huy", outcome: "rejected", reasonCode: "NOT_FOUND", lyDo: KHONG_THAY_YEU_CAU.chiTiet });
     return { ok: false, tuChoi: KHONG_THAY_YEU_CAU };
   }
   const { args } = cho;
   const dong = { requestId, userId, adapterId: args.adapterId, tagKey: args.tagKey, requestedValue: args.value, afterFormula: args.value };
   if (!(await doiTrangThaiCho(db, requestId, userId, "proposed", "cancelled"))) {
-    await ghiThuLenh(db, { ...dong, stage: "huy", outcome: "rejected", reasonCode: "DA_XU_LY" });
+    await ghiThuLenh(db, { ...dong, stage: "huy", outcome: "rejected", reasonCode: "DA_XU_LY", lyDo: "Yêu cầu đã được xử lý — không huỷ được." });
     return { ok: false, tuChoi: { ma: "DA_XU_LY", chiTiet: "Yêu cầu này đã được xử lý — không huỷ được." } };
   }
   await nhaKhoaChon(db, { adapterId: args.adapterId, tagKey: args.tagKey, requestId });
-  await ghiThuLenh(db, { ...dong, stage: "huy", outcome: "cancelled" });
+  await ghiThuLenh(db, { ...dong, stage: "huy", outcome: "cancelled", lyDo: "Người dùng huỷ yêu cầu." });
   await phatScadaCmd(userId, { requestId, status: "cancelled", at: nowDate.toISOString() });
   return { ok: true, ketQua: { requestId, status: "cancelled" } };
 }
@@ -1295,7 +1345,7 @@ async function guiStopMotAdapter(
   const userId = nguoi.user.id;
   const actionId = randomUUID();
   const coBan = { adapterId: d.id, code: d.code, writes: d.writes };
-  const thu = (outcome: "dispatched" | "rejected", reasonCode: string | null, commandLogIds: number[] = []) =>
+  const thu = (outcome: "dispatched" | "rejected", reasonCode: string | null, commandLogIds: number[] = [], moTa?: string) =>
     ghiThuLenh(db, {
       requestId: actionId,
       userId,
@@ -1306,6 +1356,7 @@ async function guiStopMotAdapter(
       stage: "dispatch",
       outcome,
       reasonCode,
+      lyDo: lyDo ?? moTa, // lý do người dùng gõ (tuỳ chọn) ưu tiên, không có ⇒ câu hệ thống mô tả kết cục (R1b-1 T7)
       commandLogIds,
     }).catch((err) => ghiLoiChot(err, actionId, "attempts_hmi_stop"));
 
@@ -1335,7 +1386,7 @@ async function guiStopMotAdapter(
     }
   } catch (err) {
     logger.error({ err: (err as Error)?.message ?? String(err), adapterId: d.id }, "[SCADA] STOP HMI: không tạo được dòng chờ — adapter này KHÔNG được gửi");
-    await thu("rejected", "DISPATCH_LOI");
+    await thu("rejected", "DISPATCH_LOI", [], "STOP: không tạo được dòng chờ hoặc dispatch ném lỗi — adapter này không được gửi.");
     return { ...coBan, status: "failed", ok: false, simulated: false, reason: "DISPATCH_LOI", commandLogIds: [] };
   }
 
@@ -1358,7 +1409,7 @@ async function guiStopMotAdapter(
     } catch (e) {
       ghiLoiChot(e, actionId, "hmi_stop_dispatch_nem");
     }
-    await thu("rejected", "DISPATCH_LOI");
+    await thu("rejected", "DISPATCH_LOI", [], "STOP: không tạo được dòng chờ hoặc dispatch ném lỗi — adapter này không được gửi.");
     return { ...coBan, status: "failed", ok: false, simulated: false, reason: "DISPATCH_LOI", commandLogIds: [] };
   }
 
@@ -1389,7 +1440,12 @@ async function guiStopMotAdapter(
   }
 
   // 4. attempts (QĐ D-4)
-  await thu("dispatched", kq.reason ?? (kq.ok ? null : String(kq.status).toUpperCase()), kq.commandLogIds);
+  await thu(
+    "dispatched",
+    kq.reason ?? (kq.ok ? null : String(kq.status).toUpperCase()),
+    kq.commandLogIds,
+    `STOP: ${kq.status}${kq.reason ? ` (${kq.reason})` : ""}`,
+  );
 
   return {
     ...coBan,
@@ -1417,7 +1473,7 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
   const lyDo = input.lyDo?.trim() ? input.lyDo.trim() : null;
   const tuChoiMay = async (t: TuChoiYeuCau): Promise<KetQuaDungMay> => {
     // fix round 1 (minor 5) — sổ hỏng không được nuốt chữ từ chối (M5 vẫn phải nói "dùng E-STOP cứng")
-    await ghiThuLenh(db, { userId, stage: "dispatch", outcome: "rejected", reasonCode: t.ma }).catch((e) => ghiLoiChot(e, "-", "attempts_hmi_stop_tu_choi"));
+    await ghiThuLenh(db, { userId, stage: "dispatch", outcome: "rejected", reasonCode: t.ma, lyDo: lyDo ?? t.chiTiet }).catch((e) => ghiLoiChot(e, "-", "attempts_hmi_stop_tu_choi"));
     return { ok: false, tuChoi: t };
   };
 
@@ -1458,7 +1514,14 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
       const err = g.err;
       // QĐ D-2 — ghim không đọc được ⇒ không gửi gì tới adapter này (ghim là dữ liệu an toàn), các adapter khác vẫn gửi
       logger.error({ err: (err as Error)?.message ?? String(err), adapterId: a.id }, "[SCADA] STOP HMI: đọc ghim lỗi — adapter này KHÔNG được gửi");
-      await ghiThuLenh(db, { userId, adapterId: a.id, stage: "dispatch", outcome: "rejected", reasonCode: "GHIM_LOI_DOC" }).catch((e) =>
+      await ghiThuLenh(db, {
+        userId,
+        adapterId: a.id,
+        stage: "dispatch",
+        outcome: "rejected",
+        reasonCode: "GHIM_LOI_DOC",
+        lyDo: lyDo ?? "STOP: không đọc được ghim của adapter này — không gửi.",
+      }).catch((e) =>
         ghiLoiChot(e, "-", "attempts_hmi_stop_ghim"),
       );
       loiDoc.push({ adapterId: a.id, code: a.code, status: "failed", ok: false, simulated: false, reason: "GHIM_LOI_DOC", writes: [], commandLogIds: [] });
@@ -1505,7 +1568,13 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
   };
 
   if (dich.length === 0 && loiDoc.length === 0) {
-    await ghiThuLenh(db, { userId, stage: "dispatch", outcome: "rejected", reasonCode: "CHUA_GHIM_STOP" }).catch((e) =>
+    await ghiThuLenh(db, {
+      userId,
+      stage: "dispatch",
+      outcome: "rejected",
+      reasonCode: "CHUA_GHIM_STOP",
+      lyDo: lyDo ?? "STOP: máy chưa ghim giá trị DỪNG — dùng E-STOP cứng.",
+    }).catch((e) =>
       ghiLoiChot(e, "-", "attempts_hmi_stop_chua_ghim"),
     );
     ghiAudit([], "CHUA_GHIM_STOP");

@@ -573,3 +573,96 @@ describe("kiem-dinh P1-3 — cổng giá trị biết scale/offset (int): (v −
     expect(loi.appParams).toMatchObject({ ma: "OFF_STEP", goiY: 20, step: 10 });
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// R1b-1 Task 7 — cột `ly_do` (mig 0433) trên dòng `request` + bộ điều tiết mã ồn (MA_ON) theo người dùng
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+async function lyDoSau(m: number, userId: number): Promise<Array<{ outcome: string; reason_code: string | null; ly_do: string | null }>> {
+  return (await dung(sql`SELECT outcome, reason_code, ly_do FROM scada_command_attempts WHERE id > ${m} AND user_id = ${userId} ORDER BY id`)) as never;
+}
+
+describe("R1b-1 T7 — ly_do trên dòng request", () => {
+  it("proposed mang lý do người dùng gõ; rejected (OFF_STEP) cũng mang lý do đó", async () => {
+    const u = nguoi.opA;
+    const m = await moc();
+    await u.caller.request({ adapterId: ad.a, tagKey: "rf4", value: 100, lyDo: "  can giam nhiet  ", clientRequestId: uuid() });
+    await loiCua(u.caller.request({ adapterId: ad.a, tagKey: "rf4", value: 100.25, lyDo: "lech buoc", clientRequestId: uuid() }));
+    expect(await lyDoSau(m, u.id)).toEqual([
+      { outcome: "proposed", reason_code: null, ly_do: "can giam nhiet" },
+      { outcome: "rejected", reason_code: "OFF_STEP", ly_do: "lech buoc" },
+    ]);
+  });
+
+  it("ghiThuLenh cắt ly_do ở 300 ký tự (theo điểm mã, không xé cặp thay thế) và rỗng ⇒ NULL", async () => {
+    const { ghiThuLenh } = await import("../services/scada/lenhHmi");
+    const u = nguoi.opA;
+    const m = await moc();
+    await ghiThuLenh(db, { userId: u.id, stage: "request", outcome: "rejected", reasonCode: "OFF_STEP", lyDo: "😀".repeat(500) });
+    await ghiThuLenh(db, { userId: u.id, stage: "request", outcome: "rejected", reasonCode: "OFF_STEP", lyDo: "   " });
+    const dong = await lyDoSau(m, u.id);
+    expect(Array.from(dong[0].ly_do as string)).toHaveLength(300);
+    expect(dong[1].ly_do).toBeNull();
+  });
+});
+
+describe("R1b-1 T7 — bộ điều tiết attempts theo người dùng (MA_ON)", () => {
+  it("★ 100 lần MODE_LOCAL (mã KHÔNG ồn, cổng an toàn) ⇒ ĐÚNG 100 dòng, client luôn nhận MODE_LOCAL", async () => {
+    const dt = await import("../services/scada/dieuTietThuLenh");
+    dt.__datLaiDieuTiet();
+    const u = nguoi.opA2;
+    boDem.napTuOt({ adapterId: ad.a, machineId: A.mid }, [mauOt("che_do", 1)]);
+    try {
+      const m = await moc();
+      for (let i = 0; i < 100; i++) {
+        const loi = await loiCua(u.caller.request({ adapterId: ad.a, tagKey: "sp3", value: 100, lyDo: LY_DO, clientRequestId: uuid() }));
+        expect(loi.appCode).toBe("SCADA_MACHINE_NOT_REMOTE");
+      }
+      const dong = await lyDoSau(m, u.id);
+      expect(dong).toHaveLength(100);
+      expect(dong.every((d) => d.reason_code === "MODE_LOCAL")).toBe(true);
+    } finally {
+      boDem.napTuOt({ adapterId: ad.a, machineId: A.mid }, [mauOt("che_do", 2)]);
+    }
+  }, 120_000);
+
+  it("★ 100 lần DA_XU_LY trong 1 phút ⇒ ≤ 31 dòng (30 + tổng kết); client nhận ĐÚNG mã cả 100 lần; sau cửa sổ ⇒ 1 dòng DIEU_TIET + dòng hiện tại", async () => {
+    const dt = await import("../services/scada/dieuTietThuLenh");
+    dt.__datLaiDieuTiet();
+    const u = nguoi.engA;
+    const clientRequestId = uuid();
+    const lan1 = await u.caller.request({ adapterId: ad.a, tagKey: "nem", value: 100, lyDo: LY_DO, clientRequestId });
+    await dung(sql`UPDATE ai_pending_actions SET status = 'cancelled' WHERE id = ${lan1.requestId}`);
+    const m = await moc();
+    const goi = async () => {
+      const loi = await loiCua(u.caller.request({ adapterId: ad.a, tagKey: "nem", value: 100, lyDo: LY_DO, clientRequestId }));
+      expect(loi).toMatchObject({ code: "CONFLICT", appCode: "SCADA_REQUEST_ALREADY_HANDLED" });
+    };
+    try {
+      for (let i = 0; i < 100; i++) await goi();
+      const trong = await lyDoSau(m, u.id);
+      expect(trong.length).toBeLessThanOrEqual(31);
+      expect(trong).toHaveLength(30);
+      expect(trong.every((d) => d.reason_code === "DA_XU_LY")).toBe(true);
+
+      // cửa sổ 60 s kết thúc ⇒ lần gọi kế tiếp ghi MỘT dòng tổng kết rồi dòng hiện tại
+      vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 61_000 });
+      await goi();
+    } finally {
+      vi.useRealTimers();
+    }
+    const sau = (await lyDoSau(m, u.id)).slice(30);
+    expect(sau).toEqual([
+      { outcome: "rejected", reason_code: "DIEU_TIET", ly_do: "70 lần DA_XU_LY bị gộp" },
+      { outcome: "rejected", reason_code: "DA_XU_LY", ly_do: LY_DO },
+    ]);
+  }, 120_000);
+
+  it("điều tiết theo NGƯỜI: người khác cùng mã ồn vẫn được ghi dòng đầu", async () => {
+    const dt = await import("../services/scada/dieuTietThuLenh");
+    dt.__datLaiDieuTiet();
+    for (let i = 0; i < 40; i++) dt.nenGhiThuLenh(nguoi.engA.id, "DA_XU_LY");
+    expect(dt.nenGhiThuLenh(nguoi.engA.id, "DA_XU_LY")).toEqual({ ghi: false });
+    expect(dt.nenGhiThuLenh(nguoi.opA.id, "DA_XU_LY")).toEqual({ ghi: true });
+    dt.__datLaiDieuTiet();
+  });
+});
