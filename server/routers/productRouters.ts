@@ -56,7 +56,9 @@ import {
   getUnmappedProductModelId,
   type UnmappedRateFilter,
 } from "../services/measurementPointResolver";
+import { sql } from "drizzle-orm";
 import { phamViCua } from "./_phamViNguoiXem";
+import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
 import { tuChoiNgoaiPhamVi } from "./publicProductScope";
 // Doc 31 UX2/PM9 (WD-2) — product config-completeness ("readiness") score.
 import {
@@ -1992,6 +1994,24 @@ export const measurementPointRouter = router({
 });
 
 // ============ PRODUCT MACHINE MAPPING ROUTER ============
+/**
+ * Phạm vi nhà máy cho GHI lên một ánh xạ sản phẩm↔máy theo id (rà bảo mật 2026-10-24, lô W4 — kiểm định phamViGhi): ánh xạ của máy ngoài
+ * phạm vi ≡ "Mapping not found" (cùng NOT_FOUND với id không có thật); kiểm TRƯỚC khi ghi. Toàn quyền (admin) ⇒ không kiểm.
+ */
+async function anhXaTrongPhamVi(ctx: Parameters<typeof mayTrongPhamVi>[0], id: number): Promise<void> {
+  if ((await idsMayTrongPhamVi(ctx)) === null) return;
+  const d = await db.getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const rows = (await d.execute(sql`SELECT "machineId" AS m FROM product_machine_mappings WHERE id = ${id}`)) as unknown as Array<{ m: number | null }>;
+  const khongThay = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "mapping" }, "Mapping not found");
+  if (rows.length === 0 || rows[0]?.m == null) throw khongThay();
+  try {
+    await mayTrongPhamVi(ctx, Number(rows[0].m));
+  } catch {
+    throw khongThay();
+  }
+}
+
 export const productMachineMappingRouter = router({
   list: protectedProcedure
     .input(z.object({
@@ -2088,6 +2108,7 @@ export const productMachineMappingRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
+      await anhXaTrongPhamVi(ctx, id);
       await db.updateProductMachineMapping(id, data);
       try {
         await db.createAuditLog({
@@ -2108,6 +2129,7 @@ export const productMachineMappingRouter = router({
   delete: writeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
+      await anhXaTrongPhamVi(ctx, input.id);
       await db.deleteProductMachineMapping(input.id);
       try {
         await db.createAuditLog({
@@ -3660,7 +3682,15 @@ export const measurementSamplesRouter = router({
         sampledAt: z.coerce.date(),
       })).min(1).max(5000),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi nhà máy (rà bảo mật 2026-10-24): mỗi máy khai trong lô phải trong phạm vi; người gọi phạm vi HẸP bắt buộc nêu máy ở mọi dòng
+      // (dòng không máy không có nhà máy để so ⇒ fail-closed). Toàn quyền (admin) ⇒ giữ nguyên.
+      if ((await idsMayTrongPhamVi(ctx)) !== null) {
+        if (input.rows.some((r) => r.machineId == null)) {
+          throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "machineId" }, "Mỗi dòng mẫu cần machineId thuộc phạm vi của bạn.");
+        }
+        for (const mid of new Set(input.rows.map((r) => r.machineId as number))) await mayTrongPhamVi(ctx, mid);
+      }
       // P4.B G19 — hard gate: validate every distinct instrumentId referenced
       // in the batch is fit-for-use (active, in-date calibration, valid MSA).
       const instrumentIds = Array.from(new Set(
