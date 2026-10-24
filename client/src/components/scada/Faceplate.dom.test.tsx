@@ -335,7 +335,7 @@ describe("Faceplate — request ⇒ M5 / lỗi request", () => {
     });
     const tb = within(fp()).getByTestId("loi-lenh");
     expect(tb).toHaveTextContent("Bộ đệm giá trị sống đang tắt — mọi máy coi như LOCAL");
-    expect(tb).toHaveTextContent("Cần dừng máy? Dùng STOP đã ghim hoặc E-STOP cứng tại máy");
+    expect(tb).toHaveTextContent("Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy — màn HMI R1a chưa có lệnh STOP riêng");
   });
 });
 

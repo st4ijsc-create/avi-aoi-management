@@ -113,7 +113,7 @@ export function nhanKetQua(
     case "rejected":
     default: {
       const c = khoaCong(ctx.reason);
-      // fix round 1 — máy chuyển LOCAL giữa cổng của confirm và dispatch ⇒ cùng gợi ý STOP ghim / E-STOP như từ chối MODE_LOCAL
+      // fix round 1 — máy chuyển LOCAL giữa cổng của confirm và dispatch ⇒ cùng gợi ý dừng (E-STOP cứng / nút dừng tại tủ — HMI R1a KHÔNG phải đường STOP, final I-3) như từ chối MODE_LOCAL
       return { khoa: c.khoa, tuDongDongMs: null, thamSo: { ma: c.ma }, ...(c.ma === "MODE_LOCAL" ? { goiYStop: true } : {}) };
     }
   }
@@ -209,7 +209,7 @@ export interface MoTaLoi {
   /** OFF_STEP: giá trị hợp lệ gần nhất (nút "Dùng {goiY}" CHỈ điền ô) */
   goiY?: number;
   lienKet2FA?: boolean;
-  /** MODE_LOCAL: gợi ý STOP ghim / E-STOP */
+  /** MODE_LOCAL: gợi ý dừng bằng E-STOP cứng / nút dừng tại tủ (R1a final I-3: màn HMI chưa có lệnh STOP riêng) */
   goiYStop?: boolean;
   /** lỗi không có mã: cần chữ chi tiết đã dịch (`mapTrpcError`) cho `{{chiTiet}}` */
   canChiTiet?: boolean;

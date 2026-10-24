@@ -23739,7 +23739,7 @@
         "OFF_STEP": "Giá trị phải theo bước {{step}}. Giá trị hợp lệ gần nhất: {{goiY}}",
         "OFF_STEP_NO_HINT": "Giá trị phải theo bước {{step}} — nhập lại.",
         "MODE_LOCAL": "Máy không nhận lệnh từ xa: {{lyDo}}",
-        "goiYStop": "Cần dừng máy? Dùng STOP đã ghim hoặc E-STOP cứng tại máy",
+        "goiYStop": "Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy — màn HMI R1a chưa có lệnh STOP riêng",
         "DANG_DUOC_CHON": "Kênh đang được {{ten}} chọn để ra lệnh tới {{den}} — chờ họ xong hoặc hết hạn rồi thử lại.",
         "EDGE_CHUA_HO_TRO": "Máy này do edge {{edge}} sở hữu — lệnh từ SCADA tới máy edge chưa được hỗ trợ (đợt R1c)",
         "ROLE_FLOOR": "Vai trò của bạn không được ra lệnh kênh mức {{level}} — nhờ người có vai cao hơn (kỹ sư hoặc quản trị).",

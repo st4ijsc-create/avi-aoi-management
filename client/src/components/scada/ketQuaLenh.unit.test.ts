@@ -189,7 +189,7 @@ describe("moTaLoiLenh — mã từ chối ⇒ chữ + cách xử lý", () => {
     const m = moTaLoiLenh(loi("SCADA_MACHINE_NOT_REMOTE", { ma: "MODE_LOCAL", lyDo: "bo_dem_tat" }), "request", { laEdge: false, locale: "vi" });
     expect(m.goiYStop).toBe(true);
     expect(m.khoaLyDo).toBe(khoaLyDoLocal("bo_dem_tat", false));
-    expect(S("scada.lenh.loi.goiYStop")).toBe("Cần dừng máy? Dùng STOP đã ghim hoặc E-STOP cứng tại máy");
+    expect(S("scada.lenh.loi.goiYStop")).toBe("Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy — màn HMI R1a chưa có lệnh STOP riêng");
   });
 
   it("TOTP_CHUA_DANG_KY ⇒ liên kết đăng ký 2FA (trang /profile có thẻ 2FA)", () => {

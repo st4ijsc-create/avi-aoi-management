@@ -23765,7 +23765,7 @@
         "OFF_STEP": "The value must follow step {{step}}. Nearest valid value: {{goiY}}",
         "OFF_STEP_NO_HINT": "The value must follow step {{step}} — enter it again.",
         "MODE_LOCAL": "The machine does not accept remote commands: {{lyDo}}",
-        "goiYStop": "Need to stop the machine? Use the pinned STOP or the hardwired E-STOP at the machine",
+        "goiYStop": "Need to stop the machine? Use the hardwired E-STOP or the stop button at the machine cabinet — the R1a HMI screen has no dedicated STOP command yet",
         "DANG_DUOC_CHON": "The channel is selected by {{ten}} until {{den}} — wait until they finish or it expires, then try again.",
         "EDGE_CHUA_HO_TRO": "This machine is owned by edge {{edge}} — SCADA commands to edge machines are not supported yet (phase R1c)",
         "ROLE_FLOOR": "Your role may not command level {{level}} channels — ask someone with a higher role (engineer or administrator).",

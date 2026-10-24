@@ -309,13 +309,13 @@ describe("M5 — từ chối nói lý do + cách xử lý", () => {
     expect(tb).not.toHaveTextContent(/unknown whether the machine received/i);
   });
 
-  it("MODE_LOCAL bo_dem_tat ⇒ 'Bộ đệm giá trị sống đang tắt — mọi máy coi như LOCAL' + gợi ý STOP ghim / E-STOP", async () => {
+  it("MODE_LOCAL bo_dem_tat ⇒ 'Bộ đệm giá trị sống đang tắt — mọi máy coi như LOCAL' + gợi ý dừng bằng E-STOP / tủ máy", async () => {
     ve();
     bamGui();
     await traLoi("confirm", "onError", loi("SCADA_MACHINE_NOT_REMOTE", { ma: "MODE_LOCAL", lyDo: "bo_dem_tat" }));
     const tb = within(hop()).getByTestId("loi-lenh");
     expect(tb).toHaveTextContent("Bộ đệm giá trị sống đang tắt — mọi máy coi như LOCAL");
-    expect(tb).toHaveTextContent("Cần dừng máy? Dùng STOP đã ghim hoặc E-STOP cứng tại máy");
+    expect(tb).toHaveTextContent("Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy — màn HMI R1a chưa có lệnh STOP riêng");
     expect(nutGui()).toBeDisabled();
   });
 
@@ -527,13 +527,13 @@ describe("M5 — ngôn ngữ", () => {
 });
 
 describe("M5 — fix round 1", () => {
-  it("IMPORTANT 1 — kết quả dispatch rejected MODE_LOCAL ⇒ khối kết quả có gợi ý STOP ghim / E-STOP; cổng khác thì không", async () => {
+  it("IMPORTANT 1 — kết quả dispatch rejected MODE_LOCAL ⇒ khối kết quả có gợi ý dừng bằng E-STOP / tủ máy; cổng khác thì không", async () => {
     ve();
     bamGui();
     await traLoi("confirm", "onSuccess", { status: "rejected", ok: false, simulated: false, reason: "MODE_LOCAL", commandLogIds: [3] });
     const kq = within(hop()).getByTestId("ket-qua");
     expect(kq).toHaveTextContent(S("scada.lenh.cong.MODE_LOCAL"));
-    expect(kq).toHaveTextContent("Cần dừng máy? Dùng STOP đã ghim hoặc E-STOP cứng tại máy");
+    expect(kq).toHaveTextContent("Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy — màn HMI R1a chưa có lệnh STOP riêng");
     cleanup();
     ve();
     bamGui();
