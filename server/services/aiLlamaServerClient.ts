@@ -281,10 +281,19 @@ function lapCoSampling(
  * ⚠ Bản cũ là `({ role: m.role, content: m.content })` — nó IM LẶNG đánh rơi `tool_call_id` và
  * `tool_calls`, tức làm đứt đúng mắt xích giữa của vòng đời tool-call.
  */
+/** ★ Đợt 9 (2026-10-24) — ảnh gắn trên vai KHÁC `user` (lỗi lập trình của người gọi): lỗi CÓ MÃ, không phải `Error` thô (rawErrorCensus). */
+export class LoiAnhSaiVai extends Error {
+  readonly code = "ANH_SAI_DINH_DANG";
+  constructor(vai: string) {
+    super(`[llama-server] ảnh chỉ được gắn trên vai user (gặp vai ${vai})`);
+    this.name = "LoiAnhSaiVai";
+  }
+}
+
 export function chuyenMessageLenDay(m: GgufChatMessage): Record<string, unknown> {
   // ★ Đợt 9 (2026-10-24) — ảnh (chỉ vai `user`) ⇒ mảng phần OpenAI `[text, image_url…]` mà llama-server `--mmproj` hiểu. Không ảnh ⇒
   // `content` chuỗi như cũ (bit-đối-bit). Ảnh trên vai KHÁC ⇒ ném (không bỏ im lặng).
-  if (m.anh?.length && m.role !== "user") throw new Error(`[llama-server] ảnh chỉ được gắn trên vai user (gặp vai ${m.role})`);
+  if (m.anh?.length && m.role !== "user") throw new LoiAnhSaiVai(m.role);
   const coAnh = !!m.anh?.length;
   const ra: Record<string, unknown> = {
     role: m.role,
