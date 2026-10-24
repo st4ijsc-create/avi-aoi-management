@@ -32,6 +32,17 @@
 export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ───────────────────────────────────────────────────────
   "server/_core/systemRouter.ts#systemRouter.exportConfig",
+  // ── server/routers/scadaCommandsRouter.ts (1) ──
+  // ★ 2026-10-25 (điểm mù đọc) của scada-master: nhờ họ xác nhận phạm vi trong trangThaiYeuCauGhi.
+  "server/routers/scadaCommandsRouter.ts#scadaCommandsRouter.trangThai",
+  // ── server/routers/repoWorkspaceRouter.ts (1) ──
+  // ★ 2026-10-25 (điểm mù đọc) listFiles|readFile|grep đọc CÂY MÃ NGUỒN repo (không phải dữ liệu nhà máy) — ứng viên MIỄN TRỪ; RBAC ai_repo_read.
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.grep",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.listFiles",
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.readFile",
+  // ── server/routers/machineRecipeRouter.ts (1) ──
+  // ★ 2026-10-25 (điểm mù đọc) lọc theo CHỦ (requestedBy = người gọi) — ứng viên MIỄN TRỪ 'dữ liệu cá nhân'.
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.changeover.listMine",
   // ── server/routers/aiActiveLearningRouter.ts (6) ───────────────────────────────────────────
   "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.checkRetrain",
   "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.diversitySampling",
@@ -100,6 +111,8 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/aiRouters.ts#predictiveAlertRouter.get",
   "server/routers/aiRouters.ts#predictiveAlertRouter.list",
   "server/routers/aiRouters.ts#predictiveAlertRouter.stats",
+  // ★ 2026-10-25 LỖ THẬT: SELECT root_cause_analysis theo id, không lọc (từng ở S chỉ vì ctx đi vào suggestActions — không phải cổng).
+  "server/routers/aiRouters.ts#rootCauseRouter.get",
   "server/routers/aiRouters.ts#rootCauseRouter.list",
   // ── server/routers/aiSegmentationRouter.ts (1) ─────────────────────────────────────────────
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.listMasks",
@@ -117,6 +130,8 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.recommendNgThreshold",
   // ── server/routers/alertRouters.ts (2) ─────────────────────────────────────────────────────
   "server/routers/alertRouters.ts#alertRouter.getById",
+  // ★ 2026-10-25 (điểm mù đọc) lọc theo CHỦ (userId = người gọi) — ứng viên MIỄN TRỪ 'dữ liệu cá nhân'.
+  "server/routers/alertRouters.ts#alertRouter.list",
   "server/routers/alertRouters.ts#alertRouter.listAll",
   // ── server/routers/annotationComparisonRouter.ts (4) ───────────────────────────────────────
   // ── server/routers/annotationRouters.ts (7) ────────────────────────────────────────────────

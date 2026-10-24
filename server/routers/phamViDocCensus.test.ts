@@ -910,7 +910,11 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // processResult.listBySerial|stats|metricSeries|spcChart|fleetRollup|envSeries|dailyRollup · defectDisposition.listByInspection|listOpen|countOpen|reInspectStatus|repairQueue|listBySerial|repairStats. 20 dòng sổ nợ đã GỠ.
 // Cùng lô vá 6 MUTATION (sổ nợ ghi −6) và processResult.record (chưa nằm trong sổ). Chưa vá, để L7: bom.getDefinition/listDefinitions + CRUD định nghĩa BOM = dữ liệu chủ theo mẫu sản phẩm (không cột nhà máy).
 // Chứng minh: `loTruyXuatPhamVi.db.test.ts` (13 ca CSDL thật; 13/13 đỏ trên mã cũ; đột biến 58/58 bị bắt sau khi bổ sung 3 ca). Kèm vá lỗi CÓ SẴN: getReInspectStatus so sánh thời gian qua Date của JS (lệch múi giờ ⇒ chính hàng gốc bị tính là "muộn hơn").
-const GHIM = { A: 270, B: 8, C: 483, D: 1198, S: 443, tong: 2402 } as const;
+// ★★ 2026-10-25 (điểm mù bộ quét ĐỌC, đối chiếu phamViGhiScan 44b4bc20b): **A 270 → 277 · S 443 → 436 · B/C/D/tong unchanged.** `nhomCua` đòi S = danh tính RỜI TAY **VÀ ĐI VÀO CỔNG**
+// (lời gọi tới bộ phân giải gốc `TEN_PHAN_GIAI`, hàm dẫn xuất tới được nó [bao đóng ngược `congDoc`], hoặc hàm đặt tên `*TrongPhamVi`/`*TheoPhamVi`; đối số mang `ctx`/`ctx.user…`/biến gán từ chúng).
+// CHÍNH XÁC 7 thủ tục S → A (đo trên cây): rootCause.get (LỖ THẬT) · alert.list · changeover.listMine · repoWorkspace.listFiles|readFile|grep · scadaCommands.trangThai — xem khối ghi chú ở cuối `phamViDocBaseline.ts`.
+// Mutation trong bộ ghi KHÔNG đổi. Kiểm: hoàn nguyên bản vá ⇒ S/A trở lại 443/270 (xem ca §6 "danh tính không vào cổng").
+const GHIM = { A: 277, B: 8, C: 483, D: 1198, S: 436, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
@@ -1117,6 +1121,48 @@ export const dotBienRoRiRouter = router({
       /* không có gì để dọn — tệp ảo */
     }
     expect(existsSync(FILE_DOT_BIEN), "phép đột biến phải tự dọn — file rò không được ở lại cây").toBe(false);
+  }, 120_000);
+});
+
+describe("§7b — ĐIỂM MÙ 2026-10-25: danh tính rời tay mà KHÔNG vào cổng ⇒ A, không phải S", () => {
+  /**
+   * Đối chiếu phamViGhiScan 44b4bc20b: `ctx` đi vào MỘT lời gọi bất kỳ (ghi nhật ký, lọc theo chủ…) không làm lượt đọc tenant "đã lọc phạm vi". Tệp ảo, không ghi đĩa.
+   */
+  const MA = `import { z } from "zod";
+import { protectedProcedure, router } from "../_core/trpc";
+import * as db from "../db";
+import { phamViCua } from "./_phamViNguoiXem";
+
+function ghiNhatKy(_x: unknown): void {}
+
+export const diemMuRouter = router({
+  // ctx đi vào ghiNhatKy (KHÔNG phải cổng) rồi đọc TOÀN đội máy ⇒ phải là A
+  nhatKyRoiDoc: protectedProcedure.query(async ({ ctx }) => {
+    ghiNhatKy(ctx.user?.id);
+    return db.getMachines();
+  }),
+  // danh tính vào một biến rồi vào hàm cổng ⇒ S
+  quaBien: protectedProcedure.query(async ({ ctx }) => {
+    const pv = phamViCua(ctx);
+    return db.getMachines(pv as never);
+  }),
+  // nhập động .then((m) => m.xxxTrongPhamVi(…)) mà thamChieu không phân giải được ⇒ S nhờ quy ước tên cổng
+  nhapDong: protectedProcedure.query(async ({ ctx }) => {
+    const ids = await import("../db").then((m) => (m as any).machineIdsTrongPhamVi(phamViCua(ctx)));
+    return { ids, ma: await db.getMachines() };
+  }),
+});
+`;
+  it("★★★ ctx vào hàm không phải cổng ⇒ A; ctx qua biến vào cổng ⇒ S; nhập động *TrongPhamVi ⇒ S", () => {
+    const lai = quetPhamViDoc(GOC_REPO, { "server/routers/__diemMuPhamViDoc.ts": MA });
+    const tim = (ten: string): ThuTuc | undefined => lai.thuTuc.find((t) => t.file.endsWith("__diemMuPhamViDoc.ts") && t.ten === ten);
+    const a = tim("nhatKyRoiDoc");
+    expect(a, "bộ suy KHÔNG THẤY thủ tục ảo").toBeDefined();
+    expect(a?.danhTinhRoiTay, "danh tính có rời tay").toBe(true);
+    expect(a?.danhTinhVaoCong, "nhưng KHÔNG vào cổng").toBe(false);
+    expect(nhomCua(a as ThuTuc)).toBe("A");
+    expect(nhomCua(tim("quaBien") as ThuTuc), "qua biến vào cổng").toBe("S");
+    expect(nhomCua(tim("nhapDong") as ThuTuc), "nhập động *TrongPhamVi").toBe("S");
   }, 120_000);
 });
 
