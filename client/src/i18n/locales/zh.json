@@ -4555,6 +4555,7 @@
     "SCADA_SELECTION_LOST": "您已不再持有此通道（选择锁已过期或已转给另一个请求）——请创建新请求。",
     "SCADA_TOTP_REQUIRED": "影响等级 {{level}} 的通道需要双因素（TOTP）验证码——请输入验证码后再次确认。",
     "SCADA_TOTP_INVALID": "双因素验证码错误或已被使用——请输入新验证码后再次确认（等级 {{level}} 通道）。",
+    "SCADA_AI_LEVEL_TOO_HIGH": "AI 助手永远不得对作用等级 {{level}} 的通道下达命令（4 级及以上仅限操作员亲自操作）。已永久拒绝——请勿重试，请由操作员亲自按键。",
     "TOTP_TAM_KHOA": "由于多次输入错误，双因素认证已被临时锁定——请在 {{remainingMinutes}} 分钟后重试。",
     "TOTP_KHONG_KIEM_DUOC": "暂时无法校验双因素验证码（系统错误）——请稍后重试。",
     "MA_DU_PHONG_TAM_KHOA": "由于多次输入错误，备用码已被临时锁定——请在 {{remainingMinutes}} 分钟后重试。",

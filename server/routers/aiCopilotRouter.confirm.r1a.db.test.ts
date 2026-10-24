@@ -199,13 +199,14 @@ describe("copilot.confirmAction — sàn vai + xác thực theo mức cho tool g
 
   it("c2 — kênh mức 4 nâng tool mức 3 ⇒ MUC_QUA_CAO ngay lúc confirm (operator; engineer 2FA + mã): không kiểm/tiêu TOTP, sổ totp_consumed không đổi, hàng không đổi; kênh NULL ⇒ level 5", async () => {
     const a = await deXuat("op", "sp4");
-    expect(await nguoi.op.caller.confirmAction({ actionId: a, token: a })).toMatchObject({ ok: false, status: "denied", reason: "MUC_QUA_CAO", level: 4 });
+    // R1b-1 T10 — MUC_QUA_CAO là appError có khoá i18n (vi/en/zh), cùng khuôn các từ chối sàn vai / TOTP.
+    expect(await loiCua(nguoi.op.caller.confirmAction({ actionId: a, token: a }))).toMatchObject({ code: "FORBIDDEN", appCode: "SCADA_AI_LEVEL_TOO_HIGH", appParams: { ma: "MUC_QUA_CAO", level: 4 } });
     const b = await deXuat("op", "spnull");
-    expect(await nguoi.op.caller.confirmAction({ actionId: b, token: b })).toMatchObject({ ok: false, reason: "MUC_QUA_CAO", level: 5 });
+    expect(await loiCua(nguoi.op.caller.confirmAction({ actionId: b, token: b }))).toMatchObject({ appCode: "SCADA_AI_LEVEL_TOO_HIGH", appParams: { ma: "MUC_QUA_CAO", level: 5 } });
     const c = await deXuat("eng", "sp4");
     const truoc = await soTotpConsumed(nguoi.eng.id);
-    const kq = await nguoi.eng.caller.confirmAction({ actionId: c, token: c, totpCode: "123456" });
-    expect(kq).toMatchObject({ ok: false, status: "denied", reason: "MUC_QUA_CAO", level: 4 });
+    const kq = await loiCua(nguoi.eng.caller.confirmAction({ actionId: c, token: c, totpCode: "123456" }));
+    expect(kq).toMatchObject({ appCode: "SCADA_AI_LEVEL_TOO_HIGH", appParams: { ma: "MUC_QUA_CAO", level: 4 } });
     expect(H.soKiemXacThuc, "kiemXacThucTheoMuc không được gọi").toBe(0);
     expect(await soTotpConsumed(nguoi.eng.id), "không tiêu mã").toBe(truoc);
     for (const id of [a, b, c]) expect(await trangThai(id)).toBe("proposed");
@@ -261,7 +262,7 @@ describe("kiemCongAi ở execute — mức kênh đọc từ DB thật", () => {
     vi.stubEnv("AI_OT_CONTROL_ENABLED", "true");
     try {
       const id = await deXuatTool("op", "machine_stop", { machineId: mid2 });
-      expect(await nguoi.op.caller.confirmAction({ actionId: id, token: id })).toMatchObject({ ok: false, reason: "MUC_QUA_CAO", level: 5 });
+      expect(await loiCua(nguoi.op.caller.confirmAction({ actionId: id, token: id }))).toMatchObject({ appCode: "SCADA_AI_LEVEL_TOO_HIGH", appParams: { ma: "MUC_QUA_CAO", level: 5 } });
       expect(await trangThai(id)).toBe("proposed");
       const r = (await registry.getTool("machine_stop")!.execute!({ machineId: mid2 }, ctx())) as { data: { ma: string; muc: number } };
       expect(r.data).toMatchObject({ ma: "MUC_QUA_CAO", muc: 5 });

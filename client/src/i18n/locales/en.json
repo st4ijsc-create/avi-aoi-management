@@ -4563,6 +4563,7 @@
     "SCADA_SELECTION_LOST": "You no longer hold this channel (the selection lock expired or moved to another request) — create a new request.",
     "SCADA_TOTP_REQUIRED": "Impact level {{level}} channels need a two-factor (TOTP) code — enter the code and confirm again.",
     "SCADA_TOTP_INVALID": "The two-factor code is wrong or has already been used — enter a new code and confirm again (level {{level}} channel).",
+    "SCADA_AI_LEVEL_TOO_HIGH": "The AI assistant is never allowed to command a channel of actuation level {{level}} (level 4 and above is for a human operator only). Permanently refused — do not retry; let the operator press the button themselves.",
     "TOTP_TAM_KHOA": "Two-factor authentication is temporarily locked after too many wrong codes — try again in {{remainingMinutes}} minutes.",
     "TOTP_KHONG_KIEM_DUOC": "The two-factor code cannot be checked right now (system error) — try again later.",
     "MA_DU_PHONG_TAM_KHOA": "Backup codes are temporarily locked after too many wrong codes — try again in {{remainingMinutes}} minutes.",

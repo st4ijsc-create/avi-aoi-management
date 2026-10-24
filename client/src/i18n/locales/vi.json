@@ -4555,6 +4555,7 @@
     "SCADA_SELECTION_LOST": "Bạn không còn giữ kênh này (khoá chọn đã hết hạn hoặc đã chuyển sang yêu cầu khác) — hãy tạo yêu cầu mới.",
     "SCADA_TOTP_REQUIRED": "Kênh mức tác động {{level}} cần mã xác thực 2 lớp (TOTP) — nhập mã rồi xác nhận lại.",
     "SCADA_TOTP_INVALID": "Mã xác thực 2 lớp không đúng hoặc đã được dùng — nhập mã mới rồi xác nhận lại (kênh mức {{level}}).",
+    "SCADA_AI_LEVEL_TOO_HIGH": "Trợ lý AI không được phép ra lệnh cho kênh mức tác động {{level}} (từ mức 4 trở lên chỉ người vận hành tự thao tác). Từ chối vĩnh viễn — đừng thử lại; hãy để người vận hành tự bấm nút.",
     "TOTP_TAM_KHOA": "Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau {{remainingMinutes}} phút.",
     "TOTP_KHONG_KIEM_DUOC": "Không kiểm được mã xác thực hai lớp lúc này (lỗi hệ thống) — thử lại sau.",
     "MA_DU_PHONG_TAM_KHOA": "Mã dự phòng đang tạm khoá do nhập sai nhiều lần — thử lại sau {{remainingMinutes}} phút.",
