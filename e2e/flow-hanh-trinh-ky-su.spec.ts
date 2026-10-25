@@ -25,20 +25,13 @@ const chup = async (page: Page, ten: string) => {
 
 let fx: FsFixture;
 let base = "";
-let banB = 0; // người chỉ thuộc nhà máy B
 let flowId = "";
 const TEN_MAU = "Báo cáo ca số liệu thuần";
 const NODE_TB = "Gửi thông báo nội bộ (điền người nhận)";
 
-test.beforeAll(async () => {
+test.beforeAll(() => {
   fx = JSON.parse(fs.readFileSync(process.env.FHT_STATE!, "utf8")) as FsFixture;
   base = process.env.FHT_BASE_URL!;
-  banB = await withTestDb(async (sql) => {
-    const [u] = await sql`INSERT INTO users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
-      VALUES (${`fse2e-banb-${Date.now().toString(36)}`}, ${`fse2e_banb_${Date.now().toString(36)}`}, 'FS ban B', 'password', 'supervisor', true, false, now()) RETURNING id`;
-    await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${u.id}, ${fx.nhaMayB.code})`;
-    return Number(u.id);
-  });
 });
 
 async function dangNhap(page: Page, ai: { username: string; password: string }): Promise<void> {
@@ -204,7 +197,7 @@ test("7 — kỹ sư đổi người nhận sang người chỉ thuộc nhà má
   await dangNhap(page, fx.mot);
   await page.goto(`${base}/ai-flows/${flowId}`);
   await expect(page.getByTestId("flow-editor")).toBeVisible({ timeout: 60_000 });
-  await datNguoiNhan(page, [banB]);
+  await datNguoiNhan(page, [fx.banB.id]);
   await page.getByTestId("nut-luu").click();
   await expect(page.getByText("Chưa lưu")).toHaveCount(0, { timeout: 30_000 });
   const truoc = await demThongBao();
@@ -239,8 +232,6 @@ test("8 — so sánh lượt xong với lượt lỗi: bước thông báo KHÁC
 
 test.afterAll(async () => {
   await withTestDb(async (sql) => {
-    await sql`DELETE FROM notifications WHERE "userId" IN (${fx.mot.id}, ${banB})`;
-    await sql`DELETE FROM user_factory_assignments WHERE "userId" = ${banB}`;
-    await sql`DELETE FROM users WHERE id = ${banB}`.catch(() => undefined);
+    await sql`DELETE FROM notifications WHERE "userId" IN (${fx.mot.id}, ${fx.banB.id})`;
   });
 });

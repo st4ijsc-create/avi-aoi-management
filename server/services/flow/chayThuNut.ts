@@ -63,6 +63,8 @@ export const NUT_XEM_TRUOC: ReadonlySet<string> = new Set([
   "tich-hop.thong-bao",
   // Lô Luồng-2: tra kho tri thức (vai chủ lượt) — chạy thử chỉ XEM TRƯỚC tham số.
   "ai.tra-tri-thuc",
+  // Lô Luồng-A: tạo phiếu bảo trì — ghi thật chỉ ở lượt chạy; chạy thử chỉ XEM TRƯỚC.
+  "bao-tri.tao-phieu",
   // FOE workflow: không có cột tenant (phạm vi suy từ máy của các bước) và chưa có bộ kiểm ⇒ chỉ xem trước.
   "ot.de-xuat-luong",
 ]);
