@@ -38,6 +38,7 @@ import rateLimit, {
 import { createHash } from "crypto";
 import type { NextFunction, Request, Response } from "express";
 import Redis from "ioredis";
+import { parse as parseCookieHeader } from "cookie";
 import { COOKIE_NAME } from "@shared/const";
 import { duongDinhTuyen, duongDinhTuyenGoc, duongKhopChinhXac } from "./duongDinhTuyen";
 
@@ -623,13 +624,15 @@ export async function apiKeyGeneratorXacThuc(req: Request, kiem: KiemChuKyPhien 
     token = bearer;
     tienTo = "bearer";
   } else if (!xApiKey) {
+    // ĐÚNG bộ phân tích của `sdk.parseCookies` (thư viện `cookie`: cắt khoảng trắng, bỏ nháy, giải %-mã, tên lặp ⇒ lần ĐẦU) — không cắt chuỗi thô ⇒ mọi biến thể
+    // văn bản mà auth coi là CÙNG một vé cũng rơi vào CÙNG một lớp khoá (phiên đã ký / IP).
     const cookies = req.headers?.cookie;
-    const m = typeof cookies === "string" && cookies.length > 0 ? cookies.match(new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`)) : null;
-    if (m?.[1]) {
+    if (typeof cookies === "string" && cookies.length > 0) {
       try {
-        token = decodeURIComponent(m[1]);
+        const v = parseCookieHeader(cookies)[COOKIE_NAME];
+        if (v) token = v;
       } catch {
-        return ip(); // %-mã hỏng: không phải một vé
+        return ip();
       }
     }
   }

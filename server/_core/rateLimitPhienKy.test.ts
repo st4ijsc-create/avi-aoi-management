@@ -13,6 +13,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "w21-test-secret-w21-test-sec
 delete process.env.REDIS_URL;
 
 const rl = await import("./rateLimitConfig");
+const { parse: phanTichCookie } = await import("cookie");
 const { COOKIE_NAME } = await import("@shared/const");
 const { sdk } = await import("./sdk");
 
@@ -85,6 +86,68 @@ describe("W21 — khoá phiên chỉ khi verify được", () => {
     expect(rl.phanDaKyJwt("a.b")).toBeNull();
     expect(rl.phanDaKyJwt("a..c")).toBeNull();
     expect(rl.phanDaKyJwt("avgw_x")).toBeNull();
+  });
+});
+
+describe("W21 — họ biến thể văn bản của MỘT vé (oracle: auth chấp nhận ⇔ cùng xô phiên; không chấp nhận ⇔ xô IP)", () => {
+  it("★ cookie có khoảng trắng / nháy / %-mã / tên lặp / padding-biến thể chữ ký ⇒ mỗi biến thể hoặc CÙNG xô phiên với vé gốc (auth chấp nhận) hoặc xô IP (auth từ chối) — không bao giờ xô riêng", async () => {
+    const t = ve;
+    const bt = bienThe(t);
+    const [h, p, sg] = t.split(".");
+    const ma = (x: string) => x.replace(/\./g, "%2E");
+    const cookieVariants: string[] = [
+      `${COOKIE_NAME}=${t}`,
+      ` ${COOKIE_NAME}=${t}`,
+      `${COOKIE_NAME}=${t} `,
+      `${COOKIE_NAME} = ${t}`,
+      `${COOKIE_NAME}= ${t} `,
+      `${COOKIE_NAME}="${t}"`,
+      `${COOKIE_NAME}=${ma(t)}`,
+      `other=1; ${COOKIE_NAME}=${t}`,
+      `${COOKIE_NAME}=${t}; other=1`,
+      `${COOKIE_NAME}=${t};${COOKIE_NAME}=rac-${Math.random()}`, // tên lặp: lần ĐẦU thắng (đúng vé)
+      `${COOKIE_NAME}=rac-${Math.random()}; ${COOKIE_NAME}=${t}`, // tên lặp: lần ĐẦU là rác ⇒ auth từ chối
+      `${COOKIE_NAME}=${bt}`,
+      `${COOKIE_NAME}=${t}=`,
+      `${COOKIE_NAME}=${t}==`,
+      `${COOKIE_NAME}=${h}.${p}.${sg}=`,
+      `${COOKIE_NAME}=${h}.${p}.${sg} `,
+      `${COOKIE_NAME}=${h}.${p}.${sg}%20`,
+      `${COOKIE_NAME}=${h}.${p}.${sg}%0A`,
+      `${COOKIE_NAME}=${h}.${p}.`, // thiếu chữ ký
+      `${COOKIE_NAME}=${h}.${p}.${"A".repeat(sg!.length)}`, // chữ ký sai
+      `${COOKIE_NAME}=${h}.${p}x.${sg}`, // payload bị sửa
+      `${COOKIE_NAME.toUpperCase()}=${t}`, // tên khác hoa/thường ⇒ không phải cookie phiên
+    ];
+    const goc = await rl.apiKeyGeneratorXacThuc(req({ cookie: cookieVariants[0]! }));
+    const khoaIp = rl.apiKeyGenerator(req({}));
+    expect(goc).toMatch(/^sess:/);
+    let chapNhan = 0;
+    let tuChoi = 0;
+    for (const cookie of cookieVariants) {
+      const tok = phanTichCookie(cookie)[COOKIE_NAME];
+      const authChapNhan = !!tok && (await sdk.verifySession(tok)) !== null;
+      const khoa = await rl.apiKeyGeneratorXacThuc(req({ cookie }));
+      if (authChapNhan) {
+        chapNhan++;
+        expect(khoa, `auth CHẤP NHẬN ⇒ phải cùng xô phiên: ${cookie.slice(0, 60)}`).toBe(goc);
+      } else {
+        tuChoi++;
+        expect(khoa, `auth TỪ CHỐI ⇒ phải rơi xô IP: ${cookie.slice(0, 60)}`).toBe(khoaIp);
+      }
+    }
+    expect(chapNhan).toBeGreaterThanOrEqual(8);
+    expect(tuChoi).toBeGreaterThanOrEqual(6);
+  });
+  it("Bearer: scheme hoa/thường, khoảng trắng thừa, biến thể chữ ký ⇒ cùng xô; chữ ký sai ⇒ IP", async () => {
+    const goc = await rl.apiKeyGeneratorXacThuc(req({ authorization: `Bearer ${ve}` }));
+    expect(goc).toMatch(/^bearer:/);
+    for (const a of [`bearer ${ve}`, `BEARER   ${ve}  `, `Bearer ${bienThe(ve)}`]) {
+      const tok = a.replace(/^bearer\s+/i, "").trim();
+      const ok = (await sdk.verifySession(tok)) !== null;
+      expect(await rl.apiKeyGeneratorXacThuc(req({ authorization: a }))).toBe(ok ? goc : rl.apiKeyGenerator(req({})));
+    }
+    expect(await rl.apiKeyGeneratorXacThuc(req({ authorization: `Bearer ${ve.slice(0, -4)}AAAA` }))).toBe(rl.apiKeyGenerator(req({})));
   });
 });
 
