@@ -46,7 +46,8 @@ import { readConfigState } from "../configDriftService";
 import { buildProcessControlChart } from "../processSpc";
 import { deviceClassOf } from "../../constants/machineTypes";
 import { registerTool, type Tool, type ToolPermission, type ToolResult } from "./toolRegistry";
-import { authCtxParam, rbacGate } from "./readToolRbac";
+import { authCtxParam, ketQuaPhamViRong, rbacGate } from "./readToolRbac";
+import { giaiPhamViMay, machineIdsParam, mayThay } from "./phamViDoc";
 
 /** G3-A — MỘT hằng dùng ở CẢ `requiredPermission` LẪN `rbacGate` (xem handlers.ts). */
 const PERM_DEVICE: ToolPermission = { module: "machine_status", action: "canView" };
@@ -117,13 +118,15 @@ const getDeviceHealth: Tool<z.infer<typeof deviceHealthParams>, DeviceHealthData
 
     const db = await getDb();
     if (!db) return noDb<DeviceHealthData>("device_health", "Sức khỏe thiết bị", empty);
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<DeviceHealthData>("device_health", "Sức khỏe thiết bị", empty);
 
     const [m] = await db
       .select({ id: machines.id, machineType: machines.machineType })
       .from(machines)
       .where(eq(machines.code, machineCode))
       .limit(1);
-    if (!m) {
+    if (!m || !mayThay(pv, m.id)) {
       return { type: "device_health", title: `Thiết bị ${machineCode}`, data: empty, textSummary: `Không tìm thấy thiết bị "${machineCode}".`, note: "NOT_FOUND" };
     }
     const machineType = m.machineType == null ? null : String(m.machineType);
@@ -220,7 +223,9 @@ const getFleetProcessSummary: Tool<z.infer<typeof fleetSummaryParams>, FleetSumm
     const db = await getDb();
     if (!db) return noDb<FleetSummaryData>("fleet_process_summary", "Tổng hợp phân xưởng", empty);
 
-    const rows = await aggregateProcessResultStatsByType({ since: sinceDays(days) });
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<FleetSummaryData>("fleet_process_summary", "Tổng hợp phân xưởng", empty);
+    const rows = await aggregateProcessResultStatsByType({ machineIds: machineIdsParam(pv), since: sinceDays(days) });
     const groups: FleetGroup[] = rows
       .map((r) => {
         const dc = r.machineType ? deviceClassOf(r.machineType) : null;

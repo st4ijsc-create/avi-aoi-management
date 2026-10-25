@@ -45,6 +45,8 @@
 import { z } from "zod";
 import { and, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
+import { congCanhBaoDuDoanTool, donViTool, dongThay, giaiPhamViDong, giaiPhamViMay, mayCot, mayThay } from "./phamViDoc";
+import { ketQuaPhamViRong } from "./readToolRbac";
 import {
   predictiveAlerts,
   genealogyChain,
@@ -215,6 +217,9 @@ const listAnomalies: Tool<z.infer<typeof anomaliesParams>, AnomalyListData> = {
     if (!db) return noDbResult<AnomalyListData>("anomaly_list", title, empty);
 
     const conds = [inArray(predictiveAlerts.alertType, ANOMALY_ALERT_TYPES as any)];
+    // phạm vi người dùng (L8 2026-10-25): cảnh báo dự đoán theo máy / nhà máy (hàng không định vị chỉ toàn quyền)
+    const congDuDoan = await congCanhBaoDuDoanTool((params as any).__authCtx);
+    if (congDuDoan) conds.push(congDuDoan);
     if (machineCode) conds.push(eq(predictiveAlerts.machineCode, machineCode));
     if (severity) conds.push(eq(predictiveAlerts.severity, severity.toUpperCase() as any));
 
@@ -357,7 +362,7 @@ const traceGenealogy: Tool<z.infer<typeof genealogyParams>, GenealogyTraceData> 
     }
     if (lotId) conds.push(eq(genealogyChain.lotCode, lotId));
 
-    const dbRows = await db
+    const dbRowsAll = await db
       .select({
         id: genealogyChain.id,
         serialNumber: genealogyChain.serialNumber,
@@ -370,7 +375,15 @@ const traceGenealogy: Tool<z.infer<typeof genealogyParams>, GenealogyTraceData> 
       .from(genealogyChain)
       .where(conds.length ? and(...conds) : undefined)
       .orderBy(desc(genealogyChain.recordedAt))
-      .limit(limit);
+      .limit(500);
+
+    // phạm vi người dùng (L8 2026-10-25): đơn vị (serial) thấy được = có dấu vết ở máy / chuyền trong phạm vi (cùng luật tRPC L2 `donViTrongPhamVi`); serial cha ngoài phạm vi bị ẩn
+    const tatCaSerial = Array.from(new Set(dbRowsAll.flatMap((r: any) => [r.serialNumber, r.parentSerial].filter((s: unknown): s is string => typeof s === "string"))));
+    const thay = await donViTool((params as any).__authCtx, tatCaSerial);
+    const dbRows = dbRowsAll
+      .filter((r: any) => thay.has(r.serialNumber))
+      .slice(0, limit)
+      .map((r: any) => ({ ...r, parentSerial: r.parentSerial && thay.has(r.parentSerial) ? r.parentSerial : null }));
 
     const items: GenealogyItem[] = dbRows.map((r: any) => ({
       id: r.id,
@@ -488,10 +501,14 @@ const getEnergyMetrics: Tool<z.infer<typeof energyParams>, EnergyMetricsData> = 
     const db = await getDb();
     if (!db) return noDbResult<EnergyMetricsData>("energy_metrics", title, empty);
 
+    const pv = await giaiPhamViMay((params as any).__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<EnergyMetricsData>("energy_metrics", title, empty);
+
     // Resolve machineCode → machineId (energy tables key on machineId).
     let resolvedMachineId: number | null = null;
     if (machineCode) {
       resolvedMachineId = await resolveMachineId(db, machineCode);
+      if (resolvedMachineId != null && !mayThay(pv, resolvedMachineId)) resolvedMachineId = null; // máy ngoài phạm vi ≡ không tồn tại
       if (resolvedMachineId == null) {
         return {
           type: "energy_metrics",
@@ -506,6 +523,8 @@ const getEnergyMetrics: Tool<z.infer<typeof energyParams>, EnergyMetricsData> = 
     const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
 
     const readConds = [gte(energyReadings.timestamp, since)];
+    const congMayR = mayCot(pv, energyReadings.machineId);
+    if (congMayR) readConds.push(congMayR);
     if (resolvedMachineId != null) readConds.push(eq(energyReadings.machineId, resolvedMachineId));
     const readRows = await db
       .select({
@@ -537,6 +556,8 @@ const getEnergyMetrics: Tool<z.infer<typeof energyParams>, EnergyMetricsData> = 
 
     // ENPI aggregate for the same scope/window.
     const enpiConds = [gte(enpiMetrics.periodStart, since)];
+    const congMayE = mayCot(pv, enpiMetrics.machineId);
+    if (congMayE) enpiConds.push(congMayE);
     if (resolvedMachineId != null) enpiConds.push(eq(enpiMetrics.machineId, resolvedMachineId));
     const enpiRows = await db
       .select({
@@ -665,6 +686,9 @@ const getRouting: Tool<z.infer<typeof routingParams>, RoutingData> = {
     const db = await getDb();
     if (!db) return noDbResult<RoutingData>("routing_steps", title, empty);
 
+    const pvDong = await giaiPhamViDong((params as any).__authCtx); // phạm vi người dùng (L8 2026-10-25): routing theo CHUYỀN; chuyền ngoài phạm vi ≡ không tồn tại; danh mục công đoạn chung (không chuyền) dùng chung
+    if (pvDong.kind === "empty") return ketQuaPhamViRong<RoutingData>("routing_steps", title, empty);
+
     let resolvedLineId: number | null = null;
     let resolvedLineCode: string | null = lineCode ?? null;
     if (lineCode) {
@@ -673,7 +697,7 @@ const getRouting: Tool<z.infer<typeof routingParams>, RoutingData> = {
         .from(productionLines)
         .where(eq(productionLines.code, lineCode))
         .limit(1);
-      if (!ln[0]) {
+      if (!ln[0] || !dongThay(pvDong, ln[0].id)) {
         return {
           type: "routing_steps",
           title,
@@ -696,7 +720,7 @@ const getRouting: Tool<z.infer<typeof routingParams>, RoutingData> = {
         .where(and(eq(productModels.code, productCode), eq(lineProductAssignments.isActive, true)))
         .orderBy(desc(lineProductAssignments.startDate))
         .limit(1);
-      if (!lp[0]) {
+      if (!lp[0] || !dongThay(pvDong, lp[0].lineId)) {
         return {
           type: "routing_steps",
           title,

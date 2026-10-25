@@ -26,7 +26,9 @@
  */
 
 import { z } from "zod";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
+import { congCanhBaoDuDoanTool, congCauHinhMayTool, congSanPhamTool, ctxCuaTool, giaiPhamViMay, idsNhaMayCuaTool, mayCot } from "./phamViDoc";
+import { ketQuaPhamViRong } from "./readToolRbac";
 import { getDb } from "../../db/connection";
 import {
   maintenanceWorkOrders,
@@ -187,7 +189,12 @@ const listWorkOrders: Tool<z.infer<typeof workOrdersParams>, WorkOrderListData> 
     const db = await getDb();
     if (!db) return noDbResult<WorkOrderListData>("work_order_list", title, empty);
 
+    const pv = await giaiPhamViMay((params as any).__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<WorkOrderListData>("work_order_list", title, empty);
+
     const conds = [];
+    const congMay = mayCot(pv, maintenanceWorkOrders.machineId);
+    if (congMay) conds.push(congMay);
     if (status) conds.push(inArray(maintenanceWorkOrders.status, WO_STATUS_MAP[status] as any));
     if (machineCode) conds.push(eq(maintenanceWorkOrders.machineCode, machineCode));
 
@@ -308,8 +315,25 @@ const listActiveAlerts: Tool<z.infer<typeof activeAlertsParams>, AlertListData> 
     const db = await getDb();
     if (!db) return noDbResult<AlertListData>("alert_list", title, empty);
 
+    // phạm vi người dùng (L8 2026-10-25): cảnh báo cài đặt theo MÁY → nhà máy → (toàn cục) chủ cài đặt; cảnh báo dự đoán theo máy / nhà máy (hàng không định vị chỉ toàn quyền)
+    const pv = await giaiPhamViMay((params as any).__authCtx);
+    if (pv.kind === "empty") return ketQuaPhamViRong<AlertListData>("alert_list", title, empty);
+    const ctxTool = ctxCuaTool((params as any).__authCtx);
+    if (!ctxTool) return ketQuaPhamViRong<AlertListData>("alert_list", title, empty);
+    const idsNM = await idsNhaMayCuaTool((params as any).__authCtx);
+    const congCaiDat =
+      pv.kind === "global"
+        ? undefined
+        : or(
+            and(isNotNull(alertSettings.machineId), mayCot(pv, alertSettings.machineId)),
+            and(isNull(alertSettings.machineId), isNotNull(alertSettings.factoryId), inArray(alertSettings.factoryId, idsNM && idsNM.length > 0 ? idsNM : [-1])),
+            and(isNull(alertSettings.machineId), isNull(alertSettings.factoryId), eq(alertSettings.userId, ctxTool.user!.id as number)),
+          );
+    const congDuDoan = await congCanhBaoDuDoanTool((params as any).__authCtx);
+
     // ── 2a. alert_history (joined to alert_settings for type/name + machineId) ──
     const histConds = [];
+    if (congCaiDat) histConds.push(congCaiDat);
     if (acknowledged === true) histConds.push(sql`${alertHistory.acknowledgedAt} is not null`);
     if (acknowledged === false) histConds.push(isNull(alertHistory.acknowledgedAt));
     const histRows = await db
@@ -329,6 +353,7 @@ const listActiveAlerts: Tool<z.infer<typeof activeAlertsParams>, AlertListData> 
 
     // ── 2b. predictive_alerts (ACTIVE; severity = maintenanceUrgencyEnum) ──
     const predConds = [eq(predictiveAlerts.status, "ACTIVE")];
+    if (congDuDoan) predConds.push(congDuDoan);
     if (severity) predConds.push(eq(predictiveAlerts.severity, severity as any));
     if (acknowledged === true) predConds.push(sql`${predictiveAlerts.acknowledgedAt} is not null`);
     if (acknowledged === false) predConds.push(isNull(predictiveAlerts.acknowledgedAt));
@@ -477,8 +502,12 @@ const listThresholds: Tool<z.infer<typeof thresholdsParams>, SpecLimitsData> = {
     const db = await getDb();
     if (!db) return noDbResult<SpecLimitsData>("spec_limits", title, empty);
 
+    // phạm vi người dùng (L8 2026-10-25): điểm đo theo SẢN PHẨM (luật L3: sản phẩm gắn nhà máy trong phạm vi); ngưỡng yield theo nhà máy (NULL = dùng chung)
+    const congSP = await congSanPhamTool((params as any).__authCtx, measurementPointDefs.productModelId);
+
     // ── 3a. spec limits from measurement_point_defs (active, not soft-deleted) ──
     const mpConds = [eq(measurementPointDefs.isActive, true), isNull(measurementPointDefs.deletedAt)];
+    if (congSP) mpConds.push(congSP);
     if (productModelId) mpConds.push(eq(measurementPointDefs.productModelId, productModelId));
     if (productCode) mpConds.push(eq(productModels.code, productCode));
     if (measurementPoint) {
@@ -640,6 +669,8 @@ const listRecipes: Tool<z.infer<typeof recipesParams>, RecipeListData> = {
     const db = await getDb();
     if (!db) return noDbResult<RecipeListData>("recipe_list", title, empty);
 
+    const congRecipe = await congCauHinhMayTool((params as any).__authCtx, machineRecipes.machineId); // phạm vi người dùng (L8 2026-10-25)
+
     // Resolve machineCode → machineId (read-only).
     let resolvedMachineId = machineId ?? null;
     if (resolvedMachineId == null && machineCode) {
@@ -657,6 +688,7 @@ const listRecipes: Tool<z.infer<typeof recipesParams>, RecipeListData> = {
     }
 
     const conds = [];
+    if (congRecipe) conds.push(congRecipe); // máy ngoài phạm vi ≡ không có công thức
     if (resolvedMachineId != null) conds.push(eq(machineRecipes.machineId, resolvedMachineId));
     const rows = await db
       .select({

@@ -140,3 +140,6 @@ describe("allow path returns documented shape + render-friendly rows", () => {
     expect(r.note).toBe("DB_UNAVAILABLE");
   });
 });
+
+// L8 (2026-10-25): test mock CSDL — ép phạm vi tool đọc về toàn quyền (phạm vi thật đo ở phamViDoc.db.test.ts)
+vi.mock("./phamViDoc", async (orig) => (await import("./phamViDocToanQuyen.testkit")).phamViDocToanQuyen(await orig<typeof import("./phamViDoc")>()));
