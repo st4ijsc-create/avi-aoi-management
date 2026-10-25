@@ -16475,7 +16475,7 @@
     "defaultPortHint": "Cổng mặc định {{protocol}}: {{port}}",
     "troLai": {
       "title": "Cần mã xác thực hai lớp",
-      "body": "Thao tác này đụng một tag được bảo vệ hoặc một adapter mang tag như thế (trỏ lại, tạo lên khoá đang được tham chiếu, tắt hoặc xoá). Tag được bảo vệ: đã khai kênh, là kênh chế độ của máy, hoặc là đích / nguồn của một luật interlock đang bật hoặc đã duyệt. Cần mã TOTP mới.",
+      "body": "Thao tác này đụng một tag được bảo vệ hoặc một adapter mang tag như thế (trỏ lại, đổi chu kỳ lấy mẫu / deadband / đơn vị, tạo lên khoá đang được tham chiếu, tắt hoặc xoá). Tag được bảo vệ: đã khai kênh, là kênh chế độ của máy, hoặc là đích / nguồn của một luật interlock đang bật hoặc đã duyệt. Cần mã TOTP mới.",
       "submit": "Xác nhận"
     }
   },

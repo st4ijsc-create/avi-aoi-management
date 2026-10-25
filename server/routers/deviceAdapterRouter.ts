@@ -72,6 +72,7 @@ import {
   AUDIT_TAO_KHOA_MO_COI,
   AUDIT_TRO_LAI,
   AUDIT_XOA_DA_KHAI,
+  anhNhipAudit,
   anhTroLai,
   congAdapterTx,
   khoaAdapterTx,
@@ -667,6 +668,7 @@ export const deviceAdapterRouter = router({
      *   2. đổi danh tính ⇒ kiểm trùng TRƯỚC kiểm mã (M3);
      *   3. kiemSuaTag: tag được bảo vệ (đã khai / kênh chế độ / đích luật đang bật) có cột trỏ lại THẬT SỰ đổi, hoặc danh tính mới là khoá
      *      mồ côi ⇒ kiểm lại nhất quán + "gỡ ghim trước" + luật interlock (cũ VÀ mới); tắt tag là đích luật đang bật / đang ghim ⇒ từ chối;
+     *      R1b-2a T8 (kiem-dinh M4): cột NHỊP (samplingMs / deadband / unit) thật sự đổi trên tag được bảo vệ ⇒ cũng cần mã (không kiểm nhất quán);
      *   4. cần mã ⇒ TOTP TƯƠI (`kiemTotpCauHinh`, mức 5) — CUỐI, ngay trước lượt ghi (lỗi kiểm hợp lệ không tiêu mã);
      *   5. ghi (luật gỡ ghim DỪNG cũ cho tag chưa khai) + kênh chế độ đổi tag_key theo + audit `kenh_da_khai_tro_lai`.
      * Tag không được bảo vệ, khoá không mồ côi ⇒ đúng hành vi cũ (không đòi mã).
@@ -757,7 +759,7 @@ export const deviceAdapterRouter = router({
                 action: AUDIT_TRO_LAI,
                 actorId: ctx.user.id,
                 before: anhTroLai(existing),
-                after: { ...anhTroLai(kq.sau), doi: kq.doi, khoaMoCoi: kq.moCoi },
+                after: { ...anhTroLai(kq.sau), doi: kq.doi, khoaMoCoi: kq.moCoi, ...anhNhipAudit(kq) }, // R1b-2a T8 — + nhip {truoc, sau}
                 reason: "deviceAdapter.tags.update",
               });
             }

@@ -56,6 +56,7 @@ import {
   AUDIT_TRO_LAI,
   AUDIT_XOA_DA_KHAI,
   TRAN_KENH_DA_KHAI_MOT_LO,
+  anhNhipAudit,
   anhTroLai,
   khoaAdapterTx,
   khoaLuatNguonTx,
@@ -793,7 +794,8 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
     });
 
     // ── SCADA R1b-1 Task 9 (+ fix round 1) — LƯỢT KIỂM (chưa ghi gì), trên hàng ĐÃ KHOÁ:
-    //    • cập nhật: `kiemSuaTag` (tag được bảo vệ bị trỏ lại / tắt; luật interlock đang bật; "gỡ ghim trước");
+    //    • cập nhật: `kiemSuaTag` (tag được bảo vệ bị trỏ lại / tắt / đổi cột nhịp samplingMs·deadband·unit — R1b-2a T8; luật interlock đang
+    //      bật; "gỡ ghim trước");
     //    • tạo: `kiemTaoTag` (khoá mồ côi — kênh chế độ / luật trỏ tới tên này — ⇒ TOTP; luật đang bật phải ghi được lên tag mới);
     //    • prune: `kiemXoaTag` (kênh chế độ ⇒ từ chối; đích luật đang bật ⇒ INTERLOCK_MAT_DICH; đã khai ⇒ TOTP).
     //    Trần lô trên số tag cần mã, rồi MỘT mã TOTP cho cả lô. Hỏng một tag ⇒ ném (appError nêu tagKey) ⇒ cả giao dịch rollback.
@@ -818,7 +820,7 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
                 action: AUDIT_TRO_LAI,
                 actorId: opts.actorId ?? null,
                 before: anhTroLai(cu),
-                after: { ...anhTroLai(kq.sau), doi: kq.doi },
+                after: { ...anhTroLai(kq.sau), doi: kq.doi, ...anhNhipAudit(kq) }, // R1b-2a T8 — + nhip {truoc, sau}
                 reason: `mappingAsCode.import v${file.version}`,
               }),
           });

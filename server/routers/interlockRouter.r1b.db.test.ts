@@ -159,9 +159,11 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — interloc
       expect((await sql`SELECT address FROM device_tags WHERE id = ${tg.cu}`)[0].address).toBe("addr-cu");
     });
 
-    it("đổi unit của tag chưa khai là đích luật bật ⇒ qua, không mã; ★ I7: đổi ADDRESS của nó ⇒ tag được bảo vệ ⇒ TOTP_CAN", async () => {
+    // R1b-2a T8 (kiem-dinh M4, Q7 duyệt): tag là đích luật bật = ĐƯỢC BẢO VỆ ⇒ đổi unit nay cũng cần mã (trước: "qua, không mã" — đổi theo phán quyết).
+    it("đổi unit của tag chưa khai là đích luật bật ⇒ TOTP_CAN (R1b-2a T8), unit giữ; ★ I7: đổi ADDRESS của nó ⇒ tag được bảo vệ ⇒ TOTP_CAN", async () => {
       await seedLuat("u", "cu", 1);
-      await dev.tags.update({ id: tg.cu, unit: "rpm" });
+      expect(await loiCua(dev.tags.update({ id: tg.cu, unit: "rpm" }))).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect((await sql`SELECT unit FROM device_tags WHERE id = ${tg.cu}`)[0].unit).toBeNull();
       const e = await loiCua(dev.tags.update({ id: tg.cu, address: "addr-cu-2" }));
       expect(e).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_CONFIG_TOTP_REQUIRED", appParams: { ma: "TOTP_CAN" } });
       expect((await sql`SELECT address FROM device_tags WHERE id = ${tg.cu}`)[0].address).toBe("addr-cu");

@@ -25,6 +25,8 @@
  *       – luật ĐÍCH đang bật trên danh tính CŨ: đổi dataType/writable/scale/offset ⇒ giá trị GỬI phải còn ghi được (`INTERLOCK_NGOAI_DAI`);
  *         đổi tên / chuyển adapter / tắt tag là đích hoặc nguồn của luật bật ⇒ `INTERLOCK_MAT_DICH` (I2);
  *       – luật ĐÍCH đang bật trên danh tính MỚI ⇒ giá trị GỬI phải ghi được lên tag này (I3).
+ *     R1b-2a T8 (kiem-dinh M4, Q7): cột NHỊP (`samplingMs` / `deadband` / `unit`, `cotNhipDoi`) THẬT SỰ đổi trên tag được bảo vệ ⇒ TOTP TƯƠI
+ *     + audit `nhip: { truoc, sau }`; KHÔNG kiểm nhất quán (cột nhịp không đụng lưới / ghim / giá trị lệnh).
  *   • Tạo (`kiemTaoTag`): lên khoá mồ côi ⇒ TOTP + luật đích đang bật ở khoá đó phải ghi được lên tag mới.
  *   • Xoá / prune (`kiemXoaTag`): kênh chế độ ⇒ từ chối (`scadaKenhCheDoGoTruoc`); đích / nguồn của luật bật ⇒ `INTERLOCK_MAT_DICH`; đã khai
  *     đang ghim ⇒ `STOP_PIN_GO_TRUOC`; còn lại được bảo vệ ⇒ TOTP.
@@ -87,10 +89,55 @@ export type HangTagTroLai = Pick<
   | "writeMax"
   | "writeStep"
   | "actuationLevel"
+  | CotNhip
 >;
 
 /** Giá trị các cột trỏ lại SAU khi gộp patch (scale/offset giữ dạng cột: chuỗi decimal | null). */
 export type GiaTriTroLai = Pick<DeviceTag, CotTroLai>;
+
+/**
+ * R1b-2a T8 (kiem-dinh M4, Q7 duyệt) — cột NHỊP của tag: tần suất lấy mẫu (`samplingMs`), bộ lọc report-by-exception (`deadband`) và đơn vị
+ * hiển thị (`unit`). Không đổi gì trên dây (không lưới / ghim / giá trị lệnh — không kiểm nhất quán), nhưng khi `OT_TAG_DEADBAND_ENABLED` bật
+ * thì `samplingMs` / `deadband` quyết NGUỒN của luật interlock trễ tới đâu (tối đa 60 s), còn `unit` quyết người vận hành đọc con số theo đơn
+ * vị nào ⇒ trên tag ĐƯỢC BẢO VỆ, đổi THẬT SỰ một cột nhịp cần TOTP TƯƠI + audit `nhip: { truoc, sau }` (tag chưa được bảo vệ: như cũ).
+ * KHÔNG thuộc băm định nghĩa của token duyệt interlock (`interlock/dinhNghiaDuyet.ts`) ⇒ không làm mất duyệt.
+ */
+export const COT_NHIP_BAO_VE = ["samplingMs", "deadband", "unit"] as const;
+export type CotNhip = (typeof COT_NHIP_BAO_VE)[number];
+/** Cột nhịp đã CHUẨN HOÁ như đường đọc (dạng so sánh và dạng ghi audit). */
+export type GiaTriNhip = { samplingMs: number | null; deadband: number | null; unit: string | null };
+
+/** Số nhịp như đường ĐỌC (`deviceAdapter.ts` / `adapterFacade.ts`): NULL / vắng / "" ⇒ không cấu hình (null); còn lại so theo `Number`. */
+function soNhipDoc(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  return Number(v); // NaN !== NaN ⇒ một giá trị lạ luôn tính là ĐỔI (chiều an toàn)
+}
+/** Đơn vị như đường hiển thị: NULL / vắng / chuỗi rỗng-hoặc-toàn-khoảng-trắng ⇒ không có đơn vị (null); so phần đã bỏ khoảng trắng hai đầu. */
+function donViDoc(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s === "" ? null : s;
+}
+
+/** THUẦN — cột nhịp của một hàng / bản ghi, chuẩn hoá như đường đọc. */
+export function nhipDoc(g: Partial<Record<CotNhip, unknown>>): GiaTriNhip {
+  return { samplingMs: soNhipDoc(g.samplingMs), deadband: soNhipDoc(g.deadband), unit: donViDoc(g.unit) };
+}
+
+/** THUẦN — cột nhịp TRƯỚC (hàng DB) và SAU khi gộp patch (trường `undefined` = giữ nguyên; `null` = bỏ cấu hình), đã chuẩn hoá. */
+export function nhipTruocSau(cu: Pick<DeviceTag, CotNhip>, patch: Record<string, unknown>): { truoc: GiaTriNhip; sau: GiaTriNhip } {
+  const lay = (k: CotNhip): unknown => (patch[k] !== undefined ? patch[k] : cu[k]);
+  return { truoc: nhipDoc(cu), sau: nhipDoc({ samplingMs: lay("samplingMs"), deadband: lay("deadband"), unit: lay("unit") }) };
+}
+
+/**
+ * THUẦN — cột nhịp THẬT SỰ đổi so với hàng DB. So như đường đọc: NULL ≡ vắng (form gửi lại `null` trên hàng đang NULL ⇒ không đổi), số so
+ * theo `Number`, đơn vị "" / khoảng trắng ≡ NULL.
+ */
+export function cotNhipDoi(cu: Pick<DeviceTag, CotNhip>, patch: Record<string, unknown>): CotNhip[] {
+  const { truoc, sau } = nhipTruocSau(cu, patch);
+  return COT_NHIP_BAO_VE.filter((k) => truoc[k] !== sau[k]);
+}
 
 /** Luật liên quan một tag (đích hoặc nguồn), kèm đích / nguồn / trạng thái duyệt (để lọc theo cặp khi khoá theo adapter / máy). */
 export type LuatCoDich = LuatNhamTag & { commandTag: string | null; sourceKey: string | null; approvedBy: number | null };
@@ -494,7 +541,17 @@ export function kiemNhatQuanSauTroLai(cu: HangTagTroLai, sau: GiaTriTroLai, doi:
   }
 }
 
-export type KetQuaKiemSua = { sau: GiaTriTroLai; doi: CotTroLai[]; daKhai: boolean; baoVe: boolean; moCoi: boolean; canTotp: boolean };
+export type KetQuaKiemSua = {
+  sau: GiaTriTroLai;
+  doi: CotTroLai[];
+  /** R1b-2a T8 — cột nhịp THẬT SỰ đổi (`cotNhipDoi`); `nhip` = trước / sau đã chuẩn hoá (vào audit khi `doiNhip` khác rỗng). */
+  doiNhip: CotNhip[];
+  nhip: { truoc: GiaTriNhip; sau: GiaTriNhip };
+  daKhai: boolean;
+  baoVe: boolean;
+  moCoi: boolean;
+  canTotp: boolean;
+};
 
 /** Luật bật (không alert) đầu tiên trong luật đích rồi luật nguồn, kèm tagKey để nêu trong lỗi. */
 function luatBatDauTien(dich: ReadonlyArray<LuatCoDich>, nguon: ReadonlyArray<LuatCoDich>): LuatCoDich | undefined {
@@ -543,8 +600,25 @@ export function kiemSuaTag(x: {
     const vp = viPhamInterlockSauSua(luatMoi, kenhMoiCua(cu, sau));
     if (vp) loiNgoaiDai(sau.tagKey, cu, vp);
   }
+  // R1b-2a T8 (kiem-dinh M4) — cột nhịp: KHÔNG kiểm nhất quán (không đụng lưới / ghim / giá trị lệnh), chỉ TOTP + audit trên tag được bảo vệ.
+  const doiNhip = cotNhipDoi(cu, patch);
+  const nhip = nhipTruocSau(cu, patch);
   // N7 — tắt một tag được bảo vệ (đã khai / kênh chế độ / luật liên quan bật hoặc đã duyệt) cần mã, như tắt adapter.
-  return { sau, doi, daKhai, baoVe, moCoi, canTotp: (baoVe && doi.length > 0) || moCoi || (tat && baoVe) };
+  return {
+    sau,
+    doi,
+    doiNhip,
+    nhip,
+    daKhai,
+    baoVe,
+    moCoi,
+    canTotp: (baoVe && doi.length > 0) || (baoVe && doiNhip.length > 0) || moCoi || (tat && baoVe),
+  };
+}
+
+/** Phần `nhip` của dòng audit `kenh_da_khai_tro_lai` — chỉ khi cột nhịp thật sự đổi (lượt không đổi nhịp giữ đúng hình audit cũ). */
+export function anhNhipAudit(kq: Pick<KetQuaKiemSua, "doiNhip" | "nhip">): Record<string, unknown> {
+  return kq.doiNhip.length > 0 ? { doiNhip: kq.doiNhip, nhip: kq.nhip } : {};
 }
 
 /**
