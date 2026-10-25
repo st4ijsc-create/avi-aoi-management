@@ -60,6 +60,7 @@ vi.mock("../robot/robotManager", async (importOriginal) => {
 
 import { getDb } from "../../db/connection";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags, interlockEvents, interlockRules } from "../../../drizzle/schema";
+import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
 import { dispatch, type DispatchInput } from "./commandDispatcher";
 import { dispatchRobotJob, type RobotDispatchInput } from "../robot/robotCommandDispatcher";
 import { otPayloadHash, robotPayloadHash, withOtPayloadHash } from "./otActionBinding";
@@ -634,6 +635,7 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 1 — SIM safety-PLC không thoả pref
           approvedAt: new Date(),
         })
         .returning();
+      await dongDauDuyetLuat(rule!.id); // kiem-dinh R1b-1 I1 (a) FIXTURE — "đã duyệt" gieo thẳng mang bám định nghĩa hiện tại
       const [ev] = await (await d()).insert(interlockEvents).values({ ruleId: rule!.id, action: "stop_line", status: "fired" }).returning();
       await withPlcConfigs([SIM], async () => {
         const res = await within(

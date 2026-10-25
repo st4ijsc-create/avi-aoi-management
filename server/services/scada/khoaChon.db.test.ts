@@ -1,6 +1,7 @@
 /**
  * SCADA R1a Task 6 (K6) - khoa chon (adapter, kenh) theo DB `_test` THAT. Khong mock `db`.
- * Bang `scada_khoa_chon` khong co FK (user_id/adapter_id la so thuong): dung so ngau nhien o dai cao + don theo adapter_id.
+ * Bang `scada_khoa_chon`: adapter_id co FK -> device_adapters(id) ON DELETE CASCADE (mig 0433) => hai adapter THAT (chi cot NOT NULL, code rieng cua bai)
+ * duoc tao o beforeAll va xoa o afterAll (CASCADE don not hang khoa). user_id la so thuong (khong FK).
  * Doi chung: moi ca dung SQL tho (`postgres`) doc/ghi hang, khong tin gia tri tra ve cua chinh ham.
  * Ca dua: HAI ket noi RIENG (max 1 moi ket noi) chay HAI giao dich song song, 20 vong tren cung mot khoa => dung mot nguoi thang.
  */
@@ -10,7 +11,9 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { conGiuKhoa, giuKhoaChon, nhaKhoaChon } from "./khoaChon";
 
 const DB_URL = process.env.DATABASE_URL;
-const ADAPTER = 2_000_000_000 + Math.floor(Math.random() * 1_000_000);
+const DAU = `KHOACHON-${Date.now()}`;
+let ADAPTER = 0;
+let ADAPTER_2 = 0;
 const KEY = "set_temp";
 const T0 = new Date("2026-10-24T08:00:00.000Z");
 const plus = (s: number, from = T0) => new Date(from.getTime() + s * 1000);
@@ -26,8 +29,13 @@ const hang = async (key = KEY): Promise<Hang | undefined> =>
   (await raw<Hang[]>`SELECT user_id, request_id, expires_at FROM scada_khoa_chon WHERE adapter_id = ${ADAPTER} AND tag_key = ${key}`)[0];
 
 describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1a T6 - khoa chon (K6) tren DB _test that", () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     raw = postgres(DB_URL!, { max: 2, connect_timeout: 30, onnotice: () => {} });
+    const proto = (await raw<{ p: string }[]>`SELECT (enum_range(NULL::"otprotocolenum"))[1]::text AS p`)[0]!.p;
+    const moi = async (hau: string) =>
+      (await raw<{ id: number }[]>`INSERT INTO device_adapters ("code", "name", "protocol", "endpoint") VALUES (${`${DAU}-${hau}`}, ${`${DAU} ${hau}`}, ${proto}::"otprotocolenum", ${`probe://khoachon/${hau}`}) RETURNING id`)[0]!.id;
+    ADAPTER = await moi("1");
+    ADAPTER_2 = await moi("2");
     clientA = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
     clientB = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
     dbA = drizzle(clientA);
@@ -35,11 +43,12 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1a T6 - khoa chon (K
   }, 60_000);
 
   beforeEach(async () => {
-    await raw`DELETE FROM scada_khoa_chon WHERE adapter_id IN (${ADAPTER}, ${ADAPTER + 1})`;
+    await raw`DELETE FROM scada_khoa_chon WHERE adapter_id IN (${ADAPTER}, ${ADAPTER_2})`;
   });
 
   afterAll(async () => {
-    if (raw) await raw`DELETE FROM scada_khoa_chon WHERE adapter_id IN (${ADAPTER}, ${ADAPTER + 1})`;
+    if (raw) await raw`DELETE FROM scada_khoa_chon WHERE adapter_id IN (${ADAPTER}, ${ADAPTER_2})`;
+    if (raw) await raw`DELETE FROM device_adapters WHERE code LIKE ${`${DAU}-%`}`;
     await Promise.all([raw?.end({ timeout: 5 }), clientA?.end({ timeout: 5 }), clientB?.end({ timeout: 5 })]);
   }, 60_000);
 
@@ -83,7 +92,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1a T6 - khoa chon (K
   it("khoa khac kenh / khac adapter khong chan nhau", async () => {
     await giuKhoaChon(dbA, { adapterId: ADAPTER, tagKey: KEY, userId: 11, requestId: "req-A", hetHanLuc: plus(60) }, T0);
     expect(await giuKhoaChon(dbB, { adapterId: ADAPTER, tagKey: "kenh_khac", userId: 22, requestId: "req-B", hetHanLuc: plus(60) }, T0)).toEqual({ ok: true });
-    expect(await giuKhoaChon(dbB, { adapterId: ADAPTER + 1, tagKey: KEY, userId: 22, requestId: "req-C", hetHanLuc: plus(60) }, T0)).toEqual({ ok: true });
+    expect(await giuKhoaChon(dbB, { adapterId: ADAPTER_2, tagKey: KEY, userId: 22, requestId: "req-C", hetHanLuc: plus(60) }, T0)).toEqual({ ok: true });
   });
 
   it("nhaKhoaChon voi requestId CU khong xoa khoa moi; dung requestId thi xoa", async () => {

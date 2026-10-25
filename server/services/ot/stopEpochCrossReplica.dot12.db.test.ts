@@ -394,11 +394,11 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
       const who = { id: OWNER, name: "R-12-f" };
       expect((await B.cd.dispatch(await prep("stop", [{ tagKey: TAG_W, value: 0 }], adapterNoPins))).ok).toBe(true);
       expect(B.pp.cachedStopPinPresence(adapterNoPins)).toBe("none"); // seeded by the full pin read of that STOP
-      await B.sp.datStopPin({ adapterId: adapterNoPins, tagKey: TAG_W, stopValue: 0, reason: "R-12-f invalidation", nguoiSua: who, phamViMay: null });
+      await B.sp.datStopPin({ adapterId: adapterNoPins, tagKey: TAG_W, stopValue: 0, reason: "R-12-f invalidation", nguoiSua: who, phamViMay: null, kiemCuoi: async () => {} });
       try {
         expect(B.pp.cachedStopPinPresence(adapterNoPins)).toBeNull(); // a pin was added: the "none" answer is gone at once
       } finally {
-        await B.sp.datStopPin({ adapterId: adapterNoPins, tagKey: TAG_W, stopValue: null, reason: "R-12-f restore", nguoiSua: who, phamViMay: null });
+        await B.sp.datStopPin({ adapterId: adapterNoPins, tagKey: TAG_W, stopValue: null, reason: "R-12-f restore", nguoiSua: who, phamViMay: null, kiemCuoi: async () => {} });
       }
       expect(B.pp.cachedStopPinPresence(adapterNoPins)).toBeNull();
     } finally {
@@ -410,7 +410,7 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
   //    "no pins" for that adapter. Before: B kept granting the peer-STOP exemption for up to the 10 s TTL.
   const who = { id: OWNER, name: "R-12-g" };
   const unpinLate = async () => {
-    await A.sp.datStopPin({ adapterId: adapterLatePin, tagKey: LP_STOP, stopValue: null, reason: "R-12-g restore", nguoiSua: who, phamViMay: null }).catch(() => undefined);
+    await A.sp.datStopPin({ adapterId: adapterLatePin, tagKey: LP_STOP, stopValue: null, reason: "R-12-g restore", nguoiSua: who, phamViMay: null, kiemCuoi: async () => {} }).catch(() => undefined);
   };
   it("★ R-12-g: a pin ADDED on replica A while B caches 'no pins': a peer STOP then cancels B's stop that writes an unpinned tag (never written after the STOP); B's stale answer is dropped by A's signed broadcast", async () => {
     setEnv(false);
@@ -419,7 +419,7 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
     expect((await B.cd.dispatch(await prep("stop", [{ tagKey: LP_RUN, value: 0 }], adapterLatePin))).ok).toBe(true);
     expect(B.pp.cachedStopPinPresence(adapterLatePin)).toBe("none");
     // replica A pins lp_stop = 0 (the adapter's FIRST pin)
-    await A.sp.datStopPin({ adapterId: adapterLatePin, tagKey: LP_STOP, stopValue: 0, reason: "R-12-g late pin", nguoiSua: who, phamViMay: null });
+    await A.sp.datStopPin({ adapterId: adapterLatePin, tagKey: LP_STOP, stopValue: 0, reason: "R-12-g late pin", nguoiSua: who, phamViMay: null, kiemCuoi: async () => {} });
     try {
       await until(() => B.pp.cachedStopPinPresence(adapterLatePin) === null, 2_000);
       device.log.length = 0;
@@ -447,7 +447,7 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
       B.pp._resetStopPinPresenceForTests();
       expect((await B.cd.dispatch(await prep("stop", [{ tagKey: LP_RUN, value: 0 }], adapterLatePin))).ok).toBe(true);
       expect(B.pp.cachedStopPinPresence(adapterLatePin)).not.toBeNull();
-      await A.sp.datStopPin({ adapterId: adapterLatePin, tagKey: LP_STOP, stopValue, reason: "R-12-g broadcast", nguoiSua: who, phamViMay: null });
+      await A.sp.datStopPin({ adapterId: adapterLatePin, tagKey: LP_STOP, stopValue, reason: "R-12-g broadcast", nguoiSua: who, phamViMay: null, kiemCuoi: async () => {} });
       expect(await until(() => B.pp.cachedStopPinPresence(adapterLatePin) === null, 3_000)).toBe(true);
     }
     // forged: unsigned / wrong key ⇒ rejected, the cached answer stays
@@ -466,7 +466,7 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
     expect(B.pp.cachedStopPinPresence(adapterLatePin)).toBe("none");
     await stopSync(B);
     try {
-      await A.sp.datStopPin({ adapterId: adapterLatePin, tagKey: LP_STOP, stopValue: 0, reason: "R-12-g no broadcast", nguoiSua: who, phamViMay: null });
+      await A.sp.datStopPin({ adapterId: adapterLatePin, tagKey: LP_STOP, stopValue: 0, reason: "R-12-g no broadcast", nguoiSua: who, phamViMay: null, kiemCuoi: async () => {} });
       await new Promise((r) => setTimeout(r, 200));
       expect(B.pp.cachedStopPinPresence(adapterLatePin)).toBe("none"); // stale here: nothing arrived
       device.log.length = 0;

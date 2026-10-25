@@ -35,6 +35,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { trpc } from "@/lib/trpc";
 import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
+// kiem-dinh R1b-1 I1 (b) — sửa / xoá luật bảo vệ cần mã TOTP 6 số: hộp mã dùng chung (máy chủ quyết khi nào cần)
+import { laLoiCanMaTotp, useHopMaTotpTroLai } from "@/components/scada/HopMaTotpTroLai";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
@@ -116,6 +118,10 @@ type RuleRow = {
   approvedBy?: number | null;
   khiThieuDuLieu?: KhiThieuDuLieu | null;
   versionToken: string;
+  /** kiem-dinh R1b-1 I1 (a) — đã duyệt VÀ bám định nghĩa tag nguồn / đích còn khớp (máy chủ tính). */
+  duyetHieuLuc?: boolean;
+  /** kiem-dinh R1b-1 I1 (a) — có người duyệt nhưng định nghĩa tag đã đổi sau duyệt (hoặc duyệt trước bản cập nhật) ⇒ coi như CHƯA duyệt. */
+  canDuyetLai?: boolean;
 };
 type EventRow = {
   id: number;
@@ -288,8 +294,16 @@ export default function InterlockRuleManagement() {
   const invalidateEvents = () => void utils.interlock.events.invalidate();
 
   const deleteRule = trpc.interlock.delete.useMutation({
-    onSuccess: () => { toast.success(t("interlockRules.toastDeleted")); invalidateRules(); },
-    onError: (e) => toastTrpcError(e),
+    onSuccess: () => { toast.success(t("interlockRules.toastDeleted")); xoaLuatTotp.daXong(); invalidateRules(); },
+    // kiem-dinh R1b-1 I1 (b) — xoá luật đang bật / đã duyệt có đích / nguồn tag ⇒ máy chủ đòi mã ⇒ hộp mã, gửi lại chính lượt đó kèm mã.
+    onError: (e, bien) => {
+      if (xoaLuatTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
+  });
+  const xoaLuatTotp = useHopMaTotpTroLai<Parameters<typeof deleteRule.mutate>[0]>((bien) => deleteRule.mutate(bien), deleteRule.isPending, {
+    tieuDe: "deviceAdapter.troLai.title",
+    than: "interlockRules.totpBody",
   });
   // doc 80 Đợt 1 Task 9 — approve/enable gửi `expectedVersion` = versionToken của HÀNG đang hiển
   // thị. Server trả CONFLICT khi rule đã bị sửa từ lúc tải trang ⇒ toast lý do ("tải lại để
@@ -479,7 +493,12 @@ export default function InterlockRuleManagement() {
     disablePending: disableRule.isPending,
     deletePending: deleteRule.isPending,
     disable: (r, reason) => disableRule.mutateAsync({ id: r.id, reason }),
-    remove: (r, reason) => deleteRule.mutateAsync({ id: r.id, reason }),
+    // I1 (b) — "cần mã" đã được onError chuyển sang hộp mã ⇒ hộp lý do đóng như thành công (lượt gửi lại đi qua hộp mã).
+    remove: (r, reason) =>
+      deleteRule.mutateAsync({ id: r.id, reason }).catch((e) => {
+        if (laLoiCanMaTotp(e)) return undefined;
+        throw e;
+      }),
     assignments,
   };
 
@@ -583,6 +602,7 @@ export default function InterlockRuleManagement() {
               }}
             />
           </InterlockCtx.Provider>
+          {xoaLuatTotp.hop}
         </PageContainer>
       </FlyoutHost>
     </DashboardLayout>
@@ -725,7 +745,8 @@ function RulesListView() {
             <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{t("interlockRules.empty")}</TableCell></TableRow>
           )}
           {c.visibleRules.map((r) => {
-            const approved = r.approvedBy != null;
+            // kiem-dinh R1b-1 I1 (a) — "đã duyệt" = duyệt CÒN HIỆU LỰC (máy chủ: bám định nghĩa tag khớp); cần duyệt lại ⇒ hiện nút Duyệt, khoá Bật.
+            const approved = r.approvedBy != null && r.canDuyetLai !== true;
             const selected = c.selectedRuleId === r.id;
             return (
               <TableRow
@@ -751,7 +772,9 @@ function RulesListView() {
                 <TableCell className="space-x-1">
                   {approved
                     ? <Badge variant="default">{t("interlockRules.approved")}</Badge>
-                    : <Badge variant="secondary">{t("interlockRules.notApproved")}</Badge>}
+                    : r.canDuyetLai
+                      ? <Badge variant="outline" data-testid="can-duyet-lai" title={t("interlockRules.canDuyetLaiGiaiThich")}>{t("interlockRules.canDuyetLai")}</Badge>
+                      : <Badge variant="secondary">{t("interlockRules.notApproved")}</Badge>}
                   {r.enabled
                     ? <Badge variant="default">{t("interlockRules.enabled")}</Badge>
                     : <Badge variant="outline">{t("interlockRules.disabled")}</Badge>}
@@ -934,7 +957,7 @@ function CauseEffectMatrixView() {
                         key={r.id}
                         type="button"
                         aria-pressed={c.selectedRuleId === r.id}
-                        title={`${r.approvedBy != null ? t("interlockRules.approved") : t("interlockRules.notApproved")} · ${r.enabled ? t("interlockRules.enabled") : t("interlockRules.disabled")}`}
+                        title={`${r.approvedBy != null && r.canDuyetLai !== true ? t("interlockRules.approved") : t("interlockRules.notApproved")} · ${r.enabled ? t("interlockRules.enabled") : t("interlockRules.disabled")}`}
                         onClick={() => c.selectRule(r.id)}
                         className={cn(
                           "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -943,7 +966,7 @@ function CauseEffectMatrixView() {
                       >
                         <span
                           aria-hidden="true"
-                          className={cn("h-1.5 w-1.5 rounded-full", r.enabled && r.approvedBy != null ? "bg-success" : r.enabled ? "bg-warning" : "bg-muted-foreground/40")}
+                          className={cn("h-1.5 w-1.5 rounded-full", r.enabled && r.approvedBy != null && r.canDuyetLai !== true ? "bg-success" : r.enabled ? "bg-warning" : "bg-muted-foreground/40")}
                         />
                         {r.name}
                       </button>
@@ -1118,8 +1141,16 @@ function RuleEditForm({ rule, onSaved }: { rule: RuleRow | null; onSaved: () => 
     onError: (e) => toastTrpcError(e),
   });
   const updateRule = trpc.interlock.update.useMutation({
-    onSuccess: () => { toast.success(t("interlockRules.toastUpdated")); onSaved(); done(); },
-    onError: (e) => toastTrpcError(e),
+    onSuccess: () => { toast.success(t("interlockRules.toastUpdated")); suaLuatTotp.daXong(); onSaved(); done(); },
+    // kiem-dinh R1b-1 I1 (b) — sửa luật đang bật / đã duyệt có đích / nguồn tag ⇒ máy chủ đòi mã ⇒ hộp mã, gửi lại chính lượt đó kèm mã.
+    onError: (e, bien) => {
+      if (suaLuatTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
+  });
+  const suaLuatTotp = useHopMaTotpTroLai<Parameters<typeof updateRule.mutate>[0]>((bien) => updateRule.mutate(bien), updateRule.isPending, {
+    tieuDe: "deviceAdapter.troLai.title",
+    than: "interlockRules.totpBody",
   });
 
   // SCADA R0.1 (D11) — luật telemetry_tag hỏng cấu trúc (phạm vi ≠ Máy / thiếu máy / thiếu tên tag): lý do inline + chặn Lưu.
@@ -1181,6 +1212,7 @@ function RuleEditForm({ rule, onSaved }: { rule: RuleRow | null; onSaved: () => 
   const scopeIdLabel = form.scope === "line" ? t("interlockRules.lineId") : form.scope === "station" ? t("interlockRules.stationId") : t("interlockRules.machineId");
   return (
     <div className="space-y-3">
+      {suaLuatTotp.hop}
       {/* doc 80 Đợt 1 Task 11 — cảnh báo TRƯỚC khi lưu một rule đã duyệt/đang bật: Lưu sẽ
           reset approvedBy/approvedAt=null + enabled=false (server ILK-01), không phải kết
           quả bất ngờ SAU khi bấm Lưu. */}

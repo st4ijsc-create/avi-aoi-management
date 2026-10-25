@@ -3,7 +3,7 @@
  * thì KHÔNG BAO GIỜ chạy (người gọi nhận `QueueExpired`; dispatcher ghi `rejected QUEUE_EXPIRED` cho dòng ý định đã có — xem
  * commandDispatcher.hanHangDoi.r1a.db.test.ts). DỪNG (ghim hay theo nội dung) và hành động interlock bảo vệ KHÔNG có hạn.
  *
- * THUẦN: chỉ `tryEnqueueAdapterCommand` (không DB, không driver), đồng hồ giả (vi.useFakeTimers giả cả Date.now). Oracle = nhật ký
+ * THUẦN: chỉ `tryEnqueueAdapterCommand` (không DB, không driver), đồng hồ giả (vi.useFakeTimers toFake gồm Date + performance). Oracle = nhật ký
  * job THẬT SỰ được chạy, do test ghi (không lấy từ mã sản phẩm). Hạn kiểm lúc lệnh TỚI LƯỢT (`run`), không có timer.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -47,9 +47,11 @@ function accepted<T>(o: ReturnType<typeof tryEnqueueAdapterCommand<T>>) {
   return o.result;
 }
 
+// R1b-1 T10 — hạn hàng đợi đo bằng performance.now() (đơn điệu) ⇒ đồng hồ giả PHẢI giả cả `performance` (mặc định của vitest không giả).
+const GIA_DONG_HO = ["Date", "performance", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "setImmediate", "clearImmediate"] as const;
 const saved = process.env.OT_CMD_QUEUE_MAX;
 beforeEach(() => {
-  vi.useFakeTimers();
+  vi.useFakeTimers({ toFake: [...GIA_DONG_HO] });
   _resetAdapterCommandQueuesForTests();
   process.env.OT_CMD_QUEUE_MAX = "5";
 });
@@ -239,5 +241,35 @@ describe("R1a T5 (K9) — hạn hàng đợi lệnh trung tâm", () => {
     expect(log).toEqual(["A"]);
     ctl.get("A")!.resolve("a");
     await expect(rA).resolves.toBe("a");
+  });
+});
+
+describe("R1b-1 T10 — hạn hàng đợi đo bằng đồng hồ ĐƠN ĐIỆU (performance.now), không bằng đồng hồ tường", () => {
+  it("★ đồng hồ tường nhảy TỚI +2 giờ (NTP/DST) khi B chờ 1 s ⇒ B KHÔNG bị coi là hết hạn, vẫn chạy", async () => {
+    const { log, ctl, job } = makeJobs();
+    const rA = accepted(tryEnqueueAdapterCommand(ADAPTER, job("A"), { queueTtlMs: 60_000 }));
+    const rB = accepted(tryEnqueueAdapterCommand(ADAPTER, job("B"), { queueTtlMs: 60_000 }));
+    await vi.advanceTimersByTimeAsync(1_000);
+    vi.setSystemTime(Date.now() + 2 * 3_600_000);
+    ctl.get("A")!.resolve("a");
+    await rA;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(log).toEqual(["A", "B"]);
+    ctl.get("B")!.resolve("b");
+    await expect(rB).resolves.toBe("b");
+  });
+
+  it("★ đồng hồ tường nhảy LÙI 2 giờ khi B chờ 61 s ⇒ B VẪN hết hạn (không bất tử), waitedMs là số nguyên ≈ 61 000", async () => {
+    const { log, ctl, job } = makeJobs();
+    const rA = accepted(tryEnqueueAdapterCommand(ADAPTER, job("A"), { queueTtlMs: 60_000 }));
+    const rB = accepted(tryEnqueueAdapterCommand(ADAPTER, job("B"), { queueTtlMs: 60_000 }));
+    await vi.advanceTimersByTimeAsync(61_000);
+    vi.setSystemTime(Date.now() - 2 * 3_600_000);
+    ctl.get("A")!.resolve("a");
+    await rA;
+    const b = await rB;
+    expect(isQueueExpired(b)).toBe(true);
+    expect((b as { waitedMs: number }).waitedMs).toBe(61_000);
+    expect(log).toEqual(["A"]);
   });
 });

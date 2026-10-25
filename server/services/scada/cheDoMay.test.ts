@@ -9,6 +9,8 @@ import type { GiaTriCoTuoi } from "./boDemHienTai";
 const m = vi.hoisted(() => ({
   layGiaTri: vi.fn(),
   boDemDangBat: vi.fn(),
+  /** adapterId → thông tin đăng ký OT (pollMs); mặc định null = chưa đăng ký ⇒ poll mặc định 5000. */
+  thongTinAdapter: vi.fn(),
   /** machineId → hàng kênh chế độ (null = chưa khai); "throw" ⇒ truy vấn ném. */
   hang: new Map<number, { adapterId: number; tagKey: string; giaTriRemote: unknown; dataType: string | null; adapterMachineId: number | null; adapterEnabled: boolean | null } | "throw">(),
   dbNull: false,
@@ -19,6 +21,8 @@ const m = vi.hoisted(() => ({
 vi.mock("./boDemHienTai", () => ({
   layGiaTri: (...a: unknown[]) => m.layGiaTri(...a),
   boDemDangBat: () => m.boDemDangBat(),
+  thongTinAdapter: (...a: unknown[]) => m.thongTinAdapter(...a),
+  POLL_MAC_DINH_MS: 5000,
 }));
 
 vi.mock("../../db/connection", () => ({
@@ -65,7 +69,7 @@ function timSoTrongDieuKien(cond: unknown): number | undefined {
   return di(cond);
 }
 
-import { cheDoMay, congCheDoBat, TOOL_HMI_GHI_TAG } from "./cheDoMay";
+import { cheDoMay, congCheDoBat, nguongTuoiCheDoMs, TOOL_HMI_GHI_TAG, TUOI_MAU_CHE_DO_TOI_DA_MS } from "./cheDoMay";
 
 const MAY = 4101;
 const AD = 77;
@@ -101,6 +105,8 @@ const savedFlag = process.env.SCADA_CONG_CHE_DO_ENABLED;
 beforeEach(() => {
   m.layGiaTri.mockReset();
   m.boDemDangBat.mockReset();
+  m.thongTinAdapter.mockReset();
+  m.thongTinAdapter.mockReturnValue(null);
   m.hang.clear();
   m.dbNull = false;
   m.soTruyVan = 0;
@@ -155,6 +161,42 @@ describe("cheDoMay — mỗi lyDo một ca", () => {
   it("cu: mẫu good đúng giá trị nhưng stale ⇒ LOCAL", async () => {
     m.layGiaTri.mockReturnValue(gt({ stale: true, ageMs: 999_999 }));
     expect((await cheDoMay(MAY, NOW)).lyDo).toBe("cu");
+  });
+
+  it("★ N5 (T10b): poll 1 h, mẫu REMOTE 3 phút tuổi mà bộ đệm vẫn coi là TƯƠI (3·poll = 3 h) ⇒ LOCAL `cu` (kẹp 30 s, fail-closed)", async () => {
+    m.thongTinAdapter.mockReturnValue({ pollMs: 3_600_000, coDeadband: false, machineId: MAY, code: "x" });
+    m.layGiaTri.mockReturnValue(gt({ stale: false, ageMs: 180_000, rx: NOW - 180_000 }));
+    expect(await cheDoMay(MAY, NOW)).toMatchObject({ cheDo: "LOCAL", lyDo: "cu" });
+    expect(m.thongTinAdapter).toHaveBeenCalledWith(AD);
+  });
+
+  it("N5: poll 1 h — mẫu 29 s tuổi vẫn REMOTE; 30 001 ms ⇒ cu (biên kẹp đúng 30 000)", async () => {
+    m.thongTinAdapter.mockReturnValue({ pollMs: 3_600_000, coDeadband: false, machineId: MAY, code: "x" });
+    m.layGiaTri.mockReturnValue(gt({ ageMs: 29_000 }));
+    expect((await cheDoMay(MAY, NOW)).cheDo).toBe("REMOTE");
+    m.layGiaTri.mockReturnValue(gt({ ageMs: TUOI_MAU_CHE_DO_TOI_DA_MS }));
+    expect((await cheDoMay(MAY, NOW)).cheDo).toBe("REMOTE");
+    m.layGiaTri.mockReturnValue(gt({ ageMs: TUOI_MAU_CHE_DO_TOI_DA_MS + 1 }));
+    expect((await cheDoMay(MAY, NOW)).lyDo).toBe("cu");
+  });
+
+  it("N5: poll ngắn (1 s) ⇒ ngưỡng 3·poll = 3 s (kẹp không nới): mẫu 3,5 s ⇒ cu; adapter chưa đăng ký ⇒ poll mặc định 5 s ⇒ 15 s", async () => {
+    m.thongTinAdapter.mockReturnValue({ pollMs: 1000, coDeadband: false, machineId: MAY, code: "x" });
+    m.layGiaTri.mockReturnValue(gt({ ageMs: 3500 }));
+    expect((await cheDoMay(MAY, NOW)).lyDo).toBe("cu");
+    m.thongTinAdapter.mockReturnValue(null);
+    m.layGiaTri.mockReturnValue(gt({ ageMs: 14_000 }));
+    expect((await cheDoMay(MAY, NOW)).cheDo).toBe("REMOTE");
+    m.layGiaTri.mockReturnValue(gt({ ageMs: 15_001 }));
+    expect((await cheDoMay(MAY, NOW)).lyDo).toBe("cu");
+  });
+
+  it("N5: nguongTuoiCheDoMs = min(3·poll, 30 000); poll lỗi (0 / âm / NaN / null) ⇒ poll mặc định 5000", () => {
+    expect(TUOI_MAU_CHE_DO_TOI_DA_MS).toBe(30_000);
+    expect(nguongTuoiCheDoMs(100)).toBe(300);
+    expect(nguongTuoiCheDoMs(10_000)).toBe(30_000);
+    expect(nguongTuoiCheDoMs(3_600_000)).toBe(30_000);
+    for (const sai of [0, -5, Number.NaN, null, undefined]) expect(nguongTuoiCheDoMs(sai)).toBe(15_000);
   });
 
   it("khac_remote: mẫu good tươi nhưng v ≠ gia_tri_remote ⇒ LOCAL", async () => {

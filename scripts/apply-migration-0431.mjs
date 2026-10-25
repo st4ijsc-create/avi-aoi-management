@@ -9,6 +9,8 @@
  *   (c) `__applied_migrations` 1 hang (bo chay chung).
  *   node scripts/apply-migration-0431.mjs --test-only | --dev-only | --both
  * ⚠ DEV chi sau khi phien dieu phoi duyet SQL + so dem (global-constraints).
+ * R1b-1 T6 (2026-10-24, fix round 1): verify CHAY LAI DUOC sau 0433 — kiem cot la TAP CON (0433 them ly_do), va hai probe id gia
+ * (adapter 999999 / may 987654) coi 23503 (FK them o 0433) la dat.
  */
 import { expectExact, maLoi, rolledBack, runMigration } from "./apply-migration-dot10-common.mjs";
 
@@ -51,7 +53,7 @@ await runMigration({
     for (const [t, want] of Object.entries(BANG)) {
       const rows = await appSql`SELECT column_name AS c, data_type AS d FROM information_schema.columns WHERE table_schema='public' AND table_name=${t}`;
       expectExact(`(a) ${t} columns`, Object.fromEntries(rows.map((r) => [r.c, r.d])), want);
-      if (rows.length !== Object.keys(want).length) throw new Error(`(a) ${t}: ${rows.length} cot (muon ${Object.keys(want).length})`);
+      if (rows.length < Object.keys(want).length) throw new Error(`(a) ${t}: ${rows.length} cot (muon >= ${Object.keys(want).length}; cot them o migration sau, vd 0433 ly_do, duoc phep)`);
     }
     const [arr] = await appSql`SELECT format_type(a.atttypid, a.atttypmod) AS ty FROM pg_attribute a WHERE a.attrelid = 'public.scada_command_attempts'::regclass AND a.attname = 'command_log_ids'`;
     expectExact("(a) command_log_ids", arr, { ty: "bigint[]" });
@@ -107,7 +109,10 @@ await runMigration({
       const khoaTrung = await maLoi(tx, (sp) => sp`INSERT INTO public.scada_khoa_chon (adapter_id, tag_key, user_id, request_id, expires_at) VALUES (${adapterId}, 'probe0431', 2, 'r2', now())`);
       const che = await maLoi(tx, (sp) => sp`INSERT INTO public.scada_kenh_che_do (machine_id, adapter_id, tag_key, gia_tri_remote, updated_by) VALUES (987654, ${adapterId}, 'mode', '1'::jsonb, 1)`);
       const cheTrung = await maLoi(tx, (sp) => sp`INSERT INTO public.scada_kenh_che_do (machine_id, adapter_id, tag_key, gia_tri_remote, updated_by) VALUES (987654, ${adapterId}, 'mode', '2'::jsonb, 1)`);
-      return { level2, minGtMax, stepKhong, stepAm, levelOk, rongOk, nullCols, kenhLa, kenhOk, chenAttempt: ins.command_log_ids, stageLa, outcomeLa, upd, del, trunc, khoa, khoaTrung, che, cheTrung };
+      // 0433 them FK (adapter/may) => id gia 999999 / 987654 bi 23503 truoc khi toi PK: 23503 = FK ton tai = dat (ruling R1b-1 T6 I2);
+      // khi chua co 0433 thi ket qua cu (null / 23505) van dung.
+      const fk = (v, khiFk) => (v === "23503" ? khiFk : v);
+      return { level2, minGtMax, stepKhong, stepAm, levelOk, rongOk, nullCols, kenhLa, kenhOk, chenAttempt: ins.command_log_ids, stageLa, outcomeLa, upd, del, trunc, khoa: fk(khoa, null), khoaTrung: fk(khoaTrung, "23505"), che: fk(che, null), cheTrung: fk(cheTrung, "23505") };
     });
     expectExact("(b) behaviour avi_app", r, {
       level2: "23514", minGtMax: "23514", stepKhong: "23514", stepAm: "23514", levelOk: null, rongOk: null,

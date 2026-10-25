@@ -29,7 +29,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
+import { tuChoiTuLoiXacNhan } from "@/lib/loiXacNhanAi";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useActuationReadiness } from "@/hooks/useActuationReadiness";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -200,7 +201,8 @@ export default function ApprovalsInbox() {
   const inboxQ = trpc.aiInbox.list.useQuery({ limit: 50 });
   const inboxItems = (inboxQ.data?.items ?? []) as InboxItem[];
 
-  const confirmM = trpc.aiCopilot.confirmAction.useMutation();
+  // onError rỗng: `approveProposal` tự hiện lỗi (một toast) — không để lưới cuối của main.tsx thêm toast thứ hai.
+  const confirmM = trpc.aiCopilot.confirmAction.useMutation({ onError: () => undefined });
   const dismissM = trpc.aiInbox.dismiss.useMutation();
   const invalidateInbox = () => {
     void utils.aiInbox.list.invalidate();
@@ -219,8 +221,9 @@ export default function ApprovalsInbox() {
       });
       if (res.ok) toast.success(res.message ?? t("approvalsInbox.ai.approved", "Action approved"));
       else toast.error(res.message ?? t("approvalsInbox.ai.failed", "Could not complete the action"));
-    } catch {
-      toast.error(t("approvalsInbox.ai.failed", "Could not complete the action"));
+    } catch (err) {
+      // R1b-1 T10 fix round 1 (I-2) — AI mức ≥ 4 bị từ chối vĩnh viễn: hiện CÂU ĐÃ DỊCH của máy chủ; lỗi khác dùng câu đã dịch chung của mapTrpcError.
+      toast.error(tuChoiTuLoiXacNhan(err)?.message ?? mapTrpcError(err));
     } finally {
       invalidateInbox();
     }

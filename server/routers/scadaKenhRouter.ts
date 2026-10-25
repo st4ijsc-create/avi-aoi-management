@@ -7,7 +7,9 @@
  *                                                             mức tác động (đã khai + hiệu lực, NULL ⇒ 5), có phải kênh chế độ không.
  *   capNhat({tagId, patch, lyDo})                           — khai / sửa các cột kênh (mig 0431) của MỘT tag.
  *   cheDo.danhSach()                                        — máy trong phạm vi (có adapter hoặc đã khai kênh chế độ) + kênh chế độ +
- *                                                             `cheDoMay` hiện tại + `canhBaoNguon`.
+ *                                                             `cheDoMay` hiện tại + `canhBaoNguon` + (R1b-1 Task 2) `coGhimStop` /
+ *                                                             `soAdapterGhimStop` (adapter BẬT mang ≥ 1 ghim DỪNG hợp lệ) + `khaNangDung`
+ *                                                             (khảo sát khả năng dừng từng adapter — `services/scada/khaNangDung.ts`).
  *   cheDo.dat({machineId, adapterId, tagKey, giaTriRemote, lyDo}) / cheDo.go({machineId, lyDo}) — khai / gỡ kênh chế độ của máy.
  *
  * QUYỀN: query = MOD_OT_CONTROL + `machine_control.canView`; mutation = vai admin|engineer + 2FA + MOD_OT_CONTROL +
@@ -29,7 +31,7 @@
  *     DỪNG ghim được miễn dải trong `dispatch()`); chiều ghim ⇒ `stopPin.datStopPin`.
  *   • `commandValue` của mọi luật interlock ĐANG BẬT nhắm tag này phải còn ghi được ⇒ không thì `INTERLOCK_NGOAI_DAI` (review T3 M-3);
  *     chiều luật ⇒ `interlockRouter` create/update/approve/enable.
- *   Khoá (fix round 1): THỨ TỰ LUẬT → TAG ở mọi bên — capNhat khoá FOR SHARE mọi luật nhắm tag rồi tag FOR UPDATE (datStopPin khoá cùng
+ *   Khoá (fix round 1): THỨ TỰ LUẬT → TAG ở mọi bên — capNhat khoá FOR SHARE adapter (R1b-1 T10) → mọi luật nhắm tag → tag FOR UPDATE (datStopPin khoá cùng
  *   hàng tag); interlockRouter khoá luật FOR UPDATE rồi tag FOR SHARE ⇒ không lọt, không vòng chờ (40P01 còn sót ⇒ CONFLICT thử lại).
  *
  * ĐỂ R2 (không làm ở đây): hạ mức tác động (5→3) hay nới dải KHÔNG cần người thứ hai duyệt trong R1a.
@@ -47,54 +49,33 @@ import { phamViCua } from "./_phamViNguoiXem";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { isEdgeControlSchemaMissing } from "../services/edge/edgeControlSchema";
 import { kiemGiaTriGhi, laKenhGhi, loaiKenh, mucTacDongKenh, type LoaiKenh } from "../services/scada/kenhScada";
-import { cheDoMay, type CheDo } from "../services/scada/cheDoMay";
-import { khoaLuatNhamTagTx, kiemNhatQuanKenh, soHienThi, viPhamInterlock, type KenhNhatQuan } from "../services/scada/nhatQuanKenh";
+import { cheDoMay, nguongTuoiCheDoMs, TUOI_MAU_CHE_DO_TOI_DA_MS, type CheDo } from "../services/scada/cheDoMay";
+import { khoaLuatNhamTagTx, kiemNhatQuanKenh, soHienThi, thamSoNgoaiDaiInterlock, viPhamInterlock, type KenhNhatQuan } from "../services/scada/nhatQuanKenh";
+import { khoaAdapterTx } from "../services/scada/troLaiKenh";
 import { tagDeadbandEnabled } from "../services/ot/otManager";
 import { TAG_DUNG_MAC_DINH } from "../services/ot/tagLenhMacDinh";
 import { validateStopValue } from "../services/ot/stopPin";
+import { khaoSatKhaNangDungNhieu, type KhaNangDungMay } from "../services/scada/khaNangDung";
+
+/**
+ * R1b-1 T2 — số adapter bật có ≥ 1 ghim DỪNG hợp lệ (mọi kết luận ≠ chua_ghim). fix round 3: khảo sát LỖI (`loiKhaoSat`) / vắng ⇒ null
+ * (KHÔNG BIẾT — không được đọc thành "chưa ghim" / 0 adapter).
+ */
+// kiem-dinh R1b-1 H1 (b) — adapter chỉ có ghim mức cao (`ghim_muc_cao`) KHÔNG nhận STOP HMI ⇒ không đếm (cùng luật với dungMay).
+const soCoGhim = (k: KhaNangDungMay | undefined): number | null =>
+  !k || k.loiKhaoSat ? null : k.adapters.filter((a) => a.trangThai !== "chua_ghim" && a.trangThai !== "ghim_muc_cao").length;
+const coGhim = (k: KhaNangDungMay | undefined): boolean | null => {
+  const n = soCoGhim(k);
+  return n === null ? null : n > 0;
+};
 import { canonicalOtValue } from "../services/ot/otActionBinding";
 import type { MucRuiRo } from "../services/ot/aiControlGate";
-import { kiemXacThucTheoMuc, type CtxXacThuc } from "../_core/xacThucTheoMuc";
-import { loiTotpKhoa } from "../_core/totpKhoaSai";
+// kiem-dinh P1-2 — TOTP TƯƠI (mức 5) + ánh xạ lỗi: R1b-1 Task 9 chuyển sang `services/scada/totpCauHinh.ts` để `deviceAdapter.tags.update` và
+// `mappingAsCode.applyImport` (trỏ lại kênh đã khai) dùng CHUNG một bộ mã lỗi / khoá i18n.
+import { kiemTotpCauHinh, totpCauHinhInput as totpInput } from "../services/scada/totpCauHinh";
 
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 const kySuProcedure = roleProcedure("admin", "engineer").use(require2FA).use(moduleGate("MOD_OT_CONTROL"));
-
-/** Mã TOTP 6 số của ba mutation cấu hình (vắng ⇒ `TOTP_CAN` ở handler, không phải lỗi zod — UI hiện đúng câu "cần mã"). */
-const totpInput = z.string().max(16).optional();
-
-/**
- * kiem-dinh P1-2 — TOTP TƯƠI cho mọi thay đổi cấu hình kênh / chế độ (xem đầu tệp). Mức 5 cố định: sàn vai ACTUATION_ROLES (admin/
- * engineer của `kySuProcedure` đều thuộc), phải đăng ký 2FA, mã 6 số mỗi lượt, không cache phiên, không đọc cờ env. Từ chối ⇒ NÉM appError.
- */
-async function kiemTotpCauHinh(ctx: CtxXacThuc, totpCode: string | undefined): Promise<void> {
-  const kq = await kiemXacThucTheoMuc(ctx, 5, totpCode);
-  if (kq.ok) return;
-  switch (kq.ma) {
-    case "TOTP_CAN":
-      throw appError("PRECONDITION_FAILED", "SCADA_CONFIG_TOTP_REQUIRED", { ma: kq.ma }, "Đổi cấu hình kênh cần mã xác thực 2 lớp (TOTP) — nhập mã rồi lưu lại.");
-    case "TOTP_SAI":
-      throw appError(
-        "PRECONDITION_FAILED",
-        "SCADA_CONFIG_TOTP_INVALID",
-        { ma: kq.ma },
-        "Mã xác thực 2 lớp không đúng hoặc đã được dùng — chờ mã mới rồi lưu lại.",
-      );
-    case "TOTP_CHUA_DANG_KY":
-      throw appError(
-        "PRECONDITION_FAILED",
-        "SCADA_CONFIG_TOTP_NOT_ENROLLED",
-        { ma: kq.ma },
-        "Đổi cấu hình kênh cần xác thực 2 lớp, nhưng tài khoản này chưa đăng ký 2FA.",
-      );
-    case "ROLE_FLOOR":
-      // không xảy ra với kySuProcedure (admin/engineer ∈ ACTUATION_ROLES) — giữ fail-closed nếu sàn vai đổi
-      throw appError("FORBIDDEN", "SCADA_ROLE_FLOOR", { ma: kq.ma, level: 5 }, "Vai trò không được đổi cấu hình kênh.");
-    case "TOTP_TAM_KHOA":
-    case "TOTP_KHONG_KIEM_DUOC":
-      throw loiTotpKhoa(kq.ma === "TOTP_TAM_KHOA" ? { ma: kq.ma, conLaiMs: kq.conLaiMs } : { ma: kq.ma }, { ma: kq.ma })!;
-  }
-}
 
 async function getDb() {
   const db = await getDbRaw();
@@ -155,7 +136,7 @@ const patchInput = z
   })
   .strict();
 
-export type CanhBaoNguon = "deadband" | "edge" | "bao_khi_doi" | null;
+export type CanhBaoNguon = "deadband" | "edge" | "bao_khi_doi" | "poll_cham" | null;
 
 /**
  * Điều phối 2026-10-24 (fix round 1) — "kênh dừng" CHƯA KHAI: tag mà lệnh stop của tool AI máy nhắm tới (`TAG_DUNG_MAC_DINH` = tag mặc
@@ -219,16 +200,25 @@ function baoKhiDoi(protocol: string | null): boolean {
  * Bộ lọc CHỈ chạy khi `OT_TAG_DEADBAND_ENABLED` bật (`tagDeadbandEnabled`; tắt ⇒ chuyển thẳng mọi mẫu ⇒ không cảnh báo). Hai đường của
  * CÙNG bộ lọc, cùng một cảnh báo "deadband" (không thêm giá trị mới: cùng cờ, cùng sink, cùng cách gỡ = sửa cấu hình lọc của tag):
  *   • deadband > 0 (0 không lọc gì);
- *   • samplingMs > 3·pollMs — mẫu thưa hơn ngưỡng `cu` cơ bản của bộ đệm (`max(3·poll, …)`) ⇒ kênh dễ thành `cu` giữa hai lần chuyển.
+ *   • samplingMs > ngưỡng tuổi của CỔNG CHẾ ĐỘ (`nguongTuoiCheDoMs` = min(3·poll, 30 s), R1b-1 T10b N5 — trước: 3·poll, ngưỡng `cu` cơ bản
+ *     của bộ đệm) ⇒ kênh dễ thành `cu` giữa hai lần chuyển. Một hàm với `cheDoMay` để cảnh báo và cổng không lệch nhau.
  */
 function locThuaMau(k: { deadband: number | null; samplingMs: number | null; pollMs: number | null }): boolean {
   if (!tagDeadbandEnabled()) return false;
   if (k.deadband != null && k.deadband > 0) return true;
-  const poll = k.pollMs != null && k.pollMs > 0 ? k.pollMs : 5000;
-  return k.samplingMs != null && k.samplingMs > 3 * poll;
+  return k.samplingMs != null && k.samplingMs > nguongTuoiCheDoMs(k.pollMs);
 }
 
-/** Một cảnh báo (nặng nhất trước): edge (trung tâm không có số liệu) > báo khi đổi > deadband (bộ lọc report-by-exception đang chạy). */
+/**
+ * R1b-1 T10b fix round 1 (M-1) — adapter mang tag chế độ poll CHẬM hơn `TUOI_MAU_CHE_DO_TOI_DA_MS / 3` (10 s): cổng chế độ kẹp tuổi mẫu ở
+ * 30 s (`nguongTuoiCheDoMs`) nên dung sai < 3 lần poll lỡ; poll ≥ 30 s ⇒ máy rơi về LOCAL `cu` giữa hai lần poll. KHÔNG phụ thuộc cờ
+ * deadband (khác `locThuaMau`). Cảnh báo SỐNG theo pollIntervalMs hiện tại (không chặn ở cheDo.dat — poll đổi được sau đó).
+ */
+function pollChamChoCheDo(pollMs: number | null): boolean {
+  return pollMs != null && pollMs > TUOI_MAU_CHE_DO_TOI_DA_MS / 3;
+}
+
+/** Một cảnh báo (nặng nhất trước): edge (trung tâm không có số liệu) > báo khi đổi > deadband (bộ lọc report-by-exception đang chạy) > poll chậm. */
 function canhBaoCua(
   k: { adapterId: number; protocol: string | null; deadband: number | null; samplingMs: number | null; pollMs: number | null },
   edge: Set<number>,
@@ -236,6 +226,7 @@ function canhBaoCua(
   if (edge.has(k.adapterId)) return "edge";
   if (baoKhiDoi(k.protocol)) return "bao_khi_doi";
   if (locThuaMau(k)) return "deadband";
+  if (pollChamChoCheDo(k.pollMs)) return "poll_cham";
   return null;
 }
 
@@ -280,6 +271,8 @@ const cheDoRouter = router({
       );
     const theoMay = new Map(kenhs.map((k) => [k.machineId, k] as const));
     const edge = await adapterEdge([...new Set(kenhs.map((k) => k.adapterId))]);
+    // R1b-1 T2 fix round 1 — khả năng dừng từng adapter (MỘT hàm dùng chung với hộp xác nhận DỪNG MÁY và cảnh báo cấp máy)
+    const khaNang = await khaoSatKhaNangDungNhieu(db, mays.map((m) => m.id));
     return Promise.all(
       mays.map(async (m) => {
         const k = theoMay.get(m.id);
@@ -306,6 +299,10 @@ const cheDoRouter = router({
             : null,
           cheDo: cd.cheDo,
           lyDo: cd.lyDo,
+          // R1b-1 Task 2 — nút DỪNG MÁY gửi tới bao nhiêu adapter (adapter có ghim; 0 ⇒ "Máy chưa ghim STOP") + khả năng dừng từng adapter
+          soAdapterGhimStop: soCoGhim(khaNang.get(m.id)),
+          coGhimStop: coGhim(khaNang.get(m.id)),
+          khaNangDung: khaNang.get(m.id) ?? { machineId: m.id, adapters: [], tongHop: "khong" as const },
           canhBaoNguon: hien
             ? canhBaoCua(
                 {
@@ -368,11 +365,14 @@ const cheDoRouter = router({
             "Adapter của kênh chế độ đang tắt.",
           );
         }
+        // R1b-1 T9 fix round 1 (M1) — tag FOR SHARE: một `deviceAdapter.tags.update` / import đang trỏ lại / đổi tên tag này (giữ FOR UPDATE)
+        // xong rồi mới khai kênh chế độ lên nó (thứ tự TAG → KÊNH CHẾ ĐỘ ở cả hai phía) — không chèn kênh chế độ lọt giữa kiểm và commit.
         const [tag] = await tx
           .select({ dataType: deviceTags.dataType, isEnabled: deviceTags.isEnabled })
           .from(deviceTags)
           .where(and(eq(deviceTags.adapterId, a.id), eq(deviceTags.tagKey, input.tagKey)))
-          .limit(1);
+          .limit(1)
+          .for("share");
         if (!tag) throw khongThayTag();
         // fix round 1 (phán quyết c5) — tag tắt không được poll ⇒ kênh chế độ luôn LOCAL `chua_co_mau`: từ chối như adapter tắt.
         // Adapter do edge sở hữu KHÔNG bị chặn ở đây — chỉ cảnh báo (`canhBaoNguon: "edge"`).
@@ -523,11 +523,10 @@ export const scadaKenhRouter = router({
             .where(eq(deviceTags.id, input.tagId))
             .limit(1);
           if (!tag0) throw khongThayTag();
-          const [a] = await tx
-            .select({ machineId: deviceAdapters.machineId })
-            .from(deviceAdapters)
-            .where(eq(deviceAdapters.id, tag0.adapterId))
-            .limit(1);
+          // R1b-1 T10 — thứ tự khoá chung (troLaiKenh.ts): ADAPTER (FOR SHARE) → LUẬT → TAG → KÊNH CHẾ ĐỘ. `machineId` đọc KHI đã khoá hàng adapter
+          // ⇒ một `deviceAdapter.update` đổi máy (giữ FOR UPDATE) xong rồi mới tới ta, và không đổi máy được nữa cho tới khi ta commit:
+          // phép kiểm phạm vi không còn đọc máy CŨ (TOCTOU) rồi ghi lên kênh của adapter đã sang máy ngoài phạm vi.
+          const a = (await khoaAdapterTx(tx, [tag0.adapterId])).get(tag0.adapterId);
           if (!a || !nhinThay(a.machineId, idsMay)) throw khongThayTag(); // ngoài phạm vi = không tồn tại
           // LUẬT trước (FOR SHARE, mọi luật nhắm tag này, bật hay tắt), TAG sau (FOR UPDATE) — xem docstring.
           const luat = await khoaLuatNhamTagTx(tx, { adapterId: tag0.adapterId, tagKey: tag0.tagKey });
@@ -609,9 +608,7 @@ export const scadaKenhRouter = router({
                   ma: "INTERLOCK_NGOAI_DAI",
                   lyDo: vp.ma,
                   tagKey: tag.tagKey,
-                  min: soHienThi(sau.writeMin),
-                  max: soHienThi(sau.writeMax),
-                  step: soHienThi(sau.writeStep),
+                  ...thamSoNgoaiDaiInterlock(sau, vp), // R1b-1 T13 polish m1: lưới thật (bước / |scale|, gốc, goiY)
                   ruleId: vp.ruleId,
                 },
                 `Luật interlock đang bật #${vp.ruleId} (${vp.ruleName}) ghi một giá trị không ghi được với khai báo mới (${vp.chiTiet}).`,

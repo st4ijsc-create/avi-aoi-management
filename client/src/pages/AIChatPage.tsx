@@ -58,7 +58,8 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
+import { tuChoiTuLoiXacNhan } from "@/lib/loiXacNhanAi";
 import { cn } from "@/lib/utils";
 import MachineQuickScan from "@/components/MachineQuickScan";
 // doc69 B2 — unify the renderer with AILocalChatBubble/AILocalKnowledgeBase:
@@ -217,7 +218,8 @@ export default function AIChatPage() {
   // P3/W3.1 (doc 11) — HITL write-action confirm/cancel (SAME mutations the
   // bubble uses). The card only fires these on the user's explicit click; a
   // pending write is NEVER auto-executed.
-  const confirmActionMutation = trpc.aiCopilot.confirmAction.useMutation();
+  // onError rỗng: `handleConfirmAction` tự hiện lỗi (một toast) — không để lưới cuối của main.tsx thêm toast thứ hai.
+  const confirmActionMutation = trpc.aiCopilot.confirmAction.useMutation({ onError: () => undefined });
   const cancelActionMutation = trpc.aiCopilot.cancelAction.useMutation();
 
   // Save streamed messages to DB
@@ -443,8 +445,14 @@ export default function AIChatPage() {
             t("copilot.writePartial", "Áp MỘT PHẦN — một số tệp ĐÃ được ghi xuống đĩa, phần còn lại thì chưa. Kiểm bằng git diff trước khi làm tiếp."),
         );
       } else toast.error(res.message ?? t("copilot.failed", "Không thể thực thi."));
-    } catch {
-      toast.error(t("copilot.failed", "Không thể thực thi."));
+    } catch (err) {
+      // R1b-1 T10 fix round 1 (I-2) — AI không bao giờ ra lệnh mức ≥ 4: từ chối vĩnh viễn ⇒ đóng thẻ (denied) + câu đã dịch một lần.
+      const tuChoi = tuChoiTuLoiXacNhan(err);
+      if (tuChoi) {
+        setActionState(tuChoi.state);
+        setActionMessage(tuChoi.message);
+        toast.error(tuChoi.message);
+      } else toast.error(mapTrpcError(err));
     }
   }, [lastExtras, actionState, confirmActionMutation, i18n.language, t]);
 

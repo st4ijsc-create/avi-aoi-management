@@ -160,8 +160,14 @@ export function baoTrangThaiAdapter(
       b.trongDotMat = false;
       b.daPhatXau = false;
     }
-    if (tt === "lost" && truoc === "connected" && b.onDinhMs > 0 && thoiGianConnected >= b.onDinhMs) {
-      b.trongDotMat = false; // liên kết trước đó đã ổn định ⇒ đây là đợt mất MỚI
+    // Liên kết trước đó đã ổn định ⇒ đợt mất cũ KẾT THÚC; `lost` kế tiếp (ngay đây hoặc sau) là đợt MỚI. Xét lúc RỜI `connected` sang BẤT
+    // KỲ trạng thái nào (R1b-1 T3 fix round 1), không chỉ `lost`: cờ V2 bật, reset phiên legacy báo connected → connecting rồi phiên mới
+    // mới rớt (connecting → lost) — chỉ xét ở `lost` thì đợt mất cũ (có thể từ hàng giờ trước) không bao giờ đóng ⇒ không soLanMat+1,
+    // không loạt mẫu xấu (telemetry giữ giá trị tốt cuối — nguy cơ C1). Cờ V2 tắt: connected chỉ rời sang `lost` hoặc `disabled` (disabled
+    // vốn đã đóng đợt ở trên) — không có connected → connecting (attemptLegacyStart chỉ báo connecting khi chưa có/disabled; supervisor
+    // sau lần connected đầu chỉ phát reconnecting) ⇒ hành vi cờ tắt không đổi.
+    if (truoc === "connected" && tt !== "connected" && b.onDinhMs > 0 && thoiGianConnected >= b.onDinhMs) {
+      b.trongDotMat = false;
       b.daPhatXau = false;
     }
     if (tt === "lost" && !b.trongDotMat) {

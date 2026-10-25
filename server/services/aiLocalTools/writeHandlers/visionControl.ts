@@ -48,6 +48,7 @@ import {
   kiemCongAi,
   siriengChoAi,
   ketQuaTuChoiChoTool,
+  cauLechBuocChoAi,
   type KetQuaDispatchToiThieu,
 } from "../../ot/aiControlGate";
 import { mucKenhChoAi, preflightSafetyChoAi } from "../../ot/aiControlGate.safety";
@@ -202,11 +203,13 @@ async function runDispatch(
   const title = result.simulated
     ? w(ctx.lang, `[MÔ PHỎNG] ${args.commandType} cho máy #${args.machineId}`, `[SIMULATED] ${args.commandType} for machine #${args.machineId}`, `[模拟] 机器 #${args.machineId} 的 ${args.commandType}`)
     : w(ctx.lang, `${args.commandType} cho máy #${args.machineId}: ${result.status}`, `${args.commandType} for machine #${args.machineId}: ${result.status}`, `机器 #${args.machineId} 的 ${args.commandType}：${result.status}`);
+  // R1b-1 T13 — lệch lưới / lệch bước (OFF_STEP) ⇒ câu đã dịch của mã SCADA_VALUE_OFF_STEP (cùng câu HMI), cho người đọc thẻ và cho model.
+  const lechBuoc = result.ok ? null : cauLechBuocChoAi(ctx.lang, result);
   return {
     type: "action_result",
-    title,
+    title: lechBuoc ? `${title} — ${lechBuoc}` : title,
     data: result,
-    textSummary: `${args.commandType} → ${result.status}${result.reason ? ` (${result.reason})` : ""}`,
+    textSummary: `${args.commandType} → ${result.status}${result.reason ? ` (${result.reason})` : ""}${lechBuoc ? ` ${lechBuoc}` : ""}`,
     note: result.ok ? undefined : result.reason,
   };
 }

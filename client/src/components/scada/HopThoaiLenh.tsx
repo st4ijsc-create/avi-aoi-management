@@ -37,6 +37,7 @@ import { dinhDangGiaTri, dinhDangGiaTriChinhXac, dinhDangSo, phanTichDinhDang } 
 import {
   LIEN_KET_DANG_KY_2FA,
   conLaiTuLucNhan,
+  khoaGoiYStop,
   laTrangThaiKetQua,
   moTaLoiLenh,
   nhanKetQua,
@@ -84,10 +85,13 @@ export function ThongBaoLoiLenh({
   moTa,
   chiTiet,
   onDungGoiY,
+  coGhimStop,
 }: {
   moTa: MoTaLoi;
   chiTiet: string;
   onDungGoiY?: (goiY: number) => void;
+  /** R1b-1 T2 (ruling R-2) — máy có ghim STOP ⇒ gợi ý nút DỪNG MÁY; vắng/false ⇒ gợi ý E-STOP cứng */
+  coGhimStop?: boolean;
 }) {
   const { t } = useTranslation();
   const cau = cauLoiLenh(t, moTa, chiTiet);
@@ -99,7 +103,7 @@ export function ThongBaoLoiLenh({
       style={{ borderLeftColor: VIEN_TRUNG_TINH }}
     >
       <p className="font-medium">{cau}</p>
-      {moTa.goiYStop && <p>{t("scada.lenh.loi.goiYStop")}</p>}
+      {moTa.goiYStop && <p data-testid="goi-y-stop">{t(khoaGoiYStop(coGhimStop))}</p>}
       {moTa.lienKet2FA && (
         <p>
           <Link href={LIEN_KET_DANG_KY_2FA} className="font-medium underline underline-offset-2">
@@ -132,6 +136,8 @@ export interface HopThoaiLenhProps {
   edgeCode: string | null;
   /** lúc nhận phản hồi `request` (Date.now()); vắng ⇒ lúc hộp gắn — neo đồng hồ đếm (`conLaiTuLucNhan`) */
   nhanLuc?: number;
+  /** R1b-1 T2 (ruling R-2) — máy có ghim STOP (`scadaKenh.cheDo.danhSach`) ⇒ gợi ý MODE_LOCAL nói tới nút DỪNG MÁY */
+  coGhimStop?: boolean;
   onDong: () => void;
 }
 
@@ -146,7 +152,7 @@ function Truong({ k, nhan, children }: { k: string; nhan: string; children: Reac
   );
 }
 
-export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanLuc, onDong }: HopThoaiLenhProps) {
+export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanLuc, coGhimStop, onDong }: HopThoaiLenhProps) {
   const { t, i18n } = useTranslation();
   const donVi = useDonViThoiGian();
   const p: BanXemTruoc = yeuCau.preview;
@@ -391,7 +397,7 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanL
           </p>
         )}
 
-        {loi && <ThongBaoLoiLenh moTa={loi.moTa} chiTiet={loi.chiTiet} />}
+        {loi && <ThongBaoLoiLenh moTa={loi.moTa} chiTiet={loi.chiTiet} coGhimStop={coGhimStop} />}
 
         {pha === "ketQua" && ketQua && nhan && (
           <div
@@ -402,7 +408,7 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanL
           >
             <p className="font-medium">{t(nhan.khoa, nhan.thamSo)}</p>
             {ketQua.status === "simulated" && tenMoPhong && <p>{t("scada.lenh.ketQua.lyDoMoPhong", { lyDo: tenMoPhong })}</p>}
-            {nhan.goiYStop && <p>{t("scada.lenh.loi.goiYStop")}</p>}
+            {nhan.goiYStop && <p data-testid="goi-y-stop">{t(khoaGoiYStop(coGhimStop))}</p>}
             {(ketQua.status === "rejected" || ketQua.status === "failed") && (
               <p className="text-xs text-muted-foreground">{t("scada.lenh.ketQua.ma", { ma: nhan.thamSo.ma })}</p>
             )}

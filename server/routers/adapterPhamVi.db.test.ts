@@ -241,6 +241,28 @@ describe("★★★ GHI — nhà máy B KHÔNG ghi/xoá được hàng của nh�
     expect(await dem(sql`SELECT count(*)::int AS n FROM device_tags WHERE "adapterId" = ${ad.a}`)).toBe(truoc);
     expect((await dung(sql`SELECT unit FROM device_tags WHERE id = ${tag.a}`))[0].unit).toBeNull();
   });
+  it("★ kiem-dinh R1b-1 M6 — tags.update / tags.delete: tag NGOÀI phạm vi và tag KHÔNG TỒN TẠI trả lỗi GIỐNG HỆT (code + appCode + params) — không lộ id tag nhà máy khác", async () => {
+    const loi = async (chay: () => Promise<unknown>) => {
+      try {
+        await chay();
+      } catch (e) {
+        const x = e as { code?: string; cause?: { appCode?: string; appParams?: unknown } };
+        return { code: x.code, appCode: x.cause?.appCode, appParams: x.cause?.appParams };
+      }
+      throw new Error("mong đợi lỗi");
+    };
+    const [{ m }] = await dung(sql`SELECT COALESCE(max(id), 0)::int + 1000000 AS m FROM device_tags`);
+    const khongCo = Number(m);
+    const ngoaiSua = await loi(() => userB.deviceAdapter.tags.update({ id: tag.a, unit: "bị sửa" } as never));
+    const khongCoSua = await loi(() => userB.deviceAdapter.tags.update({ id: khongCo, unit: "bị sửa" } as never));
+    expect(ngoaiSua).toEqual(khongCoSua);
+    expect(ngoaiSua).toEqual({ code: "NOT_FOUND", appCode: "ENTITY_NOT_FOUND", appParams: { entity: "deviceTag" } });
+    const ngoaiXoa = await loi(() => userB.deviceAdapter.tags.delete({ id: tag.a }));
+    const khongCoXoa = await loi(() => userB.deviceAdapter.tags.delete({ id: khongCo }));
+    expect(ngoaiXoa).toEqual(khongCoXoa);
+    expect(ngoaiXoa).toEqual({ code: "NOT_FOUND", appCode: "ENTITY_NOT_FOUND", appParams: { entity: "deviceTag" } });
+    expect((await dung(sql`SELECT count(*)::int AS n FROM device_tags WHERE id = ${tag.a}`))[0].n).toBe(1);
+  });
   it("unsMapping.create / update / delete (adapter hoặc mapping của A) ⇒ NOT_FOUND, mapping nguyên vẹn", async () => {
     const truoc = await dem(sql`SELECT count(*)::int AS n FROM uns_tag_mappings WHERE "adapterId" = ${ad.a}`);
     expect(await maLoi(() => userB.unsMapping.create({ adapterId: ad.a, tag: "moi", unsTopic: "uns/x", enabled: true }))).toBe("NOT_FOUND");

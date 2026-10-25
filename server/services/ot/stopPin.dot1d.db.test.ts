@@ -31,6 +31,13 @@ vi.mock("../audit/controlAuditService", async (importOriginal) => {
   };
 });
 
+// kiem-dinh R1b-1 H1 a (2026-10-25) — setStopPin nay đòi TOTP tươi mức 5 (cổng có test riêng: deviceAdapterRouter.stopPinTotp.r1b.db.test.ts).
+// Tệp này kiểm NGỮ NGHĨA ghim ⇒ FIXTURE: mã luôn hợp lệ. Sàn vai ACTUATION của router vẫn chạy thật.
+vi.mock("../scada/totpCauHinh", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../scada/totpCauHinh")>()),
+  kiemTotpCauHinh: async () => undefined,
+}));
+
 import { deviceAdapterRouter } from "../../routers/deviceAdapterRouter";
 import { commissioningRouter } from "../../routers/commissioningRouter";
 import { resolvePermissionModule } from "@shared/permissions";

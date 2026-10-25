@@ -15,21 +15,29 @@
 import { sql } from "drizzle-orm";
 
 export const ADAPTER_OWNED_BY_EDGE = "ADAPTER_OWNED_BY_EDGE" as const;
-export type AdapterOwnerRefusal = { code: typeof ADAPTER_OWNED_BY_EDGE; detail: string; edgeNodeId: number };
+/** `edgeCode` (R1b-1 T10): mã node edge (`edge_nodes.code`); node không còn mã ⇒ chính id dạng chuỗi. Người gọi cũ bỏ qua nó. */
+export type AdapterOwnerRefusal = { code: typeof ADAPTER_OWNED_BY_EDGE; detail: string; edgeNodeId: number; edgeCode: string };
 
 type SqlTx = { execute: (q: unknown) => Promise<unknown>; transaction?: <T>(fn: (sp: SqlTx) => Promise<T>) => Promise<T> };
 const firstRows = (r: unknown): Array<Record<string, unknown>> =>
   Array.isArray(r) ? (r as Array<Record<string, unknown>>) : (((r as { rows?: unknown[] })?.rows ?? []) as Array<Record<string, unknown>>);
 
-export async function adapterOwnedByEdgeInTx(tx: unknown, adapterId: number, opts: { pinnedStop?: boolean } = {}): Promise<AdapterOwnerRefusal | null> {
-  if (opts.pinnedStop === true) return null; // L-7 — the verified stop is never gated
+async function docChuEdge(tx: unknown, adapterId: number, khoa: boolean): Promise<AdapterOwnerRefusal | null> {
   const t = tx as SqlTx;
   if (!t || typeof t.execute !== "function") return null;
-  const read = async (h: SqlTx) => firstRows(await h.execute(sql`SELECT "edgeNodeId" FROM public.device_adapters WHERE id = ${adapterId} FOR SHARE`));
+  // `FOR SHARE OF a`: chỉ khoá hàng ADAPTER (bên LEFT JOIN không-null-được của edge_nodes không được khoá — Postgres từ chối).
+  const read = async (h: SqlTx) =>
+    firstRows(
+      await h.execute(
+        khoa
+          ? sql`SELECT a."edgeNodeId" AS "edgeNodeId", n."code" AS "edgeCode" FROM public.device_adapters a LEFT JOIN public.edge_nodes n ON n."id" = a."edgeNodeId" WHERE a.id = ${adapterId} FOR SHARE OF a`
+          : sql`SELECT a."edgeNodeId" AS "edgeNodeId", n."code" AS "edgeCode" FROM public.device_adapters a LEFT JOIN public.edge_nodes n ON n."id" = a."edgeNodeId" WHERE a.id = ${adapterId}`,
+      ),
+    );
   let rows: Array<Record<string, unknown>>;
   try {
     // a savepoint keeps a "0374 missing" error from aborting the reservation transaction
-    rows = typeof t.transaction === "function" ? await t.transaction((sp) => read(sp)) : await read(t);
+    rows = khoa && typeof t.transaction === "function" ? await t.transaction((sp) => read(sp)) : await read(t);
   } catch (err) {
     const { isEdgeControlSchemaMissing } = await import("../edge/edgeControlSchema");
     if (isEdgeControlSchemaMissing(err)) return null;
@@ -38,5 +46,25 @@ export async function adapterOwnedByEdgeInTx(tx: unknown, adapterId: number, opt
   const owner = rows[0]?.edgeNodeId;
   if (owner === null || owner === undefined) return null;
   const node = Number(owner);
-  return { code: ADAPTER_OWNED_BY_EDGE, edgeNodeId: node, detail: `adapter ${adapterId} is owned by edge node ${node} — central does not write to it (the edge node is the only writer)` };
+  const ma = rows[0]?.edgeCode;
+  return {
+    code: ADAPTER_OWNED_BY_EDGE,
+    edgeNodeId: node,
+    edgeCode: typeof ma === "string" && ma !== "" ? ma : String(node),
+    detail: `adapter ${adapterId} is owned by edge node ${node} — central does not write to it (the edge node is the only writer)`,
+  };
+}
+
+export async function adapterOwnedByEdgeInTx(tx: unknown, adapterId: number, opts: { pinnedStop?: boolean } = {}): Promise<AdapterOwnerRefusal | null> {
+  if (opts.pinnedStop === true) return null; // L-7 — the verified stop is never gated
+  return docChuEdge(tx, adapterId, true);
+}
+
+/**
+ * R1b-1 T10 — the SAME owner read WITHOUT the row lock, for callers that hold no reservation transaction (the HMI pre-checks, the stop
+ * capability survey): a decision that is only displayed / pre-screened, the dispatcher re-reads under `FOR SHARE` at the write-ahead
+ * reservation. Same fail rules: 0374 missing ⇒ null; any other error is THROWN.
+ */
+export async function adapterOwnedByEdge(db: unknown, adapterId: number): Promise<AdapterOwnerRefusal | null> {
+  return docChuEdge(db, adapterId, false);
 }

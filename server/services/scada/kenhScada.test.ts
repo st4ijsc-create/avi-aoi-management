@@ -4,7 +4,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { canonicalOtValue } from "../ot/otActionBinding";
-import { kiemGiaTriGhi, laKenhGhi, loaiKenh, mucTacDongKenh, type KetQuaGiaTri } from "./kenhScada";
+import { inverseScale } from "../ot/drivers/otScale";
+import { canKiemLuoiThoChuaKhai, kiemGiaTriGhi, kiemLuoiThoChuaKhai, laKenhGhi, loaiKenh, mucTacDongKenh, type KetQuaGiaTri } from "./kenhScada";
 
 type KenhThu = {
   dataType: "bool" | "int" | "float" | "string" | "json";
@@ -335,5 +336,136 @@ describe("kiem-dinh P1-3 — int có scale/offset: (v − offset)/scale phải N
   it("bool / string bỏ qua scale", () => {
     expect(tot(kiemGiaTriGhi({ ...kenh({ dataType: "bool" }), scale: 10 }, true))).toBe(true);
     expect(tot(kiemGiaTriGhi({ ...kenh({ dataType: "string" }), scale: 10 }, "x"))).toBe("x");
+  });
+});
+
+// R1b-1 T10 — Sparkplug B giao số nguyên 64 bit dưới dạng đối tượng kiểu Long ({low, high, unsigned} + toNumber()).
+// Dựng tay (duck-type), KHÔNG import thư viện long (chỉ là phụ thuộc bắc cầu).
+function giaLong(n: bigint, unsigned = false) {
+  const u = BigInt.asUintN(64, n);
+  const low = Number(BigInt.asIntN(32, u & 0xffffffffn));
+  const high = Number(BigInt.asIntN(32, u >> 32n));
+  return { low, high, unsigned, toNumber: () => Number(unsigned ? u : BigInt.asIntN(64, u)) };
+}
+describe("kiemGiaTriGhi — đối tượng kiểu Long (Sparkplug B 64 bit)", () => {
+  const i = kenh({ dataType: "int" });
+  const f = kenh({ dataType: "float" });
+  it("★ int: Long trong miền an toàn (cả dương, âm, unsigned) được nhận bằng đúng số", () => {
+    expect(tot(kiemGiaTriGhi(i, giaLong(12n)))).toBe(12);
+    expect(tot(kiemGiaTriGhi(i, giaLong(-7n)))).toBe(-7);
+    expect(tot(kiemGiaTriGhi(i, giaLong(4_000_000_000n, true)))).toBe(4_000_000_000);
+    expect(tot(kiemGiaTriGhi(i, giaLong(BigInt(Number.MAX_SAFE_INTEGER))))).toBe(Number.MAX_SAFE_INTEGER);
+  });
+  it("★ int: Long NGOÀI miền an toàn ⇒ TYPE_MISMATCH (thông điệp miền an toàn), không làm tròn lặng lẽ", () => {
+    for (const l of [giaLong(2n ** 53n), giaLong(-(2n ** 53n)), giaLong(2n ** 63n - 1n), giaLong(2n ** 64n - 1n, true)]) {
+      const r = loi(kiemGiaTriGhi(i, l));
+      expect(r.ma).toBe("TYPE_MISMATCH");
+      expect(r.chiTiet).toContain("an toàn");
+    }
+  });
+  it("float: Long an toàn được nhận; ngoài miền ⇒ TYPE_MISMATCH", () => {
+    expect(tot(kiemGiaTriGhi(f, giaLong(250n)))).toBe(250);
+    expect(loi(kiemGiaTriGhi(f, giaLong(2n ** 62n))).ma).toBe("TYPE_MISMATCH");
+  });
+  it("đối tượng KHÔNG đủ dấu hiệu Long (thiếu unsigned / toNumber không phải hàm / toNumber ném lỗi) ⇒ TYPE_MISMATCH", () => {
+    expect(loi(kiemGiaTriGhi(i, { low: 1, high: 0, toNumber: () => 1 })).ma).toBe("TYPE_MISMATCH");
+    expect(loi(kiemGiaTriGhi(i, { low: 1, high: 0, unsigned: false, toNumber: 1 })).ma).toBe("TYPE_MISMATCH");
+    expect(loi(kiemGiaTriGhi(i, { low: 1, high: 0, unsigned: false, toNumber: () => { throw new Error("x"); } })).ma).toBe("TYPE_MISMATCH");
+    expect(loi(kiemGiaTriGhi(i, { low: "1", high: 0, unsigned: false, toNumber: () => 1 })).ma).toBe("TYPE_MISMATCH");
+  });
+  it("★ M-1 — toNumber() NÓI DỐI so với low/high ⇒ TYPE_MISMATCH (cả hai kênh); khớp thì nhận", () => {
+    const that = giaLong(12n);
+    expect(tot(kiemGiaTriGhi(i, that))).toBe(12);
+    expect(loi(kiemGiaTriGhi(i, { ...that, toNumber: () => 5 })).ma).toBe("TYPE_MISMATCH"); // low/high nói 12, toNumber nói 5
+    expect(loi(kiemGiaTriGhi(f, { ...that, toNumber: () => 5 })).ma).toBe("TYPE_MISMATCH");
+    expect(loi(kiemGiaTriGhi(i, { ...that, toNumber: () => 12.5 })).ma).toBe("TYPE_MISMATCH");
+    // toNumber nói "an toàn" nhưng low/high là số khổng lồ ⇒ tin low/high ⇒ ngoài miền an toàn
+    const lon = giaLong(2n ** 62n);
+    const r = loi(kiemGiaTriGhi(i, { ...lon, toNumber: () => 7 }));
+    expect(r.ma).toBe("TYPE_MISMATCH");
+    expect(r.chiTiet).toContain("an toàn");
+    // low/high không phải số nguyên
+    expect(loi(kiemGiaTriGhi(i, { low: 1.5, high: 0, unsigned: false, toNumber: () => 1.5 })).ma).toBe("TYPE_MISMATCH");
+    expect(loi(kiemGiaTriGhi(i, { low: 1, high: Number.NaN, unsigned: false, toNumber: () => 1 })).ma).toBe("TYPE_MISMATCH");
+  });
+  it("M-1 — Long 0 mà toNumber() trả -0 ⇒ nhận (BigInt không có -0), kết quả là +0; âm / unsigned khớp bù hai", () => {
+    const khong = { ...giaLong(0n), toNumber: () => -0 };
+    const v = tot(kiemGiaTriGhi(i, khong));
+    expect(Object.is(v, 0)).toBe(true);
+    expect(tot(kiemGiaTriGhi(i, giaLong(-1n)))).toBe(-1);
+    expect(tot(kiemGiaTriGhi(i, giaLong(-(2n ** 40n))))).toBe(-(2 ** 40));
+    // cùng bit 0xFFFFFFFF.. nhưng unsigned ⇒ 2^64−1 ⇒ ngoài miền; signed ⇒ −1
+    expect(loi(kiemGiaTriGhi(i, giaLong(2n ** 64n - 1n, true))).ma).toBe("TYPE_MISMATCH");
+  });
+  it("Long vẫn chịu dải + bước của kênh", () => {
+    const k = kenh({ dataType: "int", writeMin: 0, writeMax: 100, writeStep: 5 });
+    expect(tot(kiemGiaTriGhi(k, giaLong(50n)))).toBe(50);
+    expect(loi(kiemGiaTriGhi(k, giaLong(101n))).ma).toBe("OUT_OF_RANGE");
+  });
+});
+
+describe("R1b-1 T13 — tag int CHƯA khai có scale/offset: lưới thô kiểm trên Number(giá trị) như inverseScale, giá trị KHÔNG bị ép kiểu", () => {
+  const i10 = { dataType: "int" as const, scale: "10.000000", offset: "0.000000" };
+  it("canKiemLuoiThoChuaKhai: chỉ int có scale ≠ 1 hoặc offset ≠ 0 (NULL / 0 như driver)", () => {
+    expect(canKiemLuoiThoChuaKhai(i10)).toBe(true);
+    expect(canKiemLuoiThoChuaKhai({ dataType: "int", scale: 1, offset: 5 })).toBe(true);
+    expect(canKiemLuoiThoChuaKhai({ dataType: "int", scale: "1.000000", offset: "0.000000" })).toBe(false);
+    expect(canKiemLuoiThoChuaKhai({ dataType: "int", scale: null, offset: null })).toBe(false);
+    expect(canKiemLuoiThoChuaKhai({ dataType: "int", scale: "0", offset: null })).toBe(false); // driver: scale 0 ⇒ 1
+    expect(canKiemLuoiThoChuaKhai({ dataType: "float", scale: 10, offset: 0 })).toBe(false);
+    expect(canKiemLuoiThoChuaKhai({ dataType: "bool", scale: 10, offset: 0 })).toBe(false);
+  });
+  it("scale 10: 30 ⇒ ok, giá trị NGUYÊN VẸN; 25 ⇒ OFF_STEP goiY 30 buoc 10", () => {
+    expect(tot(kiemLuoiThoChuaKhai(i10, 30))).toBe(30);
+    const r = loi(kiemLuoiThoChuaKhai(i10, 25));
+    expect(r).toMatchObject({ ma: "OFF_STEP", goiY: 30, buoc: 10 });
+  });
+  it('chuỗi KHÔNG ép kiểu: "30" ⇒ ok trả lại CHUỖI "30"; "25" ⇒ OFF_STEP (Number("25") như driver)', () => {
+    expect(tot(kiemLuoiThoChuaKhai(i10, "30"))).toBe("30");
+    expect(loi(kiemLuoiThoChuaKhai(i10, "25")).goiY).toBe(30);
+  });
+  it("true ⇒ Number(true) = 1 ⇒ OFF_STEP goiY 0 (driver ghi raw 0 — ngược ý định); false ⇒ 0 ⇒ ok", () => {
+    expect(loi(kiemLuoiThoChuaKhai(i10, true)).goiY).toBe(0);
+    expect(tot(kiemLuoiThoChuaKhai(i10, false))).toBe(false);
+  });
+  it("không hữu hạn (\"abc\", đối tượng) ⇒ không phải chuyện làm tròn ⇒ ok nguyên vẹn (hành vi cũ)", () => {
+    expect(tot(kiemLuoiThoChuaKhai(i10, "abc"))).toBe("abc");
+    const o = { a: 1 };
+    expect(tot(kiemLuoiThoChuaKhai(i10, o as never))).toBe(o);
+  });
+  it("scale 0.5: 2.5 ⇒ ok (raw 5 — tag chưa khai không đòi số nguyên); 2.7 ⇒ OFF_STEP goiY 2.5 (gợi ý KHÔNG bị bỏ vì không nguyên)", () => {
+    const k = { dataType: "int" as const, scale: 0.5, offset: 0 };
+    expect(tot(kiemLuoiThoChuaKhai(k, 2.5))).toBe(2.5);
+    expect(loi(kiemLuoiThoChuaKhai(k, 2.7))).toMatchObject({ ma: "OFF_STEP", goiY: 2.5, buoc: 0.5 });
+  });
+  it("scale 0.1: 0.3 ⇒ ok (nhiễu dấu phẩy động 2.9999999999999996 KHÔNG bị coi là lệch lưới)", () => {
+    expect(tot(kiemLuoiThoChuaKhai({ dataType: "int", scale: 0.1, offset: 0 }, 0.3))).toBe(0.3);
+  });
+  it("scale 1 / offset 0, float, bool ⇒ không kiểm (2.5 vẫn đi nguyên — ngoài phạm vi T13)", () => {
+    expect(tot(kiemLuoiThoChuaKhai({ dataType: "int", scale: 1, offset: 0 }, 2.5))).toBe(2.5);
+    expect(tot(kiemLuoiThoChuaKhai({ dataType: "float", scale: 10, offset: 0 }, 25))).toBe(25);
+  });
+  it("offset 1 scale 2: 4 ⇒ OFF_STEP goiY 5 ((4−1)/2 = 1.5 ⇒ Math.round 2 ⇒ 5); 5 ⇒ ok", () => {
+    const k = { dataType: "int" as const, scale: "2", offset: "1" };
+    expect(loi(kiemLuoiThoChuaKhai(k, 4))).toMatchObject({ goiY: 5, buoc: 2 });
+    expect(tot(kiemLuoiThoChuaKhai(k, 5))).toBe(5);
+  });
+});
+
+describe("R1b-1 T13 polish m3 — tag int CHƯA khai: scale ÂM và offset ÂM (đúng lưới ⇒ ok + raw đúng; lệch ⇒ OFF_STEP + goiY đúng)", () => {
+  it("scale −10: 30 ⇒ ok, raw −3; 25 ⇒ OFF_STEP goiY 20 (driver: round(−2.5) = −2 ⇒ 20 — đúng giá trị driver từng ghi im lặng), buoc 10, gocLuoi 0", () => {
+    const k = { dataType: "int" as const, scale: "-10.000000", offset: "0.000000" };
+    expect(tot(kiemLuoiThoChuaKhai(k, 30))).toBe(30);
+    expect(inverseScale(30, "int", -10, 0)).toBe(-3);
+    expect(loi(kiemLuoiThoChuaKhai(k, 25))).toMatchObject({ ma: "OFF_STEP", goiY: 20, buoc: 10, gocLuoi: 0 });
+    expect(inverseScale(25, "int", -10, 0)).toBe(-2); // = raw của goiY 20
+    expect(loi(kiemLuoiThoChuaKhai(k, -35)).goiY).toBe(-40); // round(3.5) = 4 ⇒ −40
+  });
+  it("offset −5, scale 10: 25 ⇒ ok, raw 3; 20 ⇒ OFF_STEP goiY 25 (round(2.5) = 3 ⇒ 25), buoc 10, gocLuoi −5", () => {
+    const k = { dataType: "int" as const, scale: "10.000000", offset: "-5.000000" };
+    expect(tot(kiemLuoiThoChuaKhai(k, 25))).toBe(25);
+    expect(inverseScale(25, "int", 10, -5)).toBe(3);
+    expect(loi(kiemLuoiThoChuaKhai(k, 20))).toMatchObject({ ma: "OFF_STEP", goiY: 25, buoc: 10, gocLuoi: -5 });
+    expect(inverseScale(20, "int", 10, -5)).toBe(3); // = raw của goiY 25
   });
 });

@@ -5,8 +5,15 @@
  *
  * CSDL `_test` THẬT; người dùng qua `taoNguoiDungTest`; oracle là SELECT thô. `control_audit_log` là WORM (lọc theo lý do của lượt).
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sql } from "drizzle-orm";
+
+// kiem-dinh R1b-1 H1 a (2026-10-25) — setStopPin nay đòi TOTP tươi mức 5 (cổng có test riêng: deviceAdapterRouter.stopPinTotp.r1b.db.test.ts).
+// Tệp này kiểm dải / bước của ghim ⇒ FIXTURE: mã luôn hợp lệ. Sàn vai ACTUATION của router vẫn chạy thật.
+vi.mock("../scada/totpCauHinh", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../scada/totpCauHinh")>()),
+  kiemTotpCauHinh: async () => undefined,
+}));
 import { getDb } from "../../db/connection";
 import { taoNguoiDungTest } from "../../testing/nguoiDungTest";
 import { deviceAdapterRouter } from "../../routers/deviceAdapterRouter";

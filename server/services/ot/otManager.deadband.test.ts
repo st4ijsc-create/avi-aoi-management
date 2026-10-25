@@ -217,3 +217,45 @@ describe("G1.4 — shouldForwardSample (pure) edge cases", () => {
     expect(shouldForwardSample({ deadband: Number.NaN }, { ...prev }, { value: 10, quality: "good" }, now, 60_000)).toBe(true);
   });
 });
+
+/**
+ * SCADA R1b-1 T1 — GHIM nhịp tim mặc định: KHÔNG đặt DEADBAND_HEARTBEAT_MS (mã thật, không ghi đè env).
+ * Bộ đệm giá trị hiện tại (`boDemHienTai.NGUONG_DEADBAND_MS` = 70 s) chỉ đúng khi nhịp tim < 70 s; test cạnh nó
+ * (`scada/boDemHienTai.deadband.r1b.test.ts`) ghim nửa kia.
+ */
+describe("R1b-1 T1 — nhịp tim deadband MẶC ĐỊNH (không env) = 60 000 ms đúng", () => {
+  beforeEach(() => {
+    process.env.OT_TAG_DEADBAND_ENABLED = "true";
+    delete process.env.DEADBAND_HEARTBEAT_MS;
+  });
+
+  it("giá trị đứng yên: 59 999 ms CHƯA chuyển tiếp, 60 000 ms chuyển tiếp lại", () => {
+    expect(process.env.DEADBAND_HEARTBEAT_MS).toBeUndefined();
+    const next = vi.fn();
+    const sink = makeDeadbandSink(makeAdapter(), next);
+    sink(sample("pressure", 100)); // đầu tiên → forward
+    expect(next).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(59_999);
+    sink(sample("pressure", 100));
+    expect(next).toHaveBeenCalledTimes(1); // chưa tới nhịp tim
+    vi.advanceTimersByTime(1); // đúng 60 000 ms kể từ lần forward
+    sink(sample("pressure", 100));
+    expect(next).toHaveBeenCalledTimes(2);
+  });
+
+  it("nhịp tim đo từ lần FORWARD gần nhất, không từ mẫu bị chặn: chuỗi 60 s đều đặn", () => {
+    const next = vi.fn();
+    const sink = makeDeadbandSink(makeAdapter(), next);
+    sink(sample("pressure", 100));
+    // mẫu 1 s/lần trong 10 phút, giá trị không đổi ⇒ đúng 1 + 10 lần forward (mỗi 60 s)
+    for (let s = 1; s <= 600; s++) {
+      vi.advanceTimersByTime(1000);
+      sink(sample("pressure", 100));
+    }
+    expect(next).toHaveBeenCalledTimes(11);
+  });
+
+  it("nhịp tim mặc định < 70 s (ngưỡng stale deadband của bộ đệm)", () => {
+    expect(deadbandHeartbeatMs()).toBeLessThan(70_000);
+  });
+});

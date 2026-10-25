@@ -137,6 +137,25 @@ function operationStatusToPackml(status: string): string {
   }
 }
 
+/** Robot-family adapter kinds — the ONLY kinds `POST /equipment/:id/commands` still serves (R1b-1 T5, D8). */
+function isRobotAdapterKind(kind: string): boolean {
+  return kind === "robot" || kind === "vda5050";
+}
+
+/**
+ * Robot-ness is decided from the machine's OWN `machineType` default profile, NEVER from the per-machine
+ * `capabilities` jsonb override (mergeCapability accepts any `adapterKind` string there): an OT machine
+ * spoofing `{"adapterKind":"robot"}` must not reach the robot dispatcher, and a real robot with an `ot-*`
+ * override must keep its REST abort/e_stop (R1b-1 T5 fix round 1). Returns the default adapter kind.
+ */
+function defaultAdapterKind(m: MachineRow): string {
+  return getCapabilitiesForMachine(m.machineType).adapterKind;
+}
+
+/** 501 body message for any non-robot command over REST v1 (R1b-1 T5, D8). */
+const OT_REST_501_MESSAGE =
+  "Lệnh OT qua REST v1 không được hỗ trợ — dùng HMI SCADA (scadaCommands) hoặc STOP ghim. Xem docs/ECOSYSTEM/ADAPTER_SDK.md.";
+
 /**
  * Build the EquipmentCommand envelope for the dispatcher from a capability command
  * + the request body args. Translates known verbs into the dispatcher's `writes`
@@ -145,13 +164,12 @@ function operationStatusToPackml(status: string): string {
  */
 function buildCommand(
   descriptor: CommandDescriptor,
-  capability: EquipmentCapability,
+  isRobot: boolean,
   machineId: number,
   args: Record<string, unknown>,
   idempotencyKey: string,
   principalName: string,
 ): EquipmentCommand {
-  const isRobot = capability.adapterKind === "robot" || capability.adapterKind === "vda5050";
   const cmd: EquipmentCommand = {
     name: descriptor.name,
     machineId,
@@ -347,11 +365,19 @@ export function createV1Router(): Router {
           supported: capability.supportedCommands.map((c) => c.name),
         });
       }
+      // SCADA R1b-1 Task 5 (D8) — lệnh KHÔNG phải robot (OT/PLC/vision/mtconnect/...) KHÔNG đi REST v1: 501 TRƯỚC
+      // idempotencyKey/buildCommand/dispatcher ⇒ không hàng command_log, không ghi thiết bị, không webhook.
+      // Đường robot (abort/e_stop — robotStopExempt, robotAbortNeverOrder) giữ nguyên; cùng bộ phân biệt với buildCommand.
+      const routedKind = defaultAdapterKind(m); // machineType default profile, ignores capabilities override
+      const isRobot = isRobotAdapterKind(routedKind);
+      if (!isRobot) {
+        throw new ApiHttpError(501, "not_implemented", OT_REST_501_MESSAGE);
+      }
       const args = (body.args ?? {}) as Record<string, unknown>;
       const idempotencyKey = body.idempotencyKey?.trim() || nanoid();
       const command = buildCommand(
         descriptor,
-        capability,
+        isRobot,
         m.id,
         args,
         idempotencyKey,
@@ -359,7 +385,7 @@ export function createV1Router(): Router {
       );
 
       // ROUTE THROUGH THE EXISTING HITL DISPATCHER (honours the dry-run gate).
-      const adapter = equipmentRegistry.getAdapter(capability.adapterKind);
+      const adapter = equipmentRegistry.getAdapter(routedKind as never);
       const result = await adapter.sendCommand(command);
 
       // Outbound webhook (flag-gated, fail-safe — never blocks the response).

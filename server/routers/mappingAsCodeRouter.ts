@@ -16,6 +16,10 @@
  *     config-drift baseline. Import KHÔNG restart adapter — trả cờ
  *     `requiresAdapterRestart` cho người vận hành.
  *   - KHÔNG có đường ghi xuống thiết bị ở đây (config-only, như deviceAdapterRouter).
+ *   - SCADA R1b-1 Task 9 (+ fix round 1–3): lô đụng tag ĐƯỢC BẢO VỆ (định nghĩa T9 r3, services/scada/troLaiKenh.ts: đã khai / kênh chế độ /
+ *     ĐÍCH hoặc NGUỒN telemetry của luật interlock không-alert ĐANG BẬT HOẶC ĐÃ DUYỆT) — trỏ lại (address/scale/offset/dataType/writable/
+ *     tagKey/adapterId), tạo lên khoá mồ côi, hoặc prune — ⇒ `totpCode` tươi (mức 5, `kiemTotpCauHinh`), MỘT mã cho cả lô, trần 200 tag được
+ *     bảo vệ, kiểm lại nhất quán từng tag (cả lô hoặc không gì; diff tính lại TRONG giao dịch) — nhóm giới hạn "2fa".
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
@@ -33,6 +37,7 @@ import {
   MappingImportError,
   MappingValidationError,
 } from "../services/ot/mappingAsCode";
+import { kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
 
 /** Giới hạn kích thước YAML upload (1 MiB) — file mapping thật cỡ vài KB. */
 const yamlInput = z.string().min(1).max(1_048_576);
@@ -133,8 +138,10 @@ export const mappingAsCodeRouter = router({
    */
   // Tên KHÔNG được là `apply` — reserved trên callable proxy của tRPC router
   // (đụng Function.prototype.apply) → vỡ appRouter khi load.
+  // SCADA R1b-1 Task 9 — lô trỏ lại ≥ 1 tag ĐÃ KHAI kênh ⇒ MỘT mã TOTP tươi (`totpCode`, mức 5) cho cả lô; trần 200 tag đã khai / lô;
+  // hỏng nhất quán một tag ⇒ cả lô bị từ chối (service `importMapping`, `services/scada/troLaiKenh.ts`). Lô chỉ đụng tag chưa khai ⇒ như cũ.
   applyImport: adminProcedure
-    .input(z.object({ yaml: yamlInput, prune: z.boolean().default(false) }))
+    .input(z.object({ yaml: yamlInput, prune: z.boolean().default(false), totpCode: totpCauHinhInput }))
     .mutation(async ({ input, ctx }) => {
       await kiemPhamViYaml(ctx, input.yaml);
       try {
@@ -144,6 +151,7 @@ export const mappingAsCodeRouter = router({
           actorId: ctx.user.id,
           actorName: actorName(ctx.user as { username?: string | null; name?: string | null }),
           source: "trpc",
+          xacThucKenhDaKhai: () => kiemTotpCauHinh(ctx, input.totpCode),
         });
       } catch (err) {
         throw toTrpcError(err);

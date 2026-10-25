@@ -2,7 +2,7 @@
  * SCADA R1a Task 4 (K2 / D3) — CHẾ ĐỘ MÁY: LOCAL hay REMOTE, suy từ kênh chế độ đã khai (`scada_kenh_che_do`) + bộ đệm giá trị hiện tại.
  *
  * REMOTE **chỉ khi** TẤT CẢ đúng: máy đã khai kênh chế độ, adapter của kênh CÒN thuộc máy này và đang bật, bộ đệm bật, có mẫu cho
- * (adapter, tag) của đúng máy này, `q === "good"`, `!stale`, và giá trị (ép kiểu theo `dataType` của tag chế độ, cùng luật
+ * (adapter, tag) của đúng máy này, `q === "good"`, `!stale` VÀ tuổi ≤ `min(3·poll, 30 s)` (R1b-1 T10b N5), và giá trị (ép kiểu theo `dataType` của tag chế độ, cùng luật
  * `kiemGiaTriGhi`) có dạng canonical (`canonicalOtValue`) bằng `gia_tri_remote`. Mọi trường hợp khác là LOCAL kèm `lyDo` (fail-closed).
  * Hàm KHÔNG BAO GIỜ ném: lỗi đọc DB / db không có / lỗi đọc bộ đệm ⇒ LOCAL `loi_doc`.
  *
@@ -17,8 +17,22 @@ import { and, eq } from "drizzle-orm";
 import { deviceAdapters, deviceTags, scadaKenhCheDo, type DeviceTag } from "../../../drizzle/schema";
 import { getDb } from "../../db/connection";
 import { canonicalOtValue } from "../ot/otActionBinding";
-import { boDemDangBat, layGiaTri } from "./boDemHienTai";
+import { boDemDangBat, layGiaTri, POLL_MAC_DINH_MS, thongTinAdapter } from "./boDemHienTai";
 import { kiemGiaTriGhi } from "./kenhScada";
+
+/**
+ * SCADA R1b-1 T10b (N5, phán quyết T9 N5) — TUỔI TỐI ĐA TUYỆT ĐỐI của mẫu kênh chế độ được tin là REMOTE, độc lập với nhịp poll.
+ * Cờ `stale` của bộ đệm = `max(3·poll, deadband ? 70 s : 0)`; `pollIntervalMs` đặt được tới 1 h KHÔNG cần TOTP ⇒ một mẫu REMOTE 3 h tuổi
+ * vẫn "tươi" trong khi bộ chọn thật đã về LOCAL. Cổng chế độ dùng `min(3·poll, 30 s)` (`nguongTuoiCheDoMs`): mẫu cũ hơn ⇒ LOCAL `cu`
+ * (fail-closed, cùng lyDo với `stale`). KHÔNG đặt TOTP cho pollIntervalMs (phán quyết).
+ */
+export const TUOI_MAU_CHE_DO_TOI_DA_MS = 30_000;
+
+/** Ngưỡng tuổi (ms) của mẫu kênh chế độ: `min(3·poll, TUOI_MAU_CHE_DO_TOI_DA_MS)`; poll không hợp lệ ⇒ poll mặc định của bộ đệm. */
+export function nguongTuoiCheDoMs(pollMs: number | null | undefined): number {
+  const poll = typeof pollMs === "number" && Number.isFinite(pollMs) && pollMs > 0 ? pollMs : POLL_MAC_DINH_MS;
+  return Math.min(3 * poll, TUOI_MAU_CHE_DO_TOI_DA_MS);
+}
 
 export type LyDoCheDo =
   | "remote"
@@ -39,6 +53,18 @@ export type CheDo = {
 
 /** Tool của lệnh ghi từ HMI SCADA (R1a Task 8/9): cổng chế độ LUÔN chạy cho nó, bất kể cờ. */
 export const TOOL_HMI_GHI_TAG = "hmi.write_tag";
+
+/**
+ * SCADA R1b-1 Task 2 — tool của STOP HMI một bước (`scadaCommands.dungMay`): ghi ĐÚNG các giá trị DỪNG đã ghim của adapter. Cổng chế độ
+ * của `dispatch()` cũng LUÔN chạy cho nó (như `hmi.write_tag`); một STOP khớp ghim được miễn theo DỮ LIỆU (3c), một payload khác thì không.
+ * KHÔNG có trong registry tool AI; lõi `confirmAction` từ chối mọi `hmi.*`.
+ */
+export const TOOL_HMI_STOP = "hmi.stop";
+
+/** Tool HMI mà cổng chế độ của `dispatch()` luôn xét (bất kể `SCADA_CONG_CHE_DO_ENABLED`). */
+export function laToolHmiCongCheDo(tool: string | undefined): boolean {
+  return tool === TOOL_HMI_GHI_TAG || tool === TOOL_HMI_STOP;
+}
 
 /** Cổng K2 trong `dispatch()` cho người gọi KHÔNG phải HMI (mặc định OFF). */
 export function congCheDoBat(): boolean {
@@ -101,7 +127,9 @@ export async function cheDoMay(machineId: number | null, now: number = Date.now(
     // Máy hiệu lực của mục bộ đệm (đăng ký OT trong tiến trình) phải là máy này — đăng ký chưa theo kịp việc chuyển máy ⇒ không tin.
     if (g.machineId !== machineId) return local("kenh_sai_may");
     if (g.q !== "good") return local("chat_luong_xau");
-    if (g.stale) return local("cu");
+    // N5 — `stale` của bộ đệm (max(3·poll, …)) HOẶC quá ngưỡng tuổi kẹp của cổng chế độ (min(3·poll, 30 s)); poll = poll ĐANG CHẠY của
+    // adapter (đăng ký OT trong tiến trình — cùng nguồn với cờ stale), chưa đăng ký ⇒ mặc định.
+    if (g.stale || g.ageMs > nguongTuoiCheDoMs(thongTinAdapter(hang.adapterId)?.pollMs)) return local("cu");
     if (g.v === null || g.v === undefined) return local("khac_remote");
     const giaTri = canonicalOtValue(epTheoKieu(hang.dataType, g.v));
     const remote = canonicalOtValue(epTheoKieu(hang.dataType, hang.giaTriRemote));
