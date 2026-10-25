@@ -6,7 +6,7 @@ Mỗi tệp `*.json` ở đây là MỘT kịch bản chạy bằng ĐỘNG CƠ 
 npx vitest run server/services/flow/kichBan
 ```
 
-Thêm kịch bản = thả một tệp JSON mới vào thư mục này (không sửa mã). Định dạng — xem docblock của `chayKichBan.ts`:
+Thêm kịch bản = thả một tệp JSON mới vào thư mục này (không sửa mã). Bộ chạy nằm TRONG `kichBan.db.test.ts` (không phải mã sản phẩm — census cửa vào lượt / quyền duyệt không thấy); định dạng xem docblock ở đầu bộ chạy trong tệp đó:
 
 | khoá | ý nghĩa |
 |---|---|
