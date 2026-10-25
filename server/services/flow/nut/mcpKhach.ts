@@ -19,6 +19,14 @@ export const TRAN_ITEM_MCP = 20;
 export const TRAN_THAN_MCP = 1024 * 1024;
 export const TRAN_DOI_SO_MCP = 64 * 1024;
 export const TRAN_MS_MCP = 30_000;
+/** HẠN TỔNG cho cả lượt-node (mọi item cộng lại) — mặc định 120 s, đặt bằng env `AI_FLOW_MCP_TONG_MS` (1 000 … 600 000). */
+export const TONG_MS_MCP_MAC_DINH = 120_000;
+export function tongMsMcp(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.AI_FLOW_MCP_TONG_MS);
+  return Number.isInteger(n) && n >= 1 && n <= 600_000 ? n : TONG_MS_MCP_MAC_DINH;
+}
+/** Độ sâu JSON tối đa của kết quả tool (chống bom lồng nhau làm RangeError lúc động cơ stringify SAU khi tool đã chạy). */
+export const SAU_TOI_DA_MCP = 32;
 export const TRAN_CHU_NOI_DUNG_MCP = 100_000;
 export const RE_TEN_MAY_CHU_MCP = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 export const RE_TEN_TOOL_MCP = /^[A-Za-z0-9_.-]{1,64}$/;
@@ -93,7 +101,20 @@ export function timPhanHoiJsonRpc(chu: string, kieu: string, id: number): { resu
 type HamGuiMcp = (url: URL, init: RequestInit, dich: DichDen) => Promise<Response>;
 
 /** Rút văn bản + cấu trúc từ kết quả `tools/call`. DỮ LIỆU — chỉ cắt/đóng gói, không diễn giải. */
+/** Độ sâu lồng của một giá trị JSON — LẶP (ngăn xếp tường minh), không đệ quy; dừng sớm khi vượt `tran`. */
+export function doSauVuot(v: unknown, tran: number): boolean {
+  const ngan: Array<[unknown, number]> = [[v, 1]];
+  while (ngan.length) {
+    const [x, d] = ngan.pop()!;
+    if (!x || typeof x !== "object") continue;
+    if (d > tran) return true;
+    for (const con of Array.isArray(x) ? x : Object.values(x as Record<string, unknown>)) ngan.push([con, d + 1]);
+  }
+  return false;
+}
+
 export function gonKetQuaTool(res: unknown, tool: string): { noiDung: string; cauTruc: unknown } {
+  if (doSauVuot(res, SAU_TOI_DA_MCP)) throw new LoiMcp(`MCP tool '${tool}': kết quả lồng quá ${SAU_TOI_DA_MCP} cấp`, "MCP_PHAN_HOI_SAI");
   const r = (res && typeof res === "object" ? res : {}) as { content?: unknown; isError?: unknown; structuredContent?: unknown };
   const phan = Array.isArray(r.content) ? r.content : [];
   const chu = phan
@@ -107,7 +128,7 @@ export function gonKetQuaTool(res: unknown, tool: string): { noiDung: string; ca
   return { noiDung: chu, cauTruc: r.structuredContent ?? null };
 }
 
-async function goiMotLan(tenMay: string, may: MayChuMcp, tool: string, doiSo: Record<string, unknown>, ngu: NguCanhChay, kieuXacThuc: unknown): Promise<{ noiDung: string; cauTruc: unknown }> {
+async function goiMotLan(tenMay: string, may: MayChuMcp, tool: string, doiSo: Record<string, unknown>, ngu: NguCanhChay, kieuXacThuc: unknown, msToiDa: number): Promise<{ noiDung: string; cauTruc: unknown }> {
   const xacThuc = tieuDeXacThuc(kieuXacThuc, ngu.biMat);
   const biMat = ngu.biMat;
   // Bí mật chỉ đi tới host NÓ KHAI (như node HTTP): chưa khai ⇒ chưa dùng được.
@@ -121,7 +142,7 @@ async function goiMotLan(tenMay: string, may: MayChuMcp, tool: string, doiSo: Re
   const choPhep = new Set([may.noiBo ? `${may.url.hostname.toLowerCase()}:${congHT}` : may.url.hostname.toLowerCase()]);
   const dich = await kiemDichDen(may.url, choPhep);
   const gui = layFetchLuong() as HamGuiMcp;
-  const tinHieu = AbortSignal.timeout(TRAN_MS_MCP);
+  const tinHieu = AbortSignal.timeout(Math.max(1, Math.min(TRAN_MS_MCP, msToiDa)));
   let phien: string | undefined;
   const post = async (body: unknown, themTieuDe: Record<string, string> = {}): Promise<Response> => {
     const tieuDe: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...themTieuDe };
@@ -146,7 +167,8 @@ async function goiMotLan(tenMay: string, may: MayChuMcp, tool: string, doiSo: Re
     const kq = await rpc(2, "tools/call", { name: tool, arguments: doiSo }, { "Idempotency-Key": ngu.idempotencyKey });
     return gonKetQuaTool(kq, tool);
   } catch (e) {
-    if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) throw new LoiMcp(`MCP quá ${TRAN_MS_MCP / 1000} giây — dừng chờ`, "MCP_HET_GIO");
+    // Hết giờ có thể hiện ra ở bất kỳ bước nào (kể cả đang đọc thân phản hồi, khi lỗi là 'aborted' chung) ⇒ nhìn vào TÍN HIỆU, không đoán theo tên lỗi.
+    if (tinHieu.aborted || (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError"))) throw new LoiMcp(`MCP quá hạn (${Math.round(Math.min(TRAN_MS_MCP, msToiDa) / 1000)} giây cho lời gọi này) — dừng chờ`, "MCP_HET_GIO");
     throw e;
   }
 }
@@ -173,12 +195,15 @@ dangKyNut({
     if (!may) throw new LoiMcp(`máy chủ MCP '${tenMay}' không có trong AI_FLOW_MCP_CHO_PHEP`, "MCP_MAY_CHU_CHUA_KHAI");
     if (!may.tools.has(tool)) throw new LoiMcp(`tool '${tool}' không có trong danh sách của máy chủ MCP '${tenMay}'`, "MCP_TOOL_CHUA_KHAI");
     const ra: ItemLuong[] = [];
+    const han = Date.now() + tongMsMcp();
     for (const item of vao) {
+      const conLai = han - Date.now();
+      if (conLai <= 0) throw new LoiMcp(`MCP vượt HẠN TỔNG ${Math.round(tongMsMcp() / 1000)} giây cho cả lượt-node (đã xử lý ${ra.length}/${vao.length} item)`, "MCP_HET_GIO_TONG");
       // `thamSo.thamSo` (đối số tool) là biểu thức theo item; KẾT QUẢ trả về KHÔNG BAO GIỜ đi qua bộ đánh giá biểu thức.
       const t = danhGiaThamSo({ doiSo: thamSo.thamSo ?? {}, truongRa: thamSo.truongRa }, nguCanhItem(ngu, item, vao)) as { doiSo: unknown; truongRa?: unknown };
       if (!t.doiSo || typeof t.doiSo !== "object" || Array.isArray(t.doiSo)) throw new LoiMcp("thamSo phải là đối tượng", "THAM_SO_SAI");
       if (JSON.stringify(t.doiSo).length > TRAN_DOI_SO_MCP) throw new LoiMcp(`đối số quá ${TRAN_DOI_SO_MCP} byte`, "THAM_SO_SAI");
-      const kq = await goiMotLan(tenMay, may, tool, t.doiSo as Record<string, unknown>, ngu, thamSo.kieuXacThuc);
+      const kq = await goiMotLan(tenMay, may, tool, t.doiSo as Record<string, unknown>, ngu, thamSo.kieuXacThuc, conLai);
       ra.push({ json: { ...item.json, [typeof t.truongRa === "string" && /^[A-Za-z][A-Za-z0-9_]{0,47}$/.test(t.truongRa) ? t.truongRa : "mcp"]: { may: tenMay, tool, ...kq } } });
     }
     return { main: ra };

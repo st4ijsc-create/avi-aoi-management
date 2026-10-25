@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { layNut, type NguCanhChay } from "../dangKyNut";
 import "../nut";
 import { datFetchLuong } from "./tichHop";
-import { LoiMcp, TRAN_ITEM_MCP, TRAN_THAN_MCP, gonKetQuaTool, mayChuMcpChoPhep, timPhanHoiJsonRpc } from "./mcpKhach";
+import { LoiMcp, SAU_TOI_DA_MCP, TONG_MS_MCP_MAC_DINH, TRAN_ITEM_MCP, TRAN_THAN_MCP, doSauVuot, gonKetQuaTool, mayChuMcpChoPhep, timPhanHoiJsonRpc, tongMsMcp } from "./mcpKhach";
 import { kiemThamSoNutMoi } from "../kiemThamSoNut";
 
 type Item = { json: Record<string, unknown> };
@@ -150,6 +150,62 @@ describe("lỗi rõ", () => {
     expect(gonKetQuaTool({ content: [{ type: "image" }] }, "t").noiDung).toBe("[image]");
     expect(timPhanHoiJsonRpc(JSON.stringify([{ jsonrpc: "2.0", id: 1, result: "a" }, { jsonrpc: "2.0", id: 2, result: "b" }]), "application/json", 2)).toEqual({ result: "b" });
     expect(() => timPhanHoiJsonRpc("không phải json", "application/json", 1)).toThrow(LoiMcp);
+  });
+});
+
+describe("G2/G3 + hạn tổng", () => {
+  const long = (n: number): unknown => {
+    let x: unknown = "lá";
+    for (let i = 0; i < n; i++) x = { a: x };
+    return x;
+  };
+  it("★ G2: kết quả lồng quá 32 cấp ⇒ MCP_PHAN_HOI_SAI TRƯỚC khi vào item; đúng 32 cấp ⇒ qua; doSauVuot lặp (không tràn ngăn xếp ở 200 000 cấp)", async () => {
+    traTool = () => json({ jsonrpc: "2.0", id: 2, result: { content: [], structuredContent: long(40) } });
+    await expect(chay(THAM)).rejects.toMatchObject({ ma: "MCP_PHAN_HOI_SAI" });
+    traTool = () => json({ jsonrpc: "2.0", id: 2, result: { content: [], structuredContent: long(SAU_TOI_DA_MCP - 3) } }); // result{ structuredContent{ … } } cộng thêm 2–3 cấp
+    await expect(chay(THAM)).resolves.toBeTruthy();
+    expect(doSauVuot(long(200_000), SAU_TOI_DA_MCP)).toBe(true);
+    expect(doSauVuot([1, [2, [3]]], 3)).toBe(false);
+    expect(doSauVuot([1, [2, [3, [4]]]], 3)).toBe(true);
+  });
+
+  it("★ G3: hết giờ KHI ĐANG ĐỌC THÂN (lỗi chung 'aborted') ⇒ MCP_HET_GIO, không 'aborted' trần", async () => {
+    process.env.AI_FLOW_MCP_TONG_MS = "60";
+    try {
+      traTool = () => new Response(null);
+      const co = mayChuGia();
+      datFetchLuong((async (u: URL, init: RequestInit) => {
+        const than = JSON.parse(String(init.body));
+        if (than.method !== "tools/call") return co(u, init);
+        const luong = new ReadableStream({
+          start(ctl) {
+            init.signal?.addEventListener("abort", () => ctl.error(new Error("aborted")));
+          },
+        });
+        return new Response(luong, { status: 200, headers: { "content-type": "application/json" } });
+      }) as never);
+      await expect(chay(THAM)).rejects.toMatchObject({ ma: "MCP_HET_GIO" });
+    } finally {
+      delete process.env.AI_FLOW_MCP_TONG_MS;
+    }
+  });
+
+  it("★ HẠN TỔNG cho cả lượt-node: item thứ hai khi hết hạn tổng ⇒ MCP_HET_GIO_TONG, không gọi tiếp; tongMsMcp đọc env (rác ⇒ 120 000)", async () => {
+    expect(tongMsMcp({} as NodeJS.ProcessEnv)).toBe(TONG_MS_MCP_MAC_DINH);
+    expect(tongMsMcp({ AI_FLOW_MCP_TONG_MS: "5000" } as unknown as NodeJS.ProcessEnv)).toBe(5000);
+    for (const v of ["0", "-1", "abc", "600001", "1.5", ""]) expect(tongMsMcp({ AI_FLOW_MCP_TONG_MS: v } as unknown as NodeJS.ProcessEnv), v).toBe(TONG_MS_MCP_MAC_DINH);
+    process.env.AI_FLOW_MCP_TONG_MS = "100";
+    try {
+      const co = mayChuGia();
+      datFetchLuong((async (u: URL, init: RequestInit) => {
+        await new Promise((r) => setTimeout(r, 45));
+        return co(u, init);
+      }) as never);
+      await expect(chay(THAM, [{ json: { x: 1 } }, { json: { x: 2 } }, { json: { x: 3 } }])).rejects.toMatchObject({ ma: "MCP_HET_GIO_TONG" });
+      expect(goi.filter((g) => g.than.method === "tools/call").length).toBeLessThan(3);
+    } finally {
+      delete process.env.AI_FLOW_MCP_TONG_MS;
+    }
   });
 });
 
