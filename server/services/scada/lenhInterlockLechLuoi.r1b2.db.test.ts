@@ -244,4 +244,59 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-2a T1 — SQL tr�
     expect(ds.map((r) => [r.id, r.ma])).toEqual([[id["khai-20"], "OUT_OF_RANGE"]]);
     expect((await hangSql()).has(id["khai-20"])).toBe(false);
   });
+
+  // ── R1b-2a T2 (phán quyết T1 c3) — đích FLOAT chưa khai; tiền tố RIÊNG `${DAU}F-` (ngoài `${DAU}-%` / `${DAU}P-%`) ──
+  it("★ R1b-2a T2 — float CHƯA khai: JS từ chối ĐÚNG {abc, rỗng, trắng, mảng, đối tượng, \"Infinity\", \"1e400\", 1e400 (jsonb), thô tràn double} ⊆ SQL; số / chuỗi số / null / true không ai; float không có diem_luoi_gan_nhat", async () => {
+    const DAU_F = `${DAU}F-`;
+    const seedF = async (ten: string, tagKey: string, jsonTho: string | null) => {
+      const [r] = await sql`INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action, "targetAdapterId",
+          "commandTag", "commandValue", enabled, "createdBy")
+        VALUES (${DAU_F + ten}, 'machine', 'ng_rate', 'gt', 5, 'reduce_speed', ${adapterId}, ${tagKey}, ${jsonTho}::text::jsonb, true, ${TAC_GIA})
+        RETURNING id`;
+      return Number(r.id);
+    };
+    try {
+      await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", scale)
+        VALUES (${adapterId}, 'f', 'addr-f', 'float', true, true, NULL), (${adapterId}, 'fnho', 'addr-fnho', 'float', true, true, 0.000001)`;
+      const tuChoi: Record<string, string> = {
+        abc: '"abc"',
+        rong: '""',
+        trang: '"   "',
+        mang: "[1.5]",
+        doiTuong: '{"v": 1.5}',
+        infinity: '"Infinity"',
+        chuoi1e400: '"1e400"',
+        so1e400: "1e400",
+      };
+      const nhan: Record<string, string | null> = { so: "2.25", chuoiSo: '"1.5"', null: null, true: "true", hex: '"0x19"' };
+      const idF: Record<string, number> = {};
+      for (const [k, v] of Object.entries(tuChoi)) idF[k] = await seedF(k, "f", v);
+      for (const [k, v] of Object.entries(nhan)) idF[k] = await seedF(k, "f", v);
+      idF["thoTran"] = await seedF("thoTran", "fnho", "1e305"); // thô 1e311 ⇒ JS OUT_OF_RANGE, SQL VUOT_MIEN_AN_TOAN
+      idF["thoOk"] = await seedF("thoOk", "fnho", "1e300"); // thô 1e306 hữu hạn ⇒ không ai
+
+      const d = await getDb();
+      const js = await luatLenhLechLuoi(d!, like(interlockRules.name, `${DAU_F}%`));
+      const q = await sql.unsafe(
+        `SELECT id::int AS id, ket_luan, diem_luoi_gan_nhat FROM (${TRUY_VAN_TRUOC_TRIEN_KHAI}) q WHERE q.name LIKE $1 ORDER BY id`,
+        [`${DAU_F}%`],
+      );
+      const hang = new Map(q.map((r) => [Number(r.id), { ket_luan: String(r.ket_luan), diem: r.diem_luoi_gan_nhat }]));
+
+      const mong = [...Object.keys(tuChoi).map((k) => idF[k]), idF["thoTran"]].sort((a, b) => a - b);
+      expect(js.map((r) => r.id)).toEqual(mong);
+      for (const r of js) {
+        expect(hang.has(r.id), `JS từ chối luật #${r.id} nhưng SQL bỏ sót`).toBe(true);
+        expect(r.ma).toBe(r.id === idF["thoTran"] ? "OUT_OF_RANGE" : "TYPE_MISMATCH");
+      }
+      for (const k of ["abc", "rong", "trang", "mang", "doiTuong", "infinity"]) expect(hang.get(idF[k])?.ket_luan, k).toBe("KHONG_PARSE_DUOC");
+      for (const k of ["chuoi1e400", "so1e400", "thoTran"]) expect(hang.get(idF[k])?.ket_luan, k).toBe("VUOT_MIEN_AN_TOAN");
+      for (const k of ["so", "chuoiSo", "null", "true", "thoOk"]) expect(hang.has(idF[k]), `${k} SQL`).toBe(false);
+      expect(hang.get(idF["hex"])?.ket_luan).toBe("KHONG_PARSE_DUOC"); // JS đọc "0x19" = 25 (nhận) — SQL báo DƯ (chiều cho phép)
+      for (const h of hang.values()) expect(h.diem).toBeNull();
+    } finally {
+      await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU_F + "%"}`;
+      await sql`DELETE FROM device_tags WHERE "adapterId" = ${adapterId} AND "tagKey" IN ('f', 'fnho')`;
+    }
+  });
 });

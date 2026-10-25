@@ -112,6 +112,41 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-2a T1 — đề x
     expect(cu).toMatchObject({ ok: false, ma: "OFF_STEP", tagKey: "printer_offset_x", goiY: -7 });
   });
 
+  it("★ R1b-2a T2 (M7 + m5) — tag ĐÃ khai: X int scale 1 dải −5..5 ⇒ −5 (không phải −7: dải); Y int scale 0,5 bước 2,5 dải −30..30 ⇒ −12,5 (không nguyên, đúng lưới thô + bước); congKenhSom với hàng THẬT ⇒ ok", async () => {
+    const x = await d();
+    await x.update(deviceTags).set({ channelKind: "output", writeMin: -5, writeMax: 5 }).where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, "printer_offset_x")));
+    await x
+      .update(deviceTags)
+      .set({ channelKind: "output", writeMin: -30, writeMax: 30, writeStep: 2.5, scale: "0.5" })
+      .where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, "printer_offset_y")));
+    const goi: Array<Record<string, unknown>> = [];
+    const res = await proposeControlFromVerdict(INPUT, taoDeps(goi));
+    expect(res.proposed).toBe(1);
+    expect(goi[0]).toMatchObject({ offsetXUm: -5, offsetYUm: -12.5 });
+
+    const hang = (await x
+      .select()
+      .from(deviceTags)
+      .where(and(eq(deviceTags.adapterId, adapterId), inArray(deviceTags.tagKey, ["printer_offset_x", "printer_offset_y"])))) as TagCongKenh[];
+    const theo = new Map(hang.map((h) => [h.tagKey, h]));
+    const writes = [
+      { tagKey: "printer_offset_x", value: goi[0]!.offsetXUm },
+      { tagKey: "printer_offset_y", value: goi[0]!.offsetYUm },
+    ];
+    expect(congKenhSom("spi_printer_offset", writes, writes.map((w) => theo.get(w.tagKey)!)).ok).toBe(true);
+    // đối chứng: đề xuất kiểu T1 (chỉ lưới thô) −7 trên X bị chính cổng ấy từ chối OUT_OF_RANGE
+    expect(congKenhSom("spi_printer_offset", [{ tagKey: "printer_offset_x", value: -7 }], [theo.get("printer_offset_x")!])).toMatchObject({ ok: false, ma: "OUT_OF_RANGE" });
+  });
+
+  it("R1b-2a T2 (M7) — tag ĐÃ khai mà dải ∩ ±50 µm không chứa giá trị nào ghi được ⇒ KHÔNG đề xuất spi (chỉ reject_divert)", async () => {
+    const x = await d();
+    await x.update(deviceTags).set({ channelKind: "output", writeMin: 60, writeMax: 100 }).where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, "printer_offset_x")));
+    const goi: Array<Record<string, unknown>> = [];
+    const res = await proposeControlFromVerdict(INPUT, taoDeps(goi));
+    expect(goi).toHaveLength(0);
+    expect(res.proposals.map((p) => p.kind)).not.toContain("spi_printer_offset");
+  });
+
   it("không có tag ⇒ args theo roundDp (−7,3 / −12,6) và rationale chứa 'chưa đọc được lưới tag'; dispatch() vẫn là trọng tài cuối", async () => {
     await (await d()).delete(deviceTags).where(eq(deviceTags.adapterId, adapterId));
     const goi: Array<Record<string, unknown>> = [];

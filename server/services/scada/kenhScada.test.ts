@@ -5,7 +5,17 @@
 import { describe, expect, it } from "vitest";
 import { canonicalOtValue } from "../ot/otActionBinding";
 import { inverseScale } from "../ot/drivers/otScale";
-import { canKiemLuoiThoChuaKhai, kiemGiaTriGhi, kiemLuoiThoChuaKhai, laKenhGhi, loaiKenh, mucTacDongKenh, type KetQuaGiaTri } from "./kenhScada";
+import {
+  canKiemGiaTriChuaKhai,
+  canKiemLuoiThoChuaKhai,
+  epKieuGiaTri,
+  kiemGiaTriGhi,
+  kiemLuoiThoChuaKhai,
+  laKenhGhi,
+  loaiKenh,
+  mucTacDongKenh,
+  type KetQuaGiaTri,
+} from "./kenhScada";
 
 type KenhThu = {
   dataType: "bool" | "int" | "float" | "string" | "json";
@@ -531,5 +541,94 @@ describe("R1b-2a T1 — tag int CHƯA khai: mọi int đi lưới thô; không h
     expect(loi(kiemGiaTriGhi({ ...kenh({ dataType: "int" }), scale: 1e-9 }, 100_000_000)).ma).toBe("OUT_OF_RANGE");
     expect(tot(kiemGiaTriGhi({ ...kenh({ dataType: "int" }), scale: 1, offset: 0 }, Number.MAX_SAFE_INTEGER))).toBe(Number.MAX_SAFE_INTEGER);
     expect(loi(kiemGiaTriGhi({ ...kenh({ dataType: "int" }), scale: 3e-10 }, 1)).ma).toBe("OFF_STEP"); // n = 3333333333.33 — bản cũ: ok (lưới 3e-10 < dung sai 1e-9)
+  });
+});
+
+// ═════════════════ R1b-2a T2 — lưới thô nhất quán: ép kiểu biết scale (m5) + tag float CHƯA khai (M2 mở rộng, phán quyết T1 c3) ═════════════════
+describe("R1b-2a T2 — epKieuGiaTri: int (s, o) ≠ (1, 0) mang giá trị KỸ THUẬT hữu hạn; kiemGiaTriGhi = epKieuGiaTri → dải → bước → lưới thô", () => {
+  it("int scale 0.5 (đã khai) nhận 2.5; 2.6 ⇒ OFF_STEP buoc 0.5 goiY 2.5; scale 1 vẫn TYPE_MISMATCH", () => {
+    const tag = { dataType: "int", writeMin: 0, writeMax: 10, writeStep: null, scale: "0.5", offset: "0" } as const;
+    expect(kiemGiaTriGhi(tag, 2.5)).toEqual({ ok: true, giaTri: 2.5 });
+    expect(kiemGiaTriGhi(tag, 2.6)).toMatchObject({ ok: false, ma: "OFF_STEP", buoc: 0.5, goiY: 2.5 });
+    expect(kiemGiaTriGhi({ ...tag, scale: null, offset: null }, 2.5)).toMatchObject({ ok: false, ma: "TYPE_MISMATCH" });
+    expect(epKieuGiaTri(tag, "2.5")).toEqual({ ok: true, giaTri: 2.5 });
+  });
+  it("epKieuGiaTri CHỈ ép kiểu: không dải / bước / lưới (2.6 trên int scale 0.5 dải 0..1 ⇒ ok 2.6)", () => {
+    const tag = { dataType: "int", scale: 0.5, offset: 0 } as const;
+    expect(epKieuGiaTri(tag, 2.6)).toEqual({ ok: true, giaTri: 2.6 });
+    expect(epKieuGiaTri(tag, "-0")).toEqual({ ok: true, giaTri: 0 });
+    expect(Object.is(tot(epKieuGiaTri(tag, -0)), 0)).toBe(true);
+  });
+  it("int (s, o) = (1, 0) — kể cả vắng / NULL / scale 0 (driver coi là 1) / chuỗi decimal — ⇒ epInt như cũ", () => {
+    for (const so of [{}, { scale: null, offset: null }, { scale: 1, offset: 0 }, { scale: "1.000000", offset: "0.000000" }, { scale: "0", offset: null }]) {
+      const tag = { dataType: "int" as const, ...so };
+      expect(loi(epKieuGiaTri(tag, 2.5)).ma).toBe("TYPE_MISMATCH");
+      expect(loi(epKieuGiaTri(tag, "30.0")).ma).toBe("TYPE_MISMATCH");
+      expect(tot(epKieuGiaTri(tag, "30"))).toBe(30);
+      expect(loi(epKieuGiaTri(tag, 2 ** 53)).chiTiet).toContain("an toàn");
+    }
+  });
+  it("int offset ≠ 0 (scale 1) ⇒ giá trị kỹ thuật hữu hạn: offset 0.5 ⇒ 2.5 ok (thô 2), 2 ⇒ OFF_STEP goiY 2.5", () => {
+    const tag = { dataType: "int" as const, writeMin: null, writeMax: null, writeStep: null, scale: 1, offset: 0.5 };
+    expect(tot(kiemGiaTriGhi(tag, 2.5))).toBe(2.5);
+    expect(loi(kiemGiaTriGhi(tag, 2))).toMatchObject({ ma: "OFF_STEP", goiY: 2.5, buoc: 1, gocLuoi: 0.5 });
+  });
+  it('int scale 10 (đã khai): "30.0" ⇒ 30 (trước: TYPE_MISMATCH — epInt); 25 vẫn OFF_STEP goiY 30', () => {
+    const tag = { dataType: "int" as const, writeMin: 0, writeMax: 300, writeStep: null, scale: "10", offset: "0" };
+    expect(tot(kiemGiaTriGhi(tag, "30.0"))).toBe(30);
+    expect(loi(kiemGiaTriGhi(tag, 25))).toMatchObject({ ma: "OFF_STEP", goiY: 30, buoc: 10 });
+  });
+  it("int scale lẻ: không hữu hạn / không phải số ⇒ TYPE_MISMATCH (epFloat), giữ dải trước lưới", () => {
+    const tag = { dataType: "int" as const, writeMin: 0, writeMax: 10, writeStep: null, scale: 0.5, offset: 0 };
+    for (const v of [NaN, Infinity, "abc", "", "   ", [2.5], { v: 2.5 }, null, undefined, true, "0x10", "1e400"]) {
+      expect(loi(kiemGiaTriGhi(tag, v)).ma, String(JSON.stringify(v))).toBe("TYPE_MISMATCH");
+    }
+    expect(loi(kiemGiaTriGhi(tag, 10.5)).ma).toBe("OUT_OF_RANGE");
+  });
+  it("int scale lẻ + bước: bước trước, lưới thô sau (bước 1.5 scale 0.5 — 3 ok, 2.5 OFF_STEP bước 1.5)", () => {
+    const tag = { dataType: "int" as const, writeMin: 0, writeMax: 10, writeStep: 1.5, scale: 0.5, offset: 0 };
+    expect(tot(kiemGiaTriGhi(tag, 3))).toBe(3);
+    expect(loi(kiemGiaTriGhi(tag, 2.5))).toMatchObject({ ma: "OFF_STEP", buoc: 1.5 });
+  });
+  it("goiY lưới thô của int scale lẻ ĐÃ khai không còn bị đòi nguyên (goiYPhaiNguyen = false); (1, 0) vẫn số nguyên", () => {
+    expect(loi(kiemGiaTriGhi({ dataType: "int", writeMin: null, writeMax: null, writeStep: null, scale: 0.5, offset: 0 }, 2.7)).goiY).toBe(2.5);
+    expect(loi(kiemGiaTriGhi({ dataType: "int", writeMin: 0.2, writeMax: 0.4, writeStep: null, scale: 0.5, offset: 0 }, 0.3)).goiY).toBeUndefined(); // không điểm lưới nào trong dải
+  });
+  it("float / bool / string / json như cũ (scale không đổi gì)", () => {
+    expect(tot(epKieuGiaTri({ dataType: "float", scale: 10 }, "2.5"))).toBe(2.5);
+    expect(tot(epKieuGiaTri({ dataType: "bool", scale: 10 }, "1"))).toBe(true);
+    expect(tot(epKieuGiaTri({ dataType: "string", scale: 10 }, "x"))).toBe("x");
+    expect(tot(epKieuGiaTri({ dataType: "json", scale: 10 }, '{"a":1}'))).toBe('{"a":1}');
+    expect(loi(epKieuGiaTri({ dataType: "weird" as never }, 1)).ma).toBe("TYPE_MISMATCH");
+  });
+});
+
+describe("R1b-2a T2 — tag float CHƯA khai (phán quyết T1 c3: M2 mở rộng sang float): không phải số hữu hạn ⇒ TYPE_MISMATCH; số / chuỗi số đi NGUYÊN VẸN", () => {
+  const f = { dataType: "float" as const, scale: null, offset: null };
+  const f10 = { dataType: "float" as const, scale: "10", offset: "5" };
+  it("canKiemGiaTriChuaKhai ⇔ int | float; canKiemLuoiThoChuaKhai vẫn chỉ int (lưới thô)", () => {
+    expect(canKiemGiaTriChuaKhai(f)).toBe(true);
+    expect(canKiemGiaTriChuaKhai({ dataType: "int", scale: null, offset: null })).toBe(true);
+    for (const dataType of ["bool", "string", "json"] as const) expect(canKiemGiaTriChuaKhai({ dataType, scale: null, offset: null })).toBe(false);
+    expect(canKiemLuoiThoChuaKhai(f)).toBe(false);
+  });
+  it("NaN / ±Infinity / \"abc\" / \"\" / chỉ khoảng trắng / mảng / đối tượng / \"Infinity\" / \"1e400\" / null / undefined / Symbol / hàm ⇒ TYPE_MISMATCH", () => {
+    for (const tag of [f, f10])
+      for (const v of [NaN, Infinity, -Infinity, "abc", "", "   ", "\t", [1.5], [], ["2"], { v: 1.5 }, {}, "Infinity", "1e400", null, undefined, Symbol("x"), () => 1]) {
+        const kq = kiemLuoiThoChuaKhai(tag, v);
+        expect(kq, String(typeof v === "symbol" ? "Symbol" : JSON.stringify(v))).toMatchObject({ ok: false, ma: "TYPE_MISMATCH" });
+        expect((kq as { chiTiet: string }).chiTiet).toContain("giá trị không phải số hữu hạn — tag float không ghi được");
+      }
+  });
+  it("số hữu hạn / chuỗi số / boolean / bigint / Long an toàn ⇒ ok NGUYÊN VẸN (không ép kiểu, không lưới — driver không làm tròn float)", () => {
+    for (const tag of [f, f10]) for (const v of [2.25, -7.3, 0, "1.5", " 1.5 ", "0x19", "1e3", true, false, 10n, giaLong(30n)]) expect(kiemLuoiThoChuaKhai(tag, v)).toEqual({ ok: true, giaTri: v });
+  });
+  it("số thô (v − o)/s không hữu hạn (tràn double) ⇒ OUT_OF_RANGE; hữu hạn ⇒ ok", () => {
+    const nho = { dataType: "float" as const, scale: "0.000001", offset: null };
+    expect(kiemLuoiThoChuaKhai(nho, 1e305)).toMatchObject({ ok: false, ma: "OUT_OF_RANGE" });
+    expect(kiemLuoiThoChuaKhai(nho, 1e300)).toEqual({ ok: true, giaTri: 1e300 });
+  });
+  it("int chưa khai giữ nguyên câu cũ (\"— tag int không ghi được\")", () => {
+    expect((kiemLuoiThoChuaKhai({ dataType: "int", scale: null, offset: null }, "abc") as { chiTiet: string }).chiTiet).toContain("tag int không ghi được");
   });
 });

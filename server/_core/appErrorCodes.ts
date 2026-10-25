@@ -201,8 +201,10 @@ export const APP_ERROR_CODES = [
   // ── SCADA R1a Task 12 (M12, điều phối mục 4 + review T3 M-3) — NHẤT QUÁN lúc cấu hình giữa khai báo kênh (loại / dải / bước) và giá trị
   // đã cam kết sẽ ghi xuống kênh đó (server/services/scada/nhatQuanKenh.ts). `ma` = chính mã; `lyDo` = kết cục của cổng kênh
   // (CHANNEL_READ_ONLY | TYPE_MISMATCH | OUT_OF_RANGE | OFF_STEP); min/max/step "—" khi không khai cận đó.
-  "STOP_PIN_NGOAI_DAI",            // params: { ma, lyDo, tagKey, stopValue, min, max, step } — giá trị DỪNG ghim không ghi được trên kênh theo
+  "STOP_PIN_NGOAI_DAI",            // params: { ma, lyDo, tagKey, stopValue, min, max, step, goiY } — giá trị DỪNG ghim không ghi được trên kênh theo
                                    // khai báo (khai dải/bước/loại kênh khi đã ghim, hoặc ghim ngoài dải đang khai). Gỡ / đổi ghim hoặc khai lại.
+                                   // R1b-2a T2 (m4, K17): cả ghim lệch lưới thô trên tag int CHƯA khai; step = lưới vừa trượt (write_step hoặc |scale|),
+                                   // goiY = giá trị hợp lệ gần nhất ("—" khi không có) — MỌI nơi phát qua nhatQuanKenh.thamSoNgoaiDaiStopPin.
   "INTERLOCK_NGOAI_DAI",           // params: { ma, lyDo, tagKey, min, max, step, goc, goiY, ruleId? } — commandValue của luật interlock (đang bật, khi
                                    // khai kênh; hoặc luật đang tạo/sửa/duyệt/bật) không ghi được trên kênh đích ⇒ hành động bảo vệ sẽ bị từ chối.
                                    // R1b-1 T9: cả khi deviceAdapter.tags.update / mappingAsCode.applyImport đổi dataType/writable/scale/offset của tag đích.

@@ -47,7 +47,7 @@ import { deviceAdapters, deviceTags, interlockRules, scadaKenhCheDo, type Device
 import { appError } from "../../_core/appError";
 import { validateStopValue } from "../ot/stopPin";
 import { laKenhGhi } from "./kenhScada";
-import { giaTriLenhInterlock, kiemLenhInterlockTrenKenh, kiemNhatQuanKenh, luatCoGhiLenh, soHienThi, thamSoNgoaiDaiInterlock, type DbHoacTx, type KenhNhatQuan, type LuatNhamTag, type LuoiLech, type MaViPham } from "./nhatQuanKenh";
+import { giaTriLenhInterlock, kiemLenhInterlockTrenKenh, kiemNhatQuanKenh, luatCoGhiLenh, thamSoNgoaiDaiInterlock, thamSoNgoaiDaiStopPin, type DbHoacTx, type KenhNhatQuan, type LuatNhamTag, type LuoiLech, type MaViPham } from "./nhatQuanKenh";
 
 /** Cột TRỎ LẠI của một tag (brief: address/scale/offset/dataType/writable/tagKey; + adapterId — tags.update chuyển được tag sang adapter khác). */
 export const COT_TRO_LAI = ["adapterId", "tagKey", "address", "dataType", "scale", "offset", "writable"] as const;
@@ -474,9 +474,7 @@ export function kiemNhatQuanSauTroLai(cu: HangTagTroLai, sau: GiaTriTroLai, doi:
           lyDo: nq.ma,
           tagKey: cu.tagKey,
           stopValue: String(cu.stopValue),
-          min: soHienThi(cu.writeMin),
-          max: soHienThi(cu.writeMax),
-          step: soHienThi(cu.writeStep),
+          ...thamSoNgoaiDaiStopPin(cu, nq), // R1b-2a T2 (K17) — min / max / step (lưới vừa trượt) / goiY ("—" khi không có)
         },
         `Giá trị DỪNG đang ghim của kênh ${cu.tagKey} không ghi được với định nghĩa mới (${nq.chiTiet}). Gỡ / đổi ghim trước.`,
       );

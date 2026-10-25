@@ -577,7 +577,8 @@ describe("ScadaKenh — hộp thoại sửa kênh (lý do ≥ 5 ký tự)", () =
     act(() =>
       srv.mutOpts.capNhat.onError?.({
         message: "Giá trị DỪNG đang ghim …",
-        data: { code: "BAD_REQUEST", appCode: "STOP_PIN_NGOAI_DAI", appParams: { ma: "STOP_PIN_NGOAI_DAI", lyDo: "OUT_OF_RANGE", tagKey: "speed_sp", stopValue: "0", min: "10", max: "100", step: "—" } },
+        // R1b-2a T2 (K17) — máy chủ luôn gửi goiY (giá trị hoặc "—")
+        data: { code: "BAD_REQUEST", appCode: "STOP_PIN_NGOAI_DAI", appParams: { ma: "STOP_PIN_NGOAI_DAI", lyDo: "OUT_OF_RANGE", tagKey: "speed_sp", stopValue: "0", min: "10", max: "100", step: "—", goiY: "—" } },
       }),
     );
     expect(toastError).toHaveBeenCalledTimes(1);
@@ -585,6 +586,7 @@ describe("ScadaKenh — hộp thoại sửa kênh (lý do ≥ 5 ký tự)", () =
     expect(cau).toContain("speed_sp");
     expect(cau).toContain("DỪNG");
     expect(cau).not.toBe("STOP_PIN_NGOAI_DAI");
+    expect(cau).not.toContain("{{"); // không placeholder thô (goiY mới)
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 

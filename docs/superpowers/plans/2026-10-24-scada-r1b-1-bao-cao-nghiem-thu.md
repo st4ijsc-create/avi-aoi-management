@@ -211,11 +211,11 @@ hạ về STOP không ghim) — nó KHÔNG thay cho bench trên PLC thật.
    ```sql
    -- R1b-1 §4 mục 2 — luật interlock ĐANG BẬT có lệnh bảo vệ lệch lưới thô (CHỈ ĐỌC). ≥ 1 hàng ⇒ DỪNG triển khai.
    WITH ung_vien AS (
-     SELECT r.id, r.name, r."commandValue" AS cv, r."targetAdapterId", t."tagKey",
+     SELECT r.id, r.name, r."commandValue" AS cv, r."targetAdapterId", t."tagKey", t."dataType"::text AS kieu,
             COALESCE(NULLIF(t.scale, 0), 1)::numeric AS s, COALESCE(t."offset", 0)::numeric AS o
      FROM interlock_rules r
      JOIN device_tags t ON t."adapterId" = r."targetAdapterId" AND t."tagKey" = r."commandTag"
-     WHERE r.enabled AND r.action::text <> 'alert' AND t."dataType"::text = 'int'
+     WHERE r.enabled AND r.action::text <> 'alert' AND t."dataType"::text IN ('int', 'float')
    ), gia_tri AS (
      SELECT u.*,
        CASE
@@ -229,14 +229,15 @@ hạ về STOP không ghim) — nó KHÔNG thay cho bench trên PLC thật.
        END AS v
      FROM ung_vien u
    ), tho AS (
-     SELECT g.*, round(g.v - g.o, 30) / g.s AS n
+     SELECT g.*, round(g.v - g.o, 30) / g.s AS n,
+            CASE WHEN g.kieu = 'int' THEN 4503599627370496 ELSE 1e308 END AS tran
      FROM gia_tri g
    )
    SELECT id, name, "targetAdapterId", "tagKey", cv AS "commandValue", s AS scale, o AS "offset", v AS gia_tri_gui,
-          CASE WHEN v IS NULL OR abs(n) >= 4503599627370496 THEN NULL ELSE o + floor(n + 0.5) * s END AS diem_luoi_gan_nhat,
-          CASE WHEN v IS NULL THEN 'KHONG_PARSE_DUOC' WHEN abs(n) >= 4503599627370496 THEN 'VUOT_MIEN_AN_TOAN' ELSE 'LECH_LUOI' END AS ket_luan
+          CASE WHEN v IS NULL OR kieu <> 'int' OR abs(n) >= tran THEN NULL ELSE o + floor(n + 0.5) * s END AS diem_luoi_gan_nhat,
+          CASE WHEN v IS NULL THEN 'KHONG_PARSE_DUOC' WHEN abs(n) >= tran OR abs(v) >= 1e308 THEN 'VUOT_MIEN_AN_TOAN' ELSE 'LECH_LUOI' END AS ket_luan
    FROM tho
-   WHERE v IS NULL OR abs(n) >= 4503599627370496 OR abs(n - round(n)) > 1e-9
+   WHERE v IS NULL OR abs(n) >= tran OR abs(v) >= 1e308 OR (kieu = 'int' AND abs(n - round(n)) > 1e-9)
    ORDER BY id
    ```
 
@@ -249,6 +250,10 @@ hạ về STOP không ghim) — nó KHÔNG thay cho bench trên PLC thật.
      parse được. Với tag int CHƯA khai, mọi luật hàm JS từ chối đều có hàng (chỉ báo DƯ); với tag ĐÃ khai, dải / bước / kiểu / loại kênh được cưỡng
      chế lúc cấu hình (`nhatQuanKenh`) và đếm ở posture, câu này không lặp lại chúng. Cột ra không đổi. Các đoạn mô tả bên dưới là của bản R1b-1;
      chỗ nào khác với ghi chú này thì ghi chú này đúng.
+   - **R1b-2a T2 (2026-10-25) — ứng viên mở rộng sang tag FLOAT** (phán quyết T1 c3: `dispatch()` nay từ chối giá trị không phải số hữu hạn trên
+     tag float CHƯA khai — "abc", "", chỉ khoảng trắng, mảng, đối tượng, "1e400"). Cột mới nội bộ `kieu` (không thêm cột ra). Tag float không có
+     lưới: chỉ có hàng khi `KHONG_PARSE_DUOC` hoặc |giá trị| / |số thô| ≥ 1e308 (`VUOT_MIEN_AN_TOAN`, báo dư so với `Number.MAX_VALUE`);
+     `diem_luoi_gan_nhat` NULL. Tag int không đổi. Mọi hàng vẫn CHẶN.
 
    - **Kết quả ≠ 0 hàng ⇒ CHẶN triển khai** — MỌI hàng đều chặn, cả `ket_luan = 'LECH_LUOI'` lẫn `ket_luan = 'KHONG_PARSE_DUOC'`:
      - `LECH_LUOI`: sửa `commandValue` về một điểm lưới (`diem_luoi_gan_nhat` là ĐÚNG giá trị driver cũ đã ghi) qua `interlockRouter.update`

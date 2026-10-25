@@ -4584,7 +4584,7 @@
     "SCADA_CONFIG_TOTP_REQUIRED": "更改通道或模式通道配置需要新的双因素（TOTP）验证码——请输入 6 位验证码后再次保存。",
     "SCADA_CONFIG_TOTP_INVALID": "双因素验证码错误或已被使用——请在验证器应用中等待新验证码后再次保存。",
     "SCADA_CONFIG_TOTP_NOT_ENROLLED": "更改通道配置需要双因素认证，但此账户尚未注册 2FA。请在 设置 > 安全 中设置。",
-    "STOP_PIN_NGOAI_DAI": "通道 {{tagKey}} 的固定停止值（{{stopValue}}）在当前通道声明下无法写入（范围 {{min}} … {{max}}，步长 {{step}}，或只读通道类型）——停止命令将被拒绝。请先清除或修改固定值，或重新声明匹配的范围/步长/通道类型。",
+    "STOP_PIN_NGOAI_DAI": "通道 {{tagKey}} 的固定停止值（{{stopValue}}）在当前通道声明下无法写入（范围 {{min}} … {{max}}，步长 {{step}}，或只读通道类型）。最接近的有效值：{{goiY}}。停止命令将被拒绝，或设备收到的值与之不同。请先清除或修改固定值，或重新声明匹配的范围/步长/通道类型。",
     "INTERLOCK_NGOAI_DAI": "联锁规则的命令值在当前通道声明下无法写入通道 {{tagKey}}（范围 {{min}} … {{max}}，步长 {{step}}（起点 {{goc}}），或只读通道类型）。最接近的有效值：{{goiY}}。保护动作将在运行时被拒绝——请修改规则的命令值，或重新声明匹配的通道。",
     "TU_DONG_TAT": "服务器上的自动 Agent 模式已关闭（AI_CODING_TU_TRI_GHI 开关）。请使用逐步审批模式，或请管理员开启。",
     "THIEU_QUYEN_THUC_THI": "缺少自动 Agent 模式所需的执行/自动写入权限（ai_repo_exec）。",

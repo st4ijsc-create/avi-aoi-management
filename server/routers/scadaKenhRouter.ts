@@ -50,7 +50,7 @@ import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { isEdgeControlSchemaMissing } from "../services/edge/edgeControlSchema";
 import { kiemGiaTriGhi, laKenhGhi, loaiKenh, mucTacDongKenh, type LoaiKenh } from "../services/scada/kenhScada";
 import { cheDoMay, nguongTuoiCheDoMs, TUOI_MAU_CHE_DO_TOI_DA_MS, type CheDo } from "../services/scada/cheDoMay";
-import { khoaLuatNhamTagTx, kiemNhatQuanKenh, soHienThi, thamSoNgoaiDaiInterlock, viPhamInterlock, type KenhNhatQuan } from "../services/scada/nhatQuanKenh";
+import { khoaLuatNhamTagTx, kiemNhatQuanKenh, thamSoNgoaiDaiInterlock, thamSoNgoaiDaiStopPin, viPhamInterlock, type KenhNhatQuan } from "../services/scada/nhatQuanKenh";
 import { khoaAdapterTx } from "../services/scada/troLaiKenh";
 import { tagDeadbandEnabled } from "../services/ot/otManager";
 import { TAG_DUNG_MAC_DINH } from "../services/ot/tagLenhMacDinh";
@@ -591,9 +591,7 @@ export const scadaKenhRouter = router({
                     lyDo: nq.ma,
                     tagKey: tag.tagKey,
                     stopValue: String(v.ok ? v.value : tag.stopValue),
-                    min: soHienThi(sau.writeMin),
-                    max: soHienThi(sau.writeMax),
-                    step: soHienThi(sau.writeStep),
+                    ...thamSoNgoaiDaiStopPin(sau, nq), // R1b-2a T2 (K17) — min / max / step (lưới vừa trượt) / goiY
                   },
                   `Giá trị DỪNG đang ghim của kênh ${tag.tagKey} không ghi được với khai báo mới (${nq.chiTiet}). Gỡ / đổi ghim trước.`,
                 );

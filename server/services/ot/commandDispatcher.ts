@@ -113,7 +113,7 @@ import {
   type CommandLog,
   type DeviceTag,
 } from "../../../drizzle/schema";
-import { canKiemLuoiThoChuaKhai, kiemGiaTriGhi, kiemLuoiThoChuaKhai, laKenhGhi, loaiKenh } from "../scada/kenhScada"; // SCADA R1a Task 3 (K4) — the ONE coercion/range/step rule
+import { canKiemGiaTriChuaKhai, epKieuGiaTri, kiemGiaTriGhi, kiemLuoiThoChuaKhai, laKenhGhi, loaiKenh } from "../scada/kenhScada"; // SCADA R1a Task 3 (K4) — the ONE coercion/range/step rule
 import { cheDoMay, congCheDoBat, laToolHmiCongCheDo } from "../scada/cheDoMay"; // SCADA R1a Task 4 (K2/D3) — machine LOCAL/REMOTE
 import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { foeApprovalDbRefusal, preReadProgramChecksForAction, type PreReadPrograms } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i); Đợt 8 final wave O M2
@@ -876,9 +876,15 @@ export function kenhDaKhaiGhi(tag: Pick<DeviceTag, "channelKind" | "writeMin" | 
   return tag.channelKind != null || tag.writeMin != null || tag.writeMax != null || tag.writeStep != null;
 }
 
-/** Type-only coercion (kenhScada's rule, no range/step) — the value a declared tag would carry if it were in range. */
-function epKieuKenh(tag: Pick<DeviceTag, "dataType">, value: unknown) {
-  return kiemGiaTriGhi({ dataType: tag.dataType, writeMin: null, writeMax: null, writeStep: null }, value);
+/**
+ * Type-only coercion (kenhScada `epKieuGiaTri`: no range / step / raw grid) — the value a declared tag would carry if it were in range.
+ * R1b-2a T2 (m5) — scale / offset aware: an int tag with (scale, offset) ≠ (1, 0) carries a finite ENGINEERING value (2.5 on scale 0.5),
+ * (1, 0) keeps the integer coercion. The SAME function for pass 1 of `congKenhSom` AND Gate 1 (`writesEpKieuChoRangBuoc`, ruling K4), so the
+ * binding re-check and the write always see one coerced value. NOT `kiemGiaTriGhi`: a raw-grid check here would refuse a pinned STOP before the
+ * whole-command exemption (pass 2 does the grid).
+ */
+function epKieuKenh(tag: Pick<DeviceTag, "dataType"> & Partial<Pick<DeviceTag, "scale" | "offset">>, value: unknown) {
+  return epKieuGiaTri({ dataType: tag.dataType, scale: tag.scale, offset: tag.offset }, value);
 }
 
 /**
@@ -888,9 +894,11 @@ function epKieuKenh(tag: Pick<DeviceTag, "dataType">, value: unknown) {
  *   1. not a write channel (`laKenhGhi`: channel_kind input / calculated) ⇒ CHANNEL_READ_ONLY. NO stop exemption: a pin
  *      only exists on a writable channel. channel_kind NULL ⇒ derived from `writable` (true here) ⇒ always a write channel.
  *   2. channel model not declared (`kenhDaKhaiGhi` false) ⇒ the write passes UNCHANGED (old behaviour: never coerced). R1b-1 T13 +
- *      R1b-2a T1 (Q-T13 b): EVERY undeclared INT tag — scale 1 / offset 0 included (`canKiemLuoiThoChuaKhai` ⇔ dataType int) — is still
- *      queued for pass 2 (5); its value is not coerced.
- *   3. coerce by dataType (`kiemGiaTriGhi`, never rounds) ⇒ TYPE_MISMATCH on failure.
+ *      R1b-2a T1 (Q-T13 b): EVERY undeclared INT tag — scale 1 / offset 0 included — is still queued for pass 2 (5); R1b-2a T2 (ruling T1
+ *      c3): EVERY undeclared FLOAT tag too (`canKiemGiaTriChuaKhai` ⇔ dataType int | float); its value is not coerced.
+ *   3. coerce by dataType (`epKieuKenh` = kenhScada `epKieuGiaTri`, type only, never rounds; R1b-2a T2: int with (scale, offset) ≠ (1, 0)
+ *      ⇒ a finite engineering value, e.g. 2.5 on scale 0.5) ⇒ TYPE_MISMATCH on failure. No raw-grid check in pass 1 (it would refuse a
+ *      pinned STOP before the exemption below).
  *   PINNED STOP exemption (coordinator 2026-10-24 item 4: no software blocks a pinned STOP; fix round 1 M-2: WHOLE command
  *   only) — matched on DATA here, since this gate runs before the mode/commissioning gates: a stop-typed command
  *   (`isStopCommandType`) whose writes — ALL of them, declared (coerced) and undeclared (as sent) — equal their tags'
@@ -898,7 +906,7 @@ function epKieuKenh(tag: Pick<DeviceTag, "dataType">, value: unknown) {
  *   range and step. A stop that mixes a pin with ANY other write (fix round 2: an undeclared, unpinned one too — it is not a
  *   pinned STOP at 5a-stop either) is not exempt for any of them. The full classification (`classifyOtStop`, connection fingerprint …)
  *   still runs later, unchanged. Range ↔ stop_value consistency is checked at CONFIGURATION time (R1a Task 12), not here.
- *   PASS 2 (declared writes + EVERY undeclared int write, in write order, unless exempt):
+ *   PASS 2 (declared writes + EVERY undeclared int or float write, in write order, unless exempt):
  *   4. range, then step ⇒ OUT_OF_RANGE / OFF_STEP (the detail carries `goiY`, a hint only — the value is never altered). Declared only.
  *   5. kiem-dinh P1-3 (2026-10-24) + R1b-1 T13 + R1b-2a T1 — int raw grid: n = (v − offset)/scale must be an integer, compared in RAW
  *      space (|n − round(n)| > 1e-9 + 4·EPSILON·(|n| + (|v| + |o|)/|s|) ⇒ OFF_STEP, goiY = the nearest raw-grid value, buoc = |scale|;
@@ -907,7 +915,9 @@ function epKieuKenh(tag: Pick<DeviceTag, "dataType">, value: unknown) {
  *      `inverseScale` reads — the value itself still goes on as sent). Undeclared int only (kiem-dinh M2, ruling K3): a value that is not
  *      a deliberate finite number — NaN / ±Infinity / "abc" / "Infinity" / "" / whitespace / null / undefined / an array / a plain object
  *      / a Symbol — ⇒ TYPE_MISMATCH "giá trị không phải số hữu hạn — tag int không ghi được" (the driver used to write Math.round(NaN), or
- *      the 0 of Number(""), Number(null), Number([])); true / false ⇒ 1 / 0, "7" ⇒ 7, a safe Sparkplug Long ⇒ its number. No flag: the
+ *      the 0 of Number(""), Number(null), Number([])); true / false ⇒ 1 / 0, "7" ⇒ 7, a safe Sparkplug Long ⇒ its number. R1b-2a T2
+ *      (ruling T1 c3): the same reader on an undeclared FLOAT tag ⇒ TYPE_MISMATCH "… tag float không ghi được" (no grid: the driver does
+ *      not round a float; a raw (v − o)/s that overflows a double ⇒ OUT_OF_RANGE); valid numbers / numeric strings still go on as sent. No flag: the
  *      driver used to round silently (scale 10: 25 ⇒ raw 3 = 30) — a right/wrong fix, census in the T13 report and the R1b-2a T1 report
  *      (nobody relies on the rounding / on the NaN write). A pinned STOP is exempt (whole-command rule above), like range/step: an
  *      off-grid pin is still written (and rounded by the driver) — STOP is never blocked; such pins are a configuration finding, not a
@@ -927,14 +937,15 @@ export function congKenhSom(commandType: string, writes: ReadonlyArray<DispatchW
     ...(luoi?.goiY !== undefined ? { goiY: luoi.goiY } : {}),
   });
   const out: DispatchWrite[] = [];
-  const canKiem: number[] = []; // indexes checked in pass 2: declared writes (coerced in `out`) + every undeclared int write (as sent)
+  const canKiem: number[] = []; // indexes checked in pass 2: declared writes (coerced in `out`) + every undeclared int / float write (as sent)
   for (let i = 0; i < writes.length; i++) {
     const w = writes[i];
     const tag = tags[i];
     if (!laKenhGhi(tag)) return tuChoi(i, "CHANNEL_READ_ONLY", `Tag "${w.tagKey}" is a '${loaiKenh(tag)}' channel — not a write channel`);
     if (!kenhDaKhaiGhi(tag)) {
       out.push(w);
-      if (canKiemLuoiThoChuaKhai(tag)) canKiem.push(i); // R1b-1 T13 + R1b-2a T1 — raw grid + finite number only; the value is NOT coerced
+      // R1b-1 T13 + R1b-2a T1 (int: raw grid + finite number) + R1b-2a T2 (float: finite number) — the value is NOT coerced
+      if (canKiemGiaTriChuaKhai(tag)) canKiem.push(i);
       continue;
     }
     const kieu = epKieuKenh(tag, w.value);
@@ -988,6 +999,10 @@ async function writesEpKieuChoRangBuoc(db: NonNullable<Awaited<ReturnType<typeof
         writeMin: deviceTags.writeMin,
         writeMax: deviceTags.writeMax,
         writeStep: deviceTags.writeStep,
+        // R1b-2a T2 (ruling K4) — the coercion is scale / offset aware (epKieuKenh): without them a declared int with scale 10 would coerce
+        // "30.0" here by epInt (refused ⇒ raw form only) while pass 1 sends 30 ⇒ a binding hashed on 30 would fail Gate 1.
+        scale: deviceTags.scale,
+        offset: deviceTags.offset,
       })
       .from(deviceTags)
       .where(and(eq(deviceTags.adapterId, input.adapterId), inArray(deviceTags.tagKey, keys)));

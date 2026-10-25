@@ -19,10 +19,14 @@ import {
   isGatedNgOrAnomaly,
   isVisionControlEnabled,
   lamTronTheoLuoiTag,
+  laKenhDaKhai,
   proposeControlFromVerdict,
   type ControlProposal,
+  type LuoiGhiTag,
   type ProposeControlDeps,
 } from "./qualityControlProposer";
+import { kiemGiaTriGhi } from "./scada/kenhScada";
+import { kenhDaKhai } from "./scada/nhatQuanKenh";
 
 beforeEach(() => {
   delete process.env.VISION_CONTROL_ENABLED;
@@ -448,5 +452,96 @@ describe("R1b-2a T1 — lamTronTheoLuoiTag + đề xuất SPI theo lưới tag",
     await proposeControlFromVerdict({ ...VERDICT_NG, machineId: 7, inspectionId: 1 }, deps);
     await proposeControlFromVerdict({ ...VERDICT_NG, machineId: null, inspectionId: 1, spiTrend: [{ offsetXUm: 9, offsetYUm: 9 }] }, deps);
     expect(layLuoiTagSpi).not.toHaveBeenCalled();
+  });
+});
+
+// ═════════════════ R1b-2a T2 (task-1-review M7) — tag int ĐÃ khai: lưới thô ∩ bước khai báo ∩ dải khai báo ∩ ±50 µm, hoặc null ═════════════════
+describe("R1b-2a T2 (M7) — lamTronTheoLuoiTag trên tag int ĐÃ khai: tôn trọng writeStep + write_min / write_max", () => {
+  const khai = (o: Partial<LuoiGhiTag>): LuoiGhiTag => ({ dataType: "int", scale: 1, offset: 0, channelKind: "output", writeMin: null, writeMax: null, writeStep: null, ...o });
+  const VERDICT_NG = { verdict: { decision: "AUTO_NG", confidence: 0.92, topLabel: "bridging" } };
+
+  it("laKenhDaKhai = bản sao đúng của nhatQuanKenh.kenhDaKhai (mọi tổ hợp NULL / khác NULL của bốn cột)", () => {
+    for (let m = 0; m < 16; m++) {
+      const t = { channelKind: m & 1 ? ("output" as const) : null, writeMin: m & 2 ? 0 : null, writeMax: m & 4 ? 1 : null, writeStep: m & 8 ? 1 : null };
+      expect(laKenhDaKhai(t)).toBe(kenhDaKhai(t));
+    }
+  });
+
+  it("dải: −7,26 trên int scale 1 dải −5..5 ⇒ −5 (bản T1: −7 ⇒ dispatch OUT_OF_RANGE); trong dải ⇒ như lưới thô", () => {
+    expect(lamTronTheoLuoiTag(-7.26, khai({ writeMin: -5, writeMax: 5 }), 1, 50)).toBe(-5);
+    expect(lamTronTheoLuoiTag(-3.4, khai({ writeMin: -5, writeMax: 5 }), 1, 50)).toBe(-3);
+    expect(lamTronTheoLuoiTag(-7.26, khai({ writeMin: 0, writeMax: 300, scale: 10 }), 1, 50)).toBe(0); // dải 0..300 ∩ ±50 ⇒ 0
+  });
+
+  it("bước: −7,26 trên int scale 1 bước 2 ⇒ −8 (−7 lệch bước); bước 1.5 trên scale 0.5 dải 0..10: 4,1 ⇒ 4,5 (4 lệch bước)", () => {
+    expect(lamTronTheoLuoiTag(-7.26, khai({ writeStep: 2 }), 1, 50)).toBe(-8);
+    expect(lamTronTheoLuoiTag(4.1, khai({ scale: "0.5", writeMin: 0, writeMax: 10, writeStep: 1.5 }), 1, 50)).toBe(4.5);
+    expect(lamTronTheoLuoiTag(-7.26, khai({ writeStep: 2, writeMin: -9 }), 1, 50)).toBe(-7); // gốc bước = writeMin ⇒ −9 + 2k: −7 hợp lệ
+  });
+
+  it("không có giá trị nào thoả cả bốn ⇒ null (không đề xuất): dải không chứa điểm lưới thô; bước lẻ ∩ lưới chẵn; dải ngoài ±50", () => {
+    expect(lamTronTheoLuoiTag(65, khai({ scale: 10, writeMin: 61, writeMax: 69 }), 1, 50)).toBeNull();
+    expect(lamTronTheoLuoiTag(20, khai({ scale: 10, writeMin: 1, writeMax: 49, writeStep: 4 }), 1, 50)).toBeNull(); // 1 + 4k lẻ, lưới 10k chẵn
+    expect(lamTronTheoLuoiTag(-7, khai({ writeMin: 60, writeMax: 100 }), 1, 50)).toBeNull();
+    expect(lamTronTheoLuoiTag(-7, khai({ writeMin: -10, writeMax: 10 }), 1, -1)).toBeNull(); // trần âm
+  });
+
+  it("không trần (tranTuyetDoi vắng) ⇒ vẫn dải + bước; không khai gì ngoài channel_kind ⇒ chỉ lưới thô", () => {
+    expect(lamTronTheoLuoiTag(130, khai({ writeMin: 0, writeMax: 100, writeStep: 5 }), 1)).toBe(100);
+    expect(lamTronTheoLuoiTag(-7.26, khai({}), 1)).toBe(-7);
+    expect(Object.is(lamTronTheoLuoiTag(-0.3, khai({ scale: 10 }), 1, 50), 0)).toBe(true);
+  });
+
+  it("tag CHƯA khai (bốn cột NULL) KHÔNG đổi hành vi T1 (dải không có để tôn trọng)", () => {
+    expect(lamTronTheoLuoiTag(-7.26, { dataType: "int", scale: 1, offset: 0, channelKind: null, writeMin: null, writeMax: null, writeStep: null }, 1, 50)).toBe(-7);
+  });
+
+  it("thuộc tính + tối ưu: ∀ cấu hình khai báo × v × trần ⇒ null ⇔ không điểm lưới thô nào trong [lo, hi] được kiemGiaTriGhi nhận; khác null ⇒ được nhận, |r| ≤ T, và GẦN v NHẤT (so với duyệt vét)", () => {
+    const cauHinh: Array<Partial<LuoiGhiTag>> = [];
+    for (const scale of [1, 0.5, 10, 2.5, -10])
+      for (const offset of [0, 0.5, 3])
+        for (const [writeMin, writeMax] of [[null, null], [-20, 20], [0, 300], [5, 15], [-100, -60]] as const)
+          for (const writeStep of [null, 2, 1.5, 5, 7]) cauHinh.push({ scale, offset, writeMin, writeMax, writeStep });
+    let soNull = 0;
+    let soCo = 0;
+    for (const c of cauHinh) {
+      const luoi = khai(c);
+      const tag = { dataType: "int" as const, writeMin: luoi.writeMin ?? null, writeMax: luoi.writeMax ?? null, writeStep: luoi.writeStep ?? null, scale: luoi.scale, offset: luoi.offset };
+      const b = Math.abs(Number(luoi.scale));
+      const o = Number(luoi.offset);
+      for (const T of [7, 50])
+        for (const v of [-63.3, -7.26, 0, 3.3, 12.6, 49.9, 77]) {
+          const r = lamTronTheoLuoiTag(v, luoi, 1, T);
+          // duyệt vét mọi điểm lưới thô trong [max(min, −T), min(max, T)]
+          const lo = Math.max(luoi.writeMin ?? -T, -T);
+          const hi = Math.min(luoi.writeMax ?? T, T);
+          let tot: number | null = null;
+          for (let k = Math.ceil((lo - o) / b - 1e-9); k <= Math.floor((hi - o) / b + 1e-9); k++) {
+            const x = Number((o + k * b).toPrecision(15));
+            if (Math.abs(x) <= T && kiemGiaTriGhi(tag, x).ok && (tot === null || Math.abs(x - v) < Math.abs(tot - v))) tot = x;
+          }
+          const nhan = `${JSON.stringify(c)} T=${T} v=${v} ⇒ ${r}`;
+          if (tot === null) {
+            expect(r, nhan).toBeNull();
+            soNull++;
+          } else {
+            expect(r, nhan).not.toBeNull();
+            expect(kiemGiaTriGhi(tag, r).ok, nhan).toBe(true);
+            expect(Math.abs(r!), nhan).toBeLessThanOrEqual(T);
+            expect(Math.abs(r! - v), nhan).toBeCloseTo(Math.abs(tot - v), 9);
+            soCo++;
+          }
+        }
+    }
+    expect(soNull).toBeGreaterThan(50); // cả hai nhánh thực sự được phủ
+    expect(soCo).toBeGreaterThan(500);
+  });
+
+  it("buildControlProposals: trục tag ĐÃ khai không có giá trị hợp lệ trong dải ∩ ±50 ⇒ KHÔNG đề xuất spi; có ⇒ đề xuất mang giá trị trong dải", () => {
+    const base = { ...VERDICT_NG, machineId: 7, inspectionId: 1, spiTrend: [{ offsetXUm: 7.26, offsetYUm: 7.26 }], spiOpts: { gain: 1 } };
+    const khong = buildControlProposals({ ...base, spiLuoi: { x: khai({ writeMin: 60, writeMax: 100 }), y: khai({}) } });
+    expect(khong.map((p) => p.kind)).toEqual(["reject_divert"]);
+    const co = buildControlProposals({ ...base, spiLuoi: { x: khai({ writeMin: -5, writeMax: 5 }), y: khai({ writeStep: 2 }) } });
+    expect(co.find((p) => p.kind === "spi_printer_offset")!.args).toMatchObject({ offsetXUm: -5, offsetYUm: -8 });
   });
 });

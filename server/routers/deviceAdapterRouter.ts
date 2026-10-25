@@ -83,6 +83,7 @@ import {
   trungKhoaTagTx,
 } from "../services/scada/troLaiKenh";
 import { kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
+import { thamSoNgoaiDaiStopPin } from "../services/scada/nhatQuanKenh"; // R1b-2a T2 (K17) — tham số STOP_PIN_NGOAI_DAI dùng chung
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 
 /** doc 81 Đợt 1D Task 1 — người sửa (id/tên/IP/UA) lấy từ ctx, KHÔNG từ input (khuôn mqttOeeRouters). */
@@ -114,18 +115,27 @@ function loiStopPin(e: StopPinLoi): never {
       );
     case "ngoai_dai": {
       // SCADA R1a Task 12 — ghim không ghi được trên kênh theo khai báo kênh hiện tại (cùng mã với scadaKenh.capNhat).
-      const so = (n: unknown) => (typeof n === "number" ? n : "—");
+      // R1b-2a T2 (m4, phán quyết K17) — step = lưới vừa trượt (`buoc`: writeStep hoặc |scale| của lưới thô trên tag CHƯA khai) ?? writeStep,
+      // goiY = giá trị hợp lệ gần nhất ("—" khi không có) — cùng hàm tham số với mọi nơi phát mã này.
+      const so = (n: unknown) => (typeof n === "number" ? n : undefined);
+      const lyDo = String(e.chiTiet.lyDo ?? "");
+      const buoc = so(e.chiTiet.buoc);
+      const ts = thamSoNgoaiDaiStopPin(
+        { writeMin: so(e.chiTiet.writeMin) ?? null, writeMax: so(e.chiTiet.writeMax) ?? null, writeStep: so(e.chiTiet.writeStep) ?? null },
+        { ma: lyDo, luoi: buoc === undefined ? undefined : { buoc, goiY: so(e.chiTiet.goiY), gocLuoi: so(e.chiTiet.gocLuoi) } },
+      );
       throw appError(
         "BAD_REQUEST",
         "STOP_PIN_NGOAI_DAI",
         {
           ma: "STOP_PIN_NGOAI_DAI",
-          lyDo: String(e.chiTiet.lyDo ?? ""),
+          lyDo,
           tagKey: String(e.chiTiet.tagKey ?? ""),
           stopValue: String(e.chiTiet.stopValue),
-          min: so(e.chiTiet.writeMin),
-          max: so(e.chiTiet.writeMax),
-          step: so(e.chiTiet.writeStep),
+          min: ts.min,
+          max: ts.max,
+          step: ts.step,
+          goiY: ts.goiY,
         },
         `Stop pin refused: the value cannot be written on the declared channel (${String(e.chiTiet.detail ?? "")}).`,
       );

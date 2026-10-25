@@ -43,6 +43,8 @@
 
 import type { Tool, ToolLang } from "./aiLocalTools/toolRegistry";
 import type { AdviceContract, AdviceGuardrail } from "./aiCopilotActions";
+// R1b-2a T2 (M7) — the declared-tag rule of dispatch() pass 2 (pure; kenhScada has no runtime imports).
+import { kiemGiaTriGhi } from "./scada/kenhScada";
 
 // ─── Flag ────────────────────────────────────────────────────────────────────
 
@@ -143,7 +145,71 @@ export type LuoiGhiTag = {
   offset: number | string | null;
   writeStep?: number | null;
   writeMin?: number | null;
+  /**
+   * R1b-2a T2 (task-1-review M7) — the rest of the channel declaration (mig 0431). A DECLARED int tag (any of channelKind / writeMin / writeMax /
+   * writeStep non-null, the `kenhDaKhaiGhi` rule) is rounded to a value `dispatch()` accepts on ALL of: raw grid, declared step, declared range.
+   */
+  writeMax?: number | null;
+  channelKind?: string | null;
 };
+
+/**
+ * Copy of `commandDispatcher.kenhDaKhaiGhi` / `nhatQuanKenh.kenhDaKhai` (this module stays free of runtime DB / dispatcher imports — every
+ * heavy dependency is a dynamic import); `qualityControlProposer.test.ts` pins it to `kenhDaKhai` on every NULL / non-NULL combination.
+ */
+export function laKenhDaKhai(luoi: Pick<LuoiGhiTag, "channelKind" | "writeMin" | "writeMax" | "writeStep">): boolean {
+  return luoi.channelKind != null || luoi.writeMin != null || luoi.writeMax != null || luoi.writeStep != null;
+}
+
+/** Search cap of the declared-int grid walk (`lamTronTheoLuoiTag`): beyond it ⇒ null (no proposal), never a value the gate would refuse. */
+const TRAN_BUOC_TIM_LUOI_DA_KHAI = 100_000;
+
+/**
+ * R1b-2a T2 (M7) — DECLARED int tag: the value nearest to `v` that is on the raw grid `o + k·|s|` AND that `kiemGiaTriGhi` (the very rule of
+ * `dispatch()` pass 2 for a declared tag: coercion, range, declared step, raw grid) accepts, AND |r| ≤ T when a bound is given. Walks the raw
+ * grid outward from the nearest point in distance order (ties ⇒ toward +∞ like Math.round), only inside [max(writeMin, −T), min(writeMax, T)].
+ * None (or the walk cap hit) ⇒ null ⇒ the caller makes NO proposal.
+ */
+function lamTronTheoLuoiDaKhai(v: number, luoi: LuoiGhiTag, tranTuyetDoi?: number): number | null {
+  const sTho = luoi.scale == null ? 1 : Number(luoi.scale);
+  const oTho = luoi.offset == null ? 0 : Number(luoi.offset);
+  const s = Number.isFinite(sTho) && sTho !== 0 ? sTho : 1;
+  const o = Number.isFinite(oTho) ? oTho : 0;
+  const buoc = Math.abs(s);
+  if (tranTuyetDoi != null && (!Number.isFinite(tranTuyetDoi) || tranTuyetDoi < 0)) return null;
+  const T = tranTuyetDoi ?? Number.POSITIVE_INFINITY;
+  const lo = Math.max(luoi.writeMin ?? Number.NEGATIVE_INFINITY, -T);
+  const hi = Math.min(luoi.writeMax ?? Number.POSITIVE_INFINITY, T);
+  if (!(lo <= hi)) return null;
+  const kLo = Number.isFinite(lo) ? Math.ceil((lo - o) / buoc - 1e-9) : Number.NEGATIVE_INFINITY;
+  const kHi = Number.isFinite(hi) ? Math.floor((hi - o) / buoc + 1e-9) : Number.POSITIVE_INFINITY;
+  if (kLo > kHi) return null;
+  const tag = {
+    dataType: "int" as const,
+    writeMin: luoi.writeMin ?? null,
+    writeMax: luoi.writeMax ?? null,
+    writeStep: luoi.writeStep ?? null,
+    scale: luoi.scale,
+    offset: luoi.offset,
+  };
+  const diem = (k: number) => sachSo(o + k * buoc);
+  const kc = Math.round((v - o) / buoc);
+  let duoi = Math.min(kc, kHi); // next candidate going down
+  let tren = Math.max(kc + 1, kLo); // next candidate going up
+  for (let lan = 0; lan < TRAN_BUOC_TIM_LUOI_DA_KHAI; lan++) {
+    const coDuoi = duoi >= kLo;
+    const coTren = tren <= kHi;
+    if (!coDuoi && !coTren) return null;
+    let k: number;
+    if (coDuoi && coTren) k = Math.abs(diem(tren) - v) <= Math.abs(diem(duoi) - v) ? tren : duoi;
+    else k = coDuoi ? duoi : tren;
+    if (k === duoi) duoi--;
+    else tren++;
+    const r = diem(k);
+    if (Math.abs(r) <= T && kiemGiaTriGhi(tag, r).ok) return Object.is(r, -0) ? 0 : r;
+  }
+  return null;
+}
 
 /** Floating-point noise of `o + k·s` (`kenhScada.sachSo`): 7·0.1 = 0.7000000000000001 ⇒ 0.7. */
 const sachSo = (n: number): number => Number(n.toPrecision(15));
@@ -157,10 +223,15 @@ const sachSo = (n: number): number => Number(n.toPrecision(15));
  * `tranTuyetDoi` present (security review 2026-10-25) ⇒ the result is the grid point INSIDE [−tranTuyetDoi, +tranTuyetDoi] nearest to v:
  * k clamped into [ceil((−T − goc)/buoc), floor((T − goc)/buoc)] (a single step back from an outside point is NOT enough: with an offset, a
  * coarse step or a large v it can stay outside or jump past −T). No grid point inside the bound ⇒ `null` (the caller makes NO proposal).
- * Never returns |r| > tranTuyetDoi. −0 ⇒ 0. `dispatch()` stays the final arbiter (range / declared type are not looked at here).
+ * Never returns |r| > tranTuyetDoi. −0 ⇒ 0. `dispatch()` stays the final arbiter.
+ * R1b-2a T2 (task-1-review M7) — a DECLARED int tag (`laKenhDaKhai`) goes through `lamTronTheoLuoiDaKhai` instead: the nearest value on the raw
+ * grid AND on the declared step AND inside the declared range AND inside ±tranTuyetDoi (accepted by `kiemGiaTriGhi`, the rule dispatch() applies
+ * to a declared tag), or null (no proposal). Undeclared int / float with step / roundDp: unchanged (range is not declared there).
  */
 export function lamTronTheoLuoiTag(v: number, luoi: LuoiGhiTag | null, roundDp: number, tranTuyetDoi?: number): number | null {
   if (!Number.isFinite(v)) return null; // polish M5 — NaN / ±Infinity is no correction (never NaN out of a number | null contract)
+  // R1b-2a T2 (M7) — a DECLARED int tag also has a step and a range that dispatch() enforces: raw grid ∩ step ∩ range ∩ ±T, or null.
+  if (luoi && luoi.dataType === "int" && laKenhDaKhai(luoi)) return lamTronTheoLuoiDaKhai(v, luoi, tranTuyetDoi);
   let r: number;
   let goc: number; // grid = goc + k·buoc, buoc > 0
   let buoc: number;
@@ -687,13 +758,17 @@ async function layLuoiTagSpiMacDinh(machineId: number): Promise<{ x: LuoiGhiTag 
       offset: deviceTags.offset,
       writeStep: deviceTags.writeStep,
       writeMin: deviceTags.writeMin,
+      writeMax: deviceTags.writeMax, // R1b-2a T2 (M7) — declared int: range + step + raw grid
+      channelKind: deviceTags.channelKind,
     })
     .from(deviceTags)
     .where(and(eq(deviceTags.adapterId, adapterId), inArray(deviceTags.tagKey, [SPI_OFFSET_X_TAG, SPI_OFFSET_Y_TAG])));
   const theoKhoa = new Map(rows.map((r) => [r.tagKey, r]));
   const luoi = (k: string): LuoiGhiTag | null => {
     const r = theoKhoa.get(k);
-    return r ? { dataType: String(r.dataType), scale: r.scale, offset: r.offset, writeStep: r.writeStep, writeMin: r.writeMin } : null;
+    return r
+      ? { dataType: String(r.dataType), scale: r.scale, offset: r.offset, writeStep: r.writeStep, writeMin: r.writeMin, writeMax: r.writeMax, channelKind: r.channelKind }
+      : null;
   };
   return { x: luoi(SPI_OFFSET_X_TAG), y: luoi(SPI_OFFSET_Y_TAG) };
 }

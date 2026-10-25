@@ -15,8 +15,11 @@
  *   R1b-1 T13 — riêng giá trị lệnh INTERLOCK (`kiemLenhInterlockTrenKenh`): kênh KHÔNG khai mà là int ⇒ lưới thô (`kiemLuoiThoChuaKhai`, CÙNG
  *   hàm cổng kênh sớm của `dispatch()` dùng cho tag chưa khai; R1b-2a T1: MỌI int kể cả scale 1 / offset 0 — lưới số nguyên — và giá trị không
  *   phải số hữu hạn ⇒ TYPE_MISMATCH). Lệnh bảo vệ không được miễn lúc chạy, nên một
- *   giá trị lệch lưới phải bị từ chối LÚC CẤU HÌNH, không phải `OFF_STEP` đúng lúc cần. Ghim DỪNG trên kênh chưa khai KHÔNG kiểm (được miễn
- *   lúc chạy ⇒ không có lệch cấu hình ↔ chạy; ghim lệch lưới là phát hiện cấu hình, xem báo cáo T13).
+ *   giá trị lệch lưới phải bị từ chối LÚC CẤU HÌNH, không phải `OFF_STEP` đúng lúc cần.
+ *   R1b-2a T2 (m4) — ĐẶT ghim DỪNG (`datStopPin`) dùng CÙNG `kiemLenhInterlockTrenKenh`: trên kênh chưa khai, ghim lệch lưới thô (int scale 10:
+ *   25) bị từ chối LÚC ĐẶT (`STOP_PIN_NGOAI_DAI` lyDo OFF_STEP + buoc / goiY) — trước đây không kiểm và driver làm tròn im lặng lúc DỪNG. Chỉ từ
+ *   chối CẤU HÌNH: lúc chạy, STOP khớp ghim vẫn được miễn cả lệnh (ghim cũ lệch lưới vẫn được ghi). R1b-2a T2 (phán quyết T1 c3): kênh chưa
+ *   khai là FLOAT ⇒ giá trị không phải số hữu hạn ⇒ TYPE_MISMATCH (`kiemLuoiThoChuaKhai`, không lưới).
  *
  * ⚠ `kenhDaKhai` là BẢN SAO của `commandDispatcher.kenhDaKhaiGhi` (không import: `stopPin.ts` nhập tệp này và `commandDispatcher.ts` nhập
  *   `stopPin.ts` ⇒ vòng import). Test `stopPin.dai.r1a.db.test.ts` so hai bản trên mọi tổ hợp NULL/khác NULL.
@@ -78,6 +81,20 @@ export function thamSoNgoaiDaiInterlock(
   };
 }
 
+/**
+ * R1b-2a T2 (phán quyết K17) — tham số `STOP_PIN_NGOAI_DAI` { min, max, step, goiY } cho câu vi/en/zh; MỌI nơi phát mã này dùng hàm này
+ * (`deviceAdapter.tags.setStopPin`, `scadaKenh.capNhat`, `kiemSuaTag` của troLaiKenh). Cùng luật `thamSoNgoaiDaiInterlock`: OFF_STEP có lưới ⇒
+ * `step` = lưới vừa trượt (writeStep, hoặc |scale| của lưới thô — tag chưa khai), `goiY` = giá trị hợp lệ gần nhất; còn lại `step` =
+ * write_step khai báo, `goiY` = "—". min/max = dải khai báo ("—" khi không khai).
+ */
+export function thamSoNgoaiDaiStopPin(
+  tag: Pick<DeviceTag, "writeMin" | "writeMax" | "writeStep"> | null | undefined,
+  vp: { ma: string; luoi?: LuoiLech },
+): { min: string | number; max: string | number; step: string | number; goiY: string | number } {
+  const { min, max, step, goiY } = thamSoNgoaiDaiInterlock(tag, vp);
+  return { min, max, step, goiY };
+}
+
 /** Bản sao của `commandDispatcher.kenhDaKhaiGhi` (xem đầu tệp). */
 export function kenhDaKhai(tag: Pick<DeviceTag, "channelKind" | "writeMin" | "writeMax" | "writeStep">): boolean {
   return tag.channelKind != null || tag.writeMin != null || tag.writeMax != null || tag.writeStep != null;
@@ -93,8 +110,8 @@ export function kiemNhatQuanKenh(tag: KenhNhatQuan, giaTri: unknown): KetQuaNhat
 
 /**
  * THUẦN — R1b-1 T13: giá trị lệnh của luật interlock có ghi được lên kênh không, theo ĐÚNG cổng kênh sớm của `dispatch()` — kênh đã khai ⇒
- * `kiemNhatQuanKenh`; kênh chưa khai ⇒ lưới thô của tag int (`kiemLuoiThoChuaKhai`; R1b-2a T1: mọi int, kể cả scale 1 / offset 0; không phải
- * int ⇒ ok).
+ * `kiemNhatQuanKenh`; kênh chưa khai ⇒ lưới thô của tag int (`kiemLuoiThoChuaKhai`; R1b-2a T1: mọi int, kể cả scale 1 / offset 0) hoặc số hữu
+ * hạn của tag float (R1b-2a T2); bool / string / json ⇒ ok. R1b-2a T2: `datStopPin` cũng dùng hàm này cho giá trị ghim.
  */
 export function kiemLenhInterlockTrenKenh(tag: KenhNhatQuan, giaTri: unknown): KetQuaNhatQuan {
   if (kenhDaKhai(tag)) return kiemNhatQuanKenh(tag, giaTri);

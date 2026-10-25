@@ -233,6 +233,10 @@ beforeAll(async () => {
   await seedTag(ad.a, { key: "sc10", dataType: "int", min: 0, max: 300, level: 3 });
   await seedTag(ad.a, { key: "sc10cu", dataType: "int", kind: null, level: 3 });
   await dung(sql`UPDATE device_tags SET scale = 10, "offset" = 0 WHERE "adapterId" = ${ad.a} AND "tagKey" IN ('sc10', 'sc10cu')`);
+  // R1b-2a T2 (m5) — int scale 0.5 CHƯA khai (giá trị kỹ thuật 2.5 = thô 5) + int scale 1 CHƯA khai (đối chứng)
+  await seedTag(ad.a, { key: "sc05cu", dataType: "int", kind: null, level: 3 });
+  await seedTag(ad.a, { key: "sc1cu", dataType: "int", kind: null, level: 3 });
+  await dung(sql`UPDATE device_tags SET scale = 0.5, "offset" = 0 WHERE "adapterId" = ${ad.a} AND "tagKey" = 'sc05cu'`);
   await seedTag(ad.b, { key: "sp3", ...sp, level: 3 });
   await seedTag(ad.e, { key: "sp3", ...sp, level: 3 });
   await seedTag(ad.n, { key: "sp3", ...sp, level: 3 });
@@ -571,6 +575,27 @@ describe("kiem-dinh P1-3 — cổng giá trị biết scale/offset (int): (v −
   it("kênh CHƯA khai (cột 0431 NULL), scale 10, 24 ⇒ VẪN OFF_STEP {goiY 20} — đường HMI luôn kiểm", async () => {
     const { loi } = await tuChoi("opA", { adapterId: ad.a, tagKey: "sc10cu", value: 24 }, { code: "BAD_REQUEST", appCode: "SCADA_VALUE_OFF_STEP", reason: "OFF_STEP" });
     expect(loi.appParams).toMatchObject({ ma: "OFF_STEP", goiY: 20, step: 10 });
+  });
+});
+
+describe("R1b-2a T2 (m5) — HMI và dispatch cùng luật cho int scale lẻ", () => {
+  it("★ request 2.5 trên int scale 0.5 CHƯA khai ⇒ được nhận (trước: SCADA_VALUE_TYPE_MISMATCH); dòng chờ + băm mang SỐ 2.5", async () => {
+    const u = nguoi.opA;
+    const kq = await u.caller.request({ adapterId: ad.a, tagKey: "sc05cu", value: "2.5", lyDo: LY_DO, clientRequestId: uuid() });
+    expect(kq.requestId).toEqual(expect.any(String));
+    expect(kq.preview).toMatchObject({ requested: 2.5 });
+    const [row] = await dung(sql`SELECT "argsJson", "previewJson" FROM ai_pending_actions WHERE id = ${kq.requestId}`);
+    expect(row.argsJson).toMatchObject({ tagKey: "sc05cu", value: 2.5 });
+    expect(row.previewJson.__otPayloadHash).toBe(
+      otPayloadHash({ tool: "hmi.write_tag", adapterId: ad.a, machineId: A.mid, commandType: "write_tag", writes: [{ tagKey: "sc05cu", value: 2.5 }] }),
+    );
+    await dung(sql`DELETE FROM scada_khoa_chon WHERE adapter_id = ${ad.a} AND tag_key = 'sc05cu'`); // nhả khoá chọn cho ca sau
+  });
+
+  it("request 2.6 trên int scale 0.5 CHƯA khai ⇒ OFF_STEP {step 0.5, goiY 2.5}; 2.5 trên int scale 1 CHƯA khai vẫn TYPE_MISMATCH", async () => {
+    const { loi } = await tuChoi("opA", { adapterId: ad.a, tagKey: "sc05cu", value: 2.6 }, { code: "BAD_REQUEST", appCode: "SCADA_VALUE_OFF_STEP", reason: "OFF_STEP" });
+    expect(loi.appParams).toMatchObject({ ma: "OFF_STEP", tagKey: "sc05cu", step: 0.5, goiY: 2.5 });
+    await tuChoi("opA", { adapterId: ad.a, tagKey: "sc1cu", value: 2.5 }, { code: "BAD_REQUEST", appCode: "SCADA_VALUE_TYPE_MISMATCH", reason: "TYPE_MISMATCH" });
   });
 });
 

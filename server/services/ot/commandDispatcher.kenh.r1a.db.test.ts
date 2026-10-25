@@ -14,6 +14,8 @@
  *   sc10      int,   dải 0..300, scale 10                                 ⇒ kiem-dinh P1-3: lưới thô (tag ĐÃ khai)
  *   sc10cu    int,   cột mới NULL, scale 10                               ⇒ R1b-1 T13: lưới thô cho tag CHƯA khai (không ép kiểu)
  *   sc2o1     int,   cột mới NULL, scale 2, offset 1                      ⇒ R1b-1 T13: lưới 1, 3, 5, …
+ *   sc05      int,   dải 0..10, scale 0.5                                 ⇒ R1b-2a T2 (m5): giá trị kỹ thuật 2.5 (thô 5) được nhận
+ *   fcu       float, cột mới NULL                                         ⇒ R1b-2a T2 (phán quyết T1 c3): không phải số hữu hạn ⇒ TYPE_MISMATCH
  */
 import {
   describe,
@@ -77,7 +79,7 @@ import {
   interlockRules,
 } from "../../../drizzle/schema";
 import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
-import { dispatch, type DispatchInput } from "./commandDispatcher";
+import { congKenhSom, dispatch, type DispatchInput, type TagCongKenh } from "./commandDispatcher";
 import { inverseScale } from "./drivers/otScale";
 import { FOE_ENGINE_TOOL, otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
@@ -305,6 +307,9 @@ describe.skipIf(!DB_URL)(
         { adapterId, tagKey: "sc10cu", address: "D206", dataType: "int", writable: true, scale: "10" },
         // R1b-1 T13 — int CHƯA khai, scale 2 offset 1 (lưới thô 1, 3, 5, …)
         { adapterId, tagKey: "sc2o1", address: "D207", dataType: "int", writable: true, scale: "2", offset: "1" },
+        // R1b-2a T2 — int scale 0.5 ĐÃ khai (dải 0..10; giá trị kỹ thuật 2.5 = thô 5) + float CHƯA khai (M2 mở rộng, phán quyết T1 c3)
+        { adapterId, tagKey: "sc05", address: "D208", dataType: "int", writable: true, writeMin: 0, writeMax: 10, scale: "0.5" },
+        { adapterId, tagKey: "fcu", address: "D209", dataType: "float", writable: true },
       ]);
       fake.drivers.set(adapterId, fakeDriver);
       fake.fingerprints.set(
@@ -1015,6 +1020,116 @@ describe.skipIf(!DB_URL)(
       } finally {
         await datGhim(null);
       }
+    });
+
+    // ═════════════════ R1b-2a T2 — HMI và dispatch cùng luật cho int scale lẻ (m5); float CHƯA khai (phán quyết T1 c3); cổng 1 (K4) ═════════════════
+    const datGhimTag = async (tagKey: string, v: unknown) =>
+      (await d()).update(deviceTags).set({ stopValue: v as never }).where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, tagKey)));
+    const hangTag = async (keys: string[]): Promise<Map<string, TagCongKenh>> => {
+      const rows = (await (await d()).select().from(deviceTags).where(eq(deviceTags.adapterId, adapterId))) as TagCongKenh[];
+      return new Map(rows.filter((r) => keys.includes(r.tagKey)).map((r) => [r.tagKey, r]));
+    };
+
+    it("R1b-2a T2 (m5): int scale 0.5 ĐÃ khai — 2.5 ⇒ gửi, thiết bị nhận 2.5 ⇒ số thô 5 (trước: TYPE_MISMATCH ở pass 1 — epInt); \"2.5\" ⇒ ép thành SỐ 2.5", async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      const writes = [{ tagKey: "sc05", value: 2.5 }];
+      const actionId = await makeAction({ writes });
+      const res = await dispatch(input({ actionId, writes }));
+      expect(res.reason).toBeUndefined();
+      expect(res.ok).toBe(true);
+      expect(writtenBatches).toEqual([[{ tagKey: "sc05", value: 2.5 }]]);
+      expect(rawBatches).toEqual([[{ tagKey: "sc05", raw: 5 }]]);
+      process.env.OT_CONTROL_ENABLED = "false"; // đường mô phỏng (không action): kiểm dạng đã ép trên sổ
+      const inpChuoi = input({ writes: [{ tagKey: "sc05", value: "2.5" }] });
+      expect((await dispatch(inpChuoi)).status).toBe("simulated");
+      expect(await requestedTypes(inpChuoi.idempotencyKey)).toEqual(["number"]);
+    });
+
+    it("R1b-2a T2 (m5): int scale 0.5 ĐÃ khai — 2.6 ⇒ OFF_STEP {step 0.5, goiY 2.5}; 10.5 ⇒ OUT_OF_RANGE; scale 1 (cu) 2.5 vẫn OFF_STEP — thiết bị 0 lần", async () => {
+      const r26 = await dispatch(input({ writes: [{ tagKey: "sc05", value: 2.6 }] }));
+      expect(r26.reason).toBe("OFF_STEP");
+      expect(r26.appError).toEqual({ appCode: "SCADA_VALUE_OFF_STEP", appParams: { ma: "OFF_STEP", tagKey: "sc05", step: 0.5, goiY: 2.5 } });
+      expect((await dispatch(input({ writes: [{ tagKey: "sc05", value: 10.5 }] }))).reason).toBe("OUT_OF_RANGE");
+      expect(writeCalls).toBe(0);
+    });
+
+    it("R1b-2a T2: STOP ghim 3 trên int scale 10 CHƯA khai ⇒ ok (không bị pass 1 chặn); STOP ghim 3 trên int scale 10 ĐÃ khai (lệch lưới thô — dữ liệu cũ) ⇒ ok (pass 1 chỉ ép kiểu, lưới ở pass 2 sau miễn trừ)", async () => {
+      try {
+        await datGhimTag("sc10cu", 3);
+        const r1 = await dispatch(input({ commandType: "stop", writes: [{ tagKey: "sc10cu", value: 3 }] }));
+        expect(r1.reason).toBeUndefined();
+        expect(r1.status).toBe("simulated");
+        await datGhimTag("sc10", 3);
+        const r2 = await dispatch(input({ commandType: "stop", writes: [{ tagKey: "sc10", value: 3 }] }));
+        expect(r2.reason).toBeUndefined();
+        expect(r2.status).toBe("simulated");
+        // không phải lệnh dừng ⇒ không miễn ⇒ lưới thô ở pass 2
+        expect((await dispatch(input({ writes: [{ tagKey: "sc10", value: 3 }] }))).reason).toBe("OFF_STEP");
+      } finally {
+        await datGhimTag("sc10cu", null);
+        await datGhimTag("sc10", null);
+      }
+    });
+
+    it('R1b-2a T2 (K4) — cổng 1 (requireBoundAction): int scale 10 ĐÃ khai, action băm trên 30, gửi "30.0" ⇒ cổng 1 ép CÙNG cách pass 1 ⇒ khớp, thiết bị nhận 30 ⇒ số thô 3', async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      const actionId = await makeAction({ writes: [{ tagKey: "sc10", value: 30 }] });
+      const res = await dispatch(input({ actionId, requireBoundAction: true, writes: [{ tagKey: "sc10", value: "30.0" }] }));
+      expect(res.reason).toBeUndefined();
+      expect(res.status).toBe("acked");
+      expect(writtenBatches).toEqual([[{ tagKey: "sc10", value: 30 }]]);
+      expect(rawBatches).toEqual([[{ tagKey: "sc10", raw: 3 }]]);
+    });
+
+    it("R1b-2a T2 (K4) — CHẴN LẺ cổng 1 ↔ pass 1: với mỗi (tag, giá trị thô), action băm trên giá trị pass 1 (congKenhSom thuần, hàng tag THẬT) ép ra ⇒ cổng 1 KHÔNG BAO GIỜ ACTION_BINDING_MISMATCH", async () => {
+      const keys = ["sc10", "sc05", "nhiet_sp", "toc_do"];
+      const theo = await hangTag(keys);
+      const ca: Array<{ tagKey: string; value: unknown }> = [
+        { tagKey: "sc10", value: "30.0" },
+        { tagKey: "sc10", value: " 300 " },
+        { tagKey: "sc10", value: 30 },
+        { tagKey: "sc05", value: "2.5" },
+        { tagKey: "sc05", value: "-0" },
+        { tagKey: "sc05", value: 7 },
+        { tagKey: "nhiet_sp", value: "245.0" },
+        { tagKey: "toc_do", value: "50" },
+      ];
+      for (const w of ca) {
+        const p1 = congKenhSom("set_param", [w], [theo.get(w.tagKey)!]);
+        expect(p1.ok, `pass 1 ${JSON.stringify(w)}`).toBe(true);
+        const epKieu = p1.ok ? p1.writes : [];
+        const actionId = await makeAction({ writes: epKieu.map((x) => ({ tagKey: x.tagKey, value: x.value })) });
+        const res = await dispatch(input({ actionId, requireBoundAction: true, writes: [w] }));
+        expect(res.reason, `cổng 1 ${JSON.stringify(w)} ⇒ băm trên ${JSON.stringify(epKieu)}`).not.toBe("ACTION_BINDING_MISMATCH");
+        expect(res.status, JSON.stringify(w)).toBe("simulated");
+      }
+    });
+
+    it("R1b-2a T2 (phán quyết T1 c3): float CHƯA khai — NaN / Infinity / \"abc\" / \"\" / chỉ khoảng trắng / [1.5] / {v:1.5} ⇒ TYPE_MISMATCH, thiết bị 0 lần, action KHÔNG bị tiêu thụ", async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      for (const value of [Number.NaN, Number.POSITIVE_INFINITY, "abc", "", "   ", [1.5], { v: 1.5 }]) {
+        const writes = [{ tagKey: "fcu", value }];
+        const actionId = await makeAction({ writes });
+        const inp = input({ actionId, writes });
+        const res = await dispatch(inp);
+        expect(res.reason, String(JSON.stringify(value))).toBe("TYPE_MISMATCH");
+        expect((await ledger(inp.idempotencyKey))[0]!.errorText).toMatch(/^TYPE_MISMATCH: Tag "fcu": giá trị không phải số hữu hạn — tag float không ghi được/);
+        expect(await pendingStatus(actionId)).toBe("confirmed");
+      }
+      expect(writeCalls).toBe(0);
+    });
+
+    it("R1b-2a T2: float CHƯA khai — 2.25 ⇒ thiết bị nhận 2.25; \"1.5\" ⇒ đi tiếp NGUYÊN chuỗi (không ép kiểu — hành vi cũ)", async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      const writes = [{ tagKey: "fcu", value: 2.25 }];
+      const actionId = await makeAction({ writes });
+      const res = await dispatch(input({ actionId, writes }));
+      expect(res.ok).toBe(true);
+      expect(writtenBatches).toEqual([[{ tagKey: "fcu", value: 2.25 }]]);
+      process.env.OT_CONTROL_ENABLED = "false";
+      const inp = input({ writes: [{ tagKey: "fcu", value: "1.5" }] });
+      expect((await dispatch(inp)).status).toBe("simulated");
+      expect(await requestedTypes(inp.idempotencyKey)).toEqual(["string"]);
     });
   }
 );
