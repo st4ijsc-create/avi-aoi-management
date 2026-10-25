@@ -10,12 +10,14 @@
  *   • kiem-dinh P1-2 — kèm mã TOTP 6 số MỖI lần lưu (máy chủ kiểm mã tươi, mức 5); lỗi mã ⇒ xoá ô mã để nhập mã mới.
  *   • R1a Task 14 — cột "Faceplate" (khi trang truyền `onFaceplate`): nút trên kênh GHI ĐƯỢC (writable + kênh ra + bật) mở M4. Không
  *     khoá theo `canAct`: operator được ghi kênh mức 1–3 (Q4); máy chủ quyết ở `scadaCommands.request`.
+ *   • R1b-2a Task 7 — cột chọn (khi `canAct` + trang truyền `adapterId`): CHỈ hàng `kenhGhiDuoc`, tối đa `TRAN_HANG_LOAT` (đạt trần ⇒ khoá
+ *     ô chưa chọn + chữ trần); thanh "Khai mức hàng loạt (n)" mở `HopKhaiHangLoat` (một lô / một adapter / một mã khi máy chủ đòi).
  * Màu chỉ lấy token ISA có sẵn (`--isa-*`, `--alarm-*`); màu không bao giờ là kênh duy nhất (biểu tượng + chữ).
  */
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { AlertTriangle, Gauge, Pencil } from "lucide-react";
+import { AlertTriangle, Gauge, Layers, Pencil } from "lucide-react";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 import { trpc } from "@/lib/trpc";
@@ -28,6 +30,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { BIEN_MAU_TONE } from "./chatLuongHienThi";
 import { dinhDangSo, docSoNhap, laLoaiKenhGhi, mucHienThi } from "./kenhHienThi";
 import { LOP_O_CHON, TruongLyDo, TruongTotp, laLoiMaTotp, lyDoDuDai, maTotpDu } from "./TruongLyDo";
+import { HopKhaiHangLoat, TRAN_HANG_LOAT } from "./HopKhaiHangLoat";
 
 export type HangKenh = inferRouterOutputs<AppRouter>["scadaKenh"]["danhSach"][number];
 type LoaiKenh = HangKenh["loaiKenh"];
@@ -216,21 +219,75 @@ export interface BangKenhProps {
   canAct: boolean;
   /** R1a T14 — mở faceplate M4 của một kênh ghi được (vắng ⇒ không có cột) */
   onFaceplate?: (h: HangKenh) => void;
+  /**
+   * R1b-2a T7 — adapter của bảng (khai mức hàng loạt: MỘT adapter mỗi lô). Vắng ⇒ không có cột chọn. Trang đặt `key` theo adapter để đổi
+   * adapter là bỏ chọn.
+   */
+  adapterId?: number;
 }
 
 /** Kênh nhận lệnh từ faceplate: cùng điều kiện cổng 3 của request (writable + kênh ra) + đang bật. */
 export const kenhGhiDuoc = (h: HangKenh): boolean => h.writable && h.isEnabled && laLoaiKenhGhi(h.loaiKenh);
 
-export function BangKenh({ rows, canAct, onFaceplate }: BangKenhProps) {
+export function BangKenh({ rows, canAct, onFaceplate, adapterId }: BangKenhProps) {
   const { t, i18n } = useTranslation();
   const [sua, setSua] = useState<HangKenh | null>(null);
   const so = (v: number | null) => dinhDangSo(v, i18n.language);
 
+  // ── R1b-2a T7 — chọn kênh cho khai mức hàng loạt: chỉ khi `canAct`, chỉ hàng `kenhGhiDuoc`, tối đa TRAN_HANG_LOAT ──
+  const coChon = canAct && adapterId !== undefined;
+  const [chon, setChon] = useState<ReadonlySet<number>>(() => new Set());
+  const [moHangLoat, setMoHangLoat] = useState(false);
+  const ghiDuoc = coChon ? rows.filter(kenhGhiDuoc) : [];
+  const hangChon = ghiDuoc.filter((h) => chon.has(h.tagId)); // hàng đã đổi / biến mất sau làm mới tự rơi khỏi lô
+  const daTran = hangChon.length >= TRAN_HANG_LOAT;
+  const tatCaChon = ghiDuoc.length > 0 && hangChon.length === Math.min(ghiDuoc.length, TRAN_HANG_LOAT);
+  const doiChon = (tagId: number) =>
+    setChon((cu) => {
+      const moi = new Set(cu);
+      if (moi.has(tagId)) moi.delete(tagId);
+      else if (hangChon.length < TRAN_HANG_LOAT) moi.add(tagId);
+      return moi;
+    });
+  const chonTatCa = () => setChon(tatCaChon ? new Set() : new Set(ghiDuoc.slice(0, TRAN_HANG_LOAT).map((h) => h.tagId)));
+
   return (
     <>
+      {coChon && ghiDuoc.length > 0 && (
+        <div data-testid="thanh-hang-loat" className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">{t("scada.kenh.hangLoat.daChon", { n: hangChon.length })}</span>
+          <Button size="sm" disabled={hangChon.length === 0} onClick={() => setMoHangLoat(true)}>
+            <Layers className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+            {t("scada.kenh.hangLoat.nut", { n: hangChon.length })}
+          </Button>
+          {hangChon.length > 0 && (
+            <Button size="sm" variant="outline" onClick={() => setChon(new Set())}>
+              {t("scada.kenh.hangLoat.boChon")}
+            </Button>
+          )}
+          {daTran && (
+            <KhoiCanhBao testId="hang-loat-tran" tone="--alarm-medium">
+              {t("scada.kenh.hangLoat.tran", { toiDa: TRAN_HANG_LOAT })}
+            </KhoiCanhBao>
+          )}
+        </div>
+      )}
       <Table data-testid="bang-kenh">
         <TableHeader>
           <TableRow>
+            {coChon && (
+              <TableHead className="w-8">
+                {ghiDuoc.length > 0 && (
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    aria-label={t("scada.kenh.hangLoat.chonTatCa", { toiDa: TRAN_HANG_LOAT })}
+                    checked={tatCaChon}
+                    onChange={chonTatCa}
+                  />
+                )}
+              </TableHead>
+            )}
             <TableHead>{t("scada.kenh.col.tag")}</TableHead>
             <TableHead>{t("scada.kenh.col.loai")}</TableHead>
             <TableHead>{t("scada.kenh.col.dai")}</TableHead>
@@ -247,6 +304,20 @@ export function BangKenh({ rows, canAct, onFaceplate }: BangKenhProps) {
             const coDai = h.writeMin !== null || h.writeMax !== null;
             return (
               <TableRow key={h.tagId} className={h.isEnabled ? undefined : "opacity-60"}>
+                {coChon && (
+                  <TableCell className="w-8 align-top">
+                    {kenhGhiDuoc(h) && (
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        aria-label={t("scada.kenh.hangLoat.chon", { tagKey: h.tagKey })}
+                        checked={chon.has(h.tagId)}
+                        disabled={!chon.has(h.tagId) && daTran}
+                        onChange={() => doiChon(h.tagId)}
+                      />
+                    )}
+                  </TableCell>
+                )}
                 <TableCell className="min-w-[200px] align-top">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-medium">{h.tagKey}</span>
@@ -309,6 +380,9 @@ export function BangKenh({ rows, canAct, onFaceplate }: BangKenhProps) {
         </TableBody>
       </Table>
       {sua && <HopSuaKenh key={sua.tagId} hang={sua} onDong={() => setSua(null)} />}
+      {moHangLoat && adapterId !== undefined && hangChon.length > 0 && (
+        <HopKhaiHangLoat adapterId={adapterId} hang={hangChon} onDong={() => setMoHangLoat(false)} onDaKhai={() => setChon(new Set())} />
+      )}
     </>
   );
 }

@@ -547,7 +547,9 @@ const KHOA_DEPLOY: readonly string[] = QUET.thuTuc.map((t) => khoaClient(t)).fil
  * không cache phiên): `scadaKenh.capNhat`, `scadaKenh.cheDo.dat` (khoá client `scadaKenh.dat`), `scadaKenh.cheDo.go` (`scadaKenh.go`).
  * Gửi `totpCode` tới chúng là đúng hợp đồng, không phải "khoá lạ" mà vế CHIỀU NGƯỢC canh.
  */
-const KHOA_TOTP_TRONG_HANDLER: readonly string[] = ["scadaKenh.capNhat", "scadaKenh.dat", "scadaKenh.go"];
+// R1b-2a T7 (2026-10-25) — + `scadaKenh.khaiHangLoat` (khai mức hàng loạt, tự kiểm mã mức 5 ở handler như capNhat): điểm gọi duy nhất ở
+//   `HopKhaiHangLoat.tsx` gửi `totpCode` trực tiếp (lượt đầu `undefined`, máy chủ đòi ⇒ hộp mã gửi lại kèm mã), không qua `stepUp.guard`.
+const KHOA_TOTP_TRONG_HANDLER: readonly string[] = ["scadaKenh.capNhat", "scadaKenh.dat", "scadaKenh.go", "scadaKenh.khaiHangLoat"];
 
 describe("★★★ I-3 — nửa CLIENT của bất biến step-up, ∀ THỦ TỤC `deployProcedure` (không chỉ VRAM)", () => {
   it("★★★ cầu chì — bộ suy đọc được cả hai nửa: 0 ô mù, 9 thủ tục, 9 khoá client, nhiều file client", () => {

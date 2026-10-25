@@ -7,6 +7,9 @@
  *
  * R1a Task 14 — nút "Faceplate" trên kênh ghi được mở M4 (`Faceplate`) cho adapter đang chọn (máy + mã edge lấy từ `scadaDiag.danhSach`).
  *
+ * R1b-2a Task 7 — khai mức hàng loạt: bảng nhận `adapterId` (MỘT adapter mỗi lô) và `key` theo adapter ⇒ đổi adapter là bỏ chọn
+ * (`HopKhaiHangLoat` → `scadaKenh.khaiHangLoat`).
+ *
  * QUYỀN: nút sửa chỉ hiện với engineer|admin có `machine_control.canEdit` (cùng cổng `canAct` của ScadaDiag) — chỉ là tiện lợi; ranh giới
  * bảo mật là máy chủ (vai + 2FA + giấy phép + quyền + phạm vi mỗi lần gọi). Lỗi máy chủ đi qua `toastTrpcError` (mã AppError đã i18n).
  */
@@ -127,7 +130,13 @@ export default function ScadaKenh() {
           ) : kenhs.length === 0 ? (
             <EmptyState variant="no-data" title={t("scada.kenh.trong")} compact />
           ) : (
-            <BangKenh rows={kenhs} canAct={canAct} onFaceplate={(h) => adapter && setFpTag({ adapterId: adapter.adapterId, tagKey: h.tagKey })} />
+            <BangKenh
+              key={adapter.adapterId}
+              rows={kenhs}
+              canAct={canAct}
+              adapterId={adapter.adapterId}
+              onFaceplate={(h) => setFpTag({ adapterId: adapter.adapterId, tagKey: h.tagKey })}
+            />
           )}
         </SectionCard>
         {fpTag && adapter && fpTag.adapterId === adapter.adapterId && (

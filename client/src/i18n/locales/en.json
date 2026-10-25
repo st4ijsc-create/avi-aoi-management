@@ -23705,6 +23705,28 @@
         "capNhatKhongDoi": "Nothing changed.",
         "datCheDo": "Mode channel set.",
         "goCheDo": "Mode channel unlinked."
+      },
+      "hangLoat": {
+        "chon": "Select {{tagKey}} for bulk level declaration",
+        "chonTatCa": "Select all writable channels (at most {{toiDa}})",
+        "daChon": "{{n}} channels selected",
+        "nut": "Declare level in bulk ({{n}})",
+        "boChon": "Clear selection",
+        "tran": "Reached the limit of {{toiDa}} channels per batch — declare this batch first, then select more.",
+        "quaTran": "The batch has {{n}} channels, at most {{toiDa}} per batch — deselect some, then submit.",
+        "tieuDe": "Declare actuation level for {{n}} channels",
+        "moTa": "One batch of one adapter: either every channel is declared or none changes. Channels already at the level are kept. The server asks for a two-factor code when the batch changes something.",
+        "danhSach": "Channels in the batch",
+        "muc": "New actuation level",
+        "mucChon": "— Choose a level —",
+        "boKhai": "Undeclare (⇒ 5 — closed by default)",
+        "ghimNhac": "A tag pinned for STOP must stay at level 1 — remove the pin first",
+        "ghimTag": "Pinned for STOP: {{tags}}",
+        "loiTag": "Channel {{tagKey}}: {{loi}}",
+        "gui": "Declare level",
+        "daKhai": "Level declared: {{soDoi}} channels changed, {{soGiuNguyen}} unchanged.",
+        "maTieuDe": "Two-factor code required for the level batch",
+        "maThan": "This batch changes channel actuation levels, so a new TOTP code is required. Enter the 6-digit code to resend the same batch; a used code cannot be reused."
       }
     },
     "faceplate": {

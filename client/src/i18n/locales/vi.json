@@ -23679,6 +23679,28 @@
         "capNhatKhongDoi": "Không có gì thay đổi.",
         "datCheDo": "Đã đặt kênh chế độ.",
         "goCheDo": "Đã gỡ kênh chế độ."
+      },
+      "hangLoat": {
+        "chon": "Chọn {{tagKey}} để khai mức hàng loạt",
+        "chonTatCa": "Chọn mọi kênh ghi được (tối đa {{toiDa}})",
+        "daChon": "Đã chọn {{n}} kênh",
+        "nut": "Khai mức hàng loạt ({{n}})",
+        "boChon": "Bỏ chọn",
+        "tran": "Đã đạt tối đa {{toiDa}} kênh mỗi lô — khai lô này trước rồi chọn tiếp.",
+        "quaTran": "Lô có {{n}} kênh, tối đa {{toiDa}} kênh mỗi lô — bỏ chọn bớt rồi gửi.",
+        "tieuDe": "Khai mức tác động cho {{n}} kênh",
+        "moTa": "Một lô của một adapter: hoặc mọi kênh cùng được khai, hoặc không kênh nào đổi. Kênh đã đúng mức được giữ nguyên. Máy chủ hỏi mã xác thực hai lớp khi lô có thay đổi.",
+        "danhSach": "Kênh trong lô",
+        "muc": "Mức tác động mới",
+        "mucChon": "— Chọn mức —",
+        "boKhai": "Bỏ khai (⇒ 5 — mặc định đóng)",
+        "ghimNhac": "Tag đang ghim DỪNG phải ở mức 1 — gỡ ghim trước",
+        "ghimTag": "Đang ghim DỪNG: {{tags}}",
+        "loiTag": "Kênh {{tagKey}}: {{loi}}",
+        "gui": "Khai mức",
+        "daKhai": "Đã khai mức: {{soDoi}} kênh đổi, {{soGiuNguyen}} kênh giữ nguyên.",
+        "maTieuDe": "Cần mã xác thực hai lớp cho lô khai mức",
+        "maThan": "Lô này đổi mức tác động của kênh nên cần mã TOTP mới. Nhập mã 6 số để gửi lại đúng lô đó; mã đã dùng không dùng lại được."
       }
     },
     "faceplate": {
