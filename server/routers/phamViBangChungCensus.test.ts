@@ -16,7 +16,7 @@ import { BANG_CHUNG_DOC, BANG_CHUNG_GHI, BANG_CHUNG_TUYEN, type BangChung } from
 const GOC = join(__dirname, "..", "..");
 
 /** Ghim nợ-bằng-chứng (đo 2026-10-25): chỉ được GIẢM. */
-const GHIM = { ghi: 0, doc: 0, tuyen: 0 } as const; // 2026-10-25 (W19d): ghi 0 · tuyến 0 · còn 31 đọc (danh mục dùng chung / miễn trừ mới của L7 — luong-ui)
+const GHIM = { ghi: 0, doc: 0, tuyen: 0 } as const; // 2026-10-25 gộp W19d (ghi 0, tuyến 0) với L8b (đọc 31 → 0) ⇒ mọi miễn trừ đều có bằng chứng
 
 const SO = [
   { ten: "ghi", mien: MIEN_TRU_GHI as Readonly<Record<string, string>>, bang: BANG_CHUNG_GHI },
