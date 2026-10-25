@@ -122,8 +122,8 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
   "server/routers/hierarchyRouters.ts#machineRouter.claimKey": "đường PUBLIC xác thực bằng token một lần do admin phát (redeemMachineClaimToken / redeemMachineEnrollmentToken), có throttle theo IP + audit mọi lần thử; serialNumber chỉ chọn máy mà token đã gắn — W14b",
   "server/routers/hierarchyRouters.ts#machineRouter.enroll": "đường PUBLIC xác thực bằng token một lần do admin phát (redeemMachineClaimToken / redeemMachineEnrollmentToken), có throttle theo IP + audit mọi lần thử; serialNumber chỉ chọn máy mà token đã gắn — W14b",
   "server/routers/hierarchyRouters.ts#machineRouter.register": "đường máy TỰ ĐĂNG KÝ công khai (throttle IP + hàng chờ duyệt có trần); CÒN LỖ: cập nhật máy đã có theo serial + đặt lại 'pending' không xác thực ⇒ giao W15 (dieu-phoi 2026-10-25), miễn trừ tạm thời tới khi vá",
-  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingCheckin": "đường PUBLIC theo sessionId giấy phép nổi (floating licence) — không dữ liệu nhà máy — W14b",
-  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingHeartbeat": "đường PUBLIC theo sessionId giấy phép nổi (floating licence) — không dữ liệu nhà máy — W14b",
+  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingCheckin": "protectedProcedure — đã đăng nhập; sessionId + licenseKey do License Server kiểm; không đặt được sàn vai vì mọi người tự check-in phiên của mình; không dữ liệu nhà máy — W14b, xác nhận W17d (dieu-phoi 2026-10-25)",
+  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingHeartbeat": "protectedProcedure — đã đăng nhập; sessionId + licenseKey do License Server kiểm; không đặt được sàn vai vì mọi người tự check-in phiên của mình; không dữ liệu nhà máy — W14b, xác nhận W17d (dieu-phoi 2026-10-25)",
   "server/routers/machineApiRouters.ts#machineApiRouter.submitProcessResult": "đường MÁY ingest xác thực bằng khoá máy: máy lấy từ khoá (authenticateMachine); lineCode đối chiếu với chuỗi nhà máy của máy (macTenantChoGhi); stationId tự khai nay phải cùng nhà máy với máy (tramCungNhaMayVoiMay, W14b, test helper phamViGhiDoW14b) — bộ quét không nhận ra phạm vi suy từ máy",
   "server/routers/sessionRouter.ts#sessionRouter.revoke": "thu hồi phiên của CHÍNH người gọi: db.revokeSession(sessionId, ctx.user.id) kiểm sở hữu trong db — W14b",
   "server/routers/userRouters.ts#userRouter.revokeSession": "dữ liệu của CHÍNH người gọi: revokeSession(sessionId, ctx.user.id) kiểm sở hữu; setUiPrefs từ chối khi expectedUserId ≠ ctx.user.id — W14b",
@@ -225,10 +225,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
     "Ghi phản hồi câu trả lời KB của CHÍNH người gọi (recordAnswerFeedback userId = ctx.user.id); không có dữ liệu nhà máy.",
   "server/routers/aiLocalTrainingRouter.ts#aiLocalTrainingRouter.predict":
     "Suy luận model cục bộ trên dữ liệu người dùng đưa vào; không đọc / ghi bảng nhà máy.",
-  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.evaluateRollback":
-    "Quay lui phiên bản MODEL (tài nguyên toàn cục, không cột nhà máy); đòi requirePermission(machine_control, canEdit) + quality gate eval (doc69 W0-2).",
-  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.manualRollback":
-    "Quay lui phiên bản MODEL (tài nguyên toàn cục, không cột nhà máy); đòi requirePermission(machine_control, canEdit) + quality gate eval (doc69 W0-2).",
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.deleteMask":
     "deleteMask: chỉ người tạo mask hoặc admin (row.createdBy !== ctx.user.id && role !== admin ⇒ FORBIDDEN); runSegmentation: suy luận model trên ảnh người dùng đưa vào, không ghi bảng nhà máy.",
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.runSegmentation":

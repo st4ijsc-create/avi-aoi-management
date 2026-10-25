@@ -67,8 +67,4 @@ export function dieuKienTram(pv: PhamViTram | undefined): SQL | undefined {
   return undefined;
 }
 
-/** Hàng kết quả của `db.execute` (postgres-js trả mảng; node-pg trả `{ rows }`). */
-export function hangKetQua(result: unknown): Array<Record<string, any>> {
-  if (Array.isArray(result)) return result as Array<Record<string, any>>;
-  return ((result as { rows?: Array<Record<string, any>> } | null)?.rows ?? []) as Array<Record<string, any>>;
-}
+export { hangKetQua } from "../db/hangKetQua";
