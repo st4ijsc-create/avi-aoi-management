@@ -27,7 +27,7 @@
  */
 import { logger } from "../../logger";
 
-export const MA_ON =Object.freeze(["DA_XU_LY", "HET_HAN", "NOT_FOUND", "TOTP_CAN"] as const);
+export const MA_ON = Object.freeze(["DA_XU_LY", "HET_HAN", "NOT_FOUND", "TOTP_CAN"] as const);
 export const TRAN_MOI_PHUT = 30;
 export const CUA_SO_MS = 60_000;
 /** Trần cứng số khoá giữ trong RAM (quét hết hạn không đủ khi bị dò nhiều userId). */
@@ -137,6 +137,9 @@ let xaGhi: GhiTongKet | null = null;
 let xaChuKyMs = CHU_KY_XA_MS;
 let hen: ReturnType<typeof setInterval> | null = null;
 
+/** Dòng tổng kết ghi lỗi lần đầu, chờ MỘT lần thử lại ở lượt quét kế. */
+const thuLaiSau: TongKetHetHan[] = [];
+
 function conCuaSoTreo(): boolean {
   for (const w of cuaSo.values()) if (w.biGop > 0) return true;
   return false;
@@ -150,19 +153,29 @@ function dungHen(): void {
 function quetXa(): void {
   const ghi = xaGhi;
   if (ghi) {
-    for (const d of layTongKetHetHan()) {
+    // Mới hết hạn + những dòng thử-lại của lượt quét trước (mỗi dòng tối đa MỘT lần thử lại).
+    const viec: Array<{ d: TongKetHetHan; thuLai: boolean }> = [
+      ...thuLaiSau.splice(0).map((d) => ({ d, thuLai: true })),
+      ...layTongKetHetHan().map((d) => ({ d, thuLai: false })),
+    ];
+    for (const { d, thuLai } of viec) {
       // Lỗi chỉ log (sổ phụ): không bao giờ ném ra khỏi hẹn giờ.
       void Promise.resolve()
         .then(() => ghi(d))
         .catch((err: unknown) => {
-          logger.error(
-            { err: (err as Error)?.message ?? String(err), userId: d.userId, reasonCode: d.reasonCode, soLan: d.soLan },
-            "[SCADA] xả dòng tổng kết DIEU_TIET lỗi — bỏ qua",
-          );
+          const chiTiet = { err: (err as Error)?.message ?? String(err), userId: d.userId, reasonCode: d.reasonCode, soLan: d.soLan };
+          if (!thuLai) {
+            // Lần đầu lỗi (insert KHÔNG thành công ⇒ chưa có dòng nào): xếp lại ĐÚNG MỘT lần cho lượt quét kế.
+            thuLaiSau.push(d);
+            henXa();
+            logger.warn(chiTiet, "[SCADA] xả dòng tổng kết DIEU_TIET lỗi — thử lại một lần ở lượt quét kế");
+          } else {
+            logger.error(chiTiet, "[SCADA] xả dòng tổng kết DIEU_TIET lỗi lần hai — bỏ qua");
+          }
         });
     }
   }
-  if (!conCuaSoTreo()) dungHen();
+  if (!conCuaSoTreo() && thuLaiSau.length === 0) dungHen();
 }
 
 function henXa(): void {
@@ -190,6 +203,7 @@ export function batXaTongKet(ghi: GhiTongKet, chuKyMs: number = CHU_KY_XA_MS): v
 export function __datLaiDieuTiet(): void {
   cuaSo.clear();
   lanQuetCuoi = 0;
+  thuLaiSau.length = 0;
   dungHen();
   xaGhi = null;
   xaChuKyMs = CHU_KY_XA_MS;

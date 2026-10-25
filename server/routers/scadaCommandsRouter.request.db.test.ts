@@ -745,10 +745,28 @@ describe("R1b-2a T9 — canh 0433 đầu request", () => {
     } finally {
       __datTrangThaiSchemaR1a(truoc);
     }
-    // chưa kiểm / không kiểm được ⇒ KHÔNG canh (request đi tiếp, tới dòng chờ)
+    // khôi phục ⇒ request đi tiếp, tới dòng chờ
     const m2 = await moc();
     const kq = await u.caller.request({ adapterId: ad.a, tagKey: "sp0433", value: 100, lyDo: LY_DO, clientRequestId: uuid() });
     expect(kq.requestId).toBeTruthy();
     expect((await dongThuSau(m2, u.id)).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["chua_kiem", { kieu: "chua_kiem" }],
+    ["khong_kiem_duoc", { kieu: "khong_kiem_duoc", loi: "x", loai: "khac" }],
+  ] as const)("trạng thái schema '%s' (không biết ≠ thiếu) ⇒ KHÔNG canh: request đi tiếp tới dòng chờ", async (_ten, trangThai) => {
+    const { __datTrangThaiSchemaR1a, trangThaiSchemaR1a } = await import("../_core/kiemSchemaR1a");
+    const truoc = trangThaiSchemaR1a();
+    const u = nguoi.opA2;
+    __datTrangThaiSchemaR1a(trangThai as never);
+    try {
+      const choTruoc = await soDongCho(u.id);
+      const kq = await u.caller.request({ adapterId: ad.a, tagKey: "sp0433", value: 100, lyDo: LY_DO, clientRequestId: uuid() });
+      expect(kq.requestId).toBeTruthy();
+      expect(await soDongCho(u.id)).toBeGreaterThan(choTruoc);
+    } finally {
+      __datTrangThaiSchemaR1a(truoc);
+    }
   });
 });

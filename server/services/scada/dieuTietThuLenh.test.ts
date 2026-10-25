@@ -130,9 +130,31 @@ describe("R1b-2a T9 — xả tổng kết cho người ngừng hẳn", () => {
     batXaTongKet(ghi);
     batXaTongKet(ghi);
     for (let i = 0; i < 40; i++) nenGhiThuLenh(8, "TOTP_CAN", Date.now(), "confirm");
-    await vi.advanceTimersByTimeAsync(61_000);
-    expect(ghi).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(71_000);
+    // lỗi mãi ⇒ đúng MỘT lần thử lại rồi bỏ (không vòng lặp vô hạn)
+    expect(ghi).toHaveBeenCalledTimes(2);
     expect(__henXaDangChay()).toBe(false);
+    await vi.advanceTimersByTimeAsync(5 * CUA_SO_MS);
+    expect(ghi).toHaveBeenCalledTimes(2);
+  });
+
+  it("lần ghi đầu LỖI, lần hai thành công ⇒ đúng MỘT dòng tổng kết được ghi (thử lại một lần, không nhân đôi)", async () => {
+    vi.useFakeTimers();
+    const daGhi: unknown[] = [];
+    let lan = 0;
+    const ghi = vi.fn(async (d: unknown) => {
+      lan += 1;
+      if (lan === 1) throw new Error("db chớp");
+      daGhi.push(d);
+    });
+    batXaTongKet(ghi);
+    for (let i = 0; i < 40; i++) nenGhiThuLenh(12, "HET_HAN", Date.now(), "request");
+    await vi.advanceTimersByTimeAsync(71_000);
+    expect(ghi).toHaveBeenCalledTimes(2);
+    expect(daGhi).toEqual([{ userId: 12, reasonCode: "HET_HAN", stage: "request", soLan: 10 }]);
+    expect(__henXaDangChay()).toBe(false);
+    await vi.advanceTimersByTimeAsync(5 * CUA_SO_MS);
+    expect(daGhi).toHaveLength(1);
   });
 
   it("không đăng ký bộ xả ⇒ không bao giờ hẹn giờ (hành vi R1b-1 giữ nguyên)", () => {

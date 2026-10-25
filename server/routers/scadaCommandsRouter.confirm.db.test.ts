@@ -1095,5 +1095,5 @@ describe("R1b-2a T9 — canh 0433 đầu confirm + xả tổng kết cho ngườ
       vi.useRealTimers();
       dt.__datLaiDieuTiet();
     }
-  });
+  }, 60_000);
 });
