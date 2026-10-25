@@ -10158,7 +10158,8 @@
     "activeBadge": "Active badge",
     "active": "Active",
     "actions": "Actions",
-    "acknowledge": "Acknowledge"
+    "acknowledge": "Acknowledge",
+    "cpkKhongXacDinh": "Some Cpk/Ppk points are undetermined (constant data — zero standard deviation): no bar is drawn; this is NOT zero."
   },
   "users": {
     "userList": "User list",

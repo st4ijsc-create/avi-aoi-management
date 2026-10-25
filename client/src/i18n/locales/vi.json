@@ -10138,7 +10138,8 @@
     "rule": "Quy tắc",
     "mean": "Giá trị trung bình",
     "info": "Thông tin",
-    "ma5": "MA 5"
+    "ma5": "MA 5",
+    "cpkKhongXacDinh": "Có điểm Cpk/Ppk không xác định (dữ liệu hằng — độ lệch chuẩn bằng 0): không vẽ thanh, KHÔNG phải 0."
   },
   "users": {
     "assignUserToCorporateFactory": "Phân công Người dùng đến Tập đoàn Nhà máy",

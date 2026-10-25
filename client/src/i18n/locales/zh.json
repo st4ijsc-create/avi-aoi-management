@@ -9941,7 +9941,8 @@
     "activeBadge": "活跃徽章",
     "active": "活跃",
     "actions": "操作",
-    "acknowledge": "确认"
+    "acknowledge": "确认",
+    "cpkKhongXacDinh": "部分 Cpk/Ppk 点无法确定（数据恒定——标准差为 0）：不绘制柱形，并非为 0。"
   },
   "users": {
     "userList": "用户列表",
