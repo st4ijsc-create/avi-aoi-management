@@ -951,7 +951,8 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // Chứng minh: loAiDocNhom1PhamVi (10 ca) + loAiDocNhom2PhamVi (12 ca) — đỏ-trước trên HEAD sạch; đột biến 83/83 bắt (sau khi bổ sung ca). Lỗi CÓ SẴN vá kèm: getQualityGateStats đọc .rows (postgres-js trả mảng) ⇒ stats luôn 0; runDiversitySampling dùng toán tử <=> trên cột text ⇒ luôn lỗi + .rows.
 // 2026-10-25 gộp R1b-1 (D +1) với L6b ⇒ đo bằng census.
 // 2026-10-25 gộp L6w (getVariant C→S) với main R1b-1 ⇒ đo bằng census.
-const GHIM = { A: 117, B: 8, C: 469, D: 1199, S: 610, tong: 2403 } as const;
+// L6c-C1 (2026-10-25): 22 thủ tục đọc OT trục máy/robot/adapter được vá (A 117→95, S 610→632) — loOtDocC1PhamVi.db.test.ts
+const GHIM = { A: 95, B: 8, C: 469, D: 1199, S: 632, tong: 2403 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
