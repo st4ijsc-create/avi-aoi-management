@@ -136,7 +136,7 @@ async function soBiChanBoi(pid: number): Promise<number> {
  * Đổi máy của adapter GIỮA kiểm-trước và lượt khoá của thủ tục: giao dịch "người đổi máy" khoá hàng adapter FOR UPDATE, thủ tục chạy tới khi
  * BỊ CHẶN ở hàng ấy (đã qua kiểm-trước), rồi người đổi máy đặt `machineId = mayMoi` và COMMIT.
  */
-async function doiMayGiuaKiemVaKhoa<T>(adapterId: number, mayMoi: number, goi: () => Promise<T>): Promise<KetQua<T>> {
+async function doiMayGiuaKiemVaKhoa<T>(adapterId: number, mayMoi: number, goi: () => Promise<T>, tuyChon?: { khoaTag?: number }): Promise<KetQua<T>> {
   let moKhoa!: () => void;
   const choMo = new Promise<void>((r) => (moKhoa = r));
   let daKhoa!: (pid: number) => void;
@@ -144,6 +144,9 @@ async function doiMayGiuaKiemVaKhoa<T>(adapterId: number, mayMoi: number, goi: (
   const giu = db.transaction(async (tx) => {
     const [p] = (await tx.execute(sql`SELECT pg_backend_pid() AS pid`)) as unknown as Array<{ pid: number }>;
     await tx.execute(sql`SELECT id FROM device_adapters WHERE id = ${adapterId} FOR UPDATE`);
+    // fix round 1 (I-1) — người đổi máy THẬT (`deviceAdapter.update` đổi đích ⇒ `goMoiStopPinCuaAdapterTx`) khoá cả tag của adapter sau adapter:
+    // thủ tục đọc adapter KHÔNG khoá (trước vá) sẽ bị chặn ở tag thay vì ở adapter — vẫn là "đã qua kiểm, chưa ghi".
+    if (tuyChon?.khoaTag !== undefined) await tx.execute(sql`SELECT id FROM device_tags WHERE id = ${tuyChon.khoaTag} FOR UPDATE`);
     daKhoa(Number(p.pid));
     await choMo;
     await tx.execute(sql`UPDATE device_adapters SET "machineId" = ${mayMoi} WHERE id = ${adapterId}`);
@@ -289,6 +292,43 @@ describe("★★★ M5 — phạm vi kiểm LẠI dưới khoá adapter (đổi 
     expect(await soAuditCua(engAId)).toBe(audit0);
   }, 30_000);
 
+  /** Tag ghi được + bật (đặt ghim DỪNG được). */
+  async function tagGhiDuoc(adapterId: number, tagKey: string): Promise<number> {
+    const [t] = await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled")
+      VALUES (${adapterId}, ${tagKey}, ${"addr-" + tagKey}, 'float', true, true) RETURNING id`);
+    return Number(t.id);
+  }
+
+  it("fix round 1 (I-1) — deviceAdapter.tags.setStopPin: adapter sang nhà máy B khi đang đặt ghim ⇒ NOT_FOUND adapter, ghim KHÔNG đặt", async () => {
+    const a = await seedAdapter(A.mid);
+    const t = await tagGhiDuoc(a.id, "t-ghim");
+    const audit0 = await soAuditCua(engAId);
+    const r = await doiMayGiuaKiemVaKhoa(
+      a.id,
+      B.mid,
+      () => engA.deviceAdapter.tags.setStopPin({ adapterId: a.id, tagKey: "t-ghim", stopValue: 0, reason: "ghim dừng kiểm phạm vi" }),
+      { khoaTag: t },
+    );
+    expect(moTa(r.loi)).toMatchObject({ code: "NOT_FOUND", appCode: "ENTITY_NOT_FOUND", appParams: { entity: "adapter" } });
+    const [h] = await dung(sql`SELECT stop_value FROM device_tags WHERE id = ${t}`);
+    expect(h.stop_value).toBeNull();
+    expect(await soAuditCua(engAId)).toBe(audit0);
+  }, 30_000);
+
+  it("đối chứng DƯƠNG (I-1): setStopPin khi adapter đổi sang máy khác CÙNG nhà máy A ⇒ qua phạm vi, tới kiểm TOTP cuối (không có mã ⇒ SCADA_CONFIG_TOTP_*)", async () => {
+    const a = await seedAdapter(A.mid);
+    const t = await tagGhiDuoc(a.id, "t-ghim-ok");
+    const r = await doiMayGiuaKiemVaKhoa(
+      a.id,
+      A.mid2,
+      () => engA.deviceAdapter.tags.setStopPin({ adapterId: a.id, tagKey: "t-ghim-ok", stopValue: 0, reason: "ghim dừng kiểm phạm vi" }),
+      { khoaTag: t },
+    );
+    const m = moTa(r.loi);
+    expect(m?.code).toBe("PRECONDITION_FAILED");
+    expect(m?.appCode).toMatch(/^SCADA_CONFIG_TOTP_/);
+  }, 30_000);
+
   it("scadaKenh.capNhat (đã đúng từ R1b-1 T10 — ghim hồi quy) ⇒ NOT_FOUND deviceTag, mức tác động giữ NULL", async () => {
     const a = await seedAdapter(A.mid);
     const t = await seedTag(a.id, "t-kenh");
@@ -313,6 +353,10 @@ describe("phán quyết T1 c8 — adapterIdForMachine tất định (ORDER BY id
     expect(theoTid, "tiên quyết: hàng id lớn đứng trước trong heap").toEqual([ids[1], ids[0]]);
     const { adapterIdForMachine } = await import("../services/aiLocalTools/writeHandlers/visionControl");
     expect(await adapterIdForMachine(B.mid2)).toBe(ids[0]);
+    // fix round 1 (review m-1) — bản sao riêng của machineControl.ts: execute VÀ preview chọn cùng adapter id nhỏ nhất
+    const mc = await import("../services/aiLocalTools/writeHandlers/machineControl");
+    expect(await mc.adapterIdForMachine(B.mid2), "machineControl.adapterIdForMachine").toBe(ids[0]);
+    expect((await mc.resolveTarget(B.mid2, null, "vi")).adapterId, "machineControl.resolveTarget (preview)").toBe(ids[0]);
   }, 30_000);
 });
 

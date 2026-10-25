@@ -53,15 +53,15 @@ interface ResolvedTarget {
   warnings: string[];
 }
 
-/** Resolve the enabled adapter for a machine + check a tag is writable. READ-ONLY. */
-async function resolveTarget(machineId: number, tagKey: string | null, lang: ToolLang): Promise<ResolvedTarget> {
+/** Resolve the enabled adapter for a machine + check a tag is writable. READ-ONLY. Exported (R1b-2a T5 r1) for the deterministic-adapter DB test. */
+export async function resolveTarget(machineId: number, tagKey: string | null, lang: ToolLang): Promise<ResolvedTarget> {
   const warnings: string[] = [];
   const db = await getDb();
   if (!db) {
     warnings.push(w(lang, "DB không khả dụng.", "Database unavailable.", "数据库不可用。"));
     return { adapterEnabled: false, warnings };
   }
-  const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.machineId, machineId)).limit(1);
+  const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.machineId, machineId)).orderBy(deviceAdapters.id).limit(1); // R1b-2a T5 r1 (m-1, T1 c8): tất định khi máy có nhiều adapter
   if (!adapter) {
     warnings.push(w(lang, `Không tìm thấy adapter OT cho máy #${machineId}.`, `No OT adapter found for machine #${machineId}.`, `未找到机器 #${machineId} 的 OT 适配器。`));
     return { adapterEnabled: false, warnings };
@@ -179,11 +179,11 @@ async function runDispatch(
   };
 }
 
-/** Resolve the adapter at execute time (defensive — preview already warned). */
-async function adapterIdForMachine(machineId: number): Promise<number> {
+/** Resolve the adapter at execute time (defensive — preview already warned). Exported (R1b-2a T5 r1) for the deterministic-adapter DB test. */
+export async function adapterIdForMachine(machineId: number): Promise<number> {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
-  const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.machineId, machineId)).limit(1);
+  const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.machineId, machineId)).orderBy(deviceAdapters.id).limit(1); // R1b-2a T5 r1 (m-1, T1 c8): tất định khi máy có nhiều adapter
   if (!adapter) throw new Error(`No OT adapter for machine #${machineId}`);
   return adapter.id;
 }

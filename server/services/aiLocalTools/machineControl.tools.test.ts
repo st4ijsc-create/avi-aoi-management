@@ -38,15 +38,17 @@ function makeFakeDb() {
     insert: () => ({ values: async (vals: Row) => { store.set(vals.id, { ...vals }); } }),
     select: () => ({
       from: (table: any) => ({
-        where: (pred: (r: Row) => boolean) => ({
-          limit: async () => {
-            const src = table?.__table === "device_adapters" ? adapters
-              : table?.__table === "device_tags" ? tags
-              : Array.from(store.values());
-            for (const r of src) if (pred(r)) return [r];
-            return [];
-          },
-        }),
+        where: (pred: (r: Row) => boolean) => {
+          const src = () => table?.__table === "device_adapters" ? adapters
+            : table?.__table === "device_tags" ? tags
+            : Array.from(store.values());
+          const dau = (rows: Row[]) => { for (const r of rows) if (pred(r)) return [r]; return []; };
+          return {
+            limit: async () => dau(src()),
+            // R1b-2a T5 r1 (m-1) — `.orderBy(deviceAdapters.id).limit(1)`: sắp tăng theo cột rồi lấy hàng đầu khớp
+            orderBy: (col: any) => ({ limit: async () => dau([...src()].sort((a, b) => (a[col?.__name] ?? 0) - (b[col?.__name] ?? 0))) }),
+          };
+        },
       }),
     }),
     update: () => ({

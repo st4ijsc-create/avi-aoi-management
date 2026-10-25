@@ -25,6 +25,13 @@ const fakeDb = {
           for (const r of adapters) if (pred(r)) return [r];
           return [];
         },
+        // R1b-2a T5 r1 (m-1) — `.orderBy(deviceAdapters.id).limit(1)`
+        orderBy: (col: any) => ({
+          limit: async () => {
+            for (const r of [...adapters].sort((a, b) => (a[col?.__name] ?? 0) - (b[col?.__name] ?? 0))) if (pred(r)) return [r];
+            return [];
+          },
+        }),
       }),
     }),
   }),

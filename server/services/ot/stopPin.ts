@@ -414,7 +414,12 @@ async function datStopPinTx(
       .select({ id: deviceAdapters.id, machineId: deviceAdapters.machineId })
       .from(deviceAdapters)
       .where(eq(deviceAdapters.id, input.adapterId))
-      .limit(1);
+      .limit(1)
+      // R1b-2a T5 fix round 1 (review I-1, kiem-dinh M5) — ADAPTER FOR SHARE (thứ tự khoá dự án: adapter → tag → khoá commissioning): phạm vi
+      // `mayOk` đọc trên hàng ĐÃ KHOÁ. Trước: đọc không khoá ⇒ một `deviceAdapter.update` đổi máy sang nhà máy khác commit sau lượt đọc này
+      // (trong khi ta chờ khoá tag) ⇒ ghim được đặt lên adapter đã ngoài phạm vi. Nay: đổi máy giữ FOR UPDATE ⇒ ta chờ rồi đọc máy MỚI ⇒
+      // NOT_FOUND; ta giữ FOR SHARE ⇒ đổi máy chờ ta commit.
+      .for("share");
     if (!adapter || !mayOk(adapter.machineId)) throw new StopPinLoi("adapter_not_found", { adapterId: input.adapterId });
 
     const [tag] = await tx
