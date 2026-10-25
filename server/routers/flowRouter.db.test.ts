@@ -208,3 +208,86 @@ describe("flowRouter (Đợt 8.1, DB)", () => {
     }
   });
 });
+
+const luongBieuMau = {
+  id: `${TT}-bm`, name: "biểu mẫu", version: 1,
+  nodes: [
+    nut("t", "kich-hoat.thu-cong"),
+    nut("b", "nguoi.bieu-mau", {
+      tieuDe: "Nhập nguyên nhân {{ $json.ma }}",
+      truong: [
+        { ten: "nguyenNhan", nhan: "Nguyên nhân", kieu: "chon", luaChon: ["dien", "co-khi"], batBuoc: true },
+        { ten: "soLan", nhan: "Số lần", kieu: "so" },
+        { ten: "daXuLy", nhan: "Đã xử lý", kieu: "boolean" },
+        { ten: "ghiChu", nhan: "Ghi chú", kieu: "chuoi" },
+      ],
+      truongRa: "bieuMau",
+    }),
+    nut("ok", "du-lieu.dat", { truong: { kq: "da-dien" } }),
+    nut("ko", "du-lieu.dat", { truong: { kq: "bo-qua" } }),
+  ],
+  connections: [noi("t", "main", "b"), noi("b", "dong-y", "ok"), noi("b", "tu-choi", "ko")],
+};
+
+describe("nguoi.bieu-mau qua flow.duyet (DB)", () => {
+  const dauVao = async (runId: string, nodeId: string) => {
+    const db = (await getDb())!;
+    const [b] = (await db.execute(sql`SELECT input FROM ai_flow_steps WHERE "runId" = ${runId} AND "nodeId" = ${nodeId} ORDER BY id DESC LIMIT 1`)) as unknown as { input: { main?: { json: Record<string, unknown> }[] } }[];
+    return b?.input.main?.map((i) => i.json) ?? null;
+  };
+  const moLuot = async (ma: string) => {
+    const { runId } = await goi("engineer").chayTay({ flowId: `${TT}-bm`, items: [{ json: { ma } }] });
+    await chayHet();
+    return runId;
+  };
+
+  it("★ thẻ mang định nghĩa trường; giá trị KIỂM LẠI phía máy chủ: thiếu bắt buộc / sai kiểu / ngoài lựa chọn / chuỗi số cho trường số ⇒ BAD_REQUEST, thẻ GIỮ NGUYÊN; hợp lệ ⇒ dong-y, item mang bieuMau (khoá lạ bị loại)", async () => {
+    await goi("engineer").luu({ definition: luongBieuMau });
+    const runId = await moLuot("RCA-9");
+    const the = (await goi("viewer").danhSachCho()).find((c) => c.runId === runId)!;
+    expect(the.tieuDe).toBe("Nhập nguyên nhân RCA-9");
+    expect(the.bieuMau?.map((f) => f.ten)).toEqual(["nguyenNhan", "soLan", "daXuLy", "ghiChu"]);
+    const duyet = (bieuMau: Record<string, string | number | boolean | null>) => goiAs("supervisor", uid2).duyet({ runId, nodeId: "b", dongY: true, bieuMau });
+    await expect(duyet({})).rejects.toMatchObject({ code: "BAD_REQUEST" }); // thiếu nguyenNhan
+    await expect(duyet({ nguyenNhan: "linh-tinh" })).rejects.toMatchObject({ code: "BAD_REQUEST" }); // ngoài lựa chọn
+    await expect(duyet({ nguyenNhan: "dien", soLan: "3" })).rejects.toMatchObject({ code: "BAD_REQUEST" }); // chuỗi số, không ép kiểu
+    await expect(duyet({ nguyenNhan: "dien", daXuLy: "true" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(duyet({ nguyenNhan: "dien", ghiChu: "x".repeat(2001) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect((await goi("viewer").danhSachCho()).some((c) => c.runId === runId)).toBe(true); // thẻ còn nguyên
+    expect(await duyet({ nguyenNhan: "co-khi", soLan: 3, daXuLy: true, ghiChu: "đã thay vòng bi", khoaLa: "bi-loai" })).toEqual({ ok: true, cong: "dong-y" });
+    await chayHet();
+    expect(await dauVao(runId, "ok")).toEqual([
+      { ma: "RCA-9", duyet: { dongY: true, nguoi: uid2, lyDo: null }, bieuMau: { nguyenNhan: "co-khi", soLan: 3, daXuLy: true, ghiChu: "đã thay vòng bi" } },
+    ]);
+    expect(await dauVao(runId, "ko")).toBeNull();
+  });
+
+  it("trường không bắt buộc để trống ⇒ null; bỏ qua (tu-choi) ⇒ đi cổng tu-choi, giá trị gửi kèm bị BỎ (không vào item)", async () => {
+    const r1 = await moLuot("RCA-10");
+    await goiAs("supervisor", uid2).duyet({ runId: r1, nodeId: "b", dongY: true, bieuMau: { nguyenNhan: "dien", ghiChu: "" } });
+    await chayHet();
+    expect((await dauVao(r1, "ok"))![0].bieuMau).toEqual({ nguyenNhan: "dien", soLan: null, daXuLy: null, ghiChu: null });
+    const r2 = await moLuot("RCA-11");
+    await goiAs("supervisor", uid2).duyet({ runId: r2, nodeId: "b", dongY: false, bieuMau: { nguyenNhan: "linh-tinh" } });
+    await chayHet();
+    expect(await dauVao(r2, "ok")).toBeNull();
+    expect(JSON.stringify(await dauVao(r2, "ko"))).not.toContain("linh-tinh");
+  });
+
+  it("quyền như nguoi.duyet: vai thấp ⇒ FORBIDDEN (không lộ lỗi giá trị); gửi bieuMau cho thẻ KHÔNG phải biểu mẫu ⇒ BAD_REQUEST", async () => {
+    const runId = await moLuot("RCA-12");
+    await expect(goi("viewer").duyet({ runId, nodeId: "b", dongY: true, bieuMau: {} })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await goi("engineer").luu({ definition: luongDuyet });
+    const { runId: rd } = await goi("engineer").chayTay({ flowId: `${TT}-duyet`, items: [{ json: { ma: "R" } }] });
+    await chayHet();
+    await expect(goiAs("supervisor", uid2).duyet({ runId: rd, nodeId: "d", dongY: true, bieuMau: { a: 1 } })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(await goiAs("supervisor", uid2).duyet({ runId: rd, nodeId: "d", dongY: true })).toEqual({ ok: true, cong: "dong-y" });
+  });
+
+  it("định nghĩa trường SAI bị chặn lúc lưu (flow.luu ⇒ BAD_REQUEST): trùng tên, thiếu lựa chọn, 21 trường", async () => {
+    const dinh = (truong: unknown) => ({ ...luongBieuMau, id: `${TT}-bm-sai`, nodes: luongBieuMau.nodes.map((n) => (n.id === "b" ? { ...n, parameters: { ...n.parameters, truong } } : n)) });
+    await expect(goi("engineer").luu({ definition: dinh([{ ten: "a", nhan: "A", kieu: "chuoi" }, { ten: "a", nhan: "B", kieu: "so" }]) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(goi("engineer").luu({ definition: dinh([{ ten: "a", nhan: "A", kieu: "chon", luaChon: [] }]) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(goi("engineer").luu({ definition: dinh(Array.from({ length: 21 }, (_, i) => ({ ten: `t${i}`, nhan: "x", kieu: "chuoi" }))) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+});

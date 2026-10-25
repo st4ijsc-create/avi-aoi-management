@@ -12,7 +12,7 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: ["flow-hanh-trinh-ky-su.spec.ts", "flow-form-ky-su.spec.ts", "flow-nhap-xuat-ky-su.spec.ts", "flow-chon-ky-su.spec.ts", "flow-tincay-ky-su.spec.ts"],
+  testMatch: ["flow-hanh-trinh-ky-su.spec.ts", "flow-form-ky-su.spec.ts", "flow-nhap-xuat-ky-su.spec.ts", "flow-chon-ky-su.spec.ts", "flow-tincay-ky-su.spec.ts", "flow-bieumau-ky-su.spec.ts"],
   timeout: 300_000,
   expect: { timeout: 20_000 },
   fullyParallel: false,

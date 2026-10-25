@@ -15,6 +15,8 @@ import { NHOM_PHIEU_FORM, SU_KIEN_NOI_BO, TRAN_NGUOI_NHAN_FORM, TRUY_VAN_SO_LIEU
 import { TOAN_TU_CHON_FORM, TRAN_NHANH_CHON_FORM } from "./FormChon";
 import { CONG_CHON, TOAN_TU_CHON, TRAN_NHANH_CHON } from "../../../../server/services/flow/nut/chon";
 import { CHO_MAC_DINH_GIAY, CHO_TOI_DA_GIAY, TRAN_THONG_DIEP_DUNG_LOI } from "../../../../server/services/flow/nut/cho";
+import { KIEU_TRUONG_BIEU_MAU, TRAN_CHUOI_BIEU_MAU, TRAN_LUA_CHON_BIEU_MAU, TRAN_TRUONG_BIEU_MAU, kiemDinhNghiaBieuMau } from "../../../../server/services/flow/nut/bieuMau";
+import { KIEU_TRUONG_FORM, TRAN_CHUOI_FORM, TRAN_LUA_CHON_FORM, TRAN_TRUONG_FORM } from "./FormBieuMau";
 import { HUONG_SAP_XEP, KIEU_SAP_XEP, TOAN_TU_LOC, TRAN_DIEU_KIEN_LOC } from "../../../../server/services/flow/nut/loc";
 import { CHO_MAC_DINH_GIAY_FORM, CHO_TOI_DA_GIAY_FORM, HUONG_SAP_XEP_FORM, KIEU_SAP_XEP_FORM, TOAN_TU_LOC_FORM, TRAN_DIEU_KIEN_LOC_FORM, TRAN_THONG_DIEP_FORM } from "./FormLoc";
 import { DANH_MUC } from "../../../../server/services/flow/soLieu/danhMuc";
@@ -58,7 +60,7 @@ describe("census: node có tham số theo danh mục / khoảng phải có form 
     "ot.de-xuat-luong": "node OT: JSON thô qua cổng aiControlGate.",
     "luong.goi-con": "chọn luồng con cần bộ chọn riêng — lô sau; máy chủ kiểm lúc lưu.",
   };
-  const NODE_MOI_CO_FORM = ["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom", "logic.cho", "logic.dung-loi", "logic.loc", "logic.sap-xep"];
+  const NODE_MOI_CO_FORM = ["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom", "logic.cho", "logic.dung-loi", "logic.loc", "logic.sap-xep", "nguoi.bieu-mau"];
 
   it("4 node mới có `case` trong NodeConfigPanel; danh sách JSON-thô-có-lý-do không chứa node mới và không có mục lỗi thời", () => {
     const nguon = readFileSync(join(AQUI, "NodeConfigPanel.tsx"), "utf8");
@@ -111,5 +113,19 @@ describe("logic.cho / dung-loi / loc / sap-xep: form ⇄ máy chủ", () => {
     }
     for (const huong of HUONG_SAP_XEP_FORM) for (const kieu of KIEU_SAP_XEP_FORM) expect(kiemThamSoNutMoi(d("logic.sap-xep", { giaTri: "{{ $json.x }}", huong, kieu }))).toEqual([]);
     expect(kiemThamSoNutMoi(d("logic.loc", { dieuKien: [{ giaTri: "{{ $json.x }}", so: "regex", dich: ".*" }] })).length).toBe(1);
+  });
+});
+
+describe("nguoi.bieu-mau: form ⇄ máy chủ", () => {
+  it("hằng số khớp (kiểu trường, trần trường / chuỗi / lựa chọn); mọi định nghĩa form sinh ra qua bộ kiểm; ngoài khoảng bị chặn", () => {
+    expect([...KIEU_TRUONG_FORM]).toEqual([...KIEU_TRUONG_BIEU_MAU]);
+    expect(TRAN_TRUONG_FORM).toBe(TRAN_TRUONG_BIEU_MAU);
+    expect(TRAN_CHUOI_FORM).toBe(TRAN_CHUOI_BIEU_MAU);
+    expect(TRAN_LUA_CHON_FORM).toBe(TRAN_LUA_CHON_BIEU_MAU);
+    const truong = KIEU_TRUONG_FORM.map((kieu, i) => ({ ten: `t${i}`, nhan: "Nhãn", kieu, ...(kieu === "chon" ? { luaChon: ["a", "b"] } : {}), batBuoc: true }));
+    expect(kiemDinhNghiaBieuMau(truong)).toEqual([]);
+    expect(kiemThamSoNutMoi({ nodes: [{ id: "n", type: "nguoi.bieu-mau", parameters: { truong } }] })).toEqual([]);
+    expect(kiemThamSoNutMoi({ nodes: [{ id: "n", type: "nguoi.bieu-mau", parameters: { truong: [] } }] }).length).toBe(1);
+    expect(kiemThamSoNutMoi({ nodes: [{ id: "n", type: "nguoi.bieu-mau", parameters: { truong: Array.from({ length: TRAN_TRUONG_FORM + 1 }, (_, i) => ({ ten: `t${i}`, nhan: "x", kieu: "chuoi" })) } }] }).length).toBe(1);
   });
 });

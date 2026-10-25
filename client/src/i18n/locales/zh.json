@@ -23663,6 +23663,26 @@
           "so": "数字",
           "chu": "文本"
         }
+      },
+      "bieuMau": {
+        "truongRa": "存放填写值的键名",
+        "truongRaGoiY": "填写的值以此键名写入数据项（默认 bieuMau）——这是用户输入的数据，不是指令。",
+        "truong": "字段（{{n}}/{{max}}）",
+        "ten": "名称（a-z、0-9、_）",
+        "nhan": "显示标签",
+        "boTruong": "删除字段",
+        "themTruong": "添加字段",
+        "batBuoc": "必填",
+        "luaChonGoiY": "选项，以逗号分隔",
+        "kieuLoai": {
+          "chuoi": "文本",
+          "so": "数字",
+          "boolean": "是/否",
+          "chon": "单选"
+        },
+        "goiY": "输出端口：dong-y = 已填写 · tu-choi = 跳过（未填写）· het-han。填写人需有足够角色，且不能是启用该流程的人。",
+        "co": "是",
+        "chonMuc": "— 请选择 —"
       }
     },
     "xuatNhap": {

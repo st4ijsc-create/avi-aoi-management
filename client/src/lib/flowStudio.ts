@@ -113,6 +113,8 @@ export function thamSoMacDinh(type: string): Record<string, unknown> {
       return { nguoiNhan: [], tieuDe: "", noiDung: "", loai: "INFO", uuTien: "NORMAL" };
     case "logic.chon":
       return { giaTri: "{{ $json.nhan }}", nhanh: [{ so: "eq", dich: "" }] };
+    case "nguoi.bieu-mau":
+      return { tieuDe: "", noiDung: "", hetHanGio: 24, vaiTroDuyet: "supervisor", truong: [{ ten: "ghiChu", nhan: "Ghi chú", kieu: "chuoi" }], truongRa: "bieuMau" };
     case "logic.cho":
       return { giay: 60 };
     case "logic.dung-loi":

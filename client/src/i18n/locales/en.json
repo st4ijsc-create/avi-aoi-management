@@ -23666,6 +23666,26 @@
           "so": "Number",
           "chu": "Text"
         }
+      },
+      "bieuMau": {
+        "truongRa": "Key that holds the entered values",
+        "truongRaGoiY": "The values the person enters are written into the item under this key (default bieuMau) — user-entered DATA, not instructions.",
+        "truong": "Fields ({{n}}/{{max}})",
+        "ten": "name (a-z, 0-9, _)",
+        "nhan": "display label",
+        "boTruong": "Remove field",
+        "themTruong": "Add field",
+        "batBuoc": "Required",
+        "luaChonGoiY": "choices, separated by commas",
+        "kieuLoai": {
+          "chuoi": "Text",
+          "so": "Number",
+          "boolean": "Yes/no",
+          "chon": "Pick one"
+        },
+        "goiY": "Output ports: dong-y = filled in · tu-choi = skipped (not filled in) · het-han. The person filling it needs a sufficient role and must differ from whoever enabled the flow.",
+        "co": "Yes",
+        "chonMuc": "— choose —"
       }
     },
     "xuatNhap": {
