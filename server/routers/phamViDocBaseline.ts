@@ -189,9 +189,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/machineApiRouters.ts#machineApiRouter.listKeys",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.get",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.list",
-  // ── server/routers/maintenanceRouter.ts (1) ────────────────────────────────────────────────
-  // 2026-10-25 (L6a): chủ dự án giao kiem-dinh (W16, mig 0424/0425) làm KHO VẬT TƯ theo nhà máy ⇒ partsBelowReorder QUAY LẠI sổ nợ, kiem-dinh vá trọn đọc + ghi.
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.partsBelowReorder",
   // ── server/routers/mappingAsCodeRouter.ts — ★ 2026-10-24: 1 mục ĐÃ TRẢ (exportOne ⇒ S qua _adapterPhamVi.ts), xoá khỏi sổ ──
   // ── server/routers/mqttBulletinRouter.ts (5) ───────────────────────────────────────────────
   "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.getDashboardStats",
