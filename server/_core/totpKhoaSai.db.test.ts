@@ -52,6 +52,10 @@ import {
   MA_DU_PHONG_CUA_SO_MS,
   AUDIT_TU_CHOI_MOI_MS,
   napLuotThu,
+  hoanLuotThu,
+  maLuotThuMoi,
+  xoaSauKhiDung,
+  kiemMaDuPhongCoBoDem,
 } from "./totpKhoaSai";
 import { kiemXacThucTheoMuc } from "./xacThucTheoMuc";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
@@ -512,6 +516,100 @@ describe("§1c fix round 1 — bộ đếm MÃ DỰ PHÒNG riêng (IMPORTANT 4):
     expect(Object.keys(l.appParams)).toEqual(["remainingMinutes"]);
     expect(Number(l.appParams.remainingMinutes)).toBeGreaterThan(50);
   }, 120_000);
+});
+
+/**
+ * SCADA R1b-2a Task 10 (+ Q8) — HOÀN LƯỢT cho lượt THUA ĐUA (phát lại mã vừa tiêu, cùng người, ≤ 10 s) và người THẮNG không bị khoá.
+ * Bất biến: hoàn chỉ trả ĐÚNG phần mình đã tính, trong ĐÚNG cửa sổ mình đã tính — không bao giờ làm một lượt sai thoát khỏi bộ đếm.
+ */
+describe("§1d R1b-2a T10 — hoanLuotThu + kiemMaDuPhongCoBoDem: lượt thua đua được hoàn, người thắng không bị khoá", () => {
+  const loiMa = async (p: Promise<unknown>) => {
+    try {
+      return { ok: await p, appCode: undefined as string | undefined };
+    } catch (e) {
+      return { ok: undefined, appCode: (e as { cause?: { appCode?: string } })?.cause?.appCode ?? String((e as Error)?.message) };
+    }
+  };
+  const napN = async (userId: number, n: number) => {
+    const ds = [];
+    for (let i = 0; i < n; i++) {
+      const luot = maLuotThuMoi();
+      ds.push({ luot, nap: await napLuotThu(userId, "backup", luot) });
+    }
+    return ds;
+  };
+
+  it("hoanLuotThu trừ ĐÚNG 1 trong cùng cửa sổ; về 0 mà không khoá ⇒ hàng biến mất (= chưa từng thử); không hàng ⇒ không làm gì, không ném", async () => {
+    const u = await nguoiMoi("t10Hoan");
+    const [a, b] = await napN(u.id, 2);
+    expect(await hangLoai(u.id, "backup")).toMatchObject({ n: 2, khoa: false });
+    await hoanLuotThu(u.id, "backup", b!.luot, b!.nap.cuaSo);
+    expect(await hangLoai(u.id, "backup")).toMatchObject({ n: 1, khoa: false });
+    await hoanLuotThu(u.id, "backup", a!.luot, a!.nap.cuaSo);
+    expect(await hangLoai(u.id, "backup")).toBeUndefined();
+    await hoanLuotThu(u.id, "backup", a!.luot, a!.nap.cuaSo);
+    expect(await hangLoai(u.id, "backup")).toBeUndefined();
+  });
+
+  it("lượt ĐẶT KHOÁ (thứ 10) được hoàn ⇒ gỡ khoá CỦA NÓ; hoàn một lượt KHÁC ⇒ khoá giữ nguyên", async () => {
+    const u = await nguoiMoi("t10HoanKhoa");
+    const ds = await napN(u.id, MA_DU_PHONG_SO_LAN_TOI_DA);
+    const thu10 = ds[MA_DU_PHONG_SO_LAN_TOI_DA - 1]!;
+    expect(thu10.nap.vuaKhoa).toBe(true);
+    await hoanLuotThu(u.id, "backup", thu10.luot, thu10.nap.cuaSo);
+    expect(await hangLoai(u.id, "backup")).toMatchObject({ n: MA_DU_PHONG_SO_LAN_TOI_DA - 1, khoa: false });
+
+    const v = await nguoiMoi("t10HoanKhoaKhac");
+    const dv = await napN(v.id, MA_DU_PHONG_SO_LAN_TOI_DA);
+    await hoanLuotThu(v.id, "backup", dv[0]!.luot, dv[0]!.nap.cuaSo);
+    expect(await hangLoai(v.id, "backup"), "khoá do lượt khác (thứ 10) đặt KHÔNG bị gỡ").toMatchObject({ n: MA_DU_PHONG_SO_LAN_TOI_DA - 1, dang_khoa: true });
+  });
+
+  it("lượt đặt khoá được hoàn nhưng đã có lượt N+1 (đếm vẫn ≥ N) ⇒ khoá giữ nguyên", async () => {
+    const u = await nguoiMoi("t10HoanQuaN");
+    const ds = await napN(u.id, MA_DU_PHONG_SO_LAN_TOI_DA + 1);
+    const thu10 = ds[MA_DU_PHONG_SO_LAN_TOI_DA - 1]!;
+    await hoanLuotThu(u.id, "backup", thu10.luot, thu10.nap.cuaSo);
+    expect(await hangLoai(u.id, "backup")).toMatchObject({ n: MA_DU_PHONG_SO_LAN_TOI_DA, dang_khoa: true });
+  });
+
+  it("cửa sổ đã ĐỔI (hàng bị lượt đúng xoá rồi một lượt sai tạo lại) ⇒ KHÔNG trừ: lượt sai của cửa sổ mới vẫn được đếm", async () => {
+    const u = await nguoiMoi("t10HoanCuaSo");
+    const [a] = await napN(u.id, 1);
+    expect((await xoaSauKhiDung(u.id, "backup", maLuotThuMoi())).conLaiMs).toBe(0);
+    expect(await hangLoai(u.id, "backup")).toBeUndefined();
+    await napN(u.id, 1); // lượt "sai" của cửa sổ mới
+    await hoanLuotThu(u.id, "backup", a!.luot, a!.nap.cuaSo);
+    expect(await hangLoai(u.id, "backup"), "lượt sai mới KHÔNG bị lượt hoàn của cửa sổ cũ ăn mất").toMatchObject({ n: 1 });
+  });
+
+  it("kiemMaDuPhongCoBoDem: kiem() = 'thua_dua' ở lượt thứ 10 (lượt đặt khoá) ⇒ false, không ném, không khoá, không audit; mã sai kế tiếp vẫn khoá", async () => {
+    const u = await nguoiMoi("t10ThuaDua");
+    for (let i = 1; i < MA_DU_PHONG_SO_LAN_TOI_DA; i++) expect(await kiemMaDuPhongCoBoDem(u.id, async () => false)).toBe(false);
+    expect(await kiemMaDuPhongCoBoDem(u.id, async () => "thua_dua")).toBe(false);
+    expect(await hangLoai(u.id, "backup")).toMatchObject({ n: MA_DU_PHONG_SO_LAN_TOI_DA - 1, khoa: false });
+    expect(await soAudit(u.id, "ma_du_phong.tam_khoa")).toBe(0);
+    expect(await loiMa(kiemMaDuPhongCoBoDem(u.id, async () => false)), "mã SAI thứ 10 vẫn khoá").toMatchObject({ appCode: "MA_DU_PHONG_TAM_KHOA" });
+    expect(await soAudit(u.id, "ma_du_phong.tam_khoa")).toBe(1);
+  });
+
+  it("kiemMaDuPhongCoBoDem: người THẮNG mà lượt khác đặt khoá trong lúc kiểm ⇒ VẪN true (mã đã tiêu); khoá còn nguyên cho lượt sau", async () => {
+    const u = await nguoiMoi("t10Thang");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const r = await kiemMaDuPhongCoBoDem(u.id, async () => {
+        await dung(sql`UPDATE totp_khoa_sai SET so_lan_sai = ${MA_DU_PHONG_SO_LAN_TOI_DA}, khoa_den = now() + interval '1 hour', khoa_boi = 'luot-khac'
+          WHERE user_id = ${u.id} AND loai = 'backup'`);
+        return true;
+      });
+      expect(r).toBe(true);
+      expect(warn.mock.calls.some((c) => String(c[0]).includes(String(u.id))), "log warn (không mã)").toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+    expect((await hangLoai(u.id, "backup"))?.dang_khoa, "khoá của lượt khác KHÔNG bị lượt thắng gỡ").toBe(true);
+    expect(await loiMa(kiemMaDuPhongCoBoDem(u.id, async () => true))).toMatchObject({ appCode: "MA_DU_PHONG_TAM_KHOA" });
+  });
 });
 
 describe("§5 không lộ số lần sai còn lại", () => {

@@ -21,7 +21,8 @@
  *   3. Mã sai ⇒ không ghi gì thêm (đã tính). Lượt thứ N sai ⇒ khoá (đã đặt) ở lại + MỘT dòng audit bắt đầu khoá.
  *   4. Mã đúng ⇒ `xoaSauKhiDung`: MỘT câu DELETE chỉ khi không có khoá hiệu lực — hoặc khoá do CHÍNH lượt này đặt (lượt thứ N đúng
  *      được gỡ khoá của mình: 4 sai + 1 đúng không bị khoá). Khoá do lượt KHÁC đặt trong lúc ấy ⇒ `conLaiMs > 0` ⇒ người gọi trả
- *      TẠM KHOÁ (mã đã tiêu — chấp nhận được).
+ *      TẠM KHOÁ (mã đã tiêu — chấp nhận được). ⚠ Mã DỰ PHÒNG khác (R1b-2a T10): người thắng vẫn được nhận, và lượt thua đua (phát lại
+ *      chính mã vừa tiêu, ≤ 10 s) được HOÀN lượt — xem `kiemMaDuPhongCoBoDem` / `hoanLuotThu`.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * CHỐT KHÁC
@@ -141,6 +142,17 @@ export interface KetQuaNapLuot {
   readonly conLaiMs: number;
   /** Chính lượt này vừa đặt khoá (lượt thứ N). */
   readonly vuaKhoa: boolean;
+  /**
+   * R1b-2a T10 — DẤU CỬA SỔ mà lượt này được tính vào: `cua_so_bat_dau` sau câu ghi, dạng micro giây epoch (chuỗi, chính xác tuyệt đối).
+   * `hoanLuotThu` chỉ trừ khi hàng còn ĐÚNG cửa sổ này ⇒ lượt hoàn không bao giờ ăn vào lượt của một cửa sổ mới (hàng bị lượt đúng xoá
+   * rồi một lượt SAI tạo lại, hoặc cửa sổ reset). Chỉ dùng nội bộ, không ra ngoài.
+   */
+  readonly cuaSo: string;
+}
+
+/** `cua_so_bat_dau` ⇒ micro giây epoch (bigint) — một biểu diễn so bằng `=` được, không phụ thuộc TimeZone của phiên. */
+function dauCuaSoSql(t: Awaited<ReturnType<typeof bang>>) {
+  return sql`(EXTRACT(EPOCH FROM ${t.cuaSoBatDau}) * 1000000)::bigint`;
 }
 
 /**
@@ -201,10 +213,16 @@ export async function napLuotThu(userId: number, loai: LoaiBoDem, luotThu: strin
         soLan: t.soLanSai,
         conLaiMs: conLaiMsSql(t),
         vuaKhoa: sql<boolean>`(${t.khoaBoi} IS NOT NULL AND ${t.khoaBoi} = ${luotThu} AND ${t.khoaDen} > now())`,
+        cuaSo: sql<string>`(${dauCuaSoSql(t)})::text`,
       });
     const r = rows[0];
     if (!r) throw new LoiBoDemTotp("Upsert bộ đếm không trả hàng.");
-    return { soLan: Number(r.soLan), conLaiMs: Math.max(0, Number(r.conLaiMs ?? 0)), vuaKhoa: r.vuaKhoa === true };
+    return {
+      soLan: Number(r.soLan),
+      conLaiMs: Math.max(0, Number(r.conLaiMs ?? 0)),
+      vuaKhoa: r.vuaKhoa === true,
+      cuaSo: String(r.cuaSo),
+    };
   } catch (e) {
     throw boc(e, `Tính lượt thử (${loai})`);
   }
@@ -237,6 +255,45 @@ export async function xoaSauKhiDung(userId: number, loai: LoaiBoDem, luotThu: st
     return { conLaiMs: Math.max(0, Number(con[0]?.conLaiMs ?? 0)) };
   } catch (e) {
     throw boc(e, `Xoá bộ đếm sau mã đúng (${loai})`);
+  }
+}
+
+/**
+ * ★ SCADA R1b-2a Task 10 (+ điều phối Q8) — HOÀN một lượt đã tính cho lượt THUA ĐUA (phát lại CHÍNH mã người này vừa tiêu, ≤ 10 s — bên
+ * gọi đã chứng minh điều ấy; xem `tieuMaDuPhongPhanLoai`). MỘT câu UPDATE nguyên tử trên hàng của (người, loại):
+ *   · `so_lan_sai = greatest(so_lan_sai − 1, 0)` — trả ĐÚNG phần lượt này đã tính;
+ *   · `khoa_boi = luotThu` (lượt này là lượt thứ N đã đặt khoá) VÀ sau khi trừ còn < N ⇒ gỡ `khoa_den` / `khoa_boi`. Khoá do lượt KHÁC
+ *     đặt, hoặc đếm vẫn ≥ N (đã có lượt N+1 bị từ chối) ⇒ khoá GIỮ NGUYÊN;
+ *   · chỉ khi hàng còn ĐÚNG cửa sổ `cuaSo` mà lượt này được tính vào (dấu micro giây của `cua_so_bat_dau`). Hàng đã bị lượt đúng xoá rồi
+ *     một lượt khác tạo lại, hoặc cửa sổ đã reset ⇒ không trừ gì: phần của ta đã mất cùng cửa sổ cũ, trừ vào cửa sổ mới là xoá MỘT LƯỢT
+ *     SAI của người khác khỏi bộ đếm.
+ * Sau đó, nếu đếm về 0 mà không khoá ⇒ xoá hàng (một hàng 0 lượt không khoá ≡ chưa từng thử; xoá còn chặt hơn vì cửa sổ kế tiếp bắt
+ * đầu muộn hơn). Câu xoá tự kiểm lại điều kiện dưới khoá hàng ⇒ không bao giờ xoá một lượt vừa được tính.
+ * Ném `LoiBoDemTotp` khi không ghi được — người gọi GIỮ lượt đã tính (đếm thừa, không bao giờ đếm thiếu).
+ */
+export async function hoanLuotThu(userId: number, loai: LoaiBoDem, luotThu: string, cuaSo: string): Promise<void> {
+  try {
+    if (!/^-?\d{1,20}$/.test(cuaSo)) throw new LoiBoDemTotp("Dấu cửa sổ không hợp lệ ⇒ không hoàn lượt.");
+    const db = await layDbBatBuoc();
+    const t = await bang();
+    const toiDa = CAU_HINH_BO_DEM[loai].toiDa;
+    const goKhoa = sql`(${t.khoaBoi} IS NOT NULL AND ${t.khoaBoi} = ${luotThu} AND ${t.soLanSai} - 1 < ${toiDa})`;
+    const rows = await db
+      .update(t)
+      .set({
+        soLanSai: sql`greatest(${t.soLanSai} - 1, 0)`,
+        khoaDen: sql`CASE WHEN ${goKhoa} THEN NULL ELSE ${t.khoaDen} END`,
+        khoaBoi: sql`CASE WHEN ${goKhoa} THEN NULL ELSE ${t.khoaBoi} END`,
+        updatedAt: sql`now()`,
+      })
+      .where(sql`${cuaNguoi(t, userId, loai)} AND ${t.soLanSai} > 0 AND ${dauCuaSoSql(t)} = ${cuaSo}::bigint`)
+      .returning({ soLan: t.soLanSai, khongKhoa: sql<boolean>`(${t.khoaDen} IS NULL)` });
+    const r = rows[0];
+    if (r && Number(r.soLan) === 0 && r.khongKhoa === true) {
+      await db.delete(t).where(sql`${cuaNguoi(t, userId, loai)} AND ${t.soLanSai} = 0 AND ${t.khoaDen} IS NULL`);
+    }
+  } catch (e) {
+    throw boc(e, `Hoàn lượt thử (${loai})`);
   }
 }
 
@@ -427,10 +484,16 @@ export function laLoiBoDemMaDuPhong(e: unknown): { ma: "MA_DU_PHONG_TAM_KHOA"; r
  *   · bị từ chối (quá N / đang khoá) ⇒ NÉM `MA_DU_PHONG_TAM_KHOA` (không đối chiếu, không tiêu mã);
  *   · bộ đếm hỏng ⇒ NÉM `TOTP_KHONG_KIEM_DUOC` (fail-closed);
  *   · `kiem()` sai ⇒ `false` — lượt thứ N sai thì NÉM `MA_DU_PHONG_TAM_KHOA` + một dòng audit bắt đầu khoá;
- *   · `kiem()` đúng (đã tiêu mã) ⇒ xoá hàng; khoá do lượt khác đặt trong lúc ấy ⇒ NÉM `MA_DU_PHONG_TAM_KHOA`.
+ *   · `kiem()` đúng (đã tiêu mã) ⇒ xoá hàng; khoá do lượt khác đặt trong lúc ấy ⇒ VẪN `true` (R1b-2a T10, xem dưới).
+ *   · `kiem()` = `"thua_dua"` (R1b-2a T10 + Q8: phát lại CHÍNH mã người này vừa tiêu, ≤ 10 s — không phải một lượt đoán) ⇒ `hoanLuotThu`,
+ *     trả `false`, không audit khoá (kể cả khi chính lượt này là lượt thứ N đã đặt khoá — lượt hoàn gỡ khoá của nó).
+ * ★ R1b-2a T10 — NGƯỜI THẮNG không bị khoá: lượt đúng nằm trong N lượt được kiểm (tính trước, kiểm sau), mã ĐÃ tiêu. Một khoá do lượt
+ *   KHÁC đặt trong lúc ấy (thường là một lượt thua đua của chính người này chưa kịp hoàn) mà NÉM lúc này là đốt mã của người dùng. Khoá
+ *   của lượt khác GIỮ NGUYÊN cho các lượt sau; chỉ ghi một dòng warn (không mã).
+ * ⚠ Mã SAI (`false`) không bao giờ được hoàn. Hoàn hỏng ⇒ giữ lượt đã tính (đếm thừa, không đếm thiếu), vẫn trả `false`.
  * ⚠ KHÔNG đọc/chạm hàng `totp`: khoá TOTP không bao giờ chặn mã dự phòng.
  */
-export async function kiemMaDuPhongCoBoDem(userId: number, kiem: () => Promise<boolean>): Promise<boolean> {
+export async function kiemMaDuPhongCoBoDem(userId: number, kiem: () => Promise<boolean | "thua_dua">): Promise<boolean> {
   const luotThu = maLuotThuMoi();
   let nap: KetQuaNapLuot;
   try {
@@ -444,7 +507,22 @@ export async function kiemMaDuPhongCoBoDem(userId: number, kiem: () => Promise<b
     throw loiMaDuPhongTamKhoa(nap.conLaiMs);
   }
   const dung = await kiem();
-  if (!dung) {
+  if (dung === "thua_dua") {
+    try {
+      await hoanLuotThu(userId, "backup", luotThu, nap.cuaSo);
+    } catch (e) {
+      console.error(
+        `[TotpKhoaSai] KHÔNG hoàn được lượt thua đua mã dự phòng của user ${userId} (${nguyenNhanBoDemHong(e)}) ⇒ lượt GIỮ được tính (đếm thừa).`,
+      );
+      if (nap.vuaKhoa) {
+        // khoá của lượt này ở lại (không hoàn được) ⇒ đúng một dòng audit bắt đầu khoá như mọi khoá khác
+        await ghiAuditBatDauKhoa(userId, "backup", { conLaiMs: nap.conLaiMs, nguyenNhan: "phat_lai" });
+        throw loiMaDuPhongTamKhoa(nap.conLaiMs);
+      }
+    }
+    return false;
+  }
+  if (dung !== true) {
     if (nap.vuaKhoa) {
       await ghiAuditBatDauKhoa(userId, "backup", { conLaiMs: nap.conLaiMs, nguyenNhan: "ma_sai" });
       throw loiMaDuPhongTamKhoa(nap.conLaiMs);
@@ -458,6 +536,10 @@ export async function kiemMaDuPhongCoBoDem(userId: number, kiem: () => Promise<b
     console.error(`[TotpKhoaSai] bộ đếm MÃ DỰ PHÒNG không xoá được sau mã đúng (${nguyenNhanBoDemHong(e)}) ⇒ TỪ CHỐI.`);
     throw loiKhongKiemDuoc();
   }
-  if (xoa.conLaiMs > 0) throw loiMaDuPhongTamKhoa(xoa.conLaiMs);
+  if (xoa.conLaiMs > 0) {
+    console.warn(
+      `[TotpKhoaSai] mã dự phòng của user ${userId} ĐÚNG (đã tiêu) trong lúc một lượt khác đặt khoá ⇒ vẫn chấp nhận lượt thắng; khoá giữ nguyên cho các lượt sau.`,
+    );
+  }
   return true;
 }
