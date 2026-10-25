@@ -32,7 +32,7 @@ import { LoiNgoaiPhamVi, chayThuNut, type BoKiemPhamVi } from "../services/flow/
 import { boKiemPhamVi, thamChieuTinhNgoai } from "../services/flow/boKiemPhamVi";
 import { biMatTrongPhamVi, luongTrongPhamVi, luotTrongPhamVi, nhaMayChoLuongMoi, nhaMayChoPhep, nhaMayHopLe } from "../services/flow/phamViLuong";
 import { phamViCua } from "./_phamViNguoiXem";
-import { LoiLuong, batDauRun, hangLuongConTuDb, luuPhienBan, traLoiCho } from "../services/flow/dongCo";
+import { KIEU_KICH_HOAT_DOC_SAU_DONG, LoiLuong, batDauRun, hangLuongConTuDb, luuPhienBan, traLoiCho } from "../services/flow/dongCo";
 import { taoTuMoTa } from "../services/flow/taoTuMoTa";
 import { danhSachNut, layNut } from "../services/flow/dangKyNut";
 import { kiemThamSoKichHoat, napLaiLich } from "../services/flow/kichHoat/lich";
@@ -205,6 +205,9 @@ async function kiemTruocKhiBat(def: FlowDefinition, ctx: { user: { id: number; r
   if (loi.length) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowKichHoat", reason: "flowKhongBatDuocThamChieu", nodeId: loi.map((x) => x.nodeId).join(", ").slice(0, 200) }, `Không bật được: ${loi.map((x) => x.thongDiep).join("; ")}.`);
 }
 
+/** Cảnh báo lúc lưu khi luồng khai `settings.errorFlowId` (chưa được động cơ hỗ trợ). */
+export const CANH_BAO_ERROR_FLOW_ID = "settings.errorFlowId chưa được hỗ trợ: luồng lỗi sẽ KHÔNG được gọi khi lượt thất bại (giá trị được giữ để nhập/xuất không vỡ).";
+
 /** Lưu phiên bản MỚI (bất biến) — DÙNG CHUNG bởi `flow.luu` và `flow.nhap` (nhập gói đi ĐÚNG đường này). */
 async function luuLuongCore(input: { definition: Record<string, unknown>; factoryId?: number }, ctx: CoCtx & { user: { id: number; role: string } }, nguon: "luu" | "nhap" = "luu") {
     const loiKichHoat = [...kiemThamSoKichHoat(input.definition), ...kiemThamSoSuKien(input.definition), ...kiemThamSoNutMoi(input.definition)];
@@ -223,7 +226,11 @@ async function luuLuongCore(input: { definition: Record<string, unknown>; factor
     try {
       const kq = await luuPhienBan(input.definition, ctx.user.id, factoryId);
       await ghiKiemToanLuong({ nguoi: ctx.user.id, hanhDong: "FLOW_LUU", loaiThucThe: "ai_flow", thucThe: kq.flowId, chiTiet: { version: kq.version, hang: kq.hang, nguon, soNode: Array.isArray(input.definition.nodes) ? input.definition.nodes.length : 0 } });
-      return kq;
+      // settings.errorFlowId được khai trong schema (giữ để nhập/xuất không vỡ) nhưng động cơ CHƯA gọi luồng lỗi (rủi ro vòng luồng lỗi gọi nhau) ⇒ nói thẳng lúc lưu.
+      const canhBao: string[] = [];
+      const sett = input.definition.settings as { errorFlowId?: unknown } | undefined;
+      if (sett && sett.errorFlowId !== undefined && sett.errorFlowId !== null && sett.errorFlowId !== "") canhBao.push(CANH_BAO_ERROR_FLOW_ID);
+      return { ...kq, canhBao };
     } catch (e) {
       if (e instanceof LoiLuong && e.code === "LUONG_KHONG_HOP_LE") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowChiTietMayChu", chiTiet: e.message.slice(0, 300) }, `Luồng không hợp lệ: ${e.message}`);
       if (e instanceof LoiLuong && e.code === "KHONG_CO_DB") throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowChiTietMayChu", chiTiet: e.message.slice(0, 300) }, e.message);
@@ -314,7 +321,7 @@ export const flowRouter = router({
       if (!p.ok) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowNhap", reason: "flowChiTietMayChu", chiTiet: p.thongDiep }, p.thongDiep);
       const definition = { ...p.luong, id: idLuongNhap(input.ten), name: input.ten };
       const kq = await luuLuongCore({ definition: definition as unknown as Record<string, unknown>, ...(input.factoryId !== undefined ? { factoryId: input.factoryId } : {}) }, ctx, "nhap");
-      return { ...(kq as object), flowId: definition.id, viec: p.viec, canhBao: p.canhBao };
+      return { ...(kq as object), flowId: definition.id, viec: p.viec, canhBao: [...p.canhBao, ...((kq as { canhBao?: string[] }).canhBao ?? [])] };
     }),
 
   chiTiet: xemProcedure.input(z.object({ flowId: flowIdSchema, version: z.number().int().min(1).optional() })).query(async ({ input, ctx }) => {
@@ -499,8 +506,14 @@ export const flowRouter = router({
     if (!run) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowXem", reason: "flowKhongTonTaiHoacNgoaiPhamVi" }, `Không có lượt ${input.runId}.`);
     const buoc = await db.select().from(aiFlowSteps).where(eq(aiFlowSteps.runId, input.runId)).orderBy(aiFlowSteps.id);
     const suKien = await db.select().from(aiFlowEvents).where(eq(aiFlowEvents.runId, input.runId)).orderBy(aiFlowEvents.id).limit(2000);
+    // Dữ liệu bước đã bị GỠ theo settings.luuDuLieu lúc đóng lượt? (để giao diện nói rõ thay vì hiện ô trống)
+    const [cs] = (await db.execute(sql`SELECT v.definition->'settings'->>'luuDuLieu' AS "luuDuLieu" FROM ai_flow_versions v WHERE v."flowId" = ${run.flowId} AND v.version = ${run.version}`)) as unknown as { luuDuLieu: string | null }[];
+    const luuDuLieu = cs?.luuDuLieu ?? "day-du";
+    const duLieuDaGo = run.status !== "dang-chay" && run.status !== "cho-duyet" && !KIEU_KICH_HOAT_DOC_SAU_DONG.includes(run.triggerKind) && (luuDuLieu === "khong" || (luuDuLieu === "chi-loi" && run.status !== "loi"));
     return {
       run,
+      luuDuLieu,
+      duLieuDaGo,
       buoc: buoc.map((b) => ({ ...b, input: catJson(b.input), output: catJson(b.output), error: catJson(b.error) })),
       suKien: suKien.map((e) => ({ ...e, payload: catJson(e.payload, 1000) })),
     };

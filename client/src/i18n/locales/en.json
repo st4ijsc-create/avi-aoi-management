@@ -23338,7 +23338,9 @@
         "khong": "None"
       },
       "loiKiemTruoc": "Pre-save check:",
-      "congChuaNoi": "Port '{{cong}}' of node '{{node}}' is not connected — items reaching it will be dropped"
+      "congChuaNoi": "Port '{{cong}}' of node '{{node}}' is not connected — items reaching it will be dropped",
+      "hanLuot": "Maximum run age (hours)",
+      "hanLuotGoiY": "Empty = no own limit. A run that is running / waiting / delayed beyond this stops with error QUA_HAN_LUOT (max 168 hours = 7 days)."
     },
     "cauHinh": {
       "loiBieuThuc": "Expression error: {{loi}}",
@@ -23434,7 +23436,8 @@
         "DICH_NOI_BO": "The target is an internal address — it can only be called when the allow-list names the exact host:port. See",
         "CAY_LUOT_DAY": "The run tree hit its run limit (parent + children + grandchildren) — reduce sub-flow calls or split the flow. See",
         "ITEM_GOI_CON_QUA_NHIEU": "One sub-flow call received too many items — split into batches before calling. See"
-      }
+      },
+      "duLieuDaGo": "Per-step input/output data was removed according to the flow's 'Keep step data' setting — status, timing and errors are still kept."
     },
     "duyet": {
       "tieuDe": "Flow approvals",

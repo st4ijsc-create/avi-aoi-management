@@ -176,6 +176,11 @@ export default function RunTimeline({ flowId, runId, onChonRun, tenNut, onTrangT
               </div>
               {dtg.data.run.error != null && <KhoiJson nhan={t("flowStudio.chay.loi")} v={dtg.data.run.error} />}
               <ChuGiaiLoi loi={dtg.data.run.error} />
+              {dtg.data.duLieuDaGo && (
+                <p className="rounded border border-warning/40 bg-warning/10 p-2 text-[11px]" data-testid="du-lieu-da-go">
+                  {t("flowStudio.chay.duLieuDaGo")}
+                </p>
+              )}
               <ol className="space-y-2" data-testid="cac-buoc">
                 {dtg.data.buoc.map((b) => (
                   <li key={b.id} className="rounded border p-2 space-y-1" data-testid={`buoc-${b.nodeId}`}>
