@@ -18,6 +18,11 @@
  *   tới :8091 (đang có phép đo chạy trên đó) và để đường in-process CHẠY THẬT nếu bị lọt vào.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+// ★ Đợt 9 (2026-10-25) — lưới này giả lập node-llama-cpp và KIỂM chính đường nạp in-process; vitest không phải tiến trình máy chủ
+// nên phải bật TƯỜNG MINH (hàng rào `ai/napServerNgoai` chặn mặc định — sự cố tràn VRAM 2026-10-25).
+vi.hoisted(() => {
+  process.env.AI_CHO_NAP_TRONG_TIEN_TRINH = "1";
+});
 
 const shouldUseServerForTextMock = vi.fn<(...a: any[]) => boolean>();
 const laModelServerDangGiuMock = vi.fn<(...a: any[]) => boolean>();
