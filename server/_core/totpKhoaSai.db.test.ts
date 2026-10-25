@@ -556,7 +556,7 @@ describe("§1d R1b-2a T10 — hoanLuotThu + kiemMaDuPhongCoBoDem: lượt thua �
     const ds = await napN(u.id, MA_DU_PHONG_SO_LAN_TOI_DA);
     const thu10 = ds[MA_DU_PHONG_SO_LAN_TOI_DA - 1]!;
     expect(thu10.nap.vuaKhoa).toBe(true);
-    await hoanLuotThu(u.id, "backup", thu10.luot, thu10.nap.cuaSo);
+    expect(await hoanLuotThu(u.id, "backup", thu10.luot, thu10.nap.cuaSo)).toEqual({ khoaCuaLuotNayConLai: false });
     expect(await hangLoai(u.id, "backup")).toMatchObject({ n: MA_DU_PHONG_SO_LAN_TOI_DA - 1, khoa: false });
 
     const v = await nguoiMoi("t10HoanKhoaKhac");
@@ -569,8 +569,26 @@ describe("§1d R1b-2a T10 — hoanLuotThu + kiemMaDuPhongCoBoDem: lượt thua �
     const u = await nguoiMoi("t10HoanQuaN");
     const ds = await napN(u.id, MA_DU_PHONG_SO_LAN_TOI_DA + 1);
     const thu10 = ds[MA_DU_PHONG_SO_LAN_TOI_DA - 1]!;
-    await hoanLuotThu(u.id, "backup", thu10.luot, thu10.nap.cuaSo);
+    expect(await hoanLuotThu(u.id, "backup", thu10.luot, thu10.nap.cuaSo), "báo cho người gọi: khoá CỦA TA còn").toEqual({ khoaCuaLuotNayConLai: true });
     expect(await hangLoai(u.id, "backup")).toMatchObject({ n: MA_DU_PHONG_SO_LAN_TOI_DA, dang_khoa: true });
+  });
+
+  it("fix round 1 I1 — lượt phát lại là lượt THỨ 10 (đặt khoá) và lượt THỨ 11 được tính trong lúc nó kiểm ⇒ TAM_KHOA + ĐÚNG 1 audit 'tam_khoa' (phat_lai)", async () => {
+    const u = await nguoiMoi("t10I1");
+    for (let i = 1; i < MA_DU_PHONG_SO_LAN_TOI_DA; i++) expect(await kiemMaDuPhongCoBoDem(u.id, async () => false)).toBe(false);
+    // móc tất định: trong lúc lượt thứ 10 (phát lại) kiểm, một lượt thứ 11 được tính (và bị từ chối — nó không tới kiem()).
+    const kq = await loiMa(
+      kiemMaDuPhongCoBoDem(u.id, async () => {
+        const thu11 = await napLuotThu(u.id, "backup", maLuotThuMoi());
+        expect(thu11.soLan).toBe(MA_DU_PHONG_SO_LAN_TOI_DA + 1);
+        return "thua_dua";
+      }),
+    );
+    expect(kq).toMatchObject({ appCode: "MA_DU_PHONG_TAM_KHOA" });
+    expect(await hangLoai(u.id, "backup")).toMatchObject({ n: MA_DU_PHONG_SO_LAN_TOI_DA, dang_khoa: true });
+    expect(await soAudit(u.id, "ma_du_phong.tam_khoa"), "đúng MỘT dòng bắt đầu khoá").toBe(1);
+    const a = (await auditCua(u.id)).filter((x) => x.action === "ma_du_phong.tam_khoa");
+    expect(JSON.stringify(a[0]?.afterJson ?? {})).toContain("phat_lai");
   });
 
   it("cửa sổ đã ĐỔI (hàng bị lượt đúng xoá rồi một lượt sai tạo lại) ⇒ KHÔNG trừ: lượt sai của cửa sổ mới vẫn được đếm", async () => {

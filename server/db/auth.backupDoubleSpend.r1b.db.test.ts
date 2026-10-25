@@ -132,12 +132,13 @@ describe("R1b-2a T10 — lượt THUA ĐUA được hoàn, người thắng khô
     await __resetSoTotpChoTest(moi); // totp_consumed + totp_khoa_sai của người test
   });
 
-  it("10 lượt SONG SONG verifyBackupCode ĐẦY ĐỦ cùng mã đúng ⇒ 1 true, 9 false, 0 ném, không khoá (×3 vòng, mã ở vị trí khác nhau)", async () => {
+  // fix round 1: 3 → 8 vòng — lượt chạy lưới đã bắt một khe đọc-hai-câu (1 vòng / ~3 lượt chạy); thêm vòng để khe kiểu ấy lộ ra.
+  it("10 lượt SONG SONG verifyBackupCode ĐẦY ĐỦ cùng mã đúng ⇒ 1 true, 9 false, 0 ném, không khoá (×8 vòng, mã ở vị trí khác nhau)", async () => {
     expect(resolvePoolMax(), "pool > 1 — không thì song song là xếp hàng giả").toBeGreaterThanOrEqual(2);
-    for (let vong = 1; vong <= 3; vong++) {
+    for (let vong = 1; vong <= 8; vong++) {
       const uid = await nguoi(`thang${vong}`);
       const bo = await db.quayVongMaDuPhong(uid);
-      const MA = bo[vong * 3]!;
+      const MA = bo[(vong * 3) % bo.length]!;
       const kq = await Promise.allSettled(Array.from({ length: 10 }, () => db.verifyBackupCode(uid, MA)));
       const tomTat = `vòng ${vong}: ${JSON.stringify(kq.map((r) => (r.status === "fulfilled" ? r.value : appCode(r))))}`;
       expect(kq.filter((r) => r.status === "fulfilled" && r.value === true), tomTat).toHaveLength(1);
@@ -223,11 +224,12 @@ describe("R1b-2a T10 — lượt THUA ĐUA được hoàn, người thắng khô
     const bo = await db.quayVongMaDuPhong(uid, 2);
     expect(await db.tieuMaDuPhongPhanLoai(uid, bo[0]!)).toBe("tieu");
     expect(await db.tieuMaDuPhongPhanLoai(uid, bo[0]!)).toBe("thua_dua");
-    const gia = (giay: number) =>
-      dung(sql`UPDATE backup_codes SET "usedAt" = "usedAt" - make_interval(secs => ${giay}) WHERE "userId" = ${uid} AND "isUsed" = true`);
-    await gia(9);
+    // tuổi TUYỆT ĐỐI đặt ngay trước mỗi lượt kiểm (đồng hồ DB, cùng biểu thức với đường ghi) — không cộng dồn thời gian chạy của ca
+    const datTuoi = (giay: number) =>
+      dung(sql`UPDATE backup_codes SET "usedAt" = (now() AT TIME ZONE 'UTC') - make_interval(secs => ${giay}) WHERE "userId" = ${uid} AND "isUsed" = true`);
+    await datTuoi(9);
     expect(await db.tieuMaDuPhongPhanLoai(uid, bo[0]!), "9 s: vẫn trong cửa sổ").toBe("thua_dua");
-    await gia(2);
+    await datTuoi(11);
     expect(await db.tieuMaDuPhongPhanLoai(uid, bo[0]!), "11 s: ngoài cửa sổ").toBe("khong_khop");
     expect(await db.tieuMaDuPhongNguyenTu(uid, bo[0]!)).toBe(false);
     expect(await db.verifyBackupCode(uid, bo[0]!)).toBe(false);

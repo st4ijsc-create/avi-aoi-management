@@ -268,10 +268,19 @@ export async function xoaSauKhiDung(userId: number, loai: LoaiBoDem, luotThu: st
  *     một lượt khác tạo lại, hoặc cửa sổ đã reset ⇒ không trừ gì: phần của ta đã mất cùng cửa sổ cũ, trừ vào cửa sổ mới là xoá MỘT LƯỢT
  *     SAI của người khác khỏi bộ đếm.
  * Sau đó, nếu đếm về 0 mà không khoá ⇒ xoá hàng (một hàng 0 lượt không khoá ≡ chưa từng thử; xoá còn chặt hơn vì cửa sổ kế tiếp bắt
- * đầu muộn hơn). Câu xoá tự kiểm lại điều kiện dưới khoá hàng ⇒ không bao giờ xoá một lượt vừa được tính.
- * Ném `LoiBoDemTotp` khi không ghi được — người gọi GIỮ lượt đã tính (đếm thừa, không bao giờ đếm thiếu).
+ * đầu muộn hơn). Câu xoá tự kiểm lại điều kiện dưới khoá hàng ⇒ không bao giờ xoá một lượt vừa được tính. Câu xoá chỉ là DỌN DẸP
+ * (fix round 1, M1): hỏng ⇒ chỉ log, KHÔNG ném — lượt hoàn đã commit, coi nó là "hoàn hỏng" sẽ audit một khoá không còn tồn tại.
+ * Trả `khoaCuaLuotNayConLai` (fix round 1, I1): SAU câu hoàn, khoá do CHÍNH lượt này đặt còn hiệu lực (đếm vẫn ≥ N vì đã có lượt N+1) ⇒
+ * người gọi audit "bắt đầu khoá" + trả TẠM KHOÁ như mọi khoá khác. Không khớp hàng (cửa sổ đổi / hàng mất) ⇒ khoá của ta không thể còn.
+ * Ném `LoiBoDemTotp` khi câu HOÀN không ghi được — người gọi GIỮ lượt đã tính (đếm thừa, không bao giờ đếm thiếu).
  */
-export async function hoanLuotThu(userId: number, loai: LoaiBoDem, luotThu: string, cuaSo: string): Promise<void> {
+export async function hoanLuotThu(
+  userId: number,
+  loai: LoaiBoDem,
+  luotThu: string,
+  cuaSo: string,
+): Promise<{ khoaCuaLuotNayConLai: boolean }> {
+  let r: { soLan: number; khongKhoa: boolean; khoaCuaLuotNayConLai: boolean } | undefined;
   try {
     if (!/^-?\d{1,20}$/.test(cuaSo)) throw new LoiBoDemTotp("Dấu cửa sổ không hợp lệ ⇒ không hoàn lượt.");
     const db = await layDbBatBuoc();
@@ -287,14 +296,27 @@ export async function hoanLuotThu(userId: number, loai: LoaiBoDem, luotThu: stri
         updatedAt: sql`now()`,
       })
       .where(sql`${cuaNguoi(t, userId, loai)} AND ${t.soLanSai} > 0 AND ${dauCuaSoSql(t)} = ${cuaSo}::bigint`)
-      .returning({ soLan: t.soLanSai, khongKhoa: sql<boolean>`(${t.khoaDen} IS NULL)` });
-    const r = rows[0];
-    if (r && Number(r.soLan) === 0 && r.khongKhoa === true) {
-      await db.delete(t).where(sql`${cuaNguoi(t, userId, loai)} AND ${t.soLanSai} = 0 AND ${t.khoaDen} IS NULL`);
-    }
+      .returning({
+        soLan: t.soLanSai,
+        khongKhoa: sql<boolean>`(${t.khoaDen} IS NULL)`,
+        khoaCuaLuotNayConLai: sql<boolean>`(${t.khoaBoi} IS NOT NULL AND ${t.khoaBoi} = ${luotThu} AND ${t.khoaDen} > now())`,
+      });
+    r = rows[0];
   } catch (e) {
     throw boc(e, `Hoàn lượt thử (${loai})`);
   }
+  if (r && Number(r.soLan) === 0 && r.khongKhoa === true) {
+    try {
+      const db = await layDbBatBuoc();
+      const t = await bang();
+      await db.delete(t).where(sql`${cuaNguoi(t, userId, loai)} AND ${t.soLanSai} = 0 AND ${t.khoaDen} IS NULL`);
+    } catch (e) {
+      console.error(
+        `[TotpKhoaSai] lượt hoàn (${loai}) của user ${userId} ĐÃ commit; chỉ câu dọn hàng 0 lượt hỏng (${(e as Error)?.message ?? String(e)}) — hàng 0 lượt không khoá vô hại.`,
+      );
+    }
+  }
+  return { khoaCuaLuotNayConLai: r?.khoaCuaLuotNayConLai === true };
 }
 
 /** Chỉ dùng trong lưới / admin: đọc khoá hiện tại (không tính lượt). */
@@ -508,17 +530,20 @@ export async function kiemMaDuPhongCoBoDem(userId: number, kiem: () => Promise<b
   }
   const dung = await kiem();
   if (dung === "thua_dua") {
+    let khoaCuaTaConLai = false;
     try {
-      await hoanLuotThu(userId, "backup", luotThu, nap.cuaSo);
+      khoaCuaTaConLai = (await hoanLuotThu(userId, "backup", luotThu, nap.cuaSo)).khoaCuaLuotNayConLai;
     } catch (e) {
       console.error(
         `[TotpKhoaSai] KHÔNG hoàn được lượt thua đua mã dự phòng của user ${userId} (${nguyenNhanBoDemHong(e)}) ⇒ lượt GIỮ được tính (đếm thừa).`,
       );
-      if (nap.vuaKhoa) {
-        // khoá của lượt này ở lại (không hoàn được) ⇒ đúng một dòng audit bắt đầu khoá như mọi khoá khác
-        await ghiAuditBatDauKhoa(userId, "backup", { conLaiMs: nap.conLaiMs, nguyenNhan: "phat_lai" });
-        throw loiMaDuPhongTamKhoa(nap.conLaiMs);
-      }
+      khoaCuaTaConLai = nap.vuaKhoa;
+    }
+    // Khoá do CHÍNH lượt này đặt còn lại — hoàn hỏng, hoặc hoàn xong mà đếm vẫn ≥ N (lượt N+1 đã tới trong lúc kiểm; fix round 1 I1) ⇒
+    // đúng một dòng audit bắt đầu khoá như mọi khoá khác, và trả TẠM KHOÁ như trước T10.
+    if (nap.vuaKhoa && khoaCuaTaConLai) {
+      await ghiAuditBatDauKhoa(userId, "backup", { conLaiMs: nap.conLaiMs, nguyenNhan: "phat_lai" });
+      throw loiMaDuPhongTamKhoa(nap.conLaiMs);
     }
     return false;
   }
