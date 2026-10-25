@@ -27,3 +27,16 @@ TAI=b bash scripts/ai-eval/bo-nho/do-bo-nho-llama.sh 27b-dai:doi:27b            
 - Đợt đo gốc 2026-10-23 (hai bản tmp đã gộp vào đây): Tải A trên `27b` mặc định / `--cache-ram 0` / `--no-mmap` / `35b`; Tải B trên `27b`
   mặc định / `--cache-ram 0` / `35b`. Lúc đó mặc định doi-model là `--cache-ram 4096`; từ 2026-10-24 là 0 (`-CacheRam`).
 - Luật: chỉ chạy khi không có phép đo GPU nào khác (khoá khe chặn); không sửa `.env` cây chính.
+
+## Chạy model thật từ vitest / script (bắt buộc, 2026-10-25)
+
+Vitest và script `tsx` KHÔNG đọc `.env`. Gọi model qua engine mà thiếu `LLAMA_SERVER_ENABLED` ⇒ engine coi như không có llama-server và
+NẠP GGUF IN-PROCESS — sự cố 2026-10-25: 35B nạp lần hai trong vitest, Windows đẩy VRAM của :8091 24 → 8,8 GB, lượt lạnh 48–117 s. Mang ĐỦ:
+
+```bash
+LLAMA_SERVER_ENABLED=true LLAMA_SERVER_URL=http://127.0.0.1:8091 LLAMA_SERVER_FAIL_CLOSED=true \
+GGUF_MODELS_DIR=D:/SOURCES/16.AI GGUF_DEFAULT_MODEL=Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf npx vitest run <tệp>
+```
+
+Kiểm lượt có thật sự tới :8091: `curl -s http://127.0.0.1:8091/metrics | grep prompt_tokens_total` trước/sau phải TĂNG. Từ 2026-10-25 engine
+tự chặn (`server/services/ai/napServerNgoai.ts`): GGUF > 8 GiB + :8091 đang phục vụ cùng model ⇒ lỗi `NAP_TRUNG_SERVER_NGOAI`.
