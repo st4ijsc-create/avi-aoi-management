@@ -3749,6 +3749,7 @@
       "enrollmentToken": "enrolment token",
       "ensembleConfig": "ensemble configuration",
       "escalationRule": "escalation rule",
+      "mqttAlertRule": "MQTT alert rule",
       "ethernet-ip": "EtherNet/IP",
       "factory": "factory",
       "factoryLayout": "factory layout",

@@ -8,7 +8,7 @@ import * as db from "../db";
 import { getDb } from "../db/connection";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { alertSettings, dailyStatistics, machines } from "../../drizzle/schema";
-import { viTriHopLe } from "./_cauHinhPhamVi";
+import { viTriHopLe, nguongYieldGhi, nguongYieldMoiGhi, idsNhaMayCuaNguoiGoi } from "./_cauHinhPhamVi";
 import type { AlertSetting } from "../../drizzle/schema";
 import { notifyOwner } from "../_core/notification";
 import { sendAlertEmail } from "../services/emailService";
@@ -416,20 +416,72 @@ export const alertRouter = router({
 
 // ============ YIELD THRESHOLD ROUTER ============
 export const yieldThresholdRouter = router({
-  list: protectedProcedure.query(async () => {
-    return db.getYieldAlertThresholds();
+  // W17b — ngưỡng mặc định (NULL) + ngưỡng của nhà máy trong phạm vi người gọi
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.getYieldAlertThresholds(await idsNhaMayCuaNguoiGoi(ctx));
   }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getYieldAlertThresholdById(input.id);
+    .query(async ({ input, ctx }) => {
+      const r = await db.getYieldAlertThresholdById(input.id);
+      if (!r) return r;
+      const ids = await idsNhaMayCuaNguoiGoi(ctx);
+      return r.factoryId != null && ids != null && !ids.includes(r.factoryId) ? null : r; // ngoài phạm vi ≡ không tồn tại
     }),
 
+  // Ngưỡng HIỆU LỰC: nêu factoryId (trong phạm vi) ⇒ ngưỡng riêng của nhà máy nếu có, không thì mặc định; không nêu ⇒ mặc định (NULL).
   getByType: protectedProcedure
-    .input(z.object({ metricType: z.enum(['FPY', 'FY', 'NTF', 'UPH']) }))
-    .query(async ({ input }) => {
-      return db.getYieldAlertThresholdByType(input.metricType);
+    .input(z.object({ metricType: z.enum(['FPY', 'FY', 'NTF', 'UPH']), factoryId: z.number().int().positive().optional() }))
+    .query(async ({ input, ctx }) => {
+      if (input.factoryId != null) await viTriHopLe(ctx, { factoryId: input.factoryId }, "yieldAlertThreshold");
+      return db.getYieldAlertThresholdByType(input.metricType, input.factoryId ?? null);
+    }),
+
+  // W17b (chủ dự án 2026-10-25) — ngưỡng yield THEO NHÀ MÁY. Khoá ghi đè = metricType; mỗi nhà máy tối đa MỘT hàng cho một metric. Người hẹp: factoryId trong phạm vi (bắt buộc);
+  // ngưỡng mặc định toàn tập đoàn (factoryId vắng) chỉ toàn quyền.
+  create: writeProcedure
+    .use(requirePermission("settings_yield_thresholds", "canCreate"))
+    .input(z.object({
+      metricType: z.enum(['FPY', 'FY', 'NTF', 'UPH']),
+      warningThreshold: z.number(),
+      criticalThreshold: z.number(),
+      targetValue: z.number().optional(),
+      comparisonOperator: z.enum(['gt', 'lt', 'gte', 'lte']).default('gte'),
+      isEnabled: z.boolean().default(true),
+      notifyOnWarning: z.boolean().default(true),
+      notifyOnCritical: z.boolean().default(true),
+      description: z.string().optional(),
+      factoryId: z.number().int().positive().nullable().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const factoryId = input.factoryId ?? null;
+      await nguongYieldMoiGhi(ctx, factoryId);
+      if (factoryId != null && (await db.coNguongNhaMay(input.metricType, factoryId))) {
+        throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "yieldAlertThreshold" }, "Nhà máy này đã có ngưỡng riêng cho chỉ số này.");
+      }
+      const id = await db.createYieldAlertThreshold({
+        metricType: input.metricType,
+        warningThreshold: String(input.warningThreshold),
+        criticalThreshold: String(input.criticalThreshold),
+        targetValue: input.targetValue !== undefined ? String(input.targetValue) : null,
+        comparisonOperator: input.comparisonOperator,
+        isEnabled: input.isEnabled,
+        notifyOnWarning: input.notifyOnWarning,
+        notifyOnCritical: input.notifyOnCritical,
+        description: input.description ?? null,
+        factoryId,
+      });
+      return { id };
+    }),
+
+  delete: writeProcedure
+    .use(requirePermission("settings_yield_thresholds", "canDelete"))
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      await nguongYieldGhi(ctx, input.id);
+      await db.deleteYieldAlertThreshold(input.id);
+      return { success: true };
     }),
 
   // doc 54 Wave B — factory-wide thresholds: write-floor + settings_yield_thresholds gate.
@@ -446,7 +498,8 @@ export const yieldThresholdRouter = router({
       notifyOnCritical: z.boolean().optional(),
       description: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await nguongYieldGhi(ctx, input.id); // W17b — ngưỡng mặc định chỉ toàn quyền; ngưỡng nhà máy: nhà máy trong phạm vi
       const { id, ...data } = input;
       // Convert numbers to strings for decimal fields
       const updateData: any = {};
@@ -463,15 +516,15 @@ export const yieldThresholdRouter = router({
       return { success: true };
     }),
 
-  getEnabled: protectedProcedure.query(async () => {
-    return db.getEnabledYieldAlertThresholds();
+  getEnabled: protectedProcedure.query(async ({ ctx }) => {
+    return db.getEnabledYieldAlertThresholds(await idsNhaMayCuaNguoiGoi(ctx));
   }),
 
   // History procedures
   getHistory: protectedProcedure
     .input(z.object({ limit: z.number().optional() }))
-    .query(async ({ input }) => {
-      return db.getAllYieldThresholdHistory(input.limit || 100);
+    .query(async ({ input, ctx }) => {
+      return db.getAllYieldThresholdHistory(input.limit || 100, await idsNhaMayCuaNguoiGoi(ctx));
     }),
 
   getHistoryByType: protectedProcedure
@@ -479,14 +532,14 @@ export const yieldThresholdRouter = router({
       metricType: z.enum(['FPY', 'FY', 'NTF', 'UPH']),
       days: z.number().optional()
     }))
-    .query(async ({ input }) => {
-      return db.getYieldThresholdHistoryWithComparison(input.metricType, input.days || 30);
+    .query(async ({ input, ctx }) => {
+      return db.getYieldThresholdHistoryWithComparison(input.metricType, input.days || 30, await idsNhaMayCuaNguoiGoi(ctx));
     }),
 
   getHistoryByThreshold: protectedProcedure
     .input(z.object({ thresholdId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getYieldThresholdHistoryByThreshold(input.thresholdId);
+    .query(async ({ input, ctx }) => {
+      return db.getYieldThresholdHistoryByThreshold(input.thresholdId, await idsNhaMayCuaNguoiGoi(ctx));
     }),
 
   // Update with history tracking
@@ -512,6 +565,7 @@ export const yieldThresholdRouter = router({
       // Get current threshold for history
       const current = await db.getYieldAlertThresholdById(id);
       if (!current) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "yieldAlertThreshold" }, "Threshold not found");
+      await nguongYieldGhi(ctx, id); // W17b — ngưỡng mặc định chỉ toàn quyền; ngưỡng nhà máy: nhà máy trong phạm vi (ngoài phạm vi ≡ không tồn tại)
 
       // Create history record if thresholds changed
       if (data.warningThreshold !== undefined || data.criticalThreshold !== undefined || data.targetValue !== undefined) {
