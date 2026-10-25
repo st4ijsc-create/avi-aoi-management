@@ -275,7 +275,7 @@ describe("★★★ annotation — GHI / xuất / nhập / lịch sử", () => {
     expect((await u.annotation.bulkDelete({ imageUrls: [urlCheo] })).deletedCount).toBe(0);
     expect((await dung(sql`SELECT id FROM image_annotations WHERE id = ${cheo.id}`)).length).toBe(1);
     // chú thích A (người tạo là NULL ⇒ không phải của A) vẫn qua cổng phạm vi: lỗi là quyền sở hữu, không phải "không tồn tại"
-    expect(await chiTiet(() => u.annotation.delete({ id: A.ann }))).toContain("FORBIDDEN");
+    expect(await chiTiet(() => u.annotation.delete({ id: A.ann }))).toContain("NOT_FOUND");
   });
   it("bulkApplyTemplate / copyAnnotations — không ghi lên ảnh của B (kể cả khi khai inspectionId của B)", async () => {
     const u: C = uA;

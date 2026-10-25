@@ -22,6 +22,13 @@
 import { viTriHopLe } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
+import { robotTrongPhamVi } from "./_robotPhamVi";
+import { dieuKienViTriTrongPhamVi } from "./_adapterPhamVi";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { fieldDeviceHealth } from "../../drizzle/schema";
+
+/** phạm vi người dùng (L6c 2026-10-25): sức khoẻ thiết bị hiện trường theo robot / máy / nhà máy của nó (hàng không định vị chỉ toàn quyền). */
+const congSucKhoeTruongThietBi = (ctx: CoDanhTinh) => dieuKienViTriTrongPhamVi(phamViCua(ctx), { robotId: fieldDeviceHealth.robotId, machineId: fieldDeviceHealth.machineId, factoryId: fieldDeviceHealth.factoryId });
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
@@ -70,7 +77,8 @@ export const fieldRouter = router({
   deviceState: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ robotId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await robotTrongPhamVi(ctx, input.robotId); // phạm vi người dùng (L6c 2026-10-25): robot ngoài phạm vi ≡ không tồn tại
       const d = await db();
       const [r] = await d.select().from(robots).where(eq(robots.id, input.robotId)).limit(1);
       if (!r) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, `Robot ${input.robotId} not found`);
@@ -108,11 +116,11 @@ export const fieldRouter = router({
   health: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ state: z.enum(LIVENESS).optional(), deviceKind: z.string().max(24).optional() }).optional())
-    .query(async ({ input }) => listFieldHealth(input ?? undefined)),
+    .query(async ({ input, ctx }) => listFieldHealth({ ...(input ?? {}), dieuKienPhamVi: await congSucKhoeTruongThietBi(ctx) })), // phạm vi người dùng (L6c 2026-10-25)
 
   healthSummary: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => fieldHealthSummary()),
+    .query(async ({ ctx }) => fieldHealthSummary(await congSucKhoeTruongThietBi(ctx))), // phạm vi người dùng (L6c 2026-10-25)
 
   // ── Hot-plug discovery (admin actions) — flag-gated ───────────────────────────
   /** Probe an endpoint for candidate devices (OPC-UA = real browse; others = seam). */

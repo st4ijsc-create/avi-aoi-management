@@ -15,6 +15,8 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { runDes, type LineModel, type SimConfig } from "../services/simulation/desEngine";
@@ -148,7 +150,10 @@ export const simulationRouter = router({
         configuredCapacityPerHour: z.number().nullable().optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L6c 2026-10-25): nhà máy ngoài phạm vi ≡ không tồn tại
+      const nhaMay = await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true });
+      if (nhaMay !== null && !nhaMay.includes(input.factoryId)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, "Factory not found");
       const scene = await buildSceneGraph(input.factoryId);
       if (scene.lines.length === 0) {
         return {

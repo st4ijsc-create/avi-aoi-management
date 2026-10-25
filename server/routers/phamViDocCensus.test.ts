@@ -952,8 +952,8 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // 2026-10-25 gộp R1b-1 (D +1) với L6b ⇒ đo bằng census.
 // 2026-10-25 gộp L6w (getVariant C→S) với main R1b-1 ⇒ đo bằng census.
 // ★★ 2026-10-25 (W17a, cộng dồn sau L6w/L6t 117/469/610): **C 469 → 466 · S 610 → 613.** reportArtifact.list|get|download C→S (phạm vi NGƯỜI TẠO). Chứng minh: phamViGhiDoW17a.db.test.ts.
-// ★★ 2026-10-25 (lô W17b, luật MQTT + ngưỡng yield THEO NHÀ MÁY, mig 0426): **C 466 → 454 · S 613 → 625 · D 1199 → 1201 · tong 2403 → 2405 · A/B unchanged.** 12 thủ tục ĐỌC C→S (mqttAlert list|getById|history|unresolved · yieldThreshold list|getById|getByType|getEnabled|getHistory|getHistoryByType|getHistoryByThreshold · alertEscalation.recentEscalations lọc theo nhà máy) + 2 mutation mới yieldThreshold.create|delete. Chứng minh: phamViGhiDoW17bMqttYield.db.test.ts.
-const GHIM = { A: 117, B: 8, C: 454, D: 1201, S: 625, tong: 2405 } as const;
+// 2026-10-25 gộp L6c-C1 (A−22) với W17a (reportArtifact C→S) ⇒ đo bằng census.
+const GHIM = { A: 95, B: 8, C: 466, D: 1199, S: 635, tong: 2403 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

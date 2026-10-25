@@ -2,6 +2,7 @@
  * ★ Điều kiện phạm vi nhà máy DÙNG CHUNG cho các thủ tục ĐỌC nhóm AI (lô L6b, 2026-10-25) — mỗi hàm trả `SQL | undefined` (undefined = toàn quyền).
  * Dữ liệu AI định vị bằng MÁY hoặc LẦN KIỂM TRA; cùng luật `dieuKienDoiTuongTrongPhamVi` (_adapterPhamVi.ts): hàng không định vị được chỉ toàn quyền thấy.
  */
+import { chuanHoaKhoaAnh } from "../utils/safeImagePath";
 import { sql, type SQL } from "drizzle-orm";
 import { aiLabelQueue, aiSuggestions, edgeDeployments, edgeInferenceSync, inferenceResults, modelRollbackEvents, predictiveAlerts, robotBehaviorAnomalies, rootCauseAnalysis } from "../../drizzle/schema";
 import { idsTrongPhamVi } from "../db/hierarchy";
@@ -68,10 +69,12 @@ export async function congRollbackMoHinh(ctx: CoDanhTinh): Promise<SQL | undefin
  * thuộc lần kiểm tra của máy trong phạm vi, HOẶC một embedding ảnh / mặt nạ khuyết tật có máy / lần kiểm tra trong phạm vi. Khoá không tra ngược được ⇒ KHÔNG thấy (fail-closed).
  */
 export async function anhTrongPhamVi(ctx: CoDanhTinh, imageKey: string): Promise<boolean> {
+  const k = chuanHoaKhoaAnh(imageKey); // MỘT lần chuẩn hoá — router đọc tệp bằng ĐÚNG chuỗi này
+  if (k === null) return false;
   const ids = await idsMayTrongPhamVi(ctx);
   if (ids === null) return true;
-  const k = imageKey.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/^uploads\//i, "");
-  if (/^temp\//i.test(k)) return true;
+  // ảnh tạm: chỉ MỘT tệp phẳng do aiImageSearch.uploadTemp sinh ra (không thư mục con). Cơ chế đó KHÔNG ghi chủ tải lên ⇒ chưa phân biệt được người.
+  if (/^temp\/tmp_\d+_[a-z0-9]+\.[a-z0-9]+$/i.test(k)) return true;
   const { getDb } = await import("../db/connection");
   const d = await getDb();
   if (!d) return false;

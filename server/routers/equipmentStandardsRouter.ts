@@ -28,6 +28,7 @@ import { z } from "zod";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
@@ -615,5 +616,5 @@ export const equipmentStandardsRouter = router({
    */
   complianceMetrics: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => loadComplianceMetrics(await getDb())),
+    .query(async ({ ctx }) => loadComplianceMetrics(await getDb(), await idsMayTrongPhamVi(ctx))), // phạm vi người dùng (L6c 2026-10-25)
 });
