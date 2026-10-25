@@ -151,6 +151,9 @@ function laJsonThuan(v: unknown, sau = 0): boolean {
   }
 }
 
+/** R1b-2a T1 (M1) — |số thô| từ 2^53 trở lên: double không còn phân biệt được hai số nguyên liền nhau ⇒ thiết bị không nhận đúng số. */
+const MIEN_THO_AN_TOAN = 2 ** 53;
+
 /** Làm sạch nhiễu dấu phẩy động của phép nhân/cộng (chỉ cho GỢI Ý — không bao giờ cho giá trị được chấp nhận). */
 const sachSo = (n: number): number => Number(n.toPrecision(15));
 
@@ -169,16 +172,24 @@ function heSoThangDo(tag: Pick<KenhGhiThuan, "scale" | "offset">): { s: number; 
  * — kẹp vào các điểm lưới thô nằm trong [writeMin, writeMax]; không có điểm nào trong dải, hoặc (`goiYPhaiNguyen`, tag ĐÃ khai: epInt chỉ
  * nhận số nguyên) gợi ý không phải số nguyên ⇒ không `goiY`. float / bool / string / json: driver không làm tròn ⇒ không kiểm. Gợi ý KHÔNG
  * xét `writeStep` (hiếm khi cả hai cùng có).
+ *
+ * R1b-2a T1 (Q-T13 b + kiem-dinh M1, điều phối 2026-10-25) — MỌI tag int, kể cả scale 1 / offset 0 (lưới thô = số nguyên; không còn lối tắt):
+ *   • n = (v − o)/s không hữu hạn hoặc |n| ≥ 2^53 ⇒ `OUT_OF_RANGE` "số thô vượt miền an toàn" (trước: coi là ok — driver ghi một số thô không
+ *     biểu diễn đúng được);
+ *   • so lưới ở KHÔNG GIAN THÔ: lệch ⇔ |n − round(n)| > 1e-9 + 4·EPSILON·(|n| + (|v| + |o|)/|s|) — vế tuyệt đối 1e-9 tính theo SỐ THÔ nên không
+ *     còn lỗ khi |scale| rất nhỏ (trước: 1e-9 ở không gian kỹ thuật ⇒ scale 1e-10 coi mọi giá trị là "trên lưới"); vế tương đối là nhiễu dấu phẩy
+ *     động của v, o (đổi sang không gian thô) và của chính phép chia.
  */
 function kiemLuoiTho(tag: KenhGhiThuan, v: number, goiYPhaiNguyen = true): KetQuaGiaTri {
   if (tag.dataType !== "int") return { ok: true, giaTri: v };
   const { s, o } = heSoThangDo(tag);
-  if (s === 1 && o === 0) return { ok: true, giaTri: v }; // lưới thô = số nguyên: tag đã khai đã qua epInt; chưa khai — ngoài phạm vi (xem kiemLuoiThoChuaKhai)
   const n = (v - o) / s;
-  if (!Number.isFinite(n) || Math.abs(n) >= 2 ** 53) return { ok: true, giaTri: v }; // vượt độ phân giải double — như nhánh bước
+  if (!Number.isFinite(n) || Math.abs(n) >= MIEN_THO_AN_TOAN) {
+    return sai("OUT_OF_RANGE", `Giá trị ${v}: số thô vượt miền an toàn (|(giá trị − ${o}) / ${s}| ≥ 2^53) — thiết bị không lưu đúng được số thô này.`);
+  }
   const k = Math.round(n);
-  const dungSai = 1e-9 * Math.max(1, Math.abs(s)) + 4 * Number.EPSILON * Math.max(Math.abs(v), Math.abs(o));
-  if (Math.abs(v - (o + k * s)) <= dungSai) return { ok: true, giaTri: v };
+  const dungSai = 1e-9 + 4 * Number.EPSILON * (Math.abs(n) + (Math.abs(v) + Math.abs(o)) / Math.abs(s));
+  if (Math.abs(n - k) <= dungSai) return { ok: true, giaTri: v };
 
   const { writeMin: min, writeMax: max } = tag;
   // k của các điểm lưới thô o + k·s nằm trong dải (s âm ⇒ đảo vai min/max).
@@ -203,32 +214,60 @@ function kiemLuoiTho(tag: KenhGhiThuan, v: number, goiYPhaiNguyen = true): KetQu
 }
 
 /**
- * R1b-1 T13 (điều phối 2026-10-24) — tag int CHƯA khai mô hình ghi (cột 0431 đều NULL) mà có `scale ≠ 1` hoặc `offset ≠ 0`: cổng kênh
- * sớm của `dispatch()` phải kiểm lưới thô như tag đã khai, không để driver làm tròn im lặng (scale 10: 25 ⇒ raw 3 = 30). true ⇔ phải kiểm.
- * scale 1 / offset 0 ⇒ false: hành vi cũ (giá trị đi nguyên như gửi; ngoài phạm vi T13).
+ * R1b-1 T13 (điều phối 2026-10-24) — tag int CHƯA khai mô hình ghi (cột 0431 đều NULL): cổng kênh sớm của `dispatch()` phải kiểm lưới thô như
+ * tag đã khai, không để driver làm tròn im lặng (scale 10: 25 ⇒ raw 3 = 30). true ⇔ phải kiểm.
+ * R1b-2a T1 (Q-T13 b, điều phối 2026-10-25) — MỌI tag int, kể cả scale 1 / offset 0 (trước: false ⇒ 2.5 đi nguyên, driver ghi 3; "abc" đi nguyên,
+ * driver ghi Math.round(NaN)). `scale` / `offset` không còn quyết định có kiểm hay không; chữ ký giữ nguyên.
  */
 export function canKiemLuoiThoChuaKhai(tag: Pick<KenhGhiThuan, "dataType" | "scale" | "offset">): boolean {
-  if (tag.dataType !== "int") return false;
-  const { s, o } = heSoThangDo(tag);
-  return s !== 1 || o !== 0;
+  return tag.dataType === "int";
+}
+
+/**
+ * R1b-2a T1 (kiem-dinh M2 + phán quyết K3) — số mà driver sẽ đọc từ giá trị gửi lên một tag int CHƯA khai (`inverseScale`: `Number(value)`), CHỈ khi
+ * giá trị ấy là một SỐ có chủ đích: boolean ⇒ 1 / 0; số hữu hạn; chuỗi không rỗng mà `Number()` đọc ra số hữu hạn ("7", " 7 ", "0x19" — như driver);
+ * đối tượng kiểu Long của Sparkplug trong miền an toàn (`epLong`). Mọi thứ khác ⇒ undefined (TYPE_MISMATCH): NaN / ±Infinity / "abc" /
+ * "Infinity"; mảng (`Number([25])` = 25, `Number([])` = 0); đối tượng thường; Symbol; hàm; chuỗi rỗng / chỉ khoảng trắng (`Number("")` = 0);
+ * null / undefined (`Number(null)` = 0 — luật interlock không khai giá trị đã được đổi thành `true` TRƯỚC khi tới đây, `giaTriLenhInterlock`).
+ */
+function soChoIntChuaKhai(v: unknown): number | undefined {
+  switch (typeof v) {
+    case "boolean":
+      return v ? 1 : 0;
+    case "number":
+      return Number.isFinite(v) ? v : undefined;
+    case "bigint": {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : undefined;
+    }
+    case "string": {
+      if (v.trim() === "") return undefined;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : undefined;
+    }
+    case "object": {
+      if (v === null) return undefined;
+      const l = epLong(v);
+      return typeof l === "number" ? l : undefined;
+    }
+    default:
+      return undefined; // undefined, symbol, function
+  }
 }
 
 /**
  * R1b-1 T13 — kiểm lưới thô cho tag int CHƯA khai (`canKiemLuoiThoChuaKhai`). Tag chưa khai KHÔNG được ép kiểu (hành vi cũ: giá trị đi nguyên
- * như người gọi gửi), nên số đem kiểm là ĐÚNG số driver sẽ dùng: `Number(giaTri)` như `inverseScale` (true ⇒ 1, "25" ⇒ 25). Không hữu hạn
- * (`"abc"`, đối tượng) ⇒ không phải chuyện làm tròn ⇒ ok (hành vi cũ). Lệch lưới ⇒ `OFF_STEP` với `buoc` = |scale| và `goiY` = điểm lưới gần
- * nhất (không đòi số nguyên — tag chưa khai không qua epInt; scale 0.5 ⇒ 2.5 là giá trị đúng lưới). `ok` trả LẠI giá trị NGUYÊN VẸN, không đổi.
+ * như người gọi gửi), nên số đem kiểm là ĐÚNG số driver sẽ dùng (`soChoIntChuaKhai`: true ⇒ 1, "25" ⇒ 25). Lệch lưới ⇒ `OFF_STEP` với
+ * `buoc` = |scale| và `goiY` = điểm lưới gần nhất (không đòi số nguyên — tag chưa khai không qua epInt; scale 0.5 ⇒ 2.5 là giá trị đúng lưới).
+ * `ok` trả LẠI giá trị NGUYÊN VẸN, không đổi.
+ * R1b-2a T1 — MỌI tag int (scale 1 ⇒ lưới số nguyên: 2.5 ⇒ OFF_STEP goiY 3, buoc 1, gocLuoi 0); giá trị không phải số hữu hạn có chủ đích ⇒
+ * `TYPE_MISMATCH` (M2: trước đây ok nguyên vẹn và driver ghi `Math.round(NaN)`); |số thô| ≥ 2^53 ⇒ `OUT_OF_RANGE` (M1).
  */
 export function kiemLuoiThoChuaKhai(tag: Pick<KenhGhiThuan, "dataType" | "scale" | "offset">, giaTri: unknown): KetQuaGiaTri {
   const nguyenVen = { ok: true, giaTri: giaTri as number | boolean | string } as const;
   if (!canKiemLuoiThoChuaKhai(tag)) return nguyenVen;
-  let x: number;
-  try {
-    x = Number(giaTri);
-  } catch {
-    return nguyenVen; // Symbol — driver cũng không ghi được; không phải chuyện làm tròn
-  }
-  if (!Number.isFinite(x)) return nguyenVen;
+  const x = soChoIntChuaKhai(giaTri);
+  if (x === undefined) return sai("TYPE_MISMATCH", "giá trị không phải số hữu hạn — tag int không ghi được");
   const kq = kiemLuoiTho({ dataType: "int", writeMin: null, writeMax: null, writeStep: null, scale: tag.scale, offset: tag.offset }, x === 0 ? 0 : x, false);
   return kq.ok ? nguyenVen : kq;
 }

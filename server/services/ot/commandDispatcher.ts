@@ -887,8 +887,9 @@ function epKieuKenh(tag: Pick<DeviceTag, "dataType">, value: unknown) {
  *   PASS 1 (every write):
  *   1. not a write channel (`laKenhGhi`: channel_kind input / calculated) ⇒ CHANNEL_READ_ONLY. NO stop exemption: a pin
  *      only exists on a writable channel. channel_kind NULL ⇒ derived from `writable` (true here) ⇒ always a write channel.
- *   2. channel model not declared (`kenhDaKhaiGhi` false) ⇒ the write passes UNCHANGED (old behaviour: never coerced). R1b-1 T13:
- *      an undeclared INT tag with scale ≠ 1 or offset ≠ 0 (`canKiemLuoiThoChuaKhai`) is still queued for the raw-grid check (5).
+ *   2. channel model not declared (`kenhDaKhaiGhi` false) ⇒ the write passes UNCHANGED (old behaviour: never coerced). R1b-1 T13 +
+ *      R1b-2a T1 (Q-T13 b): EVERY undeclared INT tag — scale 1 / offset 0 included (`canKiemLuoiThoChuaKhai` ⇔ dataType int) — is still
+ *      queued for pass 2 (5); its value is not coerced.
  *   3. coerce by dataType (`kiemGiaTriGhi`, never rounds) ⇒ TYPE_MISMATCH on failure.
  *   PINNED STOP exemption (coordinator 2026-10-24 item 4: no software blocks a pinned STOP; fix round 1 M-2: WHOLE command
  *   only) — matched on DATA here, since this gate runs before the mode/commissioning gates: a stop-typed command
@@ -897,14 +898,20 @@ function epKieuKenh(tag: Pick<DeviceTag, "dataType">, value: unknown) {
  *   range and step. A stop that mixes a pin with ANY other write (fix round 2: an undeclared, unpinned one too — it is not a
  *   pinned STOP at 5a-stop either) is not exempt for any of them. The full classification (`classifyOtStop`, connection fingerprint …)
  *   still runs later, unchanged. Range ↔ stop_value consistency is checked at CONFIGURATION time (R1a Task 12), not here.
- *   PASS 2 (declared writes + undeclared int writes with scale/offset, in write order, unless exempt):
+ *   PASS 2 (declared writes + EVERY undeclared int write, in write order, unless exempt):
  *   4. range, then step ⇒ OUT_OF_RANGE / OFF_STEP (the detail carries `goiY`, a hint only — the value is never altered). Declared only.
- *   5. kiem-dinh P1-3 (2026-10-24) + R1b-1 T13 — int with scale/offset: (v − offset)/scale must be an integer, else OFF_STEP (goiY =
- *      the nearest raw-grid value, buoc = |scale|). EVERY int tag: declared (`kiemGiaTriGhi`, on the coerced integer) AND undeclared
- *      (`kiemLuoiThoChuaKhai`, on `Number(value)` exactly as the driver's `inverseScale` reads it — the value itself still goes on as
- *      sent). No flag: the driver used to round silently (scale 10: 25 ⇒ raw 3 = 30) — a right/wrong fix, census in the T13 report
- *      (nobody relies on the rounding). A pinned STOP is exempt (whole-command rule above), like range/step: an off-grid pin is still
- *      written (and rounded by the driver) — STOP is never blocked; such pins are a configuration finding, not a dispatch refusal.
+ *   5. kiem-dinh P1-3 (2026-10-24) + R1b-1 T13 + R1b-2a T1 — int raw grid: n = (v − offset)/scale must be an integer, compared in RAW
+ *      space (|n − round(n)| > 1e-9 + 4·EPSILON·(|n| + (|v| + |o|)/|s|) ⇒ OFF_STEP, goiY = the nearest raw-grid value, buoc = |scale|;
+ *      scale 1 / offset 0 ⇒ the integer grid: 2.5 ⇒ OFF_STEP goiY 3 buoc 1); |n| ≥ 2^53 or n not finite ⇒ OUT_OF_RANGE (kiem-dinh M1).
+ *      EVERY int tag: declared (`kiemGiaTriGhi`, on the coerced integer) AND undeclared (`kiemLuoiThoChuaKhai`, on the number the driver's
+ *      `inverseScale` reads — the value itself still goes on as sent). Undeclared int only (kiem-dinh M2, ruling K3): a value that is not
+ *      a deliberate finite number — NaN / ±Infinity / "abc" / "Infinity" / "" / whitespace / null / undefined / an array / a plain object
+ *      / a Symbol — ⇒ TYPE_MISMATCH "giá trị không phải số hữu hạn — tag int không ghi được" (the driver used to write Math.round(NaN), or
+ *      the 0 of Number(""), Number(null), Number([])); true / false ⇒ 1 / 0, "7" ⇒ 7, a safe Sparkplug Long ⇒ its number. No flag: the
+ *      driver used to round silently (scale 10: 25 ⇒ raw 3 = 30) — a right/wrong fix, census in the T13 report and the R1b-2a T1 report
+ *      (nobody relies on the rounding / on the NaN write). A pinned STOP is exempt (whole-command rule above), like range/step: an
+ *      off-grid pin is still written (and rounded by the driver) — STOP is never blocked; such pins are a configuration finding, not a
+ *      dispatch refusal.
  * ok ⇒ the writes to use downstream: declared tags carry the COERCED value, undeclared ones the caller's write object.
  *
  * R1a Task 4 (ledger R-1) appends its mode gate (3c) right after this block in dispatchCore, on the same tag rows.
@@ -920,14 +927,14 @@ export function congKenhSom(commandType: string, writes: ReadonlyArray<DispatchW
     ...(luoi?.goiY !== undefined ? { goiY: luoi.goiY } : {}),
   });
   const out: DispatchWrite[] = [];
-  const canKiem: number[] = []; // indexes checked in pass 2: declared writes (coerced in `out`) + undeclared int writes with scale/offset (as sent)
+  const canKiem: number[] = []; // indexes checked in pass 2: declared writes (coerced in `out`) + every undeclared int write (as sent)
   for (let i = 0; i < writes.length; i++) {
     const w = writes[i];
     const tag = tags[i];
     if (!laKenhGhi(tag)) return tuChoi(i, "CHANNEL_READ_ONLY", `Tag "${w.tagKey}" is a '${loaiKenh(tag)}' channel — not a write channel`);
     if (!kenhDaKhaiGhi(tag)) {
       out.push(w);
-      if (canKiemLuoiThoChuaKhai(tag)) canKiem.push(i); // R1b-1 T13 — raw grid only; the value is NOT coerced
+      if (canKiemLuoiThoChuaKhai(tag)) canKiem.push(i); // R1b-1 T13 + R1b-2a T1 — raw grid + finite number only; the value is NOT coerced
       continue;
     }
     const kieu = epKieuKenh(tag, w.value);

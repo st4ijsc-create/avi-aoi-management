@@ -636,12 +636,15 @@ describe.skipIf(!DB_URL)(
       expect(rows[0]!.requestedValue).toBe(42);
     });
 
-    it('hồi quy: mọi cột mới NULL ⇒ KHÔNG ép kiểu, KHÔNG kiểm kiểu ("7" và 12.5 cho int đi nguyên dạng tới simulated như trước)', async () => {
+    // R1b-2a T1 (Q-T13 b) — thay ghim cũ "12.5 cho int chưa khai đi nguyên dạng": int scale 1 có lưới số nguyên ⇒ OFF_STEP. "7" vẫn KHÔNG ép kiểu.
+    it('hồi quy: mọi cột mới NULL ⇒ KHÔNG ép kiểu ("7" cho int đi nguyên dạng tới simulated như trước); 12.5 ⇒ OFF_STEP (R1b-2a T1)', async () => {
       const a = input({ writes: [{ tagKey: "cu", value: "7" }] });
       expect((await dispatch(a)).status).toBe("simulated");
       expect(await requestedTypes(a.idempotencyKey)).toEqual(["string"]);
       const b = input({ writes: [{ tagKey: "cu", value: 12.5 }] });
-      expect((await dispatch(b)).status).toBe("simulated");
+      const rb = await dispatch(b);
+      expect(rb.status).toBe("rejected");
+      expect(rb.reason).toBe("OFF_STEP");
     });
 
     // ═════════════════ ép kiểu trước khi băm / trước driver ═════════════════
@@ -811,7 +814,7 @@ describe.skipIf(!DB_URL)(
       expect(rawBatches).toEqual([[{ tagKey: "sc2o1", raw: 2 }]]);
     });
 
-    it("T13 kênh CHƯA khai int scale 1 / offset 0 (cu) ⇒ hành vi cũ: KHÔNG kiểm lưới (ngoài phạm vi T13), simulated", async () => {
+    it("T13 kênh CHƯA khai int scale 1 / offset 0 (cu): số nguyên 25 nằm trên lưới số nguyên ⇒ simulated (R1b-2a T1: tag này nay CÓ kiểm lưới)", async () => {
       const res = await dispatch(input({ writes: [{ tagKey: "cu", value: 25 }] }));
       expect(res.status).toBe("simulated");
     });
@@ -928,6 +931,89 @@ describe.skipIf(!DB_URL)(
         expect(lech.reason).toBe("OFF_STEP");
       } finally {
         await x.update(deviceTags).set({ stopValue: null }).where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, "sc10cu")));
+      }
+    });
+
+    // ═════════════════ R1b-2a T1 — một luật cho giá trị ghi lên tag int (Q-T13 b + kiem-dinh M2; phán quyết K3) ═════════════════
+    // Hành động AI ĐÃ xác nhận (khuôn T13 / X2 R1b-1): OT bật, action gắn đúng ⇒ cổng kênh 3b là cổng từ chối; `AI_OT_CONTROL_ENABLED` không
+    // được dispatch đọc (đã xoá ở beforeEach). Thiết bị = driver giả đếm `writeTags`.
+    it("R1b-2a T1 AI (set_machine_param): 2.5 lên int CHƯA khai scale 1 (cu) ⇒ rejected OFF_STEP, appError {SCADA_VALUE_OFF_STEP, step 1, goiY 3}, thiết bị 0 lần, action KHÔNG bị tiêu thụ", async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      const writes = [{ tagKey: "cu", value: 2.5 }];
+      const actionId = await makeAction({ writes });
+      const inp = input({ actionId, writes });
+      const res = await dispatch(inp);
+      expect(res.status).toBe("rejected");
+      expect(res.reason).toBe("OFF_STEP");
+      expect(res.appError).toEqual({ appCode: "SCADA_VALUE_OFF_STEP", appParams: { ma: "OFF_STEP", tagKey: "cu", step: 1, goiY: 3 } });
+      expect(writeCalls).toBe(0);
+      const rows = await ledger(inp.idempotencyKey);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.errorText).toMatch(/^OFF_STEP: Tag "cu": .*\(goiY=3\)$/);
+      expect(await pendingStatus(actionId)).toBe("confirmed");
+    });
+
+    it('R1b-2a T1 AI (M2): "abc" lên int CHƯA khai scale 1 ⇒ rejected TYPE_MISMATCH, thiết bị 0 lần (trước: driver ghi Math.round(NaN))', async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      const writes = [{ tagKey: "cu", value: "abc" }];
+      const actionId = await makeAction({ writes });
+      const inp = input({ actionId, writes });
+      const res = await dispatch(inp);
+      expect(res.status).toBe("rejected");
+      expect(res.reason).toBe("TYPE_MISMATCH");
+      expect(writeCalls).toBe(0);
+      expect((await ledger(inp.idempotencyKey))[0]!.errorText).toMatch(/^TYPE_MISMATCH: Tag "cu": giá trị không phải số hữu hạn — tag int không ghi được/);
+      expect(await pendingStatus(actionId)).toBe("confirmed");
+    });
+
+    it("R1b-2a T1 (K3): [3] / null / \"\" / \"Infinity\" / {v:3} lên int CHƯA khai (scale 1 và scale 10) ⇒ TYPE_MISMATCH, thiết bị 0 lần", async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      for (const tagKey of ["cu", "sc10cu"]) {
+        for (const value of [[3], null, "", "Infinity", { v: 3 }]) {
+          const writes = [{ tagKey, value }];
+          const actionId = await makeAction({ writes });
+          const res = await dispatch(input({ actionId, writes }));
+          expect(res.reason, `${tagKey} ${JSON.stringify(value)}`).toBe("TYPE_MISMATCH");
+        }
+      }
+      expect(writeCalls).toBe(0);
+    });
+
+    it("R1b-2a T1 AI: 3 lên int CHƯA khai scale 1 ⇒ driver nhận 3 (số thô 3)", async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      const writes = [{ tagKey: "cu", value: 3 }];
+      const actionId = await makeAction({ writes });
+      const res = await dispatch(input({ actionId, writes }));
+      expect(res.ok).toBe(true);
+      expect(writtenBatches).toEqual([[{ tagKey: "cu", value: 3 }]]);
+      expect(rawBatches).toEqual([[{ tagKey: "cu", raw: 3 }]]);
+    });
+
+    it("R1b-2a T1: STOP ghim 2 trên int CHƯA khai scale 1 ⇒ ok (simulated); stop KHÔNG khớp ghim (1.5) ⇒ OFF_STEP như mọi lệnh", async () => {
+      const x = await d();
+      const datGhim = (v: unknown) => x.update(deviceTags).set({ stopValue: v as never }).where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, "cu")));
+      try {
+        await datGhim(2);
+        const r2 = await dispatch(input({ commandType: "stop", writes: [{ tagKey: "cu", value: 2 }] }));
+        expect(r2.ok).toBe(true);
+        expect(r2.status).toBe("simulated");
+        expect((await dispatch(input({ commandType: "stop", writes: [{ tagKey: "cu", value: 1.5 }] }))).reason).toBe("OFF_STEP");
+      } finally {
+        await datGhim(null);
+      }
+    });
+
+    it("R1b-2a T1: stop_value 2.5 ghi thẳng trên tag int KHÔNG phải ghim hợp lệ (validateStopValue: int ⇒ số nguyên an toàn; setStopPin không đặt được) ⇒ stop 2.5 KHÔNG phải STOP ghim ⇒ OFF_STEP; STOP ghim hợp lệ không bị ảnh hưởng (ca trên)", async () => {
+      const x = await d();
+      const datGhim = (v: unknown) => x.update(deviceTags).set({ stopValue: v as never }).where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, "cu")));
+      try {
+        await datGhim(2.5);
+        const r = await dispatch(input({ commandType: "stop", writes: [{ tagKey: "cu", value: 2.5 }] }));
+        expect(r.status).toBe("rejected");
+        expect(r.reason).toBe("OFF_STEP");
+        expect(writeCalls).toBe(0);
+      } finally {
+        await datGhim(null);
       }
     });
   }

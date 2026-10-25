@@ -74,7 +74,7 @@ const NGUOI_GOI: Record<string, string> = {
   "server/services/aiLocalTools/writeHandlers/machineControl.ts":
     "AI set_machine_param (giá trị model đề xuất, NGƯỜI xác nhận đúng số đó — làm tròn = ghi khác số đã xác nhận) + start/stop/reset/alarm_ack (true), select_recipe (version nguyên / mã chuỗi), download_job (jobId), STOP ghim (stop_value).",
   "server/services/aiLocalTools/writeHandlers/visionControl.ts":
-    "AI thị giác: reject_divert (lane nguyên | true), spi_printer_offset (µm, độ phân giải 0,1 từ qualityControlProposer — tag int scale ≤ 0,1 vẫn nằm trên lưới).",
+    "AI thị giác: reject_divert (lane nguyên | true), spi_printer_offset (µm; R1b-2a T1: qualityControlProposer làm tròn theo LƯỚI GHI của tag printer_offset_x/y thật — lamTronTheoLuoiTag; chưa đọc được lưới ⇒ 0,1 + cổng kênh dispatch là trọng tài).",
   "server/services/equipment/equipmentAdapter.ts":
     "FOE bước command (args.writes do kỹ sư soạn trong workflow; TEST: 87 write, giá trị 7/0/1/true, không tag scale ≠ 1) + REST v1 (lệnh OT ⇒ 501 từ R1b-1 T5; chỉ robot).",
   "server/services/interlock/interlockEngine.ts":

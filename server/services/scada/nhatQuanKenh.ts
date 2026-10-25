@@ -12,8 +12,9 @@
  *   2. đã khai mà loại kênh không nhận lệnh ghi (`laKenhGhi` false: input / calculated) ⇒ `CHANNEL_READ_ONLY` — cổng kênh sớm của
  *      `dispatch()` từ chối mọi lệnh ghi trên kênh đó, KHÔNG có miễn trừ cho DỪNG ghim;
  *   3. còn lại ⇒ `kiemGiaTriGhi` (CÙNG hàm `dispatch()` dùng: ép kiểu, dải, bước) — mọi kết cục không `ok` là từ chối.
- *   R1b-1 T13 — riêng giá trị lệnh INTERLOCK (`kiemLenhInterlockTrenKenh`): kênh KHÔNG khai mà là int có scale ≠ 1 / offset ≠ 0 ⇒ lưới thô
- *   (`kiemLuoiThoChuaKhai`, CÙNG hàm cổng kênh sớm của `dispatch()` dùng cho tag chưa khai). Lệnh bảo vệ không được miễn lúc chạy, nên một
+ *   R1b-1 T13 — riêng giá trị lệnh INTERLOCK (`kiemLenhInterlockTrenKenh`): kênh KHÔNG khai mà là int ⇒ lưới thô (`kiemLuoiThoChuaKhai`, CÙNG
+ *   hàm cổng kênh sớm của `dispatch()` dùng cho tag chưa khai; R1b-2a T1: MỌI int kể cả scale 1 / offset 0 — lưới số nguyên — và giá trị không
+ *   phải số hữu hạn ⇒ TYPE_MISMATCH). Lệnh bảo vệ không được miễn lúc chạy, nên một
  *   giá trị lệch lưới phải bị từ chối LÚC CẤU HÌNH, không phải `OFF_STEP` đúng lúc cần. Ghim DỪNG trên kênh chưa khai KHÔNG kiểm (được miễn
  *   lúc chạy ⇒ không có lệch cấu hình ↔ chạy; ghim lệch lưới là phát hiện cấu hình, xem báo cáo T13).
  *
@@ -92,7 +93,8 @@ export function kiemNhatQuanKenh(tag: KenhNhatQuan, giaTri: unknown): KetQuaNhat
 
 /**
  * THUẦN — R1b-1 T13: giá trị lệnh của luật interlock có ghi được lên kênh không, theo ĐÚNG cổng kênh sớm của `dispatch()` — kênh đã khai ⇒
- * `kiemNhatQuanKenh`; kênh chưa khai ⇒ lưới thô của tag int có scale/offset (`kiemLuoiThoChuaKhai`; scale 1 / offset 0 / không phải int ⇒ ok).
+ * `kiemNhatQuanKenh`; kênh chưa khai ⇒ lưới thô của tag int (`kiemLuoiThoChuaKhai`; R1b-2a T1: mọi int, kể cả scale 1 / offset 0; không phải
+ * int ⇒ ok).
  */
 export function kiemLenhInterlockTrenKenh(tag: KenhNhatQuan, giaTri: unknown): KetQuaNhatQuan {
   if (kenhDaKhai(tag)) return kiemNhatQuanKenh(tag, giaTri);

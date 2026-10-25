@@ -18,6 +18,7 @@ import {
   buildControlProposals,
   isGatedNgOrAnomaly,
   isVisionControlEnabled,
+  lamTronTheoLuoiTag,
   proposeControlFromVerdict,
   type ControlProposal,
   type ProposeControlDeps,
@@ -274,5 +275,121 @@ describe("proposeControlFromVerdict — flag gate + HITL invariant", () => {
     expect(res.proposed).toBe(0);
     expect(res.skippedReason).toBe("NO_PROPOSAL");
     expect(propose).not.toHaveBeenCalled();
+  });
+});
+
+// ─── R1b-2a T1 — bộ đề xuất SPI theo lưới tag (Review Focus 4) ─────────────────────
+
+describe("R1b-2a T1 — lamTronTheoLuoiTag + đề xuất SPI theo lưới tag", () => {
+  const VERDICT_NG = { verdict: { decision: "AUTO_NG", confidence: 0.92, topLabel: "bridging" } };
+
+  it("lamTronTheoLuoiTag theo lưới tag", () => {
+    expect(lamTronTheoLuoiTag(-7.26, { dataType: "int", scale: 1, offset: 0 }, 1)).toBe(-7);
+    expect(lamTronTheoLuoiTag(-7.3, { dataType: "int", scale: "0.5", offset: null }, 1)).toBe(-7.5);
+    expect(lamTronTheoLuoiTag(23, { dataType: "int", scale: "10.000000", offset: "0" }, 1)).toBe(20);
+    expect(lamTronTheoLuoiTag(-7.26, { dataType: "float", scale: 1, offset: 0, writeStep: 0.5, writeMin: null }, 1)).toBe(-7.5);
+    expect(lamTronTheoLuoiTag(-7.26, null, 1)).toBe(-7.3);
+    expect(lamTronTheoLuoiTag(50, { dataType: "int", scale: 20, offset: 0 }, 1, 50)).toBe(40);
+  });
+
+  it("lamTronTheoLuoiTag — chuẩn hoá scale / offset như driver (NULL / 0 ⇒ 1, NULL ⇒ 0), offset ≠ 0, writeMin làm gốc bước, −0 ⇒ 0, nhiễu dấu phẩy động được làm sạch", () => {
+    expect(lamTronTheoLuoiTag(-7.26, { dataType: "int", scale: null, offset: null }, 1)).toBe(-7);
+    expect(lamTronTheoLuoiTag(-7.26, { dataType: "int", scale: "0", offset: null }, 1)).toBe(-7);
+    expect(lamTronTheoLuoiTag(12, { dataType: "int", scale: 10, offset: 5 }, 1)).toBe(15); // lưới 5 + k·10
+    expect(lamTronTheoLuoiTag(0.7, { dataType: "int", scale: 0.1, offset: 0 }, 1)).toBe(0.7); // 7·0.1 = 0.7000000000000001 ⇒ làm sạch
+    expect(lamTronTheoLuoiTag(1.2, { dataType: "float", scale: 1, offset: 0, writeStep: 0.5, writeMin: 0.25 }, 1)).toBe(1.25);
+    expect(Object.is(lamTronTheoLuoiTag(-0.3, { dataType: "int", scale: 10, offset: 0 }, 1), 0)).toBe(true);
+    expect(Object.is(lamTronTheoLuoiTag(-0.01, null, 1), 0)).toBe(true);
+    expect(lamTronTheoLuoiTag(-7.26, { dataType: "float", scale: 1, offset: 0, writeStep: null }, 1)).toBe(-7.3); // float không bước ⇒ roundDp
+    expect(lamTronTheoLuoiTag(-7.26, { dataType: "bool", scale: 1, offset: 0 }, 1)).toBe(-7.3);
+    expect(lamTronTheoLuoiTag(-50, { dataType: "int", scale: 20, offset: 0 }, 1, 50)).toBe(-40); // trần ⇒ lùi MỘT bước về phía 0
+  });
+
+  it("computeSpiPrinterOffset nhận luoiX / luoiY: trục int scale 1 ⇒ −7; trục scale 10 ⇒ −10; mean* vẫn roundDp", () => {
+    const r = computeSpiPrinterOffset([{ offsetXUm: 7.26, offsetYUm: 12.6 }], {
+      gain: 1,
+      luoiX: { dataType: "int", scale: 1, offset: 0 },
+      luoiY: { dataType: "int", scale: "10.000000", offset: "0.000000" },
+    });
+    expect(r.offsetXUm).toBe(-7);
+    expect(r.offsetYUm).toBe(-10);
+    expect(r.meanOffsetXUm).toBe(7.3);
+    expect(computeSpiPrinterOffset([{ offsetXUm: 7.26, offsetYUm: 12.6 }], { gain: 1 }).offsetXUm).toBe(-7.3); // không lưới ⇒ như cũ
+  });
+
+  it("buildControlProposals truyền spiLuoi: −7,26 trên int µm scale 1 ⇒ đề xuất mang −7 (Review Focus 4)", () => {
+    const ps = buildControlProposals({
+      ...VERDICT_NG,
+      machineId: 7,
+      inspectionId: 1,
+      spiTrend: [{ offsetXUm: 7.26, offsetYUm: 7.26 }],
+      spiOpts: { gain: 1 },
+      spiLuoi: { x: { dataType: "int", scale: 1, offset: 0 }, y: { dataType: "int", scale: 1, offset: 0 } },
+    });
+    const spi = ps.find((p) => p.kind === "spi_printer_offset")!;
+    expect(spi.args).toMatchObject({ offsetXUm: -7, offsetYUm: -7 });
+    expect(spi.rationale).not.toContain("chưa đọc được lưới tag");
+  });
+
+  it("hiệu chỉnh tròn về 0 trên cả hai trục ⇒ không đề xuất spi (Review Focus 4)", () => {
+    const ps = buildControlProposals({
+      ...VERDICT_NG,
+      machineId: 7,
+      inspectionId: 1,
+      spiTrend: Array(5).fill({ offsetXUm: 6, offsetYUm: 6 }),
+      spiLuoi: { x: { dataType: "int", scale: 10, offset: 0 }, y: { dataType: "int", scale: 10, offset: 0 } },
+    });
+    expect(ps.map((p) => p.kind)).toEqual(["reject_divert"]);
+  });
+
+  it("một trục chưa đọc được lưới ⇒ trục đó theo roundDp, rationale ghi '(chưa đọc được lưới tag)'", () => {
+    const ps = buildControlProposals({
+      ...VERDICT_NG,
+      machineId: 7,
+      inspectionId: 1,
+      spiTrend: [{ offsetXUm: 7.26, offsetYUm: 12.6 }],
+      spiOpts: { gain: 1 },
+      spiLuoi: { x: { dataType: "int", scale: 1, offset: 0 }, y: null },
+    });
+    const spi = ps.find((p) => p.kind === "spi_printer_offset")!;
+    expect(spi.args).toMatchObject({ offsetXUm: -7, offsetYUm: -12.6 });
+    expect(spi.rationale).toContain("(chưa đọc được lưới tag)");
+  });
+
+  it("proposeControlFromVerdict: có spiTrend, không có spiLuoi ⇒ gọi deps.layLuoiTagSpi(machineId) và đề xuất theo lưới; lỗi tra ⇒ roundDp + '(chưa đọc được lưới tag)'", async () => {
+    process.env.VISION_CONTROL_ENABLED = "true";
+    const spiTool = { name: "spi_printer_offset", kind: "write" as const, requiredPermission: { module: "machine_control", action: "canEdit" as const } };
+    const propose = vi.fn(async () => ({ ok: true, pendingAction: { actionId: "a" } }));
+    const layLuoiTagSpi = vi.fn(async (_m: number) => ({ x: { dataType: "int", scale: 1, offset: 0 }, y: { dataType: "int", scale: "10", offset: null } }));
+    const deps: ProposeControlDeps = {
+      propose: propose as never,
+      findTargets: async () => [{ id: 1, role: "maintenance" }],
+      getToolByName: (n) => (n === "spi_printer_offset" ? (spiTool as never) : undefined),
+      resolveFactory: async () => null,
+      layLuoiTagSpi,
+    };
+    const input = { ...VERDICT_NG, machineId: 7, inspectionId: 1, spiTrend: [{ offsetXUm: 7.26, offsetYUm: 12.6 }], spiOpts: { gain: 1 } };
+    const res = await proposeControlFromVerdict(input, deps);
+    expect(layLuoiTagSpi).toHaveBeenCalledWith(7);
+    expect(res.proposed).toBe(1);
+    const [, args] = propose.mock.calls[0] as unknown as [unknown, Record<string, unknown>];
+    expect(args).toMatchObject({ offsetXUm: -7, offsetYUm: -10 });
+
+    propose.mockClear();
+    const res2 = await proposeControlFromVerdict(input, { ...deps, layLuoiTagSpi: async () => { throw new Error("db down"); } });
+    expect(res2.proposed).toBe(1);
+    const [, args2] = propose.mock.calls[0] as unknown as [unknown, Record<string, unknown>];
+    expect(args2).toMatchObject({ offsetXUm: -7.3, offsetYUm: -12.6 });
+    expect(res2.proposals.find((p) => p.kind === "spi_printer_offset")!.rationale).toContain("(chưa đọc được lưới tag)");
+  });
+
+  it("proposeControlFromVerdict: spiLuoi có sẵn ⇒ KHÔNG tra lại; không spiTrend / máy null ⇒ không tra", async () => {
+    process.env.VISION_CONTROL_ENABLED = "true";
+    const layLuoiTagSpi = vi.fn(async () => ({ x: null, y: null }));
+    const deps: ProposeControlDeps = { propose: vi.fn(async () => ({ ok: true })) as never, findTargets: async () => [], getToolByName: () => undefined, resolveFactory: async () => null, layLuoiTagSpi };
+    await proposeControlFromVerdict({ ...VERDICT_NG, machineId: 7, inspectionId: 1, spiTrend: [{ offsetXUm: 9, offsetYUm: 9 }], spiLuoi: { x: null, y: null } }, deps);
+    await proposeControlFromVerdict({ ...VERDICT_NG, machineId: 7, inspectionId: 1 }, deps);
+    await proposeControlFromVerdict({ ...VERDICT_NG, machineId: null, inspectionId: 1, spiTrend: [{ offsetXUm: 9, offsetYUm: 9 }] }, deps);
+    expect(layLuoiTagSpi).not.toHaveBeenCalled();
   });
 });

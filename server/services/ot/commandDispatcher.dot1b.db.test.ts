@@ -735,6 +735,9 @@ describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long key
       { adapterId: a!.id, tagKey: "other_sp", address: "D101", dataType: "int", writable: true },
       { adapterId: a!.id, tagKey: "label_sp", address: "D102", dataType: "string", writable: true },
       { adapterId: a!.id, tagKey: "cmd_run", address: "M10", dataType: "bool", writable: true },
+      // R1b-2a T1 (kiem-dinh M2) — đích của luật commandValue OBJECT là tag JSON: một đối tượng lên tag INT nay bị cổng kênh TYPE_MISMATCH
+      // (trước: driver ghi Math.round(NaN)); ca này kiểm phép so chuẩn hoá của interlock, không phải kiểu tag.
+      { adapterId: a!.id, tagKey: "obj_sp", address: "D103", dataType: "json", writable: true },
     ]);
     fake.drivers.set(a!.id, fakeDriver);
     return a!.id;
@@ -787,7 +790,7 @@ describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long key
     adS = await makeAdapter("FS", MS);
     ({ ruleId: ruleReduce, eventId: evReduce } = await makeRule({ action: "reduce_speed", commandTag: "speed_sp", commandValue: 30 }));
     ({ ruleId: ruleStop, eventId: evStop } = await makeRule({ action: "stop_line", commandTag: "cmd_run", commandValue: null }));
-    ({ ruleId: ruleObj, eventId: evObj } = await makeRule({ action: "block_downstream", commandTag: "other_sp", commandValue: { pct: 30, mode: "slow" } }));
+    ({ ruleId: ruleObj, eventId: evObj } = await makeRule({ action: "block_downstream", commandTag: "obj_sp", commandValue: { pct: 30, mode: "slow" } }));
   }, 60_000);
 
   afterAll(async () => {
@@ -843,10 +846,10 @@ describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long key
 
   it("interlock commandValue là OBJECT (jsonb) — lệnh mang cùng giá trị, khác thứ tự khoá ⇒ so theo dạng chuẩn hoá ⇒ ghi 1 lần; khác một trường ⇒ VALUE_MISMATCH", async () => {
     const r = { ruleId: ruleObj, eventId: evObj };
-    const ok = await dispatch(ilInput(r, { commandType: "block_downstream", writes: [{ tagKey: "other_sp", value: { mode: "slow", pct: 30 } }] }));
+    const ok = await dispatch(ilInput(r, { commandType: "block_downstream", writes: [{ tagKey: "obj_sp", value: { mode: "slow", pct: 30 } }] }));
     expect(ok.status).toBe("acked");
     expect(writeCalls).toBe(1);
-    const bad = await dispatch(ilInput(r, { commandType: "block_downstream", writes: [{ tagKey: "other_sp", value: { mode: "slow", pct: 31 } }] }));
+    const bad = await dispatch(ilInput(r, { commandType: "block_downstream", writes: [{ tagKey: "obj_sp", value: { mode: "slow", pct: 31 } }] }));
     expect(bad.reason).toBe("INTERLOCK_VALUE_MISMATCH");
     expect(writeCalls).toBe(1);
   });

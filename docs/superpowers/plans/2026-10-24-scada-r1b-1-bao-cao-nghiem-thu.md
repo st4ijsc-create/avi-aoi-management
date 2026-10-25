@@ -216,27 +216,36 @@ hạ về STOP không ghim) — nó KHÔNG thay cho bench trên PLC thật.
      FROM interlock_rules r
      JOIN device_tags t ON t."adapterId" = r."targetAdapterId" AND t."tagKey" = r."commandTag"
      WHERE r.enabled AND r.action::text <> 'alert' AND t."dataType"::text = 'int'
-       AND (COALESCE(NULLIF(t.scale, 0), 1) <> 1 OR COALESCE(t."offset", 0) <> 0)
    ), gia_tri AS (
      SELECT u.*,
        CASE
          WHEN u.cv IS NULL OR jsonb_typeof(u.cv) = 'null' THEN 1::numeric
          WHEN jsonb_typeof(u.cv) = 'number' THEN (u.cv #>> '{}')::numeric
          WHEN jsonb_typeof(u.cv) = 'boolean' THEN CASE WHEN (u.cv #>> '{}')::boolean THEN 1::numeric ELSE 0::numeric END
-         WHEN jsonb_typeof(u.cv) = 'string' AND btrim(u.cv #>> '{}') = '' THEN 0::numeric
          WHEN jsonb_typeof(u.cv) = 'string' AND btrim(u.cv #>> '{}') ~ '^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?$'
            THEN btrim(u.cv #>> '{}')::numeric
          ELSE NULL
        END AS v
      FROM ung_vien u
+   ), tho AS (
+     SELECT g.*, round(g.v - g.o, 30) / g.s AS n
+     FROM gia_tri g
    )
    SELECT id, name, "targetAdapterId", "tagKey", cv AS "commandValue", s AS scale, o AS "offset", v AS gia_tri_gui,
-          CASE WHEN v IS NULL THEN NULL ELSE o + round((v - o) / s) * s END AS diem_luoi_gan_nhat,
-          CASE WHEN v IS NULL THEN 'KHONG_PARSE_DUOC' ELSE 'LECH_LUOI' END AS ket_luan
-   FROM gia_tri
-   WHERE v IS NULL OR abs(v - (o + round((v - o) / s) * s)) > 1e-9 * greatest(1, abs(s))
+          CASE WHEN v IS NULL OR abs(n) >= 9007199254740992 THEN NULL ELSE o + round(n) * s END AS diem_luoi_gan_nhat,
+          CASE WHEN v IS NULL THEN 'KHONG_PARSE_DUOC' WHEN abs(n) >= 9007199254740992 THEN 'VUOT_MIEN_AN_TOAN' ELSE 'LECH_LUOI' END AS ket_luan
+   FROM tho
+   WHERE v IS NULL OR abs(n) >= 9007199254740992 OR abs(n - round(n)) > 1e-9
    ORDER BY id
    ```
+
+   - **R1b-2a T1 (2026-10-25) — khối SQL trên đã được THAY bằng bản đi theo luật mới của `dispatch()`** (Q-T13 b, kiem-dinh M1 / M2): ứng viên là
+     MỌI luật bật, không `alert`, nhắm tag int (kể cả scale 1 / offset 0 — 2.5 trên tag scale 1 nay là `LECH_LUOI`); phép so ở không gian thô
+     (`n = round(v − o, 30) / s`, lệch ⇔ `|n − round(n)| > 1e-9`); `|n| ≥ 2^53` ⇒ hàng `VUOT_MIEN_AN_TOAN`; chuỗi rỗng / chỉ khoảng trắng nay là
+     `KHONG_PARSE_DUOC` (trước đọc là 0). Mọi hàng, mọi `ket_luan`, đều CHẶN. **Phạm vi (phán quyết K2):** câu này chỉ phủ lưới thô + giá trị không
+     parse được. Với tag int CHƯA khai, mọi luật hàm JS từ chối đều có hàng (chỉ báo DƯ); với tag ĐÃ khai, dải / bước / kiểu / loại kênh được cưỡng
+     chế lúc cấu hình (`nhatQuanKenh`) và đếm ở posture, câu này không lặp lại chúng. Cột ra không đổi. Các đoạn mô tả bên dưới là của bản R1b-1;
+     chỗ nào khác với ghi chú này thì ghi chú này đúng.
 
    - **Kết quả ≠ 0 hàng ⇒ CHẶN triển khai** — MỌI hàng đều chặn, cả `ket_luan = 'LECH_LUOI'` lẫn `ket_luan = 'KHONG_PARSE_DUOC'`:
      - `LECH_LUOI`: sửa `commandValue` về một điểm lưới (`diem_luoi_gan_nhat` là ĐÚNG giá trị driver cũ đã ghi) qua `interlockRouter.update`

@@ -130,8 +130,11 @@ async function resolveTarget(machineId: number, tagKeys: string[], lang: ToolLan
   return { adapterId: adapter.id, warnings };
 }
 
-/** Resolve the adapter id at execute time (defensive — preview already warned). */
-async function adapterIdForMachine(machineId: number): Promise<number> {
+/**
+ * Resolve the adapter id at execute time (defensive — preview already warned).
+ * R1b-2a T1 — exported: `qualityControlProposer` reads the SPI offset tags' write grid on THIS adapter (the one the plan writes).
+ */
+export async function adapterIdForMachine(machineId: number): Promise<number> {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
   const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.machineId, machineId)).limit(1);
@@ -300,8 +303,9 @@ const spiPrinterOffsetParams = z
   .strict();
 type SpiPrinterOffsetParams = z.infer<typeof spiPrinterOffsetParams>;
 
-const SPI_OFFSET_X_TAG = "printer_offset_x";
-const SPI_OFFSET_Y_TAG = "printer_offset_y";
+// R1b-2a T1 — exported for `qualityControlProposer` (reads these tags' write grid before proposing).
+export const SPI_OFFSET_X_TAG = "printer_offset_x";
+export const SPI_OFFSET_Y_TAG = "printer_offset_y";
 
 /** final wave (item 7) — see planRejectDivert: one plan for execute() and otWriteBinding(). */
 async function planSpiPrinterOffset(p: SpiPrinterOffsetParams): Promise<VisionPlan> {

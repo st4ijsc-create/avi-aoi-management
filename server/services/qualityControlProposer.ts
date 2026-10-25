@@ -118,6 +118,59 @@ export interface SpiOffsetOptions {
   window?: number;
   /** Decimal places the correction is rounded to (determinism). Default 1. */
   roundDp?: number;
+  /**
+   * R1b-2a T1 — the write grid of the X / Y offset tags (`printer_offset_x` / `printer_offset_y`). Present ⇒ the correction is rounded to
+   * that grid (`lamTronTheoLuoiTag`) so the proposal `dispatch()` later checks is ON the grid; null / absent ⇒ `roundDp` as before.
+   */
+  luoiX?: LuoiGhiTag | null;
+  luoiY?: LuoiGhiTag | null;
+}
+
+/**
+ * R1b-2a T1 (Review Focus 4) — the columns of a device tag that decide which values `dispatch()` accepts on it: int ⇒ the raw grid
+ * `offset + k·scale` (scale / offset like the driver: NULL / 0 ⇒ 1, NULL ⇒ 0; decimal columns arrive as strings); float with
+ * `writeStep > 0` ⇒ `writeMin ?? 0 + k·writeStep`.
+ */
+export type LuoiGhiTag = {
+  dataType: string;
+  scale: number | string | null;
+  offset: number | string | null;
+  writeStep?: number | null;
+  writeMin?: number | null;
+};
+
+/** Floating-point noise of `o + k·s` (`kenhScada.sachSo`): 7·0.1 = 0.7000000000000001 ⇒ 0.7. */
+const sachSo = (n: number): number => Number(n.toPrecision(15));
+
+/**
+ * R1b-2a T1 — round `v` to the WRITE GRID of the target tag, so an AI proposal is never off-grid by construction (Review Focus 4: −7.26 µm on
+ * an int µm tag with scale 1 ⇒ −7, which `dispatch()`'s channel gate accepts):
+ *   • `luoi` int ⇒ o + round((v − o)/s)·s (s / o normalised like `heSoThangDo`), cleaned with toPrecision(15);
+ *   • float with `writeStep > 0` ⇒ base + round((v − base)/step)·step, base = writeMin ?? 0;
+ *   • anything else, or `luoi === null` ⇒ `roundTo(v, roundDp)` (old behaviour).
+ * `tranTuyetDoi` present and |result| > tranTuyetDoi ⇒ step back ONE grid step towards 0 (the safety clamp stays a hard bound). −0 ⇒ 0.
+ * `dispatch()` stays the final arbiter (range / declared type are not looked at here).
+ */
+export function lamTronTheoLuoiTag(v: number, luoi: LuoiGhiTag | null, roundDp: number, tranTuyetDoi?: number): number {
+  let r: number;
+  let buoc: number;
+  if (luoi && luoi.dataType === "int") {
+    const sTho = luoi.scale == null ? 1 : Number(luoi.scale);
+    const oTho = luoi.offset == null ? 0 : Number(luoi.offset);
+    const s = Number.isFinite(sTho) && sTho !== 0 ? sTho : 1;
+    const o = Number.isFinite(oTho) ? oTho : 0;
+    r = sachSo(o + Math.round((v - o) / s) * s);
+    buoc = Math.abs(s);
+  } else if (luoi && luoi.dataType === "float" && luoi.writeStep != null && luoi.writeStep > 0) {
+    const base = luoi.writeMin ?? 0;
+    r = sachSo(base + Math.round((v - base) / luoi.writeStep) * luoi.writeStep);
+    buoc = luoi.writeStep;
+  } else {
+    r = roundTo(v, roundDp);
+    buoc = Math.pow(10, -Math.max(0, Math.trunc(roundDp)));
+  }
+  if (tranTuyetDoi != null && Number.isFinite(tranTuyetDoi) && Math.abs(r) > tranTuyetDoi) r = sachSo(r - Math.sign(r) * buoc);
+  return Object.is(r, -0) ? 0 : r;
 }
 
 export interface SpiOffsetResult {
@@ -199,8 +252,9 @@ export function computeSpiPrinterOffset(
   const clamped = clX !== rawX || clY !== rawY;
 
   return {
-    offsetXUm: roundTo(clX, roundDp),
-    offsetYUm: roundTo(clY, roundDp),
+    // R1b-2a T1 — the correction lands ON the target tag's write grid (no grid ⇒ roundDp as before); the clamp stays a hard bound.
+    offsetXUm: lamTronTheoLuoiTag(clX, opts.luoiX ?? null, roundDp, maxStepUm),
+    offsetYUm: lamTronTheoLuoiTag(clY, opts.luoiY ?? null, roundDp, maxStepUm),
     samplesUsed: n,
     meanOffsetXUm: roundTo(meanX, roundDp),
     meanOffsetYUm: roundTo(meanY, roundDp),
@@ -228,6 +282,11 @@ export interface BuildProposalsInput {
   /** Optional SPI position/volume trend → enables an spi_printer_offset proposal. */
   spiTrend?: SpiTrendSample[];
   spiOpts?: SpiOffsetOptions;
+  /**
+   * R1b-2a T1 — write grids of the X / Y printer-offset tags (an axis null = not read ⇒ that axis rounds to `roundDp`). Absent with a
+   * `spiTrend` ⇒ `proposeControlFromVerdict` reads them (`ProposeControlDeps.layLuoiTagSpi`).
+   */
+  spiLuoi?: { x: LuoiGhiTag | null; y: LuoiGhiTag | null };
 }
 
 /** A gated NG verdict OR a confirmed anomaly — the only cases that yield a proposal. */
@@ -311,14 +370,21 @@ export function buildControlProposals(input: BuildProposalsInput): ControlPropos
 
   // (2) spi_printer_offset — only with a real, out-of-deadband measured drift.
   if (input.spiTrend && input.spiTrend.length > 0) {
-    const offset = computeSpiPrinterOffset(input.spiTrend, input.spiOpts);
-    if (offset.samplesUsed > 0 && !offset.withinDeadband) {
+    // R1b-2a T1 — round each axis to its tag's write grid (spiLuoi wins over spiOpts.luoiX/Y); an axis without a grid ⇒ roundDp.
+    const luoiX = input.spiLuoi ? input.spiLuoi.x : input.spiOpts?.luoiX ?? null;
+    const luoiY = input.spiLuoi ? input.spiLuoi.y : input.spiOpts?.luoiY ?? null;
+    const offset = computeSpiPrinterOffset(input.spiTrend, { ...input.spiOpts, luoiX, luoiY });
+    // R1b-2a T1 (Review Focus 4) — a correction that rounds to 0 on BOTH axes moves nothing ⇒ no proposal.
+    const khongDoi = offset.offsetXUm === 0 && offset.offsetYUm === 0;
+    if (offset.samplesUsed > 0 && !offset.withinDeadband && !khongDoi) {
       const rationale =
         `SPI trend over ${offset.samplesUsed} sample(s) shows a mean deposit drift of ` +
         `(${offset.meanOffsetXUm}, ${offset.meanOffsetYUm}) µm` +
         (offset.meanVolumePct != null ? `, mean volume ${offset.meanVolumePct}%` : "") +
         ` — propose a damped stencil-printer correction of (${offset.offsetXUm}, ${offset.offsetYUm}) µm ` +
-        `(gain ${offset.gain}, clamped ±${offset.maxStepUm} µm). Requires your confirmation.`;
+        `(gain ${offset.gain}, clamped ±${offset.maxStepUm} µm)` +
+        (luoiX && luoiY ? "" : " (chưa đọc được lưới tag)") +
+        `. Requires your confirmation.`;
       proposals.push({
         kind: "spi_printer_offset",
         tool: "spi_printer_offset",
@@ -374,6 +440,11 @@ export interface ProposeControlDeps {
   getToolByName?: (name: string) => Tool<any, any> | undefined;
   /** Resolve the factory code for a machine (for user targeting). */
   resolveFactory?: (machineId: number) => Promise<string | null>;
+  /**
+   * R1b-2a T1 — read the write grids of the machine's `printer_offset_x` / `printer_offset_y` tags (on the SAME adapter
+   * `spi_printer_offset` will write: `visionControl.adapterIdForMachine`). Defaults to a read-only DB lookup. Throws / missing ⇒ null axes.
+   */
+  layLuoiTagSpi?: (machineId: number) => Promise<{ x: LuoiGhiTag | null; y: LuoiGhiTag | null }>;
 }
 
 export interface ControlProposeResult {
@@ -403,7 +474,23 @@ export async function proposeControlFromVerdict(
     return { proposed: 0, skippedReason: "DISABLED", actionIds: [], proposals: [] };
   }
 
-  const proposals = buildControlProposals(input);
+  // R1b-2a T1 — an SPI trend without the tags' write grids ⇒ read them (read-only), so the proposal is on the grid `dispatch()` checks.
+  // Any failure ⇒ both axes null ⇒ roundDp + "(chưa đọc được lưới tag)"; `dispatch()` remains the final arbiter. No machine ⇒ no lookup
+  // (buildControlProposals returns [] for a null machine anyway).
+  let inputLuoi = input;
+  if (input.spiTrend && input.spiTrend.length > 0 && !input.spiLuoi && input.machineId != null) {
+    const lay = deps.layLuoiTagSpi ?? layLuoiTagSpiMacDinh;
+    let spiLuoi: { x: LuoiGhiTag | null; y: LuoiGhiTag | null } = { x: null, y: null };
+    try {
+      const r = await lay(input.machineId);
+      spiLuoi = { x: r?.x ?? null, y: r?.y ?? null };
+    } catch (err) {
+      console.warn(`[qualityControlProposer] SPI tag grid lookup failed: ${(err as Error)?.message ?? err}`);
+    }
+    inputLuoi = { ...input, spiLuoi };
+  }
+
+  const proposals = buildControlProposals(inputLuoi);
   if (proposals.length === 0) {
     return { proposed: 0, skippedReason: "NO_PROPOSAL", actionIds: [], proposals };
   }
@@ -528,6 +615,38 @@ async function defaultGetTool() {
   await import("./aiLocalTools/writeHandlers/visionControl").catch(() => undefined);
   const { getTool } = await import("./aiLocalTools/toolRegistry");
   return (name: string) => getTool(name);
+}
+
+/**
+ * R1b-2a T1 — default `layLuoiTagSpi`: the adapter `spi_printer_offset` will write (`adapterIdForMachine`, the SAME function its plan uses —
+ * dynamic import, like `defaultGetTool`), then the `dataType, scale, offset, writeStep, writeMin` of its `printer_offset_x` / `printer_offset_y`
+ * rows. READ-ONLY. No adapter ⇒ `adapterIdForMachine` throws (the caller maps it to null axes); no DB / a missing tag ⇒ null for that axis.
+ */
+async function layLuoiTagSpiMacDinh(machineId: number): Promise<{ x: LuoiGhiTag | null; y: LuoiGhiTag | null }> {
+  const { adapterIdForMachine, SPI_OFFSET_X_TAG, SPI_OFFSET_Y_TAG } = await import("./aiLocalTools/writeHandlers/visionControl");
+  const adapterId = await adapterIdForMachine(machineId);
+  const { getDb } = await import("../db/connection");
+  const db = await getDb();
+  if (!db) return { x: null, y: null }; // không đọc được ⇒ cả hai trục roundDp + "(chưa đọc được lưới tag)"
+  const { and, eq, inArray } = await import("drizzle-orm");
+  const { deviceTags } = await import("../../drizzle/schema");
+  const rows = await db
+    .select({
+      tagKey: deviceTags.tagKey,
+      dataType: deviceTags.dataType,
+      scale: deviceTags.scale,
+      offset: deviceTags.offset,
+      writeStep: deviceTags.writeStep,
+      writeMin: deviceTags.writeMin,
+    })
+    .from(deviceTags)
+    .where(and(eq(deviceTags.adapterId, adapterId), inArray(deviceTags.tagKey, [SPI_OFFSET_X_TAG, SPI_OFFSET_Y_TAG])));
+  const theoKhoa = new Map(rows.map((r) => [r.tagKey, r]));
+  const luoi = (k: string): LuoiGhiTag | null => {
+    const r = theoKhoa.get(k);
+    return r ? { dataType: String(r.dataType), scale: r.scale, offset: r.offset, writeStep: r.writeStep, writeMin: r.writeMin } : null;
+  };
+  return { x: luoi(SPI_OFFSET_X_TAG), y: luoi(SPI_OFFSET_Y_TAG) };
 }
 
 /**
