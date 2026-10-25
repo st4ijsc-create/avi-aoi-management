@@ -214,7 +214,9 @@ export function kiemLuong(raw: unknown, dangKy: (type: string) => KhaiBaoNut | u
     const b = theoId.get(c.to.node);
     if (!a) loi.push(`nối từ node không tồn tại '${c.from.node}'`);
     if (!b) loi.push(`nối tới node không tồn tại '${c.to.node}'`);
-    if (a?.kb && !a.kb.congRa.includes(c.from.port)) loi.push(`node '${c.from.node}' không có cổng ra '${c.from.port}'`);
+    // Cổng `loi` là cổng ẨN của MỌI node, chỉ nối được khi node đặt khiLoi = "nhanh-loi" (lỗi node đi nhánh này thay vì dừng lượt).
+    const congLoiAn = c.from.port === "loi" && a?.n.khiLoi === "nhanh-loi";
+    if (a?.kb && !congLoiAn && !a.kb.congRa.includes(c.from.port)) loi.push(`node '${c.from.node}' không có cổng ra '${c.from.port}'`);
     if (b?.kb && !b.kb.congVao.includes(c.to.port)) loi.push(`node '${c.to.node}' không có cổng vào '${c.to.port}'`);
     if (b?.kb?.laKichHoat) loi.push(`node kích hoạt '${c.to.node}' không nhận nối vào`);
     if (!canh.has(c.from.node)) canh.set(c.from.node, new Set());

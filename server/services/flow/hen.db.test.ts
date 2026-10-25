@@ -153,6 +153,28 @@ describe("(A) logic.cho — __hen", () => {
   });
 });
 
+describe("(A2) lượt đang hẹn KHÔNG chiếm chỗ maxConcurrentRuns", () => {
+  it("★ trần 1: lượt thứ nhất đang hẹn (mọi mục hàng ở tương lai) ⇒ lượt thứ hai ĐƯỢC nhận; lượt còn mục sẵn sàng / bước đang chạy ⇒ vẫn bị từ chối", async () => {
+    await luuPhienBan({ ...luongCho(`${TT}-cho-tran1`, 3600), settings: { maxConcurrentRuns: 1 } }, chu, null);
+    const a = await batDauRun({ flowId: `${TT}-cho-tran1`, version: 1, chuLuong: chu, items: [{ json: { i: 1 } }] });
+    // chưa chạy gì: mục hàng của trigger còn SẴN SÀNG ⇒ chiếm chỗ ⇒ lượt hai bị từ chối
+    await expect(batDauRun({ flowId: `${TT}-cho-tran1`, version: 1, chuLuong: chu, items: [{ json: { i: 2 } }] })).rejects.toMatchObject({ code: "QUA_TRAN_DONG_THOI" });
+    await chayHet(); // a: trigger + cho xong, node kế hẹn 1 giờ ⇒ ĐANG HẸN
+    expect((await lay(a)).status).toBe("dang-chay");
+    expect((await hangDoi(a)).map((x) => x.tuong_lai)).toEqual([true]);
+    const b = await batDauRun({ flowId: `${TT}-cho-tran1`, version: 1, chuLuong: chu, items: [{ json: { i: 2 } }] }); // KHÔNG ném
+    expect(b).toBeTruthy();
+    // b đang sẵn sàng ⇒ chiếm chỗ ⇒ lượt ba bị từ chối (a vẫn đang hẹn, không tính)
+    await expect(batDauRun({ flowId: `${TT}-cho-tran1`, version: 1, chuLuong: chu, items: [{ json: { i: 3 } }] })).rejects.toMatchObject({ code: "QUA_TRAN_DONG_THOI" });
+    // a có bước đang CHẠY (nhặt + ghi bước dang-chay, chưa xong) ⇒ chiếm chỗ
+    await chayHet();
+    await deHan(a);
+    const muc = await nhatMuc("w-tran", 60_000, TT, a);
+    await batDauBuoc(muc!); // a đang chạy node sau
+    await expect(batDauRun({ flowId: `${TT}-cho-tran1`, version: 1, chuLuong: chu, items: [{ json: { i: 4 } }] })).rejects.toMatchObject({ code: "QUA_TRAN_DONG_THOI" }); // b đã hẹn xong ⇒ không tính; a có bước đang chạy ⇒ tính ⇒ đủ trần
+  });
+});
+
 describe("(B) nguoi.duyet quá hạn — mục kiểm hết hạn", () => {
   const markers = async (r: string) => (await hangDoi(r)).filter((x) => "__kiem-het-han" in x.inputs);
 
@@ -246,7 +268,7 @@ describe("(C) logic.dung-loi trong động cơ", () => {
     expect(await buoc(r, "x")).toHaveLength(1);
   });
 
-  it("khiLoi: nhanh-loi ⇒ lỗi KHÔNG dừng lượt: bước x `loi`, lượt xong (cổng `loi` chưa nối được — giới hạn sẵn có)", async () => {
+  it("khiLoi: nhanh-loi ⇒ lỗi KHÔNG dừng lượt: bước x `loi`, lượt xong (nối cổng loi: xem khiLoi.db.test.ts)", async () => {
     const r = await batDauRun({ flowId: `${TT}-loi-tiep`, version: 1, chuLuong: chu, items: [{ json: {} }] });
     await chayHet();
     expect((await lay(r)).status).toBe("xong");
