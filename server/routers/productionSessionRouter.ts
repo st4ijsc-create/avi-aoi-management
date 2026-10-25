@@ -7,6 +7,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import type { CoDanhTinh } from "./_phamViNguoiXem";
 import { ghiViTri } from "./_viTriPhamVi";
+import { dieuKienPhienSanXuatTrongPhamVi } from "./_adapterPhamVi";
 import { getDb } from "../db";
 import { productionSessions, dailyStatistics } from "../../drizzle/schema/production";
 import { finalYield } from "../utils/kpi";
@@ -98,7 +99,7 @@ async function phienGhi(ctx: CoDanhTinh, id: number): Promise<void> {
   if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   const [r] = await d.select({ f: productionSessions.factoryId, w: productionSessions.workshopId, l: productionSessions.lineId }).from(productionSessions).where(eq(productionSessions.id, id));
   try {
-    if (!r) throw new Error("none");
+    if (!r) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "none");
     await ghiViTri(ctx, { factoryId: r.f, workshopId: r.w, lineId: r.l }, { batBuoc: true });
   } catch {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Production session not found");
@@ -118,10 +119,12 @@ export const productionSessionRouter = router({
         limit: z.number().min(1).max(500).default(100),
       }).optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const filters = [] as any[];
+      const congPv = await dieuKienPhienSanXuatTrongPhamVi(ctx); // phạm vi người dùng (L5 2026-10-25)
+      if (congPv) filters.push(congPv);
       if (input?.factoryId) filters.push(eq(productionSessions.factoryId, input.factoryId));
       if (input?.workshopId) filters.push(eq(productionSessions.workshopId, input.workshopId));
       if (input?.lineId) filters.push(eq(productionSessions.lineId, input.lineId));
@@ -140,10 +143,10 @@ export const productionSessionRouter = router({
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      const [row] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
+      const [row] = await db.select().from(productionSessions).where(and(eq(productionSessions.id, input.id), await dieuKienPhienSanXuatTrongPhamVi(ctx))); // phạm vi người dùng (L5 2026-10-25)
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       return row;
     }),
@@ -343,10 +346,10 @@ export const productionSessionRouter = router({
 
   verifySignoff: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      const [session] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
+      const [session] = await db.select().from(productionSessions).where(and(eq(productionSessions.id, input.id), await dieuKienPhienSanXuatTrongPhamVi(ctx))); // phạm vi người dùng (L5 2026-10-25)
       if (!session) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       if (!session.supervisorSignoff || !session.signoffPayload || !session.signoffSignature) {
         return { signed: false as const, valid: false as const, reason: "Phiên chưa được ký duyệt" };

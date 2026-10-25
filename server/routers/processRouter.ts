@@ -5,6 +5,7 @@ import { appError } from "../_core/appError";
 import * as db from "../db";
 import { withDbErrors } from "../_core/dbErrors";
 import { requirePermission } from "../_core/accessControl";
+import { viTriHopLe, ganQuyTrinhGhi } from "./_cauHinhPhamVi";
 
 // doc 42 #15 — RBAC split-brain: quy trình là master-data của app "Quản lý dữ liệu".
 // FE gate module `settings_factory`; BE phải khớp (không hardgate role==='admin').
@@ -171,7 +172,8 @@ export const processRouter = router({
       cycleTimeTarget: z.number().optional(),
       stationId: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await viTriHopLe(ctx, { lineId: input.lineId, stationId: input.stationId ?? null }, "line"); // phạm vi nhà máy (W13)
       const { cycleTimeTarget, ...rest } = input;
       const result = await db.createLineProcessAssignment({
         ...rest,
@@ -189,8 +191,10 @@ export const processRouter = router({
       stationId: z.number().optional(),
       isActive: z.boolean().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, cycleTimeTarget, ...rest } = input;
+      await ganQuyTrinhGhi(ctx, id);
+      if (rest.stationId != null) await viTriHopLe(ctx, { stationId: rest.stationId }, "station"); // trạm MỚI cũng phải trong phạm vi
       await db.updateLineProcessAssignment(id, {
         ...rest,
         cycleTimeTarget: cycleTimeTarget?.toString(),
@@ -201,7 +205,8 @@ export const processRouter = router({
   // Delete line process assignment
   deleteLineAssignment: canDelete
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await ganQuyTrinhGhi(ctx, input.id);
       await db.deleteLineProcessAssignment(input.id);
       return { success: true };
     }),
@@ -212,7 +217,8 @@ export const processRouter = router({
       lineId: z.number(),
       orderedIds: z.array(z.number()),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await viTriHopLe(ctx, { lineId: input.lineId }, "line");
       await db.reorderLineProcessAssignments(input.lineId, input.orderedIds);
       return { success: true };
     }),

@@ -39,6 +39,7 @@
  * 2026-10-25 lô W10 (−17 vá: routing · spcAdvanced · goldenSample · mqttOee machine/OEE/ngừng máy/mục tiêu · equipmentStandards thẻ tenant; −35 MIỄN TRỪ có lý do sau khi đọc mã: repoWorkspace 17 (danh sách trắng theo người gọi), dashboardWidget 13 (cấu hình cá nhân theo userId), aiGguf 5 (tính toán LLM thuần); aiGguf.soModel* = bí danh adminProcedure) ⇒ 407 → 355. CHƯA đụng (cần quyết định): mqttClient.updateFcmToken · mqttAlert.update/delete/toggle/resolve (luật cảnh báo toàn cục, KHÔNG có requirePermission) .
  * 2026-10-25 lô W11a (−5 vá: predictiveAlert acknowledge/resolve/dismiss/generatePredictions theo máy/nhà máy của cảnh báo + lọc dữ liệu quét; mqttClient.updateFcmToken theo trạm của client + requirePermission(machine_alerts)); mqttAlert.update/delete/toggle/resolve ⇒ MIỄN TRỪ (luật toàn cục) NHƯNG nay đòi requirePermission(machine_alerts); equipmentStandards: chuẩn KHÔNG thẻ chỉ admin + engineer ghi ⇒ 355 → 350.
  * 2026-10-25 lô W11b (−15 vá: aiQualityGate · aiFeedback (kể cả lô huấn luyện / xuất chỉ phần trong phạm vi) · aiSegmentation.saveMask · aiModel.runInference theo lần kiểm tra; aiSmartAlertRouting.acknowledge · aiInsight.setStatus · aiActiveLearning theo máy; edge deployments theo máy — router edge hiện BỊ COMMENT khỏi aiAdvancedRouter nên chưa tới được; −42 MIỄN TRỪ có dẫn mã: sở hữu theo người dùng (aiAgent · aiChat · aiCopilot · aiSpecialistAgent · …), tính toán / model toàn cục) ⇒ 350 → 335. CÒN LẠI nhóm AI (W11c): aiVision.proposeDefect · aiRcaCopilot.applyTopFix · aiThresholdAdvisor.applyNgThreshold (đề xuất HITL), aiAdvanced training/abTest (router bị comment), aiAdvancedVision.explainHeatmap, aiModel cards, aiImageSearch (mutation đọc-hình-tìm-kiếm trả ảnh nhiều nhà máy — cần đổi dịch vụ).
+ * 2026-10-25 lô W13 (−45 sổ, +9 miễn trừ): shiftConfig · layout (+vị trí máy) · maintenanceSchedule (+đổi tên getRow trùng ⇒ 4 báo giả của maintenanceRouter hết) · ngRateThreshold · process (gán chuyền) · productPanel · productVariant · thresholdApproval (đổi tên getById trùng) · workstation (+gán máy) · alert.create theo phạm vi qua _cauHinhPhamVi.ts; miễn trừ: danh mục quy trình dùng chung, cảnh báo sở hữu theo người dùng, ngưỡng yield toàn cục. 291 → 246.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ──
@@ -48,32 +49,16 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/aiAdvancedRouter.ts#abTestRouter.submitFeedback",
   // ── server/routers/aiAdvancedVisionRouter.ts (1) ──
   "server/routers/aiAdvancedVisionRouter.ts#aiAdvancedVisionRouter.explainHeatmap",
-  // ── server/routers/aiImageSearchRouter.ts (2) ──
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByUpload",
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByVector",
   // ── server/routers/aiModelRouter.ts (3) ──
   "server/routers/aiModelRouter.ts#aiModelRouter.approveCard",
   "server/routers/aiModelRouter.ts#aiModelRouter.createCard",
   "server/routers/aiModelRouter.ts#aiModelRouter.updateCard",
-  // ── server/routers/aiRcaCopilotRouter.ts (1) ──
-  "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix",
-  // ── server/routers/aiThresholdAdvisorRouter.ts (1) ──
-  "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.applyNgThreshold",
-  // ── server/routers/aiVisionRouter.ts (1) ──
-  "server/routers/aiVisionRouter.ts#aiVisionRouter.proposeDefect",
   // ── server/routers/alertEscalationRouter.ts (4) ──
   "server/routers/alertEscalationRouter.ts#alertEscalationRouter.create",
   "server/routers/alertEscalationRouter.ts#alertEscalationRouter.delete",
   "server/routers/alertEscalationRouter.ts#alertEscalationRouter.toggle",
   "server/routers/alertEscalationRouter.ts#alertEscalationRouter.update",
   // ── server/routers/alertRouters.ts (7) ──
-  "server/routers/alertRouters.ts#alertRouter.acknowledge",
-  "server/routers/alertRouters.ts#alertRouter.create",
-  "server/routers/alertRouters.ts#alertRouter.delete",
-  "server/routers/alertRouters.ts#alertRouter.test",
-  "server/routers/alertRouters.ts#alertRouter.update",
-  "server/routers/alertRouters.ts#yieldThresholdRouter.update",
-  "server/routers/alertRouters.ts#yieldThresholdRouter.updateWithHistory",
   // ── server/routers/apiKeyRouter.ts (4) ──
   "server/routers/apiKeyRouter.ts#apiKeyRouter.create",
   "server/routers/apiKeyRouter.ts#apiKeyRouter.delete",
@@ -146,12 +131,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/inspectionVariantRouter.ts (1) ──
   "server/routers/inspectionVariantRouter.ts#inspectionVariantRouter.setVariant",
   // ── server/routers/layoutRouters.ts (6) ──
-  "server/routers/layoutRouters.ts#layoutRouter.addMachinePosition",
-  "server/routers/layoutRouters.ts#layoutRouter.create",
-  "server/routers/layoutRouters.ts#layoutRouter.delete",
-  "server/routers/layoutRouters.ts#layoutRouter.removeMachinePosition",
-  "server/routers/layoutRouters.ts#layoutRouter.update",
-  "server/routers/layoutRouters.ts#layoutRouter.updateMachinePosition",
   // ── server/routers/licenseRouter.ts (2) ──
   "server/routers/licenseRouter.ts#publicLicenseRouter.floatingCheckin",
   "server/routers/licenseRouter.ts#publicLicenseRouter.floatingHeartbeat",
@@ -159,15 +138,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/machineApiRouters.ts#machineApiRouter.revokeKey",
   "server/routers/machineApiRouters.ts#machineApiRouter.submitProcessResult",
   // ── server/routers/maintenanceRouter.ts (4) ──
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.closeWorkOrder",
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.deleteWorkOrder",
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.recordPartsUsed",
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.updateWorkOrder",
   // ── server/routers/maintenanceScheduleRouter.ts (4) ──
-  "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.create",
-  "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.remove",
-  "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.setEnabled",
-  "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.update",
   // ── server/routers/mesControlTowerRouter.ts (3) ──
   "server/routers/mesControlTowerRouter.ts#mesControlTowerRouter.createLotDisposition",
   "server/routers/mesControlTowerRouter.ts#mesControlTowerRouter.createMaterialReceipt",
@@ -203,11 +174,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/ncrRouter.ts#ncrRouter.create",
   "server/routers/ncrRouter.ts#ncrRouter.transition",
   // ── server/routers/ngRateThresholdRouter.ts (5) ──
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.create",
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.delete",
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.resolveAlert",
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.toggle",
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.update",
   // ── server/routers/notificationRouters.ts (2) ──
   "server/routers/notificationRouters.ts#notificationRouter.delete",
   "server/routers/notificationRouters.ts#notificationRouter.markAsRead",
@@ -221,26 +187,12 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/pdfReportRouter.ts#pdfReportRouter.generateInspectionPDF",
   // ── server/routers/processResultRouter.ts (1) ──
   // ── server/routers/processRouter.ts (7) ──
-  "server/routers/processRouter.ts#processRouter.createLineAssignment",
-  "server/routers/processRouter.ts#processRouter.delete",
-  "server/routers/processRouter.ts#processRouter.deleteLineAssignment",
-  "server/routers/processRouter.ts#processRouter.reorder",
-  "server/routers/processRouter.ts#processRouter.reorderLineAssignments",
-  "server/routers/processRouter.ts#processRouter.update",
-  "server/routers/processRouter.ts#processRouter.updateLineAssignment",
   // ── server/routers/productOnboardingRouter.ts (3) ──
   "server/routers/productOnboardingRouter.ts#productOnboardingRouter.complete",
   "server/routers/productOnboardingRouter.ts#productOnboardingRouter.deleteDraft",
   "server/routers/productOnboardingRouter.ts#productOnboardingRouter.saveDraft",
   // ── server/routers/productPanelRouter.ts (4) ──
-  "server/routers/productPanelRouter.ts#productPanelRouter.create",
-  "server/routers/productPanelRouter.ts#productPanelRouter.remove",
-  "server/routers/productPanelRouter.ts#productPanelRouter.saveBoards",
-  "server/routers/productPanelRouter.ts#productPanelRouter.update",
   // ── server/routers/productVariantRouter.ts (3) ──
-  "server/routers/productVariantRouter.ts#productVariantRouter.createVariant",
-  "server/routers/productVariantRouter.ts#productVariantRouter.deleteVariant",
-  "server/routers/productVariantRouter.ts#productVariantRouter.updateVariant",
   // ── server/routers/programmingRouter.ts (16) ──
   // ── server/routers/qualityGateTemplateRouter.ts (3) ──
   "server/routers/qualityGateTemplateRouter.ts#qualityGateTemplateRouter.applyToLine",
@@ -257,9 +209,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/sessionRouter.ts (1) ──
   "server/routers/sessionRouter.ts#sessionRouter.revoke",
   // ── server/routers/shiftConfigRouter.ts (3) ──
-  "server/routers/shiftConfigRouter.ts#shiftConfigRouter.create",
-  "server/routers/shiftConfigRouter.ts#shiftConfigRouter.delete",
-  "server/routers/shiftConfigRouter.ts#shiftConfigRouter.update",
   // ── server/routers/simTargetsRouter.ts (1) ──
   "server/routers/simTargetsRouter.ts#simTargetsRouter.validateUrscript",
   // ── server/routers/stationTriangulationRouter.ts (2) ──
@@ -268,18 +217,7 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/stencilRouter.ts (1) ──
   "server/routers/stencilRouter.ts#stencilRouter.recordPrints",
   // ── server/routers/systemRouters.ts (5) ──
-  "server/routers/systemRouters.ts#workstationRouter.assignMachine",
-  "server/routers/systemRouters.ts#workstationRouter.create",
-  "server/routers/systemRouters.ts#workstationRouter.restore",
-  "server/routers/systemRouters.ts#workstationRouter.unassignMachine",
-  "server/routers/systemRouters.ts#workstationRouter.update",
   // ── server/routers/thresholdApprovalRouter.ts (6) ──
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.approve",
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.batchApprove",
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.reject",
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.request",
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.revert",
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.withdraw",
   // ── server/routers/trainingBatchCommentsRouter.ts (7) ──
   "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.addComment",
   "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.assignTag",
@@ -298,8 +236,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   "server/routers/userRouters.ts#userRouter.revokeSession",
   "server/routers/userRouters.ts#userSettingsRouter.setUiPrefs",
   // ── server/routers/vda5050Router.ts (2) ──
-  "server/routers/vda5050Router.ts#vda5050Router.sendOrder",
-  "server/routers/vda5050Router.ts#vda5050Router.testConnection",
   // ── server/routers/visionAdapterRouter.ts (2) ──
   "server/routers/visionAdapterRouter.ts#visionAdapterRouter.ingest",
   "server/routers/visionAdapterRouter.ts#visionAdapterRouter.stopAcquisitionWorker",
@@ -317,6 +253,20 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
  * (c) không đồng thời nằm trong sổ nợ. Thêm mục = lời khai công khai, người review phải thấy.
  */
 export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
+  // ── W13 (kiểm định phamViGhi, 2026-10-25): danh mục DÙNG CHUNG và cấu hình SỞ HỮU THEO NGƯỜI DÙNG ──
+  "server/routers/processRouter.ts#processRouter.update": "danh mục quy trình (processes) DÙNG CHUNG toàn tập đoàn — bảng không có cột nhà máy; chỉ giữ bằng quyền settings_factory (luật chủ dự án 2026-10-24: danh mục dùng chung ⇒ miễn trừ). Gán quy trình vào chuyền (theo nhà máy) đã có cổng + test phamViGhiDoW13",
+  "server/routers/processRouter.ts#processRouter.delete": "danh mục quy trình DÙNG CHUNG toàn tập đoàn (xem processRouter.update) — quyền settings_factory.canDelete; gán quy trình–chuyền theo nhà máy có cổng riêng",
+  "server/routers/processRouter.ts#processRouter.reorder": "sắp xếp danh mục quy trình DÙNG CHUNG toàn tập đoàn (xem processRouter.update) — quyền settings_factory.canEdit",
+  "server/routers/alertRouters.ts#alertRouter.update": "cài đặt cảnh báo SỞ HỮU THEO NGƯỜI DÙNG: chỉ chủ (alert.userId === ctx.user.id) hoặc admin sửa (mã: alertRouters.ts update — kiểm sở hữu trước khi ghi); máy / nhà máy của cảnh báo đã được kiểm phạm vi lúc TẠO (create có cổng + test phamViGhiDoW13)",
+  "server/routers/alertRouters.ts#alertRouter.delete": "cài đặt cảnh báo SỞ HỮU THEO NGƯỜI DÙNG: chủ hoặc admin (xem alertRouter.update); id của người khác ⇒ FORBIDDEN trước khi ghi",
+  "server/routers/alertRouters.ts#alertRouter.acknowledge": "xác nhận bản ghi lịch sử cảnh báo: phân giải về cài đặt cha, chỉ chủ hoặc admin (xem alertRouter.update)",
+  "server/routers/alertRouters.ts#alertRouter.test": "gửi thử cảnh báo của CHÍNH người gọi: chủ hoặc admin (xem alertRouter.update); chỉ gửi tới chủ cảnh báo",
+  "server/routers/alertRouters.ts#yieldThresholdRouter.update": "ngưỡng yield là cấu hình TOÀN CỤC (bảng yield_alert_thresholds không có cột nhà máy / máy); giữ bằng write-floor + settings_yield_thresholds.canEdit — cùng quyết định với tool AI set_yield_threshold",
+  "server/routers/alertRouters.ts#yieldThresholdRouter.updateWithHistory": "ngưỡng yield TOÀN CỤC (xem yieldThresholdRouter.update) — write-floor + settings_yield_thresholds.canEdit, có lịch sử thay đổi",
+  // ── Phạm vi QUA CỔNG TOOL kiemPhamViGhiTool (aiLocalTools/phamViGhi.ts) — mỗi mục có test DB cấp THỦ TỤC, gỡ cổng ⇒ đỏ (dieu-phoi 2026-10-25) ──
+  "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix": "phạm vi qua cổng tool kiemPhamViGhiTool (create_maintenance_workorder … khoá machineId thật) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiRcaCopilot.applyTopFix' (A→được, B→OUT_OF_SCOPE, đột biến 3/3 đỏ) — 2026-10-25. Id phân tích nhà máy khác ≡ id không có thật (cùng NOT_FOUND, có test)",
+  "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.applyNgThreshold": "phạm vi qua cổng tool kiemPhamViGhiTool (adjust_ng_threshold, khoá thresholdId → trạm / máy / điểm đo / sản phẩm) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiThresholdAdvisor.applyNgThreshold' (A→được, B→OUT_OF_SCOPE, đột biến đỏ) — 2026-10-25",
+  "server/routers/aiVisionRouter.ts#aiVisionRouter.proposeDefect": "phạm vi qua cổng tool kiemPhamViGhiTool (propose_defect_from_vision, khoá inspectionId / measurementResultId → máy của lần kiểm tra) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiVision.proposeDefect' (A→được, B và measurementResult B→OUT_OF_SCOPE, đột biến đỏ) — 2026-10-25",
   "server/routers/aiAgentRouter.ts#aiAgentRouter.approvePlan":
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
   "server/routers/aiAgentRouter.ts#aiAgentRouter.confirmStep":

@@ -387,3 +387,6 @@ describe("suggested action → the REAL aiCopilotActions.proposeAction (reuse, n
     expect(pendingStore.size).toBe(0); // denied propose never persists a row
   });
 });
+
+// W11c: cổng phạm vi tool GHI có test riêng (aiLocalTools/phamViGhi*.test.ts); ở đây user giả / CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("../aiLocalTools/phamViGhi", () => ({ kiemPhamViGhiTool: async () => ({ ok: true }) }));

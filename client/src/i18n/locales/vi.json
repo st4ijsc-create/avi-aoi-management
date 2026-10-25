@@ -3888,6 +3888,7 @@
       "lateWriteResult": "kết quả ghi đến muộn"
     },
     "operation": {
+      "dieuKienViTriTrongPhamVi": "dựng điều kiện phạm vi theo vị trí",
       "retireEdgeNode": "cho node biên ngừng hoạt động vĩnh viễn",
       "updateApiKey": "cập nhật khoá API",
       "changeApiKeyHolder": "đổi người được cấp khoá API",
@@ -4080,6 +4081,7 @@
       "scadaKenhCapNhat": "cập nhật khai báo kênh"
     },
     "field": {
+      "location": "Vị trí (nhà máy, xưởng, chuyền, trạm hoặc máy)",
       "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",
       "settingKey": "Khoá cài đặt",
       "uiPrefs": "tuỳ chọn giao diện",
@@ -4200,7 +4202,8 @@
       "expectedProjectId": "dự án đang mở (expectedProjectId)",
       "assigneeUserId": "người được giao",
       "writable": "cho phép ghi (writable)",
-      "dataType": "kiểu dữ liệu (dataType)"
+      "dataType": "kiểu dữ liệu (dataType)",
+      "inspectionId": "lần kiểm tra"
     },
     "feature": {
       "apiKeyHolder": "bản ghi người được cấp khoá API (migration CSDL 0369)",
@@ -4262,6 +4265,7 @@
       "scadaCommands": "lệnh HMI SCADA"
     },
     "action": {
+      "writeCorporateEquipmentStandard": "ghi tiêu chuẩn thiết bị cấp tập đoàn",
       "changeMqttDeviceOfOtherScope": "đổi thiết bị MQTT đang gắn với máy ngoài phạm vi của bạn",
       "selfApproveProgramDeploy": "tự duyệt yêu cầu deploy chương trình của chính mình",
       "viewOthersPermissions": "xem quyền của người khác",
@@ -4334,7 +4338,10 @@
       "secondApproveOwnSafetyPlcConfig": "duyệt lần hai một cấu hình safety-PLC mà chính bạn đã duyệt lần đầu (cần hai quản trị viên khác nhau)",
       "flowKichHoatHangCao": "bật luồng có tác dụng ghi ra ngoài hoặc OT (chỉ quản trị viên)",
       "flowPhamVi": "dùng luồng/bí mật theo nhà máy",
-      "flowDuyet": "duyệt bước chờ của Luồng AI"
+      "flowDuyet": "duyệt bước chờ của Luồng AI",
+      "verifyChainAcrossFactories": "xác minh chuỗi truy xuất xuyên nhà máy",
+      "manageProductWideProgramRelease": "quản lý phát hành chương trình kiểm tra cấp sản phẩm",
+      "authorSharedSop": "soạn SOP dùng chung"
     },
     "robotRefusal": {
       "hitlActionRequired": "Lệnh chuyển động bị từ chối: không có thao tác xác nhận (HITL) nào đã được duyệt đứng sau lệnh này. Hãy gửi từ Bảng lệnh hoặc xác nhận thao tác trước.",

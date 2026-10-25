@@ -355,3 +355,6 @@ describe("update_product_quality_target — update after confirm", () => {
     expect(p.pendingAction!.preview.warnings.join(" ")).toMatch(/min FPY|target FPY/i);
   });
 });
+
+// W11c: cổng phạm vi tool GHI có test riêng (aiLocalTools/phamViGhi*.test.ts); ở đây user giả / CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("../phamViGhi", () => ({ kiemPhamViGhiTool: async () => ({ ok: true }) }));

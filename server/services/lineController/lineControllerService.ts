@@ -1091,6 +1091,11 @@ export function getLineControllerStatus() {
   };
 }
 
+/** Test seam: ghi một sự kiện vào bộ đệm sự kiện gần nhất (kiểm lọc phạm vi của `status`). */
+export function _ghiSuKienChoTest(ev: Omit<LineControllerEvent, "ts"> & { ts?: string }): void {
+  recordEvent({ ts: new Date().toISOString(), ...ev });
+}
+
 /** Test seam: reset module state (timer + caches + events). */
 export function _resetLineControllerForTests(): void {
   stopLineController();

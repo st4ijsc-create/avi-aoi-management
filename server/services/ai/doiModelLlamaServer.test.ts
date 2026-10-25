@@ -739,6 +739,8 @@ describe.runIf(process.platform === "win32")("THẬT — start-llama-server.ps1 
     fs.mkdirSync(path.join(goc, "scripts", "ai"), { recursive: true });
     const kb = path.join(goc, "scripts", "ai", "start-llama-server.ps1");
     fs.copyFileSync(path.join(__dirname, "..", "..", "..", "scripts", "ai", "start-llama-server.ps1"), kb);
+    // kịch bản dot-source tim-mmproj.ps1 cạnh nó (LLAMA_SERVER_MMPROJ, 3b1503467) — thiếu tệp ⇒ thoát trước dòng "model :"
+    fs.copyFileSync(path.join(__dirname, "..", "..", "..", "scripts", "ai", "tim-mmproj.ps1"), path.join(goc, "scripts", "ai", "tim-mmproj.ps1"));
     const sel = path.join(thuMuc, "sel.json");
     if (luaChon) fs.writeFileSync(sel, JSON.stringify(luaChon));
     fs.writeFileSync(

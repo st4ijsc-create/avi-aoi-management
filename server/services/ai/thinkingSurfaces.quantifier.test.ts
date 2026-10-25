@@ -331,6 +331,12 @@ interface BeMat {
 }
 
 const SO_KHAI: readonly BeMat[] = [
+  // ─── AI Local Đợt 9 (2026-10-24) — đọc ảnh bằng model chính (khe có --mmproj) ───
+  {
+    tep: "server/routes/aiLocalKnowledgeApi.ts", ham: "docBangModelChinh", goi: "chatCompletion",
+    hienThi: true, noi: "tai_cho",
+    ghiChu: "Chữ đọc ảnh được gộp vào câu hỏi KB và hiện ở thông báo 'Đã đọc ảnh'. `stripThinking().answer` ngay tại điểm gọi (thêm 2026-10-25; disableThinking không phải bảo đảm).",
+  },
   // ─── AI Local Đợt 8.1/8.4 (2026-10-20) — node AI của Luồng AI ───
   {
     tep: "server/services/flow/nut/ai.ts", ham: "goiAi", goi: "chatCompletion",

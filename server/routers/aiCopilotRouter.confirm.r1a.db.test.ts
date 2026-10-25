@@ -371,3 +371,6 @@ describe("bản xem trước set_machine_param — oldValue từ bộ đệm hi�
     expect(tat.warnings.join("\n")).toMatch(/bộ đệm/i);
   });
 });
+
+// W11c: cổng phạm vi tool GHI có test riêng (aiLocalTools/phamViGhi*.test.ts); ở đây user giả / CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("../services/aiLocalTools/phamViGhi", () => ({ kiemPhamViGhiTool: async () => ({ ok: true }) }));

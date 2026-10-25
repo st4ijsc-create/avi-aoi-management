@@ -21,6 +21,12 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 // doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
 vi.mock("./robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
+// L4 (phạm vi người dùng 2026-10-25): các ca L2 vda5050.sendOrder kiểm CÁCH dispatcher xử lý lệnh của người vận hành, không kiểm phạm vi (AGV gieo không gắn chuyền) ⇒ coi người gọi toàn quyền; phạm vi sendOrder có test CSDL thật riêng (routers/loThietBiPhamVi.db.test.ts).
+vi.mock("../../routers/_robotPhamVi", async (orig) => ({
+  ...(await orig<typeof import("../../routers/_robotPhamVi")>()),
+  robotTrongPhamVi: async () => undefined,
+  robotThayDuocNghiem: async () => true,
+}));
 import { and, eq, inArray, like } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

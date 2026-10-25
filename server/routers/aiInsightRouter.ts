@@ -20,7 +20,7 @@ async function insightGhi(ctx: CoDanhTinh, id: number): Promise<void> {
   if (!r || r.m == null) return; // không có hàng: để thân thủ tục xử như trước; insight chung: giữ nguyên
   try {
     const rows = (await d.execute(sql`SELECT id FROM machines WHERE code = ${r.m} LIMIT 1`)) as unknown as Array<{ id: number }>;
-    if (rows.length === 0) throw new Error("none");
+    if (rows.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "insight" }, "none");
     await ghiViTri(ctx, { machineId: Number(rows[0]!.id) });
   } catch {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "insight" }, "Insight not found");

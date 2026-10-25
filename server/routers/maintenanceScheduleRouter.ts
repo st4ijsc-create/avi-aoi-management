@@ -27,6 +27,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { maintenanceSchedules, machines } from "../../drizzle/schema";
+import { viTriHopLe, lichBaoTriGhi } from "./_cauHinhPhamVi";
 
 const READ = "machine_status";
 // QA4c-2: PM schedule là công việc BẢO TRÌ → dùng machine_downtime (maintenance/
@@ -58,7 +59,8 @@ function normalize(r: ScheduleRow) {
   };
 }
 
-async function getRow(id: number): Promise<ScheduleRow> {
+// Đổi tên từ getRow: trùng tên với getRow của maintenanceRouter làm bộ quét phamViGhi báo nhầm nợ (W13).
+async function layHangLichBaoTri(id: number): Promise<ScheduleRow> {
   const db = await getDb();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
   const [row] = await db.select().from(maintenanceSchedules).where(eq(maintenanceSchedules.id, id)).limit(1);
@@ -92,7 +94,7 @@ export const maintenanceScheduleRouter = router({
   get: protectedProcedure
     .use(requirePermission(READ, "canView"))
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => normalize(await getRow(input.id))),
+    .query(async ({ input }) => normalize(await layHangLichBaoTri(input.id))),
 
   // ── create (write) ───────────────────────────────────────────────────────────
   create: protectedProcedure
@@ -108,7 +110,8 @@ export const maintenanceScheduleRouter = router({
       description: z.string().max(4000).nullable().optional(),
       isActive: z.boolean().default(true),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await viTriHopLe(ctx, { machineId: input.machineId }, "machine"); // phạm vi nhà máy (W13)
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const [machine] = await db.select({ code: machines.code, id: machines.id })
@@ -144,10 +147,11 @@ export const maintenanceScheduleRouter = router({
       description: z.string().max(4000).nullable().optional(),
       isActive: z.boolean().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await lichBaoTriGhi(ctx, input.id); // phạm vi nhà máy (W13)
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
-      await getRow(input.id); // 404 if missing
+      await layHangLichBaoTri(input.id); // 404 if missing
 
       const patch: Record<string, any> = { updatedAt: new Date() };
       if (input.name !== undefined) patch.taskName = input.name;
@@ -168,10 +172,11 @@ export const maintenanceScheduleRouter = router({
   setEnabled: protectedProcedure
     .use(requirePermission(WRITE, "canEdit"))
     .input(z.object({ id: z.number().int().positive(), isActive: z.boolean() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await lichBaoTriGhi(ctx, input.id);
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
-      await getRow(input.id);
+      await layHangLichBaoTri(input.id);
       const [row] = await db.update(maintenanceSchedules)
         .set({ isActive: input.isActive, updatedAt: new Date() })
         .where(eq(maintenanceSchedules.id, input.id)).returning();
@@ -182,10 +187,11 @@ export const maintenanceScheduleRouter = router({
   remove: protectedProcedure
     .use(requirePermission(WRITE, "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await lichBaoTriGhi(ctx, input.id);
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
-      await getRow(input.id); // 404 if missing
+      await layHangLichBaoTri(input.id); // 404 if missing
       await db.delete(maintenanceSchedules).where(eq(maintenanceSchedules.id, input.id));
       return { deleted: true, id: input.id };
     }),

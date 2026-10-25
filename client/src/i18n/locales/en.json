@@ -3888,6 +3888,7 @@
       "lateWriteResult": "late write result"
     },
     "operation": {
+      "dieuKienViTriTrongPhamVi": "build the location scope condition",
       "retireEdgeNode": "retire the edge node",
       "updateApiKey": "update the API key",
       "changeApiKeyHolder": "change who the API key is issued to",
@@ -4080,6 +4081,7 @@
       "scadaKenhCapNhat": "update the channel declaration"
     },
     "field": {
+      "location": "Location (factory, workshop, line, station or machine)",
       "holderUserId": "the user the key is issued to (an existing, active user)",
       "settingKey": "Setting key",
       "uiPrefs": "interface preferences",
@@ -4200,7 +4202,8 @@
       "expectedProjectId": "open project (expectedProjectId)",
       "assigneeUserId": "assignee",
       "writable": "writable",
-      "dataType": "data type (dataType)"
+      "dataType": "data type (dataType)",
+      "inspectionId": "inspection"
     },
     "feature": {
       "apiKeyHolder": "API key holder record (database migration 0369)",
@@ -4262,6 +4265,7 @@
       "scadaCommands": "SCADA HMI commands"
     },
     "action": {
+      "writeCorporateEquipmentStandard": "write a corporate-level equipment standard",
       "changeMqttDeviceOfOtherScope": "change an MQTT device bound to a machine outside your scope",
       "selfApproveProgramDeploy": "approve your own program deploy request",
       "viewOthersPermissions": "view another user's permissions",
@@ -4334,7 +4338,10 @@
       "secondApproveOwnSafetyPlcConfig": "give the second approval of a safety-PLC configuration you approved first (two different admins are required)",
       "flowKichHoatHangCao": "enable a flow that writes externally or touches OT (admins only)",
       "flowPhamVi": "use flows/secrets by factory",
-      "flowDuyet": "approve a waiting step of an AI flow"
+      "flowDuyet": "approve a waiting step of an AI flow",
+      "verifyChainAcrossFactories": "verify a traceability chain across factories",
+      "manageProductWideProgramRelease": "manage product-wide inspection program releases",
+      "authorSharedSop": "author a shared SOP"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",

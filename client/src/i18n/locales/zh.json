@@ -3880,6 +3880,7 @@
       "lateWriteResult": "迟到的写入结果"
     },
     "operation": {
+      "dieuKienViTriTrongPhamVi": "构建位置范围条件",
       "retireEdgeNode": "永久停用边缘节点",
       "updateApiKey": "更新 API 密钥",
       "changeApiKeyHolder": "更改 API 密钥的发放对象",
@@ -4072,6 +4073,7 @@
       "scadaKenhCapNhat": "更新通道声明"
     },
     "field": {
+      "location": "位置（工厂、车间、产线、工位或机台）",
       "holderUserId": "密钥的发放对象（必须是现有的在职用户）",
       "settingKey": "设置键",
       "uiPrefs": "界面偏好",
@@ -4192,7 +4194,8 @@
       "expectedProjectId": "当前打开的项目（expectedProjectId）",
       "assigneeUserId": "被分配人",
       "writable": "可写（writable）",
-      "dataType": "数据类型（dataType）"
+      "dataType": "数据类型（dataType）",
+      "inspectionId": "检验"
     },
     "feature": {
       "apiKeyHolder": "API 密钥持有人记录（数据库迁移 0369）",
@@ -4254,6 +4257,7 @@
       "scadaCommands": "SCADA HMI 命令"
     },
     "action": {
+      "writeCorporateEquipmentStandard": "写入集团级设备标准",
       "changeMqttDeviceOfOtherScope": "更改绑定到您范围外机器的MQTT设备",
       "selfApproveProgramDeploy": "审批自己提交的程序部署请求",
       "viewOthersPermissions": "查看他人的权限",
@@ -4326,7 +4330,10 @@
       "secondApproveOwnSafetyPlcConfig": "对您已作出首次批准的安全PLC配置进行第二次批准（需要两名不同的管理员）",
       "flowKichHoatHangCao": "启用对外写入或涉及 OT 的流程（仅管理员）",
       "flowPhamVi": "按工厂使用流程/密钥",
-      "flowDuyet": "审批 AI 流程中等待的步骤"
+      "flowDuyet": "审批 AI 流程中等待的步骤",
+      "verifyChainAcrossFactories": "跨工厂验证追溯链",
+      "manageProductWideProgramRelease": "管理产品级检验程序发布",
+      "authorSharedSop": "编写共享SOP"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",

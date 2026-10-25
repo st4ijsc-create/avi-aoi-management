@@ -190,7 +190,8 @@ export const aiQualityGateRouter = router({
       const inspResult = await db.execute(
         sql`SELECT "machineId", "productModelId" FROM product_inspections WHERE id = ${input.inspectionId}`,
       ) as any;
-      const insp = inspResult.rows?.[0];
+      // postgres-js trả MẢNG (không có `.rows` như node-pg) — đọc cả hai dạng; trước đây `.rows?.[0]` khiến thủ tục luôn báo "Inspection not found".
+      const insp = (Array.isArray(inspResult) ? inspResult : inspResult.rows)?.[0];
       if (!insp) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
 
       // Find matching quality gate config

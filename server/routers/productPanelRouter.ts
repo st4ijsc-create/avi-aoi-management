@@ -24,6 +24,19 @@ import {
   replaceBoards,
 } from "../services/panel/panelService";
 import { generateGridBoards } from "../services/panel/panelTransform";
+import { sanPhamGhiTrongPhamVi } from "./_sanPhamPhamVi";
+import { sanPhamCuaPanel } from "./_cauHinhPhamVi";
+
+/** Panel theo id → sản phẩm của nó phải ghi được (luật ghi theo sản phẩm: trong phạm vi hoặc nháp); panel không tồn tại ≡ ngoài phạm vi. W13. */
+async function panelGhi(ctx: Parameters<typeof sanPhamGhiTrongPhamVi>[0], panelDefId: number): Promise<void> {
+  const p = await sanPhamCuaPanel(panelDefId);
+  if (p == null) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "panelDefinition" }, "Panel definition not found");
+  try {
+    await sanPhamGhiTrongPhamVi(ctx, p);
+  } catch {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "panelDefinition" }, "Panel definition not found");
+  }
+}
 
 const MODULE = "settings_products";
 
@@ -99,7 +112,8 @@ export const productPanelRouter = router({
       ...panelDefFields,
       boards: z.array(boardInputSchema).max(4096).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await sanPhamGhiTrongPhamVi(ctx, input.productModelId); // phạm vi nhà máy (W13)
       const product = await db.getProductModelById(input.productModelId);
       if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, "Product model not found");
       const { boards, ...def } = input;
@@ -134,8 +148,9 @@ export const productPanelRouter = router({
       fiducials: panelDefFields.fiducials,
       isActive: panelDefFields.isActive,
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...patch } = input;
+      await panelGhi(ctx, id);
       const row = await updatePanelDef(id, patch);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "panelDefinition" }, "Panel definition not found");
       return row;
@@ -144,7 +159,10 @@ export const productPanelRouter = router({
   remove: protectedProcedure
     .use(requirePermission(MODULE, "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(({ input }) => softDeletePanelDef(input.id)),
+    .mutation(async ({ input, ctx }) => {
+      await panelGhi(ctx, input.id);
+      return softDeletePanelDef(input.id);
+    }),
 
   /** Replace the FULL board table of a panel def (editor save). */
   saveBoards: protectedProcedure
@@ -153,7 +171,8 @@ export const productPanelRouter = router({
       panelDefId: z.number().int().positive(),
       boards: z.array(boardInputSchema).min(1).max(4096),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await panelGhi(ctx, input.panelDefId);
       try {
         return await replaceBoards(input.panelDefId, input.boards);
       } catch (err) {

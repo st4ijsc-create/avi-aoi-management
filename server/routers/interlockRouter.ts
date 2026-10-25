@@ -78,16 +78,37 @@ export function luatCanTotpKhiSuaXoa(r: Pick<InterlockRule, "action" | "enabled"
  * (không tồn tại trong thực tế: scope ∈ line|station|machine) chỉ toàn quyền. Ngoài phạm vi ≡ không tồn tại: NOT_FOUND "interlockRule" (cùng lỗi id không
  * có thật). Toàn quyền (admin) ⇒ không kiểm. Kiểm TRƯỚC khi ghi (và với `update`: cả luật HIỆN CÓ lẫn luật SAU KHI vá).
  */
-async function luatTrongPhamVi(
-  ctx: CoDanhTinh,
-  r: { lineId?: number | null; stationId?: number | null; machineId?: number | null; targetMachineId?: number | null; targetAdapterId?: number | null },
-): Promise<void> {
+type TapPhamViLuat = [number[] | null, number[] | null, number[] | null];
+async function layTapPhamViLuat(ctx: CoDanhTinh): Promise<TapPhamViLuat> {
   const pv = phamViCua(ctx);
-  const [dong, tram, may] = await Promise.all([
+  return Promise.all([
     idsTrongPhamVi("line", pv, { strict: true }),
     idsTrongPhamVi("station", pv, { strict: true }),
     idsTrongPhamVi("machine", pv, { strict: true }),
   ]);
+}
+
+/** phạm vi người dùng (L4 2026-10-25): các id luật (trong tập `rows`) mà người gọi THẤY ĐƯỢC — luật ngoài phạm vi ≡ không tồn tại. Toàn quyền ⇒ tất cả. */
+async function idsLuatThayDuoc(ctx: CoDanhTinh, rows: Array<{ id: number; lineId?: number | null; stationId?: number | null; machineId?: number | null; targetMachineId?: number | null; targetAdapterId?: number | null }>): Promise<Set<number>> {
+  const tap = await layTapPhamViLuat(ctx);
+  const out = new Set<number>();
+  for (const r of rows) {
+    try {
+      await luatTrongPhamVi(ctx, r, tap);
+      out.add(r.id);
+    } catch {
+      /* ngoài phạm vi */
+    }
+  }
+  return out;
+}
+
+async function luatTrongPhamVi(
+  ctx: CoDanhTinh,
+  r: { lineId?: number | null; stationId?: number | null; machineId?: number | null; targetMachineId?: number | null; targetAdapterId?: number | null },
+  tapCoSan?: TapPhamViLuat,
+): Promise<void> {
+  const [dong, tram, may] = tapCoSan ?? (await layTapPhamViLuat(ctx));
   if (dong === null && tram === null && may === null) return;
   const ngoai = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
   const coViTri = r.lineId != null || r.stationId != null || r.machineId != null || r.targetMachineId != null || r.targetAdapterId != null;
@@ -449,19 +470,21 @@ async function isRecentAuthor(
 export const interlockRouter = router({
   list: protectedProcedure
     .use(requirePermission("interlock", "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const db = await getDb();
       const rows = await db.select().from(interlockRules).orderBy(desc(interlockRules.createdAt));
-      return coVersionNhieu(db, rows);
+      const thay = await idsLuatThayDuoc(ctx, rows); // phạm vi người dùng (L4 2026-10-25)
+      return coVersionNhieu(db, rows.filter((r) => thay.has(r.id)));
     }),
 
   get: protectedProcedure
     .use(requirePermission("interlock", "canView"))
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       const [row] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
+      await luatTrongPhamVi(ctx, row); // phạm vi người dùng (L4 2026-10-25): luật ngoài phạm vi ≡ không tồn tại (cùng thông điệp)
       return coVersion(db, row);
     }),
 
@@ -729,12 +752,17 @@ export const interlockRouter = router({
       ruleId: z.number().int().positive().optional(),
       limit: z.number().int().min(1).max(500).default(100),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
+      // phạm vi người dùng (L4 2026-10-25): chỉ sự kiện của luật trong phạm vi (sự kiện không gắn luật ⇒ chỉ toàn quyền thấy)
+      const tatCaLuat = await db.select().from(interlockRules);
+      const thay = [...(await idsLuatThayDuoc(ctx, tatCaLuat))];
+      const toanQuyen = (await layTapPhamViLuat(ctx)).every((x) => x === null);
+      const congLuat = toanQuyen ? undefined : inArray(interlockEvents.ruleId, thay.length > 0 ? thay : [-1]);
       return db
         .select()
         .from(interlockEvents)
-        .where(input?.ruleId ? eq(interlockEvents.ruleId, input.ruleId) : undefined)
+        .where(and(input?.ruleId ? eq(interlockEvents.ruleId, input.ruleId) : undefined, congLuat))
         .orderBy(desc(interlockEvents.firedAt))
         .limit(input?.limit ?? 100);
     }),
@@ -780,10 +808,11 @@ export const interlockRouter = router({
       observedValue: z.number().optional(),
       series: z.array(z.number()).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       const [rule] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
       if (!rule) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
+      await luatTrongPhamVi(ctx, rule); // phạm vi người dùng (L4 2026-10-25)
 
       const observed = input.observedValue ?? deriveObserved(rule.sourceType as InterlockSourceType, { series: input.series, scalar: input.observedValue });
       const threshold = rule.threshold != null ? Number(rule.threshold) : null;

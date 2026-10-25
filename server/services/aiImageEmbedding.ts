@@ -12,7 +12,7 @@ import path from "path";
 import fs from "fs";
 import { getDb } from "../db/connection";
 import { aiImageEmbeddings } from "../../drizzle/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { getAiModelById, getActiveModelForProduct, getAiModels } from "../db/ai";
 import type { AiModel } from "../../drizzle/schema";
 import { describeDefect } from "./aiVisionLanguage";
@@ -355,6 +355,8 @@ async function searchByMetadataFallback(
     defectType?: string;
     minSimilarity?: number;
     excludeId?: number;
+    /** Phạm vi nhà máy của người gọi (W12): chỉ ảnh của các máy này; mảng rỗng ⇒ không ảnh nào; null / vắng ⇒ không lọc (toàn quyền). */
+    machineIds?: number[] | null;
   },
 ): Promise<{ results: SimilarImage[]; embedding: EmbeddingResult }> {
   const db = await getDb();
@@ -389,6 +391,7 @@ async function searchByMetadataFallback(
   const conditions: ReturnType<typeof eq>[] = [] as any;
   if (filters?.excludeId != null) conditions.push(sql`id != ${Number(filters.excludeId)}` as any);
   if (filters?.machineId != null) conditions.push(eq(aiImageEmbeddings.machineId, Number(filters.machineId)) as any);
+  if (filters?.machineIds != null) conditions.push((filters.machineIds.length > 0 ? inArray(aiImageEmbeddings.machineId, filters.machineIds) : sql`false`) as any);
   if (filters?.productModelId != null) conditions.push(eq(aiImageEmbeddings.productModelId, Number(filters.productModelId)) as any);
   if (filters?.label) conditions.push(eq(aiImageEmbeddings.label, filters.label) as any);
   if (filters?.defectType) conditions.push(eq(aiImageEmbeddings.defectType, filters.defectType) as any);
@@ -816,6 +819,8 @@ export async function storeEmbedding(params: {
 
 export interface VectorSearchFilters {
   machineId?: number;
+  /** Phạm vi nhà máy của người gọi (W12): chỉ ảnh của các máy này (ảnh không gắn máy bị loại); mảng rỗng ⇒ không ảnh nào; null / vắng ⇒ không lọc (toàn quyền). */
+  machineIds?: number[] | null;
   productModelId?: number;
   label?: string;
   defectType?: string;
@@ -838,6 +843,9 @@ function buildVectorWhere(filters?: VectorSearchFilters, opts?: { requireVecCol?
   const whereParts: ReturnType<typeof sql>[] = [];
   if (filters?.excludeId != null) whereParts.push(sql`id != ${Number(filters.excludeId)}`);
   if (filters?.machineId != null) whereParts.push(sql`"machineId" = ${Number(filters.machineId)}`);
+  if (filters?.machineIds != null) {
+    whereParts.push(filters.machineIds.length > 0 ? sql`"machineId" IN (${sql.join(filters.machineIds.map((m) => sql`${Number(m)}`), sql`, `)})` : sql`false`);
+  }
   if (filters?.productModelId != null) whereParts.push(sql`"productModelId" = ${Number(filters.productModelId)}`);
   if (filters?.label) whereParts.push(sql`"label" = ${filters.label}`);
   if (filters?.defectType) whereParts.push(sql`"defectType" = ${filters.defectType}`);
@@ -876,6 +884,7 @@ async function bruteForceCosine(
   const conditions = [];
   if (filters?.excludeId != null) conditions.push(sql`id != ${Number(filters.excludeId)}` as any);
   if (filters?.machineId != null) conditions.push(eq(aiImageEmbeddings.machineId, Number(filters.machineId)));
+  if (filters?.machineIds != null) conditions.push(filters.machineIds.length > 0 ? inArray(aiImageEmbeddings.machineId, filters.machineIds) : sql`false`);
   if (filters?.productModelId != null) conditions.push(eq(aiImageEmbeddings.productModelId, Number(filters.productModelId)));
   if (filters?.label) conditions.push(eq(aiImageEmbeddings.label, filters.label));
   if (filters?.defectType) conditions.push(eq(aiImageEmbeddings.defectType, filters.defectType));
@@ -1036,7 +1045,9 @@ export async function findSimilarByIdWithMode(
     .where(eq(aiImageEmbeddings.id, imageEmbeddingId))
     .limit(1);
 
-  if (!source[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "imageEmbedding" }, `Embedding ${imageEmbeddingId} not found`);
+  // phạm vi người dùng (L5b 2026-10-25): embedding nguồn ngoài phạm vi (máy khác nhà máy / không gắn máy) ≡ không tồn tại — không lấy ảnh nhà máy khác làm mồi
+  const ngoaiPhamVi = filters?.machineIds != null && (source[0]?.machineId == null || !filters.machineIds.includes(source[0].machineId));
+  if (!source[0] || ngoaiPhamVi) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "imageEmbedding" }, `Embedding ${imageEmbeddingId} not found`);
 
   return findSimilarByVectorWithMode(
     parseVectorLiteral(source[0].embedding),
@@ -1207,6 +1218,8 @@ export async function batchStoreEmbeddings(
  */
 export async function clusterDefects(params: {
   machineId?: number;
+  /** phạm vi người dùng (L5b 2026-10-25): chỉ ảnh của các máy này (rỗng ⇒ không ảnh; null / vắng ⇒ không lọc). */
+  machineIds?: number[] | null;
   productModelId?: number;
   label?: string;
   minSimilarity?: number;
@@ -1220,6 +1233,9 @@ export async function clusterDefects(params: {
   const conditions = [];
   if (params.machineId != null) {
     conditions.push(eq(aiImageEmbeddings.machineId, params.machineId));
+  }
+  if (params.machineIds != null) {
+    conditions.push(params.machineIds.length > 0 ? inArray(aiImageEmbeddings.machineId, params.machineIds) : sql`false`);
   }
   if (params.productModelId != null) {
     conditions.push(eq(aiImageEmbeddings.productModelId, params.productModelId));
@@ -1316,6 +1332,8 @@ export async function clusterDefects(params: {
 
 export async function getEmbeddingStats(filters?: {
   machineId?: number;
+  /** phạm vi người dùng (L5b 2026-10-25): chỉ đếm ảnh của các máy này (rỗng ⇒ 0; null / vắng ⇒ không lọc). */
+  machineIds?: number[] | null;
   productModelId?: number;
 }) {
   const empty = {
@@ -1334,6 +1352,9 @@ export async function getEmbeddingStats(filters?: {
   const conditions = [];
   if (filters?.machineId != null) {
     conditions.push(eq(aiImageEmbeddings.machineId, filters.machineId));
+  }
+  if (filters?.machineIds != null) {
+    conditions.push(filters.machineIds.length > 0 ? inArray(aiImageEmbeddings.machineId, filters.machineIds) : sql`false`);
   }
   if (filters?.productModelId != null) {
     conditions.push(eq(aiImageEmbeddings.productModelId, filters.productModelId));
@@ -1361,11 +1382,13 @@ export async function getEmbeddingStats(filters?: {
     // Truy vấn cột mới qua raw SQL, bọc try/catch để không lỗi nếu cột/pgvector chưa có.
     const vecConds: ReturnType<typeof sql>[] = [sql`embedding_vec IS NOT NULL`];
     if (filters?.machineId != null) vecConds.push(sql`"machineId" = ${Number(filters.machineId)}`);
+    if (filters?.machineIds != null) vecConds.push(filters.machineIds.length > 0 ? sql`"machineId" IN (${sql.join(filters.machineIds.map((m) => sql`${Number(m)}`), sql`, `)})` : sql`false`);
     if (filters?.productModelId != null) vecConds.push(sql`"productModelId" = ${Number(filters.productModelId)}`);
     const vecRes = (await db.execute(
       sql`SELECT count(*)::int AS c FROM ai_image_embeddings WHERE ${sql.join(vecConds, sql` AND `)}`,
     )) as any;
-    indexedCount = Number(vecRes.rows?.[0]?.c ?? 0);
+    // postgres-js trả MẢNG hàng (không có `.rows` như node-pg) — trước đây indexedCount luôn 0 (lỗi có sẵn, phát hiện ở lô L5b)
+    indexedCount = Number((Array.isArray(vecRes) ? vecRes[0] : vecRes.rows?.[0])?.c ?? 0);
     pgvectorAvailable = true;
   } catch {
     indexedCount = 0;

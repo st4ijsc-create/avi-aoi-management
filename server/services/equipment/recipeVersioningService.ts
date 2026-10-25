@@ -19,7 +19,7 @@
  * edit of a released version).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { appError } from "../../_core/appError";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
@@ -338,12 +338,14 @@ export async function listLoadHistory(machineId: number, limit = 100): Promise<R
 }
 
 /** Genealogy for a recipe code (newest first). */
-export async function listCodeHistory(code: string, limit = 200): Promise<RecipeLoadLog[]> {
+export async function listCodeHistory(code: string, limit = 200, machineIds?: number[] | null): Promise<RecipeLoadLog[]> {
   const d = await db();
+  // phạm vi người dùng (L4 2026-10-25): machineIds = tập máy trong phạm vi người gọi (null/undefined = toàn quyền)
+  const cong = machineIds != null ? inArray(recipeLoadLog.machineId, machineIds.length > 0 ? machineIds : [-1]) : undefined;
   return d
     .select()
     .from(recipeLoadLog)
-    .where(eq(recipeLoadLog.recipeCode, code))
+    .where(cong ? and(eq(recipeLoadLog.recipeCode, code), cong) : eq(recipeLoadLog.recipeCode, code))
     .orderBy(desc(recipeLoadLog.createdAt))
     .limit(limit);
 }
