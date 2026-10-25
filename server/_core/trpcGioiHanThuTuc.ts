@@ -126,12 +126,8 @@ function layCacPath(req: Request): string[] {
   return req.query?.batch === "1" ? p.split(",") : [p];
 }
 
-/**
- * Chuỗi vé phiên (đã giải %-mã) trong cookie `COOKIE_NAME`, hoặc null (không cookie / không có tên / %-mã hỏng). ĐÚNG chuỗi mà
- * `phienKyHopLe` đưa cho verifier — R1b-2a T3 fix round 1: tầng STOP băm chính chuỗi này (sha256, 16 hex đầu) làm phần "phiên" của khoá
- * đếm; chuỗi thô không bao giờ được log hay lưu.
- */
-export function veTuCookie(req: Pick<Request, "headers">): string | null {
+/** Chuỗi vé phiên (đã giải %-mã) trong cookie `COOKIE_NAME`, hoặc null (không cookie / không có tên / %-mã hỏng). Chỉ dùng trong `phienKyVaVe`. */
+function veTuCookie(req: Pick<Request, "headers">): string | null {
   const raw = req.headers?.cookie;
   if (!raw) return null;
   const m = new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`).exec(raw);
@@ -147,18 +143,28 @@ export function veTuCookie(req: Pick<Request, "headers">): string | null {
  * Phiên trong cookie có CHỮ KÝ JWT + hạn hợp lệ (`sdk.verifySession` — stateless, KHÔNG chạm DB, không tra sổ phiên): `{ openId }`, ngược lại
  * null (không cookie, cookie rác, chữ ký sai, hết hạn). CHỈ phục vụ GIỚI HẠN TỐC ĐỘ, không cấp quyền gì — xác thực thật vẫn ở createContext.
  * Hai người dùng: khoá đếm theo người của middleware này, và `rateLimitConfig.laStopHmiCoPhienKy` (SCADA R1b-1 rà soát cuối I-2; R1b-2a T3):
- * STOP HMI có vé ký hợp lệ được tầng STOP (`createHmiStopLimiter`, 600 / phút THEO PHIÊN CỦA MỘT NGƯỜI = openId trả về ở đây + băm vé
- * `veTuCookie`) đếm thay cho `apiLimiter`.
+ * STOP HMI có vé ký hợp lệ được tầng STOP (`createHmiStopLimiter`, 600 / phút THEO PHIÊN CỦA MỘT NGƯỜI = openId + băm phần ĐÃ KÝ
+ * `header.payload` của vé, qua `phienKyVaVe`) đếm thay cho `apiLimiter`.
  * Một chủ cho phép kiểm ⇒ census điểm xác thực (`thuHoiPhienMoiBeMat` …) vẫn thấy đúng MỘT lượt `verifySession` ở tệp này.
  * R1b-2a T3 (kiem-dinh N-2): kiểm IM LẶNG (`{ imLang: true }`) — một trận cookie rác vào đường giới hạn không in một dòng
  * "[Auth] Session verification failed" mỗi yêu cầu. createContext → authenticateRequest vẫn log như cũ.
  */
 export async function phienKyHopLe(req: Pick<Request, "headers">): Promise<{ openId: string } | null> {
-  const token = veTuCookie(req);
-  if (token === null) return null;
+  const p = await phienKyVaVe(req);
+  return p ? { openId: p.openId } : null;
+}
+
+/**
+ * R1b-2a T3 fix round 2 (review m-2): MỘT lượt đọc cookie trả cả `openId` lẫn `ve` — chuỗi vé ĐÚNG như đã đưa cho verifier, nên chuỗi tầng
+ * STOP băm là chuỗi đã kiểm THEO CẤU TẠO (không phải do hai lượt đọc tình cờ khớp nhau). Chỉ cho giới hạn tốc độ; `ve` không bao giờ được
+ * log hay lưu (tầng STOP chỉ giữ 16 hex sha256 của phần đã ký `header.payload`).
+ */
+export async function phienKyVaVe(req: Pick<Request, "headers">): Promise<{ openId: string; ve: string } | null> {
+  const ve = veTuCookie(req);
+  if (ve === null) return null;
   const { sdk } = await import("./sdk");
-  const phien = await sdk.verifySession(token, { imLang: true });
-  return phien ? { openId: phien.openId } : null;
+  const phien = await sdk.verifySession(ve, { imLang: true });
+  return phien ? { openId: phien.openId, ve } : null;
 }
 
 /** Khoá người dùng từ cookie phiên: `u:<openId>` khi cookie hợp lệ (chỉ kiểm chữ ký JWT, không chạm DB), ngược lại null. */

@@ -261,18 +261,30 @@ export type KiemPhienKy = (req: Request) => Promise<boolean>;
  */
 const _phienTheoYeuCau = new WeakMap<object, Promise<{ openId: string; phienBam: string } | null>>();
 /**
- * `phienBam` (R1b-2a T3 fix round 1) = first 16 hex chars of sha256(the verified session-token string, `veTuCookie`). It is the "which
- * session" half of the STOP-tier key; the raw token is never logged or stored — the prefix only appears inside the limiter key.
+ * The SIGNED part of a compact JWS: `header.payload`, i.e. everything before the last ".", which is the literal HMAC input.
+ * R1b-2a T3 fix round 2 (review C-1): the whole token string is NOT canonical. jose 6.1.0 still verifies a ticket whose SIGNATURE segment
+ * carries whitespace / newlines, a trailing space, "=" padding or a non-canonical last base64url char. So a key over the whole string gave
+ * one ticket unlimited buckets. Any change to `header.payload` breaks verification, and its random `jti` keeps two sessions of one person
+ * apart. Exported for tests.
+ */
+export function phanDaKyCuaVe(ve: string): string {
+  const i = ve.lastIndexOf(".");
+  return i > 0 ? ve.slice(0, i) : ve;
+}
+
+/**
+ * `phienBam` (R1b-2a T3 fix rounds 1–2) = first 16 hex chars of sha256(the signed part `header.payload` of the VERIFIED ticket). The
+ * string comes from `phienKyVaVe` (one cookie parse feeds both the verifier and this hash). It is the "which session" half of the
+ * STOP-tier key; the raw token is never logged or stored — only the prefix appears, inside the limiter key.
  */
 function phienKyCuaYeuCau(req: Request): Promise<{ openId: string; phienBam: string } | null> {
   let p = _phienTheoYeuCau.get(req);
   if (!p) {
     p = (async () => {
-      const { phienKyHopLe, veTuCookie } = await import("./trpcGioiHanThuTuc");
-      const phien = await phienKyHopLe(req);
-      const ve = phien ? veTuCookie(req) : null;
-      if (!phien || ve === null) return null;
-      return { openId: phien.openId, phienBam: createHash("sha256").update(ve).digest("hex").slice(0, 16) };
+      const { phienKyVaVe } = await import("./trpcGioiHanThuTuc");
+      const phien = await phienKyVaVe(req);
+      if (!phien) return null;
+      return { openId: phien.openId, phienBam: createHash("sha256").update(phanDaKyCuaVe(phien.ve)).digest("hex").slice(0, 16) };
     })().catch(() => null);
     _phienTheoYeuCau.set(req, p);
   }
@@ -654,7 +666,8 @@ export const TRAN_STOP_HMI_MOI_PHUT = 600;
 /**
  * R1b-2a T3 — the DEDICATED HMI STOP tier. Counts ONLY a non-batched `POST /api/trpc/scadaCommands.dungMay` whose session ticket verifies
  * (`laStopHmiCoPhienKy`) — exactly the requests `createApiLimiter` skips — keyed per SESSION OF A PERSON
- * (`hmistop:u:<openId>:<first 16 hex of sha256(session token)>`, R1b-2a T3 fix round 1): N operators behind one NAT / proxy each get their
+ * (`hmistop:u:<openId>:<first 16 hex of sha256 of the signed part header.payload>`, R1b-2a T3 fix rounds 1–2 — `phanDaKyCuaVe`; a
+ * re-encoded signature segment of the same ticket lands in the SAME bucket): N operators behind one NAT / proxy each get their
  * own 600 / min, and a stolen / revoked-but-unexpired ticket only exhausts ITS OWN bucket — the real user's current session keeps its own
  * 600 / min. Tickets cannot be minted without the session secret, so the total stays bounded (logins are themselves rate-limited). The raw
  * token is never logged or stored: only the 16-hex hash prefix appears, inside the limiter key.

@@ -1,6 +1,7 @@
 /**
- * SCADA R1b-1 Task 2 fix round 1 (important 1) — ★★★ CENSUS: the general `/api` limiter NEVER counts a non-batched HMI STOP
- * (`POST /api/trpc/scadaCommands.dungMay`), and STILL counts a batched request carrying it (alone or with any other call).
+ * SCADA R1b-1 Task 2 fix round 1 (important 1) — ★★★ CENSUS: the general `/api` limiter never counts a non-batched HMI STOP
+ * (`POST /api/trpc/scadaCommands.dungMay`) CARRYING A SIGNED SESSION (that one is counted by the STOP tier instead), and STILL counts an
+ * unsigned one and a batched request carrying it (alone or with any other call).
  *
  * App built in the order of `_core/index.ts` (`app.use('/api/', hmiStopLimiter)` then `app.use('/api/', apiLimiter)` before the routes),
  * general ceiling lowered to 5. Each scenario uses its own credential header (= its own bucket, `apiKeyGenerator`). Oracle: HTTP status
@@ -11,10 +12,12 @@
  * robotStopAuth step 1, `trpcGioiHanThuTuc.phienKyHopLe`). Anonymous / junk cookie / wrong signature / expired ⇒ counted like any /api
  * request. Tokens are minted by the REAL `sdk.signSession` (no mock of the verifier).
  *
- * R1b-2a Task 3 (kiem-dinh limiter + N-2) — the absolute skip is REPLACED by a wide PER-PERSON cap: a signed STOP is counted ONLY by
- * `createHmiStopLimiter` (`TRAN_STOP_HMI_MOI_PHUT` = 600 / min per SESSION of a person — key openId + 16 hex of sha256(token), fix round 1
- * c1 — a code constant, no env), never by `apiLimiter`; everything else is counted ONLY by `apiLimiter`. A revoked-but-unexpired (or
- * stolen) ticket is therefore capped at 600 / min in its OWN bucket (no longer unlimited) and cannot exhaust the person's other session. The limiter path verifies quietly (`sdk.verifySession(token, { imLang: true })`): junk cookies log nothing.
+ * R1b-2a Task 3 (kiem-dinh limiter + N-2) — the absolute skip is REPLACED by a wide PER-SESSION cap: a signed STOP is counted ONLY by
+ * `createHmiStopLimiter` (`TRAN_STOP_HMI_MOI_PHUT` = 600 / min per SESSION of a person — key openId + 16 hex of sha256 of the signed part
+ * `header.payload` of the ticket, fix rounds 1–2 — a code constant, no env), never by `apiLimiter`; everything else is counted ONLY by
+ * `apiLimiter`. A revoked-but-unexpired (or stolen) ticket is therefore capped at 600 / min in its OWN bucket (no longer unlimited), even
+ * when its signature segment is re-encoded (review C-1), and cannot exhaust the person's other session. The limiter path verifies quietly
+ * (`sdk.verifySession(token, { imLang: true })`): junk cookies log nothing.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import express from "express";
@@ -226,10 +229,46 @@ describe("★★★ R1b-2a T3 — STOP tier: 600 / min PER SESSION OF A PERSON (
     // the STOP tier never touches ordinary traffic: person A's ordinary calls still use the general bucket
     expect(await get("/api/trpc/scadaKenh.cheDo.danhSach", key(), a)).toBe(200);
   }, 60_000);
+
+  it("★★★ review C-1: re-encoded SIGNATURE segments of one ticket (whitespace / newline / tab inside it, trailing space, '=' padding, non-canonical last char) all verify AND share ONE bucket — exhaust with the original ⇒ every variant is 429", async () => {
+    const OPEN_V = `r1b2a-t3-v-${Date.now()}`;
+    const t = await ve(OPEN_V);
+    const [h, p, s] = t.split(".");
+    const B64U = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const iCuoi = B64U.indexOf(s[s.length - 1]);
+    const cuoiKhac = [0, 1, 2, 3].map((k) => B64U[(iCuoi & ~3) | k]).filter((c) => c !== s[s.length - 1]);
+    const bienThe = [
+      `${h}.${p}.${s.slice(0, 10)} ${s.slice(10)}`,
+      `${h}.${p}.${s.slice(0, 5)}\n${s.slice(5, 20)}\r\n${s.slice(20)}`,
+      `${h}.${p}.${s.slice(0, 7)}\t${s.slice(7)}`,
+      `${t} `,
+      `${t}=`,
+      ...cuoiKhac.map((c) => `${h}.${p}.${s.slice(0, -1)}${c}`),
+    ];
+    expect(new Set([t, ...bienThe]).size, "the variants must all differ from the original").toBe(bienThe.length + 1);
+    const r = (cookie: string) => ({ method: "POST", originalUrl: STOP, url: STOP, query: {}, headers: { cookie } }) as never;
+    // precondition (what makes this an attack): the verifier accepts every variant as the same signed ticket
+    for (const v of bienThe) expect(await rl.laStopHmiCoPhienKy(r(cookieCua(v))), JSON.stringify(v.slice(-12))).toBe(true);
+    // all of them hash to the same signed part
+    expect(new Set(bienThe.map(rl.phanDaKyCuaVe))).toEqual(new Set([`${h}.${p}`]));
+
+    const lo = await guiNLan(base, cookieCua(t), 600);
+    expect(lo.every((x) => x.status === 200)).toBe(true);
+    for (const v of bienThe) {
+      const [kq] = await guiNLan(base, cookieCua(v), 1);
+      expect(kq.status, `variant ${JSON.stringify(v.slice(-12))} must share the exhausted bucket`).toBe(429);
+    }
+  }, 60_000);
+
+  it("phanDaKyCuaVe: header.payload (everything before the LAST '.'); a string without '.' is returned unchanged", () => {
+    expect(rl.phanDaKyCuaVe("aaa.bbb.ccc")).toBe("aaa.bbb");
+    expect(rl.phanDaKyCuaVe("aaa.bbb.c c=\n")).toBe("aaa.bbb");
+    expect(rl.phanDaKyCuaVe("khong-co-cham")).toBe("khong-co-cham");
+  });
 });
 
 describe("★★★ R1b-2a T3 — each request is counted by EXACTLY ONE limiter (fake Redis store, counters by tier prefix)", () => {
-  it("signed STOP ⇒ only rl:hmistop: (key hmistop:u:<openId>:<16 hex sha256(token)>, raw token in no key); anonymous / junk / bad signature / batch / GET / verifier throwing ⇒ only rl:api:", async () => {
+  it("signed STOP ⇒ only rl:hmistop: (key hmistop:u:<openId>:<16 hex sha256(header.payload)>, raw token in no key); anonymous / junk / bad signature / batch / GET / verifier throwing ⇒ only rl:api:", async () => {
     process.env.REDIS_URL = "redis://fake-r1b2a-t3:6379";
     let app: { server: Server; base: string };
     try {
@@ -258,7 +297,7 @@ describe("★★★ R1b-2a T3 — each request is counted by EXACTLY ONE limiter
     try {
       await motLan("signed STOP", "hmistop", STOP, "POST", c);
       await motLan("signed STOP again", "hmistop", STOP, "POST", c);
-      const bamC = createHash("sha256").update(veC).digest("hex").slice(0, 16);
+      const bamC = createHash("sha256").update(veC.slice(0, veC.lastIndexOf("."))).digest("hex").slice(0, 16);
       expect(redisGia.dem.get(`rl:hmistop:hmistop:u:${OPEN_C}:${bamC}`)).toBe(2);
       expect([...redisGia.dem.keys()].filter((k) => k.includes(veC) || k.includes(encodeURIComponent(veC))), "raw token must never be stored").toEqual([]);
       await motLan("anonymous STOP", "api", STOP, "POST");

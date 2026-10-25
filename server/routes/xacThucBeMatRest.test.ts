@@ -676,7 +676,7 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
           "(2) BA DƯƠNG TÍNH GIẢ — ba dòng CHÚ THÍCH ngay trên middleware ấy trích nguyên văn `app.get(\"/uploads/*\")`, " +
           "`app.use(\"/uploads\", express.static(...))` và `app.use(\"/uploads\", …)` để ghi lại VÌ SAO thứ tự gắn có ý " +
           "nghĩa (đặt sau dòng resize thì mọi yêu cầu kèm `?w=` đi vòng qua cổng — một bản vá xanh mà cửa vẫn mở). " +
-          "⚠ Vẫn ghi lại thay vì sửa chú thích cho vừa bộ đếm, đúng lý do đã nêu ở lượt +2 phía trên." +
+          "⚠ Vẫn ghi lại thay vì sửa chú thích cho vừa bộ đếm, đúng lý do đã nêu ở lượt +2 phía trên. " +
           "★ 2026-10-25 86 → 85 (SCADA R1b-2a T3 fix round 1 c2): gỡ app.use('/trpc/', hmiStopLimiter) — mount CHẾT (bộ phân loại STOP chỉ khớp /api/trpc, không router tRPC nào gắn ở /trpc); đo lại sau khi gỡ = 85, còn MỘT điểm gắn mới app.use('/api/', hmiStopLimiter). " +
           "★ 2026-10-25 84 → 86 (SCADA R1b-2a T3, tầng STOP HMI): HAI điểm gắn THẬT, đếm bằng diff với HEAD — app.use('/api/', hmiStopLimiter) và app.use('/trpc/', hmiStopLimiter). " +
           "Cả hai là MIDDLEWARE giới hạn tốc độ (600 / phút theo người cho STOP HMI có vé ký hợp lệ), không phải handler; chủ: server/_core/rateLimitConfig.ts createHmiStopLimiter, canh bởi rateLimitConfig.hmiStop.test.ts / .db.test.ts. " +
