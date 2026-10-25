@@ -51,10 +51,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/alertRouters.ts#alertRouter.getById",
   "server/routers/alertRouters.ts#alertRouter.listAll",
   // ── server/routers/aoiOnboardingRouter.ts (4) ──────────────────────────────────────────────
-  "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.getDraft",
-  "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.listAoiMachines",
-  "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.listRecords",
-  "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.status",
   // ── server/routers/apiKeyRouter.ts (1) ─────────────────────────────────────────────────────
   "server/routers/apiKeyRouter.ts#apiKeyRouter.list",
   // ── server/routers/bomRouter.ts (5) ────────────────────────────────────────────────────────
@@ -79,7 +75,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // (toàn cục, bộ tính thứ hai): nó uỷ quyền `alarmKpiRouter.createCaller(ctx).summary(…)`,
   // tức đi qua CÙNG cổng `resolveAlertScope(ctx.user)` với /alarm-kpi ⇒ danh tính RỜI TAY
   // handler ⇒ nhóm S, XOÁ khỏi sổ này (GHIM.A 342→341, S 329→330).
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.complianceMetrics",
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.hierarchyTree",
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.listAlarmMappings",
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.listChangeRequests",
@@ -100,13 +95,7 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/federationRouter.ts#federationRouter.siteRollups",
   "server/routers/federationRouter.ts#federationRouter.syncLog",
   // ── server/routers/feederVerifyRouter.ts (3) ───────────────────────────────────────────────
-  "server/routers/feederVerifyRouter.ts#feederVerifyRouter.listForSetup",
-  "server/routers/feederVerifyRouter.ts#feederVerifyRouter.runGate",
-  "server/routers/feederVerifyRouter.ts#feederVerifyRouter.setupStatus",
   // ── server/routers/fieldRouter.ts (3) ──────────────────────────────────────────────────────
-  "server/routers/fieldRouter.ts#fieldRouter.deviceState",
-  "server/routers/fieldRouter.ts#fieldRouter.health",
-  "server/routers/fieldRouter.ts#fieldRouter.healthSummary",
   // ── server/routers/hierarchyRouters.ts (1) ─────────────────────────────────────────────────
   "server/routers/hierarchyRouters.ts#machineRouter.config",
   // ── server/routers/hierarchyTreeRouter.ts (4) ──────────────────────────────────────────────
@@ -115,14 +104,10 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/hierarchyTreeRouter.ts#hierarchyTreeRouter.getSummary",
   "server/routers/hierarchyTreeRouter.ts#hierarchyTreeRouter.getTree",
   // ── server/routers/hotFolderRouter.ts (3) ──────────────────────────────────────────────────
-  "server/routers/hotFolderRouter.ts#hotFolderRouter.listConfigs",
-  "server/routers/hotFolderRouter.ts#hotFolderRouter.recentFiles",
-  "server/routers/hotFolderRouter.ts#hotFolderRouter.status",
   // ── server/routers/layoutRouters.ts (2) ────────────────────────────────────────────────────
   "server/routers/layoutRouters.ts#layoutRouter.getById",
   "server/routers/layoutRouters.ts#layoutRouter.listByWorkshop",
   // ── server/routers/machineApiRouters.ts (1) ────────────────────────────────────────────────
-  "server/routers/machineApiRouters.ts#machineApiRouter.listKeys",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.get",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.list",
   // ── server/routers/mappingAsCodeRouter.ts — ★ 2026-10-24: 1 mục ĐÃ TRẢ (exportOne ⇒ S qua _adapterPhamVi.ts), xoá khỏi sổ ──
@@ -151,11 +136,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.list",
   "server/routers/oversightRouter.ts#oversightRouter.posture",
   // ── server/routers/parameterGuardrailRouter.ts (5) ─────────────────────────────────────────
-  "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.changeLog",
-  "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.get",
-  "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.list",
-  "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.materialForecast.component",
-  "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.materialForecast.machine",
   // ── server/routers/permissionsRouter.ts (2) ────────────────────────────────────────────────
   "server/routers/permissionsRouter.ts#permissionsRouter.getBuiltInRoles",
   "server/routers/permissionsRouter.ts#permissionsRouter.getDefaultPermissionsForRole",
@@ -186,12 +166,10 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // quên nó là một lượt đọc xuyên tenant có chủ đích.
   "server/routers/simTargetsRouter.ts#simTargetsRouter.ursimPing",
   // ── server/routers/simulationRouter.ts (1) ─────────────────────────────────────────────────
-  "server/routers/simulationRouter.ts#simulationRouter.fromScene",
   // ── server/routers/sitesRouter.ts (2) ──────────────────────────────────────────────────────
   "server/routers/sitesRouter.ts#sitesRouter.get",
   "server/routers/sitesRouter.ts#sitesRouter.list",
   // ── server/routers/systemHealthRouter.ts (1) ───────────────────────────────────────────────
-  "server/routers/systemHealthRouter.ts#systemHealthRouter.connectionSupervisors",
   // ── server/routers/systemRouters.ts (1) ────────────────────────────────────────────────────
   "server/routers/systemRouters.ts#corporateFactoryStatsRouter.warmingStats",
   // ── server/routers/thresholdApprovalRouter.ts (3) ──────────────────────────────────────────

@@ -44,7 +44,7 @@ import { appError } from "../../_core/appError";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import path from "node:path";
 import { watch, type FSWatcher } from "chokidar";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
   hotFolderConfigs,
@@ -894,8 +894,9 @@ async function assertMachineExists(machineId: number): Promise<void> {
   if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine id=${machineId} not found`);
 }
 
-export async function listHotFolderConfigs(): Promise<HotFolderConfig[]> {
-  return (await db()).select().from(hotFolderConfigs).orderBy(asc(hotFolderConfigs.id));
+export async function listHotFolderConfigs(idsMay: number[] | null = null): Promise<HotFolderConfig[]> {
+  // phạm vi người dùng (L6c 2026-10-25): chỉ cấu hình của máy trong phạm vi (null = toàn quyền / nội bộ)
+  return (await db()).select().from(hotFolderConfigs).where(idsMay === null ? undefined : inArray(hotFolderConfigs.machineId, idsMay.length > 0 ? idsMay : [-1])).orderBy(asc(hotFolderConfigs.id));
 }
 
 export async function createHotFolderConfig(input: HotFolderConfigInput): Promise<HotFolderConfig> {
@@ -976,14 +977,14 @@ export interface HotFolderStatusRow {
   duplicateCount: number;
 }
 
-export async function getHotFolderStatus(): Promise<{
+export async function getHotFolderStatus(idsMay: number[] | null = null): Promise<{
   enabled: boolean;
   running: boolean;
   configs: HotFolderStatusRow[];
 }> {
   let configs: HotFolderConfig[] = [];
   try {
-    configs = await listHotFolderConfigs();
+    configs = await listHotFolderConfigs(idsMay);
   } catch {
     /* DB down → still report flag state honestly */
   }
@@ -1010,11 +1011,11 @@ export async function getHotFolderStatus(): Promise<{
 }
 
 /** Recent ledger rows for ONE config (newest first) — the UI's audit tail. */
-export async function listRecentHotFolderFiles(configId: number, limit = 20) {
+export async function listRecentHotFolderFiles(configId: number, limit = 20, idsMay: number[] | null = null) {
   return (await db())
     .select()
     .from(hotFolderFiles)
-    .where(eq(hotFolderFiles.configId, configId))
+    .where(and(eq(hotFolderFiles.configId, configId), idsMay === null ? undefined : inArray(hotFolderFiles.machineId, idsMay.length > 0 ? idsMay : [-1]))) // phạm vi người dùng (L6c 2026-10-25)
     .orderBy(desc(hotFolderFiles.processedAt))
     .limit(Math.min(100, Math.max(1, limit)));
 }

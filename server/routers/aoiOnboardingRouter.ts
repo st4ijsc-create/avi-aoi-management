@@ -44,7 +44,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db";
@@ -53,7 +53,7 @@ import { getVisionAdapter, listVisionAdapters } from "../services/vision";
 import "../services/vision"; // side-effect: register built-in vendor adapters
 import type { CanonicalInspection } from "../services/vision";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
-import { mayTrongPhamVi } from "./_adapterPhamVi";
+import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
 import {
   getAoiIngestMode,
   getDraftRecord,
@@ -301,9 +301,10 @@ export const aoiOnboardingRouter = router({
    */
   listAoiMachines: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const d = await db();
-      const rows = await d.select().from(machines).where(eq(machines.isActive, true));
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6c 2026-10-25)
+      const rows = await d.select().from(machines).where(and(eq(machines.isActive, true), idsMay === null ? undefined : inArray(machines.id, idsMay.length > 0 ? idsMay : [-1])));
       const records = await listAllRecords().catch(() => []);
       const latestByMachine = new Map<number, { status: string }>();
       const draftByMachine = new Set<number>();
@@ -335,7 +336,9 @@ export const aoiOnboardingRouter = router({
   getDraft: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ machineId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6c 2026-10-25): máy ngoài phạm vi ≡ chưa có bản nháp
+      if (idsMay !== null && !idsMay.includes(input.machineId)) return null;
       return getDraftRecord(input.machineId);
     }),
 
@@ -559,7 +562,8 @@ export const aoiOnboardingRouter = router({
   status: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ machineId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await mayTrongPhamVi(ctx, input.machineId); // phạm vi người dùng (L6c 2026-10-25)
       const [latest, draft, mode] = await Promise.all([
         getLatestSignedRecord(input.machineId).catch(() => null),
         getDraftRecord(input.machineId).catch(() => null),
@@ -586,7 +590,9 @@ export const aoiOnboardingRouter = router({
   listRecords: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ machineId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6c 2026-10-25): máy ngoài phạm vi ≡ chưa có hồ sơ
+      if (idsMay !== null && !idsMay.includes(input.machineId)) return [];
       return listRecordsForMachine(input.machineId);
     }),
 });

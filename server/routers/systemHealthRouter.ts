@@ -27,6 +27,7 @@
 import { sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { idsAdapterTrongPhamVi } from "./_adapterPhamVi";
 import { getStatus as getStoreForwardStatus } from "../services/ot/storeForward";
 import { listSupervisorStatuses, isConnHaEnabled, isOtRunning } from "../services/ot/otManager";
 import { getDinov2ModelHealth } from "../services/aiImageEmbedding";
@@ -79,11 +80,15 @@ export const systemHealthRouter = router({
    */
   connectionSupervisors: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(() => ({
-      haEnabled: isConnHaEnabled(),
-      otRunning: isOtRunning(),
-      supervisors: listSupervisorStatuses(),
-    })),
+    .query(async ({ ctx }) => {
+      // phạm vi người dùng (L6c 2026-10-25): chỉ adapter gắn máy trong phạm vi (đọc RAM, lọc mảng — không thêm truy vấn theo hàng)
+      const adapters = await idsAdapterTrongPhamVi(ctx);
+      return {
+        haEnabled: isConnHaEnabled(),
+        otRunning: isOtRunning(),
+        supervisors: listSupervisorStatuses().filter((s) => adapters === null || adapters.has(s.adapterId)),
+      };
+    }),
 
   /**
    * DINOv2 ONNX model health: resolved path, present?, and the active embedding

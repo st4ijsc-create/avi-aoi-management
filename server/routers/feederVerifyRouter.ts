@@ -13,6 +13,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { ghiDoiTuong } from "./_viTriPhamVi";
+import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
 import {
   verifyScan,
   listForSetup,
@@ -48,7 +49,9 @@ export const feederVerifyRouter = router({
         limit: z.number().int().min(1).max(500).default(100),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6c 2026-10-25): máy ngoài phạm vi ≡ chưa có lịch sử
+      if (idsMay !== null && !idsMay.includes(input.machineId)) return [];
       return listForSetup(input.machineId, { productModelId: input.productModelId, limit: input.limit });
     }),
 
@@ -59,7 +62,8 @@ export const feederVerifyRouter = router({
         productModelId: z.number().int().positive().nullable().optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await mayTrongPhamVi(ctx, input.machineId); // phạm vi người dùng (L6c 2026-10-25)
       return getSetupStatus(input.machineId, input.productModelId);
     }),
 
@@ -70,7 +74,8 @@ export const feederVerifyRouter = router({
         productModelId: z.number().int().positive().nullable().optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await mayTrongPhamVi(ctx, input.machineId); // phạm vi người dùng (L6c 2026-10-25)
       return assertSetupOkForRun(input.machineId, input.productModelId);
     }),
 });
