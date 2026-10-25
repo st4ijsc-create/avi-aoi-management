@@ -15,6 +15,7 @@ beforeEach(() => {
   for (const k of KHOA) goc[k] = process.env[k];
   delete process.env.MIGRATION_DB_URL;
   delete process.env.TEST_DATABASE_URL;
+  process.env.DATABASE_URL = DEV; // máy chủ chuẩn 127.0.0.1:5434
 });
 afterEach(() => {
   for (const k of KHOA) {
@@ -47,6 +48,9 @@ describe("laDbTest / tenDbLaTest", () => {
     expect(laDbTest("postgresql://h/aoi_test_x")).toBe(false); // chứa test nhưng KHÔNG kết thúc _test
     expect(laDbTest("postgresql://h/aoi_management_test?sslmode=disable")).toBe(true);
     expect(laDbTest("không phải url")).toBe(false);
+    expect(laDbTest("postgresql://h:5434/db/x_test")).toBe(true); // đường dẫn lạ: lớp 1 cho qua, lớp 2 (current_database) quyết
+    expect(laDbTest("postgresql://h:5434/aoi_management?x=_test")).toBe(false); // _test chỉ ở query
+    expect(laDbTest("postgresql://h:5434/aoi_management?options=-c%20search_path=_test")).toBe(false);
     expect(tenDbLaTest("aoi_management")).toBe(false);
     expect(tenDbLaTest("aoi_management_test")).toBe(true);
     expect(tenDbLaTest(undefined)).toBe(false);
@@ -108,6 +112,38 @@ describe("guard thời chạy (lớp 2) — current_database() trên chính kế
     expect(await chayVoi(["--test-only", "--ghi"], g.connect)).toBe(2);
     expect(g.st.url).toBe(process.env.MIGRATION_DB_URL);
     expect(g.st.cau).toHaveLength(1);
+  });
+});
+
+describe("ghim máy chủ — cùng host:port với DATABASE_URL", () => {
+  it.each([
+    ["MIGRATION_DB_URL máy khác, CSDL *_test", "postgresql://aoi:aoi@10.9.9.9:5434/aoi_management_test"],
+    ["MIGRATION_DB_URL cùng host khác cổng", "postgresql://aoi:aoi@127.0.0.1:5999/aoi_management_test"],
+  ])("%s ⇒ thoát 2, 0 kết nối", async (_ten, url) => {
+    process.env.TEST_DATABASE_URL = TEST;
+    process.env.MIGRATION_DB_URL = url;
+    const g = gia("aoi_management_test"); // tên CSDL đúng — chỉ máy chủ sai
+    expect(await chayVoi(["--test-only", "--ghi"], g.connect)).toBe(2);
+    expect(g.st.mo).toBe(0);
+  });
+  it("TEST_DATABASE_URL ở máy khác ⇒ thoát 2, 0 kết nối", async () => {
+    process.env.TEST_DATABASE_URL = "postgresql://avi_app:x@db.example.com:5434/aoi_management_test";
+    const g = gia("aoi_management_test");
+    expect(await chayVoi(["--test-only"], g.connect)).toBe(2);
+    expect(g.st.mo).toBe(0);
+  });
+  it("DATABASE_URL chưa đặt ⇒ thoát 2, 0 kết nối", async () => {
+    process.env.TEST_DATABASE_URL = TEST;
+    delete process.env.DATABASE_URL;
+    const g = gia("aoi_management_test");
+    expect(await chayVoi(["--test-only"], g.connect)).toBe(2);
+    expect(g.st.mo).toBe(0);
+  });
+  it("cùng host:port ⇒ mở đúng một kết nối (chạy khô giả)", async () => {
+    process.env.TEST_DATABASE_URL = TEST;
+    const g = gia("aoi_management_test");
+    await chayVoi(["--test-only"], g.connect).catch(() => undefined); // phần in kết quả không có dữ liệu giả — chỉ đếm kết nối
+    expect(g.st.mo).toBe(1);
   });
 });
 

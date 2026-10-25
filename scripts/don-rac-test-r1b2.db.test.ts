@@ -105,6 +105,24 @@ describe("don-rac-test-r1b2 trên _test", () => {
     expect(st.resolvedAt).toBeNull();
   });
 
+  it("STOP chưa ack trên adapter đích ⇒ từ chối (thoát 2), không xoá gì — cả chạy khô lẫn --ghi", async () => {
+    const [{ ownerEpoch: ep }] = await sql`SELECT "ownerEpoch" FROM device_adapters WHERE id = ${muc.adapters[0]}`;
+    const q = await one(sql`INSERT INTO robot_motion_lock_requests ("adapterId", "edgeNodeId", kind, "requestedBy", "expiresAt", "ownerEpoch")
+              VALUES (${muc.adapters[0]}, ${muc.edgeNodes[0]}, 'stop', ${adminId}, now() + interval '1 hour', ${ep}) RETURNING id`);
+    try {
+      const truoc = await dem(muc);
+      for (const argv of [["--test-only"], ["--test-only", "--ghi"]]) {
+        const r = await chayThat(argv);
+        expect(r.code, r.out).toBe(2);
+        expect(r.err).toMatch(new RegExp(`STOP chua ack \\(id ${q}\\)`));
+      }
+      expect(await dem(muc)).toEqual(truoc);
+    } finally {
+      // đưa về trạng thái "đã ack, bị từ chối" để các ca sau (giải quyết + xoá) chạy như thường
+      await sql`UPDATE robot_motion_lock_requests SET "deliveredAt" = now(), "ackedAt" = now(), outcome = 'refused' WHERE id = ${q}`;
+    }
+  });
+
   it("mã không khớp mẫu ⇒ từ chối (thoát 2), không xoá gì", async () => {
     const truoc = await dem(muc);
     const r = await chay({ argv: ["--test-only", "--ghi"], muc, mauMa: /^khong-khop-/, log: () => undefined, err: () => undefined });

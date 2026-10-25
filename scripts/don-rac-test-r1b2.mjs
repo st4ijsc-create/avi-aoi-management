@@ -53,6 +53,15 @@ export function laDbTest(url) {
     return false;
   }
 }
+/** `host:port` của một URL (cổng mặc định 5432); không phân tích được ⇒ null. */
+export function hostPort(url) {
+  try {
+    const u = new URL(url);
+    return `${u.hostname.toLowerCase()}:${u.port || "5432"}`;
+  } catch {
+    return null;
+  }
+}
 /** Cùng luật cho kết quả `current_database()`. */
 export function tenDbLaTest(ten) {
   return typeof ten === "string" && /_test$/.test(ten);
@@ -113,8 +122,9 @@ async function cacBuocXoa(tx, muc) {
       for (const r of treo) await tx`SELECT public.edge_stop_resolve(${r.id}, ${ad.id}, 'R1b-2a T14 don _test')`;
       them("robot_motion_lock_requests (giải quyết STOP)", treo.length, `edge_stop_resolve bởi admin ${ad.id} (UPDATE, không tính vào tổng xoá)`, true);
     }
+    // Xoá TẤT CẢ hàng yêu cầu (mọi kind) của adapter / node đích — không chỉ STOP; STOP đã qua hai cửa trên (đã ack, đã giải quyết).
     const r1 = await tx`DELETE FROM robot_motion_lock_requests q WHERE ${dich()}`;
-    them("robot_motion_lock_requests", r1.count, "STOP đã ack / đã giải quyết");
+    them("robot_motion_lock_requests", r1.count, "mọi hàng yêu cầu của adapter/node đích (STOP đã ack + đã giải quyết)");
   }
   if (A.length) {
     them("scada_kenh_che_do", (await tx`DELETE FROM scada_kenh_che_do WHERE adapter_id IN ${tx(A)}`).count, "cascade 0433, xoá tường minh");
@@ -195,6 +205,14 @@ export async function chay(o = {}) {
   // Lớp 1: URL của KẾT NỐI GHI (asOwner có thể bị MIGRATION_DB_URL đè) — trước khi mở kết nối
   if (!laDbTest(urlOwner)) {
     err(`${TAG} URL owner tro vao CSDL "${new URL(urlOwner).pathname.replace(/^\//, "")}" khong ket thuc _test — tu choi, khong mo ket noi.`);
+    return 2;
+  }
+
+  // Ghim máy chủ: host:port của URL ghi PHẢI bằng host:port của DATABASE_URL (.env) — CSDL cục bộ. Một MIGRATION_DB_URL trỏ máy khác
+  // có tên `*_test` sẽ qua cả hai lớp tên; chốt này chặn trước khi mở kết nối.
+  const hostChuan = hostPort(process.env.DATABASE_URL);
+  if (!hostChuan || hostPort(urlOwner) !== hostChuan) {
+    err(`${TAG} may chu cua URL owner (${hostPort(urlOwner)}) khac may chu DATABASE_URL (${hostChuan ?? "chua dat"}) — tu choi, khong mo ket noi.`);
     return 2;
   }
 
