@@ -279,7 +279,7 @@ describe("lô W11 — cảnh báo dự đoán · luật cảnh báo MQTT · FCM 
     expect({ l, b: await st(ib), a: await st(ia) }).toEqual({ l: Array(6).fill(NF), b: "ACTIVE", a: "ACKNOWLEDGED" });
   });
   it("mqttAlert: người thiếu quyền machine_alerts ⇒ FORBIDDEN (create / update / delete / toggle / resolve), luật còn nguyên; người có quyền ⇒ được", async () => {
-    const [r] = await dung(sql`INSERT INTO mqtt_alert_rules (name, "ruleType", "thresholdValue") VALUES (${RUN + "-rule"}, 'LATENCY_THRESHOLD', 5) RETURNING id`);
+    const [r] = await dung(sql`INSERT INTO mqtt_alert_rules (name, "ruleType", "thresholdValue", "factoryId") VALUES (${RUN + "-rule"}, 'LATENCY_THRESHOLD', 5, ${A.fid}) RETURNING id`);
     const [h] = await dung(sql`INSERT INTO mqtt_alert_history ("ruleId", "ruleName", "ruleType", "triggeredValue", "thresholdValue", message) VALUES (${r.id}, ${RUN + "-rule"}, 'LATENCY_THRESHOLD', 9, 5, 'm') RETURNING id`);
     const id = Number(r.id);
     const l = [
