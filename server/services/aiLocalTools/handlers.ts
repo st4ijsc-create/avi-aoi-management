@@ -75,6 +75,7 @@ import {
 } from "../../../drizzle/schema";
 import { registerTool, type Tool, type ToolPermission, type ToolResult } from "./toolRegistry";
 import { authCtxParam, giaiPhamViNhaMay, ketQuaPhamViRong, rbacGate } from "./readToolRbac";
+import { congLenhTool, giaiPhamViMay, mayCot } from "./phamViDoc";
 
 // -------- helpers --------
 
@@ -166,6 +167,11 @@ const getTodayStats: Tool<z.infer<typeof todayStatsParams>, TodayStatsData> = {
         total: 0, ok: 0, ng: 0, ntf: 0, ngRate: 0, byMachine: [],
       });
     }
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") {
+      return ketQuaPhamViRong<TodayStatsData>("today_stats", "Sản lượng hôm nay", { date: fmtDateISO(new Date()), total: 0, ok: 0, ng: 0, ntf: 0, ngRate: 0, byMachine: [] });
+    }
+    const congMay = mayCot(pv, productInspections.machineId);
 
     const since = startOfTodayLocal();
 
@@ -177,7 +183,7 @@ const getTodayStats: Tool<z.infer<typeof todayStatsParams>, TodayStatsData> = {
         ntf: sql<number>`count(*) filter (where ${productInspections.overallResult} = 'NTF')::int`,
       })
       .from(productInspections)
-      .where(gte(productInspections.inspectionTime, since));
+      .where(and(gte(productInspections.inspectionTime, since), congMay));
 
     const t = totalsRow[0] ?? { total: 0, ok: 0, ng: 0, ntf: 0 };
 
@@ -190,7 +196,7 @@ const getTodayStats: Tool<z.infer<typeof todayStatsParams>, TodayStatsData> = {
       })
       .from(productInspections)
       .leftJoin(machines, eq(machines.id, productInspections.machineId))
-      .where(gte(productInspections.inspectionTime, since))
+      .where(and(gte(productInspections.inspectionTime, since), congMay))
       .groupBy(productInspections.machineId, machines.name)
       .orderBy(desc(sql`count(*) filter (where ${productInspections.overallResult} = 'NG')`))
       .limit(5);
@@ -269,10 +275,13 @@ const getLotStatus: Tool<z.infer<typeof lotStatusParams>, LotStatusData | null> 
       return noDbResult<LotStatusData | null>("lot_status", `Lệnh ${orderCode}`, null);
     }
 
+    // phạm vi người dùng (L8 2026-10-25): lệnh theo chuyền trong phạm vi (cùng luật tRPC L5); lệnh ngoài phạm vi ≡ không tồn tại
+    const congLenh = await congLenhTool(__authCtx);
+
     const rows = await db
       .select()
       .from(productionOrders)
-      .where(eq(productionOrders.orderCode, orderCode))
+      .where(and(eq(productionOrders.orderCode, orderCode), congLenh))
       .limit(1);
 
     if (rows.length === 0) {
@@ -284,7 +293,7 @@ const getLotStatus: Tool<z.infer<typeof lotStatusParams>, LotStatusData | null> 
           const sug = await db
             .select({ orderCode: productionOrders.orderCode })
             .from(productionOrders)
-            .where(ilike(productionOrders.orderCode, `${head}%`))
+            .where(and(ilike(productionOrders.orderCode, `${head}%`), congLenh))
             .orderBy(desc(productionOrders.createdAt))
             .limit(3);
           suggestions = sug.map((s) => s.orderCode);
@@ -368,6 +377,9 @@ const getMachineStatus: Tool<z.infer<typeof machineStatusParams>, MachineStatusI
       return noDbResult<MachineStatusItem[]>("machine_status", "Trạng thái máy", []);
     }
 
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<MachineStatusItem[]>("machine_status", "Trạng thái máy", []);
+
     const rows = await db
       .select({
         id: machines.id,
@@ -379,7 +391,7 @@ const getMachineStatus: Tool<z.infer<typeof machineStatusParams>, MachineStatusI
         isActive: machines.isActive,
       })
       .from(machines)
-      .where(eq(machines.isActive, true))
+      .where(and(eq(machines.isActive, true), mayCot(pv, machines.id)))
       .orderBy(machines.code);
 
     const now = Date.now();
@@ -449,6 +461,9 @@ const getDefectTrend: Tool<z.infer<typeof defectTrendParams>, DefectTrendData> =
       return noDbResult<DefectTrendData>("defect_trend", `Xu hướng NG ${days} ngày`, { days, series: [] });
     }
 
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<DefectTrendData>("defect_trend", `Xu hướng NG ${days} ngày`, { days, series: [] });
+
     const start = startOfDay(new Date());
     start.setDate(start.getDate() - (days - 1));
 
@@ -459,7 +474,7 @@ const getDefectTrend: Tool<z.infer<typeof defectTrendParams>, DefectTrendData> =
         ng: sql<number>`count(*) filter (where ${productInspections.overallResult} = 'NG')::int`,
       })
       .from(productInspections)
-      .where(gte(productInspections.inspectionTime, start))
+      .where(and(gte(productInspections.inspectionTime, start), mayCot(pv, productInspections.machineId)))
       .groupBy(sql`date_trunc('day', ${productInspections.inspectionTime})`)
       .orderBy(sql`date_trunc('day', ${productInspections.inspectionTime})`);
 
@@ -541,6 +556,9 @@ const getTopDefects: Tool<z.infer<typeof topDefectsParams>, TopDefectItem[]> = {
       return noDbResult<TopDefectItem[]>("top_defects", "Top lỗi", []);
     }
 
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<TopDefectItem[]>("top_defects", "Top lỗi", []);
+
     const start = startOfDay(new Date());
     start.setDate(start.getDate() - (days - 1));
 
@@ -554,7 +572,7 @@ const getTopDefects: Tool<z.infer<typeof topDefectsParams>, TopDefectItem[]> = {
       .from(measurementResults)
       .innerJoin(productInspections, eq(productInspections.id, measurementResults.inspectionId))
       .innerJoin(measurementPointDefs, eq(measurementPointDefs.id, measurementResults.pointDefId))
-      .where(gte(productInspections.inspectionTime, start))
+      .where(and(gte(productInspections.inspectionTime, start), mayCot(pv, productInspections.machineId)))
       .groupBy(measurementPointDefs.code, measurementPointDefs.name)
       .having(sql`count(*) filter (where ${measurementResults.result} = 'NG') > 0`)
       .orderBy(desc(sql`count(*) filter (where ${measurementResults.result} = 'NG')`))
@@ -892,12 +910,15 @@ const getOee: Tool<z.infer<typeof oeeParams>, OeeItem[]> = {
     const db = await getDb();
     if (!db) return noDbResult<OeeItem[]>("oee", "OEE", []);
 
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<OeeItem[]>("oee", "OEE", []);
+
     const start = startOfDay(new Date());
     start.setDate(start.getDate() - (days - 1));
 
     const where = machineCode
-      ? and(gte(oeeMetrics.timestamp, start), eq(oeeMetrics.machineCode, machineCode))
-      : gte(oeeMetrics.timestamp, start);
+      ? and(gte(oeeMetrics.timestamp, start), eq(oeeMetrics.machineCode, machineCode), mayCot(pv, oeeMetrics.machineId))
+      : and(gte(oeeMetrics.timestamp, start), mayCot(pv, oeeMetrics.machineId));
 
     const rows = await db
       .select({
@@ -1001,6 +1022,9 @@ const getModelMetrics: Tool<z.infer<typeof modelMetricsParams>, ModelMetricItem[
     const db = await getDb();
     if (!db) return noDbResult<ModelMetricItem[]>("model_metrics", "Top model NG", []);
 
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<ModelMetricItem[]>("model_metrics", "Top model NG", []);
+
     const start = startOfDay(new Date());
     start.setDate(start.getDate() - (days - 1));
 
@@ -1014,7 +1038,7 @@ const getModelMetrics: Tool<z.infer<typeof modelMetricsParams>, ModelMetricItem[
       })
       .from(productInspections)
       .leftJoin(productModels, eq(productModels.id, productInspections.productModelId))
-      .where(gte(productInspections.inspectionTime, start))
+      .where(and(gte(productInspections.inspectionTime, start), mayCot(pv, productInspections.machineId)))
       .groupBy(productInspections.productModelId, productModels.code, productModels.name)
       .having(sql`count(*) filter (where ${productInspections.overallResult} = 'NG') > 0`)
       .orderBy(desc(sql`count(*) filter (where ${productInspections.overallResult} = 'NG')::float / nullif(count(*),0)`))

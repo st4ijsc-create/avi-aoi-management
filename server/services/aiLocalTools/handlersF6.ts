@@ -47,7 +47,8 @@ import {
 } from "../../db/lineBalance";
 import { analyzeTimeSeries, type TimeSeriesPoint } from "../aiTimeSeriesEngine";
 import { registerTool, type Tool, type ToolPermission, type ToolResult } from "./toolRegistry";
-import { authCtxParam, rbacGate } from "./readToolRbac";
+import { authCtxParam, ketQuaPhamViRong, rbacGate } from "./readToolRbac";
+import { giaiPhamViDong, giaiPhamViMay, dongThay, machineIdsParam, mayCot, mayThay, type PhamViMay } from "./phamViDoc";
 
 // ── shared helpers ──────────────────────────────────────────────────────────
 
@@ -100,6 +101,7 @@ function notFoundMachine<T>(type: ToolResult["type"], machineCode: string, fallb
 async function resolveMachine(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   machineCode: string,
+  pv: PhamViMay, // phạm vi người dùng (L8 2026-10-25): máy ngoài phạm vi ≡ không tìm thấy
 ): Promise<{ id: number; machineType: string | null } | null> {
   const rows = await db
     .select({ id: machines.id, machineType: machines.machineType })
@@ -107,7 +109,7 @@ async function resolveMachine(
     .where(eq(machines.code, machineCode))
     .limit(1);
   const r = rows[0];
-  return r ? { id: r.id, machineType: r.machineType == null ? null : String(r.machineType) } : null;
+  return r && mayThay(pv, r.id) ? { id: r.id, machineType: r.machineType == null ? null : String(r.machineType) } : null;
 }
 
 // ── 1. get_machine_process_result ────────────────────────────────────────────
@@ -161,11 +163,13 @@ const getMachineProcessResult: Tool<z.infer<typeof processResultParams>, Process
 
     const db = await getDb();
     if (!db) return noDbResult<ProcessResultData>("process_result", "Kết quả công đoạn", empty);
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<ProcessResultData>("process_result", "Kết quả công đoạn", empty);
 
     const since = sinceDays(days);
     let machineId: number | undefined;
     if (machineCode) {
-      const m = await resolveMachine(db, machineCode);
+      const m = await resolveMachine(db, machineCode, pv);
       if (!m) return notFoundMachine<ProcessResultData>("process_result", machineCode, empty);
       machineId = m.id;
     }
@@ -176,6 +180,8 @@ const getMachineProcessResult: Tool<z.infer<typeof processResultParams>, Process
     } else {
       // serial/step-only path — direct query (no machine resolution needed).
       const conds = [gte(processResults.measuredAt, since)];
+      const congMay = mayCot(pv, processResults.machineId);
+      if (congMay) conds.push(congMay);
       if (serialNumber) conds.push(eq(processResults.serialNumber, serialNumber));
       if (stepType) conds.push(eq(processResults.stepType, stepType));
       rows = (await db
@@ -186,7 +192,7 @@ const getMachineProcessResult: Tool<z.infer<typeof processResultParams>, Process
         .limit(limit)) as ProcessResultRow[];
     }
 
-    const stats = await aggregateProcessResultStats({ machineId, serialNumber, stepType, since });
+    const stats = await aggregateProcessResultStats({ machineIds: machineIdsParam(pv), machineId, serialNumber, stepType, since });
     const totalEval = stats.pass + stats.fail + stats.warn;
     const failRate = pct(stats.fail, totalEval);
 
@@ -274,11 +280,13 @@ const getProcessMetricTrend: Tool<z.infer<typeof metricTrendParams>, MetricTrend
 
     const db = await getDb();
     if (!db) return noDbResult<MetricTrendData>("process_metric_trend", `Xu hướng ${metricKey}`, empty);
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<MetricTrendData>("process_metric_trend", `Xu hướng ${metricKey}`, empty);
 
     const since = sinceDays(days);
     let machineId: number | undefined;
     if (machineCode) {
-      const m = await resolveMachine(db, machineCode);
+      const m = await resolveMachine(db, machineCode, pv);
       if (!m) return notFoundMachine<MetricTrendData>("process_metric_trend", machineCode, empty);
       machineId = m.id;
     }
@@ -296,7 +304,7 @@ const getProcessMetricTrend: Tool<z.infer<typeof metricTrendParams>, MetricTrend
       }
       series = await getTelemetrySeries({ machineId, tagKey, since });
     } else {
-      const pts = await getProcessMetricSeries({ machineId, stepType, metricKey, since, bucket });
+      const pts = await getProcessMetricSeries({ machineIds: machineIdsParam(pv), machineId, stepType, metricKey, since, bucket });
       series = pts.map((p) => ({ ts: p.ts, value: p.value }));
     }
 
@@ -388,11 +396,13 @@ const getLineBalance: Tool<z.infer<typeof lineBalanceParams>, LineBalanceData | 
 
     const db = await getDb();
     if (!db) return noDbResult<LineBalanceData | null>("line_balance", "Cân bằng chuyền", null);
+    const pvDong = await giaiPhamViDong(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pvDong.kind === "empty") return ketQuaPhamViRong<LineBalanceData | null>("line_balance", "Cân bằng chuyền", null);
 
     let resolvedLineId = lineId;
     if (resolvedLineId == null && lineCode) {
       const id = await resolveLineIdByCode(lineCode);
-      if (id == null) {
+      if (id == null || !dongThay(pvDong, id)) {
         return {
           type: "line_balance",
           title: `Chuyền ${lineCode}`,
@@ -405,6 +415,16 @@ const getLineBalance: Tool<z.infer<typeof lineBalanceParams>, LineBalanceData | 
     }
     if (resolvedLineId == null) {
       return noDbResult<LineBalanceData | null>("line_balance", "Cân bằng chuyền", null);
+    }
+    if (!dongThay(pvDong, resolvedLineId)) {
+      // chuyền ngoài phạm vi ≡ không tồn tại
+      return {
+        type: "line_balance",
+        title: `Chuyền #${resolvedLineId}`,
+        data: null,
+        textSummary: `Không tìm thấy chuyền #${resolvedLineId}.`,
+        note: "NOT_FOUND",
+      };
     }
 
     const latest = await getLatestLineBalance(resolvedLineId);
@@ -488,11 +508,13 @@ const getPackagingThroughput: Tool<z.infer<typeof throughputParams>, ThroughputD
 
     const db = await getDb();
     if (!db) return noDbResult<ThroughputData>("throughput", "Sản lượng đóng gói", empty);
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<ThroughputData>("throughput", "Sản lượng đóng gói", empty);
 
     const since = sinceDays(days);
     let machineId: number | undefined;
     if (machineCode) {
-      const m = await resolveMachine(db, machineCode);
+      const m = await resolveMachine(db, machineCode, pv);
       if (!m) return notFoundMachine<ThroughputData>("throughput", machineCode, empty);
       machineId = m.id;
     }
@@ -504,6 +526,8 @@ const getPackagingThroughput: Tool<z.infer<typeof throughputParams>, ThroughputD
     ];
     if (machineId != null) conds.push(eq(processResults.machineId, machineId));
     if (lineCode) conds.push(eq(processResults.lineCode, lineCode));
+    const congMayTp = mayCot(pv, processResults.machineId);
+    if (congMayTp) conds.push(congMayTp);
 
     const rows = await db
       .select({
@@ -571,6 +595,8 @@ const getPalletizerStatus: Tool<z.infer<typeof palletizerParams>, PalletizerData
 
     const db = await getDb();
     if (!db) return noDbResult<PalletizerData | null>("palletizer_status", "Trạng thái palletizer", null);
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<PalletizerData | null>("palletizer_status", "Trạng thái palletizer", null);
 
     let machineRow: { id: number; code: string; operationStatus: string | null; lastHeartbeat: Date | null } | null = null;
     if (machineCode) {
@@ -584,7 +610,7 @@ const getPalletizerStatus: Tool<z.infer<typeof palletizerParams>, PalletizerData
         .from(machines)
         .where(eq(machines.code, machineCode))
         .limit(1);
-      if (!rows[0]) return notFoundMachine<PalletizerData | null>("palletizer_status", machineCode, null);
+      if (!rows[0] || !mayThay(pv, rows[0].id)) return notFoundMachine<PalletizerData | null>("palletizer_status", machineCode, null);
       machineRow = {
         id: rows[0].id,
         code: rows[0].code,
@@ -600,7 +626,7 @@ const getPalletizerStatus: Tool<z.infer<typeof palletizerParams>, PalletizerData
           lastHeartbeat: machines.lastHeartbeat,
         })
         .from(machines)
-        .where(eq(machines.machineType, "PALLETIZER"))
+        .where(and(eq(machines.machineType, "PALLETIZER"), mayCot(pv, machines.id)))
         .limit(1);
       if (rows[0]) {
         machineRow = {
@@ -697,7 +723,9 @@ const getOtTelemetryLatest: Tool<z.infer<typeof otTelemetryParams>, OtTelemetryD
       return { type: "ot_telemetry", title: "Telemetry OT", data: empty, textSummary: "Cần machineCode.", note: "MISSING_ARGS" };
     }
 
-    const m = await resolveMachine(db, machineCode);
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<OtTelemetryData>("ot_telemetry", "Telemetry OT", empty);
+    const m = await resolveMachine(db, machineCode, pv);
     if (!m) return notFoundMachine<OtTelemetryData>("ot_telemetry", machineCode, empty);
 
     const telemetry = await getLatestTelemetry({ machineId: m.id, tagKey, limit });
