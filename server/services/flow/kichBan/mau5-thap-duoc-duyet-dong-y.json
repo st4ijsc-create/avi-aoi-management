@@ -1,0 +1,17 @@
+{
+  "ten": "mau5 tin cay thap duoc nguoi duyet dong y",
+  "mau": "phieu-bao-tri-phan-loai.json",
+  "thayNut": {
+    "su-kien": { "type": "kich-hoat.thu-cong", "parameters": {} },
+    "tao-phieu": { "type": "du-lieu.dat", "parameters": { "truong": { "kenh": "tao-phieu" } } },
+    "tao-phieu-duyet": { "type": "du-lieu.dat", "parameters": { "truong": { "kenh": "tao-phieu-sau-duyet" } } }
+  },
+  "items": [{ "json": { "lyDo": "Rung nhẹ khó tả", "idMay": 1 } }],
+  "ai": [{ "khop": "rung nhẹ", "tra": "co-khi", "tinCay": 0.55 }],
+  "duyet": [{ "nodeId": "duyet", "cong": "dong-y", "them": { "duyet": { "dongY": true, "nguoi": 1, "lyDo": null } } }],
+  "kyVong": {
+    "trangThai": "xong",
+    "khongChay": ["tao-phieu"],
+    "buoc": { "tao-phieu-duyet": { "trangThai": "xong", "dauVao": { "main": [{ "json": { "lyDo": "Rung nhẹ khó tả", "duyet": { "dongY": true } } }] } } }
+  }
+}
