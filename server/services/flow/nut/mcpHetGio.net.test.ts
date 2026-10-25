@@ -97,12 +97,12 @@ describe("hạn giờ trên mạng thật", () => {
     expect(ms).toBeLessThan(40_000);
   }, 90_000);
 
-  it("★ hạn TỔNG rút ngắn lời gọi: tổng 3 s + thả giọt ⇒ MCP_HET_GIO sau ≈ 3 s (không phải 30 s)", async () => {
+  it("★ hạn TỔNG rút ngắn lời gọi: tổng 3 s + thả giọt ⇒ MCP_HET_GIO_TONG sau ≈ 3 s (G4: hạn tổng là yếu tố cắt) (không phải 30 s)", async () => {
     dat();
     process.env.AI_FLOW_MCP_TONG_MS = "3000";
     modo = "drip";
     const t = Date.now();
-    await expect(chay()).rejects.toMatchObject({ ma: "MCP_HET_GIO" });
+    await expect(chay()).rejects.toMatchObject({ ma: "MCP_HET_GIO_TONG" });
     const ms = Date.now() - t;
     expect(ms).toBeLessThan(8_000);
   });
