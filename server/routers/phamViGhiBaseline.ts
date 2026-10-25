@@ -59,15 +59,11 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/edgeRuntimeRouter.ts (1) ──
   // ── server/routers/energyRouter.ts (2) ──
   // ── server/routers/erpAdminRouter.ts (5) ──
-  // ── server/routers/feederVerifyRouter.ts (1) ──
-  "server/routers/feederVerifyRouter.ts#feederVerifyRouter.verifyScan",
   // ── server/routers/fieldRouter.ts (2) ──
   // ── server/routers/fleetRouter.ts (1) ──
   // ── server/routers/hierarchyRouters.ts (3) ──
   // ── server/routers/hotFolderRouter.ts (4) ──
   // ── server/routers/inspectionProgramRouter.ts (5) ──
-  // ── server/routers/inspectionVariantRouter.ts (1) ──
-  "server/routers/inspectionVariantRouter.ts#inspectionVariantRouter.setVariant",
   // ── server/routers/layoutRouters.ts (6) ──
   // ── server/routers/licenseRouter.ts (2) ──
   // ── server/routers/machineApiRouters.ts (2) ──
@@ -83,8 +79,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/notificationRouters.ts (2) ──
   // ── server/routers/operatorBadgeRouter.ts (2) ──
   // ── server/routers/parameterGuardrailRouter.ts (2) ──
-  // ── server/routers/pdfReportRouter.ts (1) ──
-  "server/routers/pdfReportRouter.ts#pdfReportRouter.generateInspectionPDF",
   // ── server/routers/processResultRouter.ts (1) ──
   // ── server/routers/processRouter.ts (7) ──
   // ── server/routers/productOnboardingRouter.ts (3) ──

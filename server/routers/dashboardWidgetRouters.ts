@@ -62,8 +62,8 @@ export const dashboardWidgetRouter = router({
   // Get template by ID
   getSharedTemplateById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getDashboardTemplateById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getDashboardTemplateById(input.id, { userId: ctx.user.id, role: ctx.user.role }); // phạm vi người dùng (L6t 2026-10-25)
     }),
 
   // Create shared template (admin only)

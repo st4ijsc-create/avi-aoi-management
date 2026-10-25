@@ -12,6 +12,7 @@
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+import { ghiDoiTuong } from "./_viTriPhamVi";
 import {
   verifyScan,
   listForSetup,
@@ -34,6 +35,8 @@ export const feederVerifyRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      // phạm vi người dùng (L6w 2026-10-25): GHI một lượt xác minh feeder — máy / chuyền / sản phẩm khai kèm phải trong phạm vi (kết quả xác minh là đầu vào của cổng chạy máy ⇒ không được ghi cho máy nhà máy khác). Chỉ ghi bản ghi, không điều khiển thiết bị.
+      await ghiDoiTuong(ctx, { machineId: input.machineId, lineId: input.lineId, productModelId: input.productModelId }, { batBuoc: true });
       return verifyScan({ ...input, verifiedBy: ctx.user?.id ?? null });
     }),
 
