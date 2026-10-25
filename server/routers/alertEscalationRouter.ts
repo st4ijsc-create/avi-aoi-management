@@ -18,8 +18,9 @@ import { appError } from "../_core/appError";
 import { protectedProcedure, supervisorProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { alertEscalationRules, mqttConnectionAlerts, mqttAlertHistory, users } from "../../drizzle/schema";
-import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { idsNhaMayCuaNguoiGoi, quyTacLeoThangGhi, quyTacLeoThangMoiGhi } from "./_cauHinhPhamVi";
+import { NHA_MAY_CUA_CANH_BAO_KET_NOI } from "../services/mqttConnAlertFactory";
 
 async function requireDb() {
   const db = await getDb();
@@ -147,9 +148,13 @@ export const alertEscalationRouter = router({
    */
   recentEscalations: protectedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(200).optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await requireDb();
       const limit = input?.limit ?? 50;
+      // W17b — chỉ cảnh báo của nhà máy trong phạm vi người gọi (+ cảnh báo không rõ nhà máy / luật mặc định); toàn quyền: không lọc
+      const ids = await idsNhaMayCuaNguoiGoi(ctx);
+      const dkConn = ids == null ? undefined : ids.length === 0 ? sql`${NHA_MAY_CUA_CANH_BAO_KET_NOI} IS NULL` : sql`(${NHA_MAY_CUA_CANH_BAO_KET_NOI} IS NULL OR ${NHA_MAY_CUA_CANH_BAO_KET_NOI} IN (${sql.join(ids.map((n) => sql`${n}`), sql`, `)}))`;
+      const dkHist = ids == null ? undefined : ids.length === 0 ? isNull(mqttAlertHistory.factoryId) : or(isNull(mqttAlertHistory.factoryId), inArray(mqttAlertHistory.factoryId, ids));
 
       const conn = await db
         .select({
@@ -164,7 +169,7 @@ export const alertEscalationRouter = router({
           isResolved: mqttConnectionAlerts.isResolved,
         })
         .from(mqttConnectionAlerts)
-        .where(isNotNull(mqttConnectionAlerts.escalatedAt))
+        .where(and(isNotNull(mqttConnectionAlerts.escalatedAt), dkConn))
         .orderBy(desc(mqttConnectionAlerts.escalatedAt))
         .limit(limit);
 
@@ -179,7 +184,7 @@ export const alertEscalationRouter = router({
           isResolved: mqttAlertHistory.isResolved,
         })
         .from(mqttAlertHistory)
-        .where(isNotNull(mqttAlertHistory.escalatedAt))
+        .where(and(isNotNull(mqttAlertHistory.escalatedAt), dkHist))
         .orderBy(desc(mqttAlertHistory.escalatedAt))
         .limit(limit);
 

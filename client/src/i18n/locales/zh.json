@@ -3741,6 +3741,7 @@
       "enrollmentToken": "设备注册令牌",
       "ensembleConfig": "集成配置",
       "escalationRule": "升级规则",
+      "mqttAlertRule": "MQTT 告警规则",
       "ethernet-ip": "EtherNet/IP",
       "factory": "工厂",
       "factoryLayout": "工厂布局",

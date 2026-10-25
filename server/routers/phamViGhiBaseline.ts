@@ -122,8 +122,8 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
   "server/routers/hierarchyRouters.ts#machineRouter.claimKey": "đường PUBLIC xác thực bằng token một lần do admin phát (redeemMachineClaimToken / redeemMachineEnrollmentToken), có throttle theo IP + audit mọi lần thử; serialNumber chỉ chọn máy mà token đã gắn — W14b",
   "server/routers/hierarchyRouters.ts#machineRouter.enroll": "đường PUBLIC xác thực bằng token một lần do admin phát (redeemMachineClaimToken / redeemMachineEnrollmentToken), có throttle theo IP + audit mọi lần thử; serialNumber chỉ chọn máy mà token đã gắn — W14b",
   "server/routers/hierarchyRouters.ts#machineRouter.register": "đường máy TỰ ĐĂNG KÝ công khai (throttle IP + hàng chờ duyệt có trần); CÒN LỖ: cập nhật máy đã có theo serial + đặt lại 'pending' không xác thực ⇒ giao W15 (dieu-phoi 2026-10-25), miễn trừ tạm thời tới khi vá",
-  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingCheckin": "đường PUBLIC theo sessionId giấy phép nổi (floating licence) — không dữ liệu nhà máy — W14b",
-  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingHeartbeat": "đường PUBLIC theo sessionId giấy phép nổi (floating licence) — không dữ liệu nhà máy — W14b",
+  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingCheckin": "protectedProcedure — đã đăng nhập; sessionId + licenseKey do License Server kiểm; không đặt được sàn vai vì mọi người tự check-in phiên của mình; không dữ liệu nhà máy — W14b, xác nhận W17d (dieu-phoi 2026-10-25)",
+  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingHeartbeat": "protectedProcedure — đã đăng nhập; sessionId + licenseKey do License Server kiểm; không đặt được sàn vai vì mọi người tự check-in phiên của mình; không dữ liệu nhà máy — W14b, xác nhận W17d (dieu-phoi 2026-10-25)",
   "server/routers/machineApiRouters.ts#machineApiRouter.submitProcessResult": "đường MÁY ingest xác thực bằng khoá máy: máy lấy từ khoá (authenticateMachine); lineCode đối chiếu với chuỗi nhà máy của máy (macTenantChoGhi); stationId tự khai nay phải cùng nhà máy với máy (tramCungNhaMayVoiMay, W14b, test helper phamViGhiDoW14b) — bộ quét không nhận ra phạm vi suy từ máy",
   "server/routers/sessionRouter.ts#sessionRouter.revoke": "thu hồi phiên của CHÍNH người gọi: db.revokeSession(sessionId, ctx.user.id) kiểm sở hữu trong db — W14b",
   "server/routers/userRouters.ts#userRouter.revokeSession": "dữ liệu của CHÍNH người gọi: revokeSession(sessionId, ctx.user.id) kiểm sở hữu; setUiPrefs từ chối khi expectedUserId ≠ ctx.user.id — W14b",
@@ -169,8 +169,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
   "server/routers/alertRouters.ts#alertRouter.delete": "cài đặt cảnh báo SỞ HỮU THEO NGƯỜI DÙNG: chủ hoặc admin (xem alertRouter.update); id của người khác ⇒ FORBIDDEN trước khi ghi",
   "server/routers/alertRouters.ts#alertRouter.acknowledge": "xác nhận bản ghi lịch sử cảnh báo: phân giải về cài đặt cha, chỉ chủ hoặc admin (xem alertRouter.update)",
   "server/routers/alertRouters.ts#alertRouter.test": "gửi thử cảnh báo của CHÍNH người gọi: chủ hoặc admin (xem alertRouter.update); chỉ gửi tới chủ cảnh báo",
-  "server/routers/alertRouters.ts#yieldThresholdRouter.update": "ngưỡng yield là cấu hình TOÀN CỤC (bảng yield_alert_thresholds không có cột nhà máy / máy); giữ bằng write-floor + settings_yield_thresholds.canEdit — cùng quyết định với tool AI set_yield_threshold",
-  "server/routers/alertRouters.ts#yieldThresholdRouter.updateWithHistory": "ngưỡng yield TOÀN CỤC (xem yieldThresholdRouter.update) — write-floor + settings_yield_thresholds.canEdit, có lịch sử thay đổi",
   // ── Phạm vi QUA CỔNG TOOL kiemPhamViGhiTool (aiLocalTools/phamViGhi.ts) — mỗi mục có test DB cấp THỦ TỤC, gỡ cổng ⇒ đỏ (dieu-phoi 2026-10-25) ──
   "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix": "phạm vi qua cổng tool kiemPhamViGhiTool (create_maintenance_workorder … khoá machineId thật) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiRcaCopilot.applyTopFix' (A→được, B→OUT_OF_SCOPE, đột biến 3/3 đỏ) — 2026-10-25. Id phân tích nhà máy khác ≡ id không có thật (cùng NOT_FOUND, có test)",
   "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.applyNgThreshold": "phạm vi qua cổng tool kiemPhamViGhiTool (adjust_ng_threshold, khoá thresholdId → trạm / máy / điểm đo / sản phẩm) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiThresholdAdvisor.applyNgThreshold' (A→được, B→OUT_OF_SCOPE, đột biến đỏ) — 2026-10-25",
@@ -195,12 +193,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
   "server/routers/aiAgentRouter.ts#aiAgentRouter.phanHoi":
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
-  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.imageDefectDescription":
-    "Tính toán / suy luận LLM-VLM thuần trên dữ liệu người dùng đưa vào (machineCode chỉ là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
-  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.similarDefectSearch":
-    "Tính toán / suy luận LLM-VLM thuần trên dữ liệu người dùng đưa vào (machineCode chỉ là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
-  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.quickQualityCheck":
-    "Tính toán / suy luận LLM-VLM thuần trên dữ liệu người dùng đưa vào (machineCode chỉ là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
   "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.score":
     "Chấm điểm bất thường một ảnh do người dùng đưa vào; machineId / productModelId chỉ chọn hồ sơ model, không đọc dữ liệu nhà máy trả về.",
   "server/routers/aiChatRouter.ts#aiChatRouter.updateConversation":
@@ -233,10 +225,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
     "Ghi phản hồi câu trả lời KB của CHÍNH người gọi (recordAnswerFeedback userId = ctx.user.id); không có dữ liệu nhà máy.",
   "server/routers/aiLocalTrainingRouter.ts#aiLocalTrainingRouter.predict":
     "Suy luận model cục bộ trên dữ liệu người dùng đưa vào; không đọc / ghi bảng nhà máy.",
-  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.evaluateRollback":
-    "Quay lui phiên bản MODEL (tài nguyên toàn cục, không cột nhà máy); đòi requirePermission(machine_control, canEdit) + quality gate eval (doc69 W0-2).",
-  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.manualRollback":
-    "Quay lui phiên bản MODEL (tài nguyên toàn cục, không cột nhà máy); đòi requirePermission(machine_control, canEdit) + quality gate eval (doc69 W0-2).",
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.deleteMask":
     "deleteMask: chỉ người tạo mask hoặc admin (row.createdBy !== ctx.user.id && role !== admin ⇒ FORBIDDEN); runSegmentation: suy luận model trên ảnh người dùng đưa vào, không ghi bảng nhà máy.",
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.runSegmentation":
@@ -251,22 +239,10 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
     "Phiên chuyên gia AI khoá theo userId của người gọi (completeAiSpecialistSession(sessionId, userId…)); thủ tục chạy model / ghi phản hồi trên phiên CỦA MÌNH. Đã đọc mã (2026-10-25).",
   "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.submitFeedback":
     "Phiên chuyên gia AI khoá theo userId của người gọi (completeAiSpecialistSession(sessionId, userId…)); thủ tục chạy model / ghi phản hồi trên phiên CỦA MÌNH. Đã đọc mã (2026-10-25).",
-  "server/routers/aiVisionLanguageRouter.ts#aiVisionLanguageRouter.describeDefect":
-    "Suy luận VLM thuần trên dữ liệu người dùng đưa vào (machineCode là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
-  "server/routers/aiVisionLanguageRouter.ts#aiVisionLanguageRouter.generateReport":
-    "Suy luận VLM thuần trên dữ liệu người dùng đưa vào (machineCode là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
   "server/routers/kbStudioRouter.ts#kbStudioRouter.huyEvalMa":
     "KB Studio: tài nguyên toàn cục của vai kbStudioProcedure / kbStudioDeleteProcedure (sàn vai + 2FA); không có dữ liệu nhà máy.",
   "server/routers/kbStudioRouter.ts#kbStudioRouter.startFinetune":
     "KB Studio: tài nguyên toàn cục của vai kbStudioProcedure / kbStudioDeleteProcedure (sàn vai + 2FA); không có dữ liệu nhà máy.",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.update":
-    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.delete":
-    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.toggle":
-    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.resolve":
-    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.generate":
     "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.chat":

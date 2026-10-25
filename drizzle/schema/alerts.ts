@@ -1,5 +1,6 @@
 // Schema domain: Alert tables
-import { pgTable, serial, integer, varchar, decimal, boolean, timestamp, text, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, varchar, decimal, boolean, timestamp, text, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { alertTypeEnum, comparisonOperatorEnum, metricTypeEnum, comparisonOperatorEnum_1 } from "./enums";
 
 export const alertSettings = pgTable("alert_settings", {
@@ -63,9 +64,13 @@ export const yieldAlertThresholds = pgTable("yield_alert_thresholds", {
   notifyOnWarning: boolean("notifyOnWarning").default(true).notNull(),
   notifyOnCritical: boolean("notifyOnCritical").default(true).notNull(),
   description: text("description"),
+  /** W17b (mig 0426) — nhà máy sở hữu ngưỡng; NULL = mặc định toàn tập đoàn. Khoá ghi đè = metricType; mỗi nhà máy tối đa 1 hàng/metric. */
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
+  index("idx_yield_thresholds_factory").on(table.factoryId),
+  uniqueIndex("uq_yield_thresholds_factory_metric").on(table.factoryId, table.metricType).where(sql`${table.factoryId} IS NOT NULL`),
   index("idx_yield_thresholds_type").on(table.metricType),
   index("idx_yield_thresholds_enabled").on(table.isEnabled),
 ]);

@@ -558,7 +558,8 @@ const listThresholds: Tool<z.infer<typeof thresholdsParams>, SpecLimitsData> = {
           enabled: yieldAlertThresholds.isEnabled,
         })
         .from(yieldAlertThresholds)
-        .where(eq(yieldAlertThresholds.isEnabled, true)) // ngưỡng yield: bảng KHÔNG có cột nhà máy trong schema ⇒ danh mục dùng chung (giống alert.thresholds tRPC)
+        // W17b — công cụ đọc của AI chỉ trả ngưỡng MẶC ĐỊNH toàn tập đoàn (factoryId NULL); ngưỡng riêng của nhà máy lộ qua tRPC theo phạm vi người xem, không qua đây
+        .where(and(eq(yieldAlertThresholds.isEnabled, true), isNull(yieldAlertThresholds.factoryId)))
         .orderBy(yieldAlertThresholds.metricType)
         .limit(limit);
       yieldThresholds = ytRows.map((r) => ({
