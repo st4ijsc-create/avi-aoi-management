@@ -227,7 +227,8 @@ export function BangKenh({ rows, canAct, onFaceplate, adapterId }: BangKenhProps
   // ── R1b-2a T7 — chọn kênh cho khai mức hàng loạt: chỉ khi `canAct`, chỉ hàng `kenhGhiDuoc`, tối đa TRAN_HANG_LOAT ──
   const coChon = canAct && adapterId !== undefined;
   const [chon, setChon] = useState<ReadonlySet<number>>(() => new Set());
-  const [moHangLoat, setMoHangLoat] = useState(false);
+  // Polish (review minor 1) — ẢNH CHỤP lô lúc MỞ hộp: danhSach làm mới khi hộp đang mở KHÔNG đổi được thứ sẽ gửi / thứ đang liệt kê.
+  const [lo, setLo] = useState<HangKenh[] | null>(null);
   const ghiDuoc = coChon ? rows.filter(kenhGhiDuoc) : [];
   const hangChon = ghiDuoc.filter((h) => chon.has(h.tagId)); // hàng đã đổi / biến mất sau làm mới tự rơi khỏi lô
   const daTran = hangChon.length >= TRAN_HANG_LOAT;
@@ -246,7 +247,7 @@ export function BangKenh({ rows, canAct, onFaceplate, adapterId }: BangKenhProps
       {coChon && ghiDuoc.length > 0 && (
         <div data-testid="thanh-hang-loat" className="mb-2 flex flex-wrap items-center gap-2 text-sm">
           <span className="text-muted-foreground">{t("scada.kenh.hangLoat.daChon", { n: hangChon.length })}</span>
-          <Button size="sm" disabled={hangChon.length === 0} onClick={() => setMoHangLoat(true)}>
+          <Button size="sm" disabled={hangChon.length === 0} onClick={() => setLo(hangChon)}>
             <Layers className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
             {t("scada.kenh.hangLoat.nut", { n: hangChon.length })}
           </Button>
@@ -255,10 +256,17 @@ export function BangKenh({ rows, canAct, onFaceplate, adapterId }: BangKenhProps
               {t("scada.kenh.hangLoat.boChon")}
             </Button>
           )}
-          {daTran && (
+          {daTran ? (
             <KhoiCanhBao testId="hang-loat-tran" tone="--alarm-medium">
               {t("scada.kenh.hangLoat.tran", { toiDa: TRAN_HANG_LOAT })}
             </KhoiCanhBao>
+          ) : (
+            // Polish (review minor 3) — báo trần TRƯỚC khi chọn: "chọn tất cả" chỉ lấy TRAN_HANG_LOAT kênh đầu
+            ghiDuoc.length > TRAN_HANG_LOAT && (
+              <KhoiCanhBao testId="hang-loat-tran-truoc" tone="--alarm-medium">
+                {t("scada.kenh.hangLoat.tranTruoc", { n: ghiDuoc.length, toiDa: TRAN_HANG_LOAT })}
+              </KhoiCanhBao>
+            )
           )}
         </div>
       )}
@@ -370,8 +378,8 @@ export function BangKenh({ rows, canAct, onFaceplate, adapterId }: BangKenhProps
         </TableBody>
       </Table>
       {sua && <HopSuaKenh key={sua.tagId} hang={sua} onDong={() => setSua(null)} />}
-      {moHangLoat && adapterId !== undefined && hangChon.length > 0 && (
-        <HopKhaiHangLoat adapterId={adapterId} hang={hangChon} onDong={() => setMoHangLoat(false)} onDaKhai={() => setChon(new Set())} />
+      {lo && adapterId !== undefined && (
+        <HopKhaiHangLoat adapterId={adapterId} hang={lo} onDong={() => setLo(null)} onDaKhai={() => setChon(new Set())} />
       )}
     </>
   );

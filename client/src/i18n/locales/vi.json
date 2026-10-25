@@ -23687,6 +23687,7 @@
         "nut": "Khai mức hàng loạt ({{n}})",
         "boChon": "Bỏ chọn",
         "tran": "Đã đạt tối đa {{toiDa}} kênh mỗi lô — khai lô này trước rồi chọn tiếp.",
+        "tranTruoc": "Có {{n}} kênh ghi được, mỗi lô tối đa {{toiDa}} — \"chọn tất cả\" chỉ lấy ngần ấy kênh đầu; khai phần còn lại ở lô sau.",
         "quaTran": "Lô có {{n}} kênh, tối đa {{toiDa}} kênh mỗi lô — bỏ chọn bớt rồi gửi.",
         "tieuDe": "Khai mức tác động cho {{n}} kênh",
         "moTa": "Một lô của một adapter: hoặc mọi kênh cùng được khai, hoặc không kênh nào đổi. Kênh đã đúng mức được giữ nguyên. Một mã xác thực hai lớp cho cả lô.",

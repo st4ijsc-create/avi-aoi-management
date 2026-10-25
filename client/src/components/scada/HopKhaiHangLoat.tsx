@@ -150,7 +150,15 @@ export function HopKhaiHangLoat({
           </KhoiCanhBao>
         )}
         <TruongLyDo id={id("ly-do")} value={lyDo} onChange={setLyDo} />
-        <TruongTotp id={id("totp")} value={maTotp} onChange={setMaTotp} disabled={dangGui} />
+        <TruongTotp
+          id={id("totp")}
+          value={maTotp}
+          onChange={(v) => {
+            setMaTotp(v);
+            if (loi?.kieu === "ma") setLoi(null); // polish (review minor 2): sửa mã ⇒ câu lỗi mã cũ hết hiệu lực
+          }}
+          disabled={dangGui}
+        />
         {loi && (
           <div role="alert">
             <KhoiCanhBao testId={loi.kieu === "ma" ? "hang-loat-loi-ma" : "hang-loat-loi-tag"}>

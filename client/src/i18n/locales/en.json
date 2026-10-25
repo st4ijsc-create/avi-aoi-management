@@ -23713,6 +23713,7 @@
         "nut": "Declare level in bulk ({{n}})",
         "boChon": "Clear selection",
         "tran": "Reached the limit of {{toiDa}} channels per batch — declare this batch first, then select more.",
+        "tranTruoc": "There are {{n}} writable channels, at most {{toiDa}} per batch — \"select all\" takes only that many from the top; declare the rest in a later batch.",
         "quaTran": "The batch has {{n}} channels, at most {{toiDa}} per batch — deselect some, then submit.",
         "tieuDe": "Declare actuation level for {{n}} channels",
         "moTa": "One batch of one adapter: either every channel is declared or none changes. Channels already at the level are kept. One two-factor code covers the whole batch.",
