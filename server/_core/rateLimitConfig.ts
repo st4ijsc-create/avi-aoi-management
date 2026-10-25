@@ -667,6 +667,47 @@ export function createApiLimiter() {
   });
 }
 
+/**
+ * W21b — TRẦN IP THỨ HAI, hẹp: CHỈ cho yêu cầu mang thông tin xác thực CHƯA verify được ở tầng limiter (Bearer KHÔNG có hình JWT, hoặc X-API-Key — khoá API/khoá máy chỉ tra được ở DB).
+ * Lỗ còn lại sau W21: `apiKeyGenerator` khoá các thứ này theo GIÁ TRỊ ⇒ kẻ xoay giá trị rác mỗi yêu cầu được xô 300/phút MỚI mỗi lần. Trần này đếm theo IP (cùng `req.ip` /
+ * cấu hình trust proxy hiện có), rộng (mặc định 3000/phút, `RATE_LIMIT_UNVERIFIED_IP_PER_MINUTE`) để khách API thật sau NAT không bị ảnh hưởng, độc lập với khoá của limiter chung.
+ * KHÔNG áp cho: phiên đã verify (cookie / Bearer JWT — W21), mặt phẳng máy (limiter riêng). Chạm trần ⇒ 429 + log cảnh báo (tối đa 1 dòng/IP/cửa sổ) để biết khách thật có bị ảnh hưởng.
+ */
+const UNVERIFIED_IP_PER_MIN = envInt("RATE_LIMIT_UNVERIFIED_IP_PER_MINUTE", 3000);
+
+/** True ⇔ yêu cầu mang credential chưa verify được ở tầng limiter (và không thuộc mặt phẳng máy). Pure — exported cho test. */
+export function mangCredentialChuaVerify(req: Request): boolean {
+  if (isLegacyOtIngestRequest(req) || isOtIngestRequest(req) || isMachineIngestRequest(req)) return false;
+  const { bearer, xApiKey } = headerCredentials(req);
+  if (bearer) return phanDaKyJwt(bearer) === null; // Bearer JWT: do khoá phiên (W21) xử lý
+  return !!xApiKey;
+}
+
+export function createUnverifiedCredentialIpLimiter() {
+  const daCanhBao = new Map<string, number>();
+  return rateLimit({
+    windowMs: 60 * 1000,
+    max: UNVERIFIED_IP_PER_MIN,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests, please try again later" },
+    keyGenerator: (req: Request) => `uip:${ipKeyGenerator(req.ip ?? "", 56)}`,
+    skip: (req: Request) => !mangCredentialChuaVerify(req),
+    handler: (req: Request, res: Response) => {
+      const ip = ipKeyGenerator(req.ip ?? "", 56);
+      const now = Date.now();
+      if (now - (daCanhBao.get(ip) ?? 0) > 60_000) {
+        daCanhBao.set(ip, now);
+        if (daCanhBao.size > 10_000) daCanhBao.clear();
+        console.warn(`[RateLimit] IP ${ip} chạm trần ${UNVERIFIED_IP_PER_MIN}/phút cho yêu cầu mang credential chưa verify (Bearer không-JWT / X-API-Key) — nếu là khách API thật sau NAT, nâng RATE_LIMIT_UNVERIFIED_IP_PER_MINUTE`);
+      }
+      res.status(429).json({ error: "Too many requests, please try again later" });
+    },
+    passOnStoreError: true,
+    ...storeOption("rl:api-uip:"),
+  });
+}
+
 export function createAuthLimiter() {
   return rateLimit({
     ...AUTH_RATE_LIMIT,
