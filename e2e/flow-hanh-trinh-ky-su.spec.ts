@@ -78,8 +78,17 @@ async function chonNodeThongBao(page: Page): Promise<void> {
   await page.getByTestId(`flow-node-${NODE_TB}`).click();
   await expect(page.getByTestId("node-config")).toContainText("tich-hop.thong-bao");
 }
-async function datNguoiNhan(page: Page, ids: number[]): Promise<void> {
+/** Người nhận bằng FORM (chọn từ danh sách mà máy chủ lọc theo nhà máy luồng). */
+async function chonNguoiNhanBangForm(page: Page, nguoi: { id: number; username: string }, ten: string): Promise<void> {
   await chonNodeThongBao(page);
+  await page.getByTestId("nn-tim").fill(ten);
+  await page.getByTestId(`nn-them-${nguoi.id}`).click();
+  await expect(page.getByTestId(`nn-da-chon-${nguoi.id}`)).toBeVisible();
+}
+/** Ô JSON nâng cao: gõ id tuỳ ý (kể cả người ngoài nhà máy) — máy chủ vẫn kiểm lúc chạy. */
+async function datNguoiNhanBangJson(page: Page, ids: number[]): Promise<void> {
+  await chonNodeThongBao(page);
+  await page.getByTestId("chuyen-json").click();
   const o = page.getByTestId("json-tham-so");
   const tham = JSON.parse(await o.inputValue()) as Record<string, unknown>;
   tham.nguoiNhan = ids;
@@ -89,8 +98,7 @@ async function datNguoiNhan(page: Page, ids: number[]): Promise<void> {
 test("1 — kỹ sư (không admin) đăng nhập: danh sách luồng không chứa luồng toàn-hệ-thống của nhà máy khác", async ({ page }) => {
   await dangNhap(page, fx.mot);
   await page.goto(`${base}/ai-flows`);
-  await expect(page.getByTestId("nut-tao-luong")).toBeVisible({ timeout: 60_000 }); // danh sách rỗng ⇒ không có bảng
-  await expect(page.getByTestId("bang-luong")).toHaveCount(0);
+  await expect(page.getByTestId("nut-tao-luong")).toBeVisible({ timeout: 60_000 }); // (có thể rỗng hoặc chỉ có luồng do spec khác của cùng instance tạo)
   await expect(page.getByTestId(`luong-fse2e-ot`)).toHaveCount(0);
   await expect(page.getByTestId(`luong-fse2e-thu`)).toHaveCount(0);
   await chup(page, "1-danh-sach");
@@ -117,7 +125,7 @@ test("3 — chọn node thông báo, điền người nhận; chạy thử node 
   await page.goto(`${base}/ai-flows/${flowId}`);
   await expect(page.getByTestId("flow-editor")).toBeVisible({ timeout: 60_000 });
   const truoc = await demThongBao();
-  await datNguoiNhan(page, [fx.mot.id]);
+  await chonNguoiNhanBangForm(page, fx.mot, "FS mot");
   await expect(page.getByText("Chưa lưu").first()).toBeVisible();
   await page.getByTestId("chay-thu-items-main").fill('[{"json":{"sanLuong":{"tong":{"tong":3,"ng":1,"tiLeNg":33.33}},"may":{"tong":{"tongSoMay":1}}}}]');
   await page.getByTestId("nut-chay-thu-nut").click();
@@ -197,7 +205,7 @@ test("7 — kỹ sư đổi người nhận sang người chỉ thuộc nhà má
   await dangNhap(page, fx.mot);
   await page.goto(`${base}/ai-flows/${flowId}`);
   await expect(page.getByTestId("flow-editor")).toBeVisible({ timeout: 60_000 });
-  await datNguoiNhan(page, [fx.banB.id]);
+  await datNguoiNhanBangJson(page, [fx.banB.id]);
   await page.getByTestId("nut-luu").click();
   await expect(page.getByText("Chưa lưu")).toHaveCount(0, { timeout: 30_000 });
   const truoc = await demThongBao();
