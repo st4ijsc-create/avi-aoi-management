@@ -593,6 +593,56 @@ export function apiKeyGenerator(req: Request): string {
   return credentialKey(req) ?? ipKeyGenerator(req.ip ?? "", 56);
 }
 
+/**
+ * W21 (kiểm định 2026-10-25) — khoá của limiter /api CHUNG theo PHIÊN CHỈ KHI phiên qua phép kiểm chữ ký.
+ * Lỗ cũ: `apiKeyGenerator` băm GIÁ TRỊ cookie / Bearer chưa kiểm chữ ký ⇒ kẻ vô danh xoay giá trị rác mỗi yêu cầu được MỘT XÔ MỚI (300/phút) mỗi lần ⇒ vượt limiter chung.
+ * Nay: cookie phiên / Bearer có HÌNH JWT (3 đoạn) → `sdk.verifySession` (HS256 jose, stateless, cùng phép kiểm tầng STOP `laStopHmiCoPhienKy`); qua ⇒ khoá theo PHẦN ĐÃ KÝ
+ * (`sha256(header.payload)`, KHÔNG băm cả token: jose chấp nhận biến thể đoạn chữ ký của cùng một vé ⇒ băm cả token vẫn xoay được); không qua ⇒ khoá theo IP.
+ * Không đổi: mặt phẳng máy (OT ingest / machine ingest — limiter riêng), `X-API-Key`, Bearer KHÔNG có hình JWT (khoá API) — vẫn theo `apiKeyGenerator`.
+ */
+export type KiemChuKyPhien = (token: string) => Promise<boolean>;
+const kiemChuKyMacDinh: KiemChuKyPhien = async (token) => {
+  const { sdk } = await import("./sdk");
+  return (await sdk.verifySession(token)) !== null;
+};
+
+/** `header.payload` của một JWT (bỏ đoạn chữ ký); null nếu không có hình `a.b.c`. */
+export function phanDaKyJwt(token: string): string | null {
+  const p = token.split(".");
+  return p.length === 3 && p[0] && p[1] ? `${p[0]}.${p[1]}` : null;
+}
+
+export async function apiKeyGeneratorXacThuc(req: Request, kiem: KiemChuKyPhien = kiemChuKyMacDinh): Promise<string> {
+  const ip = () => ipKeyGenerator(req.ip ?? "", 56);
+  if (isLegacyOtIngestRequest(req) || isOtIngestRequest(req) || isMachineIngestRequest(req)) return apiKeyGenerator(req);
+  const { bearer, xApiKey } = headerCredentials(req);
+  let token: string | null = null;
+  let tienTo = "sess";
+  if (bearer) {
+    if (!phanDaKyJwt(bearer)) return apiKeyGenerator(req); // khoá API (không phải JWT): giữ nguyên
+    token = bearer;
+    tienTo = "bearer";
+  } else if (!xApiKey) {
+    const cookies = req.headers?.cookie;
+    const m = typeof cookies === "string" && cookies.length > 0 ? cookies.match(new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`)) : null;
+    if (m?.[1]) {
+      try {
+        token = decodeURIComponent(m[1]);
+      } catch {
+        return ip(); // %-mã hỏng: không phải một vé
+      }
+    }
+  }
+  if (token === null) return apiKeyGenerator(req);
+  const daKy = phanDaKyJwt(token);
+  try {
+    if (daKy !== null && (await kiem(token))) return `${tienTo}:${hashToken(daKy)}`;
+  } catch {
+    /* phép kiểm lỗi ⇒ coi như không verify được */
+  }
+  return ip();
+}
+
 // ── Limiter factories ────────────────────────────────────────────────────────
 
 export function createApiLimiter() {
@@ -601,7 +651,7 @@ export function createApiLimiter() {
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: "Too many requests, please try again later" },
-    keyGenerator: apiKeyGenerator,
+    keyGenerator: (req: Request) => apiKeyGeneratorXacThuc(req),
     // doc 48 R3: EXEMPT the machine telemetry ingest path from the 300/60 browser
     // tier — it is governed by the dedicated createOtIngestLimiter high tier instead.
     // doc 51 R6: likewise EXEMPT the machine data plane (/api/machine/*, allowlisted
