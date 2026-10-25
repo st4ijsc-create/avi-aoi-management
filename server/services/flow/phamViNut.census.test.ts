@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { danhSachNut } from "./dangKyNut";
 import "./nut/index";
-import { KHOA_PHAM_VI_NUT } from "./phamViNut";
+import { KHOA_PHAM_VI_NUT, THAM_SO_THEO_NHA_MAY } from "./phamViNut";
 
 describe("phamViNut census", () => {
   it("mọi loại node đã đăng ký có dòng; không dòng thừa", () => {
@@ -22,6 +22,14 @@ describe("phamViNut census", () => {
     for (const n of danhSachNut()) {
       const v = KHOA_PHAM_VI_NUT[n.type];
       if ((n.tacDungPhu === "doc" || n.tacDungPhu === "ot") && v?.kieu === "khong") expect(n.type, `${n.type}: hạng ${n.tacDungPhu} phải khai 'loc'`).toMatch(/^tich-hop\.http/);
+    }
+  });
+  it("★ sổ THAM_SO_THEO_NHA_MAY: mọi loại node đã đăng ký có dòng; dòng không mang id phải nêu lý do ≥ 20 ký tự; không dòng thừa", () => {
+    const dk = danhSachNut().map((n) => n.type).sort();
+    expect(Object.keys(THAM_SO_THEO_NHA_MAY).sort()).toEqual(dk);
+    for (const [t, d] of Object.entries(THAM_SO_THEO_NHA_MAY)) {
+      if (d.truong.length === 0) expect((d.lyDo ?? "").length, `${t}: không mang id ⇒ phải nêu lý do`).toBeGreaterThanOrEqual(20);
+      for (const x of d.truong) expect(x.truong.length, t).toBeGreaterThan(0);
     }
   });
 });

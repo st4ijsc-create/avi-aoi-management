@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import { Link, useParams, useSearch } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { NutXuatLuong } from "@/components/aiFlow/XuatNhapLuong";
 import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -278,6 +279,7 @@ export default function AIFlowEditorPage() {
                 {t("flowStudio.sua.bat", { version: version ?? "" })}
               </Button>
             )}
+            <NutXuatLuong flowId={flowId} version={version} disabled={!version} />
             <Button size="sm" variant="outline" data-testid="nut-tu-mo-ta" disabled={!def} onClick={() => { setLoiMoTa(null); setMoMoTa(true); }}>
               <Sparkles className="h-4 w-4 mr-1" />
               {t("flowStudio.moTaLuong.nut")}

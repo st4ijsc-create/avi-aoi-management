@@ -4082,7 +4082,9 @@
       "scadaSelectTag": "select a channel to command",
       "scadaKenhCapNhat": "update the channel declaration",
       "dieuKienDoiTuongTrongPhamVi": "in-scope object condition",
-      "flowNguoiNhan": "find recipients for the flow"
+      "flowNguoiNhan": "find recipients for the flow",
+      "flowXuat": "export an AI flow package",
+      "flowNhap": "import an AI flow from a package"
     },
     "field": {
       "stationId": "station",
@@ -23585,6 +23587,44 @@
       },
       "chuyenJson": "Edit as JSON (advanced)",
       "chuyenForm": "Back to form"
+    },
+    "xuatNhap": {
+      "xuat": "Export",
+      "xuatTieuDe": "Export flow as a package",
+      "xuatMoTa": "The package carries NO secrets, machine ids, recipients, sub-flows, pinned data or flow id. Review the warnings below, then download.",
+      "canhBaoVanBan": "Free text still mentioning the source factory ({{n}})",
+      "khongCanhBao": "No machine code / factory name / person name of the source factory found in the flow's text.",
+      "canhBaoKhongXoa": "Free text is NOT removed automatically (to avoid breaking prompts) — edit by hand if needed. These warnings are not in the package file.",
+      "viecPhaiDien": "Things the importer must fill in ({{n}})",
+      "viecPhaiDienNhap": "To fill in after import ({{n}})",
+      "taiVe": "Download package",
+      "loaiCanhBao": {
+        "ma-may": "machine code",
+        "nha-may": "factory",
+        "nguoi-dung": "user"
+      },
+      "viec": {
+        "may": "pick the machine again",
+        "nguoi-nhan": "pick the recipients again",
+        "luong-con": "pick the sub-flow again (node became a placeholder)",
+        "workflow-ot": "pick the FOE workflow again",
+        "bi-mat": "attach the secret again",
+        "luong-loi": "pick the error flow again",
+        "bat-su-kien": "re-enable event listening (currently OFF)"
+      },
+      "nhap": "Import",
+      "nhapTieuDe": "Import a flow from a package",
+      "nhapMoTa": "Creates a NEW flow (OFF) of yours. The server cleans the package again: no secrets / ids of another factory.",
+      "khongPhaiJson": "The file is not valid JSON.",
+      "khongHopLe": "Flow not valid yet",
+      "xacNhanNhap": "Import flow",
+      "canhBaoGoi": {
+        "bam-thieu": "The package has no hash — cannot tell whether it was edited by hand.",
+        "bam-lech": "Hash does NOT match — the package was modified after export.",
+        "co-du-lieu-ghim": "The package has pinned data — it will be dropped.",
+        "co-bi-mat": "The package references a secret — it will be dropped (attach again later).",
+        "co-id-nha-may": "The package carries machine / recipient / flow ids — they will be cleared (pick again later)."
+      }
     }
   },
   "scada": {

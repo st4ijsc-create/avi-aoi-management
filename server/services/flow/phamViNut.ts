@@ -37,3 +37,55 @@ export const KHOA_PHAM_VI_NUT: Readonly<Record<string, LuatPhamViNut>> = {
   "tich-hop.http-doc": { kieu: "khong", lyDo: "Gọi HTTP tới host trong danh sách trắng AI_FLOW_HTTP_HOST_CHO_PHEP (chặn SSRF, ghim IP); không đọc bảng dữ liệu nhà máy." },
   "tich-hop.http-gui": { kieu: "khong", lyDo: "Gửi HTTP tới host trong danh sách trắng (chặn SSRF, atMostOnce + Idempotency-Key); không đọc bảng dữ liệu nhà máy." },
 };
+
+/**
+ * ★★★ SỔ "THAM SỐ MANG ID THEO NHÀ MÁY" (lô nhập/xuất luồng, 2026-10-25): mỗi loại node đã đăng ký khai những tham số có thể mang ID/chuỗi thuộc MỘT nhà máy
+ * (id máy, người nhận, luồng con, FOE workflow…). Lúc XUẤT (và lúc NHẬP — không tin gói) các tham số này bị đưa về chỗ TRỐNG và ghi vào "việc phải điền"; biểu thức `{{ … }}`
+ * KHÔNG phải ID nên giữ nguyên. Loại node mới mang ID theo nhà máy mà quên khai ⇒ `phamViNut.census.test.ts` ĐỎ (mọi loại đã đăng ký phải có dòng).
+ *   thanh: "chuoi-rong" (→ "") · "mang-rong" (→ []) · "bo" (xoá khoá) · "tat" (→ false) · "luong-con" (mảng đối tượng có flowId → flowId "").
+ *   Cấp NODE (mọi loại): `credentialRef` luôn bị xoá; cấp LUỒNG: id · chủ · nhà máy · `settings.errorFlowId` · `pinData` (dữ liệu ghim thật) luôn bị bỏ.
+ */
+export type CachLamTrong = "chuoi-rong" | "mang-rong" | "bo" | "tat" | "luong-con";
+export interface ThamSoNhaMay {
+  truong: string;
+  thanh: CachLamTrong;
+  /** nhãn việc phải điền (khoá i18n phía giao diện) */
+  viec: "may" | "nguoi-nhan" | "luong-con" | "workflow-ot" | "bat-su-kien";
+}
+export interface DongThamSoNhaMay {
+  truong: ThamSoNhaMay[];
+  /** bắt buộc khi `truong` rỗng (≥ 20 ký tự): vì sao loại node này không mang ID theo nhà máy */
+  lyDo?: string;
+}
+
+const KHONG_ID = (ly: string): DongThamSoNhaMay => ({ truong: [], lyDo: ly });
+const CHI_ITEM = "Tham số là chữ / số / biểu thức của luồng; không mang id máy, người dùng hay luồng khác.";
+
+export const THAM_SO_THEO_NHA_MAY: Readonly<Record<string, DongThamSoNhaMay>> = {
+  "kich-hoat.thu-cong": KHONG_ID(CHI_ITEM),
+  "kich-hoat.lich": KHONG_ID("Chỉ cron + múi giờ; không mang id theo nhà máy."),
+  "kich-hoat.webhook": KHONG_ID("Token webhook nằm ở bảng riêng theo luồng, không trong định nghĩa."),
+  "kich-hoat.mcp": KHONG_ID("Chỉ khai tool (tên, mô tả, tham số kiểu); không mang id theo nhà máy."),
+  "kich-hoat.su-kien": { truong: [{ truong: "bat", thanh: "tat", viec: "bat-su-kien" }] },
+  "logic.neu": KHONG_ID(CHI_ITEM),
+  "logic.gop": KHONG_ID(CHI_ITEM),
+  "du-lieu.dat": KHONG_ID(CHI_ITEM),
+  "du-lieu.ma": KHONG_ID("Mã chạy cách ly trên item đầu vào; không mang id (văn bản tự do được quét cảnh báo lúc xuất)."),
+  "du-lieu.so-lieu": KHONG_ID("Truy vấn trong danh mục có tên; phạm vi lấy từ chủ luồng lúc chạy, không từ tham số."),
+  "ai.llm": KHONG_ID("Prompt / vai trò; không mang id (văn bản tự do được quét cảnh báo lúc xuất)."),
+  "ai.trich-xuat": KHONG_ID("Prompt / schema trích xuất; không mang id."),
+  "ai.phan-loai": KHONG_ID("Danh sách nhãn / hướng dẫn; không mang id."),
+  "ai.tom-tat": KHONG_ID("Yêu cầu tóm tắt; không mang id."),
+  "ai.sinh-ma": KHONG_ID("Mô tả + ngôn ngữ; không mang id."),
+  "ai.tra-tri-thuc": KHONG_ID("Câu hỏi + kho + k; không mang id theo nhà máy."),
+  "ai.agent": { truong: [{ truong: "luongCon", thanh: "luong-con", viec: "luong-con" }] },
+  "nguoi.duyet": KHONG_ID("Chỉ vai trò duyệt (supervisor…), không phải id người dùng."),
+  "luong.goi-con": { truong: [{ truong: "flowId", thanh: "chuoi-rong", viec: "luong-con" }, { truong: "version", thanh: "bo", viec: "luong-con" }] },
+  "tich-hop.http-doc": KHONG_ID("URL + tên trường; bí mật (credentialRef cấp node) luôn bị xoá khi xuất."),
+  "tich-hop.http-gui": KHONG_ID("URL + thân; bí mật (credentialRef cấp node) luôn bị xoá khi xuất."),
+  "tich-hop.thong-bao": { truong: [{ truong: "nguoiNhan", thanh: "mang-rong", viec: "nguoi-nhan" }] },
+  "bao-tri.tao-phieu": { truong: [{ truong: "may", thanh: "chuoi-rong", viec: "may" }] },
+  "ot.doc-tag": { truong: [{ truong: "may", thanh: "chuoi-rong", viec: "may" }] },
+  "ot.de-xuat-lenh": { truong: [{ truong: "may", thanh: "chuoi-rong", viec: "may" }] },
+  "ot.de-xuat-luong": { truong: [{ truong: "workflowId", thanh: "bo", viec: "workflow-ot" }, { truong: "version", thanh: "bo", viec: "workflow-ot" }] },
+};

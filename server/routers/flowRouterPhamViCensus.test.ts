@@ -13,13 +13,14 @@ import ts from "typescript";
 
 const TEP = resolve(dirname(fileURLToPath(import.meta.url)), "flowRouter.ts");
 const HAM_THEO_ID = ["chanLuong", "chanLuot", "chanBiMat", "luongTrongPhamVi", "luotTrongPhamVi", "biMatTrongPhamVi"];
-const HAM_DANH_SACH = ["nhaMayChoPhep", "nhaMayChoLuongMoi", "boKiemPhamVi"]; // boKiemPhamVi: chayThuNut — không có flowId, kiểm máy theo phạm vi ctx
+const HAM_DANH_SACH = ["nhaMayChoPhep", "nhaMayChoLuongMoi", "boKiemPhamVi", "luuLuongCore"]; // luuLuongCore: thân `luu` tách ra dùng chung với `nhap` — test riêng bên dưới khoá rằng nó VẪN gọi kiểm phạm vi; // boKiemPhamVi: chayThuNut — không có flowId, kiểm máy theo phạm vi ctx
 const TAT_CA = [...HAM_THEO_ID, ...HAM_DANH_SACH];
 
 /** Thủ tục KHÔNG đụng dữ liệu của luồng nào — khai tường minh, kèm lý do. */
 const MIEN_TRU: Record<string, string> = {
   mauLuong: "đọc mẫu luồng TĨNH trong repo (không CSDL, không dữ liệu tenant)",
   danhMucNode: "danh mục loại node (sổ đăng ký trong bộ nhớ) — không dữ liệu của luồng nào",
+  nhapXemTruoc: "phân tích gói do người dùng tải lên (thuần, không CSDL, không dữ liệu luồng nào); việc ghi nằm ở `nhap` ⇒ luuLuongCore",
 };
 
 const boChuThich = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
@@ -73,6 +74,13 @@ describe("census — flow.* đi qua bộ kiểm phạm vi nhà máy của luồn
     const ds = thuTuc(boChuThich(nguon));
     expect(ds.length, "bộ quét không thấy đủ thủ tục").toBeGreaterThanOrEqual(15);
     expect(viPham(nguon)).toEqual([]);
+  });
+
+  it("★ luuLuongCore (thân `luu` dùng chung với `nhap`) VẪN kiểm phạm vi: id luồng đã có ⇒ luongTrongPhamVi; luồng mới ⇒ nhaMayMoi", () => {
+    const k = ham(boChuThich(nguon), "luuLuongCore");
+    expect(k.length).toBeGreaterThan(100);
+    expect(/\bluongTrongPhamVi\s*\(/.test(k)).toBe(true);
+    expect(/\bnhaMayMoi\s*\(/.test(k)).toBe(true);
   });
 
   it("miễn trừ KHÔNG phình: mỗi mục miễn trừ phải là thủ tục có thật, và không có chạm CSDL / flowId / runId", () => {

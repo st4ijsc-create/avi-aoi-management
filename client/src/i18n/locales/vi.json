@@ -4082,7 +4082,9 @@
       "scadaSelectTag": "chọn kênh để ra lệnh",
       "scadaKenhCapNhat": "cập nhật khai báo kênh",
       "dieuKienDoiTuongTrongPhamVi": "điều kiện đối tượng trong phạm vi",
-      "flowNguoiNhan": "tìm người nhận cho luồng"
+      "flowNguoiNhan": "tìm người nhận cho luồng",
+      "flowXuat": "xuất luồng AI ra gói",
+      "flowNhap": "nhập luồng AI từ gói"
     },
     "field": {
       "stationId": "trạm",
@@ -23559,6 +23561,44 @@
       },
       "chuyenJson": "Chỉnh bằng JSON (nâng cao)",
       "chuyenForm": "Về form"
+    },
+    "xuatNhap": {
+      "xuat": "Xuất",
+      "xuatTieuDe": "Xuất luồng ra gói",
+      "xuatMoTa": "Gói KHÔNG mang bí mật, id máy, người nhận, luồng con, dữ liệu ghim hay id luồng. Xem cảnh báo bên dưới rồi tải về.",
+      "canhBaoVanBan": "Chữ tự do còn nhắc nhà máy nguồn ({{n}})",
+      "khongCanhBao": "Không thấy mã máy / tên nhà máy / tên người của nhà máy nguồn trong văn bản của luồng.",
+      "canhBaoKhongXoa": "Chữ tự do KHÔNG bị tự xoá (tránh làm hỏng prompt) — hãy sửa tay nếu cần. Cảnh báo này không nằm trong tệp gói.",
+      "viecPhaiDien": "Việc người nhập phải điền ({{n}})",
+      "viecPhaiDienNhap": "Việc phải điền sau khi nhập ({{n}})",
+      "taiVe": "Tải gói về",
+      "loaiCanhBao": {
+        "ma-may": "mã máy",
+        "nha-may": "nhà máy",
+        "nguoi-dung": "người dùng"
+      },
+      "viec": {
+        "may": "chọn lại máy",
+        "nguoi-nhan": "chọn lại người nhận",
+        "luong-con": "chọn lại luồng con (node đã thành giữ chỗ)",
+        "workflow-ot": "chọn lại FOE workflow",
+        "bi-mat": "gắn lại bí mật",
+        "luong-loi": "chọn lại luồng xử lý lỗi",
+        "bat-su-kien": "bật lại nghe sự kiện (đang TẮT)"
+      },
+      "nhap": "Nhập",
+      "nhapTieuDe": "Nhập luồng từ gói",
+      "nhapMoTa": "Tạo luồng MỚI (đang TẮT) của bạn. Gói được làm sạch lại ở máy chủ: không mang bí mật / id nhà máy khác.",
+      "khongPhaiJson": "Tệp không phải JSON hợp lệ.",
+      "khongHopLe": "Luồng chưa hợp lệ",
+      "xacNhanNhap": "Nhập luồng",
+      "canhBaoGoi": {
+        "bam-thieu": "Gói không có mã băm — không kiểm được có bị sửa tay hay không.",
+        "bam-lech": "Mã băm KHÔNG khớp — nội dung gói đã bị sửa sau khi xuất.",
+        "co-du-lieu-ghim": "Gói có dữ liệu ghim — sẽ bị bỏ.",
+        "co-bi-mat": "Gói có tham chiếu bí mật — sẽ bị bỏ (gắn lại sau).",
+        "co-id-nha-may": "Gói mang id máy / người nhận / luồng khác — sẽ bị xoá (chọn lại sau)."
+      }
     }
   },
   "scada": {
