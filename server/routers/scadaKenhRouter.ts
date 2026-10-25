@@ -582,7 +582,15 @@ export const scadaKenhRouter = router({
           const adapter = (await khoaAdapterTx(tx, [input.adapterId])).get(input.adapterId);
           kiemPhamViDuoiKhoa(adapter?.machineId, idsMay, khongThayAdapter);
           const luat = await khoaLuatNhamAdapterTx(tx, input.adapterId);
-          const tags = await tx.select().from(deviceTags).where(inArray(deviceTags.id, ids)).orderBy(deviceTags.id).for("update");
+          // T6 polish (review m-2) — lọc adapter NGAY trong WHERE: hàng của adapter / nhà máy khác bị lọc trước LockRows ⇒ không bao giờ bị khoá
+          // (không giữ hàng ngoài quyền, không khoá tag thiếu bậc ADAPTER → LUẬT của nó, không chờ hàng người khác giữ = không lộ qua thời gian).
+          // Postgres kiểm lại vị từ sau mọi lượt chờ khoá ⇒ tag vừa bị chuyển đi rơi khỏi kết quả ⇒ đếm thiếu ⇒ CÙNG NOT_FOUND deviceTag.
+          const tags = await tx
+            .select()
+            .from(deviceTags)
+            .where(and(inArray(deviceTags.id, ids), eq(deviceTags.adapterId, input.adapterId)))
+            .orderBy(deviceTags.id)
+            .for("update");
           if (tags.length !== ids.length || tags.some((t) => t.adapterId !== input.adapterId)) throw khongThayTag();
 
           // 3. kiểm TỪNG tag (không ghi gì) — lỗi đầu tiên ném, cả giao dịch rollback

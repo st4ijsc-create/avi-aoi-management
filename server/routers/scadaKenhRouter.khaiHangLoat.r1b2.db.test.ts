@@ -48,10 +48,11 @@ let B!: NhaMay;
 const factories: string[] = [];
 const adapters: number[] = [];
 const ruleIds: number[] = [];
-const ad = { a: 0, a2: 0 };
+const ad = { a: 0, a2: 0, b: 0 };
 /** 201 tag int writable của `ad.a`, mức 5, theo id tăng dần. */
 let T: number[] = [];
 let tagA2 = 0;
+let tagB = 0; // tag của adapter nhà máy B (T6 polish m-2)
 
 let engA!: { kenh: KenhCaller; adapter: AdapterCaller; id: number };
 let engB!: KenhCaller;
@@ -174,6 +175,8 @@ beforeAll(async () => {
   ad.a2 = await seedAdapter(A.mid2); // adapter KHÁC trong cùng nhà máy A
   T = await seedTags(ad.a, 201);
   [tagA2] = await seedTags(ad.a2, 1, "x");
+  ad.b = await seedAdapter(B.mid);
+  [tagB] = await seedTags(ad.b, 1, "b");
   engA = await seedNguoi("ea", [A.code]);
   engB = (await seedNguoi("eb", [B.code])).kenh;
   engK = (await seedNguoi("ek", [A.code], false)).kenh;
@@ -309,6 +312,29 @@ describe("★★★ khaiHangLoat — MỘT mã TOTP thật cho ≤ 200 tag, audi
     }
   });
 
+  it("T6 polish (m-4) — lô TRỘN 5 tag, 2 đổi + 3 giữ nguyên: soDoi 2 · soGiuNguyen 3 · cờ changed đúng từng tag · audit CHỈ cho 2 tag đổi + dòng tổng chỉ liệt kê id đổi", async () => {
+    const ids = T.slice(30, 35);
+    const doi = [ids[1], ids[3]];
+    const ld = lyDo("tron");
+    const kq = await engA.kenh.khaiHangLoat({
+      adapterId: ad.a,
+      items: ids.map((tagId) => ({ tagId, patch: doi.includes(tagId) ? { actuationLevel: 3 as const } : { actuationLevel: 5 as const } })),
+      lyDo: ld,
+      totpCode: ma(),
+    });
+    expect(kq).toMatchObject({ soDoi: 2, soGiuNguyen: 3 });
+    expect(kq.ketQua).toEqual(ids.map((tagId) => ({ tagId, changed: doi.includes(tagId), mucHieuLuc: doi.includes(tagId) ? 3 : 5 })));
+    expect([...(await mucCua(ids)).entries()].sort((x, y) => x[0] - y[0]).map(([, v]) => v)).toEqual([5, 3, 5, 3, 5]);
+    const au = await auditTheoLyDo(ld);
+    expect(au).toHaveLength(3);
+    const tung = au.filter((r) => r.action === "scada_kenh_cap_nhat");
+    expect(tung.map((r) => Number(r.entityId)).sort((x, y) => x - y)).toEqual(doi);
+    expect(tung.every((r) => r.afterJson.loId === kq.loId)).toBe(true);
+    const tong = au.filter((r) => r.action === "scada_kenh_khai_hang_loat");
+    expect(tong).toHaveLength(1);
+    expect(tong[0].afterJson).toEqual({ loId: kq.loId, soTag: 2, tagIds: doi });
+  });
+
   it("lô KHÔNG đổi gì (mức 5 → 5) ⇒ không đòi mã, soDoi 0, không audit", async () => {
     const ids = T.slice(0, 10);
     const ld = lyDo("noop");
@@ -441,6 +467,42 @@ describe("★★★ khaiHangLoat — phạm vi + adapter (Q6: một adapter mỗ
     expect({ code: khong.code, appCode: khong.appCode, appParams: khong.appParams }).toEqual({ code: khac.code, appCode: khac.appCode, appParams: khac.appParams });
     expect([...(await mucCua([...ids, tagA2])).values()].every((v) => v === 5)).toBe(true);
   });
+
+  it("T6 polish (m-2) — tag của adapter nhà máy B (đang bị giao dịch khác giữ FOR UPDATE) trong lô của A ⇒ NOT_FOUND deviceTag NGAY, KHÔNG chờ / khoá hàng của B", async () => {
+    const postgres = (await import("postgres")).default;
+    const raw = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+    let moKhoa!: () => void;
+    const choMo = new Promise<void>((r) => (moKhoa = r));
+    let daKhoa!: () => void;
+    const choKhoa = new Promise<void>((r) => (daKhoa = r));
+    const giu = raw
+      .begin(async (t) => {
+        await t`SELECT id FROM device_tags WHERE id = ${tagB} FOR UPDATE`;
+        daKhoa();
+        await choMo;
+      })
+      .catch(() => undefined);
+    try {
+      await choKhoa;
+      const goi = engA.kenh.khaiHangLoat({ adapterId: ad.a, items: items([T[0], tagB], { actuationLevel: 3 }), lyDo: lyDo("ngoai-khoa") }).then(
+        () => "thanh_cong" as const,
+        (e) => moTa(e),
+      );
+      const kq = await Promise.race([goi, new Promise<"cho_khoa">((r) => setTimeout(() => r("cho_khoa"), 4000))]);
+      expect(kq, "khaiHangLoat KHÔNG được chờ khoá hàng tag của adapter khác (trước vá: WHERE chỉ theo id ⇒ chờ)").toMatchObject({
+        code: "NOT_FOUND",
+        appCode: "ENTITY_NOT_FOUND",
+        appParams: { entity: "deviceTag" },
+      });
+      moKhoa();
+      await goi;
+    } finally {
+      moKhoa();
+      await giu;
+      await raw.end({ timeout: 5 });
+    }
+    expect([...(await mucCua([T[0], tagB])).values()]).toEqual([5, 5]);
+  }, 30_000);
 
   it("kỹ sư nhà máy B trên adapter của A ⇒ NOT_FOUND adapter, GIỐNG HỆT adapter không tồn tại; 0 đổi", async () => {
     const ngoai = await loiCua(engB.khaiHangLoat({ adapterId: ad.a, items: items(T.slice(0, 3), { actuationLevel: 3 }), lyDo: lyDo("eb") }));

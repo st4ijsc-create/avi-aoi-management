@@ -3,8 +3,10 @@
  *
  * `scadaKenh.capNhat` gọi `kiemTotpCauHinh` BÊN TRONG giao dịch đang giữ khoá adapter (FOR SHARE) + tag (FOR UPDATE). Lượt kiểm chạy trên kết
  * nối THỨ HAI (bộ đếm sai phải commit kể cả khi giao dịch rollback — đầu `totpCauHinh.ts`); pool cạn ⇒ trước vá giao dịch treo vô hạn giữ khoá.
- * Sau vá: `kiemXacThucTheoMuc` giả TREO ⇒ capNhat trả CONFLICT `scadaKenhThuLai` trong < 3500 ms, hàng không đổi, khoá được nhả (một lượt
- * capNhat ngay sau đó đi qua không chờ). Thời gian thật ≈ 3 s < 10 s (phán quyết K15). `vi.mock` ở đây là của `_core/xacThucTheoMuc` (bộ kiểm
+ * Sau vá: `kiemXacThucTheoMuc` giả TREO ⇒ capNhat trả CONFLICT `scadaKenhThuLai` trong [2900, 5000) ms, hàng không đổi, khoá được nhả (một lượt
+ * capNhat ngay sau đó đi qua không chờ). Thời gian thật ≈ 3 s < 10 s (phán quyết K15).
+ * R1b-2a T6 polish (điều phối 2026-10-25): cận trên 3500 → 5000 ms — dưới tải đo được 3528 / 3766 ms (đỏ oan). Vẫn phân biệt "có hạn" với
+ * "không hạn": không hạn ⇒ treo tới timeout của ca (9,5 s) ⇒ đỏ; cận dưới 2900 ms giữ ⇒ hạn không bị rút ngắn lặng lẽ. `vi.mock` ở đây là của `_core/xacThucTheoMuc` (bộ kiểm
  * TOTP — điểm treo mô phỏng pool cạn), không phải hàm phạm vi cục bộ (K9).
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -64,8 +66,8 @@ afterAll(async () => {
   }
 }, 60_000);
 
-describe("★ scadaKenh.capNhat — lượt kiểm TOTP TREO (pool cạn) ⇒ CONFLICT thử lại trong < 3500 ms, không treo, không ghi", () => {
-  it("TREO ⇒ CONFLICT OPERATION_FAILED {scadaTotpCauHinh, scadaKenhThuLai} trong [2900, 3500) ms; mức tác động giữ NULL; khoá đã nhả", async () => {
+describe("★ scadaKenh.capNhat — lượt kiểm TOTP TREO (pool cạn) ⇒ CONFLICT thử lại trong < 5000 ms, không treo, không ghi", () => {
+  it("TREO ⇒ CONFLICT OPERATION_FAILED {scadaTotpCauHinh, scadaKenhThuLai} trong [2900, 5000) ms; mức tác động giữ NULL; khoá đã nhả", async () => {
     H.treo = true;
     const t0 = Date.now();
     let loi: unknown = null;
@@ -80,7 +82,7 @@ describe("★ scadaKenh.capNhat — lượt kiểm TOTP TREO (pool cạn) ⇒ CO
     expect((loi as { code?: string }).code).toBe("CONFLICT");
     expect(readAppErrorMeta(loi)).toEqual({ appCode: "OPERATION_FAILED", appParams: { operation: "scadaTotpCauHinh", reason: "scadaKenhThuLai" } });
     expect(ms).toBeGreaterThanOrEqual(2900);
-    expect(ms).toBeLessThan(3500);
+    expect(ms).toBeLessThan(5000);
     const [r] = await dung(sql`SELECT actuation_level FROM device_tags WHERE id = ${tag}`);
     expect(r.actuation_level).toBeNull();
     // giao dịch đã rollback ⇒ khoá tag / adapter đã nhả: lượt sau đi qua NGAY (không chờ khoá)
@@ -88,5 +90,5 @@ describe("★ scadaKenh.capNhat — lượt kiểm TOTP TREO (pool cạn) ⇒ CO
     const kq = await engA.capNhat({ tagId: tag, patch: { actuationLevel: 3 }, lyDo: "khai mức sau khi pool hồi" } as never);
     expect(kq).toMatchObject({ changed: true, actuationLevel: 3 });
     expect(Date.now() - t1).toBeLessThan(2000);
-  }, 8_000);
+  }, 9_500);
 });

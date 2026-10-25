@@ -39,6 +39,8 @@
  *     interlockRouter create/update/approve/enable: luật FOR UPDATE → tag FOR SHARE (enable, T10b: + tag nguồn FOR SHARE; adapter đọc
  *     KHÔNG khoá — khoá nó sau luật là đảo thứ tự);   scadaKenh.capNhat: adapter FOR SHARE (R1b-1 T10: machineId của phép kiểm phạm vi đọc ở đây) → luật FOR SHARE → tag FOR UPDATE;
  *     scadaKenh.cheDo.dat: adapter FOR SHARE → tag FOR SHARE → kênh chế độ FOR UPDATE.
+ *     scadaKenh.khaiHangLoat (R1b-2a T6): adapter FOR SHARE (+ `kiemPhamViDuoiKhoa`) → mọi luật nhắm adapter FOR SHARE theo id → tag
+ *       `WHERE id IN (…) AND adapterId = <adapter> ORDER BY id FOR UPDATE` (không khoá hàng của adapter khác).
  *   LUẬT đứng TRƯỚC TAG (không phải sau) vì interlockRouter / scadaKenh.capNhat đã khoá luật trước tag từ R1a — đảo lại sẽ tạo vòng chờ với
  *   chúng. Không đường nào khoá ngược một cặp ⇒ không vòng chờ (40P01).
  *   R1b-2a T5 (kiem-dinh M7) — TRONG bậc TAG: mọi lượt khoá NHIỀU hàng `device_tags` FOR UPDATE đều `ORDER BY id` (import, `congAdapterTx`,
@@ -414,7 +416,7 @@ export function loiQuaNhieuKenhDaKhai(soTag: number): never {
     "BAD_REQUEST",
     "QUA_NHIEU_KENH_DA_KHAI",
     { soTag, toiDa: TRAN_KENH_DA_KHAI_MOT_LO },
-    `Lô đụng ${soTag} tag đã khai kênh / được bảo vệ — tối đa ${TRAN_KENH_DA_KHAI_MOT_LO} mỗi lô. Chia nhỏ lô rồi làm lại.`,
+    `Lô có ${soTag} tag — tối đa ${TRAN_KENH_DA_KHAI_MOT_LO} mỗi lô (khai mức hàng loạt: đếm MỌI tag của lô; import: đếm tag đã khai kênh / được bảo vệ). Chia nhỏ lô rồi làm lại.`,
   );
 }
 
