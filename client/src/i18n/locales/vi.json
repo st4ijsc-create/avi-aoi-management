@@ -4079,7 +4079,8 @@
       "scadaDisableAdapter": "tạm tắt adapter",
       "scadaSetStubFault": "đặt lỗi mô phỏng cho stub",
       "scadaSelectTag": "chọn kênh để ra lệnh",
-      "scadaKenhCapNhat": "cập nhật khai báo kênh"
+      "scadaKenhCapNhat": "cập nhật khai báo kênh",
+      "dieuKienDoiTuongTrongPhamVi": "điều kiện đối tượng trong phạm vi"
     },
     "field": {
       "stationId": "trạm",

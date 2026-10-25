@@ -4071,7 +4071,8 @@
       "scadaDisableAdapter": "暂停适配器",
       "scadaSetStubFault": "为模拟器设置故障",
       "scadaSelectTag": "选择要下达命令的通道",
-      "scadaKenhCapNhat": "更新通道声明"
+      "scadaKenhCapNhat": "更新通道声明",
+      "dieuKienDoiTuongTrongPhamVi": "范围内对象条件"
     },
     "field": {
       "stationId": "工位",
