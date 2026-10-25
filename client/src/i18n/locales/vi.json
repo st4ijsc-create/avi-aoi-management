@@ -23683,6 +23683,20 @@
         "goiY": "Cổng ra: dong-y = đã điền · tu-choi = bỏ qua (không điền) · het-han. Người điền phải đủ vai và KHÁC người bật luồng.",
         "co": "Có",
         "chonMuc": "— chọn —"
+      },
+      "mcp": {
+        "server": "Máy chủ MCP",
+        "serverGoiY": "TÊN do quản trị khai (a-z, 0-9, -, _), không phải URL. Chưa khai ⇒ node từ chối mọi lời gọi (tính năng tắt).",
+        "serverSai": "Tên máy chủ chỉ gồm a-z, 0-9, -, _ (bắt đầu bằng chữ/số).",
+        "tool": "Tool",
+        "toolGoiY": "Tên tool CỐ ĐỊNH (không biểu thức) và phải nằm trong danh sách của máy chủ này.",
+        "toolSai": "Tên tool chỉ gồm chữ, số, _ . -",
+        "doiSo": "Đối số tool ({{n}}/{{max}})",
+        "boDoiSo": "Bỏ đối số",
+        "themDoiSo": "Thêm đối số",
+        "biMatGoiY": "Tuỳ chọn. Bí mật phải khai host của máy chủ MCP này; không bí mật nào tự chảy sang máy chủ MCP.",
+        "truongRaGoiY": "Kết quả ghi vào item dưới khoá này (mặc định mcp): {may, tool, noiDung, cauTruc}.",
+        "canhBao": "Kết quả của tool là DỮ LIỆU không tin cậy — không bao giờ được chạy như lệnh/biểu thức. Hạng ghi ngoài: luồng cần quyền bật tương ứng. Tối đa 20 item, 30 giây, 1 MiB mỗi phản hồi."
       }
     },
     "xuatNhap": {

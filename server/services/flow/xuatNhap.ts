@@ -67,6 +67,8 @@ export const RE_TEN_BI_MAT = { test: laTenBiMat };
 /** Tiêu đề HTTP vô hại được giữ lại khi xuất; mọi tiêu đề khác bị xoá (bí mật phải đi qua credentialRef). */
 export const TIEU_DE_VO_HAI: ReadonlySet<string> = new Set(["accept", "content-type", "accept-language", "user-agent"]);
 const LOAI_HTTP = new Set(["tich-hop.http-doc", "tich-hop.http-gui"]);
+/** Node MCP client: đối số tool (`thamSo`) là văn bản tự do của người soạn ⇒ cùng bộ làm sạch bí mật với thân HTTP. */
+const LOAI_MCP = "tich-hop.mcp-goi";
 
 /** Dòng / cặp xác thực: giá trị chạy TỚI HẾT dòng hoặc dấu & (vd "Authorization: Bearer abc", "authorization=Basic abc") — xoá cả giá trị nhiều từ. */
 const RE_DONG_XAC_THUC = /((?:proxy-)?authorization|set-cookie|cookie)(["']?\s*[:=]\s*["']?)([^\r\n&"']*)/gi;
@@ -215,6 +217,17 @@ function lamSachHttp(ra: NodeInstance, viec: ViecPhaiDien[]): void {
   }
 }
 
+function lamSachMcp(ra: NodeInstance, viec: ViecPhaiDien[]): void {
+  const p = ra.parameters;
+  if (p.thamSo !== undefined && p.thamSo !== null) {
+    const { v, doi } = lamSachThan(p.thamSo);
+    if (doi) {
+      p.thamSo = v;
+      viec.push({ nodeId: ra.id, truong: "thamSo", viec: "http-bi-mat" });
+    }
+  }
+}
+
 function lamTrongNut(n: NodeInstance, viec: ViecPhaiDien[]): NodeInstance {
   // Node GỌI LUỒNG CON không lưu được khi id con trống (id con phải CỐ ĐỊNH và tồn tại) ⇒ thay bằng node giữ chỗ `du-lieu.dat` (cùng id/tên/cổng) để luồng vẫn nhập được; người nhập thay lại bằng node luồng con.
   if (n.type === "luong.goi-con") {
@@ -228,6 +241,7 @@ function lamTrongNut(n: NodeInstance, viec: ViecPhaiDien[]): NodeInstance {
     delete ra.parameters.kieuXacThuc; // đi cùng bí mật
   }
   if (LOAI_HTTP.has(ra.type)) lamSachHttp(ra, viec);
+  if (ra.type === LOAI_MCP) lamSachMcp(ra, viec);
   for (const d of THAM_SO_THEO_NHA_MAY[ra.type]?.truong ?? []) {
     const cu = ra.parameters[d.truong];
     if (d.thanh === "luong-con") {

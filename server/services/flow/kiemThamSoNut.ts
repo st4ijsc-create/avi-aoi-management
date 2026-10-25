@@ -11,6 +11,7 @@ import { laTenBiMat } from "./xuatNhap";
 import { TOAN_TU_CHON, TRAN_NHANH_CHON } from "./nut/chon";
 import { CHO_TOI_DA_GIAY, TRAN_THONG_DIEP_DUNG_LOI } from "./nut/cho";
 import { kiemDinhNghiaBieuMau } from "./nut/bieuMau";
+import { RE_TEN_MAY_CHU_MCP, RE_TEN_TOOL_MCP, TRAN_DOI_SO_MCP } from "./nut/mcpKhach";
 import { HUONG_SAP_XEP, KIEU_SAP_XEP, TOAN_TU_LOC, TRAN_DIEU_KIEN_LOC } from "./nut/loc";
 
 const laBieuThuc = (v: unknown): boolean => typeof v === "string" && v.includes("{{");
@@ -67,6 +68,11 @@ export function kiemThamSoNutMoi(raw: unknown): string[] {
           if (d.so !== "in" && d.so !== "eq" && !laBieuThuc(d.dich) && !(typeof d.dich === "number" && Number.isFinite(d.dich))) loi.push(`node '${id}': điều kiện ${i + 1}: '${String(d.so)}' cần một SỐ`);
         });
       }
+    } else if (n?.type === "tich-hop.mcp-goi") {
+      if (typeof p.server !== "string" || !RE_TEN_MAY_CHU_MCP.test(p.server)) loi.push(`node '${id}': server phải là tên máy chủ MCP cố định (a-z, 0-9, -, _; không biểu thức)`);
+      if (typeof p.tool !== "string" || !RE_TEN_TOOL_MCP.test(p.tool)) loi.push(`node '${id}': tool phải là tên tool cố định (không biểu thức)`);
+      if (p.thamSo !== undefined && (!p.thamSo || typeof p.thamSo !== "object" || Array.isArray(p.thamSo))) loi.push(`node '${id}': thamSo phải là đối tượng`);
+      else if (p.thamSo !== undefined && JSON.stringify(p.thamSo).length > TRAN_DOI_SO_MCP) loi.push(`node '${id}': thamSo quá ${TRAN_DOI_SO_MCP} byte`);
     } else if (n?.type === "nguoi.bieu-mau") {
       if (!laBieuThuc(p.truong)) for (const l of kiemDinhNghiaBieuMau(p.truong)) loi.push(`node '${id}': ${l}`);
     } else if (n?.type === "logic.cho") {

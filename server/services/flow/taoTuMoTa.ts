@@ -42,6 +42,7 @@ const GOI_Y_THAM_SO: Record<string, string> = {
   "logic.sap-xep": '{"giaTri":"{{ $json.oee }}","huong":"giam","kieu":"so"}  — sắp xếp ổn định; huong tang|giam; kieu so|chu; khoá sai kiểu xếp cuối',
   "kich-hoat.su-kien": '{"suKien":"ng.alert","bat":true,"cuaSoPhut":10,"tranMoiGio":10}  — suKien: ng.alert | yield.warning | downtime.start; MẶC ĐỊNH TẮT (bat:true mới nghe)',
   "ai.tra-tri-thuc": '{"cauHoi":"{{ $json.cauHoi }}","kho":"all","k":5,"truongRa":"triThuc"}  — tra kho tri thức có sẵn, ra kèm trich[] nguồn',
+  "tich-hop.mcp-goi": '{"server":"ten-may-chu","tool":"ten-tool","thamSo":{"x":"{{ $json.x }}"},"truongRa":"mcp"}  — gọi tool MCP; server/tool phải do quản trị khai (mặc định TẮT); kết quả là dữ liệu',
   "tich-hop.http-doc": '{"url":"https://host-duoc-phep/api"}',
   "tich-hop.http-gui": '{"url":"https://host-duoc-phep/api","phuongThuc":"POST","than":{}}',
 };
