@@ -36,15 +36,23 @@ export function __datHamGuiThongBaoChoTest(f: HamGui | null): void {
   hamGui = f ?? guiMacDinh;
 }
 
+/**
+ * MỘT luật nhà máy cho người nhận (dùng chung với danh sách chọn người nhận `flow.nguoiNhanChoLuong` — không viết lại): đang hoạt động VÀ
+ * thấy được nhà máy của luồng bằng phạm vi của CHÍNH họ; luồng toàn hệ thống (NULL) ⇒ chỉ người toàn quyền.
+ */
+export async function nguoiNhanHopLeTheoNhaMay(u: { id: number; role: unknown; isActive: boolean | null }, nhaMayLuong: number | null): Promise<boolean> {
+  if (u.isActive === false) return false;
+  const cho = await nhaMayChoPhep({ userId: u.id, userRole: String(u.role) });
+  return nhaMayLuong === null ? cho === null : nhaMayHopLe(nhaMayLuong, cho);
+}
+
 /** Người nhận hợp lệ ⇔ tồn tại, đang hoạt động, và thấy được nhà máy của luồng (NULL ⇒ phải toàn quyền). */
 async function kiemNguoiNhan(ids: number[], nhaMayLuong: number | null, mayDoc: ReadonlySet<number>): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
   for (const id of ids) {
     const [u] = await db.select({ id: users.id, role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, id)).limit(1);
-    if (!u || u.isActive === false) return false;
-    const cho = await nhaMayChoPhep({ userId: u.id, userRole: String(u.role) });
-    if (nhaMayLuong === null ? cho !== null : !nhaMayHopLe(nhaMayLuong, cho)) return false;
+    if (!u || !(await nguoiNhanHopLeTheoNhaMay(u, nhaMayLuong))) return false;
     // ★ Phạm vi MÁY: số liệu tổng hợp của các máy mà node số liệu đã đọc trong lượt này — người nhận phải thấy TẤT CẢ các máy đó (người chỉ thuộc chuyền L1 không nhận báo cáo có máy L2).
     if (mayDoc.size > 0) {
       const may = await idsTrongPhamVi("machine", { userId: u.id, userRole: String(u.role) }, { strict: true });

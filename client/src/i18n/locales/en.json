@@ -23494,6 +23494,92 @@
         "them": "added",
         "bo": "removed"
       }
+    },
+    "form": {
+      "theoBieuThuc": "By expression…",
+      "truongRa": "Result field name",
+      "soLieu": {
+        "truyVan": "Data query",
+        "truyVanGoiY": "Pick from the named catalogue only — no free SQL. Data scope = the flow owner's scope AT RUN TIME, within the flow's factory.",
+        "chonTruyVan": "— choose a query —",
+        "gio": "Look-back hours",
+        "gioGoiY": "Integer 1–168 (default 8).",
+        "gioiHan": "Max rows",
+        "gioiHanGoiY": "Integer 1–20 (default 10).",
+        "tv": {
+          "sanLuong": "Output & NG rate (OK / NG / NTF)",
+          "oee": "Average OEE per machine",
+          "ng": "Top NG measurement points",
+          "may": "Machine status & machines in error",
+          "canhBao": "Open predictive alerts"
+        }
+      },
+      "thongBao": {
+        "nguoiNhan": "Recipients",
+        "nguoiNhanGoiY": "Internal channel only (notification bell). Only active people who can see the flow's factory can be picked; a system-wide flow can only notify full-scope people.",
+        "chuaChon": "No recipients chosen",
+        "bo": "Remove recipient",
+        "demNguoi": "Chosen {{n}}/{{max}}",
+        "timNguoi": "Type a name to search (≥ 2 characters)…",
+        "khongThay": "No matching person within the flow's factory scope.",
+        "them": "Add",
+        "veDanhSach": "Switch back to picking from the list",
+        "tieuDe": "Title",
+        "noiDung": "Message",
+        "loai": "Type",
+        "uuTien": "Priority",
+        "duongDan": "Internal link (optional)",
+        "loaiOpt": {
+          "REPORT": "Report",
+          "INFO": "Info",
+          "WARNING": "Warning"
+        },
+        "uuTienOpt": {
+          "LOW": "Low",
+          "NORMAL": "Normal",
+          "HIGH": "High"
+        }
+      },
+      "suKien": {
+        "suKien": "Internal event",
+        "suKienGoiY": "Machine events only; scope is checked at fire time against the flow owner (the person who enabled the version).",
+        "chonSuKien": "— choose an event —",
+        "bat": "Listen to this event",
+        "batGoiY": "OFF BY DEFAULT. Only an approved/enabled version listens.",
+        "cuaSo": "De-duplication window (minutes)",
+        "cuaSoGoiY": "Integer 1–1440 (default 10): the same event type + machine within one window starts one run.",
+        "tran": "Runs per hour cap",
+        "tranGoiY": "Integer 1–30 (default 10).",
+        "sk": {
+          "ngAlert": "NG alert",
+          "yieldWarning": "Low yield warning",
+          "downtimeStart": "Machine downtime started (reason typed by the operator)"
+        }
+      },
+      "taoPhieu": {
+        "may": "Machine (id)",
+        "mayGoiY": "Usually an expression reading the idMay field from the event node (e.g. $json.idMay). The machine must be in the flow owner's scope and belong to the flow's factory.",
+        "tieuDe": "Work-order title",
+        "moTa": "Description",
+        "nhom": "Handling group",
+        "nhomGoiY": "Written into the title and the first description line (the work-order table has no group column).",
+        "uuTien": "Priority (1 = highest)",
+        "uuTienGoiY": "Integer 1–5.",
+        "loai": "Work-order type",
+        "nhomOpt": {
+          "dien": "Electrical",
+          "coKhi": "Mechanical",
+          "plcPhanMem": "PLC / Software",
+          "vatTuKhac": "Supplies / Other"
+        },
+        "loaiOpt": {
+          "CORRECTIVE": "Corrective",
+          "BREAKDOWN": "Breakdown",
+          "INSPECTION": "Inspection"
+        }
+      },
+      "chuyenJson": "Edit as JSON (advanced)",
+      "chuyenForm": "Back to form"
     }
   },
   "scada": {

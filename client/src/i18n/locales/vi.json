@@ -23468,6 +23468,92 @@
         "them": "thêm",
         "bo": "bỏ"
       }
+    },
+    "form": {
+      "theoBieuThuc": "Theo biểu thức…",
+      "truongRa": "Tên trường kết quả",
+      "soLieu": {
+        "truyVan": "Truy vấn số liệu",
+        "truyVanGoiY": "Chỉ chọn trong danh mục có tên — không có SQL tự do. Phạm vi dữ liệu = phạm vi của chủ luồng LÚC CHẠY, trong nhà máy của luồng.",
+        "chonTruyVan": "— chọn truy vấn —",
+        "gio": "Khoảng giờ nhìn lại",
+        "gioGoiY": "Số nguyên 1–168 (mặc định 8).",
+        "gioiHan": "Số dòng tối đa",
+        "gioiHanGoiY": "Số nguyên 1–20 (mặc định 10).",
+        "tv": {
+          "sanLuong": "Sản lượng & tỉ lệ NG (OK / NG / NTF)",
+          "oee": "OEE trung bình theo máy",
+          "ng": "Điểm đo NG nhiều nhất",
+          "may": "Trạng thái máy & máy đang lỗi",
+          "canhBao": "Cảnh báo dự đoán đang mở"
+        }
+      },
+      "thongBao": {
+        "nguoiNhan": "Người nhận",
+        "nguoiNhanGoiY": "Chỉ kênh nội bộ (chuông thông báo). Chỉ chọn được người đang hoạt động và thấy nhà máy của luồng; luồng toàn hệ thống chỉ gửi cho người toàn quyền.",
+        "chuaChon": "Chưa chọn người nhận",
+        "bo": "Bỏ người nhận",
+        "demNguoi": "Đã chọn {{n}}/{{max}}",
+        "timNguoi": "Gõ tên để tìm (≥ 2 ký tự)…",
+        "khongThay": "Không thấy người phù hợp trong phạm vi nhà máy của luồng.",
+        "them": "Thêm",
+        "veDanhSach": "Chuyển về chọn từ danh sách",
+        "tieuDe": "Tiêu đề",
+        "noiDung": "Nội dung",
+        "loai": "Loại",
+        "uuTien": "Ưu tiên",
+        "duongDan": "Đường dẫn nội bộ (tuỳ chọn)",
+        "loaiOpt": {
+          "REPORT": "Báo cáo",
+          "INFO": "Thông tin",
+          "WARNING": "Cảnh báo"
+        },
+        "uuTienOpt": {
+          "LOW": "Thấp",
+          "NORMAL": "Bình thường",
+          "HIGH": "Cao"
+        }
+      },
+      "suKien": {
+        "suKien": "Sự kiện nội bộ",
+        "suKienGoiY": "Chỉ nghe sự kiện của máy; phạm vi kiểm lúc bắn theo chủ luồng (người bật phiên bản).",
+        "chonSuKien": "— chọn sự kiện —",
+        "bat": "Bật nghe sự kiện này",
+        "batGoiY": "MẶC ĐỊNH TẮT. Chỉ phiên bản đã được duyệt/bật mới nghe sự kiện.",
+        "cuaSo": "Cửa sổ chống trùng (phút)",
+        "cuaSoGoiY": "Số nguyên 1–1440 (mặc định 10): cùng loại sự kiện + máy trong một cửa sổ chỉ ra một lượt.",
+        "tran": "Trần lượt mỗi giờ",
+        "tranGoiY": "Số nguyên 1–30 (mặc định 10).",
+        "sk": {
+          "ngAlert": "Cảnh báo NG",
+          "yieldWarning": "Cảnh báo tỉ lệ đạt thấp",
+          "downtimeStart": "Máy bắt đầu dừng (lý do do vận hành viên nhập)"
+        }
+      },
+      "taoPhieu": {
+        "may": "Máy (id)",
+        "mayGoiY": "Thường là biểu thức lấy trường idMay từ node sự kiện (vd. $json.idMay). Máy phải trong phạm vi của chủ luồng và thuộc nhà máy của luồng.",
+        "tieuDe": "Tiêu đề phiếu",
+        "moTa": "Mô tả",
+        "nhom": "Nhóm xử lý",
+        "nhomGoiY": "Ghi vào tiêu đề và dòng đầu mô tả (bảng phiếu không có cột nhóm).",
+        "uuTien": "Ưu tiên (1 = cao nhất)",
+        "uuTienGoiY": "Số nguyên 1–5.",
+        "loai": "Loại phiếu",
+        "nhomOpt": {
+          "dien": "Điện",
+          "coKhi": "Cơ khí",
+          "plcPhanMem": "PLC / Phần mềm",
+          "vatTuKhac": "Vật tư / Khác"
+        },
+        "loaiOpt": {
+          "CORRECTIVE": "Sửa chữa",
+          "BREAKDOWN": "Hỏng đột xuất",
+          "INSPECTION": "Kiểm tra"
+        }
+      },
+      "chuyenJson": "Chỉnh bằng JSON (nâng cao)",
+      "chuyenForm": "Về form"
     }
   },
   "scada": {

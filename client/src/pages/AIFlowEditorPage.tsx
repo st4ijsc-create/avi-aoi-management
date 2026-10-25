@@ -374,6 +374,7 @@ export default function AIFlowEditorPage() {
                   <NodeConfigPanel
                     key={nutChon.id}
                     node={nutChon}
+                    flowId={flowId}
                     kb={danhMuc.get(nutChon.type)}
                     onDoi={doiNut}
                     onXoa={() => xoaNut(nutChon.id)}

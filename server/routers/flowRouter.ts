@@ -21,12 +21,12 @@ import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { router, moduleProcedure, moduleGate, writeProcedure, adminProcedure, deployProcedure } from "../_core/trpc";
 import { appError } from "../_core/appError";
 import { getDb } from "../db/connection";
 import { createAuditLog } from "../db";
-import { aiFlowCredentials, aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../drizzle/schema";
+import { aiFlowCredentials, aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows, users } from "../../drizzle/schema";
 import { THU_TU_HANG, NodeInstanceSchema, kiemLuong, luongConCuaNut, type FlowDefinition, type HangTacDungPhu } from "../../shared/flow/model";
 import { LoiNgoaiPhamVi, chayThuNut, type BoKiemPhamVi } from "../services/flow/chayThuNut";
 import { boKiemPhamVi, thamChieuTinhNgoai } from "../services/flow/boKiemPhamVi";
@@ -37,6 +37,9 @@ import { taoTuMoTa } from "../services/flow/taoTuMoTa";
 import { danhSachNut, layNut } from "../services/flow/dangKyNut";
 import { kiemThamSoKichHoat, napLaiLich } from "../services/flow/kichHoat/lich";
 import { kiemThamSoSuKien, napLaiSuKien } from "../services/flow/kichHoat/suKien";
+import { kiemThamSoNutMoi } from "../services/flow/kiemThamSoNut";
+import { nguoiNhanHopLeTheoNhaMay } from "../services/flow/nut/thongBao";
+import { nhaMayCuaLuong } from "../services/flow/phamViLuong";
 import { capTokenWebhook, coNodeWebhook, coTokenWebhook } from "../services/flow/kichHoat/webhook";
 import { LOAI_BI_MAT, LoiBiMat, datHostBiMat, lietKeBiMat, taoBiMat, xoaBiMat } from "../services/flow/biMat";
 import { ketQuaSauDuyetMoPhong, laDeXuatOtLuong } from "../services/flow/ot/congOtLuong";
@@ -111,7 +114,7 @@ export function docMauLuong(): { tep: string; definition: FlowDefinition }[] {
 /** Trần chữ của input/output mỗi bước trả về dòng thời gian (cắt ở đây, CSDL giữ nguyên theo `luuDuLieu`). */
 export const TRAN_CHU_BUOC = 4000;
 
-type Op = "flowXem" | "flowLuu" | "flowKichHoat" | "flowChayTay" | "flowDuyet" | "flowBiMatTao" | "flowBiMatXoa" | "flowBiMatXem" | "flowTaoTuMoTa" | "flowChayThu";
+type Op = "flowNguoiNhan" | "flowXem" | "flowLuu" | "flowKichHoat" | "flowChayTay" | "flowDuyet" | "flowBiMatTao" | "flowBiMatXoa" | "flowBiMatXem" | "flowTaoTuMoTa" | "flowChayThu";
 
 /** `LoiBiMat` ⇒ `appError` (thông điệp của LoiBiMat không bao giờ chứa giá trị). Lỗi khác ném lại nguyên. */
 function loiBiMat(e: unknown, op: Op): never {
@@ -212,6 +215,33 @@ export const flowRouter = router({
   }),
 
   /** Định nghĩa của phiên bản yêu cầu / hoạt động / mới nhất + danh sách phiên bản. */
+  /**
+   * ★ Chọn NGƯỜI NHẬN cho node `tich-hop.thong-bao` (form có kiểu, lô Luồng-form). Quyền xem luồng như các thủ tục flow khác (ngoài phạm vi ≡ NOT_FOUND).
+   * CHỈ trả người ĐANG HOẠT ĐỘNG mà phạm vi của CHÍNH họ chứa nhà máy của luồng — CÙNG hàm `nguoiNhanHopLeTheoNhaMay` mà node dùng lúc chạy (luồng toàn hệ thống ⇒ chỉ người toàn quyền).
+   * KHÔNG liệt kê toàn bộ người dùng: bắt buộc tìm theo tên (≥ 2 ký tự), trần 20 kết quả. Chỉ id + tên + vai trò (không email / điện thoại).
+   */
+  nguoiNhanChoLuong: xemProcedure
+    .input(z.object({ flowId: flowIdSchema, tim: z.string().trim().min(2).max(50), gioiHan: z.number().int().min(1).max(20).default(20) }))
+    .query(async ({ input, ctx }) => {
+      await chanLuong(ctx, input.flowId, "flowNguoiNhan");
+      const nhaMay = await nhaMayCuaLuong(input.flowId);
+      if (nhaMay === undefined) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowNguoiNhan", reason: "flowKhongTonTaiHoacNgoaiPhamVi" }, `Không có luồng ${input.flowId}.`);
+      const db = await layDb("flowNguoiNhan");
+      const mau = `%${input.tim.replace(/[\\%_]/g, (c) => "\\" + c)}%`;
+      const ung = await db
+        .select({ id: users.id, ten: users.name, vaiTro: users.role, isActive: users.isActive })
+        .from(users)
+        .where(and(eq(users.isActive, true), or(ilike(users.name, mau), ilike(users.username, mau))))
+        .orderBy(users.name, users.id)
+        .limit(200);
+      const ra: { id: number; ten: string | null; vaiTro: string }[] = [];
+      for (const u of ung) {
+        if (ra.length >= input.gioiHan) break;
+        if (await nguoiNhanHopLeTheoNhaMay({ id: u.id, role: u.vaiTro, isActive: u.isActive }, nhaMay)) ra.push({ id: u.id, ten: u.ten ?? null, vaiTro: String(u.vaiTro) });
+      }
+      return ra;
+    }),
+
   chiTiet: xemProcedure.input(z.object({ flowId: flowIdSchema, version: z.number().int().min(1).optional() })).query(async ({ input, ctx }) => {
     await chanLuong(ctx, input.flowId, "flowXem");
     const db = await layDb("flowXem");
@@ -241,7 +271,7 @@ export const flowRouter = router({
   luu: ghiProcedure
     .input(z.object({ definition: z.record(z.string(), z.unknown()), factoryId: z.number().int().positive().optional() }))
     .mutation(async ({ input, ctx }) => {
-    const loiKichHoat = [...kiemThamSoKichHoat(input.definition), ...kiemThamSoSuKien(input.definition)];
+    const loiKichHoat = [...kiemThamSoKichHoat(input.definition), ...kiemThamSoSuKien(input.definition), ...kiemThamSoNutMoi(input.definition)];
     if (loiKichHoat.length) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowChiTietMayChu", chiTiet: loiKichHoat.join("; ").slice(0, 300) }, `Luồng không hợp lệ: ${loiKichHoat.join("; ")}`);
     // ★ Đợt 9 (IDOR): id đã có ⇒ phải thuộc phạm vi người lưu (không được thêm phiên bản vào luồng của nhà máy khác); id mới ⇒ gán nhà máy.
     let factoryId: number | null = null;

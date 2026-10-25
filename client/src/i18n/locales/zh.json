@@ -23496,6 +23496,92 @@
         "them": "新增",
         "bo": "移除"
       }
+    },
+    "form": {
+      "theoBieuThuc": "按表达式…",
+      "truongRa": "结果字段名",
+      "soLieu": {
+        "truyVan": "数据查询",
+        "truyVanGoiY": "只能从有名称的目录中选择，不支持自由 SQL。数据范围 = 流程所有者运行时的范围，且限于流程所属工厂。",
+        "chonTruyVan": "— 选择查询 —",
+        "gio": "回看小时数",
+        "gioGoiY": "整数 1–168（默认 8）。",
+        "gioiHan": "最大行数",
+        "gioiHanGoiY": "整数 1–20（默认 10）。",
+        "tv": {
+          "sanLuong": "产量与 NG 率（OK / NG / NTF）",
+          "oee": "各机器平均 OEE",
+          "ng": "NG 最多的测量点",
+          "may": "机器状态与故障机器",
+          "canhBao": "未关闭的预测告警"
+        }
+      },
+      "thongBao": {
+        "nguoiNhan": "接收人",
+        "nguoiNhanGoiY": "仅内部渠道（通知铃）。只能选择在职且能看到该流程所属工厂的人；全系统流程只能通知全权限人员。",
+        "chuaChon": "尚未选择接收人",
+        "bo": "移除接收人",
+        "demNguoi": "已选 {{n}}/{{max}}",
+        "timNguoi": "输入姓名搜索（≥ 2 个字符）…",
+        "khongThay": "流程所属工厂范围内没有匹配的人。",
+        "them": "添加",
+        "veDanhSach": "切换回列表选择",
+        "tieuDe": "标题",
+        "noiDung": "内容",
+        "loai": "类型",
+        "uuTien": "优先级",
+        "duongDan": "内部链接（可选）",
+        "loaiOpt": {
+          "REPORT": "报告",
+          "INFO": "信息",
+          "WARNING": "警告"
+        },
+        "uuTienOpt": {
+          "LOW": "低",
+          "NORMAL": "普通",
+          "HIGH": "高"
+        }
+      },
+      "suKien": {
+        "suKien": "内部事件",
+        "suKienGoiY": "仅机器事件；触发时按流程所有者（启用该版本的人）检查范围。",
+        "chonSuKien": "— 选择事件 —",
+        "bat": "监听此事件",
+        "batGoiY": "默认关闭。只有已批准/已启用的版本才会监听。",
+        "cuaSo": "去重窗口（分钟）",
+        "cuaSoGoiY": "整数 1–1440（默认 10）：同一窗口内相同事件类型 + 机器只产生一次运行。",
+        "tran": "每小时运行上限",
+        "tranGoiY": "整数 1–30（默认 10）。",
+        "sk": {
+          "ngAlert": "NG 告警",
+          "yieldWarning": "良率过低警告",
+          "downtimeStart": "机器开始停机（原因由操作员输入）"
+        }
+      },
+      "taoPhieu": {
+        "may": "机器（id）",
+        "mayGoiY": "通常为读取事件节点 idMay 字段的表达式（如 $json.idMay）。机器必须在流程所有者范围内并属于流程所属工厂。",
+        "tieuDe": "工单标题",
+        "moTa": "描述",
+        "nhom": "处理组",
+        "nhomGoiY": "写入标题和描述第一行（工单表没有分组列）。",
+        "uuTien": "优先级（1 = 最高）",
+        "uuTienGoiY": "整数 1–5。",
+        "loai": "工单类型",
+        "nhomOpt": {
+          "dien": "电气",
+          "coKhi": "机械",
+          "plcPhanMem": "PLC / 软件",
+          "vatTuKhac": "物料 / 其他"
+        },
+        "loaiOpt": {
+          "CORRECTIVE": "纠正性",
+          "BREAKDOWN": "突发故障",
+          "INSPECTION": "检查"
+        }
+      },
+      "chuyenJson": "用 JSON 编辑（高级）",
+      "chuyenForm": "返回表单"
     }
   },
   "scada": {
