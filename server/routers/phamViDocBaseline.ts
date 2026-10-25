@@ -51,7 +51,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/aoiOnboardingRouter.ts (4) ──────────────────────────────────────────────
   // ── server/routers/apiKeyRouter.ts (1) ─────────────────────────────────────────────────────
   // ── server/routers/bomRouter.ts (5) ────────────────────────────────────────────────────────
-  "server/routers/bomRouter.ts#bomRouter.getDefinition",
   // ── server/routers/commandCenterRouter.ts — ĐÃ TRẢ 2026-09-15 (QA lần 11, PH-23) ───────────
   //    `commandCenterRouter.hierarchy` rời sổ: nay phân giải phạm vi từ `ctx.user` qua
   //    `resolveHierarchyScope` (nhóm A → S). Đo được TRƯỚC khi vá: 5 vai nhận CÙNG 450.811
