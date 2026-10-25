@@ -307,8 +307,34 @@ describe("ScadaDiag — hộp xác nhận lý do", () => {
     expect(toastTrpcError).not.toHaveBeenCalled();
     const o = screen.getByLabelText(S("scada.kenh.dialog.totp"));
     fireEvent.change(o, { target: { value: "123456" } });
-    fireEvent.click(screen.getByRole("button", { name: S("deviceAdapter.troLai.submit") }));
+    fireEvent.click(screen.getByRole("button", { name: S("scada.diag.dialog.gui") }));
     expect(srv.mutCalls.at(-1)).toEqual({ proc: "tamTat", vars: { adapterId: 1, lyDo: "bảo trì định kỳ", totpCode: "123456" } });
+  });
+
+  it("★ R1b-2a T11: MỘT hộp duy nhất — TOTP_CAN ⇒ ô mã nằm CÙNG hộp với lý do (còn nguyên chữ); gửi {adapterId, lyDo, totpCode}; mã sai ⇒ ô mã rỗng, vẫn 1 hộp", () => {
+    render(<ScadaDiag />);
+    fireEvent.click(within(hang("AD-OK")).getByRole("button", { name: S("scada.diag.nut.tamTat") }));
+    fireEvent.change(within(screen.getByRole("dialog")).getByLabelText(S("scada.diag.dialog.lyDo")), { target: { value: "bảo trì PLC" } });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: S("scada.diag.dialog.gui") }));
+    const vars = { adapterId: 1, lyDo: "bảo trì PLC" };
+    act(() => srv.mutOpts.tamTat.onError?.({ data: { appCode: "SCADA_CONFIG_TOTP_REQUIRED" } }, vars as never));
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    const dlg = screen.getByRole("dialog");
+    expect((within(dlg).getByLabelText(S("scada.diag.dialog.lyDo")) as HTMLTextAreaElement).value).toBe("bảo trì PLC");
+    const o = within(dlg).getByLabelText(S("scada.kenh.dialog.totp")) as HTMLInputElement;
+    expect(within(dlg).getByRole("button", { name: S("scada.diag.dialog.gui") })).toBeDisabled(); // chưa đủ 6 số
+    fireEvent.change(o, { target: { value: "123456" } });
+    fireEvent.click(within(dlg).getByRole("button", { name: S("scada.diag.dialog.gui") }));
+    expect(srv.mutCalls.at(-1)).toEqual({ proc: "tamTat", vars: { adapterId: 1, lyDo: "bảo trì PLC", totpCode: "123456" } });
+    act(() => srv.mutOpts.tamTat.onError?.({ data: { appCode: "SCADA_CONFIG_TOTP_INVALID" } }, { ...vars, totpCode: "123456" } as never));
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect((screen.getByLabelText(S("scada.kenh.dialog.totp")) as HTMLInputElement).value).toBe("");
+    expect(toastTrpcError).toHaveBeenCalledTimes(1);
+    // xong ⇒ đóng, mã không ở lại: mở lại hộp ⇒ không có ô mã
+    act(() => srv.mutOpts.tamTat.onSuccess?.({}));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(within(hang("AD-OK")).getByRole("button", { name: S("scada.diag.nut.tamTat") }));
+    expect(screen.queryByLabelText(S("scada.kenh.dialog.totp"))).toBeNull();
   });
 
   it("thành công ⇒ làm mới danhSach + tagCuaAdapter, toast, đóng hộp; lỗi máy chủ ⇒ toastTrpcError, hộp giữ mở", () => {

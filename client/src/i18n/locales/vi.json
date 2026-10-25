@@ -23526,6 +23526,7 @@
         "ketNoiLaiMoTa": "Làm mới phiên kết nối tới thiết bị. Trong lúc nối lại, các tag có thể tạm hiện chất lượng xấu.",
         "tamTatTieuDe": "Tạm tắt adapter {{code}}?",
         "tamTatMoTa": "Ngừng đọc thiết bị và đánh dấu adapter tắt cho tới khi được bật lại ở trang Adapter thiết bị.",
+        "canMaTotp": "Adapter này còn tag được bảo vệ — nhập mã TOTP để xác nhận cùng lý do trên.",
         "lyDo": "Lý do (ghi vào audit)",
         "lyDoNgan": "Lý do cần tối thiểu {{min}} ký tự",
         "huy": "Huỷ",

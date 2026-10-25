@@ -23552,6 +23552,7 @@
         "ketNoiLaiMoTa": "Refreshes the connection session to the device. While reconnecting, tags may briefly show bad quality.",
         "tamTatTieuDe": "Disable adapter {{code}}?",
         "tamTatMoTa": "Stops reading the device and marks the adapter disabled until it is re-enabled on the Device Adapters page.",
+        "canMaTotp": "This adapter still has protected tags — enter your TOTP code to confirm, together with the reason above.",
         "lyDo": "Reason (recorded in audit)",
         "lyDoNgan": "The reason needs at least {{min}} characters",
         "huy": "Cancel",

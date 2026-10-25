@@ -37,6 +37,13 @@ import {
   AlertTriangle, Activity, PartyPopper, Power,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useHopMaTotpTroLai } from "@/components/scada/HopMaTotpTroLai";
+
+/** Biến gửi `deviceAdapter.tags.create` (không gồm `totpCode` — hộp mã tự thêm khi gửi lại). */
+type TagCreateVars = {
+  adapterId: number; tagKey: string; address: string; dataType: DataType;
+  unit?: string | null; scale?: number | null; offset?: number | null; writable?: boolean; isEnabled?: boolean;
+};
 
 /** Wire shape received on telemetry:sample (mirrors server TelemetryBroadcastSample). */
 interface TelemetrySample {
@@ -118,7 +125,8 @@ export default function DeviceOnboardingWizard({ open, onOpenChange, onChanged }
     setTestResult(null); setLiveSample(null);
   };
 
-  useEffect(() => { if (!open) reset(); }, [open]);
+  // hopTag khai báo sau (hook phụ thuộc createTag); gọi lúc effect chạy nên đã có. Đóng wizard ⇒ mã không ở lại.
+  useEffect(() => { if (!open) { reset(); hopTag.daXong(); } }, [open]);
 
   // ── Mutations (reuse existing) ──
   const createAdapter = trpc.deviceAdapter.create.useMutation({
@@ -132,14 +140,20 @@ export default function DeviceOnboardingWizard({ open, onOpenChange, onChanged }
     onError: (e) => toastTrpcError(e),
   });
 
+  // R1b-2a T11 — tạo tag lên khoá orphan được bảo vệ ⇒ máy chủ đòi TOTP (SCADA_CONFIG_TOTP_REQUIRED) ⇒ hộp mã, gửi lại CHÍNH lượt đó.
   const createTag = trpc.deviceAdapter.tags.create.useMutation({
     onSuccess: () => {
+      hopTag.daXong();
       setTagCreated(true);
       toast.success(t("wizard.tagCreated", "Đã tạo tag"));
       setStep(3);
     },
-    onError: (e) => toastTrpcError(e),
+    onError: (e, bien) => {
+      if (hopTag.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
   });
+  const hopTag = useHopMaTotpTroLai<TagCreateVars>((bien) => createTag.mutate(bien), createTag.isPending);
 
   const testConnection = trpc.deviceAdapter.testConnection.useMutation({
     onSuccess: (res) => setTestResult(res),
@@ -233,6 +247,7 @@ export default function DeviceOnboardingWizard({ open, onOpenChange, onChanged }
   }, [liveSample]);
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
@@ -471,5 +486,7 @@ export default function DeviceOnboardingWizard({ open, onOpenChange, onChanged }
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {hopTag.hop}
+    </>
   );
 }
