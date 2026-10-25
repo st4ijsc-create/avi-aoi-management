@@ -50,6 +50,7 @@ export const NUT_XEM_TRUOC: ReadonlySet<string> = new Set([
   "kich-hoat.lich",
   "kich-hoat.webhook",
   "kich-hoat.mcp",
+  "kich-hoat.su-kien",
   "nguoi.duyet",
   "tich-hop.http-doc",
   "tich-hop.http-gui",
@@ -57,6 +58,11 @@ export const NUT_XEM_TRUOC: ReadonlySet<string> = new Set([
   "ai.sinh-ma",
   "ai.agent",
   "luong.goi-con",
+  // Lô Luồng-1: đọc số liệu nhà máy (theo phạm vi chủ lượt) và gửi thông báo nội bộ — chạy thử chỉ XEM TRƯỚC tham số.
+  "du-lieu.so-lieu",
+  "tich-hop.thong-bao",
+  // Lô Luồng-2: tra kho tri thức (vai chủ lượt) — chạy thử chỉ XEM TRƯỚC tham số.
+  "ai.tra-tri-thuc",
   // FOE workflow: không có cột tenant (phạm vi suy từ máy của các bước) và chưa có bộ kiểm ⇒ chỉ xem trước.
   "ot.de-xuat-luong",
 ]);

@@ -71,6 +71,11 @@ beforeAll(async () => {
     const [as] = await d(sql`INSERT INTO alert_settings ("userId", name, "alertType", threshold) VALUES (${x.userId}, ${RUN + "as" + k}, 'ng_count', 1) RETURNING id`);
     ad["as" + k] = as.id;
   }
+  // sản phẩm NHÁP (chưa gắn nhà máy nào) + điểm đo + yêu cầu duyệt ngưỡng: thấy được ở list LẪN getById (cùng luật L3 'nháp thấy được')
+  ad.pD = await sp("D");
+  const [ptD] = await d(sql`INSERT INTO measurement_point_defs ("productModelId", code, name, "measurementType", "positionX", "positionY") VALUES (${ad.pD}, ${RUN + "mpD"}, ${RUN + "mpD"}, 'VISUAL', 1, 1) RETURNING id`);
+  const [taD] = await d(sql`INSERT INTO threshold_approvals ("pointDefId", "requestedBy", suggestion) VALUES (${ptD.id}, ${A.userId}, '{}'::jsonb) RETURNING id`);
+  ad.taD = taD.id;
   cA = await caller(H.uA);
   cAdm = await caller(H.uAdmin);
   cRong = await caller(H.uRong);
@@ -169,6 +174,8 @@ describe("★★★ productVariant · thresholdApproval · alertRouter", () => {
     const la = ids(await cA.ta.list({ limit: 500 }));
     expect(la).toContain(ad.taA);
     expect(la).not.toContain(ad.taB);
+    expect(la, "sản phẩm NHÁP (chưa gắn nhà máy) thấy được ở list như getById").toContain(ad.taD);
+    expect(await loi(() => cA.ta.getById({ id: ad.taD }))).toBeNull();
     expect(ids(await cAdm.ta.list({ limit: 500 }))).toContain(ad.taB);
     expect((await loi(() => cA.ta.getById({ id: ad.taB })))?.startsWith("NOT_FOUND")).toBe(true);
     expect(await loi(() => cA.ta.getById({ id: ad.taA }))).toBeNull();

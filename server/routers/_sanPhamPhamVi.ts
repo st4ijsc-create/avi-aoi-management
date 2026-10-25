@@ -52,3 +52,18 @@ export async function sanPhamNhinThay(ctx: CoDanhTinh, productModelId: number): 
     throw e;
   }
 }
+
+/**
+ * phạm vi người dùng (L9b 2026-10-25): điều kiện SQL "điểm đo thuộc sản phẩm NHÌN THẤY ĐƯỢC" cho bảng khoá theo `pointDefId` — cùng luật `sanPhamNhinThay`:
+ * sản phẩm trong phạm vi (luật L3) HOẶC sản phẩm NHÁP chưa gắn nhà máy nào. `undefined` khi toàn quyền.
+ */
+export async function congDiemDoNhinThay(ctx: CoDanhTinh, cotPointDefId: import("drizzle-orm").SQL | import("drizzle-orm/pg-core").AnyPgColumn): Promise<import("drizzle-orm").SQL | undefined> {
+  const { congDiemDoTheoPhamVi } = await import("../db/product");
+  const trong = await congDiemDoTheoPhamVi(cotPointDefId, phamViCua(ctx));
+  if (trong === undefined) return undefined;
+  return sql`(${trong} OR ${cotPointDefId} IN (
+    SELECT mp.id FROM measurement_point_defs mp
+    WHERE NOT EXISTS (SELECT 1 FROM product_machine_mappings x WHERE x."productModelId" = mp."productModelId")
+      AND NOT EXISTS (SELECT 1 FROM measurement_point_defs y WHERE y."productModelId" = mp."productModelId" AND y."machineId" IS NOT NULL)
+      AND NOT EXISTS (SELECT 1 FROM product_inspections z WHERE z."productModelId" = mp."productModelId" AND z."machineId" IS NOT NULL)))`;
+}

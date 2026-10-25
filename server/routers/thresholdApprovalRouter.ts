@@ -36,9 +36,7 @@ import { appError } from "../_core/appError";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
 import { getDb } from "../db/connection";
-import { diemDoGhiTrongPhamVi, sanPhamNhinThay } from "./_sanPhamPhamVi";
-import { congDiemDoTheoPhamVi } from "../db/product";
-import { phamViCua } from "./_phamViNguoiXem";
+import { diemDoGhiTrongPhamVi, sanPhamNhinThay, congDiemDoNhinThay } from "./_sanPhamPhamVi";
 import { updateMeasurementPointDef, createAuditLog } from "../db";
 import {
   thresholdApprovals,
@@ -435,7 +433,7 @@ export const thresholdApprovalRouter = router({
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const conds = [] as any[];
-      const congSp = await congDiemDoTheoPhamVi(thresholdApprovals.pointDefId, phamViCua(ctx)); // phạm vi người dùng (L9 2026-10-25): điểm đo → sản phẩm trong phạm vi (luật L3)
+      const congSp = await congDiemDoNhinThay(ctx, thresholdApprovals.pointDefId); // phạm vi người dùng (L9 2026-10-25): điểm đo → sản phẩm NHÌN THẤY ĐƯỢC (luật L3 + sản phẩm nháp — cùng getById / countPendingByProduct)
       if (congSp) conds.push(congSp);
       if (input?.pointDefId) conds.push(eq(thresholdApprovals.pointDefId, input.pointDefId));
       if (input?.status) conds.push(eq(thresholdApprovals.status, input.status));
