@@ -26,7 +26,7 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1198, no: 160 } as const; // W17: abTest ×2 sổ → miễn trừ (router không mount) — tổng nợ không đổi, sổ 5 → 3; // 2026-10-25 gộp L6a (167) + W16 (kho vật tư + quy tắc leo thang theo nhà máy, mig 0424/0425: alertEscalation ×4 + mesControlTower ×3 có khoá thật) −7 ⇒ 160, đo bằng census
+const GHIM = { tongMutation: 1198, no: 159 } as const; // W17a: reportArtifact.delete có cổng phạm vi thật (gỡ miễn trừ) 160 → 159; // W17: abTest ×2 sổ → miễn trừ (router không mount) — tổng nợ không đổi, sổ 5 → 3; // 2026-10-25 gộp L6a (167) + W16 (kho vật tư + quy tắc leo thang theo nhà máy, mig 0424/0425: alertEscalation ×4 + mesControlTower ×3 có khoá thật) −7 ⇒ 160, đo bằng census
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {

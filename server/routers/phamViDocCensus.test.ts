@@ -929,7 +929,8 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // Chứng minh: loParetoPhamVi (5 ca, đột biến 13/13) · loDoLuongPhamVi (10 ca, đột biến 21/23 + 2 cổng dự phòng tương đương) · loNangLuongSanPhamPhamVi (12 ca) · loMsdStencilPhamVi (4 ca) · loNcrEcnPhamVi (8 ca, đột biến 24/24).
 // Kèm vá LỖI CÓ SẴN: khoá bộ nhớ đệm getStationOverview thiếu phạm vi; db/energy.ts bind Date thô vào postgres-js + timestamp trả chuỗi; stencil.status rò tổng số lần in dù ẩn tên khuôn.
 // ★★ 2026-10-25 (lô W16, kiem-dinh, cộng dồn sau L6a 164/473/559): **A 164 → 163 · C 473 → 470 · S 559 → 563 · B/D/tong unchanged.** 4 thủ tục ĐỌC → S: maintenanceRouter.partsBelowReorder (A→S, dòng sổ nợ GỠ) + mesControlTower.listMaterialReceipts|listSupplierLots|listDispositions (C→S) — kho vật tư theo nhà máy (mig 0424), lọc `factoryId IN phạm vi`. Chứng minh: `phamViGhiDoW16.db.test.ts`.
-const GHIM = { A: 163, B: 8, C: 470, D: 1198, S: 563, tong: 2402 } as const;
+// ★★ 2026-10-25 (lô W17a): **C 470 → 467 · S 563 → 566 · A/B/D/tong unchanged.** reportArtifact.list|get|download C→S: tệp báo cáo theo phạm vi NGƯỜI TẠO cho vai đặc quyền không phải admin (reportArtifactScope.ts). Chứng minh: `phamViGhiDoW17a.db.test.ts`.
+const GHIM = { A: 163, B: 8, C: 467, D: 1198, S: 566, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

@@ -273,6 +273,8 @@ export async function duplicateUserCustomDashboard(id: number, userId: number) {
   
   const original = await getUserCustomDashboardById(id);
   if (!original) return null;
+  // W17a (kiểm định phamViGhi): chỉ chủ hoặc bảng công khai mới sao chép được (cùng luật xem của getCustomDashboard / exportCustomDashboard); bảng riêng của người khác ≡ không tồn tại.
+  if (original.userId !== userId && !original.isPublic) return null;
   
   const [result] = await db.insert(userCustomDashboards).values({
     userId,
