@@ -258,6 +258,15 @@ describe("final wave #7 — vision tools produce BOUND actions (otWriteBinding +
     const row = pending.find((r) => r.id === p.pendingAction!.actionId);
     expect(readOtPayloadHash(row?.previewJson)).toBe(otPayloadHash({ tool: "spi_printer_offset", ...target! }));
   });
+
+  it("R1b-2a T1 (security review) — spi_printer_offset: |offset| ≤ 50 µm và hữu hạn ở schema VÀ ở plan (execute / otWriteBinding đọc args ĐÃ LƯU, không qua schema)", async () => {
+    const t = tool("spi_printer_offset");
+    expect(t.parameters.safeParse({ machineId: 5, offsetXUm: 50, offsetYUm: -50 }).success).toBe(true);
+    for (const [x, y] of [[50.1, 0], [0, -51], [Number.NaN, 0], [0, Number.POSITIVE_INFINITY]]) {
+      expect(t.parameters.safeParse({ machineId: 5, offsetXUm: x, offsetYUm: y }).success, `${x}/${y}`).toBe(false);
+      await expect(t.otWriteBinding!({ machineId: 5, offsetXUm: x, offsetYUm: y } as any, ctx() as any), `${x}/${y}`).rejects.toThrow();
+    }
+  });
 });
 
 describe("(c) confirmed proposal routes through dispatch — SIMULATED on uncommissioned adapter (composes with C2)", () => {

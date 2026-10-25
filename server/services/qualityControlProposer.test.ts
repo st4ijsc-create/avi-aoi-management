@@ -305,6 +305,55 @@ describe("R1b-2a T1 — lamTronTheoLuoiTag + đề xuất SPI theo lưới tag",
     expect(lamTronTheoLuoiTag(-50, { dataType: "int", scale: 20, offset: 0 }, 1, 50)).toBe(-40); // trần ⇒ lùi MỘT bước về phía 0
   });
 
+  it("security review — trần: điểm lưới TRONG [−T, T] gần v nhất (offset ≠ 0, bước thô, v lớn) — lùi một bước kiểu cũ vẫn vượt trần", () => {
+    // offset 10, bước 30, v 130 ⇒ lưới …, 40, 70, … ; bản cũ: 130 − 30 = 100 > 50. Đúng: 40.
+    expect(lamTronTheoLuoiTag(130, { dataType: "int", scale: 30, offset: 10 }, 1, 50)).toBe(40);
+    expect(lamTronTheoLuoiTag(-130, { dataType: "int", scale: 30, offset: -10 }, 1, 50)).toBe(-40); // đối xứng âm
+    expect(lamTronTheoLuoiTag(200, { dataType: "int", scale: 20, offset: 5 }, 1, 50)).toBe(45); // bản cũ 185
+    expect(lamTronTheoLuoiTag(-200, { dataType: "int", scale: -20, offset: -5 }, 1, 50)).toBe(-45); // scale âm cùng lưới
+    expect(lamTronTheoLuoiTag(80, { dataType: "float", scale: 1, offset: 0, writeStep: 30, writeMin: 7 }, 1, 50)).toBe(37); // lưới float 7 + k·30
+    expect(lamTronTheoLuoiTag(73.26, null, 1, 50)).toBe(50); // roundDp: kẹp vào 50.0
+    expect(lamTronTheoLuoiTag(50, { dataType: "int", scale: 25, offset: 0 }, 1, 50)).toBe(50); // điểm lưới ĐÚNG bằng trần được giữ
+  });
+
+  it("security review — KHÔNG có điểm lưới nào trong [−T, T] ⇒ null (bản cũ trả −60 / 60, |r| > T); đối xứng âm", () => {
+    expect(lamTronTheoLuoiTag(50, { dataType: "int", scale: 120, offset: 60 }, 1, 50)).toBeNull(); // lưới −60, 60
+    expect(lamTronTheoLuoiTag(-50, { dataType: "int", scale: 120, offset: -60 }, 1, 50)).toBeNull();
+    expect(lamTronTheoLuoiTag(0, { dataType: "int", scale: 120, offset: 60 }, 1, 50)).toBeNull();
+    expect(lamTronTheoLuoiTag(1, { dataType: "int", scale: 1, offset: 0 }, 1, -1)).toBeNull(); // trần âm ⇒ không gì hợp lệ
+  });
+
+  it("security review — thuộc tính: ∀ lưới int (scale, offset) × v × trần ⇒ null HOẶC (|r| ≤ trần VÀ r nằm trên lưới)", () => {
+    const scales = [0.1, 0.5, 1, 3, 7.5, 20, 30, 49, 99, 101, 120, -20];
+    const offsets = [0, 0.3, 5, -5, 10, 25, -60, 60, 49.9];
+    for (const s of scales)
+      for (const o of offsets)
+        for (const T of [0, 1, 7, 50])
+          for (const v of [-200, -51, -50, -49.5, -7.26, 0, 3.3, 49.9, 50, 50.1, 130, 999]) {
+            const r = lamTronTheoLuoiTag(v, { dataType: "int", scale: s, offset: o }, 1, T);
+            if (r === null) continue;
+            expect(Math.abs(r), `s=${s} o=${o} T=${T} v=${v} ⇒ ${r}`).toBeLessThanOrEqual(T);
+            const k = (r - o) / s;
+            expect(Math.abs(k - Math.round(k)), `lệch lưới s=${s} o=${o} T=${T} v=${v} ⇒ ${r}`).toBeLessThan(1e-6);
+          }
+  });
+
+  it("security review — trục không có điểm lưới trong ±maxStepUm ⇒ KHÔNG đề xuất spi; maxStepUm > 50 bị chặn ở 50", () => {
+    const ps = buildControlProposals({
+      ...VERDICT_NG,
+      machineId: 7,
+      inspectionId: 1,
+      spiTrend: [{ offsetXUm: -50, offsetYUm: -12 }],
+      spiOpts: { gain: 1 },
+      spiLuoi: { x: { dataType: "int", scale: 120, offset: 60 }, y: { dataType: "int", scale: 1, offset: 0 } },
+    });
+    expect(ps.map((p) => p.kind)).toEqual(["reject_divert"]);
+    const r = computeSpiPrinterOffset([{ offsetXUm: -500, offsetYUm: 0 }], { gain: 1, maxStepUm: 80 });
+    expect(r.maxStepUm).toBe(50);
+    expect(r.offsetXUm).toBe(50);
+    expect(r.khongCoDiemLuoi).toBe(false);
+  });
+
   it("computeSpiPrinterOffset nhận luoiX / luoiY: trục int scale 1 ⇒ −7; trục scale 10 ⇒ −10; mean* vẫn roundDp", () => {
     const r = computeSpiPrinterOffset([{ offsetXUm: 7.26, offsetYUm: 12.6 }], {
       gain: 1,

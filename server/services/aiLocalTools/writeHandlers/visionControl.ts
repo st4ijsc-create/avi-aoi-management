@@ -31,6 +31,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { deviceAdapters, deviceTags } from "../../../../drizzle/schema";
 import { dispatch, type DispatchInput } from "../../ot/commandDispatcher";
+import { SPI_TRAN_TUYET_DOI_UM } from "../../qualityControlProposer"; // R1b-2a T1 (security review) — hard bound of one SPI correction
 
 /**
  * doc 81 Đợt 1B final wave (item 7) — the OT command a vision tool dispatches, built by ONE
@@ -289,13 +290,20 @@ registerTool<RejectDivertParams, unknown>({
 
 // ─── spi_printer_offset (canEdit) ──────────────────────────────────────────────
 
+/** R1b-2a T1 (security review 2026-10-25) — one SPI correction: finite, |µm| ≤ SPI_TRAN_TUYET_DOI_UM. */
+export const offsetSpiSchema = z.number().finite().min(-SPI_TRAN_TUYET_DOI_UM).max(SPI_TRAN_TUYET_DOI_UM);
+
 const spiPrinterOffsetParams = z
   .object({
     machineId: z.number().int().positive(),
-    /** Stencil-printer X correction (µm) — computed deterministically upstream. */
-    offsetXUm: z.number(),
-    /** Stencil-printer Y correction (µm). */
-    offsetYUm: z.number(),
+    /**
+     * Stencil-printer X correction (µm) — computed deterministically upstream. R1b-2a T1 (security review 2026-10-25): finite and
+     * |offset| ≤ SPI_TRAN_TUYET_DOI_UM, enforced HERE too, not only by the proposer: the planner / intent path parses this schema, and
+     * `planSpiPrinterOffset` (execute + otWriteBinding) re-parses the STORED args with it — proposeAction does not parse args.
+     */
+    offsetXUm: offsetSpiSchema,
+    /** Stencil-printer Y correction (µm) — same bound. */
+    offsetYUm: offsetSpiSchema,
     tagKeyX: z.string().min(1).max(128).optional(), // default printer_offset_x
     tagKeyY: z.string().min(1).max(128).optional(), // default printer_offset_y
     provenance: provenanceSchema.optional(),
@@ -308,7 +316,11 @@ export const SPI_OFFSET_X_TAG = "printer_offset_x";
 export const SPI_OFFSET_Y_TAG = "printer_offset_y";
 
 /** final wave (item 7) — see planRejectDivert: one plan for execute() and otWriteBinding(). */
-async function planSpiPrinterOffset(p: SpiPrinterOffsetParams): Promise<VisionPlan> {
+async function planSpiPrinterOffset(p0: SpiPrinterOffsetParams): Promise<VisionPlan> {
+  // R1b-2a T1 (security review 2026-10-25) — the stored ai_pending_actions args are NOT schema-checked by proposeAction / confirm:
+  // re-check the two offsets here so execute (and the binding hash) never carries a non-finite or |offset| > SPI_TRAN_TUYET_DOI_UM value
+  // (ZodError ⇒ no plan). Only the offsets: the rest of the stored args keeps its old (unchanged) handling.
+  const p = { ...p0, offsetXUm: offsetSpiSchema.parse(p0.offsetXUm), offsetYUm: offsetSpiSchema.parse(p0.offsetYUm) };
   const tagKeyX = p.tagKeyX ?? SPI_OFFSET_X_TAG;
   const tagKeyY = p.tagKeyY ?? SPI_OFFSET_Y_TAG;
   const adapterId = await adapterIdForMachine(p.machineId);

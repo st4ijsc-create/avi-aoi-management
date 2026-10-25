@@ -107,10 +107,16 @@ export interface SpiTrendSample {
   volumePct?: number | null;
 }
 
+/**
+ * R1b-2a T1 (security review 2026-10-25) — HARD bound (µm) of one stencil-printer correction, per axis: `computeSpiPrinterOffset` caps
+ * `maxStepUm` at it and the `spi_printer_offset` tool schema (visionControl.ts) refuses |offset| above it.
+ */
+export const SPI_TRAN_TUYET_DOI_UM = 50;
+
 export interface SpiOffsetOptions {
   /** Closed-loop damping 0..1 (fraction of the mean drift corrected). Default 0.5. */
   gain?: number;
-  /** Max single-step correction magnitude (µm) — safety clamp. Default 50. */
+  /** Max single-step correction magnitude (µm) — safety clamp. Default 50; capped at SPI_TRAN_TUYET_DOI_UM. */
   maxStepUm?: number;
   /** Deadband (µm): mean drift within this on BOTH axes ⇒ no correction worth proposing. Default 5. */
   deadbandUm?: number;
@@ -148,28 +154,57 @@ const sachSo = (n: number): number => Number(n.toPrecision(15));
  *   • `luoi` int ⇒ o + round((v − o)/s)·s (s / o normalised like `heSoThangDo`), cleaned with toPrecision(15);
  *   • float with `writeStep > 0` ⇒ base + round((v − base)/step)·step, base = writeMin ?? 0;
  *   • anything else, or `luoi === null` ⇒ `roundTo(v, roundDp)` (old behaviour).
- * `tranTuyetDoi` present and |result| > tranTuyetDoi ⇒ step back ONE grid step towards 0 (the safety clamp stays a hard bound). −0 ⇒ 0.
- * `dispatch()` stays the final arbiter (range / declared type are not looked at here).
+ * `tranTuyetDoi` present (security review 2026-10-25) ⇒ the result is the grid point INSIDE [−tranTuyetDoi, +tranTuyetDoi] nearest to v:
+ * k clamped into [ceil((−T − goc)/buoc), floor((T − goc)/buoc)] (a single step back from an outside point is NOT enough: with an offset, a
+ * coarse step or a large v it can stay outside or jump past −T). No grid point inside the bound ⇒ `null` (the caller makes NO proposal).
+ * Never returns |r| > tranTuyetDoi. −0 ⇒ 0. `dispatch()` stays the final arbiter (range / declared type are not looked at here).
  */
-export function lamTronTheoLuoiTag(v: number, luoi: LuoiGhiTag | null, roundDp: number, tranTuyetDoi?: number): number {
+export function lamTronTheoLuoiTag(v: number, luoi: LuoiGhiTag | null, roundDp: number, tranTuyetDoi?: number): number | null {
   let r: number;
+  let goc: number; // grid = goc + k·buoc, buoc > 0
   let buoc: number;
+  let diem: (k: number) => number;
   if (luoi && luoi.dataType === "int") {
     const sTho = luoi.scale == null ? 1 : Number(luoi.scale);
     const oTho = luoi.offset == null ? 0 : Number(luoi.offset);
     const s = Number.isFinite(sTho) && sTho !== 0 ? sTho : 1;
     const o = Number.isFinite(oTho) ? oTho : 0;
     r = sachSo(o + Math.round((v - o) / s) * s);
-    buoc = Math.abs(s);
+    goc = o;
+    buoc = Math.abs(s); // o + k·s with s < 0 is the same grid as o + k'·|s|
+    diem = (k) => sachSo(goc + k * buoc);
   } else if (luoi && luoi.dataType === "float" && luoi.writeStep != null && luoi.writeStep > 0) {
     const base = luoi.writeMin ?? 0;
     r = sachSo(base + Math.round((v - base) / luoi.writeStep) * luoi.writeStep);
+    goc = base;
     buoc = luoi.writeStep;
+    diem = (k) => sachSo(goc + k * buoc);
   } else {
     r = roundTo(v, roundDp);
-    buoc = Math.pow(10, -Math.max(0, Math.trunc(roundDp)));
+    const f = Math.pow(10, Math.max(0, Math.trunc(roundDp)));
+    goc = 0;
+    buoc = 1 / f;
+    diem = (k) => k / f;
   }
-  if (tranTuyetDoi != null && Number.isFinite(tranTuyetDoi) && Math.abs(r) > tranTuyetDoi) r = sachSo(r - Math.sign(r) * buoc);
+  if (tranTuyetDoi != null) {
+    const T = tranTuyetDoi;
+    if (!Number.isFinite(T) || T < 0) return null;
+    if (!(Math.abs(r) <= T)) {
+      // nearest grid point inside [−T, T]: clamp k (a hair of tolerance on the edges so a point exactly at ±T is not lost to fp noise;
+      // the strict check below removes any point the tolerance let in)
+      const kLo = Math.ceil((-T - goc) / buoc - 1e-9);
+      const kHi = Math.floor((T - goc) / buoc + 1e-9);
+      if (kLo > kHi) return null;
+      const k = Math.min(Math.max(Math.round((v - goc) / buoc), kLo), kHi);
+      r = diem(k);
+      if (Math.abs(r) > T) {
+        const k2 = r > 0 ? k - 1 : k + 1; // the tolerance admitted a point just outside ⇒ the next one inward, if still in range
+        if (k2 < kLo || k2 > kHi) return null;
+        r = diem(k2);
+        if (Math.abs(r) > T) return null;
+      }
+    }
+  }
   return Object.is(r, -0) ? 0 : r;
 }
 
@@ -189,6 +224,11 @@ export interface SpiOffsetResult {
   withinDeadband: boolean;
   /** true ⇒ the raw correction was clamped to ±maxStepUm on at least one axis. */
   clamped: boolean;
+  /**
+   * R1b-2a T1 (security review 2026-10-25) — true ⇒ on at least one axis the target tag's write grid has NO point inside ±maxStepUm (that
+   * axis' offset is reported as 0 and must not be sent) ⇒ no spi_printer_offset proposal.
+   */
+  khongCoDiemLuoi: boolean;
 }
 
 function roundTo(n: number, dp: number): number {
@@ -218,7 +258,9 @@ export function computeSpiPrinterOffset(
   opts: SpiOffsetOptions = {},
 ): SpiOffsetResult {
   const gain = Number.isFinite(opts.gain) && (opts.gain as number) >= 0 ? (opts.gain as number) : 0.5;
-  const maxStepUm = Number.isFinite(opts.maxStepUm) && (opts.maxStepUm as number) > 0 ? (opts.maxStepUm as number) : 50;
+  // R1b-2a T1 (security review) — ±SPI_TRAN_TUYET_DOI_UM is a hard cap: a larger maxStepUm would only produce proposals the
+  // spi_printer_offset tool schema refuses.
+  const maxStepUm = Math.min(SPI_TRAN_TUYET_DOI_UM, Number.isFinite(opts.maxStepUm) && (opts.maxStepUm as number) > 0 ? (opts.maxStepUm as number) : 50);
   const deadbandUm = Number.isFinite(opts.deadbandUm) && (opts.deadbandUm as number) >= 0 ? (opts.deadbandUm as number) : 5;
   const window = Number.isFinite(opts.window) && (opts.window as number) > 0 ? Math.min(50, Math.trunc(opts.window as number)) : 20;
   const roundDp = Number.isFinite(opts.roundDp) && (opts.roundDp as number) >= 0 ? Math.trunc(opts.roundDp as number) : 1;
@@ -230,7 +272,7 @@ export function computeSpiPrinterOffset(
 
   if (n === 0) {
     return {
-      offsetXUm: 0, offsetYUm: 0, samplesUsed: 0,
+      offsetXUm: 0, offsetYUm: 0, khongCoDiemLuoi: false, samplesUsed: 0,
       meanOffsetXUm: 0, meanOffsetYUm: 0, meanVolumePct: null,
       gain, maxStepUm, deadbandUm, withinDeadband: true, clamped: false,
     };
@@ -250,11 +292,16 @@ export function computeSpiPrinterOffset(
   const clX = clamp(rawX, -maxStepUm, maxStepUm);
   const clY = clamp(rawY, -maxStepUm, maxStepUm);
   const clamped = clX !== rawX || clY !== rawY;
+  // R1b-2a T1 — the correction lands ON the target tag's write grid (no grid ⇒ roundDp as before), at the grid point inside ±maxStepUm
+  // nearest to the clamped value (security review 2026-10-25). No grid point inside ±maxStepUm on an axis ⇒ that axis reports 0 and
+  // `khongCoDiemLuoi` is true ⇒ buildControlProposals makes NO spi proposal.
+  const gx = lamTronTheoLuoiTag(clX, opts.luoiX ?? null, roundDp, maxStepUm);
+  const gy = lamTronTheoLuoiTag(clY, opts.luoiY ?? null, roundDp, maxStepUm);
 
   return {
-    // R1b-2a T1 — the correction lands ON the target tag's write grid (no grid ⇒ roundDp as before); the clamp stays a hard bound.
-    offsetXUm: lamTronTheoLuoiTag(clX, opts.luoiX ?? null, roundDp, maxStepUm),
-    offsetYUm: lamTronTheoLuoiTag(clY, opts.luoiY ?? null, roundDp, maxStepUm),
+    offsetXUm: gx ?? 0,
+    offsetYUm: gy ?? 0,
+    khongCoDiemLuoi: gx === null || gy === null,
     samplesUsed: n,
     meanOffsetXUm: roundTo(meanX, roundDp),
     meanOffsetYUm: roundTo(meanY, roundDp),
@@ -376,7 +423,8 @@ export function buildControlProposals(input: BuildProposalsInput): ControlPropos
     const offset = computeSpiPrinterOffset(input.spiTrend, { ...input.spiOpts, luoiX, luoiY });
     // R1b-2a T1 (Review Focus 4) — a correction that rounds to 0 on BOTH axes moves nothing ⇒ no proposal.
     const khongDoi = offset.offsetXUm === 0 && offset.offsetYUm === 0;
-    if (offset.samplesUsed > 0 && !offset.withinDeadband && !khongDoi) {
+    // security review 2026-10-25 — an axis whose tag grid has no point inside ±maxStepUm cannot be corrected within the bound ⇒ no proposal.
+    if (offset.samplesUsed > 0 && !offset.withinDeadband && !khongDoi && !offset.khongCoDiemLuoi) {
       const rationale =
         `SPI trend over ${offset.samplesUsed} sample(s) shows a mean deposit drift of ` +
         `(${offset.meanOffsetXUm}, ${offset.meanOffsetYUm}) µm` +
