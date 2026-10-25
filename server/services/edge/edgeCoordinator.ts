@@ -184,14 +184,14 @@ export async function registerNode(input: RegisterNodeInput): Promise<EdgeResult
 export type ListedEdgeNode = Omit<EdgeNode, "status"> & { status: EdgeNode["status"] | "retired"; retiredAt: string | null };
 
 /** List edge nodes (optionally by factory). Read — always safe (not flag-gated). A retired node is listed as "retired". */
-export async function listNodes(factoryCode?: string): Promise<ListedEdgeNode[]> {
+export async function listNodes(factoryCode?: string, dieuKienPhamVi?: import("drizzle-orm").SQL): Promise<ListedEdgeNode[]> {
   try {
     const d = await getDb();
     if (!d) return [];
     const q = d.select().from(edgeNodes);
-    const rows = factoryCode
-      ? await q.where(eq(edgeNodes.factoryCode, factoryCode)).orderBy(desc(edgeNodes.updatedAt))
-      : await q.orderBy(desc(edgeNodes.updatedAt));
+    // phạm vi người dùng (L6c 2026-10-25): dieuKienPhamVi = điều kiện mã nhà máy của người gọi (undefined = toàn quyền / nội bộ)
+    const dk = factoryCode ? (dieuKienPhamVi ? and(eq(edgeNodes.factoryCode, factoryCode), dieuKienPhamVi) : eq(edgeNodes.factoryCode, factoryCode)) : dieuKienPhamVi;
+    const rows = dk ? await q.where(dk).orderBy(desc(edgeNodes.updatedAt)) : await q.orderBy(desc(edgeNodes.updatedAt));
     // the retired ones, read apart through to_jsonb (works with or without mig 0378; unreadable ⇒ none marked — the list stays)
     const retired = new Map<number, string>();
     try {

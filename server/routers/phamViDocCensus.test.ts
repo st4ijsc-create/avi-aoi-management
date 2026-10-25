@@ -952,7 +952,8 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // 2026-10-25 gộp R1b-1 (D +1) với L6b ⇒ đo bằng census.
 // 2026-10-25 gộp L6w (getVariant C→S) với main R1b-1 ⇒ đo bằng census.
 // L6c-C1 (2026-10-25): 22 thủ tục đọc OT trục máy/robot/adapter được vá (A 117→95, S 610→632) — loOtDocC1PhamVi.db.test.ts
-const GHIM = { A: 95, B: 8, C: 469, D: 1199, S: 632, tong: 2403 } as const;
+// L6c-C2 (2026-10-25): 19 thủ tục đọc MQTT / ERP / edge / apiKey (trục trạm + mã + đích đa hình) A 95→76, S 632→651 — loOtDocC2PhamVi.db.test.ts
+const GHIM = { A: 76, B: 8, C: 469, D: 1199, S: 651, tong: 2403 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

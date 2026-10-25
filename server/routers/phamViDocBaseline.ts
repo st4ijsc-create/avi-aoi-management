@@ -52,7 +52,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/alertRouters.ts#alertRouter.listAll",
   // ── server/routers/aoiOnboardingRouter.ts (4) ──────────────────────────────────────────────
   // ── server/routers/apiKeyRouter.ts (1) ─────────────────────────────────────────────────────
-  "server/routers/apiKeyRouter.ts#apiKeyRouter.list",
   // ── server/routers/bomRouter.ts (5) ────────────────────────────────────────────────────────
   "server/routers/bomRouter.ts#bomRouter.getDefinition",
   // ── server/routers/commandCenterRouter.ts — ĐÃ TRẢ 2026-09-15 (QA lần 11, PH-23) ───────────
@@ -69,7 +68,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/ecosystemAdminRouter.ts (1) ─────────────────────────────────────────────
   "server/routers/ecosystemAdminRouter.ts#ecosystemAdminRouter.softRefIntegrity",
   // ── server/routers/edgeRuntimeRouter.ts (1) — 2026-10-10 (doc 81 Đợt 5 E2 fix): nodeStatus đã vá (runs lọc theo phạm vi), dòng đã gỡ.
-  "server/routers/edgeRuntimeRouter.ts#edgeRuntimeRouter.listNodes",
   // ── server/routers/equipmentStandardsRouter.ts (8) ─────────────────────────────────────────
   // 2026-09-27 (doc 80 Đợt 1 Task 3, STD-04) — `alarmKpis` không còn tự đọc `andon_events`
   // (toàn cục, bộ tính thứ hai): nó uỷ quyền `alarmKpiRouter.createCaller(ctx).summary(…)`,
@@ -83,9 +81,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.resolveForMachineType",
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.resolveType",
   // ── server/routers/erpAdminRouter.ts (3) ───────────────────────────────────────────────────
-  "server/routers/erpAdminRouter.ts#erpAdminRouter.listOauthClients",
-  "server/routers/erpAdminRouter.ts#erpAdminRouter.outboxDeadLetters",
-  "server/routers/erpAdminRouter.ts#erpAdminRouter.outboxStatus",
   // ── server/routers/federationRouter.ts (7) ─────────────────────────────────────────────────
   "server/routers/federationRouter.ts#federationRouter.aggregateSummary",
   "server/routers/federationRouter.ts#federationRouter.alertRollup",
@@ -112,23 +107,9 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.list",
   // ── server/routers/mappingAsCodeRouter.ts — ★ 2026-10-24: 1 mục ĐÃ TRẢ (exportOne ⇒ S qua _adapterPhamVi.ts), xoá khỏi sổ ──
   // ── server/routers/mqttBulletinRouter.ts (5) ───────────────────────────────────────────────
-  "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.getDashboardStats",
-  "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.getHistory",
-  "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.getHistoryDetail",
-  "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.getSetting",
-  "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.listSettings",
   // ── server/routers/mqttClientManagementRouter.ts (6) ───────────────────────────────────────
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.exportAssignmentReport",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.getAvailableTargets",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.getConnectionStatus",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.getDashboardStats",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.getReconnectStatsByTarget",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.listAssignments",
   // ── server/routers/mqttNgAlertSettingsRouter.ts (2) ────────────────────────────────────────
-  "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.getSetting",
-  "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.listSettings",
   // ── server/routers/mqttSoftwareVersionRouter.ts (1) ────────────────────────────────────────
-  "server/routers/mqttSoftwareVersionRouter.ts#mqttSoftwareVersionRouter.deviceVersionSummary",
   // ── server/routers/ngRateThresholdRouter.ts (4) ────────────────────────────────────────────
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.alertHistory",
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.currentNgRates",
