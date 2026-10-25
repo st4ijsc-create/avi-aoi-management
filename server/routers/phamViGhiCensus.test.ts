@@ -26,7 +26,7 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1199, no: 156 } as const; // 2026-10-25 gộp L6w (feederVerify/inspectionVariant/pdfReport −3) với main R1b-1 ⇒ đo bằng census
+const GHIM = { tongMutation: 1199, no: 155 } as const; // W17a: reportArtifact.delete có cổng thật (−1): 156 → 155; // 2026-10-25 gộp L6w (feederVerify/inspectionVariant/pdfReport −3) với main R1b-1 ⇒ đo bằng census
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {
@@ -83,6 +83,15 @@ describe("§5b miễn trừ có lý do — không hoá thạch, không trùng s�
       ...(SO.has(k) ? [`${k}: nằm cả trong sổ nợ`] : []),
     ]);
     expect(loi).toEqual([]);
+  });
+});
+
+describe("§5d router TẮT (không mount) được miễn trừ — bật lại mà chưa có cổng ⇒ ĐỎ", () => {
+  it("aiAdvanced không gắn training / abTest / edge (ngày gắn lại: thêm cổng phạm vi cho thủ tục ghi, rồi gỡ miễn trừ abTest)", async () => {
+    const { aiAdvancedRouter } = await import("./aiAdvancedRouter");
+    const duongDan = Object.keys((aiAdvancedRouter as unknown as { _def: { procedures: Record<string, unknown> } })._def.procedures);
+    expect(duongDan.length).toBeGreaterThan(0); // cầu chì: đọc được bảng thủ tục thật
+    expect(duongDan.filter((d) => /^(training|abTest|edge)./.test(d))).toEqual([]);
   });
 });
 
