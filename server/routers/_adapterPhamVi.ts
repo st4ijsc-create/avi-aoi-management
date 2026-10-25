@@ -338,7 +338,7 @@ export async function dieuKienDoiTuongTrongPhamVi(ctx: CoDanhTinh, cot: { may?: 
     phan.push(sql`(${cot.lanKiem} IS NULL OR (SELECT pi."machineId" FROM product_inspections pi WHERE pi."id" = ${cot.lanKiem}) IN (${ds}))`);
     co.push(sql`${cot.lanKiem} IS NOT NULL`);
   }
-  if (phan.length === 0) throw new Error("dieuKienDoiTuongTrongPhamVi: cần ít nhất một cột định vị");
+  if (phan.length === 0) throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "dieuKienDoiTuongTrongPhamVi" }, "Cần ít nhất một cột định vị");
   return sql`(${sql.join(phan, sql` AND `)} AND (${sql.join(co, sql` OR `)}))`;
 }
 
