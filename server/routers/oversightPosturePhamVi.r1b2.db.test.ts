@@ -49,6 +49,8 @@ let userB!: Caller;
 let userRong!: Caller;
 let admin!: Caller;
 let ctxAdmin!: { user: { id: number; role: string } };
+let ctxA!: { user: { id: number; role: string } };
+const luatN = { cN: 0, cAN: 0 };
 
 async function seedNhaMay(ten: string): Promise<NhaMay> {
   const code = `${RUN}${ten}`;
@@ -125,7 +127,9 @@ beforeAll(async () => {
   admin = ad_.caller;
   adminId = ad_.id;
   ctxAdmin = { user: { id: adminId, role: "admin" } };
-  userA = (await seedNguoi("ua", "engineer", [A.code])).caller;
+  const ua = await seedNguoi("ua", "engineer", [A.code]);
+  userA = ua.caller;
+  ctxA = { user: { id: ua.id, role: "engineer" } };
   userB = (await seedNguoi("ub", "engineer", [B.code])).caller;
   userRong = (await seedNguoi("ur", "engineer", [])).caller;
 
@@ -139,6 +143,9 @@ beforeAll(async () => {
   await seedLuat("cB", { machineId: B.mid, targetMachineId: B.mid });
   await seedLuat("cAB", { machineId: A.mid, targetAdapterId: ad.b });
   await seedLuat("cLineA", { scope: "line", lineId: A.lid, targetAdapterId: ad.a }); // vị trí chuyền + đích adapter cùng A
+  // Polish M-2 — adapter KHÔNG gắn máy (ad.n): chỉ toàn quyền thấy (adapterNhinThay(null, [..]) = false)
+  luatN.cN = await seedLuat("cN", { targetAdapterId: ad.n }); // vị trí DUY NHẤT = đích adapter vô chủ
+  luatN.cAN = await seedLuat("cAN", { machineId: A.mid, targetAdapterId: ad.n }); // máy A nhưng đích adapter vô chủ
   // hỏng cấu hình (telemetry_tag thiếu sourceKey)
   await seedLuat("hA", { sourceType: "telemetry_tag", action: "alert", machineId: A.mid });
   await seedLuat("hB", { sourceType: "telemetry_tag", action: "alert", machineId: B.mid });
@@ -153,6 +160,7 @@ beforeAll(async () => {
   await seedStop(null, { machineId: B.mid, daXacMinhPhamVi: true, buoc: "vai_tro", hanMs: 2000 });
   await seedStop(ad.a, [{ tagKey: "stop", value: 1 }]);
   await seedStop(ad.b, [{ tagKey: "stop", value: 1 }]);
+  await seedStop(ad.n, [{ tagKey: "stop", value: 1 }]); // Polish M-2 — adapter vô chủ ⇒ chỉ toàn quyền
   await seedStop(null, { machineId: A.mid, daXacMinhPhamVi: true, buoc: "doc_ghim", hanMs: 2000 }, 25);
 }, 120_000);
 
@@ -207,7 +215,7 @@ describe("★★★ oversight.posture — A/B theo phạm vi nhà máy (danh tí
     const cong = rt._internal.dieuKienLuatTrongPhamVi(pv);
     expect(cong).toBeUndefined();
     const cuaTep = like(interlockRules.name, `${RUN}-%`);
-    expect((await rt._internal.fetchInterlockCoverage(db, cuaTep)).count).toBe(4); // cA cB cAB cLineA
+    expect((await rt._internal.fetchInterlockCoverage(db, cuaTep)).count).toBe(6); // cA cB cAB cLineA cN cAN
     expect((await rt._internal.fetchInterlockCauHinhHong(db, cuaTep)).count).toBe(5); // hA hB hN lA lB
   });
 });
@@ -235,7 +243,25 @@ describe("★★★ STOP HMI quá hạn 24 h (ruling K7) — theo phạm vi; ch�
     const pv = await rt._internal.layPhamViPosture(ctxAdmin, db);
     const cuaTep = eq(scadaCommandAttempts.userId, adminId);
     const tep = await rt._internal.fetchStopQuaHan(db, pv, cuaTep);
-    expect(tep).toMatchObject({ count: 6, theoBuoc: { vai_tro: 2, pham_vi: 1, adapter: 2 }, degraded: false });
+    expect(tep).toMatchObject({ count: 7, theoBuoc: { vai_tro: 2, pham_vi: 1, adapter: 3 }, degraded: false }); // + adapter vô chủ (M-2)
+  });
+
+  it("★ Polish M-2 — adapter KHÔNG gắn máy (ad.n): luật nhắm nó + dòng STOP của nó ĐẾM cho admin, KHÔNG cho người nhà máy A", async () => {
+    const chiN = sql`${interlockRules.id} IN (${luatN.cN}, ${luatN.cAN})`;
+    const stopN = sql`${scadaCommandAttempts.adapterId} = ${ad.n} AND ${scadaCommandAttempts.userId} = ${adminId}`;
+    const pvAdmin = await rt._internal.layPhamViPosture(ctxAdmin, db);
+    const pvA = await rt._internal.layPhamViPosture(ctxA, db);
+    expect(pvA.toanQuyen).toBe(false);
+    expect(pvA.adapter).not.toContain(ad.n);
+    const congAdmin = rt._internal.dieuKienLuatTrongPhamVi(pvAdmin);
+    const congA = rt._internal.dieuKienLuatTrongPhamVi(pvA);
+    const voi = (a: ReturnType<typeof sql> | undefined, b: ReturnType<typeof sql>) => (a ? sql`(${a}) AND (${b})` : b);
+    // admin: cả hai luật + một dòng STOP
+    expect((await rt._internal.fetchInterlockCoverage(db, voi(congAdmin, chiN))).count).toBe(2);
+    expect((await rt._internal.fetchStopQuaHan(db, pvAdmin, stopN)).theoBuoc).toEqual({ adapter: 1 });
+    // người A: không luật nào, không dòng nào (cAN có máy A nhưng đích là adapter vô chủ)
+    expect((await rt._internal.fetchInterlockCoverage(db, voi(congA, chiN))).count).toBe(0);
+    expect(await rt._internal.fetchStopQuaHan(db, pvA, stopN)).toEqual({ count: 0, theoBuoc: {}, khongGhiSo: null, degraded: false });
   });
 
   it("phạm vi không phân giải được (pv null) ⇒ degraded, 0 (fail-closed, không đoán toàn quyền)", async () => {

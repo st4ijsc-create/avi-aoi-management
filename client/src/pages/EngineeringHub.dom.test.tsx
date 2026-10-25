@@ -434,6 +434,18 @@ describe("Tư thế an toàn (panel phụ + chip ghim) — không thoái lui GC1
     expect(aside().querySelector("[data-posture-cau-hinh-hong-canh-bao]")).toBeNull();
   });
 
+  it("Polish M-1 — dữ liệu THIẾU trường (không interlockRulesCauHinhHong, không stopQuaHan24h) ⇒ không in 'undefined', không khối cảnh báo, STOP 'không đọc được', panel vẫn render", () => {
+    const { interlockRulesCauHinhHong: _a, stopQuaHan24h: _b, ...thieu } = POSTURE_OK;
+    srv.posture = thieu;
+    render(<EngineeringHub />);
+    const a = aside();
+    expect(a.textContent).not.toContain("undefined");
+    expect(a.querySelector("[data-posture-cau-hinh-hong]")).toBeNull();
+    expect(a.querySelector("[data-posture-cau-hinh-hong-canh-bao]")).toBeNull();
+    expect((a.querySelector("[data-posture-stop-qua-han]") as HTMLElement).textContent).toBe(S("oversight.posture.stopQuaHanUnavailable"));
+    expect(within(a).getByText(S("oversight.posture.otWrites"))).toBeInTheDocument();
+  });
+
   it("T12 (ruling K7) — STOP HMI quá hạn 24 h: số đếm; degraded ⇒ 'không đọc được', không số", () => {
     srv.posture = { ...POSTURE_OK, stopQuaHan24h: { count: 3, theoBuoc: { vai_tro: 3 }, khongGhiSo: null, degraded: false } };
     render(<EngineeringHub />);

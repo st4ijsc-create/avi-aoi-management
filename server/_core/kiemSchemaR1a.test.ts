@@ -12,6 +12,7 @@ import {
   CHU_KY_NHAC_MS,
   COT_DEVICE_TAGS_0431,
   FK_0433,
+  HINH_FK_0433,
   __datTrangThaiSchemaR1a,
   biet0433Thieu,
   khoiDongOtCoKiemSchema,
@@ -31,12 +32,15 @@ const dialect = new PgDialect();
  * R1b-2a T12: tên FK của 0433). `fkSua` = ghi đè cột của một FK (vd `{ scada_kenh_che_do_machine_fk: { confdeltype: "a" } }`).
  * pg_constraint giả TÔN TRỌNG bộ lọc của câu thật: chỉ trả FK có tên + bảng nằm trong tham số (bảng vắng ⇒ FK của nó vắng như DB thật).
  */
-const FK_BANG: Record<string, string> = {
-  scada_kenh_che_do_machine_fk: "scada_kenh_che_do",
-  scada_kenh_che_do_adapter_fk: "scada_kenh_che_do",
-  scada_khoa_chon_adapter_fk: "scada_khoa_chon",
+// Polish M-3 — hàng pg_constraint ĐÚNG như DB đã áp 0433 (cột / bảng đích / cột đích như verify của apply-migration-0433.mjs).
+const FK_HANG: Record<string, { bang: string; cot: string; bang_dich: string; cot_dich: string; so_cot: number }> = {
+  scada_kenh_che_do_machine_fk: { bang: "scada_kenh_che_do", cot: "machine_id", bang_dich: "machines", cot_dich: "id", so_cot: 1 },
+  scada_kenh_che_do_adapter_fk: { bang: "scada_kenh_che_do", cot: "adapter_id", bang_dich: "device_adapters", cot_dich: "id", so_cot: 1 },
+  scada_khoa_chon_adapter_fk: { bang: "scada_khoa_chon", cot: "adapter_id", bang_dich: "device_adapters", cot_dich: "id", so_cot: 1 },
 };
-function gia(bo: string[] = [], fkSua: Record<string, Partial<{ confdeltype: string; convalidated: boolean }>> = {}) {
+const FK_BANG: Record<string, string> = Object.fromEntries(Object.entries(FK_HANG).map(([k, v]) => [k, v.bang]));
+type SuaFk = Partial<{ confdeltype: string; convalidated: boolean; bang: string; cot: string; bang_dich: string; cot_dich: string; so_cot: number }>;
+function gia(bo: string[] = [], fkSua: Record<string, SuaFk> = {}) {
   const cauHoi: string[] = [];
   const chay = async (q: SQL) => {
     const { sql: text, params } = dialect.sqlToQuery(q);
@@ -44,7 +48,7 @@ function gia(bo: string[] = [], fkSua: Record<string, Partial<{ confdeltype: str
     if (/pg_constraint/.test(text)) {
       return Object.entries(FK_BANG)
         .filter(([ten, bang]) => !bo.includes(ten) && !bo.includes(bang) && params.includes(ten) && params.includes(bang))
-        .map(([ten]) => ({ conname: ten, confdeltype: "c", convalidated: true, ...fkSua[ten] }));
+        .map(([ten]) => ({ conname: ten, confdeltype: "c", convalidated: true, ...FK_HANG[ten], ...fkSua[ten] }));
     }
     if (/information_schema\.columns/.test(text)) {
       const ra = COT_DEVICE_TAGS_0431.map((c) => ({ table_name: "device_tags", column_name: c }));
@@ -99,6 +103,22 @@ describe("kiemSchemaR1a — truy vấn CHỈ ĐỌC information_schema", () => {
     const vang = await kiemSchemaR1a(gia(["scada_khoa_chon"]).chay);
     expect(vang.thieu0431).toEqual(["scada_khoa_chon"]);
     expect(vang.thieu0433Fk).toEqual([]);
+  });
+
+  it("★ Polish M-3 — FK đúng tên + CASCADE nhưng trỏ SAI bảng đích / SAI cột đích / SAI cột nguồn / nhiều cột ⇒ thiếu (như verify của script 0433)", async () => {
+    expect(HINH_FK_0433.scada_kenh_che_do_machine_fk).toEqual({ bang: "scada_kenh_che_do", cot: "machine_id", bangDich: "machines", cotDich: "id" });
+    const thieu = async (s: SuaFk) => (await kiemSchemaR1a(gia([], { scada_kenh_che_do_machine_fk: s }).chay)).thieu0433Fk;
+    expect(await thieu({ bang_dich: "device_adapters" })).toEqual(["scada_kenh_che_do_machine_fk"]);
+    expect(await thieu({ cot_dich: "code" })).toEqual(["scada_kenh_che_do_machine_fk"]);
+    expect(await thieu({ cot: "adapter_id" })).toEqual(["scada_kenh_che_do_machine_fk"]);
+    expect(await thieu({ so_cot: 2 })).toEqual(["scada_kenh_che_do_machine_fk"]);
+    expect(await thieu({})).toEqual([]); // đối chứng dương
+    // câu thật đọc các cột ấy
+    const g = gia();
+    await kiemSchemaR1a(g.chay);
+    expect(g.cauHoi[2]).toMatch(/c\.confrelid/);
+    expect(g.cauHoi[2]).toMatch(/c\.confkey\[1\]/);
+    expect(g.cauHoi[2]).toMatch(/c\.conkey\[1\]/);
   });
 
   it("★ T12 (ruling K12) — thiếu CẢ cột ly_do lẫn FK ⇒ '0433' xuất hiện ĐÚNG MỘT lần, lý do nêu cả hai", () => {

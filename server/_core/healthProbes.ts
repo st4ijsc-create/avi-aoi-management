@@ -357,7 +357,7 @@ export function createHealthHandler(deps: ProbeHandlerDeps = {}) {
     // kiem-dinh P1-6 — thiếu migration R1a ⇒ degraded + lý do (vẫn 200: liveness — khởi động lại không chữa được một migration thiếu).
     const thieu = (deps.schemaR1a ?? lyDoSchemaR1a)();
     // R1b-1 T10 — không kiểm được schema lúc khởi động (fail-open): nói thẳng "chưa kiểm được" + lớp lỗi; KHÔNG degraded (không biết ≠ thiếu).
-    // Rà soát cuối M-7 — MỘT khoá, MỘT hình dạng (`SchemaR1aHealth`): có mặt ⇒ luôn `ok:false` + `trangThai` "thieu" | "chua_kiem_duoc".
+    // Rà soát cuối M-7 — MỘT khoá, MỘT hình dạng (`SchemaR1aHealth`): có mặt ⇒ luôn `ok:false` + `trangThai` "thieu" | "chua_kiem_duoc" | "dang_kiem".
     // R1b-2a T12 — + "dang_kiem" (lần kiểm khởi động chưa xong): trước T12 ca này VẮNG khoá = trông như "đã kiểm và đủ". Không degraded.
     // Bộ giám sát: khoá `schemaR1a` CÓ MẶT = chưa khoẻ về schema (mọi `trangThai`); `status` "degraded" CHỈ khi thiếu thật.
     const schemaR1a: SchemaR1aHealth | null =

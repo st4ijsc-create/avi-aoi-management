@@ -745,7 +745,8 @@ export const oversightRouter = router({
           pv = await layPhamViPosture(ctx, d);
         } catch (err) {
           // eslint-disable-next-line no-console
-          console.error("[oversight] posture scope unresolved:", err instanceof Error ? err.message : err);        }
+          console.error("[oversight] posture scope unresolved:", err instanceof Error ? err.message : err);
+        }
       }
       const congLuat = pv ? dieuKienLuatTrongPhamVi(pv) : undefined;
       const coverage = pv ? await fetchInterlockCoverage(d, congLuat) : { count: 0, degraded: true };

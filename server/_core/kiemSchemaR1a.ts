@@ -54,11 +54,14 @@ export const BANG_0431 = Object.freeze(["scada_kenh_che_do", "scada_khoa_chon", 
  * không còn) — INSERT không hỏng (vì thế `biet0433Thieu` KHÔNG tính FK), nhưng schema KHÔNG phải cái 0433 hứa ⇒ báo như thiếu cột.
  */
 export const FK_0433 = Object.freeze(["scada_kenh_che_do_machine_fk", "scada_kenh_che_do_adapter_fk", "scada_khoa_chon_adapter_fk"] as const);
-/** Bảng mang từng FK của 0433 (bảng vắng = thiếu 0431, đã báo ở 0431 — không đếm hai lần). */
-const BANG_CUA_FK_0433: Readonly<Record<(typeof FK_0433)[number], (typeof BANG_0431)[number]>> = Object.freeze({
-  scada_kenh_che_do_machine_fk: "scada_kenh_che_do",
-  scada_kenh_che_do_adapter_fk: "scada_kenh_che_do",
-  scada_khoa_chon_adapter_fk: "scada_khoa_chon",
+/**
+ * Polish M-3 — HÌNH đúng của từng FK của 0433, cùng bảng `FK` của `scripts/apply-migration-0433.mjs` verify: bảng mang · cột · bảng đích · cột đích.
+ * Một FK cùng tên mà trỏ sai bảng / sai cột (vd sửa tay) KHÔNG phải cái 0433 hứa ⇒ tính là thiếu. Bảng mang vắng = thiếu 0431 (không đếm hai lần).
+ */
+export const HINH_FK_0433: Readonly<Record<(typeof FK_0433)[number], { bang: (typeof BANG_0431)[number]; cot: string; bangDich: string; cotDich: string }>> = Object.freeze({
+  scada_kenh_che_do_machine_fk: { bang: "scada_kenh_che_do", cot: "machine_id", bangDich: "machines", cotDich: "id" },
+  scada_kenh_che_do_adapter_fk: { bang: "scada_kenh_che_do", cot: "adapter_id", bangDich: "device_adapters", cotDich: "id" },
+  scada_khoa_chon_adapter_fk: { bang: "scada_khoa_chon", cot: "adapter_id", bangDich: "device_adapters", cotDich: "id" },
 });
 
 /** Nhắc lại lỗi thiếu 0432 / 0433 mỗi 5 phút. */
@@ -170,13 +173,19 @@ export async function kiemSchemaR1a(chay: ChayTruyVan): Promise<KetQuaSchemaR1a>
   const thieu0434 = !coCot.has("interlock_rules.approvedDefHash") ? ["interlock_rules.approvedDefHash"] : [];
   // R1b-2a T12 (kiem-dinh M3) — FK của 0433: cùng hình truy vấn với verify của apply-migration-0433.mjs (conname · confdeltype · convalidated trên
   // scada_kenh_che_do / scada_khoa_chon). Lọc theo TÊN bảng qua pg_class (không `'…'::regclass`: bảng vắng thì regclass NÉM cả lần kiểm).
-  const fk = await chay(sql`SELECT c.conname, c.confdeltype, c.convalidated
+  // Polish M-3 — + bảng mang · cột · bảng đích · cột đích (pg_attribute của conkey[1] / confkey[1]) như verify (a) của script; FK một cột.
+  const fk = await chay(sql`SELECT c.conname, c.confdeltype, c.convalidated,
+      t.relname AS bang, a.attname AS cot, rt.relname AS bang_dich, af.attname AS cot_dich, cardinality(c.conkey) AS so_cot
     FROM pg_constraint c
     JOIN pg_class t ON t.oid = c.conrelid
     JOIN pg_namespace n ON n.oid = t.relnamespace
-    WHERE c.contype = 'f' AND n.nspname = 'public'
+    JOIN pg_class rt ON rt.oid = c.confrelid
+    JOIN pg_namespace rn ON rn.oid = rt.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+    JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = c.confkey[1]
+    WHERE c.contype = 'f' AND n.nspname = 'public' AND rn.nspname = 'public'
       AND t.relname IN (${sql.join(
-        [...new Set(Object.values(BANG_CUA_FK_0433))].map((b) => sql`${b}`),
+        [...new Set(Object.values(HINH_FK_0433).map((h) => h.bang))].map((b) => sql`${b}`),
         sql`, `,
       )})
       AND c.conname IN (${sql.join(
@@ -184,9 +193,23 @@ export async function kiemSchemaR1a(chay: ChayTruyVan): Promise<KetQuaSchemaR1a>
         sql`, `,
       )})`);
   const fkDung = new Set(
-    fk.filter((r) => String(r.confdeltype) === "c" && (r.convalidated === true || r.convalidated === "t")).map((r) => String(r.conname)),
+    fk
+      .filter((r) => {
+        const h = HINH_FK_0433[String(r.conname) as (typeof FK_0433)[number]];
+        return (
+          !!h &&
+          String(r.confdeltype) === "c" &&
+          (r.convalidated === true || r.convalidated === "t") &&
+          String(r.bang) === h.bang &&
+          String(r.cot) === h.cot &&
+          String(r.bang_dich) === h.bangDich &&
+          String(r.cot_dich) === h.cotDich &&
+          Number(r.so_cot) === 1
+        );
+      })
+      .map((r) => String(r.conname)),
   );
-  const thieu0433Fk = FK_0433.filter((f) => coBang.has(BANG_CUA_FK_0433[f]) && !fkDung.has(f));
+  const thieu0433Fk = FK_0433.filter((f) => coBang.has(HINH_FK_0433[f].bang) && !fkDung.has(f));
   return { thieu0431, thieu0432, thieu0433, thieu0434, thieu0433Fk };
 }
 
