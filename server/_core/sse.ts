@@ -11,6 +11,7 @@
 
 import type { Request, Response } from "express";
 import { thuXacThucRest, thanTuChoiRest } from "../routes/_xacThucRest";
+import { idsTrongPhamVi } from "../db/hierarchy";
 
 interface SseClient {
   id: number;
@@ -99,8 +100,7 @@ export async function sseHandler(req: Request, res: Response): Promise<void> {
 
   let nhaMayIds: number[] | null;
   try {
-    const { idsTrongPhamVi } = await import("../db/hierarchy");
-    nhaMayIds = await idsTrongPhamVi("factory", { userId, userRole } as never, { strict: true });
+    nhaMayIds = await idsTrongPhamVi("factory", { userId, userRole }, { strict: true });
   } catch {
     res.status(503).json({ success: false, code: "SCOPE_UNAVAILABLE" });
     return;

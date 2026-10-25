@@ -172,4 +172,5 @@ export const BANG_CHUNG_TUYEN: Readonly<Record<string, BangChung>> = {
   "server/api/v1/moduleReads.ts#GET /standards/device-types": T("server/api/v1/moduleReads.test.ts", "U4a — scope gating"),
   "server/api/v1/moduleReads.ts#GET /twin/models": T("server/api/v1/moduleReads.test.ts", "U4a — scope gating"),
   "server/routes/edgeDownload.ts#GET /api/edge/download/:deploymentId": T("server/edgeDownloadProxy.test.ts", "returns 403 when deployment belongs to a different machine"),
+  "server/_core/index.ts#GET /api/stream": T("server/_core/sse.test.ts", "lọc nhà máy: client nhà máy A không nhận sự kiện B"),
 };
