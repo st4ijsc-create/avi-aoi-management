@@ -17,12 +17,21 @@ const GiB = 1024 ** 3;
 export const NGUONG_LUOT_LON_BYTES = 8 * GiB;
 
 type DocThietBi = () => Promise<{ usedBytes: number; totalBytes: number } | null>;
-let docThietBi: DocThietBi = async () => (await import("./vramProbe")).readDeviceVramUncached();
+/** ★ Đợt 9 (2026-10-25) — bản giả đặt bởi `vitest.setup.ts` trên `globalThis` (sống qua `vi.resetModules()`): lưới không đo GPU THẬT.
+ *  Ưu tiên: `__datDocThietBiChoTest` (từng lưới) > bản giả toàn cục > đầu dò thật. `AI_NAP_DO_SONG=1` ⇒ bỏ bản giả toàn cục. */
+export const KHOA_DOC_THIET_BI_TEST = Symbol.for("avi.vram.tickTuoi.docThietBiTest");
+const docThietBiThat: DocThietBi = async () => (await import("./vramProbe")).readDeviceVramUncached();
+let docThietBi: DocThietBi | null = null;
+function docThietBiHienHanh(): DocThietBi {
+  if (docThietBi) return docThietBi;
+  const gia = (globalThis as Record<symbol, unknown>)[KHOA_DOC_THIET_BI_TEST] as DocThietBi | undefined;
+  return gia && process.env.AI_NAP_DO_SONG !== "1" ? gia : docThietBiThat;
+}
 
 /** Chỉ lưới: thay bộ đo thiết bị (trả lại bộ cũ). */
-export function __datDocThietBiChoTest(f: DocThietBi | null): DocThietBi {
+export function __datDocThietBiChoTest(f: DocThietBi | null): DocThietBi | null {
   const cu = docThietBi;
-  if (f) docThietBi = f;
+  docThietBi = f;
   return cu;
 }
 
@@ -35,7 +44,7 @@ export async function tickChoQuyetDinh(
   if (t) return t;
   let hen: ReturnType<typeof setTimeout> | undefined;
   const tuoi = await Promise.race([
-    docThietBi().catch(() => null),
+    docThietBiHienHanh()().catch(() => null),
     new Promise<null>((r) => {
       hen = setTimeout(() => r(null), hanMs);
     }),

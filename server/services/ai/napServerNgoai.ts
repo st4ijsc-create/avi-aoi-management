@@ -89,6 +89,18 @@ export const phuThuocMacDinh: PhuThuocNapServerNgoai = {
   laMayChu: () => (globalThis as Record<symbol, unknown>)[KHOA_MAY_CHU] === true,
 };
 
+/**
+ * ★ Đợt 9 (2026-10-25, dieu-phoi) — LƯỚI KHÔNG BAO GIỜ CHẠM :8091 / GPU THẬT. Sự cố: hai lưới vram (enforcement.callsites,
+ * wiring.inprocess) xanh lúc gộp rồi ĐỎ khi :3000 bản mới giữ thêm VRAM — hàng rào hỏi :8091 + nvidia-smi THẬT của máy chạy lưới.
+ * `vitest.setup.ts` đặt bản giả đầu dò lên `globalThis` (sống qua `vi.resetModules()`, khác biến module); hàm này ưu tiên nó. Ca ĐO SỐNG
+ * bật tường minh `AI_NAP_DO_SONG=1` để dùng đầu dò thật. Lưới riêng của hàng rào truyền `dep` trực tiếp nên không bị ảnh hưởng.
+ */
+export const KHOA_PHU_THUOC_TEST = Symbol.for("avi.ai.napServerNgoai.phuThuocTest");
+export function phuThuocHienHanh(env: NodeJS.ProcessEnv = process.env): PhuThuocNapServerNgoai {
+  const gia = (globalThis as Record<symbol, unknown>)[KHOA_PHU_THUOC_TEST] as Partial<PhuThuocNapServerNgoai> | undefined;
+  return gia && env.AI_NAP_DO_SONG !== "1" ? { ...phuThuocMacDinh, ...gia } : phuThuocMacDinh;
+}
+
 const soMB = (raw: string | undefined, md: number) => {
   const n = Number(raw);
   return Number.isFinite(n) && n >= 0 ? n : md;
@@ -104,7 +116,7 @@ export async function kiemNapKhiServerNgoaiSong(
   modelId: string,
   duongTep: string | undefined,
   viTri: string,
-  dep: PhuThuocNapServerNgoai = phuThuocMacDinh,
+  dep: PhuThuocNapServerNgoai = phuThuocHienHanh(),
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   const ten = baseModel(modelId);
@@ -131,7 +143,9 @@ export async function kiemNapKhiServerNgoaiSong(
         `Đặt LLAMA_SERVER_ENABLED=true (+ LLAMA_SERVER_URL, LLAMA_SERVER_FAIL_CLOSED=true) để lượt gọi đi qua server.`,
     );
   }
-  // 2 — dấu chân so với VRAM trống đo tươi.
+  // 2 — dấu chân so với VRAM trống đo tươi. Nạp CPU (`GGUF_GPU=false` — engine `getLlama({gpu:false})`) không chạm VRAM ⇒ bỏ qua bước này
+  // (phát hiện khi đo bộ nhúng chạy CPU 2026-10-25: hàng rào từ chối oan một lượt nạp 0 byte VRAM).
+  if (env.GGUF_GPU === "false") return;
   const can = dauChanUocTinh(co, env) + soMB(env.AI_NAP_BIEN_AN_TOAN_MB, 1536) * MiB;
   const v = await dep.vram().catch(() => null);
   const trong = v ? v.totalBytes - v.usedBytes : null;

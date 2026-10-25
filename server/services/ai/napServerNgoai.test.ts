@@ -93,3 +93,13 @@ describe("§E — điểm vào máy chủ đánh dấu tiến trình", () => {
     expect(src).toMatch(/^danhDauTienTrinhMayChu\(\);$/m);
   });
 });
+
+describe("§F — nạp CPU (GGUF_GPU=false) không chạm VRAM", () => {
+  it("card đầy nhưng GGUF_GPU=false ⇒ QUA (không đo VRAM); vẫn giữ cổng tiến trình + cùng-model", async () => {
+    const d = dep({ vram: vi.fn(async () => ({ totalBytes: TONG, usedBytes: TONG })) });
+    expect(await ma(goi(d, M4, { GGUF_GPU: "false" }))).toBe("QUA");
+    expect(d.vram).not.toHaveBeenCalled();
+    expect(await ma(goi(dep({ laMayChu: vi.fn(() => false) }), M4, { GGUF_GPU: "false" }))).toBe("NAP_IN_PROCESS_BI_TAT");
+    expect(await ma(goi(dep({ coTep: vi.fn(async () => 22 * GiB) }), M35, { GGUF_GPU: "false" }))).toBe("NAP_TRUNG_SERVER_NGOAI");
+  });
+});
