@@ -14,6 +14,9 @@ vi.mock("@/lib/trpc", () => ({ trpc: {} }));
 import { NHOM_PHIEU_FORM, SU_KIEN_NOI_BO, TRAN_NGUOI_NHAN_FORM, TRUY_VAN_SO_LIEU } from "./FormNutMoi";
 import { TOAN_TU_CHON_FORM, TRAN_NHANH_CHON_FORM } from "./FormChon";
 import { CONG_CHON, TOAN_TU_CHON, TRAN_NHANH_CHON } from "../../../../server/services/flow/nut/chon";
+import { CHO_MAC_DINH_GIAY, CHO_TOI_DA_GIAY, TRAN_THONG_DIEP_DUNG_LOI } from "../../../../server/services/flow/nut/cho";
+import { HUONG_SAP_XEP, KIEU_SAP_XEP, TOAN_TU_LOC, TRAN_DIEU_KIEN_LOC } from "../../../../server/services/flow/nut/loc";
+import { CHO_MAC_DINH_GIAY_FORM, CHO_TOI_DA_GIAY_FORM, HUONG_SAP_XEP_FORM, KIEU_SAP_XEP_FORM, TOAN_TU_LOC_FORM, TRAN_DIEU_KIEN_LOC_FORM, TRAN_THONG_DIEP_FORM } from "./FormLoc";
 import { DANH_MUC } from "../../../../server/services/flow/soLieu/danhMuc";
 import { SU_KIEN_CHO_PHEP, kiemThamSoSuKien } from "../../../../server/services/flow/kichHoat/suKien";
 import { NHOM_PHIEU } from "../../../../server/services/flow/nut/baoTri";
@@ -55,7 +58,7 @@ describe("census: node có tham số theo danh mục / khoảng phải có form 
     "ot.de-xuat-luong": "node OT: JSON thô qua cổng aiControlGate.",
     "luong.goi-con": "chọn luồng con cần bộ chọn riêng — lô sau; máy chủ kiểm lúc lưu.",
   };
-  const NODE_MOI_CO_FORM = ["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom"];
+  const NODE_MOI_CO_FORM = ["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom", "logic.cho", "logic.dung-loi", "logic.loc", "logic.sap-xep"];
 
   it("4 node mới có `case` trong NodeConfigPanel; danh sách JSON-thô-có-lý-do không chứa node mới và không có mục lỗi thời", () => {
     const nguon = readFileSync(join(AQUI, "NodeConfigPanel.tsx"), "utf8");
@@ -84,5 +87,29 @@ describe("logic.chon: form ⇄ máy chủ", () => {
     expect(kiemThamSoNutMoi(dinh([{ so: "regex", dich: ".*" }])).length).toBe(1);
     expect(kiemThamSoNutMoi(dinh([{ so: "gt", dich: "5" }])).length).toBe(1);
     expect(kiemThamSoNutMoi(dinh([{ so: "in", dich: "a" }])).length).toBe(1);
+  });
+});
+
+describe("logic.cho / dung-loi / loc / sap-xep: form ⇄ máy chủ", () => {
+  it("hằng số của form KHỚP máy chủ (khoảng giây, trần thông điệp, toán tử, trần điều kiện, hướng, kiểu)", () => {
+    expect(CHO_TOI_DA_GIAY_FORM).toBe(CHO_TOI_DA_GIAY);
+    expect(CHO_MAC_DINH_GIAY_FORM).toBe(CHO_MAC_DINH_GIAY);
+    expect(TRAN_THONG_DIEP_FORM).toBe(TRAN_THONG_DIEP_DUNG_LOI);
+    expect([...TOAN_TU_LOC_FORM].sort()).toEqual([...TOAN_TU_LOC].sort());
+    expect(TRAN_DIEU_KIEN_LOC_FORM).toBe(TRAN_DIEU_KIEN_LOC);
+    expect([...HUONG_SAP_XEP_FORM]).toEqual([...HUONG_SAP_XEP]);
+    expect([...KIEU_SAP_XEP_FORM]).toEqual([...KIEU_SAP_XEP]);
+  });
+  it("★ mọi giá trị form có thể sinh đều qua bộ kiểm lúc lưu; ngoài khoảng gõ tay bằng JSON vẫn bị chặn", () => {
+    const d = (type: string, parameters: Record<string, unknown>) => ({ nodes: [{ id: "n", type, parameters }] });
+    for (const giay of [0, 1, CHO_MAC_DINH_GIAY_FORM, CHO_TOI_DA_GIAY_FORM]) expect(kiemThamSoNutMoi(d("logic.cho", { giay })), String(giay)).toEqual([]);
+    expect(kiemThamSoNutMoi(d("logic.cho", { giay: CHO_TOI_DA_GIAY_FORM + 1 })).length).toBe(1);
+    expect(kiemThamSoNutMoi(d("logic.dung-loi", { thongDiep: "x".repeat(TRAN_THONG_DIEP_FORM) }))).toEqual([]);
+    for (const so of TOAN_TU_LOC_FORM) {
+      const dich = so === "in" ? ["a", 1, "2", null] : so === "eq" ? "dien" : 3;
+      expect(kiemThamSoNutMoi(d("logic.loc", { dieuKien: [{ giaTri: "{{ $json.x }}", so, dich }] })), so).toEqual([]);
+    }
+    for (const huong of HUONG_SAP_XEP_FORM) for (const kieu of KIEU_SAP_XEP_FORM) expect(kiemThamSoNutMoi(d("logic.sap-xep", { giaTri: "{{ $json.x }}", huong, kieu }))).toEqual([]);
+    expect(kiemThamSoNutMoi(d("logic.loc", { dieuKien: [{ giaTri: "{{ $json.x }}", so: "regex", dich: ".*" }] })).length).toBe(1);
   });
 });

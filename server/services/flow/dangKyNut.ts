@@ -82,8 +82,19 @@ export interface YeuCauCho {
   };
 }
 
+/**
+ * Node xong NGAY nhưng các node KẾ chỉ chạy sau `ms` mili-giây (logic.cho): động cơ xếp node kế vào hàng đợi với `availableAt = now() + ms` trong CÙNG giao dịch
+ * kết thúc bước — không giữ worker, bền qua khởi động lại, lượt vẫn `dang-chay`. Trần: `TRAN_TUOI_LUOT_HEN_MS` tính từ lúc lượt bắt đầu (vượt ⇒ bước lỗi, không hẹn).
+ */
+export interface YeuCauHen {
+  __hen: { ms: number; ra: KetQuaChay };
+}
+
+/** Tuổi tối đa của một lượt khi còn hẹn giờ (7 ngày) — luồng không treo vô hạn. */
+export const TRAN_TUOI_LUOT_HEN_MS = 7 * 24 * 3600_000;
+
 export interface DinhNghiaNut extends KhaiBaoNut {
-  chay(thamSo: Record<string, unknown>, ngu: NguCanhChay): Promise<KetQuaChay | YeuCauCho>;
+  chay(thamSo: Record<string, unknown>, ngu: NguCanhChay): Promise<KetQuaChay | YeuCauCho | YeuCauHen>;
 }
 
 /** Ngữ cảnh biểu thức cho MỘT item. */

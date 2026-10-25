@@ -23635,6 +23635,34 @@
       "gom": {
         "truongRa": "Tên trường danh sách",
         "goiY": "Gộp mọi item vào MỘT item {tên: […], soItem}; tối đa 1000 item mỗi lượt."
+      },
+      "cho": {
+        "giay": "Chờ bao nhiêu giây",
+        "goiY": "0 … {{max}} giây. Item đi qua nguyên vẹn; node kế chỉ chạy sau khoảng này (không giữ máy chủ, bền qua khởi động lại). Lượt vẫn tính là đang chạy; tổng tuổi lượt ≤ 7 ngày."
+      },
+      "dungLoi": {
+        "thongDiep": "Thông điệp lỗi",
+        "goiY": "Biểu thức theo item được; tối đa {{max}} ký tự. Node này dừng luồng với lỗi — không có cổng ra."
+      },
+      "loc": {
+        "dieuKien": "Điều kiện giữ item ({{n}}/{{max}}) — phải khớp TẤT CẢ",
+        "boDieuKien": "Bỏ điều kiện",
+        "goiY": "Item khớp mọi điều kiện đi cổng 'giu'; còn lại (hoặc biểu thức lỗi) đi cổng 'loai' (không bắt buộc nối). So sánh nghiêm ngặt kiểu — chuỗi '5' khác số 5."
+      },
+      "sapXep": {
+        "khoa": "Khoá sắp xếp",
+        "khoaGoiY": "Biểu thức theo từng item (vd $json.oee). Sắp xếp ỔN ĐỊNH; khoá sai kiểu hoặc thiếu xếp CUỐI.",
+        "huong": "Hướng",
+        "huongLoai": {
+          "tang": "Tăng dần",
+          "giam": "Giảm dần"
+        },
+        "kieu": "Kiểu khoá",
+        "kieuGoiY": "Số: chỉ nhận số hữu hạn. Chữ: so theo mã ký tự (xác định, không theo ngôn ngữ).",
+        "kieuLoai": {
+          "so": "Số",
+          "chu": "Chữ"
+        }
       }
     },
     "xuatNhap": {
