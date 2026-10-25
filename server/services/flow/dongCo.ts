@@ -458,6 +458,14 @@ export async function ketThucBuoc(
 
 /** Xếp node kế cho các cổng có item (node gộp: qua hộp nhận, đủ cổng mới thành mục hàng). */
 async function xepNodeKe(tx: Tx, def: FlowDefinition, runId: string, nodeId: string, ra: KetQuaChay, uuTien: number): Promise<void> {
+  // Item tới cổng NÊN-NỐI mà KHÔNG có đường nối ⇒ bị bỏ (đường đi của luồng): ghi sự kiện để lượt nhìn thấy được, không bỏ âm thầm.
+  const loaiNguon = layNut(def.nodes.find((n) => n.id === nodeId)?.type ?? "");
+  for (const cong of loaiNguon?.congNenNoi ?? []) {
+    const items = ra[cong] ?? [];
+    if (items.length && !def.connections.some((x) => x.from.node === nodeId && x.from.port === cong)) {
+      await tx.insert(aiFlowEvents).values({ runId, kind: "cong.khong-noi", payload: { nodeId, cong, soItem: items.length } });
+    }
+  }
   for (const [cong, items] of Object.entries(ra)) {
     if (!items.length) continue;
     for (const c of def.connections.filter((x) => x.from.node === nodeId && x.from.port === cong)) {

@@ -676,7 +676,7 @@ export const flowRouter = router({
     danhSachNut()
       .map((n) => ({
         type: n.type, typeVersion: n.typeVersion, laKichHoat: n.laKichHoat, congVao: [...n.congVao], congRa: [...n.congRa],
-        tacDungPhu: n.tacDungPhu, lapLai: n.lapLai, choDuCong: n.choDuCong === true, nhanBiMat: n.nhanBiMat === true,
+        tacDungPhu: n.tacDungPhu, lapLai: n.lapLai, choDuCong: n.choDuCong === true, nhanBiMat: n.nhanBiMat === true, congNenNoi: [...(n.congNenNoi ?? [])],
       }))
       .sort((a, b) => a.type.localeCompare(b.type)),
   ),

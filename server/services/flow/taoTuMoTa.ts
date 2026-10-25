@@ -33,6 +33,8 @@ const GOI_Y_THAM_SO: Record<string, string> = {
   "du-lieu.so-lieu": '{"truyVan":"san-luong.tong-quan","gio":12,"truongRa":"sanLuong"}  — truyVan CỐ ĐỊNH trong danh mục: san-luong.tong-quan | oee.trung-binh | ng.diem-do-hang-dau | may.trang-thai | canh-bao.dang-mo',
   "tich-hop.thong-bao": '{"nguoiNhan":[1],"tieuDe":"Báo cáo ca","noiDung":"{{ $json.tomTat }}","loai":"REPORT","uuTien":"NORMAL"}  — chỉ thông báo nội bộ',
   "bao-tri.tao-phieu": '{"may":"{{ $json.idMay }}","tieuDe":"{{ $json.lyDo }}","nhom":"{{ $json.nhan }}","uuTien":3,"loai":"CORRECTIVE"}  — tạo phiếu bảo trì cho máy (nhóm ghi vào tiêu đề); hạng ngoài-ghi',
+  "logic.chon": '{"giaTri":"{{ $json.nhan }}","nhanh":[{"so":"eq","dich":"dien"},{"so":"in","dich":["co-khi","plc-phan-mem"]},{"so":"gt","dich":10}]}  — cổng ra: nhanh-1…nhanh-5 | khac (≤ 5 điều kiện, khớp ĐẦU TIÊN thắng, so kiểu rõ không ép; nhớ NỐI cổng khac)',
+  "logic.gom": '{"truongRa":"danhSach"}  — gom mọi item thành MỘT item { danhSach: […], soItem }, tối đa 1000',
   "kich-hoat.su-kien": '{"suKien":"ng.alert","bat":true,"cuaSoPhut":10,"tranMoiGio":10}  — suKien: ng.alert | yield.warning | downtime.start; MẶC ĐỊNH TẮT (bat:true mới nghe)',
   "ai.tra-tri-thuc": '{"cauHoi":"{{ $json.cauHoi }}","kho":"all","k":5,"truongRa":"triThuc"}  — tra kho tri thức có sẵn, ra kèm trich[] nguồn',
   "tich-hop.http-doc": '{"url":"https://host-duoc-phep/api"}',

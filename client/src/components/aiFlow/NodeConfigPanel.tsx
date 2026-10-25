@@ -16,11 +16,12 @@ import { Trash2, Plus, RefreshCw, ShieldAlert } from "lucide-react";
 import { MAU_HANG, loiBieuThucChuoi, type KhaiBaoNutClient } from "@/lib/flowStudio";
 import { LoiBt, OBieuThuc, OChon, OHop, Truong, O_CHON } from "./FormKit";
 import { FormSoLieu, FormSuKien, FormTaoPhieu, FormThongBao } from "./FormNutMoi";
+import { FormChon, FormGom } from "./FormChon";
 
 type ThamSo = Record<string, unknown>;
 
 /** Node có form có kiểu — vẫn có ô JSON cho người nâng cao (nút chuyển); máy chủ kiểm tham số như nhau ở cả hai đường. */
-const CO_FORM_CO_KIEU: ReadonlySet<string> = new Set(["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu"]);
+const CO_FORM_CO_KIEU: ReadonlySet<string> = new Set(["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom"]);
 
 const VAI_TRO_GOI_Y = ["chat", "extract", "classify", "summarize", "code.software", "code.plc"];
 
@@ -249,6 +250,12 @@ export default function NodeConfigPanel({ node, kb, onDoi, onXoa, biMat, webhook
       break;
     case "bao-tri.tao-phieu":
       form = <FormTaoPhieu p={p} doi={doi} />;
+      break;
+    case "logic.chon":
+      form = <FormChon p={p} doi={doi} />;
+      break;
+    case "logic.gom":
+      form = <FormGom p={p} doi={doi} />;
       break;
     case "kich-hoat.thu-cong":
       form = <p className="text-xs text-muted-foreground">{t("flowStudio.cauHinh.thuCongGoiY")}</p>;

@@ -12,6 +12,8 @@ vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string) => k }
 vi.mock("@/lib/trpc", () => ({ trpc: {} }));
 
 import { NHOM_PHIEU_FORM, SU_KIEN_NOI_BO, TRAN_NGUOI_NHAN_FORM, TRUY_VAN_SO_LIEU } from "./FormNutMoi";
+import { TOAN_TU_CHON_FORM, TRAN_NHANH_CHON_FORM } from "./FormChon";
+import { CONG_CHON, TOAN_TU_CHON, TRAN_NHANH_CHON } from "../../../../server/services/flow/nut/chon";
 import { DANH_MUC } from "../../../../server/services/flow/soLieu/danhMuc";
 import { SU_KIEN_CHO_PHEP, kiemThamSoSuKien } from "../../../../server/services/flow/kichHoat/suKien";
 import { NHOM_PHIEU } from "../../../../server/services/flow/nut/baoTri";
@@ -53,7 +55,7 @@ describe("census: node có tham số theo danh mục / khoảng phải có form 
     "ot.de-xuat-luong": "node OT: JSON thô qua cổng aiControlGate.",
     "luong.goi-con": "chọn luồng con cần bộ chọn riêng — lô sau; máy chủ kiểm lúc lưu.",
   };
-  const NODE_MOI_CO_FORM = ["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu"];
+  const NODE_MOI_CO_FORM = ["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom"];
 
   it("4 node mới có `case` trong NodeConfigPanel; danh sách JSON-thô-có-lý-do không chứa node mới và không có mục lỗi thời", () => {
     const nguon = readFileSync(join(AQUI, "NodeConfigPanel.tsx"), "utf8");
@@ -64,5 +66,23 @@ describe("census: node có tham số theo danh mục / khoảng phải có form 
       expect(dangKy.has(t), `${t} không còn đăng ký — xoá khỏi danh sách`).toBe(true);
       expect(ly.length, t).toBeGreaterThanOrEqual(20);
     }
+  });
+});
+
+describe("logic.chon: form ⇄ máy chủ", () => {
+  it("toán tử · trần điều kiện · cổng ra khớp tập của máy chủ; mọi điều kiện form sinh ra qua bộ kiểm lúc lưu", () => {
+    expect([...TOAN_TU_CHON_FORM].sort()).toEqual([...TOAN_TU_CHON].sort());
+    expect(TRAN_NHANH_CHON_FORM).toBe(TRAN_NHANH_CHON);
+    expect(CONG_CHON).toEqual(["nhanh-1", "nhanh-2", "nhanh-3", "nhanh-4", "nhanh-5", "khac"]);
+    const dinh = (nhanh: unknown[]) => ({ nodes: [{ id: "c", type: "logic.chon", parameters: { giaTri: "{{ $json.x }}", nhanh } }] });
+    for (const so of TOAN_TU_CHON_FORM) {
+      const dich = so === "in" ? ["a", 1, "2", null] : so === "eq" ? "dien" : 3;
+      expect(kiemThamSoNutMoi(dinh([{ so, dich }])), so).toEqual([]);
+    }
+    // ngoài khoảng gõ tay bằng JSON vẫn bị máy chủ chặn
+    expect(kiemThamSoNutMoi(dinh(Array.from({ length: 6 }, () => ({ so: "eq", dich: 1 })))).length).toBe(1);
+    expect(kiemThamSoNutMoi(dinh([{ so: "regex", dich: ".*" }])).length).toBe(1);
+    expect(kiemThamSoNutMoi(dinh([{ so: "gt", dich: "5" }])).length).toBe(1);
+    expect(kiemThamSoNutMoi(dinh([{ so: "in", dich: "a" }])).length).toBe(1);
   });
 });

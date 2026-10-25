@@ -8,6 +8,7 @@ import { DANH_MUC, chuanHoaThamSo } from "./soLieu/danhMuc";
 import { NHOM_PHIEU } from "./nut/baoTri";
 import { TIEU_DE_CAM } from "./nut/tichHop";
 import { laTenBiMat } from "./xuatNhap";
+import { TOAN_TU_CHON, TRAN_NHANH_CHON } from "./nut/chon";
 
 const laBieuThuc = (v: unknown): boolean => typeof v === "string" && v.includes("{{");
 const LOAI_TB = ["REPORT", "INFO", "WARNING"];
@@ -48,6 +49,20 @@ export function kiemThamSoNutMoi(raw: unknown): string[] {
         for (const k of Object.keys(p.tieuDe as Record<string, unknown>)) {
           if (TIEU_DE_CAM.has(k.toLowerCase()) || laTenBiMat(k)) loi.push(`node '${id}': tiêu đề '${k}' trông như bí mật — dùng bí mật (credentialRef) của luồng, không gõ vào tiêu đề`);
         }
+      }
+    } else if (n?.type === "logic.chon") {
+      if (p.nhanh !== undefined && !Array.isArray(p.nhanh)) loi.push(`node '${id}': nhanh phải là danh sách điều kiện`);
+      else {
+        const ds = (p.nhanh ?? []) as { so?: unknown; dich?: unknown }[];
+        if (ds.length > TRAN_NHANH_CHON) loi.push(`node '${id}': tối đa ${TRAN_NHANH_CHON} điều kiện (có ${ds.length})`);
+        ds.forEach((d, i) => {
+          if (!d || typeof d !== "object" || !(TOAN_TU_CHON as readonly string[]).includes(String(d.so))) {
+            loi.push(`node '${id}': điều kiện ${i + 1}: so phải là ${TOAN_TU_CHON.join(" | ")}`);
+            return;
+          }
+          if (d.so === "in" && !laBieuThuc(d.dich) && !(Array.isArray(d.dich) && d.dich.length >= 1 && d.dich.length <= 50)) loi.push(`node '${id}': điều kiện ${i + 1}: 'in' cần danh sách 1–50 giá trị`);
+          if (d.so !== "in" && d.so !== "eq" && !laBieuThuc(d.dich) && !(typeof d.dich === "number" && Number.isFinite(d.dich))) loi.push(`node '${id}': điều kiện ${i + 1}: '${String(d.so)}' cần một SỐ`);
+        });
       }
     } else if (n?.type === "bao-tri.tao-phieu") {
       if (p.nhom !== undefined && !laBieuThuc(p.nhom) && !Object.prototype.hasOwnProperty.call(NHOM_PHIEU, String(p.nhom))) loi.push(`node '${id}': nhom phải là ${Object.keys(NHOM_PHIEU).join(" | ")}`);
