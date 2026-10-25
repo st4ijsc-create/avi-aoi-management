@@ -923,7 +923,12 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // Còn lại có chủ ý: lineController.status vẫn trả lastSweepStats = số đếm tổng của MỌI tuyến (chỉ recentEvents được lọc).
 // ★★ 2026-10-25 (lô L5b): **A 211 → 208 · S 511 → 514 · B/C/D/tong unchanged.** 3 thủ tục ĐỌC A → S: aiImageSearch.findSimilar|clusterDefects|stats (dùng lại `VectorSearchFilters.machineIds` của W12a; embedding NGUỒN ngoài phạm vi ≡ không tồn tại). 3 dòng sổ nợ đọc GỠ.
 // Chứng minh: `loAnhTimKiemDocPhamVi.db.test.ts` (6 ca CSDL thật; 6/6 đỏ trên mã cũ; đột biến 9/9 bị bắt). Kèm vá lỗi CÓ SẴN: `getEmbeddingStats.indexedCount` luôn 0 vì đọc `.rows` của kết quả postgres-js (là mảng).
-const GHIM = { A: 208, B: 8, C: 474, D: 1198, S: 514, tong: 2402 } as const;
+// ★★ 2026-10-25 (lô L6a): **A 208 → 164 · C 474 → 473 · S 514 → 559 · B/D/tong unchanged · miễn trừ 16 → 21.** 45 thủ tục ĐỌC → S (44 A→S + 1 C→S) + 6 miễn trừ có dẫn mã: paretoAnalysis ×6 · productionDashboard ×5 · reportingMart ×3 ·
+// measurementCorrections ×2 · stationTriangulation.correlationMatrix · spc.controlChart · energy ×6 (recipeEnergy|peakDemand|powerFactor|forecast|demandResponse|enpi) · realtimeReport ×2 · goldenSample ×5 · thresholdSuggestion ×2 · componentLibrary.linkStats ·
+// dashboard.overviewCounts · semantics.compute · msd ×2 · stencil ×2 · ncr list|getById · ecn list|getById (getItems/transition cùng cổng); miễn trừ: semantics.list|get · spc.topNGPoints · ntfClassifier.list|status.
+// Chứng minh: loParetoPhamVi (5 ca, đột biến 13/13) · loDoLuongPhamVi (10 ca, đột biến 21/23 + 2 cổng dự phòng tương đương) · loNangLuongSanPhamPhamVi (12 ca) · loMsdStencilPhamVi (4 ca) · loNcrEcnPhamVi (8 ca, đột biến 24/24).
+// Kèm vá LỖI CÓ SẴN: khoá bộ nhớ đệm getStationOverview thiếu phạm vi; db/energy.ts bind Date thô vào postgres-js + timestamp trả chuỗi; stencil.status rò tổng số lần in dù ẩn tên khuôn.
+const GHIM = { A: 164, B: 8, C: 473, D: 1198, S: 559, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
@@ -1035,7 +1040,7 @@ describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
       if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
     }
     expect(loi).toEqual([]);
-    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(16);
+    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(21); // 16 → 21 (lô L6a 2026-10-25: semantics.list|get · spc.topNGPoints · ntfClassifier.list|status; partsBelowReorder trả lại kiem-dinh W16)
   });
 
   it("sổ nợ GOM THEO FILE, mỗi file một khối liền mạch, trong khối đã sắp xếp, không lặp", () => {

@@ -32,7 +32,6 @@
 export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ───────────────────────────────────────────────────────
   "server/_core/systemRouter.ts#systemRouter.exportConfig",
-  // ── server/routers/machineRecipeRouter.ts (1) ──
   // ── server/routers/aiActiveLearningRouter.ts (6) ───────────────────────────────────────────
   "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.checkRetrain",
   "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.diversitySampling",
@@ -115,14 +114,11 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/alertRouters.ts (2) ─────────────────────────────────────────────────────
   "server/routers/alertRouters.ts#alertRouter.getById",
   "server/routers/alertRouters.ts#alertRouter.listAll",
-  // ── server/routers/annotationComparisonRouter.ts (4) ───────────────────────────────────────
-  // ── server/routers/annotationRouters.ts (7) ────────────────────────────────────────────────
   // ── server/routers/aoiOnboardingRouter.ts (4) ──────────────────────────────────────────────
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.getDraft",
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.listAoiMachines",
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.listRecords",
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.status",
-  // ── server/routers/aoiPackageRouter.ts (8) ─────────────────────────────────────────────────
   // ── server/routers/apiKeyRouter.ts (1) ─────────────────────────────────────────────────────
   "server/routers/apiKeyRouter.ts#apiKeyRouter.list",
   // ── server/routers/bomRouter.ts (5) ────────────────────────────────────────────────────────
@@ -132,34 +128,16 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   //    `resolveHierarchyScope` (nhóm A → S). Đo được TRƯỚC khi vá: 5 vai nhận CÙNG 450.811
   //    byte, CÙNG md5, kể cả tài khoản 0 gán nhà máy. Lưới hai chiều:
   //    `server/routers/commandCenterHierarchyScope.db.test.ts`.
-  // ── server/routers/componentLibraryRouter.ts (1) ───────────────────────────────────────────
-  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.linkStats",
-  // ── server/routers/dashboardStatsRouters.ts (1) ────────────────────────────────────────────
-  "server/routers/dashboardStatsRouters.ts#dashboardRouter.overviewCounts",
-  // ── server/routers/defectDispositionRouter.ts (7) ──────────────────────────────────────────
   // ── server/routers/deviceAdapterRouter.ts — ★ 2026-10-24: 2 mục ĐÃ TRẢ (get · list ⇒ S qua server/routers/_adapterPhamVi.ts), xoá khỏi sổ ──
   // ── server/routers/digitalTwinRouter.ts — ★ ĐỢT 14 LÔ Q1: 5 mục ĐÃ TRẢ, xoá khỏi sổ ────────
   //    twinState · defectHeatmap · wipFlowState · stationLoadHeatmap · predictionOverlay đều đã
   //    mang `phamViCua(ctx)` xuống tầng dữ liệu. Nghiệm thu hai chiều trên CSDL thật ở
   //    `digitalTwinPhamVi.db.test.ts`; phân đôi toàn tập ở `phamViTwinCanh.unit.test.ts`.
   //    (`whatIf` chưa từng có tên ở đây — nó là hàm thuần, không chạm CSDL.)
-  // ── server/routers/ecnRouter.ts (2) ────────────────────────────────────────────────────────
-  "server/routers/ecnRouter.ts#ecnRouter.getById",
-  "server/routers/ecnRouter.ts#ecnRouter.list",
   // ── server/routers/ecosystemAdminRouter.ts (1) ─────────────────────────────────────────────
   "server/routers/ecosystemAdminRouter.ts#ecosystemAdminRouter.softRefIntegrity",
-  // ── server/routers/edgeDeploymentRouter.ts (4) ─────────────────────────────────────────────
   // ── server/routers/edgeRuntimeRouter.ts (1) — 2026-10-10 (doc 81 Đợt 5 E2 fix): nodeStatus đã vá (runs lọc theo phạm vi), dòng đã gỡ.
   "server/routers/edgeRuntimeRouter.ts#edgeRuntimeRouter.listNodes",
-  // ── server/routers/energyRouter.ts (6) ─────────────────────────────────────────────────────
-  "server/routers/energyRouter.ts#energyRouter.demandResponse",
-  "server/routers/energyRouter.ts#energyRouter.enpi",
-  "server/routers/energyRouter.ts#energyRouter.forecast",
-  "server/routers/energyRouter.ts#energyRouter.peakDemand",
-  "server/routers/energyRouter.ts#energyRouter.powerFactor",
-  "server/routers/energyRouter.ts#energyRouter.recipeEnergy",
-  // ── server/routers/equipmentIntegrationRouter.ts (5) ───────────────────────────────────────
-  // ── server/routers/equipmentRouter.ts (3) ──────────────────────────────────────────────────
   // ── server/routers/equipmentStandardsRouter.ts (8) ─────────────────────────────────────────
   // 2026-09-27 (doc 80 Đợt 1 Task 3, STD-04) — `alarmKpis` không còn tự đọc `andon_events`
   // (toàn cục, bộ tính thứ hai): nó uỷ quyền `alarmKpiRouter.createCaller(ctx).summary(…)`,
@@ -193,12 +171,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/fieldRouter.ts#fieldRouter.deviceState",
   "server/routers/fieldRouter.ts#fieldRouter.health",
   "server/routers/fieldRouter.ts#fieldRouter.healthSummary",
-  // ── server/routers/goldenSampleRouter.ts (5) ───────────────────────────────────────────────
-  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.getActiveForKey",
-  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.getThumbnail",
-  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.listByProduct",
-  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.listForProduct",
-  "server/routers/goldenSampleRouter.ts#goldenSampleRouter.listManaged",
   // ── server/routers/hierarchyRouters.ts (1) ─────────────────────────────────────────────────
   "server/routers/hierarchyRouters.ts#machineRouter.config",
   // ── server/routers/hierarchyTreeRouter.ts (4) ──────────────────────────────────────────────
@@ -210,29 +182,17 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/hotFolderRouter.ts#hotFolderRouter.listConfigs",
   "server/routers/hotFolderRouter.ts#hotFolderRouter.recentFiles",
   "server/routers/hotFolderRouter.ts#hotFolderRouter.status",
-  // ── server/routers/inspectionProgramRouter.ts (4) ──────────────────────────────────────────
-  // ── server/routers/inspectionRouters.ts (5) ────────────────────────────────────────────────
-  // ── server/routers/interlockRouter.ts (3) ──────────────────────────────────────────────────
-  // ── server/routers/irRouter.ts (4) ─────────────────────────────────────────────────────────
   // ── server/routers/layoutRouters.ts (2) ────────────────────────────────────────────────────
   "server/routers/layoutRouters.ts#layoutRouter.getById",
   "server/routers/layoutRouters.ts#layoutRouter.listByWorkshop",
   // ── server/routers/machineApiRouters.ts (1) ────────────────────────────────────────────────
   "server/routers/machineApiRouters.ts#machineApiRouter.listKeys",
-  // ── server/routers/maintenanceRouter.ts (1) ────────────────────────────────────────────────
-  // ★ Đợt 49 (mục E) — XOÁ 3 dòng `getWorkOrder` · `listWorkOrders` · `summary`: bộ quét xếp cả ba
-  //   vào nhóm **S** (đã lọc phạm vi) từ trước baseline `d7a6a6c7`, nên §5 ("sổ nợ không được hoá
-  //   thạch") đỏ suốt từ Đợt 40. Trả nợ = XOÁ DÒNG, nhìn thấy được trong diff — không phải nới §5.
-  //   ⚠ Xoá khỏi sổ KHÔNG đổi dân số nhóm A (A do bộ quét đếm trên mã, sổ chỉ là danh sách miễn
-  //     trừ): đo A = 342 cả trước lẫn sau lượt xoá này.
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.partsBelowReorder",
-  // ── server/routers/maintenanceScheduleRouter.ts (2) ────────────────────────────────────────
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.get",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.list",
+  // ── server/routers/maintenanceRouter.ts (1) ────────────────────────────────────────────────
+  // 2026-10-25 (L6a): chủ dự án giao kiem-dinh (W16, mig 0424/0425) làm KHO VẬT TƯ theo nhà máy ⇒ partsBelowReorder QUAY LẠI sổ nợ, kiem-dinh vá trọn đọc + ghi.
+  "server/routers/maintenanceRouter.ts#maintenanceRouter.partsBelowReorder",
   // ── server/routers/mappingAsCodeRouter.ts — ★ 2026-10-24: 1 mục ĐÃ TRẢ (exportOne ⇒ S qua _adapterPhamVi.ts), xoá khỏi sổ ──
-  // ── server/routers/measurementCorrectionsRouter.ts (2) ─────────────────────────────────────
-  "server/routers/measurementCorrectionsRouter.ts#measurementCorrectionsRouter.agreementTrend",
-  "server/routers/measurementCorrectionsRouter.ts#measurementCorrectionsRouter.machineFalseCallSummary",
   // ── server/routers/mqttBulletinRouter.ts (5) ───────────────────────────────────────────────
   "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.getDashboardStats",
   "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.getHistory",
@@ -251,29 +211,11 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.listSettings",
   // ── server/routers/mqttSoftwareVersionRouter.ts (1) ────────────────────────────────────────
   "server/routers/mqttSoftwareVersionRouter.ts#mqttSoftwareVersionRouter.deviceVersionSummary",
-  // ── server/routers/msdRouter.ts (2) ────────────────────────────────────────────────────────
-  "server/routers/msdRouter.ts#msdRouter.expiringSoon",
-  "server/routers/msdRouter.ts#msdRouter.listActive",
-  // ── server/routers/ncrRouter.ts (2) ────────────────────────────────────────────────────────
-  "server/routers/ncrRouter.ts#ncrRouter.getById",
-  "server/routers/ncrRouter.ts#ncrRouter.list",
   // ── server/routers/ngRateThresholdRouter.ts (4) ────────────────────────────────────────────
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.alertHistory",
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.currentNgRates",
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.getById",
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.list",
-  // ── server/routers/ntfClassifierRouter.ts (2) ──────────────────────────────────────────────
-  "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.list",
-  "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.status",
-  // ── server/routers/orchestrationRouter.ts — 2026-10-10 (doc 81 Đợt 5 E2): simulate đã vá (nhóm S), dòng đã gỡ.
-  // ── server/routers/oversightRouter.ts (1) ──────────────────────────────────────────────────
-  // 2026-09-27 (doc 80 Đợt 1 Task 2, HUB-02) — `pendingSummary` giờ nhận `ctx` (để tính
-  // showNames qua `checkPermission(ctx.user.id, ctx.user.role, …)`) ⇒ danh tính RỜI TAY
-  // handler ⇒ chuyển sang nhóm S, XOÁ khỏi sổ này (GHIM.A không đổi: −1 pendingSummary,
-  // +1 posture dưới đây). `posture` (MỚI, ILK-06) đọc `interlock_rules` (đếm rule bật+có
-  // đích) để tính độ phủ interlock cho dải "Tư thế an toàn" — một chỉ số TOÀN NHÀ MÁY cho
-  // trưởng ca L3, cùng bản chất với `pendingSummary` cũ (đã ở sổ này từ 2026-08-18): không
-  // trả một HÀNG dữ liệu tenant nào, chỉ một SỐ ĐẾM gộp toàn hệ thống.
   "server/routers/oversightRouter.ts#oversightRouter.posture",
   // ── server/routers/parameterGuardrailRouter.ts (5) ─────────────────────────────────────────
   "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.changeLog",
@@ -281,27 +223,12 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.list",
   "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.materialForecast.component",
   "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.materialForecast.machine",
-  // ── server/routers/paretoAnalysisRouter.ts (6) ─────────────────────────────────────────────
-  "server/routers/paretoAnalysisRouter.ts#paretoAnalysisRouter.byDefectClass",
-  "server/routers/paretoAnalysisRouter.ts#paretoAnalysisRouter.byDefectType",
-  "server/routers/paretoAnalysisRouter.ts#paretoAnalysisRouter.byLine",
-  "server/routers/paretoAnalysisRouter.ts#paretoAnalysisRouter.byMachine",
-  "server/routers/paretoAnalysisRouter.ts#paretoAnalysisRouter.byPackage",
-  "server/routers/paretoAnalysisRouter.ts#paretoAnalysisRouter.byTimePeriod",
   // ── server/routers/permissionsRouter.ts (2) ────────────────────────────────────────────────
   "server/routers/permissionsRouter.ts#permissionsRouter.getBuiltInRoles",
   "server/routers/permissionsRouter.ts#permissionsRouter.getDefaultPermissionsForRole",
-  // ── server/routers/predictiveMaintenanceRouter.ts (4) ──────────────────────────────────────
-  // ── server/routers/processResultRouter.ts (7) ──────────────────────────────────────────────
   // ── server/routers/processRouter.ts (2) ────────────────────────────────────────────────────
   "server/routers/processRouter.ts#processRouter.getAssignmentsByProcess",
   "server/routers/processRouter.ts#processRouter.getLineAssignments",
-  // ── server/routers/productionDashboardRouter.ts (5) ────────────────────────────────────────
-  "server/routers/productionDashboardRouter.ts#productionDashboardRouter.getDefectAnalysis",
-  "server/routers/productionDashboardRouter.ts#productionDashboardRouter.getFalseCallEscape",
-  "server/routers/productionDashboardRouter.ts#productionDashboardRouter.getSpcSummary",
-  "server/routers/productionDashboardRouter.ts#productionDashboardRouter.getStationOverview",
-  "server/routers/productionDashboardRouter.ts#productionDashboardRouter.getTrendData",
   // ── server/routers/productVariantRouter.ts (2) ─────────────────────────────────────────────
   "server/routers/productVariantRouter.ts#productVariantRouter.getEffectivePoints",
   "server/routers/productVariantRouter.ts#productVariantRouter.getVariant",
@@ -309,23 +236,10 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ★★★ 2026-08-18 — 8 mục của `server/routers/publicProductApiRouter.ts` ĐÃ ĐƯỢC TRẢ, xoá khỏi
   // đây. Tám thủ tục ấy nay thu hẹp về nhà máy của MÁY GỌI (`publicProductScope.ts`) và bộ suy
   // xếp chúng vào nhóm **B** — xem `phamViDocCensus.test.ts` §8, nơi tập ấy được ghim TỪNG TÊN.
-  // ── server/routers/realtimeReportRouter.ts (2) ─────────────────────────────────────────────
-  "server/routers/realtimeReportRouter.ts#realtimeReportRouter.enpiSummary",
-  "server/routers/realtimeReportRouter.ts#realtimeReportRouter.healthSeries",
-  // ── server/routers/reportingMartRouter.ts (3) ──────────────────────────────────────────────
-  "server/routers/reportingMartRouter.ts#reportingMartRouter.productMix",
-  "server/routers/reportingMartRouter.ts#reportingMartRouter.yieldByShift",
-  "server/routers/reportingMartRouter.ts#reportingMartRouter.yieldTrendHourly",
-  // ── server/routers/robotRouter.ts (5) ──────────────────────────────────────────────────────
   // ── server/routers/safetyRouter.ts (5) ─────────────────────────────────────────────────────
   // ★ 2026-10-09 (doc 81 Đợt 3b final wave, rà soát bảo mật) — `safetyRouter.listAssignments` RỜI sổ: nay lọc theo phạm vi
   //   nhà máy của HÀNG (factoryId › chuyền › trạm; mồ côi bị loại) bằng `resolveTenantFactoryScope(phamViCua(ctx))` — bộ lọc
   //   ca Đợt 3b Task 1 từng cho phép dò hàng nhà máy khác theo id ca. Bộ quét xếp nó sang S.
-  // ── server/routers/semanticsRouter.ts (3) ──────────────────────────────────────────────────
-  "server/routers/semanticsRouter.ts#semanticsRouter.compute",
-  "server/routers/semanticsRouter.ts#semanticsRouter.get",
-  "server/routers/semanticsRouter.ts#semanticsRouter.list",
-  // ── server/routers/shiftConfigRouter.ts (2) ────────────────────────────────────────────────
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.defaults",
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.list",
   // ── server/routers/simTargetsRouter.ts (1) ─────────────────────────────────────────────────
@@ -343,15 +257,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/sitesRouter.ts (2) ──────────────────────────────────────────────────────
   "server/routers/sitesRouter.ts#sitesRouter.get",
   "server/routers/sitesRouter.ts#sitesRouter.list",
-  // ── server/routers/sopRouter.ts (5) ────────────────────────────────────────────────────────
-  // ── server/routers/spcAnalysisRouter.ts (2) ────────────────────────────────────────────────
-  "server/routers/spcAnalysisRouter.ts#spcAnalysisRouter.controlChart",
-  "server/routers/spcAnalysisRouter.ts#spcAnalysisRouter.topNGPoints",
-  // ── server/routers/stationTriangulationRouter.ts (1) ───────────────────────────────────────
-  "server/routers/stationTriangulationRouter.ts#stationTriangulationRouter.correlationMatrix",
-  // ── server/routers/stencilRouter.ts (2) ────────────────────────────────────────────────────
-  "server/routers/stencilRouter.ts#stencilRouter.listUsage",
-  "server/routers/stencilRouter.ts#stencilRouter.status",
   // ── server/routers/systemHealthRouter.ts (1) ───────────────────────────────────────────────
   "server/routers/systemHealthRouter.ts#systemHealthRouter.connectionSupervisors",
   // ── server/routers/systemRouters.ts (1) ────────────────────────────────────────────────────
@@ -360,10 +265,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.countPendingByProduct",
   "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.getById",
   "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.list",
-  // ── server/routers/thresholdSuggestionRouter.ts (2) ────────────────────────────────────────
-  "server/routers/thresholdSuggestionRouter.ts#thresholdSuggestionRouter.suggestForPoint",
-  "server/routers/thresholdSuggestionRouter.ts#thresholdSuggestionRouter.suggestForProductModel",
-  // ── server/routers/traceabilityRouter.ts (2) ───────────────────────────────────────────────
   // ── server/routers/twinRouter.ts (2) ───────────────────────────────────────────────────────
   // doc 81 Đợt 4 Task A3: occupancyGrid · replay · sceneGraph · twinModels đã vá (assertTwinFactoryInScope) — đã GỠ.
   "server/routers/twinRouter.ts#twinRouter.models.list",
@@ -400,4 +301,9 @@ export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
   "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.listDeployments": "adminProcedure ⇒ vai admin = phạm vi TOÀN QUYỀN trong hệ thống này (cùng lý do system.exportConfig); dieu-phoi duyệt mức kỹ thuật 2026-10-25",
   "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.listRecipeVersions": "danh mục phiên bản công thức dùng chung toàn tập đoàn (cùng quyết định với recipes.listVersions) — dieu-phoi duyệt mức kỹ thuật 2026-10-25",
   "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.frameworkSnapshot": "bộ nhớ đệm FocasAdapter/EuromapAdapter nằm TRÊN THỂ HIỆN và mỗi lượt gọi dựng thể hiện mới ⇒ ảnh chụp luôn rỗng, không chứa số đo nhà máy nào (đã đọc mã focasAdapter.ts) — 2026-10-25. ⚠ PHẢI XEM LẠI khi nối connector FOCAS/Euromap thật (cache theo máy/chia sẻ giữa lượt gọi ⇒ có thể chứa số đo nhà máy) — dieu-phoi duyệt 2026-10-25",
+  "server/routers/semanticsRouter.ts#semanticsRouter.list": "định nghĩa metric TĨNH (YAML contracts/metrics, không có dữ liệu theo nhà máy) — dieu-phoi duyệt 2026-10-25",
+  "server/routers/semanticsRouter.ts#semanticsRouter.get": "định nghĩa metric TĨNH (YAML contracts/metrics, không có dữ liệu theo nhà máy) — dieu-phoi duyệt 2026-10-25",
+  "server/routers/spcAnalysisRouter.ts#spcAnalysisRouter.topNGPoints": "ĐÃ phạm vi qua userId/userRole → resolveStatsScope (db.getTopNGMeasurementPointsEnhanced); bộ quét không nhận lời gọi db.* — bằng chứng: loDoLuongPhamVi.db.test.ts \"spc.topNGPoints\" (A 1 · admin 2) + db/statisticsScope.test.ts — dieu-phoi duyệt 2026-10-25",
+  "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.list": "adminProcedure ⇒ vai admin = phạm vi TOÀN QUYỀN (cùng lý do edgeDeployment); mô hình NTF trained toàn cục — dieu-phoi duyệt 2026-10-25",
+  "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.status": "chỉ trả mô hình đang chạy phạm vi TOÀN CỤC (machineId NULL: getActiveNtfClassifier() không truyền máy) + cờ — theo quyết định \"NULL ⇒ thấy cho mọi người có quyền module\"; mô hình theo máy KHÔNG qua thủ tục này — dieu-phoi duyệt 2026-10-25",
 };

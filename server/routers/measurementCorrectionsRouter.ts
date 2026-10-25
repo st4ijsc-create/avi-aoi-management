@@ -10,6 +10,7 @@
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import {
   getAgreementTrend,
   getMachineFalseCallSummary,
@@ -37,9 +38,10 @@ export const measurementCorrectionsRouter = router({
       machineId: z.number().int().positive().optional(),
       limit: z.number().int().min(1).max(100).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { start, end } = parseRange(input);
       return getMachineFalseCallSummary({
+        machineIds: await idsMayTrongPhamVi(ctx), // phạm vi người dùng (L6a 2026-10-25)
         startDate: start,
         endDate: end,
         machineId: input.machineId,
@@ -53,9 +55,10 @@ export const measurementCorrectionsRouter = router({
       ...dateRangeInput,
       machineId: z.number().int().positive().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { start, end } = parseRange(input);
       return getAgreementTrend({
+        machineIds: await idsMayTrongPhamVi(ctx), // phạm vi người dùng (L6a 2026-10-25)
         startDate: start,
         endDate: end,
         machineId: input.machineId,

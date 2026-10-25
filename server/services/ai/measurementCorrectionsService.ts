@@ -243,6 +243,8 @@ export interface MachineFalseCallSummaryRow {
 }
 
 export async function getMachineFalseCallSummary(params: {
+  /** phạm vi người dùng (L6a 2026-10-25): chỉ máy trong tập này (rỗng ⇒ không máy; null / vắng ⇒ không lọc). */
+  machineIds?: number[] | null;
   startDate: Date;
   endDate: Date;
   machineId?: number;
@@ -257,6 +259,7 @@ export async function getMachineFalseCallSummary(params: {
     lte(productInspections.inspectionTime, params.endDate),
   ];
   if (params.machineId) inspConditions.push(eq(productInspections.machineId, params.machineId));
+  if (params.machineIds != null) inspConditions.push(params.machineIds.length > 0 ? inArray(productInspections.machineId, params.machineIds) : sql`false`);
 
   const clearedExpr = sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} <> 'NG')`;
   const reviewedExpr = sql<number>`COUNT(*) FILTER (WHERE ${productInspections.acknowledgedAt} IS NOT NULL OR ${productInspections.overallResult} <> 'NG')`;
@@ -266,6 +269,7 @@ export async function getMachineFalseCallSummary(params: {
     lte(measurementCorrections.createdAt, params.endDate),
   ];
   if (params.machineId) corrConditions.push(eq(measurementCorrections.machineId, params.machineId));
+  if (params.machineIds != null) corrConditions.push(params.machineIds.length > 0 ? inArray(measurementCorrections.machineId, params.machineIds) : sql`false`);
 
   const [ngStats, corrStats] = await Promise.all([
     db
@@ -349,6 +353,8 @@ export interface AgreementTrendPoint {
 
 /** Daily NG-later-cleared + harvested-corrections trend for the cockpit card. */
 export async function getAgreementTrend(params: {
+  /** phạm vi người dùng (L6a 2026-10-25): chỉ máy trong tập này (rỗng ⇒ không máy; null / vắng ⇒ không lọc). */
+  machineIds?: number[] | null;
   startDate: Date;
   endDate: Date;
   machineId?: number;
@@ -362,11 +368,13 @@ export async function getAgreementTrend(params: {
     lte(productInspections.inspectionTime, params.endDate),
   ];
   if (params.machineId) inspConditions.push(eq(productInspections.machineId, params.machineId));
+  if (params.machineIds != null) inspConditions.push(params.machineIds.length > 0 ? inArray(productInspections.machineId, params.machineIds) : sql`false`);
   const corrConditions: SQL[] = [
     gte(measurementCorrections.createdAt, params.startDate),
     lte(measurementCorrections.createdAt, params.endDate),
   ];
   if (params.machineId) corrConditions.push(eq(measurementCorrections.machineId, params.machineId));
+  if (params.machineIds != null) corrConditions.push(params.machineIds.length > 0 ? inArray(measurementCorrections.machineId, params.machineIds) : sql`false`);
 
   const inspDay = factoryDayTextSql(productInspections.inspectionTime);
   const corrDay = factoryDayTextSql(measurementCorrections.createdAt);

@@ -70,6 +70,8 @@ vi.mock("drizzle-orm", async (orig) => {
   return { ...actual, eq: makeEq, and: makeAnd, desc: makeDesc };
 });
 vi.mock("../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
+// Bài này kiểm BIT QUYỀN, không kiểm phạm vi nhà máy (đã có loChuongTrinhPhamVi.db.test.ts, CSDL thật): FakeDb chỉ hiểu eq/and/gte/desc nên vị từ phạm vi (or/inArray/IN) của L3 không chạy được trên nó ⇒ coi người gọi là TOÀN QUYỀN ở cổng dự án.
+vi.mock("./_chuongTrinhPhamVi", async (orig) => ({ ...(await orig<typeof import("./_chuongTrinhPhamVi")>()), chanDuAn: async () => undefined }));
 
 import { vramRouter } from "./vramRouter";
 import { programmingRouter } from "./programmingRouter";

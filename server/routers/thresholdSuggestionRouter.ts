@@ -11,6 +11,7 @@ import * as db from "../db";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { suggestThresholds } from "../utils/thresholdSuggestion";
+import { phamViCua } from "./_phamViNguoiXem";
 
 function toNum(x: unknown): number | null {
   if (x == null) return null;
@@ -29,8 +30,12 @@ export const thresholdSuggestionRouter = router({
       toTs: z.date().optional(),
       priorWeight: z.number().min(0).max(1).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const def = await db.getMeasurementPointDefById(input.pointDefId);
+      // phạm vi người dùng (L6a 2026-10-25): điểm đo thuộc sản phẩm ngoài phạm vi ≡ không tồn tại
+      if (def && !(await db.sanPhamTrongPhamVi((def as any).productModelId, phamViCua(ctx)))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `MP ${input.pointDefId} not found`);
+      }
       if (!def) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `MP ${input.pointDefId} not found`);
       }
@@ -39,7 +44,7 @@ export const thresholdSuggestionRouter = router({
         windowSize: input.windowSize ?? 500,
         fromTs: input.fromTs,
         toTs: input.toTs,
-      });
+      }, phamViCua(ctx)); // phạm vi người dùng (L6a 2026-10-25)
       const values: number[] = [];
       for (const r of rows) {
         const v = toNum((r as any).value);
@@ -74,7 +79,9 @@ export const thresholdSuggestionRouter = router({
       priorWeight: z.number().min(0).max(1).optional(),
       minN: z.number().int().nonnegative().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L6a 2026-10-25): sản phẩm ngoài phạm vi ≡ không có điểm đo nào
+      if (!(await db.sanPhamTrongPhamVi(input.productModelId, phamViCua(ctx)))) return { productModelId: input.productModelId, count: 0, items: [] as Array<any> };
       const defs = await db.getMeasurementPointDefsByProductModel(input.productModelId);
       const minN = input.minN ?? 10;
       const results: Array<any> = [];
@@ -82,7 +89,7 @@ export const thresholdSuggestionRouter = router({
         const rows = await db.listMeasurementSamples({
           pointDefId: (def as any).id,
           windowSize: input.windowSize ?? 500,
-        });
+        }, phamViCua(ctx)); // phạm vi người dùng (L6a 2026-10-25)
         const values: number[] = [];
         for (const r of rows) {
           const v = toNum((r as any).value);

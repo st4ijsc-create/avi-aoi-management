@@ -22,7 +22,7 @@
  * via utils/kpi.resolveFactoryDateWindow (factory-local days).
  */
 import { getDb } from "../db/connection";
-import { sql, eq, and, gte, lte, desc, SQL } from "drizzle-orm";
+import { sql, eq, and, gte, lte, desc, inArray, SQL } from "drizzle-orm";
 import {
   productInspections,
   measurementResults,
@@ -41,6 +41,8 @@ export interface PackageParetoParams {
   startDate: Date;
   endDate: Date;
   machineId?: number;
+  /** phạm vi người dùng (L6a 2026-10-25): chỉ lần kiểm của các máy này (rỗng ⇒ không lần nào; null / vắng ⇒ không lọc). */
+  machineIds?: number[] | null;
   lineId?: number;
   workshopId?: number;
   factoryId?: number;
@@ -180,6 +182,7 @@ export async function getPackageDefectPareto(params: PackageParetoParams): Promi
     sql`${measurementResults.result} = 'NG'`,
   ];
   if (params.machineId) conditions.push(eq(productInspections.machineId, params.machineId));
+  if (params.machineIds != null) conditions.push(params.machineIds.length > 0 ? inArray(productInspections.machineId, params.machineIds) : sql`false`);
   if (params.productModelId) conditions.push(eq(productInspections.productModelId, params.productModelId));
 
   const needsHierarchy = !!(params.lineId || params.workshopId || params.factoryId);

@@ -24,8 +24,17 @@ import {
   NcrError,
 } from "../services/ncrService";
 import { NCR_DISPOSITIONS, NCR_SOURCES, NCR_STATUSES } from "../../drizzle/schema/ncr";
+import { nhaMayGhiPhieu, nhaMayTrongPhamVi, nhaMayTuLanKiem, phieuThayDuocTrongPhamVi } from "./_phieuPhamVi";
+import type { CoDanhTinh } from "./_phamViNguoiXem";
+
+/** phạm vi người dùng (L6a 2026-10-25): phiếu NCR ngoài phạm vi ≡ không tồn tại (cùng lỗi id không có thật). */
+async function ncrGate(ctx: CoDanhTinh, id: number): Promise<void> {
+  const row = await getNcrById(id);
+  if (row && !(await phieuThayDuocTrongPhamVi(ctx, row.factoryId))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ncr" }, `NCR ${id} not found`);
+}
 
 function toTrpc(err: unknown): never {
+  if (err instanceof TRPCError) throw err; // lỗi phạm vi / appError đi qua nguyên vẹn (phạm vi người dùng L6a 2026-10-25)
   if (err instanceof NcrError) {
     const code =
       err.code === "NOT_FOUND" ? "NOT_FOUND" :
@@ -49,10 +58,14 @@ export const ncrRouter = router({
       quarantineLocationId: z.number().int().positive().optional(),
       reason: z.string().max(4000).optional(),
       note: z.string().max(4000).optional(),
+      /** Nhà máy của phiếu khi KHÔNG có lần kiểm liên kết (người bị thu hẹp phạm vi: bắt buộc nếu có >1 nhà máy). */
+      factoryId: z.number().int().positive().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       try {
-        return await createNcr({ ...input, raisedBy: ctx.user.id });
+        // phạm vi người dùng (L6a 2026-10-25): nhà máy suy từ máy của lần kiểm liên kết; không có thì theo khai / nhà máy duy nhất của người gọi
+        const factoryId = await nhaMayGhiPhieu(ctx, { tuLanKiem: await nhaMayTuLanKiem(ctx, input.linkedInspectionId), khai: input.factoryId });
+        return await createNcr({ ...input, factoryId, raisedBy: ctx.user.id });
       } catch (err) {
         toTrpc(err);
       }
@@ -67,13 +80,13 @@ export const ncrRouter = router({
       productModelId: z.number().int().positive().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }).optional())
-    .query(async ({ input }) => listNcr(input ?? {})),
+    .query(async ({ input, ctx }) => listNcr({ ...(input ?? {}), factoryIds: await nhaMayTrongPhamVi(ctx) })), // phạm vi người dùng (L6a 2026-10-25)
 
   getById: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const row = await getNcrById(input.id);
-      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ncr" }, `NCR ${input.id} not found`);
+      if (!row || !(await phieuThayDuocTrongPhamVi(ctx, row.factoryId))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ncr" }, `NCR ${input.id} not found`); // phạm vi người dùng (L6a 2026-10-25)
       return row;
     }),
 
@@ -88,6 +101,7 @@ export const ncrRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       try {
+        await ncrGate(ctx, input.id); // phạm vi người dùng (L6a 2026-10-25)
         return await transitionNcr({ ...input, actorId: ctx.user.id });
       } catch (err) {
         toTrpc(err);
