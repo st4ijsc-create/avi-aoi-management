@@ -1,0 +1,16 @@
+{
+  "ten": "mau5 nhan hop le nhung tin cay thap cho nguoi duyet",
+  "mau": "phieu-bao-tri-phan-loai.json",
+  "thayNut": {
+    "su-kien": { "type": "kich-hoat.thu-cong", "parameters": {} },
+    "tao-phieu": { "type": "du-lieu.dat", "parameters": { "truong": { "kenh": "tao-phieu" } } },
+    "tao-phieu-duyet": { "type": "du-lieu.dat", "parameters": { "truong": { "kenh": "tao-phieu-sau-duyet" } } }
+  },
+  "items": [{ "json": { "lyDo": "Lau sạch ống kính camera, bụi bẩn bám nhiều", "idMay": 1 } }],
+  "ai": [{ "khop": "ống kính", "tra": "dien", "tinCay": 0.32 }],
+  "kyVong": {
+    "trangThai": "cho-duyet",
+    "khongChay": ["tao-phieu", "tao-phieu-duyet"],
+    "buoc": { "phan-loai": { "dauRa": { "main": [{ "json": { "nhan": "dien", "tinCay": 0.32 } }] } }, "duyet": { "trangThai": "dang-chay" } }
+  }
+}
