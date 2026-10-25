@@ -15,6 +15,8 @@ import { NHOM_PHIEU_FORM, SU_KIEN_NOI_BO, TRAN_NGUOI_NHAN_FORM, TRUY_VAN_SO_LIEU
 import { TOAN_TU_CHON_FORM, TRAN_NHANH_CHON_FORM } from "./FormChon";
 import { CONG_CHON, TOAN_TU_CHON, TRAN_NHANH_CHON } from "../../../../server/services/flow/nut/chon";
 import { CHO_MAC_DINH_GIAY, CHO_TOI_DA_GIAY, TRAN_THONG_DIEP_DUNG_LOI } from "../../../../server/services/flow/nut/cho";
+import { RE_TEN_MAY_CHU_MCP, RE_TEN_TOOL_MCP, TRAN_ITEM_MCP } from "../../../../server/services/flow/nut/mcpKhach";
+import { RE_TEN_MAY_CHU_FORM, RE_TEN_TOOL_FORM, TRAN_DOI_SO_FORM_MCP } from "./FormMcp";
 import { KIEU_TRUONG_BIEU_MAU, TRAN_CHUOI_BIEU_MAU, TRAN_LUA_CHON_BIEU_MAU, TRAN_TRUONG_BIEU_MAU, kiemDinhNghiaBieuMau } from "../../../../server/services/flow/nut/bieuMau";
 import { KIEU_TRUONG_FORM, TRAN_CHUOI_FORM, TRAN_LUA_CHON_FORM, TRAN_TRUONG_FORM } from "./FormBieuMau";
 import { HUONG_SAP_XEP, KIEU_SAP_XEP, TOAN_TU_LOC, TRAN_DIEU_KIEN_LOC } from "../../../../server/services/flow/nut/loc";
@@ -60,7 +62,7 @@ describe("census: node có tham số theo danh mục / khoảng phải có form 
     "ot.de-xuat-luong": "node OT: JSON thô qua cổng aiControlGate.",
     "luong.goi-con": "chọn luồng con cần bộ chọn riêng — lô sau; máy chủ kiểm lúc lưu.",
   };
-  const NODE_MOI_CO_FORM = ["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom", "logic.cho", "logic.dung-loi", "logic.loc", "logic.sap-xep", "nguoi.bieu-mau"];
+  const NODE_MOI_CO_FORM = ["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom", "logic.cho", "logic.dung-loi", "logic.loc", "logic.sap-xep", "nguoi.bieu-mau", "tich-hop.mcp-goi"];
 
   it("4 node mới có `case` trong NodeConfigPanel; danh sách JSON-thô-có-lý-do không chứa node mới và không có mục lỗi thời", () => {
     const nguon = readFileSync(join(AQUI, "NodeConfigPanel.tsx"), "utf8");
@@ -127,5 +129,17 @@ describe("nguoi.bieu-mau: form ⇄ máy chủ", () => {
     expect(kiemThamSoNutMoi({ nodes: [{ id: "n", type: "nguoi.bieu-mau", parameters: { truong } }] })).toEqual([]);
     expect(kiemThamSoNutMoi({ nodes: [{ id: "n", type: "nguoi.bieu-mau", parameters: { truong: [] } }] }).length).toBe(1);
     expect(kiemThamSoNutMoi({ nodes: [{ id: "n", type: "nguoi.bieu-mau", parameters: { truong: Array.from({ length: TRAN_TRUONG_FORM + 1 }, (_, i) => ({ ten: `t${i}`, nhan: "x", kieu: "chuoi" })) } }] }).length).toBe(1);
+  });
+});
+
+describe("tich-hop.mcp-goi: form ⇄ máy chủ", () => {
+  it("biểu thức chính quy tên máy chủ / tool trong form KHỚP máy chủ; mọi giá trị form sinh ra qua bộ kiểm; trần đối số hợp lý", () => {
+    expect(RE_TEN_MAY_CHU_FORM.source).toBe(RE_TEN_MAY_CHU_MCP.source);
+    expect(RE_TEN_TOOL_FORM.source).toBe(RE_TEN_TOOL_MCP.source);
+    expect(TRAN_DOI_SO_FORM_MCP).toBeLessThanOrEqual(TRAN_ITEM_MCP);
+    const d = (parameters: Record<string, unknown>) => ({ nodes: [{ id: "n", type: "tich-hop.mcp-goi", parameters }] });
+    expect(kiemThamSoNutMoi(d({ server: "may-do", tool: "do-oee", thamSo: { may: "{{ $json.x }}" }, truongRa: "mcp" }))).toEqual([]);
+    expect(kiemThamSoNutMoi(d({ server: "", tool: "" })).length).toBe(2); // form mặc định (rỗng) chưa hợp lệ cho tới khi điền
+    expect(kiemThamSoNutMoi(d({ server: "{{ $json.s }}", tool: "t" })).length).toBe(1);
   });
 });

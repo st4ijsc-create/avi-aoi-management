@@ -42,6 +42,7 @@ export const KHOA_PHAM_VI_NUT: Readonly<Record<string, LuatPhamViNut>> = {
   "ai.sinh-ma": { kieu: "khong", lyDo: "Sinh mã ST và biên dịch trong Docker cách ly; không đọc bảng dữ liệu nhà máy, không tải xuống thiết bị." },
   "nguoi.duyet": { kieu: "khong", lyDo: "Ghi hàng chờ duyệt nội bộ khoá (runId,nodeId); người duyệt kiểm quyền ở flow.duyet theo phạm vi luồng." },
   "tich-hop.http-doc": { kieu: "khong", lyDo: "Gọi HTTP tới host trong danh sách trắng AI_FLOW_HTTP_HOST_CHO_PHEP (chặn SSRF, ghim IP); không đọc bảng dữ liệu nhà máy." },
+  "tich-hop.mcp-goi": { kieu: "khong", lyDo: "Gọi tool của MCP server trong danh sách trắng AI_FLOW_MCP_CHO_PHEP (mặc định rỗng ⇒ tắt; chặn SSRF, ghim IP, atMostOnce); không đọc bảng dữ liệu nhà máy." },
   "tich-hop.http-gui": { kieu: "khong", lyDo: "Gửi HTTP tới host trong danh sách trắng (chặn SSRF, atMostOnce + Idempotency-Key); không đọc bảng dữ liệu nhà máy." },
 };
 
@@ -96,6 +97,7 @@ export const THAM_SO_THEO_NHA_MAY: Readonly<Record<string, DongThamSoNhaMay>> = 
   "nguoi.duyet": KHONG_ID("Chỉ vai trò duyệt (supervisor…), không phải id người dùng."),
   "luong.goi-con": { truong: [{ truong: "flowId", thanh: "chuoi-rong", viec: "luong-con" }, { truong: "version", thanh: "bo", viec: "luong-con" }] },
   "tich-hop.http-doc": KHONG_ID("URL + tên trường; bí mật (credentialRef cấp node) luôn bị xoá khi xuất."),
+  "tich-hop.mcp-goi": KHONG_ID("Chỉ TÊN máy chủ MCP + TÊN tool + đối số biểu thức (không URL/host/id nhà máy); bí mật (credentialRef cấp node) luôn bị xoá khi xuất."),
   "tich-hop.http-gui": KHONG_ID("URL + thân; bí mật (credentialRef cấp node) luôn bị xoá khi xuất."),
   "tich-hop.thong-bao": { truong: [{ truong: "nguoiNhan", thanh: "mang-rong", viec: "nguoi-nhan" }] },
   "bao-tri.tao-phieu": { truong: [{ truong: "may", thanh: "chuoi-rong", viec: "may" }] },

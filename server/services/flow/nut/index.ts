@@ -3,6 +3,7 @@ import "./ai";
 import "./nguoi";
 import "./bieuMau";
 import "./tichHop";
+import "./mcpKhach";
 import "./ma";
 import "./sinhMa";
 import "./luong";

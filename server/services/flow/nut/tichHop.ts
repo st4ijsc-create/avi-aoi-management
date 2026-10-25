@@ -69,6 +69,8 @@ export function kiemUrl(raw: unknown, choPhep: Set<string>): URL {
 export type HamFetch = ((url: URL, init: RequestInit, dich: DichDen) => Promise<Response>) | typeof fetch;
 const fetchMacDinh: HamFetch = (url, init, dich) => fetchGhim(url, init, dich);
 let fetchLuong: HamFetch = fetchMacDinh;
+/** Hàm gửi hiện hành (node MCP client dùng chung — cùng ghim IP / chống SSRF; lưới thay bằng `datFetchLuong`). */
+export const layFetchLuong = (): HamFetch => fetchLuong;
 /** IP công cộng cố định của bộ phân giải GIẢ (lưới thay fetch thì không có mạng/DNS thật). */
 export const IP_CONG_KHAI_GIA = "93.184.216.34";
 /**

@@ -23686,6 +23686,20 @@
         "goiY": "Output ports: dong-y = filled in · tu-choi = skipped (not filled in) · het-han. The person filling it needs a sufficient role and must differ from whoever enabled the flow.",
         "co": "Yes",
         "chonMuc": "— choose —"
+      },
+      "mcp": {
+        "server": "MCP server",
+        "serverGoiY": "NAME declared by the administrator (a-z, 0-9, -, _), not a URL. Not declared ⇒ the node refuses every call (feature off).",
+        "serverSai": "Server names use only a-z, 0-9, -, _ (starting with a letter/digit).",
+        "tool": "Tool",
+        "toolGoiY": "FIXED tool name (no expressions); must be in this server's allow-list.",
+        "toolSai": "Tool names use only letters, digits, _ . -",
+        "doiSo": "Tool arguments ({{n}}/{{max}})",
+        "boDoiSo": "Remove argument",
+        "themDoiSo": "Add argument",
+        "biMatGoiY": "Optional. The secret must declare this MCP server's host; no flow secret ever flows to an MCP server on its own.",
+        "truongRaGoiY": "The result is written into the item under this key (default mcp): {may, tool, noiDung, cauTruc}.",
+        "canhBao": "The tool result is untrusted DATA — never executed as a command/expression. External-write class: the flow needs the matching enable permission. Max 20 items, 30 s, 1 MiB per response."
       }
     },
     "xuatNhap": {

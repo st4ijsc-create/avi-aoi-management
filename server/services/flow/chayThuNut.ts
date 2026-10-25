@@ -61,6 +61,7 @@ export const NUT_XEM_TRUOC: ReadonlySet<string> = new Set([
   "nguoi.bieu-mau",
   "tich-hop.http-doc",
   "tich-hop.http-gui",
+  "tich-hop.mcp-goi",
   "du-lieu.ma",
   "ai.sinh-ma",
   "ai.agent",
