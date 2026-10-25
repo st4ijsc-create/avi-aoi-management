@@ -3,7 +3,7 @@
  * Integration: seed a point with spec limits + N measured values, run the job,
  * assert a cpk_history row was written for that point over the window.
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { eq, inArray } from "drizzle-orm";
 import { appRouter } from "../routers";
@@ -16,6 +16,14 @@ import {
 } from "../../drizzle/schema";
 import { runCpkSnapshotNow } from "./cpkSnapshotScheduler";
 import { issueMachineKey } from "./machineAuthService";
+
+// runCpkSnapshotNow quét MỌI điểm đo có giới hạn (~1 500 trên _test) và chạy một truy vấn SPC cho mỗi điểm (~0,3 s/điểm đo được ⇒ >8 phút) — vượt mọi trần hợp lý của một ca.
+// Ca này kiểm LOGIC bộ lập lịch (tính Cpk + ghi cpk_history) trên điểm đo ĐÃ GIEO ⇒ chỉ thu hẹp DANH SÁCH điểm về điểm của ca (mọi thứ còn lại — truy vấn SPC, ước lượng σ, ghi lịch sử — là mã thật).
+const G = vi.hoisted(() => ({ pointDefId: 0 }));
+vi.mock("../db/spc", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/spc")>();
+  return { ...actual, listPointDefsWithSpecLimits: async () => (await actual.listPointDefsWithSpecLimits()).filter((d) => d.id === G.pointDefId) };
+});
 
 const STAMP = Date.now();
 let API_KEY = ""; // khoá mk_ cấp trong beforeAll
@@ -51,6 +59,7 @@ beforeAll(async () => {
     positionX: 10,
     positionY: 10,
   });
+  G.pointDefId = pointDefId;
 
   // 12 in-spec values around nominal 10 (spread so σ > 0).
   const values = [9.8, 10.1, 9.9, 10.2, 10.0, 9.7, 10.3, 9.95, 10.05, 9.85, 10.15, 10.0];
@@ -97,7 +106,6 @@ describe("runCpkSnapshotNow (OP9)", () => {
     expect(snap.cpk).not.toBeNull();
     expect(Number(snap.mean)).toBeGreaterThan(9);
     expect(Number(snap.mean)).toBeLessThan(11);
-    // runCpkSnapshotNow quét MỌI điểm đo có giới hạn trong DB (không lọc được theo điểm) và mỗi điểm một truy vấn:
-    // thời gian tỉ lệ với cỡ DB test (hiện ~1 160 điểm) ⇒ trần 30 s mặc định không đủ.
-  }, 180_000);
+    expect(stats.points).toBe(1); // danh sách đã thu hẹp về điểm của ca (xem vi.mock ở đầu tệp)
+  }, 60_000);
 });
