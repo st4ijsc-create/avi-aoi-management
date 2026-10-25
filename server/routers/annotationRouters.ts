@@ -1522,7 +1522,7 @@ export const annotationTemplateRouter = router({
         throw appError('FORBIDDEN', 'OPERATION_FAILED', { operation: 'deleteAnnotationTemplate' }, 'Cannot delete system templates');
       }
       if (existing[0].createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'deleteAnnotationTemplate' }, 'Not authorized to delete this template');
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotationTemplate' }, 'Template not found');
       }
       
       await db.execute(sql`DELETE FROM annotation_templates WHERE id = ${input.id}`);

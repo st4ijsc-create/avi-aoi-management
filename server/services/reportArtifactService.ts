@@ -23,9 +23,10 @@
  */
 import { createHash } from "node:crypto";
 import { DbUnavailableError } from "../_core/dbErrors";
-import { and, desc, eq, gt, lt, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lt, sql, type SQL } from "drizzle-orm";
 import { getDb, getJobsDb } from "../db/connection";
 import { reportArtifacts, type ReportArtifact } from "../../drizzle/schema/reportArtifact";
+import { canLocTheoNguoiTao, nguoiTaoTrongPhamVi } from "./reportArtifactScope";
 
 // ── Domain vocab ──────────────────────────────────────────────────────────────
 
@@ -41,6 +42,8 @@ export interface ArtifactViewer {
   role?: string | null;
   /** Trusted server-to-server principal (valid scoped API key) — privileged read. */
   privileged?: boolean;
+  /** Khoá API có phạm vi nhà máy hẹp — xem reportArtifactScope.ts. */
+  tenantScope?: import("../_core/tenantCodeScope").TenantCodeScope;
 }
 
 const PRIVILEGED_ROLES = new Set(["admin", "supervisor", "quality_inspector"]);
@@ -239,6 +242,11 @@ export async function getArtifact(id: number, viewer: ArtifactViewer | null): Pr
   if (!canAccessArtifact(viewer, artifact)) {
     throw new ArtifactError("forbidden", "You do not have access to this report artifact");
   }
+  // W17a — vai đặc quyền không phải admin: tệp của người khác chỉ thấy khi phạm vi người tạo nằm trong phạm vi mình; ngoài phạm vi ≡ không tồn tại.
+  if (viewer && canLocTheoNguoiTao(viewer, PRIVILEGED_ROLES) && artifact.createdBy !== viewer.id) {
+    const duoc = artifact.createdBy == null ? new Set<number>() : await nguoiTaoTrongPhamVi(viewer, [artifact.createdBy]);
+    if (artifact.createdBy == null || !duoc.has(artifact.createdBy)) throw new ArtifactError("not_found", `Report artifact ${id} not found`);
+  }
   return artifact;
 }
 
@@ -309,6 +317,13 @@ export async function listArtifacts(
   const conds: SQL[] = [];
   if (privileged) {
     if (filters.createdBy != null) conds.push(eq(reportArtifacts.createdBy, filters.createdBy));
+    if (viewer && canLocTheoNguoiTao(viewer, PRIVILEGED_ROLES)) {
+      // W17a — chỉ tệp của chính mình + của người tạo nằm trong phạm vi mình (tệp hệ thống createdBy NULL: không).
+      const tac = (await db.execute(sql`SELECT DISTINCT "createdBy" AS id FROM report_artifacts WHERE "createdBy" IS NOT NULL`)) as unknown as Array<{ id: number }>;
+      const duoc = await nguoiTaoTrongPhamVi(viewer, tac.map((r) => Number(r.id)));
+      if (duoc.size === 0) return { items: [], total: 0, limit, offset };
+      conds.push(inArray(reportArtifacts.createdBy, [...duoc]));
+    }
   } else {
     // Non-privileged: only own rows (viewer must be identified).
     if (viewer?.id == null) return { items: [], total: 0, limit, offset };

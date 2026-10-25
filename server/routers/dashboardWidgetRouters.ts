@@ -236,7 +236,7 @@ export const dashboardWidgetRouter = router({
       }
       // Only owner or admin can update
       if (preset.createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'updateDashboardPreset' }, 'Not authorized to update this preset');
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       const { id, ...data } = input;
       await db.updateWidgetStylePreset(id, data);
@@ -253,7 +253,7 @@ export const dashboardWidgetRouter = router({
       }
       // Only owner or admin can delete
       if (preset.createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'deleteDashboardPreset' }, 'Not authorized to delete this preset');
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Cannot delete system presets
       if (preset.presetType === 'system') {
@@ -287,7 +287,7 @@ export const dashboardWidgetRouter = router({
       }
       // Check access - user can export their own, public, or system presets
       if (preset.createdBy !== ctx.user.id && !preset.isPublic && preset.presetType !== 'system') {
-        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'exportDashboardPreset' }, 'Not authorized to export this preset');
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       return {
         name: preset.name,
@@ -465,7 +465,7 @@ export const dashboardWidgetRouter = router({
       }
       // Check if preset is accessible (public or shared)
       if (!preset.isPublic && preset.presetType !== 'shared' && preset.createdBy !== ctx.user.id) {
-        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'cloneDashboardPreset' }, 'Not authorized to clone this preset');
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Create a copy for the user
       const newPresetId = await db.createWidgetStylePreset({
@@ -506,7 +506,7 @@ export const dashboardWidgetRouter = router({
       }
       // Check access: owner or public
       if (dashboard.userId !== ctx.user.id && !dashboard.isPublic) {
-        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'viewDashboard' }, 'Not authorized to view this dashboard');
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboard' }, 'Dashboard not found');
       }
       return dashboard;
     }),
@@ -603,7 +603,7 @@ export const dashboardWidgetRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboard' }, 'Dashboard not found');
       }
       if (dashboard.userId !== ctx.user.id && !dashboard.isPublic) {
-        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'exportDashboard' }, 'Not authorized');
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboard' }, 'Dashboard not found');
       }
 
       if (input.format === 'json') {
@@ -692,7 +692,7 @@ h1 { margin-bottom: 8px; } p { color: #666; margin-bottom: 24px; }
     .mutation(async ({ ctx, input }) => {
       const dashboard = await db.getUserCustomDashboardById(input.dashboardId);
       if (!dashboard || dashboard.userId !== ctx.user.id) {
-        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'convertDashboardToTemplate' }, 'Not authorized');
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboard' }, 'Dashboard not found');
       }
 
       const widgetsArr = Array.isArray(dashboard.widgets) ? dashboard.widgets : [];
