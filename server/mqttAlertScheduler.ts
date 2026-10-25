@@ -424,6 +424,21 @@ interface EscalationCandidate {
 
 const ESCALATION_BATCH_LIMIT = 50; // bound per-sweep work
 
+/**
+ * Nhà máy của một cảnh báo kết nối MQTT: suy từ mục tiêu của nó (factory → chính id; station / machine → qua chuỗi trạm → chuyền → xưởng → nhà máy); không rõ ⇒ NULL.
+ * (W16, mig 0425) Dùng để áp quy tắc leo thang THEO NHÀ MÁY: cảnh báo lịch sử `mqtt_alert_history` không mang mục tiêu nào ⇒ chỉ quy tắc NULL (mặc định toàn tập đoàn) áp cho nó.
+ */
+const NHA_MAY_CUA_CANH_BAO_KET_NOI = sql<number | null>`(CASE ${mqttConnectionAlerts.targetType}::text
+  WHEN 'factory' THEN ${mqttConnectionAlerts.targetId}
+  WHEN 'station' THEN (SELECT w."factoryId" FROM stations s JOIN production_lines l ON l.id = s."lineId" JOIN workshops w ON w.id = l."workshopId" WHERE s.id = ${mqttConnectionAlerts.targetId})
+  WHEN 'machine' THEN (SELECT w."factoryId" FROM machines m JOIN stations s ON s.id = m."stationId" JOIN production_lines l ON l.id = s."lineId" JOIN workshops w ON w.id = l."workshopId" WHERE m.id = ${mqttConnectionAlerts.targetId})
+  ELSE NULL END)`;
+
+/** Hai quy tắc cùng cặp (severity, alertType)? (null = "bất kỳ" — chỉ bằng null khác). */
+export function cungCapQuyTac(a: { severity: string | null; alertType: string | null }, b: { severity: string | null; alertType: string | null }): boolean {
+  return (a.severity ?? null) === (b.severity ?? null) && (a.alertType ?? null) === (b.alertType ?? null);
+}
+
 async function resolveEscalationTargets(db: Awaited<ReturnType<typeof requireDb>>, rule: { notifyRoles: string[]; notifyUserIds: number[] }): Promise<number[]> {
   const ids = new Set<number>((rule.notifyUserIds || []).filter((n) => Number.isInteger(n)));
   const roles = (rule.notifyRoles || []).filter((r) => typeof r === "string" && r.length > 0);
@@ -479,6 +494,16 @@ export async function sweepEscalations(deps: EscalationSweepDeps = {}): Promise<
     ];
     if (rule.severity) connConditions.push(eq(mqttConnectionAlerts.severity, rule.severity as any));
     if (rule.alertType) connConditions.push(eq(mqttConnectionAlerts.alertType, rule.alertType as any));
+    // W16 (mig 0425) — quy tắc THEO NHÀ MÁY: quy tắc riêng chỉ áp cho cảnh báo của nhà máy đó; quy tắc mặc định (NULL) bỏ qua cảnh báo của nhà máy ĐÃ có quy tắc riêng CÙNG cặp (severity, alertType).
+    const ruleFactoryId = (rule as { factoryId?: number | null }).factoryId ?? null;
+    if (ruleFactoryId != null) {
+      connConditions.push(sql`${NHA_MAY_CUA_CANH_BAO_KET_NOI} = ${ruleFactoryId}`);
+    } else {
+      const ghiDe = rules
+        .filter((r2) => ((r2 as { factoryId?: number | null }).factoryId ?? null) != null && cungCapQuyTac(r2, rule))
+        .map((r2) => (r2 as { factoryId: number }).factoryId);
+      if (ghiDe.length > 0) connConditions.push(sql`(${NHA_MAY_CUA_CANH_BAO_KET_NOI} IS NULL OR ${NHA_MAY_CUA_CANH_BAO_KET_NOI} NOT IN (${sql.join(ghiDe.map((x) => sql`${x}`), sql`, `)}))`);
+    }
 
     const connRows = await db.select({
       id: mqttConnectionAlerts.id,
@@ -504,7 +529,7 @@ export async function sweepEscalations(deps: EscalationSweepDeps = {}): Promise<
 
     // 2. mqtt_alert_history — open = not resolved. No severity column: severity-filtered
     //    rules honestly never match this source.
-    if (!rule.severity) {
+    if (!rule.severity && ((rule as { factoryId?: number | null }).factoryId ?? null) == null) {
       const histConditions = [
         eq(mqttAlertHistory.isResolved, false),
         isNull(mqttAlertHistory.escalatedAt),

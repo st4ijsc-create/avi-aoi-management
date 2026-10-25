@@ -26,7 +26,7 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1198, no: 167 } as const; // 2026-10-25 gộp L6a (ncr/ecn −4) với W14c (171) ⇒ 167, đo bằng census
+const GHIM = { tongMutation: 1198, no: 160 } as const; // 2026-10-25 gộp L6a (167) + W16 (kho vật tư + quy tắc leo thang theo nhà máy, mig 0424/0425: alertEscalation ×4 + mesControlTower ×3 có khoá thật) −7 ⇒ 160, đo bằng census
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {
