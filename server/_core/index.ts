@@ -4194,6 +4194,8 @@ async function startServer() {
     void import("../services/flow/worker")
       .then(({ khoiChayWorkerLuong }) => khoiChayWorkerLuong())
       .catch((err) => console.error("[luong-ai] worker không khởi chạy được:", (err as any)?.message || err));
+    // Lô B7-B — cắt tỉa lượt cũ (TẮT mặc định; FLOW_RETENTION_ENABLED=true; mặc định chỉ BÁO) cùng nơi với worker.
+    void import("../services/flow/catTia").then(({ khoiChayCatTia }) => khoiChayCatTia()).catch((err) => console.error("[luong-ai] cắt tỉa không khởi chạy được:", (err as any)?.message || err));
   }
   // ★★ Đợt 8.1 Task 4a — bộ lập lịch Luồng AI (node `kich-hoat.lich`). BẦU CHỦ (`giuQuyenChu("lich")`) ⇒ khởi ở cả API lẫn
   // worker vẫn chỉ MỘT tiến trình bắn; khoá idempotency theo phút chặn bắn trùng khi chuyển chủ.
