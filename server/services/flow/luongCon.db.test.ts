@@ -367,3 +367,21 @@ describe("ai.agent — vòng tool-calling (DB, model giả)", () => {
     expect(kq.agent).toMatchObject({ ketThuc: "het-luot", soLuotTool: 2 });
   });
 });
+
+describe("settings.luuDuLieu × luồng con (lô C)", () => {
+  it("★ con đặt luuDuLieu=khong: cha vẫn nhận ĐẦU RA của con (đọc TRƯỚC khi gỡ, cùng giao dịch); dữ liệu bước của con bị gỡ, của cha giữ", async () => {
+    const con = { ...def("con-khong", [nut("vao", "kich-hoat.thu-cong"), nut("tinh", "du-lieu.dat", { truong: { ketQua: "{{ $json.x * 3 }}" } })], [noi("vao", "tinh")]), settings: { uuTien: "background", luuDuLieu: "khong" } };
+    await luuVaBat(con as ReturnType<typeof def>);
+    const cha = def("cha-khong", [nut("t", "kich-hoat.thu-cong"), nut("g", "luong.goi-con", { flowId: con.id }), nut("sau", "du-lieu.dat", { truong: { sau: true } })], [noi("t", "g"), noi("g", "sau")]);
+    const { version } = await goi("engineer").luu({ definition: cha });
+    const runId = await batDauRun({ flowId: cha.id, version, items: [{ json: { x: 5 } }] });
+    await chayHet();
+    expect((await layRun(runId)).status).toBe("xong");
+    expect(await raCua(runId, "sau")).toEqual([{ x: 5, ketQua: 15, sau: true }]); // cha thấy đầu ra con dù con gỡ dữ liệu
+    const [rCon] = await runCua("con-khong");
+    const buocCon = await (await db()).select().from(aiFlowSteps).where(eq(aiFlowSteps.runId, rCon.id));
+    expect(buocCon.length).toBeGreaterThan(0);
+    expect(buocCon.every((b) => b.input === null && b.output === null)).toBe(true);
+    expect((await (await db()).select().from(aiFlowSteps).where(eq(aiFlowSteps.runId, runId))).every((b) => b.output !== null)).toBe(true);
+  });
+});

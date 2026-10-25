@@ -23335,7 +23335,9 @@
         "khong": "Không"
       },
       "loiKiemTruoc": "Kiểm trước khi lưu:",
-      "congChuaNoi": "Cổng '{{cong}}' của node '{{node}}' chưa nối — item tới đó sẽ bị bỏ"
+      "congChuaNoi": "Cổng '{{cong}}' của node '{{node}}' chưa nối — item tới đó sẽ bị bỏ",
+      "hanLuot": "Hạn tối đa mỗi lượt (giờ)",
+      "hanLuotGoiY": "Để trống = không đặt hạn riêng. Lượt chạy / chờ / hẹn giờ quá hạn này sẽ dừng với lỗi QUA_HAN_LUOT (tối đa 168 giờ = 7 ngày)."
     },
     "cauHinh": {
       "loiBieuThuc": "Biểu thức lỗi: {{loi}}",
@@ -23431,7 +23433,8 @@
         "DICH_NOI_BO": "Đích là địa chỉ nội bộ — chỉ gọi được khi danh sách trắng ghi rõ host:cổng. Xem",
         "CAY_LUOT_DAY": "Cây lượt đã đạt trần số lượt (cha + con + cháu) — giảm số lần gọi luồng con hoặc chia luồng. Xem",
         "ITEM_GOI_CON_QUA_NHIEU": "Một lần gọi luồng con nhận quá nhiều item — chia lô trước khi gọi. Xem"
-      }
+      },
+      "duLieuDaGo": "Dữ liệu vào/ra từng bước đã được gỡ theo cài đặt 'Giữ dữ liệu từng bước' của luồng — trạng thái, thời gian và lỗi vẫn còn."
     },
     "duyet": {
       "tieuDe": "Hộp duyệt luồng",

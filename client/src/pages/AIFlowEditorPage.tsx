@@ -100,6 +100,8 @@ export default function AIFlowEditorPage() {
     onSuccess: async (r) => {
       setLoiLuu(null);
       toast.success(t("flowStudio.sua.daLuu", { version: r.version }));
+      // Cảnh báo của máy chủ (vd settings.errorFlowId chưa được hỗ trợ) — lưu vẫn thành công.
+      for (const cb of r.canhBao ?? []) toast.warning(String(cb));
       await utils.flow.chiTiet.invalidate({ flowId });
       setPhienBanXem(r.version);
     },
@@ -423,6 +425,24 @@ export default function AIFlowEditorPage() {
                         >
                           {(["day-du", "chi-loi", "khong"] as const).map((v) => <option key={v} value={v}>{t(`flowStudio.sua.luuDuLieuChon.${v}`)}</option>)}
                         </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">{t("flowStudio.sua.hanLuot")}</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={168}
+                          step={0.5}
+                          data-testid="han-luot-gio"
+                          className={`${O_CHON} w-full`}
+                          value={def.settings?.timeoutS === undefined ? "" : String(Math.round((def.settings.timeoutS / 3600) * 100) / 100)}
+                          onChange={(e) => {
+                            const h = Number(e.target.value);
+                            const { timeoutS: _bo, ...con } = def.settings ?? { uuTien: "background" as const, luuDuLieu: "day-du" as const };
+                            setDef({ ...def, settings: e.target.value === "" || !Number.isFinite(h) || h <= 0 ? (con as FlowDefinition["settings"]) : { ...(con as FlowDefinition["settings"]), timeoutS: Math.min(7 * 24 * 3600, Math.max(1, Math.round(h * 3600))) } });
+                          }}
+                        />
+                        <p className="text-[11px] text-muted-foreground">{t("flowStudio.sua.hanLuotGoiY")}</p>
                       </div>
                       {kiem && kiem.loi.length > 0 && (
                         <div className="rounded border border-destructive/40 bg-destructive/10 p-2">
