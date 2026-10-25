@@ -22,6 +22,7 @@ const VAI_CHI_DOC: ReadonlySet<string> = new Set(["viewer", "user"]);
 
 export function boKiemPhamVi(pv: PhamViNguoiXem): BoKiemPhamVi {
   return {
+    phamVi: pv,
     async may(id) {
       if (!Number.isInteger(id) || id <= 0) return false;
       const db = await getDb();

@@ -36,6 +36,7 @@ import { LoiLuong, batDauRun, hangLuongConTuDb, luuPhienBan, traLoiCho } from ".
 import { taoTuMoTa } from "../services/flow/taoTuMoTa";
 import { danhSachNut, layNut } from "../services/flow/dangKyNut";
 import { kiemThamSoKichHoat, napLaiLich } from "../services/flow/kichHoat/lich";
+import { kiemThamSoSuKien, napLaiSuKien } from "../services/flow/kichHoat/suKien";
 import { capTokenWebhook, coNodeWebhook, coTokenWebhook } from "../services/flow/kichHoat/webhook";
 import { LOAI_BI_MAT, LoiBiMat, datHostBiMat, lietKeBiMat, taoBiMat, xoaBiMat } from "../services/flow/biMat";
 import { ketQuaSauDuyetMoPhong, laDeXuatOtLuong } from "../services/flow/ot/congOtLuong";
@@ -240,7 +241,7 @@ export const flowRouter = router({
   luu: ghiProcedure
     .input(z.object({ definition: z.record(z.string(), z.unknown()), factoryId: z.number().int().positive().optional() }))
     .mutation(async ({ input, ctx }) => {
-    const loiKichHoat = kiemThamSoKichHoat(input.definition);
+    const loiKichHoat = [...kiemThamSoKichHoat(input.definition), ...kiemThamSoSuKien(input.definition)];
     if (loiKichHoat.length) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowChiTietMayChu", chiTiet: loiKichHoat.join("; ").slice(0, 300) }, `Luồng không hợp lệ: ${loiKichHoat.join("; ")}`);
     // ★ Đợt 9 (IDOR): id đã có ⇒ phải thuộc phạm vi người lưu (không được thêm phiên bản vào luồng của nhà máy khác); id mới ⇒ gán nhà máy.
     let factoryId: number | null = null;
@@ -290,6 +291,7 @@ export const flowRouter = router({
       let tokenWebhook: string | null = null;
       if (input.bat && coNodeWebhook(v.definition as FlowDefinition)) tokenWebhook = await capTokenWebhook(input.flowId, input.xoayToken === true);
       await napLaiLich();
+      napLaiSuKien();
       return { flowId: input.flowId, version: input.version, bat: input.bat, hang: v.riskClass, tokenWebhook };
     }),
 
@@ -315,6 +317,7 @@ export const flowRouter = router({
       let tokenWebhook: string | null = null;
       if (coNodeWebhook(v.definition as FlowDefinition)) tokenWebhook = await capTokenWebhook(input.flowId, false);
       await napLaiLich();
+      napLaiSuKien();
       return { flowId: input.flowId, version: input.version, bat: true, hang: v.riskClass, tokenWebhook };
     }),
 
