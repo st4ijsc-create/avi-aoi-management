@@ -33,6 +33,8 @@ import { logVramEvent } from "./vramEventLog";
  *   • `vramRefusal` — lớp lỗi `VramRefusedError`. Từ task này nó **ĐƯỢC NÉM THẬT**.
  */
 import { readDecisionTick } from "./vramTickCell";
+// ★ Đợt 9 (2026-10-25) — tick null ⇒ đo thiết bị TƯƠI một lần (xem `vramTickTuoi`). Module lá; bộ đo nạp động bên trong.
+import { tickChoQuyetDinh, NGUONG_LUOT_LON_BYTES } from "./vramTickTuoi";
 /**
  * ★★★ Pha 3 Task 2 — SỔ CHUNG. ⚠ Nhập **module LÁ** (`vramSharedLedger`), KHÔNG nhập nửa I/O
  * (`vramSharedLedgerStore`) ở mức module: `vramWiring` nằm trên đường nóng và bị 40+ file test
@@ -715,7 +717,7 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
      */
     const nowMs = Date.now();
     let res = broker.reserve(yeuCau, {
-      tick: readDecisionTick(),
+      tick: readDecisionTick() ?? (est.bytes > NGUONG_LUOT_LON_BYTES ? await tickChoQuyetDinh(est.bytes, broker.deviceTotalBytes()) : null),
       unledgered: vramUnledgeredFact(),
       // ⚠ Ô THẬT của sổ chung — KHÔNG dựng một bản sao đọc bằng tay ở đây. Đây là điểm nối duy
       // nhất giữa sổ chung và đường quyết định của sản xuất.
@@ -784,7 +786,7 @@ export async function beginVramAllocation(opts: VramAllocationOptions): Promise<
       if (thuHoi.reclaimed.length > 0) {
         const lai = Date.now();
         res = broker.reserve(yeuCau, {
-          tick: readDecisionTick(),
+          tick: readDecisionTick() ?? (est.bytes > NGUONG_LUOT_LON_BYTES ? await tickChoQuyetDinh(est.bytes, broker.deviceTotalBytes()) : null),
           unledgered: vramUnledgeredFact(),
           sharedLedger: sharedLedgerFact(lai),
           nowMs: lai,
