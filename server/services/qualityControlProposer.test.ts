@@ -18,6 +18,7 @@ import {
   buildControlProposals,
   isGatedNgOrAnomaly,
   isVisionControlEnabled,
+  lamTronTheoLuoiDaKhai,
   lamTronTheoLuoiTag,
   laKenhDaKhai,
   proposeControlFromVerdict,
@@ -535,6 +536,26 @@ describe("R1b-2a T2 (M7) — lamTronTheoLuoiTag trên tag int ĐÃ khai: tôn tr
     }
     expect(soNull).toBeGreaterThan(50); // cả hai nhánh thực sự được phủ
     expect(soCo).toBeGreaterThan(500);
+  });
+
+  it("polish m2 — scale rất nhỏ + bước thô: duyệt lưới THÔ HƠN (lưới bước) ⇒ 5 tìm thấy sau ≤ 3 ứng viên (trước: chạm trần ~250 ms rồi null)", () => {
+    for (const scale of [1e-5, "0.000010", "0.000001"]) {
+      const dem = { lan: 0 };
+      expect(lamTronTheoLuoiDaKhai(3.3, khai({ scale, writeStep: 5 }), 50, dem)).toBe(5);
+      expect(dem.lan, String(scale)).toBeLessThanOrEqual(3);
+      // gốc bước = writeMin: −48 + 5k ⇒ 2 gần 3.3 nhất (và nằm trên lưới thô 1e-5)
+      expect(lamTronTheoLuoiDaKhai(3.3, khai({ scale, writeStep: 5, writeMin: -48, writeMax: 48 }), 50, dem)).toBe(2);
+      expect(dem.lan).toBeLessThanOrEqual(3);
+      expect(lamTronTheoLuoiTag(3.3, khai({ scale, writeStep: 5 }), 1, 50)).toBe(5); // qua hàm công khai
+    }
+    // bước NHỎ hơn scale ⇒ vẫn duyệt lưới thô (lưới thô hơn): scale 10, bước 2 ⇒ 10·k ∩ 2·j = 10·k ⇒ 0 gần 3.3
+    const dem = { lan: 0 };
+    expect(lamTronTheoLuoiDaKhai(3.3, khai({ scale: 10, writeStep: 2 }), 50, dem)).toBe(0);
+    expect(dem.lan).toBe(1);
+    // không giao nhau trên lưới bước (bước 4 từ 1 ⇒ số lẻ; lưới thô 10 ⇒ số chẵn): null, duyệt hữu hạn trong ±50
+    expect(lamTronTheoLuoiDaKhai(20, khai({ scale: 0.5, writeStep: 4, writeMin: 1, writeMax: 49 }), 50, dem)).toBe(21); // 1 + 4k trên lưới 0.5: 21 gần 20 nhất
+    expect(lamTronTheoLuoiDaKhai(20, khai({ scale: 10, writeStep: 4, writeMin: 1, writeMax: 49 }), 50, dem)).toBeNull();
+    expect(dem.lan).toBeLessThanOrEqual(5); // lưới thô 10 trong [1, 49]: 10, 20, 30, 40
   });
 
   it("buildControlProposals: trục tag ĐÃ khai không có giá trị hợp lệ trong dải ∩ ±50 ⇒ KHÔNG đề xuất spi; có ⇒ đề xuất mang giá trị trong dải", () => {

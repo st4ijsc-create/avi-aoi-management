@@ -161,28 +161,38 @@ export function laKenhDaKhai(luoi: Pick<LuoiGhiTag, "channelKind" | "writeMin" |
   return luoi.channelKind != null || luoi.writeMin != null || luoi.writeMax != null || luoi.writeStep != null;
 }
 
-/** Search cap of the declared-int grid walk (`lamTronTheoLuoiTag`): beyond it ⇒ null (no proposal), never a value the gate would refuse. */
-const TRAN_BUOC_TIM_LUOI_DA_KHAI = 100_000;
+/**
+ * Search cap of the declared-int grid walk (`lamTronTheoLuoiTag`): beyond it ⇒ null (no proposal), never a value the gate would refuse.
+ * Polish m2 — 10 000 (was 100 000): the walk now steps on the COARSER grid, so a realistic tag finds its answer in a handful of candidates.
+ */
+export const TRAN_BUOC_TIM_LUOI_DA_KHAI = 10_000;
 
 /**
- * R1b-2a T2 (M7) — DECLARED int tag: the value nearest to `v` that is on the raw grid `o + k·|s|` AND that `kiemGiaTriGhi` (the very rule of
- * `dispatch()` pass 2 for a declared tag: coercion, range, declared step, raw grid) accepts, AND |r| ≤ T when a bound is given. Walks the raw
- * grid outward from the nearest point in distance order (ties ⇒ toward +∞ like Math.round), only inside [max(writeMin, −T), min(writeMax, T)].
- * None (or the walk cap hit) ⇒ null ⇒ the caller makes NO proposal.
+ * R1b-2a T2 (M7) — DECLARED int tag: the value nearest to `v` that `kiemGiaTriGhi` (the very rule of `dispatch()` pass 2 for a declared tag:
+ * coercion, range, declared step, raw grid) accepts, AND |r| ≤ T when a bound is given. Every accepted value lies on BOTH the raw grid
+ * `o + k·|s|` and (when declared) the step grid `(writeMin ?? 0) + k·writeStep`, so walking EITHER grid in distance order finds the nearest one.
+ * Polish m2 (task-2-review) — walk the COARSER of the two (the step grid when writeStep ≥ |scale|; before: always the raw grid, so scale 1e-5 with
+ * step 5 hit the cap after ~250 ms and returned null although 5 was valid); membership on both grids is still checked by `kiemGiaTriGhi`.
+ * Outward from the nearest point, ties ⇒ toward +∞ like Math.round, only inside [max(writeMin, −T), min(writeMax, T)]. None (or the walk cap
+ * hit) ⇒ null ⇒ the caller makes NO proposal. `dem` (tests) receives the number of candidates examined.
  */
-function lamTronTheoLuoiDaKhai(v: number, luoi: LuoiGhiTag, tranTuyetDoi?: number): number | null {
+export function lamTronTheoLuoiDaKhai(v: number, luoi: LuoiGhiTag, tranTuyetDoi?: number, dem?: { lan: number }): number | null {
   const sTho = luoi.scale == null ? 1 : Number(luoi.scale);
   const oTho = luoi.offset == null ? 0 : Number(luoi.offset);
   const s = Number.isFinite(sTho) && sTho !== 0 ? sTho : 1;
   const o = Number.isFinite(oTho) ? oTho : 0;
-  const buoc = Math.abs(s);
+  const buocKhai = luoi.writeStep != null && Number.isFinite(luoi.writeStep) && luoi.writeStep > 0 ? luoi.writeStep : null;
+  const theoBuoc = buocKhai != null && buocKhai >= Math.abs(s);
+  const goc = theoBuoc ? (luoi.writeMin ?? 0) : o; // same base as kiemGiaTriGhi's step check
+  const buoc = theoBuoc ? (buocKhai as number) : Math.abs(s);
+  if (dem) dem.lan = 0;
   if (tranTuyetDoi != null && (!Number.isFinite(tranTuyetDoi) || tranTuyetDoi < 0)) return null;
   const T = tranTuyetDoi ?? Number.POSITIVE_INFINITY;
   const lo = Math.max(luoi.writeMin ?? Number.NEGATIVE_INFINITY, -T);
   const hi = Math.min(luoi.writeMax ?? Number.POSITIVE_INFINITY, T);
   if (!(lo <= hi)) return null;
-  const kLo = Number.isFinite(lo) ? Math.ceil((lo - o) / buoc - 1e-9) : Number.NEGATIVE_INFINITY;
-  const kHi = Number.isFinite(hi) ? Math.floor((hi - o) / buoc + 1e-9) : Number.POSITIVE_INFINITY;
+  const kLo = Number.isFinite(lo) ? Math.ceil((lo - goc) / buoc - 1e-9) : Number.NEGATIVE_INFINITY;
+  const kHi = Number.isFinite(hi) ? Math.floor((hi - goc) / buoc + 1e-9) : Number.POSITIVE_INFINITY;
   if (kLo > kHi) return null;
   const tag = {
     dataType: "int" as const,
@@ -192,8 +202,8 @@ function lamTronTheoLuoiDaKhai(v: number, luoi: LuoiGhiTag, tranTuyetDoi?: numbe
     scale: luoi.scale,
     offset: luoi.offset,
   };
-  const diem = (k: number) => sachSo(o + k * buoc);
-  const kc = Math.round((v - o) / buoc);
+  const diem = (k: number) => sachSo(goc + k * buoc);
+  const kc = Math.round((v - goc) / buoc);
   let duoi = Math.min(kc, kHi); // next candidate going down
   let tren = Math.max(kc + 1, kLo); // next candidate going up
   for (let lan = 0; lan < TRAN_BUOC_TIM_LUOI_DA_KHAI; lan++) {
@@ -205,6 +215,7 @@ function lamTronTheoLuoiDaKhai(v: number, luoi: LuoiGhiTag, tranTuyetDoi?: numbe
     else k = coDuoi ? duoi : tren;
     if (k === duoi) duoi--;
     else tren++;
+    if (dem) dem.lan++;
     const r = diem(k);
     if (Math.abs(r) <= T && kiemGiaTriGhi(tag, r).ok) return Object.is(r, -0) ? 0 : r;
   }
