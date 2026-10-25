@@ -4081,7 +4081,8 @@
       "scadaSetStubFault": "đặt lỗi mô phỏng cho stub",
       "scadaSelectTag": "chọn kênh để ra lệnh",
       "scadaKenhCapNhat": "cập nhật khai báo kênh",
-      "dieuKienDoiTuongTrongPhamVi": "điều kiện đối tượng trong phạm vi"
+      "dieuKienDoiTuongTrongPhamVi": "điều kiện đối tượng trong phạm vi",
+      "flowNguoiNhan": "tìm người nhận cho luồng"
     },
     "field": {
       "stationId": "trạm",
