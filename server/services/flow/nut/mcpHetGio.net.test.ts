@@ -2,7 +2,7 @@
  * MCP client (`tich-hop.mcp-goi`) — hạn giờ và độ sâu trên MẠNG THẬT (node:http trên 127.0.0.1, fetchGhim thật; noiBo:true là cửa duy nhất tới 127.0.0.1) — của người kiểm định (2026-10-26).
  * Đối chứng cho các ca mock của mcpKhach.test: hết giờ khi đang ĐỌC THÂN phải ra MCP_HET_GIO (không phải 'aborted'); hạn TỔNG cắt cả lượt-node và rút ngắn lời gọi cuối; kết quả lồng sâu ⇒ MCP_PHAN_HOI_SAI.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { layNut, type NguCanhChay } from "../dangKyNut";
@@ -18,7 +18,10 @@ let srv: http.Server;
 let port = 0;
 let modo = "ok";
 let soTool = 0;
-beforeAll(async () => {
+// MỖI CA MỘT MÁY CHỦ (cổng mới): lời gọi bị cắt của ca trước (thả giọt / hạn tổng) có thể còn tới máy chủ SAU khi ca sau đã đặt lại bộ đếm ⇒ đếm lẫn ("expected 4 to be 3").
+beforeEach(async () => {
+  soTool = 0;
+  modo = "ok";
   srv = http.createServer((q, r) => {
     let b = "";
     q.on("data", (c) => (b += c));
@@ -73,13 +76,13 @@ beforeAll(async () => {
   await new Promise<void>((r) => srv.listen(0, "127.0.0.1", () => r()));
   port = (srv.address() as AddressInfo).port;
 });
-afterAll(() => {
-  srv.close();
-});
 const dat = () => {
   process.env.AI_FLOW_MCP_CHO_PHEP = JSON.stringify({ loc: { url: `http://127.0.0.1:${port}/mcp`, tools: ["echo"], noiBo: true } });
 };
-afterEach(() => {
+afterEach(async () => {
+  // đóng HẾT kết nối dở (kể cả luồng thả giọt đang chờ) rồi đợi máy chủ đóng xong trước ca kế tiếp
+  srv.closeAllConnections();
+  await new Promise<void>((r) => srv.close(() => r()));
   delete process.env.AI_FLOW_MCP_CHO_PHEP;
   delete process.env.AI_FLOW_MCP_TONG_MS;
   modo = "ok";
