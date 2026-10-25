@@ -89,6 +89,18 @@ export const phuThuocMacDinh: PhuThuocNapServerNgoai = {
   laMayChu: () => (globalThis as Record<symbol, unknown>)[KHOA_MAY_CHU] === true,
 };
 
+/**
+ * ★ Đợt 9 (2026-10-25, dieu-phoi) — LƯỚI KHÔNG BAO GIỜ CHẠM :8091 / GPU THẬT. Sự cố: hai lưới vram (enforcement.callsites,
+ * wiring.inprocess) xanh lúc gộp rồi ĐỎ khi :3000 bản mới giữ thêm VRAM — hàng rào hỏi :8091 + nvidia-smi THẬT của máy chạy lưới.
+ * `vitest.setup.ts` đặt bản giả đầu dò lên `globalThis` (sống qua `vi.resetModules()`, khác biến module); hàm này ưu tiên nó. Ca ĐO SỐNG
+ * bật tường minh `AI_NAP_DO_SONG=1` để dùng đầu dò thật. Lưới riêng của hàng rào truyền `dep` trực tiếp nên không bị ảnh hưởng.
+ */
+export const KHOA_PHU_THUOC_TEST = Symbol.for("avi.ai.napServerNgoai.phuThuocTest");
+export function phuThuocHienHanh(env: NodeJS.ProcessEnv = process.env): PhuThuocNapServerNgoai {
+  const gia = (globalThis as Record<symbol, unknown>)[KHOA_PHU_THUOC_TEST] as Partial<PhuThuocNapServerNgoai> | undefined;
+  return gia && env.AI_NAP_DO_SONG !== "1" ? { ...phuThuocMacDinh, ...gia } : phuThuocMacDinh;
+}
+
 const soMB = (raw: string | undefined, md: number) => {
   const n = Number(raw);
   return Number.isFinite(n) && n >= 0 ? n : md;
@@ -104,7 +116,7 @@ export async function kiemNapKhiServerNgoaiSong(
   modelId: string,
   duongTep: string | undefined,
   viTri: string,
-  dep: PhuThuocNapServerNgoai = phuThuocMacDinh,
+  dep: PhuThuocNapServerNgoai = phuThuocHienHanh(),
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   const ten = baseModel(modelId);
