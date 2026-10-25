@@ -120,10 +120,12 @@ export function closeModbusClient(
  * Timer luôn được dọn (không giữ tiến trình sống sau khi p xong).
  * `opts.unref` (SCADA R1b-1 rà soát cuối M-5 — thay hai bản sao `voiHanUnref` của lenhHmi / vongPoll): hẹn giờ `unref` — một việc treo
  * không giữ tiến trình sống tới hết hạn. Mặc định giữ nguyên hành vi cũ (ref) cho mọi bên gọi sẵn có.
+ * `opts.loi` (SCADA R1b-2a T4, ruling K6): hết hạn ⇒ reject bằng lỗi CÓ KIỂU do bên gọi dựng (phân biệt "quá hạn" với lỗi DB khác bằng
+ * `instanceof`, không dò chữ). Vắng ⇒ Error cũ như trước.
  */
-export function withDeadline<T>(p: Promise<T>, ms: number, label: string, opts?: { unref?: boolean }): Promise<T> {
+export function withDeadline<T>(p: Promise<T>, ms: number, label: string, opts?: { unref?: boolean; loi?: () => Error }): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms);
+    const t = setTimeout(() => reject(opts?.loi ? opts.loi() : new Error(`${label} timeout after ${ms}ms`)), ms);
     if (opts?.unref) (t as { unref?: () => void }).unref?.();
     p.then(
       (v) => {

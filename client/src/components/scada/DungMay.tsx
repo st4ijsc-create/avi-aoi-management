@@ -13,6 +13,12 @@
  *   • fix round 1: khảo sát khả năng dừng (`khaNangDung` của `scadaKenh.cheDo.danhSach`, hàm máy chủ `khaoSatKhaNangDung`) — hộp xác
  *     nhận liệt kê TRƯỚC khi gửi điều sẽ xảy ra với từng adapter; cảnh báo cấp máy (`CanhBaoKhaNangDung`) ở M4 / M10 cho ghim chưa hiệu
  *     lực / chỉ mô phỏng / chưa ghim. Đang gửi quá 10 s ⇒ mở nút Đóng + "Kết quả chưa rõ — dùng E-STOP cứng tại máy".
+ *   • R1b-2a Task 4 (điều phối Q4 + ruling T3 c3): BĂNG ĐỎ CỐ ĐỊNH "DÙNG E-STOP CỨNG TẠI MÁY" (`BangEstopCung`, role="alert", nền token
+ *     DỪNG — không phải toast, không tự tắt) khi STOP HMI CHƯA được gửi vì: máy chủ quá hạn trước-gửi / xác thực
+ *     (`SCADA_STOP_PRECHECK_TIMEOUT`, ma STOP_QUA_HAN), MỘT phần adapter bị bỏ vì hạn (reason STOP_QUA_HAN trong kết quả), hoặc BẤT KỲ HTTP 429
+ *     nào trên dungMay (theo MÃ TRẠNG THÁI, không theo thân — tầng STOP 600/phút trả JSON trần, `apiLimiter` trả thân khác; `trpcLinks` đổi cả
+ *     hai thành lỗi tRPC `httpStatus 429`). Băng ở trong hộp khi hộp mở, và Ở LẠI trên trang sau khi đóng hộp tới khi người vận hành bấm "Đã hiểu".
+ *     Trạng thái lệnh vẫn không dùng màu cảnh báo: băng dùng token DỪNG `--packml-abort` (Global Constraints, preflight D6).
  */
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -169,6 +175,66 @@ export function CanhBaoChuaGhimStop() {
   );
 }
 
+/** R1b-2a T4 — vì sao STOP HMI CHƯA được gửi (băng đỏ cố định). */
+export type BangEstop = { loai: "qua_han" } | { loai: "qua_han_mot_phan"; list: string } | { loai: "gioi_han" };
+
+/**
+ * Lỗi của CẢ lần bấm ⇒ băng đỏ (thuần — test được):
+ *   · `SCADA_STOP_PRECHECK_TIMEOUT` / `appParams.ma === "STOP_QUA_HAN"` (pha trước-gửi 2 s hoặc xác thực 1,5 s) ⇒ `qua_han`;
+ *   · BẤT KỲ HTTP 429 (ruling T3 c3 — theo mã trạng thái: `data.httpStatus` do trpcLinks dựng, hoặc `meta.response.status` dự phòng) ⇒ `gioi_han`.
+ */
+export function bangEstopTuLoi(e: unknown): BangEstop | null {
+  if (!e || typeof e !== "object") return null;
+  const x = e as { data?: { appCode?: unknown; appParams?: { ma?: unknown }; httpStatus?: unknown }; meta?: { response?: { status?: unknown } } };
+  if (x.data?.appCode === "SCADA_STOP_PRECHECK_TIMEOUT" || x.data?.appParams?.ma === "STOP_QUA_HAN") return { loai: "qua_han" };
+  if (x.data?.httpStatus === 429 || x.meta?.response?.status === 429) return { loai: "gioi_han" };
+  return null;
+}
+
+/** Kết quả theo adapter có adapter bị bỏ vì hạn trước-gửi (reason STOP_QUA_HAN) ⇒ băng đỏ nêu các adapter đó. */
+export function bangEstopTuKetQua(ketQua: Array<{ code: string; reason?: string }>): BangEstop | null {
+  const ds = ketQua.filter((r) => r.reason === "STOP_QUA_HAN").map((r) => r.code);
+  return ds.length > 0 ? { loai: "qua_han_mot_phan", list: ds.join(", ") } : null;
+}
+
+/** Băng đỏ CỐ ĐỊNH "DÙNG E-STOP CỨNG TẠI MÁY" (không phải toast; không tự tắt). `onBo` vắng ⇒ không có nút bỏ (băng trong hộp). */
+export function BangEstopCung({ bang, onBo }: { bang: BangEstop; onBo?: () => void }) {
+  const { t } = useTranslation();
+  const ly =
+    bang.loai === "qua_han"
+      ? t("scada.dungMay.bangEstop.quaHan")
+      : bang.loai === "qua_han_mot_phan"
+        ? t("scada.dungMay.bangEstop.quaHanMotPhan", { list: bang.list })
+        : t("scada.dungMay.bangEstop.gioiHan");
+  return (
+    <div
+      role="alert"
+      data-testid="bang-estop-cung"
+      data-loai={bang.loai}
+      className="flex items-start gap-3 rounded-sm px-3 py-2"
+      style={{ backgroundColor: `var(${BIEN_MAU_DUNG})`, color: `var(${BIEN_CHU_TREN_DUNG})` }}
+    >
+      <div className="flex-1 space-y-0.5">
+        <p className="text-base font-bold tracking-wide">{t("scada.dungMay.bangEstop.tieuDe")}</p>
+        <p className="text-sm font-medium">{ly}</p>
+      </div>
+      {onBo && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="bang-estop-bo"
+          className="shrink-0 bg-transparent font-semibold"
+          style={{ color: `var(${BIEN_CHU_TREN_DUNG})`, borderColor: `var(${BIEN_CHU_TREN_DUNG})` }}
+          onClick={onBo}
+        >
+          {t("scada.dungMay.bangEstop.nutBo")}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 /** Dòng đỏ "Dùng E-STOP cứng tại máy" (token dừng). */
 function DongEstop() {
   const { t } = useTranslation();
@@ -189,17 +255,25 @@ export interface HopDungMayProps {
   /** khảo sát khả năng dừng (vắng ⇒ không liệt kê) */
   khaNang?: KhaNangDung;
   onDong: () => void;
+  /** R1b-2a T4 — STOP CHƯA được gửi (quá hạn / 429): báo lên để băng đỏ Ở LẠI trên trang sau khi đóng hộp (`NutDungMay`) */
+  onBangEstop?: (b: BangEstop) => void;
 }
 
 type Pha = "xacNhan" | "dangGui" | "ketQua" | "loi";
 
-export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDong }: HopDungMayProps) {
+export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDong, onBangEstop }: HopDungMayProps) {
   const { t, i18n } = useTranslation();
   const [pha, setPha] = useState<Pha>("xacNhan");
   const [ketQua, setKetQua] = useState<HangKetQua[]>([]);
   /** kiem-dinh R1b-1 H1 (b) — ghim máy chủ KHÔNG gửi (tag mức tác động > 1) */
   const [boQua, setBoQua] = useState<GhimBoQua[]>([]);
   const [loi, setLoi] = useState<{ moTa: MoTaLoi; chiTiet: string } | null>(null);
+  /** R1b-2a T4 — băng đỏ "dùng E-STOP cứng" (STOP chưa gửi: quá hạn / 429) */
+  const [bang, setBang] = useState<BangEstop | null>(null);
+  const baoBang = (b: BangEstop | null) => {
+    setBang(b);
+    if (b) onBangEstop?.(b);
+  };
   /** chặn gửi bằng REF: Enter + bấm chuột trong cùng lượt render ⇒ MỘT lần gửi */
   const daGuiRef = useRef(false);
   const nutRef = useRef<HTMLButtonElement | null>(null);
@@ -216,10 +290,12 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
     onSuccess: (kq: { ketQua: HangKetQua[]; boQua?: GhimBoQua[] }) => {
       setKetQua(kq.ketQua);
       setBoQua(Array.isArray(kq.boQua) ? kq.boQua : []);
+      baoBang(bangEstopTuKetQua(kq.ketQua));
       setPha("ketQua");
     },
     onError: (e: unknown) => {
       setLoi({ moTa: moTaLoiLenh(e, "confirm", { laEdge: !!laEdge, locale: i18n.language }), chiTiet: mapTrpcError(e) });
+      baoBang(bangEstopTuLoi(e));
       setPha("loi");
     },
   });
@@ -254,6 +330,8 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
             {soAdapter !== undefined ? t("scada.dungMay.moTa", { n: soAdapter }) : t("scada.dungMay.moTaKhongRo")}
           </DialogDescription>
         </DialogHeader>
+
+        {bang && pha !== "xacNhan" && <BangEstopCung bang={bang} />}
 
         {pha === "xacNhan" && khaNang?.loiKhaoSat && (
           <p data-testid="kha-nang-dung-loi" className="text-sm font-medium" style={{ color: `var(${BIEN_MAU_DUNG})` }}>
@@ -414,6 +492,8 @@ export function NutDungMay({ coGhimStop, ...hop }: NutDungMayProps) {
   const khaNang = hop.khaNang;
   const { t } = useTranslation();
   const [mo, setMo] = useState(false);
+  /** R1b-2a T4 — băng đỏ Ở LẠI sau khi đóng hộp, tới khi người vận hành bấm "Đã hiểu" */
+  const [bang, setBang] = useState<BangEstop | null>(null);
   return (
     <div className="space-y-2" data-testid="khoi-dung-may">
       <Button
@@ -425,6 +505,7 @@ export function NutDungMay({ coGhimStop, ...hop }: NutDungMayProps) {
       >
         {t("scada.dungMay.nut")}
       </Button>
+      {bang && !mo && <BangEstopCung bang={bang} onBo={() => setBang(null)} />}
       {khaNang ? (
         <CanhBaoKhaNangDung khaNang={khaNang} />
       ) : coGhimStop === false ? (
@@ -432,7 +513,7 @@ export function NutDungMay({ coGhimStop, ...hop }: NutDungMayProps) {
       ) : coGhimStop === null ? (
         <CanhBaoKhaNangDung khaNang={{ machineId: hop.machineId, adapters: [], tongHop: "khong", loiKhaoSat: true }} />
       ) : null}
-      {mo && <HopDungMay {...hop} onDong={() => setMo(false)} />}
+      {mo && <HopDungMay {...hop} onDong={() => setMo(false)} onBangEstop={setBang} />}
     </div>
   );
 }

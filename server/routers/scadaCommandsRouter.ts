@@ -114,6 +114,10 @@ export function loiTuChoiLenh(t: TuChoiYeuCau) {
     // kiem-dinh R1b-1 H1 (b) — có ghim nhưng MỌI ghim nằm trên tag mức tác động > 1 ⇒ STOP HMI không gửi gì; dùng E-STOP cứng
     case "GHIM_MUC_CAO":
       return appError("PRECONDITION_FAILED", "SCADA_STOP_PINS_HIGH_LEVEL", { ma: t.ma, soTag: t.soTag, tagKeys: t.tagKeys }, t.chiTiet);
+    // R1b-2a Task 4 (M-1) — pha trước-gửi của STOP HMI quá hạn 2 s: STOP CHƯA được gửi (dispatch 0 lần) ⇒ dùng E-STOP cứng. tRPC TIMEOUT (408).
+    // Pha "xac_thuc" (createContext, server/_core/context.ts) ném CÙNG appCode trực tiếp — không qua đây.
+    case "STOP_QUA_HAN":
+      return appError("TIMEOUT", "SCADA_STOP_PRECHECK_TIMEOUT", { ma: t.ma, pha: t.pha }, t.chiTiet);
     // R1a Task 16 — bộ đếm TOTP sai (chung mọi bên gọi TOTP): CÙNG mã + câu i18n với đăng nhập / 2FA, thêm `{ ma, level }` cho M5.
     // M5 chỉ hiện "tạm khoá, thử lại sau N phút" (`remainingMinutes`) — không có số lần sai.
     case "TOTP_TAM_KHOA":

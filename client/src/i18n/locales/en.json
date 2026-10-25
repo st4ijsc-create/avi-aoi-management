@@ -4614,7 +4614,8 @@
     "INTERLOCK_NGUON_MO_HO": "Interlock rule #{{ruleId}} cannot be enabled: {{soAdapter}} enabled adapters of the machine carry the source tag {{tagKey}} — the gate cannot tell which one to read (ambiguous), so the rule would always lack data. Rename or disable the duplicate tag first, then enable the rule again.",
     "QUA_NHIEU_KENH_DA_KHAI": "This import touches {{soTag}} declared / protected channel tags — at most {{toiDa}} per import. Split the file and import again.",
     "STOP_PIN_GO_TRUOC": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) — changing its address, type, scale, offset, writable flag or adapter, disabling or deleting it would lose STOP. Unpin it first (Software stop tag, with a reason), then try again.",
-    "SCADA_STOP_PINS_HIGH_LEVEL": "Every STOP pin of this machine is on a tag with actuation level > 1 ({{tagKeys}}) — the STOP MACHINE button does not send to high-level tags; an engineer declares actuation level 1 for the stop tags at /scada/config/channels; stop it with the hardwired E-STOP."
+    "SCADA_STOP_PINS_HIGH_LEVEL": "Every STOP pin of this machine is on a tag with actuation level > 1 ({{tagKeys}}) — the STOP MACHINE button does not send to high-level tags; an engineer declares actuation level 1 for the stop tags at /scada/config/channels; stop it with the hardwired E-STOP.",
+    "SCADA_STOP_PRECHECK_TIMEOUT": "Server is slow — the HMI STOP was NOT sent. Use the hardwired E-STOP at the machine."
   },
   "export": {
     "reportMenu": {
@@ -23855,7 +23856,8 @@
         "ma": "Code: {{ma}}",
         "CHUA_GHIM_STOP": "The machine has no pinned STOP values — an engineer pins them at /scada/config/channels; stop it with the hardwired E-STOP",
         "goiYStopKhongGhim": "Need to stop the machine? Use the hardwired E-STOP or the stop button at the machine cabinet",
-        "GHIM_MUC_CAO": "Every STOP pin of this machine is on a tag with actuation level > 1 ({{list}}) — the STOP MACHINE button sends nothing; stop it with the hardwired E-STOP"
+        "GHIM_MUC_CAO": "Every STOP pin of this machine is on a tag with actuation level > 1 ({{list}}) — the STOP MACHINE button sends nothing; stop it with the hardwired E-STOP",
+        "STOP_QUA_HAN": "Server is slow — the HMI STOP was NOT sent. Use the hardwired E-STOP at the machine."
       },
       "local": {
         "remote": "the machine is in REMOTE",
@@ -23920,6 +23922,13 @@
       "boQua": {
         "tieuDe": "Not sent (tags with actuation level > 1 — not reached by HMI STOP):",
         "dong": "{{code}} · {{tagKey}} (level {{muc}})"
+      },
+      "bangEstop": {
+        "tieuDe": "USE THE HARDWIRED E-STOP AT THE MACHINE",
+        "quaHan": "Server is slow — the HMI STOP was NOT sent to the machine.",
+        "quaHanMotPhan": "Server is slow — the HMI STOP was NOT sent to adapter {{list}}.",
+        "gioiHan": "The server refused: too many requests (HTTP 429) — the HMI STOP was NOT sent.",
+        "nutBo": "Understood"
       }
     }
   }

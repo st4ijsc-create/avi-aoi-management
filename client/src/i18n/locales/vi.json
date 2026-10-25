@@ -4606,7 +4606,8 @@
     "INTERLOCK_NGUON_MO_HO": "Không bật được luật interlock #{{ruleId}}: {{soAdapter}} adapter đang bật của máy cùng mang tag nguồn {{tagKey}} — cổng không biết đọc adapter nào (mơ hồ) nên luật sẽ luôn thiếu dữ liệu. Đổi tên hoặc tắt tag trùng trước, rồi bật lại luật.",
     "QUA_NHIEU_KENH_DA_KHAI": "Lô import đụng {{soTag}} tag đã khai kênh / được bảo vệ — tối đa {{toiDa}} tag mỗi lô. Chia nhỏ file rồi nhập lại.",
     "STOP_PIN_GO_TRUOC": "Kênh {{tagKey}} đang ghim giá trị DỪNG ({{stopValue}}) — đổi địa chỉ / kiểu / scale / offset / cho phép ghi / adapter, tắt hoặc xoá tag sẽ làm mất STOP. Gỡ ghim trước (mục Tag dừng phần mềm, có lý do), rồi làm lại.",
-    "SCADA_STOP_PINS_HIGH_LEVEL": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{tagKeys}}) — nút DỪNG MÁY không gửi tới tag mức cao; kỹ sư khai mức tác động 1 cho tag dừng ở /scada/config/channels; dừng bằng E-STOP cứng."
+    "SCADA_STOP_PINS_HIGH_LEVEL": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{tagKeys}}) — nút DỪNG MÁY không gửi tới tag mức cao; kỹ sư khai mức tác động 1 cho tag dừng ở /scada/config/channels; dừng bằng E-STOP cứng.",
+    "SCADA_STOP_PRECHECK_TIMEOUT": "Máy chủ chậm — STOP HMI CHƯA được gửi. Dùng E-STOP cứng tại máy."
   },
   "export": {
     "reportMenu": {
@@ -23829,7 +23830,8 @@
         "ma": "Mã: {{ma}}",
         "CHUA_GHIM_STOP": "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng",
         "goiYStopKhongGhim": "Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy",
-        "GHIM_MUC_CAO": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{list}}) — nút DỪNG MÁY không gửi gì; dừng bằng E-STOP cứng"
+        "GHIM_MUC_CAO": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{list}}) — nút DỪNG MÁY không gửi gì; dừng bằng E-STOP cứng",
+        "STOP_QUA_HAN": "Máy chủ chậm — STOP HMI CHƯA được gửi. Dùng E-STOP cứng tại máy."
       },
       "local": {
         "remote": "máy đang ở REMOTE",
@@ -23894,6 +23896,13 @@
       "boQua": {
         "tieuDe": "Không gửi (tag mức tác động > 1 — không tới bằng STOP HMI):",
         "dong": "{{code}} · {{tagKey}} (mức {{muc}})"
+      },
+      "bangEstop": {
+        "tieuDe": "DÙNG E-STOP CỨNG TẠI MÁY",
+        "quaHan": "Máy chủ chậm — STOP HMI CHƯA được gửi tới máy.",
+        "quaHanMotPhan": "Máy chủ chậm — STOP HMI CHƯA được gửi tới adapter {{list}}.",
+        "gioiHan": "Máy chủ từ chối vì quá nhiều yêu cầu (HTTP 429) — STOP HMI CHƯA được gửi.",
+        "nutBo": "Đã hiểu"
       }
     }
   }

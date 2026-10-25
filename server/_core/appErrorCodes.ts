@@ -194,6 +194,8 @@ export const APP_ERROR_CODES = [
                                    // kỹ sư ghim ở /scada/config/channels, dừng bằng E-STOP cứng.
   "SCADA_STOP_PINS_HIGH_LEVEL",    // params: { ma, soTag, tagKeys } — kiem-dinh R1b-1 H1 (b): máy CÓ ghim nhưng MỌI ghim nằm trên tag mức tác
                                    // động > 1 (GHIM_MUC_CAO) ⇒ STOP HMI không gửi gì; khai mức 1 cho tag dừng, dừng bằng E-STOP cứng.
+  "SCADA_STOP_PRECHECK_TIMEOUT",   // params: { ma, pha } — R1b-2a T4 (M-1): STOP HMI quá hạn TRƯỚC khi gửi (ma STOP_QUA_HAN; pha "truoc_gui" =
+                                   // phạm vi / vai / ghim / dòng chờ quá 2 s, "xac_thuc" = xác thực quá 1,5 s) ⇒ STOP CHƯA gửi; dùng E-STOP cứng.
   // ── kiem-dinh P1-2 (2026-10-24) — đổi cấu hình kênh / chế độ M12 (scadaKenh.capNhat, cheDo.dat, cheDo.go) đòi TOTP TƯƠI mỗi lượt.
   "SCADA_CONFIG_TOTP_REQUIRED",    // params: { ma } — thiếu mã TOTP (TOTP_CAN); nhập mã 6 số rồi lưu lại.
   "SCADA_CONFIG_TOTP_INVALID",     // params: { ma } — mã TOTP sai / sai định dạng / đã dùng (TOTP_SAI); chờ mã mới rồi lưu lại.
