@@ -20,6 +20,11 @@
  *   4. Đường KHÔNG được phá: model khác (4B/FIM/embed) và server-im-lặng vẫn chạy in-process y cũ.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+// ★ Đợt 9 (2026-10-25) — lưới này giả lập node-llama-cpp và KIỂM chính đường nạp in-process; vitest không phải tiến trình máy chủ
+// nên phải bật TƯỜNG MINH (hàng rào `ai/napServerNgoai` chặn mặc định — sự cố tràn VRAM 2026-10-25).
+vi.hoisted(() => {
+  process.env.AI_CHO_NAP_TRONG_TIEN_TRINH = "1";
+});
 import type { GgufStreamChunk } from "./aiGgufEngine";
 
 // ─── Mock llama-server client — cùng khuôn với serverCtxOverflow.test.ts ──────────────────────

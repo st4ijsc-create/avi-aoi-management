@@ -1,19 +1,22 @@
 /**
- * ★ Đợt 9 (2026-10-25, dieu-phoi duyệt (a)) — HÀNG RÀO NẠP IN-PROCESS khi llama-server NGOÀI đang sống, KHÔNG phụ thuộc env.
+ * ★ Đợt 9 (2026-10-25, dieu-phoi duyệt) — HÀNG RÀO NẠP GGUF IN-PROCESS (node-llama-cpp), KHÔNG phụ thuộc env của llama-server.
  *
- * Sự cố đo được 2026-10-25: một tiến trình vitest thiếu `LLAMA_SERVER_ENABLED` ⇒ `laModelServerDangGiu()` = false ⇒ hàng rào cũ
- * (`aiGgufEngine.chanNapTrungModelServer`) tắt ⇒ node-llama-cpp nạp Qwen3.6-35B (22 GB) IN-PROCESS trong khi :8091 đang phục vụ CHÍNH
- * model đó. Windows đẩy VRAM của llama-server 24 → 8,8 GB; lượt kế của :8091 mất 12,7 s cho prompt 21 token. Bộ điều phối VRAM cũng KHÔNG
- * chặn: tiến trình không chạy reconciler ⇒ `tick` null ⇒ quyết định "mù", basis ledger-only, used 0 GB ⇒ cấp 22 GB (đo bằng
- * `tmp/do-broker-vitest.ts` — sửa ở lô sau).
+ * Hai sự cố đo được cùng ngày:
+ *   • 35B nạp lần hai trong vitest thiếu `LLAMA_SERVER_ENABLED` ⇒ Windows đẩy VRAM của :8091 24 → 8,8 GB, lượt kế 12,7 s/21 token.
+ *   • Qwen3-4B in-process THỰC chiếm 5.540 MiB dedicated (tệp chỉ 2.428 MiB) ⇒ :3000 giữ 4B + một tiến trình thứ hai nạp 4B = tràn card
+ *     (đỉnh đo được 30,2 / 32,6 GB với MỘT bản). Ngưỡng cũ "tệp > 8 GiB" để lọt lớp này.
  *
- * Luật (chỉ cho GGUF > `AI_NAP_KIEM_SERVER_NGOAI_BYTES`, mặc định 8 GiB — model nhỏ (embed/fast/FIM) không tốn lượt thăm dò nào):
- *   1. thăm dò ≤ 500 ms `GET <LLAMA_SERVER_URL | http://127.0.0.1:8091>/v1/models`; không trả lời ⇒ CHO QUA (như cũ);
- *   2. server đang phục vụ CÙNG model ⇒ NÉM `NAP_TRUNG_SERVER_NGOAI` (hướng dẫn đặt LLAMA_SERVER_ENABLED=true);
- *   3. server sống, model KHÁC ⇒ đo VRAM tươi (nvidia-smi); trống < cỡ tệp × 1,10 (hoặc không đo được) ⇒ NÉM `VRAM_KHONG_DU_SERVER_NGOAI`
- *      (luật một instance 30B+ trên card 32 GB).
+ * Luật, theo thứ tự (mọi lượt nạp GGUF in-process — `aiGgufEngine.loadGgufModel` → `chanNapTrungModelServer`):
+ *   0. CỔNG TIẾN TRÌNH: chỉ tiến trình MÁY CHỦ ứng dụng (`server/_core/index.ts` gọi `danhDauTienTrinhMayChu()`) được nạp in-process.
+ *      Tiến trình khác (vitest, script tsx) ⇒ NÉM `NAP_IN_PROCESS_BI_TAT` trừ khi bật tường minh `AI_CHO_NAP_TRONG_TIEN_TRINH=1`.
+ *   1. llama-server NGOÀI (≤ 500 ms `GET <LLAMA_SERVER_URL | :8091>/v1/models`) đang phục vụ CÙNG model ⇒ NÉM `NAP_TRUNG_SERVER_NGOAI`.
+ *   2. DẤU CHÂN ước tính = cỡ tệp × 1,0 + 3.112 MiB (context ctx 4096 + CUDA context + bộ đệm tính — NGUỒN: 4B đo 5.540 MiB dedicated,
+ *      tệp 2.546.340.960 B = 2.428 MiB ⇒ phần ngoài trọng số 3.112 MiB; 2026-10-25 `tmp/vram-pl.log`). So với VRAM trống ĐO TƯƠI trừ biên
+ *      1.536 MiB (mã hoá ảnh mmproj "worst-case 1130,63 MiB" + dư). Thiếu ⇒ NÉM `VRAM_KHONG_DU_NAP`. Không đo được VRAM ⇒ chỉ chặn khi
+ *      llama-server ngoài đang sống (không biết ⇒ không đoán là trống); không có server ngoài ⇒ cho qua như cũ (máy CPU / không GPU).
+ * Hằng số chỉnh bằng env: `AI_NAP_PHU_TROI_MB` (3112), `AI_NAP_BIEN_AN_TOAN_MB` (1536), `AI_NAP_HE_SO_TEP` (1.0).
  */
-export type MaLoiNapServerNgoai = "NAP_TRUNG_SERVER_NGOAI" | "VRAM_KHONG_DU_SERVER_NGOAI";
+export type MaLoiNapServerNgoai = "NAP_TRUNG_SERVER_NGOAI" | "VRAM_KHONG_DU_NAP" | "NAP_IN_PROCESS_BI_TAT";
 
 export class LoiNapServerNgoai extends Error {
   constructor(
@@ -26,16 +29,25 @@ export class LoiNapServerNgoai extends Error {
 }
 
 export interface PhuThuocNapServerNgoai {
-  /** Cỡ tệp GGUF (byte); không đọc được ⇒ null (bỏ qua hàng rào — không có căn cứ). */
+  /** Cỡ tệp GGUF (byte); không đọc được ⇒ null. */
   coTep: (duong: string) => Promise<number | null>;
   /** Basename (không `.gguf`) model llama-server đang phục vụ; không trả lời trong hạn ⇒ null. */
   modelServer: (url: string, hanMs: number) => Promise<string | null>;
   /** VRAM thiết bị đo TƯƠI; không đo được ⇒ null. */
   vram: () => Promise<{ usedBytes: number; totalBytes: number } | null>;
+  /** Tiến trình này có phải máy chủ ứng dụng không. */
+  laMayChu: () => boolean;
 }
 
+const MiB = 1024 ** 2;
 const GiB = 1024 ** 3;
 const baseModel = (s: string) => s.replace(/\\/g, "/").split("/").pop()!.replace(/\.gguf$/i, "");
+const KHOA_MAY_CHU = Symbol.for("avi.ai.tienTrinhMayChu");
+
+/** Gọi MỘT lần ở `server/_core/index.ts` (cả vai api lẫn worker). Cờ nằm trên `globalThis` — tiến trình con KHÔNG thừa kế (khác env). */
+export function danhDauTienTrinhMayChu(): void {
+  (globalThis as Record<symbol, unknown>)[KHOA_MAY_CHU] = true;
+}
 
 export const phuThuocMacDinh: PhuThuocNapServerNgoai = {
   coTep: async (duong) => {
@@ -63,8 +75,30 @@ export const phuThuocMacDinh: PhuThuocNapServerNgoai = {
       clearTimeout(t);
     }
   },
-  vram: async () => (await import("../vram/vramProbe")).readDeviceVramUncached(),
+  vram: async () => {
+    let hen: ReturnType<typeof setTimeout> | undefined;
+    const kq = await Promise.race([
+      (await import("../vram/vramProbe")).readDeviceVramUncached().catch(() => null),
+      new Promise<null>((r) => {
+        hen = setTimeout(() => r(null), 3000);
+      }),
+    ]);
+    if (hen) clearTimeout(hen);
+    return kq;
+  },
+  laMayChu: () => (globalThis as Record<symbol, unknown>)[KHOA_MAY_CHU] === true,
 };
+
+const soMB = (raw: string | undefined, md: number) => {
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : md;
+};
+
+/** Dấu chân VRAM ước tính của một lượt nạp in-process (byte). Công thức + nguồn số: đầu tệp. */
+export function dauChanUocTinh(coTepBytes: number, env: NodeJS.ProcessEnv = process.env): number {
+  const heSo = Number(env.AI_NAP_HE_SO_TEP);
+  return coTepBytes * (Number.isFinite(heSo) && heSo > 0 ? heSo : 1) + soMB(env.AI_NAP_PHU_TROI_MB, 3112) * MiB;
+}
 
 export async function kiemNapKhiServerNgoaiSong(
   modelId: string,
@@ -73,16 +107,23 @@ export async function kiemNapKhiServerNgoaiSong(
   dep: PhuThuocNapServerNgoai = phuThuocMacDinh,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
-  if (!duongTep) return;
-  const nguong = Number(env.AI_NAP_KIEM_SERVER_NGOAI_BYTES);
-  const tran = Number.isFinite(nguong) && nguong > 0 ? nguong : 8 * GiB;
-  const co = await dep.coTep(duongTep);
-  if (co === null || co <= tran) return;
-  const url = (env.LLAMA_SERVER_URL || "").trim() || "http://127.0.0.1:8091";
-  const dangPhucVu = await dep.modelServer(url, 500);
-  if (dangPhucVu === null) return; // nhánh 1 — không có server ngoài trả lời ⇒ như cũ
   const ten = baseModel(modelId);
-  if (dangPhucVu === ten) {
+  // 0 — cổng tiến trình.
+  if (!dep.laMayChu() && env.AI_CHO_NAP_TRONG_TIEN_TRINH !== "1") {
+    throw new LoiNapServerNgoai(
+      "NAP_IN_PROCESS_BI_TAT",
+      `[aiGgufEngine] (${viTri}) KHÔNG nạp "${ten}" in-process: tiến trình này không phải máy chủ ứng dụng (vitest/script). ` +
+        `Gọi model qua llama-server (LLAMA_SERVER_ENABLED=true, LLAMA_SERVER_URL, LLAMA_SERVER_FAIL_CLOSED=true), hoặc — nếu CHỦ ĐÍCH nạp ` +
+        `model nhỏ trong tiến trình và đã kiểm VRAM — đặt AI_CHO_NAP_TRONG_TIEN_TRINH=1.`,
+    );
+  }
+  if (!duongTep) return;
+  const co = await dep.coTep(duongTep);
+  if (co === null) return; // không có tệp thật ⇒ không có căn cứ (đường lỗi nạp sẽ tự báo)
+  const url = (env.LLAMA_SERVER_URL || "").trim() || "http://127.0.0.1:8091";
+  // 1 — cùng model với server ngoài.
+  const dangPhucVu = await dep.modelServer(url, 500);
+  if (dangPhucVu !== null && dangPhucVu === ten) {
     throw new LoiNapServerNgoai(
       "NAP_TRUNG_SERVER_NGOAI",
       `[aiGgufEngine] (${viTri}) KHÔNG nạp "${ten}" in-process: llama-server ${url} đang phục vụ CHÍNH model này ` +
@@ -90,14 +131,19 @@ export async function kiemNapKhiServerNgoaiSong(
         `Đặt LLAMA_SERVER_ENABLED=true (+ LLAMA_SERVER_URL, LLAMA_SERVER_FAIL_CLOSED=true) để lượt gọi đi qua server.`,
     );
   }
+  // 2 — dấu chân so với VRAM trống đo tươi.
+  const can = dauChanUocTinh(co, env) + soMB(env.AI_NAP_BIEN_AN_TOAN_MB, 1536) * MiB;
   const v = await dep.vram().catch(() => null);
   const trong = v ? v.totalBytes - v.usedBytes : null;
-  if (trong === null || trong < co * 1.1) {
-    throw new LoiNapServerNgoai(
-      "VRAM_KHONG_DU_SERVER_NGOAI",
-      `[aiGgufEngine] (${viTri}) KHÔNG nạp "${ten}" in-process (${(co / GiB).toFixed(1)} GB): llama-server ${url} đang sống ` +
-        `(giữ "${dangPhucVu}") và VRAM trống ${trong === null ? "KHÔNG đo được" : `${(trong / GiB).toFixed(1)} GB`} < cần ` +
-        `${((co * 1.1) / GiB).toFixed(1)} GB — luật một instance model lớn trên một card.`,
-    );
+  if (trong === null) {
+    if (dangPhucVu === null) return; // không GPU đo được + không server ngoài ⇒ như cũ
+  } else if (trong >= can) {
+    return;
   }
+  throw new LoiNapServerNgoai(
+    "VRAM_KHONG_DU_NAP",
+    `[aiGgufEngine] (${viTri}) KHÔNG nạp "${ten}" in-process: cần ~${(can / MiB).toFixed(0)} MiB (dấu chân ${(dauChanUocTinh(co, env) / MiB).toFixed(0)} ` +
+      `+ biên ${soMB(env.AI_NAP_BIEN_AN_TOAN_MB, 1536)}), VRAM trống ${trong === null ? "KHÔNG đo được" : `${(trong / MiB).toFixed(0)} MiB`}` +
+      `${dangPhucVu ? ` (llama-server ${url} đang giữ "${dangPhucVu}")` : ""} — nạp sẽ làm tràn card và đẩy VRAM tiến trình khác ra RAM.`,
+  );
 }

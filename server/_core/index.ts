@@ -75,9 +75,13 @@ import { khoiChayDongBoSoModel } from "../services/ai/soModel/napSoModel";
 import { dongBoKhoModel } from "../services/ai/soModel/dongBoKhoModel";
 import { batTuDoiKheNang } from "../services/ai/soModel/kheNangMacDinh";
 import { listenThenStartOt } from "../services/ot/backgroundStart";
+import { danhDauTienTrinhMayChu } from "../services/ai/napServerNgoai";
 
 // Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
 installConsoleBridge();
+
+// ★ Đợt 9 (2026-10-25) — CHỈ tiến trình máy chủ (api/worker) được nạp GGUF in-process; vitest/script mặc định bị chặn (`ai/napServerNgoai`).
+danhDauTienTrinhMayChu();
 
 /**
  * ★★★ Pha 2B Task 5 — CỔNG CẤU HÌNH CƯỠNG CHẾ, VÀ ĐÂY LÀ **CHỖ DUY NHẤT TRONG REPO NGOÀI MỌI `try`**.
