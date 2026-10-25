@@ -179,10 +179,10 @@ export function chuanHoaThamSo(t: Record<string, unknown>): ThamSoSoLieu {
   return { gio: nguyenTrong(t.gio, "gio", 1, 168, 8), gioiHan: nguyenTrong(t.gioiHan, "gioiHan", 1, 20, 10) };
 }
 
-export async function chaySoLieu(ten: string, t: ThamSoSoLieu, pv: PhamViNguoiXem, nhaMayLuong: number | null): Promise<KetQuaSoLieu & { soMay: number }> {
+export async function chaySoLieu(ten: string, t: ThamSoSoLieu, pv: PhamViNguoiXem, nhaMayLuong: number | null): Promise<KetQuaSoLieu & { soMay: number; may: number[] }> {
   const muc = Object.prototype.hasOwnProperty.call(DANH_MUC, ten) ? DANH_MUC[ten] : undefined;
   if (!muc) throw new LoiSoLieu(`truy vấn '${String(ten).slice(0, 60)}' không có trong danh mục`, "TRUY_VAN_LA");
   const ids = await maTrongPhamViLuong(pv, nhaMayLuong);
   const tu = new Date(Date.now() - t.gio * 3600_000);
-  return { ...(await muc.chay(ids, t, tu)), soMay: ids.length };
+  return { ...(await muc.chay(ids, t, tu)), soMay: ids.length, may: ids };
 }

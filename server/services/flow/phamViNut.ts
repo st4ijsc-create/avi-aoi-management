@@ -15,9 +15,11 @@ export const KHOA_PHAM_VI_NUT: Readonly<Record<string, LuatPhamViNut>> = {
   "ot.de-xuat-lenh": { kieu: "loc", phamVi: "máy qua BoKiemPhamVi.may + aiControlGate" },
   "ot.de-xuat-luong": { kieu: "loc", phamVi: "FOE workflow qua luongFoeTrongPhamVi của chủ lượt + aiControlGate" },
   "luong.goi-con": { kieu: "loc", phamVi: "luồng con qua BoKiemPhamVi.luong của chủ lượt" },
+  "ai.tra-tri-thuc": { kieu: "loc", phamVi: "kho tri thức hãng / Studio, không có dữ liệu nhà máy; trục lọc = VAI chủ lượt lúc chạy (canAccessStudioCorpus, fail-closed)" },
   "ai.agent": { kieu: "loc", phamVi: "tool = luồng con qua BoKiemPhamVi.luong; tra_tai_lieu dùng KB hiện có" },
   // ── không chạm dữ liệu nhà máy
   "kich-hoat.thu-cong": { kieu: "khong", lyDo: KHONG_CHAM_DU_LIEU },
+  "kich-hoat.su-kien": { kieu: "khong", lyDo: "Phạm vi kiểm LÚC BẮN trong suKien.ts: máy→nhà máy tra CSDL, chủ luồng HIỆN TẠI phải thấy máy, nhà máy khớp luồng; mặc định tắt theo node." },
   "kich-hoat.lich": { kieu: "khong", lyDo: KHONG_CHAM_DU_LIEU },
   "kich-hoat.webhook": { kieu: "khong", lyDo: "Nhận item từ yêu cầu ngoài có token băm; không đọc bảng dữ liệu nhà máy." },
   "kich-hoat.mcp": { kieu: "khong", lyDo: "Nhận item từ yêu cầu MCP có danh tính; luồng chỉ hạng thuần / đọc; không đọc bảng dữ liệu nhà máy." },

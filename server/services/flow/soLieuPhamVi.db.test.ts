@@ -12,6 +12,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { createProductModel } from "../../db";
+import { taoNguoiDungTest } from "../../testing/nguoiDungTest";
 import { qChuTest } from "../../testing/__haiNhaMayDoLuong";
 import { dangKyModelSanPhamTest } from "../../testing/modelSanPhamTest";
 import { aiFlowRuns, aiFlowSteps, aiFlows } from "../../../drizzle/schema";
@@ -37,8 +38,7 @@ const gui: number[] = [];
 const FL = { A: `${TT}-A`, B: `${TT}-B`, G: `${TT}-G`, TB_A: `${TT}-tbA`, TB_G: `${TT}-tbG` };
 
 async function mkUser(suffix: string, role: string, factories: string[]): Promise<number> {
-  const [r] = (await db.execute(sql`INSERT INTO users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
-    VALUES (${`${RUN}-${suffix}`}, ${`${RUN}_${suffix}`}, ${`SL ${suffix}`}, ${"password"}, ${role}, true, false, now()) RETURNING id`)) as unknown as { id: number }[];
+  const r = await taoNguoiDungTest(suffix, role as "admin", { tienTo: "sl", ten: `SL ${suffix}`, ts: RUN });
   for (const f of factories) await db.execute(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${r.id}, ${f})`);
   return r.id;
 }
@@ -115,9 +115,6 @@ afterAll(async () => {
   const runs = await db.select({ id: aiFlowRuns.id }).from(aiFlowRuns).where(like(aiFlowRuns.flowId, `${TT}%`));
   if (runs.length) await db.delete(aiFlowRuns).where(inArray(aiFlowRuns.id, runs.map((r) => r.id)));
   await db.delete(aiFlows).where(like(aiFlows.id, `${TT}%`));
-  const tat = Object.values(u).filter((x) => x > 0);
-  await db.execute(sql`DELETE FROM user_factory_assignments WHERE "userId" IN ${sql.raw(`(${tat.join(",")})`)}`);
-  await db.execute(sql`DELETE FROM users WHERE id IN ${sql.raw(`(${tat.join(",")})`)}`);
   await db.execute(sql`DELETE FROM predictive_alerts WHERE title LIKE ${`${RUN}-pa-%`}`);
   await db.execute(sql`DELETE FROM oee_metrics WHERE "machineId" IN (${ids.machA}, ${ids.machB})`);
   await qChuTest(`DELETE FROM product_inspections WHERE "serialNumber" LIKE '${RUN}-%'`).catch(() => undefined);
@@ -285,6 +282,52 @@ describe("tich-hop.thong-bao — chỉ kênh nội bộ, người nhận trong p
     expect(gui).toEqual([u.nhanA]);
     const buocs = await db.select().from(aiFlowSteps).where(and(eq(aiFlowSteps.runId, r.id), eq(aiFlowSteps.nodeId, "n")));
     expect(buocs.length).toBe(1);
+  });
+});
+
+describe("lô Luồng-2 (N1/N2 của kiem-dinh) — phạm vi MÁY của người nhận · trần tổng thông báo mỗi lượt", () => {
+  const dung = () => {
+    gui.length = 0;
+    __datHamGuiThongBaoChoTest(async (userId) => {
+      gui.push(userId);
+      return { id: 1 };
+    });
+  };
+
+  it("★ N1: số liệu của lượt có MÁY ngoài phạm vi máy của người nhận ⇒ cả lô bị từ chối; người nhận thấy đủ máy (toàn quyền) vẫn nhận. (Phạm vi hiện chỉ mịn tới nhà máy ⇒ giả lập máy B vào nhật ký lượt của luồng A)", async () => {
+    dung();
+    const id = TT + "-n1";
+    await luuPhienBan(luongThongBao(id), u.admin, ids.facA);
+    const v = (await db.execute(sql`SELECT max(version)::int AS v FROM ai_flow_versions WHERE "flowId" = ${id}`)) as unknown as { v: number }[];
+    const mk = async (nguoiNhan: number[]) => {
+      const r = await batDauRun({ flowId: id, version: v[0].v, chuLuong: u.A, items: [{ json: { nguoiNhan } }] });
+      await db.execute(sql`INSERT INTO ai_flow_events ("runId", kind, payload) VALUES (${r}, ${"so-lieu.may-doc"}, ${JSON.stringify({ nodeId: "gia", may: [ids.machB] })}::jsonb)`);
+      await chayHet();
+      return { st: (await trangThai(r)).status, loi: (await buoc(r, "n"))?.error as { ma?: string } | null };
+    };
+    const sai = await mk([u.nhanA]);
+    expect(sai.st).toBe("loi");
+    expect(sai.loi?.ma).toBe("NGUOI_NHAN_NGOAI_PHAM_VI");
+    expect(gui).toEqual([]);
+    expect((await mk([u.nhanA, u.nhanAdmin])).st).toBe("loi"); // một người thiếu máy ⇒ không ai nhận
+    expect(gui).toEqual([]);
+    // đối chứng: không có máy lạ trong nhật ký ⇒ người nhận thuộc A nhận bình thường
+    const ok = await chay(id, u.A, [{ json: { nguoiNhan: [u.nhanA] } }]);
+    expect(ok.status).toBe("xong");
+    expect(gui).toEqual([u.nhanA]);
+  });
+
+  it("★ N2: trần 50 thông báo mỗi lượt-node — 25 item × 2 người = 50 gửi đủ; 26 item × 2 = 52 ⇒ LỖI QUA_TRAN_THONG_BAO, không gửi gì", async () => {
+    dung();
+    const item = { json: { nguoiNhan: [u.nhanA, u.nhanAdmin] } };
+    const du = await chay(FL.TB_A, u.A, Array.from({ length: 25 }, () => item));
+    expect(du.status).toBe("xong");
+    expect(gui.length).toBe(50);
+    dung();
+    const vuot = await chay(FL.TB_A, u.A, Array.from({ length: 26 }, () => item));
+    expect(vuot.status).toBe("loi");
+    expect((vuot.buocN.error as { ma?: string }).ma).toBe("QUA_TRAN_THONG_BAO");
+    expect(gui).toEqual([]);
   });
 });
 

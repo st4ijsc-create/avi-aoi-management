@@ -6,9 +6,14 @@
  * Tham số: `truyVan` (CHUỖI CỐ ĐỊNH trong danh mục, không biểu thức) · `gio` (1..168) · `gioiHan` (1..20) · `truongRa` (mặc định `soLieu`).
  */
 import { danhGiaThamSo } from "../../../../shared/flow/bieuThuc";
+import { aiFlowEvents } from "../../../../drizzle/schema";
+import { getDb } from "../../../db/connection";
 import { dangKyNut, nguCanhItem, type KetQuaChay } from "../dangKyNut";
 import { nhaMayCuaLuong } from "../phamViLuong";
 import { LoiSoLieu, chaySoLieu, chuanHoaThamSo } from "../soLieu/danhMuc";
+
+/** Loại sự kiện nhật ký lượt ghi tập máy mà các node số liệu đã đọc. */
+export const KIND_MAY_DOC = "so-lieu.may-doc";
 
 dangKyNut({
   type: "du-lieu.so-lieu",
@@ -27,13 +32,21 @@ dangKyNut({
     if (nhaMay === undefined) throw new LoiSoLieu("Không tìm thấy luồng để xác định nhà máy.", "CHU_LUOT_KHONG_XAC_DINH");
     const vao = ngu.inputs.main ?? [{ json: {} }];
     const ra = [];
+    const mayDoc = new Set<number>();
     for (const item of vao) {
       const t = danhGiaThamSo(conLai, nguCanhItem(ngu, item, vao)) as Record<string, unknown>;
       const tham = chuanHoaThamSo(t);
       const kq = await chaySoLieu(truyVan, tham, pv, nhaMay);
+      for (const m of kq.may) mayDoc.add(m);
       ra.push({
         json: { ...item.json, [String(t.truongRa ?? "soLieu")]: { truyVan, khoangGio: tham.gio, soMay: kq.soMay, tong: kq.tong, dong: kq.dong } },
       });
+    }
+    // ★ Ghi TẬP MÁY đã đọc vào nhật ký lượt (bền, ngoài tầm sửa của tác giả luồng): `tich-hop.thong-bao` đối chiếu phạm vi MÁY của người nhận với tập này.
+    if (mayDoc.size > 0) {
+      const db = await getDb();
+      if (!db) throw new LoiSoLieu("Không ghi được tập máy đã đọc — từ chối.", "CHU_LUOT_KHONG_XAC_DINH");
+      await db.insert(aiFlowEvents).values({ runId: ngu.runId, kind: KIND_MAY_DOC, payload: { nodeId: ngu.nodeId, may: [...mayDoc] } });
     }
     return { main: ra };
   },

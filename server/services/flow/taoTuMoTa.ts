@@ -32,6 +32,8 @@ const GOI_Y_THAM_SO: Record<string, string> = {
   "nguoi.duyet": '{"tieuDe":"Duyệt …","noiDung":"{{ $json.x }}","vaiTroDuyet":"supervisor","hetHanGio":24}  — cổng ra: dong-y | tu-choi | het-han',
   "du-lieu.so-lieu": '{"truyVan":"san-luong.tong-quan","gio":12,"truongRa":"sanLuong"}  — truyVan CỐ ĐỊNH trong danh mục: san-luong.tong-quan | oee.trung-binh | ng.diem-do-hang-dau | may.trang-thai | canh-bao.dang-mo',
   "tich-hop.thong-bao": '{"nguoiNhan":[1],"tieuDe":"Báo cáo ca","noiDung":"{{ $json.tomTat }}","loai":"REPORT","uuTien":"NORMAL"}  — chỉ thông báo nội bộ',
+  "kich-hoat.su-kien": '{"suKien":"ng.alert","bat":true,"cuaSoPhut":10,"tranMoiGio":10}  — suKien: ng.alert | yield.warning | downtime.start; MẶC ĐỊNH TẮT (bat:true mới nghe)',
+  "ai.tra-tri-thuc": '{"cauHoi":"{{ $json.cauHoi }}","kho":"all","k":5,"truongRa":"triThuc"}  — tra kho tri thức có sẵn, ra kèm trich[] nguồn',
   "tich-hop.http-doc": '{"url":"https://host-duoc-phep/api"}',
   "tich-hop.http-gui": '{"url":"https://host-duoc-phep/api","phuongThuc":"POST","than":{}}',
 };

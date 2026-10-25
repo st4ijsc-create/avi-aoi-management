@@ -4193,6 +4193,10 @@ async function startServer() {
     void import("../services/flow/kichHoat/lich")
       .then(({ khoiChayLich }) => khoiChayLich())
       .catch((err) => console.error("[luong-ai] bộ lập lịch không khởi chạy được:", (err as any)?.message || err));
+    // Lô Luồng-2 — bộ nghe sự kiện nội bộ (eventBus chỉ sống trong tiến trình phát ⇒ khởi ở API). Node phải `bat: true` mới bắn.
+    void import("../services/flow/kichHoat/suKien")
+      .then(({ khoiChaySuKien }) => khoiChaySuKien())
+      .catch((err) => console.error("[luong-ai] bộ nghe sự kiện không khởi chạy được:", (err as any)?.message || err));
   }
 
   // Đợt 0.1 (AI Local) — GIÁM SÁT llama-server: không ai nghe cổng ≥ 2 nhịp (15 s) ⇒ chạy

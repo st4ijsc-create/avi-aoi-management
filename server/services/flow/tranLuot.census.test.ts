@@ -27,7 +27,7 @@ const tep = moiTepTs(SERVER).map((p) => ({ p: rel(p), nd: bo(readFileSync(p, "ut
 
 describe("M5 census — trần đồng thời ở mọi cửa tạo lượt gốc", () => {
   it("cầu chì: thấy dongCo.ts và các cửa vào (không đo trên tập rỗng)", () => {
-    for (const t of ["services/flow/dongCo.ts", "routers/flowRouter.ts", "services/flow/kichHoat/webhook.ts", "services/flow/kichHoat/lich.ts", "services/flow/kichHoat/mcp.ts"]) {
+    for (const t of ["services/flow/dongCo.ts", "routers/flowRouter.ts", "services/flow/kichHoat/webhook.ts", "services/flow/kichHoat/lich.ts", "services/flow/kichHoat/mcp.ts", "services/flow/kichHoat/suKien.ts"]) {
       expect(tep.some((x) => x.p === t), t).toBe(true);
     }
   });
@@ -57,6 +57,7 @@ describe("M5 census — trần đồng thời ở mọi cửa tạo lượt gố
       "routers/flowRouter.ts",
       "services/flow/kichHoat/lich.ts",
       "services/flow/kichHoat/mcp.ts",
+      "services/flow/kichHoat/suKien.ts",
       "services/flow/kichHoat/webhook.ts",
     ]);
     expect(thieu).toEqual([]);

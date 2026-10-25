@@ -93,6 +93,10 @@ export function thamSoMacDinh(type: string): Record<string, unknown> {
       return { truyVan: "san-luong.tong-quan", gio: 8, gioiHan: 10, truongRa: "soLieu" };
     case "tich-hop.thong-bao":
       return { nguoiNhan: [], tieuDe: "", noiDung: "", loai: "INFO", uuTien: "NORMAL" };
+    case "kich-hoat.su-kien":
+      return { suKien: "ng.alert", bat: false, cuaSoPhut: 10, tranMoiGio: 10 };
+    case "ai.tra-tri-thuc":
+      return { cauHoi: "{{ $json.cauHoi }}", kho: "all", k: 5, truongRa: "triThuc" };
     case "kich-hoat.lich":
       return { cron: "0 6 * * *", muiGio: "Asia/Ho_Chi_Minh" };
     case "du-lieu.ma":

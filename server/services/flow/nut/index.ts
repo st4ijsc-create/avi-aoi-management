@@ -9,6 +9,8 @@ import "./agent";
 import "./ot";
 import "./soLieu";
 import "./thongBao";
+import "./traTriThuc";
 import "../kichHoat/lich";
 import "../kichHoat/webhook";
 import "../kichHoat/mcp";
+import "../kichHoat/suKien";
