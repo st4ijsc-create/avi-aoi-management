@@ -12,6 +12,8 @@ Spec, cổng và kết quả: `docs/superpowers/specs/2026-10-24-ai-local-doc-an
 | `do-cong-a.sh` · `do-e2e-lai.sh` · `do-bat-auto.sh` | cổng bật `LLAMA_SERVER_MMPROJ=auto` (đường sản phẩm, bản sao tạm `.env`) |
 | `model-tham-chieu.ps1` | dựng/dừng Qwen3-VL-8B tham chiếu ở cổng 8095 (không đụng sidecar :8081) |
 
+Gọi model thật từ vitest/script: mang đủ env bắt buộc — xem `scripts/ai-eval/bo-nho/README.md` §"Chạy model thật từ vitest / script".
+
 Mọi đợt giữ khoá khe (`lib/khoaKhe.mjs giu … --co-dung`), chạy kèm `lib/canh-bo-nho.sh`, cuối đợt đưa :8091 về 35B qua `doi-model.ps1`.
 
 **e2e KB cần tệp tri thức SINH RA.** `knowledge/chunks.jsonl`, `embeddings.jsonl`, … nằm trong `.gitignore` nên worktree KHÔNG có ⇒ KB trên :3013
