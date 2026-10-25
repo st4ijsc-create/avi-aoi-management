@@ -148,12 +148,12 @@ export async function goiToolLuongMcp(ten: string, args: Record<string, unknown>
   if (!n) return null;
   const p = kiemThamSoTool(JSON.stringify(args ?? {}), khaiCuaNut(n));
   if (!p.ok) return { chu: `Tham số không hợp lệ: ${p.loi}`, loi: true };
-  const { batDauRun, chayLuotDongBo } = await import("../dongCo");
+  const { batDauRun, chayLuotDongBo, laLoiTranLuot } = await import("../dongCo");
   let runId: string;
   try {
     runId = await batDauRun({ flowId: t.flowId, version: t.version, items: [{ json: p.v }], nutKichHoat: t.nodeId, triggerKind: "mcp" });
   } catch (e) {
-    if (e instanceof Error && e.name === "LoiLuong" && (e as { code?: string }).code === "QUA_TRAN_DONG_THOI") return { chu: `Từ chối: ${e.message}`, loi: true };
+    if (laLoiTranLuot(e)) return { chu: `Từ chối: ${e.message}`, loi: true };
     throw e;
   }
   const kq = await chayLuotDongBo(runId, tranMs ?? Math.max(5_000, Number(process.env.AI_FLOW_MCP_TRAN_MS ?? 120_000) || 120_000));

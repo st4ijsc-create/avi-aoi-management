@@ -126,7 +126,7 @@ async function mucHienHanh(): Promise<MucSuKien[]> {
 
 // ── xử lý một sự kiện ─────────────────────────────────────────────────────────────────────────────
 
-export type KetQuaBan = "chay" | "ngoai-pham-vi" | "trung" | "vuot-tran" | "qua-dong-thoi";
+export type KetQuaBan = "chay" | "ngoai-pham-vi" | "trung" | "vuot-tran" | "qua-dong-thoi" | "qua-luot-treo";
 export interface BanSuKien {
   flowId: string;
   nodeId: string;
@@ -214,6 +214,10 @@ export async function xuLySuKien(loai: string, payload: unknown, tsMsVao: number
       else if (e instanceof Error && e.name === "LoiLuong" && (e as { code?: string }).code === "QUA_TRAN_LUOT_GIO") {
         console.warn(`[luong-ai] sự kiện ${m.flowId}#${m.nodeId}: ${e.message} — BỎ sự kiện ${loai}`);
         ra.push({ ...dau, ketQua: "vuot-tran" });
+      }
+      else if (e instanceof Error && e.name === "LoiLuong" && (e as { code?: string }).code === "QUA_TRAN_LUOT_TREO") {
+        console.warn(`[luong-ai] sự kiện ${m.flowId}#${m.nodeId}: ${e.message} — BỎ sự kiện ${loai}`);
+        ra.push({ ...dau, ketQua: "qua-luot-treo" });
       }
       else if (e instanceof Error && e.name === "LoiLuong" && (e as { code?: string }).code === "QUA_TRAN_DONG_THOI") {
         console.warn(`[luong-ai] sự kiện ${m.flowId}#${m.nodeId}: ${e.message} — BỎ sự kiện ${loai}`);
