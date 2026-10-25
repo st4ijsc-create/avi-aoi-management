@@ -32,26 +32,7 @@
 export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ───────────────────────────────────────────────────────
   "server/_core/systemRouter.ts#systemRouter.exportConfig",
-  // ── server/routers/aiActiveLearningRouter.ts (6) ───────────────────────────────────────────
-  "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.checkRetrain",
-  "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.diversitySampling",
-  "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.getQueue",
-  "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.labelAccuracy",
-  "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.stats",
-  "server/routers/aiActiveLearningRouter.ts#aiActiveLearningRouter.uncertaintySampling",
-  // ── server/routers/aiAdvancedRouter.ts (7) ─────────────────────────────────────────────────
-  "server/routers/aiAdvancedRouter.ts#edgeRouter.deviceDeployments",
-  "server/routers/aiAdvancedRouter.ts#edgeRouter.getById",
-  "server/routers/aiAdvancedRouter.ts#edgeRouter.inferenceResults",
-  "server/routers/aiAdvancedRouter.ts#edgeRouter.list",
-  "server/routers/aiAdvancedRouter.ts#edgeRouter.staleDeployments",
-  "server/routers/aiAdvancedRouter.ts#trainingRouter.checkAutoRetrain",
-  "server/routers/aiAdvancedRouter.ts#trainingRouter.getDataStats",
   // ── server/routers/aiAnomalyRouter.ts (4) ──────────────────────────────────────────────────
-  "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.getProfile",
-  "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.latestForMachine",
-  "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.machineStatuses",
-  "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.stats",
   // ★★★ 2026-08-18, lượt 4 — BỐN mục dưới đây (3 ở `aiCalibrationRouter.ts` + `vda5050Router.status`)
   // **KHÔNG PHẢI NỢ MỚI**. Không một dòng nào của chúng đổi. Cái đổi là **THƯỚC ĐO**: `nhap()` của
   // `phamViDocScan` trước đây ánh xạ `import { getCalibrationReport } from "../db"` thành
@@ -62,55 +43,10 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ⇒ Thêm dòng vào sổ ở đây là một lời khai *"thước vừa sắc hơn"*, **không** phải *"tôi vừa mở
   //   một lỗ"*. Đó là lý do khối chú thích này dài: một dòng thêm im lặng vào sổ RATCHET là đúng
   //   thứ mà cả sổ này tồn tại để ngăn.
-  // ── server/routers/aiCalibrationRouter.ts (3) ──────────────────────────────────────────────
-  "server/routers/aiCalibrationRouter.ts#aiCalibrationRouter.getCalibration",
-  "server/routers/aiCalibrationRouter.ts#aiCalibrationRouter.getLatestCalibration",
-  "server/routers/aiCalibrationRouter.ts#aiCalibrationRouter.listCalibration",
-  // ── server/routers/aiEvalRouter.ts (1) ─────────────────────────────────────────────────────
-  "server/routers/aiEvalRouter.ts#aiEvalRouter.autoRetrainCheck",
-  // ── server/routers/aiFeedbackRouter.ts (3) ─────────────────────────────────────────────────
-  "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.getDashboardStats",
-  "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.getPendingSuggestions",
-  "server/routers/aiFeedbackRouter.ts#aiFeedbackRouter.getSuggestionsByInspection",
-  // ── server/routers/aiInsightRouter.ts (1) ──────────────────────────────────────────────────
-  "server/routers/aiInsightRouter.ts#aiInsightRouter.list",
-  // ── server/routers/aiLocalTrainingRouter.ts (1) ────────────────────────────────────────────
-  "server/routers/aiLocalTrainingRouter.ts#aiLocalTrainingRouter.capabilities",
-  // ── server/routers/aiModelRouter.ts (2) ────────────────────────────────────────────────────
-  "server/routers/aiModelRouter.ts#aiModelRouter.getInferenceResults",
-  "server/routers/aiModelRouter.ts#aiModelRouter.getInferenceStats",
-  // ── server/routers/aiOrchestrationRouter.ts (2) ────────────────────────────────────────────
-  "server/routers/aiOrchestrationRouter.ts#aiOrchestrationRouter.optimizeWorkflow",
-  "server/routers/aiOrchestrationRouter.ts#aiOrchestrationRouter.suggestWorkflow",
-  // ── server/routers/aiQualityGateRouter.ts (4) ──────────────────────────────────────────────
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.getConfig",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.listConfigs",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.listResults",
-  "server/routers/aiQualityGateRouter.ts#aiQualityGateRouter.stats",
   // ── server/routers/aiRcaCopilotRouter.ts (1) ───────────────────────────────────────────────
   "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.latest",
-  // ── server/routers/aiRobotAnomalyRouter.ts (2) ─────────────────────────────────────────────
-  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.listAnomalies",
-  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.rollbackHistory",
   // ── server/routers/aiRouters.ts (4) ────────────────────────────────────────────────────────
-  "server/routers/aiRouters.ts#predictiveAlertRouter.get",
-  "server/routers/aiRouters.ts#predictiveAlertRouter.list",
-  "server/routers/aiRouters.ts#predictiveAlertRouter.stats",
   "server/routers/aiRouters.ts#rootCauseRouter.list",
-  // ── server/routers/aiSegmentationRouter.ts (1) ─────────────────────────────────────────────
-  "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.listMasks",
-  // ── server/routers/aiSettingsRouter.ts (1) ─────────────────────────────────────────────────
-  "server/routers/aiSettingsRouter.ts#aiSettingsRouter.getDataPipelineStats",
-  // ── server/routers/aiSetupAdvisorRouter.ts (1) ─────────────────────────────────────────────
-  "server/routers/aiSetupAdvisorRouter.ts#aiSetupAdvisorRouter.suggestSetup",
-  // ── server/routers/aiSmartAlertRoutingRouter.ts (3) ────────────────────────────────────────
-  "server/routers/aiSmartAlertRoutingRouter.ts#aiSmartAlertRoutingRouter.detectSpike",
-  "server/routers/aiSmartAlertRoutingRouter.ts#aiSmartAlertRoutingRouter.detectYieldDrop",
-  "server/routers/aiSmartAlertRoutingRouter.ts#aiSmartAlertRoutingRouter.stats",
-  // ── server/routers/aiThresholdAdvisorRouter.ts (3) ─────────────────────────────────────────
-  "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.recommendForPoint",
-  "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.recommendInspectionParam",
-  "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.recommendNgThreshold",
   // ── server/routers/alertRouters.ts (2) ─────────────────────────────────────────────────────
   "server/routers/alertRouters.ts#alertRouter.getById",
   "server/routers/alertRouters.ts#alertRouter.listAll",
@@ -303,4 +239,6 @@ export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
   "server/routers/spcAnalysisRouter.ts#spcAnalysisRouter.topNGPoints": "ĐÃ phạm vi qua userId/userRole → resolveStatsScope (db.getTopNGMeasurementPointsEnhanced); bộ quét không nhận lời gọi db.* — bằng chứng: loDoLuongPhamVi.db.test.ts \"spc.topNGPoints\" (A 1 · admin 2) + db/statisticsScope.test.ts — dieu-phoi duyệt 2026-10-25",
   "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.list": "adminProcedure ⇒ vai admin = phạm vi TOÀN QUYỀN (cùng lý do edgeDeployment); mô hình NTF trained toàn cục — dieu-phoi duyệt 2026-10-25",
   "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.status": "chỉ trả mô hình đang chạy phạm vi TOÀN CỤC (machineId NULL: getActiveNtfClassifier() không truyền máy) + cờ — theo quyết định \"NULL ⇒ thấy cho mọi người có quyền module\"; mô hình theo máy KHÔNG qua thủ tục này — dieu-phoi duyệt 2026-10-25",
+  "server/routers/aiLocalTrainingRouter.ts#aiLocalTrainingRouter.capabilities": "chỉ cấu hình mô hình + số năng lực (ai_models, tệp mô hình trên đĩa, đếm mẫu toàn hệ thống); không trả hàng dữ liệu nhà máy — dieu-phoi duyệt 2026-10-25",
+  "server/routers/aiSettingsRouter.ts#aiSettingsRouter.getDataPipelineStats": "4 con số tổng + cờ pipeline (đếm embedding, tệp uploads, lỗi, trạng thái); không trả hàng dữ liệu nhà máy — dieu-phoi duyệt 2026-10-25",
 };
