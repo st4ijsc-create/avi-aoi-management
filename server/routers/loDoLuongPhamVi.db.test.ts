@@ -88,14 +88,16 @@ describe("★★★ productionDashboard — ĐỌC theo phạm vi", () => {
     const bAdm = JSON.parse(await tong(cAdm, { machineId: H.B.mid }));
     expect(JSON.stringify(b)).not.toBe(JSON.stringify(bAdm));
   });
-  it("getDefectAnalysis — số lỗi của điểm đo chung: A 1 · admin 2 · không phạm vi 0", async () => {
-    const dem = async (c: C) => {
-      const r = await c.dash.getDefectAnalysis({ ...khung, factoryId: undefined });
+  it("getDefectAnalysis — số lỗi của điểm đo chung (lọc theo chuyền: bảng 15 dòng đầu không bị dữ liệu lạ chen): A thấy chuyền A (1) · chuyền B (0) · admin thấy chuyền B (1) · không phạm vi 0", async () => {
+    const dem = async (c: C, lineId: number) => {
+      const r = await c.dash.getDefectAnalysis({ ...khung, lineId });
       return (r.defectsByType as { pointDefId: number; ngCount: number }[]).filter((x) => x.pointDefId === H.pointId).reduce((s, x) => s + Number(x.ngCount), 0);
     };
-    expect(await dem(cA)).toBe(1);
-    expect(await dem(cAdm)).toBe(2);
-    expect(await dem(cRong)).toBe(0);
+    expect(await dem(cA, H.A.lid)).toBe(1);
+    expect(await dem(cA, H.B.lid)).toBe(0);
+    expect(await dem(cAdm, H.B.lid)).toBe(1);
+    expect(await dem(cAdm, H.A.lid)).toBe(1);
+    expect(await dem(cRong, H.A.lid)).toBe(0);
   });
   it("getTrendData / getSpcSummary — A không thấy máy B (lọc theo chuyền B ⇒ rỗng)", async () => {
     expect((await cA.dash.getTrendData({ ...khung, lineId: H.B.lid })).length).toBe(0);

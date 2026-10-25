@@ -189,6 +189,9 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/machineApiRouters.ts#machineApiRouter.listKeys",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.get",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.list",
+  // ── server/routers/maintenanceRouter.ts (1) ────────────────────────────────────────────────
+  // 2026-10-25 (L6a): chủ dự án giao kiem-dinh (W16, mig 0424/0425) làm KHO VẬT TƯ theo nhà máy ⇒ partsBelowReorder QUAY LẠI sổ nợ, kiem-dinh vá trọn đọc + ghi.
+  "server/routers/maintenanceRouter.ts#maintenanceRouter.partsBelowReorder",
   // ── server/routers/mappingAsCodeRouter.ts — ★ 2026-10-24: 1 mục ĐÃ TRẢ (exportOne ⇒ S qua _adapterPhamVi.ts), xoá khỏi sổ ──
   // ── server/routers/mqttBulletinRouter.ts (5) ───────────────────────────────────────────────
   "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.getDashboardStats",
@@ -300,7 +303,6 @@ export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
   "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.frameworkSnapshot": "bộ nhớ đệm FocasAdapter/EuromapAdapter nằm TRÊN THỂ HIỆN và mỗi lượt gọi dựng thể hiện mới ⇒ ảnh chụp luôn rỗng, không chứa số đo nhà máy nào (đã đọc mã focasAdapter.ts) — 2026-10-25. ⚠ PHẢI XEM LẠI khi nối connector FOCAS/Euromap thật (cache theo máy/chia sẻ giữa lượt gọi ⇒ có thể chứa số đo nhà máy) — dieu-phoi duyệt 2026-10-25",
   "server/routers/semanticsRouter.ts#semanticsRouter.list": "định nghĩa metric TĨNH (YAML contracts/metrics, không có dữ liệu theo nhà máy) — dieu-phoi duyệt 2026-10-25",
   "server/routers/semanticsRouter.ts#semanticsRouter.get": "định nghĩa metric TĨNH (YAML contracts/metrics, không có dữ liệu theo nhà máy) — dieu-phoi duyệt 2026-10-25",
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.partsBelowReorder": "spare_parts_inventory KHÔNG có cột nhà máy / vị trí — danh mục kho phụ tùng dùng chung (đã đọc schema) — dieu-phoi duyệt 2026-10-25",
   "server/routers/spcAnalysisRouter.ts#spcAnalysisRouter.topNGPoints": "ĐÃ phạm vi qua userId/userRole → resolveStatsScope (db.getTopNGMeasurementPointsEnhanced); bộ quét không nhận lời gọi db.* — bằng chứng: loDoLuongPhamVi.db.test.ts \"spc.topNGPoints\" (A 1 · admin 2) + db/statisticsScope.test.ts — dieu-phoi duyệt 2026-10-25",
   "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.list": "adminProcedure ⇒ vai admin = phạm vi TOÀN QUYỀN (cùng lý do edgeDeployment); mô hình NTF trained toàn cục — dieu-phoi duyệt 2026-10-25",
   "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.status": "chỉ trả mô hình đang chạy phạm vi TOÀN CỤC (machineId NULL: getActiveNtfClassifier() không truyền máy) + cờ — theo quyết định \"NULL ⇒ thấy cho mọi người có quyền module\"; mô hình theo máy KHÔNG qua thủ tục này — dieu-phoi duyệt 2026-10-25",
