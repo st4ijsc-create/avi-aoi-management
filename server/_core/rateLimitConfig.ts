@@ -597,14 +597,14 @@ export function apiKeyGenerator(req: Request): string {
 /**
  * W21 (kiểm định 2026-10-25) — khoá của limiter /api CHUNG theo PHIÊN CHỈ KHI phiên qua phép kiểm chữ ký.
  * Lỗ cũ: `apiKeyGenerator` băm GIÁ TRỊ cookie / Bearer chưa kiểm chữ ký ⇒ kẻ vô danh xoay giá trị rác mỗi yêu cầu được MỘT XÔ MỚI (300/phút) mỗi lần ⇒ vượt limiter chung.
- * Nay: cookie phiên / Bearer có HÌNH JWT (3 đoạn) → `sdk.verifySession` (HS256 jose, stateless, cùng phép kiểm tầng STOP `laStopHmiCoPhienKy`); qua ⇒ khoá theo PHẦN ĐÃ KÝ
+ * Nay: cookie phiên / Bearer có HÌNH JWT (3 đoạn) → `phienKyHopLeTuVe` (HS256 jose qua sdk.verifySession ở `trpcGioiHanThuTuc`, stateless, cùng phép kiểm tầng STOP `laStopHmiCoPhienKy`); qua ⇒ khoá theo PHẦN ĐÃ KÝ
  * (`sha256(header.payload)`, KHÔNG băm cả token: jose chấp nhận biến thể đoạn chữ ký của cùng một vé ⇒ băm cả token vẫn xoay được); không qua ⇒ khoá theo IP.
  * Không đổi: mặt phẳng máy (OT ingest / machine ingest — limiter riêng), `X-API-Key`, Bearer KHÔNG có hình JWT (khoá API) — vẫn theo `apiKeyGenerator`.
  */
 export type KiemChuKyPhien = (token: string) => Promise<boolean>;
 const kiemChuKyMacDinh: KiemChuKyPhien = async (token) => {
-  const { sdk } = await import("./sdk");
-  return (await sdk.verifySession(token)) !== null;
+  const { phienKyHopLeTuVe } = await import("./trpcGioiHanThuTuc"); // CÙNG chủ phép kiểm chữ ký với laStopHmiCoPhienKy (import động: tệp ấy nhập tệp này)
+  return (await phienKyHopLeTuVe(token)) !== null;
 };
 
 /** `header.payload` của một JWT (bỏ đoạn chữ ký); null nếu không có hình `a.b.c`. */

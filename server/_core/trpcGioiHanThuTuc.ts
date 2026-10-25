@@ -143,6 +143,14 @@ export async function phienKyHopLe(req: Pick<Request, "headers">): Promise<{ ope
   } catch {
     return null; // %-mã hỏng: không phải một vé
   }
+  return phienKyHopLeTuVe(token);
+}
+
+/**
+ * Như `phienKyHopLe` nhưng từ CHUỖI vé đã tách (cookie hoặc Bearer) — MỘT lượt `verifySession` duy nhất của tệp này. W21 (kiểm định 2026-10-25): `rateLimitConfig`
+ * dùng cùng phép kiểm chữ ký này để CHỌN XÔ đếm của limiter chung (chỉ kết quả đúng/sai; không gắn danh tính vào req, không cấp quyền — createContext vẫn kiểm sổ phiên / isActive / buộc đổi MK).
+ */
+export async function phienKyHopLeTuVe(token: string): Promise<{ openId: string } | null> {
   const { sdk } = await import("./sdk");
   const phien = await sdk.verifySession(token);
   return phien ? { openId: phien.openId } : null;

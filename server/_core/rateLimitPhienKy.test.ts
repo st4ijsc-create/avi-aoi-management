@@ -75,6 +75,16 @@ describe("W21 — khoá phiên chỉ khi verify được", () => {
       expect(await rl.apiKeyGeneratorXacThuc(r)).toBe(rl.apiKeyGenerator(r));
     }
   });
+  it("limiter CHỈ chọn xô: không gắn danh tính vào req (không user/userId/openId/externalUser), trả đúng một chuỗi khoá không chứa openId", async () => {
+    const r = req({ cookie: `${COOKIE_NAME}=${ve}` }) as unknown as Record<string, unknown>;
+    const truoc = Object.keys(r).sort();
+    const khoa = await rl.apiKeyGeneratorXacThuc(r as never);
+    const them = Object.keys(r).filter((k) => !truoc.includes(k)); // vd bộ nhớ đệm parseurl của Express — không phải danh tính
+    expect(them.filter((k) => /user|open|principal|machine|session|phien/i.test(k))).toEqual([]);
+    for (const k of ["user", "userId", "externalUser", "apiPrincipal", "machine"]) expect(r[k]).toBeUndefined();
+    expect(typeof khoa).toBe("string");
+    expect(khoa).not.toContain("w21-a-"); // openId của vé không rò vào khoá
+  });
   it("phép kiểm ném lỗi ⇒ rơi về IP (không bao giờ ném ra limiter)", async () => {
     const k = await rl.apiKeyGeneratorXacThuc(req({ cookie: `${COOKIE_NAME}=a.b.c` }), async () => {
       throw new Error("boom");
