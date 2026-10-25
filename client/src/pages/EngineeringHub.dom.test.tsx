@@ -91,6 +91,8 @@ import EngineeringHub, { HUB_CATALOG } from "./EngineeringHub";
 const POSTURE_OK = {
   otControlEnabled: false, robotControlEnabled: false, dpcDeployEnabled: false, interlockEngineEnabled: true,
   interlockAutoBlockEnabled: false, interlockRulesEnabledWithTarget: 2, interlockCoverageDegraded: false, writesOnEngineOff: false,
+  interlockRulesCauHinhHong: 0, // R1b-2a T12
+  stopQuaHan24h: { count: 0, theoBuoc: {}, khongGhiSo: null, degraded: false },
 };
 
 beforeAll(async () => {
@@ -402,6 +404,44 @@ describe("Tư thế an toàn (panel phụ + chip ghim) — không thoái lui GC1
     const chip = headerEl().querySelector('[data-chip-id="posture"]') as HTMLElement;
     expect(chip.textContent).toContain(S("engineeringHome.postureWarn"));
     expect(chip.querySelector(".text-warning")).not.toBeNull();
+  });
+
+  it("★ R1b-2a T12 — interlockRulesCauHinhHong 2 ⇒ dòng đếm '2' + khối cảnh báo kiểu ILK-06 có liên kết /interlock-rules", () => {
+    srv.posture = { ...POSTURE_OK, interlockRulesEnabledWithTarget: 7, interlockRulesCauHinhHong: 2 };
+    render(<EngineeringHub />);
+    const a = aside();
+    const dong = a.querySelector("[data-posture-cau-hinh-hong]") as HTMLElement;
+    expect(dong.textContent).toBe(S("oversight.posture.cauHinhHong").replace("{{count}}", "2"));
+    const khoi = a.querySelector("[data-posture-cau-hinh-hong-canh-bao]") as HTMLElement;
+    expect(khoi).not.toBeNull();
+    expect(khoi.className).toMatch(/border-warning\/40/);
+    expect(khoi.className).toMatch(/bg-warning\/10/);
+    expect(khoi.textContent).toContain(S("oversight.posture.cauHinhHongCanhBao"));
+    const link = within(khoi).getByRole("link", { name: S("oversight.posture.cauHinhHongMo") });
+    expect(link.getAttribute("href")).toBe("/interlock-rules");
+  });
+
+  it("T12 — 0 luật hỏng ⇒ dòng '0', KHÔNG khối cảnh báo", () => {
+    render(<EngineeringHub />);
+    expect((aside().querySelector("[data-posture-cau-hinh-hong]") as HTMLElement).textContent).toBe(S("oversight.posture.cauHinhHong").replace("{{count}}", "0"));
+    expect(aside().querySelector("[data-posture-cau-hinh-hong-canh-bao]")).toBeNull();
+  });
+
+  it("T12 — độ phủ degraded ⇒ KHÔNG in số luật hỏng, không khối cảnh báo (kể cả server trả 2)", () => {
+    srv.posture = { ...POSTURE_OK, interlockCoverageDegraded: true, interlockRulesCauHinhHong: 2 };
+    render(<EngineeringHub />);
+    expect(aside().querySelector("[data-posture-cau-hinh-hong]")).toBeNull();
+    expect(aside().querySelector("[data-posture-cau-hinh-hong-canh-bao]")).toBeNull();
+  });
+
+  it("T12 (ruling K7) — STOP HMI quá hạn 24 h: số đếm; degraded ⇒ 'không đọc được', không số", () => {
+    srv.posture = { ...POSTURE_OK, stopQuaHan24h: { count: 3, theoBuoc: { vai_tro: 3 }, khongGhiSo: null, degraded: false } };
+    render(<EngineeringHub />);
+    expect((aside().querySelector("[data-posture-stop-qua-han]") as HTMLElement).textContent).toBe(S("oversight.posture.stopQuaHan").replace("{{count}}", "3"));
+    cleanup();
+    srv.posture = { ...POSTURE_OK, stopQuaHan24h: { count: 0, theoBuoc: {}, khongGhiSo: null, degraded: true } };
+    render(<EngineeringHub />);
+    expect((aside().querySelector("[data-posture-stop-qua-han]") as HTMLElement).textContent).toBe(S("oversight.posture.stopQuaHanUnavailable"));
   });
 
   it("dưới 1024 px chip tư thế VẪN ở header (panel phụ xuống dưới MAIN)", () => {

@@ -14489,7 +14489,10 @@
       "ariaLabel": "Interlock safety posture",
       "source": "oversight.posture — the server gates' own flags",
       "coverageSource": "oversight.posture — rules enabled, approved, blocking and targeted",
-      "writesOnEngineOffChip": "Real writes with engine OFF"
+      "writesOnEngineOffChip": "Real writes with engine OFF",
+      "cauHinhHong": "Misconfigured",
+      "cauHinhHongSource": "oversight.posture — enabled rules whose target commands the gate blocks (missing machine / source) or whose command dispatch will refuse (off-grid), within your scope",
+      "cauHinhHongChip": "Misconfigured rules"
     },
     "matrix": {
       "corner": "Cause ↓ · Effect →",
@@ -16946,7 +16949,12 @@
       "off": "OFF",
       "ruleCoverage": "Rules enabled with a target: {{count}}",
       "coverageUnavailable": "Rule coverage unavailable",
-      "writesOnEngineOffWarning": "Real device writes are ON while the interlock engine is OFF — violations will not be auto-blocked."
+      "writesOnEngineOffWarning": "Real device writes are ON while the interlock engine is OFF — violations will not be auto-blocked.",
+      "cauHinhHong": "Enabled but misconfigured rules: {{count}}",
+      "cauHinhHongCanhBao": "Some enabled interlock rules do NOT work: the gate blocks every command aimed at them, or dispatch will refuse their protective command. Fix them on the interlock page.",
+      "cauHinhHongMo": "Open interlock rules",
+      "stopQuaHan": "HMI STOP refused for deadline (24 h): {{count}}",
+      "stopQuaHanUnavailable": "HMI STOP deadline refusals unavailable"
     },
     "table": {
       "kind": "Work item",

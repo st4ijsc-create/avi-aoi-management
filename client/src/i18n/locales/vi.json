@@ -14469,7 +14469,10 @@
       "ariaLabel": "Tư thế an toàn interlock",
       "source": "oversight.posture — cờ của chính các cổng trên server",
       "coverageSource": "oversight.posture — số rule đang bật, đã duyệt, chặn được và có đích",
-      "writesOnEngineOffChip": "Ghi thật khi engine TẮT"
+      "writesOnEngineOffChip": "Ghi thật khi engine TẮT",
+      "cauHinhHong": "Hỏng cấu hình",
+      "cauHinhHongSource": "oversight.posture — luật đang bật mà cổng chặn mọi lệnh nhắm tới nó (thiếu máy / nguồn) hoặc lệnh của nó bị dispatch từ chối (lệch lưới), trong phạm vi của bạn",
+      "cauHinhHongChip": "Luật hỏng cấu hình"
     },
     "matrix": {
       "corner": "Nguyên nhân ↓ · Hệ quả →",
@@ -16926,7 +16929,12 @@
       "off": "TẮT",
       "ruleCoverage": "Rule chặn có đích: {{count}}",
       "coverageUnavailable": "Không đọc được độ phủ rule",
-      "writesOnEngineOffWarning": "Đang ghi lệnh thật xuống thiết bị trong khi engine interlock đang TẮT — vi phạm sẽ KHÔNG được tự động chặn."
+      "writesOnEngineOffWarning": "Đang ghi lệnh thật xuống thiết bị trong khi engine interlock đang TẮT — vi phạm sẽ KHÔNG được tự động chặn.",
+      "cauHinhHong": "Luật bật nhưng hỏng cấu hình: {{count}}",
+      "cauHinhHongCanhBao": "Có luật interlock đang bật nhưng KHÔNG chức năng: cổng chặn mọi lệnh nhắm tới nó, hoặc lệnh bảo vệ của nó sẽ bị dispatch từ chối. Sửa luật ở trang interlock.",
+      "cauHinhHongMo": "Mở trang interlock",
+      "stopQuaHan": "STOP HMI bị từ chối vì quá hạn (24 h): {{count}}",
+      "stopQuaHanUnavailable": "Không đọc được số STOP HMI quá hạn"
     },
     "table": {
       "kind": "Loại việc",

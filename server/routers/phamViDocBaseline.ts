@@ -92,7 +92,9 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.currentNgRates",
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.getById",
   "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.list",
-  "server/routers/oversightRouter.ts#oversightRouter.posture",
+  // ── server/routers/oversightRouter.ts — ★ 2026-10-26 (SCADA R1b-2a T12, điều phối 2026-10-25): `posture` ĐÃ TRẢ, xoá khỏi sổ — mọi số đếm
+  //    (độ phủ, luật hỏng cấu hình / lệch lưới, STOP HMI quá hạn 24 h) lọc theo phạm vi từ ctx (`idsTrongPhamVi` strict); A/B ở
+  //    `oversightPosturePhamVi.r1b2.db.test.ts`.
   // ── server/routers/parameterGuardrailRouter.ts (5) ─────────────────────────────────────────
   // ── server/routers/permissionsRouter.ts (2) ────────────────────────────────────────────────
   // ── server/routers/processRouter.ts (2) ────────────────────────────────────────────────────
@@ -116,8 +118,9 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // cho `resolveSimTarget` đọc `robots` + `device_adapters` của MỌI tenant để TỪ CHỐI một sim
   // target trỏ vào host của thiết bị thật (nhả phanh robot thật là điều cổng này ngăn). Thủ tục
   // KHÔNG trả một hàng tenant nào (chỉ reachable:true/false của cổng dashboard URSim) và phép so
-  // CỐ Ý xuyên tenant — thu hẹp theo `ctx.user` sẽ làm YẾU chính cổng an toàn ấy. Cùng loại lời
-  // khai như `oversightRouter.posture` (số đếm gộp, không phải dữ liệu tenant). Sàn: URSIM_ENABLED
+  // CỐ Ý xuyên tenant — thu hẹp theo `ctx.user` sẽ làm YẾU chính cổng an toàn ấy. (Trước đây khối này so
+  // với `oversightRouter.posture` "số đếm gộp, không phải dữ liệu tenant" — lời so ấy HẾT ĐÚNG 2026-10-26: R1b-2a T12
+  // xác định số đếm luật theo nhà máy LÀ dữ liệu tenant và đã lọc nó theo phạm vi.) Sàn: URSIM_ENABLED
   // + machine_control/canCreate. Bộ suy xếp (A) vì đúng hình dạng nó canh; giữ ở đây để không ai
   // quên nó là một lượt đọc xuyên tenant có chủ đích.
   // ── server/routers/simulationRouter.ts (1) ─────────────────────────────────────────────────

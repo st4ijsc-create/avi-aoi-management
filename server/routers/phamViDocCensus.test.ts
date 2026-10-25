@@ -959,7 +959,11 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // `scadaKenh.khaiHangLoat` (khai mức hàng loạt ≤ 200 tag, một mã TOTP) ⇒ D (bộ suy xếp MỌI mutation vào D). Phạm vi: `kiemPhamViDuoiKhoa` dưới khoá
 // adapter (ngoài phạm vi ≡ NOT_FOUND adapter, chứng minh ở `scadaKenhRouter.khaiHangLoat.r1b2.db.test.ts`). Đo: ghim cũ (gốc 4395bfd11) đỏ ĐÚNG +1 D /
 // +1 tong. No baseline row added. `tong` 2406 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 52, B: 8, C: 452, D: 1202, S: 692, tong: 2406 } as const;
+// ★★ 2026-10-26 · SCADA R1b-2a Task 12 (điều phối 2026-10-25) — **A 52 → 51 · S 692 → 693 · B/C/D/tong unchanged.** `oversight.posture` A → S:
+// mọi số đếm (độ phủ interlock, luật hỏng cấu hình / lệch lưới, STOP HMI quá hạn 24 h) lọc theo phạm vi nhà máy từ `ctx`
+// (`layPhamViPosture` ⇒ `idsTrongPhamVi(…, phamViCua(ctx), { strict: true })`). Dòng sổ nợ đọc GỠ (mục cuối mà main L9 để lại cho T12).
+// Đo trên cây này (gốc 003fd94b8 + T12): ghim cũ đỏ ĐÚNG −1 A / +1 S. A/B + đột biến: `oversightPosturePhamVi.r1b2.db.test.ts`.
+const GHIM = { A: 51, B: 8, C: 452, D: 1202, S: 693, tong: 2406 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

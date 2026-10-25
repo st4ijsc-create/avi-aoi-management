@@ -52,7 +52,15 @@ import {
   engineeringChanges,
   changeoverRequests,
   machines,
+  deviceAdapters,
+  scadaCommandAttempts,
 } from "../../drizzle/schema";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
+// R1b-2a T12 — phạm vi nhà máy cho `posture` (danh tính từ ctx) + đếm STOP HMI quá hạn (T4, ruling K7).
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { dieuKienThuStopQuaHan } from "../services/scada/lenhHmi";
+import { demStopQuaHanKhongGhiSo } from "../_core/hanStopHmi";
 import { detectDeadlocks } from "../services/fleet/trafficManager";
 // Fix round 1 (doc 80 Đợt 1 Task 2) — ILK-06: dùng ĐÚNG cùng allowlist action mà cổng
 // inline thật sự chặn lệnh (`evaluateInterlockGate`), để "độ phủ interlock" không đếm
@@ -398,10 +406,12 @@ const ZERO_SUMMARY = {
 // đích (targetMachineId/targetAdapterId). Fix round 1 — bản trước chỉ xét enabled+có đích,
 // nên một rule `alert` có đích nhưng CHƯA DUYỆT vẫn được đếm là "có phủ" — đúng hình dạng
 // báo-xanh-giả mà ILK-06 tồn tại để ngăn (rule đó không chặn được lệnh nào cả).
-async function fetchInterlockCoverage(d: Db | null): Promise<{ count: number; degraded: boolean }> {
+// R1b-2a T12 — `congPhamVi` = điều kiện phạm vi nhà máy của người gọi trên `interlock_rules` (`dieuKienLuatTrongPhamVi`); vắng = không lọc (toàn quyền / test cũ).
+async function fetchInterlockCoverage(d: Db | null, congPhamVi?: SQL): Promise<{ count: number; degraded: boolean }> {
   if (!d) return { count: 0, degraded: true };
   try {
     const cond = and(
+      congPhamVi,
       eq(interlockRules.enabled, true),
       isNotNull(interlockRules.approvedBy),
       // `INTERLOCK_GATE_ACTIONS` is typed `ReadonlySet<string>` (kept broad so
@@ -461,6 +471,143 @@ async function fetchInterlockCauHinhHong(d: Db | null, them?: SQL): Promise<{ co
     // eslint-disable-next-line no-console
     console.error("[oversight] posture interlock cau_hinh failed:", err instanceof Error ? err.message : err);
     return { count: 0, degraded: true };
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// SCADA R1b-2a Task 12 (điều phối 2026-10-25, ruling K11) — PHẠM VI NHÀ MÁY cho `posture`.
+//
+// Trước: `posture` đếm luật interlock (độ phủ, hỏng cấu hình / lệch lưới) trên TOÀN bảng — người nhà máy A thấy số luật hỏng của nhà máy B (mục
+// cuối của sổ nợ đọc `phamViDocBaseline.ts`). Nay MỌI số đếm theo phạm vi của người gọi; danh tính CHỈ từ `ctx` (`phamViCua`), không bao giờ input.
+//   • Luật — CÙNG ngữ nghĩa `interlockRouter.luatTrongPhamVi` (L4 2026-10-25, trang interlock hiện đúng tập này): MỌI vị trí luật nêu (lineId ·
+//     stationId · machineId · targetMachineId · targetAdapterId) phải trong phạm vi; luật KHÔNG nêu vị trí nào chỉ toàn quyền thấy (D11 — quy tắc
+//     cho luật không đích). Đích adapter ⇔ adapter gắn máy trong phạm vi (`_adapterPhamVi.adapterNhinThay`; adapter không gắn máy ⇒ chỉ toàn quyền).
+//     Viết thành MỘT điều kiện SQL từ các tập id (`idsTrongPhamVi(…, { strict: true })`) ⇒ đếm `count(*)` được, áp cả cho `luatLenhLechLuoi` (luật
+//     lệch lưới — R1b-1 I-1 / T1 / T2) qua tham số `them`.
+//   • STOP HMI quá hạn (ruling K7): dòng attempts CÓ adapter ⇒ adapter trong phạm vi; dòng từ chối CẢ lệnh (adapter_id NULL) ⇒ CHỈ khi
+//     `requested_value.daXacMinhPhamVi = true` VÀ máy trong phạm vi (false = machineId là lời client gửi, chưa kiểm ⇒ chỉ toàn quyền thấy);
+//     bộ đếm trong bộ nhớ (`demStopQuaHanKhongGhiSo` — không biết máy) ⇒ chỉ toàn quyền thấy.
+//   • Toàn quyền (admin / `idsTrongPhamVi` = null ở cả ba cấp) ⇒ KHÔNG thêm cổng nào (chiều DƯƠNG chống vá quá tay).
+//   • Không phân giải được phạm vi (strict ném) ⇒ mọi số đếm theo phạm vi `degraded` (0 + cờ) — fail-closed, không đoán "toàn quyền".
+// Cờ (OT / robot / deploy / engine) là cờ TIẾN TRÌNH, không phải dữ liệu nhà máy ⇒ giữ nguyên.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Tập id trong phạm vi người gọi; `null` ở một cấp = toàn quyền ở cấp đó. `adapter` = adapter gắn máy trong phạm vi (`null` ⇔ `may` null). */
+interface PhamViPosture {
+  toanQuyen: boolean;
+  dong: number[] | null;
+  tram: number[] | null;
+  may: number[] | null;
+  adapter: number[] | null;
+}
+
+/** Phạm vi của người gọi (danh tính từ `ctx`). NÉM khi không phân giải được (strict) — bên gọi coi là degraded. */
+async function layPhamViPosture(ctx: CoDanhTinh, d: Db): Promise<PhamViPosture> {
+  const pv = phamViCua(ctx);
+  const [dong, tram, may] = await Promise.all([
+    idsTrongPhamVi("line", pv, { strict: true }),
+    idsTrongPhamVi("station", pv, { strict: true }),
+    idsTrongPhamVi("machine", pv, { strict: true }),
+  ]);
+  const toanQuyen = dong === null && tram === null && may === null;
+  let adapter: number[] | null = null;
+  if (may !== null) {
+    adapter =
+      may.length === 0
+        ? []
+        : (await d.select({ id: deviceAdapters.id }).from(deviceAdapters).where(inArray(deviceAdapters.machineId, may)).orderBy(deviceAdapters.id)).map((r) => r.id);
+  }
+  return { toanQuyen, dong, tram, may, adapter };
+}
+
+/** `col IS NULL OR col IN (ids)` — `[]` / `null`(không toàn quyền) ⇒ `IN (-1)` (0 hàng, KHÔNG phải "không lọc"). */
+function trongTap(col: AnyPgColumn, ids: number[] | null): SQL {
+  return or(isNull(col), inArray(col, ids && ids.length > 0 ? ids : [-1]))!;
+}
+
+/** Điều kiện phạm vi trên `interlock_rules` (ngữ nghĩa `interlockRouter.luatTrongPhamVi`). `undefined` = toàn quyền (không lọc). */
+function dieuKienLuatTrongPhamVi(pv: PhamViPosture): SQL | undefined {
+  if (pv.toanQuyen) return undefined;
+  return and(
+    or(
+      isNotNull(interlockRules.lineId),
+      isNotNull(interlockRules.stationId),
+      isNotNull(interlockRules.machineId),
+      isNotNull(interlockRules.targetMachineId),
+      isNotNull(interlockRules.targetAdapterId),
+    ),
+    trongTap(interlockRules.lineId, pv.dong),
+    trongTap(interlockRules.stationId, pv.tram),
+    trongTap(interlockRules.machineId, pv.may),
+    trongTap(interlockRules.targetMachineId, pv.may),
+    // `luatTrongPhamVi` hỏi `adapterTrongPhamVi` ⇒ máy toàn quyền thì mọi adapter nhìn thấy được
+    pv.adapter === null ? undefined : trongTap(interlockRules.targetAdapterId, pv.adapter),
+  );
+}
+
+/** Điều kiện phạm vi trên `scada_command_attempts` cho dòng STOP quá hạn (xem khối chú thích trên). `undefined` = toàn quyền. */
+function dieuKienStopQuaHanTrongPhamVi(pv: PhamViPosture): SQL | undefined {
+  if (pv.toanQuyen) return undefined;
+  const rv = scadaCommandAttempts.requestedValue;
+  const mayCuaDong = sql`CASE WHEN (${rv}->>'machineId') ~ '^[0-9]{1,9}$' THEN (${rv}->>'machineId')::int END`;
+  const may = pv.may === null ? undefined : inArray(mayCuaDong, pv.may.length > 0 ? pv.may : [-1]);
+  return or(
+    and(isNotNull(scadaCommandAttempts.adapterId), pv.adapter === null ? undefined : inArray(scadaCommandAttempts.adapterId, pv.adapter.length > 0 ? pv.adapter : [-1])),
+    and(isNull(scadaCommandAttempts.adapterId), sql`(${rv}->>'daXacMinhPhamVi') = 'true'`, may),
+  );
+}
+
+/** Cửa sổ đếm STOP quá hạn (24 h — cùng cửa sổ bộ đếm trong bộ nhớ `CUA_SO_DEM_STOP_QUA_HAN_MS`). */
+const CUA_SO_STOP_QUA_HAN_GIO = 24;
+
+export interface StopQuaHanPosture {
+  /** tổng: dòng sổ trong phạm vi + (toàn quyền) bộ đếm trong bộ nhớ */
+  count: number;
+  /** dòng sổ theo `buoc` (dòng có adapter ⇒ "adapter") */
+  theoBuoc: Record<string, number>;
+  /** từ chối KHÔNG ghi được sổ (bộ nhớ tiến trình này, từ `batDauLuc`) — `null` = người gọi không phải toàn quyền (không biết máy ⇒ không lộ) */
+  khongGhiSo: { count: number; theoBuoc: Record<string, number>; batDauLuc: string } | null;
+  degraded: boolean;
+}
+
+/**
+ * R1b-2a T12 (ruling K7) — số STOP HMI bị từ chối vì hạn trước-gửi trong 24 h (`MA_STOP_QUA_HAN` / `dieuKienThuStopQuaHan()` của T4), theo bước.
+ * `pv` null = phạm vi không phân giải được ⇒ degraded. `them` (chỉ test) = điều kiện thêm trên `scada_command_attempts`.
+ */
+async function fetchStopQuaHan(d: Db | null, pv: PhamViPosture | null, them?: SQL): Promise<StopQuaHanPosture> {
+  const hong: StopQuaHanPosture = { count: 0, theoBuoc: {}, khongGhiSo: null, degraded: true };
+  if (!d || !pv) return hong;
+  try {
+    const buoc = sql<string>`CASE WHEN ${scadaCommandAttempts.adapterId} IS NULL THEN coalesce(${scadaCommandAttempts.requestedValue}->>'buoc', 'khong_ro') ELSE 'adapter' END`;
+    const rows = await d
+      .select({ buoc, n: sql<number>`count(*)::int` })
+      .from(scadaCommandAttempts)
+      .where(
+        and(
+          dieuKienThuStopQuaHan(),
+          sql`${scadaCommandAttempts.at} > now() - make_interval(hours => ${CUA_SO_STOP_QUA_HAN_GIO})`,
+          dieuKienStopQuaHanTrongPhamVi(pv),
+          them,
+        ),
+      )
+      .groupBy(sql`1`);
+    const theoBuoc: Record<string, number> = {};
+    let count = 0;
+    for (const r of rows) {
+      theoBuoc[String(r.buoc)] = Number(r.n);
+      count += Number(r.n);
+    }
+    let khongGhiSo: StopQuaHanPosture["khongGhiSo"] = null;
+    if (pv.toanQuyen) {
+      const m = demStopQuaHanKhongGhiSo();
+      khongGhiSo = { count: m.tong, theoBuoc: { ...m.theoBuoc } as Record<string, number>, batDauLuc: m.batDauLuc };
+      count += m.tong;
+    }
+    return { count, theoBuoc, khongGhiSo, degraded: false };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[oversight] posture stop qua han failed:", err instanceof Error ? err.message : err);
+    return hong;
   }
 }
 
@@ -576,10 +723,13 @@ export const oversightRouter = router({
    * trong khi engine interlock đang TẮT: cổng inline (`commandDispatcher`) vẫn
    * chạy, nhưng KHÔNG rule nào được engine tự động đánh giá/nạp lại theo lịch —
    * Hub phải cảnh báo VÀNG rõ ràng thay vì im lặng (ILK-06).
+   *
+   * R1b-2a T12 — MỌI số đếm (độ phủ, luật hỏng cấu hình / lệch lưới, STOP quá hạn 24 h) theo PHẠM VI NHÀ MÁY của người gọi (`ctx`); cờ là cờ
+   * tiến trình (không lọc). Xem khối "PHẠM VI NHÀ MÁY cho `posture`" ở trên.
    */
   posture: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       // Final wave item 5 — KHÔNG parse env ở đây: đọc đúng vị từ của từng cổng thật.
       const otControlEnabled = isOtControlEnabled();
       const robotControlEnabled = isRobotControlEnabled();
@@ -588,8 +738,20 @@ export const oversightRouter = router({
       const interlockAutoBlockEnabled = isInterlockAutoBlockEnabled();
 
       const d = await getDb();
-      const coverage = await fetchInterlockCoverage(d);
-      const cauHinhHong = await fetchInterlockCauHinhHong(d);
+      // R1b-2a T12 — phạm vi nhà máy của người gọi (danh tính từ ctx). Không phân giải được ⇒ mọi số đếm theo phạm vi degraded (fail-closed).
+      let pv: PhamViPosture | null = null;
+      if (d) {
+        try {
+          pv = await layPhamViPosture(ctx, d);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error("[oversight] posture scope unresolved:", err instanceof Error ? err.message : err);        }
+      }
+      const congLuat = pv ? dieuKienLuatTrongPhamVi(pv) : undefined;
+      const coverage = pv ? await fetchInterlockCoverage(d, congLuat) : { count: 0, degraded: true };
+      // gồm luật lệch lưới (luatLenhLechLuoi nhận cùng cổng qua `them`)
+      const cauHinhHong = pv ? await fetchInterlockCauHinhHong(d, congLuat) : { count: 0, degraded: true };
+      const stopQuaHan24h = await fetchStopQuaHan(d, pv);
 
       return {
         otControlEnabled,
@@ -602,6 +764,8 @@ export const oversightRouter = router({
         // SCADA R0 Task 9 — luật bật+duyệt nhưng KHÔNG CHỨC NĂNG (telemetry_tag thiếu machineId/sourceKey): cổng chặn, engine im.
         // R1b-1 rà soát cuối I-1 — + luật bật mà lệnh bảo vệ bị dispatch từ chối (lệch lưới thô, T13).
         interlockRulesCauHinhHong: cauHinhHong.count,
+        // R1b-2a T12 (ruling K7, Q4) — STOP HMI bị từ chối vì hạn trước-gửi trong 24 h (theo phạm vi; bộ nhớ tiến trình chỉ toàn quyền).
+        stopQuaHan24h,
         // ILK-06 — ghi lệnh thật BẬT (OT hoặc robot) mà engine interlock TẮT.
         writesOnEngineOff: (otControlEnabled || robotControlEnabled) && !interlockEngineEnabled,
         generatedAt: new Date().toISOString(),
@@ -624,4 +788,9 @@ export const _internal = {
   fetchInterlockCauHinhHong,
   dieuKienInterlockCauHinhHong,
   canSeeNamesSafe,
+  // R1b-2a T12
+  layPhamViPosture,
+  dieuKienLuatTrongPhamVi,
+  dieuKienStopQuaHanTrongPhamVi,
+  fetchStopQuaHan,
 };

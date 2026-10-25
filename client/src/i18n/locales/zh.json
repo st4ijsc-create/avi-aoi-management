@@ -14272,7 +14272,10 @@
       "ariaLabel": "联锁安全姿态",
       "source": "oversight.posture — 服务器各闸门自身的开关",
       "coverageSource": "oversight.posture — 已启用、已审批、可阻断且有目标的规则数",
-      "writesOnEngineOffChip": "引擎关闭时真实写入"
+      "writesOnEngineOffChip": "引擎关闭时真实写入",
+      "cauHinhHong": "配置损坏",
+      "cauHinhHongSource": "oversight.posture — 您范围内已启用、但闸门会阻断其所有目标命令（缺少机台/来源）或其命令会被 dispatch 拒绝（偏离网格）的规则",
+      "cauHinhHongChip": "配置损坏的规则"
     },
     "matrix": {
       "corner": "原因 ↓ · 结果 →",
@@ -17601,7 +17604,12 @@
       "off": "关",
       "ruleCoverage": "已启用且有目标的规则：{{count}}",
       "coverageUnavailable": "无法读取规则覆盖率",
-      "writesOnEngineOffWarning": "联锁引擎已关闭，但设备真实写入已开启——违规将不会被自动阻断。"
+      "writesOnEngineOffWarning": "联锁引擎已关闭，但设备真实写入已开启——违规将不会被自动阻断。",
+      "cauHinhHong": "已启用但配置损坏的规则：{{count}}",
+      "cauHinhHongCanhBao": "部分已启用的联锁规则无法工作：闸门会阻断所有指向它们的命令，或其保护命令会被 dispatch 拒绝。请在联锁页面修复。",
+      "cauHinhHongMo": "打开联锁规则页",
+      "stopQuaHan": "HMI 停机因超时被拒（24 小时）：{{count}}",
+      "stopQuaHanUnavailable": "无法读取 HMI 停机超时拒绝数"
     },
     "table": {
       "kind": "工作项",

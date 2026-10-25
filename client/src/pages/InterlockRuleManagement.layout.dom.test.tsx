@@ -189,6 +189,7 @@ const POSTURE = {
   otControlEnabled: true, robotControlEnabled: false, dpcDeployEnabled: false, interlockEngineEnabled: false,
   interlockAutoBlockEnabled: false, interlockRulesEnabledWithTarget: 4, interlockCoverageDegraded: false,
   writesOnEngineOff: true, generatedAt: "2026-10-03T00:00:00Z",
+  interlockRulesCauHinhHong: 0, // R1b-2a T12
 };
 
 beforeAll(async () => {
@@ -334,6 +335,34 @@ describe("Interlock P3 — chip tư thế trên header (oversight.posture)", () 
     expect(screen.queryByRole("button", { name: /Ghi thật khi engine TẮT/ })).toBeNull();
   });
 
+  it("★ R1b-2a T12 — chip ghim 'Hỏng cấu hình' = interlockRulesCauHinhHong (2, tông cảnh báo) + một mục NoticeStack kind error", async () => {
+    srv.posture = { data: { ...POSTURE, writesOnEngineOff: false, interlockRulesCauHinhHong: 2 }, isError: false };
+    render(<InterlockRuleManagement />);
+    const header = screen.getByRole("heading", { level: 1 }).closest("[data-layout-header]") as HTMLElement;
+    const c = chip("cauHinhHong");
+    expect(header.contains(c)).toBe(true);
+    expect(c).toHaveTextContent("Hỏng cấu hình");
+    expect(c).toHaveTextContent("2");
+    expect(c.getAttribute("data-state")).toBe("ok");
+    expect(c.querySelector(".text-warning")).toBeTruthy();
+    await userEvent.click(within(header).getByRole("button", { name: /Luật hỏng cấu hình/ }));
+    expect(await screen.findByText(/KHÔNG chức năng/)).toBeTruthy();
+  });
+
+  it("T12 — 0 luật hỏng ⇒ chip '0' tông thường, KHÔNG mục NoticeStack; độ phủ degraded ⇒ chip lỗi, không '2', không mục", () => {
+    srv.posture = { data: { ...POSTURE, writesOnEngineOff: false, interlockRulesCauHinhHong: 0 }, isError: false };
+    render(<InterlockRuleManagement />);
+    expect(chip("cauHinhHong")).toHaveTextContent("0");
+    expect(chip("cauHinhHong").querySelector(".text-warning")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Luật hỏng cấu hình/ })).toBeNull();
+    cleanup();
+    srv.posture = { data: { ...POSTURE, writesOnEngineOff: false, interlockCoverageDegraded: true, interlockRulesCauHinhHong: 2 }, isError: false };
+    render(<InterlockRuleManagement />);
+    expect(chip("cauHinhHong").getAttribute("data-state")).toBe("error");
+    expect(chip("cauHinhHong")).not.toHaveTextContent("2");
+    expect(screen.queryByRole("button", { name: /Luật hỏng cấu hình/ })).toBeNull();
+  });
+
   // doc 81 Đợt 3b final wave (I1): ở 768/1024 px header GỘP — trước: "chip+3" xám, tư thế engine/OT im lặng (Engine TẮT có tông
   // default). Nay ba chip tư thế GHIM (R-2-p) ⇒ luôn hiện; chỉ "Khi nào dùng" vào "+1"; cảnh báo ILK-06 (lỗi) vẫn hiện.
   it("header HẸP (gộp) ⇒ engine / OT / độ phủ VẪN hiện thẳng (ghim), không vào '+N'; 'Khi nào dùng' vào '+1'", () => {
@@ -343,7 +372,8 @@ describe("Interlock P3 — chip tư thế trên header (oversight.posture)", () 
       const header = screen.getByRole("heading", { level: 1 }).closest("[data-layout-header]") as HTMLElement;
       expect(header.getAttribute("data-header-fit")).not.toBeNull();
       const strip = header.querySelector("[data-status-chip-strip]") as HTMLElement;
-      expect(Array.from(strip.querySelectorAll(":scope > [data-chip-id]")).map((x) => x.getAttribute("data-chip-id"))).toEqual(["engine", "ot", "coverage"]);
+      // R1b-2a T12 — + chip ghim "Hỏng cấu hình" cạnh "Độ phủ"
+      expect(Array.from(strip.querySelectorAll(":scope > [data-chip-id]")).map((x) => x.getAttribute("data-chip-id"))).toEqual(["engine", "ot", "coverage", "cauHinhHong"]);
       expect(strip.querySelector("[data-chip-more]")).toBeNull();
       expect(within(header).getByRole("button", { name: /Ghi thật khi engine TẮT/ })).toBeTruthy();
       const more = header.querySelector("[data-notice-stack] [data-notice-more]") as HTMLElement;
