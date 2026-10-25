@@ -297,7 +297,10 @@ describe("★★★ aiAdvancedVision.explainHeatmap — ảnh theo imageKey", ()
     expect(await loi(() => cA.av.explainHeatmap({ imageKey: "khong-ton-tai-" + RUN + ".png" }))).toBe("NOT_FOUND:ENTITY_NOT_FOUND:image");
     expect(await loi(() => cA.av.explainHeatmap({ imageKey: RUN + "imA.png" }))).not.toBe("NOT_FOUND:ENTITY_NOT_FOUND:image");
     // ảnh tạm hợp lệ (tệp phẳng tmp_<ts>_<rand>.<ext>) qua cổng; mọi dạng traversal / mã hoá ≡ không tồn tại (lỗ "temp/../ảnh nhà máy B")
-    expect(await loi(() => cA.av.explainHeatmap({ imageKey: "temp/tmp_123_abc.png" }))).not.toBe("NOT_FOUND:ENTITY_NOT_FOUND:image");
+    // 2026-10-25 (dieu-phoi): ảnh tạm theo CHỦ — temp/u<id>/…; của người khác hoặc khoá phẳng kiểu cũ (không biết chủ) ≡ không tồn tại
+    expect(await loi(() => cA.av.explainHeatmap({ imageKey: `temp/u${H.uA.id}/tmp_123_abc.png` }))).not.toBe("NOT_FOUND:ENTITY_NOT_FOUND:image");
+    expect(await loi(() => cA.av.explainHeatmap({ imageKey: `temp/u${H.uA.id + 1}/tmp_123_abc.png` }))).toBe("NOT_FOUND:ENTITY_NOT_FOUND:image");
+    expect(await loi(() => cA.av.explainHeatmap({ imageKey: "temp/tmp_123_abc.png" }))).toBe("NOT_FOUND:ENTITY_NOT_FOUND:image");
     for (const k of ["temp/../" + RUN + "imB.png", "temp/%2e%2e/" + RUN + "imB.png", "temp" + String.fromCharCode(92) + ".." + String.fromCharCode(92) + RUN + "imB.png", "uploads/temp/../" + RUN + "imB.png", "/temp/../" + RUN + "imB.png", "temp//tmp_1_a.png", "temp/sub/tmp_1_a.png", "temp/khong-co-" + RUN + ".png", "temp/" + String.fromCharCode(0) + "x"]) {
       expect(await loi(() => cA.av.explainHeatmap({ imageKey: k })), k).toBe("NOT_FOUND:ENTITY_NOT_FOUND:image");
     }
