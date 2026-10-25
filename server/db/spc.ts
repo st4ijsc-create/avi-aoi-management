@@ -190,6 +190,57 @@ export async function getMeasurementValuesForSPC(filters: {
 }
 
 /**
+ * LÔ nhiều điểm đo trong MỘT truy vấn — cùng ngữ nghĩa với {@link getMeasurementValuesForSPC} cho từng điểm (giá trị đo không NULL, `inspectionTime >= startDate`, sắp theo thời gian TĂNG,
+ * lấy tối đa `limitPerPoint` dòng ĐẦU của mỗi điểm), nhưng một vòng `row_number() OVER (PARTITION BY pointDefId …)` thay cho N truy vấn (cpkSnapshotScheduler: ~1 500 điểm × ~0,33 s ⇒ ~8 phút).
+ * Đồng hạng thời gian được phá bằng (inspectionId, id) ⇒ thứ tự TẤT ĐỊNH. Điểm không có dòng nào KHÔNG xuất hiện trong Map. Cùng cổng phạm vi `scope` như hàm đơn.
+ */
+export async function getMeasurementValuesForSPCBatch(
+  pointDefIds: number[],
+  filters: { startDate?: Date; endDate?: Date; limitPerPoint: number },
+  scope?: PhamViNguoiXem,
+): Promise<Map<number, Array<{ value: string | null; inspectionTime: Date; inspectionId: number; result: string }>>> {
+  const out = new Map<number, Array<{ value: string | null; inspectionTime: Date; inspectionId: number; result: string }>>();
+  if (pointDefIds.length === 0) return out;
+  const db = await getDb();
+  if (!db) return out;
+
+  const conditions: SQL[] = [inArray(measurementResults.pointDefId, pointDefIds), isNotNull(measurementResults.measuredValue)];
+  {
+    const cong = await congSoDo(scope);
+    if (cong) conditions.push(cong);
+  }
+  if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+
+  const dong = db
+    .select({
+      pid: measurementResults.pointDefId,
+      value: measurementResults.measuredValue,
+      inspectionTime: productInspections.inspectionTime,
+      inspectionId: measurementResults.inspectionId,
+      result: measurementResults.result,
+      rn: sql<number>`row_number() over (partition by ${measurementResults.pointDefId} order by ${productInspections.inspectionTime} asc, ${measurementResults.inspectionId} asc, ${measurementResults.id} asc)`.as("rn"),
+    })
+    .from(measurementResults)
+    .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+    .where(and(...conditions))
+    .as("dong");
+
+  const rows = await db
+    .select({ pid: dong.pid, value: dong.value, inspectionTime: dong.inspectionTime, inspectionId: dong.inspectionId, result: dong.result })
+    .from(dong)
+    .where(lte(dong.rn, filters.limitPerPoint))
+    .orderBy(asc(dong.pid), asc(dong.rn));
+
+  for (const r of rows) {
+    const mang = out.get(r.pid) ?? [];
+    mang.push({ value: r.value, inspectionTime: r.inspectionTime, inspectionId: r.inspectionId, result: r.result });
+    out.set(r.pid, mang);
+  }
+  return out;
+}
+
+/**
  * Fetch ordered measurement values + spec limits for one measurement point,
  * supporting productModelId filtering (used by spc.fullAnalysis). Also returns
  * the per-result OK/NG flag so DPMO/yield can be computed.
