@@ -168,7 +168,11 @@ async function goiMotLan(tenMay: string, may: MayChuMcp, tool: string, doiSo: Re
     return gonKetQuaTool(kq, tool);
   } catch (e) {
     // Hết giờ có thể hiện ra ở bất kỳ bước nào (kể cả đang đọc thân phản hồi, khi lỗi là 'aborted' chung) ⇒ nhìn vào TÍN HIỆU, không đoán theo tên lỗi.
-    if (tinHieu.aborted || (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError"))) throw new LoiMcp(`MCP quá hạn (${Math.round(Math.min(TRAN_MS_MCP, msToiDa) / 1000)} giây cho lời gọi này) — dừng chờ`, "MCP_HET_GIO");
+    if (tinHieu.aborted || (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError"))) {
+      // Yếu tố cắt là HẠN TỔNG (phần còn lại < trần 30 s của một lời gọi) ⇒ mã riêng + nêu mili-giây còn lại, không nói "0 giây".
+    if (msToiDa < TRAN_MS_MCP) throw new LoiMcp(`MCP vượt HẠN TỔNG của lượt-node (còn ${Math.max(0, Math.round(msToiDa))} ms khi bắt đầu lời gọi này) — dừng chờ`, "MCP_HET_GIO_TONG");
+    throw new LoiMcp(`MCP quá hạn (${TRAN_MS_MCP / 1000} giây cho một lời gọi) — dừng chờ`, "MCP_HET_GIO");
+    }
     throw e;
   }
 }
