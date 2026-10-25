@@ -26,7 +26,10 @@ process.env.APPDATA = path.join(TMP, "appdata");
 process.env.LOCALAPPDATA = path.join(TMP, "localappdata");
 process.env.XDG_CONFIG_HOME = path.join(TMP, "xdg");
 process.env.OPCUA_PKI_DIR = path.join(TMP, "client-pki");
-process.env.SAFETY_PLC_POLL_READ_TIMEOUT_MS = "10000";
+// Thời hạn ĐỌC của riêng test: ngân sách THIẾT LẬP subscription của dịch vụ = 0,9 × giá trị này ÷ 2 (safetyPlcOpcuaSubscription.readBatch). Với 10 000 ms ngân sách chỉ 4,5 s cho
+// connect + phiên + tạo subscription + giá trị đầu của MỘT server OPC-UA chạy CÙNG tiến trình — dưới tải của lưới trọn (hàng nghìn tệp song song) có lúc vượt ⇒ dịch vụ (đúng thiết kế, an toàn)
+// rơi về "poll_fallback" và ca đòi "subscription" đỏ. Hành vi/thời hạn rơi-về-polling CỦA DỊCH VỤ KHÔNG đổi; test chỉ cho nó dư địa (27 s) để thiết lập xong.
+process.env.SAFETY_PLC_POLL_READ_TIMEOUT_MS = "60000";
 process.env.OAUTH_SERVER_URL ??= "http://127.0.0.1:9/oauth-unused";
 
 import type { SafetyPlcConfig } from "../../../../drizzle/schema";
@@ -176,9 +179,10 @@ describe("Đợt 9 U1 — background poller ⇄ in-process OPC-UA server through
       A.vals.ESTOP = false;
       A.vals.GUARD_OK = true;
       await withTimeout(p.refreshConfigs(), 60_000, "refresh");
-      await withTimeout(p.pollNow(c.id), 30_000, "poll 1"); // subscribes; initial values ⇒ online silently
+      await withTimeout(p.pollNow(c.id), 60_000, "poll 1"); // subscribes; initial values ⇒ online silently
       expect(recs).toEqual([]);
-      expect(p.snapshot()[0].readMode).toBe("subscription");
+      // thông điệp chẩn đoán: nếu lại rơi về poll_fallback thì in ngay lần đọc cuối (lỗi thiết lập nằm ở đó) thay vì chỉ "expected 'poll_fallback'"
+      expect(p.snapshot()[0].readMode, `snapshot=${JSON.stringify(p.snapshot()[0]).slice(0, 600)}`).toBe("subscription");
       // the server holds 2 queued items: discardOldest false, queue > 1, fast sampling
       const items = serverItems(A);
       expect(items).toHaveLength(2);
@@ -213,7 +217,8 @@ describe("Đợt 9 U1 — background poller ⇄ in-process OPC-UA server through
     await import("../../ot");
     const c = cfg(A, 99);
     let reads = 0;
-    const b = new OpcuaSubscriptionSafetyPlcBackend(c.endpoint!, c.statusMap as never, 8000, {
+    // 60 000 ms (không phải 8 000): ngân sách thiết lập subscription = 0,9 × thời hạn ÷ 2 — 3,6 s là quá chặt dưới tải lưới trọn (xem ghi chú ở đầu tệp); dịch vụ không đổi.
+    const b = new OpcuaSubscriptionSafetyPlcBackend(c.endpoint!, c.statusMap as never, 60_000, {
       intervalMs: 1000,
       createDriver: () => {
         const d = createDriver("opcua") as unknown as { readTags: (t: unknown[]) => Promise<unknown[]> };
@@ -225,7 +230,8 @@ describe("Đợt 9 U1 — background poller ⇄ in-process OPC-UA server through
     try {
       A.vals.ESTOP = false;
       A.vals.GUARD_OK = true;
-      expect((await withTimeout(b.readBatch(), 30_000, "batch 1")).mode).toBe("subscription");
+      const lan1 = await withTimeout(b.readBatch(), 60_000, "batch 1");
+      expect(lan1.mode, `modeReason=${(lan1 as { modeReason?: string }).modeReason ?? "(none)"} reads=${JSON.stringify(lan1.reads).slice(0, 300)}`).toBe("subscription");
       await sleep(SAFETY_PLC_OPCUA_VERIFY_MS + 300);
       const r = await withTimeout(b.readBatch(), 30_000, "batch 2");
       expect(reads).toBe(1);
