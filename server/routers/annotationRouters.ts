@@ -856,7 +856,7 @@ Respond in JSON format with an array of findings.`
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotation' }, 'Annotation not found');
       }
       if (existing[0].createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotation' }, 'Annotation not found');
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'deleteAnnotation' }, 'Not authorized to delete this annotation');
       }
       await db.execute(sql`DELETE FROM image_annotations WHERE id = ${input.id}`);
       return { success: true };
