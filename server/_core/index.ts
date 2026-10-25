@@ -67,7 +67,7 @@ import { uyQuyenDuongDanAnh } from "../routes/_uyQuyenAnh";
 import logger, { installConsoleBridge } from "../logger";
 import { correlationRequestMiddleware } from "./correlationMiddleware";
 import { livenessProbe, createHealthHandler, createReadyzHandler, createNetworkHealthHandler } from "./healthProbes";
-import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, credentialConflictGuard, OT_INGEST_PATHS } from "./rateLimitConfig";
+import { createApiLimiter, createAuthLimiter, createHmiStopLimiter, createMachineIngestLimiter, createOtIngestLimiter, credentialConflictGuard, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
 import { assertVramEnforcementPolicy } from "../services/vram/vramBroker";
 import { khoiChayDongBoLuaChonModel } from "../services/ai/luaChonModelLlamaServer";
@@ -379,6 +379,13 @@ async function startServer() {
   // general /api limiter, which `skip`s these exact paths (OT_INGEST_PATHS). Tune via OT_INGEST_RATE_MAX.
   const otIngestLimiter = createOtIngestLimiter();
   app.use([...OT_INGEST_PATHS], otIngestLimiter);
+  // SCADA R1b-2a T3 — DEDICATED HMI STOP tier: a non-batched POST scadaCommands.dungMay with a signed session ticket is counted HERE
+  // (600 / min per person, TRAN_STOP_HMI_MOI_PHUT) and skipped by apiLimiter; every other request is skipped here and counted by
+  // apiLimiter — exactly one tier counts each request. On '/trpc/' it is a skip today (the STOP classifier matches /api/trpc only);
+  // it is mounted there so the pair stays symmetric with apiLimiter.
+  const hmiStopLimiter = createHmiStopLimiter();
+  app.use('/api/', hmiStopLimiter);
+  app.use('/trpc/', hmiStopLimiter);
   app.use('/api/', apiLimiter);
   app.use('/trpc/', apiLimiter);
 

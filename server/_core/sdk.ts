@@ -420,9 +420,17 @@ class SDKServer {
       .sign(secretKey);
   }
 
+  /**
+   * Stateless check of a session ticket (HS256 signature + expiry + required fields) — no DB, no ledger.
+   * `tuyChon.imLang` (R1b-2a T3, kiem-dinh N-2): no `console.warn` on either refusal branch. ONLY for callers that use the result as a
+   * RATE-LIMIT key (`trpcGioiHanThuTuc.phienKyHopLe`), where every junk cookie of a flood would otherwise print one line. The real
+   * authentication path (`authenticateRequest`) and robotStopAuth keep the default (logged).
+   */
   async verifySession(
-    cookieValue: string | undefined | null
+    cookieValue: string | undefined | null,
+    tuyChon?: { imLang?: boolean }
   ): Promise<{ openId: string; appId: string; name: string } | null> {
+    const imLang = tuyChon?.imLang === true;
     if (!cookieValue) {
       // This is normal for unauthenticated requests - no need to warn
       return null;
@@ -440,7 +448,7 @@ class SDKServer {
         !isNonEmptyString(appId) ||
         !isNonEmptyString(name)
       ) {
-        console.warn("[Auth] Session payload missing required fields");
+        if (!imLang) console.warn("[Auth] Session payload missing required fields");
         return null;
       }
 
@@ -450,7 +458,7 @@ class SDKServer {
         name,
       };
     } catch (error) {
-      console.warn("[Auth] Session verification failed", String(error));
+      if (!imLang) console.warn("[Auth] Session verification failed", String(error));
       return null;
     }
   }

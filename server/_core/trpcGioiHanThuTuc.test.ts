@@ -3,7 +3,14 @@
  * Census trên appRouter THẬT: `trpcGioiHanThuTuc.census.test.ts`.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+vi.hoisted(() => {
+  // R1b-2a T3: `phienKyHopLe` dùng verifier THẬT (sdk.verifySession) — cần khoá ký phiên
+  process.env.JWT_SECRET ||= "trpc-gioi-han-thu-tuc-unit-secret-r1b2a-t3";
+  process.env.VITE_APP_ID ||= "avi-aoi-management";
+});
 import express from "express";
+import { SignJWT } from "jose";
+import { COOKIE_NAME } from "@shared/const";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { MemoryStore, type Options, type Store } from "express-rate-limit";
@@ -15,6 +22,7 @@ import {
   NHOM_THU_TUC_NHAY_CAM,
   layTapThuTucStepUp,
   phanNhomThuTuc,
+  phienKyHopLe,
   trpcGioiHanThuTucMiddleware,
   type CauHinhNhom,
   type NhomNhayCam,
@@ -239,6 +247,54 @@ describe("trpcGioiHanThuTucMiddleware — đếm từng thủ tục trong batch"
     } finally {
       storeLoi = false;
       canh.mockRestore();
+    }
+  });
+});
+
+/**
+ * R1b-2a T3 (kiem-dinh N-2) — `phienKyHopLe` chỉ phục vụ GIỚI HẠN TỐC ĐỘ (khoá đếm theo người của middleware này + tầng STOP HMI của
+ * rateLimitConfig). Nó kiểm chữ ký IM LẶNG (`sdk.verifySession(token, { imLang: true })`): một trận cookie rác không thành một trận log
+ * "[Auth] Session verification failed". Đường xác thực thật (createContext → authenticateRequest) vẫn log như cũ — xem
+ * rateLimitConfig.hmiStop.db.test.ts.
+ */
+describe("phienKyHopLe — kiểm chữ ký IM LẶNG (N-2), chữ ký không đổi", () => {
+  const req = (cookie?: string) => ({ headers: cookie ? { cookie } : {} });
+  it("★★★ 200 cookie rác / sai chữ ký / hết hạn / thiếu trường ⇒ null, 0 dòng '[Auth]'; đối chứng: gọi verifier mặc định thì CÓ log", async () => {
+    const { sdk } = await import("./sdk");
+    const sai = await new SignJWT({ openId: "x", appId: "a", name: "n" })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setExpirationTime(Math.floor(Date.now() / 1000) + 3600)
+      .sign(new TextEncoder().encode("khoa-khac-han-r1b2a-t3"));
+    const thieu = await new SignJWT({ openId: "x", appId: "a" })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setExpirationTime(Math.floor(Date.now() / 1000) + 3600)
+      .sign(new TextEncoder().encode(process.env.JWT_SECRET!));
+    const hetHan = await sdk.signSession({ openId: "x", appId: "a", name: "n" }, { expiresInMs: -60_000 });
+    const canh = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      for (let i = 0; i < 200; i++) expect(await phienKyHopLe(req(`${COOKIE_NAME}=rac${i}`))).toBeNull();
+      for (const t of [sai, thieu, hetHan]) expect(await phienKyHopLe(req(`${COOKIE_NAME}=${encodeURIComponent(t)}`))).toBeNull();
+      expect(canh.mock.calls.filter((c) => String(c[0]).startsWith("[Auth]"))).toHaveLength(0);
+      await sdk.verifySession("rac-doi-chung");
+      expect(canh.mock.calls.filter((c) => String(c[0]).includes("Session verification failed"))).toHaveLength(1);
+    } finally {
+      canh.mockRestore();
+    }
+  });
+
+  it("vé ký hợp lệ ⇒ { openId } (không thêm trường nào); verifier được gọi với { imLang: true }; không cookie ⇒ null, không gọi verifier", async () => {
+    const { sdk } = await import("./sdk");
+    const t = await sdk.signSession({ openId: "r1b2a-t3-nguoi", appId: "a", name: "n" });
+    const spy = vi.spyOn(sdk, "verifySession");
+    try {
+      expect(await phienKyHopLe(req(`foo=bar; ${COOKIE_NAME}=${encodeURIComponent(t)}`))).toEqual({ openId: "r1b2a-t3-nguoi" });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith(t, { imLang: true });
+      expect(await phienKyHopLe(req())).toBeNull();
+      expect(await phienKyHopLe(req("foo=bar"))).toBeNull();
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
     }
   });
 });
