@@ -10,6 +10,7 @@ import "./ot";
 import "./soLieu";
 import "./thongBao";
 import "./traTriThuc";
+import "./baoTri";
 import "../kichHoat/lich";
 import "../kichHoat/webhook";
 import "../kichHoat/mcp";

@@ -1,0 +1,42 @@
+{
+  "id": "mau-phieu-bao-tri-phan-loai",
+  "name": "Phiếu bảo trì → phân loại → tạo việc",
+  "version": 1,
+  "settings": { "uuTien": "background", "luuDuLieu": "day-du" },
+  "nodes": [
+    {
+      "id": "su-kien",
+      "type": "kich-hoat.su-kien",
+      "typeVersion": 1,
+      "name": "Máy dừng (vận hành viên nhập lý do)",
+      "position": [0, 0],
+      "parameters": { "suKien": "downtime.start", "bat": false, "cuaSoPhut": 10, "tranMoiGio": 10 }
+    },
+    {
+      "id": "phan-loai",
+      "type": "ai.phan-loai",
+      "typeVersion": 1,
+      "name": "Phân loại nhóm xử lý",
+      "position": [260, 0],
+      "parameters": {
+        "vaiTro": "classify",
+        "vanBan": "{{ $json.lyDo }}",
+        "nhan": ["dien", "co-khi", "plc-phan-mem", "vat-tu-khac"],
+        "huongDan": "dien = nguồn, cầu chì, aptomat, relay, contactor, biến tần, động cơ, dây dẫn, mất điện/pha, chập cháy. co-khi = băng tải, dây curoa, vòng bi, xi lanh khí nén, kẹp, ray trượt, bánh răng, giác hút, ốc lỏng, mòn/kẹt/rơ/rung. plc-phan-mem = PLC, HMI, phần mềm, chương trình, giao tiếp/kết nối mạng, camera/driver, cấu hình, dữ liệu, mã vạch, cảm biến báo sai trong chương trình. vat-tu-khac = hết/thiếu vật tư, vệ sinh, bảo dưỡng định kỳ, hiệu chuẩn, cấp phát, không rõ nguyên nhân.",
+        "truongRa": "nhan"
+      }
+    },
+    {
+      "id": "tao-phieu",
+      "type": "bao-tri.tao-phieu",
+      "typeVersion": 1,
+      "name": "Tạo phiếu bảo trì đúng nhóm",
+      "position": [520, 0],
+      "parameters": { "may": "{{ $json.idMay }}", "tieuDe": "{{ $json.lyDo }}", "moTa": "Loại dừng: {{ $json.loaiDung }}", "nhom": "{{ $json.nhan }}", "uuTien": 3, "loai": "CORRECTIVE", "truongRa": "phieu" }
+    }
+  ],
+  "connections": [
+    { "from": { "node": "su-kien", "port": "main" }, "to": { "node": "phan-loai", "port": "main" } },
+    { "from": { "node": "phan-loai", "port": "main" }, "to": { "node": "tao-phieu", "port": "main" } }
+  ]
+}

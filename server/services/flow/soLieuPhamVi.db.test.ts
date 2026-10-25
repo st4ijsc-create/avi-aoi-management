@@ -367,6 +367,24 @@ describe("mẫu 'Báo cáo ca có số liệu thật' — đầu-cuối ×3 vớ
   });
 });
 
+describe("mẫu 'Báo cáo ca số liệu thuần' (không AI) — nội dung thông báo là SỐ THẬT", () => {
+  it("lịch ⇒ 2 truy vấn ⇒ thông báo: noiDung nêu đúng 3 lần kiểm, NG 2 (66.67 %) và 1 máy của nhà máy A; không có số nhà máy B", async () => {
+    const mau = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "mau", "bao-cao-ca-so-lieu-thuan.json"), "utf8"));
+    mau.id = `${TT}-thuan`;
+    mau.settings = { ...mau.settings, maxConcurrentRuns: 100 };
+    mau.nodes.find((n: { id: string }) => n.id === "thong-bao").parameters.nguoiNhan = [u.nhanA];
+    await luuPhienBan(mau, u.admin, ids.facA);
+    const noiDung: string[] = [];
+    __datHamGuiThongBaoChoTest(async (_id, p) => {
+      noiDung.push(String(p.message));
+      return { id: 1 };
+    });
+    const r = await chay(mau.id, u.nhieu);
+    expect(r.status).toBe("xong");
+    expect(noiDung).toEqual(["Sản lượng 12 giờ: 3 lần kiểm, NG 2 (66.67 %). Máy trong phạm vi: 1."]);
+  });
+});
+
 // (d) ĐO SỐNG — chỉ chạy khi LUONG_LIVE=1 (cần khe :8091 do do-model cấp). Model THẬT, không AI giả: mẫu báo cáo ca ×3, đo thời gian + nội dung.
 const tokenLlama = async (): Promise<number | null> => {
   try {

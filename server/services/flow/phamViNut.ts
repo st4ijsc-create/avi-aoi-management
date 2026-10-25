@@ -15,6 +15,7 @@ export const KHOA_PHAM_VI_NUT: Readonly<Record<string, LuatPhamViNut>> = {
   "ot.de-xuat-lenh": { kieu: "loc", phamVi: "máy qua BoKiemPhamVi.may + aiControlGate" },
   "ot.de-xuat-luong": { kieu: "loc", phamVi: "FOE workflow qua luongFoeTrongPhamVi của chủ lượt + aiControlGate" },
   "luong.goi-con": { kieu: "loc", phamVi: "luồng con qua BoKiemPhamVi.luong của chủ lượt" },
+  "bao-tri.tao-phieu": { kieu: "loc", phamVi: "máy qua BoKiemPhamVi.may của chủ lượt + máy thuộc nhà máy của luồng + checkPermission(machine_monitoring/canCreate) của chủ lượt; ghi qua ghiPhieuBaoTri" },
   "ai.tra-tri-thuc": { kieu: "loc", phamVi: "kho tri thức hãng / Studio, không có dữ liệu nhà máy; trục lọc = VAI chủ lượt lúc chạy (canAccessStudioCorpus, fail-closed)" },
   "ai.agent": { kieu: "loc", phamVi: "tool = luồng con qua BoKiemPhamVi.luong; tra_tai_lieu dùng KB hiện có" },
   // ── không chạm dữ liệu nhà máy
