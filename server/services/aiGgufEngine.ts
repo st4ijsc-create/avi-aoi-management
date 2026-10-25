@@ -187,6 +187,8 @@ export class LoiAnhKhongHoTro extends Error {
 
 export interface GgufChatOptions {
   messages: GgufChatMessage[];
+  /** Xin logprobs (top-N) của vài token đầu — CHỈ đường llama-server; in-process bỏ qua ⇒ `GgufGenerateResult.logprobsDau` vắng. */
+  topLogprobs?: number;
   maxTokens?: number;
   temperature?: number;
   topP?: number;
@@ -268,6 +270,8 @@ export interface GgufGenerateResult {
   totalTimeMs: number;
   tokensPerSecond: number;
   modelId: string;
+  /** Logprob của ≤ 8 token đầu (khi `topLogprobs` được xin VÀ server trả). Vắng = không có — KHÔNG phải "không chắc". */
+  logprobsDau?: import("./ai/logprobDau").LogprobToken[];
   /**
    * ★★★ G2-B — các lượt gọi tool model TỰ QUYẾT ĐỊNH phát ra. `undefined` = lượt này không có
    * tool-call. ⚠ **KHÔNG BAO GIỜ gán `[]` cho một đường chưa hỗ trợ** — đó chính là lời nói dối

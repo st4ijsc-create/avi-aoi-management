@@ -30,9 +30,9 @@
       "id": "kiem-nhan",
       "type": "logic.chon",
       "typeVersion": 1,
-      "name": "Nhãn hợp lệ? (ai.phan-loai CHƯA trả độ tin cậy — chỉ kiểm nhãn, không kiểm độ chắc)",
+      "name": "Nhãn hợp lệ VÀ AI đủ chắc? (ngưỡng 0,7 — TẠM: đo trên 48 phiếu, chỉ 1 mẫu sai; thiếu độ tin cậy ⇒ người duyệt)",
       "position": [520, 0],
-      "parameters": { "giaTri": "{{ $json.nhan }}", "nhanh": [{ "so": "in", "dich": ["dien", "co-khi", "plc-phan-mem", "vat-tu-khac"] }] }
+      "parameters": { "giaTri": "{{ $json.tinCay != null && $json.tinCay >= 0.7 ? $json.nhan : \"khac\" }}", "nhanh": [{ "so": "in", "dich": ["dien", "co-khi", "plc-phan-mem", "vat-tu-khac"] }] }
     },
     {
       "id": "tao-phieu",
@@ -48,7 +48,7 @@
       "typeVersion": 1,
       "name": "Người xác nhận khi AI không xếp được nhóm",
       "position": [780, 100],
-      "parameters": { "tieuDe": "Phiếu bảo trì cần xác nhận nhóm", "noiDung": "Lý do dừng máy: {{ $json.lyDo }} — AI không xếp được vào nhóm nào (nhãn: {{ $json.nhan }}). Đồng ý = tạo phiếu nhóm Vật tư/Khác.", "vaiTroDuyet": "supervisor", "hetHanGio": 24 }
+      "parameters": { "tieuDe": "Phiếu bảo trì cần xác nhận nhóm", "noiDung": "Lý do dừng máy: {{ $json.lyDo }} — AI không xếp được hoặc không đủ chắc (nhãn: {{ $json.nhan }}, độ tin cậy: {{ $json.tinCay }}). Đồng ý = tạo phiếu nhóm Vật tư/Khác.", "vaiTroDuyet": "supervisor", "hetHanGio": 24 }
     },
     {
       "id": "tao-phieu-duyet",
