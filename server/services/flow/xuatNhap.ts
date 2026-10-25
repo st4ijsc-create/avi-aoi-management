@@ -17,7 +17,7 @@ export const DINH_DANG_GOI = "luong-ai/1";
 export const TRAN_BYTE_GOI = 256 * 1024;
 export const TRAN_NODE_GOI = 100;
 
-export type LoaiViec = ThamSoNhaMay["viec"] | "bi-mat" | "luong-loi";
+export type LoaiViec = ThamSoNhaMay["viec"] | "bi-mat" | "luong-loi" | "http-bi-mat" | "affinity";
 export interface ViecPhaiDien {
   nodeId: string;
   truong: string;
@@ -38,6 +38,110 @@ export function jsonOnDinh(v: unknown): string {
 }
 export const bamLuong = (luong: unknown): string => createHash("sha256").update(jsonOnDinh(luong), "utf8").digest("hex");
 
+// ── bí mật GÕ TAY trong tham số HTTP (kiem-dinh F1) ─────────────────────────────────────────────
+
+/** Tên khoá / tiêu đề trông như bí mật (tiếng Anh + tiếng Việt không dấu: mat_khau, bi_mat, khoa_api, xac_thuc). */
+export const RE_TEN_BI_MAT = /key|token|secret|passw|auth|bearer|cookie|mat[_ -]?khau|bi[_ -]?mat|khoa[_ -]?(bi|api)|xac[_ -]?thuc/i;
+/** Tiêu đề HTTP vô hại được giữ lại khi xuất; mọi tiêu đề khác bị xoá (bí mật phải đi qua credentialRef). */
+export const TIEU_DE_VO_HAI: ReadonlySet<string> = new Set(["accept", "content-type", "accept-language", "user-agent"]);
+const LOAI_HTTP = new Set(["tich-hop.http-doc", "tich-hop.http-gui"]);
+
+/** Vị trí dấu hỏi / dấu thăng đầu tiên NGOÀI biểu thức {{ … }} (dấu ? của biểu thức ba ngôi không phải chuỗi truy vấn). */
+function viTriTruyVan(u: string): number {
+  let sau = 0;
+  for (let i = 0; i < u.length; i++) {
+    if (u.startsWith("{{", i)) {
+      const d = u.indexOf("}}", i + 2);
+      if (d < 0) return -1;
+      i = d + 1;
+      continue;
+    }
+    if (u[i] === "?" || u[i] === "#") return i;
+    sau = i;
+  }
+  void sau;
+  return -1;
+}
+
+/** url: bỏ chuỗi truy vấn + fragment + userinfo (user:pass@) — giữ scheme + host + đường. doi = có thay đổi. */
+export function lamSachUrl(u: string): { url: string; doi: boolean } {
+  let url = u;
+  const i = viTriTruyVan(url);
+  if (i >= 0) url = url.slice(0, i);
+  url = url.replace(/^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^/@\s]*@/, "$1");
+  return { url, doi: url !== u };
+}
+
+/** Giá trị bí mật dạng chuỗi trong thân: key=abc, "password": "x", token: abc. Thay giá trị bằng rỗng. */
+const RE_CAP_BI_MAT = /((?:key|token|secret|passw\w*|auth\w*|bearer|cookie)\w*["']?\s*[:=]\s*["']?)([^&\s"',}]+)/gi;
+
+function lamSachThan(v: unknown): { v: unknown; doi: boolean } {
+  let doi = false;
+  const di = (x: unknown): unknown => {
+    if (Array.isArray(x)) return x.map(di);
+    if (x && typeof x === "object") {
+      const ra: Record<string, unknown> = {};
+      for (const [k, g] of Object.entries(x as Record<string, unknown>)) {
+        if (RE_TEN_BI_MAT.test(k)) {
+          if (g !== "" && g !== null && g !== undefined) doi = true;
+          ra[k] = "";
+        } else ra[k] = di(g);
+      }
+      return ra;
+    }
+    if (typeof x === "string") {
+      const moi = x.replace(RE_CAP_BI_MAT, (_m, a: string) => a);
+      if (moi !== x) doi = true;
+      return moi;
+    }
+    return x;
+  };
+  return { v: di(v), doi };
+}
+
+function lamSachHttp(ra: NodeInstance, viec: ViecPhaiDien[]): void {
+  const p = ra.parameters;
+  if (typeof p.url === "string") {
+    const { url, doi } = lamSachUrl(p.url);
+    if (doi) {
+      p.url = url;
+      viec.push({ nodeId: ra.id, truong: "url", viec: "http-bi-mat" });
+    }
+  }
+  if (p.tieuDe && typeof p.tieuDe === "object" && !Array.isArray(p.tieuDe)) {
+    const giu: Record<string, unknown> = {};
+    let bo = false;
+    for (const [k, g] of Object.entries(p.tieuDe as Record<string, unknown>)) {
+      if (TIEU_DE_VO_HAI.has(k.toLowerCase()) && !(typeof g === "string" && RE_TEN_BI_MAT.test(g) && g.length > 40)) giu[k] = g;
+      else bo = true;
+    }
+    if (bo) {
+      p.tieuDe = giu;
+      viec.push({ nodeId: ra.id, truong: "tieuDe", viec: "http-bi-mat" });
+    }
+  }
+  if (p.than !== undefined && p.than !== null) {
+    let goc: unknown = p.than;
+    let laChuoiJson = false;
+    if (typeof goc === "string") {
+      try {
+        const j = JSON.parse(goc) as unknown;
+        if (j && typeof j === "object") {
+          goc = j;
+          laChuoiJson = true;
+        }
+      } catch {
+        /* chuỗi thường */
+      }
+    }
+    const { v, doi } = lamSachThan(goc);
+    if (doi) {
+      p.than = laChuoiJson ? JSON.stringify(v) : v;
+      viec.push({ nodeId: ra.id, truong: "than", viec: "http-bi-mat" });
+    }
+  }
+}
+
 function lamTrongNut(n: NodeInstance, viec: ViecPhaiDien[]): NodeInstance {
   // Node GỌI LUỒNG CON không lưu được khi id con trống (id con phải CỐ ĐỊNH và tồn tại) ⇒ thay bằng node giữ chỗ `du-lieu.dat` (cùng id/tên/cổng) để luồng vẫn nhập được; người nhập thay lại bằng node luồng con.
   if (n.type === "luong.goi-con") {
@@ -50,6 +154,7 @@ function lamTrongNut(n: NodeInstance, viec: ViecPhaiDien[]): NodeInstance {
     delete ra.credentialRef;
     delete ra.parameters.kieuXacThuc; // đi cùng bí mật
   }
+  if (LOAI_HTTP.has(ra.type)) lamSachHttp(ra, viec);
   for (const d of THAM_SO_THEO_NHA_MAY[ra.type]?.truong ?? []) {
     const cu = ra.parameters[d.truong];
     if (d.thanh === "luong-con") {
@@ -88,6 +193,10 @@ export function lamSachLuong(def: FlowDefinition): { luong: FlowDefinition; viec
   const viec: ViecPhaiDien[] = [];
   const nodes = def.nodes.map((n) => lamTrongNut(n, viec));
   const settings = { ...def.settings };
+  if (settings.affinity !== undefined) {
+    viec.push({ nodeId: "(luồng)", truong: "settings.affinity", viec: "affinity" });
+    delete settings.affinity;
+  }
   if (settings.errorFlowId !== undefined) {
     viec.push({ nodeId: "(luồng)", truong: "settings.errorFlowId", viec: "luong-loi" });
     delete settings.errorFlowId;
@@ -102,11 +211,13 @@ export interface DauVetNhaMay {
   maMay: string[];
   nhaMay: string[];
   nguoi: string[];
+  /** id SỐ của máy / người / nhà máy nguồn (kiem-dinh F2) */
+  idSo?: number[];
 }
 export interface CanhBaoVanBan {
   nodeId: string;
   truong: string;
-  loai: "ma-may" | "nha-may" | "nguoi-dung";
+  loai: "ma-may" | "nha-may" | "nguoi-dung" | "bi-mat" | "id-so";
   khop: string;
 }
 
@@ -119,6 +230,52 @@ function* duyetChuoi(v: unknown, duong: string): Generator<[string, string]> {
 }
 
 /** Quét MỌI chuỗi của luồng (tên luồng, tên node, tham số) với dấu vết nhà máy nguồn (token ≥ 3 ký tự, khớp nguyên từ, không phân biệt hoa thường). Chỉ cảnh báo. */
+/** Số nguyên (hoặc chuỗi-số / số đứng riêng trong biểu thức) trùng id SỐ của máy / người nhà máy nguồn — id < 100 bị bỏ (quá nhiều trùng ngẫu nhiên). */
+const ID_SO_TOI_THIEU = 100;
+function* duyetGiaTri(v: unknown, duong: string): Generator<[string, unknown]> {
+  if (Array.isArray(v)) for (let i = 0; i < v.length; i++) yield* duyetGiaTri(v[i], `${duong}[${i}]`);
+  else if (v && typeof v === "object") for (const [k, x] of Object.entries(v as Record<string, unknown>)) yield* duyetGiaTri(x, duong ? `${duong}.${k}` : k);
+  else yield [duong, v];
+}
+
+export function quetIdSo(def: FlowDefinition, idSo: number[], tran = 200): CanhBaoVanBan[] {
+  const bo = new Set(idSo.filter((x) => Number.isSafeInteger(x) && x >= ID_SO_TOI_THIEU).map(String));
+  const ra: CanhBaoVanBan[] = [];
+  if (bo.size === 0) return ra;
+  for (const n of def.nodes) {
+    for (const [duong, g] of duyetGiaTri(n.parameters, "parameters")) {
+      if (ra.length >= tran) return ra;
+      if (typeof g === "number" && Number.isInteger(g) && bo.has(String(g))) ra.push({ nodeId: n.id, truong: duong, loai: "id-so", khop: String(g) });
+      else if (typeof g === "string") {
+        if (/^\s*\d+\s*$/.test(g) && bo.has(g.trim())) ra.push({ nodeId: n.id, truong: duong, loai: "id-so", khop: g.trim() });
+        else if (g.includes("{{")) for (const m of g.matchAll(/(?<![\w.$])(\d{3,12})(?![\w.])/g)) if (bo.has(m[1])) ra.push({ nodeId: n.id, truong: duong, loai: "id-so", khop: m[1] });
+      }
+    }
+  }
+  return ra;
+}
+
+/** Mẫu BÍ MẬT còn sót trong tham số của gói: khoá tên giống bí mật mà giá trị là chuỗi không rỗng không phải biểu thức, hoặc giá trị dạng token dài / JWT / sk- / ghp_ / AKIA / "Bearer …". Không in giá trị đầy đủ. */
+const RE_GIA_TRI_TOKEN = /(?:^|[^A-Za-z0-9_-])((?:sk|pk|ghp|gho|xox[bp])[-_][A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{12,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}|[A-Za-z0-9_-]{40,})(?![A-Za-z0-9_-])/;
+export function quetBiMat(def: FlowDefinition, tran = 200): CanhBaoVanBan[] {
+  const ra: CanhBaoVanBan[] = [];
+  const rutGon = (s: string) => `${s.slice(0, 4)}…`;
+  for (const n of def.nodes) {
+    for (const [duong, g] of duyetGiaTri(n.parameters, "parameters")) {
+      if (ra.length >= tran) return ra;
+      if (typeof g !== "string" || g === "") continue;
+      const khoa = duong.split(/[.[\]]/).filter(Boolean).pop() ?? "";
+      if (!g.includes("{{") && RE_TEN_BI_MAT.test(khoa)) {
+        ra.push({ nodeId: n.id, truong: duong, loai: "bi-mat", khop: khoa });
+        continue;
+      }
+      const mt = RE_GIA_TRI_TOKEN.exec(g) ?? /\bBearer\s+(\S{8,})/i.exec(g);
+      if (mt) ra.push({ nodeId: n.id, truong: duong, loai: "bi-mat", khop: rutGon(mt[1]) });
+    }
+  }
+  return ra;
+}
+
 export function quetVanBan(def: FlowDefinition, dau: DauVetNhaMay, tran = 200): CanhBaoVanBan[] {
   const bo: { loai: CanhBaoVanBan["loai"]; re: RegExp; khop: string }[] = [];
   const them = (loai: CanhBaoVanBan["loai"], ds: string[]) => {

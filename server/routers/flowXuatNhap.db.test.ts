@@ -72,7 +72,7 @@ beforeAll(async () => {
   await luuPhienBan(
     {
       id: LUONG_A, name: `Luồng của ${FAC_A}`, version: 1,
-      settings: { uuTien: "background", luuDuLieu: "day-du", maxConcurrentRuns: 3, errorFlowId: CON },
+      settings: { uuTien: "background", luuDuLieu: "day-du", maxConcurrentRuns: 3, errorFlowId: CON, affinity: ["gpu-nha-may-a"] },
       pinData: { ai: [{ json: { bi_mat: `DU-LIEU-THAT-${RUN}` } }] },
       nodes: [
         nut("t", "kich-hoat.thu-cong"),
@@ -85,6 +85,16 @@ beforeAll(async () => {
         nut("ag", "ai.agent", { loiNhac: "{{ $json.q }}", luongCon: [{ flowId: CON, moTa: "chạy con" }], traTaiLieu: false }),
         nut("ot", "ot.de-xuat-luong", { workflowId: 777, version: 3, thamSo: {}, hetHanGio: 24 }),
         nut("bt", "bao-tri.tao-phieu", { may: "{{ $json.idMay }}", tieuDe: "{{ $json.lyDo }}", nhom: "{{ $json.nhan }}" }),
+        // ★ bí mật GÕ TAY (kiem-dinh F1) + id số (F2): luồng cũ lưu trước khi có kiểm lúc lưu
+        nut("hg", "tich-hop.http-gui", {
+          url: "https://api.example.test:8443/v1/send?token=SECRET-URL-1#frag",
+          phuongThuc: "POST",
+          tieuDe: { "X-Api-Key": "SECRET-HDR-2", Accept: "application/json", "X-Request-Id": "abc" },
+          than: { password: "SECRET-BODY-3", nested: { apiKey: "SECRET-BODY-4", ok: "giu-lai" }, tenDangNhap: "ok" },
+        }),
+        nut("hu", "tich-hop.http-doc", { url: "https://user:SECRET-USERINFO-5@api.example.test/doc" }),
+        nut("hs", "tich-hop.http-gui", { url: "https://api.example.test/x", than: "key=SECRET-STR-6&mode=a" }),
+        nut("du", "du-lieu.dat", { truong: { khoa_bi_mat: "SECRET-FIELD-7", ghiChu: "dùng sk-abcdefghijklmnopqrstuvwxyz123456 nhé", soMay: ids.machA, soChuoi: String(u.A), bt: `{{ $json.may == ${ids.machB} }}` } }),
       ],
       connections: [noi("t", "ai")],
     } as never,
@@ -145,6 +155,55 @@ describe("XUẤT — gói sạch", () => {
     expect(JSON.stringify(r.goi)).not.toContain("canhBao");
     // chuỗi không nhắc A ⇒ không cảnh báo
     expect(r.canhBao.some((c) => c.nodeId === "tb")).toBe(false);
+  });
+
+  it("★ F1 bí mật GÕ TAY: url bỏ query/fragment/userinfo; tiêu đề chỉ giữ danh sách trắng; thân xoá khoá tên bí mật (lồng sâu, dạng chuỗi key=…); gói KHÔNG chứa SECRET-*; có 'việc phải điền'", async () => {
+    const r = await goi(u.A, "engineer").xuat({ flowId: LUONG_A });
+    const chu = JSON.stringify(r.goi);
+    expect(chu).not.toMatch(/SECRET-(URL-1|HDR-2|BODY-3|BODY-4|USERINFO-5|STR-6)/);
+    const n = Object.fromEntries(r.goi.luong.nodes.map((x) => [x.id, x]));
+    expect(n.hg.parameters.url).toBe("https://api.example.test:8443/v1/send");
+    expect(n.hg.parameters.tieuDe).toEqual({ Accept: "application/json" });
+    expect(n.hg.parameters.than).toEqual({ password: "", nested: { apiKey: "", ok: "giu-lai" }, tenDangNhap: "ok" });
+    expect(n.hu.parameters.url).toBe("https://api.example.test/doc");
+    expect(String(n.hs.parameters.than)).toBe("key=&mode=a");
+    for (const [id, truong] of [["hg", "url"], ["hg", "tieuDe"], ["hg", "than"], ["hu", "url"], ["hs", "than"]] as const) {
+      expect(r.viec.some((v) => v.nodeId === id && v.truong === truong && v.viec === "http-bi-mat"), `${id}.${truong}`).toBe(true);
+    }
+  });
+
+  it("★ F1(d) mẫu bí mật còn sót ở tham số KHÁC ⇒ CẢNH BÁO (khoá tên bí mật có giá trị; giá trị dạng sk-… / token dài), không in giá trị đầy đủ; gói vẫn mang chữ (không tự xoá)", async () => {
+    const r = await goi(u.A, "engineer").xuat({ flowId: LUONG_A });
+    const bm = r.canhBao.filter((c) => c.loai === "bi-mat" && c.nodeId === "du");
+    expect(bm.some((c) => c.truong === "parameters.truong.khoa_bi_mat" && c.khop === "khoa_bi_mat")).toBe(true);
+    expect(bm.some((c) => c.truong === "parameters.truong.ghiChu" && c.khop === "sk-a…")).toBe(true);
+    expect(JSON.stringify(r.canhBao)).not.toContain("SECRET-FIELD-7");
+    expect(JSON.stringify(r.canhBao)).not.toContain("abcdefghijklmnopqrstuvwxyz123456");
+  });
+
+  it("★ F2 id SỐ của máy / người nhà máy nguồn (số, chuỗi-số, số đứng riêng trong biểu thức) ⇒ cảnh báo 'id-so'; id < 100 không báo", async () => {
+    const r = await goi(u.A, "engineer").xuat({ flowId: LUONG_A });
+    const so = r.canhBao.filter((c) => c.loai === "id-so" && c.nodeId === "du");
+    expect(so.some((c) => c.truong === "parameters.truong.soMay" && c.khop === String(ids.machA))).toBe(true);
+    expect(so.some((c) => c.truong === "parameters.truong.soChuoi" && c.khop === String(u.A))).toBe(true);
+    // biểu thức mang id máy B (khác nhà máy nguồn): KHÔNG báo — chỉ id của nhà máy NGUỒN
+    expect(so.some((c) => c.truong === "parameters.truong.bt")).toBe(false);
+  });
+
+  it("★ F3 settings.affinity bị xoá khi xuất + ghi việc", async () => {
+    const r = await goi(u.A, "engineer").xuat({ flowId: LUONG_A });
+    expect(JSON.stringify(r.goi.luong.settings)).not.toContain("affinity");
+    expect(JSON.stringify(r.goi)).not.toContain("gpu-nha-may-a");
+    expect(r.viec.some((v) => v.truong === "settings.affinity" && v.viec === "affinity")).toBe(true);
+  });
+
+  it("★ LÚC LƯU: tiêu đề trông như bí mật (X-Api-Key, Api-Key, Cookie, Set-Cookie, X-Auth-Token, X-Custom-Token…) ⇒ 400, hướng sang credentialRef; Accept / X-Request-Id qua", async () => {
+    const A = goi(u.A, "engineer");
+    const dinh = (id: string, tieuDe: Record<string, string>) => ({ id: `${TT}-${id}`, name: "h", version: 1, settings: { uuTien: "background", luuDuLieu: "day-du" }, nodes: [nut("t", "kich-hoat.thu-cong"), nut("h", "tich-hop.http-doc", { url: "https://api.example.test/x", tieuDe })], connections: [noi("t", "h")] });
+    for (const [i, k] of ["X-Api-Key", "Api-Key", "Cookie", "Set-Cookie", "X-Auth-Token", "X-Custom-Token", "Authorization"].entries()) {
+      await expect(A.luu({ definition: dinh(`th${i}`, { [k]: "x" }) as never }), k).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    }
+    await A.luu({ definition: dinh("th-ok", { Accept: "application/json", "X-Request-Id": "abc" }) as never });
   });
 
   it("xuất luồng ngoài phạm vi ≡ NOT_FOUND (kỹ sư chỉ B xuất luồng A)", async () => {

@@ -23601,7 +23601,9 @@
       "loaiCanhBao": {
         "ma-may": "machine code",
         "nha-may": "factory",
-        "nguoi-dung": "user"
+        "nguoi-dung": "user",
+        "bi-mat": "secret-like pattern",
+        "id-so": "numeric id of the source factory"
       },
       "viec": {
         "may": "pick the machine again",
@@ -23610,7 +23612,9 @@
         "workflow-ot": "pick the FOE workflow again",
         "bi-mat": "attach the secret again",
         "luong-loi": "pick the error flow again",
-        "bat-su-kien": "re-enable event listening (currently OFF)"
+        "bat-su-kien": "re-enable event listening (currently OFF)",
+        "http-bi-mat": "re-enter what was removed from the HTTP url / headers / body (query params, keys, passwords — use the flow's secret)",
+        "affinity": "pick the worker affinity again"
       },
       "nhap": "Import",
       "nhapTieuDe": "Import a flow from a package",

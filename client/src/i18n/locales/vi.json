@@ -23575,7 +23575,9 @@
       "loaiCanhBao": {
         "ma-may": "mã máy",
         "nha-may": "nhà máy",
-        "nguoi-dung": "người dùng"
+        "nguoi-dung": "người dùng",
+        "bi-mat": "mẫu bí mật",
+        "id-so": "id số của nhà máy nguồn"
       },
       "viec": {
         "may": "chọn lại máy",
@@ -23584,7 +23586,9 @@
         "workflow-ot": "chọn lại FOE workflow",
         "bi-mat": "gắn lại bí mật",
         "luong-loi": "chọn lại luồng xử lý lỗi",
-        "bat-su-kien": "bật lại nghe sự kiện (đang TẮT)"
+        "bat-su-kien": "bật lại nghe sự kiện (đang TẮT)",
+        "http-bi-mat": "nhập lại phần đã bị gỡ khỏi url / tiêu đề / thân HTTP (tham số truy vấn, khoá, mật khẩu — dùng bí mật của luồng)",
+        "affinity": "chọn lại nhóm máy xử lý (affinity)"
       },
       "nhap": "Nhập",
       "nhapTieuDe": "Nhập luồng từ gói",

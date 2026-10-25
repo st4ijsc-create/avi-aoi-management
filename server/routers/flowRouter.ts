@@ -39,7 +39,7 @@ import { kiemThamSoKichHoat, napLaiLich } from "../services/flow/kichHoat/lich";
 import { kiemThamSoSuKien, napLaiSuKien } from "../services/flow/kichHoat/suKien";
 import { kiemThamSoNutMoi } from "../services/flow/kiemThamSoNut";
 import { nguoiNhanHopLeTheoNhaMay } from "../services/flow/nut/thongBao";
-import { idLuongNhap, phanTichGoi, quetVanBan, taoGoi } from "../services/flow/xuatNhap";
+import { idLuongNhap, phanTichGoi, quetBiMat, quetIdSo, quetVanBan, taoGoi } from "../services/flow/xuatNhap";
 import { dauVetNhaMay } from "../services/flow/xuatNhapDb";
 import { nhaMayCuaLuong } from "../services/flow/phamViLuong";
 import { capTokenWebhook, coNodeWebhook, coTokenWebhook } from "../services/flow/kichHoat/webhook";
@@ -285,7 +285,9 @@ export const flowRouter = router({
       if (!v) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowXuat", reason: "flowKhongCoPhienBan", version: chon ?? 0 }, "Không có phiên bản để xuất.");
       const def = v.definition as FlowDefinition;
       const { goi, viec } = taoGoi(def);
-      const canhBao = quetVanBan(def, await dauVetNhaMay(f.factoryId ?? null));
+      // Quét cái SẼ RỜI KHỎI nhà máy: gói đã làm sạch (chữ tự do + id số + mẫu bí mật còn sót)
+      const dau = await dauVetNhaMay(f.factoryId ?? null);
+      const canhBao = [...quetVanBan(goi.luong, dau), ...quetIdSo(goi.luong, dau.idSo ?? []), ...quetBiMat(goi.luong)];
       return { goi, viec, canhBao, hang: kiemLuong(goi.luong, layNut).hang, tenLuong: f.name };
     }),
 

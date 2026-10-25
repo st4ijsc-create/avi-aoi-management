@@ -6,6 +6,7 @@
 import { safeInternalPath } from "../../../shared/internalPath";
 import { DANH_MUC, chuanHoaThamSo } from "./soLieu/danhMuc";
 import { NHOM_PHIEU } from "./nut/baoTri";
+import { TIEU_DE_CAM } from "./nut/tichHop";
 
 const laBieuThuc = (v: unknown): boolean => typeof v === "string" && v.includes("{{");
 const LOAI_TB = ["REPORT", "INFO", "WARNING"];
@@ -40,6 +41,13 @@ export function kiemThamSoNutMoi(raw: unknown): string[] {
       if (p.duongDan !== undefined && p.duongDan !== "" && !laBieuThuc(p.duongDan) && safeInternalPath(p.duongDan) === null) loi.push(`node '${id}': duongDan phải là đường dẫn NỘI BỘ bắt đầu bằng một dấu '/' (không URL ngoài, không '//', không dấu gạch ngược)`);
       if (p.loai !== undefined && !laBieuThuc(p.loai) && !LOAI_TB.includes(String(p.loai))) loi.push(`node '${id}': loai phải là ${LOAI_TB.join(" | ")}`);
       if (p.uuTien !== undefined && !laBieuThuc(p.uuTien) && !UU_TIEN_TB.includes(String(p.uuTien))) loi.push(`node '${id}': uuTien phải là ${UU_TIEN_TB.join(" | ")}`);
+    } else if (n?.type === "tich-hop.http-doc" || n?.type === "tich-hop.http-gui") {
+      // bí mật gõ tay vào tiêu đề: chỉ qua credentialRef (kiem-dinh F1)
+      if (p.tieuDe && typeof p.tieuDe === "object" && !Array.isArray(p.tieuDe)) {
+        for (const k of Object.keys(p.tieuDe as Record<string, unknown>)) {
+          if (TIEU_DE_CAM.has(k.toLowerCase()) || /key|token|secret|passw|auth|cookie/i.test(k)) loi.push(`node '${id}': tiêu đề '${k}' trông như bí mật — dùng bí mật (credentialRef) của luồng, không gõ vào tiêu đề`);
+        }
+      }
     } else if (n?.type === "bao-tri.tao-phieu") {
       if (p.nhom !== undefined && !laBieuThuc(p.nhom) && !Object.prototype.hasOwnProperty.call(NHOM_PHIEU, String(p.nhom))) loi.push(`node '${id}': nhom phải là ${Object.keys(NHOM_PHIEU).join(" | ")}`);
       if (p.loai !== undefined && !laBieuThuc(p.loai) && !LOAI_PHIEU.includes(String(p.loai))) loi.push(`node '${id}': loai phải là ${LOAI_PHIEU.join(" | ")}`);

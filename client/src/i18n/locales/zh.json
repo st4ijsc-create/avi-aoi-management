@@ -23603,7 +23603,9 @@
       "loaiCanhBao": {
         "ma-may": "机器编码",
         "nha-may": "工厂",
-        "nguoi-dung": "用户"
+        "nguoi-dung": "用户",
+        "bi-mat": "疑似密钥模式",
+        "id-so": "源工厂的数字 id"
       },
       "viec": {
         "may": "重新选择机器",
@@ -23612,7 +23614,9 @@
         "workflow-ot": "重新选择 FOE 工作流",
         "bi-mat": "重新关联密钥",
         "luong-loi": "重新选择错误流程",
-        "bat-su-kien": "重新开启事件监听（当前关闭）"
+        "bat-su-kien": "重新开启事件监听（当前关闭）",
+        "http-bi-mat": "重新填写已从 HTTP url / 头 / 正文中移除的内容（查询参数、密钥、密码——请使用流程的密钥）",
+        "affinity": "重新选择处理亲和组"
       },
       "nhap": "导入",
       "nhapTieuDe": "从包导入流程",
