@@ -135,7 +135,8 @@ async function suyChuLuong(tx: Db | Tx, y: YeuCauRun): Promise<number | null> {
  * ★ M5 — thi hành `settings.maxConcurrentRuns` (mặc định `TRAN_DONG_THOI_MAC_DINH` = 1). CHỌN: TỪ CHỐI lượt vượt trần (ném
  * `LoiLuong QUA_TRAN_DONG_THOI`), KHÔNG xếp hàng — hàng đợi không trần chỉ dời DoS sang bảng (và cần bộ đẩy lượt chờ trong `dongRun`);
  * người gọi tự xử lý: chạy tay ⇒ CONFLICT, webhook ⇒ 429, lịch ⇒ bỏ mốc + ghi log, MCP ⇒ lỗi tool. Chỉ đếm lượt GỐC `dang-chay`
- * (lượt chờ duyệt/chờ con không chiếm tài nguyên; lượt con bị chặn bởi trần cây lượt `TRAN_LUOT_TRONG_CAY`). Khoá cố vấn theo luồng
+ * (lượt chờ duyệt/chờ con không chiếm tài nguyên; lượt con bị chặn bởi trần cây lượt `TRAN_LUOT_TRONG_CAY`). Lượt ĐANG HẸN GIỜ (`logic.cho`: còn mục hàng nhưng mọi mục đều ở
+ * tương lai, không bước nào đang chạy) cũng KHÔNG chiếm chỗ — nó không dùng tài nguyên; nếu không, trần mặc định 1 sẽ từ chối mọi sự kiện đến trong lúc luồng đang chờ. Khoá cố vấn theo luồng
  * để hai lượt gọi cùng lúc không cùng lọt qua phép đếm. Lượt trùng khoá idempotency được miễn (để đường cũ trả đúng lượt đã có).
  */
 async function kiemTranDongThoi(tx: Db | Tx, y: YeuCauRun, def: FlowDefinition): Promise<void> {
@@ -146,7 +147,11 @@ async function kiemTranDongThoi(tx: Db | Tx, y: YeuCauRun, def: FlowDefinition):
     const da = (await tx.execute(sql`SELECT 1 FROM ai_flow_runs WHERE "idempotencyKey" = ${y.idempotencyKey} LIMIT 1`)) as unknown as unknown[];
     if (da.length) return;
   }
-  const [d] = (await tx.execute(sql`SELECT count(*)::int AS n FROM ai_flow_runs WHERE "flowId" = ${y.flowId} AND status = 'dang-chay' AND "parentRunId" IS NULL`)) as unknown as { n: number }[];
+  const [d] = (await tx.execute(sql`SELECT count(*)::int AS n FROM ai_flow_runs WHERE "flowId" = ${y.flowId} AND status = 'dang-chay' AND "parentRunId" IS NULL
+      AND NOT (
+        EXISTS (SELECT 1 FROM ai_flow_queue q WHERE q."runId" = ai_flow_runs.id)
+        AND NOT EXISTS (SELECT 1 FROM ai_flow_queue q WHERE q."runId" = ai_flow_runs.id AND q."availableAt" <= now())
+        AND NOT EXISTS (SELECT 1 FROM ai_flow_steps s WHERE s."runId" = ai_flow_runs.id AND s.status = 'dang-chay'))`)) as unknown as { n: number }[];
   if (d.n >= tran) {
     throw new LoiLuong("QUA_TRAN_DONG_THOI", `luồng ${y.flowId} đang có ${d.n} lượt chạy (trần maxConcurrentRuns=${tran}) — lượt mới bị TỪ CHỐI (không xếp hàng)`);
   }

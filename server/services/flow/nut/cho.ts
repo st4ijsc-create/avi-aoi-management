@@ -3,7 +3,7 @@
  *
  * `logic.cho` — hẹn giờ: item đi qua NGUYÊN VẸN nhưng node kế chỉ chạy sau `giay` giây (0 … 86400, mặc định 60). KHÔNG giữ worker: node trả `__hen`, động cơ xếp node kế vào
  *   hàng đợi với `availableAt = now() + giay`, bền qua khởi động lại. Trần TỔNG mỗi lượt: một lượt không được còn chờ quá 7 ngày kể từ lúc bắt đầu (vượt ⇒ bước lỗi QUA_TRAN_CHO).
- *   Lưu ý vận hành: lượt đang hẹn vẫn là `dang-chay` ⇒ chiếm một chỗ của `maxConcurrentRuns`.
+ *   Lượt đang hẹn vẫn là `dang-chay` nhưng KHÔNG chiếm chỗ của `maxConcurrentRuns` (xem `kiemTranDongThoi`): nó không dùng tài nguyên.
  * `logic.dung-loi` — dừng CÓ CHỦ Ý: ném lỗi với thông điệp `thongDiep` (≤ 200 ký tự). Mặc định lượt dừng `loi`; node đặt `khiLoi: "nhanh-loi"` thì lỗi KHÔNG dừng lượt: mỗi item vào đi cổng ẨN `loi` (item gốc + `loi: { ma, thongDiep, nodeId }`).
  *   Không có cổng ra thường. Không thử lại (mặc định retry 0).
  */
