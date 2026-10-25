@@ -26,7 +26,7 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1198, no: 164 } as const; // 2026-10-25 W16: kho vật tư + quy tắc leo thang theo nhà máy (mig 0424/0425) — alertEscalation ×4 + mesControlTower ×3 từ miễn trừ → có khoá thật −7; 171 → 164. W14c: trainingBatchComments (lô huấn luyện theo phản hồi → máy; nhãn dùng chung chỉ toàn quyền) −5; bình luận sở hữu theo người dùng +2 miễn trừ; 176 → 171
+const GHIM = { tongMutation: 1198, no: 171 } as const; // 2026-10-25 W14c: trainingBatchComments (lô huấn luyện theo phản hồi → máy; nhãn dùng chung chỉ toàn quyền) −5; bình luận sở hữu theo người dùng +2 miễn trừ; 176 → 171
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {
