@@ -342,6 +342,30 @@ describe("OPC UA readTags × chất lượng", () => {
     },
   );
 
+  // R1b-2a T13 fix round 1 — `bad` KHÔNG lý do = CHƯA trả lời (mauMayChuDaTraLoi, fail-closed). Máy chủ ĐÃ trả lời (mã good / good có
+  // mã con) nhưng giá trị không chuẩn hoá được ⇒ bad PHẢI mang reason (device_error / bad_value), nếu không D1 coi tick là hỏng.
+  it.each([0, 0x00300000])("T13 cờ BẬT: mã good (decimal %i) mà giá trị null ⇒ bad / bad_value / device_error (đã trả lời)", async (sc) => {
+    vi.stubEnv(FLAG, "true");
+    mockOpcua({ value: sc, name: "Good" }, null);
+    const d = await opcuaConnected();
+    const [s] = await d.readTags(opcTags);
+    expect(s.quality).toBe("bad");
+    expect(s.value).toBeNull();
+    expect(s.statusCode).toBe("bad_value");
+    expect(s.reason).toBe("device_error");
+    const { mauMayChuDaTraLoi } = await import("../reconnectNhanh");
+    expect(mauMayChuDaTraLoi(s)).toBe(true);
+  });
+
+  it("T13 cờ TẮT: mã good mà giá trị null ⇒ bad TRẦN như cũ (không statusCode/reason)", async () => {
+    mockOpcua({ value: 0, name: "Good" }, null);
+    const d = await opcuaConnected();
+    const [s] = await d.readTags(opcTags);
+    expect(s.quality).toBe("bad");
+    expect(s.statusCode).toBeUndefined();
+    expect(s.reason).toBeUndefined();
+  });
+
   it("cờ TẮT: mã good có mã con (0x00300000) ⇒ bad như cũ (đường lui)", async () => {
     mockOpcua({ value: 0x00300000, name: "GoodClamped" });
     const d = await opcuaConnected();
@@ -469,6 +493,16 @@ describe("OPC UA đường monitored-items (push)", () => {
     expect(got[0].reason).toBeUndefined();
     await h.close();
   });
+
+  it("T13 cờ BẬT: thay đổi mã good mà giá trị null (máy chủ ĐÃ gửi) ⇒ bad / bad_value / device_error — vẫn là 'đã trả lời'", async () => {
+    vi.stubEnv(FLAG, "true");
+    const { got, items, h } = await dung();
+    items[0].fire({ statusCode: { value: 0 }, sourceTimestamp: new Date(), value: { value: null } });
+    expect(got[0].quality).toBe("bad");
+    expect(got[0].statusCode).toBe("bad_value");
+    expect(got[0].reason).toBe("device_error");
+    await h.close();
+  });
 });
 
 // ─────────────────────────────── S7 / MC (package giả) ───────────────────────────────
@@ -532,6 +566,40 @@ describe("S7", () => {
     expect(conn.addItems).toHaveBeenCalledWith(["t1"]);
   });
 
+  it("T13 cờ BẬT: lib trả giá trị BAD (null) cho item ⇒ bad / bad_value / device_error; tick poll toàn tag như thế VẪN là đọc tốt, không phải tick hỏng", async () => {
+    vi.stubEnv(FLAG, "true");
+    mockNodes("nodes7", { t1: null });
+    const { S7Driver } = await import("./s7Driver");
+    const { laDocTot, laTickHong } = await import("../reconnectNhanh");
+    const d = new S7Driver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:102" });
+    const [s] = await d.readTags([s7Tags[0]]);
+    expect(s.quality).toBe("bad");
+    expect(s.value).toBeNull();
+    expect(s.statusCode).toBe("bad_value");
+    expect(s.reason).toBe("device_error");
+    const ticks: SuKienDoc[] = [];
+    const h = await d.subscribe([s7Tags[0]], () => undefined, 30, { onTick: (e) => void ticks.push(e) });
+    dongSau.push(() => h.close());
+    await waitFor(() => ticks.length > 0, 2000);
+    await h.close();
+    expect(ticks[0].ok).toBe(true);
+    expect(ticks[0].tags).toEqual([{ tagKey: "t1", quality: "bad", reason: "device_error" }]);
+    expect(laTickHong(ticks[0])).toBe(false);
+    expect(laDocTot(ticks[0])).toBe(true);
+  });
+
+  it("T13 cờ TẮT: lib trả BAD (null) ⇒ bad TRẦN như cũ", async () => {
+    mockNodes("nodes7", { t1: null });
+    const { S7Driver } = await import("./s7Driver");
+    const d = new S7Driver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:102" });
+    const [s] = await d.readTags([s7Tags[0]]);
+    expect(s.quality).toBe("bad");
+    expect(s.statusCode).toBeUndefined();
+    expect(s.reason).toBeUndefined();
+  });
+
   it("cờ TẮT: địa chỉ sai ⇒ readTags ném như cũ (cả lô)", async () => {
     mockNodes("nodes7", { t1: 1.5 });
     const { S7Driver } = await import("./s7Driver");
@@ -574,6 +642,23 @@ describe("Mitsubishi MC", () => {
     expect(t2.quality).toBe("bad");
     expect(t2.reason).toBe("config_error");
     expect(conn.addItems).toHaveBeenCalledWith(["t1"]);
+  });
+
+  it("T13 cờ BẬT: lib trả giá trị BAD (null) ⇒ bad / bad_value / device_error; cờ TẮT ⇒ bad TRẦN như cũ", async () => {
+    vi.stubEnv(FLAG, "true");
+    mockNodes("mcprotocol", { t1: null });
+    const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
+    const d = new MitsubishiMcDriver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:1281" });
+    const [s] = await d.readTags([mcTags[0]]);
+    expect(s.quality).toBe("bad");
+    expect(s.statusCode).toBe("bad_value");
+    expect(s.reason).toBe("device_error");
+    vi.stubEnv(FLAG, "false");
+    const [s2] = await d.readTags([mcTags[0]]);
+    expect(s2.quality).toBe("bad");
+    expect(s2.statusCode).toBeUndefined();
+    expect(s2.reason).toBeUndefined();
   });
 
   it("cờ TẮT: địa chỉ sai ⇒ readTags ném như cũ", async () => {
@@ -780,6 +865,23 @@ describe("EtherNet/IP", () => {
     const out = await d.readTags(hai);
     expect(out).toHaveLength(2);
     expect(out.every((s) => s.quality === "bad" && s.reason === undefined && s.statusCode === undefined)).toBe(true);
+  });
+
+  it("T13 cờ BẬT: readTag THÀNH CÔNG mà giá trị không ép được (undefined) ⇒ bad / bad_value / device_error; cờ TẮT ⇒ bad TRẦN như cũ", async () => {
+    vi.stubEnv(FLAG, "true");
+    mockEip(async () => undefined);
+    const { EthernetIpDriver } = await import("./ethernetIpDriver");
+    const d = new EthernetIpDriver();
+    await d.connect({ endpoint: "192.168.1.10" });
+    const [s] = await d.readTags(eipTags);
+    expect(s.quality).toBe("bad");
+    expect(s.statusCode).toBe("bad_value");
+    expect(s.reason).toBe("device_error");
+    vi.stubEnv(FLAG, "false");
+    const [s2] = await d.readTags(eipTags);
+    expect(s2.quality).toBe("bad");
+    expect(s2.statusCode).toBeUndefined();
+    expect(s2.reason).toBeUndefined();
   });
 
   it("cờ TẮT: bad trần, không statusCode/reason", async () => {

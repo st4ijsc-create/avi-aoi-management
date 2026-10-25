@@ -144,6 +144,16 @@ export function chatLuongEndCodeSlmp(endCode: number): { statusCode: string; rea
   };
 }
 
+/**
+ * SCADA R1b-2a T13 fix round 1 — thiết bị / máy chủ ĐÃ trả lời nhưng giá trị không dùng được (lib trả BAD/null, NaN, không ép được kiểu)
+ * ⇒ mẫu `bad` PHẢI mang lý do (cờ V2). Luật `mauMayChuDaTraLoi` (reconnectNhanh) coi `bad` KHÔNG lý do là CHƯA trả lời (fail-closed),
+ * nên thiếu lý do ở đây sẽ biến một lần đọc đã được trả lời thành tick hỏng (D1 hạ phiên) và chặn `connected`. Cờ tắt: không dùng.
+ */
+export const MAU_GIA_TRI_HONG: { statusCode: string; reason: LyDoChatLuong } = Object.freeze({
+  statusCode: "bad_value",
+  reason: "device_error",
+});
+
 /** Một mẫu `bad` (value/raw null, giờ do server đóng dấu) cho MỖI tag — dùng khi cả lần đọc hỏng. */
 export function mauXauChoMoiTag(tags: OtTagAddress[], statusCode: string, reason: LyDoChatLuong, at: Date): OtSample[] {
   return tags.map((t) => ({

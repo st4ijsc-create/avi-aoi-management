@@ -23,7 +23,7 @@ import type {
   SuKienDoc,
   TuyChonVongPoll,
 } from "./otDriver";
-import { laDocTot, mauMayChuDaTraLoi, taoBatDocTot } from "./reconnectNhanh";
+import { laDocTot, laTickHong, mauMayChuDaTraLoi, taoBatDocTot } from "./reconnectNhanh";
 
 const TAGS: OtTagAddress[] = [
   { tagKey: "t1", address: "1", dataType: "float" },
@@ -408,7 +408,6 @@ describe.each([
         ["bad + device_error", mauXau("device_error")],
         ["bad + out_of_range", mauXau("out_of_range")],
         ["bad + stale (K13: stale = đã trả lời, như đường poll)", mauXau("stale")],
-        ["bad không lý do", mauXau(undefined)],
       ] as const)("mẫu đầu %s ⇒ connected", async (_n, mau) => {
         legacyDrv.push = true;
         await khoiDong("true");
@@ -434,6 +433,23 @@ describe.each([
         expect(bao).not.toContain("connected");
         expect(ghiDb).not.toContain("connected");
         await p.onSample(mauXau("config_error", "t2"));
+        expect(trangThai()).toBe("connected");
+      });
+
+      it("fix round 1 (fail-closed): phiên push CHỈ nhận mẫu bad KHÔNG lý do (OPC UA: item err / terminated(err) sau khi rớt) ⇒ KHÔNG BAO GIỜ connected, RAM lẫn DB; mẫu kế bad + device_error ⇒ connected", async () => {
+        legacyDrv.push = true;
+        await khoiDong("true");
+        const p = drv.phien[0];
+        for (let i = 0; i < 4; i++) {
+          await p.onSample(mauXau(undefined, "t1"));
+          await p.onSample({ ...mauXau(undefined, "t2"), statusCode: "BadSubscriptionIdInvalid" });
+          await vi.advanceTimersByTimeAsync(1000);
+        }
+        expect(trangThai()).toBe("connecting");
+        await vi.advanceTimersByTimeAsync(6000);
+        expect(bao).not.toContain("connected");
+        expect(ghiDb).not.toContain("connected");
+        await p.onSample(mauXau("device_error", "t1"));
         expect(trangThai()).toBe("connected");
       });
 
@@ -508,13 +524,26 @@ describe("R1b-2a T13 — luật chung `mauMayChuDaTraLoi` / `taoBatDocTot` (reco
   const R = [undefined, "comm_lost", "device_error", "config_error", "out_of_range", "stale"] as const;
   const moiMau = Q.flatMap((quality) => R.map((reason) => (reason ? { quality, reason } : { quality })));
 
-  it("chỉ bad + comm_lost là CHƯA trả lời (K13): stale, bad không lý do, uncertain + comm_lost đều ĐÃ trả lời", () => {
+  it("chỉ bad + comm_lost HOẶC bad KHÔNG lý do là CHƯA trả lời (K13 + fix round 1 fail-closed): stale, device_error, uncertain + comm_lost đều ĐÃ trả lời", () => {
     expect(mauMayChuDaTraLoi({ quality: "bad", reason: "comm_lost" })).toBe(false);
+    expect(mauMayChuDaTraLoi({ quality: "bad" })).toBe(false);
+    expect(mauMayChuDaTraLoi({ quality: "bad", reason: undefined })).toBe(false);
     expect(mauMayChuDaTraLoi({ quality: "bad", reason: "stale" })).toBe(true);
-    expect(mauMayChuDaTraLoi({ quality: "bad" })).toBe(true);
+    expect(mauMayChuDaTraLoi({ quality: "bad", reason: "device_error" })).toBe(true);
+    expect(mauMayChuDaTraLoi({ quality: "bad", reason: "out_of_range" })).toBe(true);
+    expect(mauMayChuDaTraLoi({ quality: "uncertain" })).toBe(true);
     expect(mauMayChuDaTraLoi({ quality: "bad", reason: "config_error" })).toBe(true);
     expect(mauMayChuDaTraLoi({ quality: "uncertain", reason: "comm_lost" })).toBe(true);
     expect(mauMayChuDaTraLoi({ quality: "good" })).toBe(true);
+  });
+
+  it("fix round 1 — đường poll cùng luật: tick ok:true mà MỌI tag bad KHÔNG lý do ⇒ tick hỏng, không phải đọc tốt; thêm một tag device_error ⇒ đọc tốt", () => {
+    const e: SuKienDoc = { ok: true, timeout: false, ms: 1, tags: [{ tagKey: "a", quality: "bad" }, { tagKey: "b", quality: "bad" }] };
+    expect(laTickHong(e)).toBe(true);
+    expect(laDocTot(e)).toBe(false);
+    const e2: SuKienDoc = { ...e, tags: [...e.tags, { tagKey: "c", quality: "bad", reason: "device_error" }] };
+    expect(laTickHong(e2)).toBe(false);
+    expect(laDocTot(e2)).toBe(true);
   });
 
   it("tương đương CHÍNH XÁC với laDocTot trên mọi tick ok:true một và hai tag (mọi tổ hợp chất lượng × lý do)", () => {

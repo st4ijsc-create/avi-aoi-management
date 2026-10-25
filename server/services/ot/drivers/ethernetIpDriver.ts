@@ -38,7 +38,7 @@ import { parseEipTag, coerceEipValue } from "./eipTag";
 import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
+import { chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll, MAU_GIA_TRI_HONG } from "../chatLuong";
 
 /** Ép raw (đã inverse scale) sang kiểu st-ethernet-ip chấp nhận theo dataType. */
 function coerceEipWrite(raw: unknown, dataType: string): number | boolean | string {
@@ -210,6 +210,8 @@ export class EthernetIpDriver extends NotImplementedDriver {
         quality: co.quality,
         timestamp: now(),
         tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
+        // R1b-2a T13 fix round 1 — readTag ĐÃ trả lời; giá trị không ép được ⇒ bad CÓ lý do (bad trần = chưa trả lời, mauMayChuDaTraLoi).
+        ...(co.quality === "bad" && chatLuongV2Bat() ? MAU_GIA_TRI_HONG : {}),
       } satisfies OtSample;
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);

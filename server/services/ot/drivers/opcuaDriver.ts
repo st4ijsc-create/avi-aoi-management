@@ -35,7 +35,7 @@ import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiChung, chatLuongOpcua, chatLuongV2Bat } from "../chatLuong";
+import { chatLuongLoiChung, chatLuongOpcua, chatLuongV2Bat, MAU_GIA_TRI_HONG } from "../chatLuong";
 import {
   parseOpcuaSecurityOptions,
   resolveOpcuaPkiDir,
@@ -107,15 +107,19 @@ function chatLuongMauOpcua(
   norm: { value: number | string | boolean | null; quality: OtQuality },
 ): { quality: OtQuality; value: number | string | boolean | null; statusCode?: string; reason?: LyDoChatLuong } {
   if (scVal === 0) {
+    // R1b-2a T13 fix round 1 — máy chủ ĐÃ trả lời (mã good) nhưng giá trị không chuẩn hoá được ⇒ bad CÓ lý do khi cờ V2 bật (bad trần
+    // = chưa trả lời theo mauMayChuDaTraLoi). Cờ tắt: đúng hình dạng cũ.
+    if (norm.quality !== "good" && chatLuongV2Bat()) return { quality: "bad", value: null, ...MAU_GIA_TRI_HONG };
     return { quality: norm.quality, value: norm.quality === "good" ? norm.value : null };
   }
   const moTa = describeStatus(sc, scVal);
   if (!chatLuongV2Bat()) return { quality: "bad", value: null, statusCode: moTa };
   const cl = chatLuongOpcua(scVal, moTa);
   // Mức "good" có mã con/bit thông tin (GoodClamped 0x00300000, GoodLocalOverride 0x00960000, bit StructureChanged/…): vẫn là mẫu tốt
-  // với giá trị chuẩn hoá, KHÔNG phải lỗi (như scVal === 0). Không statusCode/reason.
+  // với giá trị chuẩn hoá, KHÔNG phải lỗi (như scVal === 0). Không statusCode/reason — trừ khi giá trị không chuẩn hoá được (T13 fix round 1).
   if (cl.quality === "good") {
-    return { quality: norm.quality, value: norm.quality === "good" ? norm.value : null };
+    if (norm.quality !== "good") return { quality: "bad", value: null, ...MAU_GIA_TRI_HONG };
+    return { quality: norm.quality, value: norm.value };
   }
   if (cl.quality === "uncertain" && norm.quality === "good") {
     return { quality: "uncertain", value: norm.value, statusCode: cl.statusCode, reason: cl.reason };

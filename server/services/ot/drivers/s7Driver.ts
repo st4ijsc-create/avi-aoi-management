@@ -44,7 +44,7 @@ import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiChung, chatLuongV2Bat } from "../chatLuong";
+import { chatLuongLoiChung, chatLuongV2Bat, MAU_GIA_TRI_HONG } from "../chatLuong";
 import { readS7ProgramChecksum, clampS7Deadline, S7_CHECKSUM_SOURCE, type S7ChecksumTarget } from "./s7BlockChecksum";
 
 /** Ép raw (đã inverse scale) sang kiểu NodeS7 chấp nhận theo dataType. */
@@ -296,6 +296,8 @@ export class S7Driver extends NotImplementedDriver {
         quality: co.quality,
         timestamp: new Date(),
         tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
+        // R1b-2a T13 fix round 1 — readAllItems ĐÃ trả lời; item BAD ⇒ bad CÓ lý do (bad trần = chưa trả lời, mauMayChuDaTraLoi).
+        ...(v2 && co.quality === "bad" ? MAU_GIA_TRI_HONG : {}),
       } satisfies OtSample;
     });
   }

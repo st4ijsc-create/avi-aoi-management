@@ -56,18 +56,21 @@ export function tinhDeadlineMs(pollIntervalMs: number, timeoutMs?: number): numb
 export const SO_TICK_HONG_DE_MAT = 2;
 
 /**
- * SCADA R1b-2a T13 — MỘT mẫu / một tag cho thấy máy chủ ĐÃ TRẢ LỜI. Chỉ `bad` + `comm_lost` là chưa trả lời; `stale`, `config_error`,
- * `device_error`, `out_of_range`, `bad` không lý do, `uncertain` (kể cả kèm comm_lost) đều là đã trả lời (K13). Đây là luật tag DUY NHẤT
- * của cả hai đường: `moiTagMatLienLac` (đường poll: laTickHong / laDocTot) và `taoBatDocTot.quaMau` (đường push) cùng gọi hàm này.
+ * SCADA R1b-2a T13 — MỘT mẫu / một tag cho thấy máy chủ ĐÃ TRẢ LỜI. CHƯA trả lời = `bad` + `comm_lost` HOẶC `bad` KHÔNG lý do
+ * (fix round 1, fail-closed: driver OPC UA push phát bad trần cho item err / terminated(err) / … — sau khi rớt liên kết chúng không được
+ * báo connected). `stale`, `config_error`, `device_error`, `out_of_range`, `uncertain` (kể cả kèm comm_lost) đều là đã trả lời (K13).
+ * Mọi đường đọc mà thiết bị ĐÃ trả lời phải gắn lý do cho mẫu bad khi cờ V2 bật (chatLuong.MAU_GIA_TRI_HONG cho giá trị hỏng).
+ * Đây là luật tag DUY NHẤT của cả hai đường: `moiTagMatLienLac` (đường poll: laTickHong / laDocTot) và `taoBatDocTot.quaMau` (đường push).
  */
 export function mauMayChuDaTraLoi(s: Pick<OtSample, "quality" | "reason">): boolean {
-  return !(s.quality === "bad" && s.reason === "comm_lost");
+  return !(s.quality === "bad" && (s.reason === "comm_lost" || s.reason === undefined));
 }
 
 const moiTagMatLienLac = (e: SuKienDoc): boolean => e.tags.length > 0 && e.tags.every((t) => !mauMayChuDaTraLoi(t));
 
 /**
- * Tick hỏng = quá hạn (giao dịch hoặc hạn vòng poll), lỗi comm_lost cho CẢ tick, hoặc tick "ok" mà MỌI tag bad/comm_lost.
+ * Tick hỏng = quá hạn (giao dịch hoặc hạn vòng poll), lỗi comm_lost cho CẢ tick, hoặc tick "ok" mà MỌI tag CHƯA trả lời (bad/comm_lost
+ * hoặc bad không lý do — mauMayChuDaTraLoi, R1b-2a T13 fix round 1).
  * R1b-1 T4 — `lyDo:"ingest_treo"` (lượt phát mẫu/ghi DB quá hạn) KHÔNG BAO GIỜ hỏng vì cờ timeout của nó: DB chậm không phải thiết bị mất.
  * Tick đó mang lần đọc chính (`ok:true`) ⇒ phán theo tag của lần đọc như mọi tick ok; không mang lần đọc ⇒ không hỏng.
  */
