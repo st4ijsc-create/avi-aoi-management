@@ -432,7 +432,7 @@ export const flowRouter = router({
       try {
         runId = await batDauRun({ flowId: input.flowId, version, items: input.items, nutKichHoat: thuCong?.id, triggerKind: "thu-cong", chuLuong: ctx.user.id });
       } catch (e) {
-        if (e instanceof LoiLuong && e.code === "QUA_TRAN_DONG_THOI") throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowChayTay", reason: "flowQuaTranDongThoi" }, e.message);
+        if (e instanceof LoiLuong && (e.code === "QUA_TRAN_DONG_THOI" || e.code === "QUA_TRAN_LUOT_TREO")) throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowChayTay", reason: "flowQuaTranDongThoi" }, e.message);
         throw e;
       }
       return { runId, version };

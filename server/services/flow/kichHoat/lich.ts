@@ -123,7 +123,7 @@ export function laTrungKhoa(e: unknown): boolean {
  * bắn trước / bắn lặp). `bayGio` tiêm được — lưới dùng đồng hồ giả.
  */
 export async function banLich(y: { flowId: string; version: number; nodeId: string; bayGio?: Date; cron?: string; muiGio?: string }): Promise<string | null> {
-  const { batDauRun } = await import("../dongCo");
+  const { batDauRun, laLoiTranLuot } = await import("../dongCo");
   const moc = y.bayGio ?? new Date();
   // ★ M5: trần số lượt bắn theo lịch MỖI GIỜ mỗi luồng (chống luồng lưu trước bản vá / cron dày) — vượt ⇒ BỎ mốc, có log.
   const db = await getDb();
@@ -146,7 +146,7 @@ export async function banLich(y: { flowId: string; version: number; nodeId: stri
   } catch (e) {
     if (laTrungKhoa(e)) return null;
     // M5: luồng đã đủ lượt đồng thời (maxConcurrentRuns) ⇒ BỎ mốc này (không xếp hàng), có log.
-    if (e instanceof Error && e.name === "LoiLuong" && (e as { code?: string }).code === "QUA_TRAN_DONG_THOI") {
+    if (laLoiTranLuot(e)) {
       console.warn(`[luong-ai] lịch ${y.flowId}#${y.nodeId}: ${e.message} — BỎ mốc ${mocPhut(moc)}`);
       return null;
     }

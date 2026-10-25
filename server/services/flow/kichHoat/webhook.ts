@@ -120,7 +120,7 @@ export async function xuLyWebhook(y: { flowId: string; nodeId: string; token: un
     const goc = `${y.flowId}:${y.nodeId}:${k}`;
     idempotencyKey = goc.length <= 128 ? goc : `sha256:${createHash("sha256").update(goc).digest("hex")}`;
   }
-  const { batDauRun } = await import("../dongCo");
+  const { batDauRun, laLoiTranLuot } = await import("../dongCo");
   try {
     const runId = await batDauRun({
       flowId: y.flowId,
@@ -137,7 +137,7 @@ export async function xuLyWebhook(y: { flowId: string; nodeId: string; token: un
       if (r) return { ma: 202, runId: r.id, trung: true };
     }
     // M5: luồng đã đủ số lượt đồng thời (maxConcurrentRuns) ⇒ 429 — người gửi thử lại sau; KHÔNG xếp hàng.
-    if (e instanceof Error && e.name === "LoiLuong" && (e as { code?: string }).code === "QUA_TRAN_DONG_THOI") {
+    if (laLoiTranLuot(e)) {
       return { ma: 429, code: "RATE_LIMITED", thongDiep: e.message, retryAfterS: RETRY_AFTER_429_GIAY };
     }
     throw e;

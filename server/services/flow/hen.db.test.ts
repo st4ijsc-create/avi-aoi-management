@@ -15,7 +15,7 @@ import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { aiFlowEvents, aiFlowRuns, aiFlowSteps, aiFlows } from "../../../drizzle/schema";
 import { taoNguoiDungTest } from "../../testing/nguoiDungTest";
-import { batDauBuoc, batDauRun, chayMotMuc, luuPhienBan, nhatMuc, traLoiCho } from "./dongCo";
+import { batDauBuoc, batDauRun, chayMotMuc, laLoiTranLuot, luuPhienBan, nhatMuc, traLoiCho, tranLuotTreo } from "./dongCo";
 
 const TT = `t9hen${Math.floor(Math.random() * 1e5)}`;
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({ id, type, typeVersion: 1, name: id, position: [0, 0] as [number, number], parameters, ...extra });
@@ -172,6 +172,53 @@ describe("(A2) lượt đang hẹn KHÔNG chiếm chỗ maxConcurrentRuns", () =
     const muc = await nhatMuc("w-tran", 60_000, TT, a);
     await batDauBuoc(muc!); // a đang chạy node sau
     await expect(batDauRun({ flowId: `${TT}-cho-tran1`, version: 1, chuLuong: chu, items: [{ json: { i: 4 } }] })).rejects.toMatchObject({ code: "QUA_TRAN_DONG_THOI" }); // b đã hẹn xong ⇒ không tính; a có bước đang chạy ⇒ tính ⇒ đủ trần
+  });
+});
+
+describe("(A3) TRẦN RIÊNG số lượt treo (hẹn giờ + chờ duyệt) mỗi luồng", () => {
+  it("tranLuotTreo: mặc định 100; env hợp lệ 1…100000; rác ⇒ mặc định", () => {
+    expect(tranLuotTreo({} as NodeJS.ProcessEnv)).toBe(100);
+    expect(tranLuotTreo({ FLOW_TRAN_LUOT_TREO: "7" } as unknown as NodeJS.ProcessEnv)).toBe(7);
+    for (const v of ["0", "-1", "abc", "1.5", "100001", ""]) expect(tranLuotTreo({ FLOW_TRAN_LUOT_TREO: v } as unknown as NodeJS.ProcessEnv), v).toBe(100);
+  });
+
+  it("★ trần N=2: hai lượt đang hẹn ⇒ lượt thứ ba bị TỪ CHỐI (QUA_TRAN_LUOT_TREO); một lượt hết hẹn xong ⇒ nhận lại; chờ duyệt cũng tính", async () => {
+    const cu = process.env.FLOW_TRAN_LUOT_TREO;
+    process.env.FLOW_TRAN_LUOT_TREO = "2";
+    try {
+      await luuPhienBan(luongCho(`${TT}-cho-treo`, 3600), chu, null);
+      const mo = () => batDauRun({ flowId: `${TT}-cho-treo`, version: 1, chuLuong: chu, items: [{ json: {} }] });
+      const a = await mo();
+      const b = await mo(); // chưa chạy ⇒ chưa treo ⇒ không tính
+      await chayHet(); // cả hai thành "đang hẹn"
+      const loi = await mo().catch((e) => e);
+      expect(loi).toMatchObject({ code: "QUA_TRAN_LUOT_TREO" });
+      expect(laLoiTranLuot(loi)).toBe(true);
+      await deHan(a);
+      await chayHet();
+      expect((await lay(a)).status).toBe("xong");
+      const c = await mo(); // a đã xong ⇒ còn 1 treo (b) ⇒ nhận
+      expect(c).toBeTruthy();
+      await chayHet(); // b, c đang hẹn ⇒ đủ trần
+      await expect(mo()).rejects.toMatchObject({ code: "QUA_TRAN_LUOT_TREO" });
+      expect((await lay(b)).status).toBe("dang-chay");
+      // luồng khác không bị ảnh hưởng (trần theo luồng)
+      const khac = await batDauRun({ flowId: `${TT}-cho0`, version: 1, chuLuong: chu, items: [{ json: {} }] });
+      expect(khac).toBeTruthy();
+      await chayHet();
+      // chờ duyệt cũng tính vào trần
+      const d1 = await batDauRun({ flowId: `${TT}-duyet`, version: 1, chuLuong: chu, items: [{ json: {} }] });
+      const d2 = await batDauRun({ flowId: `${TT}-duyet`, version: 1, chuLuong: chu, items: [{ json: {} }] });
+      await chayHet();
+      expect([(await lay(d1)).status, (await lay(d2)).status]).toEqual(["cho-duyet", "cho-duyet"]);
+      await expect(batDauRun({ flowId: `${TT}-duyet`, version: 1, chuLuong: chu, items: [{ json: {} }] })).rejects.toMatchObject({ code: "QUA_TRAN_LUOT_TREO" });
+      expect((await traLoiCho({ runId: d1, nodeId: "d", cong: "dong-y" })).ok).toBe(true);
+      await chayHet();
+      await expect(batDauRun({ flowId: `${TT}-duyet`, version: 1, chuLuong: chu, items: [{ json: {} }] })).resolves.toBeTruthy();
+    } finally {
+      if (cu === undefined) delete process.env.FLOW_TRAN_LUOT_TREO;
+      else process.env.FLOW_TRAN_LUOT_TREO = cu;
+    }
   });
 });
 

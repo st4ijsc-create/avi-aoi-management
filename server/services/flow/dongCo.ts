@@ -32,7 +32,7 @@ const UU_TIEN_SO: Record<string, number> = { interactive: 0, agent: 1, backgroun
 
 export class LoiLuong extends Error {
   constructor(
-    public readonly code: "LUONG_KHONG_HOP_LE" | "LUONG_KHONG_CO" | "KHONG_CO_DB" | "LOAI_NODE_MAT" | "QUA_TRAN_DONG_THOI" | "QUA_TRAN_LUOT_GIO",
+    public readonly code: "LUONG_KHONG_HOP_LE" | "LUONG_KHONG_CO" | "KHONG_CO_DB" | "LOAI_NODE_MAT" | "QUA_TRAN_DONG_THOI" | "QUA_TRAN_LUOT_GIO" | "QUA_TRAN_LUOT_TREO",
     message: string,
   ) {
     super(message);
@@ -139,6 +139,17 @@ async function suyChuLuong(tx: Db | Tx, y: YeuCauRun): Promise<number | null> {
  * tương lai, không bước nào đang chạy) cũng KHÔNG chiếm chỗ — nó không dùng tài nguyên; nếu không, trần mặc định 1 sẽ từ chối mọi sự kiện đến trong lúc luồng đang chờ. Khoá cố vấn theo luồng
  * để hai lượt gọi cùng lúc không cùng lọt qua phép đếm. Lượt trùng khoá idempotency được miễn (để đường cũ trả đúng lượt đã có).
  */
+/** Trần số lượt GỐC đang TREO (cho-duyet, hoặc đang hẹn giờ) của MỘT luồng — mặc định 100, đặt bằng env `FLOW_TRAN_LUOT_TREO` (số nguyên 1…100000; rác ⇒ mặc định). */
+export const TRAN_LUOT_TREO_MAC_DINH = 100;
+export function tranLuotTreo(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.FLOW_TRAN_LUOT_TREO);
+  return Number.isInteger(n) && n >= 1 && n <= 100_000 ? n : TRAN_LUOT_TREO_MAC_DINH;
+}
+
+/** Mã từ chối "luồng đã đủ lượt" — người gọi xử lý như nhau (bỏ mốc / 429 / CONFLICT / lỗi tool). */
+export const laLoiTranLuot = (e: unknown): e is Error =>
+  e instanceof Error && e.name === "LoiLuong" && ((e as { code?: string }).code === "QUA_TRAN_DONG_THOI" || (e as { code?: string }).code === "QUA_TRAN_LUOT_TREO");
+
 async function kiemTranDongThoi(tx: Db | Tx, y: YeuCauRun, def: FlowDefinition): Promise<void> {
   if (y.parentRunId) return;
   const tran = def.settings?.maxConcurrentRuns ?? TRAN_DONG_THOI_MAC_DINH;
@@ -152,6 +163,16 @@ async function kiemTranDongThoi(tx: Db | Tx, y: YeuCauRun, def: FlowDefinition):
         EXISTS (SELECT 1 FROM ai_flow_queue q WHERE q."runId" = ai_flow_runs.id)
         AND NOT EXISTS (SELECT 1 FROM ai_flow_queue q WHERE q."runId" = ai_flow_runs.id AND q."availableAt" <= now())
         AND NOT EXISTS (SELECT 1 FROM ai_flow_steps s WHERE s."runId" = ai_flow_runs.id AND s.status = 'dang-chay'))`)) as unknown as { n: number }[];
+  // Lượt hẹn giờ / chờ duyệt KHÔNG tính vào trần đồng thời ⇒ có TRẦN RIÊNG, để sự kiện dồn dập không tích hàng nghìn lượt treo.
+  const [t] = (await tx.execute(sql`SELECT count(*)::int AS n FROM ai_flow_runs WHERE "flowId" = ${y.flowId} AND "parentRunId" IS NULL AND (
+      status = 'cho-duyet' OR (status = 'dang-chay'
+        AND EXISTS (SELECT 1 FROM ai_flow_queue q WHERE q."runId" = ai_flow_runs.id)
+        AND NOT EXISTS (SELECT 1 FROM ai_flow_queue q WHERE q."runId" = ai_flow_runs.id AND q."availableAt" <= now())
+        AND NOT EXISTS (SELECT 1 FROM ai_flow_steps s WHERE s."runId" = ai_flow_runs.id AND s.status = 'dang-chay')))`)) as unknown as { n: number }[];
+  const tranTreo = tranLuotTreo();
+  if (t.n >= tranTreo) {
+    throw new LoiLuong("QUA_TRAN_LUOT_TREO", `luồng ${y.flowId} đang có ${t.n} lượt treo (chờ duyệt / đang hẹn giờ; trần ${tranTreo}) — lượt mới bị TỪ CHỐI cho tới khi bớt`);
+  }
   if (d.n >= tran) {
     throw new LoiLuong("QUA_TRAN_DONG_THOI", `luồng ${y.flowId} đang có ${d.n} lượt chạy (trần maxConcurrentRuns=${tran}) — lượt mới bị TỪ CHỐI (không xếp hàng)`);
   }
