@@ -306,7 +306,7 @@ describe("★★★ wip — ĐỌC", () => {
     const truoc = await diem();
     expect(truoc).toBeDefined();
     await dung(sql`INSERT INTO station_dwell_time ("lineId", "stationId", "machineId", "serialNumber", "dwellMs", "blockedMs", "starvedMs", "enteredAt") VALUES (${B.lid}, ${A.sid}, ${B.mid}, ${B.serial}, 99999999, 99999999, 99999999, now())`);
-    expect(await diem()).toBe(truoc);
+    expect(Math.abs((await diem())! - truoc!)).toBeLessThan(0.5); // dung sai: điểm có thành phần tuổi (phút) nên hai lần gọi lệch chút ít; ảnh hưởng của dwell giả sẽ cộng cả W_BLOCKED
   });
   it("dispatch — khuyến nghị / điểm nghẽn của B không lọt vào kết quả của A", async () => {
     const r = await uA.wip.dispatch({ max: 200 });

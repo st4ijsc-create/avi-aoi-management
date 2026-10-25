@@ -3582,7 +3582,7 @@ export async function listSamplesForSerial(serialNumber: string) {
   return rows;
 }
 
-export async function listSamplesForLot(lotCode: string, limit = 5000) {
+export async function listSamplesForLot(lotCode: string, limit = 5000, machineIds: number[] | null = null) {
   const db = await getDb();
   if (!db) return [];
   const rows = await db
@@ -3596,7 +3596,7 @@ export async function listSamplesForLot(lotCode: string, limit = 5000) {
       lotCode: measurementSamples.lotCode,
     })
     .from(measurementSamples)
-    .where(eq(measurementSamples.lotCode, lotCode))
+    .where(and(eq(measurementSamples.lotCode, lotCode), machineIds === null ? undefined : inArray(measurementSamples.machineId, machineIds.length > 0 ? machineIds : [-1]))) // phạm vi người dùng (L6a 2026-10-25)
     .orderBy(asc(measurementSamples.sampledAt))
     .limit(limit);
   return rows;

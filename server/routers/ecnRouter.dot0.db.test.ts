@@ -19,6 +19,16 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
 
+// phạm vi người dùng (L6a 2026-10-25): bài này kiểm RBAC / CAS / SoD của ECN với người dùng gieo CỐ ĐỊNH (không gán nhà máy), KHÔNG kiểm phạm vi
+// (đã có loNcrEcnPhamVi.db.test.ts, CSDL thật) ⇒ coi người gọi là toàn quyền ở cổng phạm vi của phiếu.
+vi.mock("./_phieuPhamVi", async (orig) => ({
+  ...(await orig<typeof import("./_phieuPhamVi")>()),
+  ecnThayDuocTrongPhamVi: async () => true,
+  dieuKienEcnTrongPhamVi: async () => undefined,
+  nhaMayGhiPhieu: async (_ctx: unknown, o: { khai?: number | null }) => o.khai ?? null,
+  sanPhamChoPhieu: async () => undefined,
+}));
+
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 90_000 });
 
 const DB_URL = process.env.DATABASE_URL;

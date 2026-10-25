@@ -18,7 +18,7 @@
  * + timestamps) — a self-contained audit trail. Pure DB; null-guarded.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import {
   nonconformanceReports,
@@ -92,6 +92,8 @@ export async function createNcr(input: CreateNcrInput): Promise<NonconformanceRe
 }
 
 export interface ListNcrFilter {
+  /** phạm vi người dùng (L6a 2026-10-25): chỉ phiếu của các nhà máy này (rỗng ⇒ không phiếu; null / vắng ⇒ không lọc). Phiếu NULL chỉ hiện khi không lọc. */
+  factoryIds?: number[] | null;
   status?: NcrStatus;
   source?: NcrSource;
   lotNumber?: string;
@@ -104,6 +106,7 @@ export async function listNcr(filter: ListNcrFilter = {}): Promise<Nonconformanc
   const d = await getDb();
   if (!d) return [];
   const conds = [] as any[];
+  if (filter.factoryIds != null) conds.push(filter.factoryIds.length > 0 ? inArray(nonconformanceReports.factoryId, filter.factoryIds) : sql`false`);
   if (filter.status) conds.push(eq(nonconformanceReports.status, filter.status));
   if (filter.source) conds.push(eq(nonconformanceReports.source, filter.source));
   if (filter.lotNumber) conds.push(eq(nonconformanceReports.lotNumber, filter.lotNumber));

@@ -21,6 +21,8 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { rethrowDbError } from "../_core/dbErrors";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
+import { congMaTenant } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
 import {
   componentPackages, InsertComponentPackage,
   componentFootprints, InsertComponentFootprint,
@@ -296,16 +298,20 @@ export const componentLibraryRouter = router({
   /** Per-package linked-material counts + linkage coverage (page header stats). */
   linkStats: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return { totalMaterials: 0, linkedMaterials: 0, byPackage: [] as Array<{ packageId: number; count: number }> };
+      // phạm vi người dùng (L6a 2026-10-25): vật liệu mang mã nhà máy / tập đoàn ⇒ chỉ đếm phần trong phạm vi (cùng `congMaTenant` của danh mục)
+      const cong = await congMaTenant({ factoryCode: materials.factoryCode, corporateCode: materials.corporateCode }, phamViCua(ctx));
+      const dieuKien = cong ? sql`WHERE ${cong}` : sql``;
+      const dieuKienLienKet = cong ? sql`WHERE "packageId" IS NOT NULL AND ${cong}` : sql`WHERE "packageId" IS NOT NULL`;
       const [totals] = (await db.execute(sql`
         SELECT count(*)::int AS total,
                count(*) FILTER (WHERE "packageId" IS NOT NULL)::int AS linked
-        FROM "materials"`)) as unknown as Array<{ total: number; linked: number }>;
+        FROM "materials" ${dieuKien}`)) as unknown as Array<{ total: number; linked: number }>;
       const byPackage = (await db.execute(sql`
         SELECT "packageId", count(*)::int AS count
-        FROM "materials" WHERE "packageId" IS NOT NULL
+        FROM "materials" ${dieuKienLienKet}
         GROUP BY "packageId"`)) as unknown as Array<{ packageId: number; count: number }>;
       return {
         totalMaterials: Number(totals?.total ?? 0),

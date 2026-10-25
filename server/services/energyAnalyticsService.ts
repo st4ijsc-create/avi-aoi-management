@@ -67,7 +67,7 @@ interface ReadingForAttribution {
  * kwhPerUnit = totalKwh / goodUnits, NULL when goodUnits = 0.
  */
 export async function computeRecipeEnergy(params: EnergyRange): Promise<RecipeEnergyRow[]> {
-  const range: EnergyRange = { from: params.from, to: params.to, machineId: params.machineId };
+  const range: EnergyRange = { from: params.from, to: params.to, machineId: params.machineId, machineIds: params.machineIds };
 
   const [readings, windows, goodUnits] = await Promise.all([
     getEnergyReadings(range),
@@ -182,7 +182,7 @@ export interface PeakDemandResult {
  */
 export async function computePeakDemand(params: EnergyRange & { windowMin?: number }): Promise<PeakDemandResult> {
   const windowMin = params.windowMin && params.windowMin > 0 ? params.windowMin : 15;
-  const range: EnergyRange = { from: params.from, to: params.to, machineId: params.machineId };
+  const range: EnergyRange = { from: params.from, to: params.to, machineId: params.machineId, machineIds: params.machineIds };
 
   const peak = await getPeakDemandRows(range);
 
@@ -191,6 +191,7 @@ export async function computePeakDemand(params: EnergyRange & { windowMin?: numb
   if (isTsdbEnabled()) {
     const tsdb = await queryEnergyBuckets({
       machineId: params.machineId,
+      machineIds: params.machineIds,
       from: params.from,
       to: params.to,
       bucket: `${windowMin} minutes`,
@@ -239,7 +240,7 @@ export interface PowerFactorResult {
  */
 export async function computePowerFactor(params: EnergyRange & { threshold?: number }): Promise<PowerFactorResult> {
   const threshold = params.threshold != null ? params.threshold : PF_DEFAULT_THRESHOLD;
-  const range: EnergyRange = { from: params.from, to: params.to, machineId: params.machineId };
+  const range: EnergyRange = { from: params.from, to: params.to, machineId: params.machineId, machineIds: params.machineIds };
   const stats = await getPowerFactorStats(range, threshold);
 
   if (stats.pfSamples === 0) {
@@ -304,6 +305,7 @@ export async function forecastEnergy(params: EnergyRange & {
   if (isTsdbEnabled()) {
     const rows = await queryEnergyBuckets({
       machineId: params.machineId,
+      machineIds: params.machineIds,
       from: params.from,
       to: params.to,
       bucket: bucketLabel,
@@ -316,7 +318,7 @@ export async function forecastEnergy(params: EnergyRange & {
       .filter((p) => Number.isFinite(p.value));
   } else {
     const buckets = await getRollingDemandBuckets(
-      { from: params.from, to: params.to, machineId: params.machineId },
+      { from: params.from, to: params.to, machineId: params.machineId, machineIds: params.machineIds },
       bucketMin,
     );
     if (metric === "powerKw") {
@@ -325,7 +327,7 @@ export async function forecastEnergy(params: EnergyRange & {
         .filter((p) => Number.isFinite(p.value));
     } else {
       // kWh per bucket from raw readings summed into the same window.
-      const readings = await getEnergyReadings({ from: params.from, to: params.to, machineId: params.machineId });
+      const readings = await getEnergyReadings({ from: params.from, to: params.to, machineId: params.machineId, machineIds: params.machineIds });
       const seconds = bucketMin * 60;
       const sums = new Map<number, number>();
       for (const r of readings) {

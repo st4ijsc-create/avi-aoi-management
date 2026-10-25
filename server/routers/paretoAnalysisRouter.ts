@@ -12,6 +12,7 @@ import { paretoByDefectType, paretoByMachine, paretoByLine, paretoByTimePeriod }
 import { getDefectClassPareto } from "../services/aiInspectionAnalytics";
 import { getPackageDefectPareto } from "../services/componentPackageAnalytics";
 import { resolveFactoryDateWindow } from "../utils/kpi";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 
 export const paretoAnalysisRouter = router({
   /**
@@ -35,9 +36,10 @@ export const paretoAnalysisRouter = router({
       productModelId: z.number().optional(),
       topN: z.number().min(3).max(50).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const window = resolveFactoryDateWindow(input.startDate, input.endDate);
       const result = await getDefectClassPareto({
+        machineIds: await idsMayTrongPhamVi(ctx), // phạm vi người dùng (L6a 2026-10-25)
         startDate: window.start,
         endDate: window.end,
         factoryId: input.factoryId,
@@ -103,9 +105,10 @@ export const paretoAnalysisRouter = router({
       productModelId: z.number().optional(),
       topN: z.number().min(3).max(50).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const window = resolveFactoryDateWindow(input.startDate, input.endDate);
       const result = await getPackageDefectPareto({
+        machineIds: await idsMayTrongPhamVi(ctx), // phạm vi người dùng (L6a 2026-10-25)
         startDate: window.start,
         endDate: window.end,
         factoryId: input.factoryId,
@@ -163,7 +166,7 @@ export const paretoAnalysisRouter = router({
       machineId: z.number().optional(),
       limit: z.number().min(5).max(100).optional(),
     }))
-    .query(({ input }) => paretoByDefectType(input)),
+    .query(async ({ input, ctx }) => paretoByDefectType({ ...input, machineIds: await idsMayTrongPhamVi(ctx) })), // phạm vi người dùng (L6a 2026-10-25)
 
   /**
    * Pareto analysis by machine
@@ -177,7 +180,7 @@ export const paretoAnalysisRouter = router({
       lineId: z.number().optional(),
       limit: z.number().min(5).max(100).optional(),
     }))
-    .query(({ input }) => paretoByMachine(input)),
+    .query(async ({ input, ctx }) => paretoByMachine({ ...input, machineIds: await idsMayTrongPhamVi(ctx) })), // phạm vi người dùng (L6a 2026-10-25)
 
   /**
    * Pareto analysis by production line
@@ -190,7 +193,7 @@ export const paretoAnalysisRouter = router({
       workshopId: z.number().optional(),
       limit: z.number().min(5).max(100).optional(),
     }))
-    .query(({ input }) => paretoByLine(input)),
+    .query(async ({ input, ctx }) => paretoByLine({ ...input, machineIds: await idsMayTrongPhamVi(ctx) })), // phạm vi người dùng (L6a 2026-10-25)
 
   /**
    * Pareto analysis by time period
@@ -204,5 +207,5 @@ export const paretoAnalysisRouter = router({
       machineId: z.number().optional(),
       limit: z.number().min(5).max(100).optional(),
     }))
-    .query(({ input }) => paretoByTimePeriod(input)),
+    .query(async ({ input, ctx }) => paretoByTimePeriod({ ...input, machineIds: await idsMayTrongPhamVi(ctx) })), // phạm vi người dùng (L6a 2026-10-25)
 });

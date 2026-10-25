@@ -18,6 +18,9 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
+import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
 import {
   listMetrics,
   getDefinition,
@@ -58,13 +61,22 @@ export const semanticsRouter = router({
     }),
 
   /** Compute a metric via its canonical implementation → MetricResult (§10.2). */
-  compute: protectedProcedure.input(computeInput).query(async ({ input }) => {
+  compute: protectedProcedure.input(computeInput).query(async ({ input, ctx }) => {
     try {
+      // phạm vi người dùng (L6a 2026-10-25): id khai theo phạm vi phải trong phạm vi người gọi (ngoài ≡ không tồn tại); phạm vi nhà máy KHÔNG nêu id ⇒ chỉ tính máy trong phạm vi
+      if (input.scopeId != null) {
+        if (input.scope === "equipment") await mayTrongPhamVi(ctx, input.scopeId);
+        else if (input.scope === "line" || input.scope === "factory") {
+          const ids = await idsTrongPhamVi(input.scope, phamViCua(ctx), { strict: true });
+          if (ids !== null && !ids.includes(input.scopeId)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: input.scope }, "Not found");
+        }
+      }
       return await computeMetric(input.metric, {
         scope: input.scope,
         scopeId: input.scopeId,
         from: input.from,
         to: input.to,
+        machineIds: await idsMayTrongPhamVi(ctx),
       });
     } catch (e) {
       if (e instanceof MetricComputeError) {

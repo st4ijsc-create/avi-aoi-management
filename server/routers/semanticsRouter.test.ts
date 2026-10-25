@@ -11,6 +11,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Isolate the router from the real registry (files/DB) — the mocked class keeps
 // identity with what the router imports, so `instanceof` mapping is exercised.
+// phạm vi người dùng (L6a 2026-10-25): bài này kiểm ánh xạ lỗi + chắn cửa sổ, không kiểm phạm vi (đã có loNangLuongSanPhamPhamVi.db.test.ts) ⇒ coi người gọi là toàn quyền
+vi.mock("./_adapterPhamVi", () => ({ idsMayTrongPhamVi: vi.fn(async () => null), mayTrongPhamVi: vi.fn(async () => undefined) }));
+vi.mock("../db/hierarchy", () => ({ idsTrongPhamVi: vi.fn(async () => null) }));
+
 vi.mock("../services/semantics/metricRegistry", () => {
   class MetricComputeError extends Error {
     constructor(public readonly code: string, message: string) {
@@ -99,7 +103,7 @@ describe("compute — zod window guard", () => {
     mockCompute.mockResolvedValue(result as any);
 
     const res = await authedCaller().compute({ ...base, from, to });
-    expect(mockCompute).toHaveBeenCalledWith("OEE", { scope: "line", scopeId: 3, from, to });
+    expect(mockCompute).toHaveBeenCalledWith("OEE", { scope: "line", scopeId: 3, machineIds: null, from, to });
     expect(res).toEqual(result);
     expect(res.definition_version).toBe("OEE@v1"); // §10.2 traceability field
   });
