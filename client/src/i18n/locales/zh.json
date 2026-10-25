@@ -1595,7 +1595,8 @@
     "unsavedChangesWarning": "未保存更改警告",
     "websocketDescription": "WebSocket描述",
     "websocketRealtimeDescription": "WebSocket实时描述",
-    "websocketServer": "WebSocket服务器"
+    "websocketServer": "WebSocket服务器",
+    "clearHistoryTitle": "清除查询历史？"
   },
   "ai": {
     "citation": {
@@ -2278,7 +2279,14 @@
     "totalBackups": "备份总数",
     "weekly": "每周",
     "previewTitle": "备份预览",
-    "versionLabel": "版本"
+    "versionLabel": "版本",
+    "cancel": "取消",
+    "confirmRestoreAction": "是，立即恢复",
+    "confirmRestoreMergeBody": "此操作将把此备份文件中的记录载入所选类别（{{categories}}）。现有记录将保留，重复行将被跳过。",
+    "confirmRestoreOverwriteBody": "此操作将删除所选类别（{{categories}}）中的所有现有记录，并以此备份文件的内容替换。此操作无法撤销。",
+    "confirmRestoreTitle": "恢复并替换数据？",
+    "overwriteHint": "开启后，将在载入备份之前删除所选类别中的所有现有记录。关闭时仅添加记录并跳过重复项。",
+    "overwriteLabel": "覆盖现有数据"
   },
   "cache": {
     "warming": {
@@ -5737,7 +5745,9 @@
       "replayMessageTitle": "重放消息",
       "title": "MQTT 主题与消息",
       "topicsTab": "主题",
-      "topicStatistics": "主题统计"
+      "topicStatistics": "主题统计",
+      "resendUnavailable": "重新发送（暂不可用）",
+      "resendUnavailableHint": "消息重发功能暂不可用"
     },
     "testConnection": "测试连接",
     "replayPage": {
@@ -5777,7 +5787,17 @@
       "play": "播放",
       "timestampLabel": "时间戳",
       "title": "MQTT 消息重放",
-      "topicLabel": "主题"
+      "topicLabel": "主题",
+      "registerCodeLabel": "设备编码",
+      "registerConfirm": "注册",
+      "registerDialogDesc": "根据此发现的 MQTT 设备创建设备记录。",
+      "registerDialogTitle": "注册设备",
+      "registerNameLabel": "设备名称",
+      "registerNoStations": "尚未配置工位——请先创建工位。",
+      "registerStationLabel": "工位",
+      "registerStationPlaceholder": "选择工位",
+      "registerSuccess": "设备 {{code}} 已注册",
+      "registerTypeLabel": "设备类型"
     },
     "profileMgmt": {
       "update": "更新",
@@ -22326,7 +22346,8 @@
       "dongNgan": "关闭处理面板",
       "demTheoNhaMay": "（按整座工厂统计）",
       "bangSucKhoe": "设备健康",
-      "demTheoNhieuNhaMay": "(按当前载入的 {{n}} 家工厂统计)"
+      "demTheoNhieuNhaMay": "(按当前载入的 {{n}} 家工厂统计)",
+      "soMayNgan_other": "{{n}} 台设备"
     },
     "studio": {
       "tieuDe": "3D 工厂 — 设计",
@@ -22734,7 +22755,8 @@
         "oeeTrungBinh": "平均 OEE",
         "andonMo": "有安灯的机台",
         "ruiRoPdm": "预测性维护风险"
-      }
+      },
+      "mauSo_other": "{{n}} 台设备"
     },
     "model": {
       "tamGiac": "三角面",
@@ -22840,7 +22862,8 @@
     },
     "daiHopNhat": {
       "an": "隐藏",
-      "tomTat": "{{so}} 项需知"
+      "tomTat": "{{so}} 项需知",
+      "tomTat_other": "{{so}} 项须知"
     }
   },
   "provenance": {
