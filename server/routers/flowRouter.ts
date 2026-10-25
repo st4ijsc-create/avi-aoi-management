@@ -498,6 +498,54 @@ export const flowRouter = router({
         .limit(input.gioiHan);
     }),
 
+  /**
+   * ★ Lô B7-D — THỐNG KÊ MỘT LUỒNG trong `ngay` ngày gần nhất, tính TRỰC TIẾP bằng SQL trên ai_flow_runs / steps / events (không bảng mới):
+   * lượt theo trạng thái + tỉ lệ thành công, p50/p90 thời gian lượt XONG (đồng hồ treo tường — gồm thời gian chờ người), thời gian + lỗi theo node, token + số lời gọi theo model
+   * (từ sự kiện `buoc.model`; lời gọi không báo token đếm riêng), số lần ĐỔI MODEL liên tiếp trong một lượt = ƯỚC LƯỢNG số lần đổi khe (không đọc bộ giám sát).
+   */
+  thongKe: xemProcedure
+    .input(z.object({ flowId: flowIdSchema, ngay: z.number().int().min(1).max(90).default(7) }))
+    .query(async ({ input, ctx }) => {
+      await chanLuong(ctx, input.flowId, "flowXem");
+      const db = await layDb("flowXem");
+      const cuaSo = sql`"startedAt" > now() - (${input.ngay}::int * interval '1 day')`;
+      const so = (v: unknown): number | null => (v === null || v === undefined ? null : Math.round(Number(v) * 1000) / 1000);
+      const theoTrangThai = (await db.execute(sql`SELECT status, count(*)::int AS n FROM ai_flow_runs WHERE "flowId" = ${input.flowId} AND ${cuaSo} GROUP BY status`)) as unknown as { status: string; n: number }[];
+      const dem = (s: string) => theoTrangThai.find((x) => x.status === s)?.n ?? 0;
+      const [tg] = (await db.execute(sql`SELECT count(*)::int AS n,
+          percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM ("finishedAt" - "startedAt"))) AS p50,
+          percentile_cont(0.9) WITHIN GROUP (ORDER BY extract(epoch FROM ("finishedAt" - "startedAt"))) AS p90
+        FROM ai_flow_runs WHERE "flowId" = ${input.flowId} AND ${cuaSo} AND status = 'xong' AND "finishedAt" IS NOT NULL`)) as unknown as { n: number; p50: unknown; p90: unknown }[];
+      const theoNut = (await db.execute(sql`SELECT s."nodeId" AS "nodeId", count(*)::int AS n, (count(*) FILTER (WHERE s.status = 'loi'))::int AS loi,
+          percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM (s."finishedAt" - s."startedAt"))) AS p50,
+          percentile_cont(0.9) WITHIN GROUP (ORDER BY extract(epoch FROM (s."finishedAt" - s."startedAt"))) AS p90
+        FROM ai_flow_steps s JOIN ai_flow_runs r ON r.id = s."runId"
+        WHERE r."flowId" = ${input.flowId} AND r.${cuaSo} AND s."finishedAt" IS NOT NULL
+        GROUP BY s."nodeId" ORDER BY count(*) DESC, s."nodeId" LIMIT 50`)) as unknown as { nodeId: string; n: number; loi: number; p50: unknown; p90: unknown }[];
+      const theoModel = (await db.execute(sql`SELECT coalesce(e.payload->>'model', '(không rõ)') AS model, count(*)::int AS "soLoiGoi",
+          coalesce(sum((e.payload->>'tokVao')::numeric), 0)::bigint AS "tokVao", coalesce(sum((e.payload->>'tokRa')::numeric), 0)::bigint AS "tokRa",
+          (count(*) FILTER (WHERE e.payload->>'tokVao' IS NULL))::int AS "khongBaoToken"
+        FROM ai_flow_events e JOIN ai_flow_runs r ON r.id = e."runId"
+        WHERE r."flowId" = ${input.flowId} AND r.${cuaSo} AND e.kind = 'buoc.model'
+        GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT 20`)) as unknown as { model: string; soLoiGoi: number; tokVao: unknown; tokRa: unknown; khongBaoToken: number }[];
+      const [dk] = (await db.execute(sql`WITH m AS (
+          SELECT e."runId", e.payload->>'model' AS model, (e.payload->>'kheBan')::boolean AS "kheBan",
+                 lag(e.payload->>'model') OVER (PARTITION BY e."runId" ORDER BY e.id) AS truoc
+            FROM ai_flow_events e JOIN ai_flow_runs r ON r.id = e."runId"
+           WHERE r."flowId" = ${input.flowId} AND r.${cuaSo} AND e.kind = 'buoc.model')
+        SELECT (count(*) FILTER (WHERE truoc IS NOT NULL AND model IS NOT NULL AND model IS DISTINCT FROM truoc))::int AS "uocLuong",
+               (count(*) FILTER (WHERE "kheBan" IS TRUE))::int AS "luotKheBan" FROM m`)) as unknown as { uocLuong: number; luotKheBan: number }[];
+      const dong = dem("xong") + dem("loi") + dem("huy");
+      return {
+        ngay: input.ngay,
+        luot: { tong: theoTrangThai.reduce((a, x) => a + x.n, 0), xong: dem("xong"), loi: dem("loi"), huy: dem("huy"), dangChay: dem("dang-chay"), choDuyet: dem("cho-duyet"), tiLeThanhCong: dong > 0 ? Math.round((dem("xong") / dong) * 10000) / 10000 : null },
+        thoiGianLuotXongGiay: { soLuot: tg?.n ?? 0, p50: so(tg?.p50), p90: so(tg?.p90) },
+        theoNut: theoNut.map((x) => ({ nodeId: x.nodeId, soBuoc: x.n, soLoi: x.loi, p50Giay: so(x.p50), p90Giay: so(x.p90) })),
+        theoModel: theoModel.map((x) => ({ model: x.model, soLoiGoi: x.soLoiGoi, tokenVao: Number(x.tokVao), tokenRa: Number(x.tokRa), khongBaoToken: x.khongBaoToken })),
+        doiKhe: { uocLuong: dk?.uocLuong ?? 0, luotKheBan: dk?.luotKheBan ?? 0, ghiChu: "UOC LUONG: so lan model doi giua hai loi goi lien tiep trong cung mot luot (khong doc bo giam sat)." },
+      };
+    }),
+
   /** Dòng thời gian một lượt: bước (input/output cắt ở `TRAN_CHU_BUOC`) + sự kiện. */
   dongThoiGian: xemProcedure.input(z.object({ runId: z.string().uuid() })).query(async ({ input, ctx }) => {
     await chanLuot(ctx, input.runId, "flowXem");

@@ -100,6 +100,23 @@ describe("node AI (Đợt 8.1)", () => {
     }
   });
 
+  it("★ token THẬT của lời gọi được điền vào CHÍNH vết model (ghiModel) — dữ liệu cho flow.thongKe; hàm gọi giả không báo ⇒ vắng (không bịa)", async () => {
+    const vet: Array<{ tokVao?: number; tokRa?: number }> = [];
+    const nguGhi = { ...ngu([{ json: { a: 1 } }]), ghiModel: (v: { tokVao?: number; tokRa?: number }) => void vet.push(v) } as NguCanhChay;
+    await layNut("ai.llm")!.chay({ loiNhac: "x" }, nguGhi); // đường mặc định (chatCompletion giả trả tokensPrompt=1, tokensGenerated=1)
+    expect(vet).toHaveLength(1);
+    expect(vet[0]).toMatchObject({ tokVao: 1, tokRa: 1 });
+    const cu = datHamGoiAi((async () => "x") as HamGoiAi);
+    try {
+      const vet2: Array<{ tokVao?: number; tokRa?: number }> = [];
+      await layNut("ai.llm")!.chay({ loiNhac: "x" }, { ...ngu([{ json: {} }]), ghiModel: (v: { tokVao?: number; tokRa?: number }) => void vet2.push(v) } as NguCanhChay);
+      expect(vet2).toHaveLength(1);
+      expect(vet2[0].tokVao).toBeUndefined();
+    } finally {
+      datHamGoiAi(cu);
+    }
+  });
+
   it("ai.tom-tat: gom mọi item thành một", async () => {
     const cu = datHamGoiAi((async (y) => `tóm ${y.nguoiDung.includes('"a": 2')}`) as HamGoiAi);
     try {

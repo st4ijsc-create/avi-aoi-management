@@ -23340,7 +23340,8 @@
       "loiKiemTruoc": "Pre-save check:",
       "congChuaNoi": "Port '{{cong}}' of node '{{node}}' is not connected — items reaching it will be dropped",
       "hanLuot": "Maximum run age (hours)",
-      "hanLuotGoiY": "Empty = no own limit. A run that is running / waiting / delayed beyond this stops with error QUA_HAN_LUOT (max 168 hours = 7 days)."
+      "hanLuotGoiY": "Empty = no own limit. A run that is running / waiting / delayed beyond this stops with error QUA_HAN_LUOT (max 168 hours = 7 days).",
+      "tabThongKe": "Statistics"
     },
     "cauHinh": {
       "loiBieuThuc": "Expression error: {{loi}}",
@@ -23746,6 +23747,26 @@
         "co-bi-mat": "The package references a secret — it will be dropped (attach again later).",
         "co-id-nha-may": "The package carries machine / recipient / flow ids — they will be cleared (pick again later)."
       }
+    },
+    "thongKe": {
+      "cuaSo": "Window",
+      "ngay": "{{n}} days",
+      "tiLe": "Success rate",
+      "chiTietLuot": "{{tong}} runs: {{xong}} done · {{loi}} failed · {{huy}} cancelled · {{dangChay}} running · {{choDuyet}} awaiting approval",
+      "thoiGian": "Duration of finished runs (wall clock, includes time waiting for people)",
+      "soLuotXong": "{{n}} finished runs",
+      "theoNut": "By node",
+      "chuaCoDuLieu": "No data in this window yet.",
+      "nut": "Node",
+      "buoc": "Steps",
+      "loi": "Errors",
+      "theoModel": "By model",
+      "model": "Model",
+      "loiGoi": "Calls",
+      "tokenVao": "Tokens in",
+      "tokenRa": "Tokens out",
+      "khongBaoToken": "{{n}} calls reported no tokens",
+      "doiKhe": "Slot swaps (ESTIMATE, inferred from the model sequence of consecutive calls within a run — the supervisor is not read): {{uoc}}; {{ban}} calls met a busy slot."
     }
   },
   "scada": {
