@@ -17,7 +17,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { AlertTriangle, Gauge, Layers, Pencil } from "lucide-react";
+import { Gauge, Layers, Pencil } from "lucide-react";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 import { trpc } from "@/lib/trpc";
@@ -31,6 +31,7 @@ import { BIEN_MAU_TONE } from "./chatLuongHienThi";
 import { dinhDangSo, docSoNhap, laLoaiKenhGhi, mucHienThi } from "./kenhHienThi";
 import { LOP_O_CHON, TruongLyDo, TruongTotp, laLoiMaTotp, lyDoDuDai, maTotpDu } from "./TruongLyDo";
 import { HopKhaiHangLoat, TRAN_HANG_LOAT } from "./HopKhaiHangLoat";
+import { KhoiCanhBao } from "./KhoiCanhBao";
 
 export type HangKenh = inferRouterOutputs<AppRouter>["scadaKenh"]["danhSach"][number];
 type LoaiKenh = HangKenh["loaiKenh"];
@@ -48,19 +49,8 @@ const LOAI_KENH: LoaiKenh[] = ["input", "input_output", "calculated", "calculate
 const MUC_KHAI = [1, 3, 4, 5] as const;
 const laKenhSo = (dataType: string) => dataType === "int" || dataType === "float";
 
-/** Cảnh báo nổi bật (ISA-101: màu bão hoà chỉ cho bất thường) — viền trái + biểu tượng + chữ, không chỉ màu. */
-export function KhoiCanhBao({ children, tone = "--alarm-high", testId }: { children: React.ReactNode; tone?: string; testId?: string }) {
-  return (
-    <div
-      data-testid={testId}
-      className="flex items-start gap-1.5 rounded-sm border-l-4 px-2 py-1 text-xs font-medium whitespace-normal"
-      style={{ borderLeftColor: `var(${tone})`, color: `var(${tone})` }}
-    >
-      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      <span className="text-foreground">{children}</span>
-    </div>
-  );
-}
+/** Cảnh báo nổi bật — R1b-2a T7 fix round 1: chuyển sang `./KhoiCanhBao` (giữ tên công khai qua re-export cho bên gọi cũ). */
+export { KhoiCanhBao };
 
 function HopSuaKenh({ hang, onDong }: { hang: HangKenh; onDong: () => void }) {
   const { t, i18n } = useTranslation();

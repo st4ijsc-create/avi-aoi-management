@@ -23715,7 +23715,7 @@
         "tran": "Reached the limit of {{toiDa}} channels per batch — declare this batch first, then select more.",
         "quaTran": "The batch has {{n}} channels, at most {{toiDa}} per batch — deselect some, then submit.",
         "tieuDe": "Declare actuation level for {{n}} channels",
-        "moTa": "One batch of one adapter: either every channel is declared or none changes. Channels already at the level are kept. The server asks for a two-factor code when the batch changes something.",
+        "moTa": "One batch of one adapter: either every channel is declared or none changes. Channels already at the level are kept. One two-factor code covers the whole batch.",
         "danhSach": "Channels in the batch",
         "muc": "New actuation level",
         "mucChon": "— Choose a level —",
@@ -23724,9 +23724,7 @@
         "ghimTag": "Pinned for STOP: {{tags}}",
         "loiTag": "Channel {{tagKey}}: {{loi}}",
         "gui": "Declare level",
-        "daKhai": "Level declared: {{soDoi}} channels changed, {{soGiuNguyen}} unchanged.",
-        "maTieuDe": "Two-factor code required for the level batch",
-        "maThan": "This batch changes channel actuation levels, so a new TOTP code is required. Enter the 6-digit code to resend the same batch; a used code cannot be reused."
+        "daKhai": "Level declared: {{soDoi}} channels changed, {{soGiuNguyen}} unchanged."
       }
     },
     "faceplate": {
