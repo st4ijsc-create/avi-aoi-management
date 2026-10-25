@@ -212,7 +212,7 @@ export interface DauVetNhaMay {
   nhaMay: string[];
   nguoi: string[];
   /** id SỐ của máy / người / nhà máy nguồn (kiem-dinh F2) */
-  idSo?: number[];
+  idMay?: number[];
 }
 export interface CanhBaoVanBan {
   nodeId: string;
@@ -298,6 +298,8 @@ export function quetVanBan(def: FlowDefinition, dau: DauVetNhaMay, tran = 200): 
     xet(n.id, "name", n.name);
     for (const [duong, chu] of duyetChuoi(n.parameters, "parameters")) xet(n.id, duong, chu);
   }
+  // id SỐ của máy / người / nhà máy nguồn (kiem-dinh F2): số, chuỗi-số, số đứng riêng trong biểu thức
+  for (const c of quetIdSo(def, dau.idMay ?? [], tran)) if (ra.length < tran) ra.push(c);
   return ra;
 }
 

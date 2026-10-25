@@ -39,7 +39,7 @@ import { kiemThamSoKichHoat, napLaiLich } from "../services/flow/kichHoat/lich";
 import { kiemThamSoSuKien, napLaiSuKien } from "../services/flow/kichHoat/suKien";
 import { kiemThamSoNutMoi } from "../services/flow/kiemThamSoNut";
 import { nguoiNhanHopLeTheoNhaMay } from "../services/flow/nut/thongBao";
-import { idLuongNhap, phanTichGoi, quetBiMat, quetIdSo, quetVanBan, taoGoi } from "../services/flow/xuatNhap";
+import { idLuongNhap, phanTichGoi, quetBiMat, quetVanBan, taoGoi } from "../services/flow/xuatNhap";
 import { dauVetNhaMay } from "../services/flow/xuatNhapDb";
 import { nhaMayCuaLuong } from "../services/flow/phamViLuong";
 import { capTokenWebhook, coNodeWebhook, coTokenWebhook } from "../services/flow/kichHoat/webhook";
@@ -287,7 +287,7 @@ export const flowRouter = router({
       const { goi, viec } = taoGoi(def);
       // Quét cái SẼ RỜI KHỎI nhà máy: gói đã làm sạch (chữ tự do + id số + mẫu bí mật còn sót)
       const dau = await dauVetNhaMay(f.factoryId ?? null);
-      const canhBao = [...quetVanBan(goi.luong, dau), ...quetIdSo(goi.luong, dau.idSo ?? []), ...quetBiMat(goi.luong)];
+      const canhBao = [...quetVanBan(goi.luong, dau), ...quetBiMat(goi.luong)];
       return { goi, viec, canhBao, hang: kiemLuong(goi.luong, layNut).hang, tenLuong: f.name };
     }),
 

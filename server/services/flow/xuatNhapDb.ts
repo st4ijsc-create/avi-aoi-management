@@ -12,10 +12,10 @@ const TRAN_DAU_VET = 5000;
 
 export async function dauVetNhaMay(factoryId: number | null): Promise<DauVetNhaMay> {
   const db = await getDb();
-  if (!db) return { maMay: [], nhaMay: [], nguoi: [], idSo: [] };
+  if (!db) return { maMay: [], nhaMay: [], nguoi: [], idMay: [] };
   if (factoryId === null) {
     const fs = await db.select({ ten: factories.name, ma: factories.code }).from(factories).limit(TRAN_DAU_VET);
-    return { maMay: [], nhaMay: fs.flatMap((f) => [f.ten, f.ma]).filter((x): x is string => !!x), nguoi: [], idSo: [] };
+    return { maMay: [], nhaMay: fs.flatMap((f) => [f.ten, f.ma]).filter((x): x is string => !!x), nguoi: [], idMay: [] };
   }
   const [f] = await db.select({ ten: factories.name, ma: factories.code }).from(factories).where(eq(factories.id, factoryId)).limit(1);
   const may = await db
@@ -33,6 +33,6 @@ export async function dauVetNhaMay(factoryId: number | null): Promise<DauVetNhaM
     maMay: may.flatMap((m) => [m.ma, m.ten]).filter((x): x is string => !!x),
     nhaMay: [f?.ten, f?.ma].filter((x): x is string => !!x),
     nguoi: nguoi.flatMap((u) => [u.ten, u.dn]).filter((x): x is string => !!x),
-    idSo: [factoryId, ...may.map((m) => m.id), ...nguoi.map((u) => Number(u.id))],
+    idMay: [factoryId, ...may.map((m) => m.id), ...nguoi.map((u) => Number(u.id))],
   };
 }
