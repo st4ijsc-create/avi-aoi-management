@@ -2,7 +2,7 @@
   "_note": "NỢ i18n CÓ TRƯỚC, ĐÃ ĐÓNG BĂNG. Mỗi mục là một khoá được MÃ tham chiếu mà bản dịch còn thiếu. Danh sách này chỉ được THU HẸP: thêm một khoá vào đây là thêm một màn nói sai ngôn ngữ. Sinh lại bằng `node scripts/i18n-check.mjs --update-baseline` — và đó là một quyết định phải nói ra trong review.",
   "_ghim": {
     "missingInAllLocales": 332,
-    "missingInSomeLocales": 20
+    "missingInSomeLocales": 0
   },
   "missingInAllLocales": [
     "aboutPage.stack.items",
@@ -338,26 +338,5 @@
     "workOrders.parts.codePlaceholder",
     "workOrders.parts.qty"
   ],
-  "missingInSomeLocales": [
-    "admin.clearHistoryTitle",
-    "backup.cancel",
-    "backup.confirmRestoreAction",
-    "backup.confirmRestoreMergeBody",
-    "backup.confirmRestoreOverwriteBody",
-    "backup.confirmRestoreTitle",
-    "backup.overwriteHint",
-    "backup.overwriteLabel",
-    "mqtt.replayPage.registerCodeLabel",
-    "mqtt.replayPage.registerConfirm",
-    "mqtt.replayPage.registerDialogDesc",
-    "mqtt.replayPage.registerDialogTitle",
-    "mqtt.replayPage.registerNameLabel",
-    "mqtt.replayPage.registerNoStations",
-    "mqtt.replayPage.registerStationLabel",
-    "mqtt.replayPage.registerStationPlaceholder",
-    "mqtt.replayPage.registerSuccess",
-    "mqtt.replayPage.registerTypeLabel",
-    "mqtt.topicsMessages.resendUnavailable",
-    "mqtt.topicsMessages.resendUnavailableHint"
-  ]
+  "missingInSomeLocales": []
 }
