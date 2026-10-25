@@ -779,3 +779,20 @@ deviceAdapter* / scadaCommands* / scadaDiag* / scadaKenh* / aiCopilot*, client s
 commissioningRouter.recheck, commandDispatcher, safetySimOnly, scadaKenh, adapterPhamVi, engineeringAssignment) 35 tệp 640 qua / 4 đỏ ⇒ chạy lại
 riêng: 2 đỏ có sẵn `engineeringAssignment.db` (§13 trên), `stopPin.contention.dot5` + `engineeringAssignment §12` xanh (đỏ do tải — lô chạy cùng
 census) · census 58 tệp 978 qua / 3 bỏ qua / 0 đỏ · tsc (12 GB) 0 lỗi · i18n sạch.
+
+## 14. Kết luận kiểm định lại (kiem-dinh, 2026-10-25, tip f811ba2c9): ĐẠT — không lỗi chặn gộp
+
+**Bốn điều kiện triển khai** (bắt buộc, theo thứ tự):
+1. Áp 0434 → backfill TOFU (dry-run, rà bảng, rồi `--ghi --actor`) → build / restart (§4 mục 1).
+2. Đo TRƯỚC khi bật:
+   - §4 mục 2b (I4): census OFF_STEP trên tag int, chạy trên PRODUCTION;
+   - §4 mục 2c: rà / gỡ ghim STOP cũ trên tag mức > 1 hoặc chưa khai mức.
+3. Sau backfill, các luật có nguồn `ot_telemetry` hoặc có tag nguồn / đích vắng sẽ ở trạng thái "Cần duyệt lại" ⇒ đưa vào danh sách việc triển khai; admin duyệt lại từng luật.
+4. Tuần đầu sau triển khai: admin rà lại các luật bảo vệ.
+
+**Giới hạn đã biết** (backlog R1b-2a). Băm định nghĩa duyệt (`approvedDefHash`) KHÔNG phủ:
+- nguồn `ot_telemetry` (luật `telemetry_tag` không có tag thiết bị);
+- host / port / giao thức / tuỳ chọn kết nối của adapter (chỉ phủ `edgeNodeId`);
+- `writable` / `actuationLevel` của tag đích.
+
+Lọc ghim cho STOP do HỆ THỐNG kích (chuyển chủ, edge nhả) = R1b-2a §10 mục 22. Hiện các STOP này vẫn gửi mọi ghim; §4 mục 2c bao phần ghim cũ.
