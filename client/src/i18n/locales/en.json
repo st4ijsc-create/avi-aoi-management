@@ -23511,7 +23511,11 @@
           "oee": "Average OEE per machine",
           "ng": "Top NG measurement points",
           "may": "Machine status & machines in error",
-          "canhBao": "Open predictive alerts"
+          "canhBao": "Open predictive alerts",
+          "dungMay": "Downtime: count, total minutes, by category and top machines",
+          "phieuMo": "Open work orders by priority and the longest-open ones",
+          "phieuDong": "Closed work orders: time from opening to closing the order (not a standard MTTR)",
+          "tonKho": "Spare parts to reorder (factory minimum level — same as the Stock screen)"
         }
       },
       "thongBao": {

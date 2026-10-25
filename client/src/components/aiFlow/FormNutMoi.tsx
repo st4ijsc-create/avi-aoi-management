@@ -25,6 +25,10 @@ export const TRUY_VAN_SO_LIEU: { v: string; k: string }[] = [
   { v: "ng.diem-do-hang-dau", k: "ng" },
   { v: "may.trang-thai", k: "may" },
   { v: "canh-bao.dang-mo", k: "canhBao" },
+  { v: "dung-may.tong-hop", k: "dungMay" },
+  { v: "phieu-bao-tri.dang-mo", k: "phieuMo" },
+  { v: "phieu-bao-tri.dong-gan-day", k: "phieuDong" },
+  { v: "ton-kho.sap-het", k: "tonKho" },
 ];
 export const SU_KIEN_NOI_BO: { v: string; k: string }[] = [
   { v: "ng.alert", k: "ngAlert" },

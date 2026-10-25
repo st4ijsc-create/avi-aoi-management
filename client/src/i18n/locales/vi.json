@@ -23485,7 +23485,11 @@
           "oee": "OEE trung bình theo máy",
           "ng": "Điểm đo NG nhiều nhất",
           "may": "Trạng thái máy & máy đang lỗi",
-          "canhBao": "Cảnh báo dự đoán đang mở"
+          "canhBao": "Cảnh báo dự đoán đang mở",
+          "dungMay": "Dừng máy: số lần, tổng phút, theo loại và máy dừng nhiều nhất",
+          "phieuMo": "Phiếu bảo trì đang mở theo ưu tiên và phiếu mở lâu nhất",
+          "phieuDong": "Phiếu bảo trì đã đóng: thời gian từ mở đến đóng phiếu (không phải MTTR chuẩn)",
+          "tonKho": "Phụ tùng cần nhập (theo mức tối thiểu của nhà máy — như màn Kho)"
         }
       },
       "thongBao": {

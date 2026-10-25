@@ -127,7 +127,7 @@ test("3 — chọn node thông báo, điền người nhận; chạy thử node 
   const truoc = await demThongBao();
   await chonNguoiNhanBangForm(page, fx.mot, "FS mot");
   await expect(page.getByText("Chưa lưu").first()).toBeVisible();
-  await page.getByTestId("chay-thu-items-main").fill('[{"json":{"sanLuong":{"tong":{"tong":3,"ng":1,"tiLeNg":33.33}},"may":{"tong":{"tongSoMay":1}}}}]');
+  await page.getByTestId("chay-thu-items-main").fill('[{"json":{"sanLuong":{"tong":{"tong":3,"ng":1,"tiLeNg":33.33}},"dungMay":{"tong":{"soLan":2,"tongPhut":50}},"may":{"tong":{"tongSoMay":1}}}}]');
   await page.getByTestId("nut-chay-thu-nut").click();
   const kq = page.getByTestId("ket-qua-chay-thu");
   await expect(kq).toHaveAttribute("data-che", "xem-truoc");
@@ -197,7 +197,7 @@ test("6 — quản trị viên bật; kỹ sư Chạy tay bị từ chối; qu�
   for (const n of ["lich-6h", "san-luong", "may", "thong-bao"]) await expect(page.getByTestId(`buoc-${n}`)).toBeVisible({ timeout: 30_000 });
   expect(await demThongBao()).toBe(truoc + 1);
   const [tb] = await withTestDb((sql) => sql`SELECT message FROM notifications WHERE "userId" = ${fx.mot.id} AND title = 'Báo cáo ca' ORDER BY id DESC LIMIT 1`);
-  expect(String(tb.message)).toMatch(/^Sản lượng 12 giờ: \d+ lần kiểm, NG \d+ \(\d+(\.\d+)? %\)\. Máy trong phạm vi: 1\.$/);
+  expect(String(tb.message)).toMatch(/^Sản lượng 12 giờ: \d+ lần kiểm, NG \d+ \(\d+(\.\d+)? %\)\. Máy trong phạm vi: 1\. Dừng máy: \d+ lần, \d+ phút\.$/);
   await chup(page, "6-luot-xong");
 });
 

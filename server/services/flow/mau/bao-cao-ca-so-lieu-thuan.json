@@ -2,21 +2,84 @@
   "id": "mau-bao-cao-ca-so-lieu-thuan",
   "name": "Báo cáo ca số liệu thuần (06:00, không AI)",
   "version": 1,
-  "settings": { "uuTien": "background", "luuDuLieu": "day-du" },
+  "settings": {
+    "uuTien": "background",
+    "luuDuLieu": "day-du"
+  },
   "nodes": [
-    { "id": "lich-6h", "type": "kich-hoat.lich", "typeVersion": 1, "name": "06:00 hằng ngày", "position": [0, 0], "parameters": { "cron": "0 6 * * *", "muiGio": "Asia/Ho_Chi_Minh" } },
-    { "id": "san-luong", "type": "du-lieu.so-lieu", "typeVersion": 1, "name": "Sản lượng 12 giờ", "position": [240, 0], "parameters": { "truyVan": "san-luong.tong-quan", "gio": 12, "truongRa": "sanLuong" } },
-    { "id": "may", "type": "du-lieu.so-lieu", "typeVersion": 1, "name": "Trạng thái máy", "position": [480, 0], "parameters": { "truyVan": "may.trang-thai", "gioiHan": 5, "truongRa": "may" } },
+    {
+      "id": "lich-6h",
+      "type": "kich-hoat.lich",
+      "typeVersion": 1,
+      "name": "06:00 hằng ngày",
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "cron": "0 6 * * *",
+        "muiGio": "Asia/Ho_Chi_Minh"
+      }
+    },
+    {
+      "id": "san-luong",
+      "type": "du-lieu.so-lieu",
+      "typeVersion": 1,
+      "name": "Sản lượng 12 giờ",
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "truyVan": "san-luong.tong-quan",
+        "gio": 12,
+        "truongRa": "sanLuong"
+      }
+    },
+    {
+      "id": "dung-may",
+      "type": "du-lieu.so-lieu",
+      "typeVersion": 1,
+      "name": "Dừng máy 12 giờ",
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "truyVan": "dung-may.tong-hop",
+        "gio": 12,
+        "gioiHan": 5,
+        "truongRa": "dungMay"
+      }
+    },
+    {
+      "id": "may",
+      "type": "du-lieu.so-lieu",
+      "typeVersion": 1,
+      "name": "Trạng thái máy",
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "truyVan": "may.trang-thai",
+        "gioiHan": 5,
+        "truongRa": "may"
+      }
+    },
     {
       "id": "thong-bao",
       "type": "tich-hop.thong-bao",
       "typeVersion": 1,
       "name": "Gửi thông báo nội bộ (điền người nhận)",
-      "position": [720, 0],
+      "position": [
+        960,
+        0
+      ],
       "parameters": {
         "nguoiNhan": [],
         "tieuDe": "Báo cáo ca",
-        "noiDung": "Sản lượng 12 giờ: {{ $json.sanLuong.tong.tong }} lần kiểm, NG {{ $json.sanLuong.tong.ng }} ({{ $json.sanLuong.tong.tiLeNg }} %). Máy trong phạm vi: {{ $json.may.tong.tongSoMay }}.",
+        "noiDung": "Sản lượng 12 giờ: {{ $json.sanLuong.tong.tong }} lần kiểm, NG {{ $json.sanLuong.tong.ng }} ({{ $json.sanLuong.tong.tiLeNg }} %). Máy trong phạm vi: {{ $json.may.tong.tongSoMay }}. Dừng máy: {{ $json.dungMay.tong.soLan }} lần, {{ $json.dungMay.tong.tongPhut }} phút.",
         "loai": "REPORT",
         "uuTien": "NORMAL",
         "duongDan": "/"
@@ -24,8 +87,45 @@
     }
   ],
   "connections": [
-    { "from": { "node": "lich-6h", "port": "main" }, "to": { "node": "san-luong", "port": "main" } },
-    { "from": { "node": "san-luong", "port": "main" }, "to": { "node": "may", "port": "main" } },
-    { "from": { "node": "may", "port": "main" }, "to": { "node": "thong-bao", "port": "main" } }
+    {
+      "from": {
+        "node": "lich-6h",
+        "port": "main"
+      },
+      "to": {
+        "node": "san-luong",
+        "port": "main"
+      }
+    },
+    {
+      "from": {
+        "node": "san-luong",
+        "port": "main"
+      },
+      "to": {
+        "node": "dung-may",
+        "port": "main"
+      }
+    },
+    {
+      "from": {
+        "node": "dung-may",
+        "port": "main"
+      },
+      "to": {
+        "node": "may",
+        "port": "main"
+      }
+    },
+    {
+      "from": {
+        "node": "may",
+        "port": "main"
+      },
+      "to": {
+        "node": "thong-bao",
+        "port": "main"
+      }
+    }
   ]
 }
