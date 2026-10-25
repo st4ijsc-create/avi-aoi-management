@@ -72,13 +72,14 @@ export function nhomDanhMuc(ds: readonly KhaiBaoNutClient[], loc = ""): { nhom: 
 
 /** Cổng ra "nên nối" (vd `khac` của logic.chon) mà CHƯA có đường nối ⇒ item tới đó bị bỏ: danh sách cảnh báo {nodeId, cong} cho canvas. */
 export function canhBaoCongChuaNoi(
-  def: { nodes: { id: string; type: string; disabled?: boolean }[]; connections: { from: { node: string; port: string } }[] },
+  def: { nodes: { id: string; type: string; disabled?: boolean; khiLoi?: string }[]; connections: { from: { node: string; port: string } }[] },
   danhMuc: ReadonlyMap<string, { congNenNoi?: readonly string[] }>,
 ): { nodeId: string; cong: string }[] {
   const ra: { nodeId: string; cong: string }[] = [];
   for (const n of def.nodes) {
     if (n.disabled) continue;
-    for (const cong of danhMuc.get(n.type)?.congNenNoi ?? []) {
+    // khiLoi = nhanh-loi ⇒ cổng ẨN `loi` cũng nên nối (lỗi node đi nhánh này; không nối ⇒ item lỗi bị bỏ).
+    for (const cong of [...(danhMuc.get(n.type)?.congNenNoi ?? []), ...(n.khiLoi === "nhanh-loi" ? ["loi"] : [])]) {
       if (!def.connections.some((c) => c.from.node === n.id && c.from.port === cong)) ra.push({ nodeId: n.id, cong });
     }
   }

@@ -74,6 +74,16 @@ describe("canhBaoCongChuaNoi (canvas)", () => {
     nodes: [{ id: "c", type: "logic.chon", disabled: tat }, { id: "d", type: "du-lieu.dat" }],
     connections: [{ from: { node: "c", port: "nhanh-1" } }, ...(noiKhac ? [{ from: { node: "c", port: "khac" } }] : [])],
   });
+  it("★ khiLoi = nhanh-loi ⇒ cổng ẨN loi cũng là cổng nên nối: chưa nối ⇒ cảnh báo; đã nối ⇒ không; khiLoi khác ⇒ không", () => {
+    const d = (khiLoi: string | undefined, noiLoi: boolean) => ({
+      nodes: [{ id: "x", type: "du-lieu.dat", khiLoi }],
+      connections: noiLoi ? [{ from: { node: "x", port: "loi" } }] : [],
+    });
+    expect(canhBaoCongChuaNoi(d("nhanh-loi", false), dm)).toEqual([{ nodeId: "x", cong: "loi" }]);
+    expect(canhBaoCongChuaNoi(d("nhanh-loi", true), dm)).toEqual([]);
+    expect(canhBaoCongChuaNoi(d("tiep-tuc", false), dm)).toEqual([]);
+    expect(canhBaoCongChuaNoi(d(undefined, false), dm)).toEqual([]);
+  });
   it("★ khac CHƯA nối ⇒ cảnh báo {nodeId:'c', cong:'khac'}; đã nối ⇒ không; node tắt ⇒ không; node không khai ⇒ không", () => {
     expect(canhBaoCongChuaNoi(def(false), dm)).toEqual([{ nodeId: "c", cong: "khac" }]);
     expect(canhBaoCongChuaNoi(def(true), dm)).toEqual([]);

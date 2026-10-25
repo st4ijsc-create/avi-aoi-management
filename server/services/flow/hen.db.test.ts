@@ -246,7 +246,7 @@ describe("(C) logic.dung-loi trong động cơ", () => {
     expect(await buoc(r, "x")).toHaveLength(1);
   });
 
-  it("khiLoi: nhanh-loi ⇒ lỗi KHÔNG dừng lượt: bước x `loi`, lượt xong (cổng `loi` chưa nối được — giới hạn sẵn có)", async () => {
+  it("khiLoi: nhanh-loi ⇒ lỗi KHÔNG dừng lượt: bước x `loi`, lượt xong (nối cổng loi: xem khiLoi.db.test.ts)", async () => {
     const r = await batDauRun({ flowId: `${TT}-loi-tiep`, version: 1, chuLuong: chu, items: [{ json: {} }] });
     await chayHet();
     expect((await lay(r)).status).toBe("xong");

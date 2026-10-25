@@ -326,6 +326,16 @@ export async function thucThi(def: FlowDefinition, ngu: NguCanhChay): Promise<Ke
   }
 }
 
+/**
+ * Item ra cổng ẨN `loi` (node đặt khiLoi = nhanh-loi): với MỖI item đầu vào của bước lỗi, giữ NGUYÊN item gốc và thêm `loi: { ma?, thongDiep, nodeId }`
+ * (đè khoá `loi` cũ nếu item gốc đã có). Không có item đầu vào ⇒ một item chỉ mang `loi` — lỗi không bao giờ mất item.
+ */
+export function itemLoi(inputs: Record<string, ItemLuong[]> | readonly ItemLuong[] | undefined, nodeId: string, ma: string | undefined, thongDiep: string): ItemLuong[] {
+  const goc: readonly ItemLuong[] = Array.isArray(inputs) ? (inputs as readonly ItemLuong[]) : Object.values((inputs ?? {}) as Record<string, ItemLuong[]>).flat();
+  const loi = { ...(ma ? { ma } : {}), thongDiep, nodeId };
+  return goc.length ? goc.map((it) => ({ json: { ...it.json, loi } })) : [{ json: { loi } }];
+}
+
 async function dongRun(tx: Tx, runId: string, status: "xong" | "loi" | "huy", error: unknown = null): Promise<void> {
   const dong = await tx
     .update(aiFlowRuns)
@@ -445,7 +455,7 @@ export async function ketThucBuoc(
         await dongRun(tx, muc.runId, "loi", ma ? { nodeId: muc.nodeId, thongDiep, ma } : { nodeId: muc.nodeId, thongDiep });
         return;
       }
-      ra = { loi: [{ json: { thongDiep, nodeId: muc.nodeId } }] };
+      ra = { loi: itemLoi(muc.inputs, muc.nodeId, ma, thongDiep) };
     } else {
       let henMs = 0;
       if ("__hen" in kq.ra) {
@@ -462,7 +472,7 @@ export async function ketThucBuoc(
             await dongRun(tx, muc.runId, "loi", { nodeId: muc.nodeId, thongDiep, ma: "QUA_TRAN_CHO" });
             return;
           }
-          await xepNodeKe(tx, def, muc.runId, muc.nodeId, { loi: [{ json: { thongDiep, nodeId: muc.nodeId } }] }, uuTien);
+          await xepNodeKe(tx, def, muc.runId, muc.nodeId, { loi: itemLoi(muc.inputs, muc.nodeId, "QUA_TRAN_CHO", thongDiep) }, uuTien);
           await tx.insert(aiFlowEvents).values({ runId: muc.runId, kind: "buoc.xong", payload: { nodeId: muc.nodeId, lan: muc.lan } });
           await dongNeuHetViec(tx, muc.runId);
           return;
@@ -486,7 +496,9 @@ async function xepNodeKe(tx: Tx, def: FlowDefinition, runId: string, nodeId: str
   const luc = henMs > 0 ? sql`now() + (${henMs}::bigint * interval '1 millisecond')` : sql`now()`;
   // Item tới cổng NÊN-NỐI mà KHÔNG có đường nối ⇒ bị bỏ (đường đi của luồng): ghi sự kiện để lượt nhìn thấy được, không bỏ âm thầm.
   const loaiNguon = layNut(def.nodes.find((n) => n.id === nodeId)?.type ?? "");
-  for (const cong of loaiNguon?.congNenNoi ?? []) {
+  const nutNguon = def.nodes.find((n) => n.id === nodeId);
+  // Cổng ẨN `loi` (khiLoi = nhanh-loi) cũng là cổng NÊN NỐI: lỗi không được rơi im lặng.
+  for (const cong of [...(loaiNguon?.congNenNoi ?? []), ...(nutNguon?.khiLoi === "nhanh-loi" ? ["loi"] : [])]) {
     const items = ra[cong] ?? [];
     if (items.length && !def.connections.some((x) => x.from.node === nodeId && x.from.port === cong)) {
       await tx.insert(aiFlowEvents).values({ runId, kind: "cong.khong-noi", payload: { nodeId, cong, soItem: items.length } });
@@ -598,7 +610,7 @@ async function traLoiChoTx(
       return { ok: true, cong: "loi" } as const;
     }
     cong = "loi";
-    ra = { loi: [{ json: { thongDiep: y.loi, nodeId: y.nodeId } }] };
+    ra = { loi: itemLoi(rows[0].payload.items, y.nodeId, undefined, y.loi) };
   } else {
     cong = rows[0].hetHan || y.hetHanEp ? "het-han" : y.cong;
     const items = (y.itemsThay ?? rows[0].payload.items ?? []).map((it) => ({ json: { ...it.json, ...(y.them ?? {}) } }));
