@@ -157,7 +157,7 @@ export const KHOA_PHAM_VI_DOC_TOOL: Record<string, LuatPhamViDocTool> = {
   list_anomalies: { kieu: "loc", truc: "máy / nhà máy (congCanhBaoDuDoan)" },
   get_machine_health: { kieu: "loc", truc: "máy (machine_health_history.machineId) + congCanhBaoDuDoan" },
   list_recipes: { kieu: "loc", truc: "máy (dieuKienCauHinhTrongPhamVi; recipe không máy = dùng chung)" },
-  list_thresholds: { kieu: "loc", truc: "sản phẩm (congSanPhamTheoPhamVi); ngưỡng yield là danh mục dùng chung (schema không có cột nhà máy)" },
+  list_thresholds: { kieu: "loc", truc: "sản phẩm (congSanPhamTheoPhamVi); ngưỡng yield chỉ bản MẶC ĐỊNH toàn tập đoàn (factoryId NULL, W17b)" },
   list_products: { kieu: "loc", truc: "sản phẩm (congSanPhamTheoPhamVi, luật L3)" },
   get_rca_history: { kieu: "loc", truc: "máy / nhà máy / người yêu cầu (congPhanTichNguyenNhan)" },
   trace_genealogy: { kieu: "loc", truc: "đơn vị (donViTrongPhamVi, luật L2)" },
