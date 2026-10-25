@@ -953,7 +953,8 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // 2026-10-25 gộp L6w (getVariant C→S) với main R1b-1 ⇒ đo bằng census.
 // ★★ 2026-10-25 (W17a, cộng dồn sau L6w/L6t 117/469/610): **C 469 → 466 · S 610 → 613.** reportArtifact.list|get|download C→S (phạm vi NGƯỜI TẠO). Chứng minh: phamViGhiDoW17a.db.test.ts.
 // 2026-10-25 gộp L6c-C1 (A−22) với W17a (reportArtifact C→S) ⇒ đo bằng census.
-const GHIM = { A: 95, B: 8, C: 466, D: 1199, S: 635, tong: 2403 } as const;
+// L6c-C2+C3 (2026-10-25): 42 thủ tục đọc A→S (MQTT/ERP/edge/apiKey 19 · hierarchyTree/federation/equipmentStandards/twin/softRef/rootCause 23); 8 miễn trừ mới vẫn tính nhóm A — A 95→53, S 635→677
+const GHIM = { A: 53, B: 8, C: 466, D: 1199, S: 677, tong: 2403 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
