@@ -67,7 +67,7 @@ import { uyQuyenDuongDanAnh } from "../routes/_uyQuyenAnh";
 import logger, { installConsoleBridge } from "../logger";
 import { correlationRequestMiddleware } from "./correlationMiddleware";
 import { livenessProbe, createHealthHandler, createReadyzHandler, createNetworkHealthHandler } from "./healthProbes";
-import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, credentialConflictGuard, OT_INGEST_PATHS } from "./rateLimitConfig";
+import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, createUnverifiedCredentialIpLimiter, credentialConflictGuard, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
 import { assertVramEnforcementPolicy } from "../services/vram/vramBroker";
 import { khoiChayDongBoLuaChonModel } from "../services/ai/luaChonModelLlamaServer";
@@ -381,6 +381,10 @@ async function startServer() {
   app.use([...OT_INGEST_PATHS], otIngestLimiter);
   app.use('/api/', apiLimiter);
   app.use('/trpc/', apiLimiter);
+  // W21b — trần IP thứ hai (rộng) cho credential chưa verify được (Bearer không-JWT / X-API-Key); phiên verify + mặt phẳng máy không bị đếm.
+  const unverifiedIpLimiter = createUnverifiedCredentialIpLimiter();
+  app.use('/api/', unverifiedIpLimiter);
+  app.use('/trpc/', unverifiedIpLimiter);
 
   // Stricter rate limit for auth endpoints
   const authLimiter = createAuthLimiter();
