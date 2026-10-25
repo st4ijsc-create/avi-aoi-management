@@ -8,6 +8,7 @@
  */
 
 import { cacTramGhi } from "./_cauHinhPhamVi";
+import { dieuKienTramTrongPhamVi } from "./_adapterPhamVi";
 import { z } from "zod";
 // doc 54 Wave B — NG-alert config writers were bare protectedProcedure (any authenticated
 // user, incl. viewer, could rewire alert routing). writeProcedure blocks read-only roles;
@@ -28,9 +29,11 @@ export const mqttNgAlertSettingsRouter = router({
       stationId: z.number().optional(),
       enabledOnly: z.boolean().optional().default(false),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = (await getDb())!;
       const filters = [];
+      const congTram = await dieuKienTramTrongPhamVi(ctx, mqttNgAlertSettings.stationId); // phạm vi người dùng (L6c 2026-10-25)
+      if (congTram) filters.push(congTram);
 
       if (input?.stationId) {
         filters.push(eq(mqttNgAlertSettings.stationId, input.stationId));
@@ -59,15 +62,16 @@ export const mqttNgAlertSettingsRouter = router({
    */
   getSetting: protectedProcedure
     .input(z.object({ stationId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = (await getDb())!;
+      const congTram = await dieuKienTramTrongPhamVi(ctx, mqttNgAlertSettings.stationId); // phạm vi người dùng (L6c 2026-10-25): trạm ngoài phạm vi ≡ chưa cấu hình
       const result = await db.select({
         setting: mqttNgAlertSettings,
         stationName: stations.name,
       })
       .from(mqttNgAlertSettings)
       .leftJoin(stations, eq(mqttNgAlertSettings.stationId, stations.id))
-      .where(eq(mqttNgAlertSettings.stationId, input.stationId))
+      .where(and(eq(mqttNgAlertSettings.stationId, input.stationId), congTram))
       .limit(1);
 
       if (result.length === 0) return null;

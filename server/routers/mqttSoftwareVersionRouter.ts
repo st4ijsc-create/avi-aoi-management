@@ -4,6 +4,8 @@ import { appError } from "../_core/appError";
 import { router } from "../_core/trpc";
 import { adminProcedure, protectedProcedure } from "./_shared";
 import * as db from "../db";
+import { dieuKienViTriTrongPhamVi } from "./_adapterPhamVi";
+import { phamViCua } from "./_phamViNguoiXem";
 import { storagePut } from "../storage";
 
 export const mqttSoftwareVersionRouter = router({
@@ -206,18 +208,20 @@ export const mqttSoftwareVersionRouter = router({
     }),
 
   // Get device version summary (how many devices on each version)
-  deviceVersionSummary: protectedProcedure.query(async () => {
+  deviceVersionSummary: protectedProcedure.query(async ({ ctx }) => {
     const { mqttClients } = await import("../../drizzle/schema/mqtt");
-    const { sql, eq } = await import("drizzle-orm");
+    const { sql, eq, and } = await import("drizzle-orm");
     const database = await db.getDb();
     if (!database) return [];
+    // phạm vi người dùng (L6c 2026-10-25): thiết bị theo trạm / máy trong phạm vi; thiết bị chưa gán (stationId và machineId NULL) chỉ toàn quyền thấy
+    const congViTri = await dieuKienViTriTrongPhamVi(phamViCua(ctx), { stationId: mqttClients.stationId, machineId: mqttClients.machineId });
     const result = await database
       .select({
         appVersion: mqttClients.appVersion,
         count: sql<number>`count(*)::int`,
       })
       .from(mqttClients)
-      .where(eq(mqttClients.isActive, true))
+      .where(and(eq(mqttClients.isActive, true), congViTri))
       .groupBy(mqttClients.appVersion);
     return result;
   }),

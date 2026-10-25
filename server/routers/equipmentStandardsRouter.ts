@@ -33,7 +33,8 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { theTenantHopLe } from "./_theTenantPhamVi";
-import type { CoDanhTinh } from "./_phamViNguoiXem";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { idsTrongPhamVi } from "../db/hierarchy";
 import {
   deviceTypes,
   alarmTaxonomy,
@@ -43,6 +44,8 @@ import {
 import {
   loadAlarmMappings,
   loadMasterAlarms,
+  mergeAlarmMappings,
+  type DbAlarmTaxonomyRow,
   derivePriority,
   ALARM_CONSEQUENCES,
 } from "../services/standards/alarmMasterService";
@@ -145,6 +148,45 @@ async function hangTheGhi(ctx: CoDanhTinh, row: { factoryId?: number | null; cor
   chuanToanTapDoanChiAdminKySu(ctx, row);
 }
 
+/**
+ * phạm vi người dùng (L6c 2026-10-25) — ĐỌC danh mục chuẩn thiết bị: hàng mang thẻ tenant (factoryId · corporateCode) của nhà máy / tập đoàn khác ẩn với người hẹp (`theTenantHopLe`); hàng KHÔNG thẻ và SEED dùng chung.
+ * Lọc ở TẦNG ROUTER — bộ nạp chạy ngầm (cảnh báo runtime) không đổi. Toàn quyền ⇒ trả nguyên. Thẻ lặp lại chỉ kiểm một lần.
+ */
+async function toanQuyenDoc(ctx: CoDanhTinh): Promise<boolean> {
+  return (await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true })) === null;
+}
+async function locTheNhin<T extends { factoryId?: number | null; corporateCode?: string | null }>(ctx: CoDanhTinh, rows: T[]): Promise<T[]> {
+  if (await toanQuyenDoc(ctx)) return rows;
+  const nho = new Map<string, boolean>();
+  const out: T[] = [];
+  for (const r of rows) {
+    if (r.factoryId == null && r.corporateCode == null) { out.push(r); continue; }
+    const k = `${r.factoryId ?? ""}|${r.corporateCode ?? ""}`;
+    if (!nho.has(k)) nho.set(k, await theTenantHopLe(ctx, r));
+    if (nho.get(k)) out.push(r);
+  }
+  return out;
+}
+/** SEED ∪ hàng `device_types` thấy được. */
+async function loadNodeSetNhin(ctx: CoDanhTinh): Promise<DeviceTypeNode[]> {
+  const seed = buildSeedTypes();
+  const d = await getDb();
+  if (!d) return seed;
+  const rows = await locTheNhin(ctx, await d.select().from(deviceTypes));
+  return [...seed, ...rows.map(nodeFromDeviceTypeRow)];
+}
+/** SEED ∪ hàng `alarm_taxonomy` thấy được (hợp nhất bằng chính hàm thuần của bộ nạp — hàng bị ẩn nhường chỗ cho mục SEED cùng khoá). */
+async function loadAlarmMappingsNhin(ctx: CoDanhTinh) {
+  if (await toanQuyenDoc(ctx)) return loadAlarmMappings();
+  try {
+    const d = await getDb();
+    if (!d) return mergeAlarmMappings([]);
+    return mergeAlarmMappings((await locTheNhin(ctx, await d.select().from(alarmTaxonomy))) as DbAlarmTaxonomyRow[]);
+  } catch {
+    return mergeAlarmMappings([]);
+  }
+}
+
 export const equipmentStandardsRouter = router({
   /** UI gating hint — is the governance flag on? */
   status: protectedProcedure
@@ -155,8 +197,8 @@ export const equipmentStandardsRouter = router({
   /** The full device-type hierarchy as a tree (SEED ∪ published rows). */
   hierarchyTree: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => {
-      const nodes = await loadNodeSet();
+    .query(async ({ ctx }) => {
+      const nodes = await loadNodeSetNhin(ctx); // phạm vi người dùng (L6c 2026-10-25)
       return { tree: buildTree(nodes), typeCount: new Set(nodes.map((n) => n.typeKey)).size };
     }),
 
@@ -164,8 +206,8 @@ export const equipmentStandardsRouter = router({
   resolveType: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ typeKey: z.string().min(1).max(64) }))
-    .query(async ({ input }) => {
-      const nodes = await loadNodeSet();
+    .query(async ({ input, ctx }) => {
+      const nodes = await loadNodeSetNhin(ctx); // phạm vi người dùng (L6c 2026-10-25)
       const resolved = resolveType(input.typeKey, nodes);
       if (!resolved) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceType" }, `Device type '${input.typeKey}' not found`);
       return resolved;
@@ -175,8 +217,8 @@ export const equipmentStandardsRouter = router({
   resolveForMachineType: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ machineType: z.string().min(1).max(32) }))
-    .query(async ({ input }) => {
-      const nodes = await loadNodeSet();
+    .query(async ({ input, ctx }) => {
+      const nodes = await loadNodeSetNhin(ctx); // phạm vi người dùng (L6c 2026-10-25)
       return resolveForMachineType(input.machineType, nodes);
     }),
 
@@ -185,8 +227,8 @@ export const equipmentStandardsRouter = router({
   listAlarmMappings: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ vendor: z.string().max(48).optional() }).optional())
-    .query(async ({ input }) => {
-      const entries = await loadAlarmMappings();
+    .query(async ({ input, ctx }) => {
+      const entries = await loadAlarmMappingsNhin(ctx); // phạm vi người dùng (L6c 2026-10-25)
       const v = input?.vendor?.trim().toLowerCase();
       return {
         vendors: listVendors(entries),
@@ -198,8 +240,8 @@ export const equipmentStandardsRouter = router({
   mapAlarm: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ vendor: z.string().min(1).max(48), nativeCode: z.string().min(1).max(64) }))
-    .query(async ({ input }) => {
-      const entries = await loadAlarmMappings();
+    .query(async ({ input, ctx }) => {
+      const entries = await loadAlarmMappingsNhin(ctx); // phạm vi người dùng (L6c 2026-10-25)
       return mapAlarm(input.vendor, input.nativeCode, entries);
     }),
 
@@ -247,8 +289,8 @@ export const equipmentStandardsRouter = router({
   listMasterAlarms: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ alarmKey: z.string().max(64).optional(), assetType: z.string().max(48).optional() }).optional())
-    .query(async ({ input }) => {
-      const rows = await loadMasterAlarms();
+    .query(async ({ input, ctx }) => {
+      const rows = await locTheNhin(ctx, await loadMasterAlarms()); // phạm vi người dùng (L6c 2026-10-25)
       const now = Date.now();
       let filtered = rows;
       if (input?.alarmKey) filtered = filtered.filter((r) => r.alarmKey.toLowerCase() === input.alarmKey!.toLowerCase());
@@ -433,13 +475,15 @@ export const equipmentStandardsRouter = router({
   listChangeRequests: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ status: z.string().max(16).optional(), limit: z.number().int().min(1).max(500).default(100) }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
-      const rows = await d.select().from(deviceTypeChangeRequests)
+      const toanQuyen = await toanQuyenDoc(ctx);
+      const q = d.select().from(deviceTypeChangeRequests)
         .where(input?.status ? eq(deviceTypeChangeRequests.status, input.status) : undefined)
-        .orderBy(desc(deviceTypeChangeRequests.createdAt))
-        .limit(input?.limit ?? 100);
-      return rows;
+        .orderBy(desc(deviceTypeChangeRequests.createdAt));
+      // phạm vi người dùng (L6c 2026-10-25): người hẹp — lọc thẻ tenant rồi mới cắt `limit` (danh sách CR nhỏ)
+      if (toanQuyen) return q.limit(input?.limit ?? 100);
+      return (await locTheNhin(ctx, await q)).slice(0, input?.limit ?? 100);
     }),
 
   submitChangeRequest: protectedProcedure
