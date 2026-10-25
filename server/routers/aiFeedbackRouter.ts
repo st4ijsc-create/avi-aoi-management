@@ -3,6 +3,7 @@
  */
 import { kiemTraTrongPhamVi, locKiemTraTrongPhamVi } from "./_adapterPhamVi";
 import type { CoDanhTinh } from "./_phamViNguoiXem";
+import { congGoiY } from "./_aiPhamVi";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -85,14 +86,14 @@ export const aiFeedbackRouter = router({
   //    kiểm tra. Muốn khoá thì phải ẩn panel ở client TRƯỚC — xem báo cáo mục (b).
   getSuggestionsByInspection: thuTucVanHanh
     .input(z.object({ inspectionId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
 
       return db
         .select()
         .from(aiSuggestions)
-        .where(eq(aiSuggestions.inspectionId, input.inspectionId))
+        .where(and(eq(aiSuggestions.inspectionId, input.inspectionId), await congGoiY(ctx))) // phạm vi người dùng (L6b 2026-10-25)
         .orderBy(desc(aiSuggestions.createdAt));
     }),
 
@@ -109,11 +110,13 @@ export const aiFeedbackRouter = router({
         "PROCESS_OPTIMIZATION"
       ]).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { suggestions: [], total: 0 };
 
       const conditions = [eq(aiSuggestions.status, "PENDING")];
+      const congPv = await congGoiY(ctx); // phạm vi người dùng (L6b 2026-10-25)
+      if (congPv) conditions.push(congPv as never);
       if (input.suggestionType) {
         conditions.push(eq(aiSuggestions.suggestionType, input.suggestionType));
       }
@@ -544,8 +547,11 @@ export const aiFeedbackRouter = router({
 
   // Get dashboard stats
   getDashboardStats: protectedProcedure
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const db = await getDb();
+      // phạm vi người dùng (L6b 2026-10-25): gợi ý theo lần kiểm tra của máy trong phạm vi; phản hồi theo gợi ý đó
+      const congSug = await congGoiY(ctx);
+      const congFb = congSug ? sql`${aiFeedback.suggestionId} IN (SELECT ${aiSuggestions.id} FROM ${aiSuggestions} WHERE ${congSug})` : undefined;
       if (!db) return {
         totalSuggestions: 0,
         pendingReview: 0,
@@ -560,27 +566,29 @@ export const aiFeedbackRouter = router({
       // Get counts
       const [totalResult] = await db
         .select({ count: sql<number>`COUNT(*)` })
-        .from(aiSuggestions);
+        .from(aiSuggestions)
+        .where(congSug);
 
       const [pendingResult] = await db
         .select({ count: sql<number>`COUNT(*)` })
         .from(aiSuggestions)
-        .where(eq(aiSuggestions.status, "PENDING"));
+        .where(and(eq(aiSuggestions.status, "PENDING"), congSug));
 
       const [todayResult] = await db
         .select({ count: sql<number>`COUNT(*)` })
         .from(aiFeedback)
-        .where(gte(aiFeedback.feedbackAt, today));
+        .where(and(gte(aiFeedback.feedbackAt, today), congFb));
 
       // Calculate accuracy
       const [correctResult] = await db
         .select({ count: sql<number>`COUNT(*)` })
         .from(aiFeedback)
-        .where(eq(aiFeedback.feedbackType, "CORRECT"));
+        .where(and(eq(aiFeedback.feedbackType, "CORRECT"), congFb));
 
       const [totalFeedbackResult] = await db
         .select({ count: sql<number>`COUNT(*)` })
-        .from(aiFeedback);
+        .from(aiFeedback)
+        .where(congFb);
 
       const accuracy = totalFeedbackResult?.count && totalFeedbackResult.count > 0
         ? ((correctResult?.count || 0) / totalFeedbackResult.count) * 100
@@ -590,6 +598,7 @@ export const aiFeedbackRouter = router({
       const recentFeedback = await db
         .select()
         .from(aiFeedback)
+        .where(congFb)
         .orderBy(desc(aiFeedback.feedbackAt))
         .limit(10);
 

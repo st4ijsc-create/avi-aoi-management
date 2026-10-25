@@ -392,14 +392,14 @@ function isMissingColumnError(e: unknown): boolean {
   return (e as { code?: string } | null | undefined)?.code === "42703";
 }
 
-export async function getProfile(scope: AnomalyScope): Promise<AiAnomalyProfile | null> {
+export async function getProfile(scope: AnomalyScope, dieuKienPhamVi?: SQL): Promise<AiAnomalyProfile | null> {
   const db = await getDb();
   if (!db) return null;
   try {
     const [row] = await db
       .select()
       .from(aiAnomalyProfiles)
-      .where(and(...profileScopeConds(scope)))
+      .where(and(...profileScopeConds(scope), dieuKienPhamVi)) // phạm vi người dùng (L6b 2026-10-25)
       .limit(1);
     return row ?? null;
   } catch (e) {
@@ -407,7 +407,7 @@ export async function getProfile(scope: AnomalyScope): Promise<AiAnomalyProfile 
     const [row] = await db
       .select(LEGACY_PROFILE_COLUMNS)
       .from(aiAnomalyProfiles)
-      .where(and(...profileScopeConds(scope)))
+      .where(and(...profileScopeConds(scope), dieuKienPhamVi))
       .limit(1);
     return (row as AiAnomalyProfile | undefined) ?? null;
   }
@@ -450,7 +450,7 @@ export async function deleteScope(scope: AnomalyScope): Promise<void> {
 
 // ─── Stats ─────────────────────────────────────────────────────────────────────
 
-export async function getBankStats(filter: { productModelId: number | null; machineId: number | null }) {
+export async function getBankStats(filter: { productModelId: number | null; machineId: number | null }, pv?: { nganHang?: SQL; hoSo?: SQL }) {
   const empty = { totalVectors: 0, profiles: [] as AiAnomalyProfile[], distinctModelCodes: 0 };
   const db = await getDb();
   if (!db) return empty;
@@ -458,6 +458,7 @@ export async function getBankStats(filter: { productModelId: number | null; mach
   const bankConds: SQL[] = [];
   if (filter.productModelId != null) bankConds.push(eq(aiAnomalyMemoryBank.productModelId, filter.productModelId));
   if (filter.machineId != null) bankConds.push(eq(aiAnomalyMemoryBank.machineId, filter.machineId));
+  if (pv?.nganHang) bankConds.push(pv.nganHang); // phạm vi người dùng (L6b 2026-10-25)
 
   const [agg] = await db
     .select({
@@ -470,6 +471,7 @@ export async function getBankStats(filter: { productModelId: number | null; mach
   const profConds: SQL[] = [];
   if (filter.productModelId != null) profConds.push(eq(aiAnomalyProfiles.productModelId, filter.productModelId));
   if (filter.machineId != null) profConds.push(eq(aiAnomalyProfiles.machineId, filter.machineId));
+  if (pv?.hoSo) profConds.push(pv.hoSo); // phạm vi người dùng (L6b 2026-10-25)
   const profWhere = profConds.length > 0 ? and(...profConds) : undefined;
 
   // Same 42703 (undefined_column) guard as getProfile() — calibratedThreshold/

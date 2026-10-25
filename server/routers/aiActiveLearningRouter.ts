@@ -1,7 +1,11 @@
 import { sql } from "drizzle-orm";
 import type { CoDanhTinh } from "./_phamViNguoiXem";
 import { ghiViTri } from "./_viTriPhamVi";
-import { kiemTraTrongPhamVi } from "./_adapterPhamVi";
+import { kiemTraTrongPhamVi, dieuKienDoiTuongTrongPhamVi } from "./_adapterPhamVi";
+import { aiLabelQueue } from "../../drizzle/schema";
+
+/** phạm vi người dùng (L6b 2026-10-25): hàng đợi gán nhãn theo máy / lần kiểm tra của nó (cùng luật `hangDoiGhi`). */
+const congHangDoi = (ctx: CoDanhTinh) => dieuKienDoiTuongTrongPhamVi(ctx, { may: aiLabelQueue.machineId, lanKiem: aiLabelQueue.inspectionId });
 import { z } from "zod";
 import { appError } from "../_core/appError";
 import { router, moduleProcedure, moduleGate, adminProcedure as adminProcedureBase } from "../_core/trpc";
@@ -103,7 +107,7 @@ export const aiActiveLearningRouter = router({
       limit: z.number().min(1).max(200).optional(),
       offset: z.number().min(0).optional(),
     }).optional())
-    .query(({ input }) => getReviewQueue(input)),
+    .query(async ({ input, ctx }) => getReviewQueue({ ...(input ?? {}), dieuKienPhamVi: await congHangDoi(ctx) })),
 
   /**
    * Submit a human label for a queue item.
@@ -153,8 +157,8 @@ export const aiActiveLearningRouter = router({
       machineId: z.number().optional(),
       productModelId: z.number().optional(),
     }).optional())
-    .query(({ input }) =>
-      runUncertaintySampling(input?.limit, input?.machineId, input?.productModelId),
+    .query(async ({ input, ctx }) =>
+      runUncertaintySampling(input?.limit, input?.machineId, input?.productModelId, await congHangDoi(ctx)),
     ),
 
   /**
@@ -165,8 +169,8 @@ export const aiActiveLearningRouter = router({
       limit: z.number().min(1).max(100).optional(),
       machineId: z.number().optional(),
     }).optional())
-    .query(({ input }) =>
-      runDiversitySampling(input?.limit, input?.machineId),
+    .query(async ({ input, ctx }) =>
+      runDiversitySampling(input?.limit, input?.machineId, await congHangDoi(ctx)),
     ),
 
   /**
@@ -177,7 +181,7 @@ export const aiActiveLearningRouter = router({
       modelId: z.number(),
       minNewLabels: z.number().min(1).optional(),
     }))
-    .query(({ input }) => checkRetrainThreshold(input.modelId, input.minNewLabels)),
+    .query(async ({ input, ctx }) => checkRetrainThreshold(input.modelId, input.minNewLabels, await congHangDoi(ctx))),
 
   /**
    * Get active learning statistics.
@@ -187,12 +191,12 @@ export const aiActiveLearningRouter = router({
       modelId: z.number().optional(),
       machineId: z.number().optional(),
     }).optional())
-    .query(({ input }) => getActiveLearningStats(input)),
+    .query(async ({ input, ctx }) => getActiveLearningStats({ ...(input ?? {}), dieuKienPhamVi: await congHangDoi(ctx) })),
 
   /**
    * Get label accuracy comparison for a model.
    */
   labelAccuracy: protectedProcedure
     .input(z.object({ modelId: z.number() }))
-    .query(({ input }) => getLabelAccuracy(input.modelId)),
+    .query(async ({ input, ctx }) => getLabelAccuracy(input.modelId, await congHangDoi(ctx))),
 });

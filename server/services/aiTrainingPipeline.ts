@@ -402,14 +402,14 @@ export async function cancelTrainingJob(jobId: number) {
  * Check auto-retrain trigger conditions. Now also reads labeled-sample supply
  * (ai_label_queue LABELED/AUTO_LABELED) via getTrainingDataStats.
  */
-export async function checkAutoRetrainTrigger(modelId: number): Promise<{
+export async function checkAutoRetrainTrigger(modelId: number, pv?: { hangDoi?: import("drizzle-orm").SQL; goiY?: import("drizzle-orm").SQL }): Promise<{
   shouldRetrain: boolean;
   reason?: string;
   feedbackCount: number;
   labeledCount: number;
   accuracyDrop?: number;
 }> {
-  const stats = await db.getTrainingDataStats(modelId);
+  const stats = await db.getTrainingDataStats(modelId, pv); // phạm vi người dùng (L6b 2026-10-25): pv chỉ do tầng router dựng cho người bị thu hẹp (cron không truyền ⇒ như cũ)
   if (!stats) return { shouldRetrain: false, feedbackCount: 0, labeledCount: 0 };
 
   const labeledCount = stats.labeledCount ?? 0;

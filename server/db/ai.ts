@@ -189,6 +189,8 @@ export async function createInferenceResult(data: InsertInferenceResult) {
 }
 
 export async function getInferenceResults(options?: {
+  /** phạm vi người dùng (L6b 2026-10-25): điều kiện SQL phạm vi do tầng gọi dựng (undefined = toàn quyền / nội bộ). */
+  dieuKienPhamVi?: SQL;
   modelId?: number;
   inspectionId?: number;
   measurementResultId?: number;
@@ -203,11 +205,12 @@ export async function getInferenceResults(options?: {
   if (options?.inspectionId) conditions.push(eq(inferenceResults.inspectionId, options.inspectionId));
   if (options?.measurementResultId) conditions.push(eq(inferenceResults.measurementResultId, options.measurementResultId));
   if (options?.status) conditions.push(eq(inferenceResults.status, options.status));
+  if (options?.dieuKienPhamVi) conditions.push(options.dieuKienPhamVi);
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   return db.select().from(inferenceResults).where(where).orderBy(desc(inferenceResults.createdAt)).limit(options?.limit ?? 50).offset(options?.offset ?? 0);
 }
 
-export async function getInferenceStats(modelId: number) {
+export async function getInferenceStats(modelId: number, dieuKienPhamVi?: SQL) {
   const db = await getDb();
   if (!db) return null;
   const [result] = await db.select({
@@ -216,6 +219,6 @@ export async function getInferenceStats(modelId: number) {
     avgConfidence: sql<number>`avg("confidence"::numeric)::numeric(5,4)`,
     completedCount: sql<number>`count(*) filter (where "status" = 'COMPLETED')::int`,
     failedCount: sql<number>`count(*) filter (where "status" = 'FAILED')::int`,
-  }).from(inferenceResults).where(eq(inferenceResults.modelId, modelId));
+  }).from(inferenceResults).where(dieuKienPhamVi ? and(eq(inferenceResults.modelId, modelId), dieuKienPhamVi) : eq(inferenceResults.modelId, modelId));
   return result;
 }

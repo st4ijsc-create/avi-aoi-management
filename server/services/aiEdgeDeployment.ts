@@ -254,13 +254,13 @@ export async function syncEdgeResults(
 /**
  * Get deployments for a specific device
  */
-export async function getDeviceDeployments(deviceId: string) {
-  return db.getEdgeDeploymentsByDevice(deviceId);
+export async function getDeviceDeployments(deviceId: string, dieuKienPhamVi?: import("drizzle-orm").SQL) {
+  return db.getEdgeDeploymentsByDevice(deviceId, dieuKienPhamVi); // phạm vi người dùng (L6b 2026-10-25)
 }
 
 /**
  * Check for stale deployments (no heartbeat in threshold)
  */
-export async function checkStaleDeployments(thresholdMinutes: number = 30) {
-  return db.getStaleDeployments(thresholdMinutes);
+export async function checkStaleDeployments(thresholdMinutes: number = 30, dieuKienPhamVi?: import("drizzle-orm").SQL) {
+  return db.getStaleDeployments(thresholdMinutes, dieuKienPhamVi); // phạm vi người dùng (L6b 2026-10-25)
 }

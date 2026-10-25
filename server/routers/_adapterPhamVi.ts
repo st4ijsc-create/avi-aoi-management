@@ -318,3 +318,40 @@ export async function recipeSetThayDuocTrongPhamVi(ctx: CoDanhTinh, setIds: numb
   for (const r of rows) if (!may.includes(r.m)) ngoai.add(r.s);
   return new Set(setIds.filter((s) => !ngoai.has(s)));
 }
+
+/**
+ * phạm vi người dùng (L6b 2026-10-25): điều kiện phạm vi cho bảng DỮ LIỆU AI định vị bằng MÁY và/hoặc LẦN KIỂM TRA (ai_label_queue · inference_results · ai_quality_gate_results · defect_segmentations · ai_suggestions · edge_inference_sync …).
+ * Hàng thấy được ⇔ toàn quyền, HOẶC (có ÍT NHẤT MỘT khoá định vị khác null VÀ mọi khoá khác null đều trong phạm vi): `may` ∈ máy trong phạm vi; `lanKiem` ⇒ máy của lần kiểm tra ∈ phạm vi.
+ * Hàng không định vị được chỉ toàn quyền thấy (fail-closed, cùng `dieuKienViTriTrongPhamVi`). `undefined` khi toàn quyền.
+ */
+export async function dieuKienDoiTuongTrongPhamVi(ctx: CoDanhTinh, cot: { may?: AnyPgColumn | SQL; lanKiem?: AnyPgColumn | SQL }): Promise<SQL | undefined> {
+  const ids = await idsMayTrongPhamVi(ctx);
+  if (ids === null) return undefined;
+  const ds = sql.join((ids.length > 0 ? ids : [-1]).map((x) => sql`${x}`), sql`, `);
+  const phan: SQL[] = [];
+  const co: SQL[] = [];
+  if (cot.may) {
+    phan.push(sql`(${cot.may} IS NULL OR ${cot.may} IN (${ds}))`);
+    co.push(sql`${cot.may} IS NOT NULL`);
+  }
+  if (cot.lanKiem) {
+    phan.push(sql`(${cot.lanKiem} IS NULL OR (SELECT pi."machineId" FROM product_inspections pi WHERE pi."id" = ${cot.lanKiem}) IN (${ds}))`);
+    co.push(sql`${cot.lanKiem} IS NOT NULL`);
+  }
+  if (phan.length === 0) throw new Error("dieuKienDoiTuongTrongPhamVi: cần ít nhất một cột định vị");
+  return sql`(${sql.join(phan, sql` AND `)} AND (${sql.join(co, sql` OR `)}))`;
+}
+
+/**
+ * phạm vi người dùng (L6b 2026-10-25): điều kiện phạm vi cho bảng CẤU HÌNH / BÁO CÁO CẤP MÔ HÌNH-SẢN PHẨM có `machineId` nullable (ai_calibration_reports · ai_quality_gate_configs · ai_anomaly_profiles …).
+ * Thấy được ⇔ toàn quyền, HOẶC `may` ∈ máy trong phạm vi, HOẶC (`may` NULL VÀ (`sanPham` NULL ⇒ CHUNG; `sanPham` có ⇒ theo luật sản phẩm đa nhà máy L3, dieu-phoi 2026-10-25)).
+ */
+export async function dieuKienCauHinhTrongPhamVi(ctx: CoDanhTinh, cot: { may: AnyPgColumn | SQL; sanPham?: AnyPgColumn | SQL }): Promise<SQL | undefined> {
+  const ids = await idsMayTrongPhamVi(ctx);
+  if (ids === null) return undefined;
+  const ds = sql.join((ids.length > 0 ? ids : [-1]).map((x) => sql`${x}`), sql`, `);
+  if (!cot.sanPham) return sql`(${cot.may} IS NULL OR ${cot.may} IN (${ds}))`;
+  const { congSanPhamTheoPhamVi } = await import("../db/product");
+  const sp = await congSanPhamTheoPhamVi(cot.sanPham, phamViCua(ctx));
+  return sql`(${cot.may} IN (${ds}) OR (${cot.may} IS NULL AND (${cot.sanPham} IS NULL${sp ? sql` OR ${sp}` : sql``})))`;
+}

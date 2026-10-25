@@ -23,6 +23,8 @@ export async function insertDefectSegmentation(
 }
 
 export interface ListMasksFilter {
+  /** phạm vi người dùng (L6b 2026-10-25): điều kiện SQL phạm vi do tầng gọi dựng (undefined = toàn quyền / nội bộ). */
+  dieuKienPhamVi?: SQL;
   measurementResultId?: number | null;
   inspectionId?: number | null;
   imageUrl?: string | null;
@@ -40,6 +42,7 @@ export async function listDefectSegmentations(
   if (filter.inspectionId != null) conds.push(eq(defectSegmentations.inspectionId, filter.inspectionId));
   if (filter.imageUrl != null) conds.push(eq(defectSegmentations.imageUrl, filter.imageUrl));
   if (filter.source != null) conds.push(eq(defectSegmentations.source, filter.source));
+  if (filter.dieuKienPhamVi) conds.push(filter.dieuKienPhamVi);
   const where = conds.length ? and(...conds) : undefined;
   return db
     .select()

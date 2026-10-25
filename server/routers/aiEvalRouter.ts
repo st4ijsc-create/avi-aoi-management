@@ -24,6 +24,7 @@ import { buildDataset } from "../services/aiDatasetBuilder";
 import { evaluateModelVersion, compareBeforeAfter, evaluateQualityGate } from "../services/aiEvalHarness";
 import { scanInferenceForUncertainty, scanCommitteeDisagreement } from "../services/aiActiveLearningAuto";
 import { createTrainingJob, checkAutoRetrainTrigger } from "../services/aiTrainingPipeline";
+import { pvTrainStats } from "./_aiPhamVi";
 import { listModelCards, generateModelCard, seedPortfolioCards } from "../services/aiModelCard";
 import { checkConfidenceDrift, getDriftMetrics } from "../services/aiDriftMonitor";
 import { bootstrapFirstClassifier, InsufficientLabeledSamplesError } from "../services/aiBootstrapClassifier";
@@ -126,7 +127,7 @@ export const aiEvalRouter = router({
   // ─── Auto-retrain trigger check ─────────────────────────────
   autoRetrainCheck: protectedProcedure
     .input(z.object({ modelId: z.number() }))
-    .query(({ input }) => checkAutoRetrainTrigger(input.modelId)),
+    .query(async ({ input, ctx }) => checkAutoRetrainTrigger(input.modelId, await pvTrainStats(ctx))), // phạm vi người dùng (L6b 2026-10-25)
 
   // ─── B5.4 Governance: list model cards (Qwen3 portfolio + registered) ─
   modelCards: protectedProcedure.query(() => listModelCards()),
