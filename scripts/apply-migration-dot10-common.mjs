@@ -38,12 +38,30 @@ function simpleHash(str) {
 }
 
 /** `avi_app` has no DDL rights (42501) — the owner `aoi` runs the DDL. */
-function asOwner(url) {
+export function asOwner(url) {
   if (process.env.MIGRATION_DB_URL) return process.env.MIGRATION_DB_URL;
   const u = new URL(url);
   u.username = process.env.MIGRATION_DB_USER ?? "aoi";
   u.password = process.env.MIGRATION_DB_PASSWORD ?? "aoi";
   return u.toString();
+}
+
+/**
+ * The `_test` URL: TEST_DATABASE_URL, else DATABASE_URL + "_test" (no doubled suffix when vitest.setup already forced `_test`).
+ * Throws when the database name does not contain "test". NOTE: `asOwner(url)` ignores `url` when MIGRATION_DB_URL is set, so a caller
+ * that WRITES must still check `current_database()` on the connection it actually opens (T14 ruling K14).
+ */
+export function testDbUrl() {
+  let testUrl = process.env.TEST_DATABASE_URL;
+  if (!testUrl) {
+    const devUrl = process.env.DATABASE_URL;
+    if (!devUrl) throw new Error("DATABASE_URL not set");
+    const u = new URL(devUrl);
+    if (!/_test$/.test(u.pathname)) u.pathname = "/" + u.pathname.replace(/^\//, "") + "_test";
+    testUrl = u.toString();
+  }
+  if (!/test/i.test(new URL(testUrl).pathname)) throw new Error(`test target ${new URL(testUrl).pathname} does not look like a test DB`);
+  return testUrl;
 }
 
 /** SQLSTATE of one statement run inside a SAVEPOINT (an error never spoils the probe transaction); null = success. */
@@ -168,14 +186,11 @@ export async function runMigration(m) {
   const targets = [];
   if (!args.includes("--test-only")) targets.push([devUrl, "dev"]);
   if (!args.includes("--dev-only")) {
-    let testUrl = process.env.TEST_DATABASE_URL;
-    if (!testUrl) {
-      const u = new URL(devUrl);
-      u.pathname = "/" + u.pathname.replace(/^\//, "") + "_test";
-      testUrl = u.toString();
-    }
-    if (!/test/i.test(new URL(testUrl).pathname)) {
-      console.error(`${m.tag} test target ${new URL(testUrl).pathname} does not look like a test DB — refused`);
+    let testUrl;
+    try {
+      testUrl = testDbUrl();
+    } catch (e) {
+      console.error(`${m.tag} ${e.message} — refused`);
       process.exit(2);
     }
     targets.push([testUrl, "test"]);
