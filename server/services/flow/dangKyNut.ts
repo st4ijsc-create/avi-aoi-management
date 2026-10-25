@@ -34,6 +34,9 @@ export interface VetModel {
   /** Dự phòng vì khe nặng đang giữ model khác (`khe-dang-giu-model-khac`). */
   kheBan: boolean;
   lyDo: string[];
+  /** Token THẬT của lời gọi (điền SAU khi model trả lời — cùng đối tượng đã ghi vào vết; vắng = đường không báo / lời gọi lỗi). */
+  tokVao?: number;
+  tokRa?: number;
 }
 
 export interface NguCanhChay {

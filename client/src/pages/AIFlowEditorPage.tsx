@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import FlowThongKe from "@/components/aiFlow/FlowThongKe";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
@@ -379,6 +380,7 @@ export default function AIFlowEditorPage() {
               <TabsList className="m-2 grid grid-cols-2">
                 <TabsTrigger value="cauHinh" data-testid="tab-cau-hinh">{t("flowStudio.sua.tabCauHinh")}</TabsTrigger>
                 <TabsTrigger value="chay" data-testid="tab-chay">{t("flowStudio.sua.tabChay")}</TabsTrigger>
+                <TabsTrigger value="thongKe" data-testid="tab-thong-ke">{t("flowStudio.sua.tabThongKe")}</TabsTrigger>
               </TabsList>
               <TabsContent value="cauHinh" className="px-3 pb-4">
                 {nutChon ? (
@@ -453,6 +455,9 @@ export default function AIFlowEditorPage() {
                     </div>
                   )
                 )}
+              </TabsContent>
+              <TabsContent value="thongKe" className="px-3 pb-4">
+                <FlowThongKe flowId={flowId} />
               </TabsContent>
               <TabsContent value="chay" className="px-3 pb-4">
                 <RunTimeline flowId={flowId} runId={runId} onChonRun={setRunId} tenNut={tenNut} onTrangThai={nhanTrangThaiLuot} />
