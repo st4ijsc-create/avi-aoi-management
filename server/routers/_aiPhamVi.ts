@@ -75,7 +75,10 @@ export async function anhTrongPhamVi(ctx: CoDanhTinh, imageKey: string): Promise
   const ids = await idsMayTrongPhamVi(ctx);
   if (ids === null) return true;
   // ảnh tạm: chỉ MỘT tệp phẳng do aiImageSearch.uploadTemp sinh ra (không thư mục con). Cơ chế đó KHÔNG ghi chủ tải lên ⇒ chưa phân biệt được người.
-  if (/^temp\/tmp_\d+_[a-z0-9]+\.[a-z0-9]+$/i.test(k)) return true;
+  // 2026-10-25 (dieu-phoi): uploadForSearch nay ghi temp/u<userId>/ ⇒ CHỈ chính chủ đọc lại; khoá phẳng kiểu cũ temp/tmp_… (không biết chủ, tự xoá sau 1 giờ) ⇒ không thấy.
+  const tam = /^temp\/u(\d+)\/tmp_\d+_[a-z0-9]+\.[a-z0-9]+$/i.exec(k);
+  if (tam) return ctx.user?.id != null && Number(tam[1]) === ctx.user.id;
+  if (/^temp\//i.test(k)) return false;
   const { getDb } = await import("../db/connection");
   const d = await getDb();
   if (!d) return false;

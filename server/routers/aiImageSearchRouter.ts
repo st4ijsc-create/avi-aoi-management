@@ -247,11 +247,12 @@ export const aiImageSearchRouter = router({
       imageData: z.string(),
       fileName: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const uploadsRoot = process.env.LOCAL_STORAGE_DIR
         ? path.resolve(process.env.LOCAL_STORAGE_DIR)
         : path.join(process.cwd(), "uploads");
-      const tempDir = path.join(uploadsRoot, "temp");
+      // ảnh tạm theo CHỦ tải lên (2026-10-25, dieu-phoi): temp/u<userId>/ — anhTrongPhamVi chỉ cho chính chủ đọc lại khoá này
+      const tempDir = path.join(uploadsRoot, "temp", `u${ctx.user.id}`);
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
       }
@@ -278,7 +279,7 @@ export const aiImageSearchRouter = router({
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "emptyImagePayload" }, "Empty image data");
       }
       fs.writeFileSync(filePath, buffer);
-      return { imageKey: `temp/${safeName}` };
+      return { imageKey: `temp/u${ctx.user.id}/${safeName}` };
     }),
 });
 
