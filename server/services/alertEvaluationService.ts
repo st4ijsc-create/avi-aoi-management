@@ -11,7 +11,8 @@ import {
   computeClientOfflineMinutes,
 } from "./mqttService";
 import { redisService } from "./redisService";
-import { dieuKienTram, hangKetQua, KIEU_LUAT_THEO_TRAM, phanPhamViTram, type PhamViTram } from "./mqttAlertPhamVi";
+import { dieuKienTram, KIEU_LUAT_THEO_TRAM, phanPhamViTram, type PhamViTram } from "./mqttAlertPhamVi";
+import { hangKetQua } from "../db/hangKetQua";
 
 interface AlertEvaluationResult {
   ruleId: number;
