@@ -61,6 +61,9 @@ export const NHOM_THU_TUC_NHAY_CAM: Readonly<Record<NhomNhayCam, CauHinhNhom>> =
       "user.verify2FA",
       "user.disable2FA",
       "scadaKenh.capNhat",
+      // R1b-2a T6 (2026-10-25) — khai mức hàng loạt: MỘT mã TOTP tươi (kiemTotpCauHinh, mức 5) cho ≤ 200 tag ⇒ cùng nhóm với capNhat (việc
+      // cấu hình hiếm; một lô thay hàng trăm lượt capNhat).
+      "scadaKenh.khaiHangLoat",
       "scadaKenh.cheDo.dat",
       "scadaKenh.cheDo.go",
       "mappingAsCode.applyImport",

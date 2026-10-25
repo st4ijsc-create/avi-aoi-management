@@ -318,6 +318,9 @@ async function assertDichNguonSanSang(tx: DbHoacTx, luat: InterlockRule): Promis
       .from(deviceTags)
       .innerJoin(deviceAdapters, eq(deviceAdapters.id, deviceTags.adapterId))
       .where(and(eq(deviceAdapters.machineId, luat.machineId), eq(deviceTags.tagKey, luat.sourceKey)))
+      // R1b-2a T6 (review T5 m-2) — khoá NHIỀU hàng tag (FOR SHARE) cũng theo id như mọi khoá nhiều tag (troLaiKenh.ts): hôm nay chưa có vòng
+      // chờ (FOR SHARE không chặn nhau), nhưng một bên FOR UPDATE theo thứ tự khác trên cùng tập hàng là đường tới 40P01.
+      .orderBy(deviceTags.id)
       .for("share", { of: deviceTags });
     // I-1 — không tag thiết bị nào của máy khai khoá này ⇒ nguồn ngoài OT trung tâm, cổng đọc ot_telemetry (fail-closed lúc chạy) ⇒ cho bật.
     if (nguon.length === 0) return;

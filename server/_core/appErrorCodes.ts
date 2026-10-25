@@ -222,9 +222,14 @@ export const APP_ERROR_CODES = [
                                    // dich_tat | adapter_dich_tat | nguon_tat). Nguồn không tag thiết bị nào khai ⇒ cho bật (đường DB, fix round 1 I-1).
   "INTERLOCK_NGUON_MO_HO",         // params: { ma, lyDo: "nguon_mo_ho", tagKey, ruleId, soAdapter } — R1b-1 T10b fix round 1 (M-2): interlock.enable luật
                                    // telemetry_tag mà >1 adapter bật của máy cùng mang tag nguồn ⇒ cổng mo_ho mãi. Bỏ trùng trước.
-  "STOP_PIN_GO_TRUOC",             // params: { ma, tagKey, stopValue } — fix round 1 (phán quyết T9 b): tag ĐÃ KHAI đang ghim DỪNG mà lượt này đổi định
+  "STOP_PIN_GO_TRUOC",             // params: { ma, tagKey, stopValue, tagId? } — fix round 1 (phán quyết T9 b): tag ĐÃ KHAI đang ghim DỪNG mà lượt này đổi định
                                    // nghĩa dây (address/scale/offset/dataType/writable/adapterId), tắt hoặc xoá tag ⇒ gỡ ghim trước (thao tác riêng có lý do).
+                                   // R1b-2a T6 (điều phối DUYỆT): cả khi scadaKenh.capNhat / khaiHangLoat nâng mức hiệu lực của tag đang ghim từ ≤ 1 lên
+                                   // > 1 (hoặc bỏ khai ⇒ 5) — STOP HMI chỉ gửi ghim mức ≤ 1 ⇒ tag sẽ lặng lẽ rơi khỏi STOP. `tagId` khi bên gọi biết (K10).
   "QUA_NHIEU_KENH_DA_KHAI",        // params: { soTag, toiDa } — một lô import trỏ lại quá `toiDa` (200) tag đã khai kênh; chia nhỏ file.
+                                   // R1b-2a T6: cả lô scadaKenh.khaiHangLoat quá `toiDa` tag (kiểm TRƯỚC mọi DB / mã).
+                                   // (R1b-2a T6) INVALID_VALUE / FIELD_REQUIRED / STOP_PIN_NGOAI_DAI / INTERLOCK_NGOAI_DAI của khai cột kênh
+                                   // (`services/scada/khaiKenh.ts`) mang thêm `tagId` — lô nêu đúng tag hỏng.
   // ── SCADA R1a Task 16 — BỘ ĐẾM TOTP SAI theo người dùng (server/_core/totpKhoaSai.ts, gọi từ verifyTotpOnce ⇒ MỌI bên gọi TOTP) ──
   "TOTP_TAM_KHOA",                 // params: { remainingMinutes } (+ { ma, level } ở SCADA/copilot) — 5 lần sai / 5 phút ⇒ TOTP khoá 5 phút.
                                    // ⚠ KHÔNG BAO GIỜ mang số lần sai còn lại (điều phối 2026-10-24). KHÁC ACCOUNT_LOCKED (khoá mật khẩu).

@@ -533,7 +533,11 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   ngoaiAiCoCong KHÔNG đổi.** Thủ tục MỚI `scadaCommands.dungMay` (STOP HMI một bước) của `server/routers/scadaCommandsRouter.ts` (không
 //   phải bề mặt AI; tool `hmi.stop` KHÔNG vào registry tool AI), sau `MOD_OT_CONTROL` (xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 126 → 127).
 //   Đo: ghim cũ (gốc f5f8f40d9) đỏ ĐÚNG +1. `tong` 2403 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2405, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// ★★ 2026-10-25 · R1b-2a scadaKenh.khaiHangLoat +1 (SCADA R1b-2a Task 6) — **tong 2405 → 2406 · beMatAi / aiCoCong / aiMienTru /
+//   ngoaiAiCoCong KHÔNG đổi.** Mutation MỚI `scadaKenh.khaiHangLoat` (khai mức hàng loạt, một mã TOTP cho ≤ 200 tag) của
+//   `server/routers/scadaKenhRouter.ts` — không phải bề mặt AI, cùng cổng `kySuProcedure` (MOD_OT_CONTROL) với `capNhat` (xem
+//   `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 127 → 128). Đo: ghim cũ (gốc 4395bfd11) đỏ ĐÚNG +1. `tong` 2406 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2406, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // R1b-2a T6: +1 mutation scadaKenh.khaiHangLoat ⇒ 2406; W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
@@ -585,7 +589,10 @@ const GHIM_MODULE_KHAC = {
   // ★ 2026-10-24 · R1b-1 scadaCommands.dungMay +1 (SCADA R1b-1 Task 2) — 126 → 127: mutation `scadaCommands.dungMay` trên
   //   `moduleProcedure("MOD_OT_CONTROL")` như các thủ tục anh em (sàn vai mức 1 + `machine_control.canEdit` kiểm TRONG handler; không 2FA).
   //   Không thủ tục cũ nào đổi cổng.
-  MOD_OT_CONTROL: 127,
+  // ★ 2026-10-25 · R1b-2a scadaKenh.khaiHangLoat +1 (SCADA R1b-2a Task 6) — 127 → 128: mutation `scadaKenh.khaiHangLoat` trên
+  //   `roleProcedure("admin","engineer").use(require2FA).use(moduleGate("MOD_OT_CONTROL"))` (+ `canEdit`), như `capNhat`. Không thủ tục cũ
+  //   nào đổi cổng.
+  MOD_OT_CONTROL: 128,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

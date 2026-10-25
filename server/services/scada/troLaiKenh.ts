@@ -376,11 +376,15 @@ function loiMatDich(tagKey: string, r: LuatNhamTag, viec: string): never {
   );
 }
 
-function loiGoGhimTruoc(cu: Pick<DeviceTag, "tagKey" | "stopValue">, viec: string): never {
+/**
+ * STOP_PIN_GO_TRUOC của MỘT tag. R1b-2a T6 (phán quyết K10): `tagId` THÊM VÀO params khi bên gọi biết nó (khai mức hàng loạt nêu đúng tag
+ * hỏng trong lô 200) — thêm thuần, không đổi params cũ của các bên gọi hiện có.
+ */
+export function loiGoGhimTruoc(cu: Pick<DeviceTag, "tagKey" | "stopValue">, viec: string, tagId?: number): never {
   throw appError(
     "BAD_REQUEST",
     "STOP_PIN_GO_TRUOC",
-    { ma: "STOP_PIN_GO_TRUOC", tagKey: cu.tagKey, stopValue: String(cu.stopValue) },
+    { ma: "STOP_PIN_GO_TRUOC", tagKey: cu.tagKey, stopValue: String(cu.stopValue), ...(tagId === undefined ? {} : { tagId }) },
     `Kênh ${cu.tagKey} đang ghim giá trị DỪNG (${String(cu.stopValue)}) — ${viec} sẽ làm mất STOP. Gỡ ghim trước (Tag dừng phần mềm, có lý do), rồi làm lại.`,
   );
 }
@@ -404,13 +408,13 @@ function loiNgoaiDai(
   );
 }
 
-/** QUA_NHIEU_KENH_DA_KHAI — lô import đụng quá trần tag được bảo vệ. */
+/** QUA_NHIEU_KENH_DA_KHAI — lô import đụng quá trần tag được bảo vệ, hoặc (R1b-2a T6) lô khai mức hàng loạt quá trần tag. */
 export function loiQuaNhieuKenhDaKhai(soTag: number): never {
   throw appError(
     "BAD_REQUEST",
     "QUA_NHIEU_KENH_DA_KHAI",
     { soTag, toiDa: TRAN_KENH_DA_KHAI_MOT_LO },
-    `Lô import đụng ${soTag} tag đã khai kênh / được bảo vệ — tối đa ${TRAN_KENH_DA_KHAI_MOT_LO} mỗi lô. Chia nhỏ file rồi nhập lại.`,
+    `Lô đụng ${soTag} tag đã khai kênh / được bảo vệ — tối đa ${TRAN_KENH_DA_KHAI_MOT_LO} mỗi lô. Chia nhỏ lô rồi làm lại.`,
   );
 }
 

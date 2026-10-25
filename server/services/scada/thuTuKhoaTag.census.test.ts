@@ -13,7 +13,8 @@
  *     `{ of: X }` chỉ khoá bảng khác;
  *   • một hàng: `.where(eq(deviceTags.id, …))` hoặc `.where(and(eq(deviceTags.id, …), …))`, hoặc khoá tự nhiên duy nhất
  *     (`and(eq(deviceTags.adapterId, …), eq(deviceTags.tagKey, …))`, ràng buộc `uq_device_tags_adapter_key`) — khoá MỘT hàng không có thứ tự để lệch;
- *   • `FOR SHARE` KHÔNG thuộc census này (brief T5 chỉ FOR UPDATE; ghi chú ở báo cáo T5).
+ *   • `FOR SHARE` KHÔNG thuộc vị từ FOR UPDATE (brief T5); R1b-2a T6 (review T5 m-2) thêm MỘT ca riêng cho khoá NHIỀU hàng FOR SHARE (cùng
+ *     luật ORDER BY id, ghim riêng `VI_TRI_NHIEU_HANG_SHARE`).
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -109,14 +110,17 @@ function hamBaoNgoai(n: ts.Node): string {
   return "(cấp tệp)";
 }
 
-/** Mọi lượt khoá `device_tags` FOR UPDATE trong một tệp nguồn. */
-export function quetKhoaTag(duong: string, ma: string): ViTriKhoaTag[] {
+/**
+ * Mọi lượt khoá `device_tags` FOR UPDATE (mặc định) — hoặc FOR SHARE khi `cheDo = "share"` (R1b-2a T6, review T5 m-2: thêm thuần) — trong một
+ * tệp nguồn.
+ */
+export function quetKhoaTag(duong: string, ma: string, cheDo: "update" | "share" = "update"): ViTriKhoaTag[] {
   const src = ts.createSourceFile(duong, ma, ts.ScriptTarget.Latest, true);
   const ra: ViTriKhoaTag[] = [];
   const di = (n: ts.Node): void => {
     if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === "for") {
       const che = n.arguments[0];
-      if (che && ts.isStringLiteralLike(che) && che.text === "update" && !ofBangKhac(n.arguments[1])) {
+      if (che && ts.isStringLiteralLike(che) && che.text === cheDo && !ofBangKhac(n.arguments[1])) {
         let coTag = false;
         let motHang = false;
         let coOrderById = false;
@@ -146,6 +150,7 @@ export function quetKhoaTag(duong: string, ma: string): ViTriKhoaTag[] {
 const MOI_FILE = moiFileDuoi(GOC_REPO, "server", [".ts"]).filter((f) => !/\.test\.ts$/.test(f.duong) && !f.duong.includes("/__"));
 
 let daQuet: ViTriKhoaTag[] | null = null;
+let daQuetShare: ViTriKhoaTag[] | null = null;
 /** Quét MỘT lần cho cả tệp (AST mọi file server mất ~10 s). Chỉ parse file có nhắc `deviceTags` (các file khác không thể có khoá tag). */
 function moiKhoaTag(): ViTriKhoaTag[] {
   daQuet ??= MOI_FILE.flatMap((f) => {
@@ -154,6 +159,22 @@ function moiKhoaTag(): ViTriKhoaTag[] {
   });
   return daQuet;
 }
+/** Như trên cho FOR SHARE (R1b-2a T6). */
+function moiKhoaTagShare(): ViTriKhoaTag[] {
+  daQuetShare ??= MOI_FILE.flatMap((f) => {
+    const ma = readFileSync(f.that, "utf8");
+    return ma.includes("deviceTags") ? quetKhoaTag(f.duong, ma, "share") : [];
+  });
+  return daQuetShare;
+}
+
+/**
+ * GHIM — mọi lượt khoá NHIỀU hàng `device_tags` FOR SHARE trong `server/**` (đo bằng AST). Tất cả PHẢI `ORDER BY id`.
+ *  - 2026-10-25 · R1b-2a T6 (review T5 m-2) — đo trên cây 4395bfd11 + T6: MỘT vị trí, `interlockRouter.ts#assertDichNguonSanSang` (tag nguồn
+ *      telemetry_tag trên mọi adapter của máy, `FOR SHARE OF device_tags`) — trước đây không ORDER BY. FOR SHARE không chặn FOR SHARE, nhưng một
+ *      bên FOR UPDATE theo thứ tự khác trên cùng tập hàng vẫn là đường tới 40P01 ⇒ cùng luật ORDER BY id.
+ */
+const VI_TRI_NHIEU_HANG_SHARE = ["server/routers/interlockRouter.ts#assertDichNguonSanSang"];
 
 /**
  * GHIM — mọi lượt khoá NHIỀU hàng `device_tags` FOR UPDATE trong `server/**` (đo bằng AST, KHÔNG đoán). Tất cả PHẢI `ORDER BY id`.
@@ -163,9 +184,11 @@ function moiKhoaTag(): ViTriKhoaTag[] {
  *      `mappingAsCode.ts#importMapping` (`hangKhoa` — trước đây không ORDER BY);
  *      `stopPin.ts#goMoiStopPinCuaAdapterTx` (gỡ mọi ghim của adapter — K8, trước đây không ORDER BY);
  *      `troLaiKenh.ts#congAdapterTx` (cổng adapter — trước đây ORDER BY tagKey).
- *    `scadaKenh.khaiHangLoat` (Task 6) sẽ thêm vị trí thứ năm.
+ *  - 2026-10-25 · R1b-2a T6 — vị trí thứ năm `scadaKenhRouter.ts#khaiHangLoat` (khai mức hàng loạt: tag `WHERE id IN (…) ORDER BY id FOR UPDATE`
+ *      SAU adapter FOR SHARE → luật nhắm adapter FOR SHARE — đúng thứ tự khoá dự án).
  */
 const VI_TRI_NHIEU_HANG = [
+  "server/routers/scadaKenhRouter.ts#khaiHangLoat",
   "server/routers/deviceAdapterRouter.ts#delete",
   "server/services/ot/mappingAsCode.ts#importMapping",
   "server/services/ot/stopPin.ts#goMoiStopPinCuaAdapterTx",
@@ -219,5 +242,16 @@ describe("★★★ census — khoá NHIỀU hàng `device_tags` FOR UPDATE luô
   it("★ GHIM — danh sách vị trí khoá nhiều hàng (không thừa, không thiếu)", () => {
     const viTri = [...new Set(moiKhoaTag().filter((k) => !k.motHang).map((k) => k.viTri))].sort();
     expect(viTri, "vị trí khoá nhiều tag MỚI ⇒ thêm vào VI_TRI_NHIEU_HANG kèm ngày · task · lý do (và theo thứ tự khoá dự án)").toEqual([...VI_TRI_NHIEU_HANG].sort());
+  });
+
+  it("★★ R1b-2a T6 (review T5 m-2) — ∀ khoá nhiều hàng `device_tags` FOR SHARE ⇒ ORDER BY id; GHIM danh sách vị trí", () => {
+    expect(quetKhoaTag("x.ts", `async function g(tx) { return tx.select().from(deviceTags).where(eq(deviceTags.adapterId, 1)).for("share"); }`, "share")).toHaveLength(1);
+    expect(quetKhoaTag("x.ts", `async function g(tx) { return tx.select().from(deviceTags).where(eq(deviceTags.adapterId, 1)).for("update"); }`, "share")).toEqual([]);
+    const sai = moiKhoaTagShare()
+      .filter((k) => !k.motHang && !k.coOrderById)
+      .map((k) => `${k.viTri}:${k.dong}`);
+    expect(sai, "khoá nhiều tag FOR SHARE phải `.orderBy(deviceTags.id)` (troLaiKenh.ts)").toEqual([]);
+    const viTri = [...new Set(moiKhoaTagShare().filter((k) => !k.motHang).map((k) => k.viTri))].sort();
+    expect(viTri, "vị trí khoá nhiều tag FOR SHARE MỚI ⇒ thêm vào VI_TRI_NHIEU_HANG_SHARE kèm ngày · task · lý do").toEqual([...VI_TRI_NHIEU_HANG_SHARE].sort());
   });
 });

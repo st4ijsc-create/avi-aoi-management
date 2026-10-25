@@ -955,7 +955,11 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // 2026-10-25 gộp L6c-C1 (A−22) với W17a (reportArtifact C→S) ⇒ đo bằng census.
 // ★★ 2026-10-25 (lô W17b, luật MQTT + ngưỡng yield THEO NHÀ MÁY, mig 0426; cộng dồn sau gộp A95/C466/S635): **C 466 → 454 · S 635 → 647 · D 1199 → 1201 · tong 2403 → 2405.** 12 thủ tục ĐỌC C→S (mqttAlert list|getById|history|unresolved · yieldThreshold list|getById|getByType|getEnabled|getHistory|getHistoryByType|getHistoryByThreshold · alertEscalation.recentEscalations) + 2 mutation mới yieldThreshold.create|delete. Chứng minh: phamViGhiDoW17bMqttYield.db.test.ts.
 // 2026-10-25 gộp L6c+L7 (A−43, C−2) với W17b/W17c (D+2) ⇒ đo bằng census.
-const GHIM = { A: 52, B: 8, C: 452, D: 1201, S: 692, tong: 2405 } as const;
+// ★★ 2026-10-25 · R1b-2a scadaKenh.khaiHangLoat +1 (SCADA R1b-2a Task 6) — **D 1201 → 1202 · tong 2405 → 2406 · A/B/C/S unchanged.** Mutation MỚI
+// `scadaKenh.khaiHangLoat` (khai mức hàng loạt ≤ 200 tag, một mã TOTP) ⇒ D (bộ suy xếp MỌI mutation vào D). Phạm vi: `kiemPhamViDuoiKhoa` dưới khoá
+// adapter (ngoài phạm vi ≡ NOT_FOUND adapter, chứng minh ở `scadaKenhRouter.khaiHangLoat.r1b2.db.test.ts`). Đo: ghim cũ (gốc 4395bfd11) đỏ ĐÚNG +1 D /
+// +1 tong. No baseline row added. `tong` 2406 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 52, B: 8, C: 452, D: 1202, S: 692, tong: 2406 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

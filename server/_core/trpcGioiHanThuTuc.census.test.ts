@@ -160,6 +160,9 @@ const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<
       ],
       thuTuc: [
         "scadaKenh.capNhat",
+        // 2026-10-25 · R1b-2a T6 — khai mức hàng loạt (một mã cho ≤ 200 tag) THUỘC nhóm 2fa như capNhat: thủ tục cấu hình hiếm, đòi mã MỖI lượt có
+        // thay đổi (không có điều kiện "chỉ khi được bảo vệ" như tags.*), một lô thay cho hàng trăm lượt capNhat ⇒ không bóp việc thường ngày.
+        "scadaKenh.khaiHangLoat",
         "scadaKenh.cheDo.dat",
         "scadaKenh.cheDo.go",
         "mappingAsCode.applyImport",
@@ -278,8 +281,9 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
     // 2026-10-24 · R1b-1 T9 fix round 3 (N1/N3): + deviceAdapter.delete / scadaDiag.tamTat (miễn trừ, cùng lý do) — mien 6 → 8, tổng 10 → 12.
     // 2026-10-25 · kiem-dinh R1b-1 H1 (a): + deviceAdapter.tags.setStopPin (miễn trừ, khuôn tags.*) — mien 8 → 9, tổng 12 → 13.
     // 2026-10-25 · kiem-dinh R1b-1 I1 (b): + interlock.update / interlock.delete (miễn trừ, khuôn tags.*) — mien 9 → 11, tổng 13 → 15.
-    expect(dem + mien).toBe(15);
-    expect(dem).toBe(4); // scadaKenh ×3 + mappingAsCode.applyImport
+    // 2026-10-25 · R1b-2a T6: + scadaKenh.khaiHangLoat (THUỘC nhóm 2fa, cùng lý do với capNhat) — dem 4 → 5, tổng 15 → 16.
+    expect(dem + mien).toBe(16);
+    expect(dem).toBe(5); // scadaKenh ×4 (capNhat, khaiHangLoat, cheDo.dat, cheDo.go) + mappingAsCode.applyImport
     expect(mien).toBe(11); // aiCopilot.confirmAction + scadaCommands.confirm (R1a final I-1) + deviceAdapter.tags.create/update/delete + deviceAdapter.update/delete + scadaDiag.tamTat (T9 a) + deviceAdapter.tags.setStopPin (H1 a) + interlock.update/delete (I1 b)
   }, 120_000);
 });
