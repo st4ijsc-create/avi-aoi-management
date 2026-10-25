@@ -20,6 +20,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 // ── Mocks: drizzle operators as identity tags; schema as plain markers ──
+// kiem-dinh R1b-1 I1 (a) (2026-10-25) — FIXTURE: bám định nghĩa tag đọc DB thật (raw SQL) mà FakeDb không có; mặc định "duyệt còn hiệu lực",
+// ca riêng đặt `duyetHL.v = false` (định nghĩa đổi sau duyệt).
+const duyetHL = vi.hoisted(() => ({ v: true }));
+vi.mock("./dinhNghiaDuyet", () => ({ luatDuyetConHieuLuc: vi.fn(async () => duyetHL.v) }));
 vi.mock("drizzle-orm", () => ({
   and: (...a: any[]) => ({ op: "and", a }),
   eq: (col: any, val: any) => ({ op: "eq", col, val }),
@@ -147,6 +151,7 @@ function baseRule(over: Partial<any> = {}): any {
 }
 
 beforeEach(() => {
+  duyetHL.v = true;
   state.rules = [];
   state.observationCount = 0;
   state.insertedEvents = [];
@@ -249,6 +254,18 @@ describe("interlockEngine — F5b auto-block (deterministic, human-approved)", (
     const update = state.ruleUpdates.find((u) => u.table === "interlock_events" && u.patch.status === "auto_blocked");
     expect(update).toBeTruthy();
     expect(update.patch.commandLogId).toBe(555);
+  });
+
+  it("★ kiem-dinh R1b-1 I1 (a): định nghĩa tag nguồn / đích đổi sau duyệt (bám lệch / chưa chụp) ⇒ KHÔNG dispatch, sự kiện 'skipped' + ghi chú duyệt lại", async () => {
+    flags.autoBlock = true;
+    flags.otControl = true;
+    state.observationCount = 5;
+    duyetHL.v = false;
+    const ev = await evaluateRule(autoRule());
+    expect(dispatchSpy).not.toHaveBeenCalled();
+    expect(ev?.status).toBe("skipped");
+    const ins = state.insertedEvents.at(-1);
+    expect(String(ins?.notes ?? "")).toMatch(/changed since approval/);
   });
 
   it("R1a T12 fix 1 (c1): giá trị gửi = giaTriLenhInterlock(rule) — commandValue null ⇒ true; giá trị khai ⇒ nguyên giá trị", async () => {

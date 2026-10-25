@@ -251,6 +251,19 @@ describe("(2) tool ghi OT — sàn vai + xác thực theo mức = max(tool, kên
     expect(checkPermission).toHaveBeenCalledTimes(2); // chỉ RBAC#1 của hai lượt propose
   });
 
+  it("R1b-1 T10 — MUC_QUA_CAO: câu từ chối theo ngôn ngữ người gọi (vi/en/zh), không còn tiếng Việt cho phiên en/zh", async () => {
+    H.mucKenh = 4;
+    const ids = { vi: await deXuat(toolOt, U.operator), en: await deXuat(toolOt, U.operator), zh: await deXuat(toolOt, U.operator) };
+    const vi = await confirmAction(ids.vi, ids.vi, U.operator, "vi");
+    const en = await confirmAction(ids.en, ids.en, U.operator, "en");
+    const zh = await confirmAction(ids.zh, ids.zh, U.operator, "zh");
+    expect(vi.message).toMatch(/Mức 4/);
+    expect(en.message).toMatch(/never allowed.*level 4/);
+    expect(en.message).not.toMatch(/Mức/);
+    expect(zh.message).toMatch(/作用等级 4/);
+    expect([vi.reason, en.reason, zh.reason]).toEqual(["MUC_QUA_CAO", "MUC_QUA_CAO", "MUC_QUA_CAO"]);
+  });
+
   it("đối chứng: mức 3 THẬT SỰ đi qua kiemXacThucTheoMuc (bộ đếm không mù)", async () => {
     const id = await deXuat(toolOt, U.operator);
     await confirmAction(id, id, U.operator, "vi");

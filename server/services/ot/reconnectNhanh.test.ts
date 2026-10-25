@@ -12,6 +12,7 @@ import type {
   OtHealth,
   OtCommandResult,
   OtConnectionConfig,
+  TuyChonVongPoll,
 } from "./otDriver";
 import type { RuntimeAdapter } from "./deviceAdapter";
 import { ConnectionSupervisor } from "./connectionSupervisor";
@@ -50,7 +51,10 @@ class DriverGia implements OtDriver {
   async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
     return tags.map((t) => ({ tagKey: t.tagKey, raw: 1, value: 1, quality: "good" as const, timestamp: new Date() }));
   }
-  async subscribe(_t: OtTagAddress[], _on: OnOtSample): Promise<OtSubscriptionHandle> {
+  async subscribe(_t: OtTagAddress[], _on: OnOtSample, _ms?: number, tuyChon?: TuyChonVongPoll): Promise<OtSubscriptionHandle> {
+    // R1b-1 T3 — như vòng poll chung (T12 D2): lần đọc ĐẦU chạy ngay lúc subscribe; thiết bị trả lời ⇒ đọc tốt. Cờ V2 bật ⇒ otManager
+    // chỉ báo `connected` sau tick đọc tốt đầu tiên của phiên.
+    if (this.isConnected()) tuyChon?.onTick?.({ ok: true, timeout: false, ms: 1, tags: [{ tagKey: "t1", quality: "good" }] });
     return { close: async () => undefined };
   }
   async writeTags(): Promise<OtCommandResult[]> {

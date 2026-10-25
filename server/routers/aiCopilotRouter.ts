@@ -56,6 +56,9 @@ function loiXacThucTheoMuc(kq: ConfirmResult) {
       return appError("PRECONDITION_FAILED", "SCADA_TOTP_REQUIRED", { ma, level }, chiTiet);
     case "TOTP_SAI":
       return appError("PRECONDITION_FAILED", "SCADA_TOTP_INVALID", { ma, level }, chiTiet);
+    // R1b-1 T10 — mức ≥ 4: AI không bao giờ hành động (kiemCongAi MUC_QUA_CAO). Cùng khuôn appError + khoá i18n vi/en/zh như các từ chối khác.
+    case "MUC_QUA_CAO":
+      return appError("FORBIDDEN", "SCADA_AI_LEVEL_TOO_HIGH", { ma, level }, chiTiet);
     // R1a T16 — bộ đếm TOTP sai: CÙNG mã + câu i18n với scadaCommands / đăng nhập (phút còn lại, không số lần sai).
     case "TOTP_TAM_KHOA":
       return loiTotpKhoa({ ma: "TOTP_TAM_KHOA", conLaiMs: kq.conLaiMs }, { ma, level }); // thiếu ⇒ phutConLai dự phòng THOI_GIAN_KHOA_MS

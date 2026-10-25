@@ -45,6 +45,7 @@ import { toastTrpcError } from "@/lib/trpcErrors";
 import ManualHelp from "@/components/ManualHelp";
 import JsonSchemaForm, { jsonSchemaDefaults } from "@/components/JsonSchemaForm";
 import { lyDoGoStopPinKhiSuaTag, type TagChoLuatGoGhim } from "@shared/stopPinTagRule";
+import { useHopMaTotpTroLai } from "@/components/scada/HopMaTotpTroLai";
 
 const PROTOCOLS = ["stub", "opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip"] as const;
 const DATA_TYPES = ["bool", "int", "float", "string", "json"] as const;
@@ -178,6 +179,8 @@ export interface StopPinTagRow {
   dataType: DataType;
   writable: boolean;
   stopValue?: unknown;
+  /** kiem-dinh R1b-1 H1 (b) — mức tác động khai (NULL ⇒ coi là 5, fail-closed): > 1 ⇒ nút DỪNG MÁY bỏ qua ghim này. */
+  actuationLevel?: number | null;
 }
 
 /** doc 81 Đợt 1D Task 3 — "Tag dừng" chip: rendered in the tag table for a PINNED tag. */
@@ -237,10 +240,23 @@ export function TagStopPinEditor({
         );
       }
       setReason("");
+      ghimTotp.daXong();
       onSaved?.();
     },
-    onError: (e) => toastTrpcError(e),
+    // kiem-dinh R1b-1 H1 (a) — mọi lượt đặt / gỡ ghim cần TOTP tươi mức 5: máy chủ kiểm hợp lệ TRƯỚC rồi trả SCADA_CONFIG_TOTP_REQUIRED ⇒
+    // hộp mã 6 số (hộp dùng chung của T9), gửi lại CHÍNH lượt đó kèm mã.
+    onError: (e, bien) => {
+      if (ghimTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
   });
+  const ghimTotp = useHopMaTotpTroLai<Parameters<typeof setStopPin.mutate>[0]>((bien) => setStopPin.mutate(bien), setStopPin.isPending, {
+    tieuDe: "deviceAdapter.troLai.title",
+    than: "deviceAdapter.stopPin.totpBody",
+  });
+  // kiem-dinh R1b-1 H1 (b) — cùng luật với máy chủ (`mucTacDongKenh`: NULL ⇒ 5): STOP HMI chỉ gửi ghim của tag mức ≤ 1.
+  const mucTag = tag.actuationLevel ?? null;
+  const mucCao = mucTag === null || mucTag > 1;
 
   if (!tag.writable || tag.dataType === "json") {
     return (
@@ -327,9 +343,17 @@ export function TagStopPinEditor({
           onChange={(e) => setReason(e.target.value)}
         />
       </div>
+      {mucCao && (
+        <p data-testid="stop-pin-muc-cao" role="note" className="rounded-md border p-2 text-xs">
+          {mucTag === null
+            ? t("deviceAdapter.stopPin.mucChuaKhai")
+            : t("deviceAdapter.stopPin.mucCao", { muc: mucTag })}
+        </p>
+      )}
       <Button size="sm" disabled={!canSave} onClick={handleSave}>
         {t("deviceAdapter.stopPin.save", "Lưu ghim")}
       </Button>
+      {ghimTotp.hop}
     </div>
   );
 }
@@ -509,17 +533,28 @@ export default function DeviceAdapterManagement() {
     onSuccess: (res) => {
       toast.success(t("deviceAdapter.toast.updated", "Đã cập nhật adapter"));
       notifyAdapterStopPinsCleared(res, t); // doc 81 Đợt 4 Task C1
+      adapterTotp.daXong();
       setAdapterOpen(false);
       invalidateAdapters();
       // Pins may have been cleared server-side — refresh the open tag list.
       invalidateTags();
     },
-    onError: (e) => toastTrpcError(e),
+    // SCADA R1b-1 Task 9 fix round 1 (I5) — đổi đích adapter có tag được bảo vệ ⇒ máy chủ đòi mã TOTP ⇒ hộp mã, gửi lại chính lượt đó.
+    onError: (e, bien) => {
+      if (adapterTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
   });
+  const adapterTotp = useHopMaTotpTroLai<Parameters<typeof updateAdapter.mutate>[0]>((bien) => updateAdapter.mutate(bien), updateAdapter.isPending);
   const deleteAdapter = trpc.deviceAdapter.delete.useMutation({
-    onSuccess: () => { toast.success(t("deviceAdapter.toast.deleted", "Đã xoá adapter")); invalidateAdapters(); },
-    onError: (e) => toastTrpcError(e),
+    onSuccess: () => { toast.success(t("deviceAdapter.toast.deleted", "Đã xoá adapter")); xoaAdapterTotp.daXong(); invalidateAdapters(); },
+    // R1b-1 T9 fix round 3 (N3) — xoá adapter còn tag được bảo vệ ⇒ máy chủ đòi mã ⇒ hộp mã, gửi lại chính lượt đó.
+    onError: (e, bien) => {
+      if (xoaAdapterTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
   });
+  const xoaAdapterTotp = useHopMaTotpTroLai<Parameters<typeof deleteAdapter.mutate>[0]>((bien) => deleteAdapter.mutate(bien), deleteAdapter.isPending);
   const testConnection = trpc.deviceAdapter.testConnection.useMutation({
     onSuccess: (res) => {
       if (res.ok) toast.success(t("deviceAdapter.toast.connOk", "Kết nối OK ({{ms}}ms)", { ms: res.latencyMs }));
@@ -529,22 +564,38 @@ export default function DeviceAdapterManagement() {
   });
 
   const createTag = trpc.deviceAdapter.tags.create.useMutation({
-    onSuccess: () => { toast.success(t("deviceAdapter.toast.tagCreated", "Đã tạo tag")); setTagForm(emptyTag); invalidateTags(); },
-    onError: (e) => toastTrpcError(e),
+    onSuccess: () => { toast.success(t("deviceAdapter.toast.tagCreated", "Đã tạo tag")); taoTagTotp.daXong(); setTagForm(emptyTag); invalidateTags(); },
+    // R1b-1 T9 fix round 1 (C1) — tạo lên khoá mà kênh chế độ / luật interlock còn trỏ tới ⇒ cần mã.
+    onError: (e, bien) => {
+      if (taoTagTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
   });
+  const taoTagTotp = useHopMaTotpTroLai<Parameters<typeof createTag.mutate>[0]>((bien) => createTag.mutate(bien), createTag.isPending);
   const updateTag = trpc.deviceAdapter.tags.update.useMutation({
     onSuccess: (res) => {
       toast.success(t("deviceAdapter.toast.tagUpdated", "Đã cập nhật tag"));
       notifyStopPinAutoClear(res, t); // final wave 3 (M4)
+      troLaiTotp.daXong();
       setTagForm(emptyTag);
       invalidateTags();
     },
-    onError: (e) => toastTrpcError(e),
+    // SCADA R1b-1 Task 9 — trỏ lại tag ĐÃ KHAI ⇒ máy chủ đòi mã TOTP (SCADA_CONFIG_TOTP_REQUIRED) ⇒ hộp mã mở, gửi lại CHÍNH lượt đó kèm mã.
+    onError: (e, bien) => {
+      if (troLaiTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
   });
+  const troLaiTotp = useHopMaTotpTroLai<Parameters<typeof updateTag.mutate>[0]>((bien) => updateTag.mutate(bien), updateTag.isPending);
   const deleteTag = trpc.deviceAdapter.tags.delete.useMutation({
-    onSuccess: () => { toast.success(t("deviceAdapter.toast.tagDeleted", "Đã xoá tag")); invalidateTags(); },
-    onError: (e) => toastTrpcError(e),
+    onSuccess: () => { toast.success(t("deviceAdapter.toast.tagDeleted", "Đã xoá tag")); xoaTagTotp.daXong(); invalidateTags(); },
+    // R1b-1 T9 fix round 1 (C1) — xoá tag đã khai ⇒ cần mã.
+    onError: (e, bien) => {
+      if (xoaTagTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e);
+    },
   });
+  const xoaTagTotp = useHopMaTotpTroLai<Parameters<typeof deleteTag.mutate>[0]>((bien) => deleteTag.mutate(bien), deleteTag.isPending);
 
   /** Seed the manifest auto-form (defaults + declared/fallback default port) for a protocol. */
   const configForProtocol = (p: string): Record<string, unknown> => {
@@ -931,6 +982,11 @@ export default function DeviceAdapterManagement() {
       </Sheet>
 
       {tagEditGuard.dialog}
+      {troLaiTotp.hop}
+      {taoTagTotp.hop}
+      {xoaTagTotp.hop}
+      {adapterTotp.hop}
+      {xoaAdapterTotp.hop}
 
       {/* ── Delete adapter confirmation ── */}
       <AlertDialog open={adapterToDelete != null} onOpenChange={(o) => { if (!o) setAdapterToDelete(null); }}>

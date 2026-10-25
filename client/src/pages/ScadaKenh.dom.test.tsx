@@ -362,7 +362,7 @@ describe("ScadaKenh — khối kênh chế độ theo máy", () => {
   });
 
   const CANH_BAO = "Kênh chế độ nên là tag poll định kỳ trên adapter trung tâm — nguồn báo-khi-đổi/edge có thể làm máy rơi về LOCAL (giá trị cũ / chưa có mẫu)";
-  it.each(["deadband", "edge", "bao_khi_doi"] as const)("canhBaoNguon=%s ⇒ hiện cảnh báo nguồn trong khối", (nguon) => {
+  it.each(["deadband", "edge", "bao_khi_doi", "poll_cham"] as const)("canhBaoNguon=%s ⇒ hiện cảnh báo nguồn trong khối", (nguon) => {
     expect(S("scada.kenh.canhBaoNguon")).toBe(CANH_BAO);
     srv.cheDo = [may({ canhBaoNguon: nguon })];
     render(<ScadaKenh />);

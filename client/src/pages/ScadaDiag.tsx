@@ -25,8 +25,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { BangTruyenThong, coLoi, type HangDiag } from "@/components/scada/BangTruyenThong";
+import { BangTruyenThong, coLoi, type HangDiag, type MayDung } from "@/components/scada/BangTruyenThong";
 import { NganTagAdapter } from "@/components/scada/NganTagAdapter";
+import { useHopMaTotpTroLai } from "@/components/scada/HopMaTotpTroLai";
 
 /** Chu kỳ làm mới (ms): ≤ 5 s theo mục tiêu "M10 hiện mất kết nối". */
 const CHU_KY_LAM_MOI_MS = 2000;
@@ -47,6 +48,9 @@ export default function ScadaDiag() {
   const utils = trpc.useUtils();
   const q = trpc.scadaDiag.danhSach.useQuery(undefined, { refetchInterval: CHU_KY_LAM_MOI_MS });
   const rows = (q.data ?? []) as HangDiag[];
+  // R1b-1 T2 fix round 1 — máy (chế độ + khả năng dừng) cho hàng đầu nhóm có nút DỪNG MÁY; cùng chu kỳ 5 s với faceplate
+  const mayQ = trpc.scadaKenh.cheDo.danhSach.useQuery(undefined, { refetchInterval: 5000 });
+  const may = (mayQ.data ?? []) as MayDung[];
 
   // `now` sống theo nhịp làm mới để "Mất kết nối 3 ph" tăng dần giữa hai lần kéo dữ liệu.
   const [now, setNow] = useState(() => Date.now());
@@ -83,11 +87,17 @@ export default function ScadaDiag() {
   const tamTat = trpc.scadaDiag.tamTat.useMutation({
     onSuccess: () => {
       toast.success(t("scada.diag.toast.tamTat"));
+      tamTatTotp.daXong();
       lamMoi();
       dong();
     },
-    onError: (e: unknown) => toastTrpcError(e as never),
+    // SCADA R1b-1 T9 fix round 3 (N1) — tắt adapter còn tag được bảo vệ ⇒ máy chủ đòi mã TOTP ⇒ hộp mã, gửi lại chính lượt đó.
+    onError: (e: unknown, bien: { adapterId: number; lyDo: string; totpCode?: string }) => {
+      if (tamTatTotp.xuLyLoi(e, bien)) return;
+      toastTrpcError(e as never);
+    },
   });
+  const tamTatTotp = useHopMaTotpTroLai<{ adapterId: number; lyDo: string }>((bien) => tamTat.mutate(bien), tamTat.isPending);
   const dangGui = ketNoiLai.isPending || tamTat.isPending;
   const lyDoCat = lyDo.trim();
   const lyDoDu = lyDoCat.length >= LY_DO_TOI_THIEU;
@@ -123,24 +133,58 @@ export default function ScadaDiag() {
           }
         >
           {q.isLoading ? (
-            <div role="status" aria-label={t("scada.diag.dangTai")} className="space-y-2" data-testid="scada-diag-dang-tai">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
+            // fix round 3 — danh sách MÁY đã có thì vẽ ngay hàng DỪNG MÁY; khung xương chỉ thay cho phần adapter đang tải
+            <div className="space-y-2">
+              {may.length > 0 && (
+                <BangTruyenThong
+                  rows={[]}
+                  may={may}
+                  now={now}
+                  canAct={canAct}
+                  onChon={(h) => setChonId(h.adapterId)}
+                  onKetNoiLai={(h) => setHanhDong({ kieu: "ketNoiLai", hang: h })}
+                  onTamTat={(h) => setHanhDong({ kieu: "tamTat", hang: h })}
+                />
+              )}
+              <div role="status" aria-label={t("scada.diag.dangTai")} className="space-y-2" data-testid="scada-diag-dang-tai">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
             </div>
-          ) : q.isError ? (
-            <EmptyState variant="error" title={t("scada.diag.loiTai")} compact />
-          ) : hienThi.length === 0 ? (
-            <EmptyState variant="no-data" title={chiLoi ? t("scada.diag.khongCoLoi") : t("scada.diag.trong")} compact />
           ) : (
-            <BangTruyenThong
-              rows={hienThi}
-              now={now}
-              canAct={canAct}
-              onChon={(h) => setChonId(h.adapterId)}
-              onKetNoiLai={(h) => setHanhDong({ kieu: "ketNoiLai", hang: h })}
-              onTamTat={(h) => setHanhDong({ kieu: "tamTat", hang: h })}
-            />
+            // fix round 2 — nút DỪNG MÁY (hàng đầu theo máy, từ `scadaKenh.cheDo.danhSach`) KHÔNG phụ thuộc bộ lọc "chỉ lỗi" hay việc
+            // danh sách adapter tải được: lỗi tải adapter ⇒ biểu ngữ "dùng E-STOP cứng" + vẫn vẽ nút theo máy; lỗi tải máy ⇒ biểu ngữ.
+            <div className="space-y-2">
+              {q.isError && (
+                <>
+                  <EmptyState variant="error" title={t("scada.diag.loiTai")} compact />
+                  <p data-testid="dung-may-loi-tai-diag" role="alert" className="text-sm font-semibold" style={{ color: "var(--packml-abort)" }}>
+                    {t("scada.dungMay.loiTaiDiag")}
+                  </p>
+                </>
+              )}
+              {mayQ.isError && (
+                <p data-testid="dung-may-loi-tai-may" role="alert" className="text-sm font-semibold" style={{ color: "var(--packml-abort)" }}>
+                  {t("scada.dungMay.loiTaiMay")}
+                </p>
+              )}
+              {!q.isError && hienThi.length === 0 && (
+                <EmptyState variant="no-data" title={chiLoi ? t("scada.diag.khongCoLoi") : t("scada.diag.trong")} compact />
+              )}
+              {((!q.isError && hienThi.length > 0) || may.length > 0) && (
+                <BangTruyenThong
+                  rows={q.isError ? [] : hienThi}
+                  tatCaRows={q.isError ? [] : rows}
+                  may={may}
+                  now={now}
+                  canAct={canAct}
+                  onChon={(h) => setChonId(h.adapterId)}
+                  onKetNoiLai={(h) => setHanhDong({ kieu: "ketNoiLai", hang: h })}
+                  onTamTat={(h) => setHanhDong({ kieu: "tamTat", hang: h })}
+                />
+              )}
+            </div>
           )}
         </SectionCard>
 
@@ -182,6 +226,7 @@ export default function ScadaDiag() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {tamTatTotp.hop}
       </PageContainer>
     </DashboardLayout>
   );

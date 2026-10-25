@@ -4204,6 +4204,8 @@
       "deviceIds": "danh sách thiết bị được phép",
       "expectedProjectId": "dự án đang mở (expectedProjectId)",
       "assigneeUserId": "người được giao",
+      "writable": "cho phép ghi (writable)",
+      "dataType": "kiểu dữ liệu (dataType)",
       "inspectionId": "lần kiểm tra"
     },
     "feature": {
@@ -4521,7 +4523,12 @@
       "scadaGiaTriRemoteSaiKieu": "Giá trị REMOTE không đúng kiểu dữ liệu của tag chế độ.",
       "scadaKenhCheDoTagTat": "Tag của kênh chế độ đang tắt — bật tag trước rồi khai lại.",
       "scadaKenhGhiTrenTagKhongGhi": "Loại kênh này nhận lệnh ghi, nhưng tag không cho phép ghi — bật \"cho phép ghi\" cho tag hoặc chọn loại kênh chỉ đọc.",
-      "scadaKenhThuLai": "Kênh vừa bị thay đổi đồng thời — tải lại rồi thử lại."
+      "scadaKenhThuLai": "Kênh vừa bị thay đổi đồng thời — tải lại rồi thử lại.",
+      "scadaKenhCheDoKhongDoiAdapter": "Tag này là kênh chế độ của một máy — không chuyển sang adapter khác được. Gỡ hoặc khai lại kênh chế độ ở trang Kênh & giới hạn trước.",
+      "scadaKenhCheDoGoTruoc": "Tag này là kênh chế độ của một máy — gỡ kênh chế độ ở trang Kênh & giới hạn (cần mã xác thực) trước khi xoá tag.",
+      "scadaKenhCheDoDoiMay": "Adapter đang mang kênh chế độ của máy — gỡ kênh chế độ ở trang Kênh & giới hạn trước khi gán adapter sang máy khác.",
+      "scadaKenhCheDoGoTruocXoaAdapter": "Adapter đang mang kênh chế độ của máy — gỡ kênh chế độ ở trang Kênh & giới hạn (cần mã xác thực) trước khi xoá adapter.",
+      "interlockDefinitionChanged": "Định nghĩa tag nguồn / đích (địa chỉ, kiểu, scale / offset, adapter, node edge) đã đổi sau khi duyệt — hoặc quy tắc được duyệt trước bản cập nhật. Cần duyệt lại trước khi bật."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -4569,6 +4576,7 @@
     "SCADA_SELECTION_LOST": "Bạn không còn giữ kênh này (khoá chọn đã hết hạn hoặc đã chuyển sang yêu cầu khác) — hãy tạo yêu cầu mới.",
     "SCADA_TOTP_REQUIRED": "Kênh mức tác động {{level}} cần mã xác thực 2 lớp (TOTP) — nhập mã rồi xác nhận lại.",
     "SCADA_TOTP_INVALID": "Mã xác thực 2 lớp không đúng hoặc đã được dùng — nhập mã mới rồi xác nhận lại (kênh mức {{level}}).",
+    "SCADA_AI_LEVEL_TOO_HIGH": "Trợ lý AI không được phép ra lệnh cho kênh mức tác động {{level}} (từ mức 4 trở lên chỉ người vận hành tự thao tác). Từ chối vĩnh viễn — đừng thử lại; hãy để người vận hành tự bấm nút.",
     "TOTP_TAM_KHOA": "Xác thực hai lớp đang tạm khoá do nhập sai nhiều lần — thử lại sau {{remainingMinutes}} phút.",
     "TOTP_KHONG_KIEM_DUOC": "Không kiểm được mã xác thực hai lớp lúc này (lỗi hệ thống) — thử lại sau.",
     "MA_DU_PHONG_TAM_KHOA": "Mã dự phòng đang tạm khoá do nhập sai nhiều lần — thử lại sau {{remainingMinutes}} phút.",
@@ -4577,7 +4585,7 @@
     "SCADA_CONFIG_TOTP_INVALID": "Mã xác thực hai lớp không đúng hoặc đã được dùng — chờ mã mới trong ứng dụng xác thực rồi lưu lại.",
     "SCADA_CONFIG_TOTP_NOT_ENROLLED": "Đổi cấu hình kênh cần xác thực hai lớp, nhưng tài khoản này chưa đăng ký 2FA. Vào Cài đặt > Bảo mật để thiết lập.",
     "STOP_PIN_NGOAI_DAI": "Kênh {{tagKey}} có giá trị DỪNG ghim ({{stopValue}}) không ghi được với khai báo kênh (dải {{min}} … {{max}}, bước {{step}}, hoặc loại kênh chỉ đọc) — lệnh DỪNG sẽ bị từ chối. Gỡ hoặc đổi giá trị ghim trước, hoặc khai lại dải/bước/loại kênh cho phù hợp.",
-    "INTERLOCK_NGOAI_DAI": "Giá trị lệnh của luật interlock không ghi được trên kênh {{tagKey}} theo khai báo kênh (dải {{min}} … {{max}}, bước {{step}}, hoặc loại kênh chỉ đọc) — hành động bảo vệ sẽ bị từ chối lúc chạy. Sửa giá trị lệnh của luật, hoặc khai lại kênh cho phù hợp.",
+    "INTERLOCK_NGOAI_DAI": "Giá trị lệnh của luật interlock không ghi được trên kênh {{tagKey}} theo khai báo kênh (dải {{min}} … {{max}}, bước {{step}} tính từ {{goc}}, hoặc loại kênh chỉ đọc). Giá trị hợp lệ gần nhất: {{goiY}}. Hành động bảo vệ sẽ bị từ chối lúc chạy — sửa giá trị lệnh của luật, hoặc khai lại kênh cho phù hợp.",
     "TU_DONG_TAT": "Chế độ Agent tự động đang TẮT trên máy chủ (công tắc AI_CODING_TU_TRI_GHI). Dùng chế độ duyệt từng bước, hoặc nhờ quản trị bật công tắc.",
     "THIEU_QUYEN_THUC_THI": "Thiếu quyền chạy lệnh / tự ghi (ai_repo_exec) cho chế độ Agent tự động.",
     "THIEU_QUYEN": "Thiếu quyền đọc repo (ai_repo_read) để chạy Agent.",
@@ -4590,7 +4598,14 @@
     "AI_GIOI_HAN_TAN_SUAT": "Bạn gửi yêu cầu AI quá nhanh — chờ một lát rồi thử lại.",
     "AI_HET_HAN_MUC": "Đã hết hạn mức token AI trong ngày (kể cả phần ước lượng cho một lượt Agent). Thử lại vào ngày mai hoặc nhờ quản trị viên nâng hạn mức.",
     "AI_CHAN_AN_TOAN": "Yêu cầu bị lớp an toàn AI chặn vì có dấu hiệu tiêm lệnh. Hãy diễn đạt lại yêu cầu.",
-    "AI_CHUA_CAP_PHEP": "Phiên bản / giấy phép hiện tại không gồm tính năng AI (MOD_AI)."
+    "AI_CHUA_CAP_PHEP": "Phiên bản / giấy phép hiện tại không gồm tính năng AI (MOD_AI).",
+    "SCADA_STOP_NOT_PINNED": "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng.",
+    "INTERLOCK_MAT_DICH": "Luật interlock đang bật #{{ruleId}} dùng tag {{tagKey}} (đích ghi lệnh hoặc nguồn đọc) — đổi tên, chuyển sang adapter khác, tắt hoặc xoá tag, hoặc tắt, xoá, chuyển adapter sang máy khác sẽ làm hành động bảo vệ mất đích hoặc mất nguồn. Sửa luật (hoặc tắt luật) trước.",
+    "INTERLOCK_DICH_CHUA_SAN_SANG": "Không bật được luật interlock #{{ruleId}}: tag {{tagKey}} chưa sẵn sàng — tag đích không tồn tại, đang tắt hoặc adapter đích đang tắt; hoặc tag nguồn đã khai trên máy đang tắt (hay adapter của nó tắt). Hành động bảo vệ sẽ không có đích hoặc nguồn. Tạo / bật tag và adapter trước, rồi bật lại luật.",
+    "INTERLOCK_NGUON_MO_HO": "Không bật được luật interlock #{{ruleId}}: {{soAdapter}} adapter đang bật của máy cùng mang tag nguồn {{tagKey}} — cổng không biết đọc adapter nào (mơ hồ) nên luật sẽ luôn thiếu dữ liệu. Đổi tên hoặc tắt tag trùng trước, rồi bật lại luật.",
+    "QUA_NHIEU_KENH_DA_KHAI": "Lô import đụng {{soTag}} tag đã khai kênh / được bảo vệ — tối đa {{toiDa}} tag mỗi lô. Chia nhỏ file rồi nhập lại.",
+    "STOP_PIN_GO_TRUOC": "Kênh {{tagKey}} đang ghim giá trị DỪNG ({{stopValue}}) — đổi địa chỉ / kiểu / scale / offset / cho phép ghi / adapter, tắt hoặc xoá tag sẽ làm mất STOP. Gỡ ghim trước (mục Tag dừng phần mềm, có lý do), rồi làm lại.",
+    "SCADA_STOP_PINS_HIGH_LEVEL": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{tagKeys}}) — nút DỪNG MÁY không gửi tới tag mức cao; kỹ sư khai mức tác động 1 cho tag dừng ở /scada/config/channels; dừng bằng E-STOP cứng."
   },
   "export": {
     "reportMenu": {
@@ -14458,7 +14473,10 @@
     },
     "openEventsPanel": "Mở panel Sự kiện",
     "eventsButton": "Sự kiện",
-    "unresolvedCount": "{{count}} chưa xử lý"
+    "unresolvedCount": "{{count}} chưa xử lý",
+    "canDuyetLai": "Cần duyệt lại",
+    "canDuyetLaiGiaiThich": "Định nghĩa tag nguồn / đích (địa chỉ, kiểu, scale / offset, adapter, node edge) đã đổi sau khi duyệt, hoặc quy tắc được duyệt trước bản cập nhật — không bật được, không tự chặn cho tới khi duyệt lại.",
+    "totpBody": "Sửa hoặc xoá một quy tắc khoá liên động đang bật hoặc đã duyệt (có đích / nguồn tag) là thay đổi an toàn: quy tắc mất duyệt và tag của nó có thể mất bảo vệ. Cần mã TOTP mới."
   },
   "quickIssue": {
     "button": "Báo sự cố",
@@ -16431,7 +16449,10 @@
         "confirm": "Tắt và gỡ ghim",
         "bodyEdit": "Tag này đang được ghim DỪNG; lưu thay đổi này (không ghi được / tắt / đổi địa chỉ, kiểu, scale, offset) sẽ gỡ ghim.",
         "confirmEdit": "Lưu và gỡ ghim"
-      }
+      },
+      "totpBody": "Đặt hoặc gỡ ghim giá trị DỪNG là thay đổi an toàn: nút DỪNG MÁY gửi các ghim này một bước, miễn chế độ / dải / interlock. Chỉ kỹ sư trở lên, mỗi lượt một mã TOTP mới.",
+      "mucCao": "Tag mức tác động {{muc}} — nút DỪNG MÁY (STOP HMI) sẽ BỎ QUA ghim này; chỉ ghim của tag khai mức 1 được gửi. Muốn STOP HMI tới tag này: khai mức tác động 1 ở trang Kênh & giới hạn.",
+      "mucChuaKhai": "Tag chưa khai mức tác động (coi là mức 5) — nút DỪNG MÁY (STOP HMI) sẽ BỎ QUA ghim này. Muốn STOP HMI tới tag này: khai mức tác động 1 ở trang Kênh & giới hạn."
     },
     "toast": {
       "connFail": "Kết nối thất bại: {{err}}",
@@ -16446,7 +16467,12 @@
     "writableNote": "writable chỉ KHAI BÁO tag có thể là đích ghi; lệnh ghi thực tế chỉ thực hiện qua xác nhận HITL hoặc interlock đã duyệt.",
     "manualHelp": "Sổ tay",
     "autoForm": "Cấu hình theo manifest (tự sinh) — host + cổng sẽ tạo endpoint bên dưới",
-    "defaultPortHint": "Cổng mặc định {{protocol}}: {{port}}"
+    "defaultPortHint": "Cổng mặc định {{protocol}}: {{port}}",
+    "troLai": {
+      "title": "Cần mã xác thực hai lớp",
+      "body": "Thao tác này đụng một tag được bảo vệ hoặc một adapter mang tag như thế (trỏ lại, tạo lên khoá đang được tham chiếu, tắt hoặc xoá). Tag được bảo vệ: đã khai kênh, là kênh chế độ của máy, hoặc là đích / nguồn của một luật interlock đang bật hoặc đã duyệt. Cần mã TOTP mới.",
+      "submit": "Xác nhận"
+    }
   },
   "engineering": {
     "rollbackFailed": "Khôi phục KHÔNG thành công — deployment đích giữ nguyên trạng thái",
@@ -23580,7 +23606,8 @@
       "canhBaoNguonLoai": {
         "deadband": "Tag đang lọc deadband / lấy mẫu thưa",
         "edge": "Adapter do edge sở hữu",
-        "bao_khi_doi": "Giao thức báo-khi-đổi (OPC UA monitored items)"
+        "bao_khi_doi": "Giao thức báo-khi-đổi (OPC UA monitored items)",
+        "poll_cham": "Adapter poll chậm hơn 10 s — mẫu chế độ cũ hơn 30 s bị coi là cũ, máy có thể rơi về LOCAL giữa hai lần poll"
       },
       "nut": {
         "sua": "Sửa",
@@ -23776,7 +23803,7 @@
         "OFF_STEP": "Giá trị phải theo bước {{step}}. Giá trị hợp lệ gần nhất: {{goiY}}",
         "OFF_STEP_NO_HINT": "Giá trị phải theo bước {{step}} — nhập lại.",
         "MODE_LOCAL": "Máy không nhận lệnh từ xa: {{lyDo}}",
-        "goiYStop": "Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy — màn HMI R1a chưa có lệnh STOP riêng",
+        "goiYStop": "Cần dừng máy? Dùng nút DỪNG MÁY (gửi STOP đã ghim) hoặc E-STOP cứng tại máy",
         "DANG_DUOC_CHON": "Kênh đang được {{ten}} chọn để ra lệnh tới {{den}} — chờ họ xong hoặc hết hạn rồi thử lại.",
         "EDGE_CHUA_HO_TRO": "Máy này do edge {{edge}} sở hữu — lệnh từ SCADA tới máy edge chưa được hỗ trợ (đợt R1c)",
         "ROLE_FLOOR": "Vai trò của bạn không được ra lệnh kênh mức {{level}} — nhờ người có vai cao hơn (kỹ sư hoặc quản trị).",
@@ -23798,7 +23825,10 @@
         "khacXacNhan": "Lệnh không được gửi: {{chiTiet}}",
         "vuotTanSuat": "Không gửi — vượt giới hạn tần suất, thử lại sau",
         "nutDungGoiY": "Dùng {{goiY}}",
-        "ma": "Mã: {{ma}}"
+        "ma": "Mã: {{ma}}",
+        "CHUA_GHIM_STOP": "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng",
+        "goiYStopKhongGhim": "Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy",
+        "GHIM_MUC_CAO": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{list}}) — nút DỪNG MÁY không gửi gì; dừng bằng E-STOP cứng"
       },
       "local": {
         "remote": "máy đang ở REMOTE",
@@ -23812,6 +23842,57 @@
         "loiDoc": "lỗi đọc kênh chế độ — coi như LOCAL",
         "kenhSaiMay": "kênh chế độ không thuộc adapter của máy này — coi như LOCAL",
         "khongRo": "không xác định được chế độ ({{lyDo}}) — coi như LOCAL"
+      }
+    },
+    "dungMay": {
+      "nut": "DỪNG MÁY",
+      "tieuDe": "Dừng máy {{may}}?",
+      "moTa": "Gửi STOP đã ghim tới {{n}} adapter.",
+      "moTaKhongRo": "Gửi STOP đã ghim tới mọi adapter đang bật của máy.",
+      "nutXacNhan": "Dừng máy",
+      "nutHuy": "Huỷ",
+      "nutDong": "Đóng",
+      "dangGui": "Đang gửi STOP…",
+      "ketQuaTieuDe": "Kết quả theo adapter",
+      "dat": "Đạt",
+      "khongDat": "Không đạt",
+      "chuaXacMinh": "Chưa xác minh",
+      "daGuiEdge": "Đã gửi tới edge — node edge sẽ thực hiện STOP; chưa xác nhận máy đã dừng",
+      "dungEstop": "Dùng E-STOP cứng tại máy",
+      "canhBaoChuaGhim": "Máy chưa ghim STOP — nút dừng HMI không dùng được",
+      "chuaRo": "Kết quả chưa rõ — dùng E-STOP cứng tại máy",
+      "khaNangTieuDe": "Điều sẽ xảy ra với từng adapter:",
+      "mayTieuDe": "Máy {{code}}",
+      "khaNang": {
+        "duoc": "Sẽ gửi STOP đã ghim",
+        "moPhongChuaNghiemThu": "Chỉ mô phỏng — adapter chưa nghiệm thu, STOP không tới máy",
+        "moPhongOtTat": "Chỉ mô phỏng — điều khiển OT trên máy chủ đang tắt, STOP không tới máy",
+        "ghimCuKetNoiCu": "Ghim chưa có hiệu lực — cần kết nối lại adapter (STOP sẽ bị kiểm như lệnh thường)",
+        "chuaGhim": "Chưa ghim STOP — không gửi gì",
+        "quaEdge": "STOP gửi qua node edge {{code}} — chỉ xác nhận khi edge báo lại",
+        "matKetNoi": "Mất kết nối — STOP sẽ không tới máy (ADAPTER_OFFLINE)",
+        "khongKiemDuoc": "Không kiểm được — dùng E-STOP cứng nếu cần",
+        "ghimMucCao": "Chỉ có ghim trên tag mức tác động > 1 ({{list}}) — không tới bằng STOP HMI, không gửi gì",
+        "boQuaMucCao": "bỏ qua ghim của tag mức tác động > 1: {{list}}"
+      },
+      "canhBao": {
+        "ghimCu": "Ghim STOP chưa có hiệu lực — cần kết nối lại adapter {{code}}",
+        "moPhong": "STOP chỉ mô phỏng — adapter {{code}} chưa nghiệm thu",
+        "moPhongOtTat": "STOP chỉ mô phỏng — điều khiển OT trên máy chủ đang tắt",
+        "matKetNoi": "Adapter {{code}} mất kết nối — STOP sẽ không tới máy (ADAPTER_OFFLINE)",
+        "quaEdge": "STOP gửi qua node edge {{code}} — chỉ xác nhận khi edge báo lại",
+        "edgeKhongToi": "Node edge {{code}} không liên lạc được với trung tâm — STOP có thể không tới máy; dùng E-STOP cứng nếu cần",
+        "khongKiemDuoc": "Không kiểm được khả năng dừng — dùng E-STOP cứng nếu cần",
+        "chuaGhimMotPhan": "Adapter {{list}} chưa ghim STOP",
+        "ghimMucCao": "Adapter {{code}}: mọi ghim STOP nằm trên tag mức tác động > 1 ({{list}}) — không tới bằng STOP HMI; khai mức tác động 1 cho tag dừng",
+        "boQuaMucCao": "Adapter {{code}}: STOP HMI bỏ qua ghim của tag mức tác động > 1 ({{list}})"
+      },
+      "daGuiDuPhong": "Edge không nhận được lệnh — trung tâm đã gửi STOP dự phòng; chưa xác nhận máy đã dừng",
+      "loiTaiDiag": "Không tải được danh sách adapter — nút DỪNG MÁY theo máy vẫn ở bên dưới; dùng E-STOP cứng tại máy nếu cần",
+      "loiTaiMay": "Không tải được danh sách máy — nút DỪNG MÁY không hiện được; dùng E-STOP cứng tại máy",
+      "boQua": {
+        "tieuDe": "Không gửi (tag mức tác động > 1 — không tới bằng STOP HMI):",
+        "dong": "{{code}} · {{tagKey}} (mức {{muc}})"
       }
     }
   }

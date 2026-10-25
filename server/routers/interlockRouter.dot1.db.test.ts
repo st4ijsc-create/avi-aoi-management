@@ -14,8 +14,15 @@
  * CSDL THẬT (`_test`) — race cưỡng bức: một giao dịch NGOÀI giữ khoá hàng rule, sửa ngưỡng rồi
  * commit trong lúc lượt approve (mang token của bản cũ) đang xếp hàng sau khoá.
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
+
+// kiem-dinh R1b-1 I1 (b) (2026-10-25) — sửa / xoá luật bảo vệ nay đòi TOTP tươi mức 5 (cổng có test riêng: interlockRouter.kiemDinh.r1b.db.test.ts).
+// Tệp này kiểm version token bằng người gọi id giả (không có 2FA thật) ⇒ FIXTURE: mã luôn hợp lệ.
+vi.mock("../services/scada/totpCauHinh", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/scada/totpCauHinh")>()),
+  kiemTotpCauHinh: async () => undefined,
+}));
 import { interlockRouter } from "./interlockRouter";
 import { waitForLockWaiters, backendPid } from "../db/lockWait.testkit";
 

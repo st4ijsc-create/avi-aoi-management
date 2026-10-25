@@ -25,9 +25,11 @@ function client() {
 }
 
 describe("NF5-8 — the console STOP is never batched", () => {
-  it("isStopOnlyOp names exactly robot.consoleStop", () => {
+  it("isStopOnlyOp names exactly robot.consoleStop and scadaCommands.dungMay (R1b-1 T2)", () => {
     expect(isStopOnlyOp({ path: "robot.consoleStop" })).toBe(true);
+    expect(isStopOnlyOp({ path: "scadaCommands.dungMay" })).toBe(true);
     expect(isStopOnlyOp({ path: "robot.actuate" })).toBe(false);
+    expect(isStopOnlyOp({ path: "scadaCommands.confirm" })).toBe(false);
   });
 
   it("★ consoleStop + another mutation in the SAME tick ⇒ two requests; the STOP's carries only robot.consoleStop, unbatched", async () => {

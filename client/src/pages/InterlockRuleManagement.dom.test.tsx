@@ -26,7 +26,7 @@ vi.mock("@/lib/trpcErrors", () => ({
 
 interface MutationOpts {
   onSuccess?: (...a: unknown[]) => void;
-  onError?: (e: unknown) => void;
+  onError?: (e: unknown, bien?: never) => void;
 }
 const mutations: Record<string, { mutate: ReturnType<typeof vi.fn>; opts: MutationOpts }> = {};
 const invalidated: string[] = [];
@@ -287,5 +287,28 @@ describe("InterlockRuleManagement — R0.1: khiThieuDuLieu + telemetry_tag chỉ
     expect(within(rowOf("tag-cho-qua")).getByTestId("khi-thieu-du-lieu")).toHaveTextContent(/cho qua/i);
     // hàng không mang trường (fixture cũ) ⇒ mặc định chặn.
     expect(within(rowOf("rule-41")).getByTestId("khi-thieu-du-lieu")).toHaveTextContent(/chặn/i);
+  });
+});
+
+describe("kiem-dinh R1b-1 I1 — duyệt hết hiệu lực khi định nghĩa tag đổi + TOTP khi xoá / sửa luật bảo vệ", () => {
+  it("★ hàng canDuyetLai (approvedBy có nhưng bám định nghĩa lệch) ⇒ huy hiệu 'cần duyệt lại', nút Duyệt hiện, nút Bật KHOÁ", () => {
+    queryData["interlock.list"] = [rule(44, { approvedBy: 9, approvedAt: new Date(), canDuyetLai: true, duyetHieuLuc: false, versionToken: "v2:t44" })];
+    render(<InterlockRuleManagement />);
+    const hang = rowOf("rule-44");
+    expect(within(hang).getByTestId("can-duyet-lai")).toBeInTheDocument();
+    fireEvent.click(within(hang).getByRole("button", { name: /interlockRules\.approve|Duyệt|Approve/i }));
+    expect(mutations["interlock.approve"].mutate).toHaveBeenCalledWith({ id: 44, expectedVersion: "v2:t44" });
+    expect(within(hang).getByRole("button", { name: /interlockRules\.enable|Bật|Enable/i })).toBeDisabled();
+  });
+
+  it("★ xoá: máy chủ đòi mã (SCADA_CONFIG_TOTP_REQUIRED) ⇒ hộp mã 6 số mở; nhập mã ⇒ gửi lại CHÍNH lượt xoá kèm totpCode", async () => {
+    const { act } = await import("@testing-library/react");
+    render(<InterlockRuleManagement />);
+    const bien = { id: 42, reason: "xoa luat bao ve" };
+    act(() => mutations["interlock.delete"].opts.onError?.({ data: { appCode: "SCADA_CONFIG_TOTP_REQUIRED" } }, bien as never));
+    const hop = screen.getByRole("dialog");
+    fireEvent.change(within(hop).getByRole("textbox"), { target: { value: "654321" } });
+    fireEvent.click(within(hop).getByRole("button", { name: /deviceAdapter\.troLai\.submit|Xác nhận|Confirm/i }));
+    expect(mutations["interlock.delete"].mutate).toHaveBeenCalledWith({ ...bien, totpCode: "654321" });
   });
 });

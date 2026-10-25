@@ -418,7 +418,7 @@ interface PendingAdapterCommand {
   settled: boolean;
   /** R-11-n — callers sharing this job (1 + identical STOPs dropped onto it) — test seam only */
   callers: number;
-  /** R1a T5 (K9) — Date.now() when the command entered the queue (a slot waiter: when it started waiting). */
+  /** R1a T5 (K9) — performance.now() (monotonic: a wall-clock step must neither expire nor immortalise a command) when the command entered the queue (a slot waiter: when it started waiting). A DURATION anchor only, never persisted or shown. */
   enqueuedAt: number;
   /**
    * R1a T5 (K9) — how long it may wait before its turn; null ⇒ never expires: a STOP (priorityStop, pinned or by content), a protective
@@ -652,15 +652,16 @@ export function tryEnqueueAdapterCommand<T>(
     ...(key !== null ? { result, intentIds: opts?.shareIntentIds } : {}),
     settled: false,
     callers: 1,
-    enqueuedAt: Date.now(),
+    enqueuedAt: performance.now(),
     ttlMs:
       !priorityStop && opts?.protective !== true && typeof opts?.queueTtlMs === "number" && Number.isFinite(opts.queueTtlMs) && opts.queueTtlMs > 0
         ? opts.queueTtlMs
         : null,
     run: () => {
       // R1a T5 (K9) — its turn came too late: never run (nothing sent), the slot is freed and the next command runs.
-      const waitedMs = Date.now() - job.enqueuedAt;
-      if (job.ttlMs !== null && waitedMs > job.ttlMs) {
+      const waitedRaw = performance.now() - job.enqueuedAt;
+      const waitedMs = Math.round(waitedRaw);
+      if (job.ttlMs !== null && waitedRaw > job.ttlMs) {
         job.settled = true;
         queue.depth -= 1;
         settle.resolve({ queueExpired: true, waitedMs, ttlMs: job.ttlMs });

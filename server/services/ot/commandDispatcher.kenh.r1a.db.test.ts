@@ -11,6 +11,9 @@
  *   nhiet_sp  float, write_min 240, write_max 250, write_step 0.5         ⇒ dải + bước; "245" ⇒ 245
  *   toc_do    int,   write_min 10, write_max 100, stop_value 0 (NGOÀI dải — dữ liệu cũ ghi thẳng DB)
  *   cu        int,   mọi cột mới NULL                                     ⇒ hành vi cũ (không ép kiểu, không kiểm)
+ *   sc10      int,   dải 0..300, scale 10                                 ⇒ kiem-dinh P1-3: lưới thô (tag ĐÃ khai)
+ *   sc10cu    int,   cột mới NULL, scale 10                               ⇒ R1b-1 T13: lưới thô cho tag CHƯA khai (không ép kiểu)
+ *   sc2o1     int,   cột mới NULL, scale 2, offset 1                      ⇒ R1b-1 T13: lưới 1, 3, 5, …
  */
 import {
   describe,
@@ -21,7 +24,7 @@ import {
   beforeEach,
   vi,
 } from "vitest";
-import { eq, like, sql } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 
 const fake = vi.hoisted(() => ({
   drivers: new Map<number, unknown>(),
@@ -73,9 +76,10 @@ import {
   interlockEvents,
   interlockRules,
 } from "../../../drizzle/schema";
+import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
 import { dispatch, type DispatchInput } from "./commandDispatcher";
 import { inverseScale } from "./drivers/otScale";
-import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
+import { FOE_ENGINE_TOOL, otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -299,6 +303,8 @@ describe.skipIf(!DB_URL)(
         // kiem-dinh P1-3 — int, scale 10: ĐÃ khai (dải 0..300) / CHƯA khai (cột 0431 NULL)
         { adapterId, tagKey: "sc10", address: "D205", dataType: "int", writable: true, writeMin: 0, writeMax: 300, scale: "10" },
         { adapterId, tagKey: "sc10cu", address: "D206", dataType: "int", writable: true, scale: "10" },
+        // R1b-1 T13 — int CHƯA khai, scale 2 offset 1 (lưới thô 1, 3, 5, …)
+        { adapterId, tagKey: "sc2o1", address: "D207", dataType: "int", writable: true, scale: "2", offset: "1" },
       ]);
       fake.drivers.set(adapterId, fakeDriver);
       fake.fingerprints.set(
@@ -497,6 +503,7 @@ describe.skipIf(!DB_URL)(
         })
         .returning();
       ruleId = rule!.id;
+      await dongDauDuyetLuat(ruleId); // kiem-dinh R1b-1 I1 (a) FIXTURE — "đã duyệt" gieo thẳng mang bám định nghĩa hiện tại
       const [ev] = await x
         .insert(interlockEvents)
         .values({ ruleId, action: "reduce_speed", status: "fired" })
@@ -747,13 +754,181 @@ describe.skipIf(!DB_URL)(
       expect(rawBatches).toEqual([[{ tagKey: "sc10", raw: 3 }]]);
     });
 
-    it("P1-3 GIỚI HẠN ĐÃ BIẾT (ghim): kênh CHƯA khai, int scale 10, 25 ⇒ dispatch KHÔNG kiểm (tương đương cờ tắt R1a) ⇒ driver làm tròn im lặng raw 3 (= 30) — R1b", async () => {
+    // ═════════════════ R1b-1 T13 — kênh CHƯA khai, int scale/offset: không làm tròn im lặng (thay ca ghim "GIỚI HẠN ĐÃ BIẾT" của P1-3) ═════════════════
+    it("T13 AI (set_machine_param): kênh CHƯA khai, int scale 10, 25 ⇒ OFF_STEP (goiY=30, appError SCADA_VALUE_OFF_STEP step 10), driver 0 lần, action KHÔNG bị tiêu thụ", async () => {
       process.env.OT_CONTROL_ENABLED = "true";
       const writes = [{ tagKey: "sc10cu", value: 25 }];
       const actionId = await makeAction({ writes });
+      const inp = input({ actionId, writes });
+      const res = await dispatch(inp);
+      expect(res.status).toBe("rejected");
+      expect(res.reason).toBe("OFF_STEP");
+      expect(res.appError).toEqual({ appCode: "SCADA_VALUE_OFF_STEP", appParams: { ma: "OFF_STEP", tagKey: "sc10cu", step: 10, goiY: 30 } });
+      expect(writeCalls).toBe(0);
+      expect(rawBatches).toEqual([]);
+      const rows = await ledger(inp.idempotencyKey);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.tagKey).toBe("sc10cu");
+      expect(rows[0]!.errorText).toMatch(/^OFF_STEP: Tag "sc10cu": .*\(goiY=30\)$/);
+      expect(await pendingStatus(actionId)).toBe("confirmed");
+    });
+
+    it("T13 AI (set_machine_param): kênh CHƯA khai, int scale 10, 30 ⇒ gửi NGUYÊN 30, driver ⇒ số thô 3", async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      const writes = [{ tagKey: "sc10cu", value: 30 }];
+      const actionId = await makeAction({ writes });
       const res = await dispatch(input({ actionId, writes }));
       expect(res.ok).toBe(true);
+      expect(writtenBatches).toEqual([[{ tagKey: "sc10cu", value: 30 }]]);
       expect(rawBatches).toEqual([[{ tagKey: "sc10cu", raw: 3 }]]);
+    });
+
+    it('T13 kênh CHƯA khai KHÔNG bị ép kiểu (hành vi cũ giữ): "30" ⇒ đi tiếp NGUYÊN chuỗi (requestedValue string); "25" ⇒ OFF_STEP — kiểm trên Number(giá trị) như inverseScale', async () => {
+      const inp30 = input({ writes: [{ tagKey: "sc10cu", value: "30" }] });
+      const r30 = await dispatch(inp30);
+      expect(r30.status).toBe("simulated");
+      expect(await requestedTypes(inp30.idempotencyKey)).toEqual(["string"]);
+      const r25 = await dispatch(input({ writes: [{ tagKey: "sc10cu", value: "25" }] }));
+      expect(r25.reason).toBe("OFF_STEP");
+    });
+
+    it("T13 bool true lên kênh CHƯA khai int scale 10 ⇒ OFF_STEP goiY 0 (driver trước đây ghi raw round(0.1) = 0 — ngược ý định)", async () => {
+      const inp = input({ writes: [{ tagKey: "sc10cu", value: true }] });
+      const res = await dispatch(inp);
+      expect(res.reason).toBe("OFF_STEP");
+      expect(res.appError?.appParams).toMatchObject({ goiY: 0, step: 10 });
+    });
+
+    it("T13 offset: kênh CHƯA khai int scale 2 offset 1 — 4 ⇒ OFF_STEP (goiY 5, step 2); 5 ⇒ số thô 2", async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      const r4 = await dispatch(input({ writes: [{ tagKey: "sc2o1", value: 4 }] }));
+      expect(r4.reason).toBe("OFF_STEP");
+      expect(r4.appError).toEqual({ appCode: "SCADA_VALUE_OFF_STEP", appParams: { ma: "OFF_STEP", tagKey: "sc2o1", step: 2, goiY: 5 } });
+      const writes = [{ tagKey: "sc2o1", value: 5 }];
+      const actionId = await makeAction({ writes });
+      const r5 = await dispatch(input({ actionId, writes }));
+      expect(r5.ok).toBe(true);
+      expect(rawBatches).toEqual([[{ tagKey: "sc2o1", raw: 2 }]]);
+    });
+
+    it("T13 kênh CHƯA khai int scale 1 / offset 0 (cu) ⇒ hành vi cũ: KHÔNG kiểm lưới (ngoài phạm vi T13), simulated", async () => {
+      const res = await dispatch(input({ writes: [{ tagKey: "cu", value: 25 }] }));
+      expect(res.status).toBe("simulated");
+    });
+
+    it("T13 INTERLOCK: luật nhắm kênh CHƯA khai int scale 10 — commandValue 25 ⇒ OFF_STEP, driver 0 lần; 30 ⇒ gửi, số thô 3", async () => {
+      process.env.OT_CONTROL_ENABLED = "true";
+      process.env.INTERLOCK_AUTO_BLOCK_ENABLED = "true";
+      const x = await d();
+      const chay = async (giaTri: number) => {
+        const [rule] = await x
+          .insert(interlockRules)
+          .values({
+            name: `${DAU} rule t13 ${giaTri}`,
+            scope: "machine",
+            machineId: MACHINE,
+            sourceType: "ng_rate",
+            comparisonOperator: "gt",
+            threshold: "99999",
+            action: "reduce_speed",
+            targetMachineId: MACHINE,
+            targetAdapterId: adapterId,
+            commandTag: "sc10cu",
+            commandValue: giaTri as never, // ghi thẳng DB (mô phỏng luật có trước T13 — cổng cấu hình nay từ chối 25)
+            requiresHumanConfirm: false,
+            enabled: true,
+            approvedBy: APPROVER,
+            approvedAt: new Date(),
+          })
+          .returning();
+        await dongDauDuyetLuat(rule!.id); // kiem-dinh R1b-1 I1 (a) FIXTURE — "đã duyệt" gieo thẳng mang bám định nghĩa hiện tại
+        const [ev] = await x.insert(interlockEvents).values({ ruleId: rule!.id, action: "reduce_speed", status: "fired" }).returning();
+        try {
+          return await dispatch({
+            adapterId,
+            machineId: MACHINE,
+            commandType: "reduce_speed",
+            writes: [{ tagKey: "sc10cu", value: giaTri }],
+            triggeredBy: { kind: "interlock", ruleId: rule!.id, eventId: ev!.id, approvedBy: APPROVER },
+            idempotencyKey: nextKey("il-t13"),
+          });
+        } finally {
+          await x.update(interlockRules).set({ enabled: false }).where(eq(interlockRules.id, rule!.id));
+          await x.delete(interlockEvents).where(eq(interlockEvents.ruleId, rule!.id)).catch(() => {});
+        }
+      };
+      const r25 = await chay(25);
+      expect(r25.status).toBe("rejected");
+      expect(r25.reason).toBe("OFF_STEP");
+      expect(writeCalls).toBe(0);
+      const r30 = await chay(30);
+      expect(r30.ok).toBe(true);
+      expect(rawBatches).toEqual([[{ tagKey: "sc10cu", raw: 3 }]]);
+    });
+
+    it("T13 FOE (lệnh bước FOE qua equipmentAdapter, ánh xạ buildEquipmentCommand thật): 25 lên kênh CHƯA khai int scale 10 ⇒ rejected OFF_STEP + detail.appError (Studio dịch); 30 ⇒ qua cổng kênh (simulated, requestedValue 30)", async () => {
+      const { buildEquipmentCommand } = await import("../orchestration/foe/foeStepClass");
+      const { equipmentRegistry } = await import("../equipment/equipmentAdapter");
+      const x = await d();
+      const ids: string[] = [];
+      // Hàng ai_pending_actions của bước FOE (động cơ tạo nó khi cổng hitl_gate duyệt; ở đây ghi thẳng): id = orchestrationActionId(khoá),
+      // tool foe.orchestration, đã xác nhận bởi người xác nhận của lệnh — đủ cho cổng 1 (đường mô phỏng) để lệnh TỚI cổng kênh 3b.
+      const lenh = async (giaTri: number) => {
+        const cmd = buildEquipmentCommand(
+          { name: "write_tag" } as never,
+          { adapterKind: "ot-modbus" } as never,
+          MACHINE,
+          { adapterId, writes: [{ tagKey: "sc10cu", value: giaTri }] },
+          nextKey("foe-t13"),
+          { id: OWNER, role: "engineer" },
+        );
+        ids.push(cmd.hitl.actionId);
+        await x.insert(aiPendingActions).values({
+          id: cmd.hitl.actionId,
+          tool: FOE_ENGINE_TOOL,
+          argsJson: {},
+          userId: OWNER,
+          userRole: "engineer",
+          summary: `${DAU} foe t13`,
+          previewJson: { entityType: "machine" },
+          status: "confirmed",
+          idempotencyKey: `${cmd.hitl.actionId}-idem`,
+          expiresAt: new Date(Date.now() + 600_000),
+        });
+        return cmd;
+      };
+      try {
+        const c25 = await lenh(25);
+        const r25 = await equipmentRegistry.getAdapter("ot-modbus").sendCommand(c25);
+        expect(r25.status).toBe("rejected");
+        expect(r25.detail).toMatchObject({ reason: "OFF_STEP", appError: { appCode: "SCADA_VALUE_OFF_STEP", appParams: { tagKey: "sc10cu", step: 10, goiY: 30 } } });
+        expect((await ledger(c25.idempotencyKey))[0]!.errorText).toMatch(/^OFF_STEP: Tag "sc10cu": /);
+        const c30 = await lenh(30);
+        const r30 = await equipmentRegistry.getAdapter("ot-modbus").sendCommand(c30);
+        expect(r30.status).toBe("simulated");
+        const rows = await ledger(c30.idempotencyKey);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]!.requestedValue).toBe(30);
+        expect(writeCalls).toBe(0);
+      } finally {
+        for (const id of ids) await x.delete(aiPendingActions).where(eq(aiPendingActions.id, id)).catch(() => {});
+      }
+    });
+
+    it("T13 STOP GHIM lệch lưới (stop_value 25 trên kênh CHƯA khai int scale 10) ⇒ KHÔNG bị chặn (miễn cả lệnh) — driver vẫn làm tròn ⇒ raw 3: phát hiện CẤU HÌNH, không phải từ chối dispatch", async () => {
+      const x = await d();
+      await x.update(deviceTags).set({ stopValue: 25 as never }).where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, "sc10cu")));
+      try {
+        const inp = input({ commandType: "stop", writes: [{ tagKey: "sc10cu", value: 25 }] });
+        const res = await dispatch(inp);
+        expect(res.reason).not.toBe("OFF_STEP");
+        expect(res.status).toBe("simulated");
+        // stop KHÔNG khớp ghim (24) ⇒ không miễn ⇒ OFF_STEP như mọi lệnh
+        const lech = await dispatch(input({ commandType: "stop", writes: [{ tagKey: "sc10cu", value: 24 }] }));
+        expect(lech.reason).toBe("OFF_STEP");
+      } finally {
+        await x.update(deviceTags).set({ stopValue: null }).where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, "sc10cu")));
+      }
     });
   }
 );

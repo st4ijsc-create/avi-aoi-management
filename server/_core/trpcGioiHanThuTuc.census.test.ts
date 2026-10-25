@@ -127,7 +127,14 @@ describe("census nhóm 2fa của giới hạn theo thủ tục", () => {
  * Mỗi file sản xuất GỌI nó phải có mặt ở bảng dưới: hàm bao ngoài (AST) → thủ tục tRPC của router gọi hàm ấy. File mới / hàm mới gọi nó mà bảng chưa cập nhật ⇒ ĐỎ.
  * Thủ tục phải thuộc nhóm "2fa", TRỪ khi có `mienTru` (lý do bằng văn bản).
  */
-const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<string, Record<string, { routerFile: string; thuTuc: string | string[]; mienTru?: string }>> = {
+/**
+ * `mienTru`: chuỗi = miễn trừ cho MỌI thủ tục của mục; đối tượng = miễn trừ THEO THỦ TỤC (R1b-1 T9 fix round 1 — một hàm dùng chung, có thủ tục
+ * trong nhóm, có thủ tục miễn trừ).
+ */
+const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<
+  string,
+  Record<string, { routerFile: string | string[]; thuTuc: string | string[]; mienTru?: string | Record<string, string> }>
+> = {
   "server/services/scada/lenhHmi.ts": {
     xacNhanGhiTag: {
       routerFile: "server/routers/scadaCommandsRouter.ts",
@@ -138,10 +145,52 @@ const BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC: Record<string, Record<string, { routerF
     },
   },
   // kiem-dinh P1-2 (2026-10-24) — đổi cấu hình kênh / chế độ M12 đòi TOTP TƯƠI (mức 5) ⇒ THUỘC nhóm 2fa (việc cấu hình hiếm; bóp tần suất chấp nhận được).
-  "server/routers/scadaKenhRouter.ts": {
+  // 2026-10-24 · R1b-1 T9 — `kiemTotpCauHinh` chuyển từ scadaKenhRouter.ts sang services/scada/totpCauHinh.ts; thêm các bên gọi đụng tag được
+  // bảo vệ: mappingAsCode.applyImport (qua `xacThucKenhDaKhai`) THUỘC nhóm 2fa; deviceAdapter.tags.create / update / delete (fix round 1) và
+  // deviceAdapter.update (đổi đích / tắt adapter, I5; fix round 2) MIỄN TRỪ theo thủ tục (phán quyết T9 a).
+  "server/services/scada/totpCauHinh.ts": {
     kiemTotpCauHinh: {
-      routerFile: "server/routers/scadaKenhRouter.ts",
-      thuTuc: ["scadaKenh.capNhat", "scadaKenh.cheDo.dat", "scadaKenh.cheDo.go"],
+      routerFile: [
+        "server/routers/scadaKenhRouter.ts",
+        "server/routers/deviceAdapterRouter.ts",
+        "server/routers/mappingAsCodeRouter.ts",
+        "server/routers/scadaDiagRouter.ts",
+        // 2026-10-25 · kiem-dinh R1b-1 I1 (b) — sửa / xoá luật interlock bảo vệ
+        "server/routers/interlockRouter.ts",
+      ],
+      thuTuc: [
+        "scadaKenh.capNhat",
+        "scadaKenh.cheDo.dat",
+        "scadaKenh.cheDo.go",
+        "mappingAsCode.applyImport",
+        "deviceAdapter.update",
+        "deviceAdapter.tags.create",
+        "deviceAdapter.tags.update",
+        "deviceAdapter.tags.delete",
+        "deviceAdapter.delete",
+        "scadaDiag.tamTat",
+        // 2026-10-25 · kiem-dinh R1b-1 H1 (a) — ghim DỪNG (STOP HMI gửi ghim một bước, mức 1) ⇒ sàn vai ACTUATION + TOTP tươi mức 5 MỖI lượt.
+        "deviceAdapter.tags.setStopPin",
+        // 2026-10-25 · kiem-dinh R1b-1 I1 (b) — sửa / xoá luật interlock ĐANG BẬT hoặc ĐÃ DUYỆT có đích / nguồn tag ⇒ TOTP tươi mức 5.
+        "interlock.update",
+        "interlock.delete",
+      ],
+      mienTru: {
+        // 2026-10-25 · kiem-dinh R1b-1 I1 (b) — miễn nhóm 2fa (khuôn tags.*: chỉ đòi mã có điều kiện; T16 theo tài khoản).
+        "interlock.update": "kiem-dinh R1b-1 I1 b (điều phối 2026-10-25): chỉ xác minh TOTP khi sửa một luật ghi lệnh ĐANG BẬT hoặc ĐÃ DUYỆT có đích / nguồn tag (luật nháp, luật alert ⇒ không mã); dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt soạn luật thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn tags.update).",
+        "interlock.delete": "kiem-dinh R1b-1 I1 b (điều phối 2026-10-25): chỉ xác minh TOTP khi xoá một luật ghi lệnh ĐANG BẬT hoặc ĐÃ DUYỆT có đích / nguồn tag (luật nháp, luật alert ⇒ không mã); dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ dọn luật nháp thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn tags.delete).",
+        // 2026-10-25 · kiem-dinh R1b-1 H1 (a) — miễn nhóm 2fa (cùng khuôn lý do với tags.*: khoá T16 theo tài khoản).
+        "deviceAdapter.tags.setStopPin": "kiem-dinh R1b-1 H1 a (điều phối 2026-10-25): ghim DỪNG đặt / gỡ THEO TỪNG TAG, thành loạt lúc commissioning (mỗi tag một lượt, mỗi lượt một mã tươi mức 5); dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ một đợt ghim 20+ tag ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn tags.update).",
+        "deviceAdapter.tags.create": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
+        "deviceAdapter.tags.update": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
+        "deviceAdapter.tags.delete": "Phán quyết T9 a (2026-10-24, fix round 1): chỉ xác minh TOTP khi đụng tag được bảo vệ / khoá mồ côi; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt sửa tag thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa (khuôn scadaCommands.confirm).",
+        // 2026-10-24 · R1b-1 T9 fix round 2 — deviceAdapter.update RA khỏi nhóm (phán quyết a mở rộng).
+        "deviceAdapter.update": "Phán quyết T9 a (2026-10-24, fix round 2): chỉ xác minh TOTP khi đổi đích / tắt adapter có tag được bảo vệ; dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt lưu adapter / công tắc Bật thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa.",
+        // 2026-10-24 · R1b-1 T9 fix round 3 (N1/N3) — xoá adapter + tạm tắt adapter (scadaDiag) đi qua cùng cổng adapter ⇒ cùng miễn trừ.
+        // 2026-10-24 · R1b-1 T10b (n4) — lý do ghi đúng vòng (fix round 3, không phải 2) và đúng việc (xoá / tạm tắt, không phải đổi đích).
+        "deviceAdapter.delete": "Phán quyết T9 a (2026-10-24, áp ở fix round 3 — N3): chỉ xác minh TOTP khi XOÁ một adapter còn tag được bảo vệ (cổng adapter dùng chung congAdapterTx); dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt xoá adapter thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa.",
+        "scadaDiag.tamTat": "Phán quyết T9 a (2026-10-24, áp ở fix round 3 — N1): chỉ xác minh TOTP khi TẠM TẮT một adapter đang bật còn tag được bảo vệ (cổng adapter dùng chung congAdapterTx); dò mã đã bị chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce (5 sai / 5 phút, tính TRƯỚC khi xác minh). Nhóm 2fa đếm theo PATH ở rìa ⇒ mọi lượt tạm tắt adapter khi chẩn đoán ăn chung xô 20 / 15 phút theo IP với 2FA / deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa.",
+      },
     },
   },
   "server/services/aiCopilotActions.ts": {
@@ -201,13 +250,16 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
     let mien = 0;
     for (const [file, hams] of Object.entries(BE_MAT_GOI_KIEM_XAC_THUC_THEO_MUC)) {
       for (const [ham, m] of Object.entries(hams)) {
-        expect(fileGoiHam(path.join(GOC, m.routerFile), ham), `${m.routerFile} không gọi ${ham} (${file})`).toBe(true);
+        for (const rf of Array.isArray(m.routerFile) ? m.routerFile : [m.routerFile]) {
+          expect(fileGoiHam(path.join(GOC, rf), ham), `${rf} không gọi ${ham} (${file})`).toBe(true);
+        }
         for (const thuTuc of Array.isArray(m.thuTuc) ? m.thuTuc : [m.thuTuc]) {
           const loaiTT = trpcProcedureType(appRouter, thuTuc);
           expect(loaiTT, `${thuTuc} không tồn tại ở appRouter`).toBeDefined();
           const nhom = phanNhomThuTuc(thuTuc, loaiTT, tap);
-          if (m.mienTru) {
-            expect(m.mienTru.length, `${thuTuc}: lý do miễn trừ quá ngắn`).toBeGreaterThan(40);
+          const lyDoMien = typeof m.mienTru === "string" ? m.mienTru : m.mienTru?.[thuTuc];
+          if (lyDoMien) {
+            expect(lyDoMien.length, `${thuTuc}: lý do miễn trừ quá ngắn`).toBeGreaterThan(40);
             // Miễn trừ là RÀNG BUỘC: thủ tục miễn trừ KHÔNG được nằm trong nhóm 2fa (thêm lại vào nhóm ⇒ phải xoá miễn trừ, kèm phán quyết mới).
             expect(nhom, `${thuTuc} có miễn trừ nhưng vẫn thuộc nhóm 2fa`).not.toBe("2fa");
             mien++;
@@ -219,9 +271,73 @@ describe("census kiemXacThucTheoMuc — thủ tục tRPC xác minh TOTP qua mứ
       }
     }
     // 2026-10-24 · kiem-dinh P1-2: 2 → 5 (+ scadaKenh.capNhat / cheDo.dat / cheDo.go, THUỘC nhóm 2fa).
-    expect(dem + mien).toBe(5);
-    expect(dem).toBe(3);
-    expect(mien).toBe(2); // aiCopilot.confirmAction + scadaCommands.confirm — miễn trừ có lý do (R1a final I-1)
+    // 2026-10-24 · R1b-1 T9: 5 → 7 (+ deviceAdapter.tags.update / mappingAsCode.applyImport, THUỘC nhóm 2fa).
+    // 2026-10-24 · R1b-1 T9 fix round 1: 7 → 10 — tags.update RA khỏi nhóm (miễn trừ, phán quyết T9 a); + deviceAdapter.update (nhóm, I5);
+    //   + deviceAdapter.tags.create / tags.delete (miễn trừ, cùng lý do với tags.update).
+    // 2026-10-24 · R1b-1 T9 fix round 2: deviceAdapter.update RA khỏi nhóm (miễn trừ, phán quyết a) — dem 5 → 4, mien 5 → 6, tổng giữ 10.
+    // 2026-10-24 · R1b-1 T9 fix round 3 (N1/N3): + deviceAdapter.delete / scadaDiag.tamTat (miễn trừ, cùng lý do) — mien 6 → 8, tổng 10 → 12.
+    // 2026-10-25 · kiem-dinh R1b-1 H1 (a): + deviceAdapter.tags.setStopPin (miễn trừ, khuôn tags.*) — mien 8 → 9, tổng 12 → 13.
+    // 2026-10-25 · kiem-dinh R1b-1 I1 (b): + interlock.update / interlock.delete (miễn trừ, khuôn tags.*) — mien 9 → 11, tổng 13 → 15.
+    expect(dem + mien).toBe(15);
+    expect(dem).toBe(4); // scadaKenh ×3 + mappingAsCode.applyImport
+    expect(mien).toBe(11); // aiCopilot.confirmAction + scadaCommands.confirm (R1a final I-1) + deviceAdapter.tags.create/update/delete + deviceAdapter.update/delete + scadaDiag.tamTat (T9 a) + deviceAdapter.tags.setStopPin (H1 a) + interlock.update/delete (I1 b)
+  }, 120_000);
+});
+
+/**
+ * ★★★ R1b-1 Task 2 (điều phối 2026-10-24) — thủ tục tRPC CỐ Ý KHÔNG thuộc nhóm giới hạn nào dù nằm cạnh các thủ tục xác minh TOTP: STOP HMI.
+ * Khuôn miễn trừ của `aiCopilot.confirmAction` / `scadaCommands.confirm` ở trên — nhưng `dungMay` KHÔNG gọi `kiemXacThucTheoMuc` /
+ * `verifyTotpOnce` nên không vào bảng trên được; bảng riêng này giữ cùng ràng buộc: thủ tục THẬT, `phanNhomThuTuc` trả null (không nhóm
+ * nào — kể cả "2fa"), hàm dịch vụ không xác minh TOTP (AST), và lý do bằng văn bản. Thêm nó vào nhóm ⇒ ĐỎ (phải xoá miễn trừ + phán quyết mới).
+ */
+const MIEN_TRU_KHONG_GIOI_HAN: Record<string, { thuTuc: string; routerFile: string; ham: string; hamFile: string; mienTru: string }> = {
+  "scadaCommands.dungMay": {
+    thuTuc: "scadaCommands.dungMay",
+    routerFile: "server/routers/scadaCommandsRouter.ts",
+    ham: "dungMayHmi",
+    hamFile: "server/services/scada/lenhHmi.ts",
+    mienTru: "STOP không bao giờ bị phần mềm chặn; không xác minh TOTP",
+  },
+};
+
+/** Thân của một hàm khai báo tên `ham` trong file (AST); null nếu không có. */
+function thanHam(duong: string, ham: string): ts.FunctionDeclaration | null {
+  const src = ts.createSourceFile(duong, readFileSync(duong, "utf8"), ts.ScriptTarget.Latest, true);
+  let ra: ts.FunctionDeclaration | null = null;
+  const visit = (n: ts.Node): void => {
+    if (ts.isFunctionDeclaration(n) && n.name?.text === ham) ra = n;
+    ts.forEachChild(n, visit);
+  };
+  visit(src);
+  return ra;
+}
+
+/** Tên mọi hàm được GỌI trong một nút (AST), kể cả lồng. */
+function tenHamDuocGoi(n: ts.Node, ra = new Set<string>()): Set<string> {
+  if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) ra.add(n.expression.text);
+  ts.forEachChild(n, (c) => void tenHamDuocGoi(c, ra));
+  return ra;
+}
+
+describe("census miễn trừ giới hạn — STOP HMI không bao giờ bị bộ giới hạn theo thủ tục chặn", () => {
+  it("★★★ mỗi mục là thủ tục THẬT, router gọi hàm dịch vụ, KHÔNG thuộc nhóm nào (phanNhomThuTuc = null), hàm không xác minh TOTP", () => {
+    const tap = layTapThuTucStepUp(appRouter, [requireFreshTotp, requirePerCallFreshTotp]);
+    let dem = 0;
+    for (const [p, m] of Object.entries(MIEN_TRU_KHONG_GIOI_HAN)) {
+      expect(m.thuTuc).toBe(p);
+      expect(m.mienTru.length, `${p}: phải có lý do bằng văn bản`).toBeGreaterThan(20);
+      const loaiTT = trpcProcedureType(appRouter, p);
+      expect(loaiTT, `${p} không tồn tại ở appRouter`).toBe("mutation");
+      expect(fileGoiHam(path.join(GOC, m.routerFile), m.ham), `${m.routerFile} không gọi ${m.ham}`).toBe(true);
+      expect(phanNhomThuTuc(p, loaiTT, tap), `${p} có miễn trừ nhưng bị xếp vào một nhóm giới hạn`).toBeNull();
+      expect(tap.has(p), `${p} đứng trên bước nâng cấp 2FA (requireFreshTotp)`).toBe(false);
+      const fn = thanHam(path.join(GOC, m.hamFile), m.ham);
+      expect(fn, `${m.hamFile}: không thấy hàm ${m.ham}`).not.toBeNull();
+      const goi = tenHamDuocGoi(fn!);
+      for (const cam of ["verifyTotpOnce", "kiemXacThucTheoMuc", "verifyFreshTotp"]) expect(goi.has(cam), `${m.ham} gọi ${cam}`).toBe(false);
+      dem++;
+    }
+    expect(dem).toBe(1);
   }, 120_000);
 });
 

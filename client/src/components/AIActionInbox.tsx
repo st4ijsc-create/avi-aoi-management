@@ -40,6 +40,8 @@ import {
   Cpu,
 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
+import { tuChoiTuLoiXacNhan } from "@/lib/loiXacNhanAi";
 import { cn } from "@/lib/utils";
 
 // ─── Types (mirror server/services/aiActionInbox.ts InboxItem) ─────────────────
@@ -250,7 +252,8 @@ export function AIActionInbox({
     { enabled: open, refetchInterval: open ? 30_000 : false, refetchOnWindowFocus: false },
   );
 
-  const confirmActionMutation = trpc.aiCopilot.confirmAction.useMutation();
+  // onError rỗng: `handleApprove` tự hiện lỗi (một toast) — không để lưới cuối của main.tsx thêm toast thứ hai.
+  const confirmActionMutation = trpc.aiCopilot.confirmAction.useMutation({ onError: () => undefined });
   const dismissMutation = trpc.aiInbox.dismiss.useMutation();
 
   const connected = useSocketConnected();
@@ -297,8 +300,9 @@ export function AIActionInbox({
       });
       if (res.ok) toast.success(res.message ?? t("aiInbox.toast.approved"));
       else toast.error(res.message ?? t("aiInbox.toast.failed"));
-    } catch {
-      toast.error(t("aiInbox.toast.failed"));
+    } catch (err) {
+      // R1b-1 T10 fix round 1 (I-2) — AI mức ≥ 4 bị từ chối vĩnh viễn: hiện CÂU ĐÃ DỊCH của máy chủ; lỗi khác giữ câu chung cũ.
+      toast.error(tuChoiTuLoiXacNhan(err)?.message ?? mapTrpcError(err));
     } finally {
       invalidate();
     }

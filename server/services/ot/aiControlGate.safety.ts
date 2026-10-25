@@ -35,6 +35,9 @@ import { mucTacDongKenh } from "../scada/kenhScada";
  *     hàng tag đích — đúng luật cả-lệnh của dispatcher: tag ghim, giá trị ghim, không trùng). Người gọi dùng mức của TOOL, KHÔNG
  *     lấy max với mức kênh (kênh chưa khai = 5 không được chặn một DỪNG ghim). Lệnh dừng trộn ghim với BẤT KỲ write nào khác /
  *     sai giá trị ⇒ không phải dừng ghim ⇒ nhánh dưới.
+ *     kiem-dinh R1b-1 I-A (fix round 2, 2026-10-25): chỉ ghim ĐỦ ĐIỀU KIỆN STOP (`phanLoaiGhimStopHmi(...).gui` — tag `actuationLevel ≤ 1`, NULL ⇒ 5 ⇒
+ *     không đủ; CÙNG luật STOP HMI / khảo sát khả năng dừng) mới được coi là dừng ghim. Ghim trên tag mức cao / chưa khai mức (vd. ghim cũ do
+ *     operator đặt trước H1 a) ⇒ KHÔNG phải dừng ghim ⇒ mức kênh (5 ⇒ AI từ chối MUC_QUA_CAO).
  *   · `{ dungGhim: false, muc }` — mức CAO NHẤT của các kênh đích.
  *
  * ★ FAIL-CLOSED: không có write / tagKey không phải chuỗi khác rỗng / adapter không hợp lệ / CSDL vắng / truy vấn ném / MỘT tag
@@ -72,8 +75,9 @@ export async function mucKenhChoAi(
       // import động: giữ mô-đun này nhẹ (dispatcher + stopPin kéo cả dây chuyền audit/bảo mật).
       const { isStopCommandType } = await import("./commandDispatcher");
       if (isStopCommandType(commandType)) {
-        const { matchPinnedStop, stopPinsFromTagRows } = await import("./stopPin");
-        const ghim = matchPinnedStop(stopPinsFromTagRows(rows), writes.map((x) => ({ tagKey: x.tagKey, value: x.value })));
+        const { matchPinnedStop, phanLoaiGhimStopHmi } = await import("./stopPin");
+        // I-A — CHỈ ghim đủ điều kiện STOP (mức ≤ 1); một luật cho STOP HMI, AI machine_stop và khảo sát khả năng dừng.
+        const ghim = matchPinnedStop(phanLoaiGhimStopHmi(rows).gui, writes.map((x) => ({ tagKey: x.tagKey, value: x.value })));
         if (ghim.ok) return { dungGhim: true };
       }
     }

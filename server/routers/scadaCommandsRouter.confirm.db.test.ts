@@ -11,7 +11,7 @@
  *
  * `command_log` + `scada_command_attempts` là WORM: hàng của tệp này ở lại (đúng thiết kế).
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 
 const RUN = `r1a9${process.pid}${Date.now().toString(36)}`;
@@ -248,6 +248,15 @@ function mauOt(tagKey: string, value: number) {
   return { tagKey, raw: value, value, quality: "good" as const, timestamp: new Date() };
 }
 
+/**
+ * R1b-1 T10b (N5) — cổng chế độ tin mẫu kênh chế độ tối đa min(3·poll, 30 s) (`nguongTuoiCheDoMs`), KHÔNG còn 3·poll = 180 s của poll 60 s
+ * ⇒ mẫu REMOTE nạp MỘT lần ở beforeAll cũ đi giữa tệp. Bộ chọn REMOTE thật gửi mẫu mỗi nhịp poll: nạp lại mẫu (giờ nhận = `now`) trước mỗi
+ * ca, và ở đúng đồng hồ của ca nào chạy cổng chế độ với đồng hồ dời (+61 s, gần hạn TTL).
+ */
+function lamTuoiCheDo(now: number = Date.now()): void {
+  boDem.napTuOt({ adapterId: ad.a, machineId: A.mid }, [{ ...mauOt("che_do", 2), timestamp: new Date(now) }], now);
+}
+
 async function yeuCau(ten: string, tagKey: string, value: number | string = 200): Promise<string> {
   const kq = await nguoi[ten].caller.request({ adapterId: ad.a, tagKey, value, lyDo: LY_DO, clientRequestId: uuid() });
   return kq.requestId;
@@ -270,6 +279,10 @@ type DongThu = { stage: string; outcome: string; reason_code: string | null; com
 async function thuCua(requestId: string): Promise<DongThu[]> {
   return (await dung(sql`SELECT stage, outcome, reason_code, command_log_ids, user_id, request_id
     FROM scada_command_attempts WHERE request_id = ${requestId} ORDER BY id`)) as DongThu[];
+}
+/** R1b-1 T7 — cột ly_do (mig 0433) theo requestId, đúng thứ tự ghi. */
+async function lyDoCua(requestId: string): Promise<Array<string | null>> {
+  return ((await dung(sql`SELECT ly_do FROM scada_command_attempts WHERE request_id = ${requestId} ORDER BY id`)) as Array<{ ly_do: string | null }>).map((r) => r.ly_do);
 }
 async function moc(): Promise<number> {
   const [r] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM scada_command_attempts`);
@@ -356,6 +369,8 @@ beforeAll(async () => {
   await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${nguoi.opA.id}, ${B.code})`);
 }, 60_000);
 
+beforeEach(() => lamTuoiCheDo());
+
 afterAll(async () => {
   vi.unstubAllEnvs();
   try {
@@ -423,6 +438,8 @@ describe("confirm — đường vui (dispatch hitl hmi.write_tag, đọc lại b
     ]);
     expect(thu[2].command_log_ids?.map(Number)).toEqual([dong[1].id]);
     expect(thu[2].reason_code).toBeNull();
+    // R1b-1 T7 — ly_do: request = lý do người dùng; confirm / dispatch = câu hệ thống mô tả kết cục (không bao giờ mã TOTP)
+    expect(await lyDoCua(requestId)).toEqual([LY_DO, expect.stringContaining("Người dùng xác nhận"), "Kết quả gửi: acked_verified"]);
 
     expect(H.emits.every((e) => e.room === `user:${u.id}` && e.ev === "scada:cmd")).toBe(true);
     expect(H.emits.map((e) => e.payload.status)).toEqual(["confirmed", "acked_verified"]);
@@ -457,6 +474,7 @@ describe("confirm — hết TTL, đã xử lý, song song", () => {
     });
     expect(await trangThaiCho(requestId)).toBe("expired");
     expect(await khoa("het")).toBeUndefined();
+    expect((await lyDoCua(requestId)).at(-1)).toBe("Yêu cầu đã hết hạn (60 s) — hãy tạo yêu cầu mới.");
     expect(H.emits.map((e) => e.payload)).toEqual([{ requestId, status: "expired", at: expect.any(String), reason: "HET_HAN" }]);
   });
 
@@ -557,11 +575,13 @@ describe("Review Focus 2 — dữ liệu đổi giữa request và confirm ⇒ t
     let kqB: Awaited<ReturnType<typeof lenhHmi.yeuCauGhiTag>> | null = null;
     H.trongKhiGhi = async () => {
       // B ra yêu cầu trên CÙNG kênh khi A đang ghi; đồng hồ của B đã qua hạn khoá gốc (TTL 60 s của yêu cầu A).
+      const gioB = new Date(goc!.expires_at).getTime() + 1_000;
+      lamTuoiCheDo(gioB); // T10b N5 — bộ chọn vẫn REMOTE ở đồng hồ của B (mẫu mới), để B tới đúng cổng KHOÁ CHỌN
       kqB = await lenhHmi.yeuCauGhiTag(
         { user: { id: nguoi.opA2.id, role: "operator", twoFactorEnabled: true } },
         { userId: nguoi.opA2.id, userRole: "operator" },
         { adapterId: ad.a, tagKey: "chiem", value: 100, lyDo: LY_DO, clientRequestId: uuid() },
-        new Date(new Date(goc!.expires_at).getTime() + 1_000),
+        new Date(gioB),
       );
     };
     try {
@@ -582,6 +602,8 @@ describe("2FA theo mức — mức lấy từ tag HIỆN TẠI", () => {
     const requestId = await yeuCau("engA", "m5");
     const loi = await tuChoiXacNhan("engA", requestId, { code: "PRECONDITION_FAILED", appCode: "SCADA_TOTP_REQUIRED", reason: "TOTP_CAN" });
     expect(loi.appParams).toMatchObject({ level: 5 });
+    // R1b-1 T7 — TOTP_CAN (mã ồn, dưới trần) vẫn ghi; ly_do là câu hệ thống, KHÔNG chứa mã TOTP
+    expect((await lyDoCua(requestId)).at(-1)).toBe("Kênh mức 5 cần mã TOTP.");
     expect(await trangThaiCho(requestId)).toBe("proposed");
     expect((await khoa("m5"))?.request_id).toBe(requestId);
     // mã sai định dạng ⇒ TOTP_SAI (không gọi verify), vẫn proposed
@@ -596,6 +618,44 @@ describe("2FA theo mức — mức lấy từ tag HIỆN TẠI", () => {
     expect(loi.appParams).toMatchObject({ level: 5 });
     expect(await trangThaiCho(requestId)).toBe("proposed");
   });
+});
+
+describe("R1b-1 T7 fix round 1 (M-5) — TOTP_CAN ở confirm bị điều tiết; sau cửa sổ ⇒ dòng tổng kết DIEU_TIET", () => {
+  it("★ 35 lần confirm mức 5 thiếu mã ⇒ client luôn nhận TOTP_CAN, 30 dòng; +61 s ⇒ DIEU_TIET '5 lần TOTP_CAN bị gộp' rồi dòng TOTP_CAN; dispatch 0 lần; dòng chờ + khoá vẫn giữ", async () => {
+    const dt = await import("../services/scada/dieuTietThuLenh");
+    dt.__datLaiDieuTiet();
+    const u = nguoi.engA;
+    const requestId = await yeuCau("engA", "m5");
+    // giữ dòng chờ còn hạn suốt phép thử (TOTP_CAN đến TRƯỚC bước khoá) — chỉ để cửa sổ giả +61 s không làm HET_HAN
+    await db.update(aiPendingActions).set({ expiresAt: new Date(Date.now() + 10 * 60_000) }).where(eq(aiPendingActions.id, requestId));
+    const truocDispatch = H.dispatchCalls;
+    dt.__datLaiDieuTiet(); // bỏ mọi TOTP_CAN do các bước trước (yeuCau) gây ra
+    const m = await moc();
+    const goi = async () => {
+      const loi = await loiCua(u.caller.confirm({ requestId }));
+      expect(loi).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_TOTP_REQUIRED" });
+    };
+    try {
+      for (let i = 0; i < 35; i++) await goi();
+      expect(await thuSau(m, u.id)).toHaveLength(30);
+      vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 61_000 });
+      lamTuoiCheDo(); // T10b N5 — mẫu chế độ mới ở đồng hồ giả
+      await goi();
+    } finally {
+      vi.useRealTimers();
+    }
+    const dong = await thuSau(m, u.id);
+    expect(dong).toHaveLength(32);
+    expect(dong.slice(30).map((t) => [t.stage, t.outcome, t.reason_code])).toEqual([
+      ["confirm", "rejected", "DIEU_TIET"],
+      ["confirm", "rejected", "TOTP_CAN"],
+    ]);
+    const ly = await dung(sql`SELECT ly_do FROM scada_command_attempts WHERE id > ${m} AND user_id = ${u.id} AND reason_code = 'DIEU_TIET'`);
+    expect(ly.map((r) => r.ly_do)).toEqual(["5 lần TOTP_CAN bị gộp"]);
+    expect(H.dispatchCalls - truocDispatch).toBe(0);
+    expect(await trangThaiCho(requestId)).toBe("proposed");
+    expect((await khoa("m5"))?.request_id).toBe(requestId);
+  }, 60_000);
 });
 
 describe("R1a T16 — bộ đếm TOTP sai (chung mọi bên gọi TOTP)", () => {
@@ -750,9 +810,11 @@ describe("huy + trangThai", () => {
     expect(await khoa("huy")).toBeUndefined();
     const thu = await thuCua(requestId);
     expect(thu.at(-1)).toMatchObject({ stage: "huy", outcome: "cancelled", user_id: nguoi.opA.id });
+    expect((await lyDoCua(requestId)).at(-1)).toBe("Người dùng huỷ yêu cầu.");
     expect(H.emits).toEqual([{ room: `user:${nguoi.opA.id}`, ev: "scada:cmd", payload: { requestId, status: "cancelled", at: expect.any(String) } }]);
 
     await tuChoiXacNhan("opA", requestId, { code: "CONFLICT", appCode: "SCADA_REQUEST_ALREADY_HANDLED", reason: "DA_XU_LY" });
+    expect((await lyDoCua(requestId)).at(-1)).toContain("đã được xử lý");
   });
 
   it("trangThai: chủ thấy dòng chờ + attempts + command_log theo actionId (không address/errorText); người khác ⇒ NOT_FOUND", async () => {
@@ -859,6 +921,7 @@ describe("fix round 1 — máy đổi, mất khoá, dải hẹp, sàn vai, CAS t
     // Gốc đồng hồ của lượt confirm = 3 040 ms TRƯỚC hạn ⇒ bước 2 qua (sàn còn lại 3 s — R1a final I-2); móc ngay trước CAS cho 150 ms
     // trôi ⇒ lúc CAS còn < 3 s (CAS đòi expiresAt > lúc CAS + 3 s) ⇒ trượt ⇒ HET_HAN qua đường CAS (móc chạy = đã tới bước 5).
     const nowDate = new Date(row.e.getTime() - 3_040);
+    lamTuoiCheDo(nowDate.getTime()); // T10b N5 — cổng chế độ của lượt confirm chạy theo nowDate (~57 s sau yêu cầu)
     let mocDaChay = false;
     H.sauGiaHan = () =>
       new Promise((r) => {
