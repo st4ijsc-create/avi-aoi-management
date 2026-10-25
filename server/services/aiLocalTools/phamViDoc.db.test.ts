@@ -94,6 +94,7 @@ afterAll(async () => {
   if (!HN) return;
   const l = `'${RUN}%'`;
   for (const s of [
+    `DELETE FROM user_factory_assignments WHERE "userId" = ${ad.nhieu ?? 0}`,
     `DELETE FROM api_keys WHERE name LIKE ${l}`,
     `DELETE FROM production_orders WHERE "orderCode" LIKE ${l}`,
     `DELETE FROM line_balance_metrics WHERE "lineId" IN (${HN.A.lid}, ${HN.B.lid})`,
@@ -210,6 +211,21 @@ describe("★★★ tool đọc — tham chiếu máy / chuyền / lệnh của 
   it("get_change_history: chỉ toàn quyền (audit không có cột nhà máy)", async () => {
     expect((await goi("get_change_history", { limit: 5 }, uA) as { note?: string }).note).toBe("PERMISSION_DENIED");
     expect((await goi("get_change_history", { limit: 5 }, uAdm) as { note?: string }).note).not.toBe("PERMISSION_DENIED");
+  });
+});
+
+describe("★★★ analytics_defect_heatmap_summary — người nhiều nhà máy thấy HỢP các nhà máy được gán", () => {
+  it("A thấy 1 NG của điểm đo chung; người gán cả A và B thấy 2; người không gán: SCOPE_EMPTY; admin ≥ 2", async () => {
+    const lay = (r: unknown) => ((r as { data: { hotspots: Array<{ pointCode: string; ngCount: number }> } }).data.hotspots.find((h) => h.pointCode === RUN + "-P")?.ngCount ?? 0);
+    const ra = await goi("analytics_defect_heatmap_summary", { days: 3, topN: 30, productModelId: HN.modelId }, uA);
+    expect(lay(ra)).toBe(1);
+    const nhieu = await taoNguoiDungTest("nhieu", "supervisor", { tienTo: "l8", ts: RUN, ten: "l8 nhieu" });
+    ad.nhieu = nhieu.id;
+    await HN.dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${nhieu.id}, ${HN.A.code}), (${nhieu.id}, ${HN.B.code})`);
+    const rn = await goi("analytics_defect_heatmap_summary", { days: 3, topN: 30, productModelId: HN.modelId }, { id: nhieu.id, role: "supervisor" });
+    expect(lay(rn), "người gán A và B thấy cả hai nhà máy (không chỉ nhà máy đầu theo thứ tự mã)").toBe(2);
+    expect(((await goi("analytics_defect_heatmap_summary", { days: 3, topN: 30, productModelId: HN.modelId }, uRong)) as { note?: string }).note).toBe("SCOPE_EMPTY");
+    expect(lay(await goi("analytics_defect_heatmap_summary", { days: 3, topN: 30, productModelId: HN.modelId }, uAdm))).toBeGreaterThanOrEqual(2);
   });
 });
 

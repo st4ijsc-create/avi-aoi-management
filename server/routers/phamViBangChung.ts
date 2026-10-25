@@ -132,7 +132,39 @@ function dung(nhom: Nhom[]): Record<string, BangChung> {
 export const BANG_CHUNG_GHI: Readonly<Record<string, BangChung>> = dung(NHOM_GHI);
 
 /** Sổ ĐỌC (luong-ui) — cấu trúc `MIEN_TRU_CO_CHU_Y` không đổi; bằng chứng ở đây. */
-export const BANG_CHUNG_DOC: Readonly<Record<string, BangChung>> = {};
+export const BANG_CHUNG_DOC: Readonly<Record<string, BangChung>> = {
+  "server/routers/simTargetsRouter.ts#simTargetsRouter.ursimPing": M("server/routers/simTargetsRouter.ts", "resolveSimTarget(input.targetId)"),
+  "server/routers/hierarchyRouters.ts#machineRouter.config": M("server/routers/hierarchyRouters.ts", "config: publicProcedure"),
+  "server/routers/permissionsRouter.ts#permissionsRouter.getBuiltInRoles": M("server/routers/permissionsRouter.ts", "getBuiltInRoles: adminProcedure"),
+  "server/routers/permissionsRouter.ts#permissionsRouter.getDefaultPermissionsForRole": M("server/routers/permissionsRouter.ts", "getDefaultPermissionsForRole: adminProcedure"),
+  "server/routers/sitesRouter.ts#sitesRouter.get": M("server/routers/sitesRouter.ts", "get: adminProcedure"),
+  "server/routers/sitesRouter.ts#sitesRouter.list": M("server/routers/sitesRouter.ts", "list: adminProcedure.query"),
+  "server/routers/systemRouters.ts#corporateFactoryStatsRouter.warmingStats": M("server/routers/systemRouters.ts", "warmingStats: adminProcedure"),
+  "server/routers/userRouters.ts#userAssignmentRouter.getAllUserAssignments": M("server/routers/userRouters.ts", "getAllUserAssignments: adminProcedure"),
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.genealogy": T("server/routers/machineRecipeRouter.test.ts", "recipes.genealogy returns the code history"),
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.get": M("server/routers/machineRecipeRouter.ts", "const row = await getRecipeById(input.id);"),
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listCodes": M("server/routers/machineRecipeRouter.ts", ".groupBy(machineRecipes.code)"),
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listVersions": M("server/routers/machineRecipeRouter.ts", "return listRecipeVersions(input.code);"),
+  "server/routers/alertRouters.ts#alertRouter.list": M("server/routers/alertRouters.ts", "return db.getAlertSettings(ctx.user.id);"),
+  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.changeover.listMine": M("server/routers/machineRecipeRouter.ts", ".where(eq(changeoverRequests.requestedBy, ctx.user.id))"),
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.grep": M("server/routers/repoWorkspaceRouter.ts", "checkPermission(userId, role, \"ai_repo_read\", \"canView\")"),
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.listFiles": M("server/routers/repoWorkspaceRouter.ts", "checkPermission(userId, role, \"ai_repo_read\", \"canView\")"),
+  "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.readFile": M("server/routers/repoWorkspaceRouter.ts", "checkPermission(userId, role, \"ai_repo_read\", \"canView\")"),
+  "server/routers/scadaCommandsRouter.ts#scadaCommandsRouter.trangThai": M("server/routers/scadaCommandsRouter.ts", "trangThaiYeuCauGhi(nguoiGoi(ctx), input)"),
+  "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.getFleetOverview": M("server/routers/edgeDeploymentRouter.ts", "getFleetOverview: adminProcedure"),
+  "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.getDeploymentStatus": M("server/routers/edgeDeploymentRouter.ts", "getDeploymentStatus: adminProcedure"),
+  "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.getUnifiedFleetStatus": M("server/routers/edgeDeploymentRouter.ts", "getUnifiedFleetStatus: adminProcedure"),
+  "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.listDeployments": M("server/routers/edgeDeploymentRouter.ts", "listDeployments: adminProcedure"),
+  "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.listRecipeVersions": M("server/routers/equipmentIntegrationRouter.ts", "versions: await listVersions(input.code)"),
+  "server/routers/equipmentIntegrationRouter.ts#equipmentIntegrationRouter.frameworkSnapshot": M("server/routers/equipmentIntegrationRouter.ts", "? new FocasAdapter(input.machineCode)"),
+  "server/routers/semanticsRouter.ts#semanticsRouter.list": T("server/routers/semanticsRouter.test.ts", "list returns the governed catalogue"),
+  "server/routers/semanticsRouter.ts#semanticsRouter.get": T("server/routers/semanticsRouter.test.ts", "get returns the full definition; NOT_FOUND for unknown metric"),
+  "server/routers/spcAnalysisRouter.ts#spcAnalysisRouter.topNGPoints": T("server/routers/loDoLuongPhamVi.db.test.ts", "spc.topNGPoints — số NG của điểm đo chung"),
+  "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.list": M("server/routers/ntfClassifierRouter.ts", "list: adminProcedure"),
+  "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.status": M("server/routers/ntfClassifierRouter.ts", "const active = await getActiveNtfClassifier();"),
+  "server/routers/aiLocalTrainingRouter.ts#aiLocalTrainingRouter.capabilities": M("server/routers/aiLocalTrainingRouter.ts", "return getTrainingCapabilities(input.modelId);"),
+  "server/routers/aiSettingsRouter.ts#aiSettingsRouter.getDataPipelineStats": M("server/routers/aiSettingsRouter.ts", "getDataPipelineStats: protectedProcedure.query"),
+};
 
 /** Miễn trừ tuyến REST (đường nhận khoá API / token). */
 export const BANG_CHUNG_TUYEN: Readonly<Record<string, BangChung>> = {
