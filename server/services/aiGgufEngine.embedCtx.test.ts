@@ -33,6 +33,11 @@
  * throw. Chi tiết: docs/superpowers/reports/2026-08-02-dot2-report.md §4.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+// ★ Đợt 9 (2026-10-25) — lưới này giả lập node-llama-cpp và KIỂM chính đường nạp in-process; vitest không phải tiến trình máy chủ
+// nên phải bật TƯỜNG MINH (hàng rào `ai/napServerNgoai` chặn mặc định — sự cố tràn VRAM 2026-10-25).
+vi.hoisted(() => {
+  process.env.AI_CHO_NAP_TRONG_TIEN_TRINH = "1";
+});
 
 // Đếm opts thực sự truyền vào createEmbeddingContext — đây là nơi "auto" bị bắt quả tang.
 const createEmbeddingContextSpy = vi.fn();

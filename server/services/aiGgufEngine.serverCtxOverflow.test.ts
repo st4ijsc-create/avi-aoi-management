@@ -31,6 +31,11 @@
  *   nạp in-process thành bản thứ hai. Lưới của mặc định mới: `aiGgufEngine.failClosed.test.ts`.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+// ★ Đợt 9 (2026-10-25) — lưới này giả lập node-llama-cpp và KIỂM chính đường nạp in-process; vitest không phải tiến trình máy chủ
+// nên phải bật TƯỜNG MINH (hàng rào `ai/napServerNgoai` chặn mặc định — sự cố tràn VRAM 2026-10-25).
+vi.hoisted(() => {
+  process.env.AI_CHO_NAP_TRONG_TIEN_TRINH = "1";
+});
 
 // ─── Mock llama-server client (điều khiển được từng ca) ───────────────────────
 const shouldUseServerForTextMock = vi.fn<(...a: any[]) => boolean>();

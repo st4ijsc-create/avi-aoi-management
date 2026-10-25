@@ -1061,6 +1061,12 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
    * ⚠ Nằm TRƯỚC `motLuotThoi()`: một lượt bị cấm không được chiếm khoá in-flight của lượt khác.
    */
   await chanNapTrungModelServer(modelId, "loadGgufModel", resolvedPath);
+  // ★ Đợt 9 (2026-10-25) — hàng rào trên nay có I/O (thăm dò :8091 + đo VRAM tươi) ⇒ một lượt đồng thời có thể đã nạp xong trong lúc
+  // chờ. Kiểm lại TRƯỚC khoá in-flight, nếu không lượt này nạp bản thứ hai (lưới embedNoTextCtx "hai lượt nhúng ĐỒNG THỜI").
+  if (loadedModels.has(modelId)) {
+    loadedModels.get(modelId)!.lastUsedAt = new Date();
+    return modelId;
+  }
 
   // Đợt 1 Task 1 — khoá in-flight (nay qua helper `motLuotThoi()`, xem khai báo `inFlightLoads`).
   return motLuotThoi(inFlightLoads, modelId, async () => {
@@ -1659,9 +1665,9 @@ async function getGenerationModel(contextSize?: number): Promise<{ modelId: stri
       if (got) return got;
       why.push(`GGUF_DEFAULT_MODEL "${defaultId}" reported loaded but is not resident`);
     } catch (err) {
-      // ★ Đợt 9 (2026-10-25) — llama-server ngoài đang phục vụ CHÍNH model mặc định ⇒ lỗi CẤU HÌNH (thiếu LLAMA_SERVER_ENABLED), không
-      // phải "model hỏng": ném nguyên lỗi có mã, KHÔNG rơi xuống bước 4 (nạp một GGUF khác bất kỳ trên đĩa in-process).
-      if ((err as { name?: unknown; code?: unknown })?.name === "LoiNapServerNgoai" && (err as { code?: unknown }).code === "NAP_TRUNG_SERVER_NGOAI") throw err;
+      // ★ Đợt 9 (2026-10-25) — hàng rào nạp in-process (`ai/napServerNgoai`: tiến trình không phải máy chủ / server ngoài giữ cùng model /
+      // VRAM không đủ) ⇒ lỗi CẤU HÌNH/TÀI NGUYÊN, không phải "model hỏng": ném nguyên lỗi có mã, KHÔNG rơi xuống bước 4 (nạp GGUF khác).
+      if ((err as { name?: unknown })?.name === "LoiNapServerNgoai") throw err;
       const msg = (err as any)?.message ?? String(err);
       why.push(`GGUF_DEFAULT_MODEL "${defaultId}" failed to load: ${msg}`);
       console.error(`[aiGgufEngine] could not load GGUF_DEFAULT_MODEL "${defaultId}": ${msg}`);
