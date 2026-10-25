@@ -69,6 +69,8 @@
  * Nghiệm thu: `maintenanceAndonPhamVi.db.test.ts` (hai chiều, CSDL thật, vai
  * KHÔNG-admin).
  */
+import { nhaMayCuaMay, idsNhaMayCuaNguoiGoi, soMayDungPhuTung } from "./_cauHinhPhamVi";
+import { mucTonToiThieu, nguongCanNhap } from "../services/khoVatTu/mucTonToiThieu";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -373,19 +375,29 @@ export const maintenanceRouter = router({
       // ★ L-1 — và rằng nó THUỘC PHẠM VI người gọi: ghi sổ tiêu hao phụ tùng
       //   vào phiếu của tenant khác là một phép GHI xuyên tenant, và nó còn TRỪ
       //   tồn kho thật ở giao dịch ngay dưới.
-      await getRow(input.workOrderId, ctx);
+      const phieu = await getRow(input.workOrderId, ctx);
+      // W16 (kho vật tư THEO NHÀ MÁY, mig 0424): tồn kho của nhà máy nào thì chỉ phiếu bảo trì của nhà máy đó được trừ.
+      const nhaMayPhieu = await nhaMayCuaMay(phieu.machineId);
+      const idsNhaMay = await idsNhaMayCuaNguoiGoi(ctx);
 
       return await db.transaction(async (tx) => {
-        // Resolve the spare part by id or unique partCode, locking the row so a
+        // Resolve the spare part by id or (partCode + nhà máy của phiếu), locking the row so a
         // concurrent consumption cannot over-draw the same stock.
-        const [part] = await tx
+        const ungVien = await tx
           .select()
           .from(sparePartsInventory)
           .where(input.sparePartId != null
             ? eq(sparePartsInventory.id, input.sparePartId)
             : eq(sparePartsInventory.partCode, input.partCode!))
-          .for("update")
-          .limit(1);
+          .for("update");
+        // Hàng của nhà máy khác / ngoài phạm vi / chưa gán nhà máy (người hẹp) ≡ không tồn tại.
+        const choPhep = ungVien.filter((p) => {
+          if (idsNhaMay !== null && (p.factoryId == null || !idsNhaMay.includes(p.factoryId))) return false;
+          if (p.factoryId != null && nhaMayPhieu != null && p.factoryId !== nhaMayPhieu) return false;
+          return true;
+        });
+        // cùng mã ở nhiều nhà máy: ưu tiên hàng của nhà máy phiếu, rồi hàng chưa gán (chỉ toàn quyền tới được)
+        const part = choPhep.find((p) => p.factoryId != null && p.factoryId === nhaMayPhieu) ?? choPhep[0];
         if (!part) {
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "sparePart" }, "Spare part not found");
         }
@@ -449,12 +461,21 @@ export const maintenanceRouter = router({
   partsBelowReorder: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ limit: z.number().int().min(1).max(500).optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
-      return await db.select().from(sparePartsInventory)
-        .where(lte(sparePartsInventory.quantityOnHand, sparePartsInventory.reorderLevel))
-        .orderBy(sparePartsInventory.quantityOnHand)
-        .limit(input?.limit ?? 200);
+      // W16 (kho vật tư THEO NHÀ MÁY): người hẹp chỉ thấy tồn kho của nhà máy trong phạm vi (hàng chưa gán nhà máy: chỉ toàn quyền).
+      // Ngưỡng cần nhập = max(reorderLevel đã khai, 3 % số máy của nhà máy đó từng dùng phụ tùng ấy, làm tròn lên, tối thiểu 1; không rõ ⇒ 3) — mucTonToiThieu.ts.
+      const idsNhaMay = await idsNhaMayCuaNguoiGoi(ctx);
+      if (idsNhaMay !== null && idsNhaMay.length === 0) return [];
+      const hang = await db.select().from(sparePartsInventory)
+        .where(idsNhaMay === null ? undefined : inArray(sparePartsInventory.factoryId, idsNhaMay))
+        .orderBy(sparePartsInventory.quantityOnHand);
+      const soMay = await soMayDungPhuTung();
+      return hang
+        .map((p) => ({ ...p, soMayDung: p.factoryId == null ? null : (soMay.get(`${p.partCode}|${p.factoryId}`) ?? null) }))
+        .map((p) => ({ ...p, mucToiThieu: mucTonToiThieu(p.soMayDung), nguongCanNhap: nguongCanNhap(p.reorderLevel, p.soMayDung) }))
+        .filter((p) => p.quantityOnHand <= p.nguongCanNhap)
+        .slice(0, input?.limit ?? 200);
     }),
 });

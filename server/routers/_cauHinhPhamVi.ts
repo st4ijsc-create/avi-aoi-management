@@ -459,3 +459,75 @@ export async function loHuanLuyenGhi(ctx: CoDanhTinh, batchId: string): Promise<
   if (ids === null) return;
   if (!may.every((r) => r.m != null && ids.includes(Number(r.m)))) throw khongCo("trainingBatch", "Training batch không tồn tại");
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// W16 — kho vật tư theo nhà máy
+// ═════════════════════════════════════════════════════════════════════════════
+/** Nhà máy của máy (máy → trạm → chuyền → xưởng → nhà máy); null nếu máy không có / chưa gắn. */
+export async function nhaMayCuaMay(machineId: number | null | undefined): Promise<number | null> {
+  if (machineId == null) return null;
+  const h = await hangDau(sql`SELECT w."factoryId" AS f FROM machines m JOIN stations s ON s.id = m."stationId" JOIN production_lines l ON l.id = s."lineId" JOIN workshops w ON w.id = l."workshopId" WHERE m.id = ${machineId}`);
+  return h ? n(h.f) : null;
+}
+
+/** Tập nhà máy trong phạm vi người gọi; null = toàn quyền. */
+export async function idsNhaMayCuaNguoiGoi(ctx: CoDanhTinh): Promise<number[] | null> {
+  return idsTrongPhamVi("factory", phamViCua(ctx), { strict: true });
+}
+
+/** Số máy KHÁC NHAU của từng (nhà máy, mã phụ tùng) từng tiêu hao phụ tùng ấy — căn cứ của mức tồn tối thiểu (services/khoVatTu/mucTonToiThieu.ts). Khoá: `${partCode}|${factoryId}`. */
+export async function soMayDungPhuTung(): Promise<Map<string, number>> {
+  const d = await getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+  const rows = (await d.execute(sql`SELECT wop."partCode" AS pc, w."factoryId" AS fid, count(DISTINCT mw."machineId")::int AS n
+    FROM work_order_parts wop JOIN maintenance_work_orders mw ON mw.id = wop."workOrderId"
+    JOIN machines m ON m.id = mw."machineId" JOIN stations s ON s.id = m."stationId" JOIN production_lines l ON l.id = s."lineId" JOIN workshops w ON w.id = l."workshopId"
+    GROUP BY wop."partCode", w."factoryId"`)) as unknown as Array<{ pc: string; fid: number; n: number }>;
+  return new Map(rows.map((r) => [`${r.pc}|${r.fid}`, Number(r.n)]));
+}
+
+/**
+ * Nhà máy ĐÓNG DẤU cho hàng kho mới (phiếu nhập · lô NCC · quyết định lô): ưu tiên suy từ hàng cha (lô → phiếu → `receiptId`, quyết định → `supplierLotId`), rồi `factoryId` khai,
+ * rồi nhà máy của vật tư (`materials.factoryCode`). Nhà máy suy ra phải TRONG phạm vi người gọi (ngoài ≡ NOT_FOUND "factory"); người hẹp mà không suy được nhà máy nào ⇒ NOT_FOUND
+ * (fail-closed: hàng mồ côi chính họ cũng không thấy lại); toàn quyền được để NULL (admin gán sau). Khai `factoryId` MÂU THUẪN với hàng cha ⇒ NOT_FOUND (không gán lô A vào nhà máy B).
+ */
+export async function nhaMayDongDauKho(
+  ctx: CoDanhTinh,
+  o: { factoryId?: number | null; receiptId?: number | null; supplierLotId?: number | null; materialCode?: string | null },
+): Promise<number | null> {
+  let tuCha: number | null = null;
+  if (o.supplierLotId != null) {
+    const h = await hangDau(sql`SELECT "factoryId" AS f FROM supplier_lots WHERE id = ${o.supplierLotId}`);
+    if (!h) throw khongCo("supplierLot");
+    tuCha = n(h.f);
+  } else if (o.receiptId != null) {
+    const h = await hangDau(sql`SELECT "factoryId" AS f FROM material_receipts WHERE id = ${o.receiptId}`);
+    if (!h) throw khongCo("materialReceipt");
+    tuCha = n(h.f);
+  }
+  if (tuCha != null && o.factoryId != null && o.factoryId !== tuCha) throw khongCo("factory");
+  let nm: number | null = o.factoryId ?? tuCha;
+  if (nm == null && o.materialCode) {
+    const h = await hangDau(sql`SELECT f.id AS fid FROM materials m JOIN factories f ON f.code = m."factoryCode" WHERE m.code = ${o.materialCode}`);
+    nm = h ? n(h.fid) : null;
+  }
+  if (await toanQuyen(ctx)) return nm;
+  if (nm == null) throw khongCo("factory");
+  await viTriHopLe(ctx, { factoryId: nm }, "factory");
+  return nm;
+}
+
+/** Quy tắc leo thang theo id: NULL (mặc định toàn tập đoàn) chỉ toàn quyền; có factoryId ⇒ nhà máy phải trong phạm vi. Không có / ngoài phạm vi ≡ NOT_FOUND "escalationRule". */
+export async function quyTacLeoThangGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  if (await toanQuyen(ctx)) return;
+  const h = await hangDau(sql`SELECT "factoryId" AS f FROM alert_escalation_rules WHERE id = ${id}`);
+  if (!h || h.f == null) throw khongCo("escalationRule", "Escalation rule not found");
+  await viTriHopLe(ctx, { factoryId: Number(h.f) }, "escalationRule");
+}
+
+/** Tạo quy tắc leo thang: người hẹp phải nêu factoryId TRONG phạm vi (không tạo được quy tắc mặc định toàn tập đoàn); toàn quyền: NULL hoặc nhà máy bất kỳ tồn tại. */
+export async function quyTacLeoThangMoiGhi(ctx: CoDanhTinh, factoryId: number | null): Promise<void> {
+  if (await toanQuyen(ctx)) return;
+  if (factoryId == null) throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "escalationRule", parent: "factory" }, "Quy tắc mặc định toàn tập đoàn chỉ người toàn quyền được tạo; hãy chọn nhà máy của bạn.");
+  await viTriHopLe(ctx, { factoryId }, "escalationRule");
+}

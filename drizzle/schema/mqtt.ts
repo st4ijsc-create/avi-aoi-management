@@ -234,6 +234,7 @@ export const alertEscalationRules = pgTable("alert_escalation_rules", {
   description: text("description"),
   severity: varchar("severity", { length: 20 }), // null = any; 'info'|'warning'|'critical'
   alertType: varchar("alertType", { length: 50 }), // null = any; conn alertType or history ruleType
+  factoryId: integer("factoryId"), // W16 (mig 0425): NULL = mặc định toàn tập đoàn; có giá trị = quy tắc riêng của nhà máy. FK factories ON DELETE SET NULL ở DB
   escalateAfterMin: integer("escalateAfterMin").default(15).notNull(),
   notifyRoles: jsonb("notifyRoles").$type<string[]>().default([]).notNull(),
   notifyUserIds: jsonb("notifyUserIds").$type<number[]>().default([]).notNull(),
