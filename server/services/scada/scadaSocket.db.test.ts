@@ -214,11 +214,12 @@ describe("scada:subscribe qua socket.io that - chi nhan tag trong pham vi nha ma
     // A: chi gia tri A
     expect(snA[0].values.map((v: any[]) => [v[0], v[1], v[2]])).toEqual([[ADAPTER_A, "nhietDo", 111]]);
     expect(snA[0].denied).toEqual([TAG_B]);
-    expect(JSON.stringify(snA[0])).not.toContain("222");
+    // So TRƯỜNG giá trị / adapter, không so chuỗi con của JSON: dấu thời gian (ms) có thể chứa "222"… ⇒ đỏ oan theo giờ chạy (2026-10-25).
+    expect(snA[0].values.some((v: any[]) => v[0] === ADAPTER_B || v[2] === 222)).toBe(false);
     // B (doi xung): chi gia tri B
     expect(snB[0].values.map((v: any[]) => [v[0], v[1], v[2]])).toEqual([[ADAPTER_B, "nhietDo", 222]]);
     expect(snB[0].denied).toEqual([TAG_A]);
-    expect(JSON.stringify(snB[0])).not.toContain("111");
+    expect(snB[0].values.some((v: any[]) => v[0] === ADAPTER_A || v[2] === 111)).toBe(false);
 
     napTuOt({ adapterId: ADAPTER_A, machineId: A.mid }, [mau("nhietDo", 333)]);
     napTuOt({ adapterId: ADAPTER_B, machineId: B.mid }, [mau("nhietDo", 444)]);
@@ -231,8 +232,8 @@ describe("scada:subscribe qua socket.io that - chi nhan tag trong pham vi nha ma
     expect(dB.length).toBe(1);
     expect(dA[0].values.map((v: any[]) => [v[0], v[2]])).toEqual([[ADAPTER_A, 333]]);
     expect(dB[0].values.map((v: any[]) => [v[0], v[2]])).toEqual([[ADAPTER_B, 444]]);
-    expect(JSON.stringify(dA)).not.toContain("444");
-    expect(JSON.stringify(dB)).not.toContain("333");
+    expect(dA.flatMap((e: any) => e.values).some((v: any[]) => v[0] === ADAPTER_B || v[2] === 444)).toBe(false);
+    expect(dB.flatMap((e: any) => e.values).some((v: any[]) => v[0] === ADAPTER_A || v[2] === 333)).toBe(false);
   });
 
   it("nguoi duoc gan ca hai nha may nhan ca hai; admin (toan quyen) nhan ca hai", async () => {

@@ -168,7 +168,8 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
 // ★ 2026-10-24 /api/external nhóm ④: A 29→25 · S 70→74 (hierarchy/{tree,factory/:factoryId,mqtt-topics,summary}); dashboard/summary + statistics/measurement-points đã trích sang cùng tệp, còn nợ → nhóm ⑤.
 // ★ 2026-10-24 /api/external nhóm ⑤: A 25→5 · S 74→94 (20 tuyến tổng hợp). A=5 còn lại ĐÚNG là năm MIỄN TRỪ CÓ CHỦ Ý (standards/device-types|alarm-taxonomy, twin/models, edge/download, reports/artifacts) — sổ nợ tuyến /api/* RỖNG.
 // ★ 2026-10-25 (W17a): A 5→4 · C 40→39 · S 94→96: tải tệp báo cáo (reportArtifactRoutes download + external/reports/:id/download) lọc theo phạm vi NGƯỜI TẠO (reportArtifactScope.ts) — gỡ miễn trừ.
-const GHIM = { A: 4, C: 39, D: 96, S: 96, U: 16, tong: 251 } as const;
+// 2026-10-25 (F1): A 4→5 / C 39→38 — `GET /api/stream` (SSE) vào nhóm A dưới dạng MIỄN TRỪ CÓ BẰNG CHỨNG (handler định danh nên bộ quét không thấy lọc bên trong; xem phamViTuyenBaseline + sse.test.ts). Không phải nợ.
+const GHIM = { A: 5, C: 38, D: 96, S: 96, U: 16, tong: 251 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -294,7 +295,7 @@ describe("§4 — RÒ RỈ MỚI ⇒ ĐỎ (lý do tồn tại của cổng này
 });
 
 describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
-  it("★★ MIỄN TRỪ CÓ CHỦ Ý (tuyến): còn tồn tại · còn nhóm (A) · lý do thật có ngày duyệt · không trùng sổ nợ · ghim số = 4", () => {
+  it("★★ MIỄN TRỪ CÓ CHỦ Ý (tuyến): còn tồn tại · còn nhóm (A) · lý do thật có ngày duyệt · không trùng sổ nợ · ghim số = 5", () => {
     const nhomTheoKhoa = new Map(QUET.tuyen.map((t) => [khoaTuyen(t), nhomTuyenCua(t)]));
     const loi: string[] = [];
     for (const [k, lyDo] of Object.entries(MIEN_TRU_TUYEN_CO_CHU_Y)) {
@@ -304,7 +305,7 @@ describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
       if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
     }
     expect(loi).toEqual([]);
-    expect(Object.keys(MIEN_TRU_TUYEN_CO_CHU_Y).length, "thêm miễn trừ = quyết định, ghi lý do ở đây").toBe(4);
+    expect(Object.keys(MIEN_TRU_TUYEN_CO_CHU_Y).length, "thêm miễn trừ = quyết định, ghi lý do ở đây").toBe(5); // 5: +GET /api/stream (SSE, F1 2026-10-25) — miễn trừ CÓ bằng chứng (sse.test.ts)
   });
 
   it("★ mọi mục trong sổ vẫn còn là một tuyến CÓ THẬT", () => {
