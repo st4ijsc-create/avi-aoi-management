@@ -112,13 +112,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/systemRouters.ts (5) ──
   // ── server/routers/thresholdApprovalRouter.ts (6) ──
   // ── server/routers/trainingBatchCommentsRouter.ts (7) ──
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.addComment",
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.assignTag",
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.deleteComment",
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.deleteTag",
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.removeTag",
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.updateComment",
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.updateTag",
   // ── server/routers/twinGovRouter.ts (1) ──
   // ── server/routers/twinRouter.ts (3) ──
   // ── server/routers/userRouters.ts (2) ──
@@ -133,6 +126,9 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
  * (c) không đồng thời nằm trong sổ nợ. Thêm mục = lời khai công khai, người review phải thấy.
  */
 export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
+  // ── W14c (kiểm định phamViGhi, 2026-10-25): bình luận sở hữu theo người dùng ──
+  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.updateComment": "bình luận SỞ HỮU THEO NGƯỜI DÙNG: chỉ chủ (comment.userId === ctx.user.id) hoặc admin sửa — kiểm TRƯỚC khi ghi (trainingBatchCommentsRouter.ts); bình luận chỉ thêm được vào lô trong phạm vi (addComment có cổng + test phamViGhiDoW14c) — W14c",
+  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.deleteComment": "bình luận SỞ HỮU THEO NGƯỜI DÙNG: chỉ chủ hoặc admin xoá (xem updateComment) — W14c",
   // ── W14b (kiểm định phamViGhi, 2026-10-25): đường PUBLIC có token · dữ liệu của chính người gọi · bàn thử do máy chủ đăng ký ──
   "server/routers/hotFolderRouter.ts#hotFolderRouter.dryRun": "phân tích MỘT tệp mẫu truyền lên (CSV/XML/JSON) → bản chuẩn hoá, KHÔNG ghi CSDL, KHÔNG đụng hệ tệp (hotFolderService.dryRunSample); machineCode chỉ là gợi ý — W14b",
   "server/routers/hierarchyRouters.ts#machineRouter.claimKey": "đường PUBLIC xác thực bằng token một lần do admin phát (redeemMachineClaimToken / redeemMachineEnrollmentToken), có throttle theo IP + audit mọi lần thử; serialNumber chỉ chọn máy mà token đã gắn — W14b",

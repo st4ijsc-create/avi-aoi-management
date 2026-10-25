@@ -896,6 +896,22 @@ export function _resetEnrollThrottle(): void {
   enrollIpWindows.clear();
 }
 
+/** Trần hàng chờ duyệt (M4) — dùng CHUNG cho serial mới và serial có sẵn để phản hồi lúc đầy không lộ serial nào đã tồn tại (W15). */
+async function kiemTranHangCho(): Promise<void> {
+  const cap = registerPendingCap();
+  if (cap > 0) {
+    const pending = await db.getPendingMachines();
+    if (Array.isArray(pending) && pending.length >= cap) {
+      throw appError(
+        "PRECONDITION_FAILED",
+        "OPERATION_FAILED",
+        { operation: "registerMachine" },
+        `Registration queue is full (${cap} pending machines) — ask an admin to approve/reject pending registrations first`,
+      );
+    }
+  }
+}
+
 export const machineRouter = router({
   // ============ MACHINE SYNC APIs (Public - cho AOI/AVI) ============
 
@@ -924,23 +940,13 @@ export const machineRouter = router({
           action: "machine.register", entityType: ENTITY_TYPES.MACHINE, entityId: existing.id, entityName: existing.code,
           metadata: { mode: "ignored_existing", serialNumber: input.serialNumber, machineType: input.machineType },
         });
+        // Hàng chờ ĐẦY: trả CÙNG lỗi như serial mới (không lộ serial có sẵn qua khác biệt phản hồi lúc đầy); audit ở trên vẫn phân biệt.
+        await kiemTranHangCho();
         return { registrationStatus: "pending" as const, message: "Machine registered, awaiting admin approval" };
       }
 
-      // M4: global pending cap — an unauthenticated flood must not grow the
-      // approval queue unbounded.
-      const cap = registerPendingCap();
-      if (cap > 0) {
-        const pending = await db.getPendingMachines();
-        if (Array.isArray(pending) && pending.length >= cap) {
-          throw appError(
-            "PRECONDITION_FAILED",
-            "OPERATION_FAILED",
-            { operation: "registerMachine" },
-            `Registration queue is full (${cap} pending machines) — ask an admin to approve/reject pending registrations first`,
-          );
-        }
-      }
+      // M4: global pending cap — an unauthenticated flood must not grow the approval queue unbounded.
+      await kiemTranHangCho();
 
       // M4: resolve + validate the default station instead of hardcoding id 1.
       const defaultStation = await db.getDefaultStation();

@@ -436,3 +436,26 @@ export async function hangRaoTheoIdGhi(ctx: CoDanhTinh, id: number): Promise<voi
   if (!h) throw khongCo("parameterGuardrail");
   await hangRaoGhi(ctx, { scope: h.s as "machine" | "machine_type", machineId: n(h.m) });
 }
+
+/**
+ * Lô huấn luyện AI (`ai_training_batches.batchId`, chuỗi) theo phạm vi: lô chỉ có "nhà máy" qua phản hồi của nó (ai_feedback.trainingBatchId → gợi ý → lần kiểm tra → máy).
+ * Người hẹp thao tác được khi: lô tồn tại VÀ (mọi máy của phản hồi trong lô nằm trong phạm vi, có ≥ 1 phản hồi) HOẶC (lô RỖNG / chưa gom và do CHÍNH họ tạo).
+ * Lô trộn máy ngoài phạm vi / không tồn tại ≡ NOT_FOUND "trainingBatch". Toàn quyền ⇒ không kiểm.
+ */
+export async function loHuanLuyenGhi(ctx: CoDanhTinh, batchId: string): Promise<void> {
+  if (await toanQuyen(ctx)) return;
+  const d = await getDb();
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+  const lo = await hangDau(sql`SELECT "createdBy" AS c FROM ai_training_batches WHERE "batchId" = ${batchId}`);
+  if (!lo) throw khongCo("trainingBatch", "Training batch không tồn tại");
+  const may = (await d.execute(
+    sql`SELECT DISTINCT i."machineId" AS m FROM ai_feedback f JOIN ai_suggestions s ON s.id = f."suggestionId" JOIN product_inspections i ON i.id = s."inspectionId" WHERE f."trainingBatchId" = ${batchId}`,
+  )) as unknown as Array<{ m: number | null }>;
+  if (may.length === 0) {
+    if (n(lo.c) !== (ctx.user?.id ?? -1)) throw khongCo("trainingBatch", "Training batch không tồn tại");
+    return;
+  }
+  const ids = await idsTrongPhamVi("machine", phamViCua(ctx), { strict: true });
+  if (ids === null) return;
+  if (!may.every((r) => r.m != null && ids.includes(Number(r.m)))) throw khongCo("trainingBatch", "Training batch không tồn tại");
+}
