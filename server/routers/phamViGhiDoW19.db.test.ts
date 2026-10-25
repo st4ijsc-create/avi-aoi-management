@@ -69,14 +69,31 @@ describe("sở hữu theo người dùng — hội thoại AI · bình luận ·
     expect(await so(sql`SELECT count(*)::int AS n FROM training_batch_comments WHERE id = ${ids.bl} AND content = ${RUN + "-c"}`)).toBe(1);
     expect(await maLoi(() => trainingBatchCommentsRouter.createCaller(ctx(A)).updateComment({ commentId: ids.bl, content: `${RUN}-c2` }))).toBeNull();
   });
-  it("reportBuilder.update: B sửa báo cáo của A ⇒ FORBIDDEN, báo cáo nguyên; (save chỉ TẠO hàng mới, không đụng hàng của A)", async () => {
+  it("reportBuilder.update: B sửa báo cáo của A ⇒ FORBIDDEN, báo cáo nguyên; save ghi người tạo (người tạo sửa / xoá được, người khác FORBIDDEN)", async () => {
     const { reportBuilderRouter } = await import("./reportBuilderRouter");
     const b = reportBuilderRouter.createCaller(ctx(B));
     const dinhNghia = { name: `${RUN}-hack`, widgets: [], isPublic: false } as never;
     expect(await maLoi(() => b.update({ id: ids.rp, data: dinhNghia }))).toBe("FORBIDDEN");
     expect(await so(sql`SELECT count(*)::int AS n FROM report_templates WHERE id = ${ids.rp} AND name = ${RUN + "-rp"}`)).toBe(1);
-    const moi = await b.save({ ...(dinhNghia as object), name: `${RUN}-moi` } as never);
-    expect(await so(sql`SELECT count(*)::int AS n FROM report_templates WHERE name = ${RUN + "-moi"}`)).toBe(1); // save KHÔNG ghi createdBy (hàng mới mang createdBy NULL ⇒ chỉ admin sửa được — ghi nhận, không mở thêm quyền)
-    expect(moi).toBeTruthy();
+    // W19c — save GHI người tạo: B sửa / xoá báo cáo của CHÍNH MÌNH được; A (người khác) ⇒ FORBIDDEN, báo cáo nguyên
+    const moi = (await b.save({ ...(dinhNghia as object), name: `${RUN}-moi` } as never)) as { id: number };
+    expect(await so(sql`SELECT count(*)::int AS n FROM report_templates WHERE id = ${moi.id} AND "createdBy" = ${B.id}`)).toBe(1);
+    const a2 = reportBuilderRouter.createCaller(ctx(A));
+    expect(await maLoi(() => a2.update({ id: moi.id, data: { ...(dinhNghia as object), name: `${RUN}-hackA` } as never }))).toBe("FORBIDDEN");
+    expect(await maLoi(() => a2.delete(moi.id))).toBe("FORBIDDEN");
+    expect(await maLoi(() => b.update({ id: moi.id, data: { ...(dinhNghia as object), name: `${RUN}-moi2` } as never }))).toBeNull();
+    expect(await maLoi(() => b.delete(moi.id))).toBeNull();
+    expect(await so(sql`SELECT count(*)::int AS n FROM report_templates WHERE id = ${moi.id} AND "isActive" = true`)).toBe(0); // xoá mềm
+  });
+  it("aiCopilot.cancelAction: B huỷ hành động chờ duyệt của A ⇒ 'Người dùng không khớp', trạng thái nguyên; A huỷ được", async () => {
+    const id = `${RUN}-act`;
+    await dung(sql`INSERT INTO ai_pending_actions (id, tool, "argsJson", "userId", "userRole", summary, "idempotencyKey", "expiresAt", status)
+      VALUES (${id}, 'set_yield_threshold', '{}'::json, ${A.id}, 'supervisor', 's', ${id}, now() + interval '1 day', 'proposed')`);
+    const { aiCopilotRouter } = await import("./aiCopilotRouter");
+    const kq = await aiCopilotRouter.createCaller(ctx(B)).cancelAction({ actionId: id });
+    expect(kq).toMatchObject({ ok: false, status: "invalid" });
+    expect(await so(sql`SELECT count(*)::int AS n FROM ai_pending_actions WHERE id = ${id} AND status = 'proposed'`)).toBe(1);
+    expect(await aiCopilotRouter.createCaller(ctx(A)).cancelAction({ actionId: id })).toMatchObject({ ok: true, status: "cancelled" });
+    await dung(sql`DELETE FROM ai_pending_actions WHERE id = ${id}`);
   });
 });
