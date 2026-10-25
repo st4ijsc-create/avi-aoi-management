@@ -17,6 +17,7 @@ import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
+import { kiemTraTrongPhamVi } from "./_adapterPhamVi";
 import {
   INSPECTION_TYPES,
   validatePayload,
@@ -42,9 +43,9 @@ export const inspectionVariantRouter = router({
 
   getVariant: protectedProcedure
     .input(z.object({ inspectionId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const insp = await (db as any).getProductInspectionById?.(input.inspectionId);
-      if (!insp) {
+      if (!insp || !(await kiemTraTrongPhamVi(ctx, [input.inspectionId]))) { // phạm vi người dùng (L6w 2026-10-25)
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
       }
       return {
@@ -60,9 +61,9 @@ export const inspectionVariantRouter = router({
       inspectionType: inspectionTypeInput,
       payload: z.unknown(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const insp = await (db as any).getProductInspectionById?.(input.inspectionId);
-      if (!insp) {
+      if (!insp || !(await kiemTraTrongPhamVi(ctx, [input.inspectionId]))) { // phạm vi người dùng (L6w 2026-10-25): lần kiểm tra của máy ngoài phạm vi ≡ không tồn tại
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
       }
       const v = validatePayload(input.inspectionType, input.payload);

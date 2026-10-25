@@ -133,13 +133,18 @@ export async function listDashboardTemplates() {
     .orderBy(desc(dashboardTemplates.usageCount));
 }
 
-export async function getDashboardTemplateById(id: number) {
+/**
+ * `viewer` (phạm vi người dùng (L6t 2026-10-25)): người xem chỉ thấy mẫu CÔNG KHAI hoặc mẫu của CHÍNH mình (admin thấy hết) — mẫu riêng của người khác ≡ không tồn tại. Vắng ⇒ như cũ (nội bộ / hệ thống).
+ */
+export async function getDashboardTemplateById(id: number, viewer?: { userId: number; role: string }) {
   const db = await getDb();
   if (!db) return null;
   
   const results = await db.select()
     .from(dashboardTemplates)
-    .where(eq(dashboardTemplates.id, id))
+    .where(viewer && viewer.role !== "admin"
+      ? and(eq(dashboardTemplates.id, id), or(eq(dashboardTemplates.isPublic, true), eq(dashboardTemplates.createdBy, viewer.userId)))
+      : eq(dashboardTemplates.id, id))
     .limit(1);
   
   return results[0] || null;
@@ -179,12 +184,12 @@ export async function incrementTemplateUsage(id: number) {
     .where(eq(dashboardTemplates.id, id));
 }
 
-export async function applyDashboardTemplate(userId: number, templateId: number) {
+export async function applyDashboardTemplate(userId: number, templateId: number, role?: string) {
   const db = await getDb();
   if (!db) return null;
   
-  // Get template
-  const template = await getDashboardTemplateById(templateId);
+  // Get template (phạm vi người dùng (L6t 2026-10-25): chỉ mẫu công khai / của chính người gọi; không tìm thấy ⇒ KHÔNG tăng bộ đếm)
+  const template = await getDashboardTemplateById(templateId, role ? { userId, role } : undefined);
   if (!template) return null;
   
   // Increment usage count

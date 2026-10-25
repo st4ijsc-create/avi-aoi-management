@@ -950,7 +950,8 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★★ 2026-10-25 (lô L6b): **A 163 → 117 · S 563 → 609 · B/C/D/tong unchanged · miễn trừ +2.** 46 thủ tục ĐỌC nhóm AI A→S: aiActiveLearning ×6 · aiAdvanced (edge ×5 · training.getDataStats|checkAutoRetrain) · aiAnomaly ×4 · aiCalibration ×3 · aiEval.autoRetrainCheck · aiFeedback ×3 · aiInsight.list · aiModel ×2 · aiOrchestration ×2 · aiQualityGate ×4 · aiRcaCopilot.latest · aiRobotAnomaly ×2 · aiRouters (predictiveAlert list|get|stats · rootCause.list) · aiSegmentation.listMasks · aiSetupAdvisor.suggestSetup · aiSmartAlertRouting ×3 · aiThresholdAdvisor ×3; miễn trừ: aiLocalTraining.capabilities · aiSettings.getDataPipelineStats. Kèm cổng ảnh-theo-imageKey cho aiAdvancedVision.explainHeatmap (gỡ miễn trừ GHI).
 // Chứng minh: loAiDocNhom1PhamVi (10 ca) + loAiDocNhom2PhamVi (12 ca) — đỏ-trước trên HEAD sạch; đột biến 83/83 bắt (sau khi bổ sung ca). Lỗi CÓ SẴN vá kèm: getQualityGateStats đọc .rows (postgres-js trả mảng) ⇒ stats luôn 0; runDiversitySampling dùng toán tử <=> trên cột text ⇒ luôn lỗi + .rows.
 // 2026-10-25 gộp R1b-1 (D +1) với L6b ⇒ đo bằng census.
-const GHIM = { A: 117, B: 8, C: 470, D: 1199, S: 609, tong: 2403 } as const;
+// 2026-10-25 gộp L6w (getVariant C→S) với main R1b-1 ⇒ đo bằng census.
+const GHIM = { A: 117, B: 8, C: 469, D: 1199, S: 610, tong: 2403 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
