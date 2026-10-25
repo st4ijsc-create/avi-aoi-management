@@ -30,9 +30,9 @@
       "id": "kiem-nhan",
       "type": "logic.chon",
       "typeVersion": 1,
-      "name": "Nhãn hợp lệ VÀ AI đủ chắc? (ngưỡng 0,7 — TẠM: đo trên 48 phiếu, chỉ 1 mẫu sai; thiếu độ tin cậy ⇒ người duyệt)",
+      "name": "AI đủ chắc? (ngưỡng 0,8 TẠM: 72 phiếu, 3 mẫu sai; thiếu độ tin cậy ⇒ người duyệt)",
       "position": [520, 0],
-      "parameters": { "giaTri": "{{ $json.tinCay != null && $json.tinCay >= 0.7 ? $json.nhan : \"khac\" }}", "nhanh": [{ "so": "in", "dich": ["dien", "co-khi", "plc-phan-mem", "vat-tu-khac"] }] }
+      "parameters": { "giaTri": "{{ $json.tinCay != null && $json.tinCay >= 0.8 ? $json.nhan : \"khac\" }}", "nhanh": [{ "so": "in", "dich": ["dien", "co-khi", "plc-phan-mem", "vat-tu-khac"] }] }
     },
     {
       "id": "tao-phieu",
