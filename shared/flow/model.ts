@@ -63,6 +63,8 @@ export interface KhaiBaoNut {
   lapLai: "idempotent" | "atMostOnce";
   /** `gop`: node chờ ĐỦ mọi cổng vào có nối mới chạy (vd `logic.gop`). Mặc định: chạy khi có item ở bất kỳ cổng nào. */
   choDuCong?: boolean;
+  /** Cổng ra NÊN được nối (vd cổng `khac` của `logic.chon`): item tới cổng KHÔNG nối bị bỏ — động cơ ghi sự kiện `cong.khong-noi`, canvas cảnh báo khi lưu. */
+  congNenNoi?: readonly string[];
   /** Đợt 8.2: node nhận bí mật qua `credentialRef` (vd HTTP). Node khác có `credentialRef` ⇒ luồng không hợp lệ. */
   nhanBiMat?: boolean;
 }

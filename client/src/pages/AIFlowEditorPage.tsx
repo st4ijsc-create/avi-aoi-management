@@ -30,7 +30,7 @@ import FlowCanvas, { KIEU_KEO_NUT } from "@/components/aiFlow/FlowCanvas";
 import NodeConfigPanel from "@/components/aiFlow/NodeConfigPanel";
 import RunTimeline from "@/components/aiFlow/RunTimeline";
 import ChayThuNutPanel from "@/components/aiFlow/ChayThuNutPanel";
-import { MAU_HANG, docItemsNhap, laHang, loiBieuThucThamSo, nhomDanhMuc, taoNutMoi, type KhaiBaoNutClient } from "@/lib/flowStudio";
+import { MAU_HANG, canhBaoCongChuaNoi, docItemsNhap, laHang, loiBieuThucThamSo, nhomDanhMuc, taoNutMoi, type KhaiBaoNutClient } from "@/lib/flowStudio";
 
 const O_CHON =
   "h-9 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -88,6 +88,7 @@ export default function AIFlowEditorPage() {
   }, [def, banGoc]);
 
   const kiem = useMemo(() => (def && danhMuc.size ? kiemLuong(def, (ty) => danhMuc.get(ty) as KhaiBaoNut | undefined) : null), [def, danhMuc]);
+  const congChuaNoi = useMemo(() => (def ? canhBaoCongChuaNoi(def, danhMuc) : []), [def, danhMuc]);
   const soLoiBieuThuc = useMemo(() => (def ? def.nodes.reduce((s, n) => s + Object.keys(loiBieuThucThamSo(n.parameters)).length, 0) : 0), [def]);
 
   const luong = chiTiet.data?.luong;
@@ -252,6 +253,13 @@ export default function AIFlowEditorPage() {
               {t("flowStudio.sua.soLoi", { n: Math.max(kiem?.loi.length ?? 0, soLoiBieuThuc) })}
             </Badge>
           ) : null}
+          {congChuaNoi.length > 0 && (
+            <Badge variant="outline" className="bg-warning/15 text-warning border-warning/40" data-testid="canh-bao-cong-chua-noi" title={congChuaNoi.map((c) => t("flowStudio.sua.congChuaNoi", { cong: c.cong, node: def?.nodes.find((n) => n.id === c.nodeId)?.name ?? c.nodeId })).join("\n")}>
+              <AlertTriangle className="h-3 w-3 mr-1" />
+              {t("flowStudio.sua.congChuaNoi", { cong: congChuaNoi[0].cong, node: def?.nodes.find((n) => n.id === congChuaNoi[0].nodeId)?.name ?? congChuaNoi[0].nodeId })}
+              {congChuaNoi.length > 1 ? ` (+${congChuaNoi.length - 1})` : ""}
+            </Badge>
+          )}
           <div className="ml-auto flex flex-wrap gap-2">
             <Button size="sm" data-testid="nut-luu" disabled={!def || luu.isPending} onClick={() => def && luu.mutate({ definition: def as unknown as Record<string, unknown> })}>
               {luu.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}

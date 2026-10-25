@@ -23334,7 +23334,8 @@
         "chi-loi": "Chỉ khi lỗi",
         "khong": "Không"
       },
-      "loiKiemTruoc": "Kiểm trước khi lưu:"
+      "loiKiemTruoc": "Kiểm trước khi lưu:",
+      "congChuaNoi": "Cổng '{{cong}}' của node '{{node}}' chưa nối — item tới đó sẽ bị bỏ"
     },
     "cauHinh": {
       "loiBieuThuc": "Biểu thức lỗi: {{loi}}",
@@ -23612,7 +23613,29 @@
         }
       },
       "chuyenJson": "Chỉnh bằng JSON (nâng cao)",
-      "chuyenForm": "Về form"
+      "chuyenForm": "Về form",
+      "chon": {
+        "giaTri": "Giá trị để so",
+        "giaTriGoiY": "Biểu thức theo từng item (vd $json.nhan); giữ nguyên KIỂU — số khác chuỗi.",
+        "dieuKien": "Điều kiện ({{n}}/{{max}}) — khớp ĐẦU TIÊN thắng",
+        "so": {
+          "eq": "bằng",
+          "in": "thuộc danh sách",
+          "gt": "lớn hơn",
+          "lt": "nhỏ hơn",
+          "gte": "lớn hơn hoặc bằng",
+          "lte": "nhỏ hơn hoặc bằng"
+        },
+        "giaTriDichGoiY": "vd dien · 42 · true · \"1\" (ngoặc kép = chuỗi)",
+        "dsGoiY": "vd dien, co-khi, 3",
+        "themDieuKien": "Thêm điều kiện",
+        "boDieuKien": "Bỏ điều kiện",
+        "khacGoiY": "Item không khớp điều kiện nào (hoặc biểu thức lỗi) đi cổng 'khac'. NỐI cổng 'khac' — item tới cổng chưa nối bị bỏ."
+      },
+      "gom": {
+        "truongRa": "Tên trường danh sách",
+        "goiY": "Gộp mọi item vào MỘT item {tên: […], soItem}; tối đa 1000 item mỗi lượt."
+      }
     },
     "xuatNhap": {
       "xuat": "Xuất",

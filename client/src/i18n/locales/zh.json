@@ -23334,7 +23334,8 @@
         "chi-loi": "仅错误",
         "khong": "不保留"
       },
-      "loiKiemTruoc": "保存前检查："
+      "loiKiemTruoc": "保存前检查：",
+      "congChuaNoi": "节点 '{{node}}' 的端口 '{{cong}}' 未连接——到达该端口的项将被丢弃"
     },
     "cauHinh": {
       "loiBieuThuc": "表达式错误：{{loi}}",
@@ -23612,7 +23613,29 @@
         }
       },
       "chuyenJson": "用 JSON 编辑（高级）",
-      "chuyenForm": "返回表单"
+      "chuyenForm": "返回表单",
+      "chon": {
+        "giaTri": "比较的值",
+        "giaTriGoiY": "逐项表达式（如 $json.nhan）；保持类型——数字不等于字符串。",
+        "dieuKien": "条件（{{n}}/{{max}}）——第一个匹配者胜出",
+        "so": {
+          "eq": "等于",
+          "in": "在列表中",
+          "gt": "大于",
+          "lt": "小于",
+          "gte": "大于或等于",
+          "lte": "小于或等于"
+        },
+        "giaTriDichGoiY": "如 dien · 42 · true · \"1\"（引号 = 字符串）",
+        "dsGoiY": "如 dien, co-khi, 3",
+        "themDieuKien": "添加条件",
+        "boDieuKien": "移除条件",
+        "khacGoiY": "不匹配任何条件（或表达式出错）的项走 'khac' 端口。请连接 'khac'——到达未连接端口的项会被丢弃。"
+      },
+      "gom": {
+        "truongRa": "列表字段名",
+        "goiY": "将所有项合并为一个项 {名称: […], soItem}；每次运行最多 1000 项。"
+      }
     },
     "xuatNhap": {
       "xuat": "导出",

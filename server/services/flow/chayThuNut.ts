@@ -23,6 +23,8 @@ export const NUT_CHAY_THAT: ReadonlySet<string> = new Set([
   "du-lieu.dat",
   "logic.neu",
   "logic.gop",
+  "logic.chon",
+  "logic.gom",
   "ai.llm",
   "ai.trich-xuat",
   "ai.phan-loai",
@@ -42,7 +44,7 @@ export const THAM_CHIEU_TAI_NGUYEN: Readonly<Record<string, readonly { tham: str
 };
 
 /** CHAY nhưng KHÔNG tham chiếu tài nguyên theo id (dữ liệu chỉ đến từ item mẫu + biểu thức) — khai tường minh, census đối chiếu. */
-export const NUT_KHONG_THAM_CHIEU: ReadonlySet<string> = new Set(["kich-hoat.thu-cong", "du-lieu.dat", "logic.neu", "logic.gop", "ai.llm", "ai.trich-xuat", "ai.phan-loai", "ai.tom-tat"]);
+export const NUT_KHONG_THAM_CHIEU: ReadonlySet<string> = new Set(["kich-hoat.thu-cong", "du-lieu.dat", "logic.neu", "logic.gop", "logic.chon", "logic.gom", "ai.llm", "ai.trich-xuat", "ai.phan-loai", "ai.tom-tat"]);
 
 
 

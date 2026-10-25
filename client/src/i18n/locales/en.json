@@ -23337,7 +23337,8 @@
         "chi-loi": "Errors only",
         "khong": "None"
       },
-      "loiKiemTruoc": "Pre-save check:"
+      "loiKiemTruoc": "Pre-save check:",
+      "congChuaNoi": "Port '{{cong}}' of node '{{node}}' is not connected — items reaching it will be dropped"
     },
     "cauHinh": {
       "loiBieuThuc": "Expression error: {{loi}}",
@@ -23615,7 +23616,29 @@
         }
       },
       "chuyenJson": "Edit as JSON (advanced)",
-      "chuyenForm": "Back to form"
+      "chuyenForm": "Back to form",
+      "chon": {
+        "giaTri": "Value to compare",
+        "giaTriGoiY": "Per-item expression (e.g. $json.nhan); TYPE is preserved — a number is not a string.",
+        "dieuKien": "Conditions ({{n}}/{{max}}) — the FIRST match wins",
+        "so": {
+          "eq": "equals",
+          "in": "is in list",
+          "gt": "greater than",
+          "lt": "less than",
+          "gte": "greater or equal",
+          "lte": "less or equal"
+        },
+        "giaTriDichGoiY": "e.g. dien · 42 · true · \"1\" (quotes = string)",
+        "dsGoiY": "e.g. dien, co-khi, 3",
+        "themDieuKien": "Add condition",
+        "boDieuKien": "Remove condition",
+        "khacGoiY": "Items matching no condition (or with an expression error) go to the 'khac' port. CONNECT 'khac' — items reaching an unconnected port are dropped."
+      },
+      "gom": {
+        "truongRa": "List field name",
+        "goiY": "Merges all items into ONE item {name: […], soItem}; at most 1000 items per run."
+      }
     },
     "xuatNhap": {
       "xuat": "Export",
