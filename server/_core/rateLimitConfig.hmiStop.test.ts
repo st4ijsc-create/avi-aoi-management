@@ -12,13 +12,14 @@
  * request. Tokens are minted by the REAL `sdk.signSession` (no mock of the verifier).
  *
  * R1b-2a Task 3 (kiem-dinh limiter + N-2) — the absolute skip is REPLACED by a wide PER-PERSON cap: a signed STOP is counted ONLY by
- * `createHmiStopLimiter` (`TRAN_STOP_HMI_MOI_PHUT` = 600 / min per openId, a code constant — no env), never by `apiLimiter`; everything
- * else is counted ONLY by `apiLimiter`. A revoked-but-unexpired ticket is therefore capped at 600 / min of its own person (no longer
- * unlimited). The limiter path verifies quietly (`sdk.verifySession(token, { imLang: true })`): junk cookies log nothing.
+ * `createHmiStopLimiter` (`TRAN_STOP_HMI_MOI_PHUT` = 600 / min per SESSION of a person — key openId + 16 hex of sha256(token), fix round 1
+ * c1 — a code constant, no env), never by `apiLimiter`; everything else is counted ONLY by `apiLimiter`. A revoked-but-unexpired (or
+ * stolen) ticket is therefore capped at 600 / min in its OWN bucket (no longer unlimited) and cannot exhaust the person's other session. The limiter path verifies quietly (`sdk.verifySession(token, { imLang: true })`): junk cookies log nothing.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import express from "express";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -202,16 +203,17 @@ describe("★★★ apiLimiter × HMI STOP (real express + real limiters, genera
   });
 });
 
-describe("★★★ R1b-2a T3 — STOP tier: 600 / min PER PERSON (Review Focus 2)", () => {
+describe("★★★ R1b-2a T3 — STOP tier: 600 / min PER SESSION OF A PERSON (Review Focus 2; fix round 1 c1)", () => {
   it("the cap is a code constant (Q3): 600, not read from RATE_LIMIT_PER_MINUTE (= 5 in this file)", () => {
     expect(rl.TRAN_STOP_HMI_MOI_PHUT).toBe(600);
   });
 
-  it("★★★ signed ticket: 600 STOPs in a minute pass, the 601st ⇒ 429 with the E-STOP text; ANOTHER person on the SAME IP is unaffected; a second ticket of the SAME person shares the cap", async () => {
+  it("★★★ session A: 600 STOPs in a minute pass, the 601st ⇒ 429 with the E-STOP text; session B of the SAME person still passes; another person on the SAME IP is unaffected", async () => {
     const OPEN_A = `r1b2a-t3-a-${Date.now()}`;
     const OPEN_B = `r1b2a-t3-b-${Date.now()}`;
     const a = cookieCua(await ve(OPEN_A));
-    const a2 = cookieCua(await ve(OPEN_A)); // second login of the same person (different jti)
+    const a2 = cookieCua(await ve(OPEN_A)); // session B of the same person (another login ⇒ another ticket, different jti)
+    expect(a2).not.toBe(a);
     const b = cookieCua(await ve(OPEN_B));
     const lo = await guiNLan(base, a, 600);
     expect(lo.filter((r) => r.status === 429), "a logged-in person's STOP must never be 429 below 600 / min").toHaveLength(0);
@@ -219,7 +221,7 @@ describe("★★★ R1b-2a T3 — STOP tier: 600 / min PER PERSON (Review Focus 
     const [thu601] = await guiNLan(base, a, 1);
     expect(thu601.status).toBe(429);
     expect(JSON.parse(thu601.body)).toEqual({ error: "Too many STOP requests — use the hard E-STOP" });
-    expect((await guiNLan(base, a2, 1))[0].status, "the cap is per PERSON (openId), not per ticket").toBe(429);
+    expect((await guiNLan(base, a2, 1))[0].status, "a stolen / exhausted session must not block the same person's OTHER session").toBe(200);
     expect((await guiNLan(base, b, 1))[0].status, "another person behind the same IP must not be throttled").toBe(200);
     // the STOP tier never touches ordinary traffic: person A's ordinary calls still use the general bucket
     expect(await get("/api/trpc/scadaKenh.cheDo.danhSach", key(), a)).toBe(200);
@@ -227,7 +229,7 @@ describe("★★★ R1b-2a T3 — STOP tier: 600 / min PER PERSON (Review Focus 
 });
 
 describe("★★★ R1b-2a T3 — each request is counted by EXACTLY ONE limiter (fake Redis store, counters by tier prefix)", () => {
-  it("signed STOP ⇒ only rl:hmistop: (key hmistop:u:<openId>); anonymous / junk / bad signature / batch / GET / verifier throwing ⇒ only rl:api:", async () => {
+  it("signed STOP ⇒ only rl:hmistop: (key hmistop:u:<openId>:<16 hex sha256(token)>, raw token in no key); anonymous / junk / bad signature / batch / GET / verifier throwing ⇒ only rl:api:", async () => {
     process.env.REDIS_URL = "redis://fake-r1b2a-t3:6379";
     let app: { server: Server; base: string };
     try {
@@ -236,7 +238,8 @@ describe("★★★ R1b-2a T3 — each request is counted by EXACTLY ONE limiter
       delete process.env.REDIS_URL;
     }
     const OPEN_C = `r1b2a-t3-c-${Date.now()}`;
-    const c = cookieCua(await ve(OPEN_C));
+    const veC = await ve(OPEN_C);
+    const c = cookieCua(veC);
     const tong = (tienTo: string) => [...redisGia.dem].filter(([k]) => k.startsWith(tienTo)).reduce((s, [, v]) => s + v, 0);
     const gui = (p: string, method: "POST" | "GET", cookie?: string) =>
       fetch(`${app.base}${p}`, {
@@ -255,7 +258,9 @@ describe("★★★ R1b-2a T3 — each request is counted by EXACTLY ONE limiter
     try {
       await motLan("signed STOP", "hmistop", STOP, "POST", c);
       await motLan("signed STOP again", "hmistop", STOP, "POST", c);
-      expect(redisGia.dem.get(`rl:hmistop:hmistop:u:${OPEN_C}`)).toBe(2);
+      const bamC = createHash("sha256").update(veC).digest("hex").slice(0, 16);
+      expect(redisGia.dem.get(`rl:hmistop:hmistop:u:${OPEN_C}:${bamC}`)).toBe(2);
+      expect([...redisGia.dem.keys()].filter((k) => k.includes(veC) || k.includes(encodeURIComponent(veC))), "raw token must never be stored").toEqual([]);
       await motLan("anonymous STOP", "api", STOP, "POST");
       await motLan("junk cookie STOP", "api", STOP, "POST", `${COOKIE_NAME}=rac-r1b2a`);
       await motLan("wrong signature STOP", "api", STOP, "POST", cookieSaiChuKy);
@@ -360,16 +365,15 @@ describe("classifier `isHmiStopRequest` (exact, narrow)", () => {
   });
 });
 
-describe("wiring — `_core/index.ts` mounts the STOP tier BEFORE the general tier on both prefixes", () => {
-  it("app.use('/api/', hmiStopLimiter) precedes app.use('/api/', apiLimiter); same for '/trpc/'", () => {
+describe("wiring — `_core/index.ts` mounts the STOP tier BEFORE the general tier on '/api/' (and nowhere dead)", () => {
+  it("app.use('/api/', hmiStopLimiter) precedes app.use('/api/', apiLimiter); no '/trpc/' mount (fix round 1 c2: no router there)", () => {
     const src = readFileSync(path.resolve(__dirname, "index.ts"), "utf8");
     expect(src).toContain("const hmiStopLimiter = createHmiStopLimiter();");
-    for (const goc of ["/api/", "/trpc/"]) {
-      const iStop = src.indexOf(`app.use('${goc}', hmiStopLimiter)`);
-      const iApi = src.indexOf(`app.use('${goc}', apiLimiter)`);
-      expect(iStop, `${goc}: STOP tier mount missing`).toBeGreaterThan(0);
-      expect(iApi, `${goc}: STOP tier must be mounted before the general tier`).toBeGreaterThan(iStop);
-    }
+    const iStop = src.indexOf("app.use('/api/', hmiStopLimiter)");
+    const iApi = src.indexOf("app.use('/api/', apiLimiter)");
+    expect(iStop, "STOP tier mount missing").toBeGreaterThan(0);
+    expect(iApi, "STOP tier must be mounted before the general tier").toBeGreaterThan(iStop);
+    expect(src.match(/app\.use\([^)]*hmiStopLimiter\)/g), "exactly one STOP-tier mount").toHaveLength(1);
   });
 });
 

@@ -115,7 +115,7 @@ const BE_MAT_MIEN_TRU: { duong: string; vi_sao: string; canh_boi: string }[] = [
       "rà bảo mật 2026-10-24 (giới hạn tốc độ theo SỐ THỦ TỤC nhạy cảm): middleware này chỉ kiểm CHỮ KÝ JWT của phiên (sdk.verifySession) để lấy openId làm KHOÁ ĐẾM giới hạn tốc độ — " +
       "chỉ làm khoá giới hạn tốc độ, không cấp quyền: không gắn danh tính vào req, không trả dữ liệu, không bỏ qua bước nào; mọi quyết định cho/chặn vẫn ở context tRPC. " +
       "SCADA R1b-1 rà soát cuối I-2 + R1b-2a T3: CÙNG hàm (`phienKyHopLe`, kiểm im lặng `{ imLang: true }`) quyết STOP HMI (POST `scadaCommands.dungMay` không batch) do TẦNG nào đếm — " +
-      "vé ký hợp lệ ⇒ tầng STOP 600 / phút THEO NGƯỜI (openId làm khoá), còn lại (vô danh / vé sai chữ ký) ⇒ `apiLimiter`; vẫn chỉ là giới hạn tốc độ: vé đã thu hồi mà còn hạn chỉ được trần của chính người đó và vẫn bị createContext từ chối.",
+      "vé ký hợp lệ ⇒ tầng STOP 600 / phút THEO PHIÊN CỦA MỘT NGƯỜI (khoá openId + 16 hex sha256 của vé), còn lại (vô danh / vé sai chữ ký) ⇒ `apiLimiter`; vẫn chỉ là giới hạn tốc độ: vé đã thu hồi mà còn hạn chỉ được trần của chính phiên đó và vẫn bị createContext từ chối.",
     canh_boi:
       "xác thực thật vẫn ở tầng sau: createContext → sdk.authenticateRequest + thuTucGoc (sổ phiên · users.isActive · cổng buộc-đổi-mật-khẩu). Chứng minh bằng DB thật: phiên ĐÃ THU HỒI / tài khoản BỊ TẮT / " +
       "người BỊ BUỘC ĐỔI MẬT KHẨU đi qua middleware (chỉ bị đếm) mà thủ tục VẪN KHÔNG chạy — server/_core/trpcGioiHanThuTuc.xacThuc.db.test.ts §2–§4",

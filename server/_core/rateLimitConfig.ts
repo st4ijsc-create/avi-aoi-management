@@ -221,7 +221,7 @@ export function isMachineIngestRequest(req: Request): boolean {
   return false;
 }
 
-// ── HMI STOP tier: SCADA R1b-1 Task 2 fix round 1 (important 1) + R1b-2a Task 3 (per-person cap) ─────
+// ── HMI STOP tier: SCADA R1b-1 Task 2 fix round 1 (important 1) + R1b-2a Task 3 (cap per session of a person) ─────
 /**
  * tRPC procedures the general `/api` limiter (300/60 per IP / credential) never counts: the one-step HMI STOP. SCADA screens poll
  * every 2–5 s and HMI terminals behind one proxy share an IP, so the general bucket must never 429 a STOP. The exemption is EXACT and
@@ -230,8 +230,8 @@ export function isMachineIngestRequest(req: Request): boolean {
  * `scadaCommands.dungMay` through a non-batching `httpLink` (client/src/lib/trpcLinks.ts `isStopOnlyOp`).
  * R1b-1 rà soát cuối I-2: and the request must carry a session token whose JWT signature verifies (`laStopHmiCoPhienKy`).
  * R1b-2a T3 (kiem-dinh limiter): such a request is NOT uncounted any more — it is counted by its OWN tier, `createHmiStopLimiter`
- * (`TRAN_STOP_HMI_MOI_PHUT` = 600 / min per person). Rule: no software cap BELOW 600 / min per person on a signed HMI STOP; each request
- * is counted by exactly one of the two tiers.
+ * (`TRAN_STOP_HMI_MOI_PHUT` = 600 / min per session of a person). Rule: no software cap BELOW 600 / min per session of a person on a signed
+ * HMI STOP; each request is counted by exactly one of the two tiers.
  */
 export const API_LIMITER_EXEMPT_TRPC: ReadonlySet<string> = new Set(["scadaCommands.dungMay"]);
 
@@ -259,13 +259,20 @@ export type KiemPhienKy = (req: Request) => Promise<boolean>;
  * same result, so the two tiers can never disagree about one request (e.g. a ticket expiring between two checks ⇒ counted by NEITHER).
  * A failure / throw ⇒ null ⇒ "not a signed STOP" ⇒ counted by the general tier (fail-closed toward counting, never toward skipping).
  */
-const _phienTheoYeuCau = new WeakMap<object, Promise<{ openId: string } | null>>();
-function phienKyCuaYeuCau(req: Request): Promise<{ openId: string } | null> {
+const _phienTheoYeuCau = new WeakMap<object, Promise<{ openId: string; phienBam: string } | null>>();
+/**
+ * `phienBam` (R1b-2a T3 fix round 1) = first 16 hex chars of sha256(the verified session-token string, `veTuCookie`). It is the "which
+ * session" half of the STOP-tier key; the raw token is never logged or stored — the prefix only appears inside the limiter key.
+ */
+function phienKyCuaYeuCau(req: Request): Promise<{ openId: string; phienBam: string } | null> {
   let p = _phienTheoYeuCau.get(req);
   if (!p) {
     p = (async () => {
-      const { phienKyHopLe } = await import("./trpcGioiHanThuTuc");
-      return phienKyHopLe(req);
+      const { phienKyHopLe, veTuCookie } = await import("./trpcGioiHanThuTuc");
+      const phien = await phienKyHopLe(req);
+      const ve = phien ? veTuCookie(req) : null;
+      if (!phien || ve === null) return null;
+      return { openId: phien.openId, phienBam: createHash("sha256").update(ve).digest("hex").slice(0, 16) };
     })().catch(() => null);
     _phienTheoYeuCau.set(req, p);
   }
@@ -278,8 +285,9 @@ const kiemPhienKyMacDinh: KiemPhienKy = async (req) => (await phienKyCuaYeuCau(r
  * người vô danh (không cookie, cookie rác) gửi được `POST /api/trpc/scadaCommands.dungMay` KHÔNG GIỚI HẠN, mỗi yêu cầu vẫn đi qua parse thân +
  * createContext (đọc auth) + middleware giấy phép rồi mới UNAUTHORIZED — tranh pool DB mà chính STOP cần. Nay: không cookie / cookie rác /
  * chữ ký sai / hết hạn ⇒ ĐẾM ở `apiLimiter` như mọi yêu cầu /api; vé ký hợp lệ ⇒ ĐẾM ở tầng STOP (`createHmiStopLimiter`, 600 / phút theo
- * người — R1b-2a T3). Phiên đã thu hồi nhưng vé còn hạn vẫn qua phép kiểm stateless này (như robotStopAuth bước 1) ⇒ nó rơi vào trần 600 /
- * phút của CHÍNH người đó (không còn vô hạn), và vẫn bị createContext từ chối. Phép kiểm lỗi ⇒ false (bị `apiLimiter` đếm, không bao giờ ném
+ * phiên của một người — R1b-2a T3). Phiên đã thu hồi nhưng vé còn hạn vẫn qua phép kiểm stateless này (như robotStopAuth bước 1) ⇒ nó rơi vào
+ * trần 600 / phút của CHÍNH phiên đó (không còn vô hạn; phiên khác của cùng người không bị ảnh hưởng), và vẫn bị createContext từ chối.
+ * Phép kiểm lỗi ⇒ false (bị `apiLimiter` đếm, không bao giờ ném
  * ra limiter). Phép kiểm mặc định im lặng (`phienKyHopLe` → `verifySession(…, { imLang: true })`, N-2) và chạy MỘT lần mỗi yêu cầu.
  */
 export async function laStopHmiCoPhienKy(req: Request, kiem: KiemPhienKy = kiemPhienKyMacDinh): Promise<boolean> {
@@ -629,7 +637,7 @@ export function createApiLimiter() {
     // SCADA R1b-1 T2 fix round 1: likewise EXEMPT a non-batched HMI STOP (`isHmiStopRequest`) — the general bucket never 429s a STOP.
     // R1b-1 rà soát cuối I-2: ONLY when it carries a session token with a valid JWT signature (`laStopHmiCoPhienKy`) — anonymous / junk-cookie
     // floods of dungMay are counted like any other /api request.
-    // R1b-2a T3: the exempted request is counted by `createHmiStopLimiter` instead (600 / min per person) — exactly one tier counts it.
+    // R1b-2a T3: the exempted request is counted by `createHmiStopLimiter` instead (600 / min per session of a person) — exactly one tier counts it.
     skip: async (req: Request) => isOtIngestRequest(req) || isMachineIngestRequest(req) || (await laStopHmiCoPhienKy(req)),
     passOnStoreError: true, // Redis down → allow (fail-open), never 500 all traffic
     ...storeOption("rl:api:"),
@@ -637,7 +645,7 @@ export function createApiLimiter() {
 }
 
 /**
- * R1b-2a T3 (kiem-dinh limiter, Q3 duyệt — hằng trong mã, KHÔNG biến môi trường) — trần STOP HMI theo NGƯỜI mỗi phút. Một người bấm tay
+ * R1b-2a T3 (kiem-dinh limiter, Q3 duyệt — hằng trong mã, KHÔNG biến môi trường) — trần STOP HMI theo PHIÊN CỦA MỘT NGƯỜI mỗi phút. Một người bấm tay
  * không bao giờ chạm 600 lần / phút ⇒ STOP của người đăng nhập không bị 429 khi dùng bình thường; lạm dụng (kể cả vé đã thu hồi mà còn hạn)
  * vẫn bị chặn trên.
  */
@@ -645,10 +653,17 @@ export const TRAN_STOP_HMI_MOI_PHUT = 600;
 
 /**
  * R1b-2a T3 — the DEDICATED HMI STOP tier. Counts ONLY a non-batched `POST /api/trpc/scadaCommands.dungMay` whose session ticket verifies
- * (`laStopHmiCoPhienKy`) — exactly the requests `createApiLimiter` skips — keyed per PERSON (`hmistop:u:<openId>`), so N operators behind
- * one NAT / proxy each get their own 600 / min and an abusive (or revoked-but-unexpired) ticket only exhausts its own person's budget.
- * Everything else is `skip`ped here and counted by the general tier. Mounted BEFORE `apiLimiter` on `/api/` and `/trpc/` (_core/index.ts).
+ * (`laStopHmiCoPhienKy`) — exactly the requests `createApiLimiter` skips — keyed per SESSION OF A PERSON
+ * (`hmistop:u:<openId>:<first 16 hex of sha256(session token)>`, R1b-2a T3 fix round 1): N operators behind one NAT / proxy each get their
+ * own 600 / min, and a stolen / revoked-but-unexpired ticket only exhausts ITS OWN bucket — the real user's current session keeps its own
+ * 600 / min. Tickets cannot be minted without the session secret, so the total stays bounded (logins are themselves rate-limited). The raw
+ * token is never logged or stored: only the 16-hex hash prefix appears, inside the limiter key.
+ * Everything else is `skip`ped here and counted by the general tier. Mounted BEFORE `apiLimiter` on `/api/` only (_core/index.ts) — the STOP
+ * classifier matches `/api/trpc` only and no tRPC router is mounted on `/trpc`.
  * No DB on this path: the ticket check is stateless (signature + expiry) and shared with the general tier (one verification per request).
+ * ⚠ Fail-open, ACCEPTED (dieu-phoi 2026-10-25, c4): `passOnStoreError: true` ⇒ while the Redis store is down this tier lets every signed STOP
+ * through and the general tier skips it ⇒ signed STOPs are UNBOUNDED for the outage — the same fail-open policy as every limiter here
+ * (a store outage must never 500 a STOP).
  */
 export function createHmiStopLimiter(): RequestHandler {
   return rateLimit({
@@ -658,18 +673,18 @@ export function createHmiStopLimiter(): RequestHandler {
     legacyHeaders: false,
     message: { error: "Too many STOP requests — use the hard E-STOP" },
     keyGenerator: async (req: Request) => {
-      // `skip` already proved a signed ticket (same memoised result) ⇒ the openId branch is the live one. The fallback only exists so a
-      // key-generator failure can never 500 a STOP: it keys by the general credential under this tier's own namespace.
+      // `skip` already proved a signed ticket (same memoised result) ⇒ the session branch is the live one. The fallback only exists so a
+      // key-generator failure can never 500 a STOP: it keys by the general (hashed) credential under this tier's own namespace.
       try {
         const phien = await phienKyCuaYeuCau(req);
-        if (phien) return `hmistop:u:${phien.openId}`;
+        if (phien) return `hmistop:u:${phien.openId}:${phien.phienBam}`;
       } catch {
         /* fall through */
       }
       return `hmistop:k:${apiKeyGenerator(req)}`;
     },
     skip: async (req: Request) => !(await laStopHmiCoPhienKy(req)),
-    passOnStoreError: true, // Redis down → allow (fail-open), never 500 a STOP
+    passOnStoreError: true, // Redis down → allow (fail-open, accepted c4 — see JSDoc), never 500 a STOP
     ...storeOption("rl:hmistop:"),
   });
 }

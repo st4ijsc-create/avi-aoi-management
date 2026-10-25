@@ -52,7 +52,8 @@ export function isLicenseOp(op: { path: string }): boolean {
  *    authenticated the normal, unbounded way and wait behind a slow DB.
  *  - `scadaCommands.dungMay` — SCADA R1b-1 T2 fix round 1: ONLY so the server counts it in the dedicated HMI STOP tier instead of the
  *    general /api bucket (a non-batched `POST /api/trpc/scadaCommands.dungMay` carrying a validly signed session — rateLimitConfig
- *    `laStopHmiCoPhienKy`; R1b-2a T3: that tier is a wide per-person cap, `TRAN_STOP_HMI_MOI_PHUT` = 600 / min, never reached by hand).
+ *    `laStopHmiCoPhienKy`; R1b-2a T3: that tier is a wide cap per session of a person, `TRAN_STOP_HMI_MOI_PHUT` = 600 / min, never
+ *    reached by hand).
  *    ⚠ The HMI STOP has NO bounded auth and NO deadline on its pre-dispatch reads: with a slow-but-alive DB it waits as long as the DB
  *    stalls; the only bound is the client's 10 s "dùng E-STOP cứng" fallback (R1b-2 backlog: a real pre-dispatch deadline).
  */

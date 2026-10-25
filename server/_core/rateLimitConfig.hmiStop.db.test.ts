@@ -3,7 +3,8 @@
  *
  * Before: `apiLimiter` skipped a signed non-batched `scadaCommands.dungMay` absolutely (stateless check) ⇒ a ticket whose `user_sessions`
  * row is `isActive = false` still had UNLIMITED STOPs, each one going through createContext (pool pressure). Now the STOP tier
- * (`createHmiStopLimiter`, 600 / min per openId) counts it like any signed STOP of that person, and createContext still refuses it.
+ * (`createHmiStopLimiter`, 600 / min per session of a person — fix round 1 c1) caps it in its OWN bucket, the person's current session
+ * keeps its own 600 / min, and createContext still refuses the revoked ticket.
  * No DB lookup on the limiter path: the row only proves the ticket really is revoked (createContext ⇒ user null) — the limiter never reads it.
  *
  * Also the N-2 regression guard: the REAL authentication path (createContext → sdk.authenticateRequest → verifySession, default options)
@@ -89,6 +90,12 @@ describe.skipIf(!onTest)("STOP tier × revoked ticket (_test)", () => {
     const r601 = await fetch(`${base}${STOP}`, { method: "POST", headers: { "content-type": "application/json", cookie }, body: "{}" });
     expect(r601.status, "a revoked ticket must not have unlimited STOPs any more").toBe(429);
     expect(await r601.json()).toEqual({ error: "Too many STOP requests — use the hard E-STOP" });
+
+    // fix round 1 c1 — the revoked ticket exhausted ONLY its own bucket: the same person's current (active) session still stops
+    const moi = `${COOKIE_NAME}=${encodeURIComponent(await veMoi())}`;
+    expect((await ctxCua(moi)).user?.openId).toBe(nguoi.openId);
+    const rMoi = await fetch(`${base}${STOP}`, { method: "POST", headers: { "content-type": "application/json", cookie: moi }, body: "{}" });
+    expect(rMoi.status, "a revoked / stolen ticket must not block the real user's current session").toBe(200);
   });
 
   it("N-2 regression: createContext with a junk cookie still logs exactly ONE '[Auth] Session verification failed' line (the real auth path is not silenced)", async () => {

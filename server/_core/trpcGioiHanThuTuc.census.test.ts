@@ -296,9 +296,10 @@ const MIEN_TRU_KHONG_GIOI_HAN: Record<string, { thuTuc: string; routerFile: stri
     routerFile: "server/routers/scadaCommandsRouter.ts",
     ham: "dungMayHmi",
     hamFile: "server/services/scada/lenhHmi.ts",
-    // R1b-2a T3 (2026-10-25, K18): câu cũ "STOP không bao giờ bị phần mềm chặn" hết đúng — nay có trần rộng 600 / phút THEO NGƯỜI (Q3 duyệt).
+    // R1b-2a T3 (2026-10-25, K18): câu cũ "STOP không bao giờ bị phần mềm chặn" hết đúng — nay có trần rộng 600 / phút THEO PHIÊN CỦA MỘT
+    // NGƯỜI (Q3 duyệt; fix round 1 c1: khoá openId + băm phiên).
     mienTru:
-      "STOP HMI không thuộc nhóm giới hạn nào: không trần phần mềm nào THẤP hơn 600 / phút theo người cho STOP có vé ký hợp lệ " +
+      "STOP HMI không thuộc nhóm giới hạn nào: không trần phần mềm nào THẤP hơn 600 / phút theo phiên của một người cho STOP có vé ký hợp lệ " +
       "(tầng STOP rateLimitConfig.createHmiStopLimiter, hằng TRAN_STOP_HMI_MOI_PHUT — R1b-2a T3); không xác minh TOTP",
   },
 };

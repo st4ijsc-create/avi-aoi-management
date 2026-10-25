@@ -380,12 +380,11 @@ async function startServer() {
   const otIngestLimiter = createOtIngestLimiter();
   app.use([...OT_INGEST_PATHS], otIngestLimiter);
   // SCADA R1b-2a T3 — DEDICATED HMI STOP tier: a non-batched POST scadaCommands.dungMay with a signed session ticket is counted HERE
-  // (600 / min per person, TRAN_STOP_HMI_MOI_PHUT) and skipped by apiLimiter; every other request is skipped here and counted by
-  // apiLimiter — exactly one tier counts each request. On '/trpc/' it is a skip today (the STOP classifier matches /api/trpc only);
-  // it is mounted there so the pair stays symmetric with apiLimiter.
+  // (600 / min per session of a person, TRAN_STOP_HMI_MOI_PHUT) and skipped by apiLimiter; every other request is skipped here and
+  // counted by apiLimiter — exactly one tier counts each request. '/api/' only: the STOP classifier matches /api/trpc and no tRPC
+  // router is mounted on '/trpc' (fix round 1 c2 — a '/trpc/' mount would be dead).
   const hmiStopLimiter = createHmiStopLimiter();
   app.use('/api/', hmiStopLimiter);
-  app.use('/trpc/', hmiStopLimiter);
   app.use('/api/', apiLimiter);
   app.use('/trpc/', apiLimiter);
 

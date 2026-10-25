@@ -44,7 +44,7 @@ export const NHOM_THU_TUC_NHAY_CAM: Readonly<Record<NhomNhayCam, CauHinhNhom>> =
     tienTo: ["twoFactor."],
     // ⚠ scadaCommands.confirm CỐ Ý KHÔNG có ở đây (R1a final I-1, 2026-10-24): TOTP của nó đã chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce;
     // nhóm 20/15 phút chung IP + người sẽ bóp lệnh HMI mức 1/3 thường ngày. Miễn trừ ghi ở census kiemXacThucTheoMuc (trpcGioiHanThuTuc.census.test.ts).
-    // ⚠ scadaCommands.dungMay (STOP HMI, R1b-1 Task 2) CỐ Ý KHÔNG thuộc nhóm nào: không trần nào THẤP hơn 600 / phút theo người cho STOP có vé
+    // ⚠ scadaCommands.dungMay (STOP HMI, R1b-1 Task 2) CỐ Ý KHÔNG thuộc nhóm nào: không trần nào THẤP hơn 600 / phút theo phiên của một người cho STOP có vé
     // ký hợp lệ (R1b-2a T3 — tầng STOP `rateLimitConfig.createHmiStopLimiter`, hằng TRAN_STOP_HMI_MOI_PHUT); không xác minh TOTP
     // (census MIEN_TRU_KHONG_GIOI_HAN).
     // kiem-dinh P1-2 (2026-10-24): ba mutation cấu hình kênh / chế độ M12 xác minh TOTP tươi qua kiemXacThucTheoMuc (mức 5) ⇒ thuộc nhóm (việc hiếm).
@@ -127,25 +127,35 @@ function layCacPath(req: Request): string[] {
 }
 
 /**
+ * Chuỗi vé phiên (đã giải %-mã) trong cookie `COOKIE_NAME`, hoặc null (không cookie / không có tên / %-mã hỏng). ĐÚNG chuỗi mà
+ * `phienKyHopLe` đưa cho verifier — R1b-2a T3 fix round 1: tầng STOP băm chính chuỗi này (sha256, 16 hex đầu) làm phần "phiên" của khoá
+ * đếm; chuỗi thô không bao giờ được log hay lưu.
+ */
+export function veTuCookie(req: Pick<Request, "headers">): string | null {
+  const raw = req.headers?.cookie;
+  if (!raw) return null;
+  const m = new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`).exec(raw);
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1]!);
+  } catch {
+    return null; // %-mã hỏng: không phải một vé
+  }
+}
+
+/**
  * Phiên trong cookie có CHỮ KÝ JWT + hạn hợp lệ (`sdk.verifySession` — stateless, KHÔNG chạm DB, không tra sổ phiên): `{ openId }`, ngược lại
  * null (không cookie, cookie rác, chữ ký sai, hết hạn). CHỈ phục vụ GIỚI HẠN TỐC ĐỘ, không cấp quyền gì — xác thực thật vẫn ở createContext.
  * Hai người dùng: khoá đếm theo người của middleware này, và `rateLimitConfig.laStopHmiCoPhienKy` (SCADA R1b-1 rà soát cuối I-2; R1b-2a T3):
- * STOP HMI có vé ký hợp lệ được tầng STOP (`createHmiStopLimiter`, 600 / phút THEO NGƯỜI = openId trả về ở đây) đếm thay cho `apiLimiter`.
+ * STOP HMI có vé ký hợp lệ được tầng STOP (`createHmiStopLimiter`, 600 / phút THEO PHIÊN CỦA MỘT NGƯỜI = openId trả về ở đây + băm vé
+ * `veTuCookie`) đếm thay cho `apiLimiter`.
  * Một chủ cho phép kiểm ⇒ census điểm xác thực (`thuHoiPhienMoiBeMat` …) vẫn thấy đúng MỘT lượt `verifySession` ở tệp này.
  * R1b-2a T3 (kiem-dinh N-2): kiểm IM LẶNG (`{ imLang: true }`) — một trận cookie rác vào đường giới hạn không in một dòng
  * "[Auth] Session verification failed" mỗi yêu cầu. createContext → authenticateRequest vẫn log như cũ.
  */
 export async function phienKyHopLe(req: Pick<Request, "headers">): Promise<{ openId: string } | null> {
-  const raw = req.headers?.cookie;
-  if (!raw) return null;
-  const m = new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`).exec(raw);
-  if (!m) return null;
-  let token: string;
-  try {
-    token = decodeURIComponent(m[1]!);
-  } catch {
-    return null; // %-mã hỏng: không phải một vé
-  }
+  const token = veTuCookie(req);
+  if (token === null) return null;
   const { sdk } = await import("./sdk");
   const phien = await sdk.verifySession(token, { imLang: true });
   return phien ? { openId: phien.openId } : null;
