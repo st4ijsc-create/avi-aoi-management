@@ -44,10 +44,52 @@ export interface CpkSnapshotStats {
   points: number;    // capable points considered
   snapshotted: number; // rows written to cpk_history
   skippedThin: number; // points with < MIN_SAMPLES samples
+  /** Điểm có dữ liệu HẰNG (σ ≈ 0): ghi nhưng Cp/Cpk/Pp/Ppk/Cpl/Cpu = NULL ("không xác định"). */
+  degenerate?: number;
   errors: number;
   windowDays: number;
   minSamples: number;
   ms: number;
+}
+
+/** Ngưỡng σ coi là 0 (nhiễu dấu phẩy động của dữ liệu hằng): σ < 1e-9 × max(1, |mean|). */
+export const SIGMA_XAP_XI_0 = 1e-9;
+/** cpk_history: decimal(10,4) ⇒ |giá trị| < 1e6; lớn hơn sẽ làm INSERT lỗi. */
+const TRAN_CHI_SO = 1e6;
+
+export interface ChiSoGhi {
+  stdDev: string;
+  cp: string | null;
+  cpk: string | null;
+  pp: string | null;
+  ppk: string | null;
+  cpl: string | null;
+  cpu: string | null;
+  /** dữ liệu hằng (σ ≈ 0) ⇒ mọi chỉ số năng lực = NULL */
+  degenerate: boolean;
+}
+
+/**
+ * Chuẩn hoá các chỉ số năng lực trước khi ghi `cpk_history`. Dữ liệu HẰNG (σ nhiễu ≈ 1e-16) cho Cp ~ 1e14 vô nghĩa và làm tràn decimal(10,4) ⇒ INSERT lỗi (điểm đo 73015 trên _test):
+ * σ ≈ 0 ⇒ stdDev = "0", mọi chỉ số = NULL (UI hiển thị "—", interlock/quality gate coi như thiếu dữ liệu); giá trị hữu hạn nhưng ≥ 1e6 ⇒ NULL (không bao giờ tràn cột).
+ */
+export function chuanHoaChiSoGhi(
+  idx: { cp?: number | null; cpk?: number | null; pp?: number | null; ppk?: number | null; cpl?: number | null; cpu?: number | null; mean: number; overallStdDev: number },
+  sigma: number,
+): ChiSoGhi {
+  const eps = SIGMA_XAP_XI_0 * Math.max(1, Math.abs(idx.mean));
+  const degenerate = !(idx.overallStdDev >= eps) && !(sigma >= eps);
+  const f = (v: number | null | undefined): string | null => (degenerate || v == null || !Number.isFinite(v) || Math.abs(v) >= TRAN_CHI_SO ? null : String(v));
+  return {
+    stdDev: degenerate ? "0" : String(idx.overallStdDev),
+    cp: f(idx.cp),
+    cpk: f(idx.cpk),
+    pp: f(idx.pp),
+    ppk: f(idx.ppk),
+    cpl: f(idx.cpl),
+    cpu: f(idx.cpu),
+    degenerate,
+  };
 }
 
 /**
@@ -148,6 +190,8 @@ export async function runCpkSnapshotNow(opts?: {
 
       const sigma = estimateWithinSigma(values);
       const idx = calculateCapabilityIndices(values, usl, lsl, sigma);
+      const ghi = chuanHoaChiSoGhi(idx, sigma);
+      if (ghi.degenerate) stats.degenerate = (stats.degenerate ?? 0) + 1;
 
       await saveCpkHistory({
         measurementPointDefId: def.id,
@@ -157,13 +201,13 @@ export async function runCpkSnapshotNow(opts?: {
         periodEnd: endDate,
         sampleSize: values.length,
         mean: String(idx.mean),
-        stdDev: String(idx.overallStdDev),
-        cp: idx.cp != null ? String(idx.cp) : null,
-        cpk: idx.cpk != null ? String(idx.cpk) : null,
-        pp: idx.pp != null ? String(idx.pp) : null,
-        ppk: idx.ppk != null ? String(idx.ppk) : null,
-        cpl: idx.cpl != null ? String(idx.cpl) : null,
-        cpu: idx.cpu != null ? String(idx.cpu) : null,
+        stdDev: ghi.stdDev,
+        cp: ghi.cp,
+        cpk: ghi.cpk,
+        pp: ghi.pp,
+        ppk: ghi.ppk,
+        cpl: ghi.cpl,
+        cpu: ghi.cpu,
         usl: String(usl),
         lsl: String(lsl),
         nominal: nominal != null && Number.isFinite(nominal) ? String(nominal) : null,
@@ -196,7 +240,7 @@ export function startCpkSnapshotScheduler(): void {
       if (running) return; // no overlap
       running = true;
       runCpkSnapshotNow()
-        .then((s) => console.log(`[cpkSnapshotScheduler] snapshotted ${s.snapshotted}/${s.points} point(s), ${s.skippedThin} thin, ${s.errors} err in ${s.ms}ms`))
+        .then((s) => console.log(`[cpkSnapshotScheduler] snapshotted ${s.snapshotted}/${s.points} point(s), ${s.skippedThin} thin, ${s.degenerate ?? 0} constant-data (indices NULL), ${s.errors} err in ${s.ms}ms`))
         .catch((e) => console.error("[cpkSnapshotScheduler] cron error:", e))
         .finally(() => { running = false; });
     },
