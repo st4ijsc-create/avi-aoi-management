@@ -18,6 +18,7 @@ import * as cron from "node-cron";
 import {
   listPointDefsWithSpecLimits,
   getMeasurementValuesForSPC,
+  getMeasurementValuesForSPCBatch,
   saveCpkHistory,
 } from "../db/spc";
 import { calculateCapabilityIndices, mean, stdDev } from "../utils/spc";
@@ -30,6 +31,8 @@ const WINDOW_DAYS = Math.max(1, Number(process.env.CPK_SNAPSHOT_WINDOW_DAYS ?? 3
 const MIN_SAMPLES = Math.max(2, Number(process.env.CPK_SNAPSHOT_MIN_SAMPLES ?? 30));
 const MAX_POINTS = Math.max(1, Number(process.env.CPK_SNAPSHOT_MAX_POINTS ?? 5000));
 const VALUE_LIMIT = Math.max(100, Number(process.env.CPK_SNAPSHOT_VALUE_LIMIT ?? 50000));
+/** Số điểm đo mỗi truy vấn lô (tuần tự, KHÔNG song song — tránh dồn pool DB). */
+const BATCH_POINTS = Math.max(1, Math.min(200, Number(process.env.CPK_SNAPSHOT_BATCH_POINTS ?? 50)));
 
 // ─── Module state ─────────────────────────────────────────────────────────────
 let job: cron.ScheduledTask | null = null;
@@ -98,7 +101,22 @@ export async function runCpkSnapshotNow(opts?: {
     return stats;
   }
 
-  for (const def of defs.slice(0, MAX_POINTS)) {
+  const dsDiem = defs.slice(0, MAX_POINTS);
+  // Tối ưu (kiểm định 2026-10-25): MỘT truy vấn cho mỗi lô BATCH_POINTS điểm thay vì N+1 (xem getMeasurementValuesForSPCBatch). Lô lỗi ⇒ lùi về truy vấn từng điểm CHO LÔ ĐÓ (giữ cô lập lỗi từng điểm).
+  let lo: Map<number, Array<{ value: unknown }>> | null = null;
+  for (let idx = 0; idx < dsDiem.length; idx++) {
+    const def = dsDiem[idx]!;
+    if (idx % BATCH_POINTS === 0) {
+      try {
+        lo = await getMeasurementValuesForSPCBatch(
+          dsDiem.slice(idx, idx + BATCH_POINTS).map((d) => d.id),
+          { startDate, limitPerPoint: VALUE_LIMIT },
+        );
+      } catch (e) {
+        lo = null;
+        console.error(`[cpkSnapshotScheduler] batch ${idx}..${idx + BATCH_POINTS - 1} failed, falling back to per-point:`, (e as any)?.message || e);
+      }
+    }
     stats.points++;
     try {
       const usl = Number(def.upperLimit);
@@ -110,11 +128,14 @@ export async function runCpkSnapshotNow(opts?: {
       // "fake-UTC" shifted inspectionTimes (see processInspectionSubmission), so
       // an upper bound of real-now can wrongly exclude the freshest rows in a
       // positive-offset timezone. A trailing window only needs its lower bound.
-      const rows = await getMeasurementValuesForSPC({
-        measurementPointDefId: def.id,
-        startDate,
-        limit: VALUE_LIMIT,
-      });
+      const rows =
+        lo !== null
+          ? (lo.get(def.id) ?? [])
+          : await getMeasurementValuesForSPC({
+              measurementPointDefId: def.id,
+              startDate,
+              limit: VALUE_LIMIT,
+            });
       const values: number[] = [];
       for (const r of rows) {
         const v = Number((r as any).value);
