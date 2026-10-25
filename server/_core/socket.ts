@@ -1385,10 +1385,9 @@ export function getIO(): Server | null {
 // andon:event, …) are untouched; this is a NEW stream the Command Center (U2) +
 // cockpits (U3) + the global NotificationCenter consume.
 //
-// RBAC / tenant isolation: routed to `global` PLUS the scoped rooms the client
-// already joins (factory:/line:/machine:) — so a client only receives events for
-// scopes it subscribed to. Cross-tenant leakage is bounded by the same room model
-// the legacy emits use. (Redis cross-instance fan-out is still U6.)
+// RBAC / tenant isolation: KHÔNG phát vào `global` (P-S1b). Sự kiện đi qua `phatTheoNhaMay`: phòng toàn quyền + `factory:<id>` của
+// nhà máy sự kiện + phòng line/machine phụ — người nghe chỉ nhận sự kiện của phạm vi mình được vào phòng (cổng ở socketPhongQuyen).
+// (Redis cross-instance fan-out is still U6.)
 let ecosystemBridgeInstalled = false;
 let ecosystemBridgeUnsub: (() => void) | null = null;
 
