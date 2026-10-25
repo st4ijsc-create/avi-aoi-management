@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import ts from "typescript";
 import { MIEN_TRU_GHI } from "./phamViGhiBaseline";
 import { MIEN_TRU_CO_CHU_Y } from "./phamViDocBaseline";
 import { MIEN_TRU_TUYEN_CO_CHU_Y } from "./phamViTuyenBaseline";
@@ -15,7 +16,7 @@ import { BANG_CHUNG_DOC, BANG_CHUNG_GHI, BANG_CHUNG_TUYEN, type BangChung } from
 const GOC = join(__dirname, "..", "..");
 
 /** Ghim nợ-bằng-chứng (đo 2026-10-25): chỉ được GIẢM. */
-const GHIM = { ghi: 22, doc: 31, tuyen: 4 } as const; // 2026-10-25 (W19): còn 22 ghi (AI tính toán / chạy ứng dụng / khoá ảnh ngoài phạm vi: aiGguf ×5, aiEval ×2, aiLocalTraining, aiSpecialist run ×3, aiAgent startPlaybook|phanHoi, aiCopilot confirm|cancel, aiChayUngDung ×3, kbStudio huyEvalMa, defectHeatmap, productModel.create) · 31 đọc (danh mục dùng chung / miễn trừ mới của L7 — luong-ui; 23 → 31 khi gộp main 2026-10-25) · 4 tuyến
+const GHIM = { ghi: 0, doc: 31, tuyen: 0 } as const; // 2026-10-25 (W19d): ghi 0 · tuyến 0 · còn 31 đọc (danh mục dùng chung / miễn trừ mới của L7 — luong-ui)
 
 const SO = [
   { ten: "ghi", mien: MIEN_TRU_GHI as Readonly<Record<string, string>>, bang: BANG_CHUNG_GHI },
@@ -23,10 +24,27 @@ const SO = [
   { ten: "tuyen", mien: MIEN_TRU_TUYEN_CO_CHU_Y as Readonly<Record<string, string>>, bang: BANG_CHUNG_TUYEN },
 ] as const;
 
+/** Thân thủ tục `ten` (khoá thuộc tính trong đối tượng router) — văn bản; null nếu không thấy. */
+export function thanThuTuc(noiDung: string, ten: string): string | null {
+  const sf = ts.createSourceFile("x.ts", noiDung, ts.ScriptTarget.Latest, true);
+  let ra: string | null = null;
+  const duyet = (n: ts.Node): void => {
+    if (ts.isPropertyAssignment(n) && ((ts.isIdentifier(n.name) && n.name.text === ten) || (ts.isStringLiteral(n.name) && n.name.text === ten))) ra = n.initializer.getText(sf);
+    ts.forEachChild(n, duyet);
+  };
+  duyet(sf);
+  return ra;
+}
+
 function kiem(bc: BangChung): string | null {
   const d = join(GOC, bc.tep);
   if (!existsSync(d)) return `tệp không tồn tại: ${bc.tep}`;
   const noiDung = readFileSync(d, "utf8");
+  if (bc.loai === "thuan") {
+    const than = thanThuTuc(noiDung, bc.ten);
+    if (than === null) return `không thấy thủ tục ${bc.ten} trong ${bc.tep}`;
+    return /\bgetDb\b|\bdb\.|from "\.\.\/db|import\("\.\.\/db|drizzle/.test(than) ? `thủ tục ${bc.ten} CHẠM CSDL ở tầng router` : null;
+  }
   if (bc.loai === "ma") return noiDung.includes(bc.dau) ? null : `đoạn mã không có trong ${bc.tep}: ${bc.dau}`;
   const dong = noiDung.split("\n").find((l) => l.includes(bc.ca) && /\b(it|describe|test)(\.\w+)?\(/.test(l));
   return dong ? null : `chuỗi không nằm trên dòng it(/describe( của ${bc.tep}: ${bc.ca}`;

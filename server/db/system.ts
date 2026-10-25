@@ -848,6 +848,8 @@ export async function createReportTemplate(data: {
   sections: Record<string, any>;
   customization?: Record<string, any>;
   isDefault?: boolean;
+  /** W19c — người tạo (báo cáo tuỳ biến của người dùng); vắng = hàng hệ thống / seed (createdBy NULL: chỉ admin sửa). */
+  createdBy?: number | null;
 }) {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
@@ -876,6 +878,7 @@ export async function createReportTemplate(data: {
     sections: sectionsData,
     isSystem: data.isDefault ?? false,
     isActive: true,
+    createdBy: data.createdBy ?? null,
   }).returning();
 
   return result;
