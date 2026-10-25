@@ -14,6 +14,7 @@ import { like } from "drizzle-orm";
 import { interlockRules } from "../../../drizzle/schema";
 import { getDb } from "../../db/connection";
 import { luatLenhLechLuoi, TRUY_VAN_TRUOC_TRIEN_KHAI } from "./lenhInterlockLechLuoi";
+import { kiemLuoiThoChuaKhai } from "./kenhScada";
 
 const DB_URL = process.env.DATABASE_URL;
 const DAU = `ILR1B2T1-${process.pid}-${Date.now()}`;
@@ -98,7 +99,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-2a T1 — SQL tr�
 
   afterAll(async () => {
     if (!sql) return;
-    await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU + "-%"}`;
+    await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU + "%"}`; // gồm cả tiền tố polish `${DAU}P-`
     await sql`DELETE FROM device_tags WHERE "adapterId" = ${adapterId}`;
     await sql`DELETE FROM device_adapters WHERE id = ${adapterId}`;
     await sql.end({ timeout: 5 });
@@ -131,7 +132,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-2a T1 — SQL tr�
     }
     expect(js.has(id["i1-so2p5"])).toBe(true);
     expect(q.get(id["i1-so2p5"])).toMatchObject({ ket_luan: "LECH_LUOI" });
-    expect(Number(q.get(id["i1-so2p5"])!.diem_luoi_gan_nhat)).toBe(3); // round(2.5) numeric = 3 (= goiY của JS)
+    expect(Number(q.get(id["i1-so2p5"])!.diem_luoi_gan_nhat)).toBe(3); // floor(2.5 + 0.5) = 3 (= goiY của JS — kể cả nửa âm, xem ca polish M4)
     // K3: chuỗi rỗng / chỉ khoảng trắng — JS TYPE_MISMATCH, SQL KHONG_PARSE_DUOC (trước: SQL đọc là 0 ⇒ không có hàng trên scale 1)
     for (const n of ["rong", "trang"]) expect(q.get(id[`i1-${n}`])?.ket_luan, n).toBe("KHONG_PARSE_DUOC");
     // scale 1: null / true ⇒ 1, " 25 " ⇒ 25 — đúng lưới số nguyên ⇒ không ai
@@ -164,6 +165,77 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-2a T1 — SQL tr�
     expect(s).toBe("0.000000");
     expect((await idsJsTuChoi()).includes(id["sieuNho-1p5e-10"])).toBe(false);
     expect((await hangSql()).has(id["sieuNho-1p5e-10"])).toBe(false);
+  });
+
+  // ── polish (task-1-review M2 / M3 / M4) — luật gieo với tiền tố RIÊNG `${DAU}P-` (ngoài `${DAU}-%`) để không đổi tập mong đợi của ca trên ──
+  const DAU_P = `${DAU}P-`;
+  async function seedLuatP(ten: string, tagKey: string, v: unknown): Promise<number> {
+    const [r] = await sql`INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action, "targetAdapterId",
+        "commandTag", "commandValue", enabled, "createdBy")
+      VALUES (${DAU_P + ten}, 'machine', 'ng_rate', 'gt', 5, 'reduce_speed', ${adapterId}, ${tagKey}, ${sql.json(v as never)}, true, ${TAC_GIA})
+      RETURNING id`;
+    return Number(r.id);
+  }
+  async function hangSqlP() {
+    const q = await sql.unsafe(
+      `SELECT id::int AS id, ket_luan, gia_tri_gui, diem_luoi_gan_nhat FROM (${TRUY_VAN_TRUOC_TRIEN_KHAI}) q WHERE q.name LIKE $1 ORDER BY id`,
+      [`${DAU_P}%`],
+    );
+    return new Map(q.map((r) => [Number(r.id), { ket_luan: String(r.ket_luan), diem_luoi_gan_nhat: r.diem_luoi_gan_nhat }]));
+  }
+  async function jsP() {
+    const d = await getDb();
+    return await luatLenhLechLuoi(d!, like(interlockRules.name, `${DAU_P}%`));
+  }
+
+  it("polish M2 — sát 2^53: scale 0.000001, 9007199254.740991 ⇒ SQL thô ĐÚNG 2^53 − 1 (nguyên) nhưng JS làm tròn thành 2^53 ⇒ OUT_OF_RANGE; SQL có biên 2^52 ⇒ VUOT_MIEN_AN_TOAN (báo dư, không bỏ sót)", async () => {
+    try {
+      const r = await seedLuatP("m2", "nho", 9007199254.740991);
+      expect(9007199254.740991 / 0.000001).toBeGreaterThanOrEqual(2 ** 53); // phía JS: thô double = 2^53
+      expect((await jsP()).map((x) => [x.id, x.ma])).toEqual([[r, "OUT_OF_RANGE"]]);
+      expect((await hangSqlP()).get(r)).toMatchObject({ ket_luan: "VUOT_MIEN_AN_TOAN", diem_luoi_gan_nhat: null });
+      // biên 2^52: thô 2^52 (số nguyên, JS nhận) vẫn bị SQL báo — chiều báo dư được phép
+      const r52 = await seedLuatP("m2b", "nho", 4503599627.370496);
+      expect((await jsP()).map((x) => x.id)).not.toContain(r52);
+      expect((await hangSqlP()).get(r52)?.ket_luan).toBe("VUOT_MIEN_AN_TOAN");
+    } finally {
+      await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU_P + "%"}`;
+    }
+  });
+
+  it("polish M3 — chuỗi \"1e200000\" (tràn numeric) KHÔNG làm hỏng cả truy vấn: thành hàng KHONG_PARSE_DUOC; JS TYPE_MISMATCH", async () => {
+    try {
+      const r = await seedLuatP("m3", "i10", "1e200000");
+      const r4 = await seedLuatP("m3b", "i10", "1e9999"); // số mũ 4 chữ số vẫn đọc được ⇒ thô khổng lồ ⇒ VUOT_MIEN_AN_TOAN
+      const rDai = await seedLuatP("m3c", "i10", "9".repeat(200_000)); // phần định trị quá dài cũng tràn numeric ⇒ chặn bằng độ dài chuỗi
+      const q = await hangSqlP();
+      expect(q.get(r)?.ket_luan).toBe("KHONG_PARSE_DUOC");
+      expect(q.get(rDai)?.ket_luan).toBe("KHONG_PARSE_DUOC");
+      expect((await jsP()).find((x) => x.id === rDai)?.ma).toBe("TYPE_MISMATCH"); // Number(…) = Infinity
+      expect(q.get(r4)?.ket_luan).toBe("VUOT_MIEN_AN_TOAN");
+      const js = await jsP();
+      expect(js.find((x) => x.id === r)?.ma).toBe("TYPE_MISMATCH");
+      expect(js.find((x) => x.id === r4)?.ma).toBe("TYPE_MISMATCH"); // Number("1e9999") = Infinity
+    } finally {
+      await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU_P + "%"}`;
+    }
+  });
+
+  it("polish M4 — diem_luoi_gan_nhat làm tròn hoà .5 về phía +∞ NHƯ Math.round của JS: −2.5 trên scale 1 ⇒ −2 (= goiY JS); 2.5 ⇒ 3; −25 trên scale 10 ⇒ −20", async () => {
+    try {
+      const rAm = await seedLuatP("m4am", "i1", -2.5);
+      const rDuong = await seedLuatP("m4duong", "i1", 2.5);
+      const rAm10 = await seedLuatP("m4am10", "i10", -25);
+      const q = await hangSqlP();
+      const goiY = (tag: { scale: number | null }, v: number) => (kiemLuoiThoChuaKhai({ dataType: "int", scale: tag.scale, offset: null }, v) as { goiY?: number }).goiY;
+      expect(goiY({ scale: null }, -2.5)).toBe(-2);
+      expect(Number(q.get(rAm)!.diem_luoi_gan_nhat)).toBe(goiY({ scale: null }, -2.5));
+      expect(Number(q.get(rDuong)!.diem_luoi_gan_nhat)).toBe(goiY({ scale: null }, 2.5));
+      expect(Number(q.get(rAm10)!.diem_luoi_gan_nhat)).toBe(goiY({ scale: 10 }, -25));
+      expect(Number(q.get(rAm10)!.diem_luoi_gan_nhat)).toBe(-20);
+    } finally {
+      await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU_P + "%"}`;
+    }
   });
 
   it("phạm vi K2 — tag ĐÃ khai, giá trị ngoài dải: JS đếm (OUT_OF_RANGE, posture) nhưng SQL KHÔNG có hàng — dải / bước / kiểu được cưỡng chế lúc cấu hình, không ở SQL", async () => {

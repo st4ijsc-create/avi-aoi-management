@@ -16,7 +16,7 @@
  * kiểu / dải / bước / loại kênh / lưới thô) — không chép công thức sang SQL.
  *
  * R1b-2a T1 (điều phối 2026-10-25; phán quyết K2 của bộ điều khiển) — PHẠM VI của truy vấn trước triển khai `TRUY_VAN_TRUOC_TRIEN_KHAI`: nó chỉ
- * phủ LƯỚI THÔ (số nguyên sau (v − o)/s, |thô| ≥ 2^53) và giá trị SQL KHÔNG PARSE ĐƯỢC. Với tag int CHƯA khai, đó là toàn bộ luật JS ⇒ mọi luật
+ * phủ LƯỚI THÔ (số nguyên sau (v − o)/s, |thô| ≥ 2^52 — biên dư so với 2^53 của JS) và giá trị SQL KHÔNG PARSE ĐƯỢC. Với tag int CHƯA khai, đó là toàn bộ luật JS ⇒ mọi luật
  * hàm JS từ chối đều có hàng trong SQL (SQL chỉ được báo DƯ). Với tag ĐÃ khai, dải / bước / kiểu / loại kênh được cưỡng chế LÚC CẤU HÌNH
  * (`nhatQuanKenh`: interlock create / update / approve / enable, `scadaKenh.capNhat`, `tags.update`) và được posture đếm qua hàm này — SQL KHÔNG
  * lặp lại chúng, nên KHÔNG khẳng định "tập SQL ⊇ tập JS" cho tag đã khai.
@@ -54,7 +54,12 @@ export function dieuKienNoiDichLenh(): SQL {
  *   • chuỗi rỗng / chỉ khoảng trắng ⇒ KHONG_PARSE_DUOC (JS nay TYPE_MISMATCH; trước SQL đọc là 0); mảng / đối tượng / "abc" / "Infinity" vẫn
  *     KHONG_PARSE_DUOC (JS nay TYPE_MISMATCH thay vì bỏ qua);
  *   • phép so ở KHÔNG GIAN THÔ: n = round(v − o, 30) / s (thang 30 chữ số thập phân ⇒ phép chia numeric chính xác tới 1e-30); lệch ⇔
- *     |n − round(n)| > 1e-9 (`LECH_LUOI`) HOẶC |n| ≥ 2^53 (`VUOT_MIEN_AN_TOAN`, diem_luoi_gan_nhat NULL — JS OUT_OF_RANGE).
+ *     |n − round(n)| > 1e-9 (`LECH_LUOI`) HOẶC |n| ≥ 2^52 (`VUOT_MIEN_AN_TOAN`, diem_luoi_gan_nhat NULL — JS OUT_OF_RANGE từ 2^53).
+ *     Polish M2 (task-1-review) — biên 2^52 thay 2^53: JS tính n bằng double nên một n numeric = 2^53 − 1 (vd scale 0.000001, 9007199254.740991)
+ *     bị JS làm tròn thành 2^53 và từ chối; SQL báo từ 2^52 (báo dư, không bỏ sót).
+ *   • Polish M3 — chuỗi số chỉ được đọc khi dài ≤ 100 ký tự và số mũ ≤ 4 chữ số; ngoài ra ⇒ KHONG_PARSE_DUOC (trước: "1e200000" làm `::numeric`
+ *     tràn và CẢ truy vấn hỏng).
+ *   • Polish M4 — diem_luoi_gan_nhat = o + floor(n + 0.5)·s: hoà .5 về phía +∞ như `Math.round` (goiY của JS; −2.5 trên scale 1 ⇒ −2).
  *   Dung sai JS (1e-9 + 4·EPSILON·(|n| + (|v| + |o|)/|s|)) ≥ 1e-9 và phủ sai số double của v, o, phép chia ⇒ JS từ chối ⇒ SQL có hàng: trên tag
  *   int CHƯA khai, tập luật hàm JS từ chối ⊆ tập hàng SQL (chỉ báo DƯ). Tag ĐÃ khai: SQL chỉ phủ lưới thô + không parse được — dải / bước / kiểu /
  *   loại kênh được cưỡng chế lúc cấu hình (`nhatQuanKenh`) và đếm ở posture (phán quyết K2; xem đầu tệp).
@@ -73,7 +78,8 @@ export const TRUY_VAN_TRUOC_TRIEN_KHAI = String.raw`WITH ung_vien AS (
       WHEN u.cv IS NULL OR jsonb_typeof(u.cv) = 'null' THEN 1::numeric
       WHEN jsonb_typeof(u.cv) = 'number' THEN (u.cv #>> '{}')::numeric
       WHEN jsonb_typeof(u.cv) = 'boolean' THEN CASE WHEN (u.cv #>> '{}')::boolean THEN 1::numeric ELSE 0::numeric END
-      WHEN jsonb_typeof(u.cv) = 'string' AND btrim(u.cv #>> '{}') ~ '^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?$'
+      WHEN jsonb_typeof(u.cv) = 'string' AND char_length(btrim(u.cv #>> '{}')) <= 100
+        AND btrim(u.cv #>> '{}') ~ '^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]{1,4})?$'
         THEN btrim(u.cv #>> '{}')::numeric
       ELSE NULL
     END AS v
@@ -83,10 +89,10 @@ export const TRUY_VAN_TRUOC_TRIEN_KHAI = String.raw`WITH ung_vien AS (
   FROM gia_tri g
 )
 SELECT id, name, "targetAdapterId", "tagKey", cv AS "commandValue", s AS scale, o AS "offset", v AS gia_tri_gui,
-       CASE WHEN v IS NULL OR abs(n) >= 9007199254740992 THEN NULL ELSE o + round(n) * s END AS diem_luoi_gan_nhat,
-       CASE WHEN v IS NULL THEN 'KHONG_PARSE_DUOC' WHEN abs(n) >= 9007199254740992 THEN 'VUOT_MIEN_AN_TOAN' ELSE 'LECH_LUOI' END AS ket_luan
+       CASE WHEN v IS NULL OR abs(n) >= 4503599627370496 THEN NULL ELSE o + floor(n + 0.5) * s END AS diem_luoi_gan_nhat,
+       CASE WHEN v IS NULL THEN 'KHONG_PARSE_DUOC' WHEN abs(n) >= 4503599627370496 THEN 'VUOT_MIEN_AN_TOAN' ELSE 'LECH_LUOI' END AS ket_luan
 FROM tho
-WHERE v IS NULL OR abs(n) >= 9007199254740992 OR abs(n - round(n)) > 1e-9
+WHERE v IS NULL OR abs(n) >= 4503599627370496 OR abs(n - round(n)) > 1e-9
 ORDER BY id`;
 
 export type LuatLenhLechLuoi = { id: number; name: string; ma: MaViPham; chiTiet: string };

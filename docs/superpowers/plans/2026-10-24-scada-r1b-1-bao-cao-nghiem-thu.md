@@ -222,7 +222,8 @@ hạ về STOP không ghim) — nó KHÔNG thay cho bench trên PLC thật.
          WHEN u.cv IS NULL OR jsonb_typeof(u.cv) = 'null' THEN 1::numeric
          WHEN jsonb_typeof(u.cv) = 'number' THEN (u.cv #>> '{}')::numeric
          WHEN jsonb_typeof(u.cv) = 'boolean' THEN CASE WHEN (u.cv #>> '{}')::boolean THEN 1::numeric ELSE 0::numeric END
-         WHEN jsonb_typeof(u.cv) = 'string' AND btrim(u.cv #>> '{}') ~ '^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?$'
+         WHEN jsonb_typeof(u.cv) = 'string' AND char_length(btrim(u.cv #>> '{}')) <= 100
+           AND btrim(u.cv #>> '{}') ~ '^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]{1,4})?$'
            THEN btrim(u.cv #>> '{}')::numeric
          ELSE NULL
        END AS v
@@ -232,17 +233,19 @@ hạ về STOP không ghim) — nó KHÔNG thay cho bench trên PLC thật.
      FROM gia_tri g
    )
    SELECT id, name, "targetAdapterId", "tagKey", cv AS "commandValue", s AS scale, o AS "offset", v AS gia_tri_gui,
-          CASE WHEN v IS NULL OR abs(n) >= 9007199254740992 THEN NULL ELSE o + round(n) * s END AS diem_luoi_gan_nhat,
-          CASE WHEN v IS NULL THEN 'KHONG_PARSE_DUOC' WHEN abs(n) >= 9007199254740992 THEN 'VUOT_MIEN_AN_TOAN' ELSE 'LECH_LUOI' END AS ket_luan
+          CASE WHEN v IS NULL OR abs(n) >= 4503599627370496 THEN NULL ELSE o + floor(n + 0.5) * s END AS diem_luoi_gan_nhat,
+          CASE WHEN v IS NULL THEN 'KHONG_PARSE_DUOC' WHEN abs(n) >= 4503599627370496 THEN 'VUOT_MIEN_AN_TOAN' ELSE 'LECH_LUOI' END AS ket_luan
    FROM tho
-   WHERE v IS NULL OR abs(n) >= 9007199254740992 OR abs(n - round(n)) > 1e-9
+   WHERE v IS NULL OR abs(n) >= 4503599627370496 OR abs(n - round(n)) > 1e-9
    ORDER BY id
    ```
 
    - **R1b-2a T1 (2026-10-25) — khối SQL trên đã được THAY bằng bản đi theo luật mới của `dispatch()`** (Q-T13 b, kiem-dinh M1 / M2): ứng viên là
      MỌI luật bật, không `alert`, nhắm tag int (kể cả scale 1 / offset 0 — 2.5 trên tag scale 1 nay là `LECH_LUOI`); phép so ở không gian thô
-     (`n = round(v − o, 30) / s`, lệch ⇔ `|n − round(n)| > 1e-9`); `|n| ≥ 2^53` ⇒ hàng `VUOT_MIEN_AN_TOAN`; chuỗi rỗng / chỉ khoảng trắng nay là
-     `KHONG_PARSE_DUOC` (trước đọc là 0). Mọi hàng, mọi `ket_luan`, đều CHẶN. **Phạm vi (phán quyết K2):** câu này chỉ phủ lưới thô + giá trị không
+     (`n = round(v − o, 30) / s`, lệch ⇔ `|n − round(n)| > 1e-9`); `|n| ≥ 2^52` ⇒ hàng `VUOT_MIEN_AN_TOAN` (biên dư: JS từ chối từ 2^53 tính
+     bằng double — n numeric = 2^53 − 1 có thể bị JS làm tròn lên 2^53); chuỗi rỗng / chỉ khoảng trắng, chuỗi dài > 100 ký tự hoặc số mũ > 4
+     chữ số nay là `KHONG_PARSE_DUOC` (trước: rỗng đọc là 0; "1e200000" làm tràn `::numeric` và hỏng cả câu); `diem_luoi_gan_nhat` làm tròn
+     hoà .5 về phía +∞ (`floor(n + 0.5)`, như goiY của JS). Mọi hàng, mọi `ket_luan`, đều CHẶN. **Phạm vi (phán quyết K2):** câu này chỉ phủ lưới thô + giá trị không
      parse được. Với tag int CHƯA khai, mọi luật hàm JS từ chối đều có hàng (chỉ báo DƯ); với tag ĐÃ khai, dải / bước / kiểu / loại kênh được cưỡng
      chế lúc cấu hình (`nhatQuanKenh`) và đếm ở posture, câu này không lặp lại chúng. Cột ra không đổi. Các đoạn mô tả bên dưới là của bản R1b-1;
      chỗ nào khác với ghi chú này thì ghi chú này đúng.

@@ -323,6 +323,14 @@ describe("R1b-2a T1 — lamTronTheoLuoiTag + đề xuất SPI theo lưới tag",
     expect(lamTronTheoLuoiTag(1, { dataType: "int", scale: 1, offset: 0 }, 1, -1)).toBeNull(); // trần âm ⇒ không gì hợp lệ
   });
 
+  it("polish M5 — v không hữu hạn ⇒ null (có trần hay không, mọi loại lưới), không bao giờ NaN", () => {
+    for (const v of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])
+      for (const luoi of [null, { dataType: "int", scale: 10, offset: 5 }, { dataType: "float", scale: 1, offset: 0, writeStep: 0.5, writeMin: null }] as const) {
+        expect(lamTronTheoLuoiTag(v, luoi, 1, 50)).toBeNull();
+        expect(lamTronTheoLuoiTag(v, luoi, 1)).toBeNull();
+      }
+  });
+
   it("security review — thuộc tính: ∀ lưới int (scale, offset) × v × trần ⇒ null HOẶC (|r| ≤ trần VÀ r nằm trên lưới)", () => {
     const scales = [0.1, 0.5, 1, 3, 7.5, 20, 30, 49, 99, 101, 120, -20];
     const offsets = [0, 0.3, 5, -5, 10, 25, -60, 60, 49.9];

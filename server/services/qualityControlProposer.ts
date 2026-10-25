@@ -160,6 +160,7 @@ const sachSo = (n: number): number => Number(n.toPrecision(15));
  * Never returns |r| > tranTuyetDoi. −0 ⇒ 0. `dispatch()` stays the final arbiter (range / declared type are not looked at here).
  */
 export function lamTronTheoLuoiTag(v: number, luoi: LuoiGhiTag | null, roundDp: number, tranTuyetDoi?: number): number | null {
+  if (!Number.isFinite(v)) return null; // polish M5 — NaN / ±Infinity is no correction (never NaN out of a number | null contract)
   let r: number;
   let goc: number; // grid = goc + k·buoc, buoc > 0
   let buoc: number;

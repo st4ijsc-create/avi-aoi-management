@@ -260,11 +260,30 @@ describe("final wave #7 — vision tools produce BOUND actions (otWriteBinding +
   });
 
   it("R1b-2a T1 (security review) — spi_printer_offset: |offset| ≤ 50 µm và hữu hạn ở schema VÀ ở plan (execute / otWriteBinding đọc args ĐÃ LƯU, không qua schema)", async () => {
+    const { ZodError } = await import("zod");
     const t = tool("spi_printer_offset");
+    // ±50 (đúng trần) ⇒ nhận ở schema VÀ ở plan (otWriteBinding resolve với đúng hai write)
     expect(t.parameters.safeParse({ machineId: 5, offsetXUm: 50, offsetYUm: -50 }).success).toBe(true);
-    for (const [x, y] of [[50.1, 0], [0, -51], [Number.NaN, 0], [0, Number.POSITIVE_INFINITY]]) {
-      expect(t.parameters.safeParse({ machineId: 5, offsetXUm: x, offsetYUm: y }).success, `${x}/${y}`).toBe(false);
-      await expect(t.otWriteBinding!({ machineId: 5, offsetXUm: x, offsetYUm: y } as any, ctx() as any), `${x}/${y}`).rejects.toThrow();
+    await expect(t.otWriteBinding!({ machineId: 5, offsetXUm: 50, offsetYUm: -50 } as any, ctx() as any)).resolves.toMatchObject({
+      writes: [{ tagKey: "printer_offset_x", value: 50 }, { tagKey: "printer_offset_y", value: -50 }],
+    });
+    // polish M6 — lỗi phải là ĐÚNG lỗi trần / hữu hạn (ZodError với mã của phép kiểm), không phải một lỗi bất kỳ
+    const ca: Array<[number, number, string, Record<string, unknown>]> = [
+      [50.1, 0, "too_big", { maximum: 50 }],
+      [0, -51, "too_small", { minimum: -50 }],
+      [Number.NaN, 0, "invalid_type", {}],
+      [0, Number.POSITIVE_INFINITY, "invalid_type", {}],
+    ];
+    for (const [x, y, ma, them] of ca) {
+      const s = t.parameters.safeParse({ machineId: 5, offsetXUm: x, offsetYUm: y });
+      expect(s.success, `${x}/${y}`).toBe(false);
+      expect(s.error!.issues.map((i) => [i.path.join("."), i.code]), `${x}/${y}`).toEqual([[x === 0 ? "offsetYUm" : "offsetXUm", ma]]);
+      const loi = await t.otWriteBinding!({ machineId: 5, offsetXUm: x, offsetYUm: y } as any, ctx() as any).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(loi, `${x}/${y}`).toBeInstanceOf(ZodError);
+      expect((loi as InstanceType<typeof ZodError>).issues[0], `${x}/${y}`).toMatchObject({ code: ma, ...them });
     }
   });
 });
