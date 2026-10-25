@@ -44,6 +44,7 @@ const nhomChat = (): Ca[] => [
   [async () => (await import("./causalGraphRouter")).causalGraphRouter, "addNode", E],
   [async () => (await import("./causalGraphRouter")).causalGraphRouter, "updateNode", E],
   [async () => (await import("./causalGraphRouter")).causalGraphRouter, "deleteNode", E],
+  [async () => (await import("./causalGraphRouter")).causalGraphRouter, "replaceGraph", E],
   [async () => (await import("./aiModelRouter")).aiModelRouter, "createCard", E],
   [async () => (await import("./aiModelRouter")).aiModelRouter, "updateCard", E],
   [async () => (await import("./aiModelRouter")).aiModelRouter, "approveCard", E],
@@ -69,6 +70,7 @@ const nhomChat = (): Ca[] => [
   [async () => (await import("./webhookRouter")).webhookRouter, "delete", { id: 1 }],
   [async () => (await import("./webhookRouter")).webhookRouter, "test", { id: 1 }],
   [async () => (await import("./webhookRouter")).webhookRouter, "toggle", { id: 1, isEnabled: true }],
+  [async () => (await import("./webhookRouter")).webhookRouter, "clearLogs", { webhookId: 1 }],
 ];
 
 describe("W17b — sàn quyền ghi của cấu hình / danh mục toàn cục", () => {
