@@ -179,7 +179,9 @@ async function trongPhamViLuong(m: MucSuKien, idMay: number, nhaMayMay: number):
  * Xử lý MỘT sự kiện bus. Trả kết cục từng (luồng, node) khớp loại để lưới đo. `tsMs` mặc định lúc gọi; bus truyền `evt.ts` ⇒ hai tiến trình
  * cùng nhận (Redis fan-out) ra CÙNG cửa sổ.
  */
-export async function xuLySuKien(loai: string, payload: unknown, tsMs: number = Date.now()): Promise<BanSuKien[]> {
+export async function xuLySuKien(loai: string, payload: unknown, tsMsVao: number = Date.now()): Promise<BanSuKien[]> {
+  // ts vắng / hỏng ⇒ dùng thời điểm NHẬN; khoá cửa sổ = floor(ts / cửa sổ) nên vẫn tất định theo cửa sổ.
+  const tsMs = Number.isFinite(tsMsVao) && tsMsVao > 0 ? tsMsVao : Date.now();
   if (!SU_KIEN_CHO_PHEP.includes(loai)) return [];
   const p = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
   const idMay = p.machineId;
@@ -194,15 +196,6 @@ export async function xuLySuKien(loai: string, payload: unknown, tsMs: number = 
       ra.push({ ...dau, ketQua: "ngoai-pham-vi" });
       continue;
     }
-    const db = await getDb();
-    if (db) {
-      const [d] = (await db.execute(sql`SELECT count(*)::int AS n FROM ai_flow_runs WHERE "flowId" = ${m.flowId} AND "triggerKind" = 'su-kien' AND "startedAt" > now() - interval '1 hour'`)) as unknown as { n: number }[];
-      if (d.n >= m.tran) {
-        console.warn(`[luong-ai] sự kiện ${m.flowId}#${m.nodeId}: đã ${d.n} lượt trong 1 giờ (trần ${m.tran}) — BỎ sự kiện ${loai}`);
-        ra.push({ ...dau, ketQua: "vuot-tran" });
-        continue;
-      }
-    }
     try {
       const { batDauRun } = await import("../dongCo");
       const runId = await batDauRun({
@@ -210,12 +203,18 @@ export async function xuLySuKien(loai: string, payload: unknown, tsMs: number = 
         version: m.version,
         nutKichHoat: m.nodeId,
         triggerKind: "su-kien",
+        mayCuaSuKien: idMay,
+        tranLuotMoiGio: m.tran, // đếm + chèn nguyên tử trong taoRunTx (khoá cố vấn theo luồng)
         idempotencyKey: khoaSuKien(m, loai, p, idMay, tsMs),
         items: [itemTuSuKien(loai, p, idMay)],
       });
       ra.push({ ...dau, ketQua: "chay", runId });
     } catch (e) {
       if (laTrungKhoa(e)) ra.push({ ...dau, ketQua: "trung" });
+      else if (e instanceof Error && e.name === "LoiLuong" && (e as { code?: string }).code === "QUA_TRAN_LUOT_GIO") {
+        console.warn(`[luong-ai] sự kiện ${m.flowId}#${m.nodeId}: ${e.message} — BỎ sự kiện ${loai}`);
+        ra.push({ ...dau, ketQua: "vuot-tran" });
+      }
       else if (e instanceof Error && e.name === "LoiLuong" && (e as { code?: string }).code === "QUA_TRAN_DONG_THOI") {
         console.warn(`[luong-ai] sự kiện ${m.flowId}#${m.nodeId}: ${e.message} — BỎ sự kiện ${loai}`);
         ra.push({ ...dau, ketQua: "qua-dong-thoi" });
@@ -233,7 +232,7 @@ export function khoiChaySuKien(): void {
   huy = SU_KIEN_CHO_PHEP.map((loai) =>
     eventBus.subscribe(loai, async (evt) => {
       try {
-        await xuLySuKien(loai, evt.payload, typeof evt.ts === "number" ? evt.ts : Date.now());
+        await xuLySuKien(loai, evt.payload, evt.ts);
       } catch (e) {
         console.warn(`[luong-ai] sự kiện ${loai}: không bắt đầu được lượt — ${String((e as Error)?.message ?? e).slice(0, 200)}`);
       }
