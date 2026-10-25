@@ -114,10 +114,11 @@ export function loiTuChoiLenh(t: TuChoiYeuCau) {
     // kiem-dinh R1b-1 H1 (b) — có ghim nhưng MỌI ghim nằm trên tag mức tác động > 1 ⇒ STOP HMI không gửi gì; dùng E-STOP cứng
     case "GHIM_MUC_CAO":
       return appError("PRECONDITION_FAILED", "SCADA_STOP_PINS_HIGH_LEVEL", { ma: t.ma, soTag: t.soTag, tagKeys: t.tagKeys }, t.chiTiet);
-    // R1b-2a Task 4 (M-1) — pha trước-gửi của STOP HMI quá hạn 2 s: STOP CHƯA được gửi (dispatch 0 lần) ⇒ dùng E-STOP cứng. tRPC TIMEOUT (408).
-    // Pha "xac_thuc" (createContext, server/_core/context.ts) ném CÙNG appCode trực tiếp — không qua đây.
+    // R1b-2a Task 4 (M-1) — pha trước-gửi của STOP HMI quá hạn: STOP CHƯA được gửi (dispatch 0 lần) ⇒ dùng E-STOP cứng.
+    // Fix round 1 (I-2): SERVICE_UNAVAILABLE (HTTP 503), KHÔNG TIMEOUT/408 — Chromium tự gửi lại POST nhận 408 trên socket keep-alive dùng lại.
+    // Xác thực / middleware (server/_core/hanStopHmi.ts `loiStopQuaHan`) ném CÙNG appCode + mã trực tiếp — không qua đây.
     case "STOP_QUA_HAN":
-      return appError("TIMEOUT", "SCADA_STOP_PRECHECK_TIMEOUT", { ma: t.ma, pha: t.pha }, t.chiTiet);
+      return appError("SERVICE_UNAVAILABLE", "SCADA_STOP_PRECHECK_TIMEOUT", { ma: t.ma, pha: t.pha }, t.chiTiet);
     // R1a Task 16 — bộ đếm TOTP sai (chung mọi bên gọi TOTP): CÙNG mã + câu i18n với đăng nhập / 2FA, thêm `{ ma, level }` cho M5.
     // M5 chỉ hiện "tạm khoá, thử lại sau N phút" (`remainingMinutes`) — không có số lần sai.
     case "TOTP_TAM_KHOA":
@@ -178,7 +179,8 @@ export const scadaCommandsRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const kq = await dungMayHmi(nguoiGoi(ctx), phamViCua(ctx), input);
+      // R1b-2a T4 fix round 1 (I-1) — pha trước-gửi dùng phần CÒN LẠI của hạn tổng của request (đặt ở createContext), không phải 2 s mới
+      const kq = await dungMayHmi(nguoiGoi(ctx), phamViCua(ctx), input, { hanChotYeuCau: ctx.hanChotStopHmi });
       if (!kq.ok) throw loiTuChoiLenh(kq.tuChoi);
       return kq.ketQua;
     }),

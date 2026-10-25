@@ -68,6 +68,7 @@ import { kiemGiaTriGhi, laKenhGhi, mucTacDongKenh } from "./kenhScada";
 import { giaHanKhoaChon, giuKhoaChon, LoiKhoaChonTranhChap, nhaKhoaChon } from "./khoaChon";
 import { laMaOn, nenGhiThuLenh } from "./dieuTietThuLenh";
 import { appError } from "../../_core/appError";
+import { ghiNhanStopQuaHanKhongGhiSo, type PhaQuaHanStopHmi } from "../../_core/hanStopHmi";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -125,7 +126,7 @@ export type MaTuChoiYeuCau =
   | "CHUA_GHIM_STOP"
   // kiem-dinh R1b-1 H1 (b) — máy CÓ ghim nhưng mọi ghim nằm trên tag mức tác động > 1 (STOP HMI bỏ qua tất cả)
   | "GHIM_MUC_CAO"
-  // R1b-2a Task 4 (M-1) — pha TRƯỚC-GỬI của STOP HMI quá hạn `HAN_TRUOC_GUI_STOP_HMI_MS` (hoặc xác thực quá `HAN_XAC_THUC_STOP_HMI_MS`)
+  // R1b-2a Task 4 (M-1) — STOP HMI quá hạn trước-gửi (pha "truoc_gui") hoặc ở xác thực / cổng đổi mật khẩu (pha "xac_thuc") — server/_core/hanStopHmi.ts
   | "STOP_QUA_HAN";
 
 /** Một lần từ chối. `thongTin` là tham số cho appError (chỉ nguyên thuỷ) — router chọn câu i18n theo `ma`. */
@@ -145,7 +146,7 @@ export type TuChoiYeuCau =
   | { ma: "STOP_QUA_HAN"; chiTiet: string; pha: PhaQuaHanStop };
 
 /** R1b-2a T4 — pha quá hạn: `truoc_gui` (lenhHmi, trước mọi dispatch) | `xac_thuc` (createContext, server/_core/context.ts). */
-export type PhaQuaHanStop = "truoc_gui" | "xac_thuc";
+export type PhaQuaHanStop = PhaQuaHanStopHmi;
 
 export type GiaTriLenh = number | boolean | string;
 
@@ -1303,10 +1304,15 @@ export async function trangThaiYeuCauGhi(
 //        (2 s) đo từ đầu `dungMayHmi` (sau kiểm cờ), phủ `getDb`, phạm vi, đọc máy, `kiemCongVaiTro`, đọc adapter, `loadStopPinsHmi` của
 //        TỪNG adapter và lượt chèn dòng chờ của TỪNG adapter. Mỗi lượt chờ bọc `withDeadline(p, max(1, conLai), …, { unref, loi })` — hết hạn
 //        reject bằng `LoiQuaHanStopHmi` (có kiểu; lỗi DB khác giữ nguyên đường cũ).
+//        · Fix round 1 (I-1): ngân sách ấy KHÔNG vượt hạn TỔNG của request (`ctx.hanChotStopHmi` = vào createContext + 2,5 s — xác thực,
+//          cổng đổi mật khẩu, cổng giấy phép, phạm vi tenant đã tiêu phần của chúng; xem server/_core/hanStopHmi.ts). Hạn tổng đã cạn khi
+//          handler bắt đầu ⇒ từ chối ngay (buoc "het_han_tong_truoc_handler"). Đường từ lúc vào tRPC tới từ chối ≤ 2,5 s (+ độ trễ hẹn giờ).
+//        · Fix round 1 (M-2): requested_value / audit mang `daXacMinhPhamVi` — false ⇔ hết hạn TRƯỚC khi máy qua kiểm phạm vi (machineId là
+//          thứ client gửi, chưa kiểm). Fix round 1 (M-3): hết hạn ở getDb (chưa có kết nối) ⇒ không ghi được sổ ⇒ đếm trong bộ nhớ.
 //        · Mỗi adapter là MỘT đường ống riêng (đọc ghim → dòng chờ → dispatch): adapter chậm KHÔNG giữ STOP của adapter khoẻ.
 //        · Hết hạn ở pha CHUNG (trước khi biết adapter) hoặc MỌI adapter có ghim đều hết hạn trước dispatch ⇒ từ chối CẢ LỆNH
 //          `STOP_QUA_HAN pha "truoc_gui"` (appCode SCADA_STOP_PRECHECK_TIMEOUT, câu "dùng E-STOP cứng") + ĐÚNG MỘT dòng attempts
-//          (adapter_id NULL, reason_code STOP_QUA_HAN, requested_value {machineId, buoc, hanMs}) + audit `ketCuc "QUA_HAN"` — cả hai
+//          (adapter_id NULL, reason_code STOP_QUA_HAN, requested_value {machineId, daXacMinhPhamVi, buoc, hanMs}) + audit `ketCuc "QUA_HAN"` — cả hai
 //          FIRE-AND-FORGET (DB đang chậm: sổ không được giữ lời từ chối). `command_log` KHÔNG ghi: nó cần adapter + lệnh đã gửi (ruling K7).
 //        · Hết hạn ở MỘT adapter (đọc ghim / chèn dòng chờ) mà adapter khác đã vào dispatch ⇒ adapter đó `failed` reason STOP_QUA_HAN
 //          (+ một dòng attempts mang adapter_id), adapter khác vẫn gửi. Dòng chờ chèn muộn (sau hạn) tự hết hạn sau HMI_STOP_TTL_MS.
@@ -1351,6 +1357,15 @@ export class LoiQuaHanStopHmi extends Error {
     super(`HMI STOP precheck (${buoc}) timeout after ${ms}ms`);
     this.name = "LoiQuaHanStopHmi";
   }
+}
+
+/**
+ * Fix round 1 (I-1) — mốc hết hạn của pha trước-gửi: 2 s từ đầu handler, nhưng KHÔNG BAO GIỜ quá hạn TỔNG của request
+ * (`ctx.hanChotStopHmi` = vào createContext + HAN_TONG_STOP_HMI_MS). Vắng hạn tổng (createCaller / test) ⇒ 2 s.
+ */
+export function hanChotTruocGuiStopHmi(batDau: number, hanChotYeuCau?: number): number {
+  const rieng = batDau + HAN_TRUOC_GUI_STOP_HMI_MS;
+  return typeof hanChotYeuCau === "number" && Number.isFinite(hanChotYeuCau) ? Math.min(rieng, hanChotYeuCau) : rieng;
 }
 
 /** Chờ `p` trong phần CÒN LẠI của ngân sách (tối thiểu 1 ms — hết sạch thì hết hạn ngay ở lượt chờ kế). */
@@ -1456,7 +1471,7 @@ async function guiStopMotAdapter(
   } catch (err) {
     if (err instanceof LoiQuaHanStopHmi) {
       // dòng chờ có thể vẫn được chèn MUỘN (truy vấn chạy nền) — nó 'confirmed' nhưng không ai dispatch, tự hết hạn sau HMI_STOP_TTL_MS
-      logger.error({ adapterId: d.id, actionId, hanMs: HAN_TRUOC_GUI_STOP_HMI_MS }, "[SCADA] STOP HMI: chèn dòng chờ quá hạn trước-gửi — adapter này KHÔNG được gửi; dùng E-STOP cứng");
+      logger.error({ adapterId: d.id, actionId, conLaiMs: hanChot - Date.now() }, "[SCADA] STOP HMI: chèn dòng chờ quá hạn trước-gửi — adapter này KHÔNG được gửi; dùng E-STOP cứng");
       return { kq: { ...coBan, status: "failed", ok: false, simulated: false, reason: MA_STOP_QUA_HAN, commandLogIds: [] }, daGoiDispatch: false };
     }
     logger.error({ err: (err as Error)?.message ?? String(err), adapterId: d.id }, "[SCADA] STOP HMI: không tạo được dòng chờ — adapter này KHÔNG được gửi");
@@ -1541,15 +1556,20 @@ async function guiStopMotAdapter(
  * `scadaCommands.dungMay`. `pv` = `phamViCua(ctx)`. Không ném cho các từ chối đã biết; lỗi hạ tầng TRƯỚC khi gửi (DB) thì ném. Sau khi
  * bắt đầu gửi, mọi lỗi theo adapter nằm trong kết quả của adapter đó (QĐ D-2).
  * R1b-2a T4 (QĐ D-7): pha trước-gửi có hạn thật `HAN_TRUOC_GUI_STOP_HMI_MS`; quá hạn trước mọi dispatch ⇒ `STOP_QUA_HAN` (không ném).
+ * Fix round 1 (I-1): `opts.hanChotYeuCau` = hạn TỔNG của request (`ctx.hanChotStopHmi`, đặt ở createContext) ⇒ ngân sách thật là
+ * min(2 s từ đây, phần CÒN LẠI của hạn tổng) — KHÔNG phải 2 s mới sau khi xác thực + middleware đã tiêu.
  */
-export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input: DauVaoDungMay): Promise<KetQuaDungMay> {
+export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input: DauVaoDungMay, opts: { hanChotYeuCau?: number } = {}): Promise<KetQuaDungMay> {
   // 1. cờ — không chạm DB (QĐ D-6)
   if (!lenhHmiBat()) return { ok: false, tuChoi: { ma: "FEATURE_DISABLED", chiTiet: "SCADA_COMMANDS_ENABLED tắt." } };
 
-  // R1b-2a T4 (QĐ D-7) — ngân sách CHUNG của pha trước-gửi, đo từ đây
+  // R1b-2a T4 (QĐ D-7) — ngân sách CHUNG của pha trước-gửi, đo từ đây; fix round 1 (I-1) — không vượt hạn tổng của request
   const batDau = Date.now();
-  const hanChot = batDau + HAN_TRUOC_GUI_STOP_HMI_MS;
+  const hanChot = hanChotTruocGuiStopHmi(batDau, opts.hanChotYeuCau);
+  const hanMs = hanChot - batDau;
   const han = <T>(p: Promise<T>, buoc: string): Promise<T> => trongHanStop(p, hanChot, buoc);
+  /** M-2 — machineId đã đọc được VÀ qua kiểm phạm vi chưa (false ⇒ machineId trong sổ là thứ client gửi, chưa kiểm) */
+  let daXacMinhPhamVi = false;
 
   const userId = nguoi.user.id;
   // R1b-1 T7 fix round 1 (I-1) — lọc NUL / điều khiển: `lyDo` vào jsonb của dòng chờ hmi.stop (NUL làm INSERT ném ⇒ STOP KHÔNG được gửi) + audit
@@ -1563,16 +1583,19 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
    */
   const tuChoiQuaHan = (buoc: string, machineCode: string | null, adapterQuaHan: KetQuaDungMayAdapter[] = []): KetQuaDungMay => {
     const troi = Date.now() - batDau;
-    const chiTiet = `Máy chủ chậm — STOP HMI CHƯA được gửi (quá hạn ${HAN_TRUOC_GUI_STOP_HMI_MS} ms ở bước ${buoc}). Dùng E-STOP cứng tại máy.`;
-    logger.error({ userId, machineId: input.machineId, buoc, troiMs: troi, hanMs: HAN_TRUOC_GUI_STOP_HMI_MS }, "[SCADA] STOP HMI: quá hạn TRƯỚC khi gửi — STOP CHƯA được gửi; dùng E-STOP cứng");
-    if (db) {
+    const chiTiet = `Máy chủ chậm — STOP HMI CHƯA được gửi (quá hạn ${hanMs} ms ở bước ${buoc}). Dùng E-STOP cứng tại máy.`;
+    logger.error({ userId, machineId: input.machineId, buoc, troiMs: troi, hanMs, daXacMinhPhamVi }, "[SCADA] STOP HMI: quá hạn TRƯỚC khi gửi — STOP CHƯA được gửi; dùng E-STOP cứng");
+    if (!db) {
+      // M-3 — chưa có kết nối DB ⇒ không ghi được sổ: đếm trong bộ nhớ (posture T12)
+      ghiNhanStopQuaHanKhongGhiSo("db");
+    } else {
       const d = db;
       void ghiThuLenh(d, {
         userId,
         stage: "dispatch",
         outcome: "rejected",
         reasonCode: MA_STOP_QUA_HAN,
-        requestedValue: { machineId: input.machineId, buoc, hanMs: HAN_TRUOC_GUI_STOP_HMI_MS },
+        requestedValue: { machineId: input.machineId, daXacMinhPhamVi, buoc, hanMs },
         lyDo: lyDo ?? chiTiet,
       }).catch((e) => ghiLoiChot(e, "-", "attempts_hmi_stop_qua_han"));
       const viec = recordAuditEvent(d, {
@@ -1585,10 +1608,11 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
           ketCuc: "QUA_HAN",
           pha: "truoc_gui",
           buoc,
-          hanMs: HAN_TRUOC_GUI_STOP_HMI_MS,
+          hanMs,
           troiMs: troi,
           nguoiBam: { userId, role: nguoi.user.role },
           machineId: input.machineId,
+          daXacMinhPhamVi,
           machineCode,
           clientRequestId: input.clientRequestId,
           adapters: adapterQuaHan.map((k) => ({ adapterId: k.adapterId, code: k.code, status: k.status, reason: k.reason ?? null })),
@@ -1612,6 +1636,8 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
     if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
     const dbx = db;
     dbDa = dbx;
+    // fix round 1 (I-1) — hạn tổng đã cạn trước khi handler bắt đầu (xác thực + middleware tiêu hết) ⇒ từ chối ngay, có sổ
+    if (hanChot - Date.now() <= 0) throw new LoiQuaHanStopHmi("het_han_tong_truoc_handler", 0);
     const tuChoiMay = async (t: TuChoiYeuCau): Promise<KetQuaDungMay> => {
       // fix round 1 (minor 5) — sổ hỏng không được nuốt chữ từ chối (M5 vẫn phải nói "dùng E-STOP cứng")
       await ghiThuLenh(dbx, { userId, stage: "dispatch", outcome: "rejected", reasonCode: t.ma, lyDo: lyDo ?? t.chiTiet }).catch((e) => ghiLoiChot(e, "-", "attempts_hmi_stop_tu_choi"));
@@ -1625,6 +1651,7 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
       return tuChoiMay({ ma: "NOT_FOUND", entity: "machine", chiTiet: "Máy không tồn tại." });
     }
     mayDa = may;
+    daXacMinhPhamVi = true;
 
     // 3. sàn vai mức 1 + machine_control.canEdit (mức 1 ⇒ không 2FA)
     const vai = await han(kiemCongVaiTro(nguoi, 1), "vai_tro");
@@ -1660,7 +1687,7 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
         pins = await han(loadStopPinsHmi(dbx, a.id), "doc_ghim");
       } catch (err) {
         if (err instanceof LoiQuaHanStopHmi) {
-          logger.error({ adapterId: a.id, hanMs: HAN_TRUOC_GUI_STOP_HMI_MS }, "[SCADA] STOP HMI: đọc ghim quá hạn trước-gửi — adapter này KHÔNG được gửi");
+          logger.error({ adapterId: a.id, hanMs }, "[SCADA] STOP HMI: đọc ghim quá hạn trước-gửi — adapter này KHÔNG được gửi");
           return { loai: "qua_han_doc", kq: { adapterId: a.id, code: a.code, status: "failed", ok: false, simulated: false, reason: MA_STOP_QUA_HAN, writes: [], commandLogIds: [] } };
         }
         // QĐ D-2 — ghim không đọc được ⇒ không gửi gì tới adapter này (ghim là dữ liệu an toàn), các adapter khác vẫn gửi
@@ -1785,7 +1812,7 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
       stage: "dispatch",
       outcome: "rejected",
       reasonCode: MA_STOP_QUA_HAN,
-      lyDo: lyDo ?? `STOP: máy chủ chậm — adapter ${k.code} CHƯA được gửi (quá hạn ${HAN_TRUOC_GUI_STOP_HMI_MS} ms trước-gửi); dùng E-STOP cứng.`,
+      lyDo: lyDo ?? `STOP: máy chủ chậm — adapter ${k.code} CHƯA được gửi (quá hạn ${hanMs} ms trước-gửi); dùng E-STOP cứng.`,
     }).catch((e) => ghiLoiChot(e, "-", "attempts_hmi_stop_qua_han_adapter"));
   }
 

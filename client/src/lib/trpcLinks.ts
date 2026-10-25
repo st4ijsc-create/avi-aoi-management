@@ -54,10 +54,11 @@ export function isLicenseOp(op: { path: string }): boolean {
  *    general /api bucket (a non-batched `POST /api/trpc/scadaCommands.dungMay` carrying a validly signed session — rateLimitConfig
  *    `laStopHmiCoPhienKy`; R1b-2a T3: that tier is a wide cap per session of a person, `TRAN_STOP_HMI_MOI_PHUT` = 600 / min, never
  *    reached by hand).
- *    R1b-2a T4 (M-1): sent alone it ALSO gets the server's bounded HMI STOP auth (context.ts `laGoiChiDungMay`, full authentication under
- *    `HAN_XAC_THUC_STOP_HMI_MS` = 1.5 s) and the real pre-dispatch deadline (lenhHmi `HAN_TRUOC_GUI_STOP_HMI_MS` = 2 s, dispatch outside it):
- *    a slow-but-alive DB ⇒ a coded refusal `SCADA_STOP_PRECHECK_TIMEOUT` ("dùng E-STOP cứng") within ~2.5 s, never an unbounded wait. The
- *    client's 10 s "kết quả chưa rõ" fallback stays for a dead network. In a mixed batch neither bound applies.
+ *    R1b-2a T4 (M-1) + fix round 1 (I-1): sent alone it ALSO gets ONE request-wide server deadline (server/_core/hanStopHmi.ts,
+ *    `HAN_TONG_STOP_HMI_MS` = 2.5 s from createContext): full authentication (≤ 1.5 s), the password / license / tenant-scope middleware
+ *    reads and the handler's pre-dispatch phase all wait inside what is left; dispatch is outside it. A slow-but-alive DB ⇒ a coded refusal
+ *    `SCADA_STOP_PRECHECK_TIMEOUT` (HTTP 503, "dùng E-STOP cứng") ≤ 2.5 s after the request reaches tRPC (Express rate limiter / body read
+ *    before tRPC are outside). The client's 10 s "kết quả chưa rõ" fallback stays for a dead network. In a mixed batch no bound applies.
  *    Its 429s (STOP tier plain JSON, or the general limiter's body) are turned into a tRPC error with `httpStatus 429` by
  *    `fetchDungMay429` below, so the client keys its E-STOP banner on the STATUS whatever the body is.
  */

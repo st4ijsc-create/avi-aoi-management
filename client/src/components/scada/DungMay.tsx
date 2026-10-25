@@ -255,8 +255,11 @@ export interface HopDungMayProps {
   /** khảo sát khả năng dừng (vắng ⇒ không liệt kê) */
   khaNang?: KhaNangDung;
   onDong: () => void;
-  /** R1b-2a T4 — STOP CHƯA được gửi (quá hạn / 429): báo lên để băng đỏ Ở LẠI trên trang sau khi đóng hộp (`NutDungMay`) */
-  onBangEstop?: (b: BangEstop) => void;
+  /**
+   * R1b-2a T4 — STOP CHƯA được gửi (quá hạn / 429): báo lên để băng đỏ Ở LẠI trên trang sau khi đóng hộp (`NutDungMay`). Fix round 1 (M-1):
+   * `null` ⇔ một STOP SAU ĐÓ thành công trọn vẹn (mọi adapter ok) ⇒ gỡ băng cũ (không để "STOP chưa gửi" lỗi thời trên trang).
+   */
+  onBangEstop?: (b: BangEstop | null) => void;
 }
 
 type Pha = "xacNhan" | "dangGui" | "ketQua" | "loi";
@@ -290,7 +293,10 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
     onSuccess: (kq: { ketQua: HangKetQua[]; boQua?: GhimBoQua[] }) => {
       setKetQua(kq.ketQua);
       setBoQua(Array.isArray(kq.boQua) ? kq.boQua : []);
-      baoBang(bangEstopTuKetQua(kq.ketQua));
+      const b = bangEstopTuKetQua(kq.ketQua);
+      baoBang(b);
+      // fix round 1 (M-1) — thành công TRỌN VẸN (mọi adapter ok) ⇒ gỡ băng của lần bấm trước khỏi trang
+      if (!b && kq.ketQua.length > 0 && kq.ketQua.every((r) => r.ok)) onBangEstop?.(null);
       setPha("ketQua");
     },
     onError: (e: unknown) => {

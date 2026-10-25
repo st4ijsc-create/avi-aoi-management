@@ -4,25 +4,14 @@ import { parse as parseCookieHeader } from "cookie";
 import type { User } from "../../drizzle/schema";
 import { sdk } from "./sdk";
 import { beginStopAuthWarm, isStopOnlyCall, noteAuthenticatedUser } from "../services/robot/robotStopAuthMemo"; // doc 81 Đợt 10 D fix review 5 (R-10-bb) + 7 (R-10-bg/bh)
-import { withDeadline } from "../services/ot/drivers/boundedClose";
-import { appError } from "./appError";
-import { logger } from "../logger";
+import { HAN_TONG_STOP_HMI_MS, HAN_XAC_THUC_STOP_HMI_MS, laGoiChiDungMay, laLoiStopQuaHan, trongHanYeuCauStopHmi } from "./hanStopHmi";
 
 /**
- * SCADA R1b-2a Task 4 (M-1; mở rộng R-10-bb cho STOP HMI) — hạn của `sdk.authenticateRequest` cho request CHỈ gồm `scadaCommands.dungMay`.
- * Cùng ngân sách "người vận hành biết trong ≤ 2,5 s" với `HAN_TRUOC_GUI_STOP_HMI_MS` (lenhHmi.ts) của pha sau xác thực.
+ * SCADA R1b-2a Task 4 (M-1; mở rộng R-10-bb cho STOP HMI) + fix round 1 (I-1): request CHỈ gồm `scadaCommands.dungMay` có MỘT hạn tổng
+ * `HAN_TONG_STOP_HMI_MS` (2,5 s) bắt đầu Ở ĐÂY, gắn vào `ctx.hanChotStopHmi`; xác thực dùng min(`HAN_XAC_THUC_STOP_HMI_MS`, còn lại),
+ * middleware và handler dùng phần còn lại. Chi tiết + những gì nằm NGOÀI hạn: server/_core/hanStopHmi.ts.
  */
-export const HAN_XAC_THUC_STOP_HMI_MS = 1500;
-const DUONG_DUNG_MAY_HMI = "scadaCommands.dungMay";
-
-/** true ⇔ MỌI lượt gọi của request HTTP là `scadaCommands.dungMay` (cùng hình `isStopOnlyCall`; batch trộn thủ tục khác ⇒ false). */
-export function laGoiChiDungMay(info: unknown): boolean {
-  const calls = (info as { calls?: Array<{ path?: unknown }> } | undefined)?.calls;
-  return Array.isArray(calls) && calls.length > 0 && calls.every((c) => typeof c?.path === "string" && c.path === DUONG_DUNG_MAY_HMI);
-}
-
-/** Hết hạn xác thực của STOP HMI (lỗi CÓ KIỂU — tách khỏi lỗi xác thực thường, vốn vẫn ra `user = null`). */
-class LoiHetHanXacThucStopHmi extends Error {}
+export { HAN_TONG_STOP_HMI_MS, HAN_XAC_THUC_STOP_HMI_MS, laGoiChiDungMay };
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -53,6 +42,12 @@ export type TrpcContext = {
    * VRAM/deploy; xem khối docstring ở `_core/totpOnce.ts`.
    */
   __luotXacMinhTotp?: string;
+  /**
+   * SCADA R1b-2a T4 fix round 1 (I-1) — mốc epoch ms hết hạn TỔNG của request STOP HMI (`scadaCommands.dungMay` gửi một mình). Chỉ
+   * createContext đặt (theo request, không đọc từ dây); cổng đổi mật khẩu / giấy phép / phạm vi tenant và `dungMayHmi` chờ DB trong phần còn
+   * lại. Vắng ⇒ không hạn (mọi request khác).
+   */
+  hanChotStopHmi?: number;
 };
 
 function extractSessionToken(
@@ -76,6 +71,9 @@ export async function createContext(
     return { req: opts.req, res: opts.res, user: null, sessionToken: extractSessionToken(opts.req) };
   }
 
+  // SCADA R1b-2a T4 fix round 1 (I-1) — hạn TỔNG của request STOP HMI, đo từ đây (theo request; middleware + handler đọc `ctx.hanChotStopHmi`)
+  const hanChotStopHmi = laGoiChiDungMay(opts.info) ? Date.now() + HAN_TONG_STOP_HMI_MS : undefined;
+
   try {
     /**
      * 🔴🔴 Pha 8 Task 1 — **NGƯỜI GỌI DUY NHẤT được tắt cổng buộc-đổi-mật-khẩu ở biên xác thực.**
@@ -94,27 +92,16 @@ export async function createContext(
     const warmTicket = beginStopAuthWarm(); // R-10-bh — the invalidation generation at the START of this authentication (before its reads)
     const xacThuc = sdk.authenticateRequest(opts.req, { boQuaCongDoiMatKhau: true });
     /**
-     * SCADA R1b-2a T4 — request CHỈ gồm STOP HMI (`scadaCommands.dungMay`): xác thực ĐẦY ĐỦ như mọi request (sổ phiên, isActive, cổng đổi
-     * mật khẩu — KHÔNG có đường suy giảm như robot.consoleStop), nhưng có HẠN `HAN_XAC_THUC_STOP_HMI_MS`. Quá hạn ⇒ NÉM TIMEOUT
-     * `SCADA_STOP_PRECHECK_TIMEOUT {ma STOP_QUA_HAN, pha xac_thuc}` (tRPC 11 trả nguyên TRPCError của createContext — thủ tục KHÔNG chạy):
-     * fail-closed, không bao giờ để STOP chưa xác thực đi tiếp, và người vận hành nhận câu "dùng E-STOP cứng" thay vì chờ DB.
-     * Truy vấn xác thực bị bỏ rơi VẪN chạy nền tới khi DB trả lời (không huỷ được). Chưa biết danh tính ⇒ không có dòng
-     * scada_command_attempts (user_id NOT NULL) / audit — chỉ log.
+     * SCADA R1b-2a T4 (+ fix round 1 I-1/I-2) — request CHỈ gồm STOP HMI (`scadaCommands.dungMay`): xác thực ĐẦY ĐỦ như mọi request (sổ
+     * phiên, isActive, cổng đổi mật khẩu — KHÔNG có đường suy giảm như robot.consoleStop), dưới min(HAN_XAC_THUC_STOP_HMI_MS, còn lại của
+     * hạn tổng). Quá hạn ⇒ NÉM `SCADA_STOP_PRECHECK_TIMEOUT {ma STOP_QUA_HAN, pha xac_thuc}` (HTTP 503; tRPC 11 trả nguyên TRPCError của
+     * createContext — thủ tục KHÔNG chạy): fail-closed. Truy vấn bị bỏ rơi VẪN chạy nền. Chưa biết danh tính ⇒ không có dòng
+     * scada_command_attempts (user_id NOT NULL) / audit — đếm trong bộ nhớ (M-3, `demStopQuaHanKhongGhiSo`) + log.
      */
-    user = laGoiChiDungMay(opts.info)
-      ? await withDeadline(xacThuc, HAN_XAC_THUC_STOP_HMI_MS, "HMI STOP auth", { unref: true, loi: () => new LoiHetHanXacThucStopHmi() })
-      : await xacThuc;
+    user = await trongHanYeuCauStopHmi(xacThuc, hanChotStopHmi, "xac_thuc", "xac_thuc", HAN_XAC_THUC_STOP_HMI_MS);
     noteAuthenticatedUser(user, extractSessionToken(opts.req), warmTicket); // R-10-bb / R-10-be (bound to the session) — the last identity a FULL authentication resolved (the degraded STOP's only fallback)
   } catch (error) {
-    if (error instanceof LoiHetHanXacThucStopHmi) {
-      logger.error({ hanMs: HAN_XAC_THUC_STOP_HMI_MS }, "[SCADA] STOP HMI: xác thực quá hạn — STOP CHƯA được gửi; dùng E-STOP cứng");
-      throw appError(
-        "TIMEOUT",
-        "SCADA_STOP_PRECHECK_TIMEOUT",
-        { ma: "STOP_QUA_HAN", pha: "xac_thuc" },
-        `Máy chủ chậm — xác thực STOP HMI quá ${HAN_XAC_THUC_STOP_HMI_MS} ms, STOP CHƯA được gửi. Dùng E-STOP cứng tại máy.`,
-      );
-    }
+    if (laLoiStopQuaHan(error)) throw error;
     // Authentication is optional for public procedures.
     user = null;
   }
@@ -124,5 +111,6 @@ export async function createContext(
     res: opts.res,
     user,
     sessionToken: extractSessionToken(opts.req),
+    ...(hanChotStopHmi !== undefined ? { hanChotStopHmi } : {}),
   };
 }

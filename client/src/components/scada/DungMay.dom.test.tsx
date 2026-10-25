@@ -627,7 +627,7 @@ describe("kiem-dinh R1b-1 H1 (b) — ghim của tag mức tác động > 1 'khô
 
 // ─── R1b-2a Task 4 (điều phối Q4 + ruling T3 c3) — băng đỏ CỐ ĐỊNH "dùng E-STOP cứng" khi STOP CHƯA được gửi ─────────────────────────────
 describe("R1b-2a T4 — băng đỏ cố định 'DÙNG E-STOP CỨNG TẠI MÁY' (không phải toast)", () => {
-  const LOI_QUA_HAN = { message: "x", data: { code: "TIMEOUT", httpStatus: 408, appCode: "SCADA_STOP_PRECHECK_TIMEOUT", appParams: { ma: "STOP_QUA_HAN", pha: "truoc_gui" } } };
+  const LOI_QUA_HAN = { message: "x", data: { code: "SERVICE_UNAVAILABLE", httpStatus: 503, appCode: "SCADA_STOP_PRECHECK_TIMEOUT", appParams: { ma: "STOP_QUA_HAN", pha: "truoc_gui" } } };
   /** hình lỗi mà trpcLinks (fetchDungMay429) dựng cho MỌI 429 trên dungMay — tầng STOP hay apiLimiter */
   const LOI_429_LINKS = { message: "Too many STOP requests — use the hard E-STOP", data: { code: "TOO_MANY_REQUESTS", httpStatus: 429, path: "scadaCommands.dungMay" } };
   /** dự phòng: TRPCClientError chỉ còn meta (httpLink không đổi được thân) */
@@ -689,6 +689,24 @@ describe("R1b-2a T4 — băng đỏ cố định 'DÙNG E-STOP CỨNG TẠI MÁY
     expect(within(khoi).getByTestId("bang-estop-cung")).toBeInTheDocument();
     fireEvent.click(within(b).getByRole("button", { name: S("scada.dungMay.bangEstop.nutBo") }));
     expect(within(khoi).queryByTestId("bang-estop-cung")).toBeNull();
+  });
+
+  it("★ fix round 1 M-1 — STOP SAU thành công trọn vẹn ⇒ băng cũ trên trang được GỠ; thành công một phần (adapter không đạt) ⇒ băng GIỮ", async () => {
+    render(<NutDungMay machineId={10} tenMay="RF-2" soAdapter={1} />);
+    const bam = async (kieu: "onSuccess" | "onError", v: unknown) => {
+      fireEvent.click(screen.getByTestId("nut-dung-may"));
+      fireEvent.click(nutMacDinh());
+      await traLoi(kieu, v);
+      fireEvent.click(within(hop()).getByRole("button", { name: S("scada.dungMay.nutDong") }));
+    };
+    await bam("onError", LOI_QUA_HAN);
+    expect(within(screen.getByTestId("khoi-dung-may")).getByTestId("bang-estop-cung")).toBeInTheDocument();
+    // một phần: adapter bị safety chặn (không phải STOP_QUA_HAN) ⇒ chưa phải thành công trọn vẹn ⇒ băng giữ
+    await bam("onSuccess", { ketQua: [{ adapterId: 1, code: "PLC-A", status: "rejected", ok: false, simulated: false, reason: "SAFETY_BLOCKED", writes: [], commandLogIds: [6] }] });
+    expect(within(screen.getByTestId("khoi-dung-may")).getByTestId("bang-estop-cung")).toBeInTheDocument();
+    // trọn vẹn ⇒ gỡ
+    await bam("onSuccess", { ketQua: [{ adapterId: 1, code: "PLC-A", status: "acked_verified", ok: true, simulated: false, writes: [{ tagKey: "stop_cmd", value: true }], commandLogIds: [7] }] });
+    expect(within(screen.getByTestId("khoi-dung-may")).queryByTestId("bang-estop-cung")).toBeNull();
   });
 
   it("★ kết quả có adapter bị bỏ vì hạn (reason STOP_QUA_HAN) ⇒ băng qua_han_mot_phan nêu adapter; adapter đạt vẫn hiện đạt", async () => {

@@ -10,6 +10,7 @@ import { loiTotpKhoa } from "./totpKhoaSai";
 // Doc 37 P0-3 — server-side per-module license gate (flag-gated pass-through).
 import { moduleGate } from "./moduleGate";
 import { appError, readAppErrorMeta } from "./appError";
+import { laLoiStopQuaHan, trongHanYeuCauStopHmi } from "./hanStopHmi";
 // ★★★ Pha 7 / I-4 — chủ DUY NHẤT của vị từ cổng buộc-đổi-mật-khẩu + tập miễn trừ CỐ Ý.
 import { biChanBoiCongDoiMatKhau, duocMienTruBuocDoiMatKhau } from "@shared/buocDoiMatKhau";
 
@@ -174,7 +175,10 @@ export const chanKhiPhaiDoiMatKhau = t.middleware(async (opts) => {
   // ⚠⚠ Đọc DB **MỚI**. `ctx.user.passwordInvalidBefore` đã bị `redactServerOnlyUserFields` làm
   //    rỗng (Pha 7 Task 7) ⇒ suy từ đó cho `false` LUÔN LUÔN, tức cổng này thành trang trí.
   const { phaiDoiMatKhau } = await import("../db");
-  if (!biChanBoiCongDoiMatKhau(ctx.user.role, await phaiDoiMatKhau(ctx.user.id))) return next();
+  // SCADA R1b-2a T4 fix round 1 (I-1) — request STOP HMI (`ctx.hanChotStopHmi`): lượt đọc chờ trong phần CÒN LẠI của hạn tổng; hết hạn ⇒ NÉM
+  // từ chối "dùng E-STOP cứng" (fail-closed — không bao giờ cho qua mà không biết kết quả cổng). Không có hạn ⇒ `await` như cũ.
+  const phaiDoi = await trongHanYeuCauStopHmi(phaiDoiMatKhau(ctx.user.id), ctx.hanChotStopHmi, "cong_doi_mat_khau", "xac_thuc");
+  if (!biChanBoiCongDoiMatKhau(ctx.user.role, phaiDoi)) return next();
 
   throw appError(
     "FORBIDDEN",
@@ -312,13 +316,16 @@ const tenantScopeMiddleware = t.middleware(async (opts) => {
   if (!isTenantRlsEnabled() || !ctx.user) return next();
   try {
     const { getTenantScope } = await import("./accessControl");
-    const scope = await getTenantScope(ctx.user.id, String(ctx.user.role));
+    // SCADA R1b-2a T4 fix round 1 (I-1) — request STOP HMI: chờ trong phần còn lại của hạn tổng; hết hạn ⇒ NÉM từ chối "dùng E-STOP cứng"
+    // (catch dưới chuyển tiếp nó — KHÔNG rơi về next() không phạm vi). Không có hạn ⇒ như cũ.
+    const scope = await trongHanYeuCauStopHmi(getTenantScope(ctx.user.id, String(ctx.user.role)), ctx.hanChotStopHmi, "pham_vi_tenant", "truoc_gui");
     // NỬA THỨ HAI của điểm nối: đặt phạm vi vào AsyncLocalStorage cho toàn bộ
     // nhánh async của request. Tầng dữ liệu đọc lại bằng
     // `chayTheoPhamViTenantHienTai(db, fn)` mà KHÔNG cần `ctx` luồn qua chữ ký.
     // `ctx.tenantScope` vẫn được giữ nguyên cho nơi gọi cũ.
     return await chayVoiDanhTinhTenant(scope, () => next({ ctx: { ...ctx, tenantScope: scope } }));
-  } catch {
+  } catch (e) {
+    if (laLoiStopQuaHan(e)) throw e; // R1b-2a T4 fix round 1 — STOP HMI quá hạn: từ chối có mã, không đi tiếp
     return next(); // never block a request on scope derivation
   }
 });

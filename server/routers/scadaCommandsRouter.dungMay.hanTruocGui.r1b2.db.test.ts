@@ -28,6 +28,10 @@ const H = vi.hoisted(() => ({
   ghimCho: new Map<number, number>(),
   /** ms chờ trước checkPermission thật (0 = không chờ) */
   quyenCho: 0,
+  /** fix round 1 — ms chờ trước idsTrongPhamVi thật (hết hạn TRƯỚC kiểm phạm vi ⇒ daXacMinhPhamVi false) */
+  phamViCho: 0,
+  /** fix round 1 (I-1) — ms chờ trước phaiDoiMatKhau thật (cổng đổi mật khẩu, middleware gốc) */
+  matKhauCho: 0,
 }));
 
 const cho = (ms: number) =>
@@ -56,6 +60,28 @@ vi.mock("../_core/accessControl", async (importOriginal) => {
       if (H.quyenCho > 0) await cho(H.quyenCho);
       return real.checkPermission(...a);
     }) as typeof real.checkPermission,
+  };
+});
+
+vi.mock("../db/hierarchy", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../db/hierarchy")>();
+  return {
+    ...real,
+    idsTrongPhamVi: (async (...a: Parameters<typeof real.idsTrongPhamVi>) => {
+      if (H.phamViCho > 0) await cho(H.phamViCho);
+      return real.idsTrongPhamVi(...a);
+    }) as typeof real.idsTrongPhamVi,
+  };
+});
+
+vi.mock("../db", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../db")>();
+  return {
+    ...real,
+    phaiDoiMatKhau: (async (...a: Parameters<typeof real.phaiDoiMatKhau>) => {
+      if (H.matKhauCho > 0) await cho(H.matKhauCho);
+      return real.phaiDoiMatKhau(...a);
+    }) as typeof real.phaiDoiMatKhau,
   };
 });
 
@@ -109,7 +135,10 @@ import { aiPendingActions, scadaCommandAttempts } from "../../drizzle/schema";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { StubDriver } from "../services/ot/drivers/stubDriver";
 import { adapterTargetFingerprint } from "../services/ot/adapterTarget";
-import { dieuKienThuStopQuaHan, HAN_TRUOC_GUI_STOP_HMI_MS, MA_STOP_QUA_HAN } from "../services/scada/lenhHmi";
+import { dieuKienThuStopQuaHan, HAN_TRUOC_GUI_STOP_HMI_MS, hanChotTruocGuiStopHmi, MA_STOP_QUA_HAN } from "../services/scada/lenhHmi";
+import { sdk } from "../_core/sdk";
+import { createContext } from "../_core/context";
+import { _datLaiDemStopQuaHanChoTest, demStopQuaHanKhongGhiSo, HAN_TONG_STOP_HMI_MS } from "../_core/hanStopHmi";
 
 class StubGhi extends StubDriver {
   ghi: Array<Array<{ tagKey: string; value: unknown }>> = [];
@@ -292,15 +321,17 @@ afterAll(async () => {
   }
 }, 120_000);
 
-beforeEach(() => {
+const datLaiH = () => {
   H.dispatchCho = 0;
   H.ghimCho.clear();
   H.quyenCho = 0;
-});
+  H.phamViCho = 0;
+  H.matKhauCho = 0;
+};
+beforeEach(datLaiH);
 afterEach(() => {
-  H.dispatchCho = 0;
-  H.ghimCho.clear();
-  H.quyenCho = 0;
+  datLaiH();
+  vi.restoreAllMocks();
 });
 
 describe("hằng + điều kiện đếm (posture T12)", () => {
@@ -322,16 +353,16 @@ describe("Review Focus 5 — DB chậm-mà-sống TRƯỚC khi gửi ⇒ từ ch
     const batDau = Date.now();
     const e = await loiCua(op.caller.dungMay({ machineId: fx.m1, clientRequestId: crid }));
     const troi = Date.now() - batDau;
-    expect(e).toEqual({ code: "TIMEOUT", appCode: "SCADA_STOP_PRECHECK_TIMEOUT", appParams: { ma: "STOP_QUA_HAN", pha: "truoc_gui" } });
+    expect(e).toEqual({ code: "SERVICE_UNAVAILABLE", appCode: "SCADA_STOP_PRECHECK_TIMEOUT", appParams: { ma: "STOP_QUA_HAN", pha: "truoc_gui" } });
     expect(troi).toBeGreaterThanOrEqual(HAN_TRUOC_GUI_STOP_HMI_MS - 50);
-    expect(troi).toBeLessThan(2_400);
+    expect(troi).toBeLessThan(HAN_TRUOC_GUI_STOP_HMI_MS + 800);
     expect(soDispatch(fx.a1, dTu)).toBe(0);
     expect(stub.a1.ghi.length).toBe(ghiTruoc);
 
     const rows = await choThuQuaHan(m, 1);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ adapter_id: null, stage: "dispatch", outcome: "rejected", reason_code: "STOP_QUA_HAN" });
-    expect(rows[0].requested_value).toMatchObject({ machineId: fx.m1, hanMs: 2000 });
+    expect(rows[0].requested_value).toMatchObject({ machineId: fx.m1, daXacMinhPhamVi: true, hanMs: 2000 });
     expect(rows[0].ly_do).toContain("E-STOP cứng");
     // điều kiện đếm xuất cho posture T12 thấy đúng dòng này
     const [{ n: sau }] = await db.select({ n: count() }).from(scadaCommandAttempts).where(and(dieuKienThuStopQuaHan(), isNull(scadaCommandAttempts.adapterId), eq(scadaCommandAttempts.userId, op.id)));
@@ -339,7 +370,7 @@ describe("Review Focus 5 — DB chậm-mà-sống TRƯỚC khi gửi ⇒ từ ch
 
     const [au] = await choAuditQuaHan(am, fx.m1, crid);
     expect(au.actorId).toBe(op.id);
-    expect(au.afterJson).toMatchObject({ ketCuc: "QUA_HAN", pha: "truoc_gui", machineId: fx.m1, hanMs: 2000 });
+    expect(au.afterJson).toMatchObject({ ketCuc: "QUA_HAN", pha: "truoc_gui", machineId: fx.m1, daXacMinhPhamVi: true, hanMs: 2000 });
     expect(String(au.afterJson.buoc)).toContain("a1");
     // không dòng chờ hmi.stop nào được tạo (chưa tới bước đó)
     const cho_ = await dung(sql`SELECT id FROM ai_pending_actions WHERE "userId" = ${op.id} AND "previewJson"->>'clientRequestId' = ${crid}`);
@@ -353,13 +384,14 @@ describe("Review Focus 5 — DB chậm-mà-sống TRƯỚC khi gửi ⇒ từ ch
     const batDau = Date.now();
     const e = await loiCua(op.caller.dungMay({ machineId: fx.m1, clientRequestId: uuid() }));
     const troi = Date.now() - batDau;
-    expect(e).toEqual({ code: "TIMEOUT", appCode: "SCADA_STOP_PRECHECK_TIMEOUT", appParams: { ma: "STOP_QUA_HAN", pha: "truoc_gui" } });
-    expect(troi).toBeLessThan(2_400);
+    expect(e).toEqual({ code: "SERVICE_UNAVAILABLE", appCode: "SCADA_STOP_PRECHECK_TIMEOUT", appParams: { ma: "STOP_QUA_HAN", pha: "truoc_gui" } });
+    expect(troi).toBeLessThan(HAN_TRUOC_GUI_STOP_HMI_MS + 800);
     expect(H.dispatchInputs.length - dTu).toBe(0);
     const rows = await choThuQuaHan(m, 1);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ adapter_id: null, reason_code: "STOP_QUA_HAN" });
-    expect(rows[0].requested_value).toMatchObject({ machineId: fx.m1, buoc: "vai_tro" });
+    // M-2 — máy đã qua kiểm phạm vi trước khi hết hạn ở bước vai
+    expect(rows[0].requested_value).toMatchObject({ machineId: fx.m1, buoc: "vai_tro", daXacMinhPhamVi: true });
   }, 10_000);
 
   it("đối chứng — DB nhanh ⇒ STOP đi như R1b-1: acked_verified, driver nhận stop_cmd=true, KHÔNG dòng STOP_QUA_HAN", async () => {
@@ -423,7 +455,7 @@ describe("ruling K6 — hết hạn ở MỘT adapter: adapter đó failed STOP_
     const batDau = Date.now();
     const kq = await op.caller.dungMay({ machineId: fx.m2, clientRequestId: crid });
     const troi = Date.now() - batDau;
-    expect(troi).toBeLessThan(2_600);
+    expect(troi).toBeLessThan(HAN_TRUOC_GUI_STOP_HMI_MS + 800);
     const a = kq.ketQua.find((r) => r.adapterId === fx.a2a)!;
     const b = kq.ketQua.find((r) => r.adapterId === fx.a2b)!;
     expect(a).toMatchObject({ status: "failed", ok: false, reason: "STOP_QUA_HAN", writes: [{ tagKey: "stop_cmd", value: true }] });
@@ -445,12 +477,12 @@ describe("ruling K6 — hết hạn ở MỘT adapter: adapter đó failed STOP_
     const batDau = Date.now();
     const kq = await op.caller.dungMay({ machineId: fx.m2, clientRequestId: uuid() });
     const troi = Date.now() - batDau;
-    expect(troi).toBeLessThan(2_600);
+    expect(troi).toBeLessThan(HAN_TRUOC_GUI_STOP_HMI_MS + 800);
     expect(kq.ketQua.find((r) => r.adapterId === fx.a2a)).toMatchObject({ status: "failed", reason: "STOP_QUA_HAN", writes: [] });
     expect(kq.ketQua.find((r) => r.adapterId === fx.a2b)).toMatchObject({ status: "acked_verified", ok: true });
     const dB = H.dispatchInputs.slice(dTu).filter((d) => d.adapterId === fx.a2b);
     expect(dB).toHaveLength(1);
-    expect(dB[0].at - batDau).toBeLessThan(1_000);
+    expect(dB[0].at - batDau).toBeLessThan(HAN_TRUOC_GUI_STOP_HMI_MS - 300);
     expect(soDispatch(fx.a2a, dTu)).toBe(0);
     const rows = await choThuQuaHan(m, 1);
     expect(rows[0]).toMatchObject({ adapter_id: fx.a2a, reason_code: "STOP_QUA_HAN" });
@@ -464,7 +496,7 @@ describe("ruling K6 — hết hạn ở MỘT adapter: adapter đó failed STOP_
     const dTu = H.dispatchInputs.length;
     const batDau = Date.now();
     const e = await loiCua(op.caller.dungMay({ machineId: fx.m2, clientRequestId: uuid() }));
-    expect(Date.now() - batDau).toBeLessThan(2_400);
+    expect(Date.now() - batDau).toBeLessThan(HAN_TRUOC_GUI_STOP_HMI_MS + 800);
     expect(e.appCode).toBe("SCADA_STOP_PRECHECK_TIMEOUT");
     expect(e.appParams).toEqual({ ma: "STOP_QUA_HAN", pha: "truoc_gui" });
     expect(H.dispatchInputs.length - dTu).toBe(0);
@@ -473,5 +505,97 @@ describe("ruling K6 — hết hạn ở MỘT adapter: adapter đó failed STOP_
     const tatCa = (await thuSau(m)).filter((r) => r.reason_code === MA_STOP_QUA_HAN);
     expect(tatCa).toHaveLength(1);
     expect(rows[0].adapter_id).toBeNull();
+  }, 10_000);
+});
+
+describe("fix round 1 M-2 — machineId chưa qua kiểm phạm vi được đánh dấu", () => {
+  it("hết hạn ở bước phạm vi (idsTrongPhamVi chờ 3 s) ⇒ requested_value + audit daXacMinhPhamVi FALSE, buoc pham_vi", async () => {
+    H.phamViCho = 3_000;
+    const m = await moc();
+    const am = await mocAudit();
+    const crid = uuid();
+    const e = await loiCua(op.caller.dungMay({ machineId: fx.m1, clientRequestId: crid }));
+    expect(e.appCode).toBe("SCADA_STOP_PRECHECK_TIMEOUT");
+    const rows = await choThuQuaHan(m, 1);
+    expect(rows[0].requested_value).toMatchObject({ machineId: fx.m1, buoc: "pham_vi", daXacMinhPhamVi: false });
+    const [au] = await choAuditQuaHan(am, fx.m1, crid);
+    expect(au.afterJson).toMatchObject({ daXacMinhPhamVi: false, machineCode: null });
+  }, 10_000);
+});
+
+describe("★ fix round 1 I-1 — MỘT hạn TỔNG 2,5 s cho cả request (createContext THẬT → middleware THẬT → handler)", () => {
+  /** một request như adapter tRPC làm: createContext (info = dungMay) rồi gọi thủ tục với ctx đó */
+  async function guiRequest(crid: string) {
+    const ctx = await createContext({ req: { headers: { cookie: "app_session_id=x" } } as never, res: {} as never, info: { calls: [{ path: "scadaCommands.dungMay" }] } as never });
+    return scadaCommandsRouter.createCaller(ctx).dungMay({ machineId: fx.m1, clientRequestId: crid });
+  }
+  const nguoiXacThuc = () => ({ id: op.id, openId: `${RUN}-op`, role: "operator", name: "R1B2 T4 op", twoFactorEnabled: false });
+
+  it("hanChotTruocGuiStopHmi: min(2 s từ đầu handler, hạn tổng); vắng hạn tổng ⇒ 2 s", () => {
+    expect(hanChotTruocGuiStopHmi(1_000)).toBe(3_000);
+    expect(hanChotTruocGuiStopHmi(1_000, 1_700)).toBe(1_700);
+    expect(hanChotTruocGuiStopHmi(1_000, 9_000)).toBe(3_000);
+    expect(HAN_TONG_STOP_HMI_MS).toBe(2_500);
+  });
+
+  it("★ xác thực 1,2 s + cổng đổi mật khẩu 0,6 s + đọc ghim 3 s ⇒ từ chối ≈ 2,5 s từ đầu request (KHÔNG 1,2 + 0,6 + 2 = 3,8 s); handler chỉ có phần còn lại (hanMs ≈ 700)", async () => {
+    vi.spyOn(sdk, "authenticateRequest").mockImplementation(() => cho(1_200).then(() => nguoiXacThuc()) as never);
+    H.matKhauCho = 600;
+    H.ghimCho.set(fx.a1, 3_000);
+    const m = await moc();
+    const dTu = H.dispatchInputs.length;
+    const batDau = Date.now();
+    const e = await loiCua(guiRequest(uuid()));
+    const troi = Date.now() - batDau;
+    expect(e).toEqual({ code: "SERVICE_UNAVAILABLE", appCode: "SCADA_STOP_PRECHECK_TIMEOUT", appParams: { ma: "STOP_QUA_HAN", pha: "truoc_gui" } });
+    expect(troi).toBeGreaterThanOrEqual(HAN_TONG_STOP_HMI_MS - 50);
+    expect(troi).toBeLessThan(HAN_TONG_STOP_HMI_MS + 800);
+    expect(soDispatch(fx.a1, dTu)).toBe(0);
+    const rows = await choThuQuaHan(m, 1);
+    expect(rows[0]).toMatchObject({ adapter_id: null, reason_code: "STOP_QUA_HAN" });
+    expect(rows[0].requested_value.daXacMinhPhamVi).toBe(true);
+    expect(rows[0].requested_value.hanMs).toBeGreaterThan(300);
+    expect(rows[0].requested_value.hanMs).toBeLessThan(1_000);
+  }, 10_000);
+
+  it("★ xác thực 1,2 s + cổng đổi mật khẩu TREO ⇒ middleware từ chối ≈ 2,5 s, pha xac_thuc; handler KHÔNG chạy (0 dòng attempts) ⇒ đếm trong bộ nhớ +1 (M-3)", async () => {
+    vi.spyOn(sdk, "authenticateRequest").mockImplementation(() => cho(1_200).then(() => nguoiXacThuc()) as never);
+    H.matKhauCho = 5_000;
+    _datLaiDemStopQuaHanChoTest();
+    const m = await moc();
+    const batDau = Date.now();
+    const e = await loiCua(guiRequest(uuid()));
+    const troi = Date.now() - batDau;
+    expect(e).toEqual({ code: "SERVICE_UNAVAILABLE", appCode: "SCADA_STOP_PRECHECK_TIMEOUT", appParams: { ma: "STOP_QUA_HAN", pha: "xac_thuc" } });
+    expect(troi).toBeGreaterThanOrEqual(HAN_TONG_STOP_HMI_MS - 50);
+    expect(troi).toBeLessThan(HAN_TONG_STOP_HMI_MS + 800);
+    expect(demStopQuaHanKhongGhiSo().theoBuoc).toEqual({ cong_doi_mat_khau: 1 });
+    await cho(300);
+    expect(await thuSau(m)).toHaveLength(0);
+  }, 10_000);
+
+  it("hạn tổng ĐÃ cạn qua router ⇒ middleware gốc (cổng đổi mật khẩu) từ chối trước, pha xac_thuc — fail-closed", async () => {
+    const caller = scadaCommandsRouter.createCaller({ user: { id: op.id, role: "operator", name: "x", twoFactorEnabled: false }, hanChotStopHmi: Date.now() - 1 } as never);
+    const e = await loiCua(caller.dungMay({ machineId: fx.m1, clientRequestId: uuid() }));
+    expect(e.appParams).toEqual({ ma: "STOP_QUA_HAN", pha: "xac_thuc" });
+  }, 10_000);
+
+  it("handler nhận hạn tổng ĐÃ cạn (middleware vừa kịp) ⇒ từ chối ngay (buoc het_han_tong_truoc_handler), có dòng attempts, dispatch 0", async () => {
+    const { dungMayHmi } = await import("../services/scada/lenhHmi");
+    const m = await moc();
+    const dTu = H.dispatchInputs.length;
+    const batDau = Date.now();
+    const kq = await dungMayHmi({ user: { id: op.id, role: "operator", twoFactorEnabled: false } }, { userId: op.id, userRole: "operator" }, { machineId: fx.m1, clientRequestId: uuid() }, { hanChotYeuCau: Date.now() - 1 });
+    expect(Date.now() - batDau).toBeLessThan(800);
+    expect(kq).toMatchObject({ ok: false, tuChoi: { ma: "STOP_QUA_HAN", pha: "truoc_gui" } });
+    expect(H.dispatchInputs.length - dTu).toBe(0);
+    const rows = await choThuQuaHan(m, 1);
+    expect(rows[0].requested_value).toMatchObject({ buoc: "het_han_tong_truoc_handler", daXacMinhPhamVi: false });
+  }, 10_000);
+
+  it("đối chứng — mọi bước kịp (xác thực 0,3 s) ⇒ STOP đi: acked_verified", async () => {
+    vi.spyOn(sdk, "authenticateRequest").mockImplementation(() => cho(300).then(() => nguoiXacThuc()) as never);
+    const kq = await guiRequest(uuid());
+    expect(kq.ketQua[0]).toMatchObject({ adapterId: fx.a1, status: "acked_verified", ok: true });
   }, 10_000);
 });

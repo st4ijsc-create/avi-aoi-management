@@ -3,12 +3,12 @@
  *
  * Hợp đồng:
  *   · request CHỈ gồm `scadaCommands.dungMay` ⇒ `sdk.authenticateRequest` chạy dưới hạn `HAN_XAC_THUC_STOP_HMI_MS` (1,5 s). Quá hạn ⇒ NÉM
- *     `TRPCError TIMEOUT` mang appCode `SCADA_STOP_PRECHECK_TIMEOUT` `{ ma: "STOP_QUA_HAN", pha: "xac_thuc" }` — fail-closed: không bao giờ để
+ *     `TRPCError SERVICE_UNAVAILABLE` (HTTP 503, fix round 1 I-2) mang appCode `SCADA_STOP_PRECHECK_TIMEOUT` `{ ma: "STOP_QUA_HAN", pha: "xac_thuc" }` — fail-closed: không bao giờ để
  *     một STOP chưa xác thực đi tiếp (không có `user = null` lặng lẽ rồi chạy thủ tục).
  *   · lỗi xác thực khác (cookie rác, phiên thu hồi) ⇒ như cũ: `user = null` (thủ tục tự trả UNAUTHORIZED).
  *   · mọi request khác (confirm, batch trộn) ⇒ KHÔNG có hạn (như cũ). `robot.consoleStop` không đổi (nhánh STOP-only của R-10-bb).
  * Đồng hồ GIẢ cho mọi ca của createContext (K15); MỘT ca HTTP thật qua `fetchRequestHandler` + `errorFormatter` THẬT (đồng hồ thật, ~1,5 s)
- * chứng minh tRPC 11 trả nguyên lỗi của createContext tới dây (HTTP 408 + appCode).
+ * chứng minh tRPC 11 trả nguyên lỗi của createContext tới dây (HTTP 503 + appCode).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initTRPC } from "@trpc/server";
@@ -60,7 +60,7 @@ describe("createContext — hạn xác thực của STOP HMI (đồng hồ giả
     vi.restoreAllMocks();
   });
 
-  it("★ dungMay + xác thực treo 5 s ⇒ NÉM TIMEOUT SCADA_STOP_PRECHECK_TIMEOUT {ma STOP_QUA_HAN, pha xac_thuc} ĐÚNG lúc 1500 ms (chưa ở 1499)", async () => {
+  it("★ dungMay + xác thực treo 5 s ⇒ NÉM SERVICE_UNAVAILABLE SCADA_STOP_PRECHECK_TIMEOUT {ma STOP_QUA_HAN, pha xac_thuc} ĐÚNG lúc 1500 ms (chưa ở 1499)", async () => {
     vi.spyOn(sdk, "authenticateRequest").mockImplementation(() => cho(5_000, NGUOI) as never);
     const s = theoDoi(createContext({ req: req(), res: {} as never, info: info("scadaCommands.dungMay") }));
     await vi.advanceTimersByTimeAsync(HAN_XAC_THUC_STOP_HMI_MS - 1);
@@ -69,7 +69,7 @@ describe("createContext — hạn xác thực của STOP HMI (đồng hồ giả
     expect(s.xong).toBe(true);
     expect(s.giaTri).toBeUndefined();
     const e = s.loi as { code?: string; cause?: { appCode?: string; appParams?: Record<string, unknown> } };
-    expect(e?.code).toBe("TIMEOUT");
+    expect(e?.code).toBe("SERVICE_UNAVAILABLE");
     expect(e.cause?.appCode).toBe("SCADA_STOP_PRECHECK_TIMEOUT");
     expect(e.cause?.appParams).toEqual({ ma: "STOP_QUA_HAN", pha: "xac_thuc" });
   });
@@ -122,7 +122,7 @@ describe("createContext — hạn xác thực của STOP HMI (đồng hồ giả
 describe("HTTP thật (fetchRequestHandler + errorFormatter THẬT) — tRPC 11 trả NGUYÊN lỗi của createContext", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("★ dungMay + xác thực treo ⇒ HTTP 408, data.code TIMEOUT + appCode SCADA_STOP_PRECHECK_TIMEOUT; thủ tục KHÔNG chạy (đồng hồ thật, < 2,5 s)", async () => {
+  it("★ dungMay + xác thực treo ⇒ HTTP 503, data.code SERVICE_UNAVAILABLE + appCode SCADA_STOP_PRECHECK_TIMEOUT; thủ tục KHÔNG chạy (đồng hồ thật, < 2,5 s)", async () => {
     vi.spyOn(sdk, "authenticateRequest").mockImplementation(() => cho(5_000, NGUOI) as never);
     const t = initTRPC.context<TrpcContext>().create({ transformer: superjson, errorFormatter });
     let daChay = 0;
@@ -148,9 +148,9 @@ describe("HTTP thật (fetchRequestHandler + errorFormatter THẬT) — tRPC 11 
     const troi = Date.now() - batDau;
     expect(troi).toBeGreaterThanOrEqual(HAN_XAC_THUC_STOP_HMI_MS - 50);
     expect(troi).toBeLessThan(2_500);
-    expect(res.status).toBe(408);
+    expect(res.status).toBe(503);
     const body = (await res.json()) as { error: { json: { data: Record<string, unknown> } } };
-    expect(body.error.json.data.code).toBe("TIMEOUT");
+    expect(body.error.json.data.code).toBe("SERVICE_UNAVAILABLE");
     expect(body.error.json.data.appCode).toBe("SCADA_STOP_PRECHECK_TIMEOUT");
     expect(body.error.json.data.appParams).toEqual({ ma: "STOP_QUA_HAN", pha: "xac_thuc" });
     expect(daChay).toBe(0);
