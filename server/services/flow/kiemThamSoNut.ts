@@ -3,6 +3,7 @@
  * Chỉ kiểm giá trị VIẾT THẲNG (không phải biểu thức `{{ … }}`); biểu thức để node kiểm lúc chạy bằng đúng các hàm này. Trả danh sách lỗi (rỗng = hợp lệ).
  * Node `kich-hoat.su-kien` có bộ kiểm riêng ở `kichHoat/suKien.ts` (`kiemThamSoSuKien`).
  */
+import { safeInternalPath } from "../../../shared/internalPath";
 import { DANH_MUC, chuanHoaThamSo } from "./soLieu/danhMuc";
 import { NHOM_PHIEU } from "./nut/baoTri";
 
@@ -36,6 +37,7 @@ export function kiemThamSoNutMoi(raw: unknown): string[] {
         if (!ok && p.nguoiNhan.length > 0) loi.push(`node '${id}': nguoiNhan phải là danh sách 1–20 id người dùng`);
         if (p.nguoiNhan.length > 20) loi.push(`node '${id}': nguoiNhan tối đa 20 người`);
       }
+      if (p.duongDan !== undefined && p.duongDan !== "" && !laBieuThuc(p.duongDan) && safeInternalPath(p.duongDan) === null) loi.push(`node '${id}': duongDan phải là đường dẫn NỘI BỘ bắt đầu bằng một dấu '/' (không URL ngoài, không '//', không dấu gạch ngược)`);
       if (p.loai !== undefined && !laBieuThuc(p.loai) && !LOAI_TB.includes(String(p.loai))) loi.push(`node '${id}': loai phải là ${LOAI_TB.join(" | ")}`);
       if (p.uuTien !== undefined && !laBieuThuc(p.uuTien) && !UU_TIEN_TB.includes(String(p.uuTien))) loi.push(`node '${id}': uuTien phải là ${UU_TIEN_TB.join(" | ")}`);
     } else if (n?.type === "bao-tri.tao-phieu") {

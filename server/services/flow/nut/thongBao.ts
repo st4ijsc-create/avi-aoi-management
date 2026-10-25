@@ -12,6 +12,7 @@ import { danhGiaThamSo } from "../../../../shared/flow/bieuThuc";
 import { aiFlowEvents, users } from "../../../../drizzle/schema";
 import { getDb } from "../../../db/connection";
 import { idsTrongPhamVi } from "../../../db/hierarchy";
+import { safeInternalPath } from "../../../../shared/internalPath";
 import { dangKyNut, nguCanhItem, type KetQuaChay } from "../dangKyNut";
 import { nhaMayChoPhep, nhaMayCuaLuong, nhaMayHopLe } from "../phamViLuong";
 import { KIND_MAY_DOC } from "./soLieu";
@@ -94,11 +95,16 @@ dangKyNut({
       const tieuDe = String(t.tieuDe ?? "").slice(0, 200);
       const noiDung = String(t.noiDung ?? "").slice(0, 4000);
       if (!tieuDe) throw new LoiThongBao("tieuDe là bắt buộc", "THAM_SO_SAI");
+      // duongDan: CÙNG luật với thông báo/chuông (safeInternalPath) — kiểm cả lúc LƯU (kiemThamSoNutMoi) lẫn lúc chạy (biểu thức chỉ biết lúc chạy).
+      const duongDan = typeof t.duongDan === "string" && t.duongDan !== "" ? t.duongDan : undefined;
+      if (t.duongDan !== undefined && t.duongDan !== null && t.duongDan !== "" && (duongDan === undefined || safeInternalPath(duongDan) === null)) {
+        throw new LoiThongBao("duongDan phải là đường dẫn nội bộ bắt đầu bằng một dấu / (không URL ngoài)", "THAM_SO_SAI");
+      }
       tong += ids.length;
       if (tong > TRAN_THONG_BAO_MOI_LUOT) {
         throw new LoiThongBao(`Tổng thông báo của node trong một lượt vượt trần ${TRAN_THONG_BAO_MOI_LUOT} (item × người nhận) — không gửi gì.`, "QUA_TRAN_THONG_BAO");
       }
-      keHoach.push({ item, ids: ids as number[], loai: loai as KeHoach["loai"], uuTien: uuTien as KeHoach["uuTien"], tieuDe, noiDung, ...(typeof t.duongDan === "string" ? { duongDan: t.duongDan } : {}) });
+      keHoach.push({ item, ids: ids as number[], loai: loai as KeHoach["loai"], uuTien: uuTien as KeHoach["uuTien"], tieuDe, noiDung, ...(duongDan !== undefined ? { duongDan } : {}) });
     }
     // Tập MÁY mà các node số liệu của lượt này đã đọc (nhật ký lượt do `du-lieu.so-lieu` ghi) — mọi người nhận phải thấy đủ.
     const mayDoc = new Set<number>();
