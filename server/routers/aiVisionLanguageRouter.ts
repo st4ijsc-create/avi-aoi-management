@@ -18,6 +18,7 @@ import {
 } from "../services/aiVisionLanguage";
 import fs from "fs";
 import { resolveSafeImagePath } from "../utils/safeImagePath";
+import { khoaAnhChoPhep } from "./_aiPhamVi";
 
 function resolveImagePath(imageKey: string): string {
   return resolveSafeImagePath(imageKey);
@@ -42,8 +43,8 @@ export const aiVisionLanguageRouter = router({
         existingLabels: z.array(z.string()).optional(),
       }),
     )
-    .mutation(async ({ input }) => {
-      const imageBuffer = loadImage(input.imageKey);
+    .mutation(async ({ input, ctx }) => {
+      const imageBuffer = loadImage(await khoaAnhChoPhep(ctx, input.imageKey)); // W17c
       return describeDefect(imageBuffer, {
         productModel: input.productModel,
         machineCode: input.machineCode,
@@ -63,9 +64,9 @@ export const aiVisionLanguageRouter = router({
           .default("side_by_side"),
       }),
     )
-    .mutation(async ({ input }) => {
-      const imageA = loadImage(input.imageKeyA);
-      const imageB = loadImage(input.imageKeyB);
+    .mutation(async ({ input, ctx }) => {
+      const imageA = loadImage(await khoaAnhChoPhep(ctx, input.imageKeyA)); // W17c
+      const imageB = loadImage(await khoaAnhChoPhep(ctx, input.imageKeyB));
       return compareImages(imageA, imageB, {
         productModel: input.productModel,
         comparisonType: input.comparisonType,
@@ -91,9 +92,10 @@ export const aiVisionLanguageRouter = router({
         date: z.string().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
-      const images = input.images.map((img) => ({
-        buffer: loadImage(img.imageKey),
+    .mutation(async ({ input, ctx }) => {
+      const khoa = await Promise.all(input.images.map((img) => khoaAnhChoPhep(ctx, img.imageKey))); // W17c: kiểm TẤT CẢ trước khi đọc / gọi model
+      const images = input.images.map((img, i) => ({
+        buffer: loadImage(khoa[i]),
         label: img.label,
         inspectionPoint: img.inspectionPoint,
       }));

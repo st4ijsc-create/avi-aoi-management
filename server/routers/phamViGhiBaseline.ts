@@ -193,12 +193,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
   "server/routers/aiAgentRouter.ts#aiAgentRouter.phanHoi":
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
-  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.imageDefectDescription":
-    "Tính toán / suy luận LLM-VLM thuần trên dữ liệu người dùng đưa vào (machineCode chỉ là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
-  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.similarDefectSearch":
-    "Tính toán / suy luận LLM-VLM thuần trên dữ liệu người dùng đưa vào (machineCode chỉ là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
-  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.quickQualityCheck":
-    "Tính toán / suy luận LLM-VLM thuần trên dữ liệu người dùng đưa vào (machineCode chỉ là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
   "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.score":
     "Chấm điểm bất thường một ảnh do người dùng đưa vào; machineId / productModelId chỉ chọn hồ sơ model, không đọc dữ liệu nhà máy trả về.",
   "server/routers/aiChatRouter.ts#aiChatRouter.updateConversation":
@@ -249,10 +243,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
     "Phiên chuyên gia AI khoá theo userId của người gọi (completeAiSpecialistSession(sessionId, userId…)); thủ tục chạy model / ghi phản hồi trên phiên CỦA MÌNH. Đã đọc mã (2026-10-25).",
   "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.submitFeedback":
     "Phiên chuyên gia AI khoá theo userId của người gọi (completeAiSpecialistSession(sessionId, userId…)); thủ tục chạy model / ghi phản hồi trên phiên CỦA MÌNH. Đã đọc mã (2026-10-25).",
-  "server/routers/aiVisionLanguageRouter.ts#aiVisionLanguageRouter.describeDefect":
-    "Suy luận VLM thuần trên dữ liệu người dùng đưa vào (machineCode là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
-  "server/routers/aiVisionLanguageRouter.ts#aiVisionLanguageRouter.generateReport":
-    "Suy luận VLM thuần trên dữ liệu người dùng đưa vào (machineCode là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
   "server/routers/kbStudioRouter.ts#kbStudioRouter.huyEvalMa":
     "KB Studio: tài nguyên toàn cục của vai kbStudioProcedure / kbStudioDeleteProcedure (sàn vai + 2FA); không có dữ liệu nhà máy.",
   "server/routers/kbStudioRouter.ts#kbStudioRouter.startFinetune":

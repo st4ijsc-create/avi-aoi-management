@@ -42,6 +42,8 @@ import {
 } from "../services/aiReportGenerator";
 
 import { resolveSafeImagePath } from "../utils/safeImagePath";
+import { khoaAnhChoPhep } from "./_aiPhamVi";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 
 // doc 69 W0-3 security review fix #3 — this router calls the EXACT SAME
 // aiReportGenerator functions as server/routers/aiReportRouter.ts but, before this fix,
@@ -228,8 +230,8 @@ export const aiAnalysisHubRouter = router({
       machineCode: z.string().optional(),
       inspectionPoint: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
-      const imageBuffer = loadImage(input.imageKey);
+    .mutation(async ({ input, ctx }) => {
+      const imageBuffer = loadImage(await khoaAnhChoPhep(ctx, input.imageKey)); // W17c: ảnh phải thuộc phạm vi người gọi
       const result = await describeDefect(imageBuffer, {
         productModel: input.productModel,
         machineCode: input.machineCode,
@@ -266,13 +268,13 @@ export const aiAnalysisHubRouter = router({
       topK: z.number().min(1).max(50).default(10),
       minSimilarity: z.number().min(0).max(1).default(0.7),
     }))
-    .mutation(async ({ input }) => {
-      const imageBuffer = await fs.promises.readFile(resolveImagePath(input.imageKey));
+    .mutation(async ({ input, ctx }) => {
+      const imageBuffer = await fs.promises.readFile(resolveImagePath(await khoaAnhChoPhep(ctx, input.imageKey))); // W17c
       const { results } = await searchByImage(
         input.modelId,
         imageBuffer,
         input.topK,
-        { minSimilarity: input.minSimilarity },
+        { minSimilarity: input.minSimilarity, machineIds: await idsMayTrongPhamVi(ctx) }, // W17c: chỉ ảnh của máy trong phạm vi (trước: tìm trên mọi nhà máy)
       );
       return { analysisType: "similar_defect_search", totalFound: results.length, results };
     }),
@@ -288,8 +290,9 @@ export const aiAnalysisHubRouter = router({
       machineCode: z.string().optional(),
       topK: z.number().min(1).max(20).default(5),
     }))
-    .mutation(async ({ input }) => {
-      const imageBuffer = loadImage(input.imageKey);
+    .mutation(async ({ input, ctx }) => {
+      const imageBuffer = loadImage(await khoaAnhChoPhep(ctx, input.imageKey)); // W17c
+      const machineIds = await idsMayTrongPhamVi(ctx);
 
       // Run VLM description and similarity search in parallel
       const [description, similarImages] = await Promise.all([
@@ -297,7 +300,7 @@ export const aiAnalysisHubRouter = router({
           productModel: input.productModel,
           machineCode: input.machineCode,
         }).catch(e => ({ error: String(e), description: null })),
-        searchByImage(input.modelId, imageBuffer, input.topK, { minSimilarity: 0.5 })
+        searchByImage(input.modelId, imageBuffer, input.topK, { minSimilarity: 0.5, machineIds })
           .then((result) => result.results)
           .catch(() => [] as any[]),
       ]);

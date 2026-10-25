@@ -26,7 +26,7 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1201, no: 149 } as const; // W17b: yield ×2 + mqttAlert ×4 có khoá thật (miễn trừ gỡ) −6 ⇒ 149; yield.create|delete +2 mutation (có cổng) ⇒ tổng 1201; // W17a: reportArtifact.delete có cổng thật (−1): 156 → 155; // 2026-10-25 gộp L6w (feederVerify/inspectionVariant/pdfReport −3) với main R1b-1 ⇒ đo bằng census
+const GHIM = { tongMutation: 1201, no: 144 } as const; // W17c: aiAnalysisHub ×3 + aiVisionLanguage describeDefect|generateReport có cổng ảnh-theo-khoá (miễn trừ gỡ) −5 ⇒ 144; // W17b: yield ×2 + mqttAlert ×4 có khoá thật (miễn trừ gỡ) −6 ⇒ 149; yield.create|delete +2 mutation (có cổng) ⇒ tổng 1201; // W17a: reportArtifact.delete có cổng thật (−1): 156 → 155; // 2026-10-25 gộp L6w (feederVerify/inspectionVariant/pdfReport −3) với main R1b-1 ⇒ đo bằng census
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {

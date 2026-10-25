@@ -14,6 +14,7 @@ const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import path from "path";
 import fs from "fs";
 import { resolveSafeImagePath } from "../utils/safeImagePath";
+import { khoaAnhChoPhep } from "./_aiPhamVi";
 import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import {
   extractEmbedding,
@@ -51,6 +52,19 @@ function resolveImagePath(imageKey: string): string {
   return resolveSafeImagePath(normalizedKey);
 }
 
+/** W17c — khoá ảnh (kể cả URL tuyệt đối) → bỏ phần URL → kiểm phạm vi → đọc bằng ĐÚNG chuỗi đã chuẩn hoá. */
+async function loadImageTrongPhamVi(ctx: Parameters<typeof khoaAnhChoPhep>[0], imageKey: string): Promise<Buffer> {
+  let k = imageKey.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+  if (/^https?:\/\//i.test(k)) {
+    try {
+      k = new URL(k).pathname.replace(/^\/+/, "");
+    } catch {
+      /* giữ nguyên */
+    }
+  }
+  return loadImage(await khoaAnhChoPhep(ctx, k));
+}
+
 async function loadImage(imageKey: string): Promise<Buffer> {
   const fullPath = resolveImagePath(imageKey);
   if (!fs.existsSync(fullPath)) {
@@ -74,8 +88,8 @@ export const aiImageSearchRouter = router({
       machineId: z.number().optional(),
       productModelId: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
-      const imageBuffer = await loadImage(input.imageKey);
+    .mutation(async ({ input, ctx }) => {
+      const imageBuffer = await loadImageTrongPhamVi(ctx, input.imageKey); // W17c
       const embResult = await extractEmbedding(input.modelId, imageBuffer);
       const id = await storeEmbedding({
         inspectionId: input.inspectionId,
@@ -136,7 +150,7 @@ export const aiImageSearchRouter = router({
       minSimilarity: z.number().min(0).max(1).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const imageBuffer = await loadImage(input.imageKey);
+      const imageBuffer = await loadImageTrongPhamVi(ctx, input.imageKey); // W17c
       const { results, embedding, searchMode, embeddingSource } = await searchByImage(input.modelId, imageBuffer, input.limit, {
         machineIds: await idsMayTrongPhamVi(ctx), // phạm vi nhà máy (W12): chỉ trả ảnh của máy trong phạm vi
         machineId: input.machineId,

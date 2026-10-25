@@ -3,6 +3,7 @@
  * Dữ liệu AI định vị bằng MÁY hoặc LẦN KIỂM TRA; cùng luật `dieuKienDoiTuongTrongPhamVi` (_adapterPhamVi.ts): hàng không định vị được chỉ toàn quyền thấy.
  */
 import { chuanHoaKhoaAnh } from "../utils/safeImagePath";
+import { appError } from "../_core/appError";
 import { sql, type SQL } from "drizzle-orm";
 import { aiLabelQueue, aiSuggestions, edgeDeployments, edgeInferenceSync, inferenceResults, modelRollbackEvents, predictiveAlerts, robotBehaviorAnomalies, rootCauseAnalysis } from "../../drizzle/schema";
 import { idsTrongPhamVi } from "../db/hierarchy";
@@ -87,4 +88,16 @@ export async function anhTrongPhamVi(ctx: CoDanhTinh, imageKey: string): Promise
     OR EXISTS (SELECT 1 FROM ai_image_embeddings e WHERE e."imageUrl" IN (${dsK}) AND e."machineId" IN (${dsM}))
     OR EXISTS (SELECT 1 FROM defect_segmentations ds JOIN product_inspections pi ON pi."id" = ds."inspectionId" WHERE ds."imageUrl" IN (${dsK}) AND pi."machineId" IN (${dsM}))`)) as unknown as Array<{ ok: number }>;
   return rows.length > 0;
+}
+
+/**
+ * W17c (kiểm định phamViGhi, 2026-10-25) — khoá ảnh do CLIENT gửi cho các thủ tục đọc ảnh rồi cho model xử lý / lưu vector: chuẩn hoá MỘT lần + ảnh phải thuộc phạm vi người gọi
+ * (`anhTrongPhamVi`); ngoài phạm vi / khoá lạ ≡ ảnh không tồn tại (NOT_FOUND "image"). Trả CHUỖI ĐÃ CHUẨN HOÁ — người gọi đọc tệp bằng ĐÚNG chuỗi này.
+ */
+export async function khoaAnhChoPhep(ctx: CoDanhTinh, imageKey: unknown): Promise<string> {
+  const k = chuanHoaKhoaAnh(imageKey);
+  if (k === null || !(await anhTrongPhamVi(ctx, k))) {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, "Image not found");
+  }
+  return k;
 }

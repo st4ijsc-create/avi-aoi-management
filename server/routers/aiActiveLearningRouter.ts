@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import type { CoDanhTinh } from "./_phamViNguoiXem";
 import { ghiViTri } from "./_viTriPhamVi";
 import { kiemTraTrongPhamVi, dieuKienDoiTuongTrongPhamVi } from "./_adapterPhamVi";
+import { khoaAnhChoPhep } from "./_aiPhamVi";
 import { aiLabelQueue } from "../../drizzle/schema";
 
 /** phạm vi người dùng (L6b 2026-10-25): hàng đợi gán nhãn theo máy / lần kiểm tra của nó (cùng luật `hangDoiGhi`). */
@@ -77,10 +78,11 @@ export const aiActiveLearningRouter = router({
       autoAcceptThreshold: z.number().min(0).max(1).optional(),
       reviewThreshold: z.number().min(0).max(1).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const khoa = await Promise.all(input.images.map((img) => khoaAnhChoPhep(ctx, img.imageKey))); // W17c: ảnh phải thuộc phạm vi người gọi
       const imageData = await Promise.all(
-        input.images.map(async (img) => ({
-          imageBuffer: await loadImage(img.imageKey),
+        input.images.map(async (img, i) => ({
+          imageBuffer: await loadImage(khoa[i]),
           imageUrl: img.imageKey,
           inspectionId: img.inspectionId,
           measurementResultId: img.measurementResultId,
