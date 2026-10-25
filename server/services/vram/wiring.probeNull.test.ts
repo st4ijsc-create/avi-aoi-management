@@ -203,3 +203,10 @@ describe("Important-1 — commitMeasured() PHẢI đánh dấu measureFailed khi
     expect(r.pendingBytes).toBe(0);
   });
 });
+
+// ★ Đợt 9 (2026-10-25) — `tickChoQuyetDinh` đo thiết bị TƯƠI khi tick null; lưới này đếm/xếp lượt gọi đầu dò của đường ĐO, nên tắt
+// lượt đo tươi của đường QUYẾT ĐỊNH: thay bằng một số đo "card trống" (đúng tiền đề của lưới — tick null, không ai khác giữ GPU).
+// Lưới riêng của luật mới: vramTickTuoi.test.ts.
+beforeEach(async () => {
+  (await import("./vramTickTuoi")).__datDocThietBiChoTest(async () => ({ usedBytes: 0, totalBytes: 32 * 1024 ** 3 }));
+});

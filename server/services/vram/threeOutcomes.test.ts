@@ -85,6 +85,7 @@ beforeEach(() => {
   vi.doUnmock("fs");
   vi.doUnmock("../aiLlamaServerClient");
   vi.doUnmock("../../db/connection");
+  vi.doUnmock("../ai/napServerNgoai");
   vi.resetModules();
   delete process.env.VRAM_LOAD_RETRIES;
   delete process.env.VRAM_LOAD_RETRY_DELAY_MS;
@@ -1006,6 +1007,9 @@ describe("§5 ★★ CA BẮT BUỘC — KHÔNG CÓ ĐƯỜNG NÀO IM LẶNG", (
   it("★★★ N-1b — bốn đường I-1 để lại vết THẬT: loadGgufModel.createContext → db.insert()", async () => {
     const insert = vi.fn(async () => undefined);
     vi.doMock("../../db/connection", () => ({ getDb: async () => ({ insert: () => ({ values: insert }) }) }));
+    // ★ Đợt 9 (2026-10-25) — hàng rào server ngoài (`ai/napServerNgoai`) hỏi :8091 THẬT của máy đang chạy lưới (cỡ tệp giả lớn) ⇒ ca
+    // này (canh đường createContext, không canh hàng rào — lưới riêng: napServerNgoai.test.ts) cho hàng rào qua.
+    vi.doMock("../ai/napServerNgoai", () => ({ kiemNapKhiServerNgoaiSong: async () => {} }));
     vi.doMock("./vramProcessProbe", () => ({
       readProcessVram: async () => ({
         totalBytes: 2048 * MiB, byPid: new Map([[process.pid, 2048 * MiB]]), byLuid: new Map(), sampledAtMs: Date.now(),
@@ -1309,4 +1313,11 @@ describe("§6 — ỐNG DẪN SỰ KIỆN: giá trị không hữu hạn KHÔNG 
       expect((sanitizeVramEvent(e as never) as unknown as Record<string, string>)[ten].length, ten).toBe(rong);
     }
   });
+});
+
+// ★ Đợt 9 (2026-10-25) — `tickChoQuyetDinh` đo thiết bị TƯƠI khi tick null; lưới này đếm/xếp lượt gọi đầu dò của đường ĐO, nên tắt
+// lượt đo tươi của đường QUYẾT ĐỊNH: thay bằng một số đo "card trống" (đúng tiền đề của lưới — tick null, không ai khác giữ GPU).
+// Lưới riêng của luật mới: vramTickTuoi.test.ts.
+beforeEach(async () => {
+  (await import("./vramTickTuoi")).__datDocThietBiChoTest(async () => ({ usedBytes: 0, totalBytes: 32 * 1024 ** 3 }));
 });
