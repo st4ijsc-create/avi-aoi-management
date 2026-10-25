@@ -19,9 +19,9 @@
 import type { NextFunction, Request, Response } from "express";
 import { ipKeyGenerator, type Store } from "express-rate-limit";
 import type { AnyRouter } from "@trpc/server";
-import { COOKIE_NAME } from "@shared/const";
 import { AUTH_RATE_LIMIT, taoStoreDem } from "./rateLimitConfig";
 import { trpcProcedureType } from "./trpcAdapter";
+import { docVePhienTuCookie } from "./vePhienCookie";
 
 export type NhomNhayCam = "2fa" | "auth";
 
@@ -126,17 +126,13 @@ function layCacPath(req: Request): string[] {
   return req.query?.batch === "1" ? p.split(",") : [p];
 }
 
-/** Chuỗi vé phiên (đã giải %-mã) trong cookie `COOKIE_NAME`, hoặc null (không cookie / không có tên / %-mã hỏng). Chỉ dùng trong `phienKyVaVe`. */
+/**
+ * Chuỗi vé phiên trong cookie `COOKIE_NAME`, đọc bằng ĐÚNG bộ đọc của đường xác thực (`vePhienCookie.docVePhienTuCookie`, `cookie.parse`:
+ * cắt khoảng trắng quanh tên và giá trị, tên trùng ⇒ bản ĐẦU), hoặc null. R1b-2a T3 fix round 3 (C-2): regex tự viết cũ không cắt khoảng
+ * trắng ⇒ `app_session_id= T` / `app_session_id =T` bị tầng STOP coi là vô danh trong khi auth nhận T ⇒ vượt trần. Chỉ dùng trong `phienKyVaVe`.
+ */
 function veTuCookie(req: Pick<Request, "headers">): string | null {
-  const raw = req.headers?.cookie;
-  if (!raw) return null;
-  const m = new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`).exec(raw);
-  if (!m) return null;
-  try {
-    return decodeURIComponent(m[1]!);
-  } catch {
-    return null; // %-mã hỏng: không phải một vé
-  }
+  return docVePhienTuCookie(req.headers?.cookie) ?? null;
 }
 
 /**

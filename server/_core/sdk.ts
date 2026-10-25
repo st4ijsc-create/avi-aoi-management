@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { AXIOS_TIMEOUT_MS, COOKIE_NAME } from "@shared/const";
+import { AXIOS_TIMEOUT_MS } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
 // ★★★★ Pha 8 Task 1 — chủ DUY NHẤT của vị từ "lượt gọi này có bị cổng BUỘC-ĐỔI-MẬT-KHẨU chặn không".
 import { biChanBoiCongDoiMatKhau } from "@shared/buocDoiMatKhau";
 import axios, { type AxiosInstance } from "axios";
-import { parse as parseCookieHeader } from "cookie";
+import { docVePhienTuCookie } from "./vePhienCookie";
 import type { Request } from "express";
 import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
@@ -326,15 +326,6 @@ class SDKServer {
     } as GetUserInfoResponse;
   }
 
-  private parseCookies(cookieHeader: string | undefined) {
-    if (!cookieHeader) {
-      return new Map<string, string>();
-    }
-
-    const parsed = parseCookieHeader(cookieHeader);
-    return new Map(Object.entries(parsed));
-  }
-
   private getSessionSecret() {
     const secret = ENV.cookieSecret;
     return new TextEncoder().encode(secret);
@@ -541,8 +532,8 @@ class SDKServer {
   private async xacThucTho(req: Request): Promise<User> {
     // Regular authentication flow
     canhBaoCookiePhienTrung(req.headers.cookie); // ★ Đợt 3c: CHỈ GHI LOG khi ≥ 2 app_session_id (cookie-tossing) — không chặn
-    const cookies = this.parseCookies(req.headers.cookie);
-    const sessionCookie = cookies.get(COOKIE_NAME);
+    // R1b-2a T3 fix round 3 (C-2): the ONE shared reader — the HMI STOP tier reads the ticket with this same function.
+    const sessionCookie = docVePhienTuCookie(req.headers.cookie);
     const session = await this.verifySession(sessionCookie);
 
     if (!session) {

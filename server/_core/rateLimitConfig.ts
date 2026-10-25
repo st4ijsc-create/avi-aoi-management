@@ -265,16 +265,19 @@ const _phienTheoYeuCau = new WeakMap<object, Promise<{ openId: string; phienBam:
  * R1b-2a T3 fix round 2 (review C-1): the whole token string is NOT canonical. jose 6.1.0 still verifies a ticket whose SIGNATURE segment
  * carries whitespace / newlines, a trailing space, "=" padding or a non-canonical last base64url char. So a key over the whole string gave
  * one ticket unlimited buckets. Any change to `header.payload` breaks verification, and its random `jti` keeps two sessions of one person
- * apart. Exported for tests.
+ * apart. Fix round 3 (re-review m-6): null unless the ticket is a compact JWS of EXACTLY 3 non-empty "."-separated segments, so a future
+ * caller can never hash a non-JWS (null ⇒ "not a signed STOP" ⇒ counted by the general tier). Exported for tests.
  */
-export function phanDaKyCuaVe(ve: string): string {
-  const i = ve.lastIndexOf(".");
-  return i > 0 ? ve.slice(0, i) : ve;
+export function phanDaKyCuaVe(ve: string): string | null {
+  const phan = ve.split(".");
+  if (phan.length !== 3 || phan.some((x) => x.length === 0)) return null;
+  return `${phan[0]}.${phan[1]}`;
 }
 
 /**
  * `phienBam` (R1b-2a T3 fix rounds 1–2) = first 16 hex chars of sha256(the signed part `header.payload` of the VERIFIED ticket). The
- * string comes from `phienKyVaVe` (one cookie parse feeds both the verifier and this hash). It is the "which session" half of the
+ * string comes from `phienKyVaVe` (one cookie parse feeds both the verifier and this hash, and that parse is auth's own reader
+ * `vePhienCookie.docVePhienTuCookie` — fix round 3, C-2). It is the "which session" half of the
  * STOP-tier key; the raw token is never logged or stored — only the prefix appears, inside the limiter key.
  */
 function phienKyCuaYeuCau(req: Request): Promise<{ openId: string; phienBam: string } | null> {
@@ -283,8 +286,9 @@ function phienKyCuaYeuCau(req: Request): Promise<{ openId: string; phienBam: str
     p = (async () => {
       const { phienKyVaVe } = await import("./trpcGioiHanThuTuc");
       const phien = await phienKyVaVe(req);
-      if (!phien) return null;
-      return { openId: phien.openId, phienBam: createHash("sha256").update(phanDaKyCuaVe(phien.ve)).digest("hex").slice(0, 16) };
+      const daKy = phien ? phanDaKyCuaVe(phien.ve) : null;
+      if (!phien || daKy === null) return null;
+      return { openId: phien.openId, phienBam: createHash("sha256").update(daKy).digest("hex").slice(0, 16) };
     })().catch(() => null);
     _phienTheoYeuCau.set(req, p);
   }

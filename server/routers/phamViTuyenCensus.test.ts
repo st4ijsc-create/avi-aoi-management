@@ -168,7 +168,12 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
 // ★ 2026-10-24 /api/external nhóm ④: A 29→25 · S 70→74 (hierarchy/{tree,factory/:factoryId,mqtt-topics,summary}); dashboard/summary + statistics/measurement-points đã trích sang cùng tệp, còn nợ → nhóm ⑤.
 // ★ 2026-10-24 /api/external nhóm ⑤: A 25→5 · S 74→94 (20 tuyến tổng hợp). A=5 còn lại ĐÚNG là năm MIỄN TRỪ CÓ CHỦ Ý (standards/device-types|alarm-taxonomy, twin/models, edge/download, reports/artifacts) — sổ nợ tuyến /api/* RỖNG.
 // ★ 2026-10-25 (W17a): A 5→4 · C 40→39 · S 94→96: tải tệp báo cáo (reportArtifactRoutes download + external/reports/:id/download) lọc theo phạm vi NGƯỜI TẠO (reportArtifactScope.ts) — gỡ miễn trừ.
-const GHIM = { A: 4, C: 39, D: 96, S: 96, U: 16, tong: 251 } as const;
+// ★ 2026-10-25 (SCADA R1b-2a T3 fix round 3, C-2): D 96→94 · tong 251→249 — HAI DƯƠNG TÍNH GIẢ rời bảng, không tuyến thật nào đổi. Đo bằng
+// diff bộ quét giữa HEAD và cây sửa: mất đúng `server/_core/sdk.ts#POST /webdev.v1.WebDevAuthPublicService/ExchangeToken` và
+// `…/GetUserInfoWithJwt` — hai lượt gọi axios RA NGOÀI (`this.client.post<T>(…)`), không phải tuyến Express. Vì sao rời: bộ lọc sơ bộ
+// của bộ quét chỉ mở tệp có `.get(` / `.post(` / `.use(` theo VĂN BẢN; sdk.ts từng lọt nhờ `cookies.get(COOKIE_NAME)`, nay đọc vé qua
+// `vePhienCookie.docVePhienTuCookie` ⇒ tệp không còn khớp bộ lọc (`.post<` không khớp `\.post\s*\(`).
+const GHIM = { A: 4, C: 39, D: 94, S: 96, U: 16, tong: 249 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {

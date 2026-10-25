@@ -126,7 +126,7 @@ function tuyChonVe(req: Request): CookieOptions {
 /**
  * ⚠ Đọc **thẳng từ `req.headers.cookie`**, không đọc `req.cookies`: repo này **không nạp**
  * `cookie-parser` (đã `grep` toàn `server/**` + `package.json`: không có). `_core/context.ts:41`
- * và `sdk.parseCookies` cũng làm đúng thế. Tin vào `req.cookies` ở đây sẽ cho `undefined` **luôn
+ * và `vePhienCookie.docVePhienTuCookie` (sdk dùng nó — R1b-2a T3) cũng làm đúng thế. Tin vào `req.cookies` ở đây sẽ cho `undefined` **luôn
  * luôn** ⇒ mọi lượt `verify-2fa` trả `thieu-ve` ⇒ **chặn hết**, kể cả luồng đúng.
  */
 function maVeTu(req: Request): string | null {
