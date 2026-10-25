@@ -533,7 +533,8 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   ngoaiAiCoCong KHÔNG đổi.** Thủ tục MỚI `scadaCommands.dungMay` (STOP HMI một bước) của `server/routers/scadaCommandsRouter.ts` (không
 //   phải bề mặt AI; tool `hmi.stop` KHÔNG vào registry tool AI), sau `MOD_OT_CONTROL` (xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 126 → 127).
 //   Đo: ghim cũ (gốc f5f8f40d9) đỏ ĐÚNG +1. `tong` 2403 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2409, beMatAi: 437, aiCoCong: 375, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // 2026-10-25 lô nhập/xuất luồng: +3 thủ tục flow.xuat|nhapXemTruoc|nhap (đều MOD_AI, có cổng giấy phép) ⇒ 2409 · 437 · 375 (đo bằng lưới). Trước đó lô Luồng-form 2406/434/372: +1 query flow.nguoiNhanChoLuong (MOD_AI, có cổng giấy phép: xemProcedure = moduleProcedure("MOD_AI")) ⇒ 2406 · beMatAi 434 · aiCoCong 372. // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// 2026-10-26 lô B7-D: +1 thủ tục flow.thongKe (đọc thống kê MỘT luồng; MOD_AI, có cổng giấy phép) ⇒ 2410 · 438 · 376.
+const GHIM = { tong: 2410, beMatAi: 438, aiCoCong: 376, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // 2026-10-25 lô nhập/xuất luồng: +3 thủ tục flow.xuat|nhapXemTruoc|nhap (đều MOD_AI, có cổng giấy phép) ⇒ 2409 · 437 · 375 (đo bằng lưới). Trước đó lô Luồng-form 2406/434/372: +1 query flow.nguoiNhanChoLuong (MOD_AI, có cổng giấy phép: xemProcedure = moduleProcedure("MOD_AI")) ⇒ 2406 · beMatAi 434 · aiCoCong 372. // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

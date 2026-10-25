@@ -23337,7 +23337,8 @@
       "loiKiemTruoc": "Kiểm trước khi lưu:",
       "congChuaNoi": "Cổng '{{cong}}' của node '{{node}}' chưa nối — item tới đó sẽ bị bỏ",
       "hanLuot": "Hạn tối đa mỗi lượt (giờ)",
-      "hanLuotGoiY": "Để trống = không đặt hạn riêng. Lượt chạy / chờ / hẹn giờ quá hạn này sẽ dừng với lỗi QUA_HAN_LUOT (tối đa 168 giờ = 7 ngày)."
+      "hanLuotGoiY": "Để trống = không đặt hạn riêng. Lượt chạy / chờ / hẹn giờ quá hạn này sẽ dừng với lỗi QUA_HAN_LUOT (tối đa 168 giờ = 7 ngày).",
+      "tabThongKe": "Thống kê"
     },
     "cauHinh": {
       "loiBieuThuc": "Biểu thức lỗi: {{loi}}",
@@ -23743,6 +23744,26 @@
         "co-bi-mat": "Gói có tham chiếu bí mật — sẽ bị bỏ (gắn lại sau).",
         "co-id-nha-may": "Gói mang id máy / người nhận / luồng khác — sẽ bị xoá (chọn lại sau)."
       }
+    },
+    "thongKe": {
+      "cuaSo": "Cửa sổ",
+      "ngay": "{{n}} ngày",
+      "tiLe": "Tỉ lệ thành công",
+      "chiTietLuot": "{{tong}} lượt: {{xong}} xong · {{loi}} lỗi · {{huy}} huỷ · {{dangChay}} đang chạy · {{choDuyet}} chờ duyệt",
+      "thoiGian": "Thời gian lượt xong (đồng hồ treo tường, gồm thời gian chờ người)",
+      "soLuotXong": "{{n}} lượt xong",
+      "theoNut": "Theo node",
+      "chuaCoDuLieu": "Chưa có dữ liệu trong cửa sổ này.",
+      "nut": "Node",
+      "buoc": "Bước",
+      "loi": "Lỗi",
+      "theoModel": "Theo model",
+      "model": "Model",
+      "loiGoi": "Lời gọi",
+      "tokenVao": "Token vào",
+      "tokenRa": "Token ra",
+      "khongBaoToken": "{{n}} lời gọi không báo token",
+      "doiKhe": "Đổi khe (ƯỚC LƯỢNG, suy từ chuỗi model giữa các lời gọi liên tiếp trong một lượt — không đọc bộ giám sát): {{uoc}} lần; {{ban}} lời gọi gặp khe bận."
     }
   },
   "scada": {

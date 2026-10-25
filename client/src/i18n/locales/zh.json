@@ -23337,7 +23337,8 @@
       "loiKiemTruoc": "保存前检查：",
       "congChuaNoi": "节点 '{{node}}' 的端口 '{{cong}}' 未连接——到达该端口的项将被丢弃",
       "hanLuot": "每次运行的最长时限（小时）",
-      "hanLuotGoiY": "留空 = 不设独立时限。运行/等待/延时超过该时限的运行将以错误 QUA_HAN_LUOT 终止（最长 168 小时 = 7 天）。"
+      "hanLuotGoiY": "留空 = 不设独立时限。运行/等待/延时超过该时限的运行将以错误 QUA_HAN_LUOT 终止（最长 168 小时 = 7 天）。",
+      "tabThongKe": "统计"
     },
     "cauHinh": {
       "loiBieuThuc": "表达式错误：{{loi}}",
@@ -23743,6 +23744,26 @@
         "co-bi-mat": "包引用了密钥——将被丢弃（稍后重新关联）。",
         "co-id-nha-may": "包携带机器 / 接收人 / 流程 id——将被清除（稍后重新选择）。"
       }
+    },
+    "thongKe": {
+      "cuaSo": "时间窗口",
+      "ngay": "{{n}} 天",
+      "tiLe": "成功率",
+      "chiTietLuot": "{{tong}} 次运行：{{xong}} 完成 · {{loi}} 出错 · {{huy}} 取消 · {{dangChay}} 运行中 · {{choDuyet}} 待审批",
+      "thoiGian": "已完成运行的耗时（墙钟时间，含等待人工的时间）",
+      "soLuotXong": "{{n}} 次已完成运行",
+      "theoNut": "按节点",
+      "chuaCoDuLieu": "该时间窗口内暂无数据。",
+      "nut": "节点",
+      "buoc": "步骤",
+      "loi": "错误",
+      "theoModel": "按模型",
+      "model": "模型",
+      "loiGoi": "调用",
+      "tokenVao": "输入令牌",
+      "tokenRa": "输出令牌",
+      "khongBaoToken": "{{n}} 次调用未上报令牌",
+      "doiKhe": "槽位切换（估算值，根据同一次运行中相邻调用的模型序列推断——不读取监督器）：{{uoc}} 次；{{ban}} 次调用遇到槽位繁忙。"
     }
   },
   "scada": {
