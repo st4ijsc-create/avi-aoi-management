@@ -4074,7 +4074,9 @@
       "scadaSelectTag": "选择要下达命令的通道",
       "scadaKenhCapNhat": "更新通道声明",
       "dieuKienDoiTuongTrongPhamVi": "范围内对象条件",
-      "flowNguoiNhan": "查找流程接收人"
+      "flowNguoiNhan": "查找流程接收人",
+      "flowXuat": "导出 AI 流程包",
+      "flowNhap": "从包导入 AI 流程"
     },
     "field": {
       "stationId": "工位",
@@ -9939,7 +9941,8 @@
     "activeBadge": "活跃徽章",
     "active": "活跃",
     "actions": "操作",
-    "acknowledge": "确认"
+    "acknowledge": "确认",
+    "cpkKhongXacDinh": "部分 Cpk/Ppk 点无法确定（数据恒定——标准差为 0）：不绘制柱形，并非为 0。"
   },
   "users": {
     "userList": "用户列表",
@@ -23587,6 +23590,48 @@
       },
       "chuyenJson": "用 JSON 编辑（高级）",
       "chuyenForm": "返回表单"
+    },
+    "xuatNhap": {
+      "xuat": "导出",
+      "xuatTieuDe": "将流程导出为包",
+      "xuatMoTa": "包不含密钥、机器 id、接收人、子流程、固定数据或流程 id。请查看下方警告后下载。",
+      "canhBaoVanBan": "自由文本仍提到源工厂（{{n}}）",
+      "khongCanhBao": "流程文本中未发现源工厂的机器编码 / 工厂名 / 人名。",
+      "canhBaoKhongXoa": "自由文本不会被自动删除（避免破坏提示词）——如需请手动修改。这些警告不在包文件中。",
+      "viecPhaiDien": "导入者需要填写的内容（{{n}}）",
+      "viecPhaiDienNhap": "导入后需要填写（{{n}}）",
+      "taiVe": "下载包",
+      "loaiCanhBao": {
+        "ma-may": "机器编码",
+        "nha-may": "工厂",
+        "nguoi-dung": "用户",
+        "bi-mat": "疑似密钥模式",
+        "id-so": "源工厂的数字 id"
+      },
+      "viec": {
+        "may": "重新选择机器",
+        "nguoi-nhan": "重新选择接收人",
+        "luong-con": "重新选择子流程（节点已变为占位）",
+        "workflow-ot": "重新选择 FOE 工作流",
+        "bi-mat": "重新关联密钥",
+        "luong-loi": "重新选择错误流程",
+        "bat-su-kien": "重新开启事件监听（当前关闭）",
+        "http-bi-mat": "重新填写已从 HTTP url / 头 / 正文中移除的内容（查询参数、密钥、密码——请使用流程的密钥）",
+        "affinity": "重新选择处理亲和组"
+      },
+      "nhap": "导入",
+      "nhapTieuDe": "从包导入流程",
+      "nhapMoTa": "创建您的新流程（关闭状态）。服务器会再次清理包：不含密钥 / 其他工厂的 id。",
+      "khongPhaiJson": "文件不是有效的 JSON。",
+      "khongHopLe": "流程尚无效",
+      "xacNhanNhap": "导入流程",
+      "canhBaoGoi": {
+        "bam-thieu": "包没有哈希——无法判断是否被手动修改。",
+        "bam-lech": "哈希不匹配——包在导出后被修改过。",
+        "co-du-lieu-ghim": "包含固定数据——将被丢弃。",
+        "co-bi-mat": "包引用了密钥——将被丢弃（稍后重新关联）。",
+        "co-id-nha-may": "包携带机器 / 接收人 / 流程 id——将被清除（稍后重新选择）。"
+      }
     }
   },
   "scada": {

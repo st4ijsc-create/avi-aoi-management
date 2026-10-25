@@ -120,6 +120,15 @@ describe("luu: kiểm tham số tĩnh của 4 node (cùng luật cho form và JS
     await A().luu({ definition: luongDef(`${TT}-t-ok2`, [nut("n", "tich-hop.thong-bao", { nguoiNhan: "{{ $json.ds }}", tieuDe: "x", loai: "{{ $json.l }}" })]) });
   });
 
+  it("★ thong-bao.duongDan: URL ngoài / '//' / javascript: / dấu gạch ngược ⇒ 400 (CÙNG safeInternalPath với chuông); '/flow/123' và để trống ⇒ lưu được", async () => {
+    for (const [i, duongDan] of ["https://evil", "//evil", "javascript:alert(1)", "\\\\evil", "/\\\\evil", "evil", "/a\tb"].entries()) {
+      await sai(`dd${i}`, nut("n", "tich-hop.thong-bao", { nguoiNhan: [], tieuDe: "x", duongDan }));
+    }
+    await A().luu({ definition: luongDef(`${TT}-dd-ok1`, [nut("n", "tich-hop.thong-bao", { nguoiNhan: [], tieuDe: "x", duongDan: "/flow/123" })]) });
+    await A().luu({ definition: luongDef(`${TT}-dd-ok2`, [nut("n", "tich-hop.thong-bao", { nguoiNhan: [], tieuDe: "x", duongDan: "" })]) });
+    await A().luu({ definition: luongDef(`${TT}-dd-ok3`, [nut("n", "tich-hop.thong-bao", { nguoiNhan: [], tieuDe: "x", duongDan: "{{ $json.url }}" })]) });
+  });
+
   it("su-kien / tao-phieu: sự kiện lạ, nhóm lạ, ưu tiên ngoài 1..5 ⇒ từ chối", async () => {
     await sai("e1", nut("e", "kich-hoat.su-kien", { suKien: "order.created", bat: true }));
     await sai("p1", nut("p", "bao-tri.tao-phieu", { may: 1, tieuDe: "abc", nhom: "ma-thuat" }));

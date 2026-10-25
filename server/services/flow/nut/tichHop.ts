@@ -18,7 +18,7 @@ import { LoiHttpLuong, coMucHostCong, datPhanGiaiDns, docThanCoTran, fetchGhim, 
 export { LoiHttpLuong };
 
 const TRAN_THAN = 1024 * 1024;
-const TIEU_DE_CAM = new Set(["authorization", "cookie", "proxy-authorization", "host"]);
+export const TIEU_DE_CAM = new Set(["authorization", "cookie", "set-cookie", "proxy-authorization", "host", "x-api-key", "api-key", "apikey", "x-auth-token", "x-access-token", "x-token", "x-secret"]);
 /** Tiêu đề không bao giờ được đặt bằng `header:<tên>` (khung giao thức / khoá idempotency của động cơ). */
 const TIEU_DE_BI_MAT_CAM = new Set(["host", "content-length", "transfer-encoding", "connection", "idempotency-key", "content-type"]);
 const RE_TEN_TIEU_DE = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/;

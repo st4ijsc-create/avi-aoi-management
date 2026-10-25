@@ -956,7 +956,7 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★★ 2026-10-25 (lô W17b, luật MQTT + ngưỡng yield THEO NHÀ MÁY, mig 0426; cộng dồn sau gộp A95/C466/S635): **C 466 → 454 · S 635 → 647 · D 1199 → 1201 · tong 2403 → 2405.** 12 thủ tục ĐỌC C→S (mqttAlert list|getById|history|unresolved · yieldThreshold list|getById|getByType|getEnabled|getHistory|getHistoryByType|getHistoryByThreshold · alertEscalation.recentEscalations) + 2 mutation mới yieldThreshold.create|delete. Chứng minh: phamViGhiDoW17bMqttYield.db.test.ts.
 // 2026-10-25 gộp L6c+L7 (A−43, C−2) với W17b/W17c (D+2) ⇒ đo bằng census.
 // L9 (2026-10-25): 16 thủ tục đọc cấu hình A→S (shift/layout/maintenanceSchedule/ngRate/process/productVariant/thresholdApproval) + 3 miễn trừ mới vẫn nhóm A: A 52→36, S 692→708 — loCauHinhDocPhamVi.db.test.ts
-const GHIM = { A: 36, B: 8, C: 452, D: 1201, S: 709, tong: 2406 } as const; // 2026-10-25 lô Luồng-form: +1 query flow.nguoiNhanChoLuong (nhóm S: chanLuong ⇒ luongTrongPhamVi, ngoài phạm vi ≡ NOT_FOUND; người nhận lọc bằng nguoiNhanHopLeTheoNhaMay) — đo bằng chính lưới này
+const GHIM = { A: 36, B: 8, C: 453, D: 1202, S: 710, tong: 2409 } as const; // 2026-10-25 lô nhập/xuất luồng: +3 thủ tục (xuat · nhapXemTruoc [miễn trừ: phân tích gói thuần] · nhap) ⇒ C 453 · D 1202 · S 710 · tong 2409, đo bằng chính lưới này. Trước đó (lô Luồng-form 709/2406): +1 query flow.nguoiNhanChoLuong (nhóm S: chanLuong ⇒ luongTrongPhamVi, ngoài phạm vi ≡ NOT_FOUND; người nhận lọc bằng nguoiNhanHopLeTheoNhaMay) — đo bằng chính lưới này
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

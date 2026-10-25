@@ -7,7 +7,7 @@
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { layNut, type NguCanhChay } from "../dangKyNut";
-import { ANH_MA, ANH_MA_DIGEST, chayMaCachLy, coAnhMa, coDocker, KICH_BAN_CHAY } from "../lib/chayMaCachLy";
+import { ANH_MA, ANH_MA_DIGEST, chayMaCachLy, coAnhMa, coDocker, KICH_BAN_CHAY, TRAN_MS } from "../lib/chayMaCachLy";
 import { chuanHoaItem } from "./ma";
 import "./index";
 
@@ -75,12 +75,15 @@ describe.skipIf(!CO_ANH)("du-lieu.ma — Docker thật", () => {
     }
   });
 
-  it("vòng lặp vô hạn ⇒ het-gio trong ≤ 12 s và container đã bị xoá", async () => {
+  it("vòng lặp vô hạn ⇒ sandbox CẮT tiến trình đúng ở trần của nó (het-gio, thông điệp nêu trần), không cắt sớm, container đã bị xoá", async () => {
     const t0 = Date.now();
     const e = await loiCua(chayMaCachLy({ ma: "while (true) {}", items: [] }));
     const ms = Date.now() - t0;
     expect(e?.loai).toBe("het-gio");
-    expect(ms).toBeLessThanOrEqual(12_000);
+    // Hành vi, KHÔNG phải đồng hồ tuyệt đối dưới tải: mã bị cắt vì TRẦN CỦA SANDBOX (thông điệp của chính sandbox nêu trần), không cắt sớm hơn trần; biên trên rộng (khởi động docker/xoá container có thể chậm khi máy tải).
+    expect(e?.message).toContain(`${TRAN_MS / 1000} s`);
+    expect(ms).toBeGreaterThanOrEqual(TRAN_MS - 1_000);
+    expect(ms).toBeLessThan(TRAN_MS * 4);
     const ps = spawnSync("docker", ["ps", "-a", "--filter", `name=luong-ma-${process.pid}-`, "--format", "{{.Names}}"], { encoding: "utf8" });
     expect(ps.stdout.trim()).toBe("");
   }, 30_000);

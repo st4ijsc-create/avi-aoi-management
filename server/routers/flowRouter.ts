@@ -39,6 +39,8 @@ import { kiemThamSoKichHoat, napLaiLich } from "../services/flow/kichHoat/lich";
 import { kiemThamSoSuKien, napLaiSuKien } from "../services/flow/kichHoat/suKien";
 import { kiemThamSoNutMoi } from "../services/flow/kiemThamSoNut";
 import { nguoiNhanHopLeTheoNhaMay } from "../services/flow/nut/thongBao";
+import { idLuongNhap, phanTichGoi, quetBiMat, quetVanBan, taoGoi } from "../services/flow/xuatNhap";
+import { dauVetNhaMay } from "../services/flow/xuatNhapDb";
 import { nhaMayCuaLuong } from "../services/flow/phamViLuong";
 import { capTokenWebhook, coNodeWebhook, coTokenWebhook } from "../services/flow/kichHoat/webhook";
 import { LOAI_BI_MAT, LoiBiMat, datHostBiMat, lietKeBiMat, taoBiMat, xoaBiMat } from "../services/flow/biMat";
@@ -114,7 +116,7 @@ export function docMauLuong(): { tep: string; definition: FlowDefinition }[] {
 /** Trần chữ của input/output mỗi bước trả về dòng thời gian (cắt ở đây, CSDL giữ nguyên theo `luuDuLieu`). */
 export const TRAN_CHU_BUOC = 4000;
 
-type Op = "flowNguoiNhan" | "flowXem" | "flowLuu" | "flowKichHoat" | "flowChayTay" | "flowDuyet" | "flowBiMatTao" | "flowBiMatXoa" | "flowBiMatXem" | "flowTaoTuMoTa" | "flowChayThu";
+type Op = "flowXuat" | "flowNhap" | "flowNguoiNhan" | "flowXem" | "flowLuu" | "flowKichHoat" | "flowChayTay" | "flowDuyet" | "flowBiMatTao" | "flowBiMatXoa" | "flowBiMatXem" | "flowTaoTuMoTa" | "flowChayThu";
 
 /** `LoiBiMat` ⇒ `appError` (thông điệp của LoiBiMat không bao giờ chứa giá trị). Lỗi khác ném lại nguyên. */
 function loiBiMat(e: unknown, op: Op): never {
@@ -201,6 +203,30 @@ async function kiemTruocKhiBat(def: FlowDefinition, ctx: { user: { id: number; r
   if (loi.length) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowKichHoat", reason: "flowKhongBatDuocThamChieu", nodeId: loi.map((x) => x.nodeId).join(", ").slice(0, 200) }, `Không bật được: ${loi.map((x) => x.thongDiep).join("; ")}.`);
 }
 
+/** Lưu phiên bản MỚI (bất biến) — DÙNG CHUNG bởi `flow.luu` và `flow.nhap` (nhập gói đi ĐÚNG đường này). */
+async function luuLuongCore(input: { definition: Record<string, unknown>; factoryId?: number }, ctx: CoCtx & { user: { id: number; role: string } }) {
+    const loiKichHoat = [...kiemThamSoKichHoat(input.definition), ...kiemThamSoSuKien(input.definition), ...kiemThamSoNutMoi(input.definition)];
+    if (loiKichHoat.length) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowChiTietMayChu", chiTiet: loiKichHoat.join("; ").slice(0, 300) }, `Luồng không hợp lệ: ${loiKichHoat.join("; ")}`);
+    // ★ Đợt 9 (IDOR): id đã có ⇒ phải thuộc phạm vi người lưu (không được thêm phiên bản vào luồng của nhà máy khác); id mới ⇒ gán nhà máy.
+    let factoryId: number | null = null;
+    const idLuong = typeof input.definition.id === "string" ? input.definition.id : null;
+    if (idLuong && RE_ID.test(idLuong)) {
+      const dbL = await layDb("flowLuu");
+      const [co] = await dbL.select({ id: aiFlows.id }).from(aiFlows).where(eq(aiFlows.id, idLuong)).limit(1);
+      if (co) {
+        if (!(await luongTrongPhamVi(phamViCua(ctx), idLuong))) throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowIdDaDung" }, "Id luồng đã được dùng — chọn id khác.");
+      } else factoryId = await nhaMayMoi(ctx, input.factoryId, "flowLuu");
+    }
+    await kiemThamChieuKhiLuu(input.definition, ctx);
+    try {
+      return await luuPhienBan(input.definition, ctx.user.id, factoryId);
+    } catch (e) {
+      if (e instanceof LoiLuong && e.code === "LUONG_KHONG_HOP_LE") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowChiTietMayChu", chiTiet: e.message.slice(0, 300) }, `Luồng không hợp lệ: ${e.message}`);
+      if (e instanceof LoiLuong && e.code === "KHONG_CO_DB") throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowChiTietMayChu", chiTiet: e.message.slice(0, 300) }, e.message);
+      throw e;
+    }
+}
+
 export const flowRouter = router({
   /** Mọi luồng + phiên bản hoạt động + phiên bản mới nhất + hạng. */
   danhSach: xemProcedure.query(async ({ ctx }) => {
@@ -242,6 +268,51 @@ export const flowRouter = router({
       return ra;
     }),
 
+  /**
+   * ★ XUẤT luồng thành GÓI (lô nhập/xuất): quyền như `chiTiet` (ngoài phạm vi ≡ NOT_FOUND). Gói đã làm SẠCH (không bí mật / id máy / người nhận / luồng con / dữ liệu ghim / id luồng / chủ);
+   * `canhBao` = chuỗi tự do còn nhắc mã máy / tên nhà máy / tên người của nhà máy nguồn (vị trí node + trường) — chỉ để người xuất xem TRƯỚC khi tải, KHÔNG nằm trong gói.
+   */
+  xuat: xemProcedure
+    .input(z.object({ flowId: flowIdSchema, version: z.number().int().min(1).optional() }))
+    .query(async ({ input, ctx }) => {
+      await chanLuong(ctx, input.flowId, "flowXuat");
+      const db = await layDb("flowXuat");
+      const [f] = await db.select().from(aiFlows).where(eq(aiFlows.id, input.flowId));
+      if (!f) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowXuat", reason: "flowKhongTonTaiHoacNgoaiPhamVi" }, `Không có luồng ${input.flowId}.`);
+      const [moiNhat] = await db.select({ v: aiFlowVersions.version }).from(aiFlowVersions).where(eq(aiFlowVersions.flowId, input.flowId)).orderBy(desc(aiFlowVersions.version)).limit(1);
+      const chon = input.version ?? f.activeVersion ?? moiNhat?.v;
+      const [v] = chon ? await db.select().from(aiFlowVersions).where(and(eq(aiFlowVersions.flowId, input.flowId), eq(aiFlowVersions.version, chon))) : [];
+      if (!v) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowXuat", reason: "flowKhongCoPhienBan", version: chon ?? 0 }, "Không có phiên bản để xuất.");
+      const def = v.definition as FlowDefinition;
+      const { goi, viec } = taoGoi(def);
+      // Quét cái SẼ RỜI KHỎI nhà máy: gói đã làm sạch (chữ tự do + id số + mẫu bí mật còn sót)
+      const dau = await dauVetNhaMay(f.factoryId ?? null);
+      const canhBao = [...quetVanBan(goi.luong, dau), ...quetBiMat(goi.luong)];
+      return { goi, viec, canhBao, hang: kiemLuong(goi.luong, layNut).hang, tenLuong: f.name };
+    }),
+
+  /** ★ XEM TRƯỚC khi NHẬP gói (không ghi gì): định dạng lạ / quá lớn / sai schema ⇒ BAD_REQUEST; băm thiếu/lệch, có bí mật/dữ liệu ghim/id nhà máy trong gói ⇒ chỉ cảnh báo. */
+  nhapXemTruoc: xemProcedure.input(z.object({ goi: z.unknown() })).query(({ input }) => {
+    const p = phanTichGoi(input.goi);
+    if (!p.ok) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowNhap", reason: "flowChiTietMayChu", chiTiet: p.thongDiep }, p.thongDiep);
+    const kq = kiemLuong(p.luong, layNut);
+    return { tenGoc: p.luong.name, soNode: p.luong.nodes.length, hang: kq.hang, hopLe: kq.ok, loi: kq.loi.slice(0, 20), canhBao: p.canhBao, viec: p.viec };
+  }),
+
+  /**
+   * ★ NHẬP gói thành luồng MỚI (TẮT, phiên bản 1) của người nhập — đi ĐÚNG đường `luu` (kiểm luồng, kiểm tham số, gán nhà máy theo phạm vi người nhập, hạng tính lại ở máy chủ).
+   * Gói được làm sạch LẠI (không tin): id / bí mật / dữ liệu ghim / tham chiếu theo nhà máy luôn về trống ⇒ người nhập điền (`viec`).
+   */
+  nhap: ghiProcedure
+    .input(z.object({ goi: z.unknown(), ten: z.string().trim().min(1).max(200), factoryId: z.number().int().positive().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      const p = phanTichGoi(input.goi);
+      if (!p.ok) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowNhap", reason: "flowChiTietMayChu", chiTiet: p.thongDiep }, p.thongDiep);
+      const definition = { ...p.luong, id: idLuongNhap(input.ten), name: input.ten };
+      const kq = await luuLuongCore({ definition: definition as unknown as Record<string, unknown>, ...(input.factoryId !== undefined ? { factoryId: input.factoryId } : {}) }, ctx);
+      return { ...(kq as object), flowId: definition.id, viec: p.viec, canhBao: p.canhBao };
+    }),
+
   chiTiet: xemProcedure.input(z.object({ flowId: flowIdSchema, version: z.number().int().min(1).optional() })).query(async ({ input, ctx }) => {
     await chanLuong(ctx, input.flowId, "flowXem");
     const db = await layDb("flowXem");
@@ -270,28 +341,7 @@ export const flowRouter = router({
   /** Lưu phiên bản MỚI (bất biến) sau khi kiểm hợp lệ + tham số kích hoạt. */
   luu: ghiProcedure
     .input(z.object({ definition: z.record(z.string(), z.unknown()), factoryId: z.number().int().positive().optional() }))
-    .mutation(async ({ input, ctx }) => {
-    const loiKichHoat = [...kiemThamSoKichHoat(input.definition), ...kiemThamSoSuKien(input.definition), ...kiemThamSoNutMoi(input.definition)];
-    if (loiKichHoat.length) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowChiTietMayChu", chiTiet: loiKichHoat.join("; ").slice(0, 300) }, `Luồng không hợp lệ: ${loiKichHoat.join("; ")}`);
-    // ★ Đợt 9 (IDOR): id đã có ⇒ phải thuộc phạm vi người lưu (không được thêm phiên bản vào luồng của nhà máy khác); id mới ⇒ gán nhà máy.
-    let factoryId: number | null = null;
-    const idLuong = typeof input.definition.id === "string" ? input.definition.id : null;
-    if (idLuong && RE_ID.test(idLuong)) {
-      const dbL = await layDb("flowLuu");
-      const [co] = await dbL.select({ id: aiFlows.id }).from(aiFlows).where(eq(aiFlows.id, idLuong)).limit(1);
-      if (co) {
-        if (!(await luongTrongPhamVi(phamViCua(ctx), idLuong))) throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowIdDaDung" }, "Id luồng đã được dùng — chọn id khác.");
-      } else factoryId = await nhaMayMoi(ctx, input.factoryId, "flowLuu");
-    }
-    await kiemThamChieuKhiLuu(input.definition, ctx);
-    try {
-      return await luuPhienBan(input.definition, ctx.user.id, factoryId);
-    } catch (e) {
-      if (e instanceof LoiLuong && e.code === "LUONG_KHONG_HOP_LE") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowChiTietMayChu", chiTiet: e.message.slice(0, 300) }, `Luồng không hợp lệ: ${e.message}`);
-      if (e instanceof LoiLuong && e.code === "KHONG_CO_DB") throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowChiTietMayChu", chiTiet: e.message.slice(0, 300) }, e.message);
-      throw e;
-    }
-  }),
+    .mutation(({ input, ctx }) => luuLuongCore(input, ctx)),
 
   /**
    * Đặt phiên bản hoạt động + bật/tắt. Bật phiên bản hạng ≥ `ngoai-ghi` ⇒ admin. Luồng có node webhook mà chưa có token

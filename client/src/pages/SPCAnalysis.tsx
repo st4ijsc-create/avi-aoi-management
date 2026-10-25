@@ -17,6 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AdvancedSection } from "@/components/AdvancedSection";
+import { CpkTrendChart } from "@/components/spc/CpkTrendChart";
 import {
   PageHeader, chartColor, chartGridProps, chartAxisTick, chartTooltipStyle,
 } from "@/components/patterns";
@@ -607,18 +608,7 @@ export function SPCAnalysisContent() {
             {/* Collapsible: CPK Trend */}
             <CollapsibleSection title={t('spc.cpkTrend')}>
               {cpkTrendData?.data?.length ? (
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={[...cpkTrendData.data].reverse().map((d, i) => ({ i: i + 1, cpk: d.cpk ?? 0, ppk: d.ppk ?? 0 }))}>
-                    <CartesianGrid {...chartGridProps} />
-                    <XAxis dataKey="i" tick={chartAxisTick} />
-                    <YAxis tick={chartAxisTick} />
-                    <Tooltip contentStyle={chartTooltipStyle} /><Legend />
-                    <ReferenceLine y={1.33} stroke="var(--success)" strokeDasharray="4 2" />
-                    <ReferenceLine y={1.0} stroke="var(--destructive)" strokeDasharray="4 2" />
-                    <Bar dataKey="cpk" fill={chartColor(0)} isAnimationActive={false} />
-                    <Bar dataKey="ppk" fill={chartColor(2)} isAnimationActive={false} />
-                  </BarChart>
-                </ResponsiveContainer>
+                <CpkTrendChart rows={cpkTrendData.data} />
               ) : <p className="text-sm text-muted-foreground py-4">{t('spc.noTrendData')}</p>}
             </CollapsibleSection>
 

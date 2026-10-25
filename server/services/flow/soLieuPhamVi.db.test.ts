@@ -272,6 +272,30 @@ describe("tich-hop.thong-bao — chỉ kênh nội bộ, người nhận trong p
     expect(gui).toEqual([u.nhanAdmin]);
   });
 
+  it("★ duongDan LÚC CHẠY (biểu thức / lưu thẳng không qua router): URL ngoài ⇒ THAM_SO_SAI, không gửi; '/flow/123' ⇒ gửi kèm actionUrl", async () => {
+    const dsDuong: Array<string | undefined> = [];
+    gui.length = 0;
+    __datHamGuiThongBaoChoTest(async (userId, p) => {
+      gui.push(userId);
+      dsDuong.push(p.actionUrl);
+      return { id: 1 };
+    });
+    const tao = async (ten: string, duongDan: string) => {
+      const id = `${TT}-dd-${ten}`;
+      await luuPhienBan({ id, name: "dd", version: 1, settings: { maxConcurrentRuns: 100 }, nodes: [nut("t", "kich-hoat.thu-cong"), nut("s", "du-lieu.so-lieu", { truyVan: "san-luong.tong-quan", gio: 24 }), nut("n", "tich-hop.thong-bao", { nguoiNhan: [u.nhanA], tieuDe: "x", duongDan })], connections: [noi("t", "s"), noi("s", "n")] }, u.admin, ids.facA);
+      return chay(id, u.A);
+    };
+    for (const [i, xau] of ["https://evil", "//evil", "javascript:alert(1)", "\\\\evil"].entries()) {
+      const r = await tao(`x${i}`, xau);
+      expect(r.status, xau).toBe("loi");
+      expect(((r.buocN.error as { ma?: string }) ?? {}).ma, xau).toBe("THAM_SO_SAI");
+    }
+    expect(gui).toEqual([]);
+    const ok = await tao("ok", "/flow/123");
+    expect(ok.status).toBe("xong");
+    expect(dsDuong).toEqual(["/flow/123"]);
+  });
+
   it("tham số sai (mảng rỗng, quá 20, kiểu lạ) ⇒ lỗi; atMostOnce: bước thông báo không bao giờ chạy hai lần", async () => {
     dung();
     for (const nguoiNhan of [[], Array.from({ length: 21 }, (_, i) => i + 1), ["abc"], "1"]) {
