@@ -36,7 +36,9 @@ import { appError } from "../_core/appError";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
 import { getDb } from "../db/connection";
-import { diemDoGhiTrongPhamVi } from "./_sanPhamPhamVi";
+import { diemDoGhiTrongPhamVi, sanPhamNhinThay } from "./_sanPhamPhamVi";
+import { congDiemDoTheoPhamVi } from "../db/product";
+import { phamViCua } from "./_phamViNguoiXem";
 import { updateMeasurementPointDef, createAuditLog } from "../db";
 import {
   thresholdApprovals,
@@ -413,8 +415,10 @@ export const thresholdApprovalRouter = router({
   /** Wave 2 đường A — số đề xuất ĐANG CHỜ theo từng điểm đo, để gắn badge ngay trên /products. */
   countPendingByProduct: protectedProcedure
     .input(z.object({ productModelId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { countPendingByPoint } = await import("../services/thresholdApprovalCount");
+      // phạm vi người dùng (L9 2026-10-25): sản phẩm ngoài phạm vi ≡ không có yêu cầu chờ duyệt
+      if (!(await sanPhamNhinThay(ctx, input.productModelId))) return { byPoint: {}, total: 0 };
       return countPendingByPoint(input.productModelId);
     }),
 
@@ -427,10 +431,12 @@ export const thresholdApprovalRouter = router({
       requestedBy: z.number().int().positive().optional(),
       limit: z.number().int().min(1).max(500).default(100),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const conds = [] as any[];
+      const congSp = await congDiemDoTheoPhamVi(thresholdApprovals.pointDefId, phamViCua(ctx)); // phạm vi người dùng (L9 2026-10-25): điểm đo → sản phẩm trong phạm vi (luật L3)
+      if (congSp) conds.push(congSp);
       if (input?.pointDefId) conds.push(eq(thresholdApprovals.pointDefId, input.pointDefId));
       if (input?.status) conds.push(eq(thresholdApprovals.status, input.status));
       if (input?.requestedBy) conds.push(eq(thresholdApprovals.requestedBy, input.requestedBy));
@@ -581,5 +587,5 @@ export const thresholdApprovalRouter = router({
 
   getById: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => layYeuCauDuyet(input.id)),
+    .query(async ({ input, ctx }) => layYeuCauDuyet(input.id, ctx)), // phạm vi người dùng (L9 2026-10-25): cùng luật GHI (điểm đo → sản phẩm)
 });

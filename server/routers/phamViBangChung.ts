@@ -133,6 +133,9 @@ export const BANG_CHUNG_GHI: Readonly<Record<string, BangChung>> = dung(NHOM_GHI
 
 /** Sổ ĐỌC (luong-ui) — cấu trúc `MIEN_TRU_CO_CHU_Y` không đổi; bằng chứng ở đây. */
 export const BANG_CHUNG_DOC: Readonly<Record<string, BangChung>> = {
+  "server/routers/shiftConfigRouter.ts#shiftConfigRouter.defaults": T("server/routers/loCauHinhDocPhamVi.db.test.ts", "shiftConfig.list: ca nhà máy B ẩn"),
+  "server/routers/alertRouters.ts#alertRouter.getById": T("server/routers/loCauHinhDocPhamVi.db.test.ts", "alertRouter.getById: chủ hoặc admin"),
+  "server/routers/alertRouters.ts#alertRouter.listAll": T("server/routers/loCauHinhDocPhamVi.db.test.ts", "alertRouter.getById: chủ hoặc admin"),
   "server/routers/simTargetsRouter.ts#simTargetsRouter.ursimPing": M("server/routers/simTargetsRouter.ts", "resolveSimTarget(input.targetId)"),
   "server/routers/hierarchyRouters.ts#machineRouter.config": M("server/routers/hierarchyRouters.ts", "config: publicProcedure"),
   "server/routers/permissionsRouter.ts#permissionsRouter.getBuiltInRoles": M("server/routers/permissionsRouter.ts", "getBuiltInRoles: adminProcedure"),

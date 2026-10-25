@@ -28,6 +28,8 @@ import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { maintenanceSchedules, machines } from "../../drizzle/schema";
 import { viTriHopLe, lichBaoTriGhi } from "./_cauHinhPhamVi";
+import { dieuKienViTriTrongPhamVi } from "./_adapterPhamVi";
+import { phamViCua } from "./_phamViNguoiXem";
 
 const READ = "machine_status";
 // QA4c-2: PM schedule là công việc BẢO TRÌ → dùng machine_downtime (maintenance/
@@ -77,10 +79,13 @@ export const maintenanceScheduleRouter = router({
       isActive: z.boolean().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       const conds: any[] = [];
+      // phạm vi người dùng (L9 2026-10-25): lịch theo máy / nhà máy (hàng không định vị chỉ toàn quyền)
+      const congPv = await dieuKienViTriTrongPhamVi(phamViCua(ctx), { machineId: maintenanceSchedules.machineId, factoryId: maintenanceSchedules.factoryId });
+      if (congPv) conds.push(congPv);
       if (input?.machineId) conds.push(eq(maintenanceSchedules.machineId, input.machineId));
       if (input?.isActive !== undefined) conds.push(eq(maintenanceSchedules.isActive, input.isActive));
       const rows = await db.select().from(maintenanceSchedules)
@@ -94,7 +99,10 @@ export const maintenanceScheduleRouter = router({
   get: protectedProcedure
     .use(requirePermission(READ, "canView"))
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => normalize(await layHangLichBaoTri(input.id))),
+    .query(async ({ input, ctx }) => {
+      await lichBaoTriGhi(ctx, input.id); // phạm vi người dùng (L9 2026-10-25): cùng luật GHI; ngoài phạm vi ≡ không tồn tại
+      return normalize(await layHangLichBaoTri(input.id));
+    }),
 
   // ── create (write) ───────────────────────────────────────────────────────────
   create: protectedProcedure

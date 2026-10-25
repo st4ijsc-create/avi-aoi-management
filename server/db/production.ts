@@ -18,10 +18,17 @@ import {
 } from "../../drizzle/schema";
 
 // ============ SHIFT CONFIG FUNCTIONS ============
-export async function getShiftConfigs(factoryId?: number) {
+export async function getShiftConfigs(factoryId?: number, idsNhaMay?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
-  
+  // phạm vi người dùng (L9 2026-10-25): người hẹp (idsNhaMay là tập nhà máy trong phạm vi) chỉ thấy ca toàn cục (factoryId NULL) + ca nhà máy của mình; nhà máy ngoài phạm vi ≡ không tồn tại (chỉ ca toàn cục)
+  if (idsNhaMay != null) {
+    const trong = factoryId && idsNhaMay.includes(factoryId) ? [factoryId] : factoryId ? [] : idsNhaMay;
+    return db.select().from(shiftConfigs)
+      .where(or(isNull(shiftConfigs.factoryId), trong.length > 0 ? inArray(shiftConfigs.factoryId, trong) : undefined))
+      .orderBy(shiftConfigs.orderIndex);
+  }
+
   if (factoryId) {
     return db.select().from(shiftConfigs)
       .where(or(eq(shiftConfigs.factoryId, factoryId), isNull(shiftConfigs.factoryId)))
