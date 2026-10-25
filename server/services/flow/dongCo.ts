@@ -22,6 +22,7 @@ import type { ItemLuong } from "../../../shared/flow/bieuThuc";
 import { layNut, type KetQuaChay, type NguCanhChay, type VetModel, type YeuCauCho } from "./dangKyNut";
 import { LoiBiMat, bienTheBiMat, cheBiMat, cheSau, giaiMaChoChay } from "./biMat";
 import { ghimLuongCon, hangLuongConGhim, thamChieuTho } from "./ghimLuongCon";
+import { KIND_MAY_DOC } from "./soLieu/kind";
 import "./nut";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -31,7 +32,7 @@ const UU_TIEN_SO: Record<string, number> = { interactive: 0, agent: 1, backgroun
 
 export class LoiLuong extends Error {
   constructor(
-    public readonly code: "LUONG_KHONG_HOP_LE" | "LUONG_KHONG_CO" | "KHONG_CO_DB" | "LOAI_NODE_MAT" | "QUA_TRAN_DONG_THOI",
+    public readonly code: "LUONG_KHONG_HOP_LE" | "LUONG_KHONG_CO" | "KHONG_CO_DB" | "LOAI_NODE_MAT" | "QUA_TRAN_DONG_THOI" | "QUA_TRAN_LUOT_GIO",
     message: string,
   ) {
     super(message);
@@ -110,6 +111,10 @@ interface YeuCauRun {
    * Chạy tay truyền NGƯỜI BẤM.
    */
   chuLuong?: number | null;
+  /** Lượt khởi bởi sự kiện máy: ghi `idMay` vào nhật ký tập máy NGAY LÚC BẮT ĐẦU (cùng giao dịch) để `tich-hop.thong-bao` kiểm người nhận ⊇ máy đó. */
+  mayCuaSuKien?: number;
+  /** Trần số lượt cùng `triggerKind` của luồng trong 1 giờ — đếm + chèn NGUYÊN TỬ (cùng khoá cố vấn theo luồng với trần đồng thời). Vượt ⇒ ném `QUA_TRAN_LUOT_GIO`. */
+  tranLuotMoiGio?: number;
 }
 
 /** Chủ lượt cho một lượt mới (xem `YeuCauRun.chuLuong`). */
@@ -147,10 +152,25 @@ async function kiemTranDongThoi(tx: Db | Tx, y: YeuCauRun, def: FlowDefinition):
   }
 }
 
+/**
+ * Trần lượt/giờ theo `triggerKind` — gọi SAU `kiemTranDongThoi` (đã giữ khoá cố vấn theo luồng đến hết giao dịch) ⇒ đếm rồi chèn là NGUYÊN TỬ giữa các tiến trình.
+ * Lượt trùng khoá idempotency được miễn (đường cũ trả đúng lượt đã có / báo trùng).
+ */
+async function kiemTranLuotGio(tx: Db | Tx, y: YeuCauRun): Promise<void> {
+  if (y.tranLuotMoiGio === undefined || y.parentRunId) return;
+  if (y.idempotencyKey) {
+    const da = (await tx.execute(sql`SELECT 1 FROM ai_flow_runs WHERE "idempotencyKey" = ${y.idempotencyKey} LIMIT 1`)) as unknown as unknown[];
+    if (da.length) return;
+  }
+  const [d] = (await tx.execute(sql`SELECT count(*)::int AS n FROM ai_flow_runs WHERE "flowId" = ${y.flowId} AND "triggerKind" = ${y.triggerKind ?? "thu-cong"} AND "startedAt" > now() - interval '1 hour'`)) as unknown as { n: number }[];
+  if (d.n >= y.tranLuotMoiGio) throw new LoiLuong("QUA_TRAN_LUOT_GIO", `luồng ${y.flowId} đã ${d.n} lượt ${y.triggerKind ?? "thu-cong"} trong 1 giờ (trần ${y.tranLuotMoiGio})`);
+}
+
 /** Tạo lượt + mục hàng của node kích hoạt TRONG một giao dịch có sẵn. */
 async function taoRunTx(tx: Db | Tx, y: YeuCauRun): Promise<string> {
   const def = await dinhNghia(tx, y.flowId, y.version);
   await kiemTranDongThoi(tx, y, def);
+  await kiemTranLuotGio(tx, y);
   const runId = randomUUID();
   const uuTien = def.settings?.uuTien ?? "background";
   const kichHoat = def.nodes.filter((n) => layNut(n.type)?.laKichHoat && (!y.nutKichHoat || n.id === y.nutKichHoat));
@@ -161,6 +181,7 @@ async function taoRunTx(tx: Db | Tx, y: YeuCauRun): Promise<string> {
   for (const n of kichHoat) {
     await tx.insert(aiFlowQueue).values({ runId, nodeId: n.id, lan: 1, inputs: { main: y.items ?? [{ json: {} }] }, uuTien: UU_TIEN_SO[uuTien] ?? 2 });
   }
+  if (y.mayCuaSuKien !== undefined) await tx.insert(aiFlowEvents).values({ runId, kind: KIND_MAY_DOC, payload: { nodeId: "su-kien", may: [y.mayCuaSuKien] } });
   await tx.insert(aiFlowEvents).values({ runId, kind: "run.bat-dau", payload: { kichHoat: kichHoat.map((n) => n.id), ...(y.parentRunId ? { parentRunId: y.parentRunId } : {}) } });
   return runId;
 }

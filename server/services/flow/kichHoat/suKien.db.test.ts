@@ -15,7 +15,8 @@ import { getDb } from "../../../db/connection";
 import { aiFlowRuns, aiFlows } from "../../../../drizzle/schema";
 import { eventBus } from "../../../_core/eventBus";
 import { taoNguoiDungTest } from "../../../testing/nguoiDungTest";
-import { luuPhienBan } from "../dongCo";
+import { chayMotMuc, luuPhienBan } from "../dongCo";
+import { __datHamGuiThongBaoChoTest } from "../nut/thongBao";
 import { dungSuKien, kiemThamSoSuKien, khoiChaySuKien, napLaiSuKien, xuLySuKien } from "./suKien";
 
 const RUN = `sk_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
@@ -32,8 +33,8 @@ const luongSk = (id: string, tham: Record<string, unknown>) => ({
 
 const ids = { facA: 0, facB: 0, machA: 0, machB: 0 };
 const cay: { ws: number[]; ln: number[]; st: number[] } = { ws: [], ln: [], st: [] };
-const u = { A: 0, B: 0, khoa: 0, nhieu: 0 };
-const FL = { A: `${TT}-A`, B: `${TT}-B`, G: `${TT}-G`, TAT: `${TT}-tat`, KHOA: `${TT}-khoa`, AA: `${TT}-AA`, TRAN: `${TT}-tran`, DT: `${TT}-dt` };
+const u = { A: 0, B: 0, khoa: 0, nhieu: 0, nhanA: 0, nhanB: 0 };
+const FL = { A: `${TT}-A`, B: `${TT}-B`, G: `${TT}-G`, TAT: `${TT}-tat`, KHOA: `${TT}-khoa`, AA: `${TT}-AA`, CAP: `${TT}-cap`, TB: `${TT}-tb`, TRAN: `${TT}-tran`, DT: `${TT}-dt` };
 let db: NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 async function mkUser(suffix: string, factories: string[]): Promise<number> {
@@ -73,10 +74,22 @@ beforeAll(async () => {
   u.B = await mkUser("b", [FAC_B]);
   u.khoa = await mkUser("khoa", [FAC_A]);
   u.nhieu = await mkUser("nhieu", [FAC_A, FAC_B]);
-  await luu(luongSk(FL.A, { bat: true }), u.A, ids.facA);
+  u.nhanA = await mkUser("nhana", [FAC_A]);
+  u.nhanB = await mkUser("nhanb", [FAC_B]);
+  await luu(luongSk(FL.A, { bat: true, tranMoiGio: 30 }), u.A, ids.facA);
   await luu(luongSk(FL.B, { bat: true }), u.B, ids.facB);
   await luu(luongSk(FL.G, { bat: true }), u.A, null); // toàn hệ thống nhưng chủ chỉ thuộc A
   await luu(luongSk(FL.AA, { bat: true }), u.nhieu, ids.facA); // chủ thấy CẢ HAI nhà máy nhưng luồng gắn A
+  await luu(luongSk(FL.CAP, { bat: true, tranMoiGio: 3 }), u.A, ids.facA);
+  await luu(
+    {
+      id: FL.TB, name: "su kien thong bao", version: 1, settings: { maxConcurrentRuns: 100 },
+      nodes: [nut("sk", "kich-hoat.su-kien", { suKien: "yield.warning", bat: true }), nut("n", "tich-hop.thong-bao", { nguoiNhan: [u.nhanA], tieuDe: "Yield thấp", noiDung: "máy {{ $json.maMay }}" })],
+      connections: [noi("sk", "n")],
+    } as never,
+    u.A,
+    ids.facA,
+  );
   await luu(luongSk(FL.TAT, {}), u.A, ids.facA); // KHÔNG khai bat ⇒ mặc định tắt
   await luu(luongSk(FL.KHOA, { bat: true }), u.khoa, ids.facA);
   await luu(luongSk(FL.TRAN, { bat: true, tranMoiGio: 2 }), u.A, ids.facA);
@@ -84,7 +97,10 @@ beforeAll(async () => {
   await db.execute(sql`UPDATE users SET "isActive" = false WHERE id = ${u.khoa}`);
 }, 180_000);
 
-afterEach(() => dungSuKien());
+afterEach(() => {
+  dungSuKien();
+  __datHamGuiThongBaoChoTest(null);
+});
 
 afterAll(async () => {
   const runs = await db.select({ id: aiFlowRuns.id }).from(aiFlowRuns).where(like(aiFlowRuns.flowId, `${TT}%`));
@@ -179,6 +195,47 @@ describe("idempotent theo khoá sự kiện + cửa sổ · trần lượt/giờ
     const [r] = (await db.execute(sql`SELECT r."triggerKind", r."chuLuong", q.inputs FROM ai_flow_runs r LEFT JOIN ai_flow_queue q ON q."runId" = r.id WHERE r."flowId" = ${FL.A} ORDER BY r."startedAt" LIMIT 1`)) as unknown as { triggerKind: string; chuLuong: number; inputs: unknown }[];
     expect(r.triggerKind).toBe("su-kien");
     expect(r.chuLuong).toBe(u.A);
+  });
+});
+
+describe("N4 · trần nguyên tử · ts vắng", () => {
+  it("★ N4: lượt do sự kiện khởi ghi idMay vào nhật ký tập máy NGAY LÚC BẮT ĐẦU (kind so-lieu.may-doc), không cần node số liệu", async () => {
+    const kq = await ban("ng.alert", { machineId: ids.machA }, T0 + 200 * 3600_000);
+    expect(kq[FL.A]).toBe("chay");
+    const rows = (await db.execute(sql`SELECT e.payload FROM ai_flow_events e JOIN ai_flow_runs r ON r.id = e."runId" WHERE r."flowId" = ${FL.A} AND e.kind = 'so-lieu.may-doc'`)) as unknown as { payload: { may: number[] } }[];
+    expect(rows.some((x) => x.payload.may.includes(ids.machA))).toBe(true);
+  });
+
+  it("★ N4 đầu-cuối: sự kiện → thông báo (không node số liệu) chạy qua động cơ thật: có nhật ký máy, người nhận thuộc A nhận đúng 1 thông báo", async () => {
+    const gui: Array<[number, unknown]> = [];
+    __datHamGuiThongBaoChoTest(async (id, p) => {
+      gui.push([id, (p.metadata as { runId?: unknown } | undefined)?.runId]);
+      return { id: 1 };
+    });
+    napLaiSuKien();
+    const [b] = (await xuLySuKien("yield.warning", { machineId: ids.machA, machineCode: "x" }, T0 + 250 * 3600_000)).filter((x) => x.flowId === FL.TB);
+    expect(b.ketQua).toBe("chay");
+    for (let i = 0; i < 500 && (await chayMotMuc("w-sk", undefined, TT)); i++);
+    const [st] = (await db.execute(sql`SELECT status FROM ai_flow_runs WHERE id = ${b.runId!}`)) as unknown as { status: string }[];
+    expect(st.status).toBe("xong");
+    expect(gui.filter(([, run]) => run === b.runId)).toEqual([[u.nhanA, b.runId]]);
+  });
+
+  it("★ trần lượt/giờ NGUYÊN TỬ: 8 sự kiện song song (cửa sổ khác nhau), trần 3 ⇒ đúng 3 lượt", async () => {
+    await db.execute(sql`DELETE FROM ai_flow_runs WHERE "flowId" = ${FL.CAP}`); // các ca trước đã dùng hạn mức giờ này
+    napLaiSuKien();
+    const goc = T0 + 300 * 3600_000;
+    const kq = await Promise.all(Array.from({ length: 8 }, (_, i) => xuLySuKien("ng.alert", { machineId: ids.machA }, goc + i * 11 * 60_000)));
+    const cap = kq.map((k) => k.find((x) => x.flowId === FL.CAP)?.ketQua);
+    expect(cap.filter((x) => x === "chay").length).toBe(3);
+    expect(cap.filter((x) => x === "vuot-tran").length).toBe(5);
+    expect(await dem(FL.CAP)).toBe(3);
+  });
+
+  it("ts vắng / hỏng ⇒ dùng thời điểm nhận, không ném", async () => {
+    napLaiSuKien();
+    const kq = await xuLySuKien("ng.alert", { machineId: ids.machA }, Number.NaN);
+    expect(kq.length).toBeGreaterThan(0);
   });
 });
 

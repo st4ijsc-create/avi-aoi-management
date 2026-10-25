@@ -12,8 +12,8 @@ import { dangKyNut, nguCanhItem, type KetQuaChay } from "../dangKyNut";
 import { nhaMayCuaLuong } from "../phamViLuong";
 import { LoiSoLieu, chaySoLieu, chuanHoaThamSo } from "../soLieu/danhMuc";
 
-/** Loại sự kiện nhật ký lượt ghi tập máy mà các node số liệu đã đọc. */
-export const KIND_MAY_DOC = "so-lieu.may-doc";
+import { KIND_MAY_DOC } from "../soLieu/kind";
+export { KIND_MAY_DOC };
 
 dangKyNut({
   type: "du-lieu.so-lieu",
