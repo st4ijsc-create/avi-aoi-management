@@ -18,11 +18,12 @@ import { LoiBt, OBieuThuc, OChon, OHop, Truong, O_CHON } from "./FormKit";
 import { FormSoLieu, FormSuKien, FormTaoPhieu, FormThongBao } from "./FormNutMoi";
 import { FormChon, FormGom } from "./FormChon";
 import { FormCho, FormDungLoi, FormLoc, FormSapXep } from "./FormLoc";
+import { FormBieuMau } from "./FormBieuMau";
 
 type ThamSo = Record<string, unknown>;
 
 /** Node có form có kiểu — vẫn có ô JSON cho người nâng cao (nút chuyển); máy chủ kiểm tham số như nhau ở cả hai đường. */
-const CO_FORM_CO_KIEU: ReadonlySet<string> = new Set(["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom", "logic.cho", "logic.dung-loi", "logic.loc", "logic.sap-xep"]);
+const CO_FORM_CO_KIEU: ReadonlySet<string> = new Set(["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom", "logic.cho", "logic.dung-loi", "logic.loc", "logic.sap-xep", "nguoi.bieu-mau"]);
 
 const VAI_TRO_GOI_Y = ["chat", "extract", "classify", "summarize", "code.software", "code.plc"];
 
@@ -257,6 +258,9 @@ export default function NodeConfigPanel({ node, kb, onDoi, onXoa, biMat, webhook
       break;
     case "logic.gom":
       form = <FormGom p={p} doi={doi} />;
+      break;
+    case "nguoi.bieu-mau":
+      form = <FormBieuMau p={p} doi={doi} />;
       break;
     case "logic.cho":
       form = <FormCho p={p} doi={doi} />;

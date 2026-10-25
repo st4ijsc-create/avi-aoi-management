@@ -10,6 +10,7 @@ import { TIEU_DE_CAM } from "./nut/tichHop";
 import { laTenBiMat } from "./xuatNhap";
 import { TOAN_TU_CHON, TRAN_NHANH_CHON } from "./nut/chon";
 import { CHO_TOI_DA_GIAY, TRAN_THONG_DIEP_DUNG_LOI } from "./nut/cho";
+import { kiemDinhNghiaBieuMau } from "./nut/bieuMau";
 import { HUONG_SAP_XEP, KIEU_SAP_XEP, TOAN_TU_LOC, TRAN_DIEU_KIEN_LOC } from "./nut/loc";
 
 const laBieuThuc = (v: unknown): boolean => typeof v === "string" && v.includes("{{");
@@ -66,6 +67,8 @@ export function kiemThamSoNutMoi(raw: unknown): string[] {
           if (d.so !== "in" && d.so !== "eq" && !laBieuThuc(d.dich) && !(typeof d.dich === "number" && Number.isFinite(d.dich))) loi.push(`node '${id}': điều kiện ${i + 1}: '${String(d.so)}' cần một SỐ`);
         });
       }
+    } else if (n?.type === "nguoi.bieu-mau") {
+      if (!laBieuThuc(p.truong)) for (const l of kiemDinhNghiaBieuMau(p.truong)) loi.push(`node '${id}': ${l}`);
     } else if (n?.type === "logic.cho") {
       if (p.giay !== undefined && !laBieuThuc(p.giay) && !(typeof p.giay === "number" && Number.isFinite(p.giay) && p.giay >= 0 && p.giay <= CHO_TOI_DA_GIAY)) loi.push(`node '${id}': giay phải là số 0 … ${CHO_TOI_DA_GIAY}`);
     } else if (n?.type === "logic.dung-loi") {

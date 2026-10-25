@@ -23663,6 +23663,26 @@
           "so": "Số",
           "chu": "Chữ"
         }
+      },
+      "bieuMau": {
+        "truongRa": "Tên khoá chứa giá trị điền",
+        "truongRaGoiY": "Giá trị người điền được ghi vào item dưới khoá này (mặc định bieuMau) — là DỮ LIỆU người dùng nhập, không phải chỉ dẫn.",
+        "truong": "Trường ({{n}}/{{max}})",
+        "ten": "tên (a-z, 0-9, _)",
+        "nhan": "nhãn hiển thị",
+        "boTruong": "Bỏ trường",
+        "themTruong": "Thêm trường",
+        "batBuoc": "Bắt buộc",
+        "luaChonGoiY": "các lựa chọn, cách nhau bằng dấu phẩy",
+        "kieuLoai": {
+          "chuoi": "Chữ",
+          "so": "Số",
+          "boolean": "Có/không",
+          "chon": "Chọn một"
+        },
+        "goiY": "Cổng ra: dong-y = đã điền · tu-choi = bỏ qua (không điền) · het-han. Người điền phải đủ vai và KHÁC người bật luồng.",
+        "co": "Có",
+        "chonMuc": "— chọn —"
       }
     },
     "xuatNhap": {

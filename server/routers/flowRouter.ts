@@ -39,6 +39,7 @@ import { kiemThamSoKichHoat, napLaiLich } from "../services/flow/kichHoat/lich";
 import { kiemThamSoSuKien, napLaiSuKien } from "../services/flow/kichHoat/suKien";
 import { kiemThamSoNutMoi } from "../services/flow/kiemThamSoNut";
 import { nguoiNhanHopLeTheoNhaMay } from "../services/flow/nut/thongBao";
+import { bieuMauCuaPayload, kiemGiaTriBieuMau } from "../services/flow/nut/bieuMau";
 import { idLuongNhap, phanTichGoi, quetBiMat, quetVanBan, taoGoi } from "../services/flow/xuatNhap";
 import { dauVetNhaMay } from "../services/flow/xuatNhapDb";
 import { nhaMayCuaLuong } from "../services/flow/phamViLuong";
@@ -520,12 +521,14 @@ export const flowRouter = router({
       vaiTroDuyet: payload?.vaiTroDuyet ?? null,
       soItem: payload?.items?.length ?? 0,
       itemDau: catJson(payload?.items?.[0]?.json ?? null, 2000),
+      // Biểu mẫu (nguoi.bieu-mau): định nghĩa trường cho trang duyệt vẽ ô nhập; thẻ duyệt thường ⇒ null.
+      bieuMau: bieuMauCuaPayload(payload)?.truong ?? null,
     }));
   }),
 
   /** Duyệt / bác một bước `nguoi.duyet`. Hai người bấm cùng lúc ⇒ người sau nhận CONFLICT. */
   duyet: ghiProcedure
-    .input(z.object({ runId: z.string().uuid(), nodeId: z.string().regex(RE_ID), dongY: z.boolean(), lyDo: z.string().max(2000).optional() }))
+    .input(z.object({ runId: z.string().uuid(), nodeId: z.string().regex(RE_ID), dongY: z.boolean(), lyDo: z.string().max(2000).optional(), bieuMau: z.record(z.string().max(48), z.union([z.string().max(2100), z.number(), z.boolean(), z.null()])).refine((o) => Object.keys(o).length <= 40).optional() }))
     .mutation(async ({ input, ctx }) => {
       // Lượt ngoài phạm vi / không tồn tại / không có bước chờ: MỘT lý do (flowKhongCoBuocChoDuyet) — không phân biệt được ⇒ không lộ.
       await chanLuot(ctx, input.runId, "flowDuyet", "Không có bước nào đang chờ duyệt ở đây.", "flowKhongCoBuocChoDuyet");
@@ -550,12 +553,22 @@ export const flowRouter = router({
         if (quyen.ma === "TRUNG_NGUOI_BAT") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowDuyet", reason: "flowDuyetTrungNguoiBat" }, quyen.lyDo);
         throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowDuyet", reason: "flowDuyetTrungChuLuot" }, quyen.lyDo);
       }
+      // nguoi.bieu-mau: giá trị người điền được KIỂM LẠI theo định nghĩa trường trong hàng chờ (không tin trình duyệt); bác/bỏ qua ⇒ bỏ giá trị.
+      const bm = bieuMauCuaPayload(w.payload);
+      if (!bm && input.bieuMau !== undefined) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowDuyet", reason: "flowChiTietMayChu", chiTiet: "Bước này không phải biểu mẫu." }, "Bước này không phải biểu mẫu.");
+      let giaTriBieuMau: Record<string, unknown> | undefined;
+      if (bm && input.dongY) {
+        const kt = kiemGiaTriBieuMau(bm.truong, input.bieuMau);
+        if (!kt.ok) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowDuyet", reason: "flowChiTietMayChu", chiTiet: kt.loi.slice(0, 300) }, kt.loi);
+        giaTriBieuMau = { [bm.truongRa]: kt.v };
+      }
       const kq = await traLoiCho({
         runId: input.runId,
         nodeId: input.nodeId,
         cong: input.dongY ? "dong-y" : "tu-choi",
         them: {
           duyet: { dongY: input.dongY, nguoi: ctx.user.id, lyDo: input.lyDo ?? null },
+          ...(giaTriBieuMau ?? {}),
           // Đợt 8.5 — đề xuất OT của Luồng: CHẾ ĐỘ MÔ PHỎNG, không có đường gửi — chỉ ghi kết quả giả lập.
           ...(laDeXuatOtLuong(w.payload) ? ketQuaSauDuyetMoPhong(input.dongY) : {}),
         },

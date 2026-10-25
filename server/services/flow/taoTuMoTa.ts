@@ -35,6 +35,7 @@ const GOI_Y_THAM_SO: Record<string, string> = {
   "bao-tri.tao-phieu": '{"may":"{{ $json.idMay }}","tieuDe":"{{ $json.lyDo }}","nhom":"{{ $json.nhan }}","uuTien":3,"loai":"CORRECTIVE"}  — tạo phiếu bảo trì cho máy (nhóm ghi vào tiêu đề); hạng ngoài-ghi',
   "logic.chon": '{"giaTri":"{{ $json.nhan }}","nhanh":[{"so":"eq","dich":"dien"},{"so":"in","dich":["co-khi","plc-phan-mem"]},{"so":"gt","dich":10}]}  — cổng ra: nhanh-1…nhanh-5 | khac (≤ 5 điều kiện, khớp ĐẦU TIÊN thắng, so kiểu rõ không ép; nhớ NỐI cổng khac)',
   "logic.gom": '{"truongRa":"danhSach"}  — gom mọi item thành MỘT item { danhSach: […], soItem }, tối đa 1000',
+  "nguoi.bieu-mau": '{"tieuDe":"Nhập …","noiDung":"{{ $json.x }}","vaiTroDuyet":"supervisor","hetHanGio":24,"truong":[{"ten":"nguyenNhan","nhan":"Nguyên nhân","kieu":"chon","luaChon":["dien","co-khi"],"batBuoc":true},{"ten":"ghiChu","nhan":"Ghi chú","kieu":"chuoi"}],"truongRa":"bieuMau"}  — người điền; cổng ra: dong-y (đã điền; item mang {bieuMau:{…}}) | tu-choi (bỏ qua) | het-han; kieu: chuoi|so|boolean|chon; ≤ 20 trường',
   "logic.cho": '{"giay":60}  — hẹn giờ: item đi qua nguyên vẹn, node kế chạy sau giay giây (0…86400, mặc định 60; không giữ worker)',
   "logic.dung-loi": '{"thongDiep":"Dừng: …"}  — dừng luồng có chủ ý với thông điệp (≤ 200 ký tự); không có cổng ra',
   "logic.loc": '{"dieuKien":[{"giaTri":"{{ $json.oee }}","so":"lt","dich":0.8}]}  — cổng ra giu | loai (≤ 5 điều kiện, VÀ; so: eq|in|gt|lt|gte|lte, nghiêm ngặt kiểu)',

@@ -3,6 +3,7 @@
  * Đồng ý / Từ chối + lý do ⇒ `flow.duyet`. Hai người bấm cùng lúc ⇒ máy chủ trả CONFLICT ⇒ báo "đã có người duyệt".
  */
 import { useState } from "react";
+import { FormDienBieuMau, giaTriGui, type TruongForm } from "@/components/aiFlow/FormBieuMau";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -17,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { ArrowLeft, Check, Inbox, Loader2, X } from "lucide-react";
 
-type Cho = { runId: string; nodeId: string };
+type Cho = { runId: string; nodeId: string; bieuMau?: TruongForm[] | null };
 
 export default function AIFlowApprovalsPage() {
   const { t } = useTranslation();
@@ -25,6 +26,8 @@ export default function AIFlowApprovalsPage() {
   const ds = trpc.flow.danhSachCho.useQuery(undefined, { refetchInterval: 5000 });
   const [lyDo, setLyDo] = useState<Record<string, string>>({});
   const [dangGui, setDangGui] = useState<string | null>(null);
+  /** Giá trị đang điền của các thẻ BIỂU MẪU (nguoi.bieu-mau): thẻ → tên trường → giá trị. */
+  const [bm, setBm] = useState<Record<string, Record<string, string | number | boolean | null>>>({});
   const khoa = (c: Cho) => `${c.runId}:${c.nodeId}`;
 
   const duyet = trpc.flow.duyet.useMutation({
@@ -43,7 +46,7 @@ export default function AIFlowApprovalsPage() {
 
   const gui = (c: Cho, dongY: boolean) => {
     setDangGui(khoa(c));
-    duyet.mutate({ runId: c.runId, nodeId: c.nodeId, dongY, lyDo: lyDo[khoa(c)]?.trim() || undefined });
+    duyet.mutate({ runId: c.runId, nodeId: c.nodeId, dongY, lyDo: lyDo[khoa(c)]?.trim() || undefined, ...(c.bieuMau && dongY ? { bieuMau: giaTriGui(c.bieuMau, bm[khoa(c)] ?? {}) } : {}) });
   };
 
   return (
@@ -82,6 +85,13 @@ export default function AIFlowApprovalsPage() {
                   <div className="text-xs text-muted-foreground">{t("flowStudio.duyet.soItem", { n: c.soItem })}</div>
                   {c.itemDau != null && (
                     <pre className="max-h-40 overflow-auto rounded bg-muted p-2 text-[11px] font-mono whitespace-pre-wrap break-all">{JSON.stringify(c.itemDau, null, 2)}</pre>
+                  )}
+                  {c.bieuMau && (
+                    <FormDienBieuMau
+                      truong={c.bieuMau}
+                      giaTri={bm[k] ?? {}}
+                      doi={(ten, v) => setBm({ ...bm, [k]: { ...(bm[k] ?? {}), [ten]: v } })}
+                    />
                   )}
                   <Textarea
                     className="text-sm min-h-[60px]"
