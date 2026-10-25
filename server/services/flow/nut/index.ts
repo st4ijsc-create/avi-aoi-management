@@ -12,6 +12,8 @@ import "./thongBao";
 import "./traTriThuc";
 import "./baoTri";
 import "./chon";
+import "./cho";
+import "./loc";
 import "../kichHoat/lich";
 import "../kichHoat/webhook";
 import "../kichHoat/mcp";

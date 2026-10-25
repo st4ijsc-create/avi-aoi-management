@@ -23638,6 +23638,34 @@
       "gom": {
         "truongRa": "List field name",
         "goiY": "Merges all items into ONE item {name: […], soItem}; at most 1000 items per run."
+      },
+      "cho": {
+        "giay": "Wait how many seconds",
+        "goiY": "0 … {{max}} seconds. Items pass through unchanged; the next node runs only after this delay (holds no server resources, survives restarts). The run still counts as running; total run age ≤ 7 days."
+      },
+      "dungLoi": {
+        "thongDiep": "Error message",
+        "goiY": "May be a per-item expression; up to {{max}} characters. This node stops the flow with an error — it has no output port."
+      },
+      "loc": {
+        "dieuKien": "Conditions to keep an item ({{n}}/{{max}}) — ALL must match",
+        "boDieuKien": "Remove condition",
+        "goiY": "Items matching every condition go to port 'giu'; the rest (or on an expression error) go to 'loai' (connecting it is optional). Strictly typed comparison — the string '5' is not the number 5."
+      },
+      "sapXep": {
+        "khoa": "Sort key",
+        "khoaGoiY": "Per-item expression (e.g. $json.oee). Stable sort; items whose key has the wrong type or is missing go LAST.",
+        "huong": "Direction",
+        "huongLoai": {
+          "tang": "Ascending",
+          "giam": "Descending"
+        },
+        "kieu": "Key type",
+        "kieuGoiY": "Number: finite numbers only. Text: compared by character code (deterministic, locale-independent).",
+        "kieuLoai": {
+          "so": "Number",
+          "chu": "Text"
+        }
       }
     },
     "xuatNhap": {

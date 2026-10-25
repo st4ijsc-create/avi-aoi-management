@@ -70,6 +70,36 @@ describe("node AI (Đợt 8.1)", () => {
     }
   });
 
+  it("★ ai.phan-loai mặc định: XIN logprobs (top 10) ở cùng lượt; tinCay từ logprob đúng cách đo, nguồn 'logprob'; nhãn lạ ⇒ khac + tinCay 0", async () => {
+    const { chatCompletion } = await import("../../aiGgufEngine");
+    const lp = (token: string, ds: Array<[string, number]>) => [{ token, logprob: Math.log(ds[0][1]), top: ds.map(([t, p]) => ({ token: t, logprob: Math.log(p) })) }];
+    vi.mocked(chatCompletion)
+      .mockImplementationOnce((async (opts: any) => { h.chat.push({ opts }); return { text: "electrical", tokensPrompt: 1, tokensGenerated: 1, logprobsDau: lp("elec", [["elec", 0.6], [" elect", 0.3], ["mech", 0.08]]) }; }) as any)
+      .mockImplementationOnce((async (opts: any) => { h.chat.push({ opts }); return { text: "linh tinh", tokensPrompt: 1, tokensGenerated: 1, logprobsDau: lp("linh", [["linh", 0.9]]) }; }) as any);
+    const nhan = ["electrical", "mechanical"];
+    const ra = (await layNut("ai.phan-loai")!.chay({ nhan }, ngu([{ json: { a: 1 } }, { json: { a: 2 } }]))) as KetQuaChay;
+    expect(h.chat.every((c) => c.opts.topLogprobs === 10)).toBe(true);
+    expect(ra.main[0].json).toMatchObject({ nhan: "electrical", tinCayNguon: "logprob" });
+    expect(ra.main[0].json.tinCay as number).toBeCloseTo(0.9, 6);
+    expect(ra.main[1].json).toMatchObject({ nhan: "khac", tinCay: 0, tinCayNguon: "logprob" });
+  });
+
+  it("★ ai.phan-loai: đường KHÔNG trả logprobs (in-process / server không hỗ trợ) ⇒ tinCay null + nguồn 'khong-co' — không bịa số", async () => {
+    // chatCompletion mặc định của lưới trả { text } không có logprobsDau
+    const ra = (await layNut("ai.phan-loai")!.chay({ nhan: ["ket qua", "khac-nua"] }, ngu([{ json: { a: 1 } }]))) as KetQuaChay;
+    expect(ra.main[0].json).toMatchObject({ nhan: "ket qua", tinCay: null, tinCayNguon: "khong-co" });
+  });
+
+  it("ai.phan-loai với hàm gọi giả KHÔNG báo logprobs ⇒ cũng null / 'khong-co'", async () => {
+    const cu = datHamGoiAi((async () => "a") as HamGoiAi);
+    try {
+      const ra = (await layNut("ai.phan-loai")!.chay({ nhan: ["a", "b"] }, ngu([{ json: { x: 1 } }]))) as KetQuaChay;
+      expect(ra.main[0].json).toMatchObject({ nhan: "a", tinCay: null, tinCayNguon: "khong-co" });
+    } finally {
+      datHamGoiAi(cu);
+    }
+  });
+
   it("ai.tom-tat: gom mọi item thành một", async () => {
     const cu = datHamGoiAi((async (y) => `tóm ${y.nguoiDung.includes('"a": 2')}`) as HamGoiAi);
     try {

@@ -112,6 +112,14 @@ export function thamSoMacDinh(type: string): Record<string, unknown> {
       return { nguoiNhan: [], tieuDe: "", noiDung: "", loai: "INFO", uuTien: "NORMAL" };
     case "logic.chon":
       return { giaTri: "{{ $json.nhan }}", nhanh: [{ so: "eq", dich: "" }] };
+    case "logic.cho":
+      return { giay: 60 };
+    case "logic.dung-loi":
+      return { thongDiep: "Luồng dừng có chủ ý" };
+    case "logic.loc":
+      return { dieuKien: [{ giaTri: "{{ $json.x }}", so: "eq", dich: "" }] };
+    case "logic.sap-xep":
+      return { giaTri: "{{ $json.x }}", huong: "tang", kieu: "so" };
     case "logic.gom":
       return { truongRa: "danhSach" };
     case "bao-tri.tao-phieu":

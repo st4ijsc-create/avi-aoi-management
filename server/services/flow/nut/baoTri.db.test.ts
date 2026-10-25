@@ -227,8 +227,17 @@ describe("mẫu #5 v2 (tệp mẫu): nhãn hợp lệ ⇒ phiếu; nhãn lạ �
     await db.execute(sql`UPDATE ai_flows SET enabled = ${!b} WHERE id = ${FL.SK}`);
     napLaiSuKien();
   };
-  it("★ nhãn hợp lệ ⇒ 1 phiếu đúng nhóm, KHÔNG có yêu cầu duyệt; nhãn lạ ('khac') ⇒ lượt cho-duyet, 0 phiếu; đồng ý ⇒ ĐÚNG 1 phiếu nhóm Vật tư/Khác; bác ⇒ 0 phiếu", async () => {
-    const cu = datHamGoiAi(async ({ nguoiDung }) => (/PLC/i.test(nguoiDung.split("<du_lieu>")[1] ?? "") ? "plc-phan-mem" : "khong-biet-la-gi")); // chỉ nhìn phần DỮ LIỆU (hướng dẫn trong prompt cũng nhắc PLC)
+  it("★ nhãn hợp lệ VÀ chắc ⇒ 1 phiếu đúng nhóm, KHÔNG có yêu cầu duyệt; nhãn hợp lệ nhưng tinCay thấp / null ⇒ người duyệt; nhãn lạ ('khac') ⇒ lượt cho-duyet, 0 phiếu; đồng ý ⇒ ĐÚNG 1 phiếu nhóm Vật tư/Khác; bác ⇒ 0 phiếu", async () => {
+    // AI giả: có logprobs chắc (0,95) cho nhãn PLC; lý do chứa "chap chon" ⇒ nhãn đúng nhưng KHÔNG chắc (0,4); chứa "khong logprob" ⇒ nhãn đúng nhưng đường không trả logprobs (null)
+    const lpNhan = (nhan: string, p: number) => [{ token: nhan.slice(0, 3), logprob: Math.log(p), top: [{ token: nhan.slice(0, 3), logprob: Math.log(p) }] }];
+    const cu = datHamGoiAi(async ({ nguoiDung, baoLogprobs }) => {
+      const du = nguoiDung.split("<du_lieu>")[1] ?? ""; // chỉ nhìn phần DỮ LIỆU (hướng dẫn trong prompt cũng nhắc PLC)
+      if (/chap chon/i.test(du)) { baoLogprobs?.(lpNhan("plc-phan-mem", 0.4)); return "plc-phan-mem"; }
+      if (/khong logprob/i.test(du)) { baoLogprobs?.(undefined); return "plc-phan-mem"; }
+      if (/PLC/i.test(du)) { baoLogprobs?.(lpNhan("plc-phan-mem", 0.95)); return "plc-phan-mem"; }
+      baoLogprobs?.(lpNhan("plc-phan-mem", 0.9));
+      return "khong-biet-la-gi";
+    });
     try {
       await bat(true);
       const ts = Date.UTC(2026, 9, 26, 3, 0, 0);
@@ -254,6 +263,19 @@ describe("mẫu #5 v2 (tệp mẫu): nhãn hợp lệ ⇒ phiếu; nhãn lạ �
       expect((await runCua(FL.V2)).find((r) => r.id === la[0].runId)!.status).toBe("xong");
       // trả lời LẦN HAI không tạo phiếu thứ hai
       expect((await traLoiCho({ runId: la[0].runId!, nodeId: "duyet", cong: "dong-y" })).ok).toBe(false);
+      await chayHet();
+      expect(await demPhieu([ids.machA])).toBe(truoc + 2);
+      // ★ độ tin cậy: nhãn HỢP LỆ nhưng tinCay 0,4 < 0,7 ⇒ người duyệt, 0 phiếu; đường không trả logprobs (tinCay null) ⇒ cũng người duyệt
+      const thap = await ev("v2-thap", ids.machA, "chap chon hay PLC khong ro", ts + 60 * 60_000);
+      const khongLp = await ev("v2-khong-lp", ids.machA, "khong logprob duong in-process", ts + 80 * 60_000);
+      await chayHet();
+      const runs = await runCua(FL.V2);
+      expect(runs.find((r) => r.id === thap[0].runId)!.status).toBe("cho-duyet");
+      expect(runs.find((r) => r.id === khongLp[0].runId)!.status).toBe("cho-duyet");
+      expect(await demPhieu([ids.machA])).toBe(truoc + 2);
+      // chưa chắc ⇒ người TỪ CHỐI ⇒ vẫn 0 phiếu
+      expect((await traLoiCho({ runId: thap[0].runId!, nodeId: "duyet", cong: "tu-choi" })).ok).toBe(true);
+      expect((await traLoiCho({ runId: khongLp[0].runId!, nodeId: "duyet", cong: "tu-choi" })).ok).toBe(true);
       await chayHet();
       expect(await demPhieu([ids.machA])).toBe(truoc + 2);
       // bác ⇒ 0 phiếu mới
