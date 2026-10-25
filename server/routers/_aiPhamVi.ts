@@ -66,7 +66,7 @@ export async function congRollbackMoHinh(ctx: CoDanhTinh): Promise<SQL | undefin
 
 /**
  * Ảnh theo `imageKey` (đường dẫn trong thư mục uploads) có thuộc phạm vi người gọi không (L6b, dieu-phoi: explainHeatmap đọc ảnh theo khoá không phân nhà máy).
- * Ảnh thấy được ⇔ toàn quyền, HOẶC khoá thuộc `temp/` (ảnh tạm CHÍNH người dùng vừa tải lên), HOẶC khoá khớp ảnh của một kết quả đo (imageKey / imageUrl / defectCropKey / defectCropUrl)
+ * Ảnh thấy được ⇔ toàn quyền, HOẶC khoá thuộc `temp/u<id người gọi>/` (ảnh tạm CHÍNH người dùng vừa tải lên), HOẶC khoá khớp ảnh của một kết quả đo (imageKey / imageUrl / defectCropKey / defectCropUrl)
  * thuộc lần kiểm tra của máy trong phạm vi, HOẶC một embedding ảnh / mặt nạ khuyết tật có máy / lần kiểm tra trong phạm vi. Khoá không tra ngược được ⇒ KHÔNG thấy (fail-closed).
  */
 export async function anhTrongPhamVi(ctx: CoDanhTinh, imageKey: string): Promise<boolean> {

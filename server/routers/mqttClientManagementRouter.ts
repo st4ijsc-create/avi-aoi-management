@@ -4,6 +4,9 @@
  */
 
 import { mucTieuMqttGhi, canhBaoMqttKetNoiGhi, chiToanQuyenGhi } from "./_cauHinhPhamVi";
+import { dieuKienMucTieuMqttTrongPhamVi, dieuKienNhatKyMqttTrongPhamVi, idsMayTrongPhamVi } from "./_adapterPhamVi";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
 import { z } from "zod";
 import { appError } from "../_core/appError";
 // doc 54 Wave B — createAlert/logConnectionEvent/updateConnectionStatus/logReconnectEvent
@@ -440,10 +443,11 @@ export const mqttClientManagementRouter = router({
       limit: z.number().int().min(1).max(100).default(50),
       offset: z.number().int().min(0).default(0),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await requireDb();
       const { profileId, targetType, limit = 50, offset = 0 } = input || {};
-      
+      const congMucTieu = await dieuKienMucTieuMqttTrongPhamVi(ctx, { loai: mqttProfileAssignments.targetType, id: mqttProfileAssignments.targetId }); // phạm vi người dùng (L6c 2026-10-25)
+
       let query = db.select({
         assignment: mqttProfileAssignments,
         profile: mqttClientProfiles,
@@ -452,6 +456,7 @@ export const mqttClientManagementRouter = router({
         .innerJoin(mqttClientProfiles, eq(mqttProfileAssignments.profileId, mqttClientProfiles.id));
       
       const conditions = [eq(mqttProfileAssignments.isActive, true)];
+      if (congMucTieu) conditions.push(congMucTieu);
       if (profileId !== undefined) {
         conditions.push(eq(mqttProfileAssignments.profileId, profileId));
       }
@@ -1017,9 +1022,14 @@ export const mqttClientManagementRouter = router({
       excludeAssigned: z.boolean().default(false),
       profileId: z.number().int().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await requireDb();
       const { targetType, search, excludeAssigned, profileId } = input;
+      // phạm vi người dùng (L6c 2026-10-25): chỉ liệt kê đích (máy / trạm / nhà máy) trong phạm vi
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      const idsTram = await idsTrongPhamVi("station", phamViCua(ctx), { strict: true });
+      const idsNhaMay = await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true });
+      const trong = (col: import("drizzle-orm/pg-core").AnyPgColumn, ids: number[] | null) => (ids === null ? undefined : inArray(col, ids.length > 0 ? ids : [-1]));
       
       let targets: { id: number; name: string; code?: string; hasAssignment: boolean }[] = [];
       
@@ -1028,7 +1038,7 @@ export const mqttClientManagementRouter = router({
           id: machines.id,
           name: machines.name,
           code: machines.code,
-        }).from(machines).where(eq(machines.isActive, true));
+        }).from(machines).where(and(eq(machines.isActive, true), trong(machines.id, idsMay)));
         
         // Check assignments
         const assignedIds = await db.select({ targetId: mqttProfileAssignments.targetId })
@@ -1050,7 +1060,7 @@ export const mqttClientManagementRouter = router({
           id: stations.id,
           name: stations.name,
           code: stations.code,
-        }).from(stations).where(eq(stations.isActive, true));
+        }).from(stations).where(and(eq(stations.isActive, true), trong(stations.id, idsTram)));
         
         const assignedIds = await db.select({ targetId: mqttProfileAssignments.targetId })
           .from(mqttProfileAssignments)
@@ -1071,7 +1081,7 @@ export const mqttClientManagementRouter = router({
           id: factories.id,
           name: factories.name,
           code: factories.code,
-        }).from(factories).where(eq(factories.isActive, true));
+        }).from(factories).where(and(eq(factories.isActive, true), trong(factories.id, idsNhaMay)));
         
         const assignedIds = await db.select({ targetId: mqttProfileAssignments.targetId })
           .from(mqttProfileAssignments)
@@ -1123,8 +1133,11 @@ export const mqttClientManagementRouter = router({
 
   // ============= DASHBOARD STATS =============
   
-  getDashboardStats: protectedProcedure.query(async () => {
+  getDashboardStats: protectedProcedure.query(async ({ ctx }) => {
     const db = await requireDb();
+    // phạm vi người dùng (L6c 2026-10-25): hồ sơ = danh mục dùng chung (đếm nguyên); gán theo MỤC TIÊU; nhật ký có assignmentId theo mục tiêu của gán, nhật ký chỉ có profileId ⇒ chỉ toàn quyền
+    const congMucTieu = await dieuKienMucTieuMqttTrongPhamVi(ctx, { loai: mqttProfileAssignments.targetType, id: mqttProfileAssignments.targetId });
+    const congNhatKy = await dieuKienNhatKyMqttTrongPhamVi(ctx, mqttConnectionLogs.assignmentId);
     
     // Count profiles
     const [profileCount] = await db.select({
@@ -1138,11 +1151,12 @@ export const mqttClientManagementRouter = router({
       machines: sql<number>`SUM(CASE WHEN ${mqttProfileAssignments.targetType} = 'machine' AND ${mqttProfileAssignments.isActive} = true THEN 1 ELSE 0 END)`.as('machines'),
       stations: sql<number>`SUM(CASE WHEN ${mqttProfileAssignments.targetType} = 'station' AND ${mqttProfileAssignments.isActive} = true THEN 1 ELSE 0 END)`.as('stations'),
       factories: sql<number>`SUM(CASE WHEN ${mqttProfileAssignments.targetType} = 'factory' AND ${mqttProfileAssignments.isActive} = true THEN 1 ELSE 0 END)`.as('factories'),
-    }).from(mqttProfileAssignments);
+    }).from(mqttProfileAssignments).where(congMucTieu);
     
     // Recent connection events
     const recentLogs = await db.select()
       .from(mqttConnectionLogs)
+      .where(congNhatKy)
       .orderBy(desc(mqttConnectionLogs.timestamp))
       .limit(10);
     
@@ -1153,7 +1167,8 @@ export const mqttClientManagementRouter = router({
       .from(mqttConnectionLogs)
       .where(and(
         eq(mqttConnectionLogs.eventType, "error"),
-        sql`${mqttConnectionLogs.timestamp} >= NOW() - INTERVAL '24 hours'`
+        sql`${mqttConnectionLogs.timestamp} >= NOW() - INTERVAL '24 hours'`,
+        congNhatKy,
       ));
     
     return {
@@ -1183,11 +1198,13 @@ export const mqttClientManagementRouter = router({
       limit: z.number().int().min(1).max(100).default(50),
       offset: z.number().int().min(0).default(0),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await requireDb();
       const { profileId, targetType, status, limit = 50, offset = 0 } = input || {};
-      
+
       const conditions = [];
+      const congMucTieu = await dieuKienMucTieuMqttTrongPhamVi(ctx, { loai: mqttConnectionStatus.targetType, id: mqttConnectionStatus.targetId }); // phạm vi người dùng (L6c 2026-10-25): dòng không có đích chỉ toàn quyền
+      if (congMucTieu) conditions.push(congMucTieu);
       if (profileId) conditions.push(eq(mqttConnectionStatus.profileId, profileId));
       if (targetType) conditions.push(eq(mqttConnectionStatus.targetType, targetType));
       if (status) conditions.push(eq(mqttConnectionStatus.status, status));
@@ -1514,11 +1531,13 @@ export const mqttClientManagementRouter = router({
       isActive: z.boolean().optional(),
       format: z.enum(["csv", "json"]).default("csv"),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await requireDb();
       const { profileId, targetType, isActive, format = "csv" } = input || {};
-      
+
       const conditions = [];
+      const congMucTieu = await dieuKienMucTieuMqttTrongPhamVi(ctx, { loai: mqttProfileAssignments.targetType, id: mqttProfileAssignments.targetId }); // phạm vi người dùng (L6c 2026-10-25)
+      if (congMucTieu) conditions.push(congMucTieu);
       if (profileId) conditions.push(eq(mqttProfileAssignments.profileId, profileId));
       if (targetType) conditions.push(eq(mqttProfileAssignments.targetType, targetType));
       if (isActive !== undefined) conditions.push(eq(mqttProfileAssignments.isActive, isActive));
@@ -1988,11 +2007,12 @@ export const mqttClientManagementRouter = router({
       days: z.number().int().min(1).max(90).default(7),
       limit: z.number().int().min(1).max(50).default(10),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await requireDb();
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - input.days);
-      
+      const congMucTieu = await dieuKienMucTieuMqttTrongPhamVi(ctx, { loai: mqttReconnectLogs.targetType, id: mqttReconnectLogs.targetId }); // phạm vi người dùng (L6c 2026-10-25)
+
       const stats = await db.select({
         targetId: mqttReconnectLogs.targetId,
         totalAttempts: count(),
@@ -2004,7 +2024,8 @@ export const mqttClientManagementRouter = router({
         .from(mqttReconnectLogs)
         .where(and(
           gte(mqttReconnectLogs.timestamp, startDate),
-          eq(mqttReconnectLogs.targetType, input.targetType)
+          eq(mqttReconnectLogs.targetType, input.targetType),
+          congMucTieu,
         ))
         .groupBy(mqttReconnectLogs.targetId)
         .orderBy(desc(count()))

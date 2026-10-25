@@ -20,7 +20,11 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { requirePermission } from "../_core/accessControl";
+import { congMaTenant } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
+import type { CoDanhTinh } from "./_phamViNguoiXem";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { router, moduleProcedure } from "../_core/trpc";
@@ -60,6 +64,15 @@ function freshness(
   return { state: "ok", ageSec };
 }
 
+/**
+ * phạm vi người dùng (L6c 2026-10-25): điều kiện trang (site) thấy được. Toàn quyền ⇒ tất cả. Người hẹp ⇒ trang có MÃ TẬP ĐOÀN trong phạm vi (trục mã, `congMaTenant`)
+ * VÀ không phải trang cục bộ (`isLocal` = chính lõi này tự ghi danh ⇒ chỉ toàn quyền thấy). Trang không có mã tập đoàn ⇒ chỉ toàn quyền.
+ */
+async function dieuKienTrang(ctx: CoDanhTinh): Promise<import("drizzle-orm").SQL | undefined> {
+  const ma = await congMaTenant({ corporateCode: sites.corporateCode }, phamViCua(ctx));
+  return ma === undefined ? undefined : and(eq(sites.isLocal, false), ma);
+}
+
 const num = (v: unknown): number | null => {
   if (v == null) return null;
   const n = Number(v);
@@ -73,10 +86,11 @@ export const federationRouter = router({
    * returned (state='down') so the grid is honest about what hasn't synced.
    */
   siteRollups: protectedProcedure
+    .use(requirePermission("admin_system", "canView")) // phạm vi người dùng (L6c 2026-10-25): cùng quyền màn Federation ở client (navigation.tsx requiredPermission admin_system)
     .input(z.object({ corporateCode: z.string().max(50).optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
-      const siteRows = await d.select().from(sites).orderBy(desc(sites.isLocal), sites.code);
+      const siteRows = await d.select().from(sites).where(await dieuKienTrang(ctx)).orderBy(desc(sites.isLocal), sites.code);
       const filtered = input?.corporateCode
         ? siteRows.filter((s) => s.corporateCode === input.corporateCode)
         : siteRows;
@@ -135,14 +149,18 @@ export const federationRouter = router({
 
   /** Daily history (window='day') for one site — a trend without raw inspections. */
   siteKpiHistory: protectedProcedure
+    .use(requirePermission("admin_system", "canView")) // phạm vi người dùng (L6c 2026-10-25): cùng quyền màn Federation ở client (navigation.tsx requiredPermission admin_system)
     .input(
       z.object({
         siteId: z.number().int().positive(),
         days: z.number().int().min(1).max(180).default(30),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
+      // phạm vi người dùng (L6c 2026-10-25): trang ngoài phạm vi ≡ chưa có lịch sử
+      const [thay] = await d.select({ id: sites.id }).from(sites).where(and(eq(sites.id, input.siteId), await dieuKienTrang(ctx))).limit(1);
+      if (!thay) return [];
       const rows = await d
         .select()
         .from(siteKpiRollup)
@@ -167,16 +185,22 @@ export const federationRouter = router({
 
   /** Recent sync attempts (newest first) — per-site failure-isolation forensics. */
   syncLog: protectedProcedure
+    .use(requirePermission("admin_system", "canView")) // phạm vi người dùng (L6c 2026-10-25): cùng quyền màn Federation ở client (navigation.tsx requiredPermission admin_system)
     .input(
       z.object({
         siteId: z.number().int().positive().optional(),
         limit: z.number().int().min(1).max(200).default(50),
       }).optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
+      // phạm vi người dùng (L6c 2026-10-25): chỉ nhật ký của trang thấy được
+      const cong = await dieuKienTrang(ctx);
+      const thay = cong ? (await d.select({ id: sites.id }).from(sites).where(cong)).map((s) => s.id) : null;
+      if (thay && input?.siteId && !thay.includes(input.siteId)) return [];
       const base = d.select().from(siteSyncLog).$dynamic();
-      const q = input?.siteId ? base.where(eq(siteSyncLog.siteId, input.siteId)) : base;
+      const dkTrang = thay ? inArray(siteSyncLog.siteId, thay.length > 0 ? thay : [-1]) : undefined;
+      const q = input?.siteId ? base.where(and(eq(siteSyncLog.siteId, input.siteId), dkTrang)) : dkTrang ? base.where(dkTrang) : base;
       const rows = await q.orderBy(desc(siteSyncLog.startedAt)).limit(input?.limit ?? 50);
       return rows.map((r) => ({
         id: r.id,
@@ -200,10 +224,11 @@ export const federationRouter = router({
    * say "cross-site comparison needs ≥2 sites" instead of implying a ranking.
    */
   aggregateSummary: protectedProcedure
+    .use(requirePermission("admin_system", "canView")) // phạm vi người dùng (L6c 2026-10-25): cùng quyền màn Federation ở client (navigation.tsx requiredPermission admin_system)
     .input(z.object({ corporateCode: z.string().max(50).optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
-      const siteRows = await d.select().from(sites);
+      const siteRows = await d.select().from(sites).where(await dieuKienTrang(ctx)); // phạm vi người dùng (L6c 2026-10-25)
       const scopeSites = input?.corporateCode
         ? siteRows.filter((s) => s.corporateCode === input.corporateCode)
         : siteRows;
@@ -264,10 +289,11 @@ export const federationRouter = router({
    * empty tree with `hasDetail:false` — the drill is not fabricated.
    */
   siteDetail: protectedProcedure
+    .use(requirePermission("admin_system", "canView")) // phạm vi người dùng (L6c 2026-10-25): cùng quyền màn Federation ở client (navigation.tsx requiredPermission admin_system)
     .input(z.object({ siteCode: z.string().max(50) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
-      const [site] = await d.select().from(sites).where(eq(sites.code, input.siteCode)).limit(1);
+      const [site] = await d.select().from(sites).where(and(eq(sites.code, input.siteCode), await dieuKienTrang(ctx))).limit(1); // phạm vi người dùng (L6c 2026-10-25)
       if (!site) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "site" }, `Site ${input.siteCode} not found`);
 
       const [snap] = await d
@@ -338,10 +364,11 @@ export const federationRouter = router({
    * that hides an absence) — `sitesWithAlertFeed` makes the basis explicit.
    */
   alertRollup: protectedProcedure
+    .use(requirePermission("admin_system", "canView")) // phạm vi người dùng (L6c 2026-10-25): cùng quyền màn Federation ở client (navigation.tsx requiredPermission admin_system)
     .input(z.object({ corporateCode: z.string().max(50).optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
-      const siteRows = await d.select().from(sites);
+      const siteRows = await d.select().from(sites).where(await dieuKienTrang(ctx)); // phạm vi người dùng (L6c 2026-10-25)
       const scope = input?.corporateCode ? siteRows.filter((s) => s.corporateCode === input.corporateCode) : siteRows;
       const scopeIds = new Map(scope.map((s) => [s.id, s]));
 
@@ -391,15 +418,16 @@ export const federationRouter = router({
    * returned with `hasData:false` (honest absence), never a fabricated zero.
    */
   categoryRollup: protectedProcedure
+    .use(requirePermission("admin_system", "canView")) // phạm vi người dùng (L6c 2026-10-25): cùng quyền màn Federation ở client (navigation.tsx requiredPermission admin_system)
     .input(
       z.object({
         category: z.enum(ROLLUP_CATEGORIES as unknown as [RollupCategory, ...RollupCategory[]]),
         corporateCode: z.string().max(50).optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
-      const siteRows = await d.select().from(sites);
+      const siteRows = await d.select().from(sites).where(await dieuKienTrang(ctx)); // phạm vi người dùng (L6c 2026-10-25)
       const scope = input.corporateCode ? siteRows.filter((s) => s.corporateCode === input.corporateCode) : siteRows;
       const scopeIds = new Map(scope.map((s) => [s.id, s]));
 
@@ -453,7 +481,7 @@ export const federationRouter = router({
     }),
 
   /** Aggregator scheduler heartbeat (honest health for an ops panel). */
-  status: protectedProcedure.query(async () => {
+  status: protectedProcedure.use(requirePermission("admin_system", "canView")).query(async () => {
     const { getFederationAggregatorStatus } = await import(
       "../services/federation/aggregatorService"
     );
