@@ -22,7 +22,7 @@
  * ERP_OUTBOX_ENABLED (default OFF) — the worker timer only starts when on.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { eq, and, lte, inArray, sql } from "drizzle-orm";
+import { eq, and, lte, inArray, sql, type SQL } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb } from "../../db/connection";
 import { integrationOutbox } from "../../../drizzle/schema";
@@ -405,7 +405,7 @@ export async function retryDeadLetters(ids?: number[]): Promise<{ requeued: numb
 }
 
 /** List recent dead-letter rows for the admin surface. Fail-safe. */
-export async function listDeadLetters(limit = 50): Promise<Array<Record<string, unknown>>> {
+export async function listDeadLetters(limit = 50, dieuKienPhamVi?: SQL): Promise<Array<Record<string, unknown>>> {
   try {
     const db = await getDb();
     if (!db) return [];
@@ -420,7 +420,7 @@ export async function listDeadLetters(limit = 50): Promise<Array<Record<string, 
         createdAt: integrationOutbox.createdAt,
       })
       .from(integrationOutbox)
-      .where(eq(integrationOutbox.status, "dead"))
+      .where(dieuKienPhamVi ? and(eq(integrationOutbox.status, "dead"), dieuKienPhamVi) : eq(integrationOutbox.status, "dead")) // phạm vi người dùng (L6c 2026-10-25)
       .orderBy(integrationOutbox.id)
       .limit(Math.min(Math.max(limit, 1), 500));
     return rows as Array<Record<string, unknown>>;
@@ -430,13 +430,14 @@ export async function listDeadLetters(limit = 50): Promise<Array<Record<string, 
 }
 
 /** Lightweight outbox counts for a health/admin surface. */
-export async function outboxStats(): Promise<Record<string, number>> {
+export async function outboxStats(dieuKienPhamVi?: SQL): Promise<Record<string, number>> {
   try {
     const db = await getDb();
     if (!db) return {};
     const rows = await db
       .select({ status: integrationOutbox.status, count: sql<number>`count(*)` })
       .from(integrationOutbox)
+      .where(dieuKienPhamVi) // phạm vi người dùng (L6c 2026-10-25)
       .groupBy(integrationOutbox.status);
     const out: Record<string, number> = {};
     for (const r of rows) out[r.status] = Number(r.count);

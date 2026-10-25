@@ -267,12 +267,13 @@ export function stopFieldHealthSweep(): void {
 }
 
 /** Read-only: list health rows (optionally filtered by state). For the router. */
-export async function listFieldHealth(filter?: { state?: LivenessState; deviceKind?: string }): Promise<typeof fieldDeviceHealth.$inferSelect[]> {
+export async function listFieldHealth(filter?: { state?: LivenessState; deviceKind?: string; dieuKienPhamVi?: import("drizzle-orm").SQL }): Promise<typeof fieldDeviceHealth.$inferSelect[]> {
   const db = await getDb();
   if (!db) return [];
   const conds = [];
   if (filter?.state) conds.push(eq(fieldDeviceHealth.state, filter.state));
   if (filter?.deviceKind) conds.push(eq(fieldDeviceHealth.deviceKind, filter.deviceKind));
+  if (filter?.dieuKienPhamVi) conds.push(filter.dieuKienPhamVi); // phạm vi người dùng (L6c 2026-10-25)
   return db
     .select()
     .from(fieldDeviceHealth)
@@ -281,12 +282,13 @@ export async function listFieldHealth(filter?: { state?: LivenessState; deviceKi
 }
 
 /** Count health rows grouped by state (for a UI badge). Read-only. */
-export async function fieldHealthSummary(): Promise<Record<string, number>> {
+export async function fieldHealthSummary(dieuKienPhamVi?: import("drizzle-orm").SQL): Promise<Record<string, number>> {
   const db = await getDb();
   if (!db) return {};
   const rows = await db
     .select({ state: fieldDeviceHealth.state, n: sql<number>`count(*)::int` })
     .from(fieldDeviceHealth)
+    .where(dieuKienPhamVi)
     .groupBy(fieldDeviceHealth.state);
   const out: Record<string, number> = {};
   for (const r of rows) out[r.state] = Number(r.n);

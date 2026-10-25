@@ -24,6 +24,7 @@ import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
 import { authenticateExportRequest } from "../api/export/exportRouter";
+import { tenantCodeScopeOf } from "../api/v1/apiKeyScope";
 import {
   ArtifactError,
   getDownloadTarget,
@@ -46,7 +47,7 @@ export function registerReportArtifactRoutes(app: express.Express): void {
       const viewer: ArtifactViewer =
         auth.principal.kind === "session"
           ? { id: auth.principal.userId, role: auth.principal.userRole }
-          : { privileged: true }; // trusted server-to-server key
+          : { privileged: true, tenantScope: tenantCodeScopeOf(auth.principal.tenantScope) }; // khoá API: phạm vi hẹp ⇒ cùng luật vai đặc quyền (W17b); toàn cục ⇒ không lọc
 
       let target;
       try {

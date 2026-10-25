@@ -1,6 +1,6 @@
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
-import { eq, desc, and, gte, isNull, type SQL } from "drizzle-orm";
+import { eq, desc, and, gte, isNull, or, inArray, sql, type SQL } from "drizzle-orm";
 import {
   alertSettings,
   type InsertAlertSetting,
@@ -100,10 +100,22 @@ export async function acknowledgeAlert(id: number, userId: number) {
 
 // ============ Yield Alert Thresholds ============
 
-export async function getYieldAlertThresholds() {
+/** W17b — điều kiện thấy hàng ngưỡng: `factoryIds` null/undefined = toàn quyền (không lọc); mảng = ngưỡng mặc định (NULL) + ngưỡng của các nhà máy đó. */
+function thayDuocNguong(factoryIds: number[] | null | undefined): SQL | undefined {
+  if (factoryIds == null) return undefined;
+  return factoryIds.length === 0 ? isNull(yieldAlertThresholds.factoryId) : or(isNull(yieldAlertThresholds.factoryId), inArray(yieldAlertThresholds.factoryId, factoryIds));
+}
+/** Lịch sử chỉ của các ngưỡng thấy được (hàng ngưỡng đã xoá ⇒ chỉ toàn quyền thấy). */
+function thayDuocLichSu(factoryIds: number[] | null | undefined): SQL | undefined {
+  if (factoryIds == null) return undefined;
+  const dk = factoryIds.length === 0 ? sql`"factoryId" IS NULL` : sql`("factoryId" IS NULL OR "factoryId" IN (${sql.join(factoryIds.map((n) => sql`${n}`), sql`, `)}))`;
+  return sql`${yieldThresholdHistory.thresholdId} IN (SELECT id FROM yield_alert_thresholds WHERE ${dk})`;
+}
+
+export async function getYieldAlertThresholds(factoryIds?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(yieldAlertThresholds).orderBy(yieldAlertThresholds.metricType);
+  return db.select().from(yieldAlertThresholds).where(thayDuocNguong(factoryIds)).orderBy(yieldAlertThresholds.metricType, yieldAlertThresholds.id);
 }
 
 export async function getYieldAlertThresholdById(id: number) {
@@ -113,11 +125,27 @@ export async function getYieldAlertThresholdById(id: number) {
   return results[0] || null;
 }
 
-export async function getYieldAlertThresholdByType(metricType: 'FPY' | 'FY' | 'NTF' | 'UPH') {
+/**
+ * Ngưỡng HIỆU LỰC của một metric (W17b): nêu `factoryId` ⇒ hàng riêng của nhà máy đó nếu có, không thì hàng mặc định (NULL); không nêu ⇒ chỉ hàng mặc định (NULL) —
+ * KHÔNG bao giờ trả hàng của một nhà máy ngẫu nhiên.
+ */
+export async function getYieldAlertThresholdByType(metricType: 'FPY' | 'FY' | 'NTF' | 'UPH', factoryId?: number | null) {
   const db = await getDb();
   if (!db) return null;
-  const results = await db.select().from(yieldAlertThresholds).where(eq(yieldAlertThresholds.metricType, metricType));
+  if (factoryId != null) {
+    const rieng = await db.select().from(yieldAlertThresholds).where(and(eq(yieldAlertThresholds.metricType, metricType), eq(yieldAlertThresholds.factoryId, factoryId))).limit(1);
+    if (rieng[0]) return rieng[0];
+  }
+  const results = await db.select().from(yieldAlertThresholds).where(and(eq(yieldAlertThresholds.metricType, metricType), isNull(yieldAlertThresholds.factoryId))).orderBy(yieldAlertThresholds.id);
   return results[0] || null;
+}
+
+/** Đã có ngưỡng riêng của nhà máy này cho metric này chưa (kiểm trùng tầng ứng dụng, W17b). */
+export async function coNguongNhaMay(metricType: 'FPY' | 'FY' | 'NTF' | 'UPH', factoryId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const r = await db.select({ id: yieldAlertThresholds.id }).from(yieldAlertThresholds).where(and(eq(yieldAlertThresholds.metricType, metricType), eq(yieldAlertThresholds.factoryId, factoryId))).limit(1);
+  return r.length > 0;
 }
 
 export async function createYieldAlertThreshold(data: InsertYieldAlertThreshold) {
@@ -139,10 +167,10 @@ export async function deleteYieldAlertThreshold(id: number) {
   await db.delete(yieldAlertThresholds).where(eq(yieldAlertThresholds.id, id));
 }
 
-export async function getEnabledYieldAlertThresholds() {
+export async function getEnabledYieldAlertThresholds(factoryIds?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(yieldAlertThresholds).where(eq(yieldAlertThresholds.isEnabled, true));
+  return db.select().from(yieldAlertThresholds).where(and(eq(yieldAlertThresholds.isEnabled, true), thayDuocNguong(factoryIds)));
 }
 
 
@@ -155,12 +183,12 @@ export async function createYieldThresholdHistory(data: InsertYieldThresholdHist
   return { id: Number(result.id), ...data };
 }
 
-export async function getYieldThresholdHistoryByThreshold(thresholdId: number) {
+export async function getYieldThresholdHistoryByThreshold(thresholdId: number, factoryIds?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
   return db.select()
     .from(yieldThresholdHistory)
-    .where(eq(yieldThresholdHistory.thresholdId, thresholdId))
+    .where(and(eq(yieldThresholdHistory.thresholdId, thresholdId), thayDuocLichSu(factoryIds)))
     .orderBy(desc(yieldThresholdHistory.createdAt));
 }
 
@@ -173,16 +201,17 @@ export async function getYieldThresholdHistoryByType(metricType: 'FPY' | 'FY' | 
     .orderBy(desc(yieldThresholdHistory.createdAt));
 }
 
-export async function getAllYieldThresholdHistory(limit: number = 100) {
+export async function getAllYieldThresholdHistory(limit: number = 100, factoryIds?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
   return db.select()
     .from(yieldThresholdHistory)
+    .where(thayDuocLichSu(factoryIds))
     .orderBy(desc(yieldThresholdHistory.createdAt))
     .limit(limit);
 }
 
-export async function getYieldThresholdHistoryWithComparison(metricType: 'FPY' | 'FY' | 'NTF' | 'UPH', days: number = 30) {
+export async function getYieldThresholdHistoryWithComparison(metricType: 'FPY' | 'FY' | 'NTF' | 'UPH', days: number = 30, factoryIds?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
   
@@ -194,7 +223,8 @@ export async function getYieldThresholdHistoryWithComparison(metricType: 'FPY' |
     .where(
       and(
         eq(yieldThresholdHistory.metricType, metricType),
-        gte(yieldThresholdHistory.createdAt, startDate)
+        gte(yieldThresholdHistory.createdAt, startDate),
+        thayDuocLichSu(factoryIds)
       )
     )
     .orderBy(desc(yieldThresholdHistory.createdAt));

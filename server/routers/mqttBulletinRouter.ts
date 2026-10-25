@@ -9,6 +9,7 @@
  */
 
 import { cacTramGhi } from "./_cauHinhPhamVi";
+import { dieuKienTramTrongPhamVi } from "./_adapterPhamVi";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -42,9 +43,11 @@ export const mqttBulletinRouter = router({
       stationId: z.number().optional(),
       enabledOnly: z.boolean().optional().default(false),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = (await getDb())!;
       const filters = [];
+      const congTram = await dieuKienTramTrongPhamVi(ctx, mqttBulletinSettings.stationId); // phạm vi người dùng (L6c 2026-10-25)
+      if (congTram) filters.push(congTram);
 
       if (input?.stationId) {
         filters.push(eq(mqttBulletinSettings.stationId, input.stationId));
@@ -73,15 +76,16 @@ export const mqttBulletinRouter = router({
    */
   getSetting: protectedProcedure
     .input(z.object({ stationId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = (await getDb())!;
+      const congTram = await dieuKienTramTrongPhamVi(ctx, mqttBulletinSettings.stationId); // phạm vi người dùng (L6c 2026-10-25): trạm ngoài phạm vi ≡ chưa cấu hình
       const result = await db.select({
         setting: mqttBulletinSettings,
         stationName: stations.name,
       })
       .from(mqttBulletinSettings)
       .leftJoin(stations, eq(mqttBulletinSettings.stationId, stations.id))
-      .where(eq(mqttBulletinSettings.stationId, input.stationId))
+      .where(and(eq(mqttBulletinSettings.stationId, input.stationId), congTram))
       .limit(1);
 
       if (result.length === 0) return null;
@@ -248,9 +252,11 @@ export const mqttBulletinRouter = router({
       limit: z.number().min(1).max(200).default(50),
       offset: z.number().min(0).default(0),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = (await getDb())!;
       const filters = [];
+      const congTram = await dieuKienTramTrongPhamVi(ctx, mqttBulletinHistory.stationId); // phạm vi người dùng (L6c 2026-10-25)
+      if (congTram) filters.push(congTram);
 
       if (input.stationId) {
         filters.push(eq(mqttBulletinHistory.stationId, input.stationId));
@@ -295,15 +301,16 @@ export const mqttBulletinRouter = router({
    */
   getHistoryDetail: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = (await getDb())!;
+      const congTram = await dieuKienTramTrongPhamVi(ctx, mqttBulletinHistory.stationId); // phạm vi người dùng (L6c 2026-10-25): bản tin của trạm ngoài phạm vi ≡ không tồn tại
       const result = await db.select({
         bulletin: mqttBulletinHistory,
         stationName: stations.name,
       })
       .from(mqttBulletinHistory)
       .leftJoin(stations, eq(mqttBulletinHistory.stationId, stations.id))
-      .where(eq(mqttBulletinHistory.id, input.id))
+      .where(and(eq(mqttBulletinHistory.id, input.id), congTram))
       .limit(1);
 
       if (result.length === 0) {
@@ -332,14 +339,17 @@ export const mqttBulletinRouter = router({
       stationId: z.number().optional(),
       days: z.number().min(1).max(90).default(7),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = (await getDb())!;
+      const congTram = await dieuKienTramTrongPhamVi(ctx, mqttBulletinHistory.stationId); // phạm vi người dùng (L6c 2026-10-25)
+      const congTramCauHinh = await dieuKienTramTrongPhamVi(ctx, mqttBulletinSettings.stationId);
       const daysBack = input?.days || 7;
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - daysBack);
       startDate.setHours(0, 0, 0, 0);
 
       const filters = [gte(mqttBulletinHistory.createdAt, startDate)];
+      if (congTram) filters.push(congTram);
       if (input?.stationId) {
         filters.push(eq(mqttBulletinHistory.stationId, input.stationId));
       }
@@ -363,7 +373,7 @@ export const mqttBulletinRouter = router({
         count: sql<number>`count(*)`,
       })
       .from(mqttBulletinSettings)
-      .where(eq(mqttBulletinSettings.enabled, true));
+      .where(and(eq(mqttBulletinSettings.enabled, true), congTramCauHinh));
 
       // Recent bulletins by station
       const byStation = await db.select({

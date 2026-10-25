@@ -8,6 +8,7 @@ import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { kiemTraTrongPhamVi } from "./_adapterPhamVi";
 // ★★★ 2026-08-17 — PHẠM VI DỮ LIỆU của đường xuất báo cáo. Xem docblock đầy đủ ở
 // `_core/reportExportScope.ts`: `getDashboardStats` & co. chỉ lọc khi nơi gọi TRUYỀN `userId`,
 // và router này không truyền ⇒ mọi tài khoản đã đăng nhập tải về được PDF số liệu TOÀN CỤC.
@@ -66,10 +67,10 @@ export const pdfReportRouter = router({
         pageSize: z.enum(["A4", "LETTER"]).optional(),
       }).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       // Get inspection details
       const inspection = await db.getInspectionById(input.inspectionId);
-      if (!inspection) {
+      if (!inspection || !(await kiemTraTrongPhamVi(ctx, [input.inspectionId]))) { // phạm vi người dùng (L6w 2026-10-25): lần kiểm tra ngoài phạm vi ≡ không tồn tại
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Không tìm thấy inspection");
       }
 

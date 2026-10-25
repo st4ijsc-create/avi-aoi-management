@@ -533,7 +533,7 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   ngoaiAiCoCong KHÔNG đổi.** Thủ tục MỚI `scadaCommands.dungMay` (STOP HMI một bước) của `server/routers/scadaCommandsRouter.ts` (không
 //   phải bề mặt AI; tool `hmi.stop` KHÔNG vào registry tool AI), sau `MOD_OT_CONTROL` (xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 126 → 127).
 //   Đo: ghim cũ (gốc f5f8f40d9) đỏ ĐÚNG +1. `tong` 2403 trùng ĐÚNG `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2403, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+const GHIM = { tong: 2405, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

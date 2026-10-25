@@ -182,7 +182,8 @@ export function getQueueSnapshot() {
 export function cancelJob(id: string, userId?: number | string): boolean {
   const job = jobs.get(id);
   if (!job) return false;
-  if (userId !== undefined && job.userId !== undefined && job.userId !== userId) return false;
+  // W17a (kiểm định phamViGhi): người gọi nêu danh tính thì phải LÀ chủ job — job không chủ (hệ thống / cron) KHÔNG phải của ai nên người dùng không huỷ được.
+  if (userId !== undefined && job.userId !== userId) return false;
   if (job.status === "queued") {
     const idx = pending.indexOf(id);
     if (idx >= 0) pending.splice(idx, 1);

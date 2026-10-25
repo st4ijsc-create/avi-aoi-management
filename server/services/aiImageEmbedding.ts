@@ -11,6 +11,7 @@ import { ollamaDungDuoc } from "./ai/ollamaLui";
 import path from "path";
 import fs from "fs";
 import { getDb } from "../db/connection";
+import { hangKetQua } from "../db/hangKetQua";
 import { aiImageEmbeddings } from "../../drizzle/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { getAiModelById, getActiveModelForProduct, getAiModels } from "../db/ai";
@@ -974,7 +975,7 @@ export async function findSimilarByVectorWithMode(
         LIMIT ${safeLimit}
       `;
       const result = (await db.execute(query)) as any;
-      const results = (result.rows as any[])
+      const results = hangKetQua<any>(result) // postgres-js trả MẢNG (không có .rows) — bản cũ `result.rows` ném TypeError ⇒ tầng HNSW luôn rơi xuống tầng sau (W18)
         .filter((r) => parseFloat(r.similarity) >= minSim)
         .map(mapRowToSimilar);
       return { results, searchMode: "hnsw" };
@@ -1002,7 +1003,7 @@ export async function findSimilarByVectorWithMode(
       LIMIT ${safeLimit}
     `;
     const result = (await db.execute(query)) as any;
-    const results = (result.rows as any[])
+    const results = hangKetQua<any>(result) // W18 — như trên: tầng cast runtime
       .filter((r) => parseFloat(r.similarity) >= minSim)
       .map(mapRowToSimilar);
     return { results, searchMode: "exact" };

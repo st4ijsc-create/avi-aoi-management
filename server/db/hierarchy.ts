@@ -1799,9 +1799,11 @@ export async function getProductionLineByCode(code: string) {
  * Get full hierarchy tree: Factory → Workshop → Line → Station → Machine
  * Returns flat joined rows for tree assembly on the router layer.
  */
-export async function getFullHierarchyFlat() {
+export async function getFullHierarchyFlat(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  // phạm vi người dùng (L6c 2026-10-25): `scope` TUỲ CHỌN (nơi gọi cũ không đổi): chỉ nhà máy trong phạm vi — lọc NGAY trong cùng MỘT truy vấn (không thêm vòng lặp theo hàng)
+  const idsNhaMay = scope ? await idsTrongPhamVi("factory", scope, { strict: true }) : null;
 
   return db
     .select({
@@ -1834,7 +1836,7 @@ export async function getFullHierarchyFlat() {
     .leftJoin(productionLines, eq(productionLines.workshopId, workshops.id))
     .leftJoin(stations, eq(stations.lineId, productionLines.id))
     .leftJoin(machines, eq(machines.stationId, stations.id))
-    .where(eq(factories.isActive, true))
+    .where(idsNhaMay === null ? eq(factories.isActive, true) : and(eq(factories.isActive, true), inArray(factories.id, idsNhaMay.length > 0 ? idsNhaMay : [-1])))
     .orderBy(
       factories.name,
       workshops.name,
@@ -1847,9 +1849,12 @@ export async function getFullHierarchyFlat() {
 /**
  * Get hierarchy tree for a specific factory
  */
-export async function getFactoryHierarchyFlat(factoryId: number) {
+export async function getFactoryHierarchyFlat(factoryId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  // phạm vi người dùng (L6c 2026-10-25): nhà máy ngoài phạm vi ≡ không tồn tại (0 hàng)
+  const idsNhaMay = scope ? await idsTrongPhamVi("factory", scope, { strict: true }) : null;
+  if (idsNhaMay !== null && !idsNhaMay.includes(factoryId)) return [];
 
   return db
     .select({

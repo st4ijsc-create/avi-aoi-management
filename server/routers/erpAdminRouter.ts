@@ -21,6 +21,9 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { oauthClientMoiGhi, oauthClientGhi, deadLetterDuocThuLai } from "./_cauHinhPhamVi";
+import { congMaTenant } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
+import { integrationOutbox } from "../../drizzle/schema";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import { desc, eq } from "drizzle-orm";
@@ -95,9 +98,11 @@ export const erpAdminRouter = router({
   /** List OAuth clients (newest first) — SAFE shape only (no secret hash). */
   listOauthClients: protectedProcedure
     .use(requirePermission("admin_system", "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const d = await db();
-      const rows = await d.select().from(erpOauthClients).orderBy(desc(erpOauthClients.createdAt));
+      // phạm vi người dùng (L6c 2026-10-25): client theo MÃ tập đoàn; client cấp toàn cục (không mã) chỉ toàn quyền thấy
+      const cong = await congMaTenant({ corporateCode: erpOauthClients.corporateCode }, phamViCua(ctx));
+      const rows = await d.select().from(erpOauthClients).where(cong).orderBy(desc(erpOauthClients.createdAt));
       return rows.map(publicClient);
     }),
 
@@ -202,8 +207,10 @@ export const erpAdminRouter = router({
   /** Outbox status counts + circuit-breaker snapshot (read). */
   outboxStatus: protectedProcedure
     .use(requirePermission("admin_system", "canView"))
-    .query(async () => {
-      const [counts, breakers] = await Promise.all([outboxStats(), Promise.resolve(breakerSnapshot())]);
+    .query(async ({ ctx }) => {
+      // phạm vi người dùng (L6c 2026-10-25): đếm theo tập đoàn; `breakers` (cầu chì mạch theo endpoint, không có nhãn tenant) chỉ toàn quyền thấy
+      const cong = await congMaTenant({ corporateCode: integrationOutbox.corporateCode }, phamViCua(ctx));
+      const [counts, breakers] = await Promise.all([outboxStats(cong), Promise.resolve(cong === undefined ? breakerSnapshot() : [])]);
       return { counts, breakers };
     }),
 
@@ -211,8 +218,9 @@ export const erpAdminRouter = router({
   outboxDeadLetters: protectedProcedure
     .use(requirePermission("admin_system", "canView"))
     .input(z.object({ limit: z.number().int().min(1).max(500).optional() }).optional())
-    .query(async ({ input }) => {
-      const rows = await listDeadLetters(input?.limit ?? 50);
+    .query(async ({ input, ctx }) => {
+      const cong = await congMaTenant({ corporateCode: integrationOutbox.corporateCode }, phamViCua(ctx)); // phạm vi người dùng (L6c 2026-10-25)
+      const rows = await listDeadLetters(input?.limit ?? 50, cong);
       return { deadLetters: rows, count: rows.length };
     }),
 

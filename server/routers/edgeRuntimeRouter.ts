@@ -19,6 +19,9 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { nutEdgeGhi } from "./_cauHinhPhamVi";
+import { congMaTenant } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
+import { edgeNodes } from "../../drizzle/schema";
 import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -67,7 +70,8 @@ export const edgeRuntimeRouter = router({
   listNodes: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ factoryCode: z.string().max(128).optional() }).optional())
-    .query(async ({ input }) => listNodes(input?.factoryCode)),
+    // phạm vi người dùng (L6c 2026-10-25): nút edge theo MÃ nhà máy của nó; nút không gắn nhà máy chỉ toàn quyền thấy
+    .query(async ({ input, ctx }) => listNodes(input?.factoryCode, await congMaTenant({ factoryCode: edgeNodes.factoryCode }, phamViCua(ctx)))),
 
   /** Status of one node + the runs delegated to it. */
   nodeStatus: protectedProcedure

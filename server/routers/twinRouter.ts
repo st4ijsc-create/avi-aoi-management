@@ -30,9 +30,12 @@ import { requirePermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
 import { validateUpload } from "../_core/uploadValidation";
 // ★ Đợt 42 — hàng rào tenant cho `usdExport` (QA Đợt 41 D-4 lỗ #1): cùng khuôn Đợt 40, không dựng bộ luật thứ hai (G12).
-import { phamViCua } from "./_phamViNguoiXem";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { trongPhamVi } from "../db/hierarchy";
-import { mayTrongPhamVi } from "./_adapterPhamVi";
+import { mayTrongPhamVi, idsMayTrongPhamVi } from "./_adapterPhamVi";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { theTenantHopLe } from "./_theTenantPhamVi";
+import type { Equipment3dModel } from "../../drizzle/schema";
 import {
   twinLiveEnabled,
   registerModel,
@@ -51,6 +54,31 @@ import {
   convertStepModel,
 } from "../services/twin/pipeline/modelConversionService";
 import { SAMPLE_URDF_3DOF_ARM, SAMPLE_URDF_2DOF_PLANAR } from "../services/twin/pipeline/sampleUrdfs";
+
+/**
+ * phạm vi người dùng (L6c 2026-10-25): bộ lọc hàng sổ đăng ký mô hình 3D thấy được cho người hẹp (undefined = toàn quyền). Hàng KHÔNG gắn máy / nhà máy / tập đoàn = dùng chung (mô hình theo LỚP thiết bị);
+ * hàng có gắn thì MỌI thẻ khác null phải trong phạm vi (máy ∈ máy trong phạm vi; nhà máy ∈ nhà máy trong phạm vi; tập đoàn qua `theTenantHopLe`).
+ */
+async function locMoHinhNhin(ctx: CoDanhTinh): Promise<((rows: Equipment3dModel[]) => Promise<Equipment3dModel[]>) | undefined> {
+  const idsMay = await idsMayTrongPhamVi(ctx);
+  if (idsMay === null) return undefined;
+  const nhaMay = (await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true })) ?? [];
+  const tdoan = new Map<string, boolean>();
+  return async (rows) => {
+    const out: Equipment3dModel[] = [];
+    for (const r of rows) {
+      if (r.machineId == null && r.factoryId == null && r.corporateCode == null) { out.push(r); continue; }
+      if (r.machineId != null && !idsMay.includes(r.machineId)) continue;
+      if (r.factoryId != null && !nhaMay.includes(r.factoryId)) continue;
+      if (r.corporateCode != null) {
+        if (!tdoan.has(r.corporateCode)) tdoan.set(r.corporateCode, await theTenantHopLe(ctx, { corporateCode: r.corporateCode }).catch(() => false));
+        if (!tdoan.get(r.corporateCode)) continue;
+      }
+      out.push(r);
+    }
+    return out;
+  };
+}
 
 /**
  * doc 81 Đợt 4 Task A3 — the ONE factory gate of the twin read endpoints (the Đợt 42 usdExport check, now shared by
@@ -97,7 +125,7 @@ export const twinRouter = router({
           })
           .optional(),
       )
-      .query(async ({ input }) => listModels(input)),
+      .query(async ({ input, ctx }) => listModels(input, await locMoHinhNhin(ctx))),
 
     /** Resolve the best model for an equipment/class (most-specific wins). */
     resolve: protectedProcedure
@@ -109,7 +137,7 @@ export const twinRouter = router({
           equipmentClass: z.string().max(64).optional(),
         }),
       )
-      .query(async ({ input }) => resolveModel(input)),
+      .query(async ({ input, ctx }) => resolveModel(input, await locMoHinhNhin(ctx))),
 
     /** Register (or re-register, version-bumped) an already-converted model URI. */
     register: protectedProcedure

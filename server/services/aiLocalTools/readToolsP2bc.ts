@@ -54,7 +54,9 @@
  */
 
 import { z } from "zod";
-import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import { congCanhBaoDuDoanTool, congMaTool, congRcaTool, congSanPhamTool, giaiPhamViMay, ketQuaChiToanQuyen, mayCot, nguoiTrongPhamViTool } from "./phamViDoc";
+import { ketQuaPhamViRong } from "./readToolRbac";
 import { getDb } from "../../db/connection";
 import {
   productModels,
@@ -224,6 +226,9 @@ const listProducts: Tool<z.infer<typeof productsParams>, ProductListData> = {
     if (!db) return noDbResult<ProductListData>("product_list", title, empty);
 
     const conds = [isNull(productModels.deletedAt)];
+    // phạm vi người dùng (L8 2026-10-25): cùng luật danh sách sản phẩm của tRPC (L3): sản phẩm gắn nhà máy trong phạm vi
+    const congSP = await congSanPhamTool((params as any).__authCtx, productModels.id);
+    if (congSP) conds.push(congSP);
     if (search) {
       conds.push(sql`(${productModels.code} ilike ${`%${search}%`} or ${productModels.name} ilike ${`%${search}%`})`);
     }
@@ -397,6 +402,9 @@ const getRcaHistory: Tool<z.infer<typeof rcaParams>, RcaHistoryData> = {
     if (!db) return noDbResult<RcaHistoryData>("rca_history", title, empty);
 
     const conds = [];
+    // phạm vi người dùng (L8 2026-10-25): cùng luật rootCause.list (L6b): có máy ⇒ máy trong phạm vi; có nhà máy ⇒ nhà máy trong phạm vi; không cả hai ⇒ chỉ người yêu cầu
+    const congRca = await congRcaTool((params as any).__authCtx);
+    if (congRca) conds.push(congRca);
     if (machineCode) conds.push(eq(rootCauseAnalysis.machineCode, machineCode));
     if (defectType) {
       // No dedicated defectType column — match against analysisType / machineCode text.
@@ -520,6 +528,9 @@ const listUsersByRole: Tool<z.infer<typeof usersParams>, UserListData> = {
     const db = await getDb();
     if (!db) return noDbResult<UserListData>("user_list", title, empty);
 
+    // phạm vi người dùng (L8 2026-10-25): người dùng KHÔNG gắn nhà máy; người hẹp chỉ thấy người được gán một nhà máy MÃ trong phạm vi của họ (và chính mình). Toàn quyền ⇒ không lọc.
+    const nguoiTrongPhamVi = await nguoiTrongPhamViTool((params as any).__authCtx);
+
     // Optional factory filter → resolve user ids first (read-only).
     let factoryUserIds: number[] | null = null;
     if (factoryCode) {
@@ -540,6 +551,7 @@ const listUsersByRole: Tool<z.infer<typeof usersParams>, UserListData> = {
     }
 
     const conds = [];
+    if (nguoiTrongPhamVi) conds.push(inArray(users.id, nguoiTrongPhamVi));
     if (role) conds.push(eq(users.role, role as any));
     if (factoryUserIds) conds.push(inArray(users.id, factoryUserIds));
 
@@ -650,6 +662,17 @@ const listApiKeys: Tool<z.infer<typeof apiKeysParams>, ApiKeyListData> = {
     if (!db) return noDbResult<ApiKeyListData>("api_key_list", title, empty);
 
     const conds = [];
+    // phạm vi người dùng (L8 2026-10-25): khoá thấy được ⇔ máy của nó trong phạm vi HOẶC trục mã (dataScopeMode='factory') khớp; khoá toàn cục / chưa khai chỉ toàn quyền (cùng apiKey.list)
+    const pvKey = await giaiPhamViMay((params as any).__authCtx);
+    const congMa = await congMaTool((params as any).__authCtx, { factoryCode: apiKeys.factoryCode, corporateCode: apiKeys.corporateCode });
+    if (pvKey.kind !== "global" || congMa !== undefined) {
+      conds.push(
+        or(
+          pvKey.kind === "global" ? undefined : and(sql`${apiKeys.machineId} IS NOT NULL`, mayCot(pvKey, apiKeys.machineId)),
+          congMa === undefined ? undefined : and(eq(apiKeys.dataScopeMode, "factory"), congMa),
+        ) ?? sql`false`,
+      );
+    }
     if (active === true) conds.push(eq(apiKeys.isActive, true));
     if (active === false) conds.push(eq(apiKeys.isActive, false));
 
@@ -772,6 +795,10 @@ const getChangeHistory: Tool<z.infer<typeof changeHistoryParams>, ChangeHistoryD
 
     const db = await getDb();
     if (!db) return noDbResult<ChangeHistoryData>("change_history", title, empty);
+
+    // phạm vi người dùng (L8 2026-10-25): tRPC audit.list là adminProcedure (nhật ký KHÔNG có cột nhà máy) ⇒ tool cùng luật: chỉ toàn quyền
+    const pvAudit = await giaiPhamViMay((params as any).__authCtx);
+    if (pvAudit.kind !== "global") return ketQuaChiToanQuyen<ChangeHistoryData>("change_history", title, empty);
 
     const conds = [];
     if (entityType) conds.push(eq(auditLogs.entityType, entityType));
@@ -897,8 +924,14 @@ const getMachineHealth: Tool<z.infer<typeof machineHealthParams>, MachineHealthD
     const db = await getDb();
     if (!db) return noDbResult<MachineHealthData>("machine_health", title, empty);
 
+    const pv = await giaiPhamViMay((params as any).__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<MachineHealthData>("machine_health", title, empty);
+    const congDuDoan = await congCanhBaoDuDoanTool((params as any).__authCtx);
+
     // Latest health row per machine via DISTINCT ON (machineId, newest timestamp).
     const healthConds = [];
+    const congMayH = mayCot(pv, machineHealthHistory.machineId);
+    if (congMayH) healthConds.push(congMayH);
     if (machineCode) healthConds.push(eq(machineHealthHistory.machineCode, machineCode));
     const healthRows = await db
       .selectDistinctOn([machineHealthHistory.machineId], {
@@ -917,6 +950,7 @@ const getMachineHealth: Tool<z.infer<typeof machineHealthParams>, MachineHealthD
 
     // Active predictive alerts for the same machines (risk overlay).
     const alertConds = [eq(predictiveAlerts.status, "ACTIVE")];
+    if (congDuDoan) alertConds.push(congDuDoan);
     if (machineCode) alertConds.push(eq(predictiveAlerts.machineCode, machineCode));
     const alertRows = await db
       .select({

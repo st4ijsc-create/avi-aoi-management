@@ -179,6 +179,7 @@ export const reportBuilderRouter = router({
         },
         customization: input.styling || {},
         isDefault: input.isPublic,
+        createdBy: ctx.user.id, // W19c — trước đây KHÔNG ghi ⇒ createdBy NULL ⇒ chính người tạo không sửa / xoá được báo cáo của mình (assertReportOwnership)
       });
       return result;
     }),

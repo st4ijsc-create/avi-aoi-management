@@ -40,3 +40,18 @@ export function resolveSafeImagePath(imageKey: string, uploadsRoot?: string): st
 
   return resolved;
 }
+
+/**
+ * Chuẩn hoá MỘT lần khoá ảnh của client (L6b-fix 2026-10-25): `\` → `/`, bỏ `/` đầu và `uploads/` đầu, bỏ đoạn `.`.
+ * TỪ CHỐI (null) khi: không phải chuỗi, rỗng, chứa NUL, tuyệt đối / ổ đĩa, có đoạn `..` hoặc đoạn rỗng (`a//b`, đuôi `/`), hoặc có `%2e`/`%2f`/`%5c` (dạng mã hoá của dấu chấm / gạch).
+ * Mọi nơi kiểm phạm vi lẫn đọc tệp phải dùng ĐÚNG chuỗi trả về — không chuẩn hoá lại riêng.
+ */
+export function chuanHoaKhoaAnh(imageKey: unknown): string | null {
+  if (typeof imageKey !== "string" || imageKey.includes("\0")) return null;
+  if (/%(2e|2f|5c)/i.test(imageKey)) return null;
+  const k = imageKey.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/^uploads\//i, "");
+  if (!k || path.posix.isAbsolute(k) || /^[a-zA-Z]:/.test(k)) return null;
+  const doan = k.split("/").filter((s) => s !== ".");
+  if (doan.length === 0 || doan.some((s) => s === "" || s === "..")) return null;
+  return doan.join("/");
+}

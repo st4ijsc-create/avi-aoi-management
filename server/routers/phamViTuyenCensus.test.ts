@@ -167,7 +167,8 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
 // ★ 2026-10-24 /api/external nhóm ③: A 41→29 · S 58→70 (12 tuyến: stations/:id + 6 nhánh, resolve-topic, workstations, workstations/:id, products, products/:id).
 // ★ 2026-10-24 /api/external nhóm ④: A 29→25 · S 70→74 (hierarchy/{tree,factory/:factoryId,mqtt-topics,summary}); dashboard/summary + statistics/measurement-points đã trích sang cùng tệp, còn nợ → nhóm ⑤.
 // ★ 2026-10-24 /api/external nhóm ⑤: A 25→5 · S 74→94 (20 tuyến tổng hợp). A=5 còn lại ĐÚNG là năm MIỄN TRỪ CÓ CHỦ Ý (standards/device-types|alarm-taxonomy, twin/models, edge/download, reports/artifacts) — sổ nợ tuyến /api/* RỖNG.
-const GHIM = { A: 5, C: 40, D: 96, S: 94, U: 16, tong: 251 } as const;
+// ★ 2026-10-25 (W17a): A 5→4 · C 40→39 · S 94→96: tải tệp báo cáo (reportArtifactRoutes download + external/reports/:id/download) lọc theo phạm vi NGƯỜI TẠO (reportArtifactScope.ts) — gỡ miễn trừ.
+const GHIM = { A: 4, C: 39, D: 96, S: 96, U: 16, tong: 251 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -293,7 +294,7 @@ describe("§4 — RÒ RỈ MỚI ⇒ ĐỎ (lý do tồn tại của cổng này
 });
 
 describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
-  it("★★ MIỄN TRỪ CÓ CHỦ Ý (tuyến): còn tồn tại · còn nhóm (A) · lý do thật có ngày duyệt · không trùng sổ nợ · ghim số = 5", () => {
+  it("★★ MIỄN TRỪ CÓ CHỦ Ý (tuyến): còn tồn tại · còn nhóm (A) · lý do thật có ngày duyệt · không trùng sổ nợ · ghim số = 4", () => {
     const nhomTheoKhoa = new Map(QUET.tuyen.map((t) => [khoaTuyen(t), nhomTuyenCua(t)]));
     const loi: string[] = [];
     for (const [k, lyDo] of Object.entries(MIEN_TRU_TUYEN_CO_CHU_Y)) {
@@ -303,7 +304,7 @@ describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
       if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
     }
     expect(loi).toEqual([]);
-    expect(Object.keys(MIEN_TRU_TUYEN_CO_CHU_Y).length, "thêm miễn trừ = quyết định, ghi lý do ở đây").toBe(5);
+    expect(Object.keys(MIEN_TRU_TUYEN_CO_CHU_Y).length, "thêm miễn trừ = quyết định, ghi lý do ở đây").toBe(4);
   });
 
   it("★ mọi mục trong sổ vẫn còn là một tuyến CÓ THẬT", () => {
@@ -404,6 +405,7 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/_core/index.ts#GET /api/aoi/image/:packageId/:fileName",
       "server/_core/index.ts#GET /api/external/machines",
       "server/_core/index.ts#GET /api/external/machines/by-code/:code",
+      "server/_core/index.ts#GET /api/external/reports/:reportId/download",
       "server/_core/index.ts#GET /api/inspection/:id/images",
       "server/_core/index.ts#GET /api/measurement-point/:id/reference-image",
       "server/_core/index.ts#GET /api/product-model/:id/reference-images",
@@ -494,6 +496,7 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/routes/externalStationApi.ts#GET /api/external/stations/resolve-topic",
       "server/routes/externalStationApi.ts#GET /api/external/workstations",
       "server/routes/externalStationApi.ts#GET /api/external/workstations/:id",
+      "server/routes/reportArtifactRoutes.ts#GET /api/reports/artifacts/:id/download",
     ]);
   });
 });

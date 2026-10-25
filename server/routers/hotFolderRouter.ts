@@ -19,6 +19,7 @@
  * delete → canDelete.
  */
 import { viTriHopLe, hotFolderGhi } from "./_cauHinhPhamVi";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -57,18 +58,18 @@ export const hotFolderRouter = router({
   /** Flag + per-config live runtime status (watching/lastFile/lastError/counters). */
   status: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => getHotFolderStatus()),
+    .query(async ({ ctx }) => getHotFolderStatus(await idsMayTrongPhamVi(ctx))), // phạm vi người dùng (L6c 2026-10-25)
 
   /** All configs (config UI list). */
   listConfigs: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => listHotFolderConfigs()),
+    .query(async ({ ctx }) => listHotFolderConfigs(await idsMayTrongPhamVi(ctx))), // phạm vi người dùng (L6c 2026-10-25)
 
   /** Processed-file ledger tail for one config (newest first). */
   recentFiles: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ configId: z.number().int().positive(), limit: z.number().int().min(1).max(100).optional() }))
-    .query(async ({ input }) => listRecentHotFolderFiles(input.configId, input.limit ?? 20)),
+    .query(async ({ input, ctx }) => listRecentHotFolderFiles(input.configId, input.limit ?? 20, await idsMayTrongPhamVi(ctx))), // phạm vi người dùng (L6c 2026-10-25)
 
   /** Create a config. Validates adapterKey (registry) + machine + absolute paths. */
   createConfig: protectedProcedure

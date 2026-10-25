@@ -16,15 +16,21 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { router, moduleProcedure } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, roleProcedure, require2FA } from "../_core/trpc";
 // ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
 //   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
 const protectedProcedure = moduleProcedure("MOD_AI");
+/**
+ * W17d (kiểm định phamViGhi, 2026-10-25; dieu-phoi duyệt) — QUAY LUI MODEL là hành động đổi model TOÀN CỤC cho MỌI nhà máy: sàn của model-card (admin · kỹ sư + 2FA + giấy phép MOD_AI)
+ * VÀ chỉ người TOÀN QUYỀN theo phạm vi (kỹ sư / giám sát viên một nhà máy ⇒ NOT_FOUND). Trước: chỉ `machine_control.canEdit` — giám sát viên nhà máy A quay lui được model dùng chung.
+ */
+const quayLuiProcedure = roleProcedure("admin", "engineer").use(require2FA).use(moduleGate("MOD_AI"));
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { and, desc, eq } from "drizzle-orm";
 import { robotBehaviorAnomalies, modelRollbackEvents } from "../../drizzle/schema";
 import { robotTrongPhamVi } from "./_robotPhamVi";
+import { chiToanQuyenGhi } from "./_cauHinhPhamVi";
 import { congBatThuongRobot, congRollbackMoHinh } from "./_aiPhamVi";
 import { isRobotAnomalyEnabled } from "../services/ai/robotBehaviorAnomaly";
 import { detectAndRaiseForRobot } from "../services/ai/robotBehaviorAnomalyService";
@@ -127,10 +133,11 @@ export const aiRobotAnomalyRouter = router({
     }),
 
   /** Run the auto-rollback evaluation for one model now (flag-gated). */
-  evaluateRollback: protectedProcedure
+  evaluateRollback: quayLuiProcedure
     .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({ modelId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await chiToanQuyenGhi(ctx, "aiModel"); // W17d — model toàn cục: chỉ toàn quyền
       if (!isModelAutoRollbackEnabled()) {
         throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "modelAutoRollback" }, "Model auto-rollback disabled (set AI_MODEL_AUTOROLLBACK_ENABLED=true)");
       }
@@ -144,7 +151,7 @@ export const aiRobotAnomalyRouter = router({
    * as manual activation. A target whose evalReport.gate.pass !== true is rejected
    * unless `force: true` (+ this `reason`, doubling as the audited override reason).
    */
-  manualRollback: protectedProcedure
+  manualRollback: quayLuiProcedure
     .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({
       modelId: z.number().int().positive(),
@@ -153,6 +160,7 @@ export const aiRobotAnomalyRouter = router({
       force: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await chiToanQuyenGhi(ctx, "aiModel"); // W17d — model toàn cục: chỉ toàn quyền
       const outcome = await manualRollback(
         input.modelId, input.toVersionId, ctx.user.id, input.reason ?? "Manual rollback",
         { force: input.force === true },

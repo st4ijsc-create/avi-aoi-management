@@ -11,6 +11,8 @@ import {
   computeClientOfflineMinutes,
 } from "./mqttService";
 import { redisService } from "./redisService";
+import { dieuKienTram, KIEU_LUAT_THEO_TRAM, phanPhamViTram, type PhamViTram } from "./mqttAlertPhamVi";
+import { hangKetQua } from "../db/hangKetQua";
 
 interface AlertEvaluationResult {
   ruleId: number;
@@ -125,11 +127,20 @@ export async function evaluateAllAlertRules(): Promise<AlertEvaluationResult[]> 
     .from(mqttAlertRules)
     .where(eq(mqttAlertRules.isEnabled, true));
 
+  return evaluateAlertRules(rules);
+}
+
+/** Đánh giá một TẬP luật đã nạp (tách ra để kiểm thử độc lập; `evaluateAllAlertRules` nạp mọi luật đang bật rồi gọi vào đây). */
+export async function evaluateAlertRules(rules: any[]): Promise<AlertEvaluationResult[]> {
   const results: AlertEvaluationResult[] = [];
+  // W17b — phạm vi trạm của từng luật (luật nhà máy / luật mặc định bị nhà máy ghi đè); đường nhanh: map rỗng ⇒ truy vấn y như trước.
+  const phamVi = phanPhamViTram(rules);
 
   for (const rule of rules) {
+    // W17b — luật gắn nhà máy mà loại luật không có số đo theo trạm (BROKER_DISCONNECT / CLIENT_OFFLINE) không hợp lệ ⇒ bỏ qua (API từ chối tạo; hàng gieo tay không được đánh giá toàn cục thay)
+    if (rule.factoryId != null && !KIEU_LUAT_THEO_TRAM.has(rule.ruleType)) continue;
     try {
-      const result = await evaluateRule(rule);
+      const result = await evaluateRule(rule, phamVi.get(rule.id));
       results.push(result);
 
       if (result.triggered) {
@@ -143,7 +154,7 @@ export async function evaluateAllAlertRules(): Promise<AlertEvaluationResult[]> 
   return results;
 }
 
-async function evaluateRule(rule: any): Promise<AlertEvaluationResult> {
+async function evaluateRule(rule: any, pv?: PhamViTram): Promise<AlertEvaluationResult> {
   const { id, name, ruleType, thresholdValue, comparisonOperator, timeWindowMinutes } = rule;
 
   let currentValue = 0;
@@ -152,7 +163,7 @@ async function evaluateRule(rule: any): Promise<AlertEvaluationResult> {
 
   switch (ruleType) {
     case "LATENCY_THRESHOLD":
-      currentValue = await getAverageLatency(timeWindowMinutes);
+      currentValue = await getAverageLatency(timeWindowMinutes, pv);
       triggered = compareValues(currentValue, thresholdValue, comparisonOperator);
       message = `Độ trễ trung bình ${currentValue.toFixed(2)}ms ${getOperatorText(comparisonOperator)} ngưỡng ${thresholdValue}ms`;
       break;
@@ -164,19 +175,19 @@ async function evaluateRule(rule: any): Promise<AlertEvaluationResult> {
       break;
 
     case "MESSAGE_FAILURE_RATE":
-      currentValue = await getMessageFailureRate(timeWindowMinutes);
+      currentValue = await getMessageFailureRate(timeWindowMinutes, pv);
       triggered = compareValues(currentValue, thresholdValue, comparisonOperator);
       message = `Tỷ lệ message thất bại ${currentValue.toFixed(2)}% ${getOperatorText(comparisonOperator)} ngưỡng ${thresholdValue}%`;
       break;
 
     case "THROUGHPUT_LOW":
-      currentValue = await getThroughput(timeWindowMinutes);
+      currentValue = await getThroughput(timeWindowMinutes, pv);
       triggered = compareValues(currentValue, thresholdValue, comparisonOperator);
       message = `Throughput ${currentValue.toFixed(0)} msg/min ${getOperatorText(comparisonOperator)} ngưỡng ${thresholdValue} msg/min`;
       break;
 
     case "THROUGHPUT_HIGH":
-      currentValue = await getThroughput(timeWindowMinutes);
+      currentValue = await getThroughput(timeWindowMinutes, pv);
       triggered = compareValues(currentValue, thresholdValue, comparisonOperator);
       message = `Throughput ${currentValue.toFixed(0)} msg/min ${getOperatorText(comparisonOperator)} ngưỡng ${thresholdValue} msg/min (có thể spam)`;
       break;
@@ -231,6 +242,7 @@ async function handleTriggeredAlert(rule: any, result: AlertEvaluationResult) {
     thresholdValue: result.thresholdValue.toString(),
     message: result.message,
     isResolved: false,
+    factoryId: rule.factoryId ?? null, // W17b — snapshot nhà máy của luật đã kích
     triggeredAt: new Date(),
   });
 
@@ -315,12 +327,13 @@ function getOperatorText(operator: string): string {
 }
 
 // Helper functions to get metrics
-async function getAverageLatency(minutes: number): Promise<number> {
+async function getAverageLatency(minutes: number, pv?: PhamViTram): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
   const since = new Date(Date.now() - minutes * 60 * 1000);
   const sinceStr = since.toISOString();
+  const dkTram = dieuKienTram(pv);
   
   const result = await db.execute(sql`
     SELECT AVG(EXTRACT(EPOCH FROM ("deliveredAt" - "createdAt")) * 1000.0) as avg_latency
@@ -328,10 +341,11 @@ async function getAverageLatency(minutes: number): Promise<number> {
     WHERE "createdAt" >= ${sinceStr}
       AND "deliveredAt" IS NOT NULL
       AND "deliveryStatus" = 'DELIVERED'
+      ${dkTram ? sql`AND ${dkTram}` : sql``}
   `);
 
-  const rows = (result as unknown as { rows: any[] }).rows || [];
-  return rows[0]?.avg_latency || 0;
+  const rows = hangKetQua(result);
+  return Number(rows[0]?.avg_latency) || 0;
 }
 
 async function getBrokerDisconnectDuration(): Promise<number> {
@@ -340,12 +354,13 @@ async function getBrokerDisconnectDuration(): Promise<number> {
   return computeBrokerDisconnectMinutes(getBrokerConnectionState(), Date.now());
 }
 
-async function getMessageFailureRate(minutes: number): Promise<number> {
+async function getMessageFailureRate(minutes: number, pv?: PhamViTram): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
   const since = new Date(Date.now() - minutes * 60 * 1000);
   const sinceStr = since.toISOString();
+  const dkTram = dieuKienTram(pv);
   
   const result = await db.execute(sql`
     SELECT 
@@ -353,29 +368,32 @@ async function getMessageFailureRate(minutes: number): Promise<number> {
       SUM(CASE WHEN "deliveryStatus" = 'FAILED' THEN 1 ELSE 0 END) as failed
     FROM mqtt_message_logs
     WHERE "createdAt" >= ${sinceStr}
+      ${dkTram ? sql`AND ${dkTram}` : sql``}
   `);
 
-  const rows = (result as unknown as { rows: any[] }).rows || [];
+  const rows = hangKetQua(result);
   const total = parseInt(rows[0]?.total || "0");
   const failed = parseInt(rows[0]?.failed || "0");
   
   return total > 0 ? (failed / total) * 100 : 0;
 }
 
-async function getThroughput(minutes: number): Promise<number> {
+async function getThroughput(minutes: number, pv?: PhamViTram): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
   const since = new Date(Date.now() - minutes * 60 * 1000);
   const sinceStr = since.toISOString();
+  const dkTram = dieuKienTram(pv);
   
   const result = await db.execute(sql`
     SELECT COUNT(*) as count
     FROM mqtt_message_logs
     WHERE "createdAt" >= ${sinceStr}
+      ${dkTram ? sql`AND ${dkTram}` : sql``}
   `);
 
-  const rows = (result as unknown as { rows: any[] }).rows || [];
+  const rows = hangKetQua(result);
   const count = parseInt(rows[0]?.count || "0");
   
   return count / minutes; // messages per minute

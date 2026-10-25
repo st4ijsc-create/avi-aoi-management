@@ -12,6 +12,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { appError } from "../_core/appError";
 import { getDb as getDbRaw } from "../db";
 import { idsTrongPhamVi, type PhamViDoc } from "../db/hierarchy";
+import { mqttProfileAssignments } from "../../drizzle/schema/mqtt";
 import { cameraCalibrations, collaborationSessions, commandLog, commissioningRecords, deviceAdapters, deviceTags, lineBalanceMetrics, productionOrders, productionSessions, recipeSetItems, robots, safetyEvents, safetyZones, stationDwellTime, wipTracking } from "../../drizzle/schema";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 
@@ -195,6 +196,40 @@ export async function dieuKienViTriTrongPhamVi(phamVi: PhamViDoc, cot: CotViTri)
       WHERE r."lineId" IN (${d(dong)}) OR st."lineId" IN (${d(dong)})))`);
   }
   return sql`((${mot}) AND ${sql.join(mach, sql` AND `)})`;
+}
+
+/** phạm vi người dùng (L6c 2026-10-25): hàng gắn MỘT trạm (cột trạm) thấy được ⇔ toàn quyền HOẶC trạm trong phạm vi. `undefined` khi toàn quyền. */
+export async function dieuKienTramTrongPhamVi(ctx: CoDanhTinh, cotTram: AnyPgColumn): Promise<SQL | undefined> {
+  return dieuKienViTriTrongPhamVi(phamViCua(ctx), { stationId: cotTram });
+}
+
+/**
+ * phạm vi người dùng (L6c 2026-10-25): mục tiêu ĐA HÌNH của MQTT (`targetType` machine|station|factory + `targetId`): thấy được ⇔ toàn quyền HOẶC id nằm trong tập máy / trạm / nhà máy tương ứng của phạm vi.
+ * Hàng không có mục tiêu (loại NULL) chỉ toàn quyền thấy. `undefined` khi toàn quyền.
+ */
+export async function dieuKienMucTieuMqttTrongPhamVi(ctx: CoDanhTinh, cot: { loai: AnyPgColumn; id: AnyPgColumn }): Promise<SQL | undefined> {
+  const pv = phamViCua(ctx);
+  const [may, tram, nhaMay] = await Promise.all([
+    idsTrongPhamVi("machine", pv, { strict: true }),
+    idsTrongPhamVi("station", pv, { strict: true }),
+    idsTrongPhamVi("factory", pv, { strict: true }),
+  ]);
+  if (may === null && tram === null && nhaMay === null) return undefined;
+  const nhanh = (loai: string, ids: number[] | null): SQL =>
+    ids === null
+      ? sql`(${cot.loai} = ${loai} AND ${cot.id} IS NOT NULL)`
+      : sql`(${cot.loai} = ${loai} AND ${cot.id} IN (${sql.join((ids.length > 0 ? ids : [-1]).map((x) => sql`${x}`), sql`, `)}))`;
+  return sql`(${nhanh("machine", may)} OR ${nhanh("station", tram)} OR ${nhanh("factory", nhaMay)})`;
+}
+
+/**
+ * phạm vi người dùng (L6c 2026-10-25): nhật ký kết nối MQTT — dòng có `assignmentId` đi theo MỤC TIÊU của gán hồ sơ đó; dòng chỉ có `profileId` (hồ sơ là danh mục dùng chung, chạm mọi nhà máy dùng nó) hoặc không có gì ⇒ chỉ toàn quyền.
+ * `undefined` khi toàn quyền.
+ */
+export async function dieuKienNhatKyMqttTrongPhamVi(ctx: CoDanhTinh, cotGan: AnyPgColumn): Promise<SQL | undefined> {
+  const muc = await dieuKienMucTieuMqttTrongPhamVi(ctx, { loai: mqttProfileAssignments.targetType, id: mqttProfileAssignments.targetId });
+  if (muc === undefined) return undefined;
+  return sql`(${cotGan} IS NOT NULL AND ${cotGan} IN (SELECT ${mqttProfileAssignments.id} FROM ${mqttProfileAssignments} WHERE ${muc}))`;
 }
 
 /** `safety_events` theo người dùng (tRPC). */

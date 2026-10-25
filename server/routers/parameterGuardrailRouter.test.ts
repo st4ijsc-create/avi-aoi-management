@@ -75,3 +75,10 @@ describe("read surfaces — protectedProcedure", () => {
 
 // W14b: cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW14b.db.test.ts); ở đây kiểm đúng điều test này đo ⇒ cho qua.
 vi.mock("./_cauHinhPhamVi", () => ({ hangRaoGhi: async () => undefined, hangRaoTheoIdGhi: async () => undefined }));
+// L6c-C1 (2026-10-25): đọc theo phạm vi — test này mock DB nên ép toàn quyền (phạm vi thật: loOtDocC1PhamVi.db.test.ts)
+vi.mock("./_adapterPhamVi", () => ({
+  mayTrongPhamVi: async () => null,
+  idsMayTrongPhamVi: async () => null,
+  dieuKienCauHinhTrongPhamVi: async () => undefined,
+  dieuKienDoiTuongTrongPhamVi: async () => undefined,
+}));

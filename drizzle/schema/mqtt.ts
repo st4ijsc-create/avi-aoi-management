@@ -176,9 +176,12 @@ export const mqttAlertRules = pgTable("mqtt_alert_rules", {
   // Status
   isEnabled: boolean("isEnabled").default(true).notNull(),
   createdBy: integer("createdBy"), // FK to users
+  /** W17b (mig 0426) — nhà máy sở hữu luật; NULL = mặc định toàn tập đoàn. Khoá ghi đè = (ruleType, categoryId). */
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
+  index("idx_mqtt_alert_rules_factory").on(table.factoryId),
   index("idx_mqtt_alert_rules_type").on(table.ruleType),
   index("idx_mqtt_alert_rules_enabled").on(table.isEnabled),
 ]);
@@ -209,9 +212,12 @@ export const mqttAlertHistory = pgTable("mqtt_alert_history", {
   resolutionNote: text("resolutionNote"),
   // Escalation (0186 — set ONCE by mqttAlertScheduler sweep)
   escalatedAt: timestamp("escalatedAt"),
+  // W17b (mig 0426) — nhà máy của luật đã kích (snapshot); NULL = luật mặc định
+  factoryId: integer("factoryId"),
   // Timestamps
   triggeredAt: timestamp("triggeredAt").defaultNow().notNull(),
 }, (table) => [
+  index("idx_mqtt_alert_history_factory").on(table.factoryId),
   index("idx_mqtt_alert_history_rule").on(table.ruleId),
   index("idx_mqtt_alert_history_type").on(table.ruleType),
   index("idx_mqtt_alert_history_resolved").on(table.isResolved),

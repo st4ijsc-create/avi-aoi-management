@@ -10,6 +10,8 @@
  * (dải sai/thiếu target) — không ném TRPCError.
  */
 import { hangRaoGhi, hangRaoTheoIdGhi } from "./_cauHinhPhamVi";
+import { dieuKienCauHinhTrongPhamVi, dieuKienDoiTuongTrongPhamVi, idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
+import { parameterGuardrails, parameterChangeLog } from "../../drizzle/schema";
 import { z } from "zod";
 import { protectedProcedure, actuationProcedure, router } from "../_core/trpc";
 import {
@@ -25,11 +27,12 @@ export const parameterGuardrailRouter = router({
   // ── Guardrail CRUD (engineer authoring — actuation role-floor + 2FA) ──────────
   list: actuationProcedure
     .input(z.object({ machineId: z.number().int().positive().optional(), machineType: z.string().max(120).optional() }).optional())
-    .query(async ({ input }) => listGuardrails({ machineId: input?.machineId, machineType: input?.machineType })),
+    // phạm vi người dùng (L6c 2026-10-25): hàng theo máy ⇒ máy trong phạm vi; hàng theo LOẠI máy (machine_type, machineId NULL) vẫn thấy (dải an toàn vận hành — dieu-phoi duyệt)
+    .query(async ({ input, ctx }) => listGuardrails({ machineId: input?.machineId, machineType: input?.machineType, dieuKienPhamVi: await dieuKienCauHinhTrongPhamVi(ctx, { may: parameterGuardrails.machineId }) })),
 
   get: actuationProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => getGuardrail(input.id)),
+    .query(async ({ input, ctx }) => getGuardrail(input.id, await dieuKienCauHinhTrongPhamVi(ctx, { may: parameterGuardrails.machineId }))), // phạm vi người dùng (L6c 2026-10-25)
 
   set: actuationProcedure
     .input(
@@ -83,8 +86,8 @@ export const parameterGuardrailRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) =>
-      listChangeLog({ machineId: input?.machineId, paramKey: input?.paramKey, limit: input?.limit }),
+    .query(async ({ input, ctx }) =>
+      listChangeLog({ machineId: input?.machineId, paramKey: input?.paramKey, limit: input?.limit, dieuKienPhamVi: await dieuKienDoiTuongTrongPhamVi(ctx, { may: parameterChangeLog.machineId }) }), // phạm vi người dùng (L6c 2026-10-25)
     ),
 
   // ── G4.21 material time-to-empty forecast (read-only) ─────────────────────────
@@ -98,11 +101,17 @@ export const parameterGuardrailRouter = router({
           windowHours: z.number().int().min(1).max(720).optional(),
         }),
       )
-      .query(async ({ input }) => forecastTimeToEmpty(input)),
+      .query(async ({ input, ctx }) => {
+        await mayTrongPhamVi(ctx, input.machineId); // phạm vi người dùng (L6c 2026-10-25)
+        return forecastTimeToEmpty(input);
+      }),
 
     /** All components loaded on a machine, soonest to empty first. */
     machine: protectedProcedure
       .input(z.object({ machineId: z.number().int().positive(), windowHours: z.number().int().min(1).max(720).optional() }))
-      .query(async ({ input }) => forecastMachineMaterials(input.machineId, input.windowHours ?? 24)),
+      .query(async ({ input, ctx }) => {
+        await mayTrongPhamVi(ctx, input.machineId); // phạm vi người dùng (L6c 2026-10-25)
+        return forecastMachineMaterials(input.machineId, input.windowHours ?? 24);
+      }),
   }),
 });

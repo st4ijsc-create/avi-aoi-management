@@ -22,9 +22,9 @@ describe("phamViGhi tool census", () => {
     expect(ghi.length).toBe(32);
     expect(Object.keys(KHOA_PHAM_VI_TOOL).sort()).toEqual(ghi);
   });
-  it("miễn trừ chỉ gồm 6 tool repo + set_yield_threshold, mỗi cái có lý do ≥ 20 ký tự", () => {
+  it("miễn trừ chỉ gồm 6 tool repo (set_yield_threshold đã có cổng thật ở W17b), mỗi cái có lý do ≥ 20 ký tự", () => {
     const mien = Object.entries(KHOA_PHAM_VI_TOOL).filter(([, v]) => v.kieu === "mien");
-    expect(mien.map(([k]) => k).sort()).toEqual([...REPO, "set_yield_threshold"].sort());
+    expect(mien.map(([k]) => k).sort()).toEqual([...REPO].sort());
     for (const [, v] of mien) expect(v.kieu === "mien" && v.lyDo.length >= 20).toBe(true);
   });
   it("tool vắng bảng ⇒ OUT_OF_SCOPE (fail-closed)", async () => {

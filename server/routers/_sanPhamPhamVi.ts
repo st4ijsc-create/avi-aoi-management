@@ -38,3 +38,17 @@ export async function diemDoGhiTrongPhamVi(ctx: CoDanhTinh, pointDefId: number):
   if (rows.length === 0 || rows[0]?.p == null) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Điểm đo không tồn tại");
   await sanPhamGhiTrongPhamVi(ctx, Number(rows[0].p));
 }
+
+/**
+ * phạm vi người dùng (L7 2026-10-25): ĐỌC theo sản phẩm — thấy được ⇔ cùng luật GHI (sản phẩm trong phạm vi, hoặc sản phẩm nháp chưa gắn nhà máy nào).
+ * Sản phẩm ngoài phạm vi (hoặc không tồn tại) ⇒ false; không ném.
+ */
+export async function sanPhamNhinThay(ctx: CoDanhTinh, productModelId: number): Promise<boolean> {
+  try {
+    await sanPhamGhiTrongPhamVi(ctx, productModelId);
+    return true;
+  } catch (e) {
+    if ((e as { code?: string })?.code === "NOT_FOUND") return false;
+    throw e;
+  }
+}

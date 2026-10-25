@@ -44,9 +44,6 @@
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ──
-  // ── server/routers/aiAdvancedRouter.ts (2) ──
-  "server/routers/aiAdvancedRouter.ts#abTestRouter.runInference",
-  "server/routers/aiAdvancedRouter.ts#abTestRouter.submitFeedback",
   // ── server/routers/aiAdvancedVisionRouter.ts (1) ──
   // ── server/routers/aiModelRouter.ts (3) ──
   // ── server/routers/alertEscalationRouter.ts (4) ──
@@ -62,15 +59,11 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/edgeRuntimeRouter.ts (1) ──
   // ── server/routers/energyRouter.ts (2) ──
   // ── server/routers/erpAdminRouter.ts (5) ──
-  // ── server/routers/feederVerifyRouter.ts (1) ──
-  "server/routers/feederVerifyRouter.ts#feederVerifyRouter.verifyScan",
   // ── server/routers/fieldRouter.ts (2) ──
   // ── server/routers/fleetRouter.ts (1) ──
   // ── server/routers/hierarchyRouters.ts (3) ──
   // ── server/routers/hotFolderRouter.ts (4) ──
   // ── server/routers/inspectionProgramRouter.ts (5) ──
-  // ── server/routers/inspectionVariantRouter.ts (1) ──
-  "server/routers/inspectionVariantRouter.ts#inspectionVariantRouter.setVariant",
   // ── server/routers/layoutRouters.ts (6) ──
   // ── server/routers/licenseRouter.ts (2) ──
   // ── server/routers/machineApiRouters.ts (2) ──
@@ -86,8 +79,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/notificationRouters.ts (2) ──
   // ── server/routers/operatorBadgeRouter.ts (2) ──
   // ── server/routers/parameterGuardrailRouter.ts (2) ──
-  // ── server/routers/pdfReportRouter.ts (1) ──
-  "server/routers/pdfReportRouter.ts#pdfReportRouter.generateInspectionPDF",
   // ── server/routers/processResultRouter.ts (1) ──
   // ── server/routers/processRouter.ts (7) ──
   // ── server/routers/productOnboardingRouter.ts (3) ──
@@ -120,6 +111,9 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
  * (c) không đồng thời nằm trong sổ nợ. Thêm mục = lời khai công khai, người review phải thấy.
  */
 export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
+  // ── W17 (kiểm định phamViGhi, 2026-10-25): router không mount ──
+  "server/routers/aiAdvancedRouter.ts#abTestRouter.runInference": "router abTest KHÔNG ĐƯỢC MOUNT: `aiAdvancedRouter` chỉ gắn batch + monitoring (training / abTest / edge đã tắt khi chuyển sang AI cục bộ, các dòng `abTest: abTestRouter` nằm trong chú thích) ⇒ không có đường gọi tới thủ tục này. Census §5d ĐỎ nếu training / abTest / edge xuất hiện lại trong aiAdvanced (phải gắn cổng phạm vi cho thủ tục ghi RỒI mới gỡ miễn trừ) — W17 kiểm định phamViGhi 2026-10-25",
+  "server/routers/aiAdvancedRouter.ts#abTestRouter.submitFeedback": "router abTest KHÔNG ĐƯỢC MOUNT: `aiAdvancedRouter` chỉ gắn batch + monitoring (training / abTest / edge đã tắt khi chuyển sang AI cục bộ, các dòng `abTest: abTestRouter` nằm trong chú thích) ⇒ không có đường gọi tới thủ tục này. Census §5d ĐỎ nếu training / abTest / edge xuất hiện lại trong aiAdvanced (phải gắn cổng phạm vi cho thủ tục ghi RỒI mới gỡ miễn trừ) — W17 kiểm định phamViGhi 2026-10-25",
   // ── W14c (kiểm định phamViGhi, 2026-10-25): bình luận sở hữu theo người dùng ──
   "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.updateComment": "bình luận SỞ HỮU THEO NGƯỜI DÙNG: chỉ chủ (comment.userId === ctx.user.id) hoặc admin sửa — kiểm TRƯỚC khi ghi (trainingBatchCommentsRouter.ts); bình luận chỉ thêm được vào lô trong phạm vi (addComment có cổng + test phamViGhiDoW14c) — W14c",
   "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.deleteComment": "bình luận SỞ HỮU THEO NGƯỜI DÙNG: chỉ chủ hoặc admin xoá (xem updateComment) — W14c",
@@ -128,8 +122,8 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
   "server/routers/hierarchyRouters.ts#machineRouter.claimKey": "đường PUBLIC xác thực bằng token một lần do admin phát (redeemMachineClaimToken / redeemMachineEnrollmentToken), có throttle theo IP + audit mọi lần thử; serialNumber chỉ chọn máy mà token đã gắn — W14b",
   "server/routers/hierarchyRouters.ts#machineRouter.enroll": "đường PUBLIC xác thực bằng token một lần do admin phát (redeemMachineClaimToken / redeemMachineEnrollmentToken), có throttle theo IP + audit mọi lần thử; serialNumber chỉ chọn máy mà token đã gắn — W14b",
   "server/routers/hierarchyRouters.ts#machineRouter.register": "đường máy TỰ ĐĂNG KÝ công khai (throttle IP + hàng chờ duyệt có trần); CÒN LỖ: cập nhật máy đã có theo serial + đặt lại 'pending' không xác thực ⇒ giao W15 (dieu-phoi 2026-10-25), miễn trừ tạm thời tới khi vá",
-  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingCheckin": "đường PUBLIC theo sessionId giấy phép nổi (floating licence) — không dữ liệu nhà máy — W14b",
-  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingHeartbeat": "đường PUBLIC theo sessionId giấy phép nổi (floating licence) — không dữ liệu nhà máy — W14b",
+  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingCheckin": "protectedProcedure — đã đăng nhập; sessionId + licenseKey do License Server kiểm; không đặt được sàn vai vì mọi người tự check-in phiên của mình; không dữ liệu nhà máy — W14b, xác nhận W17d (dieu-phoi 2026-10-25)",
+  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingHeartbeat": "protectedProcedure — đã đăng nhập; sessionId + licenseKey do License Server kiểm; không đặt được sàn vai vì mọi người tự check-in phiên của mình; không dữ liệu nhà máy — W14b, xác nhận W17d (dieu-phoi 2026-10-25)",
   "server/routers/machineApiRouters.ts#machineApiRouter.submitProcessResult": "đường MÁY ingest xác thực bằng khoá máy: máy lấy từ khoá (authenticateMachine); lineCode đối chiếu với chuỗi nhà máy của máy (macTenantChoGhi); stationId tự khai nay phải cùng nhà máy với máy (tramCungNhaMayVoiMay, W14b, test helper phamViGhiDoW14b) — bộ quét không nhận ra phạm vi suy từ máy",
   "server/routers/sessionRouter.ts#sessionRouter.revoke": "thu hồi phiên của CHÍNH người gọi: db.revokeSession(sessionId, ctx.user.id) kiểm sở hữu trong db — W14b",
   "server/routers/userRouters.ts#userRouter.revokeSession": "dữ liệu của CHÍNH người gọi: revokeSession(sessionId, ctx.user.id) kiểm sở hữu; setUiPrefs từ chối khi expectedUserId ≠ ctx.user.id — W14b",
@@ -154,7 +148,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
   "server/routers/causalGraphRouter.ts#causalGraphRouter.replaceGraph": "đồ thị nhân quả là MỘT tệp tri thức toàn cục (id = khoá nút, không phải thực thể nhà máy) — quyền analytics_root_cause.canEdit/canDelete — W14",
   "server/routers/qualityGateTemplateRouter.ts#qualityGateTemplateRouter.updateCustom": "mẫu cổng chất lượng tuỳ biến là DANH MỤC DÙNG CHUNG (quality_gate_templates không có cột nhà máy); việc ÁP mẫu lên chuyền (applyToLine) đã có cổng phạm vi + test — W14",
   "server/routers/qualityGateTemplateRouter.ts#qualityGateTemplateRouter.deleteCustom": "mẫu cổng chất lượng tuỳ biến là DANH MỤC DÙNG CHUNG (quality_gate_templates không có cột nhà máy); việc ÁP mẫu lên chuyền (applyToLine) đã có cổng phạm vi + test — W14",
-  "server/routers/reportArtifactRouter.ts#reportArtifactRouter.delete": "deleteArtifact(id, viewerOf(ctx)) gọi getArtifact(viewer) — ném not_found/forbidden theo quyền xem của người gọi TRƯỚC khi xoá (reportArtifactService.ts:344) — W14",
   "server/routers/reportBuilderRouter.ts#reportBuilderRouter.save": "định nghĩa báo cáo SỞ HỮU THEO NGƯỜI DÙNG: update/delete qua assertReportOwnership (chủ hoặc admin); duplicate nay áp cùng luật xem (chủ · admin · công khai, có test); save tạo báo cáo mới — bộ lọc nhà máy chỉ là tham số lưu, khi chạy đi qua phạm vi đọc — W14",
   "server/routers/reportBuilderRouter.ts#reportBuilderRouter.update": "định nghĩa báo cáo SỞ HỮU THEO NGƯỜI DÙNG: update/delete qua assertReportOwnership (chủ hoặc admin); duplicate nay áp cùng luật xem (chủ · admin · công khai, có test); save tạo báo cáo mới — bộ lọc nhà máy chỉ là tham số lưu, khi chạy đi qua phạm vi đọc — W14",
   "server/routers/reportBuilderRouter.ts#reportBuilderRouter.duplicate": "định nghĩa báo cáo SỞ HỮU THEO NGƯỜI DÙNG: update/delete qua assertReportOwnership (chủ hoặc admin); duplicate nay áp cùng luật xem (chủ · admin · công khai, có test); save tạo báo cáo mới — bộ lọc nhà máy chỉ là tham số lưu, khi chạy đi qua phạm vi đọc — W14",
@@ -176,8 +169,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
   "server/routers/alertRouters.ts#alertRouter.delete": "cài đặt cảnh báo SỞ HỮU THEO NGƯỜI DÙNG: chủ hoặc admin (xem alertRouter.update); id của người khác ⇒ FORBIDDEN trước khi ghi",
   "server/routers/alertRouters.ts#alertRouter.acknowledge": "xác nhận bản ghi lịch sử cảnh báo: phân giải về cài đặt cha, chỉ chủ hoặc admin (xem alertRouter.update)",
   "server/routers/alertRouters.ts#alertRouter.test": "gửi thử cảnh báo của CHÍNH người gọi: chủ hoặc admin (xem alertRouter.update); chỉ gửi tới chủ cảnh báo",
-  "server/routers/alertRouters.ts#yieldThresholdRouter.update": "ngưỡng yield là cấu hình TOÀN CỤC (bảng yield_alert_thresholds không có cột nhà máy / máy); giữ bằng write-floor + settings_yield_thresholds.canEdit — cùng quyết định với tool AI set_yield_threshold",
-  "server/routers/alertRouters.ts#yieldThresholdRouter.updateWithHistory": "ngưỡng yield TOÀN CỤC (xem yieldThresholdRouter.update) — write-floor + settings_yield_thresholds.canEdit, có lịch sử thay đổi",
   // ── Phạm vi QUA CỔNG TOOL kiemPhamViGhiTool (aiLocalTools/phamViGhi.ts) — mỗi mục có test DB cấp THỦ TỤC, gỡ cổng ⇒ đỏ (dieu-phoi 2026-10-25) ──
   "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix": "phạm vi qua cổng tool kiemPhamViGhiTool (create_maintenance_workorder … khoá machineId thật) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiRcaCopilot.applyTopFix' (A→được, B→OUT_OF_SCOPE, đột biến 3/3 đỏ) — 2026-10-25. Id phân tích nhà máy khác ≡ id không có thật (cùng NOT_FOUND, có test)",
   "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.applyNgThreshold": "phạm vi qua cổng tool kiemPhamViGhiTool (adjust_ng_threshold, khoá thresholdId → trạm / máy / điểm đo / sản phẩm) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiThresholdAdvisor.applyNgThreshold' (A→được, B→OUT_OF_SCOPE, đột biến đỏ) — 2026-10-25",
@@ -202,12 +193,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
   "server/routers/aiAgentRouter.ts#aiAgentRouter.phanHoi":
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
-  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.imageDefectDescription":
-    "Tính toán / suy luận LLM-VLM thuần trên dữ liệu người dùng đưa vào (machineCode chỉ là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
-  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.similarDefectSearch":
-    "Tính toán / suy luận LLM-VLM thuần trên dữ liệu người dùng đưa vào (machineCode chỉ là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
-  "server/routers/aiAnalysisHubRouter.ts#aiAnalysisHubRouter.quickQualityCheck":
-    "Tính toán / suy luận LLM-VLM thuần trên dữ liệu người dùng đưa vào (machineCode chỉ là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
   "server/routers/aiAnomalyRouter.ts#aiAnomalyRouter.score":
     "Chấm điểm bất thường một ảnh do người dùng đưa vào; machineId / productModelId chỉ chọn hồ sơ model, không đọc dữ liệu nhà máy trả về.",
   "server/routers/aiChatRouter.ts#aiChatRouter.updateConversation":
@@ -240,16 +225,12 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
     "Ghi phản hồi câu trả lời KB của CHÍNH người gọi (recordAnswerFeedback userId = ctx.user.id); không có dữ liệu nhà máy.",
   "server/routers/aiLocalTrainingRouter.ts#aiLocalTrainingRouter.predict":
     "Suy luận model cục bộ trên dữ liệu người dùng đưa vào; không đọc / ghi bảng nhà máy.",
-  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.evaluateRollback":
-    "Quay lui phiên bản MODEL (tài nguyên toàn cục, không cột nhà máy); đòi requirePermission(machine_control, canEdit) + quality gate eval (doc69 W0-2).",
-  "server/routers/aiRobotAnomalyRouter.ts#aiRobotAnomalyRouter.manualRollback":
-    "Quay lui phiên bản MODEL (tài nguyên toàn cục, không cột nhà máy); đòi requirePermission(machine_control, canEdit) + quality gate eval (doc69 W0-2).",
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.deleteMask":
     "deleteMask: chỉ người tạo mask hoặc admin (row.createdBy !== ctx.user.id && role !== admin ⇒ FORBIDDEN); runSegmentation: suy luận model trên ảnh người dùng đưa vào, không ghi bảng nhà máy.",
   "server/routers/aiSegmentationRouter.ts#aiSegmentationRouter.runSegmentation":
     "deleteMask: chỉ người tạo mask hoặc admin (row.createdBy !== ctx.user.id && role !== admin ⇒ FORBIDDEN); runSegmentation: suy luận model trên ảnh người dùng đưa vào, không ghi bảng nhà máy.",
   "server/routers/aiSettingsRouter.ts#aiSettingsRouter.cancelAiJob":
-    "Huỷ job hàng đợi AI của CHÍNH người gọi: cancelJob(id, ctx.user.id) từ chối khi job.userId khác.",
+    "Huỷ job hàng đợi AI của CHÍNH người gọi: cancelJob(id, ctx.user.id) từ chối khi job.userId khác HOẶC job không chủ (W17a vá: trước đây huỷ được job hệ thống); test aiJobQueue.cancel.test.ts.",
   "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.run":
     "Phiên chuyên gia AI khoá theo userId của người gọi (completeAiSpecialistSession(sessionId, userId…)); thủ tục chạy model / ghi phản hồi trên phiên CỦA MÌNH. Đã đọc mã (2026-10-25).",
   "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.runWorkflowChain":
@@ -258,58 +239,46 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
     "Phiên chuyên gia AI khoá theo userId của người gọi (completeAiSpecialistSession(sessionId, userId…)); thủ tục chạy model / ghi phản hồi trên phiên CỦA MÌNH. Đã đọc mã (2026-10-25).",
   "server/routers/aiSpecialistAgentRouter.ts#aiSpecialistAgentRouter.submitFeedback":
     "Phiên chuyên gia AI khoá theo userId của người gọi (completeAiSpecialistSession(sessionId, userId…)); thủ tục chạy model / ghi phản hồi trên phiên CỦA MÌNH. Đã đọc mã (2026-10-25).",
-  "server/routers/aiVisionLanguageRouter.ts#aiVisionLanguageRouter.describeDefect":
-    "Suy luận VLM thuần trên dữ liệu người dùng đưa vào (machineCode là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
-  "server/routers/aiVisionLanguageRouter.ts#aiVisionLanguageRouter.generateReport":
-    "Suy luận VLM thuần trên dữ liệu người dùng đưa vào (machineCode là nhãn trong prompt); không đọc hay ghi bảng nhà máy.",
   "server/routers/kbStudioRouter.ts#kbStudioRouter.huyEvalMa":
     "KB Studio: tài nguyên toàn cục của vai kbStudioProcedure / kbStudioDeleteProcedure (sàn vai + 2FA); không có dữ liệu nhà máy.",
   "server/routers/kbStudioRouter.ts#kbStudioRouter.startFinetune":
     "KB Studio: tài nguyên toàn cục của vai kbStudioProcedure / kbStudioDeleteProcedure (sàn vai + 2FA); không có dữ liệu nhà máy.",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.update":
-    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.delete":
-    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.toggle":
-    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.resolve":
-    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.generate":
-    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25).",
+    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.chat":
-    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25).",
+    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.analyzeDefect":
-    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25).",
+    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.qualityInsights":
-    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25).",
+    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.embedding":
-    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25).",
+    "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.saveLayout":
-    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.applySharedTemplate":
-    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.updateStylePreset":
-    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.deleteStylePreset":
-    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.applyStylePreset":
-    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.cloneSharedPreset":
-    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.createCustomDashboard":
-    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.updateCustomDashboard":
-    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.deleteCustomDashboard":
-    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.duplicateCustomDashboard":
-    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.toggleCustomDashboardFavorite":
-    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.toggleCustomDashboardPublic":
-    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/dashboardWidgetRouters.ts#dashboardWidgetRouter.saveCustomDashboardAsTemplate":
-    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25).",
+    "Cấu hình GIAO DIỆN CÁ NHÂN của người dùng (bố cục, preset, dashboard tuỳ biến): ghi / xoá luôn khoá theo ctx.user.id (sở hữu), applySharedTemplate / applyStylePreset chỉ tăng bộ đếm dùng. Không có dữ liệu nhà máy. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatThayTheLo":
     "Tài nguyên của AI coding workspace, KHÔNG phải dữ liệu nhà máy: `projectId` là gốc thư mục được phân giải qua DANH SÁCH TRẮNG THEO NGƯỜI GỌI (phanGiaiGoc / moRepoGit, doc 79 trục 2; id lạ ⇒ PROJECT_NOT_FOUND, fail-closed); phiên / dự án cá nhân / bài học lọc theo userId của chính người gọi (congPhien → userId). Đã kiểm mã từng thủ tục (2026-10-25).",
   "server/routers/repoWorkspaceRouter.ts#repoWorkspaceRouter.deXuatSuaTay":
@@ -373,7 +342,7 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
   "server/routers/productRouters.ts#defectCatalogRouter.delete":
     "Danh mục lỗi DÙNG CHUNG toàn tập đoàn — chủ dự án duyệt 2026-10-24 (không có cột nhà máy); sàn qualityProcedure (vai chất lượng/quản trị) giới hạn người ghi.",
   "server/routers/annotationRouters.ts#annotationTemplateRouter.delete":
-    "Mẫu chú thích DÙNG CHUNG, không dữ liệu theo nhà máy; chỉ người tạo hoặc admin được xoá (luong-ui xác nhận, dieu-phoi chuyển 2026-10-24).",
+    "Mẫu chú thích DÙNG CHUNG, không dữ liệu theo nhà máy; chỉ người tạo hoặc admin được xoá (luong-ui xác nhận, dieu-phoi chuyển 2026-10-24); W17a: test DB phamViGhiDoW17a (B ⇒ FORBIDDEN, mẫu hệ thống không ai xoá).",
   "server/routers/aoiOnboardingRouter.ts#aoiOnboardingRouter.dryRun":
     "Hàm THUẦN: chuẩn hoá một mẫu xuất của máy qua adapter rồi trả bản tóm tắt, KHÔNG đọc/ghi CSDL và không giữ trạng thái; `machineCode` chỉ là nhãn truyền vào bộ chuẩn hoá (không tra máy nào). Bộ quét khớp vì tên trường kết thúc bằng Code.",
 };

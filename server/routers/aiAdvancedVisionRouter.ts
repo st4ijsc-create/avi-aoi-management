@@ -26,7 +26,7 @@ import {
 } from "../services/aiAdvancedVision";
 import { explain } from "../services/aiExplainability";
 import fs from "fs";
-import { resolveSafeImagePath } from "../utils/safeImagePath";
+import { resolveSafeImagePath, chuanHoaKhoaAnh } from "../utils/safeImagePath";
 import { anhTrongPhamVi } from "./_aiPhamVi";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -190,15 +190,15 @@ export const aiAdvancedVisionRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       // phạm vi người dùng (L6b 2026-10-25): ảnh theo khoá phải thuộc máy trong phạm vi (ảnh base64 do người gọi tự gửi thì không cần)
-      if (!input.image && input.imageKey && !(await anhTrongPhamVi(ctx, input.imageKey))) {
+      // khoá chuẩn hoá MỘT lần (chuanHoaKhoaAnh): cùng chuỗi cho kiểm phạm vi và đọc tệp; khoá lạ ("..", "%2e", NUL…) ≡ ảnh không tồn tại
+      const khoaAnh = input.image ? null : chuanHoaKhoaAnh(input.imageKey);
+      if (!input.image && (khoaAnh === null || !(await anhTrongPhamVi(ctx, khoaAnh)))) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, "Image not found");
       }
       const imageBuffer = input.image
         ? decodeBase64Image(input.image)
         : await fs.promises.readFile(
-            resolveSafeImagePath(
-              input.imageKey!.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/^uploads\//i, ""),
-            ),
+            resolveSafeImagePath(khoaAnh!),
           );
       const referenceBuffer = input.referenceImage
         ? decodeBase64Image(input.referenceImage)

@@ -950,7 +950,12 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★★ 2026-10-25 (lô L6b): **A 163 → 117 · S 563 → 609 · B/C/D/tong unchanged · miễn trừ +2.** 46 thủ tục ĐỌC nhóm AI A→S: aiActiveLearning ×6 · aiAdvanced (edge ×5 · training.getDataStats|checkAutoRetrain) · aiAnomaly ×4 · aiCalibration ×3 · aiEval.autoRetrainCheck · aiFeedback ×3 · aiInsight.list · aiModel ×2 · aiOrchestration ×2 · aiQualityGate ×4 · aiRcaCopilot.latest · aiRobotAnomaly ×2 · aiRouters (predictiveAlert list|get|stats · rootCause.list) · aiSegmentation.listMasks · aiSetupAdvisor.suggestSetup · aiSmartAlertRouting ×3 · aiThresholdAdvisor ×3; miễn trừ: aiLocalTraining.capabilities · aiSettings.getDataPipelineStats. Kèm cổng ảnh-theo-imageKey cho aiAdvancedVision.explainHeatmap (gỡ miễn trừ GHI).
 // Chứng minh: loAiDocNhom1PhamVi (10 ca) + loAiDocNhom2PhamVi (12 ca) — đỏ-trước trên HEAD sạch; đột biến 83/83 bắt (sau khi bổ sung ca). Lỗi CÓ SẴN vá kèm: getQualityGateStats đọc .rows (postgres-js trả mảng) ⇒ stats luôn 0; runDiversitySampling dùng toán tử <=> trên cột text ⇒ luôn lỗi + .rows.
 // 2026-10-25 gộp R1b-1 (D +1) với L6b ⇒ đo bằng census.
-const GHIM = { A: 117, B: 8, C: 470, D: 1199, S: 609, tong: 2403 } as const;
+// 2026-10-25 gộp L6w (getVariant C→S) với main R1b-1 ⇒ đo bằng census.
+// ★★ 2026-10-25 (W17a, cộng dồn sau L6w/L6t 117/469/610): **C 469 → 466 · S 610 → 613.** reportArtifact.list|get|download C→S (phạm vi NGƯỜI TẠO). Chứng minh: phamViGhiDoW17a.db.test.ts.
+// 2026-10-25 gộp L6c-C1 (A−22) với W17a (reportArtifact C→S) ⇒ đo bằng census.
+// ★★ 2026-10-25 (lô W17b, luật MQTT + ngưỡng yield THEO NHÀ MÁY, mig 0426; cộng dồn sau gộp A95/C466/S635): **C 466 → 454 · S 635 → 647 · D 1199 → 1201 · tong 2403 → 2405.** 12 thủ tục ĐỌC C→S (mqttAlert list|getById|history|unresolved · yieldThreshold list|getById|getByType|getEnabled|getHistory|getHistoryByType|getHistoryByThreshold · alertEscalation.recentEscalations) + 2 mutation mới yieldThreshold.create|delete. Chứng minh: phamViGhiDoW17bMqttYield.db.test.ts.
+// 2026-10-25 gộp L6c+L7 (A−43, C−2) với W17b/W17c (D+2) ⇒ đo bằng census.
+const GHIM = { A: 52, B: 8, C: 452, D: 1201, S: 692, tong: 2405 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
@@ -1062,7 +1067,7 @@ describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
       if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
     }
     expect(loi).toEqual([]);
-    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(23); // 16 → 21 (lô L6a 2026-10-25: semantics.list|get · spc.topNGPoints · ntfClassifier.list|status; partsBelowReorder trả lại kiem-dinh W16)
+    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(31); // 23 → 31 (L6c 2026-10-25: ursimPing · machineRouter.config · permissions ×2 · sites ×2 · warmingStats · getAllUserAssignments); 16 → 21 (lô L6a 2026-10-25: semantics.list|get · spc.topNGPoints · ntfClassifier.list|status; partsBelowReorder trả lại kiem-dinh W16)
   });
 
   it("sổ nợ GOM THEO FILE, mỗi file một khối liền mạch, trong khối đã sắp xếp, không lặp", () => {

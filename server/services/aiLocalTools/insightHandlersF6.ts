@@ -33,7 +33,8 @@ import { getLineBalanceSeries, resolveLineIdByCode } from "../../db/lineBalance"
 import { analyzeTimeSeries, forecastWithConfidenceInterval, type TimeSeriesPoint } from "../aiTimeSeriesEngine";
 import { pearsonCorrelation } from "../../utils/statistics";
 import { registerTool, type Tool, type ToolPermission, type ToolResult } from "./toolRegistry";
-import { authCtxParam, rbacGate } from "./readToolRbac";
+import { authCtxParam, ketQuaPhamViRong, rbacGate } from "./readToolRbac";
+import { giaiPhamViDong, giaiPhamViMay, dongThay, mayCot, mayThay } from "./phamViDoc";
 
 /** G3-A — MỘT hằng cho mỗi tool, dùng ở CẢ `requiredPermission` LẪN `rbacGate`. */
 const PERM_BOTTLENECK: ToolPermission = { module: "analytics_oee", action: "canView" };
@@ -104,11 +105,13 @@ const analyzeLineBottleneck: Tool<z.infer<typeof bottleneckParams>, BottleneckDa
 
     const db = await getDb();
     if (!db) return noDbResult<BottleneckData | null>("line_insight", "Phân tích nút thắt", null);
+    const pvDong = await giaiPhamViDong(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pvDong.kind === "empty") return ketQuaPhamViRong<BottleneckData | null>("line_insight", "Phân tích nút thắt", null);
 
     let resolvedLineId = lineId;
     if (resolvedLineId == null && lineCode) {
       const id = await resolveLineIdByCode(lineCode);
-      if (id == null) {
+      if (id == null || !dongThay(pvDong, id)) {
         return {
           type: "line_insight",
           title: `Nút thắt chuyền ${lineCode}`,
@@ -120,6 +123,10 @@ const analyzeLineBottleneck: Tool<z.infer<typeof bottleneckParams>, BottleneckDa
       resolvedLineId = id;
     }
     if (resolvedLineId == null) return noDbResult<BottleneckData | null>("line_insight", "Phân tích nút thắt", null);
+    if (!dongThay(pvDong, resolvedLineId)) {
+      // chuyền ngoài phạm vi ≡ không tồn tại
+      return { type: "line_insight", title: `Nút thắt chuyền #${resolvedLineId}`, data: null, textSummary: `Không tìm thấy chuyền #${resolvedLineId}.`, note: "NOT_FOUND" };
+    }
 
     const since = sinceDays(days);
     const series = await getLineBalanceSeries(resolvedLineId, since);
@@ -233,6 +240,8 @@ const correlateProcessQuality: Tool<z.infer<typeof correlationParams>, Correlati
 
     const db = await getDb();
     if (!db) return noDbResult<CorrelationData | null>("correlation_insight", "Tương quan chất lượng", null);
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<CorrelationData | null>("correlation_insight", "Tương quan chất lượng", null);
 
     const since = sinceDays(days);
 
@@ -243,7 +252,7 @@ const correlateProcessQuality: Tool<z.infer<typeof correlationParams>, Correlati
         .from(machines)
         .where(eq(machines.code, machineCode))
         .limit(1);
-      if (!rows[0]) {
+      if (!rows[0] || !mayThay(pv, rows[0].id)) {
         return {
           type: "correlation_insight",
           title: `Tương quan ${metricKey}`,
@@ -258,6 +267,8 @@ const correlateProcessQuality: Tool<z.infer<typeof correlationParams>, Correlati
     // Upstream rows: serial → metric numeric value (latest per serial).
     const upConds = [eq(processResults.stepType, upstreamStepType), gte(processResults.measuredAt, since)];
     if (machineId != null) upConds.push(eq(processResults.machineId, machineId));
+    const congMayUp = mayCot(pv, processResults.machineId);
+    if (congMayUp) upConds.push(congMayUp);
     const upRows = await db
       .select({ serialNumber: processResults.serialNumber, metrics: processResults.metrics, result: processResults.result })
       .from(processResults)
@@ -275,6 +286,8 @@ const correlateProcessQuality: Tool<z.infer<typeof correlationParams>, Correlati
     // Downstream rows: serial → fail flag (1 if any fail in downstream step).
     const downConds = [gte(processResults.measuredAt, since)];
     if (downstreamStepType) downConds.push(eq(processResults.stepType, downstreamStepType));
+    const congMayDown = mayCot(pv, processResults.machineId);
+    if (congMayDown) downConds.push(congMayDown);
     const downRows = await db
       .select({ serialNumber: processResults.serialNumber, result: processResults.result, stepType: processResults.stepType })
       .from(processResults)

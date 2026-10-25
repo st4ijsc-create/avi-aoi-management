@@ -30,6 +30,7 @@ import { eq } from "drizzle-orm";
 import { idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
 import { recordComponentInstallation } from "../services/componentInstallationService";
 import { khoaKyThuatGhi, bomGhi, dongBomGhi } from "./_cauHinhPhamVi";
+import { sanPhamNhinThay } from "./_sanPhamPhamVi";
 
 const MODULE = "mes_bom";
 
@@ -68,14 +69,16 @@ export const bomRouter = router({
   listDefinitions: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ productModelId: z.number().int().positive(), includeDeleted: z.boolean().optional() }))
-    .query(({ input }) => db.listBomDefinitionsByProduct(input.productModelId, input.includeDeleted ?? false)),
+    // phạm vi người dùng (L7 2026-10-25): sản phẩm ngoài phạm vi ≡ chưa có BOM nào
+    .query(async ({ input, ctx }) => ((await sanPhamNhinThay(ctx, input.productModelId)) ? db.listBomDefinitionsByProduct(input.productModelId, input.includeDeleted ?? false) : [])),
 
   getDefinition: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const definition = await db.getBomDefinitionById(input.id);
-      if (!definition) return { definition: null, lineItems: [] };
+      // phạm vi người dùng (L7 2026-10-25): BOM của sản phẩm ngoài phạm vi ≡ không tồn tại
+      if (!definition || !(await sanPhamNhinThay(ctx, definition.productModelId))) return { definition: null, lineItems: [] };
       const lineItems = await db.listBomLineItemsByBom(input.id);
       return { definition, lineItems };
     }),
@@ -83,7 +86,8 @@ export const bomRouter = router({
   getActiveForProduct: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(z.object({ productModelId: z.number().int().positive() }))
-    .query(({ input }) => db.getActiveBomForProduct(input.productModelId)),
+    // phạm vi người dùng (L7 2026-10-25)
+    .query(async ({ input, ctx }) => ((await sanPhamNhinThay(ctx, input.productModelId)) ? db.getActiveBomForProduct(input.productModelId) : null)),
 
   createDefinition: protectedProcedure
     .use(requirePermission(MODULE, "canCreate"))

@@ -20,6 +20,7 @@ import { idsTrongPhamVi } from "../../db/hierarchy";
 import { phamViCua, type CoDanhTinh } from "../../routers/_phamViNguoiXem";
 import { ghiViTri, ghiDoiTuong, canhBaoDuDoanGhi } from "../../routers/_viTriPhamVi";
 import { sanPhamGhiTrongPhamVi, diemDoGhiTrongPhamVi } from "../../routers/_sanPhamPhamVi";
+import { nguongYieldGhi, chiToanQuyenGhi } from "../../routers/_cauHinhPhamVi";
 
 type Args = Record<string, unknown>;
 
@@ -128,9 +129,14 @@ export const KHOA_PHAM_VI_TOOL: Record<string, LuatPhamViTool> = {
     kieu: "kiem",
     kiem: async (a, ctx) => ghiDoiTuong(ctx, { machineId: soHoacNull(a, "machineId"), measurementPointDefId: soHoacNull(a, "pointDefId") }, { batBuoc: true }),
   },
+  // W17b — ngưỡng yield THEO NHÀ MÁY: theo thresholdId ⇒ hàng NULL chỉ toàn quyền, hàng nhà máy ⇒ nhà máy trong phạm vi; theo scope (metric) ⇒ ngưỡng MẶC ĐỊNH ⇒ chỉ toàn quyền.
   set_yield_threshold: {
-    kieu: "mien",
-    lyDo: "Ngưỡng yield là cấu hình TOÀN CỤC (bảng yield_alert_thresholds không có cột nhà máy / máy); chỉ giữ bằng quyền settings_yield_thresholds + cổng aiControlGate (L-7).",
+    kieu: "kiem",
+    kiem: async (a, ctx) => {
+      const id = so(a, "thresholdId");
+      if (id !== null) return nguongYieldGhi(ctx, id);
+      return chiToanQuyenGhi(ctx, "yieldAlertThreshold");
+    },
   },
   // ── Thị giác → khiếm khuyết (đăng ký ở services/visionDefectProposal.ts) ──
   propose_defect_from_vision: { kieu: "kiem", kiem: theoDeXuatLoiThiGiac },

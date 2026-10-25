@@ -19,9 +19,12 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { phamViKhoaMoiGhi, khoaApiGhi } from "./_cauHinhPhamVi";
+import { congMaTenant } from "../db/hierarchy";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
+import { phamViCua } from "./_phamViNguoiXem";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
@@ -199,9 +202,19 @@ export const apiKeyRouter = router({
   /** List keys (newest first) — SAFE shape only (no hash, no plaintext). */
   list: protectedProcedure
     .use(requirePermission("admin_system", "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const d = await db();
-      const rows = await d.select().from(apiKeys).orderBy(desc(apiKeys.createdAt));
+      // phạm vi người dùng (L6c 2026-10-25): khoá thấy được ⇔ máy của nó trong phạm vi HOẶC trục mã (nhà máy / tập đoàn, dataScopeMode='factory') khớp; khoá toàn cục / chưa khai chỉ toàn quyền. Không bao giờ trả băm (publicRow).
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      const congMa = await congMaTenant({ factoryCode: apiKeys.factoryCode, corporateCode: apiKeys.corporateCode }, phamViCua(ctx));
+      const cong =
+        idsMay === null && congMa === undefined
+          ? undefined
+          : or(
+              idsMay === null ? undefined : and(sql`${apiKeys.machineId} IS NOT NULL`, inArray(apiKeys.machineId, idsMay.length > 0 ? idsMay : [-1])),
+              congMa === undefined ? undefined : and(eq(apiKeys.dataScopeMode, "factory"), congMa),
+            );
+      const rows = await d.select().from(apiKeys).where(cong).orderBy(desc(apiKeys.createdAt));
       return withHolders(d, rows.map(publicRow)); // doc 81 Đợt 9 R3 — "Issued to"
     }),
 

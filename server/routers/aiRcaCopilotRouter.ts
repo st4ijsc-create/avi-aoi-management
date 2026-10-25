@@ -60,7 +60,7 @@ export const aiRcaCopilotRouter = router({
   latest: protectedProcedure
     .input(z.object({ machineId: z.number().int().positive().optional(), limit: z.number().int().min(1).max(50).optional() }))
     .query(async ({ input, ctx }) => {
-      return latestRca(input.machineId, input.limit ?? 10, await congPhanTichNguyenNhan(ctx as never)); // phạm vi người dùng (L6b 2026-10-25)
+      return latestRca(input.machineId, input.limit ?? 10, await congPhanTichNguyenNhan(ctx)); // phạm vi người dùng (L6b 2026-10-25)
     }),
 
   // Propose (HITL) the top fix → returns the pending actionId for the UI to

@@ -34,6 +34,8 @@ import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { machines, oeeMetrics } from "../../../drizzle/schema";
 import { checkPermission } from "../../_core/accessControl";
+import { ketQuaPhamViRong } from "./readToolRbac";
+import { giaiPhamViMay, machineIdsParam, mayCot, mayThay, statsScopeArgs, type PhamViMay } from "./phamViDoc";
 import { resolveLineIdByCode } from "../../db/lineBalance";
 import {
   paretoByDefectType,
@@ -196,9 +198,12 @@ async function avgOeeOver(
   machineCode: string | undefined,
   from: Date,
   to: Date,
+  pv: PhamViMay, // phạm vi người dùng (L8 2026-10-25)
 ): Promise<{ avgOee: number; avgA: number; avgP: number; avgQ: number; samples: number }> {
   const conds = [gte(oeeMetrics.timestamp, from), lte(oeeMetrics.timestamp, to)];
   if (machineCode) conds.push(eq(oeeMetrics.machineCode, machineCode));
+  const congMay = mayCot(pv, oeeMetrics.machineId);
+  if (congMay) conds.push(congMay);
   const rows = await db
     .select({
       availability: oeeMetrics.availability,
@@ -256,8 +261,11 @@ const analyticsQueryOee: Tool<z.infer<typeof oeeQueryParams>, OeeAnalyticsData |
     const db = await getDb();
     if (!db) return noDbResult<OeeAnalyticsData | null>("analytics_oee", title, null);
 
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<OeeAnalyticsData | null>("analytics_oee", title, null);
+
     const { curStart, curEnd, prevStart, prevEnd } = periodWindows(period);
-    const current = await avgOeeOver(db, machineCode, curStart, curEnd);
+    const current = await avgOeeOver(db, machineCode, curStart, curEnd, pv);
     if (current.samples === 0) {
       return {
         type: "analytics_oee",
@@ -269,7 +277,7 @@ const analyticsQueryOee: Tool<z.infer<typeof oeeQueryParams>, OeeAnalyticsData |
         note: "NOT_FOUND",
       };
     }
-    const previous = compareToPrior ? await avgOeeOver(db, machineCode, prevStart, prevEnd) : null;
+    const previous = compareToPrior ? await avgOeeOver(db, machineCode, prevStart, prevEnd, pv) : null;
     const prev = previous && previous.samples > 0 ? { avgOee: previous.avgOee, samples: previous.samples } : null;
     const deltaPct = prev ? round2(current.avgOee - prev.avgOee) : null;
     const trend: OeeAnalyticsData["trend"] =
@@ -351,14 +359,18 @@ const analyticsDefectPareto: Tool<z.infer<typeof paretoParams>, ParetoToolData |
     const db = await getDb();
     if (!db) return noDbResult<ParetoToolData | null>("analytics_pareto", title, null);
 
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<ParetoToolData | null>("analytics_pareto", title, null);
+    const machineIds = machineIdsParam(pv); // AND với factoryId / lineId / machineId do model khai: id ngoài phạm vi ⇒ 0 hàng ≡ không tồn tại
+
     const endDate = new Date();
     const startDate = sinceDays(days);
     let result: ParetoAnalysisResult;
     try {
       result =
         groupBy === "machine"
-          ? await paretoByMachine({ startDate, endDate, factoryId, lineId, limit: topN })
-          : await paretoByDefectType({ startDate, endDate, factoryId, lineId, machineId, limit: topN });
+          ? await paretoByMachine({ startDate, endDate, factoryId, lineId, machineIds, limit: topN })
+          : await paretoByDefectType({ startDate, endDate, factoryId, lineId, machineId, machineIds, limit: topN });
     } catch {
       // Fail-safe: any analytics-query error → honest empty result, never throw.
       return {
@@ -615,7 +627,7 @@ const analyticsQueryYield: Tool<z.infer<typeof yieldParams>, YieldAnalyticsData 
     const endDate = new Date();
     let trend: Awaited<ReturnType<typeof getYieldTrendData>>;
     try {
-      trend = await getYieldTrendData({ startDate, endDate, machineId, factoryCode, interval });
+      trend = await getYieldTrendData({ startDate, endDate, machineId, factoryCode, interval, ...statsScopeArgs(__authCtx) }); // phạm vi người dùng (L8 2026-10-25)
     } catch {
       return {
         type: "analytics_yield",
@@ -727,7 +739,7 @@ const analyticsSpcStatus: Tool<z.infer<typeof spcParams>, SpcStatusData | null> 
     const endDate = new Date();
     let trend: Awaited<ReturnType<typeof getYieldTrendData>>;
     try {
-      trend = await getYieldTrendData({ startDate, endDate, machineId, factoryCode, interval: "day" });
+      trend = await getYieldTrendData({ startDate, endDate, machineId, factoryCode, interval: "day", ...statsScopeArgs(__authCtx) }); // phạm vi người dùng (L8 2026-10-25)
     } catch {
       return {
         type: "analytics_spc",
@@ -837,9 +849,17 @@ const analyticsPdmForecast: Tool<z.infer<typeof pdmParams>, PdmForecastData | nu
     const db = await getDb();
     if (!db) return noDbResult<PdmForecastData | null>("analytics_pdm_forecast", title, null);
 
+    const pv = await giaiPhamViMay(__authCtx); // phạm vi người dùng (L8 2026-10-25)
+    if (pv.kind === "empty") return ketQuaPhamViRong<PdmForecastData | null>("analytics_pdm_forecast", title, null);
+
     let resolvedId = machineId ?? null;
+    if (resolvedId != null && !mayThay(pv, resolvedId)) {
+      // máy ngoài phạm vi ≡ không tồn tại
+      return { type: "analytics_pdm_forecast", title, data: null, textSummary: `Không tìm thấy máy #${resolvedId}.`, note: "NOT_FOUND" };
+    }
     if (resolvedId == null && machineCode) {
       resolvedId = await resolveMachineId(db, machineCode);
+      if (resolvedId != null && !mayThay(pv, resolvedId)) resolvedId = null;
       if (resolvedId == null) {
         return {
           type: "analytics_pdm_forecast",
@@ -965,7 +985,7 @@ const analyticsForecastSeries: Tool<z.infer<typeof forecastParams>, ForecastSeri
     const endDate = new Date();
     let trend: Awaited<ReturnType<typeof getYieldTrendData>>;
     try {
-      trend = await getYieldTrendData({ startDate, endDate, machineId, factoryCode, interval: "day" });
+      trend = await getYieldTrendData({ startDate, endDate, machineId, factoryCode, interval: "day", ...statsScopeArgs(__authCtx) }); // phạm vi người dùng (L8 2026-10-25)
     } catch {
       return {
         type: "analytics_forecast",

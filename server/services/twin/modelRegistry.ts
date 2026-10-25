@@ -174,18 +174,24 @@ export async function registerModel(input: RegisterModelInput): Promise<Register
 }
 
 /** List models (optionally filter by class / status). Read-only; not flag-gated. */
-export async function listModels(opts?: { equipmentClass?: string; status?: string; limit?: number }): Promise<Equipment3dModel[]> {
+export async function listModels(
+  opts?: { equipmentClass?: string; status?: string; limit?: number },
+  /** phạm vi người dùng (L6c 2026-10-25): bộ lọc hàng thấy được (router truyền cho người hẹp); không truyền = toàn quyền / nội bộ */
+  loc?: (rows: Equipment3dModel[]) => Promise<Equipment3dModel[]>,
+): Promise<Equipment3dModel[]> {
   const db = await getDb();
   if (!db) return [];
   const conds = [];
   if (opts?.equipmentClass) conds.push(eq(equipment3dModels.equipmentClass, opts.equipmentClass));
   if (opts?.status) conds.push(eq(equipment3dModels.status, opts.status));
-  return db
+  const q = db
     .select()
     .from(equipment3dModels)
     .where(conds.length ? and(...conds) : undefined)
-    .orderBy(desc(equipment3dModels.updatedAt))
-    .limit(Math.min(Math.max(opts?.limit ?? 200, 1), 1000));
+    .orderBy(desc(equipment3dModels.updatedAt));
+  const gioiHan = Math.min(Math.max(opts?.limit ?? 200, 1), 1000);
+  if (!loc) return q.limit(gioiHan);
+  return (await loc(await q)).slice(0, gioiHan); // lọc rồi mới cắt (sổ đăng ký nhỏ: một hàng / thiết bị / lớp)
 }
 
 /**
@@ -193,13 +199,13 @@ export async function listModels(opts?: { equipmentClass?: string; status?: stri
  * Loads the small candidate set (rows that could match) and applies the PURE
  * `pickBestModel` precedence. Returns null when nothing usable is registered.
  */
-export async function resolveModel(target: ResolveTarget): Promise<Equipment3dModel | null> {
+export async function resolveModel(target: ResolveTarget, loc?: (rows: Equipment3dModel[]) => Promise<Equipment3dModel[]>): Promise<Equipment3dModel | null> {
   const db = await getDb();
   if (!db) return null;
   // The registry is small (one row per equipment/class). Load active rows and let
   // the pure picker apply precedence — keeps the query trivial + the logic testable.
   const rows = await db.select().from(equipment3dModels).where(eq(equipment3dModels.status, "active"));
-  return pickBestModel(target, rows);
+  return pickBestModel(target, loc ? await loc(rows) : rows);
 }
 
 /** Archive a model (soft delete — hidden from resolve). Gated at the router. */

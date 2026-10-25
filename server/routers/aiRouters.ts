@@ -282,7 +282,7 @@ export const rootCauseRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       let query = sql`SELECT * FROM root_cause_analysis WHERE 1=1`;
-      const congPv = await congPhanTichNguyenNhan(ctx as never); // phạm vi người dùng (L6b 2026-10-25)
+      const congPv = await congPhanTichNguyenNhan(ctx); // phạm vi người dùng (L6b 2026-10-25)
       if (congPv) query = sql`${query} AND ${congPv}`;
       if (input?.analysisType) {
         query = sql`${query} AND "analysisType" = ${input.analysisType}`;

@@ -11,6 +11,8 @@
 import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import * as db from "../db";
+import { phamViCua } from "./_phamViNguoiXem";
+import { idsTrongPhamVi } from "../db/hierarchy";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -308,8 +310,8 @@ export const hierarchyTreeRouter = router({
    * Lấy toàn bộ cây phân cấp: Factory → Workshop → Line → Station → Machine
    * App client dùng để hiển thị tree selector và cấu hình MQTT subscription.
    */
-  getTree: protectedProcedure.query(async () => {
-    const rows = await db.getFullHierarchyFlat();
+  getTree: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await db.getFullHierarchyFlat(phamViCua(ctx)); // phạm vi người dùng (L6c 2026-10-25)
     return buildTree(rows);
   }),
 
@@ -318,8 +320,8 @@ export const hierarchyTreeRouter = router({
    */
   getFactoryTree: protectedProcedure
     .input(z.object({ factoryId: z.number() }))
-    .query(async ({ input }) => {
-      const rows = await db.getFactoryHierarchyFlat(input.factoryId);
+    .query(async ({ input, ctx }) => {
+      const rows = await db.getFactoryHierarchyFlat(input.factoryId, phamViCua(ctx)); // phạm vi người dùng (L6c 2026-10-25)
       const tree = buildTree(rows as any);
       return tree[0] ?? null;
     }),
@@ -349,9 +351,17 @@ export const hierarchyTreeRouter = router({
       stationId: z.number().optional(),
       messageTypes: z.array(z.enum(["inspection", "errors", "status", "heartbeat", "summary/daily", "summary/weekly"])).optional(),
     }))
-    .query(async ({ input }) => {
-      const rows = await db.getFullHierarchyFlat();
+    .query(async ({ input, ctx }) => {
+      const rows = await db.getFullHierarchyFlat(phamViCua(ctx)); // phạm vi người dùng (L6c 2026-10-25): topic chỉ sinh cho cây trong phạm vi
       const tree = buildTree(rows);
+      // phạm vi người dùng (L6c 2026-10-25): người hẹp — mức "all" KHÔNG sinh wildcard `+` mọi nhà máy mà liệt kê từng nhà máy trong phạm vi;
+      // nhà máy / xưởng không có trong cây của họ ≡ không tồn tại (không sinh topic từ id client tự khai).
+      const hep = (await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true })) !== null;
+      if (hep) {
+        if (input.level === "all") return tree.flatMap((f) => generateMqttTopics(tree, { level: "factory", factoryId: f.id }, input.messageTypes));
+        if (input.level === "factory" && !tree.some((f) => f.id === input.factoryId)) return [];
+        if (input.level === "workshop" && !tree.find((f) => f.id === input.factoryId)?.workshops.some((w) => w.id === input.workshopId)) return [];
+      }
       return generateMqttTopics(tree, input, input.messageTypes);
     }),
 
@@ -376,8 +386,8 @@ export const hierarchyTreeRouter = router({
   /**
    * Lấy thông tin tóm tắt hierarchy (số lượng mỗi cấp) — để hiển thị trên dashboard
    */
-  getSummary: protectedProcedure.query(async () => {
-    const rows = await db.getFullHierarchyFlat();
+  getSummary: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await db.getFullHierarchyFlat(phamViCua(ctx)); // phạm vi người dùng (L6c 2026-10-25)
     const tree = buildTree(rows);
 
     let totalWorkshops = 0;

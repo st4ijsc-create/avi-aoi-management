@@ -26,12 +26,8 @@ import {
   listArtifacts,
   deleteArtifact,
   artifactDownloadPath,
-  type ArtifactViewer,
 } from "../services/reportArtifactService";
 
-function viewerOf(ctx: { user: { id: number; role: string } }): ArtifactViewer {
-  return { id: ctx.user.id, role: ctx.user.role };
-}
 
 function mapArtifactError(err: unknown): never {
   if (err instanceof ArtifactError) {
@@ -69,7 +65,7 @@ export const reportArtifactRouter = router({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      return listArtifacts(viewerOf(ctx as never), {
+      return listArtifacts(ctx.user, {
         ...(input ?? {}),
         format: input?.format as never,
         source: input?.source as never,
@@ -79,7 +75,7 @@ export const reportArtifactRouter = router({
   /** Access-checked metadata for one artifact. */
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
     try {
-      return await getArtifact(input.id, viewerOf(ctx as never));
+      return await getArtifact(input.id, ctx.user);
     } catch (err) {
       mapArtifactError(err);
     }
@@ -92,7 +88,7 @@ export const reportArtifactRouter = router({
    */
   download: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
     try {
-      const t = await getDownloadTarget(input.id, viewerOf(ctx as never));
+      const t = await getDownloadTarget(input.id, ctx.user);
       return {
         id: t.artifact.id,
         downloadUrl: t.downloadUrl,
@@ -111,7 +107,7 @@ export const reportArtifactRouter = router({
   /** Access-checked delete (storage object + row). */
   delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     try {
-      const ok = await deleteArtifact(input.id, viewerOf(ctx as never));
+      const ok = await deleteArtifact(input.id, ctx.user);
       return { success: ok, downloadUrl: artifactDownloadPath(input.id) };
     } catch (err) {
       mapArtifactError(err);

@@ -3,6 +3,7 @@ import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 // F2 — `DbUnavailableError` tự mang `appCode: "DB_UNAVAILABLE"` (đã đủ ba bản dịch), nên
 // client dịch được mà `errorFormatter` không phải đổi dòng nào. ⚠ `name` của lớp này phải
 // giữ nguyên: đường ingest WAL (`_core/index.ts`) khoá theo nó để đệm khi CSDL sập.
@@ -4569,7 +4570,11 @@ export const machineApiRouter = router({
   listKeys: protectedProcedure
     .use(requirePermission("admin_system", "canView"))
     .input(z.object({ machineId: z.number().int().positive() }))
-    .query(async ({ input }) => listMachineKeys(input.machineId)),
+    .query(async ({ input, ctx }) => {
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6c 2026-10-25): khoá của máy ngoài phạm vi ≡ không có khoá nào
+      if (idsMay !== null && !idsMay.includes(input.machineId)) return [];
+      return listMachineKeys(input.machineId);
+    }),
 
   issueKey: protectedProcedure
     .use(requirePermission("admin_system", "canCreate"))

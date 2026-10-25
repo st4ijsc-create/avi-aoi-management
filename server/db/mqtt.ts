@@ -1,6 +1,6 @@
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
-import { eq, and, or, desc, gte, lte, sql, isNotNull, like, inArray, type SQL } from "drizzle-orm";
+import { eq, and, or, desc, gte, lte, sql, isNotNull, isNull, like, inArray, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { idsTrongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 import {
@@ -591,12 +591,19 @@ export async function getMqttThroughputHistory(minutes: number = 60, scope?: Pha
 
 // ============ MQTT ALERT RULES FUNCTIONS ============
 
-export async function getMqttAlertRules() {
+/** Điều kiện thấy: `factoryIds` null/undefined = toàn quyền (không lọc); mảng = luật mặc định (NULL) + luật của các nhà máy đó (W17b). */
+function thayDuocNhaMay(cot: any, factoryIds: number[] | null | undefined): SQL | undefined {
+  if (factoryIds == null) return undefined;
+  return factoryIds.length === 0 ? isNull(cot) : or(isNull(cot), inArray(cot, factoryIds));
+}
+
+export async function getMqttAlertRules(factoryIds?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
   
   return db.select()
     .from(mqttAlertRules)
+    .where(thayDuocNhaMay(mqttAlertRules.factoryId, factoryIds))
     .orderBy(desc(mqttAlertRules.createdAt));
 }
 
@@ -633,11 +640,13 @@ export async function createMqttAlertRule(data: {
   notifyMqtt?: boolean;
   cooldownMinutes?: number;
   createdBy?: number;
+  factoryId?: number | null;
 }) {
   const db = await getDb();
   if (!db) return null;
   
   const [result] = await db.insert(mqttAlertRules).values({
+    factoryId: data.factoryId ?? null,
     name: data.name,
     description: data.description,
     ruleType: data.ruleType,
@@ -695,24 +704,33 @@ export async function updateMqttAlertRuleLastTriggered(id: number) {
 
 // ============ MQTT ALERT HISTORY FUNCTIONS ============
 
-export async function getMqttAlertHistory(limit: number = 50) {
+export async function getMqttAlertHistory(limit: number = 50, factoryIds?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
   
   return db.select()
     .from(mqttAlertHistory)
+    .where(thayDuocNhaMay(mqttAlertHistory.factoryId, factoryIds))
     .orderBy(desc(mqttAlertHistory.triggeredAt))
     .limit(limit);
 }
 
-export async function getUnresolvedMqttAlerts() {
+export async function getUnresolvedMqttAlerts(factoryIds?: number[] | null) {
   const db = await getDb();
   if (!db) return [];
   
   return db.select()
     .from(mqttAlertHistory)
-    .where(eq(mqttAlertHistory.isResolved, false))
+    .where(and(eq(mqttAlertHistory.isResolved, false), thayDuocNhaMay(mqttAlertHistory.factoryId, factoryIds)))
     .orderBy(desc(mqttAlertHistory.triggeredAt));
+}
+
+/** Nhà máy của một bản ghi lịch sử cảnh báo (W17b); null = luật mặc định hoặc không có bản ghi. */
+export async function getMqttAlertHistoryFactoryId(id: number): Promise<number | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [r] = await db.select({ f: mqttAlertHistory.factoryId }).from(mqttAlertHistory).where(eq(mqttAlertHistory.id, id)).limit(1);
+  return r?.f ?? null;
 }
 
 export async function createMqttAlertHistoryEntry(data: {

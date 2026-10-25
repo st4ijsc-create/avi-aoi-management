@@ -1,4 +1,5 @@
 import { getDb } from "../db/connection";
+import { hangKetQua } from "../db/hangKetQua";
 import { soDuongTuEnv, soKhongAmTuEnv } from "../_core/envNumber";
 import {
   productInspections,
@@ -987,7 +988,7 @@ async function getEscalationTargets(db: any, level: EscalationLevel): Promise<Ro
 
 // ─── Pattern Recognition ─────────────────────────────────────────────────────
 
-async function checkPatterns(
+export async function checkPatterns(
   db: any,
   event: SmartAlertEvent
 ): Promise<string | null> {
@@ -1008,7 +1009,7 @@ async function checkPatterns(
     LIMIT 3
   `) as any;
 
-  const rows = result.rows ?? [];
+  const rows = hangKetQua<any>(result); // W18 — postgres-js trả MẢNG: `result.rows ?? []` luôn [] ⇒ nhận diện mẫu lặp theo giờ/thứ KHÔNG BAO GIỜ chạy
   if (rows.length === 0) return null;
 
   const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

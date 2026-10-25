@@ -273,8 +273,8 @@ export const dashboardRouter = router({
 
   getTemplate: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getDashboardTemplateById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getDashboardTemplateById(input.id, { userId: ctx.user.id, role: ctx.user.role }); // phạm vi người dùng (L6t 2026-10-25)
     }),
 
   createTemplate: adminProcedure
@@ -336,7 +336,7 @@ export const dashboardRouter = router({
   applyTemplate: protectedProcedure
     .input(z.object({ templateId: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      return db.applyDashboardTemplate(ctx.user.id, input.templateId);
+      return db.applyDashboardTemplate(ctx.user.id, input.templateId, ctx.user.role); // phạm vi người dùng (L6t 2026-10-25)
     }),
 
   // ── Andon/TV board (doc 27 F7 / Đợt 5.4, W5-C) ────────────────────────────

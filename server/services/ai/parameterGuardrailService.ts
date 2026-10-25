@@ -475,21 +475,22 @@ async function findExactGuardrail(input: SetGuardrailInput): Promise<{ id: numbe
   return row ?? null;
 }
 
-export async function listGuardrails(filter?: { machineId?: number; machineType?: string }): Promise<ParameterGuardrail[]> {
+export async function listGuardrails(filter?: { machineId?: number; machineType?: string; dieuKienPhamVi?: import("drizzle-orm").SQL }): Promise<ParameterGuardrail[]> {
   const db = await getDb();
   if (!db) return [];
   const conds: any[] = [];
   if (filter?.machineId != null) conds.push(eq(parameterGuardrails.machineId, filter.machineId));
   if (filter?.machineType) conds.push(eq(parameterGuardrails.machineType, filter.machineType));
+  if (filter?.dieuKienPhamVi) conds.push(filter.dieuKienPhamVi); // phạm vi người dùng (L6c 2026-10-25)
   const q = db.select().from(parameterGuardrails);
   const rows = conds.length ? await q.where(and(...conds)) : await q;
   return rows;
 }
 
-export async function getGuardrail(id: number): Promise<ParameterGuardrail | null> {
+export async function getGuardrail(id: number, dieuKienPhamVi?: import("drizzle-orm").SQL): Promise<ParameterGuardrail | null> {
   const db = await getDb();
   if (!db) return null;
-  const [row] = await db.select().from(parameterGuardrails).where(eq(parameterGuardrails.id, id)).limit(1);
+  const [row] = await db.select().from(parameterGuardrails).where(dieuKienPhamVi ? and(eq(parameterGuardrails.id, id), dieuKienPhamVi) : eq(parameterGuardrails.id, id)).limit(1); // phạm vi người dùng (L6c 2026-10-25)
   return row ?? null;
 }
 
@@ -500,12 +501,13 @@ export async function deleteGuardrail(id: number): Promise<boolean> {
   return (res?.rowCount ?? 1) > 0;
 }
 
-export async function listChangeLog(filter?: { machineId?: number; paramKey?: string; limit?: number }) {
+export async function listChangeLog(filter?: { machineId?: number; paramKey?: string; limit?: number; dieuKienPhamVi?: import("drizzle-orm").SQL }) {
   const db = await getDb();
   if (!db) return [];
   const conds: any[] = [];
   if (filter?.machineId != null) conds.push(eq(parameterChangeLog.machineId, filter.machineId));
   if (filter?.paramKey) conds.push(eq(parameterChangeLog.paramKey, filter.paramKey));
+  if (filter?.dieuKienPhamVi) conds.push(filter.dieuKienPhamVi); // phạm vi người dùng (L6c 2026-10-25)
   const limit = Math.max(1, Math.min(500, filter?.limit ?? 100));
   const base = db.select().from(parameterChangeLog);
   const q = conds.length ? base.where(and(...conds)) : base;
