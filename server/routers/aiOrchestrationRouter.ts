@@ -21,6 +21,8 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { machines } from "../../drizzle/schema";
+import { inArray } from "drizzle-orm";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import {
   suggestWorkflow,
   optimizeWorkflow,
@@ -44,9 +46,10 @@ async function db() {
 const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
 
 /** Load all machines as advisor rows (id + machineType + per-machine capability override). */
-async function loadAdvisorMachines(): Promise<AdvisorMachine[]> {
+async function loadAdvisorMachines(idsMay: number[] | null = null): Promise<AdvisorMachine[]> {
   const d = await db();
-  const rows = await d.select().from(machines);
+  // phạm vi người dùng (L6b 2026-10-25): chỉ máy trong phạm vi (tên + năng lực máy đi vào lời nhắc LLM ⇒ không được chứa máy nhà máy khác)
+  const rows = await d.select().from(machines).where(idsMay === null ? undefined : inArray(machines.id, idsMay.length > 0 ? idsMay : [-1]));
   return rows.map((m) => ({ id: m.id, name: m.name, machineType: m.machineType, capabilities: m.capabilities }));
 }
 
@@ -90,8 +93,10 @@ export const aiOrchestrationRouter = router({
         lang: langSchema,
       }),
     )
-    .query(async ({ input }) => {
-      const machineRows = await loadAdvisorMachines();
+    .query(async ({ input, ctx }) => {
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6b 2026-10-25)
+      const machineRows = await loadAdvisorMachines(idsMay);
+      const trongPv = (id: number) => idsMay === null || idsMay.includes(id);
       // Optional RCA/causal-graph hint from the problem context (machine name → text match).
       const focus = input.context?.machineId
         ? machineRows.find((m) => m.id === input.context?.machineId)
@@ -100,8 +105,8 @@ export const aiOrchestrationRouter = router({
 
       return suggestWorkflow({
         goal: input.goal,
-        machineIds: input.machineIds,
-        context: input.context ? { ...input.context, hint: hint || undefined } : (hint ? { hint } : undefined),
+        machineIds: input.machineIds ? input.machineIds.filter(trongPv) : input.machineIds,
+        context: input.context ? { ...input.context, machineId: input.context.machineId != null && trongPv(input.context.machineId) ? input.context.machineId : undefined, hint: hint || undefined } : (hint ? { hint } : undefined),
         lang: input.lang as AdvisorLang,
         machines: machineRows,
       });
@@ -121,8 +126,8 @@ export const aiOrchestrationRouter = router({
         lang: langSchema,
       }),
     )
-    .query(async ({ input }) => {
-      const machineRows = await loadAdvisorMachines();
+    .query(async ({ input, ctx }) => {
+      const machineRows = await loadAdvisorMachines(await idsMayTrongPhamVi(ctx)); // phạm vi người dùng (L6b 2026-10-25)
       return optimizeWorkflow({
         workflow: input.workflow as unknown as WorkflowDefinition,
         goal: input.goal,

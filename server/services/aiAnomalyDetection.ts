@@ -852,12 +852,12 @@ export function anomalyModelCode(source: EmbeddingSource, modelId: number | null
 
 // ─── Stats passthrough ─────────────────────────────────────────────────────────
 
-export async function getAnomalyStats(scope: { productModelId?: number | null; machineId?: number | null; modelId?: number | null }) {
+export async function getAnomalyStats(scope: { productModelId?: number | null; machineId?: number | null; modelId?: number | null }, pv?: { nganHang?: import("drizzle-orm").SQL; hoSo?: import("drizzle-orm").SQL }) {
   // Stats tổng hợp theo cả 3 modelCode khả dĩ (onnx/text-of-image/heuristic) cho scope.
   return getBankStats({
     productModelId: scope.productModelId ?? null,
     machineId: scope.machineId ?? null,
-  });
+  }, pv); // phạm vi người dùng (L6b 2026-10-25)
 }
 
 // ─── B3.2 / B8ter — VL escalation gate ─────────────────────────────────────────

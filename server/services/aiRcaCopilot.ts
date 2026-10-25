@@ -805,14 +805,13 @@ export async function persistRca(input: PersistRcaInput): Promise<number | null>
 }
 
 /** Read recent persisted RCAs (optionally scoped to a machine). Fail-safe. */
-export async function latestRca(machineId?: number, limit = 10) {
+export async function latestRca(machineId?: number, limit = 10, dieuKienPhamVi?: import("drizzle-orm").SQL) {
   try {
     const db = await getDb();
     if (!db) return [];
     const base = db.select().from(rootCauseAnalysis);
-    const rows = machineId != null
-      ? await base.where(eq(rootCauseAnalysis.machineId, machineId)).orderBy(desc(rootCauseAnalysis.createdAt)).limit(limit)
-      : await base.orderBy(desc(rootCauseAnalysis.createdAt)).limit(limit);
+    const conds = [machineId != null ? eq(rootCauseAnalysis.machineId, machineId) : undefined, dieuKienPhamVi]; // phạm vi người dùng (L6b 2026-10-25)
+    const rows = await base.where(and(...conds)).orderBy(desc(rootCauseAnalysis.createdAt)).limit(limit);
     return rows;
   } catch (err) {
     console.warn("[aiRcaCopilot] latestRca failed:", err);

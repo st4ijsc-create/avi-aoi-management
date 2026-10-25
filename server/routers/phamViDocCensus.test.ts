@@ -929,7 +929,9 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // Chứng minh: loParetoPhamVi (5 ca, đột biến 13/13) · loDoLuongPhamVi (10 ca, đột biến 21/23 + 2 cổng dự phòng tương đương) · loNangLuongSanPhamPhamVi (12 ca) · loMsdStencilPhamVi (4 ca) · loNcrEcnPhamVi (8 ca, đột biến 24/24).
 // Kèm vá LỖI CÓ SẴN: khoá bộ nhớ đệm getStationOverview thiếu phạm vi; db/energy.ts bind Date thô vào postgres-js + timestamp trả chuỗi; stencil.status rò tổng số lần in dù ẩn tên khuôn.
 // ★★ 2026-10-25 (lô W16, kiem-dinh, cộng dồn sau L6a 164/473/559): **A 164 → 163 · C 473 → 470 · S 559 → 563 · B/D/tong unchanged.** 4 thủ tục ĐỌC → S: maintenanceRouter.partsBelowReorder (A→S, dòng sổ nợ GỠ) + mesControlTower.listMaterialReceipts|listSupplierLots|listDispositions (C→S) — kho vật tư theo nhà máy (mig 0424), lọc `factoryId IN phạm vi`. Chứng minh: `phamViGhiDoW16.db.test.ts`.
-const GHIM = { A: 163, B: 8, C: 470, D: 1198, S: 563, tong: 2402 } as const;
+// ★★ 2026-10-25 (lô L6b): **A 163 → 117 · S 563 → 609 · B/C/D/tong unchanged · miễn trừ +2.** 46 thủ tục ĐỌC nhóm AI A→S: aiActiveLearning ×6 · aiAdvanced (edge ×5 · training.getDataStats|checkAutoRetrain) · aiAnomaly ×4 · aiCalibration ×3 · aiEval.autoRetrainCheck · aiFeedback ×3 · aiInsight.list · aiModel ×2 · aiOrchestration ×2 · aiQualityGate ×4 · aiRcaCopilot.latest · aiRobotAnomaly ×2 · aiRouters (predictiveAlert list|get|stats · rootCause.list) · aiSegmentation.listMasks · aiSetupAdvisor.suggestSetup · aiSmartAlertRouting ×3 · aiThresholdAdvisor ×3; miễn trừ: aiLocalTraining.capabilities · aiSettings.getDataPipelineStats. Kèm cổng ảnh-theo-imageKey cho aiAdvancedVision.explainHeatmap (gỡ miễn trừ GHI).
+// Chứng minh: loAiDocNhom1PhamVi (10 ca) + loAiDocNhom2PhamVi (12 ca) — đỏ-trước trên HEAD sạch; đột biến 83/83 bắt (sau khi bổ sung ca). Lỗi CÓ SẴN vá kèm: getQualityGateStats đọc .rows (postgres-js trả mảng) ⇒ stats luôn 0; runDiversitySampling dùng toán tử <=> trên cột text ⇒ luôn lỗi + .rows.
+const GHIM = { A: 117, B: 8, C: 470, D: 1198, S: 609, tong: 2402 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
@@ -1041,7 +1043,7 @@ describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
       if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
     }
     expect(loi).toEqual([]);
-    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(21); // 16 → 21 (lô L6a 2026-10-25: semantics.list|get · spc.topNGPoints · ntfClassifier.list|status; partsBelowReorder trả lại kiem-dinh W16)
+    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(23); // 16 → 21 (lô L6a 2026-10-25: semantics.list|get · spc.topNGPoints · ntfClassifier.list|status; partsBelowReorder trả lại kiem-dinh W16)
   });
 
   it("sổ nợ GOM THEO FILE, mỗi file một khối liền mạch, trong khối đã sắp xếp, không lặp", () => {

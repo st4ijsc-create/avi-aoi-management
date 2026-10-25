@@ -136,6 +136,8 @@ export async function autoLabelImages(
  * Get the review queue sorted by priority (highest uncertainty first).
  */
 export async function getReviewQueue(options?: {
+  /** phạm vi người dùng (L6b 2026-10-25): điều kiện SQL phạm vi do tầng gọi dựng (undefined = toàn quyền / nội bộ). */
+  dieuKienPhamVi?: SQL;
   status?: string;
   machineId?: number;
   productModelId?: number;
@@ -160,6 +162,7 @@ export async function getReviewQueue(options?: {
   if (options?.machineId) conditions.push(eq(aiLabelQueue.machineId, options.machineId));
   if (options?.productModelId) conditions.push(eq(aiLabelQueue.productModelId, options.productModelId));
   if (options?.assignedTo) conditions.push(eq(aiLabelQueue.assignedTo, options.assignedTo));
+  if (options?.dieuKienPhamVi) conditions.push(options.dieuKienPhamVi);
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -253,6 +256,7 @@ export async function runUncertaintySampling(
   limit: number = 20,
   machineId?: number,
   productModelId?: number,
+  dieuKienPhamVi?: SQL, // phạm vi người dùng (L6b 2026-10-25)
 ): Promise<Array<typeof aiLabelQueue.$inferSelect>> {
   const db = await getDb();
   if (!db) return [];
@@ -262,6 +266,7 @@ export async function runUncertaintySampling(
   ];
   if (machineId) conditions.push(eq(aiLabelQueue.machineId, machineId));
   if (productModelId) conditions.push(eq(aiLabelQueue.productModelId, productModelId));
+  if (dieuKienPhamVi) conditions.push(dieuKienPhamVi);
 
   return db
     .select()
@@ -278,6 +283,7 @@ export async function runUncertaintySampling(
 export async function runDiversitySampling(
   limit: number = 20,
   machineId?: number,
+  dieuKienPhamVi?: SQL, // phạm vi người dùng (L6b 2026-10-25)
 ): Promise<Array<{ queueId: number; imageUrl: string; diversityScore: number }>> {
   const db = await getDb();
   if (!db) return [];
@@ -287,6 +293,7 @@ export async function runDiversitySampling(
     inArray(aiLabelQueue.status, ["PENDING", "IN_REVIEW", "EXPERT_REQUIRED"]),
   ];
   if (machineId) conditions.push(eq(aiLabelQueue.machineId, machineId));
+  if (dieuKienPhamVi) conditions.push(dieuKienPhamVi);
 
   const queueItems = await db
     .select()
@@ -315,10 +322,11 @@ export async function runDiversitySampling(
   const diversityRows = await db.execute(
     sql`SELECT e1.id            AS candidate_id,
                e1."imageUrl"   AS image_url,
-               AVG(1 - (e1.embedding <=> e2.embedding)) AS avg_similarity
+               AVG(1 - (e1.embedding_vec <=> e2.embedding_vec)) AS avg_similarity
         FROM ${aiImageEmbeddings} e1
         JOIN ${aiImageEmbeddings} e2
           ON e2.label IS NOT NULL
+         AND e2.embedding_vec IS NOT NULL
          AND e2.id != e1.id
         WHERE e1.id = ANY(${sql`ARRAY[${sql.join(candidateEmbIds.map((id) => sql`${id}`), sql`,`)}]`}::int[])
         GROUP BY e1.id, e1."imageUrl"`,
@@ -326,7 +334,7 @@ export async function runDiversitySampling(
 
   // Map results back to queue items
   const scoreByEmbId = new Map<number, number>(
-    (diversityRows.rows ?? []).map((r: any) => [
+    ((Array.isArray(diversityRows) ? diversityRows : diversityRows.rows) ?? []).map((r: any) => [
       Number(r.candidate_id),
       1 - parseFloat(r.avg_similarity ?? "0.5"), // diversity = 1 - similarity
     ])
@@ -412,6 +420,7 @@ export async function runCommitteeSampling(
 export async function checkRetrainThreshold(
   modelId: number,
   minNewLabels: number = 50,
+  dieuKienPhamVi?: SQL, // phạm vi người dùng (L6b 2026-10-25)
 ): Promise<{ shouldRetrain: boolean; labeledCount: number; threshold: number }> {
   const db = await getDb();
   if (!db) return { shouldRetrain: false, labeledCount: 0, threshold: minNewLabels };
@@ -423,6 +432,7 @@ export async function checkRetrainThreshold(
       and(
         eq(aiLabelQueue.modelId, modelId),
         inArray(aiLabelQueue.status, ["LABELED", "AUTO_LABELED"]),
+        dieuKienPhamVi,
       ),
     );
 
@@ -441,6 +451,8 @@ export async function checkRetrainThreshold(
 export async function getActiveLearningStats(options?: {
   modelId?: number;
   machineId?: number;
+  /** phạm vi người dùng (L6b 2026-10-25): điều kiện SQL phạm vi (undefined = toàn quyền / nội bộ). */
+  dieuKienPhamVi?: SQL;
 }): Promise<{
   total: number;
   pending: number;
@@ -462,6 +474,7 @@ export async function getActiveLearningStats(options?: {
   const conditions: SQL[] = [];
   if (options?.modelId) conditions.push(eq(aiLabelQueue.modelId, options.modelId));
   if (options?.machineId) conditions.push(eq(aiLabelQueue.machineId, options.machineId));
+  if (options?.dieuKienPhamVi) conditions.push(options.dieuKienPhamVi);
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   const result = await db
@@ -498,6 +511,7 @@ export async function getActiveLearningStats(options?: {
  */
 export async function getLabelAccuracy(
   modelId: number,
+  dieuKienPhamVi?: SQL, // phạm vi người dùng (L6b 2026-10-25)
 ): Promise<{
   totalLabeled: number;
   correctPredictions: number;
@@ -518,6 +532,7 @@ export async function getLabelAccuracy(
       and(
         eq(aiLabelQueue.modelId, modelId),
         eq(aiLabelQueue.status, "LABELED"),
+        dieuKienPhamVi,
       ),
     );
 

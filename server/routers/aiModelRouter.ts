@@ -1,4 +1,5 @@
 import { kiemTraTrongPhamVi } from "./_adapterPhamVi";
+import { congInference } from "./_aiPhamVi";
 import {
   protectedProcedure as thuTucVanHanh,
   moduleProcedure,
@@ -297,14 +298,14 @@ export const aiModelRouter = router({
       limit: z.number().min(1).max(200).optional(),
       offset: z.number().min(0).optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getInferenceResults(input ?? undefined);
+    .query(async ({ input, ctx }) => {
+      return db.getInferenceResults({ ...(input ?? {}), dieuKienPhamVi: await congInference(ctx) }); // phạm vi người dùng (L6b 2026-10-25)
     }),
 
   getInferenceStats: protectedProcedure
     .input(z.object({ modelId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getInferenceStats(input.modelId);
+    .query(async ({ input, ctx }) => {
+      return db.getInferenceStats(input.modelId, await congInference(ctx)); // phạm vi người dùng (L6b 2026-10-25)
     }),
 
   // ─── Active Model Lookup ────────────────────────────────

@@ -15,6 +15,9 @@ import { adminProcedure as adminProcedureBase } from "./_shared";
 const protectedProcedure = moduleProcedure("MOD_AI");
 const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import { z } from "zod";
+import type { CoDanhTinh } from "./_phamViNguoiXem";
+import { dieuKienCauHinhTrongPhamVi } from "./_adapterPhamVi";
+import { aiCalibrationReports } from "../../drizzle/schema";
 import {
   computeECE,
   fitTemperature,
@@ -26,6 +29,9 @@ import {
   getLatestCalibrationReport,
   listCalibrationReports,
 } from "../db";
+
+/** phạm vi người dùng (L6b 2026-10-25): báo cáo hiệu chuẩn theo máy; cấp mô hình (machineId NULL): gắn sản phẩm ⇒ luật sản phẩm L3; không gắn ⇒ chung. */
+const congHieuChuan = (ctx: CoDanhTinh) => dieuKienCauHinhTrongPhamVi(ctx, { may: aiCalibrationReports.machineId, sanPham: aiCalibrationReports.productModelId });
 
 export const aiCalibrationRouter = router({
   /**
@@ -98,11 +104,11 @@ export const aiCalibrationRouter = router({
 
   getCalibration: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(({ input }) => getCalibrationReport(input.id)),
+    .query(async ({ input, ctx }) => getCalibrationReport(input.id, await congHieuChuan(ctx))),
 
   getLatestCalibration: protectedProcedure
     .input(z.object({ modelId: z.number().int().positive() }))
-    .query(({ input }) => getLatestCalibrationReport(input.modelId)),
+    .query(async ({ input, ctx }) => getLatestCalibrationReport(input.modelId, await congHieuChuan(ctx))),
 
   listCalibration: protectedProcedure
     .input(
@@ -112,7 +118,7 @@ export const aiCalibrationRouter = router({
         offset: z.number().int().min(0).default(0),
       }),
     )
-    .query(({ input }) =>
-      listCalibrationReports({ modelId: input.modelId, limit: input.limit, offset: input.offset }),
+    .query(async ({ input, ctx }) =>
+      listCalibrationReports({ modelId: input.modelId, limit: input.limit, offset: input.offset, dieuKienPhamVi: await congHieuChuan(ctx) }),
     ),
 });
