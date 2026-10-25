@@ -169,8 +169,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
   "server/routers/alertRouters.ts#alertRouter.delete": "cài đặt cảnh báo SỞ HỮU THEO NGƯỜI DÙNG: chủ hoặc admin (xem alertRouter.update); id của người khác ⇒ FORBIDDEN trước khi ghi",
   "server/routers/alertRouters.ts#alertRouter.acknowledge": "xác nhận bản ghi lịch sử cảnh báo: phân giải về cài đặt cha, chỉ chủ hoặc admin (xem alertRouter.update)",
   "server/routers/alertRouters.ts#alertRouter.test": "gửi thử cảnh báo của CHÍNH người gọi: chủ hoặc admin (xem alertRouter.update); chỉ gửi tới chủ cảnh báo",
-  "server/routers/alertRouters.ts#yieldThresholdRouter.update": "ngưỡng yield là cấu hình TOÀN CỤC (bảng yield_alert_thresholds không có cột nhà máy / máy); giữ bằng write-floor + settings_yield_thresholds.canEdit — cùng quyết định với tool AI set_yield_threshold",
-  "server/routers/alertRouters.ts#yieldThresholdRouter.updateWithHistory": "ngưỡng yield TOÀN CỤC (xem yieldThresholdRouter.update) — write-floor + settings_yield_thresholds.canEdit, có lịch sử thay đổi",
   // ── Phạm vi QUA CỔNG TOOL kiemPhamViGhiTool (aiLocalTools/phamViGhi.ts) — mỗi mục có test DB cấp THỦ TỤC, gỡ cổng ⇒ đỏ (dieu-phoi 2026-10-25) ──
   "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix": "phạm vi qua cổng tool kiemPhamViGhiTool (create_maintenance_workorder … khoá machineId thật) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiRcaCopilot.applyTopFix' (A→được, B→OUT_OF_SCOPE, đột biến 3/3 đỏ) — 2026-10-25. Id phân tích nhà máy khác ≡ id không có thật (cùng NOT_FOUND, có test)",
   "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.applyNgThreshold": "phạm vi qua cổng tool kiemPhamViGhiTool (adjust_ng_threshold, khoá thresholdId → trạm / máy / điểm đo / sản phẩm) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiThresholdAdvisor.applyNgThreshold' (A→được, B→OUT_OF_SCOPE, đột biến đỏ) — 2026-10-25",
@@ -259,14 +257,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
     "KB Studio: tài nguyên toàn cục của vai kbStudioProcedure / kbStudioDeleteProcedure (sàn vai + 2FA); không có dữ liệu nhà máy.",
   "server/routers/kbStudioRouter.ts#kbStudioRouter.startFinetune":
     "KB Studio: tài nguyên toàn cục của vai kbStudioProcedure / kbStudioDeleteProcedure (sàn vai + 2FA); không có dữ liệu nhà máy.",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.update":
-    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.delete":
-    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.toggle":
-    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
-  "server/routers/mqttOeeRouters.ts#mqttAlertRouter.resolve":
-    "Luật cảnh báo MQTT TOÀN CỤC (mqtt_alert_rules không có cột nhà máy) — danh mục dùng chung, chủ dự án duyệt 2026-10-25; từ lô W11 mọi thao tác đòi requirePermission(machine_alerts, canCreate|canEdit|canDelete) (trước đây chỉ đăng nhập). Bản ghi cảnh báo phát sinh (history) chỉ có ruleId — không gắn máy/trạm.",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.generate":
     "Thủ tục TÍNH TOÁN LLM thuần: modelId là mã model trong danh sách trắng, machineCode / dữ liệu chất lượng là văn bản người dùng tự đưa vào prompt; không đọc hay ghi bảng nhà máy nào. Đã kiểm mã (2026-10-25); W17a: kiểm bằng DB test phamViGhiDoW17a (B không đụng được bảng / preset riêng của A; duplicateCustomDashboard từng sao chép được bảng RIÊNG của người khác ⇒ đã vá).",
   "server/routers/aiGgufRouter.ts#aiGgufRouter.chat":

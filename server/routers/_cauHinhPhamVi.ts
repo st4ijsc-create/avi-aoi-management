@@ -4,6 +4,7 @@
  * Mọi hàm ném đúng MỘT dạng lỗi theo `entity` (không lộ "tồn tại nhưng không phải của bạn").
  */
 import { sql } from "drizzle-orm";
+import { KIEU_LUAT_THEO_TRAM } from "../services/mqttAlertPhamVi";
 import { appError } from "../_core/appError";
 import { getDb } from "../db";
 import { idsTrongPhamVi } from "../db/hierarchy";
@@ -530,4 +531,40 @@ export async function quyTacLeoThangMoiGhi(ctx: CoDanhTinh, factoryId: number | 
   if (await toanQuyen(ctx)) return;
   if (factoryId == null) throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "escalationRule", parent: "factory" }, "Quy tắc mặc định toàn tập đoàn chỉ người toàn quyền được tạo; hãy chọn nhà máy của bạn.");
   await viTriHopLe(ctx, { factoryId }, "escalationRule");
+}
+
+// ── W17b (2026-10-25) — luật cảnh báo MQTT + ngưỡng yield THEO NHÀ MÁY (mig 0426) ─────────────────────────────────────────────────────────────
+
+/** Luật MQTT theo id: NULL (mặc định toàn tập đoàn) chỉ toàn quyền; có factoryId ⇒ nhà máy trong phạm vi. Không có / ngoài phạm vi ≡ NOT_FOUND "mqttAlertRule". */
+export async function luatMqttGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  if (await toanQuyen(ctx)) return;
+  const h = await hangDau(sql`SELECT "factoryId" AS f FROM mqtt_alert_rules WHERE id = ${id}`);
+  if (!h || h.f == null) throw khongCo("mqttAlertRule", "Alert rule not found");
+  await viTriHopLe(ctx, { factoryId: Number(h.f) }, "mqttAlertRule");
+}
+
+/** Tạo luật MQTT: người hẹp phải nêu factoryId TRONG phạm vi; loại luật không có số đo theo trạm chỉ là luật mặc định (toàn quyền, factoryId NULL). */
+export async function luatMqttMoiGhi(ctx: CoDanhTinh, factoryId: number | null, ruleType: string): Promise<void> {
+  const theoNhaMay = KIEU_LUAT_THEO_TRAM.has(ruleType); // BROKER_DISCONNECT / CLIENT_OFFLINE: chỉ luật mặc định
+  if (factoryId != null && !theoNhaMay) {
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "factoryId" }, "Loại luật này (broker / thiết bị offline) là trạng thái chung — chỉ có luật mặc định, không đặt theo nhà máy.");
+  }
+  if (await toanQuyen(ctx)) return;
+  if (factoryId == null) throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "mqttAlertRule", parent: "factory" }, "Luật mặc định toàn tập đoàn chỉ người toàn quyền được tạo; hãy chọn nhà máy của bạn.");
+  await viTriHopLe(ctx, { factoryId }, "mqttAlertRule");
+}
+
+/** Ngưỡng yield theo id (cùng luật `luatMqttGhi`). NOT_FOUND "yieldAlertThreshold". */
+export async function nguongYieldGhi(ctx: CoDanhTinh, id: number): Promise<void> {
+  if (await toanQuyen(ctx)) return;
+  const h = await hangDau(sql`SELECT "factoryId" AS f FROM yield_alert_thresholds WHERE id = ${id}`);
+  if (!h || h.f == null) throw khongCo("yieldAlertThreshold", "Threshold not found");
+  await viTriHopLe(ctx, { factoryId: Number(h.f) }, "yieldAlertThreshold");
+}
+
+/** Tạo ngưỡng yield: người hẹp phải nêu factoryId TRONG phạm vi; toàn quyền: NULL hoặc nhà máy bất kỳ tồn tại. */
+export async function nguongYieldMoiGhi(ctx: CoDanhTinh, factoryId: number | null): Promise<void> {
+  if (await toanQuyen(ctx)) return;
+  if (factoryId == null) throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "yieldAlertThreshold", parent: "factory" }, "Ngưỡng mặc định toàn tập đoàn chỉ người toàn quyền được tạo; hãy chọn nhà máy của bạn.");
+  await viTriHopLe(ctx, { factoryId }, "yieldAlertThreshold");
 }

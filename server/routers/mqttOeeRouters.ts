@@ -4,6 +4,7 @@
  */
 
 import { z } from "zod";
+import { luatMqttGhi, luatMqttMoiGhi, idsNhaMayCuaNguoiGoi } from "./_cauHinhPhamVi";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 // doc 54 Wave B — write-floor + module-permission gate for OEE/downtime/health/target
@@ -1493,15 +1494,20 @@ export const oeeRouter = router({
 // ============================================================
 export const mqttAlertRouter = router({
   // List all alert rules
-  list: protectedProcedure.query(async () => {
-    return db.getMqttAlertRules();
+  // W17b — luật mặc định (NULL) + luật của nhà máy trong phạm vi người gọi
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.getMqttAlertRules(await idsNhaMayCuaNguoiGoi(ctx));
   }),
 
   // Get single rule by ID
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMqttAlertRuleById(input.id);
+    .query(async ({ input, ctx }) => {
+      const r = await db.getMqttAlertRuleById(input.id);
+      if (!r) return r;
+      // W17b — luật của nhà máy ngoài phạm vi ≡ không tồn tại
+      const ids = await idsNhaMayCuaNguoiGoi(ctx);
+      return r.factoryId != null && ids != null && !ids.includes(r.factoryId) ? null : r;
     }),
 
   // Create new alert rule
@@ -1519,8 +1525,11 @@ export const mqttAlertRouter = router({
       notifyEmail: z.boolean().default(false),
       notifyMqtt: z.boolean().default(false),
       cooldownMinutes: z.number().default(15),
+      // W17b — nhà máy sở hữu; vắng = luật mặc định toàn tập đoàn (chỉ toàn quyền). Khoá ghi đè = (ruleType, categoryId).
+      factoryId: z.number().int().positive().nullable().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await luatMqttMoiGhi(ctx, input.factoryId ?? null, input.ruleType);
       const result = await db.createMqttAlertRule({
         ...input,
         thresholdValue: String(input.thresholdValue),
@@ -1546,7 +1555,8 @@ export const mqttAlertRouter = router({
       cooldownMinutes: z.number().optional(),
       isEnabled: z.boolean().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await luatMqttGhi(ctx, input.id); // W17b — luật mặc định chỉ toàn quyền; luật nhà máy: nhà máy trong phạm vi
       const { id, thresholdValue, ...rest } = input;
       await db.updateMqttAlertRule(id, {
         ...rest,
@@ -1559,7 +1569,8 @@ export const mqttAlertRouter = router({
   delete: protectedProcedure
     .use(requirePermission("machine_alerts", "canDelete")) // trước đây MỌI người đăng nhập ghi được luật cảnh báo toàn cục (lô W11, 2026-10-25)
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await luatMqttGhi(ctx, input.id);
       await db.deleteMqttAlertRule(input.id);
       return { success: true };
     }),
@@ -1568,7 +1579,8 @@ export const mqttAlertRouter = router({
   toggle: protectedProcedure
     .use(requirePermission("machine_alerts", "canEdit")) // trước đây MỌI người đăng nhập ghi được luật cảnh báo toàn cục (lô W11, 2026-10-25)
     .input(z.object({ id: z.number(), isEnabled: z.boolean() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await luatMqttGhi(ctx, input.id);
       await db.updateMqttAlertRule(input.id, { isEnabled: input.isEnabled });
       return { success: true };
     }),
@@ -1576,13 +1588,13 @@ export const mqttAlertRouter = router({
   // Get alert history
   history: protectedProcedure
     .input(z.object({ limit: z.number().default(50) }).optional())
-    .query(async ({ input }) => {
-      return db.getMqttAlertHistory(input?.limit || 50);
+    .query(async ({ input, ctx }) => {
+      return db.getMqttAlertHistory(input?.limit || 50, await idsNhaMayCuaNguoiGoi(ctx));
     }),
 
   // Get unresolved alerts
-  unresolved: protectedProcedure.query(async () => {
-    return db.getUnresolvedMqttAlerts();
+  unresolved: protectedProcedure.query(async ({ ctx }) => {
+    return db.getUnresolvedMqttAlerts(await idsNhaMayCuaNguoiGoi(ctx));
   }),
 
   // Resolve an alert
@@ -1594,6 +1606,12 @@ export const mqttAlertRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       if (!ctx.user) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED', undefined, 'Authentication required to resolve alert');
+      // W17b — bản ghi của luật nhà máy ngoài phạm vi ≡ không tồn tại; bản ghi của luật mặc định (factoryId NULL) giữ nguyên (quyền module machine_alerts)
+      const ids = await idsNhaMayCuaNguoiGoi(ctx);
+      if (ids != null) {
+        const fid = await db.getMqttAlertHistoryFactoryId(input.id);
+        if (fid != null && !ids.includes(fid)) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'mqttAlertRule' }, 'Alert not found');
+      }
       await db.resolveMqttAlert(input.id, ctx.user.id, input.note);
       return { success: true };
     }),

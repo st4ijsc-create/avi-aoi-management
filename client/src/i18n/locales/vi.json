@@ -3749,6 +3749,7 @@
       "enrollmentToken": "mã đăng ký thiết bị",
       "ensembleConfig": "cấu hình ensemble",
       "escalationRule": "quy tắc leo thang",
+      "mqttAlertRule": "luật cảnh báo MQTT",
       "ethernet-ip": "EtherNet/IP",
       "factory": "nhà máy",
       "factoryLayout": "bố trí xưởng",

@@ -35,7 +35,7 @@
  * enum value would need a migration, which W5-A must not create. Documented
  * as visual-only.
  */
-import { sql, eq, and, gte, lt, inArray, type SQL } from "drizzle-orm";
+import { sql, eq, and, or, isNull, gte, lt, inArray, type SQL } from "drizzle-orm";
 import { productInspections, stationTraces, yieldAlertThresholds } from "../../drizzle/schema";
 import { getDb } from "../db/connection";
 import { factoryDayTextSql } from "../utils/kpi";
@@ -109,6 +109,17 @@ export interface FalseCallEscapeParams {
   endDate: Date;
   machineIds?: number[];
   productModelId?: number;
+}
+
+/** Nhà máy DUY NHẤT chứa mọi máy của bộ lọc (null nếu không có bộ lọc máy / nhiều nhà máy / lỗi) — W17b. */
+async function nhaMayDuyNhatCuaMay(db: any, machineIds: number[] | undefined): Promise<number | null> {
+  if (!machineIds || machineIds.length === 0) return null;
+  try {
+    const r = (await db.execute(sql`SELECT DISTINCT w."factoryId" AS f FROM machines m JOIN stations s ON s.id = m."stationId" JOIN production_lines l ON l.id = s."lineId" JOIN workshops w ON w.id = l."workshopId" WHERE m.id IN (${sql.join(machineIds.map((i) => sql`${i}`), sql`, `)})`)) as unknown as Array<{ f: number | null }>;
+    return r.length === 1 && r[0].f != null ? Number(r[0].f) : null;
+  } catch {
+    return null;
+  }
 }
 
 // ─── Pure helpers (unit-tested) ─────────────────────────────────────────────
@@ -246,6 +257,9 @@ export async function getFalseCallEscapeKpi(
 
   const dayBucket = factoryDayTextSql(productInspections.inspectionTime);
 
+  // W17b — ngưỡng NTF THEO NHÀ MÁY: báo cáo thu về ĐÚNG MỘT nhà máy (mọi máy của bộ lọc cùng một nhà máy) ⇒ ưu tiên ngưỡng riêng của nhà máy đó, không thì mặc định (NULL).
+  const nhaMayBaoCao = await nhaMayDuyNhatCuaMay(db, params.machineIds);
+
   const [totals, trendRows, thresholdRows] = await Promise.all([
     db
       .select({
@@ -269,7 +283,14 @@ export async function getFalseCallEscapeKpi(
     db
       .select()
       .from(yieldAlertThresholds)
-      .where(and(eq(yieldAlertThresholds.metricType, "NTF"), eq(yieldAlertThresholds.isEnabled, true)))
+      .where(
+        and(
+          eq(yieldAlertThresholds.metricType, "NTF"),
+          eq(yieldAlertThresholds.isEnabled, true),
+          nhaMayBaoCao != null ? or(isNull(yieldAlertThresholds.factoryId), eq(yieldAlertThresholds.factoryId, nhaMayBaoCao)) : isNull(yieldAlertThresholds.factoryId),
+        ),
+      )
+      .orderBy(sql`${yieldAlertThresholds.factoryId} IS NULL`, yieldAlertThresholds.id) // hàng riêng của nhà máy trước, mặc định sau
       .limit(1),
   ]);
 
