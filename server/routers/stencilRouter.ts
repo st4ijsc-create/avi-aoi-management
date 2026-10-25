@@ -9,8 +9,13 @@
  * Recording works regardless of any flag. The worn side-effect is gated by
  * STENCIL_TRACKING_ENABLED (default OFF). The `tools` master is never written here.
  */
+import { mayTuyChonGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+import { tools } from "../../drizzle/schema";
+import { congMaTenant } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import { recordPrints, getStatus, listUsage } from "../services/stencilService";
 
 export const stencilRouter = router({
@@ -27,18 +32,22 @@ export const stencilRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await mayTuyChonGhi(ctx, input.machineId, "machine"); // phạm vi nhà máy (W14)
       return recordPrints({ ...input, recordedBy: ctx.user?.id ?? null });
     }),
 
   status: protectedProcedure
     .input(z.object({ stencilToolId: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      return getStatus(input.stencilToolId);
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L6a 2026-10-25): dụng cụ theo mã nhà máy (congMaTenant) + nhật ký in theo máy (NULL = chung)
+      const congTool = await congMaTenant({ factoryCode: tools.factoryCode, corporateCode: tools.corporateCode }, phamViCua(ctx));
+      return getStatus(input.stencilToolId, { machineIds: await idsMayTrongPhamVi(ctx), congTool });
     }),
 
   listUsage: protectedProcedure
     .input(z.object({ stencilToolId: z.number().int().positive(), limit: z.number().int().min(1).max(500).default(100) }))
-    .query(async ({ input }) => {
-      return listUsage(input.stencilToolId, input.limit);
+    .query(async ({ input, ctx }) => {
+      const congTool = await congMaTenant({ factoryCode: tools.factoryCode, corporateCode: tools.corporateCode }, phamViCua(ctx));
+      return listUsage(input.stencilToolId, input.limit, { machineIds: await idsMayTrongPhamVi(ctx), congTool }); // phạm vi người dùng (L6a 2026-10-25)
     }),
 });

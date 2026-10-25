@@ -91,14 +91,24 @@ describe("machine.register (public) — M4 hardening", () => {
     expect(db.createMachine).not.toHaveBeenCalled();
   });
 
-  it("an EXISTING serial updates in place (no pending-cap / station lookup needed)", async () => {
+  it("W15: khi hàng chờ ĐẦY, serial CÓ SẴN nhận CÙNG lỗi như serial mới (không lộ tồn tại), máy có sẵn không bị sửa", async () => {
+    process.env.MACHINE_REGISTER_PENDING_CAP = "2";
+    (db.getPendingMachines as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 1 }, { id: 2 }]);
+    const caller = machineRouter.createCaller(ctx());
+    const moi = await caller.register(input("SN-FULL-NEW")).then(() => null, (e: { code?: string; message?: string }) => ({ code: e.code, message: e.message }));
+    (db.getMachineBySerialNumber as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 8 });
+    const co = await caller.register(input("SN-FULL-EXISTS")).then(() => null, (e: { code?: string; message?: string }) => ({ code: e.code, message: e.message }));
+    expect(moi).not.toBeNull();
+    expect(co).toEqual(moi);
+    expect(db.updateMachine).not.toHaveBeenCalled();
+  });
+
+  it("an EXISTING serial is NOT modified (W15): generic response, no update, no status change, no id", async () => {
     (db.getMachineBySerialNumber as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 8 });
     const caller = machineRouter.createCaller(ctx());
     const r = await caller.register(input("SN-EXISTS"));
-    expect(r.id).toBe(8);
-    expect(db.updateMachine).toHaveBeenCalledWith(8, expect.objectContaining({
-      registrationStatus: "pending",
-    }));
+    expect(r).toEqual({ registrationStatus: "pending", message: "Machine registered, awaiting admin approval" });
+    expect(db.updateMachine).not.toHaveBeenCalled();
     expect(db.createMachine).not.toHaveBeenCalled();
   });
 });

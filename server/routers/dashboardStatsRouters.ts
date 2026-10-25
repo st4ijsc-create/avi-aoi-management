@@ -222,7 +222,9 @@ export const dashboardRouter = router({
   // factory/line/machine list procedures) instead of shipping three full lists
   // to the client just to read .length. Cached 1' — the registry changes rarely.
   overviewCounts: protectedProcedure
-    .query(async () => {
+    .query(async ({ ctx }) => {
+      // phạm vi người dùng (L6a 2026-10-25): toàn quyền dùng bộ nhớ đệm chung; người bị thu hẹp đếm THEO phạm vi của mình (không đệm — ba COUNT rẻ, và khoá đệm chung sẽ trộn phạm vi)
+      if (ctx.user.role !== "admin") return db.getOverviewEntityCounts({ userId: ctx.user.id, userRole: ctx.user.role });
       const cacheKey = "dashboard:overviewCounts:";
       const cached = statsCache.get<Awaited<ReturnType<typeof db.getOverviewEntityCounts>>>(cacheKey);
       if (cached) return cached;

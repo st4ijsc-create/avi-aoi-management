@@ -3,6 +3,7 @@
  * CRUD custom templates + built-in template library
  */
 
+import { ghiDoiTuong } from "./_viTriPhamVi";
 import { z } from "zod";
 import { appError } from "../_core/appError";
 import { router, protectedProcedure, qualityProcedure } from "../_core/trpc";
@@ -155,6 +156,12 @@ export const qualityGateTemplateRouter = router({
       machineId: z.number().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      // phạm vi nhà máy (W14): chuyền · công trạm · sản phẩm · máy đích đều phải trong phạm vi
+      try {
+        await ghiDoiTuong(ctx, { lineId: input.lineId, workstationId: input.workstationId ?? null, productModelId: input.productModelId ?? null, machineId: input.machineId ?? null }, { batBuoc: true });
+      } catch {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, "Line not found");
+      }
       let templateRules: any[];
       let templateName: string;
       let notifyRoles: string[];

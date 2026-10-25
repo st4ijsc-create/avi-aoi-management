@@ -99,6 +99,8 @@ export class MetricComputeError extends Error {
 interface ComputeArgs {
   scope: string;
   scopeId?: number;
+  /** phạm vi người dùng (L6a 2026-10-25): chỉ máy trong tập này (rỗng ⇒ không máy; null / vắng ⇒ không lọc). */
+  machineIds?: number[] | null;
   from: Date;
   to: Date;
 }
@@ -262,10 +264,13 @@ const IMPLEMENTATIONS: Record<string, ImplementationFn> = {
     if (args.scope === "equipment" && args.scopeId == null) {
       throw new MetricComputeError("SCOPE_ID_REQUIRED", `scope "equipment" requires scopeId (machine id)`);
     }
-    const machineFilter =
-      args.scope === "equipment"
-        ? sql` AND pi."machineId" = ${args.scopeId}`
-        : sql``;
+    const phamViFilter =
+      args.machineIds == null
+        ? sql``
+        : args.machineIds.length > 0
+          ? sql` AND pi."machineId" IN (${sql.join(args.machineIds.map((m) => sql`${Number(m)}`), sql`, `)})`
+          : sql` AND false`;
+    const machineFilter = sql`${args.scope === "equipment" ? sql` AND pi."machineId" = ${args.scopeId}` : sql``}${phamViFilter}`;
     const rows = executeRows(
       await db.execute(sql`
         SELECT COUNT(mr.id)::int AS opportunities,
@@ -466,7 +471,7 @@ export function getMetricDefinitionVersion(name: string): string | null {
  */
 export async function computeMetric(
   name: string,
-  params: { scope: string; scopeId?: number; from: Date; to: Date },
+  params: { scope: string; scopeId?: number; machineIds?: number[] | null; from: Date; to: Date },
 ): Promise<MetricResult> {
   const def = getDefinition(name);
   if (!def) {
@@ -488,7 +493,7 @@ export async function computeMetric(
       `Metric "${def.metric}": no canonical implementation wired for scope "${scope}"`,
     );
   }
-  const outcome = await impl({ scope, scopeId: params.scopeId, from: params.from, to: params.to }, def.metric);
+  const outcome = await impl({ scope, scopeId: params.scopeId, machineIds: params.machineIds, from: params.from, to: params.to }, def.metric);
   return {
     metric: def.metric,
     scope,

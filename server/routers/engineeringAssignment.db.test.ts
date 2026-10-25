@@ -16,6 +16,16 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
 
+// phạm vi người dùng (L6a 2026-10-25): bài này kiểm RBAC / CAS / SoD của ECN với người dùng gieo CỐ ĐỊNH (không gán nhà máy), KHÔNG kiểm phạm vi
+// (đã có loNcrEcnPhamVi.db.test.ts, CSDL thật) ⇒ coi người gọi là toàn quyền ở cổng phạm vi của phiếu.
+vi.mock("./_phieuPhamVi", async (orig) => ({
+  ...(await orig<typeof import("./_phieuPhamVi")>()),
+  ecnThayDuocTrongPhamVi: async () => true,
+  dieuKienEcnTrongPhamVi: async () => undefined,
+  nhaMayGhiPhieu: async (_ctx: unknown, o: { khai?: number | null }) => o.khai ?? null,
+  sanPhamChoPhieu: async () => undefined,
+}));
+
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 
 const DB_URL = process.env.DATABASE_URL;
@@ -611,7 +621,7 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       expect(await mineIds("engViewer")).not.toContain(ruleId);
       expect(await sup.assignments({ entityType: "interlock_rule", entityIds: [ruleId] })).toEqual([]);
       // sửa rule đã duyệt (ILK-01 reset duyệt) ⇒ chờ duyệt LẠI, đợt mới ⇒ người cũ KHÔNG thấy
-      await interlockRouter.createCaller(ctxOf("engAuthor")).update({ id: ruleId, description: "sua sau duyet" });
+      await interlockRouter.createCaller(ctxOf("adminA")).update({ id: ruleId, description: "sua sau duyet" }); // W7 (phamViGhi): luật không gắn vị trí nào là luật toàn cục — chỉ toàn quyền sửa
       const [r] = await sql`SELECT "approvedBy" FROM interlock_rules WHERE id = ${ruleId}`;
       expect(r.approvedBy).toBeNull();
       expect(await mineIds("engViewer")).not.toContain(ruleId);
@@ -799,7 +809,7 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       await give("interlock_rule", stale);
       const v = ((await interlockRouter.createCaller(ctxOf("adminA")).get({ id: stale })) as any).versionToken;
       await interlockRouter.createCaller(ctxOf("adminA")).approve({ id: stale, expectedVersion: v });
-      await interlockRouter.createCaller(ctxOf("engAuthor")).update({ id: stale, description: "m5 sua sau duyet" });
+      await interlockRouter.createCaller(ctxOf("adminA")).update({ id: stale, description: "m5 sua sau duyet" });
       // run: một còn sống; một sang gate khác (đợt mới)
       await give("orchestration_run", await mkRun("held"));
       const runStale = await mkRun("held");

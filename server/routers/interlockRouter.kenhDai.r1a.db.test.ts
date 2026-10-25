@@ -8,8 +8,16 @@
  *
  * CSDL `_test` THẬT (khuôn `interlockRouter.cauHinh.db.test.ts`: người gọi admin + 2FA, id giả cho SoD).
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
+import { dongDauDuyetLuat } from "../testing/dauDuyetInterlock";
+
+// kiem-dinh R1b-1 I1 (b) (2026-10-25) — sửa / xoá luật bảo vệ nay đòi TOTP tươi mức 5 (cổng có test riêng: interlockRouter.kiemDinh.r1b.db.test.ts).
+// Tệp này kiểm commandValue ↔ dải bằng người gọi id giả (không có 2FA thật) ⇒ FIXTURE: mã luôn hợp lệ.
+vi.mock("../services/scada/totpCauHinh", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/scada/totpCauHinh")>()),
+  kiemTotpCauHinh: async () => undefined,
+}));
 import { interlockRouter } from "./interlockRouter";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -161,6 +169,7 @@ describe.skipIf(!DB_URL)("interlockRouter — commandValue ↔ dải/bước c�
         "commandTag", "commandValue", "approvedBy", "createdBy")
       VALUES (${DAU + "-e1"}, 'machine', 'ng_rate', 'gt', 5, 'reduce_speed', ${adapterId}, 'sp', '500'::jsonb, ${DUYET}, ${TAC_GIA}) RETURNING id`;
     ruleIds.push(Number(b.id));
+    await dongDauDuyetLuat(Number(b.id)); // I1 (a) FIXTURE — "đã duyệt" gieo thẳng mang bám định nghĩa hiện tại
     const tokB = (await caller(TAC_GIA).list()).find((r) => r.id === Number(b.id))!.versionToken;
     expect(await loiCua(caller(TAC_GIA).enable({ id: Number(b.id), expectedVersion: tokB }))).toMatchObject({ appCode: "INTERLOCK_NGOAI_DAI" });
     expect((await sql`SELECT enabled FROM interlock_rules WHERE id = ${b.id}`)[0].enabled).toBe(false);
@@ -201,6 +210,7 @@ describe.skipIf(!DB_URL)("interlockRouter — commandValue ↔ dải/bước c�
     const tok = (await caller(DUYET).list()).find((r) => r.id === id)!.versionToken;
     expect(await loiCua(caller(DUYET).approve({ id, expectedVersion: tok }))).toMatchObject({ appCode: "INTERLOCK_NGOAI_DAI" });
     await sql`UPDATE interlock_rules SET "approvedBy" = ${DUYET} WHERE id = ${id}`;
+    await dongDauDuyetLuat(id); // I1 (a) FIXTURE
     const tok2 = (await caller(TAC_GIA).list()).find((r) => r.id === id)!.versionToken;
     expect(await loiCua(caller(TAC_GIA).enable({ id, expectedVersion: tok2 }))).toMatchObject({ appCode: "INTERLOCK_NGOAI_DAI" });
     expect((await sql`SELECT enabled FROM interlock_rules WHERE id = ${id}`)[0].enabled).toBe(false);

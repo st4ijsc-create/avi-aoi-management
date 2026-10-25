@@ -23,6 +23,14 @@ export interface EnergyRange {
   from: Date;
   to: Date;
   machineId?: number;
+  /** phạm vi người dùng (L6a 2026-10-25): chỉ máy trong tập này (rỗng ⇒ không hàng; null / vắng ⇒ không lọc; hàng không gắn máy bị loại với người hẹp). */
+  machineIds?: number[] | null;
+}
+
+/** Mảnh SQL `AND "machineId" IN (…)` theo tập máy trong phạm vi; `col` là biểu thức cột đã trích dẫn. */
+function congMay(machineIds: number[] | null | undefined, col = '"machineId"') {
+  if (machineIds == null) return sql``;
+  return machineIds.length > 0 ? sql`AND ${sql.raw(col)} IN (${sql.join(machineIds.map((m) => sql`${Number(m)}`), sql`, `)})` : sql`AND false`;
 }
 
 // ============================================================
@@ -45,7 +53,7 @@ export interface EnergyReadingRow {
 export async function getEnergyReadings(range: EnergyRange): Promise<EnergyReadingRow[]> {
   const db = await getDb();
   if (!db) return [];
-  const machineFilter = range.machineId != null ? sql`AND "machineId" = ${range.machineId}` : sql``;
+  const machineFilter = sql`${range.machineId != null ? sql`AND "machineId" = ${range.machineId}` : sql``} ${congMay(range.machineIds)}`;
   const rows = await db.execute(sql`
     SELECT id, "machineId", source,
            value::float8           AS value,
@@ -54,12 +62,13 @@ export async function getEnergyReadings(range: EnergyRange): Promise<EnergyReadi
            "apparentPowerKva"::float8  AS "apparentPowerKva",
            "powerFactor"::float8   AS "powerFactor",
            "recipeRef",
-           "timestamp"
+           "timestamp" AT TIME ZONE 'UTC' AS "timestamp" -- naive ⇒ Date UTC đúng (G104; trước đây trả chuỗi ⇒ r.timestamp.getTime lỗi)
     FROM energy_readings
-    WHERE "timestamp" >= ${range.from} AND "timestamp" < ${range.to} ${machineFilter}
+    WHERE "timestamp" >= ${range.from.toISOString()}::timestamp AND "timestamp" < ${range.to.toISOString()}::timestamp ${machineFilter}
     ORDER BY "timestamp" ASC
   `);
-  return asRows<EnergyReadingRow>(rows);
+  // db.execute thô trả timestamptz dạng CHUỖI ⇒ ép về Date (AT TIME ZONE UTC ở trên đã đưa về đúng thời điểm)
+  return asRows<EnergyReadingRow>(rows).map((r) => ({ ...r, timestamp: new Date(r.timestamp as unknown as string) }));
 }
 
 // ============================================================
@@ -82,7 +91,10 @@ export interface RecipeWindowRow {
 export async function getRecipeDeploymentWindows(machineId: number | undefined, range: EnergyRange): Promise<RecipeWindowRow[]> {
   const db = await getDb();
   if (!db) return [];
-  const machineFilter = machineId != null ? sql`WHERE rd."machineId" = ${machineId}` : sql``;
+  const conds: ReturnType<typeof sql>[] = [];
+  if (machineId != null) conds.push(sql`rd."machineId" = ${machineId}`);
+  if (range.machineIds != null) conds.push(range.machineIds.length > 0 ? sql`rd."machineId" IN (${sql.join(range.machineIds.map((m) => sql`${Number(m)}`), sql`, `)})` : sql`false`); // phạm vi người dùng (L6a 2026-10-25)
+  const machineFilter = conds.length > 0 ? sql`WHERE ${sql.join(conds, sql` AND `)}` : sql``;
   const rows = await db.execute(sql`
     WITH windows AS (
       SELECT rd."recipeId",
@@ -98,8 +110,8 @@ export async function getRecipeDeploymentWindows(machineId: number | undefined, 
     )
     SELECT "recipeId", "machineId", "recipeCode", "startAt", "endAt"
     FROM windows
-    WHERE "startAt" < ${range.to}
-      AND ("endAt" IS NULL OR "endAt" > ${range.from})
+    WHERE "startAt" < ${range.to.toISOString()}::timestamp
+      AND ("endAt" IS NULL OR "endAt" > ${range.from.toISOString()}::timestamp)
     ORDER BY "machineId" ASC, "startAt" ASC
   `);
   return asRows<RecipeWindowRow>(rows);
@@ -118,7 +130,7 @@ export interface GoodUnitsRow {
 export async function getGoodUnitsByRecipe(range: EnergyRange): Promise<GoodUnitsRow[]> {
   const db = await getDb();
   if (!db) return [];
-  const machineFilter = range.machineId != null ? sql`AND "machineId" = ${range.machineId}` : sql``;
+  const machineFilter = sql`${range.machineId != null ? sql`AND "machineId" = ${range.machineId}` : sql``} ${congMay(range.machineIds)}`;
   const rows = await db.execute(sql`
     SELECT "recipeRef",
            "machineId",
@@ -126,7 +138,7 @@ export async function getGoodUnitsByRecipe(range: EnergyRange): Promise<GoodUnit
     FROM process_results
     WHERE result = 'pass'
       AND "recipeRef" IS NOT NULL
-      AND "measuredAt" >= ${range.from} AND "measuredAt" < ${range.to} ${machineFilter}
+      AND "measuredAt" >= ${range.from.toISOString()}::timestamp AND "measuredAt" < ${range.to.toISOString()}::timestamp ${machineFilter}
     GROUP BY "recipeRef", "machineId"
   `);
   return asRows<GoodUnitsRow>(rows);
@@ -144,14 +156,14 @@ export interface PeakRow {
 export async function getPeakDemandRows(range: EnergyRange): Promise<PeakRow> {
   const db = await getDb();
   if (!db) return { instantaneousPeakKw: null, peakAt: null };
-  const machineFilter = range.machineId != null ? sql`AND "machineId" = ${range.machineId}` : sql``;
+  const machineFilter = sql`${range.machineId != null ? sql`AND "machineId" = ${range.machineId}` : sql``} ${congMay(range.machineIds)}`;
   // ★ Đợt 35 (G104): `timestamp` naive qua `db.execute` thô đọc theo giờ máy Node (+07 ⇒ −7 h) ⇒ ép
   //   `AT TIME ZONE 'UTC'`; `peakAt` rời SQL ra UI "Thời điểm đỉnh" (`EnergyAnalyticsPage`).
   const rows = await db.execute(sql`
     SELECT "powerKw"::float8 AS "instantaneousPeakKw", "timestamp" AT TIME ZONE 'UTC' AS "peakAt"
     FROM energy_readings
     WHERE "powerKw" IS NOT NULL
-      AND "timestamp" >= ${range.from} AND "timestamp" < ${range.to} ${machineFilter}
+      AND "timestamp" >= ${range.from.toISOString()}::timestamp AND "timestamp" < ${range.to.toISOString()}::timestamp ${machineFilter}
     ORDER BY "powerKw" DESC, "timestamp" ASC
     LIMIT 1
   `);
@@ -167,14 +179,14 @@ export async function getPeakDemandRows(range: EnergyRange): Promise<PeakRow> {
 export async function getRollingDemandBuckets(range: EnergyRange, windowMin: number): Promise<Array<{ bucket: Date; avgPowerKw: number | null }>> {
   const db = await getDb();
   if (!db) return [];
-  const machineFilter = range.machineId != null ? sql`AND "machineId" = ${range.machineId}` : sql``;
+  const machineFilter = sql`${range.machineId != null ? sql`AND "machineId" = ${range.machineId}` : sql``} ${congMay(range.machineIds)}`;
   const seconds = Math.max(1, Math.floor(windowMin * 60));
   const rows = await db.execute(sql`
     SELECT to_timestamp(floor(extract(epoch FROM "timestamp") / ${seconds}) * ${seconds}) AS bucket,
            AVG("powerKw")::float8 AS "avgPowerKw"
     FROM energy_readings
     WHERE "powerKw" IS NOT NULL
-      AND "timestamp" >= ${range.from} AND "timestamp" < ${range.to} ${machineFilter}
+      AND "timestamp" >= ${range.from.toISOString()}::timestamp AND "timestamp" < ${range.to.toISOString()}::timestamp ${machineFilter}
     GROUP BY bucket
     ORDER BY bucket ASC
   `);
@@ -196,7 +208,7 @@ export interface PowerFactorRow {
 export async function getPowerFactorStats(range: EnergyRange, threshold: number): Promise<PowerFactorRow> {
   const db = await getDb();
   if (!db) return { samples: 0, pfSamples: 0, avgPf: null, minPf: null, belowThreshold: 0 };
-  const machineFilter = range.machineId != null ? sql`AND "machineId" = ${range.machineId}` : sql``;
+  const machineFilter = sql`${range.machineId != null ? sql`AND "machineId" = ${range.machineId}` : sql``} ${congMay(range.machineIds)}`;
   const rows = await db.execute(sql`
     SELECT COUNT(*)::int AS samples,
            COUNT("powerFactor")::int AS "pfSamples",
@@ -204,7 +216,7 @@ export async function getPowerFactorStats(range: EnergyRange, threshold: number)
            MIN("powerFactor")::float8 AS "minPf",
            COUNT(*) FILTER (WHERE "powerFactor" IS NOT NULL AND "powerFactor" < ${threshold})::int AS "belowThreshold"
     FROM energy_readings
-    WHERE "timestamp" >= ${range.from} AND "timestamp" < ${range.to} ${machineFilter}
+    WHERE "timestamp" >= ${range.from.toISOString()}::timestamp AND "timestamp" < ${range.to.toISOString()}::timestamp ${machineFilter}
   `);
   const r = asRows<PowerFactorRow>(rows)[0];
   return r ?? { samples: 0, pfSamples: 0, avgPf: null, minPf: null, belowThreshold: 0 };
@@ -223,6 +235,8 @@ export async function recordEnergyReading(data: InsertEnergyReading): Promise<nu
 /** List EnPI snapshots with optional machine/recipe/period filters, newest first. */
 export async function listEnpiMetrics(params: {
   machineId?: number;
+  /** phạm vi người dùng (L6a 2026-10-25): chỉ máy trong tập này (rỗng ⇒ không hàng; null / vắng ⇒ không lọc). */
+  machineIds?: number[] | null;
   recipeId?: number;
   from?: Date;
   to?: Date;
@@ -231,9 +245,10 @@ export async function listEnpiMetrics(params: {
   if (!db) return [];
   const conds = [sql`1=1`];
   if (params.machineId != null) conds.push(sql`"machineId" = ${params.machineId}`);
+  if (params.machineIds != null) conds.push(params.machineIds.length > 0 ? sql`"machineId" IN (${sql.join(params.machineIds.map((m) => sql`${Number(m)}`), sql`, `)})` : sql`false`);
   if (params.recipeId != null) conds.push(sql`"recipeId" = ${params.recipeId}`);
-  if (params.from != null) conds.push(sql`"periodStart" >= ${params.from}`);
-  if (params.to != null) conds.push(sql`"periodEnd" <= ${params.to}`);
+  if (params.from != null) conds.push(sql`"periodStart" >= ${params.from.toISOString()}::timestamp`);
+  if (params.to != null) conds.push(sql`"periodEnd" <= ${params.to.toISOString()}::timestamp`);
   const where = conds.reduce((acc, c, i) => (i === 0 ? c : sql`${acc} AND ${c}`));
   const rows = await db.execute(sql`
     SELECT * FROM enpi_metrics WHERE ${where} ORDER BY "periodStart" DESC LIMIT 500

@@ -13,7 +13,9 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
+import type { CoDanhTinh } from "./_phamViNguoiXem";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb as getDbRaw } from "../db";
@@ -33,9 +35,10 @@ async function getDb() {
   return db;
 }
 
-async function loadMachine(machineId: number) {
+async function loadMachine(ctx: CoDanhTinh, machineId: number) {
   const db = await getDb();
-  const [m] = await db.select().from(machines).where(eq(machines.id, machineId)).limit(1);
+  const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L4 2026-10-25): máy ngoài phạm vi ≡ không tồn tại (cùng thông điệp)
+  const [m] = idsMay !== null && !idsMay.includes(machineId) ? [] : await db.select().from(machines).where(eq(machines.id, machineId)).limit(1);
   if (!m) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine ${machineId} not found`);
   return m;
 }
@@ -55,12 +58,13 @@ export const equipmentRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L4 2026-10-25)
       const rows = await db
         .select()
         .from(machines)
-        .where(input?.stationId != null ? eq(machines.stationId, input.stationId) : undefined)
+        .where(and(input?.stationId != null ? eq(machines.stationId, input.stationId) : undefined, idsMay === null ? undefined : inArray(machines.id, idsMay.length > 0 ? idsMay : [-1])))
         .limit(input?.limit ?? 500);
       return rows.map((m) => {
         const capability = getCapabilitiesForMachine({
@@ -88,8 +92,8 @@ export const equipmentRouter = router({
   getCapabilities: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ machineId: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      const m = await loadMachine(input.machineId);
+    .query(async ({ input, ctx }) => {
+      const m = await loadMachine(ctx, input.machineId);
       const capability = getCapabilitiesForMachine({
         machineType: m.machineType,
         capabilities: m.capabilities,
@@ -132,8 +136,8 @@ export const equipmentRouter = router({
   getState: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ machineId: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      const m = await loadMachine(input.machineId);
+    .query(async ({ input, ctx }) => {
+      const m = await loadMachine(ctx, input.machineId);
       const capability = getCapabilitiesForMachine({
         machineType: m.machineType,
         capabilities: m.capabilities,

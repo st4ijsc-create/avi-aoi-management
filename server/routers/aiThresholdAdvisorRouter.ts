@@ -16,6 +16,10 @@
  */
 
 import { z } from "zod";
+import { mqttNgRateThresholds } from "../../drizzle/schema";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { dieuKienViTriTrongPhamVi, idsMayTrongPhamVi } from "./_adapterPhamVi";
+import type { PhamViAdvisor } from "../services/aiThresholdAdvisor";
 import { protectedProcedure, router } from "../_core/trpc";
 import {
   recommendForMeasurementPoint,
@@ -32,6 +36,16 @@ function toCopilotUser(user: { id: number; role: string; name?: string | null })
   return { id: user.id, role: String(user.role), name: user.name ?? null };
 }
 
+/** phạm vi người dùng (L6b 2026-10-25): phạm vi người gọi cho advisor (máy trong phạm vi, luật sản phẩm, ngưỡng NG theo trạm/máy). */
+async function pvAdvisor(ctx: CoDanhTinh): Promise<PhamViAdvisor> {
+  const scope = phamViCua(ctx);
+  return {
+    idsMay: await idsMayTrongPhamVi(ctx),
+    scope,
+    congNg: await dieuKienViTriTrongPhamVi(scope, { stationId: mqttNgRateThresholds.stationId, machineId: mqttNgRateThresholds.machineId }),
+  };
+}
+
 export const aiThresholdAdvisorRouter = router({
   // ── Measurement-point limits (LSL/USL/target) ───────────────────────────────
   recommendForPoint: protectedProcedure
@@ -44,7 +58,7 @@ export const aiThresholdAdvisorRouter = router({
         windowDays: z.number().int().positive().max(365).optional(),
       }),
     )
-    .query(async ({ input }) => recommendForMeasurementPoint(input)),
+    .query(async ({ input, ctx }) => recommendForMeasurementPoint(input, await pvAdvisor(ctx))),
 
   // ── NG-rate threshold (warning/critical %) ──────────────────────────────────
   recommendNgThreshold: protectedProcedure
@@ -55,7 +69,7 @@ export const aiThresholdAdvisorRouter = router({
         minSampleDays: z.number().int().positive().max(365).optional(),
       }),
     )
-    .query(async ({ input }) => recommendNgThreshold(input)),
+    .query(async ({ input, ctx }) => recommendNgThreshold(input, await pvAdvisor(ctx))),
 
   // ── Inspection params (minSampleSize / cooldown) ────────────────────────────
   recommendInspectionParam: protectedProcedure
@@ -65,7 +79,7 @@ export const aiThresholdAdvisorRouter = router({
         windowDays: z.number().int().positive().max(365).optional(),
       }),
     )
-    .query(async ({ input }) => recommendInspectionParam(input)),
+    .query(async ({ input, ctx }) => recommendInspectionParam(input, await pvAdvisor(ctx))),
 
   // ── Apply NG threshold via HITL (propose → UI confirms with aiCopilot.confirmAction) ──
   applyNgThreshold: protectedProcedure

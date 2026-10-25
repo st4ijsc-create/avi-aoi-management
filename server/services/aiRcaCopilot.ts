@@ -805,14 +805,13 @@ export async function persistRca(input: PersistRcaInput): Promise<number | null>
 }
 
 /** Read recent persisted RCAs (optionally scoped to a machine). Fail-safe. */
-export async function latestRca(machineId?: number, limit = 10) {
+export async function latestRca(machineId?: number, limit = 10, dieuKienPhamVi?: import("drizzle-orm").SQL) {
   try {
     const db = await getDb();
     if (!db) return [];
     const base = db.select().from(rootCauseAnalysis);
-    const rows = machineId != null
-      ? await base.where(eq(rootCauseAnalysis.machineId, machineId)).orderBy(desc(rootCauseAnalysis.createdAt)).limit(limit)
-      : await base.orderBy(desc(rootCauseAnalysis.createdAt)).limit(limit);
+    const conds = [machineId != null ? eq(rootCauseAnalysis.machineId, machineId) : undefined, dieuKienPhamVi]; // phạm vi người dùng (L6b 2026-10-25)
+    const rows = await base.where(and(...conds)).orderBy(desc(rootCauseAnalysis.createdAt)).limit(limit);
     return rows;
   } catch (err) {
     console.warn("[aiRcaCopilot] latestRca failed:", err);
@@ -860,6 +859,8 @@ export async function proposeTopFix(rcaId: number, user: CopilotUser, lang: Tool
 
     const res = await proposeAction(tool, parsed.data as Record<string, unknown>, { user, lang });
     if (!res.ok || !res.pendingAction) {
+      // Ngoài phạm vi nhà máy ≡ phân tích không tồn tại (cùng kết quả — không lộ id RCA của nhà máy khác); W11c, 2026-10-25.
+      if (res.reason === "OUT_OF_SCOPE") return { ok: false, reason: "NOT_FOUND" };
       return { ok: false, reason: res.reason ?? "PROPOSE_FAILED", message: res.message };
     }
     return { ok: true, actionId: res.pendingAction.actionId };

@@ -8,6 +8,10 @@
  *     "column ly_do does not exist" ⇒ lệnh HMI hỏng (khi SCADA_COMMANDS_ENABLED bật). OT KHÔNG bị ảnh hưởng.
  *   · Thiếu 0432 ⇒ bộ đếm TOTP sai không hỏi được ⇒ mọi lượt xác minh TOTP trả `TOTP_KHONG_KIEM_DUOC` (fail-closed) — đúng về an toàn,
  *     nhưng người dùng chỉ thấy "lỗi hệ thống".
+ *   · kiem-dinh R1b-1 I-C (fix round 2, 2026-10-25) — thiếu 0434 (`interlock_rules."approvedDefHash"`) ⇒ MỌI `select()` drizzle trên
+ *     `interlock_rules` ném "column does not exist": cổng interlock inline ném TRƯỚC khi lọc luật ⇒ fail-closed CHẶN MỌI lệnh ghi HITL thật trên
+ *     MỌI adapter (STOP ghim vẫn đi — miễn interlock), engine không đánh giá được, trang interlock hỏng. Như 0433: `startOt` vẫn chạy; khối lỗi +
+ *     nhắc mỗi `CHU_KY_NHAC_MS`; `/health` degraded + `schemaR1a.thieuMigration` có "0434".
  *
  * Hợp đồng:
  *   · Truy vấn CHỈ ĐỌC `information_schema` (không DDL, không áp migration): 7 cột R1a của `device_tags`, 3 bảng `scada_kenh_che_do` /
@@ -54,6 +58,8 @@ export interface KetQuaSchemaR1a {
   thieu0432: string[];
   /** đối tượng còn thiếu của 0433 (`scada_command_attempts.ly_do`) — rỗng = đủ (hoặc bảng vắng: đã tính ở 0431) */
   thieu0433: string[];
+  /** kiem-dinh R1b-1 I-C — đối tượng còn thiếu của 0434 (`interlock_rules.approvedDefHash`) — rỗng = đủ */
+  thieu0434: string[];
 }
 
 /**
@@ -114,7 +120,8 @@ export async function kiemSchemaR1a(chay: ChayTruyVan): Promise<KetQuaSchemaR1a>
         sql`, `,
       )}))
       OR (table_name = 'totp_khoa_sai' AND column_name = 'loai')
-      OR (table_name = 'scada_command_attempts' AND column_name = 'ly_do'))`);
+      OR (table_name = 'scada_command_attempts' AND column_name = 'ly_do')
+      OR (table_name = 'interlock_rules' AND column_name = 'approvedDefHash'))`);
   const bang = await chay(sql`SELECT table_name FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name IN (${sql.join(
       [...BANG_0431, "totp_khoa_sai"].map((b) => sql`${b}`),
@@ -128,7 +135,9 @@ export async function kiemSchemaR1a(chay: ChayTruyVan): Promise<KetQuaSchemaR1a>
   ];
   const thieu0432 = !coBang.has("totp_khoa_sai") ? ["totp_khoa_sai"] : !coCot.has("totp_khoa_sai.loai") ? ["totp_khoa_sai.loai"] : [];
   const thieu0433 = coBang.has("scada_command_attempts") && !coCot.has("scada_command_attempts.ly_do") ? ["scada_command_attempts.ly_do"] : [];
-  return { thieu0431, thieu0432, thieu0433 };
+  // I-C — interlock_rules có từ mig 0013 (luôn có) ⇒ chỉ kiểm cột.
+  const thieu0434 = !coCot.has("interlock_rules.approvedDefHash") ? ["interlock_rules.approvedDefHash"] : [];
+  return { thieu0431, thieu0432, thieu0433, thieu0434 };
 }
 
 /**
@@ -160,6 +169,12 @@ export function lyDoSchemaR1a(t: TrangThaiSchemaR1a = trangThai): Extract<Schema
   if (t.thieu0433.length) {
     thieu.push("0433");
     phan.push(`thiếu migration 0433 (${t.thieu0433.join(", ")}) — mọi lệnh HMI ghi nhật ký thử lệnh sẽ lỗi (OT vẫn chạy)`);
+  }
+  // I-C — đọc phòng thủ (trạng thái do test / bản cũ đặt có thể vắng trường)
+  const thieu0434 = t.thieu0434 ?? [];
+  if (thieu0434.length) {
+    thieu.push("0434");
+    phan.push(`thiếu migration 0434 (${thieu0434.join(", ")}) — cổng interlock CHẶN MỌI lệnh ghi HITL trên MỌI adapter, trang interlock hỏng (STOP ghim vẫn đi)`);
   }
   return thieu.length ? { ok: false, trangThai: "thieu", thieuMigration: thieu, lyDo: phan.join("; ") } : null;
 }
@@ -219,8 +234,13 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
   const boNhac = deps.boNhac ?? ((h: unknown) => clearInterval(h as NodeJS.Timeout));
 
   // 0432 / 0433: OT vẫn chạy; khối lỗi nổi bật + nhắc lại mỗi 5 phút tới khi đối tượng có mặt (mỗi mã một bộ hẹn giờ).
-  const nhacTheoMa = (kq: KetQuaSchemaR1a, ma: "thieu0432" | "thieu0433", dongLoi: (thieu: string[]) => string[], macDinhThieu: string[]) => {
-    if (!kq[ma].length) return;
+  const DA_CO_MAT: Record<"thieu0432" | "thieu0433" | "thieu0434", string> = {
+    thieu0432: "[SCADA R1a] migration 0432 đã có mặt — bộ đếm TOTP sai hoạt động lại.",
+    thieu0433: "[SCADA R1b] migration 0433 đã có mặt — nhật ký thử lệnh HMI ghi được lý do.",
+    thieu0434: "[SCADA R1b] migration 0434 đã có mặt — cổng interlock đọc được luật (khởi động lại nếu tiến trình đã cache lỗi).",
+  };
+  const nhacTheoMa = (kq: KetQuaSchemaR1a, ma: "thieu0432" | "thieu0433" | "thieu0434", dongLoi: (thieu: string[]) => string[], macDinhThieu: string[]) => {
+    if (!(kq[ma] ?? []).length) return;
     const bao = (thieu: string[]) => logLoi(khoiLoi(dongLoi(thieu)));
     bao(kq[ma]);
     const h = datNhac(() => {
@@ -233,14 +253,10 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
           if (lai[ma].length) bao(lai[ma]);
           else {
             boNhac(h);
-            logLoi(
-              ma === "thieu0432"
-                ? "[SCADA R1a] migration 0432 đã có mặt — bộ đếm TOTP sai hoạt động lại."
-                : "[SCADA R1b] migration 0433 đã có mặt — nhật ký thử lệnh HMI ghi được lý do.",
-            );
+            logLoi(DA_CO_MAT[ma]);
           }
         })
-        .catch(() => bao(trangThai.kieu === "da_kiem" ? trangThai[ma] : macDinhThieu));
+        .catch(() => bao(trangThai.kieu === "da_kiem" ? (trangThai[ma] ?? macDinhThieu) : macDinhThieu));
     }, CHU_KY_NHAC_MS);
     (h as { unref?: () => void } | null)?.unref?.();
   };
@@ -267,6 +283,18 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
         "Sửa: chạy scripts/apply-migration-0433.mjs trên DB này (log này nhắc lại mỗi 5 phút tới khi cột có mặt).",
       ],
       ["scada_command_attempts.ly_do"],
+    );
+    nhacTheoMa(
+      kq,
+      "thieu0434",
+      (thieu) => [
+        "[SCADA R1b] THIẾU MIGRATION 0434 (bám định nghĩa lúc duyệt luật interlock — kiem-dinh I1 a).",
+        `Còn thiếu: ${thieu.join(", ")}.`,
+        "Hậu quả: MỌI truy vấn interlock_rules lỗi \"column approvedDefHash does not exist\" ⇒ cổng interlock inline fail-closed CHẶN MỌI lệnh ghi HITL thật trên MỌI adapter (HMI, AI, commissioning); engine không đánh giá được; trang interlock hỏng. STOP ghim vẫn đi (miễn interlock).",
+        "/health báo status \"degraded\" + schemaR1a.",
+        "Sửa: chạy scripts/apply-migration-0434.mjs trên DB này, rồi scripts/backfill-approved-def-hash.mjs (TOFU, dry-run trước) (log này nhắc lại mỗi 5 phút tới khi cột có mặt).",
+      ],
+      ["interlock_rules.approvedDefHash"],
     );
   };
 

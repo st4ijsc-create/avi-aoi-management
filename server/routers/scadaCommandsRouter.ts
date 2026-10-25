@@ -111,6 +111,9 @@ export function loiTuChoiLenh(t: TuChoiYeuCau) {
     // R1b-1 Task 2 — STOP HMI: máy không có adapter bật nào mang tag ghim DỪNG ⇒ không gửi được gì; dùng E-STOP cứng
     case "CHUA_GHIM_STOP":
       return appError("PRECONDITION_FAILED", "SCADA_STOP_NOT_PINNED", { ma: t.ma }, t.chiTiet);
+    // kiem-dinh R1b-1 H1 (b) — có ghim nhưng MỌI ghim nằm trên tag mức tác động > 1 ⇒ STOP HMI không gửi gì; dùng E-STOP cứng
+    case "GHIM_MUC_CAO":
+      return appError("PRECONDITION_FAILED", "SCADA_STOP_PINS_HIGH_LEVEL", { ma: t.ma, soTag: t.soTag, tagKeys: t.tagKeys }, t.chiTiet);
     // R1a Task 16 — bộ đếm TOTP sai (chung mọi bên gọi TOTP): CÙNG mã + câu i18n với đăng nhập / 2FA, thêm `{ ma, level }` cho M5.
     // M5 chỉ hiện "tạm khoá, thử lại sau N phút" (`remainingMinutes`) — không có số lần sai.
     case "TOTP_TAM_KHOA":

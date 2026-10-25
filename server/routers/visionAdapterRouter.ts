@@ -16,6 +16,7 @@
  *   - Fail-safe: unknown vendor → clear NOT_FOUND; bad payload → BAD_REQUEST; never
  *     crashes the process.
  */
+import { mayTheoMaGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -109,6 +110,9 @@ export const visionAdapterRouter = router({
         );
       }
 
+      // phạm vi nhà máy (W14b): máy khai ở ĐẦU VÀO kiểm trước khi chạm payload (mã trong payload kiểm lại sau normalize)
+      if (input.machineCode) await mayTheoMaGhi(ctx, input.machineCode);
+
       // ── Normalize (bad payload → BAD_REQUEST, never crash) ──
       let canonical;
       try {
@@ -132,6 +136,9 @@ export const visionAdapterRouter = router({
           "Could not resolve machine identity — provide machineCode (argument or payload) or apiKey.",
         );
       }
+
+      // phạm vi nhà máy (W14b): gói ingest qua PHIÊN người dùng phải nêu máy (mã) trong phạm vi; ingest bằng khoá máy đi đường machineApi (xác thực bằng khoá)
+      await mayTheoMaGhi(ctx, canonical.machineCode);
 
       // ── V13 (doc 27 Đợt 7.6): native SPI enrichment via the height-map seam ──
       // Flag-gated (SPI_3D_NATIVE_ENABLED) + fail-safe: any error or absent height
@@ -195,7 +202,8 @@ export const visionAdapterRouter = router({
   startAcquisitionWorker: protectedProcedure
     .use(requirePermission("machine_alerts", "canCreate"))
     .input(acquisitionWorkerConfigSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await mayTheoMaGhi(ctx, input.machineCode); // phạm vi nhà máy (W14b): worker gắn máy trong phạm vi (người hẹp phải nêu máy)
       const res = await startAcquisitionWorker(input);
       if (!res.ok) {
         throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "startAcquisitionWorker" }, res.reason);
@@ -207,5 +215,10 @@ export const visionAdapterRouter = router({
   stopAcquisitionWorker: protectedProcedure
     .use(requirePermission("machine_alerts", "canCreate"))
     .input(z.object({ id: z.string().min(1).max(128) }))
-    .mutation(async ({ input }) => stopAcquisitionWorker(input.id)),
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi nhà máy (W14b): chỉ dừng worker gắn máy trong phạm vi; worker không gắn máy / không tồn tại ⇒ người hẹp không thấy
+      const w = getAcquisitionWorkersStatus().workers.find((x) => x.id === input.id);
+      await mayTheoMaGhi(ctx, w?.config.machineCode, "acquisitionWorker");
+      return stopAcquisitionWorker(input.id);
+    }),
 });

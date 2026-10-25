@@ -28,7 +28,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { and, eq, desc } from "drizzle-orm";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, ACTUATION_ROLES } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb as getDbRaw } from "../db";
 import { deviceAdapters, deviceTags, scadaKenhCheDo } from "../../drizzle/schema";
@@ -807,6 +807,15 @@ export const deviceAdapterRouter = router({
      * Chỉ tag writable + enabled; giá trị đúng dataType. `stopValue: null` = gỡ. Một transaction, tag
      * khoá FOR UPDATE, audit control_audit_log + audit_logs (trước/sau/lý do). Adapter đã commissioning
      * ⇒ vẫn cho đổi, audit gắn `commissioningRecheckRequired: true`.
+     *
+     * kiem-dinh R1b-1 H1 (a) (điều phối 2026-10-25) — ghim DỪNG là một CỬA GHI: `scadaCommands.dungMay` gửi ghim một bước (mức 1, miễn chế độ /
+     * dải / policy / interlock). Trước: chỉ cần canEdit ⇒ operator ghim một tag mức 4/5 với giá trị X rồi bấm DỪNG ⇒ thiết bị nhận X (vượt TOTP,
+     * vượt sàn vai, vượt LOCAL). Nay, cho CẢ đặt lẫn gỡ:
+     *   1. sàn vai ACTUATION (admin / supervisor / engineer) — kiểm TRƯỚC mọi đọc (`SCADA_ROLE_FLOOR`, không tiêu mã);
+     *   2. kiểm hợp lệ của `datStopPin` (phạm vi, tag, writable, kiểu, dải);
+     *   3. TOTP TƯƠI mức 5 (`kiemTotpCauHinh` — mã mỗi lượt, không cache, không đọc cờ env) CUỐI, ngay trước lượt ghi.
+     * Census: thủ tục gọi `kiemTotpCauHinh` (trpcGioiHanThuTuc.census.test.ts) — miễn nhóm "2fa" có lý do bằng văn bản (2026-10-25).
+     * Lớp thứ hai (H1 b): `dungMay` chỉ gửi ghim của tag `actuationLevel ≤ 1` — ghim mức cao bị BỎ QUA và báo trong kết quả.
      */
     setStopPin: protectedProcedure
       .use(requirePermission("machine_control", "canEdit"))
@@ -815,8 +824,13 @@ export const deviceAdapterRouter = router({
         tagKey: z.string().min(1).max(128),
         stopValue: z.unknown(),
         reason: z.string().trim().min(5).max(500),
+        totpCode: totpCauHinhInput,
       }))
       .mutation(async ({ input, ctx }) => {
+        // H1 (a) 1 — sàn vai TRƯỚC mọi đọc (mã không bị tiêu, không lộ tag tồn tại hay không cho vai dưới sàn).
+        if (!(ACTUATION_ROLES as readonly string[]).includes(String(ctx.user?.role))) {
+          throw appError("FORBIDDEN", "SCADA_ROLE_FLOOR", { ma: "ROLE_FLOOR", level: 5 }, "Vai trò không được ghim giá trị DỪNG (cần kỹ sư trở lên).");
+        }
         const phamViMay = await idsTrongPhamVi("machine", phamViCua(ctx));
         try {
           return await datStopPin({
@@ -827,6 +841,8 @@ export const deviceAdapterRouter = router({
             reason: input.reason,
             nguoiSua: nguoiSuaTu(ctx),
             phamViMay,
+            // H1 (a) 3 — TOTP tươi mức 5, CUỐI (sau kiểm hợp lệ trong giao dịch của datStopPin).
+            kiemCuoi: () => kiemTotpCauHinh(ctx, input.totpCode),
           });
         } catch (e) {
           if (e instanceof StopPinLoi) loiStopPin(e);

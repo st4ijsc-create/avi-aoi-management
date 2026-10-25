@@ -14,7 +14,7 @@
 import { getDb } from "../db";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { chayTheoPhamViTenantHienTai } from "../db/tenantContext";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and, or, isNull, inArray, type SQL } from "drizzle-orm";
 import { stencilUsageLogs, tools, type InsertStencilUsageLog } from "../../drizzle/schema";
 
 export function isStencilTrackingEnabled(): boolean {
@@ -77,7 +77,18 @@ export interface StencilStatus {
  * ledger. `worn` is advisory; whether it drives an alert is gated by
  * STENCIL_TRACKING_ENABLED (this function only reports the flag state).
  */
-export async function getStatus(stencilToolId: number): Promise<StencilStatus> {
+/** phạm vi người dùng (L6a 2026-10-25): phạm vi đọc — `machineIds` (null = toàn quyền) cho nhật ký in; `congTool` là vị từ mã nhà máy của dụng cụ (undefined = toàn quyền). */
+export interface PhamViStencil {
+  machineIds: number[] | null;
+  congTool?: SQL;
+}
+function congNhatKy(pv?: PhamViStencil): SQL | undefined {
+  if (!pv || pv.machineIds === null) return undefined;
+  return pv.machineIds.length > 0 ? or(isNull(stencilUsageLogs.machineId), inArray(stencilUsageLogs.machineId, pv.machineIds)) : isNull(stencilUsageLogs.machineId);
+}
+const dangNarrow = (pv?: PhamViStencil) => !!pv && (pv.machineIds !== null || pv.congTool !== undefined);
+
+export async function getStatus(stencilToolId: number, pv?: PhamViStencil): Promise<StencilStatus> {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
 
@@ -90,18 +101,19 @@ export async function getStatus(stencilToolId: number): Promise<StencilStatus> {
     h
       .select({ id: tools.id, code: tools.code, name: tools.name, lifeLimit: tools.lifeLimit, lifeUsed: tools.lifeUsed })
       .from(tools)
-      .where(eq(tools.id, stencilToolId))
+      .where(pv?.congTool ? and(eq(tools.id, stencilToolId), pv.congTool) : eq(tools.id, stencilToolId))
       .limit(1),
   );
 
-  const [agg] = await db
+  // phạm vi người dùng (L6a 2026-10-25): người bị thu hẹp không thấy dụng cụ này ⇒ KHÔNG cộng dồn nhật ký in của nó (trước đây tổng số lần in / ngày vệ sinh rò dù tên khuôn bị ẩn)
+  const [agg] = !tool && dangNarrow(pv) ? [undefined] : await db
     .select({
       total: sql<number>`COALESCE(SUM(${stencilUsageLogs.printCount}), 0)`,
       lastCleanedAt: sql<Date | null>`MAX(${stencilUsageLogs.cleanedAt})`,
       lastTensionCheckAt: sql<Date | null>`MAX(${stencilUsageLogs.tensionCheckAt})`,
     })
     .from(stencilUsageLogs)
-    .where(eq(stencilUsageLogs.stencilToolId, stencilToolId));
+    .where(and(eq(stencilUsageLogs.stencilToolId, stencilToolId), congNhatKy(pv)));
 
   const baselineUsed = Number(tool?.lifeUsed ?? 0);
   const accruedPrints = Number(agg?.total ?? 0);
@@ -127,13 +139,18 @@ export async function getStatus(stencilToolId: number): Promise<StencilStatus> {
 }
 
 /** Recent usage log entries for a stencil (newest first). */
-export async function listUsage(stencilToolId: number, limit = 100) {
+export async function listUsage(stencilToolId: number, limit = 100, pv?: PhamViStencil) {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
+  // phạm vi người dùng (L6a 2026-10-25): dụng cụ ngoài phạm vi ≡ không có nhật ký
+  if (pv?.congTool) {
+    const [t] = await db.select({ id: tools.id }).from(tools).where(and(eq(tools.id, stencilToolId), pv.congTool)).limit(1);
+    if (!t) return [];
+  }
   return db
     .select()
     .from(stencilUsageLogs)
-    .where(eq(stencilUsageLogs.stencilToolId, stencilToolId))
+    .where(and(eq(stencilUsageLogs.stencilToolId, stencilToolId), congNhatKy(pv)))
     .orderBy(desc(stencilUsageLogs.createdAt))
     .limit(Math.min(Math.max(limit, 1), 500));
 }

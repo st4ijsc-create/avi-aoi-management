@@ -103,7 +103,9 @@ describe("aiQualityGate / aiSegmentation — lần kiểm tra của máy nhà m�
     ];
     const r = await one(sql`SELECT "reviewDecision" AS d FROM ai_quality_gate_results WHERE id = ${rb.id}`);
     expect({ l, reviewed: r?.d ?? null, mask: Number((await one(sql`SELECT count(*)::int AS n FROM defect_segmentations WHERE "classLabel" = ${RUN + "-mb"}`)).n) }).toEqual({ l: [NF, NF, NF], reviewed: null, mask: 0 });
-    // (không có đối chứng thành công cho processInspection: thân thủ tục đọc `inspResult.rows?.[0]` — với postgres-js `.rows` không tồn tại ⇒ luôn "Inspection not found", lỗi CÓ SẴN ngoài phạm vi lô này)
+    // đối chứng: lần kiểm tra của A ĐỌC được (qua bước `product_inspections`, từng luôn "Inspection not found" vì `.rows?.[0]`) — dừng ở bước kế: chưa có cấu hình cổng chất lượng
+    const loiA = await c.qg.processInspection({ inspectionId: A.insp, imageKey: "k" } as never).then(() => "ok", (e: Error) => e.message);
+    expect(loiA).toMatch(/quality gate config/i);
   });
 });
 

@@ -8,6 +8,7 @@ import * as db from "../db";
 import { getDb } from "../db/connection";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { alertSettings, dailyStatistics, machines } from "../../drizzle/schema";
+import { viTriHopLe } from "./_cauHinhPhamVi";
 import type { AlertSetting } from "../../drizzle/schema";
 import { notifyOwner } from "../_core/notification";
 import { sendAlertEmail } from "../services/emailService";
@@ -288,6 +289,8 @@ export const alertRouter = router({
       cooldownMinutes: z.number().min(5).max(1440).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      // phạm vi nhà máy (W13): cảnh báo trỏ máy / nhà máy nào thì người tạo phải có phạm vi trên đó (nếu không, cảnh báo gửi dữ liệu máy nhà máy khác cho họ)
+      if (input.machineId != null || input.factoryId != null) await viTriHopLe(ctx, { machineId: input.machineId ?? null, factoryId: input.factoryId ?? null }, "machine");
       const result = await db.createAlertSetting({
         ...input,
         userId: ctx.user.id,

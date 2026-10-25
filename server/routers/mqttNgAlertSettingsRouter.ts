@@ -7,6 +7,7 @@
  * - Tùy chỉnh topic, kênh gửi, QoS
  */
 
+import { cacTramGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 // doc 54 Wave B — NG-alert config writers were bare protectedProcedure (any authenticated
 // user, incl. viewer, could rewire alert routing). writeProcedure blocks read-only roles;
@@ -97,7 +98,8 @@ export const mqttNgAlertSettingsRouter = router({
       retain: z.boolean().default(false),
       cooldownSeconds: z.number().min(0).max(86400).default(0),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await cacTramGhi(ctx, [input.stationId]); // phạm vi nhà máy (W14b)
       const db = (await getDb())!;
 
       const existing = await db.select()
@@ -158,7 +160,8 @@ export const mqttNgAlertSettingsRouter = router({
   deleteSetting: writeProcedure
     .use(requirePermission("mqtt_alerts", "canEdit"))
     .input(z.object({ stationId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await cacTramGhi(ctx, [input.stationId]); // phạm vi nhà máy (W14b)
       const db = (await getDb())!;
 
       await db.delete(mqttNgAlertSettings)
@@ -173,7 +176,8 @@ export const mqttNgAlertSettingsRouter = router({
   toggleEnabled: writeProcedure
     .use(requirePermission("mqtt_alerts", "canEdit"))
     .input(z.object({ stationId: z.number(), enabled: z.boolean() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await cacTramGhi(ctx, [input.stationId]); // phạm vi nhà máy (W14b)
       const db = (await getDb())!;
 
       await db.update(mqttNgAlertSettings)
@@ -192,7 +196,8 @@ export const mqttNgAlertSettingsRouter = router({
       stationIds: z.array(z.number()),
       enabled: z.boolean(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await cacTramGhi(ctx, input.stationIds); // phạm vi nhà máy (W14b)
       const db = (await getDb())!;
 
       for (const stationId of input.stationIds) {

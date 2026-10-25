@@ -896,6 +896,22 @@ export function _resetEnrollThrottle(): void {
   enrollIpWindows.clear();
 }
 
+/** Trần hàng chờ duyệt (M4) — dùng CHUNG cho serial mới và serial có sẵn để phản hồi lúc đầy không lộ serial nào đã tồn tại (W15). */
+async function kiemTranHangCho(): Promise<void> {
+  const cap = registerPendingCap();
+  if (cap > 0) {
+    const pending = await db.getPendingMachines();
+    if (Array.isArray(pending) && pending.length >= cap) {
+      throw appError(
+        "PRECONDITION_FAILED",
+        "OPERATION_FAILED",
+        { operation: "registerMachine" },
+        `Registration queue is full (${cap} pending machines) — ask an admin to approve/reject pending registrations first`,
+      );
+    }
+  }
+}
+
 export const machineRouter = router({
   // ============ MACHINE SYNC APIs (Public - cho AOI/AVI) ============
 
@@ -917,49 +933,20 @@ export const machineRouter = router({
       // Tìm máy theo serialNumber (M3: ACTIVE rows only — tombstones are never resurrected here)
       const existing = await db.getMachineBySerialNumber(input.serialNumber);
       if (existing) {
-        // M2: a decommissioned/retired asset must NOT silently re-enter the
-        // approval queue — re-commissioning is an explicit admin decision.
-        const lifecycle = (existing as { lifecycleStatus?: string | null }).lifecycleStatus;
-        if (lifecycle === "retired" || lifecycle === "decommissioned") {
-          throw appError(
-            "CONFLICT",
-            "OPERATION_FAILED",
-            { operation: "registerMachine" },
-            `Machine '${existing.code}' is ${lifecycle} — an admin must re-commission it before it can register again`,
-          );
-        }
-        // Nếu đã có, cập nhật thông tin (trừ APIKey)
-        await db.updateMachine(existing.id, {
-          name: input.name,
-          machineType: input.machineType,
-          model: input.model,
-          manufacturer: input.manufacturer,
-          firmwareVersion: input.firmwareVersion,
-          serialNumber: input.serialNumber,
-          syncMode: input.syncMode || "online",
-          registrationStatus: "pending",
-        });
+        // W15 (kiểm định phamViGhi, 2026-10-25; dieu-phoi duyệt): đường CÔNG KHAI không xác thực KHÔNG được sửa BẤT KỲ trường nào của máy ĐÃ CÓ và KHÔNG được đổi
+        // registrationStatus (trước đây: kẻ biết serial đổi tên / loại / firmware của máy đã duyệt và đẩy nó về 'pending'). Đổi thông tin máy đã đăng ký chỉ qua đường quản trị.
+        // Phản hồi y hệt đường tạo mới (không lộ serial có tồn tại hay không, cũng không trả id); ghi audit để phát hiện dò serial.
         await auditAction(ctx as AuditableCtx, {
           action: "machine.register", entityType: ENTITY_TYPES.MACHINE, entityId: existing.id, entityName: existing.code,
-          metadata: { mode: "updated", serialNumber: input.serialNumber, machineType: input.machineType },
+          metadata: { mode: "ignored_existing", serialNumber: input.serialNumber, machineType: input.machineType },
         });
-        return { id: existing.id, registrationStatus: "pending", message: "Machine info updated, awaiting approval" };
+        // Hàng chờ ĐẦY: trả CÙNG lỗi như serial mới (không lộ serial có sẵn qua khác biệt phản hồi lúc đầy); audit ở trên vẫn phân biệt.
+        await kiemTranHangCho();
+        return { registrationStatus: "pending" as const, message: "Machine registered, awaiting admin approval" };
       }
 
-      // M4: global pending cap — an unauthenticated flood must not grow the
-      // approval queue unbounded.
-      const cap = registerPendingCap();
-      if (cap > 0) {
-        const pending = await db.getPendingMachines();
-        if (Array.isArray(pending) && pending.length >= cap) {
-          throw appError(
-            "PRECONDITION_FAILED",
-            "OPERATION_FAILED",
-            { operation: "registerMachine" },
-            `Registration queue is full (${cap} pending machines) — ask an admin to approve/reject pending registrations first`,
-          );
-        }
-      }
+      // M4: global pending cap — an unauthenticated flood must not grow the approval queue unbounded.
+      await kiemTranHangCho();
 
       // M4: resolve + validate the default station instead of hardcoding id 1.
       const defaultStation = await db.getDefaultStation();
@@ -1014,7 +1001,7 @@ export const machineRouter = router({
           action: "machine.register", entityType: ENTITY_TYPES.MACHINE, entityId: id, entityName: code,
           metadata: { mode: "created", serialNumber: input.serialNumber, machineType: input.machineType, stationId: defaultStation.id },
         });
-        return { id, registrationStatus: "pending", message: "Machine registered, awaiting admin approval" };
+        return { registrationStatus: "pending" as const, message: "Machine registered, awaiting admin approval" }; // W15: không trả id (đồng nhất với nhánh máy đã có)
       } catch (e) {
         // Concurrent register racing the pre-check — clean CONFLICT, not a raw 500.
         if (isErrorNamed(e, "MachineCodeCollisionError")) {

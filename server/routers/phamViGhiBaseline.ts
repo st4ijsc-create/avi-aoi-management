@@ -39,276 +39,79 @@
  * 2026-10-25 lô W10 (−17 vá: routing · spcAdvanced · goldenSample · mqttOee machine/OEE/ngừng máy/mục tiêu · equipmentStandards thẻ tenant; −35 MIỄN TRỪ có lý do sau khi đọc mã: repoWorkspace 17 (danh sách trắng theo người gọi), dashboardWidget 13 (cấu hình cá nhân theo userId), aiGguf 5 (tính toán LLM thuần); aiGguf.soModel* = bí danh adminProcedure) ⇒ 407 → 355. CHƯA đụng (cần quyết định): mqttClient.updateFcmToken · mqttAlert.update/delete/toggle/resolve (luật cảnh báo toàn cục, KHÔNG có requirePermission) .
  * 2026-10-25 lô W11a (−5 vá: predictiveAlert acknowledge/resolve/dismiss/generatePredictions theo máy/nhà máy của cảnh báo + lọc dữ liệu quét; mqttClient.updateFcmToken theo trạm của client + requirePermission(machine_alerts)); mqttAlert.update/delete/toggle/resolve ⇒ MIỄN TRỪ (luật toàn cục) NHƯNG nay đòi requirePermission(machine_alerts); equipmentStandards: chuẩn KHÔNG thẻ chỉ admin + engineer ghi ⇒ 355 → 350.
  * 2026-10-25 lô W11b (−15 vá: aiQualityGate · aiFeedback (kể cả lô huấn luyện / xuất chỉ phần trong phạm vi) · aiSegmentation.saveMask · aiModel.runInference theo lần kiểm tra; aiSmartAlertRouting.acknowledge · aiInsight.setStatus · aiActiveLearning theo máy; edge deployments theo máy — router edge hiện BỊ COMMENT khỏi aiAdvancedRouter nên chưa tới được; −42 MIỄN TRỪ có dẫn mã: sở hữu theo người dùng (aiAgent · aiChat · aiCopilot · aiSpecialistAgent · …), tính toán / model toàn cục) ⇒ 350 → 335. CÒN LẠI nhóm AI (W11c): aiVision.proposeDefect · aiRcaCopilot.applyTopFix · aiThresholdAdvisor.applyNgThreshold (đề xuất HITL), aiAdvanced training/abTest (router bị comment), aiAdvancedVision.explainHeatmap, aiModel cards, aiImageSearch (mutation đọc-hình-tìm-kiếm trả ảnh nhiều nhà máy — cần đổi dịch vụ).
+ * 2026-10-25 lô W14a (−27 vá, +40 miễn trừ có lý do; sổ không đổi tổng ghim 246 → 219): bom · energy · msd · stencil · productOnboarding · qualityGateTemplate.applyToLine · dataRouters (import* + exportMeasurementPoints) · stationTriangulation · mpVariantSubform · twinGov.runFidelityCheck theo phạm vi qua _cauHinhPhamVi.ts; sửa quyền webhook.test/toggle (chỉ admin) và reportBuilder.duplicate (IDOR). CÒN LẠI: nhóm OT/kết nối/khoá API chờ W14b (dieu-phoi đã duyệt phân loại).
+ * 2026-10-25 lô W13 (−45 sổ, +9 miễn trừ): shiftConfig · layout (+vị trí máy) · maintenanceSchedule (+đổi tên getRow trùng ⇒ 4 báo giả của maintenanceRouter hết) · ngRateThreshold · process (gán chuyền) · productPanel · productVariant · thresholdApproval (đổi tên getById trùng) · workstation (+gán máy) · alert.create theo phạm vi qua _cauHinhPhamVi.ts; miễn trừ: danh mục quy trình dùng chung, cảnh báo sở hữu theo người dùng, ngưỡng yield toàn cục. 291 → 246.
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ──
-  "server/_core/systemRouter.ts#systemRouter.marketplace.download",
   // ── server/routers/aiAdvancedRouter.ts (2) ──
   "server/routers/aiAdvancedRouter.ts#abTestRouter.runInference",
   "server/routers/aiAdvancedRouter.ts#abTestRouter.submitFeedback",
   // ── server/routers/aiAdvancedVisionRouter.ts (1) ──
-  "server/routers/aiAdvancedVisionRouter.ts#aiAdvancedVisionRouter.explainHeatmap",
-  // ── server/routers/aiImageSearchRouter.ts (2) ──
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByUpload",
-  "server/routers/aiImageSearchRouter.ts#aiImageSearchRouter.searchByVector",
   // ── server/routers/aiModelRouter.ts (3) ──
-  "server/routers/aiModelRouter.ts#aiModelRouter.approveCard",
-  "server/routers/aiModelRouter.ts#aiModelRouter.createCard",
-  "server/routers/aiModelRouter.ts#aiModelRouter.updateCard",
-  // ── server/routers/aiRcaCopilotRouter.ts (1) ──
-  "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix",
-  // ── server/routers/aiThresholdAdvisorRouter.ts (1) ──
-  "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.applyNgThreshold",
-  // ── server/routers/aiVisionRouter.ts (1) ──
-  "server/routers/aiVisionRouter.ts#aiVisionRouter.proposeDefect",
   // ── server/routers/alertEscalationRouter.ts (4) ──
-  "server/routers/alertEscalationRouter.ts#alertEscalationRouter.create",
-  "server/routers/alertEscalationRouter.ts#alertEscalationRouter.delete",
-  "server/routers/alertEscalationRouter.ts#alertEscalationRouter.toggle",
-  "server/routers/alertEscalationRouter.ts#alertEscalationRouter.update",
   // ── server/routers/alertRouters.ts (7) ──
-  "server/routers/alertRouters.ts#alertRouter.acknowledge",
-  "server/routers/alertRouters.ts#alertRouter.create",
-  "server/routers/alertRouters.ts#alertRouter.delete",
-  "server/routers/alertRouters.ts#alertRouter.test",
-  "server/routers/alertRouters.ts#alertRouter.update",
-  "server/routers/alertRouters.ts#yieldThresholdRouter.update",
-  "server/routers/alertRouters.ts#yieldThresholdRouter.updateWithHistory",
   // ── server/routers/apiKeyRouter.ts (4) ──
-  "server/routers/apiKeyRouter.ts#apiKeyRouter.create",
-  "server/routers/apiKeyRouter.ts#apiKeyRouter.delete",
-  "server/routers/apiKeyRouter.ts#apiKeyRouter.revoke",
-  "server/routers/apiKeyRouter.ts#apiKeyRouter.update",
   // ── server/routers/bomRouter.ts (10) ──
-  "server/routers/bomRouter.ts#bomRouter.addLineItem",
-  "server/routers/bomRouter.ts#bomRouter.archiveDefinition",
-  "server/routers/bomRouter.ts#bomRouter.bulkAddLineItems",
-  "server/routers/bomRouter.ts#bomRouter.createDefinition",
-  "server/routers/bomRouter.ts#bomRouter.deleteLineItem",
-  "server/routers/bomRouter.ts#bomRouter.updateDefinition",
-  "server/routers/bomRouter.ts#bomRouter.updateLineItem",
   // ── server/routers/causalGraphRouter.ts (4) ──
-  "server/routers/causalGraphRouter.ts#causalGraphRouter.addNode",
-  "server/routers/causalGraphRouter.ts#causalGraphRouter.deleteNode",
-  "server/routers/causalGraphRouter.ts#causalGraphRouter.replaceGraph",
-  "server/routers/causalGraphRouter.ts#causalGraphRouter.updateNode",
   // ── server/routers/componentLibraryRouter.ts (7) ──
-  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.footprints.create",
-  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.footprints.delete",
-  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.footprints.update",
-  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.linkMaterial",
-  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.packages.delete",
-  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.packages.restore",
-  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.packages.update",
   // ── server/routers/dashboardStatsRouters.ts (1) ──
-  "server/routers/dashboardStatsRouters.ts#dashboardRouter.applyTemplate",
   // ── server/routers/dataRouters.ts (6) ──
-  "server/routers/dataRouters.ts#exportRouter.exportMeasurementPoints",
-  "server/routers/dataRouters.ts#importRouter.importLines",
-  "server/routers/dataRouters.ts#importRouter.importMachines",
-  "server/routers/dataRouters.ts#importRouter.importStations",
-  "server/routers/dataRouters.ts#importRouter.importWorkshops",
-  "server/routers/dataRouters.ts#importRouter.importWorkstations",
   // ── server/routers/defectDispositionRouter.ts (3) ──
   // ── server/routers/defectHeatmapRouter.ts (1) ──
-  "server/routers/defectHeatmapRouter.ts#defectHeatmapRouter.generate",
-  // ── server/routers/ecnRouter.ts (2) ──
-  "server/routers/ecnRouter.ts#ecnRouter.create",
-  "server/routers/ecnRouter.ts#ecnRouter.transition",
   // ── server/routers/edgeRuntimeRouter.ts (1) ──
-  "server/routers/edgeRuntimeRouter.ts#edgeRuntimeRouter.deleteNode",
   // ── server/routers/energyRouter.ts (2) ──
-  "server/routers/energyRouter.ts#energyRouter.recordReading",
-  "server/routers/energyRouter.ts#energyRouter.snapshotEnpi",
   // ── server/routers/erpAdminRouter.ts (5) ──
-  "server/routers/erpAdminRouter.ts#erpAdminRouter.createOauthClient",
-  "server/routers/erpAdminRouter.ts#erpAdminRouter.retryOutboxDeadLetters",
-  "server/routers/erpAdminRouter.ts#erpAdminRouter.rotateOauthClientSecret",
-  "server/routers/erpAdminRouter.ts#erpAdminRouter.setOauthClientEnabled",
-  "server/routers/erpAdminRouter.ts#erpAdminRouter.updateOauthClient",
   // ── server/routers/feederVerifyRouter.ts (1) ──
   "server/routers/feederVerifyRouter.ts#feederVerifyRouter.verifyScan",
   // ── server/routers/fieldRouter.ts (2) ──
-  "server/routers/fieldRouter.ts#fieldRouter.discover",
-  "server/routers/fieldRouter.ts#fieldRouter.registerDiscovered",
   // ── server/routers/fleetRouter.ts (1) ──
-  "server/routers/fleetRouter.ts#fleetRouter.createVariant",
   // ── server/routers/hierarchyRouters.ts (3) ──
-  "server/routers/hierarchyRouters.ts#machineRouter.claimKey",
-  "server/routers/hierarchyRouters.ts#machineRouter.enroll",
-  "server/routers/hierarchyRouters.ts#machineRouter.register",
   // ── server/routers/hotFolderRouter.ts (4) ──
-  "server/routers/hotFolderRouter.ts#hotFolderRouter.deleteConfig",
-  "server/routers/hotFolderRouter.ts#hotFolderRouter.dryRun",
-  "server/routers/hotFolderRouter.ts#hotFolderRouter.processNow",
-  "server/routers/hotFolderRouter.ts#hotFolderRouter.updateConfig",
   // ── server/routers/inspectionProgramRouter.ts (5) ──
   // ── server/routers/inspectionVariantRouter.ts (1) ──
   "server/routers/inspectionVariantRouter.ts#inspectionVariantRouter.setVariant",
   // ── server/routers/layoutRouters.ts (6) ──
-  "server/routers/layoutRouters.ts#layoutRouter.addMachinePosition",
-  "server/routers/layoutRouters.ts#layoutRouter.create",
-  "server/routers/layoutRouters.ts#layoutRouter.delete",
-  "server/routers/layoutRouters.ts#layoutRouter.removeMachinePosition",
-  "server/routers/layoutRouters.ts#layoutRouter.update",
-  "server/routers/layoutRouters.ts#layoutRouter.updateMachinePosition",
   // ── server/routers/licenseRouter.ts (2) ──
-  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingCheckin",
-  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingHeartbeat",
   // ── server/routers/machineApiRouters.ts (2) ──
-  "server/routers/machineApiRouters.ts#machineApiRouter.revokeKey",
-  "server/routers/machineApiRouters.ts#machineApiRouter.submitProcessResult",
   // ── server/routers/maintenanceRouter.ts (4) ──
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.closeWorkOrder",
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.deleteWorkOrder",
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.recordPartsUsed",
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.updateWorkOrder",
   // ── server/routers/maintenanceScheduleRouter.ts (4) ──
-  "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.create",
-  "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.remove",
-  "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.setEnabled",
-  "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.update",
   // ── server/routers/mesControlTowerRouter.ts (3) ──
-  "server/routers/mesControlTowerRouter.ts#mesControlTowerRouter.createLotDisposition",
-  "server/routers/mesControlTowerRouter.ts#mesControlTowerRouter.createMaterialReceipt",
-  "server/routers/mesControlTowerRouter.ts#mesControlTowerRouter.createSupplierLot",
   // ── server/routers/mpVariantSubformRouter.ts (1) ──
-  "server/routers/mpVariantSubformRouter.ts#mpVariantSubformRouter.setExtra",
   // ── server/routers/mqttBulletinRouter.ts (7) ──
-  "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.bulkToggle",
-  "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.deleteSetting",
-  "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.quickSetup",
-  "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.sendTestBulletin",
-  "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.toggleEnabled",
-  "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.triggerNow",
-  "server/routers/mqttBulletinRouter.ts#mqttBulletinRouter.upsertSetting",
   // ── server/routers/mqttClientManagementRouter.ts (7) ──
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.acknowledgeAlert",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.createAlert",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.logConnectionEvent",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.logReconnectEvent",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.resolveAlert",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.updateAlertConfig",
-  "server/routers/mqttClientManagementRouter.ts#mqttClientManagementRouter.updateConnectionStatus",
   // ── server/routers/mqttNgAlertSettingsRouter.ts (4) ──
-  "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.bulkToggle",
-  "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.deleteSetting",
-  "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.toggleEnabled",
-  "server/routers/mqttNgAlertSettingsRouter.ts#mqttNgAlertSettingsRouter.upsertSetting",
   // ── server/routers/msdRouter.ts (3) ──
-  "server/routers/msdRouter.ts#msdRouter.closeExposure",
-  "server/routers/msdRouter.ts#msdRouter.openExposure",
-  "server/routers/msdRouter.ts#msdRouter.startBake",
-  // ── server/routers/ncrRouter.ts (2) ──
-  "server/routers/ncrRouter.ts#ncrRouter.create",
-  "server/routers/ncrRouter.ts#ncrRouter.transition",
   // ── server/routers/ngRateThresholdRouter.ts (5) ──
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.create",
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.delete",
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.resolveAlert",
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.toggle",
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.update",
   // ── server/routers/notificationRouters.ts (2) ──
-  "server/routers/notificationRouters.ts#notificationRouter.delete",
-  "server/routers/notificationRouters.ts#notificationRouter.markAsRead",
   // ── server/routers/operatorBadgeRouter.ts (2) ──
-  "server/routers/operatorBadgeRouter.ts#operatorBadgeRouter.revoke",
-  "server/routers/operatorBadgeRouter.ts#operatorBadgeRouter.update",
   // ── server/routers/parameterGuardrailRouter.ts (2) ──
-  "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.delete",
-  "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.set",
   // ── server/routers/pdfReportRouter.ts (1) ──
   "server/routers/pdfReportRouter.ts#pdfReportRouter.generateInspectionPDF",
   // ── server/routers/processResultRouter.ts (1) ──
   // ── server/routers/processRouter.ts (7) ──
-  "server/routers/processRouter.ts#processRouter.createLineAssignment",
-  "server/routers/processRouter.ts#processRouter.delete",
-  "server/routers/processRouter.ts#processRouter.deleteLineAssignment",
-  "server/routers/processRouter.ts#processRouter.reorder",
-  "server/routers/processRouter.ts#processRouter.reorderLineAssignments",
-  "server/routers/processRouter.ts#processRouter.update",
-  "server/routers/processRouter.ts#processRouter.updateLineAssignment",
   // ── server/routers/productOnboardingRouter.ts (3) ──
-  "server/routers/productOnboardingRouter.ts#productOnboardingRouter.complete",
-  "server/routers/productOnboardingRouter.ts#productOnboardingRouter.deleteDraft",
-  "server/routers/productOnboardingRouter.ts#productOnboardingRouter.saveDraft",
   // ── server/routers/productPanelRouter.ts (4) ──
-  "server/routers/productPanelRouter.ts#productPanelRouter.create",
-  "server/routers/productPanelRouter.ts#productPanelRouter.remove",
-  "server/routers/productPanelRouter.ts#productPanelRouter.saveBoards",
-  "server/routers/productPanelRouter.ts#productPanelRouter.update",
   // ── server/routers/productVariantRouter.ts (3) ──
-  "server/routers/productVariantRouter.ts#productVariantRouter.createVariant",
-  "server/routers/productVariantRouter.ts#productVariantRouter.deleteVariant",
-  "server/routers/productVariantRouter.ts#productVariantRouter.updateVariant",
   // ── server/routers/programmingRouter.ts (16) ──
   // ── server/routers/qualityGateTemplateRouter.ts (3) ──
-  "server/routers/qualityGateTemplateRouter.ts#qualityGateTemplateRouter.applyToLine",
-  "server/routers/qualityGateTemplateRouter.ts#qualityGateTemplateRouter.deleteCustom",
-  "server/routers/qualityGateTemplateRouter.ts#qualityGateTemplateRouter.updateCustom",
   // ── server/routers/reportArtifactRouter.ts (1) ──
-  "server/routers/reportArtifactRouter.ts#reportArtifactRouter.delete",
   // ── server/routers/reportBuilderRouter.ts (3) ──
-  "server/routers/reportBuilderRouter.ts#reportBuilderRouter.duplicate",
-  "server/routers/reportBuilderRouter.ts#reportBuilderRouter.save",
-  "server/routers/reportBuilderRouter.ts#reportBuilderRouter.update",
   // ── server/routers/secsGemRouter.ts (1) ──
-  "server/routers/secsGemRouter.ts#secsGemRouter.testConnection",
   // ── server/routers/sessionRouter.ts (1) ──
-  "server/routers/sessionRouter.ts#sessionRouter.revoke",
   // ── server/routers/shiftConfigRouter.ts (3) ──
-  "server/routers/shiftConfigRouter.ts#shiftConfigRouter.create",
-  "server/routers/shiftConfigRouter.ts#shiftConfigRouter.delete",
-  "server/routers/shiftConfigRouter.ts#shiftConfigRouter.update",
   // ── server/routers/simTargetsRouter.ts (1) ──
-  "server/routers/simTargetsRouter.ts#simTargetsRouter.validateUrscript",
   // ── server/routers/stationTriangulationRouter.ts (2) ──
-  "server/routers/stationTriangulationRouter.ts#stationTriangulationRouter.recomputeForLot",
-  "server/routers/stationTriangulationRouter.ts#stationTriangulationRouter.recomputeForSerial",
   // ── server/routers/stencilRouter.ts (1) ──
-  "server/routers/stencilRouter.ts#stencilRouter.recordPrints",
   // ── server/routers/systemRouters.ts (5) ──
-  "server/routers/systemRouters.ts#workstationRouter.assignMachine",
-  "server/routers/systemRouters.ts#workstationRouter.create",
-  "server/routers/systemRouters.ts#workstationRouter.restore",
-  "server/routers/systemRouters.ts#workstationRouter.unassignMachine",
-  "server/routers/systemRouters.ts#workstationRouter.update",
   // ── server/routers/thresholdApprovalRouter.ts (6) ──
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.approve",
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.batchApprove",
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.reject",
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.request",
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.revert",
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.withdraw",
   // ── server/routers/trainingBatchCommentsRouter.ts (7) ──
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.addComment",
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.assignTag",
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.deleteComment",
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.deleteTag",
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.removeTag",
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.updateComment",
-  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.updateTag",
   // ── server/routers/twinGovRouter.ts (1) ──
-  "server/routers/twinGovRouter.ts#twinGovRouter.runFidelityCheck",
   // ── server/routers/twinRouter.ts (3) ──
-  "server/routers/twinRouter.ts#twinRouter.models.archive",
-  "server/routers/twinRouter.ts#twinRouter.models.register",
-  "server/routers/twinRouter.ts#twinRouter.models.uploadAndRegister",
   // ── server/routers/userRouters.ts (2) ──
-  "server/routers/userRouters.ts#userRouter.revokeSession",
-  "server/routers/userRouters.ts#userSettingsRouter.setUiPrefs",
   // ── server/routers/vda5050Router.ts (2) ──
-  "server/routers/vda5050Router.ts#vda5050Router.sendOrder",
-  "server/routers/vda5050Router.ts#vda5050Router.testConnection",
   // ── server/routers/visionAdapterRouter.ts (2) ──
-  "server/routers/visionAdapterRouter.ts#visionAdapterRouter.ingest",
-  "server/routers/visionAdapterRouter.ts#visionAdapterRouter.stopAcquisitionWorker",
   // ── server/routers/webhookRouter.ts (5) ──
-  "server/routers/webhookRouter.ts#webhookRouter.clearLogs",
-  "server/routers/webhookRouter.ts#webhookRouter.delete",
-  "server/routers/webhookRouter.ts#webhookRouter.test",
-  "server/routers/webhookRouter.ts#webhookRouter.toggle",
-  "server/routers/webhookRouter.ts#webhookRouter.update",
 ];
 
 /**
@@ -317,6 +120,68 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
  * (c) không đồng thời nằm trong sổ nợ. Thêm mục = lời khai công khai, người review phải thấy.
  */
 export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
+  // ── W14c (kiểm định phamViGhi, 2026-10-25): bình luận sở hữu theo người dùng ──
+  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.updateComment": "bình luận SỞ HỮU THEO NGƯỜI DÙNG: chỉ chủ (comment.userId === ctx.user.id) hoặc admin sửa — kiểm TRƯỚC khi ghi (trainingBatchCommentsRouter.ts); bình luận chỉ thêm được vào lô trong phạm vi (addComment có cổng + test phamViGhiDoW14c) — W14c",
+  "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.deleteComment": "bình luận SỞ HỮU THEO NGƯỜI DÙNG: chỉ chủ hoặc admin xoá (xem updateComment) — W14c",
+  // ── W14b (kiểm định phamViGhi, 2026-10-25): đường PUBLIC có token · dữ liệu của chính người gọi · bàn thử do máy chủ đăng ký ──
+  "server/routers/hotFolderRouter.ts#hotFolderRouter.dryRun": "phân tích MỘT tệp mẫu truyền lên (CSV/XML/JSON) → bản chuẩn hoá, KHÔNG ghi CSDL, KHÔNG đụng hệ tệp (hotFolderService.dryRunSample); machineCode chỉ là gợi ý — W14b",
+  "server/routers/hierarchyRouters.ts#machineRouter.claimKey": "đường PUBLIC xác thực bằng token một lần do admin phát (redeemMachineClaimToken / redeemMachineEnrollmentToken), có throttle theo IP + audit mọi lần thử; serialNumber chỉ chọn máy mà token đã gắn — W14b",
+  "server/routers/hierarchyRouters.ts#machineRouter.enroll": "đường PUBLIC xác thực bằng token một lần do admin phát (redeemMachineClaimToken / redeemMachineEnrollmentToken), có throttle theo IP + audit mọi lần thử; serialNumber chỉ chọn máy mà token đã gắn — W14b",
+  "server/routers/hierarchyRouters.ts#machineRouter.register": "đường máy TỰ ĐĂNG KÝ công khai (throttle IP + hàng chờ duyệt có trần); CÒN LỖ: cập nhật máy đã có theo serial + đặt lại 'pending' không xác thực ⇒ giao W15 (dieu-phoi 2026-10-25), miễn trừ tạm thời tới khi vá",
+  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingCheckin": "đường PUBLIC theo sessionId giấy phép nổi (floating licence) — không dữ liệu nhà máy — W14b",
+  "server/routers/licenseRouter.ts#publicLicenseRouter.floatingHeartbeat": "đường PUBLIC theo sessionId giấy phép nổi (floating licence) — không dữ liệu nhà máy — W14b",
+  "server/routers/machineApiRouters.ts#machineApiRouter.submitProcessResult": "đường MÁY ingest xác thực bằng khoá máy: máy lấy từ khoá (authenticateMachine); lineCode đối chiếu với chuỗi nhà máy của máy (macTenantChoGhi); stationId tự khai nay phải cùng nhà máy với máy (tramCungNhaMayVoiMay, W14b, test helper phamViGhiDoW14b) — bộ quét không nhận ra phạm vi suy từ máy",
+  "server/routers/sessionRouter.ts#sessionRouter.revoke": "thu hồi phiên của CHÍNH người gọi: db.revokeSession(sessionId, ctx.user.id) kiểm sở hữu trong db — W14b",
+  "server/routers/userRouters.ts#userRouter.revokeSession": "dữ liệu của CHÍNH người gọi: revokeSession(sessionId, ctx.user.id) kiểm sở hữu; setUiPrefs từ chối khi expectedUserId ≠ ctx.user.id — W14b",
+  "server/routers/userRouters.ts#userSettingsRouter.setUiPrefs": "dữ liệu của CHÍNH người gọi: revokeSession(sessionId, ctx.user.id) kiểm sở hữu; setUiPrefs từ chối khi expectedUserId ≠ ctx.user.id — W14b",
+  "server/routers/simTargetsRouter.ts#simTargetsRouter.validateUrscript": "targetId = id bàn thử do MÁY CHỦ đăng ký (resolveSimTarget: chỉ 'default' = URSIM_HOST, từ chối khi host là robot/adapter thật); chạy trên URSim ảo, cờ URSIM_ENABLED + machine_control.canCreate — không phải thực thể nhà máy — W14b",
+  "server/_core/systemRouter.ts#systemRouter.marketplace.download": "chợ mẫu bảng điều khiển CÔNG KHAI: chỉ tăng bộ đếm tải và trả mẫu giao diện (getDashboardTemplateById) — KHÔNG đẩy gì xuống thiết bị, không dữ liệu nhà máy (đọc mã 2026-10-25) — W14",
+  // ── W14 (kiểm định phamViGhi, 2026-10-25): danh mục dùng chung · dữ liệu của chính người gọi · cấu hình toàn cục ──
+  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.packages.update": "danh mục linh kiện (gói · footprint · liên kết vật tư) DANH MỤC DÙNG CHUNG toàn tập đoàn, KHÔNG phải kho (chủ dự án 2026-10-25, W14-Q2/W16: tồn kho theo nhà máy nằm ở spare_parts_inventory / material_receipts / supplier_lots, còn thư viện linh kiện là catalog chung) — component_packages / component_footprints không có cột nhà máy; giữ bằng quyền module",
+  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.packages.delete": "danh mục linh kiện (gói · footprint · liên kết vật tư) DANH MỤC DÙNG CHUNG toàn tập đoàn, KHÔNG phải kho (chủ dự án 2026-10-25, W14-Q2/W16: tồn kho theo nhà máy nằm ở spare_parts_inventory / material_receipts / supplier_lots, còn thư viện linh kiện là catalog chung) — component_packages / component_footprints không có cột nhà máy; giữ bằng quyền module",
+  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.packages.restore": "danh mục linh kiện (gói · footprint · liên kết vật tư) DANH MỤC DÙNG CHUNG toàn tập đoàn, KHÔNG phải kho (chủ dự án 2026-10-25, W14-Q2/W16: tồn kho theo nhà máy nằm ở spare_parts_inventory / material_receipts / supplier_lots, còn thư viện linh kiện là catalog chung) — component_packages / component_footprints không có cột nhà máy; giữ bằng quyền module",
+  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.footprints.create": "danh mục linh kiện (gói · footprint · liên kết vật tư) DANH MỤC DÙNG CHUNG toàn tập đoàn, KHÔNG phải kho (chủ dự án 2026-10-25, W14-Q2/W16: tồn kho theo nhà máy nằm ở spare_parts_inventory / material_receipts / supplier_lots, còn thư viện linh kiện là catalog chung) — component_packages / component_footprints không có cột nhà máy; giữ bằng quyền module",
+  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.footprints.update": "danh mục linh kiện (gói · footprint · liên kết vật tư) DANH MỤC DÙNG CHUNG toàn tập đoàn, KHÔNG phải kho (chủ dự án 2026-10-25, W14-Q2/W16: tồn kho theo nhà máy nằm ở spare_parts_inventory / material_receipts / supplier_lots, còn thư viện linh kiện là catalog chung) — component_packages / component_footprints không có cột nhà máy; giữ bằng quyền module",
+  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.footprints.delete": "danh mục linh kiện (gói · footprint · liên kết vật tư) DANH MỤC DÙNG CHUNG toàn tập đoàn, KHÔNG phải kho (chủ dự án 2026-10-25, W14-Q2/W16: tồn kho theo nhà máy nằm ở spare_parts_inventory / material_receipts / supplier_lots, còn thư viện linh kiện là catalog chung) — component_packages / component_footprints không có cột nhà máy; giữ bằng quyền module",
+  "server/routers/componentLibraryRouter.ts#componentLibraryRouter.linkMaterial": "danh mục linh kiện (gói · footprint · liên kết vật tư) DANH MỤC DÙNG CHUNG toàn tập đoàn, KHÔNG phải kho (chủ dự án 2026-10-25, W14-Q2/W16: tồn kho theo nhà máy nằm ở spare_parts_inventory / material_receipts / supplier_lots, còn thư viện linh kiện là catalog chung) — component_packages / component_footprints không có cột nhà máy; giữ bằng quyền module",
+  "server/routers/notificationRouters.ts#notificationRouter.markAsRead": "thông báo CỦA CHÍNH người gọi: db.markNotificationAsRead(id, ctx.user.id) / deleteNotification(id, ctx.user.id) lọc theo userId từ phiên (mã: notificationRouters.ts) — W14",
+  "server/routers/notificationRouters.ts#notificationRouter.delete": "thông báo CỦA CHÍNH người gọi: db.markNotificationAsRead(id, ctx.user.id) / deleteNotification(id, ctx.user.id) lọc theo userId từ phiên (mã: notificationRouters.ts) — W14",
+  "server/routers/operatorBadgeRouter.ts#operatorBadgeRouter.update": "thẻ nhân sự (operator_badges chỉ có userId, không có nhà máy) — chủ dự án quyết 2026-10-25 (W14-Q1): không giới hạn theo nhà máy; giữ bằng quyền module",
+  "server/routers/operatorBadgeRouter.ts#operatorBadgeRouter.revoke": "thẻ nhân sự (operator_badges chỉ có userId, không có nhà máy) — chủ dự án quyết 2026-10-25 (W14-Q1): không giới hạn theo nhà máy; giữ bằng quyền module",
+  "server/routers/causalGraphRouter.ts#causalGraphRouter.addNode": "đồ thị nhân quả là MỘT tệp tri thức toàn cục (id = khoá nút, không phải thực thể nhà máy) — quyền analytics_root_cause.canEdit/canDelete — W14",
+  "server/routers/causalGraphRouter.ts#causalGraphRouter.updateNode": "đồ thị nhân quả là MỘT tệp tri thức toàn cục (id = khoá nút, không phải thực thể nhà máy) — quyền analytics_root_cause.canEdit/canDelete — W14",
+  "server/routers/causalGraphRouter.ts#causalGraphRouter.deleteNode": "đồ thị nhân quả là MỘT tệp tri thức toàn cục (id = khoá nút, không phải thực thể nhà máy) — quyền analytics_root_cause.canEdit/canDelete — W14",
+  "server/routers/causalGraphRouter.ts#causalGraphRouter.replaceGraph": "đồ thị nhân quả là MỘT tệp tri thức toàn cục (id = khoá nút, không phải thực thể nhà máy) — quyền analytics_root_cause.canEdit/canDelete — W14",
+  "server/routers/qualityGateTemplateRouter.ts#qualityGateTemplateRouter.updateCustom": "mẫu cổng chất lượng tuỳ biến là DANH MỤC DÙNG CHUNG (quality_gate_templates không có cột nhà máy); việc ÁP mẫu lên chuyền (applyToLine) đã có cổng phạm vi + test — W14",
+  "server/routers/qualityGateTemplateRouter.ts#qualityGateTemplateRouter.deleteCustom": "mẫu cổng chất lượng tuỳ biến là DANH MỤC DÙNG CHUNG (quality_gate_templates không có cột nhà máy); việc ÁP mẫu lên chuyền (applyToLine) đã có cổng phạm vi + test — W14",
+  "server/routers/reportArtifactRouter.ts#reportArtifactRouter.delete": "deleteArtifact(id, viewerOf(ctx)) gọi getArtifact(viewer) — ném not_found/forbidden theo quyền xem của người gọi TRƯỚC khi xoá (reportArtifactService.ts:344) — W14",
+  "server/routers/reportBuilderRouter.ts#reportBuilderRouter.save": "định nghĩa báo cáo SỞ HỮU THEO NGƯỜI DÙNG: update/delete qua assertReportOwnership (chủ hoặc admin); duplicate nay áp cùng luật xem (chủ · admin · công khai, có test); save tạo báo cáo mới — bộ lọc nhà máy chỉ là tham số lưu, khi chạy đi qua phạm vi đọc — W14",
+  "server/routers/reportBuilderRouter.ts#reportBuilderRouter.update": "định nghĩa báo cáo SỞ HỮU THEO NGƯỜI DÙNG: update/delete qua assertReportOwnership (chủ hoặc admin); duplicate nay áp cùng luật xem (chủ · admin · công khai, có test); save tạo báo cáo mới — bộ lọc nhà máy chỉ là tham số lưu, khi chạy đi qua phạm vi đọc — W14",
+  "server/routers/reportBuilderRouter.ts#reportBuilderRouter.duplicate": "định nghĩa báo cáo SỞ HỮU THEO NGƯỜI DÙNG: update/delete qua assertReportOwnership (chủ hoặc admin); duplicate nay áp cùng luật xem (chủ · admin · công khai, có test); save tạo báo cáo mới — bộ lọc nhà máy chỉ là tham số lưu, khi chạy đi qua phạm vi đọc — W14",
+  "server/routers/dashboardStatsRouters.ts#dashboardRouter.applyTemplate": "áp mẫu bảng điều khiển lên bảng của CHÍNH người gọi: applyDashboardTemplate(ctx.user.id, templateId) — dữ liệu cá nhân — W14",
+  "server/routers/defectHeatmapRouter.ts#defectHeatmapRouter.generate": "phạm vi áp ở dịch vụ: computeSpatialHeatmap(db, {scope:{userId,userRole} từ phiên}) + resolveContributingScope ghi nhà máy đóng góp (defectHeatmapRouter.ts:108–121) — bộ quét không nhận ra phạm vi truyền qua đối tượng — W14",
+  "server/routers/webhookRouter.ts#webhookRouter.update": "cấu hình webhook TOÀN CỤC (webhook_configs không có cột nhà máy), chỉ admin — kiểm role==='admin' trong thân (nay gồm cả test/toggle, có test FORBIDDEN) — W14",
+  "server/routers/webhookRouter.ts#webhookRouter.delete": "cấu hình webhook TOÀN CỤC (webhook_configs không có cột nhà máy), chỉ admin — kiểm role==='admin' trong thân (nay gồm cả test/toggle, có test FORBIDDEN) — W14",
+  "server/routers/webhookRouter.ts#webhookRouter.test": "cấu hình webhook TOÀN CỤC (webhook_configs không có cột nhà máy), chỉ admin — kiểm role==='admin' trong thân (nay gồm cả test/toggle, có test FORBIDDEN) — W14",
+  "server/routers/webhookRouter.ts#webhookRouter.toggle": "cấu hình webhook TOÀN CỤC (webhook_configs không có cột nhà máy), chỉ admin — kiểm role==='admin' trong thân (nay gồm cả test/toggle, có test FORBIDDEN) — W14",
+  "server/routers/webhookRouter.ts#webhookRouter.clearLogs": "cấu hình webhook TOÀN CỤC (webhook_configs không có cột nhà máy), chỉ admin — kiểm role==='admin' trong thân (nay gồm cả test/toggle, có test FORBIDDEN) — W14",
+  "server/routers/aiModelRouter.ts#aiModelRouter.createCard": "thẻ model AI là tài liệu quản trị của danh mục model DÙNG CHUNG (modelCardProcedure: vai + 2FA); không dữ liệu nhà máy — W14",
+  "server/routers/aiModelRouter.ts#aiModelRouter.updateCard": "thẻ model AI là tài liệu quản trị của danh mục model DÙNG CHUNG (modelCardProcedure: vai + 2FA); không dữ liệu nhà máy — W14",
+  "server/routers/aiModelRouter.ts#aiModelRouter.approveCard": "thẻ model AI là tài liệu quản trị của danh mục model DÙNG CHUNG (modelCardProcedure: vai + 2FA); không dữ liệu nhà máy — W14",
+  // ── W13 (kiểm định phamViGhi, 2026-10-25): danh mục DÙNG CHUNG và cấu hình SỞ HỮU THEO NGƯỜI DÙNG ──
+  "server/routers/processRouter.ts#processRouter.update": "danh mục quy trình (processes) DÙNG CHUNG toàn tập đoàn — bảng không có cột nhà máy; chỉ giữ bằng quyền settings_factory (luật chủ dự án 2026-10-24: danh mục dùng chung ⇒ miễn trừ). Gán quy trình vào chuyền (theo nhà máy) đã có cổng + test phamViGhiDoW13",
+  "server/routers/processRouter.ts#processRouter.delete": "danh mục quy trình DÙNG CHUNG toàn tập đoàn (xem processRouter.update) — quyền settings_factory.canDelete; gán quy trình–chuyền theo nhà máy có cổng riêng",
+  "server/routers/processRouter.ts#processRouter.reorder": "sắp xếp danh mục quy trình DÙNG CHUNG toàn tập đoàn (xem processRouter.update) — quyền settings_factory.canEdit",
+  "server/routers/alertRouters.ts#alertRouter.update": "cài đặt cảnh báo SỞ HỮU THEO NGƯỜI DÙNG: chỉ chủ (alert.userId === ctx.user.id) hoặc admin sửa (mã: alertRouters.ts update — kiểm sở hữu trước khi ghi); máy / nhà máy của cảnh báo đã được kiểm phạm vi lúc TẠO (create có cổng + test phamViGhiDoW13)",
+  "server/routers/alertRouters.ts#alertRouter.delete": "cài đặt cảnh báo SỞ HỮU THEO NGƯỜI DÙNG: chủ hoặc admin (xem alertRouter.update); id của người khác ⇒ FORBIDDEN trước khi ghi",
+  "server/routers/alertRouters.ts#alertRouter.acknowledge": "xác nhận bản ghi lịch sử cảnh báo: phân giải về cài đặt cha, chỉ chủ hoặc admin (xem alertRouter.update)",
+  "server/routers/alertRouters.ts#alertRouter.test": "gửi thử cảnh báo của CHÍNH người gọi: chủ hoặc admin (xem alertRouter.update); chỉ gửi tới chủ cảnh báo",
+  "server/routers/alertRouters.ts#yieldThresholdRouter.update": "ngưỡng yield là cấu hình TOÀN CỤC (bảng yield_alert_thresholds không có cột nhà máy / máy); giữ bằng write-floor + settings_yield_thresholds.canEdit — cùng quyết định với tool AI set_yield_threshold",
+  "server/routers/alertRouters.ts#yieldThresholdRouter.updateWithHistory": "ngưỡng yield TOÀN CỤC (xem yieldThresholdRouter.update) — write-floor + settings_yield_thresholds.canEdit, có lịch sử thay đổi",
+  // ── Phạm vi QUA CỔNG TOOL kiemPhamViGhiTool (aiLocalTools/phamViGhi.ts) — mỗi mục có test DB cấp THỦ TỤC, gỡ cổng ⇒ đỏ (dieu-phoi 2026-10-25) ──
+  "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.applyTopFix": "phạm vi qua cổng tool kiemPhamViGhiTool (create_maintenance_workorder … khoá machineId thật) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiRcaCopilot.applyTopFix' (A→được, B→OUT_OF_SCOPE, đột biến 3/3 đỏ) — 2026-10-25. Id phân tích nhà máy khác ≡ id không có thật (cùng NOT_FOUND, có test)",
+  "server/routers/aiThresholdAdvisorRouter.ts#aiThresholdAdvisorRouter.applyNgThreshold": "phạm vi qua cổng tool kiemPhamViGhiTool (adjust_ng_threshold, khoá thresholdId → trạm / máy / điểm đo / sản phẩm) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiThresholdAdvisor.applyNgThreshold' (A→được, B→OUT_OF_SCOPE, đột biến đỏ) — 2026-10-25",
+  "server/routers/aiVisionRouter.ts#aiVisionRouter.proposeDefect": "phạm vi qua cổng tool kiemPhamViGhiTool (propose_defect_from_vision, khoá inspectionId / measurementResultId → máy của lần kiểm tra) — chứng minh: phamViGhiDoW11c.db.test.ts 'aiVision.proposeDefect' (A→được, B và measurementResult B→OUT_OF_SCOPE, đột biến đỏ) — 2026-10-25",
   "server/routers/aiAgentRouter.ts#aiAgentRouter.approvePlan":
     "Sở hữu theo NGƯỜI DÙNG (không phải dữ liệu nhà máy): phiên agent / hội thoại / hành động chờ duyệt (HITL) chỉ chủ của nó thao tác — aiAgentOrchestrator.loadOwned, aiCopilotActions.confirmAction/cancelAction kiểm `row.userId === user.id` + token gắn userId, aiChat khoá theo userId; hành động ghi sau khi duyệt chạy dưới RBAC của người dùng (phạm vi nhà máy của TOOL GHI do AI đề xuất là hạng mục đo riêng — W11c). Đã đọc mã (2026-10-25); KHÔNG đổi hành vi agent / trợ lý.",
   "server/routers/aiAgentRouter.ts#aiAgentRouter.confirmStep":

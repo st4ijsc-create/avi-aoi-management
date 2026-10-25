@@ -35,7 +35,7 @@ import {
 import { mucKenhChoAi, preflightSafetyChoAi } from "../../ot/aiControlGate.safety";
 import { boDemDangBat, layGiaTri } from "../../scada/boDemHienTai";
 import type { OtWriteTarget } from "../../ot/otActionBinding";
-import { loadStopPins } from "../../ot/stopPin";
+import { loadStopPinsHmi, type GhimBoQuaHmi } from "../../ot/stopPin";
 import {
   registerTool,
   type ActionPreview,
@@ -198,6 +198,8 @@ interface OtPlan {
   adapterId: number;
   commandType: string;
   writes: Array<{ tagKey: string; value: unknown }>;
+  /** I-A — machine_stop: ghim bị bỏ qua (tag mức > 1). Không thuộc lệnh (không vào binding / hash). */
+  boQua?: GhimBoQuaHmi[];
 }
 
 function planToTarget(plan: OtPlan): OtWriteTarget {
@@ -214,17 +216,50 @@ function planToTarget(plan: OtPlan): OtWriteTarget {
  * adapter has none OR the pins cannot be read ⇒ today's behaviour (the dispatcher re-reads the pins itself and a
  * read failure there is never an exemption). Used by BOTH plan() (execute + propose-time binding) and preview().
  */
-async function pinnedStopWrites(adapterId: number): Promise<Array<{ tagKey: string; value: unknown }> | null> {
+/**
+ * kiem-dinh R1b-1 I-A (fix round 2, 2026-10-25) — CÙNG LUẬT với STOP HMI (`dungMayHmi`) và khảo sát khả năng dừng: chỉ ghim của tag
+ * `actuationLevel ≤ 1` (`loadStopPinsHmi` → `phanLoaiGhimStopHmi`, NULL ⇒ 5 ⇒ bỏ qua). Ghim mức cao bị BỎ QUA từng tag (`boQua`, báo ở preview +
+ * kết quả); có ghim mà KHÔNG ghim nào đủ điều kiện ⇒ `{ writes: [], boQua }` ⇒ tool TỪ CHỐI (không rơi về tag dừng mặc định). Trước bản sửa:
+ * MỌI ghim (kể cả ghim cũ do operator đặt trên tag mức 5) ⇒ dispatcher coi là STOP ghim ⇒ miễn chế độ / dải / policy / interlock.
+ */
+async function pinnedStopWrites(
+  adapterId: number,
+): Promise<{ writes: Array<{ tagKey: string; value: unknown }>; boQua: GhimBoQuaHmi[] } | null> {
   const db = await getDb();
   if (!db) return null;
   try {
-    const pins = await loadStopPins(db, adapterId);
-    return pins.length > 0 ? pins.map((pin) => ({ tagKey: pin.tagKey, value: pin.value })) : null;
+    const { gui, boQua } = await loadStopPinsHmi(db, adapterId);
+    if (gui.length === 0 && boQua.length === 0) return null;
+    return { writes: gui.map((pin) => ({ tagKey: pin.tagKey, value: pin.value })), boQua };
   } catch (err) {
     console.warn(`[machine_stop] pinned stop tags of adapter ${adapterId} could not be read — using the default stop tag:`, (err as Error)?.message || err);
     return null;
   }
 }
+
+/** I-A — câu từ chối (ba ngôn ngữ) khi máy có ghim nhưng không ghim nào đủ điều kiện STOP (mức ≤ 1). */
+function loiKhongGhimDuDieuKien(lang: ToolLang, boQua: ReadonlyArray<GhimBoQuaHmi>): Error {
+  const ds = boQua.map((b) => `${b.tagKey} (${b.muc})`).join(", ");
+  return new Error(
+    w(
+      lang,
+      `Mọi ghim DỪNG của máy nằm trên tag mức tác động > 1 (${ds}) — trợ lý không gửi; kỹ sư khai mức 1 cho tag dừng; dừng bằng E-STOP cứng.`,
+      `Every pinned STOP of this machine is on a tag with actuation level > 1 (${ds}) — the assistant sends nothing; an engineer declares level 1 for the stop tags; stop it with the hardwired E-STOP.`,
+      `此设备的所有固定 STOP 值都位于执行等级 > 1 的标签上（${ds}）— 助手不发送；请工程师将停机标签声明为等级 1；请使用硬接线急停（E-STOP）停机。`,
+    ),
+  );
+}
+
+/** I-A — dòng báo ghim bị bỏ qua (preview + kết quả). */
+const cauBoQua = (lang: ToolLang, boQua: ReadonlyArray<GhimBoQuaHmi>) => {
+  const ds = boQua.map((b) => `${b.tagKey} (${b.muc})`).join(", ");
+  return w(
+    lang,
+    `Bỏ qua ghim của tag mức tác động > 1: ${ds} — không được dừng bằng lệnh này.`,
+    `Skipped pins on tags with actuation level > 1: ${ds} — not stopped by this command.`,
+    `跳过执行等级 > 1 的标签上的固定值：${ds} — 此命令不会停止它们。`,
+  );
+};
 
 const listWrites = (writes: Array<{ tagKey: string; value: unknown }>) => writes.map((x) => `${x.tagKey}=${String(x.value)}`).join(", ");
 
@@ -253,11 +288,15 @@ for (const cfg of lifecycle) {
     .strict();
   type P = z.infer<typeof params>;
 
-  const plan = async (p: P): Promise<OtPlan> => {
+  const plan = async (p: P, lang: ToolLang = "vi"): Promise<OtPlan> => {
     const adapterId = await adapterIdForMachine(p.machineId);
     if (cfg.verb === "stop") {
       const pinned = await pinnedStopWrites(adapterId);
-      if (pinned) return { machineId: p.machineId, adapterId, commandType: cfg.verb, writes: pinned };
+      if (pinned) {
+        // I-A — có ghim mà KHÔNG ghim nào đủ điều kiện (mức ≤ 1) ⇒ từ chối (cả lúc propose lẫn execute); không rơi về tag mặc định.
+        if (pinned.writes.length === 0) throw loiKhongGhimDuDieuKien(lang, pinned.boQua);
+        return { machineId: p.machineId, adapterId, commandType: cfg.verb, writes: pinned.writes, boQua: pinned.boQua };
+      }
     }
     return { machineId: p.machineId, adapterId, commandType: cfg.verb, writes: [{ tagKey: p.tagKey ?? cfg.defaultTag, value: true }] };
   };
@@ -278,8 +317,20 @@ for (const cfg of lifecycle) {
         // doc 81 Đợt 1D Task 2 — show the human EXACTLY what a pinned stop will write (it is what gets bound).
         const r0 = await resolveTarget(p.machineId, null, ctx.lang);
         const pinned = r0.adapterId != null ? await pinnedStopWrites(r0.adapterId) : null;
+        if (pinned && pinned.writes.length === 0) {
+          // I-A — không ghim nào đủ điều kiện ⇒ execute sẽ từ chối; nói trước cho người xác nhận.
+          r0.warnings.push(loiKhongGhimDuDieuKien(ctx.lang, pinned.boQua).message);
+          return {
+            entityType: "machine",
+            entityId: p.machineId,
+            changes: [{ field: cfg.verb, oldValue: null, newValue: "—", displayName: cfg.verb }],
+            warnings: r0.warnings,
+            humanSummary: summarize(p, ctx.lang),
+          };
+        }
         if (pinned) {
-          const list = listWrites(pinned);
+          const list = listWrites(pinned.writes);
+          if (pinned.boQua.length > 0) r0.warnings.push(cauBoQua(ctx.lang, pinned.boQua));
           r0.warnings.push(
             w(
               ctx.lang,
@@ -309,7 +360,15 @@ for (const cfg of lifecycle) {
     },
     otWriteBinding: async (p) => planToTarget(await plan(p)),
     execute: async (p, ctx) => {
-      return runDispatch(ctx, { ...(await plan(p)), toolName: cfg.name });
+      const pl = await plan(p, ctx.lang);
+      const { boQua, ...lenh } = pl;
+      const r = await runDispatch(ctx, { ...lenh, toolName: cfg.name });
+      // I-A — báo ghim bị bỏ qua (tag mức > 1) trong kết quả cho người đọc thẻ và cho model.
+      if (boQua && boQua.length > 0) {
+        const cau = cauBoQua(ctx.lang, boQua);
+        return { ...r, title: `${r.title} — ${cau}`, textSummary: `${r.textSummary ?? ""} ${cau}`.trim(), boQua } as ToolExecuteResult;
+      }
+      return r;
     },
   };
   registerTool(tool);

@@ -5,8 +5,12 @@
  * SAFETY:
  *   - create ALWAYS forces enabled=false, approvedBy=null, requiresHumanConfirm=true
  *     (a created rule can never auto-act until a human approves AND enables it).
- *   - approve is ADMIN-ONLY (sets approvedBy = ctx.user.id, approvedAt).
- *   - enable requires approvedBy != null (cannot enable an unapproved rule).
+ *   - approve is ADMIN-ONLY (sets approvedBy = ctx.user.id, approvedAt, and — kiem-dinh R1b-1 I1 a — approvedDefHash = the hash of the
+ *     CURRENT source / target tag definitions + the adapter's edgeNodeId, also part of the versionToken the approver saw).
+ *   - enable requires approvedBy != null AND approvedDefHash == the current definition hash (a definition changed after approval, or an
+ *     approval older than mig 0434, ⇒ "not approved", fail-closed). The interlock engine (auto-block) and the dispatcher apply the same rule.
+ *   - kiem-dinh R1b-1 I1 b — update / delete of an enabled-or-approved non-alert rule with a target or a telemetry source ⇒ fresh TOTP
+ *     level 5 (`kiemTotpCauHinh`), checked LAST (after validation).
  *   - testEvaluate is a DRY-RUN: it reports whether the condition would fire and
  *     what the ALERT-ONLY outcome would be. It NEVER inserts events, raises Andon,
  *     or writes a command.
@@ -50,6 +54,22 @@ import { evaluateCondition, deriveObserved, type ComparisonOperator, type Interl
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { kiemLenhInterlockTx, luatCoGhiLenh, thamSoNgoaiDaiInterlock, type DbHoacTx } from "../services/scada/nhatQuanKenh";
 import { telemetryTagDungPhamVi } from "../services/interlock/d11";
+// kiem-dinh R1b-1 I1 (2026-10-25) — (a) bám định nghĩa tag nguồn / đích chụp lúc duyệt; (b) TOTP tươi mức 5 khi sửa / xoá luật bảo vệ
+import { bamDinhNghiaLuat, bamDinhNghiaNhieu, duyetConHieuLuc } from "../services/interlock/dinhNghiaDuyet";
+import { kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
+
+/**
+ * kiem-dinh R1b-1 I1 (b) (điều phối 2026-10-25) — luật mà sửa / xoá cần TOTP tươi mức 5 (`kiemTotpCauHinh`): luật GHI LỆNH (không phải `alert`)
+ * ĐANG BẬT HOẶC ĐÃ DUYỆT (cùng điều kiện `troLaiKenh.luatBaoVe`) có ĐÍCH (máy / adapter / tag) hoặc NGUỒN tag thiết bị (`telemetry_tag`).
+ * Chuỗi lỗi kiem-dinh: sửa / xoá tự bỏ duyệt (MOC) mà KHÔNG mã ⇒ tag hết được bảo vệ ⇒ đổi address / kiểu không cần mã ⇒ duyệt lại mà không
+ * thấy định nghĩa đã đổi. Nay bước đầu tiên của chuỗi đã cần mã (bước cuối do bám định nghĩa — I1 a — chặn).
+ */
+export function luatCanTotpKhiSuaXoa(r: Pick<InterlockRule, "action" | "enabled" | "approvedBy" | "targetMachineId" | "targetAdapterId" | "commandTag" | "sourceType" | "machineId" | "sourceKey">): boolean {
+  if (!luatCoGhiLenh(r.action)) return false;
+  if (!(r.enabled === true || r.approvedBy != null)) return false;
+  const coNguon = r.sourceType === "telemetry_tag" && (r.machineId != null || !!r.sourceKey);
+  return hasTarget(r) || coNguon;
+}
 
 /**
  * Phạm vi nhà máy cho GHI interlock (rà bảo mật 2026-10-24, lô W8 — kiểm định phamViGhi): một luật interlock có thể DỪNG LINE / GIẢM TỐC / HẠ CHẶN máy ở
@@ -58,16 +78,37 @@ import { telemetryTagDungPhamVi } from "../services/interlock/d11";
  * (không tồn tại trong thực tế: scope ∈ line|station|machine) chỉ toàn quyền. Ngoài phạm vi ≡ không tồn tại: NOT_FOUND "interlockRule" (cùng lỗi id không
  * có thật). Toàn quyền (admin) ⇒ không kiểm. Kiểm TRƯỚC khi ghi (và với `update`: cả luật HIỆN CÓ lẫn luật SAU KHI vá).
  */
-async function luatTrongPhamVi(
-  ctx: CoDanhTinh,
-  r: { lineId?: number | null; stationId?: number | null; machineId?: number | null; targetMachineId?: number | null; targetAdapterId?: number | null },
-): Promise<void> {
+type TapPhamViLuat = [number[] | null, number[] | null, number[] | null];
+async function layTapPhamViLuat(ctx: CoDanhTinh): Promise<TapPhamViLuat> {
   const pv = phamViCua(ctx);
-  const [dong, tram, may] = await Promise.all([
+  return Promise.all([
     idsTrongPhamVi("line", pv, { strict: true }),
     idsTrongPhamVi("station", pv, { strict: true }),
     idsTrongPhamVi("machine", pv, { strict: true }),
   ]);
+}
+
+/** phạm vi người dùng (L4 2026-10-25): các id luật (trong tập `rows`) mà người gọi THẤY ĐƯỢC — luật ngoài phạm vi ≡ không tồn tại. Toàn quyền ⇒ tất cả. */
+async function idsLuatThayDuoc(ctx: CoDanhTinh, rows: Array<{ id: number; lineId?: number | null; stationId?: number | null; machineId?: number | null; targetMachineId?: number | null; targetAdapterId?: number | null }>): Promise<Set<number>> {
+  const tap = await layTapPhamViLuat(ctx);
+  const out = new Set<number>();
+  for (const r of rows) {
+    try {
+      await luatTrongPhamVi(ctx, r, tap);
+      out.add(r.id);
+    } catch {
+      /* ngoài phạm vi */
+    }
+  }
+  return out;
+}
+
+async function luatTrongPhamVi(
+  ctx: CoDanhTinh,
+  r: { lineId?: number | null; stationId?: number | null; machineId?: number | null; targetMachineId?: number | null; targetAdapterId?: number | null },
+  tapCoSan?: TapPhamViLuat,
+): Promise<void> {
+  const [dong, tram, may] = tapCoSan ?? (await layTapPhamViLuat(ctx));
   if (dong === null && tram === null && may === null) return;
   const ngoai = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
   const coViTri = r.lineId != null || r.stationId != null || r.machineId != null || r.targetMachineId != null || r.targetAdapterId != null;
@@ -138,7 +179,12 @@ const createInput = ruleInput.extend({
  * R0.1 — update: khiThieuDuLieu tuỳ chọn, KHÔNG mặc định. zod 4 áp `.default()` cả bên trong `.partial()` (đo: partial().parse({})
  * ⇒ trường có default được điền) — nếu dùng createInput.partial() thì mọi lần sửa không khai trường này sẽ âm thầm ghi 'cho_qua' về 'chan'.
  */
-const updateInput = ruleInput.partial().extend({ id: z.number().int().positive(), khiThieuDuLieu: khiThieuDuLieuEnum.optional() });
+const updateInput = ruleInput.partial().extend({
+  id: z.number().int().positive(),
+  khiThieuDuLieu: khiThieuDuLieuEnum.optional(),
+  // kiem-dinh R1b-1 I1 (b) — mã TOTP 6 số khi sửa luật bảo vệ (`luatCanTotpKhiSuaXoa`); vắng ⇒ SCADA_CONFIG_TOTP_REQUIRED ở handler.
+  totpCode: totpCauHinhInput,
+});
 
 /** ILK-05 — true khi rule có ÍT NHẤT một đích lệnh (máy / adapter / tag). */
 function hasTarget(v: { targetMachineId?: number | null; targetAdapterId?: number | null; commandTag?: string | null }): boolean {
@@ -310,26 +356,48 @@ function stableJson(value: unknown): string {
     .join(",")}}`;
 }
 
-export function interlockRuleVersionToken(row: InterlockRule): string {
+/**
+ * kiem-dinh R1b-1 I1 (a) (2026-10-25) — token `v2`: băm cột của luật CÙNG bám ĐỊNH NGHĨA tag nguồn / đích HIỆN TẠI (`dinhNghiaDuyet.ts`: address,
+ * dataType, scale / offset, adapterId, edgeNodeId của adapter). Tag đổi định nghĩa giữa lúc người duyệt mở trang và lúc bấm ⇒ token lệch ⇒
+ * CONFLICT "tải lại để duyệt" — người duyệt duyệt ĐÚNG định nghĩa đang xem.
+ */
+export function interlockRuleVersionToken(row: InterlockRule, bamDinhNghia: string): string {
   const { lastFiredAt: _volatile, ...content } = row;
-  return `v1:${createHash("sha256").update(stableJson(content)).digest("hex")}`;
+  return `v2:${createHash("sha256").update(stableJson({ luat: content, dinhNghia: bamDinhNghia })).digest("hex")}`;
 }
 
-/** Gắn `versionToken` vào hàng rule trả cho client (list/get/mọi mutation trả rule). */
-function withVersion<T extends InterlockRule>(row: T): T & { versionToken: string } {
-  return { ...row, versionToken: interlockRuleVersionToken(row) };
+type DbHoacTxIlk = Parameters<typeof bamDinhNghiaNhieu>[0];
+type CoVersion<T> = T & { versionToken: string; duyetHieuLuc: boolean; canDuyetLai: boolean };
+
+/**
+ * Gắn `versionToken` + trạng thái duyệt HIỆU LỰC vào hàng rule trả cho client (list/get/mọi mutation trả rule). kiem-dinh R1b-1 I1 (a):
+ * `duyetHieuLuc` = đã duyệt VÀ bám định nghĩa còn khớp; `canDuyetLai` = có `approvedBy` nhưng bám lệch / chưa chụp (duyệt trước bản build) —
+ * luật KHÔNG bật được, engine không tự chặn, cho tới khi duyệt lại.
+ */
+async function coVersionNhieu<T extends InterlockRule>(d: DbHoacTxIlk, rows: T[]): Promise<Array<CoVersion<T>>> {
+  const bam = await bamDinhNghiaNhieu(d, rows);
+  return rows.map((r) => {
+    const b = bam.get(r.id) as string;
+    const hieuLuc = duyetConHieuLuc(r, b);
+    return { ...r, versionToken: interlockRuleVersionToken(r, b), duyetHieuLuc: hieuLuc, canDuyetLai: r.approvedBy != null && !hieuLuc };
+  });
+}
+async function coVersion<T extends InterlockRule>(d: DbHoacTxIlk, row: T): Promise<CoVersion<T>> {
+  return (await coVersionNhieu(d, [row]))[0];
 }
 
 /**
  * Task 9 — bản người bấm đã xem PHẢI là bản đang lưu (đọc dưới `FOR UPDATE` trong cùng
  * transaction). Lệch ⇒ CONFLICT, không ghi gì: người duyệt/bật phải tải lại và xem nội dung mới.
+ * kiem-dinh R1b-1 I1 (a): token gồm bám định nghĩa tag HIỆN TẠI (`bamDinhNghia`, bên gọi đọc trong cùng giao dịch).
  */
 function assertExpectedVersion(
   existing: InterlockRule,
   expectedVersion: string,
   operation: "approveInterlockRule" | "activateInterlockRule",
+  bamDinhNghia: string,
 ): void {
-  if (interlockRuleVersionToken(existing) !== expectedVersion) {
+  if (interlockRuleVersionToken(existing, bamDinhNghia) !== expectedVersion) {
     throw appError(
       "CONFLICT",
       "OPERATION_FAILED",
@@ -348,6 +416,30 @@ const expectedVersionInput = z.string().min(1).max(128);
  * transaction của approve, SAU `SELECT … FOR UPDATE` trên rule — mọi update đồng thời đã commit
  * (kèm dòng audit của nó) hoặc đang chờ khoá, nên không có lần sửa nào lọt khỏi cửa sổ này.
  */
+/**
+ * kiem-dinh R1b-1 I-B (fix round 2) — người sửa NỘI DUNG cuối của luật: actor của dòng audit `create` / `update` MỚI NHẤT (approve / enable /
+ * disable không phải sửa nội dung). Không có dòng audit nào (hàng gieo thẳng bảng) ⇒ `updatedBy` của hàng (chiều an toàn: như trước).
+ */
+async function nguoiSuaNoiDungCuoi(
+  tx: Parameters<Parameters<Awaited<ReturnType<typeof getDb>>["transaction"]>[0]>[0],
+  ruleId: number,
+  updatedBy: number | null,
+): Promise<number | null> {
+  const [dong] = await tx
+    .select({ actorId: controlAuditLog.actorId })
+    .from(controlAuditLog)
+    .where(
+      and(
+        eq(controlAuditLog.entityType, "interlock_rule"),
+        eq(controlAuditLog.entityId, String(ruleId)),
+        inArray(controlAuditLog.action, ["create", "update"]),
+      ),
+    )
+    .orderBy(desc(controlAuditLog.id))
+    .limit(1);
+  return dong ? (dong.actorId ?? null) : updatedBy;
+}
+
 async function isRecentAuthor(
   tx: Parameters<Parameters<Awaited<ReturnType<typeof getDb>>["transaction"]>[0]>[0],
   ruleId: number,
@@ -378,20 +470,22 @@ async function isRecentAuthor(
 export const interlockRouter = router({
   list: protectedProcedure
     .use(requirePermission("interlock", "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const db = await getDb();
       const rows = await db.select().from(interlockRules).orderBy(desc(interlockRules.createdAt));
-      return rows.map(withVersion);
+      const thay = await idsLuatThayDuoc(ctx, rows); // phạm vi người dùng (L4 2026-10-25)
+      return coVersionNhieu(db, rows.filter((r) => thay.has(r.id)));
     }),
 
   get: protectedProcedure
     .use(requirePermission("interlock", "canView"))
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       const [row] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
-      return withVersion(row);
+      await luatTrongPhamVi(ctx, row); // phạm vi người dùng (L4 2026-10-25): luật ngoài phạm vi ≡ không tồn tại (cùng thông điệp)
+      return coVersion(db, row);
     }),
 
   create: actuationProcedure
@@ -422,7 +516,7 @@ export const interlockRouter = router({
           .returning();
         // Audit bất biến: tạo rule an toàn.
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: row.id, action: "create", actorId: ctx.user.id, before: null, after: row });
-        return withVersion(row);
+        return coVersion(tx, row);
       });
     }),
 
@@ -431,7 +525,8 @@ export const interlockRouter = router({
     .input(updateInput)
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      const { id, threshold, ...rest } = input;
+      // kiem-dinh R1b-1 I1 (b) — `totpCode` KHÔNG BAO GIỜ vào patch / audit.
+      const { id, threshold, totpCode, ...rest } = input;
       // ILK-10 — SELECT/UPDATE/audit-INSERT trong CÙNG một transaction.
       return db.transaction(async (tx) => {
         const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, id)).limit(1).for("update");
@@ -486,21 +581,26 @@ export const interlockRouter = router({
         if (existing.approvedBy != null || existing.enabled === true) {
           patch.approvedBy = null;
           patch.approvedAt = null;
+          patch.approvedDefHash = null; // kiem-dinh R1b-1 I1 (a) — bám định nghĩa đi cùng lần duyệt
           patch.enabled = false;
           reason = "sửa rule đã duyệt ⇒ cần duyệt lại";
         }
 
+        // kiem-dinh R1b-1 I1 (b) — luật bảo vệ (ghi lệnh, đang bật hoặc đã duyệt, có đích / nguồn tag) ⇒ TOTP tươi mức 5, CUỐI (sau mọi kiểm
+        // hợp lệ — một lỗi kiểm không tiêu mã), ngay trước lượt ghi.
+        if (luatCanTotpKhiSuaXoa(existing)) await kiemTotpCauHinh(ctx, totpCode);
+
         const [row] = await tx.update(interlockRules).set(patch).where(eq(interlockRules.id, id)).returning();
         // Audit bất biến: sửa rule (before/after để truy vết cấu hình an toàn).
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: id, action: "update", actorId: ctx.user.id, before: existing, after: row, reason });
-        return withVersion(row);
+        return coVersion(tx, row);
       });
     }),
 
   delete: actuationProcedure
     .use(requirePermission("interlock", "canDelete"))
     // ILK-03 — hard-delete một rule an toàn PHẢI có lý do (ghi vào sổ audit).
-    .input(z.object({ id: z.number().int().positive(), reason: z.string().min(3) }))
+    .input(z.object({ id: z.number().int().positive(), reason: z.string().min(3), totpCode: totpCauHinhInput }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       // ILK-10 — audit + hard-delete trong CÙNG transaction (before-audit vẫn
@@ -509,6 +609,8 @@ export const interlockRouter = router({
         const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1).for("update");
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
         await luatTrongPhamVi(ctx, existing); // phạm vi nhà máy
+        // kiem-dinh R1b-1 I1 (b) — xoá luật bảo vệ ⇒ TOTP tươi mức 5, CUỐI (sau tồn tại + phạm vi), trước audit + DELETE.
+        if (luatCanTotpKhiSuaXoa(existing)) await kiemTotpCauHinh(ctx, input.totpCode);
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: input.id, action: "delete", actorId: ctx.user.id, before: existing, after: null, reason: input.reason });
         await tx.delete(interlockRules).where(eq(interlockRules.id, input.id));
         return { success: true };
@@ -529,7 +631,12 @@ export const interlockRouter = router({
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
         // ILK-02 (SoD) — người duyệt KHÔNG được là người tạo (createdBy) hay
         // người sửa cuối (updatedBy) của rule — MOC đòi một cặp mắt độc lập.
-        if (existing.createdBy === ctx.user.id || existing.updatedBy === ctx.user.id) {
+        // kiem-dinh R1b-1 I-B (fix round 2, 2026-10-25): `updatedBy` nay CHỈ do `update` (sửa NỘI DUNG) ghi — approve / enable / disable thôi ghi
+        // đè nó (người làm các việc đó nằm ở audit). Trước: B duyệt + bật ⇒ updatedBy = B ⇒ khi bám định nghĩa lệch (tag đổi / sau mig 0434) chính
+        // B KHÔNG duyệt lại được (tự duyệt giả), nhà máy hai admin bị kẹt. Hàng CŨ (trước bản này) còn mang updatedBy = người duyệt / bật ⇒ người
+        // sửa nội dung cuối lấy từ SỔ AUDIT (`nguoiSuaNoiDungCuoi`: actor của dòng create/update mới nhất; không có dòng nào ⇒ `updatedBy`).
+        const nguoiSuaCuoi = await nguoiSuaNoiDungCuoi(tx, input.id, existing.updatedBy ?? null);
+        if (existing.createdBy === ctx.user.id || nguoiSuaCuoi === ctx.user.id) {
           throw appError(
             "FORBIDDEN",
             "PERMISSION_DENIED",
@@ -551,7 +658,10 @@ export const interlockRouter = router({
         }
         // Task 9 — duyệt ĐÚNG nội dung đã xem: bản đang lưu (dưới FOR UPDATE) phải trùng token client
         // gửi. Đứng SAU SoD (người tự sửa rồi tự duyệt vẫn nhận PERMISSION_DENIED, không phải CONFLICT).
-        assertExpectedVersion(existing, input.expectedVersion, "approveInterlockRule");
+        // kiem-dinh R1b-1 I1 (a) — bám định nghĩa tag nguồn / đích HIỆN TẠI (đọc trong giao dịch, sau khoá luật): nằm trong token so ở đây VÀ
+        // được chụp vào `approvedDefHash` — định nghĩa đổi sau lúc này ⇒ luật trở về chưa duyệt ở enable / engine / dispatcher.
+        const bam = await bamDinhNghiaLuat(tx, existing);
+        assertExpectedVersion(existing, input.expectedVersion, "approveInterlockRule", bam);
         // Final review fix #7 — ILK-05 cả ở approve: hàng do AI tool (propose_interlock_rule) / seed
         // ghi thẳng bảng không đi qua create/update.
         assertTargetIfNotAlert(existing.action, existing);
@@ -559,12 +669,12 @@ export const interlockRouter = router({
         await assertLenhTrongDaiKenh(tx, existing, existing.id); // SCADA R1a Task 12 — cả hàng ghi thẳng bảng
         const [row] = await tx
           .update(interlockRules)
-          .set({ approvedBy: ctx.user.id, approvedAt: new Date(), updatedAt: new Date(), updatedBy: ctx.user.id })
+          .set({ approvedBy: ctx.user.id, approvedAt: new Date(), approvedDefHash: bam, updatedAt: new Date() }) // I-B: KHÔNG ghi updatedBy (giữ người sửa NỘI DUNG cuối cho SoD)
           .where(eq(interlockRules.id, input.id))
           .returning();
-        // Audit bất biến: duyệt rule (quyết định an toàn có đặc quyền).
+        // Audit bất biến: duyệt rule (quyết định an toàn có đặc quyền). `after.approvedDefHash` = định nghĩa đã duyệt.
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: input.id, action: "approve", actorId: ctx.user.id, before: existing, after: row });
-        return withVersion(row);
+        return coVersion(tx, row);
       });
     }),
 
@@ -583,8 +693,19 @@ export const interlockRouter = router({
         if (existing.approvedBy == null) {
           throw appError("FORBIDDEN", "OPERATION_FAILED", { operation: "activateInterlockRule" }, "Rule chưa được duyệt (approvedBy=null) — không thể bật.");
         }
+        // kiem-dinh R1b-1 I1 (a) — duyệt chỉ còn hiệu lực khi bám định nghĩa tag nguồn / đích HIỆN TẠI == bám chụp lúc duyệt (NULL = duyệt trước bản
+        // build ⇒ chưa duyệt lại). Lệch ⇒ coi như CHƯA DUYỆT (fail-closed) — cùng mã FORBIDDEN của nhánh trên, lý do riêng.
+        const bam = await bamDinhNghiaLuat(tx, existing);
+        if (!duyetConHieuLuc(existing, bam)) {
+          throw appError(
+            "FORBIDDEN",
+            "OPERATION_FAILED",
+            { operation: "activateInterlockRule", reason: "interlockDefinitionChanged" },
+            "Định nghĩa tag nguồn / đích (địa chỉ, kiểu, scale / offset, adapter, node edge) đã đổi sau khi duyệt — hoặc luật được duyệt trước bản cập nhật — cần duyệt lại trước khi bật.",
+          );
+        }
         // Task 9 — bản đang lưu phải là bản người bật đã xem (sửa + duyệt lại ở giữa ⇒ CONFLICT).
-        assertExpectedVersion(existing, input.expectedVersion, "activateInterlockRule");
+        assertExpectedVersion(existing, input.expectedVersion, "activateInterlockRule", bam);
         // Final review fix #7 — ILK-05 cả ở enable (hàng seed có thể đã mang approvedBy sẵn).
         assertTargetIfNotAlert(existing.action, existing);
         assertTelemetryCauHinh(existing); // luật đã duyệt sẵn (seed / trước vá) mà hỏng cấu trúc không được bật
@@ -594,12 +715,12 @@ export const interlockRouter = router({
         await assertDichNguonSanSang(tx, existing);
         const [row] = await tx
           .update(interlockRules)
-          .set({ enabled: true, updatedAt: new Date(), updatedBy: ctx.user.id })
+          .set({ enabled: true, updatedAt: new Date() }) // I-B: không ghi updatedBy (người bật nằm ở audit)
           .where(eq(interlockRules.id, input.id))
           .returning();
         // Audit bất biến: bật rule an toàn.
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: input.id, action: "enable", actorId: ctx.user.id, before: existing, after: row });
-        return withVersion(row);
+        return coVersion(tx, row);
       });
     }),
 
@@ -616,12 +737,12 @@ export const interlockRouter = router({
         await luatTrongPhamVi(ctx, existing); // phạm vi nhà máy
         const [row] = await tx
           .update(interlockRules)
-          .set({ enabled: false, updatedAt: new Date(), updatedBy: ctx.user.id })
+          .set({ enabled: false, updatedAt: new Date() }) // I-B: không ghi updatedBy (người tắt nằm ở audit)
           .where(eq(interlockRules.id, input.id))
           .returning();
         // Audit bất biến: tắt rule an toàn (reason bắt buộc — ILK-03).
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: input.id, action: "disable", actorId: ctx.user.id, before: existing, after: row, reason: input.reason });
-        return withVersion(row);
+        return coVersion(tx, row);
       });
     }),
 
@@ -631,12 +752,17 @@ export const interlockRouter = router({
       ruleId: z.number().int().positive().optional(),
       limit: z.number().int().min(1).max(500).default(100),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
+      // phạm vi người dùng (L4 2026-10-25): chỉ sự kiện của luật trong phạm vi (sự kiện không gắn luật ⇒ chỉ toàn quyền thấy)
+      const tatCaLuat = await db.select().from(interlockRules);
+      const thay = [...(await idsLuatThayDuoc(ctx, tatCaLuat))];
+      const toanQuyen = (await layTapPhamViLuat(ctx)).every((x) => x === null);
+      const congLuat = toanQuyen ? undefined : inArray(interlockEvents.ruleId, thay.length > 0 ? thay : [-1]);
       return db
         .select()
         .from(interlockEvents)
-        .where(input?.ruleId ? eq(interlockEvents.ruleId, input.ruleId) : undefined)
+        .where(and(input?.ruleId ? eq(interlockEvents.ruleId, input.ruleId) : undefined, congLuat))
         .orderBy(desc(interlockEvents.firedAt))
         .limit(input?.limit ?? 100);
     }),
@@ -682,10 +808,11 @@ export const interlockRouter = router({
       observedValue: z.number().optional(),
       series: z.array(z.number()).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       const [rule] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
       if (!rule) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
+      await luatTrongPhamVi(ctx, rule); // phạm vi người dùng (L4 2026-10-25)
 
       const observed = input.observedValue ?? deriveObserved(rule.sourceType as InterlockSourceType, { series: input.series, scalar: input.observedValue });
       const threshold = rule.threshold != null ? Number(rule.threshold) : null;

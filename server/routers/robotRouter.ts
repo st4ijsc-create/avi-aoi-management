@@ -13,7 +13,7 @@ import { robots, robotTelemetry, robotJobs, systemSettings } from "../../drizzle
 import { readRobotAutomationState, readRobotAutomationStates, robotAutomationOffKey, type RobotAutomationState } from "../services/robot/robotAutomationAction"; // doc 81 Đợt 7 I5
 import { phamViCua } from "./_phamViNguoiXem"; // doc 81 Đợt 7 I fix 1 (M-4)
 import { idsTrongPhamVi } from "../db/hierarchy";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray, or, type SQL } from "drizzle-orm";
 import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/robot";
 import { dispatchRobotJob, robotInterlockTarget } from "../services/robot/robotCommandDispatcher";
 import { getActiveRobot } from "../services/robot/robotManager";
@@ -214,6 +214,24 @@ async function robotInCallerScope(ctx: { user: { id: number; role?: string | nul
 }
 
 /**
+ * phạm vi người dùng (L4 2026-10-25) — robot thấy được cho ĐỌC: CÙNG luật `robotInCallerScope` của đường GHI (chuyền HOẶC trạm của nó trong phạm vi; robot mồ côi chỉ toàn quyền thấy). Ngoài phạm vi ≡ không tồn tại
+ * (get ⇒ null, telemetry/jobs ⇒ rỗng, list ⇒ vắng mặt). `undefined` = toàn quyền.
+ */
+async function dieuKienRobotThay(ctx: { user: { id: number; role?: string | null } }): Promise<SQL | undefined> {
+  const scope = phamViCua(ctx as never);
+  const [lines, stations] = await Promise.all([idsTrongPhamVi("line", scope, { strict: true }), idsTrongPhamVi("station", scope, { strict: true })]);
+  if (lines === null) return undefined;
+  return or(inArray(robots.lineId, lines.length > 0 ? lines : [-1]), inArray(robots.stationId, (stations ?? []).length > 0 ? (stations ?? []) : [-1]));
+}
+async function robotThayDuoc(ctx: { user: { id: number; role?: string | null } }, robotId: number): Promise<boolean> {
+  if ((await dieuKienRobotThay(ctx)) === undefined) return true; // toàn quyền: không kiểm (cả tồn tại) — giữ hành vi cũ
+  const db = await getDb();
+  if (!db) return false;
+  const [r] = await db.select({ lineId: robots.lineId, stationId: robots.stationId }).from(robots).where(eq(robots.id, robotId)).limit(1);
+  return !!r && (await robotInCallerScope(ctx, r));
+}
+
+/**
  * doc 81 Đợt 7 I5 — set a robot's automation switch: robot must exist AND be inside the caller's factory scope (fix 1,
  * M-4: outside it ⇒ the SAME NOT_FOUND as a missing robot), audit FIRST, then the setting (upsert).
  */
@@ -384,10 +402,10 @@ export const robotRouter = router({
   // the connection surface is not exposed to every authenticated user.
   list: protectedProcedure
     .use(requirePermission("machine_control", "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return [];
-      const rows = await db.select().from(robots).orderBy(desc(robots.updatedAt));
+      const rows = await db.select().from(robots).where(await dieuKienRobotThay(ctx)).orderBy(desc(robots.updatedAt)); // phạm vi người dùng (L4 2026-10-25)
       // doc 81 Đợt 7 I5 — the per-robot automation switch ("unknown" = unreadable: automation is refused then).
       const automation = await readRobotAutomationStates(db, rows.map((r) => r.id));
       const persisted = await persistedLocksOfLocklessRobots(rows.map((r) => r.id)); // doc 81 Đợt 12 N
@@ -404,11 +422,11 @@ export const robotRouter = router({
   get: protectedProcedure
     .use(requirePermission("machine_control", "canView"))
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return null;
       const [row] = await db.select().from(robots).where(eq(robots.id, input.id)).limit(1);
-      if (!row) return null;
+      if (!row || !(await robotInCallerScope(ctx, row))) return null; // phạm vi người dùng (L4 2026-10-25): ngoài phạm vi ≡ không tồn tại
       return {
         ...row,
         validationStatus: getRobotVendorValidation(row.vendor),
@@ -643,9 +661,10 @@ export const robotRouter = router({
   telemetry: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ robotId: z.number(), limit: z.number().min(1).max(500).default(100) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
+      if (!(await robotThayDuoc(ctx, input.robotId))) return []; // phạm vi người dùng (L4 2026-10-25)
       return db.select().from(robotTelemetry)
         .where(eq(robotTelemetry.robotId, input.robotId))
         .orderBy(desc(robotTelemetry.timestamp))
@@ -655,9 +674,10 @@ export const robotRouter = router({
   jobs: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ robotId: z.number(), limit: z.number().min(1).max(200).default(50) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
+      if (!(await robotThayDuoc(ctx, input.robotId))) return []; // phạm vi người dùng (L4 2026-10-25)
       return db.select().from(robotJobs)
         .where(eq(robotJobs.robotId, input.robotId))
         .orderBy(desc(robotJobs.createdAt))
@@ -745,10 +765,12 @@ export const robotRouter = router({
   interlockPreview: protectedProcedure
     .use(requirePermission("machine_control", "canView"))
     .input(z.object({ robotId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { evaluateInterlockGate } = await import("../services/interlock/interlockGate");
+      // phạm vi người dùng (L4 2026-10-25): robot ngoài phạm vi ≡ robot không tồn tại ⇒ đánh giá trên khoá KHÔNG có luật (-1), không lộ luật interlock của nhà máy khác
+      const mucTieu = (await robotThayDuoc(ctx, input.robotId)) ? input.robotId : -1;
       // doc 81 Đợt 1B Task 5 — CÙNG khoá với cổng thật (robotInterlockTarget), không hai định nghĩa.
-      const gate = await evaluateInterlockGate(robotInterlockTarget(input.robotId));
+      const gate = await evaluateInterlockGate(robotInterlockTarget(mucTieu));
       return { blocked: gate.blocked, failClosed: gate.failClosed, violations: gate.violations };
     }),
 

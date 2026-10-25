@@ -8,12 +8,12 @@ import { getDb } from "../db/connection";
 import { kiemSchemaR1a } from "./kiemSchemaR1a";
 
 describe("kiemSchemaR1a trên DB _test thật", () => {
-  it("0431 + 0432 + 0433 đã áp ⇒ không thiếu gì", async () => {
+  it("0431 + 0432 + 0433 + 0434 đã áp ⇒ không thiếu gì", async () => {
     expect(process.env.DATABASE_URL).toMatch(/_test/);
     const db = await getDb();
     if (!db) throw new Error("cần DB _test");
     const chay = async (q: SQL) => (await db.execute(q)) as unknown as Array<Record<string, unknown>>;
-    expect(await kiemSchemaR1a(chay)).toEqual({ thieu0431: [], thieu0432: [], thieu0433: [] });
+    expect(await kiemSchemaR1a(chay)).toEqual({ thieu0431: [], thieu0432: [], thieu0433: [], thieu0434: [] }); // kiem-dinh I-C: + 0434 (đã áp TEST)
   });
   it("oracle: cùng câu nhưng information_schema trả rỗng cho bảng lạ ⇒ chứng minh lọc theo tên thật", async () => {
     const db = await getDb();

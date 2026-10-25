@@ -39,6 +39,10 @@ function reset() {
 
 // doc 81 Đợt 1B Task 6 — + inArray/sql for the write-ahead reservation (see commandDispatcher.testkit.ts).
 vi.mock("drizzle-orm", async () => (await import("./commandDispatcher.testkit")).fakeOrm);
+// kiem-dinh R1b-1 I1 (a) (2026-10-25) — FIXTURE: bám định nghĩa tag đọc DB thật (raw SQL) mà FakeDb không có; mặc định "duyệt còn hiệu lực",
+// ca riêng đặt `duyetHL.v = false` (định nghĩa đổi sau duyệt).
+const duyetHL = vi.hoisted(() => ({ v: true }));
+vi.mock("../interlock/dinhNghiaDuyet", () => ({ luatDuyetConHieuLuc: vi.fn(async () => duyetHL.v) }));
 
 function matches(row: Row, pred: any): boolean {
   if (!pred) return true;
@@ -132,6 +136,7 @@ const interlockInput = (over: Partial<Parameters<typeof dispatch>[0]> = {}) => (
 beforeEach(() => {
   reset();
   vi.clearAllMocks();
+  duyetHL.v = true;
   driverConnected = true;
   process.env.OT_CONTROL_ENABLED = "true";
   process.env.INTERLOCK_AUTO_BLOCK_ENABLED = "true";
@@ -199,6 +204,14 @@ describe("commandDispatcher — F5b interlock SAFETY rejections (writeTags 0×)"
 
   it("rule not approved (approvedBy null) → reject INTERLOCK_NOT_APPROVED", async () => {
     rules[0].approvedBy = null;
+    const r = await dispatch(interlockInput());
+    expect(r.status).toBe("rejected");
+    expect(r.reason).toBe("INTERLOCK_NOT_APPROVED");
+    expect(writeTagsSpy).not.toHaveBeenCalled();
+  });
+
+  it("★ kiem-dinh R1b-1 I1 (a): định nghĩa tag nguồn / đích đổi sau duyệt (bám lệch / chưa chụp) → reject INTERLOCK_NOT_APPROVED, writeTags 0×", async () => {
+    duyetHL.v = false;
     const r = await dispatch(interlockInput());
     expect(r.status).toBe("rejected");
     expect(r.reason).toBe("INTERLOCK_NOT_APPROVED");

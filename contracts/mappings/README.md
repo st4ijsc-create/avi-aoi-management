@@ -94,7 +94,16 @@ Tương đương trong app (tRPC, RBAC `machine_control`): `mappingAsCode.list` 
   KHÔNG BAO GIỜ đặt ghim. Cả app lẫn CLI đều GỠ ghim (kèm audit `control_audit_log`
   `device_tag_stop_pin`/`stop_pin_clear` + `audit_logs`) khi file đổi `address`/`datatype`/
   `scale`/`offset`, đặt `writable: false` hoặc `enabled: false`, hoặc `--prune` xoá tag đang ghim.
-  CLI in dòng `[STOP-PIN] …`; ghim lại qua UI (`deviceAdapter.tags.setStopPin`) nếu vẫn cần.
+  CLI in dòng `[STOP-PIN] …`; ghim lại qua UI (`deviceAdapter.tags.setStopPin`, cần mã TOTP) nếu vẫn cần.
+- **Tag ĐƯỢC BẢO VỆ (kiem-dinh R1b-1 I2, 2026-10-25):** CLI ghi SQL thẳng, NÉ cổng của máy chủ (TOTP tươi mức 5 + kiểm lại
+  nhất quán). Nên `--apply` **TỪ CHỐI** (thoát 1, không ghi gì) mọi lô sửa `address`/`datatype`/`scale`/`offset`/`writable`/
+  `enabled`, tạo lên khoá được tham chiếu, hoặc `--prune` xoá một tag ĐƯỢC BẢO VỆ — tag đã khai mức tác động / loại kênh /
+  dải, là kênh chế độ của máy, hoặc là đích / nguồn của một luật interlock không-alert đang bật HOẶC đã duyệt (cùng định
+  nghĩa `server/services/scada/troLaiKenh.ts`). Dry-run in các tag đó với nhãn `[BẢO VỆ]`. Đường bình thường: app
+  (`deviceAdapter` / `mappingAsCode.apply`, nhập mã TOTP).
+  **Ngoại lệ:** `--cho-phep-tag-bao-ve` — CHỈ dành cho người có quyền **host + DB** (đã ghi thẳng bảng được; cờ không mở
+  thêm quyền, chỉ ghi lại ý định vào metadata audit `mapping_as_code.import`). Luật interlock đã duyệt nhắm / đọc các tag
+  bị đổi **tự mất hiệu lực duyệt** (bám định nghĩa lúc duyệt, mig 0434) — phải duyệt lại trước khi bật / tự chặn.
 - Import **không restart adapter**. Nếu kết quả trả `requiresAdapterRestart:
   true` (device_tags đổi) — người vận hành chủ động restart adapter/app; thay
   đổi chỉ ở `uns_mappings` có hiệu lực ngay (qua app) hoặc sau restart (qua CLI).

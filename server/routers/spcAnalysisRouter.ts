@@ -4,6 +4,7 @@ import { router, moduleProcedure } from "../_core/trpc";
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_QUALITY");
 import * as db from "../db";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 // Doc 31 OP2 (decision #4) — lifecycle gate for direct threshold edits.
 import { assertThresholdEditAllowed } from "../services/thresholdGovernanceService";
 import {
@@ -591,6 +592,7 @@ export const spcAnalysisRouter = router({
         startDate: input.startDate ? new Date(input.startDate) : undefined,
         endDate: input.endDate ? new Date(input.endDate) : undefined,
         machineId: input.machineId,
+        machineIds: await idsMayTrongPhamVi(ctx), // phạm vi người dùng (L6a 2026-10-25)
         productModelId: input.productModelId,
         limit: 50000,
       });

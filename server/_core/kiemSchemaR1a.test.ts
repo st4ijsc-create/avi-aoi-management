@@ -33,6 +33,8 @@ function gia(bo: string[] = []) {
       const ra = COT_DEVICE_TAGS_0431.map((c) => ({ table_name: "device_tags", column_name: c }));
       ra.push({ table_name: "totp_khoa_sai", column_name: "loai" } as never);
       ra.push({ table_name: "scada_command_attempts", column_name: "ly_do" } as never);
+      // kiem-dinh R1b-1 I-C (fix round 2) — FIXTURE: cột của mig 0434 (DB "đủ" nay gồm 0434)
+      ra.push({ table_name: "interlock_rules", column_name: "approvedDefHash" } as never);
       return ra.filter((r) => !bo.includes(`${r.table_name}.${r.column_name}`) && !bo.includes(r.table_name));
     }
     if (/information_schema\.tables/.test(text)) {
@@ -51,7 +53,7 @@ afterEach(() => {
 describe("kiemSchemaR1a — truy vấn CHỈ ĐỌC information_schema", () => {
   it("đủ ⇒ không thiếu gì; chỉ SELECT trên information_schema", async () => {
     const g = gia();
-    expect(await kiemSchemaR1a(g.chay)).toEqual({ thieu0431: [], thieu0432: [], thieu0433: [] });
+    expect(await kiemSchemaR1a(g.chay)).toEqual({ thieu0431: [], thieu0432: [], thieu0433: [], thieu0434: [] }); // I-C: + 0434
     expect(g.cauHoi).toHaveLength(2);
     for (const c of g.cauHoi) {
       expect(c.trim()).toMatch(/^SELECT /);
@@ -67,7 +69,7 @@ describe("kiemSchemaR1a — truy vấn CHỈ ĐỌC information_schema", () => {
   });
   it("★ R1b-1 T7 — 0433: bảng có mà thiếu cột ly_do ⇒ scada_command_attempts.ly_do; bảng vắng (thiếu 0431) ⇒ KHÔNG đếm hai lần", async () => {
     const r = await kiemSchemaR1a(gia(["scada_command_attempts.ly_do"]).chay);
-    expect(r).toEqual({ thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"] });
+    expect(r).toEqual({ thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [] }); // I-C: + 0434
     const vang = await kiemSchemaR1a(gia(["scada_command_attempts"]).chay);
     expect(vang.thieu0431).toEqual(["scada_command_attempts"]);
     expect(vang.thieu0433).toEqual([]);
@@ -187,6 +189,44 @@ describe("khoiDongOtCoKiemSchema — kiểm TRƯỚC startOt", () => {
     await vi.waitFor(() => expect(boNhac).toHaveBeenCalledTimes(1));
     expect(lyDoSchemaR1a()).toBeNull();
     expect(trangThaiSchemaR1a()).toMatchObject({ kieu: "da_kiem", thieu0433: [] });
+  });
+
+  it("★ kiem-dinh I-C — THIẾU 0434 ⇒ startOt VẪN chạy; khối lỗi gọi tên 0434 + nói cổng interlock chặn MỌI lệnh HITL + backfill TOFU; nhắc mỗi 5 phút; có cột ⇒ thôi nhắc; /health có lý do", async () => {
+    let bo = ["interlock_rules.approvedDefHash"];
+    const g = gia();
+    const chay = async (q: SQL) => {
+      const r = await g.chay(q);
+      return r.filter((x: Record<string, unknown>) => !bo.includes(`${String(x.table_name)}.${String(x.column_name)}`));
+    };
+    let nhac: (() => void) | null = null;
+    const boNhac = vi.fn();
+    const startOt = vi.fn(async () => undefined);
+    const logLoi = vi.fn();
+    expect((await kiemSchemaR1a(chay)).thieu0434).toEqual(["interlock_rules.approvedDefHash"]);
+    const kq = await khoiDongOtCoKiemSchema({
+      chay,
+      startOt,
+      logLoi,
+      datNhac: (fn) => {
+        nhac = fn;
+        return { unref: () => undefined };
+      },
+      boNhac,
+    });
+    expect(kq).toBe("da_start");
+    expect(startOt).toHaveBeenCalledTimes(1);
+    const log = String(logLoi.mock.calls[0][0]);
+    expect(log).toContain("THIẾU MIGRATION 0434");
+    expect(log).toContain("MỌI lệnh ghi HITL thật trên MỌI adapter");
+    expect(log).toContain("apply-migration-0434");
+    expect(log).toContain("backfill-approved-def-hash");
+    expect(lyDoSchemaR1a()).toMatchObject({ ok: false, trangThai: "thieu", thieuMigration: ["0434"] });
+    nhac!();
+    await vi.waitFor(() => expect(logLoi).toHaveBeenCalledTimes(2));
+    bo = [];
+    nhac!();
+    await vi.waitFor(() => expect(boNhac).toHaveBeenCalledTimes(1));
+    expect(lyDoSchemaR1a()).toBeNull();
   });
 
   it("không kiểm được (truy vấn ném) ⇒ cảnh báo, startOt vẫn chạy như trước, /health không degraded vì schema", async () => {

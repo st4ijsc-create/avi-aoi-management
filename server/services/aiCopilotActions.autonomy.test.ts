@@ -378,3 +378,6 @@ describe("D2 wire — ineligible (hard-coded denylist) type is never auto-confir
     expect(pendingStore.get(res.pendingAction!.actionId)!.status).toBe("proposed");
   });
 });
+
+// W11c: cổng phạm vi tool GHI có test riêng (aiLocalTools/phamViGhi*.test.ts); ở đây user giả / CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./aiLocalTools/phamViGhi", () => ({ kiemPhamViGhiTool: async () => ({ ok: true }) }));

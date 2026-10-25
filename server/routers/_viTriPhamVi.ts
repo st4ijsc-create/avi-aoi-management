@@ -72,7 +72,7 @@ export async function canhBaoDuDoanGhi(ctx: CoDanhTinh, id: number): Promise<voi
   if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   const [a] = await d.select({ m: predictiveAlerts.machineId, f: predictiveAlerts.factoryId }).from(predictiveAlerts).where(eq(predictiveAlerts.id, id)).limit(1);
   try {
-    if (!a) throw new Error("none");
+    if (!a) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "predictiveAlert" }, "none");
     await ghiViTri(ctx, { machineId: a.m, factoryId: a.f }, { batBuoc: true });
   } catch {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "predictiveAlert" }, "Alert not found");

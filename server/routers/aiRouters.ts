@@ -13,6 +13,7 @@ import { idsTrongPhamVi } from "../db/hierarchy";
 import { resolveTenantFactoryScope } from "../db/reportAggregators";
 import { mayTrongPhamVi } from "./_adapterPhamVi";
 import { ghiViTri, canhBaoDuDoanGhi } from "./_viTriPhamVi";
+import { congCanhBaoDuDoan, congPhanTichNguyenNhan } from "./_aiPhamVi";
 
 /**
  * Phạm vi nhà máy của một bản phân tích nguyên nhân gốc đã lưu (rà bảo mật 2026-10-24, kiểm định phamViGhi): bản có máy ⇒ máy phải trong
@@ -276,11 +277,13 @@ export const rootCauseRouter = router({
       machineId: z.number().optional(),
       limit: z.number().min(1).max(100).default(20),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      
+
       let query = sql`SELECT * FROM root_cause_analysis WHERE 1=1`;
+      const congPv = await congPhanTichNguyenNhan(ctx as never); // phạm vi người dùng (L6b 2026-10-25)
+      if (congPv) query = sql`${query} AND ${congPv}`;
       if (input?.analysisType) {
         query = sql`${query} AND "analysisType" = ${input.analysisType}`;
       }
@@ -464,14 +467,16 @@ export const predictiveAlertRouter = router({
       machineId: z.number().optional(),
       limit: z.number().min(1).max(100).default(50),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      
+
       const { predictiveAlerts } = await import('../../drizzle/schema');
       const { desc, eq, and } = await import('drizzle-orm');
-      
+
       const conditions: any[] = [];
+      const congPv = await congCanhBaoDuDoan(ctx); // phạm vi người dùng (L6b 2026-10-25)
+      if (congPv) conditions.push(congPv);
       if (input?.status) conditions.push(eq(predictiveAlerts.status, input.status));
       if (input?.severity) conditions.push(eq(predictiveAlerts.severity, input.severity));
       if (input?.alertType) conditions.push(eq(predictiveAlerts.alertType, input.alertType));
@@ -549,12 +554,13 @@ export const predictiveAlertRouter = router({
   // Get single alert
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      
+
+      const congPv = await congCanhBaoDuDoan(ctx); // phạm vi người dùng (L6b 2026-10-25): cảnh báo ngoài phạm vi ≡ không tồn tại
       const result = await db.execute(
-        sql`SELECT * FROM predictive_alerts WHERE id = ${input.id}`
+        congPv ? sql`SELECT * FROM predictive_alerts WHERE id = ${input.id} AND ${congPv}` : sql`SELECT * FROM predictive_alerts WHERE id = ${input.id}`
       ) as any;
       // W0-1 fix (doc 69): db.execute() rows come back directly, not under
       // `.rows` — `result.rows?.length` was always undefined → always NOT_FOUND.
@@ -804,16 +810,18 @@ export const predictiveAlertRouter = router({
 
   // Get alert statistics
   stats: protectedProcedure
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      
+
+      const congPv = await congCanhBaoDuDoan(ctx); // phạm vi người dùng (L6b 2026-10-25)
       const result = await db.execute(sql`
-        SELECT 
+        SELECT
           status,
           severity,
           COUNT(*) as count
         FROM predictive_alerts
+        ${congPv ? sql`WHERE ${congPv}` : sql``}
         GROUP BY status, severity
       `) as any;
       

@@ -171,3 +171,6 @@ describe("withdraw — requester-only", () => {
     await expect(userCaller(20).withdraw({ id: 1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });
+
+// W13: cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW13.db.test.ts); ở đây CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./_sanPhamPhamVi", () => ({ sanPhamGhiTrongPhamVi: async () => undefined, diemDoGhiTrongPhamVi: async () => undefined }));

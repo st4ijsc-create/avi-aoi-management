@@ -3696,6 +3696,7 @@
       "queued-for-shared-ledger": "The read replica was cleaned IMMEDIATELY (headroom reflects it right away), but the row only actually LEAVES the database at the NEXT shared-ledger sync — see unsyncedWritesAfter for how many writes are still pending."
     },
     "entity": {
+      "corporate": "corporation",
       "edgeNode": "edge node",
       "scadaRequest": "SCADA command request",
       "mqttClient": "MQTT device",
@@ -3888,6 +3889,7 @@
       "lateWriteResult": "late write result"
     },
     "operation": {
+      "dieuKienViTriTrongPhamVi": "build the location scope condition",
       "retireEdgeNode": "retire the edge node",
       "updateApiKey": "update the API key",
       "changeApiKeyHolder": "change who the API key is issued to",
@@ -4077,9 +4079,12 @@
       "scadaDisableAdapter": "disable the adapter",
       "scadaSetStubFault": "set a simulated stub fault",
       "scadaSelectTag": "select a channel to command",
-      "scadaKenhCapNhat": "update the channel declaration"
+      "scadaKenhCapNhat": "update the channel declaration",
+      "dieuKienDoiTuongTrongPhamVi": "in-scope object condition"
     },
     "field": {
+      "stationId": "station",
+      "location": "Location (factory, workshop, line, station or machine)",
       "holderUserId": "the user the key is issued to (an existing, active user)",
       "settingKey": "Setting key",
       "uiPrefs": "interface preferences",
@@ -4200,7 +4205,8 @@
       "expectedProjectId": "open project (expectedProjectId)",
       "assigneeUserId": "assignee",
       "writable": "writable",
-      "dataType": "data type (dataType)"
+      "dataType": "data type (dataType)",
+      "inspectionId": "inspection"
     },
     "feature": {
       "apiKeyHolder": "API key holder record (database migration 0369)",
@@ -4262,6 +4268,9 @@
       "scadaCommands": "SCADA HMI commands"
     },
     "action": {
+      "testWebhook": "send a test webhook",
+      "toggleWebhook": "enable or disable a webhook",
+      "writeCorporateEquipmentStandard": "write a corporate-level equipment standard",
       "changeMqttDeviceOfOtherScope": "change an MQTT device bound to a machine outside your scope",
       "selfApproveProgramDeploy": "approve your own program deploy request",
       "viewOthersPermissions": "view another user's permissions",
@@ -4334,7 +4343,10 @@
       "secondApproveOwnSafetyPlcConfig": "give the second approval of a safety-PLC configuration you approved first (two different admins are required)",
       "flowKichHoatHangCao": "enable a flow that writes externally or touches OT (admins only)",
       "flowPhamVi": "use flows/secrets by factory",
-      "flowDuyet": "approve a waiting step of an AI flow"
+      "flowDuyet": "approve a waiting step of an AI flow",
+      "verifyChainAcrossFactories": "verify a traceability chain across factories",
+      "manageProductWideProgramRelease": "manage product-wide inspection program releases",
+      "authorSharedSop": "author a shared SOP"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -4523,7 +4535,8 @@
       "scadaKenhCheDoKhongDoiAdapter": "This tag is a machine's mode channel — it cannot be moved to another adapter. Remove or re-declare the mode channel on the Channels & limits page first.",
       "scadaKenhCheDoGoTruoc": "This tag is a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the tag.",
       "scadaKenhCheDoDoiMay": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page before assigning the adapter to another machine.",
-      "scadaKenhCheDoGoTruocXoaAdapter": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the adapter."
+      "scadaKenhCheDoGoTruocXoaAdapter": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the adapter.",
+      "interlockDefinitionChanged": "The source / target tag definition (address, type, scale / offset, adapter, edge node) changed after approval — or the rule was approved before this update. Re-approve it before enabling."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -4599,7 +4612,8 @@
     "INTERLOCK_DICH_CHUA_SAN_SANG": "Interlock rule #{{ruleId}} cannot be enabled: tag {{tagKey}} is not ready — the target tag does not exist, is disabled or its adapter is disabled; or the source tag declared on the machine is disabled (or its adapter is). The protective action would have no target or no source. Create / enable the tag and its adapter first, then enable the rule again.",
     "INTERLOCK_NGUON_MO_HO": "Interlock rule #{{ruleId}} cannot be enabled: {{soAdapter}} enabled adapters of the machine carry the source tag {{tagKey}} — the gate cannot tell which one to read (ambiguous), so the rule would always lack data. Rename or disable the duplicate tag first, then enable the rule again.",
     "QUA_NHIEU_KENH_DA_KHAI": "This import touches {{soTag}} declared / protected channel tags — at most {{toiDa}} per import. Split the file and import again.",
-    "STOP_PIN_GO_TRUOC": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) — changing its address, type, scale, offset, writable flag or adapter, disabling or deleting it would lose STOP. Unpin it first (Software stop tag, with a reason), then try again."
+    "STOP_PIN_GO_TRUOC": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) — changing its address, type, scale, offset, writable flag or adapter, disabling or deleting it would lose STOP. Unpin it first (Software stop tag, with a reason), then try again.",
+    "SCADA_STOP_PINS_HIGH_LEVEL": "Every STOP pin of this machine is on a tag with actuation level > 1 ({{tagKeys}}) — the STOP MACHINE button does not send to high-level tags; an engineer declares actuation level 1 for the stop tags at /scada/config/channels; stop it with the hardwired E-STOP."
   },
   "export": {
     "reportMenu": {
@@ -14479,7 +14493,10 @@
     },
     "openEventsPanel": "Open Events panel",
     "eventsButton": "Events",
-    "unresolvedCount": "{{count}} open"
+    "unresolvedCount": "{{count}} open",
+    "canDuyetLai": "Re-approval needed",
+    "canDuyetLaiGiaiThich": "The source / target tag definition (address, type, scale / offset, adapter, edge node) changed after approval, or the rule was approved before this update — it cannot be enabled and will not auto-block until re-approved.",
+    "totpBody": "Editing or deleting an interlock rule that is enabled or approved (with a tag target / source) is a safety change: the rule loses its approval and its tags may lose protection. A fresh TOTP code is required."
   },
   "quickIssue": {
     "button": "Report issue",
@@ -16452,7 +16469,10 @@
         "confirm": "Turn off and remove pin",
         "bodyEdit": "This tag has a pinned STOP value; saving this change (not writable / disabled / new address, type, scale or offset) removes the pin.",
         "confirmEdit": "Save and remove pin"
-      }
+      },
+      "totpBody": "Setting or clearing a STOP pin is a safety change: the STOP MACHINE button sends these pins in one step, exempt from mode / range / interlock checks. Engineers and above only, with a fresh TOTP code each time.",
+      "mucCao": "Actuation level {{muc}} tag — the STOP MACHINE button (HMI STOP) will SKIP this pin; only pins on tags declared at level 1 are sent. For HMI STOP to reach this tag, declare actuation level 1 on the Channels & limits page.",
+      "mucChuaKhai": "This tag has no actuation level declared (treated as level 5) — the STOP MACHINE button (HMI STOP) will SKIP this pin. For HMI STOP to reach this tag, declare actuation level 1 on the Channels & limits page."
     },
     "toast": {
       "connFail": "Connection failed: {{err}}",
@@ -23833,7 +23853,8 @@
         "nutDungGoiY": "Use {{goiY}}",
         "ma": "Code: {{ma}}",
         "CHUA_GHIM_STOP": "The machine has no pinned STOP values — an engineer pins them at /scada/config/channels; stop it with the hardwired E-STOP",
-        "goiYStopKhongGhim": "Need to stop the machine? Use the hardwired E-STOP or the stop button at the machine cabinet"
+        "goiYStopKhongGhim": "Need to stop the machine? Use the hardwired E-STOP or the stop button at the machine cabinet",
+        "GHIM_MUC_CAO": "Every STOP pin of this machine is on a tag with actuation level > 1 ({{list}}) — the STOP MACHINE button sends nothing; stop it with the hardwired E-STOP"
       },
       "local": {
         "remote": "the machine is in REMOTE",
@@ -23876,7 +23897,9 @@
         "chuaGhim": "No pinned STOP — nothing is sent",
         "quaEdge": "STOP sent via edge node {{code}} — confirmed only when the edge reports back",
         "matKetNoi": "Disconnected — the STOP will not reach the machine (ADAPTER_OFFLINE)",
-        "khongKiemDuoc": "Could not be checked — use the hardwired E-STOP if needed"
+        "khongKiemDuoc": "Could not be checked — use the hardwired E-STOP if needed",
+        "ghimMucCao": "Only pins on tags with actuation level > 1 ({{list}}) — not reached by HMI STOP, nothing is sent",
+        "boQuaMucCao": "skips pins on tags with actuation level > 1: {{list}}"
       },
       "canhBao": {
         "ghimCu": "Pinned STOP not in effect — reconnect adapter {{code}}",
@@ -23886,11 +23909,17 @@
         "quaEdge": "STOP sent via edge node {{code}} — confirmed only when the edge reports back",
         "edgeKhongToi": "Edge node {{code}} cannot be reached from central — the STOP may not reach the machine; use the hardwired E-STOP if needed",
         "khongKiemDuoc": "Could not check whether the machine can be stopped — use the hardwired E-STOP if needed",
-        "chuaGhimMotPhan": "Adapter(s) {{list}} have no pinned STOP"
+        "chuaGhimMotPhan": "Adapter(s) {{list}} have no pinned STOP",
+        "ghimMucCao": "Adapter {{code}}: every STOP pin is on a tag with actuation level > 1 ({{list}}) — not reached by HMI STOP; declare actuation level 1 for the stop tags",
+        "boQuaMucCao": "Adapter {{code}}: HMI STOP skips pins on tags with actuation level > 1 ({{list}})"
       },
       "daGuiDuPhong": "The edge did not take the command — central sent its fallback STOP; not yet confirmed that the machine stopped",
       "loiTaiDiag": "Could not load the adapter list — the per-machine STOP MACHINE buttons are still below; use the hardwired E-STOP at the machine if needed",
-      "loiTaiMay": "Could not load the machine list — the STOP MACHINE buttons cannot be shown; use the hardwired E-STOP at the machine"
+      "loiTaiMay": "Could not load the machine list — the STOP MACHINE buttons cannot be shown; use the hardwired E-STOP at the machine",
+      "boQua": {
+        "tieuDe": "Not sent (tags with actuation level > 1 — not reached by HMI STOP):",
+        "dong": "{{code}} · {{tagKey}} (level {{muc}})"
+      }
     }
   }
 }

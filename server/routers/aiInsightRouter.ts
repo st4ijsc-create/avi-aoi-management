@@ -5,6 +5,7 @@
 import { sql } from "drizzle-orm";
 import type { CoDanhTinh } from "./_phamViNguoiXem";
 import { ghiViTri } from "./_viTriPhamVi";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import { z } from "zod";
 import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
@@ -20,7 +21,7 @@ async function insightGhi(ctx: CoDanhTinh, id: number): Promise<void> {
   if (!r || r.m == null) return; // không có hàng: để thân thủ tục xử như trước; insight chung: giữ nguyên
   try {
     const rows = (await d.execute(sql`SELECT id FROM machines WHERE code = ${r.m} LIMIT 1`)) as unknown as Array<{ id: number }>;
-    if (rows.length === 0) throw new Error("none");
+    if (rows.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "insight" }, "none");
     await ghiViTri(ctx, { machineId: Number(rows[0]!.id) });
   } catch {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "insight" }, "Insight not found");
@@ -34,10 +35,15 @@ export const aiInsightRouter = router({
       machineCode: z.string().optional(),
       limit: z.number().min(1).max(200).default(50),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       const conds = [];
+      // phạm vi người dùng (L6b 2026-10-25): insight theo máy (mã máy) ⇒ máy trong phạm vi; không gắn máy ⇒ chung (khớp insightGhi)
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      if (idsMay !== null) {
+        conds.push(sql`(${aiInsights.machineCode} IS NULL OR ${aiInsights.machineCode} IN (SELECT code FROM machines WHERE id IN (${sql.join((idsMay.length > 0 ? idsMay : [-1]).map((x) => sql`${x}`), sql`, `)})))`);
+      }
       if (input?.status) conds.push(eq(aiInsights.status, input.status));
       if (input?.machineCode) conds.push(eq(aiInsights.machineCode, input.machineCode));
       const where = conds.length ? and(...conds) : undefined;

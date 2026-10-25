@@ -186,6 +186,7 @@ import { getCorrelationId } from "../observability/correlation";
 import { adapterOwnedByEdgeInTx } from "./otAdapterOwnerGate"; // doc 81 Đợt 10 D fix review 3 (scan #73)
 // doc 81 Đợt 1D Task 2 — per-tag pinned STOP values (mig 0362, Task 1).
 import { loadStopPins, matchPinnedStop, stopPinsFromTagRows, validateStopValue, type MatchPinnedStopResult, type StopPin, type StopPinTagRow } from "./stopPin";
+import { luatDuyetConHieuLuc } from "../interlock/dinhNghiaDuyet"; // kiem-dinh R1b-1 I1 (a): duyệt còn hiệu lực = bám định nghĩa tag khớp
 import { giaTriLenhInterlock } from "../interlock/giaTriLenh"; // R1a T12 fix 1 (c1): giá trị luật GỬI = giá trị so ở đây = giá trị kiểm lúc cấu hình
 import { cachedStopPinPresence } from "./stopPinPresence"; // doc 81 Đợt 12 final fix wave residual (R-12-f item 1)
 import { otStopEpochSyncSeesPeers } from "./otStopEpochSync"; // R-12-f item 1
@@ -2213,6 +2214,7 @@ async function reserveRealWrite(
  *   - INTERLOCK_AUTO_BLOCK_ENABLED === "true" (master flag; default off → reject)
  *   - the rule exists AND enabled=true
  *   - rule.approvedBy IS NOT NULL AND === triggeredBy.approvedBy (anti-forgery)
+ *   - kiem-dinh R1b-1 I1 (a): the approval is still in force — current source/target tag definition hash == rule.approvedDefHash
  *   - rule.requiresHumanConfirm === false (this is the AUTO path, not HITL)
  *   - rule.action ∈ {block_downstream, stop_line, reduce_speed} (allowlist)
  *   - rule.targetAdapterId === input.adapterId
@@ -2241,6 +2243,16 @@ async function verifyInterlockAuthorization(
   }
   if (rule.approvedBy == null || rule.approvedBy !== trig.approvedBy) {
     return { ok: false, reason: "INTERLOCK_NOT_APPROVED", detail: "Rule not approved or approver mismatch" };
+  }
+  // kiem-dinh R1b-1 I1 (a) — the approval only holds while the source / target tag definitions (address, type, scale/offset, adapter, the
+  // adapter's edge node) still hash to what was captured at approval (approvedDefHash, mig 0434). Mismatch / no hash (approved before 0434) /
+  // unreadable ⇒ NOT approved (fail-closed), same code as above.
+  if (!(await luatDuyetConHieuLuc(db as never, rule))) {
+    return {
+      ok: false,
+      reason: "INTERLOCK_NOT_APPROVED",
+      detail: "Rule source/target tag definition changed since approval (or approved before mig 0434) — re-approve",
+    };
   }
   if (rule.requiresHumanConfirm !== false) {
     return { ok: false, reason: "INTERLOCK_REQUIRES_HUMAN_CONFIRM", detail: "Rule requires human confirm — not an auto-block path" };

@@ -73,8 +73,13 @@ async function seedTag(key: string, level: number | null) {
       'input_output'::scada_channel_kind, ${"Kenh " + key}, 0, 300, 0.5, ${level})`);
 }
 /** Fix round 1 (c1) — tag lệnh bool, actuation_level CHƯA KHAI (NULL ⇒ 5); `stopValue` khác null ⇒ tag DỪNG ghim. */
-async function seedTagDung(adId: number, key: string, stopValue: boolean | null) {
-  await db.insert(deviceTags).values({ adapterId: adId, tagKey: key, address: `M.${key}`, dataType: "bool", writable: true, isEnabled: true, stopValue });
+/**
+ * kiem-dinh R1b-1 I-A (fix round 2, 2026-10-25) — FIXTURE: tag CÓ ghim khai `actuationLevel = 1` (dừng ghim chỉ tính ghim đủ điều kiện STOP, cùng luật
+ * STOP HMI); `muc` ghi đè (null = chưa khai ⇒ 5 ⇒ không phải dừng ghim).
+ */
+async function seedTagDung(adId: number, key: string, stopValue: boolean | null, muc?: number | null) {
+  const actuationLevel = muc !== undefined ? muc : stopValue === null ? null : 1;
+  await db.insert(deviceTags).values({ adapterId: adId, tagKey: key, address: `M.${key}`, dataType: "bool", writable: true, isEnabled: true, stopValue, actuationLevel });
 }
 async function soTotpConsumed(userId: number): Promise<number> {
   const [r] = await dung(sql`SELECT count(*)::int AS n FROM totp_consumed WHERE "userId" = ${userId}`);
@@ -245,7 +250,7 @@ describe("kiemCongAi ở execute — mức kênh đọc từ DB thật", () => {
     }
   });
 
-  it("c1 — machine_stop, kênh CHƯA khai mức, ghi đúng stop_value ghim ⇒ qua cổng mức ở confirm (mức 1, không 2FA) VÀ ở execute ⇒ dispatch", async () => {
+  it("c1 — machine_stop, kênh khai mức 1 (kiem-dinh I-A: ghim chỉ tính khi tag mức ≤ 1; trước đây kênh chưa khai), ghi đúng stop_value ghim ⇒ qua cổng mức ở confirm (mức 1, không 2FA) VÀ ở execute ⇒ dispatch", async () => {
     vi.stubEnv("AI_OT_CONTROL_ENABLED", "true");
     try {
       const id = await deXuatTool("op", "machine_stop", { machineId: mid });
@@ -276,12 +281,32 @@ describe("kiemCongAi ở execute — mức kênh đọc từ DB thật", () => {
     const { mucKenhChoAi } = await import("../services/ot/aiControlGate.safety");
     expect(await mucKenhChoAi(adapterId, [{ tagKey: "dung_ghim", value: true }], "stop")).toEqual({ dungGhim: true });
     expect(await mucKenhChoAi(adapterId, [{ tagKey: "dung_ghim", value: 1 }], "e_stop")).toEqual({ dungGhim: true });
-    expect(await mucKenhChoAi(adapterId, [{ tagKey: "dung_ghim", value: false }], "stop")).toEqual({ dungGhim: false, muc: 5 });
-    expect(await mucKenhChoAi(adapterId, [{ tagKey: "dung_ghim", value: true }, { tagKey: "sp3", value: 1 }], "stop")).toEqual({ dungGhim: false, muc: 5 });
-    expect(await mucKenhChoAi(adapterId, [{ tagKey: "dung_ghim", value: true }], "start")).toEqual({ dungGhim: false, muc: 5 });
-    expect(await mucKenhChoAi(adapterId, [{ tagKey: "dung_ghim", value: true }])).toEqual({ dungGhim: false, muc: 5 });
+    // kiem-dinh I-A (fix round 2): tag dung_ghim nay khai mức 1 (điều kiện để là dừng ghim) ⇒ nhánh "không phải dừng ghim" trả mức THẬT của kênh (1; trộn sp3 ⇒ 3) thay vì 5 của kênh chưa khai.
+    expect(await mucKenhChoAi(adapterId, [{ tagKey: "dung_ghim", value: false }], "stop")).toEqual({ dungGhim: false, muc: 1 });
+    expect(await mucKenhChoAi(adapterId, [{ tagKey: "dung_ghim", value: true }, { tagKey: "sp3", value: 1 }], "stop")).toEqual({ dungGhim: false, muc: 3 });
+    expect(await mucKenhChoAi(adapterId, [{ tagKey: "dung_ghim", value: true }], "start")).toEqual({ dungGhim: false, muc: 1 });
+    expect(await mucKenhChoAi(adapterId, [{ tagKey: "dung_ghim", value: true }])).toEqual({ dungGhim: false, muc: 1 });
     expect(await mucKenhChoAi(adapterId, [{ tagKey: "sp3", value: 1 }], "set_param")).toEqual({ dungGhim: false, muc: 3 });
     expect(await mucKenhChoAi(adapterId, [{ tagKey: "khong_co", value: 1 }], "stop")).toEqual({ dungGhim: false, muc: 5 });
+  });
+
+  it("★ kiem-dinh I-A — ghim trên tag CHƯA khai mức / mức 4 KHÔNG phải dừng ghim (cùng luật STOP HMI) ⇒ mức kênh (5 / 4); machine_stop chỉ có ghim như vậy ⇒ từ chối, 0 dispatch", async () => {
+    const { mucKenhChoAi } = await import("../services/ot/aiControlGate.safety");
+    await seedTagDung(adapterId, "ghim_cu_null", true, null);
+    await seedTagDung(adapterId, "ghim_cu_m4", true, 4);
+    expect(await mucKenhChoAi(adapterId, [{ tagKey: "ghim_cu_null", value: true }], "stop")).toEqual({ dungGhim: false, muc: 5 });
+    expect(await mucKenhChoAi(adapterId, [{ tagKey: "ghim_cu_m4", value: true }], "stop")).toEqual({ dungGhim: false, muc: 4 });
+    // máy thứ hai: chỉ ghim cũ trên tag chưa khai mức ⇒ tool từ chối (không rơi về cmd_stop)
+    await dung(sql`UPDATE device_tags SET stop_value = 'true'::jsonb WHERE "adapterId" = ${adapterId2} AND "tagKey" = 'cmd_stop'`);
+    vi.stubEnv("AI_OT_CONTROL_ENABLED", "true");
+    try {
+      await expect(registry.getTool("machine_stop")!.execute!({ machineId: mid2 }, ctx())).rejects.toThrow(/actuation level > 1|mức tác động > 1/);
+      expect(H.dispatchCalls).toBe(0);
+    } finally {
+      vi.stubEnv("AI_OT_CONTROL_ENABLED", "false");
+      await dung(sql`UPDATE device_tags SET stop_value = NULL WHERE "adapterId" = ${adapterId2} AND "tagKey" = 'cmd_stop'`);
+      await dung(sql`DELETE FROM device_tags WHERE "adapterId" = ${adapterId} AND "tagKey" IN ('ghim_cu_null', 'ghim_cu_m4')`);
+    }
   });
 });
 
@@ -346,3 +371,6 @@ describe("bản xem trước set_machine_param — oldValue từ bộ đệm hi�
     expect(tat.warnings.join("\n")).toMatch(/bộ đệm/i);
   });
 });
+
+// W11c: cổng phạm vi tool GHI có test riêng (aiLocalTools/phamViGhi*.test.ts); ở đây user giả / CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("../services/aiLocalTools/phamViGhi", () => ({ kiemPhamViGhiTool: async () => ({ ok: true }) }));

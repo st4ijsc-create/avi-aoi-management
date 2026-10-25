@@ -3688,6 +3688,7 @@
       "queued-for-shared-ledger": "读取副本已立即清理（余量会立刻反映出来），但该行要到下一次共享台账同步时才会真正从数据库中移除——查看 unsyncedWritesAfter 了解还有多少写入尚未发送。"
     },
     "entity": {
+      "corporate": "集团",
       "edgeNode": "边缘节点",
       "scadaRequest": "SCADA 指令请求",
       "mqttClient": "MQTT设备",
@@ -3880,6 +3881,7 @@
       "lateWriteResult": "迟到的写入结果"
     },
     "operation": {
+      "dieuKienViTriTrongPhamVi": "构建位置范围条件",
       "retireEdgeNode": "永久停用边缘节点",
       "updateApiKey": "更新 API 密钥",
       "changeApiKeyHolder": "更改 API 密钥的发放对象",
@@ -4069,9 +4071,12 @@
       "scadaDisableAdapter": "暂停适配器",
       "scadaSetStubFault": "为模拟器设置故障",
       "scadaSelectTag": "选择要下达命令的通道",
-      "scadaKenhCapNhat": "更新通道声明"
+      "scadaKenhCapNhat": "更新通道声明",
+      "dieuKienDoiTuongTrongPhamVi": "范围内对象条件"
     },
     "field": {
+      "stationId": "工位",
+      "location": "位置（工厂、车间、产线、工位或机台）",
       "holderUserId": "密钥的发放对象（必须是现有的在职用户）",
       "settingKey": "设置键",
       "uiPrefs": "界面偏好",
@@ -4192,7 +4197,8 @@
       "expectedProjectId": "当前打开的项目（expectedProjectId）",
       "assigneeUserId": "被分配人",
       "writable": "可写（writable）",
-      "dataType": "数据类型（dataType）"
+      "dataType": "数据类型（dataType）",
+      "inspectionId": "检验"
     },
     "feature": {
       "apiKeyHolder": "API 密钥持有人记录（数据库迁移 0369）",
@@ -4254,6 +4260,9 @@
       "scadaCommands": "SCADA HMI 命令"
     },
     "action": {
+      "testWebhook": "发送测试 Webhook",
+      "toggleWebhook": "启用或停用 Webhook",
+      "writeCorporateEquipmentStandard": "写入集团级设备标准",
       "changeMqttDeviceOfOtherScope": "更改绑定到您范围外机器的MQTT设备",
       "selfApproveProgramDeploy": "审批自己提交的程序部署请求",
       "viewOthersPermissions": "查看他人的权限",
@@ -4326,7 +4335,10 @@
       "secondApproveOwnSafetyPlcConfig": "对您已作出首次批准的安全PLC配置进行第二次批准（需要两名不同的管理员）",
       "flowKichHoatHangCao": "启用对外写入或涉及 OT 的流程（仅管理员）",
       "flowPhamVi": "按工厂使用流程/密钥",
-      "flowDuyet": "审批 AI 流程中等待的步骤"
+      "flowDuyet": "审批 AI 流程中等待的步骤",
+      "verifyChainAcrossFactories": "跨工厂验证追溯链",
+      "manageProductWideProgramRelease": "管理产品级检验程序发布",
+      "authorSharedSop": "编写共享SOP"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
@@ -4515,7 +4527,8 @@
       "scadaKenhCheDoKhongDoiAdapter": "该标签是某台机器的模式通道——不能移到其他适配器。请先在“通道与限值”页面移除或重新声明模式通道。",
       "scadaKenhCheDoGoTruoc": "该标签是某台机器的模式通道——删除标签前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。",
       "scadaKenhCheDoDoiMay": "该适配器承载某台机器的模式通道——将适配器分配给其他机器前，请先在“通道与限值”页面移除模式通道。",
-      "scadaKenhCheDoGoTruocXoaAdapter": "该适配器承载某台机器的模式通道——删除适配器前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。"
+      "scadaKenhCheDoGoTruocXoaAdapter": "该适配器承载某台机器的模式通道——删除适配器前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。",
+      "interlockDefinitionChanged": "源 / 目标标签的定义（地址、类型、比例 / 偏移、适配器、边缘节点）在审批后已更改 — 或该规则是在本次更新之前审批的。启用前需要重新审批。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -4591,7 +4604,8 @@
     "INTERLOCK_DICH_CHUA_SAN_SANG": "无法启用联锁规则 #{{ruleId}}：标签 {{tagKey}} 尚未就绪——目标标签不存在、已停用或其适配器已停用；或机器上已声明的数据源标签（或其适配器）已停用。保护动作将没有目标或数据源。请先创建 / 启用该标签及其适配器，然后再启用规则。",
     "INTERLOCK_NGUON_MO_HO": "无法启用联锁规则 #{{ruleId}}：该机器有 {{soAdapter}} 个已启用的适配器带有数据源标签 {{tagKey}}——网关无法确定读取哪一个（不明确），规则将始终缺少数据。请先重命名或停用重复的标签，然后再启用规则。",
     "QUA_NHIEU_KENH_DA_KHAI": "本次导入涉及 {{soTag}} 个已声明/受保护通道的标签——每次最多 {{toiDa}} 个。请拆分文件后重新导入。",
-    "STOP_PIN_GO_TRUOC": "通道 {{tagKey}} 已固定停止值（{{stopValue}}）——修改其地址、类型、比例、偏移、可写标志或适配器，或停用、删除该标签，都会失去 STOP。请先解除固定（软件停止标签，需填写原因），然后重试。"
+    "STOP_PIN_GO_TRUOC": "通道 {{tagKey}} 已固定停止值（{{stopValue}}）——修改其地址、类型、比例、偏移、可写标志或适配器，或停用、删除该标签，都会失去 STOP。请先解除固定（软件停止标签，需填写原因），然后重试。",
+    "SCADA_STOP_PINS_HIGH_LEVEL": "此设备的所有 STOP 固定值都位于执行等级 > 1 的标签上（{{tagKeys}}）—“停机”按钮不会发送到高等级标签；请工程师在 /scada/config/channels 将停机标签的执行等级声明为 1；请使用硬接线急停（E-STOP）停机。"
   },
   "export": {
     "reportMenu": {
@@ -14262,7 +14276,10 @@
     },
     "openEventsPanel": "打开事件面板",
     "eventsButton": "事件",
-    "unresolvedCount": "{{count}} 未处理"
+    "unresolvedCount": "{{count}} 未处理",
+    "canDuyetLai": "需要重新审批",
+    "canDuyetLaiGiaiThich": "源 / 目标标签的定义（地址、类型、比例 / 偏移、适配器、边缘节点）在审批后已更改，或该规则是在本次更新之前审批的 — 重新审批之前无法启用，也不会自动拦截。",
+    "totpBody": "编辑或删除已启用或已审批（带标签目标 / 源）的联锁规则属于安全变更：规则将失去审批，其标签可能失去保护。需要新的 TOTP 验证码。"
   },
   "quickIssue": {
     "button": "报告异常",
@@ -17107,7 +17124,10 @@
         "confirm": "关闭并移除固定值",
         "bodyEdit": "该标签已固定停止值；保存此更改（不可写 / 禁用 / 更改地址、类型、缩放或偏移）将移除该固定值。",
         "confirmEdit": "保存并移除固定值"
-      }
+      },
+      "totpBody": "设置或清除 STOP 固定值属于安全变更：“停机”按钮会一步发送这些固定值，免于模式 / 范围 / 联锁检查。仅限工程师及以上角色，每次都需要新的 TOTP 验证码。",
+      "mucCao": "执行等级 {{muc}} 的标签 —“停机”按钮（HMI STOP）将跳过此固定值；只发送声明为等级 1 的标签的固定值。如需 HMI STOP 到达此标签，请在“通道与限值”页面将执行等级声明为 1。",
+      "mucChuaKhai": "此标签尚未声明执行等级（按等级 5 处理）—“停机”按钮（HMI STOP）将跳过此固定值。如需 HMI STOP 到达此标签，请在“通道与限值”页面将执行等级声明为 1。"
     },
     "toast": {
       "connFail": "连接失败：{{err}}",
@@ -23835,7 +23855,8 @@
         "nutDungGoiY": "使用 {{goiY}}",
         "ma": "代码：{{ma}}",
         "CHUA_GHIM_STOP": "设备尚未固定 STOP 值 — 请工程师在 /scada/config/channels 固定；请使用硬接线急停（E-STOP）停机",
-        "goiYStopKhongGhim": "需要停机？请使用硬接线急停（E-STOP）或设备柜上的停止按钮"
+        "goiYStopKhongGhim": "需要停机？请使用硬接线急停（E-STOP）或设备柜上的停止按钮",
+        "GHIM_MUC_CAO": "此设备的所有 STOP 固定值都位于执行等级 > 1 的标签上（{{list}}）—“停机”按钮不会发送任何内容；请使用硬接线急停（E-STOP）停机"
       },
       "local": {
         "remote": "设备处于 REMOTE",
@@ -23878,7 +23899,9 @@
         "chuaGhim": "未固定 STOP — 不发送任何内容",
         "quaEdge": "STOP 经边缘节点 {{code}} 发送 — 仅在边缘节点回报后确认",
         "matKetNoi": "已断开连接 — STOP 不会到达设备（ADAPTER_OFFLINE）",
-        "khongKiemDuoc": "无法检查 — 如有需要请使用硬接线急停（E-STOP）"
+        "khongKiemDuoc": "无法检查 — 如有需要请使用硬接线急停（E-STOP）",
+        "ghimMucCao": "仅有执行等级 > 1 的标签上的固定值（{{list}}）— HMI STOP 无法到达，不会发送任何内容",
+        "boQuaMucCao": "跳过执行等级 > 1 的标签上的固定值：{{list}}"
       },
       "canhBao": {
         "ghimCu": "固定的 STOP 尚未生效 — 需要重新连接适配器 {{code}}",
@@ -23888,11 +23911,17 @@
         "quaEdge": "STOP 经边缘节点 {{code}} 发送 — 仅在边缘节点回报后确认",
         "edgeKhongToi": "中心无法联系边缘节点 {{code}} — STOP 可能不会到达设备；如有需要请使用硬接线急停（E-STOP）",
         "khongKiemDuoc": "无法检查停机能力 — 如有需要请使用硬接线急停（E-STOP）",
-        "chuaGhimMotPhan": "适配器 {{list}} 尚未固定 STOP"
+        "chuaGhimMotPhan": "适配器 {{list}} 尚未固定 STOP",
+        "ghimMucCao": "适配器 {{code}}：所有 STOP 固定值都位于执行等级 > 1 的标签上（{{list}}）— HMI STOP 无法到达；请将停机标签的执行等级声明为 1",
+        "boQuaMucCao": "适配器 {{code}}：HMI STOP 会跳过执行等级 > 1 的标签上的固定值（{{list}}）"
       },
       "daGuiDuPhong": "边缘节点未接收命令 — 中心已发送备用 STOP；尚未确认设备已停止",
       "loiTaiDiag": "无法加载适配器列表 — 下方仍有按设备的“停机”按钮；如有需要请在设备处使用硬接线急停（E-STOP）",
-      "loiTaiMay": "无法加载设备列表 — 无法显示“停机”按钮；请在设备处使用硬接线急停（E-STOP）"
+      "loiTaiMay": "无法加载设备列表 — 无法显示“停机”按钮；请在设备处使用硬接线急停（E-STOP）",
+      "boQua": {
+        "tieuDe": "未发送（执行等级 > 1 的标签 — HMI STOP 无法到达）：",
+        "dong": "{{code}} · {{tagKey}}（等级 {{muc}}）"
+      }
     }
   }
 }

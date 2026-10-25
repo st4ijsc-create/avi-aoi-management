@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { like } from "drizzle-orm";
 import { appRouter } from "./routers";
 import * as db from "./db";
@@ -10,6 +10,20 @@ import { users } from "../drizzle/schema";
  * **theo cấu tạo**, không phải theo thiện chí của người viết ca kế tiếp.
  */
 const DAU = "pha8-setupadmin-";
+
+/**
+ * 2026-10-25 — CÔ LẬP tiền đề toàn cục. `auth.setupAdmin` hỏi `getUsersByRole('admin').length === 0` — một điều kiện TOÀN CỤC mà CSDL `_test` dùng chung KHÔNG BAO GIỜ còn thoả
+ * (hàng chục admin của các test khác, kể cả tài khoản bị vô hiệu hoá thay vì xoá do ràng buộc khoá ngoại ⇒ ca đỏ "Admin already exists"). File này chỉ kiểm LOGIC thủ tục ⇒
+ * `db.getUsersByRole` được khoá vào ĐÚNG hàng mang `DAU` của chính file (admin của người khác vẫn tồn tại, không bị đụng — bán kính phá hoại = 0).
+ */
+vi.mock("./db", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("./db")>();
+  return {
+    ...orig,
+    getUsersByRole: async (role: Parameters<typeof orig.getUsersByRole>[0]) =>
+      (await orig.getUsersByRole(role)).filter((u) => u.email?.startsWith("pha8-setupadmin-")),
+  };
+});
 const EMAIL = (s: string) => `${DAU}${s}@test.invalid`;
 
 describe("auth.setupAdmin", () => {

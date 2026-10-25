@@ -314,6 +314,9 @@ export const webhookRouter = router({
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
+      if (ctx.user?.role !== "admin") {
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "testWebhook" }, "Chỉ admin mới có quyền gửi thử webhook");
+      }
       const [webhook] = await db.select().from(webhookConfigs).where(eq(webhookConfigs.id, input.id));
       if (!webhook) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "webhook" }, "Webhook không tồn tại");
 
@@ -336,6 +339,9 @@ export const webhookRouter = router({
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
+      if (ctx.user?.role !== "admin") {
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "toggleWebhook" }, "Chỉ admin mới có quyền bật/tắt webhook");
+      }
       await db.update(webhookConfigs)
         .set({ isEnabled: input.isEnabled, updatedAt: new Date() })
         .where(eq(webhookConfigs.id, input.id));

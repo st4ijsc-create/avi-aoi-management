@@ -413,7 +413,7 @@ export async function getTrainingJobs(options?: {
  * `totalFeedback` is kept as the labeled-sample count for backward-compat with
  * the auto-retrain trigger which reads `totalFeedback`.
  */
-export async function getTrainingDataStats(modelId: number) {
+export async function getTrainingDataStats(modelId: number, pv?: { hangDoi?: SQL; goiY?: SQL }) {
   const db = await getDb();
   if (!db) return null;
 
@@ -421,7 +421,7 @@ export async function getTrainingDataStats(modelId: number) {
   const [queueStats] = await db.select({
     labeledCount: sql<number>`count(*) filter (where ${aiLabelQueue.status} in ('LABELED','AUTO_LABELED'))::int`,
     totalQueue: sql<number>`count(*)::int`,
-  }).from(aiLabelQueue).where(eq(aiLabelQueue.modelId, modelId));
+  }).from(aiLabelQueue).where(pv?.hangDoi ? and(eq(aiLabelQueue.modelId, modelId), pv.hangDoi) : eq(aiLabelQueue.modelId, modelId)); // phạm vi người dùng (L6b 2026-10-25)
 
   // Resolve model code to scope feedback by suggestion.modelName.
   const [model] = await db.select({ code: aiModels.code }).from(aiModels).where(eq(aiModels.id, modelId)).limit(1);
@@ -437,7 +437,7 @@ export async function getTrainingDataStats(modelId: number) {
     })
       .from(aiFeedback)
       .innerJoin(aiSuggestions, eq(aiFeedback.suggestionId, aiSuggestions.id))
-      .where(eq(aiSuggestions.modelName, model.code));
+      .where(pv?.goiY ? and(eq(aiSuggestions.modelName, model.code), pv.goiY) : eq(aiSuggestions.modelName, model.code)); // phạm vi người dùng (L6b 2026-10-25)
     correctCount = fb?.correctCount ?? 0;
     incorrectCount = fb?.incorrectCount ?? 0;
     partialCount = fb?.partialCount ?? 0;
@@ -493,10 +493,10 @@ export async function createEdgeDeployment(data: InsertEdgeDeployment) {
   return result!;
 }
 
-export async function getEdgeDeployment(id: number) {
+export async function getEdgeDeployment(id: number, dieuKienPhamVi?: SQL) {
   const db = await getDb();
   if (!db) return null;
-  const [result] = await db.select().from(edgeDeployments).where(eq(edgeDeployments.id, id)).limit(1);
+  const [result] = await db.select().from(edgeDeployments).where(dieuKienPhamVi ? and(eq(edgeDeployments.id, id), dieuKienPhamVi) : eq(edgeDeployments.id, id)).limit(1); // phạm vi người dùng (L6b 2026-10-25)
   return result ?? null;
 }
 
@@ -507,13 +507,15 @@ export async function updateEdgeDeployment(id: number, data: Partial<InsertEdgeD
   return result;
 }
 
-export async function getEdgeDeploymentsByDevice(deviceId: string) {
+export async function getEdgeDeploymentsByDevice(deviceId: string, dieuKienPhamVi?: SQL) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(edgeDeployments).where(eq(edgeDeployments.deviceId, deviceId)).orderBy(desc(edgeDeployments.createdAt));
+  return db.select().from(edgeDeployments).where(dieuKienPhamVi ? and(eq(edgeDeployments.deviceId, deviceId), dieuKienPhamVi) : eq(edgeDeployments.deviceId, deviceId)).orderBy(desc(edgeDeployments.createdAt));
 }
 
 export async function getEdgeDeployments(options?: {
+  /** phạm vi người dùng (L6b 2026-10-25): điều kiện SQL phạm vi (undefined = toàn quyền / nội bộ). */
+  dieuKienPhamVi?: SQL;
   modelId?: number;
   status?: string;
   machineId?: number;
@@ -526,11 +528,12 @@ export async function getEdgeDeployments(options?: {
   if (options?.modelId) conditions.push(eq(edgeDeployments.modelId, options.modelId));
   if (options?.status) conditions.push(eq(edgeDeployments.status, options.status as any));
   if (options?.machineId) conditions.push(eq(edgeDeployments.machineId, options.machineId));
+  if (options?.dieuKienPhamVi) conditions.push(options.dieuKienPhamVi);
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   return db.select().from(edgeDeployments).where(where).orderBy(desc(edgeDeployments.createdAt)).limit(options?.limit ?? 50).offset(options?.offset ?? 0);
 }
 
-export async function getStaleDeployments(thresholdMinutes: number) {
+export async function getStaleDeployments(thresholdMinutes: number, dieuKienPhamVi?: SQL) {
   const db = await getDb();
   if (!db) return [];
   const threshold = new Date();
@@ -539,6 +542,7 @@ export async function getStaleDeployments(thresholdMinutes: number) {
     and(
       eq(edgeDeployments.status, "ACTIVE"),
       lt(edgeDeployments.lastHeartbeatAt, threshold),
+      dieuKienPhamVi,
     ),
   );
 }
@@ -562,6 +566,8 @@ export async function createEdgeInferenceSync(data: InsertEdgeInferenceSync) {
 }
 
 export async function getEdgeInferenceResults(options?: {
+  /** phạm vi người dùng (L6b 2026-10-25): điều kiện SQL phạm vi (undefined = toàn quyền / nội bộ). */
+  dieuKienPhamVi?: SQL;
   deploymentId?: number;
   deviceId?: string;
   synced?: boolean;
@@ -574,6 +580,7 @@ export async function getEdgeInferenceResults(options?: {
   if (options?.deploymentId) conditions.push(eq(edgeInferenceSync.deploymentId, options.deploymentId));
   if (options?.deviceId) conditions.push(eq(edgeInferenceSync.deviceId, options.deviceId));
   if (options?.synced !== undefined) conditions.push(eq(edgeInferenceSync.synced, options.synced));
+  if (options?.dieuKienPhamVi) conditions.push(options.dieuKienPhamVi);
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   return db.select().from(edgeInferenceSync).where(where).orderBy(desc(edgeInferenceSync.inferredAt)).limit(options?.limit ?? 50).offset(options?.offset ?? 0);
 }
@@ -587,14 +594,16 @@ export async function createCalibrationReport(data: InsertAiCalibrationReport) {
   return result!;
 }
 
-export async function getCalibrationReport(id: number) {
+export async function getCalibrationReport(id: number, dieuKienPhamVi?: SQL) {
   const db = await getDb();
   if (!db) return null;
-  const [result] = await db.select().from(aiCalibrationReports).where(eq(aiCalibrationReports.id, id)).limit(1);
+  const [result] = await db.select().from(aiCalibrationReports).where(dieuKienPhamVi ? and(eq(aiCalibrationReports.id, id), dieuKienPhamVi) : eq(aiCalibrationReports.id, id)).limit(1); // phạm vi người dùng (L6b 2026-10-25)
   return result ?? null;
 }
 
 export async function listCalibrationReports(options?: {
+  /** phạm vi người dùng (L6b 2026-10-25): điều kiện SQL phạm vi (undefined = toàn quyền / nội bộ). */
+  dieuKienPhamVi?: SQL;
   modelId?: number;
   limit?: number;
   offset?: number;
@@ -603,6 +612,7 @@ export async function listCalibrationReports(options?: {
   if (!db) return [];
   const conditions: SQL[] = [];
   if (options?.modelId != null) conditions.push(eq(aiCalibrationReports.modelId, options.modelId));
+  if (options?.dieuKienPhamVi) conditions.push(options.dieuKienPhamVi);
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   return db
     .select()
@@ -613,13 +623,13 @@ export async function listCalibrationReports(options?: {
     .offset(options?.offset ?? 0);
 }
 
-export async function getLatestCalibrationReport(modelId: number) {
+export async function getLatestCalibrationReport(modelId: number, dieuKienPhamVi?: SQL) {
   const db = await getDb();
   if (!db) return null;
   const [result] = await db
     .select()
     .from(aiCalibrationReports)
-    .where(eq(aiCalibrationReports.modelId, modelId))
+    .where(dieuKienPhamVi ? and(eq(aiCalibrationReports.modelId, modelId), dieuKienPhamVi) : eq(aiCalibrationReports.modelId, modelId)) // phạm vi người dùng (L6b 2026-10-25): lọc TRƯỚC LIMIT 1
     .orderBy(desc(aiCalibrationReports.createdAt))
     .limit(1);
   return result ?? null;

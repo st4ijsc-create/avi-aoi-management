@@ -18,6 +18,7 @@ import { getDb } from "../db/connection";
 // ★ Đợt 42 — cổng quyền + hàng rào tenant cho `lineBalance` (QA Đợt 41 D-4 lỗ #3).
 import { requireAnyPermission } from "../_core/accessControl";
 import { phamViCua } from "./_phamViNguoiXem";
+import { dieuKienWipTrongPhamVi, dieuKienDwellTrongPhamVi, dieuKienCanBangChuyenTrongPhamVi } from "./_adapterPhamVi";
 import { trongPhamVi } from "../db/hierarchy";
 import { and, desc, eq, gte, notInArray, sql } from "drizzle-orm";
 import {
@@ -50,11 +51,13 @@ export const wipRouter = router({
       status: wipStatusSchema.optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [] as (typeof wipTracking.$inferSelect)[];
 
       const conds = [] as any[];
+      const congPv = await dieuKienWipTrongPhamVi(ctx); // phạm vi người dùng (L5 2026-10-25)
+      if (congPv) conds.push(congPv);
       if (input?.lineId) conds.push(eq(wipTracking.lineId, input.lineId));
       if (input?.stationId) conds.push(eq(wipTracking.currentStationId, input.stationId));
       if (input?.status) conds.push(eq(wipTracking.status, input.status as any));
@@ -73,9 +76,10 @@ export const wipRouter = router({
     .input(z.object({
       lineId: z.number().int().positive().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { total: 0, byStatus: [] as { status: string; count: number }[] };
+      const congPv = await dieuKienWipTrongPhamVi(ctx); // phạm vi người dùng (L5 2026-10-25)
 
       const rows = await database
         .select({
@@ -83,7 +87,7 @@ export const wipRouter = router({
           count: sql<number>`count(*)::int`,
         })
         .from(wipTracking)
-        .where(input?.lineId ? eq(wipTracking.lineId, input.lineId) : undefined)
+        .where(and(input?.lineId ? eq(wipTracking.lineId, input.lineId) : undefined, congPv))
         .groupBy(wipTracking.status);
 
       const byStatus = rows.map((r) => ({ status: r.status as string, count: Number(r.count) }));
@@ -97,14 +101,16 @@ export const wipRouter = router({
       lineId: z.number().int().positive().optional(),
       hours: z.number().int().min(1).max(720).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [] as {
         stationId: number; avgDwellMs: number; avgStarvedMs: number; avgBlockedMs: number; samples: number;
       }[];
 
       const since = new Date(Date.now() - (input?.hours ?? 24) * 60 * 60 * 1000);
-      const conds = [gte(stationDwellTime.enteredAt, since)];
+      const conds = [gte(stationDwellTime.enteredAt, since)] as any[];
+      const congPv = await dieuKienDwellTrongPhamVi(ctx); // phạm vi người dùng (L5 2026-10-25)
+      if (congPv) conds.push(congPv);
       if (input?.lineId) conds.push(eq(stationDwellTime.lineId, input.lineId));
 
       const rows = await database
@@ -175,11 +181,13 @@ export const wipRouter = router({
       lineId: z.number().int().positive().optional(),
       max: z.number().int().min(1).max(200).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) {
         return { generatedAt: new Date(), bottleneckStationIds: [], totalItems: 0, recommendations: [] };
       }
+      // phạm vi người dùng (L5 2026-10-25): WIP, cân bằng chuyền và dwell đều chỉ trong phạm vi
+      const [congWip, congCanBang, congDwell] = await Promise.all([dieuKienWipTrongPhamVi(ctx), dieuKienCanBangChuyenTrongPhamVi(ctx), dieuKienDwellTrongPhamVi(ctx)]);
 
       // WIP đang hoạt động (chưa hoàn tất/loại bỏ). W4-B: when WIP_HOLD_ENFORCED
       // is ON, held serials (status 'hold'/'on_hold') are ALSO excluded so a unit
@@ -189,6 +197,7 @@ export const wipRouter = router({
         notInArray(wipTracking.status, dispatchExcludedStatuses() as any),
       ] as any[];
       if (input?.lineId) activeConds.push(eq(wipTracking.lineId, input.lineId));
+      if (congWip) activeConds.push(congWip);
 
       const wipRows = await database
         .select()
@@ -201,7 +210,7 @@ export const wipRouter = router({
       const balanceRows = await database
         .select()
         .from(lineBalanceMetrics)
-        .where(input?.lineId ? eq(lineBalanceMetrics.lineId, input.lineId) : undefined)
+        .where(and(input?.lineId ? eq(lineBalanceMetrics.lineId, input.lineId) : undefined, congCanBang))
         .orderBy(desc(lineBalanceMetrics.periodStart))
         .limit(50);
 
@@ -214,6 +223,7 @@ export const wipRouter = router({
       const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const dwellConds = [gte(stationDwellTime.enteredAt, since)] as any[];
       if (input?.lineId) dwellConds.push(eq(stationDwellTime.lineId, input.lineId));
+      if (congDwell) dwellConds.push(congDwell);
       const dwellRows = await database
         .select({
           stationId: stationDwellTime.stationId,

@@ -645,9 +645,12 @@ export function quetPhamViDoc(goc: string, ghiDe: Readonly<Record<string, string
   /** Hàm CỔNG theo QUY ƯỚC TÊN (`machineIdsTrongPhamVi`, `mayTrongPhamVi`, `kiemTraTrongPhamVi`, `donViTheoPhamVi`…) — cùng tinh thần `laTenCong` của phamViGhiScan. */
   const RE_TEN_CONG = /(?:TrongPhamVi|TheoPhamVi)$/;
   const congDoc = new Set(hatPhamVi);
+  /** Cổng tool GHI của AI + đường đề xuất / duyệt HITL KHÔNG phải cổng phạm vi ĐỌC của thủ tục (census riêng aiLocalTools/phamViGhi.census; dieu-phoi 2026-10-25). */
+  const NGOAI_CONG_DOC = new Set(["kiemPhamViGhiTool", "proposeAction", "confirmAction", "cancelAction"]);
   for (const f of files) {
     const rel = duong(f);
     for (const [ten, than] of khai(f)) {
+      if (NGOAI_CONG_DOC.has(ten)) continue;
       let co = false;
       const di = (x: ts.Node): void => {
         if (!co && ts.isCallExpression(x)) {
@@ -666,7 +669,7 @@ export function quetPhamViDoc(goc: string, ghiDe: Readonly<Record<string, string
       const rel = duong(f);
       for (const [ten, than] of khai(f)) {
         const id = `${rel}#${ten}`;
-        if (congDoc.has(id)) continue;
+        if (congDoc.has(id) || NGOAI_CONG_DOC.has(ten)) continue;
         for (const q of thamChieu(f, than)) {
           if (congDoc.has(q)) {
             congDoc.add(id);

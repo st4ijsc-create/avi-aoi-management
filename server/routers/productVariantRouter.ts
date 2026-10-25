@@ -28,6 +28,20 @@
  * permission tracks the nature of the data being changed.
  */
 import { protectedProcedure, router } from "../_core/trpc";
+import { sanPhamGhiTrongPhamVi } from "./_sanPhamPhamVi";
+import { sanPhamCuaBienThe } from "./_cauHinhPhamVi";
+
+/** Biến thể theo id → sản phẩm của nó phải ghi được; biến thể không tồn tại ≡ ngoài phạm vi (cùng NOT_FOUND). W13. */
+async function bienTheGhi(ctx: Parameters<typeof sanPhamGhiTrongPhamVi>[0], variantId: number): Promise<void> {
+  const p = await sanPhamCuaBienThe(variantId);
+  const khongCo = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
+  if (p == null) throw khongCo();
+  try {
+    await sanPhamGhiTrongPhamVi(ctx, p);
+  } catch {
+    throw khongCo();
+  }
+}
 import { requirePermission } from "../_core/accessControl";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -195,6 +209,7 @@ export const productVariantRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertVariantTableAvailable();
+      await sanPhamGhiTrongPhamVi(ctx, input.productModelId); // phạm vi nhà máy (W13)
 
       const model = await db.getProductModelById(input.productModelId);
       if (!model) {
@@ -259,6 +274,7 @@ export const productVariantRouter = router({
       await assertVariantTableAvailable();
 
       const { variantId, ...patch } = input;
+      await bienTheGhi(ctx, variantId);
       const existing = await db.getVariantById(variantId);
       if (!existing) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
@@ -310,6 +326,7 @@ export const productVariantRouter = router({
     .input(z.object({ variantId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       await assertVariantTableAvailable();
+      await bienTheGhi(ctx, input.variantId);
 
       const existing = await db.getVariantById(input.variantId);
       if (!existing) {

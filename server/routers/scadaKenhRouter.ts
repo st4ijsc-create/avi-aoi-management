@@ -61,8 +61,9 @@ import { khaoSatKhaNangDungNhieu, type KhaNangDungMay } from "../services/scada/
  * R1b-1 T2 — số adapter bật có ≥ 1 ghim DỪNG hợp lệ (mọi kết luận ≠ chua_ghim). fix round 3: khảo sát LỖI (`loiKhaoSat`) / vắng ⇒ null
  * (KHÔNG BIẾT — không được đọc thành "chưa ghim" / 0 adapter).
  */
+// kiem-dinh R1b-1 H1 (b) — adapter chỉ có ghim mức cao (`ghim_muc_cao`) KHÔNG nhận STOP HMI ⇒ không đếm (cùng luật với dungMay).
 const soCoGhim = (k: KhaNangDungMay | undefined): number | null =>
-  !k || k.loiKhaoSat ? null : k.adapters.filter((a) => a.trangThai !== "chua_ghim").length;
+  !k || k.loiKhaoSat ? null : k.adapters.filter((a) => a.trangThai !== "chua_ghim" && a.trangThai !== "ghim_muc_cao").length;
 const coGhim = (k: KhaNangDungMay | undefined): boolean | null => {
   const n = soCoGhim(k);
   return n === null ? null : n > 0;

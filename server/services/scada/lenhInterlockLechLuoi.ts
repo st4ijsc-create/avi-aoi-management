@@ -43,10 +43,14 @@ export function dieuKienNoiDichLenh(): SQL {
 /**
  * Truy vấn TRƯỚC TRIỂN KHAI (báo cáo nghiệm thu R1b-1 §4, CHỈ ĐỌC, chép NGUYÊN VĂN vào báo cáo): bản SQL thuần cho DB chưa chạy bản build này.
  * Giá trị gửi như `giaTriLenhInterlock` + `Number()` của `kiemLuoiThoChuaKhai`: NULL / JSON null ⇒ 1 (true), boolean ⇒ 1 / 0, số ⇒ chính nó,
- * chuỗi số thập phân (cắt khoảng trắng) ⇒ số, chuỗi rỗng ⇒ 0; còn lại (đối tượng, chuỗi chữ) ⇒ không kiểm (driver không làm tròn được).
+ * chuỗi số thập phân SẠCH (cắt dấu cách đầu/cuối) ⇒ số, chuỗi rỗng ⇒ 0.
+ * kiem-dinh R1b-1 N-1 (điều phối 2026-10-25) — MỌI giá trị khác (chuỗi hex / 0b / 0o, chuỗi có TAB / xuống dòng / NBSP, chuỗi chữ, mảng, đối tượng)
+ *   ⇒ MỘT HÀNG `ket_luan = 'KHONG_PARSE_DUOC'` (gia_tri_gui / diem_luoi_gan_nhat NULL) — ĐẾM LÀ CHẶN, không bỏ qua như trước: JS đọc được một số
+ *   trong đó (`Number("0x19")` = 25, `Number("\t25")` = 25, `Number([25])` = 25) và dispatch sẽ từ chối; SQL không chép lại được bộ đọc số của JS
+ *   nên báo DƯ (người triển khai xem tay từng hàng) thay vì BỎ SÓT. Hàng lệch lưới thật mang `ket_luan = 'LECH_LUOI'`.
  * Lệch lưới ⇔ |v − (o + round((v − o)/s)·s)| > 1e-9·max(1, |s|) (numeric chính xác ⇒ không cần vế dung sai tương đối của bản double).
- * Khác bản JS ở biên hiếm theo CẢ HAI chiều: |(v − o)/s| ≥ 2^53 ⇒ SQL báo DƯ; chuỗi hex / 0b / 0o / có khoảng trắng lạ (TAB, NBSP…) mà JS đọc được
- *   ("0x19" = 25) ⇒ SQL BỎ SÓT (rà soát cuối N-1). Posture + log khởi động dùng hàm JS nên vẫn bắt sau triển khai. Backlog R1b-2.
+ * Khác bản JS: CHỈ theo chiều báo DƯ — |(v − o)/s| ≥ 2^53, và mọi giá trị KHONG_PARSE_DUOC (kể cả đối tượng mà JS bỏ qua). Tập hàng ⊇ tập
+ *   lệch lưới thô của JS trên tag chưa khai.
  * Tag đã khai cũng chỉ được kiểm lưới thô ở đây (posture kiểm đủ dải / bước / kiểu). `interlockRouter.r1b.db.test.ts` §5 chạy
  * chính chuỗi này trên `_test` và so với `luatLenhLechLuoi`.
  */
@@ -71,9 +75,10 @@ export const TRUY_VAN_TRUOC_TRIEN_KHAI = String.raw`WITH ung_vien AS (
   FROM ung_vien u
 )
 SELECT id, name, "targetAdapterId", "tagKey", cv AS "commandValue", s AS scale, o AS "offset", v AS gia_tri_gui,
-       o + round((v - o) / s) * s AS diem_luoi_gan_nhat
+       CASE WHEN v IS NULL THEN NULL ELSE o + round((v - o) / s) * s END AS diem_luoi_gan_nhat,
+       CASE WHEN v IS NULL THEN 'KHONG_PARSE_DUOC' ELSE 'LECH_LUOI' END AS ket_luan
 FROM gia_tri
-WHERE v IS NOT NULL AND abs(v - (o + round((v - o) / s) * s)) > 1e-9 * greatest(1, abs(s))
+WHERE v IS NULL OR abs(v - (o + round((v - o) / s) * s)) > 1e-9 * greatest(1, abs(s))
 ORDER BY id`;
 
 export type LuatLenhLechLuoi = { id: number; name: string; ma: MaViPham; chiTiet: string };

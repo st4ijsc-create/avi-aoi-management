@@ -4,7 +4,7 @@
  * Endpoints for managing quality gate configs, processing inspections,
  * and reviewing AI decisions.
  */
-import { kiemTraTrongPhamVi } from "./_adapterPhamVi";
+import { kiemTraTrongPhamVi, dieuKienDoiTuongTrongPhamVi, dieuKienCauHinhTrongPhamVi } from "./_adapterPhamVi";
 import type { CoDanhTinh } from "./_phamViNguoiXem";
 import { moduleProcedure, moduleGate, router } from "../_core/trpc";
 import { adminProcedure as adminProcedureBase } from "./_shared";
@@ -63,10 +63,12 @@ export const aiQualityGateRouter = router({
         offset: z.number().min(0).default(0),
       }).optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       const conditions = [];
+      const congPv = await dieuKienCauHinhTrongPhamVi(ctx, { may: aiQualityGateConfigs.machineId, sanPham: aiQualityGateConfigs.productModelId }); // phạm vi người dùng (L6b 2026-10-25)
+      if (congPv) conditions.push(congPv);
       if (input?.machineId) conditions.push(eq(aiQualityGateConfigs.machineId, input.machineId));
       if (input?.productModelId) conditions.push(eq(aiQualityGateConfigs.productModelId, input.productModelId));
       if (input?.enabled !== undefined) conditions.push(eq(aiQualityGateConfigs.enabled, input.enabled));
@@ -82,10 +84,11 @@ export const aiQualityGateRouter = router({
 
   getConfig: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      const [config] = await db.select().from(aiQualityGateConfigs).where(eq(aiQualityGateConfigs.id, input.id)).limit(1);
+      const congPv = await dieuKienCauHinhTrongPhamVi(ctx, { may: aiQualityGateConfigs.machineId, sanPham: aiQualityGateConfigs.productModelId }); // phạm vi người dùng (L6b 2026-10-25)
+      const [config] = await db.select().from(aiQualityGateConfigs).where(congPv ? and(eq(aiQualityGateConfigs.id, input.id), congPv) : eq(aiQualityGateConfigs.id, input.id)).limit(1);
       if (!config) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateConfig" }, "Quality gate config not found");
       return config;
     }),
@@ -190,7 +193,8 @@ export const aiQualityGateRouter = router({
       const inspResult = await db.execute(
         sql`SELECT "machineId", "productModelId" FROM product_inspections WHERE id = ${input.inspectionId}`,
       ) as any;
-      const insp = inspResult.rows?.[0];
+      // postgres-js trả MẢNG (không có `.rows` như node-pg) — đọc cả hai dạng; trước đây `.rows?.[0]` khiến thủ tục luôn báo "Inspection not found".
+      const insp = (Array.isArray(inspResult) ? inspResult : inspResult.rows)?.[0];
       if (!insp) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
 
       // Find matching quality gate config
@@ -232,10 +236,12 @@ export const aiQualityGateRouter = router({
         offset: z.number().min(0).default(0),
       }).optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       const conditions = [];
+      const congPv = await dieuKienDoiTuongTrongPhamVi(ctx, { lanKiem: aiQualityGateResults.inspectionId }); // phạm vi người dùng (L6b 2026-10-25)
+      if (congPv) conditions.push(congPv);
       if (input?.configId) conditions.push(eq(aiQualityGateResults.configId, input.configId));
       if (input?.decision) conditions.push(eq(aiQualityGateResults.decision, input.decision));
       if (input?.inspectionId) conditions.push(eq(aiQualityGateResults.inspectionId, input.inspectionId));
@@ -394,8 +400,8 @@ export const aiQualityGateRouter = router({
         endDate: z.date().optional(),
       }).optional(),
     )
-    .query(async ({ input }) => {
-      return getQualityGateStats(input ?? {});
+    .query(async ({ input, ctx }) => {
+      return getQualityGateStats({ ...(input ?? {}), dieuKienPhamVi: await dieuKienDoiTuongTrongPhamVi(ctx, { lanKiem: aiQualityGateResults.inspectionId }) }); // phạm vi người dùng (L6b 2026-10-25)
     }),
 
   // ─── Ensemble Config Management ──────────────────────────

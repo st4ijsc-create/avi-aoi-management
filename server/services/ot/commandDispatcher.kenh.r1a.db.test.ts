@@ -76,6 +76,7 @@ import {
   interlockEvents,
   interlockRules,
 } from "../../../drizzle/schema";
+import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
 import { dispatch, type DispatchInput } from "./commandDispatcher";
 import { inverseScale } from "./drivers/otScale";
 import { FOE_ENGINE_TOOL, otPayloadHash, withOtPayloadHash } from "./otActionBinding";
@@ -502,6 +503,7 @@ describe.skipIf(!DB_URL)(
         })
         .returning();
       ruleId = rule!.id;
+      await dongDauDuyetLuat(ruleId); // kiem-dinh R1b-1 I1 (a) FIXTURE — "đã duyệt" gieo thẳng mang bám định nghĩa hiện tại
       const [ev] = await x
         .insert(interlockEvents)
         .values({ ruleId, action: "reduce_speed", status: "fired" })
@@ -839,6 +841,7 @@ describe.skipIf(!DB_URL)(
             approvedAt: new Date(),
           })
           .returning();
+        await dongDauDuyetLuat(rule!.id); // kiem-dinh R1b-1 I1 (a) FIXTURE — "đã duyệt" gieo thẳng mang bám định nghĩa hiện tại
         const [ev] = await x.insert(interlockEvents).values({ ruleId: rule!.id, action: "reduce_speed", status: "fired" }).returning();
         try {
           return await dispatch({

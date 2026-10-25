@@ -37,6 +37,9 @@ const quiet = vi.hoisted(() => {
 import postgres from "postgres";
 import { datStopPin, goMoiStopPinCuaAdapterTx } from "./stopPin";
 
+/** kiem-dinh R1b-1 m-1 (fix round 2) — `kiemCuoi` nay BẮT BUỘC; tệp này kiểm tranh chấp khoá, không kiểm TOTP ⇒ truyền TƯỜNG MINH "không mã". */
+const KHONG_MA = async (): Promise<void> => {};
+
 const DB_URL = process.env.DATABASE_URL;
 const RUN = `G4SP${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1e4)}`;
 
@@ -198,7 +201,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 5 G4 �
     const values = [1.5, 2.5, 3.5, 4.5, 5.5, 6.5];
     const results = await underHeldLock(
       values.map((v, i) => () =>
-        datStopPin({ adapterId, tagKey: "stop_sp", stopValue: v, reason: `G4 writer ${i}`, nguoiSua: nguoiSua(i), phamViMay: null }),
+        datStopPin({ adapterId, tagKey: "stop_sp", stopValue: v, reason: `G4 writer ${i}`, nguoiSua: nguoiSua(i), phamViMay: null, kiemCuoi: KHONG_MA }),
       ),
     );
     for (const r of results) {
@@ -214,13 +217,13 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 5 G4 �
   }, 60_000);
 
   it("set vs clear at the same moment (pin 1 ⇒ {set 9, clear}) ⇒ either order, both audited against the real prior pin", async () => {
-    await datStopPin({ adapterId, tagKey: "stop_sp", stopValue: 1, reason: "G4 seed pin", nguoiSua: nguoiSua(0), phamViMay: null });
+    await datStopPin({ adapterId, tagKey: "stop_sp", stopValue: 1, reason: "G4 seed pin", nguoiSua: nguoiSua(0), phamViMay: null, kiemCuoi: KHONG_MA });
     startAuditId = (await sql<{ m: number | null }[]>`SELECT max(id) AS m FROM control_audit_log`)[0].m ?? 0;
     startAuditLogId = (await sql<{ m: number | null }[]>`SELECT max(id) AS m FROM audit_logs`)[0].m ?? 0;
 
     const results = await underHeldLock<unknown>([
-      () => datStopPin({ adapterId, tagKey: "stop_sp", stopValue: 9, reason: "G4 set 9", nguoiSua: nguoiSua(1), phamViMay: null }),
-      () => datStopPin({ adapterId, tagKey: "stop_sp", stopValue: null, reason: "G4 clear", nguoiSua: nguoiSua(2), phamViMay: null }),
+      () => datStopPin({ adapterId, tagKey: "stop_sp", stopValue: 9, reason: "G4 set 9", nguoiSua: nguoiSua(1), phamViMay: null, kiemCuoi: KHONG_MA }),
+      () => datStopPin({ adapterId, tagKey: "stop_sp", stopValue: null, reason: "G4 clear", nguoiSua: nguoiSua(2), phamViMay: null, kiemCuoi: KHONG_MA }),
     ]);
     expect(results.map((r) => r.status)).toEqual(["fulfilled", "fulfilled"]);
     const finalPin = await pinNow();
@@ -237,10 +240,10 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 5 G4 �
     const { getDb } = await import("../../db");
     const db = (await getDb())!;
     for (const order of ["pin-first", "clear-first", "pin-first", "clear-first", "pin-first", "clear-first"] as const) {
-      await datStopPin({ adapterId, tagKey: "stop_sp", stopValue: 2, reason: "G4 seed pin", nguoiSua: nguoiSua(0), phamViMay: null });
+      await datStopPin({ adapterId, tagKey: "stop_sp", stopValue: 2, reason: "G4 seed pin", nguoiSua: nguoiSua(0), phamViMay: null, kiemCuoi: KHONG_MA });
       startAuditId = (await sql<{ m: number | null }[]>`SELECT max(id) AS m FROM control_audit_log`)[0].m ?? 0;
       startAuditLogId = (await sql<{ m: number | null }[]>`SELECT max(id) AS m FROM audit_logs`)[0].m ?? 0;
-      const pin = () => datStopPin({ adapterId, tagKey: "stop_sp", stopValue: 7, reason: "G4 set 7", nguoiSua: nguoiSua(1), phamViMay: null });
+      const pin = () => datStopPin({ adapterId, tagKey: "stop_sp", stopValue: 7, reason: "G4 set 7", nguoiSua: nguoiSua(1), phamViMay: null, kiemCuoi: KHONG_MA });
       const clear = () =>
         db.transaction((tx) =>
           goMoiStopPinCuaAdapterTx(tx, { adapterId, nguon: "adapter_redefined", nguoiSua: nguoiSua(2), thaoTac: "G4 re-point" }),
@@ -262,8 +265,8 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 5 G4 �
       const b = round * 2 + 11;
       const res = await withTimeout(
         Promise.allSettled([
-          datStopPin({ adapterId, tagKey: "stop_sp", stopValue: a, reason: `G4 r${round}a`, nguoiSua: nguoiSua(1), phamViMay: null }),
-          datStopPin({ adapterId, tagKey: "stop_sp", stopValue: b, reason: `G4 r${round}b`, nguoiSua: nguoiSua(2), phamViMay: null }),
+          datStopPin({ adapterId, tagKey: "stop_sp", stopValue: a, reason: `G4 r${round}a`, nguoiSua: nguoiSua(1), phamViMay: null, kiemCuoi: KHONG_MA }),
+          datStopPin({ adapterId, tagKey: "stop_sp", stopValue: b, reason: `G4 r${round}b`, nguoiSua: nguoiSua(2), phamViMay: null, kiemCuoi: KHONG_MA }),
         ]),
         20_000,
         `round ${round}`,

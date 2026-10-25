@@ -17,6 +17,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
+import { dongDauDuyetLuat } from "../testing/dauDuyetInterlock";
 
 const hold = vi.hoisted(() => ({
   action: null as string | null,
@@ -266,6 +267,7 @@ describe.skipIf(!DB_URL)("interlock — final review fix wave (#2 khoá hàng, #
         RETURNING id`;
       const id = (r[0] as unknown as { id: number }).id;
       ruleIds.push(id);
+      await dongDauDuyetLuat(id); // kiem-dinh R1b-1 I1 (a) FIXTURE — "đã duyệt" gieo thẳng mang bám định nghĩa hiện tại
       const err = await caller(A).enable({ id, expectedVersion: await ver(id) }).catch((e) => e);
       expect(appCodeOf(err)).toBe("FIELD_REQUIRED");
       expect((await ruleRow(id)).enabled).toBe(false);

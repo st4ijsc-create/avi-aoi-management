@@ -7,7 +7,10 @@
  *     T9 r3 ở `troLaiKenh.ts`: đã khai, kênh chế độ, hoặc đích / nguồn của luật interlock không-alert ĐANG BẬT HOẶC ĐÃ DUYỆT);
  *   • `deviceAdapter.update` (đổi đích / tắt / đổi máy) / `deviceAdapter.delete` / `scadaDiag.tamTat` — adapter có tag được bảo vệ hoặc kênh
  *     chế độ (cổng chung `congAdapterTx`);
- *   • `mappingAsCode.applyImport` — một lô import đụng ≥ 1 tag được bảo vệ (MỘT mã cho cả lô).
+ *   • `mappingAsCode.applyImport` — một lô import đụng ≥ 1 tag được bảo vệ (MỘT mã cho cả lô);
+ *   • `deviceAdapter.tags.setStopPin` (kiem-dinh R1b-1 H1 a, 2026-10-25) — MỌI lượt đặt / gỡ ghim DỪNG (sau sàn vai + kiểm hợp lệ);
+ *   • `interlock.update` / `interlock.delete` (kiem-dinh R1b-1 I1 b, 2026-10-25) — sửa / xoá luật ghi lệnh ĐANG BẬT hoặc ĐÃ DUYỆT có đích /
+ *     nguồn tag (`interlockRouter.luatCanTotpKhiSuaXoa`).
  *
  * Vì sao mức 5 trong handler, không phải middleware `requireFreshTotp`: middleware ấy là pass-through khi `ACTUATION_STEPUP_2FA` tắt
  * (dev hiện tại) và cache 10 phút theo phiên; `kiemXacThucTheoMuc` mức 5 KHÔNG đọc cờ env nào, không đọc cache, mã dùng một lần, dùng

@@ -1147,14 +1147,20 @@ export async function getActiveAlertsCount() {
 // (getFactories / getProductionLines / getMachines all filter isActive = true —
 // soft-deletes on these tables are isActive=false tombstones), so the numbers
 // match what the lists would have counted.
-export async function getOverviewEntityCounts() {
+export async function getOverviewEntityCounts(scope?: import("./hierarchy").PhamViDoc) {
   const db = await getDb();
   if (!db) return { factories: 0, lines: 0, machines: 0 };
 
+  // phạm vi người dùng (L6a 2026-10-25): đếm theo phạm vi (undefined ⇒ toàn quyền, như cũ)
+  const { idsTrongPhamVi } = await import("./hierarchy");
+  const [nhaMay, dong, may] = scope
+    ? await Promise.all([idsTrongPhamVi("factory", scope, { strict: true }), idsTrongPhamVi("line", scope, { strict: true }), idsTrongPhamVi("machine", scope, { strict: true })])
+    : [null, null, null];
+  const loc = (col: unknown, ids: number[] | null) => (ids === null ? sql`` : sql` AND ${col} IN (${sql.join((ids.length > 0 ? ids : [-1]).map((x) => sql`${x}`), sql`, `)})`);
   const [result] = await db.select({
-    factories: sql<number>`(SELECT count(*) FROM ${factories} WHERE ${factories.isActive} = true)`,
-    lines: sql<number>`(SELECT count(*) FROM ${productionLines} WHERE ${productionLines.isActive} = true)`,
-    machines: sql<number>`(SELECT count(*) FROM ${machines} WHERE ${machines.isActive} = true)`,
+    factories: sql<number>`(SELECT count(*) FROM ${factories} WHERE ${factories.isActive} = true${loc(factories.id, nhaMay)})`,
+    lines: sql<number>`(SELECT count(*) FROM ${productionLines} WHERE ${productionLines.isActive} = true${loc(productionLines.id, dong)})`,
+    machines: sql<number>`(SELECT count(*) FROM ${machines} WHERE ${machines.isActive} = true${loc(machines.id, may)})`,
   }).from(sql`(SELECT 1) AS one`);
 
   return {

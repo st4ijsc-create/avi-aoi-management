@@ -25,6 +25,7 @@ import { getDb } from "../db/connection";
 import { and, desc, eq } from "drizzle-orm";
 import { robotBehaviorAnomalies, modelRollbackEvents } from "../../drizzle/schema";
 import { robotTrongPhamVi } from "./_robotPhamVi";
+import { congBatThuongRobot, congRollbackMoHinh } from "./_aiPhamVi";
 import { isRobotAnomalyEnabled } from "../services/ai/robotBehaviorAnomaly";
 import { detectAndRaiseForRobot } from "../services/ai/robotBehaviorAnomalyService";
 import {
@@ -51,10 +52,12 @@ export const aiRobotAnomalyRouter = router({
       status: z.enum(["raised", "acknowledged"]).optional(),
       limit: z.number().int().min(1).max(200).default(50),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
-      const conds = [] as ReturnType<typeof eq>[];
+      const conds = [] as any[];
+      const congPv = await congBatThuongRobot(ctx); // phạm vi người dùng (L6b 2026-10-25)
+      if (congPv) conds.push(congPv);
       if (input.robotId) conds.push(eq(robotBehaviorAnomalies.robotId, input.robotId));
       if (input.status) conds.push(eq(robotBehaviorAnomalies.status, input.status));
       const where = conds.length ? and(...conds) : undefined;
@@ -111,10 +114,10 @@ export const aiRobotAnomalyRouter = router({
       modelId: z.number().int().positive().optional(),
       limit: z.number().int().min(1).max(200).default(50),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
-      const where = input.modelId ? eq(modelRollbackEvents.modelId, input.modelId) : undefined;
+      const where = and(input.modelId ? eq(modelRollbackEvents.modelId, input.modelId) : undefined, await congRollbackMoHinh(ctx)); // phạm vi người dùng (L6b 2026-10-25)
       return db
         .select()
         .from(modelRollbackEvents)

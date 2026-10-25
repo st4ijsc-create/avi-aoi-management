@@ -22,9 +22,10 @@
  * RBAC: read-only, protectedProcedure (any authenticated user).
  */
 import { z } from "zod";
-import { and, eq, sql, SQL } from "drizzle-orm";
+import { and, eq, inArray, sql, SQL } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db/connection";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import { factInspectionHourly, dimShift, dimProduct } from "../../drizzle/schema/reportingMart";
 import { finalYield, roundPct } from "../utils/kpi";
 
@@ -57,7 +58,7 @@ const windowInput = z.object({
 type WindowInput = z.infer<typeof windowInput>;
 
 /** bucketHour window + optional dimension filters over the fact table. */
-function factConditions(input: WindowInput): SQL[] {
+function factConditions(input: WindowInput, idsMay: number[] | null = null): SQL[] {
   const { startStr, endStr } = localDayBounds(input.startDate, input.endDate);
   // bucketHour is naive factory-local; compare to text bounds (Postgres casts).
   const conds: SQL[] = [
@@ -67,6 +68,8 @@ function factConditions(input: WindowInput): SQL[] {
   if (input.factoryId != null) conds.push(eq(factInspectionHourly.factoryId, input.factoryId));
   if (input.machineId != null) conds.push(eq(factInspectionHourly.machineId, input.machineId));
   if (input.productModelId != null) conds.push(eq(factInspectionHourly.productModelId, input.productModelId));
+  // phạm vi người dùng (L6a 2026-10-25): chỉ hàng mart của máy trong phạm vi (rỗng ⇒ không hàng; hàng machineId=0 'không máy' bị loại với người hẹp)
+  if (idsMay !== null) conds.push(inArray(factInspectionHourly.machineId, idsMay.length > 0 ? idsMay : [-1]));
   return conds;
 }
 
@@ -77,9 +80,10 @@ export const reportingMartRouter = router({
    * Output + canonical FINAL yield per shift over the window, read from the
    * mart. Shift names are resolved from dim_shift (preferring the global row).
    */
-  yieldByShift: protectedProcedure.input(windowInput).query(async ({ input }) => {
+  yieldByShift: protectedProcedure.input(windowInput).query(async ({ input, ctx }) => {
     const db = await getDb();
     if (!db) return [];
+    const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6a 2026-10-25)
 
     const rows = await db
       .select({
@@ -90,7 +94,7 @@ export const reportingMartRouter = router({
         ntf: sql<number>`SUM(${factInspectionHourly.ntfCount})`.as("ntf"),
       })
       .from(factInspectionHourly)
-      .where(and(...factConditions(input)))
+      .where(and(...factConditions(input, idsMay)))
       .groupBy(factInspectionHourly.shiftCode);
 
     // Names from dim_shift (no join — avoid fan-out; prefer the global row).
@@ -120,9 +124,10 @@ export const reportingMartRouter = router({
    * machines/products/shifts. Ordered chronologically. bucketHour is returned
    * as a factory-local 'YYYY-MM-DD HH24:00' string.
    */
-  yieldTrendHourly: protectedProcedure.input(windowInput).query(async ({ input }) => {
+  yieldTrendHourly: protectedProcedure.input(windowInput).query(async ({ input, ctx }) => {
     const db = await getDb();
     if (!db) return [];
+    const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6a 2026-10-25)
 
     const rows = await db
       .select({
@@ -133,7 +138,7 @@ export const reportingMartRouter = router({
         ntf: sql<number>`SUM(${factInspectionHourly.ntfCount})`.as("ntf"),
       })
       .from(factInspectionHourly)
-      .where(and(...factConditions(input)))
+      .where(and(...factConditions(input, idsMay)))
       .groupBy(factInspectionHourly.bucketHour)
       .orderBy(factInspectionHourly.bucketHour);
 
@@ -152,9 +157,10 @@ export const reportingMartRouter = router({
    * each product's share of total output. Product metadata from dim_product.
    * The productModelId=0 sentinel ("no product model") surfaces as an honest row.
    */
-  productMix: protectedProcedure.input(windowInput).query(async ({ input }) => {
+  productMix: protectedProcedure.input(windowInput).query(async ({ input, ctx }) => {
     const db = await getDb();
     if (!db) return [];
+    const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6a 2026-10-25)
 
     const rows = await db
       .select({
@@ -165,7 +171,7 @@ export const reportingMartRouter = router({
         ntf: sql<number>`SUM(${factInspectionHourly.ntfCount})`.as("ntf"),
       })
       .from(factInspectionHourly)
-      .where(and(...factConditions(input)))
+      .where(and(...factConditions(input, idsMay)))
       .groupBy(factInspectionHourly.productModelId);
 
     const prodRows = await db

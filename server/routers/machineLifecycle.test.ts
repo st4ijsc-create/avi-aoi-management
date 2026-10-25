@@ -186,3 +186,6 @@ describe("machine.lifecycleTransitions — UI helper", () => {
     await expect(caller.lifecycleTransitions({ id: 9 })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
+
+// Cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW*.db.test.ts); ở đây CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("../db/hierarchy", async (orig) => ({ ...(await orig<typeof import("../db/hierarchy")>()), idsTrongPhamVi: async () => null }));

@@ -8,7 +8,7 @@
 // KHOÁ TRẦN (không có i18next instance), và phép kiểm "chip mang đúng giá trị"/"nút Lưu
 // ghim" (tên nút LÀ câu dịch) sẽ vô nghĩa.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -18,7 +18,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const localeJson = (rel: string) => JSON.parse(readFileSync(join(HERE, rel), "utf8"));
 
 const mutate = vi.fn();
-let lastMutationOptions: { onSuccess?: (res: unknown) => void; onError?: (e: unknown) => void } | undefined;
+let lastMutationOptions: { onSuccess?: (res: unknown) => void; onError?: (e: unknown, bien?: unknown) => void } | undefined;
 const toastSuccess = vi.fn();
 const toastWarning = vi.fn();
 const toastError = vi.fn();
@@ -35,7 +35,7 @@ vi.mock("@/lib/trpc", () => ({
     deviceAdapter: {
       tags: {
         setStopPin: {
-          useMutation: (opts: { onSuccess?: (res: unknown) => void; onError?: (e: unknown) => void }) => {
+          useMutation: (opts: { onSuccess?: (res: unknown) => void; onError?: (e: unknown, bien?: unknown) => void }) => {
             lastMutationOptions = opts;
             return { mutate, isPending: false };
           },
@@ -379,6 +379,35 @@ describe("TagStopPinEditor", () => {
     lastMutationOptions!.onSuccess!({ commissioningRecheckRequired: true });
     expect(toastSuccess).toHaveBeenCalledTimes(1);
     expect(toastWarning).toHaveBeenCalledTimes(1);
+  });
+
+  it("★ kiem-dinh H1 (a): máy chủ đòi mã (SCADA_CONFIG_TOTP_REQUIRED) ⇒ hộp mã 6 số mở, KHÔNG toast; nhập mã ⇒ gửi lại CHÍNH lượt đó kèm totpCode", () => {
+    render(<TagStopPinEditor tag={{ ...baseTag, actuationLevel: 1 }} adapterId={9} canEdit />);
+    fireEvent.click(screen.getByRole("switch"));
+    fireEvent.change(screen.getByLabelText("Giá trị khi DỪNG"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText(/Lý do/), { target: { value: "ghim dung muc mot" } });
+    fireEvent.click(screen.getByRole("button", { name: "Lưu ghim" }));
+    const bien = mutate.mock.calls[0][0];
+    expect(bien).toEqual({ adapterId: 9, tagKey: "cmd_stop", stopValue: 0, reason: "ghim dung muc mot" });
+    act(() => lastMutationOptions!.onError!({ data: { appCode: "SCADA_CONFIG_TOTP_REQUIRED" } }, bien));
+    expect(toastError).not.toHaveBeenCalled();
+    const o = screen.getByLabelText("Mã xác thực hai lớp (6 số)");
+    expect(screen.getByText(/Đặt hoặc gỡ ghim giá trị DỪNG là thay đổi an toàn/)).toBeInTheDocument();
+    fireEvent.change(o, { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận" }));
+    expect(mutate).toHaveBeenCalledTimes(2);
+    expect(mutate.mock.calls[1][0]).toEqual({ ...bien, totpCode: "123456" });
+  });
+
+  it("★ kiem-dinh H1 (b): tag mức 4 / chưa khai mức ⇒ ghi chú 'nút DỪNG MÁY sẽ BỎ QUA ghim này'; tag mức 1 ⇒ không ghi chú", () => {
+    render(<TagStopPinEditor tag={{ ...baseTag, actuationLevel: 4 }} adapterId={9} canEdit />);
+    expect(screen.getByTestId("stop-pin-muc-cao")).toHaveTextContent("Tag mức tác động 4 — nút DỪNG MÁY (STOP HMI) sẽ BỎ QUA ghim này");
+    cleanup();
+    render(<TagStopPinEditor tag={{ ...baseTag, actuationLevel: null }} adapterId={9} canEdit />);
+    expect(screen.getByTestId("stop-pin-muc-cao")).toHaveTextContent("Tag chưa khai mức tác động (coi là mức 5)");
+    cleanup();
+    render(<TagStopPinEditor tag={{ ...baseTag, actuationLevel: 1 }} adapterId={9} canEdit />);
+    expect(screen.queryByTestId("stop-pin-muc-cao")).toBeNull();
   });
 
   it("canEdit=false ⇒ nút Lưu luôn khoá dù điền đủ giá trị/lý do", () => {

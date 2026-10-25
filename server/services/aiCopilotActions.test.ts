@@ -301,3 +301,6 @@ describe("E2-4 — realtime nudge at the propose/confirm choke points", () => {
     expect(confirmRes.status).toBe("executed");
   });
 });
+
+// W11c: cổng phạm vi tool GHI có test riêng (aiLocalTools/phamViGhi*.test.ts); ở đây user giả / CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./aiLocalTools/phamViGhi", () => ({ kiemPhamViGhiTool: async () => ({ ok: true }) }));

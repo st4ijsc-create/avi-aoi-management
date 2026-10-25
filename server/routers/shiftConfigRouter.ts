@@ -1,6 +1,7 @@
 import { protectedProcedure, writeProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import * as db from "../db";
+import { hangTheoNhaMay, caLamViecGhi } from "./_cauHinhPhamVi";
 
 // ============ SHIFT CONFIG ROUTER ============
 export const shiftConfigRouter = router({
@@ -26,7 +27,8 @@ export const shiftConfigRouter = router({
       endMinute: z.number().min(0).max(59).optional(),
       orderIndex: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await hangTheoNhaMay(ctx, input.factoryId, "factory"); // phạm vi nhà máy (W13): ca mặc định toàn cục chỉ toàn quyền tạo
       return db.createShiftConfig(input);
     }),
 
@@ -42,15 +44,17 @@ export const shiftConfigRouter = router({
       isActive: z.boolean().optional(),
       orderIndex: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      await caLamViecGhi(ctx, id);
       await db.updateShiftConfig(id, data);
       return { success: true };
     }),
 
   delete: writeProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await caLamViecGhi(ctx, input.id);
       await db.deleteShiftConfig(input.id);
       return { success: true };
     }),

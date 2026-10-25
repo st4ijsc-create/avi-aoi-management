@@ -51,6 +51,7 @@ vi.mock("./otManager", async (importOriginal) => {
 
 import { getDb } from "../../db/connection";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags, interlockEvents, interlockRules } from "../../../drizzle/schema";
+import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
 import { dispatch, NO_CONFIRMER, type DispatchInput } from "./commandDispatcher";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { makeFoeGateRun, type FoeGateRunFixture } from "../orchestration/foe/__foeGateRunFixture";
@@ -761,6 +762,7 @@ describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long key
         approvedAt: new Date(),
       })
       .returning();
+    await dongDauDuyetLuat(rule!.id); // kiem-dinh R1b-1 I1 (a) FIXTURE — "đã duyệt" gieo thẳng mang bám định nghĩa hiện tại
     const [ev] = await x.insert(interlockEvents).values({ ruleId: rule!.id, action: v.action, status: "fired" }).returning();
     return { ruleId: rule!.id, eventId: ev!.id };
   }

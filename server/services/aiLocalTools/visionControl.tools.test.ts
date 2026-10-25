@@ -340,3 +340,6 @@ describe("GATE-INTACT: HITL + allowlist are never bypassed", () => {
     expect(cmdLog.some((r) => r.triggerKind === "interlock")).toBe(false);
   });
 });
+
+// W11c: cổng phạm vi tool GHI có test riêng (aiLocalTools/phamViGhi*.test.ts); ở đây user giả / CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./phamViGhi", () => ({ kiemPhamViGhiTool: async () => ({ ok: true }) }));

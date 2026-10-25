@@ -191,3 +191,6 @@ describe("doc 51 R4/CASE #4 — measurementPoint.delete", () => {
     await expect(caller.delete({ id: 501 })).resolves.toMatchObject({ success: true });
   });
 });
+
+// Cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW*.db.test.ts); ở đây CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./_sanPhamPhamVi", () => ({ sanPhamGhiTrongPhamVi: async () => undefined, diemDoGhiTrongPhamVi: async () => undefined }));

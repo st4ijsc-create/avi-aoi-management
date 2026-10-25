@@ -38,6 +38,7 @@
  * no fs access). Every entry point is fail-safe: a bad config/file/DB error never
  * crashes the process; per-config error counters surface in the status endpoint.
  */
+import { trongGocChoPhep, tepTrongThuMuc } from "./hotFolderRoots";
 import fs from "node:fs";
 import { appError } from "../../_core/appError";
 import { DbUnavailableError } from "../../_core/dbErrors";
@@ -321,6 +322,11 @@ export async function processHotFolderFile(
     return { outcome: "skipped", reason: "inside archive/error folder" };
   }
 
+  // W15 — tệp là symlink / junction thoát khỏi thư mục theo dõi ⇒ bỏ qua (không đọc nội dung ngoài thư mục)
+  if (!tepTrongThuMuc(filePath, cfg.watchPath)) {
+    return { outcome: "skipped", reason: "file resolves outside the watched folder (symlink)" };
+  }
+
   // ── 1. Read (transient-lock retry) ──
   let buf: Buffer | null;
   try {
@@ -558,6 +564,15 @@ function startWatcherFor(cfg: HotFolderConfig): void {
   const rt = getRuntime(cfg.id);
   if (rt.watcher) return; // already watching
 
+  // W15 — cấu hình CŨ ngoài gốc cho phép: không theo dõi (fail-closed), báo log
+  const goc = cfg.watchPath?.trim() ? trongGocChoPhep(cfg.watchPath) : { ok: false as const, ma: "UNRESOLVABLE" as const };
+  const gocLuu = [resolveConfigDirs(cfg).archiveDir, resolveConfigDirs(cfg).errorDir].map((d) => trongGocChoPhep(d));
+  if (!goc.ok || gocLuu.some((g) => !g.ok)) {
+    recordError(rt, `watchPath/archive/error outside permitted hot-folder roots (${goc.ok ? "archive/error" : goc.ma})`);
+    rt.watching = false;
+    console.error(`[HotFolder] cfg#${cfg.id} NOT watched: path outside permitted roots (HOT_FOLDER_ROOTS) — ${cfg.watchPath}`);
+    return;
+  }
   if (!cfg.watchPath?.trim() || !fs.existsSync(cfg.watchPath)) {
     recordError(rt, `watchPath does not exist: ${cfg.watchPath}`);
     rt.watching = false;
@@ -745,6 +760,11 @@ export async function scanConfigNow(configId: number, deps?: ProcessDeps): Promi
   const cfg = rows[0];
   if (!cfg) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "hotFolderConfig" }, `Hot-folder config #${configId} not found`);
 
+  // W15 — quét tay cũng chỉ trong gốc cho phép
+  const { archiveDir: thuMucLuu, errorDir: thuMucLoi } = resolveConfigDirs(cfg);
+  if (!trongGocChoPhep(cfg.watchPath).ok || !trongGocChoPhep(thuMucLuu).ok || !trongGocChoPhep(thuMucLoi).ok) {
+    throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "manageHotFolder" }, `Cannot scan: watchPath/archive/error of config #${configId} is outside the permitted hot-folder roots (HOT_FOLDER_ROOTS)`);
+  }
   let entries: fs.Dirent[] = [];
   try {
     entries = await fs.promises.readdir(cfg.watchPath, { withFileTypes: true });
@@ -836,6 +856,20 @@ export interface HotFolderConfigInput {
   deleteAfterDays?: number;
 }
 
+/** W15: đường dẫn phải nằm trong gốc cho phép (HOT_FOLDER_ROOTS, mặc định rỗng ⇒ từ chối). */
+function kiemGoc(truong: string, p: string): void {
+  const r = trongGocChoPhep(p);
+  if (r.ok) return;
+  throw appError(
+    "BAD_REQUEST",
+    "OPERATION_FAILED",
+    { operation: "manageHotFolder" },
+    r.ma === "ROOTS_EMPTY"
+      ? `${truong} refused: HOT_FOLDER_ROOTS is not configured (no hot-folder path is allowed until an administrator lists the permitted root directories)`
+      : `${truong} "${p}" is outside the permitted hot-folder roots (HOT_FOLDER_ROOTS) or cannot be resolved`,
+  );
+}
+
 function validateConfigInput(input: Partial<HotFolderConfigInput>): void {
   if (input.adapterKey !== undefined) {
     getVisionAdapter(input.adapterKey); // throws "No vision adapter registered …"
@@ -844,12 +878,14 @@ function validateConfigInput(input: Partial<HotFolderConfigInput>): void {
     const p = input.watchPath.trim();
     if (!p) throw new Error("watchPath is required");
     if (!path.isAbsolute(p)) throw new Error(`watchPath must be an absolute path (got "${p}")`);
+    kiemGoc("watchPath", p);
   }
   for (const key of ["archivePath", "errorPath"] as const) {
     const v = input[key];
     if (v != null && v.trim() && !path.isAbsolute(v.trim())) {
       throw new Error(`${key} must be an absolute path (got "${v}")`);
     }
+    if (v != null && v.trim()) kiemGoc(key, v.trim());
   }
 }
 
