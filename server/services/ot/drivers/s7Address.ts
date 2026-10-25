@@ -15,6 +15,7 @@
  * truyền thẳng cho NodeS7 (lib tự parse). Nhờ vậy ta không phải tự encode lại S7.
  */
 import type { OtDataType } from "../otDriver";
+import { laGiaTriBadThuVien } from "../chatLuong";
 
 /** Địa chỉ S7 đã validate — giữ nguyên dạng gốc để truyền cho NodeS7. */
 export interface ParsedS7Address {
@@ -84,7 +85,8 @@ export function parseS7Address(address: string): ParsedS7Address {
 
 /**
  * Ép giá trị thô NodeS7 trả về theo dataType khai báo (KHÔNG áp scale/offset).
- *   - giá trị BAD của NodeS7 (null/undefined) → {value:null, quality:"bad"}
+ *   - giá trị BAD của NodeS7 → {value:null, quality:"bad"}: null/undefined, VÀ chuỗi chất lượng "BAD <mã>" mà nodes7 đặt vào chỗ giá trị
+ *     cho item lỗi (R1b-2a T13 fix round 2, I2 — `laGiaTriBadThuVien`; trước đây bool đọc TRUE / string đọc "BAD 255" là good)
  *   - bool → Boolean(raw)
  *   - int → ép Number (round), float → Number
  *   - string/json → String(raw)
@@ -96,7 +98,7 @@ export interface CoercedS7Value {
 }
 
 export function coerceS7Value(raw: unknown, dataType: OtDataType): CoercedS7Value {
-  if (raw === null || raw === undefined) {
+  if (raw === null || raw === undefined || laGiaTriBadThuVien(raw)) {
     return { value: null, quality: "bad" };
   }
   switch (dataType) {

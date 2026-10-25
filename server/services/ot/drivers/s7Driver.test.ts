@@ -2,7 +2,7 @@
  * Sprint F1.3 — s7Driver tests với package GIẢ (vi.doMock + vi.resetModules).
  * Không cần lib/PLC thật.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { OtTagAddress } from "../otDriver";
 
 const tags: OtTagAddress[] = [
@@ -154,8 +154,8 @@ describe("S7Driver (mocked nodes7)", () => {
     await expect(d.writeTags([{ tagKey: "sp", address: "DB1,INT0", value: 1 }])).rejects.toThrow(/not connected/);
   });
 
-  it("BAD value (null) → quality bad", async () => {
-    mockNodeS7({ temp: null, run: true });
+  it("BAD value (real nodes7 shape: quality string 'BAD 255' in place of the value, anythingBad=true) → quality bad", async () => {
+    mockNodeS7({ temp: "BAD 255", run: true }, { readAllItems: vi.fn((cb: (bad: boolean, vals: Record<string, unknown>) => void) => cb(true, { temp: "BAD 255", run: true })) });
     const { S7Driver } = await import("./s7Driver");
     const d = new S7Driver();
     await d.connect({ endpoint: "127.0.0.1" });
@@ -163,6 +163,48 @@ describe("S7Driver (mocked nodes7)", () => {
     const temp = samples.find((s) => s.tagKey === "temp")!;
     expect(temp.quality).toBe("bad");
     expect(temp.value).toBeNull();
+  });
+
+  describe("R1b-2a T13 fix round 2 (I2) — nodes7 BAD sentinel on bool / string tags never reads as a good value", () => {
+    const tagsI2: OtTagAddress[] = [
+      { tagKey: "temp", address: "DB1,REAL0", dataType: "float" },
+      { tagKey: "run", address: "M0.0", dataType: "bool" },
+      { tagKey: "name", address: "DB1,CHAR10.20", dataType: "string" },
+    ];
+    /** Real nodes7 shape, item-level error while the read as a whole succeeded: one item answered, the others carry 'BAD <code>'. */
+    const docMotPhanBad = (vals: Record<string, unknown>) =>
+      vi.fn((cb: (bad: boolean, v: Record<string, unknown>) => void) => cb(true, vals));
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it.each([
+      ["V2 off", "false"],
+      ["V2 on", "true"],
+    ] as const)("%s: bool 'BAD 255' ⇒ bad (NOT true), string 'BAD 10' ⇒ bad (NOT the text); the answered item stays good", async (_n, v2) => {
+      vi.stubEnv("OT_CHAT_LUONG_V2_ENABLED", v2);
+      mockNodeS7({}, { readAllItems: docMotPhanBad({ temp: 1.5, run: "BAD 255", name: "BAD 10" }) });
+      const { S7Driver } = await import("./s7Driver");
+      const d = new S7Driver();
+      await d.connect({ endpoint: "127.0.0.1" });
+      const out = await d.readTags(tagsI2);
+      const run = out.find((s) => s.tagKey === "run")!;
+      const name = out.find((s) => s.tagKey === "name")!;
+      expect(out.find((s) => s.tagKey === "temp")!).toMatchObject({ quality: "good", value: 1.5 });
+      for (const s of [run, name]) {
+        expect(s.quality).toBe("bad");
+        expect(s.value).toBeNull();
+        if (v2 === "true") {
+          // item-level error, read answered ⇒ device_error (answered)
+          expect(s.reason).toBe("device_error");
+          expect(s.statusCode).toBe("bad_value");
+        } else {
+          // flag-off shape stays bare (no statusCode / reason), as for every driver
+          expect(s.reason).toBeUndefined();
+          expect(s.statusCode).toBeUndefined();
+        }
+      }
+    });
   });
 
   it("readTags throws when not connected", async () => {

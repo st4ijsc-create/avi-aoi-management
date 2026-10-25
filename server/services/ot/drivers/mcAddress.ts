@@ -14,6 +14,7 @@
  * Helper giữ nguyên địa chỉ gốc để mcprotocol tự parse; chỉ suy ra cờ isBit.
  */
 import type { OtDataType } from "../otDriver";
+import { laGiaTriBadThuVien } from "../chatLuong";
 
 export interface ParsedMcAddress {
   /** Địa chỉ mcprotocol gốc (đã trim, đã chuẩn hoá hoa). */
@@ -123,13 +124,14 @@ export interface CoercedMcValue {
 
 /**
  * Ép giá trị thô mcprotocol trả về theo dataType (KHÔNG áp scale/offset).
- *   - null/undefined (BAD) → {value:null, quality:"bad"}
+ *   - null/undefined, VÀ chuỗi chất lượng "BAD <mã>" mà mcprotocol đặt vào chỗ giá trị cho item lỗi (R1b-2a T13 fix round 2, I2 —
+ *     `laGiaTriBadThuVien`; trước đây bool đọc TRUE / string đọc "BAD 255" là good) → {value:null, quality:"bad"}
  *   - bool → Boolean(raw)  (mcprotocol trả true/false hoặc 0/1)
  *   - int → Number round; float → Number; string/json → String/serialize
  * NaN sau ép → quality:"bad".
  */
 export function coerceMcValue(raw: unknown, dataType: OtDataType): CoercedMcValue {
-  if (raw === null || raw === undefined) {
+  if (raw === null || raw === undefined || laGiaTriBadThuVien(raw)) {
     return { value: null, quality: "bad" };
   }
   switch (dataType) {

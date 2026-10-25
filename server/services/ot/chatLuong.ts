@@ -145,6 +145,18 @@ export function chatLuongEndCodeSlmp(endCode: number): { statusCode: string; rea
 }
 
 /**
+ * SCADA R1b-2a T13 fix round 2 (I2) — chuỗi chất lượng BAD mà nodes7 0.3.x / mcprotocol 0.1.x đặt VÀO CHỖ GIÁ TRỊ cho item lỗi
+ * (`dataObject[useraddr] = item.quality` = "BAD " + mã: "BAD 255" khi gói đọc quá hạn / liên kết rớt, "BAD 10"… khi PLC báo lỗi item;
+ * item mảng ⇒ mảng chứa các chuỗi đó). Giá trị như thế KHÔNG BAO GIỜ được ép thành giá trị tốt: trước đây bool đọc TRUE và string đọc
+ * "BAD 255" với chất lượng good khi mất liên lạc (fail-open). Khớp chặt `^BAD \d{1,3}$` để một chuỗi PLC thật như "BAD PART" không bị bắt.
+ */
+export function laGiaTriBadThuVien(raw: unknown): boolean {
+  if (typeof raw === "string") return /^BAD \d{1,3}$/.test(raw);
+  if (Array.isArray(raw)) return raw.some((x) => typeof x === "string" && /^BAD \d{1,3}$/.test(x));
+  return false;
+}
+
+/**
  * SCADA R1b-2a T13 fix round 1 — thiết bị / máy chủ ĐÃ trả lời nhưng giá trị không dùng được (lib trả BAD/null, NaN, không ép được kiểu)
  * ⇒ mẫu `bad` PHẢI mang lý do (cờ V2). Luật `mauMayChuDaTraLoi` (reconnectNhanh) coi `bad` KHÔNG lý do là CHƯA trả lời (fail-closed),
  * nên thiếu lý do ở đây sẽ biến một lần đọc đã được trả lời thành tick hỏng (D1 hạ phiên) và chặn `connected`. Cờ tắt: không dùng.
