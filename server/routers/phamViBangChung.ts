@@ -8,10 +8,15 @@
  * Miễn trừ CHƯA có bằng chứng ⇒ vào "nợ-bằng-chứng" (số ghim GIẢM dần ở `phamViBangChungCensus.test.ts`; thêm miễn trừ mới mà không kèm bằng chứng ⇒ nợ tăng ⇒ ĐỎ).
  * Ba sổ: `MIEN_TRU_GHI` (ghi), `MIEN_TRU_CO_CHU_Y` (đọc, luong-ui), `MIEN_TRU_TUYEN_CO_CHU_Y` (tuyến REST). Cấu trúc ba sổ KHÔNG đổi — bằng chứng nằm ở đây, khoá giống hệt.
  */
-export type BangChung = { loai: "test"; tep: string; ca: string } | { loai: "ma"; tep: string; dau: string };
+export type BangChung =
+  | { loai: "test"; tep: string; ca: string }
+  | { loai: "ma"; tep: string; dau: string }
+  /** `thuan` — thủ tục KHÔNG chạm CSDL ở tầng router: thân thủ tục (thuộc tính `ten` trong đối tượng router của `tep`) không chứa getDb / db. / import("…/db…") / drizzle. Chứng minh bằng AST, không phải lời khai. */
+  | { loai: "thuan"; tep: string; ten: string };
 
 const T = (tep: string, ca: string): BangChung => ({ loai: "test", tep, ca });
 const M = (tep: string, dau: string): BangChung => ({ loai: "ma", tep, dau });
+const P = (tep: string, ten: string): BangChung => ({ loai: "thuan", tep, ten });
 
 const R = "server/routers/";
 type Nhom = [file: string, thuTuc: string[], bc: BangChung];
@@ -83,6 +88,30 @@ const NHOM_GHI: Nhom[] = [
   ["dashboardWidgetRouters.ts", ["dashboardWidgetRouter.saveLayout"], M(R + "dashboardWidgetRouters.ts", "saveDashboardWidgetLayout(ctx.user.id")],
   ["dashboardWidgetRouters.ts", ["dashboardWidgetRouter.createCustomDashboard"], M(R + "dashboardWidgetRouters.ts", "userId: ctx.user.id,")],
   ["operatorBadgeRouter.ts", ["operatorBadgeRouter.update", "operatorBadgeRouter.revoke"], M(R + "operatorBadgeRouter.ts", "requirePermission(MODULE, \"canEdit\")")],
+  // ── W19c ──
+  ["aiCopilotRouter.ts", ["aiCopilotRouter.confirmAction"], T("server/services/aiCopilotActions.test.ts", "confirm with wrong userId is blocked")],
+  ["aiCopilotRouter.ts", ["aiCopilotRouter.cancelAction"], T(R + "phamViGhiDoW19.db.test.ts", "aiCopilot.cancelAction: B huỷ hành động chờ duyệt của A")],
+  ["aiChayUngDungRouter.ts", ["aiChayUngDungRouter.chay"], T("server/services/ai/chayUngDung/dichVu.test.ts", "dự án CÁ NHÂN của người khác ⇒ PROJECT_NOT_FOUND")],
+  ["aiChayUngDungRouter.ts", ["aiChayUngDungRouter.dung"], T("server/services/ai/chayUngDung/dichVu.test.ts", "người KHÁC dừng ⇒ NOT_FOUND")],
+  ["aiChayUngDungRouter.ts", ["aiChayUngDungRouter.deXuatLenh"], T(R + "aiCodingSessionScope.test.ts", "id ĐÚNG HÌNH DẠNG nhưng KHÔNG trong danh sách trắng ⇒ PROJECT_NOT_FOUND")],
+  ["aiAgentRouter.ts", ["aiAgentRouter.startPlaybook"], T("server/services/aiPlaybookEngine.test.ts", "startPlaybook — RBAC gate")],
+  ["aiAgentRouter.ts", ["aiAgentRouter.phanHoi"], T("server/services/ai/agent/thuTucLuotChay.phanHoi.test.ts", "bác thất bại (không phải của mình / đã xử lý) ⇒ KHÔNG ghi")],
+  // ── W19c: thuần tầng router (AST: thân thủ tục không chạm CSDL) ──
+  ["aiGgufRouter.ts", ["aiGgufRouter.generate"], P(R + "aiGgufRouter.ts", "generate")],
+  ["aiGgufRouter.ts", ["aiGgufRouter.chat"], P(R + "aiGgufRouter.ts", "chat")],
+  ["aiGgufRouter.ts", ["aiGgufRouter.analyzeDefect"], P(R + "aiGgufRouter.ts", "analyzeDefect")],
+  ["aiGgufRouter.ts", ["aiGgufRouter.qualityInsights"], P(R + "aiGgufRouter.ts", "qualityInsights")],
+  ["aiGgufRouter.ts", ["aiGgufRouter.embedding"], P(R + "aiGgufRouter.ts", "embedding")],
+  ["aiEvalRouter.ts", ["aiEvalRouter.evaluate"], P(R + "aiEvalRouter.ts", "evaluate")],
+  ["aiEvalRouter.ts", ["aiEvalRouter.driftCheck"], P(R + "aiEvalRouter.ts", "driftCheck")],
+  ["aiLocalTrainingRouter.ts", ["aiLocalTrainingRouter.predict"], P(R + "aiLocalTrainingRouter.ts", "predict")],
+  ["aiSpecialistAgentRouter.ts", ["aiSpecialistAgentRouter.run"], P(R + "aiSpecialistAgentRouter.ts", "run")],
+  ["aiSpecialistAgentRouter.ts", ["aiSpecialistAgentRouter.runWorkflowChain"], P(R + "aiSpecialistAgentRouter.ts", "runWorkflowChain")],
+  ["aiSpecialistAgentRouter.ts", ["aiSpecialistAgentRouter.runModuleAudit"], P(R + "aiSpecialistAgentRouter.ts", "runModuleAudit")],
+  ["kbStudioRouter.ts", ["kbStudioRouter.huyEvalMa"], P(R + "kbStudioRouter.ts", "huyEvalMa")],
+  ["defectHeatmapRouter.ts", ["defectHeatmapRouter.generate"], T(R + "defectHeatmapScope.test.ts", "generate: cũng nối `scope` từ phiên")],
+  ["aiChatRouter.ts", ["aiChatRouter.chat"], M(R + "aiChatRouter.ts", "const convIdNum = parseInt(input.conversationId, 10);")], // chỉ GHI vào hội thoại của chính người gọi (kiểm userId trước khi insert); LLM chạy trên đầu vào của người gọi
+  ["productRouters.ts", ["productModelRouter.create"], T(R + "phamViGhiDoW19.db.test.ts", "productModel.create: thiếu quyền settings_products")],
   // ── router không mount ──
   ["aiAdvancedRouter.ts", ["abTestRouter.runInference", "abTestRouter.submitFeedback"], T(R + "phamViGhiCensus.test.ts", "§5d router TẮT")],
   // ── thủ tục AI nhận khoá ảnh (W17c): các thủ tục còn miễn trừ chỉ nhận ảnh base64 / văn bản của người gọi ──
@@ -138,4 +167,9 @@ export const BANG_CHUNG_DOC: Readonly<Record<string, BangChung>> = {
 };
 
 /** Miễn trừ tuyến REST (đường nhận khoá API / token). */
-export const BANG_CHUNG_TUYEN: Readonly<Record<string, BangChung>> = {};
+export const BANG_CHUNG_TUYEN: Readonly<Record<string, BangChung>> = {
+  "server/api/v1/moduleReads.ts#GET /standards/alarm-taxonomy": T("server/api/v1/moduleReads.test.ts", "U4a — scope gating"),
+  "server/api/v1/moduleReads.ts#GET /standards/device-types": T("server/api/v1/moduleReads.test.ts", "U4a — scope gating"),
+  "server/api/v1/moduleReads.ts#GET /twin/models": T("server/api/v1/moduleReads.test.ts", "U4a — scope gating"),
+  "server/routes/edgeDownload.ts#GET /api/edge/download/:deploymentId": T("server/edgeDownloadProxy.test.ts", "returns 403 when deployment belongs to a different machine"),
+};
