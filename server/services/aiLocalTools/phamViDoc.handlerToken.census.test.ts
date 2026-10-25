@@ -59,7 +59,8 @@ describe("§2 tool miễn trừ không chạm CSDL ở thân handler", () => {
 });
 
 /** Khe hở TẠM đã biết (gỡ khi lô sửa tương ứng lên main): tool CHƯA được gọi tên trong test CSDL ở main hiện tại. Dòng nào đã được gọi tên ⇒ ĐỎ "gỡ khỏi khe hở" (chống hoá thạch). */
-const KHE_HO_TAM: ReadonlySet<string> = new Set(["analytics_defect_heatmap_summary" /* ca DB "người nhiều nhà máy thấy HỢP" nằm ở lô L8b của luong-ui (2026-10-25) */]);
+// 2026-10-25 (dieu-phoi, gộp W20 với L8b): analytics_defect_heatmap_summary đã có ca DB "người nhiều nhà máy thấy HỢP" ⇒ khe hở tạm rỗng.
+const KHE_HO_TAM: ReadonlySet<string> = new Set<string>([]);
 
 describe("§3 mọi tool không miễn trừ được gọi tên trong test CSDL", () => {
   it("tên tool xuất hiện (dạng chuỗi) trong ít nhất một test CSDL của thư mục tool", async () => {
