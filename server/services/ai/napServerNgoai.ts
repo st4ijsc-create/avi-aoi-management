@@ -131,7 +131,9 @@ export async function kiemNapKhiServerNgoaiSong(
         `Đặt LLAMA_SERVER_ENABLED=true (+ LLAMA_SERVER_URL, LLAMA_SERVER_FAIL_CLOSED=true) để lượt gọi đi qua server.`,
     );
   }
-  // 2 — dấu chân so với VRAM trống đo tươi.
+  // 2 — dấu chân so với VRAM trống đo tươi. Nạp CPU (`GGUF_GPU=false` — engine `getLlama({gpu:false})`) không chạm VRAM ⇒ bỏ qua bước này
+  // (phát hiện khi đo bộ nhúng chạy CPU 2026-10-25: hàng rào từ chối oan một lượt nạp 0 byte VRAM).
+  if (env.GGUF_GPU === "false") return;
   const can = dauChanUocTinh(co, env) + soMB(env.AI_NAP_BIEN_AN_TOAN_MB, 1536) * MiB;
   const v = await dep.vram().catch(() => null);
   const trong = v ? v.totalBytes - v.usedBytes : null;
