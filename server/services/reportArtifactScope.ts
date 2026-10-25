@@ -12,17 +12,21 @@
  */
 import { sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
-import { resolveTenantFactoryScope } from "../db/reportAggregators";
+import { resolveTenantCodeFactoryIds, resolveTenantFactoryScope } from "../db/reportAggregators";
+import type { TenantCodeScope } from "../_core/tenantCodeScope";
 
 export interface NguoiXemTep {
   id?: number | null;
   role?: string | null;
   privileged?: boolean;
+  /** Khoá API `export:read` có phạm vi nhà máy HẸP (`tenantCodeScopeOf` ≠ undefined). Vắng = khoá toàn cục / master key (giữ nguyên). */
+  tenantScope?: TenantCodeScope;
 }
 
 /** Người xem có phải loại phải lọc theo phạm vi người tạo (vai đặc quyền, không admin, không phải chủ thể máy–máy)? */
 export function canLocTheoNguoiTao(viewer: NguoiXemTep | null | undefined, vaiDacQuyen: ReadonlySet<string>): boolean {
-  if (!viewer || viewer.privileged) return false;
+  if (!viewer) return false;
+  if (viewer.privileged) return viewer.tenantScope != null; // khoá API hẹp: cùng luật; khoá toàn cục / master key: không lọc
   if (!viewer.role || viewer.role === "admin") return false;
   return vaiDacQuyen.has(viewer.role);
 }
@@ -33,12 +37,15 @@ export function canLocTheoNguoiTao(viewer: NguoiXemTep | null | undefined, vaiDa
  */
 export async function nguoiTaoTrongPhamVi(viewer: NguoiXemTep, nguoiTaoIds: ReadonlyArray<number>): Promise<Set<number>> {
   const ra = new Set<number>();
-  if (viewer.id == null) return ra;
+  const laKhoa = viewer.privileged === true && viewer.tenantScope != null;
+  if (viewer.id == null && !laKhoa) return ra;
   const khac = [...new Set(nguoiTaoIds.filter((x) => x !== viewer.id))];
-  if (nguoiTaoIds.includes(viewer.id)) ra.add(viewer.id);
+  if (viewer.id != null && nguoiTaoIds.includes(viewer.id)) ra.add(viewer.id);
   if (khac.length === 0) return ra;
   try {
-    const nx = await resolveTenantFactoryScope({ userId: viewer.id, userRole: viewer.role ?? undefined }, { strict: true });
+    const nx = laKhoa
+      ? await resolveTenantCodeFactoryIds(viewer.tenantScope).then((r) => ({ factoryIds: r.outcome === "db_unavailable" ? [] : r.factoryIds }))
+      : await resolveTenantFactoryScope({ userId: viewer.id as number, userRole: viewer.role ?? undefined }, { strict: true });
     if (nx.factoryIds === null) {
       // người xem toàn quyền theo phạm vi (không phải admin theo tên vai) ⇒ thấy hết
       for (const x of khac) ra.add(x);

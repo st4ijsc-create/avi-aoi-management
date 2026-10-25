@@ -42,6 +42,8 @@ export interface ArtifactViewer {
   role?: string | null;
   /** Trusted server-to-server principal (valid scoped API key) — privileged read. */
   privileged?: boolean;
+  /** Khoá API có phạm vi nhà máy hẹp — xem reportArtifactScope.ts. */
+  tenantScope?: import("../_core/tenantCodeScope").TenantCodeScope;
 }
 
 const PRIVILEGED_ROLES = new Set(["admin", "supervisor", "quality_inspector"]);

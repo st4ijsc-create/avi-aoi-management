@@ -146,7 +146,7 @@ export const aiSegmentationRouter = router({
       const row = await getDefectSegmentationById(input.id);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "mask" }, "Mask not found");
       if (row.createdBy !== ctx.user.id && ctx.user.role !== "admin") {
-        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "deleteMask" }, "Not authorized to delete this mask");
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "mask" }, "Mask not found");
       }
       await deleteDefectSegmentation(input.id);
       return { success: true };

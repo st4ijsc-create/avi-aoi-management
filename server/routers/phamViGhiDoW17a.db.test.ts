@@ -79,7 +79,7 @@ describe("dashboardWidget — bảng điều khiển & preset cá nhân", () => 
     await b.toggleCustomDashboardFavorite({ id: ids.dRieng }).catch(() => undefined);
     await b.toggleCustomDashboardPublic({ id: ids.dRieng }).catch(() => undefined);
     await b.deleteCustomDashboard({ id: ids.dRieng }).catch(() => undefined);
-    expect(await maLoi(() => b.saveCustomDashboardAsTemplate({ dashboardId: ids.dRieng, name: `${RUN}-tpl` }))).toBe("FORBIDDEN");
+    expect(await maLoi(() => b.saveCustomDashboardAsTemplate({ dashboardId: ids.dRieng, name: `${RUN}-tpl` }))).toBe("NOT_FOUND");
     const sau = await one(sql`SELECT name, "isFavorite", "isPublic", "updatedAt" FROM user_custom_dashboards WHERE id = ${ids.dRieng}`);
     expect(sau).toEqual(truoc);
     expect(await so(sql`SELECT count(*)::int AS n FROM dashboard_templates WHERE name = ${RUN + "-tpl"}`)).toBe(0);
@@ -98,7 +98,7 @@ describe("dashboardWidget — bảng điều khiển & preset cá nhân", () => 
     expect(await a.duplicateCustomDashboard({ id: ids.dRieng })).toMatchObject({ id: expect.any(Number) });
     expect(await dem()).toBe(2);
   });
-  it("B sửa / xoá / nhân bản preset RIÊNG của A ⇒ FORBIDDEN, preset còn nguyên", async () => {
+  it("B sửa / xoá / nhân bản preset RIÊNG của A ⇒ NOT_FOUND (≡ không tồn tại), preset còn nguyên", async () => {
     const { dashboardWidgetRouter } = await import("./dashboardWidgetRouters");
     const b = dashboardWidgetRouter.createCaller(tenTep(B));
     const l = [
@@ -106,13 +106,13 @@ describe("dashboardWidget — bảng điều khiển & preset cá nhân", () => 
       await maLoi(() => b.deleteStylePreset({ id: ids.preset })),
       await maLoi(() => b.cloneSharedPreset({ id: ids.preset })),
     ];
-    expect(l).toEqual(["FORBIDDEN", "FORBIDDEN", "FORBIDDEN"]);
+    expect(l).toEqual(["NOT_FOUND", "NOT_FOUND", "NOT_FOUND"]);
     expect(await so(sql`SELECT count(*)::int AS n FROM widget_style_presets WHERE id = ${ids.preset} AND name = ${RUN + "-preset"}`)).toBe(1);
   });
 });
 
 describe("cảnh báo · thông báo · phiên · token · mẫu chú thích", () => {
-  it("alertRouter: B update / delete / test / acknowledge cảnh báo của A ⇒ FORBIDDEN, không đổi", async () => {
+  it("alertRouter: B update / delete / test / acknowledge cảnh báo của A ⇒ NOT_FOUND, không đổi", async () => {
     const { alertRouter } = await import("./alertRouters");
     const b = alertRouter.createCaller(tenTep(B));
     const l = [
@@ -121,7 +121,7 @@ describe("cảnh báo · thông báo · phiên · token · mẫu chú thích", (
       await maLoi(() => b.test({ id: ids.alert })),
       await maLoi(() => b.acknowledge({ id: ids.alertHis })),
     ];
-    expect(l).toEqual(["FORBIDDEN", "FORBIDDEN", "FORBIDDEN", "FORBIDDEN"]);
+    expect(l).toEqual(["NOT_FOUND", "NOT_FOUND", "NOT_FOUND", "NOT_FOUND"]);
     expect(await so(sql`SELECT count(*)::int AS n FROM alert_settings WHERE id = ${ids.alert} AND name = ${RUN + "-al"} AND threshold = 90`)).toBe(1);
     expect(await so(sql`SELECT count(*)::int AS n FROM alert_history WHERE id = ${ids.alertHis} AND "acknowledgedAt" IS NULL`)).toBe(1);
     const a = alertRouter.createCaller(tenTep(A));
@@ -152,11 +152,11 @@ describe("cảnh báo · thông báo · phiên · token · mẫu chú thích", (
     expect(await aiGatewayTokenRouter.createCaller(tenTep(A)).thuHoi({ id: ids.token })).toMatchObject({ ok: true });
     expect(await so(sql`SELECT count(*)::int AS n FROM ai_gateway_tokens WHERE id = ${ids.token} AND "thuHoiLuc" IS NOT NULL`)).toBe(1);
   });
-  it("annotationTemplate.delete: B xoá mẫu của A ⇒ FORBIDDEN; mẫu hệ thống ⇒ FORBIDDEN ngay cả chủ; chủ xoá mẫu thường được", async () => {
+  it("annotationTemplate.delete: B xoá mẫu của A ⇒ NOT_FOUND; mẫu hệ thống ⇒ FORBIDDEN ngay cả chủ; chủ xoá mẫu thường được", async () => {
     const { annotationTemplateRouter } = await import("./annotationRouters");
     const b = annotationTemplateRouter.createCaller(tenTep(B));
     const a = annotationTemplateRouter.createCaller(tenTep(A));
-    expect(await maLoi(() => b.delete({ id: ids.mau }))).toBe("FORBIDDEN");
+    expect(await maLoi(() => b.delete({ id: ids.mau }))).toBe("NOT_FOUND");
     expect(await maLoi(() => a.delete({ id: ids.mauHeThong }))).toBe("FORBIDDEN");
     expect(await so(sql`SELECT count(*)::int AS n FROM annotation_templates WHERE id IN (${ids.mau}, ${ids.mauHeThong})`)).toBe(2);
     expect(await maLoi(() => a.delete({ id: ids.mau }))).toBeNull();
@@ -214,5 +214,32 @@ describe("★ reportArtifact — phạm vi nhà máy của người tạo (vai �
     const tatCa = (await ad.list({ limit: 200 })).items.map((x) => x.id);
     for (const id of [aMine, aB, aAB, aAdm, aSys]) expect(tatCa).toContain(id);
     expect(await maLoi(() => ad.delete({ id: aB }))).toBeNull();
+  });
+
+  it("★ W17b — khoá API export:read có phạm vi HẸP (nhà máy A) cùng luật: tải được tệp người tạo trong A; tệp người tạo B / nhiều nhà máy / toàn quyền / hệ thống ⇒ not_found; khoá TOÀN CỤC thấy hết", async () => {
+    const { getArtifact, listArtifacts } = await import("../services/reportArtifactService");
+    const fa = `${RUN}ka`;
+    const fb = `${RUN}kb`;
+    await dung(sql`INSERT INTO factories (code, name) VALUES (${fa}, ${fa}), (${fb}, ${fb})`);
+    const cA = await taoNguoiDungTest("kca", "supervisor", { tienTo: "pw21", ts: RUN, ten: "PW21 kca" });
+    const cB = await taoNguoiDungTest("kcb", "supervisor", { tienTo: "pw21", ts: RUN, ten: "PW21 kcb" });
+    const adm = await taoNguoiDungTest("kadm", "admin", { tienTo: "pw21", ts: RUN, ten: "PW21 kadm" });
+    await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${cA.id}, ${fa}), (${cB.id}, ${fb})`);
+    const mk = async (by: number | null, ten: string) =>
+      Number((await one(sql`INSERT INTO report_artifacts ("reportType", format, title, "storageKey", "storageUrl", "fileHash", "createdBy")
+        VALUES ('t', 'csv', ${RUN + "-k" + ten}, ${RUN + "k" + ten}, 'http://x/' || ${RUN + "k" + ten}, ${"c".repeat(64)}, ${by}) RETURNING id`)).id);
+    const aA = await mk(cA.id, "a");
+    const aB = await mk(cB.id, "b");
+    const aAdm = await mk(adm.id, "adm");
+    const aSys = await mk(null, "sys");
+    const khoaA = { privileged: true, tenantScope: { factoryCode: fa } };
+    expect((await getArtifact(aA, khoaA)).id).toBe(aA);
+    for (const id of [aB, aAdm, aSys]) await expect(getArtifact(id, khoaA), `khoá A / ${id}`).rejects.toMatchObject({ reason: "not_found" });
+    const thay = (await listArtifacts(khoaA, { limit: 200 })).items.map((x) => x.id).filter((id) => [aA, aB, aAdm, aSys].includes(id));
+    expect(thay).toEqual([aA]);
+    const toanCuc = { privileged: true };
+    for (const id of [aA, aB, aAdm, aSys]) expect((await getArtifact(id, toanCuc)).id).toBe(id);
+    // khoá nhà máy rỗng (mã không tồn tại) ⇒ không thấy gì
+    await expect(getArtifact(aA, { privileged: true, tenantScope: { factoryCode: "khong-co-" + RUN } })).rejects.toMatchObject({ reason: "not_found" });
   });
 });
