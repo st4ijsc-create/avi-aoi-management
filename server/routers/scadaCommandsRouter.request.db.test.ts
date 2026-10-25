@@ -225,7 +225,7 @@ beforeAll(async () => {
 
   const sp = { dataType: "float" as const, min: 0, max: 300, step: 0.5 };
   await seedTag(ad.a, { key: "che_do", dataType: "int", kind: "input", writable: false, level: null });
-  for (const key of ["sp3", "khoa", "nem", "lap", "dua", "rf4"]) await seedTag(ad.a, { key, ...sp, level: 3 });
+  for (const key of ["sp3", "khoa", "nem", "lap", "dua", "rf4", "sp0433"]) await seedTag(ad.a, { key, ...sp, level: 3 });
   await seedTag(ad.a, { key: "sp4", ...sp, level: 4 });
   await seedTag(ad.a, { key: "doc", dataType: "float", kind: "input", writable: false, level: null });
   await seedTag(ad.a, { key: "tat", ...sp, enabled: false });
@@ -723,5 +723,32 @@ describe("R1b-1 T7 fix round 1 — NUL trong lyDo (I-1)", () => {
     } finally {
       boDem.napTuOt({ adapterId: ad.a, machineId: A.mid }, [mauOt("che_do", 2)]);
     }
+  });
+});
+
+describe("R1b-2a T9 — canh 0433 đầu request", () => {
+  it("★ trạng thái thiếu 0433 ⇒ PRECONDITION_FAILED SCADA_SCHEMA_MISSING; KHÔNG khoá chọn, KHÔNG dòng chờ, KHÔNG dòng attempts; khôi phục ⇒ request chạy lại", async () => {
+    const { __datTrangThaiSchemaR1a, trangThaiSchemaR1a } = await import("../_core/kiemSchemaR1a");
+    const truoc = trangThaiSchemaR1a();
+    const u = nguoi.opA2;
+    const dem = async () => Number((await dung(sql`SELECT count(*)::int AS n FROM scada_khoa_chon WHERE adapter_id = ${ad.a}`))[0].n);
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: new Date().toISOString(), thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [] });
+    try {
+      const m = await moc();
+      const khoaTruoc = await dem();
+      const choTruoc = await soDongCho(u.id);
+      const loi = await loiCua(u.caller.request({ adapterId: ad.a, tagKey: "sp0433", value: 100, lyDo: LY_DO, clientRequestId: uuid() }));
+      expect(loi).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_SCHEMA_MISSING", appParams: { ma: "THIEU_MIGRATION", migration: "0433" } });
+      expect(await dongThuSau(m, u.id), "không ghi attempts").toHaveLength(0);
+      expect(await dem(), "khoá chọn KHÔNG bị lấy").toBe(khoaTruoc);
+      expect(await soDongCho(u.id), "không dòng chờ").toBe(choTruoc);
+    } finally {
+      __datTrangThaiSchemaR1a(truoc);
+    }
+    // chưa kiểm / không kiểm được ⇒ KHÔNG canh (request đi tiếp, tới dòng chờ)
+    const m2 = await moc();
+    const kq = await u.caller.request({ adapterId: ad.a, tagKey: "sp0433", value: 100, lyDo: LY_DO, clientRequestId: uuid() });
+    expect(kq.requestId).toBeTruthy();
+    expect((await dongThuSau(m2, u.id)).length).toBeGreaterThan(0);
   });
 });

@@ -4610,7 +4610,8 @@
     "QUA_NHIEU_KENH_DA_KHAI": "本批共 {{soTag}} 个标签——每批最多 {{toiDa}} 个（批量声明：计入本批全部标签；导入：计入已声明/受保护的标签）。请拆分后重试。",
     "STOP_PIN_GO_TRUOC": "通道 {{tagKey}} 已固定停止值（{{stopValue}}）——修改其地址、类型、比例、偏移、可写标志或适配器，将动作等级提高到 1 以上（HMI 停止只发送等级 1 标签的固定值），或停用、删除该标签，都会失去 STOP。请先解除固定（软件停止标签，需填写原因），然后重试。",
     "SCADA_STOP_PINS_HIGH_LEVEL": "此设备的所有 STOP 固定值都位于执行等级 > 1 的标签上（{{tagKeys}}）—“停机”按钮不会发送到高等级标签；请工程师在 /scada/config/channels 将停机标签的执行等级声明为 1；请使用硬接线急停（E-STOP）停机。",
-    "SCADA_STOP_PRECHECK_TIMEOUT": "服务器响应缓慢 — HMI STOP 未发送。请在设备处使用硬接线急停（E-STOP）。"
+    "SCADA_STOP_PRECHECK_TIMEOUT": "服务器响应缓慢 — HMI STOP 未发送。请在设备处使用硬接线急停（E-STOP）。",
+    "SCADA_SCHEMA_MISSING": "数据库缺少迁移 {{migration}} — HMI 命令暂不可用；请管理员应用迁移并重启服务器。"
   },
   "export": {
     "reportMenu": {
@@ -23883,7 +23884,8 @@
         "CHUA_GHIM_STOP": "设备尚未固定 STOP 值 — 请工程师在 /scada/config/channels 固定；请使用硬接线急停（E-STOP）停机",
         "goiYStopKhongGhim": "需要停机？请使用硬接线急停（E-STOP）或设备柜上的停止按钮",
         "GHIM_MUC_CAO": "此设备的所有 STOP 固定值都位于执行等级 > 1 的标签上（{{list}}）—“停机”按钮不会发送任何内容；请使用硬接线急停（E-STOP）停机",
-        "STOP_QUA_HAN": "服务器响应缓慢 — HMI STOP 未发送。请在设备处使用硬接线急停（E-STOP）。"
+        "STOP_QUA_HAN": "服务器响应缓慢 — HMI STOP 未发送。请在设备处使用硬接线急停（E-STOP）。",
+        "THIEU_MIGRATION": "未发送 — 数据库缺少迁移 0433；请管理员应用并重启（“停机”按钮仍可使用）"
       },
       "local": {
         "remote": "设备处于 REMOTE",

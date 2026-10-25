@@ -119,6 +119,9 @@ export function loiTuChoiLenh(t: TuChoiYeuCau) {
     // Xác thực / middleware (server/_core/hanStopHmi.ts `loiStopQuaHan`) ném CÙNG appCode + mã trực tiếp — không qua đây.
     case "STOP_QUA_HAN":
       return appError("SERVICE_UNAVAILABLE", "SCADA_STOP_PRECHECK_TIMEOUT", { ma: t.ma, pha: t.pha }, t.chiTiet);
+    // R1b-2a Task 9 — thiếu migration 0433 ⇒ request / confirm từ chối có mã (KHÔNG BAO GIỜ dungMay)
+    case "THIEU_MIGRATION":
+      return appError("PRECONDITION_FAILED", "SCADA_SCHEMA_MISSING", { ma: t.ma, migration: t.migration }, t.chiTiet);
     // R1a Task 16 — bộ đếm TOTP sai (chung mọi bên gọi TOTP): CÙNG mã + câu i18n với đăng nhập / 2FA, thêm `{ ma, level }` cho M5.
     // M5 chỉ hiện "tạm khoá, thử lại sau N phút" (`remainingMinutes`) — không có số lần sai.
     case "TOTP_TAM_KHOA":

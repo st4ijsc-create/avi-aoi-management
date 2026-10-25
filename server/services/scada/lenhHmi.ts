@@ -53,6 +53,7 @@ import { checkPermission } from "../../_core/accessControl";
 import { khoaPhienStepUp, stepUpPhienConHan, type UserRole } from "../../_core/trpc";
 import { kiemXacThucTheoMuc, vaiTroDuocGhi } from "../../_core/xacThucTheoMuc";
 import { logger } from "../../logger";
+import { biet0433Thieu } from "../../_core/kiemSchemaR1a";
 import type { MucRuiRo } from "../ot/aiControlGate";
 import { ackTimeoutMacDinhMs, dispatch, isOtControlEnabled, type DispatchResult, type DispatchStatus } from "../ot/commandDispatcher";
 import { isCommissioned, isCommissioningRequired } from "../ot/commissioningService";
@@ -66,7 +67,7 @@ import { OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS } from "../ot/otDeviceWrite";
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { kiemGiaTriGhi, laKenhGhi, mucTacDongKenh } from "./kenhScada";
 import { giaHanKhoaChon, giuKhoaChon, LoiKhoaChonTranhChap, nhaKhoaChon } from "./khoaChon";
-import { laMaOn, nenGhiThuLenh } from "./dieuTietThuLenh";
+import { batXaTongKet, laMaOn, nenGhiThuLenh, type TongKetHetHan } from "./dieuTietThuLenh";
 import { appError } from "../../_core/appError";
 import { ghiNhanStopQuaHanKhongGhiSo, type PhaQuaHanStopHmi } from "../../_core/hanStopHmi";
 
@@ -127,7 +128,9 @@ export type MaTuChoiYeuCau =
   // kiem-dinh R1b-1 H1 (b) — máy CÓ ghim nhưng mọi ghim nằm trên tag mức tác động > 1 (STOP HMI bỏ qua tất cả)
   | "GHIM_MUC_CAO"
   // R1b-2a Task 4 (M-1) — STOP HMI quá hạn trước-gửi (pha "truoc_gui") hoặc ở xác thực / cổng đổi mật khẩu (pha "xac_thuc") — server/_core/hanStopHmi.ts
-  | "STOP_QUA_HAN";
+  | "STOP_QUA_HAN"
+  // R1b-2a Task 9 — thiếu migration 0433 (cột ly_do) ⇒ request / confirm từ chối có mã thay vì 500 (KHÔNG BAO GIỜ ở dungMay)
+  | "THIEU_MIGRATION";
 
 /** Một lần từ chối. `thongTin` là tham số cho appError (chỉ nguyên thuỷ) — router chọn câu i18n theo `ma`. */
 export type TuChoiYeuCau =
@@ -143,7 +146,22 @@ export type TuChoiYeuCau =
   | { ma: "MODE_LOCAL"; chiTiet: string; lyDo: LyDoCheDo }
   | { ma: "DANG_DUOC_CHON"; chiTiet: string; boiUserId: number; boiTen: string; hetHanLuc: string }
   | { ma: "GHIM_MUC_CAO"; chiTiet: string; soTag: number; tagKeys: string }
-  | { ma: "STOP_QUA_HAN"; chiTiet: string; pha: PhaQuaHanStop };
+  | { ma: "STOP_QUA_HAN"; chiTiet: string; pha: PhaQuaHanStop }
+  | { ma: "THIEU_MIGRATION"; chiTiet: string; migration: "0433" };
+
+/**
+ * R1b-2a T9 — canh 0433 ở ĐẦU `yeuCauGhiTag` / `xacNhanGhiTag` (sau cờ, TRƯỚC mọi chạm DB: không lấy khoá chọn, không ghi attempts — INSERT
+ * nhật ký sẽ ném "column ly_do does not exist"). Trạng thái do `kiemSchemaR1a` khởi động nhớ; chưa kiểm / không kiểm được ⇒ không canh.
+ * ⛔ KHÔNG BAO GIỜ gọi từ `dungMayHmi`: STOP không bao giờ bị trạng thái schema chặn (dòng nhật ký của STOP tự chịu lỗi — xem dungMayHmi).
+ */
+function canh0433(): TuChoiYeuCau | null {
+  if (!biet0433Thieu()) return null;
+  return {
+    ma: "THIEU_MIGRATION",
+    migration: "0433",
+    chiTiet: "Thiếu migration 0433 (cột scada_command_attempts.ly_do) — lệnh HMI tạm không dùng được; quản trị áp migration rồi khởi động lại.",
+  };
+}
 
 /** R1b-2a T4 — pha quá hạn: `truoc_gui` (lenhHmi, trước mọi dispatch) | `xac_thuc` (createContext, server/_core/context.ts). */
 export type PhaQuaHanStop = PhaQuaHanStopHmi;
@@ -237,6 +255,27 @@ export function catLyDo(s: string | null | undefined): string | null {
   return cp.length > LY_DO_TOI_DA ? cp.slice(0, LY_DO_TOI_DA).join("") : t;
 }
 
+/** Ghi MỘT dòng tổng kết `DIEU_TIET` (WORM — chỉ INSERT). Dùng chung bởi lần gọi kế của người dùng và bộ xả cho người ngừng hẳn. */
+async function chenDongTongKet(
+  d: DbHoacTx,
+  t: { userId: number; stage: string; reasonCode: string; soLan: number },
+): Promise<void> {
+  await d.insert(scadaCommandAttempts).values({
+    userId: t.userId,
+    stage: t.stage as "request" | "confirm" | "dispatch" | "huy",
+    outcome: "rejected",
+    reasonCode: "DIEU_TIET",
+    lyDo: catLyDo(`${t.soLan} lần ${t.reasonCode} bị gộp`),
+  });
+}
+
+/** Đường ghi của bộ xả hẹn giờ: DB nối riêng (không tx của ai); lỗi ném ra để bộ xả log. */
+async function ghiTongKetXa(t: TongKetHetHan): Promise<void> {
+  const db = await getDb();
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  await chenDongTongKet(db, t);
+}
+
 /**
  * Ghi MỘT dòng nhật ký thử lệnh (WORM — chỉ INSERT). R1b-1 T7:
  *   · `lyDo` ⇒ cột `ly_do` (lý do người dùng nếu có, ngược lại câu hệ thống mô tả kết cục), cắt 300.
@@ -261,22 +300,22 @@ export async function ghiThuLenh(
   },
 ): Promise<void> {
   let tongKet = 0;
+  let stageTongKet: string = dong.stage;
   if (dong.outcome === "rejected" && laMaOn(dong.reasonCode)) {
-    const q = nenGhiThuLenh(dong.userId, dong.reasonCode as string);
+    // R1b-2a T9 — đường ghi cho người NGỪNG HẲN (hẹn giờ unref, bật lười ở lần gộp đầu): ghi qua getDb() riêng (không phải `d`, có thể là tx).
+    batXaTongKet(ghiTongKetXa);
+    const q = nenGhiThuLenh(dong.userId, dong.reasonCode as string, Date.now(), dong.stage);
     if (q.ghi === false) return;
-    if (q.ghi === "tong_ket") tongKet = q.soLan;
+    if (q.ghi === "tong_ket") {
+      tongKet = q.soLan;
+      stageTongKet = q.stage;
+    }
   }
   if (tongKet > 0) {
     // Dòng tổng kết là SỔ PHỤ: lỗi ghi nó (R1b-1 T7 fix round 1, I-2) chỉ được log, KHÔNG được chặn dòng hiện tại và không đổi kết
     // quả cho client. (Dòng `rejected` mã ồn không bao giờ nằm trong transaction ⇒ lỗi câu lệnh không làm hỏng transaction của ai.)
     try {
-      await d.insert(scadaCommandAttempts).values({
-        userId: dong.userId,
-        stage: dong.stage,
-        outcome: "rejected",
-        reasonCode: "DIEU_TIET",
-        lyDo: catLyDo(`${tongKet} lần ${dong.reasonCode} bị gộp`),
-      });
+      await chenDongTongKet(d, { userId: dong.userId, stage: stageTongKet, reasonCode: dong.reasonCode as string, soLan: tongKet });
     } catch (err) {
       logger.error(
         { err: (err as Error)?.message ?? String(err), userId: dong.userId, reasonCode: dong.reasonCode, soLan: tongKet },
@@ -544,6 +583,9 @@ export async function yeuCauGhiTag(
   const input: DauVaoYeuCau = { ...dauVao, lyDo: catLyDo(dauVao.lyDo) ?? "" };
   // 1. cờ — không chạm DB
   if (!lenhHmiBat()) return { ok: false, tuChoi: { ma: "FEATURE_DISABLED", chiTiet: "SCADA_COMMANDS_ENABLED tắt." } };
+  // R1b-2a T9 — thiếu 0433 ⇒ từ chối có mã, không chạm DB (không khoá chọn, không attempts)
+  const thieu0433 = canh0433();
+  if (thieu0433) return { ok: false, tuChoi: thieu0433 };
 
   const db = await getDb();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
@@ -844,6 +886,9 @@ export async function xacNhanGhiTag(
 ): Promise<KetQuaXacNhanGhi> {
   // 0. cờ — không chạm DB
   if (!lenhHmiBat()) return { ok: false, tuChoi: { ma: "FEATURE_DISABLED", chiTiet: "SCADA_COMMANDS_ENABLED tắt." } };
+  // R1b-2a T9 — thiếu 0433 ⇒ từ chối có mã, không chạm DB (không dòng chờ, không khoá, không attempts)
+  const thieu0433 = canh0433();
+  if (thieu0433) return { ok: false, tuChoi: thieu0433 };
 
   const db = await getDb();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");

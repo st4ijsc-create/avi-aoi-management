@@ -4618,7 +4618,8 @@
     "QUA_NHIEU_KENH_DA_KHAI": "This batch has {{soTag}} tags — at most {{toiDa}} per batch (bulk declaration: every tag in the batch counts; import: declared / protected tags count). Split it and try again.",
     "STOP_PIN_GO_TRUOC": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) — changing its address, type, scale, offset, writable flag or adapter, raising its actuation level above 1 (HMI STOP only sends pins of level-1 tags), disabling or deleting it would lose STOP. Unpin it first (Software stop tag, with a reason), then try again.",
     "SCADA_STOP_PINS_HIGH_LEVEL": "Every STOP pin of this machine is on a tag with actuation level > 1 ({{tagKeys}}) — the STOP MACHINE button does not send to high-level tags; an engineer declares actuation level 1 for the stop tags at /scada/config/channels; stop it with the hardwired E-STOP.",
-    "SCADA_STOP_PRECHECK_TIMEOUT": "Server is slow — the HMI STOP was NOT sent. Use the hardwired E-STOP at the machine."
+    "SCADA_STOP_PRECHECK_TIMEOUT": "Server is slow — the HMI STOP was NOT sent. Use the hardwired E-STOP at the machine.",
+    "SCADA_SCHEMA_MISSING": "Database migration {{migration}} is missing — HMI commands are temporarily unavailable; an administrator applies the migration and restarts the server."
   },
   "export": {
     "reportMenu": {
@@ -23881,7 +23882,8 @@
         "CHUA_GHIM_STOP": "The machine has no pinned STOP values — an engineer pins them at /scada/config/channels; stop it with the hardwired E-STOP",
         "goiYStopKhongGhim": "Need to stop the machine? Use the hardwired E-STOP or the stop button at the machine cabinet",
         "GHIM_MUC_CAO": "Every STOP pin of this machine is on a tag with actuation level > 1 ({{list}}) — the STOP MACHINE button sends nothing; stop it with the hardwired E-STOP",
-        "STOP_QUA_HAN": "Server is slow — the HMI STOP was NOT sent. Use the hardwired E-STOP at the machine."
+        "STOP_QUA_HAN": "Server is slow — the HMI STOP was NOT sent. Use the hardwired E-STOP at the machine.",
+        "THIEU_MIGRATION": "Not sent — the database is missing migration 0433; an administrator applies it and restarts (the STOP MACHINE button still works)"
       },
       "local": {
         "remote": "the machine is in REMOTE",

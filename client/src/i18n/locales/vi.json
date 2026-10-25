@@ -4610,7 +4610,8 @@
     "QUA_NHIEU_KENH_DA_KHAI": "Lô có {{soTag}} tag — tối đa {{toiDa}} tag mỗi lô (khai mức hàng loạt: đếm mọi tag của lô; import: đếm tag đã khai kênh / được bảo vệ). Chia nhỏ lô rồi làm lại.",
     "STOP_PIN_GO_TRUOC": "Kênh {{tagKey}} đang ghim giá trị DỪNG ({{stopValue}}) — đổi địa chỉ / kiểu / scale / offset / cho phép ghi / adapter, nâng mức tác động lên trên 1 (STOP HMI chỉ gửi ghim của tag mức 1), tắt hoặc xoá tag sẽ làm mất STOP. Gỡ ghim trước (mục Tag dừng phần mềm, có lý do), rồi làm lại.",
     "SCADA_STOP_PINS_HIGH_LEVEL": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{tagKeys}}) — nút DỪNG MÁY không gửi tới tag mức cao; kỹ sư khai mức tác động 1 cho tag dừng ở /scada/config/channels; dừng bằng E-STOP cứng.",
-    "SCADA_STOP_PRECHECK_TIMEOUT": "Máy chủ chậm — STOP HMI CHƯA được gửi. Dùng E-STOP cứng tại máy."
+    "SCADA_STOP_PRECHECK_TIMEOUT": "Máy chủ chậm — STOP HMI CHƯA được gửi. Dùng E-STOP cứng tại máy.",
+    "SCADA_SCHEMA_MISSING": "Thiếu migration {{migration}} của cơ sở dữ liệu — lệnh HMI tạm không dùng được; quản trị áp migration rồi khởi động lại máy chủ."
   },
   "export": {
     "reportMenu": {
@@ -23855,7 +23856,8 @@
         "CHUA_GHIM_STOP": "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng",
         "goiYStopKhongGhim": "Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy",
         "GHIM_MUC_CAO": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{list}}) — nút DỪNG MÁY không gửi gì; dừng bằng E-STOP cứng",
-        "STOP_QUA_HAN": "Máy chủ chậm — STOP HMI CHƯA được gửi. Dùng E-STOP cứng tại máy."
+        "STOP_QUA_HAN": "Máy chủ chậm — STOP HMI CHƯA được gửi. Dùng E-STOP cứng tại máy.",
+        "THIEU_MIGRATION": "Không gửi — cơ sở dữ liệu thiếu migration 0433; quản trị áp migration rồi khởi động lại (nút DỪNG MÁY vẫn dùng được)"
       },
       "local": {
         "remote": "máy đang ở REMOTE",

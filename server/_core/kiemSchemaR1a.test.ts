@@ -12,6 +12,7 @@ import {
   CHU_KY_NHAC_MS,
   COT_DEVICE_TAGS_0431,
   __datTrangThaiSchemaR1a,
+  biet0433Thieu,
   khoiDongOtCoKiemSchema,
   kiemSchemaR1a,
   lyDoSchemaR1a,
@@ -456,5 +457,22 @@ describe("TOTP_KHONG_KIEM_DUOC mang nguyên nhân 'thiếu migration 0432' trong
     const c = nguyenNhanBoDemHong(new Error("connection terminated"));
     expect(c).toContain("connection terminated");
     expect(c).not.toContain("0432");
+  });
+});
+
+describe("R1b-2a T9 — biet0433Thieu (canh đầu request / confirm)", () => {
+  afterEach(() => __datTrangThaiSchemaR1a({ kieu: "chua_kiem" }));
+  const daKiem = (thieu0433: string[]) =>
+    ({ kieu: "da_kiem", luc: "2026-10-26T00:00:00Z", thieu0431: [], thieu0432: [], thieu0433, thieu0434: [] }) as const;
+
+  it("chỉ true khi ĐÃ kiểm và thiếu cột ly_do; chưa kiểm / không kiểm được / đủ ⇒ false (không biết ≠ thiếu)", () => {
+    __datTrangThaiSchemaR1a({ kieu: "chua_kiem" });
+    expect(biet0433Thieu()).toBe(false);
+    __datTrangThaiSchemaR1a({ kieu: "khong_kiem_duoc", loi: "x", loai: "khac" });
+    expect(biet0433Thieu()).toBe(false);
+    __datTrangThaiSchemaR1a(daKiem([]));
+    expect(biet0433Thieu()).toBe(false);
+    __datTrangThaiSchemaR1a(daKiem(["scada_command_attempts.ly_do"]));
+    expect(biet0433Thieu()).toBe(true);
   });
 });

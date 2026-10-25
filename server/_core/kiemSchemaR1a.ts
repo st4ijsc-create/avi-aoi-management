@@ -111,6 +111,14 @@ export function biet0432Thieu(): boolean {
   return trangThai.kieu === "da_kiem" && trangThai.thieu0432.length > 0;
 }
 
+/**
+ * R1b-2a T9 — tiến trình này đã THẤY thiếu cột `scada_command_attempts.ly_do` (0433)? CHỈ cột (FK của Task 12 không tính).
+ * `chua_kiem` / `khong_kiem_duoc` ⇒ false (không biết ≠ thiếu: không chặn). Người dùng: canh đầu `request` / `confirm` — KHÔNG BAO GIỜ `dungMay`.
+ */
+export function biet0433Thieu(): boolean {
+  return trangThai.kieu === "da_kiem" && trangThai.thieu0433.length > 0;
+}
+
 /** Truy vấn CHỈ ĐỌC information_schema ⇒ đối tượng còn thiếu của 0431 / 0432 / 0433. */
 export async function kiemSchemaR1a(chay: ChayTruyVan): Promise<KetQuaSchemaR1a> {
   const cot = await chay(sql`SELECT table_name, column_name FROM information_schema.columns

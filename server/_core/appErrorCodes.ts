@@ -197,6 +197,8 @@ export const APP_ERROR_CODES = [
   "SCADA_STOP_PRECHECK_TIMEOUT",   // params: { ma, pha } — R1b-2a T4 (M-1): STOP HMI quá hạn TRƯỚC khi gửi (ma STOP_QUA_HAN; hạn tổng 2,5 s từ
                                    // createContext — pha "xac_thuc" = xác thực / cổng đổi mật khẩu, "truoc_gui" = giấy phép / phạm vi tenant /
                                    // phạm vi / vai / ghim / dòng chờ) ⇒ STOP CHƯA gửi; dùng E-STOP cứng. tRPC SERVICE_UNAVAILABLE (503).
+  "SCADA_SCHEMA_MISSING",          // params: { ma, migration } — R1b-2a T9: thiếu migration 0433 (cột ly_do) ⇒ request / confirm từ chối (THIEU_MIGRATION);
+                                   // KHÔNG BAO GIỜ ở dungMay. Quản trị áp migration rồi khởi động lại.
   // ── kiem-dinh P1-2 (2026-10-24) — đổi cấu hình kênh / chế độ M12 (scadaKenh.capNhat, cheDo.dat, cheDo.go) đòi TOTP TƯƠI mỗi lượt.
   "SCADA_CONFIG_TOTP_REQUIRED",    // params: { ma } — thiếu mã TOTP (TOTP_CAN); nhập mã 6 số rồi lưu lại.
   "SCADA_CONFIG_TOTP_INVALID",     // params: { ma } — mã TOTP sai / sai định dạng / đã dùng (TOTP_SAI); chờ mã mới rồi lưu lại.
