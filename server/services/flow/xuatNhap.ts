@@ -38,10 +38,18 @@ export function jsonOnDinh(v: unknown): string {
 }
 export const bamLuong = (luong: unknown): string => createHash("sha256").update(jsonOnDinh(luong), "utf8").digest("hex");
 
-// ── bí mật GÕ TAY trong tham số HTTP (kiem-dinh F1 + 17 biến thể) ───────────────────────────────
+// ── bí mật GÕ TAY trong tham số HTTP (kiem-dinh F1 + 17 biến thể + XML/full-width) ──────────────────
+//
+// GIỚI HẠN ĐÃ BIẾT (khai thẳng — đây là bộ lọc theo MẪU, không phải bằng chứng "sạch"):
+//   • "Basic <base64>" hoặc token nằm trong trường KHÔNG có tên khoá và không giống token độc lập (ngắn / tuỳ ý) KHÔNG bị phát hiện;
+//   • đoạn đường dẫn url chứa bí mật NGẮN hoặc dạng tuỳ ý (không phải bot<id>:<token>, không ≥ 24 ký tự chữ+số liền, không hex ≥ 32) KHÔNG bị phát hiện;
+//   • UUID trong đường dẫn url (≥ 24 ký tự chữ+số liền) bị thay bằng chỗ giữ — quá tay có chủ ý (UUID thường là id tài nguyên của nhà máy nguồn);
+//   • khoá VÔ HẠI mà tên chứa key / auth / cred / session / pass… (keyboard, authorName, credits…) bị xoá GIÁ TRỊ trong thân/tiêu đề HTTP — quá tay có chủ ý
+//     (xoá nhầm chỉ tốn một lần điền lại; sót bí mật thì lộ);
+//   • bí mật trong node KHÔNG phải HTTP chỉ được CẢNH BÁO (quetBiMat), không tự xoá.
 
-/** Chuẩn hoá tên khoá để so: NFD bỏ dấu (mật_khẩu → mat_khau), đ→d, chữ thường. */
-export const chuanTenKhoa = (k: string): string => k.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[đĐ]/g, "d").toLowerCase();
+/** Chuẩn hoá tên khoá để so: NFKD (gập full-width ｐａｓｓｗｏｒｄ → password) bỏ dấu (mật_khẩu → mat_khau), đ→d, chữ thường. */
+export const chuanTenKhoa = (k: string): string => k.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[\u0111\u0110]/g, "d").toLowerCase();
 
 /**
  * Tên khoá / tiêu đề trông như bí mật (đã chuẩn hoá bỏ dấu): từ khoá dài khớp ở bất cứ đâu; từ khoá NGẮN (pwd, pass, otp, sid) chỉ khớp khi đứng riêng
@@ -68,11 +76,18 @@ const RE_CAP_BI_MAT = new RegExp(String.raw`((?:${NGUON_KHOA_DAI}|\b(?:pwd|pass|
 const RE_TOKEN_DOC_LAP = /(?:^|[^A-Za-z0-9_-])((?:sk|pk|ghp|gho|xox[bp])[-_][A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{12,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}|[A-Za-z0-9_-]{40,})(?![A-Za-z0-9_-])/g;
 
 /** Xoá giá trị bí mật khỏi MỘT chuỗi (thân dạng chuỗi / giá trị tiêu đề). */
+/** Thẻ XML mang bí mật: <password>…</password>, <api-key attr="x">…</api-key>, <token>… — xoá NỘI DUNG thẻ (giữ thẻ). */
+const RE_THE_XML_BI_MAT = /(<\s*(?:password|passwd|pwd|secret|token|api[-_]?key|authorization|credential\w*)\b[^>]*>)([\s\S]*?)(<\/\s*(?:password|passwd|pwd|secret|token|api[-_]?key|authorization|credential\w*)\s*>)/gi;
+
 export function lamSachChuoiBiMat(x: string): string {
-  return x
+  // so/ thay trên bản NFKC (gập full-width: ｐａｓｓｗｏｒｄ=… → password=…); chỉ trả bản đã thay khi THỰC SỰ có bí mật bị gỡ, còn không giữ nguyên chuỗi gốc
+  const nx = x.normalize("NFKC");
+  const sach = nx
+    .replace(RE_THE_XML_BI_MAT, (_m, a: string, _b: string, c: string) => `${a}${c}`)
     .replace(RE_DONG_XAC_THUC, (_m, a: string, b: string) => `${a}${b}`)
     .replace(RE_CAP_BI_MAT, (_m, a: string) => a)
     .replace(RE_TOKEN_DOC_LAP, (m, t: string) => m.replace(t, ""));
+  return sach === nx ? x : sach;
 }
 
 const PLACEHOLDER_DOAN = "DIEN-LAI-DOAN-DUONG-DAN";

@@ -46,3 +46,29 @@ describe("lamSachUrl", () => {
     expect(lamSachUrl("https://h.example.com/{{ $json.a ? 1 : 2 }}/x").url).toBe("https://h.example.com/{{ $json.a ? 1 : 2 }}/x");
   });
 });
+
+describe("thẻ XML · full-width · giới hạn đã biết (lô nhỏ kiem-dinh)", () => {
+  it("★ thẻ XML mang bí mật: xoá NỘI DUNG, giữ thẻ (password / api-key có thuộc tính / token / authorization / Password hoa-thường lẫn)", () => {
+    expect(lamSachChuoiBiMat("<req><password>SEC-XML-1</password><user>a</user></req>")).toBe("<req><password></password><user>a</user></req>");
+    expect(lamSachChuoiBiMat('<api-key id="1">SEC-XML-2</api-key>')).toBe('<api-key id="1"></api-key>');
+    expect(lamSachChuoiBiMat("<Token>SEC-XML-3</Token><x>ok</x>")).toBe("<Token></Token><x>ok</x>");
+    expect(lamSachChuoiBiMat("<authorization>Bearer SEC-XML-4</authorization>")).toBe("<authorization></authorization>");
+    expect(lamSachChuoiBiMat("<ten>Nguyen Van A</ten>")).toBe("<ten>Nguyen Van A</ten>");
+  });
+
+  it("★ full-width (NFKD/NFKC): ｐａｓｓｗｏｒｄ làm tên khoá và trong chuỗi key=value đều bị bắt; chuỗi KHÔNG có bí mật giữ nguyên bản gốc (không bị đổi sang NFKC)", () => {
+    expect(laTenBiMat("ｐａｓｓｗｏｒｄ")).toBe(true);
+    expect(laTenBiMat("ＡＰＩ＿ＫＥＹ")).toBe(true);
+    expect(lamSachChuoiBiMat("ｐａｓｓｗｏｒｄ=SEC-FW-1&a=1")).toBe("password=&a=1");
+    const thuong = "Ｘin chào ｍáy ０１ — không bí mật";
+    expect(lamSachChuoiBiMat(thuong)).toBe(thuong);
+  });
+
+  it("GIỚI HẠN ĐÃ BIẾT (khoá thành ca để không ai tưởng là đã phủ): Basic base64 trong trường không tên khoá KHÔNG bị bắt; UUID trong đường dẫn bị thay chỗ giữ; khoá vô hại chứa 'key' bị xoá giá trị", () => {
+    const basic = "dùng Basic dXNlcjpwYXNz cho kết nối";
+    expect(lamSachChuoiBiMat(basic)).toBe(basic); // giới hạn: không có tên khoá, không giống token độc lập
+    expect(lamSachUrl("https://h.example.com/items/3f2504e04f8911d39a0c0305e82c3301/x").url).toBe("https://h.example.com/items/DIEN-LAI-DOAN-DUONG-DAN/x"); // UUID liền (quá tay có chủ ý)
+    expect(lamSachChuoiBiMat("keyboard=azerty&ok=1")).toBe("keyboard=&ok=1"); // quá tay có chủ ý
+    expect(laTenBiMat("authorName")).toBe(true); // quá tay có chủ ý
+  });
+});
