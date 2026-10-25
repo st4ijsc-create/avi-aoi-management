@@ -16,7 +16,7 @@ import { BANG_CHUNG_DOC, BANG_CHUNG_GHI, BANG_CHUNG_TUYEN, type BangChung } from
 const GOC = join(__dirname, "..", "..");
 
 /** Ghim nợ-bằng-chứng (đo 2026-10-25): chỉ được GIẢM. */
-const GHIM = { ghi: 1, doc: 31, tuyen: 4 } as const; // 2026-10-25 (W19c): ghi còn 1 (productModel.create — sản phẩm MỚI chưa thuộc nhà máy nào, luật ghi theo sản phẩm duyệt 2026-10-24) · 31 đọc (danh mục dùng chung / miễn trừ mới của L7 — luong-ui) · 4 tuyến
+const GHIM = { ghi: 0, doc: 31, tuyen: 0 } as const; // 2026-10-25 (W19d): ghi 0 · tuyến 0 · còn 31 đọc (danh mục dùng chung / miễn trừ mới của L7 — luong-ui)
 
 const SO = [
   { ten: "ghi", mien: MIEN_TRU_GHI as Readonly<Record<string, string>>, bang: BANG_CHUNG_GHI },

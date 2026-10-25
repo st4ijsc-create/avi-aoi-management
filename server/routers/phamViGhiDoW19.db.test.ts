@@ -96,4 +96,16 @@ describe("sở hữu theo người dùng — hội thoại AI · bình luận ·
     expect(await aiCopilotRouter.createCaller(ctx(A)).cancelAction({ actionId: id })).toMatchObject({ ok: true, status: "cancelled" });
     await dung(sql`DELETE FROM ai_pending_actions WHERE id = ${id}`);
   });
+  it("productModel.create: thiếu quyền settings_products ⇒ FORBIDDEN, không hàng; có quyền ⇒ tạo sản phẩm NHÁP chưa gắn máy nào (chưa thuộc nhà máy nào — luật ghi theo sản phẩm)", async () => {
+    const { productModelRouter } = await import("./productRouters");
+    const ma = `${RUN}-pm`.replace(/[^A-Za-z0-9_-]/g, "");
+    expect(await maLoi(() => productModelRouter.createCaller(ctx(B)).create({ code: ma, name: ma }))).toBe("FORBIDDEN");
+    expect(await so(sql`SELECT count(*)::int AS n FROM product_models WHERE code = ${ma}`)).toBe(0);
+    await dung(sql`INSERT INTO permissions ("userId", category, "moduleName", "canView", "canCreate", "canEdit", "canDelete") VALUES (${A.id}, 'machine_monitoring', 'settings_products', true, true, true, true)`);
+    const kq = (await productModelRouter.createCaller(ctx(A)).create({ code: ma, name: ma })) as { id?: number } | undefined;
+    expect(await so(sql`SELECT count(*)::int AS n FROM product_models WHERE code = ${ma}`)).toBe(1);
+    expect(await so(sql`SELECT count(*)::int AS n FROM product_machine_mappings pm JOIN product_models p ON p.id = pm."productModelId" WHERE p.code = ${ma}`)).toBe(0);
+    expect(kq).toBeTruthy();
+    await dung(sql`DELETE FROM product_models WHERE code = ${ma}`);
+  });
 });

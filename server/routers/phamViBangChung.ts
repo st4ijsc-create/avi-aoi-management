@@ -111,6 +111,7 @@ const NHOM_GHI: Nhom[] = [
   ["kbStudioRouter.ts", ["kbStudioRouter.huyEvalMa"], P(R + "kbStudioRouter.ts", "huyEvalMa")],
   ["defectHeatmapRouter.ts", ["defectHeatmapRouter.generate"], T(R + "defectHeatmapScope.test.ts", "generate: cũng nối `scope` từ phiên")],
   ["aiChatRouter.ts", ["aiChatRouter.chat"], M(R + "aiChatRouter.ts", "const convIdNum = parseInt(input.conversationId, 10);")], // chỉ GHI vào hội thoại của chính người gọi (kiểm userId trước khi insert); LLM chạy trên đầu vào của người gọi
+  ["productRouters.ts", ["productModelRouter.create"], T(R + "phamViGhiDoW19.db.test.ts", "productModel.create: thiếu quyền settings_products")],
   // ── router không mount ──
   ["aiAdvancedRouter.ts", ["abTestRouter.runInference", "abTestRouter.submitFeedback"], T(R + "phamViGhiCensus.test.ts", "§5d router TẮT")],
   // ── thủ tục AI nhận khoá ảnh (W17c): các thủ tục còn miễn trừ chỉ nhận ảnh base64 / văn bản của người gọi ──
@@ -134,4 +135,9 @@ export const BANG_CHUNG_GHI: Readonly<Record<string, BangChung>> = dung(NHOM_GHI
 export const BANG_CHUNG_DOC: Readonly<Record<string, BangChung>> = {};
 
 /** Miễn trừ tuyến REST (đường nhận khoá API / token). */
-export const BANG_CHUNG_TUYEN: Readonly<Record<string, BangChung>> = {};
+export const BANG_CHUNG_TUYEN: Readonly<Record<string, BangChung>> = {
+  "server/api/v1/moduleReads.ts#GET /standards/alarm-taxonomy": T("server/api/v1/moduleReads.test.ts", "U4a — scope gating"),
+  "server/api/v1/moduleReads.ts#GET /standards/device-types": T("server/api/v1/moduleReads.test.ts", "U4a — scope gating"),
+  "server/api/v1/moduleReads.ts#GET /twin/models": T("server/api/v1/moduleReads.test.ts", "U4a — scope gating"),
+  "server/routes/edgeDownload.ts#GET /api/edge/download/:deploymentId": T("server/edgeDownloadProxy.test.ts", "returns 403 when deployment belongs to a different machine"),
+};
