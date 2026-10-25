@@ -6,6 +6,11 @@
  */
 
 import { canhBaoDuDoanGhi } from "./_viTriPhamVi";
+import { mayTrongPhamVi } from "./_adapterPhamVi";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
+import { appError } from "../_core/appError";
+import { congCanhBaoDuDoan } from "./_aiPhamVi";
 import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import {
@@ -73,7 +78,8 @@ export const aiSmartAlertRoutingRouter = router({
         spikeThreshold: z.number().min(1).max(10).default(2.0),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await mayTrongPhamVi(ctx, input.machineId); // phạm vi người dùng (L6b 2026-10-25): máy ngoài phạm vi ≡ không tồn tại
       const event = await detectDefectSpike(
         input.machineId,
         input.windowMinutes,
@@ -90,7 +96,10 @@ export const aiSmartAlertRoutingRouter = router({
         dropThresholdPercent: z.number().min(1).max(50).default(5.0),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L6b 2026-10-25): nhà máy ngoài phạm vi ≡ không tồn tại
+      const nhaMay = await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true });
+      if (nhaMay !== null && !nhaMay.includes(input.factoryId)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, "Factory not found");
       const event = await detectYieldDrop(
         input.factoryId,
         input.dropThresholdPercent
@@ -111,8 +120,8 @@ export const aiSmartAlertRoutingRouter = router({
         days: z.number().int().min(1).max(90).default(7),
       })
     )
-    .query(async ({ input }) => {
-      return getAlertRoutingStats(input.days);
+    .query(async ({ input, ctx }) => {
+      return getAlertRoutingStats(input.days, await congCanhBaoDuDoan(ctx)); // phạm vi người dùng (L6b 2026-10-25)
     }),
 
   /** Cleanup stale in-memory alert entries */

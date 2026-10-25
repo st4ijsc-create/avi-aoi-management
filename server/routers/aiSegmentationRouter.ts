@@ -12,7 +12,9 @@
  * Degrade trung thực: thiếu model seg → PRECONDITION_FAILED (MODEL_NOT_AVAILABLE),
  * KHÔNG crash. Thiếu calibration µm/pixel → đơn vị "px", cờ degraded.
  */
-import { kiemTraTrongPhamVi } from "./_adapterPhamVi";
+import { kiemTraTrongPhamVi, dieuKienDoiTuongTrongPhamVi } from "./_adapterPhamVi";
+import { sql } from "drizzle-orm";
+import { defectSegmentations } from "../../drizzle/schema";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -129,8 +131,13 @@ export const aiSegmentationRouter = router({
       source: z.enum(["human", "model"]).nullish(),
       limit: z.number().int().min(1).max(500).default(200),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L6b 2026-10-25): mặt nạ theo lần kiểm tra của nó (trực tiếp, hoặc qua kết quả đo); không xác định được ⇒ chỉ toàn quyền
+      const congPv = await dieuKienDoiTuongTrongPhamVi(ctx, {
+        lanKiem: sql`COALESCE(${defectSegmentations.inspectionId}, (SELECT mr."inspectionId" FROM measurement_results mr WHERE mr."id" = ${defectSegmentations.measurementResultId}))`,
+      });
       return listDefectSegmentations({
+        dieuKienPhamVi: congPv,
         measurementResultId: input.measurementResultId ?? null,
         inspectionId: input.inspectionId ?? null,
         imageUrl: input.imageUrl ?? null,

@@ -5,6 +5,7 @@
 import { sql } from "drizzle-orm";
 import type { CoDanhTinh } from "./_phamViNguoiXem";
 import { ghiViTri } from "./_viTriPhamVi";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import { z } from "zod";
 import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
@@ -34,10 +35,15 @@ export const aiInsightRouter = router({
       machineCode: z.string().optional(),
       limit: z.number().min(1).max(200).default(50),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       const conds = [];
+      // phạm vi người dùng (L6b 2026-10-25): insight theo máy (mã máy) ⇒ máy trong phạm vi; không gắn máy ⇒ chung (khớp insightGhi)
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      if (idsMay !== null) {
+        conds.push(sql`(${aiInsights.machineCode} IS NULL OR ${aiInsights.machineCode} IN (SELECT code FROM machines WHERE id IN (${sql.join((idsMay.length > 0 ? idsMay : [-1]).map((x) => sql`${x}`), sql`, `)})))`);
+      }
       if (input?.status) conds.push(eq(aiInsights.status, input.status));
       if (input?.machineCode) conds.push(eq(aiInsights.machineCode, input.machineCode));
       const where = conds.length ? and(...conds) : undefined;

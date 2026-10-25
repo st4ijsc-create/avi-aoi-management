@@ -167,7 +167,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
   "server/routers/aiModelRouter.ts#aiModelRouter.createCard": "thẻ model AI là tài liệu quản trị của danh mục model DÙNG CHUNG (modelCardProcedure: vai + 2FA); không dữ liệu nhà máy — W14",
   "server/routers/aiModelRouter.ts#aiModelRouter.updateCard": "thẻ model AI là tài liệu quản trị của danh mục model DÙNG CHUNG (modelCardProcedure: vai + 2FA); không dữ liệu nhà máy — W14",
   "server/routers/aiModelRouter.ts#aiModelRouter.approveCard": "thẻ model AI là tài liệu quản trị của danh mục model DÙNG CHUNG (modelCardProcedure: vai + 2FA); không dữ liệu nhà máy — W14",
-  "server/routers/aiAdvancedVisionRouter.ts#aiAdvancedVisionRouter.explainHeatmap": "tính toán thuần trên ảnh gửi lên / imageKey (resolveSafeImagePath), không ghi CSDL; modelId = danh mục model dùng chung. Giới hạn: imageKey tham chiếu kho ảnh không phân nhà máy — W14",
   // ── W13 (kiểm định phamViGhi, 2026-10-25): danh mục DÙNG CHUNG và cấu hình SỞ HỮU THEO NGƯỜI DÙNG ──
   "server/routers/processRouter.ts#processRouter.update": "danh mục quy trình (processes) DÙNG CHUNG toàn tập đoàn — bảng không có cột nhà máy; chỉ giữ bằng quyền settings_factory (luật chủ dự án 2026-10-24: danh mục dùng chung ⇒ miễn trừ). Gán quy trình vào chuyền (theo nhà máy) đã có cổng + test phamViGhiDoW13",
   "server/routers/processRouter.ts#processRouter.delete": "danh mục quy trình DÙNG CHUNG toàn tập đoàn (xem processRouter.update) — quyền settings_factory.canDelete; gán quy trình–chuyền theo nhà máy có cổng riêng",

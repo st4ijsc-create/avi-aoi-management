@@ -1235,7 +1235,7 @@ export async function detectYieldDrop(
 
 // ─── Get Routing Stats ───────────────────────────────────────────────────────
 
-export async function getAlertRoutingStats(days: number = 7) {
+export async function getAlertRoutingStats(days: number = 7, dieuKienPhamVi?: import("drizzle-orm").SQL) {
   const db = await getDb();
   if (!db) {
     return { totalAlerts: 0, byType: [], avgAckTimeMinutes: 0, pendingCount: 0 };
@@ -1249,7 +1249,7 @@ export async function getAlertRoutingStats(days: number = 7) {
       count: sql<number>`COUNT(*)`,
     })
     .from(predictiveAlerts)
-    .where(gte(predictiveAlerts.createdAt, since))
+    .where(and(gte(predictiveAlerts.createdAt, since), dieuKienPhamVi)) // phạm vi người dùng (L6b 2026-10-25)
     .groupBy(predictiveAlerts.alertType);
 
   const [ackTime] = await db
@@ -1260,14 +1260,15 @@ export async function getAlertRoutingStats(days: number = 7) {
     .where(
       and(
         gte(predictiveAlerts.createdAt, since),
-        sql`${predictiveAlerts.acknowledgedAt} IS NOT NULL`
+        sql`${predictiveAlerts.acknowledgedAt} IS NOT NULL`,
+        dieuKienPhamVi
       )
     );
 
   const [total] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(predictiveAlerts)
-    .where(gte(predictiveAlerts.createdAt, since));
+    .where(and(gte(predictiveAlerts.createdAt, since), dieuKienPhamVi));
 
   // pendingCount = alerts still awaiting acknowledgement (the auto-escalation
   // backlog). Derived from the table now, not an in-memory Map size.
@@ -1278,6 +1279,7 @@ export async function getAlertRoutingStats(days: number = 7) {
       and(
         eq(predictiveAlerts.status, "ACTIVE"),
         isNull(predictiveAlerts.acknowledgedAt),
+        dieuKienPhamVi,
       ),
     );
 

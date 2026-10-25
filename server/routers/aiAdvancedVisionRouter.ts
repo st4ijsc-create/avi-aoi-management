@@ -27,6 +27,7 @@ import {
 import { explain } from "../services/aiExplainability";
 import fs from "fs";
 import { resolveSafeImagePath } from "../utils/safeImagePath";
+import { anhTrongPhamVi } from "./_aiPhamVi";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 const MAX_BATCH = 20;
@@ -187,7 +188,11 @@ export const aiAdvancedVisionRouter = router({
     }).refine((v) => !!v.image || !!v.imageKey, {
       message: "Provide either image (base64) or imageKey",
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // phạm vi người dùng (L6b 2026-10-25): ảnh theo khoá phải thuộc máy trong phạm vi (ảnh base64 do người gọi tự gửi thì không cần)
+      if (!input.image && input.imageKey && !(await anhTrongPhamVi(ctx, input.imageKey))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, "Image not found");
+      }
       const imageBuffer = input.image
         ? decodeBase64Image(input.image)
         : await fs.promises.readFile(

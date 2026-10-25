@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { CoDanhTinh } from "./_phamViNguoiXem";
 import { ghiViTri } from "./_viTriPhamVi";
+import { congEdge, congEdgeSuy, pvTrainStats } from "./_aiPhamVi";
 import { moduleProcedure, moduleGate, router } from "../_core/trpc";
 import { adminProcedure as adminProcedureBase } from "./_shared";
 // ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
@@ -116,7 +117,8 @@ const batchRouter = router({
 });
 
 // ─── Training Pipeline ────────────────────────────────────────
-const trainingRouter = router({
+// xuất để test phạm vi (L6b); CHƯA gắn vào aiAdvancedRouter nên chưa tới được qua API — vẫn vá để khi bật không rò
+export const trainingRouter = router({
   createJob: adminProcedure
     .input(z.object({
       name: z.string().min(1).max(255),
@@ -200,14 +202,14 @@ const trainingRouter = router({
 
   getDataStats: protectedProcedure
     .input(z.object({ modelId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getTrainingDataStats(input.modelId);
+    .query(async ({ input, ctx }) => {
+      return db.getTrainingDataStats(input.modelId, await pvTrainStats(ctx)); // phạm vi người dùng (L6b 2026-10-25)
     }),
 
   checkAutoRetrain: protectedProcedure
     .input(z.object({ modelId: z.number() }))
-    .query(async ({ input }) => {
-      return checkAutoRetrainTrigger(input.modelId);
+    .query(async ({ input, ctx }) => {
+      return checkAutoRetrainTrigger(input.modelId, await pvTrainStats(ctx)); // phạm vi người dùng (L6b 2026-10-25)
     }),
 
   deleteJob: adminProcedure
@@ -414,7 +416,7 @@ const monitoringRouter = router({
 });
 
 // ─── Edge Deployment ──────────────────────────────────────────
-const edgeRouter = router({
+export const edgeRouter = router({
   create: adminProcedure
     .input(z.object({
       modelId: z.number(),
@@ -434,8 +436,8 @@ const edgeRouter = router({
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const dep = await db.getEdgeDeployment(input.id);
+    .query(async ({ input, ctx }) => {
+      const dep = await db.getEdgeDeployment(input.id, await congEdge(ctx)); // phạm vi người dùng (L6b 2026-10-25)
       if (!dep) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, "Edge deployment not found");
       return dep;
     }),
@@ -448,8 +450,8 @@ const edgeRouter = router({
       limit: z.number().min(1).max(200).optional(),
       offset: z.number().min(0).optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getEdgeDeployments(input ?? undefined);
+    .query(async ({ input, ctx }) => {
+      return db.getEdgeDeployments({ ...(input ?? {}), dieuKienPhamVi: await congEdge(ctx) }); // phạm vi người dùng (L6b 2026-10-25)
     }),
 
   packageModel: adminProcedure
@@ -501,14 +503,14 @@ const edgeRouter = router({
 
   deviceDeployments: protectedProcedure
     .input(z.object({ deviceId: z.string() }))
-    .query(async ({ input }) => {
-      return getDeviceDeployments(input.deviceId);
+    .query(async ({ input, ctx }) => {
+      return getDeviceDeployments(input.deviceId, await congEdge(ctx)); // phạm vi người dùng (L6b 2026-10-25)
     }),
 
   staleDeployments: protectedProcedure
     .input(z.object({ thresholdMinutes: z.number().optional() }).optional())
-    .query(async ({ input }) => {
-      return checkStaleDeployments(input?.thresholdMinutes);
+    .query(async ({ input, ctx }) => {
+      return checkStaleDeployments(input?.thresholdMinutes, await congEdge(ctx)); // phạm vi người dùng (L6b 2026-10-25)
     }),
 
   inferenceResults: protectedProcedure
@@ -519,8 +521,8 @@ const edgeRouter = router({
       limit: z.number().min(1).max(200).optional(),
       offset: z.number().min(0).optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getEdgeInferenceResults(input ?? undefined);
+    .query(async ({ input, ctx }) => {
+      return db.getEdgeInferenceResults({ ...(input ?? {}), dieuKienPhamVi: await congEdgeSuy(ctx) }); // phạm vi người dùng (L6b 2026-10-25)
     }),
 
   delete: adminProcedure

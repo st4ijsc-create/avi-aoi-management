@@ -355,11 +355,11 @@ export function assembleBundle(
  * Load candidate machines (active) with their product-model + point-count, so
  * pickBestTemplate can score them. Best-effort: returns [] on any failure.
  */
-async function loadCandidates(): Promise<
+async function loadCandidates(idsMay: number[] | null = null): Promise<
   Array<{ machine: TemplateMachineLite; pointCount: number }>
 > {
   try {
-    const machines = (await db.getMachines()) as any[];
+    const machines = ((await db.getMachines()) as any[]).filter((m) => idsMay === null || idsMay.includes(m.id)); // phạm vi người dùng (L6b 2026-10-25)
     const out: Array<{ machine: TemplateMachineLite; pointCount: number }> = [];
     for (const m of machines) {
       // Prefer a product the machine is mapped to (highest priority mapping).
@@ -488,10 +488,10 @@ export async function findSimilarTemplate(input: {
   productModelId?: number;
   /** Exclude the target machine itself (if it already exists). */
   targetMachineId?: number;
-}): Promise<{ machine: TemplateMachineLite; reason: string } | null> {
+}, idsMay: number[] | null = null): Promise<{ machine: TemplateMachineLite; reason: string } | null> {
   if (!isSetupAdvisorEnabled()) return null;
   try {
-    const candidates = (await loadCandidates()).filter(
+    const candidates = (await loadCandidates(idsMay)).filter(
       (c) => c.machine.id !== input.targetMachineId,
     );
     const best = pickBestTemplate(
@@ -515,7 +515,7 @@ export async function buildConfigBundle(input: {
   machineType: string;
   productModelId?: number;
   targetMachineId?: number;
-}): Promise<ConfigBundle> {
+}, idsMay: number[] | null = null): Promise<ConfigBundle> {
   const minSamples = setupMinSamples();
 
   if (!isSetupAdvisorEnabled()) {
@@ -529,7 +529,7 @@ export async function buildConfigBundle(input: {
   }
 
   try {
-    const found = await findSimilarTemplate(input);
+    const found = await findSimilarTemplate(input, idsMay);
     if (!found) {
       return assembleBundle(null, { minSamples });
     }

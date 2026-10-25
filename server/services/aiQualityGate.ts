@@ -787,6 +787,8 @@ export interface QualityGateStats {
 }
 
 export async function getQualityGateStats(options: {
+  /** phạm vi người dùng (L6b 2026-10-25): điều kiện SQL phạm vi trên `ai_quality_gate_results` (undefined = toàn quyền / nội bộ). */
+  dieuKienPhamVi?: import("drizzle-orm").SQL;
   configId?: number;
   machineId?: number;
   startDate?: Date;
@@ -818,6 +820,9 @@ export async function getQualityGateStats(options: {
     query = sql`${query} AND "createdAt" <= ${options.endDate}`;
   }
 
+  if (options.dieuKienPhamVi) {
+    query = sql`${query} AND ${options.dieuKienPhamVi}`;
+  }
   if (options.machineId) {
     query = sql`${query} AND "inspectionId" IN (
       SELECT id FROM product_inspections WHERE "machineId" = ${options.machineId}
@@ -825,7 +830,7 @@ export async function getQualityGateStats(options: {
   }
 
   const result = await db.execute(query) as any;
-  const row = result.rows?.[0];
+  const row = (Array.isArray(result) ? result[0] : result.rows?.[0]); // postgres-js trả MẢNG hàng (không có .rows) — trước đây stats luôn 0 (lỗi có sẵn, L6b)
   if (!row) return { total: 0, autoOk: 0, autoNg: 0, needsReview: 0, manual: 0, avgConfidence: 0, avgProcessingTimeMs: 0 };
 
   return {

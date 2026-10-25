@@ -189,10 +189,18 @@ export function computeNgRecommendation(
  * over the last `days` days. Each day with at least 1 inspection becomes one
  * observation. Best-effort: returns [] on any failure.
  */
+/** phạm vi người dùng (L6b 2026-10-25): phạm vi người gọi (idsMay null = toàn quyền); `scope` cho luật sản phẩm; `congNg` là vị từ ngưỡng NG theo trạm/máy. Cron / nội bộ không truyền ⇒ như cũ. */
+export interface PhamViAdvisor {
+  idsMay: number[] | null;
+  scope: import("../db/hierarchy").PhamViDoc;
+  congNg?: import("drizzle-orm").SQL;
+}
+
 async function recentDailyNgRates(opts: {
   machineId?: number | null;
   measurementPointId?: number | null;
   days: number;
+  idsMay?: number[] | null;
 }): Promise<number[]> {
   try {
     const db = await getDb();
@@ -200,6 +208,7 @@ async function recentDailyNgRates(opts: {
     const since = new Date(Date.now() - opts.days * 24 * 60 * 60 * 1000);
     const conds: any[] = [gte(productInspections.inspectionTime, since)];
     if (opts.machineId != null) conds.push(eq(productInspections.machineId, opts.machineId));
+    if (opts.idsMay != null) conds.push(inArray(productInspections.machineId, opts.idsMay.length > 0 ? opts.idsMay : [-1])); // phạm vi người dùng (L6b 2026-10-25)
     if (opts.measurementPointId != null) conds.push(eq(measurementResults.pointDefId, opts.measurementPointId));
 
     const rows = await db
@@ -233,6 +242,7 @@ async function inspectionThroughput(opts: {
   machineId?: number | null;
   measurementPointId?: number | null;
   days: number;
+  idsMay?: number[] | null;
 }): Promise<{ total: number; perDay: number }> {
   try {
     const db = await getDb();
@@ -240,6 +250,7 @@ async function inspectionThroughput(opts: {
     const since = new Date(Date.now() - opts.days * 24 * 60 * 60 * 1000);
     const conds: any[] = [gte(productInspections.inspectionTime, since)];
     if (opts.machineId != null) conds.push(eq(productInspections.machineId, opts.machineId));
+    if (opts.idsMay != null) conds.push(inArray(productInspections.machineId, opts.idsMay.length > 0 ? opts.idsMay : [-1])); // phạm vi người dùng (L6b 2026-10-25)
     if (opts.measurementPointId != null) conds.push(eq(measurementResults.pointDefId, opts.measurementPointId));
     const [row] = await db
       .select({ total: sql<number>`COUNT(*)`.as("total") })
@@ -254,11 +265,11 @@ async function inspectionThroughput(opts: {
   }
 }
 
-async function getNgThresholdRow(id: number) {
+async function getNgThresholdRow(id: number, congNg?: import("drizzle-orm").SQL) {
   try {
     const db = await getDb();
     if (!db) return null;
-    const [row] = await db.select().from(mqttNgRateThresholds).where(eq(mqttNgRateThresholds.id, id)).limit(1);
+    const [row] = await db.select().from(mqttNgRateThresholds).where(congNg ? and(eq(mqttNgRateThresholds.id, id), congNg) : eq(mqttNgRateThresholds.id, id)).limit(1); // phạm vi người dùng (L6b 2026-10-25)
     return row ?? null;
   } catch {
     return null;
@@ -282,6 +293,7 @@ async function getNgThresholdRow(id: number) {
 async function getPointValues(
   pointDefId: number,
   opts: { windowDays?: number; windowSize: number },
+  pv?: PhamViAdvisor,
 ): Promise<{ values: number[]; source: "results" | "samples" | "none" }> {
   const since = opts.windowDays ? new Date(Date.now() - opts.windowDays * 24 * 60 * 60 * 1000) : undefined;
   const db = await getDb();
@@ -292,6 +304,7 @@ async function getPointValues(
         isNotNull(measurementResults.measuredValue),
       ];
       if (since) conds.push(gte(productInspections.inspectionTime, since));
+      if (pv && pv.idsMay !== null) conds.push(inArray(productInspections.machineId, pv.idsMay.length > 0 ? pv.idsMay : [-1])); // phạm vi người dùng (L6b 2026-10-25): chỉ giá trị đo từ máy trong phạm vi
       // OP6 — drop rows an operator overturned to NTF/OK (false calls) so their
       // near-limit readings don't skew the suggested limits. Correlated anti-join
       // on measurement_corrections (soft ref by measurement_results.id).
@@ -328,7 +341,7 @@ async function getPointValues(
   }
   // Fallback: measurement_samples (SPC).
   try {
-    const rows = await productDb.listMeasurementSamples({ pointDefId, windowSize: opts.windowSize, fromTs: since });
+    const rows = await productDb.listMeasurementSamples({ pointDefId, windowSize: opts.windowSize, fromTs: since }, pv?.scope as never);
     const values: number[] = [];
     for (const r of rows) {
       const v = toNum((r as any).value);
@@ -346,7 +359,7 @@ export async function recommendForMeasurementPoint(input: {
   machineId?: number;
   windowSize?: number;
   windowDays?: number;
-}): Promise<PointRecommendation> {
+}, pv?: PhamViAdvisor): Promise<PointRecommendation> {
   const minN = minSamples();
   const disabledResult = (note: string): PointRecommendation => ({
     ok: true,
@@ -370,6 +383,10 @@ export async function recommendForMeasurementPoint(input: {
 
   try {
     const def = await productDb.getMeasurementPointDefById(input.measurementPointId);
+    // phạm vi người dùng (L6b 2026-10-25): điểm đo thuộc sản phẩm ngoài phạm vi ≡ không tìm thấy
+    if (def && pv && !(await productDb.sanPhamTrongPhamVi((def as any).productModelId, pv.scope as never))) {
+      return { ...disabledResult("Không tìm thấy điểm đo."), disabled: false, ok: false };
+    }
     if (!def) {
       return {
         ...disabledResult("Không tìm thấy điểm đo."),
@@ -382,7 +399,7 @@ export async function recommendForMeasurementPoint(input: {
     const { values, source } = await getPointValues(input.measurementPointId, {
       windowDays: input.windowDays,
       windowSize: input.windowSize ?? 5000,
-    });
+    }, pv);
 
     const currentLsl = toNum((def as any).lowerLimit);
     const currentUsl = toNum((def as any).upperLimit);
@@ -467,7 +484,7 @@ export async function recommendNgThreshold(input: {
   ngThresholdId: number;
   windowDays?: number;
   minSampleDays?: number;
-}): Promise<NgRecommendation> {
+}, pv?: PhamViAdvisor): Promise<NgRecommendation> {
   const disabledResult = (note: string): NgRecommendation => ({
     ok: true,
     disabled: true,
@@ -486,7 +503,7 @@ export async function recommendNgThreshold(input: {
   }
 
   try {
-    const row = await getNgThresholdRow(input.ngThresholdId);
+    const row = await getNgThresholdRow(input.ngThresholdId, pv?.congNg);
     if (!row) {
       return { ...disabledResult("Không tìm thấy ngưỡng NG."), disabled: false, ok: false };
     }
@@ -501,6 +518,7 @@ export async function recommendNgThreshold(input: {
       machineId: row.machineId,
       measurementPointId: row.measurementPointId,
       days,
+      idsMay: pv?.idsMay,
     });
 
     const rec = computeNgRecommendation(rates, {
@@ -537,7 +555,7 @@ export async function recommendNgThreshold(input: {
 export async function recommendInspectionParam(input: {
   ngThresholdId: number;
   windowDays?: number;
-}): Promise<InspectionParamRecommendation> {
+}, pv?: PhamViAdvisor): Promise<InspectionParamRecommendation> {
   const disabledResult = (note: string): InspectionParamRecommendation => ({
     ok: true,
     disabled: true,
@@ -555,7 +573,7 @@ export async function recommendInspectionParam(input: {
   }
 
   try {
-    const row = await getNgThresholdRow(input.ngThresholdId);
+    const row = await getNgThresholdRow(input.ngThresholdId, pv?.congNg);
     if (!row) {
       return { ...disabledResult("Không tìm thấy ngưỡng NG."), disabled: false, ok: false };
     }
@@ -564,6 +582,7 @@ export async function recommendInspectionParam(input: {
       machineId: row.machineId,
       measurementPointId: row.measurementPointId,
       days,
+      idsMay: pv?.idsMay,
     });
 
     // Heuristic: minSampleSize ≈ 1/8 of a day's throughput (so a NG rate is

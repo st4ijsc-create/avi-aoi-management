@@ -13,6 +13,7 @@
  */
 
 import { z } from "zod";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import { protectedProcedure, router } from "../_core/trpc";
 import { MACHINE_TYPES } from "../constants/machineTypes";
 import {
@@ -33,9 +34,10 @@ export const aiSetupAdvisorRouter = router({
         targetMachineId: z.number().int().positive().optional(),
       }),
     )
-    .query(async ({ input }) => {
-      const template = await findSimilarTemplate(input);
-      const bundle = await buildConfigBundle(input);
+    .query(async ({ input, ctx }) => {
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6b 2026-10-25): mẫu chỉ chọn từ máy trong phạm vi (không lộ mã / tên / cấu hình máy nhà máy khác)
+      const template = await findSimilarTemplate(input, idsMay);
+      const bundle = await buildConfigBundle(input, idsMay);
       return { template, bundle };
     }),
 });

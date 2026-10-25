@@ -4079,7 +4079,8 @@
       "scadaDisableAdapter": "disable the adapter",
       "scadaSetStubFault": "set a simulated stub fault",
       "scadaSelectTag": "select a channel to command",
-      "scadaKenhCapNhat": "update the channel declaration"
+      "scadaKenhCapNhat": "update the channel declaration",
+      "dieuKienDoiTuongTrongPhamVi": "in-scope object condition"
     },
     "field": {
       "stationId": "station",

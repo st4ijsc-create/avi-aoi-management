@@ -33,6 +33,8 @@ import { buildPatchMemoryBank } from "../services/aiPatchAnomaly";
 import { getProfile, deleteScope } from "../db/aiAnomaly";
 import { getDb } from "../db/connection";
 import { sql } from "drizzle-orm";
+import { aiAnomalyMemoryBank, aiAnomalyProfiles } from "../../drizzle/schema";
+import { dieuKienCauHinhTrongPhamVi, idsMayTrongPhamVi } from "./_adapterPhamVi";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 const MAX_BANK_IMAGES = 500;
@@ -203,18 +205,20 @@ export const aiAnomalyRouter = router({
   // Trả profile cho cả 3 modelCode khả dĩ (onnx/text-of-image/heuristic).
   getProfile: protectedProcedure
     .input(scopeInput)
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const base = {
         productModelId: input.productModelId ?? null,
         machineId: input.machineId ?? null,
       };
+      // phạm vi người dùng (L6b 2026-10-25): hồ sơ theo máy ⇒ máy trong phạm vi; hồ sơ cấp sản phẩm (machineId NULL) ⇒ theo luật sản phẩm L3; không gắn gì ⇒ chung
+      const congHoSo = await dieuKienCauHinhTrongPhamVi(ctx, { may: aiAnomalyProfiles.machineId, sanPham: aiAnomalyProfiles.productModelId });
       const sources = [
         anomalyModelCode("onnx", input.modelId ?? null),
         anomalyModelCode("text-of-image", null),
         anomalyModelCode("heuristic", null),
       ];
       const profiles = await Promise.all(
-        sources.map((modelCode) => getProfile({ ...base, modelCode })),
+        sources.map((modelCode) => getProfile({ ...base, modelCode }, congHoSo)),
       );
       return { profiles: profiles.filter((p) => p != null) };
     }),
@@ -225,11 +229,14 @@ export const aiAnomalyRouter = router({
       productModelId: z.number().int().positive().nullish(),
       machineId: z.number().int().positive().nullish(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       return getAnomalyStats({
         productModelId: input.productModelId ?? null,
         machineId: input.machineId ?? null,
-      });
+      }, {
+        nganHang: await dieuKienCauHinhTrongPhamVi(ctx, { may: aiAnomalyMemoryBank.machineId, sanPham: aiAnomalyMemoryBank.productModelId }),
+        hoSo: await dieuKienCauHinhTrongPhamVi(ctx, { may: aiAnomalyProfiles.machineId, sanPham: aiAnomalyProfiles.productModelId }),
+      }); // phạm vi người dùng (L6b 2026-10-25)
     }),
 
   // ── latestForMachine (protected) — trạng thái anomaly realtime / 1 máy ────────
@@ -243,7 +250,10 @@ export const aiAnomalyRouter = router({
       machineId: z.number().int().positive(),
       productModelId: z.number().int().positive().nullish(),
     }))
-    .query(async ({ input }): Promise<MachineAnomalyStatus> => {
+    .query(async ({ input, ctx }): Promise<MachineAnomalyStatus> => {
+      // phạm vi người dùng (L6b 2026-10-25): máy ngoài phạm vi ≡ chưa có dữ liệu anomaly (trạng thái rỗng, như máy không tồn tại)
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      if (idsMay !== null && !idsMay.includes(input.machineId)) return emptyStatus();
       const map = await readMachineStatuses([input.machineId], input.productModelId ?? null);
       return map[input.machineId] ?? emptyStatus();
     }),
@@ -254,8 +264,13 @@ export const aiAnomalyRouter = router({
       machineIds: z.array(z.number().int().positive()).max(500),
       productModelId: z.number().int().positive().nullish(),
     }))
-    .query(async ({ input }): Promise<Record<number, MachineAnomalyStatus>> => {
-      return readMachineStatuses(input.machineIds, input.productModelId ?? null);
+    .query(async ({ input, ctx }): Promise<Record<number, MachineAnomalyStatus>> => {
+      // phạm vi người dùng (L6b 2026-10-25): chỉ đọc máy trong phạm vi; máy khác trả trạng thái rỗng (không lộ có hay không dữ liệu)
+      const idsMay = await idsMayTrongPhamVi(ctx);
+      const duocPhep = idsMay === null ? input.machineIds : input.machineIds.filter((m) => idsMay.includes(m));
+      const out = await readMachineStatuses(duocPhep, input.productModelId ?? null);
+      for (const m of input.machineIds) if (!(m in out)) out[m] = emptyStatus();
+      return out;
     }),
 
   // ── buildBank (admin) ───────────────────────────────────────────────────────
