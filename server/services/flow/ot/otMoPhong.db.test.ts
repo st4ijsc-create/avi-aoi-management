@@ -102,7 +102,7 @@ describe("Đợt 8.5 — node OT chế độ mô phỏng (động cơ thật, DB
 
     expect(await demBang("command_log"), "command_log phải đứng yên").toBe(cmd0);
     expect(await demFoeCuaTest(moc0, [...runCao, ...runThap]), "không có lượt FOE nào do luồng này sinh ra").toBe(0);
-  });
+  }, 120_000); // 55 lượt × (bước + kiểm toán FLOW_BUOC_NGOAI_GHI mỗi bước ot) — trần mặc định 30 s không đủ khi máy tải
 
   it("★★ đồng ý một đề xuất ⇒ 'đã duyệt (mô phỏng) — không gửi', item mang deXuatId/muc/ketQua; command_log đứng yên", async () => {
     const { version } = await luuPhienBan(luongLenh, null);

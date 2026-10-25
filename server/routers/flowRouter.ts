@@ -40,6 +40,7 @@ import { kiemThamSoSuKien, napLaiSuKien } from "../services/flow/kichHoat/suKien
 import { kiemThamSoNutMoi } from "../services/flow/kiemThamSoNut";
 import { nguoiNhanHopLeTheoNhaMay } from "../services/flow/nut/thongBao";
 import { bieuMauCuaPayload, kiemGiaTriBieuMau } from "../services/flow/nut/bieuMau";
+import { banGhiKiemToan, ghiKiemToanLuong } from "../services/flow/kiemToan";
 import { idLuongNhap, phanTichGoi, quetBiMat, quetVanBan, taoGoi } from "../services/flow/xuatNhap";
 import { dauVetNhaMay } from "../services/flow/xuatNhapDb";
 import { nhaMayCuaLuong } from "../services/flow/phamViLuong";
@@ -205,7 +206,7 @@ async function kiemTruocKhiBat(def: FlowDefinition, ctx: { user: { id: number; r
 }
 
 /** Lưu phiên bản MỚI (bất biến) — DÙNG CHUNG bởi `flow.luu` và `flow.nhap` (nhập gói đi ĐÚNG đường này). */
-async function luuLuongCore(input: { definition: Record<string, unknown>; factoryId?: number }, ctx: CoCtx & { user: { id: number; role: string } }) {
+async function luuLuongCore(input: { definition: Record<string, unknown>; factoryId?: number }, ctx: CoCtx & { user: { id: number; role: string } }, nguon: "luu" | "nhap" = "luu") {
     const loiKichHoat = [...kiemThamSoKichHoat(input.definition), ...kiemThamSoSuKien(input.definition), ...kiemThamSoNutMoi(input.definition)];
     if (loiKichHoat.length) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowChiTietMayChu", chiTiet: loiKichHoat.join("; ").slice(0, 300) }, `Luồng không hợp lệ: ${loiKichHoat.join("; ")}`);
     // ★ Đợt 9 (IDOR): id đã có ⇒ phải thuộc phạm vi người lưu (không được thêm phiên bản vào luồng của nhà máy khác); id mới ⇒ gán nhà máy.
@@ -220,7 +221,9 @@ async function luuLuongCore(input: { definition: Record<string, unknown>; factor
     }
     await kiemThamChieuKhiLuu(input.definition, ctx);
     try {
-      return await luuPhienBan(input.definition, ctx.user.id, factoryId);
+      const kq = await luuPhienBan(input.definition, ctx.user.id, factoryId);
+      await ghiKiemToanLuong({ nguoi: ctx.user.id, hanhDong: "FLOW_LUU", loaiThucThe: "ai_flow", thucThe: kq.flowId, chiTiet: { version: kq.version, hang: kq.hang, nguon, soNode: Array.isArray(input.definition.nodes) ? input.definition.nodes.length : 0 } });
+      return kq;
     } catch (e) {
       if (e instanceof LoiLuong && e.code === "LUONG_KHONG_HOP_LE") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowChiTietMayChu", chiTiet: e.message.slice(0, 300) }, `Luồng không hợp lệ: ${e.message}`);
       if (e instanceof LoiLuong && e.code === "KHONG_CO_DB") throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "flowLuu", reason: "flowChiTietMayChu", chiTiet: e.message.slice(0, 300) }, e.message);
@@ -310,7 +313,7 @@ export const flowRouter = router({
       const p = phanTichGoi(input.goi);
       if (!p.ok) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowNhap", reason: "flowChiTietMayChu", chiTiet: p.thongDiep }, p.thongDiep);
       const definition = { ...p.luong, id: idLuongNhap(input.ten), name: input.ten };
-      const kq = await luuLuongCore({ definition: definition as unknown as Record<string, unknown>, ...(input.factoryId !== undefined ? { factoryId: input.factoryId } : {}) }, ctx);
+      const kq = await luuLuongCore({ definition: definition as unknown as Record<string, unknown>, ...(input.factoryId !== undefined ? { factoryId: input.factoryId } : {}) }, ctx, "nhap");
       return { ...(kq as object), flowId: definition.id, viec: p.viec, canhBao: p.canhBao };
     }),
 
@@ -373,6 +376,7 @@ export const flowRouter = router({
       if (input.bat && coNodeWebhook(v.definition as FlowDefinition)) tokenWebhook = await capTokenWebhook(input.flowId, input.xoayToken === true);
       await napLaiLich();
       napLaiSuKien();
+      await ghiKiemToanLuong({ nguoi: ctx.user.id, hanhDong: input.bat ? "FLOW_KICH_HOAT" : "FLOW_TAT", loaiThucThe: "ai_flow", thucThe: input.flowId, chiTiet: { version: input.version, hang: v.riskClass, xoayToken: input.xoayToken === true } });
       return { flowId: input.flowId, version: input.version, bat: input.bat, hang: v.riskClass, tokenWebhook };
     }),
 
@@ -399,6 +403,7 @@ export const flowRouter = router({
       if (coNodeWebhook(v.definition as FlowDefinition)) tokenWebhook = await capTokenWebhook(input.flowId, false);
       await napLaiLich();
       napLaiSuKien();
+      await ghiKiemToanLuong({ nguoi: ctx.user.id, hanhDong: "FLOW_BAT_OT", loaiThucThe: "ai_flow", thucThe: input.flowId, chiTiet: { version: input.version, hang: v.riskClass, hai2fa: true } });
       return { flowId: input.flowId, version: input.version, bat: true, hang: v.riskClass, tokenWebhook };
     }),
 
@@ -436,6 +441,7 @@ export const flowRouter = router({
         if (e instanceof LoiLuong && (e.code === "QUA_TRAN_DONG_THOI" || e.code === "QUA_TRAN_LUOT_TREO")) throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowChayTay", reason: "flowQuaTranDongThoi" }, e.message);
         throw e;
       }
+      if (laHangCao(v.riskClass)) await ghiKiemToanLuong({ nguoi: ctx.user.id, hanhDong: "FLOW_CHAY_TAY", loaiThucThe: "ai_flow_run", thucThe: runId, chiTiet: { flowId: input.flowId, version, hang: v.riskClass, soItem: input.items?.length ?? 0, daBat } });
       return { runId, version };
     }),
 
@@ -566,6 +572,14 @@ export const flowRouter = router({
         runId: input.runId,
         nodeId: input.nodeId,
         cong: input.dongY ? "dong-y" : "tu-choi",
+        // Bằng chứng duyệt / điền vào audit_logs (WORM) trong CÙNG giao dịch trả lời. KHÔNG ghi giá trị biểu mẫu / nội dung lý do — chỉ định danh và cờ.
+        kiemToan: banGhiKiemToan({
+          nguoi: ctx.user.id,
+          hanhDong: "FLOW_DUYET",
+          loaiThucThe: "ai_flow_run",
+          thucThe: input.runId,
+          chiTiet: { nodeId: input.nodeId, dongY: input.dongY, vaiTroNguoiDuyet: String(ctx.user.role), laBieuMau: bm !== null, ...(bm && input.dongY ? { truongBieuMau: bm.truong.map((f) => f.ten) } : {}), coLyDo: !!input.lyDo?.trim() },
+        }),
         them: {
           duyet: { dongY: input.dongY, nguoi: ctx.user.id, lyDo: input.lyDo ?? null },
           ...(giaTriBieuMau ?? {}),
@@ -604,7 +618,9 @@ export const flowRouter = router({
         factoryId = yeuCau === undefined ? undefined : await nhaMayMoi(ctx, yeuCau, "flowBiMatTao");
       } else if (!co) factoryId = await nhaMayMoi(ctx, yeuCau, "flowBiMatTao");
       try {
-        return await taoBiMat({ ...phanCon, factoryId }, ctx.user.id);
+        const kqTao = await taoBiMat({ ...phanCon, factoryId }, ctx.user.id);
+        await ghiKiemToanLuong({ nguoi: ctx.user.id, hanhDong: "FLOW_BI_MAT_TAO", loaiThucThe: "ai_flow_credential", thucThe: input.id, chiTiet: { loai: input.loai, ghiDe: input.ghiDe === true, soHost: input.hostChoPhep?.length ?? null } });
+        return kqTao;
       } catch (e) {
         loiBiMat(e, "flowBiMatTao");
       }
@@ -619,6 +635,7 @@ export const flowRouter = router({
       try {
         const kq = await datHostBiMat(input.id, input.hostChoPhep);
         if (!kq) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowBiMatTao", reason: "flowKhongTonTaiHoacNgoaiPhamVi" }, `Không có bí mật ${input.id}.`);
+        await ghiKiemToanLuong({ nguoi: ctx.user.id, hanhDong: "FLOW_BI_MAT_HOST", loaiThucThe: "ai_flow_credential", thucThe: input.id, chiTiet: { hostChoPhep: kq } });
         return { id: input.id, hostChoPhep: kq };
       } catch (e) {
         loiBiMat(e, "flowBiMatTao");
@@ -634,6 +651,7 @@ export const flowRouter = router({
       loiBiMat(e, "flowBiMatXoa");
     }
     if (!xoa) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowBiMatXoa", reason: "flowKhongTonTaiHoacNgoaiPhamVi" }, `Không có bí mật ${input.id}.`);
+    await ghiKiemToanLuong({ nguoi: ctx.user.id, hanhDong: "FLOW_BI_MAT_XOA", loaiThucThe: "ai_flow_credential", thucThe: input.id, chiTiet: {} });
     return { id: input.id, daXoa: true };
   }),
 

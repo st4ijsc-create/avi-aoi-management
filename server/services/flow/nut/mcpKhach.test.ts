@@ -169,7 +169,7 @@ describe("G2/G3 + hạn tổng", () => {
     expect(doSauVuot([1, [2, [3, [4]]]], 3)).toBe(true);
   });
 
-  it("★ G3: hết giờ KHI ĐANG ĐỌC THÂN (lỗi chung 'aborted') ⇒ MCP_HET_GIO, không 'aborted' trần", async () => {
+  it("★ G3/G4: hết giờ KHI ĐANG ĐỌC THÂN (lỗi chung 'aborted') do HẠN TỔNG ⇒ MCP_HET_GIO_TONG nêu ms còn lại; hết 30 s của một lời gọi ⇒ MCP_HET_GIO", async () => {
     process.env.AI_FLOW_MCP_TONG_MS = "60";
     try {
       traTool = () => new Response(null);
@@ -184,7 +184,11 @@ describe("G2/G3 + hạn tổng", () => {
         });
         return new Response(luong, { status: 200, headers: { "content-type": "application/json" } });
       }) as never);
-      await expect(chay(THAM)).rejects.toMatchObject({ ma: "MCP_HET_GIO" });
+      // hạn tổng (60 ms) < 30 s ⇒ yếu tố cắt là HẠN TỔNG ⇒ MCP_HET_GIO_TONG, thông điệp nêu mili-giây (không 'aborted', không '0 giây')
+      const e = await chay(THAM).catch((x) => x);
+      expect(e).toMatchObject({ ma: "MCP_HET_GIO_TONG" });
+      expect(e.message).toMatch(/còn [0-9]+ ms/);
+      expect(e.message).not.toMatch(/aborted|0 giây/);
     } finally {
       delete process.env.AI_FLOW_MCP_TONG_MS;
     }
