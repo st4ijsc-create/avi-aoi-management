@@ -44,7 +44,7 @@ import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiChung, chatLuongV2Bat, MAU_GIA_TRI_HONG } from "../chatLuong";
+import { chatLuongLoiChung, chatLuongV2Bat, laGiaTriBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
 import { readS7ProgramChecksum, clampS7Deadline, S7_CHECKSUM_SOURCE, type S7ChecksumTarget } from "./s7BlockChecksum";
 
 /** Ép raw (đã inverse scale) sang kiểu NodeS7 chấp nhận theo dataType. */
@@ -259,10 +259,15 @@ export class S7Driver extends NotImplementedDriver {
       this.conn.addItems(keys);
 
       const t0 = Date.now();
+      /** R1b-2a T13 fix round 2 (I1) — `isoConnectionState` của nodes7 ĐÚNG LÚC callback đọc (undefined = lib/mock không có trường). */
+      let trangThaiSauDoc: number | undefined;
+      const conn = this.conn;
       // SCADA R0 (C5) — readAllItems có thể không bao giờ gọi lại ⇒ đọc CÓ HẠN (không cờ, sửa lỗi treo).
       values = await withDeadline(
         new Promise<Record<string, unknown>>((resolve, reject) => {
-          this.conn.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
+          conn.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
+            const st = (conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
+            trangThaiSauDoc = typeof st === "number" ? st : undefined;
             // anythingBad=true vẫn trả vals (item lỗi mang giá trị BAD) — không reject.
             if (vals && typeof vals === "object") resolve(vals);
             else reject(new Error("S7Driver: readAllItems returned no values"));
@@ -272,6 +277,15 @@ export class S7Driver extends NotImplementedDriver {
         "s7 readAllItems",
       );
       this.lastLatencyMs = Date.now() - t0;
+      // R1b-2a T13 fix round 2 (I1, cờ V2) — gói đọc QUÁ HẠN (PLC im, TCP còn) hoặc liên kết chưa lên: nodes7 (nodeS7.js packetTimeout "read"
+      // ⇒ connectionReset() ⇒ readResponse(undefined)) VẪN gọi lại, mọi item mang chuỗi "BAD 255", và isoConnectionState đã rời 4. Đó là
+      // lần đọc KHÔNG được trả lời ⇒ ném lỗi mức liên kết (chatLuongLoiChung ⇒ comm_lost; vòng poll ⇒ tick ok:false, D1 đếm), KHÔNG trả mẫu
+      // device_error (sẽ thành "đã trả lời" ⇒ connected giả, D1 không bao giờ bắn). Item BAD khi liên kết vẫn 4 = PLC báo lỗi item ⇒ device_error.
+      if (v2 && trangThaiSauDoc !== undefined && trangThaiSauDoc !== 4 && keys.some((k) => laGiaTriBadThuVien(values[k]))) {
+        const err = new DeviceUnreachableError("s7", `read not answered: nodes7 returned BAD and left the link (isoConnectionState ${trangThaiSauDoc})`);
+        this.lastError = err.message;
+        throw err;
+      }
       this.lastOkAt = new Date();
     }
 

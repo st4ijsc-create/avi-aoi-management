@@ -8,6 +8,7 @@ import net from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ServerTCP } from "modbus-serial";
 import type { OtSample, OtTagAddress, SuKienDoc } from "../otDriver";
+import { laDocTot, laTickHong, SO_TICK_HONG_DE_MAT, taoBatDocTot, taoDemTickHong } from "../reconnectNhanh";
 
 const FLAG = "OT_CHAT_LUONG_V2_ENABLED";
 
@@ -524,6 +525,22 @@ function mockNodes(lib: "nodes7" | "mcprotocol", values: Record<string, unknown>
   return conn;
 }
 
+/**
+ * R1b-2a T13 fix round 2 (I1) — hình dạng THẬT khi gói đọc QUÁ HẠN (PLC im, TCP còn).
+ *   nodes7 0.3.18 (nodeS7.js): packetTimeout("read") ⇒ connectionReset() (isoConnectionState = 0) ⇒ readResponse(undefined) ⇒ mọi item
+ *   quality "BAD 255" ⇒ readDoneCallback(true, { useraddr: "BAD 255", … }). Callback được gọi trên ĐỐI TƯỢNG lib (`this`).
+ */
+function docQuaHanNodes7(keys: string[]) {
+  return vi.fn(function (this: { isoConnectionState?: number }, cb: (bad: boolean, v: Record<string, unknown>) => void) {
+    this.isoConnectionState = 0;
+    cb(true, Object.fromEntries(keys.map((k) => [k, "BAD 255"])));
+  });
+}
+/** mcprotocol 0.1.2 (mcprotocol.js): packetTimeout("read") ⇒ readResponse(undefined) ⇒ mọi item "BAD 255"; isoConnectionState GIỮ 4. */
+function docQuaHanMc(keys: string[]) {
+  return vi.fn((cb: (bad: boolean, v: Record<string, unknown>) => void) => cb(true, Object.fromEntries(keys.map((k) => [k, "BAD 255"]))));
+}
+
 const s7Tags: OtTagAddress[] = [
   { tagKey: "t1", address: "DB1,REAL0", dataType: "float" },
   { tagKey: "t2", address: "XYZ", dataType: "float" },
@@ -566,9 +583,9 @@ describe("S7", () => {
     expect(conn.addItems).toHaveBeenCalledWith(["t1"]);
   });
 
-  it("T13 cờ BẬT: lib trả giá trị BAD (null) cho item ⇒ bad / bad_value / device_error; tick poll toàn tag như thế VẪN là đọc tốt, không phải tick hỏng", async () => {
+  it("T13 cờ BẬT: PLC báo lỗi ITEM (hình dạng thật: 'BAD 10', anythingBad=true, liên kết VẪN 4) ⇒ bad / bad_value / device_error; tick poll toàn tag như thế VẪN là đọc tốt, không phải tick hỏng", async () => {
     vi.stubEnv(FLAG, "true");
-    mockNodes("nodes7", { t1: null });
+    mockNodes("nodes7", {}, { isoConnectionState: 4, readAllItems: vi.fn((cb: (bad: boolean, v: Record<string, unknown>) => void) => cb(true, { t1: "BAD 10" })) });
     const { S7Driver } = await import("./s7Driver");
     const { laDocTot, laTickHong } = await import("../reconnectNhanh");
     const d = new S7Driver();
@@ -589,8 +606,8 @@ describe("S7", () => {
     expect(laDocTot(ticks[0])).toBe(true);
   });
 
-  it("T13 cờ TẮT: lib trả BAD (null) ⇒ bad TRẦN như cũ", async () => {
-    mockNodes("nodes7", { t1: null });
+  it("T13 cờ TẮT: gói đọc quá hạn (hình dạng thật: 'BAD 255', liên kết rời 4) ⇒ KHÔNG ném, bad TRẦN như cũ (không statusCode/reason)", async () => {
+    mockNodes("nodes7", {}, { isoConnectionState: 4, readAllItems: docQuaHanNodes7(["t1"]) });
     const { S7Driver } = await import("./s7Driver");
     const d = new S7Driver();
     await d.connect({ endpoint: "tcp://127.0.0.1:102" });
@@ -644,18 +661,21 @@ describe("Mitsubishi MC", () => {
     expect(conn.addItems).toHaveBeenCalledWith(["t1"]);
   });
 
-  it("T13 cờ BẬT: lib trả giá trị BAD (null) ⇒ bad / bad_value / device_error; cờ TẮT ⇒ bad TRẦN như cũ", async () => {
+  it("T13 cờ BẬT: MỘT PHẦN item BAD (hình dạng thật 'BAD 255', lần đọc có trả lời) ⇒ item đó bad / bad_value / device_error; cờ TẮT ⇒ bad TRẦN như cũ", async () => {
     vi.stubEnv(FLAG, "true");
-    mockNodes("mcprotocol", { t1: null });
+    const hai: OtTagAddress[] = [mcTags[0], { tagKey: "t3", address: "D200", dataType: "int" }];
+    mockNodes("mcprotocol", {}, { isoConnectionState: 4, readAllItems: vi.fn((cb: (bad: boolean, v: Record<string, unknown>) => void) => cb(true, { t1: 7, t3: "BAD 255" })) });
     const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
     const d = new MitsubishiMcDriver();
     await d.connect({ endpoint: "tcp://127.0.0.1:1281" });
-    const [s] = await d.readTags([mcTags[0]]);
+    const out = await d.readTags(hai);
+    expect(out.find((s) => s.tagKey === "t1")!.quality).toBe("good");
+    const s = out.find((x) => x.tagKey === "t3")!;
     expect(s.quality).toBe("bad");
     expect(s.statusCode).toBe("bad_value");
     expect(s.reason).toBe("device_error");
     vi.stubEnv(FLAG, "false");
-    const [s2] = await d.readTags([mcTags[0]]);
+    const s2 = (await d.readTags(hai)).find((x) => x.tagKey === "t3")!;
     expect(s2.quality).toBe("bad");
     expect(s2.statusCode).toBeUndefined();
     expect(s2.reason).toBeUndefined();
@@ -884,6 +904,23 @@ describe("EtherNet/IP", () => {
     expect(s2.reason).toBeUndefined();
   });
 
+  it("T13 fix round 2 (m2): đường poll dùng ẢNH CHỤP cờ lúc subscribe — lật cờ giữa phiên không đổi hình dạng mẫu của phiên đó", async () => {
+    vi.stubEnv(FLAG, "true");
+    mockEip(async () => undefined); // readTag thành công, giá trị không ép được ⇒ bad
+    const { EthernetIpDriver } = await import("./ethernetIpDriver");
+    const d = new EthernetIpDriver();
+    await d.connect({ endpoint: "192.168.1.10" });
+    const got: OtSample[] = [];
+    const h = await d.subscribe(eipTags, (s) => void got.push(s), 30);
+    dongSau.push(() => h.close());
+    await waitFor(() => got.length >= 1, 2000);
+    vi.stubEnv(FLAG, "false"); // lật giữa phiên
+    const n = got.length;
+    await waitFor(() => got.length >= n + 3, 2000);
+    await h.close();
+    expect(got.every((s) => s.quality === "bad" && s.reason === "device_error" && s.statusCode === "bad_value")).toBe(true);
+  });
+
   it("cờ TẮT: bad trần, không statusCode/reason", async () => {
     mockEip(async () => {
       throw Object.assign(new Error("m"), { code: "EIP_ERR_17" });
@@ -910,5 +947,117 @@ describe("EtherNet/IP", () => {
     await waitFor(() => ticks.length > 0, 2000);
     await h.close();
     expect(ticks[0].ok).toBe(true);
+  });
+});
+
+// ─────────── R1b-2a T13 fix round 2 (I1) — S7 / MC: gói đọc QUÁ HẠN (PLC im, TCP còn) với hình dạng THẬT của lib ───────────
+/**
+ * Lần đọc mà lib "trả về" sau khi tự quá hạn (mọi item "BAD 255") KHÔNG phải lần đọc được trả lời: cờ V2 ⇒ tick ok:false / comm_lost,
+ * D1 (taoDemTickHong, K = SO_TICK_HONG_DE_MAT) đếm và bắn, bộ bắt đọc tốt của phiên (taoBatDocTot — đúng hàm otManager/supervisor dùng)
+ * KHÔNG BAO GIỜ báo ⇒ không bao giờ `connected`. Trước fix: device_error ⇒ "đã trả lời" ⇒ connected giả, D1 về 0 mỗi tick.
+ */
+describe("R1b-2a T13 fix round 2 (I1) — S7/MC packet timeout ⇒ comm failure, never connected, D1 counts", () => {
+  /** Chạy subscribe qua vòng poll thật; nối mọi tick vào bộ bắt đọc tốt + bộ đếm D1 của MỘT phiên. */
+  async function chayPhien(d: { subscribe: (...a: never[]) => Promise<{ close: () => Promise<void> }> }, tags: OtTagAddress[], soTick: number) {
+    const ticks: SuKienDoc[] = [];
+    const mau: OtSample[] = [];
+    let docTot = 0;
+    let d1Ban = 0;
+    const bat = taoBatDocTot(() => void (docTot += 1));
+    const dem = taoDemTickHong(SO_TICK_HONG_DE_MAT, () => void (d1Ban += 1));
+    const h = await (d.subscribe as unknown as (t: OtTagAddress[], s: (x: OtSample) => void, ms: number, o: { onTick: (e: SuKienDoc) => void }) => Promise<{ close: () => Promise<void> }>)(
+      tags,
+      (s) => {
+        mau.push(s);
+        bat.quaMau(s);
+      },
+      30,
+      {
+        onTick: (e) => {
+          ticks.push(e);
+          bat.quaTick(e);
+          dem(e);
+        },
+      },
+    );
+    dongSau.push(() => h.close());
+    await waitFor(() => ticks.length >= soTick, 3000);
+    await h.close();
+    return { ticks, mau, docTot: () => docTot, d1Ban: () => d1Ban };
+  }
+
+  it("S7 cờ BẬT: nodes7 quá hạn (reset liên kết, mọi item 'BAD 255') ⇒ readTags NÉM lỗi liên kết; tick ok:false/comm_lost, D1 bắn từ tick thứ K, không đọc tốt nào", async () => {
+    vi.stubEnv(FLAG, "true");
+    mockNodes("nodes7", {}, { isoConnectionState: 4, readAllItems: docQuaHanNodes7(["t1"]) });
+    const { S7Driver } = await import("./s7Driver");
+    const d = new S7Driver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:102" });
+    const r = await chayPhien(d as never, [s7Tags[0]], SO_TICK_HONG_DE_MAT + 1);
+    // quyết định của phiên trước (không đọc tốt, D1 bắn) — đột biến bỏ luật làm đỏ ở đây, không chỉ ở lời ném
+    expect(r.docTot()).toBe(0);
+    expect(r.d1Ban()).toBeGreaterThanOrEqual(1);
+    for (const e of r.ticks) {
+      expect(e.ok).toBe(false);
+      expect(e.reason).toBe("comm_lost");
+      expect(laTickHong(e)).toBe(true);
+      expect(laDocTot(e)).toBe(false);
+    }
+    await expect(d.readTags([s7Tags[0]])).rejects.toMatchObject({ name: "DeviceUnreachableError" });
+    // loạt mẫu xấu của vòng poll mang comm_lost (không bao giờ device_error, không bao giờ good)
+    expect(r.mau.length).toBeGreaterThan(0);
+    expect(r.mau.every((s) => s.quality === "bad" && s.reason === "comm_lost")).toBe(true);
+  });
+
+  it("S7 cờ BẬT: PLC báo lỗi item trong khi liên kết VẪN 4 ('BAD 10' + một item tốt) ⇒ KHÔNG ném; tick ok:true, đọc tốt, D1 không bắn", async () => {
+    vi.stubEnv(FLAG, "true");
+    const hai: OtTagAddress[] = [s7Tags[0], { tagKey: "t3", address: "DB1,REAL4", dataType: "float" }];
+    mockNodes("nodes7", {}, { isoConnectionState: 4, readAllItems: vi.fn((cb: (bad: boolean, v: Record<string, unknown>) => void) => cb(true, { t1: 1.5, t3: "BAD 10" })) });
+    const { S7Driver } = await import("./s7Driver");
+    const d = new S7Driver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:102" });
+    const r = await chayPhien(d as never, hai, SO_TICK_HONG_DE_MAT + 1);
+    expect(r.ticks.every((e) => e.ok === true && laDocTot(e))).toBe(true);
+    expect(r.d1Ban()).toBe(0);
+    expect(r.docTot()).toBeGreaterThan(0);
+    expect(r.mau.find((s) => s.tagKey === "t3")).toMatchObject({ quality: "bad", reason: "device_error" });
+  });
+
+  it("MC cờ BẬT: mcprotocol quá hạn (mọi item 'BAD 255', liên kết GIỮ 4) ⇒ readTags NÉM lỗi quá hạn; tick ok:false/timeout/comm_lost, D1 bắn, không đọc tốt nào", async () => {
+    vi.stubEnv(FLAG, "true");
+    const hai: OtTagAddress[] = [
+      { tagKey: "t1", address: "D100", dataType: "int" },
+      { tagKey: "t3", address: "M100", dataType: "bool" },
+    ];
+    mockNodes("mcprotocol", {}, { isoConnectionState: 4, readAllItems: docQuaHanMc(["t1", "t3"]) });
+    const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
+    const d = new MitsubishiMcDriver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:1281" });
+    const r = await chayPhien(d as never, hai, SO_TICK_HONG_DE_MAT + 1);
+    // quyết định của phiên trước (không đọc tốt, D1 bắn) — đột biến bỏ luật làm đỏ ở đây, không chỉ ở lời ném
+    expect(r.docTot()).toBe(0);
+    expect(r.d1Ban()).toBeGreaterThanOrEqual(1);
+    for (const e of r.ticks) {
+      expect(e.ok).toBe(false);
+      expect(e.timeout).toBe(true);
+      expect(e.reason).toBe("comm_lost");
+      expect(laTickHong(e)).toBe(true);
+    }
+    await expect(d.readTags(hai)).rejects.toMatchObject({ name: "McReadTimeoutError" });
+    expect(r.mau.every((s) => s.quality === "bad" && s.reason === "comm_lost")).toBe(true);
+    // I2 cùng lúc: tag bool KHÔNG BAO GIỜ đọc TRUE trong đợt mất
+    expect(r.mau.some((s) => s.tagKey === "t3" && s.value === true)).toBe(false);
+  });
+
+  it("MC cờ TẮT: cùng quá hạn ⇒ KHÔNG ném (hình dạng cũ), mẫu bad TRẦN, bool không đọc TRUE (I2)", async () => {
+    const hai: OtTagAddress[] = [
+      { tagKey: "t1", address: "D100", dataType: "int" },
+      { tagKey: "t3", address: "M100", dataType: "bool" },
+    ];
+    mockNodes("mcprotocol", {}, { isoConnectionState: 4, readAllItems: docQuaHanMc(["t1", "t3"]) });
+    const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
+    const d = new MitsubishiMcDriver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:1281" });
+    const out = await d.readTags(hai);
+    expect(out.every((s) => s.quality === "bad" && s.value === null && s.reason === undefined && s.statusCode === undefined)).toBe(true);
   });
 });

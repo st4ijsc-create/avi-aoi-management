@@ -60,6 +60,9 @@ export const SO_TICK_HONG_DE_MAT = 2;
  * (fix round 1, fail-closed: driver OPC UA push phát bad trần cho item err / terminated(err) / … — sau khi rớt liên kết chúng không được
  * báo connected). `stale`, `config_error`, `device_error`, `out_of_range`, `uncertain` (kể cả kèm comm_lost) đều là đã trả lời (K13).
  * Mọi đường đọc mà thiết bị ĐÃ trả lời phải gắn lý do cho mẫu bad khi cờ V2 bật (chatLuong.MAU_GIA_TRI_HONG cho giá trị hỏng).
+ * ★ LUẬT (điều phối 2026-10-26): `stale` được tính là ĐÃ trả lời CHỈ vì không ai phát nó vào sink của phiên. A staleness watchdog on this
+ *   path MUST emit comm_lost, never stale — bộ canh độ tươi trên đường này PHẢI phát `comm_lost`, KHÔNG BAO GIỜ `stale`. Ghim bởi census
+ *   `staleKhongVaoPhien.census.test.ts` (bảng cho phép rỗng; chỉ phản hồi stale THẬT của thiết bị, có lý do + ngày, mới được thêm).
  * Đây là luật tag DUY NHẤT của cả hai đường: `moiTagMatLienLac` (đường poll: laTickHong / laDocTot) và `taoBatDocTot.quaMau` (đường push).
  */
 export function mauMayChuDaTraLoi(s: Pick<OtSample, "quality" | "reason">): boolean {

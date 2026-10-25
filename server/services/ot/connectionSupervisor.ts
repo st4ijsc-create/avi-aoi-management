@@ -173,7 +173,8 @@ export interface SupervisorOptions {
   /** SCADA R0 Task 6 (C8) — gọi sau MỖI lần thử nối một endpoint (ok = nối + subscribe thành công). Ném ⇒ bị nuốt. */
   onConnectAttempt?: (ok: boolean) => void;
   /**
-   * SCADA R0 T12 (D1) — số tick poll HỎNG liên tiếp (laTickHong: timeout / comm_lost cả tick) của phiên ĐANG HOẠT ĐỘNG ⇒ coi như mất
+   * SCADA R0 T12 (D1) — số tick poll HỎNG liên tiếp (laTickHong: timeout / comm_lost cả tick, hoặc tick ok mà MỌI tag CHƯA trả lời —
+   * bad/comm_lost hoặc bad KHÔNG lý do, mauMayChuDaTraLoi, R1b-2a T13) của phiên ĐANG HOẠT ĐỘNG ⇒ coi như mất
    * liên kết (onActiveLost: `reconnecting` ⇒ host báo lost; hạ phiên; nối lại). Bắt liên kết TREO mà isConnected() không thấy. Không
    * đặt / ≤ 0 ⇒ tắt (hành vi cũ). Tick của phiên đã bị thay bị bỏ qua. Dạng hàm ⇒ đọc lại MỖI lần subscribe (host gắn cờ vào đây).
    */

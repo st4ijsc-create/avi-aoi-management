@@ -81,7 +81,7 @@ import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { boundedClose, withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiChung, chatLuongV2Bat, MAU_GIA_TRI_HONG } from "../chatLuong";
+import { chatLuongLoiChung, chatLuongV2Bat, laGiaTriBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
 
 /** Ép raw (đã inverse scale) sang kiểu mcprotocol chấp nhận theo dataType. */
 function coerceMcWrite(raw: unknown, dataType: string): number | boolean | string {
@@ -400,6 +400,18 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
         "mc readAllItems",
       );
       this.lastLatencyMs = Date.now() - t0;
+      // R1b-2a T13 fix round 2 (I1, cờ V2) — gói đọc QUÁ HẠN (PLC im, TCP còn): mcprotocol (mcprotocol.js packetTimeout "read" ⇒
+      // readResponse(undefined)) VẪN gọi lại, mọi item mang chuỗi "BAD 255", và KHÔNG hạ isoConnectionState (vẫn 4) ⇒ không có tín hiệu
+      // nào khác bắt được. MỌI item BAD ⇒ lần đọc KHÔNG được trả lời ⇒ ném lỗi quá hạn (chatLuongLoiChung ⇒ timeout/comm_lost; vòng poll ⇒
+      // tick ok:false, D1 đếm). Chỉ MỘT PHẦN item BAD (lần đọc có trả lời) ⇒ item đó device_error như cũ. Giá phải trả: PLC trả lời lỗi cho
+      // MỌI item (mcprotocol tô 0xFF y như quá hạn — không phân biệt được) cũng bị coi là mất liên lạc (fail-closed, điều phối 2026-10-26).
+      if (v2 && keys.length > 0 && keys.every((k) => laGiaTriBadThuVien(values[k]))) {
+        const err = Object.assign(new Error(`mc read not answered: every item BAD (mcprotocol packet timeout, ${Date.now() - t0} ms)`), {
+          name: "McReadTimeoutError",
+        });
+        this.lastError = err.message;
+        throw err;
+      }
       this.lastOkAt = new Date();
     }
 
