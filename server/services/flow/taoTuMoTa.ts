@@ -30,6 +30,8 @@ const GOI_Y_THAM_SO: Record<string, string> = {
   "ai.agent": '{"loiNhac":"{{ $json.cauHoi }}","luongCon":[{"flowId":"id-luong-co-san","moTa":"…"}],"traTaiLieu":true}',
   "luong.goi-con": '{"flowId":"id-luong-co-san"}',
   "nguoi.duyet": '{"tieuDe":"Duyệt …","noiDung":"{{ $json.x }}","vaiTroDuyet":"supervisor","hetHanGio":24}  — cổng ra: dong-y | tu-choi | het-han',
+  "du-lieu.so-lieu": '{"truyVan":"san-luong.tong-quan","gio":12,"truongRa":"sanLuong"}  — truyVan CỐ ĐỊNH trong danh mục: san-luong.tong-quan | oee.trung-binh | ng.diem-do-hang-dau | may.trang-thai | canh-bao.dang-mo',
+  "tich-hop.thong-bao": '{"nguoiNhan":[1],"tieuDe":"Báo cáo ca","noiDung":"{{ $json.tomTat }}","loai":"REPORT","uuTien":"NORMAL"}  — chỉ thông báo nội bộ',
   "tich-hop.http-doc": '{"url":"https://host-duoc-phep/api"}',
   "tich-hop.http-gui": '{"url":"https://host-duoc-phep/api","phuongThuc":"POST","than":{}}',
 };

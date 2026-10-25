@@ -89,6 +89,10 @@ export function thamSoMacDinh(type: string): Record<string, unknown> {
       return { url: "", truongRa: "phanHoi" };
     case "tich-hop.http-gui":
       return { url: "", phuongThuc: "POST", than: "", truongRa: "phanHoi" };
+    case "du-lieu.so-lieu":
+      return { truyVan: "san-luong.tong-quan", gio: 8, gioiHan: 10, truongRa: "soLieu" };
+    case "tich-hop.thong-bao":
+      return { nguoiNhan: [], tieuDe: "", noiDung: "", loai: "INFO", uuTien: "NORMAL" };
     case "kich-hoat.lich":
       return { cron: "0 6 * * *", muiGio: "Asia/Ho_Chi_Minh" };
     case "du-lieu.ma":

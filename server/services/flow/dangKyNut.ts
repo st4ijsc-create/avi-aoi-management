@@ -4,6 +4,7 @@
  */
 import { danhGiaThamSo, type ItemLuong, type NguCanhBieuThuc } from "../../../shared/flow/bieuThuc";
 import type { KhaiBaoNut } from "../../../shared/flow/model";
+import type { PhamViNguoiXem } from "../../db/hierarchy";
 
 /**
  * ★★★ Đợt 9 (IDOR) — bộ kiểm PHẠM VI của người mà lần chạy thử / lượt chạy dưới quyền. `true` ⇔ tài nguyên TỒN TẠI VÀ thuộc phạm vi;
@@ -15,6 +16,8 @@ export interface BoKiemPhamVi {
   biMat(id: string): Promise<boolean>;
   /** Luồng (luồng con / tool agent) tồn tại và thuộc phạm vi. */
   luong(flowId: string): Promise<boolean>;
+  /** Lô Luồng-1 — định danh phạm vi của người đang chạy (chủ lượt, tính LÚC CHẠY; chạy thử: người gọi). Node đọc số liệu nhà máy PHẢI dùng cái này; vắng ⇒ từ chối. */
+  phamVi?: PhamViNguoiXem;
 }
 
 /**

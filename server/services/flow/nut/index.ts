@@ -7,6 +7,8 @@ import "./sinhMa";
 import "./luong";
 import "./agent";
 import "./ot";
+import "./soLieu";
+import "./thongBao";
 import "../kichHoat/lich";
 import "../kichHoat/webhook";
 import "../kichHoat/mcp";

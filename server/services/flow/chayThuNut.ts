@@ -57,6 +57,9 @@ export const NUT_XEM_TRUOC: ReadonlySet<string> = new Set([
   "ai.sinh-ma",
   "ai.agent",
   "luong.goi-con",
+  // Lô Luồng-1: đọc số liệu nhà máy (theo phạm vi chủ lượt) và gửi thông báo nội bộ — chạy thử chỉ XEM TRƯỚC tham số.
+  "du-lieu.so-lieu",
+  "tich-hop.thong-bao",
   // FOE workflow: không có cột tenant (phạm vi suy từ máy của các bước) và chưa có bộ kiểm ⇒ chỉ xem trước.
   "ot.de-xuat-luong",
 ]);
