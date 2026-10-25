@@ -1595,7 +1595,8 @@
     "unsavedChangesWarning": "Bạn có thay đổi chưa lưu. Bạn có chắc muốn rời đi?",
     "websocketDescription": "Cấu hình máy chủ WebSocket",
     "websocketRealtimeDescription": "Truyền dữ liệu thời gian thực qua WebSocket",
-    "websocketServer": "Máy chủ WebSocket"
+    "websocketServer": "Máy chủ WebSocket",
+    "clearHistoryTitle": "Xoá lịch sử truy vấn?"
   },
   "ai": {
     "citation": {
@@ -2278,7 +2279,14 @@
     "totalBackups": "Tổng bản sao lưu",
     "weekly": "Hàng tuần",
     "previewTitle": "Xem trước bản sao lưu",
-    "versionLabel": "Phiên bản"
+    "versionLabel": "Phiên bản",
+    "cancel": "Huỷ",
+    "confirmRestoreAction": "Có, khôi phục ngay",
+    "confirmRestoreMergeBody": "Thao tác này sẽ nạp các bản ghi từ tệp sao lưu vào các nhóm đã chọn ({{categories}}). Bản ghi hiện có được giữ nguyên và các dòng trùng sẽ bị bỏ qua.",
+    "confirmRestoreOverwriteBody": "Thao tác này sẽ XOÁ toàn bộ bản ghi hiện có trong các nhóm đã chọn ({{categories}}) và thay bằng nội dung của tệp sao lưu này. Không thể hoàn tác.",
+    "confirmRestoreTitle": "Khôi phục và thay thế dữ liệu?",
+    "overwriteHint": "Khi bật, toàn bộ bản ghi hiện có trong các nhóm đã chọn sẽ bị xoá trước khi nạp bản sao lưu. Khi tắt, chỉ thêm bản ghi mới và bỏ qua các dòng trùng.",
+    "overwriteLabel": "Ghi đè dữ liệu hiện có"
   },
   "cache": {
     "warming": {
@@ -5240,7 +5248,35 @@
     "workspaceToday": "Hôm nay",
     "workspaceTodayDesc": "Tóm tắt ca của bạn",
     "workspaceCommandDesc": "Một màn hình tổng quan",
-    "aboutLink": "Giới thiệu"
+    "aboutLink": "Giới thiệu",
+    "configureSystem": "Cấu hình hệ thống",
+    "ctaDescription": "Bắt đầu giám sát các dây chuyền kiểm tra AOI và nâng cao tỷ lệ đạt nhờ thông tin dựa trên dữ liệu.",
+    "ctaHeading": "Sẵn sàng tối ưu chất lượng sản xuất của bạn?",
+    "featureAIDesc": "Phân loại lỗi bằng AI, dự báo xu hướng và đề xuất tối ưu tỷ lệ đạt.",
+    "featureAITitle": "Phân tích AI",
+    "featureAPIDesc": "API RESTful & tRPC để tích hợp liền mạch với MES, ERP và các hệ thống nhà máy khác.",
+    "featureAPITitle": "API mở",
+    "featureDashboardDesc": "Giám sát thời gian thực tỷ lệ đạt, số lỗi và chỉ số sản xuất của mọi máy AOI.",
+    "featureDashboardTitle": "Bảng điều khiển thời gian thực",
+    "featureDetailDesc": "Kiểm tra lỗi chi tiết với trình xem ảnh độ phân giải cao và công cụ đo.",
+    "featureDetailTitle": "Phân tích lỗi",
+    "featureHistoryDesc": "Lịch sử kiểm tra đầy đủ với bộ lọc nâng cao, phân tích xu hướng và xuất báo cáo.",
+    "featureHistoryTitle": "Lịch sử kiểm tra",
+    "featureLayoutDesc": "Trực quan hoá sơ đồ nhà máy tương tác, hiển thị trạng thái máy trực tiếp và phân bố dây chuyền.",
+    "featureLayoutTitle": "Sơ đồ nhà máy",
+    "featuresHeading": "Công cụ mạnh mẽ cho",
+    "featuresHighlight": "kiểm soát chất lượng",
+    "featuresSubheading": "Mọi công cụ bạn cần để quản lý kiểm tra AOI trên toàn bộ nhà máy.",
+    "heroDescription": "Nền tảng quản lý kiểm tra quang học tự động toàn diện — giám sát máy theo thời gian thực, phân tích lỗi và tối ưu chất lượng sản xuất.",
+    "heroTagline": "Kiểm soát chất lượng nhà máy thông minh",
+    "loginToStart": "Đăng nhập để bắt đầu",
+    "navHistory": "Lịch sử",
+    "statMachines": "Máy AOI",
+    "statProductsPerDay": "Sản phẩm mỗi ngày",
+    "statUptime": "Thời gian hoạt động của hệ thống",
+    "statYieldRate": "Tỷ lệ đạt",
+    "viewAPIDocs": "Tài liệu API",
+    "viewDashboard": "Xem bảng điều khiển"
   },
   "domains": {
     "production": {
@@ -6394,7 +6430,9 @@
       "replayMessageTitle": "Phát lại tin nhắn",
       "title": "Topic & Tin nhắn MQTT",
       "topicsTab": "Topic",
-      "topicStatistics": "Thống kê topic"
+      "topicStatistics": "Thống kê topic",
+      "resendUnavailable": "Gửi lại (chưa khả dụng)",
+      "resendUnavailableHint": "Chức năng gửi lại tin nhắn chưa khả dụng"
     },
     "dashboard": {
       "messageClassification": "Phân loại tin nhắn",
@@ -6482,7 +6520,17 @@
       "play": "Chạy",
       "timestampLabel": "Thời điểm",
       "title": "Phát lại tin nhắn MQTT",
-      "topicLabel": "Topic"
+      "topicLabel": "Topic",
+      "registerCodeLabel": "Mã máy",
+      "registerConfirm": "Đăng ký",
+      "registerDialogDesc": "Tạo hồ sơ máy từ thiết bị MQTT vừa phát hiện này.",
+      "registerDialogTitle": "Đăng ký máy",
+      "registerNameLabel": "Tên máy",
+      "registerNoStations": "Chưa cấu hình trạm nào — hãy tạo trạm trước.",
+      "registerStationLabel": "Trạm",
+      "registerStationPlaceholder": "Chọn trạm",
+      "registerSuccess": "Đã đăng ký máy {{code}}",
+      "registerTypeLabel": "Loại máy"
     },
     "testConnection": "Kiểm tra kết nối",
     "editClient": "Chỉnh sửa client",
@@ -22301,7 +22349,8 @@
       "dongNgan": "Đóng ngăn xử lý",
       "demTheoNhaMay": "(đếm theo toàn nhà máy)",
       "bangSucKhoe": "Sức khoẻ máy",
-      "demTheoNhieuNhaMay": "(đếm theo {{n}} nhà máy đang nạp)"
+      "demTheoNhieuNhaMay": "(đếm theo {{n}} nhà máy đang nạp)",
+      "soMayNgan_other": "{{n}} máy"
     },
     "studio": {
       "tieuDe": "Nhà máy 3D — Thiết kế",
@@ -22709,7 +22758,8 @@
         "oeeTrungBinh": "OEE trung bình",
         "andonMo": "Máy có andon",
         "ruiRoPdm": "Rủi ro PdM"
-      }
+      },
+      "mauSo_other": "{{n}} máy"
     },
     "model": {
       "tamGiac": "tam giác",
@@ -22815,7 +22865,8 @@
     },
     "daiHopNhat": {
       "an": "ẩn",
-      "tomTat": "{{so}} việc cần biết"
+      "tomTat": "{{so}} việc cần biết",
+      "tomTat_other": "{{so}} điều cần biết"
     }
   },
   "provenance": {
