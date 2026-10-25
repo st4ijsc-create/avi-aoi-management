@@ -40,6 +40,8 @@ describe.skipIf(!DB_URL)("BG-28 — luật giám sát: bo v2.0 có header mà 0 
   it("đếm ĐÚNG số bo v2.0 không có dòng đo — đối chiếu SELECT trực tiếp trên DB thật (không chế fixture)", async () => {
     const sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
     try {
+      // ⚠ KHÔNG dùng `NOT IN (SELECT DISTINCT "inspectionId" …)`: đo trên _test (100k bo / 40k dòng đo) mất ~30 s (tuần tự, không dùng chỉ mục) và nhân lên khi cả bộ chạy song song ⇒ chạm
+      // trần 120 s của ca. NOT EXISTS cho CÙNG số (13 996) trong ~0,1 s nhờ idx_results_inspection (và vẫn KHÁC hình câu của luật — luật dùng LEFT JOIN — nên phép đối chiếu giữ độc lập).
       // Sự thật tính ĐỘC LẬP với countSql của luật (không copy nguyên văn) — cùng vị từ
       // nghiệp vụ (bo v2.0 mà LEFT JOIN measurement_results ra NULL) nhưng viết lại tay
       // để phép đối chiếu có giá trị (không tự thoả bằng cách so sánh một câu với chính nó).
@@ -47,7 +49,7 @@ describe.skipIf(!DB_URL)("BG-28 — luật giám sát: bo v2.0 có header mà 0 
         SELECT count(*)::int AS n
         FROM product_inspections c
         WHERE c."summaryCounts" IS NOT NULL
-          AND c.id NOT IN (SELECT DISTINCT "inspectionId" FROM measurement_results)`;
+          AND NOT EXISTS (SELECT 1 FROM measurement_results m WHERE m."inspectionId" = c.id)`;
       const groundTruth = Number(truth.n);
       // Dữ liệu THẬT có sẵn (Task 4 để lại) — nếu đây là 0, ca này PHẢI đỏ, không được
       // âm thầm bỏ qua bằng skip: đúng lời dặn "dùng dữ liệu thật đã có sẵn".
