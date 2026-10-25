@@ -45,6 +45,9 @@ vi.mock("../_core/accessControl", () => ({
   },
 }));
 
+// phạm vi người dùng (L6a 2026-10-25): bài này kiểm RBAC + hợp đồng, không kiểm phạm vi (đã có loNangLuongSanPhamPhamVi.db.test.ts) ⇒ coi người gọi là toàn quyền
+vi.mock("./_adapterPhamVi", () => ({ idsMayTrongPhamVi: vi.fn(async () => null) }));
+
 import { energyRouter } from "./energyRouter";
 
 const ctx = { user: { id: 3, role: "supervisor", name: "Sup" } } as any;
@@ -121,3 +124,6 @@ describe("SAFETY — no machine-write path", () => {
     expect(importsModule(src, "writeTags")).toBe(false);
   });
 });
+
+// W14: cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW14.db.test.ts); ở đây CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./_cauHinhPhamVi", () => ({ nangLuongGhi: async () => undefined }));

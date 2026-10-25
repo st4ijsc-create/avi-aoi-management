@@ -155,3 +155,6 @@ describe("RBAC", () => {
     ).rejects.toThrow(/FORBIDDEN|settings_products/i);
   });
 });
+
+// W14: cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW14.db.test.ts); ở đây CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
+vi.mock("./_sanPhamPhamVi", () => ({ sanPhamGhiTrongPhamVi: async () => undefined, diemDoGhiTrongPhamVi: async () => undefined }));

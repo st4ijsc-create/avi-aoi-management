@@ -8,6 +8,7 @@
  * - Xem trạng thái scheduler
  */
 
+import { cacTramGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -108,7 +109,8 @@ export const mqttBulletinRouter = router({
       sendToExternal: z.boolean().default(true),
       sendFcm: z.boolean().default(true),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await cacTramGhi(ctx, [input.stationId]); // phạm vi nhà máy (W14b)
       const db = (await getDb())!;
 
       // Check if setting exists
@@ -169,7 +171,8 @@ export const mqttBulletinRouter = router({
   deleteSetting: writeProcedure
     .use(requirePermission("mqtt_bulletin", "canEdit"))
     .input(z.object({ stationId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await cacTramGhi(ctx, [input.stationId]); // phạm vi nhà máy (W14b)
       const db = (await getDb())!;
 
       stopBulletinForStation(input.stationId);
@@ -186,7 +189,8 @@ export const mqttBulletinRouter = router({
   toggleEnabled: writeProcedure
     .use(requirePermission("mqtt_bulletin", "canEdit"))
     .input(z.object({ stationId: z.number(), enabled: z.boolean() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await cacTramGhi(ctx, [input.stationId]); // phạm vi nhà máy (W14b)
       const db = (await getDb())!;
 
       await db.update(mqttBulletinSettings)
@@ -207,7 +211,8 @@ export const mqttBulletinRouter = router({
       stationIds: z.array(z.number()),
       enabled: z.boolean(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await cacTramGhi(ctx, input.stationIds); // phạm vi nhà máy (W14b)
       const db = (await getDb())!;
 
       for (const stationId of input.stationIds) {
@@ -226,7 +231,8 @@ export const mqttBulletinRouter = router({
   triggerNow: writeProcedure
     .use(requirePermission("mqtt_bulletin", "canEdit"))
     .input(z.object({ stationId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await cacTramGhi(ctx, [input.stationId]); // phạm vi nhà máy (W14b)
       await triggerBulletinForStation(input.stationId);
       return { success: true, message: `Bulletin triggered for station ${input.stationId}` };
     }),
@@ -417,7 +423,8 @@ export const mqttBulletinRouter = router({
       sendToExternal: z.boolean().default(true),
       sendFcm: z.boolean().default(true),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await cacTramGhi(ctx, input.stationIds); // phạm vi nhà máy (W14b)
       const db = (await getDb())!;
       let created = 0;
       let updated = 0;
@@ -470,7 +477,8 @@ export const mqttBulletinRouter = router({
       sendToExternal: z.boolean().default(true),
       sendFcm: z.boolean().default(false),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await cacTramGhi(ctx, [input.stationId]); // phạm vi nhà máy (W14b)
       const db = (await getDb())!;
 
       // Get station info

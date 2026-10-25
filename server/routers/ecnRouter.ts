@@ -45,6 +45,14 @@ import {
   EcnError,
 } from "../services/ecnService";
 import { ECN_CHANGE_TYPES, ECN_ITEM_ACTIONS, ECN_STATUSES } from "../../drizzle/schema/ecn";
+import { dieuKienEcnTrongPhamVi, ecnThayDuocTrongPhamVi, nhaMayGhiPhieu, sanPhamChoPhieu } from "./_phieuPhamVi";
+import type { CoDanhTinh } from "./_phamViNguoiXem";
+
+/** phạm vi người dùng (L6a 2026-10-25): phiếu ECN ngoài phạm vi ≡ không tồn tại (cùng lỗi id không có thật). */
+async function ecnGate(ctx: CoDanhTinh, id: number): Promise<void> {
+  const row = await getEcnById(id);
+  if (row && !(await ecnThayDuocTrongPhamVi(ctx, row))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ecn" }, `ECN ${id} not found`);
+}
 
 // Engineering-change decisions are made by quality / engineering leadership.
 // The gate on `transition` is the ROLE FLOOR below (plus SoD + status CAS inside
@@ -64,6 +72,7 @@ export const ECN_DECISION_ROLES = ["admin", "supervisor", "quality_inspector", "
 const ecnDecisionProcedure = roleProcedure(...ECN_DECISION_ROLES);
 
 function toTrpc(err: unknown): never {
+  if (err instanceof TRPCError) throw err; // lỗi phạm vi / appError đi qua nguyên vẹn (phạm vi người dùng L6a 2026-10-25)
   if (err instanceof EcnError) {
     const code =
       err.code === "NOT_FOUND" ? "NOT_FOUND" :
@@ -110,10 +119,15 @@ export const ecnRouter = router({
       effectivityDate: z.union([z.string(), z.date()]).optional(),
       note: z.string().max(4000).optional(),
       items: z.array(itemSchema).max(200).optional(),
+      /** Nhà máy của phiếu (người bị thu hẹp phạm vi: bắt buộc nếu có >1 nhà máy; toàn quyền được để trống). */
+      factoryId: z.number().int().positive().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       try {
-        return await createEcn({ ...input, requestedBy: ctx.user.id });
+        // phạm vi người dùng (L6a 2026-10-25): sản phẩm đính kèm theo luật sản phẩm (L3); nhà máy theo khai / nhà máy duy nhất của người gọi
+        await sanPhamChoPhieu(ctx, input.productModelId);
+        const factoryId = await nhaMayGhiPhieu(ctx, { khai: input.factoryId });
+        return await createEcn({ ...input, factoryId, requestedBy: ctx.user.id });
       } catch (err) {
         toTrpc(err);
       }
@@ -126,19 +140,24 @@ export const ecnRouter = router({
       productModelId: z.number().int().positive().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }).optional())
-    .query(async ({ input }) => listEcn(input ?? {})),
+    .query(async ({ input, ctx }) => listEcn({ ...(input ?? {}), dieuKienPhamVi: await dieuKienEcnTrongPhamVi(ctx) })), // phạm vi người dùng (L6a 2026-10-25)
 
   getById: ecnViewProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const row = await getEcnById(input.id);
-      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ecn" }, `ECN ${input.id} not found`);
+      if (!row || !(await ecnThayDuocTrongPhamVi(ctx, row))) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ecn" }, `ECN ${input.id} not found`); // phạm vi người dùng (L6a 2026-10-25)
       return row;
     }),
 
   getItems: ecnViewProcedure
     .input(z.object({ ecnId: z.number().int().positive() }))
-    .query(async ({ input }) => getEcnItems(input.ecnId)),
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L6a 2026-10-25): hạng mục của phiếu ngoài phạm vi ≡ phiếu không có hạng mục
+      const row = await getEcnById(input.ecnId);
+      if (row && !(await ecnThayDuocTrongPhamVi(ctx, row))) return [];
+      return getEcnItems(input.ecnId);
+    }),
 
   // Decision-gated lifecycle advance. SoD (requester ≠ approver) checked inside
   // transitionEcn. `submit` is available to the same gate for simplicity; the
@@ -158,6 +177,7 @@ export const ecnRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       try {
+        await ecnGate(ctx, input.id); // phạm vi người dùng (L6a 2026-10-25)
         return await transitionEcn({ ...input, actorId: ctx.user.id });
       } catch (err) {
         toTrpc(err);

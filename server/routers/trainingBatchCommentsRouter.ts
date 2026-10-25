@@ -2,6 +2,7 @@
  * Training Batch Comments & Tags Router
  * Quản lý nhận xét và gắn thẻ cho từng lô đào tạo AI
  */
+import { loHuanLuyenGhi, chiToanQuyenGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -26,6 +27,7 @@ export const trainingBatchCommentsRouter = router({
       parentId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      await loHuanLuyenGhi(ctx, input.batchId); // phạm vi nhà máy (W14c)
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -198,7 +200,8 @@ export const trainingBatchCommentsRouter = router({
       color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
       description: z.string().max(500).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      await chiToanQuyenGhi(ctx, "trainingBatchTag"); // W14c: nhãn là danh mục DÙNG CHUNG — đổi tên/màu chỉ toàn quyền
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -218,7 +221,8 @@ export const trainingBatchCommentsRouter = router({
   // Delete tag
   deleteTag: protectedProcedure
     .input(z.object({ tagId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      await chiToanQuyenGhi(ctx, "trainingBatchTag"); // W14c: xoá nhãn dùng chung gỡ nó khỏi MỌI lô — chỉ toàn quyền
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -244,6 +248,7 @@ export const trainingBatchCommentsRouter = router({
       tagId: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
+      await loHuanLuyenGhi(ctx, input.batchId); // phạm vi nhà máy (W14c)
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
@@ -275,7 +280,8 @@ export const trainingBatchCommentsRouter = router({
       batchId: z.string(),
       tagId: z.number(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      await loHuanLuyenGhi(ctx, input.batchId); // phạm vi nhà máy (W14c)
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 

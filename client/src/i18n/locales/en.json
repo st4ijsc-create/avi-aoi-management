@@ -3696,6 +3696,7 @@
       "queued-for-shared-ledger": "The read replica was cleaned IMMEDIATELY (headroom reflects it right away), but the row only actually LEAVES the database at the NEXT shared-ledger sync — see unsyncedWritesAfter for how many writes are still pending."
     },
     "entity": {
+      "corporate": "corporation",
       "edgeNode": "edge node",
       "scadaRequest": "SCADA command request",
       "mqttClient": "MQTT device",
@@ -4081,6 +4082,7 @@
       "scadaKenhCapNhat": "update the channel declaration"
     },
     "field": {
+      "stationId": "station",
       "location": "Location (factory, workshop, line, station or machine)",
       "holderUserId": "the user the key is issued to (an existing, active user)",
       "settingKey": "Setting key",
@@ -4265,6 +4267,8 @@
       "scadaCommands": "SCADA HMI commands"
     },
     "action": {
+      "testWebhook": "send a test webhook",
+      "toggleWebhook": "enable or disable a webhook",
       "writeCorporateEquipmentStandard": "write a corporate-level equipment standard",
       "changeMqttDeviceOfOtherScope": "change an MQTT device bound to a machine outside your scope",
       "selfApproveProgramDeploy": "approve your own program deploy request",

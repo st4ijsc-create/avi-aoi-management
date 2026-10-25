@@ -10,8 +10,9 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db/connection";
-import { asc, desc, eq, gte, and } from "drizzle-orm";
+import { asc, desc, eq, gte, and, inArray, sql } from "drizzle-orm";
 import { machineHealthHistory } from "../../drizzle/schema";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import { enpiMetrics } from "../../drizzle/schema";
 import {
   lttbDownsample,
@@ -36,9 +37,11 @@ export const realtimeReportRouter = router({
       hours: z.number().int().min(1).max(2160).optional(),
       points: z.number().int().min(10).max(2000).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [] as TimePoint[];
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6a 2026-10-25): máy ngoài phạm vi ≡ không có dữ liệu (chuỗi rỗng, như máy không tồn tại)
+      if (idsMay !== null && !idsMay.includes(input.machineId)) return [] as TimePoint[];
 
       const since = new Date(Date.now() - (input.hours ?? 168) * 60 * 60 * 1000);
       const rows = await database
@@ -67,13 +70,17 @@ export const realtimeReportRouter = router({
       machineId: z.number().int().positive().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
+      const idsMay = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6a 2026-10-25)
       return await database
         .select()
         .from(enpiMetrics)
-        .where(input?.machineId ? eq(enpiMetrics.machineId, input.machineId) : undefined)
+        .where(and(
+          input?.machineId ? eq(enpiMetrics.machineId, input.machineId) : undefined,
+          idsMay === null ? undefined : idsMay.length > 0 ? inArray(enpiMetrics.machineId, idsMay) : sql`false`,
+        ))
         .orderBy(desc(enpiMetrics.periodStart))
         .limit(input?.limit ?? 100);
     }),

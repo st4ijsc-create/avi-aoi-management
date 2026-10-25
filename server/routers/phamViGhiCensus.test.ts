@@ -26,7 +26,7 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1199, no: 246 } as const; // 2026-10-25 W13 (main): 291 → 246 (−45 thoát sổ, +9 miễn trừ có lý do). 2026-10-25 merge main eb6f363e0 vào feat/scada-r1b: +1 mutation `scadaCommands.dungMay` (R1b-1 T2, phạm vi máy strict ⇒ không vào sổ nợ) — SỐ ĐO trên cây hợp nhất
+const GHIM = { tongMutation: 1199, no: 160 } as const; // 2026-10-25 gộp L6a (167) + W16 (kho vật tư + quy tắc leo thang theo nhà máy, mig 0424/0425: alertEscalation ×4 + mesControlTower ×3 có khoá thật) −7 ⇒ 160, đo bằng census · 2026-10-25 merge main bffdf5ab0 vào feat/scada-r1b: tong = main + 1 (`scadaCommands.dungMay`, R1b-1 T2, phạm vi máy strict ⇒ không vào sổ nợ) — SỐ ĐO trên cây hợp nhất
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {

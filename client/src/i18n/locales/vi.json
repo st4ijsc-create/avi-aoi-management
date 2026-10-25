@@ -3696,6 +3696,7 @@
       "queued-for-shared-ledger": "Bản sao đọc đã sạch NGAY (dư địa thấy đúng ngay lập tức), nhưng hàng chỉ thật sự RỜI DATABASE ở lượt đồng bộ sổ chung KẾ TIẾP — xem unsyncedWritesAfter để biết còn bao nhiêu ý định ghi chưa gửi."
     },
     "entity": {
+      "corporate": "tập đoàn",
       "edgeNode": "node biên (edge)",
       "scadaRequest": "yêu cầu lệnh SCADA",
       "mqttClient": "thiết bị MQTT",
@@ -4081,6 +4082,7 @@
       "scadaKenhCapNhat": "cập nhật khai báo kênh"
     },
     "field": {
+      "stationId": "trạm",
       "location": "Vị trí (nhà máy, xưởng, chuyền, trạm hoặc máy)",
       "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",
       "settingKey": "Khoá cài đặt",
@@ -4265,6 +4267,8 @@
       "scadaCommands": "lệnh HMI SCADA"
     },
     "action": {
+      "testWebhook": "gửi thử webhook",
+      "toggleWebhook": "bật/tắt webhook",
       "writeCorporateEquipmentStandard": "ghi tiêu chuẩn thiết bị cấp tập đoàn",
       "changeMqttDeviceOfOtherScope": "đổi thiết bị MQTT đang gắn với máy ngoài phạm vi của bạn",
       "selfApproveProgramDeploy": "tự duyệt yêu cầu deploy chương trình của chính mình",

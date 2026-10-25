@@ -13,7 +13,8 @@ import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db/connection";
 import { createNcr } from "../services/ncrService"; // W4-B: optional lot-disposition → NCR link
-import { and, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import { idsNhaMayCuaNguoiGoi, nhaMayDongDauKho } from "./_cauHinhPhamVi";
 import { phamViCua } from "./_phamViNguoiXem";
 import { congMaTenant, idsTrongPhamVi, trongPhamVi } from "../db/hierarchy";
 import {
@@ -264,11 +265,18 @@ export const mesControlTowerRouter = router({
       disposition: z.string().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
+      // W16: quyết định xử lý lô THEO NHÀ MÁY (factoryId); hàng chưa gán: chỉ toàn quyền (lot_disposition không có đường suy nào khác ra nhà máy).
+      const idsNhaMay = await idsNhaMayCuaNguoiGoi(ctx);
+      if (idsNhaMay !== null && idsNhaMay.length === 0) return [];
+      const dieuKien = [
+        ...(input?.disposition ? [eq(lotDisposition.disposition, input.disposition as any)] : []),
+        ...(idsNhaMay === null ? [] : [inArray(lotDisposition.factoryId, idsNhaMay)]),
+      ];
       return await database.select().from(lotDisposition)
-        .where(input?.disposition ? eq(lotDisposition.disposition, input.disposition as any) : undefined)
+        .where(dieuKien.length ? and(...dieuKien) : undefined)
         .orderBy(desc(lotDisposition.decidedAt))
         .limit(input?.limit ?? 100);
     }),
@@ -340,10 +348,15 @@ export const mesControlTowerRouter = router({
       // `material_receipts` không có cột tenant — chiếu qua `materials.factoryCode` bằng MÃ vật tư
       // (`materialCode` NOT NULL, luôn có; `materialId` đo được là 0/0 hàng có giá trị).
       const congVatTu = await congMaTenant({ factoryCode: materials.factoryCode, corporateCode: materials.corporateCode }, phamViCua(ctx));
+      const idsNhaMay = await idsNhaMayCuaNguoiGoi(ctx);
+      // W16 (kho vật tư THEO NHÀ MÁY, mig 0424): hàng có factoryId ⇒ theo factoryId; hàng CHƯA gán ⇒ vẫn theo nhà máy của vật tư (suy được thật), không suy được ⇒ chỉ toàn quyền.
       return database.select().from(materialReceipts)
-        .where(congVatTu === undefined ? undefined : inArray(
-          materialReceipts.materialCode,
-          database.select({ code: materials.code }).from(materials).where(congVatTu),
+        .where(congVatTu === undefined || idsNhaMay === null ? undefined : or(
+          inArray(materialReceipts.factoryId, idsNhaMay.length ? idsNhaMay : [-1]),
+          and(isNull(materialReceipts.factoryId), inArray(
+            materialReceipts.materialCode,
+            database.select({ code: materials.code }).from(materials).where(congVatTu),
+          )),
         ))
         .orderBy(desc(materialReceipts.receivedDate))
         .limit(input?.limit ?? 100);
@@ -361,14 +374,17 @@ export const mesControlTowerRouter = router({
       unit: z.string().max(16).optional(),
       poNumber: z.string().max(64).optional(),
       notes: z.string().optional(),
+      factoryId: z.number().int().positive().optional(), // W16: nhà máy nhận vật tư (người hẹp: phải trong phạm vi; không nêu ⇒ suy từ vật tư)
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+      const nhaMay = await nhaMayDongDauKho(ctx, { factoryId: input.factoryId, materialCode: input.materialCode });
       const supplierId = await resolveSupplierId(database, input.supplierId, input.supplierCode);
       const materialId = await resolveMaterialId(database, input.materialId, input.materialCode);
       const [row] = await database.insert(materialReceipts).values({
         receiptNumber: input.receiptNumber,
+        factoryId: nhaMay,
         supplierId,
         supplierCode: input.supplierCode ?? null,
         supplierName: input.supplierName ?? null,
@@ -390,10 +406,14 @@ export const mesControlTowerRouter = router({
       const database = await getDb();
       if (!database) return [];
       const congVatTu = await congMaTenant({ factoryCode: materials.factoryCode, corporateCode: materials.corporateCode }, phamViCua(ctx));
+      const idsNhaMay = await idsNhaMayCuaNguoiGoi(ctx);
       return database.select().from(supplierLots)
-        .where(congVatTu === undefined ? undefined : inArray(
-          supplierLots.materialCode,
-          database.select({ code: materials.code }).from(materials).where(congVatTu),
+        .where(congVatTu === undefined || idsNhaMay === null ? undefined : or(
+          inArray(supplierLots.factoryId, idsNhaMay.length ? idsNhaMay : [-1]),
+          and(isNull(supplierLots.factoryId), inArray(
+            supplierLots.materialCode,
+            database.select({ code: materials.code }).from(materials).where(congVatTu),
+          )),
         ))
         .orderBy(desc(supplierLots.createdAt))
         .limit(input?.limit ?? 100);
@@ -408,13 +428,16 @@ export const mesControlTowerRouter = router({
       quantity: z.number().positive(),
       unit: z.string().max(16).optional(),
       status: z.enum(["received", "inspecting", "approved", "rejected", "consumed", "returned"]).optional(),
+      factoryId: z.number().int().positive().optional(), // W16: nhà máy sở hữu lô (suy từ phiếu nhập khi có receiptId)
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+      const nhaMay = await nhaMayDongDauKho(ctx, { factoryId: input.factoryId, receiptId: input.receiptId, materialCode: input.materialCode });
       const materialId = await resolveMaterialId(database, input.materialId, input.materialCode);
       const [row] = await database.insert(supplierLots).values({
         supplierLotNumber: input.supplierLotNumber,
+        factoryId: nhaMay,
         receiptId: input.receiptId ?? null,
         materialId,
         materialCode: input.materialCode,
@@ -440,11 +463,14 @@ export const mesControlTowerRouter = router({
       // W4-B — optionally raise a linked NCR/MRB for this lot (typically for
       // scrap/return/quarantine). Additive & opt-in: default false = prior behaviour.
       raiseNcr: z.boolean().optional(),
+      factoryId: z.number().int().positive().optional(), // W16: nhà máy ra quyết định (suy từ lô NCC khi có supplierLotId)
     }))
     .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+      const nhaMay = await nhaMayDongDauKho(ctx, { factoryId: input.factoryId, supplierLotId: input.supplierLotId });
       const [row] = await database.insert(lotDisposition).values({
+        factoryId: nhaMay,
         lotNumber: input.lotNumber,
         supplierLotId: input.supplierLotId ?? null,
         serialNumber: input.serialNumber ?? null,

@@ -18,7 +18,8 @@ import { appError } from "../_core/appError";
 import { protectedProcedure, supervisorProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { alertEscalationRules, mqttConnectionAlerts, mqttAlertHistory, users } from "../../drizzle/schema";
-import { desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { idsNhaMayCuaNguoiGoi, quyTacLeoThangGhi, quyTacLeoThangMoiGhi } from "./_cauHinhPhamVi";
 
 async function requireDb() {
   const db = await getDb();
@@ -39,27 +40,41 @@ const ruleCreateSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+/**
+ * Quy tắc theo NHÀ MÁY (W16, mig 0425, chủ dự án quyết 2026-10-25): `factoryId` NULL = mặc định toàn tập đoàn (chỉ toàn quyền sửa / xoá); quy tắc có `factoryId` do nhà máy đó tự quyết
+ * (người hẹp tạo / sửa / xoá quy tắc nhà máy mình). Nhà máy có quy tắc riêng cho cặp (severity, alertType) thì cặp đó dùng riêng, cặp khác rơi về quy tắc NULL (mqttAlertScheduler.sweepEscalations).
+ */
+const ruleCreateWithFactorySchema = ruleCreateSchema.extend({ factoryId: z.number().int().positive().nullable().optional() });
+
 export const alertEscalationRouter = router({
   // List all escalation rules (newest first)
-  list: protectedProcedure.query(async () => {
+  list: protectedProcedure.query(async ({ ctx }) => {
     const db = await requireDb();
-    return db.select().from(alertEscalationRules).orderBy(desc(alertEscalationRules.createdAt));
+    const ids = await idsNhaMayCuaNguoiGoi(ctx);
+    return db.select().from(alertEscalationRules)
+      .where(ids === null ? undefined : or(isNull(alertEscalationRules.factoryId), inArray(alertEscalationRules.factoryId, ids.length ? ids : [-1])))
+      .orderBy(desc(alertEscalationRules.createdAt));
   }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await requireDb();
       const rows = await db.select().from(alertEscalationRules).where(eq(alertEscalationRules.id, input.id)).limit(1);
       if (rows.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "escalationRule" }, "Escalation rule not found");
+      const ids = await idsNhaMayCuaNguoiGoi(ctx);
+      const f = (rows[0] as { factoryId?: number | null }).factoryId ?? null;
+      if (ids !== null && f != null && !ids.includes(f)) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "escalationRule" }, "Escalation rule not found");
       return rows[0];
     }),
 
   create: supervisorProcedure
-    .input(ruleCreateSchema)
+    .input(ruleCreateWithFactorySchema)
     .mutation(async ({ input, ctx }) => {
+      await quyTacLeoThangMoiGhi(ctx, input.factoryId ?? null); // W16: người hẹp chỉ tạo quy tắc CỦA nhà máy mình; quy tắc mặc định (NULL) chỉ toàn quyền
       const db = await requireDb();
       const [created] = await db.insert(alertEscalationRules).values({
+        factoryId: input.factoryId ?? null,
         name: input.name,
         description: input.description ?? null,
         severity: input.severity ?? null,
@@ -75,7 +90,8 @@ export const alertEscalationRouter = router({
 
   update: supervisorProcedure
     .input(ruleCreateSchema.partial().extend({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await quyTacLeoThangGhi(ctx, input.id); // W16: quy tắc NULL chỉ toàn quyền; quy tắc nhà máy ⇒ nhà máy phải trong phạm vi
       const db = await requireDb();
       const { id, ...rest } = input;
       const patch: Record<string, unknown> = { updatedAt: new Date() };
@@ -98,7 +114,8 @@ export const alertEscalationRouter = router({
 
   delete: supervisorProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await quyTacLeoThangGhi(ctx, input.id); // W16
       const db = await requireDb();
       const deleted = await db.delete(alertEscalationRules)
         .where(eq(alertEscalationRules.id, input.id))
@@ -109,7 +126,8 @@ export const alertEscalationRouter = router({
 
   toggle: supervisorProcedure
     .input(z.object({ id: z.number().int().positive(), enabled: z.boolean() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await quyTacLeoThangGhi(ctx, input.id); // W16
       const db = await requireDb();
       const updated = await db.update(alertEscalationRules)
         .set({ enabled: input.enabled, updatedAt: new Date() })

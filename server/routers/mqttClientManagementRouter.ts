@@ -3,6 +3,7 @@
  * Quản lý tập trung các MQTT Client profiles và assignments
  */
 
+import { mucTieuMqttGhi, canhBaoMqttKetNoiGhi, chiToanQuyenGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { appError } from "../_core/appError";
 // doc 54 Wave B — createAlert/logConnectionEvent/updateConnectionStatus/logReconnectEvent
@@ -514,7 +515,8 @@ export const mqttClientManagementRouter = router({
       ipAddress: z.string().optional(),
       userAgent: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await mucTieuMqttGhi(ctx, { assignmentId: input.assignmentId }); // phạm vi nhà máy (W14b): chỉ ghi nhật ký cho gán hồ sơ thuộc phạm vi
       const db = await requireDb();
       
       await db.insert(mqttConnectionLogs).values(input);
@@ -1262,7 +1264,8 @@ export const mqttClientManagementRouter = router({
       errorMessage: z.string().optional(),
       errorCode: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await mucTieuMqttGhi(ctx, { assignmentId: input.assignmentId, targetType: input.targetType, targetId: input.targetId }); // W14b
       const db = await requireDb();
       const { profileId, assignmentId, targetType, targetId, status, clientId, brokerUrl, errorMessage, errorCode } = input;
       
@@ -1365,7 +1368,8 @@ export const mqttClientManagementRouter = router({
       clientId: z.string().optional(),
       brokerUrl: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await mucTieuMqttGhi(ctx, { assignmentId: input.assignmentId, targetType: input.targetType, targetId: input.targetId }); // W14b
       const db = await requireDb();
 
       // W2-D: log insert + reconnect-counter bump are dependent → one transaction.
@@ -1658,7 +1662,8 @@ export const mqttClientManagementRouter = router({
       notificationEmails: z.string().optional(),
       isActive: z.boolean().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await chiToanQuyenGhi(ctx, "mqttAlertConfig"); // W14b: cấu hình ngưỡng / email cảnh báo cấp hồ sơ (dùng chung mọi nhà máy) — chỉ toàn quyền
       const db = await requireDb();
       const { profileId, ...updateData } = input;
       
@@ -1779,6 +1784,7 @@ export const mqttClientManagementRouter = router({
       alertId: z.number().int(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await canhBaoMqttKetNoiGhi(ctx, input.alertId); // W14b
       const db = await requireDb();
       
       await db.update(mqttConnectionAlerts)
@@ -1797,7 +1803,8 @@ export const mqttClientManagementRouter = router({
     .input(z.object({
       alertId: z.number().int(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await canhBaoMqttKetNoiGhi(ctx, input.alertId); // W14b
       const db = await requireDb();
       
       await db.update(mqttConnectionAlerts)
@@ -1824,7 +1831,8 @@ export const mqttClientManagementRouter = router({
       message: z.string().optional(),
       thresholdMinutes: z.number().int().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await mucTieuMqttGhi(ctx, { assignmentId: input.assignmentId, targetType: input.targetType, targetId: input.targetId }); // W14b
       const db = await requireDb();
       
       const [result] = await db.insert(mqttConnectionAlerts).values(input).returning({ id: mqttConnectionAlerts.id });

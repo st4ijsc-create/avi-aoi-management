@@ -11,10 +11,12 @@
  *
  * RBAC: module "energy" (canView/Create/Edit) via requirePermission.
  */
+import { nangLuongGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import * as db from "../db";
+import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 import { insertEnergyReading, isTsdbEnabled } from "../db/timescale";
 import {
   computeRecipeEnergy,
@@ -37,19 +39,19 @@ export const energyRouter = router({
   recipeEnergy: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(rangeInput)
-    .query(({ input }) => computeRecipeEnergy(input)),
+    .query(async ({ input, ctx }) => computeRecipeEnergy({ ...input, machineIds: await idsMayTrongPhamVi(ctx) })), // phạm vi người dùng (L6a 2026-10-25)
 
   // ─── Peak demand (read) ───────────────────────────────────────────────────
   peakDemand: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(rangeInput.extend({ windowMin: z.number().int().positive().max(1440).optional() }))
-    .query(({ input }) => computePeakDemand(input)),
+    .query(async ({ input, ctx }) => computePeakDemand({ ...input, machineIds: await idsMayTrongPhamVi(ctx) })), // phạm vi người dùng (L6a 2026-10-25)
 
   // ─── Power factor (read) ──────────────────────────────────────────────────
   powerFactor: protectedProcedure
     .use(requirePermission(MODULE, "canView"))
     .input(rangeInput.extend({ threshold: z.number().min(0).max(1).optional() }))
-    .query(({ input }) => computePowerFactor(input)),
+    .query(async ({ input, ctx }) => computePowerFactor({ ...input, machineIds: await idsMayTrongPhamVi(ctx) })), // phạm vi người dùng (L6a 2026-10-25)
 
   // ─── Forecast (read) ──────────────────────────────────────────────────────
   forecast: protectedProcedure
@@ -60,7 +62,7 @@ export const energyRouter = router({
       algorithm: z.enum(["ewma", "holt_winters"]).optional(),
       bucketMin: z.number().int().positive().max(1440).optional(),
     }))
-    .query(({ input }) => forecastEnergy(input)),
+    .query(async ({ input, ctx }) => forecastEnergy({ ...input, machineIds: await idsMayTrongPhamVi(ctx) })), // phạm vi người dùng (L6a 2026-10-25)
 
   // ─── Demand-response advisory (read; TEXT ONLY — no action) ────────────────
   demandResponse: protectedProcedure
@@ -70,10 +72,11 @@ export const energyRouter = router({
       windowMin: z.number().int().positive().max(1440).optional(),
       horizon: z.number().int().positive().max(168).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const machineIds = await idsMayTrongPhamVi(ctx); // phạm vi người dùng (L6a 2026-10-25)
       const [peak, forecast] = await Promise.all([
-        computePeakDemand({ from: input.from, to: input.to, machineId: input.machineId, windowMin: input.windowMin }),
-        forecastEnergy({ from: input.from, to: input.to, machineId: input.machineId, metric: "powerKw", horizon: input.horizon }),
+        computePeakDemand({ from: input.from, to: input.to, machineId: input.machineId, machineIds, windowMin: input.windowMin }),
+        forecastEnergy({ from: input.from, to: input.to, machineId: input.machineId, machineIds, metric: "powerKw", horizon: input.horizon }),
       ]);
       return { suggestions: suggestDemandResponse(forecast, peak, input.thresholdKw), peak, forecast };
     }),
@@ -87,7 +90,7 @@ export const energyRouter = router({
       from: z.coerce.date().optional(),
       to: z.coerce.date().optional(),
     }))
-    .query(({ input }) => db.listEnpiMetrics(input)),
+    .query(async ({ input, ctx }) => db.listEnpiMetrics({ ...input, machineIds: await idsMayTrongPhamVi(ctx) })), // phạm vi người dùng (L6a 2026-10-25)
 
   // ─── Record an energy reading (TELEMETRY — canCreate, NOT a machine write) ─
   recordReading: protectedProcedure
@@ -105,7 +108,8 @@ export const energyRouter = router({
       recipeRef: z.string().max(128).optional(),
       timestamp: z.coerce.date().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await nangLuongGhi(ctx, input.machineId, input.layoutId); // phạm vi nhà máy (W14)
       const row = {
         machineId: input.machineId ?? null,
         layoutId: input.layoutId ?? null,
@@ -137,7 +141,8 @@ export const energyRouter = router({
       recipeCode: z.string().max(64).optional(),
       carbonKg: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await nangLuongGhi(ctx, input.machineId, input.layoutId); // phạm vi nhà máy (W14): người hẹp phải nêu máy (không gộp năng lượng nhà máy khác vào ảnh chụp)
       const range = { from: input.from, to: input.to, machineId: input.machineId };
       const [recipeRows, peak, pf] = await Promise.all([
         computeRecipeEnergy(range),

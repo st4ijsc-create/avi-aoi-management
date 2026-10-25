@@ -22,7 +22,7 @@
  * DB; null-guarded; fail-safe on offline DB.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, type SQL } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import {
   engineeringChanges,
@@ -147,6 +147,8 @@ export async function createEcn(input: CreateEcnInput): Promise<EngineeringChang
 }
 
 export interface ListEcnFilter {
+  /** phạm vi người dùng (L6a 2026-10-25): điều kiện SQL phạm vi do tầng gọi dựng (nhà máy HOẶC sản phẩm trong phạm vi); undefined = không lọc. */
+  dieuKienPhamVi?: SQL;
   status?: EcnStatus;
   changeType?: EcnChangeType;
   productModelId?: number;
@@ -157,6 +159,7 @@ export async function listEcn(filter: ListEcnFilter = {}): Promise<EngineeringCh
   const d = await getDb();
   if (!d) return [];
   const conds = [] as any[];
+  if (filter.dieuKienPhamVi) conds.push(filter.dieuKienPhamVi);
   if (filter.status) conds.push(eq(engineeringChanges.status, filter.status));
   if (filter.changeType) conds.push(eq(engineeringChanges.changeType, filter.changeType));
   if (filter.productModelId) conds.push(eq(engineeringChanges.productModelId, filter.productModelId));
