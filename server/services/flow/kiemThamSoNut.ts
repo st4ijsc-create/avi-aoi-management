@@ -7,6 +7,7 @@ import { safeInternalPath } from "../../../shared/internalPath";
 import { DANH_MUC, chuanHoaThamSo } from "./soLieu/danhMuc";
 import { NHOM_PHIEU } from "./nut/baoTri";
 import { TIEU_DE_CAM } from "./nut/tichHop";
+import { laTenBiMat } from "./xuatNhap";
 
 const laBieuThuc = (v: unknown): boolean => typeof v === "string" && v.includes("{{");
 const LOAI_TB = ["REPORT", "INFO", "WARNING"];
@@ -45,7 +46,7 @@ export function kiemThamSoNutMoi(raw: unknown): string[] {
       // bí mật gõ tay vào tiêu đề: chỉ qua credentialRef (kiem-dinh F1)
       if (p.tieuDe && typeof p.tieuDe === "object" && !Array.isArray(p.tieuDe)) {
         for (const k of Object.keys(p.tieuDe as Record<string, unknown>)) {
-          if (TIEU_DE_CAM.has(k.toLowerCase()) || /key|token|secret|passw|auth|cookie/i.test(k)) loi.push(`node '${id}': tiêu đề '${k}' trông như bí mật — dùng bí mật (credentialRef) của luồng, không gõ vào tiêu đề`);
+          if (TIEU_DE_CAM.has(k.toLowerCase()) || laTenBiMat(k)) loi.push(`node '${id}': tiêu đề '${k}' trông như bí mật — dùng bí mật (credentialRef) của luồng, không gõ vào tiêu đề`);
         }
       }
     } else if (n?.type === "bao-tri.tao-phieu") {

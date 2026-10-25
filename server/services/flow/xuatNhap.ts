@@ -38,17 +38,54 @@ export function jsonOnDinh(v: unknown): string {
 }
 export const bamLuong = (luong: unknown): string => createHash("sha256").update(jsonOnDinh(luong), "utf8").digest("hex");
 
-// ── bí mật GÕ TAY trong tham số HTTP (kiem-dinh F1) ─────────────────────────────────────────────
+// ── bí mật GÕ TAY trong tham số HTTP (kiem-dinh F1 + 17 biến thể) ───────────────────────────────
 
-/** Tên khoá / tiêu đề trông như bí mật (tiếng Anh + tiếng Việt không dấu: mat_khau, bi_mat, khoa_api, xac_thuc). */
-export const RE_TEN_BI_MAT = /key|token|secret|passw|auth|bearer|cookie|mat[_ -]?khau|bi[_ -]?mat|khoa[_ -]?(bi|api)|xac[_ -]?thuc/i;
+/** Chuẩn hoá tên khoá để so: NFD bỏ dấu (mật_khẩu → mat_khau), đ→d, chữ thường. */
+export const chuanTenKhoa = (k: string): string => k.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[đĐ]/g, "d").toLowerCase();
+
+/**
+ * Tên khoá / tiêu đề trông như bí mật (đã chuẩn hoá bỏ dấu): từ khoá dài khớp ở bất cứ đâu; từ khoá NGẮN (pwd, pass, otp, sid) chỉ khớp khi đứng riêng
+ * (không phải trong "bypass", "inside", "passenger"…). Tiếng Việt không dấu: mat_khau, bi_mat, khoa_api, xac_thuc.
+ */
+const NGUON_KHOA_DAI = "key|token|secret|passw|cred|signature|session|private|auth|bearer|cookie|mat[_ -]?khau|bi[_ -]?mat|khoa[_ -]?(?:bi|api)|xac[_ -]?thuc";
+const RE_KHOA_NGAN = /(?:^|[^a-z])(?:pwd|pass|otp|sid)(?:[^a-z]|$)/;
+const RE_KHOA_DAI = new RegExp(NGUON_KHOA_DAI);
+export const laTenBiMat = (k: string): boolean => {
+  const c = chuanTenKhoa(k);
+  return RE_KHOA_DAI.test(c) || RE_KHOA_NGAN.test(c);
+};
+/** Giữ tương thích: kiểm lúc LƯU và quét dùng cùng bộ luật. */
+export const RE_TEN_BI_MAT = { test: laTenBiMat };
 /** Tiêu đề HTTP vô hại được giữ lại khi xuất; mọi tiêu đề khác bị xoá (bí mật phải đi qua credentialRef). */
 export const TIEU_DE_VO_HAI: ReadonlySet<string> = new Set(["accept", "content-type", "accept-language", "user-agent"]);
 const LOAI_HTTP = new Set(["tich-hop.http-doc", "tich-hop.http-gui"]);
 
-/** Vị trí dấu hỏi / dấu thăng đầu tiên NGOÀI biểu thức {{ … }} (dấu ? của biểu thức ba ngôi không phải chuỗi truy vấn). */
+/** Dòng / cặp xác thực: giá trị chạy TỚI HẾT dòng hoặc dấu & (vd "Authorization: Bearer abc", "authorization=Basic abc") — xoá cả giá trị nhiều từ. */
+const RE_DONG_XAC_THUC = /((?:proxy-)?authorization|set-cookie|cookie)(["']?\s*[:=]\s*["']?)([^\r\n&"']*)/gi;
+/** Cặp tên-bí-mật = giá trị: key=abc, "password": "x", mat_khau=abc, session_id: abc. Thay giá trị bằng rỗng. */
+const RE_CAP_BI_MAT = new RegExp(String.raw`((?:${NGUON_KHOA_DAI}|\b(?:pwd|pass|otp|sid)\b)[\w-]*["']?\s*[:=]\s*["']?)([^&\s"',}]+)`, "gi");
+/** Giá trị trông như token độc lập (không có tên khoá): sk-…, ghp_…, AKIA…, JWT, chuỗi ≥ 40 ký tự base64/hex. */
+const RE_TOKEN_DOC_LAP = /(?:^|[^A-Za-z0-9_-])((?:sk|pk|ghp|gho|xox[bp])[-_][A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{12,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}|[A-Za-z0-9_-]{40,})(?![A-Za-z0-9_-])/g;
+
+/** Xoá giá trị bí mật khỏi MỘT chuỗi (thân dạng chuỗi / giá trị tiêu đề). */
+export function lamSachChuoiBiMat(x: string): string {
+  return x
+    .replace(RE_DONG_XAC_THUC, (_m, a: string, b: string) => `${a}${b}`)
+    .replace(RE_CAP_BI_MAT, (_m, a: string) => a)
+    .replace(RE_TOKEN_DOC_LAP, (m, t: string) => m.replace(t, ""));
+}
+
+const PLACEHOLDER_DOAN = "DIEN-LAI-DOAN-DUONG-DAN";
+/** Đoạn đường dẫn trông như bí mật: bot123456:xxxx, hoặc ≥ 24 ký tự chữ+số liền (có cả chữ lẫn số), hoặc hex ≥ 32. Đoạn chứa biểu thức {{ }} KHÔNG bị đụng. */
+function doanGiongToken(s: string): boolean {
+  if (s.includes("{{")) return false;
+  if (/^[A-Za-z]*\d+:[A-Za-z0-9_-]{4,}$/.test(s)) return true;
+  if (/^[0-9a-fA-F]{32,}$/.test(s)) return true;
+  return /^[A-Za-z0-9_-]{24,}$/.test(s) && /[A-Za-z]/.test(s) && /\d/.test(s);
+}
+
+/** Vị trí đầu tiên của ?, #, hoặc dạng mã hoá %3F / %23 NGOÀI biểu thức {{ … }} (dấu ? của biểu thức ba ngôi không phải chuỗi truy vấn). */
 function viTriTruyVan(u: string): number {
-  let sau = 0;
   for (let i = 0; i < u.length; i++) {
     if (u.startsWith("{{", i)) {
       const d = u.indexOf("}}", i + 2);
@@ -57,23 +94,36 @@ function viTriTruyVan(u: string): number {
       continue;
     }
     if (u[i] === "?" || u[i] === "#") return i;
-    sau = i;
+    if (u[i] === "%" && /^%(?:3f|23)/i.test(u.slice(i, i + 3))) return i;
   }
-  void sau;
   return -1;
 }
 
-/** url: bỏ chuỗi truy vấn + fragment + userinfo (user:pass@) — giữ scheme + host + đường. doi = có thay đổi. */
+/**
+ * url: bỏ khoảng trắng đầu/cuối, chuỗi truy vấn + fragment (cả dạng %3F/%23), tham số ma trận (;jsessionid=…), userinfo (cắt tới dấu '@' CUỐI của authority — mật khẩu chứa '@'),
+ * và đoạn đường dẫn trông như token. Giữ scheme + host + port + đường còn lại. `doi` = có thay đổi (so với bản đã trim).
+ */
 export function lamSachUrl(u: string): { url: string; doi: boolean } {
-  let url = u;
+  const goc = u.trim();
+  let url = goc;
   const i = viTriTruyVan(url);
   if (i >= 0) url = url.slice(0, i);
-  url = url.replace(/^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^/@\s]*@/, "$1");
+  const m = /^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)([^/]*)([\s\S]*)$/.exec(url);
+  if (m) {
+    let auth = m[2];
+    const at = auth.lastIndexOf("@");
+    if (at >= 0) auth = auth.slice(at + 1);
+    const duong = m[3]
+      .split("/")
+      .map((seg) => {
+        const cat = seg.includes("{{") ? seg : seg.split(";")[0];
+        return doanGiongToken(cat) ? PLACEHOLDER_DOAN : cat;
+      })
+      .join("/");
+    url = `${m[1]}${auth}${duong}`;
+  }
   return { url, doi: url !== u };
 }
-
-/** Giá trị bí mật dạng chuỗi trong thân: key=abc, "password": "x", token: abc. Thay giá trị bằng rỗng. */
-const RE_CAP_BI_MAT = /((?:key|token|secret|passw\w*|auth\w*|bearer|cookie)\w*["']?\s*[:=]\s*["']?)([^&\s"',}]+)/gi;
 
 function lamSachThan(v: unknown): { v: unknown; doi: boolean } {
   let doi = false;
@@ -82,7 +132,7 @@ function lamSachThan(v: unknown): { v: unknown; doi: boolean } {
     if (x && typeof x === "object") {
       const ra: Record<string, unknown> = {};
       for (const [k, g] of Object.entries(x as Record<string, unknown>)) {
-        if (RE_TEN_BI_MAT.test(k)) {
+        if (laTenBiMat(k)) {
           if (g !== "" && g !== null && g !== undefined) doi = true;
           ra[k] = "";
         } else ra[k] = di(g);
@@ -90,7 +140,7 @@ function lamSachThan(v: unknown): { v: unknown; doi: boolean } {
       return ra;
     }
     if (typeof x === "string") {
-      const moi = x.replace(RE_CAP_BI_MAT, (_m, a: string) => a);
+      const moi = lamSachChuoiBiMat(x);
       if (moi !== x) doi = true;
       return moi;
     }
@@ -112,8 +162,16 @@ function lamSachHttp(ra: NodeInstance, viec: ViecPhaiDien[]): void {
     const giu: Record<string, unknown> = {};
     let bo = false;
     for (const [k, g] of Object.entries(p.tieuDe as Record<string, unknown>)) {
-      if (TIEU_DE_VO_HAI.has(k.toLowerCase()) && !(typeof g === "string" && RE_TEN_BI_MAT.test(g) && g.length > 40)) giu[k] = g;
-      else bo = true;
+      if (!TIEU_DE_VO_HAI.has(k.toLowerCase())) {
+        bo = true;
+        continue;
+      }
+      // tiêu đề vô hại vẫn có thể NHÉT bí mật vào giá trị (Accept: …; key=SEC) ⇒ quét giá trị
+      if (typeof g === "string") {
+        const sach = lamSachChuoiBiMat(g);
+        if (sach !== g) bo = true;
+        giu[k] = sach;
+      } else giu[k] = g;
     }
     if (bo) {
       p.tieuDe = giu;
