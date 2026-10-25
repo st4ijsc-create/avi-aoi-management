@@ -28,7 +28,7 @@
  * permission tracks the nature of the data being changed.
  */
 import { protectedProcedure, router } from "../_core/trpc";
-import { sanPhamGhiTrongPhamVi } from "./_sanPhamPhamVi";
+import { sanPhamGhiTrongPhamVi, sanPhamNhinThay } from "./_sanPhamPhamVi";
 import { sanPhamCuaBienThe } from "./_cauHinhPhamVi";
 
 /** Biến thể theo id → sản phẩm của nó phải ghi được; biến thể không tồn tại ≡ ngoài phạm vi (cùng NOT_FOUND). W13. */
@@ -178,10 +178,10 @@ export const productVariantRouter = router({
   getVariant: protectedProcedure
     .use(requirePermission("settings_products", "canView"))
     .input(z.object({ variantId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       await assertVariantTableAvailable();
       const variant = await db.getVariantById(input.variantId);
-      if (!variant) {
+      if (!variant || !(await sanPhamNhinThay(ctx, variant.productModelId))) { // phạm vi người dùng (L9 2026-10-25): biến thể của sản phẩm ngoài phạm vi ≡ không tồn tại
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
       }
       const [overrides, effective] = await Promise.all([
@@ -360,8 +360,9 @@ export const productVariantRouter = router({
       productModelId: z.number().int().positive(),
       variantId: z.number().int().positive().nullable().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       await assertVariantTableAvailable();
+      if (!(await sanPhamNhinThay(ctx, input.productModelId))) return { points: [], count: 0 }; // phạm vi người dùng (L9 2026-10-25): sản phẩm ngoài phạm vi ≡ chưa có điểm kiểm
 
       const variantId = input.variantId ?? null;
       let overriddenBaseIds = new Set<number>();

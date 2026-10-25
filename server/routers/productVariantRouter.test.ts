@@ -462,5 +462,5 @@ describe("PV3 — RBAC", () => {
 });
 
 // W13: cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW13.db.test.ts); ở đây CSDL giả ⇒ cho qua để test đúng điều nó kiểm.
-vi.mock("./_sanPhamPhamVi", () => ({ sanPhamGhiTrongPhamVi: async () => undefined, diemDoGhiTrongPhamVi: async () => undefined }));
+vi.mock("./_sanPhamPhamVi", () => ({ sanPhamNhinThay: async () => true, sanPhamGhiTrongPhamVi: async () => undefined, diemDoGhiTrongPhamVi: async () => undefined }));
 vi.mock("./_cauHinhPhamVi", () => ({ sanPhamCuaBienThe: async () => 1 }));

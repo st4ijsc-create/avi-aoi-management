@@ -6,6 +6,8 @@ import * as db from "../db";
 import { requireAnyPermission } from "../_core/accessControl";
 import { createAuditContext, logCrudOperation } from "../services/auditTrailService";
 import { viTriHopLe, boCucGhi, viTriMayBoCucGhi } from "./_cauHinhPhamVi";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
 
 // doc 42 #18 — RBAC split-brain: bố trí xưởng là master-data của "Quản lý dữ liệu".
 // FE gate module `settings_factory`; BE khớp permission thay vì hardgate role==='admin'.
@@ -59,13 +61,17 @@ export const layoutRouter = router({
   // NGUYÊN, không thêm gate ở đây (ngoài phạm vi ràng buộc chống hồi quy của Lô 6).
   listByWorkshop: protectedProcedure
     .input(z.object({ workshopId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L9 2026-10-25): xưởng ngoài phạm vi ≡ chưa có bố cục
+      const xuong = await idsTrongPhamVi("workshop", phamViCua(ctx), { strict: true });
+      if (xuong !== null && !xuong.includes(input.workshopId)) return [];
       return db.getFactoryLayoutsByWorkshop(input.workshopId);
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await boCucGhi(ctx, input.id); // phạm vi người dùng (L9 2026-10-25): cùng luật GHI (xưởng / nhà máy của bố cục); ngoài phạm vi ≡ "Layout not found"
       const layout = await db.getFactoryLayoutById(input.id);
       if (!layout) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'factoryLayout' }, 'Layout not found');

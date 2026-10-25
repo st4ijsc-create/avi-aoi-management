@@ -6,6 +6,9 @@ import * as db from "../db";
 import { withDbErrors } from "../_core/dbErrors";
 import { requirePermission } from "../_core/accessControl";
 import { viTriHopLe, ganQuyTrinhGhi } from "./_cauHinhPhamVi";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { dieuKienViTriTrongPhamVi } from "./_adapterPhamVi";
+import { phamViCua } from "./_phamViNguoiXem";
 
 // doc 42 #15 — RBAC split-brain: quy trình là master-data của app "Quản lý dữ liệu".
 // FE gate module `settings_factory`; BE phải khớp (không hardgate role==='admin').
@@ -127,7 +130,10 @@ export const processRouter = router({
   // Get line process assignments
   getLineAssignments: protectedProcedure
     .input(z.object({ lineId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L9 2026-10-25): chuyền ngoài phạm vi ≡ chưa có gán quy trình
+      const dong = await idsTrongPhamVi("line", phamViCua(ctx), { strict: true });
+      if (dong !== null && !dong.includes(input.lineId)) return [];
       return db.getLineProcessAssignments(input.lineId);
     }),
 
@@ -137,12 +143,14 @@ export const processRouter = router({
   // nhãn người-đọc thay vì raw id. Read-only (protectedProcedure, khớp getLineAssignments).
   getAssignmentsByProcess: protectedProcedure
     .input(z.object({ processId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await db.getDb();
       if (!database) return [];
       const { lineProcessAssignments } = await import("../../drizzle/schema/production");
+      // phạm vi người dùng (L9 2026-10-25): danh mục quy trình dùng chung, nhưng gán quy trình theo chuyền / trạm — chỉ thấy gán thuộc chuyền / trạm trong phạm vi
+      const congPv = await dieuKienViTriTrongPhamVi(phamViCua(ctx), { lineId: lineProcessAssignments.lineId, stationId: lineProcessAssignments.stationId });
       const { productionLines, stations } = await import("../../drizzle/schema/hierarchy");
-      const { eq, asc } = await import("drizzle-orm");
+      const { eq, asc, and } = await import("drizzle-orm");
       return database
         .select({
           id: lineProcessAssignments.id,
@@ -159,7 +167,7 @@ export const processRouter = router({
         .from(lineProcessAssignments)
         .leftJoin(productionLines, eq(lineProcessAssignments.lineId, productionLines.id))
         .leftJoin(stations, eq(lineProcessAssignments.stationId, stations.id))
-        .where(eq(lineProcessAssignments.processId, input.processId))
+        .where(congPv ? and(eq(lineProcessAssignments.processId, input.processId), congPv) : eq(lineProcessAssignments.processId, input.processId))
         .orderBy(asc(lineProcessAssignments.orderIndex));
     }),
 

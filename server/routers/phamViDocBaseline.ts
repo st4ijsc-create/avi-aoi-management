@@ -46,8 +46,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/aiRcaCopilotRouter.ts (1) ───────────────────────────────────────────────
   // ── server/routers/aiRouters.ts (4) ────────────────────────────────────────────────────────
   // ── server/routers/alertRouters.ts (2) ─────────────────────────────────────────────────────
-  "server/routers/alertRouters.ts#alertRouter.getById",
-  "server/routers/alertRouters.ts#alertRouter.listAll",
   // ── server/routers/aoiOnboardingRouter.ts (4) ──────────────────────────────────────────────
   // ── server/routers/apiKeyRouter.ts (1) ─────────────────────────────────────────────────────
   // ── server/routers/bomRouter.ts (5) ────────────────────────────────────────────────────────
@@ -77,30 +75,18 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/hierarchyTreeRouter.ts (4) ──────────────────────────────────────────────
   // ── server/routers/hotFolderRouter.ts (3) ──────────────────────────────────────────────────
   // ── server/routers/layoutRouters.ts (2) ────────────────────────────────────────────────────
-  "server/routers/layoutRouters.ts#layoutRouter.getById",
-  "server/routers/layoutRouters.ts#layoutRouter.listByWorkshop",
   // ── server/routers/machineApiRouters.ts (1) ────────────────────────────────────────────────
-  "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.get",
-  "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.list",
   // ── server/routers/mappingAsCodeRouter.ts — ★ 2026-10-24: 1 mục ĐÃ TRẢ (exportOne ⇒ S qua _adapterPhamVi.ts), xoá khỏi sổ ──
   // ── server/routers/mqttBulletinRouter.ts (5) ───────────────────────────────────────────────
   // ── server/routers/mqttClientManagementRouter.ts (6) ───────────────────────────────────────
   // ── server/routers/mqttNgAlertSettingsRouter.ts (2) ────────────────────────────────────────
   // ── server/routers/mqttSoftwareVersionRouter.ts (1) ────────────────────────────────────────
   // ── server/routers/ngRateThresholdRouter.ts (4) ────────────────────────────────────────────
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.alertHistory",
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.currentNgRates",
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.getById",
-  "server/routers/ngRateThresholdRouter.ts#ngRateThresholdRouter.list",
   "server/routers/oversightRouter.ts#oversightRouter.posture",
   // ── server/routers/parameterGuardrailRouter.ts (5) ─────────────────────────────────────────
   // ── server/routers/permissionsRouter.ts (2) ────────────────────────────────────────────────
   // ── server/routers/processRouter.ts (2) ────────────────────────────────────────────────────
-  "server/routers/processRouter.ts#processRouter.getAssignmentsByProcess",
-  "server/routers/processRouter.ts#processRouter.getLineAssignments",
   // ── server/routers/productVariantRouter.ts (2) ─────────────────────────────────────────────
-  "server/routers/productVariantRouter.ts#productVariantRouter.getEffectivePoints",
-  "server/routers/productVariantRouter.ts#productVariantRouter.getVariant",
   // ── server/routers/programmingRouter.ts (9) ────────────────────────────────────────────────
   // ★★★ 2026-08-18 — 8 mục của `server/routers/publicProductApiRouter.ts` ĐÃ ĐƯỢC TRẢ, xoá khỏi
   // đây. Tám thủ tục ấy nay thu hẹp về nhà máy của MÁY GỌI (`publicProductScope.ts`) và bộ suy
@@ -109,8 +95,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ★ 2026-10-09 (doc 81 Đợt 3b final wave, rà soát bảo mật) — `safetyRouter.listAssignments` RỜI sổ: nay lọc theo phạm vi
   //   nhà máy của HÀNG (factoryId › chuyền › trạm; mồ côi bị loại) bằng `resolveTenantFactoryScope(phamViCua(ctx))` — bộ lọc
   //   ca Đợt 3b Task 1 từng cho phép dò hàng nhà máy khác theo id ca. Bộ quét xếp nó sang S.
-  "server/routers/shiftConfigRouter.ts#shiftConfigRouter.defaults",
-  "server/routers/shiftConfigRouter.ts#shiftConfigRouter.list",
   // ── server/routers/simTargetsRouter.ts (1) ─────────────────────────────────────────────────
   // ★ 2026-09-27 (doc 81 Đợt 1B final wave, item 4) — `ursimPing` vào nhóm (A) vì Task 3 (R3/R9)
   // cho `resolveSimTarget` đọc `robots` + `device_adapters` của MỌI tenant để TỪ CHỐI một sim
@@ -125,9 +109,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/systemHealthRouter.ts (1) ───────────────────────────────────────────────
   // ── server/routers/systemRouters.ts (1) ────────────────────────────────────────────────────
   // ── server/routers/thresholdApprovalRouter.ts (3) ──────────────────────────────────────────
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.countPendingByProduct",
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.getById",
-  "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.list",
   // ── server/routers/twinRouter.ts (2) ───────────────────────────────────────────────────────
   // doc 81 Đợt 4 Task A3: occupancyGrid · replay · sceneGraph · twinModels đã vá (assertTwinFactoryInScope) — đã GỠ.
   // ── server/routers/userRouters.ts (1) ──────────────────────────────────────────────────────
@@ -141,6 +122,9 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
  * (còn tồn tại, còn nhóm A, lý do ≥ 20 ký tự có ngày duyệt, không đồng thời nằm trong sổ nợ). Thêm mục = thêm quyết định của chủ dự án, KHÔNG phải cách làm cổng xanh.
  */
 export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
+  "server/routers/shiftConfigRouter.ts#shiftConfigRouter.defaults": "ca mặc định TOÀN CỤC (shift_configs.factoryId NULL) — dùng chung mọi nhà máy, chỉ GHI là toàn quyền (luật W13) — dieu-phoi duyệt 2026-10-25",
+  "server/routers/alertRouters.ts#alertRouter.getById": "dữ liệu của CHÍNH người gọi: chỉ chủ cài đặt hoặc admin, ngoài ≡ NOT_FOUND (luật W17a) — dieu-phoi duyệt 2026-10-25",
+  "server/routers/alertRouters.ts#alertRouter.listAll": "adminProcedure ⇒ admin = toàn quyền; liệt kê cài đặt cảnh báo của mọi người dùng — dieu-phoi duyệt 2026-10-25",
   "server/routers/simTargetsRouter.ts#simTargetsRouter.ursimPing": "một mục tiêu sim DUY NHẤT lấy từ env (URSIM_HOST); resolveSimTarget từ chối host trùng robot / adapter thật; chỉ trả reachable true/false, không trả hàng tenant; giữ cổng machine_control — dieu-phoi duyệt 2026-10-25",
   "server/routers/hierarchyRouters.ts#machineRouter.config": "TẠM MIỄN: hợp đồng thiết bị, public theo serial — KHÔNG xác thực: ai biết serial đều nhận machineId / code / ánh xạ trạm-chuyền (lộ không xác thực). Backlog: bắt khoá máy cho config = đổi hợp đồng client, chờ chủ dự án — dieu-phoi duyệt tạm 2026-10-25",
   "server/routers/permissionsRouter.ts#permissionsRouter.getBuiltInRoles": "adminProcedure ⇒ admin = toàn quyền; danh mục vai trò dựng sẵn, không dữ liệu tenant — dieu-phoi duyệt 2026-10-25",
