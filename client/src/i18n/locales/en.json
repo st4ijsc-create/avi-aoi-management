@@ -4081,6 +4081,7 @@
       "scadaSetStubFault": "set a simulated stub fault",
       "scadaSelectTag": "select a channel to command",
       "scadaKenhCapNhat": "update the channel declaration",
+      "scadaTotpCauHinh": "verify the authentication code for the channel configuration change",
       "dieuKienDoiTuongTrongPhamVi": "in-scope object condition"
     },
     "field": {

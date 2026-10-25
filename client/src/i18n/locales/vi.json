@@ -4081,6 +4081,7 @@
       "scadaSetStubFault": "đặt lỗi mô phỏng cho stub",
       "scadaSelectTag": "chọn kênh để ra lệnh",
       "scadaKenhCapNhat": "cập nhật khai báo kênh",
+      "scadaTotpCauHinh": "kiểm mã xác thực cho thay đổi cấu hình kênh",
       "dieuKienDoiTuongTrongPhamVi": "điều kiện đối tượng trong phạm vi"
     },
     "field": {

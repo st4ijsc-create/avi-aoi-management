@@ -72,7 +72,12 @@ function tableFor(table: any): Row[] {
 function whereResult(rows: Row[]) {
   const p: any = Promise.resolve(rows);
   p.limit = async (_n?: number) => rows.slice(0, 1);
-  p.orderBy = () => Promise.resolve(rows);
+  // R1b-2a T5 (T1 c8) — `.orderBy(asc(id)).limit(1)` (adapterIdForMachine / resolveTarget): orderBy cũng có .limit()
+  p.orderBy = () => {
+    const q: any = Promise.resolve(rows);
+    q.limit = async (_n?: number) => rows.slice(0, 1);
+    return q;
+  };
   return p;
 }
 

@@ -27,7 +27,7 @@ import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
-import { adapterTheoMaTrongPhamVi, maAdapterTrongPhamVi } from "./_adapterPhamVi";
+import { adapterTheoMaTrongPhamVi, idsMayTrongPhamVi, khongThayAdapter, kiemPhamViDuoiKhoa, maAdapterTrongPhamVi } from "./_adapterPhamVi";
 import {
   parseMappingYaml,
   exportAdapterMapping,
@@ -143,6 +143,9 @@ export const mappingAsCodeRouter = router({
   applyImport: adminProcedure
     .input(z.object({ yaml: yamlInput, prune: z.boolean().default(false), totpCode: totpCauHinhInput }))
     .mutation(async ({ input, ctx }) => {
+      // R1b-2a T5 (M5) — tập máy tính TRƯỚC giao dịch; service kiểm LẠI dưới khoá adapter (adminProcedure ⇒ toàn quyền — giữ cho NHẤT QUÁN
+      // với mọi thủ tục có giao dịch khác: một ngày applyImport mở cho vai phạm vi hẹp thì cổng dưới khoá đã có sẵn).
+      const idsMay = await idsMayTrongPhamVi(ctx);
       await kiemPhamViYaml(ctx, input.yaml);
       try {
         return await importMapping(input.yaml, {
@@ -152,6 +155,7 @@ export const mappingAsCodeRouter = router({
           actorName: actorName(ctx.user as { username?: string | null; name?: string | null }),
           source: "trpc",
           xacThucKenhDaKhai: () => kiemTotpCauHinh(ctx, input.totpCode),
+          kiemPhamViDuoiKhoa: (m) => kiemPhamViDuoiKhoa(m, idsMay, khongThayAdapter),
         });
       } catch (err) {
         throw toTrpcError(err);

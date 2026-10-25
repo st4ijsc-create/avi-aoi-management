@@ -4073,6 +4073,7 @@
       "scadaSetStubFault": "为模拟器设置故障",
       "scadaSelectTag": "选择要下达命令的通道",
       "scadaKenhCapNhat": "更新通道声明",
+      "scadaTotpCauHinh": "校验通道配置变更的验证码",
       "dieuKienDoiTuongTrongPhamVi": "范围内对象条件"
     },
     "field": {

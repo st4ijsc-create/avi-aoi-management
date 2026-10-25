@@ -51,6 +51,8 @@ import {
   adapterCuaTag,
   dieuKienAdapterTrongPhamVi,
   idsMayTrongPhamVi,
+  khongThayAdapter,
+  kiemPhamViDuoiKhoa,
   maySuDungTrongPhamVi,
 } from "./_adapterPhamVi";
 import { createAuditContext } from "../services/auditTrailService";
@@ -325,7 +327,8 @@ export const deviceAdapterRouter = router({
       const db = await getDb();
       const { id, totpCode, ...rest } = input;
       // phạm vi nhà máy (rà bảo mật 2026-10-24): sửa adapter ngoài phạm vi ≡ NOT_FOUND; đổi máy gắn thì máy MỚI cũng phải trong phạm vi
-      await adapterTrongPhamVi(ctx, id);
+      const idsMay = await idsMayTrongPhamVi(ctx); // R1b-2a T5 — tính TRƯỚC giao dịch, dùng lại dưới khoá (không gọi pool trong tx)
+      await adapterTrongPhamVi(ctx, id, idsMay);
       if (rest.machineId !== undefined) await maySuDungTrongPhamVi(ctx, rest.machineId);
       try {
         // ★ doc 81 Đợt 1B final wave 5b (security) — ĐỌC-KIỂM-KHÔI PHỤC-GHI trong MỘT giao dịch, hàng
@@ -336,6 +339,11 @@ export const deviceAdapterRouter = router({
         // Với FOR UPDATE, B chờ A commit rồi đọc ĐÚNG hàng sắp bị ghi đè: placeholder khôi phục bí mật
         // của A (A tự cung cấp), còn form cũ mang endpoint E0 ≠ hàng của A ⇒ bị từ chối.
         const row = await db.transaction(async (tx) => {
+          // R1b-2a T5 (kiem-dinh M5) — ADAPTER FOR UPDATE NGAY đầu giao dịch, MỌI patch (trước: chỉ khi đổi đích / tắt / đổi mã / bí mật — sửa tên
+          // hay chu kỳ không khoá gì), rồi KIỂM LẠI phạm vi trên `machineId` ĐÃ KHOÁ: đổi máy sang nhà máy khác đã commit sau kiểm-trước ⇒ cùng
+          // NOT_FOUND, không ghi. Các nhánh dưới đọc lại hàng này trong CÙNG giao dịch (khoá đã giữ ⇒ không chờ, không đổi thứ tự khoá).
+          const [khoa] = await tx.select({ machineId: deviceAdapters.machineId }).from(deviceAdapters).where(eq(deviceAdapters.id, id)).for("update"); // ADAPTER
+          kiemPhamViDuoiKhoa(khoa ? (khoa.machineId ?? null) : undefined, idsMay, khongThayAdapter);
           const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
           // doc 81 Đợt 1D Task 1 fix round 1 (Ruling R-1D-a) — adapter đổi "thiết bị nào" (endpoint /
           // protocol / đích trong connectionOptions / machineId) ⇒ gỡ MỌI ghim DỪNG của nó trong CÙNG tx.
@@ -448,10 +456,12 @@ export const deviceAdapterRouter = router({
     .input(z.object({ id: z.number().int().positive(), totpCode: totpCauHinhInput }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      await adapterTrongPhamVi(ctx, input.id); // ngoài phạm vi ≡ NOT_FOUND (rà bảo mật 2026-10-24) — TRƯỚC cổng adapter T9
+      const idsMay = await idsMayTrongPhamVi(ctx); // R1b-2a T5 — tính TRƯỚC giao dịch, dùng lại dưới khoá
+      await adapterTrongPhamVi(ctx, input.id, idsMay); // ngoài phạm vi ≡ NOT_FOUND (rà bảo mật 2026-10-24) — TRƯỚC cổng adapter T9
       await db.transaction(async (tx) => {
         const [existing] = await tx.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).for("update"); // ADAPTER (thứ tự khoá)
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
+        kiemPhamViDuoiKhoa(existing.machineId ?? null, idsMay, khongThayAdapter); // R1b-2a T5 (M5) — phạm vi trên hàng ĐÃ KHOÁ
         // SAFETY: refuse to delete an adapter that is still enabled (it may be polling).
         if (existing.isEnabled) {
           // Task 5 (doc 71) — reason khôi phục chỉ dẫn "tắt trước khi xoá" đã mất khi câu
@@ -479,7 +489,8 @@ export const deviceAdapterRouter = router({
         }
         // Cascade delete tags + adapter atomically.
         // doc 81 Đợt 1D Task 1 — tag đang GHIM DỪNG bị xoá theo adapter ⇒ audit gỡ ghim cùng transaction.
-        const tags = await tx.select().from(deviceTags).where(eq(deviceTags.adapterId, input.id)).for("update");
+        // R1b-2a T5 (phán quyết K8) — khoá nhiều tag ORDER BY id (thứ tự khoá dự án, troLaiKenh.ts); congAdapterTx đã khoá cùng tập theo id.
+        const tags = await tx.select().from(deviceTags).where(eq(deviceTags.adapterId, input.id)).orderBy(deviceTags.id).for("update");
         for (const t of tags) {
           if (t.stopValue != null) {
             await ghiAuditGoStopPinTx(tx, { tag: t, nguon: "adapter_deleted", nguoiSua: nguoiSuaTu(ctx), thaoTac: "deviceAdapter.delete" });
@@ -595,12 +606,16 @@ export const deviceAdapterRouter = router({
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
         const { totpCode, ...v } = input;
-        await adapterTrongPhamVi(ctx, v.adapterId); // thêm tag vào adapter ngoài phạm vi ≡ NOT_FOUND (rà bảo mật 2026-10-24) — TRƯỚC kiểm T9
+        const idsMay = await idsMayTrongPhamVi(ctx); // R1b-2a T5 — tính TRƯỚC giao dịch, dùng lại dưới khoá
+        await adapterTrongPhamVi(ctx, v.adapterId, idsMay); // thêm tag vào adapter ngoài phạm vi ≡ NOT_FOUND (rà bảo mật 2026-10-24) — TRƯỚC kiểm T9
         try {
           return await db.transaction(async (tx) => {
             const cap = { adapterId: v.adapterId, tagKey: v.tagKey };
-            // Thứ tự khoá ADAPTER → LUẬT → TAG → KÊNH CHẾ ĐỘ (troLaiKenh.ts). Adapter không tồn tại ⇒ FK của INSERT báo như cũ.
-            const may = (await khoaAdapterTx(tx, [v.adapterId])).get(v.adapterId)?.machineId ?? null;
+            // Thứ tự khoá ADAPTER → LUẬT → TAG → KÊNH CHẾ ĐỘ (troLaiKenh.ts). R1b-2a T5 (M5): phạm vi kiểm LẠI trên hàng adapter ĐÃ KHOÁ (adapter
+            // biến mất giữa chừng ⇒ cùng NOT_FOUND của kiểm-trước, thay cho lỗi FK của INSERT).
+            const khoa = (await khoaAdapterTx(tx, [v.adapterId])).get(v.adapterId);
+            kiemPhamViDuoiKhoa(khoa?.machineId, idsMay, khongThayAdapter);
+            const may = khoa?.machineId ?? null;
             const luat = await khoaLuatNhamCapTx(tx, cap);
             const nguon = await khoaLuatNguonTx(tx, may, v.tagKey);
             const kenhCheDo = await kenhCheDoCuaTagTx(tx, cap);
@@ -662,8 +677,9 @@ export const deviceAdapterRouter = router({
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
         const { id, scale, offset, totpCode, ...rest } = input;
-        await adapterCuaTag(ctx, id); // tag thuộc adapter ngoài phạm vi ≡ không tồn tại
-        if (rest.adapterId !== undefined) await adapterTrongPhamVi(ctx, rest.adapterId); // không chuyển tag sang adapter ngoài phạm vi
+        const idsMay = await idsMayTrongPhamVi(ctx); // R1b-2a T5 — tính TRƯỚC giao dịch, dùng lại dưới khoá
+        await adapterCuaTag(ctx, id, idsMay); // tag thuộc adapter ngoài phạm vi ≡ không tồn tại
+        if (rest.adapterId !== undefined) await adapterTrongPhamVi(ctx, rest.adapterId, idsMay); // không chuyển tag sang adapter ngoài phạm vi
         const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
         if (scale !== undefined) patch.scale = scale != null ? String(scale) : null;
         if (offset !== undefined) patch.offset = offset != null ? String(offset) : null;
@@ -679,6 +695,10 @@ export const deviceAdapterRouter = router({
             // LUẬT trước (FOR SHARE, mọi luật nhắm danh tính cũ — và mới — bật hay tắt), TAG sau (FOR UPDATE).
             // Thứ tự khoá ADAPTER (cũ + mới, theo id) → LUẬT (đích + nguồn, danh tính cũ + mới) → TAG → KÊNH CHẾ ĐỘ (troLaiKenh.ts, N6).
             const adapters = await khoaAdapterTx(tx, [tag0.adapterId, capMoi.adapterId]);
+            // R1b-2a T5 (M5) — phạm vi kiểm LẠI trên CẢ adapter cũ (lỗi của adapterCuaTag: deviceTag) LẪN adapter mới (lỗi của adapterTrongPhamVi:
+            // adapter), đọc dưới khoá. `tag0` đọc trong giao dịch ⇒ tag đã bị chuyển sang adapter khác sau kiểm-trước cũng bị kiểm đúng adapter ấy.
+            kiemPhamViDuoiKhoa(adapters.get(tag0.adapterId)?.machineId, idsMay, khongThay);
+            if (capMoi.adapterId !== tag0.adapterId) kiemPhamViDuoiKhoa(adapters.get(capMoi.adapterId)?.machineId, idsMay, khongThayAdapter);
             const luatCu = await khoaLuatNhamCapTx(tx, tag0);
             const nguonCu = await khoaLuatNguonTx(tx, adapters.get(tag0.adapterId)?.machineId, tag0.tagKey);
             const luatMoi = doiDanhTinh ? await khoaLuatNhamCapTx(tx, capMoi) : [];
@@ -767,14 +787,17 @@ export const deviceAdapterRouter = router({
       .input(z.object({ id: z.number().int().positive(), totpCode: totpCauHinhInput }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
-        await adapterCuaTag(ctx, input.id); // tag thuộc adapter ngoài phạm vi ≡ không tồn tại
+        const idsMay = await idsMayTrongPhamVi(ctx); // R1b-2a T5 — tính TRƯỚC giao dịch, dùng lại dưới khoá
+        await adapterCuaTag(ctx, input.id, idsMay); // tag thuộc adapter ngoài phạm vi ≡ không tồn tại
         // doc 81 Đợt 1D Task 1 — xoá tag đang GHIM DỪNG ⇒ audit gỡ ghim trong CÙNG transaction.
         await db.transaction(async (tx) => {
           const khongThay = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
           const [tag0] = await tx.select({ adapterId: deviceTags.adapterId, tagKey: deviceTags.tagKey }).from(deviceTags).where(eq(deviceTags.id, input.id));
           if (!tag0) throw khongThay();
           // Thứ tự khoá ADAPTER → LUẬT (đích + nguồn) → TAG → KÊNH CHẾ ĐỘ (troLaiKenh.ts, N6).
-          const may = (await khoaAdapterTx(tx, [tag0.adapterId])).get(tag0.adapterId)?.machineId ?? null;
+          const khoa = (await khoaAdapterTx(tx, [tag0.adapterId])).get(tag0.adapterId);
+          kiemPhamViDuoiKhoa(khoa?.machineId, idsMay, khongThay); // R1b-2a T5 (M5) — phạm vi trên hàng adapter ĐÃ KHOÁ
+          const may = khoa?.machineId ?? null;
           const luat = await khoaLuatNhamCapTx(tx, tag0);
           const nguon = await khoaLuatNguonTx(tx, may, tag0.tagKey);
           const [existing] = await tx.select().from(deviceTags).where(eq(deviceTags.id, input.id)).for("update");

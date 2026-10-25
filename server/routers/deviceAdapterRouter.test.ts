@@ -36,6 +36,9 @@ vi.mock("./_adapterPhamVi", () => ({
   idsAdapterTrongPhamVi: vi.fn(async () => null),
   maAdapterTrongPhamVi: vi.fn(async () => null),
   adapterTheoMaTrongPhamVi: vi.fn(async (_c: unknown, ma: string) => ({ id: 1, code: ma, machineId: null })),
+  // R1b-2a T5 — kiểm lại phạm vi dưới khoá: vai TOÀN QUYỀN ở test này ⇒ không từ chối (hành vi thật ở phamViDuoiKhoa.r1b2.db.test.ts)
+  kiemPhamViDuoiKhoa: vi.fn(() => undefined),
+  khongThayAdapter: () => new Error("adapter không tồn tại"),
 }));
 
 

@@ -563,7 +563,8 @@ export async function goMoiStopPinCuaAdapterTx(
   tx: Tx,
   e: { adapterId: number; nguon: Exclude<NguonGo, "manual">; nguoiSua: NguoiSuaStopPin; thaoTac: string },
 ): Promise<number> {
-  const tags = await tx.select().from(deviceTags).where(eq(deviceTags.adapterId, e.adapterId)).for("update");
+  // R1b-2a T5 (kiem-dinh M7, phán quyết K8) — khoá nhiều tag ORDER BY id như mọi đường khác (troLaiKenh.ts: thứ tự khoá dự án)
+  const tags = await tx.select().from(deviceTags).where(eq(deviceTags.adapterId, e.adapterId)).orderBy(deviceTags.id).for("update");
   let n = 0;
   for (const t of tags) {
     if (t.stopValue === null || t.stopValue === undefined) continue;

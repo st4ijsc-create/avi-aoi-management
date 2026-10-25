@@ -108,7 +108,8 @@ async function resolveTarget(machineId: number, tagKeys: string[], lang: ToolLan
     warnings.push(w(lang, "DB không khả dụng.", "Database unavailable.", "数据库不可用。"));
     return { warnings };
   }
-  const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.machineId, machineId)).limit(1);
+  // R1b-2a T5 (phán quyết T1 c8) — ORDER BY id: máy có nhiều adapter ⇒ preview và execute (`adapterIdForMachine`) chọn CÙNG một adapter, tất định.
+  const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.machineId, machineId)).orderBy(deviceAdapters.id).limit(1);
   if (!adapter) {
     warnings.push(w(lang, `Không tìm thấy adapter OT cho máy #${machineId}.`, `No OT adapter found for machine #${machineId}.`, `未找到机器 #${machineId} 的 OT 适配器。`));
     return { warnings };
@@ -138,7 +139,8 @@ async function resolveTarget(machineId: number, tagKeys: string[], lang: ToolLan
 export async function adapterIdForMachine(machineId: number): Promise<number> {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
-  const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.machineId, machineId)).limit(1);
+  // R1b-2a T5 (phán quyết T1 c8) — ORDER BY id: tất định khi máy có nhiều adapter (cùng adapter với preview `resolveTarget`).
+  const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.machineId, machineId)).orderBy(deviceAdapters.id).limit(1);
   if (!adapter) throw new Error(`No OT adapter for machine #${machineId}`);
   return adapter.id;
 }

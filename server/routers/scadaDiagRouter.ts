@@ -31,6 +31,7 @@ import { deviceAdapters, deviceTags } from "../../drizzle/schema";
 import { idsTrongPhamVi, type PhamViNguoiXem } from "../db/hierarchy";
 import { layMauThoTheoThietBi } from "../db/otTelemetry";
 import { phamViCua } from "./_phamViNguoiXem";
+import { kiemPhamViDuoiKhoa } from "./_adapterPhamVi";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { isEdgeControlSchemaMissing } from "../services/edge/edgeControlSchema";
 import { baoTrangThaiAdapter, layTrangThaiAdapter } from "../services/ot/trangThaiAdapter";
@@ -96,9 +97,9 @@ function nhinThay(machineId: number | null, idsMay: number[] | null): boolean {
 }
 
 /** Đọc MỘT adapter theo id client gửi, kiểm phạm vi ở máy chủ. Không thấy / ngoài phạm vi ⇒ cùng NOT_FOUND. */
-async function adapterTrongPhamVi(pv: PhamViNguoiXem, adapterId: number): Promise<HangAdapter> {
+async function adapterTrongPhamVi(pv: PhamViNguoiXem, adapterId: number, idsMayCo?: number[] | null): Promise<HangAdapter> {
   const db = await getDb();
-  const idsMay = await idsTrongPhamVi("machine", pv, { strict: true });
+  const idsMay = idsMayCo === undefined ? await idsTrongPhamVi("machine", pv, { strict: true }) : idsMayCo;
   const [row] = await db.select(cotAdapter).from(deviceAdapters).where(eq(deviceAdapters.id, adapterId)).limit(1);
   if (!row || !nhinThay(row.machineId, idsMay)) throw khongThay();
   return row as HangAdapter;
@@ -343,12 +344,14 @@ export const scadaDiagRouter = router({
     .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({ adapterId: adapterIdInput, lyDo: lyDoInput, totpCode: totpCauHinhInput }))
     .mutation(async ({ ctx, input }) => {
-      const a = await adapterTrongPhamVi(phamViCua(ctx), input.adapterId);
+      const idsMay = await idsTrongPhamVi("machine", phamViCua(ctx), { strict: true }); // R1b-2a T5 — TRƯỚC giao dịch, dùng lại dưới khoá
+      const a = await adapterTrongPhamVi(phamViCua(ctx), input.adapterId, idsMay);
       await tuChoiNeuEdge(a.id, "scadaDisableAdapter");
       const db = await getDb();
       await db.transaction(async (tx) => {
         const [cu] = await tx.select().from(deviceAdapters).where(eq(deviceAdapters.id, a.id)).for("update"); // ADAPTER (thứ tự khoá)
         if (!cu) throw khongThay();
+        kiemPhamViDuoiKhoa(cu.machineId ?? null, idsMay, khongThay); // R1b-2a T5 (M5) — đổi máy sang nhà máy khác sau kiểm-trước ⇒ cùng NOT_FOUND
         if (cu.isEnabled === true) {
           const cong = await congAdapterTx(tx, { adapterId: a.id, code: cu.code, machineId: cu.machineId ?? null, viec: "tat" });
           if (cong.canTotp) {

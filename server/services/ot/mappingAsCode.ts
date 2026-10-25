@@ -649,6 +649,13 @@ export interface ImportOptions {
    * tag đã khai bị từ chối `SCADA_CONFIG_TOTP_REQUIRED` (fail-closed — không có đường import nào trỏ lại kênh đã khai mà không qua mã).
    */
   xacThucKenhDaKhai?: (e: { soTag: number; tagKeys: string[] }) => Promise<void>;
+  /**
+   * SCADA R1b-2a T5 (kiem-dinh M5) — kiểm LẠI phạm vi nhà máy DƯỚI KHOÁ hàng adapter (router: `kiemPhamViDuoiKhoa(m, idsMay, khongThayAdapter)`,
+   * `idsMay` tính trước giao dịch). Gọi ĐÚNG MỘT lần, trong giao dịch, NGAY sau khi khoá hàng adapter FOR SHARE, với `machineId` đọc dưới khoá
+   * (`undefined` = adapter đã biến mất). NÉM ⇒ giao dịch rollback, không ghi gì. Vắng (CLI / cron) ⇒ không kiểm (phạm vi toàn quyền).
+   * `applyImport` là adminProcedure (phạm vi toàn quyền) — hook này giữ cho đường import NHẤT QUÁN với mọi thủ tục có giao dịch khác.
+   */
+  kiemPhamViDuoiKhoa?: (machineIdDaKhoa: number | null | undefined) => void;
 }
 
 export interface AppliedCounts {
@@ -742,16 +749,21 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
   await d.transaction(async (tx) => {
     // SCADA R1b-1 Task 9 — thứ tự khoá DUY NHẤT ADAPTER → LUẬT → TAG → KÊNH CHẾ ĐỘ (server/services/scada/troLaiKenh.ts, fix round 3 N6):
     // adapter FOR SHARE (lấy máy hiện tại — quyết luật NGUỒN), mọi luật nhắm adapter + luật telemetry_tag của máy FOR SHARE, rồi tag FOR UPDATE.
-    const mayHienTai = (await khoaAdapterTx(tx, [adapter.id])).get(adapter.id)?.machineId ?? null;
+    const khoaAd = (await khoaAdapterTx(tx, [adapter.id])).get(adapter.id);
+    // R1b-2a T5 (M5) — phạm vi kiểm LẠI trên hàng adapter ĐÃ KHOÁ (kiểm-trước ở router đọc không khoá).
+    opts.kiemPhamViDuoiKhoa?.(khoaAd?.machineId);
+    const mayHienTai = khoaAd?.machineId ?? null;
     const luatAdapter = await khoaLuatNhamAdapterTx(tx, adapter.id);
     const luatNguonMay = await khoaLuatNguonTx(tx, mayHienTai);
     // doc 81 Đợt 1D Task 1 fix round 1 — KHOÁ mọi tag của adapter (FOR UPDATE) trước khi upsert/xoá:
     // tag đang GHIM DỪNG mà file đổi nghĩa (address/dataType/scale/offset), thôi writable, tắt, hoặc bị
     // prune ⇒ ghim bị gỡ trong CÙNG tx + audit (lyDoGoStopPinKhiSuaTag / ghiAuditGoStopPinTx). Upsert
     // KHÔNG bao giờ ghi cột ghim ngoài việc gỡ ⇒ một lượt import sau bật lại tag cũng không hồi sinh ghim.
-    const hangKhoa = await tx.select().from(deviceTags).where(eq(deviceTags.adapterId, adapter.id)).for("update");
+    // R1b-2a T5 (kiem-dinh M7) — ORDER BY id (thứ tự khoá dự án, troLaiKenh.ts): không ORDER BY ⇒ thứ tự vật lý của heap, khác thứ tự id của
+    // congAdapterTx / khaiHangLoat trên CÙNG tập tag ⇒ vòng chờ 40P01 (đo được: phamViDuoiKhoa.r1b2.db.test.ts). uns_tag_mappings cũng theo id.
+    const hangKhoa = await tx.select().from(deviceTags).where(eq(deviceTags.adapterId, adapter.id)).orderBy(deviceTags.id).for("update");
     const tagHienCo = new Map(hangKhoa.map((r) => [r.tagKey, r]));
-    const mapKhoa = await tx.select().from(unsTagMappings).where(eq(unsTagMappings.adapterId, adapter.id)).for("update");
+    const mapKhoa = await tx.select().from(unsTagMappings).where(eq(unsTagMappings.adapterId, adapter.id)).orderBy(unsTagMappings.id).for("update");
     // M1 — kênh chế độ của adapter, FOR SHARE (một `cheDo.dat` đồng thời chờ tag FOR UPDATE của ta).
     const kenhCheDoTag = new Set(
       (await tx.select({ tagKey: scadaKenhCheDo.tagKey }).from(scadaKenhCheDo).where(eq(scadaKenhCheDo.adapterId, adapter.id)).for("share")).map(

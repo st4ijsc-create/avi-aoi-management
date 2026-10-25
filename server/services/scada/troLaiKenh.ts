@@ -41,6 +41,11 @@
  *     scadaKenh.cheDo.dat: adapter FOR SHARE → tag FOR SHARE → kênh chế độ FOR UPDATE.
  *   LUẬT đứng TRƯỚC TAG (không phải sau) vì interlockRouter / scadaKenh.capNhat đã khoá luật trước tag từ R1a — đảo lại sẽ tạo vòng chờ với
  *   chúng. Không đường nào khoá ngược một cặp ⇒ không vòng chờ (40P01).
+ *   R1b-2a T5 (kiem-dinh M7) — TRONG bậc TAG: mọi lượt khoá NHIỀU hàng `device_tags` FOR UPDATE đều `ORDER BY id` (import, `congAdapterTx`,
+ *   `goMoiStopPinCuaAdapterTx`, xoá adapter, `khaiHangLoat`) — hai thứ tự (id / tagKey / thứ tự vật lý heap) trên cùng tập hàng là vòng chờ.
+ *   Census: `thuTuKhoaTag.census.test.ts`. PHẠM VI NHÀ MÁY được kiểm LẠI ngay sau khi khoá hàng ADAPTER (`kiemPhamViDuoiKhoa`, _adapterPhamVi.ts):
+ *   `machineId` đọc dưới khoá là máy mà giao dịch thật sự ghi lên (một `deviceAdapter.update` đổi máy đã commit giữa kiểm-trước và khoá ⇒
+ *   NOT_FOUND như kiểm-trước, không ghi).
  */
 import { and, eq } from "drizzle-orm";
 import { deviceAdapters, deviceTags, interlockRules, scadaKenhCheDo, type DeviceTag } from "../../../drizzle/schema";
@@ -294,7 +299,7 @@ export async function congAdapterTx(
     })
     .from(deviceTags)
     .where(eq(deviceTags.adapterId, e.adapterId))
-    .orderBy(deviceTags.tagKey)
+    .orderBy(deviceTags.id) // R1b-2a T5 (kiem-dinh M7) — MỌI khoá nhiều tag ORDER BY id (trước: tagKey ⇒ khác thứ tự với import ⇒ 40P01)
     .for("update");
   const kenh = await tx
     .select({ machineId: scadaKenhCheDo.machineId, tagKey: scadaKenhCheDo.tagKey })
