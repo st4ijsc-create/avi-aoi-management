@@ -41,3 +41,10 @@ describe("hàng rào nạp in-process + đo tươi broker — không chạm máy
     vi.doUnmock("../vram/vramProbe");
   });
 });
+
+describe("đo model thật trong vitest (cờ đặt TỪ DÒNG LỆNH) ⇒ KHÔNG giả", () => {
+  it("vitest.setup.ts chỉ giả khi AI_CHO_NAP_TRONG_TIEN_TRINH chưa được đặt từ ngoài", () => {
+    const s = readFileSync("vitest.setup.ts", "utf8");
+    expect(s).toMatch(/if \(process\.env\.AI_CHO_NAP_TRONG_TIEN_TRINH !== "1"\) \{\s*\(globalThis/);
+  });
+});

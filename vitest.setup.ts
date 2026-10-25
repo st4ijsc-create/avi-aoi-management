@@ -137,11 +137,16 @@ process.env.LLAMA_WATCHDOG_PAUSE_FILE = resolve(mkdtempSync(resolve(tmpdir(), "v
  *   • broker tick null: thiết bị TRỐNG (tiền đề lịch sử của các lưới broker — "không ai khác giữ GPU").
  * Ca ĐO SỐNG (chủ đích chạm máy thật) đặt `AI_NAP_DO_SONG=1`. Lưới canh: server/services/ai/napServerNgoai.khongChamMay.test.ts.
  */
-(globalThis as Record<symbol, unknown>)[Symbol.for("avi.ai.napServerNgoai.phuThuocTest")] = {
-  modelServer: async () => null,
-  vram: async () => null,
-};
-(globalThis as Record<symbol, unknown>)[Symbol.for("avi.vram.tickTuoi.docThietBiTest")] = async () => ({
-  usedBytes: 0,
-  totalBytes: 32 * 1024 ** 3,
-});
+// ⚠ (2026-10-26) KHÔNG giả khi lượt chạy được KHỞI từ dòng lệnh với AI_CHO_NAP_TRONG_TIEN_TRINH=1 (đo model thật trong vitest): lúc đó
+// hàng rào PHẢI thấy card thật — giả ở đây sẽ cho 4B nạp vào card đã đầy. Lưới giả lập tự đặt cờ đó TRONG tệp (vi.hoisted, chạy SAU
+// setup) nên vẫn nhận bản giả.
+if (process.env.AI_CHO_NAP_TRONG_TIEN_TRINH !== "1") {
+  (globalThis as Record<symbol, unknown>)[Symbol.for("avi.ai.napServerNgoai.phuThuocTest")] = {
+    modelServer: async () => null,
+    vram: async () => null,
+  };
+  (globalThis as Record<symbol, unknown>)[Symbol.for("avi.vram.tickTuoi.docThietBiTest")] = async () => ({
+    usedBytes: 0,
+    totalBytes: 32 * 1024 ** 3,
+  });
+}
