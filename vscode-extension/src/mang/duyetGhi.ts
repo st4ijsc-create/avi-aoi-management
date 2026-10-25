@@ -54,13 +54,45 @@ export function docKetQuaDuyet(dap: unknown): KetQuaDuyet {
   };
 }
 
+/**
+ * R1b-1 T10 fix round 1 (I-2) — lỗi HTTP của máy chủ KÈM mã ứng dụng (`data.appCode`) và câu của nó, để `goiDuyet` phân biệt một lượt từ chối
+ * ĐÃ BIẾT KẾT CỤC (FORBIDDEN SCADA_AI_LEVEL_TOO_HIGH) với hỏng đường truyền ("không biết"). Thông điệp `Error.message` giữ NGUYÊN như trước.
+ */
+export class LoiMayChuTuChoi extends Error {
+  constructor(
+    message: string,
+    readonly appCode: string | null,
+    readonly thongDiepMayChu: string | null,
+  ) {
+    super(message);
+    this.name = "LoiMayChuTuChoi";
+  }
+}
+
+/** Bóc `{error:{json:{message, data:{appCode}}}}` của tRPC khi đáp ứng lỗi; hình dạng lạ / không phải JSON ⇒ null cả hai. */
+async function docLoiTrpc(res: Response): Promise<{ appCode: string | null; thongDiep: string | null }> {
+  try {
+    const j = (await res.json()) as { error?: { json?: unknown; message?: unknown; data?: unknown } };
+    const e = (j?.error?.json ?? j?.error) as { message?: unknown; data?: { appCode?: unknown } } | undefined;
+    return {
+      appCode: typeof e?.data?.appCode === "string" ? e.data.appCode : null,
+      thongDiep: typeof e?.message === "string" ? e.message : null,
+    };
+  } catch {
+    return { appCode: null, thongDiep: null };
+  }
+}
+
 async function goiMutation(serverUrl: string, cookie: string, ten: string, dauVao: unknown): Promise<unknown> {
   const res = await fetch(`${serverUrl.replace(/\/+$/, "")}/api/trpc/${ten}`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie: `app_session_id=${cookie}` },
     body: JSON.stringify({ json: dauVao }),
   });
-  if (!res.ok) throw new Error(`tRPC ${ten} trả ${res.status}`);
+  if (!res.ok) {
+    const { appCode, thongDiep } = await docLoiTrpc(res);
+    throw new LoiMayChuTuChoi(`tRPC ${ten} trả ${res.status}`, appCode, thongDiep);
+  }
   return boBoiSuperjson(await res.json());
 }
 
@@ -70,9 +102,18 @@ export async function goiDuyet(
   actionId: string,
   token: string,
 ): Promise<KetQuaDuyet> {
-  return docKetQuaDuyet(
-    await goiMutation(serverUrl, cookie, "aiCopilot.confirmAction", { actionId, token, lang: "vi" }),
-  );
+  try {
+    return docKetQuaDuyet(
+      await goiMutation(serverUrl, cookie, "aiCopilot.confirmAction", { actionId, token, lang: "vi" }),
+    );
+  } catch (e) {
+    // R1b-1 T10 fix round 1 (I-2) — AI không bao giờ ra lệnh mức ≥ 4: máy chủ từ chối VĨNH VIỄN (FORBIDDEN). Đây là kết cục ĐÃ BIẾT (không
+    // chạy gì), không phải "KHÔNG RÕ KẾT CỤC" — trả như một lượt từ chối thường để giao diện hiện đúng câu của máy chủ.
+    if (e instanceof LoiMayChuTuChoi && e.appCode === "SCADA_AI_LEVEL_TOO_HIGH") {
+      return { ok: false, status: "denied", message: e.thongDiepMayChu ?? "Trợ lý AI không được ra lệnh cho kênh mức tác động từ 4 trở lên." };
+    }
+    throw e;
+  }
 }
 
 export async function goiHuy(serverUrl: string, cookie: string, actionId: string): Promise<KetQuaDuyet> {

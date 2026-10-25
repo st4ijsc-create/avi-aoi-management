@@ -52,6 +52,12 @@ export const interlockRules = pgTable("interlock_rules", {
   enabled: boolean("enabled").default(false).notNull(),
   approvedBy: integer("approvedBy"),
   approvedAt: timestamp("approvedAt"),
+  /**
+   * kiem-dinh R1b-1 I1 (a) (mig 0434): bám ĐỊNH NGHĨA tag nguồn / đích (address, dataType, scale / offset, adapterId + edgeNodeId của adapter)
+   * chụp lúc DUYỆT. Luật chỉ "đã duyệt" khi `approvedBy` khác NULL VÀ bám hiện tại == cột này (`services/interlock/dinhNghiaDuyet.ts`);
+   * NULL trên luật đã duyệt = duyệt trước bản build ⇒ coi là chưa duyệt lại (fail-closed).
+   */
+  approvedDefHash: varchar("approvedDefHash", { length: 80 }),
   cooldownSeconds: integer("cooldownSeconds").default(300).notNull(),
   /** SCADA R0 Task 9 (D2, mig 0430): thiếu/xấu/cũ/mơ hồ dữ liệu ⇒ 'chan' (mặc định, fail-closed) | 'cho_qua' (bỏ qua luật này ở cổng inline). */
   khiThieuDuLieu: varchar("khiThieuDuLieu", { length: 8 }).$type<"chan" | "cho_qua">().default("chan").notNull(),

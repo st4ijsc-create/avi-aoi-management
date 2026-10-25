@@ -18,6 +18,8 @@ import { z } from "zod";
 import { DbUnavailableError } from "../../../_core/dbErrors";
 import { getDb } from "../../../db/connection";
 import { interlockRules } from "../../../../drizzle/schema";
+import { telemetryTagDungPhamVi } from "../../interlock/d11";
+import { appError } from "../../../_core/appError";
 import {
   registerTool,
   type ActionPreview,
@@ -25,6 +27,9 @@ import {
   type ToolExecContext,
   type ToolLang,
 } from "../toolRegistry";
+
+/** R1b-1 T9 (D11) — câu từ chối khi luật telemetry_tag không ở phạm vi Máy. */
+const D11_LOI = "Luật nguồn tag thiết bị (telemetry_tag) chỉ được đặt ở phạm vi Máy (scope = machine), không phải dây chuyền / trạm.";
 
 const params = z
   .object({
@@ -43,7 +48,10 @@ const params = z
     action: z.enum(["alert", "block_downstream", "stop_line", "reduce_speed"]),
     cooldownSeconds: z.number().int().min(0).max(86400).optional(),
   })
-  .strict();
+  .strict()
+  // SCADA R1b-1 Task 9 (nợ R0.1, D11) — telemetry_tag chỉ phạm vi Máy: từ chối NGAY lúc đề xuất (model nhận lỗi tham số, không tới bước
+  // xác nhận), CÙNG helper với interlockRouter. execute() kiểm lại trước khi chèn (phòng khi bị gọi thẳng).
+  .refine((p) => telemetryTagDungPhamVi(p), { message: D11_LOI, path: ["scope"] });
 
 type Params = z.infer<typeof params>;
 
@@ -104,6 +112,8 @@ registerTool<Params, { id: number }>({
   summarize,
   preview,
   execute: async (p, ctx) => {
+    // R1b-1 T9 — D11 TRƯỚC khi chèn (không có hàng nào được ghi).
+    if (!telemetryTagDungPhamVi(p)) throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "scope", reason: "telemetryTagChiPhamViMay" }, D11_LOI);
     const db = await getDb();
     if (!db) throw new DbUnavailableError();
     // SAFETY: forced-safe defaults — AI-proposed rules are always inert.

@@ -12,6 +12,10 @@
  *   2. đã khai mà loại kênh không nhận lệnh ghi (`laKenhGhi` false: input / calculated) ⇒ `CHANNEL_READ_ONLY` — cổng kênh sớm của
  *      `dispatch()` từ chối mọi lệnh ghi trên kênh đó, KHÔNG có miễn trừ cho DỪNG ghim;
  *   3. còn lại ⇒ `kiemGiaTriGhi` (CÙNG hàm `dispatch()` dùng: ép kiểu, dải, bước) — mọi kết cục không `ok` là từ chối.
+ *   R1b-1 T13 — riêng giá trị lệnh INTERLOCK (`kiemLenhInterlockTrenKenh`): kênh KHÔNG khai mà là int có scale ≠ 1 / offset ≠ 0 ⇒ lưới thô
+ *   (`kiemLuoiThoChuaKhai`, CÙNG hàm cổng kênh sớm của `dispatch()` dùng cho tag chưa khai). Lệnh bảo vệ không được miễn lúc chạy, nên một
+ *   giá trị lệch lưới phải bị từ chối LÚC CẤU HÌNH, không phải `OFF_STEP` đúng lúc cần. Ghim DỪNG trên kênh chưa khai KHÔNG kiểm (được miễn
+ *   lúc chạy ⇒ không có lệch cấu hình ↔ chạy; ghim lệch lưới là phát hiện cấu hình, xem báo cáo T13).
  *
  * ⚠ `kenhDaKhai` là BẢN SAO của `commandDispatcher.kenhDaKhaiGhi` (không import: `stopPin.ts` nhập tệp này và `commandDispatcher.ts` nhập
  *   `stopPin.ts` ⇒ vòng import). Test `stopPin.dai.r1a.db.test.ts` so hai bản trên mọi tổ hợp NULL/khác NULL.
@@ -19,7 +23,7 @@
 import { and, eq } from "drizzle-orm";
 import { deviceTags, interlockRules, type DeviceTag } from "../../../drizzle/schema";
 import type { getDb } from "../../db/connection";
-import { kiemGiaTriGhi, laKenhGhi } from "./kenhScada";
+import { kiemGiaTriGhi, kiemLuoiThoChuaKhai, laKenhGhi, type KetQuaGiaTri } from "./kenhScada";
 import { giaTriLenhInterlock } from "../interlock/giaTriLenh";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -31,9 +35,47 @@ export type KenhNhatQuan = Pick<DeviceTag, "dataType" | "channelKind" | "writabl
   // kiem-dinh P1-3 — cùng luật lưới thô (int có scale/offset) với `dispatch()` cho kênh ĐÃ khai.
   Partial<Pick<DeviceTag, "scale" | "offset">>;
 
+/**
+ * R1b-1 T13 polish (m1) — lưới vừa trượt của một OFF_STEP (lưới = `gocLuoi` + k·`buoc`; `goiY` = điểm lưới gần nhất), để lời từ chối nêu ĐÚNG
+ * lưới (bước khai báo, hoặc |scale| / offset của lưới thô) thay vì "bước —" khi tag không khai `write_step`.
+ */
+export type LuoiLech = { buoc?: number; goiY?: number; gocLuoi?: number };
+
 export type KetQuaNhatQuan =
   | { ok: true }
-  | { ok: false; ma: "CHANNEL_READ_ONLY" | "TYPE_MISMATCH" | "OUT_OF_RANGE" | "OFF_STEP"; chiTiet: string };
+  | { ok: false; ma: "CHANNEL_READ_ONLY" | "TYPE_MISMATCH" | "OUT_OF_RANGE" | "OFF_STEP"; chiTiet: string; luoi?: LuoiLech };
+
+/** Lưới của một kết cục `kiemGiaTriGhi` / `kiemLuoiThoChuaKhai` không ok (chỉ OFF_STEP có); không có ⇒ undefined. */
+function luoiCua(kq: { buoc?: number; goiY?: number; gocLuoi?: number }): LuoiLech | undefined {
+  if (kq.buoc === undefined) return undefined;
+  return { buoc: kq.buoc, ...(kq.goiY !== undefined ? { goiY: kq.goiY } : {}), ...(kq.gocLuoi !== undefined ? { gocLuoi: kq.gocLuoi } : {}) };
+}
+
+const tuChoiTu = (kq: Extract<KetQuaGiaTri, { ok: false }>): KetQuaNhatQuan => {
+  const luoi = luoiCua(kq);
+  return { ok: false, ma: kq.ma, chiTiet: kq.chiTiet, ...(luoi ? { luoi } : {}) };
+};
+
+/**
+ * R1b-1 T13 polish (m1) — tham số `INTERLOCK_NGOAI_DAI` { min, max, step, goc, goiY } cho câu vi/en/zh (MỌI nơi phát mã này dùng hàm này):
+ * OFF_STEP có lưới ⇒ `step` = bước vừa trượt (writeStep, hoặc |scale| của lưới thô), `goc` = gốc lưới (writeMin ?? 0, hoặc offset), `goiY` =
+ * giá trị hợp lệ gần nhất ("—" khi không có điểm lưới trong dải); còn lại ⇒ `step` = write_step khai báo, `goc` / `goiY` = "—".
+ * min/max = dải khai báo ("—" khi không khai).
+ */
+export function thamSoNgoaiDaiInterlock(
+  tag: Pick<DeviceTag, "writeMin" | "writeMax" | "writeStep"> | null | undefined,
+  vp: { ma: string; luoi?: LuoiLech },
+): { min: string | number; max: string | number; step: string | number; goc: string | number; goiY: string | number } {
+  const luoi = vp.ma === "OFF_STEP" ? vp.luoi : undefined;
+  const buoc = luoi?.buoc;
+  return {
+    min: soHienThi(tag?.writeMin),
+    max: soHienThi(tag?.writeMax),
+    step: buoc !== undefined ? buoc : soHienThi(tag?.writeStep),
+    goc: buoc !== undefined ? soHienThi(luoi?.gocLuoi) : "—",
+    goiY: buoc !== undefined ? soHienThi(luoi?.goiY) : "—",
+  };
+}
 
 /** Bản sao của `commandDispatcher.kenhDaKhaiGhi` (xem đầu tệp). */
 export function kenhDaKhai(tag: Pick<DeviceTag, "channelKind" | "writeMin" | "writeMax" | "writeStep">): boolean {
@@ -45,7 +87,17 @@ export function kiemNhatQuanKenh(tag: KenhNhatQuan, giaTri: unknown): KetQuaNhat
   if (!kenhDaKhai(tag)) return { ok: true };
   if (!laKenhGhi(tag)) return { ok: false, ma: "CHANNEL_READ_ONLY", chiTiet: `Kênh loại ${tag.channelKind} không nhận lệnh ghi.` };
   const kq = kiemGiaTriGhi(tag, giaTri);
-  return kq.ok ? { ok: true } : { ok: false, ma: kq.ma, chiTiet: kq.chiTiet };
+  return kq.ok ? { ok: true } : tuChoiTu(kq);
+}
+
+/**
+ * THUẦN — R1b-1 T13: giá trị lệnh của luật interlock có ghi được lên kênh không, theo ĐÚNG cổng kênh sớm của `dispatch()` — kênh đã khai ⇒
+ * `kiemNhatQuanKenh`; kênh chưa khai ⇒ lưới thô của tag int có scale/offset (`kiemLuoiThoChuaKhai`; scale 1 / offset 0 / không phải int ⇒ ok).
+ */
+export function kiemLenhInterlockTrenKenh(tag: KenhNhatQuan, giaTri: unknown): KetQuaNhatQuan {
+  if (kenhDaKhai(tag)) return kiemNhatQuanKenh(tag, giaTri);
+  const kq = kiemLuoiThoChuaKhai(tag, giaTri);
+  return kq.ok ? { ok: true } : tuChoiTu(kq);
 }
 
 /** Hành động của luật interlock có ghi xuống thiết bị không: `alert` không bao giờ dispatch (interlockEngine chỉ auto-block hành động khác). */
@@ -63,7 +115,7 @@ export { giaTriLenhInterlock };
 export const soHienThi = (n: number | null | undefined): string | number => (n == null ? "—" : n);
 
 export type MaViPham = Exclude<KetQuaNhatQuan, { ok: true }>["ma"];
-export type ViPhamInterlock = { ruleId: number; ruleName: string; ma: MaViPham; chiTiet: string };
+export type ViPhamInterlock = { ruleId: number; ruleName: string; ma: MaViPham; chiTiet: string; luoi?: LuoiLech };
 
 export type LuatNhamTag = { id: number; name: string; action: string; enabled: boolean; commandValue: unknown };
 
@@ -94,11 +146,10 @@ export async function khoaLuatNhamTagTx(tx: DbHoacTx, e: { adapterId: number; ta
  * `tag` mới. Trả vi phạm ĐẦU TIÊN (theo thứ tự đầu vào), không có ⇒ null.
  */
 export function viPhamInterlock(luat: ReadonlyArray<LuatNhamTag>, tag: KenhNhatQuan): ViPhamInterlock | null {
-  if (!kenhDaKhai(tag)) return null;
   for (const r of luat) {
     if (r.enabled !== true || !luatCoGhiLenh(r.action)) continue;
-    const kq = kiemNhatQuanKenh(tag, giaTriLenhInterlock(r));
-    if (!kq.ok) return { ruleId: r.id, ruleName: r.name, ma: kq.ma, chiTiet: kq.chiTiet };
+    const kq = kiemLenhInterlockTrenKenh(tag, giaTriLenhInterlock(r)); // R1b-1 T13: kênh chưa khai ⇒ lưới thô (trước: bỏ qua mọi kênh chưa khai)
+    if (!kq.ok) return { ruleId: r.id, ruleName: r.name, ma: kq.ma, chiTiet: kq.chiTiet, ...(kq.luoi ? { luoi: kq.luoi } : {}) };
   }
   return null;
 }
@@ -111,7 +162,7 @@ export function viPhamInterlock(luat: ReadonlyArray<LuatNhamTag>, tag: KenhNhatQ
 export async function kiemLenhInterlockTx(
   tx: DbHoacTx,
   luat: { action: string; targetAdapterId: number | null | undefined; commandTag: string | null | undefined; commandValue: unknown },
-): Promise<{ tag: KenhNhatQuan & { tagKey: string }; ma: MaViPham; chiTiet: string } | null> {
+): Promise<{ tag: KenhNhatQuan & { tagKey: string }; ma: MaViPham; chiTiet: string; luoi?: LuoiLech } | null> {
   if (!luatCoGhiLenh(luat.action) || luat.targetAdapterId == null || !luat.commandTag) return null;
   const [tag] = await tx
     .select({
@@ -130,6 +181,6 @@ export async function kiemLenhInterlockTx(
     .limit(1)
     .for("share");
   if (!tag) return null;
-  const kq = kiemNhatQuanKenh(tag, giaTriLenhInterlock(luat));
-  return kq.ok ? null : { tag, ma: kq.ma, chiTiet: kq.chiTiet };
+  const kq = kiemLenhInterlockTrenKenh(tag, giaTriLenhInterlock(luat)); // R1b-1 T13: kênh chưa khai ⇒ lưới thô
+  return kq.ok ? null : { tag, ma: kq.ma, chiTiet: kq.chiTiet, ...(kq.luoi ? { luoi: kq.luoi } : {}) };
 }

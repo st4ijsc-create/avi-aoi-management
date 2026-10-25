@@ -63,6 +63,9 @@ class NuaMoDriver implements OtDriver {
     if (!this.connected) throw new Error("not connected");
     const p: Phien = { onTick: tuyChon?.onTick, closed: false };
     this.phien.push(p);
+    // R1b-1 T3 — như vòng poll chung (T12 D2): lần đọc ĐẦU chạy ngay lúc subscribe và (thiết bị còn trả lời lúc nối) là đọc tốt.
+    // Cờ V2 bật ⇒ otManager chỉ báo `connected` sau tick đọc tốt đầu tiên của phiên; không có nó thì không phiên nào thành connected.
+    p.onTick?.(TICK_TOT);
     return {
       close: async () => {
         p.closed = true;

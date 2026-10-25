@@ -948,7 +948,7 @@ Hạng mục gốc (3) 'tiêu chuẩn hóa cài đặt & đồng bộ' cho thi�
 - edgeGatewayRuntime + edge_nodes registry + UNS store-forward biên ≥24h — server/services/edge/edgeGatewayRuntime.ts, drizzle/schema/edge.ts — mô hình edge tự chủ khi cần tách gateway
 - st4i-standard adapter + hotFolderService + doc 28 spec (JSON/CSV/XML, spec_version additive-only) — server/services/vision/adapters/st4iStandard.ts — KHUÔN MẪU viết spec tương tự cho automation feed (st4i process-result spec)
 - /v1 openapi.json + asyncapi.json self-describe + envelope {ok,data,error} + v1Guard license/audit — server/api/v1/, server/_core/index.ts:1037-1047 — bộ khung công bố contract
-- webhookBridge HMAC-signed outbound (inspection.committed, equipment.command.executed...) — server/api/v1/webhookBridge.ts — kênh đẩy sự kiện cho hệ thống IoT nội bộ tiêu thụ
+- webhookBridge HMAC-signed outbound (inspection.committed, andon.raised, spc.violation, ng.alert; `equipment.command.executed` chỉ còn phát cho lệnh robot — lệnh OT qua REST v1 `POST /api/v1/equipment/:id/commands` trả 501, dùng HMI SCADA; xem ADAPTER_SDK.md, R1b-1 D8) — server/api/v1/webhookBridge.ts — kênh đẩy sự kiện cho hệ thống IoT nội bộ tiêu thụ
 - processResultService + genealogy hash-chain (serialNumber, stepType, metrics, recipeRef) — server/services/processResultService.ts — bảng đích đúng cho automation, chỉ thiếu cửa machine-credential
 - Rate-limit 3 tầng theo credential (createMachineIngestLimiter R6 body-key sau NAT, createOtIngestLimiter, per-key 600/min) — server/_core/index.ts:287-311 — không cần thiết kế lại throttling
 

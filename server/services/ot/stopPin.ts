@@ -182,6 +182,66 @@ export async function loadStopPins(db: StopPinDb, adapterId: number): Promise<St
   return pins;
 }
 
+// ─── kiem-dinh R1b-1 H1 (b) — ghim mà STOP HMI (`scadaCommands.dungMay`) được gửi ────────────────────────────────────────────────
+
+/**
+ * kiem-dinh R1b-1 H1 (b) (điều phối 2026-10-25) — STOP HMI là lệnh MỨC 1 một bước (sàn vai operator, không 2FA, miễn chế độ / dải / policy /
+ * interlock). Nó chỉ được gửi ghim của tag có mức tác động ≤ `MUC_TOI_DA_STOP_HMI`: ghim trên tag mức cao hơn là một lệnh ghi mức cao đội lốt
+ * STOP. Mức NULL ⇒ suy như `kenhScada.mucTacDongKenh` (fail-closed = 5) ⇒ tag CHƯA khai mức bị bỏ qua — muốn STOP HMI tới tag nào thì khai
+ * `actuationLevel = 1` cho tag đó (báo cáo nghiệm thu §7). Dispatcher / đường OT khác KHÔNG đổi (luật này chỉ ở STOP HMI và bộ khảo sát của nó).
+ */
+export const MUC_TOI_DA_STOP_HMI = 1;
+
+export type StopPinTagRowMuc = StopPinTagRow & { actuationLevel: number | null };
+/** Một ghim hợp lệ bị STOP HMI BỎ QUA (`ly_do` cố định "muc_cao"); `muc` = mức hiệu lực (NULL đã suy thành 5). */
+export type GhimBoQuaHmi = { tagKey: string; ly_do: "muc_cao"; muc: number };
+
+/** Mức hiệu lực của một tag cho STOP HMI — cùng phép suy với `mucTacDongKenh` (NULL ⇒ 5). */
+function mucHieuLuc(level: number | null | undefined): number {
+  return level ?? 5;
+}
+
+/**
+ * MỘT LUẬT DUY NHẤT (kiem-dinh R1b-1 I-A, fix round 2) cho: STOP HMI `dungMayHmi` (qua `loadStopPinsHmi`), tool AI `machine_stop` (qua
+ * `loadStopPinsHmi`) + cổng mức AI `mucKenhChoAi` (dừng ghim chỉ tính ghim `gui`), và khảo sát khả năng dừng `khaNangDung`.
+ * THUẦN — tách ghim DỪNG hợp lệ (`stopPinsFromTagRows`: enabled + writable + giá trị còn đúng kiểu) của một adapter thành ghim STOP HMI GỬI được
+ * (mức hiệu lực là số nguyên trong [1, MUC_TOI_DA_STOP_HMI]) và ghim BỎ QUA (mọi mức khác — kể cả giá trị lạ lúc chạy: fail-closed).
+ */
+export function phanLoaiGhimStopHmi(rows: ReadonlyArray<StopPinTagRowMuc>): { gui: StopPin[]; boQua: GhimBoQuaHmi[] } {
+  const mucTheoTag = new Map(rows.map((r) => [r.tagKey, mucHieuLuc(r.actuationLevel)] as const));
+  const gui: StopPin[] = [];
+  const boQua: GhimBoQuaHmi[] = [];
+  for (const p of stopPinsFromTagRows(rows)) {
+    const muc = mucTheoTag.get(p.tagKey) ?? 5;
+    if (Number.isInteger(muc) && muc >= 1 && muc <= MUC_TOI_DA_STOP_HMI) gui.push(p);
+    else boQua.push({ tagKey: p.tagKey, ly_do: "muc_cao", muc });
+  }
+  return { gui, boQua };
+}
+
+/**
+ * Ghim DỪNG của MỘT adapter cho STOP HMI: như `loadStopPins` (cùng điều kiện SQL, cùng bộ nhớ "adapter có ghim" — tính theo MỌI ghim hợp lệ, vì
+ * dispatcher dùng nó cho mọi đường STOP) + mức tác động ⇒ `phanLoaiGhimStopHmi`. Lỗi DB ⇒ NÉM (QĐ D-2 của dungMay: adapter đó không gửi gì).
+ */
+export async function loadStopPinsHmi(db: StopPinDb, adapterId: number): Promise<{ gui: StopPin[]; boQua: GhimBoQuaHmi[] }> {
+  const token = stopPinReadToken(adapterId);
+  if (pinReadProbe) await pinReadProbe(adapterId);
+  const rows = await db
+    .select({
+      tagKey: deviceTags.tagKey,
+      dataType: deviceTags.dataType,
+      stopValue: deviceTags.stopValue,
+      writable: deviceTags.writable,
+      isEnabled: deviceTags.isEnabled,
+      actuationLevel: deviceTags.actuationLevel,
+    })
+    .from(deviceTags)
+    .where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.isEnabled, true), eq(deviceTags.writable, true)))
+    .orderBy(deviceTags.tagKey);
+  rememberStopPinPresence(adapterId, stopPinsFromTagRows(rows).length > 0, token);
+  return phanLoaiGhimStopHmi(rows);
+}
+
 // ─── Đặt / gỡ ghim (router deviceAdapter.tags.setStopPin) ──────────────────────────────────────────
 
 export interface NguoiSuaStopPin {
@@ -309,6 +369,8 @@ async function ghiAuditStopPinTx(
  *   • tag phải thuộc ĐÚNG adapter đó (tra theo cặp adapterId + tagKey) — tag của adapter khác ⇒
  *     không tìm thấy;
  *   • ĐẶT: tag writable + enabled, giá trị đúng kiểu; GỠ luôn được (thu hẹp);
+ *   • kiem-dinh R1b-1 H1 (a): `kiemCuoi` (router: TOTP tươi mức 5 — `kiemTotpCauHinh`) chạy SAU mọi kiểm hợp lệ, TRƯỚC lượt ghi (cả đặt lẫn
+ *     gỡ, cả lượt không đổi gì) — một lỗi kiểm hợp lệ không tiêu mã; mã sai ⇒ ném, giao dịch rollback, ghim không đổi;
  *   • không đổi gì ⇒ không ghi, không audit (`changed: false`).
  */
 export async function datStopPin(input: {
@@ -318,6 +380,11 @@ export async function datStopPin(input: {
   reason: string;
   nguoiSua: NguoiSuaStopPin;
   phamViMay: ReadonlyArray<number> | null;
+  /**
+   * kiem-dinh R1b-1 H1 (a) — kiểm CUỐI trong giao dịch (TOTP), ném để từ chối. BẮT BUỘC (fix round 2, m-1): một bên gọi mới quên truyền ⇒
+   * lỗi BIÊN DỊCH, không phải một ghim không mã. Bên gọi không cần mã (test, công cụ nội bộ) phải truyền `async () => {}` TƯỜNG MINH.
+   */
+  kiemCuoi: () => Promise<void>;
 }): Promise<KetQuaStopPin> {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
@@ -377,6 +444,9 @@ async function datStopPinTx(
       }
       sau = v.value;
     }
+
+    // kiem-dinh R1b-1 H1 (a) — TOTP CUỐI: sau kiểm hợp lệ (không tiêu mã cho lượt sai), trước no-op / lượt ghi.
+    await input.kiemCuoi();
 
     const truoc = tag.stopValue ?? null;
     if (cungGiaTri(truoc, sau)) {

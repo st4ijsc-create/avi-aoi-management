@@ -30,7 +30,7 @@
  *        channel_kind khai là kênh ghi (dispatch bước 3 cũng đòi writable: từ chối sớm cùng một lý do).
  *   QĐ-3 Thiếu `machine_control.canEdit` ⇒ mã riêng `PERMISSION_DENIED` (không gộp vào ROLE_FLOOR: cách gỡ khác — xin quyền, không đổi vai).
  *   QĐ-4 Băm (`__otPayloadHash`) tính trên giá trị ĐÃ ÉP KIỂU, `commandType "write_tag"`, `machineId` = máy của adapter — đúng cái
- *        Task 9 truyền vào `dispatch()` (argsJson). `lyDo` chỉ lưu ở `previewJson.lyDo` (attempts KHÔNG có cột lyDo; không đổi schema).
+ *        Task 9 truyền vào `dispatch()` (argsJson). `lyDo` lưu ở `previewJson.lyDo` VÀ (R1b-1 T7, mig 0433) ở cột `scada_command_attempts.ly_do` của MỌI dòng có lý do.
  *   QĐ-5 Gửi lại: khoá `idempotencyKey = "hmi:" + userId + ":" + clientRequestId`. Dòng còn `proposed` + chưa hết hạn + CÙNG lệnh
  *        (adapter, tag, giá trị thô) ⇒ trả lại requestId/expiresAt/preview cũ, KHÔNG ghi attempts mới (cùng một lần thử). Ngược lại ⇒
  *        DA_XU_LY (có attempts, request_id = dòng cũ). Hai yêu cầu giống hệt cùng lúc: ràng buộc unique của idempotencyKey quyết;
@@ -45,7 +45,7 @@
  * ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
  */
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags, machines, scadaCommandAttempts, users, type DeviceTag } from "../../../drizzle/schema";
 import { getDb } from "../../db/connection";
 import { idsTrongPhamVi, type PhamViNguoiXem } from "../../db/hierarchy";
@@ -57,11 +57,16 @@ import type { MucRuiRo } from "../ot/aiControlGate";
 import { ackTimeoutMacDinhMs, dispatch, isOtControlEnabled, type DispatchResult, type DispatchStatus } from "../ot/commandDispatcher";
 import { isCommissioned, isCommissioningRequired } from "../ot/commissioningService";
 import { canonicalOtValue, otPayloadHash, withOtPayloadHash } from "../ot/otActionBinding";
-import { isEdgeControlSchemaMissing } from "../edge/edgeControlSchema";
+import { adapterOwnedByEdge } from "../ot/otAdapterOwnerGate";
 import { boDemDangBat, layGiaTri } from "./boDemHienTai";
-import { cheDoMay, TOOL_HMI_GHI_TAG, type LyDoCheDo } from "./cheDoMay";
+import { cheDoMay, TOOL_HMI_GHI_TAG, TOOL_HMI_STOP, type LyDoCheDo } from "./cheDoMay";
+import { loadStopPinsHmi, MUC_TOI_DA_STOP_HMI, type GhimBoQuaHmi } from "../ot/stopPin";
+import { recordAuditEvent } from "../audit/controlAuditService";
+import { OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS } from "../ot/otDeviceWrite";
+import { withDeadline } from "../ot/drivers/boundedClose";
 import { kiemGiaTriGhi, laKenhGhi, mucTacDongKenh } from "./kenhScada";
 import { giaHanKhoaChon, giuKhoaChon, LoiKhoaChonTranhChap, nhaKhoaChon } from "./khoaChon";
+import { laMaOn, nenGhiThuLenh } from "./dieuTietThuLenh";
 import { appError } from "../../_core/appError";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -115,12 +120,16 @@ export type MaTuChoiYeuCau =
   | "MAY_DA_DOI"
   // R1a Task 16 (bộ đếm TOTP sai, trong verifyTotpOnce)
   | "TOTP_TAM_KHOA"
-  | "TOTP_KHONG_KIEM_DUOC";
+  | "TOTP_KHONG_KIEM_DUOC"
+  // R1b-1 Task 2 (STOP HMI một bước)
+  | "CHUA_GHIM_STOP"
+  // kiem-dinh R1b-1 H1 (b) — máy CÓ ghim nhưng mọi ghim nằm trên tag mức tác động > 1 (STOP HMI bỏ qua tất cả)
+  | "GHIM_MUC_CAO";
 
 /** Một lần từ chối. `thongTin` là tham số cho appError (chỉ nguyên thuỷ) — router chọn câu i18n theo `ma`. */
 export type TuChoiYeuCau =
-  | { ma: "FEATURE_DISABLED" | "PERMISSION_DENIED" | "KHOA_CHON_LOI" | "DA_XU_LY" | "HET_HAN" | "KHOA_MAT" | "MAY_DA_DOI"; chiTiet: string }
-  | { ma: "NOT_FOUND"; chiTiet: string; entity: "adapter" | "deviceTag" | "scadaRequest" }
+  | { ma: "FEATURE_DISABLED" | "PERMISSION_DENIED" | "KHOA_CHON_LOI" | "DA_XU_LY" | "HET_HAN" | "KHOA_MAT" | "MAY_DA_DOI" | "CHUA_GHIM_STOP"; chiTiet: string }
+  | { ma: "NOT_FOUND"; chiTiet: string; entity: "adapter" | "deviceTag" | "scadaRequest" | "machine" }
   | { ma: "CHANNEL_READ_ONLY"; chiTiet: string; tagKey: string }
   | { ma: "TYPE_MISMATCH"; chiTiet: string; tagKey: string; dataType: string }
   | { ma: "OUT_OF_RANGE"; chiTiet: string; tagKey: string; min: number | null; max: number | null }
@@ -129,7 +138,8 @@ export type TuChoiYeuCau =
   | { ma: "TOTP_TAM_KHOA"; chiTiet: string; level: MucRuiRo; conLaiMs: number }
   | { ma: "EDGE_CHUA_HO_TRO"; chiTiet: string; edgeCode: string; edgeNodeId: number }
   | { ma: "MODE_LOCAL"; chiTiet: string; lyDo: LyDoCheDo }
-  | { ma: "DANG_DUOC_CHON"; chiTiet: string; boiUserId: number; boiTen: string; hetHanLuc: string };
+  | { ma: "DANG_DUOC_CHON"; chiTiet: string; boiUserId: number; boiTen: string; hetHanLuc: string }
+  | { ma: "GHIM_MUC_CAO"; chiTiet: string; soTag: number; tagKeys: string };
 
 export type GiaTriLenh = number | boolean | string;
 
@@ -200,6 +210,33 @@ type TagLenh = Pick<
 // ─── Nhật ký thử lệnh (WORM) ───────────────────────────────────────────────────────────────────────────────────────────────────
 type DbHoacTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
+/** Độ dài tối đa của `ly_do` (cột varchar(300), mig 0433). */
+export const LY_DO_TOI_DA = 300;
+/** C0 trừ TAB (U+0009), LF (U+000A), CR (U+000D). */
+// eslint-disable-next-line no-control-regex
+const KY_TU_DIEU_KHIEN_C0 = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
+
+/**
+ * R1b-1 T7 — chuẩn hoá chữ vào cột `ly_do`: trim, rỗng ⇒ NULL, cắt 300 ký tự theo điểm mã (không xé cặp thay thế UTF-16 — Postgres
+ * từ chối chuỗi UTF-8 hỏng). CHỈ nhận văn bản người dùng gõ (lý do) hoặc câu hệ thống mô tả kết cục — KHÔNG BAO GIỜ mã TOTP / bí mật
+ * (người gọi không truyền `input.totpCode`).
+ */
+export function catLyDo(s: string | null | undefined): string | null {
+  // R1b-1 T7 fix round 1 (I-1): Postgres KHÔNG lưu được U+0000 (text/varchar/jsonb) ⇒ INSERT ném, một từ chối có mã thành 500. Bỏ
+  // NUL và các ký tự điều khiển C0 khác (giữ TAB, LF, CR) TRƯỚC khi trim/cắt. Mọi chữ vào `ly_do` (kể cả câu hệ thống) đi qua đây.
+  const t = (s ?? "").replace(KY_TU_DIEU_KHIEN_C0, "").trim();
+  if (!t) return null;
+  const cp = Array.from(t);
+  return cp.length > LY_DO_TOI_DA ? cp.slice(0, LY_DO_TOI_DA).join("") : t;
+}
+
+/**
+ * Ghi MỘT dòng nhật ký thử lệnh (WORM — chỉ INSERT). R1b-1 T7:
+ *   · `lyDo` ⇒ cột `ly_do` (lý do người dùng nếu có, ngược lại câu hệ thống mô tả kết cục), cắt 300.
+ *   · Dòng `rejected` mang mã ồn (`MA_ON`) đi qua `nenGhiThuLenh`: quá 30 dòng/60 s/người ⇒ KHÔNG ghi (client vẫn nhận đúng mã — hàm này
+ *     chỉ quyết việc ghi sổ); sau cửa sổ ⇒ thêm MỘT dòng tổng kết `DIEU_TIET`. Mọi dòng khác (dispatched / proposed / confirmed /
+ *     cancelled / expired, từ chối ở cổng an toàn) LUÔN ghi.
+ */
 export async function ghiThuLenh(
   d: DbHoacTx,
   dong: {
@@ -212,10 +249,36 @@ export async function ghiThuLenh(
     stage: "request" | "confirm" | "dispatch" | "huy";
     outcome: "rejected" | "proposed" | "confirmed" | "dispatched" | "expired" | "cancelled";
     reasonCode?: string | null;
+    lyDo?: string | null;
     commandLogIds?: number[] | null;
   },
 ): Promise<void> {
+  let tongKet = 0;
+  if (dong.outcome === "rejected" && laMaOn(dong.reasonCode)) {
+    const q = nenGhiThuLenh(dong.userId, dong.reasonCode as string);
+    if (q.ghi === false) return;
+    if (q.ghi === "tong_ket") tongKet = q.soLan;
+  }
+  if (tongKet > 0) {
+    // Dòng tổng kết là SỔ PHỤ: lỗi ghi nó (R1b-1 T7 fix round 1, I-2) chỉ được log, KHÔNG được chặn dòng hiện tại và không đổi kết
+    // quả cho client. (Dòng `rejected` mã ồn không bao giờ nằm trong transaction ⇒ lỗi câu lệnh không làm hỏng transaction của ai.)
+    try {
+      await d.insert(scadaCommandAttempts).values({
+        userId: dong.userId,
+        stage: dong.stage,
+        outcome: "rejected",
+        reasonCode: "DIEU_TIET",
+        lyDo: catLyDo(`${tongKet} lần ${dong.reasonCode} bị gộp`),
+      });
+    } catch (err) {
+      logger.error(
+        { err: (err as Error)?.message ?? String(err), userId: dong.userId, reasonCode: dong.reasonCode, soLan: tongKet },
+        "[SCADA] ghi dòng tổng kết DIEU_TIET lỗi — bỏ qua, dòng hiện tại vẫn được ghi",
+      );
+    }
+  }
   await d.insert(scadaCommandAttempts).values({
+    lyDo: catLyDo(dong.lyDo),
     requestId: dong.requestId ?? null,
     userId: dong.userId,
     adapterId: dong.adapterId ?? null,
@@ -322,18 +385,11 @@ export async function kiemCongVaiTro(nguoi: NguoiGoiLenh, muc: MucRuiRo): Promis
  * adapter nào thuộc edge; lỗi khác ⇒ ném (không đoán "trung tâm").
  */
 export async function kiemCongEdge(db: Db, adapterId: number): Promise<Cong<object>> {
-  let rows: Array<{ edgeNodeId: number | null; edgeCode: string | null }>;
-  try {
-    rows = (await db.execute(sql`SELECT a."edgeNodeId" AS "edgeNodeId", n."code" AS "edgeCode"
-      FROM device_adapters a LEFT JOIN edge_nodes n ON n."id" = a."edgeNodeId" WHERE a."id" = ${adapterId}`)) as unknown as typeof rows;
-  } catch (err) {
-    if (isEdgeControlSchemaMissing(err)) return { ok: true };
-    throw err;
-  }
-  const r = rows[0];
-  if (!r || r.edgeNodeId === null || r.edgeNodeId === undefined) return { ok: true };
-  const edgeNodeId = Number(r.edgeNodeId);
-  const edgeCode = r.edgeCode ?? String(edgeNodeId);
+  // R1b-1 T10 (fix round 1, I-3) — đây là KIỂM TRƯỚC, không giữ giao dịch: dùng bản KHÔNG KHOÁ (`adapterOwnedByEdge`), đúng như truy vấn trần trước T10
+  // (không BEGIN, không FOR SHARE). Dispatcher đọc lại dưới FOR SHARE ở bước đặt chỗ. Lỗi ngoài "thiếu 0374" ném.
+  const chu = await adapterOwnedByEdge(db, adapterId);
+  if (!chu) return { ok: true };
+  const { edgeNodeId, edgeCode } = chu;
   return {
     ok: false,
     tuChoi: { ma: "EDGE_CHUA_HO_TRO", edgeCode, edgeNodeId, chiTiet: `Adapter do edge ${edgeCode} sở hữu — HMI trung tâm chưa ra lệnh qua edge (R1c).` },
@@ -473,9 +529,12 @@ export type KetQuaYeuCauGhi = { ok: true; ketQua: KetQuaYeuCau; moi: boolean } |
 export async function yeuCauGhiTag(
   nguoi: NguoiGoiLenh,
   pv: PhamViNguoiXem,
-  input: DauVaoYeuCau,
+  dauVao: DauVaoYeuCau,
   nowDate: Date = new Date(),
 ): Promise<KetQuaYeuCauGhi> {
+  // R1b-1 T7 fix round 1 (I-1) — phòng thủ chiều sâu: router đã từ chối NUL, nhưng `lyDo` còn vào jsonb của dòng chờ + cột ly_do; lọc ở đây
+  // để một lối gọi khác (hoặc router sửa sau này) không biến một từ chối có mã thành 500.
+  const input: DauVaoYeuCau = { ...dauVao, lyDo: catLyDo(dauVao.lyDo) ?? "" };
   // 1. cờ — không chạm DB
   if (!lenhHmiBat()) return { ok: false, tuChoi: { ma: "FEATURE_DISABLED", chiTiet: "SCADA_COMMANDS_ENABLED tắt." } };
 
@@ -487,7 +546,7 @@ export async function yeuCauGhiTag(
   // 2. phạm vi
   const a = await adapterTrongPhamViLenh(db, pv, input.adapterId);
   if (!a) {
-    await ghiThuLenh(db, { userId, stage: "request", outcome: "rejected", reasonCode: "NOT_FOUND" });
+    await ghiThuLenh(db, { userId, stage: "request", outcome: "rejected", reasonCode: "NOT_FOUND", lyDo: input.lyDo });
     return { ok: false, tuChoi: { ma: "NOT_FOUND", entity: "adapter", chiTiet: "Adapter không tồn tại." } };
   }
 
@@ -502,6 +561,7 @@ export async function yeuCauGhiTag(
       stage: "request",
       outcome: "rejected",
       reasonCode: t.ma,
+      lyDo: input.lyDo, // lý do người dùng gõ ở `request` (R1b-1 T7)
     });
     return { ok: false as const, tuChoi: t };
   };
@@ -580,6 +640,7 @@ export async function yeuCauGhiTag(
         afterFormula: giaTri,
         stage: "request",
         outcome: "proposed",
+        lyDo: input.lyDo,
       });
       return { ok: true } as const;
     });
@@ -787,7 +848,7 @@ export async function xacNhanGhiTag(
   // 1. dòng chờ của chính người gọi
   const cho = await dongChoCuaNguoi(db, requestId, userId);
   if (!cho) {
-    await ghiThuLenh(db, { userId, stage: "confirm", outcome: "rejected", reasonCode: "NOT_FOUND" });
+    await ghiThuLenh(db, { userId, stage: "confirm", outcome: "rejected", reasonCode: "NOT_FOUND", lyDo: KHONG_THAY_YEU_CAU.chiTiet });
     return { ok: false, tuChoi: KHONG_THAY_YEU_CAU };
   }
   const { r, args } = cho;
@@ -798,6 +859,7 @@ export async function xacNhanGhiTag(
     outcome: "rejected" | "confirmed" | "dispatched" | "expired",
     reasonCode: string | null,
     commandLogIds?: number[],
+    lyDo?: string | null,
   ) =>
     ghiThuLenh(db, {
       requestId,
@@ -809,6 +871,7 @@ export async function xacNhanGhiTag(
       stage,
       outcome,
       reasonCode,
+      lyDo,
       commandLogIds: commandLogIds ?? null,
     });
   const phat = (p: { status: string; reason?: string; readBackValue?: unknown }) =>
@@ -830,14 +893,14 @@ export async function xacNhanGhiTag(
 
   /** Từ chối GIỮ NGUYÊN dòng chờ + khoá (DA_XU_LY, 2FA — QĐ T9-2/T9-3). */
   const tuChoiGiu = async (t: TuChoiYeuCau): Promise<KetQuaXacNhanGhi> => {
-    await thu("confirm", "rejected", t.ma);
+    await thu("confirm", "rejected", t.ma, undefined, t.chiTiet);
     return { ok: false, tuChoi: t };
   };
   /** Từ chối KẾT THÚC yêu cầu (QĐ T9-3): CAS proposed→denied rồi mới nhả khoá; CAS trượt ⇒ DA_XU_LY, không nhả. */
   const tuChoiKetThuc = async (t: TuChoiYeuCau): Promise<KetQuaXacNhanGhi> => {
     if (!(await doiTrangThaiCho(db, requestId, userId, "proposed", "denied", { resultJson: { ma: t.ma } }))) return tuChoiGiu(DA_XU_LY_CONFIRM);
     await nhaKhoaChon(db, khoaKey);
-    await thu("confirm", "rejected", t.ma);
+    await thu("confirm", "rejected", t.ma, undefined, t.chiTiet);
     await phat({ status: "rejected", reason: t.ma });
     return { ok: false, tuChoi: t };
   };
@@ -850,7 +913,7 @@ export async function xacNhanGhiTag(
   if (r.expiresAt.getTime() - now < CON_LAI_TOI_THIEU_MS) {
     if (!(await doiTrangThaiCho(db, requestId, userId, "proposed", "expired"))) return tuChoiGiu(DA_XU_LY_CONFIRM);
     await nhaKhoaChon(db, khoaKey);
-    await thu("confirm", "expired", "HET_HAN");
+    await thu("confirm", "expired", "HET_HAN", undefined, hetHan.chiTiet);
     await phat({ status: "expired", reason: "HET_HAN" });
     return { ok: false, tuChoi: hetHan };
   }
@@ -927,7 +990,7 @@ export async function xacNhanGhiTag(
     if (st === "proposed") {
       if (await doiTrangThaiCho(db, requestId, userId, "proposed", "expired")) {
         await nhaKhoaChon(db, khoaKey);
-        await thu("confirm", "expired", "HET_HAN");
+        await thu("confirm", "expired", "HET_HAN", undefined, hetHan.chiTiet);
         await phat({ status: "expired", reason: "HET_HAN" });
         return { ok: false, tuChoi: hetHan };
       }
@@ -940,7 +1003,7 @@ export async function xacNhanGhiTag(
     if (st !== "bi_tu_choi_ghi") await phat({ status: st === "expired" ? "expired" : "rejected", reason: t.ma });
     return tuChoiGiu(t);
   }
-  await thu("confirm", "confirmed", null);
+  await thu("confirm", "confirmed", null, undefined, "Người dùng xác nhận — các cổng kiểm đã đạt, chuyển sang gửi lệnh.");
   await phat({ status: "confirmed" });
 
   // 7. dispatch — đường ghi DUY NHẤT; băm khớp request: machineId/commandType/giá trị ĐÚNG như argsJson (ledger ruling T8)
@@ -977,7 +1040,7 @@ export async function xacNhanGhiTag(
       await nhaAnToan();
     }
     try {
-      await thu("dispatch", "rejected", "DISPATCH_LOI");
+      await thu("dispatch", "rejected", "DISPATCH_LOI", undefined, "dispatch ném lỗi — lệnh không được gửi.");
       await phat({ status: "rejected", reason: "DISPATCH_LOI" });
     } catch (e) {
       ghiLoiChot(e, requestId, "attempts_dispatch_nem");
@@ -1013,7 +1076,13 @@ export async function xacNhanGhiTag(
   }
 
   // 9. attempts (QĐ T9-5)
-  await thu("dispatch", "dispatched", kq.reason ?? (kq.ok ? null : String(kq.status).toUpperCase()), kq.commandLogIds);
+  await thu(
+    "dispatch",
+    "dispatched",
+    kq.reason ?? (kq.ok ? null : String(kq.status).toUpperCase()),
+    kq.commandLogIds,
+    `Kết quả gửi: ${kq.status}${kq.reason ? ` (${kq.reason})` : ""}`,
+  );
   // 10. socket
   await phat({ status: kq.status, ...(kq.reason ? { reason: kq.reason } : {}), ...(readBackValue !== undefined ? { readBackValue } : {}) });
 
@@ -1043,17 +1112,17 @@ export async function huyYeuCauGhi(nguoi: NguoiGoiLenh, input: { requestId: stri
 
   const cho = await dongChoCuaNguoi(db, requestId, userId);
   if (!cho) {
-    await ghiThuLenh(db, { userId, stage: "huy", outcome: "rejected", reasonCode: "NOT_FOUND" });
+    await ghiThuLenh(db, { userId, stage: "huy", outcome: "rejected", reasonCode: "NOT_FOUND", lyDo: KHONG_THAY_YEU_CAU.chiTiet });
     return { ok: false, tuChoi: KHONG_THAY_YEU_CAU };
   }
   const { args } = cho;
   const dong = { requestId, userId, adapterId: args.adapterId, tagKey: args.tagKey, requestedValue: args.value, afterFormula: args.value };
   if (!(await doiTrangThaiCho(db, requestId, userId, "proposed", "cancelled"))) {
-    await ghiThuLenh(db, { ...dong, stage: "huy", outcome: "rejected", reasonCode: "DA_XU_LY" });
+    await ghiThuLenh(db, { ...dong, stage: "huy", outcome: "rejected", reasonCode: "DA_XU_LY", lyDo: "Yêu cầu đã được xử lý — không huỷ được." });
     return { ok: false, tuChoi: { ma: "DA_XU_LY", chiTiet: "Yêu cầu này đã được xử lý — không huỷ được." } };
   }
   await nhaKhoaChon(db, { adapterId: args.adapterId, tagKey: args.tagKey, requestId });
-  await ghiThuLenh(db, { ...dong, stage: "huy", outcome: "cancelled" });
+  await ghiThuLenh(db, { ...dong, stage: "huy", outcome: "cancelled", lyDo: "Người dùng huỷ yêu cầu." });
   await phatScadaCmd(userId, { requestId, status: "cancelled", at: nowDate.toISOString() });
   return { ok: true, ketQua: { requestId, status: "cancelled" } };
 }
@@ -1185,4 +1254,377 @@ export async function trangThaiYeuCauGhi(
       }),
     },
   };
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// SCADA R1b-1 Task 2 (Review Focus 1–3) — STOP HMI MỘT BƯỚC: `scadaCommands.dungMay`.
+//
+// Người vận hành bấm "DỪNG MÁY" ⇒ máy chủ gửi các giá trị DỪNG ĐÃ GHIM (`device_tags.stop_value`, `loadStopPins`) tới MỌI adapter ĐANG BẬT
+// của máy, qua `dispatch()` có sẵn (đường ghi DUY NHẤT). Dispatcher đã cho STOP khớp ghim mọi đặc quyền: miễn policy + interlock, miễn dải
+// và chế độ (3b/3c, theo DỮ LIỆU — cả lệnh), bỏ preflight safety, định tuyến sang edge cho adapter do edge sở hữu. Ở đây chỉ nối HMI vào.
+//
+// THỨ TỰ (điều phối 2026-10-24, cố định):
+//   1. cờ `SCADA_COMMANDS_ENABLED`                      ⇒ FEATURE_DISABLED (không chạm DB — như request/confirm)
+//   2. phạm vi máy (idsTrongPhamVi strict)             ⇒ NOT_FOUND (entity machine; không tồn tại = ngoài phạm vi) + 1 dòng attempts
+//   3. sàn vai mức 1 (`vaiTroDuocGhi(1)`: operator trở lên) → `machine_control.canEdit` ⇒ ROLE_FLOOR | PERMISSION_DENIED + 1 dòng attempts
+//      (mức 1 ⇒ KHÔNG 2FA — kiemCongVaiTro chỉ đòi 2FA ở mức ≠ 1|3)
+//   4. adapter bật của máy; mỗi adapter `loadStopPinsHmi` ⇒ không adapter nào có ghim ⇒ CHUA_GHIM_STOP + 1 dòng attempts + audit.
+//      kiem-dinh R1b-1 H1 (b): CHỈ ghim của tag mức tác động ≤ 1 được gửi (NULL ⇒ 5 ⇒ bỏ qua); ghim mức cao bị BỎ QUA TỪNG TAG và báo
+//      trong kết quả (`boQua: [{adapterId, code, tagKey, ly_do: "muc_cao", muc}]`) + audit — KHÔNG chặn các ghim hợp lệ khác; có ghim mà
+//      MỌI ghim mức cao ⇒ GHIM_MUC_CAO (cùng khuôn CHUA_GHIM_STOP: 1 dòng attempts + audit + "dùng E-STOP cứng")
+//   5. SONG SONG mỗi adapter có ghim: một dòng `ai_pending_actions` (tool hmi.stop, status 'confirmed', TTL 30 s, băm otPayloadHash của
+//      CHÍNH các ghim) → `dispatch()` hitl requireBoundAction, commandType "stop", đọc lại bắt buộc → chốt dòng chờ → 1 dòng attempts
+//   6. MỘT `recordAuditEvent` cho lần bấm: ai bấm, máy, từng adapter + giá trị ghim đã gửi + kết quả (status, edgeStopRequest).
+//
+// KHÔNG: khoá chọn, kiểm chế độ ở đây, 2FA, hỏi-rồi-xác-nhận (một bước). Mode gate của dispatcher miễn STOP khớp ghim (cả lệnh) — payload
+// dựng từ CHÍNH các ghim nên luôn khớp; một payload khác dưới tool `hmi.stop` bị MODE_LOCAL ở máy LOCAL (cổng 3c luôn chạy cho hmi.*).
+//
+// QUYẾT ĐỊNH:
+//   QĐ D-1 Mỗi lần bấm, mỗi adapter: dòng chờ RIÊNG (actionId mới) + khoá idempotency RIÊNG `hmistop:<user>:<clientRequestId>:<adapter>` +
+//        khoá dispatch `hmistop:<actionId>` ⇒ bấm hai lần / hai người cùng lúc đều GỬI (Review Focus 3), không DA_XU_LY, không trùng khoá
+//        dispatch. Gửi lại CÙNG clientRequestId (client thử lại sau lỗi mạng) ⇒ khoá dòng chờ trùng (23505) ⇒ thêm hậu tố actionId rồi VẪN
+//        gửi: một STOP không bao giờ bị từ chối vì trùng khoá (gửi lại giá trị dừng là vô hại).
+//   QĐ D-2 Lỗi một adapter (đọc ghim lỗi / dispatch ném / ghi sổ lỗi) KHÔNG chặn adapter khác; kết quả trả theo từng adapter. Đọc ghim lỗi ⇒
+//        adapter đó `failed` GHIM_LOI_DOC (không gửi gì — ghim là dữ liệu an toàn, L-7); dispatch ném ⇒ `failed` DISPATCH_LOI.
+//   QĐ D-3 Sau dispatch, dòng chờ còn 'confirmed' (mô phỏng / edge / từ chối trước đặt chỗ) ⇒ chốt 'executed' (simulated) | 'bi_tu_choi_ghi'
+//        (+ resultJson) như QĐ T9-4 — không để lại uỷ quyền 'confirmed' còn hạn; đã qua đặt chỗ mà `rejected` ⇒ executed→bi_tu_choi_ghi.
+//   QĐ D-4 attempts: stage 'dispatch' (CHECK của mig 0431 không có stage riêng), tag_key NULL (nhiều tag), requested_value = các ghim đã gửi;
+//        outcome 'dispatched' + reason_code như QĐ T9-5; dispatch ném ⇒ 'rejected' DISPATCH_LOI. `ly_do` thêm ở Task 7 (ruling R-1).
+//   QĐ D-5 Audit ghi SAU khi gửi, FIRE-AND-FORGET dưới hạn HMI_STOP_AUDIT_DEADLINE_MS (fix round 1): STOP không chờ sổ; lỗi / quá hạn
+//        chỉ log — không che kết quả STOP đã gửi khỏi người vận hành.
+//   QĐ D-6 Cờ `SCADA_COMMANDS_ENABLED` vẫn là công tắc tắt hẳn của mọi lệnh HMI (cùng request/confirm); tắt ⇒ dùng E-STOP cứng.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+/** commandType của STOP HMI — một phần của băm. */
+export const COMMAND_TYPE_HMI_STOP = "stop";
+/** TTL của dòng chờ `hmi.stop` (chỉ để dispatcher xác minh ràng buộc — dòng được tạo đã 'confirmed' rồi gửi ngay). */
+export const HMI_STOP_TTL_MS = 30_000;
+/** fix round 1 — hạn của audit fire-and-forget (cùng hạn audit override STOP ghim của dispatcher). */
+export const HMI_STOP_AUDIT_DEADLINE_MS = OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS;
+
+/**
+ * fix round 2 (trivial 7) — hạn có hẹn giờ `unref`: một audit treo không giữ tiến trình sống tới hết hạn. Rà soát cuối M-5: bản sao riêng đã
+ * gộp vào `withDeadline(…, { unref: true })` (drivers/boundedClose — một helper cho cả vongPoll).
+ */
+const voiHanUnref = <T>(p: Promise<T>, ms: number, nhan: string): Promise<T> => withDeadline(p, ms, nhan, { unref: true });
+export { TOOL_HMI_STOP };
+
+export interface DauVaoDungMay {
+  machineId: number;
+  lyDo?: string;
+  clientRequestId: string;
+}
+
+export interface KetQuaDungMayAdapter {
+  adapterId: number;
+  code: string;
+  status: DispatchStatus | "rejected";
+  ok: boolean;
+  simulated: boolean;
+  reason?: string;
+  /** adapter do edge sở hữu: STOP đã xếp hàng cho node edge (`DispatchResult.edgeStopRequest`) */
+  edgeStopRequest?: boolean;
+  /** fix round 2 — edge KHÔNG nhận được hàng đợi ⇒ STOP dự phòng của trung tâm (`DispatchResult.centralFallbackStop`) đã gửi */
+  centralFallbackSent?: boolean;
+  /** các giá trị ghim của lệnh STOP tới adapter này (đúng thứ truyền cho dispatch; rỗng khi đọc ghim lỗi) — kết quả thật ở `status` */
+  writes: Array<{ tagKey: string; value: unknown }>;
+  commandLogIds: number[];
+}
+
+/** kiem-dinh R1b-1 H1 (b) — một ghim hợp lệ mà lần bấm này KHÔNG gửi (tag mức tác động > 1; mức NULL đã suy thành 5). */
+export type GhimBoQuaDungMay = { adapterId: number; code: string } & GhimBoQuaHmi;
+
+export type KetQuaDungMay =
+  | { ok: true; ketQua: { ketQua: KetQuaDungMayAdapter[]; boQua: GhimBoQuaDungMay[] } }
+  | { ok: false; tuChoi: TuChoiYeuCau };
+
+type DichDung = { id: number; code: string; writes: Array<{ tagKey: string; value: unknown }> };
+
+/** Một adapter: dòng chờ hmi.stop → dispatch → chốt → attempts. Không bao giờ ném (QĐ D-2). */
+async function guiStopMotAdapter(
+  db: Db,
+  nguoi: NguoiGoiLenh,
+  machineId: number,
+  d: DichDung,
+  input: DauVaoDungMay,
+  lyDo: string | null,
+): Promise<KetQuaDungMayAdapter> {
+  const userId = nguoi.user.id;
+  const actionId = randomUUID();
+  const coBan = { adapterId: d.id, code: d.code, writes: d.writes };
+  const thu = (outcome: "dispatched" | "rejected", reasonCode: string | null, commandLogIds: number[] = [], moTa?: string) =>
+    ghiThuLenh(db, {
+      requestId: actionId,
+      userId,
+      adapterId: d.id,
+      tagKey: null,
+      requestedValue: d.writes,
+      afterFormula: d.writes,
+      stage: "dispatch",
+      outcome,
+      reasonCode,
+      lyDo: lyDo ?? moTa, // lý do người dùng gõ (tuỳ chọn) ưu tiên, không có ⇒ câu hệ thống mô tả kết cục (R1b-1 T7)
+      commandLogIds,
+    }).catch((err) => ghiLoiChot(err, actionId, "attempts_hmi_stop"));
+
+  // 1. dòng chờ — băm trên CHÍNH các ghim (đúng thứ dispatch nhận)
+  const hash = otPayloadHash({ tool: TOOL_HMI_STOP, adapterId: d.id, machineId, commandType: COMMAND_TYPE_HMI_STOP, writes: d.writes });
+  const khoa = `hmistop:${userId}:${input.clientRequestId}:${d.id}`;
+  const dong = (idempotencyKey: string) => ({
+    id: actionId,
+    tool: TOOL_HMI_STOP,
+    argsJson: { adapterId: d.id, machineId, commandType: COMMAND_TYPE_HMI_STOP, writes: d.writes },
+    userId,
+    userRole: nguoi.user.role,
+    requiredPermissionJson: { module: "machine_control", action: "canEdit" },
+    summary: `HMI: DỪNG MÁY — STOP đã ghim (${d.writes.length} tag) tới adapter ${d.code}`,
+    previewJson: withOtPayloadHash({ lyDo, clientRequestId: input.clientRequestId, writes: d.writes }, hash),
+    status: "confirmed" as const,
+    idempotencyKey,
+    expiresAt: new Date(Date.now() + HMI_STOP_TTL_MS),
+  });
+  try {
+    try {
+      await db.insert(aiPendingActions).values(dong(khoa));
+    } catch (err) {
+      if (!laTrungKhoa(err)) throw err;
+      // QĐ D-1 — cùng clientRequestId gửi lại: VẪN gửi, khoá có hậu tố actionId (duy nhất)
+      await db.insert(aiPendingActions).values(dong(`${khoa}:${actionId}`));
+    }
+  } catch (err) {
+    logger.error({ err: (err as Error)?.message ?? String(err), adapterId: d.id }, "[SCADA] STOP HMI: không tạo được dòng chờ — adapter này KHÔNG được gửi");
+    await thu("rejected", "DISPATCH_LOI", [], "STOP: không tạo được dòng chờ hoặc dispatch ném lỗi — adapter này không được gửi.");
+    return { ...coBan, status: "failed", ok: false, simulated: false, reason: "DISPATCH_LOI", commandLogIds: [] };
+  }
+
+  // 2. dispatch — STOP khớp ghim: miễn chế độ / dải / policy / interlock / preflight; edge ⇒ edgeStopRequest
+  let kq: DispatchResult;
+  try {
+    kq = await dispatch({
+      adapterId: d.id,
+      machineId,
+      commandType: COMMAND_TYPE_HMI_STOP,
+      writes: d.writes,
+      triggeredBy: { kind: "hitl", tool: TOOL_HMI_STOP, actionId, confirmedBy: userId, requestedBy: userId, requireBoundAction: true },
+      idempotencyKey: `hmistop:${actionId}`,
+      docLai: "bat_buoc",
+    });
+  } catch (err) {
+    logger.error({ err: (err as Error)?.message ?? String(err), adapterId: d.id, actionId }, "[SCADA] STOP HMI: dispatch ném — dùng E-STOP cứng");
+    try {
+      await doiTrangThaiCho(db, actionId, userId, "confirmed", "bi_tu_choi_ghi", { resultJson: { ma: "DISPATCH_LOI" } });
+    } catch (e) {
+      ghiLoiChot(e, actionId, "hmi_stop_dispatch_nem");
+    }
+    await thu("rejected", "DISPATCH_LOI", [], "STOP: không tạo được dòng chờ hoặc dispatch ném lỗi — adapter này không được gửi.");
+    return { ...coBan, status: "failed", ok: false, simulated: false, reason: "DISPATCH_LOI", commandLogIds: [] };
+  }
+
+  // 3. chốt dòng chờ (QĐ D-3)
+  const edge = !!kq.edgeStopRequest;
+  const ketCuc = {
+    resultJson: {
+      status: kq.status,
+      reason: kq.reason ?? null,
+      commandLogIds: kq.commandLogIds,
+      ...(kq.edgeStopRequest ? { edgeStopRequest: kq.edgeStopRequest } : {}),
+      ...(kq.centralFallbackStop ? { centralFallbackStop: kq.centralFallbackStop } : {}),
+    },
+  };
+  // fix round 1 (minor 4) — STOP đã RA KHỎI trung tâm (mô phỏng, đã xếp hàng cho edge, hoặc gửi được mà dòng chưa bị đặt chỗ tiêu thụ —
+  // vd. kết quả cache) ⇒ 'executed' (+ chi tiết edge trong resultJson); chỉ từ chối KHÔNG gửi gì mới là 'bi_tu_choi_ghi'.
+  // fix round 2 — + nhánh dự phòng: edge không nhận hàng đợi, STOP dự phòng của trung tâm ĐÃ gửi ⇒ cũng đã ra khỏi trung tâm
+  const duPhong = kq.centralFallbackStop?.sent === true;
+  const daRa = kq.simulated || edge || kq.ok || duPhong;
+  try {
+    const doi = await doiTrangThaiCho(db, actionId, userId, "confirmed", daRa ? "executed" : "bi_tu_choi_ghi", {
+      ...(daRa ? { executedAt: new Date() } : {}),
+      ...ketCuc,
+    });
+    if (!doi && !daRa && kq.status === "rejected") await doiTrangThaiCho(db, actionId, userId, "executed", "bi_tu_choi_ghi", ketCuc);
+  } catch (e) {
+    ghiLoiChot(e, actionId, "hmi_stop_sau_dispatch");
+  }
+
+  // 4. attempts (QĐ D-4)
+  await thu(
+    "dispatched",
+    kq.reason ?? (kq.ok ? null : String(kq.status).toUpperCase()),
+    kq.commandLogIds,
+    `STOP: ${kq.status}${kq.reason ? ` (${kq.reason})` : ""}`,
+  );
+
+  return {
+    ...coBan,
+    status: kq.status,
+    ok: kq.ok,
+    simulated: kq.simulated,
+    ...(kq.reason ? { reason: kq.reason } : {}),
+    ...(edge ? { edgeStopRequest: true } : {}),
+    ...(duPhong ? { centralFallbackSent: true } : {}),
+    commandLogIds: kq.commandLogIds,
+  };
+}
+
+/**
+ * `scadaCommands.dungMay`. `pv` = `phamViCua(ctx)`. Không ném cho các từ chối đã biết; lỗi hạ tầng TRƯỚC khi gửi (DB) thì ném. Sau khi
+ * bắt đầu gửi, mọi lỗi theo adapter nằm trong kết quả của adapter đó (QĐ D-2).
+ */
+export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input: DauVaoDungMay): Promise<KetQuaDungMay> {
+  // 1. cờ — không chạm DB (QĐ D-6)
+  if (!lenhHmiBat()) return { ok: false, tuChoi: { ma: "FEATURE_DISABLED", chiTiet: "SCADA_COMMANDS_ENABLED tắt." } };
+
+  const db = await getDb();
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  const userId = nguoi.user.id;
+  // R1b-1 T7 fix round 1 (I-1) — lọc NUL / điều khiển: `lyDo` vào jsonb của dòng chờ hmi.stop (NUL làm INSERT ném ⇒ STOP KHÔNG được gửi) + audit
+  const lyDo = catLyDo(input.lyDo);
+  const tuChoiMay = async (t: TuChoiYeuCau): Promise<KetQuaDungMay> => {
+    // fix round 1 (minor 5) — sổ hỏng không được nuốt chữ từ chối (M5 vẫn phải nói "dùng E-STOP cứng")
+    await ghiThuLenh(db, { userId, stage: "dispatch", outcome: "rejected", reasonCode: t.ma, lyDo: lyDo ?? t.chiTiet }).catch((e) => ghiLoiChot(e, "-", "attempts_hmi_stop_tu_choi"));
+    return { ok: false, tuChoi: t };
+  };
+
+  // 2. phạm vi — không tồn tại và ngoài phạm vi: CÙNG một NOT_FOUND
+  const idsMay = await idsTrongPhamVi("machine", pv, { strict: true });
+  const [may] = await db.select({ id: machines.id, code: machines.code }).from(machines).where(eq(machines.id, input.machineId)).limit(1);
+  if (!may || (idsMay !== null && !idsMay.includes(may.id))) {
+    return tuChoiMay({ ma: "NOT_FOUND", entity: "machine", chiTiet: "Máy không tồn tại." });
+  }
+
+  // 3. sàn vai mức 1 + machine_control.canEdit (mức 1 ⇒ không 2FA)
+  const vai = await kiemCongVaiTro(nguoi, 1);
+  if (!vai.ok) return tuChoiMay(vai.tuChoi);
+
+  // 4. adapter bật của máy + ghim của từng adapter
+  const adapters = await db
+    .select({ id: deviceAdapters.id, code: deviceAdapters.code })
+    .from(deviceAdapters)
+    .where(and(eq(deviceAdapters.machineId, may.id), eq(deviceAdapters.isEnabled, true)))
+    .orderBy(asc(deviceAdapters.id));
+  const dich: DichDung[] = [];
+  const loiDoc: KetQuaDungMayAdapter[] = [];
+  // kiem-dinh R1b-1 H1 (b) — ghim của tag mức > 1 (NULL ⇒ 5): BỎ QUA từng tag, báo trong kết quả; KHÔNG chặn các ghim hợp lệ khác.
+  const boQua: GhimBoQuaDungMay[] = [];
+  // fix round 1 (minor 7) — đọc ghim SONG SONG (một STOP không chờ N lượt đọc nối tiếp); thứ tự kết quả giữ theo adapterId
+  const docGhim = await Promise.all(
+    adapters.map(async (a) => {
+      try {
+        return { a, pins: await loadStopPinsHmi(db, a.id), err: undefined };
+      } catch (err) {
+        return { a, pins: null, err };
+      }
+    }),
+  );
+  for (const g of docGhim) {
+    const a = g.a;
+    if (g.pins) {
+      for (const b of g.pins.boQua) boQua.push({ adapterId: a.id, code: a.code, ...b });
+      if (g.pins.gui.length > 0) dich.push({ id: a.id, code: a.code, writes: g.pins.gui.map((p) => ({ tagKey: p.tagKey, value: p.value })) });
+    } else {
+      const err = g.err;
+      // QĐ D-2 — ghim không đọc được ⇒ không gửi gì tới adapter này (ghim là dữ liệu an toàn), các adapter khác vẫn gửi
+      logger.error({ err: (err as Error)?.message ?? String(err), adapterId: a.id }, "[SCADA] STOP HMI: đọc ghim lỗi — adapter này KHÔNG được gửi");
+      await ghiThuLenh(db, {
+        userId,
+        adapterId: a.id,
+        stage: "dispatch",
+        outcome: "rejected",
+        reasonCode: "GHIM_LOI_DOC",
+        lyDo: lyDo ?? "STOP: không đọc được ghim của adapter này — không gửi.",
+      }).catch((e) =>
+        ghiLoiChot(e, "-", "attempts_hmi_stop_ghim"),
+      );
+      loiDoc.push({ adapterId: a.id, code: a.code, status: "failed", ok: false, simulated: false, reason: "GHIM_LOI_DOC", writes: [], commandLogIds: [] });
+    }
+  }
+
+  /**
+   * fix round 1 (important 2) — FIRE-AND-FORGET dưới hạn (khuôn `auditPinnedStopOverride` của dispatcher): với SEC_PLATFORM bật,
+   * `recordAuditEvent` chờ khoá advisory của chuỗi băm KHÔNG có hạn — kết quả STOP của người vận hành không được treo theo sổ. Lỗi / quá hạn
+   * ⇒ log (không bí mật); kết quả trả ngay.
+   */
+  const ghiAudit = (ketQua: KetQuaDungMayAdapter[], ketCuc: "DA_GUI" | "CHUA_GHIM_STOP" | "GHIM_MUC_CAO"): void => {
+    const viec = recordAuditEvent(db, {
+      entityType: "machine",
+      entityId: may.id,
+      action: "scada_hmi_stop",
+      actorId: userId,
+      before: null,
+      after: {
+        ketCuc,
+        nguoiBam: { userId, role: nguoi.user.role },
+        machineId: may.id,
+        machineCode: may.code,
+        clientRequestId: input.clientRequestId,
+        adapters: ketQua.map((k) => ({
+          adapterId: k.adapterId,
+          code: k.code,
+          ghimDaGui: k.writes,
+          status: k.status,
+          ok: k.ok,
+          simulated: k.simulated,
+          reason: k.reason ?? null,
+          edgeStopRequest: k.edgeStopRequest === true,
+          centralFallbackSent: k.centralFallbackSent === true,
+          commandLogIds: k.commandLogIds,
+        })),
+        // kiem-dinh R1b-1 H1 (b) — ghim KHÔNG gửi (tag mức > 1): tag nào bị bỏ qua, vì sao
+        ghimBoQua: boQua.map((b) => ({ adapterId: b.adapterId, code: b.code, tagKey: b.tagKey, ly_do: b.ly_do, muc: b.muc })),
+      },
+      reason: lyDo ?? "HMI DỪNG MÁY",
+    });
+    // QĐ D-5 — STOP đã gửi; sổ hỏng / treo không được che kết quả khỏi người vận hành
+    void voiHanUnref(viec, HMI_STOP_AUDIT_DEADLINE_MS, "HMI STOP audit").catch((err) =>
+      logger.error({ err: (err as Error)?.message ?? String(err), machineId: may.id }, "[SCADA] STOP HMI: ghi audit lỗi hoặc quá hạn (STOP đã gửi)"),
+    );
+  };
+
+  if (dich.length === 0 && loiDoc.length === 0 && boQua.length > 0) {
+    // kiem-dinh R1b-1 H1 (b) — máy CÓ ghim nhưng MỌI ghim nằm trên tag mức > 1 ⇒ không gửi gì; cùng khuôn "chưa ghim" (attempts + audit + E-STOP).
+    const ds = [...new Set(boQua.map((b) => b.tagKey))];
+    const tagKeys = ds.slice(0, 5).join(", ") + (ds.length > 5 ? ", …" : "");
+    await ghiThuLenh(db, {
+      userId,
+      stage: "dispatch",
+      outcome: "rejected",
+      reasonCode: "GHIM_MUC_CAO",
+      lyDo: lyDo ?? `STOP: mọi ghim nằm trên tag mức tác động > ${MUC_TOI_DA_STOP_HMI} (${tagKeys}) — không gửi; dùng E-STOP cứng.`,
+    }).catch((e) => ghiLoiChot(e, "-", "attempts_hmi_stop_muc_cao"));
+    ghiAudit([], "GHIM_MUC_CAO");
+    return {
+      ok: false,
+      tuChoi: {
+        ma: "GHIM_MUC_CAO",
+        soTag: boQua.length,
+        tagKeys,
+        chiTiet: `Mọi ghim STOP của máy nằm trên tag mức tác động > ${MUC_TOI_DA_STOP_HMI} (${tagKeys}) — nút DỪNG MÁY không gửi tới tag mức cao; kỹ sư khai mức tác động 1 cho tag dừng ở /scada/config/channels; dừng bằng E-STOP cứng.`,
+      },
+    };
+  }
+
+  if (dich.length === 0 && loiDoc.length === 0) {
+    await ghiThuLenh(db, {
+      userId,
+      stage: "dispatch",
+      outcome: "rejected",
+      reasonCode: "CHUA_GHIM_STOP",
+      lyDo: lyDo ?? "STOP: máy chưa ghim giá trị DỪNG — dùng E-STOP cứng.",
+    }).catch((e) =>
+      ghiLoiChot(e, "-", "attempts_hmi_stop_chua_ghim"),
+    );
+    ghiAudit([], "CHUA_GHIM_STOP");
+    return {
+      ok: false,
+      tuChoi: { ma: "CHUA_GHIM_STOP", chiTiet: "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng." },
+    };
+  }
+
+  // 5. song song — lỗi một adapter không chặn adapter khác
+  const daGui = await Promise.all(dich.map((x) => guiStopMotAdapter(db, nguoi, may.id, x, input, lyDo)));
+  const ketQua = [...daGui, ...loiDoc].sort((p, q) => p.adapterId - q.adapterId);
+
+  // 6. audit
+  ghiAudit(ketQua, "DA_GUI");
+  return { ok: true, ketQua: { ketQua, boQua } };
 }

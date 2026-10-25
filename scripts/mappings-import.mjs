@@ -26,6 +26,16 @@
  *     (FOR UPDATE); tag đang ghim mà file đổi nghĩa (address/datatype/scale/offset), thôi writable, tắt, hoặc
  *     bị --prune ⇒ gỡ ghim + audit control_audit_log/audit_logs trong CÙNG transaction (scripts/lib/
  *     stopPinCli.mjs, khớp server/services/ot/stopPin.ts). Import không bao giờ ĐẶT ghim.
+ *   - kiem-dinh R1b-1 I2 (điều phối 2026-10-25) — TAG ĐƯỢC BẢO VỆ: script này ghi SQL thẳng vào device_tags, NÉ cổng T9 của máy chủ (TOTP tươi
+ *     mức 5 + kiểm lại nhất quán khi trỏ lại / tạo lên khoá mồ côi / xoá một tag được bảo vệ). Nên MẶC ĐỊNH TỪ CHỐI (thoát 1, không ghi gì) mọi
+ *     lô đụng tag được bảo vệ — CÙNG định nghĩa của server/services/scada/troLaiKenh.ts (đã khai mức / loại kênh / dải, là kênh chế độ, hoặc là
+ *     đích / nguồn telemetry của luật interlock không-alert đang bật HOẶC đã duyệt; tạo lên khoá mà kênh chế độ / bất kỳ luật nào trỏ tới):
+ *     sửa address / datatype / scale / offset / writable / enabled, tạo lên khoá mồ côi, --prune xoá. (unit / deadband / sampling_ms không tính.)
+ *     Truy vấn: scripts/lib/tagBaoVeCli.mjs (test so với chính hàm TS). Dry-run in các tag đó với nhãn [BẢO VỆ].
+ *     NGOẠI LỆ TƯỜNG MINH: `--cho-phep-tag-bao-ve` cho phép lô đó đi tiếp — DÀNH CHO NGƯỜI CÓ QUYỀN HOST + DB (đã có quyền ghi thẳng bảng; cờ
+ *     này không mở thêm quyền nào, chỉ ghi lại rằng họ cố ý). Danh sách tag bảo vệ bị đụng vào metadata dòng audit_logs `mapping_as_code.import`.
+ *     Luật interlock đã duyệt nhắm / đọc các tag đó TỰ MẤT HIỆU LỰC duyệt (bám định nghĩa lúc duyệt — kiem-dinh I1 a, mig 0434): phải duyệt lại
+ *     trước khi bật / tự chặn.
  *
  * Exit code: 0 = OK (kể cả dry-run có diff); 1 = lỗi (validate/version/DB).
  * LƯU Ý: validate/diff phải khớp server/services/ot/mappingAsCode.ts.
@@ -35,6 +45,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { lyDoGoStopPinCli, goStopPinCliTx } from './lib/stopPinCli.mjs';
+import { tagBaoVeCuaAdapterTx, thaoTacChamBaoVe } from './lib/tagBaoVeCli.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,6 +55,8 @@ const ROOT = path.join(__dirname, '..');
 const args = process.argv.slice(2);
 const APPLY = args.includes('--apply');
 const PRUNE = args.includes('--prune');
+// kiem-dinh R1b-1 I2 — ngoại lệ tường minh cho lô đụng tag được bảo vệ (người có quyền host + DB).
+const CHO_PHEP_BAO_VE = args.includes('--cho-phep-tag-bao-ve');
 // doc 81 Đợt 4 Task C2 — `--actor <v>` hoặc `--actor=<v>`; giá trị của `--actor <v>` KHÔNG phải tham số vị trí (file).
 let ACTOR = null;
 const actorIdx = args.findIndex((a) => a === '--actor' || a.startsWith('--actor='));
@@ -54,7 +67,7 @@ if (actorIdx !== -1) {
 }
 const fileArg = args.find((a, i) => !a.startsWith('--') && !(actorIdx !== -1 && args[actorIdx] === '--actor' && i === actorIdx + 1));
 if (!fileArg) {
-  console.error('Usage: node scripts/mappings-import.mjs <file.mapping.yaml> [--apply --actor <userId|email>] [--prune]');
+  console.error('Usage: node scripts/mappings-import.mjs <file.mapping.yaml> [--apply --actor <userId|email>] [--prune] [--cho-phep-tag-bao-ve]');
   process.exit(1);
 }
 if (APPLY && !ACTOR) {
@@ -329,10 +342,40 @@ try {
 
   const tagWrites = tagCreates.length + tagUpdates.length + (PRUNE ? tagDeletes.length : 0);
 
+  // kiem-dinh R1b-1 I2 — lô đụng tag được bảo vệ? (định nghĩa troLaiKenh, scripts/lib/tagBaoVeCli.mjs)
+  const loCuaFile = {
+    creates: tagCreates.map((t) => t.name),
+    updates: tagUpdates.map((u) => ({ tagKey: u.t.name, fields: u.fields })),
+    deletes: PRUNE ? tagDeletes : [],
+  };
+  const nhanViec = { tao: 'tạo lên khoá được tham chiếu', sua: 'sửa', xoa: 'xoá' };
+  const inChamBaoVe = (ds) => {
+    for (const c of ds) console.log(`  [BẢO VỆ] ${nhanViec[c.viec]}  ${c.tagKey}  (${c.lyDo.join(', ')})`);
+  };
+  const chamBaoVe = thaoTacChamBaoVe(loCuaFile, await tagBaoVeCuaAdapterTx(sql, adapter.id));
+  if (chamBaoVe.length) {
+    console.log(`\nTag ĐƯỢC BẢO VỆ bị đụng (${chamBaoVe.length}) — máy chủ đòi TOTP tươi cho các thay đổi này:`);
+    inChamBaoVe(chamBaoVe);
+  }
+
   if (!APPLY) {
+    if (chamBaoVe.length && !CHO_PHEP_BAO_VE) {
+      console.log('[DRY-RUN] --apply sẽ bị TỪ CHỐI: dùng UI (deviceAdapter / mappingAsCode, có mã TOTP) — hoặc --cho-phep-tag-bao-ve nếu bạn có quyền host + DB và cố ý.');
+    }
     console.log('\n[DRY-RUN] Không ghi gì. Thêm --apply để thực thi.');
     await sql.end();
     process.exit(0);
+  }
+  if (chamBaoVe.length && !CHO_PHEP_BAO_VE) {
+    console.error(
+      `ERROR: lô import đụng ${chamBaoVe.length} tag ĐƯỢC BẢO VỆ (danh sách ở trên) — CLI ghi SQL thẳng, né TOTP + kiểm lại nhất quán của máy chủ. ` +
+        'Dùng UI (deviceAdapter / mappingAsCode, có mã TOTP). Ngoại lệ cho người có quyền host + DB: thêm --cho-phep-tag-bao-ve. Không ghi gì.',
+    );
+    await sql.end();
+    process.exit(1);
+  }
+  if (chamBaoVe.length) {
+    console.warn(`[WARN] --cho-phep-tag-bao-ve: ghi ${chamBaoVe.length} thay đổi lên tag ĐƯỢC BẢO VỆ (ngoại lệ host + DB). Luật interlock đã duyệt nhắm / đọc các tag đó sẽ CẦN DUYỆT LẠI.`);
   }
 
   // ── apply: MỘT transaction ────────────────────────────────────────────────
@@ -347,6 +390,13 @@ try {
       SELECT id, "adapterId", "tagKey", address, "dataType", scale, "offset", writable, "isEnabled", stop_value
       FROM device_tags WHERE "adapterId" = ${adapter.id} FOR UPDATE`;
     const khoaTheoKey = new Map(khoa.map((r) => [r.tagKey, r]));
+    // kiem-dinh R1b-1 I2 — kiểm LẠI sau khi khoá tag (một tag có thể vừa được khai / một luật vừa bật giữa lượt đọc trên và lúc ghi).
+    const chamTrongTx = thaoTacChamBaoVe(loCuaFile, await tagBaoVeCuaAdapterTx(tx, adapter.id));
+    if (chamTrongTx.length && !CHO_PHEP_BAO_VE) {
+      inChamBaoVe(chamTrongTx);
+      throw new Error(`lô import đụng ${chamTrongTx.length} tag ĐƯỢC BẢO VỆ (vừa đổi trong lúc chạy) — không ghi gì; dùng UI có TOTP hoặc --cho-phep-tag-bao-ve.`);
+    }
+    chamBaoVe.splice(0, chamBaoVe.length, ...chamTrongTx);
     for (const t of [...tagCreates, ...tagUpdates.map((u) => u.t)]) {
       await tx`
         INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", unit, scale, "offset", writable, "isEnabled", deadband, "samplingMs", "updatedAt")
@@ -419,6 +469,9 @@ try {
         storedVersion: Number.isFinite(storedVersion) ? storedVersion : null,
         prune: PRUNE,
         applied: true,
+        // kiem-dinh R1b-1 I2 — ngoại lệ host + DB: tag được bảo vệ bị đụng (rỗng = không đụng)
+        choPhepTagBaoVe: CHO_PHEP_BAO_VE,
+        tagBaoVeBiDung: chamBaoVe.map((c) => ({ tagKey: c.tagKey, viec: c.viec, lyDo: c.lyDo })),
         changeCount: tagCreates.length + tagUpdates.length + tagDeletes.length + unsCreates.length + unsUpdates.length + unsDeletes.length,
         fileHash,
       },

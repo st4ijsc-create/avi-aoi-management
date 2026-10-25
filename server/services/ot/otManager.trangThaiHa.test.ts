@@ -50,6 +50,10 @@ vi.mock("./connectionSupervisor", () => {
     resetBoundMs() {
       return 1000;
     }
+    /** R1b-1 T3 — supervisor giả: 'connected' phát ra đã kèm lần đọc tốt đầu tiên (không mô phỏng chờ đọc tốt ở đây). */
+    dangChoDocTot() {
+      return false;
+    }
   }
   return { ConnectionSupervisor: FakeSupervisor, DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS: 1000 };
 });

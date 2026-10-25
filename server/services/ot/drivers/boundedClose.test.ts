@@ -128,4 +128,23 @@ describe("withDeadline", () => {
   it("kịp ⇒ trả giá trị", async () => {
     await expect(withDeadline(Promise.resolve(7), 1000, "x")).resolves.toBe(7);
   });
+  it("R1b-1 rà soát cuối M-5 — `{ unref: true }` ⇒ hẹn giờ unref (thay hai bản sao voiHanUnref); mặc định KHÔNG unref (bên gọi cũ giữ nguyên)", async () => {
+    const goc = globalThis.setTimeout;
+    const unrefs: Array<ReturnType<typeof vi.fn>> = [];
+    const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number) => {
+      const t = goc(fn, ms);
+      const gocUnref = t.unref.bind(t);
+      const u = vi.fn(() => gocUnref());
+      unrefs.push(u);
+      return Object.assign(t, { unref: u });
+    }) as never);
+    try {
+      await withDeadline(Promise.resolve(1), 1000, "a");
+      await withDeadline(Promise.resolve(2), 1000, "b", { unref: true });
+      await expect(withDeadline(new Promise(() => undefined), 10, "c", { unref: true })).rejects.toThrow("c timeout after 10ms");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(unrefs.map((u) => u.mock.calls.length)).toEqual([0, 1, 1]);
+  });
 });

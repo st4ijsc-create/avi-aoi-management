@@ -17,6 +17,8 @@ const fake = vi.hoisted(() => {
     selectResults: [] as unknown[][],
     txOps: [] as Array<{ kind: "upsert" | "delete"; table: unknown; values?: Record<string, unknown>; set?: Record<string, unknown>; where?: unknown }>,
     txCount: 0,
+    /** R1b-1 T9 fix round 1 (I6) — hàng mà SELECT trong giao dịch trả theo BẢNG (apply tính lại diff trên hàng đã khoá). */
+    txTables: new Map<unknown, unknown[]>(),
   };
   function chain(rows: unknown[]) {
     const p: any = Promise.resolve(rows);
@@ -30,7 +32,12 @@ const fake = vi.hoisted(() => {
   const tx = {
     // doc 81 Đợt 1D Task 1 fix round 1 — SELECT … FOR UPDATE các tag hiện có (luật ghim DỪNG); fake: không
     // tag nào đang ghim ⇒ đường ghim không chạy (có test DB riêng: mappingAsCode.stopPin.dot1d.db.test.ts).
-    select: (_cols?: unknown) => chain([]),
+    // R1b-1 T9 fix round 1 — apply tính lại diff từ hàng ĐÃ KHOÁ (device_tags + uns_tag_mappings) ⇒ SELECT trong tx trả theo bảng.
+    select: (_cols?: unknown) => {
+      const c = chain([]);
+      c.from = (t: unknown) => chain(state.txTables.get(t) ?? []);
+      return c;
+    },
     insert: (table: unknown) => ({
       values: (values: Record<string, unknown>) => ({
         onConflictDoUpdate: async (cfg: { set: Record<string, unknown> }) => {
@@ -67,6 +74,22 @@ vi.mock("../../../drizzle/schema", () => ({
   unsTagMappings: { adapterId: "unsTagMappings.adapterId", tag: "unsTagMappings.tag" },
   configSnapshots: { entityType: "configSnapshots.entityType", entityId: "configSnapshots.entityId" },
   machines: { id: "machines.id", code: "machines.code" },
+  // SCADA R1b-1 Task 9 — apply khoá luật interlock nhắm adapter (FOR SHARE) + đọc kênh chế độ của adapter; fake: không có (select tx ⇒ [])
+  // ⇒ không tag nào đã khai / bị luật nhắm (có test DB riêng: deviceAdapterRouter.troLaiKenh.r1b.db.test.ts, interlockRouter.r1b.db.test.ts).
+  interlockRules: {
+    id: "interlockRules.id",
+    name: "interlockRules.name",
+    action: "interlockRules.action",
+    enabled: "interlockRules.enabled",
+    commandValue: "interlockRules.commandValue",
+    commandTag: "interlockRules.commandTag",
+    targetAdapterId: "interlockRules.targetAdapterId",
+    approvedBy: "interlockRules.approvedBy",
+    sourceKey: "interlockRules.sourceKey",
+    sourceType: "interlockRules.sourceType",
+    machineId: "interlockRules.machineId",
+  },
+  scadaKenhCheDo: { machineId: "scadaKenhCheDo.machineId", adapterId: "scadaKenhCheDo.adapterId", tagKey: "scadaKenhCheDo.tagKey" },
 }));
 vi.mock("drizzle-orm", () => ({
   and: (...a: unknown[]) => a,
@@ -146,6 +169,11 @@ const DB_MAPS: UnsRowInput[] = [
 
 /** FIFO selects của importMapping (machineId null ⇒ KHÔNG select machines). */
 function queueImportSelects(opts: { adapter?: Record<string, unknown>; tags?: unknown[]; maps?: unknown[]; snapshot?: unknown[] } = {}) {
+  // cùng trạng thái DB cho SELECT trong giao dịch (hàng đã khoá — R1b-1 T9 fix round 1)
+  fake.state.txTables = new Map<unknown, unknown[]>([
+    [deviceTagsMock, (opts.tags ?? DB_TAGS) as unknown[]],
+    [unsTagMappingsMock, (opts.maps ?? DB_MAPS) as unknown[]],
+  ]);
   fake.state.selectResults = [
     [opts.adapter ?? { id: ADAPTER.id, code: ADAPTER.code, protocol: ADAPTER.protocol, machineId: null }],
     (opts.tags ?? DB_TAGS) as unknown[],

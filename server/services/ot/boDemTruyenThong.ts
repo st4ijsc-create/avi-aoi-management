@@ -11,6 +11,9 @@
  *   - `loi` cấp adapter = tick `ok:false` (gồm cả timeout); `timeout` = tick bị cắt ở hạn. `loi` của tag = số lần mẫu `bad`.
  *   - `phien` = số lần THỬ nối (cả legacy lẫn supervisor), `phienLoi` = số lần thử thất bại.
  *   - `lenh` / `lenhLoi` = kết quả ghi theo từng tag (otDeviceWrite); ghi timeout tính là lỗi.
+ *   - R1b-1 T4: `chong` = số tick poll bị bỏ vì tick trước chưa xong (`soLanChong`, đến qua trường `chong` của onTick — phần tăng).
+ *     `ingestTreo` = số lượt phát mẫu (ghi DB) quá hạn (`lyDo:"ingest_treo"`). Ingest treo KHÔNG tính `loi`/`timeout` (đó là số liệu
+ *     thiết bị): kèm lần đọc chính (`ok:true`) ⇒ lần đọc đếm như một request thành công; không kèm lần đọc (`ok:false`) ⇒ chỉ `ingestTreo`.
  *
  * PHẠM VI R0: adapter đẩy kiểu push (OPC UA monitored items) KHÔNG gọi onTick ⇒ không có request/độ trễ cho chúng ở R0 (chỉ phiên
  * và lệnh). Mọi hàm ghi không ném (đường nóng của poll/lệnh không được hỏng vì bộ đếm).
@@ -40,6 +43,8 @@ interface Thung {
   timeout: number;
   lenh: number;
   lenhLoi: number;
+  chong: number;
+  ingestTreo: number;
   tag: Map<string, DemTag>;
 }
 
@@ -57,6 +62,10 @@ export interface BoDemAdapter {
   timeout: number;
   lenh: number;
   lenhLoi: number;
+  /** R1b-1 T4 — tick poll bị bỏ vì chồng (tick trước chưa xong). */
+  chong: number;
+  /** R1b-1 T4 — lượt phát mẫu (ghi DB) quá hạn. */
+  ingestTreo: number;
   p50Ms: number | null;
   p95Ms: number | null;
   theoTag: Record<string, DemTag>;
@@ -80,7 +89,7 @@ function thungHienTai(s: TrangThaiAdapter, now: number): Thung {
   const phut = Math.floor(now / PHUT_MS);
   let t = s.thung.get(phut);
   if (!t) {
-    t = { phien: 0, phienLoi: 0, request: 0, loi: 0, timeout: 0, lenh: 0, lenhLoi: 0, tag: new Map() };
+    t = { phien: 0, phienLoi: 0, request: 0, loi: 0, timeout: 0, lenh: 0, lenhLoi: 0, chong: 0, ingestTreo: 0, tag: new Map() };
     s.thung.set(phut, t);
   }
   // Giữ tối đa 60 thùng: bỏ thùng xa hơn 60 phút so với thùng MỚI NHẤT (ghi lệch thứ tự thời gian không làm mất thùng gần).
@@ -103,9 +112,16 @@ export function ghiNhanDoc(adapterId: number, e: SuKienDoc, now: number = Date.n
   try {
     const s = trangThai(adapterId);
     const t = thungHienTai(s, now);
+    if (typeof e.chong === "number" && Number.isFinite(e.chong) && e.chong > 0) t.chong += e.chong;
+    const treo = e.lyDo === "ingest_treo";
+    if (treo) {
+      t.ingestTreo += 1;
+      // Báo treo không kèm lần đọc (mẫu muộn / loạt xấu): lần đọc đã được đếm ở tick riêng.
+      if (!e.ok) return;
+    }
     t.request += 1;
     if (!e.ok) t.loi += 1;
-    if (e.timeout) t.timeout += 1;
+    if (e.timeout && !treo) t.timeout += 1;
     for (const tag of e.tags) {
       const d = dungTag(t, tag.tagKey);
       d.request += 1;
@@ -166,6 +182,8 @@ export function layBoDem(adapterId: number, cuaSoMs: number = CUA_SO_MAC_DINH_MS
     timeout: 0,
     lenh: 0,
     lenhLoi: 0,
+    chong: 0,
+    ingestTreo: 0,
     p50Ms: null,
     p95Ms: null,
     theoTag: {},
@@ -183,6 +201,8 @@ export function layBoDem(adapterId: number, cuaSoMs: number = CUA_SO_MAC_DINH_MS
     kq.timeout += t.timeout;
     kq.lenh += t.lenh;
     kq.lenhLoi += t.lenhLoi;
+    kq.chong += t.chong;
+    kq.ingestTreo += t.ingestTreo;
     for (const [tagKey, d] of t.tag) {
       const g = (kq.theoTag[tagKey] ??= demTagMoi());
       g.request += d.request;

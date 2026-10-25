@@ -133,7 +133,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("Đợt 5 F7 — signa
     const before = await maxAuditId();
     const unhold = await holdTagRow();
     // P begins (its now() is stamped) and parks on the tag row lock.
-    const p = datStopPin({ adapterId: fx.adapter, tagKey: "stop_cmd", stopValue: false, reason: "F7 P", nguoiSua: nguoiSua(), phamViMay: null });
+    const p = datStopPin({ adapterId: fx.adapter, tagKey: "stop_cmd", stopValue: false, reason: "F7 P", nguoiSua: nguoiSua(), phamViMay: null, kiemCuoi: async () => {} });
     await new Promise((r) => setTimeout(r, 150));
     // S signs and COMMITS while P is parked.
     let s: Awaited<ReturnType<typeof createRecord>>;
@@ -155,7 +155,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("Đợt 5 F7 — signa
   it("★ a signature cannot land INSIDE a pin-change tx: createRecord waits until the pin change committed (advisory lock)", async () => {
     const g = armGate();
     // P: lock taken, signature state read (none), audit written — parked BEFORE COMMIT.
-    const p = datStopPin({ adapterId: fx.adapter, tagKey: "stop_cmd", stopValue: false, reason: "F7 P2", nguoiSua: nguoiSua(), phamViMay: null });
+    const p = datStopPin({ adapterId: fx.adapter, tagKey: "stop_cmd", stopValue: false, reason: "F7 P2", nguoiSua: nguoiSua(), phamViMay: null, kiemCuoi: async () => {} });
     await within(g.reached, 5000, "pin-change audit");
     const s = createRecord({ adapterId: fx.adapter, signedBy: fx.user, fatReference: `${RUN}-S2` });
     let early: string;
@@ -229,7 +229,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("Đợt 5 F7 — signa
 
   it("a pin change made under a signature, then a NEW signature ⇒ chip shows, then clears (id comparison)", async () => {
     const s1 = await createRecord({ adapterId: fx.adapter, signedBy: fx.user, fatReference: `${RUN}-S4` });
-    await datStopPin({ adapterId: fx.adapter, tagKey: "stop_cmd", stopValue: false, reason: "F7 P4", nguoiSua: nguoiSua(), phamViMay: null });
+    await datStopPin({ adapterId: fx.adapter, tagKey: "stop_cmd", stopValue: false, reason: "F7 P4", nguoiSua: nguoiSua(), phamViMay: null, kiemCuoi: async () => {} });
     expect(await latestCommissioningRecheck(fx.adapter)).toMatchObject({ signatureId: s1.id });
     const s2 = await createRecord({ adapterId: fx.adapter, signedBy: fx.user, fatReference: `${RUN}-S5` });
     expect(s2.id).toBeGreaterThan(s1.id);

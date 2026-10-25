@@ -318,8 +318,9 @@ describe("taoVongPoll", () => {
     await vi.advanceTimersByTimeAsync(5500); // 5 tick
     expect(doc).toHaveBeenCalledTimes(1);
     expect(h.soLanChong()).toBeGreaterThan(0);
-    expect(ticks).toHaveLength(1);
-    expect(ticks[0]).toMatchObject({ ok: false, timeout: true });
+    // R1b-1 T4 fix round 1 (ruling T4 c2): mỗi tick bị chặn bởi lần đọc treo quá hạn cũng báo tick hỏng (D1 K=2 hạ được phiên).
+    expect(ticks).toHaveLength(1 + h.soLanChong());
+    expect(ticks.every((e) => e.ok === false && e.timeout === true && e.lyDo === undefined)).toBe(true);
     expect(mau).toHaveLength(2);
     expect(mau.every((s) => s.quality === "bad")).toBe(true);
     await h.close();
@@ -353,9 +354,13 @@ describe("taoVongPoll", () => {
     expect(doc).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(600); // 2600: đọc 1 xong muộn (2500), tick 3000 chưa tới
     expect(mau.filter((s) => s.quality === "good")).toHaveLength(0); // kết quả muộn không phát
-    expect(ticks).toHaveLength(1);
+    // R1b-1 T4 fix round 1: tick 1000/2000 bị chặn bởi lần đọc treo quá hạn ⇒ báo tick hỏng; đọc xong (2500) ⇒ hết báo.
+    expect(ticks).toHaveLength(3);
+    expect(ticks.every((e) => e.ok === false && e.timeout === true)).toBe(true);
     await vi.advanceTimersByTimeAsync(500); // 3100: tick 3000 đọc lại
     expect(doc).toHaveBeenCalledTimes(2);
+    expect(ticks).toHaveLength(4);
+    expect(ticks[3]).toMatchObject({ ok: true, timeout: false });
     expect(mau.filter((s) => s.quality === "good")).toHaveLength(2);
     await h.close();
   });
@@ -393,7 +398,10 @@ describe("taoVongPoll", () => {
     await vi.advanceTimersByTimeAsync(500); // 2600: đọc 1 xong muộn ⇒ phát
     expect(mau.map((s) => s.tagKey)).toEqual(["t1", "t2"]);
     expect(mau.every((s) => s.quality === "good")).toBe(true);
-    expect(ticks).toHaveLength(1); // tick đó vẫn là timeout, không thêm tick "ok"
+    // tick đó vẫn là timeout, không thêm tick "ok". R1b-1 T4 fix round 1: tick 1000/2000 bị chặn bởi lần đọc TREO (docP chưa xong — dù
+    // chot.giaoMuon đã đặt từ hạn) ⇒ báo tick hỏng.
+    expect(ticks).toHaveLength(3);
+    expect(ticks.every((e) => e.ok === false && e.timeout === true)).toBe(true);
     await vi.advanceTimersByTimeAsync(500); // 3100: tick 3000 đọc lại bình thường
     expect(doc).toHaveBeenCalledTimes(2);
     expect(mau).toHaveLength(4);
@@ -525,9 +533,11 @@ describe("taoVongPoll", () => {
       nhan: "plc1",
     });
     await vi.advanceTimersByTimeAsync(1500);
-    expect(ticks).toHaveLength(1);
+    // R1b-1 T4 fix round 1: tick 1000 bị chặn bởi lần đọc treo ⇒ tick hỏng thứ hai, cùng phân loại (không gọi lại phanLoiLoi).
+    expect(ticks).toHaveLength(2);
     expect(ticks[0].timeout).toBe(true);
     expect(ticks[0]).toMatchObject({ statusCode: "sc_timeout", reason: "comm_lost" }); // T12 D1: tick lỗi mang phân loại
+    expect(ticks[1]).toMatchObject({ ok: false, timeout: true, statusCode: "sc_timeout", reason: "comm_lost" });
     expect(phan).toHaveBeenCalledTimes(1);
     const err = (phan.mock.calls[0] as unknown[])[0];
     expect((err as Error).message).toMatch(/plc1 read timeout after 400ms/);

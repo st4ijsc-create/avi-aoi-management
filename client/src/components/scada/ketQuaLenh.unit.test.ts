@@ -19,8 +19,10 @@ import {
   TRANG_THAI_KET_QUA,
   TU_DONG_DONG_MS,
   docLoiApp,
+  khoaGoiYStop,
   khoaLyDoLocal,
   laLoiGioiHanTanSuat,
+  phanLoaiKetQuaDung,
   moTaLoiLenh,
   nhanKetQua,
   TTL_YEU_CAU_MS,
@@ -161,7 +163,7 @@ describe("moTaLoiLenh — mã từ chối ⇒ chữ + cách xử lý", () => {
       expect.arrayContaining([
         "FEATURE_DISABLED", "NOT_FOUND", "CHANNEL_READ_ONLY", "TYPE_MISMATCH", "OUT_OF_RANGE", "OFF_STEP", "MODE_LOCAL", "DANG_DUOC_CHON",
         "EDGE_CHUA_HO_TRO", "ROLE_FLOOR", "PERMISSION_DENIED", "TOTP_CHUA_DANG_KY", "TOTP_CAN", "TOTP_SAI", "TOTP_TAM_KHOA",
-        "TOTP_KHONG_KIEM_DUOC", "KHOA_CHON_LOI", "DA_XU_LY", "HET_HAN", "KHOA_MAT", "MAY_DA_DOI", "DISPATCH_LOI", "TIMEOUT",
+        "TOTP_KHONG_KIEM_DUOC", "KHOA_CHON_LOI", "DA_XU_LY", "HET_HAN", "KHOA_MAT", "MAY_DA_DOI", "DISPATCH_LOI", "TIMEOUT", "CHUA_GHIM_STOP",
       ]),
     );
   });
@@ -190,7 +192,12 @@ describe("moTaLoiLenh — mã từ chối ⇒ chữ + cách xử lý", () => {
     const m = moTaLoiLenh(loi("SCADA_MACHINE_NOT_REMOTE", { ma: "MODE_LOCAL", lyDo: "bo_dem_tat" }), "request", { laEdge: false, locale: "vi" });
     expect(m.goiYStop).toBe(true);
     expect(m.khoaLyDo).toBe(khoaLyDoLocal("bo_dem_tat", false));
-    expect(S("scada.lenh.loi.goiYStop")).toBe("Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy — màn HMI R1a chưa có lệnh STOP riêng");
+    // R1b-1 T2 (ruling R-2) — chữ theo máy có ghim STOP hay không
+    expect(S("scada.lenh.loi.goiYStop")).toBe("Cần dừng máy? Dùng nút DỪNG MÁY (gửi STOP đã ghim) hoặc E-STOP cứng tại máy");
+    expect(S("scada.lenh.loi.goiYStopKhongGhim")).toBe("Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy");
+    expect(khoaGoiYStop(true)).toBe("scada.lenh.loi.goiYStop");
+    expect(khoaGoiYStop(false)).toBe("scada.lenh.loi.goiYStopKhongGhim");
+    expect(khoaGoiYStop(undefined)).toBe("scada.lenh.loi.goiYStopKhongGhim");
   });
 
   it("TOTP_CHUA_DANG_KY ⇒ liên kết đăng ký 2FA (trang /profile có thẻ 2FA)", () => {
@@ -373,5 +380,29 @@ describe("fix round 1 — thuần", () => {
     expect(conLaiTuLucNhan(iso(t0 + 600_000), t0, t0)).toBe(TTL_YEU_CAU_MS);
     expect(conLaiTuLucNhan(iso(t0 - 10_000), t0, t0 + 1_000)).toBe(TTL_YEU_CAU_MS - 1_000);
     expect(conLaiTuLucNhan(iso(t0 + 5_000), t0, t0 + 9_000)).toBe(0);
+  });
+});
+
+describe("R1b-1 Task 2 — STOP HMI: phân loại kết quả theo adapter + chữ CHUA_GHIM_STOP", () => {
+  const loiApp = (appCode: string, appParams: Record<string, unknown>) => ({ data: { appCode, appParams } });
+  it("chỉ acked_verified (ok, không mô phỏng) là đạt; edge / mô phỏng / acked / unverified / sent / timeout ⇒ chưa xác minh; rejected / failed ⇒ không đạt", () => {
+    expect(phanLoaiKetQuaDung({ status: "acked_verified", ok: true, simulated: false })).toBe("dat");
+    expect(phanLoaiKetQuaDung({ status: "rejected", ok: false, simulated: false, reason: "ADAPTER_OWNED_BY_EDGE", edgeStopRequest: true })).toBe("chuaXacMinh");
+    for (const status of ["acked_unverified", "acked", "sent", "timeout", "simulated"])
+      expect(phanLoaiKetQuaDung({ status, ok: status !== "timeout", simulated: status === "simulated" }), status).toBe("chuaXacMinh");
+    expect(phanLoaiKetQuaDung({ status: "rejected", ok: false, simulated: false, reason: "SAFETY_BLOCKED" })).toBe("khongDat");
+    expect(phanLoaiKetQuaDung({ status: "failed", ok: false, simulated: false, reason: "DISPATCH_LOI" })).toBe("khongDat");
+  });
+
+  it("CHUA_GHIM_STOP ⇒ đúng chữ M5 của điều phối; có ở vi/en/zh; appCode SCADA_STOP_NOT_PINNED có câu ở 3 ngôn ngữ", () => {
+    const m = moTaLoiLenh(loiApp("SCADA_STOP_NOT_PINNED", { ma: "CHUA_GHIM_STOP" }), "confirm", { laEdge: false, locale: "vi" });
+    expect(m.khoa).toBe("scada.lenh.loi.CHUA_GHIM_STOP");
+    expect(S(m.khoa)).toBe("Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng");
+    coO3("errors.SCADA_STOP_NOT_PINNED");
+    for (const k of ["nut", "tieuDe", "moTa", "nutXacNhan", "dat", "khongDat", "chuaXacMinh", "daGuiEdge", "dungEstop", "canhBaoChuaGhim"]) coO3(`scada.dungMay.${k}`);
+    for (const l of ["en", "zh"]) {
+      for (const k of ["scada.lenh.loi.CHUA_GHIM_STOP", "scada.lenh.loi.goiYStop", "scada.lenh.loi.goiYStopKhongGhim", "scada.dungMay.canhBaoChuaGhim"])
+        expect(CHU_VIET.test(String(lay(l, k))), `${l}:${k}`).toBe(false);
+    }
   });
 });

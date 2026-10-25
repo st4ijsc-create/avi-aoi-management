@@ -48,6 +48,9 @@ import {
 import { ConfirmActionCard, trangThaiTheTuConfirm, type ActionState, type PendingAction } from "@/components/ConfirmActionCard";
 import { Sparkles, SlidersHorizontal, Gauge, PlusCircle, Target, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
+import { tuChoiTuLoiXacNhan } from "@/lib/loiXacNhanAi";
 
 // Roles allowed to use the engineering write-tools (app roles, lowercased).
 const WRITE_ROLES = new Set(["maintenance", "supervisor", "admin"]);
@@ -373,7 +376,8 @@ function SuggestedActionDialog({
   const [message, setMessage] = useState<string | null>(null);
 
   const proposeM = trpc.aiCopilot.proposeSuggestedAction.useMutation();
-  const confirmM = trpc.aiCopilot.confirmAction.useMutation();
+  // onError rỗng: `onConfirm` tự hiện lỗi — không để lưới cuối của main.tsx thêm toast thứ hai.
+  const confirmM = trpc.aiCopilot.confirmAction.useMutation({ onError: () => undefined });
   const cancelM = trpc.aiCopilot.cancelAction.useMutation();
 
   // Propose IMMEDIATELY on open — this is the dry-run preview (NO mutation yet);
@@ -405,7 +409,18 @@ function SuggestedActionDialog({
 
   const onConfirm = async () => {
     if (!pending) return;
-    const res = await confirmM.mutateAsync({ actionId: pending.actionId, token: pending.token, lang });
+    let res: Awaited<ReturnType<typeof confirmM.mutateAsync>>;
+    try {
+      res = await confirmM.mutateAsync({ actionId: pending.actionId, token: pending.token, lang });
+    } catch (err) {
+      // R1b-1 T10 fix round 1 (I-2) — AI không bao giờ ra lệnh mức ≥ 4: đóng thẻ (denied) + câu đã dịch (chân thẻ hiện nó, không thêm toast).
+      const tuChoi = tuChoiTuLoiXacNhan(err);
+      if (tuChoi) {
+        setState(tuChoi.state);
+        setMessage(tuChoi.message);
+      } else toast.error(mapTrpcError(err));
+      return;
+    }
     /**
      * ★★★ Rà soát cuối Đợt B (2026-08-29) — ÉP KIỂU KHÔNG PHẢI MỘT PHÉP DỊCH.
      * `res.status as ActionState` để LỌT mọi giá trị máy chủ trả (kể cả hai giá trị chung cục MỚI

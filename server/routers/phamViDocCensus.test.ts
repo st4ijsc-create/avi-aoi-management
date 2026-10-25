@@ -884,6 +884,20 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // trong CÙNG giao dịch. Bảng không có cột tenant; admin toàn hệ ⇒ không lọc phạm vi. Mutation ⇒ D (bộ suy xếp MỌI mutation vào D). Đo:
 // trên ghim cũ (gốc c6e2422e7) đỏ ĐÚNG +1 D / +1 tong sau khi thêm, rồi ghim lại. No baseline row added. `tong` 2402 matches
 // `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+// ★★ 2026-10-24 · R1b-1 scadaCommands.dungMay +1 (SCADA R1b-1 Task 2 — STOP HMI một bước) — **D 1198 → 1199 · tong 2402 → 2403 ·
+// A/B/C/S unchanged.** MỘT thủ tục MỚI `scadaCommands.dungMay` (mutation) trong `server/routers/scadaCommandsRouter.ts`: truyền
+// `phamViCua(ctx)` xuống `lenhHmi.dungMayHmi` ⇒ `idsTrongPhamVi("machine", …, {strict:true})` (machineId từ client ⇒ kiểm lại phạm vi;
+// ngoài phạm vi = không tồn tại = NOT_FOUND). Mutation ⇒ D (bộ suy xếp MỌI mutation vào D). Đo: trên ghim cũ (gốc f5f8f40d9) đỏ ĐÚNG
+// +1 D / +1 tong sau khi thêm, rồi ghim lại. No baseline row added. `tong` 2403 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+// ★★ 2026-10-24 · R1b-1 T6 (mig 0433, FK cascade kênh chế độ / khoá chọn) — **A 333 → 338 · C 494 → 489 · B/D/S/tong unchanged (2403).** KHÔNG thêm thủ tục nào;
+// 5 thủ tục đổi nhóm C → A vì lược đồ drizzle được KHAI THÊM FK (`drizzle/schema/ot.ts`: `scadaKenhCheDo.machineId → machines`, `.adapterId → deviceAdapters`,
+// `scadaKhoaChon.adapterId → deviceAdapters`). CƠ CHẾ (`phamViDocScan.ts` §A): luật 2 — bảng có FK khai báo tới bảng tenant thành tenant; luật 3 —
+// "quy ước học từ chính các FK đã khai": cột `adapterId` lần đầu có FK tới `device_adapters` nên MỌI bảng có cột `adapterId` (commissioning_records, device_tags,
+// uns_tag_mappings) nay được xếp là tenant (adapter → machine). ĐỌC MÃ từng thủ tục: cả 5 nhận `adapterId`/`id` từ client, đọc hàng khoá theo adapter
+// và chỉ có `requirePermission` (vai trò) — KHÔNG lọc phạm vi nhà xưởng ⇒ KHÔNG phải dương tính giả; là nợ CÓ SẴN trước 0433, nay thước thấy:
+//   commissioningRouter.list · commissioningRouter.status · deviceAdapterRouter.tags.listByAdapter · unsMappingRouter.get · unsMappingRouter.list.
+// Đã ghi vào SỔ NỢ (`phamViDocBaseline.ts`, kèm ghi chú ngày); sửa rò = backlog R1b-2, NGOÀI phạm vi T6. Đo: ở 403ca87ac xanh 17/17; đặt lại CHỈ `drizzle/schema/ot.ts`
+// của 403ca87ac thì xanh lại ⇒ nguyên nhân duy nhất là `.references()`. Không gỡ `.references()` cho xanh. `tong` 2403 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
 // ★★ 2026-10-24 · PHẠM VI NHÀ MÁY cho thủ tục khoá theo `adapterId` (rà bảo mật, scada-master phát hiện) — **A 333 → 330 · C 494 → 488 · S 369 → 378 · B/D/tong unchanged (2402).**
 // CHÍNH XÁC 9 thủ tục đổi nhóm, đo bằng so `nhomCua` trên cây trước/sau (worktree HEAD cũ): ba mục sổ nợ A → S (`deviceAdapter.get`, `deviceAdapter.list`,
 // `mappingAsCode.exportOne`) và SÁU thủ tục C → S — nhóm "không có cổng" vì đọc bảng theo adapter mà bộ suy không thấy cổng: `commissioning.list`, `commissioning.status`,
@@ -899,6 +913,8 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // (line/station/factory/robot) và MỌI thuộc tính đều trong phạm vi; sự kiện không định vị chỉ toàn quyền thấy. Hai dòng sổ nợ đã GỠ. Chứng minh: `safetyPhamVi.db.test.ts` (5 ca; 4 đỏ trước khi vá; 6 đột biến bị bắt).
 // ★ 2026-10-24 (đợt 4): `genealogy.getFullHistory|getBySerial|getByLot|getLineage|verify` A → S (luật: đơn vị thấy được ⇔ có bản ghi ở máy trong phạm vi, hoặc chính người gọi đã ghi sự kiện chuỗi; `appendEvent` vào đơn vị đã tồn tại ngoài phạm vi ⇒ NOT_FOUND).
 // Chứng minh: `genealogyPhamVi.db.test.ts` (9 ca; 8 đỏ trước khi vá; 10 đột biến bị bắt). Năm dòng sổ nợ đã GỠ. Kèm vá lỗi CÓ SẴN: CTE đệ quy của `getLineage` lỗi 42804 trên CSDL thật (varchar[] vs text[]) ⇒ luôn 500.
+// ★★ 2026-10-24 · MERGE main (đợt vá phạm vi adapter của luong-ui, 7388c6bcd…) vào feat/scada-r1b — năm mục T6 (commissioning.list|status · tags.listByAdapter ·
+// unsMapping.get|list) nay ĐÃ CÓ cổng `_adapterPhamVi.ts` ⇒ S trên main; khối sổ nợ T6 bị GỠ theo main. Số dưới = SỐ ĐO trên cây gộp (main + R1b-1: +1 D scadaCommands.dungMay).
 // ★★ 2026-10-24 (lô L1 rà bảo mật tRPC nhóm A — phạm vi người dùng cho AOI): **A 314 → 290 · S 394 → 418 · B/C/D/tong unchanged (2402).** CHÍNH XÁC 24 thủ tục A → S, đo bằng `nhomCua`:
 // `aoiPackage` ×8 (getPackage|getImage|getPackageImages|getPackageLogs|downloadZip|listPackages|getUploadStats|getQueueStatus), `inspection.getById|aiAnalysis|defectPatternClusters` + `measurementResult.getById|getByInspection`,
 // `annotation.getByImage|getByInspection|search|statistics|comparison|heatmapData|trendPrediction`, `annotationComparison.list|getById|compareTwo|getTrendData`. Ngoài phạm vi ≡ NOT_FOUND (cùng thực thể với "không tồn tại") hoặc rỗng.
@@ -912,6 +928,7 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // Chứng minh: `loTruyXuatPhamVi.db.test.ts` (13 ca CSDL thật; 13/13 đỏ trên mã cũ; đột biến 58/58 bị bắt sau khi bổ sung 3 ca). Kèm vá lỗi CÓ SẴN: getReInspectStatus so sánh thời gian qua Date của JS (lệch múi giờ ⇒ chính hàng gốc bị tính là "muộn hơn").
 // 2026-10-25 (kiểm định, lô W7c, migration 0421): thiết bị đo + hiệu chuẩn + MSA ĐỌC theo nhà máy ⇒ 7 thủ tục đọc C → S (instrument.list|getById · calibration.list|health · msaRecord.list · msaWizard.getStudy|listByProduct): C 483 → 476 · S 423 → 430.
 // 2026-10-25 gộp L2 (A270/C483/S443) với W7c (7 C→S) ⇒ A270 · C476 · S450 (đo bằng census).
+// ★★ 2026-10-25 · MERGE main dba990c69 vào feat/scada-r1b (sau R1b-1) — SỐ ĐO trên cây hợp nhất (không lấy số bên nào).
 // ★★ 2026-10-25 (lô L4): **A 254 → 229 · C 476 → 475 · S 466 → 492 · B/D/tong unchanged.** 25 thủ tục ĐỌC → S (24 A→S + 1 C→S): interlock.list|get|testEvaluate · safety.listZones|evaluateZones|listCameraCalibrations|listCollaborations|currentBoard ·
 // robot.list|get|telemetry|jobs|interlockPreview · vda5050.listAgvs|status · equipment.listEquipment|getCapabilities|getState · equipmentIntegration.listLoadHistory|listCodeHistory|euromapOpcuaSnapshot ·
 // predictiveMaintenance.getMachineRisk|getReliabilityStats|getRulEstimate|listRulForecast (interlock.events: C→S). 25 dòng sổ nợ đọc GỠ; 6 thủ tục khai MIỄN TRỪ (edgeDeployment ×4 adminProcedure; listRecipeVersions = danh mục dùng chung;
@@ -923,6 +940,7 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // Còn lại có chủ ý: lineController.status vẫn trả lastSweepStats = số đếm tổng của MỌI tuyến (chỉ recentEvents được lọc).
 // ★★ 2026-10-25 (lô L5b): **A 211 → 208 · S 511 → 514 · B/C/D/tong unchanged.** 3 thủ tục ĐỌC A → S: aiImageSearch.findSimilar|clusterDefects|stats (dùng lại `VectorSearchFilters.machineIds` của W12a; embedding NGUỒN ngoài phạm vi ≡ không tồn tại). 3 dòng sổ nợ đọc GỠ.
 // Chứng minh: `loAnhTimKiemDocPhamVi.db.test.ts` (6 ca CSDL thật; 6/6 đỏ trên mã cũ; đột biến 9/9 bị bắt). Kèm vá lỗi CÓ SẴN: `getEmbeddingStats.indexedCount` luôn 0 vì đọc `.rows` của kết quả postgres-js (là mảng).
+// ★★ 2026-10-25 · MERGE main eb6f363e0 vào feat/scada-r1b (vòng sửa kiểm định R1b-1) — SỐ ĐO trên cây hợp nhất.
 // ★★ 2026-10-25 (lô L6a): **A 208 → 164 · C 474 → 473 · S 514 → 559 · B/D/tong unchanged · miễn trừ 16 → 21.** 45 thủ tục ĐỌC → S (44 A→S + 1 C→S) + 6 miễn trừ có dẫn mã: paretoAnalysis ×6 · productionDashboard ×5 · reportingMart ×3 ·
 // measurementCorrections ×2 · stationTriangulation.correlationMatrix · spc.controlChart · energy ×6 (recipeEnergy|peakDemand|powerFactor|forecast|demandResponse|enpi) · realtimeReport ×2 · goldenSample ×5 · thresholdSuggestion ×2 · componentLibrary.linkStats ·
 // dashboard.overviewCounts · semantics.compute · msd ×2 · stencil ×2 · ncr list|getById · ecn list|getById (getItems/transition cùng cổng); miễn trừ: semantics.list|get · spc.topNGPoints · ntfClassifier.list|status.
@@ -931,9 +949,9 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★★ 2026-10-25 (lô W16, kiem-dinh, cộng dồn sau L6a 164/473/559): **A 164 → 163 · C 473 → 470 · S 559 → 563 · B/D/tong unchanged.** 4 thủ tục ĐỌC → S: maintenanceRouter.partsBelowReorder (A→S, dòng sổ nợ GỠ) + mesControlTower.listMaterialReceipts|listSupplierLots|listDispositions (C→S) — kho vật tư theo nhà máy (mig 0424), lọc `factoryId IN phạm vi`. Chứng minh: `phamViGhiDoW16.db.test.ts`.
 // ★★ 2026-10-25 (lô L6b): **A 163 → 117 · S 563 → 609 · B/C/D/tong unchanged · miễn trừ +2.** 46 thủ tục ĐỌC nhóm AI A→S: aiActiveLearning ×6 · aiAdvanced (edge ×5 · training.getDataStats|checkAutoRetrain) · aiAnomaly ×4 · aiCalibration ×3 · aiEval.autoRetrainCheck · aiFeedback ×3 · aiInsight.list · aiModel ×2 · aiOrchestration ×2 · aiQualityGate ×4 · aiRcaCopilot.latest · aiRobotAnomaly ×2 · aiRouters (predictiveAlert list|get|stats · rootCause.list) · aiSegmentation.listMasks · aiSetupAdvisor.suggestSetup · aiSmartAlertRouting ×3 · aiThresholdAdvisor ×3; miễn trừ: aiLocalTraining.capabilities · aiSettings.getDataPipelineStats. Kèm cổng ảnh-theo-imageKey cho aiAdvancedVision.explainHeatmap (gỡ miễn trừ GHI).
 // Chứng minh: loAiDocNhom1PhamVi (10 ca) + loAiDocNhom2PhamVi (12 ca) — đỏ-trước trên HEAD sạch; đột biến 83/83 bắt (sau khi bổ sung ca). Lỗi CÓ SẴN vá kèm: getQualityGateStats đọc .rows (postgres-js trả mảng) ⇒ stats luôn 0; runDiversitySampling dùng toán tử <=> trên cột text ⇒ luôn lỗi + .rows.
-// 2026-10-25 (lô L6w): inspectionVariant.getVariant C → S ⇒ C 470 → 469 · S 609 → 610.
-// L6c-C1 (2026-10-25): 22 thủ tục đọc OT trục máy/robot/adapter được vá (A 117→95, S 610→632) — loOtDocC1PhamVi.db.test.ts
-const GHIM = { A: 95, B: 8, C: 469, D: 1198, S: 632, tong: 2402 } as const;
+// 2026-10-25 gộp R1b-1 (D +1) với L6b ⇒ đo bằng census.
+// 2026-10-25 gộp L6w (getVariant C→S) với main R1b-1 ⇒ đo bằng census.
+const GHIM = { A: 117, B: 8, C: 469, D: 1199, S: 610, tong: 2403 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

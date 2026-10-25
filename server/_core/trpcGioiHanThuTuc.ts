@@ -44,8 +44,26 @@ export const NHOM_THU_TUC_NHAY_CAM: Readonly<Record<NhomNhayCam, CauHinhNhom>> =
     tienTo: ["twoFactor."],
     // ⚠ scadaCommands.confirm CỐ Ý KHÔNG có ở đây (R1a final I-1, 2026-10-24): TOTP của nó đã chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce;
     // nhóm 20/15 phút chung IP + người sẽ bóp lệnh HMI mức 1/3 thường ngày. Miễn trừ ghi ở census kiemXacThucTheoMuc (trpcGioiHanThuTuc.census.test.ts).
+    // ⚠ scadaCommands.dungMay (STOP HMI, R1b-1 Task 2) CỐ Ý KHÔNG thuộc nhóm nào: STOP không bao giờ bị phần mềm chặn; không xác minh TOTP
+    // (census MIEN_TRU_KHONG_GIOI_HAN).
     // kiem-dinh P1-2 (2026-10-24): ba mutation cấu hình kênh / chế độ M12 xác minh TOTP tươi qua kiemXacThucTheoMuc (mức 5) ⇒ thuộc nhóm (việc hiếm).
-    chinhXac: ["user.setup2FA", "user.verify2FA", "user.disable2FA", "scadaKenh.capNhat", "scadaKenh.cheDo.dat", "scadaKenh.cheDo.go"],
+    // R1b-1 Task 9 (2026-10-24): mappingAsCode.applyImport (lô đụng tag được bảo vệ) xác minh qua `kiemTotpCauHinh` ⇒ thuộc nhóm (việc hiếm).
+    // ⚠ deviceAdapter.tags.create / update / delete (fix round 1), deviceAdapter.update (fix round 2), deviceAdapter.delete + scadaDiag.tamTat
+    // (fix round 3) CỐ Ý KHÔNG có ở đây (phán quyết T9 a):
+    // nhóm đếm theo PATH ở rìa ⇒ mọi lượt sửa tag / adapter thường ngày (kể cả công tắc Bật) sẽ ăn chung xô 20 / 15 phút theo IP với 2FA /
+    // deploy — một NAT nhà máy bị khoá khỏi mọi thủ tục 2fa; dò mã đã chặn theo TÀI KHOẢN bởi T16. Miễn trừ ghi ở census kiemXacThucTheoMuc.
+    // ⚠ deviceAdapter.tags.setStopPin (kiem-dinh R1b-1 H1 a, 2026-10-25 — TOTP mức 5 MỖI lượt) CỐ Ý KHÔNG có ở đây: ghim theo từng tag, thành
+    // loạt lúc commissioning; cùng lý do T16. Miễn trừ ghi ở census kiemXacThucTheoMuc.
+    // ⚠ interlock.update / interlock.delete (kiem-dinh R1b-1 I1 b, 2026-10-25 — TOTP chỉ khi luật bảo vệ) CỐ Ý KHÔNG có ở đây (khuôn tags.*).
+    chinhXac: [
+      "user.setup2FA",
+      "user.verify2FA",
+      "user.disable2FA",
+      "scadaKenh.capNhat",
+      "scadaKenh.cheDo.dat",
+      "scadaKenh.cheDo.go",
+      "mappingAsCode.applyImport",
+    ],
   },
   auth: {
     cuaSoMs: AUTH_RATE_LIMIT.windowMs,
@@ -107,14 +125,32 @@ function layCacPath(req: Request): string[] {
   return req.query?.batch === "1" ? p.split(",") : [p];
 }
 
-/** Khoá người dùng từ cookie phiên: `u:<openId>` khi cookie hợp lệ (chỉ kiểm chữ ký JWT, không chạm DB), ngược lại null. */
-async function khoaNguoiMacDinh(req: Request): Promise<string | null> {
-  const raw = req.headers.cookie;
+/**
+ * Phiên trong cookie có CHỮ KÝ JWT + hạn hợp lệ (`sdk.verifySession` — stateless, KHÔNG chạm DB, không tra sổ phiên): `{ openId }`, ngược lại
+ * null (không cookie, cookie rác, chữ ký sai, hết hạn). CHỈ phục vụ GIỚI HẠN TỐC ĐỘ, không cấp quyền gì — xác thực thật vẫn ở createContext.
+ * Hai người dùng: khoá đếm theo người của middleware này, và (SCADA R1b-1 rà soát cuối I-2) `rateLimitConfig.laStopHmiCoPhienKy` — `apiLimiter`
+ * chỉ miễn đếm STOP HMI khi phiên qua phép kiểm này (cùng phép kiểm bước 1 của `robotStopAuth`). Một chủ cho phép kiểm ⇒ census điểm xác thực
+ * (`thuHoiPhienMoiBeMat` …) vẫn thấy đúng MỘT lượt `verifySession` ở tệp này.
+ */
+export async function phienKyHopLe(req: Pick<Request, "headers">): Promise<{ openId: string } | null> {
+  const raw = req.headers?.cookie;
   if (!raw) return null;
   const m = new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`).exec(raw);
   if (!m) return null;
+  let token: string;
+  try {
+    token = decodeURIComponent(m[1]!);
+  } catch {
+    return null; // %-mã hỏng: không phải một vé
+  }
   const { sdk } = await import("./sdk");
-  const phien = await sdk.verifySession(decodeURIComponent(m[1]!));
+  const phien = await sdk.verifySession(token);
+  return phien ? { openId: phien.openId } : null;
+}
+
+/** Khoá người dùng từ cookie phiên: `u:<openId>` khi cookie hợp lệ (chỉ kiểm chữ ký JWT, không chạm DB), ngược lại null. */
+async function khoaNguoiMacDinh(req: Request): Promise<string | null> {
+  const phien = await phienKyHopLe(req);
   return phien ? `u:${phien.openId}` : null;
 }
 

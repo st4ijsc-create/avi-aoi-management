@@ -819,6 +819,17 @@ export async function mucGhiOtLucXacNhan(
   }
 }
 
+/** R1b-1 T10 — câu từ chối MUC_QUA_CAO theo ngôn ngữ người gọi (vi = nguyên văn lý do của cổng; en/zh dịch cùng ý). */
+function mucQuaCaoMessage(lang: ToolLang, muc: number, lyDoVi: string): string {
+  if (lang === "en") {
+    return `The AI assistant is never allowed to command a channel of actuation level ${muc} (level 4 and above is for a human operator only). Permanently refused — do not retry; let the operator press the button themselves.`;
+  }
+  if (lang === "zh") {
+    return `AI 助手永远不得对作用等级 ${muc} 的通道下达命令（4 级及以上仅限操作员亲自操作）。已永久拒绝——请勿重试，请由操作员亲自按键。`;
+  }
+  return lyDoVi;
+}
+
 function xacThucMucMessage(lang: ToolLang, ma: MaXacThucTheoMuc, muc: MucRuiRo, conLaiMs?: number): string {
   // R1a T16 — phút còn lại của khoá TOTP (làm tròn lên, ≥ 1). Không bao giờ nói số lần sai.
   const phut = phutConLai(conLaiMs);
@@ -955,7 +966,7 @@ export async function confirmAction(
         tieuQuota: false,
       });
       await auditConfirmFailure(user, req, row.tool, actionId, cong.ma);
-      return { ok: false, status: "denied", reason: cong.ma, level: cong.muc, message: cong.lyDo };
+      return { ok: false, status: "denied", reason: cong.ma, level: cong.muc, message: mucQuaCaoMessage(lang, cong.muc, cong.lyDo) };
     }
     const ctxXt: CtxXacThuc & { __luotXacMinhTotp?: string } = {
       user: { id: user.id, role: user.role, twoFactorEnabled: xacThuc?.twoFactorEnabled ?? false },

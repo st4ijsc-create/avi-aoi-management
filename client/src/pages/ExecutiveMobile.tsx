@@ -39,6 +39,8 @@ import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
+import { tuChoiTuLoiXacNhan } from "@/lib/loiXacNhanAi";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Card, CardContent } from "@/components/ui/card";
@@ -519,7 +521,8 @@ export default function ExecutiveMobile(): React.JSX.Element {
   // cancel). Both invalidate aiInbox.list (+count badge) and toast the REAL
   // server outcome — never an optimistic success.
   const utils = trpc.useUtils();
-  const confirmM = trpc.aiCopilot.confirmAction.useMutation();
+  // onError rỗng: `approveConfirmed` tự hiện lỗi (một toast) — không để lưới cuối của main.tsx thêm toast thứ hai.
+  const confirmM = trpc.aiCopilot.confirmAction.useMutation({ onError: () => undefined });
   const dismissM = trpc.aiInbox.dismiss.useMutation();
   const aiActionBusy = confirmM.isPending || dismissM.isPending;
   const [confirmTarget, setConfirmTarget] = useState<{
@@ -549,8 +552,9 @@ export default function ExecutiveMobile(): React.JSX.Element {
       } else {
         toast.error(res.message ?? t("executiveMobile.approvals.actionFailed", "Could not complete the action"));
       }
-    } catch {
-      toast.error(t("executiveMobile.approvals.actionFailed", "Could not complete the action"));
+    } catch (err) {
+      // R1b-1 T10 fix round 1 (I-2) — AI mức ≥ 4 bị từ chối vĩnh viễn: hiện CÂU ĐÃ DỊCH của máy chủ; lỗi khác dùng câu đã dịch chung của mapTrpcError.
+      toast.error(tuChoiTuLoiXacNhan(err)?.message ?? mapTrpcError(err));
     } finally {
       invalidateAiInbox();
     }

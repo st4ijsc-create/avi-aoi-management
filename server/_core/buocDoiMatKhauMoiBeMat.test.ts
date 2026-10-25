@@ -134,7 +134,8 @@ const BE_MAT_TU_CANH: { duong: string; vi_sao: string; canh_boi: string }[] = [
     duong: "server/_core/trpcGioiHanThuTuc.ts",
     vi_sao:
       "rà bảo mật 2026-10-24 (giới hạn tốc độ theo SỐ THỦ TỤC nhạy cảm): middleware này chỉ kiểm CHỮ KÝ JWT của phiên (sdk.verifySession) để lấy openId làm KHOÁ ĐẾM giới hạn tốc độ — " +
-      "chỉ làm khoá giới hạn tốc độ, không cấp quyền: không gắn danh tính vào req, không trả dữ liệu, không bỏ qua bước nào; mọi quyết định cho/chặn vẫn ở context tRPC.",
+      "chỉ làm khoá giới hạn tốc độ, không cấp quyền: không gắn danh tính vào req, không trả dữ liệu, không bỏ qua bước nào; mọi quyết định cho/chặn vẫn ở context tRPC. " +
+      "SCADA R1b-1 rà soát cuối I-2: CÙNG hàm (`phienKyHopLe`) quyết `apiLimiter` có miễn đếm STOP HMI (POST `scadaCommands.dungMay` không batch) — vẫn chỉ là giới hạn tốc độ; vô danh / vé sai chữ ký bị đếm.",
     canh_boi:
       "xác thực thật vẫn ở tầng sau: createContext → sdk.authenticateRequest + thuTucGoc (sổ phiên · users.isActive · cổng buộc-đổi-mật-khẩu). Chứng minh bằng DB thật: phiên ĐÃ THU HỒI / tài khoản BỊ TẮT / " +
       "người BỊ BUỘC ĐỔI MẬT KHẨU đi qua middleware (chỉ bị đếm) mà thủ tục VẪN KHÔNG chạy — server/_core/trpcGioiHanThuTuc.xacThuc.db.test.ts §2–§4",

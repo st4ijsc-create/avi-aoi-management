@@ -2,7 +2,7 @@
  * SCADA R1a Task 5 (K7 + K9) — qua `dispatch()` thật, CSDL thật (`_test`, ép bởi vitest.setup): command_log WORM + trigger
  * `trg_command_log_result_guard` (một kết quả cho mỗi ý định) chỉ kiểm được trên Postgres thật.
  *
- *   K9 — OT_CMD_SERIALIZE_ENABLED bật: lệnh B chờ sau lệnh A đang treo; đồng hồ (Date.now) nhảy 61 s rồi A xong ⇒ B KHÔNG BAO GIỜ tới
+ *   K9 — OT_CMD_SERIALIZE_ENABLED bật: lệnh B chờ sau lệnh A đang treo; đồng hồ (performance.now + Date.now) nhảy 61 s rồi A xong ⇒ B KHÔNG BAO GIỜ tới
  *        driver, kết quả `rejected QUEUE_EXPIRED` là dòng KẾT QUẢ DUY NHẤT của dòng ý định đã có (ackValue {ledger:'result', intentId}).
  *        deadlineMs của lệnh là hạn chờ (B deadlineMs 50 ms chờ ~150 ms thật ⇒ hết hạn). DỪNG ghim và lệnh kiểu stop chưa xác minh
  *        không có hạn (chờ "61 s" vẫn chạy). Cờ tắt ⇒ không có hàng đợi, không có gì đổi.
@@ -152,11 +152,19 @@ function holdA(): () => void {
   return release;
 }
 
-/** Đồng hồ Date.now nhảy `ms` (giả lập lệnh chờ lâu, không phải đợi thật); trả hàm khôi phục. */
+/**
+ * Thời gian trôi `ms` (giả lập lệnh chờ lâu, không phải đợi thật); trả hàm khôi phục. R1b-1 T10: hạn hàng đợi đo bằng performance.now()
+ * (đơn điệu) ⇒ phải nhảy CẢ performance.now (đồng hồ hạn hàng đợi) lẫn Date.now (mốc khác của dispatcher: preflight, thời điểm ghi).
+ */
 function jumpClock(ms: number): () => void {
   const real = Date.now.bind(Date);
+  const realPerf = performance.now.bind(performance);
   const spy = vi.spyOn(Date, "now").mockImplementation(() => real() + ms);
-  return () => spy.mockRestore();
+  const spyPerf = vi.spyOn(performance, "now").mockImplementation(() => realPerf() + ms);
+  return () => {
+    spy.mockRestore();
+    spyPerf.mockRestore();
+  };
 }
 
 const ENV_KEYS = [

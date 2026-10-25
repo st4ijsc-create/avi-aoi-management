@@ -31,6 +31,7 @@ import { baoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, ty
 import { chatLuongLoiChung, chatLuongV2Bat } from "./chatLuong";
 import {
   khoangNoiLaiMs,
+  laDocTot,
   NOI_LAI_NHANH_TOI_THIEU_MS,
   SO_TICK_HONG_DE_MAT,
   taoDemTickHong,
@@ -169,6 +170,12 @@ interface LegacyEntry {
   /** SCADA R0 T12 (D1) — số thứ tự lần subscribe (mỗi attemptLegacyStart một số) và phiên đang giữ `handle` (0 = không có). */
   demPhien?: number;
   phienHoatDong?: number;
+  /**
+   * SCADA R1b-1 T3 — phiên đang hoạt động được mở khi cờ OT_CHAT_LUONG_V2_ENABLED bật (đọc lúc subscribe) ⇒ `connected` chỉ sau tick
+   * ĐỌC TỐT đầu tiên của CHÍNH phiên đó; `phienDocTot` = phiên mới nhất đã có tick đọc tốt (xem dangChoDocTotLegacy).
+   */
+  choDocTot?: boolean;
+  phienDocTot?: number;
 }
 
 const legacy = new Map<number, LegacyEntry>();
@@ -246,15 +253,31 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
   if (tt0 === undefined || tt0 === "disabled") baoLegacy(entry, "connecting");
   // T12 D1 — mỗi lần subscribe là một PHIÊN có bộ đếm tick hỏng riêng; tick của phiên đã bị thay không hạ được phiên mới.
   const phien = (entry.demPhien = (entry.demPhien ?? 0) + 1);
+  /** R1b-1 T3 — cờ V2 đọc lúc subscribe của phiên này (cùng lần đọc với D1). */
+  let v2Phien = false;
   const work = (async (): Promise<OtSubscriptionHandle> => {
     await adapter.driver.connect(adapter.connection);
     const sink = await makeIngestSink(adapter);
+    // T12b fix round 1 — D1 sau cờ OT_CHAT_LUONG_V2_ENABLED, đọc lúc subscribe (như D3): cờ tắt ⇒ đúng hành vi trước R0.
+    // R1b-1 T3 — cùng cờ, cùng lần đọc: phiên chờ tick đọc tốt đầu tiên trước khi báo `connected`.
+    v2Phien = chatLuongV2Bat();
+    // R1b-1 T3 fix round 1 — đường PUSH (OPC UA monitored items) không bao giờ gọi onTick: mẫu chất lượng `good` ĐẦU TIÊN của phiên
+    // cũng là một lần đọc tốt. Bọc sink RIÊNG của phiên này (closure giữ `phien`) ⇒ cùng bảo đảm định danh phiên như đường tick.
+    const sinkPhien: OnOtSample = v2Phien
+      ? (s) => {
+          if (s.quality === "good") khiDocTotLegacy(entry, phien, myEpoch);
+          return sink(s);
+        }
+      : sink;
     return adapter.driver.subscribe(
       adapter.tags,
-      sink,
+      sinkPhien,
       adapter.pollIntervalMs,
-      // T12b fix round 1 — D1 sau cờ OT_CHAT_LUONG_V2_ENABLED, đọc lúc subscribe (như D3): cờ tắt ⇒ đúng hành vi trước R0.
-      tuyChonPollCua(adapter, chatLuongV2Bat() ? (e) => khiTickHongLegacy(entry, phien, myEpoch, e) : undefined),
+      tuyChonPollCua(
+        adapter,
+        v2Phien ? (e) => khiTickHongLegacy(entry, phien, myEpoch, e) : undefined,
+        v2Phien ? (e) => (laDocTot(e) ? khiDocTotLegacy(entry, phien, myEpoch) : undefined) : undefined,
+      ),
     );
   })();
   // Cờ settle gắn TRƯỚC withDeadline ⇒ khi work reject đúng hạn, cờ đã bật lúc catch chạy.
@@ -316,6 +339,7 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
   }
   entry.handle = handle;
   entry.phienHoatDong = phien;
+  entry.choDocTot = v2Phien;
   entry.fingerprint = fingerprint;
   entry.state = "active";
   entry.lastError = null;
@@ -325,15 +349,46 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
   entry.upSince = Date.now();
   // Driver vừa nối được nhưng tự báo chưa thông (vd stub đang mô phỏng mất kết nối) ⇒ chưa phải "đã nối": legacyTick báo
   // 'connected' khi isConnected() thật sự true (không chập chờn lost↔connected, không phát lại mẫu xấu mỗi vòng nối lại).
-  if (driverDangNoi(adapter)) baoLegacy(entry, "connected");
+  if (driverDangNoi(adapter)) {
+    // R1b-1 T3 (cờ V2) — TCP lên chưa phải "đã nối": chờ tick đọc tốt đầu tiên của phiên này (có thể ĐÃ về trong lúc subscribe —
+    // lần đọc đầu chạy ngay — khi đó báo luôn). Đang chờ: giữ 'lost' (nối lại sau mất) / 'connecting'; phiên cũ còn để 'connected'
+    // (reset phiên legacy không đi qua 'lost') ⇒ hạ về 'connecting' cho tới khi phiên mới đọc được.
+    if (!dangChoDocTotLegacy(entry)) baoLegacy(entry, "connected");
+    else if (layTrangThaiAdapter(adapter.adapterId)?.tt === "connected") baoLegacy(entry, "connecting");
+  }
   return true;
+}
+
+/** R1b-1 T3 — phiên đang hoạt động mở với cờ V2 và chưa có tick đọc tốt ⇒ chưa được báo `connected` (legacyTick cũng không). */
+function dangChoDocTotLegacy(entry: LegacyEntry): boolean {
+  const p = entry.phienHoatDong ?? 0;
+  return entry.choDocTot === true && p !== 0 && entry.phienDocTot !== p;
+}
+
+/**
+ * R1b-1 T3 (legacy, cờ V2) — phiên `phien` vừa có một lần đọc tốt: tick `laDocTot` (đường poll) hoặc mẫu `good` (đường push — fix
+ * round 1). Lần đầu của phiên MỚI NHẤT ⇒ ghi lại; nếu phiên đó đã là phiên hoạt động ⇒ báo `connected` (ổn định theo thoiGianOnDinhMs
+ * như cũ — baoLegacy). Phiên đã bị thay (muộn) không ghi, không báo; về trước khi phiên thành hoạt động (lần đọc đầu trong subscribe)
+ * chỉ được ghi — attemptLegacyStart báo sau.
+ */
+function khiDocTotLegacy(entry: LegacyEntry, phien: number, myEpoch: number): void {
+  if (myEpoch !== epoch || legacy.get(entry.adapter.adapterId) !== entry) return;
+  if (phien !== entry.demPhien || entry.phienDocTot === phien) return;
+  entry.phienDocTot = phien;
+  if (entry.phienHoatDong !== phien || entry.state !== "active" || entry.inflight) return;
+  if (driverDangNoi(entry.adapter)) baoLegacy(entry, "connected");
 }
 
 /**
  * SCADA R0 Task 6 — tham số thứ 4 của subscribe(): hạn cứng một lần đọc (tinhDeadlineMs, theo timeoutMs LỚN NHẤT của các endpoint
  * để endpoint dự phòng chậm hơn không bị cắt oan) + bộ đếm truyền thông (C8). Adapter push (OPC UA monitored items) không gọi onTick.
  */
-function tuyChonPollCua(adapter: RuntimeAdapter, khiTickHong?: (e: SuKienDoc) => void): TuyChonVongPoll {
+function tuyChonPollCua(
+  adapter: RuntimeAdapter,
+  khiTickHong?: (e: SuKienDoc) => void,
+  /** R1b-1 T3 (legacy) — mọi tick của phiên, để bắt lần đọc tốt đầu tiên; nhánh HA bắt trong ConnectionSupervisor (onDocTotDauTien). */
+  khiTick?: (e: SuKienDoc) => void,
+): TuyChonVongPoll {
   const t1 = adapter.connection.timeoutMs;
   const t2 = adapter.backupConnection?.timeoutMs;
   const timeoutMs = typeof t1 === "number" || typeof t2 === "number" ? Math.max(t1 ?? 0, t2 ?? 0) : undefined;
@@ -343,6 +398,7 @@ function tuyChonPollCua(adapter: RuntimeAdapter, khiTickHong?: (e: SuKienDoc) =>
     deadlineMs: tinhDeadlineMs(adapter.pollIntervalMs, timeoutMs),
     onTick: (e) => {
       ghiNhanDoc(adapter.adapterId, e);
+      khiTick?.(e);
       dem?.(e);
     },
   };
@@ -406,7 +462,8 @@ async function legacyTick(myEpoch: number): Promise<void> {
         up = false;
       }
       if (up) {
-        baoLegacy(entry, "connected"); // no-op khi đã connected; sửa trạng thái nếu nối xong lúc driver chưa thông
+        // no-op khi đã connected; sửa trạng thái nếu nối xong lúc driver chưa thông. R1b-1 T3: phiên còn chờ đọc tốt ⇒ không báo.
+        if (!dangChoDocTotLegacy(entry)) baoLegacy(entry, "connected");
         // Liên kết đã giữ vững đủ lâu ⇒ đợt mất kết thúc: bộ đếm thất bại về 0.
         if (entry.upSince !== undefined && Date.now() - entry.upSince >= thoiGianOnDinhMs(entry.adapter.pollIntervalMs)) {
           entry.failures = 0;
@@ -782,6 +839,14 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
     // doc 81 Đợt 1B Task 2 (R8) — một lần connect+subscribe không giữ quá hạn khởi động.
     // Fix round 1 — supervisor tự nâng hạn theo timeoutMs của từng endpoint (connectDeadlineFor).
     connectTimeoutMs: adapterStartTimeoutMs(),
+    // SCADA R1b-1 T3 — cờ V2 đọc lúc subscribe MỖI phiên: phiên chờ tick đọc tốt đầu tiên trước khi host báo `connected`.
+    choDocTotDauTien: () => chatLuongV2Bat(),
+    onDocTotDauTien: () => {
+      const hienTai = supervisors.get(adapter.adapterId)?.supervisor;
+      if (hienTai && chinhNo && hienTai !== chinhNo) return;
+      if (epoch !== epochLucDung || detachToken(adapter.adapterId) !== tokLucDung) return;
+      baoTrangThaiAdapter(adapter, "connected", null, new Date(), null, thoiGianOnDinhMs(adapter.pollIntervalMs));
+    },
     // SCADA R0 Task 5 (C1/C3) — trạng thái kết nối + mẫu xấu khi mất (xem trangThaiAdapter.ts).
     onStateChange: (prev, next, lastError, statusCode) => {
       if (prev === "stopped") return; // 'stopped' là cuối: vòng nối trễ không được kéo adapter đã dừng về 'lost'
@@ -791,6 +856,13 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
       if (next !== "stopped" && (epoch !== epochLucDung || detachToken(adapter.adapterId) !== tokLucDung)) return;
       switch (next) {
         case "connected":
+          // R1b-1 T3 (cờ V2) — TCP + subscribe xong chưa phải "đã nối": phiên chưa có tick đọc tốt ⇒ giữ 'lost' (nối lại sau mất) /
+          // 'connecting'; onDocTotDauTien báo `connected` ở tick đọc tốt đầu tiên. Tick tốt về TRƯỚC lúc này (lần đọc đầu tức thì) ⇒
+          // dangChoDocTot() = false ⇒ báo ngay như cũ.
+          if (chinhNo?.dangChoDocTot()) {
+            if (layTrangThaiAdapter(adapter.adapterId)?.tt !== "lost") baoTrangThaiAdapter(adapter, "connecting", null);
+            break;
+          }
           baoTrangThaiAdapter(adapter, "connected", null, new Date(), null, thoiGianOnDinhMs(adapter.pollIntervalMs));
           break;
         case "reconnecting":

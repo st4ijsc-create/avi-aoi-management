@@ -517,8 +517,29 @@ describe("scadaKenh.cheDo — kênh chế độ máy", () => {
     expect((await cua(viewerA, A.mid)).canhBaoNguon).toBeNull();
     await dung(sql`UPDATE device_tags SET "samplingMs" = 1501 WHERE id = ${tg.mode}`);
     expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("deadband");
+    // R1b-1 T10b (N5) — ngưỡng = ngưỡng tuổi của CỔNG CHẾ ĐỘ min(3·poll, 30 s): poll 20 s ⇒ 30 s (không phải 60 s)
+    await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 20000 WHERE id = ${ad.a}`);
+    try {
+      await dung(sql`UPDATE device_tags SET "samplingMs" = 30000 WHERE id = ${tg.mode}`);
+      // T10b fix round 1 (M-1) — samplingMs chưa vượt ngưỡng ⇒ không "deadband", nhưng poll 20 s > 10 s ⇒ "poll_cham" (xếp SAU deadband)
+      expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("poll_cham");
+      await dung(sql`UPDATE device_tags SET "samplingMs" = 30001 WHERE id = ${tg.mode}`);
+      expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("deadband");
+    } finally {
+      await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 500 WHERE id = ${ad.a}`);
+      await dung(sql`UPDATE device_tags SET "samplingMs" = 1501 WHERE id = ${tg.mode}`);
+    }
     vi.stubEnv("OT_TAG_DEADBAND_ENABLED", "false");
     expect((await cua(viewerA, A.mid)).canhBaoNguon).toBeNull();
+    // R1b-1 T10b fix round 1 (M-1) — poll_cham KHÔNG phụ thuộc cờ deadband: ngưỡng = TUOI_MAU_CHE_DO_TOI_DA_MS / 3 = 10 000 ms (cùng kẹp 30 s)
+    await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 10000 WHERE id = ${ad.a}`);
+    try {
+      expect((await cua(viewerA, A.mid)).canhBaoNguon, "poll đúng 10 s ⇒ 3·poll = 30 s, chưa kẹp").toBeNull();
+      await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 10001 WHERE id = ${ad.a}`);
+      expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("poll_cham");
+    } finally {
+      await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 500 WHERE id = ${ad.a}`);
+    }
     // OPC UA: đổi protocol của adapter (bật, đúng máy) trong chốc lát — không ai mở phiên (test không gọi startOt)
     await dung(sql`UPDATE device_adapters SET protocol = 'opcua' WHERE id = ${ad.a}`);
     expect((await cua(viewerA, A.mid)).canhBaoNguon).toBe("bao_khi_doi");
@@ -541,9 +562,14 @@ describe("scadaKenh.cheDo — kênh chế độ máy", () => {
       expect(m2).toMatchObject({ kenh: null, kenhAn: true, canhBaoNguon: null, cheDo: "LOCAL", lyDo: "kenh_sai_may" });
       const m1 = ds.find((x) => x.machineId === A.mid)!;
       expect(m1).toMatchObject({ kenh: null, kenhAn: true, canhBaoNguon: null, cheDo: "LOCAL", lyDo: "kenh_sai_may" });
-      const tho = JSON.stringify([m1, m2]);
+      // R1b-1 T2 fix round 1 (2026-10-24) — `khaNangDung` liệt kê adapter CỦA CHÍNH máy (máy trong phạm vi ⇒ adapter của nó thấy được,
+      // cùng tập `scadaDiag.danhSach`); điều canh ở đây là chi tiết của KÊNH bị che ⇒ bỏ khaNangDung khỏi phép soi chuỗi, và soi riêng
+      // rằng adapter ngoài phạm vi (ad.b) không lọt ở BẤT KỲ đâu trong hàng.
+      const tho = JSON.stringify([m1, m2].map(({ khaNangDung: _k, ...r }) => r));
       expect(tho).not.toContain(`"adapterId"`);
       expect(tho).not.toContain(`"tagKey"`);
+      expect(JSON.stringify([m1, m2])).not.toContain(`"adapterId":${ad.b}`);
+      for (const k of [m1.khaNangDung, m2.khaNangDung]) for (const a of k.adapters) expect([ad.a, ad.a2]).toContain(a.adapterId);
       // admin (toàn quyền) cũng không thấy chi tiết của kênh SAI MÁY
       expect((await admin.cheDo.danhSach()).find((x) => x.machineId === A.mid)).toMatchObject({ kenh: null, kenhAn: true });
     } finally {
@@ -629,6 +655,33 @@ describe("fix round 1 — canhBaoKenhDung, loại kênh ghi trên tag không ghi
       expect(capNhatXong).toMatchObject({ changed: true });
       expect(await cotTag(tg.sp)).toMatchObject({ writeMin: 0, writeMax: 100 });
     } finally {
+      await raw.end({ timeout: 5 });
+    }
+  });
+});
+
+describe("R1b-1 T10 — capNhat đọc adapter.machineId KHI đã khoá hàng adapter (FOR SHARE)", () => {
+  it("★ adapter đang bị đổi sang máy NGOÀI phạm vi (giao dịch khác giữ FOR UPDATE, chưa commit): capNhat CHỜ rồi đọc máy MỚI ⇒ NOT_FOUND, tag không đổi (không TOCTOU)", async () => {
+    const postgres = (await import("postgres")).default;
+    const raw = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+    const ten = lyDo("khoa-adapter");
+    try {
+      let xong: unknown;
+      let daXong = false;
+      await raw.begin(async (t) => {
+        await t`UPDATE device_adapters SET "machineId" = ${B.mid} WHERE id = ${ad.a}`; // giữ khoá hàng adapter, CHƯA commit
+        void engA.capNhat({ tagId: tg.sp, patch: { displayName: ten }, lyDo: lyDo("khoa-ad") }).then(
+          (v) => ((xong = v), (daXong = true)),
+          (e) => ((xong = e), (daXong = true)),
+        );
+        await new Promise((res) => setTimeout(res, 800));
+        expect(daXong, "capNhat phải ĐANG CHỜ khoá FOR SHARE của hàng adapter, không đọc máy cũ rồi chạy tiếp").toBe(false);
+      });
+      await vi.waitFor(() => expect(daXong).toBe(true), { timeout: 10_000 });
+      expect(xong).toMatchObject({ code: "NOT_FOUND" });
+      expect((await cotTag(tg.sp)).displayName).toBeNull();
+    } finally {
+      await dung(sql`UPDATE device_adapters SET "machineId" = ${A.mid} WHERE id = ${ad.a}`);
       await raw.end({ timeout: 5 });
     }
   });

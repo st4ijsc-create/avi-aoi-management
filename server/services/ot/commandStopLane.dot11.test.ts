@@ -29,6 +29,8 @@ const events: Row[] = [];
 let cmdSeq = 1;
 
 vi.mock("drizzle-orm", async () => (await import("./commandDispatcher.testkit")).fakeOrm);
+// kiem-dinh R1b-1 I1 (a) (2026-10-25) — FIXTURE: bám định nghĩa tag đọc DB thật (raw SQL) mà FakeDb không có; mặc định "duyệt còn hiệu lực".
+vi.mock("../interlock/dinhNghiaDuyet", () => ({ luatDuyetConHieuLuc: vi.fn(async () => true) }));
 function tableFor(table: any): Row[] {
   switch (table.__table) {
     case "ai_pending_actions": return Array.from(pending.values());
