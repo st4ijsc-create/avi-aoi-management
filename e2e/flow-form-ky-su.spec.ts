@@ -126,8 +126,12 @@ test("4 — lưu: tham số trong CSDL đúng như chọn bằng form (ô JSON c
   await page.getByTestId("them-bao-tri.tao-phieu").click();
   await page.getByTestId("tp-nhom").selectOption("plc-phan-mem");
   await page.getByTestId("tp-uu-tien").selectOption("2");
+  // truy vấn MỚI của danh mục mở rộng, chọn bằng form (thêm node số liệu thứ hai)
+  await page.getByTestId("them-du-lieu.so-lieu").click();
+  await page.getByTestId("so-lieu-truy-van").selectOption("ton-kho.sap-het");
   await page.getByTestId("nut-luu").click();
   await expect(page.getByText("Chưa lưu")).toHaveCount(0, { timeout: 30_000 });
+  expect((await dsNutMoi("du-lieu.so-lieu")).some((n) => n.parameters.truyVan === "ton-kho.sap-het")).toBe(true);
   expect(await thamSoNut("san-luong")).toMatchObject({ truyVan: "oee.trung-binh", gio: 168 });
   expect(await thamSoNut("thong-bao")).toMatchObject({ nguoiNhan: [fx.mot.id], loai: "INFO" });
   const [sk] = await dsNutMoi("kich-hoat.su-kien");

@@ -381,7 +381,7 @@ describe("mẫu 'Báo cáo ca số liệu thuần' (không AI) — nội dung th
     });
     const r = await chay(mau.id, u.nhieu);
     expect(r.status).toBe("xong");
-    expect(noiDung).toEqual(["Sản lượng 12 giờ: 3 lần kiểm, NG 2 (66.67 %). Máy trong phạm vi: 1."]);
+    expect(noiDung).toEqual(["Sản lượng 12 giờ: 3 lần kiểm, NG 2 (66.67 %). Máy trong phạm vi: 1. Dừng máy: 0 lần, 0 phút."]);
   });
 });
 
