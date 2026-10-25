@@ -44,9 +44,6 @@
  */
 export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/_core/systemRouter.ts (1) ──
-  // ── server/routers/aiAdvancedRouter.ts (2) ──
-  "server/routers/aiAdvancedRouter.ts#abTestRouter.runInference",
-  "server/routers/aiAdvancedRouter.ts#abTestRouter.submitFeedback",
   // ── server/routers/aiAdvancedVisionRouter.ts (1) ──
   // ── server/routers/aiModelRouter.ts (3) ──
   // ── server/routers/alertEscalationRouter.ts (4) ──
@@ -120,6 +117,9 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
  * (c) không đồng thời nằm trong sổ nợ. Thêm mục = lời khai công khai, người review phải thấy.
  */
 export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
+  // ── W17 (kiểm định phamViGhi, 2026-10-25): router không mount ──
+  "server/routers/aiAdvancedRouter.ts#abTestRouter.runInference": "router abTest KHÔNG ĐƯỢC MOUNT: `aiAdvancedRouter` chỉ gắn batch + monitoring (training / abTest / edge đã tắt khi chuyển sang AI cục bộ, các dòng `abTest: abTestRouter` nằm trong chú thích) ⇒ không có đường gọi tới thủ tục này. Census §5d ĐỎ nếu training / abTest / edge xuất hiện lại trong aiAdvanced (phải gắn cổng phạm vi cho thủ tục ghi RỒI mới gỡ miễn trừ) — W17 kiểm định phamViGhi 2026-10-25",
+  "server/routers/aiAdvancedRouter.ts#abTestRouter.submitFeedback": "router abTest KHÔNG ĐƯỢC MOUNT: `aiAdvancedRouter` chỉ gắn batch + monitoring (training / abTest / edge đã tắt khi chuyển sang AI cục bộ, các dòng `abTest: abTestRouter` nằm trong chú thích) ⇒ không có đường gọi tới thủ tục này. Census §5d ĐỎ nếu training / abTest / edge xuất hiện lại trong aiAdvanced (phải gắn cổng phạm vi cho thủ tục ghi RỒI mới gỡ miễn trừ) — W17 kiểm định phamViGhi 2026-10-25",
   // ── W14c (kiểm định phamViGhi, 2026-10-25): bình luận sở hữu theo người dùng ──
   "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.updateComment": "bình luận SỞ HỮU THEO NGƯỜI DÙNG: chỉ chủ (comment.userId === ctx.user.id) hoặc admin sửa — kiểm TRƯỚC khi ghi (trainingBatchCommentsRouter.ts); bình luận chỉ thêm được vào lô trong phạm vi (addComment có cổng + test phamViGhiDoW14c) — W14c",
   "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.deleteComment": "bình luận SỞ HỮU THEO NGƯỜI DÙNG: chỉ chủ hoặc admin xoá (xem updateComment) — W14c",
