@@ -16498,6 +16498,10 @@
       "title": "Two-factor code required",
       "body": "This action touches a protected tag, or an adapter that carries one (re-pointing it, changing its sampling interval / deadband / unit, creating it on a key that is still referenced, disabling or deleting it). A protected tag is a declared channel, a machine's mode channel, or the target or source of an interlock rule that is enabled or approved. A fresh TOTP code is required.",
       "submit": "Confirm"
+    },
+    "taoTagTotp": {
+      "title": "Two-factor code required to create the tag",
+      "body": "This tag key is still referenced (a declared channel, a machine mode channel or an interlock rule), so creating a tag on it needs a fresh TOTP code. Enter it to resend the tag creation you just made."
     }
   },
   "engineering": {

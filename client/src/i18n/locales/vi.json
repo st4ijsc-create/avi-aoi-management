@@ -16478,6 +16478,10 @@
       "title": "Cần mã xác thực hai lớp",
       "body": "Thao tác này đụng một tag được bảo vệ hoặc một adapter mang tag như thế (trỏ lại, đổi chu kỳ lấy mẫu / deadband / đơn vị, tạo lên khoá đang được tham chiếu, tắt hoặc xoá). Tag được bảo vệ: đã khai kênh, là kênh chế độ của máy, hoặc là đích / nguồn của một luật interlock đang bật hoặc đã duyệt. Cần mã TOTP mới.",
       "submit": "Xác nhận"
+    },
+    "taoTagTotp": {
+      "title": "Cần mã xác thực hai lớp để tạo tag",
+      "body": "Khoá tag này đang được tham chiếu (kênh đã khai, kênh chế độ máy hoặc luật interlock), nên việc tạo tag lên khoá đó cần mã TOTP mới. Nhập mã để gửi lại đúng thao tác tạo tag vừa rồi."
     }
   },
   "engineering": {

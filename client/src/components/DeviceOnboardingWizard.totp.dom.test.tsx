@@ -136,4 +136,38 @@ describe("R1b-2a T11 — wizard onboarding nhập được TOTP khi tạo tag l�
     await waitFor(() => expect(H.toastTrpcError).toHaveBeenCalledTimes(1));
     expect(oMa()).toBeNull();
   });
+
+  it("polish: hộp mã dùng chữ RIÊNG của tạo tag (không phải câu trỏ lại); TOTP_TAM_KHOA khi gửi lại ⇒ hộp còn mở, ô mã xoá, báo lỗi", async () => {
+    H.traLoi = ["SCADA_CONFIG_TOTP_REQUIRED", "TOTP_TAM_KHOA"];
+    await taoTag();
+    await waitFor(() => expect(oMa()).toBeInTheDocument());
+    expect(screen.getByText(i18n.t("deviceAdapter.taoTagTotp.title"))).toBeInTheDocument();
+    expect(screen.queryByText(i18n.t("deviceAdapter.troLai.title"))).toBeNull();
+    fireEvent.change(oMa()!, { target: { value: "222222" } });
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("deviceAdapter.troLai.submit") }));
+    await waitFor(() => expect(H.toastTrpcError).toHaveBeenCalledTimes(1));
+    expect(oMa()).toBeInTheDocument();
+    expect(oMa()!.value).toBe("");
+  });
+
+  it("polish: đóng wizard khi hộp mã đang mở ⇒ mã không ở lại (mở lại: không hộp mã, không ô mã)", async () => {
+    H.traLoi = ["SCADA_CONFIG_TOTP_REQUIRED"];
+    const { rerender } = render(<DeviceOnboardingWizard open onOpenChange={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("common.next") }));
+    fireEvent.change(screen.getByPlaceholderText("line-a-plc1"), { target: { value: "plc1" } });
+    fireEvent.change(screen.getByPlaceholderText(/opc\.tcp/), { target: { value: "stub://x" } });
+    fireEvent.change(screen.getAllByRole("textbox")[1], { target: { value: "PLC 1" } });
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("wizard.createAdapter") }));
+    await screen.findByPlaceholderText("temperature");
+    fireEvent.change(screen.getByPlaceholderText("temperature"), { target: { value: "sp" } });
+    fireEvent.change(screen.getByPlaceholderText(/DB1\.DBD0/), { target: { value: "40001" } });
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("wizard.createTag") }));
+    await waitFor(() => expect(oMa()).toBeInTheDocument());
+    fireEvent.change(oMa()!, { target: { value: "123456" } });
+    rerender(<DeviceOnboardingWizard open={false} onOpenChange={() => undefined} />);
+    await waitFor(() => expect(oMa()).toBeNull());
+    rerender(<DeviceOnboardingWizard open onOpenChange={() => undefined} />);
+    expect(oMa()).toBeNull();
+    expect(screen.queryByText(i18n.t("deviceAdapter.taoTagTotp.title"))).toBeNull();
+  });
 });

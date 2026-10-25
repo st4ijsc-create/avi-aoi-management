@@ -235,8 +235,10 @@ export default function ScadaDiag() {
             </div>
             {canMa && hanhDong?.kieu === "tamTat" && (
               <>
-                <p className="text-sm text-muted-foreground">{t("scada.diag.dialog.canMaTotp")}</p>
-                <TruongTotp id="scada-diag-totp" value={ma} onChange={setMa} disabled={dangGui} />
+                <p id="scada-diag-totp-goi-y" className="text-sm text-muted-foreground">
+                  {t("scada.diag.dialog.canMaTotp")}
+                </p>
+                <TruongTotp id="scada-diag-totp" value={ma} onChange={setMa} disabled={dangGui} autoFocus describedBy="scada-diag-totp-goi-y" />
               </>
             )}
             <DialogFooter>

@@ -337,6 +337,38 @@ describe("ScadaDiag — hộp xác nhận lý do", () => {
     expect(screen.queryByLabelText(S("scada.kenh.dialog.totp"))).toBeNull();
   });
 
+  it("polish T11: ô mã nhận tiêu điểm khi hiện + gắn aria-describedby với đoạn gợi ý", () => {
+    render(<ScadaDiag />);
+    fireEvent.click(within(hang("AD-OK")).getByRole("button", { name: S("scada.diag.nut.tamTat") }));
+    fireEvent.change(within(screen.getByRole("dialog")).getByLabelText(S("scada.diag.dialog.lyDo")), { target: { value: "bảo trì PLC" } });
+    act(() => srv.mutOpts.tamTat.onError?.({ data: { appCode: "SCADA_CONFIG_TOTP_REQUIRED" } }, { adapterId: 1, lyDo: "bảo trì PLC" } as never));
+    const o = screen.getByLabelText(S("scada.kenh.dialog.totp"));
+    expect(o).toHaveFocus();
+    const goiY = document.getElementById(o.getAttribute("aria-describedby") ?? "");
+    expect(goiY).toHaveTextContent(S("scada.diag.dialog.canMaTotp"));
+  });
+
+  it("polish T11: TOTP_TAM_KHOA khi gửi lại ⇒ ô mã xoá, toast, vẫn MỘT hộp; lỗi khác (NOT_FOUND) khi gửi lại ⇒ toast, hộp còn mở, lý do giữ, ô mã xoá", () => {
+    render(<ScadaDiag />);
+    fireEvent.click(within(hang("AD-OK")).getByRole("button", { name: S("scada.diag.nut.tamTat") }));
+    fireEvent.change(within(screen.getByRole("dialog")).getByLabelText(S("scada.diag.dialog.lyDo")), { target: { value: "bảo trì PLC" } });
+    const vars = { adapterId: 1, lyDo: "bảo trì PLC" };
+    act(() => srv.mutOpts.tamTat.onError?.({ data: { appCode: "SCADA_CONFIG_TOTP_REQUIRED" } }, vars as never));
+    const nhapMa = (v: string) => fireEvent.change(screen.getByLabelText(S("scada.kenh.dialog.totp")), { target: { value: v } });
+    nhapMa("123456");
+    act(() => srv.mutOpts.tamTat.onError?.({ data: { appCode: "TOTP_TAM_KHOA" } }, { ...vars, totpCode: "123456" } as never));
+    expect(toastTrpcError).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect((screen.getByLabelText(S("scada.kenh.dialog.totp")) as HTMLInputElement).value).toBe("");
+    nhapMa("654321");
+    const err = { data: { code: "NOT_FOUND" } };
+    act(() => srv.mutOpts.tamTat.onError?.(err, { ...vars, totpCode: "654321" } as never));
+    expect(toastTrpcError).toHaveBeenLastCalledWith(err);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect((screen.getByLabelText(S("scada.diag.dialog.lyDo")) as HTMLTextAreaElement).value).toBe("bảo trì PLC");
+    expect((screen.getByLabelText(S("scada.kenh.dialog.totp")) as HTMLInputElement).value).toBe("");
+  });
+
   it("thành công ⇒ làm mới danhSach + tagCuaAdapter, toast, đóng hộp; lỗi máy chủ ⇒ toastTrpcError, hộp giữ mở", () => {
     render(<ScadaDiag />);
     fireEvent.click(within(hang("AD-LOST")).getByRole("button", { name: S("scada.diag.nut.ketNoiLai") }));

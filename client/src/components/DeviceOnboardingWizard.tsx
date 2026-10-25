@@ -153,7 +153,10 @@ export default function DeviceOnboardingWizard({ open, onOpenChange, onChanged }
       toastTrpcError(e);
     },
   });
-  const hopTag = useHopMaTotpTroLai<TagCreateVars>((bien) => createTag.mutate(bien), createTag.isPending);
+  const hopTag = useHopMaTotpTroLai<TagCreateVars>((bien) => createTag.mutate(bien), createTag.isPending, {
+    tieuDe: "deviceAdapter.taoTagTotp.title",
+    than: "deviceAdapter.taoTagTotp.body",
+  });
 
   const testConnection = trpc.deviceAdapter.testConnection.useMutation({
     onSuccess: (res) => setTestResult(res),
