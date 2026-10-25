@@ -12,6 +12,8 @@
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { checkSoftRefIntegrity } from "../services/ecosystem/integrityCheck";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
 
 export const ecosystemAdminRouter = router({
   /**
@@ -21,7 +23,10 @@ export const ecosystemAdminRouter = router({
    */
   softRefIntegrity: protectedProcedure
     .use(requirePermission("admin_system", "canView"))
-    .query(async () => {
-      return checkSoftRefIntegrity();
+    .query(async ({ ctx }) => {
+      const bao = await checkSoftRefIntegrity();
+      // phạm vi người dùng (L6c 2026-10-25) (dieu-phoi duyệt): toàn quyền thấy đủ; người hẹp chỉ thấy SỐ ĐẾM — mẫu (id + tham chiếu mồ côi, có thể thuộc nhà máy khác) để trống
+      if ((await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true })) === null) return bao;
+      return { ...bao, rules: bao.rules.map((r) => ({ ...r, sample: [] })) };
     }),
 });

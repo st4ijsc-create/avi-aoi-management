@@ -44,9 +44,7 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   //   một lỗ"*. Đó là lý do khối chú thích này dài: một dòng thêm im lặng vào sổ RATCHET là đúng
   //   thứ mà cả sổ này tồn tại để ngăn.
   // ── server/routers/aiRcaCopilotRouter.ts (1) ───────────────────────────────────────────────
-  "server/routers/aiRcaCopilotRouter.ts#aiRcaCopilotRouter.latest",
   // ── server/routers/aiRouters.ts (4) ────────────────────────────────────────────────────────
-  "server/routers/aiRouters.ts#rootCauseRouter.list",
   // ── server/routers/alertRouters.ts (2) ─────────────────────────────────────────────────────
   "server/routers/alertRouters.ts#alertRouter.getById",
   "server/routers/alertRouters.ts#alertRouter.listAll",
@@ -66,38 +64,18 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   //    `digitalTwinPhamVi.db.test.ts`; phân đôi toàn tập ở `phamViTwinCanh.unit.test.ts`.
   //    (`whatIf` chưa từng có tên ở đây — nó là hàm thuần, không chạm CSDL.)
   // ── server/routers/ecosystemAdminRouter.ts (1) ─────────────────────────────────────────────
-  "server/routers/ecosystemAdminRouter.ts#ecosystemAdminRouter.softRefIntegrity",
   // ── server/routers/edgeRuntimeRouter.ts (1) — 2026-10-10 (doc 81 Đợt 5 E2 fix): nodeStatus đã vá (runs lọc theo phạm vi), dòng đã gỡ.
   // ── server/routers/equipmentStandardsRouter.ts (8) ─────────────────────────────────────────
   // 2026-09-27 (doc 80 Đợt 1 Task 3, STD-04) — `alarmKpis` không còn tự đọc `andon_events`
   // (toàn cục, bộ tính thứ hai): nó uỷ quyền `alarmKpiRouter.createCaller(ctx).summary(…)`,
   // tức đi qua CÙNG cổng `resolveAlertScope(ctx.user)` với /alarm-kpi ⇒ danh tính RỜI TAY
   // handler ⇒ nhóm S, XOÁ khỏi sổ này (GHIM.A 342→341, S 329→330).
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.hierarchyTree",
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.listAlarmMappings",
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.listChangeRequests",
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.listMasterAlarms",
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.mapAlarm",
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.resolveForMachineType",
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.resolveType",
   // ── server/routers/erpAdminRouter.ts (3) ───────────────────────────────────────────────────
   // ── server/routers/federationRouter.ts (7) ─────────────────────────────────────────────────
-  "server/routers/federationRouter.ts#federationRouter.aggregateSummary",
-  "server/routers/federationRouter.ts#federationRouter.alertRollup",
-  "server/routers/federationRouter.ts#federationRouter.categoryRollup",
-  "server/routers/federationRouter.ts#federationRouter.siteDetail",
-  "server/routers/federationRouter.ts#federationRouter.siteKpiHistory",
-  "server/routers/federationRouter.ts#federationRouter.siteRollups",
-  "server/routers/federationRouter.ts#federationRouter.syncLog",
   // ── server/routers/feederVerifyRouter.ts (3) ───────────────────────────────────────────────
   // ── server/routers/fieldRouter.ts (3) ──────────────────────────────────────────────────────
   // ── server/routers/hierarchyRouters.ts (1) ─────────────────────────────────────────────────
-  "server/routers/hierarchyRouters.ts#machineRouter.config",
   // ── server/routers/hierarchyTreeRouter.ts (4) ──────────────────────────────────────────────
-  "server/routers/hierarchyTreeRouter.ts#hierarchyTreeRouter.getFactoryTree",
-  "server/routers/hierarchyTreeRouter.ts#hierarchyTreeRouter.getMqttTopics",
-  "server/routers/hierarchyTreeRouter.ts#hierarchyTreeRouter.getSummary",
-  "server/routers/hierarchyTreeRouter.ts#hierarchyTreeRouter.getTree",
   // ── server/routers/hotFolderRouter.ts (3) ──────────────────────────────────────────────────
   // ── server/routers/layoutRouters.ts (2) ────────────────────────────────────────────────────
   "server/routers/layoutRouters.ts#layoutRouter.getById",
@@ -118,8 +96,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/oversightRouter.ts#oversightRouter.posture",
   // ── server/routers/parameterGuardrailRouter.ts (5) ─────────────────────────────────────────
   // ── server/routers/permissionsRouter.ts (2) ────────────────────────────────────────────────
-  "server/routers/permissionsRouter.ts#permissionsRouter.getBuiltInRoles",
-  "server/routers/permissionsRouter.ts#permissionsRouter.getDefaultPermissionsForRole",
   // ── server/routers/processRouter.ts (2) ────────────────────────────────────────────────────
   "server/routers/processRouter.ts#processRouter.getAssignmentsByProcess",
   "server/routers/processRouter.ts#processRouter.getLineAssignments",
@@ -145,24 +121,17 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // khai như `oversightRouter.posture` (số đếm gộp, không phải dữ liệu tenant). Sàn: URSIM_ENABLED
   // + machine_control/canCreate. Bộ suy xếp (A) vì đúng hình dạng nó canh; giữ ở đây để không ai
   // quên nó là một lượt đọc xuyên tenant có chủ đích.
-  "server/routers/simTargetsRouter.ts#simTargetsRouter.ursimPing",
   // ── server/routers/simulationRouter.ts (1) ─────────────────────────────────────────────────
   // ── server/routers/sitesRouter.ts (2) ──────────────────────────────────────────────────────
-  "server/routers/sitesRouter.ts#sitesRouter.get",
-  "server/routers/sitesRouter.ts#sitesRouter.list",
   // ── server/routers/systemHealthRouter.ts (1) ───────────────────────────────────────────────
   // ── server/routers/systemRouters.ts (1) ────────────────────────────────────────────────────
-  "server/routers/systemRouters.ts#corporateFactoryStatsRouter.warmingStats",
   // ── server/routers/thresholdApprovalRouter.ts (3) ──────────────────────────────────────────
   "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.countPendingByProduct",
   "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.getById",
   "server/routers/thresholdApprovalRouter.ts#thresholdApprovalRouter.list",
   // ── server/routers/twinRouter.ts (2) ───────────────────────────────────────────────────────
   // doc 81 Đợt 4 Task A3: occupancyGrid · replay · sceneGraph · twinModels đã vá (assertTwinFactoryInScope) — đã GỠ.
-  "server/routers/twinRouter.ts#twinRouter.models.list",
-  "server/routers/twinRouter.ts#twinRouter.models.resolve",
   // ── server/routers/userRouters.ts (1) ──────────────────────────────────────────────────────
-  "server/routers/userRouters.ts#userAssignmentRouter.getAllUserAssignments",
   // ── server/routers/vda5050Router.ts (2) ────────────────────────────────────────────────────
   // ↓ cùng lời khai "thước vừa sắc hơn" như khối `aiCalibrationRouter.ts` ở trên.
 ];
@@ -173,6 +142,14 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
  * (còn tồn tại, còn nhóm A, lý do ≥ 20 ký tự có ngày duyệt, không đồng thời nằm trong sổ nợ). Thêm mục = thêm quyết định của chủ dự án, KHÔNG phải cách làm cổng xanh.
  */
 export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
+  "server/routers/simTargetsRouter.ts#simTargetsRouter.ursimPing": "một mục tiêu sim DUY NHẤT lấy từ env (URSIM_HOST); resolveSimTarget từ chối host trùng robot / adapter thật; chỉ trả reachable true/false, không trả hàng tenant; giữ cổng machine_control — dieu-phoi duyệt 2026-10-25",
+  "server/routers/hierarchyRouters.ts#machineRouter.config": "TẠM MIỄN: hợp đồng thiết bị, public theo serial — KHÔNG xác thực: ai biết serial đều nhận machineId / code / ánh xạ trạm-chuyền (lộ không xác thực). Backlog: bắt khoá máy cho config = đổi hợp đồng client, chờ chủ dự án — dieu-phoi duyệt tạm 2026-10-25",
+  "server/routers/permissionsRouter.ts#permissionsRouter.getBuiltInRoles": "adminProcedure ⇒ admin = toàn quyền; danh mục vai trò dựng sẵn, không dữ liệu tenant — dieu-phoi duyệt 2026-10-25",
+  "server/routers/permissionsRouter.ts#permissionsRouter.getDefaultPermissionsForRole": "adminProcedure ⇒ admin = toàn quyền; quyền mặc định theo vai trò, không dữ liệu tenant — dieu-phoi duyệt 2026-10-25",
+  "server/routers/sitesRouter.ts#sitesRouter.get": "adminProcedure ⇒ admin = toàn quyền; danh bạ site liên bang — dieu-phoi duyệt 2026-10-25",
+  "server/routers/sitesRouter.ts#sitesRouter.list": "adminProcedure ⇒ admin = toàn quyền; danh bạ site liên bang — dieu-phoi duyệt 2026-10-25",
+  "server/routers/systemRouters.ts#corporateFactoryStatsRouter.warmingStats": "adminProcedure ⇒ admin = toàn quyền; thống kê làm nóng bộ nhớ đệm hệ thống — dieu-phoi duyệt 2026-10-25",
+  "server/routers/userRouters.ts#userAssignmentRouter.getAllUserAssignments": "adminProcedure ⇒ admin = toàn quyền; quản trị gán người dùng ↔ nhà máy — dieu-phoi duyệt 2026-10-25",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.genealogy":
     "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.get":

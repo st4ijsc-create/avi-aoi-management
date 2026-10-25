@@ -953,7 +953,8 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // 2026-10-25 gộp L6w (getVariant C→S) với main R1b-1 ⇒ đo bằng census.
 // L6c-C1 (2026-10-25): 22 thủ tục đọc OT trục máy/robot/adapter được vá (A 117→95, S 610→632) — loOtDocC1PhamVi.db.test.ts
 // L6c-C2 (2026-10-25): 19 thủ tục đọc MQTT / ERP / edge / apiKey (trục trạm + mã + đích đa hình) A 95→76, S 632→651 — loOtDocC2PhamVi.db.test.ts
-const GHIM = { A: 76, B: 8, C: 469, D: 1199, S: 651, tong: 2403 } as const;
+// L6c-C3 (2026-10-25): 23 thủ tục đọc (hierarchyTree ×4 · federation ×7 · equipmentStandards ×7 · twin.models ×2 · softRefIntegrity · rootCause.list · aiRcaCopilot.latest) A→S; 8 miễn trừ MỚI vẫn tính nhóm A (A 76→53, S 651→674) — loOtDocC3PhamVi.db.test.ts
+const GHIM = { A: 53, B: 8, C: 469, D: 1199, S: 674, tong: 2403 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
@@ -1065,7 +1066,7 @@ describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
       if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
     }
     expect(loi).toEqual([]);
-    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(23); // 16 → 21 (lô L6a 2026-10-25: semantics.list|get · spc.topNGPoints · ntfClassifier.list|status; partsBelowReorder trả lại kiem-dinh W16)
+    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(31); // 23 → 31 (L6c 2026-10-25: ursimPing · machineRouter.config · permissions ×2 · sites ×2 · warmingStats · getAllUserAssignments); 16 → 21 (lô L6a 2026-10-25: semantics.list|get · spc.topNGPoints · ntfClassifier.list|status; partsBelowReorder trả lại kiem-dinh W16)
   });
 
   it("sổ nợ GOM THEO FILE, mỗi file một khối liền mạch, trong khối đã sắp xếp, không lặp", () => {
