@@ -333,3 +333,6 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 R fix 1 #6 — setHolder: one transact
     }
   });
 });
+
+// W14b: cổng phạm vi nhà máy có test DB riêng (phamViGhiDoW14b.db.test.ts); ở đây kiểm đúng điều test này đo ⇒ cho qua.
+vi.mock("./_cauHinhPhamVi", async (orig) => ({ ...(await orig<typeof import("./_cauHinhPhamVi")>()), khoaApiGhi: async () => undefined, phamViKhoaMoiGhi: async () => undefined }));

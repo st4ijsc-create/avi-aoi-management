@@ -18,6 +18,7 @@
  * ctx.user is the source of truth — never the request body.
  * ════════════════════════════════════════════════════════════════════════════
  */
+import { duAnChuongTrinhGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -852,6 +853,7 @@ export const fleetRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       requireResourceFlag();
+      await duAnChuongTrinhGhi(ctx, input.programProjectId); // phạm vi nhà máy (W14b): dự án chương trình phải thuộc nhà máy trong phạm vi
       const d = await db();
       // No `factoryId` field on this input (the row is created with factoryId=NULL,
       // unchanged from before this fix) — nothing supplied to validate against scope.

@@ -3688,6 +3688,7 @@
       "queued-for-shared-ledger": "读取副本已立即清理（余量会立刻反映出来），但该行要到下一次共享台账同步时才会真正从数据库中移除——查看 unsyncedWritesAfter 了解还有多少写入尚未发送。"
     },
     "entity": {
+      "corporate": "集团",
       "edgeNode": "边缘节点",
       "scadaRequest": "SCADA 指令请求",
       "mqttClient": "MQTT设备",
@@ -4073,6 +4074,7 @@
       "scadaKenhCapNhat": "更新通道声明"
     },
     "field": {
+      "stationId": "工位",
       "location": "位置（工厂、车间、产线、工位或机台）",
       "holderUserId": "密钥的发放对象（必须是现有的在职用户）",
       "settingKey": "设置键",

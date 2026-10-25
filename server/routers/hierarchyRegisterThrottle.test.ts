@@ -91,14 +91,12 @@ describe("machine.register (public) — M4 hardening", () => {
     expect(db.createMachine).not.toHaveBeenCalled();
   });
 
-  it("an EXISTING serial updates in place (no pending-cap / station lookup needed)", async () => {
+  it("an EXISTING serial is NOT modified (W15): generic response, no update, no status change, no id", async () => {
     (db.getMachineBySerialNumber as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 8 });
     const caller = machineRouter.createCaller(ctx());
     const r = await caller.register(input("SN-EXISTS"));
-    expect(r.id).toBe(8);
-    expect(db.updateMachine).toHaveBeenCalledWith(8, expect.objectContaining({
-      registrationStatus: "pending",
-    }));
+    expect(r).toEqual({ registrationStatus: "pending", message: "Machine registered, awaiting admin approval" });
+    expect(db.updateMachine).not.toHaveBeenCalled();
     expect(db.createMachine).not.toHaveBeenCalled();
   });
 });

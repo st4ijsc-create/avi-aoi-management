@@ -26,7 +26,7 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1198, no: 215 } as const; // 2026-10-25 L6a: ncr create|transition + ecn create|transition (suy nhà máy + cổng phạm vi) ⇒ 219 → 215 (−4); 2026-10-25 W14a: bom · energy · msd · stencil · onboarding · qualityGateTemplate.applyToLine · dataRouters · stationTriangulation · mpVariantSubform · twinGov vá (−27); 39 miễn trừ có lý do (danh mục dùng chung / của chính người gọi / toàn cục); 246 → 219
+const GHIM = { tongMutation: 1198, no: 176 } as const; // 2026-10-25 W14b: khoá API · OAuth ERP · khoá máy · MQTT · bản tin · dò thiết bị · vision · hot-folder · edge · fleet · twin · guardrail theo phạm vi (−43 vá); 11 miễn trừ (public có token / của chính người gọi / bàn thử); 219 → 176
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {

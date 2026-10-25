@@ -116,6 +116,7 @@ beforeEach(async () => {
   adapterShouldFail = false;
   process.env.HOT_FOLDER_INGEST_ENABLED = "true";
   tmpRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), "hotfolder-test-"));
+  process.env.HOT_FOLDER_ROOTS = tmpRoot; // W15: hot-folder chỉ hoạt động trong gốc cho phép
   cfg = makeConfig();
   fake.seed(machines, [{ id: 5, code: "AOI-01", name: "AOI Line A" }]);
   fake.seed(hotFolderConfigs, [cfg as never]);
@@ -127,6 +128,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  delete process.env.HOT_FOLDER_ROOTS;
   await __resetHotFolderRuntimeForTests();
   await fs.promises.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
 });

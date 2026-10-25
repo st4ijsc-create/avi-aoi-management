@@ -20,6 +20,7 @@
  * (CAD→glTF conversion is OUT OF SCOPE / external — see modelRegistry.ts).
  * ════════════════════════════════════════════════════════════════════════════
  */
+import { moHinh3dDangKyGhi, moHinh3dTheoIdGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import fs from "node:fs";
@@ -132,6 +133,7 @@ export const twinRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         requireFlag();
+        await moHinh3dDangKyGhi(ctx, input); // phạm vi nhà máy (W14b): đích mới + không ghi đè modelKey của nhà máy khác
         return registerModel({ ...input, createdBy: (ctx as any).user?.id ?? null });
       }),
 
@@ -155,6 +157,7 @@ export const twinRouter = router({
         }),
       )
       .mutation(async ({ input, ctx }) => {
+        await moHinh3dDangKyGhi(ctx, { modelKey: `machine-${input.machineId}`, machineId: input.machineId }); // phạm vi nhà máy (W14b): TRƯỚC khi ghi tệp
         if (process.env.STORAGE_MODE !== "local") {
           throw appError(
             "CONFLICT",
@@ -206,8 +209,9 @@ export const twinRouter = router({
     archive: protectedProcedure
       .use(requirePermission("machine_control", "canCreate"))
       .input(z.object({ id: z.number().int().positive() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         requireFlag();
+        await moHinh3dTheoIdGhi(ctx, input.id); // phạm vi nhà máy (W14b)
         return archiveModel(input.id);
       }),
   }),

@@ -18,6 +18,7 @@
  * a missing DB throws a clean INTERNAL_SERVER_ERROR, never a silent grant.
  * ════════════════════════════════════════════════════════════════════════════
  */
+import { phamViKhoaMoiGhi, khoaApiGhi } from "./_cauHinhPhamVi";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -221,6 +222,7 @@ export const apiKeyRouter = router({
         .and(tenantScopeSchema),
     )
     .mutation(async ({ input, ctx }) => {
+      await phamViKhoaMoiGhi(ctx, input, "apiKey"); // phạm vi khoá không rộng hơn người cấp (W14b)
       const d = await db();
       const { plaintext, prefix } = generateKey();
       const keyHash = hashApiKey(plaintext);
@@ -276,6 +278,10 @@ export const apiKeyRouter = router({
         .and(tenantScopeSchema),
     )
     .mutation(async ({ input, ctx }) => {
+      await khoaApiGhi(ctx, input.id); // khoá hiện có phải trong phạm vi người gọi (W14b)
+      if (input.dataScopeMode !== undefined || input.corporateCode !== undefined || input.factoryCode !== undefined) {
+        await phamViKhoaMoiGhi(ctx, input, "apiKey"); // phạm vi MỚI không rộng hơn người cấp
+      }
       const d = await db();
       const newExp = input.expiresAt !== undefined ? toExpiry(input.expiresAt) : undefined;
       // doc 81 Đợt 9 R fix scan (ruling R-9-c: "an ADMIN re-activating the key restores it") — re-activating a disabled key or
@@ -435,7 +441,8 @@ export const apiKeyRouter = router({
   revoke: protectedProcedure
     .use(requirePermission("admin_system", "canEdit"))
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await khoaApiGhi(ctx, input.id);
       const d = await db();
       const [row] = await d
         .update(apiKeys)
@@ -450,7 +457,8 @@ export const apiKeyRouter = router({
   delete: protectedProcedure
     .use(requirePermission("admin_system", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await khoaApiGhi(ctx, input.id);
       const d = await db();
       const removed = await d.delete(apiKeys).where(eq(apiKeys.id, input.id)).returning();
       if (removed.length === 0) {
