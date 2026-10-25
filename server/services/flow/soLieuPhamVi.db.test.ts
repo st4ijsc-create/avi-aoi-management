@@ -366,3 +366,46 @@ describe("mẫu 'Báo cáo ca có số liệu thật' — đầu-cuối ×3 vớ
     }
   });
 });
+
+// (d) ĐO SỐNG — chỉ chạy khi LUONG_LIVE=1 (cần khe :8091 do do-model cấp). Model THẬT, không AI giả: mẫu báo cáo ca ×3, đo thời gian + nội dung.
+const tokenLlama = async (): Promise<number | null> => {
+  try {
+    const t = await (await fetch(`${process.env.LLAMA_SERVER_URL ?? "http://127.0.0.1:8091"}/metrics`)).text();
+    const m = /^llamacpp:prompt_tokens_total\s+([0-9.e+]+)/m.exec(t);
+    return m ? Number(m[1]) : null;
+  } catch {
+    return null;
+  }
+};
+
+describe.skipIf(process.env.LUONG_LIVE !== "1")("(d) đo sống :8091 — mẫu báo cáo ca với model thật", () => {
+  it("×3: tóm tắt nhắc đúng số nhà máy A (tổng 3, NG 2), không lộ máy/số nhà máy B; mỗi lượt đúng 1 thông báo", async () => {
+    const mau = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "mau", "bao-cao-ca-so-lieu.json"), "utf8"));
+    mau.id = `${TT}-live`;
+    mau.settings = { ...mau.settings, maxConcurrentRuns: 100 };
+    mau.nodes.find((n: { id: string }) => n.id === "thong-bao").parameters.nguoiNhan = [u.nhanA];
+    await luuPhienBan(mau, u.admin, ids.facA);
+    gui.length = 0;
+    __datHamGuiThongBaoChoTest(async (userId, p) => {
+      gui.push(userId);
+      console.log("[LIVE] thông báo:", String(p.message).slice(0, 600));
+      return { id: 1 };
+    });
+    for (let i = 0; i < Number(process.env.LUONG_LIVE_N ?? 3); i++) {
+      const t0 = Date.now();
+      const tok0 = await tokenLlama();
+      const r = await chay(mau.id, u.nhieu);
+      console.log(`[LIVE] :8091 prompt_tokens_total tăng ${tok0 === null ? "?" : (await tokenLlama())! - tok0} (0 ⇒ lượt KHÔNG đi qua llama-server)`);
+      const bc = (await buoc(r.id, "tom-tat")).output as { main: Array<{ json: { baoCao?: string } }> } | null;
+      const chu = String(bc?.main?.[0]?.json?.baoCao ?? "");
+      console.log(`[LIVE] lượt ${i + 1}: ${r.status} ${Date.now() - t0} ms · ${chu.length} ký tự`);
+      if (r.status !== "xong") console.log("[LIVE] lỗi các bước:", JSON.stringify((await db.select({ n: aiFlowSteps.nodeId, e: aiFlowSteps.error }).from(aiFlowSteps).where(eq(aiFlowSteps.runId, r.id))).filter((x) => x.e)).slice(0, 800));
+      expect(r.status).toBe("xong");
+      console.log("[LIVE] báo cáo:", chu);
+      expect(chu).not.toContain(`${FAC_B}_M1`);
+      expect(chu.includes("3"), "có tổng 3").toBe(true);
+      expect(chu.includes("2"), "có NG 2").toBe(true);
+    }
+    expect(gui.length).toBe(Number(process.env.LUONG_LIVE_N ?? 3));
+  }, 900_000);
+});
