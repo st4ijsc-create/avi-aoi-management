@@ -6,6 +6,7 @@
  *   FLOW_CHAY_TAY       chạy tay luồng hạng ngoai-ghi / ot                FLOW_DUYET                  duyệt / điền THÀNH CÔNG (CÙNG giao dịch với việc trả lời hàng chờ)
  *   FLOW_BUOC_NGOAI_GHI MỘT dòng mỗi bước node tác dụng phụ (ngoai-ghi / ot) kết thúc — xong hoặc lỗi (CÙNG giao dịch với việc đóng bước)
  *   FLOW_BI_MAT_TAO / FLOW_BI_MAT_XOA / FLOW_BI_MAT_HOST   bí mật (CHỈ id + tên; KHÔNG BAO GIỜ giá trị)
+ *   FLOW_CAT_TIA        một dòng mỗi lượt quét cắt tỉa lượt cũ có xoá / sẽ xoá (số lượt + cửa sổ; userId null — bộ quét nền)
  * `details` không chứa dữ liệu item / giá trị biểu mẫu / giá trị bí mật — chỉ định danh và số đếm (giá trị biểu mẫu vẫn nằm ở bước của lượt, chịu cắt tỉa).
  */
 import { createAuditLog } from "../../db/system";
@@ -21,6 +22,7 @@ export const HANH_DONG_KIEM_TOAN = [
   "FLOW_BI_MAT_TAO",
   "FLOW_BI_MAT_XOA",
   "FLOW_BI_MAT_HOST",
+  "FLOW_CAT_TIA",
 ] as const;
 export type HanhDongKiemToan = (typeof HANH_DONG_KIEM_TOAN)[number];
 export type BanGhiKiemToan = Parameters<typeof createAuditLog>[0];
