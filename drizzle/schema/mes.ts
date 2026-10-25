@@ -296,6 +296,7 @@ export const sparePartsInventory = pgTable("spare_parts_inventory", {
   index("idx_spare_category").on(table.category),
   index("idx_spare_factory").on(table.factoryId),
   // W16 (mig 0424): thay UNIQUE(partCode) — cùng mã phụ tùng ở nhiều nhà máy; hàng chưa gán (NULL) vẫn duy nhất theo mã
+  // ⚠ W16 (mig 0424): hiện KHÔNG có đường tạo/sửa phụ tùng trong server — chỉ ràng buộc DB này chặn trùng (partCode, nhà máy; NULL coi như 0). Ai thêm đường tạo/sửa phụ tùng PHẢI kiểm trùng ở tầng ứng dụng và trả lỗi i18n (appError), không để lọt 23505 thô.
   uniqueIndex("uq_spare_parts_code_factory").on(table.partCode, sql`(COALESCE(${table.factoryId}, 0))`),
 ]);
 
