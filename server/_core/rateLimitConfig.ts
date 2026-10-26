@@ -38,8 +38,7 @@ import rateLimit, {
 import { createHash } from "crypto";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import Redis from "ioredis";
-import { parse as parseCookieHeader } from "cookie";
-import { COOKIE_NAME } from "@shared/const";
+import { bamPhanDaKy, coHinhJws, docVePhienTuCookie } from "./vePhienCookie";
 import { duongDinhTuyen, duongDinhTuyenGoc, duongKhopChinhXac } from "./duongDinhTuyen";
 
 const envInt = (name: string, fallback: number): number => {
@@ -262,20 +261,6 @@ export type KiemPhienKy = (req: Request) => Promise<boolean>;
  */
 const _phienTheoYeuCau = new WeakMap<object, Promise<{ openId: string; phienBam: string } | null>>();
 /**
- * The SIGNED part of a compact JWS: `header.payload`, i.e. everything before the last ".", which is the literal HMAC input.
- * R1b-2a T3 fix round 2 (review C-1): the whole token string is NOT canonical. jose 6.1.0 still verifies a ticket whose SIGNATURE segment
- * carries whitespace / newlines, a trailing space, "=" padding or a non-canonical last base64url char. So a key over the whole string gave
- * one ticket unlimited buckets. Any change to `header.payload` breaks verification, and its random `jti` keeps two sessions of one person
- * apart. Fix round 3 (re-review m-6): null unless the ticket is a compact JWS of EXACTLY 3 non-empty "."-separated segments, so a future
- * caller can never hash a non-JWS (null ⇒ "not a signed STOP" ⇒ counted by the general tier). Exported for tests.
- */
-export function phanDaKyCuaVe(ve: string): string | null {
-  const phan = ve.split(".");
-  if (phan.length !== 3 || phan.some((x) => x.length === 0)) return null;
-  return `${phan[0]}.${phan[1]}`;
-}
-
-/**
  * `phienBam` (R1b-2a T3 fix rounds 1–2) = first 16 hex chars of sha256(the signed part `header.payload` of the VERIFIED ticket). The
  * string comes from `phienKyVaVe` (one cookie parse feeds both the verifier and this hash, and that parse is auth's own reader
  * `vePhienCookie.docVePhienTuCookie` — fix round 3, C-2). It is the "which session" half of the
@@ -287,9 +272,9 @@ function phienKyCuaYeuCau(req: Request): Promise<{ openId: string; phienBam: str
     p = (async () => {
       const { phienKyVaVe } = await import("./trpcGioiHanThuTuc");
       const phien = await phienKyVaVe(req);
-      const daKy = phien ? phanDaKyCuaVe(phien.ve) : null;
-      if (!phien || daKy === null) return null;
-      return { openId: phien.openId, phienBam: createHash("sha256").update(daKy).digest("hex").slice(0, 16) };
+      const phienBam = phien ? bamPhanDaKy(phien.ve, 16) : null;
+      if (!phien || phienBam === null) return null;
+      return { openId: phien.openId, phienBam };
     })().catch(() => null);
     _phienTheoYeuCau.set(req, p);
   }
@@ -549,12 +534,8 @@ function credentialKey(req: Request): string | null {
   if (xApiKey) return `key:${hashToken(xApiKey)}`;
 
   const sessionKey = (): string | null => {
-    const cookies = req.headers?.cookie;
-    if (typeof cookies === "string" && cookies.length > 0) {
-      const m = cookies.match(new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`));
-      if (m?.[1]) return `sess:${hashToken(m[1])}`;
-    }
-    return null;
+    const ve = docVePhienTuCookie(req.headers?.cookie);
+    return ve ? `sess:${hashToken(ve)}` : null;
   };
   const machinePlane = isOtIngestRequest(req) || isMachineIngestRequest(req);
   if (!machinePlane) {
@@ -649,12 +630,6 @@ const kiemChuKyMacDinh: KiemChuKyPhien = async (token) => {
   return (await phienKyHopLeTuVe(token)) !== null;
 };
 
-/** `header.payload` của một JWT (bỏ đoạn chữ ký); null nếu không có hình `a.b.c`. */
-export function phanDaKyJwt(token: string): string | null {
-  const p = token.split(".");
-  return p.length === 3 && p[0] && p[1] ? `${p[0]}.${p[1]}` : null;
-}
-
 export async function apiKeyGeneratorXacThuc(req: Request, kiem: KiemChuKyPhien = kiemChuKyMacDinh): Promise<string> {
   const ip = () => ipKeyGenerator(req.ip ?? "", 56);
   if (isLegacyOtIngestRequest(req) || isOtIngestRequest(req) || isMachineIngestRequest(req)) return apiKeyGenerator(req);
@@ -662,7 +637,7 @@ export async function apiKeyGeneratorXacThuc(req: Request, kiem: KiemChuKyPhien 
   let token: string | null = null;
   let tienTo = "sess";
   if (bearer) {
-    if (!phanDaKyJwt(bearer)) return apiKeyGenerator(req); // khoá API (không phải JWT): giữ nguyên
+    if (!coHinhJws(bearer)) return apiKeyGenerator(req); // khoá API (không phải JWT): giữ nguyên
     token = bearer;
     tienTo = "bearer";
   } else if (!xApiKey) {
@@ -671,7 +646,7 @@ export async function apiKeyGeneratorXacThuc(req: Request, kiem: KiemChuKyPhien 
     const cookies = req.headers?.cookie;
     if (typeof cookies === "string" && cookies.length > 0) {
       try {
-        const v = parseCookieHeader(cookies)[COOKIE_NAME];
+        const v = docVePhienTuCookie(cookies);
         if (v) token = v;
       } catch {
         return ip();
@@ -679,9 +654,9 @@ export async function apiKeyGeneratorXacThuc(req: Request, kiem: KiemChuKyPhien 
     }
   }
   if (token === null) return apiKeyGenerator(req);
-  const daKy = phanDaKyJwt(token);
+  const bam = bamPhanDaKy(token, 32);
   try {
-    if (daKy !== null && (await kiem(token))) return `${tienTo}:${hashToken(daKy)}`;
+    if (bam !== null && (await kiem(token))) return `${tienTo}:${bam}`;
   } catch {
     /* phép kiểm lỗi ⇒ coi như không verify được */
   }
@@ -771,7 +746,7 @@ const UNVERIFIED_IP_PER_MIN = envInt("RATE_LIMIT_UNVERIFIED_IP_PER_MINUTE", 3000
 export function mangCredentialChuaVerify(req: Request): boolean {
   if (isLegacyOtIngestRequest(req) || isOtIngestRequest(req) || isMachineIngestRequest(req)) return false;
   const { bearer, xApiKey } = headerCredentials(req);
-  if (bearer) return phanDaKyJwt(bearer) === null; // Bearer JWT: do khoá phiên (W21) xử lý
+  if (bearer) return !coHinhJws(bearer); // Bearer JWT: do khoá phiên (W21) xử lý
   return !!xApiKey;
 }
 

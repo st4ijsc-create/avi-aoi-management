@@ -16,6 +16,7 @@ const rl = await import("./rateLimitConfig");
 const { parse: phanTichCookie } = await import("cookie");
 const { COOKIE_NAME } = await import("@shared/const");
 const { sdk } = await import("./sdk");
+const { phanDaKyCuaVe, coHinhJws, bamPhanDaKy } = await import("./vePhienCookie");
 
 const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const req = (headers: Record<string, string>, ip = "10.1.1.1", url = "/api/trpc/x.y") =>
@@ -91,11 +92,22 @@ describe("W21 — khoá phiên chỉ khi verify được", () => {
     });
     expect(k).toBe(rl.apiKeyGenerator(req({})));
   });
-  it("phanDaKyJwt: chỉ chấp nhận hình a.b.c; trả header.payload", () => {
-    expect(rl.phanDaKyJwt("a.b.c")).toBe("a.b");
-    expect(rl.phanDaKyJwt("a.b")).toBeNull();
-    expect(rl.phanDaKyJwt("a..c")).toBeNull();
-    expect(rl.phanDaKyJwt("avgw_x")).toBeNull();
+  it("bộ đọc vé CHUNG (vePhienCookie): phanDaKyCuaVe chỉ nhận JWS 3 đoạn khác rỗng; coHinhJws chỉ xét hình; bamPhanDaKy cắt đúng độ dài và bỏ đoạn chữ ký", () => {
+    expect(phanDaKyCuaVe("a.b.c")).toBe("a.b");
+    expect(phanDaKyCuaVe("a.b")).toBeNull();
+    expect(phanDaKyCuaVe("a..c")).toBeNull();
+    expect(phanDaKyCuaVe("a.b.")).toBeNull();
+    expect(phanDaKyCuaVe("avgw_x")).toBeNull();
+    expect(coHinhJws("a.b.c")).toBe(true);
+    expect(coHinhJws("a.b.")).toBe(true); // có HÌNH vé (rồi bị verifier từ chối ⇒ IP), khác khoá API không có dấu chấm
+    expect(coHinhJws("a.b")).toBe(false);
+    expect(coHinhJws("avgw_x")).toBe(false);
+    expect(coHinhJws("a.b.c.d")).toBe(false);
+    expect(bamPhanDaKy("a.b.c", 16)).toHaveLength(16);
+    expect(bamPhanDaKy("a.b.c", 32)).toHaveLength(32);
+    expect(bamPhanDaKy("a.b.XYZ", 16)).toBe(bamPhanDaKy("a.b.c", 16)); // cùng phần đã ký, chữ ký khác ⇒ cùng băm
+    expect(bamPhanDaKy("a.c.c", 16)).not.toBe(bamPhanDaKy("a.b.c", 16));
+    expect(bamPhanDaKy("a.b", 16)).toBeNull();
   });
 });
 
