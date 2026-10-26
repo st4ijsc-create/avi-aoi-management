@@ -546,7 +546,8 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   cây đã gộp (đặt ghim 0 rồi đọc số nhận được): = main 2410/438/376 + 1 mutation `scadaKenh.khaiHangLoat` của nhánh (ngoài bề mặt AI). `tong` 2411
 //   trùng `phamViDocCensus.test.ts#GHIM.tong`.
 // 2026-10-26 Đợt 10.1 (do-model): +1 aiChonModel.danhMuc (query MOD_AI, mặt AI có cổng) ⇒ tong 2412, beMatAi 439, aiCoCong 377.
-const GHIM = { tong: 2412, beMatAi: 439, aiCoCong: 377, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// 2026-10-26 Đợt 10.3 (do-model): +4 aiNgoai.taoKhoa|xoayKhoa|thuHoiKhoa|dsKhoa (adminProcedure.use(moduleGate("MOD_AI"))) ⇒ tong 2416, beMatAi 443, aiCoCong 381.
+const GHIM = { tong: 2416, beMatAi: 443, aiCoCong: 381, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

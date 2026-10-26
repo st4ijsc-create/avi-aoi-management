@@ -974,7 +974,9 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   `scadaKenh.khaiHangLoat`: D +1, tong +1). Sổ nợ đọc: gỡ cả 4 mục ngRateThreshold (main L9) lẫn `oversight.posture` (nhánh T12). `tong` 2411
 //   trùng `congGiayPhepAiCensus.test.ts#GHIM.tong`.
 // 2026-10-26 Đợt 10.1 (do-model): +1 C aiChonModel.danhMuc (query danh mục model — đọc sổ model/cấu hình, không đọc dữ liệu tenant theo id người gọi khai) ⇒ C 454, tong 2412.
-const GHIM = { A: 35, B: 8, C: 454, D: 1203, S: 712, tong: 2412 } as const;
+// 2026-10-26 Đợt 10.3 (do-model): +3 D aiNgoai.taoKhoa|xoayKhoa|thuHoiKhoa; +1 S aiNgoai.dsKhoa (nhaMayNgoaiTrongPhamVi); aiSettings.listApiKeys C → S
+//   (ai_api_keys nay có factoryId — mig 0414 — nên là bảng tenant; lọc locKhoaApiTrongPhamVi) ⇒ C 453, D 1206, S 714, tong 2416.
+const GHIM = { A: 35, B: 8, C: 453, D: 1206, S: 714, tong: 2416 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

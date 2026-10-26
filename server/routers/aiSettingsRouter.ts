@@ -15,6 +15,8 @@ import { adminProcedure as adminProcedureBase } from "./_shared";
 const protectedProcedure = moduleProcedure("MOD_AI");
 const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import { getDb } from "../db/connection";
+import { phamViCua } from "./_phamViNguoiXem";
+import { nhaMayChoPhep, nhaMayHopLe } from "../services/flow/phamViLuong";
 import { aiApiKeys, aiSystemConfig, aiImageEmbeddings } from "../../drizzle/schema/ai";
 import { eq, desc, sql } from "drizzle-orm";
 import { extractEmbedding, storeEmbedding } from "../services/aiImageEmbedding";
@@ -103,16 +105,20 @@ async function resolveAndMigrateApiKeySecret(
   return legacyPlaintext;
 }
 
+/** Bộ lọc khoá API theo phạm vi nhà máy của người gọi (danh tính từ `ctx`); NULL nhà máy ⇒ chỉ phạm vi toàn quyền. */
+async function locKhoaApiTrongPhamVi(ctx: Parameters<typeof phamViCua>[0]): Promise<(k: { factoryId: number | null }) => boolean> {
+  const cho = await nhaMayChoPhep(phamViCua(ctx));
+  return (k) => nhaMayHopLe(k.factoryId, cho);
+}
+
 export const aiSettingsRouter = router({
   // ═══════════════ API Key Management ═══════════════
 
-  listApiKeys: adminProcedure.query(async () => {
+  listApiKeys: adminProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
-    const keys = await db
-      .select()
-      .from(aiApiKeys)
-      .orderBy(desc(aiApiKeys.createdAt));
+    // ★ Đợt 10.3 (mig 0414) — `ai_api_keys` nay mang `factoryId` ⇒ lọc theo PHẠM VI NHÀ MÁY người gọi (khoá không nhà máy chỉ phạm vi toàn quyền).
+    const keys = (await db.select().from(aiApiKeys).orderBy(desc(aiApiKeys.createdAt))).filter(await locKhoaApiTrongPhamVi(ctx));
     // The plaintext secret is decrypted here ONLY to derive a last-4 mask — it is never
     // included in the returned objects (doc-51 P0 / doc-69 W0-4: list/get must not leak
     // the raw key, not even base64-encoded).
@@ -125,6 +131,7 @@ export const aiSettingsRouter = router({
         provider: k.provider,
         endpoint: k.endpoint,
         status: k.status,
+        factoryId: k.factoryId,
         lastTestedAt: k.lastTestedAt,
         createdBy: k.createdBy,
         createdAt: k.createdAt,
@@ -144,6 +151,9 @@ export const aiSettingsRouter = router({
         provider: z.enum(["openai", "azure_openai", "huggingface", "custom"]),
         apiKey: z.string().min(1),
         endpoint: z.string().url().optional().or(z.literal("")),
+        // ★ Đợt 10.3 (mig 0414) — khoá THEO NHÀ MÁY; CHECK: khoá `active` phải có nhà máy ⇒ vắng nhà máy ⇒ tạo `inactive`.
+        //   Khoá AI ngoài tạo ở `aiNgoai.taoKhoa` (audit, phạm vi); thủ tục cũ này giữ cho màn AI Settings.
+        factoryId: z.number().int().positive().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -169,8 +179,9 @@ export const aiSettingsRouter = router({
           provider: input.provider,
           encryptedKey,
           endpoint: input.endpoint || null,
-          status: "active",
+          status: input.factoryId ? "active" : "inactive",
           createdBy: ctx.user.id,
+          factoryId: input.factoryId ?? null,
         })
         .returning({
           id: aiApiKeys.id,
