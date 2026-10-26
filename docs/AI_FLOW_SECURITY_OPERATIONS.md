@@ -142,6 +142,16 @@ Mọi lượt gọi model AI NGOÀI (Anthropic / OpenAI / Gemini / máy chủ t�
 
 **Giới hạn — đọc kỹ:** đây là rào chống NHẦM (dán URL tiện tay), KHÔNG chống người có quyền sửa luồng hay quản trị cố tình. Người đó có thể dựng proxy riêng, hoặc cấu hình webhook / ERP / SIEM / cảnh báo (các đích do quản trị cấu hình ngoài Luồng — miễn trừ có dấu ⚠ trong census) trỏ tới máy chủ AI. Dịch vụ "forge" của khung gốc (`ENV.forgeApiUrl`: sinh ảnh, chuyển giọng nói…) là đường dịch vụ ngoài có sẵn, nằm ngoài cổng. Kiểm soát các đường này là việc vận hành: quyền quản trị, audit, tường lửa egress.
 
+**Rủi ro còn lại — quyết định 2026-10-26 (dieu-phoi, thay mặt chủ dự án):**
+
+- **Đích do quản trị cấu hình ngoài Luồng:** `webhookRouter`, `erpOutbox`, `spcAlertSink`, `siemExporter`, `reportDeliveryService` — CHẤP NHẬN. Đây là đích admin khai, không phải đường AI; B4 là rào chống nhầm cho Luồng.
+  - Backlog (chưa làm): áp `chanHostAiNgoai` lúc LƯU cấu hình của 5 nơi này.
+- **Dịch vụ "forge" của khung gốc** (`server/_core` imageGeneration / voiceTranscription / dataApi / map / notification, `server/storage.ts` — qua `ENV.forgeApiUrl`):
+  - Hiện `BUILT_IN_FORGE_API_URL` RỖNG trong `.env` của máy chạy (đã đo) ⇒ đường này không hoạt động.
+  - ⚠ ĐẶT `BUILT_IN_FORGE_API_URL` = MỞ một đường ra ngoài KHÔNG qua cổng AI ngoài (không che dữ liệu, không trần, không sổ) — cần quyết định của chủ dự án trước khi đặt.
+  - Census `duongVong` giữ các miễn trừ này có dấu ⚠.
+- **`kiemDichDen` luôn từ chối link-local / metadata kể cả khi danh sách trắng khai host:cổng:** ĐỒNG Ý (chặt hơn Đợt 9).
+
 ## Phụ lục — việc cần làm khi nâng cấp
 
 1. Áp mig 0410 (chủ lượt), 0411 (phạm vi nhà máy), 0412 (host của bí mật) — `node scripts/apply-migration-04xx.mjs --dev-only|--test-only`.
