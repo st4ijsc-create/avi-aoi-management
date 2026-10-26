@@ -472,8 +472,9 @@ export async function* streamCodingAnswer(
   }
 
   /**
-   * ★ Đợt 9 (2026-10-23, thiết kế 26ba9d039, dieu-phoi duyệt) — TRỢ LÝ THEO VAI TRÒ (cờ `AI_TRO_LY_THEO_VAI_TRO`, mặc định TẮT ⇒ không
-   * một byte nào đổi). MỘT lần mỗi lượt hỏi, DÙNG LẠI bộ chọn của tác nhân (`giaiModelTheoVaiTro`: dự án PLC / chữ câu hỏi ⇒ `code.plc`,
+   * ★ Đợt 9 (2026-10-23, thiết kế 26ba9d039, dieu-phoi duyệt) — TRỢ LÝ THEO VAI TRÒ (cờ `AI_TRO_LY_THEO_VAI_TRO`, mặc định BẬT —
+   * vắng/rỗng ⇒ bật, chỉ "false"/"off"/"0"/"no" tắt; khớp `troLyTheoVaiTroBat` ở `vaiTroTacNhan.ts`; sửa chú thích ở Đợt 10.1 A4).
+   * ★ Đợt 10.1 — người dùng chọn model TƯỜNG MINH (`context.chonModel` ⇒ `modelVaiTro` do tuyến đặt) thắng ⇒ không định tuyến ở đây. MỘT lần mỗi lượt hỏi, DÙNG LẠI bộ chọn của tác nhân (`giaiModelTheoVaiTro`: dự án PLC / chữ câu hỏi ⇒ `code.plc`,
    * còn lại `code.software`; định tuyến vai trò + khoá khe + khe đang giữ). Người dùng CHỌN TƯỜNG MINH ("fast"/"code" ⇒ `context.modelTask`)
    * thắng ⇒ không định tuyến. Khoá khe giữ model khác và không có dự phòng ⇒ NÓI THẬT, 0 lượt gọi model. Kết quả đi xuống mọi nhánh
    * qua ô SERVER-ONLY `context.modelVaiTro` (`parseContext` dựng ctx từng ô ⇒ client không đặt được).

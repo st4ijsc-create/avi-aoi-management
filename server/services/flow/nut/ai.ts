@@ -15,6 +15,7 @@ import { dangKyNut, nguCanhItem, type NguCanhChay, type VetModel } from "../dang
 // Module LÁ (0 import) — cắt chuỗi suy luận khỏi chữ model trước khi chữ thành DỮ LIỆU của luồng (hiển thị + chảy xuống node sau).
 import { stripThinking } from "../../ai/thinkingStrip";
 import { tinCayNhan, type LogprobToken } from "../../ai/logprobDau";
+import type { PhuThuocDanhMuc } from "../../ai/chonModel/kieu";
 
 /** `ngu` vắng = lời gọi ngoài một lượt chạy (vd `flow.taoTuMoTa`, Đợt 8.4). */
 export type HamGoiAi = (y: {
@@ -29,12 +30,19 @@ export type HamGoiAi = (y: {
   baoLogprobs?: (lp: LogprobToken[] | undefined) => void;
   /** Hàm gọi báo lại token thật (prompt, sinh) sau lời gọi — vào vết `buoc.model` để thống kê. */
   baoTokens?: (vao: number, ra: number) => void;
+  /**
+   * ★ Đợt 10.1 A2 — `thamSo.chonModel` THÔ của node (KHÔNG qua biểu thức — dữ liệu item không chọn được model). `goiAiCoVet` giải
+   * thành `chon`; vắng / `auto` ⇒ định tuyến vai như cũ.
+   */
+  chonModel?: unknown;
+  /** Model đã giải từ `chonModel` (đặt bởi `goiAiCoVet`) — có ⇒ dùng đúng model này. */
+  chon?: { modelId: string | undefined };
 }) => Promise<string>;
 
 export const VAI_TRO_TASK: Record<string, "code" | "extract" | "chat"> = { "code.plc": "code", "code.software": "code", extract: "extract", classify: "extract" };
 
 /** Mặc định: Cổng AI + engine (nạp động — lưới thay bằng `datHamGoiAi`). */
-let goiAi: HamGoiAi = async ({ vaiTro, heThong, nguoiDung, nghi, maxTokens, loai, ngu, baoLogprobs, baoTokens }) => {
+let goiAi: HamGoiAi = async ({ vaiTro, heThong, nguoiDung, nghi, maxTokens, loai, ngu, baoLogprobs, baoTokens, chon }) => {
   const [{ routeInference }, { chatCompletion }, { resolveLogicalModel, defaultModelBasename }] = await Promise.all([
     import("../../aiGateway"),
     import("../../aiGgufEngine"),
@@ -42,9 +50,11 @@ let goiAi: HamGoiAi = async ({ vaiTro, heThong, nguoiDung, nghi, maxTokens, loai
   ]);
   // ★ Đợt 9 — trong MỘT lượt chạy (có `ngu`): phạm vi flow + bề mặt `luong` (mig 0405), và vai trò NHẸ không kéo
   // đổi khe nặng (lượt nền; danh sách MỘT chỗ: `VAI_TRO_NHE_KHONG_DOI_KHE` — code.* vẫn đổi khe). Ngoài lượt chạy (vd `flow.taoTuMoTa`, người dùng đang chờ) ⇒ như trước.
-  const modelId = ngu
-    ? resolveLogicalModel(vaiTro, { phamVi: { flowId: ngu.flowId, beMat: "luong" }, khongDoiKhe: true })
-    : resolveLogicalModel(vaiTro);
+  const modelId = chon
+    ? chon.modelId
+    : ngu
+      ? resolveLogicalModel(vaiTro, { phamVi: { flowId: ngu.flowId, beMat: "luong" }, khongDoiKhe: true })
+      : resolveLogicalModel(vaiTro);
   // Model THỰC chạy (vắng ⇒ engine dùng GGUF_DEFAULT_MODEL) ⇒ ghi vào metrics/audit `flow_*`.
   const modelThuc = modelId ?? defaultModelBasename() ?? null;
   const { result } = await routeInference(
@@ -92,12 +102,58 @@ export async function diemModel(vaiTro: string, ngu: NguCanhChay): Promise<VetMo
   return { vaiTro, model, nguon, phamVi: pv, duPhong: nguon === "du-phong", kheBan: lyDo.some((x) => x.includes("khe-dang-giu-model-khac")), lyDo };
 }
 
-/** Báo vết model (nếu lượt chạy / chạy thử đang lắng nghe) rồi gọi model. Lỗi định tuyến KHÔNG làm hỏng node. */
+let layDepChonModel: () => Promise<PhuThuocDanhMuc> = async () => (await import("../../ai/chonModel/danhMuc")).layPhuThuocDanhMucMacDinh();
+
+/** Chỉ lưới: thay phụ thuộc danh mục cho `chonModel` của node (null ⇒ mặc định). */
+export function datPhuThuocChonModelNut(f: (() => Promise<PhuThuocDanhMuc>) | null): void {
+  layDepChonModel = f ?? (async () => (await import("../../ai/chonModel/danhMuc")).layPhuThuocDanhMucMacDinh());
+}
+
+/**
+ * ★ Đợt 10.1 A2 — `thamSo.chonModel` THÔ của node ⇒ model + vết. Vắng / `auto` ⇒ null (định tuyến vai như cũ). Giá trị lạ (kể cả
+ * biểu thức `{{ }}`) ⇒ lỗi node — KHÔNG rơi về mặc định. `ngoai:` ⇒ lỗi tới khi 10.3 nối cổng AI ngoài.
+ */
+export async function giaiChonModelNut(chonModel: unknown, ngu: NguCanhChay | undefined): Promise<{ modelId: string | undefined; vet: VetModel } | null> {
+  if (chonModel === undefined || chonModel === null || chonModel === "" || chonModel === "auto") return null;
+  if (typeof chonModel !== "string") throw new LoiNutAi("chonModel không hợp lệ (phải là chuỗi cố định, không phải biểu thức)");
+  const [{ giaiChonModel }, { nguCanhKhe, defaultModelBasename }] = await Promise.all([
+    import("../../ai/chonModel/giaiChonModel"),
+    import("../../ai/modelResolver"),
+  ]);
+  let dich;
+  try {
+    dich = await giaiChonModel(
+      chonModel,
+      { beMatChu: true, factoryId: null, ...(ngu ? { phamVi: { flowId: ngu.flowId, beMat: "luong" } } : {}), kheBiKhoa: nguCanhKhe().kheBiKhoa },
+      await layDepChonModel(),
+    );
+  } catch (e) {
+    throw new LoiNutAi(`chonModel: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (!dich) return null;
+  if (dich.loai !== "local") throw new LoiNutAi("chonModel: model ngoài chưa được cài đặt");
+  return {
+    modelId: dich.modelId,
+    vet: {
+      vaiTro: dich.vaiTro,
+      model: dich.modelId ?? defaultModelBasename() ?? null,
+      nguon: dich.nguon,
+      phamVi: dich.phamVi,
+      duPhong: dich.nguon === "du-phong",
+      kheBan: false,
+      lyDo: [`chọn tường minh ${chonModel}`],
+    },
+  };
+}
+
+/** Báo vết model (nếu lượt chạy / chạy thử đang lắng nghe) rồi gọi model. Lỗi định tuyến KHÔNG làm hỏng node — trừ `chonModel` lạ. */
 async function goiAiCoVet(y: Parameters<HamGoiAi>[0]): Promise<string> {
+  const chon = await giaiChonModelNut(y.chonModel, y.ngu);
+  if (chon) y = { ...y, chon: { modelId: chon.modelId } };
   let vet: VetModel | undefined;
   if (y.ngu?.ghiModel) {
     try {
-      vet = await diemModel(y.vaiTro, y.ngu);
+      vet = chon ? { ...chon.vet, lyDo: [...chon.vet.lyDo] } : await diemModel(y.vaiTro, y.ngu);
       y.ngu.ghiModel(vet);
     } catch {
       /* vết là thông tin phụ */
@@ -155,6 +211,7 @@ dangKyNut({
         maxTokens: so(t.maxTokens, 1024, 16, 16000),
         loai: "llm",
         ngu,
+        chonModel: thamSo.chonModel,
       });
       ra.push({ json: { ...item.json, [String(t.truongRa ?? "traLoi")]: chu.trim() } });
     }
@@ -219,7 +276,7 @@ dangKyNut({
       let nguoiDung = `Trích các trường sau thành MỘT đối tượng JSON (không thêm trường khác; không có thì null):\n${moTa}\n\n${boc(nguon)}`;
       let kq: ReturnType<typeof kiemTheoTruong> = { ok: false, loi: "chưa gọi" };
       for (let lan = 0; lan < 2; lan++) {
-        const chu = await goiAiCoVet({ vaiTro: String(t.vaiTro ?? "extract"), heThong: HE_THONG_CHUNG, nguoiDung, nghi: false, maxTokens: so(t.maxTokens, 1024, 64, 8000), loai: "trich-xuat", ngu });
+        const chu = await goiAiCoVet({ vaiTro: String(t.vaiTro ?? "extract"), heThong: HE_THONG_CHUNG, nguoiDung, nghi: false, maxTokens: so(t.maxTokens, 1024, 64, 8000), loai: "trich-xuat", ngu, chonModel: thamSo.chonModel });
         kq = kiemTheoTruong(chu, truong);
         if (kq.ok) break;
         nguoiDung += `\n\nLần trước sai: ${kq.loi}. Chỉ trả về ĐÚNG một đối tượng JSON hợp lệ.`;
@@ -255,6 +312,7 @@ dangKyNut({
         maxTokens: 32,
         loai: "phan-loai",
         ngu,
+        chonModel: thamSo.chonModel,
         baoLogprobs: (x) => {
           lp = x;
         },
@@ -288,6 +346,7 @@ dangKyNut({
       maxTokens: so(t.maxTokens, 1500, 64, 16000),
       loai: "tom-tat",
       ngu,
+      chonModel: thamSo.chonModel,
     });
     return { main: [{ json: { [String(t.truongRa ?? "tomTat")]: chu.trim(), soItem: vao.length } }] };
   },
