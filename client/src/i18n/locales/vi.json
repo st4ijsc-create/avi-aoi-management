@@ -3704,6 +3704,7 @@
       "queued-for-shared-ledger": "Bản sao đọc đã sạch NGAY (dư địa thấy đúng ngay lập tức), nhưng hàng chỉ thật sự RỜI DATABASE ở lượt đồng bộ sổ chung KẾ TIẾP — xem unsyncedWritesAfter để biết còn bao nhiêu ý định ghi chưa gửi."
     },
     "entity": {
+      "aiNgoaiKhoa": "khoá nhà cung cấp AI ngoài",
       "corporate": "tập đoàn",
       "edgeNode": "node biên (edge)",
       "scadaRequest": "yêu cầu lệnh SCADA",
@@ -3898,6 +3899,8 @@
       "lateWriteResult": "kết quả ghi đến muộn"
     },
     "operation": {
+      "toggleApiKey": "bật/tắt khoá API",
+      "aiNgoaiEndpoint": "endpoint AI ngoài",
       "dieuKienViTriTrongPhamVi": "dựng điều kiện phạm vi theo vị trí",
       "retireEdgeNode": "cho node biên ngừng hoạt động vĩnh viễn",
       "updateApiKey": "cập nhật khoá API",
@@ -4386,6 +4389,8 @@
       "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát."
     },
     "reason": {
+      "can-nha-may": "khoá cần gắn nhà máy trước khi kích hoạt",
+      "thieu-endpoint": "thiếu endpoint",
       "totpSelfUnlock": "Không tự mở khoá xác thực hai lớp của chính mình — cần một quản trị viên khác.",
       "edgeNodeBusy": "Node đang được một thao tác khác thay đổi (gán thiết bị, xoay vòng thông tin xác thực…). Chưa có gì thay đổi — thử lại sau giây lát.",
       "edgeNodeRetireBlocked": "Node vẫn còn: {{blockers}}. Trả thiết bị về trung tâm, chờ các lệnh DỪNG / yêu cầu khoá được xác nhận (hoặc xử lý), kết thúc các lượt chạy, rồi thử lại. Chưa có gì thay đổi.",

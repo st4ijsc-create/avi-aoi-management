@@ -3696,6 +3696,7 @@
       "queued-for-shared-ledger": "读取副本已立即清理（余量会立刻反映出来），但该行要到下一次共享台账同步时才会真正从数据库中移除——查看 unsyncedWritesAfter 了解还有多少写入尚未发送。"
     },
     "entity": {
+      "aiNgoaiKhoa": "外部AI提供商密钥",
       "corporate": "集团",
       "edgeNode": "边缘节点",
       "scadaRequest": "SCADA 指令请求",
@@ -3890,6 +3891,8 @@
       "lateWriteResult": "迟到的写入结果"
     },
     "operation": {
+      "toggleApiKey": "启用/停用API密钥",
+      "aiNgoaiEndpoint": "外部AI端点",
       "dieuKienViTriTrongPhamVi": "构建位置范围条件",
       "retireEdgeNode": "永久停用边缘节点",
       "updateApiKey": "更新 API 密钥",
@@ -4386,6 +4389,8 @@
       "ros2JobMessageRequired": "ROS2 指令未携带自身消息——未发布任何内容。"
     },
     "reason": {
+      "can-nha-may": "密钥需先关联工厂才能启用",
+      "thieu-endpoint": "缺少端点",
       "totpSelfUnlock": "不能自行解锁本人的双因素认证——需由另一位管理员操作。",
       "edgeNodeBusy": "该节点正被其他操作修改（设备分配、凭据轮换等）。未做任何更改——请稍后重试。",
       "edgeNodeRetireBlocked": "该节点仍有：{{blockers}}。请先将其设备交还中央、等待其停止指令 / 锁定请求被确认（或处理）、结束其运行，然后重试。未做任何更改。",
