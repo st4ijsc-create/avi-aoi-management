@@ -119,3 +119,32 @@ export function _datLaiDemStopQuaHanChoTest(): void {
   mocDem.length = 0;
   batDauDem = Date.now();
 }
+
+// ─── R1b-2b-1 T9 (mục 46): làm ấm import ĐỘNG của đường STOP HMI ─────────────────────────────────────────────────────────────────
+/**
+ * MỌI `import("<spec>")` trong `server/_core/trpc.ts`, `server/_core/moduleGate.ts`, `server/_core/context.ts` (cùng thư mục với tệp này ⇒
+ * CÙNG chuỗi spec) — các middleware mà request STOP HMI (`scadaCommands.dungMay`) đi qua. Lần import ĐẦU của một module lớn (vd. `../db`) tốn
+ * hàng trăm ms đĩa + biên dịch, và nằm TRONG hạn tổng `HAN_TONG_STOP_HMI_MS` ⇒ STOP đầu tiên sau khởi động có thể quá hạn chỉ vì import lạnh.
+ * `index.ts` gọi `lamAmDuongStopHmi()` ngay sau `listen`. Lưới `hanStopHmi.lamAm.test.ts` quét ba tệp: spec mới thiếu ở đây ⇒ ĐỎ.
+ */
+export const MODULE_DUONG_STOP_HMI: ReadonlyArray<readonly [string, () => Promise<unknown>]> = [
+  ["../db", () => import("../db")],
+  ["../db/tenantContext", () => import("../db/tenantContext")],
+  ["./accessControl", () => import("./accessControl")],
+  ["../license/license-service", () => import("../license/license-service")],
+  ["../services/robot/robotStopAuthMemo", () => import("../services/robot/robotStopAuthMemo")],
+  ["../services/auditTrailService", () => import("../services/auditTrailService")],
+];
+
+/** Gọi MỌI loader (song song); KHÔNG BAO GIỜ ném — loader lỗi ⇒ tên nó vào `loi` (STOP sau đó vẫn tự import như trước, chỉ chậm hơn). */
+export async function lamAmDuongStopHmi(
+  dsModule: ReadonlyArray<readonly [string, () => Promise<unknown>]> = MODULE_DUONG_STOP_HMI,
+): Promise<{ ok: number; loi: string[] }> {
+  const kq = await Promise.allSettled(
+    dsModule.map(async ([, nap]) => {
+      await nap();
+    }),
+  );
+  const loi = dsModule.flatMap(([ten], i) => (kq[i].status === "rejected" ? [ten] : []));
+  return { ok: dsModule.length - loi.length, loi };
+}
