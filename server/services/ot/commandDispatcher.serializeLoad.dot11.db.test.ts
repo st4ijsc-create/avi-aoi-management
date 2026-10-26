@@ -359,10 +359,13 @@ describe.skipIf(!DB_URL)("Đợt 11 K — OT_CMD_SERIALIZE_ENABLED load + STOP b
     it(`[${F}] A3 — one adapter, burst of 25 with the DEFAULT queue bound (10): BUSY`, async () => {
       setEnv(flag);
       const a = adapters[0];
-      reset(a, 20, 10);
+      // ★ ĐỎ KHI CHẠY SONG SONG (kiem-dinh 2026-10-26): "BUSY > 0" chỉ đúng nếu 25 lệnh TỚI HÀNG ĐỢI nhanh hơn thiết bị xả (20 ms/lệnh). Cổng tiền-hàng-đợi (DB)
+      // của mỗi lệnh chậm dưới tải ⇒ lệnh đến thưa, hàng đợi không bao giờ đầy ⇒ 0 BUSY. Làm tất định: thiết bị CHẬM (300 ms/lệnh — xả chậm hơn lúc đến) và đợt 2
+      // chỉ được gửi khi hàng đợi đã ≥ 8 lệnh (cùng cơ chế "độ trễ âm" của ca STOP bên dưới) ⇒ 15 lệnh cuối PHẢI vượt trần 10 bất kể tốc độ cổng.
+      reset(a, 300, 10);
       const inputs: DispatchInput[] = [];
       for (let v = 1; v <= 25; v++) inputs.push(await prep(a, "set", [{ tagKey: TAG_W, value: v }]));
-      const r = await burst(inputs, [a.id]);
+      const r = await burst(inputs, [a.id], inputs.map((_, i) => (i < 10 ? 0 : -8)));
       emit({ phase: "A3", flag: F, n: 25, byStatus: r.recs.reduce((m: Record<string, number>, x) => ((m[x.status + ":" + (x.reason ?? "")] = (m[x.status + ":" + (x.reason ?? "")] ?? 0) + 1), m), {}), maxDepth: r.maxDepth, latAccepted: stats(r.recs.filter((x) => x.reason !== "BUSY").map((x) => x.ms)), latBusy: stats(r.recs.filter((x) => x.reason === "BUSY").map((x) => x.ms)) });
       if (flag) expect(r.recs.filter((x) => x.reason === "BUSY").length).toBeGreaterThan(0);
       else expect(r.recs.filter((x) => x.reason === "BUSY").length).toBe(0);
