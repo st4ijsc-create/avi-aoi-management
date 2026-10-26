@@ -8,13 +8,14 @@
 ## Kết luận ngắn
 
 - **Lưới nghiệm thu** `server/services/scada/r1b2b1NghiemThu.db.test.ts` (opt-in `SCADA_R1B2B1_NGHIEM_THU=1`, `-c vitest.db.config.ts`): 16 ô của kế hoạch
-  + 2 ô thêm theo phán quyết (C1 nhánh HA, L2) + 1 ô đối chứng do T16 thêm (R1-đc) = 18 ca. **3 lượt tuần tự: 17/18 xanh mỗi lượt, cùng MỘT ca đỏ
-  tất định: R1-đc** (§1, §6 LOGIC mục 1). Không đặt biến ⇒ 18/18 bị bỏ qua (đã chạy).
-- **R1-đc ĐỎ — chuyển về Task 6 (mục 42), KHÔNG nới gì:** so đọc lại ở không gian thô của T6 coi lượt ghi ĐÚNG là lệch trên driver THẬT, vì mọi driver
-  (Modbus / S7 / MC / EIP / OPC UA) trả giá trị kỹ thuật của tag int đã `Math.round(raw * scale + offset)`. Đo bằng `ModbusDriver` thật: thiết bị giữ
-  đúng thô 5 (scale 0,5, ghi 2,5) đọc về 3 ⇒ `acked_unverified`; thô 23 (scale 0,1, ghi 2,3) đọc về 2 ⇒ `acked_unverified`. Hệ quả: ô R1 xanh nhưng
-  KHÔNG phân biệt được thiết bị giữ 6 với thiết bị giữ 5 trên driver thật (test của T6 dùng driver giả trả 2,5 chưa làm tròn). Chiều hỏng là NHÃN
-  (chỉ cảnh báo, không gửi lại, không chặn STOP) — nhưng là báo động giả cho mọi tag int scale lẻ có giá trị kỹ thuật không nguyên.
+  + 2 ô thêm theo phán quyết (C1 nhánh HA, L2) + 1 ô đối chứng do T16 thêm (R1-đc) = 18 ca. Đo T16 đầu: 17/18 mỗi lượt, R1-đc ĐỎ tất định ⇒ về
+  Task 6. **Sau T6 fix round 1: 3 lượt tuần tự 18/18 xanh** (53,3 / 52,2 / 55,3 s), mong đợi của R1-đc KHÔNG đổi; ô R1 đổi số thô thiết bị 6 → 7 (§1, §6 LOGIC
+  mục 1). Không đặt biến ⇒ 18/18 bị bỏ qua (đã chạy).
+- **R1-đc (T16 → T6) đã sửa — T6 fix round 1:** so đọc lại ở không gian thô của T6 coi lượt ghi ĐÚNG là lệch trên driver THẬT, vì mọi driver
+  (Modbus / SLMP / S7 / MC / EIP / OPC UA) trả giá trị kỹ thuật của tag int đã `Math.round(raw * scale + offset)` (thô 5 ở scale 0,5 ⇒ đọc 3 ⇒
+  round(3/0,5) = 6 ≠ 5). Nay `readbackMatches` so với giá trị ĐỌC MÔ PHỎNG `scaleXuoi(inverseScale(e))` — `scaleXuoi` (`drivers/otScale.ts`) là MỘT
+  nguồn mà đường đọc của cả 6 driver cũng gọi. Giới hạn còn lại: làm tròn có thể CHE số thô sai (scale 0,5: thô 6 cũng đọc 3) ⇒ R1b-2b-2 mục 64 (đọc
+  lại THÔ thật). Chiều hỏng vẫn chỉ là NHÃN (không gửi lại, không chặn STOP).
 - **Đột biến cấp hệ thống** (coil Modbus quay về `Boolean(w.value)`) ⇒ B1 ĐỎ; hoàn tác, `git diff` của tệp rỗng (§2).
 - Bench OpenPLC và chạy toàn bộ: CHƯA chạy (việc của bộ điều khiển, §3 / §5).
 - **R1b-2b-1 là điều kiện cần; bật `AI_OT_CONTROL_ENABLED` là quyết định của chủ dự án sau rà soát độc lập riêng**. Báo cáo này không ngụ ý gì khác:
@@ -34,8 +35,8 @@ Chạy: `SCADA_R1B2B1_NGHIEM_THU=1 npx vitest run -c vitest.db.config.ts server/
 | Q1 | T3 | phiên OT THẬT (`startOt`, vòng poll chung, `S7Driver` THẬT, nodes7 giả qua `loadPackage`), tag string DUY NHẤT, thư viện trả `(false, {t:"BAD 12"})` | phiên `connected`, mọi mẫu `good` giá trị `"BAD 12"`, không `lost`; cùng chuỗi với `anythingBad=true` ⇒ mẫu `bad`, `value null` | ✓ (< 300 ms + phiên) |
 | M1 | T4 | `MitsubishiMcDriver` THẬT, mcprotocol giả; thời gian TỈ LỆ `globalTimeout` 400 ms (≙ 4500): mọi item BAD sau 382 ms (≙ 4300) errCode `MC Error Response …`; rồi 409 ms (≙ 4600) errCode `MC_ERRCODE_QUA_HAN_GOI` | (a) đọc ≥ 90 % hạn gói, KHÔNG ném, mọi mẫu `device_error`, tick `ok` + `laDocTot` + không `laTickHong`, `isConnected`, STOP ghim (`dungGhim`) ghi được (`writeItems` 1 lần, ok); (b) ném `McReadTimeoutError` (mất liên lạc) | ✓ 1206 / 1225 / 1212 ms |
 | C1 | T5 | phiên S7 THẬT mà MỌI địa chỉ sai (`XYZ`, `DB1,QQQ9`), nhánh **legacy** và **HA** (ConnectionSupervisor thật), chu kỳ 300 ms, hạn nối lại 1 s / 0,5 s | sau ≥ 3 lượt đọc: `connecting` + lý do `moi_tag_sai_cau_hinh`; thêm 2,5 s vẫn thế; không `lost`, không `connected`, `initiateConnection` đúng 1 lần, driver tạo 1 (legacy) / 2 (HA: fixture + supervisor), `readAllItems` 0 lần | ✓ legacy 3178 / 3193 / 3190; HA 3175 / 3203 / 3198 ms |
-| R1 | T6 | `dispatch()` AI, `ModbusDriver` THẬT; tag int `holding:10` scale 0,5; ghi 2,5; thiết bị trả thô 6 | `writeRegister(9, 5)`; `acked_unverified` | ✓ (< 300 ms) |
-| **R1-đc** | T6 | như R1 nhưng thiết bị giữ ĐÚNG thô vừa ghi (scale 0,5: 2,5 ⇒ 5; scale 0,1 `holding:11`: 2,3 ⇒ 23) | `acked_verified` cả hai | **✗ 219 / 271 / 284 ms — nhận `acked_unverified` cả hai** (thô đã đúng: `writeRegister(9,5)`, `writeRegister(10,23)`) ⇒ về T6 |
+| R1 | T6 | `dispatch()` AI, `ModbusDriver` THẬT; tag int `holding:10` scale 0,5; ghi 2,5; thiết bị trả thô 7 (driver đọc round(3,5) = 4 ≠ 3). T6 fix round 1: thô 6 → 7 — thô 6 đọc round(3,0) = 3 = đọc của thô 5, KHÔNG phân biệt được khi chưa có đọc lại thô (mục 64) | `writeRegister(9, 5)`; `acked_unverified` | ✓ < 300 ms, 3 lượt (fix round 1) |
+| **R1-đc** | T6 | như R1 nhưng thiết bị giữ ĐÚNG thô vừa ghi (scale 0,5: 2,5 ⇒ 5; scale 0,1 `holding:11`: 2,3 ⇒ 23) | `acked_verified` cả hai | T16 đầu: ✗ 219 / 271 / 284 ms (`acked_unverified` cả hai, thô đã đúng `writeRegister(9,5)`, `writeRegister(10,23)`) ⇒ về T6. **Sau T6 fix round 1: ✓ < 300 ms, 3 lượt** (mong đợi không đổi) |
 | E1 | T7 | `EthernetIpDriver` THẬT, Controller giả phát `'error'` 5 ms sau khi bắt đầu connect (connect không bao giờ xong); `SlmpDriver` THẬT socket giả: giao dịch A hết hạn, callback ghi MUỘN (lỗi) của A tới khi B đang chờ | 0 `uncaughtException` / `unhandledRejection`; connect hết hạn, `lastError` là chuỗi, `timeout_sp` = 60; B nhận đúng khung trả lời | ✓ (< 300 ms) |
 | T1 | T8 | adapter stub THẬT trong DB, `startOt` THẬT, ghi trạng thái DB THẬT (điều tiết 5 s); `stopOt({ tatTienTrinh: true })` | DB `connected` → giữ `connected` sau 7 s (RAM `disabled`); đối chứng: `startOt` lại rồi `stopOt()` trần ⇒ DB `disabled` | ✓ 17629 / 17692 / 17504 ms |
 | L1 | T9 | sổ chậm 5 s = bão hoà POOL CỦA CHÍNH tiến trình bằng khoá tư vấn (điều kiện 2 / C14, không `LOCK TABLE`), rào ngay sau `loadStopPinsHmi` thật; máy CHƯA ghim | `CHUA_GHIM_STOP` sau ≥ 495 ms (lượt sổ chạm hạn thật) và < 1200 + `batDauDoLag().dung(1200)`; log `attempts_hmi_stop_chua_ghim_qua_han`; dispatch 0; lúc trả lời dòng attempts CHƯA có | ✓ trôi 557 / 576 / 587 ms (nới 331 / 375 / 300) |
@@ -117,12 +118,12 @@ ORDER BY r.id
 > **CHỖ TRỐNG — bộ điều khiển điền (Step 5)**, sau bench và sau khi điều phối trả lời "OK chạy ngay":
 > `node scripts/luoi-truoc-gop.mjs --nang server shared client/src scripts vscode-extension/src`; lô serial (`vitest.serial.config.ts`); mọi `*census*`;
 > opt-in R0 + R1a + R1b-1 + R1b-2a + R1b-2b-1; `npm run check` (12 GB); `npm run i18n:check`. Phân loại MỌI tệp đỏ (lô / tải / có sẵn; tải ⇒ chạy lại
-> riêng tệp; không nới ngưỡng). Lưu ý: opt-in R1b-2b-1 hiện ĐỎ ở R1-đc (§1) cho tới khi T6 sửa.
+> riêng tệp; không nới ngưỡng). Opt-in R1b-2b-1: R1-đc đã xanh sau T6 fix round 1 (§1).
 
 _(chạy toàn bộ: chưa chạy)_
 
 Đã chạy ở T16 (phạm vi T16, không phải Step 5):
-- lưới opt-in: 3 lượt, 17/18 mỗi lượt (R1-đc đỏ); không đặt biến ⇒ 18 bị bỏ qua;
+- lưới opt-in: 3 lượt, 17/18 mỗi lượt (R1-đc đỏ); không đặt biến ⇒ 18 bị bỏ qua; sau T6 fix round 1: 3 lượt 18/18;
 - census / gate chạm SCADA + test file + pin báo cáo (23 tệp: `rawErrorCensus`, `dataErrorStringCensus`, `xoaHangKhongGioiHanTrongTest`,
   `phamViDocCensus`, `phamViGhiCensus`, `phamViTuyenCensus`, `congGiayPhepAiCensus`, `otWriteBinding.census`, `lamTronScaleCensus`,
   `staleKhongVaoPhien.census`, `stopPinDatMotCho.census`, `thuTuKhoaTag.census`, `vramPha5Gate`, `nguoiDungTest.census`, `fakeUtcCensus`,
@@ -139,8 +140,10 @@ _(chạy toàn bộ: chưa chạy)_
   interlock (`INTERLOCK_NGOAI_DAI` lý do `TYPE_MISMATCH`), ở posture (`luatLenhLechLuoi` đếm), và lúc GỬI (`TYPE_MISMATCH` sớm, thiết bị 0 lần). Ghim
   STOP MỚI ngoài tập trên địa chỉ bit bị từ chối lúc đặt (`INVALID_VALUE {field:"stopValue", reason:"stopPinBitAddress"}`). STOP khớp ghim KHÔNG BAO GIỜ
   bị chặn: ghim cũ `255` trên coil kiểu int ghi TRUE.
-- (T6) **STOP `255` trên coil int đọc lại `acked_verified`** (lớp địa chỉ bit so theo bool). So đọc lại tag int ở không gian thô ⇒ nhiều
-  `acked_unverified` hơn (xem §6 LOGIC mục 1: hiện cả với lượt ghi ĐÚNG trên tag int scale lẻ — lỗi chờ T6).
+- (T6) **STOP `255` trên coil int đọc lại `acked_verified`** (lớp địa chỉ bit so theo bool). (T6 fix round 1) So đọc lại tag int / float có thang
+  đo so với giá trị driver SẼ đọc về cho số thô vừa ghi (`scaleXuoi(inverseScale(e))`): lượt ghi đúng ⇒ `acked_verified` như trước T6; thiết bị giữ
+  số thô làm ĐỔI giá trị đọc ⇒ `acked_unverified` (vd scale 10: ghi 30, thiết bị giữ thô 4 ⇒ đọc 40 — trước T6 cũng lệch). Đường đọc của 6 driver nay
+  gọi chung `otScale.scaleXuoi` (cùng phép tính, giá trị đọc không đổi).
 - (T1, mục 59) **Trang đổi mật khẩu có khối "DỪNG MÁY khẩn cấp"** cho người có quyền dừng (sàn vai mức 1 + `machine_control.canEdit`); nút không bao giờ
   ẩn / vô hiệu; dòng "Có thể không tới mọi thiết bị — dùng thêm E-STOP cứng" khi `tongHop` ≠ `du`; dòng "danh sách có thể chưa đủ" khi bị cắt ở 200.
   Mọi thủ tục khác vẫn `MUST_CHANGE_PASSWORD`.
@@ -165,12 +168,13 @@ _(chạy toàn bộ: chưa chạy)_
 
 ### LOGIC
 
-1. **(T16 → T6, ĐỎ, chưa sửa) So đọc lại int ở không gian thô xung đột với làm tròn của driver.** Driver Modbus / S7 / MC / EIP / OPC UA trả giá trị kỹ
-   thuật tag int = `Math.round(raw * scale + offset)` (vd `modbusDriver.ts` readOne, `s7Address.ts:114`, `mcAddress.ts:147`, `eipTag.ts:76`,
-   `opcuaAddress.ts:210`). `readbackMatches` (T6) suy thô từ giá trị ĐÃ làm tròn ⇒ lượt ghi ĐÚNG của giá trị không nguyên trên tag int scale lẻ luôn
-   `acked_unverified` (lưới R1-đc: scale 0,5 ghi 2,5 thô 5 ⇒ đọc 3; scale 0,1 ghi 2,3 thô 23 ⇒ đọc 2). Ô R1 xanh vì thiết bị giữ 6 cũng đọc 3 — tức R1 không
-   phân biệt được trên driver thật. Chỉ là nhãn (không gửi lại, không chặn STOP); trước T6 hai trường hợp đều `acked_verified`. Hướng sửa thuộc T6 (ví
-   dụ so `sample.raw` của driver với thô kỳ vọng, hoặc driver không làm tròn giá trị kỹ thuật); có lưới R1-đc làm đối chứng.
+1. **(T16 → T6, ĐÃ SỬA ở T6 fix round 1; còn giới hạn) So đọc lại int có thang đo.** Driver Modbus / SLMP / S7 / MC / EIP / OPC UA trả giá trị
+   kỹ thuật tag int = `Math.round(raw * scale + offset)`; bản T6 đầu suy thô từ giá trị ĐÃ làm tròn ⇒ lượt ghi ĐÚNG của giá trị không nguyên trên tag
+   int scale lẻ luôn `acked_unverified` (lưới R1-đc: scale 0,5 ghi 2,5 thô 5 ⇒ đọc 3; scale 0,1 ghi 2,3 thô 23 ⇒ đọc 2). Sửa: so với giá trị ĐỌC MÔ
+   PHỎNG `scaleXuoi(inverseScale(e))`, `scaleXuoi` là MỘT nguồn cho đường đọc của cả 6 driver (test `ModbusDriver` THẬT trên client Modbus giả;
+   đột biến quay về so không gian thô ⇒ đỏ). **Giới hạn còn lại:** khi làm tròn CHE số thô sai (scale 0,5: thô 6 và thô 5 cùng đọc 3) thì không phát
+   hiện được nếu không đọc lại THÔ thật ⇒ R1b-2b-2 mục 64 (ca giới hạn được GHIM trong `otDeviceWrite.readback.r1b2b.test.ts` để mục 64 lật có chủ ý).
+   Vì thế ô R1 của lưới dùng thô 7 (đọc 4 ≠ 3) thay thô 6. Chỉ là nhãn (không gửi lại, không chặn STOP).
 2. (T2, KD-T2) Ghim STOP CŨ là chuỗi ngoài tập trên coil (vd `"off"`) vẫn ghi TRUE (luật truthy cũ — STOP không bao giờ bị chặn); ghim MỚI như vậy bị từ
    chối lúc đặt; census TEST / DEV = 0 ghim như vậy. Cùng nhánh: số hữu hạn ≠ 0 ⇒ TRUE.
 3. (Task 2 fix round 1) luật/FOE tạo sau triển khai: luật interlock bị kiểm lúc lưu + tư thế; workflow FOE chỉ bị chặn sớm lúc gửi (TYPE_MISMATCH), không lúc lưu.
@@ -273,7 +277,7 @@ _(chạy toàn bộ: chưa chạy)_
 | T3 (G2) | bỏ vế `thuVienBaoLoi` ⇒ 3 đỏ; MC "mọi BAD" bỏ `anythingBad` ⇒ 1; bỏ vế dataType ⇒ chỉ ca thuần đỏ (ca driver int không phân biệt được — đã ghi) |
 | T4 (mục 58) | M1 luôn `khong_ro` ⇒ 4; M2 bỏ lọc `valid===false` ⇒ ban đầu SỐNG, thêm 2 ca ⇒ 2 đỏ; M3 đảo "mọi item lỗi PLC" ⇒ đỏ; M4 `khong_ro` bỏ luật thời gian ⇒ 3 |
 | T5 (mục 51) | M1–M8 đỏ (M3b — router bỏ lý do — ban đầu SỐNG, thêm ca ⇒ đỏ); fix round M9–M11 đỏ (ca push "mọi địa chỉ sai" xanh theo thiết kế: đi đường poll) |
-| T6 (mục 42) | A: so đọc lại không thang đo ⇒ ca "scale 0,5 đọc 3,0" đỏ; B: `lopBit:false` ⇒ ca "STOP 255 coil int" đỏ. Chỗ gọi canh STOP chưa đột biến |
+| T6 (mục 42) | A: so đọc lại không thang đo ⇒ ca "scale 0,5 đọc 3,0" đỏ; B: `lopBit:false` ⇒ ca "STOP 255 coil int" đỏ. Chỗ gọi canh STOP chưa đột biến. Fix round 1: quay về so không gian thô `round((e − o)/s) === round((a − o)/s)` ⇒ 7 ca đỏ (4 qua `ModbusDriver` THẬT: scale 0,5 / 0,1 / offset / giới hạn; 3 thuần) |
 | T7 (mục 11, 12) | M1 gắn listener sau connect ⇒ đỏ; M2 bỏ chốt danh tính callback ⇒ đỏ; M3 bỏ so serial 4E ⇒ đỏ |
 | T8 (mục 13) | bỏ điều kiện chỉ-RAM ⇒ 2 đỏ (legacy + HA) |
 | T9 (mục 44, 46) | M1 / M2 / M7 bỏ hạn ⇒ đỏ theo thời gian; M3 bỏ spec khỏi danh sách làm ấm ⇒ đỏ; M4 bỏ handler reject (C3) ⇒ đỏ; M5 / M6 vòng bận ⇒ đỏ; fix round: bỏ trần (MC) ⇒ đơn vị + DB đỏ (11 ≠ 8); M8 vòng bận ⇒ đỏ |
@@ -288,14 +292,15 @@ _(chạy toàn bộ: chưa chạy)_
 ## 9. Danh sách R1b-2b-2
 
 Danh sách 1-1 ở kế hoạch `docs/superpowers/plans/2026-10-26-scada-r1b-2b-1-an-toan-va-no.md`, mục **"Danh sách R1b-2b-2 (chỉ liệt kê — kế hoạch
-riêng)"** (số giữ theo báo cáo R1b-2a §11). Ba mục mới từ R1b-2b-1, theo thứ tự điều phối 2026-10-26:
+riêng)"** (số giữ theo báo cáo R1b-2a §11). Bốn mục mới từ R1b-2b-1 (61–63 theo thứ tự điều phối 2026-10-26; 64 từ T6 fix round 1):
 
 - **61 (ƯU TIÊN ĐẦU R1b-2b-2)** — lượt ghi bắn-rồi-quên CÓ TỪ TRƯỚC trên đường `dungMay` (attempts + audit của `tuChoiQuaHan`, vòng `STOP_QUA_HAN`
   theo adapter, mọi `recordAuditEvent`) vào CÙNG bộ đếm trần T9; bỏ qua audit khi đầy phải log nội dung hàng; trần theo tiến trình.
 - **62** — interlock `resolveEvent`: đọc luật + kiểm phạm vi adapter dưới `khoaDichLuatTx` (adapter FOR SHARE → luật), không gọi pool trong giao dịch.
 - **63** — census thứ tự khoá ADAPTER → LUẬT interlock + cấm gọi pool (`getDb()`) bên trong giao dịch đang giữ khoá hàng.
+- **64** — đọc lại THÔ thật từ driver (giá trị trước scale) cho so đọc lại tag int có scale lẻ — R1b-2b-1 T16 phát hiện làm tròn che lỗi (§6 LOGIC mục 1).
 
-Không phải mục R1b-2b-2: lỗi R1-đc (§6 LOGIC mục 1) là ô ĐỎ của R1b-2b-1, về Task 6 trước khi bàn giao.
+Lỗi R1-đc (§6 LOGIC mục 1) là ô ĐỎ của R1b-2b-1 — đã sửa ở T6 fix round 1 trước bàn giao; chỉ giới hạn còn lại (mục 64) sang R1b-2b-2.
 
 ## Phụ lục A — `task-2-census.sql` (NGUYÊN VĂN, chỉ đọc)
 

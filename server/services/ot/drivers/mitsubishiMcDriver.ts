@@ -77,7 +77,7 @@ import type {
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseMcAddress, coerceMcValue } from "./mcAddress";
-import { inverseScale } from "./otScale";
+import { inverseScale, scaleXuoi } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { boundedClose, withDeadline } from "./boundedClose";
@@ -504,10 +504,8 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
 
       let value = co.value;
       if (co.quality === "good" && typeof value === "number" && tag.dataType !== "bool") {
-        const scale = tag.scale ?? 1;
-        const offset = tag.offset ?? 0;
-        const n = value * scale + offset;
-        value = tag.dataType === "int" ? Math.round(n) : n;
+        // R1b-2b-1 T6 fix round 1 — scale xuôi + làm tròn int qua MỘT nguồn (`otScale.scaleXuoi`), cũng là nguồn mô phỏng của so đọc lại.
+        value = scaleXuoi(value, tag.dataType === "int" ? "int" : "float", tag.scale, tag.offset);
       }
 
       return {

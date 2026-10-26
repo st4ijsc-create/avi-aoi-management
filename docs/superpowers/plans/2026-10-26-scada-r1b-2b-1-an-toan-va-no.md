@@ -823,7 +823,7 @@ Cổng:
 | Q1 | S7 tag string `"BAD 12"`, `anythingBad=false` / `true` | mẫu tốt + `connected` / mẫu xấu |
 | M1 | MC mọi item BAD 4300 ms `MC Error Response` / quá hạn gói | `device_error`, STOP ghim ghi được / mất liên lạc |
 | C1 | S7 mọi địa chỉ sai | `connecting`, không `lost`, không nối lại |
-| R1 | int scale 0,5 ghi 2,5 đọc lại 3,0 | `acked_unverified` |
+| R1 | int scale 0,5 ghi 2,5 (thô 5), thiết bị giữ thô 7 ⇒ driver thật đọc lại 4 (T6 fix round 1: "đọc lại 3,0" là ĐÚNG số driver thật đọc từ thô 5 — và từ thô 6, giới hạn mục 64) | `acked_unverified` |
 | E1 | EIP `'error'` lúc kết nối; SLMP callback ghi muộn | không sập tiến trình; giao dịch kế không bị hỏng |
 | T1 | `stopOt({tatTienTrinh:true})` | DB `status` giữ nguyên |
 | L1 | sổ chậm 5 s, máy chưa ghim | `CHUA_GHIM_STOP` < 1,2 s |
@@ -892,6 +892,7 @@ Số giữ theo báo cáo R1b-2a §11 để đối chiếu 1-1.
 61. **(ƯU TIÊN ĐẦU R1b-2b-2 — điều phối 2026-10-26: đụng pool của đường STOP)** STOP HMI: các lượt ghi bắn-rồi-quên CÓ TỪ TRƯỚC trên đường `dungMay` (attempts + audit của `tuChoiQuaHan`, vòng `STOP_QUA_HAN` theo adapter, mọi `recordAuditEvent`) chưa chịu trần ghi treo của T9 (`TRAN_GHI_SO_TREO_STOP_HMI` = 8, R1b-2b-1 T9 `960e42f01`) — bảng audit chậm vẫn có thể cạn pool như lỗi I1 của T9. Đưa chúng vào CÙNG bộ đếm; bỏ qua audit khi đầy phải log nội dung hàng. Kèm: trần là THEO TIẾN TRÌNH (N bản API ⇒ N × 8).
 62. Interlock `resolveEvent`: đọc luật không khoá và kiểm phạm vi adapter qua pool TRONG giao dịch (R1b-2b-1 T10 review) — đưa vào `khoaDichLuatTx` (adapter FOR SHARE → luật) như các đường sửa luật.
 63. Census thứ tự khoá ADAPTER → LUẬT interlock + cấm gọi pool (`getDb()`) bên trong giao dịch đang giữ khoá hàng (R1b-2b-1 T10 review: lượt đọc pool trong tx là kết nối thứ hai — treo khi pool cạn).
+64. Đọc lại THÔ thật từ driver (giá trị trước scale) cho so đọc lại tag int có scale lẻ — R1b-2b-1 T16 phát hiện làm tròn che lỗi
 
 **AI và cổng mức:**
 17. `congOtLuong` dùng mức kênh (cần `adapterId` trong luồng AI).

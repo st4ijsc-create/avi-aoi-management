@@ -5,6 +5,7 @@
  * opcuaDriver.ts dùng các hàm này để parse nodeId và chuẩn hoá giá trị đọc về.
  */
 import type { OtDataType } from "../otDriver";
+import { scaleXuoi } from "./otScale";
 import { boolDungGhim, boolTuGiaTri, giaiMaBoolDoc } from "./boolNghiem";
 
 /** Một nodeId OPC-UA đã được validate. */
@@ -205,13 +206,14 @@ export function normalizeOpcuaValue(
     }
 
     case "int": {
-      const n = Number(raw) * s + o;
+      // R1b-2b-1 T6 fix round 1 — MỘT nguồn scale xuôi + làm tròn (`otScale.scaleXuoi`); Math.round(NaN) = NaN ⇒ kiểm NaN sau vẫn đúng.
+      const n = scaleXuoi(Number(raw), "int", s, o);
       if (Number.isNaN(n)) return { value: null, quality: "bad" };
-      return { value: Math.round(n), quality: "good" };
+      return { value: n, quality: "good" };
     }
 
     case "float": {
-      const n = Number(raw) * s + o;
+      const n = scaleXuoi(Number(raw), "float", s, o);
       if (Number.isNaN(n)) return { value: null, quality: "bad" };
       return { value: n, quality: "good" };
     }

@@ -35,7 +35,7 @@ import type {
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseEipTag, coerceEipValue } from "./eipTag";
-import { inverseScale } from "./otScale";
+import { inverseScale, scaleXuoi } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { taoVongPoll } from "../vongPoll";
@@ -205,10 +205,8 @@ export class EthernetIpDriver extends NotImplementedDriver {
       const co = coerceEipValue(raw, tag.dataType);
       let value = co.value;
       if (co.quality === "good" && typeof value === "number" && tag.dataType !== "bool") {
-        const scale = tag.scale ?? 1;
-        const offset = tag.offset ?? 0;
-        const n = value * scale + offset;
-        value = tag.dataType === "int" ? Math.round(n) : n;
+        // R1b-2b-1 T6 fix round 1 — scale xuôi + làm tròn int qua MỘT nguồn (`otScale.scaleXuoi`), cũng là nguồn mô phỏng của so đọc lại.
+        value = scaleXuoi(value, tag.dataType === "int" ? "int" : "float", tag.scale, tag.offset);
       }
 
       if (co.quality === "good") this.lastOkAt = now();

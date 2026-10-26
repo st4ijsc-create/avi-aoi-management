@@ -1051,9 +1051,13 @@ describe.skipIf(!CHAY_NGHIEM_THU)(
     }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-    it("R1 (T6, mục 42) — int scale 0,5 ghi 2,5 (thô 5) mà thiết bị trả thô 6 (đọc lại 3,0) ⇒ acked_unverified", async () => {
+    /**
+     * T6 fix round 1: thô 6 → thô 7. Driver THẬT đọc thô 6 ở scale 0,5 thành round(3,0) = 3 — ĐÚNG bằng đọc của thô 5 đã ghi ⇒ làm tròn che lỗi, KHÔNG
+     * phát hiện được khi chưa có đọc lại THÔ (R1b-2b-2 mục 64; ca giới hạn ghim ở otDeviceWrite.readback.r1b2b.test.ts). Thô 7 ⇒ round(3,5) = 4 ≠ 3.
+     */
+    it("R1 (T6, mục 42) — int scale 0,5 ghi 2,5 (thô 5) mà thiết bị trả thô 7 (đọc lại 4) ⇒ acked_unverified", async () => {
       datEnv({ OT_READBACK_ENABLED: "true" });
-      thietBi.docHold.set(9, 6);
+      thietBi.docHold.set(9, 7);
       try {
         const n0 = lanGhi().length;
         const res = await disp.dispatch(await lenhAi("set_param", [{ tagKey: "h05", value: 2.5 }]));
@@ -1069,7 +1073,8 @@ describe.skipIf(!CHAY_NGHIEM_THU)(
      * ĐỎ khi đo lần đầu (2026-10-27): driver Modbus THẬT trả giá trị kỹ thuật của tag int đã LÀM TRÒN (`Math.round(raw * scale + offset)`,
      * modbusDriver.ts readOne; S7 / MC / EIP / OPC UA cùng hình) ⇒ thô 5 ở scale 0,5 đọc về 3 (= thô 6), thô 23 ở scale 0,1 đọc về 2 (= thô 20) ⇒ so ở
      * không gian thô của T6 coi lượt ghi ĐÚNG là lệch. Cùng lý do: R1 ở trên KHÔNG phân biệt được "thiết bị giữ 6" với "thiết bị giữ 5" trên driver
-     * thật. Chuyển task sở hữu (T6) — không nới gì ở đây.
+     * thật. Chuyển task sở hữu (T6) — không nới gì ở đây. XANH sau T6 fix round 1 (so với giá trị ĐỌC MÔ PHỎNG `scaleXuoi(inverseScale(e))`), mong đợi
+     * của ô này KHÔNG đổi.
      */
     it("R1-đc (đối chứng R1, T6) — thiết bị giữ ĐÚNG số thô vừa ghi (scale 0,5: 2,5 ⇒ thô 5; scale 0,1: 2,3 ⇒ thô 23) ⇒ acked_verified", async () => {
       datEnv({ OT_READBACK_ENABLED: "true" });

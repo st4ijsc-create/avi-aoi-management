@@ -37,7 +37,7 @@ import type {
   OnOtSample,
   TuyChonVongPoll,
 } from "../otDriver";
-import { inverseScale } from "./otScale";
+import { inverseScale, scaleXuoi } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongEndCodeSlmp, chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
@@ -312,10 +312,8 @@ export class SlmpDriver implements OtDriver {
       if (typeof raw === "boolean") {
         value = raw;
       } else {
-        const scale = tag.scale ?? 1;
-        const offset = tag.offset ?? 0;
-        const n = raw * scale + offset;
-        value = tag.dataType === "int" ? Math.round(n) : n;
+        // R1b-2b-1 T6 fix round 1 — scale xuôi + làm tròn int qua MỘT nguồn (`otScale.scaleXuoi`), cũng là nguồn mô phỏng của so đọc lại.
+        value = scaleXuoi(raw, tag.dataType === "int" ? "int" : "float", tag.scale, tag.offset);
       }
 
       this.lastOkAt = now();

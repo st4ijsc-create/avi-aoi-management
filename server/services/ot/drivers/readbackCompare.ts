@@ -6,10 +6,17 @@
  * `acked` là `acked_verified` (khớp) hay `acked_unverified` (lệch — CHỈ cảnh báo,
  * KHÔNG coi là failed, KHÔNG retry mù — quyết định #4).
  *
- * So sánh trên value ĐÃ SCALE (cả expected lẫn actual là giá trị người dùng).
- *   - float → |expected - actual| <= tolerance  (NaN bất kỳ bên → false)
- *   - int   → so ở KHÔNG GIAN THÔ (R1b-2b-1 T6, mục 42): Math.round((e − o)/s) === Math.round((a − o)/s), (s, o) chuẩn hoá bởi `chuanHoaThangDo`
- *             (vắng `thangDo` ⇒ (1, 0) ⇒ Math.round(e) === Math.round(a) như cũ; NaN → false)
+ * int / float — R1b-2b-1 T6 fix round 1 (phát hiện ở nghiệm thu T16, ô R1-đc): so với giá trị ĐỌC MÔ PHỎNG, KHÔNG so ở không gian thô.
+ *   Driver THẬT trả tag int đã scale xuôi RỒI làm tròn (`otScale.scaleXuoi`: Math.round(raw·s + o)). Bản T6 đầu suy thô từ giá trị ĐÃ làm tròn
+ *   (round((a − o)/s)) ⇒ lượt ghi ĐÚNG bị `acked_unverified` (scale 0,5: ghi 2,5 ⇒ thô 5 ⇒ đọc 3 ⇒ round(3/0,5) = 6 ≠ 5). Nay:
+ *     rawGhi    = inverseScale(e, dataType, s, o)          — ĐÚNG số driver ghi xuống
+ *     docMongDoi = scaleXuoi(rawGhi, dataType, s, o)        — ĐÚNG số driver sẽ đọc về nếu thiết bị giữ rawGhi (cùng hàm với đường đọc)
+ *   (s, o) chuẩn hoá bởi `chuanHoaThangDo` (NULL / 0 / không hữu hạn ⇒ 1; NULL ⇒ 0).
+ *   - int   → Math.round(actual) === docMongDoi (driver thật luôn trả số nguyên ⇒ round là không đổi; giữ round để vắng `thangDo` ⇒ (1, 0) ⇒
+ *             Math.round(e) === Math.round(a) ĐÚNG như cũ); NaN → false
+ *   - float → |docMongDoi − actual| <= tolerance (vắng thang đo ⇒ docMongDoi = e ⇒ như cũ); NaN → false
+ *   ⚠ GIỚI HẠN (R1b-2b-2 mục 64): làm tròn có thể CHE số thô sai — scale 0,5: thô 6 và thô 5 cùng đọc 3 ⇒ "khớp". Không phát hiện được nếu không
+ *     có đọc lại THÔ thật (giá trị trước scale) từ driver. Số thô sai làm ĐỔI giá trị đọc đã làm tròn (thô 7 ⇒ 4 ≠ 3) thì vẫn lệch.
  *   - ĐỊA CHỈ lớp bit (`bit.lopBit`, R1b-2b-1 T6 / Task 2 concern 3): so theo luật bool BẤT KỂ dataType — expected = `boolDungGhim` khi là STOP đã
  *             xác minh (`bit.dungGhim`, đúng cách driver đã ghi) hoặc `boolTuGiaTri`; actual = `giaiMaBoolDoc`; một bên undefined ⇒ lệch
  *   - bool  → `boolTuGiaTri(expected)` === `giaiMaBoolDoc(actual)` (R1b-2b-1 T2 — CÙNG luật với đường ghi / đọc của driver: "false" khớp
@@ -19,7 +26,7 @@
  */
 import type { OtDataType } from "../otDriver";
 import { boolDungGhim, boolTuGiaTri, giaiMaBoolDoc } from "./boolNghiem";
-import { chuanHoaThangDo } from "./otScale";
+import { chuanHoaThangDo, inverseScale, scaleXuoi } from "./otScale";
 
 export function readbackMatches(
   expected: unknown,
@@ -40,18 +47,16 @@ export function readbackMatches(
   }
 
   switch (dataType) {
-    case "float": {
-      const e = Number(expected);
-      const a = Number(actual);
-      if (Number.isNaN(e) || Number.isNaN(a)) return false;
-      return Math.abs(e - a) <= Math.abs(tolerance);
-    }
+    case "float":
     case "int": {
       const e = Number(expected);
       const a = Number(actual);
       if (Number.isNaN(e) || Number.isNaN(a)) return false;
       const { s, o } = chuanHoaThangDo(thangDo?.scale, thangDo?.offset);
-      return Math.round((e - o) / s) === Math.round((a - o) / s);
+      // Mô phỏng đường ghi rồi đường đọc của driver (cùng hai hàm driver dùng) — xem chú thích đầu tệp.
+      const docMongDoi = scaleXuoi(Number(inverseScale(e, dataType, s, o)), dataType, s, o);
+      if (dataType === "int") return Math.round(a) === docMongDoi;
+      return Math.abs(docMongDoi - a) <= Math.abs(tolerance);
     }
     case "bool": {
       const e = boolTuGiaTri(expected);
