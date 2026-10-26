@@ -13,6 +13,7 @@ import { CHO_TOI_DA_GIAY, TRAN_THONG_DIEP_DUNG_LOI } from "./nut/cho";
 import { kiemDinhNghiaBieuMau } from "./nut/bieuMau";
 import { CHON_MODEL_RE } from "../ai/chonModel/kieu";
 import { RE_TEN_MAY_CHU_MCP, RE_TEN_TOOL_MCP, TRAN_DOI_SO_MCP } from "./nut/mcpKhach";
+import { laHostAiNgoai } from "../ai/ngoai/hostAiNgoai";
 import { HUONG_SAP_XEP, KIEU_SAP_XEP, TOAN_TU_LOC, TRAN_DIEU_KIEN_LOC } from "./nut/loc";
 
 const laBieuThuc = (v: unknown): boolean => typeof v === "string" && v.includes("{{");
@@ -56,6 +57,14 @@ export function kiemThamSoNutMoi(raw: unknown): string[] {
       if (p.loai !== undefined && !laBieuThuc(p.loai) && !LOAI_TB.includes(String(p.loai))) loi.push(`node '${id}': loai phải là ${LOAI_TB.join(" | ")}`);
       if (p.uuTien !== undefined && !laBieuThuc(p.uuTien) && !UU_TIEN_TB.includes(String(p.uuTien))) loi.push(`node '${id}': uuTien phải là ${UU_TIEN_TB.join(" | ")}`);
     } else if (n?.type === "tich-hop.http-doc" || n?.type === "tich-hop.http-gui") {
+      // Đợt 10.3 B4 — URL VIẾT THẲNG tới máy chủ AI ngoài ⇒ từ chối lúc lưu (biểu thức: node kiểm lúc chạy, cùng hàm + tập động).
+      if (typeof p.url === "string" && !laBieuThuc(p.url)) {
+        try {
+          if (laHostAiNgoai(new URL(p.url).hostname)) loi.push(`node '${id}': DICH_LA_AI_NGOAI — url trỏ tới máy chủ AI ngoài; dùng node AI với model 'ngoai:…' (đi qua cổng AI ngoài)`);
+        } catch {
+          /* URL hỏng: node kiểm lúc chạy */
+        }
+      }
       // bí mật gõ tay vào tiêu đề: chỉ qua credentialRef (kiem-dinh F1)
       if (p.tieuDe && typeof p.tieuDe === "object" && !Array.isArray(p.tieuDe)) {
         for (const k of Object.keys(p.tieuDe as Record<string, unknown>)) {

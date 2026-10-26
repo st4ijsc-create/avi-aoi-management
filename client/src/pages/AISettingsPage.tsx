@@ -43,12 +43,15 @@ import { toast } from 'sonner';
 import { toastTrpcError } from '@/lib/trpcErrors';
 
 type ApiKeyProvider = 'openai' | 'azure_openai' | 'huggingface' | 'custom';
+/** Đợt 10.3 — khoá nhà cung cấp AI ngoài (tạo ở màn AI ngoài, không ở form này) vẫn hiện trong danh sách. */
+type ApiKeyProviderHienThi = ApiKeyProvider | 'anthropic' | 'gemini' | 'openai_compat';
+const PROVIDER_TAO_DUOC: ApiKeyProvider[] = ['openai', 'azure_openai', 'huggingface', 'custom'];
 type ApiKeyStatus = 'active' | 'inactive' | 'expired' | 'error';
 
 interface ApiKeyEntry {
   id: number;
   name: string;
-  provider: ApiKeyProvider;
+  provider: ApiKeyProviderHienThi;
   maskedKey?: string;
   endpoint?: string | null;
   status: ApiKeyStatus;
@@ -56,11 +59,14 @@ interface ApiKeyEntry {
   createdAt?: string | Date;
 }
 
-const PROVIDER_INFO: Record<ApiKeyProvider, { label: string; icon: React.ReactNode; color: string }> = {
+const PROVIDER_INFO: Record<ApiKeyProviderHienThi, { label: string; icon: React.ReactNode; color: string }> = {
   openai: { label: 'OpenAI', icon: <Brain className="h-4 w-4" />, color: 'bg-success/10 text-success' },
   azure_openai: { label: 'Azure OpenAI', icon: <Globe className="h-4 w-4" />, color: 'bg-info/10 text-info' },
   huggingface: { label: 'Hugging Face', icon: <Cpu className="h-4 w-4" />, color: 'bg-warning/10 text-warning' },
   custom: { label: 'Custom', icon: <Server className="h-4 w-4" />, color: 'bg-primary/10 text-primary' },
+  anthropic: { label: 'Anthropic', icon: <Brain className="h-4 w-4" />, color: 'bg-primary/10 text-primary' },
+  gemini: { label: 'Gemini', icon: <Brain className="h-4 w-4" />, color: 'bg-info/10 text-info' },
+  openai_compat: { label: 'OpenAI-compatible', icon: <Server className="h-4 w-4" />, color: 'bg-primary/10 text-primary' },
 };
 
 const STATUS_CONFIG: Record<ApiKeyStatus, { label: string; icon: React.ReactNode; variant: 'default' | 'destructive' | 'secondary' | 'outline' }> = {
@@ -226,7 +232,7 @@ function ApiKeysSection() {
       ) : (
         <div className="grid gap-3">
           {keys.map((key) => {
-            const provider = PROVIDER_INFO[key.provider] ?? PROVIDER_INFO.custom;
+            const provider = (PROVIDER_INFO as Partial<Record<string, (typeof PROVIDER_INFO)[ApiKeyProvider]>>)[key.provider] ?? PROVIDER_INFO.custom;
             const status = STATUS_CONFIG[key.status] ?? STATUS_CONFIG.inactive;
             return (
               <Card key={key.id}>
@@ -347,7 +353,7 @@ function AddApiKeyForm({ onSubmit, isLoading }: {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {Object.entries(PROVIDER_INFO).map(([key, info]) => (
+              {PROVIDER_TAO_DUOC.map((key) => [key, PROVIDER_INFO[key]] as const).map(([key, info]) => (
                 <SelectItem key={key} value={key}>
                   <span className="flex items-center gap-2">
                     {info.icon}

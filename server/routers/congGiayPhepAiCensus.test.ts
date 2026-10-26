@@ -71,10 +71,17 @@ const FILE_AI_TUONG_MINH = new Set([
 const laBeMatAi = (file: string): boolean =>
   /^server\/routers\/ai[A-Z]/.test(file) || FILE_AI_TUONG_MINH.has(file);
 
-const beMatAi = QUET.thuTuc.filter((t) => laBeMatAi(t.file));
+/**
+ * ★ Đợt 10.3 (dieu-phoi e, 2026-10-26) — thủ tục AI TƯỜNG MINH THEO TÊN trong file không-AI (`file#tên`): `annotation.analyzeImage` gọi
+ * model thị giác (invokeLLM) ⇒ thuộc SKU AI, nay sau MOD_AI. Khai theo TÊN (không cả file) để §3 vẫn canh các thủ tục chú thích khác.
+ */
+const THU_TUC_AI_TUONG_MINH = new Set(["server/routers/annotationRouters.ts#analyzeImage"]);
+const laBeMatAiThuTuc = (t: { file: string; ten: string }): boolean => laBeMatAi(t.file) || THU_TUC_AI_TUONG_MINH.has(`${t.file}#${t.ten}`);
+
+const beMatAi = QUET.thuTuc.filter((t) => laBeMatAiThuTuc(t));
 const aiCoCong = beMatAi.filter((t) => t.module === "MOD_AI");
 const aiKhongCong = beMatAi.filter((t) => t.module !== "MOD_AI");
-const ngoaiAiCoCong = QUET.thuTuc.filter((t) => !laBeMatAi(t.file) && t.module === "MOD_AI");
+const ngoaiAiCoCong = QUET.thuTuc.filter((t) => !laBeMatAiThuTuc(t) && t.module === "MOD_AI");
 
 /**
  * ★★★ **SỔ KÝ TÊN: thủ tục nằm trong file AI mà CỐ Ý KHÔNG khoá sau `MOD_AI`.**
@@ -548,7 +555,12 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 // 2026-10-26 gỡ gán (UX Trung tâm Model): +1 mutation aiGguf.soModelGoGan (MOD_AI, admin + audit) ⇒ 2412 · 439 · 377.
 // 2026-10-26 Đợt 10.1 (do-model): +1 aiChonModel.danhMuc (query MOD_AI, mặt AI có cổng) ⇒ tong 2412, beMatAi 439, aiCoCong 377.
 // 2026-10-26 dieu-phoi GỘP: soModelGoGan (luong-ui) + aiChonModel.danhMuc (do-model) cùng +1 ⇒ ĐO trên cây gộp.
-const GHIM = { tong: 2413, beMatAi: 440, aiCoCong: 378, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// 2026-10-26 Đợt 10.3 (do-model): +4 aiNgoai.taoKhoa|xoayKhoa|thuHoiKhoa|dsKhoa (adminProcedure.use(moduleGate("MOD_AI"))) ⇒ tong 2416, beMatAi 443, aiCoCong 381.
+// 2026-10-26 dieu-phoi GỘP 10.3 (tới Task 7) vào main 84a308ee6 — ghim ĐO trên cây gộp.
+// 2026-10-26 Đợt 10.3 Task 8: +8 aiNgoai.cauHinh|ghiCauHinh|dsModel|datModel|dsHostNoiBo|datHostNoiBo|xemNoiDung|duyetNgoai ⇒ 2424 / 451 / 389.
+// 2026-10-26 do-model gộp main 84a308ee6: soModelGoGan +1 (bề mặt AI, có cổng) với Đợt 10.3 ⇒ 2425 / 452 / 390 ĐO trên cây gộp.
+// 2026-10-26 Đợt 10.3 lô sau nghiệm thu (dieu-phoi e): annotation.analyzeImage vào bề mặt AI (THU_TUC_AI_TUONG_MINH) + sau MOD_AI ⇒ beMatAi 452→453, aiCoCong 390→391; tong không đổi.
+const GHIM = { tong: 2425, beMatAi: 453, aiCoCong: 391, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

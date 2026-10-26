@@ -15,6 +15,9 @@ import { adminProcedure as adminProcedureBase } from "./_shared";
 const protectedProcedure = moduleProcedure("MOD_AI");
 const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import { getDb } from "../db/connection";
+import { auditTrongGiaoDich, cuoi4AnToan, khoaApiTrongPhamVi, khongCoKhoa, locKhoaApiTrongPhamVi, nhaMayNgoaiTrongPhamVi } from "./_aiNgoaiPhamVi";
+import { kiemEndpointLuu } from "../services/ai/ngoai/urlNgoai";
+import { LoiNgoai } from "../services/ai/ngoai/loi";
 import { aiApiKeys, aiSystemConfig, aiImageEmbeddings } from "../../drizzle/schema/ai";
 import { eq, desc, sql } from "drizzle-orm";
 import { extractEmbedding, storeEmbedding } from "../services/aiImageEmbedding";
@@ -103,16 +106,20 @@ async function resolveAndMigrateApiKeySecret(
   return legacyPlaintext;
 }
 
+/** `host:cổng` nội bộ đã khai của nhà máy (kiểm endpoint lúc lưu). */
+async function hostNoiBoNhaMay(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, factoryId: number): Promise<Set<string>> {
+  const r = (await db.execute(sql`SELECT "hostCong" FROM ai_ngoai_host_noi_bo WHERE "factoryId" = ${factoryId}`)) as unknown as Array<{ hostCong: string }>;
+  return new Set((Array.isArray(r) ? r : []).map((x) => x.hostCong));
+}
+
 export const aiSettingsRouter = router({
   // ═══════════════ API Key Management ═══════════════
 
-  listApiKeys: adminProcedure.query(async () => {
+  listApiKeys: adminProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
-    const keys = await db
-      .select()
-      .from(aiApiKeys)
-      .orderBy(desc(aiApiKeys.createdAt));
+    // ★ Đợt 10.3 (mig 0414) — `ai_api_keys` nay mang `factoryId` ⇒ lọc theo PHẠM VI NHÀ MÁY người gọi (khoá không nhà máy chỉ phạm vi toàn quyền).
+    const keys = (await db.select().from(aiApiKeys).orderBy(desc(aiApiKeys.createdAt))).filter(await locKhoaApiTrongPhamVi(ctx));
     // The plaintext secret is decrypted here ONLY to derive a last-4 mask — it is never
     // included in the returned objects (doc-51 P0 / doc-69 W0-4: list/get must not leak
     // the raw key, not even base64-encoded).
@@ -125,6 +132,7 @@ export const aiSettingsRouter = router({
         provider: k.provider,
         endpoint: k.endpoint,
         status: k.status,
+        factoryId: k.factoryId,
         lastTestedAt: k.lastTestedAt,
         createdBy: k.createdBy,
         createdAt: k.createdAt,
@@ -143,13 +151,28 @@ export const aiSettingsRouter = router({
         name: z.string().min(1).max(255),
         provider: z.enum(["openai", "azure_openai", "huggingface", "custom"]),
         apiKey: z.string().min(1),
-        endpoint: z.string().url().optional().or(z.literal("")),
+        endpoint: z.string().max(500).optional().or(z.literal("")),
+        // ★ Đợt 10.3 (mig 0414) — khoá THEO NHÀ MÁY; CHECK: khoá `active` phải có nhà máy ⇒ vắng nhà máy ⇒ tạo `inactive`.
+        //   Khoá AI ngoài tạo ở `aiNgoai.taoKhoa` (audit, phạm vi); thủ tục cũ này giữ cho màn AI Settings.
+        factoryId: z.number().int().positive().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      // ★ Đợt 10.3 (rà kiem-dinh Task 7 F1) — có factoryId ⇒ nhà máy PHẢI trong phạm vi người gọi (ngoài ⇒ NOT_FOUND).
+      if (input.factoryId !== undefined && !(await nhaMayNgoaiTrongPhamVi(ctx, input.factoryId))) throw khongCoKhoa();
       const db = await getDb();
       if (!db)
         throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+      // ★ Đợt 10.3 (F3) — endpoint kiểm TĨNH trước khi lưu (scheme, userinfo, metadata, nội bộ chưa khai).
+      let endpoint: string | null = null;
+      if (input.endpoint) {
+        try {
+          endpoint = kiemEndpointLuu(input.endpoint, input.factoryId ? await hostNoiBoNhaMay(db, input.factoryId) : new Set());
+        } catch (e) {
+          if (e instanceof LoiNgoai) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "aiNgoaiEndpoint", reason: e.chiTiet ?? e.ma }, "endpoint không hợp lệ");
+          throw e;
+        }
+      }
       // doc 69 W0-4: real encryption at rest (AES-256-GCM via secretBox) — replaces the
       // prior Buffer.from(...).toString("base64"), which was reversible ENCODING, not
       // encryption (doc-51 P0 finding).
@@ -162,56 +185,65 @@ export const aiSettingsRouter = router({
           "Failed to encrypt API key",
         );
       }
-      const [result] = await db
-        .insert(aiApiKeys)
-        .values({
-          name: input.name,
-          provider: input.provider,
-          encryptedKey,
-          endpoint: input.endpoint || null,
-          status: "active",
-          createdBy: ctx.user.id,
-        })
-        .returning({
-          id: aiApiKeys.id,
-          name: aiApiKeys.name,
-          provider: aiApiKeys.provider,
-          status: aiApiKeys.status,
-          createdAt: aiApiKeys.createdAt,
+      const result = await db.transaction(async (tx) => {
+        const [r] = await tx
+          .insert(aiApiKeys)
+          .values({
+            name: input.name,
+            provider: input.provider,
+            encryptedKey,
+            endpoint,
+            status: input.factoryId ? "active" : "inactive",
+            createdBy: ctx.user.id,
+            factoryId: input.factoryId ?? null,
+          })
+          .returning({
+            id: aiApiKeys.id,
+            name: aiApiKeys.name,
+            provider: aiApiKeys.provider,
+            status: aiApiKeys.status,
+            createdAt: aiApiKeys.createdAt,
+          });
+        await auditTrongGiaoDich(tx, ctx, {
+          action: "create",
+          entityType: "ai_api_key",
+          entityId: r!.id,
+          entityName: input.name,
+          details: { operation: "CREATE", after: { factoryId: input.factoryId ?? null, provider: input.provider, status: r!.status, cuoi4: cuoi4AnToan(input.apiKey), endpoint } },
+          status: "success",
         });
-      return result;
+        return r!;
+      });
+      // ★ Đợt 10.3 (dieu-phoi) — KHÔNG tạo khoá inactive ÂM THẦM: báo rõ để màn hình hiển thị (và gửi factoryId ở 10.2/10.4).
+      return input.factoryId
+        ? { ...result, kichHoat: true as const }
+        : { ...result, kichHoat: false as const, lyDo: "can-nha-may" as const };
     }),
 
   deleteApiKey: adminProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      const db = await getDb();
-      if (!db)
-        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      const [existing] = await db
-        .select({ id: aiApiKeys.id })
-        .from(aiApiKeys)
-        .where(eq(aiApiKeys.id, input.id))
-        .limit(1);
-      if (!existing)
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, "API key not found");
-      await db.delete(aiApiKeys).where(eq(aiApiKeys.id, input.id));
+    .mutation(async ({ ctx, input }) => {
+      // ★ Đợt 10.3 (F1) — khoá ngoài phạm vi nhà máy ⇒ NOT_FOUND; xoá + audit CÙNG giao dịch.
+      const { db, k } = await khoaApiTrongPhamVi(ctx, input.id);
+      await db.transaction(async (tx) => {
+        await tx.delete(aiApiKeys).where(eq(aiApiKeys.id, input.id));
+        await auditTrongGiaoDich(tx, ctx, {
+          action: "delete",
+          entityType: "ai_api_key",
+          entityId: input.id,
+          entityName: k.name,
+          details: { operation: "DELETE", before: { factoryId: k.factoryId, provider: k.provider, status: k.status } },
+          status: "success",
+        });
+      });
       return { success: true };
     }),
 
   testApiKey: adminProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      const db = await getDb();
-      if (!db)
-        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      const [key] = await db
-        .select()
-        .from(aiApiKeys)
-        .where(eq(aiApiKeys.id, input.id))
-        .limit(1);
-      if (!key)
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, "API key not found");
+    .mutation(async ({ ctx, input }) => {
+      // ★ Đợt 10.3 (F1) — khoá ngoài phạm vi nhà máy ⇒ NOT_FOUND.
+      const { db } = await khoaApiTrongPhamVi(ctx, input.id);
       // doc 69 W0-4: the system is 100% local (cloud LLM removed at WS-G3) — there is no
       // real provider endpoint to call here. The previous "isValid = encryptedKey.length > 0"
       // check was a FABRICATED pass (doc-51 P0 finding). Report an honest "not supported"
@@ -233,27 +265,29 @@ export const aiSettingsRouter = router({
 
   toggleApiKey: adminProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      const db = await getDb();
-      if (!db)
-        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
-      const [key] = await db
-        .select({ id: aiApiKeys.id, status: aiApiKeys.status })
-        .from(aiApiKeys)
-        .where(eq(aiApiKeys.id, input.id))
-        .limit(1);
-      if (!key)
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, "API key not found");
+    .mutation(async ({ ctx, input }) => {
+      // ★ Đợt 10.3 (F1) — khoá ngoài phạm vi ⇒ NOT_FOUND; BẬT lại cần nhà máy (CHECK 0414); đổi + audit CÙNG giao dịch.
+      const { db, k: key } = await khoaApiTrongPhamVi(ctx, input.id);
       const newStatus = key.status === "active" ? "inactive" : "active";
-      const [result] = await db
-        .update(aiApiKeys)
-        .set({ status: newStatus, updatedAt: new Date() })
-        .where(eq(aiApiKeys.id, input.id))
-        .returning({
-          id: aiApiKeys.id,
-          status: aiApiKeys.status,
+      if (newStatus === "active" && key.factoryId === null) {
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "toggleApiKey", reason: "can-nha-may" }, "Khoá cần thuộc một nhà máy mới bật được");
+      }
+      return db.transaction(async (tx) => {
+        const [result] = await tx
+          .update(aiApiKeys)
+          .set({ status: newStatus, updatedAt: new Date() })
+          .where(eq(aiApiKeys.id, input.id))
+          .returning({ id: aiApiKeys.id, status: aiApiKeys.status });
+        await auditTrongGiaoDich(tx, ctx, {
+          action: "update",
+          entityType: "ai_api_key",
+          entityId: input.id,
+          entityName: key.name,
+          details: { operation: "TOGGLE", before: { status: key.status }, after: { status: newStatus } },
+          status: "success",
         });
-      return result;
+        return result;
+      });
     }),
 
   // ═══════════════ Model Config ═══════════════

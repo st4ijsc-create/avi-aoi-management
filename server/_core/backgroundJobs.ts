@@ -45,6 +45,7 @@ let chargingSweepTimer: NodeJS.Timeout | null = null;
 let andonSlaSweepTimer: NodeJS.Timeout | null = null;
 let storeForwardDrainTimer: NodeJS.Timeout | null = null;
 let machineKeyExpiryTimer: NodeJS.Timeout | null = null;
+let aiNgoaiDonTimer: NodeJS.Timeout | null = null;
 
 export function backgroundSchedulersStarted(): boolean {
   return started;
@@ -641,6 +642,37 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[MachineKeyExpiry] sweep start failed:", (err as any)?.message || err);
   }
 
+  // ★ Đợt 10.3 — dọn sổ AI NGOÀI mỗi giờ: xoá nội dung đã che hết hạn giữ, đối soát ý định mồ côi (> 30 phút ⇒ hàng kết quả
+  // `khong-ro`, không hoàn bộ đếm), dọn bộ đếm trần (ngày > 90, phút > 1 giờ). Bảng chưa áp (0415) / DB vắng ⇒ lỗi ghi log, không hỏng boot.
+  try {
+    let dang = false;
+    const donAiNgoaiOnce = async () => {
+      if (dang) return;
+      dang = true;
+      try {
+        const { getDb } = await import("../db/connection");
+        const db = await getDb();
+        if (!db) return;
+        const [{ xoaNoiDungHetHan, doiSoatYDinhMoCoi }, { donDemCu }] = await Promise.all([
+          import("../services/ai/ngoai/soNgoai"),
+          import("../services/ai/ngoai/tranChiPhi"),
+        ]);
+        const noiDung = await xoaNoiDungHetHan(db as never);
+        const moCoi = await doiSoatYDinhMoCoi(db as never);
+        const dem = await donDemCu(db as never);
+        if (noiDung || moCoi || dem) console.log(`[AiNgoai] dọn: nội dung hết hạn ${noiDung}, ý định mồ côi ${moCoi}, bộ đếm ${dem}`);
+      } catch (err) {
+        console.error("[AiNgoai] dọn sổ thất bại:", (err as any)?.message || err);
+      } finally {
+        dang = false;
+      }
+    };
+    aiNgoaiDonTimer = setInterval(() => void donAiNgoaiOnce(), 60 * 60_000);
+    if (typeof aiNgoaiDonTimer.unref === "function") aiNgoaiDonTimer.unref();
+  } catch (err) {
+    console.error("[AiNgoai] dọn sổ start failed:", (err as any)?.message || err);
+  }
+
   console.log("[BackgroundJobs] cron-like schedulers started (W4-D/B7 set)");
 }
 
@@ -667,6 +699,10 @@ export function stopBackgroundSchedulers(): void {
   if (machineKeyExpiryTimer) {
     clearInterval(machineKeyExpiryTimer);
     machineKeyExpiryTimer = null;
+  }
+  if (aiNgoaiDonTimer) {
+    clearInterval(aiNgoaiDonTimer);
+    aiNgoaiDonTimer = null;
   }
   // Pha 1 điều phối VRAM (Task 5) — tắt VÔ ĐIỀU KIỆN, idempotent (no-op khi chưa từng bật).
   // ⚠ Pha 2B Task 2 (I-1) — KHÔNG CÒN ĐỐI XỨNG với một chỗ bật trong CÙNG file: lượt bật đã dời

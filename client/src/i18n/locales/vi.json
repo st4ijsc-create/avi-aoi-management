@@ -3704,6 +3704,7 @@
       "queued-for-shared-ledger": "Bản sao đọc đã sạch NGAY (dư địa thấy đúng ngay lập tức), nhưng hàng chỉ thật sự RỜI DATABASE ở lượt đồng bộ sổ chung KẾ TIẾP — xem unsyncedWritesAfter để biết còn bao nhiêu ý định ghi chưa gửi."
     },
     "entity": {
+      "aiNgoaiKhoa": "khoá nhà cung cấp AI ngoài",
       "corporate": "tập đoàn",
       "edgeNode": "node biên (edge)",
       "scadaRequest": "yêu cầu lệnh SCADA",
@@ -3898,6 +3899,8 @@
       "lateWriteResult": "kết quả ghi đến muộn"
     },
     "operation": {
+      "toggleApiKey": "bật/tắt khoá API",
+      "aiNgoaiEndpoint": "endpoint AI ngoài",
       "dieuKienViTriTrongPhamVi": "dựng điều kiện phạm vi theo vị trí",
       "retireEdgeNode": "cho node biên ngừng hoạt động vĩnh viễn",
       "updateApiKey": "cập nhật khoá API",
@@ -4094,7 +4097,10 @@
       "dieuKienDoiTuongTrongPhamVi": "điều kiện đối tượng trong phạm vi",
       "flowNguoiNhan": "tìm người nhận cho luồng",
       "flowXuat": "xuất luồng AI ra gói",
-      "flowNhap": "nhập luồng AI từ gói"
+      "flowNhap": "nhập luồng AI từ gói",
+      "aiNgoaiDatModel": "đặt model AI ngoài",
+      "aiNgoaiDuyet": "duyệt luồng dùng AI ngoài",
+      "taiAnhAi": "tải ảnh cho phân tích AI"
     },
     "field": {
       "stationId": "trạm",
@@ -4361,7 +4367,11 @@
       "flowDuyet": "duyệt bước chờ của Luồng AI",
       "verifyChainAcrossFactories": "xác minh chuỗi truy xuất xuyên nhà máy",
       "manageProductWideProgramRelease": "quản lý phát hành chương trình kiểm tra cấp sản phẩm",
-      "authorSharedSop": "soạn SOP dùng chung"
+      "authorSharedSop": "soạn SOP dùng chung",
+      "aiNgoaiHostNoiBo": "khai host nội bộ cho AI ngoài",
+      "aiNgoaiDuyet": "duyệt luồng dùng AI ngoài",
+      "flowKichHoat": "bật luồng",
+      "flowChayTay": "chạy tay luồng"
     },
     "robotRefusal": {
       "hitlActionRequired": "Lệnh chuyển động bị từ chối: không có thao tác xác nhận (HITL) nào đã được duyệt đứng sau lệnh này. Hãy gửi từ Bảng lệnh hoặc xác nhận thao tác trước.",
@@ -4386,6 +4396,8 @@
       "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát."
     },
     "reason": {
+      "can-nha-may": "khoá cần gắn nhà máy trước khi kích hoạt",
+      "thieu-endpoint": "thiếu endpoint",
       "totpSelfUnlock": "Không tự mở khoá xác thực hai lớp của chính mình — cần một quản trị viên khác.",
       "edgeNodeBusy": "Node đang được một thao tác khác thay đổi (gán thiết bị, xoay vòng thông tin xác thực…). Chưa có gì thay đổi — thử lại sau giây lát.",
       "edgeNodeRetireBlocked": "Node vẫn còn: {{blockers}}. Trả thiết bị về trung tâm, chờ các lệnh DỪNG / yêu cầu khoá được xác nhận (hoặc xử lý), kết thúc các lượt chạy, rồi thử lại. Chưa có gì thay đổi.",
@@ -4544,7 +4556,21 @@
       "scadaKenhCheDoGoTruoc": "Tag này là kênh chế độ của một máy — gỡ kênh chế độ ở trang Kênh & giới hạn (cần mã xác thực) trước khi xoá tag.",
       "scadaKenhCheDoDoiMay": "Adapter đang mang kênh chế độ của máy — gỡ kênh chế độ ở trang Kênh & giới hạn trước khi gán adapter sang máy khác.",
       "scadaKenhCheDoGoTruocXoaAdapter": "Adapter đang mang kênh chế độ của máy — gỡ kênh chế độ ở trang Kênh & giới hạn (cần mã xác thực) trước khi xoá adapter.",
-      "interlockDefinitionChanged": "Định nghĩa tag nguồn / đích (địa chỉ, kiểu, scale / offset, adapter, node edge) đã đổi sau khi duyệt — hoặc quy tắc được duyệt trước bản cập nhật. Cần duyệt lại trước khi bật."
+      "interlockDefinitionChanged": "Định nghĩa tag nguồn / đích (địa chỉ, kiểu, scale / offset, adapter, node edge) đã đổi sau khi duyệt — hoặc quy tắc được duyệt trước bản cập nhật. Cần duyệt lại trước khi bật.",
+      "khoa-khac-nha-may-hoac-nha-cung-cap": "khoá thuộc nhà máy hoặc nhà cung cấp khác",
+      "can-gia-hoac-tran-luot": "cần khai giá hoặc trần token mỗi lượt",
+      "chi-admin-toan-he": "chỉ quản trị viên toàn hệ thống",
+      "khong-co-node-ngoai": "phiên bản không dùng model AI ngoài",
+      "NGOAI_TU_DUYET_VAN_HANH": "không tự duyệt luồng gửi dữ liệu vận hành ra AI ngoài",
+      "NGOAI_CHUA_DUYET": "phiên bản dùng model AI ngoài chưa được duyệt",
+      "NGOAI_LUONG_TOAN_CUC": "luồng toàn hệ thống không dùng được model AI ngoài",
+      "anh-url-sai": "URL ảnh không hợp lệ (chỉ http/https, không kèm tài khoản)",
+      "anh-dich-cam": "đích ảnh nội bộ chưa được khai (AI_IMAGE_HOST_CHO_PHEP) hoặc là địa chỉ metadata",
+      "anh-ket-noi": "không kết nối được tới máy chủ ảnh",
+      "anh-chuyen-huong": "máy chủ ảnh trả chuyển hướng (không theo)",
+      "anh-http-loi": "máy chủ ảnh trả lỗi",
+      "anh-khong-phai-anh": "nội dung tải về không phải ảnh",
+      "anh-qua-lon": "ảnh vượt 20 MB"
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",

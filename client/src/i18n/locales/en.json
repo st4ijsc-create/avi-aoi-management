@@ -3696,6 +3696,7 @@
       "queued-for-shared-ledger": "The read replica was cleaned IMMEDIATELY (headroom reflects it right away), but the row only actually LEAVES the database at the NEXT shared-ledger sync — see unsyncedWritesAfter for how many writes are still pending."
     },
     "entity": {
+      "aiNgoaiKhoa": "external AI provider key",
       "corporate": "corporation",
       "edgeNode": "edge node",
       "scadaRequest": "SCADA command request",
@@ -3890,6 +3891,8 @@
       "lateWriteResult": "late write result"
     },
     "operation": {
+      "toggleApiKey": "toggle API key",
+      "aiNgoaiEndpoint": "external AI endpoint",
       "dieuKienViTriTrongPhamVi": "build the location scope condition",
       "retireEdgeNode": "retire the edge node",
       "updateApiKey": "update the API key",
@@ -4086,7 +4089,10 @@
       "dieuKienDoiTuongTrongPhamVi": "in-scope object condition",
       "flowNguoiNhan": "find recipients for the flow",
       "flowXuat": "export an AI flow package",
-      "flowNhap": "import an AI flow from a package"
+      "flowNhap": "import an AI flow from a package",
+      "aiNgoaiDatModel": "set external AI model",
+      "aiNgoaiDuyet": "approve flow using external AI",
+      "taiAnhAi": "download image for AI analysis"
     },
     "field": {
       "stationId": "station",
@@ -4353,7 +4359,11 @@
       "flowDuyet": "approve a waiting step of an AI flow",
       "verifyChainAcrossFactories": "verify a traceability chain across factories",
       "manageProductWideProgramRelease": "manage product-wide inspection program releases",
-      "authorSharedSop": "author a shared SOP"
+      "authorSharedSop": "author a shared SOP",
+      "aiNgoaiHostNoiBo": "declare internal host for external AI",
+      "aiNgoaiDuyet": "approve flow using external AI",
+      "flowKichHoat": "enable flow",
+      "flowChayTay": "run flow manually"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -4386,6 +4396,8 @@
       "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published."
     },
     "reason": {
+      "can-nha-may": "the key must belong to a factory before it can be activated",
+      "thieu-endpoint": "endpoint missing",
       "totpSelfUnlock": "You cannot unlock your own two-factor authentication — another administrator must do it.",
       "edgeNodeBusy": "The node is being changed by another operation (a device assignment, a credential rotation…). Nothing was changed — retry in a moment.",
       "edgeNodeRetireBlocked": "The node still has: {{blockers}}. Release its devices to central, let its STOPs / lock requests be acknowledged (or resolved) and finish its runs, then retry. Nothing was changed.",
@@ -4544,7 +4556,21 @@
       "scadaKenhCheDoGoTruoc": "This tag is a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the tag.",
       "scadaKenhCheDoDoiMay": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page before assigning the adapter to another machine.",
       "scadaKenhCheDoGoTruocXoaAdapter": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the adapter.",
-      "interlockDefinitionChanged": "The source / target tag definition (address, type, scale / offset, adapter, edge node) changed after approval — or the rule was approved before this update. Re-approve it before enabling."
+      "interlockDefinitionChanged": "The source / target tag definition (address, type, scale / offset, adapter, edge node) changed after approval — or the rule was approved before this update. Re-approve it before enabling.",
+      "khoa-khac-nha-may-hoac-nha-cung-cap": "the key belongs to another factory or provider",
+      "can-gia-hoac-tran-luot": "a price or a per-call token cap is required",
+      "chi-admin-toan-he": "system-wide administrators only",
+      "khong-co-node-ngoai": "this version does not use an external AI model",
+      "NGOAI_TU_DUYET_VAN_HANH": "you cannot self-approve a flow that sends operational data to external AI",
+      "NGOAI_CHUA_DUYET": "the version using an external AI model has not been approved",
+      "NGOAI_LUONG_TOAN_CUC": "system-wide flows cannot use external AI models",
+      "anh-url-sai": "invalid image URL (http/https only, no credentials)",
+      "anh-dich-cam": "image destination is an undeclared internal host (AI_IMAGE_HOST_CHO_PHEP) or a metadata address",
+      "anh-ket-noi": "could not connect to the image server",
+      "anh-chuyen-huong": "the image server returned a redirect (not followed)",
+      "anh-http-loi": "the image server returned an error",
+      "anh-khong-phai-anh": "the downloaded content is not an image",
+      "anh-qua-lon": "the image exceeds 20 MB"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",

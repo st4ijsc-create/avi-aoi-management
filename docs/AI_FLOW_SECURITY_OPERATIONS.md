@@ -128,6 +128,33 @@ Hành vi khi **lượt đồng thời** vượt trần (chỉ đếm lượt g�
 
 **Khuyến nghị:** trần mặc định 1 an toàn nhưng chặt. Luồng **webhook / lịch có tải** (nhiều lượt chạy chồng nhau là bình thường) cần khai `settings.maxConcurrentRuns` trong định nghĩa luồng, vd. `"settings": { "maxConcurrentRuns": 5 }`; nếu không, đỉnh tải sẽ bị 429 / bỏ mốc. Đặt vừa đủ — không đặt số lớn "cho khỏi lỗi". Dấu hiệu cần chỉnh: webhook trả 429 liên tục, log `BỎ mốc` của lịch, hoặc người dùng báo "lượt mới bị từ chối".
 
+## 12. AI ngoài — rào chống NHẦM đường vòng (Đợt 10.3 B4)
+
+Mọi lượt gọi model AI NGOÀI (Anthropic / OpenAI / Gemini / máy chủ tương thích OpenAI) phải đi qua cổng `goiAiNgoai`. Cổng này lo che dữ liệu, trần token/tiền, sổ ghi, duyệt phiên bản luồng, và cờ `AI_NGOAI_ENABLED` + nhà máy. Node gọi ra ngoài của Luồng KHÔNG được nhắm thẳng tới máy chủ AI:
+
+- **Lúc LƯU:** node `tich-hop.http-*` có `url` viết thẳng trỏ tới host AI ⇒ bị từ chối, kèm lỗi `DICH_LA_AI_NGOAI`.
+- **Lúc CHẠY:** áp cho URL tính từ biểu thức, và cho `tich-hop.mcp-goi`. Sau khi phân giải DNS + ghim IP, `chanHostAiNgoai` chặn trong hai trường hợp:
+  - host thuộc danh sách tĩnh (gồm aggregator như OpenRouter, Groq, Together…, và mẫu Bedrock), env `AI_NGOAI_HOST_CHAN_THEM` (phẩy), host của mọi khoá `openai_compat`, hoặc `ai_ngoai_host_noi_bo`;
+  - **IP đã ghim** trùng IP của các host tương thích đã khai (tên khác cùng máy).
+- **MCP lúc NẠP:** máy chủ MCP khai tới host AI bị bỏ khỏi `AI_FLOW_MCP_CHO_PHEP`.
+- **Metadata:** link-local / metadata (169.254.0.0/16, fe80::/10) LUÔN cấm ở lớp mạng của Luồng và của cổng AI ngoài, kể cả khi danh sách trắng ghi rõ host:cổng.
+- **Census `duongVong.census.test.ts`:** quét TOÀN `server/` các điểm gọi mạng nguyên thuỷ. Mỗi tệp phải gọi `chanHostAiNgoai`, là chính cổng, hoặc có tên trong danh sách miễn trừ (đã ghim số điểm + lý do). Thêm điểm mới ⇒ đỏ.
+
+**Giới hạn — đọc kỹ:** đây là rào chống NHẦM (dán URL tiện tay), KHÔNG chống người có quyền sửa luồng hay quản trị cố tình. Người đó có thể dựng proxy riêng, hoặc cấu hình webhook / ERP / SIEM / cảnh báo (các đích do quản trị cấu hình ngoài Luồng — miễn trừ có dấu ⚠ trong census) trỏ tới máy chủ AI. Dịch vụ "forge" của khung gốc (`ENV.forgeApiUrl`: sinh ảnh, chuyển giọng nói…) là đường dịch vụ ngoài có sẵn, nằm ngoài cổng. Kiểm soát các đường này là việc vận hành: quyền quản trị, audit, tường lửa egress.
+
+**Rủi ro còn lại — quyết định 2026-10-26 (dieu-phoi, thay mặt chủ dự án):**
+
+- **Đích do quản trị cấu hình ngoài Luồng:** `webhookRouter`, `erpOutbox`, `spcAlertSink`, `siemExporter`, `reportDeliveryService` — CHẤP NHẬN. Đây là đích admin khai, không phải đường AI; B4 là rào chống nhầm cho Luồng.
+  - Backlog (chưa làm): áp `chanHostAiNgoai` lúc LƯU cấu hình của 5 nơi này.
+- **Dịch vụ "forge" của khung gốc** (`server/_core` imageGeneration / voiceTranscription / dataApi / map / notification, `server/storage.ts` — qua `ENV.forgeApiUrl`):
+  - Hiện `BUILT_IN_FORGE_API_URL` RỖNG trong `.env` của máy chạy (đã đo) ⇒ đường này không hoạt động.
+  - ⚠ ĐẶT `BUILT_IN_FORGE_API_URL` = MỞ một đường ra ngoài KHÔNG qua cổng AI ngoài (không che dữ liệu, không trần, không sổ) — cần quyết định của chủ dự án trước khi đặt.
+  - Census `duongVong` giữ các miễn trừ này có dấu ⚠.
+  - Đặt URL ⇒ khởi động in cảnh báo `[an-ninh] BUILT_IN_FORGE_API_URL đã đặt…` MỘT lần và `oversight.posture.forgeNgoaiBat = true`; lưới `server/_core/forgeNgoai.test.ts` canh "URL rỗng ⇒ 0 lời gọi" ở mọi điểm dùng forge.
+- **URL máy suy luận "cục bộ" do quản trị đặt** (`OLLAMA_BASE_URL`, `LLAMA_SERVER_URL`, KB API…): cùng lớp rủi ro admin — trỏ ra Internet là mở đường ngoài cổng AI ngoài; giữ trỏ 127.0.0.1 / mạng nhà máy.
+- **`kiemDichDen` luôn từ chối link-local / metadata kể cả khi danh sách trắng khai host:cổng:** ĐỒNG Ý (chặt hơn Đợt 9).
+- **Tập động so theo CẶP host:cổng / IP:cổng** (rà kiem-dinh): khai `llm.local:8000` không chặn dịch vụ khác cùng máy (`mes.local:3000`, MCP cục bộ `127.0.0.1:8811`); đọc tập động lỗi / CSDL vắng ⇒ `DICH_AI_KHONG_RO` (đóng).
+
 ## Phụ lục — việc cần làm khi nâng cấp
 
 1. Áp mig 0410 (chủ lượt), 0411 (phạm vi nhà máy), 0412 (host của bí mật) — `node scripts/apply-migration-04xx.mjs --dev-only|--test-only`.

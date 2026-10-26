@@ -3696,6 +3696,7 @@
       "queued-for-shared-ledger": "读取副本已立即清理（余量会立刻反映出来），但该行要到下一次共享台账同步时才会真正从数据库中移除——查看 unsyncedWritesAfter 了解还有多少写入尚未发送。"
     },
     "entity": {
+      "aiNgoaiKhoa": "外部AI提供商密钥",
       "corporate": "集团",
       "edgeNode": "边缘节点",
       "scadaRequest": "SCADA 指令请求",
@@ -3890,6 +3891,8 @@
       "lateWriteResult": "迟到的写入结果"
     },
     "operation": {
+      "toggleApiKey": "启用/停用API密钥",
+      "aiNgoaiEndpoint": "外部AI端点",
       "dieuKienViTriTrongPhamVi": "构建位置范围条件",
       "retireEdgeNode": "永久停用边缘节点",
       "updateApiKey": "更新 API 密钥",
@@ -4086,7 +4089,10 @@
       "dieuKienDoiTuongTrongPhamVi": "范围内对象条件",
       "flowNguoiNhan": "查找流程接收人",
       "flowXuat": "导出 AI 流程包",
-      "flowNhap": "从包导入 AI 流程"
+      "flowNhap": "从包导入 AI 流程",
+      "aiNgoaiDatModel": "设置外部AI模型",
+      "aiNgoaiDuyet": "审批使用外部AI的流程",
+      "taiAnhAi": "下载用于AI分析的图像"
     },
     "field": {
       "stationId": "工位",
@@ -4353,7 +4359,11 @@
       "flowDuyet": "审批 AI 流程中等待的步骤",
       "verifyChainAcrossFactories": "跨工厂验证追溯链",
       "manageProductWideProgramRelease": "管理产品级检验程序发布",
-      "authorSharedSop": "编写共享SOP"
+      "authorSharedSop": "编写共享SOP",
+      "aiNgoaiHostNoiBo": "声明外部AI内部主机",
+      "aiNgoaiDuyet": "审批使用外部AI的流程",
+      "flowKichHoat": "启用流程",
+      "flowChayTay": "手动运行流程"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
@@ -4386,6 +4396,8 @@
       "ros2JobMessageRequired": "ROS2 指令未携带自身消息——未发布任何内容。"
     },
     "reason": {
+      "can-nha-may": "密钥需先关联工厂才能启用",
+      "thieu-endpoint": "缺少端点",
       "totpSelfUnlock": "不能自行解锁本人的双因素认证——需由另一位管理员操作。",
       "edgeNodeBusy": "该节点正被其他操作修改（设备分配、凭据轮换等）。未做任何更改——请稍后重试。",
       "edgeNodeRetireBlocked": "该节点仍有：{{blockers}}。请先将其设备交还中央、等待其停止指令 / 锁定请求被确认（或处理）、结束其运行，然后重试。未做任何更改。",
@@ -4544,7 +4556,21 @@
       "scadaKenhCheDoGoTruoc": "该标签是某台机器的模式通道——删除标签前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。",
       "scadaKenhCheDoDoiMay": "该适配器承载某台机器的模式通道——将适配器分配给其他机器前，请先在“通道与限值”页面移除模式通道。",
       "scadaKenhCheDoGoTruocXoaAdapter": "该适配器承载某台机器的模式通道——删除适配器前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。",
-      "interlockDefinitionChanged": "源 / 目标标签的定义（地址、类型、比例 / 偏移、适配器、边缘节点）在审批后已更改 — 或该规则是在本次更新之前审批的。启用前需要重新审批。"
+      "interlockDefinitionChanged": "源 / 目标标签的定义（地址、类型、比例 / 偏移、适配器、边缘节点）在审批后已更改 — 或该规则是在本次更新之前审批的。启用前需要重新审批。",
+      "khoa-khac-nha-may-hoac-nha-cung-cap": "密钥属于其他工厂或提供商",
+      "can-gia-hoac-tran-luot": "需要设置价格或每次调用的令牌上限",
+      "chi-admin-toan-he": "仅限全系统管理员",
+      "khong-co-node-ngoai": "此版本未使用外部AI模型",
+      "NGOAI_TU_DUYET_VAN_HANH": "不能自行审批向外部AI发送运营数据的流程",
+      "NGOAI_CHUA_DUYET": "使用外部AI模型的版本尚未审批",
+      "NGOAI_LUONG_TOAN_CUC": "全系统流程不能使用外部AI模型",
+      "anh-url-sai": "图像URL无效（仅限http/https，不含凭据）",
+      "anh-dich-cam": "图像目标是未声明的内部主机（AI_IMAGE_HOST_CHO_PHEP）或元数据地址",
+      "anh-ket-noi": "无法连接到图像服务器",
+      "anh-chuyen-huong": "图像服务器返回重定向（不跟随）",
+      "anh-http-loi": "图像服务器返回错误",
+      "anh-khong-phai-anh": "下载的内容不是图像",
+      "anh-qua-lon": "图像超过20 MB"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",

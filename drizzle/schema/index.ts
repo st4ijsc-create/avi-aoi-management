@@ -84,6 +84,7 @@ export * from "./aiCodingSession"; // doc 79 DANH SÁCH PHIÊN — mạch hội 
 export * from "./aiCodingLesson"; // doc 82 BỘ NHỚ XUYÊN PHIÊN — bài học người dùng tự khai, phạm vi CHỦ SỞ HỮU, migration 0336
 export * from "./aiAgentRun"; // Đợt 1 T4 2026-10-17 — sổ LƯỢT CHẠY vòng agent máy chủ, phạm vi CHỦ LƯỢT CHẠY, migration 0390
 export * from "./aiModelRegistry"; // Đợt 7.0 2026-10-20 — SỔ MODEL (artifact · hồ sơ · vai trò · gán · lượt đo), migration 0400
+export * from "./aiNgoai"; // Đợt 10.3 2026-10-26 — cổng AI NGOÀI (cấu hình / danh mục / host theo nhà máy, sổ WORM, bộ đếm trần), mig 0414–0415
 export * from "./aiFlow"; // Đợt 8.0 2026-10-20 — LUỒNG AI (luồng · phiên bản · lượt chạy · bước · hàng đợi bền), migration 0401
 export * from "./aiCodeChunk"; // Đợt 2 2026-10-17 — chỉ mục NGỮ NGHĨA mã nguồn theo dự án (pgvector, khoá projectId), migration 0391
 export * from "./aiCodeIndexState"; // 2026-10-17 — TRẠNG THÁI lượt dựng chỉ mục ngữ nghĩa (san-sang CHỈ khi xong), migration 0395

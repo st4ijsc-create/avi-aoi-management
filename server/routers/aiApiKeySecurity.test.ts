@@ -70,6 +70,8 @@ describe.skipIf(!db)("aiSettingsRouter — aiApiKeys security (doc 69 W0-4, inte
       apiKey: plaintext,
     });
     expect(created?.id).toBeTruthy();
+    // ★ Đợt 10.3 — vắng factoryId ⇒ khoá inactive VÀ phản hồi nói rõ (không âm thầm).
+    expect(created).toMatchObject({ status: "inactive", kichHoat: false, lyDo: "can-nha-may" });
 
     const [row] = await db!.select().from(aiApiKeys).where(eq(aiApiKeys.id, created!.id));
     expect(row).toBeTruthy();
@@ -84,6 +86,19 @@ describe.skipIf(!db)("aiSettingsRouter — aiApiKeys security (doc 69 W0-4, inte
     // the secretBox API itself, not a hand-rolled base64 decode.
     expect(isEncrypted(row.encryptedKey)).toBe(true);
     expect(decryptSecret(row.encryptedKey)).toBe(plaintext);
+  });
+
+  it("(a2) Đợt 10.3 (rà kiem-dinh Task 7 a) — createApiKey cũ với endpoint xấu ⇒ BAD_REQUEST, KHÔNG lưu hàng nào", async () => {
+    const { aiSettingsRouter } = await import("./aiSettingsRouter");
+    const caller = aiSettingsRouter.createCaller(admin);
+    const xau = ["https://u:p@api.example.com/v1", "http://api.example.com/v1", "https://169.254.169.254/latest", "http://metadata.google.internal/", "ftp://api.example.com/v1", "file:///etc/passwd", "http://llm.local:8000/v1"];
+    for (const [i, endpoint] of xau.entries()) {
+      await expect(caller.createApiKey({ name: `${PREFIX}-xau-${i}`, provider: "custom", apiKey: "k-" + "x".repeat(20), endpoint }), endpoint).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    }
+    expect(await db!.select({ id: aiApiKeys.id }).from(aiApiKeys).where(like(aiApiKeys.name, `${PREFIX}-xau-%`))).toEqual([]);
+    const tot = await caller.createApiKey({ name: `${PREFIX}-tot`, provider: "custom", apiKey: "k-" + "y".repeat(20), endpoint: "https://API.example.com/v1/" });
+    const [r] = await db!.select({ endpoint: aiApiKeys.endpoint }).from(aiApiKeys).where(eq(aiApiKeys.id, tot!.id));
+    expect(r!.endpoint).toBe("https://api.example.com/v1");
   });
 
   it("(b) listApiKeys never returns the raw or base64 secret — only a last-4 mask", async () => {
@@ -122,6 +137,8 @@ describe.skipIf(!db)("aiSettingsRouter — aiApiKeys security (doc 69 W0-4, inte
       apiKey: "any-value-at-all",
     });
 
+    // ★ Đợt 10.3 (mig 0414) — khoá không nhà máy được tạo `inactive`; điều cần đo là testApiKey KHÔNG ĐỔI trạng thái.
+    const [truoc] = await db!.select({ status: aiApiKeys.status }).from(aiApiKeys).where(eq(aiApiKeys.id, created!.id));
     const result = await caller.testApiKey({ id: created!.id });
     // Pre-task code returned { success: true } unconditionally (encryptedKey.length > 0
     // is always true for a NOT NULL column) — this MUST NOT be a fabricated pass.
@@ -132,8 +149,8 @@ describe.skipIf(!db)("aiSettingsRouter — aiApiKeys security (doc 69 W0-4, inte
     // lastTestedAt is still honestly recorded even though no real test ran.
     const [row] = await db!.select().from(aiApiKeys).where(eq(aiApiKeys.id, created!.id));
     expect(row.lastTestedAt).toBeInstanceOf(Date);
-    // status is NOT overwritten with a fabricated verdict — stays whatever it was (active).
-    expect(row.status).toBe("active");
+    // status is NOT overwritten with a fabricated verdict — stays whatever it was.
+    expect(row.status).toBe(truoc!.status);
   });
 
   it("(d) a legacy base64 row (pre-fix data) reads without crashing and self-heals to secretBox ciphertext", async () => {
@@ -146,7 +163,8 @@ describe.skipIf(!db)("aiSettingsRouter — aiApiKeys security (doc 69 W0-4, inte
         name: `${PREFIX}-legacy`,
         provider: "openai",
         encryptedKey: legacyBase64,
-        status: "active",
+        // ★ Đợt 10.3 (mig 0414) — CHECK: khoá `active` phải có nhà máy; hàng legacy thật đã bị 0414 chuyển `inactive`.
+        status: "inactive",
         createdBy: ADMIN_ID,
       })
       .returning({ id: aiApiKeys.id });

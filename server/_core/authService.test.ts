@@ -259,8 +259,11 @@ describe("F9-D — thời gian phản hồi (bổ sung, không phải bằng ch�
       foundTimes.push(performance.now() - t1);
     }
 
-    const medNotFound = median(notFoundTimes);
-    const medFound = median(foundTimes);
+    // ★ Đỏ khi chạy song song (kiem-dinh 2026-10-26: diff 188 > 119 ms dưới tải): bcrypt là CPU thuần nên thời gian đo = chi phí thật + phần máy bị tranh CPU;
+    //   TRUNG VỊ của 21 mẫu vẫn dính phần tranh CPU (hai nhánh xen kẽ nhưng bị chiếm ở những lúc khác nhau). Ước lượng đúng cho thứ CPU-thuần là
+    //   GIÁ TRỊ NHỎ NHẤT (chi phí không nhiễu) — lỗi cũ (nhánh not-found bỏ bcrypt ⇒ ~0 ms so với ~51 ms) vẫn lệch ~98% theo giá trị nhỏ nhất.
+    const medNotFound = Math.min(...notFoundTimes);
+    const medFound = Math.min(...foundTimes);
     const diffMs = Math.abs(medNotFound - medFound);
     const slower = Math.max(medNotFound, medFound);
 

@@ -14,6 +14,7 @@
 import { danhGiaThamSo, type ItemLuong } from "../../../../shared/flow/bieuThuc";
 import { dangKyNut, nguCanhItem, type KetQuaChay, type NguCanhChay } from "../dangKyNut";
 
+import { chanHostAiNgoai } from "../../ai/ngoai/hostAiNgoai";
 import { LoiHttpLuong, coMucHostCong, datPhanGiaiDns, docThanCoTran, fetchGhim, kiemDichDen, type DichDen } from "./mangAnToan";
 export { LoiHttpLuong };
 
@@ -116,6 +117,8 @@ async function goi(phuongThuc: string, item: ItemLuong, vao: ItemLuong[], thamSo
   }
   // Đợt 9 (M3): phân giải DNS MỘT lần, từ chối đích nội bộ (trừ mục host:cổng rõ ràng), kết nối tới ĐÚNG IP đã kiểm; đọc thân dạng luồng, ngắt ở trần.
   const dich = await kiemDichDen(url, hostChoPhep());
+  // Đợt 10.3 B4 — rào chống nhầm: không gọi thẳng máy chủ AI ngoài (tên hoặc IP đã ghim) — AI ngoài chỉ qua cổng `goiAiNgoai`.
+  await chanHostAiNgoai(url, dich);
   const r = await (fetchLuong as (u: URL, i: RequestInit, d: DichDen) => Promise<Response>)(url, { method: phuongThuc, headers: tieuDe, body: than, redirect: "manual", signal: AbortSignal.timeout(30_000) }, dich);
   const chu = await docThanCoTran(r, TRAN_THAN);
   let duLieu: unknown = chu;

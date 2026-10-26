@@ -166,8 +166,10 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *   lỗi có mã cho người dùng (`LoiDoiModel` → appError ở `aiGgufRouter`; `{ ok:false, ma }` ở `quanLyUngDung`) ⇒ KHÔNG tới
  *   tRPC ⇒ luật (a)+(b): không đẻ mã appError, đổi sang lớp có mã `LoiNoiBoDoiModel` (code theo họ) · `LoiTenModelKhongHopLe`
  *   · `LoiDiaChiUngDung`. Message GIỮ NGUYÊN VĂN. ĐO sau vá ra **462** — 469 − 7 = 462, không nới, không dư.
+ * 462 → **461** (2026-10-26, Đợt 10.3 lô sau nghiệm thu — dieu-phoi e): `_core/llm.ts` bỏ `throw new Error("Failed to fetch image_url…")`
+ *   cùng nhánh `fetch` thô (ảnh nay qua `_core/taiAnhAnToan.ts` — lỗi `appError` có mã `taiAnhAi`). ĐO sau vá ra **461**, không dư.
  */
-const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 462;
+const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 461;
 
 /**
  * Họ "DB không sẵn sàng": `407 → 83 → 1 → **0**` — nay là BẤT BIẾN, không phải ngân sách.
