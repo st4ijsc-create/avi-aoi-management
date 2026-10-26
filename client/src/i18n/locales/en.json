@@ -21116,7 +21116,7 @@
       "auto": "model: auto",
       "codeTen": "model: {{ten}}",
       "code": "model: code tier",
-      "tip": "Auto = system default + question difficulty. Code tier = force the code-specialised tier (measured: more accurate on programming tasks). Takes effect on the NEXT turn — no restart. The badge next to it shows the model ACTUALLY chosen. Deliberately no \"Fast\" option: the router climbs tiers by DIFFICULTY and coding prompts are always hard, so such an option would be silently ignored."
+      "tip": "Automatic = the router picks by task and question difficulty. Choose a role (e.g. code.software) or a Local profile to pin the model for following turns. Takes effect on the NEXT turn — no restart. Entries marked \"needs slot swap\" take a few seconds to load. The badge next to it shows the model actually used."
     },
     "khoi": {
       "modelSinh": "Code written by the model — may differ from the file on disk",
@@ -23472,7 +23472,10 @@
         "tiep-tuc": "Continue",
         "nhanh-loi": "Take error branch"
       },
-      "tatNode": "Disable this node"
+      "tatNode": "Disable this node",
+      "chonModel": "Model",
+      "chonModelGoiY": "Automatic = the router picks per task. Choose a role or a specific Local profile to pin the model for this node.",
+      "chonModelBieuThuc": "This older flow sets the model with an expression ({{bt}}) — it can no longer be saved. Pick a model above (or Automatic) to replace it."
     },
     "chay": {
       "lichSu": "Run history",
@@ -23793,7 +23796,8 @@
         "luong-loi": "pick the error flow again",
         "bat-su-kien": "re-enable event listening (currently OFF)",
         "http-bi-mat": "re-enter what was removed from the HTTP url / headers / body (query params, keys, passwords — use the flow's secret)",
-        "affinity": "pick the worker affinity again"
+        "affinity": "pick the worker affinity again",
+        "chon-model": "pick the model again (an external model does not travel with the package — the target factory may not have enabled the provider)"
       },
       "nhap": "Import",
       "nhapTieuDe": "Import a flow from a package",
@@ -24297,6 +24301,19 @@
         "biCat": "The list may be incomplete — use the hardwired E-STOP",
         "khongToiMoi": "May not reach every device — also use the hardwired E-STOP"
       }
+    }
+  },
+  "chonModel": {
+    "nhan": "Choose model",
+    "tuDong": "Automatic",
+    "tat": "off",
+    "canDoiKhe": "needs slot swap ~{{n}} s",
+    "canDoiKheChuaDo": "needs slot swap (not measured)",
+    "hetHieuLuc": "The selected model is no longer available — using Automatic.",
+    "nhom": {
+      "vaiTro": "Roles",
+      "hoSo": "Local profiles",
+      "ngoai": "External models"
     }
   }
 }

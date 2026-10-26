@@ -4,6 +4,8 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import ChonModel from "@/components/ai/ChonModel";
+import { docChonDaLuu } from "@/lib/chonModel";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
@@ -309,6 +311,8 @@ export function AILocalChatBubble() {
   const minimized = headerEntry ? false : minimizedState;
 
   const [question, setQuestion] = useState("");
+  // ★ Đợt 10.2 — model người dùng chọn (chung khoá "chat" với /ai-chat); auto ⇒ không gửi trường.
+  const [chonModel, setChonModel] = useState<string>(() => docChonDaLuu("chat"));
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadStoredMessages());
   const [showSources, setShowSources] = useState<string | null>(null);
   const [typingStage, setTypingStage] = useState(0);
@@ -556,6 +560,7 @@ export function AILocalChatBubble() {
         route: location,
         uiLanguage: i18n.language,
       };
+      if (chonModel !== "auto") copilotContext.chonModel = chonModel;
       if (selection.selectedMachineCode) copilotContext.selectedMachineCode = selection.selectedMachineCode;
       if (selection.selectedMachineId != null) copilotContext.selectedMachineId = selection.selectedMachineId;
       if (selection.selectedProductCode) copilotContext.selectedProductCode = selection.selectedProductCode;
@@ -814,7 +819,7 @@ export function AILocalChatBubble() {
         ),
       );
     },
-    [question, isStreaming, isReady, messages, userRole, location, i18n.language, selection, attachedImage, t, startTypingAnimation, stopTypingAnimation],
+    [question, isStreaming, isReady, messages, userRole, location, i18n.language, selection, attachedImage, chonModel, t, startTypingAnimation, stopTypingAnimation],
   );
 
   // ─── Feedback ────────────────────────────────────────────────────────────────
@@ -1691,6 +1696,7 @@ export function AILocalChatBubble() {
                 e.target.value = "";
               }}
             />
+            <div className="mb-1.5 flex justify-end"><ChonModel beMat="chat" giaTri={chonModel} onDoi={setChonModel} compact testId="chon-model-bong-bong" /></div>
             <div className="flex gap-2 items-end border rounded-xl px-3 py-2 focus-within:border-primary/50 transition-colors bg-background">
               <Textarea
                 placeholder={

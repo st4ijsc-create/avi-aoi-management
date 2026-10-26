@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import ChonModel from "@/components/ai/ChonModel";
+import { docChonDaLuu } from "@/lib/chonModel";
 import { useTranslation } from "react-i18next";
 import { useSearch, useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -117,6 +119,8 @@ export default function AIChatPage() {
   const [, setLocation] = useLocation();
   const [selectedConvId, setSelectedConvId] = useState<number | null>(null);
   const [inputMessage, setInputMessage] = useState("");
+  // ★ Đợt 10.2 — model người dùng chọn cho lượt (dính theo trình duyệt; auto ⇒ không gửi trường).
+  const [chonModel, setChonModel] = useState<string>(() => docChonDaLuu("chat"));
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prefillSentRef = useRef(false);
 
@@ -327,6 +331,7 @@ export default function AIChatPage() {
           uiLanguage: i18n.language,
           selectedMachineCode:
             scopeCode ?? selection.selectedMachineCode ?? undefined,
+          ...(chonModel !== "auto" ? { chonModel } : {}),
         },
         // P3/D8 (doc 34) — attach the image (base64 data URL) when present.
         image: image?.dataUrl,
@@ -1116,6 +1121,7 @@ export default function AIChatPage() {
                 >
                   <ImagePlus className="h-4 w-4" />
                 </Button>
+                <ChonModel beMat="chat" giaTri={chonModel} onDoi={setChonModel} />
                 <Input
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}

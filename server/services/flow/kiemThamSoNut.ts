@@ -11,6 +11,7 @@ import { laTenBiMat } from "./xuatNhap";
 import { TOAN_TU_CHON, TRAN_NHANH_CHON } from "./nut/chon";
 import { CHO_TOI_DA_GIAY, TRAN_THONG_DIEP_DUNG_LOI } from "./nut/cho";
 import { kiemDinhNghiaBieuMau } from "./nut/bieuMau";
+import { CHON_MODEL_RE } from "../ai/chonModel/kieu";
 import { RE_TEN_MAY_CHU_MCP, RE_TEN_TOOL_MCP, TRAN_DOI_SO_MCP } from "./nut/mcpKhach";
 import { laHostAiNgoai } from "../ai/ngoai/hostAiNgoai";
 import { HUONG_SAP_XEP, KIEU_SAP_XEP, TOAN_TU_LOC, TRAN_DIEU_KIEN_LOC } from "./nut/loc";
@@ -27,6 +28,13 @@ export function kiemThamSoNutMoi(raw: unknown): string[] {
   for (const n of nodes as { id?: unknown; type?: unknown; parameters?: Record<string, unknown> }[]) {
     const p = n?.parameters ?? {};
     const id = String(n?.id);
+    // Đợt 10.2 — `chonModel` của node AI là chuỗi CỐ ĐỊNH khớp hợp đồng (auto | vai-tro:<id> | ho-so:<id> | ngoai:<ncc>:<model>), KHÔNG biểu thức (dữ liệu item không được chọn model). Lỗi LÚC LƯU,
+    // chỉ nêu node sai — node khác kiểm độc lập. (Còn phải có trong danh mục lúc GỌI: máy chủ giải ở `giaiChonModel`.)
+    if (typeof n?.type === "string" && n.type.startsWith("ai.") && p.chonModel !== undefined && p.chonModel !== null) {
+      if (typeof p.chonModel !== "string" || laBieuThuc(p.chonModel) || !CHON_MODEL_RE.test(p.chonModel)) {
+        loi.push(`node '${id}': chonModel phải là chuỗi cố định (auto | vai-tro:<id> | ho-so:<id> | ngoai:<nhà-cung-cấp>:<model>), không phải biểu thức`);
+      }
+    }
     if (n?.type === "du-lieu.so-lieu") {
       if (typeof p.truyVan !== "string" || laBieuThuc(p.truyVan) || !Object.prototype.hasOwnProperty.call(DANH_MUC, p.truyVan)) {
         loi.push(`node '${id}': truyVan phải là một truy vấn trong danh mục (${Object.keys(DANH_MUC).join(" | ")})`);
