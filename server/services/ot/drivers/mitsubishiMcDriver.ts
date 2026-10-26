@@ -136,6 +136,9 @@ export type LoaiLoiDocMc = "qua_han_goi" | "plc_tra_loi_loi" | "khong_ro";
  *   - >= 1 item loi mang errCode khac (MC Error Response / Invalid Response Length / ...) ⇒ "plc_tra_loi_loi" (it nhat mot goi duoc PLC tra loi ⇒ PLC song);
  *   - khong doc duoc cau truc (thu vien khac ban, mang rong, khong item nao valid===false) ⇒ "khong_ro" ⇒ goi gia tri van dung luat thoi gian
  *     `laDocMcQuaHanGoi` (du phong khi cau truc noi bo doi, nen khong xoa luat do). Truy cap phong thu, khong nem.
+ *   - final fix (ra soat cuoi M-3): item valid===false ma errCode KHONG phai chuoi (undefined = mac dinh cua constructor item mcprotocol.js
+ *     :2411-2412, tuc "chua duoc xu ly o lan doc nay"; hoac so / null) KHONG phai bang chung PLC da tra loi ⇒ khong dem. Khong item loi nao mang
+ *     errCode chuoi ⇒ "khong_ro" (fail-closed: luat thoi gian quyet), khong bao gio "plc_tra_loi_loi".
  */
 export function phanLoaiLoiDocMc(conn: unknown): LoaiLoiDocMc {
   try {
@@ -148,8 +151,10 @@ export function phanLoaiLoiDocMc(conn: unknown): LoaiLoiDocMc {
       if (!Array.isArray(ds)) continue;
       for (const it of ds) {
         if (!it || typeof it !== "object" || (it as { valid?: unknown }).valid !== false) continue;
+        const errCode = (it as { errCode?: unknown }).errCode;
+        if (typeof errCode !== "string") continue; // final fix M-3: khong co errCode chuoi ⇒ khong phai bang chung (khong dem)
         soLoi++;
-        if ((it as { errCode?: unknown }).errCode !== MC_ERRCODE_QUA_HAN_GOI) coLoiKhac = true;
+        if (errCode !== MC_ERRCODE_QUA_HAN_GOI) coLoiKhac = true;
       }
     }
     if (soLoi === 0) return "khong_ro";

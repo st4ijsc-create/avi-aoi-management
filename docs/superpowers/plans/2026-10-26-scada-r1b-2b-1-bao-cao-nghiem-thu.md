@@ -236,8 +236,9 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
 5. (T3, Q4 — điều phối CHẤP NHẬN) Tag string có giá trị thật `"BAD n"` đọc CÙNG lượt với một item lỗi khác (thư viện `anythingBad=true`) vẫn bị coi là
    xấu (fail-closed). `anythingBad` vắng / không phải `false` ⇒ coi là có lỗi. Chưa có ca S7 mất liên kết + string + `anythingBad=false`.
 6. (T4) Phân loại MC dựa trên CHUỖI `errCode` của mcprotocol 0.1.2 (`MC_ERRCODE_QUA_HAN_GOI`, probe `mcErrCode.thuVienThat.test.ts`): thư viện đổi bản /
-   đổi chuỗi ⇒ `khong_ro` ⇒ quay về luật thời gian cũ (90 % hạn gói). `valid=false` với `errCode` không phải chuỗi hiện tính là "PLC đã trả lời" (nên là
-   `khong_ro`, đã ghi để rà). Probe có cận `< 250 ms` có thể chập chờn dưới tải.
+   đổi chuỗi ⇒ `khong_ro` ⇒ quay về luật thời gian cũ (90 % hạn gói). (Rà soát cuối M-3, ĐÃ SỬA ở final fix) `valid=false` với `errCode` không phải
+   chuỗi (undefined = item chưa được xử lý ở lần đọc này) không còn tính là "PLC đã trả lời": không item lỗi nào mang `errCode` chuỗi ⇒ `khong_ro` ⇒
+   luật thời gian (test `chatLuong.drivers.test.ts` "final fix M-3"; đột biến bỏ kiểm kiểu ⇒ đỏ). Probe có cận `< 250 ms` có thể chập chờn dưới tải.
 7. (T5, phán quyết — CHẤP NHẬN) **Trùng tên mã OPC UA:** `BadNodeIdInvalid` do MÁY CHỦ trả về mang đúng chuỗi của mã cục bộ ⇒ phiên mà máy chủ trả mã này
    cho MỌI tag bị coi là trung tính (`connecting` + lý do) dù máy chủ đã trả lời (chiều vô hại: không `connected` giả, không vòng nối lại). Lý do chỉ ở RAM
    (không cột DB, không migration) ⇒ sau khởi động lại hiện lại sau ≤ 1 chu kỳ; người đọc DB khác không thấy. `lost` giữ `lost` + lý do; tick toàn trung

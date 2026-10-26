@@ -1364,6 +1364,21 @@ describe("R1b-2b-1 T4 — MC phân loại lỗi đọc bằng errCode từng ite
     for (const s of out) expect(s).toMatchObject({ quality: "bad", reason: "device_error" });
   });
 
+  it("final fix M-3: item valid:false mà errCode undefined (mặc định item mcprotocol — chưa xử lý) / số ⇒ KHÔNG phải 'PLC đã trả lời' ⇒ khong_ro ⇒ luật thời gian: 41 ms ném, 2 ms device_error", async () => {
+    vi.stubEnv(FLAG, "true");
+    const { phanLoaiLoiDocMc } = await import("./mitsubishiMcDriver");
+    const conn = (goi: unknown[][]) => ({ readPacketArray: goi.map((itemList) => ({ itemList })) });
+    expect(phanLoaiLoiDocMc(conn([[{ valid: false }, { valid: false, errCode: undefined }]]))).toBe("khong_ro");
+    expect(phanLoaiLoiDocMc(conn([[{ valid: false, errCode: 255 }, { valid: false, errCode: null }]]))).toBe("khong_ro");
+    // có errCode chuỗi ⇒ chuỗi đó quyết (item không chuỗi không làm "PLC trả lời")
+    expect(phanLoaiLoiDocMc(conn([[{ valid: false, errCode: MC_ERRCODE_QUA_HAN_GOI }, { valid: false }]]))).toBe("qua_han_goi");
+    expect(phanLoaiLoiDocMc(conn([[{ valid: false, errCode: LOI_PLC }, { valid: false }]]))).toBe("plc_tra_loi_loi");
+    // đường driver thật: errCode undefined + đọc lâu (41/40 ms) ⇒ mất liên lạc (trước: "PLC trả lời" ⇒ device_error, phiên giữ)
+    mcDoc(41, [[{ valid: false }, { valid: false }]]);
+    const d = await moDriver();
+    expect(await d.readTags(hai).catch((e) => e as Error)).toMatchObject({ name: "McReadTimeoutError" });
+  });
+
   it("item valid===true mang errCode PLC cũ không che item quá hạn thật: valid:true(MC Error Response cũ) + valid:false(quá hạn) ⇒ ném", async () => {
     vi.stubEnv(FLAG, "true");
     mcDoc(41, [[{ valid: true, errCode: LOI_PLC }, { valid: false, errCode: MC_ERRCODE_QUA_HAN_GOI }]]);
