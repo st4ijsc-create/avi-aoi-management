@@ -112,24 +112,24 @@
   - `interface PhieuGiu { id: string; khoa: string[]; tokenUoc: number; tienUocUsd: number }`
   - `datTruoc(db, yc: YeuCauGiuCho, tran: TranNhaMay): Promise<PhieuGiu>` — MỘT giao dịch, cho từng khoá `nha-may`, `nguoi:<id>`, `luong:<id>`, `luot:<runId>` có trần, MỘT câu lệnh kiểm CẢ nhánh chèn lẫn nhánh cập nhật, CẢ token lẫn tiền (rà kiem-dinh mục 1 — `INSERT … VALUES` trần không kiểm khi hàng chưa có):
     ```sql
-    INSERT INTO ai_ngoai_dem (ngay, khoa, "tokenGiu", "tienGiuUsd")
-    SELECT $ngay, $khoa, $n, $tien
+    INSERT INTO ai_ngoai_dem ("factoryId", ngay, khoa, "tokenGiu", "tienGiuUsd")
+    SELECT $factoryId, $ngay, $khoa, $n, $tien
     WHERE $n <= $tranToken AND ($tranTien IS NULL OR $tien <= $tranTien)
-    ON CONFLICT (ngay, khoa) DO UPDATE
+    ON CONFLICT ("factoryId", ngay, khoa) DO UPDATE
       SET "tokenGiu" = ai_ngoai_dem."tokenGiu" + EXCLUDED."tokenGiu",
           "tienGiuUsd" = ai_ngoai_dem."tienGiuUsd" + EXCLUDED."tienGiuUsd"
       WHERE ai_ngoai_dem."tokenGiu" + EXCLUDED."tokenGiu" <= $tranToken
         AND ($tranTien IS NULL OR ai_ngoai_dem."tienGiuUsd" + EXCLUDED."tienGiuUsd" <= $tranTien)
     RETURNING khoa
     ```
-    cộng `ai_ngoai_dem_phut` phút hiện tại bằng cùng mẫu (≤ `tranLanPhut`); bất kỳ khoá không trả hàng ⇒ ROLLBACK + ném `LoiNgoai("NGOAI_VUOT_TRAN", khoa)`; lỗi DB ⇒ ném `LoiNgoai("NGOAI_DEM_HONG")`. Trần tiền chỉ áp khi model có giá; model không giá ⇒ `$tien=0` và dựa trần token + số lần.
+    `$factoryId` = `nhaMayTinhTran` (Task 6) — khoá `nguoi:`/`luong:`/`luot:` tách theo nhà máy (rà kiem-dinh: khoá chính `(factoryId, ngay, khoa)`); cộng `ai_ngoai_dem_phut` phút hiện tại bằng cùng mẫu `ON CONFLICT ("factoryId", phut)` (≤ `tranLanPhut`); bất kỳ khoá không trả hàng ⇒ ROLLBACK + ném `LoiNgoai("NGOAI_VUOT_TRAN", khoa)`; lỗi DB ⇒ ném `LoiNgoai("NGOAI_DEM_HONG")`. Trần tiền chỉ áp khi model có giá; model không giá ⇒ `$tien=0` và dựa trần token + số lần.
   - `uocTokenVao(yc: YeuCauNhaCungCap): number` — BI QUAN: `Math.ceil(Buffer.byteLength(JSON.stringify(yc), "utf8") / 2)` (≥ số token thật với mọi tokenizer đã biết, kể cả CJK/Việt có dấu ~1 token/2–3 byte); `tokenUoc = uocTokenVao + maxTokens`.
   - `ketToan(db, phieu: PhieuGiu, thuc: { tokenVao: number; tokenRa: number; tienUsd: number | null }): Promise<void>` — cộng chênh vào cùng khoá. Quyết định (rà mục 8): chênh ÂM (hoàn) CHỈ khi nhà cung cấp trả `usage` hợp lệ; KHÔNG hoàn khi yêu cầu đã rời máy mà không có `usage` (hết hạn, mất kết nối giữa chừng, 5xx sau khi gửi) — giữ nguyên ước tính. `huyGiuChuaGui(db, phieu)` hoàn TOÀN BỘ — chỉ gọi khi CHẮC CHẮN chưa gửi (lỗi trước `fetch`, `ghiYDinh` lỗi, kiểm URL lỗi).
   - `donDemCu(db, giuNgay = 90): Promise<number>` — xoá hàng `ai_ngoai_dem` cũ hơn `giuNgay` và `ai_ngoai_dem_phut` cũ hơn 1 giờ; job nền mỗi giờ (`backgroundJobs.ts`, Task 5).
   - `class LoiNgoai extends Error { constructor(readonly ma: MaLoiNgoai, readonly chiTiet?: string) }` (đặt ở `server/services/ai/ngoai/loi.ts`; `MaLoiNgoai` hợp các mã của kế hoạch này).
 - Model không giá (`giaVaoUsdTrieu IS NULL`) ⇒ `tienUocUsd=null`, bắt buộc `tranTokenLuot` (CHECK 0414) và trần số lần.
 
-- [ ] **Step 1: Test** (DB `_test`): trần nhà máy 1000 token, giữ 600 ⇒ ok, giữ thêm 600 ⇒ `NGOAI_VUOT_TRAN` và tổng vẫn 600 (rollback mọi khoá); `dong-thoi`: 2 `datTruoc` 600 đồng thời trên trần 1000 ⇒ đúng 1 thành công; `nua-dem`: `ngayUtc7(new Date("2026-10-26T16:59:59Z"))==="2026-10-26"`, `…T17:00:00Z` ⇒ `"2026-10-27"`; `lan-phut`: `tranLanPhut=2` ⇒ lần 3 trong cùng phút bị từ chối; `ketToan` có `usage` hoàn trả chênh âm; DB giả ném ⇒ `NGOAI_DEM_HONG`; THÊM (rà kiem-dinh): `chen-vuot-tran` — hàng CHƯA có + `tokenUoc` 1500 > trần 1000 ⇒ `NGOAI_VUOT_TRAN` và `SELECT count(*)` khoá đó = 0 (đột biến: bỏ `WHERE` của nhánh `SELECT` ⇒ ca này đỏ — kiểm trong test bằng bản SQL đột biến chạy song song); `tran-tien`: trần tiền 1,00 USD, giữ 0,60 ⇒ ok, giữ 0,60 nữa ⇒ từ chối; hàng chưa có + 1,50 ⇒ từ chối, 0 hàng; `uoc-bi-quan`: văn bản 1 000 ký tự CJK (`"漢".repeat(1000)`) và 1 000 ký tự Việt có dấu ⇒ `uocTokenVao` ≥ 1 000 (≥ số ký tự); `khong-hoan-sau-gui`: `ketToan` với `usage` vắng ⇒ bộ đếm giữ nguyên ước tính; `huyGiuChuaGui` ⇒ về 0; `don-dem`: hàng 91 ngày bị xoá, 89 ngày còn.
+- [ ] **Step 1: Test** (DB `_test`): trần nhà máy 1000 token, giữ 600 ⇒ ok, giữ thêm 600 ⇒ `NGOAI_VUOT_TRAN` và tổng vẫn 600 (rollback mọi khoá); `dong-thoi`: 2 `datTruoc` 600 đồng thời trên trần 1000 ⇒ đúng 1 thành công; `nua-dem`: `ngayUtc7(new Date("2026-10-26T16:59:59Z"))==="2026-10-26"`, `…T17:00:00Z` ⇒ `"2026-10-27"`; `lan-phut`: `tranLanPhut=2` ⇒ lần 3 trong cùng phút bị từ chối; `ketToan` có `usage` hoàn trả chênh âm; DB giả ném ⇒ `NGOAI_DEM_HONG`; THÊM (rà kiem-dinh): `chen-vuot-tran` — hàng CHƯA có + `tokenUoc` 1500 > trần 1000 ⇒ `NGOAI_VUOT_TRAN` và `SELECT count(*)` khoá đó = 0 (đột biến: bỏ `WHERE` của nhánh `SELECT` ⇒ ca này đỏ — kiểm trong test bằng bản SQL đột biến chạy song song); `tran-tien`: trần tiền 1,00 USD, giữ 0,60 ⇒ ok, giữ 0,60 nữa ⇒ từ chối; hàng chưa có + 1,50 ⇒ từ chối, 0 hàng; `uoc-bi-quan`: văn bản 1 000 ký tự CJK (`"漢".repeat(1000)`) và 1 000 ký tự Việt có dấu ⇒ `uocTokenVao` ≥ 1 000 (≥ số ký tự); `khong-hoan-sau-gui`: `ketToan` với `usage` vắng ⇒ bộ đếm giữ nguyên ước tính; `huyGiuChuaGui` ⇒ về 0; `don-dem`: hàng 91 ngày bị xoá, 89 ngày còn; `tach-nha-may`: nhà máy A và B cùng `nguoi:7`, mỗi bên giữ 600 trên trần người 1000 ⇒ cả hai ok (bộ đếm RIÊNG), A giữ thêm 600 ⇒ từ chối, B không đổi. Mọi ca chạy trên DB `_test` THẬT (không mock SQL) — `chen-vuot-tran` phải bắt lỗi `ON CONFLICT` không khớp khoá. README vận hành: `uocTokenVao` bi quan 2–4× với tiếng Anh/mã ⇒ đặt trần có hệ số.
 - [ ] **Step 2–4:** FAIL → cài → PASS. **Step 5: Commit** `feat(ai-ngoai): tran chi phi dat-truoc nguyen tu theo nha may/ngay UTC+7/nguoi/luong/luot + so lan/phut`.
 
 ### Task 5: Sổ WORM (`soNgoai.ts`)
