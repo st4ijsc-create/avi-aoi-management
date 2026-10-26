@@ -52,6 +52,46 @@ Giữ cách tách của điều phối. Ba mục driver 11 / 12 / 13 nằm ở R
 - **Hợp nhất limiter / bộ đọc cookie: GỠ khỏi kế hoạch này** — kiem-dinh làm trên main. Ràng buộc kèm theo ở Global Constraints.
 - **Gửi kế hoạch cho điều phối TRƯỚC khi thực thi.** Câu trả lời cho Q1–Q12 (cuối tệp) sẽ ghi bổ sung vào mục này.
 
+### Kế hoạch e703d844a — DUYỆT có 6 điều kiện bắt buộc (điều phối 2026-10-26). Thực thi từ T1, không chờ duyệt lại.
+
+**Trả lời Q1–Q12:**
+- **Q1 DUYỆT:** `mayDungKhanCap` là phần tử thứ hai của tập miễn. Điều kiện: test chiều B ghim ĐÚNG 2 phần tử; JSON trả về không có endpoint / lastError / stopValue / giá trị ghim.
+- **Q2 CÓ:** tìm thấy hàng ⇒ DỪNG. Gửi điều phối SQL chỉ đọc; điều phối chạy trên DEV (read_only).
+- **Q3 DUYỆT**, kèm điều kiện (1).
+- **Q4 CHẤP NHẬN**, ghi vào báo cáo §giới hạn.
+- **Q5 DUYỆT**, kèm điều kiện (5).
+- **Q6 DUYỆT.** Ghi vào "thay đổi hành vi nhìn thấy được": trong cửa sổ từ lúc tắt tới lúc khởi động lại, DB vẫn để `connected`.
+- **Q7 DUYỆT**, kèm điều kiện (3).
+- **Q8 DUYỆT.**
+- **Q9:** trần THEO TIẾN TRÌNH DUYỆT. `commandTimeout` 250 ms dùng chung KHÔNG duyệt như đang viết; xem điều kiện (4).
+- **Q10 BỌC HẠN: DUYỆT.**
+- **Q11 CÓ**, nhưng hỏi điều phối ngay lúc chạy (commit trống ≥ 10 GB, không chạm :3000 / :8091 / GPU). Với M1, ghi rõ là giới hạn.
+- **Q12:** lọc theo CÙNG luật `phanLoaiGhimStopHmi` (một luật STOP cho mọi nguồn), sau khi đã dọn ghim cũ. Để ở R1b-2b-2.
+
+**Điều kiện bắt buộc:**
+1. **T2 / Q3 — STOP không được bị driver chặn.** Coil chặt sẽ từ chối giá trị 2. Vì vậy ghim STOP trên tag địa chỉ COIL kiểu int / float có `stop_value ∉ {0, 1, true, false, "0", "1", "true", "false"}` sẽ THẤT BẠI ở driver, tức là một cổng phần mềm đứng trước STOP. Cần:
+   - (a) Census Step 1 phủ thêm: ghim STOP trên MỌI tag địa chỉ coil (mọi dataType), và FOE / luật ghi lên coil có giá trị ngoài tập. Có hàng ⇒ dừng như Q2.
+   - (b) `validateStopValue` và đường tạo / sửa ghim từ chối ghim như vậy trên coil, để từ nay không sinh hàng mới. Có test và đột biến.
+   - (c) Thêm vào ô B1: ghim STOP `1` trên coil kiểu int ⇒ ghi TRUE, acked.
+2. **T9 — ca L1 khoá bảng.** Ca `LOCK TABLE scada_command_attempts, ai_pending_actions IN EXCLUSIVE MODE` 5 s trên `_test` dùng chung sẽ làm treo các tệp DB khác chạy song song. Phải chọn một và ghi rõ đã chọn cách nào:
+   - đưa tệp soCoHan vào lô serial (thêm vào `vitest.serial.config.ts`, loại khỏi `vitest.db.config.ts`);
+   - hoặc để opt-in.
+3. **T9 / Q7 — promise sổ bị bỏ rơi.** Promise sổ bị bỏ rơi sau 500 ms mà reject muộn KHÔNG được thành `unhandledRejection` (mặc định Node làm sập tiến trình).
+   - Test: p reject ở 800 ms ⇒ 0 `unhandledRejection` (đo bằng `process.on`), có `ghiLoiChot`.
+   - Đột biến: bỏ handler gắn lên p ⇒ đỏ.
+4. **T14 / Q9 — hạn Redis.** Hạn 250 ms trên client dùng chung sẽ biến một Redis chậm-mà-sống thành fail-open cho bộ giới hạn đăng nhập / OTP. Hôm nay các bộ này chậm nhưng vẫn chặn, nên đây là hồi quy bảo mật. Chọn một trong hai:
+   - (a) client Redis RIÊNG cho tầng STOP với `commandTimeout` 250; các tầng khác giữ nguyên;
+   - (b) giữ hạn dùng chung, NHƯNG mọi bộ giới hạn trên client ấy đều dùng `StoreDuPhongBoNho` (rơi xuống bộ nhớ, không fail-open).
+
+   Điều phối nghiêng về (b) nếu helper hợp nhất của kiem-dinh cho phép gắn store ở một chỗ; nếu không thì (a). Dù chọn cách nào cũng thêm test: Redis giả chờ 2 s ⇒ limiter đăng nhập vẫn đếm (429 đúng lượt).
+5. **T5 / Q5 — `connecting` có lý do.** `connecting` mãi mà không có lý do sẽ thành vòng xoay vô tận trên UI. Khi mọi tag trung tính, đặt `lastError` / lý do phiên dạng mã (vd `moi_tag_sai_cau_hinh`, có i18n). Thêm test.
+6. **T1 — danh sách máy bị cắt.** Khi số máy = `TRAN_MAY_DUNG_KHAN_CAP` (200), client hiện một dòng "danh sách có thể chưa đủ — dùng E-STOP cứng". Server có thể trả LIMIT 201 để biết là bị cắt. Có ca DOM.
+
+**Ghi chú:**
+- Hợp nhất cookie của kiem-dinh (e0e4caefc) và W22 (ecee38524) đang chạy cổng gộp main. Lệnh đóng băng 4 tệp + `context.ts` CHỈ hết khi điều phối báo đã lên `fresh/main`; lúc đó T14–T15 mới chạy Step 0.
+- Không migration. Cần schema thì dùng 0437–0439, gửi SQL trước khi áp DEV.
+- Trước khi gửi bàn giao: chạy ĐỦ census (grep -i census toàn cây + server/_core + routers/services/routes + client/src + shared), không chỉ test của task.
+
 ## Global Constraints
 
 - **Nơi làm và nhánh.**
