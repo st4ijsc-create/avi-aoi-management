@@ -11,6 +11,7 @@
  * otSessionReset.dot4.test.ts): mỗi lệnh ghi được ghi lại {tag, phiên, bắt đầu, kết thúc}. Oracle = nhật ký của
  * driver giả. Mọi khẳng định thời gian dùng hạn giờ tường minh.
  */
+import { batDauDoLag } from "../../testing/doLagBucleSuKien";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { makeLedgerFakeDb, boundPending, TESTKIT_TOOL } from "./commandDispatcher.testkit";
 
@@ -331,12 +332,13 @@ describe("B3 — a STOP behind a timed-out write (QĐ-4b, grace = 1000 ms)", () 
   it("★ L-7: session reset HANGS ⇒ STOP still starts within timeout + grace + reset bound; overlapRisk logged + audited", async () => {
     D.plan.set("cmd_speed", "hang");
     D.reset.mode = "hang";
+    const lag = batDauDoLag();
     const { t0, pStop } = await hungWriteThenStop();
     const rStop = await within(pStop, TIMEOUT_MS + GRACE + D.reset.boundMs + 700);
     expect(rStop.status).toBe("acked");
     const stop = D.log.find((w) => w.tag === "cmd_stop")!;
     expect(stop.start - t0).toBeGreaterThanOrEqual(TIMEOUT_MS + GRACE - 20);
-    expect(stop.start - t0).toBeLessThanOrEqual(TIMEOUT_MS + GRACE + D.reset.boundMs + 400);
+    expect(stop.start - t0).toBeLessThanOrEqual(TIMEOUT_MS + GRACE + D.reset.boundMs + 400 + (await lag.dung(60))); // + the time this process was not scheduled (same run)
     expect(await until(() => audit.events.some((e) => e.action === "ot_write_overlap_risk"), 2000)).toBe(true);
     const ev = audit.events.find((e) => e.action === "ot_write_overlap_risk")!;
     expect(ev).toMatchObject({ entityType: "ot_command", actorId: 1 });
@@ -444,10 +446,12 @@ describe("B3 alert-only (R-4-q) — read-only watch after a STOP that followed a
 
   it("★ the watch never holds the queue: a newer STOP and a newer command write at once", async () => {
     await hungRunThenStop();
+    const lag = batDauDoLag();
     const t1 = Date.now();
     expect((await within(dispatch(input("cmd_run", "stop", `al-stop2-${actSeq}`, false)), 1000)).status).toBe("acked");
     expect((await within(dispatch(input("cmd_speed", "set_speed", `al-speed-${actSeq}`, true)), 1000)).status).toBe("acked");
-    expect(Date.now() - t1).toBeLessThan(400);
+    const troi = Date.now() - t1;
+    expect(troi).toBeLessThan(400 + (await lag.dung(60)));
   });
 
   it("★ a newer command that WRITES the STOP's tag ends the watch for it — no alarm about the operator's own start", async () => {

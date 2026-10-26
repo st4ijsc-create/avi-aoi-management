@@ -162,7 +162,8 @@ export const samplingStrategyEnum = pgEnum("samplingstrategyenum", ["UNCERTAINTY
 export const chatRoleEnum = pgEnum("chatroleenum", ["system", "user", "assistant", "tool"]);
 
 // AI API Key enums
-export const apiKeyProviderEnum = pgEnum("apikeyprovider", ["openai", "azure_openai", "huggingface", "custom"]);
+// ★ Đợt 10.3 (mig 0413) — thêm anthropic / gemini / openai_compat (cổng AI ngoài).
+export const apiKeyProviderEnum = pgEnum("apikeyprovider", ["openai", "azure_openai", "huggingface", "custom", "anthropic", "gemini", "openai_compat"]);
 export const apiKeyStatusEnum = pgEnum("apikeystatus", ["active", "inactive", "expired", "error"]);
 
 // AI Copilot pending-action lifecycle (GĐ2 HITL write-action)

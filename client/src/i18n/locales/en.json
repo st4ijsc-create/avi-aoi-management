@@ -3696,6 +3696,7 @@
       "queued-for-shared-ledger": "The read replica was cleaned IMMEDIATELY (headroom reflects it right away), but the row only actually LEAVES the database at the NEXT shared-ledger sync — see unsyncedWritesAfter for how many writes are still pending."
     },
     "entity": {
+      "aiNgoaiKhoa": "external AI provider key",
       "corporate": "corporation",
       "edgeNode": "edge node",
       "scadaRequest": "SCADA command request",
@@ -3890,6 +3891,8 @@
       "lateWriteResult": "late write result"
     },
     "operation": {
+      "toggleApiKey": "toggle API key",
+      "aiNgoaiEndpoint": "external AI endpoint",
       "dieuKienViTriTrongPhamVi": "build the location scope condition",
       "retireEdgeNode": "retire the edge node",
       "updateApiKey": "update the API key",
@@ -3963,6 +3966,7 @@
       "doiModelLlamaServer": "switch the model running on llama-server",
       "soModelTongQuan": "view the model registry (role → model)",
       "soModelDatGan": "change a role → model binding",
+      "soModelGoGan": "remove a role's model assignment",
       "soModelSuaArtifact": "edit a model artifact's licence / status",
       "soModelTaoHoSo": "create/edit a model serving profile",
       "generateText": "generate text",
@@ -4085,7 +4089,9 @@
       "dieuKienDoiTuongTrongPhamVi": "in-scope object condition",
       "flowNguoiNhan": "find recipients for the flow",
       "flowXuat": "export an AI flow package",
-      "flowNhap": "import an AI flow from a package"
+      "flowNhap": "import an AI flow from a package",
+      "aiNgoaiDatModel": "set external AI model",
+      "aiNgoaiDuyet": "approve flow using external AI"
     },
     "field": {
       "stationId": "station",
@@ -4352,7 +4358,11 @@
       "flowDuyet": "approve a waiting step of an AI flow",
       "verifyChainAcrossFactories": "verify a traceability chain across factories",
       "manageProductWideProgramRelease": "manage product-wide inspection program releases",
-      "authorSharedSop": "author a shared SOP"
+      "authorSharedSop": "author a shared SOP",
+      "aiNgoaiHostNoiBo": "declare internal host for external AI",
+      "aiNgoaiDuyet": "approve flow using external AI",
+      "flowKichHoat": "enable flow",
+      "flowChayTay": "run flow manually"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -4385,6 +4395,8 @@
       "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published."
     },
     "reason": {
+      "can-nha-may": "the key must belong to a factory before it can be activated",
+      "thieu-endpoint": "endpoint missing",
       "totpSelfUnlock": "You cannot unlock your own two-factor authentication — another administrator must do it.",
       "edgeNodeBusy": "The node is being changed by another operation (a device assignment, a credential rotation…). Nothing was changed — retry in a moment.",
       "edgeNodeRetireBlocked": "The node still has: {{blockers}}. Release its devices to central, let its STOPs / lock requests be acknowledged (or resolved) and finish its runs, then retry. Nothing was changed.",
@@ -4544,7 +4556,14 @@
       "scadaKenhCheDoGoTruoc": "This tag is a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the tag.",
       "scadaKenhCheDoDoiMay": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page before assigning the adapter to another machine.",
       "scadaKenhCheDoGoTruocXoaAdapter": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the adapter.",
-      "interlockDefinitionChanged": "The source / target tag definition (address, type, scale / offset, adapter, edge node) changed after approval — or the rule was approved before this update. Re-approve it before enabling."
+      "interlockDefinitionChanged": "The source / target tag definition (address, type, scale / offset, adapter, edge node) changed after approval — or the rule was approved before this update. Re-approve it before enabling.",
+      "khoa-khac-nha-may-hoac-nha-cung-cap": "the key belongs to another factory or provider",
+      "can-gia-hoac-tran-luot": "a price or a per-call token cap is required",
+      "chi-admin-toan-he": "system-wide administrators only",
+      "khong-co-node-ngoai": "this version does not use an external AI model",
+      "NGOAI_TU_DUYET_VAN_HANH": "you cannot self-approve a flow that sends operational data to external AI",
+      "NGOAI_CHUA_DUYET": "the version using an external AI model has not been approved",
+      "NGOAI_LUONG_TOAN_CUC": "system-wide flows cannot use external AI models"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -13768,12 +13787,14 @@
       "datGan": {
         "tieuDe": "Set binding",
         "nut": "Set binding",
-        "daDat": "Binding set (replaced {{n}} old binding(s)).",
         "maPhamVi": "Scope ID",
         "loaiDich": "Target type",
         "duPhong": "Fallback (profile IDs, comma-separated, up to 4)",
         "cong": "Active mode on a profile requires ≥ 1 evaluation run of that profile and a declared model licence. Bindings to a .env key need no evaluation.",
-        "chuaDoChan": "Profile {{id}} has no eval run yet — it can't be assigned as active. Assign it in 'trial' mode, run the role's suite, then activate."
+        "chuaDoChan": "Profile {{id}} has no eval run yet — it can't be assigned as active. Assign it in 'trial' mode, run the role's suite, then activate.",
+        "daGan": "Assigned {{vaiTro}} → {{dich}} ({{cheDo}}) — replaced {{n}} previous assignment(s).",
+        "khongDoi": "No change: {{vaiTro}} is already assigned to {{dich}} ({{cheDo}}).",
+        "canhBaoCheDo": "'trial' / 'shadow' do NOT change the model that is running — choose 'active' to take effect."
       },
       "kho": {
         "dongBo": "Sync store",
@@ -13888,6 +13909,18 @@
           "kem": "Target is WORSE than the assigned profile on the same suite.",
           "bang": "Target is on par with the assigned profile on the same suite."
         }
+      },
+      "goGan": {
+        "cot": "Actions",
+        "nut": "Remove",
+        "tieuDe": "Confirm removing the assignment",
+        "activeGlobal": "Removing the global active assignment of role {{vaiTro}}: this role will follow the .env key {{envKey}}.",
+        "activeKhac": "Removing the active assignment for scope {{phamVi}} {{scopeId}} of {{vaiTro}}: that scope will follow the broader assignment or the .env key.",
+        "thu": "The {{cheDo}} assignment of {{vaiTro}} does NOT affect the running model — removing it only drops it from the list of effective assignments (history is kept).",
+        "xacNhan": "Confirm removal",
+        "huy": "Cancel",
+        "daGo": "Removed assignment {{vaiTro}} ({{cheDo}}).",
+        "diTheoEnv": "Role {{vaiTro}} now follows the .env key."
       }
     }
   },

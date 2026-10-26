@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { kiemModelV1, thongDiepLoiChoKhachV1 } from "./kiemModelV1";
+import { kiemModelV1, thongDiepLoiChoKhachV1, THONG_DIEP_MODEL_KHONG_HOP_LE } from "./kiemModelV1";
 import { resolveLogicalModel } from "./modelResolver";
 import { ANH_RONG, type AnhSoModel } from "./soModel/anhSoModel";
 
@@ -37,20 +37,41 @@ const anh: AnhSoModel = {
   gan: [],
 };
 
-describe("kiemModelV1 — /v1 chỉ nhận tên logic, vai trò, hồ sơ trong sổ, hoặc TÊN TỆP nằm trong GGUF_MODELS_DIR", () => {
-  const k = (m: string) => kiemModelV1(m, { thuMucModel: dir, anh });
+describe("kiemModelV1 — /v1 chỉ nhận tên logic, vai trò, hồ sơ trong sổ, mã danh mục (Đợt 10.1: KHÔNG còn tên tệp)", () => {
+  const k = (m: string) => kiemModelV1(m, { anh });
 
-  it("nhận: tên logic, auto, vai trò đã biết, hồ sơ (⇒ basename artifact), tên tệp có thật trong thư mục", () => {
+  it("nhận: tên logic, auto, vai trò đã biết, hồ sơ (⇒ basename artifact), mã danh mục vai-tro:/ho-so:/ngoai:", () => {
     expect(k("chat")).toEqual({ ok: true, ten: "chat" });
     expect(k("auto")).toEqual({ ok: true, ten: "auto" });
     expect(k("extract")).toEqual({ ok: true, ten: "extract" });
     expect(k("ho-so@8k")).toEqual({ ok: true, ten: "Model-A" });
-    expect(k("Model-A")).toEqual({ ok: true, ten: "Model-A" });
-    expect(k("Model-A.gguf")).toEqual({ ok: true, ten: "Model-A.gguf" });
+    expect(k("vai-tro:code.plc")).toEqual({ ok: true, ten: "vai-tro:code.plc" });
+    expect(k("ho-so:ho-so@8k")).toEqual({ ok: true, ten: "ho-so:ho-so@8k" });
+    expect(k("ngoai:anthropic:claude-x")).toEqual({ ok: true, ten: "ngoai:anthropic:claude-x" });
   });
 
-  it("TỪ CHỐI: đường tuyệt đối, `..`, dấu phân cách, ổ đĩa, tệp không có, tệp ngoài thư mục", () => {
+  it("★ Đợt 10.1 — tên tệp GGUF trần (kể cả CÓ THẬT trong thư mục model) ⇒ TỪ CHỐI", () => {
+    const cu = process.env.GGUF_MODELS_DIR;
+    process.env.GGUF_MODELS_DIR = dir;
+    try {
+      expect(k("Model-A")).toEqual({ ok: false });
+      expect(k("Model-A.gguf")).toEqual({ ok: false });
+    } finally {
+      if (cu === undefined) delete process.env.GGUF_MODELS_DIR;
+      else process.env.GGUF_MODELS_DIR = cu;
+    }
+  });
+
+  it("lời từ chối nêu các dạng hợp lệ", () => {
+    expect(THONG_DIEP_MODEL_KHONG_HOP_LE).toMatch(/vai-tro:<role>.*ho-so:<profile-id>/);
+    expect(THONG_DIEP_MODEL_KHONG_HOP_LE).not.toMatch(/[A-Za-z]:\|.gguf/);
+  });
+
+  it("TỪ CHỐI: đường tuyệt đối, `..`, dấu phân cách, ổ đĩa, tệp không có, tệp ngoài thư mục, mã sai dạng", () => {
     for (const m of [
+      "vai-tro:",
+      "ho-so:../x",
+      "ngoai:anthropic",
       path.join(ngoai, "bimat.gguf"),
       path.join(ngoai, "bimat"),
       `../${path.basename(ngoai)}/bimat`,

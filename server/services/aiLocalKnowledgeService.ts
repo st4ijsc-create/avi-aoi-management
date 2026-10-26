@@ -254,6 +254,12 @@ export interface KbQueryContext {
    */
   modelVaiTro?: { modelId: string | undefined; vaiTro: string; nguon: string; bangChung: string };
   /**
+   * ★ Đợt 10.1 A2 — model người dùng CHỌN TƯỜNG MINH cho lượt (`vai-tro:<id>` | `ho-so:<id>` | `ngoai:…`; hình dạng
+   * `CHON_MODEL_RE`, `auto` ⇒ không đặt). TUYẾN giải nó (`chonModel/kbChonModel.apChonModelKb`) thành `modelVaiTro` TRƯỚC khi
+   * gọi service — giá trị lạ ⇒ 400/404 ở tuyến, không rơi về mặc định. Vắng ⇒ hành vi cũ y nguyên.
+   */
+  chonModel?: string;
+  /**
    * ★★★ doc 79 · TRỤC 2 — id DỰ ÁN đang chọn (bộ chọn dự án ở đầu cây tệp). **Là một ID, KHÔNG phải
    * đường dẫn** — server tra danh sách TRẮNG (`repoProjects.gocTheoId`) để ra gốc; id lạ / đường dẫn
    * tự do ⇒ TỪ CHỐI (fail-closed). Chỉ có nghĩa khi `codingMode === true`. Vắng ⇒ dự án mặc định.
@@ -1173,7 +1179,9 @@ async function laCauHoiTaiLieuMoHo(question: string, userId?: number): Promise<b
  * vận hành XẾP HÀNG sau cả lượt đó: đo 20–24 s (lượt dài 8.000 token) so với 2–3 s ở model planner. Bật là quyết định
  * của chủ dự án. Lượt TỰ KIỂM cổng lạc đề luôn dùng model planner (model mặc định tự kiểm chặn nhầm Q11 Q22 GQ03 T35).
  */
-async function modelTraLoiKb(planModelId: string | undefined): Promise<string | undefined> {
+async function modelTraLoiKb(planModelId: string | undefined, modelChon?: string): Promise<string | undefined> {
+  // ★ Đợt 10.1 — người dùng CHỌN TƯỜNG MINH (`context.chonModel` ⇒ `modelVaiTro`) thắng mọi mặc định.
+  if (modelChon) return modelChon;
   if (process.env.AI_KB_MODEL_TRA_LOI !== "mac-dinh") return planModelId;
   const macDinh = resolveTaskModel("default");
   if (!macDinh) return planModelId;
@@ -1777,6 +1785,8 @@ async function generateWithOllama(
   // gọi cũ nào), luồn `context.route` xuống `pickNumPredict` — thứ duy nhất `retrieve.intent`
   // không còn mang được nữa sau khi Việc 2 ép nó thành "general" cho route vscode.
   route?: string,
+  /** ★ Đợt 10.1 — model chọn tường minh của lượt (`kbContext.modelVaiTro.modelId`); vắng ⇒ như cũ. */
+  modelChon?: string,
 ): Promise<string | null> {
   // doc69 G2-3 — AI Gateway: SAME input this function always passed to `route()` below
   // (`{task:"chat", text: question}`), so `plan.decision.modelId` is byte-identical to
@@ -1842,7 +1852,7 @@ async function generateWithOllama(
           repeatPenalty: KB_QA_REPEAT_PENALTY,
           // ★ B1 — lớp `kb-qa` không nghĩ (xem nhánh stream bên dưới cho lý do đo được).
           disableThinking: !luotDuocNghi("kb-qa"),
-        }, await modelTraLoiKb(plan.decision.modelId));
+        }, await modelTraLoiKb(plan.decision.modelId, modelChon));
         // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
         plan.record({
           tokensIn: result.tokensPrompt,
@@ -1926,6 +1936,8 @@ export async function* generateWithOllamaStream(
    * nhánh này. Vắng ⇒ hành vi cũ y nguyên.
    */
   signal?: AbortSignal,
+  /** ★ Đợt 10.1 — model chọn tường minh của lượt (`kbContext.modelVaiTro.modelId`); vắng ⇒ như cũ. */
+  modelChon?: string,
 ): AsyncGenerator<string> {
   // doc69 G2-3 — AI Gateway (see the identical comment on generateWithOllama above; same
   // {task:"chat", text: question} input preserves the pinned-model decision byte-for-byte).
@@ -2015,7 +2027,7 @@ export async function* generateWithOllamaStream(
           // ★ B1 — KB-QA là lớp `kb-qa` (ai/loaiLuot.ts): KHÔNG nghĩ. Trần 220/900 token với model
           //   biết nghĩ mặc định ⇒ chuỗi suy luận nuốt hết trần, câu trả lời rỗng (đo sống 2026-09-22).
           disableThinking: !luotDuocNghi("kb-qa"),
-        }, await modelTraLoiKb(plan.decision.modelId), signal)) {
+        }, await modelTraLoiKb(plan.decision.modelId, modelChon), signal)) {
           // GGUF engine yields { type: "token" | "done" | "error", token?, ... }
           // We must extract the string token, not yield the whole object
           // (which would stringify to "[object Object]" downstream).
@@ -3210,7 +3222,8 @@ export async function answerQuestion(
     ? { ...context, callerRole: execCtx.user.role }
     : context;
   const studioEligible = canAccessStudioCorpus(execCtx?.user?.role);
-  const key = getCacheKey(question, topK, userRole, studioEligible);
+  // ★ Đợt 10.1 — model chọn tường minh vào khoá đệm (câu trả lời của model khác KHÔNG được trả lại); vắng ⇒ khoá cũ.
+  const key = getCacheKey(question, topK, userRole, studioEligible) + (context?.chonModel ? `|m=${context.chonModel}` : "");
   const now = Date.now();
   // ★ Đợt 9 (2026-10-24) — ảnh đính kèm: công cụ/intent theo câu GỐC, truy hồi theo câu gốc + mã từ ảnh (xem `cauHoiTheoAnh`).
   const { cauHoiCongCu, cauHoiTruyVanAnh } = cauHoiTheoAnh(question, context);
@@ -3342,7 +3355,7 @@ export async function answerQuestion(
     let daTraLoiTheoTaiLieu = false;
     if (quyTacTaiLieuNS) {
       try {
-        const theoTaiLieu = await generateWithOllama(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route);
+        const theoTaiLieu = await generateWithOllama(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route, kbContext?.modelVaiTro?.modelId);
         const ghep = ghepQuyTacVoiDuLieuSong(theoTaiLieu, summary, laTuChoi);
         if (ghep) {
           provider = "ollama";
@@ -3368,6 +3381,7 @@ export async function answerQuestion(
           toolPromptBlock,
           execCtx?.user?.id,
           kbContext?.route,
+          kbContext?.modelVaiTro?.modelId,
         );
         if (llmAnswer) {
           provider = "ollama";
@@ -3403,7 +3417,7 @@ export async function answerQuestion(
     // `LOOKS_LIKE_LIVE_FACTORY_DATA_RE` cho lý do (đo được: không gate ⇒ model bịa API/config vận
     // hành không có thật cho câu hỏi vận hành 0-citation).
     try {
-      const llmAnswer = await generateWithOllama(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route);
+      const llmAnswer = await generateWithOllama(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route, kbContext?.modelVaiTro?.modelId);
       if (llmAnswer) {
         provider = "ollama";
         answer = llmAnswer;
@@ -3579,7 +3593,8 @@ export async function* streamAnswer(
     ? { ...context, callerRole: execCtx.user.role }
     : context;
   const studioEligible = canAccessStudioCorpus(execCtx?.user?.role);
-  const key = getCacheKey(question, topK, userRole, studioEligible);
+  // ★ Đợt 10.1 — model chọn tường minh vào khoá đệm (câu trả lời của model khác KHÔNG được trả lại); vắng ⇒ khoá cũ.
+  const key = getCacheKey(question, topK, userRole, studioEligible) + (context?.chonModel ? `|m=${context.chonModel}` : "");
   const now = Date.now();
   // ★ Đợt 9 (2026-10-24) — ẢNH ĐÍNH KÈM: `question` mang khối bản đọc ảnh (cho model); bộ chọn công cụ/intent dùng câu GỐC, truy hồi
   // dùng câu gốc + mã/nhãn trích từ ảnh. Xem `cauHoiTheoAnh`.
@@ -3869,7 +3884,7 @@ export async function* streamAnswer(
   if (quyTacTaiLieu) {
     try {
       let dem = "";
-      for await (const piece of generateWithOllamaStream(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route, execCtx?.signal)) {
+      for await (const piece of generateWithOllamaStream(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route, execCtx?.signal, kbContext?.modelVaiTro?.modelId)) {
         if (piece) dem += piece;
       }
       const g = guardGeneratedText(dem);
@@ -3902,6 +3917,7 @@ export async function* streamAnswer(
         execCtx?.user?.id,
         kbContext?.route,
         execCtx?.signal, // final wave item 2 — huỷ của tuyến SSE đi tới tận fetch llama-server
+        kbContext?.modelVaiTro?.modelId,
       );
       // FE-W0.3 (doc 46 §2.3) — incremental degenerate-loop guard: re-check the
       // accumulated text every STREAM_GUARD_STEP_CHARS once past the min, and BREAK

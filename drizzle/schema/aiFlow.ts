@@ -33,6 +33,12 @@ export const aiFlowVersions = pgTable(
     createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
     approvedBy: integer("approvedBy").references(() => users.id, { onDelete: "set null" }),
     createdAt: tz("createdAt").defaultNow().notNull(),
+    /** ★ Đợt 10.3 (mig 0416) — phiên bản có node AI NGOÀI ⇒ duyệt RIÊNG từng phiên bản + băm định nghĩa đầy đủ lúc duyệt. */
+    coNodeNgoai: boolean("coNodeNgoai").notNull().default(false),
+    ngoaiDuyetBoi: integer("ngoaiDuyetBoi").references(() => users.id, { onDelete: "set null" }),
+    ngoaiDuyetLuc: tz("ngoaiDuyetLuc"),
+    ngoaiTuDuyet: boolean("ngoaiTuDuyet").notNull().default(false),
+    ngoaiBamDuyet: varchar("ngoaiBamDuyet", { length: 64 }),
   },
   (t) => [primaryKey({ columns: [t.flowId, t.version] })],
 );

@@ -977,7 +977,16 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   (khối DỪNG khẩn cấp trên trang buộc đổi mật khẩu) — nhóm S: đọc CÓ phạm vi (`services/scada/mayDungKhanCap.ts` ⇒
 //   `idsTrongPhamVi("machine", phamViCua(ctx), {strict:true})`; máy nhà máy khác không bao giờ hiện — `scadaCommandsRouter.mayDungKhanCap.r1b2b.db.test.ts`).
 //   Đo: ghim cũ (gốc f891c93f7) đỏ ĐÚNG +1 S / +1 tong. `tong` 2412 trùng `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 35, B: 8, C: 453, D: 1203, S: 713, tong: 2412 } as const;
+// 2026-10-26 gỡ gán (UX Trung tâm Model): +1 mutation aiGguf.soModelGoGan (nhóm D: ghi cấu hình model toàn hệ thống, admin) ⇒ D 1203→1204 · tong 2411→2412.
+// 2026-10-26 Đợt 10.1 (do-model): +1 C aiChonModel.danhMuc (query danh mục model — đọc sổ model/cấu hình, không đọc dữ liệu tenant theo id người gọi khai) ⇒ C 454, tong 2412.
+// 2026-10-26 dieu-phoi GỘP hai nhánh: D 1204 (soModelGoGan) + C 454 (aiChonModel.danhMuc) ⇒ tong 2413 (đo trên cây gộp).
+// 2026-10-26 Đợt 10.3 (do-model): +3 D aiNgoai.taoKhoa|xoayKhoa|thuHoiKhoa; +1 S aiNgoai.dsKhoa (nhaMayNgoaiTrongPhamVi); aiSettings.listApiKeys C → S
+//   (ai_api_keys nay có factoryId — mig 0414 — nên là bảng tenant; lọc locKhoaApiTrongPhamVi) ⇒ C 453, D 1206, S 714, tong 2416.
+// 2026-10-26 dieu-phoi GỘP 10.3 (tới Task 7) vào main 84a308ee6 — ghim ĐO trên cây gộp.
+// 2026-10-26 Đợt 10.3 Task 8: +5 D (ghiCauHinh, datModel, datHostNoiBo, xemNoiDung, duyetNgoai) + 3 S (cauHinh, dsModel, dsHostNoiBo — nhaMayNgoaiTrongPhamVi) ⇒ D 1211, S 717, tong 2424.
+// 2026-10-26 do-model gộp main 84a308ee6: soModelGoGan D +1 với Đợt 10.3 ⇒ đo trên cây gộp.
+// ★★ 2026-10-26 · scada-master GỘP main a03700211 vào feat/scada-r1b2b — ĐO trên cây gộp: main {A 35, B 8, C 453, D 1212, S 717, tong 2425} + nhánh S +1 (`scadaCommands.mayDungKhanCap`) ⇒ S 718, tong 2426.
+const GHIM = { A: 35, B: 8, C: 453, D: 1212, S: 718, tong: 2426 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

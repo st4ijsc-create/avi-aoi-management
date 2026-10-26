@@ -37,6 +37,8 @@ export interface VetModel {
   /** Token THẬT của lời gọi (điền SAU khi model trả lời — cùng đối tượng đã ghi vào vết; vắng = đường không báo / lời gọi lỗi). */
   tokVao?: number;
   tokRa?: number;
+  /** ★ Đợt 10.1 — nhà cung cấp khi model là AI NGOÀI (10.3); vắng = model local. */
+  nhaCungCap?: string;
 }
 
 export interface NguCanhChay {
@@ -62,6 +64,15 @@ export interface NguCanhChay {
   kiemPhamVi?: BoKiemPhamVi;
   /** Đợt 9 — node AI báo model thực chạy (động cơ / chạy thử gắn; vắng ⇒ bỏ qua). */
   ghiModel?: (v: VetModel) => void;
+  /**
+   * ★ Đợt 10.3 — MỨC DỮ LIỆU của lượt (taint theo lượt, đơn điệu — `ai/ngoai/phanLoai.ts`). Động cơ gắn bằng `ganMucDuLieu`
+   * (KHÔNG liệt kê, KHÔNG ghi đè ⇒ node không hạ được). Vắng ⇒ cổng AI ngoài coi là `van-hanh` (fail-closed).
+   */
+  readonly mucDuLieu?: () => Promise<"ky-thuat" | "van-hanh">;
+  /** ★ Đợt 10.3 — nhà máy CHỦ LUỒNG (`null` = luồng toàn hệ thống); vắng ⇒ ngoài lượt chạy thật (chạy thử). */
+  nhaMayLuong?: number | null;
+  /** ★ Đợt 10.3 — nhà máy trong phạm vi chủ lượt (dữ liệu vận hành có thể đến từ đó). */
+  nhaMayPhamViChu?: () => Promise<number[]>;
 }
 
 export type KetQuaChay = Record<string, ItemLuong[]>;

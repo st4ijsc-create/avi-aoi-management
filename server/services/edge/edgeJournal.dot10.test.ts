@@ -517,25 +517,52 @@ describe("doc 81 Đợt 10 E — edge journal: bounds + compaction", () => {
     await j.close();
   });
 
-  it("★ R-10-ag: appends on a FULL journal stay O(1) — 10 000 appends, bounded time, nothing rewritten", async () => {
+  it("★ R-10-ag: appends on a FULL journal stay O(1) — 3 000 appends, constant work per append, nothing rewritten (counted, not timed)", async () => {
     const dir = await tmp();
-    const r = recordingIo();
-    const writes: number[] = [];
-    const io: EdgeJournalIo = { ...r.io, writeFileAtomic: async (f, d) => (writes.push(d.length), nodeEdgeJournalIo.writeFileAtomic(f, d)) };
+    // O(1) is asserted by COUNTING the work the journal asks of the disk (same run, no wall clock — a wall-clock bound failed at 18 s on a 99 %-CPU machine):
+    // a journal that re-read / rewrote the un-acked records on each append would grow these counters with N (quadratic), not with the records themselves.
+    const c = { atomicCalls: 0, atomicBytes: 0, maxAtomic: 0, appendBytes: 0, appendCalls: 0, reads: 0, readBytes: 0, truncates: 0, otherFs: 0 };
+    const io: EdgeJournalIo = {
+      ...nodeEdgeJournalIo,
+      writeFileAtomic: async (f, d) => (c.atomicCalls++, (c.atomicBytes += d.length), (c.maxAtomic = Math.max(c.maxAtomic, d.length)), nodeEdgeJournalIo.writeFileAtomic(f, d)),
+      readFile: async (f) => {
+        const d = await nodeEdgeJournalIo.readFile(f);
+        c.reads++;
+        c.readBytes += d.length;
+        return d;
+      },
+      truncate: async (f, n) => (c.truncates++, nodeEdgeJournalIo.truncate(f, n)),
+      rename: async (f, t) => (c.otherFs++, nodeEdgeJournalIo.rename(f, t)),
+      unlink: async (f) => (c.otherFs++, nodeEdgeJournalIo.unlink(f)),
+      readdir: async (d) => (c.otherFs++, nodeEdgeJournalIo.readdir(d)),
+      openAppend: async (f) => {
+        const h = await nodeEdgeJournalIo.openAppend(f);
+        return {
+          write: async (data: string) => (c.appendCalls++, (c.appendBytes += data.length), h.write(data)),
+          sync: () => h.sync(),
+          close: () => h.close(),
+        };
+      },
+    };
     const j = await EdgeJournal.open({ dir, io, maxBytes: 2_000, segmentMaxBytes: 64 * 1024, groupCommitMs: 5 });
     for (let n = 0; n < 5_000 && !j.isFull(); n++) await j.appendRun(9, 2, step("fill"));
     expect(j.isFull()).toBe(true);
-    writes.length = 0;
-    const t0 = Date.now();
-    await Promise.all(Array.from({ length: 10_000 }, (_, k) => j.appendEvent({ kind: "anomaly", code: "BENCH", runId: null, detail: String(k), at: 1 })));
-    const took = Date.now() - t0;
+    for (const k of Object.keys(c) as (keyof typeof c)[]) c[k] = 0;
+    const N = 3_000;
+    await Promise.all(Array.from({ length: N }, (_, k) => j.appendEvent({ kind: "anomaly", code: "BENCH", runId: null, detail: String(k), at: 1 })));
+    console.log("R-10-ag counters", JSON.stringify(c));
     expect(j.isFull()).toBe(true);
-    expect(took).toBeLessThan(15_000);
-    // nothing un-acknowledged was ever rewritten: only new (empty) segment files + snapshots, never a record body
-    expect(writes.every((len) => len === 0 || len < 20_000)).toBe(true);
-    expect(j.pending("events").length).toBe(10_000);
+    // the bytes appended are the new records themselves (linear in N: ~150-250 B each) — not N x journal size
+    expect(c.appendBytes).toBeLessThan(N * 400);
+    // nothing un-acknowledged was ever rewritten: no record body in an atomic write, and the atomic writes do not add up to a rewrite per append
+    expect(c.maxAtomic).toBeLessThan(20_000);
+    expect(c.atomicBytes).toBeLessThan(N * 20);
+    // the journal does not re-read its own segments per append
+    expect(c.readBytes).toBeLessThan(N * 20);
+    expect(c.reads + c.truncates + c.otherFs).toBeLessThan(N / 10);
+    expect(j.pending("events").length).toBe(N);
     await j.close();
-  }, 30_000);
+  }, 120_000);
 
   it("★ compaction drops only fully-acknowledged segments; a clean restart neither loses nor resends acked records", async () => {
     const dir = await tmp();

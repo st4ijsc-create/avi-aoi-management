@@ -27,22 +27,33 @@ import type { TinNhan, WireTool, WireToolCall } from "../../../../shared/agentCo
 import { danhGiaThamSo, type ItemLuong } from "../../../../shared/flow/bieuThuc";
 import { LOAI_AGENT } from "../../../../shared/flow/model";
 import { dangKyNut, nguCanhItem, type NguCanhChay } from "../dangKyNut";
-import { HE_THONG_CHUNG, LoiNutAi, VAI_TRO_TASK, boc } from "./ai";
+import { HE_THONG_CHUNG, LoiNutAi, VAI_TRO_TASK, boc, diemModel, giaiChonModelNut, goiCongNgoaiHienHanh, nguNgoaiTuLuot } from "./ai";
+import type { VetModel } from "../dangKyNut";
 import { kiemGoiLuongCon } from "./luong";
 import type { TimTaiLieu } from "../../ai/agent/timTaiLieuAgent";
 // Module LÁ — chữ cuối của agent thành dữ liệu luồng; chuỗi suy luận KHÔNG BAO GIỜ đi theo (và không bao giờ thành lệnh).
 import { stripThinking } from "../../ai/thinkingStrip";
 
-export type HamGoiAgent = (y: { vaiTro: string; tinNhan: TinNhan[]; congCu: WireTool[]; maxTokens: number; ngu: NguCanhChay }) => Promise<{ chu: string; toolCalls: WireToolCall[] }>;
+export type HamGoiAgent = (y: {
+  vaiTro: string;
+  tinNhan: TinNhan[];
+  congCu: WireTool[];
+  maxTokens: number;
+  ngu: NguCanhChay;
+  /** ★ Đợt 10.1 — model đã giải từ `thamSo.chonModel` (THÔ); vắng ⇒ định tuyến vai trong phạm vi luồng. */
+  chon?: { modelId: string | undefined };
+}) => Promise<{ chu: string; toolCalls: WireToolCall[] }>;
 
 /** Mặc định: Cổng AI (`routeInference`, audit `flow_agent`) + engine tool-calling GỐC (`chatCompletion({ tools })`). */
-let goiAgent: HamGoiAgent = async ({ vaiTro, tinNhan, congCu, maxTokens }) => {
+let goiAgent: HamGoiAgent = async ({ vaiTro, tinNhan, congCu, maxTokens, ngu, chon }) => {
   const [{ routeInference }, { chatCompletion }, { resolveLogicalModel }] = await Promise.all([
     import("../../aiGateway"),
     import("../../aiGgufEngine"),
     import("../../ai/modelResolver"),
   ]);
-  const modelId = resolveLogicalModel(vaiTro);
+  // ★ Đợt 10.1 A4 — cùng định tuyến như `goiAi` của node AI: phạm vi flow + bề mặt `luong` (gán theo luồng thắng gán toàn cục)
+  //   và `khongDoiKhe` (vai nhẹ của lượt nền không kéo đổi khe nặng). Trước A4 node này gọi `resolveLogicalModel(vaiTro)` trần.
+  const modelId = chon ? chon.modelId : resolveLogicalModel(vaiTro, { phamVi: { flowId: ngu.flowId, beMat: "luong" }, khongDoiKhe: true });
   const cuoi = tinNhan[tinNhan.length - 1];
   const { result } = await routeInference(
     { task: VAI_TRO_TASK[vaiTro] ?? "chat", text: cuoi?.content ?? "", auditTask: "flow_agent" },
@@ -148,6 +159,91 @@ async function chayToolLuong(ngu: NguCanhChay, k: KhaiToolLuong, thamSo: Record<
   return { ok: false, chu: `[error] luồng ${k.flowId} kết thúc '${kq.status}'${kq.thongDiep ? `: ${kq.thongDiep}` : ""}` };
 }
 
+/** Luồng con hạng `thuan` / `doc` (hạng tính LÚC GỌI qua `kiemGoiLuongCon`) + tra tài liệu; con lỗi / hạng cao ⇒ bỏ khỏi tập cấp. */
+async function locCongCuNgoai(ngu: NguCanhChay, khai: KhaiToolLuong[], congCu: WireTool[]): Promise<WireTool[]> {
+  const { schemaHoTro } = await import("../../ai/ngoai/congNgoai");
+  const ra: WireTool[] = [];
+  for (const c of congCu) {
+    // Schema ngoài tập con cổng kiểm được (tham số mảng / đối tượng) ⇒ KHÔNG cấp (cấp rồi bị từ chối mọi lời gọi là hỏng im lặng).
+    if (!schemaHoTro(c.function.parameters)) continue;
+    if (c.function.name === TOOL_TRA_TAI_LIEU) {
+      ra.push(c);
+      continue;
+    }
+    const k = khai.find((x) => toolTuLuongCon(x).function.name === c.function.name);
+    if (!k) continue;
+    try {
+      const kiem = await kiemGoiLuongCon(ngu, k.flowId, typeof k.version === "number" ? k.version : undefined);
+      if (kiem.hang === "thuan" || kiem.hang === "doc") ra.push(c);
+    } catch {
+      /* không gọi được ⇒ không cấp */
+    }
+  }
+  return ra;
+}
+
+/** Mức TĨNH của luồng con vừa chạy làm công cụ (đọc lỗi ⇒ `van-hanh`). */
+async function mucLuongCon(ngu: NguCanhChay, k: KhaiToolLuong | undefined): Promise<"ky-thuat" | "van-hanh"> {
+  if (!k) return "van-hanh";
+  try {
+    const kiem = await kiemGoiLuongCon(ngu, k.flowId, typeof k.version === "number" ? k.version : undefined);
+    const [{ mucTinhCuaDinhNghia }, { getDb }, { aiFlowVersions }, { and, eq }] = await Promise.all([
+      import("../../ai/ngoai/phanLoai"),
+      import("../../../db/connection"),
+      import("../../../../drizzle/schema"),
+      import("drizzle-orm"),
+    ]);
+    return await mucTinhCuaDinhNghia(kiem.def, async (flowId, version) => {
+      const db = await getDb();
+      if (!db) return null;
+      const [v] = await db.select({ d: aiFlowVersions.definition }).from(aiFlowVersions).where(and(eq(aiFlowVersions.flowId, flowId), eq(aiFlowVersions.version, version)));
+      return v ? (v.d as never) : null;
+    });
+  } catch {
+    return "van-hanh";
+  }
+}
+
+/**
+ * ★ Đợt 10.3 — MỘT lượt model NGOÀI qua cổng: lịch sử chuyển thành tin nhắn chữ (lời gọi công cụ cũ ghi thành dòng mô tả, kết quả
+ * công cụ là tin `tool`); cổng kiểm toolCalls trả về theo tập ĐÃ CẤP (`NGOAI_TOOL_KHONG_CAP` ⇒ node dừng). Mức dữ liệu MỖI lượt =
+ * mức lượt chạy ∪ kết quả tool đã ghép.
+ */
+async function goiAgentNgoai(
+  dich: { nhaCungCap: string; model: string },
+  tinNhan: TinNhan[],
+  congCu: WireTool[],
+  ngu: NguCanhChay,
+  mucTool: () => readonly ("ky-thuat" | "van-hanh")[],
+): Promise<{ chu: string; toolCalls: WireToolCall[] }> {
+  const ds = tinNhan.map((m) => ({
+    vaiTro: m.role as "system" | "user" | "assistant" | "tool",
+    noiDung:
+      m.role === "assistant" && m.tool_calls?.length
+        ? `${m.content ?? ""}${m.content ? "\n" : ""}${m.tool_calls.map((c) => `[gọi công cụ ${c.function.name} ${c.function.arguments ?? "{}"}]`).join("\n")}`
+        : String(m.content ?? ""),
+    ...(m.role === "tool" && m.name ? { tenTool: m.name } : {}),
+  }));
+  let kq;
+  try {
+    kq = await goiCongNgoaiHienHanh({
+      dich,
+      tinNhan: ds,
+      congCu: congCu.map((c) => ({ ten: c.function.name, moTa: c.function.description ?? "", schema: c.function.parameters })),
+      maxTokens: 2000,
+      mucDich: "flow_agent",
+      ngu: nguNgoaiTuLuot(ngu, mucTool),
+    });
+  } catch (e) {
+    const ma = (e as { ma?: unknown })?.ma;
+    throw new LoiNutAi(`ai.agent — AI ngoài: ${typeof ma === "string" ? ma : e instanceof Error ? e.message : String(e)}`);
+  }
+  return {
+    chu: stripThinking(kq.noiDung).answer,
+    toolCalls: kq.toolCalls.map((c, i) => ({ id: `ngoai_${Date.now().toString(36)}_${i}`, type: "function", function: { name: c.ten, arguments: JSON.stringify(c.thamSo ?? {}) } })) as WireToolCall[],
+  };
+}
+
 async function chayToolTraTaiLieu(thamSo: Record<string, unknown>): Promise<{ ok: boolean; chu: string }> {
   const tim = timTaiLieu ?? (await import("../../ai/agent/timTaiLieuAgent")).timTaiLieuMacDinh;
   const kq = await tim({ query: String(thamSo.query ?? "").slice(0, 500), corpus: "all", vaiTro: "engineer", k: 5 });
@@ -181,6 +277,10 @@ dangKyNut({
     if (theoTen.size !== congCu.length) throw new LoiNutAi("ai.agent: hai luồng con trùng tên tool");
     if (thamSo.traTaiLieu === true) congCu.push(TOOL_KB);
     const soLuot = Math.min(10, Math.max(1, Math.round(Number(thamSo.soLuotToiDa ?? 6)) || 6));
+    // ★ Đợt 10.1 — `chonModel` THÔ (không qua biểu thức), giải MỘT lần cho node; lạ ⇒ lỗi node.
+    const chon = await giaiChonModelNut(thamSo.chonModel, ngu);
+    // ★ Đợt 10.3 — model NGOÀI: chỉ luồng con hạng `thuan` / `doc` + tra tài liệu (AI ngoài không bao giờ tới thiết bị / ghi ra ngoài).
+    const congCuDung = chon?.ngoai ? await locCongCuNgoai(ngu, khai, congCu) : congCu;
     const ra: ItemLuong[] = [];
     for (const item of vao) {
       const t = danhGiaThamSo({ loiNhac: thamSo.loiNhac, heThong: thamSo.heThong, vaiTro: thamSo.vaiTro, truongRa: thamSo.truongRa }, nguCanhItem(ngu, item, vao)) as Record<string, unknown>;
@@ -195,10 +295,24 @@ dangKyNut({
         { role: "user", content: String(t.loiNhac ?? "") },
       ];
       const nhatKy: { ten: string; ok: boolean }[] = [];
+      /** ★ Đợt 10.3 — mức dữ liệu các kết quả tool ĐÃ ghép vào hội thoại (phân loại THEO TỪNG LƯỢT gọi model ngoài). */
+      const mucTool: Array<"ky-thuat" | "van-hanh"> = [];
       let traLoi = "";
       let ketThuc: "hoan-thanh" | "het-luot" = "het-luot";
       for (let luot = 1; luot <= soLuot; luot++) {
-        const r = await goiAgent({ vaiTro, tinNhan, congCu, maxTokens: 2000, ngu });
+        // ★ Đợt 10.1 A4 — vết `buoc.model` MỖI lượt model (như `goiAiCoVet`); lỗi vết không làm hỏng node.
+        let vet: VetModel | undefined;
+        if (ngu.ghiModel) {
+          try {
+            vet = chon ? { ...chon.vet, lyDo: [...chon.vet.lyDo] } : await diemModel(vaiTro, ngu);
+            ngu.ghiModel(vet);
+          } catch {
+            /* vết là thông tin phụ */
+          }
+        }
+        const r = chon?.ngoai
+          ? await goiAgentNgoai(chon.ngoai, tinNhan, congCuDung, ngu, () => mucTool)
+          : await goiAgent({ vaiTro, tinNhan, congCu, maxTokens: 2000, ngu, ...(chon ? { chon: { modelId: chon.modelId } } : {}) });
         const chu = boThink(r.chu ?? "");
         if (!r.toolCalls?.length) {
           traLoi = chu;
@@ -220,6 +334,7 @@ dangKyNut({
             kq = { ok: false, chu: `[error] không có công cụ '${ten.slice(0, 60)}' — chỉ dùng: ${[...congCu.map((c) => c.function.name)].join(", ") || "(không có)"}` };
           }
           nhatKy.push({ ten: ten.slice(0, 60), ok: kq.ok });
+          if (chon?.ngoai) mucTool.push(ten === TOOL_TRA_TAI_LIEU ? "van-hanh" : await mucLuongCon(ngu, theoTen.get(ten)));
           tinNhan.push({ role: "tool", tool_call_id: goi.id, name: ten.slice(0, 60), content: cat(kq.chu) });
         }
       }

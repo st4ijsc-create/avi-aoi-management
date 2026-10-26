@@ -11,6 +11,7 @@
  *     failed attempt's session is released BEFORE the fallback opens one; a release that does not finish ⇒ no second session;
  *   • I3 / R-9-e — a set latch is persisted with "since when", cleared on reset, survives a restart, reaches health.
  */
+import { batDauDoLag } from "../../../testing/doLagBucleSuKien";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.hoisted(() => {
   process.env.OAUTH_SERVER_URL ??= "http://127.0.0.1:9/oauth-unused";
@@ -212,9 +213,11 @@ describe("U fix 1 (M1) — retry + fallback fit one budget, never two sessions",
   it("★ a server that refuses SLOWLY (≈ half the budget): the poll is still DECIDED (fallback read in the same budget), the attempt's session released first", async () => {
     const d = fakeDriver({ subscribeDelayMs: 150, failSubscribe: "BadTooManySubscriptions" });
     const { b, polls } = backend([d], { timeoutMs: 400 }); // budget 360: subscribe ≤ 180
+    const lag = batDauDoLag();
     const t0 = Date.now();
     const r = await b.readBatch();
-    expect(Date.now() - t0).toBeLessThan(400);
+    const troi = Date.now() - t0;
+    expect(troi).toBeLessThan(400 + (await lag.dung(60))); // + the time this process was not scheduled (same run)
     expect(r.mode).toBe("poll_fallback");
     expect(r.reads[0]).not.toHaveProperty("error");
     expect(polls).toHaveLength(1);
@@ -236,9 +239,11 @@ describe("U fix 1 (M1) — retry + fallback fit one budget, never two sessions",
   it("★ a HUNG subscribe attempt is cut at half the budget: the batch returns within the budget (the poller's race never drops it), no second session", async () => {
     const d = fakeDriver({ subscribeDelayMs: 60_000 });
     const { b, polls } = backend([d], { timeoutMs: 400 }); // budget 360 ⇒ the attempt gets 180
+    const lag = batDauDoLag();
     const t0 = Date.now();
     const r = await b.readBatch();
-    expect(Date.now() - t0).toBeLessThan(360);
+    const troi = Date.now() - t0;
+    expect(troi).toBeLessThan(360 + (await lag.dung(60))); // + the time this process was not scheduled (same run)
     expect(r.mode).toBe("poll_fallback");
     expect(r.reads).toEqual([{ error: expect.stringMatching(/still closing — no second session/) }]); // the attempt has not settled
     expect(polls).toHaveLength(0);

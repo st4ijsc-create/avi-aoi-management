@@ -59,9 +59,10 @@ export type VaiTroTacNhan = "code.plc" | "code.software";
 
 /** Thông tin model của lượt chạy — đi vào sự kiện `bat-dau` (UI hiện "đang chạy 27B vì dự án PLC"). */
 export interface ThongTinModelLuotChay {
-  vaiTro: VaiTroTacNhan;
+  /** Vai của tác nhân (`code.plc` / `code.software`), hoặc — Đợt 10.1 — vai / `ho-so` người dùng chọn tường minh. */
+  vaiTro: VaiTroTacNhan | (string & {});
   model: string | null;
-  nguon: KetQuaDinhTuyen["nguon"];
+  nguon: KetQuaDinhTuyen["nguon"] | "chon-tuong-minh"; // Đợt 10.1: hồ sơ người dùng chọn tường minh (giaiChonModel)
   bangChung: string;
 }
 
@@ -127,11 +128,18 @@ export async function giaiModelTheoVaiTro(
 }
 
 export async function chuanBiLuotChayTheoVaiTro(
-  y: { cauHoi: string; gocDuAn: string; projectId: string; user: { id: number; role: string } },
+  y: {
+    cauHoi: string;
+    gocDuAn: string;
+    projectId: string;
+    user: { id: number; role: string };
+    /** ★ Đợt 10.1 — model người dùng CHỌN TƯỜNG MINH (đã giải bằng `giaiChonModel`) ⇒ bỏ bộ chọn vai của tác nhân, vẫn qua cổng. */
+    modelChon?: { modelId: string | undefined; thongTin: ThongTinModelLuotChay };
+  },
   p: PhuThuocVaiTro,
 ): Promise<KetQuaChuanBi> {
   const env = p.env ?? process.env;
-  const g = await giaiModelTheoVaiTro(y, p);
+  const g = y.modelChon ? ({ ok: true, modelId: y.modelChon.modelId, thongTin: y.modelChon.thongTin } as const) : await giaiModelTheoVaiTro(y, p);
   if (!g.ok) return { ok: false, ma: "AI_KHONG_CO_MODEL", thongDiep: g.thongDiep, thongTin: g.thongTin };
   const { thongTin } = g;
   const r = { model: g.modelId };

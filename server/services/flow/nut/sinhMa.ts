@@ -70,7 +70,7 @@ dangKyNut({
       let ma = "";
       let bienDich: { ok: boolean; chanDoan: ChanDoanST[]; soVong: number } | null = null;
       for (let vong = 1; vong <= (kiem ? 1 + nSua : 1); vong++) {
-        const chu = await goiAiHienHanh({ vaiTro, heThong, nguoiDung, nghi: false, maxTokens: 4000, loai: "sinh-ma", ngu });
+        const chu = await goiAiHienHanh({ vaiTro, heThong, nguoiDung, nghi: false, maxTokens: 4000, loai: "sinh-ma", ngu, chonModel: thamSo.chonModel });
         ma = trichKhoiMa(chu);
         if (!kiem) break;
         const kq = await bienDichST(ma);

@@ -14,6 +14,7 @@ import { danhGiaThamSo, type ItemLuong } from "../../../../shared/flow/bieuThuc"
 import { dangKyNut, nguCanhItem, type KetQuaChay, type NguCanhChay } from "../dangKyNut";
 import { LoiHttpLuong, docThanCoTran, kiemDichDen, type DichDen } from "./mangAnToan";
 import { layFetchLuong, tieuDeXacThuc } from "./tichHop";
+import { chanHostAiNgoai, hostChanThemEnv as hostChanThem, laHostAiNgoai } from "../../ai/ngoai/hostAiNgoai";
 
 export const TRAN_ITEM_MCP = 20;
 export const TRAN_THAN_MCP = 1024 * 1024;
@@ -65,6 +66,8 @@ export function mayChuMcpChoPhep(env: NodeJS.ProcessEnv = process.env): Map<stri
       continue;
     }
     if ((u.protocol !== "http:" && u.protocol !== "https:") || u.username || u.password) continue;
+    // Đợt 10.3 B4 — máy chủ MCP khai tới host AI ngoài ⇒ bỏ mục (lúc gọi còn kiểm tên + IP đã ghim với tập động).
+    if (laHostAiNgoai(u.hostname, hostChanThem(env))) continue;
     const tools = m.tools.filter((x): x is string => typeof x === "string" && RE_TEN_TOOL_MCP.test(x)).slice(0, 50);
     if (!tools.length) continue;
     ra.set(ten, { url: u, tools: new Set(tools), noiBo: m.noiBo === true });
@@ -141,6 +144,7 @@ async function goiMotLan(tenMay: string, may: MayChuMcp, tool: string, doiSo: Re
   const congHT = may.url.port || (may.url.protocol === "https:" ? "443" : "80");
   const choPhep = new Set([may.noiBo ? `${may.url.hostname.toLowerCase()}:${congHT}` : may.url.hostname.toLowerCase()]);
   const dich = await kiemDichDen(may.url, choPhep);
+  await chanHostAiNgoai(may.url, dich);
   const gui = layFetchLuong() as HamGuiMcp;
   const tinHieu = AbortSignal.timeout(Math.max(1, Math.min(TRAN_MS_MCP, msToiDa)));
   let phien: string | undefined;

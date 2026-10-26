@@ -144,7 +144,10 @@ async function underHeldLock<T>(writers: Array<() => Promise<T>>): Promise<Promi
   const t0 = Date.now();
   while (Date.now() - t0 < 5000) {
     blocked = await backendsBlockedBy(holderPid);
-    if (blocked.length >= writers.length) break;
+    // ★ ĐỎ KHI CHẠY SONG SONG (kiem-dinh 2026-10-26): `pg_blocking_pids` là trạng thái SỐNG còn `wait_event_type` lấy từ ảnh chụp pg_stat_activity — hai nguồn không cùng
+    // một thời điểm; một backend vừa bị chặn (có trong chuỗi chặn) nhưng ảnh chụp còn ghi wait_event_type NULL ⇒ khẳng định "mọi writer đang chờ Lock" thấy NULL một nhịp.
+    // Chờ tới khi CẢ HAI cùng đúng (cùng cửa sổ 5 s); không bao giờ đúng ⇒ các khẳng định bên dưới vẫn đỏ với ảnh chụp cuối.
+    if (blocked.length >= writers.length && blocked.every((b) => b.waitEventType === "Lock")) break;
     await sleep(25);
   }
   expect(blocked.length, `writers blocked behind the holder (pid ${holderPid})`).toBe(writers.length);

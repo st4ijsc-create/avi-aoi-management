@@ -35,7 +35,7 @@ import express, {
   type Response,
   type Express,
 } from "express";
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { requireServiceIdentity } from "../services/security/requireServiceIdentity";
 import { huyKhiClientBoDi } from "./_huyKhiClientBoDi"; // final wave item 2 — huỷ khi client bỏ đi (res.on("close"))
 import {
@@ -70,6 +70,7 @@ import { xacThucTokenNguoiDung, ghiDungLanCuoi, type KetQuaXacThucToken } from "
 import { TIEN_TO_TOKEN, phamViCuaDuong } from "../services/ai/gatewayToken/maToken";
 import { TU_CHOI_TOKEN, loaiLoiTheoMa } from "../services/ai/gatewayToken/tuChoiToken";
 import { redactSecretsAndPII, StreamingSecretRedactor } from "../services/ai/aiSafety";
+import { kiemTranV1 } from "../services/ai/tranDauVao";
 // ★ G5-E — bộ cắt chuỗi suy luận. Module LÁ (0 import, 0 I/O) nên import TĨNH được từ đây với chi
 // phí ~0 ⇒ hàng rào là vô điều kiện theo CẤU TẠO, không phụ thuộc một `await import()` trong try.
 // ⚠ THỨ TỰ BẮT BUỘC: cắt thẻ TRƯỚC — che bí mật SAU. Cắt thẻ là phép XOÁ nên nó NỐI LIỀN hai đoạn
@@ -82,7 +83,7 @@ import { stripThinking, StreamingThinkingStripper } from "../services/ai/thinkin
 // for the full STEP 0 comparison / reconciliation notes, incl. the one deliberately-fixed "fim"
 // fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
 import { defaultModelBasename, resolveLogicalModel, toBasename } from "../services/ai/modelResolver";
-import { kiemModelV1, thongDiepLoiChoKhachV1 } from "../services/ai/kiemModelV1";
+import { kiemModelV1, thongDiepLoiChoKhachV1, THONG_DIEP_MODEL_KHONG_HOP_LE } from "../services/ai/kiemModelV1";
 import { cheDoKiemBienDichV1, kiemVaSuaST, nhanKiemBienDich, tranMsVongSuaST, type KetQuaKiemBienDichST } from "../services/ai/st/kiemBienDichSt";
 import { auditKiemBienDich, headerKiemBienDich } from "../services/ai/st/auditKiemBienDich";
 import { trichMaST } from "../services/ai/st/trichMaST";
@@ -391,6 +392,142 @@ function apTranDoiKhe(res: Response, modelId: string | undefined): string | unde
   });
   if (kq.doi && !res.headersSent) res.setHeader("x-st4i-khe", "tran-doi-khe-token");
   return kq.model;
+}
+
+/**
+ * ★ Đợt 10.1 A2 — `model` là MÃ DANH MỤC (`vai-tro:` / `ho-so:` / `ngoai:`) ⇒ giải bằng hợp đồng chung `giaiChonModel`.
+ * `undefined` = không phải mã danh mục (đường cũ); `null` = đã trả lỗi cho client. `ngoai:` ⇒ 404 tới khi 10.3 nối cổng
+ * AI ngoài (chưa có danh mục ngoài ⇒ `giaiChonModel` đã NOT_FOUND).
+ */
+interface DichNgoaiV1 {
+  nhaCungCap: string;
+  model: string;
+  userId: number;
+  factoryId: number;
+}
+
+/**
+ * ★ Đợt 10.3 — nhà máy của NGƯỜI GỌI /v1 cho model ngoài: chỉ token người dùng (key chung không gắn người ⇒ null ⇒ NOT_FOUND), và chỉ
+ * khi người đó thuộc ĐÚNG MỘT nhà máy (toàn quyền / nhiều nhà máy ⇒ chưa xác định chủ dữ liệu ⇒ null).
+ */
+async function nhaMayNguoiGoiV1(res: Response): Promise<{ userId: number; factoryId: number } | null> {
+  const ng = nguoiGoi(res);
+  if (!ng || ng.kieu !== "token") return null;
+  const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+  const { factoryIds } = await resolveTenantFactoryScope({ userId: ng.userId, userRole: ng.role });
+  return factoryIds && factoryIds.length === 1 ? { userId: ng.userId, factoryId: factoryIds[0]! } : null;
+}
+
+async function giaiMaDanhMucV1(
+  res: Response,
+  ma: string,
+  choNgoai = false,
+): Promise<{ nhan: string; modelId: string | undefined; ngoai?: DichNgoaiV1 } | null | undefined> {
+  if (!/^(vai-tro|ho-so|ngoai):/.test(ma)) return undefined;
+  const [{ giaiChonModel }, { layPhuThuocDanhMucMacDinh }, { nguCanhKhe }] = await Promise.all([
+    import("../services/ai/chonModel/giaiChonModel"),
+    import("../services/ai/chonModel/danhMuc"),
+    import("../services/ai/modelResolver"),
+  ]);
+  try {
+    // ★ Đợt 10.3 — `ngoai:` ⇒ danh mục ngoài của nhà máy NGƯỜI GỌI (chủ API key); không xác định ⇒ danh mục rỗng ⇒ NOT_FOUND.
+    const nm = ma.startsWith("ngoai:") && choNgoai ? await nhaMayNguoiGoiV1(res) : null;
+    const dich = await giaiChonModel(ma, { beMatChu: true, factoryId: nm?.factoryId ?? null, kheBiKhoa: nguCanhKhe().kheBiKhoa }, await layPhuThuocDanhMucMacDinh());
+    if (dich?.loai === "ngoai" && nm) return { nhan: ma, modelId: undefined, ngoai: { nhaCungCap: dich.nhaCungCap, model: dich.model, ...nm } };
+    if (dich?.loai !== "local") {
+      jsonError(res, 404, "Model not found.", "invalid_request_error", "model_not_found");
+      return null;
+    }
+    return { nhan: dich.vaiTro === "ho-so" ? ma : dich.vaiTro, modelId: dich.modelId };
+  } catch (e) {
+    const code = (e as { code?: unknown })?.code;
+    if (code === "NOT_FOUND") jsonError(res, 404, "Model not found.", "invalid_request_error", "model_not_found");
+    else if (code === "BAD_REQUEST") jsonError(res, 400, (e as Error).message, "invalid_request_error", "model_not_found");
+    else throw e;
+    return null;
+  }
+}
+
+const HTTP_CUA_MA_TRPC: Record<string, number> = {
+  NOT_FOUND: 404,
+  BAD_REQUEST: 400,
+  FORBIDDEN: 403,
+  TOO_MANY_REQUESTS: 429,
+  SERVICE_UNAVAILABLE: 503,
+  BAD_GATEWAY: 502,
+  PAYLOAD_TOO_LARGE: 413,
+};
+
+/**
+ * ★ Đợt 10.3 (rà kiem-dinh mục 13) — `/v1/chat/completions` với `model: "ngoai:<ncc>:<model>"`: đi qua CÙNG cổng `goiAiNgoai` (che, trần,
+ * sổ, nhà máy theo chủ API key) — không có đường riêng. Không nhận `tools` (model ngoài không được cấp công cụ ở bề mặt này — 10.4
+ * mặc định bỏ công cụ ghi / chạy); phần không phải chữ (ảnh) ⇒ đính kèm ⇒ cổng từ chối. `stream` ⇒ MỘT mảnh + `[DONE]`.
+ * Lỗi trả MÃ (`NGOAI_*`), không nội dung chi tiết.
+ */
+async function traLoiNgoaiV1(res: Response, body: Record<string, unknown>, messages: Array<{ role?: unknown; content?: unknown }>, dich: DichNgoaiV1): Promise<void> {
+  if (Array.isArray(body.tools) && body.tools.length) {
+    jsonError(res, 400, "Tools are not supported with external models on /v1.", "invalid_request_error", "NGOAI_KHONG_HO_TRO_TOOL");
+    return;
+  }
+  const dinhKem: unknown[] = [];
+  const tinNhan = messages.map((m) => {
+    const role = m.role === "system" || m.role === "assistant" || m.role === "tool" ? m.role : "user";
+    let noiDung = "";
+    if (typeof m.content === "string") noiDung = m.content;
+    else if (Array.isArray(m.content)) {
+      for (const p of m.content as Array<{ type?: unknown; text?: unknown }>) {
+        if (p?.type === "text" && typeof p.text === "string") noiDung += p.text;
+        else dinhKem.push(p);
+      }
+    }
+    return { vaiTro: role as "system" | "user" | "assistant" | "tool", noiDung };
+  });
+  // Kẹp ở biên (cổng kẹp lần nữa theo trần model): rác / âm / 1e12 ⇒ không lọt xuống nhà cung cấp.
+  const maxTokens = typeof body.max_tokens === "number" && Number.isFinite(body.max_tokens) && body.max_tokens >= 1 ? Math.min(Math.floor(body.max_tokens), 32_000) : 1024;
+  // Rà kiem-dinh Task 8 B — lượt mang KẾT QUẢ TOOL (role tool/function, hoặc assistant có tool_calls) = dữ liệu tool cục bộ của
+  // nhà máy chủ token ⇒ mức `van-hanh` (cổng đòi `choDuLieuVanHanh`), không phải lời người dùng gõ.
+  const coKetQuaTool = messages.some(
+    (m) => m.role === "tool" || m.role === "function" || (m.role === "assistant" && (m as { tool_calls?: unknown }).tool_calls != null) || (m as { function_call?: unknown }).function_call != null,
+  );
+  const { goiAiNgoai } = await import("../services/ai/ngoai/congNgoai");
+  const { maTrpcCua } = await import("../services/ai/ngoai/loi");
+  let kq;
+  try {
+    kq = await goiAiNgoai({
+      dich: { nhaCungCap: dich.nhaCungCap, model: dich.model },
+      tinNhan,
+      ...(dinhKem.length ? { dinhKem } : {}),
+      maxTokens,
+      mucDich: "v1",
+      ngu: {
+        userId: dich.userId,
+        flowId: null,
+        runId: null,
+        tuDong: false,
+        nhaMayNguoiGoi: [dich.factoryId],
+        nhaMayChuDuLieu: coKetQuaTool ? [dich.factoryId] : [],
+        nguonMuc: { loai: "be-mat", beMat: "v1", phanDaGhep: coKetQuaTool ? ["van-hanh"] : [] },
+      },
+    });
+  } catch (e) {
+    const ma = (e as { ma?: unknown })?.ma;
+    if (typeof ma !== "string") throw e;
+    jsonError(res, HTTP_CUA_MA_TRPC[maTrpcCua(ma as never)] ?? 502, ma, "invalid_request_error", ma === "NGOAI_KHONG_TON_TAI" || ma === "NGOAI_TAT" ? "model_not_found" : ma);
+    return;
+  }
+  const id = `chatcmpl-${randomUUID()}`;
+  const created = nowUnix();
+  const model = `ngoai:${dich.nhaCungCap}:${dich.model}`;
+  const usage = { prompt_tokens: kq.tokenVao ?? 0, completion_tokens: kq.tokenRa ?? 0, total_tokens: (kq.tokenVao ?? 0) + (kq.tokenRa ?? 0) };
+  if (body.stream === true) {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.write(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model, choices: [{ index: 0, delta: { role: "assistant", content: kq.noiDung }, finish_reason: null }] })}\n\n`);
+    res.write(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage })}\n\n`);
+    res.write("data: [DONE]\n\n");
+    res.end();
+    return;
+  }
+  res.json({ id, object: "chat.completion", created, model, choices: [{ index: 0, message: { role: "assistant", content: kq.noiDung }, finish_reason: "stop" }], usage });
 }
 
 /**
@@ -997,6 +1134,12 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         jsonError(res, 400, "`messages` must be a non-empty array.");
         return;
       }
+      // Trần đầu vào ở cửa vào (kiem-dinh 2026-10-26, `tranDauVao.ts`): thân /v1 cho tới 20 MB nhưng context của model là 64k token.
+      const quaDai = kiemTranV1(messages);
+      if (!quaDai.ok) {
+        jsonError(res, 413, `Input too long (limit ${quaDai.tran} characters of message text).`, "invalid_request_error", "context_length_exceeded");
+        return;
+      }
       // Phần lạ KHÔNG phải ảnh báo trước (mã đúng loại); chỉ còn ảnh ⇒ mã ảnh.
       const phanLa = timPhanKhongHoTro(messages, true) ?? timPhanKhongHoTro(messages);
       // ★ Đợt 9 (2026-10-24) — ẢNH: kiểm hình dạng/trần trước, rồi hỏi khe có đọc được ảnh không (`/props`, `--mmproj`). Đọc được ⇒
@@ -1027,7 +1170,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // ★ M4 (audit kiem-dinh) — `model` chỉ là tên logic / vai trò / hồ sơ trong sổ / tên tệp TRONG GGUF_MODELS_DIR.
       const kiem = kiemModelV1(modelLabel);
       if (!kiem.ok) {
-        jsonError(res, 400, "Unknown model.", "invalid_request_error", "model_not_found");
+        jsonError(res, 400, THONG_DIEP_MODEL_KHONG_HOP_LE, "invalid_request_error", "model_not_found");
         return;
       }
       modelLabel = kiem.ten;
@@ -1043,7 +1186,15 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       }
       // ★ Đợt 9 (2026-10-23) — làm mới "khe đang giữ" TRƯỚC định tuyến vai trò (đổi khe ngoài tiến trình ⇒ lượt đầu bị từ chối oan).
       await (await import("../services/ai/soModel/kheNangMacDinh")).lamMoiKheDangGiu();
-      const modelId = apTranDoiKhe(res, resolveModelId(modelLabel));
+      // ★ Đợt 10.1 — mã danh mục (vai-tro:/ho-so:/ngoai:) ⇒ hợp đồng chung `giaiChonModel`.
+      const maDanhMuc = await giaiMaDanhMucV1(res, modelLabel, true);
+      if (maDanhMuc === null) return;
+      if (maDanhMuc?.ngoai) {
+        await traLoiNgoaiV1(res, body, messages, maDanhMuc.ngoai);
+        return;
+      }
+      if (maDanhMuc) modelLabel = maDanhMuc.nhan;
+      const modelId = apTranDoiKhe(res, maDanhMuc ? maDanhMuc.modelId : resolveModelId(modelLabel));
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : 0.7;
       const topP = Number.isFinite(body.top_p) ? Number(body.top_p) : undefined;
@@ -1521,13 +1672,16 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const kiem = kiemModelV1(typeof body.model === "string" && body.model ? body.model : isFim ? "fim" : "code");
       // ★ M4 (audit kiem-dinh) — như /chat/completions.
       if (!kiem.ok) {
-        jsonError(res, 400, "Unknown model.", "invalid_request_error", "model_not_found");
+        jsonError(res, 400, THONG_DIEP_MODEL_KHONG_HOP_LE, "invalid_request_error", "model_not_found");
         return;
       }
-      const modelLabel = kiem.ten;
+      let modelLabel = kiem.ten;
       // ★ Đợt 9 (2026-10-23) — làm mới "khe đang giữ" TRƯỚC định tuyến vai trò (đổi khe ngoài tiến trình ⇒ lượt đầu bị từ chối oan).
       await (await import("../services/ai/soModel/kheNangMacDinh")).lamMoiKheDangGiu();
-      const modelId = apTranDoiKhe(res, resolveModelId(modelLabel));
+      const maDanhMuc = await giaiMaDanhMucV1(res, modelLabel);
+      if (maDanhMuc === null) return;
+      if (maDanhMuc) modelLabel = maDanhMuc.nhan;
+      const modelId = apTranDoiKhe(res, maDanhMuc ? maDanhMuc.modelId : resolveModelId(modelLabel));
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : isFim ? 256 : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : isFim ? 0.2 : 0.7;
       const topP = Number.isFinite(body.top_p) ? Number(body.top_p) : undefined;
