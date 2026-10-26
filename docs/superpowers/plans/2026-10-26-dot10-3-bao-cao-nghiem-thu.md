@@ -69,6 +69,7 @@ Thứ tự bật cho một nhà máy. Không bước nào làm qua `.env` hay qu
 5. **Host nội bộ** cho máy chủ tương thích OpenAI trong mạng nhà máy (`aiNgoai.datHostNoiBo`, chỉ admin toàn hệ). Khai đúng `host:cổng`.
 6. **Luồng dùng model ngoài**: mỗi PHIÊN BẢN phải `aiNgoai.duyetNgoai`. Băm định nghĩa đổi ⇒ phải duyệt lại. Luồng toàn hệ thống không dùng được.
 7. **Bật cờ toàn cục** `AI_NGOAI_ENABLED=true` ở môi trường chạy (cổng 3000) — bước cuối.
+   - **Danh sách TRƯỚC KHI BẬT (kỹ thuật, bắt buộc — rà kiem-dinh):** bộ che chặn ba cách né khối 2–8 KB: (a) đoạn bảng base64/hex ≥ 2 000 ký tự bất kể ký tự dính hai bên; (b) ≥ 12 dòng liên tiếp ≥ 40 ký tự toàn bảng base64 (PEM / MIME không nhãn); (c) hex ngăn `:` / khoảng trắng ≥ 900 cặp — ĐÃ CÀI (commit sau `b837a99cd`), kèm lưới tuyến tính 25 họ. Chỉ bật sau khi commit này đã lên main.
 8. ⚠ `BUILT_IN_FORGE_API_URL` phải để RỖNG (hiện rỗng). Đặt nó = mở đường ra ngoài KHÔNG qua cổng — cần quyết định riêng (§12 tài liệu an ninh).
 9. ⚠ **Ảnh cho phân tích AI** (`annotation.analyzeImage`, `inspection.analyzeWithAI`): `imageUrl` dạng URL TUYỆT ĐỐI tới kho / máy NỘI BỘ — **kể cả chính server** (`http://localhost:3000/uploads/…`, `http://10.x/…`) — bị ĐÓNG (`anh-dich-cam`) cho tới khi khai `host:cổng` vào `AI_IMAGE_HOST_CHO_PHEP`. Khoá kho tệp / đường tương đối (`/uploads/…`) và `data:` không đi mạng ⇒ vẫn chạy. Ảnh http chỉ tải khi sidecar thị giác sẵn sàng.
 
@@ -78,6 +79,7 @@ Thứ tự bật cho một nhà máy. Không bước nào làm qua `.env` hay qu
 - Dịch vụ "forge" của khung gốc: không hoạt động (URL rỗng). Đặt URL cần chủ dự án quyết. Census giữ miễn trừ có ⚠.
 - URL máy suy luận "cục bộ" do quản trị đặt (`OLLAMA_BASE_URL`, `LLAMA_SERVER_URL`, KB API): cùng lớp rủi ro admin.
 - `kiemDichDen` luôn cấm link-local / metadata: **ĐỒNG Ý**.
+- **Bộ che — khối mã hoá dài, giới hạn đã biết (dieu-phoi quyết, không chặn):** sau `0aa62d6e6` vẫn LỌT ba dạng cố ý né — base64 chèn dòng trống giữa các dòng (hoặc mỗi 10 dòng), tiền tố trích dẫn `> ` mỗi dòng, hex ngăn `, `. Bộ che là rào chống NHẦM, không chống người cố ý né (spec §9).
 - Giới hạn của bộ che, taint theo lượt, văn bản người dùng tự dán = `ky-thuat`: xem spec §9.
 
 ## 7. Bàn giao cho 10.4 (luong-ui)
