@@ -1450,6 +1450,7 @@ export default function AICodingWorkspace() {
   //   (cùng đường trang dùng sau khi duyệt diff: `listFiles.invalidate` + `fileQ.refetch`). Hook giữ callback MỚI NHẤT qua ref.
   const agent = useLuotChayAgent({
     projectId,
+    chonModel, // ★ Đợt 10.2 — cùng ô chọn model với chế độ Hỏi
     ngonNgu: i18n.language?.startsWith("en") ? "en" : i18n.language?.startsWith("zh") ? "zh" : "vi",
     onTepDaDoi: (tep) => {
       void utils.repoWorkspace.listFiles.invalidate();
