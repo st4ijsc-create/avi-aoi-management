@@ -12,7 +12,7 @@ const DM: MucModel[] = [
   m("vai-tro:fim", "vai-tro"),
   m("vai-tro:vision", "vai-tro", "can-doi-khe", { uocTinhDoiKheGiay: 12.4 }),
   m("ho-so:abc", "ho-so", "tat"),
-  m("ngoai:openai-compat:gpt-x", "ngoai"),
+  m("ngoai:openai_compat:gpt-x", "ngoai"),
 ];
 
 function mem() {
@@ -29,7 +29,7 @@ describe("CHON_MODEL_RE — hợp đồng với máy chủ", () => {
     expect(CHON_MODEL_RE.source).toBe(new RegExp(mm![1].slice(1, -1)).source);
   });
   it("chấp nhận bốn dạng, từ chối biểu thức / rác", () => {
-    for (const ok of ["auto", "vai-tro:code.software", "ho-so:p1", "ngoai:openai-compat:gpt-x"]) expect(CHON_MODEL_RE.test(ok), ok).toBe(true);
+    for (const ok of ["auto", "vai-tro:code.software", "ho-so:p1", "ngoai:openai_compat:gpt-x"]) expect(CHON_MODEL_RE.test(ok), ok).toBe(true);
     for (const bad of ["", "{{ x }}", "vai-tro:", "AUTO", "ngoai:x", "ho-so:a b"]) expect(CHON_MODEL_RE.test(bad), bad).toBe(false);
   });
 });

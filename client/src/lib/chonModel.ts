@@ -19,7 +19,7 @@ export type BeMatChon = "chat" | "lap-trinh" | "agent" | "luong";
 
 /** Bản sao hình dạng hợp lệ của máy chủ (`CHON_MODEL_RE`) — census so khớp nguồn hai phía. */
 export const CHON_MODEL_RE =
-  /^(auto|vai-tro:[a-z][a-z0-9]*(\.[a-z0-9-]+)?|ho-so:[A-Za-z0-9._@-]{1,96}|ngoai:[a-z0-9-]{1,32}:[A-Za-z0-9._:-]{1,96})$/;
+  /^(auto|vai-tro:[a-z][a-z0-9]*(\.[a-z0-9-]+)?|ho-so:[A-Za-z0-9._@-]{1,96}|ngoai:[a-z0-9_-]{1,32}:[A-Za-z0-9._:-]{1,96})$/;
 
 /** Vai KHÔNG sinh chữ — ẩn khỏi mọi bề mặt hiện có (chat / lập trình / agent / node sinh chữ): máy chủ cũng từ chối (`beMatChu`). */
 export const VAI_KHONG_SINH_CHU: ReadonlySet<string> = new Set(["embed", "rerank", "vision", "fim"]);

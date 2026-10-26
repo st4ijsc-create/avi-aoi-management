@@ -21,7 +21,7 @@ const luong = (...nodes: ReturnType<typeof node>[]): any => ({
 
 describe("kiểm tĩnh lúc LƯU", () => {
   it("★ giá trị hợp lệ qua: auto · vai-tro · ho-so · ngoai:ncc:model (model có ':'); vắng / null ⇒ qua", () => {
-    for (const cm of ["auto", "vai-tro:chat", "vai-tro:code.software", "ho-so:qwen3.6-35b@ctx64k", "ngoai:openai-compat:gpt-4o", "ngoai:anthropic:claude-x:1"]) {
+    for (const cm of ["auto", "vai-tro:chat", "vai-tro:code.software", "ho-so:qwen3.6-35b@ctx64k", "ngoai:openai_compat:gpt-4o", "ngoai:anthropic:claude-x:1"]) {
       expect(kiemThamSoNutMoi(dinh(node("a", "ai.llm", { chonModel: cm }))), cm).toEqual([]);
     }
     expect(kiemThamSoNutMoi(dinh(node("a", "ai.llm", {})))).toEqual([]);
@@ -48,7 +48,7 @@ describe("kiểm tĩnh lúc LƯU", () => {
 });
 
 describe("xuất / nhập", () => {
-  const goc = () => luong(node("n", "ai.llm", { chonModel: "ngoai:openai-compat:gpt-4o", vaiTro: "chat" }), node("h", "ai.tom-tat", { chonModel: "ho-so:p1" }), node("v", "ai.phan-loai", { chonModel: "vai-tro:classify" }), node("d", "du-lieu.dat", { chonModel: "ngoai:x:y", truong: {} }));
+  const goc = () => luong(node("n", "ai.llm", { chonModel: "ngoai:openai_compat:gpt-4o", vaiTro: "chat" }), node("h", "ai.tom-tat", { chonModel: "ho-so:p1" }), node("v", "ai.phan-loai", { chonModel: "vai-tro:classify" }), node("d", "du-lieu.dat", { chonModel: "ngoai:x:y", truong: {} }));
 
   it("★ lamSachLuong: ngoai:* ⇒ khoá bị xoá + việc chon-model; ho-so/vai-tro giữ; node không phải ai.* không bị đụng", () => {
     const { luong: ra, viec } = lamSachLuong(goc());
@@ -65,7 +65,7 @@ describe("xuất / nhập", () => {
     const { goi } = taoGoi(goc());
     expect(JSON.stringify(goi)).not.toContain("ngoai:openai_compat");
     const tay = JSON.parse(JSON.stringify(goi));
-    tay.luong.nodes.find((n: { id: string }) => n.id === "n").parameters.chonModel = "ngoai:openai-compat:gpt-4o";
+    tay.luong.nodes.find((n: { id: string }) => n.id === "n").parameters.chonModel = "ngoai:openai_compat:gpt-4o";
     const p = phanTichGoi(tay);
     if (!p.ok) throw new Error(p.thongDiep);
     expect(JSON.stringify(p.luong)).not.toContain("ngoai:openai_compat");
