@@ -515,33 +515,6 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
     }
   });
 
-  /**
-   * ★ Đợt 10.2 bước 5 — `GET /api/ai/chon-model/danh-muc`: DANH MỤC model chọn được cho client không có tRPC (extension VS Code).
-   * Cùng nội dung với tRPC `aiChonModel.danhMuc`. Xác thực = `thuXacThucRest` (PHIÊN/cookie như mọi tuyến KB), cổng giấy phép MOD_AI do
-   * `app.use("/api/ai", chanTuyenAiTheoGiayPhep())` đứng TRƯỚC; phạm vi nhà máy lấy từ NGƯỜI ĐÃ XÁC THỰC (không từ query). Không trả tên tệp/đường dẫn/cổng.
-   */
-  app.get("/api/ai/chon-model/danh-muc", async (req, res) => {
-    try {
-      const xacThuc = await thuXacThucRest(req);
-      if (!xacThuc.ok) {
-        res.status(xacThuc.ma).json({ success: false, ...thanTuChoiRest(xacThuc) });
-        return;
-      }
-      const u = xacThuc.user as { id?: number | null; role?: string | null };
-      const [{ layDanhMucModel, layPhuThuocDanhMucMacDinh }, { resolveTenantFactoryScope }] = await Promise.all([
-        import("../services/ai/chonModel/danhMuc"),
-        import("../db/reportAggregators"),
-      ]);
-      const { factoryIds } = await resolveTenantFactoryScope({ userId: u.id ?? undefined, userRole: u.role ?? undefined });
-      const danhMuc = await layDanhMucModel(factoryIds?.[0] ?? null, await layPhuThuocDanhMucMacDinh());
-      res.json({ success: true, data: danhMuc });
-    } catch (error: any) {
-      void error; // không trả error.message (có thể chứa đường dẫn); chi tiết ở nhật ký máy chủ
-      console.error("[chon-model/danh-muc]", error);
-      res.status(500).json({ success: false, error: "Failed to get model catalogue" });
-    }
-  });
-
   app.post("/api/ai/local-kb/reload", async (req, res) => {
     try {
       const xacThuc = await thuXacThucRest(req);
