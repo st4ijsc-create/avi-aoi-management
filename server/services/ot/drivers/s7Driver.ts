@@ -41,6 +41,7 @@ import type {
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseS7Address, coerceS7Value } from "./s7Address";
 import { inverseScale } from "./otScale";
+import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
@@ -48,10 +49,11 @@ import { chatLuongLoiChung, chatLuongV2Bat, laGiaTriBadThuVien, MAU_GIA_TRI_HONG
 import { readS7ProgramChecksum, clampS7Deadline, S7_CHECKSUM_SOURCE, type S7ChecksumTarget } from "./s7BlockChecksum";
 
 /** Ép raw (đã inverse scale) sang kiểu NodeS7 chấp nhận theo dataType. */
-function coerceS7Write(raw: unknown, dataType: string): number | boolean | string {
+function coerceS7Write(raw: unknown, dataType: string, dungGhim?: boolean): number | boolean | string {
+  // R1b-2b-1 T2 — MỘT luật bool (`boolChoGhi`): "false" / "0" ⇒ FALSE; ngoài tập hợp lệ ⇒ ném (write đó ok:false); STOP đã xác minh ⇒ không chặn.
   switch (dataType) {
     case "bool":
-      return Boolean(raw);
+      return boolChoGhi(raw, dungGhim);
     case "int":
       return Math.round(Number(raw));
     case "float":
@@ -372,7 +374,7 @@ export class S7Driver extends NotImplementedDriver {
           }
           const dataType = w.dataType ?? "float";
           const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0);
-          return { tagKey: w.tagKey, addr: parsed.s7, value: coerceS7Write(raw, dataType) };
+          return { tagKey: w.tagKey, addr: parsed.s7, value: coerceS7Write(raw, dataType, w.dungGhim) };
         } catch (err) {
           return { tagKey: w.tagKey, error: (err as Error)?.message || String(err) };
         }

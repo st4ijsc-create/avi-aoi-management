@@ -32,6 +32,7 @@ import type {
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseOpcuaAddress, normalizeOpcuaValue, coerceOpcuaWriteValue, opcuaBuiltinName, OpcuaNodeError } from "./opcuaAddress";
 import { inverseScale } from "./otScale";
+import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
@@ -862,9 +863,9 @@ export class OpcuaDriver extends NotImplementedDriver {
             return { tagKey: w.tagKey, error: `cannot read DataType of ${nodeId}: ${(e as Error)?.message || String(e)}` };
           }
           if (builtin === null) {
-            variantValue = this.coerce(raw, dataType);
+            variantValue = this.coerce(raw, dataType, w.dungGhim);
           } else {
-            const c = coerceOpcuaWriteValue(raw, builtin);
+            const c = coerceOpcuaWriteValue(raw, builtin, w.dungGhim);
             if (!c.ok) return { tagKey: w.tagKey, error: c.error };
             try {
               variantValue = this.Variant
@@ -925,7 +926,7 @@ export class OpcuaDriver extends NotImplementedDriver {
   }
 
   /** Bọc raw vào Variant theo OtDataType (int→Int32, float→Double, bool→Boolean, string→String). */
-  private coerce(raw: unknown, dataType: string): any {
+  private coerce(raw: unknown, dataType: string, dungGhim?: boolean): any {
     const DataType = this.DataType ?? {};
     const Variant = this.Variant;
     let dt: any;
@@ -933,7 +934,8 @@ export class OpcuaDriver extends NotImplementedDriver {
     switch (dataType) {
       case "bool":
         dt = DataType.Boolean;
-        value = Boolean(raw);
+        // R1b-2b-1 T2 — MỘT luật bool (`boolChoGhi`): ngoài tập hợp lệ ⇒ ném (khối try của write ⇒ ok:false); STOP đã xác minh ⇒ không chặn.
+        value = boolChoGhi(raw, dungGhim);
         break;
       case "int":
         dt = DataType.Int32; // Int32 phổ biến nhất với PLC.

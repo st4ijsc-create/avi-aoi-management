@@ -1176,7 +1176,12 @@ export async function executeOtDeviceWrite(a: {
   const { intentIds, confirmedBy: ledgerConfirmer } = a.ledger;
   // R-11-d — NO await may precede driver.writeTags below: executeOtDeviceWriteUnlessStopped checks the STOP epoch in the same
   // tick as this call (its check is "right before the device write"), and this bump is "when the STOP is sent" (K-fix 2, R-11-i b).
-  if (a.bumpStopEpoch ?? stopTyped) bumpAdapterStopEpoch(input.adapterId, { idempotencyKey: input.idempotencyKey ?? null, commandType: input.commandType });
+  const stopDaXacMinh = a.bumpStopEpoch ?? stopTyped;
+  if (stopDaXacMinh) bumpAdapterStopEpoch(input.adapterId, { idempotencyKey: input.idempotencyKey ?? null, commandType: input.commandType });
+  // SCADA R1b-2b-1 T2 (KD-T2) — MỘT chỗ gắn cờ cho driver: write của STOP ĐÃ XÁC MINH (cùng điều kiện dời mốc STOP ở trên: dispatcher truyền
+  // `trueStop`, edge truyền STOP pinned / verified, quét STOP chuyển chủ sở hữu ghi đúng giá trị ghim với stopTyped) ⇒ `dungGhim: true` ⇒ driver
+  // đổi bool bằng `boolDungGhim` (không bao giờ từ chối một STOP). Mọi write khác ⇒ `boolGhi` chặt.
+  const driverWritesGui = stopDaXacMinh ? driverWrites.map((w) => ({ ...w, dungGhim: true })) : driverWrites;
   const TIMEOUT = Symbol("timeout");
   // Pre-insert outcome per resolved write. `ok` is fixed by the WRITE result;
   // read-back only refines an acked write's status (verified/unverified) and
@@ -1199,7 +1204,7 @@ export async function executeOtDeviceWrite(a: {
     // B3 fix scan 3 (a) — this write is DISPATCHED now: a running STOP watch gives up exactly these tags (the newer
     // intent for them wins); watches on other tags keep running.
     releaseWatchedTags(input.adapterId, driverWrites.map((w) => w.tagKey));
-    const wp = Promise.resolve(driver.writeTags(driverWrites));
+    const wp = Promise.resolve(driver.writeTags(driverWritesGui));
     writePromise = wp;
     wp.catch(() => undefined); // a late rejection after the timeout is expected, never unhandled
     writeResults = await Promise.race([

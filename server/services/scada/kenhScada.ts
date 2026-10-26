@@ -13,6 +13,7 @@
  */
 import type { DeviceTag } from "../../../drizzle/schema";
 import type { MucRuiRo } from "../ot/aiControlGate";
+import { boolTuGiaTri } from "../ot/drivers/boolNghiem";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Loại kênh · mức tác động
@@ -69,17 +70,11 @@ const sai = (ma: "TYPE_MISMATCH" | "OUT_OF_RANGE" | "OFF_STEP", chiTiet: string,
   ...(gocLuoi === undefined ? {} : { gocLuoi }),
 });
 
-function epBool(v: unknown): boolean | undefined {
-  if (typeof v === "boolean") return v;
-  if (v === 1) return true;
-  if (v === 0) return false;
-  if (typeof v === "string") {
-    const s = v.trim().toLowerCase();
-    if (s === "1" || s === "true") return true;
-    if (s === "0" || s === "false") return false;
-  }
-  return undefined;
-}
+/** R1b-2b-1 T2 (kiem-dinh G1) — MỘT luật bool cho cổng kênh, mọi driver ghi, giải mã đọc và so đọc lại: `drivers/boolNghiem.boolTuGiaTri`. */
+const epBool = boolTuGiaTri;
+
+/** Câu từ chối bool — CÙNG một câu cho tag bool đã khai (`epKieuGiaTri`) và chưa khai (`kiemLuoiThoChuaKhai`). */
+const CAU_BOOL_SAI = "Giá trị bool phải là true/false, 1/0, \"1\"/\"0\" hoặc \"true\"/\"false\".";
 
 /**
  * R1b-1 T10 — bộ giải mã Sparkplug B giao số nguyên 64 bit dưới dạng đối tượng kiểu Long (thư viện `long`: {low, high, unsigned} + toNumber()).
@@ -227,7 +222,9 @@ function kiemLuoiTho(tag: KenhGhiThuan, v: number, goiYPhaiNguyen = true): KetQu
  * final-fix M-4: `canKiemLuoiThoChuaKhai` (chỉ int) đã gỡ — không còn bên gọi sản phẩm nào sau T2; hàm này là cổng DUY NHẤT.
  */
 export function canKiemGiaTriChuaKhai(tag: Pick<KenhGhiThuan, "dataType" | "scale" | "offset">): boolean {
-  return tag.dataType === "int" || tag.dataType === "float";
+  // R1b-2b-1 T2 (kiem-dinh G1) — cả tag BOOL chưa khai: driver đổi bool bằng `boolGhi` (ngoài tập hợp lệ ⇒ write ok:false SAU khi đã qua mọi cổng
+  // và ghi sổ); cổng kênh từ chối SỚM cùng luật (`boolTuGiaTri`), cùng câu với tag bool đã khai. STOP khớp ghim không tới pass 2 (miễn như cũ).
+  return tag.dataType === "int" || tag.dataType === "float" || tag.dataType === "bool";
 }
 
 /**
@@ -277,6 +274,8 @@ function soChoKenhSoChuaKhai(v: unknown): number | undefined {
 export function kiemLuoiThoChuaKhai(tag: Pick<KenhGhiThuan, "dataType" | "scale" | "offset">, giaTri: unknown): KetQuaGiaTri {
   const nguyenVen = { ok: true, giaTri: giaTri as number | boolean | string } as const;
   if (!canKiemGiaTriChuaKhai(tag)) return nguyenVen;
+  // R1b-2b-1 T2 — tag bool chưa khai: tập hợp lệ của `boolTuGiaTri`; `ok` trả giá trị NGUYÊN VẸN (không đổi băm `canonicalOtValue`).
+  if (tag.dataType === "bool") return boolTuGiaTri(giaTri) === undefined ? sai("TYPE_MISMATCH", CAU_BOOL_SAI) : nguyenVen;
   const x = soChoKenhSoChuaKhai(giaTri);
   if (x === undefined) return sai("TYPE_MISMATCH", `giá trị không phải số hữu hạn — tag ${tag.dataType} không ghi được`);
   if (tag.dataType === "float") {
@@ -303,7 +302,7 @@ export function epKieuGiaTri(tag: Pick<KenhGhiThuan, "dataType" | "scale" | "off
   switch (tag.dataType) {
     case "bool": {
       const b = epBool(giaTri);
-      return b === undefined ? sai("TYPE_MISMATCH", "Giá trị bool phải là true/false, 1/0, \"1\"/\"0\" hoặc \"true\"/\"false\".") : { ok: true, giaTri: b };
+      return b === undefined ? sai("TYPE_MISMATCH", CAU_BOOL_SAI) : { ok: true, giaTri: b };
     }
     case "string":
       return typeof giaTri === "string" ? { ok: true, giaTri } : sai("TYPE_MISMATCH", "Giá trị phải là chuỗi.");

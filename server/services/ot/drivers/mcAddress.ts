@@ -15,6 +15,7 @@
  */
 import type { OtDataType } from "../otDriver";
 import { laGiaTriBadThuVien } from "../chatLuong";
+import { giaiMaBoolDoc } from "./boolNghiem";
 
 export interface ParsedMcAddress {
   /** Địa chỉ mcprotocol gốc (đã trim, đã chuẩn hoá hoa). */
@@ -126,7 +127,7 @@ export interface CoercedMcValue {
  * Ép giá trị thô mcprotocol trả về theo dataType (KHÔNG áp scale/offset).
  *   - null/undefined, VÀ chuỗi chất lượng "BAD <mã>" mà mcprotocol đặt vào chỗ giá trị cho item lỗi (R1b-2a T13 fix round 2, I2 —
  *     `laGiaTriBadThuVien`; trước đây bool đọc TRUE / string đọc "BAD 255" là good) → {value:null, quality:"bad"}
- *   - bool → Boolean(raw)  (mcprotocol trả true/false hoặc 0/1)
+ *   - bool → `giaiMaBoolDoc(raw)` (mcprotocol trả true/false hoặc 0/1; R1b-2b-1 T2: chuỗi lạ ⇒ bad)
  *   - int → Number round; float → Number; string/json → String/serialize
  * NaN sau ép → quality:"bad".
  */
@@ -135,8 +136,11 @@ export function coerceMcValue(raw: unknown, dataType: OtDataType): CoercedMcValu
     return { value: null, quality: "bad" };
   }
   switch (dataType) {
-    case "bool":
-      return { value: Boolean(raw), quality: "good" };
+    case "bool": {
+      // R1b-2b-1 T2 — MỘT luật bool phía ĐỌC (`giaiMaBoolDoc`): số khác 0 ⇒ TRUE, "false" ⇒ FALSE, chuỗi lạ ⇒ bad (trước: `Boolean("x")` = TRUE).
+      const b = giaiMaBoolDoc(raw);
+      return b === undefined ? { value: null, quality: "bad" } : { value: b, quality: "good" };
+    }
     case "int": {
       const n = Number(raw);
       if (Number.isNaN(n)) return { value: null, quality: "bad" };

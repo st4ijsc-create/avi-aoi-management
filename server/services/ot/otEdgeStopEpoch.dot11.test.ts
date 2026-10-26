@@ -192,7 +192,7 @@ describe("Đợt 11 K-fix / K-fix 2 — edge: STOP epoch (bumped when a true STO
         const r = await pWrite;
         expect(r).toMatchObject({ ok: false, status: "rejected", reason: "STOPPED_BEFORE_WRITE", jti: JTI });
         expect(r.detail).toContain("abort:9:w1");
-        expect(H.driver!.writes).toEqual([[{ tagKey: "run", address: "00001", value: false, dataType: "bool", scale: undefined, offset: undefined }]]);
+        expect(H.driver!.writes).toEqual([[{ tagKey: "run", address: "00001", value: false, dataType: "bool", scale: undefined, offset: undefined, dungGhim: true }]]); // R1b-2b-1 T2 (KD-T2): STOP đã xác minh mang cờ dungGhim
         expect(j.runs).toMatchObject([{ kind: "ledger", jti: JTI, stop: false, status: "rejected", result: { reason: "STOPPED_BEFORE_WRITE" } }]);
         expect(H.dbCalls).toBe(0);
       } finally {
@@ -289,7 +289,7 @@ describe("Đợt 11 K-fix / K-fix 2 — edge: STOP epoch (bumped when a true STO
       expect(rArb).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" }); // R-1E-b: its unproven value never runs after the STOP
       expect(rC.reason).not.toBe("BUSY");
       expect(rC).toMatchObject({ ok: true, status: "acked" });
-      expect(H.driver!.writes).toEqual([[{ tagKey: "run", address: "00001", value: false, dataType: "bool", scale: undefined, offset: undefined }]]);
+      expect(H.driver!.writes).toEqual([[{ tagKey: "run", address: "00001", value: false, dataType: "bool", scale: undefined, offset: undefined, dungGhim: true }]]); // R1b-2b-1 T2 (KD-T2): STOP đã xác minh mang cờ dungGhim
     } finally {
       delete process.env.OT_CMD_SERIALIZE_ENABLED;
       delete process.env.OT_CMD_QUEUE_MAX;
@@ -380,7 +380,7 @@ describe("Đợt 11 K-fix / K-fix 2 — edge: STOP epoch (bumped when a true STO
       const r = await p;
       expect(r).toMatchObject({ ok: true, stop: true, pinnedStop: true });
       expect(r.detail).toBeUndefined();
-      expect(H.driver!.writes).toEqual([[{ tagKey: "run", address: "00001", value: false, dataType: "bool", scale: undefined, offset: undefined }]]);
+      expect(H.driver!.writes).toEqual([[{ tagKey: "run", address: "00001", value: false, dataType: "bool", scale: undefined, offset: undefined, dungGhim: true }]]); // R1b-2b-1 T2 (KD-T2): STOP đã xác minh mang cờ dungGhim
     } finally {
       delete process.env.OT_CMD_SERIALIZE_ENABLED;
     }
@@ -500,7 +500,7 @@ describe("Đợt 11 K-fix / K-fix 2 — edge: STOP epoch (bumped when a true STO
         release();
         const r = await pO;
         expect(r).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
-        expect(H.driver!.writes).toEqual([[{ tagKey: "run", address: "00001", value: false, dataType: "bool", scale: undefined, offset: undefined }]]);
+        expect(H.driver!.writes).toEqual([[{ tagKey: "run", address: "00001", value: false, dataType: "bool", scale: undefined, offset: undefined, dungGhim: true }]]); // R1b-2b-1 T2 (KD-T2): STOP đã xác minh mang cờ dungGhim
       } finally {
         delete process.env.OT_CMD_SERIALIZE_ENABLED;
       }

@@ -36,15 +36,17 @@ import type {
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseEipTag, coerceEipValue } from "./eipTag";
 import { inverseScale } from "./otScale";
+import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll, MAU_GIA_TRI_HONG } from "../chatLuong";
 
 /** Ép raw (đã inverse scale) sang kiểu st-ethernet-ip chấp nhận theo dataType. */
-function coerceEipWrite(raw: unknown, dataType: string): number | boolean | string {
+function coerceEipWrite(raw: unknown, dataType: string, dungGhim?: boolean): number | boolean | string {
+  // R1b-2b-1 T2 — MỘT luật bool (`boolChoGhi`): "false" / "0" ⇒ FALSE; ngoài tập hợp lệ ⇒ ném (write đó ok:false); STOP đã xác minh ⇒ không chặn.
   switch (dataType) {
     case "bool":
-      return Boolean(raw);
+      return boolChoGhi(raw, dungGhim);
     case "int":
       return Math.round(Number(raw));
     case "float":
@@ -300,7 +302,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
       const { name, program } = parseEipTag(w.address);
       const dataType = w.dataType ?? "float";
       const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0);
-      const value = coerceEipWrite(raw, dataType);
+      const value = coerceEipWrite(raw, dataType, w.dungGhim);
 
       const eipTag = this.plc.newTag(name, program ?? null);
       // st-ethernet-ip: set tag.value rồi await PLC.writeTag(tag).

@@ -34,7 +34,9 @@ import { giaTriLenhInterlock, kiemLenhInterlockTrenKenh, type DbHoacTx, type MaV
  */
 export function dieuKienUngVienLenhLechLuoi(): SQL {
   // R1b-2a T2 (phán quyết T1 c3) — cả đích FLOAT: tag float CHƯA khai nay từ chối giá trị không phải số hữu hạn ở cổng kênh của dispatch().
-  return and(eq(interlockRules.enabled, true), ne(interlockRules.action, "alert"), inArray(deviceTags.dataType, ["int", "float"])) as SQL;
+  // R1b-2b-1 T2 (kiem-dinh G1) — cả đích BOOL: tag bool CHƯA khai nay từ chối giá trị ngoài tập hợp lệ (`boolTuGiaTri`) ở cổng kênh của
+  // dispatch() ⇒ luật bật gửi "on" / 2 / {"v":1} lên tag bool là cấu hình hỏng (posture + khởi động). SQL thuần: `TRUY_VAN_TRUOC_TRIEN_KHAI_BOOL`.
+  return and(eq(interlockRules.enabled, true), ne(interlockRules.action, "alert"), inArray(deviceTags.dataType, ["int", "float", "bool"])) as SQL;
 }
 
 /** Nối luật ↔ tag đích (cùng khoá `kiemLenhInterlockTx` đọc). */
@@ -101,6 +103,27 @@ FROM tho
 WHERE v IS NULL OR abs(n) >= tran OR abs(v) >= 1e308 OR (kieu = 'int' AND abs(n - round(n)) > 1e-9)
 ORDER BY id`;
 
+/**
+ * R1b-2b-1 T2 (kiem-dinh G1) — Truy vấn TRƯỚC TRIỂN KHAI cho đích BOOL (báo cáo nghiệm thu R1b-2b-1 §4 mục 2b, CHỈ ĐỌC, chép NGUYÊN VĂN vào báo
+ * cáo; hằng RIÊNG — `TRUY_VAN_TRUOC_TRIEN_KHAI` giữ nguyên từng byte vì hai báo cáo cũ ghim nó). Ứng viên: luật bật, `action <> 'alert'`, đích
+ * (targetAdapterId + commandTag) là tag `bool`. Giá trị gửi như `giaTriLenhInterlock`: NULL / jsonb null ⇒ `true` ⇒ HỢP LỆ; boolean; số 0 / 1;
+ * chuỗi mà `lower(btrim(.))` ∈ ('0','1','true','false') ⇒ hợp lệ. Mọi giá trị khác ⇒ MỘT hàng `ket_luan = 'KHONG_PARSE_DUOC'`.
+ * btrim của Postgres chỉ cắt dấu cách, `boolTuGiaTri` của JS cắt mọi khoảng trắng ⇒ SQL báo DƯ ("\tfalse"), không bỏ sót: trên tag bool CHƯA
+ * khai, tập luật hàm JS (`luatLenhLechLuoi`) từ chối ⊆ tập hàng của truy vấn này. Phép ép `::numeric` bọc `CASE` (không phụ thuộc thứ tự đánh
+ * giá của planner). `lenhInterlockLechLuoi.r1b2.db.test.ts` chạy chính chuỗi này trên `_test`.
+ */
+export const TRUY_VAN_TRUOC_TRIEN_KHAI_BOOL = String.raw`SELECT r.id, r.name, r."targetAdapterId", t."tagKey", r."commandValue", 'KHONG_PARSE_DUOC' AS ket_luan
+FROM interlock_rules r
+JOIN device_tags t ON t."adapterId" = r."targetAdapterId" AND t."tagKey" = r."commandTag"
+WHERE r.enabled AND r.action::text <> 'alert' AND t."dataType"::text = 'bool'
+  AND NOT (
+        r."commandValue" IS NULL
+     OR jsonb_typeof(r."commandValue") IN ('null', 'boolean')
+     OR (CASE WHEN jsonb_typeof(r."commandValue") = 'number' THEN (r."commandValue" #>> '{}')::numeric IN (0, 1) ELSE false END)
+     OR (jsonb_typeof(r."commandValue") = 'string' AND lower(btrim(r."commandValue" #>> '{}')) IN ('0', '1', 'true', 'false'))
+  )
+ORDER BY r.id`;
+
 export type LuatLenhLechLuoi = { id: number; name: string; ma: MaViPham; chiTiet: string };
 
 /**
@@ -155,10 +178,10 @@ export async function canhBaoLuatLenhLechLuoiKhiKhoiDong(
         [
           "",
           vien,
-          `█  [SCADA R1b] ${ds.length} LUẬT INTERLOCK ĐANG BẬT có lệnh bảo vệ mà dispatch() sẽ TỪ CHỐI (T13 / R1b-2a T1 / T2: lệch lưới thô hoặc không phải số hữu hạn trên tag int / float).`,
+          `█  [SCADA R1b] ${ds.length} LUẬT INTERLOCK ĐANG BẬT có lệnh bảo vệ mà dispatch() sẽ TỪ CHỐI (T13 / R1b-2a T1 / T2: lệch lưới thô hoặc không phải số hữu hạn trên tag int / float; R1b-2b-1 T2: giá trị ngoài true/false, 1/0, "1"/"0", "true"/"false" trên tag bool).`,
           ...ds.slice(0, 20).map((r) => `█    #${r.id} "${r.name}" — ${r.ma}: ${r.chiTiet}`),
           ...(ds.length > 20 ? [`█    … và ${ds.length - 20} luật khác (posture: interlockRulesCauHinhHong).`] : []),
-          "█  Hậu quả: khi điều kiện xảy ra, hành động bảo vệ KHÔNG tới thiết bị (OFF_STEP / TYPE_MISMATCH / OUT_OF_RANGE). Sửa commandValue thành một SỐ trên điểm lưới (offset + k·scale) rồi duyệt lại.",
+          "█  Hậu quả: khi điều kiện xảy ra, hành động bảo vệ KHÔNG tới thiết bị (OFF_STEP / TYPE_MISMATCH / OUT_OF_RANGE). Sửa commandValue thành một SỐ trên điểm lưới (offset + k·scale) — tag bool: true/false — rồi duyệt lại.",
           vien,
           "",
         ].join("\n"),

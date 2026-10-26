@@ -13,7 +13,7 @@ import postgres from "postgres";
 import { like } from "drizzle-orm";
 import { interlockRules } from "../../../drizzle/schema";
 import { getDb } from "../../db/connection";
-import { luatLenhLechLuoi, TRUY_VAN_TRUOC_TRIEN_KHAI } from "./lenhInterlockLechLuoi";
+import { luatLenhLechLuoi, TRUY_VAN_TRUOC_TRIEN_KHAI, TRUY_VAN_TRUOC_TRIEN_KHAI_BOOL } from "./lenhInterlockLechLuoi";
 import { kiemLuoiThoChuaKhai } from "./kenhScada";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -297,6 +297,48 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-2a T1 — SQL tr�
     } finally {
       await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU_F + "%"}`;
       await sql`DELETE FROM device_tags WHERE "adapterId" = ${adapterId} AND "tagKey" IN ('f', 'fnho')`;
+    }
+  });
+
+  it("★ R1b-2b-1 T2 (kiem-dinh G1) — bool CHƯA khai: idsJsTuChoi ⊆ (idsSql ∪ idsSqlBool); \"on\" / 2 / {\"v\":1} có trong cả hai; \"false\" / true / null / \" TRUE \" không ai; \"\\tfalse\" SQL báo DƯ", async () => {
+    const DAU_B = `${DAU}B-`;
+    const seedB = async (ten: string, jsonTho: string | null) => {
+      const [r] = await sql`INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action, "targetAdapterId",
+          "commandTag", "commandValue", enabled, "createdBy")
+        VALUES (${DAU_B + ten}, 'machine', 'ng_rate', 'gt', 5, 'reduce_speed', ${adapterId}, 'b', ${jsonTho}::text::jsonb, true, ${TAC_GIA})
+        RETURNING id`;
+      return Number(r.id);
+    };
+    try {
+      await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled")
+        VALUES (${adapterId}, 'b', 'coil:1', 'bool', true, true)`;
+      const tuChoi: Record<string, string> = { on: '"on"', so2: "2", doiTuong: '{"v": 1}' };
+      const nhan: Record<string, string | null> = { chuoiFalse: '"false"', true: "true", null: null, hoaCach: '" TRUE "', so0: "0" };
+      const idB: Record<string, number> = {};
+      for (const [k, v] of Object.entries(tuChoi)) idB[k] = await seedB(k, v);
+      for (const [k, v] of Object.entries(nhan)) idB[k] = await seedB(k, v);
+      idB["tabFalse"] = await seedB("tabFalse", '"\\tfalse"'); // JS: drizzle jsonb() parse lại ⇒ false (nhận); SQL btrim chỉ cắt dấu cách ⇒ báo DƯ
+
+      const d = await getDb();
+      const js = (await luatLenhLechLuoi(d!, like(interlockRules.name, `${DAU_B}%`))).map((r) => r.id);
+      const sqlCu = await sql.unsafe(`SELECT id::int AS id FROM (${TRUY_VAN_TRUOC_TRIEN_KHAI}) q WHERE q.name LIKE $1`, [`${DAU_B}%`]);
+      const sqlBool = await sql.unsafe(`SELECT id::int AS id, ket_luan FROM (${TRUY_VAN_TRUOC_TRIEN_KHAI_BOOL}) q WHERE q.name LIKE $1 ORDER BY id`, [`${DAU_B}%`]);
+      const idsSql = new Set(sqlCu.map((r) => Number(r.id)));
+      const idsSqlBool = new Set(sqlBool.map((r) => Number(r.id)));
+      for (const i of js) expect(idsSql.has(i) || idsSqlBool.has(i), `JS từ chối luật #${i} nhưng SQL bỏ sót`).toBe(true);
+      expect(js).toEqual(Object.keys(tuChoi).map((k) => idB[k]).sort((a, b) => a - b));
+      for (const k of Object.keys(tuChoi)) expect(idsSqlBool.has(idB[k]), `${k} SQL bool`).toBe(true);
+      for (const k of Object.keys(nhan)) {
+        expect(js.includes(idB[k]), `${k} JS`).toBe(false);
+        expect(idsSqlBool.has(idB[k]) || idsSql.has(idB[k]), `${k} SQL`).toBe(false);
+      }
+      expect(js.includes(idB["tabFalse"])).toBe(false);
+      expect(idsSqlBool.has(idB["tabFalse"])).toBe(true); // báo DƯ (chiều cho phép)
+      expect(sqlCu.length).toBe(0); // truy vấn cũ (int / float) không đổi phạm vi
+      for (const r of sqlBool) expect(String(r.ket_luan)).toBe("KHONG_PARSE_DUOC");
+    } finally {
+      await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU_B + "%"}`;
+      await sql`DELETE FROM device_tags WHERE "adapterId" = ${adapterId} AND "tagKey" = 'b'`;
     }
   });
 });

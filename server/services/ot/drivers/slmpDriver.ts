@@ -38,6 +38,7 @@ import type {
   TuyChonVongPoll,
 } from "../otDriver";
 import { inverseScale } from "./otScale";
+import { boolChoGhi } from "./boolNghiem";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongEndCodeSlmp, chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
 import {
@@ -403,7 +404,9 @@ export class SlmpDriver implements OtDriver {
 
       let request: Buffer;
       if (dataType === "bool" || dev.isBit) {
-        request = buildBatchWriteBit(w.address, [Boolean(w.value)], cfg).request;
+        // R1b-2b-1 T2 — MỘT luật bool cho MỌI write lên bit-device (bất kể dataType): "false" ⇒ FALSE; ngoài tập hợp lệ ⇒ ném (khối catch ⇒
+        // ok:false, không gửi); STOP đã xác minh (`w.dungGhim`) ⇒ `boolDungGhim` — ghim cũ 2 trên M100 kiểu int ⇒ TRUE (KD-T2).
+        request = buildBatchWriteBit(w.address, [boolChoGhi(w.value, w.dungGhim)], cfg).request;
       } else {
         const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0) as number;
         const words =

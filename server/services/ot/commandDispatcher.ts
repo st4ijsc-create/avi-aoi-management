@@ -503,7 +503,8 @@ export interface DispatchResult {
    * `errors.reason.*` key) when the refusal needs words beyond `reason`. Today: a stop/e_stop refused by the
    * safety preflight; doc 81 Đợt 1E (I-1): a waiting command cancelled by a pinned STOP
    * (`OT_COMMAND_SUPERSEDED_BY_STOP`, params { stopKey }); R1b-1 T13: an early-channel-gate OFF_STEP (`SCADA_VALUE_OFF_STEP` /
-   * `_NO_HINT`, params { ma, tagKey, step, goiY? } — the HMI's own codes, `appErrorLechBuoc`). Absent everywhere else (byte-identical).
+   * `_NO_HINT`, params { ma, tagKey, step, goiY? } — the HMI's own codes, `appErrorLechBuoc`); R1b-2b-1 T2: an early-channel-gate TYPE_MISMATCH
+   * (`SCADA_VALUE_TYPE_MISMATCH`, params { ma, tagKey, dataType } — `appErrorCongKenh`). Absent everywhere else (byte-identical).
    */
   appError?: { appCode: AppErrorCode; appParams: AppErrorParams };
   /** Plain-English sentence for API callers/logs, paired with `appError`. */
@@ -983,6 +984,19 @@ export function appErrorLechBuoc(kq: KetQuaCongKenhSom): DispatchResult["appErro
 }
 
 /**
+ * PURE — R1b-2b-1 T2 (kiem-dinh G1): the localisable form of an early-gate refusal returned by `dispatch()`. OFF_STEP ⇒ `appErrorLechBuoc`;
+ * TYPE_MISMATCH ⇒ the HMI's own `SCADA_VALUE_TYPE_MISMATCH` with { ma, tagKey, dataType } (the dataType of the step-3 row of that tag —
+ * e.g. "off" on an undeclared bool coil says the same sentence as on a declared one). Any other refusal ⇒ undefined.
+ */
+export function appErrorCongKenh(kq: KetQuaCongKenhSom, tags: ReadonlyArray<Pick<TagCongKenh, "tagKey" | "dataType">>): DispatchResult["appError"] {
+  const lech = appErrorLechBuoc(kq);
+  if (lech || kq.ok || kq.ma !== "TYPE_MISMATCH") return lech;
+  const dataType = tags.find((t) => t.tagKey === kq.tagKey)?.dataType;
+  if (dataType == null) return undefined;
+  return { appCode: "SCADA_VALUE_TYPE_MISMATCH", appParams: { ma: kq.ma, tagKey: kq.tagKey, dataType } };
+}
+
+/**
  * Gate 1 (requireBoundAction) verifies the binding BEFORE step 3 reads the tags. To accept the same coerced form step 3b
  * will produce, this reads the written tags' declarations and returns the type-coerced writes — or null when nothing
  * would change, or the read fails (⇒ the raw verdict stands: fail-closed). Read-only.
@@ -1195,7 +1209,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     return { ok: false, simulated: false, status: "rejected", reason: ma, results: failedResults(input, ma), commandLogIds: ids, ...(appError ? { appError } : {}) };
   };
   const kenh = congKenhSom(input.commandType, input.writes, tagRowsBuoc3);
-  if (!kenh.ok) return tuChoiSom(kenh.ma, kenh.chiTiet, kenh.tagKey, kenh.address, appErrorLechBuoc(kenh));
+  if (!kenh.ok) return tuChoiSom(kenh.ma, kenh.chiTiet, kenh.tagKey, kenh.address, appErrorCongKenh(kenh, tagRowsBuoc3));
   if (kenh.writes.some((w, i) => w !== rawCallerWrites[i])) {
     input = { ...input, writes: kenh.writes };
     resolved.forEach((r, i) => {

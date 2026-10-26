@@ -417,14 +417,15 @@ describe("R1b-1 T13 — tag int CHƯA khai có scale/offset: lưới thô kiểm
   const i10 = { dataType: "int" as const, scale: "10.000000", offset: "0.000000" };
   // R1b-2a T1 (Q-T13 b) — thay ghim cũ "scale 1 / offset 0 ⇒ false": MỌI tag int chưa khai đều kiểm (lưới thô số nguyên + M2).
   // final-fix M-4 — canKiemLuoiThoChuaKhai (chỉ int, không bên gọi sản phẩm) đã gỡ; cổng duy nhất là canKiemGiaTriChuaKhai.
-  it("canKiemGiaTriChuaKhai: MỌI int (kể cả scale 1 / offset 0 / NULL / scale 0) — R1b-2a T1; float ⇒ true (T2); bool ⇒ false", () => {
+  it("canKiemGiaTriChuaKhai: MỌI int (kể cả scale 1 / offset 0 / NULL / scale 0) — R1b-2a T1; float ⇒ true (T2); bool ⇒ true (R1b-2b-1 T2)", () => {
     expect(canKiemGiaTriChuaKhai(i10)).toBe(true);
     expect(canKiemGiaTriChuaKhai({ dataType: "int", scale: 1, offset: 5 })).toBe(true);
     expect(canKiemGiaTriChuaKhai({ dataType: "int", scale: "1.000000", offset: "0.000000" })).toBe(true);
     expect(canKiemGiaTriChuaKhai({ dataType: "int", scale: null, offset: null })).toBe(true);
     expect(canKiemGiaTriChuaKhai({ dataType: "int", scale: "0", offset: null })).toBe(true); // driver: scale 0 ⇒ 1 — lưới số nguyên
     expect(canKiemGiaTriChuaKhai({ dataType: "float", scale: 10, offset: 0 })).toBe(true);
-    expect(canKiemGiaTriChuaKhai({ dataType: "bool", scale: 10, offset: 0 })).toBe(false);
+    // R1b-2b-1 T2 (kiem-dinh G1) — ĐỔI ghim cũ (false): tag bool chưa khai nay được cổng kênh kiểm (tập hợp lệ `boolTuGiaTri`)
+    expect(canKiemGiaTriChuaKhai({ dataType: "bool", scale: 10, offset: 0 })).toBe(true);
   });
   it("scale 10: 30 ⇒ ok, giá trị NGUYÊN VẸN; 25 ⇒ OFF_STEP goiY 30 buoc 10", () => {
     expect(tot(kiemLuoiThoChuaKhai(i10, 30))).toBe(30);
@@ -606,10 +607,11 @@ describe("R1b-2a T2 — epKieuGiaTri: int (s, o) ≠ (1, 0) mang giá trị KỸ
 describe("R1b-2a T2 — tag float CHƯA khai (phán quyết T1 c3: M2 mở rộng sang float): không phải số hữu hạn ⇒ TYPE_MISMATCH; số / chuỗi số đi NGUYÊN VẸN", () => {
   const f = { dataType: "float" as const, scale: null, offset: null };
   const f10 = { dataType: "float" as const, scale: "10", offset: "5" };
-  it("canKiemGiaTriChuaKhai ⇔ int | float (lưới thô chỉ áp cho int, bên trong kiemLuoiThoChuaKhai)", () => {
+  it("canKiemGiaTriChuaKhai ⇔ int | float | bool (lưới thô chỉ áp cho int, bên trong kiemLuoiThoChuaKhai; bool từ R1b-2b-1 T2)", () => {
     expect(canKiemGiaTriChuaKhai(f)).toBe(true);
     expect(canKiemGiaTriChuaKhai({ dataType: "int", scale: null, offset: null })).toBe(true);
-    for (const dataType of ["bool", "string", "json"] as const) expect(canKiemGiaTriChuaKhai({ dataType, scale: null, offset: null })).toBe(false);
+    expect(canKiemGiaTriChuaKhai({ dataType: "bool", scale: null, offset: null })).toBe(true);
+    for (const dataType of ["string", "json"] as const) expect(canKiemGiaTriChuaKhai({ dataType, scale: null, offset: null })).toBe(false);
   });
   it("NaN / ±Infinity / \"abc\" / \"\" / chỉ khoảng trắng / mảng / đối tượng / \"Infinity\" / \"1e400\" / null / undefined / Symbol / hàm ⇒ TYPE_MISMATCH", () => {
     for (const tag of [f, f10])
@@ -629,5 +631,24 @@ describe("R1b-2a T2 — tag float CHƯA khai (phán quyết T1 c3: M2 mở rộn
   });
   it("int chưa khai giữ nguyên câu cũ (\"— tag int không ghi được\")", () => {
     expect((kiemLuoiThoChuaKhai({ dataType: "int", scale: null, offset: null }, "abc") as { chiTiet: string }).chiTiet).toContain("tag int không ghi được");
+  });
+});
+
+describe("R1b-2b-1 T2 (kiem-dinh G1) — tag BOOL chưa khai: cùng luật với tag bool đã khai, cùng câu; ok trả NGUYÊN VẸN", () => {
+  it("bool chưa khai: 'off' / 2 / {} ⇒ TYPE_MISMATCH; 'false' ⇒ ok nguyên vẹn", () => {
+    const b = { dataType: "bool", scale: null, offset: null } as const;
+    expect(canKiemGiaTriChuaKhai(b)).toBe(true);
+    for (const v of ["off", "no", 2, {}, ""]) expect(kiemLuoiThoChuaKhai(b, v)).toMatchObject({ ok: false, ma: "TYPE_MISMATCH" });
+    expect(kiemLuoiThoChuaKhai(b, "false")).toEqual({ ok: true, giaTri: "false" });
+  });
+  it("tập hợp lệ ⇒ ok với giá trị NGUYÊN VẸN (không ép ⇒ không đổi canonicalOtValue); ngoài tập ⇒ CÙNG câu với tag bool đã khai", () => {
+    const b = { dataType: "bool", scale: "10", offset: "5" } as const; // scale / offset không có nghĩa với bool
+    for (const v of [true, false, 1, 0, "1", "0", "true", "false", " FALSE ", "True"]) expect(kiemLuoiThoChuaKhai(b, v)).toEqual({ ok: true, giaTri: v });
+    const caiDaKhai = loi(kiemGiaTriGhi(bool, "on")).chiTiet;
+    for (const v of ["on", "yes", -1, 255, NaN, [1], null, undefined, "  "]) {
+      const kq = kiemLuoiThoChuaKhai(b, v);
+      expect(kq, String(JSON.stringify(v))).toMatchObject({ ok: false, ma: "TYPE_MISMATCH" });
+      expect((kq as { chiTiet: string }).chiTiet).toBe(caiDaKhai);
+    }
   });
 });

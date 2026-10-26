@@ -9,11 +9,13 @@
  * So sánh trên value ĐÃ SCALE (cả expected lẫn actual là giá trị người dùng).
  *   - float → |expected - actual| <= tolerance  (NaN bất kỳ bên → false)
  *   - int   → Math.round(expected) === Math.round(actual)  (NaN → false)
- *   - bool  → Boolean(expected) === Boolean(actual)
+ *   - bool  → `boolTuGiaTri(expected)` === `giaiMaBoolDoc(actual)` (R1b-2b-1 T2 — CÙNG luật với đường ghi / đọc của driver: "false" khớp
+ *             false; một bên ngoài luật ("off", đối tượng…) ⇒ false — không bao giờ "khớp" nhờ truthy của JS)
  *   - string/json → String(expected) === String(actual)
  *   - actual === null/undefined → false (đọc lại không có giá trị → coi là lệch)
  */
 import type { OtDataType } from "../otDriver";
+import { boolTuGiaTri, giaiMaBoolDoc } from "./boolNghiem";
 
 export function readbackMatches(
   expected: unknown,
@@ -37,8 +39,11 @@ export function readbackMatches(
       if (Number.isNaN(e) || Number.isNaN(a)) return false;
       return Math.round(e) === Math.round(a);
     }
-    case "bool":
-      return Boolean(expected) === Boolean(actual);
+    case "bool": {
+      const e = boolTuGiaTri(expected);
+      const a = giaiMaBoolDoc(actual);
+      return e !== undefined && a !== undefined && e === a;
+    }
     case "string":
     case "json":
     default:

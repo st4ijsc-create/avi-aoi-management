@@ -37,6 +37,7 @@ import {
   type DecodeModbusOpts,
 } from "./modbusDecode";
 import { inverseScale } from "./otScale";
+import { boolChoGhi } from "./boolNghiem";
 import { closeModbusClient, withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiModbus, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
@@ -310,14 +311,16 @@ export class ModbusDriver extends NotImplementedDriver {
       }
 
       if (registerType === "coil") {
-        await this.client.writeCoil(register, Boolean(w.value));
+        // R1b-2b-1 T2 — MỘT luật bool bất kể dataType: "false" / "0" ⇒ FALSE, "off" / 2 ⇒ ok:false (khối catch dưới); STOP đã xác minh
+        // (`w.dungGhim`) ⇒ `boolDungGhim` — ghim cũ 255 trên coil int ⇒ TRUE, không bao giờ bị chặn (KD-T2).
+        await this.client.writeCoil(register, boolChoGhi(w.value, w.dungGhim));
         return { tagKey: w.tagKey, ok: true };
       }
 
       // holding register — int (1 word) hoặc float (2 word).
       const dataType = w.dataType ?? "int";
-      // INVERSE scale/offset (int/float); bool không tới đây với holding.
-      const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0) as number;
+      // INVERSE scale/offset (int/float). R1b-2b-1 T2 — bool trên holding: cùng luật với coil (`boolChoGhi`), rồi encodeModbus ghi 1 / 0.
+      const raw = dataType === "bool" ? boolChoGhi(w.value, w.dungGhim) : (inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0) as number);
       if (dataType === "int" || dataType === "float") {
         const rangeErr = modbusRangeError(Number(raw), dataType, this.decodeOpts.signed !== false);
         if (rangeErr) {

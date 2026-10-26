@@ -27,6 +27,22 @@ describe("readbackMatches", () => {
     expect(readbackMatches(false, 0, "bool")).toBe(true);
   });
 
+  it("R1b-2b-1 T2 — bool: 'false' khớp false; 'off' không khớp gì", () => {
+    expect(readbackMatches("false", false, "bool")).toBe(true);
+    expect(readbackMatches("off", true, "bool")).toBe(false);
+  });
+
+  it("R1b-2b-1 T2 — bool cùng luật ghi / đọc: kỳ vọng theo boolTuGiaTri, đọc lại theo giaiMaBoolDoc; một bên ngoài luật ⇒ false", () => {
+    expect(readbackMatches("0", 0, "bool")).toBe(true);
+    expect(readbackMatches(" TRUE ", 255, "bool")).toBe(true); // thanh ghi khác 0 ⇒ TRUE
+    expect(readbackMatches("off", false, "bool")).toBe(false); // trước: Boolean("off") = true ≠ false ⇒ false (đúng nhờ may); nay: ngoài luật
+    expect(readbackMatches("off", "off", "bool")).toBe(false);
+    expect(readbackMatches(true, "BAD 255", "bool")).toBe(false);
+    expect(readbackMatches(false, "x", "bool")).toBe(false); // trước: Boolean("x") = true ≠ false; giờ "x" ngoài luật
+    expect(readbackMatches(true, "x", "bool")).toBe(false); // trước: Boolean("x") = true ⇒ "khớp" sai
+    expect(readbackMatches({}, true, "bool")).toBe(false); // trước: Boolean({}) = true ⇒ "khớp" sai
+  });
+
   it("string compares String()", () => {
     expect(readbackMatches("RUN", "RUN", "string")).toBe(true);
     expect(readbackMatches("RUN", "STOP", "string")).toBe(false);
