@@ -11,6 +11,7 @@ import { getDb } from "../../db/connection";
 import { adapterSessionResetBoundMs, getActiveConnectionFingerprint, getActiveDriver, listActiveAdapters, resetAdapterSession } from "./otManager";
 import type { OtDriver, OtTagAddress } from "./otDriver";
 import { readbackMatches } from "./drivers/readbackCompare";
+import { lopDiaChiBit } from "./drivers/diaChiBit";
 import { canonicalOtValue } from "./otActionBinding";
 import { withDeadline } from "./drivers/boundedClose";
 import { ghiNhanLenh } from "./boDemTruyenThong";
@@ -901,15 +902,17 @@ function startStopWatch(
         if (token.cancelled) break;
         const drift: Array<{ tagKey: string; expected: unknown; actual: unknown; abandonedValueLanded: boolean }> = [];
         const unread: string[] = [];
+        // R1b-2b-1 T6 — địa chỉ lớp bit so theo luật bool; STOP đã xác minh ghi bằng boolDungGhim ⇒ expected cũng thế.
+        const bitStop = (t: OtTagAddress) => ({ lopBit: lopDiaChiBit(stopDriver.protocol, t.address, t.dataType) !== null, dungGhim: true });
         for (const t of tags) {
           if (!token.tags.has(t.tagKey)) continue; // released by a newer command while we were reading
           const s = samples?.find((x) => x.tagKey === t.tagKey);
           const expected = writes.find((w) => w.tagKey === t.tagKey)?.value;
           // SCADA R0 (F2) — chỉ mẫu quality "good" mới xác nhận được STOP: uncertain mang giá trị CŨ (last usable), bad không có giá trị.
           if (!s || s.value == null || s.quality !== "good") unread.push(t.tagKey);
-          else if (!readbackMatches(expected, s.value, t.dataType, tol)) {
+          else if (!readbackMatches(expected, s.value, t.dataType, tol, { scale: t.scale, offset: t.offset }, bitStop(t))) {
             const old = abandoned?.writes.find((w) => w.tagKey === t.tagKey);
-            drift.push({ tagKey: t.tagKey, expected, actual: s.value as unknown, abandonedValueLanded: old != null && readbackMatches(old.value, s.value, t.dataType, tol) });
+            drift.push({ tagKey: t.tagKey, expected, actual: s.value as unknown, abandonedValueLanded: old != null && readbackMatches(old.value, s.value, t.dataType, tol, { scale: t.scale, offset: t.offset }, bitStop(t)) });
           }
         }
         if (drift.length === 0 && unread.length === 0) continue;
@@ -1317,7 +1320,10 @@ export async function executeOtDeviceWrite(a: {
       const dataType = (r.dataType ?? "float") as OtTagAddress["dataType"];
       // SCADA R0 (F2) — chỉ mẫu quality "good" mới xác minh được lệnh ghi: uncertain mang giá trị CŨ (last usable) nên khớp giá trị
       // không chứng minh gì; uncertain/bad ⇒ acked_unverified.
-      const matched = s != null && s.quality === "good" && readbackMatches(r.write.value, actual, dataType, tol);
+      const matched = s != null && s.quality === "good" && readbackMatches(r.write.value, actual, dataType, tol, { scale: r.scale, offset: r.offset }, {
+        lopBit: lopDiaChiBit(driver.protocol, r.address, r.dataType) !== null,
+        dungGhim: stopDaXacMinh,
+      });
       if (matched) {
         o.status = "acked_verified";
         o.readBackValue = actual;

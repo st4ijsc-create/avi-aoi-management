@@ -14,6 +14,7 @@
 import type { DeviceTag } from "../../../drizzle/schema";
 import type { MucRuiRo } from "../ot/aiControlGate";
 import { boolTuGiaTri } from "../ot/drivers/boolNghiem";
+import { chuanHoaThangDo } from "../ot/drivers/otScale";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Loại kênh · mức tác động
@@ -154,9 +155,7 @@ const sachSo = (n: number): number => Number(n.toPrecision(15));
 
 /** scale / offset như driver dùng (`drivers/otScale.inverseScale`): vắng / NULL / 0 / không hữu hạn ⇒ scale 1; vắng / NULL ⇒ offset 0. */
 function heSoThangDo(tag: Pick<KenhGhiThuan, "scale" | "offset">): { s: number; o: number } {
-  const s = tag.scale == null ? 1 : Number(tag.scale);
-  const o = tag.offset == null ? 0 : Number(tag.offset);
-  return { s: Number.isFinite(s) && s !== 0 ? s : 1, o: Number.isFinite(o) ? o : 0 };
+  return chuanHoaThangDo(tag.scale, tag.offset); // R1b-2b-1 T6 (C8) — MỘT nguồn chuẩn hoá, dùng chung với readbackCompare
 }
 
 /** R1b-2a T2 — (s, o) = (1, 0) theo đúng cách driver đọc (`heSoThangDo`): giá trị kỹ thuật = số thô ⇒ tag int nhận đúng số nguyên. */
