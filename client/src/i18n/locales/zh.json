@@ -24256,5 +24256,18 @@
         "nutBo": "知道了"
       }
     }
+  },
+  "chonModel": {
+    "nhan": "选择模型",
+    "tuDong": "自动",
+    "tat": "已关闭",
+    "canDoiKhe": "需要切换显存槽 ~{{n}} 秒",
+    "canDoiKheChuaDo": "需要切换显存槽（未测量）",
+    "hetHieuLuc": "所选模型已不可用 — 改用自动。",
+    "nhom": {
+      "vaiTro": "角色",
+      "hoSo": "本地配置",
+      "ngoai": "外部模型"
+    }
   }
 }

@@ -1,0 +1,87 @@
+/**
+ * Đợt 10.2 — "chọn model theo yêu cầu" phía CLIENT: kiểu danh mục, lưu lựa chọn dính theo bề mặt, xác thực với danh mục, nhóm hiển thị. THUẦN (trừ localStorage có try/catch).
+ * Hợp đồng máy chủ: `server/services/ai/chonModel/kieu.ts` — mã `auto | vai-tro:<id> | ho-so:<profileId> | ngoai:<ncc>:<model>`. Client KHÔNG tự dựng mã `ngoai:*` (chỉ lấy từ danh mục
+ * máy chủ trả — máy chủ chỉ trả khi nhà máy đã bật). `auto` ⇒ KHÔNG gửi trường (không đổi một byte so với trước).
+ */
+export type LoaiMuc = "auto" | "vai-tro" | "ho-so" | "ngoai";
+export type TrangThaiMuc = "san-sang" | "can-doi-khe" | "tat";
+export interface MucModel {
+  ma: string;
+  loai: LoaiMuc;
+  nhan: string;
+  moTa: string;
+  trangThai: TrangThaiMuc;
+  uocTinhDoiKheGiay?: number;
+  nhaCungCap?: string;
+}
+/** Bề mặt chọn: mỗi nơi nhớ lựa chọn RIÊNG (chat và lập trình cần model khác nhau). */
+export type BeMatChon = "chat" | "lap-trinh" | "agent" | "luong";
+
+/** Bản sao hình dạng hợp lệ của máy chủ (`CHON_MODEL_RE`) — census so khớp nguồn hai phía. */
+export const CHON_MODEL_RE =
+  /^(auto|vai-tro:[a-z][a-z0-9]*(\.[a-z0-9-]+)?|ho-so:[A-Za-z0-9._@-]{1,96}|ngoai:[a-z0-9-]{1,32}:[A-Za-z0-9._:-]{1,96})$/;
+
+/** Vai KHÔNG sinh chữ — ẩn khỏi mọi bề mặt hiện có (chat / lập trình / agent / node sinh chữ): máy chủ cũng từ chối (`beMatChu`). */
+export const VAI_KHONG_SINH_CHU: ReadonlySet<string> = new Set(["embed", "rerank", "vision", "fim"]);
+
+/** Giấu mục `ngoai:*` ở node Luồng cho tới khi có node kiểm định ngoài (10.4). */
+export const HIEN_NGOAI_O_LUONG = false;
+
+export const AUTO: MucModel = { ma: "auto", loai: "auto", nhan: "Tự động", moTa: "", trangThai: "san-sang" };
+
+const khoa = (b: BeMatChon) => `aiChon.${b}`;
+
+/** Lựa chọn đã lưu của bề mặt; hỏng / không có / sai hình dạng ⇒ "auto". */
+export function docChonDaLuu(b: BeMatChon): string {
+  try {
+    const v = localStorage.getItem(khoa(b));
+    return v && CHON_MODEL_RE.test(v) ? v : "auto";
+  } catch {
+    return "auto";
+  }
+}
+export function luuChon(b: BeMatChon, ma: string): void {
+  try {
+    if (ma === "auto") localStorage.removeItem(khoa(b));
+    else localStorage.setItem(khoa(b), ma);
+  } catch {
+    /* chế độ riêng tư / bị chặn — lựa chọn chỉ sống trong phiên */
+  }
+}
+
+/** Mã đã lưu mà danh mục KHÔNG còn (hoặc đang `tat`) ⇒ phải về auto (trả `hetHieuLuc` để báo một lần). Danh mục chưa tải (rỗng) ⇒ giữ nguyên, chưa kết luận. */
+export function xacThucChon(ma: string, danhMuc: readonly MucModel[]): { ma: string; hetHieuLuc: boolean } {
+  if (ma === "auto" || danhMuc.length === 0) return { ma, hetHieuLuc: false };
+  const m = danhMuc.find((x) => x.ma === ma);
+  if (!m || m.trangThai === "tat") return { ma: "auto", hetHieuLuc: true };
+  return { ma, hetHieuLuc: false };
+}
+
+export interface NhomMuc {
+  tuDong: MucModel;
+  vaiTro: MucModel[];
+  hoSo: MucModel[];
+  ngoai: MucModel[];
+}
+/** Chia danh mục thành nhóm cho ô chọn của bề mặt. Vai không sinh chữ bị ẩn; `luong` giấu `ngoai:*` (xem HIEN_NGOAI_O_LUONG). Client không thêm gì ngoài danh mục. */
+export function nhomMuc(danhMuc: readonly MucModel[], beMat: BeMatChon): NhomMuc {
+  const tuDong = danhMuc.find((m) => m.loai === "auto") ?? AUTO;
+  return {
+    tuDong,
+    vaiTro: danhMuc.filter((m) => m.loai === "vai-tro" && !VAI_KHONG_SINH_CHU.has(m.ma.slice("vai-tro:".length))),
+    hoSo: danhMuc.filter((m) => m.loai === "ho-so"),
+    ngoai: beMat === "luong" && !HIEN_NGOAI_O_LUONG ? [] : danhMuc.filter((m) => m.loai === "ngoai"),
+  };
+}
+
+/** Hậu tố trạng thái hiển thị trong ô chọn: san-sang ⇒ rỗng; can-doi-khe ⇒ "cần đổi khe ~N s" hoặc "chưa đo"; tat ⇒ "tắt". `t` nhận khoá + mặc định + tham số. */
+export function hauToTrangThai(m: MucModel, t: (k: string, def: string, o?: Record<string, unknown>) => string): string {
+  if (m.trangThai === "san-sang") return "";
+  if (m.trangThai === "tat") return t("chonModel.tat", "tắt");
+  return m.uocTinhDoiKheGiay !== undefined
+    ? t("chonModel.canDoiKhe", "cần đổi khe ~{{n}} s", { n: Math.round(m.uocTinhDoiKheGiay) })
+    : t("chonModel.canDoiKheChuaDo", "cần đổi khe (chưa đo)");
+}
+
+/** Giá trị gửi lên máy chủ cho một lựa chọn: "auto" ⇒ undefined (KHÔNG gửi trường). */
+export const chonModelGui = (ma: string): string | undefined => (ma === "auto" || !ma ? undefined : ma);

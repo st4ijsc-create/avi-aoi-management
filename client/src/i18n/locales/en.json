@@ -24259,5 +24259,18 @@
         "nutBo": "Understood"
       }
     }
+  },
+  "chonModel": {
+    "nhan": "Choose model",
+    "tuDong": "Automatic",
+    "tat": "off",
+    "canDoiKhe": "needs slot swap ~{{n}} s",
+    "canDoiKheChuaDo": "needs slot swap (not measured)",
+    "hetHieuLuc": "The selected model is no longer available — using Automatic.",
+    "nhom": {
+      "vaiTro": "Roles",
+      "hoSo": "Local profiles",
+      "ngoai": "External models"
+    }
   }
 }

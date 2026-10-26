@@ -24256,5 +24256,18 @@
         "nutBo": "Đã hiểu"
       }
     }
+  },
+  "chonModel": {
+    "nhan": "Chọn model",
+    "tuDong": "Tự động",
+    "tat": "tắt",
+    "canDoiKhe": "cần đổi khe ~{{n}} s",
+    "canDoiKheChuaDo": "cần đổi khe (chưa đo)",
+    "hetHieuLuc": "Model đã chọn không còn khả dụng — dùng Tự động.",
+    "nhom": {
+      "vaiTro": "Vai trò",
+      "hoSo": "Hồ sơ Local",
+      "ngoai": "Model ngoài"
+    }
   }
 }
