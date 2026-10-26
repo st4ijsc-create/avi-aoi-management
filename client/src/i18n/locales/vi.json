@@ -3971,6 +3971,7 @@
       "doiModelLlamaServer": "đổi model đang chạy trên llama-server",
       "soModelTongQuan": "xem sổ model (vai trò → model)",
       "soModelDatGan": "đổi gán vai trò → model",
+      "soModelGoGan": "gỡ gán model của vai trò",
       "soModelSuaArtifact": "sửa giấy phép / trạng thái artifact model",
       "soModelTaoHoSo": "tạo/sửa hồ sơ phục vụ model",
       "generateText": "sinh văn bản",

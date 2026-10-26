@@ -3963,6 +3963,7 @@
       "doiModelLlamaServer": "切换 llama-server 上运行的模型",
       "soModelTongQuan": "查看模型注册表（角色 → 模型）",
       "soModelDatGan": "更改角色 → 模型的绑定",
+      "soModelGoGan": "移除角色的模型分配",
       "soModelSuaArtifact": "修改模型文件的许可证/状态",
       "soModelTaoHoSo": "创建/编辑模型服务配置",
       "generateText": "生成文本",

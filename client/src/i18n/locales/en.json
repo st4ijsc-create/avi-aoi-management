@@ -3963,6 +3963,7 @@
       "doiModelLlamaServer": "switch the model running on llama-server",
       "soModelTongQuan": "view the model registry (role → model)",
       "soModelDatGan": "change a role → model binding",
+      "soModelGoGan": "remove a role's model assignment",
       "soModelSuaArtifact": "edit a model artifact's licence / status",
       "soModelTaoHoSo": "create/edit a model serving profile",
       "generateText": "generate text",
