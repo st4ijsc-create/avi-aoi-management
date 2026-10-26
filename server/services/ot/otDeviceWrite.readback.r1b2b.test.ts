@@ -124,6 +124,21 @@ describe("R1b-2b-1 T6 fix round 1 — đọc lại tag có tỉ lệ qua ModbusD
     expect(o.errorText).toBe("readback mismatch: expected=2.5 actual=4");
   });
 
+  // T6 fix round 2 (re-review T16): giá trị LỆCH LƯỚI — ca DUY NHẤT phân biệt so-đường-đọc với so bỏ thang đo (round(2,4) = 2 ≠ 3). Đi THẲNG
+  // `executeOtDeviceWrite` (dưới cổng kênh của dispatch(): cổng R1b-2a từ chối OFF_STEP giá trị lệch lưới trên tag int scale ≠ 1).
+  it("★ LỆCH LƯỚI int scale 0,5 ghi 2,4 ⇒ thô round(4,8) = 5 ⇒ đọc 3 ⇒ acked_verified; scale 10 ghi 33 ⇒ thô 3 ⇒ đọc 30 ⇒ acked_verified", async () => {
+    const tb = thietBiModbus();
+    const o = await ghi({ address: "holding:10", dataType: "int", value: 2.4, scale: 0.5, driver: tb.driver });
+    expect(tb.ghi).toEqual([["writeRegister", 9, 5]]);
+    expect(o.readBackValue).toBe(3);
+    expect(o.status).toBe("acked_verified");
+    const tb2 = thietBiModbus();
+    const o2 = await ghi({ address: "holding:13", dataType: "int", value: 33, scale: 10, driver: tb2.driver });
+    expect(tb2.ghi).toEqual([["writeRegister", 12, 3]]);
+    expect(o2.readBackValue).toBe(30);
+    expect(o2.status).toBe("acked_verified");
+  });
+
   it("int scale 0,5 offset 10 ghi 12,5 ⇒ thô 5 ⇒ đọc round(12,5) = 13 ⇒ acked_verified; thiết bị giữ thô 3 ⇒ đọc 12 (round 11,5) ⇒ acked_unverified", async () => {
     const tb = thietBiModbus();
     const ok = await ghi({ address: "holding:12", dataType: "int", value: 12.5, scale: 0.5, offset: 10, driver: tb.driver });

@@ -97,6 +97,15 @@ describe("readbackMatches", () => {
     expect(readbackMatches(5, 6, "int")).toBe(false);
   });
 
+  // T6 fix round 2 (re-review T16) — giá trị LỆCH LƯỚI: chỉ chúng phân biệt so-đường-đọc với so-bỏ-thang-đo (Math.round(e) === Math.round(a)); mọi ca
+  // trên lưới ở trên đều có round(e) = đọc mô phỏng nên đột biến "bỏ thang đo" sống sót nếu thiếu ca này.
+  it("R1b-2b-1 T6 fix round 2 — LỆCH LƯỚI: 2,4 @0,5 ⇒ thô 5 ⇒ đọc 3 khớp; 33 @10 ⇒ thô 3 ⇒ đọc 30 khớp (thiết kế: thiết bị giữ đúng số driver ghi)", () => {
+    expect(readbackMatches(2.4, 3, "int", 1e-6, { scale: 0.5 })).toBe(true);
+    expect(readbackMatches(2.4, 2, "int", 1e-6, { scale: 0.5 })).toBe(false);
+    expect(readbackMatches(33, 30, "int", 1e-6, { scale: 10 })).toBe(true);
+    expect(readbackMatches(33, 33, "int", 1e-6, { scale: "10", offset: "0" })).toBe(false); // driver thật không thể đọc 33 từ thô nguyên
+  });
+
   it("R1b-2b-1 T6 fix round 1 — GIỚI HẠN đã biết (R1b-2b-2 mục 64): làm tròn che số thô sai ⇒ không phân biệt được", () => {
     // scale 0,5: thô 6 đọc round(3,0) = 3 = đọc của thô 5 ⇒ "khớp" — cần đọc lại THÔ thật mới phát hiện.
     expect(readbackMatches(2.5, 3, "int", 1e-6, { scale: 0.5 })).toBe(true);

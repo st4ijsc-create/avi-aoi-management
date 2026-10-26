@@ -175,6 +175,8 @@ _(chạy toàn bộ: chưa chạy)_
    đột biến quay về so không gian thô ⇒ đỏ). **Giới hạn còn lại:** khi làm tròn CHE số thô sai (scale 0,5: thô 6 và thô 5 cùng đọc 3) thì không phát
    hiện được nếu không đọc lại THÔ thật ⇒ R1b-2b-2 mục 64 (ca giới hạn được GHIM trong `otDeviceWrite.readback.r1b2b.test.ts` để mục 64 lật có chủ ý).
    Vì thế ô R1 của lưới dùng thô 7 (đọc 4 ≠ 3) thay thô 6. Chỉ là nhãn (không gửi lại, không chặn STOP).
+   Ghi giá trị lệch lưới (vd 33 ở scale 10 ⇒ thiết bị giữ 30) được gắn `acked_verified` theo thiết kế so đường đọc; cổng kênh (OFF_STEP, R1b-2a) đã từ
+   chối giá trị lệch lưới cho tag int có scale ≠ 1 / tag đã khai `writeStep`, nên chỉ đường vòng qua cổng mới gặp.
 2. (T2, KD-T2) Ghim STOP CŨ là chuỗi ngoài tập trên coil (vd `"off"`) vẫn ghi TRUE (luật truthy cũ — STOP không bao giờ bị chặn); ghim MỚI như vậy bị từ
    chối lúc đặt; census TEST / DEV = 0 ghim như vậy. Cùng nhánh: số hữu hạn ≠ 0 ⇒ TRUE.
 3. (Task 2 fix round 1) luật/FOE tạo sau triển khai: luật interlock bị kiểm lúc lưu + tư thế; workflow FOE chỉ bị chặn sớm lúc gửi (TYPE_MISMATCH), không lúc lưu.
@@ -277,7 +279,7 @@ _(chạy toàn bộ: chưa chạy)_
 | T3 (G2) | bỏ vế `thuVienBaoLoi` ⇒ 3 đỏ; MC "mọi BAD" bỏ `anythingBad` ⇒ 1; bỏ vế dataType ⇒ chỉ ca thuần đỏ (ca driver int không phân biệt được — đã ghi) |
 | T4 (mục 58) | M1 luôn `khong_ro` ⇒ 4; M2 bỏ lọc `valid===false` ⇒ ban đầu SỐNG, thêm 2 ca ⇒ 2 đỏ; M3 đảo "mọi item lỗi PLC" ⇒ đỏ; M4 `khong_ro` bỏ luật thời gian ⇒ 3 |
 | T5 (mục 51) | M1–M8 đỏ (M3b — router bỏ lý do — ban đầu SỐNG, thêm ca ⇒ đỏ); fix round M9–M11 đỏ (ca push "mọi địa chỉ sai" xanh theo thiết kế: đi đường poll) |
-| T6 (mục 42) | A: so đọc lại không thang đo ⇒ ca "scale 0,5 đọc 3,0" đỏ; B: `lopBit:false` ⇒ ca "STOP 255 coil int" đỏ. Chỗ gọi canh STOP chưa đột biến. Fix round 1: quay về so không gian thô `round((e − o)/s) === round((a − o)/s)` ⇒ 7 ca đỏ (4 qua `ModbusDriver` THẬT: scale 0,5 / 0,1 / offset / giới hạn; 3 thuần) |
+| T6 (mục 42) | Đo lại ở fix round 2 (head sau fix round 1 + ca lệch lưới; ca "scale 0,5 đọc 3,0 ⇒ lệch" của T6 đầu đã bỏ vì sai mô hình). **A** `readbackMatches` bỏ thang đo (`chuanHoaThangDo(undefined, undefined)` = so `round(e) === round(a)` trước T6) ⇒ 2 đỏ: ca thuần lệch lưới (2,4 @0,5 đọc 3; 33 @10 đọc 30) + ca `ModbusDriver` THẬT lệch lưới (2,4 @0,5 ⇒ `writeRegister(9,5)`, đọc 3; 33 @10 ⇒ `writeRegister(12,3)`, đọc 30). **A2** chỗ gọi xác minh ghi (`otDeviceWrite.ts`) truyền `undefined` thay `{scale, offset}` ⇒ 1 đỏ (ca `ModbusDriver` lệch lưới). **R** quay về so không gian thô `round((e − o)/s) === round((a − o)/s)` ⇒ 9 đỏ (5 qua `ModbusDriver` THẬT: 2,5 @0,5, 2,3 @0,1, lệch lưới, offset, giới hạn; 4 thuần). **B** `lopBit:false` ⇒ ca "STOP 255 coil int" đỏ (T6 đầu). Ô R1 / R1-đc của lưới nằm TRÊN lưới nên không giết A (suy ra ở re-review, lưới không chạy dưới đột biến) — chỉ ca lệch lưới giết. Chỗ gọi canh STOP chưa đột biến |
 | T7 (mục 11, 12) | M1 gắn listener sau connect ⇒ đỏ; M2 bỏ chốt danh tính callback ⇒ đỏ; M3 bỏ so serial 4E ⇒ đỏ |
 | T8 (mục 13) | bỏ điều kiện chỉ-RAM ⇒ 2 đỏ (legacy + HA) |
 | T9 (mục 44, 46) | M1 / M2 / M7 bỏ hạn ⇒ đỏ theo thời gian; M3 bỏ spec khỏi danh sách làm ấm ⇒ đỏ; M4 bỏ handler reject (C3) ⇒ đỏ; M5 / M6 vòng bận ⇒ đỏ; fix round: bỏ trần (MC) ⇒ đơn vị + DB đỏ (11 ≠ 8); M8 vòng bận ⇒ đỏ |
