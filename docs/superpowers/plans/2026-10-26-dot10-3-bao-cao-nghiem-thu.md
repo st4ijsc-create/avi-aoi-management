@@ -92,7 +92,7 @@ Thứ tự bật cho một nhà máy. Không bước nào làm qua `.env` hay qu
 
 ## 8. Backlog sau 10.3 (chưa làm)
 
-1. `server/_core/llm.ts:237` tải `image_url` bằng `fetch` thô (theo chuyển hướng, không rào SSRF). Cần xác nhận nguồn URL (`annotationRouters`, `inspectionRouters`) hoặc chuyển sang `fetchGhim`.
+1. ~~`server/_core/llm.ts:237` tải `image_url` bằng `fetch` thô~~ — XONG (lô sau nghiệm thu, phương án B của dieu-phoi): SSRF THẬT (nguồn: `annotation.analyzeImage` chuỗi tự do của người dùng; `inspection.analyzeWithAI` đọc URL do Machine API ghi). Nay qua `_core/taiAnhAnToan.ts` (ghim IP, metadata cấm, nội bộ chỉ khi khai `AI_IMAGE_HOST_CHO_PHEP`, không chuyển hướng, 20 MB, 15 s, `image/*`); ảnh http CHỈ tải khi sidecar thị giác sẵn sàng; `annotation.analyzeImage` sau MOD_AI. **Backlog mới:** Machine API `imageUrl: z.string().url()` — kiểm dạng URL lúc GHI (chỉ khoá kho tệp / data: / host khai).
 2. ~~Forge: lưới "URL rỗng ⇒ 0 lời gọi" + cảnh báo khởi động~~ — XONG (lô sau nghiệm thu): `forgeNgoai.ts` + test, cảnh báo khởi động một lần, `oversight.posture.forgeNgoaiBat`.
 3. Kiểm `chanHostAiNgoai` lúc LƯU cấu hình của 5 đích admin ở §6.
 4. `urlNgoai`: host nội bộ đặt tên công khai (vd `gpu.nhamay.vn` → 10.x) bị buộc https dù đã khai. Hạn chế chức năng, không phải lỗ.

@@ -4099,7 +4099,8 @@
       "flowXuat": "xuất luồng AI ra gói",
       "flowNhap": "nhập luồng AI từ gói",
       "aiNgoaiDatModel": "đặt model AI ngoài",
-      "aiNgoaiDuyet": "duyệt luồng dùng AI ngoài"
+      "aiNgoaiDuyet": "duyệt luồng dùng AI ngoài",
+      "taiAnhAi": "tải ảnh cho phân tích AI"
     },
     "field": {
       "stationId": "trạm",
@@ -4562,7 +4563,14 @@
       "khong-co-node-ngoai": "phiên bản không dùng model AI ngoài",
       "NGOAI_TU_DUYET_VAN_HANH": "không tự duyệt luồng gửi dữ liệu vận hành ra AI ngoài",
       "NGOAI_CHUA_DUYET": "phiên bản dùng model AI ngoài chưa được duyệt",
-      "NGOAI_LUONG_TOAN_CUC": "luồng toàn hệ thống không dùng được model AI ngoài"
+      "NGOAI_LUONG_TOAN_CUC": "luồng toàn hệ thống không dùng được model AI ngoài",
+      "anh-url-sai": "URL ảnh không hợp lệ (chỉ http/https, không kèm tài khoản)",
+      "anh-dich-cam": "đích ảnh nội bộ chưa được khai (AI_IMAGE_HOST_CHO_PHEP) hoặc là địa chỉ metadata",
+      "anh-ket-noi": "không kết nối được tới máy chủ ảnh",
+      "anh-chuyen-huong": "máy chủ ảnh trả chuyển hướng (không theo)",
+      "anh-http-loi": "máy chủ ảnh trả lỗi",
+      "anh-khong-phai-anh": "nội dung tải về không phải ảnh",
+      "anh-qua-lon": "ảnh vượt 20 MB"
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
