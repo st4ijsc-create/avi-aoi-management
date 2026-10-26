@@ -403,6 +403,10 @@ luật máy chủ; polish 4 mục · T8 c3 / c4 chấp nhận (trim, CLI chặt 
 M-1…M-5 · T13 c2 mẫu xấu không lý do = chưa trả lời; r2 vá I1 / I2 (commit riêng cho I2), cờ tắt phát mẫu xấu trần (chấp nhận), vòng nối lại MC (chấp nhận,
 ghi giới hạn; thu hẹp ở final-fix I-1 — chỉ khi lần đọc trôi ≥ ~hạn gói); r3 census `stale` mở rộng · T14 fix: ghim host:port = `DATABASE_URL`, test STOP chưa ack.
 
+> Nguyên văn sổ cái (progress.md dòng 171): `dieu-phoi 2026-10-26: I-1 narrowing APPROVED (no full revert; STOP availability > connected metric); slow-error edge ⇒ limits + R1b-2b; minors approved; DECISION: exempt ONLY scadaCommands.dungMay from forced-password-change gate (STOP-never-blocked invariant), still valid session + scope + all STOP checks, audit 'STOP khi đang bị buộc đổi mật khẩu', no other procedure; tests + mutation; record in report for owner — added to final fix round`
+>
+> Kèm theo cùng quyết định: điều phối DUYỆT thu hẹp I-1 (all-BAD MC chỉ là mất liên lạc khi đọc ≥ ~timeout thư viện; all-BAD nhanh ⇒ device_error, phiên giữ, STOP ghi được — không quay lui toàn bộ, ưu tiên STOP luôn đi được hơn chỉ số connected); ca biên PLC trả lỗi chậm sát timeout ⇒ giới hạn + R1b-2b mục 58.
+
 **Điều phối quyết 2026-10-26: miễn riêng scadaCommands.dungMay khỏi cổng buộc đổi mật khẩu (bất biến STOP không bao giờ bị chặn); vẫn đòi phiên hợp
 lệ + phạm vi + mọi kiểm STOP; có audit.** Thực hiện ở final-fix: tập có tên `THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU = ["scadaCommands.dungMay"]`
 (`server/_core/trpc.ts`, lý do có ngày) — KHÁC tập cho qua: cổng VẪN đọc cờ (trong hạn tổng STOP; hết hạn ⇒ từ chối "dùng E-STOP cứng"), có cờ ⇒ đi
