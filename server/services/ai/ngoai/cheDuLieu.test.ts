@@ -171,3 +171,17 @@ describe("layTuDienNhay — đệm 5 phút", () => {
     __xoaDemTuDien();
   });
 });
+
+describe("trần chuỗi liền 8 000 (dieu-phoi c, 2026-10-26 — đo trên aiSafety tuyến tính)", () => {
+  it("log JSON gọn KHÔNG đóng ~2,4 KB giữ nguyên dữ liệu kỹ thuật; khối liền > 8 KB vẫn che NGUYÊN khối", () => {
+    const log = `log:{"may":"M-07","nhietDo":[${Array.from({ length: 600 }, (_, i) => 200 + (i % 7)).join(",")}],"trangThai":"chay"`;
+    expect(log.length).toBeGreaterThan(2000);
+    const k = cheChuoi(log);
+    expect(k.giaTri).toContain('"nhietDo":[200,201');
+    expect(k.theoLoai).not.toHaveProperty("chuoi_lien_dai");
+    const khoi = "QUJD".repeat(2100); // 8 400 ký tự liền (base64)
+    const k2 = cheChuoi(`tep: ${khoi} het`);
+    expect(k2.theoLoai).toHaveProperty("chuoi_lien_dai");
+    expect(k2.giaTri).not.toContain("QUJDQUJD");
+  });
+});

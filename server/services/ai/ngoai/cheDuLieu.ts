@@ -218,9 +218,14 @@ const RE_NGUOI_DUNG = /(?<![A-Za-z0-9_])((?:user(?:name)?|login|uid)["']?[ \t]*[
  * dài một chuỗi liền (đo: `"10.1.1.".repeat(20000)` ⇒ 11,6 s, chặn vòng lặp sự kiện chung với đường STOP). Chuỗi liền
  * ≥ 2 000 ký tự không trắng KHÔNG phải văn xuôi / mã đọc được — che NGUYÊN khối (fail-closed, che thừa) TRƯỚC mọi luật
  * khác ⇒ mọi luật sau chạy trên chuỗi liền có trần (chi phí ≤ 2 000 × n). Lookbehind neo ở ĐẦU chuỗi liền ⇒ tuyến tính.
- * Lưới "TUYẾN TÍNH" trong `cheDuLieu.test.ts` đỏ khi bỏ dòng này (họ `x://a:b`: 6 s).
+ * Lưới "TUYẾN TÍNH" trong `cheDuLieu.test.ts` đỏ khi bỏ dòng này (họ `x://a:b`: 6 s) — KHI tầng cũ còn bậc hai (trước `134988874`).
+ *
+ * ★ NỚI 2 000 → 8 000 (2026-10-26, dieu-phoi c — ĐO trên `aiSafety` TUYẾN TÍNH đã ở main `134988874`): KHÔNG trần, 12 họ xấu × 256 KB
+ * (trần mỗi chuỗi của cổng) ⇒ chậm nhất 30 ms (`a-…%`), tỉ lệ t(2n)/t(n) 1,0–2,8 ⇒ trần không còn cần cho HIỆU NĂNG. Giá của 2 000:
+ * log JSON gọn bị cắt 2,4 KB (`log:{"may":…,"nhietDo":[600 số]…` không đóng) bị che NGUYÊN khối ⇒ mất dữ liệu kỹ thuật vô hại; 8 000
+ * giữ được. Vẫn GIỮ trần (phòng thủ nếu tầng cũ hồi quy bậc hai; khối liền > 8 KB thường là base64 / tệp nhị phân ⇒ che là đúng).
  */
-const RE_KHONG_TRANG_DAI = /(?<!\S)\S{2000,}/g;
+const RE_KHONG_TRANG_DAI = /(?<!\S)\S{8000,}/g;
 
 /** PEM khoá riêng — quét TUYẾN TÍNH (regex lười `[\s\S]*?` của tầng cũ bậc hai khi nhiều BEGIN không END). Không có END ⇒ che tới hết văn bản. */
 function chePem(t: string, dem: (loai: string) => void): string {
