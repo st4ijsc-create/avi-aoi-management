@@ -446,3 +446,51 @@ describe("R1b-2b-1 T17 fix round 1 (I1) — rủi ro lệnh ghi cũ sau huỷ v�
     expect(_staleWriteRiskIntentIdsForTests(adapterId)).toBeNull();
   }, 15_000);
 });
+
+/**
+ * R1b-2b-1 T17 fix round 2 (re-review New-1) — hạn của LỆNH (deadline ngắn) hết TRƯỚC ⇒ đường giữ chỗ B3; TRONG ân hạn 1 s phiên bị hạ (vòng canh /
+ * resetSession HA / connect() của supervisor) ⇒ driver reject lệnh treo bằng lỗi có kiểu. Lần reject đó KHÔNG được coi là "đã xong": kết cục không rõ ⇒ ghi
+ * rủi ro "lệnh ghi cũ" (gộp), không đặt lại phiên; STOP acked kế tiếp có canh chỉ-báo-động. Trước T17 với Modbus: promise mồ côi ⇒ hết ân hạn ⇒ có ghi rủi ro.
+ */
+describe("R1b-2b-1 T17 fix round 2 (New-1) — huỷ vì mất liên kết TRONG ân hạn B3 vẫn ghi rủi ro lệnh ghi cũ", () => {
+  const cu = process.env.OT_CMD_SERIALIZE_ENABLED;
+  afterEach(() => {
+    if (cu === undefined) delete process.env.OT_CMD_SERIALIZE_ENABLED;
+    else process.env.OT_CMD_SERIALIZE_ENABLED = cu;
+  });
+
+  it("serialize BẬT: lệnh hạn 200 ms, driver treo (peer im lặng, hạn driver 5 s) ⇒ timeout + slotHold; disconnect() trong ân hạn ⇒ intent ghi vào rủi ro; STOP2 acked ⇒ canh = 1", async () => {
+    process.env.OT_CMD_SERIALIZE_ENABLED = "true";
+    const adapterId = 990_031;
+    const sim = await startSim();
+    const driver = new ModbusDriver();
+    cleanup.push(() => sim.close(), () => driver.disconnect());
+    const cfgCham = { endpoint: `tcp://127.0.0.1:${sim.port}`, timeoutMs: 5000, options: { unitId: 1, timeoutMs: 5000 } };
+    await driver.connect(cfgCham as any);
+    await sleep(100);
+    sim.kichBan = ["im_lang"];
+    const su: Array<{ action: string; detail: Record<string, unknown> }> = [];
+    const sink: OtDeviceEventSink = (ev) => su.push({ action: ev.action, detail: ev.detail });
+
+    const r1 = await chayStopKhongCho(driver, adapterId, 200, { intentIds: [61, 62], sink });
+    expect(r1.timedOut).toBe(true);
+    expect(r1.outcomes[0].status).toBe("timeout");
+    expect(r1.outcomes[0].errorText).toMatch(/write timeout after 200ms/); // hạn của LỆNH, không phải mất liên kết
+    expect(r1.slotHold).toBeDefined(); // đường giữ chỗ B3
+    expect(_staleWriteRiskIntentIdsForTests(adapterId)).toBeNull(); // chưa hết ân hạn, chưa có gì
+    await driver.disconnect(); // hạ phiên TRONG ân hạn 1 s ⇒ lệnh treo bị reject bằng lỗi có kiểu
+    const t0 = performance.now();
+    await r1.slotHold;
+    expect(performance.now() - t0).toBeLessThan(500); // nhả chỗ ngay, không chờ hết ân hạn / không đặt lại phiên
+    expect(_staleWriteRiskIntentIdsForTests(adapterId)).toEqual([61, 62]);
+
+    sim.kichBan = [];
+    await driver.connect(cfgCham as any);
+    const r2 = await chayStopKhongCho(driver, adapterId, 5000, { intentIds: [63], sink });
+    expect(r2.outcomes[0].status).toBe("acked");
+    expect(sim.coil.v).toBe(1);
+    expect(_stopWatchCountForTests(adapterId)).toBe(1);
+    await choToi(() => _stopWatchCountForTests(adapterId) === 0, 3000, "canh STOP kết thúc");
+    expect(JSON.stringify(su.find((e) => e.action === "ot_stop_unverified")?.detail ?? {})).toMatch(/61/);
+  }, 20_000);
+});

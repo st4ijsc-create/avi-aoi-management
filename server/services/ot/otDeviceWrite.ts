@@ -235,12 +235,14 @@ function nhaGiuRuiRo(adapterId: number, daGiu: StaleWrite): void {
   }
   const hanCuaGiu = now + daGiu.windowMs;
   if (!hienTai) {
-    daGiu.soGiu = 0;
+    // (không xảy ra ngoài seam test — chỉ seam test xoá map) — trừ lượt CỦA MÌNH, các lượt giữ khác đã gộp vào mục vẫn giữ ∞ (re-review N1).
+    daGiu.soGiu = Math.max(0, daGiu.soGiu - 1);
     daGiu.untilHuuHan = Math.max(daGiu.untilHuuHan, hanCuaGiu);
     daGiu.until = hanHieuLuc(daGiu);
     staleWriteRisk.set(adapterId, daGiu);
     return;
   }
+  // (không xảy ra trong sản phẩm: mục đang giữ có hạn ∞, không bị quét) — gộp nội dung, không chuyển lượt giữ.
   hienTai.windowMs = Math.max(hienTai.windowMs, daGiu.windowMs);
   for (const n of daGiu.nguonIntent) if (!hienTai.nguonIntent.includes(n)) hienTai.nguonIntent.push(n);
   hienTai.writes.push(...daGiu.writes);
@@ -874,13 +876,20 @@ async function holdSlotAfterTimedOutWrite(
     const first = await Promise.race([
       write.then(
         () => "settled" as const,
-        () => "settled" as const,
+        // R1b-2b-1 T17 fix round 2 (New-1) — huỷ vì mất liên kết / hạ phiên TRONG ân hạn (vòng canh S7/MC disconnect(), resetSession HA,
+        // connect() của supervisor) KHÔNG phải "đã xong": kết cục vẫn không rõ và byte đã vào socket còn có thể tới PLC ⇒ kết quả riêng.
+        (e: unknown) => (laLoiMatLienKetKhiDangGui(e) ? ("huy_mat_lien_ket" as const) : ("settled" as const)),
       ),
       new Promise<"grace">((resolve) => {
         graceTimer = setTimeout(() => resolve("grace"), OT_TIMED_OUT_WRITE_GRACE_MS);
       }),
     ]);
     clearTimeout(graceTimer);
+    if (first === "huy_mat_lien_ket") {
+      // ghi rủi ro "lệnh ghi cũ" (gộp, không làm yếu) để STOP acked kế tiếp có canh chỉ-báo-động; KHÔNG đặt lại phiên (phiên đã hạ); nhả chỗ ngay.
+      ghiRuiRoGhiCu(input, ledger, "cua_so");
+      return;
+    }
     if (first === "settled") return;
 
     // The old write is abandoned with its fate unknown. Fix round 1 (R-4-r): the risk entry is LIVE for the whole reset
