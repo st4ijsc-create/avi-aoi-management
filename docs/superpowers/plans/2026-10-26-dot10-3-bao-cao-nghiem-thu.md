@@ -70,6 +70,7 @@ Thứ tự bật cho một nhà máy. Không bước nào làm qua `.env` hay qu
 6. **Luồng dùng model ngoài**: mỗi PHIÊN BẢN phải `aiNgoai.duyetNgoai`. Băm định nghĩa đổi ⇒ phải duyệt lại. Luồng toàn hệ thống không dùng được.
 7. **Bật cờ toàn cục** `AI_NGOAI_ENABLED=true` ở môi trường chạy (cổng 3000) — bước cuối.
 8. ⚠ `BUILT_IN_FORGE_API_URL` phải để RỖNG (hiện rỗng). Đặt nó = mở đường ra ngoài KHÔNG qua cổng — cần quyết định riêng (§12 tài liệu an ninh).
+9. ⚠ **Ảnh cho phân tích AI** (`annotation.analyzeImage`, `inspection.analyzeWithAI`): `imageUrl` dạng URL TUYỆT ĐỐI tới kho / máy NỘI BỘ — **kể cả chính server** (`http://localhost:3000/uploads/…`, `http://10.x/…`) — bị ĐÓNG (`anh-dich-cam`) cho tới khi khai `host:cổng` vào `AI_IMAGE_HOST_CHO_PHEP`. Khoá kho tệp / đường tương đối (`/uploads/…`) và `data:` không đi mạng ⇒ vẫn chạy. Ảnh http chỉ tải khi sidecar thị giác sẵn sàng.
 
 ## 6. Rủi ro còn lại — đã quyết (dieu-phoi, ghi ở `docs/AI_FLOW_SECURITY_OPERATIONS.md` §12)
 

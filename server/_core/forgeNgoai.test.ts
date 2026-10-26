@@ -65,3 +65,29 @@ describe("cảnh báo khởi động", () => {
     expect(ghi[0]).toContain("§12");
   });
 });
+
+describe("nối dây (rà kiem-dinh F3) — startServer GỌI canhBaoForgeKhiKhoiDong()", () => {
+  it("AST index.ts: thân hàm startServer có lời gọi canhBaoForgeKhiKhoiDong() (không chỉ nhắc trong chú thích)", async () => {
+    const ts = (await import("typescript")).default;
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const nguon = fs.readFileSync(path.join(__dirname, "index.ts"), "utf8");
+    const sf = ts.createSourceFile("index.ts", nguon, ts.ScriptTarget.Latest, true);
+    let than: import("typescript").Node | undefined;
+    sf.forEachChild((n) => {
+      if (ts.isFunctionDeclaration(n) && n.name?.text === "startServer") than = n.body;
+    });
+    expect(than).toBeDefined();
+    let goi = 0;
+    const duyet = (n: import("typescript").Node): void => {
+      if (ts.isCallExpression(n)) {
+        const c = n.expression;
+        const ten = ts.isPropertyAccessExpression(c) ? c.name.text : ts.isIdentifier(c) ? c.text : "";
+        if (ten === "canhBaoForgeKhiKhoiDong") goi++;
+      }
+      ts.forEachChild(n, duyet);
+    };
+    duyet(than!);
+    expect(goi).toBe(1);
+  });
+});
