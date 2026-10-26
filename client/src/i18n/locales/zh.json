@@ -4089,7 +4089,9 @@
       "dieuKienDoiTuongTrongPhamVi": "范围内对象条件",
       "flowNguoiNhan": "查找流程接收人",
       "flowXuat": "导出 AI 流程包",
-      "flowNhap": "从包导入 AI 流程"
+      "flowNhap": "从包导入 AI 流程",
+      "aiNgoaiDatModel": "设置外部AI模型",
+      "aiNgoaiDuyet": "审批使用外部AI的流程"
     },
     "field": {
       "stationId": "工位",
@@ -4356,7 +4358,11 @@
       "flowDuyet": "审批 AI 流程中等待的步骤",
       "verifyChainAcrossFactories": "跨工厂验证追溯链",
       "manageProductWideProgramRelease": "管理产品级检验程序发布",
-      "authorSharedSop": "编写共享SOP"
+      "authorSharedSop": "编写共享SOP",
+      "aiNgoaiHostNoiBo": "声明外部AI内部主机",
+      "aiNgoaiDuyet": "审批使用外部AI的流程",
+      "flowKichHoat": "启用流程",
+      "flowChayTay": "手动运行流程"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
@@ -4549,7 +4555,14 @@
       "scadaKenhCheDoGoTruoc": "该标签是某台机器的模式通道——删除标签前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。",
       "scadaKenhCheDoDoiMay": "该适配器承载某台机器的模式通道——将适配器分配给其他机器前，请先在“通道与限值”页面移除模式通道。",
       "scadaKenhCheDoGoTruocXoaAdapter": "该适配器承载某台机器的模式通道——删除适配器前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。",
-      "interlockDefinitionChanged": "源 / 目标标签的定义（地址、类型、比例 / 偏移、适配器、边缘节点）在审批后已更改 — 或该规则是在本次更新之前审批的。启用前需要重新审批。"
+      "interlockDefinitionChanged": "源 / 目标标签的定义（地址、类型、比例 / 偏移、适配器、边缘节点）在审批后已更改 — 或该规则是在本次更新之前审批的。启用前需要重新审批。",
+      "khoa-khac-nha-may-hoac-nha-cung-cap": "密钥属于其他工厂或提供商",
+      "can-gia-hoac-tran-luot": "需要设置价格或每次调用的令牌上限",
+      "chi-admin-toan-he": "仅限全系统管理员",
+      "khong-co-node-ngoai": "此版本未使用外部AI模型",
+      "NGOAI_TU_DUYET_VAN_HANH": "不能自行审批向外部AI发送运营数据的流程",
+      "NGOAI_CHUA_DUYET": "使用外部AI模型的版本尚未审批",
+      "NGOAI_LUONG_TOAN_CUC": "全系统流程不能使用外部AI模型"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",

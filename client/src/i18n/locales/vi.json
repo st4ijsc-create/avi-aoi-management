@@ -4097,7 +4097,9 @@
       "dieuKienDoiTuongTrongPhamVi": "điều kiện đối tượng trong phạm vi",
       "flowNguoiNhan": "tìm người nhận cho luồng",
       "flowXuat": "xuất luồng AI ra gói",
-      "flowNhap": "nhập luồng AI từ gói"
+      "flowNhap": "nhập luồng AI từ gói",
+      "aiNgoaiDatModel": "đặt model AI ngoài",
+      "aiNgoaiDuyet": "duyệt luồng dùng AI ngoài"
     },
     "field": {
       "stationId": "trạm",
@@ -4364,7 +4366,11 @@
       "flowDuyet": "duyệt bước chờ của Luồng AI",
       "verifyChainAcrossFactories": "xác minh chuỗi truy xuất xuyên nhà máy",
       "manageProductWideProgramRelease": "quản lý phát hành chương trình kiểm tra cấp sản phẩm",
-      "authorSharedSop": "soạn SOP dùng chung"
+      "authorSharedSop": "soạn SOP dùng chung",
+      "aiNgoaiHostNoiBo": "khai host nội bộ cho AI ngoài",
+      "aiNgoaiDuyet": "duyệt luồng dùng AI ngoài",
+      "flowKichHoat": "bật luồng",
+      "flowChayTay": "chạy tay luồng"
     },
     "robotRefusal": {
       "hitlActionRequired": "Lệnh chuyển động bị từ chối: không có thao tác xác nhận (HITL) nào đã được duyệt đứng sau lệnh này. Hãy gửi từ Bảng lệnh hoặc xác nhận thao tác trước.",
@@ -4549,7 +4555,14 @@
       "scadaKenhCheDoGoTruoc": "Tag này là kênh chế độ của một máy — gỡ kênh chế độ ở trang Kênh & giới hạn (cần mã xác thực) trước khi xoá tag.",
       "scadaKenhCheDoDoiMay": "Adapter đang mang kênh chế độ của máy — gỡ kênh chế độ ở trang Kênh & giới hạn trước khi gán adapter sang máy khác.",
       "scadaKenhCheDoGoTruocXoaAdapter": "Adapter đang mang kênh chế độ của máy — gỡ kênh chế độ ở trang Kênh & giới hạn (cần mã xác thực) trước khi xoá adapter.",
-      "interlockDefinitionChanged": "Định nghĩa tag nguồn / đích (địa chỉ, kiểu, scale / offset, adapter, node edge) đã đổi sau khi duyệt — hoặc quy tắc được duyệt trước bản cập nhật. Cần duyệt lại trước khi bật."
+      "interlockDefinitionChanged": "Định nghĩa tag nguồn / đích (địa chỉ, kiểu, scale / offset, adapter, node edge) đã đổi sau khi duyệt — hoặc quy tắc được duyệt trước bản cập nhật. Cần duyệt lại trước khi bật.",
+      "khoa-khac-nha-may-hoac-nha-cung-cap": "khoá thuộc nhà máy hoặc nhà cung cấp khác",
+      "can-gia-hoac-tran-luot": "cần khai giá hoặc trần token mỗi lượt",
+      "chi-admin-toan-he": "chỉ quản trị viên toàn hệ thống",
+      "khong-co-node-ngoai": "phiên bản không dùng model AI ngoài",
+      "NGOAI_TU_DUYET_VAN_HANH": "không tự duyệt luồng gửi dữ liệu vận hành ra AI ngoài",
+      "NGOAI_CHUA_DUYET": "phiên bản dùng model AI ngoài chưa được duyệt",
+      "NGOAI_LUONG_TOAN_CUC": "luồng toàn hệ thống không dùng được model AI ngoài"
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
