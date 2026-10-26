@@ -27,6 +27,7 @@
  * PHẠM VI: MỌI thủ tục kiểm lại ở máy chủ (`idsTrongPhamVi("machine", phamViCua(ctx), {strict:true})`); adapter không gắn máy chỉ với
  *   phạm vi toàn quyền; "không tồn tại" và "ngoài phạm vi" trả CÙNG một NOT_FOUND.
  * AUDIT: mỗi mutation có thay đổi ghi `recordAuditEvent` bằng CHÍNH `tx` của thay đổi (before / after / lyDo) — lỗi ⇒ cả hai rollback.
+ *   (R1b-2b-1 T11: `khaiHangLoat` ghi cả lô bằng MỘT `recordAuditEvents` — một INSERT nhiều hàng, chuỗi băm đúng — cùng `tx`.)
  *   Không đổi gì ⇒ không ghi, không audit.
  *
  * NHẤT QUÁN LÚC CẤU HÌNH (`server/services/scada/nhatQuanKenh.ts`, gọi qua `khaiKenh.kiemPatchKenh`) — khi patch chạm loại kênh / dải / bước
@@ -50,7 +51,7 @@ import { getDb as getDbRaw } from "../db";
 import { deviceAdapters, deviceTags, machines, scadaKenhCheDo, type DeviceTag } from "../../drizzle/schema";
 import { idsTrongPhamVi } from "../db/hierarchy";
 import { phamViCua } from "./_phamViNguoiXem";
-import { recordAuditEvent } from "../services/audit/controlAuditService";
+import { recordAuditEvent, recordAuditEvents } from "../services/audit/controlAuditService";
 import { isEdgeControlSchemaMissing } from "../services/edge/edgeControlSchema";
 import { randomUUID } from "node:crypto";
 import { kiemGiaTriGhi, loaiKenh, mucTacDongKenh, type LoaiKenh } from "../services/scada/kenhScada";
@@ -58,7 +59,7 @@ import { cheDoMay, nguongTuoiCheDoMs, TUOI_MAU_CHE_DO_TOI_DA_MS, type CheDo } fr
 import { khoaLuatNhamTagTx } from "../services/scada/nhatQuanKenh";
 import { khoaAdapterTx, khoaLuatNhamAdapterTx, loiQuaNhieuKenhDaKhai, luatCuaTag, TRAN_KENH_DA_KHAI_MOT_LO } from "../services/scada/troLaiKenh";
 // R1b-2a T6 — cột kênh + thân kiểm của capNhat rút sang services/scada/khaiKenh.ts (MỘT hàm cho capNhat và khaiHangLoat)
-import { kiemPatchKenh, patchKenhInput, patchKhaiKenh, type KhaiKenh } from "../services/scada/khaiKenh";
+import { ghiKenhLoTx, kiemPatchKenh, patchKenhInput, patchKhaiKenh, type KhaiKenh } from "../services/scada/khaiKenh";
 import { kiemPhamViDuoiKhoa } from "./_adapterPhamVi";
 import { tagDeadbandEnabled } from "../services/ot/otManager";
 import { TAG_DUNG_MAC_DINH } from "../services/ot/tagLenhMacDinh";
@@ -525,8 +526,9 @@ export const scadaKenhRouter = router({
    *      → LUẬT nhắm adapter FOR SHARE theo id (`khoaLuatNhamAdapterTx`) → TAG `WHERE id IN (…) ORDER BY id FOR UPDATE` (census
    *      `thuTuKhoaTag`); tag thiếu / thuộc adapter khác ⇒ NOT_FOUND deviceTag cho CẢ lô;
    *   3. từng tag theo id: `kiemPatchKenh` (CHÍNH hàm của capNhat) — lỗi đầu tiên ⇒ ném;
-   *   4. ≥ 1 tag đổi ⇒ `kiemTotpCauHinh` MỘT lần, SAU mọi kiểm; rồi mỗi tag đổi: UPDATE + audit `scada_kenh_cap_nhat` (`after.loId`), cộng MỘT
-   *      audit `scada_kenh_khai_hang_loat` (adapter; `{loId, soTag, tagIds}`). Không tag nào đổi ⇒ không mã, không audit.
+   *   4. ≥ 1 tag đổi ⇒ `kiemTotpCauHinh` MỘT lần, SAU mọi kiểm; rồi (R1b-2b-1 T11) MỘT `UPDATE … FROM (VALUES …)` cho mọi tag đổi
+   *      (`khaiKenh.ghiKenhLoTx`) và MỘT `recordAuditEvents`: mỗi tag đổi một dòng `scada_kenh_cap_nhat` (`after.loId`), cộng MỘT dòng
+   *      `scada_kenh_khai_hang_loat` (adapter; `{loId, soTag, tagIds}`) — nội dung như trước. Không tag nào đổi ⇒ không mã, không audit.
    *   40P01 còn sót ⇒ CONFLICT thử lại. Chỉ ghi cột kênh (mig 0431) — ngoài bám định nghĩa duyệt interlock ⇒ luật đã duyệt vẫn còn duyệt.
    */
   khaiHangLoat: kySuProcedure
@@ -584,16 +586,19 @@ export const scadaKenhRouter = router({
           const kiem = tags.map((tag) => ({ tag, ...kiemPatchKenh(tag, luatCuaTag(luat, tag.tagKey), patchTheoTag.get(tag.id)!) }));
           const doi = kiem.filter((k) => k.doi);
 
-          // 4. mã MỘT lần, CUỐI (sau mọi kiểm), rồi mới ghi
+          // 4. mã MỘT lần, CUỐI (sau mọi kiểm), rồi mới ghi. R1b-2b-1 T11 (mục 48): MỘT `UPDATE … FROM (VALUES …)` cho mọi tag đổi, rồi MỘT
+          //    `recordAuditEvents` (một INSERT nhiều hàng, chuỗi băm nối trong bộ nhớ) — khoá chuỗi audit lấy SAU mọi khoá hàng và chỉ giữ cho
+          //    một câu lệnh (trước: lấy ở dòng audit đầu rồi giữ qua 200 vòng UPDATE + INSERT). Thứ tự: kiểm → TOTP → UPDATE → audit.
           if (doi.length > 0) {
             await kiemTotpCauHinh(ctx, input.totpCode);
             const now = new Date();
-            for (const { tag, truoc, sau } of doi) {
-              await tx
-                .update(deviceTags)
-                .set({ ...patchTheoTag.get(tag.id)!, updatedAt: now })
-                .where(eq(deviceTags.id, tag.id));
-              await recordAuditEvent(tx, {
+            await ghiKenhLoTx(
+              tx,
+              doi.map(({ tag, sau }) => ({ id: tag.id, sau })),
+              now,
+            );
+            await recordAuditEvents(tx, [
+              ...doi.map(({ tag, truoc, sau }) => ({
                 entityType: "device_tag",
                 entityId: tag.id,
                 action: "scada_kenh_cap_nhat",
@@ -601,17 +606,17 @@ export const scadaKenhRouter = router({
                 before: { adapterId: tag.adapterId, tagKey: tag.tagKey, ...truoc },
                 after: { adapterId: tag.adapterId, tagKey: tag.tagKey, ...sau, loId },
                 reason: input.lyDo,
-              });
-            }
-            await recordAuditEvent(tx, {
-              entityType: "device_adapter",
-              entityId: input.adapterId,
-              action: "scada_kenh_khai_hang_loat",
-              actorId: ctx.user.id,
-              before: null,
-              after: { loId, soTag: doi.length, tagIds: doi.map((k) => k.tag.id) },
-              reason: input.lyDo,
-            });
+              })),
+              {
+                entityType: "device_adapter",
+                entityId: input.adapterId,
+                action: "scada_kenh_khai_hang_loat",
+                actorId: ctx.user.id,
+                before: null,
+                after: { loId, soTag: doi.length, tagIds: doi.map((k) => k.tag.id) },
+                reason: input.lyDo,
+              },
+            ]);
           }
           return {
             loId,

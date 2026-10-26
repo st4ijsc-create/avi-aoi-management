@@ -98,3 +98,53 @@ describe("verifyAuditRows — tamper-evidence anchoring", () => {
     expect(res.reason).toMatch(/stripped|after chain start/i);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R1b-2b-1 T11 (mục 48) — audit theo LÔ: `xauChuoiAudit` thuần + biên của `recordAuditEvents` (không chạm DB). Ca DB:
+// `server/routers/scadaKenhRouter.khaiHangLoat.auditLo.r1b2b.db.test.ts`.
+import { xauChuoiAudit, recordAuditEvents, TRAN_HANG_AUDIT_MOT_LO, LoGhiQuaTranError } from "./controlAuditService";
+
+describe("R1b-2b-1 T11 — xauChuoiAudit / recordAuditEvents (thuần)", () => {
+  it("xauChuoiAudit nối đúng chuỗi và verifyAuditRows xác nhận", () => {
+    const es = Array.from({ length: 5 }, (_, i) => ({ entityType: "device_tag", entityId: i, action: "x", actorId: 1, before: null, after: { i }, reason: "r" }));
+    const c = xauChuoiAudit(GENESIS_HASH, es, 1700000000000);
+    expect(c[0].prevHash).toBe(GENESIS_HASH);
+    for (let i = 1; i < 5; i++) expect(c[i].prevHash).toBe(c[i - 1].hash);
+    const rows = es.map((e, i) => ({ id: i + 1, entityType: e.entityType, entityId: String(e.entityId), action: e.action, actorId: 1, beforeJson: null, afterJson: e.after, reason: "r", prevHash: c[i].prevHash, hash: c[i].hash, hashTs: 1700000000000 }));
+    expect(verifyAuditRows(rows).ok).toBe(true);
+  });
+
+  it("xauChuoiAudit băm CÙNG trường với recordAuditEvent (mặc định actor/before/after/reason ⇒ null, entityId số ⇒ chuỗi)", () => {
+    const [a] = xauChuoiAudit("p0", [{ entityType: "t", entityId: 7, action: "a" }], 42);
+    expect(a).toEqual({
+      prevHash: "p0",
+      hash: computeAuditHash("p0", { entityType: "t", entityId: "7", action: "a", actorId: null, before: null, after: null, reason: null }, 42),
+    });
+    expect(xauChuoiAudit("p0", [], 42)).toEqual([]);
+  });
+
+  it("recordAuditEvents([]) ⇒ [] và KHÔNG chạm DB", async () => {
+    const dbNo = new Proxy({}, { get: (_t, k) => { throw new Error(`chạm DB: ${String(k)}`); } }) as never;
+    await expect(recordAuditEvents(dbNo, [])).resolves.toEqual([]);
+  });
+
+  it(`TRAN_HANG_AUDIT_MOT_LO = 500; vượt ⇒ LoGhiQuaTranError có kiểu (KHÔNG Error trần), trước khi chạm DB`, async () => {
+    expect(TRAN_HANG_AUDIT_MOT_LO).toBe(500);
+    const dbNo = new Proxy({}, { get: (_t, k) => { throw new Error(`chạm DB: ${String(k)}`); } }) as never;
+    const es = Array.from({ length: 501 }, (_, i) => ({ entityType: "x", entityId: i, action: "a" }));
+    const loi = await recordAuditEvents(dbNo, es).catch((e: unknown) => e);
+    expect(loi).toBeInstanceOf(LoGhiQuaTranError);
+    expect(loi).toMatchObject({ name: "LoGhiQuaTranError", reasonCode: "audit_lo_qua_tran_hang", soHang: 501, toiDa: 500 });
+  });
+});
+
+describe("R1b-2b-1 T11 — cổng số tham số bind (< 65535 của giao thức postgres)", () => {
+  it("kiemThamSoLo: 65534 qua; 65535 ⇒ LoGhiQuaTranError lo_qua_tran_tham_so; lô audit trần 500 nằm xa dưới cổng", async () => {
+    const { kiemThamSoLo, SO_THAM_SO_MOT_HANG_AUDIT } = await import("./controlAuditService");
+    expect(() => kiemThamSoLo(65_534, 1)).not.toThrow();
+    const loi = (() => { try { kiemThamSoLo(13_107, 5); } catch (e) { return e; } })(); // 65535
+    expect(loi).toBeInstanceOf(LoGhiQuaTranError);
+    expect(loi).toMatchObject({ reasonCode: "lo_qua_tran_tham_so", soThamSo: 65_535 });
+    expect(TRAN_HANG_AUDIT_MOT_LO * SO_THAM_SO_MOT_HANG_AUDIT).toBeLessThan(65_535);
+  });
+});
