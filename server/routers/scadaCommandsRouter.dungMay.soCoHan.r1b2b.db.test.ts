@@ -31,7 +31,11 @@ import { sql } from "drizzle-orm";
 
 const RUN = `r1b2bt9${process.pid}${Date.now().toString(36)}`;
 
-const H = vi.hoisted(() => ({
+const H = vi.hoisted(() => {
+  // fix round 1 (I1) — pool của TIẾN TRÌNH NÀY = trần lượt treo (8) + 4: đủ chỗ để chứng minh trần GIỮ được kết nối cho lượt đọc của STOP sau
+  // (pool 4 mặc định của vitest.setup < trần ⇒ không đo được). Đặt trước getDb() đầu tiên (client tạo lười).
+  process.env.DB_POOL_MAX = "12";
+  return {
   drivers: new Map<number, unknown>(),
   fingerprints: new Map<number, string>(),
   dispatchInputs: [] as Array<{ adapterId: number; actionId: string }>,
@@ -39,7 +43,47 @@ const H = vi.hoisted(() => ({
   sauDispatch: null as null | (() => Promise<unknown>),
   /** chạy SAU loadStopPinsHmi thật (rào: mọi lượt đọc trước-gửi đã xong) — theo adapterId */
   sauGhim: null as null | ((adapterId: number) => Promise<unknown> | undefined),
-}));
+  /** fix round 1 (I1) — true ⇒ INSERT scada_command_attempts chạy trong giao dịch chờ khoá advisory `khoaThu` (CHỈ bảng sổ chậm) */
+  chamThu: false,
+  bangThu: null as unknown,
+  khoaThu: [0x750a, process.pid] as const,
+  };
+});
+
+// fix round 1 (I1) — "CHỈ bảng sổ chậm" (đọc + dispatch khoẻ): getDb THẬT bọc proxy (khuôn hanTruocGui.r1b2 final-fix M-1). Khi H.chamThu, INSERT
+// vào scada_command_attempts chạy trong MỘT giao dịch THẬT: `pg_advisory_xact_lock(khoaThu)` (bị Postgres chặn THẬT khi kết nối giữ cầm khoá —
+// GIỮ một kết nối pool như một lượt chờ khoá hàng thật) rồi INSERT thật. Bảng / lượt khác đi nguyên. `lenhHmi.ts` không bị giả chỗ nào.
+vi.mock("../db/connection", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../db/connection")>();
+  const { sql: s } = await import("drizzle-orm");
+  const boc = (d: any) =>
+    new Proxy(d, {
+      get(t, p) {
+        if (p === "insert") {
+          return (bang: unknown) => {
+            const q = t.insert(bang);
+            if (!H.chamThu || bang !== H.bangThu) return q;
+            return {
+              values: (v: unknown) =>
+                t.transaction(async (tx: any) => {
+                  await tx.execute(s`SELECT pg_advisory_xact_lock(${H.khoaThu[0]}::int, ${H.khoaThu[1]}::int)`);
+                  await tx.insert(bang).values(v);
+                }),
+            };
+          };
+        }
+        const v = Reflect.get(t, p, t);
+        return typeof v === "function" && p !== "constructor" ? v.bind(t) : v;
+      },
+    });
+  return {
+    ...real,
+    getDb: (async (...a: Parameters<typeof real.getDb>) => {
+      const d = await real.getDb(...a);
+      return d ? boc(d) : d;
+    }) as typeof real.getDb,
+  };
+});
 
 vi.mock("../services/ot/stopPin", async (importOriginal) => {
   const real = await importOriginal<typeof import("../services/ot/stopPin")>();
@@ -104,7 +148,8 @@ import { getDb, resolvePoolMax } from "../db/connection";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { StubDriver } from "../services/ot/drivers/stubDriver";
 import { adapterTargetFingerprint } from "../services/ot/adapterTarget";
-import { HAN_GHI_SO_STOP_HMI_MS } from "../services/scada/lenhHmi";
+import { HAN_GHI_SO_STOP_HMI_MS, soGhiSoTreoStopHmi, TRAN_GHI_SO_TREO_STOP_HMI } from "../services/scada/lenhHmi";
+import { scadaCommandAttempts } from "../../drizzle/schema";
 import { batDauDoLag } from "../testing/doLagBucleSuKien";
 import { logger } from "../logger";
 
@@ -124,8 +169,9 @@ let db: Db;
 let scadaCommandsRouter: Router;
 let boDem: typeof import("../services/scada/boDemHienTai");
 
-const fx = { fCode: "", sid: 0, mG: 0, mN: 0, aG: 0, aN: 0 };
+const fx = { fCode: "", sid: 0, mG: 0, mN: 0, aG: 0, aN: 0, mG2: 0, aG2: 0 };
 let stubG: StubGhi;
+let stubG2: StubGhi;
 const userIds: number[] = [];
 let op: { id: number; caller: Caller };
 
@@ -169,21 +215,24 @@ async function moBaoHoa(giuMs: number): Promise<BaoHoa> {
     coTx(tx);
     await nhaP;
   });
-  const tx = await Promise.race([txP, giu.then(() => Promise.reject(new Error("giao dịch giữ kết thúc sớm")))]);
-  const n = resolvePoolMax() - 1;
-  expect(n, "pool ≥ 2 — không thì không có kết nối nào để bão hoà").toBeGreaterThanOrEqual(1);
-  const chiemCho = Array.from({ length: n }, () => Promise.resolve(db.execute(sql`SELECT pg_advisory_xact_lock(${KHOA_LOP}::int, ${KHOA_ID}::int)`)));
-  // chứng minh bão hoà THẬT: n backend đang bị Postgres chặn trên khoá của tệp
-  const t0 = Date.now();
-  for (;;) {
-    const [r] = (await tx.execute(
-      sql`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND classid::bigint = ${KHOA_LOP} AND objid::bigint = ${KHOA_ID} AND objsubid = 2 AND NOT granted`,
-    )) as unknown as Array<{ n: number }>;
-    if (r.n >= n) break;
-    if (Date.now() - t0 > 5_000) throw new Error(`pool không bão hoà: ${r.n}/${n} backend chờ khoá`);
-    await cho(5);
+  let chiemCho: Array<Promise<unknown>> = [];
+  let tx: Tx;
+  try {
+    tx = await Promise.race([txP, giu.then(() => Promise.reject(new Error("giao dịch giữ kết thúc sớm")))]);
+    const n = resolvePoolMax() - 1;
+    expect(n, "pool ≥ 2 — không thì không có kết nối nào để bão hoà").toBeGreaterThanOrEqual(1);
+    chiemCho = Array.from({ length: n }, () => Promise.resolve(db.execute(sql`SELECT pg_advisory_xact_lock(${KHOA_LOP}::int, ${KHOA_ID}::int)`)));
+    // chứng minh bão hoà THẬT: n backend đang bị Postgres chặn trên khoá của tệp
+    await choDuChoKhoa(tx, KHOA_LOP, KHOA_ID, n, "pool không bão hoà");
+  } catch (e) {
+    // fix round 1 (M3) — dựng hỏng ⇒ nhả giao dịch giữ + mọi truy vấn chiếm chỗ NGAY (không để pool kẹt cho các ca sau của tệp)
+    nhaFn();
+    await giu.catch(() => undefined);
+    await Promise.allSettled(chiemCho);
+    throw e;
   }
   const hen = setTimeout(nhaFn, giuMs);
+  (hen as { unref?: () => void }).unref?.();
   const daNha = (async () => {
     await giu.catch((e) => console.warn("[r1b2bt9] giao dịch giữ:", (e as Error).message));
     await Promise.allSettled(chiemCho);
@@ -202,6 +251,51 @@ async function moBaoHoa(giuMs: number): Promise<BaoHoa> {
 const datBaoHoa = async () => {
   baoHoa = await moBaoHoa(GIU_MS);
 };
+
+/** chờ (≤ 5 s) tới khi ≥ n backend `NOT granted` trên khoá advisory 2-khoá (lop, id) — đọc qua kết nối `tx` (ngoài hàng đợi pool) */
+async function choDuChoKhoa(tx: Tx, lop: number, id: number, n: number, loi: string): Promise<number> {
+  const t0 = Date.now();
+  for (;;) {
+    const k = await demChoKhoa(tx, lop, id);
+    if (k >= n) return k;
+    if (Date.now() - t0 > 5_000) throw new Error(`${loi}: ${k}/${n} backend chờ khoá`);
+    await cho(5);
+  }
+}
+async function demChoKhoa(tx: Tx, lop: number, id: number): Promise<number> {
+  const [r] = (await tx.execute(
+    sql`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND classid::bigint = ${lop} AND objid::bigint = ${id} AND objsubid = 2 AND NOT granted`,
+  )) as unknown as Array<{ n: number }>;
+  return r.n;
+}
+
+/** fix round 1 (I1) — kết nối giữ cầm khoá `H.khoaThu` (chặn INSERT attempts khi H.chamThu); `nha()` nhả. */
+async function moGiuKhoaThu(): Promise<{ tx: Tx; nha(): Promise<void> }> {
+  let nhaFn!: () => void;
+  const nhaP = new Promise<void>((r) => (nhaFn = r));
+  let coTx!: (tx: Tx) => void;
+  const txP = new Promise<Tx>((r) => (coTx = r));
+  const giu = db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${H.khoaThu[0]}::int, ${H.khoaThu[1]}::int)`);
+    coTx(tx);
+    await nhaP;
+  });
+  try {
+    const tx = await Promise.race([txP, giu.then(() => Promise.reject(new Error("giao dịch giữ kết thúc sớm")))]);
+    return {
+      tx,
+      async nha() {
+        nhaFn();
+        await giu.catch(() => undefined);
+      },
+    };
+  } catch (e) {
+    nhaFn();
+    await giu.catch(() => undefined);
+    throw e;
+  }
+}
+let giuThu: { tx: Tx; nha(): Promise<void> } | null = null;
 
 // ─── oracle ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 type Loi = { code?: string; appCode?: string; appParams?: Record<string, unknown> };
@@ -255,6 +349,9 @@ beforeAll(async () => {
   const [mN] = await dung(sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive") VALUES (${fx.sid}, ${RUN + "mn"}, 'May T9 chua ghim', 'AOI', true) RETURNING id`);
   fx.mG = Number(mG.id);
   fx.mN = Number(mN.id);
+  const [mG2] = await dung(sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive") VALUES (${fx.sid}, ${RUN + "mg2"}, 'May T9 ghim 2', 'AOI', true) RETURNING id`);
+  fx.mG2 = Number(mG2.id);
+  H.bangThu = scadaCommandAttempts;
 
   const seedAdapter = async (mid: number, ma: string) => {
     const [r] = await dung(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "pollIntervalMs", "isEnabled", status)
@@ -274,15 +371,22 @@ beforeAll(async () => {
   fx.aN = await seedAdapter(fx.mN, "an");
   await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", channel_kind)
     VALUES (${fx.aN}, 'sp', 'M.sp', 'float', true, true, 'input_output'::scada_channel_kind)`);
+  // máy G2 (fix round 1, I1): một adapter, một ghim DỪNG mức 1 — 'máy khác' phải vẫn dừng được khi sổ treo đầy trần
+  fx.aG2 = await seedAdapter(fx.mG2, "ag2");
+  await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", channel_kind, stop_value, stop_pinned_by, stop_pinned_at, actuation_level)
+    VALUES (${fx.aG2}, 'stop_cmd', 'M.stop_cmd', 'bool', true, true, 'input_output'::scada_channel_kind, 'true'::jsonb, '1', now(), 1)`);
 
   stubG = new StubGhi();
-  await stubG.connect({ endpoint: `stub://${RUN}-ag` } as never);
-  H.drivers.set(fx.aG, stubG);
-  const [row] = await dung(sql`SELECT protocol, endpoint, "machineId", "connectionOptions" FROM device_adapters WHERE id = ${fx.aG}`);
-  H.fingerprints.set(
-    fx.aG,
-    adapterTargetFingerprint({ protocol: row.protocol, endpoint: row.endpoint, machineId: row.machineId ?? null, connectionOptions: row.connectionOptions ?? null }),
-  );
+  stubG2 = new StubGhi();
+  for (const [aid, st, ma] of [[fx.aG, stubG, "ag"], [fx.aG2, stubG2, "ag2"]] as const) {
+    await st.connect({ endpoint: `stub://${RUN}-${ma}` } as never);
+    H.drivers.set(aid, st);
+    const [row] = await dung(sql`SELECT protocol, endpoint, "machineId", "connectionOptions" FROM device_adapters WHERE id = ${aid}`);
+    H.fingerprints.set(
+      aid,
+      adapterTargetFingerprint({ protocol: row.protocol, endpoint: row.endpoint, machineId: row.machineId ?? null, connectionOptions: row.connectionOptions ?? null }),
+    );
+  }
 
   const u = await taoNguoiDungTest("opT9", "operator", { tienTo: "r1b2bt9", ts: RUN, ten: "R1B2B T9 op" });
   userIds.push(u.id);
@@ -296,6 +400,7 @@ afterAll(async () => {
   try {
     boDem?.xoaAdapter(fx.aG);
     await stubG?.disconnect();
+    await stubG2?.disconnect();
   } catch {
     /* bỏ qua */
   }
@@ -303,12 +408,12 @@ afterAll(async () => {
   try {
     for (const id of userIds) await dung(sql`DELETE FROM ai_pending_actions WHERE "userId" = ${id} AND tool LIKE 'hmi.%'`);
     await dung(sql`DELETE FROM scada_kenh_che_do WHERE machine_id = ${fx.mG}`);
-    for (const id of [fx.aG, fx.aN].filter(Boolean)) {
+    for (const id of [fx.aG, fx.aN, fx.aG2].filter(Boolean)) {
       await dung(sql`DELETE FROM scada_khoa_chon WHERE adapter_id = ${id}`);
       await dung(sql`DELETE FROM device_tags WHERE "adapterId" = ${id}`);
       await dung(sql`DELETE FROM device_adapters WHERE id = ${id}`);
     }
-    await dung(sql`DELETE FROM machines WHERE code IN (${RUN + "mg"}, ${RUN + "mn"})`);
+    await dung(sql`DELETE FROM machines WHERE code IN (${RUN + "mg"}, ${RUN + "mn"}, ${RUN + "mg2"})`);
     await dung(sql`DELETE FROM user_factory_assignments WHERE "factoryCode" = ${fx.fCode}`);
     await dung(sql`DELETE FROM stations WHERE code = ${fx.fCode}`);
     await dung(sql`DELETE FROM production_lines WHERE code = ${fx.fCode}`);
@@ -332,6 +437,13 @@ afterEach(async () => {
     baoHoa = null;
     await cho(300); // lượt ghi bị bỏ rơi (chạy nền) kịp xong trước ca sau
   }
+  H.chamThu = false;
+  if (giuThu) {
+    await giuThu.nha();
+    giuThu = null;
+  }
+  // mọi lượt ghi bỏ rơi của ca này đã xong (trạng thái đếm của mô-đun sạch cho ca sau)
+  await vi.waitFor(() => expect(soGhiSoTreoStopHmi()).toBe(0), { timeout: 10_000, interval: 50 });
   vi.restoreAllMocks();
 });
 
@@ -463,4 +575,57 @@ describe("đối chứng — DB nhanh: thứ tự + nội dung sổ như trướ
     expect(Number(x.cho)).toBeLessThan(Number(x.thu));
     expect(nhanGhiLoiChot()).toEqual([]);
   }, 20_000);
+});
+
+// ═════════ fix round 1 (review I1) — trần lượt ghi sổ treo: bấm STOP liên tục khi CHỈ bảng sổ chậm KHÔNG vắt cạn pool ═════════
+describe("★ R1b-2b-1 T9 fix round 1 (I1) — sổ attempts chậm + bấm liên tục ⇒ lượt treo ≤ trần, máy KHÁC vẫn dừng trong hạn", () => {
+  it("★ TRAN + 4 lần bấm máy G (mọi lần acked_verified) ⇒ đúng TRAN lượt treo ở Postgres, 4 lượt bỏ qua có nội dung; máy G2 vẫn acked_verified < 1700 ms", async () => {
+    // pool phải lớn hơn trần (không thì không đo được trần giữ kết nối cho lượt đọc)
+    expect(resolvePoolMax()).toBeGreaterThanOrEqual(TRAN_GHI_SO_TREO_STOP_HMI + 3);
+    const m = await moc();
+    giuThu = await moGiuKhoaThu();
+    H.chamThu = true;
+    const SO_BAM = TRAN_GHI_SO_TREO_STOP_HMI + 4;
+    let treoMax = 0;
+    for (let i = 0; i < SO_BAM; i++) {
+      const kq = await op.caller.dungMay({ machineId: fx.mG, clientRequestId: uuid() });
+      // kết quả STOP KHÔNG đổi dù sổ treo / bị bỏ qua
+      expect(kq.ketQua[0], `lần bấm ${i + 1}`).toMatchObject({ adapterId: fx.aG, status: "acked_verified", ok: true });
+      treoMax = Math.max(treoMax, soGhiSoTreoStopHmi());
+    }
+    expect(treoMax).toBe(TRAN_GHI_SO_TREO_STOP_HMI);
+    expect(soGhiSoTreoStopHmi()).toBe(TRAN_GHI_SO_TREO_STOP_HMI);
+    // oracle độc lập ở Postgres: ĐÚNG TRAN backend đang chờ khoá sổ (mỗi lượt bỏ rơi giữ một kết nối) — không hơn
+    await choDuChoKhoa(giuThu.tx, H.khoaThu[0], H.khoaThu[1], TRAN_GHI_SO_TREO_STOP_HMI, "lượt treo chưa tới Postgres");
+    await cho(200);
+    expect(await demChoKhoa(giuThu.tx, H.khoaThu[0], H.khoaThu[1])).toBe(TRAN_GHI_SO_TREO_STOP_HMI);
+    const boQua = loiLog.mock.calls
+      .map((c) => c[0] as { cho?: string; noiDung?: Record<string, unknown> })
+      .filter((o) => o?.cho === "attempts_hmi_stop_bo_qua_day");
+    expect(boQua).toHaveLength(SO_BAM - TRAN_GHI_SO_TREO_STOP_HMI);
+    // nội dung dòng đủ để dựng lại từ log
+    expect(boQua[0].noiDung).toMatchObject({ bang: "scada_command_attempts", adapterId: fx.aG, stage: "dispatch", outcome: "dispatched", reasonCode: null });
+    expect(boQua[0].noiDung?.requestId).toEqual(expect.any(String));
+    expect(boQua[0].noiDung?.commandLogIds).toHaveLength(1);
+
+    // máy KHÁC: lượt đọc trước-gửi + dòng chờ + dispatch còn kết nối ⇒ STOP đi, trong hạn
+    const ghiTruoc = stubG2.ghi.length;
+    const lag = batDauDoLag();
+    const batDau = Date.now();
+    const kq2 = await op.caller.dungMay({ machineId: fx.mG2, clientRequestId: uuid() });
+    const troi = Date.now() - batDau;
+    const phanNoi = await lag.dung(CAN_CO_GHIM_MS);
+    console.info(`[r1b2bt9] I1 máy G2: trôi ${troi} ms, phần nới ${phanNoi} ms`);
+    expect(kq2.ketQua[0]).toMatchObject({ adapterId: fx.aG2, status: "acked_verified", ok: true });
+    expect(stubG2.ghi.length - ghiTruoc).toBe(1);
+    expect(troi).toBeLessThan(CAN_CO_GHIM_MS + phanNoi);
+
+    // DB hết chậm ⇒ TRAN lượt treo ghi xong (dòng có thật), đếm về 0; lượt bị bỏ qua KHÔNG có dòng (chỉ ở log)
+    H.chamThu = false;
+    await giuThu.nha();
+    giuThu = null;
+    await vi.waitFor(() => expect(soGhiSoTreoStopHmi()).toBe(0), { timeout: 10_000, interval: 50 });
+    const rows = (await dung(cauThu(m))) as DongThu[];
+    expect(rows.filter((r) => r.adapter_id === fx.aG && r.outcome === "dispatched")).toHaveLength(TRAN_GHI_SO_TREO_STOP_HMI);
+  }, 90_000);
 });

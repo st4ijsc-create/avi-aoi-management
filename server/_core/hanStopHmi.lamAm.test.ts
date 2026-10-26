@@ -59,6 +59,18 @@ function boChuThich(src: string): string {
   return ra;
 }
 
+/**
+ * Fix round 1 (M2) — mọi dạng import ĐỘNG: nháy kép / đơn / backtick (không nội suy), nhiều dòng (`import(\n  "x"\n)` của Prettier).
+ * Cầu chì: đếm MỌI `import(` (sau khi bỏ chú thích) và đòi bằng số spec đọc được — dạng không phân tích được (spec là biến / nội suy) ⇒ ĐỎ,
+ * không lọt im.
+ */
+const RE_SPEC = /\bimport\s*\(\s*(["'`])([^"'`$]+)\1\s*\)/g;
+const RE_GOI = /\bimport\s*\(/g;
+function quetImportDong(src: string): { specs: string[]; soGoi: number } {
+  const ma = boChuThich(src);
+  return { specs: [...ma.matchAll(RE_SPEC)].map((m) => m[2]), soGoi: [...ma.matchAll(RE_GOI)].length };
+}
+
 describe("R1b-2b-1 T9 — MODULE_DUONG_STOP_HMI phủ mọi import động của trpc / moduleGate / context", () => {
   it("quét ba tệp (bỏ chú thích): mọi import(\"…\") ⇒ có trong danh sách", () => {
     const ds = new Set(MODULE_DUONG_STOP_HMI.map(([s]) => s));
@@ -67,18 +79,30 @@ describe("R1b-2b-1 T9 — MODULE_DUONG_STOP_HMI phủ mọi import động của
     for (const tep of TEP_QUET) {
       const src = readFileSync(resolve(GOC, tep), "utf8");
       expect(src.length, `cầu chì: ${tep} đọc được`).toBeGreaterThan(500);
-      for (const m of boChuThich(src).matchAll(/import\("([^"]+)"\)/g)) {
+      const { specs, soGoi } = quetImportDong(src);
+      expect(specs.length, `cầu chì: ${tep} — mọi import( đều đọc được spec`).toBe(soGoi);
+      for (const sp of specs) {
         tong += 1;
-        if (!ds.has(m[1])) thieu.push(`${tep}: import("${m[1]}")`);
+        if (!ds.has(sp)) thieu.push(`${tep}: import("${sp}")`);
       }
     }
     expect(tong, "cầu chì: tìm thấy ít nhất một import động").toBeGreaterThan(0);
     expect(thieu).toEqual([]);
   });
 
-  it("cầu chì của bộ quét: chú thích bị bỏ, mã thật giữ", () => {
-    const s = boChuThich(`// import("../a")\n/* import("../b") */\nconst u = "http://x"; await import("../c");`);
-    expect([...s.matchAll(/import\("([^"]+)"\)/g)].map((m) => m[1])).toEqual(["../c"]);
+  it("cầu chì của bộ quét: chú thích bỏ; nháy kép / đơn / backtick / nhiều dòng đọc được; spec động ⇒ lệch đếm (đỏ ở ca quét)", () => {
+    const src = [
+      `// import("../a")`,
+      `/* import("../b") */`,
+      `const u = "http://x"; await import("../c");`,
+      `await import('../d');`,
+      "await import(`../e`);",
+      `await import(\n  "../f"\n);`,
+    ].join("\n");
+    expect(quetImportDong(src)).toEqual({ specs: ["../c", "../d", "../e", "../f"], soGoi: 4 });
+    const dong = quetImportDong("const x = '../g'; await import(x); await import(`../${x}`);");
+    expect(dong.specs).toEqual([]);
+    expect(dong.soGoi).toBe(2);
   });
 
   it("danh sách không trùng spec", () => {

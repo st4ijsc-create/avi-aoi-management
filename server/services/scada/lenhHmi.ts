@@ -1387,35 +1387,76 @@ export { TOOL_HMI_STOP };
 export const HAN_GHI_SO_STOP_HMI_MS = 500;
 
 /**
+ * R1b-2b-1 T9 fix round 1 (review I1) — TRẦN số lượt ghi sổ ĐÃ BỊ BỎ RƠI (quá hạn) mà CHƯA xong, toàn tiến trình. Mỗi lượt bỏ rơi giữ một kết nối
+ * pool tới khi DB trả lời (tối đa statement_timeout 30 s); câu trả lời STOP nay về sau ~1–1,5 s ⇒ người vận hành bấm lại mỗi 2–3 s ⇒ không trần
+ * thì vài người bấm liên tục khi CHỈ bảng sổ chậm sẽ VẮT CẠN pool (25) ⇒ lượt đọc trước-gửi của MỌI máy xếp hàng ⇒ STOP_QUA_HAN toàn nhà máy
+ * (phá "STOP không bao giờ bị chặn"). Đầy trần ⇒ lượt ghi KHÔNG được phát (log `<nhan>_bo_qua_day` mang nội dung dòng để dựng lại từ log;
+ * `command_log` của dispatch vẫn ghi STOP). Chỉ đếm lượt ĐÃ quá hạn ⇒ DB nhanh không bao giờ bị bỏ qua. 8 ≈ 1/3 pool mặc định.
+ */
+export const TRAN_GHI_SO_TREO_STOP_HMI = 8;
+let ghiSoTreo = 0;
+/** Số lượt ghi sổ STOP HMI đã quá hạn mà còn treo (đọc cho test / chẩn đoán). */
+export function soGhiSoTreoStopHmi(): number {
+  return ghiSoTreo;
+}
+
+/**
  * R1b-2b-1 T9 (mục 44) — chờ một lượt ghi sổ tối đa `HAN_GHI_SO_STOP_HMI_MS`; KHÔNG BAO GIỜ ném, không bao giờ đổi kết quả STOP.
+ *   · `viec` là THUNK (fix round 1, I1): trần `TRAN_GHI_SO_TREO_STOP_HMI` được kiểm TRƯỚC khi truy vấn được phát; đầy ⇒ không gọi `viec`,
+ *     log `<nhan>_bo_qua_day` + `noiDung` (nội dung dòng), trả ngay;
  *   · xong trong hạn ⇒ trả đúng lúc lượt ghi xong (DB nhanh: thứ tự + nội dung sổ y như trước — cùng chuỗi `await`);
  *   · lỗi trong hạn ⇒ `ghiLoiChot` (như `.catch(ghiLoiChot)` cũ);
- *   · quá hạn ⇒ `ghiLoiChot` (nhãn `<nhan>_qua_han`) rồi trả — lượt ghi bị BỎ RƠI vẫn chạy nền (không huỷ được truy vấn đã gửi).
- * Điều kiện điều phối C3: handler gắn THẲNG vào `p` (cả nhánh lỗi) ⇒ lượt ghi bị bỏ rơi mà ném MUỘN (sau hạn) vẫn được log, KHÔNG thành
- * `unhandledRejection` (mặc định Node: sập tiến trình). Không dùng `withDeadline` ở đây vì lỗi muộn của nó bị nuốt im (promise đã chốt) —
- * sổ thiếu dòng phải để lại dấu. Hẹn giờ `unref` (khuôn `voiHanUnref`). Xuất cho test (lenhHmi.ghiSoCoHan.test.ts).
+ *   · quá hạn ⇒ `ghiLoiChot` (nhãn `<nhan>_qua_han`), đếm vào `ghiSoTreo`, trả — lượt ghi BỎ RƠI vẫn chạy nền (không huỷ được truy vấn đã
+ *     gửi); khi nó xong: giảm đếm + log `<nhan>_muon_xong` (info, fix round 1 M5) hoặc `<nhan>_muon` (lỗi) — dấu vết đủ hai chiều.
+ * Điều kiện điều phối C3: handler gắn THẲNG vào promise của lượt ghi (cả nhánh lỗi) ⇒ ném MUỘN vẫn được log, KHÔNG thành `unhandledRejection`
+ * (mặc định Node: sập tiến trình). Không dùng `withDeadline` vì lỗi muộn của nó bị nuốt im. Hẹn giờ `unref`. Xuất cho test.
  */
-export function ghiSoCoHan(p: Promise<unknown>, nhan: string, requestId: string): Promise<void> {
+export function ghiSoCoHan(viec: () => Promise<unknown>, nhan: string, requestId: string, noiDung?: unknown): Promise<void> {
+  if (ghiSoTreo >= TRAN_GHI_SO_TREO_STOP_HMI) {
+    logger.error(
+      { cho: `${nhan}_bo_qua_day`, requestId, ghiSoTreo, tran: TRAN_GHI_SO_TREO_STOP_HMI, noiDung },
+      "[SCADA] STOP HMI: BỎ QUA ghi sổ — đã đủ trần lượt ghi sổ treo (DB chậm); nội dung dòng ở trường noiDung, STOP vẫn có trong command_log",
+    );
+    return Promise.resolve();
+  }
+  let p: Promise<unknown>;
+  try {
+    p = Promise.resolve(viec());
+  } catch (e) {
+    ghiLoiChot(e, requestId, nhan);
+    return Promise.resolve();
+  }
   return new Promise<void>((xong) => {
     let quaHan = false;
     const t = setTimeout(() => {
       quaHan = true;
+      ghiSoTreo += 1;
       ghiLoiChot(`ghi sổ STOP HMI quá ${HAN_GHI_SO_STOP_HMI_MS} ms — trả lời không chờ nữa, lượt ghi chạy nền`, requestId, `${nhan}_qua_han`);
       xong();
     }, HAN_GHI_SO_STOP_HMI_MS);
     (t as { unref?: () => void }).unref?.();
+    const ketThuc = () => {
+      clearTimeout(t);
+      if (quaHan) ghiSoTreo -= 1;
+    };
     p.then(
       () => {
-        clearTimeout(t);
+        ketThuc();
+        if (quaHan) logger.info({ cho: `${nhan}_muon_xong`, requestId }, "[SCADA] STOP HMI: lượt ghi sổ bị bỏ rơi đã ghi xong (muộn)");
         xong();
       },
       (e) => {
-        clearTimeout(t);
+        ketThuc();
         ghiLoiChot(e, requestId, quaHan ? `${nhan}_muon` : nhan);
         xong();
       },
     );
   });
+}
+
+/** Một dòng attempts trên đường trả lời của STOP HMI qua `ghiSoCoHan` (nội dung dòng đi kèm để dựng lại khi bị bỏ qua vì đầy trần). */
+function ghiThuCoHan(d: DbHoacTx, dong: Parameters<typeof ghiThuLenh>[1], nhan: string, requestId: string): Promise<void> {
+  return ghiSoCoHan(() => ghiThuLenh(d, dong), nhan, requestId, { bang: "scada_command_attempts", ...dong });
 }
 
 /** R1b-2a T4 (QĐ D-7) — ngân sách CHUNG của pha trước-gửi của STOP HMI (từ đầu `dungMayHmi`, sau kiểm cờ). */
@@ -1522,8 +1563,10 @@ async function guiStopMotAdapter(
   const userId = nguoi.user.id;
   const actionId = randomUUID();
   const coBan = { adapterId: d.id, code: d.code, writes: d.writes };
-  const thu = (outcome: "dispatched" | "rejected", reasonCode: string | null, commandLogIds: number[] = [], moTa?: string) =>
-    ghiThuLenh(db, {
+  /** R1b-2b-1 T9 (mục 44) — lượt attempts trên đường trả lời: tối đa HAN_GHI_SO_STOP_HMI_MS, lỗi/quá hạn ⇒ ghiLoiChot (không ném); fix round 1
+   *  (I1) — đầy trần lượt treo ⇒ không phát, nội dung dòng vào log */
+  const thuCoHan = (outcome: "dispatched" | "rejected", reasonCode: string | null, commandLogIds: number[] = [], moTa?: string) =>
+    ghiThuCoHan(db, {
       requestId: actionId,
       userId,
       adapterId: d.id,
@@ -1535,9 +1578,7 @@ async function guiStopMotAdapter(
       reasonCode,
       lyDo: lyDo ?? moTa, // lý do người dùng gõ (tuỳ chọn) ưu tiên, không có ⇒ câu hệ thống mô tả kết cục (R1b-1 T7)
       commandLogIds,
-    });
-  /** R1b-2b-1 T9 (mục 44) — lượt attempts trên đường trả lời: tối đa HAN_GHI_SO_STOP_HMI_MS, lỗi/quá hạn ⇒ ghiLoiChot (không ném) */
-  const thuCoHan = (...a: Parameters<typeof thu>) => ghiSoCoHan(thu(...a), "attempts_hmi_stop", actionId);
+    }, "attempts_hmi_stop", actionId);
 
   // 1. dòng chờ — băm trên CHÍNH các ghim (đúng thứ dispatch nhận)
   const hash = otPayloadHash({ tool: TOOL_HMI_STOP, adapterId: d.id, machineId, commandType: COMMAND_TYPE_HMI_STOP, writes: d.writes });
@@ -1598,9 +1639,10 @@ async function guiStopMotAdapter(
     logger.error({ err: (err as Error)?.message ?? String(err), adapterId: d.id, actionId }, "[SCADA] STOP HMI: dispatch ném — dùng E-STOP cứng");
     // R1b-2b-1 T9 (mục 44) — chốt dòng chờ + attempts: mỗi lượt tối đa HAN_GHI_SO_STOP_HMI_MS (lỗi/quá hạn ⇒ ghiLoiChot, không ném)
     await ghiSoCoHan(
-      doiTrangThaiCho(db, actionId, userId, "confirmed", "bi_tu_choi_ghi", { resultJson: { ma: "DISPATCH_LOI" } }),
+      () => doiTrangThaiCho(db, actionId, userId, "confirmed", "bi_tu_choi_ghi", { resultJson: { ma: "DISPATCH_LOI" } }),
       "hmi_stop_dispatch_nem",
       actionId,
+      { bang: "ai_pending_actions", id: actionId, userId, tu: "confirmed", den: "bi_tu_choi_ghi", resultJson: { ma: "DISPATCH_LOI" } },
     );
     await thuCoHan("rejected", "DISPATCH_LOI", [], "STOP: không tạo được dòng chờ hoặc dispatch ném lỗi — adapter này không được gửi.");
     return { kq: { ...coBan, status: "failed", ok: false, simulated: false, reason: "DISPATCH_LOI", commandLogIds: [] }, daGoiDispatch: true };
@@ -1625,15 +1667,16 @@ async function guiStopMotAdapter(
   // R1b-2b-1 T9 (mục 44) — STOP ĐÃ gửi: chốt dòng chờ là MỘT lượt sổ (cả hai CAS) tối đa HAN_GHI_SO_STOP_HMI_MS; quá hạn ⇒ chạy nền, kết quả
   // của adapter (`kq.status` / `kq.ok`) không đổi. DB nhanh ⇒ cùng thứ tự (chốt xong rồi mới attempts).
   await ghiSoCoHan(
-    (async () => {
+    async () => {
       const doi = await doiTrangThaiCho(db, actionId, userId, "confirmed", daRa ? "executed" : "bi_tu_choi_ghi", {
         ...(daRa ? { executedAt: new Date() } : {}),
         ...ketCuc,
       });
       if (!doi && !daRa && kq.status === "rejected") await doiTrangThaiCho(db, actionId, userId, "executed", "bi_tu_choi_ghi", ketCuc);
-    })(),
+    },
     "hmi_stop_sau_dispatch",
     actionId,
+    { bang: "ai_pending_actions", id: actionId, userId, tu: "confirmed", den: daRa ? "executed" : "bi_tu_choi_ghi", ...ketCuc },
   );
 
   // 4. attempts (QĐ D-4) — R1b-2b-1 T9: tối đa HAN_GHI_SO_STOP_HMI_MS
@@ -1799,7 +1842,7 @@ export async function dungMayHmi(
     if (hanChot - Date.now() <= 0) throw new LoiQuaHanStopHmi("het_han_tong_truoc_handler", 0);
     const tuChoiMay = async (t: TuChoiYeuCau): Promise<KetQuaDungMay> => {
       // fix round 1 (minor 5) — sổ hỏng không được nuốt chữ từ chối (M5 vẫn phải nói "dùng E-STOP cứng"); R1b-2b-1 T9 — sổ chậm cũng không
-      await ghiSoCoHan(ghiThuLenh(dbx, { userId, stage: "dispatch", outcome: "rejected", reasonCode: t.ma, lyDo: lyDo ?? t.chiTiet }), "attempts_hmi_stop_tu_choi", "-");
+      await ghiThuCoHan(dbx, { userId, stage: "dispatch", outcome: "rejected", reasonCode: t.ma, lyDo: lyDo ?? t.chiTiet }, "attempts_hmi_stop_tu_choi", "-");
       return { ok: false, tuChoi: t };
     };
 
@@ -1853,15 +1896,16 @@ export async function dungMayHmi(
         }
         // QĐ D-2 — ghim không đọc được ⇒ không gửi gì tới adapter này (ghim là dữ liệu an toàn), các adapter khác vẫn gửi
         logger.error({ err: (err as Error)?.message ?? String(err), adapterId: a.id }, "[SCADA] STOP HMI: đọc ghim lỗi — adapter này KHÔNG được gửi");
-        await ghiSoCoHan(
-          ghiThuLenh(dbx, {
+        await ghiThuCoHan(
+          dbx,
+          {
             userId,
             adapterId: a.id,
             stage: "dispatch",
             outcome: "rejected",
             reasonCode: "GHIM_LOI_DOC",
             lyDo: lyDo ?? "STOP: không đọc được ghim của adapter này — không gửi.",
-          }),
+          },
           "attempts_hmi_stop_ghim",
           "-",
         );
@@ -1930,14 +1974,15 @@ export async function dungMayHmi(
     // kiem-dinh R1b-1 H1 (b) — máy CÓ ghim nhưng MỌI ghim nằm trên tag mức > 1 ⇒ không gửi gì; cùng khuôn "chưa ghim" (attempts + audit + E-STOP).
     const ds = [...new Set(boQua.map((b) => b.tagKey))];
     const tagKeys = ds.slice(0, 5).join(", ") + (ds.length > 5 ? ", …" : "");
-    await ghiSoCoHan(
-      ghiThuLenh(dbx, {
+    await ghiThuCoHan(
+      dbx,
+      {
         userId,
         stage: "dispatch",
         outcome: "rejected",
         reasonCode: "GHIM_MUC_CAO",
         lyDo: lyDo ?? `STOP: mọi ghim nằm trên tag mức tác động > ${MUC_TOI_DA_STOP_HMI} (${tagKeys}) — không gửi; dùng E-STOP cứng.`,
-      }),
+      },
       "attempts_hmi_stop_muc_cao",
       "-",
     );
@@ -1954,14 +1999,15 @@ export async function dungMayHmi(
   }
 
   if (daGui.length === 0 && loiDoc.length === 0) {
-    await ghiSoCoHan(
-      ghiThuLenh(dbx, {
+    await ghiThuCoHan(
+      dbx,
+      {
         userId,
         stage: "dispatch",
         outcome: "rejected",
         reasonCode: "CHUA_GHIM_STOP",
         lyDo: lyDo ?? "STOP: máy chưa ghim giá trị DỪNG — dùng E-STOP cứng.",
-      }),
+      },
       "attempts_hmi_stop_chua_ghim",
       "-",
     );
