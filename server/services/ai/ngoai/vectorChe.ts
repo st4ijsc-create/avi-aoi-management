@@ -90,7 +90,22 @@ export const VECTOR_CHE: readonly VectorChe[] = [
     dauVao: Array.from({ length: 70 }).reduce<unknown>((acc) => ({ a: acc }), JSON.stringify(JSON.stringify(JSON.stringify({ token: "deep-json-70" })))),
     phaiKhongCon: ["deep-json-70"],
   },
+  // ── rà kiem-dinh lô 1, điểm 2–3 ──
+  { ten: "duoi-pass", dauVao: "DB_PASS=hunter2\ndb_pass: hunter3x\nroot_pass = hunter4y", phaiKhongCon: ["hunter2", "hunter3x", "hunter4y"] },
+  {
+    ten: "duoi-pass-json",
+    dauVao: { mysql_pass: "hunter5z", qc_pass: true, line_pass: "PASSED", test_pass: 97 },
+    phaiKhongCon: ["hunter5z"],
+    phaiConLai: ['"qc_pass":true', '"line_pass":"PASSED"', '"test_pass":97'],
+  },
+  {
+    ten: "viet-chen-danh-tu",
+    dauVao: "mật khẩu wifi là Zz99887766\nmật khẩu admin là Ab#12345\nmật khẩu máy chủ là Srv2026!x",
+    phaiKhongCon: ["Zz99887766", "Ab#12345", "Srv2026!x"],
+  },
   // ── giữ nguyên (che thừa = lỗi) ──
+  { ten: "pass-qc-giu-nguyen", dauVao: { pass: true, status: "Pass: PASSED", note: "pass = 1" }, phaiKhongCon: [], phaiConLai: ['"pass":true', "Pass: PASSED", "pass = 1"] },
+  { ten: "viet-van-xuoi-giu-nguyen", dauVao: "mật khẩu là gì?\nmật khẩu mạnh là mật khẩu dài", phaiKhongCon: [], phaiConLai: ["mật khẩu là gì?", "mật khẩu mạnh là mật khẩu dài"] },
   { ten: "ip-cong-khai-giu-nguyen", dauVao: "DNS 8.8.8.8", phaiKhongCon: [], phaiConLai: ["8.8.8.8"] },
   { ten: "ma-nguon-giu-nguyen", dauVao: "const x = 1;\nconst pw = req.body.password;\ninterface A { token: string }", phaiKhongCon: [], phaiConLai: ["const x = 1;", "req.body.password", "token: string"] },
   { ten: "qc-pass", dauVao: { passed: 12, passRate: 0.97, status: "Pass: PASSED" }, phaiKhongCon: [], phaiConLai: ['"passed":12', '"passRate":0.97', "Pass: PASSED"] },

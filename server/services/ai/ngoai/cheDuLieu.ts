@@ -142,6 +142,22 @@ function tachDoan(ten: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * `DB_PASS`, `root_pass`, `mysql_pass` (rà kiem-dinh lô 1, điểm 2): đoạn CUỐI là `pass` và có tiền tố. `pass` đứng một mình,
+ * `passed`, `passRate` vẫn KHÔNG nhạy (từ vựng QC Pass/Fail). Giá trị kiểu QC (`GIA_TRI_QC`) dưới tên này được giữ.
+ */
+function laTenDuoiPass(doan: string[]): boolean {
+  return doan.length > 1 && doan[doan.length - 1] === "pass";
+}
+export function laTenPass(ten: string): boolean {
+  return laTenDuoiPass(tachDoan(ten));
+}
+const GIA_TRI_QC = /^(?:pass(?:ed)?|fail(?:ed)?|ok|ng|true|false|-?\d+(?:[.,]\d+)?\s*%?)$/i;
+/** Giá trị QC (Pass/Fail/OK/NG/bool/số/%) — dưới tên kiểu `*_pass` thì KHÔNG phải mật khẩu. */
+export function laGiaTriQc(v: unknown): boolean {
+  return typeof v === "boolean" || typeof v === "number" || (typeof v === "string" && GIA_TRI_QC.test(v.trim()));
+}
+
 /** Tên khoá (JSON / nhãn văn bản) có phải tên của một bí mật không. */
 export function laTenKhoaNhay(ten: string): boolean {
   const doan = tachDoan(ten);
@@ -152,6 +168,7 @@ export function laTenKhoaNhay(ten: string): boolean {
   if (gop === "sessionid") return true;
   if (doan.length > 1 && DOAN_CUOI_MIEN.has(doan[doan.length - 1]!)) return false;
   if (TU_NHAY.has(gop)) return true;
+  if (laTenDuoiPass(doan)) return true;
   for (let i = 0; i < doan.length; i++) {
     let ghep = "";
     for (let j = i; j < Math.min(doan.length, i + 3); j++) {
@@ -272,7 +289,7 @@ function cheNhan(t: string, dem: (loai: string) => void): string {
     const tho = t.slice(p, kt);
     const nhay = (tho[0] === '"' || tho[0] === "'") && tho.length > 1 && tho.endsWith(tho[0]) ? tho[0] : "";
     const loi = (nhay ? tho.slice(1, -1) : tho).trim();
-    if (!loi || laGiaTriMa(loi)) continue;
+    if (!loi || laGiaTriMa(loi) || (laTenPass(nhan) && laGiaTriQc(loi))) continue;
     out += t.slice(viTri, p) + nhay + THAY.biMat + nhay;
     dem("nhan");
     viTri = kt;
@@ -305,6 +322,10 @@ function boDauGiuDoDai(s: string): string {
 const RE_NHAN_VIET =
   /(?<![a-z0-9])(mat khau|matkhau|mat ma|mk|ma pin|pin|ma bi mat|khoa bi mat|khoa api|ma xac thuc|ma xac minh|ma otp|otp)((?:[ \t]+[a-z0-9]+){0,5}?)(?:([ \t]*[:=][ \t]*)|([ \t]+la(?![a-z0-9])[ \t]*:?[ \t]*))/g;
 const RE_PHAN_TRAM = /^\d{1,3}(?:[.,]\d+)?\s*%$/;
+/** ≥ 6 ký tự và (có cả chữ lẫn số, hoặc có ký tự đặc biệt). */
+function trongNhuBiMat(v: string): boolean {
+  return v.length >= 6 && ((/\p{L}/u.test(v) && /\d/.test(v)) || /[^\p{L}\p{N}\s]/u.test(v));
+}
 const RE_CHEN_GIUA_VIET = /^[ \t]+(?:cua|cho|moi|cu|hien|mac|dang)(?![a-z0-9])/;
 
 function cheNhanViet(t: string, dem: (loai: string) => void): string {
@@ -314,8 +335,10 @@ function cheNhanViet(t: string, dem: (loai: string) => void): string {
   let viTri = 0;
   RE_NHAN_VIET.lastIndex = 0;
   for (let m = RE_NHAN_VIET.exec(bo); m; m = RE_NHAN_VIET.exec(bo)) {
-    // Có chữ chen giữa nhãn và ngăn (`mã PIN của máy:`) chỉ hợp lệ khi bắt đầu bằng "cua"/"cho"/"moi"/"cu"/"hien"/…
-    if (m[2] && !RE_CHEN_GIUA_VIET.test(m[2])) {
+    // Chữ chen giữa nhãn và ngăn: "của/cho/mới/cũ/hiện/mặc/đang …" luôn được; ≤ 3 từ BẤT KỲ ("mật khẩu wifi là …") chỉ khi giá trị
+    // TRÔNG NHƯ bí mật (rà kiem-dinh lô 1, điểm 3) — "mật khẩu mạnh là mật khẩu dài" không phải.
+    const chenTuDo = !!m[2] && !RE_CHEN_GIUA_VIET.test(m[2]);
+    if (chenTuDo && m[2]!.trim().split(/\s+/).length > 3) {
       RE_NHAN_VIET.lastIndex = m.index + m[1]!.length;
       continue;
     }
@@ -330,7 +353,12 @@ function cheNhanViet(t: string, dem: (loai: string) => void): string {
     const loi = t.slice(p, kt).trim();
     // `pin` / `mk` ngắn dễ trùng (chân GPIO `pin: 13`) ⇒ giá trị phải ≥ 4 ký tự.
     const ngan = m[1] === "pin" || m[1] === "mk";
-    if (!loi || RE_PHAN_TRAM.test(loi) || laGiaTriMa(loi) || (ngan && loi.length < 4)) continue;
+    // Dạng "… là X" (văn xuôi): X ngắn toàn chữ ("là gì", "là mật …") là câu, không phải bí mật.
+    const vanXuoi = m[4] !== undefined && loi.length < 4 && !/[\d\W_]/.test(loi.normalize("NFD").replace(/\p{M}/gu, ""));
+    if (!loi || RE_PHAN_TRAM.test(loi) || laGiaTriMa(loi) || (ngan && loi.length < 4) || vanXuoi || (chenTuDo && !trongNhuBiMat(loi))) {
+      if (chenTuDo) RE_NHAN_VIET.lastIndex = m.index + m[1]!.length;
+      continue;
+    }
     out += t.slice(viTri, p) + THAY.biMat;
     dem("nhan_viet");
     viTri = kt;
@@ -522,7 +550,8 @@ function cheNut(v: unknown, tu: TuDienNhay, dem: (loai: string, n?: number) => v
   const capNhay = Object.entries(goc).some(([k, x]) => KHOA_TEN_CAP.has(k.toLowerCase()) && typeof x === "string" && laTenKhoaNhay(x));
   const ra: Record<string, unknown> = {};
   for (const [k, x] of Object.entries(goc)) {
-    if (x !== null && x !== undefined && (laTenKhoaNhay(k) || (capNhay && KHOA_GIA_TRI_CAP.includes(k)))) {
+    const nhayTheoTen = laTenKhoaNhay(k) && !(laTenPass(k) && laGiaTriQc(x));
+    if (x !== null && x !== undefined && (nhayTheoTen || (capNhay && KHOA_GIA_TRI_CAP.includes(k)))) {
       dem("khoa_json");
       datRieng(ra, k, typeof x === "number" || typeof x === "boolean" ? null : THAY.biMat);
       continue;
