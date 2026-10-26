@@ -91,3 +91,28 @@ describe("ChonModel", () => {
     expect(localStorage.getItem("aiChon.luong")).toBeNull();
   });
 });
+
+describe("ChonModel — mục ngoai theo duocDungO (10.4 T0)", () => {
+  const NGOAI = { ma: "ngoai:openai_compat:gpt-x", loai: "ngoai", nhan: "GPT X", moTa: "", trangThai: "san-sang" };
+  it("máy chủ chưa khai duocDungO ⇒ ô KHÔNG có nhóm Model ngoài", () => {
+    h.data = [...DM, NGOAI];
+    render(<Boc />);
+    expect(Array.from(screen.getByTestId("chon-model-chat").querySelectorAll("option")).map((o) => o.getAttribute("value"))).not.toContain(NGOAI.ma);
+  });
+  it("khai ['luong','kiem-dinh'] ⇒ vẫn ẩn ở chat; khai ['chat'] ⇒ hiện", () => {
+    h.data = [...DM, { ...NGOAI, duocDungO: ["luong", "kiem-dinh"] }];
+    const { unmount } = render(<Boc />);
+    expect(Array.from(screen.getByTestId("chon-model-chat").querySelectorAll("option")).map((o) => o.getAttribute("value"))).not.toContain(NGOAI.ma);
+    unmount();
+    h.data = [...DM, { ...NGOAI, duocDungO: ["chat"] }];
+    render(<Boc />);
+    expect(Array.from(screen.getByTestId("chon-model-chat").querySelectorAll("option")).map((o) => o.getAttribute("value"))).toContain(NGOAI.ma);
+  });
+  it("mã ngoai đã lưu mà bề mặt không còn phục vụ ⇒ về auto + toast (không âm thầm gửi 404)", () => {
+    h.data = [...DM, { ...NGOAI, duocDungO: ["luong"] }];
+    localStorage.setItem("aiChon.chat", NGOAI.ma);
+    render(<Boc dau={NGOAI.ma} />);
+    expect(screen.getByTestId("gia-tri").textContent).toBe("auto");
+    expect(h.toasts).toHaveLength(1);
+  });
+});

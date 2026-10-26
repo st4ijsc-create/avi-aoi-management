@@ -7,7 +7,7 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { useDanhMucModel } from "@/hooks/useDanhMucModel";
-import { docChonDaLuu, hauToTrangThai, luuChon, nhomMuc, xacThucChon, type BeMatChon, type MucModel } from "@/lib/chonModel";
+import { docChonDaLuu, hauToTrangThai, luuChon, mucHienThi, nhomMuc, xacThucChon, type BeMatChon, type MucModel } from "@/lib/chonModel";
 
 interface Props {
   beMat: BeMatChon;
@@ -39,7 +39,7 @@ export default function ChonModel({ beMat, giaTri, onDoi, compact, nho = true, t
   // Mã đã lưu mà danh mục không còn ⇒ về auto + toast MỘT lần (chỉ khi danh mục đã tải thật).
   useEffect(() => {
     if (!daTai || !tuVeAuto) return;
-    const kq = xacThucChon(giaTri, danhMuc);
+    const kq = xacThucChon(giaTri, mucHienThi(danhMuc, beMat));
     if (kq.hetHieuLuc) {
       onDoi("auto");
       if (nho) luuChon(beMat, "auto");
