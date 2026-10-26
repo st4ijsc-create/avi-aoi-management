@@ -669,14 +669,16 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     const legB = (await startRun(rLegB, {}, ADMIN)).runId!;
     const legA = (await startRun(rLegA, {}, ADMIN)).runId!;
     await sql`UPDATE orchestration_runs SET "paramsJson" = '{}'::jsonb WHERE id IN ${sql([legA, legB])}`;
-    // parity is checked on the newest PARIDAD_MAU runs: the cost is one resolver round-trip per run, and the shared _test DB keeps hundreds of runs from other files (50 s for 700 checks)
-    const PARIDAD_MAU = 60;
-    // (1) parity: every run the SQL page shows is visible by the per-run rule, and every visible recent run is shown
+    // (1) parity: every run of THIS file the SQL page shows is visible by the per-run rule, and every visible one is shown.
+    //     Only this file's runs (RUN prefix): the shared _test DB also holds other files' runs, created / mutated / deleted concurrently — comparing
+    //     two reads of those is a race (and ~700 resolver round-trips: 51 s alone), while this file's own set is stable.
     const page = await listVisibleRuns({ limit: 500 }, scopeA);
-    for (const r of page.runs.slice(0, PARIDAD_MAU)) expect(await runIdVisibleTo(r.id, scopeA), `run ${r.id}`).toBe(true);
-    const recent = await sql`SELECT id FROM orchestration_runs ORDER BY "createdAt" DESC, id DESC LIMIT ${PARIDAD_MAU}`;
+    const propios = new Set((await sql`SELECT id FROM orchestration_runs WHERE "workflowRef" LIKE ${RUN + "%"}`).map((x) => Number(x.id)));
+    const pagePropios = page.runs.filter((r) => propios.has(r.id));
+    expect(pagePropios.length).toBeGreaterThan(0);
+    for (const r of pagePropios) expect(await runIdVisibleTo(r.id, scopeA), `run ${r.id}`).toBe(true);
     const shown = new Set(page.runs.map((r) => r.id));
-    for (const row of recent) if (await runIdVisibleTo(Number(row.id), scopeA)) expect(shown.has(Number(row.id)), `run ${row.id}`).toBe(true);
+    for (const id of propios) if (await runIdVisibleTo(id, scopeA)) expect(shown.has(id), `run ${id}`).toBe(true);
     expect(page.truncated).toBe(false);
     expect(shown.has(legA)).toBe(true);
     expect(shown.has(legB)).toBe(false);
@@ -843,10 +845,29 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
       expect(sA.mine.orchestration.count).toBe(0); // assigned to A's user, but out of A's scope
       // the count is the caller's count: equal to the per-run check (runIdVisibleTo — the rule of every run entry point) over
       // every pending run. doc 81 Đợt 7 I3 — by RUN (the definition versions it executed), no longer by the workflow's head.
-      const pending = await sql`SELECT id FROM orchestration_runs WHERE status IN ('held','awaiting_confirm')`;
-      let c = 0;
-      for (const p of pending) if (await runIdVisibleTo(Number(p.id), { userId: fx.users.ua, userRole: "engineer" })) c += 1;
-      expect(sA.orchestration.count).toBe(c);
+      // Other files of the suite create / settle pending runs in the same _test DB while this runs: compare only when the pending set was
+      // the same before and after the hub read (retry otherwise) — a count taken at two instants is not an invariant.
+      const scopeA = { userId: fx.users.ua, userRole: "engineer" };
+      const ids = async () => (await sql`SELECT id FROM orchestration_runs WHERE status IN ('held','awaiting_confirm') ORDER BY id`).map((x) => Number(x.id));
+      const visibles = async (lista: number[]) => {
+        let c = 0;
+        for (let i = 0; i < lista.length; i += 16) c += (await Promise.all(lista.slice(i, i + 16).map((id) => runIdVisibleTo(id, scopeA)))).filter(Boolean).length;
+        return c;
+      };
+      let ok = false;
+      let last = "";
+      for (let lan = 0; lan < 5 && !ok; lan++) {
+        const truoc = await ids();
+        const c = await visibles(truoc);
+        const s2 = lan === 0 ? sA : await hub("ua");
+        const sau = await ids();
+        last = `${c}/${s2.orchestration.count}`;
+        if (truoc.join(",") === sau.join(",")) {
+          expect(s2.orchestration.count, `hub vs per-run (${last})`).toBe(c);
+          ok = true;
+        }
+      }
+      expect(ok, `pending set never stable in 5 tries (${last})`).toBe(true);
       const sAdm = await hub("adm", "admin");
       expect(sAdm.orchestration.samples.map((x: { id: number }) => x.id)).toContain(runB);
       expect(sAdm.orchestration.count).toBeGreaterThan(sA.orchestration.count);
@@ -854,7 +875,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
       // engineering_assignments: avi_app may not DELETE (same as engineeringAssignment.db.test) ⇒ deactivate
       await sql`UPDATE engineering_assignments SET active = false WHERE entity_type = 'orchestration_run' AND entity_id = ${runB} AND active`;
     }
-  });
+  }, 120_000);
 
   it("★ R-5-d assignment: assigning / unassigning / reading assignments of another factory's run ⇒ the SAME refusal as a missing run; an assignee who cannot see the run is refused", async () => {
     const { deployWorkflow, startRun } = await engine();
