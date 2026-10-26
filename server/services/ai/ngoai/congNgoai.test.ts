@@ -263,3 +263,20 @@ describe("cổng AI ngoài — gọi", () => {
     }
   });
 });
+
+describe("cổng AI ngoài — luồng, dữ liệu vận hành từ phạm vi chủ lượt", () => {
+  it("mức van-hanh: MỌI nhà máy trong phạm vi chủ lượt phải bật + cho dữ liệu vận hành; hàm phạm vi lỗi ⇒ từ chối", async () => {
+    await exec(sql`UPDATE ai_ngoai_nha_may SET "choDuLieuVanHanh" = true WHERE "factoryId" = ${A}`);
+    await exec(sql`UPDATE ai_ngoai_nha_may SET "choDuLieuVanHanh" = false WHERE "factoryId" = ${B}`);
+    const g = taoNhaCungCapGia();
+    const luong = (nhaMayKhiVanHanh: () => Promise<number[]>) =>
+      yc({}, { nhaMayNguoiGoi: null, nhaMayChuDuLieu: [A], nguonMuc: { loai: "luong", mucDuLieu: async () => "van-hanh" }, nhaMayKhiVanHanh });
+    expect(await maLoi(goiAiNgoai(luong(async () => [A, B]), dep(g)))).toBe("NGOAI_DU_LIEU_VAN_HANH");
+    expect(await maLoi(goiAiNgoai(luong(async () => Promise.reject(new Error("pham vi"))), dep(g)))).toBe("NGOAI_DU_LIEU_VAN_HANH");
+    expect(g.nhan).toHaveLength(0);
+    await goiAiNgoai(luong(async () => [A]), dep(g));
+    expect(g.nhan).toHaveLength(1);
+    const [r] = await exec(sql`SELECT "nhaMayDuLieu" FROM ai_external_calls WHERE "factoryId" = ${A} AND loai = 'y-dinh' ORDER BY id DESC LIMIT 1`);
+    expect(r!.nhaMayDuLieu).toEqual([A]);
+  });
+});
