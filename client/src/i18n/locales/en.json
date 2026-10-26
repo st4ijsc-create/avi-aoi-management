@@ -3707,6 +3707,7 @@
       "aiModel": "AI model",
       "aiModelCard": "AI model card",
       "aiModelVersion": "AI model version",
+      "aiNgoaiKhoa": "external AI provider key",
       "alert": "alert",
       "alertSetting": "alert setting",
       "andonEvent": "Andon event",

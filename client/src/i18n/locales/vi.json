@@ -3715,6 +3715,7 @@
       "aiModel": "mô hình AI",
       "aiModelCard": "model card AI",
       "aiModelVersion": "phiên bản mô hình AI",
+      "aiNgoaiKhoa": "khoá nhà cung cấp AI ngoài",
       "alert": "cảnh báo",
       "alertSetting": "thiết lập cảnh báo",
       "andonEvent": "sự kiện Andon",

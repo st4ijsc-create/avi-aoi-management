@@ -3707,6 +3707,7 @@
       "aiModel": "AI模型",
       "aiModelCard": "AI模型卡",
       "aiModelVersion": "AI 模型版本",
+      "aiNgoaiKhoa": "外部AI提供商密钥",
       "alert": "警报",
       "alertSetting": "警报设置",
       "andonEvent": "安灯事件",
