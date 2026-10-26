@@ -148,3 +148,69 @@ describe("R1b-2b-1 T11 — cổng số tham số bind (< 65535 của giao thức
     expect(TRAN_HANG_AUDIT_MOT_LO * SO_THAM_SO_MOT_HANG_AUDIT).toBeLessThan(65_535);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// kiem-dinh R1b-2b-1 (T11a / T11c). T11a — id cấp trước phải được SẮP TĂNG trước khi gán cho phần tử chuỗi: Postgres hôm nay trả nextval
+// trên generate_series theo thứ tự tăng nên DB thật không lộ việc bỏ `.sort` ⇒ ép qua SEAM: db giả trả các id NGƯỢC thứ tự. T11c — xem
+// báo cáo: với trần 500 dòng, cổng tham số trong `recordAuditEvents` không thể là cổng chặn đầu tiên (500 × 11 = 5500 < 65535).
+import { PgDialect } from "drizzle-orm/pg-core";
+
+describe("kiem-dinh T11a — recordAuditEvents (SEC_PLATFORM bật) sắp id cấp trước TĂNG dù sequence trả NGƯỢC (seam)", () => {
+  it("id trả về [105..101] ⇒ phần tử chuỗi i nhận id tăng thứ i; hàng theo id ⇒ verifyAuditRows ok, nối từ hash cuối", async () => {
+    const dialect = new PgDialect();
+    const cuSec = process.env.SEC_PLATFORM;
+    process.env.SEC_PLATFORM = "true";
+    const giaTriChen: Row[][] = [];
+    const cauLenh: string[] = [];
+    const HASH_CUOI = computeAuditHash(GENESIS_HASH, { entityType: "goc", entityId: "0", action: "x", actorId: null, before: null, after: null, reason: null }, 1);
+    const tx = {
+      execute: async (q: any) => {
+        const s = dialect.sqlToQuery(q).sql;
+        cauLenh.push(s);
+        if (/nextval/i.test(s)) return [105, 104, 103, 102, 101].map((id) => ({ id })); // NGƯỢC
+        return [];
+      },
+      select: () => ({ from: () => ({ where: () => ({ orderBy: () => ({ limit: async () => [{ hash: HASH_CUOI }] }) }) }) }),
+      insert: () => ({
+        values: (vals: Row[]) => {
+          giaTriChen.push(vals);
+          return { returning: async () => vals.map((v) => ({ ...v })) };
+        },
+      }),
+    };
+    const dbGia = { transaction: async (cb: (t: unknown) => Promise<unknown>) => cb(tx) } as never;
+    try {
+      const es = Array.from({ length: 5 }, (_, i) => ({ entityType: "device_tag", entityId: 10 + i, action: "khai", actorId: 7, after: { i }, reason: `r${i}` }));
+      const rows = (await recordAuditEvents(dbGia, es)) as unknown as HashedAuditRow[];
+      expect(cauLenh.some((s) => /nextval/i.test(s)), "phải cấp id qua nextval").toBe(true);
+      expect(giaTriChen).toHaveLength(1);
+      // phần tử chuỗi i (thứ tự `es`) ⇔ id tăng thứ i
+      expect(giaTriChen[0].map((v) => [v.id, v.entityId])).toEqual([
+        [101, "10"],
+        [102, "11"],
+        [103, "12"],
+        [104, "13"],
+        [105, "14"],
+      ]);
+      expect(rows.map((r) => r.id)).toEqual([101, 102, 103, 104, 105]);
+      expect(rows[0].prevHash).toBe(HASH_CUOI);
+      const goc: HashedAuditRow = { id: 100, entityType: "goc", entityId: "0", action: "x", actorId: null, beforeJson: null, afterJson: null, reason: null, prevHash: GENESIS_HASH, hash: HASH_CUOI, hashTs: 1 };
+      expect(verifyAuditRows([goc, ...rows])).toMatchObject({ ok: true, checked: 6, brokenAtId: null });
+    } finally {
+      if (cuSec === undefined) delete process.env.SEC_PLATFORM;
+      else process.env.SEC_PLATFORM = cuSec;
+    }
+  });
+});
+
+describe("kiem-dinh T11c — lô có số tham số bind > 65535 ⇒ ném lỗi có kiểu TRƯỚC khi chạm DB (không chia lô)", () => {
+  it("5958 dòng × 11 = 65538 tham số ⇒ LoGhiQuaTranError (trần dòng chặn trước — cổng tham số không bao giờ là cổng đầu tiên)", async () => {
+    const { SO_THAM_SO_MOT_HANG_AUDIT } = await import("./controlAuditService");
+    const n = Math.ceil(65_535 / SO_THAM_SO_MOT_HANG_AUDIT) + 1;
+    expect(n * SO_THAM_SO_MOT_HANG_AUDIT).toBeGreaterThan(65_535);
+    const dbNo = new Proxy({}, { get: (_t, k) => { throw new Error(`chạm DB: ${String(k)}`); } }) as never;
+    const loi = await recordAuditEvents(dbNo, Array.from({ length: n }, (_, i) => ({ entityType: "x", entityId: i, action: "a" }))).catch((e: unknown) => e);
+    expect(loi).toBeInstanceOf(LoGhiQuaTranError);
+    expect(loi).toMatchObject({ reasonCode: "audit_lo_qua_tran_hang", soHang: n, toiDa: TRAN_HANG_AUDIT_MOT_LO });
+  });
+});
