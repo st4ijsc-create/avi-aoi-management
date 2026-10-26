@@ -102,6 +102,24 @@ function coerceMcWrite(raw: unknown, dataType: string): number | boolean | strin
 const withTimeout = withDeadline;
 
 /**
+ * R1b-2a final-fix I-1 — hạn gói đọc của mcprotocol 0.1.2: `self.globalTimeout = 4500` (mcprotocol.js, constructor) — hẹn
+ * `packetTimeout("read")` cho từng gói. Driver không ghi đè giá trị này; đọc từ instance nếu có (để không lệch nếu lib đổi), lui về 4500.
+ */
+export const HAN_GOI_MCPROTOCOL_MAC_DINH_MS = 4500;
+/** Ngưỡng "đã trôi gần bằng hạn gói": 90 % hạn (bộ hẹn Node có thể lệch vài ms; ≥ 90 % mới coi là quá hạn). */
+export const TI_LE_NGUONG_QUA_HAN_MC = 0.9;
+
+export function hanGoiThuVienMc(conn: unknown): number {
+  const g = (conn as { globalTimeout?: unknown } | null)?.globalTimeout;
+  return typeof g === "number" && Number.isFinite(g) && g > 0 ? g : HAN_GOI_MCPROTOCOL_MAC_DINH_MS;
+}
+
+/** Lần đọc mọi-item-BAD có phải lib tự quá hạn gói (không phải PLC trả lời lỗi nhanh)? Đo trên đồng hồ đơn điệu. */
+export function laDocMcQuaHanGoi(daTroiMs: number, globalTimeoutMs: number): boolean {
+  return daTroiMs >= globalTimeoutMs * TI_LE_NGUONG_QUA_HAN_MC;
+}
+
+/**
  * doc 81 Đợt 1B Task 1 — GIA CỐ `mcprotocol` 0.1.2 TỪ BÊN NGOÀI (không sửa node_modules).
  *
  * Lỗi của thư viện (BE1 §0 (2), mcprotocol.js):
@@ -387,6 +405,8 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       this.conn.addItems(keys);
 
       const t0 = Date.now();
+      // R1b-2a final-fix I-1 — đồng hồ ĐƠN ĐIỆU (không theo đồng hồ tường / NTP) cho phép phân biệt quá hạn gói vs PLC trả lời lỗi.
+      const t0DonDieu = performance.now();
       // doc 81 Đợt 1B Task 1 — readAllItems có thể không bao giờ gọi lại (lib tự thử lại mỗi
       // 100 ms khi còn gói chưa xong) ⇒ đọc CÓ HẠN; lib tự timeout gói sau globalTimeout 4500 ms.
       values = await withDeadline(
@@ -400,17 +420,32 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
         "mc readAllItems",
       );
       this.lastLatencyMs = Date.now() - t0;
-      // R1b-2a T13 fix round 2 (I1, cờ V2) — gói đọc QUÁ HẠN (PLC im, TCP còn): mcprotocol (mcprotocol.js packetTimeout "read" ⇒
-      // readResponse(undefined)) VẪN gọi lại, mọi item mang chuỗi "BAD 255", và KHÔNG hạ isoConnectionState (vẫn 4) ⇒ không có tín hiệu
-      // nào khác bắt được. MỌI item BAD ⇒ lần đọc KHÔNG được trả lời ⇒ ném lỗi quá hạn (chatLuongLoiChung ⇒ timeout/comm_lost; vòng poll ⇒
-      // tick ok:false, D1 đếm). Chỉ MỘT PHẦN item BAD (lần đọc có trả lời) ⇒ item đó device_error như cũ. Giá phải trả: PLC trả lời lỗi cho
-      // MỌI item (mcprotocol tô 0xFF y như quá hạn — không phân biệt được) cũng bị coi là mất liên lạc (fail-closed, điều phối 2026-10-26).
+      const daTroiMs = performance.now() - t0DonDieu;
+      // R1b-2a T13 fix round 2 (I1, cờ V2) + final-fix I-1 — gói đọc QUÁ HẠN (PLC im, TCP còn): mcprotocol (mcprotocol.js packetTimeout
+      // "read" ⇒ readResponse(undefined)) VẪN gọi lại, mọi item mang chuỗi "BAD 255", và KHÔNG hạ isoConnectionState (vẫn 4). Nhưng PLC
+      // trả lời LỖI cho cả khối (end code lỗi / độ dài sai) cũng tô 0xFF ⇒ cùng chuỗi "BAD 255". Phân biệt bằng THỜI GIAN: lib chỉ gọi
+      // readResponse(undefined) từ bộ hẹn globalTimeout của gói ⇒ quá hạn thật luôn trả về SAU ≥ globalTimeout. Do đó:
+      //   • MỌI item BAD và (đã trôi ≥ ~globalTimeout, hoặc lib tự báo rời isoConnectionState≠4) ⇒ mất liên lạc ⇒ ném McReadTimeoutError
+      //     (chatLuongLoiChung ⇒ timeout/comm_lost; vòng poll ⇒ tick ok:false, D1 đếm);
+      //   • MỌI item BAD mà trả về NHANH ⇒ PLC CÒN SỐNG và đã trả lời lỗi ⇒ từng item device_error, phiên GIỮ nguyên, lệnh ghi (STOP ghim)
+      //     vẫn đi được (final review I-1: trước đó adapter bị hạ + lùi dần ⇒ STOP ADAPTER_OFFLINE).
+      // Còn sót (biết, ghi giới hạn): PLC trả lời lỗi CHẬM sát globalTimeout (≥ 90 %) bị coi là mất liên lạc (fail-closed cho đọc).
       if (v2 && keys.length > 0 && keys.every((k) => laGiaTriBadThuVien(values[k]))) {
-        const err = Object.assign(new Error(`mc read not answered: every item BAD (mcprotocol packet timeout, ${Date.now() - t0} ms)`), {
-          name: "McReadTimeoutError",
-        });
-        this.lastError = err.message;
-        throw err;
+        const globalTimeoutMs = hanGoiThuVienMc(this.conn);
+        const st = (this.conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
+        const libRoi = typeof st === "number" && st !== 4;
+        if (libRoi || laDocMcQuaHanGoi(daTroiMs, globalTimeoutMs)) {
+          const err = Object.assign(
+            new Error(
+              `mc read not answered: every item BAD (mcprotocol packet timeout, ${Math.round(daTroiMs)} ms ≥ ~${globalTimeoutMs} ms${libRoi ? ", lib not connected" : ""})`,
+            ),
+            { name: "McReadTimeoutError" },
+          );
+          this.lastError = err.message;
+          throw err;
+        }
+        // nhanh ⇒ PLC đã trả lời lỗi cho mọi item: KHÔNG ném; từng item ra device_error bên dưới (MAU_GIA_TRI_HONG).
+        this.lastError = `mc read answered with error for every item (${Math.round(daTroiMs)} ms < ~${globalTimeoutMs} ms) — device_error, session kept`;
       }
       this.lastOkAt = new Date();
     }

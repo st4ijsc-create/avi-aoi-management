@@ -536,9 +536,22 @@ function docQuaHanNodes7(keys: string[]) {
     cb(true, Object.fromEntries(keys.map((k) => [k, "BAD 255"])));
   });
 }
-/** mcprotocol 0.1.2 (mcprotocol.js): packetTimeout("read") ⇒ readResponse(undefined) ⇒ mọi item "BAD 255"; isoConnectionState GIỮ 4. */
+/**
+ * mcprotocol 0.1.2 (mcprotocol.js): packetTimeout("read") ⇒ readResponse(undefined) ⇒ mọi item "BAD 255"; isoConnectionState GIỮ 4.
+ * final-fix I-1: bộ hẹn gói của lib là `self.globalTimeout` (4500 ms) ⇒ callback quá hạn đến SAU globalTimeout. Mock đọc đúng trường
+ * `globalTimeout` của instance (test đặt nhỏ, ví dụ 40 ms) để giữ hình dạng thời gian thật mà không chờ 4,5 s.
+ */
 function docQuaHanMc(keys: string[]) {
-  return vi.fn((cb: (bad: boolean, v: Record<string, unknown>) => void) => cb(true, Object.fromEntries(keys.map((k) => [k, "BAD 255"]))));
+  return vi.fn(function (this: { globalTimeout?: number }, cb: (bad: boolean, v: Record<string, unknown>) => void) {
+    setTimeout(() => cb(true, Object.fromEntries(keys.map((k) => [k, "BAD 255"]))), this.globalTimeout ?? 4500);
+  });
+}
+/**
+ * mcprotocol 0.1.2: PLC TRẢ LỜI gói đọc bằng end code lỗi (processMBPacket "MC Error Response …" / "Invalid Response Length …") ⇒
+ * qualityBuffer GIỮ 0xFF ⇒ mọi item của khối "BAD 255" — cùng chuỗi với quá hạn, nhưng đến NGAY (một vòng TCP), liên kết GIỮ 4.
+ */
+function docLoiNhanhMc(keys: string[]) {
+  return vi.fn((cb: (bad: boolean, v: Record<string, unknown>) => void) => setImmediate(() => cb(true, Object.fromEntries(keys.map((k) => [k, "BAD 255"])))));
 }
 
 const s7Tags: OtTagAddress[] = [
@@ -1028,7 +1041,7 @@ describe("R1b-2a T13 fix round 2 (I1) — S7/MC packet timeout ⇒ comm failure,
       { tagKey: "t1", address: "D100", dataType: "int" },
       { tagKey: "t3", address: "M100", dataType: "bool" },
     ];
-    mockNodes("mcprotocol", {}, { isoConnectionState: 4, readAllItems: docQuaHanMc(["t1", "t3"]) });
+    mockNodes("mcprotocol", {}, { isoConnectionState: 4, globalTimeout: 40, readAllItems: docQuaHanMc(["t1", "t3"]) });
     const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
     const d = new MitsubishiMcDriver();
     await d.connect({ endpoint: "tcp://127.0.0.1:1281" });
@@ -1053,11 +1066,87 @@ describe("R1b-2a T13 fix round 2 (I1) — S7/MC packet timeout ⇒ comm failure,
       { tagKey: "t1", address: "D100", dataType: "int" },
       { tagKey: "t3", address: "M100", dataType: "bool" },
     ];
-    mockNodes("mcprotocol", {}, { isoConnectionState: 4, readAllItems: docQuaHanMc(["t1", "t3"]) });
+    mockNodes("mcprotocol", {}, { isoConnectionState: 4, globalTimeout: 40, readAllItems: docQuaHanMc(["t1", "t3"]) });
     const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
     const d = new MitsubishiMcDriver();
     await d.connect({ endpoint: "tcp://127.0.0.1:1281" });
     const out = await d.readTags(hai);
     expect(out.every((s) => s.quality === "bad" && s.value === null && s.reason === undefined && s.statusCode === undefined)).toBe(true);
+  });
+
+  // ── final-fix I-1 — PLC CÒN SỐNG trả lời LỖI cho cả khối (mọi item "BAD 255", NHANH) ⇒ device_error, phiên giữ, STOP ghi được ──
+  const haiMc: OtTagAddress[] = [
+    { tagKey: "t1", address: "D100", dataType: "int" },
+    { tagKey: "t3", address: "M100", dataType: "bool" },
+  ];
+
+  it("MC cờ BẬT (I-1): mọi item 'BAD 255' trả về NHANH (PLC trả lời lỗi, liên kết 4) ⇒ KHÔNG ném; mọi item bad/device_error; tick ok:true, D1 không bắn, vẫn connected", async () => {
+    vi.stubEnv(FLAG, "true");
+    // globalTimeout đặt LỚN (hạn thật 4500) — trả lời nhanh ⇒ xa dưới ngưỡng
+    mockNodes("mcprotocol", {}, { isoConnectionState: 4, globalTimeout: 4500, readAllItems: docLoiNhanhMc(["t1", "t3"]) });
+    const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
+    const d = new MitsubishiMcDriver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:1281" });
+    const out = await d.readTags(haiMc);
+    expect(out).toHaveLength(2);
+    for (const s of out) expect(s).toMatchObject({ quality: "bad", value: null, reason: "device_error" });
+    // bool KHÔNG BAO GIỜ đọc TRUE (I2)
+    expect(out.some((s) => s.tagKey === "t3" && s.value === true)).toBe(false);
+    const r = await chayPhien(d as never, haiMc, SO_TICK_HONG_DE_MAT + 2);
+    expect(r.d1Ban()).toBe(0);
+    for (const e of r.ticks) {
+      expect(e.ok).toBe(true);
+      expect(laTickHong(e)).toBe(false);
+    }
+    expect(r.mau.every((s) => s.quality === "bad" && s.reason === "device_error")).toBe(true);
+    expect(d.isConnected()).toBe(true);
+    expect((await d.health()).connected).toBe(true);
+  });
+
+  it("MC cờ BẬT (I-1): sau loạt đọc lỗi NHANH, đường ghi STOP ghim VẪN đi được (writeItems tới lib, ok:true) — không ADAPTER_OFFLINE", async () => {
+    vi.stubEnv(FLAG, "true");
+    const writeItems = vi.fn((_k: string[], _v: unknown[], cb: (anyBad: boolean) => void) => {
+      setImmediate(() => cb(false));
+      return 0;
+    });
+    mockNodes("mcprotocol", {}, { isoConnectionState: 4, globalTimeout: 4500, readAllItems: docLoiNhanhMc(["t1", "t3"]), writeItems });
+    const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
+    const d = new MitsubishiMcDriver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:1281" });
+    await chayPhien(d as never, haiMc, SO_TICK_HONG_DE_MAT + 2);
+    await expect(d.readTags(haiMc)).resolves.toHaveLength(2);
+    expect(d.isConnected()).toBe(true);
+    // ghim STOP: ghi bool M200 = true (đúng hình dạng commandDispatcher gửi xuống driver)
+    const kq = await d.writeTags([{ tagKey: "stop_pin", address: "M200", value: true, dataType: "bool" }]);
+    expect(kq).toEqual([{ tagKey: "stop_pin", ok: true }]);
+    expect(writeItems).toHaveBeenCalledTimes(1);
+    expect(writeItems.mock.calls[0]![0]).toEqual(["stop_pin"]);
+    expect(writeItems.mock.calls[0]![1]).toEqual([true]);
+  });
+
+  it("MC cờ BẬT (I-1): mọi item BAD trả về NHANH nhưng lib báo RỜI (isoConnectionState≠4 — đường 'instant timeout' khi chưa nối) ⇒ VẪN là mất liên lạc (ném)", async () => {
+    vi.stubEnv(FLAG, "true");
+    const conn = mockNodes("mcprotocol", {}, { isoConnectionState: 4, globalTimeout: 4500 });
+    conn.readAllItems = vi.fn(function (this: { isoConnectionState?: number }, cb: (bad: boolean, v: Record<string, unknown>) => void) {
+      this.isoConnectionState = 0;
+      setImmediate(() => cb(true, { t1: "BAD 255", t3: "BAD 255" }));
+    });
+    const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
+    const d = new MitsubishiMcDriver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:1281" });
+    await expect(d.readTags(haiMc)).rejects.toMatchObject({ name: "McReadTimeoutError" });
+  });
+
+  it("MC (I-1) ngưỡng: laDocMcQuaHanGoi theo 90 % hạn gói; hanGoiThuVienMc đọc globalTimeout của instance, lui về 4500", async () => {
+    const { laDocMcQuaHanGoi, hanGoiThuVienMc, HAN_GOI_MCPROTOCOL_MAC_DINH_MS } = await import("./mitsubishiMcDriver");
+    expect(HAN_GOI_MCPROTOCOL_MAC_DINH_MS).toBe(4500);
+    expect(hanGoiThuVienMc({ globalTimeout: 4500 })).toBe(4500);
+    expect(hanGoiThuVienMc({})).toBe(4500);
+    expect(hanGoiThuVienMc(null)).toBe(4500);
+    expect(hanGoiThuVienMc({ globalTimeout: "x" })).toBe(4500);
+    expect(laDocMcQuaHanGoi(4500, 4500)).toBe(true);
+    expect(laDocMcQuaHanGoi(4050, 4500)).toBe(true);
+    expect(laDocMcQuaHanGoi(4049, 4500)).toBe(false);
+    expect(laDocMcQuaHanGoi(12, 4500)).toBe(false);
   });
 });
