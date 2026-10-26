@@ -13343,7 +13343,13 @@
       "name": "Tên",
       "namePlaceholder": "VD: Khóa OpenAI Production",
       "provider": "Nhà Cung Cấp",
-      "key": "Khóa API"
+      "key": "Khóa API",
+      "createdInactive": "Đã tạo khoá nhưng CHƯA hoạt động: khoá cần thuộc một nhà máy. Gán nhà máy để dùng.",
+      "needsFactory": "Cần nhà máy để bật",
+      "needsFactoryHint": "Khoá chưa thuộc nhà máy nào nên không thể bật.",
+      "factory": "Nhà máy",
+      "noFactory": "— Không chọn (khoá sẽ không hoạt động) —",
+      "noFactoryWarn": "Không chọn nhà máy ⇒ khoá được tạo ở trạng thái KHÔNG hoạt động và không bật được cho tới khi gán nhà máy."
     },
     "modelConfig": {
       "title": "Cấu Hình Mô Hình",
@@ -21109,7 +21115,8 @@
       "label": "Chọn chế độ nghĩ",
       "canBang": "nghĩ: cân bằng",
       "nhanh": "nghĩ: tắt (nhanh)",
-      "tip": "Cân bằng = lượt sinh/sửa mã được NGHĨ tới 12.000 token (đúng hơn, chậm hơn: ~30–120 s/lượt trên Qwen3.6), lượt phụ (chọn tệp, KB) không nghĩ. Tắt = không nghĩ ở mọi lượt (đo được: nhanh 5–15×, đúng ít hơn ~10–15 điểm). Áp cho từng yêu cầu, không cần khởi động lại."
+      "tip": "Cân bằng = lượt sinh/sửa mã được NGHĨ tới 12.000 token (đúng hơn, chậm hơn: ~30–120 s/lượt trên Qwen3.6), lượt phụ (chọn tệp, KB) không nghĩ. Tắt = không nghĩ ở mọi lượt (đo được: nhanh 5–15×, đúng ít hơn ~10–15 điểm). Áp cho từng yêu cầu, không cần khởi động lại.",
+      "nhanhCanhBao": "Nhanh: trả lời nhanh hơn nhưng có thể kém chính xác hơn (không suy nghĩ)"
     },
     "modelPick": {
       "label": "Chọn tầng model",

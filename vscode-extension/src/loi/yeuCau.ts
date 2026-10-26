@@ -32,6 +32,7 @@ import type { MucBoNho } from "./khoBoNho";
 // trên, CỘNG điều kiện RIÊNG: `choPhepChay` (mức quyền hiện tại KHÔNG PHẢI "chỉ đọc", xem docblock
 // `dayLenhDoc.ts`). `dungVanBanDayLenhDoc(false)` trả CHUỖI RỖNG.
 import { dungVanBanDayLenhDoc } from "./dayLenhDoc";
+import { CHON_MODEL_RE } from "./chonModel";
 
 export type CheDoDuAn =
   | { loai: "local"; nhan: string }
@@ -92,6 +93,8 @@ export function dungYeuCauStream(dv: {
    * suy từ `mucQuyen.ts`, không được để tham số tuỳ chọn này âm thầm mở khả năng dạy.
    */
   choPhepChayLenh?: boolean;
+  /** ★ Đợt 10.2 — mã model người dùng chọn (`vai-tro:<id>` | `ho-so:<id>` | `ngoai:…`); `auto`/vắng/sai hình dạng ⇒ KHÔNG gửi trường (payload không đổi một byte). */
+  chonModel?: string;
 }): Record<string, unknown> {
   const context: Record<string, unknown> = {
     route: "vscode",
@@ -99,6 +102,7 @@ export function dungYeuCauStream(dv: {
     codingMode: dv.cheDo.loai === "server",
   };
   if (dv.cheDo.loai === "server") context.projectId = dv.cheDo.projectId;
+  if (dv.chonModel && dv.chonModel !== "auto" && CHON_MODEL_RE.test(dv.chonModel)) context.chonModel = dv.chonModel;
 
   const dayGiaoThucDoc = dv.cheDo.loai === "local" && dv.laCmdK !== true;
 

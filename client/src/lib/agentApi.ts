@@ -28,6 +28,8 @@ export interface ThanTaoLuotChay {
   lichSu?: TinNhan[];
   sessionId?: string;
   ngonNgu?: NgonNgu;
+  /** ★ Đợt 10.2 — model người dùng chọn (`vai-tro:<id>` | `ho-so:<id>` | `ngoai:…`); vắng/auto ⇒ KHÔNG gửi. Máy chủ kiểm hình dạng + danh mục (400/404 trước khi mở lượt). */
+  chonModel?: string;
 }
 
 // ─── SSE thuần ─────────────────────────────────────────────────────────────────────────────────
