@@ -69,7 +69,7 @@ vi.mock("@/lib/trpc", () => {
 });
 
 import { Faceplate } from "./Faceplate";
-import { CanhBaoKhaNangDung, HopDungMay, NutDungMay, QUA_HAN_GUI_MS } from "./DungMay";
+import { bangEstopTuKetQua, bangEstopTuLoi, CanhBaoKhaNangDung, HopDungMay, NutDungMay, QUA_HAN_GUI_MS } from "./DungMay";
 import { KenhCheDoMay } from "./KenhCheDoMay";
 
 const kenh = (o: Row): Row => ({
@@ -621,6 +621,147 @@ describe("kiem-dinh R1b-1 H1 (b) — ghim của tag mức tác động > 1 'khô
       "errors.SCADA_STOP_PINS_HIGH_LEVEL",
     ]) {
       expect(CHU_VIET.test(E(k)), k).toBe(false);
+    }
+  });
+});
+
+// ─── R1b-2a Task 4 (điều phối Q4 + ruling T3 c3) — băng đỏ CỐ ĐỊNH "dùng E-STOP cứng" khi STOP CHƯA được gửi ─────────────────────────────
+describe("R1b-2a T4 — băng đỏ cố định 'DÙNG E-STOP CỨNG TẠI MÁY' (không phải toast)", () => {
+  const LOI_QUA_HAN = { message: "x", data: { code: "SERVICE_UNAVAILABLE", httpStatus: 503, appCode: "SCADA_STOP_PRECHECK_TIMEOUT", appParams: { ma: "STOP_QUA_HAN", pha: "truoc_gui" } } };
+  /** hình lỗi mà trpcLinks (fetchDungMay429) dựng cho MỌI 429 trên dungMay — tầng STOP hay apiLimiter */
+  const LOI_429_LINKS = { message: "Too many STOP requests — use the hard E-STOP", data: { code: "TOO_MANY_REQUESTS", httpStatus: 429, path: "scadaCommands.dungMay" } };
+  /** dự phòng: TRPCClientError chỉ còn meta (httpLink không đổi được thân) */
+  const LOI_429_META = { message: "Unable to transform response from server", meta: { response: { status: 429 } } };
+  const bang = () => screen.getByTestId("bang-estop-cung");
+
+  it("★ SCADA_STOP_PRECHECK_TIMEOUT (pha truoc_gui) ⇒ hộp DỪNG hiện câu có 'E-STOP cứng' + dòng đỏ token dừng + BĂNG role=alert nền --packml-abort", async () => {
+    veHop();
+    fireEvent.click(nutMacDinh());
+    await traLoi("onError", LOI_QUA_HAN);
+    expect(within(hop()).getByTestId("loi-lenh")).toHaveTextContent(S("scada.lenh.loi.STOP_QUA_HAN"));
+    expect(S("scada.lenh.loi.STOP_QUA_HAN")).toContain("E-STOP cứng");
+    expect(within(hop()).getByTestId("dung-estop")).toHaveTextContent("Dùng E-STOP cứng tại máy");
+    const b = within(hop()).getByTestId("bang-estop-cung");
+    expect(b).toHaveAttribute("role", "alert");
+    expect(b).toHaveAttribute("data-loai", "qua_han");
+    expect(b).toHaveTextContent(S("scada.dungMay.bangEstop.tieuDe"));
+    expect(b).toHaveTextContent(S("scada.dungMay.bangEstop.quaHan"));
+    const st = b.getAttribute("style") ?? "";
+    expect(st).toContain("--packml-abort");
+    expect(st).not.toMatch(/--alarm-/);
+  });
+
+  it("pha xac_thuc (createContext) ⇒ cùng băng qua_han", async () => {
+    veHop();
+    fireEvent.click(nutMacDinh());
+    await traLoi("onError", { ...LOI_QUA_HAN, data: { ...LOI_QUA_HAN.data, appParams: { ma: "STOP_QUA_HAN", pha: "xac_thuc" } } });
+    expect(bang()).toHaveAttribute("data-loai", "qua_han");
+  });
+
+  it("★ BẤT KỲ HTTP 429 trên dungMay (theo mã trạng thái): hình của trpcLinks HOẶC chỉ còn meta.response.status ⇒ băng gioi_han", async () => {
+    for (const loi of [LOI_429_LINKS, LOI_429_META]) {
+      veHop();
+      fireEvent.click(nutMacDinh());
+      await traLoi("onError", loi);
+      expect(bang()).toHaveAttribute("data-loai", "gioi_han");
+      expect(bang()).toHaveTextContent(S("scada.dungMay.bangEstop.gioiHan"));
+      expect(within(hop()).getByTestId("dung-estop")).toBeInTheDocument();
+      cleanup();
+      srv.calls = [];
+      srv.opts = {};
+    }
+  });
+
+  it("★ NutDungMay: đóng hộp ⇒ băng Ở LẠI trên trang (ngoài hộp) tới khi bấm 'Đã hiểu'; không tự tắt", async () => {
+    render(<NutDungMay machineId={10} tenMay="RF-2" soAdapter={1} />);
+    fireEvent.click(screen.getByTestId("nut-dung-may"));
+    fireEvent.click(nutMacDinh());
+    await traLoi("onError", LOI_QUA_HAN);
+    fireEvent.click(within(hop()).getByRole("button", { name: S("scada.dungMay.nutDong") }));
+    expect(screen.queryByTestId("hop-dung-may")).toBeNull();
+    const khoi = screen.getByTestId("khoi-dung-may");
+    const b = within(khoi).getByTestId("bang-estop-cung");
+    expect(b).toHaveAttribute("role", "alert");
+    expect(b).toHaveTextContent(S("scada.dungMay.bangEstop.tieuDe"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(within(khoi).getByTestId("bang-estop-cung")).toBeInTheDocument();
+    fireEvent.click(within(b).getByRole("button", { name: S("scada.dungMay.bangEstop.nutBo") }));
+    expect(within(khoi).queryByTestId("bang-estop-cung")).toBeNull();
+  });
+
+  it("★ fix round 1 M-1 — STOP SAU thành công trọn vẹn ⇒ băng cũ trên trang được GỠ; thành công một phần (adapter không đạt) ⇒ băng GIỮ", async () => {
+    render(<NutDungMay machineId={10} tenMay="RF-2" soAdapter={1} />);
+    const bam = async (kieu: "onSuccess" | "onError", v: unknown) => {
+      fireEvent.click(screen.getByTestId("nut-dung-may"));
+      fireEvent.click(nutMacDinh());
+      await traLoi(kieu, v);
+      fireEvent.click(within(hop()).getByRole("button", { name: S("scada.dungMay.nutDong") }));
+    };
+    await bam("onError", LOI_QUA_HAN);
+    expect(within(screen.getByTestId("khoi-dung-may")).getByTestId("bang-estop-cung")).toBeInTheDocument();
+    // một phần: adapter bị safety chặn (không phải STOP_QUA_HAN) ⇒ chưa phải thành công trọn vẹn ⇒ băng giữ
+    await bam("onSuccess", { ketQua: [{ adapterId: 1, code: "PLC-A", status: "rejected", ok: false, simulated: false, reason: "SAFETY_BLOCKED", writes: [], commandLogIds: [6] }] });
+    expect(within(screen.getByTestId("khoi-dung-may")).getByTestId("bang-estop-cung")).toBeInTheDocument();
+    // trọn vẹn ⇒ gỡ
+    await bam("onSuccess", { ketQua: [{ adapterId: 1, code: "PLC-A", status: "acked_verified", ok: true, simulated: false, writes: [{ tagKey: "stop_cmd", value: true }], commandLogIds: [7] }] });
+    expect(within(screen.getByTestId("khoi-dung-may")).queryByTestId("bang-estop-cung")).toBeNull();
+  });
+
+  it("★ kết quả có adapter bị bỏ vì hạn (reason STOP_QUA_HAN) ⇒ băng qua_han_mot_phan nêu adapter; adapter đạt vẫn hiện đạt", async () => {
+    veHop({ soAdapter: 2 });
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", {
+      ketQua: [
+        { adapterId: 1, code: "PLC-A", status: "failed", ok: false, simulated: false, reason: "STOP_QUA_HAN", writes: [{ tagKey: "stop_cmd", value: true }], commandLogIds: [] },
+        { adapterId: 2, code: "PLC-B", status: "acked_verified", ok: true, simulated: false, writes: [{ tagKey: "stop_cmd", value: true }], commandLogIds: [9] },
+      ],
+    });
+    expect(bang()).toHaveAttribute("data-loai", "qua_han_mot_phan");
+    expect(bang()).toHaveTextContent(S("scada.dungMay.bangEstop.quaHanMotPhan", { list: "PLC-A" }));
+    expect(screen.getByTestId("ket-qua-dung-2")).toHaveAttribute("data-loai", "dat");
+    expect(within(screen.getByTestId("ket-qua-dung-1")).getByTestId("dung-estop")).toBeInTheDocument();
+  });
+
+  it("từ chối KHÁC (CHUA_GHIM_STOP) / kết quả đạt ⇒ KHÔNG băng (băng chỉ cho quá hạn / 429)", async () => {
+    veHop();
+    fireEvent.click(nutMacDinh());
+    await traLoi("onError", { message: "x", data: { appCode: "SCADA_STOP_NOT_PINNED", appParams: { ma: "CHUA_GHIM_STOP" } } });
+    expect(screen.queryByTestId("bang-estop-cung")).toBeNull();
+    cleanup();
+    srv.opts = {};
+    veHop();
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", { ketQua: [{ adapterId: 1, code: "PLC-A", status: "acked_verified", ok: true, simulated: false, writes: [], commandLogIds: [5] }] });
+    expect(screen.queryByTestId("bang-estop-cung")).toBeNull();
+  });
+
+  it("bangEstopTuLoi / bangEstopTuKetQua (thuần)", () => {
+    expect(bangEstopTuLoi(LOI_QUA_HAN)).toEqual({ loai: "qua_han" });
+    expect(bangEstopTuLoi(LOI_429_LINKS)).toEqual({ loai: "gioi_han" });
+    expect(bangEstopTuLoi(LOI_429_META)).toEqual({ loai: "gioi_han" });
+    // 429 CÓ appCode khác (vd. TRPC_GIOI_HAN_THU_TUC) vẫn là 429 ⇒ băng (theo mã trạng thái, không theo thân)
+    expect(bangEstopTuLoi({ data: { appCode: "TRPC_GIOI_HAN_THU_TUC", httpStatus: 429 } })).toEqual({ loai: "gioi_han" });
+    expect(bangEstopTuLoi({ data: { appCode: "SCADA_STOP_NOT_PINNED", httpStatus: 412 } })).toBeNull();
+    expect(bangEstopTuLoi(new Error("network"))).toBeNull();
+    expect(bangEstopTuLoi(null)).toBeNull();
+    expect(bangEstopTuKetQua([{ code: "A", reason: "STOP_QUA_HAN" }, { code: "B" }, { code: "C", reason: "STOP_QUA_HAN" }])).toEqual({ loai: "qua_han_mot_phan", list: "A, C" });
+    expect(bangEstopTuKetQua([{ code: "A", reason: "SAFETY_BLOCKED" }])).toBeNull();
+  });
+
+  it("chữ mới ở en không có chữ Việt; vi/en/zh đều có khoá", () => {
+    for (const k of [
+      "scada.dungMay.bangEstop.tieuDe",
+      "scada.dungMay.bangEstop.quaHan",
+      "scada.dungMay.bangEstop.quaHanMotPhan",
+      "scada.dungMay.bangEstop.gioiHan",
+      "scada.dungMay.bangEstop.nutBo",
+      "scada.lenh.loi.STOP_QUA_HAN",
+      "errors.SCADA_STOP_PRECHECK_TIMEOUT",
+    ]) {
+      expect(CHU_VIET.test(E(k)), k).toBe(false);
+      expect(S(k).length, k).toBeGreaterThan(0);
     }
   });
 });

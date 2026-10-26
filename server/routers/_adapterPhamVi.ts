@@ -9,6 +9,7 @@
  */
 import { eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import type { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { getDb as getDbRaw } from "../db";
 import { idsTrongPhamVi, type PhamViDoc } from "../db/hierarchy";
@@ -36,6 +37,23 @@ export function adapterNhinThay(machineId: number | null, idsMay: number[] | nul
   return machineId !== null && idsMay.includes(machineId);
 }
 
+/**
+ * SCADA R1b-2a T5 (kiem-dinh M5) — KIỂM LẠI phạm vi DƯỚI KHOÁ hàng adapter, trong giao dịch. NÉM `loi()` khi adapter không nhìn thấy được.
+ *
+ * Vì sao: kiểm-trước (`adapterTrongPhamVi` / `adapterCuaTag` / `kiemPhamViYaml`) đọc `machineId` KHÔNG khoá; một `deviceAdapter.update` đổi máy
+ * (sang nhà máy ngoài phạm vi) commit giữa lượt kiểm ấy và lượt khoá trong giao dịch ⇒ giao dịch ghi lên adapter đã thuộc nhà máy khác (TOCTOU).
+ * Bên gọi gọi hàm này NGAY sau khi khoá hàng adapter (`khoaAdapterTx` FOR SHARE hoặc `FOR UPDATE` của chính thủ tục): `machineIdDaKhoa` đọc dưới
+ * khoá là máy mà giao dịch thật sự ghi lên, và không đổi được nữa cho tới khi giao dịch xong (đổi máy giữ FOR UPDATE — thứ tự khoá troLaiKenh.ts).
+ *
+ *   • `machineIdDaKhoa` — `machineId` của hàng ĐÃ KHOÁ; `undefined` = hàng adapter không còn (bị xoá giữa chừng) ⇒ NÉM kể cả phạm vi toàn quyền
+ *     (cùng kết cục với kiểm-trước: "không tồn tại").
+ *   • `idsMay` — tính TRƯỚC giao dịch bằng `idsMayTrongPhamVi(ctx)`: KHÔNG gọi pool trong giao dịch (thứ tự khoá dự án — Global Constraints).
+ *   • `loi` — CHÍNH lỗi mà kiểm-trước của thủ tục đó trả (sau M6 của R1b-1): "ngoài phạm vi" ≡ "không tồn tại", cùng một NOT_FOUND.
+ */
+export function kiemPhamViDuoiKhoa(machineIdDaKhoa: number | null | undefined, idsMay: number[] | null, loi: () => TRPCError): void {
+  if (machineIdDaKhoa === undefined || !adapterNhinThay(machineIdDaKhoa, idsMay)) throw loi();
+}
+
 /** Điều kiện SQL cho danh sách `device_adapters`: `undefined` khi toàn quyền (không thêm cổng nào — chiều DƯƠNG chống vá quá tay). */
 export function dieuKienAdapterTrongPhamVi(idsMay: number[] | null): SQL | undefined {
   return idsMay === null ? undefined : inArray(deviceAdapters.machineId, idsMay.length > 0 ? idsMay : [-1]);
@@ -47,10 +65,13 @@ export interface HangAdapterToiThieu {
   machineId: number | null;
 }
 
-/** Đọc MỘT adapter theo id client gửi và kiểm phạm vi. Không thấy / ngoài phạm vi ⇒ cùng NOT_FOUND. */
-export async function adapterTrongPhamVi(ctx: CoDanhTinh, adapterId: number): Promise<HangAdapterToiThieu> {
+/**
+ * Đọc MỘT adapter theo id client gửi và kiểm phạm vi. Không thấy / ngoài phạm vi ⇒ cùng NOT_FOUND.
+ * `idsMayCo` (R1b-2a T5): tập máy ĐÃ tính sẵn (bên gọi cần nó lần nữa cho `kiemPhamViDuoiKhoa` dưới khoá) — vắng ⇒ tự tính như cũ.
+ */
+export async function adapterTrongPhamVi(ctx: CoDanhTinh, adapterId: number, idsMayCo?: number[] | null): Promise<HangAdapterToiThieu> {
   const db = await layDb();
-  const idsMay = await idsMayTrongPhamVi(ctx);
+  const idsMay = idsMayCo === undefined ? await idsMayTrongPhamVi(ctx) : idsMayCo;
   const [row] = await db
     .select({ id: deviceAdapters.id, code: deviceAdapters.code, machineId: deviceAdapters.machineId })
     .from(deviceAdapters)
@@ -95,12 +116,12 @@ export const khongThayTag = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { en
  * trả `{entity:"deviceTag"}` ⇒ người nhà máy A dò id tag phân biệt được tag CÓ THẬT của nhà máy B. Lỗi phạm vi đổi về đúng lỗi "không tồn tại";
  * lỗi khác (DB, phạm vi không phân giải được — strict) vẫn ném nguyên.
  */
-export async function adapterCuaTag(ctx: CoDanhTinh, tagId: number): Promise<number> {
+export async function adapterCuaTag(ctx: CoDanhTinh, tagId: number, idsMayCo?: number[] | null): Promise<number> {
   const db = await layDb();
   const [t] = await db.select({ adapterId: deviceTags.adapterId }).from(deviceTags).where(eq(deviceTags.id, tagId)).limit(1);
   if (!t) throw khongThayTag();
   try {
-    await adapterTrongPhamVi(ctx, t.adapterId);
+    await adapterTrongPhamVi(ctx, t.adapterId, idsMayCo);
   } catch (e) {
     const c = (e as { code?: string; cause?: { appCode?: string } } | null) ?? null;
     if (c?.code === "NOT_FOUND" && c.cause?.appCode === "ENTITY_NOT_FOUND") throw khongThayTag();

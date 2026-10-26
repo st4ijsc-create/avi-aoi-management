@@ -225,7 +225,7 @@ beforeAll(async () => {
 
   const sp = { dataType: "float" as const, min: 0, max: 300, step: 0.5 };
   await seedTag(ad.a, { key: "che_do", dataType: "int", kind: "input", writable: false, level: null });
-  for (const key of ["sp3", "khoa", "nem", "lap", "dua", "rf4"]) await seedTag(ad.a, { key, ...sp, level: 3 });
+  for (const key of ["sp3", "khoa", "nem", "lap", "dua", "rf4", "sp0433"]) await seedTag(ad.a, { key, ...sp, level: 3 });
   await seedTag(ad.a, { key: "sp4", ...sp, level: 4 });
   await seedTag(ad.a, { key: "doc", dataType: "float", kind: "input", writable: false, level: null });
   await seedTag(ad.a, { key: "tat", ...sp, enabled: false });
@@ -233,6 +233,10 @@ beforeAll(async () => {
   await seedTag(ad.a, { key: "sc10", dataType: "int", min: 0, max: 300, level: 3 });
   await seedTag(ad.a, { key: "sc10cu", dataType: "int", kind: null, level: 3 });
   await dung(sql`UPDATE device_tags SET scale = 10, "offset" = 0 WHERE "adapterId" = ${ad.a} AND "tagKey" IN ('sc10', 'sc10cu')`);
+  // R1b-2a T2 (m5) — int scale 0.5 CHƯA khai (giá trị kỹ thuật 2.5 = thô 5) + int scale 1 CHƯA khai (đối chứng)
+  await seedTag(ad.a, { key: "sc05cu", dataType: "int", kind: null, level: 3 });
+  await seedTag(ad.a, { key: "sc1cu", dataType: "int", kind: null, level: 3 });
+  await dung(sql`UPDATE device_tags SET scale = 0.5, "offset" = 0 WHERE "adapterId" = ${ad.a} AND "tagKey" = 'sc05cu'`);
   await seedTag(ad.b, { key: "sp3", ...sp, level: 3 });
   await seedTag(ad.e, { key: "sp3", ...sp, level: 3 });
   await seedTag(ad.n, { key: "sp3", ...sp, level: 3 });
@@ -574,6 +578,27 @@ describe("kiem-dinh P1-3 — cổng giá trị biết scale/offset (int): (v −
   });
 });
 
+describe("R1b-2a T2 (m5) — HMI và dispatch cùng luật cho int scale lẻ", () => {
+  it("★ request 2.5 trên int scale 0.5 CHƯA khai ⇒ được nhận (trước: SCADA_VALUE_TYPE_MISMATCH); dòng chờ + băm mang SỐ 2.5", async () => {
+    const u = nguoi.opA;
+    const kq = await u.caller.request({ adapterId: ad.a, tagKey: "sc05cu", value: "2.5", lyDo: LY_DO, clientRequestId: uuid() });
+    expect(kq.requestId).toEqual(expect.any(String));
+    expect(kq.preview).toMatchObject({ requested: 2.5 });
+    const [row] = await dung(sql`SELECT "argsJson", "previewJson" FROM ai_pending_actions WHERE id = ${kq.requestId}`);
+    expect(row.argsJson).toMatchObject({ tagKey: "sc05cu", value: 2.5 });
+    expect(row.previewJson.__otPayloadHash).toBe(
+      otPayloadHash({ tool: "hmi.write_tag", adapterId: ad.a, machineId: A.mid, commandType: "write_tag", writes: [{ tagKey: "sc05cu", value: 2.5 }] }),
+    );
+    await dung(sql`DELETE FROM scada_khoa_chon WHERE adapter_id = ${ad.a} AND tag_key = 'sc05cu'`); // nhả khoá chọn cho ca sau
+  });
+
+  it("request 2.6 trên int scale 0.5 CHƯA khai ⇒ OFF_STEP {step 0.5, goiY 2.5}; 2.5 trên int scale 1 CHƯA khai vẫn TYPE_MISMATCH", async () => {
+    const { loi } = await tuChoi("opA", { adapterId: ad.a, tagKey: "sc05cu", value: 2.6 }, { code: "BAD_REQUEST", appCode: "SCADA_VALUE_OFF_STEP", reason: "OFF_STEP" });
+    expect(loi.appParams).toMatchObject({ ma: "OFF_STEP", tagKey: "sc05cu", step: 0.5, goiY: 2.5 });
+    await tuChoi("opA", { adapterId: ad.a, tagKey: "sc1cu", value: 2.5 }, { code: "BAD_REQUEST", appCode: "SCADA_VALUE_TYPE_MISMATCH", reason: "TYPE_MISMATCH" });
+  });
+});
+
 // ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 // R1b-1 Task 7 — cột `ly_do` (mig 0433) trên dòng `request` + bộ điều tiết mã ồn (MA_ON) theo người dùng
 // ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -697,6 +722,51 @@ describe("R1b-1 T7 fix round 1 — NUL trong lyDo (I-1)", () => {
       expect(await lyDoSau(m, u.id)).toEqual([{ outcome: "rejected", reason_code: "MODE_LOCAL", ly_do: "chinh nhiet" }]);
     } finally {
       boDem.napTuOt({ adapterId: ad.a, machineId: A.mid }, [mauOt("che_do", 2)]);
+    }
+  });
+});
+
+describe("R1b-2a T9 — canh 0433 đầu request", () => {
+  it("★ trạng thái thiếu 0433 ⇒ PRECONDITION_FAILED SCADA_SCHEMA_MISSING; KHÔNG khoá chọn, KHÔNG dòng chờ, KHÔNG dòng attempts; khôi phục ⇒ request chạy lại", async () => {
+    const { __datTrangThaiSchemaR1a, trangThaiSchemaR1a } = await import("../_core/kiemSchemaR1a");
+    const truoc = trangThaiSchemaR1a();
+    const u = nguoi.opA2;
+    const dem = async () => Number((await dung(sql`SELECT count(*)::int AS n FROM scada_khoa_chon WHERE adapter_id = ${ad.a}`))[0].n);
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: new Date().toISOString(), thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [] });
+    try {
+      const m = await moc();
+      const khoaTruoc = await dem();
+      const choTruoc = await soDongCho(u.id);
+      const loi = await loiCua(u.caller.request({ adapterId: ad.a, tagKey: "sp0433", value: 100, lyDo: LY_DO, clientRequestId: uuid() }));
+      expect(loi).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_SCHEMA_MISSING", appParams: { ma: "THIEU_MIGRATION", migration: "0433" } });
+      expect(await dongThuSau(m, u.id), "không ghi attempts").toHaveLength(0);
+      expect(await dem(), "khoá chọn KHÔNG bị lấy").toBe(khoaTruoc);
+      expect(await soDongCho(u.id), "không dòng chờ").toBe(choTruoc);
+    } finally {
+      __datTrangThaiSchemaR1a(truoc);
+    }
+    // khôi phục ⇒ request đi tiếp, tới dòng chờ
+    const m2 = await moc();
+    const kq = await u.caller.request({ adapterId: ad.a, tagKey: "sp0433", value: 100, lyDo: LY_DO, clientRequestId: uuid() });
+    expect(kq.requestId).toBeTruthy();
+    expect((await dongThuSau(m2, u.id)).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["chua_kiem", { kieu: "chua_kiem" }],
+    ["khong_kiem_duoc", { kieu: "khong_kiem_duoc", loi: "x", loai: "khac" }],
+  ] as const)("trạng thái schema '%s' (không biết ≠ thiếu) ⇒ KHÔNG canh: request đi tiếp tới dòng chờ", async (_ten, trangThai) => {
+    const { __datTrangThaiSchemaR1a, trangThaiSchemaR1a } = await import("../_core/kiemSchemaR1a");
+    const truoc = trangThaiSchemaR1a();
+    const u = nguoi.opA2;
+    __datTrangThaiSchemaR1a(trangThai as never);
+    try {
+      const choTruoc = await soDongCho(u.id);
+      const kq = await u.caller.request({ adapterId: ad.a, tagKey: "sp0433", value: 100, lyDo: LY_DO, clientRequestId: uuid() });
+      expect(kq.requestId).toBeTruthy();
+      expect(await soDongCho(u.id)).toBeGreaterThan(choTruoc);
+    } finally {
+      __datTrangThaiSchemaR1a(truoc);
     }
   });
 });

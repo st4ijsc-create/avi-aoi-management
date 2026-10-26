@@ -46,6 +46,7 @@
 
 import { TRPCError } from "@trpc/server";
 import { appError } from "./appError";
+import { trongHanYeuCauStopHmi } from "./hanStopHmi";
 import {
   getModuleByCode,
   CORE_MODULE_CODES,
@@ -202,7 +203,9 @@ export function moduleGate(moduleCode: string) {
     }
 
     try {
-      const entitlement = await resolveEntitlement();
+      // SCADA R1b-2a T4 fix round 1 (I-1) — request STOP HMI (`ctx.hanChotStopHmi`): 2 lượt getAllLicenses chờ trong phần CÒN LẠI của hạn
+      // tổng; hết hạn ⇒ NÉM từ chối "dùng E-STOP cứng" (là TRPCError ⇒ catch dưới chuyển tiếp, không rơi về fail-safe allow). Không hạn ⇒ như cũ.
+      const entitlement = await trongHanYeuCauStopHmi(resolveEntitlement(), ctx.hanChotStopHmi, "giay_phep", "truoc_gui");
       // No-brick: SKU never configured → allow (never lock an unconfigured system).
       if (!entitlement.configured) {
         return next({ ctx });

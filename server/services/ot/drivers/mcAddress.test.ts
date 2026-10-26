@@ -58,4 +58,15 @@ describe("coerceMcValue", () => {
   it("NaN → bad", () => {
     expect(coerceMcValue(NaN, "float")).toEqual({ value: null, quality: "bad" });
   });
+
+  // R1b-2a T13 fix round 2 (I2) — mcprotocol (mcprotocol.js readResponse) đặt CHUỖI chất lượng 'BAD 255' vào chỗ giá trị cho item lỗi
+  // (mọi đường lỗi tô 0xFF). Trước đây bool ⇒ TRUE good, string ⇒ "BAD 255" good (fail-open).
+  it.each(["bool", "string", "int", "float", "json"] as const)("I2: chuỗi BAD của mcprotocol ('BAD 255') trên tag %s ⇒ bad, không bao giờ good", (dt) => {
+    expect(coerceMcValue("BAD 255", dt)).toEqual({ value: null, quality: "bad" });
+    expect(coerceMcValue(["BAD 255"], dt)).toEqual({ value: null, quality: "bad" });
+  });
+
+  it("I2: chuỗi PLC thật bắt đầu bằng 'BAD' nhưng không phải mã chất lượng vẫn là giá trị tốt", () => {
+    expect(coerceMcValue("BAD PART", "string")).toEqual({ value: "BAD PART", quality: "good" });
+  });
 });

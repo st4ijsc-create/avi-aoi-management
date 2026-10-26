@@ -25,6 +25,8 @@
  *       – luật ĐÍCH đang bật trên danh tính CŨ: đổi dataType/writable/scale/offset ⇒ giá trị GỬI phải còn ghi được (`INTERLOCK_NGOAI_DAI`);
  *         đổi tên / chuyển adapter / tắt tag là đích hoặc nguồn của luật bật ⇒ `INTERLOCK_MAT_DICH` (I2);
  *       – luật ĐÍCH đang bật trên danh tính MỚI ⇒ giá trị GỬI phải ghi được lên tag này (I3).
+ *     R1b-2a T8 (kiem-dinh M4, Q7): cột NHỊP (`samplingMs` / `deadband` / `unit`, `cotNhipDoi`) THẬT SỰ đổi trên tag được bảo vệ ⇒ TOTP TƯƠI
+ *     + audit `nhip: { truoc, sau }`; KHÔNG kiểm nhất quán (cột nhịp không đụng lưới / ghim / giá trị lệnh).
  *   • Tạo (`kiemTaoTag`): lên khoá mồ côi ⇒ TOTP + luật đích đang bật ở khoá đó phải ghi được lên tag mới.
  *   • Xoá / prune (`kiemXoaTag`): kênh chế độ ⇒ từ chối (`scadaKenhCheDoGoTruoc`); đích / nguồn của luật bật ⇒ `INTERLOCK_MAT_DICH`; đã khai
  *     đang ghim ⇒ `STOP_PIN_GO_TRUOC`; còn lại được bảo vệ ⇒ TOTP.
@@ -39,15 +41,22 @@
  *     interlockRouter create/update/approve/enable: luật FOR UPDATE → tag FOR SHARE (enable, T10b: + tag nguồn FOR SHARE; adapter đọc
  *     KHÔNG khoá — khoá nó sau luật là đảo thứ tự);   scadaKenh.capNhat: adapter FOR SHARE (R1b-1 T10: machineId của phép kiểm phạm vi đọc ở đây) → luật FOR SHARE → tag FOR UPDATE;
  *     scadaKenh.cheDo.dat: adapter FOR SHARE → tag FOR SHARE → kênh chế độ FOR UPDATE.
+ *     scadaKenh.khaiHangLoat (R1b-2a T6): adapter FOR SHARE (+ `kiemPhamViDuoiKhoa`) → mọi luật nhắm adapter FOR SHARE theo id → tag
+ *       `WHERE id IN (…) AND adapterId = <adapter> ORDER BY id FOR UPDATE` (không khoá hàng của adapter khác).
  *   LUẬT đứng TRƯỚC TAG (không phải sau) vì interlockRouter / scadaKenh.capNhat đã khoá luật trước tag từ R1a — đảo lại sẽ tạo vòng chờ với
  *   chúng. Không đường nào khoá ngược một cặp ⇒ không vòng chờ (40P01).
+ *   R1b-2a T5 (kiem-dinh M7) — TRONG bậc TAG: mọi lượt khoá NHIỀU hàng `device_tags` FOR UPDATE đều `ORDER BY id` (import, `congAdapterTx`,
+ *   `goMoiStopPinCuaAdapterTx`, xoá adapter, `khaiHangLoat`) — hai thứ tự (id / tagKey / thứ tự vật lý heap) trên cùng tập hàng là vòng chờ.
+ *   Census: `thuTuKhoaTag.census.test.ts`. PHẠM VI NHÀ MÁY được kiểm LẠI ngay sau khi khoá hàng ADAPTER (`kiemPhamViDuoiKhoa`, _adapterPhamVi.ts):
+ *   `machineId` đọc dưới khoá là máy mà giao dịch thật sự ghi lên (một `deviceAdapter.update` đổi máy đã commit giữa kiểm-trước và khoá ⇒
+ *   NOT_FOUND như kiểm-trước, không ghi).
  */
 import { and, eq } from "drizzle-orm";
 import { deviceAdapters, deviceTags, interlockRules, scadaKenhCheDo, type DeviceTag } from "../../../drizzle/schema";
 import { appError } from "../../_core/appError";
 import { validateStopValue } from "../ot/stopPin";
 import { laKenhGhi } from "./kenhScada";
-import { giaTriLenhInterlock, kiemLenhInterlockTrenKenh, kiemNhatQuanKenh, luatCoGhiLenh, soHienThi, thamSoNgoaiDaiInterlock, type DbHoacTx, type KenhNhatQuan, type LuatNhamTag, type LuoiLech, type MaViPham } from "./nhatQuanKenh";
+import { giaTriLenhInterlock, kiemLenhInterlockTrenKenh, kiemNhatQuanKenh, luatCoGhiLenh, thamSoNgoaiDaiInterlock, thamSoNgoaiDaiStopPin, type DbHoacTx, type KenhNhatQuan, type LuatNhamTag, type LuoiLech, type MaViPham } from "./nhatQuanKenh";
 
 /** Cột TRỎ LẠI của một tag (brief: address/scale/offset/dataType/writable/tagKey; + adapterId — tags.update chuyển được tag sang adapter khác). */
 export const COT_TRO_LAI = ["adapterId", "tagKey", "address", "dataType", "scale", "offset", "writable"] as const;
@@ -80,10 +89,55 @@ export type HangTagTroLai = Pick<
   | "writeMax"
   | "writeStep"
   | "actuationLevel"
+  | CotNhip
 >;
 
 /** Giá trị các cột trỏ lại SAU khi gộp patch (scale/offset giữ dạng cột: chuỗi decimal | null). */
 export type GiaTriTroLai = Pick<DeviceTag, CotTroLai>;
+
+/**
+ * R1b-2a T8 (kiem-dinh M4, Q7 duyệt) — cột NHỊP của tag: tần suất lấy mẫu (`samplingMs`), bộ lọc report-by-exception (`deadband`) và đơn vị
+ * hiển thị (`unit`). Không đổi gì trên dây (không lưới / ghim / giá trị lệnh — không kiểm nhất quán), nhưng khi `OT_TAG_DEADBAND_ENABLED` bật
+ * thì `samplingMs` / `deadband` quyết NGUỒN của luật interlock trễ tới đâu (tối đa 60 s), còn `unit` quyết người vận hành đọc con số theo đơn
+ * vị nào ⇒ trên tag ĐƯỢC BẢO VỆ, đổi THẬT SỰ một cột nhịp cần TOTP TƯƠI + audit `nhip: { truoc, sau }` (tag chưa được bảo vệ: như cũ).
+ * KHÔNG thuộc băm định nghĩa của token duyệt interlock (`interlock/dinhNghiaDuyet.ts`) ⇒ không làm mất duyệt.
+ */
+export const COT_NHIP_BAO_VE = ["samplingMs", "deadband", "unit"] as const;
+export type CotNhip = (typeof COT_NHIP_BAO_VE)[number];
+/** Cột nhịp đã CHUẨN HOÁ như đường đọc (dạng so sánh và dạng ghi audit). */
+export type GiaTriNhip = { samplingMs: number | null; deadband: number | null; unit: string | null };
+
+/** Số nhịp như đường ĐỌC (`deviceAdapter.ts` / `adapterFacade.ts`): NULL / vắng / "" ⇒ không cấu hình (null); còn lại so theo `Number`. */
+function soNhipDoc(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  return Number(v); // NaN !== NaN ⇒ một giá trị lạ luôn tính là ĐỔI (chiều an toàn)
+}
+/** Đơn vị như đường hiển thị: NULL / vắng / chuỗi rỗng-hoặc-toàn-khoảng-trắng ⇒ không có đơn vị (null); so phần đã bỏ khoảng trắng hai đầu. */
+function donViDoc(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s === "" ? null : s;
+}
+
+/** THUẦN — cột nhịp của một hàng / bản ghi, chuẩn hoá như đường đọc. */
+export function nhipDoc(g: Partial<Record<CotNhip, unknown>>): GiaTriNhip {
+  return { samplingMs: soNhipDoc(g.samplingMs), deadband: soNhipDoc(g.deadband), unit: donViDoc(g.unit) };
+}
+
+/** THUẦN — cột nhịp TRƯỚC (hàng DB) và SAU khi gộp patch (trường `undefined` = giữ nguyên; `null` = bỏ cấu hình), đã chuẩn hoá. */
+export function nhipTruocSau(cu: Pick<DeviceTag, CotNhip>, patch: Record<string, unknown>): { truoc: GiaTriNhip; sau: GiaTriNhip } {
+  const lay = (k: CotNhip): unknown => (patch[k] !== undefined ? patch[k] : cu[k]);
+  return { truoc: nhipDoc(cu), sau: nhipDoc({ samplingMs: lay("samplingMs"), deadband: lay("deadband"), unit: lay("unit") }) };
+}
+
+/**
+ * THUẦN — cột nhịp THẬT SỰ đổi so với hàng DB. So như đường đọc: NULL ≡ vắng (form gửi lại `null` trên hàng đang NULL ⇒ không đổi), số so
+ * theo `Number`, đơn vị "" / khoảng trắng ≡ NULL.
+ */
+export function cotNhipDoi(cu: Pick<DeviceTag, CotNhip>, patch: Record<string, unknown>): CotNhip[] {
+  const { truoc, sau } = nhipTruocSau(cu, patch);
+  return COT_NHIP_BAO_VE.filter((k) => truoc[k] !== sau[k]);
+}
 
 /** Luật liên quan một tag (đích hoặc nguồn), kèm đích / nguồn / trạng thái duyệt (để lọc theo cặp khi khoá theo adapter / máy). */
 export type LuatCoDich = LuatNhamTag & { commandTag: string | null; sourceKey: string | null; approvedBy: number | null };
@@ -294,7 +348,7 @@ export async function congAdapterTx(
     })
     .from(deviceTags)
     .where(eq(deviceTags.adapterId, e.adapterId))
-    .orderBy(deviceTags.tagKey)
+    .orderBy(deviceTags.id) // R1b-2a T5 (kiem-dinh M7) — MỌI khoá nhiều tag ORDER BY id (trước: tagKey ⇒ khác thứ tự với import ⇒ 40P01)
     .for("update");
   const kenh = await tx
     .select({ machineId: scadaKenhCheDo.machineId, tagKey: scadaKenhCheDo.tagKey })
@@ -371,11 +425,15 @@ function loiMatDich(tagKey: string, r: LuatNhamTag, viec: string): never {
   );
 }
 
-function loiGoGhimTruoc(cu: Pick<DeviceTag, "tagKey" | "stopValue">, viec: string): never {
+/**
+ * STOP_PIN_GO_TRUOC của MỘT tag. R1b-2a T6 (phán quyết K10): `tagId` THÊM VÀO params khi bên gọi biết nó (khai mức hàng loạt nêu đúng tag
+ * hỏng trong lô 200) — thêm thuần, không đổi params cũ của các bên gọi hiện có.
+ */
+export function loiGoGhimTruoc(cu: Pick<DeviceTag, "tagKey" | "stopValue">, viec: string, tagId?: number): never {
   throw appError(
     "BAD_REQUEST",
     "STOP_PIN_GO_TRUOC",
-    { ma: "STOP_PIN_GO_TRUOC", tagKey: cu.tagKey, stopValue: String(cu.stopValue) },
+    { ma: "STOP_PIN_GO_TRUOC", tagKey: cu.tagKey, stopValue: String(cu.stopValue), ...(tagId === undefined ? {} : { tagId }) },
     `Kênh ${cu.tagKey} đang ghim giá trị DỪNG (${String(cu.stopValue)}) — ${viec} sẽ làm mất STOP. Gỡ ghim trước (Tag dừng phần mềm, có lý do), rồi làm lại.`,
   );
 }
@@ -399,13 +457,13 @@ function loiNgoaiDai(
   );
 }
 
-/** QUA_NHIEU_KENH_DA_KHAI — lô import đụng quá trần tag được bảo vệ. */
+/** QUA_NHIEU_KENH_DA_KHAI — lô import đụng quá trần tag được bảo vệ, hoặc (R1b-2a T6) lô khai mức hàng loạt quá trần tag. */
 export function loiQuaNhieuKenhDaKhai(soTag: number): never {
   throw appError(
     "BAD_REQUEST",
     "QUA_NHIEU_KENH_DA_KHAI",
     { soTag, toiDa: TRAN_KENH_DA_KHAI_MOT_LO },
-    `Lô import đụng ${soTag} tag đã khai kênh / được bảo vệ — tối đa ${TRAN_KENH_DA_KHAI_MOT_LO} mỗi lô. Chia nhỏ file rồi nhập lại.`,
+    `Lô có ${soTag} tag — tối đa ${TRAN_KENH_DA_KHAI_MOT_LO} mỗi lô (khai mức hàng loạt: đếm MỌI tag của lô; import: đếm tag đã khai kênh / được bảo vệ). Chia nhỏ lô rồi làm lại.`,
   );
 }
 
@@ -474,9 +532,7 @@ export function kiemNhatQuanSauTroLai(cu: HangTagTroLai, sau: GiaTriTroLai, doi:
           lyDo: nq.ma,
           tagKey: cu.tagKey,
           stopValue: String(cu.stopValue),
-          min: soHienThi(cu.writeMin),
-          max: soHienThi(cu.writeMax),
-          step: soHienThi(cu.writeStep),
+          ...thamSoNgoaiDaiStopPin(cu, nq), // R1b-2a T2 (K17) — min / max / step (lưới vừa trượt) / goiY ("—" khi không có)
         },
         `Giá trị DỪNG đang ghim của kênh ${cu.tagKey} không ghi được với định nghĩa mới (${nq.chiTiet}). Gỡ / đổi ghim trước.`,
       );
@@ -485,7 +541,17 @@ export function kiemNhatQuanSauTroLai(cu: HangTagTroLai, sau: GiaTriTroLai, doi:
   }
 }
 
-export type KetQuaKiemSua = { sau: GiaTriTroLai; doi: CotTroLai[]; daKhai: boolean; baoVe: boolean; moCoi: boolean; canTotp: boolean };
+export type KetQuaKiemSua = {
+  sau: GiaTriTroLai;
+  doi: CotTroLai[];
+  /** R1b-2a T8 — cột nhịp THẬT SỰ đổi (`cotNhipDoi`); `nhip` = trước / sau đã chuẩn hoá (vào audit khi `doiNhip` khác rỗng). */
+  doiNhip: CotNhip[];
+  nhip: { truoc: GiaTriNhip; sau: GiaTriNhip };
+  daKhai: boolean;
+  baoVe: boolean;
+  moCoi: boolean;
+  canTotp: boolean;
+};
 
 /** Luật bật (không alert) đầu tiên trong luật đích rồi luật nguồn, kèm tagKey để nêu trong lỗi. */
 function luatBatDauTien(dich: ReadonlyArray<LuatCoDich>, nguon: ReadonlyArray<LuatCoDich>): LuatCoDich | undefined {
@@ -534,8 +600,25 @@ export function kiemSuaTag(x: {
     const vp = viPhamInterlockSauSua(luatMoi, kenhMoiCua(cu, sau));
     if (vp) loiNgoaiDai(sau.tagKey, cu, vp);
   }
+  // R1b-2a T8 (kiem-dinh M4) — cột nhịp: KHÔNG kiểm nhất quán (không đụng lưới / ghim / giá trị lệnh), chỉ TOTP + audit trên tag được bảo vệ.
+  const doiNhip = cotNhipDoi(cu, patch);
+  const nhip = nhipTruocSau(cu, patch);
   // N7 — tắt một tag được bảo vệ (đã khai / kênh chế độ / luật liên quan bật hoặc đã duyệt) cần mã, như tắt adapter.
-  return { sau, doi, daKhai, baoVe, moCoi, canTotp: (baoVe && doi.length > 0) || moCoi || (tat && baoVe) };
+  return {
+    sau,
+    doi,
+    doiNhip,
+    nhip,
+    daKhai,
+    baoVe,
+    moCoi,
+    canTotp: (baoVe && doi.length > 0) || (baoVe && doiNhip.length > 0) || moCoi || (tat && baoVe),
+  };
+}
+
+/** Phần `nhip` của dòng audit `kenh_da_khai_tro_lai` — chỉ khi cột nhịp thật sự đổi (lượt không đổi nhịp giữ đúng hình audit cũ). */
+export function anhNhipAudit(kq: Pick<KetQuaKiemSua, "doiNhip" | "nhip">): Record<string, unknown> {
+  return kq.doiNhip.length > 0 ? { doiNhip: kq.doiNhip, nhip: kq.nhip } : {};
 }
 
 /**

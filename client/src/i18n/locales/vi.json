@@ -4089,6 +4089,7 @@
       "scadaSetStubFault": "đặt lỗi mô phỏng cho stub",
       "scadaSelectTag": "chọn kênh để ra lệnh",
       "scadaKenhCapNhat": "cập nhật khai báo kênh",
+      "scadaTotpCauHinh": "kiểm mã xác thực cho thay đổi cấu hình kênh",
       "dieuKienDoiTuongTrongPhamVi": "điều kiện đối tượng trong phạm vi",
       "flowNguoiNhan": "tìm người nhận cho luồng",
       "flowXuat": "xuất luồng AI ra gói",
@@ -4105,6 +4106,7 @@
       "stopValue": "giá trị dừng ghim (stopValue)",
       "writeMin": "giới hạn dưới của dải ghi (writeMin)",
       "patch": "nội dung cần đổi (patch)",
+      "items": "danh sách tag của lô (items)",
       "adapterId": "adapter (adapterId)",
       "giaTriRemote": "giá trị nghĩa là REMOTE (giaTriRemote)",
       "tagKey": "tag (tagKey)",
@@ -4536,6 +4538,7 @@
       "scadaKenhCheDoTagTat": "Tag của kênh chế độ đang tắt — bật tag trước rồi khai lại.",
       "scadaKenhGhiTrenTagKhongGhi": "Loại kênh này nhận lệnh ghi, nhưng tag không cho phép ghi — bật \"cho phép ghi\" cho tag hoặc chọn loại kênh chỉ đọc.",
       "scadaKenhThuLai": "Kênh vừa bị thay đổi đồng thời — tải lại rồi thử lại.",
+      "scadaKenhTagTrung": "Một tag xuất hiện hơn một lần trong lô — mỗi tag chỉ một dòng.",
       "scadaKenhCheDoKhongDoiAdapter": "Tag này là kênh chế độ của một máy — không chuyển sang adapter khác được. Gỡ hoặc khai lại kênh chế độ ở trang Kênh & giới hạn trước.",
       "scadaKenhCheDoGoTruoc": "Tag này là kênh chế độ của một máy — gỡ kênh chế độ ở trang Kênh & giới hạn (cần mã xác thực) trước khi xoá tag.",
       "scadaKenhCheDoDoiMay": "Adapter đang mang kênh chế độ của máy — gỡ kênh chế độ ở trang Kênh & giới hạn trước khi gán adapter sang máy khác.",
@@ -4596,7 +4599,7 @@
     "SCADA_CONFIG_TOTP_REQUIRED": "Đổi cấu hình kênh / kênh chế độ cần mã xác thực hai lớp (TOTP) mới — nhập mã 6 số rồi lưu lại.",
     "SCADA_CONFIG_TOTP_INVALID": "Mã xác thực hai lớp không đúng hoặc đã được dùng — chờ mã mới trong ứng dụng xác thực rồi lưu lại.",
     "SCADA_CONFIG_TOTP_NOT_ENROLLED": "Đổi cấu hình kênh cần xác thực hai lớp, nhưng tài khoản này chưa đăng ký 2FA. Vào Cài đặt > Bảo mật để thiết lập.",
-    "STOP_PIN_NGOAI_DAI": "Kênh {{tagKey}} có giá trị DỪNG ghim ({{stopValue}}) không ghi được với khai báo kênh (dải {{min}} … {{max}}, bước {{step}}, hoặc loại kênh chỉ đọc) — lệnh DỪNG sẽ bị từ chối. Gỡ hoặc đổi giá trị ghim trước, hoặc khai lại dải/bước/loại kênh cho phù hợp.",
+    "STOP_PIN_NGOAI_DAI": "Kênh {{tagKey}} có giá trị DỪNG ghim ({{stopValue}}) không ghi được với khai báo kênh (dải {{min}} … {{max}}, bước {{step}}, hoặc loại kênh chỉ đọc). Khi DỪNG, lệnh sẽ bị từ chối (kênh chỉ đọc), được ghi ra ngoài dải / bước đã khai, hoặc bị driver làm tròn sang giá trị khác (lưới thô). Gỡ hoặc đổi giá trị ghim trước (giá trị hợp lệ gần nhất: {{goiY}}), hoặc khai lại dải/bước/loại kênh cho phù hợp.",
     "INTERLOCK_NGOAI_DAI": "Giá trị lệnh của luật interlock không ghi được trên kênh {{tagKey}} theo khai báo kênh (dải {{min}} … {{max}}, bước {{step}} tính từ {{goc}}, hoặc loại kênh chỉ đọc). Giá trị hợp lệ gần nhất: {{goiY}}. Hành động bảo vệ sẽ bị từ chối lúc chạy — sửa giá trị lệnh của luật, hoặc khai lại kênh cho phù hợp.",
     "TU_DONG_TAT": "Chế độ Agent tự động đang TẮT trên máy chủ (công tắc AI_CODING_TU_TRI_GHI). Dùng chế độ duyệt từng bước, hoặc nhờ quản trị bật công tắc.",
     "THIEU_QUYEN_THUC_THI": "Thiếu quyền chạy lệnh / tự ghi (ai_repo_exec) cho chế độ Agent tự động.",
@@ -4615,9 +4618,11 @@
     "INTERLOCK_MAT_DICH": "Luật interlock đang bật #{{ruleId}} dùng tag {{tagKey}} (đích ghi lệnh hoặc nguồn đọc) — đổi tên, chuyển sang adapter khác, tắt hoặc xoá tag, hoặc tắt, xoá, chuyển adapter sang máy khác sẽ làm hành động bảo vệ mất đích hoặc mất nguồn. Sửa luật (hoặc tắt luật) trước.",
     "INTERLOCK_DICH_CHUA_SAN_SANG": "Không bật được luật interlock #{{ruleId}}: tag {{tagKey}} chưa sẵn sàng — tag đích không tồn tại, đang tắt hoặc adapter đích đang tắt; hoặc tag nguồn đã khai trên máy đang tắt (hay adapter của nó tắt). Hành động bảo vệ sẽ không có đích hoặc nguồn. Tạo / bật tag và adapter trước, rồi bật lại luật.",
     "INTERLOCK_NGUON_MO_HO": "Không bật được luật interlock #{{ruleId}}: {{soAdapter}} adapter đang bật của máy cùng mang tag nguồn {{tagKey}} — cổng không biết đọc adapter nào (mơ hồ) nên luật sẽ luôn thiếu dữ liệu. Đổi tên hoặc tắt tag trùng trước, rồi bật lại luật.",
-    "QUA_NHIEU_KENH_DA_KHAI": "Lô import đụng {{soTag}} tag đã khai kênh / được bảo vệ — tối đa {{toiDa}} tag mỗi lô. Chia nhỏ file rồi nhập lại.",
-    "STOP_PIN_GO_TRUOC": "Kênh {{tagKey}} đang ghim giá trị DỪNG ({{stopValue}}) — đổi địa chỉ / kiểu / scale / offset / cho phép ghi / adapter, tắt hoặc xoá tag sẽ làm mất STOP. Gỡ ghim trước (mục Tag dừng phần mềm, có lý do), rồi làm lại.",
-    "SCADA_STOP_PINS_HIGH_LEVEL": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{tagKeys}}) — nút DỪNG MÁY không gửi tới tag mức cao; kỹ sư khai mức tác động 1 cho tag dừng ở /scada/config/channels; dừng bằng E-STOP cứng."
+    "QUA_NHIEU_KENH_DA_KHAI": "Lô có {{soTag}} tag — tối đa {{toiDa}} tag mỗi lô (khai mức hàng loạt: đếm mọi tag của lô; import: đếm tag đã khai kênh / được bảo vệ). Chia nhỏ lô rồi làm lại.",
+    "STOP_PIN_GO_TRUOC": "Kênh {{tagKey}} đang ghim giá trị DỪNG ({{stopValue}}) — đổi địa chỉ / kiểu / scale / offset / cho phép ghi / adapter, nâng mức tác động lên trên 1 (STOP HMI chỉ gửi ghim của tag mức 1), tắt hoặc xoá tag sẽ làm mất STOP. Gỡ ghim trước (mục Tag dừng phần mềm, có lý do), rồi làm lại.",
+    "SCADA_STOP_PINS_HIGH_LEVEL": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{tagKeys}}) — nút DỪNG MÁY không gửi tới tag mức cao; kỹ sư khai mức tác động 1 cho tag dừng ở /scada/config/channels; dừng bằng E-STOP cứng.",
+    "SCADA_STOP_PRECHECK_TIMEOUT": "Máy chủ chậm — STOP HMI CHƯA được gửi. Dùng E-STOP cứng tại máy.",
+    "SCADA_SCHEMA_MISSING": "Thiếu migration {{migration}} của cơ sở dữ liệu — lệnh HMI tạm không dùng được; quản trị áp migration rồi khởi động lại máy chủ."
   },
   "export": {
     "reportMenu": {
@@ -14516,7 +14521,10 @@
       "ariaLabel": "Tư thế an toàn interlock",
       "source": "oversight.posture — cờ của chính các cổng trên server",
       "coverageSource": "oversight.posture — số rule đang bật, đã duyệt, chặn được và có đích",
-      "writesOnEngineOffChip": "Ghi thật khi engine TẮT"
+      "writesOnEngineOffChip": "Ghi thật khi engine TẮT",
+      "cauHinhHong": "Hỏng cấu hình",
+      "cauHinhHongSource": "oversight.posture — luật đang bật mà cổng chặn mọi lệnh nhắm tới nó (thiếu máy / nguồn) hoặc lệnh của nó bị dispatch từ chối (lệch lưới), trong phạm vi của bạn",
+      "cauHinhHongChip": "Luật hỏng cấu hình"
     },
     "matrix": {
       "corner": "Nguyên nhân ↓ · Hệ quả →",
@@ -16523,8 +16531,12 @@
     "defaultPortHint": "Cổng mặc định {{protocol}}: {{port}}",
     "troLai": {
       "title": "Cần mã xác thực hai lớp",
-      "body": "Thao tác này đụng một tag được bảo vệ hoặc một adapter mang tag như thế (trỏ lại, tạo lên khoá đang được tham chiếu, tắt hoặc xoá). Tag được bảo vệ: đã khai kênh, là kênh chế độ của máy, hoặc là đích / nguồn của một luật interlock đang bật hoặc đã duyệt. Cần mã TOTP mới.",
+      "body": "Thao tác này đụng một tag được bảo vệ hoặc một adapter mang tag như thế (trỏ lại, đổi chu kỳ lấy mẫu / deadband / đơn vị, tạo lên khoá đang được tham chiếu, tắt hoặc xoá). Tag được bảo vệ: đã khai kênh, là kênh chế độ của máy, hoặc là đích / nguồn của một luật interlock đang bật hoặc đã duyệt. Cần mã TOTP mới.",
       "submit": "Xác nhận"
+    },
+    "taoTagTotp": {
+      "title": "Cần mã xác thực hai lớp để tạo tag",
+      "body": "Khoá tag này đang được tham chiếu (kênh đã khai, kênh chế độ máy hoặc luật interlock), nên việc tạo tag lên khoá đó cần mã TOTP mới. Nhập mã để gửi lại đúng thao tác tạo tag vừa rồi."
     }
   },
   "engineering": {
@@ -16969,7 +16981,12 @@
       "off": "TẮT",
       "ruleCoverage": "Rule chặn có đích: {{count}}",
       "coverageUnavailable": "Không đọc được độ phủ rule",
-      "writesOnEngineOffWarning": "Đang ghi lệnh thật xuống thiết bị trong khi engine interlock đang TẮT — vi phạm sẽ KHÔNG được tự động chặn."
+      "writesOnEngineOffWarning": "Đang ghi lệnh thật xuống thiết bị trong khi engine interlock đang TẮT — vi phạm sẽ KHÔNG được tự động chặn.",
+      "cauHinhHong": "Luật bật nhưng hỏng cấu hình: {{count}}",
+      "cauHinhHongCanhBao": "Có luật interlock đang bật nhưng KHÔNG chức năng: cổng chặn mọi lệnh nhắm tới nó, hoặc lệnh bảo vệ của nó sẽ bị dispatch từ chối. Sửa luật ở trang interlock.",
+      "cauHinhHongMo": "Mở trang interlock",
+      "stopQuaHan": "STOP HMI bị từ chối vì quá hạn (24 h): {{count}}",
+      "stopQuaHanUnavailable": "Không đọc được số STOP HMI quá hạn"
     },
     "table": {
       "kind": "Loại việc",
@@ -23817,6 +23834,7 @@
         "ketNoiLaiMoTa": "Làm mới phiên kết nối tới thiết bị. Trong lúc nối lại, các tag có thể tạm hiện chất lượng xấu.",
         "tamTatTieuDe": "Tạm tắt adapter {{code}}?",
         "tamTatMoTa": "Ngừng đọc thiết bị và đánh dấu adapter tắt cho tới khi được bật lại ở trang Adapter thiết bị.",
+        "canMaTotp": "Adapter này còn tag được bảo vệ — nhập mã TOTP để xác nhận cùng lý do trên.",
         "lyDo": "Lý do (ghi vào audit)",
         "lyDoNgan": "Lý do cần tối thiểu {{min}} ký tự",
         "huy": "Huỷ",
@@ -23971,6 +23989,27 @@
         "capNhatKhongDoi": "Không có gì thay đổi.",
         "datCheDo": "Đã đặt kênh chế độ.",
         "goCheDo": "Đã gỡ kênh chế độ."
+      },
+      "hangLoat": {
+        "chon": "Chọn {{tagKey}} để khai mức hàng loạt",
+        "chonTatCa": "Chọn mọi kênh ghi được (tối đa {{toiDa}})",
+        "daChon": "Đã chọn {{n}} kênh",
+        "nut": "Khai mức hàng loạt ({{n}})",
+        "boChon": "Bỏ chọn",
+        "tran": "Đã đạt tối đa {{toiDa}} kênh mỗi lô — khai lô này trước rồi chọn tiếp.",
+        "tranTruoc": "Có {{n}} kênh ghi được, mỗi lô tối đa {{toiDa}} — \"chọn tất cả\" chỉ lấy ngần ấy kênh đầu; khai phần còn lại ở lô sau.",
+        "quaTran": "Lô có {{n}} kênh, tối đa {{toiDa}} kênh mỗi lô — bỏ chọn bớt rồi gửi.",
+        "tieuDe": "Khai mức tác động cho {{n}} kênh",
+        "moTa": "Một lô của một adapter: hoặc mọi kênh cùng được khai, hoặc không kênh nào đổi. Kênh đã đúng mức được giữ nguyên. Một mã xác thực hai lớp cho cả lô.",
+        "danhSach": "Kênh trong lô",
+        "muc": "Mức tác động mới",
+        "mucChon": "— Chọn mức —",
+        "boKhai": "Bỏ khai (⇒ 5 — mặc định đóng)",
+        "ghimNhac": "Tag đang ghim DỪNG phải ở mức 1 — gỡ ghim trước",
+        "ghimTag": "Đang ghim DỪNG: {{tags}}",
+        "loiTag": "Kênh {{tagKey}}: {{loi}}",
+        "gui": "Khai mức",
+        "daKhai": "Đã khai mức: {{soDoi}} kênh đổi, {{soGiuNguyen}} kênh giữ nguyên."
       }
     },
     "faceplate": {
@@ -24125,7 +24164,9 @@
         "ma": "Mã: {{ma}}",
         "CHUA_GHIM_STOP": "Máy chưa ghim giá trị STOP — kỹ sư ghim ở /scada/config/channels; dừng bằng E-STOP cứng",
         "goiYStopKhongGhim": "Cần dừng máy? Dùng E-STOP cứng hoặc nút dừng tại tủ máy",
-        "GHIM_MUC_CAO": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{list}}) — nút DỪNG MÁY không gửi gì; dừng bằng E-STOP cứng"
+        "GHIM_MUC_CAO": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{list}}) — nút DỪNG MÁY không gửi gì; dừng bằng E-STOP cứng",
+        "STOP_QUA_HAN": "Máy chủ chậm — STOP HMI CHƯA được gửi. Dùng E-STOP cứng tại máy.",
+        "THIEU_MIGRATION": "Không gửi — cơ sở dữ liệu thiếu migration 0433; quản trị áp migration rồi khởi động lại (nút DỪNG MÁY vẫn dùng được)"
       },
       "local": {
         "remote": "máy đang ở REMOTE",
@@ -24190,6 +24231,13 @@
       "boQua": {
         "tieuDe": "Không gửi (tag mức tác động > 1 — không tới bằng STOP HMI):",
         "dong": "{{code}} · {{tagKey}} (mức {{muc}})"
+      },
+      "bangEstop": {
+        "tieuDe": "DÙNG E-STOP CỨNG TẠI MÁY",
+        "quaHan": "Máy chủ chậm — STOP HMI CHƯA được gửi tới máy.",
+        "quaHanMotPhan": "Máy chủ chậm — STOP HMI CHƯA được gửi tới adapter {{list}}.",
+        "gioiHan": "Máy chủ từ chối vì quá nhiều yêu cầu (HTTP 429) — STOP HMI CHƯA được gửi.",
+        "nutBo": "Đã hiểu"
       }
     }
   }

@@ -38,7 +38,7 @@ import { parseEipTag, coerceEipValue } from "./eipTag";
 import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
+import { chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll, MAU_GIA_TRI_HONG } from "../chatLuong";
 
 /** Ép raw (đã inverse scale) sang kiểu st-ethernet-ip chấp nhận theo dataType. */
 function coerceEipWrite(raw: unknown, dataType: string): number | boolean | string {
@@ -184,8 +184,12 @@ export class EthernetIpDriver extends NotImplementedDriver {
     this.lastError = `ethernet-ip link lost (${ev})${detail}`;
   }
 
-  /** Đọc một tag, trả OtSample. Lỗi → quality:"bad" (không throw). */
-  private async readOne(tag: OtTagAddress, abortOnCommLost = false): Promise<OtSample> {
+  /**
+   * Đọc một tag, trả OtSample. Lỗi → quality:"bad" (không throw).
+   * R1b-2a T13 fix round 2 (m2) — `v2` do người gọi truyền: đường poll = ảnh chụp cờ lúc subscribe (cùng giá trị với huỷ tick và loạt mẫu
+   * xấu của vòng poll), readTags công khai = đọc MỘT lần mỗi lời gọi. Không đọc cờ theo từng mẫu ⇒ một phiên không trộn hai hình dạng mẫu.
+   */
+  private async readOne(tag: OtTagAddress, abortOnCommLost: boolean, v2: boolean): Promise<OtSample> {
     const now = () => new Date();
     try {
       const { name, program } = parseEipTag(tag.address);
@@ -210,12 +214,13 @@ export class EthernetIpDriver extends NotImplementedDriver {
         quality: co.quality,
         timestamp: now(),
         tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
+        // R1b-2a T13 fix round 1 — readTag ĐÃ trả lời; giá trị không ép được ⇒ bad CÓ lý do (bad trần = chưa trả lời, mauMayChuDaTraLoi).
+        ...(co.quality === "bad" && v2 ? MAU_GIA_TRI_HONG : {}),
       } satisfies OtSample;
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
       // SCADA R0 (C1) — đường poll, sau cờ: lỗi mức LIÊN KẾT (ECONNRESET/…, mất kết nối) ⇒ HUỶ cả tick (một loạt mẫu xấu do vòng poll phát);
-      // T12 D3: giao dịch QUÁ HẠN cũng huỷ. Lỗi thiết bị theo từng tag.
-      const v2 = chatLuongV2Bat();
+      // T12 D3: giao dịch QUÁ HẠN cũng huỷ. Lỗi thiết bị theo từng tag. (`v2`: ảnh chụp của người gọi — m2.)
       if (abortOnCommLost && (laLoiHuyTickPoll(err) || !this.connected)) throw err;
       return {
         tagKey: tag.tagKey,
@@ -231,7 +236,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
-    return this.docTuanTu(tags, false);
+    return this.docTuanTu(tags, false, chatLuongV2Bat());
   }
 
   /**
@@ -240,10 +245,10 @@ export class EthernetIpDriver extends NotImplementedDriver {
    * luôn trả mẫu bad theo từng tag.
    */
   private docChoVongPoll(tags: OtTagAddress[], chatLuongV2: boolean): Promise<OtSample[]> {
-    return this.docTuanTu(tags, chatLuongV2);
+    return this.docTuanTu(tags, chatLuongV2, chatLuongV2);
   }
 
-  private async docTuanTu(tags: OtTagAddress[], abortOnCommLost: boolean): Promise<OtSample[]> {
+  private async docTuanTu(tags: OtTagAddress[], abortOnCommLost: boolean, v2: boolean): Promise<OtSample[]> {
     if (!this.connected || !this.plc) {
       throw new DeviceUnreachableError("ethernet-ip");
     }
@@ -252,7 +257,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
     const t0 = Date.now();
     const out: OtSample[] = [];
     for (const tag of tags) {
-      out.push(await this.readOne(tag, abortOnCommLost));
+      out.push(await this.readOne(tag, abortOnCommLost, v2));
     }
     this.lastLatencyMs = Date.now() - t0;
     return out;

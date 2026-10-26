@@ -973,3 +973,21 @@ describe("fix round 3 — hạn đọc node edge, bộ nhớ đệm theo lượt
     }
   });
 });
+
+describe("R1b-2a T9 — STOP KHÔNG BAO GIỜ bị canh 0433 chặn", () => {
+  it("★ cùng trạng thái 'thiếu 0433' làm request/confirm bị từ chối ⇒ dungMay VẪN acked_verified và driver nhận đúng ghim", async () => {
+    const { __datTrangThaiSchemaR1a, trangThaiSchemaR1a } = await import("../_core/kiemSchemaR1a");
+    const truoc = trangThaiSchemaR1a();
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: new Date().toISOString(), thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [] });
+    try {
+      const ghiTruoc = stub.R.ghi.length;
+      const kq = await nguoi.opA2.caller.dungMay({ machineId: may.R.mid, clientRequestId: uuid() });
+      expect(kq.ketQua).toHaveLength(1);
+      expect(kq.ketQua[0]).toMatchObject({ adapterId: ad.R, status: "acked_verified", ok: true });
+      expect(stub.R.ghi.length - ghiTruoc).toBe(1);
+      expect(loCuoi("R")).toEqual(GHIM_R);
+    } finally {
+      __datTrangThaiSchemaR1a(truoc);
+    }
+  });
+});

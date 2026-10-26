@@ -1,0 +1,302 @@
+/**
+ * SCADA R1b-2a T1 (Review Focus 3; Q-T13 b + kiem-dinh M1 / M2; phán quyết K2 / K3) — truy vấn TRƯỚC TRIỂN KHAI `TRUY_VAN_TRUOC_TRIEN_KHAI`
+ * đi theo luật JS của cổng kênh `dispatch()` (`luatLenhLechLuoi` ⇒ `kiemLenhInterlockTrenKenh`).
+ *
+ * Thuộc tính chính (tag int CHƯA khai — phạm vi K2): mọi luật hàm JS từ chối đều có hàng SQL (idsJsTuChoi ⊆ idsSql; SQL chỉ được báo DƯ).
+ * Mỗi giá trị là MỘT luật bật nhắm tag int chưa khai scale 10 VÀ một luật nhắm tag int chưa khai scale 1 (NULL).
+ *
+ * Giá trị đọc ra ở JS đi qua drizzle `jsonb()` (parse lại chuỗi: "\t25" / " 25 " / "30" ⇒ số) — ĐÚNG đường engine đọc luật khi gửi lệnh.
+ * CSDL `_test` THẬT (cầu chì `_test`); chỉ hàng có tiền tố của tệp này được đọc / xoá.
+ */
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import postgres from "postgres";
+import { like } from "drizzle-orm";
+import { interlockRules } from "../../../drizzle/schema";
+import { getDb } from "../../db/connection";
+import { luatLenhLechLuoi, TRUY_VAN_TRUOC_TRIEN_KHAI } from "./lenhInterlockLechLuoi";
+import { kiemLuoiThoChuaKhai } from "./kenhScada";
+
+const DB_URL = process.env.DATABASE_URL;
+const DAU = `ILR1B2T1-${process.pid}-${Date.now()}`;
+const TAC_GIA = 990_542_001;
+
+let sql: ReturnType<typeof postgres>;
+let adapterId = 0;
+
+/** Giá trị Review Focus 3 + K3 (chuỗi rỗng / chỉ khoảng trắng). `nhan` là tên ngắn ghép vào tên luật. */
+const GIA_TRI: Array<{ nhan: string; v: unknown }> = [
+  { nhan: "hex", v: "0x19" },
+  { nhan: "tab", v: "\t25" },
+  { nhan: "nbsp", v: "25 " },
+  { nhan: "mangSo", v: [25] },
+  { nhan: "mangChuoi", v: ["25"] },
+  { nhan: "doiTuong", v: { v: 25 } },
+  { nhan: "abc", v: "abc" },
+  { nhan: "infinity", v: "Infinity" },
+  { nhan: "cach", v: " 25 " },
+  { nhan: "so25", v: 25 },
+  { nhan: "so2p5", v: 2.5 },
+  { nhan: "so30", v: 30 },
+  { nhan: "chuoi30", v: "30" },
+  { nhan: "null", v: null },
+  { nhan: "true", v: true },
+  { nhan: "rong", v: "" },
+  { nhan: "trang", v: "   " },
+];
+
+const id: Record<string, number> = {};
+
+async function seedTag(tagKey: string, scale: string | null, cot: { channel_kind?: string; write_min?: number; write_max?: number } = {}) {
+  await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", scale, channel_kind, write_min, write_max)
+    VALUES (${adapterId}, ${tagKey}, ${"addr-" + tagKey}, 'int', true, true, ${scale}, ${cot.channel_kind ?? null}, ${cot.write_min ?? null}, ${cot.write_max ?? null})`;
+}
+
+/** Luật BẬT ghi thẳng bảng (mô phỏng luật có từ trước bản build) nhắm (adapterId, tagKey). `v === null` ⇒ cột SQL NULL. */
+async function seedLuat(ten: string, tagKey: string, v: unknown): Promise<number> {
+  const [r] = await sql`INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action, "targetAdapterId",
+      "commandTag", "commandValue", enabled, "createdBy")
+    VALUES (${DAU + "-" + ten}, 'machine', 'ng_rate', 'gt', 5, 'reduce_speed', ${adapterId}, ${tagKey},
+      ${v === null ? null : sql.json(v as never)}, true, ${TAC_GIA}) RETURNING id`;
+  return Number(r.id);
+}
+
+async function idsJsTuChoi(): Promise<number[]> {
+  const d = await getDb();
+  return (await luatLenhLechLuoi(d!, like(interlockRules.name, `${DAU}-%`))).map((r) => r.id);
+}
+
+async function hangSql(): Promise<Map<number, { ket_luan: string; gia_tri_gui: unknown; diem_luoi_gan_nhat: unknown }>> {
+  const q = await sql.unsafe(
+    `SELECT id::int AS id, ket_luan, gia_tri_gui, diem_luoi_gan_nhat FROM (${TRUY_VAN_TRUOC_TRIEN_KHAI}) q WHERE q.name LIKE $1 ORDER BY id`,
+    [`${DAU}-%`],
+  );
+  return new Map(q.map((r) => [Number(r.id), { ket_luan: String(r.ket_luan), gia_tri_gui: r.gia_tri_gui, diem_luoi_gan_nhat: r.diem_luoi_gan_nhat }]));
+}
+
+describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-2a T1 — SQL trước triển khai theo luật JS (tag int CHƯA khai: JS từ chối ⊆ SQL)", () => {
+  beforeAll(async () => {
+    sql = postgres(DB_URL!, { max: 1, onnotice: () => {} });
+    const [{ db }] = await sql`SELECT current_database() AS db`;
+    expect(String(db)).toMatch(/_test$/); // cầu chì: không bao giờ chạy trên DB dev
+    const [a] = await sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled")
+      VALUES (${DAU}, ${DAU}, 'stub', 'stub://ilr1b2t1', false) RETURNING id`;
+    adapterId = Number(a.id);
+    await seedTag("i10", "10"); // int CHƯA khai, scale 10
+    await seedTag("i1", null); // int CHƯA khai, scale NULL ⇒ 1
+    await seedTag("nho", "0.000001"); // scale nhỏ nhất cột numeric(18,6) lưu được
+    await seedTag("sieuNho", "0.0000000001"); // numeric(18,6) làm tròn thành 0.000000 ⇒ cả JS lẫn SQL coi là scale 1
+    await seedTag("khai", null, { channel_kind: "output", write_min: 0, write_max: 10 }); // ĐÃ khai (phạm vi K2)
+    for (const g of GIA_TRI) {
+      id[`i10-${g.nhan}`] = await seedLuat(`i10-${g.nhan}`, "i10", g.v);
+      id[`i1-${g.nhan}`] = await seedLuat(`i1-${g.nhan}`, "i1", g.v);
+    }
+    id["nho-1p5"] = await seedLuat("nho-1p5", "nho", 1.5e-6); // thô 1.5 ⇒ lệch
+    id["nho-2"] = await seedLuat("nho-2", "nho", 2e-6); // thô 2 ⇒ đúng lưới
+    id["nho-1e10"] = await seedLuat("nho-1e10", "nho", 1e10); // thô 1e16 ≥ 2^53 ⇒ vượt miền an toàn
+    id["sieuNho-1p5e-10"] = await seedLuat("sieuNho-1p5e-10", "sieuNho", 1.5e-10);
+    id["khai-20"] = await seedLuat("khai-20", "khai", 20); // ngoài dải 0..10 của tag ĐÃ khai
+  }, 60_000);
+
+  afterAll(async () => {
+    if (!sql) return;
+    await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU + "%"}`; // gồm cả tiền tố polish `${DAU}P-`
+    await sql`DELETE FROM device_tags WHERE "adapterId" = ${adapterId}`;
+    await sql`DELETE FROM device_adapters WHERE id = ${adapterId}`;
+    await sql.end({ timeout: 5 });
+  }, 60_000);
+
+  it("★ Review Focus 3 — trên tag int CHƯA khai (scale 10 và scale 1): idsJsTuChoi ⊆ idsSql, và JS từ chối ĐÚNG tập mong đợi", async () => {
+    const js = await idsJsTuChoi();
+    const q = await hangSql();
+    const chuaKhai = js.filter((x) => x !== id["khai-20"]);
+    for (const x of chuaKhai) expect(q.has(x), `JS từ chối luật #${x} nhưng SQL bỏ sót`).toBe(true);
+
+    const tuChoi10 = ["hex", "tab", "nbsp", "mangSo", "mangChuoi", "doiTuong", "abc", "infinity", "cach", "so25", "so2p5", "null", "true", "rong", "trang"];
+    const tuChoi1 = ["mangSo", "mangChuoi", "doiTuong", "abc", "infinity", "so2p5", "rong", "trang"];
+    const mong = [...tuChoi10.map((n) => id[`i10-${n}`]), ...tuChoi1.map((n) => id[`i1-${n}`]), id["nho-1p5"], id["nho-1e10"], id["khai-20"]].sort((a, b) => a - b);
+    expect(js).toEqual(mong);
+  });
+
+  it("★ tường minh: {\"v\":25} / \"abc\" CÓ trong cả hai (M2); 2.5 trên scale 1 CÓ trong cả hai; 30 / \"30\" không ai (cả hai tag)", async () => {
+    const js = new Set(await idsJsTuChoi());
+    const q = await hangSql();
+    for (const t of ["i10", "i1"]) {
+      for (const n of ["doiTuong", "abc"]) {
+        expect(js.has(id[`${t}-${n}`]), `${t}-${n} JS`).toBe(true);
+        expect(q.get(id[`${t}-${n}`])?.ket_luan, `${t}-${n} SQL`).toBe("KHONG_PARSE_DUOC");
+      }
+      for (const n of ["so30", "chuoi30"]) {
+        expect(js.has(id[`${t}-${n}`]), `${t}-${n} JS`).toBe(false);
+        expect(q.has(id[`${t}-${n}`]), `${t}-${n} SQL`).toBe(false);
+      }
+    }
+    expect(js.has(id["i1-so2p5"])).toBe(true);
+    expect(q.get(id["i1-so2p5"])).toMatchObject({ ket_luan: "LECH_LUOI" });
+    expect(Number(q.get(id["i1-so2p5"])!.diem_luoi_gan_nhat)).toBe(3); // floor(2.5 + 0.5) = 3 (= goiY của JS — kể cả nửa âm, xem ca polish M4)
+    // K3: chuỗi rỗng / chỉ khoảng trắng — JS TYPE_MISMATCH, SQL KHONG_PARSE_DUOC (trước: SQL đọc là 0 ⇒ không có hàng trên scale 1)
+    for (const n of ["rong", "trang"]) expect(q.get(id[`i1-${n}`])?.ket_luan, n).toBe("KHONG_PARSE_DUOC");
+    // scale 1: null / true ⇒ 1, " 25 " ⇒ 25 — đúng lưới số nguyên ⇒ không ai
+    for (const n of ["null", "true", "cach", "so25"]) {
+      expect(js.has(id[`i1-${n}`]), `i1-${n} JS`).toBe(false);
+      expect(q.has(id[`i1-${n}`]), `i1-${n} SQL`).toBe(false);
+    }
+    // scale 1: "0x19" / TAB / NBSP — JS đọc ra 25 (đúng lưới) ⇒ không từ chối; SQL không đọc được ⇒ báo DƯ (đúng chiều cho phép)
+    for (const n of ["hex", "tab", "nbsp"]) {
+      expect(js.has(id[`i1-${n}`]), `i1-${n} JS`).toBe(false);
+      expect(q.get(id[`i1-${n}`])?.ket_luan, `i1-${n} SQL`).toBe("KHONG_PARSE_DUOC");
+    }
+  });
+
+  it("★ M1 — scale 0.000001 (nhỏ nhất DB lưu được): 1.5e-6 ⇒ cả hai (thô 1.5); 2e-6 ⇒ không ai; 1e10 ⇒ JS OUT_OF_RANGE + SQL VUOT_MIEN_AN_TOAN (thô 1e16 ≥ 2^53)", async () => {
+    const d = await getDb();
+    const ds = await luatLenhLechLuoi(d!, like(interlockRules.name, `${DAU}-nho-%`));
+    expect(ds.map((r) => [r.id, r.ma])).toEqual([
+      [id["nho-1p5"], "OFF_STEP"],
+      [id["nho-1e10"], "OUT_OF_RANGE"],
+    ]);
+    const q = await hangSql();
+    expect(q.get(id["nho-1p5"])).toMatchObject({ ket_luan: "LECH_LUOI" });
+    expect(q.get(id["nho-1e10"])).toMatchObject({ ket_luan: "VUOT_MIEN_AN_TOAN", diem_luoi_gan_nhat: null });
+    expect(q.has(id["nho-2"])).toBe(false);
+  });
+
+  it("M1 — scale 1e-10 KHÔNG lưu được (numeric(18,6) ⇒ 0 ⇒ scale 1 như driver): JS và SQL cùng KHÔNG báo 1.5e-10 (lỗ M1 chỉ tồn tại ngoài DB — ca thuần ở kenhScada.test.ts)", async () => {
+    const [{ s }] = await sql`SELECT scale::text AS s FROM device_tags WHERE "adapterId" = ${adapterId} AND "tagKey" = 'sieuNho'`;
+    expect(s).toBe("0.000000");
+    expect((await idsJsTuChoi()).includes(id["sieuNho-1p5e-10"])).toBe(false);
+    expect((await hangSql()).has(id["sieuNho-1p5e-10"])).toBe(false);
+  });
+
+  // ── polish (task-1-review M2 / M3 / M4) — luật gieo với tiền tố RIÊNG `${DAU}P-` (ngoài `${DAU}-%`) để không đổi tập mong đợi của ca trên ──
+  const DAU_P = `${DAU}P-`;
+  async function seedLuatP(ten: string, tagKey: string, v: unknown): Promise<number> {
+    const [r] = await sql`INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action, "targetAdapterId",
+        "commandTag", "commandValue", enabled, "createdBy")
+      VALUES (${DAU_P + ten}, 'machine', 'ng_rate', 'gt', 5, 'reduce_speed', ${adapterId}, ${tagKey}, ${sql.json(v as never)}, true, ${TAC_GIA})
+      RETURNING id`;
+    return Number(r.id);
+  }
+  async function hangSqlP() {
+    const q = await sql.unsafe(
+      `SELECT id::int AS id, ket_luan, gia_tri_gui, diem_luoi_gan_nhat FROM (${TRUY_VAN_TRUOC_TRIEN_KHAI}) q WHERE q.name LIKE $1 ORDER BY id`,
+      [`${DAU_P}%`],
+    );
+    return new Map(q.map((r) => [Number(r.id), { ket_luan: String(r.ket_luan), diem_luoi_gan_nhat: r.diem_luoi_gan_nhat }]));
+  }
+  async function jsP() {
+    const d = await getDb();
+    return await luatLenhLechLuoi(d!, like(interlockRules.name, `${DAU_P}%`));
+  }
+
+  it("polish M2 — sát 2^53: scale 0.000001, 9007199254.740991 ⇒ SQL thô ĐÚNG 2^53 − 1 (nguyên) nhưng JS làm tròn thành 2^53 ⇒ OUT_OF_RANGE; SQL có biên 2^52 ⇒ VUOT_MIEN_AN_TOAN (báo dư, không bỏ sót)", async () => {
+    try {
+      const r = await seedLuatP("m2", "nho", 9007199254.740991);
+      expect(9007199254.740991 / 0.000001).toBeGreaterThanOrEqual(2 ** 53); // phía JS: thô double = 2^53
+      expect((await jsP()).map((x) => [x.id, x.ma])).toEqual([[r, "OUT_OF_RANGE"]]);
+      expect((await hangSqlP()).get(r)).toMatchObject({ ket_luan: "VUOT_MIEN_AN_TOAN", diem_luoi_gan_nhat: null });
+      // biên 2^52: thô 2^52 (số nguyên, JS nhận) vẫn bị SQL báo — chiều báo dư được phép
+      const r52 = await seedLuatP("m2b", "nho", 4503599627.370496);
+      expect((await jsP()).map((x) => x.id)).not.toContain(r52);
+      expect((await hangSqlP()).get(r52)?.ket_luan).toBe("VUOT_MIEN_AN_TOAN");
+    } finally {
+      await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU_P + "%"}`;
+    }
+  });
+
+  it("polish M3 — chuỗi \"1e200000\" (tràn numeric) KHÔNG làm hỏng cả truy vấn: thành hàng KHONG_PARSE_DUOC; JS TYPE_MISMATCH", async () => {
+    try {
+      const r = await seedLuatP("m3", "i10", "1e200000");
+      const r4 = await seedLuatP("m3b", "i10", "1e9999"); // số mũ 4 chữ số vẫn đọc được ⇒ thô khổng lồ ⇒ VUOT_MIEN_AN_TOAN
+      const rDai = await seedLuatP("m3c", "i10", "9".repeat(200_000)); // phần định trị quá dài cũng tràn numeric ⇒ chặn bằng độ dài chuỗi
+      const q = await hangSqlP();
+      expect(q.get(r)?.ket_luan).toBe("KHONG_PARSE_DUOC");
+      expect(q.get(rDai)?.ket_luan).toBe("KHONG_PARSE_DUOC");
+      expect((await jsP()).find((x) => x.id === rDai)?.ma).toBe("TYPE_MISMATCH"); // Number(…) = Infinity
+      expect(q.get(r4)?.ket_luan).toBe("VUOT_MIEN_AN_TOAN");
+      const js = await jsP();
+      expect(js.find((x) => x.id === r)?.ma).toBe("TYPE_MISMATCH");
+      expect(js.find((x) => x.id === r4)?.ma).toBe("TYPE_MISMATCH"); // Number("1e9999") = Infinity
+    } finally {
+      await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU_P + "%"}`;
+    }
+  });
+
+  it("polish M4 — diem_luoi_gan_nhat làm tròn hoà .5 về phía +∞ NHƯ Math.round của JS: −2.5 trên scale 1 ⇒ −2 (= goiY JS); 2.5 ⇒ 3; −25 trên scale 10 ⇒ −20", async () => {
+    try {
+      const rAm = await seedLuatP("m4am", "i1", -2.5);
+      const rDuong = await seedLuatP("m4duong", "i1", 2.5);
+      const rAm10 = await seedLuatP("m4am10", "i10", -25);
+      const q = await hangSqlP();
+      const goiY = (tag: { scale: number | null }, v: number) => (kiemLuoiThoChuaKhai({ dataType: "int", scale: tag.scale, offset: null }, v) as { goiY?: number }).goiY;
+      expect(goiY({ scale: null }, -2.5)).toBe(-2);
+      expect(Number(q.get(rAm)!.diem_luoi_gan_nhat)).toBe(goiY({ scale: null }, -2.5));
+      expect(Number(q.get(rDuong)!.diem_luoi_gan_nhat)).toBe(goiY({ scale: null }, 2.5));
+      expect(Number(q.get(rAm10)!.diem_luoi_gan_nhat)).toBe(goiY({ scale: 10 }, -25));
+      expect(Number(q.get(rAm10)!.diem_luoi_gan_nhat)).toBe(-20);
+    } finally {
+      await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU_P + "%"}`;
+    }
+  });
+
+  it("phạm vi K2 — tag ĐÃ khai, giá trị ngoài dải: JS đếm (OUT_OF_RANGE, posture) nhưng SQL KHÔNG có hàng — dải / bước / kiểu được cưỡng chế lúc cấu hình, không ở SQL", async () => {
+    const d = await getDb();
+    const ds = await luatLenhLechLuoi(d!, like(interlockRules.name, `${DAU}-khai-%`));
+    expect(ds.map((r) => [r.id, r.ma])).toEqual([[id["khai-20"], "OUT_OF_RANGE"]]);
+    expect((await hangSql()).has(id["khai-20"])).toBe(false);
+  });
+
+  // ── R1b-2a T2 (phán quyết T1 c3) — đích FLOAT chưa khai; tiền tố RIÊNG `${DAU}F-` (ngoài `${DAU}-%` / `${DAU}P-%`) ──
+  it("★ R1b-2a T2 — float CHƯA khai: JS từ chối ĐÚNG {abc, rỗng, trắng, mảng, đối tượng, \"Infinity\", \"1e400\", 1e400 (jsonb), thô tràn double} ⊆ SQL; số / chuỗi số / null / true không ai; float không có diem_luoi_gan_nhat", async () => {
+    const DAU_F = `${DAU}F-`;
+    const seedF = async (ten: string, tagKey: string, jsonTho: string | null) => {
+      const [r] = await sql`INSERT INTO interlock_rules (name, scope, "sourceType", "comparisonOperator", threshold, action, "targetAdapterId",
+          "commandTag", "commandValue", enabled, "createdBy")
+        VALUES (${DAU_F + ten}, 'machine', 'ng_rate', 'gt', 5, 'reduce_speed', ${adapterId}, ${tagKey}, ${jsonTho}::text::jsonb, true, ${TAC_GIA})
+        RETURNING id`;
+      return Number(r.id);
+    };
+    try {
+      await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", scale)
+        VALUES (${adapterId}, 'f', 'addr-f', 'float', true, true, NULL), (${adapterId}, 'fnho', 'addr-fnho', 'float', true, true, 0.000001)`;
+      const tuChoi: Record<string, string> = {
+        abc: '"abc"',
+        rong: '""',
+        trang: '"   "',
+        mang: "[1.5]",
+        doiTuong: '{"v": 1.5}',
+        infinity: '"Infinity"',
+        chuoi1e400: '"1e400"',
+        so1e400: "1e400",
+      };
+      const nhan: Record<string, string | null> = { so: "2.25", chuoiSo: '"1.5"', null: null, true: "true", hex: '"0x19"' };
+      const idF: Record<string, number> = {};
+      for (const [k, v] of Object.entries(tuChoi)) idF[k] = await seedF(k, "f", v);
+      for (const [k, v] of Object.entries(nhan)) idF[k] = await seedF(k, "f", v);
+      idF["thoTran"] = await seedF("thoTran", "fnho", "1e305"); // thô 1e311 ⇒ JS OUT_OF_RANGE, SQL VUOT_MIEN_AN_TOAN
+      idF["thoOk"] = await seedF("thoOk", "fnho", "1e300"); // thô 1e306 hữu hạn ⇒ không ai
+
+      const d = await getDb();
+      const js = await luatLenhLechLuoi(d!, like(interlockRules.name, `${DAU_F}%`));
+      const q = await sql.unsafe(
+        `SELECT id::int AS id, ket_luan, diem_luoi_gan_nhat FROM (${TRUY_VAN_TRUOC_TRIEN_KHAI}) q WHERE q.name LIKE $1 ORDER BY id`,
+        [`${DAU_F}%`],
+      );
+      const hang = new Map(q.map((r) => [Number(r.id), { ket_luan: String(r.ket_luan), diem: r.diem_luoi_gan_nhat }]));
+
+      const mong = [...Object.keys(tuChoi).map((k) => idF[k]), idF["thoTran"]].sort((a, b) => a - b);
+      expect(js.map((r) => r.id)).toEqual(mong);
+      for (const r of js) {
+        expect(hang.has(r.id), `JS từ chối luật #${r.id} nhưng SQL bỏ sót`).toBe(true);
+        expect(r.ma).toBe(r.id === idF["thoTran"] ? "OUT_OF_RANGE" : "TYPE_MISMATCH");
+      }
+      for (const k of ["abc", "rong", "trang", "mang", "doiTuong", "infinity"]) expect(hang.get(idF[k])?.ket_luan, k).toBe("KHONG_PARSE_DUOC");
+      for (const k of ["chuoi1e400", "so1e400", "thoTran"]) expect(hang.get(idF[k])?.ket_luan, k).toBe("VUOT_MIEN_AN_TOAN");
+      for (const k of ["so", "chuoiSo", "null", "true", "thoOk"]) expect(hang.has(idF[k]), `${k} SQL`).toBe(false);
+      expect(hang.get(idF["hex"])?.ket_luan).toBe("KHONG_PARSE_DUOC"); // JS đọc "0x19" = 25 (nhận) — SQL báo DƯ (chiều cho phép)
+      for (const h of hang.values()) expect(h.diem).toBeNull();
+    } finally {
+      await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU_F + "%"}`;
+      await sql`DELETE FROM device_tags WHERE "adapterId" = ${adapterId} AND "tagKey" IN ('f', 'fnho')`;
+    }
+  });
+});

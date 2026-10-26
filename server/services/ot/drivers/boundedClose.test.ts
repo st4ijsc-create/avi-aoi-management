@@ -147,4 +147,10 @@ describe("withDeadline", () => {
     }
     expect(unrefs.map((u) => u.mock.calls.length)).toEqual([0, 1, 1]);
   });
+  it("R1b-2a T4 (K6) — `{ loi }` ⇒ hết hạn reject bằng ĐÚNG lỗi có kiểu của bên gọi; lỗi của chính p KHÔNG bị đổi thành lỗi hạn", async () => {
+    class QuaHan extends Error {}
+    await expect(withDeadline(new Promise(() => undefined), 10, "d", { loi: () => new QuaHan("qh") })).rejects.toBeInstanceOf(QuaHan);
+    const loiDb = new Error("db down");
+    await expect(withDeadline(Promise.reject(loiDb), 1000, "e", { loi: () => new QuaHan("qh") })).rejects.toBe(loiDb);
+  });
 });

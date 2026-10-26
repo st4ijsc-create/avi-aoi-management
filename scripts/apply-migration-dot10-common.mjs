@@ -38,12 +38,66 @@ function simpleHash(str) {
 }
 
 /** `avi_app` has no DDL rights (42501) — the owner `aoi` runs the DDL. */
-function asOwner(url) {
+export function asOwner(url) {
   if (process.env.MIGRATION_DB_URL) return process.env.MIGRATION_DB_URL;
   const u = new URL(url);
   u.username = process.env.MIGRATION_DB_USER ?? "aoi";
   u.password = process.env.MIGRATION_DB_PASSWORD ?? "aoi";
   return u.toString();
+}
+
+/**
+ * The `_test` URL: TEST_DATABASE_URL, else DATABASE_URL + "_test" (no doubled suffix when vitest.setup already forced `_test`).
+ * Throws when the database name does not contain "test". NOTE: `asOwner(url)` ignores `url` when MIGRATION_DB_URL is set, so a caller
+ * that WRITES must still check `current_database()` on the connection it actually opens (T14 ruling K14).
+ */
+export function testDbUrl() {
+  let testUrl = process.env.TEST_DATABASE_URL;
+  if (!testUrl) {
+    const devUrl = process.env.DATABASE_URL;
+    if (!devUrl) throw new Error("DATABASE_URL not set");
+    const u = new URL(devUrl);
+    if (!/_test$/.test(u.pathname)) u.pathname = "/" + u.pathname.replace(/^\//, "") + "_test";
+    testUrl = u.toString();
+  }
+  if (!/test/i.test(new URL(testUrl).pathname)) throw new Error(`test target ${new URL(testUrl).pathname} does not look like a test DB`);
+  return testUrl;
+}
+
+/** Same physical database? host (case-insensitive) + port (default 5432) + database name. Credentials are ignored. */
+export function cungCsdl(a, b) {
+  const ua = new URL(a);
+  const ub = new URL(b);
+  const khoa = (u) => `${u.hostname.toLowerCase()}:${u.port || "5432"}/${decodeURIComponent(u.pathname.replace(/^\//, ""))}`;
+  return khoa(ua) === khoa(ub);
+}
+
+/**
+ * R1b-2a final-fix M-5 — the target list of runMigration, as a pure function (unit-tested). `testDbUrl()` stopped appending `_test` when
+ * DATABASE_URL already ends in `_test`, so without this check `--both` (or `--dev-only`) in an environment whose DATABASE_URL IS the test DB
+ * would run the file twice on the SAME database, the first pass mislabelled "dev". That case is now REFUSED with an explicit message:
+ *   • --dev-only / --both while DATABASE_URL's database name ends in `_test` ⇒ throws (the "dev" target is a test DB — use --test-only);
+ *   • --both while the dev and test URLs name the same database ⇒ throws (one database, two labels).
+ * Returns [[url, label], …]. Throws Error (message ends with "refused").
+ */
+export function planTargets(args, devUrl) {
+  if (!devUrl) throw new Error("DATABASE_URL not set — refused");
+  const targets = [];
+  if (!args.includes("--test-only")) {
+    const devName = decodeURIComponent(new URL(devUrl).pathname.replace(/^\//, ""));
+    if (/_test$/.test(devName)) {
+      throw new Error(`DATABASE_URL already names the test DB "${devName}" — the "dev" target would be a test DB; use --test-only — refused`);
+    }
+    targets.push([devUrl, "dev"]);
+  }
+  if (!args.includes("--dev-only")) {
+    const testUrl = testDbUrl();
+    if (targets.length > 0 && cungCsdl(devUrl, testUrl)) {
+      throw new Error(`dev and test targets are the SAME database (${new URL(testUrl).pathname}) — one database cannot be both; refused`);
+    }
+    targets.push([testUrl, "test"]);
+  }
+  return targets;
 }
 
 /** SQLSTATE of one statement run inside a SAVEPOINT (an error never spoils the probe transaction); null = success. */
@@ -165,20 +219,13 @@ export async function runMigration(m) {
     console.error(`${m.tag} DATABASE_URL not set`);
     process.exit(1);
   }
-  const targets = [];
-  if (!args.includes("--test-only")) targets.push([devUrl, "dev"]);
-  if (!args.includes("--dev-only")) {
-    let testUrl = process.env.TEST_DATABASE_URL;
-    if (!testUrl) {
-      const u = new URL(devUrl);
-      u.pathname = "/" + u.pathname.replace(/^\//, "") + "_test";
-      testUrl = u.toString();
-    }
-    if (!/test/i.test(new URL(testUrl).pathname)) {
-      console.error(`${m.tag} test target ${new URL(testUrl).pathname} does not look like a test DB — refused`);
-      process.exit(2);
-    }
-    targets.push([testUrl, "test"]);
+  // R1b-2a final-fix M-5 — a dev target that is really the test DB (or the same DB twice) is refused before any connection
+  let targets;
+  try {
+    targets = planTargets(args, devUrl);
+  } catch (e) {
+    console.error(`${m.tag} ${/refused$/.test(e.message) ? e.message : `${e.message} — refused`}`);
+    process.exit(2);
   }
   let failed = false;
   for (const [url, label] of targets) {

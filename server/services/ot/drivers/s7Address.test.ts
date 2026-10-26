@@ -62,4 +62,17 @@ describe("coerceS7Value", () => {
   it("NaN number → bad", () => {
     expect(coerceS7Value(NaN, "float")).toEqual({ value: null, quality: "bad" });
   });
+
+  // R1b-2a T13 fix round 2 (I2) — nodes7 đặt CHUỖI chất lượng vào chỗ giá trị cho item lỗi (nodeS7.js readResponse:
+  // dataObject[useraddr] = item.quality = 'BAD ' + mã). Trước đây bool ⇒ TRUE good, string ⇒ "BAD 255" good (fail-open).
+  it.each(["bool", "string", "int", "float", "json"] as const)("I2: chuỗi BAD của nodes7 ('BAD 255' / 'BAD 10') trên tag %s ⇒ bad, không bao giờ good", (dt) => {
+    expect(coerceS7Value("BAD 255", dt)).toEqual({ value: null, quality: "bad" });
+    expect(coerceS7Value("BAD 10", dt)).toEqual({ value: null, quality: "bad" });
+    expect(coerceS7Value(["BAD 255", "BAD 255"], dt)).toEqual({ value: null, quality: "bad" });
+  });
+
+  it("I2: chuỗi PLC thật bắt đầu bằng 'BAD' nhưng không phải mã chất lượng vẫn là giá trị tốt", () => {
+    expect(coerceS7Value("BAD PART", "string")).toEqual({ value: "BAD PART", quality: "good" });
+    expect(coerceS7Value("BAD 2550", "string")).toEqual({ value: "BAD 2550", quality: "good" });
+  });
 });

@@ -150,6 +150,10 @@ export const MA_LOI_LENH = [
   "CHUA_GHIM_STOP",
   // kiem-dinh R1b-1 H1 (b) — STOP HMI: máy có ghim nhưng MỌI ghim nằm trên tag mức tác động > 1
   "GHIM_MUC_CAO",
+  // R1b-2a Task 4 — STOP HMI: pha trước-gửi (hoặc xác thực) quá hạn ⇒ STOP CHƯA gửi (appCode SCADA_STOP_PRECHECK_TIMEOUT)
+  "STOP_QUA_HAN",
+  // R1b-2a Task 9 — thiếu migration 0433: request / confirm từ chối có mã (KHÔNG BAO GIỜ dungMay)
+  "THIEU_MIGRATION",
 ] as const;
 const MA_LOI_SET: ReadonlySet<string> = new Set(MA_LOI_LENH);
 

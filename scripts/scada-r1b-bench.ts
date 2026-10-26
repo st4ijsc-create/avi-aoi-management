@@ -2,7 +2,13 @@
  * SCADA R1b-1 Task 12 — bench nghiệm thu STOP HMI (`scadaCommands.dungMay`) trên OpenPLC (Docker) + safety PLC MÔ PHỎNG. CHẠY TAY, không vào CI.
  *
  *   npx tsx scripts/scada-r1b-bench.ts [--endpoint tcp://127.0.0.1:15502] [--container avi-openplc-bench] [--web http://127.0.0.1:18080]
- *       [--poll 1000] [--timeout 800] [--lap 3] [--start-neu-tat] [--khong-docker]
+ *       [--poll 1000] [--timeout 800] [--lap 3] [--start-neu-tat] [--khong-docker] [--r1b2a]
+ *
+ * R1b-2a Task 15 — `--r1b2a` thêm ô L1 vào MỖI lượt (sau S1 / S2 / X2): `dispatch()` như tool AI lên một thanh ghi int CHƯA khai scale 1
+ * (thanh ghi thứ TƯ giữ giá trị của bước 0): 2,5 ⇒ OFF_STEP goiY 3 (thanh ghi không đổi); "abc" ⇒ TYPE_MISMATCH (thanh ghi không đổi);
+ * 3 ⇒ thanh ghi = 3. Trước R1b-2a, 2,5 đi nguyên tới driver và PLC nhận Math.round(2,5) = 3 im lặng. Không tải chương trình PLC, chỉ ghi / đọc
+ * thanh ghi holding như R1b-1. Chạy trên OpenPLC CHỈ khi điều phối OK tại thời điểm đó (Q10, sau khi đo commit còn trống ≥ 10 GB và
+ * `docker update --memory 1g --memory-swap 1g avi-openplc-bench`).
  *
  * Container DÙNG CHUNG (điều phối 2026-10-25): mặc định script KHÔNG khởi động container. Container không `running` hoặc Modbus không trả lời
  * ⇒ in "bench not run — container unavailable" kèm bằng chứng (trạng thái `docker inspect`, kết quả thăm dò) và thoát mã 3, không đụng gì.
@@ -59,6 +65,8 @@ interface TuyChon {
   lap: number;
   startNeuTat: boolean;
   khongDocker: boolean;
+  /** R1b-2a T15 — thêm ô L1 (int CHƯA khai scale 1) */
+  r1b2a: boolean;
 }
 function docThamSo(argv: string[]): TuyChon {
   const lay = (k: string, mac: string) => {
@@ -74,6 +82,7 @@ function docThamSo(argv: string[]): TuyChon {
     lap: Math.max(1, Number(lay("lap", "3"))),
     startNeuTat: argv.includes("--start-neu-tat"),
     khongDocker: argv.includes("--khong-docker"),
+    r1b2a: argv.includes("--r1b2a"),
   };
 }
 
@@ -348,14 +357,22 @@ async function main(): Promise<void> {
     const giu = await kiemGiuGiaTri(o.endpoint);
     for (const g of giu) console.log(`[bench] bước 0: holding reg ${g.reg0} (tag holding:${g.reg0 + 1}) gốc=${g.goc} ghi=${g.ghi} đọc@200/1000/2500ms=${g.doc.join("/")} ⇒ ${g.giu ? "GIỮ" : "KHÔNG GIỮ"}`);
     const dungDuoc = giu.filter((g) => g.giu);
-    if (dungDuoc.length < 3) throw new Error(`bước 0: cần ≥ 3 thanh ghi giữ giá trị (dừng + chế độ + X2), có ${dungDuoc.length} — bench KHÔNG đo được`);
+    const canSo = o.r1b2a ? 4 : 3;
+    if (dungDuoc.length < canSo) {
+      throw new Error(`bước 0: cần ≥ ${canSo} thanh ghi giữ giá trị (dừng + chế độ + X2${o.r1b2a ? " + L1" : ""}), có ${dungDuoc.length} — bench KHÔNG đo được`);
+    }
     const REG_DUNG = dungDuoc[0].reg0;
     const REG_CHE_DO = dungDuoc[1].reg0;
     const REG_SC10 = dungDuoc[2].reg0;
-    console.log(`[bench] dùng: dừng (ghim 0) = reg ${REG_DUNG} (holding:${REG_DUNG + 1}), chế độ = reg ${REG_CHE_DO} (holding:${REG_CHE_DO + 1}), X2 int scale 10 = reg ${REG_SC10} (holding:${REG_SC10 + 1})`);
+    const REG_SC1 = o.r1b2a ? dungDuoc[3].reg0 : -1;
+    console.log(
+      `[bench] dùng: dừng (ghim 0) = reg ${REG_DUNG} (holding:${REG_DUNG + 1}), chế độ = reg ${REG_CHE_DO} (holding:${REG_CHE_DO + 1}), X2 int scale 10 = reg ${REG_SC10} (holding:${REG_SC10 + 1})` +
+        (o.r1b2a ? `, L1 int scale 1 chưa khai = reg ${REG_SC1} (holding:${REG_SC1 + 1})` : ""),
+    );
     await ghiThanhGhi(o.endpoint, REG_CHE_DO, 2); // REMOTE
     await ghiThanhGhi(o.endpoint, REG_DUNG, DANG_CHAY);
     await ghiThanhGhi(o.endpoint, REG_SC10, 0);
+    if (o.r1b2a) await ghiThanhGhi(o.endpoint, REG_SC1, 0);
 
     // ── server ──
     await import("../server/services/ot"); // đăng ký driver
@@ -433,6 +450,12 @@ async function main(): Promise<void> {
       VALUES (${adapterId}, 'dung', ${tagDung}, 'int', 1, true, true, 'input_output'::scada_channel_kind, 'Dung bench (ghim 0)', 0, 100, 1, 1, '0'::jsonb, '1', now()),
              (${adapterId}, 'che_do', ${tagCheDo}, 'int', 1, false, true, 'input'::scada_channel_kind, 'Che do may', NULL, NULL, NULL, NULL, NULL, NULL, NULL),
              (${adapterId}, 'sc10cu', ${tagSc10}, 'int', 10, true, true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)`);
+    const tagSc1 = `holding:${REG_SC1 + 1}`;
+    if (o.r1b2a) {
+      // R1b-2a L1 — int CHƯA khai (mọi cột 0431 NULL), scale 1
+      await dung1(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", scale, writable, "isEnabled")
+        VALUES (${adapterId}, 'sc1cu', ${tagSc1}, 'int', 1, true, true)`);
+    }
     await dung1(sql`INSERT INTO scada_kenh_che_do (machine_id, adapter_id, tag_key, gia_tri_remote, updated_by) VALUES (${machineId}, ${adapterId}, 'che_do', '2'::jsonb, 1)`);
 
     const admin = await taoNguoiDungTest("admin", "admin", { tienTo: "r1bbench", ts: RUN, ten: "R1b-1 bench admin" });
@@ -452,6 +475,7 @@ async function main(): Promise<void> {
           { tagKey: "dung", address: tagDung, dataType: "int" as const },
           { tagKey: "che_do", address: tagCheDo, dataType: "int" as const },
           { tagKey: "sc10cu", address: tagSc10, dataType: "int" as const, scale: 10 },
+          ...(o.r1b2a ? [{ tagKey: "sc1cu", address: tagSc1, dataType: "int" as const }] : []),
         ],
         driver: createDriver("modbus"),
       } as never,
@@ -573,6 +597,41 @@ async function main(): Promise<void> {
         const ms2 = Date.now() - t1;
         const sau30 = await docThanhGhi(o.endpoint, REG_SC10);
         bang.push({ lap, o: "X2", buoc: "dispatch AI sc10cu=30", mong: "gửi, thanh ghi = số thô 3", duoc: `${r30.status} ok=${r30.ok}`, ms: ms2, thanhGhi: `0 → ${sau30}`, dat: r30.ok === true && r30.simulated === false && sau30 === 3 });
+      }
+
+      // ── R1b-2a L1: tag int CHƯA khai scale 1 — 2,5 ⇒ OFF_STEP goiY 3; "abc" ⇒ TYPE_MISMATCH; 3 ⇒ thanh ghi = 3 ──
+      if (o.r1b2a) {
+        await ghiThanhGhi(o.endpoint, REG_SC1, 0);
+        for (const [v, ma] of [
+          [2.5, "OFF_STEP"],
+          ["abc", "TYPE_MISMATCH"],
+        ] as const) {
+          const truoc = await docThanhGhi(o.endpoint, REG_SC1);
+          const n0 = await demLenh();
+          const t0 = Date.now();
+          const r = await disp.dispatch(await lenhAi("set_param", [{ tagKey: "sc1cu", value: v }]));
+          const ms = Date.now() - t0;
+          const sau = await docThanhGhi(o.endpoint, REG_SC1);
+          const n1 = await demLenh();
+          const goiY = (r.appError?.appParams as { goiY?: unknown } | undefined)?.goiY;
+          const mongGoiY = ma === "OFF_STEP" ? goiY === 3 : true;
+          bang.push({
+            lap,
+            o: "L1",
+            buoc: `dispatch AI sc1cu=${JSON.stringify(v)} (int chưa khai, scale 1)`,
+            mong: `rejected ${ma}${ma === "OFF_STEP" ? " goiY 3" : ""}, command_log +1, thanh ghi không đổi`,
+            duoc: `${r.status} ${r.reason ?? ""}${goiY !== undefined ? ` goiY=${String(goiY)}` : ""} · command_log +${n1 - n0}`,
+            ms,
+            thanhGhi: `${truoc} → ${sau}`,
+            dat: r.status === "rejected" && r.reason === ma && mongGoiY && n1 - n0 === 1 && sau === truoc,
+          });
+        }
+        const truoc = await docThanhGhi(o.endpoint, REG_SC1);
+        const t1 = Date.now();
+        const r3 = await disp.dispatch(await lenhAi("set_param", [{ tagKey: "sc1cu", value: 3 }]));
+        const ms3 = Date.now() - t1;
+        const sau3 = await docThanhGhi(o.endpoint, REG_SC1);
+        bang.push({ lap, o: "L1", buoc: "dispatch AI sc1cu=3", mong: "gửi, thanh ghi = 3", duoc: `${r3.status} ok=${r3.ok}`, ms: ms3, thanhGhi: `${truoc} → ${sau3}`, dat: r3.ok === true && r3.simulated === false && sau3 === 3 });
       }
     }
     console.log(`[bench] số hàng telemetry đi qua bus (seam ghi, không ghi DB): ${soHangTelemetry}`);

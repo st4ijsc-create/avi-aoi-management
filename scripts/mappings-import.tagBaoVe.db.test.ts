@@ -6,7 +6,8 @@
  *      `khoaLuatNguonTx` / `kenhCheDoCuaTagTx`) — tập "được bảo vệ" và tập "khoá mồ côi" trên cùng dữ liệu (đã khai, kênh chế độ, đích luật bật,
  *      đích luật đã duyệt mà tắt, đích luật alert, nguồn telemetry đã duyệt, tag trơn, khoá chỉ luật trỏ tới).
  *   2. CLI THẬT (tiến trình con, DATABASE_URL = `_test`): sửa address tag bảo vệ ⇒ thoát 1, không ghi; dry-run nhãn [BẢO VỆ]; cờ ⇒ ghi + metadata audit;
- *      tag trơn / chỉ đổi unit ⇒ ghi như cũ; prune tag bảo vệ / tạo lên khoá mồ côi ⇒ từ chối.
+ *      tag trơn ⇒ ghi như cũ; prune tag bảo vệ / tạo lên khoá mồ côi ⇒ từ chối. R1b-2a T8: chỉ đổi unit / deadband / sampling_ms của tag bảo vệ ⇒
+ *      cũng từ chối (trước: ghi).
  *   3. Nhờ I1 (a): luật đã duyệt nhắm tag bị CLI đổi (có cờ) TỰ MẤT hiệu lực duyệt.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -37,12 +38,14 @@ let version = 0;
 
 const KHOA = ["k_khai", "k_che_do", "k_dich_bat", "k_dich_duyet", "k_dich_alert", "k_nguon", "k_tron"] as const;
 
-function yaml(tags: Array<{ name: string; address: string; datatype?: string; unit?: string }>): string {
+function yaml(tags: Array<{ name: string; address: string; datatype?: string; unit?: string; deadband?: number; sampling_ms?: number }>): string {
   version += 1;
   const lines = [`version: ${version}`, `adapter: "${RUN}"`, "tags:"];
   for (const t of tags) {
     lines.push(`  - name: ${t.name}`, `    address: "${t.address}"`, `    datatype: ${t.datatype ?? "int"}`, `    writable: true`, `    enabled: true`);
     if (t.unit) lines.push(`    unit: "${t.unit}"`);
+    if (t.deadband !== undefined) lines.push(`    deadband: ${t.deadband}`); // R1b-2a T8 — cột nhịp
+    if (t.sampling_ms !== undefined) lines.push(`    sampling_ms: ${t.sampling_ms}`);
   }
   return lines.join("\n") + "\n";
 }
@@ -59,9 +62,14 @@ function cli(y: string, ...flags: string[]): { code: number | null; out: string 
 const apply = (y: string, ...flags: string[]) => cli(y, "--apply", "--actor", String(ids.actor), ...flags);
 const addr = async (k: string) => (await sql`SELECT address FROM device_tags WHERE "adapterId" = ${ids.ad} AND "tagKey" = ${k}`)[0]?.address as string | undefined;
 /** Tất cả tag hiện có trong file (không prune) — thay `address` của tag chỉ định. */
-const fileVoi = async (doi: Record<string, Partial<{ address: string; unit: string }>>) => {
+const fileVoi = async (doi: Record<string, Partial<{ address: string; unit: string; deadband: number; sampling_ms: number }>>) => {
   const rows = await sql`SELECT "tagKey", address, "dataType" FROM device_tags WHERE "adapterId" = ${ids.ad} ORDER BY "tagKey"`;
-  return yaml(rows.map((r) => ({ name: String(r.tagKey), address: doi[String(r.tagKey)]?.address ?? String(r.address), datatype: String(r.dataType), unit: doi[String(r.tagKey)]?.unit })));
+  return yaml(
+    rows.map((r) => {
+      const d = doi[String(r.tagKey)];
+      return { name: String(r.tagKey), address: d?.address ?? String(r.address), datatype: String(r.dataType), unit: d?.unit, deadband: d?.deadband, sampling_ms: d?.sampling_ms };
+    }),
+  );
 };
 
 describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("kiem-dinh R1b-1 I2 — CLI mappings-import từ chối tag được bảo vệ", () => {
@@ -143,9 +151,15 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("kiem-dinh R1b-1 I2 �
     expect(mongMoCoi.sort()).toEqual(["k_che_do", "k_dich_alert", "k_dich_bat", "k_dich_duyet", "k_mo_coi", "k_nguon"]);
   });
 
-  it("thaoTacChamBaoVe: chỉ cột trỏ lại / bật-tắt tính; unit / deadband / samplingMs không", () => {
+  // R1b-2a T8 (kiem-dinh M4, Q7): cột nhịp unit / deadband / samplingMs nay TÍNH như cột trỏ lại (trước: không tính — ca cũ đổi theo phán quyết).
+  it("thaoTacChamBaoVe: cột trỏ lại / bật-tắt / cột nhịp (unit, deadband, samplingMs — R1b-2a T8) đều tính trên tag bảo vệ; tag không bảo vệ không", () => {
     const tap = { baoVe: new Map([["p", ["da_khai_kenh"]]]), moCoi: new Map([["m", ["luat_dich_1"]]]) };
-    expect(thaoTacChamBaoVe({ creates: ["m", "x"], updates: [{ tagKey: "p", fields: ["unit", "deadband", "samplingMs"] }], deletes: [] }, tap)).toEqual([
+    for (const f of ["unit", "deadband", "samplingMs"]) {
+      expect(thaoTacChamBaoVe({ creates: [], updates: [{ tagKey: "p", fields: [f] }, { tagKey: "x", fields: [f] }], deletes: [] }, tap), f).toEqual([
+        { tagKey: "p", viec: "sua", lyDo: ["da_khai_kenh"] },
+      ]);
+    }
+    expect(thaoTacChamBaoVe({ creates: ["m", "x"], updates: [{ tagKey: "p", fields: ["notes-khong-co"] }], deletes: [] }, tap)).toEqual([
       { tagKey: "m", viec: "tao", lyDo: ["luat_dich_1"] },
     ]);
     expect(thaoTacChamBaoVe({ creates: [], updates: [{ tagKey: "p", fields: ["scale"] }], deletes: ["p", "y"] }, tap)).toEqual([
@@ -167,17 +181,38 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("kiem-dinh R1b-1 I2 �
     expect(await addr("k_tron")).toBe("A-k_tron");
   });
 
-  it("★ mỗi loại bảo vệ đều chặn (đã khai, kênh chế độ, đích luật bật, nguồn telemetry đã duyệt); tag trơn và tag alert-chỉ ⇒ ghi như cũ; chỉ đổi unit trên tag bảo vệ ⇒ ghi", async () => {
+  it("★ mỗi loại bảo vệ đều chặn (đã khai, kênh chế độ, đích luật bật, nguồn telemetry đã duyệt); tag trơn và tag alert-chỉ ⇒ ghi như cũ (kể cả đổi unit / deadband)", async () => {
     for (const k of ["k_khai", "k_che_do", "k_dich_bat", "k_nguon"]) {
       const r = apply(await fileVoi({ [k]: { address: `MOI-${k}` } }));
       expect(r.code, `${k}: ${r.out}`).toBe(1);
       expect(await addr(k)).toBe(`A-${k}`);
     }
-    const ok = apply(await fileVoi({ k_tron: { address: "MOI-TRON" }, k_dich_alert: { address: "MOI-ALERT" }, k_khai: { unit: "bar" } }));
+    const ok = apply(await fileVoi({ k_tron: { address: "MOI-TRON", unit: "bar", deadband: 0.5 }, k_dich_alert: { address: "MOI-ALERT", sampling_ms: 250 } }));
     expect(ok.code, ok.out).toBe(0);
     expect(await addr("k_tron")).toBe("MOI-TRON");
     expect(await addr("k_dich_alert")).toBe("MOI-ALERT");
-    expect((await sql`SELECT unit FROM device_tags WHERE "adapterId" = ${ids.ad} AND "tagKey" = 'k_khai'`)[0].unit).toBe("bar");
+    expect((await sql`SELECT unit, deadband FROM device_tags WHERE "adapterId" = ${ids.ad} AND "tagKey" = 'k_tron'`)[0]).toEqual({ unit: "bar", deadband: 0.5 });
+  });
+
+  it("★ R1b-2a T8 (kiem-dinh M4): CHỈ đổi unit / deadband / sampling_ms của tag ĐƯỢC BẢO VỆ không cờ ⇒ thoát 1, KHÔNG ghi gì; dry-run in [BẢO VỆ]", async () => {
+    const nhip = async (k: string) =>
+      (await sql`SELECT unit, deadband, "samplingMs" AS "samplingMs" FROM device_tags WHERE "adapterId" = ${ids.ad} AND "tagKey" = ${k}`)[0];
+    const ca: Array<[string, Partial<{ unit: string; deadband: number; sampling_ms: number }>]> = [
+      ["k_khai", { unit: "bar" }],
+      ["k_nguon", { deadband: 0.5 }],
+      ["k_che_do", { sampling_ms: 250 }],
+    ];
+    for (const [k, d] of ca) {
+      const y = await fileVoi({ [k]: d, k_tron: { unit: "x" } });
+      const kho = cli(y);
+      expect(kho.code, kho.out).toBe(0);
+      expect(kho.out).toContain(`[BẢO VỆ] sửa  ${k}`);
+      const r = apply(y);
+      expect(r.code, `${k}: ${r.out}`).toBe(1);
+      expect(r.out).toContain("tag ĐƯỢC BẢO VỆ");
+      expect(await nhip(k)).toEqual({ unit: null, deadband: null, samplingMs: null });
+      expect((await nhip("k_tron")).unit).toBeNull(); // cả lô không ghi
+    }
   });
 
   it("★ --prune xoá tag bảo vệ / tạo tag lên khoá mồ côi ⇒ từ chối, không ghi", async () => {

@@ -30,7 +30,8 @@
  *     mức 5 + kiểm lại nhất quán khi trỏ lại / tạo lên khoá mồ côi / xoá một tag được bảo vệ). Nên MẶC ĐỊNH TỪ CHỐI (thoát 1, không ghi gì) mọi
  *     lô đụng tag được bảo vệ — CÙNG định nghĩa của server/services/scada/troLaiKenh.ts (đã khai mức / loại kênh / dải, là kênh chế độ, hoặc là
  *     đích / nguồn telemetry của luật interlock không-alert đang bật HOẶC đã duyệt; tạo lên khoá mà kênh chế độ / bất kỳ luật nào trỏ tới):
- *     sửa address / datatype / scale / offset / writable / enabled, tạo lên khoá mồ côi, --prune xoá. (unit / deadband / sampling_ms không tính.)
+ *     sửa address / datatype / scale / offset / writable / enabled / unit / deadband / sampling_ms (R1b-2a T8, kiem-dinh M4: cột nhịp nay
+ *     cũng tính), tạo lên khoá mồ côi, --prune xoá.
  *     Truy vấn: scripts/lib/tagBaoVeCli.mjs (test so với chính hàm TS). Dry-run in các tag đó với nhãn [BẢO VỆ].
  *     NGOẠI LỆ TƯỜNG MINH: `--cho-phep-tag-bao-ve` cho phép lô đó đi tiếp — DÀNH CHO NGƯỜI CÓ QUYỀN HOST + DB (đã có quyền ghi thẳng bảng; cờ
  *     này không mở thêm quyền nào, chỉ ghi lại rằng họ cố ý). Danh sách tag bảo vệ bị đụng vào metadata dòng audit_logs `mapping_as_code.import`.

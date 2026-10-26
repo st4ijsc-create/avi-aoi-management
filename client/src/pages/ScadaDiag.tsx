@@ -8,7 +8,7 @@
  * QUYỀN: nút chỉ hiện với engineer|admin có `machine_control.canEdit` — chỉ là tiện lợi; ranh giới bảo mật là máy chủ (vai + 2FA +
  * giấy phép + quyền + phạm vi mỗi lần gọi). Lỗi máy chủ đi qua `toastTrpcError` (mã AppError đã i18n: FEATURE_DISABLED, NOT_FOUND…).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Activity, RefreshCw } from "lucide-react";
@@ -27,7 +27,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BangTruyenThong, coLoi, type HangDiag, type MayDung } from "@/components/scada/BangTruyenThong";
 import { NganTagAdapter } from "@/components/scada/NganTagAdapter";
-import { useHopMaTotpTroLai } from "@/components/scada/HopMaTotpTroLai";
+import { laLoiCanMaTotp } from "@/components/scada/HopMaTotpTroLai";
+import { TruongTotp, maTotpDu } from "@/components/scada/TruongLyDo";
 
 /** Chu kỳ làm mới (ms): ≤ 5 s theo mục tiêu "M10 hiện mất kết nối". */
 const CHU_KY_LAM_MOI_MS = 2000;
@@ -71,9 +72,19 @@ export default function ScadaDiag() {
     void utils.scadaDiag.danhSach.invalidate();
     void utils.scadaDiag.tagCuaAdapter.invalidate();
   };
+  // R1b-2a T11 — MỘT hộp: máy chủ đòi TOTP (tamTat trên adapter còn tag được bảo vệ) ⇒ cùng hộp hiện ô mã, giữ lý do.
+  const [canMa, setCanMaState] = useState(false);
+  const canMaRef = useRef(false); // onError của useMutation có thể chạy với closure của lượt render trước
+  const setCanMa = (v: boolean) => {
+    canMaRef.current = v;
+    setCanMaState(v);
+  };
+  const [ma, setMa] = useState("");
   const dong = () => {
     setHanhDong(null);
     setLyDo("");
+    setCanMa(false);
+    setMa(""); // mã không ở lại trong state sau BẤT KỲ kết cục nào
   };
   const ketNoiLai = trpc.scadaDiag.ketNoiLai.useMutation({
     onSuccess: (res: { reset?: boolean }) => {
@@ -87,26 +98,34 @@ export default function ScadaDiag() {
   const tamTat = trpc.scadaDiag.tamTat.useMutation({
     onSuccess: () => {
       toast.success(t("scada.diag.toast.tamTat"));
-      tamTatTotp.daXong();
       lamMoi();
       dong();
     },
-    // SCADA R1b-1 T9 fix round 3 (N1) — tắt adapter còn tag được bảo vệ ⇒ máy chủ đòi mã TOTP ⇒ hộp mã, gửi lại chính lượt đó.
-    onError: (e: unknown, bien: { adapterId: number; lyDo: string; totpCode?: string }) => {
-      if (tamTatTotp.xuLyLoi(e, bien)) return;
+    // SCADA R1b-1 T9 fix round 3 (N1) + R1b-2a T11 — tắt adapter còn tag được bảo vệ ⇒ máy chủ đòi mã TOTP ⇒ cùng hộp hiện ô mã,
+    // người dùng nhập rồi gửi lại CHÍNH lượt đó kèm `totpCode`. Mã sai / đã dùng / tạm khoá ⇒ xoá ô mã + báo lỗi, hộp còn mở.
+    onError: (e: unknown) => {
+      setMa(""); // mã đã dùng (đúng hay sai) không ở lại
+      if (laLoiCanMaTotp(e) && !canMaRef.current) {
+        setCanMa(true);
+        return;
+      }
       toastTrpcError(e as never);
     },
   });
-  const tamTatTotp = useHopMaTotpTroLai<{ adapterId: number; lyDo: string }>((bien) => tamTat.mutate(bien), tamTat.isPending);
   const dangGui = ketNoiLai.isPending || tamTat.isPending;
   const lyDoCat = lyDo.trim();
   const lyDoDu = lyDoCat.length >= LY_DO_TOI_THIEU;
+  const maDu = maTotpDu(ma);
 
   const gui = () => {
     if (!hanhDong || !lyDoDu || dangGui) return;
     const vars = { adapterId: hanhDong.hang.adapterId, lyDo: lyDoCat };
     if (hanhDong.kieu === "ketNoiLai") ketNoiLai.mutate(vars);
-    else tamTat.mutate(vars);
+    else {
+      if (canMa && !maDu) return;
+      // MỘT điểm gọi (R1b-2a T15 — census KHOA_TOTP_TRONG_HANDLER: mọi điểm gọi tamTat mang `totpCode`): lượt đầu không mã; máy chủ đòi ⇒ gửi lại kèm mã.
+      tamTat.mutate({ ...vars, totpCode: canMa ? ma : undefined });
+    }
   };
 
   return (
@@ -216,17 +235,24 @@ export default function ScadaDiag() {
                 <p className="text-xs text-destructive">{t("scada.diag.dialog.lyDoNgan", { min: LY_DO_TOI_THIEU })}</p>
               )}
             </div>
+            {canMa && hanhDong?.kieu === "tamTat" && (
+              <>
+                <p id="scada-diag-totp-goi-y" className="text-sm text-muted-foreground">
+                  {t("scada.diag.dialog.canMaTotp")}
+                </p>
+                <TruongTotp id="scada-diag-totp" value={ma} onChange={setMa} disabled={dangGui} autoFocus describedBy="scada-diag-totp-goi-y" />
+              </>
+            )}
             <DialogFooter>
               <Button variant="outline" onClick={dong} disabled={dangGui}>
                 {t("scada.diag.dialog.huy")}
               </Button>
-              <Button onClick={gui} disabled={!lyDoDu || dangGui}>
+              <Button onClick={gui} disabled={!lyDoDu || dangGui || (canMa && !maDu)}>
                 {t("scada.diag.dialog.gui")}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
-        {tamTatTotp.hop}
       </PageContainer>
     </DashboardLayout>
   );

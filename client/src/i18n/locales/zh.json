@@ -4081,6 +4081,7 @@
       "scadaSetStubFault": "为模拟器设置故障",
       "scadaSelectTag": "选择要下达命令的通道",
       "scadaKenhCapNhat": "更新通道声明",
+      "scadaTotpCauHinh": "校验通道配置变更的验证码",
       "dieuKienDoiTuongTrongPhamVi": "范围内对象条件",
       "flowNguoiNhan": "查找流程接收人",
       "flowXuat": "导出 AI 流程包",
@@ -4097,6 +4098,7 @@
       "stopValue": "固定停止值（stopValue）",
       "writeMin": "写入范围下限（writeMin）",
       "patch": "要修改的字段（patch）",
+      "items": "本批标签列表（items）",
       "adapterId": "适配器（adapterId）",
       "giaTriRemote": "表示 REMOTE 的值（giaTriRemote）",
       "tagKey": "标签（tagKey）",
@@ -4536,6 +4538,7 @@
       "scadaKenhCheDoTagTat": "模式通道的标签已停用——请先启用标签，再重新声明。",
       "scadaKenhGhiTrenTagKhongGhi": "该通道类型接受写入，但标签不可写——请将标签设为可写，或选择只读通道类型。",
       "scadaKenhThuLai": "通道刚被并发修改——请刷新后重试。",
+      "scadaKenhTagTrung": "同一标签在本批中出现多次——每个标签只能一行。",
       "scadaKenhCheDoKhongDoiAdapter": "该标签是某台机器的模式通道——不能移到其他适配器。请先在“通道与限值”页面移除或重新声明模式通道。",
       "scadaKenhCheDoGoTruoc": "该标签是某台机器的模式通道——删除标签前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。",
       "scadaKenhCheDoDoiMay": "该适配器承载某台机器的模式通道——将适配器分配给其他机器前，请先在“通道与限值”页面移除模式通道。",
@@ -4596,7 +4599,7 @@
     "SCADA_CONFIG_TOTP_REQUIRED": "更改通道或模式通道配置需要新的双因素（TOTP）验证码——请输入 6 位验证码后再次保存。",
     "SCADA_CONFIG_TOTP_INVALID": "双因素验证码错误或已被使用——请在验证器应用中等待新验证码后再次保存。",
     "SCADA_CONFIG_TOTP_NOT_ENROLLED": "更改通道配置需要双因素认证，但此账户尚未注册 2FA。请在 设置 > 安全 中设置。",
-    "STOP_PIN_NGOAI_DAI": "通道 {{tagKey}} 的固定停止值（{{stopValue}}）在当前通道声明下无法写入（范围 {{min}} … {{max}}，步长 {{step}}，或只读通道类型）——停止命令将被拒绝。请先清除或修改固定值，或重新声明匹配的范围/步长/通道类型。",
+    "STOP_PIN_NGOAI_DAI": "通道 {{tagKey}} 的固定停止值（{{stopValue}}）在当前通道声明下无法写入（范围 {{min}} … {{max}}，步长 {{step}}，或只读通道类型）。停止时，该命令将被拒绝（只读通道）、被写入声明的范围/步长之外，或被驱动程序舍入为另一个值（原始网格）。请先清除或修改固定值（最接近的有效值：{{goiY}}），或重新声明匹配的范围/步长/通道类型。",
     "INTERLOCK_NGOAI_DAI": "联锁规则的命令值在当前通道声明下无法写入通道 {{tagKey}}（范围 {{min}} … {{max}}，步长 {{step}}（起点 {{goc}}），或只读通道类型）。最接近的有效值：{{goiY}}。保护动作将在运行时被拒绝——请修改规则的命令值，或重新声明匹配的通道。",
     "TU_DONG_TAT": "服务器上的自动 Agent 模式已关闭（AI_CODING_TU_TRI_GHI 开关）。请使用逐步审批模式，或请管理员开启。",
     "THIEU_QUYEN_THUC_THI": "缺少自动 Agent 模式所需的执行/自动写入权限（ai_repo_exec）。",
@@ -4615,9 +4618,11 @@
     "INTERLOCK_MAT_DICH": "已启用的联锁规则 #{{ruleId}} 使用标签 {{tagKey}}（作为命令目标或数据源）——重命名该标签、将其移到其他适配器、停用或删除该标签，或停用、删除其适配器或将适配器移到其他机器，都会使保护动作失去目标或数据源。请先修改规则（或停用规则）。",
     "INTERLOCK_DICH_CHUA_SAN_SANG": "无法启用联锁规则 #{{ruleId}}：标签 {{tagKey}} 尚未就绪——目标标签不存在、已停用或其适配器已停用；或机器上已声明的数据源标签（或其适配器）已停用。保护动作将没有目标或数据源。请先创建 / 启用该标签及其适配器，然后再启用规则。",
     "INTERLOCK_NGUON_MO_HO": "无法启用联锁规则 #{{ruleId}}：该机器有 {{soAdapter}} 个已启用的适配器带有数据源标签 {{tagKey}}——网关无法确定读取哪一个（不明确），规则将始终缺少数据。请先重命名或停用重复的标签，然后再启用规则。",
-    "QUA_NHIEU_KENH_DA_KHAI": "本次导入涉及 {{soTag}} 个已声明/受保护通道的标签——每次最多 {{toiDa}} 个。请拆分文件后重新导入。",
-    "STOP_PIN_GO_TRUOC": "通道 {{tagKey}} 已固定停止值（{{stopValue}}）——修改其地址、类型、比例、偏移、可写标志或适配器，或停用、删除该标签，都会失去 STOP。请先解除固定（软件停止标签，需填写原因），然后重试。",
-    "SCADA_STOP_PINS_HIGH_LEVEL": "此设备的所有 STOP 固定值都位于执行等级 > 1 的标签上（{{tagKeys}}）—“停机”按钮不会发送到高等级标签；请工程师在 /scada/config/channels 将停机标签的执行等级声明为 1；请使用硬接线急停（E-STOP）停机。"
+    "QUA_NHIEU_KENH_DA_KHAI": "本批共 {{soTag}} 个标签——每批最多 {{toiDa}} 个（批量声明：计入本批全部标签；导入：计入已声明/受保护的标签）。请拆分后重试。",
+    "STOP_PIN_GO_TRUOC": "通道 {{tagKey}} 已固定停止值（{{stopValue}}）——修改其地址、类型、比例、偏移、可写标志或适配器，将动作等级提高到 1 以上（HMI 停止只发送等级 1 标签的固定值），或停用、删除该标签，都会失去 STOP。请先解除固定（软件停止标签，需填写原因），然后重试。",
+    "SCADA_STOP_PINS_HIGH_LEVEL": "此设备的所有 STOP 固定值都位于执行等级 > 1 的标签上（{{tagKeys}}）—“停机”按钮不会发送到高等级标签；请工程师在 /scada/config/channels 将停机标签的执行等级声明为 1；请使用硬接线急停（E-STOP）停机。",
+    "SCADA_STOP_PRECHECK_TIMEOUT": "服务器响应缓慢 — HMI STOP 未发送。请在设备处使用硬接线急停（E-STOP）。",
+    "SCADA_SCHEMA_MISSING": "数据库缺少迁移 {{migration}} — HMI 命令暂不可用；请管理员应用迁移并重启服务器。"
   },
   "export": {
     "reportMenu": {
@@ -14291,7 +14296,10 @@
       "ariaLabel": "联锁安全姿态",
       "source": "oversight.posture — 服务器各闸门自身的开关",
       "coverageSource": "oversight.posture — 已启用、已审批、可阻断且有目标的规则数",
-      "writesOnEngineOffChip": "引擎关闭时真实写入"
+      "writesOnEngineOffChip": "引擎关闭时真实写入",
+      "cauHinhHong": "配置损坏",
+      "cauHinhHongSource": "oversight.posture — 您范围内已启用、但闸门会阻断其所有目标命令（缺少机台/来源）或其命令会被 dispatch 拒绝（偏离网格）的规则",
+      "cauHinhHongChip": "配置损坏的规则"
     },
     "matrix": {
       "corner": "原因 ↓ · 结果 →",
@@ -17170,8 +17178,12 @@
     "defaultPortHint": "{{protocol}} 默认端口：{{port}}",
     "troLai": {
       "title": "需要双因素验证码",
-      "body": "此操作涉及受保护的标签，或带有此类标签的适配器（重新指向、在仍被引用的键上创建、停用或删除）。受保护的标签是：已声明的通道、机器的模式通道，或已启用或已批准的联锁规则的目标或数据源。需要新的 TOTP 验证码。",
+      "body": "此操作涉及受保护的标签，或带有此类标签的适配器（重新指向、更改采样周期 / 死区 / 单位、在仍被引用的键上创建、停用或删除）。受保护的标签是：已声明的通道、机器的模式通道，或已启用或已批准的联锁规则的目标或数据源。需要新的 TOTP 验证码。",
       "submit": "确认"
+    },
+    "taoTagTotp": {
+      "title": "创建标签需要双因素验证码",
+      "body": "该标签键仍被引用（已声明的通道、机器模式通道或联锁规则），因此在其上创建标签需要新的 TOTP 验证码。输入验证码即可重新发送刚才的创建标签操作。"
     }
   },
   "engineering": {
@@ -17616,7 +17628,12 @@
       "off": "关",
       "ruleCoverage": "已启用且有目标的规则：{{count}}",
       "coverageUnavailable": "无法读取规则覆盖率",
-      "writesOnEngineOffWarning": "联锁引擎已关闭，但设备真实写入已开启——违规将不会被自动阻断。"
+      "writesOnEngineOffWarning": "联锁引擎已关闭，但设备真实写入已开启——违规将不会被自动阻断。",
+      "cauHinhHong": "已启用但配置损坏的规则：{{count}}",
+      "cauHinhHongCanhBao": "部分已启用的联锁规则无法工作：闸门会阻断所有指向它们的命令，或其保护命令会被 dispatch 拒绝。请在联锁页面修复。",
+      "cauHinhHongMo": "打开联锁规则页",
+      "stopQuaHan": "HMI 停机因超时被拒（24 小时）：{{count}}",
+      "stopQuaHanUnavailable": "无法读取 HMI 停机超时拒绝数"
     },
     "table": {
       "kind": "工作项",
@@ -23817,6 +23834,7 @@
         "ketNoiLaiMoTa": "刷新到设备的连接会话。重连期间标签可能短暂显示质量不良。",
         "tamTatTieuDe": "暂停适配器 {{code}}？",
         "tamTatMoTa": "停止读取设备并将适配器标记为停用，直到在“设备适配器”页面重新启用。",
+        "canMaTotp": "该适配器仍有受保护的标签——请输入 TOTP 验证码，与上方原因一并确认。",
         "lyDo": "原因（记入审计）",
         "lyDoNgan": "原因至少需要 {{min}} 个字符",
         "huy": "取消",
@@ -23971,6 +23989,27 @@
         "capNhatKhongDoi": "没有任何更改。",
         "datCheDo": "已设置模式通道。",
         "goCheDo": "已移除模式通道。"
+      },
+      "hangLoat": {
+        "chon": "选择 {{tagKey}} 进行批量声明级别",
+        "chonTatCa": "选择所有可写通道（最多 {{toiDa}} 个）",
+        "daChon": "已选择 {{n}} 个通道",
+        "nut": "批量声明级别（{{n}}）",
+        "boChon": "取消选择",
+        "tran": "已达到每批最多 {{toiDa}} 个通道 — 请先声明本批，再继续选择。",
+        "tranTruoc": "共有 {{n}} 个可写通道，每批最多 {{toiDa}} 个 —「全选」只选取前面这么多个；其余请在下一批声明。",
+        "quaTran": "本批有 {{n}} 个通道，每批最多 {{toiDa}} 个 — 请取消部分选择后再提交。",
+        "tieuDe": "为 {{n}} 个通道声明动作级别",
+        "moTa": "一个适配器的一批：要么所有通道都被声明，要么没有任何通道改变。已处于该级别的通道保持不变。整批只需一个双因素验证码。",
+        "danhSach": "本批通道",
+        "muc": "新的动作级别",
+        "mucChon": "— 选择级别 —",
+        "boKhai": "取消声明（⇒ 5 — 默认关闭）",
+        "ghimNhac": "固定了停止值的标签必须保持级别 1 — 请先移除固定",
+        "ghimTag": "已固定停止值：{{tags}}",
+        "loiTag": "通道 {{tagKey}}：{{loi}}",
+        "gui": "声明级别",
+        "daKhai": "已声明级别：{{soDoi}} 个通道已更改，{{soGiuNguyen}} 个保持不变。"
       }
     },
     "faceplate": {
@@ -24125,7 +24164,9 @@
         "ma": "代码：{{ma}}",
         "CHUA_GHIM_STOP": "设备尚未固定 STOP 值 — 请工程师在 /scada/config/channels 固定；请使用硬接线急停（E-STOP）停机",
         "goiYStopKhongGhim": "需要停机？请使用硬接线急停（E-STOP）或设备柜上的停止按钮",
-        "GHIM_MUC_CAO": "此设备的所有 STOP 固定值都位于执行等级 > 1 的标签上（{{list}}）—“停机”按钮不会发送任何内容；请使用硬接线急停（E-STOP）停机"
+        "GHIM_MUC_CAO": "此设备的所有 STOP 固定值都位于执行等级 > 1 的标签上（{{list}}）—“停机”按钮不会发送任何内容；请使用硬接线急停（E-STOP）停机",
+        "STOP_QUA_HAN": "服务器响应缓慢 — HMI STOP 未发送。请在设备处使用硬接线急停（E-STOP）。",
+        "THIEU_MIGRATION": "未发送 — 数据库缺少迁移 0433；请管理员应用并重启（“停机”按钮仍可使用）"
       },
       "local": {
         "remote": "设备处于 REMOTE",
@@ -24190,6 +24231,13 @@
       "boQua": {
         "tieuDe": "未发送（执行等级 > 1 的标签 — HMI STOP 无法到达）：",
         "dong": "{{code}} · {{tagKey}}（等级 {{muc}}）"
+      },
+      "bangEstop": {
+        "tieuDe": "请在设备处使用硬接线急停（E-STOP）",
+        "quaHan": "服务器响应缓慢 — HMI STOP 未发送到设备。",
+        "quaHanMotPhan": "服务器响应缓慢 — HMI STOP 未发送到适配器 {{list}}。",
+        "gioiHan": "服务器因请求过多而拒绝（HTTP 429）— HMI STOP 未发送。",
+        "nutBo": "知道了"
       }
     }
   }

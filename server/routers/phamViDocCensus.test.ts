@@ -955,9 +955,25 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // 2026-10-25 gộp L6c-C1 (A−22) với W17a (reportArtifact C→S) ⇒ đo bằng census.
 // ★★ 2026-10-25 (lô W17b, luật MQTT + ngưỡng yield THEO NHÀ MÁY, mig 0426; cộng dồn sau gộp A95/C466/S635): **C 466 → 454 · S 635 → 647 · D 1199 → 1201 · tong 2403 → 2405.** 12 thủ tục ĐỌC C→S (mqttAlert list|getById|history|unresolved · yieldThreshold list|getById|getByType|getEnabled|getHistory|getHistoryByType|getHistoryByThreshold · alertEscalation.recentEscalations) + 2 mutation mới yieldThreshold.create|delete. Chứng minh: phamViGhiDoW17bMqttYield.db.test.ts.
 // 2026-10-25 gộp L6c+L7 (A−43, C−2) với W17b/W17c (D+2) ⇒ đo bằng census.
-// L9 (2026-10-25): 16 thủ tục đọc cấu hình A→S (shift/layout/maintenanceSchedule/ngRate/process/productVariant/thresholdApproval) + 3 miễn trừ mới vẫn nhóm A: A 52→36, S 692→708 — loCauHinhDocPhamVi.db.test.ts
-// 2026-10-26 lô B7-D: +1 thủ tục flow.thongKe (nhóm S: đọc có phạm vi — chanLuong theo flowId) ⇒ S 710→711 · tong 2409→2410.
-const GHIM = { A: 36, B: 8, C: 453, D: 1202, S: 711, tong: 2410 } as const; // 2026-10-25 lô nhập/xuất luồng: +3 thủ tục (xuat · nhapXemTruoc [miễn trừ: phân tích gói thuần] · nhap) ⇒ C 453 · D 1202 · S 710 · tong 2409, đo bằng chính lưới này. Trước đó (lô Luồng-form 709/2406): +1 query flow.nguoiNhanChoLuong (nhóm S: chanLuong ⇒ luongTrongPhamVi, ngoài phạm vi ≡ NOT_FOUND; người nhận lọc bằng nguoiNhanHopLeTheoNhaMay) — đo bằng chính lưới này
+// ★★ 2026-10-25 · R1b-2a scadaKenh.khaiHangLoat +1 (SCADA R1b-2a Task 6) — **D 1201 → 1202 · tong 2405 → 2406 · A/B/C/S unchanged.** Mutation MỚI
+// `scadaKenh.khaiHangLoat` (khai mức hàng loạt ≤ 200 tag, một mã TOTP) ⇒ D (bộ suy xếp MỌI mutation vào D). Phạm vi: `kiemPhamViDuoiKhoa` dưới khoá
+// adapter (ngoài phạm vi ≡ NOT_FOUND adapter, chứng minh ở `scadaKenhRouter.khaiHangLoat.r1b2.db.test.ts`). Đo: ghim cũ (gốc 4395bfd11) đỏ ĐÚNG +1 D /
+// +1 tong. No baseline row added. `tong` 2406 matches `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+// ★★ 2026-10-26 · SCADA R1b-2a Task 12 (điều phối 2026-10-25) — **A 52 → 51 · S 692 → 693 · B/C/D/tong unchanged.** `oversight.posture` A → S:
+// mọi số đếm (độ phủ interlock, luật hỏng cấu hình / lệch lưới, STOP HMI quá hạn 24 h) lọc theo phạm vi nhà máy từ `ctx`
+// (`layPhamViPosture` ⇒ `idsTrongPhamVi(…, phamViCua(ctx), { strict: true })`). Dòng sổ nợ đọc GỠ (mục cuối mà main L9 để lại cho T12).
+// Đo trên cây này (gốc 003fd94b8 + T12): ghim cũ đỏ ĐÚNG −1 A / +1 S. A/B + đột biến: `oversightPosturePhamVi.r1b2.db.test.ts`.
+//   (nhánh R1b-2a: { A: 51, B: 8, C: 452, D: 1202, S: 693, tong: 2406 })
+// [main] L9 (2026-10-25): 16 thủ tục đọc cấu hình A→S (shift/layout/maintenanceSchedule/ngRate/process/productVariant/thresholdApproval) + 3 miễn trừ mới vẫn nhóm A: A 52→36, S 692→708 — loCauHinhDocPhamVi.db.test.ts
+// [main] 2026-10-25 lô nhập/xuất luồng: +3 thủ tục (xuat · nhapXemTruoc [miễn trừ: phân tích gói thuần] · nhap) ⇒ C 453 · D 1202 · S 710 · tong 2409, đo bằng chính lưới này. Trước đó
+//   (lô Luồng-form 709/2406): +1 query flow.nguoiNhanChoLuong (nhóm S: chanLuong ⇒ luongTrongPhamVi, ngoài phạm vi ≡ NOT_FOUND; người nhận lọc bằng nguoiNhanHopLeTheoNhaMay) — đo bằng chính lưới này
+// [main] 2026-10-26 lô B7-D: +1 thủ tục flow.thongKe (nhóm S: đọc có phạm vi — chanLuong theo flowId) ⇒ S 710→711 · tong 2409→2410.
+//   (main: { A: 36, B: 8, C: 453, D: 1202, S: 711, tong: 2410 })
+// ★★ 2026-10-26 · MERGE main 134293775 vào feat/scada-r1b2 — **A 35 · B 8 · C 453 · D 1203 · S 712 · tong 2411**, ĐO trên cây đã gộp (đặt ghim 0
+//   rồi đọc số nhận được) = main { A 36, S 711, D 1202, tong 2410 } + nhánh T12 (`oversight.posture` A → S: A −1, S +1) + nhánh T6 (mutation
+//   `scadaKenh.khaiHangLoat`: D +1, tong +1). Sổ nợ đọc: gỡ cả 4 mục ngRateThreshold (main L9) lẫn `oversight.posture` (nhánh T12). `tong` 2411
+//   trùng `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 35, B: 8, C: 453, D: 1203, S: 712, tong: 2411 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

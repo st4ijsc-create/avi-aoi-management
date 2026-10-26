@@ -29,6 +29,17 @@ vi.mock("../_core/accessControl", async (importOriginal) => {
   return { ...actual, checkPermission: (...a: Parameters<typeof actual.checkPermission>) => checkPermissionMock(...a) };
 });
 
+// R1b-2a T12 — phạm vi posture: lật `idsTrongPhamVi` sang NÉM (strict: không phân giải được) cho ca fail-closed; mặc định = bản thật.
+const phamViHong = vi.hoisted(() => ({ nem: false }));
+vi.mock("../db/hierarchy", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/hierarchy")>();
+  return {
+    ...actual,
+    idsTrongPhamVi: (...a: Parameters<typeof actual.idsTrongPhamVi>) =>
+      phamViHong.nem ? Promise.reject(new Error("TenantScopeUnavailable (test)")) : actual.idsTrongPhamVi(...a),
+  };
+});
+
 import { oversightRouter, _internal } from "./oversightRouter";
 
 /**
@@ -329,6 +340,32 @@ describe("oversightRouter.posture (ILK-06)", () => {
     mockGetDb.mockResolvedValue(fakeDb([[{ c: 0 }]]).db);
     const r = await oversightRouter.createCaller(admin()).posture();
     expect(r.writesOnEngineOff).toBe(false);
+  });
+
+  it("★ R1b-2a T12 — phạm vi KHÔNG phân giải được (strict ném) ⇒ mọi số đếm theo phạm vi degraded + 0, KHÔNG truy vấn luật nào (fail-closed, không đoán toàn quyền)", async () => {
+    phamViHong.nem = true;
+    try {
+      const f = fakeDb([[{ c: 7 }], [{ c: 7 }], []]);
+      mockGetDb.mockResolvedValue(f.db);
+      // admin chỉ để qua cổng quyền thật (requirePermission) — `idsTrongPhamVi` bị lật sang ném cho MỌI vai
+      const r = await oversightRouter.createCaller(admin()).posture();
+      expect(r.interlockCoverageDegraded).toBe(true);
+      expect(r.interlockRulesEnabledWithTarget).toBe(0);
+      expect(r.interlockRulesCauHinhHong).toBe(0);
+      expect(r.stopQuaHan24h).toEqual({ count: 0, theoBuoc: {}, khongGhiSo: null, degraded: true });
+      expect(f.calls()).toBe(0);
+    } finally {
+      phamViHong.nem = false;
+    }
+  });
+
+  it("T12 — dieuKienLuatTrongPhamVi / dieuKienStopQuaHanTrongPhamVi: toàn quyền ⇒ undefined (không thêm cổng); phạm vi hẹp ⇒ có cổng", () => {
+    const toan = { toanQuyen: true, dong: null, tram: null, may: null, adapter: null };
+    const hep = { toanQuyen: false, dong: [1], tram: [2], may: [3], adapter: [4] };
+    expect(_internal.dieuKienLuatTrongPhamVi(toan)).toBeUndefined();
+    expect(_internal.dieuKienStopQuaHanTrongPhamVi(toan)).toBeUndefined();
+    expect(_internal.dieuKienLuatTrongPhamVi(hep)).toBeDefined();
+    expect(_internal.dieuKienStopQuaHanTrongPhamVi(hep)).toBeDefined();
   });
 });
 

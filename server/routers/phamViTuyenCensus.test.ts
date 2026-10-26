@@ -168,8 +168,17 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
 // ★ 2026-10-24 /api/external nhóm ④: A 29→25 · S 70→74 (hierarchy/{tree,factory/:factoryId,mqtt-topics,summary}); dashboard/summary + statistics/measurement-points đã trích sang cùng tệp, còn nợ → nhóm ⑤.
 // ★ 2026-10-24 /api/external nhóm ⑤: A 25→5 · S 74→94 (20 tuyến tổng hợp). A=5 còn lại ĐÚNG là năm MIỄN TRỪ CÓ CHỦ Ý (standards/device-types|alarm-taxonomy, twin/models, edge/download, reports/artifacts) — sổ nợ tuyến /api/* RỖNG.
 // ★ 2026-10-25 (W17a): A 5→4 · C 40→39 · S 94→96: tải tệp báo cáo (reportArtifactRoutes download + external/reports/:id/download) lọc theo phạm vi NGƯỜI TẠO (reportArtifactScope.ts) — gỡ miễn trừ.
-// 2026-10-25 (F1): A 4→5 / C 39→38 — `GET /api/stream` (SSE) vào nhóm A dưới dạng MIỄN TRỪ CÓ BẰNG CHỨNG (handler định danh nên bộ quét không thấy lọc bên trong; xem phamViTuyenBaseline + sse.test.ts). Không phải nợ.
-const GHIM = { A: 5, C: 38, D: 96, S: 96, U: 16, tong: 251 } as const;
+// ★ 2026-10-25 (SCADA R1b-2a T3 fix round 3, C-2): D 96→94 · tong 251→249 — HAI DƯƠNG TÍNH GIẢ rời bảng, không tuyến thật nào đổi. Đo bằng
+// diff bộ quét giữa HEAD và cây sửa: mất đúng `server/_core/sdk.ts#POST /webdev.v1.WebDevAuthPublicService/ExchangeToken` và
+// `…/GetUserInfoWithJwt` — hai lượt gọi axios RA NGOÀI (`this.client.post<T>(…)`), không phải tuyến Express. Vì sao rời: bộ lọc sơ bộ
+// của bộ quét chỉ mở tệp có `.get(` / `.post(` / `.use(` theo VĂN BẢN; sdk.ts từng lọt nhờ `cookies.get(COOKIE_NAME)`, nay đọc vé qua
+// `vePhienCookie.docVePhienTuCookie` ⇒ tệp không còn khớp bộ lọc (`.post<` không khớp `\.post\s*\(`).
+//   (nhánh R1b-2a: { A: 4, C: 39, D: 94, S: 96, U: 16, tong: 249 })
+// [main] 2026-10-25 (F1): A 4→5 / C 39→38 — `GET /api/stream` (SSE) vào nhóm A dưới dạng MIỄN TRỪ CÓ BẰNG CHỨNG (handler định danh nên bộ quét không thấy lọc bên trong; xem phamViTuyenBaseline + sse.test.ts). Không phải nợ.
+//   (main: { A: 5, C: 38, D: 96, S: 96, U: 16, tong: 251 })
+// ★ 2026-10-26 · MERGE main 134293775 vào feat/scada-r1b2 — **A 5 · C 38 · D 94 · S 96 · U 16 · tong 249**, ĐO trên cây đã gộp (đặt ghim 0 rồi
+//   đọc số nhận được) = main F1 (A +1 / C −1, `GET /api/stream`) + nhánh C-2 (D −2, hai dương tính giả axios của sdk.ts rời bảng).
+const GHIM = { A: 5, C: 38, D: 94, S: 96, U: 16, tong: 249 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {

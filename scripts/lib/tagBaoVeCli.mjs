@@ -16,8 +16,12 @@
  * hiệu lực khi định nghĩa tag đổi — CLI không mở được cửa nào mà bám đó không đóng lại.
  */
 
-/** Cột tag mà đổi chúng là "trỏ lại / tắt" (khớp COT_TRO_LAI của troLaiKenh trừ tagKey/adapterId — CLI không đổi được hai cột đó — cộng `enabled`). */
-export const COT_FILE_CHAM_BAO_VE = ["address", "datatype", "scale", "offset", "writable", "enabled"];
+/**
+ * Cột tag mà đổi chúng là "trỏ lại / tắt" (khớp COT_TRO_LAI của troLaiKenh trừ tagKey/adapterId — CLI không đổi được hai cột đó — cộng `enabled`),
+ * + R1b-2a T8 (kiem-dinh M4, Q7 duyệt) cột NHỊP (khớp COT_NHIP_BAO_VE: `unit` / `deadband` / `samplingMs` — tên trường của diff CLI). Diff CLI
+ * so CHẶT hơn máy chủ ở `unit` ("" ≠ NULL, khoảng trắng tính) ⇒ chỉ có thể từ chối THỪA, không bao giờ thiếu.
+ */
+export const COT_FILE_CHAM_BAO_VE = ["address", "datatype", "scale", "offset", "writable", "enabled", "unit", "deadband", "samplingMs"];
 
 /**
  * Tập tagKey ĐƯỢC BẢO VỆ và tập khoá MỒ CÔI của MỘT adapter. `tx` = kết nối / giao dịch `postgres` (tagged template).
@@ -66,7 +70,8 @@ export async function tagBaoVeCuaAdapterTx(tx, adapterId) {
 /**
  * THUẦN — các thao tác của một lô import đụng tag được bảo vệ / khoá mồ côi:
  *   • tạo lên khoá mồ côi (hoặc khoá đang được bảo vệ);
- *   • cập nhật một tag được bảo vệ ở cột trỏ lại / bật-tắt (`COT_FILE_CHAM_BAO_VE`; unit / deadband / sampling_ms không tính — như UI);
+ *   • cập nhật một tag được bảo vệ ở cột trỏ lại / bật-tắt / cột nhịp unit · deadband · sampling_ms (`COT_FILE_CHAM_BAO_VE`; R1b-2a T8 — trước:
+ *     cột nhịp không tính);
  *   • prune (xoá) một tag được bảo vệ.
  * @returns {Array<{ tagKey: string, viec: "tao" | "sua" | "xoa", lyDo: string[] }>}
  */

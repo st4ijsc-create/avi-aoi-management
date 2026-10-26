@@ -2,7 +2,7 @@
  * Sprint F1.3 — mitsubishiMcDriver tests với package GIẢ (vi.doMock + vi.resetModules).
  * Không cần lib/PLC thật.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { OtTagAddress } from "../otDriver";
 
 const tags: OtTagAddress[] = [
@@ -143,8 +143,8 @@ describe("MitsubishiMcDriver (mocked mcprotocol)", () => {
     await expect(d.writeTags([{ tagKey: "sp", address: "D0", value: 1 }])).rejects.toThrow(/not connected/);
   });
 
-  it("BAD value (null) → quality bad", async () => {
-    mockMc({ level: null, run: true });
+  it("BAD value (real mcprotocol shape: quality string 'BAD 255' in place of the value, anythingBad=true) → quality bad", async () => {
+    mockMc({}, { readAllItems: vi.fn((cb: (bad: boolean, vals: Record<string, unknown>) => void) => cb(true, { level: "BAD 255", run: true })) });
     const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
     const d = new MitsubishiMcDriver();
     await d.connect({ endpoint: "127.0.0.1" });
@@ -152,6 +152,43 @@ describe("MitsubishiMcDriver (mocked mcprotocol)", () => {
     const level = samples.find((s) => s.tagKey === "level")!;
     expect(level.quality).toBe("bad");
     expect(level.value).toBeNull();
+  });
+
+  describe("R1b-2a T13 fix round 2 (I2) — mcprotocol BAD sentinel on bool / string tags never reads as a good value", () => {
+    const tagsI2: OtTagAddress[] = [
+      { tagKey: "level", address: "D100", dataType: "int" },
+      { tagKey: "run", address: "M100", dataType: "bool" },
+      { tagKey: "name", address: "D200", dataType: "string" },
+    ];
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it.each([
+      ["V2 off", "false"],
+      ["V2 on", "true"],
+    ] as const)("%s: bool 'BAD 255' ⇒ bad (NOT true), string 'BAD 255' ⇒ bad (NOT the text); the answered item stays good", async (_n, v2) => {
+      vi.stubEnv("OT_CHAT_LUONG_V2_ENABLED", v2);
+      // Real mcprotocol shape, item-level error while the read as a whole succeeded (one item answered).
+      mockMc({}, { readAllItems: vi.fn((cb: (bad: boolean, vals: Record<string, unknown>) => void) => cb(true, { level: 7, run: "BAD 255", name: "BAD 255" })) });
+      const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
+      const d = new MitsubishiMcDriver();
+      await d.connect({ endpoint: "127.0.0.1" });
+      const out = await d.readTags(tagsI2);
+      expect(out.find((s) => s.tagKey === "level")!).toMatchObject({ quality: "good", value: 7 });
+      for (const k of ["run", "name"]) {
+        const s = out.find((x) => x.tagKey === k)!;
+        expect(s.quality).toBe("bad");
+        expect(s.value).toBeNull();
+        if (v2 === "true") {
+          expect(s.reason).toBe("device_error");
+          expect(s.statusCode).toBe("bad_value");
+        } else {
+          expect(s.reason).toBeUndefined();
+          expect(s.statusCode).toBeUndefined();
+        }
+      }
+    });
   });
 
   it("readTags throws when not connected", async () => {

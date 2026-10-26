@@ -19,9 +19,9 @@
 import type { NextFunction, Request, Response } from "express";
 import { ipKeyGenerator, type Store } from "express-rate-limit";
 import type { AnyRouter } from "@trpc/server";
-import { COOKIE_NAME } from "@shared/const";
 import { AUTH_RATE_LIMIT, taoStoreDem } from "./rateLimitConfig";
 import { trpcProcedureType } from "./trpcAdapter";
+import { docVePhienTuCookie } from "./vePhienCookie";
 
 export type NhomNhayCam = "2fa" | "auth";
 
@@ -44,7 +44,8 @@ export const NHOM_THU_TUC_NHAY_CAM: Readonly<Record<NhomNhayCam, CauHinhNhom>> =
     tienTo: ["twoFactor."],
     // ⚠ scadaCommands.confirm CỐ Ý KHÔNG có ở đây (R1a final I-1, 2026-10-24): TOTP của nó đã chặn theo TÀI KHOẢN bởi khoá T16 trong verifyTotpOnce;
     // nhóm 20/15 phút chung IP + người sẽ bóp lệnh HMI mức 1/3 thường ngày. Miễn trừ ghi ở census kiemXacThucTheoMuc (trpcGioiHanThuTuc.census.test.ts).
-    // ⚠ scadaCommands.dungMay (STOP HMI, R1b-1 Task 2) CỐ Ý KHÔNG thuộc nhóm nào: STOP không bao giờ bị phần mềm chặn; không xác minh TOTP
+    // ⚠ scadaCommands.dungMay (STOP HMI, R1b-1 Task 2) CỐ Ý KHÔNG thuộc nhóm nào: không trần nào THẤP hơn 600 / phút theo phiên của một người cho STOP có vé
+    // ký hợp lệ (R1b-2a T3 — tầng STOP `rateLimitConfig.createHmiStopLimiter`, hằng TRAN_STOP_HMI_MOI_PHUT); không xác minh TOTP
     // (census MIEN_TRU_KHONG_GIOI_HAN).
     // kiem-dinh P1-2 (2026-10-24): ba mutation cấu hình kênh / chế độ M12 xác minh TOTP tươi qua kiemXacThucTheoMuc (mức 5) ⇒ thuộc nhóm (việc hiếm).
     // R1b-1 Task 9 (2026-10-24): mappingAsCode.applyImport (lô đụng tag được bảo vệ) xác minh qua `kiemTotpCauHinh` ⇒ thuộc nhóm (việc hiếm).
@@ -60,6 +61,9 @@ export const NHOM_THU_TUC_NHAY_CAM: Readonly<Record<NhomNhayCam, CauHinhNhom>> =
       "user.verify2FA",
       "user.disable2FA",
       "scadaKenh.capNhat",
+      // R1b-2a T6 (2026-10-25) — khai mức hàng loạt: MỘT mã TOTP tươi (kiemTotpCauHinh, mức 5) cho ≤ 200 tag ⇒ cùng nhóm với capNhat (việc
+      // cấu hình hiếm; một lô thay hàng trăm lượt capNhat).
+      "scadaKenh.khaiHangLoat",
       "scadaKenh.cheDo.dat",
       "scadaKenh.cheDo.go",
       "mappingAsCode.applyImport",
@@ -126,33 +130,51 @@ function layCacPath(req: Request): string[] {
 }
 
 /**
+ * Chuỗi vé phiên trong cookie `COOKIE_NAME`, đọc bằng ĐÚNG bộ đọc của đường xác thực (`vePhienCookie.docVePhienTuCookie`, `cookie.parse`:
+ * cắt khoảng trắng quanh tên và giá trị, tên trùng ⇒ bản ĐẦU), hoặc null. R1b-2a T3 fix round 3 (C-2): regex tự viết cũ không cắt khoảng
+ * trắng ⇒ `app_session_id= T` / `app_session_id =T` bị tầng STOP coi là vô danh trong khi auth nhận T ⇒ vượt trần. Chỉ dùng trong `phienKyVaVe`.
+ */
+function veTuCookie(req: Pick<Request, "headers">): string | null {
+  return docVePhienTuCookie(req.headers?.cookie) ?? null;
+}
+
+/**
  * Phiên trong cookie có CHỮ KÝ JWT + hạn hợp lệ (`sdk.verifySession` — stateless, KHÔNG chạm DB, không tra sổ phiên): `{ openId }`, ngược lại
  * null (không cookie, cookie rác, chữ ký sai, hết hạn). CHỈ phục vụ GIỚI HẠN TỐC ĐỘ, không cấp quyền gì — xác thực thật vẫn ở createContext.
- * Hai người dùng: khoá đếm theo người của middleware này, và (SCADA R1b-1 rà soát cuối I-2) `rateLimitConfig.laStopHmiCoPhienKy` — `apiLimiter`
- * chỉ miễn đếm STOP HMI khi phiên qua phép kiểm này (cùng phép kiểm bước 1 của `robotStopAuth`). Một chủ cho phép kiểm ⇒ census điểm xác thực
- * (`thuHoiPhienMoiBeMat` …) vẫn thấy đúng MỘT lượt `verifySession` ở tệp này.
+ * Hai người dùng: khoá đếm theo người của middleware này, và `rateLimitConfig.laStopHmiCoPhienKy` (SCADA R1b-1 rà soát cuối I-2; R1b-2a T3):
+ * STOP HMI có vé ký hợp lệ được tầng STOP (`createHmiStopLimiter`, 600 / phút THEO PHIÊN CỦA MỘT NGƯỜI = openId + băm phần ĐÃ KÝ
+ * `header.payload` của vé, qua `phienKyVaVe`) đếm thay cho `apiLimiter`.
+ * Một chủ cho phép kiểm ⇒ census điểm xác thực (`thuHoiPhienMoiBeMat` …) vẫn thấy đúng MỘT lượt `verifySession` ở tệp này.
+ * R1b-2a T3 (kiem-dinh N-2): kiểm IM LẶNG (`{ imLang: true }`) — một trận cookie rác vào đường giới hạn không in một dòng
+ * "[Auth] Session verification failed" mỗi yêu cầu. createContext → authenticateRequest vẫn log như cũ.
  */
 export async function phienKyHopLe(req: Pick<Request, "headers">): Promise<{ openId: string } | null> {
-  const raw = req.headers?.cookie;
-  if (!raw) return null;
-  const m = new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`).exec(raw);
-  if (!m) return null;
-  let token: string;
-  try {
-    token = decodeURIComponent(m[1]!);
-  } catch {
-    return null; // %-mã hỏng: không phải một vé
-  }
-  return phienKyHopLeTuVe(token);
+  const p = await phienKyVaVe(req);
+  return p ? { openId: p.openId } : null;
+}
+
+/**
+ * R1b-2a T3 fix round 2 (review m-2): MỘT lượt đọc cookie trả cả `openId` lẫn `ve` — chuỗi vé ĐÚNG như đã đưa cho verifier, nên chuỗi tầng
+ * STOP băm là chuỗi đã kiểm THEO CẤU TẠO (không phải do hai lượt đọc tình cờ khớp nhau). Chỉ cho giới hạn tốc độ; `ve` không bao giờ được
+ * log hay lưu (tầng STOP chỉ giữ 16 hex sha256 của phần đã ký `header.payload`).
+ * Merge main 134293775 (2026-10-26): phép kiểm chữ ký đi qua `phienKyHopLeTuVe` — vẫn đúng MỘT lượt `verifySession` trong tệp này.
+ */
+export async function phienKyVaVe(req: Pick<Request, "headers">): Promise<{ openId: string; ve: string } | null> {
+  const ve = veTuCookie(req);
+  if (ve === null) return null;
+  const phien = await phienKyHopLeTuVe(ve);
+  return phien ? { openId: phien.openId, ve } : null;
 }
 
 /**
  * Như `phienKyHopLe` nhưng từ CHUỖI vé đã tách (cookie hoặc Bearer) — MỘT lượt `verifySession` duy nhất của tệp này. W21 (kiểm định 2026-10-25): `rateLimitConfig`
  * dùng cùng phép kiểm chữ ký này để CHỌN XÔ đếm của limiter chung (chỉ kết quả đúng/sai; không gắn danh tính vào req, không cấp quyền — createContext vẫn kiểm sổ phiên / isActive / buộc đổi MK).
+ * Merge main 134293775 (2026-10-26): kiểm IM LẶNG (`{ imLang: true }`, R1b-2a T3 N-2) — mọi người gọi đều dùng kết quả làm KHOÁ giới hạn tốc độ (tầng STOP,
+ * khoá người của middleware này, khoá xô W21 của limiter chung), đúng hợp đồng tuỳ chọn `imLang` của `sdk.verifySession`; đường xác thực thật vẫn log.
  */
 export async function phienKyHopLeTuVe(token: string): Promise<{ openId: string } | null> {
   const { sdk } = await import("./sdk");
-  const phien = await sdk.verifySession(token);
+  const phien = await sdk.verifySession(token, { imLang: true });
   return phien ? { openId: phien.openId } : null;
 }
 

@@ -13,7 +13,7 @@
  *   (B) `congKenhSom` THUẦN — tag int CHƯA khai scale 10: 25 ⇒ OFF_STEP (buoc 10, goiY 30, appError SCADA_VALUE_OFF_STEP); 30 ⇒ ok, ĐÚNG
  *       đối tượng write của người gọi (không ép kiểu); STOP khớp ghim lệch lưới ⇒ miễn (STOP không bao giờ bị chặn); scale 1 ⇒ hành vi cũ.
  *   (C) Cấu hình ↔ chạy: giá trị lệnh interlock nhắm tag int CHƯA khai có scale ⇒ cùng lưới thô (`kiemLenhInterlockTrenKenh`), để hành động
- *       bảo vệ không bị OFF_STEP đúng lúc cần; ghim DỪNG trên tag chưa khai KHÔNG kiểm (được miễn lúc chạy).
+ *       bảo vệ không bị OFF_STEP đúng lúc cần; R1b-2a T2 (m4): ghim DỪNG trên tag chưa khai cũng kiểm lưới thô LÚC ĐẶT (miễn lúc chạy giữ nguyên).
  * Không DB, không dữ liệu đo (số đo ở báo cáo — tất định).
  */
 import { describe, expect, it } from "vitest";
@@ -74,7 +74,7 @@ const NGUOI_GOI: Record<string, string> = {
   "server/services/aiLocalTools/writeHandlers/machineControl.ts":
     "AI set_machine_param (giá trị model đề xuất, NGƯỜI xác nhận đúng số đó — làm tròn = ghi khác số đã xác nhận) + start/stop/reset/alarm_ack (true), select_recipe (version nguyên / mã chuỗi), download_job (jobId), STOP ghim (stop_value).",
   "server/services/aiLocalTools/writeHandlers/visionControl.ts":
-    "AI thị giác: reject_divert (lane nguyên | true), spi_printer_offset (µm, độ phân giải 0,1 từ qualityControlProposer — tag int scale ≤ 0,1 vẫn nằm trên lưới).",
+    "AI thị giác: reject_divert (lane nguyên | true), spi_printer_offset (µm; R1b-2a T1: qualityControlProposer làm tròn theo LƯỚI GHI của tag printer_offset_x/y thật — lamTronTheoLuoiTag; chưa đọc được lưới ⇒ 0,1 + cổng kênh dispatch là trọng tài).",
   "server/services/equipment/equipmentAdapter.ts":
     "FOE bước command (args.writes do kỹ sư soạn trong workflow; TEST: 87 write, giá trị 7/0/1/true, không tag scale ≠ 1) + REST v1 (lệnh OT ⇒ 501 từ R1b-1 T5; chỉ robot).",
   "server/services/interlock/interlockEngine.ts":
@@ -192,7 +192,7 @@ describe("T13 (B) — congKenhSom: tag int CHƯA khai có scale/offset ⇒ lư�
 
 // ─── (C) cấu hình ↔ chạy ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-describe("T13 (C) — lúc cấu hình: lệnh interlock nhắm tag int CHƯA khai có scale ⇒ cùng lưới thô với dispatch; ghim DỪNG không kiểm", () => {
+describe("T13 (C) — lúc cấu hình: lệnh interlock nhắm tag int CHƯA khai có scale ⇒ cùng lưới thô với dispatch; R1b-2a T2: ghim DỪNG cũng vậy", () => {
   const chuaKhai = { dataType: "int" as const, channelKind: null, writable: true, writeMin: null, writeMax: null, writeStep: null, scale: "10", offset: "0" };
 
   it("kiemLenhInterlockTrenKenh: 25 ⇒ OFF_STEP; 30 ⇒ ok; true (luật không khai giá trị) ⇒ OFF_STEP (driver ghi raw 0)", () => {
@@ -210,7 +210,11 @@ describe("T13 (C) — lúc cấu hình: lệnh interlock nhắm tag int CHƯA kh
     expect(viPhamInterlock([luat({ commandValue: 30 })], chuaKhai)).toBeNull();
   });
 
-  it("kiemNhatQuanKenh (ghim DỪNG) trên tag CHƯA khai ⇒ KHÔNG kiểm (ghim được miễn lúc chạy ⇒ không lệch cấu hình ↔ chạy)", () => {
+  // R1b-2a T2 (m4) — thay ghim cũ "ghim DỪNG trên tag CHƯA khai KHÔNG kiểm": `datStopPin` nay dùng `kiemLenhInterlockTrenKenh` ⇒ ghim lệch lưới
+  // thô bị từ chối LÚC ĐẶT (STOP_PIN_NGOAI_DAI + buoc / goiY; test DB stopPin.dai.r1a.db.test.ts). Lúc chạy, STOP khớp ghim vẫn được miễn (B).
+  it("ghim DỪNG trên tag CHƯA khai: luật lúc đặt = kiemLenhInterlockTrenKenh (25 ⇒ OFF_STEP buoc 10 goiY 30; 30 ⇒ ok); kiemNhatQuanKenh vẫn chỉ cho tag ĐÃ khai", () => {
+    expect(kiemLenhInterlockTrenKenh(chuaKhai, 25)).toMatchObject({ ok: false, ma: "OFF_STEP", luoi: { buoc: 10, goiY: 30 } });
+    expect(kiemLenhInterlockTrenKenh(chuaKhai, 30)).toEqual({ ok: true });
     expect(kiemNhatQuanKenh(chuaKhai, 25)).toEqual({ ok: true });
   });
 });

@@ -19,6 +19,7 @@ import { taoNguoiDungTest } from "../../testing/nguoiDungTest";
 import { deviceAdapterRouter } from "../../routers/deviceAdapterRouter";
 import { kenhDaKhai, kiemNhatQuanKenh } from "../scada/nhatQuanKenh";
 import { kenhDaKhaiGhi } from "./commandDispatcher";
+import { datStopPin, StopPinLoi } from "./stopPin";
 
 const RUN = `r1at12sp${process.pid}${Date.now().toString(36)}`;
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -28,6 +29,8 @@ let mid = 0;
 let adapterId = 0;
 let tagId = 0;
 let tagBool = 0;
+let tagSc10 = 0;
+let engId = 0;
 let eng!: ReturnType<typeof deviceAdapterRouter.createCaller>;
 
 async function dung(q: ReturnType<typeof sql>): Promise<any[]> {
@@ -70,9 +73,14 @@ beforeAll(async () => {
   const [tb] = await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled")
     VALUES (${adapterId}, 'estop', 'addr-estop', 'bool', true, true) RETURNING id`);
   tagBool = Number(tb.id);
+  // R1b-2a T2 (m4) — int CHƯA khai (cột 0431 NULL), scale 10: lưới thô 0, 10, 20, …
+  const [t10] = await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", scale)
+    VALUES (${adapterId}, 'sc10', 'addr-sc10', 'int', true, true, 10) RETURNING id`);
+  tagSc10 = Number(t10.id);
   const u = await taoNguoiDungTest("eng", "engineer", { tienTo: "r1at12sp", ts: RUN });
   await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${u.id}, ${code})`);
   await dung(sql`INSERT INTO permissions ("userId", category, "moduleName", "canView", "canEdit") VALUES (${u.id}, 'machine_control', 'machine_control', true, true)`);
+  engId = u.id;
   eng = deviceAdapterRouter.createCaller({ user: { id: u.id, role: "engineer", name: u.name, twoFactorEnabled: true } } as never);
 }, 60_000);
 
@@ -103,7 +111,7 @@ describe("datStopPin ↔ dải/bước đang khai của tag (R1a T12, điều ph
     const ld = lyDo("ngoai");
     const e = await loiCua(ghim(0, ld));
     expect(e).toMatchObject({ code: "BAD_REQUEST", appCode: "STOP_PIN_NGOAI_DAI" });
-    expect(e.appParams).toMatchObject({ ma: "STOP_PIN_NGOAI_DAI", lyDo: "OUT_OF_RANGE", tagKey: "stop", stopValue: "0", min: 10, max: 20, step: "—" });
+    expect(e.appParams).toMatchObject({ ma: "STOP_PIN_NGOAI_DAI", lyDo: "OUT_OF_RANGE", tagKey: "stop", stopValue: "0", min: 10, max: 20, step: "—", goiY: "—" }); // R1b-2a T2 (K17): goiY luôn có
     expect(await stopCua(tagId)).toBeNull();
     expect(await audit(ld)).toHaveLength(0);
 
@@ -114,7 +122,8 @@ describe("datStopPin ↔ dải/bước đang khai của tag (R1a T12, điều ph
 
   it("lệch bước ⇒ STOP_PIN_NGOAI_DAI (OFF_STEP); đúng bước ⇒ OK", async () => {
     await dung(sql`UPDATE device_tags SET write_min = 0, write_max = 100, write_step = 5 WHERE id = ${tagId}`);
-    expect(await loiCua(ghim(7, lyDo("buoc")))).toMatchObject({ appCode: "STOP_PIN_NGOAI_DAI", appParams: expect.objectContaining({ lyDo: "OFF_STEP" }) });
+    // R1b-2a T2 (K17) — lưới vừa trượt + giá trị hợp lệ gần nhất
+    expect(await loiCua(ghim(7, lyDo("buoc")))).toMatchObject({ appCode: "STOP_PIN_NGOAI_DAI", appParams: expect.objectContaining({ lyDo: "OFF_STEP", step: 5, goiY: 5 }) });
     expect(await ghim(15, lyDo("buoc-ok"))).toMatchObject({ changed: true });
   });
 
@@ -133,6 +142,47 @@ describe("datStopPin ↔ dải/bước đang khai của tag (R1a T12, điều ph
   it("tag bool có khai dải (dải không áp cho bool) ⇒ ghim true OK", async () => {
     await dung(sql`UPDATE device_tags SET channel_kind = 'output', write_min = 0, write_max = 0 WHERE id = ${tagBool}`);
     expect(await ghim(1, lyDo("bool"), "estop")).toMatchObject({ changed: true, stopValue: true });
+  });
+});
+
+describe("R1b-2a T2 (m4) — datStopPin trên tag CHƯA khai: ghim lệch lưới thô bị từ chối LÚC ĐẶT (không bao giờ một lệnh STOP)", () => {
+  const nguoiSua = () => ({ id: engId, name: "eng" });
+
+  it("★ datStopPin (kiểm cuối = TOTP như R1b-1 đòi): 25 trên int scale 10 chưa khai ⇒ StopPinLoi('ngoai_dai') {lyDo OFF_STEP, buoc 10, goiY 30}; hàng không đổi; TOTP KHÔNG bị gọi", async () => {
+    const kiemCuoi = vi.fn(async () => undefined);
+    let loi: unknown;
+    try {
+      await datStopPin({ adapterId, tagKey: "sc10", stopValue: 25, reason: lyDo("sc10-25"), nguoiSua: nguoiSua(), phamViMay: null, kiemCuoi });
+    } catch (e) {
+      loi = e;
+    }
+    expect(loi).toBeInstanceOf(StopPinLoi);
+    expect((loi as StopPinLoi).loai).toBe("ngoai_dai");
+    expect((loi as StopPinLoi).chiTiet).toMatchObject({ lyDo: "OFF_STEP", buoc: 10, goiY: 30, gocLuoi: 0, tagKey: "sc10", stopValue: 25 });
+    expect(kiemCuoi).not.toHaveBeenCalled(); // từ chối trước TOTP ⇒ mã không bị tiêu
+    expect(await stopCua(tagSc10)).toBeNull();
+  });
+
+  it("datStopPin: 30 (đúng lưới) ⇒ ok, TOTP gọi đúng một lần, hàng mang 30", async () => {
+    const kiemCuoi = vi.fn(async () => undefined);
+    const kq = await datStopPin({ adapterId, tagKey: "sc10", stopValue: 30, reason: lyDo("sc10-30"), nguoiSua: nguoiSua(), phamViMay: null, kiemCuoi });
+    expect(kq).toMatchObject({ changed: true, stopValue: 30 });
+    expect(kiemCuoi).toHaveBeenCalledTimes(1);
+    expect(await stopCua(tagSc10)).toBe(30);
+  });
+
+  it("qua router (deviceAdapter.tags.setStopPin) ⇒ BAD_REQUEST STOP_PIN_NGOAI_DAI {lyDo OFF_STEP, step 10, goiY 30, min/max '—'}; không ghi, không audit", async () => {
+    const ld = lyDo("sc10-router");
+    const e = await loiCua(ghim(25, ld, "sc10"));
+    expect(e).toMatchObject({ code: "BAD_REQUEST", appCode: "STOP_PIN_NGOAI_DAI" });
+    expect(e.appParams).toEqual({ ma: "STOP_PIN_NGOAI_DAI", lyDo: "OFF_STEP", tagKey: "sc10", stopValue: "25", min: "—", max: "—", step: 10, goiY: 30 });
+    expect(await stopCua(tagSc10)).toBeNull();
+    expect(await audit(ld)).toHaveLength(0);
+  });
+
+  it("tag int CHƯA khai scale 1 (stop): số nguyên vẫn ghim được như cũ (−999); gỡ ghim (null) luôn được", async () => {
+    expect(await ghim(-999, lyDo("sc1"))).toMatchObject({ changed: true, stopValue: -999 });
+    expect(await ghim(null, lyDo("sc1-go"))).toMatchObject({ changed: true, stopValue: null });
   });
 });
 

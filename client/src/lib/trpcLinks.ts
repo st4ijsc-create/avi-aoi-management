@@ -50,13 +50,67 @@ export function isLicenseOp(op: { path: string }): boolean {
  *  - `robot.consoleStop` — doc 81 Đợt 10 D fix review 6 (NF5-8, R-10-bb): the server's bounded STOP-only auth (context.ts
  *    `isStopOnlyCall` + robotStopAuth, 300 ms) applies only to a request made of that route alone; in a mixed batch it would be
  *    authenticated the normal, unbounded way and wait behind a slow DB.
- *  - `scadaCommands.dungMay` — SCADA R1b-1 T2 fix round 1: ONLY so the server's general /api limiter exemption applies (it exempts a
- *    non-batched `POST /api/trpc/scadaCommands.dungMay` carrying a validly signed session — rateLimitConfig `laStopHmiCoPhienKy`).
- *    ⚠ The HMI STOP has NO bounded auth and NO deadline on its pre-dispatch reads: with a slow-but-alive DB it waits as long as the DB
- *    stalls; the only bound is the client's 10 s "dùng E-STOP cứng" fallback (R1b-2 backlog: a real pre-dispatch deadline).
+ *  - `scadaCommands.dungMay` — SCADA R1b-1 T2 fix round 1: ONLY so the server counts it in the dedicated HMI STOP tier instead of the
+ *    general /api bucket (a non-batched `POST /api/trpc/scadaCommands.dungMay` carrying a validly signed session — rateLimitConfig
+ *    `laStopHmiCoPhienKy`; R1b-2a T3: that tier is a wide cap per session of a person, `TRAN_STOP_HMI_MOI_PHUT` = 600 / min, never
+ *    reached by hand).
+ *    R1b-2a T4 (M-1) + fix round 1 (I-1): sent alone it ALSO gets ONE request-wide server deadline (server/_core/hanStopHmi.ts,
+ *    `HAN_TONG_STOP_HMI_MS` = 2.5 s from createContext): full authentication (≤ 1.5 s), the password / license / tenant-scope middleware
+ *    reads and the handler's pre-dispatch phase all wait inside what is left; dispatch is outside it. A slow-but-alive DB ⇒ a coded refusal
+ *    `SCADA_STOP_PRECHECK_TIMEOUT` (HTTP 503, "dùng E-STOP cứng") ≤ 2.5 s after the request reaches tRPC (Express rate limiter / body read
+ *    before tRPC are outside). The client's 10 s "kết quả chưa rõ" fallback stays for a dead network. In a mixed batch no bound applies.
+ *    Its 429s (STOP tier plain JSON, or the general limiter's body) are turned into a tRPC error with `httpStatus 429` by
+ *    `fetchDungMay429` below, so the client keys its E-STOP banner on the STATUS whatever the body is.
  */
 export function isStopOnlyOp(op: { path: string }): boolean {
   return op.path === "robot.consoleStop" || op.path === "scadaCommands.dungMay";
+}
+
+/** R1b-2a T4 (ruling T3 c3) — path tRPC của STOP HMI. */
+export const DUONG_DUNG_MAY = "scadaCommands.dungMay";
+/** Mã JSON-RPC của tRPC cho TOO_MANY_REQUESTS (`TRPC_ERROR_CODES_BY_KEY.TOO_MANY_REQUESTS`). */
+export const TRPC_MA_TOO_MANY_REQUESTS = -32029;
+const THONG_BAO_429_DUNG_MAY = "Too many STOP requests — use the hard E-STOP";
+
+/** URL của một yêu cầu httpLink (KHÔNG batch) tới `scadaCommands.dungMay`. */
+export function laUrlDungMay(input: RequestInfo | URL): boolean {
+  const s = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  try {
+    return decodeURIComponent(new URL(s, "http://x").pathname).endsWith(`/${DUONG_DUNG_MAY}`);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * R1b-2a T4 (ruling T3 c3) — một 429 KHÔNG phải lỗi tRPC trên dungMay (tầng STOP: `{"error":"Too many STOP requests — use the hard E-STOP"}`;
+ * `apiLimiter`: thân khác; proxy: có thể không phải JSON) ⇒ thân lỗi tRPC + superjson `{code TOO_MANY_REQUESTS, httpStatus 429}`.
+ * Không đổi thì httpLink ra `TRPCClientError("Unable to transform response from server")` không có `data` (thân JSON lạ — còn
+ * `meta.response.status`) hoặc mất luôn `meta` (thân không phải JSON — `res.json()` ném trước khi gắn meta) ⇒ client không còn biết là 429.
+ * Thân đã là lỗi tRPC (`{error: {json: …}}`) ⇒ giữ nguyên (giữ appCode của nó).
+ */
+export async function doi429DungMayThanhLoiTrpc(res: Response): Promise<Response> {
+  let thongBao = THONG_BAO_429_DUNG_MAY;
+  try {
+    const j = (await res.clone().json()) as { error?: unknown; message?: unknown } | null;
+    if (j && typeof j.error === "object" && j.error !== null) return res;
+    if (typeof j?.error === "string" && j.error.trim()) thongBao = j.error;
+    else if (typeof j?.message === "string" && j.message.trim()) thongBao = j.message;
+  } catch {
+    /* thân không phải JSON (proxy) — dùng câu mặc định */
+  }
+  const headers = new Headers(res.headers);
+  headers.set("content-type", "application/json");
+  const shape = { message: thongBao, code: TRPC_MA_TOO_MANY_REQUESTS, data: { code: "TOO_MANY_REQUESTS", httpStatus: 429, path: DUONG_DUNG_MAY } };
+  return new Response(JSON.stringify({ error: superjson.serialize(shape) }), { status: 429, statusText: res.statusText, headers });
+}
+
+/** fetch của nhánh không-batch: 429 trên dungMay ⇒ lỗi tRPC `httpStatus 429` (mọi đường khác đi nguyên). */
+export function fetchDungMay429(goc?: typeof fetch): typeof fetch {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const res = await (goc ?? globalThis.fetch)(input, init);
+    return res.status === 429 && laUrlDungMay(input) ? doi429DungMayThanhLoiTrpc(res) : res;
+  }) as typeof fetch;
 }
 
 /** Chỉ QUERY có input > ngưỡng mới đi nhánh POST; mutation vốn đã POST, subscription không đổi. */
@@ -75,7 +129,7 @@ export function createAppTrpcLinks(opts: {
   return [
     splitLink<AppRouter>({
       condition: (op) => isLicenseOp(op) || isStopOnlyOp(op),
-      true: httpLink<AppRouter>({ ...common }),
+      true: httpLink<AppRouter>({ ...common, fetch: fetchDungMay429(opts.fetch) }),
       false: splitLink<AppRouter>({
         condition: (op) => shouldSendAsPost(op),
         true: httpBatchLink<AppRouter>({ ...common, methodOverride: "POST" }),

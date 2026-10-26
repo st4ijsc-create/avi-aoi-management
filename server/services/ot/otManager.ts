@@ -31,9 +31,9 @@ import { baoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, ty
 import { chatLuongLoiChung, chatLuongV2Bat } from "./chatLuong";
 import {
   khoangNoiLaiMs,
-  laDocTot,
   NOI_LAI_NHANH_TOI_THIEU_MS,
   SO_TICK_HONG_DE_MAT,
+  taoBatDocTot,
   taoDemTickHong,
   thoiGianOnDinhMs,
   tinhDeadlineMs,
@@ -261,11 +261,13 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
     // T12b fix round 1 — D1 sau cờ OT_CHAT_LUONG_V2_ENABLED, đọc lúc subscribe (như D3): cờ tắt ⇒ đúng hành vi trước R0.
     // R1b-1 T3 — cùng cờ, cùng lần đọc: phiên chờ tick đọc tốt đầu tiên trước khi báo `connected`.
     v2Phien = chatLuongV2Bat();
-    // R1b-1 T3 fix round 1 — đường PUSH (OPC UA monitored items) không bao giờ gọi onTick: mẫu chất lượng `good` ĐẦU TIÊN của phiên
-    // cũng là một lần đọc tốt. Bọc sink RIÊNG của phiên này (closure giữ `phien`) ⇒ cùng bảo đảm định danh phiên như đường tick.
-    const sinkPhien: OnOtSample = v2Phien
+    // R1b-1 T3 fix round 1 — đường PUSH (OPC UA monitored items) không bao giờ gọi onTick: mẫu của phiên cũng báo lần đọc tốt. Bọc sink
+    // RIÊNG của phiên này (closure giữ `phien`) ⇒ cùng bảo đảm định danh phiên như đường tick.
+    // R1b-2a T13 — mẫu "máy chủ đã trả lời" (không chỉ `good`), cùng luật với tick poll: một bộ bắt chung (taoBatDocTot) cho cả hai.
+    const bat = v2Phien ? taoBatDocTot(() => khiDocTotLegacy(entry, phien, myEpoch)) : null;
+    const sinkPhien: OnOtSample = bat
       ? (s) => {
-          if (s.quality === "good") khiDocTotLegacy(entry, phien, myEpoch);
+          bat.quaMau(s);
           return sink(s);
         }
       : sink;
@@ -273,11 +275,7 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
       adapter.tags,
       sinkPhien,
       adapter.pollIntervalMs,
-      tuyChonPollCua(
-        adapter,
-        v2Phien ? (e) => khiTickHongLegacy(entry, phien, myEpoch, e) : undefined,
-        v2Phien ? (e) => (laDocTot(e) ? khiDocTotLegacy(entry, phien, myEpoch) : undefined) : undefined,
-      ),
+      tuyChonPollCua(adapter, v2Phien ? (e) => khiTickHongLegacy(entry, phien, myEpoch, e) : undefined, bat ? bat.quaTick : undefined),
     );
   })();
   // Cờ settle gắn TRƯỚC withDeadline ⇒ khi work reject đúng hạn, cờ đã bật lúc catch chạy.
@@ -366,8 +364,8 @@ function dangChoDocTotLegacy(entry: LegacyEntry): boolean {
 }
 
 /**
- * R1b-1 T3 (legacy, cờ V2) — phiên `phien` vừa có một lần đọc tốt: tick `laDocTot` (đường poll) hoặc mẫu `good` (đường push — fix
- * round 1). Lần đầu của phiên MỚI NHẤT ⇒ ghi lại; nếu phiên đó đã là phiên hoạt động ⇒ báo `connected` (ổn định theo thoiGianOnDinhMs
+ * R1b-1 T3 (legacy, cờ V2) — phiên `phien` vừa có một lần đọc tốt: tick `laDocTot` (đường poll) hoặc mẫu "máy chủ đã trả lời"
+ * (`mauMayChuDaTraLoi`, đường push — fix round 1; R1b-2a T13 thay "chỉ good"), qua bộ bắt chung `taoBatDocTot`. Lần đầu của phiên MỚI NHẤT ⇒ ghi lại; nếu phiên đó đã là phiên hoạt động ⇒ báo `connected` (ổn định theo thoiGianOnDinhMs
  * như cũ — baoLegacy). Phiên đã bị thay (muộn) không ghi, không báo; về trước khi phiên thành hoạt động (lần đọc đầu trong subscribe)
  * chỉ được ghi — attemptLegacyStart báo sau.
  */

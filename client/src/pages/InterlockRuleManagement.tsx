@@ -617,6 +617,8 @@ interface PostureData {
   interlockRulesEnabledWithTarget: number;
   interlockCoverageDegraded: boolean;
   writesOnEngineOff: boolean;
+  /** SCADA R1b-2a T12 — luật BẬT mà không chức năng (hỏng cấu trúc / lệch lưới), trong phạm vi người xem; degraded ⇒ không phải con số */
+  interlockRulesCauHinhHong: number;
 }
 interface PostureQueryLike {
   data: PostureData | undefined;
@@ -664,7 +666,18 @@ function InterlockHeader({ canCreate, createReason, posture }: { canCreate: bool
       source: t("interlockRules.posture.coverageSource", "oversight.posture — rule đang bật, đã duyệt, chặn được và có đích"),
       pinned: true,
     },
+    // SCADA R1b-2a T12 — cạnh "Độ phủ": luật bật nhưng KHÔNG chức năng (cùng nguồn đọc với độ phủ ⇒ cùng cờ degraded).
+    {
+      id: "cauHinhHong",
+      label: t("interlockRules.posture.cauHinhHong", "Hỏng cấu hình"),
+      value: d?.interlockRulesCauHinhHong,
+      state: state === "ok" && d?.interlockCoverageDegraded ? "error" : state,
+      source: t("interlockRules.posture.cauHinhHongSource", "oversight.posture — luật đang bật nhưng không chức năng, trong phạm vi của bạn"),
+      tone: (d?.interlockRulesCauHinhHong ?? 0) > 0 ? "warning" : "default",
+      pinned: true,
+    },
   ];
+  const coLuatHong = !!d && !d.interlockCoverageDegraded && (d.interlockRulesCauHinhHong ?? 0) > 0;
   return (
     <PageHeaderCompact
       icon={<ShieldAlert />}
@@ -689,6 +702,16 @@ function InterlockHeader({ canCreate, createReason, posture }: { canCreate: bool
                   "Real device writes are ON while the interlock engine is OFF — violations will not be auto-blocked.",
                 ),
               },
+              // SCADA R1b-2a T12 — có luật bật nhưng không chức năng ⇒ mục lỗi (luôn hiện như ILK-06)
+              coLuatHong && {
+                id: "cauHinhHong",
+                kind: "error",
+                label: t("interlockRules.posture.cauHinhHongChip", "Luật hỏng cấu hình"),
+                content: t(
+                  "oversight.posture.cauHinhHongCanhBao",
+                  "Some enabled interlock rules do NOT work: the gate blocks every command aimed at them, or dispatch will refuse their protective command. Fix them on the interlock page.",
+                ),
+              },
               // U7 (doc 26 §2.1) — "Khi nào dùng" + phụ đề cũ, trong popover (không còn khối trên MAIN).
               {
                 id: "whenToUse",
@@ -702,7 +725,7 @@ function InterlockHeader({ canCreate, createReason, posture }: { canCreate: bool
               },
             ]}
           />
-          <StatusChipStrip items={items} ariaLabel={t("interlockRules.posture.ariaLabel", "Tư thế an toàn interlock")} maxVisible={3} className="shrink-0" />
+          <StatusChipStrip items={items} ariaLabel={t("interlockRules.posture.ariaLabel", "Tư thế an toàn interlock")} maxVisible={4} className="shrink-0" />
         </>
       }
       actions={

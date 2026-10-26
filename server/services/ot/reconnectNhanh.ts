@@ -5,7 +5,7 @@
  * poll khi thiết bị vừa rớt); từ lần thứ 11 trở đi quay về backoff lũy thừa như cũ (bắt đầu lại từ bước đầu, trần không đổi).
  * Bộ đếm là số lần thất bại liên tiếp của từng adapter và về 0 khi nối thành công (đã có sẵn ở supervisor/otManager).
  */
-import type { SuKienDoc } from "./otDriver";
+import type { OtSample, SuKienDoc } from "./otDriver";
 
 export const NOI_LAI_NHANH_SO_LAN = 10;
 export const NOI_LAI_NHANH_TOI_THIEU_MS = 500;
@@ -55,11 +55,25 @@ export function tinhDeadlineMs(pollIntervalMs: number, timeoutMs?: number): numb
  */
 export const SO_TICK_HONG_DE_MAT = 2;
 
-const moiTagMatLienLac = (e: SuKienDoc): boolean =>
-  e.tags.length > 0 && e.tags.every((t) => t.quality === "bad" && t.reason === "comm_lost");
+/**
+ * SCADA R1b-2a T13 — MỘT mẫu / một tag cho thấy máy chủ ĐÃ TRẢ LỜI. CHƯA trả lời = `bad` + `comm_lost` HOẶC `bad` KHÔNG lý do
+ * (fix round 1, fail-closed: driver OPC UA push phát bad trần cho item err / terminated(err) / … — sau khi rớt liên kết chúng không được
+ * báo connected). `stale`, `config_error`, `device_error`, `out_of_range`, `uncertain` (kể cả kèm comm_lost) đều là đã trả lời (K13).
+ * Mọi đường đọc mà thiết bị ĐÃ trả lời phải gắn lý do cho mẫu bad khi cờ V2 bật (chatLuong.MAU_GIA_TRI_HONG cho giá trị hỏng).
+ * ★ LUẬT (điều phối 2026-10-26): `stale` được tính là ĐÃ trả lời CHỈ vì không ai phát nó vào sink của phiên. A staleness watchdog on this
+ *   path MUST emit comm_lost, never stale — bộ canh độ tươi trên đường này PHẢI phát `comm_lost`, KHÔNG BAO GIỜ `stale`. Ghim bởi census
+ *   `staleKhongVaoPhien.census.test.ts` (bảng cho phép rỗng; chỉ phản hồi stale THẬT của thiết bị, có lý do + ngày, mới được thêm).
+ * Đây là luật tag DUY NHẤT của cả hai đường: `moiTagMatLienLac` (đường poll: laTickHong / laDocTot) và `taoBatDocTot.quaMau` (đường push).
+ */
+export function mauMayChuDaTraLoi(s: Pick<OtSample, "quality" | "reason">): boolean {
+  return !(s.quality === "bad" && (s.reason === "comm_lost" || s.reason === undefined));
+}
+
+const moiTagMatLienLac = (e: SuKienDoc): boolean => e.tags.length > 0 && e.tags.every((t) => !mauMayChuDaTraLoi(t));
 
 /**
- * Tick hỏng = quá hạn (giao dịch hoặc hạn vòng poll), lỗi comm_lost cho CẢ tick, hoặc tick "ok" mà MỌI tag bad/comm_lost.
+ * Tick hỏng = quá hạn (giao dịch hoặc hạn vòng poll), lỗi comm_lost cho CẢ tick, hoặc tick "ok" mà MỌI tag CHƯA trả lời (bad/comm_lost
+ * hoặc bad không lý do — mauMayChuDaTraLoi, R1b-2a T13 fix round 1).
  * R1b-1 T4 — `lyDo:"ingest_treo"` (lượt phát mẫu/ghi DB quá hạn) KHÔNG BAO GIỜ hỏng vì cờ timeout của nó: DB chậm không phải thiết bị mất.
  * Tick đó mang lần đọc chính (`ok:true`) ⇒ phán theo tag của lần đọc như mọi tick ok; không mang lần đọc ⇒ không hỏng.
  */
@@ -74,11 +88,42 @@ export function laTickHong(e: SuKienDoc): boolean {
  * ok:true mà mọi tag bad vì lý do khác mất liên lạc (config_error / device_error / out_of_range…) VẪN là đọc tốt: liên lạc đã thông.
  * ok:true mà MỌI tag bad/comm_lost (laTickHong) KHÔNG phải: D1 đếm nó là tick hỏng, coi nó là đọc tốt sẽ báo connected rồi lost ngay.
  * R1b-1 T4 (chốt) — lần đọc thành công mà lượt phát mẫu treo (`ok:true, lyDo:"ingest_treo"`) VẪN là đọc tốt: thiết bị đã trả lời,
- * "connected" nói về liên kết thiết bị chứ không về DB (đường push của T3 cũng đánh dấu ở mẫu good đầu, TRƯỚC khi sink ghi DB). Báo treo
+ * "connected" nói về liên kết thiết bị chứ không về DB (đường push cũng đánh dấu ở mẫu "đã trả lời" đầu — R1b-2a T13 — TRƯỚC khi sink ghi DB). Báo treo
  * không kèm lần đọc (`ok:false`) thì không.
  */
 export function laDocTot(e: SuKienDoc): boolean {
   return e.ok === true && !laTickHong(e);
+}
+
+/** R1b-2a T13 — bộ bắt "lần đọc tốt" của MỘT phiên (xem taoBatDocTot). */
+export interface BatDocTot {
+  /** Mọi tick của phiên (đường poll). */
+  quaTick: (e: SuKienDoc) => void;
+  /** Mọi mẫu của phiên (đường push — OPC UA monitored items không gọi onTick). */
+  quaMau: (s: Pick<OtSample, "quality" | "reason">) => void;
+}
+
+/**
+ * SCADA R1b-2a T13 — bắt lần đọc tốt của MỘT phiên từ cả hai nguồn, cùng nghĩa "máy chủ đã trả lời":
+ *   - tick (đường poll): `laDocTot(e)`;
+ *   - mẫu (đường push): `mauMayChuDaTraLoi(s)`, CHỈ khi phiên CHƯA thấy tick nào.
+ * Vì sao mẫu thôi quyết định khi phiên đã có tick: driver poll phát mẫu qua CÙNG sink. Sau một tick lỗi `ok:false`, vòng poll (cờ V2) phát
+ * loạt `mauXauChoMoiTag(…, reason = phanLoiLoi(err))`; reason có thể là `device_error` (lỗi không nhận ra) ⇒ mẫu "đã trả lời" trong khi
+ * laDocTot nói KHÔNG ⇒ đường poll sẽ báo connected oan. Lần đọc THÀNH CÔNG phát mẫu TRƯỚC tick của nó, và ≥ 1 mẫu đã trả lời ⇔
+ * laDocTot(tick đó) ⇒ trước tick đầu, mẫu không đổi nghĩa đường poll. Driver push không bao giờ gọi onTick ⇒ mẫu luôn quyết định.
+ * `khiDocTot` có thể bị gọi nhiều lần; người gọi tự chốt lần đầu (khiDocTotLegacy / danhDauDocTot).
+ */
+export function taoBatDocTot(khiDocTot: () => void): BatDocTot {
+  let daThayTick = false;
+  return {
+    quaTick: (e) => {
+      daThayTick = true;
+      if (laDocTot(e)) khiDocTot();
+    },
+    quaMau: (s) => {
+      if (!daThayTick && mauMayChuDaTraLoi(s)) khiDocTot();
+    },
+  };
 }
 
 /**

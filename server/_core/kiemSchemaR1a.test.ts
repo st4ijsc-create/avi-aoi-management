@@ -11,9 +11,13 @@ import {
   BANG_0431,
   CHU_KY_NHAC_MS,
   COT_DEVICE_TAGS_0431,
+  FK_0433,
+  HINH_FK_0433,
   __datTrangThaiSchemaR1a,
+  biet0433Thieu,
   khoiDongOtCoKiemSchema,
   kiemSchemaR1a,
+  lyDoDangKiemR1a,
   lyDoSchemaR1a,
   phanLoaiLoiKiem,
   trangThaiSchemaR1a,
@@ -23,12 +27,29 @@ import { nguyenNhanBoDemHong } from "./totpKhoaSai";
 
 const dialect = new PgDialect();
 
-/** information_schema giả: `bo` = đối tượng bị bỏ ("device_tags.write_step", "scada_khoa_chon", "totp_khoa_sai", "totp_khoa_sai.loai", "scada_command_attempts.ly_do"). */
-function gia(bo: string[] = []) {
+/**
+ * information_schema giả: `bo` = đối tượng bị bỏ ("device_tags.write_step", "scada_khoa_chon", "totp_khoa_sai", "totp_khoa_sai.loai", "scada_command_attempts.ly_do",
+ * R1b-2a T12: tên FK của 0433). `fkSua` = ghi đè cột của một FK (vd `{ scada_kenh_che_do_machine_fk: { confdeltype: "a" } }`).
+ * pg_constraint giả TÔN TRỌNG bộ lọc của câu thật: chỉ trả FK có tên + bảng nằm trong tham số (bảng vắng ⇒ FK của nó vắng như DB thật).
+ */
+// Polish M-3 — hàng pg_constraint ĐÚNG như DB đã áp 0433 (cột / bảng đích / cột đích như verify của apply-migration-0433.mjs).
+const FK_HANG: Record<string, { bang: string; cot: string; bang_dich: string; cot_dich: string; so_cot: number }> = {
+  scada_kenh_che_do_machine_fk: { bang: "scada_kenh_che_do", cot: "machine_id", bang_dich: "machines", cot_dich: "id", so_cot: 1 },
+  scada_kenh_che_do_adapter_fk: { bang: "scada_kenh_che_do", cot: "adapter_id", bang_dich: "device_adapters", cot_dich: "id", so_cot: 1 },
+  scada_khoa_chon_adapter_fk: { bang: "scada_khoa_chon", cot: "adapter_id", bang_dich: "device_adapters", cot_dich: "id", so_cot: 1 },
+};
+const FK_BANG: Record<string, string> = Object.fromEntries(Object.entries(FK_HANG).map(([k, v]) => [k, v.bang]));
+type SuaFk = Partial<{ confdeltype: string; convalidated: boolean; bang: string; cot: string; bang_dich: string; cot_dich: string; so_cot: number }>;
+function gia(bo: string[] = [], fkSua: Record<string, SuaFk> = {}) {
   const cauHoi: string[] = [];
   const chay = async (q: SQL) => {
-    const { sql: text } = dialect.sqlToQuery(q);
+    const { sql: text, params } = dialect.sqlToQuery(q);
     cauHoi.push(text);
+    if (/pg_constraint/.test(text)) {
+      return Object.entries(FK_BANG)
+        .filter(([ten, bang]) => !bo.includes(ten) && !bo.includes(bang) && params.includes(ten) && params.includes(bang))
+        .map(([ten]) => ({ conname: ten, confdeltype: "c", convalidated: true, ...FK_HANG[ten], ...fkSua[ten] }));
+    }
     if (/information_schema\.columns/.test(text)) {
       const ra = COT_DEVICE_TAGS_0431.map((c) => ({ table_name: "device_tags", column_name: c }));
       ra.push({ table_name: "totp_khoa_sai", column_name: "loai" } as never);
@@ -51,15 +72,74 @@ afterEach(() => {
 });
 
 describe("kiemSchemaR1a — truy vấn CHỈ ĐỌC information_schema", () => {
-  it("đủ ⇒ không thiếu gì; chỉ SELECT trên information_schema", async () => {
+  it("đủ ⇒ không thiếu gì; chỉ SELECT trên information_schema (+ pg_constraint cho FK 0433, T12)", async () => {
     const g = gia();
-    expect(await kiemSchemaR1a(g.chay)).toEqual({ thieu0431: [], thieu0432: [], thieu0433: [], thieu0434: [] }); // I-C: + 0434
-    expect(g.cauHoi).toHaveLength(2);
+    expect(await kiemSchemaR1a(g.chay)).toEqual({ thieu0431: [], thieu0432: [], thieu0433: [], thieu0434: [], thieu0433Fk: [] }); // I-C: + 0434; T12: + FK
+    expect(g.cauHoi).toHaveLength(3);
     for (const c of g.cauHoi) {
       expect(c.trim()).toMatch(/^SELECT /);
-      expect(c).toMatch(/information_schema\./);
+      expect(c).toMatch(/information_schema\.|pg_constraint/);
       expect(c).not.toMatch(/\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP)\b/i);
     }
+    // cùng hình verify của apply-migration-0433.mjs: conname · confdeltype · convalidated
+    expect(g.cauHoi[2]).toMatch(/c\.conname, c\.confdeltype, c\.convalidated/);
+    expect(g.cauHoi[2]).not.toMatch(/::regclass/); // bảng vắng không được làm cả lần kiểm ném
+  });
+
+  it("★ R1b-2a T12 (kiem-dinh M3) — 2/3 FK của 0433 ⇒ thieu0433Fk nêu đúng FK vắng; lyDoSchemaR1a có '0433' (MỘT lần); biet0433Thieu false (FK không làm hỏng INSERT)", async () => {
+    expect(FK_0433).toEqual(["scada_kenh_che_do_machine_fk", "scada_kenh_che_do_adapter_fk", "scada_khoa_chon_adapter_fk"]);
+    const r = await kiemSchemaR1a(gia(["scada_khoa_chon_adapter_fk"]).chay);
+    expect(r).toEqual({ thieu0431: [], thieu0432: [], thieu0433: [], thieu0434: [], thieu0433Fk: ["scada_khoa_chon_adapter_fk"] });
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", ...r });
+    const ly = lyDoSchemaR1a();
+    expect(ly).toMatchObject({ ok: false, trangThai: "thieu", thieuMigration: ["0433"] });
+    expect(ly!.lyDo).toContain("scada_khoa_chon_adapter_fk");
+    expect(biet0433Thieu()).toBe(false);
+  });
+
+  it("★ T12 — FK có mà KHÔNG phải ON DELETE CASCADE (confdeltype 'a') ⇒ thiếu; chưa VALIDATE ⇒ thiếu; bảng vắng (thiếu 0431) ⇒ FK không đếm hai lần", async () => {
+    expect((await kiemSchemaR1a(gia([], { scada_kenh_che_do_machine_fk: { confdeltype: "a" } }).chay)).thieu0433Fk).toEqual(["scada_kenh_che_do_machine_fk"]);
+    expect((await kiemSchemaR1a(gia([], { scada_kenh_che_do_adapter_fk: { convalidated: false } }).chay)).thieu0433Fk).toEqual(["scada_kenh_che_do_adapter_fk"]);
+    const vang = await kiemSchemaR1a(gia(["scada_khoa_chon"]).chay);
+    expect(vang.thieu0431).toEqual(["scada_khoa_chon"]);
+    expect(vang.thieu0433Fk).toEqual([]);
+  });
+
+  it("★ Polish M-3 — FK đúng tên + CASCADE nhưng trỏ SAI bảng đích / SAI cột đích / SAI cột nguồn / nhiều cột ⇒ thiếu (như verify của script 0433)", async () => {
+    expect(HINH_FK_0433.scada_kenh_che_do_machine_fk).toEqual({ bang: "scada_kenh_che_do", cot: "machine_id", bangDich: "machines", cotDich: "id" });
+    const thieu = async (s: SuaFk) => (await kiemSchemaR1a(gia([], { scada_kenh_che_do_machine_fk: s }).chay)).thieu0433Fk;
+    expect(await thieu({ bang_dich: "device_adapters" })).toEqual(["scada_kenh_che_do_machine_fk"]);
+    expect(await thieu({ cot_dich: "code" })).toEqual(["scada_kenh_che_do_machine_fk"]);
+    expect(await thieu({ cot: "adapter_id" })).toEqual(["scada_kenh_che_do_machine_fk"]);
+    expect(await thieu({ so_cot: 2 })).toEqual(["scada_kenh_che_do_machine_fk"]);
+    expect(await thieu({})).toEqual([]); // đối chứng dương
+    // câu thật đọc các cột ấy
+    const g = gia();
+    await kiemSchemaR1a(g.chay);
+    expect(g.cauHoi[2]).toMatch(/c\.confrelid/);
+    expect(g.cauHoi[2]).toMatch(/c\.confkey\[1\]/);
+    expect(g.cauHoi[2]).toMatch(/c\.conkey\[1\]/);
+  });
+
+  it("★ T12 (ruling K12) — thiếu CẢ cột ly_do lẫn FK ⇒ '0433' xuất hiện ĐÚNG MỘT lần, lý do nêu cả hai", () => {
+    __datTrangThaiSchemaR1a({
+      kieu: "da_kiem",
+      luc: "x",
+      thieu0431: [],
+      thieu0432: [],
+      thieu0433: ["scada_command_attempts.ly_do"],
+      thieu0434: [],
+      thieu0433Fk: ["scada_kenh_che_do_machine_fk"],
+    });
+    const ly = lyDoSchemaR1a()!;
+    expect(ly.thieuMigration).toEqual(["0433"]);
+    expect(ly.lyDo).toContain("scada_command_attempts.ly_do");
+    expect(ly.lyDo).toContain("scada_kenh_che_do_machine_fk");
+  });
+
+  it("T12 — trạng thái cũ VẮNG thieu0433Fk (bản trước / test) ⇒ đọc phòng thủ, không ném", () => {
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: [], thieu0432: [], thieu0433: [], thieu0434: [] } as never);
+    expect(lyDoSchemaR1a()).toBeNull();
   });
   it("thiếu cột / bảng 0431 ⇒ liệt kê đích danh", async () => {
     const r = await kiemSchemaR1a(gia(["device_tags.actuation_level", "scada_khoa_chon"]).chay);
@@ -69,7 +149,7 @@ describe("kiemSchemaR1a — truy vấn CHỈ ĐỌC information_schema", () => {
   });
   it("★ R1b-1 T7 — 0433: bảng có mà thiếu cột ly_do ⇒ scada_command_attempts.ly_do; bảng vắng (thiếu 0431) ⇒ KHÔNG đếm hai lần", async () => {
     const r = await kiemSchemaR1a(gia(["scada_command_attempts.ly_do"]).chay);
-    expect(r).toEqual({ thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [] }); // I-C: + 0434
+    expect(r).toEqual({ thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [], thieu0433Fk: [] }); // I-C: + 0434; T12: + FK
     const vang = await kiemSchemaR1a(gia(["scada_command_attempts"]).chay);
     expect(vang.thieu0431).toEqual(["scada_command_attempts"]);
     expect(vang.thieu0433).toEqual([]);
@@ -227,6 +307,47 @@ describe("khoiDongOtCoKiemSchema — kiểm TRƯỚC startOt", () => {
     nhac!();
     await vi.waitFor(() => expect(boNhac).toHaveBeenCalledTimes(1));
     expect(lyDoSchemaR1a()).toBeNull();
+  });
+
+  it("★ R1b-2a T12 (kiem-dinh M3) — THIẾU FK 0433 ⇒ startOt VẪN chạy; khối lỗi gọi tên apply-migration-0433 + nhắc mỗi 5 phút; có FK ⇒ thôi nhắc; /health có '0433'", async () => {
+    let bo = ["scada_kenh_che_do_adapter_fk"];
+    const chay = async (q: SQL) => gia(bo).chay(q);
+    let nhac: (() => void) | null = null;
+    let msNhac = 0;
+    const boNhac = vi.fn();
+    const startOt = vi.fn(async () => undefined);
+    const logLoi = vi.fn();
+    const kq = await khoiDongOtCoKiemSchema({
+      chay,
+      startOt,
+      logLoi,
+      datNhac: (fn, ms) => {
+        nhac = fn;
+        msNhac = ms;
+        return { unref: () => undefined };
+      },
+      boNhac,
+    });
+    expect(kq).toBe("da_start");
+    expect(startOt).toHaveBeenCalledTimes(1);
+    expect(msNhac).toBe(CHU_KY_NHAC_MS);
+    expect(logLoi).toHaveBeenCalledTimes(1);
+    const log = String(logLoi.mock.calls[0][0]);
+    expect(log).toContain("THIẾU MIGRATION 0433");
+    expect(log).toContain("scada_kenh_che_do_adapter_fk");
+    expect(log).toContain("scripts/apply-migration-0433.mjs");
+    expect(lyDoSchemaR1a()).toMatchObject({ ok: false, trangThai: "thieu", thieuMigration: ["0433"] });
+    expect(biet0433Thieu()).toBe(false); // canh request/confirm KHÔNG chặn vì FK
+
+    nhac!();
+    await vi.waitFor(() => expect(logLoi).toHaveBeenCalledTimes(2));
+    expect(String(logLoi.mock.calls[1][0])).toContain("scada_kenh_che_do_adapter_fk");
+
+    bo = [];
+    nhac!();
+    await vi.waitFor(() => expect(boNhac).toHaveBeenCalledTimes(1));
+    expect(lyDoSchemaR1a()).toBeNull();
+    expect(trangThaiSchemaR1a()).toMatchObject({ kieu: "da_kiem", thieu0433Fk: [] });
   });
 
   it("không kiểm được (truy vấn ném) ⇒ cảnh báo, startOt vẫn chạy như trước, /health không degraded vì schema", async () => {
@@ -403,12 +524,33 @@ describe("/health (route THẬT — `/api/health` là SPA catch-all) mang lý do
       srv.close();
     }
   }
-  it("chưa kiểm / đủ ⇒ status ok, không có schemaR1a", async () => {
-    expect((await goiHealth()).body).toMatchObject({ status: "ok" });
-    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: [], thieu0432: [], thieu0433: [] });
+  it("★ R1b-2a T12 — CHƯA kiểm ⇒ HTTP 200, status ok, schemaR1a {dang_kiem, null, chua_xong}; đã kiểm đủ ⇒ VẮNG khoá", async () => {
+    __datTrangThaiSchemaR1a({ kieu: "chua_kiem" });
+    const dang = await goiHealth();
+    expect(dang.status).toBe(200);
+    expect(dang.body.status).toBe("ok"); // chưa biết ≠ thiếu
+    expect(dang.body.schemaR1a).toEqual({ ok: false, trangThai: "dang_kiem", thieuMigration: null, lyDo: "chua_xong" });
+    expect(lyDoDangKiemR1a()).toEqual({ ok: false, trangThai: "dang_kiem", thieuMigration: null, lyDo: "chua_xong" });
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: [], thieu0432: [], thieu0433: [], thieu0434: [], thieu0433Fk: [] });
+    expect(lyDoDangKiemR1a()).toBeNull();
     const r = await goiHealth();
     expect(r.body.status).toBe("ok");
     expect(r.body.schemaR1a).toBeUndefined();
+  });
+  it("★ T12 — ba nhánh (thiếu · không kiểm được · đang kiểm) CÙNG một tập khoá; thiếu FK 0433 ⇒ degraded", async () => {
+    const hinh = (v: unknown) => Object.keys(v as object).sort();
+    __datTrangThaiSchemaR1a({ kieu: "chua_kiem" });
+    const dang = (await goiHealth()).body;
+    __datTrangThaiSchemaR1a({ kieu: "khong_kiem_duoc", loi: "x", loai: "khac" });
+    const khongBiet = (await goiHealth()).body;
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: [], thieu0432: [], thieu0433: [], thieu0434: [], thieu0433Fk: ["scada_khoa_chon_adapter_fk"] });
+    const thieu = (await goiHealth()).body;
+    expect(hinh(dang.schemaR1a)).toEqual(["lyDo", "ok", "thieuMigration", "trangThai"]);
+    expect(hinh(khongBiet.schemaR1a)).toEqual(hinh(dang.schemaR1a));
+    expect(hinh(thieu.schemaR1a)).toEqual(hinh(dang.schemaR1a));
+    expect(thieu.status).toBe("degraded");
+    expect(thieu.schemaR1a).toMatchObject({ trangThai: "thieu", thieuMigration: ["0433"] });
+    expect(Object.keys(dang).filter((k) => k.startsWith("schemaR1a"))).toEqual(["schemaR1a"]);
   });
   it("thiếu 0431 ⇒ 200 (liveness — khởi động lại không chữa được migration) nhưng status degraded + schemaR1a nói rõ", async () => {
     __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: ["device_tags.write_min"], thieu0432: ["totp_khoa_sai"], thieu0433: [] });
@@ -456,5 +598,22 @@ describe("TOTP_KHONG_KIEM_DUOC mang nguyên nhân 'thiếu migration 0432' trong
     const c = nguyenNhanBoDemHong(new Error("connection terminated"));
     expect(c).toContain("connection terminated");
     expect(c).not.toContain("0432");
+  });
+});
+
+describe("R1b-2a T9 — biet0433Thieu (canh đầu request / confirm)", () => {
+  afterEach(() => __datTrangThaiSchemaR1a({ kieu: "chua_kiem" }));
+  const daKiem = (thieu0433: string[]) =>
+    ({ kieu: "da_kiem", luc: "2026-10-26T00:00:00Z", thieu0431: [], thieu0432: [], thieu0433, thieu0434: [] }) as const;
+
+  it("chỉ true khi ĐÃ kiểm và thiếu cột ly_do; chưa kiểm / không kiểm được / đủ ⇒ false (không biết ≠ thiếu)", () => {
+    __datTrangThaiSchemaR1a({ kieu: "chua_kiem" });
+    expect(biet0433Thieu()).toBe(false);
+    __datTrangThaiSchemaR1a({ kieu: "khong_kiem_duoc", loi: "x", loai: "khac" });
+    expect(biet0433Thieu()).toBe(false);
+    __datTrangThaiSchemaR1a(daKiem([]));
+    expect(biet0433Thieu()).toBe(false);
+    __datTrangThaiSchemaR1a(daKiem(["scada_command_attempts.ly_do"]));
+    expect(biet0433Thieu()).toBe(true);
   });
 });

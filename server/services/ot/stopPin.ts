@@ -18,7 +18,8 @@
  *   • `datStopPin` — đặt/gỡ ghim trong MỘT transaction: tag khoá `FOR UPDATE`, audit `control_audit_log`
  *     + `audit_logs` bằng CHÍNH `tx` (audit hỏng ⇒ ghim không đổi). SCADA R1a Task 12: ĐẶT một giá trị không
  *     ghi được trên kênh theo khai báo kênh đang có (ngoài dải / lệch bước / loại kênh chỉ đọc — `kiemNhatQuanKenh`)
- *     ⇒ `StopPinLoi("ngoai_dai")` (router: STOP_PIN_NGOAI_DAI). Khai báo NULL ⇒ không kiểm (hành vi cũ). CỐ Ý không
+ *     ⇒ `StopPinLoi("ngoai_dai")` (router: STOP_PIN_NGOAI_DAI). R1b-2a T2 (m4): khai báo NULL ⇒ lưới thô của tag int /
+ *     số hữu hạn của tag float (`kiemLenhInterlockTrenKenh` — trước: không kiểm; int scale 10 ghim 25 ⇒ OFF_STEP, `buoc` 10, `goiY` 30). CỐ Ý không
  *     đặt luật này vào `validateStopValue`: hàm đó cũng chạy ở `dispatch()` (ghim DỪNG được miễn dải lúc chạy —
  *     điều phối mục 4); nhất quán dải ↔ ghim là việc của LÚC CẤU HÌNH (đây + `scadaKenh.capNhat`).
  *   • `lyDoGoStopPinKhiSuaTag` / `ghiAuditGoStopPinTx` — sửa tag thành không-ghi-được / tắt / đổi định
@@ -40,7 +41,7 @@ import { currentSignatureId, lockAdapterCommissioningTx } from "./commissioningS
 import { adapterTargetCanonical, type AdapterTarget } from "./adapterTarget";
 import { lyDoGoStopPinKhiSuaTag } from "@shared/stopPinTagRule";
 // SCADA R1a Task 12 — ghim phải ghi được trên kênh theo khai báo kênh HIỆN TẠI (loại / dải / bước), cùng luật cổng kênh của dispatch()
-import { kiemNhatQuanKenh } from "../scada/nhatQuanKenh";
+import { kiemLenhInterlockTrenKenh } from "../scada/nhatQuanKenh";
 // doc 81 Đợt 12 final fix wave residual (R-12-f item 1) — the cached "adapter has any pin" answer: seeded here, invalidated on a change
 import { invalidateStopPinPresence, rememberStopPinPresence, stopPinChanged, stopPinReadToken } from "./stopPinPresence";
 
@@ -413,7 +414,12 @@ async function datStopPinTx(
       .select({ id: deviceAdapters.id, machineId: deviceAdapters.machineId })
       .from(deviceAdapters)
       .where(eq(deviceAdapters.id, input.adapterId))
-      .limit(1);
+      .limit(1)
+      // R1b-2a T5 fix round 1 (review I-1, kiem-dinh M5) — ADAPTER FOR SHARE (thứ tự khoá dự án: adapter → tag → khoá commissioning): phạm vi
+      // `mayOk` đọc trên hàng ĐÃ KHOÁ. Trước: đọc không khoá ⇒ một `deviceAdapter.update` đổi máy sang nhà máy khác commit sau lượt đọc này
+      // (trong khi ta chờ khoá tag) ⇒ ghim được đặt lên adapter đã ngoài phạm vi. Nay: đổi máy giữ FOR UPDATE ⇒ ta chờ rồi đọc máy MỚI ⇒
+      // NOT_FOUND; ta giữ FOR SHARE ⇒ đổi máy chờ ta commit.
+      .for("share");
     if (!adapter || !mayOk(adapter.machineId)) throw new StopPinLoi("adapter_not_found", { adapterId: input.adapterId });
 
     const [tag] = await tx
@@ -435,11 +441,17 @@ async function datStopPinTx(
       const v = validateStopValue(String(tag.dataType), input.stopValue);
       if (!v.ok) throw new StopPinLoi("type_mismatch", { tagKey: tag.tagKey, dataType: tag.dataType, detail: v.reason });
       // SCADA R1a Task 12 — trên khai báo kênh đọc dưới CÙNG khoá FOR UPDATE (scadaKenh.capNhat khoá cùng hàng ⇒ không lọt giữa hai bên).
-      const nq = kiemNhatQuanKenh(tag, v.value);
+      // R1b-2a T2 (m4) — `kiemLenhInterlockTrenKenh`: đã khai ⇒ `kiemNhatQuanKenh` như trước; CHƯA khai ⇒ lưới thô của tag int (scale 10: 25 ⇒
+      // OFF_STEP buoc 10 goiY 30). Chỉ từ chối CẤU HÌNH (đặt ghim) — không bao giờ một lệnh STOP (dispatch vẫn miễn cả lệnh khớp ghim).
+      const nq = kiemLenhInterlockTrenKenh(tag, v.value);
       if (!nq.ok) {
         throw new StopPinLoi("ngoai_dai", {
           tagKey: tag.tagKey, lyDo: nq.ma, detail: nq.chiTiet, stopValue: v.value,
           writeMin: tag.writeMin, writeMax: tag.writeMax, writeStep: tag.writeStep,
+          // lưới vừa trượt (chỉ OFF_STEP): writeStep, hoặc |scale| / offset của lưới thô; goiY = điểm hợp lệ gần nhất (vắng khi không có)
+          ...(nq.luoi?.buoc !== undefined ? { buoc: nq.luoi.buoc } : {}),
+          ...(nq.luoi?.goiY !== undefined ? { goiY: nq.luoi.goiY } : {}),
+          ...(nq.luoi?.gocLuoi !== undefined ? { gocLuoi: nq.luoi.gocLuoi } : {}),
         });
       }
       sau = v.value;
@@ -556,7 +568,8 @@ export async function goMoiStopPinCuaAdapterTx(
   tx: Tx,
   e: { adapterId: number; nguon: Exclude<NguonGo, "manual">; nguoiSua: NguoiSuaStopPin; thaoTac: string },
 ): Promise<number> {
-  const tags = await tx.select().from(deviceTags).where(eq(deviceTags.adapterId, e.adapterId)).for("update");
+  // R1b-2a T5 (kiem-dinh M7, phán quyết K8) — khoá nhiều tag ORDER BY id như mọi đường khác (troLaiKenh.ts: thứ tự khoá dự án)
+  const tags = await tx.select().from(deviceTags).where(eq(deviceTags.adapterId, e.adapterId)).orderBy(deviceTags.id).for("update");
   let n = 0;
   for (const t of tags) {
     if (t.stopValue === null || t.stopValue === undefined) continue;

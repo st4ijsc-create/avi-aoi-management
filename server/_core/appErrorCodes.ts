@@ -194,6 +194,11 @@ export const APP_ERROR_CODES = [
                                    // kỹ sư ghim ở /scada/config/channels, dừng bằng E-STOP cứng.
   "SCADA_STOP_PINS_HIGH_LEVEL",    // params: { ma, soTag, tagKeys } — kiem-dinh R1b-1 H1 (b): máy CÓ ghim nhưng MỌI ghim nằm trên tag mức tác
                                    // động > 1 (GHIM_MUC_CAO) ⇒ STOP HMI không gửi gì; khai mức 1 cho tag dừng, dừng bằng E-STOP cứng.
+  "SCADA_STOP_PRECHECK_TIMEOUT",   // params: { ma, pha } — R1b-2a T4 (M-1): STOP HMI quá hạn TRƯỚC khi gửi (ma STOP_QUA_HAN; hạn tổng 2,5 s từ
+                                   // createContext — pha "xac_thuc" = xác thực / cổng đổi mật khẩu, "truoc_gui" = giấy phép / phạm vi tenant /
+                                   // phạm vi / vai / ghim / dòng chờ) ⇒ STOP CHƯA gửi; dùng E-STOP cứng. tRPC SERVICE_UNAVAILABLE (503).
+  "SCADA_SCHEMA_MISSING",          // params: { ma, migration } — R1b-2a T9: thiếu migration 0433 (cột ly_do) ⇒ request / confirm từ chối (THIEU_MIGRATION);
+                                   // KHÔNG BAO GIỜ ở dungMay. Quản trị áp migration rồi khởi động lại.
   // ── kiem-dinh P1-2 (2026-10-24) — đổi cấu hình kênh / chế độ M12 (scadaKenh.capNhat, cheDo.dat, cheDo.go) đòi TOTP TƯƠI mỗi lượt.
   "SCADA_CONFIG_TOTP_REQUIRED",    // params: { ma } — thiếu mã TOTP (TOTP_CAN); nhập mã 6 số rồi lưu lại.
   "SCADA_CONFIG_TOTP_INVALID",     // params: { ma } — mã TOTP sai / sai định dạng / đã dùng (TOTP_SAI); chờ mã mới rồi lưu lại.
@@ -201,8 +206,10 @@ export const APP_ERROR_CODES = [
   // ── SCADA R1a Task 12 (M12, điều phối mục 4 + review T3 M-3) — NHẤT QUÁN lúc cấu hình giữa khai báo kênh (loại / dải / bước) và giá trị
   // đã cam kết sẽ ghi xuống kênh đó (server/services/scada/nhatQuanKenh.ts). `ma` = chính mã; `lyDo` = kết cục của cổng kênh
   // (CHANNEL_READ_ONLY | TYPE_MISMATCH | OUT_OF_RANGE | OFF_STEP); min/max/step "—" khi không khai cận đó.
-  "STOP_PIN_NGOAI_DAI",            // params: { ma, lyDo, tagKey, stopValue, min, max, step } — giá trị DỪNG ghim không ghi được trên kênh theo
+  "STOP_PIN_NGOAI_DAI",            // params: { ma, lyDo, tagKey, stopValue, min, max, step, goiY } — giá trị DỪNG ghim không ghi được trên kênh theo
                                    // khai báo (khai dải/bước/loại kênh khi đã ghim, hoặc ghim ngoài dải đang khai). Gỡ / đổi ghim hoặc khai lại.
+                                   // R1b-2a T2 (m4, K17): cả ghim lệch lưới thô trên tag int CHƯA khai; step = lưới vừa trượt (write_step hoặc |scale|),
+                                   // goiY = giá trị hợp lệ gần nhất ("—" khi không có) — MỌI nơi phát qua nhatQuanKenh.thamSoNgoaiDaiStopPin.
   "INTERLOCK_NGOAI_DAI",           // params: { ma, lyDo, tagKey, min, max, step, goc, goiY, ruleId? } — commandValue của luật interlock (đang bật, khi
                                    // khai kênh; hoặc luật đang tạo/sửa/duyệt/bật) không ghi được trên kênh đích ⇒ hành động bảo vệ sẽ bị từ chối.
                                    // R1b-1 T9: cả khi deviceAdapter.tags.update / mappingAsCode.applyImport đổi dataType/writable/scale/offset của tag đích.
@@ -217,9 +224,14 @@ export const APP_ERROR_CODES = [
                                    // dich_tat | adapter_dich_tat | nguon_tat). Nguồn không tag thiết bị nào khai ⇒ cho bật (đường DB, fix round 1 I-1).
   "INTERLOCK_NGUON_MO_HO",         // params: { ma, lyDo: "nguon_mo_ho", tagKey, ruleId, soAdapter } — R1b-1 T10b fix round 1 (M-2): interlock.enable luật
                                    // telemetry_tag mà >1 adapter bật của máy cùng mang tag nguồn ⇒ cổng mo_ho mãi. Bỏ trùng trước.
-  "STOP_PIN_GO_TRUOC",             // params: { ma, tagKey, stopValue } — fix round 1 (phán quyết T9 b): tag ĐÃ KHAI đang ghim DỪNG mà lượt này đổi định
+  "STOP_PIN_GO_TRUOC",             // params: { ma, tagKey, stopValue, tagId? } — fix round 1 (phán quyết T9 b): tag ĐÃ KHAI đang ghim DỪNG mà lượt này đổi định
                                    // nghĩa dây (address/scale/offset/dataType/writable/adapterId), tắt hoặc xoá tag ⇒ gỡ ghim trước (thao tác riêng có lý do).
+                                   // R1b-2a T6 (điều phối DUYỆT): cả khi scadaKenh.capNhat / khaiHangLoat nâng mức hiệu lực của tag đang ghim từ ≤ 1 lên
+                                   // > 1 (hoặc bỏ khai ⇒ 5) — STOP HMI chỉ gửi ghim mức ≤ 1 ⇒ tag sẽ lặng lẽ rơi khỏi STOP. `tagId` khi bên gọi biết (K10).
   "QUA_NHIEU_KENH_DA_KHAI",        // params: { soTag, toiDa } — một lô import trỏ lại quá `toiDa` (200) tag đã khai kênh; chia nhỏ file.
+                                   // R1b-2a T6: cả lô scadaKenh.khaiHangLoat quá `toiDa` tag (kiểm TRƯỚC mọi DB / mã).
+                                   // (R1b-2a T6) INVALID_VALUE / FIELD_REQUIRED / STOP_PIN_NGOAI_DAI / INTERLOCK_NGOAI_DAI của khai cột kênh
+                                   // (`services/scada/khaiKenh.ts`) mang thêm `tagId` — lô nêu đúng tag hỏng.
   // ── SCADA R1a Task 16 — BỘ ĐẾM TOTP SAI theo người dùng (server/_core/totpKhoaSai.ts, gọi từ verifyTotpOnce ⇒ MỌI bên gọi TOTP) ──
   "TOTP_TAM_KHOA",                 // params: { remainingMinutes } (+ { ma, level } ở SCADA/copilot) — 5 lần sai / 5 phút ⇒ TOTP khoá 5 phút.
                                    // ⚠ KHÔNG BAO GIỜ mang số lần sai còn lại (điều phối 2026-10-24). KHÁC ACCOUNT_LOCKED (khoá mật khẩu).

@@ -6,6 +6,8 @@
  *   danhSach({adapterId})                                   — kênh của một adapter: loại kênh (hiệu lực + đã khai), hiển thị, dải/bước,
  *                                                             mức tác động (đã khai + hiệu lực, NULL ⇒ 5), có phải kênh chế độ không.
  *   capNhat({tagId, patch, lyDo})                           — khai / sửa các cột kênh (mig 0431) của MỘT tag.
+ *   khaiHangLoat({adapterId, items, lyDo, totpCode})        — (R1b-2a T6) ≤ 200 tag của MỘT adapter, MỘT mã, tất-cả-hoặc-không; cùng hàm kiểm
+ *                                                             `services/scada/khaiKenh.kiemPatchKenh` với capNhat.
  *   cheDo.danhSach()                                        — máy trong phạm vi (có adapter hoặc đã khai kênh chế độ) + kênh chế độ +
  *                                                             `cheDoMay` hiện tại + `canhBaoNguon` + (R1b-1 Task 2) `coGhimStop` /
  *                                                             `soAdapterGhimStop` (adapter BẬT mang ≥ 1 ghim DỪNG hợp lệ) + `khaNangDung`
@@ -20,13 +22,15 @@
  *   (dev hiện tại) và cache 10 phút theo phiên; `kiemXacThucTheoMuc` mức 5 KHÔNG đọc cờ env nào, không đọc cache, mã dùng một lần, dùng
  *   chung khoá sai T16 (`TOTP_TAM_KHOA`). Kiểm ĐẶT CUỐI — ngay trước lượt ghi, sau phạm vi / kiểm hợp lệ / nhất quán — để một lỗi kiểm hợp
  *   lệ không tiêu mã (cùng nguyên tắc R1a final M-3). Lượt không đổi gì (`changed:false`, `daGo:false`) không ghi ⇒ không đòi mã.
- *   Ba thủ tục thuộc nhóm giới hạn "2fa" (trpcGioiHanThuTuc.ts) — việc cấu hình hiếm, bóp tần suất chấp nhận được.
+ *   Ba thủ tục thuộc nhóm giới hạn "2fa" (trpcGioiHanThuTuc.ts) — việc cấu hình hiếm, bóp tần suất chấp nhận được. R1b-2a T6: `khaiHangLoat`
+ *   (MỘT mã cho ≤ 200 tag) cũng thuộc nhóm — một lô thay cho hàng trăm lượt capNhat, nên càng ít lượt hơn.
  * PHẠM VI: MỌI thủ tục kiểm lại ở máy chủ (`idsTrongPhamVi("machine", phamViCua(ctx), {strict:true})`); adapter không gắn máy chỉ với
  *   phạm vi toàn quyền; "không tồn tại" và "ngoài phạm vi" trả CÙNG một NOT_FOUND.
  * AUDIT: mỗi mutation có thay đổi ghi `recordAuditEvent` bằng CHÍNH `tx` của thay đổi (before / after / lyDo) — lỗi ⇒ cả hai rollback.
  *   Không đổi gì ⇒ không ghi, không audit.
  *
- * NHẤT QUÁN LÚC CẤU HÌNH (`server/services/scada/nhatQuanKenh.ts`) — khi patch chạm loại kênh / dải / bước:
+ * NHẤT QUÁN LÚC CẤU HÌNH (`server/services/scada/nhatQuanKenh.ts`, gọi qua `khaiKenh.kiemPatchKenh`) — khi patch chạm loại kênh / dải / bước
+ *   (và R1b-2a T6: nâng mức hiệu lực của tag ĐANG GHIM DỪNG qua 1 ⇒ `STOP_PIN_GO_TRUOC` — tag sẽ lặng lẽ rơi khỏi STOP HMI):
  *   • giá trị DỪNG đang ghim của tag phải còn ghi được trên khai báo mới ⇒ không thì `STOP_PIN_NGOAI_DAI` (điều phối mục 4: đổi lấy việc
  *     DỪNG ghim được miễn dải trong `dispatch()`); chiều ghim ⇒ `stopPin.datStopPin`.
  *   • `commandValue` của mọi luật interlock ĐANG BẬT nhắm tag này phải còn ghi được ⇒ không thì `INTERLOCK_NGOAI_DAI` (review T3 M-3);
@@ -48,13 +52,16 @@ import { idsTrongPhamVi } from "../db/hierarchy";
 import { phamViCua } from "./_phamViNguoiXem";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { isEdgeControlSchemaMissing } from "../services/edge/edgeControlSchema";
-import { kiemGiaTriGhi, laKenhGhi, loaiKenh, mucTacDongKenh, type LoaiKenh } from "../services/scada/kenhScada";
+import { randomUUID } from "node:crypto";
+import { kiemGiaTriGhi, loaiKenh, mucTacDongKenh, type LoaiKenh } from "../services/scada/kenhScada";
 import { cheDoMay, nguongTuoiCheDoMs, TUOI_MAU_CHE_DO_TOI_DA_MS, type CheDo } from "../services/scada/cheDoMay";
-import { khoaLuatNhamTagTx, kiemNhatQuanKenh, soHienThi, thamSoNgoaiDaiInterlock, viPhamInterlock, type KenhNhatQuan } from "../services/scada/nhatQuanKenh";
-import { khoaAdapterTx } from "../services/scada/troLaiKenh";
+import { khoaLuatNhamTagTx } from "../services/scada/nhatQuanKenh";
+import { khoaAdapterTx, khoaLuatNhamAdapterTx, loiQuaNhieuKenhDaKhai, luatCuaTag, TRAN_KENH_DA_KHAI_MOT_LO } from "../services/scada/troLaiKenh";
+// R1b-2a T6 — cột kênh + thân kiểm của capNhat rút sang services/scada/khaiKenh.ts (MỘT hàm cho capNhat và khaiHangLoat)
+import { kiemPatchKenh, patchKenhInput, patchKhaiKenh, type KhaiKenh } from "../services/scada/khaiKenh";
+import { kiemPhamViDuoiKhoa } from "./_adapterPhamVi";
 import { tagDeadbandEnabled } from "../services/ot/otManager";
 import { TAG_DUNG_MAC_DINH } from "../services/ot/tagLenhMacDinh";
-import { validateStopValue } from "../services/ot/stopPin";
 import { khaoSatKhaNangDungNhieu, type KhaNangDungMay } from "../services/scada/khaNangDung";
 
 /**
@@ -95,46 +102,12 @@ function nhinThay(machineId: number | null, idsMay: number[] | null): boolean {
 
 const idsMayCua = (ctx: Parameters<typeof phamViCua>[0]) => idsTrongPhamVi("machine", phamViCua(ctx), { strict: true });
 
-/** Cột kênh (mig 0431) — before/after của audit và kết quả trả về. */
-const COT_KENH = ["channelKind", "displayName", "displayFormat", "writeMin", "writeMax", "writeStep", "actuationLevel"] as const;
-type CotKenh = (typeof COT_KENH)[number];
-type KhaiKenh = Pick<DeviceTag, CotKenh>;
-/** Cột mà cổng kênh của `dispatch()` đọc (đổi một trong số này ⇒ kiểm nhất quán với ghim DỪNG + luật interlock). */
-const COT_CONG_KENH: ReadonlySet<CotKenh> = new Set(["channelKind", "writeMin", "writeMax", "writeStep"]);
-
-function khaiCua(t: KhaiKenh): KhaiKenh {
-  return {
-    channelKind: t.channelKind ?? null,
-    displayName: t.displayName ?? null,
-    displayFormat: t.displayFormat ?? null,
-    writeMin: t.writeMin ?? null,
-    writeMax: t.writeMax ?? null,
-    writeStep: t.writeStep ?? null,
-    actuationLevel: t.actuationLevel ?? null,
-  };
-}
-
 const lyDoInput = z.string().trim().min(5).max(300);
-const loaiKenhInput = z.enum(["input", "input_output", "calculated", "calculated_output", "output"]);
-const chuoiHienThi = (max: number) =>
-  z
-    .string()
-    .trim()
-    .max(max)
-    .nullable()
-    .optional()
-    .transform((v) => (v === "" ? null : v));
-const patchInput = z
-  .object({
-    channelKind: loaiKenhInput.nullable().optional(),
-    displayName: chuoiHienThi(128),
-    displayFormat: chuoiHienThi(64),
-    writeMin: z.number().finite().nullable().optional(),
-    writeMax: z.number().finite().nullable().optional(),
-    writeStep: z.number().finite().positive().nullable().optional(),
-    actuationLevel: z.union([z.literal(1), z.literal(3), z.literal(4), z.literal(5)]).nullable().optional(),
-  })
-  .strict();
+/**
+ * R1b-2a T6 — trần số MỤC của input `khaiHangLoat` (zod): rộng hơn trần nghiệp vụ `TRAN_KENH_DA_KHAI_MOT_LO` (200) để lô 201..500 tới được
+ * handler và nhận `QUA_NHIEU_KENH_DA_KHAI` có mã (UI hiện câu "chia nhỏ lô") thay vì lỗi zod chung; > 500 ⇒ zod chặn trước (giới hạn kích thước body).
+ */
+const SO_MUC_INPUT_TOI_DA = 500;
 
 export type CanhBaoNguon = "deadband" | "edge" | "bao_khi_doi" | "poll_cham" | null;
 
@@ -502,17 +475,9 @@ export const scadaKenhRouter = router({
    */
   capNhat: kySuProcedure
     .use(requirePermission("machine_control", "canEdit"))
-    .input(z.object({ tagId: z.number().int().positive(), patch: patchInput, lyDo: lyDoInput, totpCode: totpInput }))
+    .input(z.object({ tagId: z.number().int().positive(), patch: patchKenhInput, lyDo: lyDoInput, totpCode: totpInput }))
     .mutation(async ({ ctx, input }) => {
-      const patch: Partial<KhaiKenh> = {};
-      for (const k of COT_KENH) {
-        const v = input.patch[k];
-        if (v !== undefined) (patch as Record<string, unknown>)[k] = v;
-      }
-      const khoa = Object.keys(patch) as CotKenh[];
-      if (khoa.length === 0) {
-        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "patch" }, "Patch không có trường nào để đổi.");
-      }
+      const patch = patchKhaiKenh(input.patch, input.tagId);
       const idsMay = await idsMayCua(ctx);
       const db = await getDb();
       try {
@@ -534,86 +499,10 @@ export const scadaKenhRouter = router({
           if (!tag) throw khongThayTag();
           if (tag.adapterId !== tag0.adapterId || tag.tagKey !== tag0.tagKey) throw thuLai();
 
-          const truoc = khaiCua(tag);
-          const sau: KhaiKenh = { ...truoc, ...patch };
-          if (sau.writeMin != null && sau.writeMax != null && sau.writeMin > sau.writeMax) {
-            throw appError(
-              "BAD_REQUEST",
-              "INVALID_VALUE",
-              { field: "writeMin", reason: "scadaDaiMinLonHonMax" },
-              `Giới hạn dưới ${sau.writeMin} lớn hơn giới hạn trên ${sau.writeMax}.`,
-            );
-          }
-          const coDai = sau.writeMin != null || sau.writeMax != null || sau.writeStep != null;
-          if (coDai && tag.dataType !== "int" && tag.dataType !== "float" && khoa.some((k) => k === "writeMin" || k === "writeMax" || k === "writeStep")) {
-            throw appError(
-              "BAD_REQUEST",
-              "INVALID_VALUE",
-              { field: "writeMin", reason: "scadaDaiChiChoKenhSo" },
-              `Dải / bước chỉ áp cho kênh số (int / float); tag này kiểu ${tag.dataType}.`,
-            );
-          }
-          // fix round 1 (minor 4) — loại kênh GHI (input_output / output / calculated_output) trên tag không ghi được (writable !== true):
-          // khai báo nói dối — dispatch() vẫn từ chối mọi lệnh ghi (tag phải writable ở bước 3) mà M12/M4 lại hiện nó như kênh ra.
-          if (khoa.includes("channelKind") && sau.channelKind != null && laKenhGhi({ channelKind: sau.channelKind, writable: tag.writable }) && tag.writable !== true) {
-            throw appError(
-              "BAD_REQUEST",
-              "INVALID_VALUE",
-              { field: "channelKind", reason: "scadaKenhGhiTrenTagKhongGhi" },
-              `Loại kênh ${sau.channelKind} nhận lệnh ghi nhưng tag ${tag.tagKey} không cho phép ghi (writable=false).`,
-            );
-          }
-          if (khoa.every((k) => sau[k] === truoc[k])) {
+          // R1b-2a T6 — MỘT hàm kiểm cho capNhat và khaiHangLoat (hợp lệ → không đổi ⇒ trả sớm → ghim DỪNG / luật interlock → gỡ ghim trước).
+          const { truoc, sau, doi } = kiemPatchKenh(tag, luat, patch);
+          if (!doi) {
             return { changed: false, tagId: tag.id, ...sau, mucHieuLuc: mucTacDongKenh(sau) };
-          }
-
-          if (khoa.some((k) => COT_CONG_KENH.has(k))) {
-            const kenhMoi: KenhNhatQuan = {
-              dataType: tag.dataType,
-              writable: tag.writable,
-              channelKind: sau.channelKind,
-              writeMin: sau.writeMin,
-              writeMax: sau.writeMax,
-              writeStep: sau.writeStep,
-              scale: tag.scale, // kiem-dinh P1-3 — lưới thô (int) như dispatch()
-              offset: tag.offset,
-            };
-            // Ghim DỪNG (kể cả khi tag đang tắt — bật lại thì ghim có hiệu lực ngay). Ghim không còn hợp lệ với dataType ⇒ dispatch bỏ qua nó.
-            if (tag.stopValue !== null && tag.stopValue !== undefined) {
-              const v = validateStopValue(String(tag.dataType), tag.stopValue);
-              const nq = v.ok ? kiemNhatQuanKenh(kenhMoi, v.value) : ({ ok: true } as const);
-              if (!nq.ok) {
-                throw appError(
-                  "BAD_REQUEST",
-                  "STOP_PIN_NGOAI_DAI",
-                  {
-                    ma: "STOP_PIN_NGOAI_DAI",
-                    lyDo: nq.ma,
-                    tagKey: tag.tagKey,
-                    stopValue: String(v.ok ? v.value : tag.stopValue),
-                    min: soHienThi(sau.writeMin),
-                    max: soHienThi(sau.writeMax),
-                    step: soHienThi(sau.writeStep),
-                  },
-                  `Giá trị DỪNG đang ghim của kênh ${tag.tagKey} không ghi được với khai báo mới (${nq.chiTiet}). Gỡ / đổi ghim trước.`,
-                );
-              }
-            }
-            const vp = viPhamInterlock(luat, kenhMoi);
-            if (vp) {
-              throw appError(
-                "BAD_REQUEST",
-                "INTERLOCK_NGOAI_DAI",
-                {
-                  ma: "INTERLOCK_NGOAI_DAI",
-                  lyDo: vp.ma,
-                  tagKey: tag.tagKey,
-                  ...thamSoNgoaiDaiInterlock(sau, vp), // R1b-1 T13 polish m1: lưới thật (bước / |scale|, gốc, goiY)
-                  ruleId: vp.ruleId,
-                },
-                `Luật interlock đang bật #${vp.ruleId} (${vp.ruleName}) ghi một giá trị không ghi được với khai báo mới (${vp.chiTiet}).`,
-              );
-            }
           }
 
           await kiemTotpCauHinh(ctx, input.totpCode); // P1-2: cuối, ngay trước lượt ghi (sau kiểm hợp lệ + nhất quán)
@@ -631,6 +520,118 @@ export const scadaKenhRouter = router({
             reason: input.lyDo,
           });
           return { changed: true, tagId: tag.id, ...sau, mucHieuLuc: mucTacDongKenh(sau) };
+        });
+      } catch (err) {
+        if (laDeadlock(err)) throw thuLai();
+        throw err;
+      }
+    }),
+
+  /**
+   * R1b-2a Task 6 (P1-1) — KHAI MỨC HÀNG LOẠT: ≤ `TRAN_KENH_DA_KHAI_MOT_LO` (200) tag của MỘT adapter (Q6), MỖI tag một patch đầy đủ (mức, loại
+   * kênh, dải / bước, hiển thị), MỘT mã TOTP tươi cho cả lô. TẤT-CẢ-HOẶC-KHÔNG: một tag hỏng ⇒ cả lô bị từ chối, không hàng nào đổi, mã KHÔNG
+   * bị tiêu, lỗi nêu đúng `tagId`.
+   *   1. kiểm RẺ (không DB, không mã): số tag > 200 ⇒ `QUA_NHIEU_KENH_DA_KHAI`; `tagId` trùng ⇒ `INVALID_VALUE {items, scadaKenhTagTrung,
+   *      tagId}`; patch rỗng ⇒ `FIELD_REQUIRED {patch, tagId}`;
+   *   2. `idsMay` tính TRƯỚC giao dịch (không gọi pool trong giao dịch); MỘT giao dịch, thứ tự khoá dự án (troLaiKenh.ts):
+   *      ADAPTER FOR SHARE (`khoaAdapterTx`) + phạm vi kiểm DƯỚI khoá (`kiemPhamViDuoiKhoa` — không có / ngoài phạm vi ⇒ CÙNG NOT_FOUND adapter)
+   *      → LUẬT nhắm adapter FOR SHARE theo id (`khoaLuatNhamAdapterTx`) → TAG `WHERE id IN (…) ORDER BY id FOR UPDATE` (census
+   *      `thuTuKhoaTag`); tag thiếu / thuộc adapter khác ⇒ NOT_FOUND deviceTag cho CẢ lô;
+   *   3. từng tag theo id: `kiemPatchKenh` (CHÍNH hàm của capNhat) — lỗi đầu tiên ⇒ ném;
+   *   4. ≥ 1 tag đổi ⇒ `kiemTotpCauHinh` MỘT lần, SAU mọi kiểm; rồi mỗi tag đổi: UPDATE + audit `scada_kenh_cap_nhat` (`after.loId`), cộng MỘT
+   *      audit `scada_kenh_khai_hang_loat` (adapter; `{loId, soTag, tagIds}`). Không tag nào đổi ⇒ không mã, không audit.
+   *   40P01 còn sót ⇒ CONFLICT thử lại. Chỉ ghi cột kênh (mig 0431) — ngoài bám định nghĩa duyệt interlock ⇒ luật đã duyệt vẫn còn duyệt.
+   */
+  khaiHangLoat: kySuProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(
+      z.object({
+        adapterId: z.number().int().positive(),
+        items: z
+          .array(z.object({ tagId: z.number().int().positive(), patch: patchKenhInput }).strict())
+          .min(1)
+          .max(SO_MUC_INPUT_TOI_DA),
+        lyDo: lyDoInput,
+        totpCode: totpInput,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // 1. kiểm rẻ — đúng thứ tự: trần → trùng → patch rỗng
+      if (input.items.length > TRAN_KENH_DA_KHAI_MOT_LO) loiQuaNhieuKenhDaKhai(input.items.length);
+      const thay = new Set<number>();
+      for (const it of input.items) {
+        if (thay.has(it.tagId)) {
+          throw appError(
+            "BAD_REQUEST",
+            "INVALID_VALUE",
+            { field: "items", reason: "scadaKenhTagTrung", tagId: it.tagId },
+            `Tag #${it.tagId} xuất hiện hơn một lần trong lô.`,
+          );
+        }
+        thay.add(it.tagId);
+      }
+      const patchTheoTag = new Map<number, Partial<KhaiKenh>>(input.items.map((it) => [it.tagId, patchKhaiKenh(it.patch, it.tagId)] as const));
+      const ids = [...patchTheoTag.keys()].sort((a, b) => a - b);
+
+      // 2. phạm vi tính TRƯỚC giao dịch; kiểm lại dưới khoá adapter
+      const idsMay = await idsMayCua(ctx);
+      const db = await getDb();
+      const loId = randomUUID();
+      try {
+        return await db.transaction(async (tx) => {
+          const adapter = (await khoaAdapterTx(tx, [input.adapterId])).get(input.adapterId);
+          kiemPhamViDuoiKhoa(adapter?.machineId, idsMay, khongThayAdapter);
+          const luat = await khoaLuatNhamAdapterTx(tx, input.adapterId);
+          // T6 polish (review m-2) — lọc adapter NGAY trong WHERE: hàng của adapter / nhà máy khác bị lọc trước LockRows ⇒ không bao giờ bị khoá
+          // (không giữ hàng ngoài quyền, không khoá tag thiếu bậc ADAPTER → LUẬT của nó, không chờ hàng người khác giữ = không lộ qua thời gian).
+          // Postgres kiểm lại vị từ sau mọi lượt chờ khoá ⇒ tag vừa bị chuyển đi rơi khỏi kết quả ⇒ đếm thiếu ⇒ CÙNG NOT_FOUND deviceTag.
+          const tags = await tx
+            .select()
+            .from(deviceTags)
+            .where(and(inArray(deviceTags.id, ids), eq(deviceTags.adapterId, input.adapterId)))
+            .orderBy(deviceTags.id)
+            .for("update");
+          if (tags.length !== ids.length || tags.some((t) => t.adapterId !== input.adapterId)) throw khongThayTag();
+
+          // 3. kiểm TỪNG tag (không ghi gì) — lỗi đầu tiên ném, cả giao dịch rollback
+          const kiem = tags.map((tag) => ({ tag, ...kiemPatchKenh(tag, luatCuaTag(luat, tag.tagKey), patchTheoTag.get(tag.id)!) }));
+          const doi = kiem.filter((k) => k.doi);
+
+          // 4. mã MỘT lần, CUỐI (sau mọi kiểm), rồi mới ghi
+          if (doi.length > 0) {
+            await kiemTotpCauHinh(ctx, input.totpCode);
+            const now = new Date();
+            for (const { tag, truoc, sau } of doi) {
+              await tx
+                .update(deviceTags)
+                .set({ ...patchTheoTag.get(tag.id)!, updatedAt: now })
+                .where(eq(deviceTags.id, tag.id));
+              await recordAuditEvent(tx, {
+                entityType: "device_tag",
+                entityId: tag.id,
+                action: "scada_kenh_cap_nhat",
+                actorId: ctx.user.id,
+                before: { adapterId: tag.adapterId, tagKey: tag.tagKey, ...truoc },
+                after: { adapterId: tag.adapterId, tagKey: tag.tagKey, ...sau, loId },
+                reason: input.lyDo,
+              });
+            }
+            await recordAuditEvent(tx, {
+              entityType: "device_adapter",
+              entityId: input.adapterId,
+              action: "scada_kenh_khai_hang_loat",
+              actorId: ctx.user.id,
+              before: null,
+              after: { loId, soTag: doi.length, tagIds: doi.map((k) => k.tag.id) },
+              reason: input.lyDo,
+            });
+          }
+          return {
+            loId,
+            soDoi: doi.length,
+            soGiuNguyen: kiem.length - doi.length,
+            ketQua: kiem.map((k) => ({ tagId: k.tag.id, changed: k.doi, mucHieuLuc: mucTacDongKenh(k.sau) })),
+          };
         });
       } catch (err) {
         if (laDeadlock(err)) throw thuLai();

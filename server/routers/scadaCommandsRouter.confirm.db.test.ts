@@ -340,7 +340,7 @@ beforeAll(async () => {
 
   await seedTag(ad.a, "che_do", { kind: "input", writable: false, level: null, dataType: "int" });
   for (const key of ["vui", "lech", "het", "song", "local", "tat", "edge", "len", "il", "otoff", "huy", "chiem", "nem", "treo", "tt",
-    "maydoi", "khoamat", "hep", "san", "casmiss", "cashet", "qexp", "chot1", "chot2", "conlai1", "conlai30"]) {
+    "maydoi", "khoamat", "hep", "san", "casmiss", "cashet", "qexp", "chot1", "chot2", "conlai1", "conlai30", "sp0433"]) {
     await seedTag(ad.a, key, { level: 3 });
   }
   await seedTag(ad.a, "m5", { level: 5 });
@@ -1035,4 +1035,65 @@ describe("kiem-dinh P1-3 — 'xác nhận = ghi': tag int scale 10 — không đ
     expect(loi.appParams).toMatchObject({ ma: "OFF_STEP", tagKey: "sc10doi", goiY: 30, step: 10 });
     expect(H.rawGhi).toEqual([]);
   });
+});
+
+describe("R1b-2a T9 — canh 0433 đầu confirm + xả tổng kết cho người ngừng hẳn", () => {
+  it("★ thiếu 0433 ⇒ confirm ném SCADA_SCHEMA_MISSING; dòng chờ VẪN proposed, khoá chọn không đổi, KHÔNG dòng attempts, dispatch 0 lần", async () => {
+    const { __datTrangThaiSchemaR1a, trangThaiSchemaR1a } = await import("../_core/kiemSchemaR1a");
+    const truoc = trangThaiSchemaR1a();
+    const u = nguoi.opA2;
+    const requestId = await yeuCau("opA2", "sp0433");
+    const khoaTruoc = await khoa("sp0433");
+    expect(khoaTruoc?.request_id).toBe(requestId);
+    const dispatchTruoc = H.dispatchCalls;
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: new Date().toISOString(), thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [] });
+    try {
+      const m = await moc();
+      const loi = await loiCua(u.caller.confirm({ requestId }));
+      expect(loi).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_SCHEMA_MISSING", appParams: { ma: "THIEU_MIGRATION", migration: "0433" } });
+      expect(await thuSau(m, u.id), "không ghi attempts").toHaveLength(0);
+      expect(await trangThaiCho(requestId)).toBe("proposed");
+      expect((await khoa("sp0433"))?.request_id).toBe(requestId);
+      expect(H.dispatchCalls - dispatchTruoc).toBe(0);
+      expect(await dongLenh(requestId)).toHaveLength(0);
+    } finally {
+      __datTrangThaiSchemaR1a(truoc);
+    }
+  });
+
+  it("★ 40 lần confirm TOTP_CAN rồi IM (không lần gọi kế) ⇒ 30 dòng; sau 61 s hẹn giờ ghi ĐÚNG MỘT dòng DIEU_TIET '10 lần TOTP_CAN bị gộp' stage confirm", async () => {
+    const dt = await import("../services/scada/dieuTietThuLenh");
+    dt.__datLaiDieuTiet();
+    const u = nguoi.engA;
+    const requestId = await yeuCau("engA", "m5");
+    await db.update(aiPendingActions).set({ expiresAt: new Date(Date.now() + 10 * 60_000) }).where(eq(aiPendingActions.id, requestId));
+    dt.__datLaiDieuTiet();
+    const m = await moc();
+    // đồng hồ giả CHỈ cho Date + setInterval (hẹn giờ của bộ xả phải được tạo SAU khi cài, ở lần gộp đầu); setTimeout thật cho CSDL
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    try {
+      for (let i = 0; i < 40; i++) {
+        const loi = await loiCua(u.caller.confirm({ requestId }));
+        expect(loi).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_TOTP_REQUIRED" });
+      }
+      expect(await thuSau(m, u.id)).toHaveLength(30);
+      expect(dt.__henXaDangChay()).toBe(true);
+      await vi.advanceTimersByTimeAsync(61_000);
+      let dong = await thuSau(m, u.id);
+      for (let i = 0; i < 100 && dong.length < 31; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+        dong = await thuSau(m, u.id);
+      }
+      expect(dong.slice(30).map((t) => [t.stage, t.outcome, t.reason_code])).toEqual([["confirm", "rejected", "DIEU_TIET"]]);
+      const ly = await dung(sql`SELECT ly_do FROM scada_command_attempts WHERE id > ${m} AND user_id = ${u.id} AND reason_code = 'DIEU_TIET'`);
+      expect(ly.map((r) => r.ly_do)).toEqual(["10 lần TOTP_CAN bị gộp"]);
+      expect(dt.__henXaDangChay(), "hẹn giờ tự dừng").toBe(false);
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await new Promise((r) => setTimeout(r, 200));
+      expect(await thuSau(m, u.id), "không tổng kết thứ hai").toHaveLength(31);
+    } finally {
+      vi.useRealTimers();
+      dt.__datLaiDieuTiet();
+    }
+  }, 60_000);
 });

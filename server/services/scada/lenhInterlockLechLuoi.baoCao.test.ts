@@ -24,9 +24,27 @@ function khoiSqlBaoCao(): string {
     .join("\n");
 }
 
+/**
+ * R1b-2a Task 15 — báo cáo nghiệm thu R1b-2a §4 mục 2 mang CÙNG chuỗi (khối ```sql không thụt lề, dòng chú thích đầu `-- R1b-2a §4 mục 2` không
+ * thuộc hằng). Thứ tự triển khai: chuỗi này = 0 hàng trên DB đích TRƯỚC bản build.
+ */
+const BAO_CAO_R1B2A = path.resolve(__dirname, "../../../docs/superpowers/plans/2026-10-25-scada-r1b-2a-bao-cao-nghiem-thu.md");
+function khoiSqlBaoCaoR1b2a(): string {
+  const doc = readFileSync(BAO_CAO_R1B2A, "utf8").replace(/\r\n/g, "\n");
+  const dau = doc.indexOf("```sql\n-- R1b-2a §4 mục 2");
+  expect(dau, "báo cáo R1b-2a §4 mục 2 phải có khối ```sql bắt đầu bằng chú thích '-- R1b-2a §4 mục 2'").toBeGreaterThan(-1);
+  const sauChuThich = doc.indexOf("\n", doc.indexOf("-- R1b-2a §4 mục 2", dau)) + 1;
+  const cuoi = doc.indexOf("\n```\n", sauChuThich);
+  return doc.slice(sauChuThich, cuoi);
+}
+
 describe("kiem-dinh N-1 — SQL trước triển khai trong báo cáo = hằng trong mã", () => {
   it("khối SQL §4 mục 2 (bỏ thụt 3 dấu cách) bằng TRUY_VAN_TRUOC_TRIEN_KHAI từng ký tự", () => {
     expect(khoiSqlBaoCao()).toBe(TRUY_VAN_TRUOC_TRIEN_KHAI);
+  });
+
+  it("R1b-2a T15 — khối SQL §4 mục 2 của báo cáo nghiệm thu R1b-2a bằng TRUY_VAN_TRUOC_TRIEN_KHAI từng ký tự", () => {
+    expect(khoiSqlBaoCaoR1b2a()).toBe(TRUY_VAN_TRUOC_TRIEN_KHAI);
   });
 
   it("hằng trả hàng KHONG_PARSE_DUOC thay vì bỏ qua giá trị không đọc được (không còn `WHERE v IS NOT NULL AND`)", () => {

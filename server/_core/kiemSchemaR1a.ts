@@ -15,7 +15,9 @@
  *
  * Hợp đồng:
  *   · Truy vấn CHỈ ĐỌC `information_schema` (không DDL, không áp migration): 7 cột R1a của `device_tags`, 3 bảng `scada_kenh_che_do` /
- *     `scada_khoa_chon` / `scada_command_attempts` (0431), bảng `totp_khoa_sai` + cột `loai` (0432).
+ *     `scada_khoa_chon` / `scada_command_attempts` (0431), bảng `totp_khoa_sai` + cột `loai` (0432). R1b-2a T12 (kiem-dinh M3): + `pg_constraint`
+ *     (chỉ đọc) cho 3 FK ON DELETE CASCADE của 0433 (`FK_0433`) — thiếu ⇒ "0433" như thiếu cột (degraded, khối lỗi nhắc 5 phút), `startOt` vẫn chạy.
+ *   · R1b-2a T12 — CHƯA kiểm xong (`chua_kiem`) ⇒ `/health` `schemaR1a {trangThai:"dang_kiem"}` (status vẫn "ok") — không im lặng như "đủ".
  *   · Thiếu 0431 ⇒ một KHỐI `console.error` nổi bật gọi đúng tên migration, `/health` báo `status:"degraded"` + `schemaR1a` (lý do rõ),
  *     và KHÔNG gọi `startOt` (ghi rõ vì sao). Áp 0431 xong phải KHỞI ĐỘNG LẠI tiến trình (OT không tự nạp lại).
  *   · Thiếu 0433 ⇒ như 0432: `startOt` vẫn chạy (OT không đọc `ly_do`); lỗi nổi bật + nhắc lại mỗi `CHU_KY_NHAC_MS` tới khi cột có mặt;
@@ -46,6 +48,22 @@ export const COT_DEVICE_TAGS_0431 = Object.freeze([
 /** 3 bảng của mig 0431. */
 export const BANG_0431 = Object.freeze(["scada_kenh_che_do", "scada_khoa_chon", "scada_command_attempts"] as const);
 
+/**
+ * R1b-2a T12 (kiem-dinh M3) — 3 FK ON DELETE CASCADE của mig 0433 (tên cố định, cùng tên `scripts/apply-migration-0433.mjs` verify).
+ * Vắng FK ⇒ xoá máy / adapter để lại hàng `scada_kenh_che_do` / `scada_khoa_chon` MỒ CÔI (kênh chế độ trỏ máy không còn; khoá chọn trỏ adapter
+ * không còn) — INSERT không hỏng (vì thế `biet0433Thieu` KHÔNG tính FK), nhưng schema KHÔNG phải cái 0433 hứa ⇒ báo như thiếu cột.
+ */
+export const FK_0433 = Object.freeze(["scada_kenh_che_do_machine_fk", "scada_kenh_che_do_adapter_fk", "scada_khoa_chon_adapter_fk"] as const);
+/**
+ * Polish M-3 — HÌNH đúng của từng FK của 0433, cùng bảng `FK` của `scripts/apply-migration-0433.mjs` verify: bảng mang · cột · bảng đích · cột đích.
+ * Một FK cùng tên mà trỏ sai bảng / sai cột (vd sửa tay) KHÔNG phải cái 0433 hứa ⇒ tính là thiếu. Bảng mang vắng = thiếu 0431 (không đếm hai lần).
+ */
+export const HINH_FK_0433: Readonly<Record<(typeof FK_0433)[number], { bang: (typeof BANG_0431)[number]; cot: string; bangDich: string; cotDich: string }>> = Object.freeze({
+  scada_kenh_che_do_machine_fk: { bang: "scada_kenh_che_do", cot: "machine_id", bangDich: "machines", cotDich: "id" },
+  scada_kenh_che_do_adapter_fk: { bang: "scada_kenh_che_do", cot: "adapter_id", bangDich: "device_adapters", cotDich: "id" },
+  scada_khoa_chon_adapter_fk: { bang: "scada_khoa_chon", cot: "adapter_id", bangDich: "device_adapters", cotDich: "id" },
+});
+
 /** Nhắc lại lỗi thiếu 0432 / 0433 mỗi 5 phút. */
 export const CHU_KY_NHAC_MS = 5 * 60 * 1000;
 
@@ -60,6 +78,12 @@ export interface KetQuaSchemaR1a {
   thieu0433: string[];
   /** kiem-dinh R1b-1 I-C — đối tượng còn thiếu của 0434 (`interlock_rules.approvedDefHash`) — rỗng = đủ */
   thieu0434: string[];
+  /**
+   * R1b-2a T12 (kiem-dinh M3) — FK của 0433 (`FK_0433`) vắng, hoặc có mà KHÔNG phải ON DELETE CASCADE (`confdeltype <> 'c'`) hoặc chưa
+   * VALIDATE (`convalidated = false`) — rỗng = đủ. Chỉ xét FK của bảng CÓ MẶT (bảng vắng = thiếu 0431).
+   * ⚠ Trạng thái cũ do test / bản trước đặt có thể vắng trường này ⇒ mọi chỗ đọc dùng `?? []`.
+   */
+  thieu0433Fk: string[];
 }
 
 /**
@@ -111,7 +135,17 @@ export function biet0432Thieu(): boolean {
   return trangThai.kieu === "da_kiem" && trangThai.thieu0432.length > 0;
 }
 
-/** Truy vấn CHỈ ĐỌC information_schema ⇒ đối tượng còn thiếu của 0431 / 0432 / 0433. */
+/**
+ * R1b-2a T9 — tiến trình này đã THẤY thiếu cột `scada_command_attempts.ly_do` (0433)? CHỈ cột (FK của Task 12 không tính).
+ * `chua_kiem` / `khong_kiem_duoc` ⇒ false (không biết ≠ thiếu: không chặn). Người dùng: canh đầu `request` / `confirm` — KHÔNG BAO GIỜ `dungMay`.
+ */
+export function biet0433Thieu(): boolean {
+  return trangThai.kieu === "da_kiem" && trangThai.thieu0433.length > 0;
+}
+
+/**
+ * Truy vấn CHỈ ĐỌC information_schema (+ `pg_constraint` cho FK của 0433, T12) ⇒ đối tượng còn thiếu của 0431 / 0432 / 0433 / 0434.
+ */
 export async function kiemSchemaR1a(chay: ChayTruyVan): Promise<KetQuaSchemaR1a> {
   const cot = await chay(sql`SELECT table_name, column_name FROM information_schema.columns
     WHERE table_schema = 'public' AND (
@@ -137,7 +171,46 @@ export async function kiemSchemaR1a(chay: ChayTruyVan): Promise<KetQuaSchemaR1a>
   const thieu0433 = coBang.has("scada_command_attempts") && !coCot.has("scada_command_attempts.ly_do") ? ["scada_command_attempts.ly_do"] : [];
   // I-C — interlock_rules có từ mig 0013 (luôn có) ⇒ chỉ kiểm cột.
   const thieu0434 = !coCot.has("interlock_rules.approvedDefHash") ? ["interlock_rules.approvedDefHash"] : [];
-  return { thieu0431, thieu0432, thieu0433, thieu0434 };
+  // R1b-2a T12 (kiem-dinh M3) — FK của 0433: cùng hình truy vấn với verify của apply-migration-0433.mjs (conname · confdeltype · convalidated trên
+  // scada_kenh_che_do / scada_khoa_chon). Lọc theo TÊN bảng qua pg_class (không `'…'::regclass`: bảng vắng thì regclass NÉM cả lần kiểm).
+  // Polish M-3 — + bảng mang · cột · bảng đích · cột đích (pg_attribute của conkey[1] / confkey[1]) như verify (a) của script; FK một cột.
+  const fk = await chay(sql`SELECT c.conname, c.confdeltype, c.convalidated,
+      t.relname AS bang, a.attname AS cot, rt.relname AS bang_dich, af.attname AS cot_dich, cardinality(c.conkey) AS so_cot
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    JOIN pg_class rt ON rt.oid = c.confrelid
+    JOIN pg_namespace rn ON rn.oid = rt.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+    JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = c.confkey[1]
+    WHERE c.contype = 'f' AND n.nspname = 'public' AND rn.nspname = 'public'
+      AND t.relname IN (${sql.join(
+        [...new Set(Object.values(HINH_FK_0433).map((h) => h.bang))].map((b) => sql`${b}`),
+        sql`, `,
+      )})
+      AND c.conname IN (${sql.join(
+        FK_0433.map((f) => sql`${f}`),
+        sql`, `,
+      )})`);
+  const fkDung = new Set(
+    fk
+      .filter((r) => {
+        const h = HINH_FK_0433[String(r.conname) as (typeof FK_0433)[number]];
+        return (
+          !!h &&
+          String(r.confdeltype) === "c" &&
+          (r.convalidated === true || r.convalidated === "t") &&
+          String(r.bang) === h.bang &&
+          String(r.cot) === h.cot &&
+          String(r.bang_dich) === h.bangDich &&
+          String(r.cot_dich) === h.cotDich &&
+          Number(r.so_cot) === 1
+        );
+      })
+      .map((r) => String(r.conname)),
+  );
+  const thieu0433Fk = FK_0433.filter((f) => coBang.has(HINH_FK_0433[f].bang) && !fkDung.has(f));
+  return { thieu0431, thieu0432, thieu0433, thieu0434, thieu0433Fk };
 }
 
 /**
@@ -148,10 +221,14 @@ export async function kiemSchemaR1a(chay: ChayTruyVan): Promise<KetQuaSchemaR1a>
  *       – `"thieu"` — `thieuMigration` = mã migration còn thiếu (≥ 1), `lyDo` = câu dài; `status` "degraded";
  *       – `"chua_kiem_duoc"` — không đọc được information_schema: `thieuMigration: null` (KHÔNG biết — không phải rỗng), `lyDo` = LỚP lỗi
  *         ngắn (`LoaiLoiKiem`; /health không xác thực ⇒ không văn bản lỗi); `status` giữ "ok" (không biết ≠ thiếu, T10).
+ *       – R1b-2a T12 — `"dang_kiem"` — lần kiểm khởi động CHƯA chạy xong (`chua_kiem`): `thieuMigration: null`, `lyDo: "chua_xong"`; `status`
+ *         giữ "ok". Trước T12 ca này VẮNG khoá = trông như "đã kiểm và đủ" ⇒ bộ giám sát hỏi ngay sau khởi động nhận câu trả lời khoẻ giả.
+ *   ⇒ Bộ giám sát: khoá `schemaR1a` CÓ MẶT (bất kể `trangThai`) = CHƯA KHOẺ về schema; vắng = đã kiểm và đủ.
  */
 export type SchemaR1aHealth =
   | { ok: false; trangThai: "thieu"; thieuMigration: string[]; lyDo: string }
-  | { ok: false; trangThai: "chua_kiem_duoc"; thieuMigration: null; lyDo: LoaiLoiKiem };
+  | { ok: false; trangThai: "chua_kiem_duoc"; thieuMigration: null; lyDo: LoaiLoiKiem }
+  | { ok: false; trangThai: "dang_kiem"; thieuMigration: null; lyDo: "chua_xong" };
 
 /** Lý do một dòng cho `/health` khi THIẾU migration (null = không thiếu gì đã biết). */
 export function lyDoSchemaR1a(t: TrangThaiSchemaR1a = trangThai): Extract<SchemaR1aHealth, { trangThai: "thieu" }> | null {
@@ -166,9 +243,14 @@ export function lyDoSchemaR1a(t: TrangThaiSchemaR1a = trangThai): Extract<Schema
     thieu.push("0432");
     phan.push(`thiếu migration 0432 (${t.thieu0432.join(", ")}) — mọi xác minh TOTP bị từ chối (TOTP_KHONG_KIEM_DUOC)`);
   }
-  if (t.thieu0433.length) {
+  // R1b-2a T12 (kiem-dinh M3, ruling K12) — cột VÀ/HOẶC FK của 0433: "0433" vào `thieuMigration` ĐÚNG MỘT lần.
+  const thieu0433Fk = t.thieu0433Fk ?? [];
+  if (t.thieu0433.length || thieu0433Fk.length) {
     thieu.push("0433");
-    phan.push(`thiếu migration 0433 (${t.thieu0433.join(", ")}) — mọi lệnh HMI ghi nhật ký thử lệnh sẽ lỗi (OT vẫn chạy)`);
+    if (t.thieu0433.length) phan.push(`thiếu migration 0433 (${t.thieu0433.join(", ")}) — mọi lệnh HMI ghi nhật ký thử lệnh sẽ lỗi (OT vẫn chạy)`);
+    if (thieu0433Fk.length) {
+      phan.push(`thiếu migration 0433 (FK ON DELETE CASCADE: ${thieu0433Fk.join(", ")}) — xoá máy / adapter để lại kênh chế độ / khoá chọn mồ côi (OT vẫn chạy)`);
+    }
   }
   // I-C — đọc phòng thủ (trạng thái do test / bản cũ đặt có thể vắng trường)
   const thieu0434 = t.thieu0434 ?? [];
@@ -187,6 +269,14 @@ export function lyDoSchemaR1a(t: TrangThaiSchemaR1a = trangThai): Extract<Schema
 export function lyDoChuaKiemDuocR1a(t: TrangThaiSchemaR1a = trangThai): Extract<SchemaR1aHealth, { trangThai: "chua_kiem_duoc" }> | null {
   // CHỈ lớp ngắn — `t.loi` (văn bản lỗi thô) không bao giờ ra `/health`.
   return t.kieu === "khong_kiem_duoc" ? { ok: false, trangThai: "chua_kiem_duoc", thieuMigration: null, lyDo: t.loai } : null;
+}
+
+/**
+ * R1b-2a T12 — lần kiểm khởi động CHƯA chạy xong (`chua_kiem`: tiến trình vừa lên, `khoiDongOtCoKiemSchema` chưa tới / đang chờ DB) ⇒ `/health`
+ * nói "đang kiểm" thay vì im lặng (im lặng = "đã kiểm và đủ"). KHÔNG degraded (chưa biết ≠ thiếu). null ⇔ đã có kết quả (đủ / thiếu / không kiểm được).
+ */
+export function lyDoDangKiemR1a(t: TrangThaiSchemaR1a = trangThai): Extract<SchemaR1aHealth, { trangThai: "dang_kiem" }> | null {
+  return t.kieu === "chua_kiem" ? { ok: false, trangThai: "dang_kiem", thieuMigration: null, lyDo: "chua_xong" } : null;
 }
 
 function khoiLoi(dong: string[]): string {
@@ -234,12 +324,15 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
   const boNhac = deps.boNhac ?? ((h: unknown) => clearInterval(h as NodeJS.Timeout));
 
   // 0432 / 0433: OT vẫn chạy; khối lỗi nổi bật + nhắc lại mỗi 5 phút tới khi đối tượng có mặt (mỗi mã một bộ hẹn giờ).
-  const DA_CO_MAT: Record<"thieu0432" | "thieu0433" | "thieu0434", string> = {
+  // R1b-2a T12 (ruling K12) — + `thieu0433Fk` (FK của 0433): bộ hẹn giờ riêng, cùng chu kỳ.
+  type MaNhac = "thieu0432" | "thieu0433" | "thieu0434" | "thieu0433Fk";
+  const DA_CO_MAT: Record<MaNhac, string> = {
     thieu0432: "[SCADA R1a] migration 0432 đã có mặt — bộ đếm TOTP sai hoạt động lại.",
     thieu0433: "[SCADA R1b] migration 0433 đã có mặt — nhật ký thử lệnh HMI ghi được lý do.",
     thieu0434: "[SCADA R1b] migration 0434 đã có mặt — cổng interlock đọc được luật (khởi động lại nếu tiến trình đã cache lỗi).",
+    thieu0433Fk: "[SCADA R1b] 3 FK ON DELETE CASCADE của migration 0433 đã có mặt — xoá máy / adapter dọn kênh chế độ / khoá chọn theo.",
   };
-  const nhacTheoMa = (kq: KetQuaSchemaR1a, ma: "thieu0432" | "thieu0433" | "thieu0434", dongLoi: (thieu: string[]) => string[], macDinhThieu: string[]) => {
+  const nhacTheoMa = (kq: KetQuaSchemaR1a, ma: MaNhac, dongLoi: (thieu: string[]) => string[], macDinhThieu: string[]) => {
     if (!(kq[ma] ?? []).length) return;
     const bao = (thieu: string[]) => logLoi(khoiLoi(dongLoi(thieu)));
     bao(kq[ma]);
@@ -250,7 +343,7 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
         })
         .then((lai) => {
           if (trangThai.kieu === "da_kiem") trangThai = { ...trangThai, [ma]: lai[ma], luc: new Date().toISOString() };
-          if (lai[ma].length) bao(lai[ma]);
+          if ((lai[ma] ?? []).length) bao(lai[ma]);
           else {
             boNhac(h);
             logLoi(DA_CO_MAT[ma]);
@@ -295,6 +388,19 @@ export async function khoiDongOtCoKiemSchema(deps: DepsKhoiDongOt): Promise<"da_
         "Sửa: chạy scripts/apply-migration-0434.mjs trên DB này, rồi scripts/backfill-approved-def-hash.mjs (TOFU, dry-run trước) (log này nhắc lại mỗi 5 phút tới khi cột có mặt).",
       ],
       ["interlock_rules.approvedDefHash"],
+    );
+    // R1b-2a T12 (kiem-dinh M3) — FK của 0433. `startOt` vẫn chạy (FK không làm hỏng INSERT; `biet0433Thieu` không tính FK).
+    nhacTheoMa(
+      kq,
+      "thieu0433Fk",
+      (thieu) => [
+        "[SCADA R1b] THIẾU MIGRATION 0433 (FK ON DELETE CASCADE của kênh chế độ / khoá chọn — kiem-dinh M3).",
+        `Còn thiếu (vắng, không phải CASCADE, hoặc chưa VALIDATE): ${thieu.join(", ")}.`,
+        "Hậu quả: xoá máy / adapter để lại hàng scada_kenh_che_do / scada_khoa_chon MỒ CÔI (kênh chế độ / khoá chọn trỏ tới thứ không còn). OT vẫn chạy.",
+        "/health báo status \"degraded\" + schemaR1a.",
+        "Sửa: chạy scripts/apply-migration-0433.mjs trên DB này (dọn mồ côi rồi thêm FK; log này nhắc lại mỗi 5 phút tới khi FK có mặt).",
+      ],
+      [...FK_0433],
     );
   };
 

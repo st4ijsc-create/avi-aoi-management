@@ -336,6 +336,33 @@ function PostureSection() {
               ? t("oversight.posture.coverageUnavailable", "Rule coverage unavailable")
               : t("oversight.posture.ruleCoverage", "Rules enabled with a target: {{count}}", { count: data.interlockRulesEnabledWithTarget })}
           </p>
+          {/* SCADA R1b-2a T12 — luật BẬT mà không chức năng (hỏng cấu trúc / lệch lưới), đếm theo phạm vi của người xem. Không đọc được ⇒ KHÔNG in số. */}
+          {/* Polish M-1 — dữ liệu thiếu trường (bộ nhớ đệm cũ / máy chủ bản trước) ⇒ KHÔNG in "undefined", như dòng STOP bên dưới. */}
+          {!data.interlockCoverageDegraded && typeof data.interlockRulesCauHinhHong === "number" && (
+            <p className="text-xs text-muted-foreground" data-posture-cau-hinh-hong>
+              {t("oversight.posture.cauHinhHong", "Enabled but misconfigured rules: {{count}}", { count: data.interlockRulesCauHinhHong })}
+            </p>
+          )}
+          {/* R1b-2a T12 (ruling K7) — STOP HMI bị từ chối vì hạn trước-gửi trong 24 h (trạng thái lệnh ⇒ không tô màu cảnh báo). */}
+          <p className="text-xs text-muted-foreground" data-posture-stop-qua-han>
+            {!data.stopQuaHan24h || data.stopQuaHan24h.degraded
+              ? t("oversight.posture.stopQuaHanUnavailable", "HMI STOP deadline refusals unavailable")
+              : t("oversight.posture.stopQuaHan", "HMI STOP refused for deadline (24 h): {{count}}", { count: data.stopQuaHan24h.count })}
+          </p>
+          {!data.interlockCoverageDegraded && typeof data.interlockRulesCauHinhHong === "number" && data.interlockRulesCauHinhHong > 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-2 text-xs text-muted-foreground" data-posture-cau-hinh-hong-canh-bao>
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+              <span>
+                {t(
+                  "oversight.posture.cauHinhHongCanhBao",
+                  "Some enabled interlock rules do NOT work: the gate blocks every command aimed at them, or dispatch will refuse their protective command. Fix them on the interlock page.",
+                )}{" "}
+                <Link href="/interlock-rules" className="font-medium text-foreground underline underline-offset-2">
+                  {t("oversight.posture.cauHinhHongMo", "Open interlock rules")}
+                </Link>
+              </span>
+            </div>
+          )}
           {data.writesOnEngineOff && (
             <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-2 text-xs text-muted-foreground">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />

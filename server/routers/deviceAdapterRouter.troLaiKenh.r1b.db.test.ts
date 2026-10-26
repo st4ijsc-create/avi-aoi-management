@@ -64,12 +64,18 @@ const hang = async (id: number) =>
   (await sql`SELECT "tagKey" AS "tagKey", address, "dataType" AS "dataType", scale::float8 AS scale, "offset"::float8 AS "offset", writable,
       unit, stop_value AS "stopValue" FROM device_tags WHERE id = ${id}`)[0];
 
-function yamlCua(adapterCode: string, tags: Array<{ name: string; datatype?: string; scale?: number; writable?: boolean; address?: string }>): string {
+function yamlCua(
+  adapterCode: string,
+  tags: Array<{ name: string; datatype?: string; scale?: number; writable?: boolean; address?: string; deadband?: number; sampling_ms?: number; unit?: string }>,
+): string {
   version += 1;
   const lines = [`version: ${version}`, `adapter: "${adapterCode}"`, "tags:"];
   for (const t of tags) {
     lines.push(`  - name: ${t.name}`, `    address: "${t.address ?? "addr-" + t.name}"`, `    datatype: ${t.datatype ?? "int"}`);
     if (t.scale !== undefined) lines.push(`    scale: ${t.scale}`);
+    if (t.deadband !== undefined) lines.push(`    deadband: ${t.deadband}`); // R1b-2a T8 — cột nhịp
+    if (t.sampling_ms !== undefined) lines.push(`    sampling_ms: ${t.sampling_ms}`);
+    if (t.unit !== undefined) lines.push(`    unit: "${t.unit}"`);
     lines.push(`    writable: ${t.writable ?? true}`, `    enabled: true`);
   }
   return lines.join("\n") + "\n";
@@ -164,10 +170,12 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — trỏ l�
       expect(await hang(tg.cu)).toMatchObject({ scale: 5, address: "addr-cu-2", dataType: "float", writable: false });
     });
 
-    it("★ tag đã khai, sửa trường KHÔNG trỏ lại (unit) ⇒ không cần mã; form gửi lại nguyên các giá trị cũ (scale 1 / offset trống) cũng không", async () => {
-      await caller.tags.update({ id: tg.dk, unit: "bar" });
-      await caller.tags.update({ id: tg.dk, tagKey: "dk", address: "addr-dk", dataType: "int", unit: "kPa", scale: 1, offset: null, writable: true, isEnabled: true });
-      expect(await hang(tg.dk)).toMatchObject({ unit: "kPa", scale: 1, address: "addr-dk" });
+    // R1b-2a T8 (kiem-dinh M4, Q7 duyệt): `unit` thôi là "trường không trỏ lại" — đổi unit trên tag được bảo vệ nay CẦN mã (ca cũ "unit không cần
+    // mã" đổi theo phán quyết). Phần "form gửi lại nguyên giá trị cũ ⇒ không mã" GIỮ.
+    it("★ tag đã khai: form gửi lại nguyên các giá trị cũ (scale 1 / offset trống / unit NULL như hàng) ⇒ không cần mã; đổi unit ⇒ cần mã (R1b-2a T8)", async () => {
+      await caller.tags.update({ id: tg.dk, tagKey: "dk", address: "addr-dk", dataType: "int", unit: null, scale: 1, offset: null, writable: true, isEnabled: true });
+      expect(await loiCua(caller.tags.update({ id: tg.dk, unit: "bar" }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect(await hang(tg.dk)).toMatchObject({ unit: null, scale: 1, address: "addr-dk" });
     });
 
     it("tag chỉ khai MỨC tác động (actuationLevel) cũng là đã khai ⇒ đổi address cần mã", async () => {
@@ -638,6 +646,113 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-1 T9 — trỏ l�
       const au = await sql`SELECT id FROM control_audit_log WHERE "entityType" = 'device_adapter' AND "entityId" = ${String(ids.ad)}
         AND action = 'adapter_bao_ve_tat' AND reason = 'thu tam tat da tat T10b'`;
       expect(au).toHaveLength(0);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+  // R1b-2a T8 (kiem-dinh M4, Q7 duyệt) — cột NHỊP (samplingMs / deadband / unit) của tag ĐƯỢC BẢO VỆ cần TOTP tươi + audit nhip {truoc, sau}.
+  // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+  describe("R1b-2a T8 — cột nhịp của tag được bảo vệ", () => {
+    const nhipHang = async (id: number) =>
+      (await sql`SELECT "samplingMs" AS "samplingMs", deadband, unit FROM device_tags WHERE id = ${id}`)[0] as { samplingMs: number | null; deadband: number | null; unit: string | null };
+    const auditTroLai = (id: number) =>
+      sql`SELECT "beforeJson" AS b, "afterJson" AS a FROM control_audit_log WHERE "entityType" = 'device_tag' AND "entityId" = ${String(id)} AND action = 'kenh_da_khai_tro_lai' ORDER BY id`;
+
+    it("★ tag ĐÃ KHAI đổi CHỈ samplingMs không mã ⇒ SCADA_CONFIG_TOTP_REQUIRED (TOTP_CAN), hàng nguyên, không audit", async () => {
+      const e = await loiCua(caller.tags.update({ id: tg.dk, samplingMs: 500 }));
+      expect(e).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_CONFIG_TOTP_REQUIRED", appParams: { ma: "TOTP_CAN" } });
+      expect(await nhipHang(tg.dk)).toEqual({ samplingMs: null, deadband: null, unit: null });
+      expect(await auditTroLai(tg.dk)).toHaveLength(0);
+    });
+
+    it("★ có mã ⇒ ghi; audit kenh_da_khai_tro_lai mang nhip.truoc.samplingMs / nhip.sau.samplingMs + doiNhip, doi (cột trỏ lại) rỗng", async () => {
+      await caller.tags.update({ id: tg.dk, samplingMs: 500, totpCode: await maMoi() });
+      expect((await nhipHang(tg.dk)).samplingMs).toBe(500);
+      const au = await auditTroLai(tg.dk);
+      expect(au).toHaveLength(1);
+      expect(au[0].a).toMatchObject({
+        doi: [],
+        doiNhip: ["samplingMs"],
+        nhip: { truoc: { samplingMs: null, deadband: null, unit: null }, sau: { samplingMs: 500, deadband: null, unit: null } },
+      });
+    });
+
+    it("★ NGUỒN telemetry_tag của luật (không alert) ĐÃ DUYỆT dù tắt: đổi deadband không mã ⇒ TOTP_CAN; có mã ⇒ ghi + audit nhip.deadband", async () => {
+      await sql`INSERT INTO interlock_rules (name, scope, "machineId", "sourceKey", "sourceType", "comparisonOperator", threshold, action, enabled, "approvedBy", "createdBy")
+        VALUES (${RUN + "-t8-nguon"}, 'machine', ${ids.may}, 'cu', 'telemetry_tag', 'gt', 80, 'stop_line', false, ${uid}, ${uid})`;
+      try {
+        expect(await loiCua(caller.tags.update({ id: tg.cu, deadband: 0.5 }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED", appParams: { ma: "TOTP_CAN" } });
+        expect((await nhipHang(tg.cu)).deadband).toBeNull();
+        await caller.tags.update({ id: tg.cu, deadband: 0.5, totpCode: await maMoi() });
+        expect((await nhipHang(tg.cu)).deadband).toBe(0.5);
+        const au = await auditTroLai(tg.cu);
+        expect(au).toHaveLength(1);
+        expect(au[0].a).toMatchObject({ doiNhip: ["deadband"], nhip: { truoc: { deadband: null }, sau: { deadband: 0.5 } } });
+      } finally {
+        await sql`DELETE FROM interlock_rules WHERE name = ${RUN + "-t8-nguon"}`;
+      }
+    });
+
+    it("★ KÊNH CHẾ ĐỘ đổi unit không mã ⇒ TOTP_CAN (unit nguyên); có mã ⇒ ghi", async () => {
+      expect(await loiCua(caller.tags.update({ id: tg.mode, unit: "chế độ" }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect((await nhipHang(tg.mode)).unit).toBeNull();
+      await caller.tags.update({ id: tg.mode, unit: "chế độ", totpCode: await maMoi() });
+      expect((await nhipHang(tg.mode)).unit).toBe("chế độ");
+    });
+
+    it("★ tag THƯỜNG (chưa khai, không luật) đổi samplingMs / deadband / unit ⇒ không mã, ghi như cũ, không audit trỏ lại", async () => {
+      await caller.tags.update({ id: tg.cu, samplingMs: 250, deadband: 1.5, unit: "°C" });
+      expect(await nhipHang(tg.cu)).toEqual({ samplingMs: 250, deadband: 1.5, unit: "°C" });
+      expect(await auditTroLai(tg.cu)).toHaveLength(0);
+    });
+
+    it("★ samplingMs: null (và deadband: null, unit: null / \"\" / khoảng trắng) trên hàng đang NULL ⇒ không đổi, không mã; giá trị số gửi lại y nguyên ⇒ không mã", async () => {
+      await caller.tags.update({ id: tg.dk, samplingMs: null });
+      await caller.tags.update({ id: tg.dk, samplingMs: null, deadband: null, unit: null });
+      await caller.tags.update({ id: tg.dk, unit: "" });
+      await caller.tags.update({ id: tg.dk, unit: "   " });
+      expect(await auditTroLai(tg.dk)).toHaveLength(0);
+      // hàng có nhịp ⇒ form gửi lại đúng các giá trị ấy (số / chuỗi như đọc ra) ⇒ không mã
+      await sql`UPDATE device_tags SET "samplingMs" = 500, deadband = 0.25, unit = 'bar' WHERE id = ${tg.dk}`;
+      await caller.tags.update({ id: tg.dk, samplingMs: 500, deadband: 0.25, unit: "bar", scale: 1, offset: null, address: "addr-dk" });
+      expect(await nhipHang(tg.dk)).toEqual({ samplingMs: 500, deadband: 0.25, unit: "bar" });
+      expect(await auditTroLai(tg.dk)).toHaveLength(0);
+      // bỏ cấu hình (giá trị → NULL) LÀ một thay đổi ⇒ cần mã
+      expect(await loiCua(caller.tags.update({ id: tg.dk, samplingMs: null }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_REQUIRED" });
+      expect((await nhipHang(tg.dk)).samplingMs).toBe(500);
+    });
+
+    it("mã SAI khi đổi cột nhịp ⇒ SCADA_CONFIG_TOTP_INVALID, hàng nguyên (TOTP kiểm cuối, lỗi khác vẫn đứng trước)", async () => {
+      const sai = String((Number(speakeasy.totp({ secret, encoding: "base32" })) + 500_000) % 1_000_000).padStart(6, "0");
+      expect(await loiCua(caller.tags.update({ id: tg.lv, samplingMs: 100, totpCode: sai }))).toMatchObject({ appCode: "SCADA_CONFIG_TOTP_INVALID" });
+      expect((await nhipHang(tg.lv)).samplingMs).toBeNull();
+      // kiểm nhất quán (cột trỏ lại) vẫn đứng TRƯỚC mã khi lượt đổi cả nhịp lẫn writable của kênh GHI ⇒ mã không bị tiêu
+      const m = await maMoi();
+      const e = await loiCua(caller.tags.update({ id: tg.out, writable: false, samplingMs: 100, totpCode: m }));
+      expect(e).toMatchObject({ appCode: "INVALID_VALUE", appParams: { reason: "scadaKenhGhiTrenTagKhongGhi" } });
+      await caller.tags.update({ id: tg.out, samplingMs: 100, totpCode: m }); // cùng mã còn dùng được
+      expect((await nhipHang(tg.out)).samplingMs).toBe(100);
+    });
+
+    it("★ import đổi deadband của tag ĐÃ KHAI không mã ⇒ SCADA_CONFIG_TOTP_REQUIRED, không ghi gì; có mã ⇒ ghi + audit nhip; tag thường cùng lô ⇒ không tính", async () => {
+      const y = yamlCua(`${RUN}-a`, [{ name: "dk", deadband: 0.5 }, { name: "cu", deadband: 2 }]);
+      const e = await loiCua(mac.applyImport({ yaml: y }));
+      expect(e).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "SCADA_CONFIG_TOTP_REQUIRED", appParams: { ma: "TOTP_CAN" } });
+      expect([(await nhipHang(tg.dk)).deadband, (await nhipHang(tg.cu)).deadband]).toEqual([null, null]);
+      const kq = await mac.applyImport({ yaml: y, totpCode: await maMoi() });
+      expect(kq.applied?.tagUpdates).toBe(2);
+      expect([(await nhipHang(tg.dk)).deadband, (await nhipHang(tg.cu)).deadband]).toEqual([0.5, 2]);
+      const au = await auditTroLai(tg.dk);
+      expect(au).toHaveLength(1);
+      expect(au[0].a).toMatchObject({ doi: [], doiNhip: ["deadband"], nhip: { truoc: { deadband: null }, sau: { deadband: 0.5 } } });
+      expect(await auditTroLai(tg.cu)).toHaveLength(0);
+    });
+
+    it("import gửi lại tag đã khai với nhịp y như hàng (sampling_ms / unit) ⇒ không đụng tag bảo vệ ⇒ không cần mã", async () => {
+      await sql`UPDATE device_tags SET "samplingMs" = 500, unit = 'bar' WHERE id = ${tg.dk}`;
+      const kq = await mac.applyImport({ yaml: yamlCua(`${RUN}-a`, [{ name: "dk", sampling_ms: 500, unit: "bar" }, { name: "cu", sampling_ms: 750 }]) });
+      expect(kq.applied?.tagUpdates).toBe(1); // chỉ cu đổi
+      expect((await nhipHang(tg.cu)).samplingMs).toBe(750);
     });
   });
 });

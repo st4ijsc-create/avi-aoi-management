@@ -60,13 +60,13 @@ const srv = vi.hoisted(() => ({
   kenhInputs: [] as unknown[],
   cheDo: [] as Record<string, unknown>[],
   mutCalls: [] as Array<{ proc: string; vars: unknown }>,
-  mutOpts: {} as Record<string, { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void }>,
+  mutOpts: {} as Record<string, { onSuccess?: (r: unknown) => void; onError?: (e: unknown, vars?: unknown) => void }>,
   invalidated: [] as string[],
   loading: false,
 }));
 vi.mock("@/lib/trpc", () => {
   const mut = (proc: string) => ({
-    useMutation: (opts: { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void }) => {
+    useMutation: (opts: { onSuccess?: (r: unknown) => void; onError?: (e: unknown, vars?: unknown) => void }) => {
       srv.mutOpts[proc] = opts;
       return { mutate: (vars: unknown) => srv.mutCalls.push({ proc, vars }), isPending: false };
     },
@@ -97,6 +97,7 @@ vi.mock("@/lib/trpc", () => {
           },
         },
         capNhat: mut("capNhat"),
+        khaiHangLoat: mut("khaiHangLoat"),
         cheDo: {
           danhSach: { useQuery: () => ({ data: srv.loading ? undefined : srv.cheDo, isLoading: srv.loading, isError: false }) },
           dat: mut("dat"),
@@ -115,6 +116,9 @@ vi.mock("@/components/scada/Faceplate", () => ({
 }));
 
 import ScadaKenh from "./ScadaKenh";
+import { HopKhaiHangLoat, TRAN_HANG_LOAT } from "@/components/scada/HopKhaiHangLoat";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const NOW_ISO = new Date().toISOString();
 const adapter = (o: Row): Row => ({
@@ -577,7 +581,8 @@ describe("ScadaKenh — hộp thoại sửa kênh (lý do ≥ 5 ký tự)", () =
     act(() =>
       srv.mutOpts.capNhat.onError?.({
         message: "Giá trị DỪNG đang ghim …",
-        data: { code: "BAD_REQUEST", appCode: "STOP_PIN_NGOAI_DAI", appParams: { ma: "STOP_PIN_NGOAI_DAI", lyDo: "OUT_OF_RANGE", tagKey: "speed_sp", stopValue: "0", min: "10", max: "100", step: "—" } },
+        // R1b-2a T2 (K17) — máy chủ luôn gửi goiY (giá trị hoặc "—")
+        data: { code: "BAD_REQUEST", appCode: "STOP_PIN_NGOAI_DAI", appParams: { ma: "STOP_PIN_NGOAI_DAI", lyDo: "OUT_OF_RANGE", tagKey: "speed_sp", stopValue: "0", min: "10", max: "100", step: "—", goiY: "—" } },
       }),
     );
     expect(toastError).toHaveBeenCalledTimes(1);
@@ -585,6 +590,7 @@ describe("ScadaKenh — hộp thoại sửa kênh (lý do ≥ 5 ký tự)", () =
     expect(cau).toContain("speed_sp");
     expect(cau).toContain("DỪNG");
     expect(cau).not.toBe("STOP_PIN_NGOAI_DAI");
+    expect(cau).not.toContain("{{"); // không placeholder thô (goiY mới)
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
@@ -680,6 +686,370 @@ describe("kiem-dinh P1-2 — mã TOTP 6 số bắt buộc ở cả ba hộp tho�
     expect(cau).not.toBe(appCode);
     expect(oMa(dlg).value).toBe("");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+});
+
+describe("R1b-2a T7 — khai mức hàng loạt (chọn kênh, một hộp, ô mã TOTP hiện sẵn — một lượt gọi mỗi lô)", () => {
+  // Bộ chọn theo aria-label bằng querySelector (không getByRole trên cả trang): ca trần dựng 201 hàng, getByRole toàn trang ở jsdom quá chậm.
+  const oTheoNhan = (nhan: string) => document.querySelector<HTMLInputElement>(`input[type="checkbox"][aria-label="${nhan}"]`);
+  const oChon = (key: string) => oTheoNhan(S("scada.kenh.hangLoat.chon", { tagKey: key }));
+  const chonHang = (...keys: string[]) => keys.forEach((k) => fireEvent.click(oChon(k)!));
+  const nutHangLoat = (n: number) => within(screen.getByTestId("thanh-hang-loat")).getByRole("button", { name: S("scada.kenh.hangLoat.nut", { n }) });
+  const moHop = (n: number) => {
+    fireEvent.click(nutHangLoat(n));
+    return screen.getByRole("dialog");
+  };
+  const datMuc = (dlg: HTMLElement, v: string) => fireEvent.change(within(dlg).getByLabelText(S("scada.kenh.hangLoat.muc")), { target: { value: v } });
+  const datLyDo = (dlg: HTMLElement, v: string) => fireEvent.change(within(dlg).getByLabelText(S("scada.kenh.dialog.lyDo")), { target: { value: v } });
+  const nutGui = (dlg: HTMLElement) => within(dlg).getByRole("button", { name: S("scada.kenh.hangLoat.gui") });
+  const loiMa = (appCode: string, appParams: Record<string, unknown>) => ({ message: "x", data: { code: "PRECONDITION_FAILED", appCode, appParams } });
+  const goiKhai = () => srv.mutCalls.filter((c) => c.proc === "khaiHangLoat") as Array<{ proc: string; vars: Record<string, unknown> }>;
+  const oMaLo = (dlg: HTMLElement) => within(dlg).getByLabelText(S("scada.kenh.dialog.totp")) as HTMLInputElement;
+  const nhapMaLo = (dlg: HTMLElement, ma = MA) => fireEvent.change(oMaLo(dlg), { target: { value: ma } });
+  /** Mức + lý do + mã — đủ để gửi. */
+  const dienDu = (dlg: HTMLElement, muc = "3", lyDo = "nâng mức lô") => {
+    datMuc(dlg, muc);
+    datLyDo(dlg, lyDo);
+    nhapMaLo(dlg);
+  };
+
+  it("chọn 3 hàng, mức 3, lý do, mã ⇒ ĐÚNG MỘT lượt {adapterId, items 3 mục actuationLevel 3, lyDo, totpCode}; ô mã hiện SẴN, thiếu 6 số ⇒ khoá", () => {
+    render(<ScadaKenh />);
+    chonHang("cmd_stop", "speed_sp", "valve");
+    const dlg = moHop(3);
+    expect(nutGui(dlg)).toBeDisabled(); // chưa chọn mức
+    datMuc(dlg, "3");
+    datLyDo(dlg, "  khai mức 3 cho dây chuyền  ");
+    // ô mã hiện sẵn (như HopSuaKenh) — một lượt gọi mỗi lô
+    expect(oMaLo(dlg)).toBeInTheDocument();
+    expect(nutGui(dlg)).toBeDisabled(); // thiếu mã
+    nhapMaLo(dlg, "12a34");
+    expect(oMaLo(dlg).value).toBe("1234");
+    expect(nutGui(dlg)).toBeDisabled(); // 4 số
+    fireEvent.click(nutGui(dlg));
+    expect(goiKhai()).toHaveLength(0);
+    nhapMaLo(dlg);
+    expect(nutGui(dlg)).toBeEnabled();
+    fireEvent.click(nutGui(dlg));
+    const items = [101, 102, 104].map((tagId) => ({ tagId, patch: { actuationLevel: 3 } }));
+    expect(goiKhai()).toEqual([{ proc: "khaiHangLoat", vars: { adapterId: 1, items, lyDo: "khai mức 3 cho dây chuyền", totpCode: MA } }]);
+  });
+
+  it("'Bỏ khai' ⇒ actuationLevel null cho mọi hàng", () => {
+    render(<ScadaKenh />);
+    chonHang("valve", "speed_sp");
+    const dlg = moHop(2);
+    dienDu(dlg, "bo", "bỏ khai mức");
+    fireEvent.click(nutGui(dlg));
+    expect(goiKhai()[0].vars.items).toEqual([
+      { tagId: 102, patch: { actuationLevel: null } },
+      { tagId: 104, patch: { actuationLevel: null } },
+    ]);
+  });
+
+  it("lý do < 5 ký tự ⇒ nút gửi khoá", () => {
+    render(<ScadaKenh />);
+    chonHang("valve");
+    const dlg = moHop(1);
+    datMuc(dlg, "1");
+    nhapMaLo(dlg);
+    datLyDo(dlg, " abc ");
+    expect(nutGui(dlg)).toBeDisabled();
+    datLyDo(dlg, "abcde");
+    expect(nutGui(dlg)).toBeEnabled();
+  });
+
+  it("hàng CHỈ ĐỌC / tắt / không phải kênh ra KHÔNG có ô chọn; operator không có cột chọn lẫn thanh hàng loạt", () => {
+    render(<ScadaKenh />);
+    for (const k of ["cmd_stop", "speed_sp", "valve"]) expect(oChon(k), k).not.toBeNull();
+    for (const k of ["temp", "mode_sel", "off_tag"]) expect(oChon(k), k).toBeNull();
+    expect(nutHangLoat(0)).toBeDisabled();
+    cleanup();
+    who.role = "operator";
+    who.canEdit = false;
+    render(<ScadaKenh />);
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.queryByTestId("thanh-hang-loat")).toBeNull();
+  });
+
+  it(`trần ${TRAN_HANG_LOAT}: chọn tất cả ⇒ đúng ${TRAN_HANG_LOAT} hàng; ô thứ 201 bị KHOÁ + chữ trần; bỏ một ⇒ mở lại`, () => {
+    srv.kenh[1] = Array.from({ length: 201 }, (_, i) =>
+      tag({ tagId: 1000 + i, tagKey: `sp_${i}`, writable: true, loaiKenh: "output", channelKindKhai: "output" }),
+    );
+    render(<ScadaKenh />);
+    // polish (review minor 3) — báo trần TRƯỚC khi chọn (201 kênh ghi được > 200)
+    expect(screen.getByTestId("hang-loat-tran-truoc")).toHaveTextContent(S("scada.kenh.hangLoat.tranTruoc", { n: 201, toiDa: TRAN_HANG_LOAT }));
+    fireEvent.click(oTheoNhan(S("scada.kenh.hangLoat.chonTatCa", { toiDa: TRAN_HANG_LOAT }))!);
+    // … và NGAY sau "chọn tất cả": chữ trần hiện cùng lượt
+    expect(screen.getByTestId("hang-loat-tran")).toHaveTextContent(S("scada.kenh.hangLoat.tran", { toiDa: TRAN_HANG_LOAT }));
+    expect(document.querySelectorAll('[data-testid="bang-kenh"] tbody input[type="checkbox"]:checked')).toHaveLength(TRAN_HANG_LOAT);
+    expect(nutHangLoat(200)).toBeEnabled();
+    const o201 = oChon("sp_200")!;
+    expect(o201).not.toBeChecked();
+    expect(o201).toBeDisabled();
+    fireEvent.click(o201);
+    expect(o201).not.toBeChecked();
+    expect(screen.getByTestId("hang-loat-tran")).toHaveTextContent(S("scada.kenh.hangLoat.tran", { toiDa: TRAN_HANG_LOAT }));
+    fireEvent.click(oChon("sp_0")!); // bỏ một
+    expect(oChon("sp_200")).toBeEnabled();
+    expect(screen.queryByTestId("hang-loat-tran")).toBeNull();
+    expect(screen.getByTestId("hang-loat-tran-truoc")).toBeInTheDocument();
+    fireEvent.click(oChon("sp_200")!);
+    expect(oChon("sp_200")).toBeChecked();
+    expect(nutHangLoat(200)).toBeEnabled();
+    expect(oChon("sp_0")).toBeDisabled();
+  });
+
+  it(`≤ ${TRAN_HANG_LOAT} kênh ghi được ⇒ KHÔNG có ghi chú trần`, () => {
+    render(<ScadaKenh />);
+    expect(screen.queryByTestId("hang-loat-tran-truoc")).toBeNull();
+    expect(screen.queryByTestId("hang-loat-tran")).toBeNull();
+  });
+
+  it("polish (review minor 1) — danhSach LÀM MỚI khi hộp đang mở (hàng biến mất / hàng mới) ⇒ vẫn gửi ĐÚNG lô đã chụp lúc mở", () => {
+    const { rerender } = render(<ScadaKenh />);
+    chonHang("cmd_stop", "speed_sp", "valve");
+    moHop(3);
+    // làm mới: valve biến mất, thêm một kênh ghi được mới, speed_sp đổi tên hiển thị
+    srv.kenh[1] = [
+      ...srv.kenh[1].filter((t) => t.tagKey !== "valve").map((t) => (t.tagKey === "speed_sp" ? { ...t, displayName: "đổi" } : t)),
+      tag({ tagId: 107, tagKey: "new_out", writable: true, loaiKenh: "output" }),
+    ];
+    rerender(<ScadaKenh />);
+    const dlg = screen.getByRole("dialog");
+    expect(within(dlg).getByTestId("hang-loat-danh-sach")).toHaveTextContent("cmd_stop, speed_sp, valve");
+    expect(within(dlg).getByText(S("scada.kenh.hangLoat.tieuDe", { n: 3 }))).toBeInTheDocument();
+    dienDu(dlg);
+    fireEvent.click(nutGui(dlg));
+    expect(goiKhai()).toHaveLength(1);
+    expect(goiKhai()[0].vars.items).toEqual([101, 102, 104].map((tagId) => ({ tagId, patch: { actuationLevel: 3 } })));
+  });
+
+  it(`hộp nhận > ${TRAN_HANG_LOAT} hàng (phòng thủ) ⇒ nút gửi KHOÁ + câu rõ, không gửi`, () => {
+    const hang = Array.from({ length: 201 }, (_, i) => tag({ tagId: 1000 + i, tagKey: `sp_${i}`, writable: true, loaiKenh: "output" }));
+    render(<HopKhaiHangLoat adapterId={1} hang={hang as never} onDong={() => {}} />);
+    const dlg = screen.getByRole("dialog");
+    dienDu(dlg, "3", "lô quá trần");
+    expect(nutGui(dlg)).toBeDisabled();
+    expect(within(dlg).getByTestId("hang-loat-qua-tran")).toHaveTextContent(S("scada.kenh.hangLoat.quaTran", { n: 201, toiDa: TRAN_HANG_LOAT }));
+    fireEvent.click(nutGui(dlg));
+    expect(goiKhai()).toHaveLength(0);
+  });
+
+  it(`trần client = trần máy chủ TRAN_KENH_DA_KHAI_MOT_LO (preflight D3 — bản sao có ghim)`, () => {
+    const nguon = readFileSync(join(process.cwd(), "server/services/scada/troLaiKenh.ts"), "utf8");
+    const m = /export const TRAN_KENH_DA_KHAI_MOT_LO = (\d+);/.exec(nguon);
+    expect(m, "không tìm thấy hằng trần ở máy chủ").not.toBeNull();
+    expect(TRAN_HANG_LOAT).toBe(Number(m![1]));
+  });
+
+  it("fix round 1 (c5) — luật nhắc = luật máy chủ: ghim DỪNG ở mức 3 lên 4 / bỏ khai (cũ > 1) ⇒ KHÔNG nhắc; ghim mức 1 cùng lô ⇒ chỉ nêu tag mức 1", () => {
+    srv.kenh[1] = srv.kenh[1].map((t) =>
+      t.tagKey === "speed_sp"
+        ? { ...t, stopValue: 10, actuationLevel: 3, mucHieuLuc: 3 }
+        : t.tagKey === "valve"
+          ? { ...t, stopValue: true, actuationLevel: 4, mucHieuLuc: 4 }
+          : t,
+    );
+    render(<ScadaKenh />);
+    chonHang("speed_sp", "valve");
+    const dlg = moHop(2);
+    for (const m of ["4", "5", "bo", "3"]) {
+      datMuc(dlg, m);
+      expect(within(dlg).queryByTestId("hang-loat-ghim-nhac"), `mức ${m}`).toBeNull();
+    }
+    cleanup();
+    srv.kenh[1] = srv.kenh[1].map((t) => (t.tagKey === "cmd_stop" ? { ...t, stopValue: false, actuationLevel: 1, mucHieuLuc: 1 } : t));
+    render(<ScadaKenh />);
+    chonHang("cmd_stop", "speed_sp", "valve");
+    const dlg2 = moHop(3);
+    datMuc(dlg2, "4");
+    const nhac = within(dlg2).getByTestId("hang-loat-ghim-nhac");
+    expect(nhac).toHaveTextContent("cmd_stop");
+    expect(nhac).not.toHaveTextContent("speed_sp");
+    expect(nhac).not.toHaveTextContent("valve");
+  });
+
+  it.each([
+    ["số 0", 0],
+    ["bool false", false],
+    ["chuỗi \"0\"", "0"],
+  ] as const)("polish (review minor 4) — ghim DỪNG giá trị %s (falsy) ở mức 1 VẪN tính là ghim ⇒ có nhắc khi nâng mức", (_, stopValue) => {
+    srv.kenh[1] = srv.kenh[1].map((t) => (t.tagKey === "speed_sp" ? { ...t, stopValue, actuationLevel: 1, mucHieuLuc: 1 } : t));
+    render(<ScadaKenh />);
+    chonHang("speed_sp", "valve");
+    const dlg = moHop(2);
+    datMuc(dlg, "3");
+    const nhac = within(dlg).getByTestId("hang-loat-ghim-nhac");
+    expect(nhac).toHaveTextContent("speed_sp");
+    expect(nhac).not.toHaveTextContent("valve");
+  });
+
+  it("có hàng đang ghim DỪNG ở mức 1 + chọn mức > 1 ⇒ dòng nhắc 'gỡ ghim trước' (nêu tag) TRƯỚC khi gửi; mức 1 ⇒ không nhắc; vẫn gửi được", () => {
+    srv.kenh[1] = srv.kenh[1].map((t) => (t.tagKey === "cmd_stop" ? { ...t, stopValue: false, actuationLevel: 1, mucHieuLuc: 1 } : t));
+    render(<ScadaKenh />);
+    chonHang("cmd_stop", "valve");
+    const dlg = moHop(2);
+    expect(within(dlg).queryByTestId("hang-loat-ghim-nhac")).toBeNull();
+    datMuc(dlg, "3");
+    const nhac = within(dlg).getByTestId("hang-loat-ghim-nhac");
+    expect(nhac).toHaveTextContent(S("scada.kenh.hangLoat.ghimNhac"));
+    expect(S("scada.kenh.hangLoat.ghimNhac")).toBe("Tag đang ghim DỪNG phải ở mức 1 — gỡ ghim trước");
+    expect(nhac).toHaveTextContent("cmd_stop");
+    expect(nhac).not.toHaveTextContent("valve");
+    datMuc(dlg, "bo"); // bỏ khai ⇒ 5 ⇒ cũng rơi khỏi STOP
+    expect(within(dlg).getByTestId("hang-loat-ghim-nhac")).toBeInTheDocument();
+    datMuc(dlg, "1");
+    expect(within(dlg).queryByTestId("hang-loat-ghim-nhac")).toBeNull();
+    dienDu(dlg, "4", "máy chủ là trọng tài");
+    expect(within(dlg).getByTestId("hang-loat-ghim-nhac")).toBeInTheDocument();
+    expect(nutGui(dlg)).toBeEnabled(); // nhắc, không chặn
+  });
+
+  it("lỗi STOP_PIN_GO_TRUOC {tagId:102} ⇒ hộp nêu speed_sp + câu ĐÃ DỊCH; hộp giữ mở; không toast trùng", () => {
+    render(<ScadaKenh />);
+    chonHang("cmd_stop", "speed_sp");
+    const dlg = moHop(2);
+    dienDu(dlg);
+    fireEvent.click(nutGui(dlg));
+    act(() =>
+      srv.mutOpts.khaiHangLoat.onError?.(
+        { message: "x", data: { code: "BAD_REQUEST", appCode: "STOP_PIN_GO_TRUOC", appParams: { ma: "STOP_PIN_GO_TRUOC", tagKey: "speed_sp", stopValue: "0", tagId: 102 } } },
+        goiKhai()[0].vars as never,
+      ),
+    );
+    const loi = within(screen.getByRole("dialog", { name: S("scada.kenh.hangLoat.tieuDe", { n: 2 }) })).getByTestId("hang-loat-loi-tag");
+    expect(loi).toHaveTextContent(/^Kênh speed_sp: /);
+    expect(loi).toHaveTextContent("Gỡ ghim trước");
+    expect(loi.textContent).not.toContain("STOP_PIN_GO_TRUOC");
+    expect(loi.textContent).not.toContain("{{");
+    expect(toastError).not.toHaveBeenCalled();
+    expect(oMaLo(dlg).value).toBe(""); // mã bị xoá sau MỌI kết cục, kể cả lỗi không phải mã
+  });
+
+  it("lỗi có tagId của hàng KHÔNG thuộc lô / lỗi không có tagId ⇒ toast đã dịch (không bịa tên tag)", () => {
+    render(<ScadaKenh />);
+    chonHang("valve");
+    const dlg = moHop(1);
+    dienDu(dlg);
+    fireEvent.click(nutGui(dlg));
+    act(() =>
+      srv.mutOpts.khaiHangLoat.onError?.(
+        { message: "x", data: { code: "BAD_REQUEST", appCode: "QUA_NHIEU_KENH_DA_KHAI", appParams: { soTag: 201, toiDa: 200 } } },
+        goiKhai()[0].vars as never,
+      ),
+    );
+    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(String(toastError.mock.calls[0][0])).toContain("201");
+    expect(within(dlg).queryByTestId("hang-loat-loi-tag")).toBeNull();
+  });
+
+  it.each([
+    ["SCADA_CONFIG_TOTP_INVALID", { ma: "TOTP_SAI" }, "đã được dùng"],
+    ["TOTP_TAM_KHOA", { ma: "TOTP_TAM_KHOA", remainingMinutes: 4 }, "4 phút"],
+    ["TOTP_KHONG_KIEM_DUOC", { ma: "TOTP_KHONG_KIEM_DUOC" }, "lỗi hệ thống"],
+  ] as const)("fix round 1 (c1) — %s ⇒ câu ĐÃ DỊCH ngay TRONG hộp, ô mã RỖNG, sửa mã ⇒ gửi lại được (lượt 2 mang mã MỚI)", (appCode, appParams, chu) => {
+    render(<ScadaKenh />);
+    chonHang("valve");
+    const dlg = moHop(1);
+    dienDu(dlg);
+    fireEvent.click(nutGui(dlg));
+    act(() => srv.mutOpts.khaiHangLoat.onError?.(loiMa(appCode, appParams), goiKhai()[0].vars as never));
+    const loi = within(dlg).getByTestId("hang-loat-loi-ma");
+    expect(loi).toHaveTextContent(chu);
+    expect(loi.textContent).not.toContain(appCode);
+    expect(loi.textContent).not.toContain("{{");
+    expect(toastError).not.toHaveBeenCalled(); // trong hộp, không toast
+    expect(oMaLo(dlg).value).toBe("");
+    expect(nutGui(dlg)).toBeDisabled(); // mã cũ đã bị xoá ⇒ phải nhập mã mới
+    nhapMaLo(dlg, "654321");
+    fireEvent.click(nutGui(dlg));
+    expect(goiKhai()).toHaveLength(2);
+    expect(goiKhai()[1].vars).toEqual({ ...goiKhai()[0].vars, totpCode: "654321" });
+    expect(within(dlg).queryByTestId("hang-loat-loi-ma")).toBeNull(); // gửi lại xoá câu lỗi cũ
+  });
+
+  it("polish (review minor 2) — sửa ô mã ⇒ câu lỗi MÃ trong hộp biến mất ngay (lỗi theo tag thì giữ tới lượt gửi sau)", () => {
+    render(<ScadaKenh />);
+    chonHang("speed_sp");
+    const dlg = moHop(1);
+    dienDu(dlg);
+    fireEvent.click(nutGui(dlg));
+    act(() => srv.mutOpts.khaiHangLoat.onError?.(loiMa("SCADA_CONFIG_TOTP_INVALID", { ma: "TOTP_SAI" }), goiKhai()[0].vars as never));
+    expect(within(dlg).getByTestId("hang-loat-loi-ma")).toBeInTheDocument();
+    nhapMaLo(dlg, "6");
+    expect(within(dlg).queryByTestId("hang-loat-loi-ma")).toBeNull();
+    // lỗi theo tag: sửa mã không phải cách sửa nó ⇒ giữ
+    nhapMaLo(dlg);
+    fireEvent.click(nutGui(dlg));
+    act(() =>
+      srv.mutOpts.khaiHangLoat.onError?.(
+        { message: "x", data: { code: "BAD_REQUEST", appCode: "STOP_PIN_GO_TRUOC", appParams: { ma: "STOP_PIN_GO_TRUOC", tagKey: "speed_sp", stopValue: "0", tagId: 102 } } },
+        goiKhai()[1].vars as never,
+      ),
+    );
+    nhapMaLo(dlg, "1");
+    expect(within(dlg).getByTestId("hang-loat-loi-tag")).toBeInTheDocument();
+  });
+
+  it("thành công ⇒ toast {soDoi, soGiuNguyen}, làm mới danhSach, đóng hộp, bỏ chọn; mở lô mới ⇒ ô mã TRỐNG", () => {
+    render(<ScadaKenh />);
+    chonHang("valve", "speed_sp");
+    const dlg = moHop(2);
+    dienDu(dlg);
+    fireEvent.click(nutGui(dlg));
+    expect(goiKhai()).toHaveLength(1);
+    act(() => srv.mutOpts.khaiHangLoat.onSuccess?.({ loId: "x", soDoi: 1, soGiuNguyen: 1, ketQua: [] }));
+    expect(toastSuccess).toHaveBeenCalledWith(S("scada.kenh.hangLoat.daKhai", { soDoi: 1, soGiuNguyen: 1 }));
+    expect(srv.invalidated).toEqual(expect.arrayContaining(["kenh.danhSach"]));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByLabelText(S("scada.kenh.dialog.totp"))).toBeNull();
+    expect(oChon("valve")).not.toBeChecked();
+    expect(oChon("speed_sp")).not.toBeChecked();
+    expect(nutHangLoat(0)).toBeDisabled();
+    // mở lại một lô mới ⇒ ô mã trống, nút khoá tới khi nhập mã mới
+    chonHang("valve");
+    const dlg2 = moHop(1);
+    expect(oMaLo(dlg2).value).toBe("");
+    datMuc(dlg2, "4");
+    datLyDo(dlg2, "lô thứ hai");
+    expect(nutGui(dlg2)).toBeDisabled();
+  });
+
+  it("huỷ ⇒ đóng hộp, GIỮ lựa chọn; đổi adapter ⇒ bỏ chọn", () => {
+    srv.kenh[2] = [tag({ tagId: 202, tagKey: "edge_sp", writable: true, loaiKenh: "output" })];
+    render(<ScadaKenh />);
+    chonHang("valve");
+    const dlg = moHop(1);
+    fireEvent.click(within(dlg).getByRole("button", { name: S("scada.kenh.dialog.huy") }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(oChon("valve")).toBeChecked();
+    fireEvent.change(screen.getByLabelText(S("scada.kenh.adapter")), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText(S("scada.kenh.adapter")), { target: { value: "1" } });
+    expect(oChon("valve")).not.toBeChecked();
+  });
+
+  it.each(["en", "zh"] as const)("%s: thanh chọn + hộp lô + nhắc ghim + lỗi mã trong hộp KHÔNG còn chữ Việt, không lộ khoá trần", async (lng) => {
+    await act(async () => {
+      await i18next.changeLanguage(lng);
+    });
+    srv.kenh[1] = srv.kenh[1].map((t) => (t.tagKey === "cmd_stop" ? { ...t, stopValue: 0, actuationLevel: 1, mucHieuLuc: 1 } : t));
+    render(<ScadaKenh />);
+    fireEvent.click(within(hangTag("cmd_stop")).getByRole("checkbox", { name: i18next.t("scada.kenh.hangLoat.chon", { tagKey: "cmd_stop" }) }));
+    fireEvent.click(screen.getByRole("button", { name: i18next.t("scada.kenh.hangLoat.nut", { n: 1 }) }));
+    const dlg = screen.getByRole("dialog");
+    fireEvent.change(within(dlg).getByLabelText(i18next.t("scada.kenh.hangLoat.muc")), { target: { value: "3" } });
+    fireEvent.change(within(dlg).getByLabelText(i18next.t("scada.kenh.dialog.lyDo")), { target: { value: "raise level" } });
+    fireEvent.change(within(dlg).getByLabelText(i18next.t("scada.kenh.dialog.totp")), { target: { value: MA } });
+    fireEvent.click(within(dlg).getByRole("button", { name: i18next.t("scada.kenh.hangLoat.gui") }));
+    act(() => srv.mutOpts.khaiHangLoat.onError?.(loiMa("TOTP_TAM_KHOA", { ma: "TOTP_TAM_KHOA", remainingMinutes: 4 }), goiKhai()[0].vars as never));
+    expect(screen.getByTestId("hang-loat-ghim-nhac")).toBeInTheDocument();
+    expect(screen.getByTestId("hang-loat-loi-ma")).toHaveTextContent("4");
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(CHU_VIET);
+    expect(text).not.toMatch(/scada\.kenh\./);
+    const bundle = (lng === "en" ? en_ : zh_) as Record<string, any>;
+    expect(text).toContain(bundle.scada.kenh.hangLoat.ghimNhac);
   });
 });
 

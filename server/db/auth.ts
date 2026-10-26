@@ -640,8 +640,92 @@ export async function verifyBackupCode(userId: number, code: string) {
    * (TRPCError có mã — tRPC tự trả đúng mã; đường REST bắt bằng `laLoiBoDemMaDuPhong`); bộ đếm hỏng ⇒ NÉM `TOTP_KHONG_KIEM_DUOC`.
    * ⚠ Khoá TOTP KHÔNG chạm tới đây: mã dự phòng là lối thoát của người bị khoá TOTP.
    */
+  /**
+   * ★ SCADA R1b-2a Task 10 (+ điều phối Q8) — đưa cho bộ đếm cả lượt THUA ĐUA (`"thua_dua"` = phát lại CHÍNH mã người này vừa tiêu,
+   * ≤ `CUA_SO_THUA_DUA_MS`): bộ đếm HOÀN lượt ấy thay vì tính như một lượt đoán. Mọi kết quả khác ⇒ `false` như cũ (vẫn bị đếm).
+   */
   const { kiemMaDuPhongCoBoDem } = await import('../_core/totpKhoaSai');
-  return kiemMaDuPhongCoBoDem(userId, () => tieuMaDuPhongNguyenTu(userId, code));
+  return kiemMaDuPhongCoBoDem(userId, async () => {
+    const kq = await tieuMaDuPhongPhanLoai(userId, code);
+    return kq === "tieu" ? true : kq === "thua_dua" ? "thua_dua" : false;
+  });
+}
+
+/**
+ * ★ SCADA R1b-2a Task 10 — cửa sổ nhận ra "PHÁT LẠI MÃ VỪA TIÊU" (lượt thua đua: bấm hai lần, tab trùng, lô tRPC lặp…). Một mã cùng người
+ * gửi lại trong ngần này sau khi CHÍNH nó được tiêu ⇒ `"thua_dua"` (được hoàn lượt ở bộ đếm), quá ngần này ⇒ `"khong_khop"` (bị đếm).
+ */
+export const CUA_SO_THUA_DUA_MS = 10_000;
+
+/** Kết quả một lượt tiêu mã dự phòng. `"thua_dua"` KHÔNG BAO GIỜ là "đúng": nó chỉ cho bộ đếm biết đây không phải một lượt đoán. */
+export type KetQuaTieuMaDuPhong = "tieu" | "khong_khop" | "thua_dua";
+
+/**
+ * Dấu thời gian `usedAt` theo ĐỒNG HỒ DB, dạng giờ UTC trơn — cùng biểu diễn drizzle vẫn ghi (`toISOString()` vào cột `timestamp` không
+ * múi giờ), nên người đọc cũ không đổi gì; nhưng ghi và so cùng MỘT đồng hồ (`now()` của Postgres) thay vì đồng hồ tiến trình.
+ */
+const BAY_GIO_UTC_TRON = sql`(now() AT TIME ZONE 'UTC')`;
+
+/**
+ * ★ SCADA R1b-2a Task 10 — TIÊU MÃ DỰ PHÒNG + PHÂN LOẠI lượt thua (điều phối Q8: chỉ CÙNG `userId` VÀ CÙNG mã đã tiêu trong 10 s).
+ *
+ *   · `"tieu"`       : khớp một hàng chưa dùng và CHÍNH lượt này đổi được `"isUsed"` false→true (câu UPDATE có điều kiện, R1b-1 T8).
+ *   · `"thua_dua"`   : (a) khớp hàng mà người dùng NÀY đã tiêu trong `CUA_SO_THUA_DUA_MS` gần nhất (so trong SQL bằng `now()` của DB); hoặc
+ *                      (b) khớp hàng chưa dùng nhưng UPDATE trả 0 hàng và hàng ấy nay ĐÃ DÙNG bởi chính người này — lượt khác vừa tiêu nó
+ *                      SAU lượt đọc của ta (tức sau khi ta đã được tính lượt) ⇒ "trong 10 s" hiển nhiên, không cần so thêm đồng hồ.
+ *   · `"khong_khop"` : mọi trường hợp khác — mã sai, mã của NGƯỜI KHÁC, mã tiêu đã quá 10 s, hàng bị xoá (quay vòng) giữa chừng.
+ *
+ * Nhận ra "cùng mã" bằng chính hàng `backup_codes` đã tiêu (bcrypt của nó) — không lưu mã thô ở đâu, không ghi log mã.
+ * ⚠ Đọc cả hai loại hàng trong MỘT câu (một ảnh chụp — xem ghi chú fix round 1 trong thân hàm).
+ * ⚠ Thứ tự: đối chiếu hàng VỪA TIÊU trước (thường 0–1 hàng) rồi mới tới các hàng chưa dùng ⇒ một lượt phát lại tốn MỘT bcrypt thay vì cả bộ
+ *   (giữ lượt phát lại nằm gọn trong cửa sổ dưới tải). Tương đương thứ tự ngược lại vì mã trong một bộ là ngẫu nhiên 32 bit; một mã trùng
+ *   nguyên văn với mã vừa tiêu CHÍNH LÀ "cùng mã" theo Q8.
+ */
+export async function tieuMaDuPhongPhanLoai(userId: number, code: string): Promise<KetQuaTieuMaDuPhong> {
+  const db = await getDb();
+  if (!db) return "khong_khop";
+
+  /**
+   * ★ fix round 1 (đo được: 1/3 lượt chạy lưới 10 song song ĐỎ — một lượt thua đua bị coi `khong_khop` rồi, là lượt thứ 10, audit + ném
+   *   khoá): bản đầu đọc "hàng vừa tiêu" và "hàng chưa dùng" bằng HAI câu. Người thắng commit GIỮA hai câu ⇒ câu 1 chưa thấy hàng đã
+   *   dùng, câu 2 không còn thấy hàng chưa dùng ⇒ mã đúng vừa tiêu "biến mất". Nay MỘT câu = MỘT ảnh chụp (READ COMMITTED: mỗi câu một
+   *   snapshot): hàng của mã ấy hoặc còn chưa dùng (⇒ khớp, UPDATE thua ⇒ nhánh (b)), hoặc đã dùng trong cửa sổ (⇒ nhánh (a)).
+   */
+  const laVuaTieu = sql<boolean>`(${backupCodes.isUsed} = true AND ${backupCodes.usedAt} IS NOT NULL
+      AND ${backupCodes.usedAt} > ${BAY_GIO_UTC_TRON} - make_interval(secs => ${CUA_SO_THUA_DUA_MS / 1000}))`;
+  const hang = await db.select({ id: backupCodes.id, code: backupCodes.code, isUsed: backupCodes.isUsed, laVuaTieu })
+    .from(backupCodes)
+    .where(sql`${backupCodes.userId} = ${userId} AND (${backupCodes.isUsed} = false OR ${laVuaTieu})`);
+
+  for (const h of hang) {
+    if (h.laVuaTieu === true && (await khopMaDuPhong(code, h.code))) return "thua_dua";
+  }
+
+  // Đối chiếu qua chủ duy nhất (chuẩn hoá HOA + bcrypt.compare) — không giữ bản sao vị từ ở đây.
+  for (const backupCode of hang.filter((h) => h.isUsed === false)) {
+    const isMatch = await khopMaDuPhong(code, backupCode.code);
+    if (isMatch) {
+      // Mark as used — nguyên tử: chỉ lượt NÀO đổi được `"isUsed"` false→true mới thắng. `usedAt` theo đồng hồ DB (xem BAY_GIO_UTC_TRON).
+      const tieu = await db.update(backupCodes)
+        .set({ isUsed: true, usedAt: BAY_GIO_UTC_TRON })
+        .where(
+          and(
+            eq(backupCodes.id, backupCode.id),
+            eq(backupCodes.userId, userId),
+            eq(backupCodes.isUsed, false)
+          )
+        )
+        .returning({ id: backupCodes.id });
+      if (tieu.length === 1) return "tieu";
+      // Thua đua (b): hàng còn đó, cùng người, nay đã dùng ⇒ lượt khác vừa tiêu CHÍNH mã này. Hàng biến mất (quay vòng) ⇒ không khớp.
+      const daBiTieu = await db.select({ id: backupCodes.id })
+        .from(backupCodes)
+        .where(sql`${backupCodes.id} = ${backupCode.id} AND ${backupCodes.userId} = ${userId} AND ${backupCodes.isUsed} = true`);
+      return daBiTieu.length === 1 ? "thua_dua" : "khong_khop";
+    }
+  }
+
+  return "khong_khop";
 }
 
 /**
@@ -654,46 +738,17 @@ export async function verifyBackupCode(userId: number, code: string) {
  * Lưu trữ thật: bảng riêng `backup_codes` (băm bcrypt, cột camelCase `"userId"` / `"isUsed"` / `"usedAt"`), nên bcrypt BẮT BUỘC đọc
  * trước. Khuôn: so bcrypt ngoài khoá (chậm, không giữ khoá hàng), rồi ĐÁNH DẤU bằng MỘT câu có điều kiện trên đúng hàng khớp (= câu drizzle
  * bên dưới):
- *     UPDATE backup_codes SET "isUsed" = true, "usedAt" = now() WHERE id = $1 AND "userId" = $2 AND "isUsed" = false RETURNING id
+ *     UPDATE backup_codes SET "isUsed" = true, "usedAt" = (now() AT TIME ZONE 'UTC') WHERE id = $1 AND "userId" = $2 AND "isUsed" = false RETURNING id
+ * ⚠ (R1b-2a T10) `"usedAt"` là `timestamp` KHÔNG múi giờ, giữ giờ UTC trơn: ĐỪNG "rút gọn" thành `now()` trần (ép theo TimeZone của phiên)
+ *   hay `new Date()` (đồng hồ tiến trình) — cửa sổ thua đua 10 s so CÙNG biểu thức `now() AT TIME ZONE 'UTC'` (`BAY_GIO_UTC_TRON`).
  * Postgres khoá hàng lúc UPDATE và (READ COMMITTED) đánh giá lại `"isUsed" = false` trên phiên bản mới nhất sau khi lượt kia commit ⇒
  * đúng MỘT lượt nhận lại hàng; lượt thua có 0 hàng RETURNING ⇒ coi như mã không hợp lệ (`false`). Tương đương `SELECT … FOR UPDATE` +
  * đánh dấu nhưng không cần giao dịch / giữ khoá qua bcrypt.
  * ⚠ KHÔNG chạm bộ đếm T16 (charge-before-verify nằm ở `kiemMaDuPhongCoBoDem`, bọc ngoài hàm này).
+ * ★ R1b-2a Task 10: thân hàm chuyển vào `tieuMaDuPhongPhanLoai` (cùng câu UPDATE có điều kiện); chữ ký boolean giữ nguyên — `true` ⇔ `"tieu"`.
  */
 export async function tieuMaDuPhongNguyenTu(userId: number, code: string): Promise<boolean> {
-  const db = await getDb();
-  if (!db) return false;
-
-  // Get all unused backup codes for user
-  const codes = await db.select()
-    .from(backupCodes)
-    .where(
-      and(
-        eq(backupCodes.userId, userId),
-        eq(backupCodes.isUsed, false)
-      )
-    );
-
-  // Đối chiếu qua chủ duy nhất (chuẩn hoá HOA + bcrypt.compare) — không giữ bản sao vị từ ở đây.
-  for (const backupCode of codes) {
-    const isMatch = await khopMaDuPhong(code, backupCode.code);
-    if (isMatch) {
-      // Mark as used — nguyên tử: chỉ lượt NÀO đổi được `"isUsed"` false→true mới thắng.
-      const tieu = await db.update(backupCodes)
-        .set({ isUsed: true, usedAt: new Date() })
-        .where(
-          and(
-            eq(backupCodes.id, backupCode.id),
-            eq(backupCodes.userId, userId),
-            eq(backupCodes.isUsed, false)
-          )
-        )
-        .returning({ id: backupCodes.id });
-      return tieu.length === 1;
-    }
-  }
-
-  return false;
+  return (await tieuMaDuPhongPhanLoai(userId, code)) === "tieu";
 }
 
 /**

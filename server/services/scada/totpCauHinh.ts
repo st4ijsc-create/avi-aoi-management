@@ -21,20 +21,48 @@
  * TRỪ các miễn trừ có lý do bằng văn bản (phán quyết T9 a): `deviceAdapter.tags.create/update/delete`, `deviceAdapter.update/delete`,
  * `scadaDiag.tamTat` (chỉ đòi mã khi đụng tag được bảo vệ; dò mã đã bị khoá T16 theo tài khoản chặn; xếp vào nhóm "2fa" đếm theo path sẽ cho
  * mọi lượt sửa tag / adapter thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy).
+ *
+ * ★ R1b-2a T5 (kiem-dinh M7, điều phối Q5 DUYỆT 2026-10-25) — KẾT NỐI THỨ HAI TRONG GIAO DỊCH CẤU HÌNH, CÓ HẠN:
+ *   Mọi bên gọi ở trên gọi hàm này BÊN TRONG giao dịch cấu hình (đang giữ khoá adapter / luật / tag). `kiemXacThucTheoMuc` đọc / ghi bộ đếm sai
+ *   (`totp_khoa_sai`, T16) và sổ mã đã dùng (`totp_consumed`) qua POOL — một kết nối THỨ HAI ngoài `tx`. Điều đó là CỐ Ý và KHÔNG được chuyển
+ *   vào `tx`: bộ đếm sai phải COMMIT kể cả khi giao dịch cấu hình rollback (lượt bị từ chối vì mã sai CHÍNH LÀ lượt rollback) — đếm trong `tx`
+ *   thì mỗi mã sai bị rollback cùng giao dịch ⇒ bộ đếm không bao giờ tăng ⇒ dò mã không giới hạn.
+ *   Cái giá: pool cạn (mọi kết nối đang bị các giao dịch cấu hình như thế này giữ) ⇒ lượt lấy kết nối thứ hai chờ VÔ HẠN trong khi `tx` giữ
+ *   khoá. Vì vậy lượt kiểm được bọc `withDeadline(…, HAN_TOTP_CAU_HINH_MS)`: quá hạn ⇒ CONFLICT "thử lại" (`OPERATION_FAILED` · operation
+ *   `scadaTotpCauHinh` · reason `scadaKenhThuLai`), giao dịch của bên gọi rollback và nhả khoá trong ≤ 3 s thay vì treo.
+ *   Giới hạn đã biết (preflight D10): lượt kiểm bị bỏ rơi khi quá hạn vẫn có thể chạy xong sau đó trên kết nối riêng — mã có thể đã bị tiêu
+ *   dù người dùng được báo "thử lại" (họ chờ mã mới; không có đường nào ghi cấu hình bằng lượt ấy vì giao dịch đã rollback).
  */
 import { z } from "zod";
 import { appError } from "../../_core/appError";
 import { kiemXacThucTheoMuc, type CtxXacThuc } from "../../_core/xacThucTheoMuc";
 import { loiTotpKhoa } from "../../_core/totpKhoaSai";
+import { withDeadline } from "../ot/drivers/boundedClose";
 
 /** Mã TOTP 6 số của các mutation cấu hình kênh (vắng ⇒ `TOTP_CAN` ở handler, không phải lỗi zod — UI hiện đúng câu "cần mã"). */
 export const totpCauHinhInput = z.string().max(16).optional();
 
+/** R1b-2a T5 (Q5) — hạn của lượt kiểm TOTP (kết nối thứ hai) khi chạy trong giao dịch cấu hình. Xem đầu tệp. */
+export const HAN_TOTP_CAU_HINH_MS = 3000;
+
+/** Quá hạn kiểm TOTP ⇒ "thử lại" (khoá i18n có sẵn `errors.reason.scadaKenhThuLai`). */
+const loiQuaHanTotp = () =>
+  appError(
+    "CONFLICT",
+    "OPERATION_FAILED",
+    { operation: "scadaTotpCauHinh", reason: "scadaKenhThuLai" },
+    "Không kiểm được mã xác thực kịp thời (hệ thống đang bận) — thay đổi chưa được lưu, thử lại.",
+  );
+
 /**
  * Mức 5 cố định: sàn vai ACTUATION_ROLES, phải đăng ký 2FA, mã 6 số mỗi lượt, không cache phiên, không đọc cờ env. Từ chối ⇒ NÉM appError.
+ * `tuyChon.hanMs` (test): hạn của lượt kiểm, mặc định `HAN_TOTP_CAU_HINH_MS`.
  */
-export async function kiemTotpCauHinh(ctx: CtxXacThuc, totpCode: string | undefined): Promise<void> {
-  const kq = await kiemXacThucTheoMuc(ctx, 5, totpCode);
+export async function kiemTotpCauHinh(ctx: CtxXacThuc, totpCode: string | undefined, tuyChon?: { hanMs?: number }): Promise<void> {
+  const kq = await withDeadline(kiemXacThucTheoMuc(ctx, 5, totpCode), tuyChon?.hanMs ?? HAN_TOTP_CAU_HINH_MS, "scadaTotpCauHinh", {
+    unref: true,
+    loi: loiQuaHanTotp,
+  });
   if (kq.ok) return;
   switch (kq.ma) {
     case "TOTP_CAN":

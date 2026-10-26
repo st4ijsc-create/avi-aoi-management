@@ -44,7 +44,23 @@ export function laLoiMaTotp(e: unknown): boolean {
  * kiem-dinh P1-2 — ô mã TOTP 6 số, BẮT BUỘC mỗi lần lưu cấu hình kênh / kênh chế độ (máy chủ: `kiemXacThucTheoMuc` mức 5 — mã tươi mỗi
  * lượt, không cache phiên). Chỉ nhận chữ số. Câu lỗi của máy chủ (SCADA_CONFIG_TOTP_*, TOTP_TAM_KHOA …) đi qua `toastTrpcError`.
  */
-export function TruongTotp({ id, value, onChange, disabled }: { id: string; value: string; onChange: (v: string) => void; disabled?: boolean }) {
+export function TruongTotp({
+  id,
+  value,
+  onChange,
+  disabled,
+  autoFocus,
+  describedBy,
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  /** R1b-2a T11 — ô mã hiện GIỮA hộp đang mở (ScadaDiag): chuyển tiêu điểm vào ô khi nó xuất hiện. */
+  autoFocus?: boolean;
+  /** id của đoạn chữ giải thích đứng ngoài ô (đọc cùng ô bằng trình đọc màn hình). */
+  describedBy?: string;
+}) {
   const { t } = useTranslation();
   return (
     <div className="space-y-1">
@@ -56,6 +72,8 @@ export function TruongTotp({ id, value, onChange, disabled }: { id: string; valu
         maxLength={MA_TOTP_DAI}
         value={value}
         disabled={disabled}
+        autoFocus={autoFocus}
+        aria-describedby={describedBy}
         onChange={(e) => onChange(e.target.value.replace(/\D/g, "").slice(0, MA_TOTP_DAI))}
       />
       <p className="text-xs text-muted-foreground">{t("scada.kenh.dialog.totpGoiY")}</p>
