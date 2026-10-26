@@ -69,4 +69,94 @@ describe("datGanModel (DB _test, Đợt 7.0)", () => {
       .where(and(eq(aiModelBindings.scopeId, SCOPE), isNull(aiModelBindings.retiredAt)));
     expect(conHieuLuc.map((g) => `${g.mode}:${g.profileId ?? g.envKey}`).sort()).toEqual(["active:GGUF_CODE_MODEL", `thu:${TT}-pa`]);
   });
+
+  it("★ KHÔNG ĐỔI: gán lại đúng (vai, phạm vi, chế độ, đích, dự phòng) ⇒ { khongDoi: true, daThay: 0 } — KHÔNG retire, KHÔNG chèn hàng giống hệt (id giữ nguyên, vẫn đúng 1 hàng sống)", async () => {
+    const db = (await getDb())!;
+    const sinh = () => db.select().from(aiModelBindings).where(and(eq(aiModelBindings.scopeId, SCOPE), eq(aiModelBindings.mode, "active"), isNull(aiModelBindings.retiredAt)));
+    const truoc = await sinh();
+    expect(truoc).toHaveLength(1);
+    const dem = async () => (await db.select().from(aiModelBindings).where(and(eq(aiModelBindings.scopeId, SCOPE), eq(aiModelBindings.mode, "active")))).length; // KỂ CẢ hàng đã retire
+    const tongTruoc = await dem();
+    const lai = await datGanModel(db, yc({ envKey: "GGUF_CODE_MODEL" }), null);
+    expect(lai).toEqual({ id: truoc[0].id, daThay: 0, khongDoi: true });
+    expect((await sinh()).map((g) => g.id)).toEqual([truoc[0].id]);
+    expect(await dem()).toBe(tongTruoc); // không chèn thêm hàng (kể cả hàng sẽ bị retire ngay)
+  });
+
+  it("★ ĐỔI thật vẫn thay: đổi đích / thêm dự phòng / đổi THỨ TỰ dự phòng ⇒ retire hàng cũ + hàng mới (khongDoi vắng); gán lại đúng dự phòng ⇒ khongDoi; chế độ khác không bị ảnh hưởng", async () => {
+    const db = (await getDb())!;
+    const dem = async () => (await db.select().from(aiModelBindings).where(and(eq(aiModelBindings.scopeId, SCOPE), isNull(aiModelBindings.retiredAt)))).length;
+    const a = await datGanModel(db, yc({ envKey: "GGUF_CODE_MODEL", fallback: [`${TT}-pa`] }), null);
+    expect(a.khongDoi).toBeUndefined();
+    expect(a.daThay).toBe(1);
+    const b = await datGanModel(db, yc({ envKey: "GGUF_CODE_MODEL", fallback: [`${TT}-pa`] }), null);
+    expect(b).toEqual({ id: a.id, daThay: 0, khongDoi: true });
+    const c = await datGanModel(db, yc({ envKey: "GGUF_CODE_MODEL", fallback: [`${TT}-pa`, `${TT}-pb`] }), null);
+    expect(c.khongDoi).toBeUndefined();
+    expect(c.daThay).toBe(1);
+    const d = await datGanModel(db, yc({ envKey: "GGUF_CODE_MODEL", fallback: [`${TT}-pb`, `${TT}-pa`] }), null); // đổi THỨ TỰ
+    expect(d.khongDoi).toBeUndefined();
+    expect(d.daThay).toBe(1);
+    const e = await datGanModel(db, yc({ profileId: `${TT}-pb`, fallback: [`${TT}-pb`, `${TT}-pa`] }), null); // đổi ĐÍCH (env → hồ sơ)
+    expect(e.khongDoi).toBeUndefined();
+    expect(e.daThay).toBe(1);
+    const truoc = await dem();
+    await datGanModel(db, yc({ profileId: `${TT}-pb`, fallback: [`${TT}-pb`, `${TT}-pa`] }), null);
+    expect(await dem()).toBe(truoc); // gán trùng không đổi số hàng sống
+    // chế độ khác: gán 'thu' trùng hàng thu có sẵn ⇒ khongDoi; không đụng hàng active
+    const thu = await datGanModel(db, yc({ profileId: `${TT}-pa`, mode: "thu" }), null);
+    expect(thu.khongDoi).toBe(true);
+  });
+
+  it("cổng vẫn chạy TRƯỚC khi coi là trùng: gán lại một đích bị cổng chặn vẫn bị từ chối (không 'khongDoi' trá hình)", async () => {
+    const db = (await getDb())!;
+    expect(await maLoi(datGanModel(db, yc({ profileId: `${TT}-pa`, mode: "active" }), null))).toBe("GIAY_PHEP_CHUA_RO");
+  });
+});
+
+describe("goGanModel — gỡ mềm một gán (lô UX Trung tâm Model)", () => {
+  const SCOPE_GO = `${TT}-go`;
+  beforeAll(async () => {
+    const db = (await getDb())!;
+    await db.delete(aiModelBindings).where(eq(aiModelBindings.scopeId, SCOPE_GO));
+  });
+  afterAll(async () => {
+    const db = await getDb();
+    if (db) await db.delete(aiModelBindings).where(eq(aiModelBindings.scopeId, SCOPE_GO));
+  });
+
+  it("★ gỡ ⇒ retiredAt đặt (KHÔNG xoá hàng: lịch sử còn), biến khỏi ảnh sổ model; gỡ lần hai / id lạ ⇒ GAN_KHONG_CO", async () => {
+    const { goGanModel } = await import("./datGan");
+    const { napAnhSoModel } = await import("./napSoModel");
+    const db = (await getDb())!;
+    const g = await datGanModel(db, yc({ scopeId: SCOPE_GO, envKey: "GGUF_CODE_MODEL", mode: "active" }), null);
+    const truoc = await napAnhSoModel();
+    expect(truoc?.gan.some((x) => x.id === g.id)).toBe(true);
+    const kq = await goGanModel(db, g.id);
+    expect(kq).toMatchObject({ id: g.id, roleId: "code.plc", scopeKind: "project", scopeId: SCOPE_GO, mode: "active", envKey: "GGUF_CODE_MODEL" });
+    const [hang] = await db.select().from(aiModelBindings).where(eq(aiModelBindings.id, g.id));
+    expect(hang.retiredAt).not.toBeNull();
+    expect((await napAnhSoModel())?.gan.some((x) => x.id === g.id)).toBe(false);
+    expect(await maLoi(goGanModel(db, g.id))).toBe("GAN_KHONG_CO");
+    expect(await maLoi(goGanModel(db, 2_000_000_000))).toBe("GAN_KHONG_CO");
+  });
+
+  it("vaiTroDiTheoEnv phản ánh ĐÚNG việc vai trò còn gán active toàn cục hay không (so với đếm trực tiếp)", async () => {
+    const { goGanModel } = await import("./datGan");
+    const db = (await getDb())!;
+    const g = await datGanModel(db, yc({ scopeId: SCOPE_GO, envKey: "GGUF_CODE_MODEL", mode: "active" }), null);
+    const conGlobal = await db.select().from(aiModelBindings).where(and(eq(aiModelBindings.roleId, "code.plc"), eq(aiModelBindings.scopeKind, "global"), eq(aiModelBindings.mode, "active"), isNull(aiModelBindings.retiredAt)));
+    const kq = await goGanModel(db, g.id);
+    expect(kq.vaiTroDiTheoEnv).toBe(conGlobal.length === 0);
+  });
+
+  it("chỉ gỡ ĐÚNG hàng được chỉ: hàng khác cùng vai/phạm vi khác chế độ vẫn sống", async () => {
+    const { goGanModel } = await import("./datGan");
+    const db = (await getDb())!;
+    const a = await datGanModel(db, yc({ scopeId: SCOPE_GO, envKey: "GGUF_CODE_MODEL", mode: "active" }), null);
+    const b = await datGanModel(db, yc({ scopeId: SCOPE_GO, envKey: "GGUF_CODE_MODEL", mode: "thu" }), null);
+    await goGanModel(db, a.id);
+    const [conB] = await db.select().from(aiModelBindings).where(eq(aiModelBindings.id, b.id));
+    expect(conB.retiredAt).toBeNull();
+  });
 });

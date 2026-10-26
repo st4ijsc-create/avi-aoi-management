@@ -41,6 +41,7 @@ export async function napAnhSoModel(dbVao?: Db | null): Promise<AnhSoModel | nul
       ]),
     ),
     gan: gan.map((g) => ({
+      id: g.id,
       roleId: g.roleId,
       scopeKind: g.scopeKind as PhamViGan,
       scopeId: g.scopeId,

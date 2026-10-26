@@ -23,6 +23,8 @@ export interface ProfileTrongAnh {
 }
 
 export interface GanTrongAnh {
+  /** Khoá hàng `ai_model_bindings` (để UI gỡ đúng hàng — `soModelGoGan`). Vắng ở ảnh dựng tay trong lưới. */
+  id?: number;
   roleId: string;
   scopeKind: PhamViGan;
   scopeId: string | null;

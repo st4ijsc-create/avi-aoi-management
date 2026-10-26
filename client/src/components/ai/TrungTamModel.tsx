@@ -112,7 +112,7 @@ export default function TrungTamModel() {
 
 // ─── Vai trò & gán ─────────────────────────────────────────────────────────────
 
-function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
+export function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
   const { t } = useTranslation();
   const envKeys = useMemo(() => [...new Set(d.vaiTro.map((v) => v.envKey))].sort(), [d.vaiTro]);
   const [roleId, setRoleId] = useState("");
@@ -122,10 +122,28 @@ function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
   const [dich, setDich] = useState("");
   const [fallback, setFallback] = useState("");
   const [mode, setMode] = useState<(typeof CHE_DO)[number]>("thu");
+  /** Gán đang chờ xác nhận GỠ (hộp xác nhận trong trang — không dùng confirm()). */
+  const [goChon, setGoChon] = useState<TongQuan["gan"][number] | null>(null);
+  const goGan = trpc.aiGguf.soModelGoGan.useMutation({
+    onSuccess: (r) => {
+      toast.success(t("gguf.trungTam.goGan.daGo", "Đã gỡ gán {{vaiTro}} ({{cheDo}}).", { vaiTro: r.roleId, cheDo: t(`gguf.trungTam.cheDo.${r.mode}`, r.mode) }));
+      if (r.vaiTroDiTheoEnv && r.mode === "active" && r.scopeKind === "global") toast.info(t("gguf.trungTam.goGan.diTheoEnv", "Vai trò {{vaiTro}} nay đi theo khoá .env.", { vaiTro: r.roleId }));
+      setGoChon(null);
+      lamMoi();
+    },
+    onError: (e) => {
+      toastTrpcError(e);
+      setGoChon(null);
+      lamMoi(); // gán có thể đã được gỡ ở nơi khác — làm mới danh sách
+    },
+  });
 
   const datGan = trpc.aiGguf.soModelDatGan.useMutation({
-    onSuccess: (r) => {
-      toast.success(t("gguf.trungTam.datGan.daDat", "Đã đặt gán (thay {{n}} gán cũ).", { n: r.daThay }));
+    onSuccess: (r, v) => {
+      // Thông báo CỤ THỂ (vai → đích, chế độ) để người dùng biết điều gì vừa xảy ra; gán trùng hàng đang có ⇒ máy chủ trả khongDoi ⇒ nói thẳng "không đổi".
+      const p = { vaiTro: v.roleId, dich: v.profileId ?? v.envKey ?? "?", cheDo: t(`gguf.trungTam.cheDo.${v.mode}`, v.mode), n: r.daThay };
+      if ((r as { khongDoi?: boolean }).khongDoi) toast.info(t("gguf.trungTam.datGan.khongDoi", "Không đổi: {{vaiTro}} đã gán đúng {{dich}} ({{cheDo}}).", p));
+      else toast.success(t("gguf.trungTam.datGan.daGan", "Đã gán {{vaiTro}} → {{dich}} ({{cheDo}}) — thay {{n}} gán cũ.", p));
       lamMoi();
     },
   });
@@ -190,6 +208,7 @@ function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
                   <TableHead>{t("gguf.trungTam.gan.cot.cheDo", "Chế độ")}</TableHead>
                   <TableHead>{t("gguf.trungTam.gan.cot.dich", "Đích")}</TableHead>
                   <TableHead>{t("gguf.trungTam.gan.cot.duPhong", "Dự phòng")}</TableHead>
+                  <TableHead>{t("gguf.trungTam.goGan.cot", "Thao tác")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -217,6 +236,13 @@ function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
                       )}
                     </TableCell>
                     <TableCell className="font-mono text-xs whitespace-normal break-all">{g.fallback.length ? g.fallback.join(" → ") : "—"}</TableCell>
+                    <TableCell>
+                      {g.id !== undefined ? (
+                        <Button type="button" size="sm" variant="outline" data-testid={`go-gan-${g.id}`} onClick={() => setGoChon(g)} disabled={goGan.isPending}>
+                          {t("gguf.trungTam.goGan.nut", "Gỡ")}
+                        </Button>
+                      ) : null}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -224,6 +250,28 @@ function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
           </div>
         )}
       </div>
+
+      {goChon ? (
+        <div className="space-y-2 rounded-md border border-destructive/40 p-3" role="alertdialog" aria-label={t("gguf.trungTam.goGan.tieuDe", "Xác nhận gỡ gán")} data-testid="hop-xac-nhan-go">
+          <h4 className="text-sm font-medium">{t("gguf.trungTam.goGan.tieuDe", "Xác nhận gỡ gán")}</h4>
+          <p className="text-xs" data-testid="noi-dung-go">
+            {goChon.mode === "active" && goChon.scopeKind === "global"
+              ? t("gguf.trungTam.goGan.activeGlobal", "Gỡ gán chạy thật toàn cục của vai trò {{vaiTro}}: vai trò này sẽ đi theo khoá .env {{envKey}}.", { vaiTro: goChon.roleId, envKey: d.vaiTro.find((v) => v.id === goChon.roleId)?.envKey ?? "?" })
+              : goChon.mode === "active"
+                ? t("gguf.trungTam.goGan.activeKhac", "Gỡ gán chạy thật phạm vi {{phamVi}} {{scopeId}} của {{vaiTro}}: phạm vi này sẽ đi theo gán rộng hơn hoặc khoá .env.", { vaiTro: goChon.roleId, phamVi: goChon.scopeKind, scopeId: goChon.scopeId ?? "" })
+                : t("gguf.trungTam.goGan.thu", "Gán {{cheDo}} của {{vaiTro}} KHÔNG ảnh hưởng model đang chạy — gỡ chỉ bỏ nó khỏi danh sách gán còn hiệu lực (lịch sử còn).", { vaiTro: goChon.roleId, cheDo: t(`gguf.trungTam.cheDo.${goChon.mode}`, goChon.mode) })}
+          </p>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" variant="destructive" data-testid="xac-nhan-go" disabled={goGan.isPending} onClick={() => goChon.id !== undefined && goGan.mutate({ id: goChon.id })}>
+              {goGan.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden /> : null}
+              {t("gguf.trungTam.goGan.xacNhan", "Xác nhận gỡ")}
+            </Button>
+            <Button type="button" size="sm" variant="outline" data-testid="huy-go" disabled={goGan.isPending} onClick={() => setGoChon(null)}>
+              {t("gguf.trungTam.goGan.huy", "Huỷ")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <form
         className="space-y-3 rounded-md border p-3"
@@ -305,6 +353,11 @@ function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
                 </option>
               ))}
             </select>
+            {mode !== "active" ? (
+              <span className="block text-amber-600 dark:text-amber-400" role="status" data-testid="canh-bao-che-do">
+                {t("gguf.trungTam.datGan.canhBaoCheDo", "'thử' / 'chạy bóng' KHÔNG đổi model đang chạy — chọn 'chạy thật' (active) để có hiệu lực.")}
+              </span>
+            ) : null}
           </label>
           <label className="space-y-1 text-xs sm:col-span-3">
             <span>{t("gguf.trungTam.datGan.duPhong", "Dự phòng (mã hồ sơ, cách nhau dấu phẩy, tối đa 4)")}</span>
