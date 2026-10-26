@@ -71,6 +71,53 @@ describe("boolDungGhim — STOP ĐÃ XÁC MINH (KD-T2): không bao giờ ném; t
     for (const v of [...NGOAI_TAP, ...HOP_LE.map(([x]) => x)]) expect(typeof boolDungGhim(v)).toBe("boolean");
     for (const [v, k] of HOP_LE) expect(boolDungGhim(v)).toBe(k);
   });
+  /**
+   * kiem-dinh R1b-2b-1 (T2d) — ghim MỌI nhánh khoan dung, từng giá trị một (trước: ngoài tập chỉ kiểm `typeof === "boolean"` ⇒ nhánh "truthy cũ"
+   * trả hằng `false` vẫn sống). Đột biến nguyên văn T2d (bỏ dòng "số hữu hạn ≠ 0 ⇒ TRUE") là TƯƠNG ĐƯƠNG: mọi số hữu hạn ≠ 0 rơi xuống
+   * `Boolean(v)` = true; 0 / -0 đã bị `boolTuGiaTri` bắt; NaN / ±Infinity không hữu hạn nên đi `Boolean` ở cả hai bản. Ca này bắt các biến thể
+   * KHÔNG tương đương (số ⇒ `v === 1`, số ⇒ `v > 0`, bỏ / đổi nhánh truthy).
+   */
+  it("T2d: bảng khoan dung đầy đủ — số hữu hạn ≠ 0 (âm, 255, lẻ) ⇒ TRUE; NaN ⇒ FALSE; ±Infinity ⇒ TRUE; truthy cũ ⇒ TRUE; falsy cũ ⇒ FALSE", () => {
+    const BANG: ReadonlyArray<readonly [unknown, boolean]> = [
+      // nhánh số hữu hạn ≠ 0
+      [255, true],
+      [2, true],
+      [-1, true],
+      [-255, true],
+      [-0.5, true],
+      [0.5, true],
+      [65535, true],
+      [-32768, true],
+      [Number.MIN_VALUE, true],
+      // 0 / -0 ⇒ tập hợp lệ (FALSE)
+      [0, false],
+      [-0, false],
+      // số không hữu hạn ⇒ truthy JS
+      [NaN, false],
+      [Infinity, true],
+      [-Infinity, true],
+      // truthy cũ (chuỗi / đối tượng ngoài tập)
+      ["on", true],
+      ["off", true],
+      ["2", true],
+      ["255", true],
+      ["yes", true],
+      ["no", true],
+      ["BAD 255", true],
+      ["  ", true],
+      [[], true],
+      [[0], true],
+      [{}, true],
+      [{ v: 0 }, true],
+      // falsy cũ
+      ["", false],
+      [null, false],
+      [undefined, false],
+    ];
+    for (const [v, k] of BANG) expect(boolDungGhim(v), `boolDungGhim(${String(JSON.stringify(v) ?? v)})`).toBe(k);
+    // cùng bảng qua bộ chọn của driver
+    for (const [v, k] of BANG) expect(boolChoGhi(v, true), `boolChoGhi(${String(JSON.stringify(v) ?? v)}, true)`).toBe(k);
+  });
   it("boolChoGhi: dungGhim=true ⇒ khoan dung; vắng / false ⇒ chặt", () => {
     expect(boolChoGhi(255, true)).toBe(true);
     expect(() => boolChoGhi(255, false)).toThrow(LoiGiaTriBool);
