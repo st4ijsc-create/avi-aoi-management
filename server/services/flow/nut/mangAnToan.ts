@@ -150,10 +150,19 @@ export async function kiemDichDen(url: URL, choPhep: ReadonlySet<string>): Promi
 const KHONG_THAN = new Set([101, 204, 205, 304]);
 
 /**
- * `fetch` tối giản kết nối TỚI ĐÚNG `dich.ip` (ghim `lookup`). Không theo chuyển hướng. Trả `Response` chuẩn — thân là luồng.
+ * ★ Đợt 10.3 (rà kiem-dinh Task 9) — agent RIÊNG, KHÔNG kế thừa proxy từ env: trên Node ≥ 24, `NODE_USE_ENV_PROXY=1` hoặc
+ * `http.setGlobalProxyFromEnv()` làm agent TOÀN CỤC đi qua `HTTP(S)_PROXY` ⇒ proxy tự phân giải / nối đích cuối, vô hiệu ghim IP +
+ * `kiemDichDen`. Agent tạo mới không có `proxyEnv` ⇒ luôn nối thẳng tới IP đã ghim. Không keep-alive (mỗi yêu cầu một kết nối ghim).
+ */
+const AGENT_HTTP = new http.Agent({ keepAlive: false });
+const AGENT_HTTPS = new https.Agent({ keepAlive: false });
+
+/**
+ * `fetch` tối giản kết nối TỚI ĐÚNG `dich.ip` (ghim `lookup`). Không theo chuyển hướng, không qua proxy env. Trả `Response` chuẩn — thân là luồng.
  */
 export function fetchGhim(url: URL, init: RequestInit, dich: DichDen): Promise<Response> {
   const mod = url.protocol === "https:" ? https : http;
+  const agent = url.protocol === "https:" ? AGENT_HTTPS : AGENT_HTTP;
   return new Promise<Response>((resolve, reject) => {
     const tieuDe: Record<string, string> = {};
     for (const [k, v] of Object.entries((init.headers ?? {}) as Record<string, string>)) tieuDe[k] = v;
@@ -166,6 +175,7 @@ export function fetchGhim(url: URL, init: RequestInit, dich: DichDen): Promise<R
         method: init.method ?? "GET",
         headers: tieuDe,
         signal: init.signal ?? undefined,
+        agent,
         lookup: ((_host: string, opts: { all?: boolean }, cb: (...a: unknown[]) => void) => {
           if (opts && opts.all) cb(null, [{ address: dich.ip, family: dich.family }]);
           else cb(null, dich.ip, dich.family);
