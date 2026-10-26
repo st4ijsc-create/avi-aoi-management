@@ -3924,6 +3924,7 @@
       "taiModelMay": "tải mô hình 3D của máy",
       "restoreBackup": "khôi phục bản sao lưu",
       "activateInterlockRule": "kích hoạt quy tắc khoá liên động",
+      "interlockRule": "lưu quy tắc khoá liên động",
       "createProgramArtifactVersion": "tạo phiên bản artifact chương trình",
       "requestRecipeModelChangeover": "yêu cầu đổi model công thức",
       "approveChangeoverRequest": "duyệt yêu cầu đổi lệnh",

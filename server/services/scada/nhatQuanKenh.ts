@@ -212,8 +212,9 @@ export async function kiemLenhInterlockTx(
     .limit(1)
     .for("share");
   if (!dong) return null;
-  // R1b-2b-1 T2 fix round 1 (I1) — giao thức của adapter cho luật địa chỉ bit. Đọc KHÔNG khoá (khoá adapter SAU tag sẽ đảo thứ tự khoá dự án
-  // adapter → tag); đổi protocol của adapter là `deviceAdapter.update` ⇒ posture (`luatLenhLechLuoi`) vẫn bắt luật hỏng sau đó.
+  // R1b-2b-1 T2 fix round 1 (I1) — giao thức của adapter cho luật địa chỉ bit. KHÔNG khoá ở đây (khoá adapter SAU tag sẽ đảo thứ tự khoá dự án
+  // adapter → tag): bên gọi (interlockRouter, R1b-2b-1 T10 `khoaDichLuatTx`) đã khoá adapter đích FOR SHARE TRƯỚC luật ⇒ hàng đọc ở đây là hàng
+  // giao dịch đang giữ, `deviceAdapter.update` đổi protocol phải chờ ta commit (hoặc ta chờ nó và đọc protocol MỚI).
   const [ad] = await tx.select({ protocol: deviceAdapters.protocol }).from(deviceAdapters).where(eq(deviceAdapters.id, luat.targetAdapterId)).limit(1);
   const tag = { ...dong, protocol: ad?.protocol ?? null };
   const kq = kiemLenhInterlockTrenKenh(tag, giaTriLenhInterlock(luat)); // R1b-1 T13: kênh chưa khai ⇒ lưới thô; T2 fix round 1: địa chỉ bit

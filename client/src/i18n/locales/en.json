@@ -3916,6 +3916,7 @@
       "taiModelMay": "upload machine 3D model",
       "restoreBackup": "restore backup",
       "activateInterlockRule": "activate interlock rule",
+      "interlockRule": "save interlock rule",
       "createProgramArtifactVersion": "create program artifact version",
       "requestRecipeModelChangeover": "request recipe model changeover",
       "approveChangeoverRequest": "approve changeover request",

@@ -38,8 +38,9 @@
  * ★ THỨ TỰ KHOÁ DUY NHẤT (fix round 3, N6): ADAPTER → LUẬT → TAG → KÊNH CHẾ ĐỘ. Mỗi đường lấy một DÃY CON theo đúng thứ tự này:
  *     tags.update / create / delete, import:   adapter FOR SHARE (theo id) → luật FOR SHARE → tag FOR UPDATE → kênh chế độ;
  *     deviceAdapter.update / delete, tamTat:   adapter FOR UPDATE → luật FOR SHARE → tag FOR UPDATE → kênh chế độ FOR SHARE (`congAdapterTx`);
- *     interlockRouter create/update/approve/enable: luật FOR UPDATE → tag FOR SHARE (enable, T10b: + tag nguồn FOR SHARE; adapter đọc
- *     KHÔNG khoá — khoá nó sau luật là đảo thứ tự);   scadaKenh.capNhat: adapter FOR SHARE (R1b-1 T10: machineId của phép kiểm phạm vi đọc ở đây) → luật FOR SHARE → tag FOR UPDATE;
+ *     interlockRouter create/update/delete/approve/enable/disable (R1b-2b-1 T10, mục 47 — `khoaDichLuatTx`): adapter ĐÍCH FOR SHARE (cũ + mới,
+ *     theo id; phạm vi kiểm dưới khoá) → luật FOR UPDATE → tag FOR SHARE (enable, T10b: + tag nguồn FOR SHARE; adapter NGUỒN đọc KHÔNG khoá —
+ *     khoá nó sau luật là đảo thứ tự);   scadaKenh.capNhat: adapter FOR SHARE (R1b-1 T10: machineId của phép kiểm phạm vi đọc ở đây) → luật FOR SHARE → tag FOR UPDATE;
  *     scadaKenh.cheDo.dat: adapter FOR SHARE → tag FOR SHARE → kênh chế độ FOR UPDATE.
  *     scadaKenh.khaiHangLoat (R1b-2a T6): adapter FOR SHARE (+ `kiemPhamViDuoiKhoa`) → mọi luật nhắm adapter FOR SHARE theo id → tag
  *       `WHERE id IN (…) AND adapterId = <adapter> ORDER BY id FOR UPDATE` (không khoá hàng của adapter khác).

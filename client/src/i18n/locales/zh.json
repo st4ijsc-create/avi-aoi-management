@@ -3916,6 +3916,7 @@
       "taiModelMay": "上传设备3D模型",
       "restoreBackup": "恢复备份",
       "activateInterlockRule": "启用联锁规则",
+      "interlockRule": "保存联锁规则",
       "createProgramArtifactVersion": "创建程序工件版本",
       "requestRecipeModelChangeover": "请求配方型号切换",
       "approveChangeoverRequest": "批准换型请求",
