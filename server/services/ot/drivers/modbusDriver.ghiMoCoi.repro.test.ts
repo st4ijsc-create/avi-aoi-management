@@ -22,7 +22,16 @@
 import { describe, it, expect, afterEach } from "vitest";
 import net from "node:net";
 import { ModbusDriver } from "./modbusDriver";
-import { executeOtDeviceWrite, tryEnqueueAdapterCommand, _resetAdapterCommandQueuesForTests, type ExecutedWrite } from "../otDeviceWrite";
+import {
+  executeOtDeviceWrite,
+  tryEnqueueAdapterCommand,
+  _resetAdapterCommandQueuesForTests,
+  _staleWriteRiskIntentIdsForTests,
+  _stopWatchCountForTests,
+  _sweepStaleWriteRiskForTests,
+  type ExecutedWrite,
+  type OtDeviceEventSink,
+} from "../otDeviceWrite";
 import type { OtSubscriptionHandle } from "../otDriver";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -134,16 +143,22 @@ function vongCanhLegacy(driver: ModbusDriver, getHandle: () => OtSubscriptionHan
 const ADAPTER_ID = 990_001;
 const cfg = (port: number) => ({ endpoint: `tcp://127.0.0.1:${port}`, timeoutMs: 800, options: { unitId: 1, timeoutMs: 800 } });
 
-function chayStopKhongCho(driver: ModbusDriver, adapterId = ADAPTER_ID, timeoutMs = 5000): Promise<ExecutedWrite> {
+function chayStopKhongCho(
+  driver: ModbusDriver,
+  adapterId = ADAPTER_ID,
+  timeoutMs = 5000,
+  them: { intentIds?: number[]; sink?: OtDeviceEventSink } = {},
+): Promise<ExecutedWrite> {
   return executeOtDeviceWrite({
-    input: { adapterId, commandType: "stop", idempotencyKey: `repro-${adapterId}-${Math.random()}` } as any,
+    input: { adapterId, machineId: null, commandType: "stop", idempotencyKey: `repro-${adapterId}-${Math.random()}`, writes: [{ tagKey: "icoil", value: 1 }] } as any,
     driver,
     resolved: [{ write: { tagKey: "icoil", value: 1 }, address: "coil:1", dataType: "int" }],
     driverWrites: [{ tagKey: "icoil", address: "coil:1", value: 1, dataType: "int" }],
     timeoutMs,
     stopTyped: true,
     bumpStopEpoch: true,
-    ledger: { intentIds: [1], confirmedBy: 1 },
+    ledger: { intentIds: them.intentIds ?? [1], confirmedBy: 1 },
+    ...(them.sink ? { sink: them.sink } : {}),
   });
 }
 
@@ -183,6 +198,7 @@ afterEach(async () => {
   for (const c of cleanup.reverse()) await c();
   cleanup = [];
   _resetAdapterCommandQueuesForTests();
+  _sweepStaleWriteRiskForTests(Number.MAX_SAFE_INTEGER);
 });
 
 async function moDriver(sim: Sim): Promise<ModbusDriver> {
@@ -378,4 +394,55 @@ describe("R1b-2b-1 — STOP kế tiếp KHÔNG xếp sau lần ghi treo (OT_CMD_
       }
     }, 25_000);
   }
+});
+
+/**
+ * R1b-2b-1 T17 fix round 1 (I1 của review) — lệnh bị huỷ vì mất liên kết lúc đang bay có kết cục KHÔNG RÕ: byte đã vào socket vẫn có thể tới PLC
+ * SAU (khi ta tự hạ một socket còn sống). Với OT_CMD_SERIALIZE_ENABLED bật, nó phải được ghi vào rủi ro "lệnh ghi cũ" (B3) như một lệnh quá hạn —
+ * KHÔNG giữ chỗ, KHÔNG đặt lại phiên — để STOP acked kế tiếp có canh chỉ-báo-động (startStopWatch, R-4-q).
+ */
+describe("R1b-2b-1 T17 fix round 1 (I1) — rủi ro lệnh ghi cũ sau huỷ vì mất liên kết", () => {
+  const cu = process.env.OT_CMD_SERIALIZE_ENABLED;
+  afterEach(() => {
+    if (cu === undefined) delete process.env.OT_CMD_SERIALIZE_ENABLED;
+    else process.env.OT_CMD_SERIALIZE_ENABLED = cu;
+  });
+
+  it("serialize BẬT: STOP1 bị huỷ (peer đóng lúc FC5) ⇒ mục rủi ro mang intent của STOP1, không giữ chỗ; STOP2 acked trên phiên mới ⇒ có canh STOP (1) và báo động liên kết tới intent STOP1", async () => {
+    process.env.OT_CMD_SERIALIZE_ENABLED = "true";
+    const adapterId = 990_021;
+    const sim = await startSim();
+    const driver = await moDriver(sim);
+    await sleep(100);
+    sim.kichBan = ["dong_khong_tra_loi"];
+    const su: Array<{ action: string; detail: Record<string, unknown> }> = [];
+    const sink: OtDeviceEventSink = (ev) => su.push({ action: ev.action, detail: ev.detail });
+    const r1 = await chayStopKhongCho(driver, adapterId, 5000, { intentIds: [71, 72], sink });
+    laKhongRoKetCuc(r1);
+    expect(r1.slotHold).toBeUndefined(); // không giữ chỗ, không đặt lại phiên
+    expect(_staleWriteRiskIntentIdsForTests(adapterId)).toEqual([71, 72]);
+
+    await driver.connect(cfg(sim.port) as any); // phiên mới (như vòng canh nối lại)
+    const r2 = await chayStopKhongCho(driver, adapterId, 5000, { intentIds: [81], sink });
+    expect(r2.outcomes[0].status).toBe("acked");
+    expect(sim.coil.v).toBe(1);
+    expect(_stopWatchCountForTests(adapterId)).toBe(1); // canh chỉ-báo-động đã chạy cho STOP2
+    // canh không thấy driver hoạt động (không có otManager trong test) ⇒ MỘT báo động, liên kết tới lệnh BỊ BỎ (intent của STOP1)
+    await choToi(() => su.some((e) => e.action === "ot_stop_unverified"), 3000, "báo động canh STOP");
+    const bd = su.find((e) => e.action === "ot_stop_unverified")!;
+    expect(JSON.stringify(bd.detail)).toMatch(/71/);
+    await choToi(() => _stopWatchCountForTests(adapterId) === 0, 3000, "canh STOP kết thúc");
+  }, 15_000);
+
+  it("serialize TẮT: không ghi rủi ro (B3 chỉ áp khi tuần tự hoá bật — hành vi như trước)", async () => {
+    process.env.OT_CMD_SERIALIZE_ENABLED = "false";
+    const adapterId = 990_022;
+    const sim = await startSim();
+    const driver = await moDriver(sim);
+    await sleep(100);
+    sim.kichBan = ["dong_khong_tra_loi"];
+    const r1 = await chayStopKhongCho(driver, adapterId, 5000, { intentIds: [91] });
+    laKhongRoKetCuc(r1);
+    expect(_staleWriteRiskIntentIdsForTests(adapterId)).toBeNull();
+  }, 15_000);
 });

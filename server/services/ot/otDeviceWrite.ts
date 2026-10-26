@@ -168,6 +168,26 @@ const staleWriteRisk = new Map<number, StaleWrite>();
 function sweepStaleWriteRisk(now = Date.now()): void {
   for (const [id, r] of staleWriteRisk) if (now > r.until) staleWriteRisk.delete(id);
 }
+/**
+ * Ghi (đè) mục "lệnh ghi bị bỏ, kết cục không rõ" của adapter — MỘT nguồn cho hai đường: quá hạn giữ chỗ (B3, `until` = ∞ trong lúc đặt lại
+ * phiên) và R1b-2b-1 T17 fix round 1 (I1): lệnh bị huỷ vì mất liên kết / hạ phiên lúc đang bay (`until` = bây giờ + cửa sổ).
+ */
+function ghiRuiRoGhiCu(input: DispatchInput, ledger: { intentIds: number[]; confirmedBy: number }, until: number | "cua_so"): StaleWrite {
+  sweepStaleWriteRisk();
+  const windowMs = staleWriteRiskWindowMs(input.adapterId);
+  const entry: StaleWrite = {
+    until: until === "cua_so" ? Date.now() + windowMs : until,
+    windowMs,
+    commandType: input.commandType,
+    idempotencyKey: input.idempotencyKey ?? null,
+    intentIds: ledger.intentIds,
+    confirmedBy: ledger.confirmedBy,
+    machineId: input.machineId ?? null,
+    writes: input.writes.map((w) => ({ tagKey: w.tagKey, value: w.value })),
+  };
+  staleWriteRisk.set(input.adapterId, entry);
+  return entry;
+}
 /** Test seams (B3 fix scan 3 (b)) — sizes of the per-adapter state and an explicit sweep. */
 export function _staleWriteRiskSizeForTests(): number {
   return staleWriteRisk.size;
@@ -796,18 +816,7 @@ async function holdSlotAfterTimedOutWrite(
     // The old write is abandoned with its fate unknown. Fix round 1 (R-4-r): the risk entry is LIVE for the whole reset
     // (until = ∞) and gets its TTL only when the reset SETTLES (success, failure or budget expiry) — a full-budget reset
     // can no longer expire it before the STOP behind it runs. The STOP's read-only watch then runs TTL from the STOP.
-    sweepStaleWriteRisk();
-    const riskEntry: StaleWrite = {
-      until: Number.POSITIVE_INFINITY,
-      windowMs: staleWriteRiskWindowMs(input.adapterId),
-      commandType: input.commandType,
-      idempotencyKey: input.idempotencyKey ?? null,
-      intentIds: ledger.intentIds,
-      confirmedBy: ledger.confirmedBy,
-      machineId: input.machineId ?? null,
-      writes: input.writes.map((w) => ({ tagKey: w.tagKey, value: w.value })),
-    };
-    staleWriteRisk.set(input.adapterId, riskEntry);
+    const riskEntry = ghiRuiRoGhiCu(input, ledger, Number.POSITIVE_INFINITY);
     // fix scan (1) — the reset gets ONE budget it honours itself (cooperative); the outer deadline adds only a slack.
     const resetBoundMs = adapterSessionResetBoundMs(input.adapterId);
     let resetError: string;
@@ -1240,9 +1249,14 @@ export async function executeOtDeviceWrite(a: {
   // B3 — a timed-out write keeps the adapter's queue slot (only the serialized path has one) until it settles or
   // its grace expires and the session is reset; the caller's answer is not delayed by this.
   const slotHold =
-    timedOut && writePromise && isCmdSerializeEnabled()
+    writeResults === TIMEOUT && writePromise && isCmdSerializeEnabled()
       ? holdSlotAfterTimedOutWrite(input, writePromise, { intentIds, confirmedBy: ledgerConfirmer }, a.sink)
       : undefined;
+  // R1b-2b-1 T17 fix round 1 (I1) — lệnh bị huỷ vì mất liên kết / hạ phiên lúc ĐANG BAY: lời ghi đã settle nên không giữ chỗ và không đặt lại
+  // phiên (phiên đã hạ), nhưng kết cục KHÔNG RÕ và byte đã vào socket vẫn có thể TỚI thiết bị SAU (ta tự hạ một socket còn sống — reset HA lúc
+  // mạng phân mảnh, connect() lại sau khi trạng thái iso rớt: kernel vẫn gửi nốt, PLC xử lý phần đã nhận) ⇒ ghi rủi ro "lệnh ghi cũ" như B3 để
+  // STOP acked kế tiếp có canh chỉ-báo-động (startStopWatch). Chỉ khi tuần tự hoá bật — cùng phạm vi với B3.
+  if (matLienKetSauMs !== null && isCmdSerializeEnabled()) ghiRuiRoGhiCu(input, { intentIds, confirmedBy: ledgerConfirmer }, "cua_so");
   const resultsArr = Array.isArray(writeResults) ? writeResults : [];
 
   const outcomes: Outcome[] = resolved.map((r, i) => {

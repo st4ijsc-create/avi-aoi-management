@@ -173,7 +173,10 @@ _(chạy toàn bộ: chưa chạy)_
   Modbus khi vòng canh hạ phiên, 5000 ms `failed` với S7 / MC / EIP, ~800 ms `failed` với Modbus khi không ai hạ phiên, `failed` với SLMP / OPC UA). Status
   và nhãn HMI GIỐNG HỆT `timeout` hôm nay (dòng "chưa xác minh" + "Dùng E-STOP cứng tại máy"); chỉ `errorText` đổi thành `link lost while the write was
   in flight (after N ms) — outcome unknown: …`. Poll: tick bị huỷ vì mất liên kết mang `link_lost` / `comm_lost`. Với `OT_CMD_SERIALIZE_ENABLED` bật,
-  lệnh kế (STOP) không còn đợi 5 s + ân hạn 1 s + đặt lại phiên sau lệnh treo.
+  lệnh kế (STOP) không còn đợi 5 s + ân hạn 1 s + đặt lại phiên sau lệnh treo. (T17 fix round 1, I1) Lệnh bị huỷ như vậy VẪN được ghi NGAY vào rủi ro
+  "lệnh ghi cũ" của B3 (không giữ chỗ, không đặt lại phiên — phiên đã hạ) ⇒ STOP acked kế tiếp có canh chỉ-báo-động như sau một lệnh quá hạn. Lý do: kết
+  cục không rõ — khi CHÍNH ta hạ một socket còn sống (reset HA lúc mạng phân mảnh, `connect()` lại sau khi trạng thái iso rớt), byte kernel đã nhận vẫn
+  được gửi nốt và PLC vẫn xử lý phần đã nhận, nên lệnh cũ CÓ THỂ tới sau STOP; "socket đã huỷ nên không thể tới" chỉ đúng khi PLC đóng kết nối.
 
 ## 6. Giới hạn đã biết
 
