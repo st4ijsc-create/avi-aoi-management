@@ -95,16 +95,16 @@ function gomChuTach(s: string): string {
   });
 }
 
-/** `%70assword` ⇒ `password` (chỉ khi bản giải mã chứa từ khoá nhạy). */
+/**
+ * `%70assword` ⇒ `password` (chỉ khi bản giải mã chứa từ khoá nhạy). TUYẾN TÍNH (rà kiem-dinh F: regex cũ dò lại từ mỗi vị
+ * trí ⇒ 2,2 s ở 80 KB): lớp ký tự đơn `+` khớp tối đa một lần mỗi chuỗi liền; giải từng `%XX` ASCII (đủ cho dò nhãn).
+ */
 function giaiPhanTram(s: string): string {
   if (!s.includes("%")) return s;
-  return s.replace(/(?:%[0-9A-Fa-f]{2}|[A-Za-z0-9_-])*%[0-9A-Fa-f]{2}(?:%[0-9A-Fa-f]{2}|[A-Za-z0-9_-])*/g, (doan) => {
-    try {
-      const giai = decodeURIComponent(doan);
-      return chuaTuKhoaGom(giai) ? giai : doan;
-    } catch {
-      return doan;
-    }
+  return s.replace(/[A-Za-z0-9_%-]+/g, (doan) => {
+    if (!doan.includes("%")) return doan;
+    const giai = doan.replace(/%([0-7][0-9A-Fa-f])/g, (_k, h: string) => String.fromCharCode(parseInt(h, 16)));
+    return giai !== doan && chuaTuKhoaGom(giai) ? giai : doan;
   });
 }
 
@@ -177,14 +177,186 @@ const RE_MAC = /(?<![0-9A-Fa-f:-])(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}(?![0-9
 const RE_KHOA_THEM = /(?<![A-Za-z0-9])(?:sk-ant-(?:api|admin)\d{2}-[A-Za-z0-9_-]{20,}|sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,})/g;
 const RE_BASIC = /(Authorization["']?\s*[:=]\s*["']?Basic\s+)[A-Za-z0-9+/=]{8,}/gi;
 const RE_QUERY = /([?&](?:token|api_key|apikey|access_token|key|password|secret|sig|signature|auth)=)[^&#\s"']+/gi;
-const RE_NHAN = /(?<![A-Za-z0-9_.])([A-Za-z][A-Za-z0-9_.-]{0,63})(["']?[ \t]*[=:](?![=:/])[ \t]*)("[^"\n]*"|'[^'\n]*'|[^\s"',;&}\])=]+)/g;
+/** URL webhook MANG bí mật trong đường dẫn (rà kiem-dinh E): Slack, Discord, Teams, bot Telegram. */
+const RE_WEBHOOK =
+  /(https?:\/\/(?:hooks\.slack\.com\/(?:services|workflows|triggers)\/|(?:canary\.|ptb\.)?discord(?:app)?\.com\/api\/webhooks\/|[A-Za-z0-9.-]*webhook\.office\.com\/|api\.telegram\.org\/bot))[^\s"'<>]+/gi;
+const RE_TELEGRAM = /(?<![A-Za-z0-9])\d{8,10}:[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])/g;
+/** Nhãn + ngăn (KHÔNG gồm giá trị — giá trị quét tay ở `cheNhan`, chỉ khi nhãn nhạy ⇒ tuyến tính). */
+const RE_NHAN_DAU = /(?<![A-Za-z0-9_.])([A-Za-z][A-Za-z0-9_.-]{0,63})(["']?[ \t]*[=:](?![=:/])[ \t]*)/g;
 const RE_NGUOI_DUNG = /(?<![A-Za-z0-9_])((?:user(?:name)?|login|uid)["']?[ \t]*[=:][ \t]*)(["']?)([A-Za-z0-9._@\\-]+)(?![^\s"',;&})\]])/gi;
 
-/** Giá trị trông như KIỂU / BIỂU THỨC mã (không phải giá trị bí mật) ⇒ giữ, để mã gửi đi rà vẫn đọc được. */
-const RE_GIA_TRI_MA = /^(?:string|number|boolean|null|undefined|true|false|any|unknown|none|nil|str|int|bytes|optional|void)$|^(?:process\.env|import\.meta|os\.environ|\$\{|\{\{)|^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+(?:\(.*)?$|^[A-Za-z_$][\w$]*\(/;
+/**
+ * TRẦN CHUỖI LIỀN (rà kiem-dinh F — ReDoS): nhiều regex của tầng cũ `aiSafety` (email, chuỗi kết nối) tốn BẬC HAI theo độ
+ * dài một chuỗi liền (đo: `"10.1.1.".repeat(20000)` ⇒ 11,6 s, chặn vòng lặp sự kiện chung với đường STOP). Chuỗi liền
+ * ≥ 2 000 ký tự không trắng KHÔNG phải văn xuôi / mã đọc được — che NGUYÊN khối (fail-closed, che thừa) TRƯỚC mọi luật
+ * khác ⇒ mọi luật sau chạy trên chuỗi liền có trần (chi phí ≤ 2 000 × n). Lookbehind neo ở ĐẦU chuỗi liền ⇒ tuyến tính.
+ * Lưới "TUYẾN TÍNH" trong `cheDuLieu.test.ts` đỏ khi bỏ dòng này (họ `x://a:b`: 6 s).
+ */
+const RE_KHONG_TRANG_DAI = /(?<!\S)\S{2000,}/g;
+
+/** PEM khoá riêng — quét TUYẾN TÍNH (regex lười `[\s\S]*?` của tầng cũ bậc hai khi nhiều BEGIN không END). Không có END ⇒ che tới hết văn bản. */
+function chePem(t: string, dem: (loai: string) => void): string {
+  if (!t.includes("-----BEGIN")) return t;
+  let out = "";
+  let i = 0;
+  for (;;) {
+    const b = t.indexOf("-----BEGIN", i);
+    if (b < 0) break;
+    const hetNhan = t.indexOf("-----", b + 10);
+    if (hetNhan < 0) break;
+    if (hetNhan - b > 60 || !/PRIVATE KEY$/.test(t.slice(b + 10, hetNhan))) {
+      out += t.slice(i, b + 10);
+      i = b + 10;
+      continue;
+    }
+    const e = t.indexOf("-----END", hetNhan + 5);
+    const k = e < 0 ? -1 : t.indexOf("-----", e + 8);
+    out += t.slice(i, b) + THAY.biMat;
+    dem("private_key");
+    i = e < 0 || k < 0 ? t.length : k + 5;
+  }
+  return out + t.slice(i);
+}
+
+/** Nhãn mà giá trị là CẢ DÒNG (chứa `;`, `,`, `=`): cookie, header xác thực. */
+const NHAN_CA_DONG = new Set(["cookie", "setcookie", "authorization", "proxyauthorization"]);
+const NGAT_GIA_TRI = new Set([";", ",", "&", "}", "]", ")", '"', "'"]);
+
+/** Vị trí kết thúc giá trị bắt đầu ở `p`: chuỗi nháy cùng dòng ⇒ tới nháy đóng; còn lại ⇒ tới hết dòng (hoặc ký tự ngắt). */
+function ketThucGiaTri(t: string, p: number, caDong: boolean): number {
+  const q = t[p];
+  let i = p;
+  if (q === '"' || q === "'") {
+    const e = t.indexOf(q, p + 1);
+    const nl = t.indexOf("\n", p + 1);
+    if (e >= 0 && (nl < 0 || e < nl)) return e + 1;
+    i = p + 1; // nháy không đóng ⇒ quét như không nháy
+  }
+  for (; i < t.length; i++) {
+    const c = t[i]!;
+    if (c === "\n" || c === "\r") break;
+    // chỗ trống đã che (`[REDACTED_…]`) là MỘT khối — `]` của nó không ngắt giá trị (vd tầng cũ đã che từ đầu của passphrase).
+    if (c === "[" && t.startsWith("[REDACTED_", i)) {
+      const e = t.indexOf("]", i);
+      if (e > 0) {
+        i = e;
+        continue;
+      }
+    }
+    // mẫu `${{ … }}` / `{{ … }}` / `${ … }` là một khối — `}` bên trong không ngắt giá trị.
+    const dong = t.startsWith("${{", i) || t.startsWith("{{", i) ? "}}" : t.startsWith("${", i) ? "}" : null;
+    if (dong) {
+      const e = t.indexOf(dong, i + 2);
+      const nl = t.indexOf("\n", i);
+      if (e > 0 && (nl < 0 || e < nl)) {
+        i = e + dong.length - 1;
+        continue;
+      }
+    }
+    if (!caDong && NGAT_GIA_TRI.has(c)) break;
+  }
+  while (i > p && (t[i - 1] === " " || t[i - 1] === "\t")) i--;
+  return i;
+}
+
+/** Nhãn nhạy (`laTenKhoaNhay`) + `:`/`=` ⇒ che giá trị (rà kiem-dinh A/C: cookie cả dòng; giá trị nhiều từ không nháy tới hết dòng). */
+function cheNhan(t: string, dem: (loai: string) => void): string {
+  let out = "";
+  let viTri = 0;
+  RE_NHAN_DAU.lastIndex = 0;
+  for (let m = RE_NHAN_DAU.exec(t); m; m = RE_NHAN_DAU.exec(t)) {
+    const nhan = m[1]!;
+    if (!laTenKhoaNhay(nhan)) continue;
+    const p = m.index + m[0].length;
+    const kt = ketThucGiaTri(t, p, NHAN_CA_DONG.has(nhan.toLowerCase().replace(/[-_]/g, "")));
+    const tho = t.slice(p, kt);
+    const nhay = (tho[0] === '"' || tho[0] === "'") && tho.length > 1 && tho.endsWith(tho[0]) ? tho[0] : "";
+    const loi = (nhay ? tho.slice(1, -1) : tho).trim();
+    if (!loi || laGiaTriMa(loi)) continue;
+    out += t.slice(viTri, p) + nhay + THAY.biMat + nhay;
+    dem("nhan");
+    viTri = kt;
+    RE_NHAN_DAU.lastIndex = kt;
+  }
+  return viTri === 0 ? t : out + t.slice(viTri);
+}
+
+// ── Nhãn tiếng Việt (rà kiem-dinh D) — dò trên bản BỎ DẤU, chữ thường, CÙNG ĐỘ DÀI ⇒ chỉ số dùng chung với bản gốc. ──
+
+function boDauGiuDoDai(s: string): string {
+  if (!/[^\x00-\x7F]/.test(s)) return s.toLowerCase();
+  let o = "";
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]!;
+    if (c.charCodeAt(0) < 0x80) o += c.toLowerCase();
+    else if (c === "đ" || c === "Đ") o += "d";
+    else {
+      const b = c.normalize("NFD")[0]!.toLowerCase();
+      o += b.length === 1 ? b : c;
+    }
+  }
+  return o;
+}
+
+/**
+ * `mật khẩu: X`, `mat khau = X`, `mk: X`, `mã PIN của máy: X`, `Mật khẩu của tôi là X` … Nhãn ngắn dễ trùng (`mk`, `pin`)
+ * chỉ tính khi sau nó là `:`/`=` hoặc "là"; giá trị dạng phần trăm (`Mức pin: 80%`) giữ nguyên.
+ */
+const RE_NHAN_VIET =
+  /(?<![a-z0-9])(mat khau|matkhau|mat ma|mk|ma pin|pin|ma bi mat|khoa bi mat|khoa api|ma xac thuc|ma xac minh|ma otp|otp)((?:[ \t]+[a-z0-9]+){0,5}?)(?:([ \t]*[:=][ \t]*)|([ \t]+la(?![a-z0-9])[ \t]*:?[ \t]*))/g;
+const RE_PHAN_TRAM = /^\d{1,3}(?:[.,]\d+)?\s*%$/;
+const RE_CHEN_GIUA_VIET = /^[ \t]+(?:cua|cho|moi|cu|hien|mac|dang)(?![a-z0-9])/;
+
+function cheNhanViet(t: string, dem: (loai: string) => void): string {
+  const bo = boDauGiuDoDai(t);
+  if (bo.length !== t.length) return t;
+  let out = "";
+  let viTri = 0;
+  RE_NHAN_VIET.lastIndex = 0;
+  for (let m = RE_NHAN_VIET.exec(bo); m; m = RE_NHAN_VIET.exec(bo)) {
+    // Có chữ chen giữa nhãn và ngăn (`mã PIN của máy:`) chỉ hợp lệ khi bắt đầu bằng "cua"/"cho"/"moi"/"cu"/"hien"/…
+    if (m[2] && !RE_CHEN_GIUA_VIET.test(m[2])) {
+      RE_NHAN_VIET.lastIndex = m.index + m[1]!.length;
+      continue;
+    }
+    const p = m.index + m[0].length;
+    let kt: number;
+    if (m[3] !== undefined) kt = ketThucGiaTri(t, p, false);
+    else {
+      kt = p;
+      while (kt < t.length && !/\s/.test(t[kt]!)) kt++;
+      while (kt > p && /[.,!?;:)]/.test(t[kt - 1]!)) kt--;
+    }
+    const loi = t.slice(p, kt).trim();
+    // `pin` / `mk` ngắn dễ trùng (chân GPIO `pin: 13`) ⇒ giá trị phải ≥ 4 ký tự.
+    const ngan = m[1] === "pin" || m[1] === "mk";
+    if (!loi || RE_PHAN_TRAM.test(loi) || laGiaTriMa(loi) || (ngan && loi.length < 4)) continue;
+    out += t.slice(viTri, p) + THAY.biMat;
+    dem("nhan_viet");
+    viTri = kt;
+    RE_NHAN_VIET.lastIndex = kt;
+  }
+  return viTri === 0 ? t : out + t.slice(viTri);
+}
+
+/**
+ * Giá trị TRÔNG NHƯ MÃ (không phải bí mật) ⇒ giữ, để mã gửi đi rà vẫn đọc được. HẸP CÓ CHỦ Ý (rà kiem-dinh B: `my.company.secret`,
+ * `v1.public.…`, `abc(def` là bí mật thật) — chỉ: (i) toàn từ khoá KIỂU (`string`, `string | null`); (ii) truy cập thuộc
+ * tính có TIỀN TỐ NGỮ CẢNH MÃ rõ (`req.`, `this.`, `process.env.`, `config.`…), biến môi trường / mẫu (`$X`, `${…}`, `{{…}}`);
+ * (iii) chỉ gồm chỗ trống đã che. Mọi thứ khác ⇒ CHE (lỗi về phía che thừa).
+ */
+const KIEU_MA = new Set([
+  "string", "number", "boolean", "null", "undefined", "any", "unknown", "void", "never", "bigint", "object", "none", "nil",
+  "str", "int", "float", "bytes", "bool", "optional", "true", "false",
+]);
+const RE_TIEN_TO_MA =
+  /^(?:(?:req|request|res|this|self|cls|config|cfg|conf|settings|options|opts|args|argv|params|props|input|body|ctx|context|env|secrets|vault|process\.env|os\.environ|import\.meta\.env)(?:\.[A-Za-z_$][\w$]*|\[[^\]\s]{1,64}\])+|process\.env|\$\{\{[^}]{1,80}\}\}|\$\{[^}\s]{1,80}\}|\{\{[^}]{1,80}\}\}|\$[A-Za-z_][A-Za-z0-9_]{0,63}|os\.getenv\([^)]{1,80}\)?)$/;
+const RE_CHI_CHO_TRONG = /^(?:\[REDACTED_[A-Z]+\]\s*)+$/;
 
 function laGiaTriMa(v: string): boolean {
-  return v.startsWith("[REDACTED") || RE_GIA_TRI_MA.test(v);
+  if (RE_CHI_CHO_TRONG.test(v) || RE_TIEN_TO_MA.test(v)) return true;
+  const tu = v.split(/[\s|&?<>[\]]+/).filter(Boolean);
+  return tu.length > 0 && tu.every((x) => KIEU_MA.has(x.toLowerCase()));
 }
 
 // ─── Từ điển tên ────────────────────────────────────────────────────────────────────────────────────────────
@@ -272,22 +444,19 @@ function boDem(): { dem: (loai: string, n?: number) => void; theoLoai: Record<st
 }
 
 function cheChuoiVao(s: string, tu: TuDienNhay, dem: (loai: string, n?: number) => void): string {
-  let t = giaiPhanTram(gomChuTach(suaDongChu(chuanHoaDeKhop(s))));
+  let t = chePem(chuanHoaDeKhop(s), dem);
+  t = t.replace(RE_KHONG_TRANG_DAI, () => (dem("chuoi_lien_dai"), THAY.biMat));
+  t = giaiPhanTram(gomChuTach(suaDongChu(t)));
 
+  t = t.replace(RE_WEBHOOK, (_k, dau: string) => (dem("webhook"), dau + THAY.biMat));
+  t = t.replace(RE_TELEGRAM, () => (dem("api_key"), THAY.biMat));
   t = t.replace(RE_KHOA_THEM, () => (dem("api_key"), THAY.biMat));
   t = t.replace(RE_BASIC, (_k, nhan: string) => (dem("basic"), nhan + THAY.biMat));
   const nen = redactSecretsAndPII(t);
   t = nen.text;
   for (const r of nen.redactions) dem(r.type, r.count);
   t = t.replace(RE_QUERY, (_k, nhan: string) => (dem("query"), nhan + THAY.biMat));
-  t = t.replace(RE_NHAN, (khop, nhan: string, ngan: string, giaTri: string) => {
-    if (!laTenKhoaNhay(nhan)) return khop;
-    const nhay = giaTri[0] === '"' || giaTri[0] === "'" ? giaTri[0] : "";
-    const loi = nhay ? giaTri.slice(1, -1) : giaTri;
-    if (loi.length === 0 || laGiaTriMa(loi)) return khop;
-    dem("nhan");
-    return `${nhan}${ngan}${nhay}${THAY.biMat}${nhay}`;
-  });
+  t = cheNhanViet(cheNhan(t, dem), dem);
   t = t.replace(RE_NGUOI_DUNG, (khop, nhan: string, nhay: string, giaTri: string) => {
     if (laGiaTriMa(giaTri)) return khop;
     dem("nguoi_dung");
@@ -327,8 +496,16 @@ function bocJson(s: string): { lop: number; giaTri: unknown } | null {
   return null;
 }
 
+/** Gán thuộc tính RIÊNG — `ra["__proto__"] = …` sẽ đổi prototype (thả nhánh im lặng / ô nhiễm), không phải tạo khoá. */
+function datRieng(o: Record<string, unknown>, k: string, v: unknown): void {
+  Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true });
+}
+
 function cheNut(v: unknown, tu: TuDienNhay, dem: (loai: string, n?: number) => void, sau: number): unknown {
-  if (sau > 64) return THAY.biMat; // cây sâu bất thường ⇒ che cả nhánh (fail-closed)
+  if (sau > 64) {
+    dem("cay_qua_sau");
+    return THAY.biMat; // cây sâu bất thường ⇒ che cả nhánh (fail-closed)
+  }
   if (typeof v === "string") {
     const boc = bocJson(v);
     if (boc) {
@@ -347,10 +524,10 @@ function cheNut(v: unknown, tu: TuDienNhay, dem: (loai: string, n?: number) => v
   for (const [k, x] of Object.entries(goc)) {
     if (x !== null && x !== undefined && (laTenKhoaNhay(k) || (capNhay && KHOA_GIA_TRI_CAP.includes(k)))) {
       dem("khoa_json");
-      ra[k] = typeof x === "number" || typeof x === "boolean" ? null : THAY.biMat;
+      datRieng(ra, k, typeof x === "number" || typeof x === "boolean" ? null : THAY.biMat);
       continue;
     }
-    ra[k] = cheNut(x, tu, dem, sau + 1);
+    datRieng(ra, k, cheNut(x, tu, dem, sau + 1));
   }
   return ra;
 }

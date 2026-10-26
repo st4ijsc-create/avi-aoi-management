@@ -65,6 +65,54 @@ describe("cheDuLieu — vector dùng chung", () => {
   });
 });
 
+describe("cheGiaTri — __proto__ (rà kiem-dinh G)", () => {
+  it("khoá `__proto__` từ JSON.parse: không rò, không ô nhiễm prototype, giữ là thuộc tính riêng đã che", () => {
+    const vao = JSON.parse('{"__proto__":{"password":"proto-secret-1"},"ok":1}');
+    const kq = cheGiaTri(vao).giaTri as Record<string, unknown>;
+    expect(JSON.stringify(kq)).not.toContain("proto-secret-1");
+    expect(Object.getPrototypeOf(kq)).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).password).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(kq, "__proto__")).toBe(true);
+    expect(kq.ok).toBe(1);
+  });
+});
+
+describe("thời gian TUYẾN TÍNH với đầu vào xấu (rà kiem-dinh F — ReDoS, cùng tiến trình với đường STOP)", () => {
+  const HO: Array<[string, (n: number) => string]> = [
+    ["10.1.1.", (n) => "10.1.1.".repeat(n)],
+    ["a.", (n) => "a.".repeat(n)],
+    ["Ab.", (n) => "Ab.".repeat(n)],
+    ["1.", (n) => "1.".repeat(n)],
+    ["a-…%", (n) => "a-".repeat(n) + "%"],
+    ["a…%", (n) => "a".repeat(n) + "%"],
+    ["%41a…%", (n) => "%41a".repeat(n) + "%"],
+    ["x://a:b", (n) => "x://a:b".repeat(n)],
+    ["x://a:b␠", (n) => "x://a:b ".repeat(n)],
+    ["PEM không END", (n) => "-----BEGIN RSA PRIVATE KEY-----\n".repeat(Math.ceil(n / 4))],
+    ["a␠", (n) => "a ".repeat(n)],
+    ["p a s s␠", (n) => "p a s s ".repeat(Math.ceil(n / 4))],
+    ["user=a@", (n) => "user=a@".repeat(n)],
+    ["password: x␠", (n) => "password: x ".repeat(Math.ceil(n / 4))],
+    ["token=", (n) => "token=".repeat(n)],
+    ["a:b␠", (n) => "a:b ".repeat(n)],
+    ["mật khẩu␠", (n) => "mật khẩu ".repeat(Math.ceil(n / 4))],
+    ["eyJ…", (n) => "eyJaaaaaaaa.".repeat(Math.ceil(n / 4))],
+    ["Bearer␠", (n) => "Bearer ".repeat(n)],
+  ];
+  const doMs = (s: string) => {
+    const t0 = performance.now();
+    cheChuoi(s);
+    return performance.now() - t0;
+  };
+  it.each(HO)("%s: 20k lần < 200 ms và t(2n)/t(n) < 3", (_ten, sinh) => {
+    doMs(sinh(1000)); // làm nóng JIT
+    const t1 = Math.min(doMs(sinh(10_000)), doMs(sinh(10_000)));
+    const t2 = Math.min(doMs(sinh(20_000)), doMs(sinh(20_000)));
+    expect(t2).toBeLessThan(200);
+    if (t2 > 20) expect(t2 / Math.max(t1, 1)).toBeLessThan(3);
+  });
+});
+
 describe("laTenKhoaNhay — neo theo đoạn + ngoại lệ", () => {
   it.each([
     "password", "DB_PASSWORD", "MYSQL_PWD", "AWS_SECRET_ACCESS_KEY", "x-api-key", "apiKey", "Api_Key", "APIKey",

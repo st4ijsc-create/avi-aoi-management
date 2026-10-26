@@ -51,6 +51,45 @@ export const VECTOR_CHE: readonly VectorChe[] = [
   { ten: "fullwidth", dauVao: "ｐａｓｓｗｏｒｄ=hunter33", phaiKhongCon: ["hunter33"] },
   { ten: "phan-tram", dauVao: "q=%70assword=hunter44", phaiKhongCon: ["hunter44"] },
   { ten: "nhieu-dong", dauVao: "dong 1\ndong 2\napi_key=ABCDEFGH12345678\ndong 4\ndong 5", phaiKhongCon: ["ABCDEFGH12345678"], phaiConLai: ["dong 4", "dong 5"] },
+  // ── rà kiem-dinh lô 1 (A–E, G) ──
+  { ten: "cookie", dauVao: "Cookie: session=abc123def456; theme=dark\nSet-Cookie: sid=zzz999yyy888; Path=/\nCookie: theme=dark; sid=abc123def457", phaiKhongCon: ["abc123def456", "zzz999yyy888", "abc123def457"] },
+  {
+    ten: "gia-tri-co-cham",
+    dauVao:
+      "secret=my.company.secret\napi_secret: v1.public.AbCdEf123456\ntoken=Zz9988.abc.def\nclient_secret=abc.def.ghi\n" +
+      "SESSION_TOKEN=a1b2.c3d4.e5f6\nDB_PASSWORD=my.db.pass\nrefresh_token: tok_live.abcd.efgh\ntoken=abc(def123",
+    phaiKhongCon: ["my.company.secret", "v1.public.AbCdEf123456", "Zz9988.abc.def", "abc.def.ghi", "a1b2.c3d4.e5f6", "my.db.pass", "tok_live.abcd.efgh", "abc(def123"],
+  },
+  {
+    ten: "ma-that-giu-nguyen",
+    dauVao: "const pw = req.body.password;\ntoken = process.env.TOKEN\ntoken: string | null;\nsecret: ${{ secrets.DEPLOY_KEY }}\nDB_PASSWORD=$DB_PASS",
+    phaiKhongCon: [],
+    phaiConLai: ["req.body.password", "process.env.TOKEN", "string | null", "${{ secrets.DEPLOY_KEY }}", "$DB_PASS"],
+  },
+  { ten: "nhieu-tu-khong-nhay", dauVao: "password: correct horse battery staple\nhost: db1", phaiKhongCon: ["correct", "horse battery staple"], phaiConLai: ["host: db1"] },
+  {
+    ten: "tieng-viet",
+    dauVao: "mật khẩu: Abc12345!\nmat khau = Qq778899\nmk: Ww665544\nMật khẩu của tôi là Zz998877.\nMã PIN của máy: 4821\nPIN: 9137\nmã OTP là 556677",
+    phaiKhongCon: ["Abc12345!", "Qq778899", "Ww665544", "Zz998877", "4821", "9137", "556677"],
+    phaiConLai: ["Mật khẩu của tôi là", "Mã PIN của máy:"],
+  },
+  { ten: "tieng-viet-giu-nguyen", dauVao: "Mức pin: 80%\nĐèn báo pin: 13\nmk ổn", phaiKhongCon: [], phaiConLai: ["Mức pin: 80%", "pin: 13", "mk ổn"] },
+  {
+    ten: "webhook",
+    dauVao:
+      "slack https://hooks.slack.com/services/" + "T0AAA/B0BBB/" + "z".repeat(24) +
+      "\ndiscord https://discord.com/api/webhooks/123456789012345678/" + "dScrt-" + "q".repeat(30) +
+      "\nteams https://acme.webhook.office.com/webhookb2/aaaa-bbbb@cccc/IncomingWebhook/" + "t".repeat(20) +
+      "\ntele " + "1234567890:" + "T".repeat(35),
+    phaiKhongCon: ["z".repeat(24), "q".repeat(30), "t".repeat(20), "T".repeat(35)],
+    phaiConLai: ["https://hooks.slack.com/services/"],
+  },
+  { ten: "sau-70", dauVao: Array.from({ length: 70 }).reduce<unknown>((acc) => ({ a: acc }), { password: "deep-secret-70" }), phaiKhongCon: ["deep-secret-70"] },
+  {
+    ten: "sau-70-chuoi-json",
+    dauVao: Array.from({ length: 70 }).reduce<unknown>((acc) => ({ a: acc }), JSON.stringify(JSON.stringify(JSON.stringify({ token: "deep-json-70" })))),
+    phaiKhongCon: ["deep-json-70"],
+  },
   // ── giữ nguyên (che thừa = lỗi) ──
   { ten: "ip-cong-khai-giu-nguyen", dauVao: "DNS 8.8.8.8", phaiKhongCon: [], phaiConLai: ["8.8.8.8"] },
   { ten: "ma-nguon-giu-nguyen", dauVao: "const x = 1;\nconst pw = req.body.password;\ninterface A { token: string }", phaiKhongCon: [], phaiConLai: ["const x = 1;", "req.body.password", "token: string"] },
