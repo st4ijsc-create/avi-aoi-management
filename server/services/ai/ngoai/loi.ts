@@ -20,12 +20,19 @@ export type MaLoiNgoai =
   | "NGOAI_TU_DUYET_VAN_HANH";
 
 export class LoiNgoai extends Error {
+  /** Chắc chắn yêu cầu CHƯA rời máy (lỗi trước khi gửi) ⇒ cổng hoàn TOÀN BỘ chỗ đã giữ. */
+  readonly chuaGui: boolean;
+  /** Lỗi tạm (429 / 5xx / mạng) ⇒ cổng được thử lại (mỗi lần thử giữ chỗ lại). */
+  readonly thuLai: boolean;
   constructor(
     readonly ma: MaLoiNgoai,
     readonly chiTiet?: string,
+    co: { chuaGui?: boolean; thuLai?: boolean } = {},
   ) {
     super(chiTiet ? `${ma}: ${chiTiet}` : ma);
     this.name = "LoiNgoai";
+    this.chuaGui = co.chuaGui === true;
+    this.thuLai = co.thuLai === true;
   }
 }
 
