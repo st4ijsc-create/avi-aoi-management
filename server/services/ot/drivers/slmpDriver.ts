@@ -24,6 +24,7 @@
  */
 import net from "node:net";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
+import { LoiMatLienKetKhiDangGui, laLoiMatLienKetKhiDangGui } from "./dangBay";
 import type {
   OtProtocol,
   OtDriver,
@@ -125,7 +126,8 @@ export class SlmpDriver implements OtDriver {
     if (cu) {
       this.socket = null;
       this.connected = false;
-      this.failPending(new Error("slmp reconnect: previous session dropped"));
+      // R1b-2b-1 (iii) — giao dịch đang bay đã ghi lên socket ⇒ kết cục KHÔNG RÕ (dispatcher ⇒ 'timeout'), không 'failed'.
+      this.failPending(new LoiMatLienKetKhiDangGui("slmp", "reconnect replaced the session"));
       try {
         cu.removeAllListeners("data");
         cu.destroy();
@@ -176,7 +178,7 @@ export class SlmpDriver implements OtDriver {
     const s = this.socket;
     this.socket = null;
     this.connected = false;
-    this.failPending(new Error("slmp disconnected"));
+    this.failPending(new LoiMatLienKetKhiDangGui("slmp", "session torn down (disconnect)")); // R1b-2b-1 (ii) — kết cục không rõ
     if (s) {
       try {
         s.removeAllListeners("data");
@@ -206,7 +208,8 @@ export class SlmpDriver implements OtDriver {
       this.connected = false;
       this.lastError = `slmp link lost (${ev})${detail}`;
     }
-    this.failPending(new Error(this.lastError ?? `slmp link lost (${ev})`));
+    // R1b-2b-1 (i) — giao dịch đang bay (đã ghi lên socket) ⇒ kết cục KHÔNG RÕ (dispatcher ⇒ 'timeout'), không 'failed'.
+    this.failPending(new LoiMatLienKetKhiDangGui("slmp", `socket ${ev}${detail}`));
   }
 
   /** Nhận chunk TCP; gộp tới đủ 1 frame rồi giải quyết giao dịch đang chờ. */
@@ -440,6 +443,8 @@ export class SlmpDriver implements OtDriver {
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
       this.lastError = msg;
+      // R1b-2b-1 — lệnh ĐÃ ghi lên socket khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+      if (laLoiMatLienKetKhiDangGui(err)) throw err;
       return { tagKey: w.tagKey, ok: false, error: msg };
     }
   }

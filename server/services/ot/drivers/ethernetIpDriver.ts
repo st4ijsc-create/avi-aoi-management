@@ -38,6 +38,7 @@ import { parseEipTag, coerceEipValue } from "./eipTag";
 import { inverseScale, scaleXuoi } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
+import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll, MAU_GIA_TRI_HONG } from "../chatLuong";
 
@@ -89,6 +90,12 @@ export class EthernetIpDriver extends NotImplementedDriver {
   private lastOkAt: Date | undefined;
   private lastError: string | undefined;
   private lastLatencyMs: number | undefined;
+  /**
+   * SCADA R1b-2b-1 — yêu cầu đang bay theo Controller: `disconnect()` của st-ethernet-ip 2.7.5 hạ socket nhưng KHÔNG trả lời lệnh ghi đang
+   * chờ — nó chỉ xong ở `promiseTimeout(timeout_sp)` (= hạn kết nối, mặc định 5000 ms) hoặc hạn 5000 ms của driver, rồi thành 'failed'.
+   * Reject NGAY (kết cục không rõ) ở: close/error/Disconnected của Controller (markLinkLost), disconnect(), connect() khi thay Controller cũ.
+   */
+  private readonly dangBay = new SoYeuCauDangBay("ethernet-ip");
 
   override async connect(cfg: OtConnectionConfig): Promise<void> {
     const mod: any = await this.loadPackage();
@@ -105,6 +112,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
     if (cu) {
       this.plc = null;
       this.connected = false;
+      this.dangBay.huy(cu, "reconnect replaced the session"); // R1b-2b-1 (iii)
       try {
         if (typeof cu.disconnect === "function") void Promise.resolve(cu.disconnect()).catch(() => undefined);
       } catch {
@@ -150,6 +158,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
     const plc = this.plc;
     this.plc = null;
     this.connected = false;
+    this.dangBay.huy(plc, "session torn down (disconnect)"); // R1b-2b-1 (ii)
     if (plc && typeof plc.disconnect === "function") {
       try {
         await plc.disconnect();
@@ -173,7 +182,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
     for (const ev of ["close", "error", "Disconnected"]) {
       try {
         plc.on(ev, (arg?: unknown) => {
-          if (this.plc === plc) this.markLinkLost(ev, arg);
+          if (this.plc === plc) this.markLinkLost(ev, arg, plc);
         });
       } catch {
         // ignore
@@ -182,11 +191,13 @@ export class EthernetIpDriver extends NotImplementedDriver {
   }
 
   /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
-  private markLinkLost(ev: string, arg?: unknown): void {
-    if (!this.connected) return;
-    this.connected = false;
+  private markLinkLost(ev: string, arg: unknown, plc: any): void {
     const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
-    this.lastError = `ethernet-ip link lost (${ev})${detail}`;
+    if (this.connected) {
+      this.connected = false;
+      this.lastError = `ethernet-ip link lost (${ev})${detail}`;
+    }
+    this.dangBay.huy(plc, `link ${ev}${detail}`); // R1b-2b-1 (i)
   }
 
   /**
@@ -305,16 +316,21 @@ export class EthernetIpDriver extends NotImplementedDriver {
       const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0);
       const value = coerceEipWrite(raw, dataType, w.dungGhim);
 
-      const eipTag = this.plc.newTag(name, program ?? null);
+      const plc = this.plc;
+      if (!plc) throw new DeviceUnreachableError("ethernet-ip");
+      const eipTag = plc.newTag(name, program ?? null);
       // st-ethernet-ip: set tag.value rồi await PLC.writeTag(tag).
       eipTag.value = value;
-      await withTimeout(this.plc.writeTag(eipTag, value), 5000, "eip writeTag");
+      // R1b-2b-1 — qua sổ đang bay: liên kết mất / phiên bị hạ ⇒ reject NGAY (kết cục không rõ), không chờ hạn rồi báo 'failed'.
+      await withTimeout(this.dangBay.bay(plc, plc.writeTag(eipTag, value)), 5000, "eip writeTag");
 
       this.lastOkAt = new Date();
       return { tagKey: w.tagKey, ok: true };
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
       this.lastError = msg;
+      // R1b-2b-1 — lệnh ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+      if (laLoiMatLienKetKhiDangGui(err)) throw err;
       return { tagKey: w.tagKey, ok: false, error: msg };
     }
   }

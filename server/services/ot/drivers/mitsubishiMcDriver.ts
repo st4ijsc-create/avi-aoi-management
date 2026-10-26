@@ -81,6 +81,7 @@ import { inverseScale, scaleXuoi } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { boundedClose, withDeadline } from "./boundedClose";
+import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiChung, chatLuongV2Bat, laMauBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
 
@@ -304,6 +305,12 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
   private lastOkAt: Date | undefined;
   private lastError: string | undefined;
   private lastLatencyMs: number | undefined;
+  /**
+   * SCADA R1b-2b-1 — yêu cầu đang bay theo phiên mcprotocol: dropConnection ⇒ connectionCleanup ⇒ clearWritePacketTimeouts xoá hẹn giờ
+   * gói mà KHÔNG gọi writeDoneCallback (mcprotocol.js:128-134, 422-431, 1211-1225) ⇒ lệnh ghi chỉ xong ở hạn 5000 ms của driver, 'failed'.
+   * Reject NGAY (kết cục không rõ) ở: lỗi socket (markLinkLost qua lớp gia cố), disconnect(), connect() trước khi hạ phiên cũ.
+   */
+  private readonly dangBay = new SoYeuCauDangBay("mitsubishi-mc");
 
   override async connect(cfg: OtConnectionConfig): Promise<void> {
     const mod: any = await this.loadPackage();
@@ -318,11 +325,12 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       this.conn = null;
       this.hardening = null;
       this.connected = false;
+      this.dangBay.huy(prev, "reconnect replaced the session"); // R1b-2b-1 (iii)
       await dropMcBounded(prev, prevHardening);
     }
     const conn = new MC();
     const hardening = hardenMcInstance(conn, (err) => {
-      if (this.conn === conn) this.markLinkLost("error", err);
+      if (this.conn === conn) this.markLinkLost("error", err, conn);
     });
 
     const opts = cfg.options ?? {};
@@ -368,6 +376,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     this.conn = null;
     this.hardening = null;
     this.connected = false;
+    this.dangBay.huy(conn, "session torn down (disconnect)"); // R1b-2b-1 (ii) — trước dropConnection (huỷ hẹn giờ gói, không gọi lại)
     // doc 81 Đợt 1B Task 1 — ngắt có hạn (≤ DEFAULT_CLOSE_TIMEOUT_MS rồi destroy).
     await dropMcBounded(conn, hardening);
   }
@@ -391,7 +400,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     for (const ev of ["error", "close"]) {
       try {
         conn.on(ev, (arg?: unknown) => {
-          if (this.conn === conn) this.markLinkLost(ev, arg);
+          if (this.conn === conn) this.markLinkLost(ev, arg, conn);
         });
       } catch {
         // ignore
@@ -400,11 +409,13 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
   }
 
   /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
-  private markLinkLost(ev: string, arg?: unknown): void {
-    if (!this.connected) return;
-    this.connected = false;
+  private markLinkLost(ev: string, arg: unknown, conn: any): void {
     const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
-    this.lastError = `mitsubishi-mc link lost (${ev})${detail}`;
+    if (this.connected) {
+      this.connected = false;
+      this.lastError = `mitsubishi-mc link lost (${ev})${detail}`;
+    }
+    this.dangBay.huy(conn, `link ${ev}${detail}`); // R1b-2b-1 (i)
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
@@ -451,14 +462,18 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       const t0DonDieu = performance.now();
       // doc 81 Đợt 1B Task 1 — readAllItems có thể không bao giờ gọi lại (lib tự thử lại mỗi
       // 100 ms khi còn gói chưa xong) ⇒ đọc CÓ HẠN; lib tự timeout gói sau globalTimeout 4500 ms.
+      const connDoc = this.conn;
       values = await withDeadline(
-        new Promise<Record<string, unknown>>((resolve, reject) => {
-          this.conn.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
-            thuVienBaoLoi = anythingBad !== false;
-            if (vals && typeof vals === "object") resolve(vals);
-            else reject(new Error("MitsubishiMcDriver: readAllItems returned no values"));
-          });
-        }),
+        this.dangBay.bay(
+          connDoc,
+          new Promise<Record<string, unknown>>((resolve, reject) => {
+            connDoc.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
+              thuVienBaoLoi = anythingBad !== false;
+              if (vals && typeof vals === "object") resolve(vals);
+              else reject(new Error("MitsubishiMcDriver: readAllItems returned no values"));
+            });
+          }),
+        ),
         Math.max(this.timeoutMs, 4500) + 1000,
         "mc readAllItems",
       );
@@ -596,21 +611,28 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     const values = writable.map((p) => p.value);
 
     let batchError: string | null = null;
+    const conn = this.conn;
     try {
       await withTimeout(
-        new Promise<void>((resolve, reject) => {
-          const rc = this.conn.writeItems(keys, values, (anyBadQualities: boolean) => {
-            if (anyBadQualities) reject(new Error("bad write quality"));
-            else resolve();
-          });
-          if (rc === 1) reject(new Error("MC write busy"));
-        }),
+        // R1b-2b-1 — qua sổ đang bay: phiên bị hạ / lỗi socket ⇒ reject NGAY (không chờ hạn 5000 ms rồi báo 'failed').
+        this.dangBay.bay(
+          conn,
+          new Promise<void>((resolve, reject) => {
+            const rc = conn.writeItems(keys, values, (anyBadQualities: boolean) => {
+              if (anyBadQualities) reject(new Error("bad write quality"));
+              else resolve();
+            });
+            if (rc === 1) reject(new Error("MC write busy"));
+          }),
+        ),
         5000,
         "mc writeItems",
       );
     } catch (err) {
       batchError = (err as Error)?.message || String(err);
       this.lastError = batchError;
+      // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+      if (laLoiMatLienKetKhiDangGui(err)) throw err;
     }
 
     if (!batchError) this.lastOkAt = new Date();

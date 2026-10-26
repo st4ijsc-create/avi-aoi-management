@@ -14,6 +14,7 @@ import { readbackMatches } from "./drivers/readbackCompare";
 import { lopDiaChiBit } from "./drivers/diaChiBit";
 import { canonicalOtValue } from "./otActionBinding";
 import { withDeadline } from "./drivers/boundedClose";
+import { laLoiMatLienKetKhiDangGui } from "./drivers/dangBay";
 import { ghiNhanLenh } from "./boDemTruyenThong";
 import type { DispatchInput, DispatchStatus } from "./commandDispatcher";
 
@@ -1200,6 +1201,10 @@ export async function executeOtDeviceWrite(a: {
 
   let writeResults: Awaited<ReturnType<typeof driver.writeTags>> | typeof TIMEOUT;
   let threwError: string | null = null;
+  // SCADA R1b-2b-1 (bench B1b, điều phối 2026-10-27 Phương án A + nhãn (a)) — driver reject lệnh ĐANG BAY vì liên kết mất / phiên bị hạ
+  // (`LoiMatLienKetKhiDangGui`): lệnh đã giao cho thư viện ⇒ CÓ THỂ đã tới thiết bị ⇒ kết cục KHÔNG RÕ = đúng ngữ nghĩa `timeout` hôm nay
+  // (B3: timeout ≠ không áp), chỉ trả lời NGAY thay vì ở hạn OT_CONTROL_TIMEOUT_MS. Không bao giờ `failed`. Không thử lại.
+  let matLienKetSauMs: number | null = null;
   // doc 81 Đợt 4 Task B3 — keep the write promise: after a timeout it may still be running on the session.
   let writePromise: Promise<unknown> | undefined;
   let writeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1217,7 +1222,8 @@ export async function executeOtDeviceWrite(a: {
       }),
     ]);
   } catch (err) {
-    threwError = (err as Error)?.message || String(err);
+    if (laLoiMatLienKetKhiDangGui(err)) matLienKetSauMs = Date.now() - sentAt.getTime();
+    else threwError = (err as Error)?.message || String(err);
     writeResults = [];
   } finally {
     clearTimeout(writeTimer);
@@ -1229,7 +1235,8 @@ export async function executeOtDeviceWrite(a: {
   }
 
   // Decide a per-write outcome from the write result (status BEFORE read-back).
-  const timedOut = writeResults === TIMEOUT;
+  // R1b-2b-1 — mất liên kết lúc đang bay ⇒ CÙNG nhánh với quá hạn (status / nhãn / giữ chỗ B3 / bỏ đọc lại / bỏ STOP watch giống hệt).
+  const timedOut = writeResults === TIMEOUT || matLienKetSauMs !== null;
   // B3 — a timed-out write keeps the adapter's queue slot (only the serialized path has one) until it settles or
   // its grace expires and the session is reset; the caller's answer is not delayed by this.
   const slotHold =
@@ -1245,7 +1252,10 @@ export async function executeOtDeviceWrite(a: {
         idx: i,
         ok: false,
         status: "timeout",
-        errorText: `write timeout after ${timeoutMs}ms — outcome unknown: the write may have been applied on the device`,
+        errorText:
+          matLienKetSauMs !== null
+            ? `link lost while the write was in flight (after ${matLienKetSauMs}ms) — outcome unknown: the write may have been applied on the device`
+            : `write timeout after ${timeoutMs}ms — outcome unknown: the write may have been applied on the device`,
         readBackValue: null,
       };
     }

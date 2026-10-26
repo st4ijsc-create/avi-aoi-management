@@ -35,6 +35,7 @@ import { inverseScale } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
+import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiChung, chatLuongOpcua, chatLuongV2Bat, MAU_GIA_TRI_HONG } from "../chatLuong";
 import {
@@ -189,6 +190,13 @@ export class OpcuaDriver extends NotImplementedDriver {
   private lastLatencyMs: number | undefined;
   /** SCADA R0 (C5) — hạn giao dịch đã cấu hình ở connect(); `session.read` có thể treo vô hạn khi cáp rút. */
   private timeoutMs = 5000;
+  /**
+   * SCADA R1b-2b-1 — lệnh ghi đang bay theo OPCUAClient. node-opcua TRẢ LỜI giao dịch đang chờ khi transport đóng
+   * (client_secure_channel_layer `_cancel_pending_transactions`) — không mồ côi — nhưng bằng lỗi thường ⇒ trước đây 'failed' (nói sai:
+   * lệnh có thể đã tới server). 'connection_lost'/'close' của client phát ĐỒNG BỘ trước bước huỷ đó ⇒ reject ở đây trước với
+   * `LoiMatLienKetKhiDangGui` ⇒ dispatcher 'timeout' (không rõ). Ba điểm: markLinkLost, disconnect(), connect() khi thay client cũ.
+   */
+  private readonly dangBay = new SoYeuCauDangBay("opcua");
   // doc 81 Đợt 1B Task 12 — theo PHIÊN (xoá khi connect/disconnect: PLC tải lại project có
   // thể đổi chỉ số namespace và kiểu biến).
   private resolveNodeIdFn: ((s: string) => unknown) | null = null;
@@ -242,6 +250,8 @@ export class OpcuaDriver extends NotImplementedDriver {
 
     const timeoutMs = cfg.timeoutMs ?? 5000;
     this.timeoutMs = timeoutMs;
+    // R1b-2b-1 (iii) — connect lại trên CÙNG driver: lệnh ghi đang bay trên client hiện tại trả lời NGAY (không rõ kết cục).
+    if (this.client) this.dangBay.huy(this.client, "reconnect replaced the session");
     const createOpts: Record<string, unknown> = {
       endpointMustExist: false,
       connectionStrategy: { maxRetry: 1 },
@@ -314,6 +324,7 @@ export class OpcuaDriver extends NotImplementedDriver {
     this.session = null;
     this.client = null;
     this.connected = false;
+    this.dangBay.huy(client, "session torn down (disconnect)"); // R1b-2b-1 (ii)
     this.resetSessionCaches();
     // Task 12 — mỗi bước có hạn (tổng ≤ 2 s): session/secure channel treo không giữ stop().
     if (session) {
@@ -427,7 +438,7 @@ export class OpcuaDriver extends NotImplementedDriver {
     for (const ev of events) {
       try {
         client.on(ev, (arg?: unknown) => {
-          if (this.client === client) this.markLinkLost(ev, arg);
+          if (this.client === client) this.markLinkLost(ev, arg, client);
         });
       } catch {
         // ignore — không phải mọi build đều expose event này
@@ -436,10 +447,12 @@ export class OpcuaDriver extends NotImplementedDriver {
   }
 
   /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
-  private markLinkLost(ev: string, arg?: unknown): void {
+  private markLinkLost(ev: string, arg: unknown, client: any): void {
+    const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
+    // R1b-2b-1 (i) — 'backoff' chỉ là một lần thử nối lại (không hạ transport đang dùng) ⇒ không huỷ lệnh đang bay vì nó.
+    if (ev !== "backoff") this.dangBay.huy(client, `link ${ev}${detail}`);
     if (!this.connected) return;
     this.connected = false;
-    const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
     this.lastError = `opcua link lost (${ev})${detail}`;
   }
 
@@ -905,11 +918,14 @@ export class OpcuaDriver extends NotImplementedDriver {
     let statusCodes: any[] = [];
     if (toWrite.length > 0) {
       try {
-        const res = await this.session.write(toWrite);
+        // R1b-2b-1 — qua sổ đang bay (theo client): liên kết mất / phiên bị hạ ⇒ reject NGAY với kết cục KHÔNG RÕ.
+        const res = await this.dangBay.bay(this.client, this.session.write(toWrite));
         statusCodes = Array.isArray(res) ? res : [res];
       } catch (err) {
         const msg = (err as Error)?.message || String(err);
         this.lastError = msg;
+        // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+        if (laLoiMatLienKetKhiDangGui(err)) throw err;
         // Toàn batch lỗi I/O → tất cả node-đã-prepare fail; giữ lỗi parse riêng.
         return prepared.map((p) => ({
           tagKey: p.tagKey,

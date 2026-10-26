@@ -241,6 +241,31 @@ describe("kết quả theo TỪNG adapter", () => {
     expect(within(a).getByTestId("dung-estop")).toBeInTheDocument();
   });
 
+  it("★ R1b-2b-1 T17 — 'timeout' (liên kết mất lúc STOP đang bay, nay trả lời NGAY) ⇒ chưa xác minh + 'Không rõ máy đã nhận' + dòng đỏ E-STOP, KHÔNG 'không đạt'", async () => {
+    veHop();
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", {
+      ketQua: [
+        {
+          adapterId: 1,
+          code: "PLC-A",
+          status: "timeout",
+          ok: false,
+          simulated: false,
+          writes: [{ tagKey: "stop_cmd", value: true }],
+          commandLogIds: [5],
+        },
+      ],
+    });
+    const a = screen.getByTestId("ket-qua-dung-1");
+    expect(a).toHaveAttribute("data-loai", "chuaXacMinh");
+    expect(a).toHaveTextContent(S("scada.dungMay.chuaXacMinh"));
+    expect(a).toHaveTextContent(S("scada.lenh.ketQua.timeout"));
+    expect(a).not.toHaveTextContent("Gửi lỗi"); // câu của 'failed' (scada.lenh.ketQua.failed)
+    expect(within(a).getByTestId("dung-estop")).toHaveTextContent("Dùng E-STOP cứng tại máy");
+    expect(a.getAttribute("style") ?? "").not.toMatch(/--alarm-/);
+  });
+
   it("★ máy chưa ghim (CHUA_GHIM_STOP) ⇒ chữ M5 của điều phối + dòng đỏ E-STOP", async () => {
     veHop();
     fireEvent.click(nutMacDinh());

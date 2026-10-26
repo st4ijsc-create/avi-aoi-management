@@ -44,6 +44,7 @@ import { inverseScale, scaleXuoi } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
+import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiChung, chatLuongV2Bat, laMauBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
 import { readS7ProgramChecksum, clampS7Deadline, S7_CHECKSUM_SOURCE, type S7ChecksumTarget } from "./s7BlockChecksum";
@@ -101,6 +102,12 @@ export class S7Driver extends NotImplementedDriver {
   private timeoutMs = 5000;
   /** doc 81 Đợt 9 T1 — where the program checksum is read (same host / port / rack / slot as the nodes7 session). */
   private checksumTarget: S7ChecksumTarget | null = null;
+  /**
+   * SCADA R1b-2b-1 — yêu cầu đang bay theo phiên NodeS7: dropConnection ⇒ connectionCleanup ⇒ clearWritePacketTimeouts /
+   * clearReadPacketTimeouts xoá hẹn giờ gói mà KHÔNG gọi writeDoneCallback ⇒ lệnh ghi chỉ xong ở hạn 5000 ms của driver, thành 'failed'.
+   * Reject NGAY (kết cục không rõ) ở: mất liên kết (markLinkLost), disconnect(), connect() trước khi hạ phiên cũ.
+   */
+  private readonly dangBay = new SoYeuCauDangBay("s7");
 
   override async connect(cfg: OtConnectionConfig): Promise<void> {
     const mod: any = await this.loadPackage();
@@ -115,6 +122,7 @@ export class S7Driver extends NotImplementedDriver {
     if (cu) {
       this.conn = null;
       this.connected = false;
+      this.dangBay.huy(cu, "reconnect replaced the session"); // R1b-2b-1 (iii)
       try {
         if (typeof cu.dropConnection === "function") cu.dropConnection(() => undefined);
       } catch {
@@ -177,6 +185,7 @@ export class S7Driver extends NotImplementedDriver {
     const conn = this.conn;
     this.conn = null;
     this.connected = false;
+    this.dangBay.huy(conn, "session torn down (disconnect)"); // R1b-2b-1 (ii) — trước dropConnection (huỷ hẹn giờ gói, không gọi lại)
     if (conn && typeof conn.dropConnection === "function") {
       try {
         await new Promise<void>((resolve) => conn.dropConnection(() => resolve()));
@@ -207,7 +216,7 @@ export class S7Driver extends NotImplementedDriver {
     for (const ev of ["error", "close"]) {
       try {
         conn.on(ev, (arg?: unknown) => {
-          if (this.conn === conn) this.markLinkLost(ev, arg);
+          if (this.conn === conn) this.markLinkLost(ev, arg, conn);
         });
       } catch {
         // ignore
@@ -216,11 +225,13 @@ export class S7Driver extends NotImplementedDriver {
   }
 
   /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
-  private markLinkLost(ev: string, arg?: unknown): void {
-    if (!this.connected) return;
-    this.connected = false;
+  private markLinkLost(ev: string, arg: unknown, conn: any): void {
     const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
-    this.lastError = `s7 link lost (${ev})${detail}`;
+    if (this.connected) {
+      this.connected = false;
+      this.lastError = `s7 link lost (${ev})${detail}`;
+    }
+    this.dangBay.huy(conn, `link ${ev}${detail}`); // R1b-2b-1 (i)
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
@@ -269,16 +280,19 @@ export class S7Driver extends NotImplementedDriver {
       const conn = this.conn;
       // SCADA R0 (C5) — readAllItems có thể không bao giờ gọi lại ⇒ đọc CÓ HẠN (không cờ, sửa lỗi treo).
       values = await withDeadline(
-        new Promise<Record<string, unknown>>((resolve, reject) => {
-          conn.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
-            const st = (conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
-            trangThaiSauDoc = typeof st === "number" ? st : undefined;
-            thuVienBaoLoi = anythingBad !== false;
-            // anythingBad=true vẫn trả vals (item lỗi mang giá trị BAD) — không reject.
-            if (vals && typeof vals === "object") resolve(vals);
-            else reject(new Error("S7Driver: readAllItems returned no values"));
-          });
-        }),
+        this.dangBay.bay(
+          conn,
+          new Promise<Record<string, unknown>>((resolve, reject) => {
+            conn.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
+              const st = (conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
+              trangThaiSauDoc = typeof st === "number" ? st : undefined;
+              thuVienBaoLoi = anythingBad !== false;
+              // anythingBad=true vẫn trả vals (item lỗi mang giá trị BAD) — không reject.
+              if (vals && typeof vals === "object") resolve(vals);
+              else reject(new Error("S7Driver: readAllItems returned no values"));
+            });
+          }),
+        ),
         this.timeoutMs + 1000,
         "s7 readAllItems",
       );
@@ -399,22 +413,29 @@ export class S7Driver extends NotImplementedDriver {
     const values = writable.map((p) => p.value);
 
     let batchError: string | null = null;
+    const conn = this.conn;
     try {
       await withTimeout(
-        new Promise<void>((resolve, reject) => {
-          // writeItems trả 1 (đồng bộ) nếu busy → coi là lỗi, KHÔNG chờ callback.
-          const rc = this.conn.writeItems(keys, values, (anyBadQualities: boolean) => {
-            if (anyBadQualities) reject(new Error("bad write quality"));
-            else resolve();
-          });
-          if (rc === 1) reject(new Error("S7 write busy"));
-        }),
+        // R1b-2b-1 — qua sổ đang bay: phiên bị hạ / liên kết mất ⇒ reject NGAY (không chờ hạn 5000 ms rồi báo 'failed').
+        this.dangBay.bay(
+          conn,
+          new Promise<void>((resolve, reject) => {
+            // writeItems trả 1 (đồng bộ) nếu busy → coi là lỗi, KHÔNG chờ callback.
+            const rc = conn.writeItems(keys, values, (anyBadQualities: boolean) => {
+              if (anyBadQualities) reject(new Error("bad write quality"));
+              else resolve();
+            });
+            if (rc === 1) reject(new Error("S7 write busy"));
+          }),
+        ),
         5000,
         "s7 writeItems",
       );
     } catch (err) {
       batchError = (err as Error)?.message || String(err);
       this.lastError = batchError;
+      // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+      if (laLoiMatLienKetKhiDangGui(err)) throw err;
     }
 
     if (!batchError) this.lastOkAt = new Date();
