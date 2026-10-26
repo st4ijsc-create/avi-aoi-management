@@ -1244,3 +1244,130 @@ describe("R1b-2b-1 T3 — chuỗi 'BAD n' tag string là giá trị THẬT khi t
     expect((await mc.readTags([{ tagKey: "t", address: "D100", dataType: "int" }]))[0]).toMatchObject({ quality: "bad", value: null });
   });
 });
+
+// ─────────── R1b-2b-1 T4 (muc 58) — MC: "PLC tra loi loi (cham)" vs "qua han goi" bang errCode cua mcprotocol ───────────
+// Thoi gian thu nho cung ti le voi hang that: globalTimeout 40 ms (that 4500). Dong ho cua driver la performance.now() (fake timers
+// KHONG tien) nen dung timer that: 38 ms ≈ 4300/4500 (95 %, tren nguong 90 % cua luat thoi gian cu), 41 ms ≈ 4600 ms (102 %), 2 ms ≈ 200 ms.
+describe("R1b-2b-1 T4 — MC phân loại lỗi đọc bằng errCode từng item (mục 58)", () => {
+  // chuoi nguyen van mcprotocol.js :1263 (probe mcErrCode.thuVienThat.test.ts chung minh bang thu vien that)
+  const MC_ERRCODE_QUA_HAN_GOI = "Timeout error - zero length packet";
+  const hai: OtTagAddress[] = [
+    { tagKey: "t1", address: "D100", dataType: "int" },
+    { tagKey: "t3", address: "M100", dataType: "bool" },
+  ];
+  const LOI_PLC = "MC Error Response - Second Byte is 91 and error code is 0";
+  type It = { valid: boolean; errCode?: string };
+  /** callback thu vien that: anythingBad=true, mọi item "BAD 255", sau `troMs`; readPacketArray theo hinh da tham do (probe thuVienThat). */
+  function mcDoc(troMs: number, goi: It[][] | undefined, writeItems?: unknown) {
+    const ov: Record<string, unknown> = {
+      isoConnectionState: 4,
+      globalTimeout: 40,
+      readAllItems: vi.fn((cb: (b: boolean, v: Record<string, unknown>) => void) => void setTimeout(() => cb(true, { t1: "BAD 255", t3: "BAD 255" }), troMs)),
+    };
+    if (goi) ov.readPacketArray = goi.map((itemList) => ({ itemList }));
+    if (writeItems) ov.writeItems = writeItems;
+    mockNodes("mcprotocol", {}, ov);
+  }
+  async function chayPhien(d: { subscribe: (...a: never[]) => Promise<{ close: () => Promise<void> }> }, tags: OtTagAddress[], soTick: number) {
+    const ticks: SuKienDoc[] = [];
+    const mau: OtSample[] = [];
+    let docTot = 0;
+    let d1Ban = 0;
+    const bat = taoBatDocTot(() => void (docTot += 1));
+    const dem = taoDemTickHong(SO_TICK_HONG_DE_MAT, () => void (d1Ban += 1));
+    const h = await (d.subscribe as unknown as (t: OtTagAddress[], s: (x: OtSample) => void, ms: number, o: { onTick: (e: SuKienDoc) => void }) => Promise<{ close: () => Promise<void> }>)(
+      tags,
+      (s) => {
+        mau.push(s);
+        bat.quaMau(s);
+      },
+      30,
+      {
+        onTick: (e) => {
+          ticks.push(e);
+          bat.quaTick(e);
+          dem(e);
+        },
+      },
+    );
+    dongSau.push(() => h.close());
+    await waitFor(() => ticks.length >= soTick, 3000);
+    await h.close();
+    return { ticks, mau, docTot: () => docTot, d1Ban: () => d1Ban };
+  }
+  async function moDriver() {
+    const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
+    const d = new MitsubishiMcDriver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:1281" });
+    return d;
+  }
+
+  it("PLC trả lời lỗi CHẬM (38/40 ms ≈ 4300/4500, trên ngưỡng 90 %) ⇒ KHÔNG ném; device_error; tick đọc tốt; STOP ghim vẫn ghi được", async () => {
+    vi.stubEnv(FLAG, "true");
+    const writeItems = vi.fn((_k: string[], _v: unknown[], cb: (anyBad: boolean) => void) => {
+      setImmediate(() => cb(false));
+      return 0;
+    });
+    mcDoc(38, [[{ valid: false, errCode: LOI_PLC }, { valid: false, errCode: LOI_PLC }]], writeItems);
+    const d = await moDriver();
+    const out = await d.readTags(hai);
+    for (const s of out) expect(s).toMatchObject({ quality: "bad", value: null, reason: "device_error" });
+    const r = await chayPhien(d as never, hai, SO_TICK_HONG_DE_MAT + 1);
+    expect(r.ticks.every((e) => e.ok === true && laDocTot(e))).toBe(true);
+    expect(r.d1Ban()).toBe(0);
+    expect(r.mau.every((s) => s.quality === "bad" && s.reason === "device_error")).toBe(true);
+    expect(d.isConnected()).toBe(true);
+    const kq = await d.writeTags([{ tagKey: "stop_pin", address: "M200", value: true, dataType: "bool" }]);
+    expect(kq).toEqual([{ tagKey: "stop_pin", ok: true }]);
+    expect(writeItems).toHaveBeenCalledTimes(1);
+  });
+
+  it("errCode quá hạn gói trên mọi item lỗi, 41/40 ms ≈ 4600/4500 ⇒ ném McReadTimeoutError", async () => {
+    vi.stubEnv(FLAG, "true");
+    mcDoc(41, [[{ valid: false, errCode: MC_ERRCODE_QUA_HAN_GOI }, { valid: false, errCode: MC_ERRCODE_QUA_HAN_GOI }]]);
+    const d = await moDriver();
+    expect(await d.readTags(hai).catch((e) => e as Error)).toMatchObject({ name: "McReadTimeoutError" });
+  });
+
+  it("errCode quá hạn gói NHƯNG đọc nhanh (2 ms) ⇒ vẫn ném (cấu trúc thư viện nói rõ quá hạn, không dựa thời gian)", async () => {
+    vi.stubEnv(FLAG, "true");
+    mcDoc(2, [[{ valid: false, errCode: MC_ERRCODE_QUA_HAN_GOI }, { valid: false, errCode: MC_ERRCODE_QUA_HAN_GOI }]]);
+    const d = await moDriver();
+    expect(await d.readTags(hai).catch((e) => e as Error)).toMatchObject({ name: "McReadTimeoutError" });
+  });
+
+  it("hai gói: một quá hạn, một 'MC Error Response' ⇒ device_error (PLC sống), kể cả khi đọc lâu (41 ms)", async () => {
+    vi.stubEnv(FLAG, "true");
+    mcDoc(41, [[{ valid: false, errCode: MC_ERRCODE_QUA_HAN_GOI }], [{ valid: false, errCode: LOI_PLC }]]);
+    const d = await moDriver();
+    const out = await d.readTags(hai);
+    for (const s of out) expect(s).toMatchObject({ quality: "bad", value: null, reason: "device_error" });
+  });
+
+  it("readPacketArray vắng ⇒ luật thời gian cũ: 41 ms ném, 2 ms ⇒ device_error", async () => {
+    vi.stubEnv(FLAG, "true");
+    mcDoc(41, undefined);
+    const d1 = await moDriver();
+    expect(await d1.readTags(hai).catch((e) => e as Error)).toMatchObject({ name: "McReadTimeoutError" });
+    vi.resetModules();
+    mcDoc(2, undefined);
+    const d2 = await moDriver();
+    const out = await d2.readTags(hai);
+    for (const s of out) expect(s).toMatchObject({ quality: "bad", value: null, reason: "device_error" });
+  });
+
+  it("item valid===true mang errCode quá hạn CŨ bị bỏ qua: không item lỗi nào ⇒ khong_ro ⇒ luật thời gian (2 ms ⇒ device_error, không ném)", async () => {
+    vi.stubEnv(FLAG, "true");
+    mcDoc(2, [[{ valid: true, errCode: MC_ERRCODE_QUA_HAN_GOI }, { valid: true, errCode: MC_ERRCODE_QUA_HAN_GOI }]]);
+    const d = await moDriver();
+    const out = await d.readTags(hai);
+    for (const s of out) expect(s).toMatchObject({ quality: "bad", reason: "device_error" });
+  });
+
+  it("item valid===true mang errCode PLC cũ không che item quá hạn thật: valid:true(MC Error Response cũ) + valid:false(quá hạn) ⇒ ném", async () => {
+    vi.stubEnv(FLAG, "true");
+    mcDoc(41, [[{ valid: true, errCode: LOI_PLC }, { valid: false, errCode: MC_ERRCODE_QUA_HAN_GOI }]]);
+    const d = await moDriver();
+    expect(await d.readTags(hai).catch((e) => e as Error)).toMatchObject({ name: "McReadTimeoutError" });
+  });
+});

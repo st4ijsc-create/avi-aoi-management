@@ -122,6 +122,43 @@ export function laDocMcQuaHanGoi(daTroiMs: number, globalTimeoutMs: number): boo
 }
 
 /**
+ * R1b-2b-1 T4 (muc 58) - chuoi errCode nguyen van khi goi doc qua han: mcprotocol 0.1.2 `mcprotocol.js` :1263
+ * (`processMBPacket(undefined, ...)` tu bo hen globalTimeout cua goi).
+ */
+export const MC_ERRCODE_QUA_HAN_GOI = "Timeout error - zero length packet";
+export type LoaiLoiDocMc = "qua_han_goi" | "plc_tra_loi_loi" | "khong_ro";
+
+/**
+ * Phan loai loi cua lan doc "moi item BAD" bang `errCode` tung item cua thu vien (mcprotocol 0.1.2: `conn.readPacketArray[*].itemList[*]`;
+ * `processMBPacket` dat `valid=false` + `errCode` cho item loi, `valid=true` cho item tot va KHONG xoa errCode cu ⇒ chi xet `valid === false`).
+ *   - moi item loi la "Timeout error - zero length packet" ⇒ "qua_han_goi";
+ *   - >= 1 item loi mang errCode khac (MC Error Response / Invalid Response Length / ...) ⇒ "plc_tra_loi_loi" (it nhat mot goi duoc PLC tra loi ⇒ PLC song);
+ *   - khong doc duoc cau truc (thu vien khac ban, mang rong, khong item nao valid===false) ⇒ "khong_ro" ⇒ goi gia tri van dung luat thoi gian
+ *     `laDocMcQuaHanGoi` (du phong khi cau truc noi bo doi, nen khong xoa luat do). Truy cap phong thu, khong nem.
+ */
+export function phanLoaiLoiDocMc(conn: unknown): LoaiLoiDocMc {
+  try {
+    const arr = (conn as { readPacketArray?: unknown } | null)?.readPacketArray;
+    if (!Array.isArray(arr)) return "khong_ro";
+    let soLoi = 0;
+    let coLoiKhac = false;
+    for (const goi of arr) {
+      const ds = (goi as { itemList?: unknown } | null)?.itemList;
+      if (!Array.isArray(ds)) continue;
+      for (const it of ds) {
+        if (!it || typeof it !== "object" || (it as { valid?: unknown }).valid !== false) continue;
+        soLoi++;
+        if ((it as { errCode?: unknown }).errCode !== MC_ERRCODE_QUA_HAN_GOI) coLoiKhac = true;
+      }
+    }
+    if (soLoi === 0) return "khong_ro";
+    return coLoiKhac ? "plc_tra_loi_loi" : "qua_han_goi";
+  } catch {
+    return "khong_ro";
+  }
+}
+
+/**
  * doc 81 Đợt 1B Task 1 — GIA CỐ `mcprotocol` 0.1.2 TỪ BÊN NGOÀI (không sửa node_modules).
  *
  * Lỗi của thư viện (BE1 §0 (2), mcprotocol.js):
@@ -440,10 +477,13 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
         const globalTimeoutMs = hanGoiThuVienMc(this.conn);
         const st = (this.conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
         const libRoi = typeof st === "number" && st !== 4;
-        if (libRoi || laDocMcQuaHanGoi(daTroiMs, globalTimeoutMs)) {
+        // R1b-2b-1 T4 (muc 58): errCode tung item cua thu vien quyet dinh truoc; chi "khong_ro" moi roi ve luat thoi gian.
+        const loai = phanLoaiLoiDocMc(this.conn);
+        const matLienLac = libRoi || loai === "qua_han_goi" || (loai === "khong_ro" && laDocMcQuaHanGoi(daTroiMs, globalTimeoutMs));
+        if (matLienLac) {
           const err = Object.assign(
             new Error(
-              `mc read not answered: every item BAD (mcprotocol packet timeout, ${Math.round(daTroiMs)} ms ≥ ~${globalTimeoutMs} ms${libRoi ? ", lib not connected" : ""})`,
+              `mc read not answered: every item BAD (mcprotocol packet timeout, ${Math.round(daTroiMs)} ms, ~${globalTimeoutMs} ms, ${loai}${libRoi ? ", lib not connected" : ""})`,
             ),
             { name: "McReadTimeoutError" },
           );
@@ -451,7 +491,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
           throw err;
         }
         // nhanh ⇒ PLC đã trả lời lỗi cho mọi item: KHÔNG ném; từng item ra device_error bên dưới (MAU_GIA_TRI_HONG).
-        this.lastError = `mc read answered with error for every item (${Math.round(daTroiMs)} ms < ~${globalTimeoutMs} ms) — device_error, session kept`;
+        this.lastError = `mc read answered with error for every item (${Math.round(daTroiMs)} ms, ~${globalTimeoutMs} ms, ${loai}) — device_error, session kept`;
       }
       this.lastOkAt = new Date();
     }
