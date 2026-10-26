@@ -3,6 +3,8 @@
  *   • gán `active` trỏ PROFILE cố định cần ≥ 1 lượt đo (`ai_model_eval_runs`) của profile đó VÀ giấy phép artifact ≠ `unknown`;
  *   • gán theo-env (`envKey`) không cần đo — nó chỉ là hành vi `.env` hiện hành;
  *   • lịch sử: hàng cũ cùng (vai trò, phạm vi, chế độ) được đặt `retiredAt`, rồi chèn hàng mới — MỘT giao dịch.
+ *   • KHÔNG ĐỔI (2026-10-26): nếu hàng chưa retire cùng (vai trò, phạm vi, chế độ) ĐÃ trỏ đúng đích (hồ sơ | khoá .env) + cùng danh sách dự phòng (đúng thứ tự) thì KHÔNG retire, KHÔNG chèn
+ *     hàng giống hệt — trả `{ id: hàng hiện có, daThay: 0, khongDoi: true }` (cổng vẫn chạy trước, nên lời từ chối không đổi). scopeId rỗng / null là một; fallback rỗng / null là một.
  * Audit: middleware mutation của tRPC ghi lượt gọi (`aiGguf.soModelDatGan`).
  */
 import { and, count, eq, isNull, sql } from "drizzle-orm";
@@ -37,7 +39,14 @@ export interface YeuCauDatGan {
   mode: CheDoGan;
 }
 
-export async function datGanModel(db: Db, yc: YeuCauDatGan, userId: number | null): Promise<{ id: number; daThay: number }> {
+/** Hai danh sách dự phòng (null / rỗng là một) bằng nhau KỂ CẢ thứ tự. */
+export function cungDuPhong(a: readonly string[] | null | undefined, b: readonly string[] | null | undefined): boolean {
+  const x = a ?? [];
+  const y = b ?? [];
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+}
+
+export async function datGanModel(db: Db, yc: YeuCauDatGan, userId: number | null): Promise<{ id: number; daThay: number; khongDoi?: boolean }> {
   if ((yc.profileId === null) === (yc.envKey === null)) {
     throw new LoiDatGan("DICH_SAI", "Gán phải trỏ đúng một trong hai: hồ sơ phục vụ hoặc khoá .env.");
   }
@@ -63,6 +72,22 @@ export async function datGanModel(db: Db, yc: YeuCauDatGan, userId: number | nul
           throw new LoiDatGan("CHUA_CO_DO", `Hồ sơ ${pid} chưa có lượt đo nào — gán ở chế độ 'thu', chạy bộ đo vai trò, rồi mới active.`);
         }
       }
+    }
+    const scopeId = yc.scopeId === "" ? null : yc.scopeId;
+    const dangCo = await tx
+      .select()
+      .from(aiModelBindings)
+      .where(
+        and(
+          eq(aiModelBindings.roleId, yc.roleId),
+          eq(aiModelBindings.scopeKind, yc.scopeKind),
+          scopeId === null ? isNull(aiModelBindings.scopeId) : eq(aiModelBindings.scopeId, scopeId),
+          eq(aiModelBindings.mode, yc.mode),
+          isNull(aiModelBindings.retiredAt),
+        ),
+      );
+    if (dangCo.length === 1 && (dangCo[0].profileId ?? null) === yc.profileId && (dangCo[0].envKey ?? null) === yc.envKey && cungDuPhong(dangCo[0].fallback as string[] | null, yc.fallback)) {
+      return { id: dangCo[0].id, daThay: 0, khongDoi: true };
     }
     const thay = await tx
       .update(aiModelBindings)

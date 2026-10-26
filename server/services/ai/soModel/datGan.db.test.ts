@@ -69,4 +69,47 @@ describe("datGanModel (DB _test, Đợt 7.0)", () => {
       .where(and(eq(aiModelBindings.scopeId, SCOPE), isNull(aiModelBindings.retiredAt)));
     expect(conHieuLuc.map((g) => `${g.mode}:${g.profileId ?? g.envKey}`).sort()).toEqual(["active:GGUF_CODE_MODEL", `thu:${TT}-pa`]);
   });
+
+  it("★ KHÔNG ĐỔI: gán lại đúng (vai, phạm vi, chế độ, đích, dự phòng) ⇒ { khongDoi: true, daThay: 0 } — KHÔNG retire, KHÔNG chèn hàng giống hệt (id giữ nguyên, vẫn đúng 1 hàng sống)", async () => {
+    const db = (await getDb())!;
+    const sinh = () => db.select().from(aiModelBindings).where(and(eq(aiModelBindings.scopeId, SCOPE), eq(aiModelBindings.mode, "active"), isNull(aiModelBindings.retiredAt)));
+    const truoc = await sinh();
+    expect(truoc).toHaveLength(1);
+    const dem = async () => (await db.select().from(aiModelBindings).where(and(eq(aiModelBindings.scopeId, SCOPE), eq(aiModelBindings.mode, "active")))).length; // KỂ CẢ hàng đã retire
+    const tongTruoc = await dem();
+    const lai = await datGanModel(db, yc({ envKey: "GGUF_CODE_MODEL" }), null);
+    expect(lai).toEqual({ id: truoc[0].id, daThay: 0, khongDoi: true });
+    expect((await sinh()).map((g) => g.id)).toEqual([truoc[0].id]);
+    expect(await dem()).toBe(tongTruoc); // không chèn thêm hàng (kể cả hàng sẽ bị retire ngay)
+  });
+
+  it("★ ĐỔI thật vẫn thay: đổi đích / thêm dự phòng / đổi THỨ TỰ dự phòng ⇒ retire hàng cũ + hàng mới (khongDoi vắng); gán lại đúng dự phòng ⇒ khongDoi; chế độ khác không bị ảnh hưởng", async () => {
+    const db = (await getDb())!;
+    const dem = async () => (await db.select().from(aiModelBindings).where(and(eq(aiModelBindings.scopeId, SCOPE), isNull(aiModelBindings.retiredAt)))).length;
+    const a = await datGanModel(db, yc({ envKey: "GGUF_CODE_MODEL", fallback: [`${TT}-pa`] }), null);
+    expect(a.khongDoi).toBeUndefined();
+    expect(a.daThay).toBe(1);
+    const b = await datGanModel(db, yc({ envKey: "GGUF_CODE_MODEL", fallback: [`${TT}-pa`] }), null);
+    expect(b).toEqual({ id: a.id, daThay: 0, khongDoi: true });
+    const c = await datGanModel(db, yc({ envKey: "GGUF_CODE_MODEL", fallback: [`${TT}-pa`, `${TT}-pb`] }), null);
+    expect(c.khongDoi).toBeUndefined();
+    expect(c.daThay).toBe(1);
+    const d = await datGanModel(db, yc({ envKey: "GGUF_CODE_MODEL", fallback: [`${TT}-pb`, `${TT}-pa`] }), null); // đổi THỨ TỰ
+    expect(d.khongDoi).toBeUndefined();
+    expect(d.daThay).toBe(1);
+    const e = await datGanModel(db, yc({ profileId: `${TT}-pb`, fallback: [`${TT}-pb`, `${TT}-pa`] }), null); // đổi ĐÍCH (env → hồ sơ)
+    expect(e.khongDoi).toBeUndefined();
+    expect(e.daThay).toBe(1);
+    const truoc = await dem();
+    await datGanModel(db, yc({ profileId: `${TT}-pb`, fallback: [`${TT}-pb`, `${TT}-pa`] }), null);
+    expect(await dem()).toBe(truoc); // gán trùng không đổi số hàng sống
+    // chế độ khác: gán 'thu' trùng hàng thu có sẵn ⇒ khongDoi; không đụng hàng active
+    const thu = await datGanModel(db, yc({ profileId: `${TT}-pa`, mode: "thu" }), null);
+    expect(thu.khongDoi).toBe(true);
+  });
+
+  it("cổng vẫn chạy TRƯỚC khi coi là trùng: gán lại một đích bị cổng chặn vẫn bị từ chối (không 'khongDoi' trá hình)", async () => {
+    const db = (await getDb())!;
+    expect(await maLoi(datGanModel(db, yc({ profileId: `${TT}-pa`, mode: "active" }), null))).toBe("GIAY_PHEP_CHUA_RO");
+  });
 });
