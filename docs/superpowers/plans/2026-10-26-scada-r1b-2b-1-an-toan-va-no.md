@@ -894,7 +894,7 @@ Số giữ theo báo cáo R1b-2a §11 để đối chiếu 1-1.
 63. Census thứ tự khoá ADAPTER → LUẬT interlock + cấm gọi pool (`getDb()`) bên trong giao dịch đang giữ khoá hàng (R1b-2b-1 T10 review: lượt đọc pool trong tx là kết nối thứ hai — treo khi pool cạn).
 64. Đọc lại THÔ thật từ driver (giá trị trước scale) cho so đọc lại tag int có scale lẻ — R1b-2b-1 T16 phát hiện làm tròn che lỗi
 65. Thử lại STOP MỘT lần trên kết nối mới trong hạn tổng 2,5 s — chủ dự án quyết (điều phối 2026-10-27: không làm ở R1b-2b-1). Nền: R1b-2b-1 Task 17 (bench B1b) — lệnh STOP đang bay khi liên kết mất nay được trả lời NGAY `timeout` (không rõ kết cục) thay vì treo 5 s; không có thử lại nào.
-66. **(ƯU TIÊN — thứ tự 61 → 66 → 62, điều phối 2026-10-27)** Hết hạn yêu cầu của CHÍNH driver (Modbus 800 ms, S7/MC/EIP 5000 ms cố định, OPC UA, SLMP) ⇒ kết quả `timeout` (chưa rõ) thay vì `failed` — lệnh có thể đã tới thiết bị
+66. **(ƯU TIÊN — thứ tự 61 → 66 → 62, điều phối 2026-10-27)** Hết hạn yêu cầu của CHÍNH driver (Modbus 800 ms, S7/MC/EIP 5000 ms cố định, OPC UA, SLMP) ⇒ kết quả `timeout` (chưa rõ) thay vì `failed` — lệnh có thể đã tới thiết bị. Nền: R1b-2b-1 Task 17 (bench B1b) fix round 1 — mất liên kết / hạ phiên lúc đang bay nay đã ra `timeout`; quá hạn của chính driver vẫn ra `failed` (kể cả khi nó reject trong ân hạn B3 bằng lỗi thường ⇒ không ghi rủi ro lệnh ghi cũ — xử lý cùng mục này).
 
 **AI và cổng mức:**
 17. `congOtLuong` dùng mức kênh (cần `adapterId` trong luồng AI).

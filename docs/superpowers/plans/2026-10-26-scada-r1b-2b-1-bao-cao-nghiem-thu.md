@@ -182,6 +182,8 @@ _(chạy toàn bộ: chưa chạy)_
   được gửi nốt và PLC vẫn xử lý phần đã nhận, nên lệnh cũ CÓ THỂ tới sau STOP; "socket đã huỷ nên không thể tới" chỉ đúng khi PLC đóng kết nối.
   (rà soát bảo mật) Mục rủi ro của adapter không bao giờ bị làm yếu: lần bỏ mới GỘP vào mục đang có (hạn = max, intent + writes hợp lại; trước: lần quá
   hạn sau ĐÈ lần trước); lượt giữ B3 nhả trên mục đang ở map, chỉ nới hạn; canh STOP coi "giá trị bị bỏ đã tới" khi BẤT KỲ giá trị bỏ nào của tag khớp.
+  (T17 fix round 2) Cả khi hạn của LỆNH hết trước và phiên bị hạ TRONG ân hạn 1 s của B3 (lệnh treo bị huỷ bằng lỗi có kiểu): ghi rủi ro ngay, không đặt
+  lại phiên, nhả chỗ ngay (trước: coi là "đã xong", không ghi gì).
 
 ## 6. Giới hạn đã biết
 
