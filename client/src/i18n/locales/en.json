@@ -21106,7 +21106,8 @@
       "label": "Choose thinking mode",
       "canBang": "thinking: balanced",
       "nhanh": "thinking: off (fast)",
-      "tip": "Balanced = code generation/fix turns THINK up to 12,000 tokens (more correct, slower: ~30–120 s/turn on Qwen3.6); helper turns (file pick, KB) do not think. Off = no thinking on any turn (measured: 5–15× faster, ~10–15 points less correct). Applies per request, no restart."
+      "tip": "Balanced = code generation/fix turns THINK up to 12,000 tokens (more correct, slower: ~30–120 s/turn on Qwen3.6); helper turns (file pick, KB) do not think. Off = no thinking on any turn (measured: 5–15× faster, ~10–15 points less correct). Applies per request, no restart.",
+      "nhanhCanhBao": "Fast: answers faster but may be less accurate (no thinking)"
     },
     "modelPick": {
       "label": "Choose model tier",
