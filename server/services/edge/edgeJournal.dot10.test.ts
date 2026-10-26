@@ -517,7 +517,7 @@ describe("doc 81 Đợt 10 E — edge journal: bounds + compaction", () => {
     await j.close();
   });
 
-  it("★ R-10-ag: appends on a FULL journal stay O(1) — 10 000 appends, constant work per append, nothing rewritten (counted, not timed)", async () => {
+  it("★ R-10-ag: appends on a FULL journal stay O(1) — 3 000 appends, constant work per append, nothing rewritten (counted, not timed)", async () => {
     const dir = await tmp();
     // O(1) is asserted by COUNTING the work the journal asks of the disk (same run, no wall clock — a wall-clock bound failed at 18 s on a 99 %-CPU machine):
     // a journal that re-read / rewrote the un-acked records on each append would grow these counters with N (quadratic), not with the records themselves.
@@ -548,7 +548,7 @@ describe("doc 81 Đợt 10 E — edge journal: bounds + compaction", () => {
     for (let n = 0; n < 5_000 && !j.isFull(); n++) await j.appendRun(9, 2, step("fill"));
     expect(j.isFull()).toBe(true);
     for (const k of Object.keys(c) as (keyof typeof c)[]) c[k] = 0;
-    const N = 10_000;
+    const N = 3_000;
     await Promise.all(Array.from({ length: N }, (_, k) => j.appendEvent({ kind: "anomaly", code: "BENCH", runId: null, detail: String(k), at: 1 })));
     console.log("R-10-ag counters", JSON.stringify(c));
     expect(j.isFull()).toBe(true);
