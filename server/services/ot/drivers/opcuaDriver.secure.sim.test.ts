@@ -32,6 +32,7 @@ process.env.XDG_CONFIG_HOME = path.join(TMP, "xdg");
 process.env.OPCUA_PKI_DIR = path.join(TMP, "client-pki");
 process.env.SECRET_ENCRYPTION_KEY = "task12-sim-test-key";
 
+/** Hệ số nới MỌI hạn giờ của tệp (connect thật qua TLS + khoá RSA): cận trên vẫn là cận, chỉ không sát đến mức máy bị chiếm CPU làm đỏ oan. */const ESCALA = 3;
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`${label}: test deadline ${ms}ms exceeded`)), ms);
@@ -134,9 +135,9 @@ async function newDriver() {
 const SEC_OPTS = { securityMode: "SignAndEncrypt", securityPolicy: "Basic256Sha256" };
 
 beforeAll(async () => {
-  secure = await withTimeout(startServer({ secure: true, pkiName: "server-pki" }), 30_000, "start secure server");
-  plain = await withTimeout(startServer({ secure: false, pkiName: "server-pki-plain" }), 30_000, "start plain server");
-}, 60_000);
+  secure = await withTimeout(startServer({ secure: true, pkiName: "server-pki" }), 30_000 * ESCALA, "start secure server");
+  plain = await withTimeout(startServer({ secure: false, pkiName: "server-pki-plain" }), 30_000 * ESCALA, "start plain server");
+}, 60_000 * ESCALA);
 
 afterAll(async () => {
   for (const d of drivers) {
@@ -144,7 +145,7 @@ afterAll(async () => {
   }
   for (const s of [secure, plain]) {
     if (!s) continue;
-    await withTimeout(s.server.shutdown(0), 10_000, "server shutdown").catch(() => undefined);
+    await withTimeout(s.server.shutdown(0), 10_000 * ESCALA, "server shutdown").catch(() => undefined);
     await s.cm.dispose().catch(() => undefined);
   }
   try {
@@ -162,7 +163,7 @@ afterAll(async () => {
   } catch {
     // Windows có thể còn khoá tệp PKI — thư mục tạm, bỏ qua
   }
-}, 60_000);
+}, 60_000 * ESCALA);
 
 // Fix round 1 — đóng driver của MỖI test (server node-opcua giới hạn số secure channel;
 // để dồn tới afterAll làm test sau bị "premature disconnection").
@@ -180,10 +181,10 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     const d = await newDriver();
     const t0 = Date.now();
     // Fix round 1 (#8) — lý do CỤ THỂ, không chỉ "có lỗi".
-    await expect(withTimeout(d.connect({ endpoint: secure.url, timeoutMs: 5000 }), 12_000, "None→secure connect")).rejects.toThrow(
+    await expect(withTimeout(d.connect({ endpoint: secure.url, timeoutMs: 5000 * ESCALA }), 12_000 * ESCALA, "None→secure connect")).rejects.toThrow(
       /no endpoint for SecurityMode None/,
     );
-    expect(Date.now() - t0).toBeLessThan(12_000);
+    expect(Date.now() - t0).toBeLessThan(12_000 * ESCALA);
     expect(d.isConnected()).toBe(false);
   });
 
@@ -191,7 +192,7 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     const d = await newDriver();
     let err: Error | null = null;
     try {
-      await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 15_000, "untrusted connect");
+      await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 * ESCALA }), 15_000 * ESCALA, "untrusted connect");
     } catch (e) {
       err = e as Error;
     }
@@ -222,7 +223,7 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     let lastErr: unknown = null;
     for (;;) {
       try {
-        await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "trusted connect");
+        await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "trusted connect");
         break;
       } catch (e) {
         lastErr = e;
@@ -238,11 +239,11 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     );
     expect(s.quality).toBe("good");
     expect(s.value).toBeCloseTo(1.5, 6);
-  }, 40_000);
+  }, 40_000 * ESCALA);
 
   it("typed writes Float/Int16/UInt16/UInt32/Byte (+Boolean/String/Double/Int32) land with the NODE's type and read back", async () => {
     const d = await newDriver();
-    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "connect");
+    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "connect");
     const ns = secure.nsIndex;
     const writes = [
       { tagKey: "F", address: `ns=${ns};s=F`, value: 3.25, dataType: "float" as const },
@@ -286,11 +287,11 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
       expect(byKey[k].quality).toBe("good");
       expect(byKey[k].value).toBe(v);
     }
-  }, 30_000);
+  }, 30_000 * ESCALA);
 
   it("out-of-range write ⇒ ok:false and the PLC value is untouched; other writes in the batch still land", async () => {
     const d = await newDriver();
-    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "connect");
+    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "connect");
     const ns = secure.nsIndex;
     const before = { B: secure.store.B.value, I16: secure.store.I16.value, U16: secure.store.U16.value };
     const res = await withTimeout(
@@ -309,11 +310,11 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     expect(secure.store.I16.value).toBe(before.I16);
     expect(secure.store.U16.value).toBe(before.U16);
     expect(secure.store.I32.value).toBe(11);
-  }, 30_000);
+  }, 30_000 * ESCALA);
 
   it("batch of 5 tags with ONE malformed nodeId ⇒ 4 good + 1 bad (with its status code)", async () => {
     const d = await newDriver();
-    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "connect");
+    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "connect");
     const ns = secure.nsIndex;
     const samples = await withTimeout(
       d.readTags([
@@ -329,11 +330,11 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     expect(samples.map((s: any) => s.quality)).toEqual(["good", "bad", "good", "good", "good"]);
     expect(samples[1].value).toBeNull();
     expect(samples[1].statusCode).toMatch(/BadNodeIdInvalid/);
-  }, 30_000);
+  }, 30_000 * ESCALA);
 
   it("batch with an UNKNOWN nodeId ⇒ only that tag bad with BadNodeIdUnknown", async () => {
     const d = await newDriver();
-    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "connect");
+    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "connect");
     const ns = secure.nsIndex;
     const samples = await withTimeout(
       d.readTags([
@@ -345,11 +346,11 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     );
     expect(samples.map((s: any) => s.quality)).toEqual(["good", "bad"]);
     expect(samples[1].statusCode).toMatch(/BadNodeIdUnknown/);
-  }, 30_000);
+  }, 30_000 * ESCALA);
 
   it("nsu=<namespace uri>;s=… resolves through the server's NamespaceArray (read + write); unknown uri ⇒ that tag bad", async () => {
     const d = await newDriver();
-    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "connect");
+    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "connect");
     const w = await withTimeout(
       d.writeTags([{ tagKey: "I32", address: `nsu=${secure.nsUri};s=I32`, value: 4242, dataType: "int" }]),
       5000,
@@ -368,7 +369,7 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     expect(samples[0]).toMatchObject({ quality: "good", value: 4242 });
     expect(samples[1].quality).toBe("bad");
     expect(samples[1].statusCode).toMatch(/BadNodeIdUnknown/);
-  }, 30_000);
+  }, 30_000 * ESCALA);
 
   it("UserName auth with the password stored as a secretBox ciphertext; wrong password refused", async () => {
     const { encryptSecret } = await import("../../security/secretBox");
@@ -376,7 +377,7 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     expect(enc).toMatch(/^enc:v1:/);
     const d = await newDriver();
     await withTimeout(
-      d.connect({ endpoint: secure.url, options: { ...SEC_OPTS, userName: "operator", password: enc }, timeoutMs: 8000 }),
+      d.connect({ endpoint: secure.url, options: { ...SEC_OPTS, userName: "operator", password: enc }, timeoutMs: 8000 * ESCALA }),
       10_000,
       "user connect",
     );
@@ -386,13 +387,13 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     const d2 = await newDriver();
     await expect(
       withTimeout(
-        d2.connect({ endpoint: secure.url, options: { ...SEC_OPTS, userName: "operator", password: encryptSecret("wrong")! }, timeoutMs: 8000 }),
+        d2.connect({ endpoint: secure.url, options: { ...SEC_OPTS, userName: "operator", password: encryptSecret("wrong")! }, timeoutMs: 8000 * ESCALA }),
         10_000,
         "bad user connect",
       ),
     ).rejects.toThrow(/Bad|denied|rejected/i);
     expect(d2.isConnected()).toBe(false);
-  }, 30_000);
+  }, 30_000 * ESCALA);
 
   it("trustOnFirstUse:true is REFUSED before any socket when OPCUA_ALLOW_TRUST_ON_FIRST_USE is not set (R20)", async () => {
     delete process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE;
@@ -401,7 +402,7 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     try {
       const d = await newDriver();
       await expect(
-        withTimeout(d.connect({ endpoint: secure.url, options: { ...SEC_OPTS, trustOnFirstUse: true }, timeoutMs: 8000 }), 10_000, "tofu refused"),
+        withTimeout(d.connect({ endpoint: secure.url, options: { ...SEC_OPTS, trustOnFirstUse: true }, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "tofu refused"),
       ).rejects.toThrow(/OPCUA_ALLOW_TRUST_ON_FIRST_USE/);
       expect(d.isConnected()).toBe(false);
       // Không PKI nào được tạo ⇒ không bước nối nào đã chạy.
@@ -409,7 +410,7 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     } finally {
       process.env.OPCUA_PKI_DIR = clientPki();
     }
-  }, 30_000);
+  }, 30_000 * ESCALA);
 
   it("R20: a TOFU accept lives in an ISOLATED <pki>/tofu root — a strict adapter on the same dir is STILL refused; accept WARNs with the thumbprint", async () => {
     const shared = path.join(TMP, "client-pki-shared");
@@ -419,7 +420,7 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     try {
       const tofu = await newDriver();
       await withTimeout(
-        tofu.connect({ endpoint: secure.url, options: { ...SEC_OPTS, trustOnFirstUse: true }, timeoutMs: 8000 }),
+        tofu.connect({ endpoint: secure.url, options: { ...SEC_OPTS, trustOnFirstUse: true }, timeoutMs: 8000 * ESCALA }),
         10_000,
         "tofu connect",
       );
@@ -437,7 +438,7 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
 
       const strict = await newDriver();
       await expect(
-        withTimeout(strict.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "strict after tofu"),
+        withTimeout(strict.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "strict after tofu"),
       ).rejects.toThrow(/BadCertificateUntrusted/);
       expect(strict.isConnected()).toBe(false);
       const strictTrusted = path.join(shared, "trusted", "certs");
@@ -446,7 +447,7 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
       // TOFU lần hai (đã tin trong gốc tofu) ⇒ không WARN "ACCEPTED" nữa, không WARN tư thế lần 2.
       await tofu.disconnect();
       await withTimeout(
-        tofu.connect({ endpoint: secure.url, options: { ...SEC_OPTS, trustOnFirstUse: true }, timeoutMs: 8000 }),
+        tofu.connect({ endpoint: secure.url, options: { ...SEC_OPTS, trustOnFirstUse: true }, timeoutMs: 8000 * ESCALA }),
         10_000,
         "tofu reconnect",
       );
@@ -457,7 +458,7 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
       delete process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE;
       process.env.OPCUA_PKI_DIR = clientPki();
     }
-  }, 40_000);
+  }, 40_000 * ESCALA);
 
   it("#9 two adapters doing their FIRST secure connect in parallel on a fresh, empty PKI dir ⇒ both connect, one client certificate", async () => {
     const fresh = path.join(TMP, "client-pki-race");
@@ -484,11 +485,11 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     } finally {
       process.env.OPCUA_PKI_DIR = clientPki();
     }
-  }, 40_000);
+  }, 40_000 * ESCALA);
 
   it("#4 (final wave item 7) Int64: beyond the safe-integer range ⇒ ok:false with a clear reason; −5 AND −5 000 000 000 (below −2^32, once refused) land on the real server as two's complement", async () => {
     const d = await newDriver();
-    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "connect");
+    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "connect");
     const ns = secure.nsIndex;
     const res = await withTimeout(
       d.writeTags([
@@ -507,13 +508,13 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     // được ghi (thứ tự batch) là −5 000 000 000, thứ fix round 1 từng từ chối oan.
     const b = BigInt.asUintN(64, -5_000_000_000n);
     expect(secure.store.I64.value).toEqual([Number(b >> 32n), Number(b & 0xffffffffn)]);
-  }, 30_000);
+  }, 30_000 * ESCALA);
 
   it("#5 monitored item the server rejects ⇒ ONE rate-limited bad sample with its statusCode; good tag keeps flowing", async () => {
     process.env.OT_OPCUA_MONITORED_ITEMS = "true";
     try {
       const d = await newDriver();
-      await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "connect");
+      await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "connect");
       const got: any[] = [];
       const handle = await withTimeout(
         d.subscribe(
@@ -547,16 +548,16 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     } finally {
       delete process.env.OT_OPCUA_MONITORED_ITEMS;
     }
-  }, 30_000);
+  }, 30_000 * ESCALA);
 
   it("disconnect() is bounded", async () => {
     const d = await newDriver();
-    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "connect");
+    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "connect");
     const t0 = Date.now();
     await withTimeout(d.disconnect(), 6000, "disconnect");
     expect(Date.now() - t0).toBeLessThan(6000);
     expect(d.isConnected()).toBe(false);
-  }, 30_000);
+  }, 30_000 * ESCALA);
 });
 
 describe("legacy default (no securityMode) against a None server keeps working (Task 12)", () => {
@@ -566,7 +567,7 @@ describe("legacy default (no securityMode) against a None server keeps working (
     const warn = vi.spyOn(console, "warn");
     try {
       const d = await newDriver();
-      await withTimeout(d.connect({ endpoint: plain.url, timeoutMs: 8000 }), 10_000, "plain connect");
+      await withTimeout(d.connect({ endpoint: plain.url, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "plain connect");
       const [s] = await withTimeout(
         d.readTags([{ tagKey: "D", address: `ns=${plain.nsIndex};s=D`, dataType: "float" }]),
         5000,
@@ -581,17 +582,17 @@ describe("legacy default (no securityMode) against a None server keeps working (
       expect(w[0]).toMatchObject({ ok: true });
       expect(plain.store.U16.dataType).toBe(SPEC.UInt16);
       await d.disconnect();
-      await withTimeout(d.connect({ endpoint: plain.url, timeoutMs: 8000 }), 10_000, "plain reconnect");
+      await withTimeout(d.connect({ endpoint: plain.url, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "plain reconnect");
       const ours = warn.mock.calls.filter((c) => /securityMode not configured/.test(String(c[0])));
       expect(ours).toHaveLength(1);
       // R20 — securityMode "None" ĐẶT TƯỜNG MINH ⇒ WARN một lần cho endpoint này (hai lần nối ⇒ 1 dòng).
       const e = await newDriver();
-      await withTimeout(e.connect({ endpoint: plain.url, options: { securityMode: "None" }, timeoutMs: 8000 }), 10_000, "explicit None");
+      await withTimeout(e.connect({ endpoint: plain.url, options: { securityMode: "None" }, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "explicit None");
       await e.disconnect();
-      await withTimeout(e.connect({ endpoint: plain.url, options: { securityMode: "None" }, timeoutMs: 8000 }), 10_000, "explicit None 2");
+      await withTimeout(e.connect({ endpoint: plain.url, options: { securityMode: "None" }, timeoutMs: 8000 * ESCALA }), 10_000 * ESCALA, "explicit None 2");
       expect(warn.mock.calls.filter((c) => /securityMode None set explicitly/.test(String(c[0])))).toHaveLength(1);
     } finally {
       warn.mockRestore();
     }
-  }, 30_000);
+  }, 30_000 * ESCALA);
 });
