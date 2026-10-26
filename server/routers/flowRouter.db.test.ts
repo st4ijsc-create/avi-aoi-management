@@ -291,3 +291,31 @@ describe("nguoi.bieu-mau qua flow.duyet (DB)", () => {
     await expect(goi("engineer").luu({ definition: dinh(Array.from({ length: 21 }, (_, i) => ({ ten: `t${i}`, nhan: "x", kieu: "chuoi" }))) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });
+
+describe("chonModel của node AI (Đợt 10.2) qua flow.luu / nhapXemTruoc", () => {
+  const luongCm = (cm: unknown, id = `${TT}-cm`) => ({
+    id, name: "cm", version: 1,
+    nodes: [nut("t", "kich-hoat.thu-cong"), nut("a", "ai.llm", { loiNhac: "x", vaiTro: "chat", chonModel: cm }), nut("b", "du-lieu.dat", { truong: { k: 1 } })],
+    connections: [noi("t", "main", "a"), noi("a", "main", "b")],
+  });
+
+  it("★ lưu chonModel hợp lệ ⇒ được; biểu thức / sai dạng ⇒ BAD_REQUEST nêu node 'a' (không nêu node khác)", async () => {
+    await expect(goi("engineer").luu({ definition: luongCm("vai-tro:chat") })).resolves.toMatchObject({ flowId: `${TT}-cm` });
+    for (const cm of ["{{ $json.model }}", "tep.gguf"]) {
+      const e = await goi("engineer").luu({ definition: luongCm(cm, `${TT}-cm2`) }).catch((x) => x);
+      expect(e).toMatchObject({ code: "BAD_REQUEST" });
+      expect(String(e.message)).toContain("node 'a'");
+      expect(String(e.message)).not.toContain("node 'b'");
+    }
+  });
+
+  it("★ nhapXemTruoc gói thật: chonModel ho-so:<không có ở máy này> ⇒ canhBao nêu node 'a'; vai-tro:* ⇒ không cảnh báo", async () => {
+    const { taoGoi } = await import("../services/flow/xuatNhap");
+    const goiLa = taoGoi(luongCm("ho-so:khong-co-o-may-nay", "x-nhap") as never).goi;
+    const ra = await goi("engineer").nhapXemTruoc({ goi: goiLa });
+    expect(ra.canhBao.join("\n")).toContain("node 'a'");
+    expect(ra.canhBao.join("\n")).toContain("khong-co-o-may-nay");
+    const goiVai = taoGoi(luongCm("vai-tro:chat", "x-nhap2") as never).goi;
+    expect((await goi("engineer").nhapXemTruoc({ goi: goiVai })).canhBao.join("\n")).not.toContain("hồ sơ model");
+  });
+});

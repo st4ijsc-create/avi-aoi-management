@@ -23761,7 +23761,8 @@
         "luong-loi": "chọn lại luồng xử lý lỗi",
         "bat-su-kien": "bật lại nghe sự kiện (đang TẮT)",
         "http-bi-mat": "nhập lại phần đã bị gỡ khỏi url / tiêu đề / thân HTTP (tham số truy vấn, khoá, mật khẩu — dùng bí mật của luồng)",
-        "affinity": "chọn lại nhóm máy xử lý (affinity)"
+        "affinity": "chọn lại nhóm máy xử lý (affinity)",
+        "chon-model": "chọn lại model (model ngoài không đi theo gói — nhà máy đích có thể chưa bật nhà cung cấp)"
       },
       "nhap": "Nhập",
       "nhapTieuDe": "Nhập luồng từ gói",

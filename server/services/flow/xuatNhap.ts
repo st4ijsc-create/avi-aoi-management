@@ -17,7 +17,7 @@ export const DINH_DANG_GOI = "luong-ai/1";
 export const TRAN_BYTE_GOI = 256 * 1024;
 export const TRAN_NODE_GOI = 100;
 
-export type LoaiViec = ThamSoNhaMay["viec"] | "bi-mat" | "luong-loi" | "http-bi-mat" | "affinity";
+export type LoaiViec = ThamSoNhaMay["viec"] | "bi-mat" | "luong-loi" | "http-bi-mat" | "affinity" | "chon-model";
 export interface ViecPhaiDien {
   nodeId: string;
   truong: string;
@@ -240,6 +240,11 @@ function lamTrongNut(n: NodeInstance, viec: ViecPhaiDien[]): NodeInstance {
     delete ra.credentialRef;
     delete ra.parameters.kieuXacThuc; // đi cùng bí mật
   }
+  // Đợt 10.2 — `chonModel` = model NGOÀI (ngoai:*) phụ thuộc nhà máy ĐÃ BẬT nhà cung cấp ⇒ gói không mang theo: về auto (bỏ khoá) + việc phải chọn lại.
+  if (ra.type.startsWith("ai.") && typeof ra.parameters.chonModel === "string" && ra.parameters.chonModel.startsWith("ngoai:")) {
+    delete ra.parameters.chonModel;
+    viec.push({ nodeId: ra.id, truong: "chonModel", viec: "chon-model" });
+  }
   if (LOAI_HTTP.has(ra.type)) lamSachHttp(ra, viec);
   if (ra.type === LOAI_MCP) lamSachMcp(ra, viec);
   for (const d of THAM_SO_THEO_NHA_MAY[ra.type]?.truong ?? []) {
@@ -271,6 +276,19 @@ function lamTrongNut(n: NodeInstance, viec: ViecPhaiDien[]): NodeInstance {
     if (d.thanh === "tat" || d.thanh === "bo" || d.thanh === "luong-con") continue;
     const v = ra.parameters[d.truong];
     if (!laBieuThuc(v) && trong(v) && !viec.some((x) => x.nodeId === ra.id && x.truong === d.truong)) viec.push({ nodeId: ra.id, truong: d.truong, viec: d.viec });
+  }
+  return ra;
+}
+
+/**
+ * Cảnh báo lúc NHẬP: node AI trỏ `chonModel: "ho-so:<id>"` mà máy này KHÔNG có hồ sơ đó (id hồ sơ là toàn hệ thống nhưng sổ model mỗi nơi khác nhau) — gọi sẽ lỗi cho tới khi chọn lại.
+ * `coHoSo` do người gọi truyền (đọc ảnh sổ model) để hàm này vẫn THUẦN.
+ */
+export function canhBaoHoSoChonModel(def: FlowDefinition, coHoSo: (id: string) => boolean): string[] {
+  const ra: string[] = [];
+  for (const n of def.nodes) {
+    const cm = n.type.startsWith("ai.") ? (n.parameters as Record<string, unknown> | undefined)?.chonModel : undefined;
+    if (typeof cm === "string" && cm.startsWith("ho-so:") && !coHoSo(cm.slice("ho-so:".length))) ra.push(`node '${n.id}': hồ sơ model '${cm.slice(6, 100)}' không có ở máy này — chọn lại model trước khi bật luồng.`);
   }
   return ra;
 }

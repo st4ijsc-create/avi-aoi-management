@@ -23764,7 +23764,8 @@
         "luong-loi": "pick the error flow again",
         "bat-su-kien": "re-enable event listening (currently OFF)",
         "http-bi-mat": "re-enter what was removed from the HTTP url / headers / body (query params, keys, passwords — use the flow's secret)",
-        "affinity": "pick the worker affinity again"
+        "affinity": "pick the worker affinity again",
+        "chon-model": "pick the model again (an external model does not travel with the package — the target factory may not have enabled the provider)"
       },
       "nhap": "Import",
       "nhapTieuDe": "Import a flow from a package",
