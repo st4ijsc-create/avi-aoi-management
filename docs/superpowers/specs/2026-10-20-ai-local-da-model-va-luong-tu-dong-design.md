@@ -900,6 +900,11 @@ một node, so sánh lượt, OTP bật luồng `ot`, form node OT; (7) bí mậ
     lần đổi khe cho việc khác (không restart chỉ để áp); khi áp kiểm CommandLine đủ `--mmproj`, `--cache-ram 0`, `--ctx-checkpoints 8`.
   - Phối hợp: luong-ui chạy xong e2e extension TRƯỚC khi giữ khe; nhắc kiem-dinh/luong-ui boot dev với `AI_KB_WARM_ON_BOOT=false
     AI_ORCHESTRATION_ENABLED=false` trong đợt; cuối đợt :8091 về 35B + mmproj (mặc định).
+- **Hàng rào nạp GGUF in-process (2026-10-25, `server/services/ai/napServerNgoai.ts`) — `AI_NAP_PHU_TROI_MB` CHỐT 3.112 (dieu-phoi đóng mục
+  2026-10-26).** Nguồn: Qwen3-4B in-process trong vitest đo 5.540 MiB dedicated, tệp 2.428 MiB ⇒ phần ngoài trọng số 3.112 MiB (`tmp/vram-pl.log`).
+  Không đo lại trên :3000 được: :3000 (35B + mmproj 24,4 GB + bộ nhúng/reranker 2,6 GB) chỉ còn ~5,4 GB ⇒ 4B không bao giờ nạp; và sau khi
+  classify / chat.ops / extract chuyển sang GGUF_DEFAULT_MODEL (35B qua :8091, trạng thái ỔN ĐỊNH) :3000 không còn nạp 4B in-process ⇒ hằng số
+  hết ý nghĩa thực tế. Bộ nhúng + reranker GIỮ trên GPU (đo: bộ nhúng CPU đoạn 4k ký tự 111 s, reranker CPU 75 s; dỡ khi rảnh ⇒ lượt lạnh 14 s).
 - **LỖ THIẾT KẾ bài toán 1 (đổi model theo loại việc) — phát hiện 2026-10-22:** tác nhân lập trình (`ai/agent/goiModelMayChu.ts`)
   luôn dùng model MẶC ĐỊNH (`codeModelBasename` ⇒ 35B), KHÔNG qua định tuyến vai trò ⇒ dự án PLC không dùng `code.plc` (27B). Thêm
   (luong-ui đo): đường này gọi THẲNG `aiGgufEngine.chatCompletionStream`, NGOÀI aiGateway ⇒ không quota/safety/license/metrics/audit;
