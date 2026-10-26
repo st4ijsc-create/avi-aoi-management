@@ -1,14 +1,16 @@
 # SCADA R1b-2b-1 · An toàn và nợ — Báo cáo nghiệm thu
 
 > Khung do Task 2 tạo (§4 mục 2b + Phụ lục A), Task 5 / Task 8 bổ sung, Task 16 điền phần còn lại (2026-10-27, nhánh `feat/scada-r1b2b`,
-> nền `20cf977b0`). §3 (bench) và §5 (chạy toàn bộ) là CHỖ TRỐNG cho bộ điều khiển — chỉ chạy sau khi điều phối trả lời "OK chạy ngay".
+> nền `20cf977b0`). §3 (bench OpenPLC, 3 lượt) và §5 (chạy toàn bộ) do bộ điều khiển chạy và điền (`236bb7da9`), mỗi lượt sau khi điều phối trả lời
+> "OK chạy ngay". Sửa sau rà soát cuối toàn nhánh (2026-10-27): `.superpowers/sdd/2026-10-26-scada-r1b-2b-1-an-toan-va-no/final-fix-report.md`.
 > `server/services/scada/lenhInterlockLechLuoi.baoCao.test.ts` so khối SQL §4 mục 2b với hằng `TRUY_VAN_TRUOC_TRIEN_KHAI_BOOL` TỪNG KÝ TỰ — không ai
 > được sửa khối đó (sửa hằng ⇒ sửa khối, và ngược lại).
 
 ## Kết luận ngắn
 
-- **Lưới nghiệm thu** `server/services/scada/r1b2b1NghiemThu.db.test.ts` (opt-in `SCADA_R1B2B1_NGHIEM_THU=1`, `-c vitest.db.config.ts`): 16 ô của kế hoạch
-  + 2 ô thêm theo phán quyết (C1 nhánh HA, L2) + 1 ô đối chứng do T16 thêm (R1-đc) = 18 ca. Đo T16 đầu: 17/18 mỗi lượt, R1-đc ĐỎ tất định ⇒ về
+- **Lưới nghiệm thu** `server/services/scada/r1b2b1NghiemThu.db.test.ts` (opt-in `SCADA_R1B2B1_NGHIEM_THU=1`, `-c vitest.db.config.ts`): 14 ô của kế hoạch
+  (P1, B1, B2, Q1, M1, C1, R1, E1, T1, L1, I1, A1, G3, G4) + C1 nhánh HA (phán quyết) + G3 ca (b) (T14 fix round) + L2 (T9 fix round) + R1-đc (ô đối
+  chứng do T16 thêm) = 18 ca; bảng §1 có 16 hàng vì C1 và G3 mỗi hàng gồm hai ca. Đo T16 đầu: 17/18 mỗi lượt, R1-đc ĐỎ tất định ⇒ về
   Task 6. **Sau T6 fix round 1: 3 lượt tuần tự 18/18 xanh** (53,3 / 52,2 / 55,3 s), mong đợi của R1-đc KHÔNG đổi; ô R1 đổi số thô thiết bị 6 → 7 (§1, §6 LOGIC
   mục 1). Không đặt biến ⇒ 18/18 bị bỏ qua (đã chạy).
 - **R1-đc (T16 → T6) đã sửa — T6 fix round 1:** so đọc lại ở không gian thô của T6 coi lượt ghi ĐÚNG là lệch trên driver THẬT, vì mọi driver
@@ -17,7 +19,12 @@
   nguồn mà đường đọc của cả 6 driver cũng gọi. Giới hạn còn lại: làm tròn có thể CHE số thô sai (scale 0,5: thô 6 cũng đọc 3) ⇒ R1b-2b-2 mục 64 (đọc
   lại THÔ thật). Chiều hỏng vẫn chỉ là NHÃN (không gửi lại, không chặn STOP).
 - **Đột biến cấp hệ thống** (coil Modbus quay về `Boolean(w.value)`) ⇒ B1 ĐỎ; hoàn tác, `git diff` của tệp rỗng (§2).
-- Bench OpenPLC và chạy toàn bộ: CHƯA chạy (việc của bộ điều khiển, §3 / §5).
+- **Bench OpenPLC (§3) — ĐÃ chạy 3 lượt**, mỗi lượt điều phối duyệt: lượt 1 41/42 (B1b lượt 1 hết hạn 5124 ms, không ack giả ⇒ dẫn tới T17); lượt 2
+  huỷ do chính kịch bản bench (không dữ liệu, kịch bản đã sửa `b473cf1e9`); lượt 3 61/66 với ô ĐỐI CHỨNG (proxy thông suốt) ĐỎ ⇒ theo luật đã thoả
+  thuận, các hàng cắt liên kết KHÔNG đủ điều kiện làm bằng chứng — bằng chứng T17 là test tất định trong tiến trình + lưới T16 + đột biến (§8). Chỉ
+  bench Modbus B1; không bench S7 / MC / EIP / SLMP / OPC UA.
+- **Chạy toàn bộ (§5) — ĐÃ chạy** (HEAD `b473cf1e9`, 35751 ca): **0 đỏ thật, 1 đỏ do tải** (`rateLimitConfig.duPhongBoNho.test.ts` ca Redis khoẻ, chạy
+  riêng 3/3 xanh ⇒ R1b-2b-2 mục 68; ngưỡng không nới).
 - **Task 17 (bench B1b lượt 1: STOP `timeout ok=false` 5124 ms, coil 0 → 0):** lệnh ghi ĐANG BAY khi liên kết mất / phiên bị hạ bị mồ côi
   (`ModbusRTU.destroy()` huỷ hẹn giờ giao dịch mà không gọi callback) ⇒ dispatcher chỉ trả lời ở hạn 5000 ms. **Lỗi CÓ SẴN từ 1e0ae656c (2026-09-26), có
   trên main/:3000 hiện tại; R1b-2b-1 sửa** (điều phối 2026-10-27: Phương án A + nhãn (a) "không rõ kết cục"): mọi driver reject NGAY lệnh đang bay ở ba
@@ -152,7 +159,8 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
   - Nặng: 82 ca, 0 đỏ.
 - **0 đỏ THẬT.**
 - 1 đỏ chỉ khi chạy song song: `server/_core/rateLimitConfig.duPhongBoNho.test.ts`, ca Redis khoẻ — 4 lần rơi về bộ nhớ dưới tải CPU. Chạy riêng 3/3
-  xanh ⇒ phân loại **tải**. Ngưỡng KHÔNG được nới. Thành mục 68 của R1b-2b-2.
+  xanh ⇒ phân loại **tải**. Ngưỡng KHÔNG được nới. Đây cũng là hành vi SẢN PHẨM: dưới tải vòng lặp sự kiện, Redis khoẻ vẫn quá 250 ms và bộ giới
+  hạn rơi về bộ nhớ (§6 VẬN HÀNH 3). Thành mục 68 của R1b-2b-2.
 - Lô serial 7/7 (66 ca). Opt-in R0 + R1a + R1b-1 + R1b-2a + R1b-2b-1 5/5 (74 ca). `npm run check` 0. `i18n:check` 0.
 - Phân loại tệp đỏ: lô 0 / tải 1 / có sẵn 0.
 
@@ -231,7 +239,9 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
 3. (Task 2 fix round 1) luật/FOE tạo sau triển khai: luật interlock bị kiểm lúc lưu + tư thế; workflow FOE chỉ bị chặn sớm lúc gửi (TYPE_MISMATCH), không lúc lưu.
 4. (T2 fix round) Đổi `address` của tag đích (holding ⇒ coil) không kiểm lại luật theo luật bit lúc sửa; posture / log khởi động / dispatch (TYPE_MISMATCH
    sớm) bắt ngay sau đó. Edge (`otEdgeDispatch`) không qua `congKenhSom`: lệnh không-STOP ngoài tập lên bit trên edge `failed` ở driver (central đã từ
-   chối trước khi ký). Lệnh không-STOP BẰNG giá trị ghim vẫn chỉ hỏng muộn ở driver (hình có sẵn). Cờ octal SLMP bị bỏ qua khi nhận diện bit (không đổi
+   chối trước khi ký). Lệnh không-STOP mà nội dung BẰNG đúng các giá trị ghim: `isStopByContent` bỏ qua nhãn ⇒ được miễn luật 6 (`khopGhim`) và là
+   `trueStop` ⇒ `dungGhim` ⇒ ghi khoan dung như STOP; nó CHỈ hỏng muộn ở driver khi kết nối đang chạy KHÔNG khớp hàng adapter
+   (`runningConnectionMatchesAdapterRow` false ⇒ không `trueStop` ⇒ driver ghi nghiêm, vd ghim cũ `255` trên coil ⇒ `failed`; hình có sẵn). Cờ octal SLMP bị bỏ qua khi nhận diện bit (không đổi
    `isBit`). Posture join trong với adapter có thể bỏ sót luật trỏ tag mồ côi.
 5. (T3, Q4 — điều phối CHẤP NHẬN) Tag string có giá trị thật `"BAD n"` đọc CÙNG lượt với một item lỗi khác (thư viện `anythingBad=true`) vẫn bị coi là
    xấu (fail-closed). `anythingBad` vắng / không phải `false` ⇒ coi là có lỗi. Chưa có ca S7 mất liên kết + string + `anythingBad=false`.
@@ -294,7 +304,8 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
 
 1. **MC không có PLC thật.** M1 chỉ chứng minh trên thư viện giả ở lưới và thư viện mcprotocol THẬT trên máy chủ TCP giả (probe T4). Hành vi với PLC
    Mitsubishi thật quá tải (trả lỗi chậm) chưa được đo.
-2. **Bench OpenPLC B1** chưa chạy ở T16 (§3, bộ điều khiển). Không có bench cho S7 / MC / EIP / SLMP / OPC UA.
+2. **Bench OpenPLC chỉ có cho Modbus B1** (§3: 3 lượt; lượt 3 ô đối chứng proxy thông suốt ĐỎ ⇒ hàng cắt liên kết không phải bằng chứng). Không có
+   bench cho S7 / MC / EIP / SLMP / OPC UA. Bench cắt liên kết ổn định ⇒ R1b-2b-2 mục 67.
 3. **Trần THEO TIẾN TRÌNH** (T9: 8 lượt sổ treo; T1: 8 khe khảo sát; T14: mọi bộ giới hạn khi Redis sập) — chạy N bản API thì trần thực là N ×.
    **Ngân sách pool DB (rà soát cuối I-1, final fix):** pool chính mặc định 25 (`resolvePoolMax()`, env `DB_POOL_MAX`). Khi DB chậm, truy vấn bị bỏ
    rơi giữ kết nối tới khi DB trả lời (≤ `statement_timeout` 30 s): khe khảo sát của khối DỪNG khẩn cấp tối đa **8** (`DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP`;
@@ -303,6 +314,9 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
    ghim ở `server/services/scada/nganSachPoolStop.test.ts` (nâng một trần / hạ pool mặc định ⇒ đỏ). **Không** đặt `DB_POOL_MAX` < 25 trên bản API
    phục vụ STOP HMI. Ngân sách chưa phủ: lượt bắn-rồi-quên có từ trước trên đường STOP (R1b-2b-2 mục 61 — gộp thành MỘT ngân sách dùng chung) và
    khảo sát không trần của `cheDo.danhSach` (mục 33).
+   **Bộ giới hạn dưới tải vòng lặp sự kiện (T14, hành vi SẢN PHẨM — không chỉ chuyện cô lập test):** khi vòng lặp sự kiện của tiến trình API trễ
+   ≥ 250 ms, lệnh tới một Redis KHOẺ cũng chạm `commandTimeout` 250 ms ⇒ bộ giới hạn rơi về đếm trong bộ nhớ THEO TIẾN TRÌNH (đếm tách đôi Redis /
+   bộ nhớ ⇒ một khách có thể thêm tới một trần mỗi tiến trình mỗi cửa sổ; không fail-open). Ca đỏ do tải ở §5 chính là hành vi này ⇒ mục 68.
 4. Lý do `moi_tag_sai_cau_hinh` chỉ ở RAM — công cụ đọc `device_adapters.status` trực tiếp không thấy; sau khởi động lại hiện lại sau ≤ 1 chu kỳ poll.
 5. Trong cửa sổ tắt → khởi động lại, `device_adapters.status` có thể còn `connected` (T8, Q6).
 6. STOP HMI vẫn có thể gặp hạn: khi DB chậm, câu trả lời trễ ≤ 500 ms mỗi lượt sổ; luôn có E-STOP cứng. Batch có `dungMay` có thể làm lượt khác cùng batch
@@ -364,7 +378,7 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
 ## 9. Danh sách R1b-2b-2
 
 Danh sách 1-1 ở kế hoạch `docs/superpowers/plans/2026-10-26-scada-r1b-2b-1-an-toan-va-no.md`, mục **"Danh sách R1b-2b-2 (chỉ liệt kê — kế hoạch
-riêng)"** (số giữ theo báo cáo R1b-2a §11). Tám mục mới từ R1b-2b-1 (61–63 theo thứ tự điều phối 2026-10-26; 64 từ T6 fix round 1; 65, 66 từ T17; 67, 68 từ T16 Step 3 / 5; thứ tự ưu tiên 61 → 66 → 62, điều phối 2026-10-27):
+riêng)"** (số giữ theo báo cáo R1b-2a §11). Mười mục mới từ R1b-2b-1 (61–63 theo thứ tự điều phối 2026-10-26; 64 từ T6 fix round 1; 65, 66 từ T17; 67, 68 từ T16 Step 3 / 5; 69, 70 từ rà soát cuối toàn nhánh; thứ tự ưu tiên 61 → 66 → 62, điều phối 2026-10-27):
 
 - **61 (ƯU TIÊN ĐẦU R1b-2b-2; thứ tự 61 → 66 → 62)** — lượt ghi bắn-rồi-quên CÓ TỪ TRƯỚC trên đường `dungMay` (attempts + audit của `tuChoiQuaHan`, vòng `STOP_QUA_HAN`
   theo adapter, mọi `recordAuditEvent`) vào CÙNG bộ đếm trần T9; bỏ qua audit khi đầy phải log nội dung hàng; trần theo tiến trình. Gộp thành MỘT
@@ -377,6 +391,12 @@ riêng)"** (số giữ theo báo cáo R1b-2a §11). Tám mục mới từ R1b-2b
   thay vì `failed` — lệnh có thể đã tới thiết bị (§6 LOGIC mục 18 (a)).
 - **67** — bench cắt liên kết ổn định, ví dụ một OpenPLC riêng cho mỗi adapter hoặc proxy phần cứng. Lý do: ở R1b-2b-1, ô đối chứng proxy thông suốt ĐỎ trên OpenPLC dùng chung (§3 lượt 3).
 - **68** — làm ca Redis khoẻ của `rateLimitConfig.duPhongBoNho.test.ts` không phụ thuộc tải vòng lặp sự kiện. Lý do: dưới tải, 4 lần tăng quá 250 ms và rơi về bộ nhớ (§5).
+  Đây CŨNG là hành vi sản phẩm, không chỉ cô lập test: dưới tải vòng lặp sự kiện, một Redis KHOẺ vẫn vượt `commandTimeout` 250 ms và bộ giới hạn rơi
+  về bộ nhớ theo tiến trình (§6 VẬN HÀNH 3) — mục này xét cả hai (thiết bị đo và hành vi).
+- **69** — OPC UA: mất liên kết giữa một lô ghi (`opcuaDriver.ts` ~941 ném lỗi có kiểu cho cả `writeTags`) ⇒ các write CHƯA BAO GIỜ được gửi (vd hỏng
+  ép kiểu cục bộ) cũng mang nhãn `timeout` thay vì `failed`. Chiều an toàn (không ack giả); trả lỗi theo từng item cho phần chưa chuẩn bị (rà soát cuối M-9).
+- **70** — mục rủi ro "lệnh ghi cũ" gộp (`otDeviceWrite.ts` ~214) lớn dần khi liên kết chập chờn: mỗi lần huỷ vì mất liên kết trong cửa sổ nối thêm
+  intents / writes và nới `untilHuuHan` ⇒ dưới lệnh liên tục mục không bao giờ hết hạn. Cần trần mảng GIỮ ý định ĐẦU TIÊN (N3; rà soát cuối M-10).
 
 Lỗi R1-đc (§6 LOGIC mục 1) là ô ĐỎ của R1b-2b-1 — đã sửa ở T6 fix round 1 trước bàn giao; chỉ giới hạn còn lại (mục 64) sang R1b-2b-2.
 
