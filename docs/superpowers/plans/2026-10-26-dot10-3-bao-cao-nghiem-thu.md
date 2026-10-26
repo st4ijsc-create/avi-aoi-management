@@ -79,6 +79,7 @@ Thứ tự bật cho một nhà máy. Không bước nào làm qua `.env` hay qu
 - Dịch vụ "forge" của khung gốc: không hoạt động (URL rỗng). Đặt URL cần chủ dự án quyết. Census giữ miễn trừ có ⚠.
 - URL máy suy luận "cục bộ" do quản trị đặt (`OLLAMA_BASE_URL`, `LLAMA_SERVER_URL`, KB API): cùng lớp rủi ro admin.
 - `kiemDichDen` luôn cấm link-local / metadata: **ĐỒNG Ý**.
+- **Bộ che — khối mã hoá dài, giới hạn đã biết (dieu-phoi quyết, không chặn):** sau `0aa62d6e6` vẫn LỌT ba dạng cố ý né — base64 chèn dòng trống giữa các dòng (hoặc mỗi 10 dòng), tiền tố trích dẫn `> ` mỗi dòng, hex ngăn `, `. Bộ che là rào chống NHẦM, không chống người cố ý né (spec §9).
 - Giới hạn của bộ che, taint theo lượt, văn bản người dùng tự dán = `ky-thuat`: xem spec §9.
 
 ## 7. Bàn giao cho 10.4 (luong-ui)
