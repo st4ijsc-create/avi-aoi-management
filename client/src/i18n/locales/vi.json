@@ -24305,5 +24305,37 @@
       "hoSo": "Hồ sơ Local",
       "ngoai": "Model ngoài"
     }
+  },
+  "kiemDinhNgoai": {
+    "khongHopLe": "Kết quả kiểm định không đúng định dạng nên không hiển thị.",
+    "daChep": "Đã chép bản chuẩn hoá.",
+    "chepLoi": "Không chép được — hãy bôi đen và chép tay.",
+    "yKienNgoai": "Ý kiến của AI bên ngoài — cần người xem xét, có thể sai.",
+    "ketLuan": {
+      "dat": "Đạt",
+      "can-sua": "Cần sửa",
+      "sai": "Sai"
+    },
+    "diem": "Điểm",
+    "loi": "Lỗi / góp ý",
+    "muc": {
+      "nghiem-trong": "Nghiêm trọng",
+      "vua": "Vừa",
+      "nhe": "Nhẹ"
+    },
+    "viTri": "Vị trí",
+    "banChuanHoa": "Bản chuẩn hoá (AI ngoài đề xuất)",
+    "chep": "Chép",
+    "daChepNut": "Đã chép",
+    "canhBaoChep": "Kiểm tra kỹ trước khi chạy hoặc dán vào terminal/tệp. Nội dung do AI bên ngoài viết, không được tự áp dụng.",
+    "baiHoc": "Bài học đề xuất",
+    "baiHocGhiChu": "Chỉ là đề xuất — chưa được áp dụng; cần người duyệt.",
+    "phamVi": {
+      "nguoi": "Người dùng",
+      "du-an": "Dự án",
+      "nha-may": "Nhà máy"
+    },
+    "thuLai": "đã thử lại 1 lần (tính phí hai lượt)",
+    "tuBoNho": "kết quả đã có từ lần gọi trước — không tính phí lần nữa"
   }
 }

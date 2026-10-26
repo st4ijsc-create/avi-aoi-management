@@ -24305,5 +24305,37 @@
       "hoSo": "本地配置",
       "ngoai": "外部模型"
     }
+  },
+  "kiemDinhNgoai": {
+    "khongHopLe": "审查结果格式无效，未显示。",
+    "daChep": "已复制标准化版本。",
+    "chepLoi": "无法复制 — 请选中文本后手动复制。",
+    "yKienNgoai": "外部 AI 的意见 — 需要人工审阅，可能有误。",
+    "ketLuan": {
+      "dat": "通过",
+      "can-sua": "需要修改",
+      "sai": "不通过"
+    },
+    "diem": "得分",
+    "loi": "问题 / 意见",
+    "muc": {
+      "nghiem-trong": "严重",
+      "vua": "中等",
+      "nhe": "轻微"
+    },
+    "viTri": "位置",
+    "banChuanHoa": "标准化版本（外部 AI 建议）",
+    "chep": "复制",
+    "daChepNut": "已复制",
+    "canhBaoChep": "运行或粘贴到终端/文件前请仔细检查。内容由外部 AI 编写，不得自动应用。",
+    "baiHoc": "建议的经验教训",
+    "baiHocGhiChu": "仅为建议 — 尚未应用，需要人工批准。",
+    "phamVi": {
+      "nguoi": "用户",
+      "du-an": "项目",
+      "nha-may": "工厂"
+    },
+    "thuLai": "已重试 1 次（两次计费调用）",
+    "tuBoNho": "来自上次调用的结果 — 不再计费"
   }
 }

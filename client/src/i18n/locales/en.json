@@ -24308,5 +24308,37 @@
       "hoSo": "Local profiles",
       "ngoai": "External models"
     }
+  },
+  "kiemDinhNgoai": {
+    "khongHopLe": "The review result has an invalid format and is not shown.",
+    "daChep": "Standardised version copied.",
+    "chepLoi": "Could not copy — select the text and copy it manually.",
+    "yKienNgoai": "Opinion of an external AI — needs human review, may be wrong.",
+    "ketLuan": {
+      "dat": "Pass",
+      "can-sua": "Needs changes",
+      "sai": "Fail"
+    },
+    "diem": "Score",
+    "loi": "Issues / remarks",
+    "muc": {
+      "nghiem-trong": "Critical",
+      "vua": "Medium",
+      "nhe": "Minor"
+    },
+    "viTri": "Location",
+    "banChuanHoa": "Standardised version (suggested by the external AI)",
+    "chep": "Copy",
+    "daChepNut": "Copied",
+    "canhBaoChep": "Check carefully before running it or pasting it into a terminal/file. This was written by an external AI and must not be applied automatically.",
+    "baiHoc": "Suggested lessons",
+    "baiHocGhiChu": "Suggestions only — not applied; a person must approve them.",
+    "phamVi": {
+      "nguoi": "User",
+      "du-an": "Project",
+      "nha-may": "Factory"
+    },
+    "thuLai": "retried once (two charged calls)",
+    "tuBoNho": "result from the previous call — not charged again"
   }
 }
