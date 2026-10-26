@@ -4101,7 +4101,8 @@
       "flowNhap": "nhập luồng AI từ gói",
       "aiNgoaiDatModel": "đặt model AI ngoài",
       "aiNgoaiDuyet": "duyệt luồng dùng AI ngoài",
-      "taiAnhAi": "tải ảnh cho phân tích AI"
+      "taiAnhAi": "tải ảnh cho phân tích AI",
+      "mayDungKhanCap": "tải danh sách máy DỪNG khẩn cấp"
     },
     "field": {
       "stationId": "trạm",
@@ -4407,7 +4408,7 @@
       "reservedSettingKey": "Cài đặt này chỉ đổi được ở màn riêng của nó (công tắc tự động hoá robot: màn Điều khiển Robot) — cần lý do và được ghi kiểm toán.",
       "stopPinTagNotWritable": "Chỉ ghim giá trị dừng cho tag đang BẬT và cho phép GHI. Bật ghi (writable) và bật tag trước, rồi ghim lại.",
       "stopPinTypeMismatch": "Giá trị dừng không đúng kiểu dữ liệu của tag: tag bool cần true/false (hoặc 1/0), tag int cần số nguyên, tag float cần số, tag string cần chuỗi; tag json không ghim được.",
-      "stopPinBitAddress": "Địa chỉ của tag này được ghi thành MỘT BIT (coil Modbus, holding kiểu bool, bit-device SLMP / MC) bất kể kiểu dữ liệu — giá trị dừng phải là true/false, 1/0, \"1\"/\"0\" hoặc \"true\"/\"false\".",
+      "stopPinBitAddress": "Địa chỉ của tag này được ghi thành MỘT BIT (coil Modbus, holding kiểu bool, bit-device SLMP / MC, bit S7) bất kể kiểu dữ liệu — giá trị dừng phải là true/false, 1/0, \"1\"/\"0\" hoặc \"true\"/\"false\".",
       "softwareStopRefusedUseHardwareEstop": "Lệnh dừng phần mềm đã bị TỪ CHỐI: kiểm tra an toàn không xác nhận được PLC an toàn (không đọc được, chỉ có mô phỏng, hoặc đang báo dừng) nên nền tảng KHÔNG gửi lệnh dừng này. Hãy nhấn nút E-STOP cứng trên máy ngay.",
       "telemetryTagChiPhamViMay": "Luật nguồn tag thiết bị (telemetry_tag) chỉ đặt được ở phạm vi Máy — đổi phạm vi về Máy rồi lưu lại.",
       "timeOffsetRequired": "Thời điểm phải kèm múi giờ tường minh (Z hoặc +07:00) — chuỗi không múi giờ bị từ chối vì máy chủ không thể biết đó là giờ nào.",

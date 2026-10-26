@@ -4093,7 +4093,8 @@
       "flowNhap": "import an AI flow from a package",
       "aiNgoaiDatModel": "set external AI model",
       "aiNgoaiDuyet": "approve flow using external AI",
-      "taiAnhAi": "download image for AI analysis"
+      "taiAnhAi": "download image for AI analysis",
+      "mayDungKhanCap": "load the emergency STOP machine list"
     },
     "field": {
       "stationId": "station",
@@ -4407,7 +4408,7 @@
       "reservedSettingKey": "This setting can only be changed on its own screen (robot automation switch: Robot Control) — it needs a reason and is audited.",
       "stopPinTagNotWritable": "A stop value can only be pinned on a tag that is ENABLED and WRITABLE. Make the tag writable and enabled first, then pin it again.",
       "stopPinTypeMismatch": "The stop value does not match the tag data type: a bool tag needs true/false (or 1/0), an int tag a whole number, a float tag a number, a string tag text; json tags cannot be pinned.",
-      "stopPinBitAddress": "This tag address is written as a SINGLE BIT (Modbus coil, bool holding register, SLMP / MC bit device) whatever its data type — the stop value must be true/false, 1/0, \"1\"/\"0\" or \"true\"/\"false\".",
+      "stopPinBitAddress": "This tag address is written as a SINGLE BIT (Modbus coil, bool holding register, SLMP / MC bit device, S7 bit address) whatever its data type — the stop value must be true/false, 1/0, \"1\"/\"0\" or \"true\"/\"false\".",
       "softwareStopRefusedUseHardwareEstop": "The software stop was REFUSED: the safety check could not confirm the safety PLC (unreadable, simulation only, or tripped), so the platform did NOT send this stop. Use the hardware E-STOP on the machine now.",
       "telemetryTagChiPhamViMay": "A device-tag (telemetry_tag) rule can only use Machine scope — set the scope to Machine and save again.",
       "timeOffsetRequired": "The timestamp must carry an explicit time zone (Z or +07:00) — a timestamp without one is rejected because the server cannot tell which clock it refers to.",
