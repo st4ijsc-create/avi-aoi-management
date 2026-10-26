@@ -36,7 +36,7 @@ const UU_TIEN_SO: Record<string, number> = { interactive: 0, agent: 1, backgroun
 
 export class LoiLuong extends Error {
   constructor(
-    public readonly code: "LUONG_KHONG_HOP_LE" | "LUONG_KHONG_CO" | "KHONG_CO_DB" | "LOAI_NODE_MAT" | "QUA_TRAN_DONG_THOI" | "QUA_TRAN_LUOT_GIO" | "QUA_TRAN_LUOT_TREO",
+    public readonly code: "LUONG_KHONG_HOP_LE" | "LUONG_KHONG_CO" | "KHONG_CO_DB" | "LOAI_NODE_MAT" | "QUA_TRAN_DONG_THOI" | "QUA_TRAN_LUOT_GIO" | "QUA_TRAN_LUOT_TREO" | "NGOAI_CHUA_DUYET",
     message: string,
   ) {
     super(message);
@@ -82,7 +82,9 @@ export async function luuPhienBan(rawGoc: unknown, userId: number | null, factor
     await tx.insert(aiFlows).values({ id: def.id, name: def.name, ownerId: userId, riskClass: kq.hang, factoryId }).onConflictDoNothing();
     const [m] = (await tx.execute(sql`SELECT coalesce(max(version), 0)::int AS v FROM ai_flow_versions WHERE "flowId" = ${def.id}`)) as unknown as { v: number }[];
     const version = m.v + 1;
-    await tx.insert(aiFlowVersions).values({ flowId: def.id, version, definition: { ...def, version }, riskClass: kq.hang, createdBy: userId });
+    // ★ Đợt 10.3 — phiên bản có node model NGOÀI ⇒ đánh dấu (mỗi phiên bản cần duyệt ngoài riêng trước khi bật).
+    const { coNodeNgoai } = await import("../ai/ngoai/duyetNgoai");
+    await tx.insert(aiFlowVersions).values({ flowId: def.id, version, definition: { ...def, version }, riskClass: kq.hang, createdBy: userId, coNodeNgoai: coNodeNgoai(def) });
     await tx.update(aiFlows).set({ name: def.name, riskClass: kq.hang, updatedAt: sql`now()` }).where(eq(aiFlows.id, def.id));
     return { flowId: def.id, version, hang: kq.hang };
   });
@@ -199,6 +201,7 @@ async function kiemTranLuotGio(tx: Db | Tx, y: YeuCauRun): Promise<void> {
 /** Tạo lượt + mục hàng của node kích hoạt TRONG một giao dịch có sẵn. */
 async function taoRunTx(tx: Db | Tx, y: YeuCauRun): Promise<string> {
   const def = await dinhNghia(tx, y.flowId, y.version);
+  await kiemDuyetNgoaiCuaLuot(tx, y.flowId, y.version, def);
   await kiemTranDongThoi(tx, y, def);
   await kiemTranLuotGio(tx, y);
   const runId = randomUUID();
@@ -221,6 +224,31 @@ async function taoRunTx(tx: Db | Tx, y: YeuCauRun): Promise<string> {
       VALUES (${runId}, '__han-luot', 1, ${JSON.stringify({ [CONG_KIEM_HAN_LUOT]: [] })}::jsonb, ${UU_TIEN_SO[uuTien] ?? 2}, now() + (${giay}::bigint * interval '1 second'))`);
   }
   return runId;
+}
+
+/**
+ * ★ Đợt 10.3 (rà kiem-dinh Task 8 A) — CỬA DUY NHẤT tạo lượt (`taoRunTx`) kiểm DUYỆT NGOÀI cho MỌI lượt (bật / chạy tay / chạy ngay / lịch /
+ * webhook / lượt con ghim phiên bản): phiên bản có node model ngoài mà chưa duyệt, băm duyệt lệch định nghĩa, hoặc luồng toàn hệ thống ⇒
+ * KHÔNG tạo lượt. Lượt con đi qua đây nên cha "sạch" gọi con chưa duyệt cũng bị chặn — node gọi con (`kiemGoiLuongCon`) kiểm TRƯỚC qua
+ * `kiemDuyetNgoaiPhienBan` để bước của cha lỗi sạch; chốt ở đây là tuyến cuối.
+ */
+export async function kiemDuyetNgoaiPhienBan(flowId: string, version: number, def: FlowDefinition): Promise<void> {
+  await kiemDuyetNgoaiCuaLuot(await layDb(), flowId, version, def);
+}
+
+async function kiemDuyetNgoaiCuaLuot(tx: Db | Tx, flowId: string, version: number, def: FlowDefinition): Promise<void> {
+  const { coNodeNgoai, kiemDuyetNgoaiTruocKhiBat } = await import("../ai/ngoai/duyetNgoai");
+  if (!coNodeNgoai(def)) return;
+  const [v] = await tx
+    .select({ luc: aiFlowVersions.ngoaiDuyetLuc, bam: aiFlowVersions.ngoaiBamDuyet })
+    .from(aiFlowVersions)
+    .where(and(eq(aiFlowVersions.flowId, flowId), eq(aiFlowVersions.version, version)));
+  const [f] = await tx.select({ f: aiFlows.factoryId }).from(aiFlows).where(eq(aiFlows.id, flowId));
+  try {
+    kiemDuyetNgoaiTruocKhiBat({ definition: def, ngoaiDuyetLuc: v?.luc ?? null, ngoaiBamDuyet: v?.bam ?? null }, f?.f ?? null);
+  } catch (e) {
+    throw new LoiLuong("NGOAI_CHUA_DUYET", `luồng ${flowId}@${version} dùng model AI ngoài: ${(e as { ma?: string }).ma ?? "chưa duyệt"}`);
+  }
 }
 
 /** Bắt đầu một lượt chạy: một mục hàng cho mỗi node kích hoạt (hoặc đúng `nutKichHoat`). */

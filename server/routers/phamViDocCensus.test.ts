@@ -978,8 +978,10 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // 2026-10-26 dieu-phoi GỘP hai nhánh: D 1204 (soModelGoGan) + C 454 (aiChonModel.danhMuc) ⇒ tong 2413 (đo trên cây gộp).
 // 2026-10-26 Đợt 10.3 (do-model): +3 D aiNgoai.taoKhoa|xoayKhoa|thuHoiKhoa; +1 S aiNgoai.dsKhoa (nhaMayNgoaiTrongPhamVi); aiSettings.listApiKeys C → S
 //   (ai_api_keys nay có factoryId — mig 0414 — nên là bảng tenant; lọc locKhoaApiTrongPhamVi) ⇒ C 453, D 1206, S 714, tong 2416.
-const GHIM = { A: 35, B: 8, C: 453, D: 1207, S: 714, tong: 2417 } as const;
 // 2026-10-26 dieu-phoi GỘP 10.3 (tới Task 7) vào main 84a308ee6 — ghim ĐO trên cây gộp.
+// 2026-10-26 Đợt 10.3 Task 8: +5 D (ghiCauHinh, datModel, datHostNoiBo, xemNoiDung, duyetNgoai) + 3 S (cauHinh, dsModel, dsHostNoiBo — nhaMayNgoaiTrongPhamVi) ⇒ D 1211, S 717, tong 2424.
+// 2026-10-26 do-model gộp main 84a308ee6: soModelGoGan D +1 với Đợt 10.3 ⇒ đo trên cây gộp.
+const GHIM = { A: 35, B: 8, C: 453, D: 1212, S: 717, tong: 2425 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

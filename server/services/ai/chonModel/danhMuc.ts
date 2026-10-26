@@ -89,12 +89,13 @@ export async function layPhuThuocDanhMucMacDinh(): Promise<PhuThuocDanhMuc> {
   const hoSoCoDo = db
     ? new Set((await db.selectDistinct({ profileId: sm.aiModelEvalRuns.profileId }).from(sm.aiModelEvalRuns)).map((r) => r.profileId))
     : new Set<string>();
-  const { NGOAI_RONG } = await import("./kieu");
+  // ★ Đợt 10.3 — model ngoài THẬT: cờ env + nhà máy bật + model bật (đọc LÚC GỌI, không đệm).
+  const { layModelDaBat } = await import("../ngoai/cauHinhNgoai");
   return {
     anh: layAnhSoModel(),
     hoSoCoDo,
     kheDangGiu: nguCanhKhe().kheDangGiu,
     uocTinhDoiKheGiay: async () => (db ? uocTinhDoiKheTuSuKien(db) : null),
-    ngoai: NGOAI_RONG,
+    ngoai: { layModelDaBat: (factoryId) => layModelDaBat(db as never, factoryId) },
   };
 }

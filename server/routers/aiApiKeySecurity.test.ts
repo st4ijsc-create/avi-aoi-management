@@ -88,6 +88,19 @@ describe.skipIf(!db)("aiSettingsRouter — aiApiKeys security (doc 69 W0-4, inte
     expect(decryptSecret(row.encryptedKey)).toBe(plaintext);
   });
 
+  it("(a2) Đợt 10.3 (rà kiem-dinh Task 7 a) — createApiKey cũ với endpoint xấu ⇒ BAD_REQUEST, KHÔNG lưu hàng nào", async () => {
+    const { aiSettingsRouter } = await import("./aiSettingsRouter");
+    const caller = aiSettingsRouter.createCaller(admin);
+    const xau = ["https://u:p@api.example.com/v1", "http://api.example.com/v1", "https://169.254.169.254/latest", "http://metadata.google.internal/", "ftp://api.example.com/v1", "file:///etc/passwd", "http://llm.local:8000/v1"];
+    for (const [i, endpoint] of xau.entries()) {
+      await expect(caller.createApiKey({ name: `${PREFIX}-xau-${i}`, provider: "custom", apiKey: "k-" + "x".repeat(20), endpoint }), endpoint).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    }
+    expect(await db!.select({ id: aiApiKeys.id }).from(aiApiKeys).where(like(aiApiKeys.name, `${PREFIX}-xau-%`))).toEqual([]);
+    const tot = await caller.createApiKey({ name: `${PREFIX}-tot`, provider: "custom", apiKey: "k-" + "y".repeat(20), endpoint: "https://API.example.com/v1/" });
+    const [r] = await db!.select({ endpoint: aiApiKeys.endpoint }).from(aiApiKeys).where(eq(aiApiKeys.id, tot!.id));
+    expect(r!.endpoint).toBe("https://api.example.com/v1");
+  });
+
   it("(b) listApiKeys never returns the raw or base64 secret — only a last-4 mask", async () => {
     const { aiSettingsRouter } = await import("./aiSettingsRouter");
     const caller = aiSettingsRouter.createCaller(admin);

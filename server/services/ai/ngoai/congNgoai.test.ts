@@ -16,9 +16,11 @@ import { LoiNgoai } from "./loi";
 import { TU_DIEN_RONG } from "./cheDuLieu";
 import { taoNhaCungCapGia, type KichBanGia, type NhaCungCapGia } from "./nhaCungCap/gia";
 import { VECTOR_CHE, KHOA_GIA } from "./vectorChe";
+import { bamDinhNghia } from "./duyetNgoai";
 
 const hang = (r: unknown) => (Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? [])) as Array<Record<string, unknown>>;
 const TAG = `cn${Date.now().toString(36)}`;
+const LUONG = `${TAG}-luong`;
 let A = 0;
 let B = 0;
 const KHOA_THAT = "sk-ant-api03-" + "Q".repeat(95);
@@ -38,9 +40,16 @@ beforeAll(async () => {
     await exec(sql`INSERT INTO ai_ngoai_model ("factoryId", "nhaCungCap", model, nhan, "keyId", "tranTokenLuot", "batModel")
       VALUES (${f}, 'anthropic', 'claude-thu', 'Claude thu', ${k!.id}, 5000000, true)`);
   }
+  // Luồng của A: v1 ĐÃ duyệt ngoài (băm khớp), v2 CHƯA duyệt.
+  const def = { id: LUONG, name: "l", version: 1, nodes: [{ id: "t", type: "kich-hoat.thu-cong", typeVersion: 1, name: "t", position: [0, 0], parameters: {} }, { id: "ai", type: "ai.llm", typeVersion: 1, name: "ai", position: [0, 0], parameters: { chonModel: "ngoai:anthropic:claude-thu" } }], connections: [] };
+  await exec(sql`INSERT INTO ai_flows (id, name, "riskClass", "factoryId") VALUES (${LUONG}, 'l', 'thuan', ${A})`);
+  await exec(sql`INSERT INTO ai_flow_versions ("flowId", version, definition, "riskClass", "coNodeNgoai", "ngoaiDuyetLuc", "ngoaiBamDuyet")
+    VALUES (${LUONG}, 1, ${JSON.stringify(def)}::jsonb, 'thuan', true, now(), ${bamDinhNghia(def as never)})`);
+  await exec(sql`INSERT INTO ai_flow_versions ("flowId", version, definition, "riskClass", "coNodeNgoai") VALUES (${LUONG}, 2, ${JSON.stringify({ ...def, version: 2 })}::jsonb, 'thuan', true)`);
 });
 
 afterAll(async () => {
+  await exec(sql`DELETE FROM ai_flows WHERE id = ${LUONG}`);
   for (const f of [A, B].filter(Boolean)) {
     await exec(sql`DELETE FROM ai_ngoai_model WHERE "factoryId" = ${f}`);
     await exec(sql`DELETE FROM ai_ngoai_nha_may WHERE "factoryId" = ${f}`);
@@ -116,7 +125,7 @@ describe("cổng AI ngoài — từ chối sớm (không gọi, không sổ)", (
   it("dữ liệu vận hành + nhà máy chưa cho ⇒ NGOAI_DU_LIEU_VAN_HANH; luồng không có hàm mức ⇒ coi là vận hành", async () => {
     const g = taoNhaCungCapGia();
     expect(await maLoi(goiAiNgoai(yc({}, { nguonMuc: { loai: "be-mat", beMat: "chat", phanDaGhep: ["van-hanh"] } }), dep(g)))).toBe("NGOAI_DU_LIEU_VAN_HANH");
-    expect(await maLoi(goiAiNgoai(yc({}, { nguonMuc: { loai: "luong" } }), dep(g)))).toBe("NGOAI_DU_LIEU_VAN_HANH");
+    expect(await maLoi(goiAiNgoai(yc({}, { nguonMuc: { loai: "luong" }, flowId: LUONG, phienBan: 1 }), dep(g)))).toBe("NGOAI_DU_LIEU_VAN_HANH");
     expect(g.nhan).toHaveLength(0);
   });
 
@@ -270,7 +279,7 @@ describe("cổng AI ngoài — luồng, dữ liệu vận hành từ phạm vi c
     await exec(sql`UPDATE ai_ngoai_nha_may SET "choDuLieuVanHanh" = false WHERE "factoryId" = ${B}`);
     const g = taoNhaCungCapGia();
     const luong = (nhaMayKhiVanHanh: () => Promise<number[]>) =>
-      yc({}, { nhaMayNguoiGoi: null, nhaMayChuDuLieu: [A], nguonMuc: { loai: "luong", mucDuLieu: async () => "van-hanh" }, nhaMayKhiVanHanh });
+      yc({}, { nhaMayNguoiGoi: null, nhaMayChuDuLieu: [A], nguonMuc: { loai: "luong", mucDuLieu: async () => "van-hanh" }, nhaMayKhiVanHanh, flowId: LUONG, phienBan: 1 });
     expect(await maLoi(goiAiNgoai(luong(async () => [A, B]), dep(g)))).toBe("NGOAI_DU_LIEU_VAN_HANH");
     expect(await maLoi(goiAiNgoai(luong(async () => Promise.reject(new Error("pham vi"))), dep(g)))).toBe("NGOAI_DU_LIEU_VAN_HANH");
     expect(g.nhan).toHaveLength(0);
@@ -308,5 +317,24 @@ describe("cổng AI ngoài — rà kiem-dinh lô 2 (kẹp / trần đầu ra / s
       { loai: "y-dinh", ketCuc: null },
       { loai: "ket-qua", ketCuc: "ok" },
     ]);
+  });
+});
+
+describe("cổng — phòng thủ chiều sâu: lượt luồng phải ĐÃ DUYỆT NGOÀI (rà kiem-dinh Task 8 A)", () => {
+  it("phiên bản chưa duyệt / thiếu phiên bản / băm duyệt bị sửa ⇒ NGOAI_CHUA_DUYET, nhà cung cấp không được gọi; v1 đã duyệt ⇒ qua", async () => {
+    const g = taoNhaCungCapGia();
+    const luong = (o: Partial<YeuCauGoiNgoai["ngu"]>) => yc({}, { nhaMayNguoiGoi: null, nhaMayChuDuLieu: [A], nguonMuc: { loai: "luong", mucDuLieu: async () => "ky-thuat" }, flowId: LUONG, ...o });
+    expect(await maLoi(goiAiNgoai(luong({ phienBan: 2 }), dep(g)))).toBe("NGOAI_CHUA_DUYET");
+    expect(await maLoi(goiAiNgoai(luong({}), dep(g)))).toBe("NGOAI_CHUA_DUYET");
+    await exec(sql`UPDATE ai_flow_versions SET "ngoaiBamDuyet" = ${"f".repeat(64)} WHERE "flowId" = ${LUONG} AND version = 1`);
+    try {
+      expect(await maLoi(goiAiNgoai(luong({ phienBan: 1 }), dep(g)))).toBe("NGOAI_CHUA_DUYET");
+    } finally {
+      const [v] = await exec(sql`SELECT definition FROM ai_flow_versions WHERE "flowId" = ${LUONG} AND version = 1`);
+      await exec(sql`UPDATE ai_flow_versions SET "ngoaiBamDuyet" = ${bamDinhNghia(v!.definition as never)} WHERE "flowId" = ${LUONG} AND version = 1`);
+    }
+    expect(g.nhan).toHaveLength(0);
+    await goiAiNgoai(luong({ phienBan: 1 }), dep(g));
+    expect(g.nhan).toHaveLength(1);
   });
 });

@@ -19,7 +19,8 @@ export type MaLoiNgoai =
   | "NGOAI_MODEL_KHONG_HOP_LE"
   | "NGOAI_URL_KHONG_HOP_LE"
   | "NGOAI_LUONG_TOAN_CUC"
-  | "NGOAI_TU_DUYET_VAN_HANH";
+  | "NGOAI_TU_DUYET_VAN_HANH"
+  | "NGOAI_CHUA_DUYET";
 
 export class LoiNgoai extends Error {
   /** Chắc chắn yêu cầu CHƯA rời máy (lỗi trước khi gửi) ⇒ cổng hoàn TOÀN BỘ chỗ đã giữ. */
@@ -58,6 +59,7 @@ export function maTrpcCua(ma: MaLoiNgoai): "NOT_FOUND" | "BAD_REQUEST" | "FORBID
     case "NGOAI_DU_LIEU_VAN_HANH":
     case "NGOAI_LUONG_TOAN_CUC":
     case "NGOAI_TU_DUYET_VAN_HANH":
+    case "NGOAI_CHUA_DUYET":
       return "FORBIDDEN";
     default:
       return "BAD_REQUEST";

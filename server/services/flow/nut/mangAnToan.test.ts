@@ -221,8 +221,12 @@ describe("node HTTP đi qua mạng an toàn", () => {
       expect(goi).toHaveLength(0);
 
       process.env.AI_FLOW_HTTP_HOST_CHO_PHEP = "erp.local:80";
+      // Đợt 10.3 — metadata (169.254/16) LUÔN cấm kể cả có mục host:cổng; mục khai mở dải nội bộ THƯỜNG
+      await expect(layNut("tich-hop.http-doc")!.chay({ url: "http://erp.local/x" }, ngu([{ json: {} }]))).rejects.toThrow(/metadata/);
+      expect(goi).toHaveLength(0);
+      datPhanGiaiDns(async () => [{ address: "10.20.30.40", family: 4 }]);
       await layNut("tich-hop.http-doc")!.chay({ url: "http://erp.local/x" }, ngu([{ json: {} }]));
-      expect(goi).toEqual([{ url: "http://erp.local/x", ip: "169.254.169.254" }]);
+      expect(goi).toEqual([{ url: "http://erp.local/x", ip: "10.20.30.40" }]);
     } finally {
       datFetchLuong(cu);
     }
@@ -237,4 +241,83 @@ describe("node HTTP đi qua mạng an toàn", () => {
       datFetchLuong(cu);
     }
   });
+});
+
+describe("★ Đợt 10.3 (rà kiem-dinh Task 9) — fetchGhim KHÔNG đi qua proxy env kể cả khi agent toàn cục bật proxy (Node ≥ 24)", () => {
+  const coProxyToanCuc = typeof (http as unknown as { setGlobalProxyFromEnv?: unknown }).setGlobalProxyFromEnv === "function";
+  it.skipIf(!coProxyToanCuc)("http.setGlobalProxyFromEnv({HTTP_PROXY}) ⇒ đích ĐÃ GHIM nhận yêu cầu, proxy KHÔNG nhận", async () => {
+    let dichNhan = 0;
+    let proxyNhan = 0;
+    const dich = http.createServer((_q, r) => (dichNhan++, r.end("{}")));
+    const proxy = http.createServer((_q, r) => (proxyNhan++, r.end("{}")));
+    proxy.on("connect", (_q, s) => (proxyNhan++, s.destroy()));
+    await Promise.all([dich, proxy].map((s) => new Promise<void>((r) => s.listen(0, "127.0.0.1", r))));
+    const congDich = (dich.address() as AddressInfo).port;
+    const congProxy = (proxy.address() as AddressInfo).port;
+    const datLai = (http as unknown as { setGlobalProxyFromEnv(e: Record<string, string>): () => void }).setGlobalProxyFromEnv({
+      HTTP_PROXY: `http://127.0.0.1:${congProxy}`,
+      HTTPS_PROXY: `http://127.0.0.1:${congProxy}`,
+    });
+    try {
+      // đối chứng: agent toàn cục THẬT SỰ đi qua proxy (nếu không, phép thử vô nghĩa)
+      await new Promise<void>((ok, loi) => http.get(`http://llm.vi-du.vn:${congDich}/doi-chung`, (r) => (r.resume(), r.on("end", ok))).on("error", loi));
+      expect(proxyNhan).toBe(1);
+      const r = await fetchGhim(new URL(`http://llm.vi-du.vn:${congDich}/v1`), { method: "POST", body: "{}" }, { ip: "127.0.0.1", family: 4 });
+      await r.text();
+      expect(dichNhan).toBe(1);
+      expect(proxyNhan).toBe(1);
+    } finally {
+      datLai();
+      dich.close();
+      proxy.close();
+    }
+  });
+});
+
+describe("★ Đợt 10.3 — tiến trình chạy với NODE_USE_ENV_PROXY=1 + HTTP_PROXY (tiến trình con thật)", () => {
+  it.skipIf(Number(process.versions.node.split(".")[0]) < 24)("đối chứng http.get đi qua proxy; fetchGhim nối thẳng IP đã ghim", async () => {
+    const { spawn } = await import("node:child_process");
+    const { writeFileSync, mkdtempSync, rmSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const { pathToFileURL } = await import("node:url");
+    let dichNhan = 0;
+    let proxyNhan = 0;
+    const dich = http.createServer((_q, r) => (dichNhan++, r.end("{}")));
+    const proxy = http.createServer((_q, r) => (proxyNhan++, r.end("{}")));
+    await Promise.all([dich, proxy].map((s) => new Promise<void>((r) => s.listen(0, "127.0.0.1", r))));
+    const congDich = (dich.address() as AddressInfo).port;
+    const congProxy = (proxy.address() as AddressInfo).port;
+    const thu = mkdtempSync(join(tmpdir(), "proxy-env-"));
+    const kichBan = join(thu, "con.mts");
+    const nguon = pathToFileURL(join(__dirname, "mangAnToan.ts")).href;
+    writeFileSync(
+      kichBan,
+      `import http from "node:http";
+import { fetchGhim } from ${JSON.stringify(nguon)};
+await new Promise((ok, loi) => http.get("http://llm.vi-du.vn:${congDich}/doi-chung", (r) => (r.resume(), r.on("end", ok))).on("error", loi));
+const r = await fetchGhim(new URL("http://llm.vi-du.vn:${congDich}/v1"), { method: "POST", body: "{}" }, { ip: "127.0.0.1", family: 4 });
+await r.text();
+console.log("XONG");`,
+    );
+    try {
+      const ra = await new Promise<{ ma: number | null; out: string }>((ok) => {
+        const c = spawn(process.execPath, ["--import", "tsx", kichBan], {
+          cwd: join(__dirname, "..", "..", "..", ".."),
+          env: { ...process.env, NODE_USE_ENV_PROXY: "1", HTTP_PROXY: `http://127.0.0.1:${congProxy}`, NO_PROXY: "", no_proxy: "" },
+        });
+        let out = "";
+        c.stdout.on("data", (d) => (out += d));
+        c.stderr.on("data", (d) => (out += d));
+        c.on("close", (ma) => ok({ ma, out }));
+      });
+      expect(ra.out).toContain("XONG");
+      expect(proxyNhan).toBe(1); // đối chứng: agent toàn cục đi qua proxy trong tiến trình này
+      expect(dichNhan).toBe(1); // fetchGhim KHÔNG qua proxy
+    } finally {
+      dich.close();
+      proxy.close();
+      rmSync(thu, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

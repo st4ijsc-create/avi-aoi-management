@@ -4089,7 +4089,9 @@
       "dieuKienDoiTuongTrongPhamVi": "in-scope object condition",
       "flowNguoiNhan": "find recipients for the flow",
       "flowXuat": "export an AI flow package",
-      "flowNhap": "import an AI flow from a package"
+      "flowNhap": "import an AI flow from a package",
+      "aiNgoaiDatModel": "set external AI model",
+      "aiNgoaiDuyet": "approve flow using external AI"
     },
     "field": {
       "stationId": "station",
@@ -4356,7 +4358,11 @@
       "flowDuyet": "approve a waiting step of an AI flow",
       "verifyChainAcrossFactories": "verify a traceability chain across factories",
       "manageProductWideProgramRelease": "manage product-wide inspection program releases",
-      "authorSharedSop": "author a shared SOP"
+      "authorSharedSop": "author a shared SOP",
+      "aiNgoaiHostNoiBo": "declare internal host for external AI",
+      "aiNgoaiDuyet": "approve flow using external AI",
+      "flowKichHoat": "enable flow",
+      "flowChayTay": "run flow manually"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -4549,7 +4555,14 @@
       "scadaKenhCheDoGoTruoc": "This tag is a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the tag.",
       "scadaKenhCheDoDoiMay": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page before assigning the adapter to another machine.",
       "scadaKenhCheDoGoTruocXoaAdapter": "This adapter carries a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the adapter.",
-      "interlockDefinitionChanged": "The source / target tag definition (address, type, scale / offset, adapter, edge node) changed after approval — or the rule was approved before this update. Re-approve it before enabling."
+      "interlockDefinitionChanged": "The source / target tag definition (address, type, scale / offset, adapter, edge node) changed after approval — or the rule was approved before this update. Re-approve it before enabling.",
+      "khoa-khac-nha-may-hoac-nha-cung-cap": "the key belongs to another factory or provider",
+      "can-gia-hoac-tran-luot": "a price or a per-call token cap is required",
+      "chi-admin-toan-he": "system-wide administrators only",
+      "khong-co-node-ngoai": "this version does not use an external AI model",
+      "NGOAI_TU_DUYET_VAN_HANH": "you cannot self-approve a flow that sends operational data to external AI",
+      "NGOAI_CHUA_DUYET": "the version using an external AI model has not been approved",
+      "NGOAI_LUONG_TOAN_CUC": "system-wide flows cannot use external AI models"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",

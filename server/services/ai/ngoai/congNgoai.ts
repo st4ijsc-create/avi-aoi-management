@@ -25,6 +25,9 @@ import { gopMuc, type MucDuLieu } from "./phanLoai";
 import { bamNoiDung, ghiKetQua, ghiYDinh, luuNoiDungNeuBat, type DbSo } from "./soNgoai";
 import { datTruoc, huyGiuChuaGui, ketToan, uocTokenVao, type DbDem, type PhieuGiu } from "./tranChiPhi";
 import type { CongCuNgoai, KetQuaNhaCungCap, MangNgoai, NhaCungCapAi, TinNhanNgoai, YeuCauNhaCungCap } from "./nhaCungCap/kieu";
+import { anthropic } from "./nhaCungCap/anthropic";
+import { gemini } from "./nhaCungCap/gemini";
+import { openai, openaiTuongThich } from "./nhaCungCap/openai";
 
 export type NguonMuc =
   | { loai: "luong"; mucDuLieu?: () => Promise<MucDuLieu> }
@@ -52,6 +55,8 @@ export interface YeuCauGoiNgoai {
      * `van-hanh`, cổng thêm các nhà máy này vào tập và đòi MỖI nhà máy `batNgoai` + `choDuLieuVanHanh`.
      */
     nhaMayKhiVanHanh?: () => Promise<number[]>;
+    /** Luồng: phiên bản của lượt đang chạy — cổng KIỂM LẠI duyệt ngoài (phòng thủ chiều sâu ngoài `taoRunTx`). */
+    phienBan?: number;
   };
 }
 
@@ -63,7 +68,7 @@ export interface KetQuaGoiNgoai {
   tokenRa: number | null;
 }
 
-type DbCong = DbDem & DbSo & DbDoc;
+export type DbCong = DbDem & DbSo & DbDoc;
 
 export interface PhuThuocCong {
   db: () => Promise<DbCong | null>;
@@ -72,7 +77,8 @@ export interface PhuThuocCong {
   layNhaCungCap: (ma: string) => NhaCungCapAi | null;
   layKhoa: (db: DbCong, keyId: number, factoryId: number, nhaCungCap: string) => () => Promise<string>;
   layEndpoint: (db: DbCong, keyId: number) => Promise<string | null>;
-  mang: () => MangNgoai;
+  /** Mạng ra ngoài với chính sách host nội bộ của NHÀ MÁY tính trần. */
+  mang: (db: DbCong, factoryId: number) => Promise<MangNgoai>;
   soLanThu: number;
   /** Lưới: nhật ký thứ tự bước. */
   ghiBuoc?: (buoc: string) => void;
@@ -83,20 +89,25 @@ export const TRAN_YEU_CAU_BYTE = 1024 * 1024;
 /** Trần cứng token RA mỗi lời gọi (dù model / nhà máy không đặt trần). */
 export const MAX_TOKENS_CUNG = 32_000;
 
-const MANG_CHUA_CAI: MangNgoai = {
-  async goiJson() {
-    throw new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", "mạng ngoài chưa cài", { chuaGui: true });
-  },
-};
+/** Bản cài THẬT (Task 9) — tĩnh: chỉ phụ thuộc lỗi / kiểu, không mạng lúc nạp. */
+const cacNhaCungCap = new Map<string, NhaCungCapAi>([anthropic, openai, openaiTuongThich, gemini].map((n) => [n.ma, n]));
+
+async function mangChoNhaMay(db: DbCong, factoryId: number): Promise<MangNgoai> {
+  const { sql } = await import("drizzle-orm");
+  const { taoMangNgoai } = await import("./mangNgoai");
+  const r = (await db.execute(sql`SELECT "hostCong" FROM ai_ngoai_host_noi_bo WHERE "factoryId" = ${factoryId}`)) as unknown;
+  const ds = (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<{ hostCong: string }>;
+  return taoMangNgoai({ hostNoiBo: new Set(ds.map((x) => x.hostCong)) });
+}
 
 export const phuThuocMacDinh: PhuThuocCong = {
   db: async () => (await (await import("../../../db/connection")).getDb()) as unknown as DbCong | null,
   env: () => process.env,
   layTuDien: () => layTuDienNhay(),
-  layNhaCungCap: () => null, // Task 9: bản cài thật
+  layNhaCungCap: (ma) => cacNhaCungCap.get(ma) ?? null,
   layKhoa: (db, keyId, factoryId, nhaCungCap) => layKhoaChoNhaCungCap(db, keyId, factoryId, nhaCungCap),
   layEndpoint: (db, keyId) => layEndpointKhoa(db, keyId),
-  mang: () => MANG_CHUA_CAI,
+  mang: (db, factoryId) => mangChoNhaMay(db, factoryId),
   soLanThu: 2,
 };
 
@@ -184,6 +195,18 @@ function cheYeuCau(yc: YeuCauNhaCungCap, tu: TuDienNhay): { daChe: YeuCauNhaCung
   return { daChe: { ...yc, tinNhan, ...(congCu ? { congCu } : {}) }, soTruong };
 }
 
+async function kiemDuyetLuong(db: DbCong, flowId: string | null, phienBan: number | undefined, nhaMay: number): Promise<void> {
+  if (!flowId || typeof phienBan !== "number") throw new LoiNgoai("NGOAI_CHUA_DUYET", "thieu-phien-ban");
+  const { sql } = await import("drizzle-orm");
+  const { kiemDuyetNgoaiTruocKhiBat } = await import("./duyetNgoai");
+  const r = (await db.execute(sql`SELECT v.definition, v."ngoaiDuyetLuc", v."ngoaiBamDuyet", f."factoryId"
+    FROM ai_flow_versions v JOIN ai_flows f ON f.id = v."flowId" WHERE v."flowId" = ${flowId} AND v.version = ${phienBan}`)) as unknown;
+  const [h] = (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<{ definition: unknown; ngoaiDuyetLuc: Date | null; ngoaiBamDuyet: string | null; factoryId: number | null }>;
+  if (!h) throw new LoiNgoai("NGOAI_CHUA_DUYET", "khong-co-phien-ban");
+  if (h.factoryId !== nhaMay) throw new LoiNgoai("NGOAI_KHONG_TON_TAI");
+  kiemDuyetNgoaiTruocKhiBat({ definition: h.definition, ngoaiDuyetLuc: h.ngoaiDuyetLuc, ngoaiBamDuyet: h.ngoaiBamDuyet }, h.factoryId);
+}
+
 export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuocMacDinh): Promise<KetQuaGoiNgoai> {
   const buoc = (b: string) => dep.ghiBuoc?.(b);
   // (1)
@@ -205,6 +228,8 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
     if (!c?.batNgoai) throw new LoiNgoai("NGOAI_KHONG_TON_TAI");
     cauHinh.set(f, c);
   }
+  // Luồng: phiên bản của lượt phải ĐÃ DUYỆT NGOÀI và băm khớp (cổng là điểm ra DUY NHẤT — kiểm lại dù `taoRunTx` đã kiểm).
+  if (laLuong) await kiemDuyetLuong(db, yc.ngu.flowId, yc.ngu.phienBan, tinhTran);
   const model = await layModelNgoai(db, tinhTran, yc.dich.nhaCungCap, yc.dich.model).catch(() => null);
   const ncc = dep.layNhaCungCap(yc.dich.nhaCungCap);
   if (!model?.batModel || !ncc) throw new LoiNgoai("NGOAI_KHONG_TON_TAI");
@@ -301,7 +326,7 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
     buoc("nha-cung-cap");
     try {
       const endpoint = yc.dich.nhaCungCap === "openai_compat" ? await dep.layEndpoint(db, model.keyId) : null;
-      kq = await ncc.goi(daChe, dep.layKhoa(db, model.keyId, tinhTran, yc.dich.nhaCungCap), dep.mang(), { endpoint });
+      kq = await ncc.goi(daChe, dep.layKhoa(db, model.keyId, tinhTran, yc.dich.nhaCungCap), await dep.mang(db, tinhTran), { endpoint });
       break;
     } catch (e) {
       const loi = e instanceof LoiNgoai ? e : null;
