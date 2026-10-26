@@ -16,6 +16,7 @@
  * KHÔNG có đường ghi riêng: mọi byte vẫn qua `apBanVa` (census canh).
  */
 import * as vscode from "vscode";
+import { modelChoAgent } from "../loi/chonModel";
 import { randomUUID } from "node:crypto";
 import { basename, join } from "node:path";
 import {
@@ -69,6 +70,8 @@ export interface PhuThuocPhienAgent {
   goc: () => string[];
   /** Lưu một lượt vào lịch sử hội thoại của khung (kho "Lịch sử"). */
   ghiLuot?: (cauHoi: string, traLoi: string) => void;
+  /** ★ Đợt 10.2 — mã model người dùng chọn ở ô chọn (auto/vắng ⇒ dùng `aviAiLocal.agentModel`). */
+  chonModel?: () => string;
   // ── đường nối cho lưới ──
   taoGoiModel?: (ch: CauHinhGoiModelV1) => GoiModel;
   apBanVa?: (dv: DauVaoApBanVa) => Promise<KetQuaApBanVa>;
@@ -323,7 +326,7 @@ export class PhienAgent {
       soTinNhanLichSu,
       serverUrl: this.serverUrl(),
       layToken: async () => this.pt.context.secrets.get(KHOA_TOKEN_GATEWAY),
-      model: this.cfg().get<string>("agentModel", "chat"),
+      model: modelChoAgent(this.pt.chonModel?.(), this.cfg().get<string>("agentModel", "chat")),
       maxTokens: this.cfg().get<number>("agentMaxTokens", TRAN_TOKEN_MOT_LUOT_MAC_DINH),
       khi401: () => this.pt.gui({ loai: "ag_token", coToken: false, hong: true }),
     };
