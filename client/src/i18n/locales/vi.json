@@ -23440,7 +23440,10 @@
         "tiep-tuc": "Tiếp tục",
         "nhanh-loi": "Đi nhánh lỗi"
       },
-      "tatNode": "Tắt node này"
+      "tatNode": "Tắt node này",
+      "chonModel": "Model",
+      "chonModelGoiY": "Tự động = bộ định tuyến chọn theo tác vụ. Chọn một vai trò, hồ sơ Local cụ thể… để ghim model cho node này.",
+      "chonModelBieuThuc": "Luồng cũ đang đặt model bằng biểu thức ({{bt}}) — không còn được hỗ trợ khi lưu. Hãy chọn một model ở ô trên (hoặc Tự động) để thay."
     },
     "chay": {
       "lichSu": "Lịch sử chạy",

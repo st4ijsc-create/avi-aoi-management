@@ -23440,7 +23440,10 @@
         "tiep-tuc": "继续",
         "nhanh-loi": "走错误分支"
       },
-      "tatNode": "停用此节点"
+      "tatNode": "停用此节点",
+      "chonModel": "模型",
+      "chonModelGoiY": "自动 = 由路由器按任务选择。选择角色或指定本地配置即可为此节点固定模型。",
+      "chonModelBieuThuc": "此旧流程用表达式设置模型（{{bt}}）— 保存时不再支持。请在上方选择模型（或自动）以替换。"
     },
     "chay": {
       "lichSu": "运行历史",

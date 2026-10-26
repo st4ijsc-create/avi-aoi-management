@@ -23443,7 +23443,10 @@
         "tiep-tuc": "Continue",
         "nhanh-loi": "Take error branch"
       },
-      "tatNode": "Disable this node"
+      "tatNode": "Disable this node",
+      "chonModel": "Model",
+      "chonModelGoiY": "Automatic = the router picks per task. Choose a role or a specific Local profile to pin the model for this node.",
+      "chonModelBieuThuc": "This older flow sets the model with an expression ({{bt}}) — it can no longer be saved. Pick a model above (or Automatic) to replace it."
     },
     "chay": {
       "lichSu": "Run history",

@@ -18,6 +18,8 @@ interface Props {
   compact?: boolean;
   /** `false` ⇒ không ghi localStorage (node Luồng lưu vào tham số, không vào máy người dùng). */
   nho?: boolean;
+  /** `false` ⇒ mã không còn trong danh mục vẫn GIỮ NGUYÊN (form node: không âm thầm xoá dữ liệu đã lưu của luồng). */
+  tuVeAuto?: boolean;
   className?: string;
   testId?: string;
 }
@@ -28,7 +30,7 @@ const NHAN_NHOM: Record<string, [string, string]> = {
   ngoai: ["chonModel.nhom.ngoai", "Model ngoài"],
 };
 
-export default function ChonModel({ beMat, giaTri, onDoi, compact, nho = true, className, testId }: Props) {
+export default function ChonModel({ beMat, giaTri, onDoi, compact, nho = true, tuVeAuto = true, className, testId }: Props) {
   const { t } = useTranslation();
   const { danhMuc, daTai } = useDanhMucModel();
   const nhom = nhomMuc(danhMuc, beMat);
@@ -36,7 +38,7 @@ export default function ChonModel({ beMat, giaTri, onDoi, compact, nho = true, c
 
   // Mã đã lưu mà danh mục không còn ⇒ về auto + toast MỘT lần (chỉ khi danh mục đã tải thật).
   useEffect(() => {
-    if (!daTai) return;
+    if (!daTai || !tuVeAuto) return;
     const kq = xacThucChon(giaTri, danhMuc);
     if (kq.hetHieuLuc) {
       onDoi("auto");
@@ -46,7 +48,7 @@ export default function ChonModel({ beMat, giaTri, onDoi, compact, nho = true, c
         toast.info(t("chonModel.hetHieuLuc", "Model đã chọn không còn khả dụng — dùng Tự động."));
       }
     }
-  }, [daTai, giaTri, danhMuc, beMat, nho, onDoi, t]);
+  }, [daTai, tuVeAuto, giaTri, danhMuc, beMat, nho, onDoi, t]);
 
   const mot = (m: MucModel) => {
     const hau = hauToTrangThai(m, (k, def, o) => String(t(k, { defaultValue: def, ...o })));
