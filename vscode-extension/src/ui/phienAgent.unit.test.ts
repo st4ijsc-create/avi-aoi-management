@@ -58,14 +58,14 @@ afterAll(() => rmSync(WS, { recursive: true, force: true }));
 
 function dung(
   kichBan: (luot: number, vao: { tinNhan: TinNhan[]; congCu: WireTool[] }) => ManhModel[],
-  o: { tuDuyet?: boolean; diffStaged?: string; guiPhanHoi?: (url: string, token: string, p: PhieuPhanHoi) => Promise<KetQuaGuiPhanHoi> } = {},
+  o: { tuDuyet?: boolean; chonModel?: () => string; diffStaged?: string; guiPhanHoi?: (url: string, token: string, p: PhieuPhanHoi) => Promise<KetQuaGuiPhanHoi> } = {},
 ) {
   const nhatKy: string[] = [];
   const tin: Array<Record<string, unknown>> = [];
   const ap: DauVaoApBanVa[] = [];
   const vaoModel: Array<{ tinNhan: TinNhan[]; congCu: WireTool[] }> = [];
   const lenh: string[][] = [];
-  const cauHinhGoiModel: Array<{ anhLuotNay?: ReadonlyArray<{ kieu: string; noiDung: string }>; soTinNhanLichSu?: number }> = [];
+  const cauHinhGoiModel: Array<{ model?: string; anhLuotNay?: ReadonlyArray<{ kieu: string; noiDung: string }>; soTinNhanLichSu?: number }> = [];
   const luu: Array<[string, string]> = [];
   let luot = 0;
   const goiModel: GoiModel = (vao) =>
@@ -91,6 +91,7 @@ function dung(
     },
     khoDeXuat: { datDeXuat: () => ({ cu: {}, moi: {} }), quen: () => undefined } as never,
     mucQuyen: () => "hoi_truoc_khi_ghi",
+    chonModel: o.chonModel,
     goc: () => [WS],
     ghiLuot: (q, a) => luu.push([q, a]),
     taoGoiModel: (ch) => {
@@ -414,5 +415,26 @@ describe("phiên agent — ảnh qua /v1 (0.3.2)", () => {
     expect(d.cauHinhGoiModel[0]!.anhLuotNay).toEqual([]);
     await d.phien.chay("tiếp", "hoi");
     expect(d.vaoModel.at(-1)!.tinNhan.map((m) => m.content).join("\n")).not.toContain("ảnh đã gửi");
+  });
+});
+
+describe("phiên agent — ô chọn model (Đợt 10.2)", () => {
+  const ket = [{ loai: "chu" as const, noiDung: "ok" }, { loai: "xong" as const, toolCalls: [] }];
+  it("★ chọn cụ thể ⇒ `model` của /v1 là mã danh mục; auto / không có ô ⇒ cấu hình `agentModel` (mặc định chat)", async () => {
+    const a = dung(() => ket, { chonModel: () => "vai-tro:code.software" });
+    await a.phien.chay("x", "hoi");
+    expect(a.cauHinhGoiModel[0]!.model).toBe("vai-tro:code.software");
+    const b = dung(() => ket, { chonModel: () => "auto" });
+    await b.phien.chay("x", "hoi");
+    expect(b.cauHinhGoiModel[0]!.model).toBe("chat");
+    const c = dung(() => ket);
+    await c.phien.chay("x", "hoi");
+    expect(c.cauHinhGoiModel[0]!.model).toBe("chat");
+  });
+  it("giá trị sai hình dạng (biểu thức) ⇒ rơi về cấu hình, không đi lên máy chủ", async () => {
+    may.cfg = { agentModel: "code" };
+    const d = dung(() => ket, { chonModel: () => "{{ x }}" });
+    await d.phien.chay("x", "hoi");
+    expect(d.cauHinhGoiModel[0]!.model).toBe("code");
   });
 });

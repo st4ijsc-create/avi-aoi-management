@@ -2060,3 +2060,35 @@ describe("webview — ảnh lớn thu nhỏ trước khi đính (0.3.2)", () => 
     expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 1");
   });
 });
+
+describe("webview — ô chọn model (Đợt 10.2)", () => {
+  it("★ danh_muc_model ⇒ dựng option (tắt ⇒ vô hiệu + hậu tố; đổi khe ⇒ ~N s); đổi ô ⇒ dat_chon_model; mã không có ⇒ về auto", () => {
+    const w = chayWebview();
+    w.banTin({
+      loai: "danh_muc_model",
+      chon: "ho-so:p1",
+      muc: [
+        { ma: "auto", nhan: "Tự động", trangThai: "san-sang" },
+        { ma: "ho-so:p1", nhan: "P1", trangThai: "can-doi-khe", uocTinhDoiKheGiay: 9.4 },
+        { ma: "ho-so:off", nhan: "Off", trangThai: "tat" },
+      ],
+    });
+    const o = w.nut("o-chon-model");
+    expect(o.con.map((c) => c.value)).toEqual(["auto", "ho-so:p1", "ho-so:off"]);
+    expect(o.con[1]!.textContent).toBe("P1 — cần đổi khe ~9 s");
+    expect(o.con[2]!.textContent).toBe("Off — tắt");
+    expect(o.con[2]!.disabled).toBe(true);
+    expect(o.value).toBe("ho-so:p1");
+    o.value = "ho-so:p1";
+    o.kichHoat("change", {});
+    expect(w.daGui.find((m) => m.loai === "dat_chon_model")).toEqual({ loai: "dat_chon_model", chonModel: "ho-so:p1" });
+    w.banTin({ loai: "danh_muc_model", chon: "auto", muc: [{ ma: "auto", nhan: "Tự động", trangThai: "san-sang" }] });
+    expect(o.con).toHaveLength(1);
+    expect(o.value).toBe("auto");
+  });
+  it("tin danh_muc_model thiếu muc ⇒ vẫn có 'Tự động' (không văng)", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "danh_muc_model" });
+    expect(w.nut("o-chon-model").con.map((c) => c.value)).toEqual(["auto"]);
+  });
+});

@@ -21,6 +21,7 @@ import { existsSync } from "node:fs";
 import { dungHtmlBang } from "./htmlBang";
 import { dungNguCanh } from "../loi/nguCanh";
 import { dungYeuCauStream, type CheDoDuAn, type LuotChat } from "../loi/yeuCau";
+import { KHOA_CHON_MODEL, chuanHoaChon, chuanHoaDanhMuc, xacThucChon, type MucModel } from "../loi/chonModel";
 import { moDongSse } from "../mang/dongSse";
 import { KHOA_COOKIE, KHOA_TEN_TAI_KHOAN } from "../loi/dangNhap";
 import { gopDanhSachDuAn, type MucDuAn } from "../loi/duAn";
@@ -273,6 +274,9 @@ export class BangChat {
   // instance đang hiển thị trong thanh hoạt động — đây là nơi DUY NHẤT giữ tham chiếu đó.
   private static thanhBenHienTai: BangChat | undefined;
   private lichSu: LuotChat[] = [];
+  // ★ Đợt 10.2 — model người dùng chọn (lưu theo workspace) + danh mục máy chủ trả (`aiChonModel.danhMuc`). `auto` ⇒ không gửi trường.
+  private chonModelHienTai = "auto";
+  private dsDanhMucModel: MucModel[] = [];
   // ★★★ ĐỢT F / TASK 2 — mã ĐỊNH DANH của hội thoại đang mở trong `workspaceState`. `undefined`
   // nghĩa là "chưa từng lưu lượt nào của hội thoại NÀY" — `luuHoiThoaiHienTai()` tự sinh một mã
   // MỚI ở lần lưu ĐẦU TIÊN, còn `khoiPhucHoiThoaiGanNhat()` gán LẠI mã của bản ghi đã đọc được, để
@@ -345,6 +349,7 @@ export class BangChat {
       gui: (m) => void this.panel.webview.postMessage(m),
       khoDeXuat: this.khoDeXuat,
       mucQuyen: () => this.mucQuyenHienTai,
+      chonModel: () => this.chonModelHienTai,
       goc: () => {
         const goc = this.thuMucLocalDangChon();
         const tatCa = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
@@ -393,6 +398,7 @@ export class BangChat {
         cheDo?: unknown;
         // ★★★ ĐỢT 4B — chế độ agent của lượt hỏi + tham số các tin `ag_*` (đều THÔ, kiểm trước khi dùng).
         cheDoAgent?: unknown;
+        chonModel?: unknown;
         id?: unknown;
         lyDo?: unknown;
         chiSo?: unknown;
@@ -408,6 +414,7 @@ export class BangChat {
       if (m.loai === "san_sang") {
         this.daSanSang = true;
         void this.napDuAn();
+        void this.napDanhMucModel();
         this.guiCauHoiDangCho();
         // ★★★ ĐỢT F / TASK 1 — phản ánh trạng thái đăng nhập THẬT ngay khi webview vừa mở: cookie
         // có thể đã tồn tại từ một phiên VSCode TRƯỚC (SecretStorage sống qua nhiều lần mở lại),
@@ -545,6 +552,7 @@ export class BangChat {
       // ★★★ ĐỢT G / TASK G3 / B4 — người dùng đổi mức quyền ở ô chọn.
       if (m.loai === "dat_muc_quyen") { void this.datMucQuyen(m.mucQuyen); return; }
       if (m.loai === "dat_che_do") { void this.datCheDoAgent(m.cheDo); return; }
+      if (m.loai === "dat_chon_model") { void this.datChonModel(m.chonModel); return; }
       // ★★★ ĐỢT G / TASK G4 / B3 — nút "Mở Settings" trên bong bóng lỗi KHÔNG-NỐI-ĐƯỢC-MÁY-CHỦ
       // (xem `hoi()`/`duyetDeXuat()`/`huyDeXuat()` bên dưới, và `moTaLoiKhongNoiDuocMayChu`). Webview
       // chỉ báo Ý ĐỊNH — mở đúng lệnh có sẵn của VSCode, lọc thẳng tới ô `aviAiLocal.serverUrl`,
@@ -1058,6 +1066,35 @@ export class BangChat {
   }
 
   /** ★ 2026-10-24 — người dùng đổi CHẾ ĐỘ agent: lưu theo workspace; hình dạng lạ bị bỏ (giữ chế độ cũ); xác nhận lại cho webview giá trị THẬT. */
+  /**
+   * ★ Đợt 10.2 — nạp danh mục model chọn được (tRPC `aiChonModel.danhMuc`, cookie phiên như `repoWorkspace.listProjects`) rồi báo webview vẽ ô.
+   * Chưa đăng nhập / lỗi mạng ⇒ danh mục chỉ có "Tự động" (khung vẫn dùng được). Lựa chọn đã lưu mà danh mục không còn ⇒ về auto.
+   */
+  private async napDanhMucModel(): Promise<void> {
+    const luu = chuanHoaChon(this.khoHoiThoaiTho().doc<unknown>(KHOA_CHON_MODEL));
+    const cookie = await this.context.secrets.get(KHOA_COOKIE);
+    let dm = chuanHoaDanhMuc(undefined);
+    if (cookie) {
+      try {
+        const serverUrl = vscode.workspace.getConfiguration("aviAiLocal").get<string>("serverUrl", "http://localhost:3000");
+        dm = chuanHoaDanhMuc(await goiTruyVanTrpc(serverUrl, cookie, "aiChonModel.danhMuc"));
+      } catch {
+        /* không nối được / không có quyền MOD_AI — chỉ còn "Tự động" */
+      }
+    }
+    this.dsDanhMucModel = dm;
+    this.chonModelHienTai = xacThucChon(luu, dm);
+    if (this.chonModelHienTai !== luu) await this.khoHoiThoaiTho().ghi(KHOA_CHON_MODEL, this.chonModelHienTai);
+    void this.panel.webview.postMessage({ loai: "danh_muc_model", muc: dm, chon: this.chonModelHienTai });
+  }
+
+  private async datChonModel(gt: unknown): Promise<void> {
+    const ma = xacThucChon(chuanHoaChon(gt), this.dsDanhMucModel);
+    this.chonModelHienTai = ma;
+    await this.khoHoiThoaiTho().ghi(KHOA_CHON_MODEL, ma);
+    void this.panel.webview.postMessage({ loai: "danh_muc_model", muc: this.dsDanhMucModel, chon: ma });
+  }
+
   private async datCheDoAgent(gt: unknown): Promise<void> {
     if (!laCheDoAgentHopLe(gt)) return;
     await this.khoHoiThoaiTho().ghi(KHOA_CHE_DO_AGENT, gt);
@@ -1462,6 +1499,7 @@ export class BangChat {
           // vẫn là hàng rào THẬT ở nơi THỰC THI (`chayYeuCauLenh` bên dưới) — cờ này CHỈ tránh mời
           // model xin một khả năng chắc chắn bị chặn (xem docblock `dayLenhDoc.ts`).
           choPhepChayLenh: duocPhepGhiTheoMucQuyen(this.mucQuyenHienTai).ok,
+          chonModel: this.chonModelHienTai,
         });
         if (vong === 1 && anhKb.image) {
           Object.assign(than, { image: anhKb.image, imageMimeType: anhKb.imageMimeType });

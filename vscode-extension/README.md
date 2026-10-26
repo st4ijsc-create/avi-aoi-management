@@ -32,6 +32,7 @@ mở được sổ kiểm toán thì không ghi — thà không ghi còn hơn gh
   - **Hỏi (chỉ đọc)**: AI chỉ đọc/tìm/giải thích, không có tool ghi.
   - **Chat cũ (máy chủ)**: đường hỏi–đáp cũ qua máy chủ (giữ cho dự án SERVER và thói quen cũ; `Ctrl+Alt+K` luôn đi
     đường này).
+- **Model** (ô chọn cạnh ô Chế độ, từ 0.4.0): *Tự động* (máy chủ chọn theo tác vụ) hoặc một vai trò / hồ sơ Local / model ngoài mà máy chủ cho phép. Danh mục lấy từ máy chủ sau khi đăng nhập (chưa đăng nhập ⇒ chỉ *Tự động*); mục ghi "cần đổi khe" mất vài giây nạp model; lựa chọn được lưu theo workspace và tự về *Tự động* nếu model không còn khả dụng. Áp cho cả Trợ lý và Agent (Agent: ghi đè `aviAiLocal.agentModel` khi chọn cụ thể).
 - Trả lời hiển thị **markdown** (đóng gói `marked`, chỉ dùng bộ phân tích; webview dựng DOM bằng `textContent`, không
   `innerHTML` nội dung, CSP chặt). Mỗi khối mã có **Chép** · **Chèn** (vào con trỏ, qua điểm ghi) · **Áp dụng**
   (thay vùng chọn — hoặc cả tệp đang mở — dưới dạng đề xuất có thẻ duyệt + diff).
@@ -166,7 +167,7 @@ mở một repo thù địch là đủ để chuyển cookie/token sang máy ch�
 ## Cài đặt offline
 
 ```
-code --install-extension avi-ai-local-0.3.3.vsix
+code --install-extension avi-ai-local-0.4.0.vsix
 ```
 
 Đóng gói từ gốc repo:
@@ -176,7 +177,7 @@ npm run ext:build
 npm run ext:package
 ```
 
-Lệnh sinh `vscode-extension/avi-ai-local-0.3.3.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.3.3+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
+Lệnh sinh `vscode-extension/avi-ai-local-0.4.0.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.4.0+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
 
 ## Giới hạn đã biết
 

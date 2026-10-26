@@ -185,7 +185,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
   /* ★★★ ĐỢT 4B — AGENT: hàng điều khiển (chế độ · đăng nhập token · đồng hồ ngữ cảnh · hoàn tác), dòng thời gian tool,
      kế hoạch, thẻ duyệt TỪNG TỆP, markdown (dựng bằng createElement/textContent — xem veMd). Chỉ biến --vscode-*. */
   #vung-agent { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; }
-  #o-che-do { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground);
+  #o-che-do, #o-chon-model { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground);
               border: 1px solid var(--vscode-dropdown-border); font-size: 11px; padding: 2px 4px; }
   #dong-ho-token { opacity: .75; }
   .nut-phu { font-size: 11px; padding: 2px 8px; }
@@ -270,10 +270,11 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
   #hang-nhap #ds-dinh-kem { padding: 8px 8px 0; margin-top: 0; }
   .soan-thanh { display: flex; align-items: center; gap: 4px; padding: 4px 6px 6px; }
   .soan-thanh #nut-dinh-kem { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; font-size: 12px; border-radius: 6px; }
-  .soan-thanh #o-che-do { -webkit-appearance: none; appearance: none; background: transparent url('data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2710%27 height=%2710%27 viewBox=%270 0 10 10%27><path d=%27M2 3.5l3 3 3-3%27 fill=%27none%27 stroke=%27%23999%27 stroke-width=%271.4%27/></svg>') no-repeat right 4px center;
+  .soan-thanh #o-che-do, .soan-thanh #o-chon-model { -webkit-appearance: none; appearance: none; background: transparent url('data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2710%27 height=%2710%27 viewBox=%270 0 10 10%27><path d=%27M2 3.5l3 3 3-3%27 fill=%27none%27 stroke=%27%23999%27 stroke-width=%271.4%27/></svg>') no-repeat right 4px center;
                           color: var(--vscode-foreground); border: 1px solid transparent; border-radius: 6px; padding: 3px 18px 3px 8px; font-size: 12px; cursor: pointer; max-width: 55%; }
-  .soan-thanh #o-che-do { field-sizing: content; }
-  .soan-thanh #o-che-do:hover { background-color: var(--vscode-list-hoverBackground); }
+  .soan-thanh #o-che-do, .soan-thanh #o-chon-model { field-sizing: content; }
+  .soan-thanh #o-chon-model { max-width: 30%; text-overflow: ellipsis; }
+  .soan-thanh #o-che-do:hover, .soan-thanh #o-chon-model:hover { background-color: var(--vscode-list-hoverBackground); }
   .soan-thanh #nut-gui { margin-left: auto; width: 28px; height: 28px; padding: 0; border-radius: 6px; }
   .soan-thanh #nut-dung { margin-left: auto; padding: 3px 10px; font-size: 12px; border-radius: 6px; background: transparent; color: var(--vscode-foreground); border: 1px solid var(--vscode-input-border); }
   .soan-thanh #nut-dung:not([hidden]) + #nut-gui, .soan-thanh #nut-gui + #nut-dung { margin-left: 4px; }
@@ -399,6 +400,10 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
       <option value="hoi">Hỏi · chỉ đọc</option>
       <option value="tu-dong">Agent · tự ghi</option>
       <option value="chat-cu">Chat cũ (máy chủ)</option>
+    </select>
+    <!-- ★ Đợt 10.2 — chọn model (danh mục từ máy chủ; mặc định TĨNH = Tự động). Chọn ⇒ báo host lưu theo workspace. -->
+    <select id="o-chon-model" aria-label="Chọn model" title="Tự động = máy chủ chọn theo tác vụ. Chọn một vai trò hoặc hồ sơ Local để ghim model cho các lượt sau. Được lưu theo workspace.">
+      <option value="auto">Tự động</option>
     </select>
     <button id="nut-gui" class="nut-icon" title="Gửi (Enter)" aria-label="Gửi (Enter)">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
@@ -1062,6 +1067,27 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
     return mucQuyen === "tu_ghi" ? "tu-dong" : "sua";
   }
   const moTaCheDo = document.getElementById("mo-ta-che-do");
+  // ★ Đợt 10.2 — ô chọn model: option dựng bằng createElement/textContent từ danh mục host đã chuẩn hoá (host lọc mã lạ). Chọn ⇒ host lưu + xác nhận lại bằng tin danh_muc_model.
+  const oChonModel = document.getElementById("o-chon-model");
+  function veOChonModel(muc, chon) {
+    oChonModel.innerHTML = "";
+    const ds = Array.isArray(muc) && muc.length ? muc : [{ ma: "auto", nhan: "Tự động", trangThai: "san-sang" }];
+    ds.forEach(function (m) {
+      const op = document.createElement("option");
+      op.value = String(m.ma);
+      let nhan = m.ma === "auto" ? "Tự động" : String(m.nhan || m.ma);
+      if (m.trangThai === "tat") { nhan += " — tắt"; op.disabled = true; }
+      else if (m.trangThai === "can-doi-khe") nhan += typeof m.uocTinhDoiKheGiay === "number" ? " — cần đổi khe ~" + Math.round(m.uocTinhDoiKheGiay) + " s" : " — cần đổi khe (chưa đo)";
+      op.textContent = nhan;
+      if (m.moTa) op.title = String(m.moTa);
+      oChonModel.appendChild(op);
+    });
+    oChonModel.value = typeof chon === "string" ? chon : "auto";
+    if (oChonModel.value !== chon) oChonModel.value = "auto";
+  }
+  oChonModel.addEventListener("change", function () {
+    vscode.postMessage({ loai: "dat_chon_model", chonModel: oChonModel.value });
+  });
   function veOCheDo() {
     oCheDo.value = cheDoHienThi(cheDoLuu, mucQuyenLuu);
     moTaCheDo.textContent = MO_TA_CHE_DO[oCheDo.value] || "";
@@ -1781,6 +1807,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
       const nhanTaiKhoan = (daDangNhap ? (m.tenTaiKhoan || "Đã đăng nhập") + " — bấm để đăng xuất" : "Đăng nhập") + dongMayChu;
       nutTaiKhoan.title = nhanTaiKhoan;
       nutTaiKhoan.setAttribute("aria-label", nhanTaiKhoan);
+    } else if (m.loai === "danh_muc_model") {
+      veOChonModel(m.muc, m.chon);
     } else if (m.loai === "che_do") {
       if (m.cheDo === "hoi" || m.cheDo === "sua" || m.cheDo === "tu-dong" || m.cheDo === "chat-cu") { cheDoLuu = m.cheDo; veOCheDo(); }
     } else if (m.loai === "muc_quyen") {
