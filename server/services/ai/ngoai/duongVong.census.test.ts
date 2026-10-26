@@ -116,7 +116,7 @@ const MIEN_TRU: Readonly<Record<string, { so: number; lyDo: string }>> = {
   "server/services/security/secretManager.ts": { so: 1, lyDo: "kho bí mật (Vault) quản trị cấu hình" },
   "server/services/security/siemExporter.ts": { so: 3, lyDo: "⚠ đích do QUẢN TRỊ cấu hình NGOÀI Luồng (webhook / ERP / SIEM / cảnh báo / giao báo cáo) — không phải đường của Luồng; rủi ro còn lại: quản trị trỏ tới máy chủ AI — báo dieu-phoi" },
   "server/services/universalExportService.ts": { so: 1, lyDo: "tải LOGO công ty (URL quản trị đặt) cho báo cáo — GET, chiều vào" },
-  "server/storage.ts": { so: 3, lyDo: "kho tệp của khung gốc (ENV, quản trị cấu hình)" },
+  "server/storage.ts": { so: 3, lyDo: "⚠ kho tệp qua dịch vụ 'forge' của khung gốc (ENV.forgeApiUrl) — BUILT_IN_FORGE_API_URL rỗng = tắt; đặt = mở đường ngoài cổng, cần chủ dự án (§12)" },
   "server/utils/spcAlertSink.ts": { so: 1, lyDo: "⚠ đích do QUẢN TRỊ cấu hình NGOÀI Luồng (webhook / ERP / SIEM / cảnh báo / giao báo cáo) — không phải đường của Luồng; rủi ro còn lại: quản trị trỏ tới máy chủ AI — báo dieu-phoi" },
 };
 /** GHIM: số tệp miễn trừ + tổng điểm — đổi ⇒ đo lại + ghi lý do (ratchet). */
