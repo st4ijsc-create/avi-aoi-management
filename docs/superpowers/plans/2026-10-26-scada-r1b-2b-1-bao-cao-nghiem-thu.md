@@ -318,7 +318,9 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
    **Ngân sách pool DB (rà soát cuối I-1, final fix):** pool chính mặc định 25 (`resolvePoolMax()`, env `DB_POOL_MAX`). Khi DB chậm, truy vấn bị bỏ
    rơi giữ kết nối tới khi DB trả lời (≤ `statement_timeout` 30 s): khe khảo sát của khối DỪNG khẩn cấp tối đa **8** (`DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP`;
    bản trước rà soát cuối: 16) + lượt sổ STOP treo tối đa **8** (`TRAN_GHI_SO_TREO_STOP_HMI`) = **16** ⇒ còn ≥ **9** (`DU_TRU_POOL_CHO_DUNG_MAY`) cho lượt
-   đọc trước-gửi của `dungMay`. Hai trần từng được định cỡ RIÊNG (16 + 8 = 24 / 25 ⇒ `dungMay` còn 1 kết nối ⇒ có thể `STOP_QUA_HAN`). Bất đẳng thức
+   đọc trước-gửi của `dungMay`. **"Dự trữ" này là một BẤT ĐẲNG THỨC giữa các trần, KHÔNG phải kết nối được giữ riêng:** không có pool riêng, không có
+   khe đặt trước, không gì ngăn các truy vấn khác (thủ tục thường, bộ đọc, lượt ghi bắn-rồi-quên) dùng 9 kết nối ấy — nó chỉ bảo đảm hai đường bị
+   trần ở trên không thể tự mình chiếm quá 16 / 25 (kiem-dinh R1b-2b-1 ghi chú a). Hai trần từng được định cỡ RIÊNG (16 + 8 = 24 / 25 ⇒ `dungMay` còn 1 kết nối ⇒ có thể `STOP_QUA_HAN`). Bất đẳng thức
    ghim ở `server/services/scada/nganSachPoolStop.test.ts` (nâng một trần / hạ pool mặc định ⇒ đỏ). **Không** đặt `DB_POOL_MAX` < 25 trên bản API
    phục vụ STOP HMI. Ngân sách chưa phủ: lượt bắn-rồi-quên có từ trước trên đường STOP (R1b-2b-2 mục 61 — gộp thành MỘT ngân sách dùng chung) và
    khảo sát không trần của `cheDo.danhSach` (mục 33).

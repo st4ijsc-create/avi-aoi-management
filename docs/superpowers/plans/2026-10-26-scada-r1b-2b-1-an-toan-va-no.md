@@ -900,6 +900,7 @@ Số giữ theo báo cáo R1b-2a §11 để đối chiếu 1-1.
 69. OPC UA: mất liên kết giữa một lô ghi ⇒ `writeTags` ném lỗi có kiểu cho CẢ lô (`opcuaDriver.ts` ~941) ⇒ write chưa bao giờ được gửi (hỏng ép kiểu cục bộ cùng lô) mang nhãn `timeout` thay vì `failed`. Chiều an toàn (không ack giả). Hướng: trả lỗi theo từng item cho phần chưa chuẩn bị (R1b-2b-1 rà soát cuối M-9).
 70. Mục rủi ro "lệnh ghi cũ" gộp lớn dần khi liên kết chập chờn (`otDeviceWrite.ts` ~214-215): mỗi lần huỷ vì mất liên kết trong cửa sổ nối thêm intents / writes và nới `untilHuuHan` ⇒ dưới lệnh liên tục mục không bao giờ hết hạn và lớn mãi. Hướng: trần các mảng nhưng GIỮ ý định ĐẦU TIÊN (N3 của T17 r2; R1b-2b-1 rà soát cuối M-10).
 71. Cảnh báo khởi động / posture khi `DB_POOL_MAX` < 25: ngân sách pool đường STOP (khảo sát 8 + sổ treo 8 ≤ pool − dự trữ 9, `nganSachPoolStop.test.ts`) chỉ giữ ở pool mặc định 25 — pool nhỏ hơn làm STOP thiếu kết nối mà không ai biết (điều phối 2026-10-27; đo máy này: `.env` không đặt `DB_POOL_MAX` ⇒ 25).
+72. Cầu chì mạch cho tầng giới hạn khi Redis chết: các tầng limiter nối tiếp mỗi tầng thêm tới 250 ms ⇒ đánh dấu Redis hỏng ~5 s và đi thẳng bộ nhớ (kiem-dinh R1b-2b-1 ghi chú c)
 
 **AI và cổng mức:**
 17. `congOtLuong` dùng mức kênh (cần `adapterId` trong luồng AI).

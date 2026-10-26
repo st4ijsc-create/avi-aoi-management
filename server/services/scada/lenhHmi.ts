@@ -1402,6 +1402,9 @@ export const TRAN_GHI_SO_TREO_STOP_HMI = 8;
  * `dungMay` khi DB chậm: tổng các trần "truy vấn bị bỏ rơi" của tiến trình (khe khảo sát `DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP` + lượt sổ treo
  * `TRAN_GHI_SO_TREO_STOP_HMI`) phải ≤ pool − DU_TRU. 9 > 8 trần sổ treo: một lượt dungMay cần vài lượt đọc nối nhau + vài máy bấm cùng lúc.
  * Không phải cổng (không gì chặn STOP theo số này) — chỉ là ngân sách được ghim bằng test.
+ * ⚠ "Dự trữ" là một BẤT ĐẲNG THỨC giữa các trần, KHÔNG phải kết nối được giữ riêng (kiem-dinh R1b-2b-1 ghi chú a): không có pool / khe đặt trước
+ * cho `dungMay`; truy vấn khác (thủ tục thường, bộ đọc, lượt ghi bắn-rồi-quên — mục 61) vẫn dùng được 9 kết nối ấy. Nó chỉ bảo đảm hai đường có trần
+ * ở trên không tự mình chiếm quá pool − DU_TRU.
  */
 export const DU_TRU_POOL_CHO_DUNG_MAY = 9;
 let ghiSoTreo = 0;
