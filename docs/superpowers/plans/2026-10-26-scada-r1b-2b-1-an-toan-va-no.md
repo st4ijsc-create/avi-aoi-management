@@ -889,6 +889,7 @@ Số giữ theo báo cáo R1b-2a §11 để đối chiếu 1-1.
 24. T3: thứ tự canh `sinkPhien` legacy (nit).
 52. K13: xem lại "`stale` = đã trả lời" khi có nguồn `stale` thật.
 60. OPC UA: cuộc đua tin cậy chứng chỉ (kiem-dinh đo được ở SẢN PHẨM, điều phối 2026-10-26). Danh sách tin cậy của node-opcua-pki nằm trong bộ nhớ, chỉ cập nhật khi watcher thấy tệp mới ở `trusted/`; nếu vòng nối lại của `opcuaDriver` rơi giữa lúc người vận hành chuyển chứng chỉ `rejected/`→`trusted/` và lúc watcher cập nhật ⇒ nối thất bại và node-opcua-pki DỜI chứng chỉ NGƯỢC về `rejected/`. Hướng sửa: nạp lại danh sách tin cậy từ đĩa trước mỗi lượt nối lại (hoặc không tự dời ngược chứng chỉ vừa được chuyển trong N giây); test đua 6 bản song song dưới tải. Cơ chế: `opcuaDriver.secure.sim.test.ts` bản sửa của kiem-dinh trên `chore/ai-luoi-do`; kiem-dinh chỉ sửa comment hướng dẫn đầu `opcuaSecurity.ts`.
+61. STOP HMI: các lượt ghi bắn-rồi-quên CÓ TỪ TRƯỚC trên đường `dungMay` (attempts + audit của `tuChoiQuaHan`, vòng `STOP_QUA_HAN` theo adapter, mọi `recordAuditEvent`) chưa chịu trần ghi treo của T9 (`TRAN_GHI_SO_TREO_STOP_HMI` = 8, R1b-2b-1 T9 `960e42f01`) — bảng audit chậm vẫn có thể cạn pool như lỗi I1 của T9. Đưa chúng vào CÙNG bộ đếm; bỏ qua audit khi đầy phải log nội dung hàng. Kèm: trần là THEO TIẾN TRÌNH (N bản API ⇒ N × 8).
 
 **AI và cổng mức:**
 17. `congOtLuong` dùng mức kênh (cần `adapterId` trong luồng AI).
